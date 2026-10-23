@@ -23,18 +23,18 @@
 
 ## 1. 复用调研（本轮源码回读）
 
-| 对象                                              | 路径锚点                                                                                 | 决策                                          | 理由                                                      |
-| ------------------------------------------------- | ---------------------------------------------------------------------------------------- | --------------------------------------------- | --------------------------------------------------------- |
-| `/chats` 历史行                                   | `packages/frontend/src/app/(main)/chats/page.tsx` L113–120 `useCharacterQuery`           | **P1-L-N1 首选：停掉逐行详情**                | 注释已写明「只为头像」；收藏 Tab 已批量                   |
-| 大厅 list 缓存                                    | `lib/api/characters.ts` localStorage + `useCharactersQuery`                              | 作头像/名称来源                               | 已有 `CharacterSummary`；勿用 Summary 硬灌 Detail cache   |
-| 会话列表契约                                      | `shared` `ChatSession` 仅 `character_id`                                                 | 二期可选内嵌摘要                              | 模式对齐 favorites；非首批必需                            |
-| 详情金框                                          | `routes/characters.ts` L165–176：`findFirst` + **全量 `findMany` id** + ranking + pinned | **P1-N-DETAIL：抽 featured 快照，删全量扫描** | 金框须与大厅同源（源码注释）；可用 60s 缓存替代每请求全表 |
-| 收藏金框                                          | `routes/favorites.ts` 全量 `findMany` 摘要                                               | 同 featured 快照 + `id in (...)`              | 收藏少时也不应扫全大厅                                    |
-| ranking/pinned                                    | `features/lobby/*` 已有 60s TTL                                                          | 扩展为 featuredIds 同 TTL + single-flight     | 复用既有模式                                              |
-| 上下文两次 GET                                    | `ConversationHistoryRepository.getContextBeforeTurn` L514–553                            | **P1-S-HTTP：合并 OR 查询**                   | `windowStart>1` 时并行第二次 GET → ST-MINIAPP-2G          |
-| supabase client                                   | `lib/supabase.ts` 未设 `db.timeout`                                                      | **P1-C：全局有界 + 热路径 signal**            | 无 abort 可读到 undici ≈300s                              |
-| `getOrCreateDbUser` / `fetchRuntimeConfigEntries` | `lib/user.ts` / `runtime-config.ts`                                                      | 补 abort；准备期 deadline 须传到底层          | race 只拒等待不取消 HTTP                                  |
-| generation / settle                               | `features/generation/*`                                                                  | 不改计费/CAS 顺序                             | 非本轮提速对象                                            |
+| 对象                                              | 路径锚点                                                                                 | 决策                                                    | 理由                                                                                              |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `/chats` 历史行                                   | `packages/frontend/src/app/(main)/chats/page.tsx` L113–120 `useCharacterQuery`           | **P1-L-N1 首选：停掉逐行详情**                          | 注释已写明「只为头像」；收藏 Tab 已批量                                                           |
+| 大厅 list 缓存                                    | `lib/api/characters.ts` localStorage + `useCharactersQuery`                              | 作头像/名称来源                                         | 已有 `CharacterSummary`；勿用 Summary 硬灌 Detail cache                                           |
+| 会话列表契约                                      | `shared` `ChatSession` 仅 `character_id`                                                 | 二期可选内嵌摘要                                        | 模式对齐 favorites；非首批必需                                                                    |
+| 详情金框                                          | `routes/characters.ts` L165–176：`findFirst` + **全量 `findMany` id** + ranking + pinned | **P1-N-DETAIL：抽 featured 快照，删全量扫描（TTL 2s）** | 金框须与大厅同源（源码注释）；**2026-10-23 用户决策：TTL 由 60s 改为 2s**，兼顾金框时效与加载速度 |
+| 收藏金框                                          | `routes/favorites.ts` 全量 `findMany` 摘要                                               | 同 featured 快照 + `id in (...)`                        | 收藏少时也不应扫全大厅                                                                            |
+| ranking/pinned                                    | `features/lobby/*` 已有 60s TTL                                                          | featuredIds TTL 2s + single-flight（2026-10-23 决策）   | ranking/pinned 自身 60s TTL 不改                                                                  |
+| 上下文两次 GET                                    | `ConversationHistoryRepository.getContextBeforeTurn` L514–553                            | **P1-S-HTTP：合并 OR 查询**                             | `windowStart>1` 时并行第二次 GET → ST-MINIAPP-2G                                                  |
+| supabase client                                   | `lib/supabase.ts` 未设 `db.timeout`                                                      | **P1-C：全局有界 + 热路径 signal**                      | 无 abort 可读到 undici ≈300s                                                                      |
+| `getOrCreateDbUser` / `fetchRuntimeConfigEntries` | `lib/user.ts` / `runtime-config.ts`                                                      | 补 abort；准备期 deadline 须传到底层                    | race 只拒等待不取消 HTTP                                                                          |
+| generation / settle                               | `features/generation/*`                                                                  | 不改计费/CAS 顺序                                       | 非本轮提速对象                                                                                    |
 
 ---
 
@@ -123,12 +123,12 @@
 
 #### 共享组件：`loadLobbyFeaturedIdSet`（新，落在 `features/lobby/`）
 
-| 项   | 设计                                                                                        |
-| ---- | ------------------------------------------------------------------------------------------- |
-| 输入 | 复用 `loadCharacterRankingScores` + `resolveLobbyPinnedCharacters` + **一次**运营序 id 列表 |
-| 输出 | `Set<string>`（或只读快照）                                                                 |
-| 缓存 | 与 ranking 对齐：**60s TTL + single-flight**；失败可沿用旧快照（与现有 ranking 降级一致）   |
-| 语义 | 必须继续调用 `resolveLobbyFeaturedIds`，保证列表/详情/收藏金框同源                          |
+| 项   | 设计                                                                                                                                                         |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 输入 | 复用 `loadCharacterRankingScores` + `resolveLobbyPinnedCharacters` + **一次**运营序 id 列表                                                                  |
+| 输出 | `Set<string>`（或只读快照）                                                                                                                                  |
+| 缓存 | **【2026-10-23 决策修订】TTL 2s + single-flight**：原 60s 被否决（金框要接近实时），完全不缓存也被否决（要保住加载速度）；失败时沿用上次成功结果（含已过期） |
+| 语义 | 必须继续调用 `resolveLobbyFeaturedIds`，保证列表/详情/收藏金框同源                                                                                           |
 
 #### P1-N-DETAIL（`GET /api/characters/:id`）
 
@@ -248,13 +248,36 @@ P0-A（对照表/日志字段审）
 
 ## 7. 审核门禁（阻止实施的未决项）
 
-- [ ] G1：产品/技术审核本文与主文档 §1.1/§8
-- [ ] 大厅总预算 15s、supabase `db.timeout`、Prisma pool 数值
-- [ ] featured 缓存陈旧窗是否与运营金框时效一致
-- [ ] P1-L-N1 是否首批只做方案 A，或并行启动方案 B
-- [ ] 灰度/停止阈值（主文档候选：p95 恶化 >10% 或错误率 +0.5pp）
+- [x] G1：产品/技术审核本文与主文档 §1.1/§8（技术追溯审核见 §7.1；决策项见下，用户 2026-10-23 已答复）
+- [x] 大厅总预算 15s、supabase `db.timeout`、Prisma pool 数值 —— **决策：15s 总预算与池参数不纳入本批次**（`db.timeout=30s` 与热读 5s 已写，保留）
+- [x] featured 缓存陈旧窗 —— **决策：TTL 2s**（先答「实时」后改为 1–2s，取 2s；代码已改，见 §7.1）
+- [x] P1-L-N1 是否首批只做方案 A，或并行启动方案 B —— 仅方案 A
+- [x] 灰度/停止阈值 —— **决策：不做**（无灰度开关、无量化停止阈值；发布后靠 Sentry 对照与回滚兜底）
 
 未决不阻碍本文作为设计交付；**未勾选不得 `task start` 写产品代码**。
+
+### 7.1 G1 追溯审核记录（2026-10-23，代码侧；非用户签批）
+
+背景：产品代码已在 G1 未勾选时写入 `fix_request_speed`（8 个提交均不在 `origin/main`，未部署）。本次是**追溯审核**，只核对「已写代码是否与本文一致、是否引入未评估风险」，不等同于 G1 获得用户批准。
+
+| 门禁项                         | 审核结论                       | 证据                                                                                                                                                                                                                                                                                                                                                                                    |
+| ------------------------------ | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| G1 技术审核                    | **技术通过（有保留）**         | 已写代码与 §2/§8 设计一致，无 migration、无契约变更；`tsc`（backend/frontend）、eslint、backend 14 files/126 tests、frontend `lib/perf` 26 tests 通过                                                                                                                                                                                                                                   |
+| 15s 总预算 / `db.timeout` / 池 | **部分落地，余项待决**         | `db.timeout=30s`（`lib/supabase.ts`）+ `users`/`runtime_config` 热读 5s 已写；supabase-js 2.107.0 类型含 `db.timeout`，**运行时行为未实测**。15s 大厅总预算属 P0-B，未实现。Prisma 池未改（运维值 `connection_limit=10`/`pool_timeout=10`，见 #451）                                                                                                                                    |
+| featured 陈旧窗                | **用户决策：TTL 2s（已改码）** | 60s 改为 2s，保留 single-flight。运营序（`sort_order`/上下架）最多晚 2s 生效；**排序分、固定位各自既有的 60s 缓存未动**，所以金框判定相对这两项数据仍可能晚最多 60s，「2s」仅指运营序这一段。失败沿用上次成功结果（含已过期），无则返回空集。**代价**：2s 内的请求才共用一次查询，低并发时几乎每次请求仍现查一次全量在架 id，原预期「count 降到约 22.6k」不再成立，实际降幅无法事先估算 |
+| P1-L-N1 方案                   | **已定：仅方案 A**             | `/chats` 历史行用大厅摘要，`useCharacterQuery` 加 `enabled`；方案 B 未启动                                                                                                                                                                                                                                                                                                              |
+| 灰度/停止阈值                  | **用户决策：不做**             | 代码无灰度开关，也不设量化停止阈值。风险敞口：上线后若恶化只能靠人工观察 Sentry 并回滚。不预设「p95 +10% / 错误率 +0.5pp」                                                                                                                                                                                                                                                              |
+
+审核发现的边界风险（已评估，不阻塞）：
+
+- `history` 窄投影只取 `[0]`/`[1]`。仅当「开场白为空 + 存在 system 段」时，`extractOpeningMessage` 与旧实现不同（旧实现会误取后面的 assistant 回复，新实现返回 null）；该场景 `card.first_mes` 同为空，行为差异可忽略。
+- `db.timeout` 对所有 PostgREST 调用生效，含计费 RPC：客户端超时放弃不等于服务端回滚。计费走 `charge_key` 幂等，`user.ts` 注释已说明重试语义；上线后须盯 `charge_llm_usage` 错误率。
+- 排名 job 依赖 `DIRECT_URL`；缺失时跳过本轮并告警（不回退共享池）。上线前须核对 Railway production 的 `PROD_DIRECT_URL` 存在且可从 Railway 出站访问（`postgres-advisory-lease.ts` 已有同类用法，可作旁证）。
+- 前端 `build` 已补跑通过（`pnpm install --frozen-lockfile` 无变化，`next/dist` 实际存在；此前“缺失”的判断不成立或已自行恢复，原因未查明）。`/` 为静态预渲染，HTML 内含 `LobbyShellSkeleton`（`aria-label="加载中"`、`animate-breath`）；First Load JS：`/` 221 kB，shared 185 kB。**没有改动前的基线数字，不能据此断言 First Load JS 未增长。**
+
+**本次追溯审核的验证结果（2026-10-23，本机）**：backend `tsc` 通过、eslint 无输出、vitest 95 files / 762 tests 通过；frontend `tsc` 通过、eslint 0 error / 5 warning（`<img>`，与本任务无关）、`build` 通过、vitest 45 files / 286 tests 通过。frontend vitest 第一次与 backend 并行运行时出现过“1 个文件失败、0 个用例失败”，单独重跑全过，疑似并行负载下的偶发，**具体文件未抓到，原因未查明**。以上都是本地结果，不代表 TEST/生产行为。
+
+**用户决策（2026-10-23）**：① 金框 TTL 2s（已改码，见上表）；② 灰度/停止阈值不做；③ 15s 总预算与池参数不放入本批次。三项均已答复，**G1 置为通过**。注意：G1 通过只代表决策项已闭环，不代表代码已验证；合并/发布前仍需 TEST 实请求核对 `history->0` 形状与 `PROD_DIRECT_URL`。
 
 ---
 
@@ -299,16 +322,16 @@ GET /api/characters/:id
 
 E18 原顺序把 P1-L-N1（前端）排在 P1-N-DETAIL 之前。E19 的 `sum(span.duration)` 表明**后端详情接口占了压倒性的总时长**，故调整为：
 
-| 序  | 批次                                             | 具体改动（锚点）                                                                                                                                                                                       | 量化目标                                                                                                                                                                        |
-| --- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | **P1-N-DETAIL**（§2.5 不变，优先级提至最高）     | `characters.ts` L169–173 删除全量 `findMany`，改用共享 `loadLobbyFeaturedIdSet`（60s TTL + single-flight）；`findFirst` 收窄 `select` 到契约字段                                                       | `prisma:engine:connection` 在 `/api/characters/:id` 的 **count 从 ≈49.5k 降到 ≈22.6k**（每请求 1 路）；该 transaction 的 `sum(span.duration)` 降一个量级；p95 脱离 10000ms 常数 |
-| 2   | **C2′ 聚合移出请求池**（修订 §2.3 C-T4）         | `lobby-ranking-refresh-job.ts` L87–110：整轮 `prisma.$transaction` 改为**专用直连**（复用 `postgres-advisory-lease.ts` 的 `DIRECT_URL` + session advisory lock 模式），聚合与落表走该连接，不占 API 池 | `prisma:client:transaction` p95 **120s → 不再出现在 API 池**；E19-3 的 2 分钟聚合不再与在线请求抢连接                                                                           |
-| 3   | **C1′ 池参数显式化**（§2.3 C-T3 前置条件已具备） | `db.ts` 当前完全依赖默认值。先交付容量表，再在 `DATABASE_URL` 显式 `connection_limit` / `pool_timeout` / `connect_timeout`，一次只改一维                                                               | 10000ms 常数消失或迁移到新设定值；P2024 分类计数与在线成功率同窗报告                                                                                                            |
-| 4   | **P1-L-TAIL**（favorites）                       | `favorites.ts` L68–83：RPC 得 ids 后 `findMany({ where:{ id:{ in: ids } } })`；金框改用共享快照                                                                                                        | favorites 的 `prisma:engine:connection` count 与 10s 命中数下降                                                                                                                 |
-| 5   | **P1-C 有界等待**                                | `supabase.ts` L30–38 未设任何超时 → 加有界 `db.timeout`；`getOrCreateDbUser` / `fetchRuntimeConfigEntries` 补 `AbortSignal`                                                                            | Supabase REST 的 `max(span.duration)` 从 ≈300s 落到设定上限内；**p50/p95 不应恶化**（E19-4 表明它们本来就健康）                                                                 |
-| 6   | **P1-L-N1**（前端 `/chats`）                     | 维持 §2.4 方案 A                                                                                                                                                                                       | `/chats` 打开时 `GET /api/characters/:id` 次数 ≈ unique(miss)                                                                                                                   |
-| 7   | **轮询端点合并**（新，低风险）                   | `support/unread`(15k) + `notifications/unread-count`(13.7k) + `wallet/free-quota`(7.1k) 合计 ≈36k 次/7d，p50 均 >100ms。先核对前端轮询间隔与 `staleTime`，再评估是否合并为一个汇总端点                 | 请求次数下降；**不得**为此新建通用聚合框架，也不得延长用户可感知的未读延迟                                                                                                      |
-| 8   | **前端首屏预算**（§2.7 P1-N）                    | `/` 与 `/create` 的 p75 ≈7.5s                                                                                                                                                                          | 先拆 TTFB / JS / 图片，再定预算；**不与后端收益混算**                                                                                                                           |
+| 序  | 批次                                             | 具体改动（锚点）                                                                                                                                                                                       | 量化目标                                                                                                                                                                                                                                                  |
+| --- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | **P1-N-DETAIL**（§2.5 不变，优先级提至最高）     | `characters.ts` L169–173 删除全量 `findMany`，改用共享 `loadLobbyFeaturedIdSet`（**2s TTL + single-flight，2026-10-23 由 60s 改为 2s**）；`findFirst` 收窄 `select` 到契约字段                         | `prisma:engine:connection` 在 `/api/characters/:id` 的 count 下降：原估 ≈22.6k 基于 60s 命中率，**2s 下命中率更低，降幅会小于该估值，无事先数字**。以发布后同窗对照为准：count、`sum(span.duration)`、`span.duration:>9000` 命中数；p95 脱离 10000ms 常数 |
+| 2   | **C2′ 聚合移出请求池**（修订 §2.3 C-T4）         | `lobby-ranking-refresh-job.ts` L87–110：整轮 `prisma.$transaction` 改为**专用直连**（复用 `postgres-advisory-lease.ts` 的 `DIRECT_URL` + session advisory lock 模式），聚合与落表走该连接，不占 API 池 | `prisma:client:transaction` p95 **120s → 不再出现在 API 池**；E19-3 的 2 分钟聚合不再与在线请求抢连接                                                                                                                                                     |
+| 3   | **C1′ 池参数显式化**（§2.3 C-T3 前置条件已具备） | `db.ts` 当前完全依赖默认值。先交付容量表，再在 `DATABASE_URL` 显式 `connection_limit` / `pool_timeout` / `connect_timeout`，一次只改一维                                                               | 10000ms 常数消失或迁移到新设定值；P2024 分类计数与在线成功率同窗报告                                                                                                                                                                                      |
+| 4   | **P1-L-TAIL**（favorites）                       | `favorites.ts` L68–83：RPC 得 ids 后 `findMany({ where:{ id:{ in: ids } } })`；金框改用共享快照                                                                                                        | favorites 的 `prisma:engine:connection` count 与 10s 命中数下降                                                                                                                                                                                           |
+| 5   | **P1-C 有界等待**                                | `supabase.ts` L30–38 未设任何超时 → 加有界 `db.timeout`；`getOrCreateDbUser` / `fetchRuntimeConfigEntries` 补 `AbortSignal`                                                                            | Supabase REST 的 `max(span.duration)` 从 ≈300s 落到设定上限内；**p50/p95 不应恶化**（E19-4 表明它们本来就健康）                                                                                                                                           |
+| 6   | **P1-L-N1**（前端 `/chats`）                     | 维持 §2.4 方案 A                                                                                                                                                                                       | `/chats` 打开时 `GET /api/characters/:id` 次数 ≈ unique(miss)                                                                                                                                                                                             |
+| 7   | **轮询端点合并**（新，低风险）                   | `support/unread`(15k) + `notifications/unread-count`(13.7k) + `wallet/free-quota`(7.1k) 合计 ≈36k 次/7d，p50 均 >100ms。先核对前端轮询间隔与 `staleTime`，再评估是否合并为一个汇总端点                 | 请求次数下降；**不得**为此新建通用聚合框架，也不得延长用户可感知的未读延迟                                                                                                                                                                                |
+| 8   | **前端首屏预算**（§2.7 P1-N）                    | `/` 与 `/create` 的 p75 ≈7.5s                                                                                                                                                                          | 先拆 TTFB / JS / 图片，再定预算；**不与后端收益混算**                                                                                                                                                                                                     |
 
 ### 8.4 E19 对验收口径的约束
 

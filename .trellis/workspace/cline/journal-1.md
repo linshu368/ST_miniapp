@@ -129,3 +129,43 @@
 4. chat 页配置请求 staleTime 调优：已查明 `models`/`generation-config` 已有合理 staleTime，`voice`/`images` 的 `staleTime:0` 是代码注释写明的有意设计（额度实时性），非遗漏——建议直接汇报结论，确认是否移出任务范围。
 5. `design.md` §3 推荐顺序中仍是纯设计的批次（P0-A 起）需要先过 G1 才能开始写代码；若治理问题导致 G1 被认定事实失效，需先和用户对齐新机制。
 6. 未提交范围：无（本次改动已全部提交，工作区干净，除 Windows 残留的空 `nul` 文件无关紧要）。
+
+---
+
+## Session 4: fix_request_speed 分支 — Sentry 复采，确认连接池事故已消除
+
+**Date**: 2026-10-23
+**Task**: 10-21-production-request-performance（步骤 11）
+**Package**: backend（只读排查，未改代码）
+**Branch**: `fix_request_speed`
+
+### Summary
+
+用户要求用 Sentry 生产数据继续找慢路径、降低 p75/p95。按 `sentry.release` 分组复采后确认：`prisma:engine:connection` 的长耗时全部集中在旧 release；`origin/main` 的 `111dda8a`（#451）记录了根因是 Railway 的 `PROD_DATABASE_URL` 被改成直连 5432 + `connection_limit=1`。最新 release 上已无 >500ms 的连接 span，`GET /api/characters/:id` 的 p95 从 7d 窗口的 10s 降到 190ms。因此不做连接池调大/预热/keep-alive。唯一仍偏慢的是 `GET /api/v1/conversations/:id`（p75 424ms），耗时集中在 Supabase REST 读 `current_chat_history` 视图；用户选择不改代码，仅记录结论。
+
+### Main Changes
+
+- `.trellis/tasks/10-21-production-request-performance/implement.md`：新增步骤 11（release 对照表、最新 release 各接口延迟、`conversations/:id` 子 span 分解与视图执行计划推断、方案 A/B/C 与用户决策、对步骤 10 的修正）。
+- 未改任何产品代码、配置、migration 或数据库。
+
+### Git Commits
+
+- 无（仅文档改动，未提交）。
+
+### Testing
+
+- [NOT RUN] typecheck / vitest：本次无代码改动。
+- [OK] Sentry `search_traces`（production，24h，按 release / transaction / span 聚合）。
+- [OK] Supabase MCP 只读：`pg_views` / `pg_indexes` / `pg_class` 元数据与 `EXPLAIN`（占位 UUID，未执行查询、未读业务行）。
+- [GAP] 未跑 `EXPLAIN ANALYZE`，"`current_chat_history` 随会话长度变慢"仍是推断，未用真实长会话实测。
+
+### Status
+
+[OK] **本次排查完成**；任务整体仍 `in_progress`。
+
+### Next Steps
+
+1. 7d 后用同口径（按 release 分组）再复采 `prisma:engine:connection` 与端点 p75/p95，样本量更大后再关闭连接池相关条目。
+2. 评估 `PROD_DATABASE_URL` 等仅存在于 Railway 控制台的变量是否需要定期核对/告警（参见 `ops/railway/README.md` 新增小节）。
+3. 若要处理 `conversations/:id`：先补真实长会话的 `EXPLAIN ANALYZE` 和按会话轮次分层的耗时，再在 `ConversationHistoryRepository.listMessages` 两步查（方案 A）与 DB 侧改造（方案 B，需 migration）之间选择。
+4. `implement.md` 步骤 10.3.5 的文档/状态同步治理问题仍未处理。

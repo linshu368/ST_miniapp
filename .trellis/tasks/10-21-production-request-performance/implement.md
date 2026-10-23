@@ -1,6 +1,6 @@
 # 执行计划与验证门禁
 
-状态：**步骤 1 实施中**（2026-10-22 起，依据 design.md §8.5 的 E20/E21 修订顺序）。1c 的 image_plaza 图片缓存已实施；步骤 2（P1-N-DETAIL）、步骤 4（favorites）与 P1-L-N1 方案 A 已实施；P1-C（PostgREST 有界等待）与 P1-S-HTTP（上下文单查询）已实施；步骤 7 轮询收敛第一刀（前端去重，不合并端点）已实施。前端首屏仍为文档阶段。
+状态（2026-10-23 更正）：**代码已写入 `fix_request_speed`，但 8 个提交均不在 `origin/main`：未合并、未部署、生产效果未测。** G1 仅做了追溯技术审核（`design.md` §7.1），用户决策项未签批。下文各步骤的「已实施」均指「代码已写、本地检查通过」，不代表上线或达标。原状态：**步骤 1 实施中**（2026-10-22 起，依据 design.md §8.5 的 E20/E21 修订顺序）。1c 的 image_plaza 图片缓存已实施；步骤 2（P1-N-DETAIL）、步骤 4（favorites）与 P1-L-N1 方案 A 已实施；P1-C（PostgREST 有界等待）与 P1-S-HTTP（上下文单查询）已实施；步骤 7 轮询收敛第一刀（前端去重，不合并端点）已实施。前端首屏仍为文档阶段。
 
 ## 步骤 1（进行中）：排序刷新 job 移出 API 共享连接池
 
@@ -102,12 +102,12 @@
 **后端：共享金框快照 `features/lobby/featured-snapshot.ts`（新）**
 
 - `loadLobbyFeaturedIdSet(log)`：运营序全量 id + 排序分 + 固定位 → `resolveLobbyFeaturedIds`（与大厅同源）。
-- 60s TTL，与 ranking/pinned 对齐；single-flight，过期瞬间的并发请求只查一次。
-- 刷新失败：沿用旧快照；无旧快照则返回空集（少显示金框，不让详情失败）。失败结果不缓存。日志 `lobby_featured.snapshot_failed`，带 `{ err, durationMs, hasStale }`。
+- **2026-10-23 决策修订：TTL 由 60s 改为 2s。** 保留 single-flight（过期瞬间的并发请求只查一次）。
+- 刷新失败：沿用上次成功结果（`lastGood`，含已过期的）；没有则返回空集（少显示金框，不让详情失败）。失败结果不记入 `lastGood`。日志 `lobby_featured.snapshot_failed`，带 `{ err, durationMs, hasStale }`。
 
 **`GET /api/characters/:id`（P1-N-DETAIL）**
 
-- 删除每请求全量 `findMany({ select: { id } })`，改用快照。热缓存下每请求 Prisma 连接数从 2–3 条降为 1 条。
+- 每请求全量 `findMany({ select: { id } })` 改走共享快照。**TTL 缩到 2s 后命中率明显低于 60s**：2s 内的请求共用一次查询，低流量时仍几乎每次请求都现查全量 id（连接数不再是「降为 1 条」）；降幅无法事先估算，以发布后 Sentry 对照为准。
 - `findFirst` 收窄 `select` 为契约用到的 8 个字段，不再拖 `raw_card` 等大 JSON。
 - 可见性过滤 `enabled / archived_at` 不变；响应结构不变。
 
@@ -127,7 +127,8 @@
 
 **已知边界**：
 
-- 金框最多比大厅列表晚 60s 生效（三份缓存同为 60s，但起点不同）。这与改前 ranking/pinned 已有的陈旧窗同级。
+- 金框的运营序部分最多晚 2s；排序分与固定位仍各自带既有的 60s 内存缓存（本任务未改动），所以金框判定相对这两项数据最多晚 60s，与改前一致，没有新增陈旧窗。
+- 快照只用于详情和收藏；大厅列表 `/api/characters` 不走它，所以这个 TTL 不影响大厅列表的加载速度。
 - `/chats` 的头像来自大厅本地快照，运营改头像后最多到用户下次进大厅才更新；`/chats` 只做展示，进入聊天页仍走详情接口。
 
 **验证（已运行）**：backend `tsc --noEmit` 0、vitest 91 文件 / 723 用例全过；frontend `tsc --noEmit` 0、eslint 0；prettier、`git diff --check` 通过。未新建测试文件。
@@ -386,7 +387,9 @@ git diff --check
 - **F2**：`telegramReady` 之前，`/` 渲染纯静态的 `LobbyShellSkeleton`（不发请求、不读 initData），其他路由仍然留空。
 - **F4**：大厅 `latest-badge` 和 BottomNav 的 `notifications/unread-count`、`support/unread` 加 `enabled`，等首屏结束再请求；推迟期间切回前台也不补发。`/profile` 自己的读者不受影响。`favorites/ids` **没有**推迟：它决定首屏卡片的心形状态，推迟会出现空心→实心的闪烁。`users/settings` 也没动，它属于 Providers 的 hydrate。
 
-验证：frontend `typecheck`、`lint`（0 error）、`test` 41 files / 256 tests 通过。`build` 没能执行，原因是本机 `packages/frontend/node_modules/next/dist` 缺失（依赖安装损坏，和改动无关）；需要 `pnpm install` 之后补跑，并检查 `/` 预渲染 HTML 里有骨架、First Load JS 没有增长。
+验证：frontend `typecheck`、`lint`（0 error）、`test` 41 files / 256 tests 通过。`build` 当时没能执行，原因是本机 `packages/frontend/node_modules/next/dist` 缺失（依赖安装损坏，和改动无关）。
+
+**2026-10-23 补跑**：`pnpm install --frozen-lockfile` 无变化，`next/dist` 已存在，`build` 通过；`/` 预渲染 HTML 含骨架（`aria-label="加载中"`）。First Load JS（`/` 221 kB，shared 185 kB）**无改动前基线，增长与否未验证**。frontend vitest 现为 45 files / 286 tests 全过（首次并行运行曾偶发 1 个文件失败，原因未查明）。
 
 ### 步骤 8（2026-10-22）：CORS 预检缓存 + 读路径 history 窄投影
 
@@ -432,17 +435,17 @@ git diff --check
 
 这些代码已合入 `fix_request_speed`（commit 见括号），本地 typecheck/test 已过，但生产灰度观察、真机人工项、或本地 `build` 尚未全部跑完，**不能视为已验证收尾**：
 
-| 批次 | commit | 已做 | 还缺什么 |
-| --- | --- | --- | --- |
-| 步骤 1（排序 job 移出共享池） | `888b616b` | `DIRECT_URL` 专用 `PrismaClient`（`connection_limit=1`），job 失败即跳过不回退共享池 | 发布后核对 3 项（§步骤1b 末尾）：日志应见 `lobby_ranking.completed`、`character_ranking_scores.computed_at` 晚于部署时间、若仍 `failed` 先人工 `VACUUM` 不再调大超时 |
-| 步骤 1b（库侧 statement_timeout 掐断） | 同上 | 事务内 `SET LOCAL statement_timeout=8min` | `8min` 是否够**未实测**（未跑 `EXPLAIN ANALYZE`），需以发布后第一轮 `durationMs` 为准；`chat_history` 表 `VACUUM (ANALYZE)` 仍是待执行的人工运维动作，不由代码触发 |
-| 步骤 1c（image_plaza 签名缓存） | `668754c6` | 进程内签名缓存 + 已发布作品图 TTL 15min→24h + `hydrateWorks` 并发化 | 发布后核对 4 项：二次进入瞬时出图、同一 artifact 的 `image_url` 多次请求逐字节相同、Storage 出网流量下降、studio 新产物仍 15min |
-| 步骤 2/4/P1-L-N1（详情/收藏/`/chats` 请求收敛） | `668754c6` | `loadLobbyFeaturedIdSet` 60s TTL + single-flight 快照；详情 `select` 收窄；favorites `id in`；`/chats` 方案 A | 4 项人工回归（§步骤2/4 末尾）未在真实环境跑：金框跨页一致性、下架卡占位、`/chats` 详情请求数、清空 localStorage 冷启动路径 |
-| P1-C / P1-S-HTTP（PostgREST 有界等待 + 上下文单查询） | `cf26c65a` | `db.timeout=30s`；`getOrCreateDbUser`/`fetchRuntimeConfigEntries` 5s signal；`getContextBeforeTurn` 合并为单次 OR 查询 | 3 项人工回归（新用户创建、泄洪会话开场白保留、未泄洪行为不变）+ 发布后 Sentry 对照（`users`/`runtime_config` 的 `span.duration:>290000` 应降到 0） |
-| 步骤 7（轮询收敛第一刀） | `8cfdd335`（CORS 提交内一并） | `refetch({cancelRefetch:false})`；未读 hook 加 `{poll}`；`/profile` 两个读者停止自轮询 | 4 项人工回归（停留 60s 请求计数、切后台/前台各 1 次、客服/公告红点延迟 ≤20s、已读后红点消失）+ 发布后 count 对照 |
-| 步骤 8 F1/F2/F4/F8（前端首屏） | `2ee36edb` | 首屏图片 8→6；Sentry replay/PostHog 延后到首屏结束；`/` 的 `telegramReady` 前骨架；latest-badge/未读角标延后 | **本地 `build` 未能执行**（`packages/frontend/node_modules/next/dist` 缺失，依赖安装损坏，与改动无关）——需要先 `pnpm install` 补跑 `build`，确认预渲染 HTML 含骨架、First Load JS 未增长，再做人工冷/热启动回归 |
-| 步骤 8（CORS 预检缓存 + history 窄投影） | `8cfdd335` | `app.ts` 加 `maxAge:600`；`ConversationHistoryRepository` 读路径改 `history->0/1` 别名投影 | 本机当时 vitest 因依赖损坏（`@jridgewell/sourcemap-codec` 缺失）**未跑**，需要补跑 `ConversationHistoryRepository.cancel.test.ts` 与 `features/conversations`；`history->0` 别名投影需在 TEST 环境真实请求一次，确认 PostgREST 返回形状（含开场白、`request_id` 取消定位）未被破坏 |
-| 本次步骤 9（action-tracker 切后台污染修复） | `ff42181b` | `ActiveAction` 加 `bindVisibility`/`hiddenMs`，看门狗与上报口径对齐 `page-tracker.ts` | 真机验证项见上方「仍待做」1–3 |
+| 批次                                                  | commit                        | 已做                                                                                                                                       | 还缺什么                                                                                                                                                                                                                                                                           |
+| ----------------------------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 步骤 1（排序 job 移出共享池）                         | `888b616b`                    | `DIRECT_URL` 专用 `PrismaClient`（`connection_limit=1`），job 失败即跳过不回退共享池                                                       | 发布后核对 3 项（§步骤1b 末尾）：日志应见 `lobby_ranking.completed`、`character_ranking_scores.computed_at` 晚于部署时间、若仍 `failed` 先人工 `VACUUM` 不再调大超时                                                                                                               |
+| 步骤 1b（库侧 statement_timeout 掐断）                | 同上                          | 事务内 `SET LOCAL statement_timeout=8min`                                                                                                  | `8min` 是否够**未实测**（未跑 `EXPLAIN ANALYZE`），需以发布后第一轮 `durationMs` 为准；`chat_history` 表 `VACUUM (ANALYZE)` 仍是待执行的人工运维动作，不由代码触发                                                                                                                 |
+| 步骤 1c（image_plaza 签名缓存）                       | `668754c6`                    | 进程内签名缓存 + 已发布作品图 TTL 15min→24h + `hydrateWorks` 并发化                                                                        | 发布后核对 4 项：二次进入瞬时出图、同一 artifact 的 `image_url` 多次请求逐字节相同、Storage 出网流量下降、studio 新产物仍 15min                                                                                                                                                    |
+| 步骤 2/4/P1-L-N1（详情/收藏/`/chats` 请求收敛）       | `668754c6`                    | `loadLobbyFeaturedIdSet` 2s TTL + single-flight（2026-10-23 由 60s 改 2s，未提交）；详情 `select` 收窄；favorites `id in`；`/chats` 方案 A | 4 项人工回归（§步骤2/4 末尾）未在真实环境跑：金框跨页一致性、下架卡占位、`/chats` 详情请求数、清空 localStorage 冷启动路径                                                                                                                                                         |
+| P1-C / P1-S-HTTP（PostgREST 有界等待 + 上下文单查询） | `cf26c65a`                    | `db.timeout=30s`；`getOrCreateDbUser`/`fetchRuntimeConfigEntries` 5s signal；`getContextBeforeTurn` 合并为单次 OR 查询                     | 3 项人工回归（新用户创建、泄洪会话开场白保留、未泄洪行为不变）+ 发布后 Sentry 对照（`users`/`runtime_config` 的 `span.duration:>290000` 应降到 0）                                                                                                                                 |
+| 步骤 7（轮询收敛第一刀）                              | `8cfdd335`（CORS 提交内一并） | `refetch({cancelRefetch:false})`；未读 hook 加 `{poll}`；`/profile` 两个读者停止自轮询                                                     | 4 项人工回归（停留 60s 请求计数、切后台/前台各 1 次、客服/公告红点延迟 ≤20s、已读后红点消失）+ 发布后 count 对照                                                                                                                                                                   |
+| 步骤 8 F1/F2/F4/F8（前端首屏）                        | `2ee36edb`                    | 首屏图片 8→6；Sentry replay/PostHog 延后到首屏结束；`/` 的 `telegramReady` 前骨架；latest-badge/未读角标延后                               | **本地 `build` 未能执行**（`packages/frontend/node_modules/next/dist` 缺失，依赖安装损坏，与改动无关）——需要先 `pnpm install` 补跑 `build`，确认预渲染 HTML 含骨架、First Load JS 未增长，再做人工冷/热启动回归                                                                    |
+| 步骤 8（CORS 预检缓存 + history 窄投影）              | `8cfdd335`                    | `app.ts` 加 `maxAge:600`；`ConversationHistoryRepository` 读路径改 `history->0/1` 别名投影                                                 | 本机当时 vitest 因依赖损坏（`@jridgewell/sourcemap-codec` 缺失）**未跑**，需要补跑 `ConversationHistoryRepository.cancel.test.ts` 与 `features/conversations`；`history->0` 别名投影需在 TEST 环境真实请求一次，确认 PostgREST 返回形状（含开场白、`request_id` 取消定位）未被破坏 |
+| 本次步骤 9（action-tracker 切后台污染修复）           | `ff42181b`                    | `ActiveAction` 加 `bindVisibility`/`hiddenMs`，看门狗与上报口径对齐 `page-tracker.ts`                                                      | 真机验证项见上方「仍待做」1–3                                                                                                                                                                                                                                                      |
 
 > 共同待办：这些批次散落在 8 个不同 commit 里（`whc` 与 `linshu368` 两人并行推进），`implement.md` 顶部状态行（第 3 行）与 `task.md`/`design.md` 的批次表**均未随代码更新勾掉对应批次**——下面 10.3 单独列为治理问题。
 
@@ -450,18 +453,18 @@ git diff --check
 
 按 `design.md` §3 推荐顺序，以下批次在 `task.md`/`design.md` 中仍是 `Todo`，且 git log 中找不到对应代码改动：
 
-| 批次 | 设计内容（design.md 锚点） | 依赖/门禁 |
-| --- | --- | --- |
-| P0-A | 固化 E18 对照表 + 分段日志字段（`phase=list\|detail\|featured\|ranking`） | G1 |
-| P0-B | 大厅浏览器侧 15s 总预算 + Next 代理更短 deadline + 失败可重试 UI | P0-A |
-| P0-C | 全服务连接容量表（含 PostgREST ≈300s）；**E21 已更正**不调大 `connection_limit`，池参数调整降级为观察项 | P0-A |
-| P1-A | 请求内规则/设置/模型目录同轮复用；验收用 `backend_prepare_ms`/`context_http_count`，不用 messages 总 p95 | G1、P0-A |
-| P1-B | 排名缓存刷新合并为显式 single-flight（注：`ranking-stats.ts` 当前仅有 60s TTL 缓存，**没有**像 `featured-snapshot.ts` 那样的 `inflight` 锁；过期瞬间的并发大厅请求仍可能触发多次聚合查询） | P0-A、运营审核陈旧窗 |
-| P1-N（其余项） | 开屏 240ms+720ms 定时器与创建 freshness；design.md 建议等 P1-N-DETAIL/P1-L-N1 有进展后再动，避免把入口卡顿全推给动画 | P0-A、交互方案审核 |
-| P1-S | 首字之外的流速/绘制/终态定点优化；仅在证明非 provider 瓶颈后动手 | P0-A |
-| 前端首屏 F3 | `/api/lobby-characters` 短 CDN 缓存（`s-maxage=15`）——**需决策**：与「每次挂载都对齐数据库，下架/重排立即生效」的现有注释冲突 | 产品决策 |
-| 前端首屏 F5 | 调低 `replaysSessionSampleRate`——**需决策**：影响排障可见性 | 产品决策 |
-| P2 / P2-X | 有证据的 SQL/索引优化；webhook/miniapp-entry 慢（旁路，不阻塞四主线） | 核心批次收口后另审 |
+| 批次           | 设计内容（design.md 锚点）                                                                                                                                                                 | 依赖/门禁            |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------- |
+| P0-A           | 固化 E18 对照表 + 分段日志字段（`phase=list\|detail\|featured\|ranking`）                                                                                                                  | G1                   |
+| P0-B           | 大厅浏览器侧 15s 总预算 + Next 代理更短 deadline + 失败可重试 UI                                                                                                                           | P0-A                 |
+| P0-C           | 全服务连接容量表（含 PostgREST ≈300s）；**E21 已更正**不调大 `connection_limit`，池参数调整降级为观察项                                                                                    | P0-A                 |
+| P1-A           | 请求内规则/设置/模型目录同轮复用；验收用 `backend_prepare_ms`/`context_http_count`，不用 messages 总 p95                                                                                   | G1、P0-A             |
+| P1-B           | 排名缓存刷新合并为显式 single-flight（注：`ranking-stats.ts` 当前仅有 60s TTL 缓存，**没有**像 `featured-snapshot.ts` 那样的 `inflight` 锁；过期瞬间的并发大厅请求仍可能触发多次聚合查询） | P0-A、运营审核陈旧窗 |
+| P1-N（其余项） | 开屏 240ms+720ms 定时器与创建 freshness；design.md 建议等 P1-N-DETAIL/P1-L-N1 有进展后再动，避免把入口卡顿全推给动画                                                                       | P0-A、交互方案审核   |
+| P1-S           | 首字之外的流速/绘制/终态定点优化；仅在证明非 provider 瓶颈后动手                                                                                                                           | P0-A                 |
+| 前端首屏 F3    | `/api/lobby-characters` 短 CDN 缓存（`s-maxage=15`）——**需决策**：与「每次挂载都对齐数据库，下架/重排立即生效」的现有注释冲突                                                              | 产品决策             |
+| 前端首屏 F5    | 调低 `replaysSessionSampleRate`——**需决策**：影响排障可见性                                                                                                                                | 产品决策             |
+| P2 / P2-X      | 有证据的 SQL/索引优化；webhook/miniapp-entry 慢（旁路，不阻塞四主线）                                                                                                                      | 核心批次收口后另审   |
 
 ### 10.3 本次新发现、尚未决策的跟进项（步骤 9 遗留）
 
@@ -478,3 +481,70 @@ git diff --check
 3. 10.3.1–10.3.3（真机验证相关）需要先确认是否有真机/弱网环境可用；若没有，向用户同步该限制并讨论是否接受"仅代码层面已修复、生产效果需等真实用户反馈"作为阶段性结论。
 4. 10.3.4（chat 配置 staleTime）已有明确结论（多数非遗漏），建议直接向用户汇报结论并确认是否从任务范围移除，而非继续排查。
 5. 10.2 的纯设计批次（P0-A 起）仍需 G1 审核放行，按 `design.md` §3 顺序推进；若 10.3.5 的治理问题导致 G1 被认定为事实失效，需要先和用户对齐新的审核/放行机制再继续。
+
+## 步骤 11（2026-10-23：Sentry 复采，验证连接池事故已消除；不改代码）
+
+口径：Sentry org `wangqiao` / project `st-miniapp` / `environment:production` / 近 24h；按 `sentry.release` 分组对照。采样率与被丢弃事件未审计，长尾仍可能偏差。本步骤**未改任何代码、配置或数据库**。
+
+### 11.1 根因更正：连接池排队来自运维配置，不来自代码
+
+`origin/main` 的 `111dda8a`（#451）记录：Railway 控制台里的 `PROD_DATABASE_URL`（不受版本控制）曾被改成直连 5432 + `connection_limit=1`，整个服务同一时刻只有 1 个请求能碰数据库。这与 Sentry 现象吻合，也**部分推翻**步骤 1/E19 里"长事务 + 瞬时扇出"是主因的判断：旧判断解释不了持续性的大面积排队。已验证可用的值为 `:6543/<db>?pgbouncer=true&connection_limit=10&pool_timeout=10`（见 `ops/railway/README.md` 新增小节）。
+
+### 11.2 release 对照（`prisma:engine:connection` span）
+
+| release            | 24h span 数 | p50    | p75    | p95    | 说明                                       |
+| ------------------ | ----------- | ------ | ------ | ------ | ------------------------------------------ |
+| `769dbe02`         | 410         | ≈11.9s | ≈12.0s | ≈12.0s | 全部卡在 `pool_timeout` 附近，即池排队超时 |
+| `6326a0b1`         | 3,675       | 94ms   | 550ms  | 1.56s  | 池参数仍异常的时期                         |
+| `66a617f8`         | 1,625       | 2.9ms  | 23ms   | 71ms   | 仅 10 个 span >500ms，最大 ≈2.0s           |
+| `111dda8a`（最新） | 2,165       | 3.1ms  | 23ms   | 121ms  | **无 >500ms 的 span**                      |
+
+结论：此前把 `/api/characters*` 的 ≈1.56s 常数簇当成"冷连接固定开销"的猜测**不成立**，它属于池配置异常时期；最新 release 上已不存在。因此**不做**连接池调大、启动 `$connect` 预热、keep-alive 探活——没有证据支持，也违反"最小充分方案"。
+
+### 11.3 最新 release `111dda8a` 的接口延迟（`http.server` 事务，24h）
+
+| 接口                                      | 请求数 | p50   | p75   | p95   |
+| ----------------------------------------- | ------ | ----- | ----- | ----- |
+| `GET /api/characters/:id`                 | 735    | 47ms  | 79ms  | 190ms |
+| `GET /api/notifications/unread-count`     | 505    | 86ms  | 107ms | 157ms |
+| `GET /api/support/unread`                 | 500    | 108ms | 151ms | 201ms |
+| `GET /api/v1/conversations/:id`           | 455    | 248ms | 424ms | 770ms |
+| `GET /api/characters/latest-badge`        | 250    | 59ms  | 81ms  | 121ms |
+| `GET /api/characters`                     | 145    | 60ms  | 96ms  | 255ms |
+| `POST /api/v1/conversations/:id/messages` | 350    | 23.8s | 32.5s | 52.5s |
+
+对照 7d 窗口：`GET /api/characters/:id` p95 由 10,057ms 降到 190ms。注意两个窗口样本量与时段不同，只能说明量级变化，不能当严格 A/B。
+
+`POST .../messages` 是 LLM 流式生成，耗时由上游模型决定，**不应与普通接口放在一起看全局 p95**。最新 release 的全局 p95≈21s 主要由它拉高；评估"整体 p75/p95"时应排除该事务或单独看。
+
+### 11.4 仍然偏慢：`GET /api/v1/conversations/:id`
+
+子 span 分解（24h，455 次）：
+
+| span                                                                                | p50     | p75     | max      |
+| ----------------------------------------------------------------------------------- | ------- | ------- | -------- |
+| Supabase REST `GET .../rest/v1/current_chat_history`                                | 111ms   | 277ms   | 1.41s    |
+| `chat_history` / `miniapp_user_settings` / `chat_sessions` / `users` / `characters` | 21–28ms | 31–35ms | 85–403ms |
+
+耗时集中在 `current_chat_history` 这一次读取。TEST 无关，下面全部取自生产库（项目 `wbtsfzozlmurljvglhpn`）的**只读**结构采集，未读业务行：
+
+- 视图 `experience.current_chat_history` = `SELECT DISTINCT ON (h.session_id, h.turn_index) … FROM chat_history h LEFT JOIN openrouter_chat_history o LEFT JOIN venice_chat_history v WHERE … ORDER BY h.session_id, h.turn_index, h.revision DESC`。
+- `EXPLAIN`（占位 UUID，未执行）显示 `Limit → Sort → Unique → Nested Loop Left Join`，`LIMIT` 位于 `Sort`/`Unique` 之上；`chat_history` 走 `idx_chat_history_session_current`，每行再各做两次主键索引 join。推断为：翻页时需先处理该会话全部（或范围内全部）轮次再取最近一页，会话越长越慢。
+- 规模：`chat_history` 约 35.4 万行 / 22GB，`openrouter_chat_history` 约 33.7 万行 / 270MB，`venice_chat_history` 约 2.5k 行。
+
+**验证缺口**：占位 UUID 的计划代价只有几十，不代表真实长会话；未跑 `EXPLAIN ANALYZE`，也未按会话长度分层统计 p75。上面"随会话长度线性变慢"是推断，不是实测。
+
+候选方案（本步骤**未实施**）：
+
+- A. 仅改 `ConversationHistoryRepository.listMessages`：先用轻量列确定本页 `turn_index` 范围，再按范围读 `current_chat_history`。无 migration；需保持 `hasMore`、重生成多版本（`revision`）、开场白补齐语义不变。
+- B. 新增 DB 函数或改视图使 `LIMIT` 下推。效果最彻底，但需要 migration、八域归属评估、TEST 先验证与回滚说明。
+- C. 暂不处理（p75 424ms / p95 770ms 可接受）。
+
+**决策（用户，2026-10-23）：选 C**，不改代码，本步骤收尾。若后续要做 A/B，须先补真实长会话的 `EXPLAIN ANALYZE` 与按会话轮次分层的耗时统计。
+
+### 11.5 对步骤 10 的修正与遗留
+
+- 10.2 里 P0-C"全服务连接容量表"的结论需补一句：近期事故的直接原因是 `PROD_DATABASE_URL` 被改错，**需要的是配置变更留痕与核对，不是调池参数**；`ops/railway/README.md` 已有核对步骤。
+- 步骤 1/1b/1c 等批次的"发布后核对"仍按 10.1 表格执行，本步骤数据只覆盖 `prisma:engine:connection` 与端点延迟，**没有**核对 `lobby_ranking.completed`、`image_url` 缓存等项。
+- 未做：24h 内最新 release 样本量仍偏小（`/api/characters` 仅 145 次），建议 7d 后用同口径再复采一次，再决定是否关闭任务的连接池相关条目。
+- 本步骤命令：Sentry `search_traces`（按 release 聚合 `prisma:engine:connection`、`http.server` 事务、`conversations/:id` 子 span）；Supabase MCP `execute_sql` 仅 `pg_views`/`pg_indexes`/`pg_class` 元数据与 `EXPLAIN`。
