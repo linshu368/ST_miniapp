@@ -128,7 +128,16 @@ P3 的价值是"用户来投诉时能查到"，不是打扰人。任何 P3 类�
 
 **计数会高估影响**：一个用户重试 3 次就是 3 条失败 span。所以所有规则都是"比例 + 绝对数下限 + 覆盖用户数"三件套，不用裸计数。
 
-## 六、落地清单
+## 六、新功能上线的配套动作（非常建议，不强制）
+
+新功能如果新增了会触发请求的关键按钮/交互（参照本文开头"只回答一个问题"的标准：用户点了会不会觉得"没反应"），非常建议顺手做两件事：
+
+1. 在 `packages/frontend/src/lib/perf/action-tracker.ts` 的 `TrackedAction` 里补一条埋点；
+2. 评估这个动作是否重要到要进第三节 P1-4 的白名单（目前只有 `send_message`、`select_character`、`daily_checkin`、`support_send_message`）。
+
+不做不会报错、不会被测试拦住——纯前端交互本来就不用埋。但新按钮卡住了没人会知道，只能等用户来投诉，这正是这套监控本来想避免的事。
+
+## 七、落地清单
 
 1. 每条规则对应一条 Sentry Alert Rule（Dataset 按第五节：5xx 用 Spans，卡住用 Issues/Metrics）
 2. Alert Rule 的 webhook 指向 `POST https://<backend>/api/alerts/sentry`，Header `x-alert-secret`
