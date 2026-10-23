@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useSyncExternalStore } from 'react';
 import {
+  infiniteQueryOptions,
   useInfiniteQuery,
   useMutation,
   useQuery,
@@ -52,21 +53,14 @@ export function useImagePlazaConfigQuery() {
   });
 }
 
-export function useImagePlazaFeedQuery(
-  search: string,
-  tag: string,
-  sort: ImagePlazaFeedSort = 'recommended'
-) {
-  const client = useQueryClient();
-  const query = useInfiniteQuery<
-    GetImagePlazaFeedData,
-    Error,
-    InfiniteData<GetImagePlazaFeedData, string | undefined>,
-    ReturnType<typeof imagePlazaKeys.feed>,
-    string | undefined
-  >({
+/**
+ * feed 的查询配置只此一份：页面 hook 与导航栏的空闲预取共用同一个 key 和 queryFn，
+ * 否则预取写进缓存的数据页面读不到。
+ */
+function imagePlazaFeedQueryOptions(search: string, tag: string, sort: ImagePlazaFeedSort) {
+  return infiniteQueryOptions({
     queryKey: imagePlazaKeys.feed(search, tag, sort),
-    initialPageParam: undefined,
+    initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam, signal }) => {
       const params = new URLSearchParams();
       params.set('sort', sort);
@@ -77,10 +71,30 @@ export function useImagePlazaFeedQuery(
         signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
       });
     },
-    getNextPageParam: (page) => page.next_cursor ?? undefined,
+    getNextPageParam: (page: GetImagePlazaFeedData) => page.next_cursor ?? undefined,
     staleTime: 60_000,
     // A different filter/order must never display or continue the previous cursor chain.
-    retry: (count, error) => count < 1 && !(error instanceof ApiClientError && error.status < 500),
+    retry: (count: number, error: Error) =>
+      count < 1 && !(error instanceof ApiClientError && error.status < 500),
+  });
+}
+
+/**
+ * 默认视图（无搜索、全部标签、推荐）的首页预取。失败静默：页面挂载时会自己再请求一次，
+ * 预取只负责让「点进创作」时已经有数据可画。
+ */
+export function prefetchImagePlazaFeed(client: QueryClient): Promise<void> {
+  return client.prefetchInfiniteQuery(imagePlazaFeedQueryOptions('', 'all', 'recommended'));
+}
+
+export function useImagePlazaFeedQuery(
+  search: string,
+  tag: string,
+  sort: ImagePlazaFeedSort = 'recommended'
+) {
+  const client = useQueryClient();
+  const query = useInfiniteQuery({
+    ...imagePlazaFeedQueryOptions(search, tag, sort),
     refetchOnMount: false,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
@@ -88,12 +102,20 @@ export function useImagePlazaFeedQuery(
   useEffect(() => {
     const key = imagePlazaKeys.feed(search, tag, sort);
     const state = client.getQueryState(key);
-    if (
-      state?.isInvalidated ||
-      (state?.dataUpdatedAt && Date.now() - state.dataUpdatedAt > 60_000)
-    ) {
-      void client.resetQueries({ queryKey: key, exact: true });
-    }
+    const stale =
+      state?.isInvalidated || (state?.dataUpdatedAt && Date.now() - state.dataUpdatedAt > 60_000);
+    if (!stale) return;
+    // 不用 resetQueries：它会清空数据，每次回到这页都先看到整屏骨架。
+    // 这里只保留第一页先展示（图片多半还在浏览器缓存里），再整体刷新；
+    // 第二页起的游标可能已经失效，必须丢弃，翻页由 sentinel 在刷新结束后重新驱动。
+    // updatedAt 保持原值：刷新若失败，这份旧数据仍然是过期的，下次进页要继续重试。
+    client.setQueryData<InfiniteData<GetImagePlazaFeedData, string | undefined>>(
+      key,
+      (old) =>
+        old ? { pages: old.pages.slice(0, 1), pageParams: old.pageParams.slice(0, 1) } : old,
+      { updatedAt: state?.dataUpdatedAt }
+    );
+    void client.refetchQueries({ queryKey: key, exact: true });
   }, [client, search, tag, sort]);
   const subscribe = useCallback(
     (notify: () => void) => client.getQueryCache().subscribe(notify),
