@@ -1,0 +1,385 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_POSTGRES",
+      "label": "PostgreSQL 只读数据源",
+      "type": "datasource",
+      "pluginId": "grafana-postgresql-datasource",
+      "pluginName": "PostgreSQL"
+    }
+  ],
+  "title": "聊天首 token · 同型号人工调参",
+  "uid": "chat-first-token-manual",
+  "schemaVersion": 39,
+  "version": 1,
+  "timezone": "Asia/Shanghai",
+  "tags": [
+    "chat",
+    "first-token",
+    "manual-tuning"
+  ],
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "refresh": "",
+  "editable": true,
+  "description": "用户显示耗时为体验依据；供应商值仅诊断。缺报不算成功，只比较同一型号。没有自动调参/告警写入。",
+  "templating": {
+    "list": [
+      {
+        "name": "model",
+        "label": "型号（每次只比较一个）",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "${DS_POSTGRES}"
+        },
+        "query": "SELECT DISTINCT requested_model_id AS __text,requested_model_id AS __value FROM miniapp_analytics.chat_first_token_facts WHERE NOT billing_rejected ORDER BY 1",
+        "refresh": 1,
+        "multi": false,
+        "includeAll": false,
+        "current": {}
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "用户总首 token p90 与兜底替代比例（同一型号）",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_POSTGRES}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT $__timeGroupAlias(request_received_at,'5m'), percentile_cont(0.9) WITHIN GROUP (ORDER BY client_first_token_visible_ms) FILTER (WHERE client_backgrounded=false) AS \"用户总首 token p90\", 100*avg((COALESCE(delivery_role,'')='fallback')::integer) AS \"兜底选用率\", 100*count(*) FILTER(WHERE delivery_role='fallback' AND client_outcome='observed')::numeric/NULLIF(count(*) FILTER(WHERE client_outcome='observed'),0) AS \"可见样本中兜底占比\" FROM miniapp_analytics.chat_first_token_facts WHERE $__timeFilter(request_received_at) AND NOT billing_rejected AND requested_model_id = ${model:sqlstring} GROUP BY 1 ORDER BY 1",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_POSTGRES}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "兜底选用率"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "min",
+                "value": 0
+              },
+              {
+                "id": "max",
+                "value": 100
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "可见样本中兜底占比"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "min",
+                "value": 0
+              },
+              {
+                "id": "max",
+                "value": 100
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "超时率、1% 目标与回报覆盖率（缺报不算成功）",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_POSTGRES}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT $__timeGroupAlias(request_received_at,'5m'), 100*count(*) FILTER(WHERE client_outcome='timed_out' AND client_backgrounded=false)::numeric/NULLIF(count(*) FILTER(WHERE client_outcome IN ('observed','timed_out') AND client_backgrounded=false),0) AS \"前台已知结果超时率\", 100*avg((client_outcome<>'missing')::integer) AS \"回报覆盖率\",100*avg(timeout_rate_target) AS \"人工目标\" FROM miniapp_analytics.chat_first_token_facts WHERE $__timeFilter(request_received_at) AND NOT billing_rejected AND requested_model_id = ${model:sqlstring} GROUP BY 1 ORDER BY 1",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_POSTGRES}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 3,
+      "title": "每 24h 人工比较：总体 150 门槛与参数分组样本",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_POSTGRES}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 9,
+        "w": 24,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT j->>'model_id' AS \"所选型号\",(j->>'model_requests')::int AS \"型号总体请求\",(j->>'sample_eligible')::boolean AS \"总体达到150\",(j->>'requests')::int AS \"本参数组请求\",(j->>'primary_timeout_ms')::int AS \"首发等待ms\",(j->>'catalog_version')::int AS \"目录版本\",(j->>'user_first_token_p90_ms')::numeric AS \"用户总首token_p90_ms\",100*(j->>'fallback_start_rate')::numeric AS \"兜底启动率%\",100*(j->>'foreground_timeout_rate_observed')::numeric AS \"前台已知结果超时率%\",100*(j->>'client_report_coverage')::numeric AS \"回报覆盖率%\",(j->>'primary_censored_or_unknown')::int AS \"首发未测得精确值\" FROM miniapp_analytics.chat_first_token_report($__timeFrom(),$__timeTo()) j WHERE j->>'model_id'=${model:sqlstring}",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_POSTGRES}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 4,
+      "title": "首发与兜底：后端实测和供应商自报分开对照",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_POSTGRES}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 18,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT $__timeGroupAlias(request_received_at,'5m'), percentile_cont(0.9) WITHIN GROUP(ORDER BY primary_actual_first_token_ms) AS \"首发实测 p90\",percentile_cont(0.9) WITHIN GROUP(ORDER BY primary_provider_latency_ms) AS \"首发供应商 p90\", percentile_cont(0.9) WITHIN GROUP(ORDER BY fallback_first_token_ms) AS \"兜底实测 p90\",percentile_cont(0.9) WITHIN GROUP(ORDER BY fallback_provider_latency_ms) AS \"兜底供应商 p90\" FROM miniapp_analytics.chat_first_token_facts WHERE $__timeFilter(request_received_at) AND NOT billing_rejected AND requested_model_id = ${model:sqlstring} GROUP BY 1 ORDER BY 1",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_POSTGRES}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 5,
+      "title": "缺报、未观测、后台与超时数量",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_POSTGRES}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 18,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT $__timeGroupAlias(request_received_at,'5m'),count(*) FILTER(WHERE client_outcome='missing') AS \"缺报\",count(*) FILTER(WHERE client_outcome='not_observed') AS \"未观测\",count(*) FILTER(WHERE client_backgrounded=true) AS \"曾进入后台\",count(*) FILTER(WHERE client_outcome='timed_out') AS \"客户端超时\",count(*) FILTER(WHERE server_first_token_timeout) AS \"服务端首token超时\" FROM miniapp_analytics.chat_first_token_facts WHERE $__timeFilter(request_received_at) AND NOT billing_rejected AND requested_model_id = ${model:sqlstring} GROUP BY 1 ORDER BY 1",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_POSTGRES}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 6,
+      "title": "原始事实（最近 100 轮；NULL 保留）",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_POSTGRES}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 27,
+        "w": 24,
+        "h": 10
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT request_received_at,chat_history_id,primary_timeout_ms,catalog_version,client_outcome,client_backgrounded,delivery_role,client_first_token_visible_ms,primary_wait_ms,fallback_dispatch_delay_ms,fallback_first_token_ms,primary_actual_first_token_ms,primary_end_reason,primary_provider_latency_ms,fallback_provider_latency_ms,client_display_delay_ms,client_server_residual_ms FROM miniapp_analytics.chat_first_token_facts WHERE $__timeFilter(request_received_at) AND NOT billing_rejected AND requested_model_id = ${model:sqlstring} ORDER BY request_received_at DESC LIMIT 100",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_POSTGRES}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    }
+  ]
+}

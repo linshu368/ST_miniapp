@@ -19,6 +19,7 @@ import {
 import { arrayMove } from '@dnd-kit/sortable';
 import { useMemo, useState } from 'react';
 import {
+  DEFAULT_FIRST_TOKEN_TIMEOUT_MS,
   LLM_MODEL_PROVIDER_LABELS,
   LLM_MODEL_PROVIDERS,
   type LlmModelProvider,
@@ -131,6 +132,7 @@ function newModel(index: number, timestamp = Date.now()): ModelCatalogModel {
     display_name: 'New Model',
     tagline: '',
     is_free: false,
+    first_token_timeout_ms: DEFAULT_FIRST_TOKEN_TIMEOUT_MS,
     enabled: true,
     sort_order: index + 1,
   };

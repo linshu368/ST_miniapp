@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import type { ModelCatalog, OpenRouterModelDirectory } from '@miniapp/shared';
-import { getOpenRouterCatalogIssues } from './openRouterModels';
+import type {
+  ModelCatalog,
+  OpenRouterModelDirectory,
+  ProviderModelDirectory,
+} from '@miniapp/shared';
+import { getCatalogProviderIssues, getOpenRouterCatalogIssues } from './openRouterModels';
 
 const upstream = {
   id: 'google/gemini-flash',
@@ -64,4 +68,27 @@ describe('OpenRouter admin helpers', () => {
       getOpenRouterCatalogIssues(catalog, expiredDirectory, Date.parse('2026-07-17T00:00:00.000Z'))
     ).toEqual(['Gemini Flash: OpenRouter model is expired']);
   });
+});
+
+it('validates the configured fallback against the existing OpenRouter directory', () => {
+  const providerDirectory: ProviderModelDirectory = {
+    ...directory,
+    provider: 'openrouter',
+    models: [{ ...upstream, provider: 'openrouter', status: 'available', raw_status_label: null }],
+  };
+  const configured = { ...catalog, fallback_model_id: upstream.id };
+  expect(getCatalogProviderIssues(configured, { openrouter: providerDirectory })).toEqual([]);
+  expect(
+    getCatalogProviderIssues(
+      { ...configured, fallback_model_id: 'vendor/missing' },
+      { openrouter: providerDirectory }
+    )
+  ).toContain('兜底模型：OpenRouter 模型 ID 不存在');
+  const unavailable: ProviderModelDirectory = {
+    ...providerDirectory,
+    models: [{ ...providerDirectory.models[0]!, status: 'unavailable' }],
+  };
+  expect(getCatalogProviderIssues(configured, { openrouter: unavailable })).toContain(
+    '兜底模型：所选型号当前不可用'
+  );
 });
