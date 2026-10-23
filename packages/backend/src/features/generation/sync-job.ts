@@ -16,6 +16,7 @@
  */
 
 import type { FastifyBaseLogger } from 'fastify';
+import { GenerationObservationRepository } from '../../infrastructure/repositories/GenerationObservationRepository.js';
 import { LlmModelProviderSchema, type LlmModelProvider } from '@miniapp/shared';
 import { calculateUsageDeduction } from '../billing/usage-pricing.js';
 import {
@@ -216,6 +217,14 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
         }
 
         const providerMetadata = buildGenerationMetadata(genData);
+        try {
+          await new GenerationObservationRepository().enrichGeneration(
+            generationId,
+            providerMetadata
+          );
+        } catch (err) {
+          log.warn({ err, event: 'llm.attempt.provider_metadata_failed' }, '供应商观测未补齐');
+        }
         // Local cancellation/deadline remains the billing outcome even if upstream later stops.
         const finishReason =
           record.llm_finish_reason === 'cancelled' || record.llm_finish_reason === 'timeout'
@@ -511,8 +520,8 @@ function buildFixedTierChargeCommand(input: {
   if (typeof userId !== 'string' || userId.length === 0) return null;
 
   const displayName = (
-    originalCharge?.model_display_name ??
     snapshot?.model_display_name ??
+    originalCharge?.model_display_name ??
     ''
   ).trim();
   if (!displayName) return null;
@@ -528,7 +537,7 @@ function buildFixedTierChargeCommand(input: {
     chargeId,
     generationId,
     userId,
-    modelId: originalCharge?.model_id ?? snapshot?.model_id ?? null,
+    modelId: snapshot?.model_id ?? originalCharge?.model_id ?? null,
     requestedModel,
     observedModel,
     requestedDisplayName: displayName,
@@ -572,6 +581,7 @@ function buildFixedTierChargeCommand(input: {
         vip_active: snapshot?.vip_active,
         vip_valid_until: snapshot?.vip_valid_until,
         model_tier: snapshot?.model_tier,
+        vip_discount_config_version: snapshot?.vip_discount_config_version,
       }),
       source: 'chat_history_sync',
     },

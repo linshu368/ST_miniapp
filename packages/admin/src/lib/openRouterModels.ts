@@ -1,4 +1,5 @@
 import {
+  FIRST_TOKEN_FALLBACK_MODEL_ID,
   LLM_MODEL_PROVIDER_LABELS,
   LLM_PROVIDER_CAPABILITIES,
   LlmModelProviderSchema,
@@ -72,6 +73,11 @@ export function getCatalogProviderIssues(
   directories: ProviderDirectoryMap
 ): string[] {
   const issues: string[] = [];
+  const fallbackId = catalog.fallback_model_id ?? FIRST_TOKEN_FALLBACK_MODEL_ID;
+  const fallback = directories.openrouter?.models.find((model) => model.id === fallbackId);
+  if (!directories.openrouter) issues.push('兜底模型：请先同步 OpenRouter 模型目录');
+  else if (!fallback) issues.push('兜底模型：OpenRouter 模型 ID 不存在');
+  else if (fallback.status !== 'available') issues.push('兜底模型：所选型号当前不可用');
 
   for (const model of catalog.tiers.flatMap((tier) => tier.models)) {
     const provider = model.provider ?? 'openrouter';

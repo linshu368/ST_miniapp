@@ -2,6 +2,8 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
+  ReportFirstTokenRequest,
+  ReportFirstTokenData,
   CancelConversationTurnData,
   CancelConversationTurnRequest,
   CreateConversationData,
@@ -70,6 +72,30 @@ export function fetchConversationDetail(
   return apiClient<GetConversationData>(`/api/v1/conversations/${encodeURIComponent(sessionId)}`, {
     signal: AbortSignal.timeout(timeoutMs),
   });
+}
+
+export async function reportConversationFirstToken(
+  sessionId: string,
+  body: ReportFirstTokenRequest
+): Promise<void> {
+  // Identity can arrive while the dispatch intent is still committing. Bounded, idempotent retries.
+  for (const delay of [0, 300, 1000]) {
+    if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+    try {
+      const result = await apiClient<ReportFirstTokenData>(
+        `/api/v1/conversations/${encodeURIComponent(sessionId)}/first-token`,
+        {
+          method: 'POST',
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(3000),
+          keepalive: true,
+        }
+      );
+      if (result.recorded) return;
+    } catch {
+      /* Advisory metrics must not disturb conversation state. */
+    }
+  }
 }
 
 export function useCancelConversationTurnMutation() {

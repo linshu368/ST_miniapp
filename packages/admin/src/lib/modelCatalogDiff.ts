@@ -18,6 +18,12 @@ export function getModelCatalogChangeSummary(before: unknown, after: unknown): s
   const beforeModels = modelMap(previous.data);
   const afterModels = modelMap(next.data);
   const changes: string[] = [];
+  if (previous.data.fallback_model_id !== next.data.fallback_model_id)
+    changes.push(`兜底模型改为 ${next.data.fallback_model_id}`);
+  if (previous.data.first_token_deadline_ms !== next.data.first_token_deadline_ms)
+    changes.push(`全局首 token 上限改为 ${next.data.first_token_deadline_ms / 1000} 秒`);
+  if (previous.data.first_token_timeout_rate_target !== next.data.first_token_timeout_rate_target)
+    changes.push(`超时率目标改为 ${next.data.first_token_timeout_rate_target * 100}%`);
 
   for (const [id, model] of afterModels) {
     const oldModel = beforeModels.get(id);
@@ -25,6 +31,10 @@ export function getModelCatalogChangeSummary(before: unknown, after: unknown): s
       changes.push(`新增模型“${model.display_name}”`);
       continue;
     }
+    if (oldModel.first_token_timeout_ms !== model.first_token_timeout_ms)
+      changes.push(
+        `“${model.display_name}”首发等待改为 ${(model.first_token_timeout_ms ?? 4000) / 1000} 秒`
+      );
     if (oldModel.enabled !== model.enabled) {
       changes.push(`${model.enabled ? '上架' : '下架'}“${model.display_name}”`);
     }

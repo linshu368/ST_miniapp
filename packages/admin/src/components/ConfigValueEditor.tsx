@@ -62,6 +62,7 @@ import {
 import { LobbyPinnedCharactersEditor } from './LobbyPinnedCharactersEditor';
 import { LobbyRankingParamsEditor } from './LobbyRankingParamsEditor';
 import { ModelCatalogEditor } from './ModelCatalogEditor';
+import { FallbackConfigEditor } from './FallbackConfigEditor';
 import { PaymentPromptDialogConfigEditor } from './PaymentPromptDialogConfigEditor';
 import { ProviderRoutingConfigEditor } from './ProviderRoutingConfigEditor';
 import { RechargePageConfigEditor } from './RechargePageConfigEditor';
@@ -241,6 +242,7 @@ function ImageTextModelConfigEditor(props: {
 
 export function ConfigValueEditor(props: {
   configKey: ManagedConfigKey;
+  modelCatalogSection?: 'models' | 'fallback';
   value: unknown;
   onChange: (value: unknown) => void;
   disabled?: boolean;
@@ -870,16 +872,28 @@ export function ConfigValueEditor(props: {
           message="当前模型目录尚未填写完整；内容会保留在页面，补全必填项后自动保存草稿。"
         />
       ) : null}
-      <ModelCatalogEditor
-        value={modelCatalog}
-        onChange={props.onChange}
-        disabled={props.disabled}
-        providerDirectories={props.providerDirectories}
-        publishedModelIds={props.publishedModelIds}
-        syncLoading={props.syncLoading}
-        syncError={props.syncError}
-        onRefreshProvider={props.onRefreshProvider}
-      />
+      {props.modelCatalogSection === 'fallback' ? (
+        <FallbackConfigEditor
+          value={modelCatalog}
+          onChange={props.onChange}
+          disabled={props.disabled}
+          directory={props.providerDirectories.openrouter}
+          loading={props.syncLoading.openrouter}
+          error={props.syncError.openrouter}
+          onRefresh={() => props.onRefreshProvider('openrouter')}
+        />
+      ) : (
+        <ModelCatalogEditor
+          value={modelCatalog}
+          onChange={props.onChange}
+          disabled={props.disabled}
+          providerDirectories={props.providerDirectories}
+          publishedModelIds={props.publishedModelIds}
+          syncLoading={props.syncLoading}
+          syncError={props.syncError}
+          onRefreshProvider={props.onRefreshProvider}
+        />
+      )}
     </Space>
   );
 }

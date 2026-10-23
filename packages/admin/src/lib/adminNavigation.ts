@@ -3,6 +3,7 @@ import { VIP_STRATEGY_CONFIG_KEYS, type VipStrategyConfigKey } from '@miniapp/sh
 
 export type AdminViewKey =
   | 'configs'
+  | 'fallback_config'
   | 'outreach_credit_grant'
   | 'invite_program'
   | 'image_generation_config'
@@ -111,6 +112,7 @@ export function resolveAdminMenuSelection(key: string): {
   view: AdminViewKey;
   configKey?: ManagedConfigKey;
 } {
+  if (key === 'fallback_config') return { view: 'fallback_config', configKey: 'llm_model_catalog' };
   if (key.startsWith(CONFIG_PREFIX)) {
     const configKey = key.slice(CONFIG_PREFIX.length) as ManagedConfigKey;
     if (managedConfigKeys.includes(configKey)) {

@@ -5,6 +5,7 @@ import {
   LlmPricingConfigSchema,
   managedConfigKeys,
   EditableImagePlazaTagConfigSchema,
+  EditableModelCatalogSchema,
 } from './configSchemas';
 
 describe('editable image plaza tags', () => {
@@ -161,5 +162,19 @@ describe('platform instruction slot registration', () => {
         '{{INTERACTION_MODE}} {{WORD_COUNT}} {{USER_CUSTOM_INSTRUCTIONS}}'
       ).success
     ).toBe(false);
+  });
+});
+
+describe('fallback managed configuration', () => {
+  it('preserves fallback selection, global settings and every model wait through editor and save parsing', () => {
+    const catalog = configSchemas.llm_model_catalog.parse(
+      configMetadata.llm_model_catalog.defaultValue
+    );
+    catalog.fallback_model_id = 'vendor/operator-flash';
+    catalog.first_token_deadline_ms = 8000;
+    catalog.first_token_timeout_rate_target = 0.02;
+    catalog.tiers[0]!.models[0]!.first_token_timeout_ms = 3500;
+    const edited = EditableModelCatalogSchema.parse(catalog);
+    expect(configSchemas.llm_model_catalog.parse(edited)).toEqual(catalog);
   });
 });
