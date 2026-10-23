@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { AlertCircle, Play, RefreshCw } from 'lucide-react';
 
@@ -21,7 +21,11 @@ export default function DramaDetailPage() {
 
   const currentVideoId = playback?.video_id ?? activeVideoId;
 
-  const videoRef = useRef<HTMLVideoElement>(null);
+  // 用 state（回调 ref）而不是 useRef：<video> 是否已经挂载和 playback 是否已经
+  // 就绪是两件独立的异步事情（卡片点击会预取 playback，可能比详情数据更早就绪，
+  // 这期间 <video> 还没渲染）。只依赖 playback 变化触发副作用，会在 video 还没挂载时
+  // 跳过一次之后就再也不重跑——播放地址早就有了，但 src 永远没被设置。
+  const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
   const [needsTapToPlay, setNeedsTapToPlay] = useState(false);
   const [playbackFailed, setPlaybackFailed] = useState(false);
 
@@ -46,20 +50,19 @@ export default function DramaDetailPage() {
     return () => window.clearTimeout(timer);
   }, [autoAdvance]);
 
-  // 拿到签名链接立刻设 src 并尝试播放；这是同步 DOM 的 video 元素，不是数据获取。
+  // 拿到签名链接立刻设 src 并尝试播放；video 元素挂载和 playback 就绪谁先谁后都要能触发。
   useEffect(() => {
-    const video = videoRef.current;
-    if (!video || !playback?.playable || !playback.play_url) return;
-    video.src = playback.play_url;
+    if (!videoEl || !playback?.playable || !playback.play_url) return;
+    videoEl.src = playback.play_url;
     setPlaybackFailed(false);
     setNeedsTapToPlay(false);
-    const playPromise = video.play();
+    const playPromise = videoEl.play();
     if (playPromise && typeof playPromise.catch === 'function') {
       // Telegram WebView/部分移动浏览器会拦截非用户手势触发的 autoplay，
       // 拦截时退化成"点击播放"覆盖层，而不是静默黑屏。
       playPromise.catch(() => setNeedsTapToPlay(true));
     }
-  }, [playback?.play_url, playback?.playable]);
+  }, [videoEl, playback?.play_url, playback?.playable]);
 
   const handleEnded = () => {
     const nextVideoId = resolveNextVideoId(videos, currentVideoId);
@@ -77,9 +80,8 @@ export default function DramaDetailPage() {
   };
 
   const handleTapToPlay = () => {
-    const video = videoRef.current;
-    if (!video) return;
-    video
+    if (!videoEl) return;
+    videoEl
       .play()
       .then(() => setNeedsTapToPlay(false))
       .catch(() => setNeedsTapToPlay(true));
@@ -107,7 +109,7 @@ export default function DramaDetailPage() {
         ) : (
           <>
             <video
-              ref={videoRef}
+              ref={setVideoEl}
               className="h-full w-full object-contain"
               playsInline
               controls
