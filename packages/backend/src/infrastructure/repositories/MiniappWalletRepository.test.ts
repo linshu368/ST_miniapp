@@ -1,10 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { VipPlansSchema } from '@miniapp/shared';
 
 import {
   formatSpendingStatus,
   mapLlmRefundSpendingRow,
   mapLlmSpendingRow,
+  MiniappWalletRepository,
   toClaimedCheckin,
   toWalletBalance,
   type MiniappWalletRow,
@@ -13,6 +14,57 @@ import {
   buildVipPlans,
   parseVipPurchaseEnabled,
 } from '../../features/payment/domain/rechargeRules.js';
+
+type LedgerFixtureRow = {
+  user_id: string;
+  reference_type: string;
+  reference_id: string;
+  entry_type: string;
+  amount: number | string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+};
+
+const spendingDb = vi.hoisted(() => ({ ledger: [] as LedgerFixtureRow[] }));
+
+vi.mock('../../lib/supabase.js', () => ({
+  getDomainDb: () => ({
+    from: (table: string) => {
+      let rows: LedgerFixtureRow[] = table === 'wallet_ledger' ? [...spendingDb.ledger] : [];
+      const query = {
+        select: () => query,
+        eq: (column: keyof LedgerFixtureRow, value: unknown) => {
+          rows = rows.filter((row) => row[column] === value);
+          return query;
+        },
+        in: (column: keyof LedgerFixtureRow, values: unknown[]) => {
+          rows = rows.filter((row) => values.includes(row[column]));
+          return query;
+        },
+        contains: (column: keyof LedgerFixtureRow, expected: Record<string, unknown>) => {
+          rows = rows.filter((row) => {
+            const value = row[column];
+            return (
+              typeof value === 'object' &&
+              value !== null &&
+              Object.entries(expected).every(([key, item]) => value[key] === item)
+            );
+          });
+          return query;
+        },
+        order: (_column: string, options: { ascending: boolean }) => {
+          rows.sort((left, right) => {
+            const delta = Date.parse(left.created_at) - Date.parse(right.created_at);
+            return options.ascending ? delta : -delta;
+          });
+          return query;
+        },
+        limit: async (count: number) => ({ data: rows.slice(0, count), error: null }),
+      };
+      return query;
+    },
+  }),
+}));
 
 function wallet(overrides: Partial<MiniappWalletRow> = {}): MiniappWalletRow {
   return {
@@ -180,5 +232,70 @@ describe('LLM spending snapshot', () => {
       bonus_delta: 28,
       status_label: '已原路退回',
     });
+  });
+});
+
+describe('listSpending image ledger coverage', () => {
+  beforeEach(() => {
+    spendingDb.ledger = [];
+  });
+
+  it('includes both image debit types, excludes other users and types, and sorts with voice', async () => {
+    const userId = '00000000-0000-4000-8000-000000000001';
+    const otherUserId = '00000000-0000-4000-8000-000000000002';
+    const entry = (
+      reference_id: string,
+      reference_type: string,
+      amount: number | string,
+      minute: string,
+      user_id = userId
+    ): LedgerFixtureRow => ({
+      user_id,
+      reference_id,
+      reference_type,
+      entry_type: reference_type,
+      amount,
+      metadata: {},
+      created_at: `2026-10-23T12:${minute}:00.000Z`,
+    });
+    spendingDb.ledger = [
+      entry('character-image', 'image_generation', '-10.0', '01'),
+      entry('other-plaza', 'image_plaza_generation', -999, '07', otherUserId),
+      entry('plaza-attempt', 'image_plaza_generation', '-25.5', '03'),
+      entry('recharge', 'payment_order', 100, '06'),
+      entry('voice', 'voice_usage', -5, '02'),
+      entry('other-character-image', 'image_generation', -888, '05', otherUserId),
+      entry('share-reward', 'image_plaza_share_reward', 3, '04'),
+    ];
+
+    const records = await new MiniappWalletRepository().listSpending(userId);
+
+    expect(
+      records.map(({ id, charged_amount, created_at }) => ({ id, charged_amount, created_at }))
+    ).toEqual([
+      {
+        id: 'plaza-attempt',
+        charged_amount: 25.5,
+        created_at: '2026-10-23T12:03:00.000Z',
+      },
+      {
+        id: 'voice',
+        charged_amount: 5,
+        created_at: '2026-10-23T12:02:00.000Z',
+      },
+      {
+        id: 'character-image',
+        charged_amount: 10,
+        created_at: '2026-10-23T12:01:00.000Z',
+      },
+    ]);
+    expect(records.filter((record) => record.model_display_name === '图片消费')).toHaveLength(2);
+    expect(
+      records.every((record) => record.status === 'charged' && record.charged_amount > 0)
+    ).toBe(true);
+  });
+
+  it('returns no spending when no matching ledger entries exist', async () => {
+    expect(await new MiniappWalletRepository().listSpending('no-ledger-user')).toEqual([]);
   });
 });

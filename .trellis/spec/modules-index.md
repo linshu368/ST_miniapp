@@ -24,7 +24,7 @@
 
 ## frontend
 
-- [大厅角色发现与收藏](frontend/app/modules/business/character-lobby.md) — `frontend.business.character-lobby` · `business` · `active`
+- [角色模块发现与收藏](frontend/app/modules/business/character-lobby.md) — `frontend.business.character-lobby` · `business` · `active`
 - [用户会话、语音与图片界面](frontend/app/modules/business/conversation-ui.md) — `frontend.business.conversation-ui` · `business` · `active`
 - [个人互动、通知与客服](frontend/app/modules/business/engagement-support.md) — `frontend.business.engagement-support` · `business` · `active`
 - [钱包、签到与充值](frontend/app/modules/business/wallet-payment.md) — `frontend.business.wallet-payment` · `business` · `active`

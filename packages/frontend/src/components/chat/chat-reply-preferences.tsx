@@ -31,12 +31,14 @@ const SLOT_CONFIG: ReadonlyArray<{
 ];
 
 interface ChatReplyPreferencesProps {
+  maxContentHeight: number;
   detailsDefaultOpen: ReplyDetailsDefaultOpen;
   onDetailsDefaultOpenChange: (value: ReplyDetailsDefaultOpen) => void;
 }
 
 /** 输入框上方的轻量偏好抽屉；模型规则仍只经 generation-config 写入。 */
 export function ChatReplyPreferences({
+  maxContentHeight,
   detailsDefaultOpen,
   onDetailsDefaultOpenChange,
 }: ChatReplyPreferencesProps) {
@@ -130,7 +132,7 @@ export function ChatReplyPreferences({
   return (
     <section
       className={cn(
-        'mb-1.5 overflow-hidden rounded-2xl border transition-colors motion-reduce:transition-none',
+        'mb-1.5 flex min-h-[38px] shrink flex-col overflow-hidden rounded-2xl border transition-colors motion-reduce:transition-none',
         open ? 'border-border bg-card/95' : 'border-transparent bg-transparent'
       )}
       aria-label="回复偏好"
@@ -165,7 +167,7 @@ export function ChatReplyPreferences({
         onPointerCancel={() => {
           pointerStartY.current = null;
         }}
-        className="relative grid min-h-9 w-full grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-2 px-2.5 pb-1 pt-2 text-left touch-pan-x"
+        className="relative grid min-h-9 w-full shrink-0 grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-2 px-2.5 pb-1 pt-2 text-left touch-pan-x"
       >
         <span className="absolute left-1/2 top-0.5 h-0.5 w-8 -translate-x-1/2 rounded-full bg-muted-foreground/35" />
         <span className="text-[11px] font-semibold text-foreground">回复偏好</span>
@@ -191,7 +193,10 @@ export function ChatReplyPreferences({
       </button>
 
       {open ? (
-        <div className="chat-scroll-area max-h-[min(45dvh,24rem)] overflow-y-auto overscroll-contain px-3 pb-3 pt-1">
+        <div
+          className="chat-scroll-area min-h-0 overflow-y-auto overscroll-contain px-3 pb-3 pt-1"
+          style={{ maxHeight: Math.min(maxContentHeight, 384) }}
+        >
           <section aria-label="回复长度" className="pb-3">
             <div className="mb-2 flex items-center justify-between gap-2">
               <h3 className="text-[11px] font-semibold text-foreground">回复长度</h3>

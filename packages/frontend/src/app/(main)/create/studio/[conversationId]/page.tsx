@@ -413,7 +413,7 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
       style={{ height: viewportHeight ?? '100dvh' }}
       className="mx-auto flex w-full max-w-3xl flex-col overflow-hidden bg-background text-foreground"
     >
-      <header className="sticky top-0 z-30 flex items-center justify-between border-b border-border/60 bg-background/90 px-3 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] backdrop-blur-xl">
+      <header className="sticky top-0 z-30 flex shrink-0 items-center justify-between border-b border-border/60 bg-background/90 px-3 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] backdrop-blur-xl">
         <div className="flex min-w-0 items-center gap-2">
           <button
             type="button"
@@ -545,91 +545,96 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
         </div>
       </section>
 
-      <div className="z-20 shrink-0 bg-background/95 px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3 backdrop-blur-xl">
-        {localPreview || reference || referenceArtifactId ? (
-          <div className="mb-2 flex items-center gap-2 rounded-2xl bg-card p-2 ring-1 ring-border">
-            {localPreview || reference ? (
-              <img
-                src={localPreview ?? reference?.image_url}
-                alt="参考图"
-                className="size-12 rounded-xl object-cover"
-              />
-            ) : (
-              <div className="grid size-12 place-items-center rounded-xl bg-primary/10 text-xs font-bold text-primary">
-                同款
-              </div>
-            )}
-            <div className="min-w-0 flex-1">
-              <p role="status" className="text-xs font-bold">
-                {referenceStatus === 'reading'
-                  ? '读取中…'
-                  : referenceStatus === 'uploading'
-                    ? '上传中…'
-                    : referenceStatus === 'error'
-                      ? '上传失败，请重试或移除'
-                      : '已添加参考图'}
-              </p>
-              {referenceStatus === 'error' ? (
+      <div
+        className="z-20 flex min-h-0 shrink flex-col bg-background/95 px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3 backdrop-blur-xl"
+        style={{ maxHeight: viewportHeight ? viewportHeight * 0.7 : '70dvh' }}
+      >
+        <div className="flex min-h-0 flex-col rounded-[2rem] border border-border bg-card p-3 shadow-[0_-12px_50px_rgba(0,0,0,0.2)] min-[360px]:p-4">
+          <div className="chat-scroll-area min-h-0 overflow-y-auto overscroll-contain">
+            {localPreview || reference || referenceArtifactId ? (
+              <div className="mb-2 flex items-center gap-2 rounded-2xl bg-card p-2 ring-1 ring-border">
+                {localPreview || reference ? (
+                  <img
+                    src={localPreview ?? reference?.image_url}
+                    alt="参考图"
+                    className="size-12 rounded-xl object-cover"
+                  />
+                ) : (
+                  <div className="grid size-12 place-items-center rounded-xl bg-primary/10 text-xs font-bold text-primary">
+                    同款
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <p role="status" className="text-xs font-bold">
+                    {referenceStatus === 'reading'
+                      ? '读取中…'
+                      : referenceStatus === 'uploading'
+                        ? '上传中…'
+                        : referenceStatus === 'error'
+                          ? '上传失败，请重试或移除'
+                          : '已添加参考图'}
+                  </p>
+                  {referenceStatus === 'error' ? (
+                    <button
+                      type="button"
+                      className="text-xs text-primary"
+                      onClick={() => void chooseReference(referenceFile.current ?? undefined)}
+                    >
+                      重试上传
+                    </button>
+                  ) : null}
+                  <div className="mt-1 flex gap-2 text-[11px]">
+                    <button
+                      type="button"
+                      onClick={() => setMode('i2i')}
+                      className={mode === 'i2i' ? 'text-primary' : 'text-muted-foreground'}
+                    >
+                      参考生成
+                    </button>
+                    {model.supports_edit ? (
+                      <button
+                        type="button"
+                        onClick={() => setMode('edit')}
+                        className={mode === 'edit' ? 'text-primary' : 'text-muted-foreground'}
+                      >
+                        编辑图片
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
                 <button
                   type="button"
-                  className="text-xs text-primary"
-                  onClick={() => void chooseReference(referenceFile.current ?? undefined)}
+                  onClick={clearReference}
+                  aria-label="移除参考图"
+                  className="grid size-9 place-items-center rounded-full bg-background"
                 >
-                  重试上传
+                  <Trash2 className="size-4" />
                 </button>
-              ) : null}
-              <div className="mt-1 flex gap-2 text-[11px]">
-                <button
-                  type="button"
-                  onClick={() => setMode('i2i')}
-                  className={mode === 'i2i' ? 'text-primary' : 'text-muted-foreground'}
-                >
-                  参考生成
-                </button>
-                {model.supports_edit ? (
-                  <button
-                    type="button"
-                    onClick={() => setMode('edit')}
-                    className={mode === 'edit' ? 'text-primary' : 'text-muted-foreground'}
-                  >
-                    编辑图片
-                  </button>
-                ) : null}
               </div>
-            </div>
-            <button
-              type="button"
-              onClick={clearReference}
-              aria-label="移除参考图"
-              className="grid size-9 place-items-center rounded-full bg-background"
-            >
-              <Trash2 className="size-4" />
-            </button>
-          </div>
-        ) : null}
+            ) : null}
 
-        <div className="rounded-[2rem] border border-border bg-card p-3 shadow-[0_-12px_50px_rgba(0,0,0,0.2)] min-[360px]:p-4">
-          <textarea
-            value={prompt}
-            maxLength={IMAGE_PLAZA_PROMPT_MAX_CHARS}
-            onChange={(event) =>
-              setPrompt(event.target.value.slice(0, IMAGE_PLAZA_PROMPT_MAX_CHARS))
-            }
-            onKeyDown={(event) => {
-              if (
-                event.key === 'Enter' &&
-                (event.ctrlKey || event.metaKey) &&
-                !event.nativeEvent.isComposing
-              ) {
-                event.preventDefault();
-                void generate();
+            <textarea
+              value={prompt}
+              maxLength={IMAGE_PLAZA_PROMPT_MAX_CHARS}
+              onChange={(event) =>
+                setPrompt(event.target.value.slice(0, IMAGE_PLAZA_PROMPT_MAX_CHARS))
               }
-            }}
-            rows={4}
-            placeholder="描述你想生成的画面…"
-            className="min-h-24 w-full resize-none bg-transparent text-base leading-7 outline-none placeholder:text-muted-foreground"
-          />
-          <div className="mt-3 flex items-center gap-1">
+              onKeyDown={(event) => {
+                if (
+                  event.key === 'Enter' &&
+                  (event.ctrlKey || event.metaKey) &&
+                  !event.nativeEvent.isComposing
+                ) {
+                  event.preventDefault();
+                  void generate();
+                }
+              }}
+              rows={4}
+              placeholder="描述你想生成的画面…"
+              className="min-h-24 w-full resize-none overflow-y-auto bg-transparent text-base leading-7 outline-none placeholder:text-muted-foreground"
+            />
+          </div>
+          <div className="mt-3 flex shrink-0 flex-wrap items-center gap-1">
             <input
               ref={fileInput}
               type="file"

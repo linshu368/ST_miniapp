@@ -32,6 +32,7 @@ import type {
   UploadImagePlazaReferenceRequest,
 } from '@miniapp/shared';
 import { apiClient, ApiClientError } from './client';
+import { paymentKeys } from './payment';
 
 export const imagePlazaKeys = {
   all: ['image-plaza'] as const,
@@ -140,9 +141,31 @@ export function useImagePlazaConversationsQuery() {
 }
 
 export function useImagePlazaConversationQuery(id: string) {
+  const client = useQueryClient();
   return useQuery({
     queryKey: imagePlazaKeys.conversation(id),
-    queryFn: () => apiClient<GetImagePlazaConversationData>(`/api/image-plaza/conversations/${id}`),
+    queryFn: async () => {
+      const next = await apiClient<GetImagePlazaConversationData>(
+        `/api/image-plaza/conversations/${id}`
+      );
+      const current = client.getQueryData<GetImagePlazaConversationData>(
+        imagePlazaKeys.conversation(id)
+      );
+      const previousReady = new Set(
+        current?.conversation.messages.flatMap(({ attempt }) =>
+          attempt?.status === 'ready' ? [attempt.id] : []
+        ) ?? []
+      );
+      // Compare shared cache so completion while away is reconciled once on return.
+      if (
+        next.conversation.messages.some(
+          ({ attempt }) => attempt?.status === 'ready' && !previousReady.has(attempt.id)
+        )
+      ) {
+        void client.invalidateQueries({ queryKey: paymentKeys.wallet() });
+      }
+      return next;
+    },
     enabled: Boolean(id),
     refetchInterval: (query) => {
       const conversation = query.state.data?.conversation;
@@ -359,6 +382,7 @@ export function useShareImagePlazaMutation() {
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: imagePlazaKeys.config() });
       void client.invalidateQueries({ queryKey: [...imagePlazaKeys.all, 'feed'] });
+      void client.invalidateQueries({ queryKey: paymentKeys.wallet() });
     },
   });
 }

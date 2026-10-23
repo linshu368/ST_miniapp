@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { FastifyBaseLogger } from 'fastify';
 import { config } from '../../platform/config.js';
-import { ImagePlazaRepository } from './repository.js';
+import { ImagePlazaRepository, ImagePlazaSettlementError } from './repository.js';
 import { generateImagePlazaImage, ImagePlazaUpstreamError } from './upstream.js';
 
 let timer: NodeJS.Timeout | null = null;
@@ -47,12 +47,15 @@ export function startImagePlazaGenerationJob(log: FastifyBaseLogger): void {
             'Image plaza generation completed'
           );
         } catch (err) {
-          const upstream = err instanceof ImagePlazaUpstreamError ? err : null;
+          const failure =
+            err instanceof ImagePlazaUpstreamError || err instanceof ImagePlazaSettlementError
+              ? err
+              : null;
           await repository
             .markFailed(
               attempt.id,
-              upstream?.code ?? 'image_plaza_generation_failed',
-              upstream?.outcomeUnknown ?? false
+              failure?.code ?? 'image_plaza_generation_failed',
+              failure?.outcomeUnknown ?? false
             )
             .catch((markErr) =>
               log.error(
