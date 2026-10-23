@@ -12,15 +12,15 @@ import { getDomainDb, type DomainDb } from '../../lib/supabase.js';
 const QUERY_TIMEOUT_MS = 5000;
 
 /**
- * 列表页需要的列：标题 + 判定可播和取标签所需的最小集合。
- * 不取 original_description / ai description，列表用不到。
+ * 列表页需要的列：标题 + 判定可播/封面就绪、取标签和简介所需的最小集合。
+ * 简介和封面都取第一条可播视频代表整部剧，所以列表页也要带上。
  */
 const LIST_COLUMNS =
-  'id,title,videos(id,episode,message_id,object_path,original_tags,ai_results(tags),pipeline_tasks(stage,status))';
+  'id,title,videos(id,episode,message_id,object_path,cover_path,original_tags,original_description,ai_results(tags,description),pipeline_tasks(stage,status))';
 
-/** 详情页在列表基础上多取标题和简介 */
+/** 详情页在列表基础上多取标题 */
 const DETAIL_COLUMNS =
-  'id,title,videos(id,episode,message_id,object_path,original_title,original_tags,original_description,ai_results(title,tags,description),pipeline_tasks(stage,status))';
+  'id,title,videos(id,episode,message_id,object_path,cover_path,original_title,original_tags,original_description,ai_results(title,tags,description),pipeline_tasks(stage,status))';
 
 /**
  * /play 只需要定位对象和判定就绪，不取任何展示字段。
@@ -36,6 +36,9 @@ export interface VideoRow {
   object_path: string | null;
   /** pipeline_tasks 中 stage='upload' 的 status 是否为 succeeded */
   upload_succeeded: boolean;
+  cover_path: string | null;
+  /** pipeline_tasks 中 stage='cover_upload' 的 status 是否为 succeeded */
+  cover_upload_succeeded: boolean;
   original_title: string | null;
   original_tags: string[];
   original_description: string | null;
@@ -57,6 +60,7 @@ interface RawVideo {
   episode: string | null;
   message_id: number;
   object_path: string | null;
+  cover_path?: string | null;
   original_title?: string | null;
   original_tags?: string[] | null;
   original_description?: string | null;
@@ -75,14 +79,17 @@ interface RawDrama {
 }
 
 function toVideoRow(raw: RawVideo): VideoRow {
-  // 嵌套查询已过滤成 stage='upload'，这里仍显式判断 stage，
-  // 避免将来过滤条件变动后把别的阶段的状态当成上传结果。
+  // 嵌套查询按需过滤 stage，这里仍显式判断 stage，
+  // 避免将来过滤条件变动后把别的阶段的状态当成上传/封面结果。
   const upload = (raw.pipeline_tasks ?? []).find((t) => t.stage === 'upload');
+  const coverUpload = (raw.pipeline_tasks ?? []).find((t) => t.stage === 'cover_upload');
   return {
     id: raw.id,
     episode: raw.episode,
     object_path: raw.object_path,
     upload_succeeded: upload?.status === 'succeeded',
+    cover_path: raw.cover_path ?? null,
+    cover_upload_succeeded: coverUpload?.status === 'succeeded',
     original_title: raw.original_title ?? null,
     original_tags: raw.original_tags ?? [],
     original_description: raw.original_description ?? null,
@@ -117,25 +124,27 @@ function toDramaRow(raw: RawDrama): DramaRow {
 export class DramaRepository {
   constructor(private readonly db: DomainDb = getDomainDb('drama_archive')) {}
 
-  /** 嵌套过滤只保留 upload 阶段的任务行，别的阶段不进内存 */
-  private query(columns: string) {
+  /** 嵌套过滤只保留指定阶段的任务行，别的阶段不进内存 */
+  private query(columns: string, stages: string[] = ['upload']) {
     return this.db
       .from('dramas')
       .select(columns)
-      .eq('videos.pipeline_tasks.stage', 'upload')
+      .in('videos.pipeline_tasks.stage', stages)
       .abortSignal(AbortSignal.timeout(QUERY_TIMEOUT_MS));
   }
 
   /** 列表页。当前库里只有个位数短剧，先全量取，分页等数据量上来再说 */
   async listDramas(): Promise<DramaRow[]> {
-    const { data, error } = await this.query(LIST_COLUMNS);
+    const { data, error } = await this.query(LIST_COLUMNS, ['upload', 'cover_upload']);
     if (error) throw new Error('drama list read failed');
     return ((data as unknown as RawDrama[] | null) ?? []).map(toDramaRow);
   }
 
   /** 详情页。短剧不存在返回 null，由路由转成 404 */
   async getDrama(id: string): Promise<DramaRow | null> {
-    const { data, error } = await this.query(DETAIL_COLUMNS).eq('id', id).maybeSingle();
+    const { data, error } = await this.query(DETAIL_COLUMNS, ['upload', 'cover_upload'])
+      .eq('id', id)
+      .maybeSingle();
     if (error) throw new Error('drama detail read failed');
     return data ? toDramaRow(data as unknown as RawDrama) : null;
   }

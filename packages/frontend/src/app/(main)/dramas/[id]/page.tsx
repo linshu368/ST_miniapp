@@ -20,13 +20,31 @@ export default function DramaDetailPage() {
   const playback = playbackQuery.data;
 
   const currentVideoId = playback?.video_id ?? activeVideoId;
-  // description 在契约里是按集维度的字段（VideoItem），不是整部剧的字段；
-  // 还没选中具体某一集时（刚进页面）先用第一集的简介占位。
-  const currentVideo = videos.find((v) => v.id === currentVideoId) ?? videos[0];
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const [needsTapToPlay, setNeedsTapToPlay] = useState(false);
   const [playbackFailed, setPlaybackFailed] = useState(false);
+
+  // 播完后自动连播前的缓冲倒计时；用下标而不是 episode 字段算第几集，
+  // 因为 episode 目前全库为空（见 repository.ts 注释），下标才是实际播放顺序。
+  const [autoAdvance, setAutoAdvance] = useState<{
+    nextVideoId: string;
+    nextEpisodeNumber: number;
+    secondsLeft: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!autoAdvance) return;
+    if (autoAdvance.secondsLeft <= 0) {
+      setActiveVideoId(autoAdvance.nextVideoId);
+      setAutoAdvance(null);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setAutoAdvance((prev) => (prev ? { ...prev, secondsLeft: prev.secondsLeft - 1 } : prev));
+    }, 1000);
+    return () => window.clearTimeout(timer);
+  }, [autoAdvance]);
 
   // 拿到签名链接立刻设 src 并尝试播放；这是同步 DOM 的 video 元素，不是数据获取。
   useEffect(() => {
@@ -45,7 +63,17 @@ export default function DramaDetailPage() {
 
   const handleEnded = () => {
     const nextVideoId = resolveNextVideoId(videos, currentVideoId);
-    if (nextVideoId) setActiveVideoId(nextVideoId);
+    if (!nextVideoId) return;
+    const nextEpisodeNumber = videos.findIndex((v) => v.id === nextVideoId) + 1;
+    setAutoAdvance({ nextVideoId, nextEpisodeNumber, secondsLeft: 3 });
+  };
+
+  const handleCancelAutoAdvance = () => setAutoAdvance(null);
+
+  const handlePlayNextNow = () => {
+    if (!autoAdvance) return;
+    setActiveVideoId(autoAdvance.nextVideoId);
+    setAutoAdvance(null);
   };
 
   const handleTapToPlay = () => {
@@ -74,7 +102,7 @@ export default function DramaDetailPage() {
           <NoEpisodesNotice />
         ) : playback && !playback.playable ? (
           <PlaybackFailedNotice onRetry={() => void playbackQuery.refetch()} />
-        ) : playbackFailed ? (
+        ) : playbackFailed || playbackQuery.isError ? (
           <PlaybackFailedNotice onRetry={() => void playbackQuery.refetch()} />
         ) : (
           <>
@@ -98,6 +126,29 @@ export default function DramaDetailPage() {
                 </span>
               </button>
             ) : null}
+            {autoAdvance ? (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/65 text-center text-white">
+                <p className="text-sm">
+                  {autoAdvance.secondsLeft} 秒后播放第 {autoAdvance.nextEpisodeNumber} 集
+                </p>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={handleCancelAutoAdvance}
+                    className="rounded-full border border-white/40 px-4 py-1.5 text-xs font-semibold text-white/90 transition active:scale-95"
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handlePlayNextNow}
+                    className="rounded-full bg-white px-4 py-1.5 text-xs font-semibold text-black transition active:scale-95"
+                  >
+                    立即播放
+                  </button>
+                </div>
+              </div>
+            ) : null}
             {playbackQuery.isLoading ? (
               <div className="absolute inset-0 flex items-center justify-center bg-black/30 text-sm text-white">
                 加载中…
@@ -108,10 +159,20 @@ export default function DramaDetailPage() {
       </div>
 
       <div className="mx-auto mt-4 max-w-md">
-        <h1 className="text-xl font-bold">{drama.title}</h1>
-        <p className="mt-2 whitespace-pre-line text-sm text-muted-foreground">
-          {currentVideo?.description || '简介整理中'}
-        </p>
+        <div className="flex items-baseline justify-between gap-2">
+          <h1 className="text-xl font-bold">{drama.title}</h1>
+          {drama.episode_count > 0 ? (
+            <span className="shrink-0 text-xs text-muted-foreground">
+              共 {drama.episode_count} 集
+            </span>
+          ) : null}
+        </div>
+        <div className="mt-3 rounded-2xl border border-border bg-card p-3">
+          <p className="text-xs font-semibold text-muted-foreground">简介</p>
+          <p className="mt-1 whitespace-pre-line text-sm text-foreground/90">
+            {drama.description || '简介整理中'}
+          </p>
+        </div>
         {drama.tags.length > 0 ? (
           <div className="mt-3 flex flex-wrap gap-1.5">
             {drama.tags.map((tag) => (

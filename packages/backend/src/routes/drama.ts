@@ -10,6 +10,7 @@ import { requireTelegramAuth } from '../middleware/auth.js';
 import { DramaRepository } from '../features/drama/repository.js';
 import { isPlayable, toDramaDetail, toDramaSummary } from '../features/drama/assemble.js';
 import { DramaSignedUrlCache } from '../features/drama/signed-url.js';
+import { buildCoverUrl } from '../features/drama/cover-url.js';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -21,8 +22,11 @@ export default async function dramaRoutes(app: FastifyInstance) {
   // @frontend-ready: true — MVP：封面/时长待归档端补数据，标题/标签/播放已可用
   app.get('/api/dramas', { preHandler: [requireTelegramAuth] }, async (_request, reply) => {
     const dramas = await repo.listDramas();
+    // 归档流水线是异步的：剧的元数据可能先落库，视频还没传完，这期间不应该出现在列表里。
     // 先随机展示；dramas.created_at 落库后改为按时间倒序
-    const shuffled = dramas.map(toDramaSummary);
+    const shuffled = dramas
+      .map((drama) => toDramaSummary(drama, buildCoverUrl))
+      .filter((drama) => drama.episode_count > 0);
     for (let i = shuffled.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [shuffled[i], shuffled[j]] = [shuffled[j]!, shuffled[i]!];
@@ -40,7 +44,7 @@ export default async function dramaRoutes(app: FastifyInstance) {
     const drama = await repo.getDrama(id);
     if (!drama) return reply.status(404).send(fail('NOT_FOUND', '短剧不存在'));
 
-    return reply.send(ok<GetDramaByIdData>({ drama: toDramaDetail(drama) }));
+    return reply.send(ok<GetDramaByIdData>({ drama: toDramaDetail(drama, buildCoverUrl) }));
   });
 
   // @frontend-ready: true — MVP：封面/时长待归档端补数据，标题/标签/播放已可用

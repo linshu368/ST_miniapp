@@ -18,6 +18,11 @@ export function isPlayable(video: VideoRow): boolean {
   return video.upload_succeeded && video.object_path !== null && video.object_path !== '';
 }
 
+/** 封面就绪判定：和 isPlayable 一个思路，cover_upload 阶段确认成功且路径非空 */
+function isCoverReady(video: VideoRow): boolean {
+  return video.cover_upload_succeeded && video.cover_path !== null && video.cover_path !== '';
+}
+
 /** 字符串逐字段回退：原始 → AI → 空串。空白串视为缺失 */
 function fallbackText(original: string | null, ai: string | null): string {
   return original?.trim() || ai?.trim() || '';
@@ -57,18 +62,26 @@ function toVideoItem(video: VideoRow): VideoItem {
 /**
  * 列表卡片。
  *
- * tags 取首条可播视频的有效标签，与详情页第一集一致；不跨集聚合，
- * 那样会把整部剧的标签堆成一大串且语义混乱。全量返回，由前端截断展示。
+ * tags/description/cover_url 都取首条可播视频代表整部剧，与详情页一致；不跨集聚合，
+ * 那样会把整部剧的信息堆成一大串且语义混乱，也不能随播放中的集数切换而变化。
+ * tags 全量返回，由前端截断展示。
+ *
+ * buildCoverUrl 由调用方注入（而不是在本模块直接依赖 Supabase 客户端），
+ * 保持 assemble.ts 是纯函数、不做 I/O，方便单测和替身。
  */
-export function toDramaSummary(drama: DramaRow): DramaSummary {
+export function toDramaSummary(
+  drama: DramaRow,
+  buildCoverUrl: (coverPath: string) => string
+): DramaSummary {
   const playable = drama.videos.filter(isPlayable);
   const first = playable[0];
+  const firstItem = first ? toVideoItem(first) : null;
   return {
     id: drama.id,
     title: drama.title,
-    // 归档端补上预生成缩略图之前恒为 null，前端渲染占位
-    cover_url: null,
-    tags: first ? toVideoItem(first).tags : [],
+    cover_url: first && isCoverReady(first) ? buildCoverUrl(first.cover_path!) : null,
+    tags: firstItem?.tags ?? [],
+    description: firstItem?.description ?? '',
     episode_count: playable.length,
     // 待归档端把 Telegram 的 DocumentAttributeVideo.duration 登记进库
     duration_seconds: null,
@@ -80,9 +93,12 @@ export function toDramaSummary(drama: DramaRow): DramaSummary {
  * 否则列表显示 10 集、详情列出 12 集，用户点到放不出来的那两集。
  * repository 已按播放顺序排好，这里保持原序，数组下标即集数顺序。
  */
-export function toDramaDetail(drama: DramaRow): DramaDetail {
+export function toDramaDetail(
+  drama: DramaRow,
+  buildCoverUrl: (coverPath: string) => string
+): DramaDetail {
   return {
-    ...toDramaSummary(drama),
+    ...toDramaSummary(drama, buildCoverUrl),
     videos: drama.videos.filter(isPlayable).map(toVideoItem),
   };
 }
