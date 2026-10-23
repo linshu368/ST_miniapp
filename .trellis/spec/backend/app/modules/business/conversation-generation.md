@@ -5,7 +5,7 @@ scope: backend
 category: business
 status: active
 owners: [backend]
-last_verified_task: .trellis/tasks/10-10-image-plaza-v2/
+last_verified_task: .trellis/tasks/10-23-dialogue-preference/
 last_verified_at: 2026-10-13
 ---
 
@@ -111,3 +111,7 @@ Good：思考→正文→DONE/stop，按原正文交付结算。Base：只正文
 Wrong：`replyChunks.push(reasoning)`。Correct：思考只进`onReasoningDelta`，`content/deltaCount`只统计正文，原`[DONE]+可见正文+stop`计费条件保持。
 
 首字统一口径：开启深度思考时，真实思考文本首字与正文首字等效，满足原首字放行/截止/观测；关闭只算正文。等待提示、thinking标题、密文占位不计；只有思考无有效正文仍不得扣费。
+
+## 2026-10-23 可运营回复风格
+
+展示feature reply-style-options仅从runtime-config读取已发布目录，GET/PATCH严格投影id/name/description。用户pref_reply_styles默认{}，部分map只走service_role invoker RPC原子合并；公开HTTP/SSE、日志与Engine不接收marker/rules。该功能只负责UI目录与用户选择。
