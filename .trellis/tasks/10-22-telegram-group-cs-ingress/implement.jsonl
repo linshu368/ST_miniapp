@@ -1,0 +1,4 @@
+{"file": "AGENTS.md", "reason": "Repository and Trellis gates"}
+{"file": ".trellis/spec/backend/app/data-reliability-and-security.md", "reason": "External timeout, secrets and retry"}
+{"file": ".trellis/spec/shared/contracts/index.md", "reason": "Cross-service contract"}
+{"file": ".trellis/tasks/10-22-telegram-group-cs-ingress/design.md", "reason": "Ingress design and rollout"}

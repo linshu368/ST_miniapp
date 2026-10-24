@@ -27,6 +27,12 @@ export const config = {
   csService: {
     url: (process.env.CS_SERVICE_URL || '').replace(/\/$/, ''),
     secret: process.env.CS_SERVICE_SECRET || '',
+    groupMonitorForwardEnabled: process.env.CS_GROUP_MONITOR_FORWARD_ENABLED === 'true',
+    // 开关和明确群白名单双重保护；空值或非法 ID 不允许采集任意群。
+    groupMonitorChatIds: (process.env.CS_GROUP_MONITOR_CHAT_IDS || '')
+      .split(',')
+      .map((value) => value.trim())
+      .filter((value) => /^-[1-9]\d*$/.test(value) && Number.isSafeInteger(Number(value))),
   },
 
   // ── 数据库环境隔离 ────────────────────────────────────────────────────────
