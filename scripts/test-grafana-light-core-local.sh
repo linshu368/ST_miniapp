@@ -20,7 +20,7 @@ d=json.load(open(sys.argv[1]))
 print('SET ROLE first_token_metrics_reader;')
 for p in d['panels']:
  for t in p.get('targets',[]):
-  print(t['rawSql'].replace('$__timeFrom()',"now()-interval '6 days'").replace('$__timeTo()','now()')+';')
+  print(t['rawSql'].replace('$__timeFrom()',"(now()-interval '6 days')").replace('$__timeTo()','now()')+';')
 print('RESET ROLE;')
 PY
 echo 'PASS: bounded exact daily cache, model attribution, cost coverage, payment/stars, atomic failure, ACL and cron retirement'
