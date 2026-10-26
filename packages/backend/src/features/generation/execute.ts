@@ -41,11 +41,7 @@ import {
   type SseTapResult,
 } from './upstream.js';
 import { applyPromptCaching, type UpstreamMessage } from './prompt-caching.js';
-import {
-  forwardWithFirstTokenFallback,
-  FirstTokenDeadlineError,
-  type TransportModel,
-} from './first-token-fallback.js';
+import { forwardWithFirstTokenFallback, type TransportModel } from './first-token-fallback.js';
 import { GenerationCleanupPendingError } from './types.js';
 import type {
   GenerationHooks,
@@ -296,7 +292,6 @@ export async function execute(
           fallbackModelId: request.model.firstTokenPolicy.fallbackModelId,
           primaryAttemptId: request.firstToken.primaryAttemptId,
           timeoutMs: request.model.firstTokenPolicy.timeoutMs,
-          remainingFirstTokenMs: request.model.firstTokenPolicy.deadlineMs - elapsed,
           remainingObservationMs: 110_000 - elapsed,
           requestStartedAt: request.firstToken.requestStartedAt,
           signal,
@@ -316,11 +311,6 @@ export async function execute(
         upstreamRes = delivered.response;
       } else upstreamRes = await forward(request.model, signal);
     } catch (err) {
-      if (
-        err instanceof FirstTokenDeadlineError ||
-        signal.reason instanceof FirstTokenDeadlineError
-      )
-        throw new FirstTokenDeadlineError();
       // 连不上上游时 ST 链路也不落 chat_history（没有 upstream_status 可记），这里保持一致
       await releaseReservation();
       log.sys.error(

@@ -13,14 +13,6 @@ export interface FirstTokenAttemptStore {
   selectDelivery(attempt: AttemptObservation): Promise<void>;
 }
 
-/** A first-token timeout is distinct from the lifetime of the delivered response. */
-export class FirstTokenDeadlineError extends Error {
-  constructor() {
-    super('这次响应有点慢，请重试。');
-    this.name = 'FirstTokenDeadlineError';
-  }
-}
-
 interface Peeked {
   response: Response;
   observation: AttemptObservation;
@@ -35,7 +27,6 @@ export async function forwardWithFirstTokenFallback(input: {
   fallbackModelId?: string;
   primaryAttemptId: string;
   timeoutMs: number;
-  remainingFirstTokenMs: number;
   remainingObservationMs: number;
   requestStartedAt: number;
   signal: AbortSignal;
@@ -50,17 +41,9 @@ export async function forwardWithFirstTokenFallback(input: {
 }> {
   const fallbackModelId = input.fallbackModelId ?? FIRST_TOKEN_FALLBACK_MODEL_ID;
   input.signal.throwIfAborted();
-  if (input.remainingFirstTokenMs <= 0) throw new FirstTokenDeadlineError();
-  const deadlineAt = performance.now() + input.remainingFirstTokenMs;
   const assertBudget = () => {
     input.signal.throwIfAborted();
-    if (performance.now() >= deadlineAt) throw new FirstTokenDeadlineError();
   };
-  const deadline = new AbortController();
-  const deadlineTimer = setTimeout(
-    () => deadline.abort(new FirstTokenDeadlineError()),
-    Math.max(1, input.remainingFirstTokenMs)
-  );
   const observationDeadline = AbortSignal.timeout(
     Math.max(1, Math.ceil(input.remainingObservationMs))
   );
@@ -241,14 +224,11 @@ export async function forwardWithFirstTokenFallback(input: {
       };
     } catch (error) {
       observation.observed_until_ms = performance.now() - started;
-      observation.end_reason =
-        signal.reason instanceof FirstTokenDeadlineError
-          ? 'first_token_deadline'
-          : input.signal.aborted
-            ? 'cancelled'
-            : signal.aborted
-              ? 'observation_deadline'
-              : 'upstream_error';
+      observation.end_reason = input.signal.aborted
+        ? 'cancelled'
+        : signal.aborted
+          ? 'observation_deadline'
+          : 'upstream_error';
       record();
       stop();
       throw error;
@@ -265,10 +245,10 @@ export async function forwardWithFirstTokenFallback(input: {
   );
   // A late observer rejection must always have a handler after the fallback takes over.
   void primaryPromise.catch(input.onObservationError);
-  const abortSignal = AbortSignal.any([deadline.signal, input.signal]);
+  const abortSignal = input.signal;
   let removeAbort = () => {};
   const abortPromise = new Promise<never>((_, reject) => {
-    const abort = () => reject(abortSignal.reason ?? new FirstTokenDeadlineError());
+    const abort = () => reject(abortSignal.reason ?? new DOMException('Aborted', 'AbortError'));
     removeAbort = () => abortSignal.removeEventListener('abort', abort);
     if (abortSignal.aborted) abort();
     else abortSignal.addEventListener('abort', abort, { once: true });
@@ -277,9 +257,13 @@ export async function forwardWithFirstTokenFallback(input: {
     const threshold = new Promise<null>((resolve) => {
       thresholdTimer = setTimeout(() => resolve(null), input.timeoutMs);
     });
-    const canFallback = !(
-      input.primary.provider === 'openrouter' && input.primary.providerModelId === fallbackModelId
-    );
+    // Deep-thinking providers may legitimately stay silent before exposing reasoning or an answer.
+    // Keep the selected model in that mode; the conversation lifetime signal remains the hard bound.
+    const canFallback =
+      input.thinkingEnabled !== true &&
+      !(
+        input.primary.provider === 'openrouter' && input.primary.providerModelId === fallbackModelId
+      );
     const primary = await Promise.race([
       primaryPromise,
       ...(canFallback ? [threshold] : []),
@@ -331,7 +315,6 @@ export async function forwardWithFirstTokenFallback(input: {
     throw error;
   } finally {
     removeAbort();
-    clearTimeout(deadlineTimer);
     clearTimeout(thresholdTimer);
   }
 }

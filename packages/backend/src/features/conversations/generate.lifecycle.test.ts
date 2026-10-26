@@ -169,13 +169,50 @@ describe('turn lifecycle recovery', () => {
     await vi.advanceTimersByTimeAsync(3001);
     expect(turnInput.sink.send).toHaveBeenCalledWith({ type: 'reasoning', text: '真实思考' });
     expect(mocks.markServer).toHaveBeenCalledExactlyOnceWith('reply', {
-      first_token_emitted_ms: 3000,
+      first_token_emitted_ms: expect.any(Number),
     });
+    expect(mocks.markServer.mock.calls[0]?.[1].first_token_emitted_ms).toBeLessThan(6000);
     await vi.advanceTimersByTimeAsync(7000);
     await expect(result).resolves.toMatchObject({ kind: 'streamed' });
     expect(turnInput.sink.send).toHaveBeenCalledWith({ type: 'delta', text: '正文' });
     expect(mocks.markServer).toHaveBeenCalledTimes(1);
   });
+
+  it.each([
+    ['normal', false],
+    ['deep-thinking', true],
+  ] as const)(
+    'records the SLA miss but lets a silent %s reply reach a later answer',
+    async (_, thinkingEnabled) => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+      mocks.execute.mockImplementation(async (request, hooks) => {
+        hooks.onStreamOpen();
+        await new Promise((resolve) => setTimeout(resolve, 10_000));
+        request.signal.throwIfAborted();
+        hooks.onDelta('稍后的正文');
+        return {
+          status: 'stream_interrupted',
+          content: '稍后的正文',
+          finishReason: 'length',
+          generationId: 'gen',
+          chargeId: 'charge',
+        };
+      });
+      const turnInput = { ...input({ kind: 'send', content: 'original' }), thinkingEnabled };
+      const result = runConversationTurn(turnInput);
+      await vi.advanceTimersByTimeAsync(6001);
+      expect(mocks.markServer).toHaveBeenCalledWith('reply', { first_token_timeout: true });
+      expect(turnInput.sink.send).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'error' })
+      );
+      await vi.advanceTimersByTimeAsync(3999);
+      await expect(result).resolves.toMatchObject({ kind: 'streamed' });
+      expect(turnInput.sink.send).toHaveBeenCalledWith({ type: 'delta', text: '稍后的正文' });
+      expect(mocks.markServer).toHaveBeenCalledWith('reply', {
+        first_token_emitted_ms: 10_000,
+      });
+    }
+  );
 
   it.each(['send', 'regenerate'] as const)(
     'explicit thinking on for %s emits progress without changing saved content',
@@ -238,7 +275,7 @@ describe('turn lifecycle recovery', () => {
         ...input({ kind: 'send', content: 'original' }),
         receivedAt: Date.now() - 20_001,
       })
-    ).rejects.toMatchObject({ name: 'FirstTokenDeadlineError' });
+    ).rejects.toMatchObject({ name: 'TimeoutError' });
     expect(mocks.start).not.toHaveBeenCalled();
     expect(mocks.recover).not.toHaveBeenCalled();
   });

@@ -55,6 +55,7 @@ vi.mock('../features/engine/platform-instructions.js', () => ({
   }),
 }));
 vi.mock('../features/conversations/index.js', () => ({
+  CONVERSATION_PREPARATION_TIMEOUT_MS: 20_000,
   applyUserPlaceholderToMessages: (value: unknown) => value,
   applyUserPlaceholderToSession: (value: unknown) => value,
   createReplyStreamSink: () => ({
