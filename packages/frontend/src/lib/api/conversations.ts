@@ -109,11 +109,16 @@ export function useCancelConversationTurnMutation() {
     mutationFn: ({
       sessionId,
       assistantMessageId,
+      reason,
     }: {
       sessionId: string;
       assistantMessageId: string;
+      reason?: CancelConversationTurnRequest['reason'];
     }) => {
-      const body: CancelConversationTurnRequest = { assistant_message_id: assistantMessageId };
+      const body: CancelConversationTurnRequest = {
+        assistant_message_id: assistantMessageId,
+        reason,
+      };
       return apiClient<CancelConversationTurnData>(
         `/api/v1/conversations/${encodeURIComponent(sessionId)}/cancel`,
         { method: 'POST', body: JSON.stringify(body), signal: AbortSignal.timeout(15_000) }

@@ -100,7 +100,10 @@ export default async function conversationRoutes(app: FastifyInstance) {
         !sessionId ||
         !UUID_PATTERN.test(sessionId) ||
         typeof body.assistant_message_id !== 'string' ||
-        !UUID_PATTERN.test(body.assistant_message_id)
+        !UUID_PATTERN.test(body.assistant_message_id) ||
+        (body.reason !== undefined &&
+          body.reason !== 'user_stop' &&
+          body.reason !== 'first_token_timeout')
       ) {
         return reply.status(400).send(fail('BAD_REQUEST', '会话或回复 ID 无效'));
       }
@@ -109,7 +112,7 @@ export default async function conversationRoutes(app: FastifyInstance) {
       const startedAt = Date.now();
       try {
         await sessions.requireSession(sessionId, dbUser.id);
-        const row = await history.cancelTurn(sessionId, body.assistant_message_id);
+        const row = await history.cancelTurn(sessionId, body.assistant_message_id, body.reason);
         if (!row) return reply.status(404).send(fail('NOT_FOUND', '回复不存在'));
         if (row.status === 'streaming')
           return reply.status(409).send(fail('CANCEL_PENDING', '正在取消本次回复，请稍后重试'));
