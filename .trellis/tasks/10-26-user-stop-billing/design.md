@@ -1,0 +1,13 @@
+# 设计与复用
+
+复用已有cancel接口、ConversationHistoryRepository CAS、generation execute/settle/sync、冻结原价快照、charge_id账本、免费额度预留/finalize和可见回报闸门。不另起计费通道，不加轮询/统计cron/依赖。
+
+Shared取消请求兼容增加reason=user_stop|first_token_timeout；是否收费由请求创建时的服务端user_stop_billing_enabled决定（既有false、新请求true）；省略字段的新政策请求也按主动停止处理。新的cancel_chat_generation RPC根据数据库中的截止/实际观测裁决，未验证的自动截止不得直接写timeout。新手动停止由后端写新业务原因user_cancelled；自动截止写timeout，旧cancelled保持原规则。请求政策位与新原因共同构成发布边界，无历史回填。
+
+billing.chat_delivery_billing_gate根据持久化history取消原因及已有请求快照确认user_stopped资格；服务端首字超时优先免扣。既有charge RPC仅为这个资格放开完整/可见限制，价格/钱包/幂等保持。free finalize按该资格将预留收口为consumed，已有非reserved状态不重新消费；report对cancelled观测不抢先释放额度。归属：billing维护金额/权益不变量，读取experience业务终态；experience.report仍拥有用户体验记录。新增一个固定默认策略列及一个取消CAS RPC，无新表/索引；Postgres17常量默认不扫描回填历史。
+
+最小充分性：客户端reason仅声明意图，持久化CAS裁决后由数据库判费；旧原因不改写，原始统计口径不混成系统失败。数据库函数同OID替换，权限不扩张。
+
+失败/恢复：网络未知按原charge_id幂等重放；停止与完成CAS互斥，先保存快照再扣费。停止确认只等待免费权益收口；钱包按正常回复异步结算/回捞，不因另一会话消耗余额长期锁住已停止会话。请求尚未受理或VIP/余额未通过时不收费；已受理生成的首字前停止需在等待上游头部和流中断两处均保留原价结算。真正开始报价前取消不伪造账单。仅已有5秒数据库超时、已有重试与sync；不扩容并发。
+
+发布：local真实PG回归 → TEST迁移 → 生产兼容迁移 → 后端 → 新前端显式reason；新原因仅新前端触发。无需追扣旧行。回退前端停止产生新收费原因，后端/DB须继续识别已产生的新原因，不能把已收费行重新免费或重复扣。

@@ -44,3 +44,5 @@ design 必须列 producer/consumer、旧客户端、部分部署、重试/幂等
 - Admin mutation 使用 UUID `request_id`、明确 CAS 前提和稳定错误码；`RESULT_UNKNOWN` 表示提交结果未知，不等于失败，也不授权自动重试。
 - 版本批次一次最多 20 个去重正整数；每个结果独立为 snapshot/unavailable，单个坏版本不得污染整批，也不得返回 source 或内部诊断正文。
 - choice payload 是 renderer 输出的可信纯文本，但 consumer 仍负责“最新完整回复”资格、长度与防双击。
+
+取消文字回复兼容字段（2026-10-26）：CancelConversationTurnRequest.reason?: user_stop | first_token_timeout。请求创建时的服务端策略位决定新旧政策，不以是否省略字段选价；producer必须验证枚举，Frontend手动和总截止分别填写。返回ChatMessage保持原形状，不新增扣费通知字段。

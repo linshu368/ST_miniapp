@@ -258,7 +258,9 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
         }
         // Local cancellation/deadline remains the billing outcome even if upstream later stops.
         const finishReason =
-          record.llm_finish_reason === 'cancelled' || record.llm_finish_reason === 'timeout'
+          record.llm_finish_reason === 'cancelled' ||
+          record.llm_finish_reason === 'user_cancelled' ||
+          record.llm_finish_reason === 'timeout'
             ? record.llm_finish_reason
             : providerMetadata.finish_reason;
 

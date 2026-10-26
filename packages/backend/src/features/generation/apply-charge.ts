@@ -167,9 +167,10 @@ export async function applyLlmCharge(command: LlmChargeCommand): Promise<LlmChar
   if (command.finishReason !== null && result.charge.status !== 'pending') {
     await freeQuotas().finalizePending(
       command.chargeId,
-      replyOutcome === 'complete' &&
-        command.finishReason === 'stop' &&
-        result.charge.metadata?.delivery_billing_gate !== 'waived'
+      result.charge.metadata?.delivery_billing_gate === 'user_stopped' ||
+        (replyOutcome === 'complete' &&
+          command.finishReason === 'stop' &&
+          result.charge.metadata?.delivery_billing_gate !== 'waived')
     );
   }
 

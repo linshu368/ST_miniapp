@@ -169,6 +169,19 @@ wait "$task_charge_pid"
 "${task_psql[@]}" -c "SELECT visible_billing_test.charge('00000000-0000-4000-8000-000000000091'); SELECT vip_t4_test.assert(NOT EXISTS(SELECT 1 FROM billing.wallet_ledger WHERE debit_key='00000000-0000-4000-8000-000000000091'),'concurrent no-token timeout was charged');" >/dev/null
 echo 'PASS: visible token receipt, zero debit/quota on timeout/missing, late replay and concurrent settlement'
 
+# Explicit user stops are a new persisted reason; legacy/system outcomes stay free.
+"${task_psql[@]}" -f "$task_root/packages/shared/migrations/20261026_user_stop_billing.sql" >/dev/null
+"${task_psql[@]}" -f "$task_root/packages/shared/migrations/20261026_user_stop_billing.sql" >/dev/null
+"${task_psql[@]}" -f "$task_root/packages/shared/migrations/tests/user_stop_billing.sql" >/dev/null
+"${task_psql[@]}" -c "SELECT user_stop_test.charge('00000000-0000-4000-8000-0000000001ab');" >/dev/null &
+task_stop_first_pid=$!
+"${task_psql[@]}" -c "SELECT user_stop_test.charge('00000000-0000-4000-8000-0000000001ab');" >/dev/null &
+task_stop_second_pid=$!
+wait "$task_stop_first_pid"
+wait "$task_stop_second_pid"
+"${task_psql[@]}" -c "SELECT vip_t4_test.assert((SELECT count(*)=1 AND sum(abs(amount))=29 FROM billing.wallet_ledger WHERE debit_key='00000000-0000-4000-8000-0000000001ab'),'concurrent user stop double debit');" >/dev/null
+echo 'PASS: explicit stop original quote/entitlement once; system timeout and legacy cancellations stay free'
+
 # Run the existing real wallet/free-quota migration suite in another disposable DB.
 mkdir "$task_dir/bin"
 for task_command in psql createdb dropdb; do
