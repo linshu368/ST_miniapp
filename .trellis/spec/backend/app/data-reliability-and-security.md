@@ -229,3 +229,33 @@ Good：前置1.5秒、首发4秒、切换0.1秒、兜底1秒，用户分布取�
 ### 7. Wrong vs Correct
 
 Wrong：provider latency或后台写出视为用户看到，提前阶段失败漏出超时率。Correct：客户端可见结果是业务依据；时间截断率分子仅时间原因，分母为前台已知结果（显示+时间失败+其他上游失败）；缺报不算成功，另示覆盖率。
+
+## Scenario: 可见首 token 后才允许结算（2026-10-26）
+
+### 1. Scope / Trigger
+
+新建 observation 的文字轮次；服务端完成而客户端超时无字不能扣星尘或免费次数。
+
+### 2. Signatures
+
+`billing.chat_delivery_billing_gate(charge_key)` 返回 legacy/visible/pending/waived；既有 charge/finalize RPC 签名不变；`applyLlmCharge` 返回实际 pending。
+
+### 3. Contracts
+
+experience 的 requires_visible_token 是交付协议标记，存量 false、新轮 true；billing 资格函数锁定请求后读取身份绑定的首个客户端结果。缺报 pending，服务器预算加 15 秒回报宽限后 waived，宽限不改变前端总限。报价、完整成功、钱包策略、单 charge_id 仍由服务端约束；已终结零费用不得被 sync 重新扣。
+
+### 4. Validation & Error Matrix
+
+客户端 timed_out/not_observed 或服务端首字超时 → waived；observed 且真实显示时间小于总限才允许通过原计费闸门。缺报期间不消费预留；失去回报按不收费处理。权限仅 service_role/postgres；故障先失败闭合，不用上游 stop 推断可见。
+
+### 5. Good/Base/Bad Cases
+
+Good：服务端 stop 先到，账单 pending；客户端随后超时，零费用终结、额度释放。Base：7.2 秒显示含思考的 token，完整成功后按原价一次结算。Bad：以服务端完成或厂商 latency 直接扣用户费用。
+
+### 6. Tests Required
+
+真实 PG：先结算后报告、timeout/missing、晚到重放、免费 pending/release/consume once、并发报告与结算；Backend apply/settle/sync pending 传播；Frontend 轻提示与安全取消。
+
+### 7. Wrong vs Correct
+
+Wrong：先扣款再以用户投诉判断退款。Correct：未确认可见不扣费，既有持久化账单终态防止后续补扣。

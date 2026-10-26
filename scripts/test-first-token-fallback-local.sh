@@ -127,6 +127,41 @@ done
 FIRST_TOKEN_TEST_REST_URL="http://127.0.0.1:$task_rest_port" DOTENV_CONFIG_PATH=/dev/null \
   pnpm --dir "$task_root" --filter @miniapp/backend exec vitest run src/infrastructure/repositories/GenerationObservationRepository.integration.test.ts
 
+# Extend this disposable observation DB with real wallet/quota primitives.
+# The earlier bootstrap deliberately has skeletal billing tables; no remote DB is used.
+"${task_psql[@]}" >/dev/null <<'SQL'
+DROP TABLE billing.llm_usage_charge_dedup;
+DROP TABLE billing.llm_usage_charges;
+DROP TABLE billing.character_free_chat_quota_decisions;
+ALTER TABLE app_core.runtime_config ADD PRIMARY KEY (key);
+ALTER TABLE app_core.runtime_config ADD COLUMN description text, ADD COLUMN version integer DEFAULT 1,
+  ADD COLUMN updated_at timestamptz DEFAULT now(), ADD COLUMN text_value text;
+CREATE TABLE app_core.characters(id uuid PRIMARY KEY);
+SQL
+for task_file in fixtures/vip_billing_t2_harness.sql 20260924_vip_billing_schema_pg_cron_compat.sql 20260921_wallet_debit_refund.sql tests/vip_llm_t4_setup.sql 20260922_llm_vip_wallet_charge.sql; do
+  "${task_psql[@]}" -f "$task_root/packages/shared/migrations/$task_file" >/dev/null
+done
+# Apply the original quota definition with the schema split's canonical names.
+python3 - "$task_root" <<'PYQUOTA' | "${task_psql[@]}" >/dev/null
+import pathlib,sys
+s=(pathlib.Path(sys.argv[1])/'packages/shared/migrations/055_character_free_chat_quota.sql').read_text()
+s=s[:s.index('-- Populate deduct_markup')]+ '\nCOMMIT;\n'
+print(s.replace('miniapp.users','app_core.users').replace('miniapp.characters','app_core.characters').replace('miniapp.','billing.'))
+PYQUOTA
+"${task_psql[@]}" -f "$task_root/packages/shared/migrations/20261026_first_token_visible_billing.sql" >/dev/null
+"${task_psql[@]}" -f "$task_root/packages/shared/migrations/20261026_first_token_visible_billing.sql" >/dev/null
+"${task_psql[@]}" -f "$task_root/packages/shared/migrations/tests/vip_llm_t4_scenarios.sql" >/dev/null
+"${task_psql[@]}" -f "$task_root/packages/shared/migrations/tests/first_token_visible_billing.sql" >/dev/null
+# Race a committed timeout receipt against a settlement from another connection.
+"${task_psql[@]}" -c "BEGIN; SELECT visible_billing_test.report('00000000-0000-4000-8000-000000000091','timed_out'); SELECT pg_sleep(0.5); COMMIT;" >/dev/null &
+task_report_pid=$!
+"${task_psql[@]}" -c "SELECT visible_billing_test.charge('00000000-0000-4000-8000-000000000091');" >/dev/null &
+task_charge_pid=$!
+wait "$task_report_pid"
+wait "$task_charge_pid"
+"${task_psql[@]}" -c "SELECT visible_billing_test.charge('00000000-0000-4000-8000-000000000091'); SELECT vip_t4_test.assert(NOT EXISTS(SELECT 1 FROM billing.wallet_ledger WHERE debit_key='00000000-0000-4000-8000-000000000091'),'concurrent no-token timeout was charged');" >/dev/null
+echo 'PASS: visible token receipt, zero debit/quota on timeout/missing, late replay and concurrent settlement'
+
 # Run the existing real wallet/free-quota migration suite in another disposable DB.
 mkdir "$task_dir/bin"
 for task_command in psql createdb dropdb; do

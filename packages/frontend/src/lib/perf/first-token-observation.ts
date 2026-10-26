@@ -6,7 +6,7 @@ export interface FirstTokenIdentity {
   revision: number;
 }
 
-/** One monotonic clock for submit, network, and display. Outcomes never control billing. */
+/** One monotonic clock for submit, network, and display. The receipt confirms display; it never selects the price. */
 export class FirstTokenObservation {
   readonly startedAt = performance.now();
   private timer: ReturnType<typeof setTimeout>;

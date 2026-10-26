@@ -694,3 +694,5 @@ Vercel 侧关键变量：`NEXT_PUBLIC_API_URL`（用户端 backend 公网域名�
 Admin 在“运营配置 → 兜底配置”集中编辑兜底型号、每型号等待与全局上限/目标，复用模型目录的同一草稿/发布/恢复通路。每轮冻结兜底型号，prepare RPC 从请求快照读取，分析事实与报表保留该型号；不新增配置key或secret。客户端只能经鉴权和精确身份校验 API 回报。应用与两份基础迁移已通过 #461 生产发布，Telegram 真机验收尚未完成。
 
 Grafana 通过 `20261023_grafana_first_token_reader.sql` 正式迁移为既有登录角色授予 NOLOGIN reader 会员关系，只读新事实/报表及父表三列，正文与写权限不开放；先 TEST 后 production。独立业务看板默认最近24h、全部有请求型号，主图只使用客户端实际显示总首token秒数、兜底触发率、前台已知结果超时率，并同时展示样本与覆盖率。供应商/后端耗时保留在原始事实中供排障，不进入该业务看板。本期无 AI、自动调参或定时任务。详见 [首 token 运行说明](first-token-fallback.md)。
+
+新轮首 token 可见确认与计费：`20261026_first_token_visible_billing.sql` 将客户端真实可见回报加入既有计费资格判断；服务端完成而客户端超时无字时不扣星尘、不消费免费次数。缺报 pending 后保守免收，既有 sync 依据 RPC 实际 pending 保留回捞；存量政策不改。超时采用灰色轻提示。详见 `docs/first-token-fallback.md`。

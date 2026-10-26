@@ -119,6 +119,15 @@ describe('runSettlement', () => {
     upsertOpenRouterHistory.mockResolvedValue(undefined);
   });
 
+  it('keeps a completed server reply unsettled while client display is pending', async () => {
+    applyLlmCharge.mockResolvedValueOnce({ pending: true, chargedAmount: 0, calculatedAmount: 50 });
+    await runSettlement(entry(), fakeLog());
+    expect(recordBillingOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({ deductionRate: 0 })
+    );
+    expect(recordBillingOutcome.mock.calls[0]?.[0]).not.toHaveProperty('billingSettledAt');
+  });
+
   it('persists the request-time snapshot before charging and stamps settlement complete', async () => {
     const order: string[] = [];
     saveBillingSnapshot.mockImplementation(async () => {

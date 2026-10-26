@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 const DurationMs = z.number().finite().nonnegative().max(86_400_000);
 
-/** These are client observations, never authority for billing or model selection. */
+/** Client display receipts gate new-turn billing; prices and completion remain server-owned. */
 export const ReportFirstTokenRequestSchema = z
   .object({
     request_id: z.string().uuid(),

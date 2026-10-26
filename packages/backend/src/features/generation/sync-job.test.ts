@@ -164,6 +164,15 @@ describe('reconcileCharge (fixed_tier pending → applyLlmCharge)', () => {
     findLlmUsageCharge.mockResolvedValue(pendingFixedCharge());
   });
 
+  it('does not mark recovery settled while a display receipt is still pending', async () => {
+    chargeLlmUsage.mockResolvedValueOnce({
+      charge: { status: 'pending', charged_amount: 0, calculated_amount: 50 },
+    });
+    const result = await reconcileCharge(syncInput({ finishReason: 'stop' }));
+    expect(result).toEqual({ settled: false, intendedDeduction: 50, deductionRate: 0 });
+    expect(finalizePending).not.toHaveBeenCalled();
+  });
+
   it('success + length after sync is incomplete, not the old complete', async () => {
     const input = syncInput({ finishReason: 'length' });
     const result = await reconcileCharge(input);

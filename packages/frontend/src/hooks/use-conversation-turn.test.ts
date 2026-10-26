@@ -332,7 +332,7 @@ describe('useConversationTurn asynchronous ownership', () => {
     await vi.advanceTimersByTimeAsync(10_100);
     const waiting = RenderTurn('s1', [], thinkingEnabled);
     expect(waiting.firstTokenObservation).toBeNull();
-    expect(waiting.streamError).toBe('这次响应有点慢，请重试。');
+    expect(waiting.streamError).toBe('这次回应稍慢，再试一次吧');
     expect(runtime.cancel).toHaveBeenCalledExactlyOnceWith({
       sessionId: 's1',
       assistantMessageId: 'a1',
