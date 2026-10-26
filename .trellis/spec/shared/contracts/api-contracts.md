@@ -46,3 +46,5 @@ design 必须列 producer/consumer、旧客户端、部分部署、重试/幂等
 - Admin mutation 使用 UUID `request_id`、明确 CAS 前提和稳定错误码；`RESULT_UNKNOWN` 表示提交结果未知，不等于失败，也不授权自动重试。
 - 版本批次一次最多 20 个去重正整数；每个结果独立为 snapshot/unavailable，单个坏版本不得污染整批，也不得返回 source 或内部诊断正文。
 - choice payload 是 renderer 输出的可信纯文本，但 consumer 仍负责“最新完整回复”资格、长度与防双击。
+
+短剧诊断上报契约 `api/drama-timing.ts`：`POST /api/telemetry/drama-timing` 请求为 `DramaTimingReportSchema`（嵌套 strict、有限状态、有限数值、最多 12 个 query/每 query 4 次尝试），响应 `{ accepted: true }`。body 最多 32 KiB，只允许关联 ID/耗时/状态；负查询起点用于进入前在途复用，其他耗时非负。纯函数 `dramaTimingLogFields` 统一浏览器/Railway 字段，媒体 URL/路径/签名/正文不得进入报告。Backend 先于 Frontend 发布。

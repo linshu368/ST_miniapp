@@ -99,7 +99,7 @@ describe('drama backend timing', () => {
       outcome: 'ok',
     });
     expect(JSON.stringify(mocks.info.mock.calls)).not.toContain('private');
-    expect(JSON.stringify(mocks.metric.mock.calls)).not.toContain(ID);
+    expect(mocks.metric).not.toHaveBeenCalled();
     expect(mocks.info).toHaveBeenCalledTimes(1);
   });
 

@@ -1,93 +1,24 @@
 'use client';
 
-import * as Sentry from '@sentry/nextjs';
-import { sendSentryLog } from '@/lib/sentry/client';
+import { dramaTimingLogFields } from '@miniapp/shared';
+import { uploadDramaTiming } from '@/lib/api/telemetry';
+import { createLogger } from '@/lib/logger';
 import { createRequestId } from './request-timing';
-import { getMetricDimensions } from './env-tags';
 import { DramaTimingTracker, type DramaTimingReport } from './drama-timing';
 
+const log = createLogger('drama-timing');
+
 function reportTiming(report: DramaTimingReport): void {
-  const attributes = {
-    type: report.type,
-    entry: report.entry ?? 'list',
-    outcome: report.outcome,
-    ...getMetricDimensions(),
-  };
-  const summary = {
-    observation_id: report.id,
-    drama_id: report.dramaId,
-    video_id: report.videoId,
-    phase: report.phase,
-    ...attributes,
-    elapsed_ms: report.elapsedMs,
-    address_source: report.addressSource,
-    frame_method: report.frameMethod,
-    ...Object.fromEntries(
-      Object.entries(report.stages).map(([key, value]) => [`${key}_ms`, value])
-    ),
-    list_id: report.list?.id,
-    list_ready_ms: report.list?.readyMs,
-    browse_ms: report.list?.browseMs,
-    since_list_entry_ms: report.list?.sinceEntryMs,
-    list_start_kind: report.list?.startKind,
-    cover_outcome: report.cover?.outcome,
-    cover_load_ms: report.cover?.loadMs,
-    request_ids: report.queries
-      .flatMap((query) => query.attempts.map((attempt) => attempt.requestId))
-      .join(','),
-    query_runs: report.queries.length,
-    query_details_truncated: report.queryDetailsTruncated,
-  };
-  sendSentryLog(report.phase === 'slow' ? 'warn' : 'info', 'drama.timing', summary);
-  if (report.phase === 'final') {
-    report.queries.forEach((query, queryIndex) => {
-      const { attempts, ...querySummary } = query;
-      sendSentryLog('info', 'drama.query_timing', {
-        observation_id: report.id,
-        query_index: queryIndex,
-        ...querySummary,
-      });
-      attempts.forEach((attempt, attemptIndex) =>
-        sendSentryLog('info', 'drama.request_timing', {
-          observation_id: report.id,
-          query_index: queryIndex,
-          attempt_index: attemptIndex,
-          ...attempt,
-        })
-      );
+  const fields = dramaTimingLogFields(report);
+  if (report.phase === 'slow') log.warn(fields);
+  else log.info(fields);
+  // 上报不参与播放状态机；失败保留本地诊断，不递归记录成新的播放样本。
+  void uploadDramaTiming(report).catch(() => {
+    log.warn({
+      event: 'drama.timing_upload_failed',
+      observation_id: report.id,
+      phase: report.phase,
     });
-    Sentry.metrics.distribution('drama.startup.duration', report.elapsedMs, {
-      unit: 'millisecond',
-      attributes,
-    });
-    for (const [stage, ms] of Object.entries(report.stages)) {
-      Sentry.metrics.distribution('drama.stage.duration', ms, {
-        unit: 'millisecond',
-        attributes: { ...attributes, stage },
-      });
-    }
-  }
-  if (
-    report.phase !== 'slow' &&
-    report.elapsedMs < 10_000 &&
-    ['playing', 'ready', 'switched', 'left', 'background'].includes(report.outcome)
-  )
-    return;
-  Sentry.withScope((scope) => {
-    scope.setLevel('warning');
-    scope.setFingerprint(['drama_timing', report.type, report.phase, report.outcome]);
-    scope.setTags({ perf_event: 'drama_timing', ...attributes });
-    // 独立的扁平 context，避免 SDK 默认 normalizeDepth 把请求尝试截断成 [Object]。
-    scope.setContext('drama_timing', summary);
-    scope.setContext('drama_marks', report.marks);
-    report.queries.forEach((query, index) => {
-      const { attempts, ...querySummary } = query;
-      scope.setContext(`drama_query_${index}`, querySummary);
-      attempts.forEach((attempt, attemptIndex) =>
-        scope.setContext(`drama_request_${index}_${attemptIndex}`, { ...attempt })
-      );
-    });
-    Sentry.captureMessage('drama_timing');
   });
 }
 

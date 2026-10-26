@@ -1,28 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const sentry = vi.hoisted(() => {
-  const contexts = vi.fn();
-  const logs = vi.fn();
-  const metrics = vi.fn();
-  const capture = vi.fn();
-  return {
-    contexts,
-    logs,
-    metrics,
-    capture,
-    scope: { setLevel: vi.fn(), setFingerprint: vi.fn(), setTags: vi.fn(), setContext: contexts },
-  };
-});
-vi.mock('@sentry/nextjs', () => ({
-  metrics: { distribution: sentry.metrics },
-  captureMessage: sentry.capture,
-  withScope: (run: (scope: typeof sentry.scope) => void) => run(sentry.scope),
+const mocks = vi.hoisted(() => ({
+  upload: vi.fn(async () => {}),
+  info: vi.fn(),
+  warn: vi.fn(),
+  api: vi.fn(),
 }));
-vi.mock('@/lib/sentry/client', () => ({ sendSentryLog: sentry.logs }));
+vi.mock('@/lib/api/telemetry', () => ({ uploadDramaTiming: mocks.upload }));
+vi.mock('@/lib/api/client', () => ({ apiClient: mocks.api }));
+vi.mock('@/lib/logger', () => ({ createLogger: () => ({ info: mocks.info, warn: mocks.warn }) }));
 vi.mock('./request-timing', () => ({ createRequestId: () => 'observation' }));
-vi.mock('./env-tags', () => ({
-  getMetricDimensions: () => ({ net_type: 'unknown', tg_platform: 'unknown' }),
-}));
 import { dramaTiming, installDramaTiming } from './drama-observer';
 
 afterEach(() => {
@@ -34,8 +21,8 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('drama Sentry reporting', () => {
-  it('keeps slow request details flat and never emits media URLs or response bodies', async () => {
+describe('drama centralized logging', () => {
+  it('uploads slow and final snapshots with request details and no media credentials', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
     const flow = dramaTiming.beginPlayback('drama-id', 'cover');
     const data = await dramaTiming.query('playback', 'drama-id', undefined, async (observe) => {
@@ -56,38 +43,52 @@ describe('drama Sentry reporting', () => {
     dramaTiming.playbackState(flow, data, false, false);
     flow.mark('source_set');
     await vi.advanceTimersByTimeAsync(10_000);
-    expect(sentry.capture).toHaveBeenCalledWith('drama_timing');
-    expect(sentry.contexts).toHaveBeenCalledWith(
-      'drama_request_0_0',
-      expect.objectContaining({ requestId: 'api-request', outcome: 'ok' })
+    expect(mocks.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'drama.frontend_timing',
+        phase: 'slow',
+        observation_id: 'observation',
+      })
+    );
+    expect(mocks.upload).toHaveBeenCalledWith(
+      expect.objectContaining({
+        phase: 'slow',
+        queries: [
+          expect.objectContaining({
+            attempts: [expect.objectContaining({ requestId: 'api-request', outcome: 'ok' })],
+          }),
+        ],
+      })
     );
     flow.finish('playing');
-    expect(sentry.logs).toHaveBeenCalledWith(
-      'info',
-      'drama.request_timing',
-      expect.objectContaining({ observation_id: 'observation', requestId: 'api-request' })
-    );
-    expect(sentry.logs).toHaveBeenCalledWith(
-      'info',
-      'drama.timing',
-      expect.objectContaining({ video_id: 'video-id' })
+    expect(mocks.upload).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        phase: 'final',
+        videoId: 'video-id',
+        outcome: 'playing',
+      })
     );
     const output = JSON.stringify([
-      sentry.logs.mock.calls,
-      sentry.contexts.mock.calls,
-      sentry.metrics.mock.calls,
+      mocks.info.mock.calls,
+      mocks.warn.mock.calls,
+      mocks.upload.mock.calls,
     ]);
     expect(output).not.toContain('never-record');
     expect(output).not.toContain('example.invalid');
-    expect(JSON.stringify(sentry.metrics.mock.calls)).not.toContain('drama-id');
-    expect(JSON.stringify(sentry.metrics.mock.calls)).not.toContain('api-request');
   });
 
-  it('emits metrics and logs for normal cancellation without creating a warning issue', () => {
+  it('uploads normal cancellation and keeps reporting after a delivery failure', async () => {
+    mocks.upload.mockRejectedValueOnce(new Error('network unavailable'));
     dramaTiming.beginPlayback('a', 'cover').finish('switched');
-    expect(sentry.logs).toHaveBeenCalled();
-    expect(sentry.metrics).toHaveBeenCalled();
-    expect(sentry.capture).not.toHaveBeenCalled();
+    await Promise.resolve();
+    expect(mocks.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'drama.timing_upload_failed',
+        observation_id: 'observation',
+      })
+    );
+    dramaTiming.beginPlayback('b', 'switch').finish('playing');
+    expect(mocks.upload).toHaveBeenLastCalledWith(expect.objectContaining({ outcome: 'playing' }));
   });
   it('does not start a false wait when clicking the already-active drama navigation tab', () => {
     vi.useFakeTimers();
@@ -118,5 +119,50 @@ describe('drama Sentry reporting', () => {
     handlers.get('click')?.(click);
     expect(begin).toHaveBeenCalledWith('navigation_click');
     cleanup();
+  });
+});
+
+describe('drama upload transport', () => {
+  const report = {
+    type: 'playback' as const,
+    phase: 'final' as const,
+    id: 'observation',
+    outcome: 'playing' as const,
+    elapsedMs: 123,
+    marks: {},
+    stages: {},
+    queries: [],
+  };
+  it('uses one authenticated API POST with keepalive and background priority', async () => {
+    const { uploadDramaTiming } =
+      await vi.importActual<typeof import('@/lib/api/telemetry')>('@/lib/api/telemetry');
+    mocks.api.mockResolvedValueOnce({ accepted: true });
+    await uploadDramaTiming(report);
+    expect(mocks.api).toHaveBeenCalledWith(
+      '/api/telemetry/drama-timing',
+      expect.objectContaining({
+        method: 'POST',
+        keepalive: true,
+        queuePriority: 'background',
+        timeoutMs: 5000,
+        body: JSON.stringify(report),
+        signal: expect.any(AbortSignal),
+      })
+    );
+  });
+  it('ends a hung upload within its total budget without retrying', async () => {
+    vi.useFakeTimers();
+    const { uploadDramaTiming } =
+      await vi.importActual<typeof import('@/lib/api/telemetry')>('@/lib/api/telemetry');
+    mocks.api.mockImplementationOnce(
+      (_path: string, options: { signal: AbortSignal }) =>
+        new Promise((_resolve, reject) =>
+          options.signal.addEventListener('abort', () => reject(new Error('aborted')))
+        )
+    );
+    const checked = expect(uploadDramaTiming(report)).rejects.toThrow('aborted');
+    await vi.advanceTimersByTimeAsync(5000);
+    await checked;
+    expect(mocks.api).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,4 +1,5 @@
-import type { DramaPlayback } from '@miniapp/shared';
+import type { DramaPlayback, DramaTimingReport } from '@miniapp/shared';
+export type { DramaTimingReport } from '@miniapp/shared';
 import type { ApiAttemptTiming } from '@/lib/api/client';
 
 export type DramaQueryKind = 'list' | 'queue' | 'detail' | 'playback';
@@ -40,47 +41,6 @@ interface ListTiming {
   ended?: boolean;
   queriesTruncated?: boolean;
   queries: DramaQueryTiming[];
-}
-
-export interface DramaTimingReport {
-  type: 'list' | 'playback';
-  phase: 'slow' | 'final';
-  id: string;
-  entry?: DramaEntry;
-  dramaId?: string;
-  videoId?: string;
-  outcome: DramaOutcome | 'ready' | 'waiting';
-  elapsedMs: number;
-  marks: Partial<Record<Mark, number>>;
-  stages: Record<string, number>;
-  addressSource?: 'fetch' | 'inflight' | 'cache' | 'unknown';
-  frameMethod?: 'video_frame_callback' | 'playing_and_timeupdate';
-  list?: {
-    id: string;
-    readyMs?: number;
-    browseMs?: number;
-    sinceEntryMs: number;
-    startKind: ListTiming['startKind'];
-  };
-  cover?: { outcome: 'loaded' | 'error' | 'pending' | 'absent'; loadMs?: number };
-  queryDetailsTruncated?: boolean;
-  queries: Array<{
-    kind: DramaQueryKind;
-    startMs: number;
-    durationMs: number;
-    outcome: string;
-    attemptsTruncated?: boolean;
-    attempts: Array<{
-      requestId: string;
-      startMs: number;
-      queueMs?: number;
-      headersMs?: number;
-      bodyMs?: number;
-      totalMs: number;
-      outcome: string;
-      status?: number;
-    }>;
-  }>;
 }
 
 const SLOW_MS = 10_000;

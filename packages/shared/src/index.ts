@@ -35,6 +35,7 @@ export * from './api/notifications';
 export * from './api/support';
 export * from './api/telemetry';
 export * from './api/drama';
+export * from './api/drama-timing';
 export * from './api/text-postprocess';
 export {
   applyTextPostprocess,

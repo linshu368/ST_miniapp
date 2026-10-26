@@ -4,7 +4,6 @@
 // 签一个 URL。前端可以并行请求详情和 /play，不必等详情回来再去拿播放地址。
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import * as Sentry from '@sentry/node';
 import { requestLogger } from '../lib/logger.js';
 import { ok, fail } from '@miniapp/shared';
 import type { GetDramaByIdData, GetDramaPlaybackData, GetDramasData } from '@miniapp/shared';
@@ -71,6 +70,7 @@ export default async function dramaRoutes(app: FastifyInstance) {
       requestLogger(request.log, 'drama').biz.info(
         {
           event: 'drama.request_timing',
+          source: 'backend',
           request_id: request.id,
           ...attributes,
           status: reply.statusCode,
@@ -83,16 +83,6 @@ export default async function dramaRoutes(app: FastifyInstance) {
         },
         'drama request timing'
       );
-      Sentry.metrics.distribution('drama.server.duration', reply.elapsedTime, {
-        unit: 'millisecond',
-        attributes,
-      });
-      for (const [stage, ms] of Object.entries(timing.stages)) {
-        Sentry.metrics.distribution('drama.server.stage.duration', ms, {
-          unit: 'millisecond',
-          attributes: { ...attributes, stage },
-        });
-      }
     } catch {
       /* 监控故障不能改变响应。 */
     }
