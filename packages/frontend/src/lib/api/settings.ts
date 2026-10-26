@@ -33,11 +33,12 @@ async function setUserAvatar(body: SetUserAvatarRequest): Promise<SetUserAvatarD
   });
 }
 
-export function useUserSettingsQuery() {
+export function useUserSettingsQuery({ enabled = true }: { enabled?: boolean } = {}) {
   return useQuery<GetUserSettingsData>({
     queryKey: userSettingsKeys.all,
     queryFn: fetchUserSettings,
     staleTime: 60_000,
+    enabled,
   });
 }
 

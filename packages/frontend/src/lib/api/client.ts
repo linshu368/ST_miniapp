@@ -97,14 +97,53 @@ const LONG_RUNNING_PATHS = [
   /\/image-plaza\/references(\?|$)/,
 ];
 
+/** GET 传输层失败时最多再试 1 次；退避带抖动，避免边缘抖动时齐射。 */
+const GET_TRANSPORT_RETRY_MAX = 1;
+const GET_RETRY_BASE_DELAY_MS = 200;
+const GET_RETRY_JITTER_MS = 300;
+
 function resolveTimeoutMs(path: string): number {
   return LONG_RUNNING_PATHS.some((pattern) => pattern.test(path))
     ? LONG_RUNNING_TIMEOUT_MS
     : DEFAULT_TIMEOUT_MS;
 }
 
-/** 统一的 HTTP 客户端。仅在 lib/api/ 内部使用；业务层必须走 React Query hook 包装。 */
-export async function apiClient<T>(path: string, options?: ApiRequestInit): Promise<T> {
+function resolveMethod(options?: ApiRequestInit): string {
+  return (options?.method ?? 'GET').toUpperCase();
+}
+
+/** 仅对幂等 GET 的超时/断网重试；调用方取消（React Query abort）绝不重试。 */
+export function isRetryableGetTransportError(
+  error: unknown,
+  method: string,
+  externalSignal?: AbortSignal
+): boolean {
+  if (method !== 'GET') return false;
+  if (externalSignal?.aborted) return false;
+  if (error instanceof RequestTimeoutError) return true;
+  if (error instanceof ApiClientError && error.code === 'client_timeout') return true;
+  if (error instanceof TypeError) return true;
+  return false;
+}
+
+function toTransportApiError(error: unknown): never {
+  if (error instanceof RequestTimeoutError) {
+    throw new ApiClientError('请求超时，请检查网络后重试', 0, 'client_timeout');
+  }
+  throw error;
+}
+
+function retryDelayMs(): number {
+  return GET_RETRY_BASE_DELAY_MS + Math.floor(Math.random() * (GET_RETRY_JITTER_MS + 1));
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+async function apiClientOnce<T>(path: string, options?: ApiRequestInit): Promise<T> {
   const url = `${API_URL}${path}`;
 
   const initData = getRawInitData();
@@ -124,17 +163,15 @@ export async function apiClient<T>(path: string, options?: ApiRequestInit): Prom
     { ...fetchOptions, headers },
     { requestId, timeoutMs: timeoutMs ?? resolveTimeoutMs(path) }
   ).catch((error: unknown) => {
-    recordFailedRequest(requestId, path, options?.method ?? 'GET', 0);
-    if (error instanceof RequestTimeoutError) {
-      throw new ApiClientError('请求超时，请检查网络后重试', 0, 'client_timeout');
-    }
+    recordFailedRequest(requestId, path, resolveMethod(options), 0);
+    // 保留 RequestTimeoutError，供外层决定是否对 GET 再试一次。
     throw error;
   });
   const json = (await res.json().catch(() => null)) as ApiResponse<T> | null;
 
   if (!res.ok) {
     log.error(`Error ${res.status} for ${url}:`, json);
-    recordFailedRequest(requestId, path, options?.method ?? 'GET', res.status);
+    recordFailedRequest(requestId, path, resolveMethod(options), res.status);
     throw toApiClientError(res.status, json);
   }
 
@@ -147,4 +184,33 @@ export async function apiClient<T>(path: string, options?: ApiRequestInit): Prom
   }
 
   return json.data;
+}
+
+/**
+ * 统一的 HTTP 客户端。仅在 lib/api/ 内部使用；业务层必须走 React Query hook 包装。
+ *
+ * GET 在超时或网络失败时最多再试 1 次（新 requestId），用于吸收客户端→Railway
+ * 的瞬时抖动；HTTP 业务错误与调用方 abort 不重试。
+ */
+export async function apiClient<T>(path: string, options?: ApiRequestInit): Promise<T> {
+  const method = resolveMethod(options);
+  const maxAttempts = method === 'GET' ? 1 + GET_TRANSPORT_RETRY_MAX : 1;
+
+  let attempt = 0;
+  for (;;) {
+    try {
+      return await apiClientOnce<T>(path, options);
+    } catch (error) {
+      attempt += 1;
+      if (
+        attempt >= maxAttempts ||
+        !isRetryableGetTransportError(error, method, options?.signal ?? undefined)
+      ) {
+        toTransportApiError(error);
+      }
+      const delayMs = retryDelayMs();
+      log.warn(`GET transport retry after ${delayMs}ms`, { path, attempt });
+      await sleep(delayMs);
+    }
+  }
 }

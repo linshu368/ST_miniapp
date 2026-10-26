@@ -44,12 +44,16 @@ async function setFavorite(input: {
 /**
  * 收藏 id 集合是首页、详情弹层和对话页共用的唯一状态源，
  * 任一入口切换后其余入口都会读到同一份缓存。
+ *
+ * `enabled` 供大厅冷启动延后：收藏心与「只看收藏」不在首屏关键路径上，
+ * 与列表争 Railway 连接时会放大超时尖峰。
  */
-export function useFavoriteIdsQuery() {
+export function useFavoriteIdsQuery({ enabled = true }: { enabled?: boolean } = {}) {
   return useQuery<GetCharacterFavoriteIdsData>({
     queryKey: favoriteKeys.ids(),
     queryFn: fetchFavoriteIds,
     staleTime: 30_000,
+    enabled,
   });
 }
 

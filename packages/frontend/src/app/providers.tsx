@@ -10,7 +10,7 @@ import { INVITE_START_PARAM_PREFIX } from '@miniapp/shared';
 import { FavoriteFeedbackNotice } from '@/components/characters/favorite-feedback-notice';
 
 import { LobbyShellSkeleton } from '@/components/characters/lobby-shell-skeleton';
-import { afterFirstScreen } from '@/lib/after-first-screen';
+import { afterFirstScreen, useAfterFirstScreen } from '@/lib/after-first-screen';
 import { getQueryClient } from '@/lib/api/query-client';
 import { recordMiniappEntry } from '@/lib/api/growth';
 import { bindInvite } from '@/lib/api/invite';
@@ -108,58 +108,65 @@ function PaymentReturnRedirect() {
 
 function GrowthEntryReporter() {
   useEffect(() => {
-    try {
-      const rawInitData = getRawInitData();
-      console.log('[Growth] Telegram initData status:', { available: Boolean(rawInitData) });
-
-      // 即使没有 rawInitData，也可以尝试从 URL 中获取 startapp 参数 (本地开发环境)
-      const sourceId = getStartParam();
-      console.log('[Growth] Extracted sourceId:', sourceId);
-
-      console.log('[Growth] GrowthEntryReporter sourceId:', sourceId);
-
-      if (
-        !sourceId ||
-        sourceId === 'payment_return' ||
-        sourceId.startsWith(PAYMENT_RETURN_PREFIX) ||
-        // 邀请深链不是渠道码：source_id='invite' 由绑定接口守卫式写入（阶段二计划 E2），
-        // 走 botlinks 渠道逻辑会互相踩踏。
-        sourceId.startsWith(INVITE_START_PARAM_PREFIX)
-      ) {
-        console.log('[Growth] No sourceId found, skipping report');
-        return;
-      }
-
-      const key = `growth_entry_reported:${sourceId}`;
+    let cancelled = false;
+    void afterFirstScreen().then(() => {
+      if (cancelled) return;
       try {
-        if (sessionStorage.getItem(key) === '1') {
-          console.log('[Growth] GrowthEntryReporter already reported in this session');
+        const rawInitData = getRawInitData();
+        console.log('[Growth] Telegram initData status:', { available: Boolean(rawInitData) });
+
+        // 即使没有 rawInitData，也可以尝试从 URL 中获取 startapp 参数 (本地开发环境)
+        const sourceId = getStartParam();
+        console.log('[Growth] Extracted sourceId:', sourceId);
+
+        console.log('[Growth] GrowthEntryReporter sourceId:', sourceId);
+
+        if (
+          !sourceId ||
+          sourceId === 'payment_return' ||
+          sourceId.startsWith(PAYMENT_RETURN_PREFIX) ||
+          // 邀请深链不是渠道码：source_id='invite' 由绑定接口守卫式写入（阶段二计划 E2），
+          // 走 botlinks 渠道逻辑会互相踩踏。
+          sourceId.startsWith(INVITE_START_PARAM_PREFIX)
+        ) {
+          console.log('[Growth] No sourceId found, skipping report');
           return;
         }
-        sessionStorage.setItem(key, '1');
-      } catch (e) {
-        console.warn('[Growth] sessionStorage access failed:', e);
-      }
 
-      console.log(
-        '[Growth] GrowthEntryReporter calling recordMiniappEntry with sourceId:',
-        sourceId
-      );
-      recordMiniappEntry(sourceId)
-        .then((res) => {
-          console.log('[Growth] GrowthEntryReporter success:', res);
-        })
-        .catch((err) => {
-          console.error('[Growth] GrowthEntryReporter failed:', err);
-          try {
-            sessionStorage.removeItem(key);
-          } catch (e) {
-            // ignore
+        const key = `growth_entry_reported:${sourceId}`;
+        try {
+          if (sessionStorage.getItem(key) === '1') {
+            console.log('[Growth] GrowthEntryReporter already reported in this session');
+            return;
           }
-        });
-    } catch (err) {
-      console.error('[Growth] Unhandled error in GrowthEntryReporter:', err);
-    }
+          sessionStorage.setItem(key, '1');
+        } catch (e) {
+          console.warn('[Growth] sessionStorage access failed:', e);
+        }
+
+        console.log(
+          '[Growth] GrowthEntryReporter calling recordMiniappEntry with sourceId:',
+          sourceId
+        );
+        recordMiniappEntry(sourceId)
+          .then((res) => {
+            console.log('[Growth] GrowthEntryReporter success:', res);
+          })
+          .catch((err) => {
+            console.error('[Growth] GrowthEntryReporter failed:', err);
+            try {
+              sessionStorage.removeItem(key);
+            } catch {
+              // ignore
+            }
+          });
+      } catch (err) {
+        console.error('[Growth] Unhandled error in GrowthEntryReporter:', err);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   return null;
@@ -178,9 +185,9 @@ const INVITE_CODE_RE = /^[A-Za-z0-9]{8}$/;
  */
 function InviteBindReporter() {
   useEffect(() => {
+    let cancelled = false;
+    // 邀请码仍可先落 sessionStorage；真正打后端放到首屏之后，避免和大厅列表抢连接。
     try {
-      if (sessionStorage.getItem(INVITE_BIND_DONE_KEY) === '1') return;
-
       const startParam = getStartParam();
       if (startParam.startsWith(INVITE_START_PARAM_PREFIX)) {
         const code = startParam.slice(INVITE_START_PARAM_PREFIX.length);
@@ -188,23 +195,35 @@ function InviteBindReporter() {
           sessionStorage.setItem(INVITE_BIND_PENDING_KEY, code);
         }
       }
-
-      const pendingCode = sessionStorage.getItem(INVITE_BIND_PENDING_KEY);
-      if (!pendingCode) return;
-
-      bindInvite(pendingCode)
-        .then((data) => {
-          console.log('[Invite] bind result:', data.status);
-          sessionStorage.setItem(INVITE_BIND_DONE_KEY, '1');
-          sessionStorage.removeItem(INVITE_BIND_PENDING_KEY);
-        })
-        .catch((err) => {
-          // 保留 pending，下次挂载（下次启动）重试。
-          console.error('[Invite] bind failed, will retry on next launch:', err);
-        });
     } catch (err) {
-      console.error('[Invite] Unhandled error in InviteBindReporter:', err);
+      console.error('[Invite] Unhandled error while caching invite code:', err);
     }
+
+    void afterFirstScreen().then(() => {
+      if (cancelled) return;
+      try {
+        if (sessionStorage.getItem(INVITE_BIND_DONE_KEY) === '1') return;
+
+        const pendingCode = sessionStorage.getItem(INVITE_BIND_PENDING_KEY);
+        if (!pendingCode) return;
+
+        bindInvite(pendingCode)
+          .then((data) => {
+            console.log('[Invite] bind result:', data.status);
+            sessionStorage.setItem(INVITE_BIND_DONE_KEY, '1');
+            sessionStorage.removeItem(INVITE_BIND_PENDING_KEY);
+          })
+          .catch((err) => {
+            // 保留 pending，下次挂载（下次启动）重试。
+            console.error('[Invite] bind failed, will retry on next launch:', err);
+          });
+      } catch (err) {
+        console.error('[Invite] Unhandled error in InviteBindReporter:', err);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   return null;
@@ -235,7 +254,9 @@ function getStartParam(): string {
 function UserSettingsHydrator() {
   const applyServerDisplayName = useUserProfileStore((s) => s.applyServerDisplayName);
   const applyServerPhotoUrl = useUserProfileStore((s) => s.applyServerPhotoUrl);
-  const { data } = useUserSettingsQuery();
+  // 头像/昵称可先用本地 hydrate；服务端 settings 延后到首屏后，少占入场连接。
+  const firstScreenDone = useAfterFirstScreen();
+  const { data } = useUserSettingsQuery({ enabled: firstScreenDone });
 
   useEffect(() => {
     if (data) {

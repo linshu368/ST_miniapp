@@ -112,8 +112,10 @@ function neighborIds(ids: string[], anchorId: string): string[] {
 export function CharacterGallery() {
   const router = useRouter();
   const [savedDiscovery] = useState(readRoleplayDiscovery);
-  const favoriteIds = useFavoriteIdsQuery();
-  const history = useConversationsQuery(undefined);
+  // 冷启动只保证大厅列表；收藏 id / 会话历史 / New 角标延后，避免与列表争 Railway 连接。
+  const firstScreenDone = useAfterFirstScreen();
+  const favoriteIds = useFavoriteIdsQuery({ enabled: firstScreenDone });
+  const history = useConversationsQuery(undefined, firstScreenDone);
   // message_count 不计虚拟开场白；只标记已确认的用户对话，未命中不代表从未聊过。
   const experiencedIds = useMemo(
     () =>
@@ -149,8 +151,6 @@ export function CharacterGallery() {
   const restoredAnchorIdRef = useRef<string | null>(null);
   const restoreCalibrationUsedRef = useRef(false);
 
-  // New 角标不在首屏关键路径上，冷启动时让给列表与首屏图片。
-  const firstScreenDone = useAfterFirstScreen();
   const latestBadge = useLobbyLatestBadgeQuery({ enabled: firstScreenDone });
   const { mutate: markLatestSeen } = useMarkLobbyLatestSeenMutation();
   const markedLatestRef = useRef(false);

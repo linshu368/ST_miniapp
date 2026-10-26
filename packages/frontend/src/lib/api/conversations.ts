@@ -69,8 +69,10 @@ export function fetchConversationDetail(
   sessionId: string,
   timeoutMs = 10_000
 ): Promise<GetConversationData> {
+  // 用 timeoutMs 而不是 AbortSignal.timeout：超时走 RequestTimeoutError，
+  // apiClient 才能对 GET 做最多 1 次传输层重试（调用方 abort 仍不重试）。
   return apiClient<GetConversationData>(`/api/v1/conversations/${encodeURIComponent(sessionId)}`, {
-    signal: AbortSignal.timeout(timeoutMs),
+    timeoutMs,
   });
 }
 
