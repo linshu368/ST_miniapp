@@ -1,6 +1,6 @@
 // 把 repository 的数据库投影组装成 shared 的对外类型。
 //
-// 回退规则来自 telegram-video-archive/SUPABASE_PIPELINE_DESIGN.md §5：逐字段回退，
+// 剧级回退规则来自本任务 PRD 和已核验的剧级 AI schema：逐字段回退，
 // 不整行替换、不混合两边的标签、不编造信息。原始字段优先，AI 结果只在原始缺失时顶上，
 // 所以 AI 跑完之后前端不需要改动。
 
@@ -50,9 +50,9 @@ function fallbackTags(original: string[], ai: string[]): string[] {
 function toVideoItem(video: VideoRow): VideoItem {
   return {
     id: video.id,
-    title: fallbackText(video.original_title, video.ai_title),
-    tags: fallbackTags(video.original_tags, video.ai_tags),
-    description: fallbackText(video.original_description, video.ai_description),
+    title: video.original_title?.trim() || '',
+    tags: normalizeTags(video.original_tags),
+    description: video.original_description?.trim() || '',
     // 集数标签没有回退来源，原样透出
     episode: video.episode,
     playable: isPlayable(video),
@@ -62,9 +62,7 @@ function toVideoItem(video: VideoRow): VideoItem {
 /**
  * 列表卡片。
  *
- * tags/description/cover_url 都取首条可播视频代表整部剧，与详情页一致；不跨集聚合，
- * 那样会把整部剧的信息堆成一大串且语义混乱，也不能随播放中的集数切换而变化。
- * tags 全量返回，由前端截断展示。
+ * 剧级文字逐字段回退，封面仍取首条可播视频。tags/description 全量返回用于搜索。
  *
  * buildCoverUrl 由调用方注入（而不是在本模块直接依赖 Supabase 客户端），
  * 保持 assemble.ts 是纯函数、不做 I/O，方便单测和替身。
@@ -75,13 +73,18 @@ export function toDramaSummary(
 ): DramaSummary {
   const playable = drama.videos.filter(isPlayable);
   const first = playable[0];
-  const firstItem = first ? toVideoItem(first) : null;
+  // 只聚合可播视频；缺时间的集不伪造时间，也不能让未就绪集提前影响上架排序。
+  const publishedTimes = playable
+    .map((video) => (video.created_at ? Date.parse(video.created_at) : NaN))
+    .filter(Number.isFinite);
   return {
     id: drama.id,
-    title: drama.title,
+    title: fallbackText(drama.title, drama.ai_title),
     cover_url: first && isCoverReady(first) ? buildCoverUrl(first.cover_path!) : null,
-    tags: firstItem?.tags ?? [],
-    description: firstItem?.description ?? '',
+    tags: fallbackTags(drama.tags, drama.ai_tags),
+    description: fallbackText(drama.description, drama.ai_description),
+    first_published_at:
+      publishedTimes.length > 0 ? new Date(Math.min(...publishedTimes)).toISOString() : null,
     episode_count: playable.length,
     // 待归档端把 Telegram 的 DocumentAttributeVideo.duration 登记进库
     duration_seconds: null,

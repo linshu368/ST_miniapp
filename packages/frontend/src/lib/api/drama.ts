@@ -78,8 +78,9 @@ export function useDramaPlaybackQuery(id: string, videoId?: string) {
 /** 点击卡片时顺手预取首集播放地址，省掉路由跳转后再发请求的一小段延迟。 */
 export function usePrefetchDramaPlayback() {
   const queryClient = useQueryClient();
-  return (id: string) => {
-    const list = queryClient.getQueryData<DramaSummary[]>(dramaKeys.list());
+  return (id: string, browseQueue?: DramaSummary[]) => {
+    // 点击时固定当前筛选/排序后的队列，保证进入播放后的上下滑仍沿用所见顺序。
+    const list = browseQueue ?? queryClient.getQueryData<DramaSummary[]>(dramaKeys.list());
     if (list) queryClient.setQueryData(dramaKeys.browseQueue(), list);
     void queryClient.prefetchQuery({
       queryKey: dramaKeys.playback(id),

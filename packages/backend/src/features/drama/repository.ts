@@ -3,8 +3,8 @@
 // 只做数据库访问、播放排序和最小形状归一化：把 pipeline_tasks 的任务行收敛成一个
 // upload_succeeded 布尔值，原始任务行不离开本文件。对外类型的组装在 assemble.ts。
 //
-// 该 schema 由 telegram-video-archive 直接建在 Supabase 上，不经本仓库迁移通道，
-// 因此这里不用 Prisma，走 PostgREST（getDomainDb('drama_archive')）。
+// 基础表由 telegram-video-archive 管理，展示时间扩展经本仓库 migration 通道。
+// 这里不用 Prisma，走 PostgREST（getDomainDb('drama_archive')）。
 
 import { getDomainDb, type DomainDb } from '../../lib/supabase.js';
 
@@ -12,15 +12,15 @@ import { getDomainDb, type DomainDb } from '../../lib/supabase.js';
 const QUERY_TIMEOUT_MS = 5000;
 
 /**
- * 列表页需要的列：标题 + 判定可播/封面就绪、取标签和简介所需的最小集合。
- * 简介和封面都取第一条可播视频代表整部剧，所以列表页也要带上。
+ * 剧级 AI 必须经 drama_id 读取；source_video_id 只是生成来源，不能当成单集 AI。
+ * 视频只提供可播/封面就绪和首次上架时间，不参与剧级文字回退。
  */
 const LIST_COLUMNS =
-  'id,title,videos(id,episode,message_id,object_path,cover_path,original_tags,original_description,ai_results(tags,description),pipeline_tasks(stage,status))';
+  'id,title,tags,description,ai_results!ai_results_drama_fkey(title,tags,description),videos(id,episode,message_id,created_at,object_path,cover_path,pipeline_tasks(stage,status))';
 
-/** 详情页在列表基础上多取标题 */
+/** 详情页额外读取各集自己的原始展示字段 */
 const DETAIL_COLUMNS =
-  'id,title,videos(id,episode,message_id,object_path,cover_path,original_title,original_tags,original_description,ai_results(title,tags,description),pipeline_tasks(stage,status))';
+  'id,title,tags,description,ai_results!ai_results_drama_fkey(title,tags,description),videos(id,episode,message_id,created_at,object_path,cover_path,original_title,original_tags,original_description,pipeline_tasks(stage,status))';
 
 /**
  * /play 只需要定位对象和判定就绪，不取任何展示字段。
@@ -42,15 +42,18 @@ export interface VideoRow {
   original_title: string | null;
   original_tags: string[];
   original_description: string | null;
-  ai_title: string | null;
-  ai_tags: string[];
-  ai_description: string | null;
+  created_at: string | null;
 }
 
 /** repository 对外的短剧投影。videos 已按播放顺序排好 */
 export interface DramaRow {
   id: string;
-  title: string;
+  title: string | null;
+  tags: string[];
+  description: string | null;
+  ai_title: string | null;
+  ai_tags: string[];
+  ai_description: string | null;
   videos: VideoRow[];
 }
 
@@ -64,17 +67,20 @@ interface RawVideo {
   original_title?: string | null;
   original_tags?: string[] | null;
   original_description?: string | null;
-  ai_results?: {
-    title?: string | null;
-    tags?: string[] | null;
-    description?: string | null;
-  } | null;
+  created_at?: string | null;
   pipeline_tasks?: { stage: string; status: string }[] | null;
 }
 
 interface RawDrama {
   id: string;
-  title: string;
+  title: string | null;
+  tags?: string[] | null;
+  description?: string | null;
+  ai_results?: {
+    title: string | null;
+    tags: string[];
+    description: string | null;
+  } | null;
   videos?: RawVideo[] | null;
 }
 
@@ -93,9 +99,7 @@ function toVideoRow(raw: RawVideo): VideoRow {
     original_title: raw.original_title ?? null,
     original_tags: raw.original_tags ?? [],
     original_description: raw.original_description ?? null,
-    ai_title: raw.ai_results?.title ?? null,
-    ai_tags: raw.ai_results?.tags ?? [],
-    ai_description: raw.ai_results?.description ?? null,
+    created_at: raw.created_at ?? null,
   };
 }
 
@@ -118,7 +122,16 @@ function comparePlayOrder(a: RawVideo, b: RawVideo): number {
 
 function toDramaRow(raw: RawDrama): DramaRow {
   const videos = [...(raw.videos ?? [])].sort(comparePlayOrder).map(toVideoRow);
-  return { id: raw.id, title: raw.title, videos };
+  return {
+    id: raw.id,
+    title: raw.title,
+    tags: raw.tags ?? [],
+    description: raw.description ?? null,
+    ai_title: raw.ai_results?.title ?? null,
+    ai_tags: raw.ai_results?.tags ?? [],
+    ai_description: raw.ai_results?.description ?? null,
+    videos,
+  };
 }
 
 export class DramaRepository {
@@ -133,7 +146,7 @@ export class DramaRepository {
       .abortSignal(AbortSignal.timeout(QUERY_TIMEOUT_MS));
   }
 
-  /** 列表页。当前库里只有个位数短剧，先全量取，分页等数据量上来再说 */
+  /** 全目录用于前端检索；TEST 已核验顶层/单剧数量均低于 PostgREST 行上限。 */
   async listDramas(): Promise<DramaRow[]> {
     const { data, error } = await this.query(LIST_COLUMNS, ['upload', 'cover_upload']);
     if (error) throw new Error('drama list read failed');

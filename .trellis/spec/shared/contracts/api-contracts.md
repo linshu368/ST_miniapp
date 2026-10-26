@@ -27,6 +27,8 @@
 
 ## 设计规则
 
+短剧契约 `api/drama.ts`：列表和详情共享完整剧级文字；新增向后兼容可选 `first_published_at?: string | null`（新 Backend 必返回 ISO 时间或 NULL）。它是可播视频 `created_at` 的最早值，允许存量补录，不能当成真实历史上传证据。`VideoItem` 只承载自身原始元数据，不复用剧级 AI。具体回退和排序行为见[短剧目录契约](../../database/supabase/drama-catalog.md)。
+
 - 请求、响应、分页、错误和 SSE event 使用明确领域命名；字段可选性必须表达真实协议，不为绕过编译器滥用 `?`。
 - API DTO 只含业务所需字段，不复制数据库表；日期明确使用 ISO string，金额/credits 明确单位，ID 不混用。
 - 不可信 JSON 或跨版本运营配置使用 Zod，并以 `z.infer` 保持类型同源；简单可信编译期形状可用 interface/type。

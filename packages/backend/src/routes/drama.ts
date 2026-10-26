@@ -23,7 +23,7 @@ export default async function dramaRoutes(app: FastifyInstance) {
   app.get('/api/dramas', { preHandler: [requireTelegramAuth] }, async (_request, reply) => {
     const dramas = await repo.listDramas();
     // 归档流水线是异步的：剧的元数据可能先落库，视频还没传完，这期间不应该出现在列表里。
-    // 先随机展示；dramas.created_at 落库后改为按时间倒序
+    // 推荐保留现有随机顺序；前端“最新”按 first_published_at 独立排序。
     const shuffled = dramas
       .map((drama) => toDramaSummary(drama, buildCoverUrl))
       .filter((drama) => drama.episode_count > 0);

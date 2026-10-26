@@ -1,7 +1,8 @@
 // 短剧浏览与播放契约。
 //
 // 数据源是 telegram-video-archive 直接建在 Supabase 上的 drama_archive schema，
-// 不经本仓库迁移通道。对外只暴露展示字段，不透传数据库行、object_path、
+// 基础表由归档仓库管理，展示时间扩展经本仓库 migration 通道。
+// 对外只暴露展示字段，不透传数据库行、object_path、
 // Telegram 定位信息（source_id / message_id / media_id）或任务表记录。
 //
 // 播放地址刻意不放在列表/详情里：点击卡片只发一次 GET /api/dramas/:id/play，
@@ -10,7 +11,7 @@
 /** 列表页用的精简结构 */
 export interface DramaSummary {
   id: string;
-  /** 短剧名，库表 CHECK 保证非空 */
+  /** 剧级原始标题 → 同剧 AI 标题 → 空串；空白视为缺失 */
   title: string;
   /**
    * 封面图。取第一条可播视频的封面（cover_path 非空且 cover_upload 阶段已确认成功），
@@ -20,15 +21,20 @@ export interface DramaSummary {
   cover_url: string | null;
   /**
    * 有效标签：原始标签优先，为空回退 AI 标签，都空为 []。
-   * 取第一条可播视频的标签代表整部剧，不跨集聚合。
-   * 全量返回（实测 6-7 个），列表卡片由前端截断展示。
+   * 只用 dramas / 同剧 ai_results，不借用单集信息、不混合来源。
+   * 全量返回，列表卡片由前端截断展示。
    */
   tags: string[];
   /**
-   * 简介：取第一条可播视频的简介代表整部剧，不跨集聚合，也不随播放中的集数变化。
+   * 简介：只用 dramas / 同剧 ai_results，不随播放中的集数变化。
    * 原始简介非空用原始，否则 AI 简介，都空则 ''。
    */
   description: string;
+  /**
+   * 可播视频 created_at 的最早值，ISO 8601；全部缺失为 null。
+   * 存量可能为补录排序时间，并非真实历史上传时间。旧 Backend 可缺此字段。
+   */
+  first_published_at?: string | null;
   /**
    * 可播放的集数，即 playable=true 的视频条数；0 表示暂无可用集数。
    * 与 DramaDetail.videos 的长度口径一致。
@@ -45,11 +51,11 @@ export interface DramaSummary {
 /** 详情页的单个视频 */
 export interface VideoItem {
   id: string;
-  /** 原始标题非空用原始，否则 AI 标题，都空则 '' */
+  /** 单集原始标题，空白/缺失为 ''；剧级 AI 不冒充单集元数据 */
   title: string;
-  /** 原始标签优先，否则 AI 标签，去空项、去重；都空则 [] */
+  /** 单集原始标签，去空项、去重；缺失为 [] */
   tags: string[];
-  /** 原始简介非空用原始，否则 AI 简介，都空则 '' */
+  /** 单集原始简介，空白/缺失为 '' */
   description: string;
   /** 集数标签，直接取 videos.episode，无回退 */
   episode: string | null;

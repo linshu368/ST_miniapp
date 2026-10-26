@@ -10,6 +10,7 @@
 - [迁移、发布与回滚](./migrations-and-rollbacks.md)
 - [安全、RLS 与授权](./security-rls-and-grants.md)
 - [MCP 采集与文档维护](./introspection-and-documentation.md)
+- [短剧目录与时间契约](./drama-catalog.md)：剧级 AI 回退、首次上架排序和 TEST 补录／上传交接
 - [测试库结构参考](./test-database-reference.md)（当前等待 Supabase MCP 连接）
 
 ## 证据标签

@@ -365,6 +365,8 @@ T9 专表 contract：`20261016_openrouter_chat_history_drop_legacy_aliases.sql` 
 
 三张钱表的口径纪律：**支付金额以订单为准，星尘变动以流水为准，钱包余额只是可重建的当前状态。**
 
+短剧是既有外部归档域 `drama_archive`，基础表由独立 `telegram-video-archive` 管理，不代表八域治理已经扩展。本次仅通过 shared migration 扩展既有 `videos.created_at`，不创建新表／schema／RPC。`DramaRepository` 经 `dramas → ai_results.drama_id` 获取剧级文字，`assemble` 统一逐字段回退；可播视频最早时间输出为 `first_published_at`，前端在完整目录上组合搜索／分类并按该字段排序，点击后保存当前播放队列顺序。外部上传端负责后续时间写入，NULL 不伪造为当前时间。迁移先于消费者发布，TEST 的补录时间不是历史上传事实，Production 不随本次执行。详见[短剧目录与时间契约](../.trellis/spec/database/supabase/drama-catalog.md)。
+
 ### 5.2 会话存储
 
 ```

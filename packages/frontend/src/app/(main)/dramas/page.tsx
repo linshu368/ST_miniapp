@@ -8,10 +8,11 @@ import type { DramaSummary } from '@miniapp/shared';
 import { cn } from '@/lib/utils';
 import { characterRoomGradient } from '@/lib/utils/character-hue';
 import { useDramaListQuery, usePrefetchDramaPlayback } from '@/lib/api/drama';
+import { selectDramas } from '@/lib/drama-catalog';
+import { Input } from '@/components/ui/input';
 
 const TAG_DISPLAY_LIMIT = 3;
 
-/** 占位用：后端还没有排序/分类接口，这两组只做视觉切换，不影响实际列表数据 */
 const DRAMA_SORT_TABS = [
   { value: 'recommended', label: '推荐' },
   { value: 'latest', label: '最新' },
@@ -41,6 +42,8 @@ export default function DramasPage() {
   const [activeSort, setActiveSort] =
     useState<(typeof DRAMA_SORT_TABS)[number]['value']>('recommended');
   const [activeCategory, setActiveCategory] = useState<string>('全部');
+  const [keyword, setKeyword] = useState('');
+  const visibleDramas = selectDramas(dramas, keyword, activeCategory, activeSort);
 
   return (
     <main className="mx-auto min-h-dvh w-full max-w-screen-xl px-4 pb-8 pt-[calc(1.5rem+env(safe-area-inset-top))] text-foreground">
@@ -48,6 +51,16 @@ export default function DramasPage() {
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Dramas</p>
         <h1 className="mt-1 text-2xl font-bold">短剧</h1>
       </header>
+
+      <div role="search" aria-label="搜索短剧" className="mb-3">
+        <Input
+          type="search"
+          aria-label="搜索标题、标签或简介"
+          placeholder="搜索标题、标签或简介"
+          value={keyword}
+          onChange={(event) => setKeyword(event.target.value)}
+        />
+      </div>
 
       <div role="tablist" aria-label="短剧排序" className="mb-2 flex items-center gap-2">
         {DRAMA_SORT_TABS.map((tab) => {
@@ -105,10 +118,26 @@ export default function DramasPage() {
 
       {!isLoading && !isError && dramas.length === 0 ? <DramaListEmpty /> : null}
 
-      {!isLoading && !isError && dramas.length > 0 ? (
+      {!isLoading && !isError && dramas.length > 0 && visibleDramas.length === 0 ? (
+        <div role="status" className="rounded-3xl border border-border bg-card p-8 text-center">
+          <p className="font-semibold">没有找到匹配的短剧</p>
+          <button
+            type="button"
+            className="mt-3 rounded-full px-4 py-2 text-sm text-primary"
+            onClick={() => {
+              setKeyword('');
+              setActiveCategory('全部');
+            }}
+          >
+            清除筛选
+          </button>
+        </div>
+      ) : null}
+
+      {!isLoading && !isError && visibleDramas.length > 0 ? (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-          {dramas.map((drama) => (
-            <DramaCard key={drama.id} drama={drama} />
+          {visibleDramas.map((drama) => (
+            <DramaCard key={drama.id} drama={drama} browseQueue={visibleDramas} />
           ))}
         </div>
       ) : null}
@@ -116,7 +145,7 @@ export default function DramasPage() {
   );
 }
 
-function DramaCard({ drama }: { drama: DramaSummary }) {
+function DramaCard({ drama, browseQueue }: { drama: DramaSummary; browseQueue: DramaSummary[] }) {
   const prefetchPlayback = usePrefetchDramaPlayback();
   const gradient = characterRoomGradient(drama.id);
   const badge = dramaBadge(drama);
@@ -128,7 +157,7 @@ function DramaCard({ drama }: { drama: DramaSummary }) {
   return (
     <Link
       href={`/dramas/${drama.id}`}
-      onClick={() => prefetchPlayback(drama.id)}
+      onClick={() => prefetchPlayback(drama.id, browseQueue)}
       className="group flex flex-col overflow-hidden rounded-[16px] border border-border bg-card text-left shadow-lg transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-2xl active:scale-95"
       aria-label={`查看 ${drama.title}`}
     >

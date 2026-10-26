@@ -141,6 +141,8 @@ Admin Vercel Preview 在构建期固定 API 映射：普通 branch Preview 与 `
 
 ## 6. Supabase 与数据库迁移
 
+短剧目录复用 `/api/dramas` 的完整标题、标签、简介，在前端做搜索／分类交集和排序。剧级文字逐字段采用 `dramas → 同剧 ai_results → 空值`；“最新”采用可播视频最早的 `created_at`，推荐保留接口顺序。`20261026_drama_video_created_at.sql` 仅计划用于 TEST：为已核验的 577 条存量按来源／消息升序补录展示时间，新增视频由独立上传端在首次上传成功时写入（本仓库不改该脚本）。先迁移验收，再发布 Backend／Frontend；当前远端执行状态和验证限制见[任务记录](.trellis/tasks/10-26-drama-mvp-search-latest/verification.md)，字段及恢复约定见[短剧目录契约](.trellis/spec/database/supabase/drama-catalog.md)。
+
 ```bash
 pnpm supabase:start
 pnpm supabase:status
