@@ -8,16 +8,19 @@ export const freeQuotaKeys = {
   detail: (characterId: string) => ['character-free-quota', characterId] as const,
 };
 
-export function useCharacterFreeQuotaQuery(characterId: string | undefined) {
+export function useCharacterFreeQuotaQuery(
+  characterId: string | undefined,
+  options: { enabled?: boolean } = {}
+) {
   return useQuery<GetCharacterFreeQuotaData>({
     queryKey: characterId ? freeQuotaKeys.detail(characterId) : ['character-free-quota'],
-    enabled: !!characterId,
+    enabled: !!characterId && options.enabled !== false,
     queryFn: async () => {
       if (!characterId) throw new Error('character id is required');
       return apiClient<GetCharacterFreeQuotaData>(
         `/api/wallet/free-quota/${encodeURIComponent(characterId)}`
       );
     },
-    staleTime: 0,
+    staleTime: 30_000,
   });
 }

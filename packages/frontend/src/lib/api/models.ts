@@ -11,9 +11,10 @@ export const modelCatalogKeys = {
   detail: ['modelCatalog'] as const,
 };
 
-export function useModelCatalogQuery() {
+export function useModelCatalogQuery({ enabled = true }: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: modelCatalogKeys.detail,
+    enabled,
     queryFn: async () => {
       try {
         const data = await apiClient<GetModelCatalogData>('/api/v1/models/config');

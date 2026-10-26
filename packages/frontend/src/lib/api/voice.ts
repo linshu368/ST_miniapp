@@ -49,11 +49,14 @@ export function usePatchVoiceConfigMutation() {
  * 生成是后台异步跑的，没有推送通道，只能轮询；有 pending 才轮询，
  * 全部收口后自动停下——否则每个开着的聊天页都会一直在打这个接口。
  */
-export function useSessionVoiceQuery(sessionId: string | undefined) {
+export function useSessionVoiceQuery(
+  sessionId: string | undefined,
+  options: { enabled?: boolean } = {}
+) {
   const queryClient = useQueryClient();
   return useQuery<GetSessionVoiceData>({
     queryKey: voiceKeys.session(sessionId ?? ''),
-    enabled: Boolean(sessionId),
+    enabled: Boolean(sessionId) && options.enabled !== false,
     queryFn: async () => {
       if (!sessionId) throw new Error('session id is required');
       const next = await apiClient<GetSessionVoiceData>(

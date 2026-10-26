@@ -98,10 +98,11 @@ async function postDailyCheckin(): Promise<PostDailyCheckinData> {
 
 // ==== React Query hooks（业务层唯一入口）====
 
-export function usePaymentPlansQuery() {
+export function usePaymentPlansQuery({ enabled = true }: { enabled?: boolean } = {}) {
   return useQuery<GetPaymentPlansData>({
     queryKey: paymentKeys.plans(),
     queryFn: fetchPlans,
+    enabled,
     // 响应同时包含运营可热更的余额不足提示语，每次进入充值页都拉取最新值。
     staleTime: 0,
     refetchOnMount: 'always',
