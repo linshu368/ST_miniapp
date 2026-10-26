@@ -116,3 +116,18 @@ describe('admin navigation', () => {
     expect(resolveAdminMenuSelection('text_postprocess')).toEqual({ view: 'text_postprocess' });
   });
 });
+
+describe('reply style options navigation', () => {
+  it('uses an independent page under platform rules without duplicate generic entries', () => {
+    const expected = { view: 'reply_style_options', configKey: 'reply_style_options' };
+    expect(resolveAdminMenuSelection('reply_style_options')).toEqual(expected);
+    expect(resolveAdminMenuSelection(configMenuKey('reply_style_options'))).toEqual(expected);
+    expect(sidebarManagedConfigKeys).not.toContain('reply_style_options');
+    expect(PLATFORM_INSTRUCTION_CONFIG_KEYS).toEqual([
+      'choice_rules',
+      'status_rules',
+      'memory_rules',
+      'system_instructions',
+    ]);
+  });
+});

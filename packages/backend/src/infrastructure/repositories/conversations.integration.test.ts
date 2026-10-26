@@ -442,6 +442,7 @@ describe.skipIf(!canRunAgainstDatabase)(
         pref_show_options: true,
         pref_show_status: true,
         pref_show_memory: true,
+        pref_reply_styles: {},
         pref_custom_instructions: null,
       });
     });

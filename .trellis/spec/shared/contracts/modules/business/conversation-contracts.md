@@ -5,7 +5,7 @@ scope: shared
 category: business
 status: active
 owners: [shared]
-last_verified_task: .trellis/tasks/10-10-image-plaza-v2/
+last_verified_task: .trellis/tasks/10-23-dialogue-preference/
 last_verified_at: 2026-10-13
 ---
 
@@ -60,3 +60,39 @@ Shared 只定义浏览器可见 DTO、错误码、容量上限和 runtime valida
 
 - 2026-09-18：任务 `图片生成 PostHog 接入规划`（`.trellis/tasks/archive/2026-09/09-17-image-generation-posthog-plan/`）写入图片生成 telemetry 事件契约与禁止字段；commit：`7ab4a18ac4924d9a23d35dfc6f4f75be0401c9fe`。
 - 2026-10-20：任务 `Remove confirmed repository noise`（`.trellis/tasks/archive/2026-10/10-20-remove-confirmed-repository-noise/`）删除无法恢复的乱码变更记录；commit：`63eee1e847f678f4b2c434f872425a40fc7f891a`。
+
+## Scenario: 对话思考开关与进度流（2026-10-23）
+
+### 1. Scope / Trigger
+
+角色聊天默认请求思考；思考是临时进度，不能变成角色正文或历史上下文。
+
+### 2. Signatures
+
+`SendMessageRequest` / `RegenerateRequest` 追加 `thinking_enabled?: boolean`；SSE 追加 `{type:'reasoning',text:string}`，`start.thinking_enabled?:boolean`。
+
+### 3. Contracts
+
+新UI默认显式true，HTTP缺字段按false兼容旧客户端；`start` 表示请求设置，不保证模型执行或公开思考。每轮转发最多 `MAX_CONVERSATION_REASONING_LENGTH=65_536` 字符。ChatMessage 历史 DTO 不新增思考字段；无新数据库/环境变量。兼容滚动部署：旧客户端未传开关按正文首字处理；新客户端遇旧服务仍可显示正文。
+
+### 4. Validation & Error Matrix
+
+非布尔开关→开轮前400；无公开文本/加密块→不编造；只有思考无正文→既有失败/不扣费；关闭仍返回思考→不向浏览器转发。遵照产品范围，只传平台通用参数，不对强制思考型号新增判断或特殊重试。
+
+### 5. Good / Base / Bad Cases
+
+Good：reasoning进度后delta正文，正文开始自动收起。Base：非推理模型只有delta。Bad：把reasoning拼进content，再用于语音/图片/收费。
+
+### 6. Tests Required
+
+开关默认/非法/send/regenerate、流事件顺序、关闭后意外思考、reasoning-only计费隔离；全消费者typecheck。fixture不能作为真实Provider/扣费或手机键盘实测。
+
+### 7. Wrong vs Correct
+
+Wrong：`{type:'delta',text:reasoning}`。Correct：`{type:'reasoning',text}` 单独消费，正文/后续prompt/历史不变。
+
+首字统一口径：开启深度思考时，真实思考文本首字与正文首字等效，满足原首字放行/截止/观测；关闭只算正文。等待提示、thinking标题、密文占位不计；只有思考无有效正文仍不得扣费。
+
+## 2026-10-23 可运营回复风格
+
+reply-style-options定义内部目录与公开metadata两个strictschema；公开仅id/name/description。两套用户偏好DTO增加optional pref_reply_styles布尔map，PATCH是部分map赋值。id为style-前缀、目录最多24项、偏好最多64键；旧响应缺失兼容。标记与规则不是公开用户数据。

@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils';
 import type { AssistantBodyPlan } from '@/lib/text-postprocess/reply-plan';
 import { CHAT_MARKDOWN_CLASS, ChatMarkdown } from './chat-markdown';
 import { getChatReplyPresentation } from './chat-reply-presentation';
+import { ChatThinking } from './chat-thinking';
 
 /**
  * 字号/行高/头像尺寸等取值照搬原版聊天页注入 ST iframe 的那套样式
@@ -71,6 +72,7 @@ interface ChatMessageBubbleProps {
   choiceDisabled?: boolean;
   onChoice?: (choice: ReplyChoicePayload) => void;
   detailsDefaultOpen?: Readonly<Record<string, boolean>>;
+  thinkingText?: string;
 }
 
 export function ChatMessageBubble({
@@ -88,6 +90,7 @@ export function ChatMessageBubble({
   choiceDisabled,
   onChoice,
   detailsDefaultOpen,
+  thinkingText,
 }: ChatMessageBubbleProps) {
   if (message.role === 'user') {
     return (
@@ -110,6 +113,14 @@ export function ChatMessageBubble({
           <span className={HEADER_TITLE_CLASS}>{characterName}</span>
         </div>
         <div className="min-w-0">
+          {thinkingText ? (
+            <ChatThinking
+              text={thinkingText}
+              streaming={Boolean(streaming)}
+              content={message.content}
+              onFirstTokenDisplayed={onFirstTokenDisplayed}
+            />
+          ) : null}
           <div className={cn('text-foreground', BODY_TEXT_CLASS)}>
             {message.content ? (
               <AssistantReplyBody
@@ -123,7 +134,7 @@ export function ChatMessageBubble({
                 detailsDefaultOpen={detailsDefaultOpen}
               />
             ) : null}
-            {streaming ? (
+            {streaming && message.content.trim() ? (
               <span
                 className="ml-0.5 inline-block h-[1.05em] w-[2px] translate-y-[0.15em] animate-pulse bg-primary align-middle"
                 aria-hidden
@@ -139,6 +150,11 @@ export function ChatMessageBubble({
           </div>
           {footer ? <div className="pt-1.5">{footer}</div> : null}
         </div>
+        {!message.content && streaming && !thinkingText ? (
+          <p className="mt-1 text-[12px] text-muted-foreground" role="status">
+            正在准备回复…
+          </p>
+        ) : null}
       </div>
     </div>
   );
@@ -162,6 +178,7 @@ export function ChatTypingBubble({
           <span className={HEADER_TITLE_CLASS}>{characterName}</span>
         </div>
         <div className="flex items-center gap-1 pt-1">
+          <span className="mr-1 text-[12px] text-muted-foreground">正在准备回复</span>
           {[0, 1, 2].map((index) => (
             <span
               key={index}

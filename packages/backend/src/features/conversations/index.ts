@@ -16,6 +16,7 @@ export { createReplyStreamSink, encodeStreamEvent, type ConversationStreamSink }
 export { conversationErrorStatus, sendConversationError } from './errors.js';
 
 export {
+  CONVERSATION_PREPARATION_TIMEOUT_MS,
   runConversationTurn,
   withConversationPreparationDeadline,
   toEngineCharacter,

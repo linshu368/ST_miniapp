@@ -33,11 +33,15 @@ export function mergeGenerationConfigPatch(
   current: GetGenerationConfigData,
   patch: PatchGenerationConfigRequest
 ): GetGenerationConfigData {
+  const { pref_reply_styles: stylePatch, ...fields } = patch;
   return {
     ...current,
     config: {
       ...current.config,
-      ...patch,
+      ...fields,
+      ...(stylePatch
+        ? { pref_reply_styles: { ...current.config.pref_reply_styles, ...stylePatch } }
+        : {}),
     },
   };
 }
@@ -53,6 +57,20 @@ export function rollbackGenerationConfigPatch(
 ): GetGenerationConfigData {
   const config = { ...current.config };
   for (const field of patchFields(request)) {
+    if (field === 'pref_reply_styles') {
+      const styles = { ...config.pref_reply_styles };
+      for (const [id, value] of Object.entries(request.pref_reply_styles ?? {})) {
+        if (!Object.is(styles[id], value)) continue;
+        const previous = previousConfig.pref_reply_styles;
+        if (previous && Object.prototype.hasOwnProperty.call(previous, id))
+          styles[id] = previous[id]!;
+        else delete styles[id];
+      }
+      if (Object.keys(styles).length > 0 || previousConfig.pref_reply_styles !== undefined)
+        config.pref_reply_styles = styles;
+      else delete config.pref_reply_styles;
+      continue;
+    }
     if (Object.is(config[field], request[field])) {
       Object.assign(config, { [field]: previousConfig[field] });
     }
@@ -66,11 +84,21 @@ export function rollbackGenerationConfigPatch(
 export function mergeGenerationConfigResponse(
   current: GetGenerationConfigData,
   response: PatchGenerationConfigData,
-  request: PatchGenerationConfigRequest
+  request: PatchGenerationConfigRequest,
+  onlyIfUnchanged = true
 ): GetGenerationConfigData {
   const config = { ...current.config };
   for (const field of patchFields(request)) {
-    if (Object.is(config[field], request[field])) {
+    if (field === 'pref_reply_styles') {
+      const styles = { ...config.pref_reply_styles };
+      for (const [id, value] of Object.entries(request.pref_reply_styles ?? {})) {
+        if (!onlyIfUnchanged || Object.is(styles[id], value))
+          styles[id] = response.config.pref_reply_styles?.[id] === true;
+      }
+      config.pref_reply_styles = styles;
+      continue;
+    }
+    if (!onlyIfUnchanged || Object.is(config[field], request[field])) {
       Object.assign(config, { [field]: response.config[field] });
     }
   }
@@ -78,6 +106,9 @@ export function mergeGenerationConfigResponse(
     ...current,
     config,
     word_count_tiers: response.word_count_tiers,
+    ...(response.reply_style_options !== undefined
+      ? { reply_style_options: response.reply_style_options }
+      : {}),
   };
 }
 
@@ -95,7 +126,7 @@ export function useGenerationConfigQuery(enabled = true) {
 }
 
 /**
- * 只改三个 pref_* 字段。
+ * 只修改用户级回复偏好；动态回复风格按选项 id 局部合并。
  * 切模型不走这里——那要走 /api/v1/models/select，它带着「切到付费模型前先查余额」的闸门。
  */
 export function usePatchGenerationConfigMutation({
@@ -137,13 +168,10 @@ export function usePatchGenerationConfigMutation({
       }
     },
     onSuccess: (data, request, context) => {
-      if (!context?.optimistic) {
-        queryClient.setQueryData<GetGenerationConfigData>(generationConfigKeys.detail, data);
-        return;
-      }
-
       queryClient.setQueryData<GetGenerationConfigData>(generationConfigKeys.detail, (current) =>
-        current ? mergeGenerationConfigResponse(current, data, request) : data
+        current
+          ? mergeGenerationConfigResponse(current, data, request, context?.optimistic ?? false)
+          : data
       );
     },
   });

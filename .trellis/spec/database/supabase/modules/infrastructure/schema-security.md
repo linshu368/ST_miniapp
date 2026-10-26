@@ -5,7 +5,7 @@ scope: database
 category: infrastructure
 status: active
 owners: [database]
-last_verified_task: .trellis/tasks/10-10-image-plaza-v2/
+last_verified_task: .trellis/tasks/10-23-dialogue-preference/
 last_verified_at: 2026-10-13
 ---
 
@@ -65,3 +65,7 @@ last_verified_at: 2026-10-13
 ## T10 历史处置（本地实现，未远端执行）
 
 新history_disposition只保全类型化原名调用字段/受控诊断，清父表raw并规范化已有OR诊断；不存未知JSON、自由文本错误或原始归档，Venice/业务/账务不写。LIMIT2001先预算、最多2000、指纹CAS/事务/ID/provider/类型守卫。主表DROP仅在两库未执行证明后修正：以真实snapshot schema账本边界分类旧终态账单/dedup/失败/真实pending，旧pending原样保留不伪造结算；现代未知/漏快照/身份或状态冲突/关联reserved继续阻断。先处置文件成功记账再主表DROP，TEST证据不替代Production；超窗旧账务停止自动回捞、独立核验。
+
+## 2026-10-23 可运营回复风格
+
+20261023_reply_style_options.sql（迁移交付，执行状态见任务验收）新增app_core用户偏好JSONB及校验helper/service_role-only原子更新RPC，seed空正式UI目录。扩展admin managed-key/validator和两表实际CHECK，保留前置名单/验证状态/ACL；无历史重写。事务lock5s/statement60s，repeat不覆盖运营值。测试/生产独立门禁，先迁移再消费者。

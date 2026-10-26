@@ -59,3 +59,4 @@ export * from './telegram-avatar';
 export * from './user-placeholder';
 export * from './rich-reply-protocol';
 export * from './telemetry/sanitize';
+export * from './api/reply-style-options';
