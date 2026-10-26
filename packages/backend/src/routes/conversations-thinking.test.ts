@@ -10,6 +10,7 @@ const routing = vi.hoisted(() => ({
   getOrCreate: vi.fn(),
   patch: vi.fn(),
   runtime: vi.fn(),
+  cancel: vi.fn(),
 }));
 
 vi.mock('../middleware/auth.js', () => ({
@@ -31,7 +32,9 @@ vi.mock('../infrastructure/repositories/ChatSessionRepository.js', () => ({
   toChatSession: (row: unknown) => row,
 }));
 vi.mock('../infrastructure/repositories/ConversationHistoryRepository.js', () => ({
-  ConversationHistoryRepository: class {},
+  ConversationHistoryRepository: class {
+    cancelTurn = routing.cancel;
+  },
   toChatMessages: () => [],
 }));
 vi.mock('../infrastructure/repositories/MiniappUserSettingsRepository.js', () => ({
@@ -74,6 +77,7 @@ beforeEach(() => {
   Object.values(routing).forEach((mock) => mock.mockReset());
   routing.user.mockResolvedValue({ id: 'test-user' });
   routing.requireSession.mockResolvedValue({ id: SESSION, user_id: 'test-user' });
+  routing.cancel.mockResolvedValue({ id: SESSION, status: 'stream_interrupted' });
   // A pre-stream outcome avoids any real LLM, DB or wallet work in this route contract test.
   routing.runTurn.mockResolvedValue({ kind: 'upstream_error', upstreamStatus: 503 });
   routing.getGenerationConfig.mockResolvedValue({
@@ -121,6 +125,47 @@ beforeEach(() => {
     version: 1,
     textValue: null,
   });
+});
+
+describe('explicit cancel intent validation', () => {
+  it.each([undefined, 'user_stop', 'first_token_timeout'] as const)(
+    'passes the compatible %s intent only after ownership validation',
+    async (reason) => {
+      const app = await buildApp();
+      try {
+        const result = await app.inject({
+          method: 'POST',
+          url: `/api/v1/conversations/${SESSION}/cancel`,
+          payload: { assistant_message_id: SESSION, ...(reason ? { reason } : {}) },
+        });
+        expect(result.statusCode).toBe(200);
+        expect(routing.cancel).toHaveBeenCalledExactlyOnceWith(SESSION, SESSION, reason);
+        expect(routing.requireSession.mock.invocationCallOrder[0]).toBeLessThan(
+          routing.cancel.mock.invocationCallOrder[0]!
+        );
+      } finally {
+        await app.close();
+      }
+    }
+  );
+  it.each([null, 1, 'timeout', 'user_cancelled', {}, []])(
+    'rejects invalid reason %j before database work',
+    async (reason) => {
+      const app = await buildApp();
+      try {
+        const result = await app.inject({
+          method: 'POST',
+          url: `/api/v1/conversations/${SESSION}/cancel`,
+          payload: { assistant_message_id: SESSION, reason },
+        });
+        expect(result.statusCode).toBe(400);
+        expect(routing.user).not.toHaveBeenCalled();
+        expect(routing.cancel).not.toHaveBeenCalled();
+      } finally {
+        await app.close();
+      }
+    }
+  );
 });
 
 async function buildApp() {

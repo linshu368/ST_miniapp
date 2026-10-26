@@ -66,7 +66,7 @@ vi.mock('../../lib/supabase.js', () => ({
   }),
 }));
 
-const { runSettlement } = await import('./settle.js');
+const { runSettlement, settleGeneration } = await import('./settle.js');
 
 function fakeLog(): FastifyBaseLogger {
   const log = {
@@ -117,6 +117,82 @@ describe('runSettlement', () => {
     fetchGenerationDataForSettlement.mockResolvedValue(null);
     upsertVeniceHistory.mockResolvedValue(undefined);
     upsertOpenRouterHistory.mockResolvedValue(undefined);
+  });
+
+  it('settles an admitted manual stop without waiting for provider stop metadata', async () => {
+    await runSettlement(
+      entry({
+        status: 'stream_interrupted',
+        finish_reason: 'user_cancelled',
+        assistant_reply: null,
+        generation_id: null,
+      }),
+      fakeLog()
+    );
+    expect(fetchGenerationDataForSettlement).not.toHaveBeenCalled();
+    expect(applyLlmCharge).toHaveBeenCalledWith(
+      expect.objectContaining({
+        calculatedAmount: 50,
+        finishReason: 'user_cancelled',
+        assistantReply: null,
+      })
+    );
+    expect(recordBillingOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({
+        finishReason: 'user_cancelled',
+        billingSettledAt: expect.any(String),
+      })
+    );
+  });
+
+  it('manual billing retries stay unsettled without delaying an already stopped generation', async () => {
+    applyLlmCharge.mockResolvedValueOnce({ pending: true, chargedAmount: 0, calculatedAmount: 50 });
+    await expect(
+      runSettlement(
+        entry({ status: 'stream_interrupted', finish_reason: 'user_cancelled' }),
+        fakeLog()
+      )
+    ).resolves.toBeUndefined();
+    expect(recordBillingOutcome.mock.calls.at(-1)?.[0]).not.toHaveProperty('billingSettledAt');
+    applyLlmCharge.mockRejectedValueOnce(new Error('wallet DB unavailable'));
+    await expect(
+      runSettlement(
+        entry({ status: 'stream_interrupted', finish_reason: 'user_cancelled' }),
+        fakeLog()
+      )
+    ).resolves.toBeUndefined();
+    expect(recordBillingOutcome.mock.calls.at(-1)?.[0]).not.toHaveProperty('billingSettledAt');
+    expect(saveBillingSnapshot).toHaveBeenCalledWith(
+      'row-1',
+      expect.objectContaining({ charge_id: 'charge-1', fixed_deduction: 50 })
+    );
+  });
+
+  it('manual stop queues the same asynchronous settlement as a standard reply', async () => {
+    let finishCharge: (() => void) | undefined;
+    applyLlmCharge.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishCharge = () => resolve({ pending: false, chargedAmount: 50, calculatedAmount: 50 });
+        })
+    );
+    expect(
+      settleGeneration(
+        entry({ status: 'stream_interrupted', finish_reason: 'user_cancelled' }),
+        fakeLog()
+      )
+    ).toBeUndefined();
+    await vi.waitFor(() => expect(finishCharge).toBeDefined());
+    expect(recordBillingOutcome).not.toHaveBeenCalled();
+    finishCharge!();
+    await vi.waitFor(() =>
+      expect(recordBillingOutcome).toHaveBeenCalledWith(
+        expect.objectContaining({
+          billingSettledAt: expect.any(String),
+          finishReason: 'user_cancelled',
+        })
+      )
+    );
   });
 
   it('keeps a completed server reply unsettled while client display is pending', async () => {

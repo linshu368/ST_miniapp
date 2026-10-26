@@ -336,6 +336,7 @@ describe('useConversationTurn asynchronous ownership', () => {
     expect(runtime.cancel).toHaveBeenCalledExactlyOnceWith({
       sessionId: 's1',
       assistantMessageId: 'a1',
+      reason: 'first_token_timeout',
     });
     finish();
     await run;
@@ -477,7 +478,11 @@ describe('useConversationTurn asynchronous ownership', () => {
     expect(after.generating).toBe(true);
     expect(after.cancelling).toBe(false);
     expect(after.streamError).toContain('请稍后重试');
-    expect(runtime.cancel).toHaveBeenCalledWith({ sessionId: 's1', assistantMessageId: 'a1' });
+    expect(runtime.cancel).toHaveBeenCalledWith({
+      sessionId: 's1',
+      assistantMessageId: 'a1',
+      reason: 'user_stop',
+    });
     await after.abort();
     expect(runtime.cancel).toHaveBeenCalledTimes(2);
   });
@@ -553,7 +558,11 @@ describe('useConversationTurn asynchronous ownership', () => {
     await vi.advanceTimersByTimeAsync(500);
     await cancellation;
     expect(runtime.cancel).toHaveBeenCalledTimes(1);
-    expect(runtime.cancel).toHaveBeenCalledWith({ sessionId: 's1', assistantMessageId: 'late-a1' });
+    expect(runtime.cancel).toHaveBeenCalledWith({
+      sessionId: 's1',
+      assistantMessageId: 'late-a1',
+      reason: 'user_stop',
+    });
     expect(RenderTurn().cancelling).toBe(false);
     finish();
     await run;
@@ -677,7 +686,11 @@ describe('useConversationTurn asynchronous ownership', () => {
     expect(runtime.stream).toHaveBeenCalledTimes(1);
     const active = RenderTurn();
     await active.abort();
-    expect(runtime.cancel).toHaveBeenCalledWith({ sessionId: 's1', assistantMessageId: 'a1' });
+    expect(runtime.cancel).toHaveBeenCalledWith({
+      sessionId: 's1',
+      assistantMessageId: 'a1',
+      reason: 'user_stop',
+    });
     const cacheUpdater = runtime.client.setQueryData.mock.calls.at(-1)?.[1] as (
       detail: unknown
     ) => { messages: ChatMessage[] };

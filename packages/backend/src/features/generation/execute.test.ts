@@ -777,6 +777,101 @@ describe('reasoning is progress, never a roleplay answer or billing proof', () =
 });
 
 describe('cancellation, deadlines and billing arbitration', () => {
+  it.each([
+    ...(['partial', 'reasoning', 'empty'] as const).map((kind) => ({ kind, free: false })),
+    ...(['partial', 'reasoning', 'empty'] as const).map((kind) => ({ kind, free: true })),
+  ])(
+    'a manual stop with $kind output (free=$free) queues its original quote after quota finalization',
+    async ({ kind, free }) => {
+      const reasoning = `data: ${JSON.stringify({ id: 'gen-1', choices: [{ delta: { reasoning: 'thought' } }] })}\n\n`;
+      stubUpstream(
+        sseResponse(
+          kind === 'partial' ? [DELTA('partial')] : kind === 'reasoning' ? [reasoning] : []
+        )
+      );
+      quotaState.granted = free;
+      billingContext.isFree = free;
+      quotaState.finalize.mockResolvedValue({ status: 'consumed' });
+      const result = await execute(
+        request(),
+        {
+          onBeforeSettle: async (observed, release) => {
+            await release();
+            return { ...observed, completed: false, finishReason: 'user_cancelled' };
+          },
+        },
+        fakeLogger()
+      );
+      expect(savedHistory()[0]).toMatchObject({
+        finish_reason: 'user_cancelled',
+        fixed_deduction: free ? 0 : 48,
+      });
+      expect(result).toMatchObject({
+        status: 'stream_interrupted',
+        finishReason: 'user_cancelled',
+      });
+      expect(quotaState.finalize.mock.calls.every(([success]) => success === false)).toBe(true);
+    }
+  );
+
+  it('a manual stop awaiting upstream headers retains the admitted quote and charge ID', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        (_url: string, init: { signal: AbortSignal }) =>
+          new Promise<Response>((_resolve, reject) => {
+            init.signal.addEventListener('abort', () => reject(init.signal.reason), { once: true });
+          })
+      )
+    );
+    const quote = vi.fn();
+    const result = await execute(
+      request({ signal: AbortSignal.timeout(30) }),
+      {
+        onBeforeDispatch: async (snapshot) => {
+          quote(snapshot);
+        },
+        onBeforeSettle: async (observed) => ({ ...observed, finishReason: 'user_cancelled' }),
+      },
+      fakeLogger()
+    );
+    expect(result).toMatchObject({
+      status: 'stream_interrupted',
+      finishReason: 'user_cancelled',
+      generationId: null,
+    });
+    expect(result.chargeId).toBeTruthy();
+    expect(savedHistory()).toHaveLength(1);
+    expect(savedHistory()[0]).toMatchObject({
+      charge_id: result.chargeId,
+      fixed_deduction: 48,
+      finish_reason: 'user_cancelled',
+      generation_id: null,
+    });
+    expect(quote).toHaveBeenCalledOnce();
+  });
+
+  it('a system deadline while awaiting headers stays a free failure', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        (_url: string, init: { signal: AbortSignal }) =>
+          new Promise<Response>((_resolve, reject) => {
+            init.signal.addEventListener('abort', () => reject(init.signal.reason), { once: true });
+          })
+      )
+    );
+    const result = await execute(
+      request({ signal: AbortSignal.timeout(30) }),
+      {
+        onBeforeSettle: async (observed) => observed,
+      },
+      fakeLogger()
+    );
+    expect(result.status).toBe('upstream_error');
+    expect(savedHistory()).toHaveLength(0);
+  });
+
   it('cancel winner suppresses success even after all upstream tokens and DONE arrive', async () => {
     stubUpstream(sseResponse([DELTA('late complete'), 'data: [DONE]\n\n']));
     const gate = vi.fn(async (observed) => ({

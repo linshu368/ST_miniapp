@@ -151,7 +151,7 @@ async function checkInviteChatRoundsReward(userId: string, log: FastifyBaseLogge
 }
 
 /**
- * 结算一轮生成。fire-and-forget：调用方不 await，异常一律内部消化。
+ * 正常完成和主动停止均异步结算；失败使用原报价和 charge_id 交给既有同步任务恢复。
  */
 export function settleGeneration(entry: GenerationSettlementEntry, log: FastifyBaseLogger): void {
   const clog = log.child({ module: 'generation-settle' });
@@ -176,6 +176,7 @@ export async function runSettlement(
   const provider = entry.provider ?? 'openrouter';
   const wantsUsageData =
     provider === 'openrouter' &&
+    entry.finish_reason !== 'user_cancelled' &&
     Boolean(entry.generation_id) &&
     (entry.fixed_deduction > 0 || entry.first_token_observation);
   let finishReason = entry.finish_reason ?? null;
@@ -206,7 +207,11 @@ export async function runSettlement(
 
   // User cancellation/deadline is a local business outcome, never replaced by
   // upstream stop metadata; otherwise later reconciliation could reopen billing.
-  if (entry.finish_reason === 'cancelled' || entry.finish_reason === 'timeout') {
+  if (
+    entry.finish_reason === 'cancelled' ||
+    entry.finish_reason === 'user_cancelled' ||
+    entry.finish_reason === 'timeout'
+  ) {
     finishReason = entry.finish_reason;
     businessFinishReason = entry.finish_reason;
   }
@@ -238,7 +243,7 @@ export async function runSettlement(
     }
   }
 
-  // 每轮生成都保留一条明细；只有 finish_reason=stop 的正常完整回复才扣星尘。
+  // Manual stops use the persisted intent/quote gate; other interrupted calls stay free.
   if (willCharge) {
     const round = await chargeRound({ entry, providerMetadata, finishReason, clog });
     actualDeduction = round.chargedAmount;
