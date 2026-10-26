@@ -69,3 +69,7 @@ last_verified_at: 2026-10-13
 ## 2026-10-23 可运营回复风格
 
 20261023_reply_style_options.sql（迁移交付，执行状态见任务验收）新增app_core用户偏好JSONB及校验helper/service_role-only原子更新RPC，seed空正式UI目录。扩展admin managed-key/validator和两表实际CHECK，保留前置名单/验证状态/ACL；无历史重写。事务lock5s/statement60s，repeat不覆盖运营值。测试/生产独立门禁，先迁移再消费者。
+
+## 2026-10-26 轻量经营统计
+
+`20261026_grafana_light_core.sql` 新增 miniapp_analytics.grafana_core_daily 日/型号派生汇总，运行时不依赖。owner-only refresh_grafana_core_day 一次仅处理近14天内的一天，先按 created_at 范围过滤后关联计费/供应商标量，保留实际成本覆盖率、去重每日用户和实际支付/星尘口径。只有一个30分钟 cron 更新今天/昨天，caller statement5s/lock1s/禁并行、事务 advisory lock，失败保留旧快照；读者仅 SELECT 聚合，不能刷新或接触正文。退出11个旧全历史 cron，保留其旧数据对象。生产新 cron 在实测与引导填充前关闭，执行状态见任务10-26-grafana-light-core。

@@ -1,0 +1,43 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "links": [],
+  "panels": [
+    {
+      "id": 1,
+      "title": "已合并到轻量经营看板",
+      "type": "text",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 9
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "为保护线上体验，本看板的重复/全历史统计已退出常驻刷新。\n\n请查看：[经营核心指标](/d/st-model-overview) · [用户首 token 与兜底体验](/d/chat-first-token-manual?var-measurement=visible_dom_after_frame_v2)。\n\n原始业务数据和历史缓存保留；人群生命周期、长周期复购、角色卡/配额/配置版本分层暂不定时重算，需要具体决策时再按限定范围分析。"
+      }
+    }
+  ],
+  "refresh": "",
+  "schemaVersion": 42,
+  "tags": ["ST TelegramBot", "DAU", "支付", "用户结构"],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "Asia/Shanghai",
+  "title": "已合并｜03｜用户生态与支付（可信口径）",
+  "uid": "st-user-ecosystem",
+  "version": 1,
+  "weekStart": "",
+  "description": "已合并：使用轻量经营核心与真实首字体验两张看板。"
+}

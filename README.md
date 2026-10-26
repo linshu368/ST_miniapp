@@ -235,3 +235,5 @@ T10 新增 `20261016_openrouter_history_disposition.sql`，先按现有mapper白
 首 token 兜底修复的明确口径为首发实际派发后最多4秒、兜底实际派发后最多2秒、用户提交到可见首字总硬上限10秒。总时间包含前置/网络/显示；思考模式同样受约束。新增迁移须先TEST后生产，现有显式6秒配置须经运营发布改为10秒；本地代码完成不代表已上线。详见[运行与数据口径](docs/first-token-fallback.md)。
 
 新轮首 token 可见确认与计费：`20261026_first_token_visible_billing.sql` 将客户端真实可见回报加入既有计费资格判断；服务端完成而客户端超时无字时不扣星尘、不消费免费次数。缺报 pending 后保守免收，既有 sync 依据 RPC 实际 pending 保留回捞；存量政策不改。超时采用灰色轻提示。详见 `docs/first-token-fallback.md`。
+
+Grafana 经营统计的轻量口径、刷新预算及发布恢复流程见 [docs/grafana/README.md](docs/grafana/README.md)。真实首字体验看板与经营日汇总分别服务用户体验与经营判断。
