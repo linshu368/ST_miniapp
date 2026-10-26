@@ -73,6 +73,7 @@ DO $$ DECLARE k uuid; r jsonb; BEGIN
   r:=billing.finalize_character_free_chat_round(k,true);
   PERFORM vip_t4_test.assert(r->>'status'='reserved' AND (r->>'used_rounds')::integer=0,'server completion consumed unseen free round');
   PERFORM visible_billing_test.report(k,'timed_out');
+  PERFORM vip_t4_test.assert((SELECT status='released' FROM billing.character_free_chat_quota_decisions WHERE charge_key=k),'receipt did not release quota immediately');
   r:=billing.finalize_character_free_chat_round(k,true);
   PERFORM vip_t4_test.assert(r->>'status'='released' AND (r->>'used_rounds')::integer=0,'timeout consumed free round');
   PERFORM billing.finalize_character_free_chat_round(k,true);

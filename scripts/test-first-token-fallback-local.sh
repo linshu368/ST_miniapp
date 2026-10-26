@@ -150,6 +150,8 @@ print(s.replace('miniapp.users','app_core.users').replace('miniapp.characters','
 PYQUOTA
 "${task_psql[@]}" -f "$task_root/packages/shared/migrations/20261026_first_token_visible_billing.sql" >/dev/null
 "${task_psql[@]}" -f "$task_root/packages/shared/migrations/20261026_first_token_visible_billing.sql" >/dev/null
+"${task_psql[@]}" -f "$task_root/packages/shared/migrations/20261026_first_token_receipt_quota_release.sql" >/dev/null
+"${task_psql[@]}" -f "$task_root/packages/shared/migrations/20261026_first_token_receipt_quota_release.sql" >/dev/null
 "${task_psql[@]}" -f "$task_root/packages/shared/migrations/tests/vip_llm_t4_scenarios.sql" >/dev/null
 "${task_psql[@]}" -f "$task_root/packages/shared/migrations/tests/first_token_visible_billing.sql" >/dev/null
 # Race a committed timeout receipt against a settlement from another connection.
