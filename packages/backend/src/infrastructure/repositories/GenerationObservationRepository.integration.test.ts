@@ -89,15 +89,13 @@ describe.skipIf(!url)('real local PostgREST generation facts', () => {
     mode: 'regenerate' as const,
   };
   beforeAll(async () => {
-    const { error } = await db
-      .from('chat_history')
-      .insert({
-        id: h,
-        user_id: owner,
-        session_id: session,
-        model: 'selected-source',
-        revision: 0,
-      });
+    const { error } = await db.from('chat_history').insert({
+      id: h,
+      user_id: owner,
+      session_id: session,
+      model: 'selected-source',
+      revision: 0,
+    });
     if (error) throw error;
   });
   it('durably prepares a request before quoting, then binds exactly one frozen quote', async () => {
@@ -184,12 +182,10 @@ describe.skipIf(!url)('real local PostgREST generation facts', () => {
         first_token_visible_ms: null,
       })
     ).toBe(true);
-    const rows = await client
-      .schema('miniapp_analytics')
-      .rpc('chat_first_token_report', {
-        p_from: '2026-10-22T00:00:00+08',
-        p_to: '2026-10-23T00:00:00+08',
-      });
+    const rows = await client.schema('miniapp_analytics').rpc('chat_first_token_report', {
+      p_from: '2026-10-22T00:00:00+08',
+      p_to: '2026-10-23T00:00:00+08',
+    });
     if (rows.error) throw rows.error;
     const report = (rows.data as Array<Record<string, unknown>>).find(
       (r) => r.model_id === 'rpc-selected'
@@ -220,13 +216,45 @@ describe.skipIf(!url)('real local PostgREST generation facts', () => {
       .eq('id', h);
     expect(content.error?.code).toBe('42501');
     const anonymous = createClient(endpoint, token('anon'), options);
-    const denied = await anonymous
-      .schema('experience')
-      .rpc('report_chat_first_token', {
-        p_user_id: owner,
-        p_session_id: session,
-        p_report: firstReport,
-      });
+    const denied = await anonymous.schema('experience').rpc('report_chat_first_token', {
+      p_user_id: owner,
+      p_session_id: session,
+      p_report: firstReport,
+    });
     expect(denied.error).not.toBeNull();
+  });
+
+  it('returns terminal HTTP 409 for permanent delivery conflicts instead of retrying transactions', async () => {
+    const primary = await db
+      .rpc('select_chat_generation_delivery', {
+        p_history_id: h,
+        p_attempt_id: primaryId,
+        p_generation_id: `observer-${h}`,
+      })
+      .abortSignal(AbortSignal.timeout(1500));
+    expect(primary.status).toBe(409);
+    expect(primary.error?.code).toBe('PT409');
+    const ended = await db.from('chat_history').update({ status: 'success' }).eq('id', h);
+    expect(ended.error).toBeNull();
+    const stale = await db
+      .rpc('begin_chat_generation_observation', { p_history_id: h, p_input: {} })
+      .abortSignal(AbortSignal.timeout(1500));
+    expect(stale.status).toBe(409);
+    expect(stale.error?.code).toBe('PT409');
+    const fallback = await db
+      .rpc('prepare_chat_generation_fallback', {
+        p_history_id: h,
+        p_attempt_id: randomUUID(),
+        p_triggered_ms: 4000,
+      })
+      .abortSignal(AbortSignal.timeout(1500));
+    expect(fallback.status).toBe(409);
+    expect(fallback.error?.code).toBe('PT409');
+    const unchanged = await db
+      .from('chat_generation_requests')
+      .select('delivery_attempt_id')
+      .eq('chat_history_id', h)
+      .single();
+    expect(unchanged.data?.delivery_attempt_id).toBe(fallbackId);
   });
 });

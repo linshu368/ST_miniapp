@@ -4,13 +4,12 @@
  * settle.ts 即时结算与 sync-job.ts 回捞共用的定档扣费拼装：
  *   - resolveReplyOutcome：回复体验口径（complete / incomplete / empty）；
  *   - resolveBillingChatStatus：RPC 闸门输入 chat_status
- *     （finish_reason 未到且有 generation_id 时报 'success'，其余用生成终态原样）；
+ *     （finish_reason 未到且有 generation_id 时报 'success'；终态空回复降级为中断）；
  *   - 免费额度收口条件（complete 且 finish_reason=stop）只写一遍。
  *
  * 回捞路径已按 settle 口径接入：success + length/content_filter 是 incomplete，
  * 不再因为 chat_history.status=success 就打 complete。金额仍由 RPC 按
  * chat_status + finish_reason 决定（081），charge_id 幂等，不会多扣。
- *
  * 已存在的 charged / free 行也可以再进这里：RPC 对同 charge_id 直接返回原行，
  * 随后补跑 finalizePending（非 reserved 为 no-op）并把金额交回给调用方回写。
  * 不回写 chat_history。
@@ -59,13 +58,18 @@ export function resolveReplyOutcome(input: {
 /**
  * RPC 闸门输入 chat_status。与抽出前 settle chargeRound 相同：
  * finish_reason 未到但已拿到 generation_id 时报 'success'，让 RPC 判
- * pending_finish_reason 等回捞；其余情形原样使用生成终态。
+ * pending_finish_reason 等回捞。已得到终态却没有可见正文时降级为中断，
+ * 防止异常的 success + stop 空回复绕过金额闸门。
  */
 export function resolveBillingChatStatus(input: {
   generationStatus: string;
   finishReason: string | null;
   generationId: string | null;
+  replyOutcome: ReplyOutcome;
 }): string {
+  if (input.finishReason !== null && input.replyOutcome === 'empty') {
+    return 'stream_interrupted';
+  }
   return input.finishReason === null && input.generationId ? 'success' : input.generationStatus;
 }
 
@@ -99,6 +103,8 @@ export interface LlmChargeCommand {
 }
 
 export interface LlmChargeResult {
+  /** A display receipt or provider finish reason is still pending. */
+  pending: boolean;
   replyOutcome: ReplyOutcome;
   billingChatStatus: string;
   /** RPC 实际扣减额 */
@@ -122,6 +128,7 @@ export async function applyLlmCharge(command: LlmChargeCommand): Promise<LlmChar
     generationStatus: command.generationStatus,
     finishReason: command.finishReason,
     generationId: command.generationId,
+    replyOutcome,
   });
 
   const observed = command.observedModel?.trim() ? command.observedModel : null;
@@ -157,14 +164,18 @@ export async function applyLlmCharge(command: LlmChargeCommand): Promise<LlmChar
 
   // 免费额度两阶段收口：只有自然收尾的完整回复才消费预留，其余释放。
   // finish_reason 未到时保持预留，等回捞拿到终态后再走到这里。
-  if (command.finishReason !== null) {
+  if (command.finishReason !== null && result.charge.status !== 'pending') {
     await freeQuotas().finalizePending(
       command.chargeId,
-      replyOutcome === 'complete' && command.finishReason === 'stop'
+      result.charge.metadata?.delivery_billing_gate === 'user_stopped' ||
+        (replyOutcome === 'complete' &&
+          command.finishReason === 'stop' &&
+          result.charge.metadata?.delivery_billing_gate !== 'waived')
     );
   }
 
   return {
+    pending: result.charge.status === 'pending',
     replyOutcome,
     billingChatStatus,
     chargedAmount: Number(result.charge.charged_amount),

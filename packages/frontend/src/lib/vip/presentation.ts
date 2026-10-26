@@ -13,8 +13,9 @@ import { formatNumber, formatYuanShort } from '@/lib/utils/payment';
  */
 export function formatDiscountLabel(rate: number): string | null {
   if (!Number.isFinite(rate) || rate <= 0 || rate > 1) return null;
-  const percent = Math.round(rate * 1000) / 10;
-  return `${Number.isInteger(percent) ? String(percent) : String(percent)}折`;
+  // 中文折数以十为基准：0.95 是 9.5 折，不能直接把百分比写成 95 折。
+  const discount = Math.round(rate * 1000) / 100;
+  return `${discount}折`;
 }
 
 export function publishedDiscountRate(

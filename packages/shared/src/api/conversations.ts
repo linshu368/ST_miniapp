@@ -4,6 +4,11 @@
 
 import type { PreferredWordCount } from './settings';
 import { z } from 'zod';
+import {
+  ReplyStylePreferencesSchema,
+  type ReplyStylePreferences,
+  type PublicReplyStyleOption,
+} from './reply-style-options';
 import type { PublicWordCountTiers } from './word-count-tiers';
 
 // ==== 领域对象 ====
@@ -11,6 +16,9 @@ import type { PublicWordCountTiers } from './word-count-tiers';
 export type ChatMessageRole = 'user' | 'assistant';
 
 export type ChatMessageStatus = 'streaming' | 'complete' | 'interrupted' | 'failed';
+
+/** Maximum provider-exposed reasoning characters forwarded or retained for one turn. */
+export const MAX_CONVERSATION_REASONING_LENGTH = 65_536;
 
 export interface ChatMessage {
   id: string;
@@ -52,7 +60,7 @@ export interface ChatSession {
 
 /**
  * 用户级生成配置：对该用户所有会话生效，不做会话级覆盖（总方案决策 10）。
- * 全部落在 app_core.miniapp_user_settings 的既有字段上，M1 只建读取通道、不新增列。
+ * 存储于 app_core.miniapp_user_settings；公开数据不包含运营规则。
  */
 export interface UserGenerationConfig {
   /**
@@ -65,6 +73,8 @@ export interface UserGenerationConfig {
   pref_show_options: boolean;
   pref_show_status: boolean;
   pref_show_memory: boolean;
+  /** Missing means no selected styles; independent boolean choices. */
+  pref_reply_styles?: ReplyStylePreferences;
   pref_custom_instructions: string | null;
 }
 
@@ -76,6 +86,7 @@ export const UserGenerationConfigSchema: z.ZodType<UserGenerationConfig> = z
     pref_show_options: z.boolean(),
     pref_show_status: z.boolean(),
     pref_show_memory: z.boolean(),
+    pref_reply_styles: ReplyStylePreferencesSchema.optional(),
     pref_custom_instructions: z.string().nullable(),
   })
   .strict();
@@ -86,6 +97,9 @@ export const UserGenerationConfigSchema: z.ZodType<UserGenerationConfig> = z
  * 不会以 stream 事件的形式出现。
  */
 export type ConversationErrorCode =
+  | 'first_token_timeout'
+  | 'fallback_first_token_timeout'
+  | 'primary_first_token_timeout'
   | 'session_not_found'
   | 'character_not_found'
   /** 409：该会话已有一条 status='streaming' 的 assistant 消息尚未收口 */
@@ -174,11 +188,14 @@ export interface SendMessageRequest {
   /** Correlation only; not an idempotency key or a billing identifier. */
   request_id?: string;
   content: string;
+  /** New UI defaults to true; omission keeps older clients on the content-only path. */
+  thinking_enabled?: boolean;
 }
 
 /** 重生成只作用于最后一轮，轮次由后端判定，无需入参 */
 export interface RegenerateRequest {
   request_id?: string;
+  thinking_enabled?: boolean;
 }
 
 // ==== SSE 事件契约 ====
@@ -200,6 +217,8 @@ export interface ConversationStreamStartEvent {
   user_message_id: string | null;
   assistant_message_id: string;
   revision: number;
+  /** Requested setting for this turn, not a guarantee that the model exposes reasoning. */
+  thinking_enabled?: boolean;
   /** 本轮开轮时绑定的规则版本。旧 start 事件没有该字段时按 null 解释。 */
   postprocess_version?: number | null;
 }
@@ -207,6 +226,12 @@ export interface ConversationStreamStartEvent {
 /** 增量：text 是本次新增的片段，不是累积全文 */
 export interface ConversationStreamDeltaEvent {
   type: 'delta';
+  text: string;
+}
+
+/** Provider-exposed progress only; never part of the saved roleplay answer or context. */
+export interface ConversationStreamReasoningEvent {
+  type: 'reasoning';
   text: string;
 }
 
@@ -231,6 +256,7 @@ export interface ConversationStreamErrorEvent {
 export type ConversationStreamEvent =
   | ConversationStreamStartEvent
   | ConversationStreamDeltaEvent
+  | ConversationStreamReasoningEvent
   | ConversationStreamDoneEvent
   | ConversationStreamErrorEvent;
 
@@ -240,12 +266,14 @@ export interface GetGenerationConfigData {
   config: UserGenerationConfig;
   /** 当前启用的回复长度档位，驱动 MiniApp「生成偏好」按钮文案与布局 */
   word_count_tiers: PublicWordCountTiers;
+  /** Enabled options in operator order; no private marker or rule text. */
+  reply_style_options?: PublicReplyStyleOption[];
 }
 
 // ==== PATCH /api/v1/generation-config ====
 
 /**
- * 只收五个 pref_* 字段。selected_model_id 是只读镜像，改模型走 POST /api/v1/models/select——
+ * 只收用户可编辑偏好。selected_model_id 是只读镜像，改模型走 POST /api/v1/models/select——
  * 那条路由带着「切到付费模型前先查余额」的业务闸门，从这里旁路改会绕过它。
  */
 export interface PatchGenerationConfigRequest {
@@ -253,6 +281,8 @@ export interface PatchGenerationConfigRequest {
   pref_show_options?: boolean;
   pref_show_status?: boolean;
   pref_show_memory?: boolean;
+  /** Partial map merge; unrelated option IDs are preserved. */
+  pref_reply_styles?: ReplyStylePreferences;
   pref_custom_instructions?: string | null;
 }
 
@@ -263,6 +293,7 @@ export const PatchGenerationConfigRequestSchema: z.ZodType<PatchGenerationConfig
     pref_show_options: z.boolean().optional(),
     pref_show_status: z.boolean().optional(),
     pref_show_memory: z.boolean().optional(),
+    pref_reply_styles: ReplyStylePreferencesSchema.optional(),
     pref_custom_instructions: z.string().nullable().optional(),
   })
   .strict();
@@ -270,11 +301,15 @@ export const PatchGenerationConfigRequestSchema: z.ZodType<PatchGenerationConfig
 export interface PatchGenerationConfigData {
   config: UserGenerationConfig;
   word_count_tiers: PublicWordCountTiers;
+  /** Enabled options in operator order; no private marker or rule text. */
+  reply_style_options?: PublicReplyStyleOption[];
 }
 
 /** POST /api/v1/conversations/:id/cancel. The ID binds cancellation to one revision. */
 export interface CancelConversationTurnRequest {
   assistant_message_id: string;
+  /** Explicit intent; omitted legacy callers retain their cancellation policy. */
+  reason?: 'user_stop' | 'first_token_timeout';
 }
 
 /** Returns the authoritative state; a reply completed before cancellation stays complete. */

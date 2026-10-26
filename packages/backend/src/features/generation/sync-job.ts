@@ -39,6 +39,8 @@ const SYNC_INTERVAL_MS = 30 * 1000;
 const STARTUP_DELAY_MS = 5 * 1000;
 const LOOKBACK_HOURS = 24;
 const BATCH_LIMIT = 50;
+/** 扫描阶段最多并行占几条共享池连接；5 路全开会在池紧张时与大厅读路径抢额度。 */
+const SCAN_CONCURRENCY = 2;
 
 let timerId: NodeJS.Timeout | null = null;
 let startupTimerId: NodeJS.Timeout | null = null;
@@ -46,6 +48,33 @@ let isRunning = false;
 let walletRepository: MiniappWalletRepository | null = null;
 let historyRepository: ConversationHistoryRepository | null = null;
 let openRouterHistoryRepository: OpenRouterChatHistoryRepository | null = null;
+
+/** 保持 allSettled 语义，但限制同时 in-flight 的任务数，降低对 Prisma 共享池的尖峰占用。 */
+async function runSettledWithConcurrency<T>(
+  tasks: Array<() => Promise<T>>,
+  concurrency: number
+): Promise<Array<PromiseSettledResult<T>>> {
+  const limit = Math.max(1, Math.min(concurrency, tasks.length));
+  const results: Array<PromiseSettledResult<T>> = new Array(tasks.length);
+  let next = 0;
+
+  async function worker(): Promise<void> {
+    while (next < tasks.length) {
+      const index = next;
+      next += 1;
+      const task = tasks[index];
+      if (!task) continue;
+      try {
+        results[index] = { status: 'fulfilled', value: await task() };
+      } catch (reason) {
+        results[index] = { status: 'rejected', reason };
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: limit }, () => worker()));
+  return results;
+}
 
 function wallets(): MiniappWalletRepository {
   return (walletRepository ??= new MiniappWalletRepository());
@@ -102,13 +131,15 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
     const input = { since, limit: BATCH_LIMIT };
     // Separate budgets keep a metadata backlog from hiding billing recovery.
     // A failed metadata scan must not prevent the independent billing repair.
-    const scans = await Promise.allSettled([
-      history().listRowsPendingBilling({ ...input, provider: 'openrouter' }),
-      history().listRowsPendingBilling({ ...input, provider: 'venice' }),
-      history().listRowsMissingProviderIdentity(input),
-      openRouterHistory().listRowsMissingGenerationData(input),
-      history().listStaleStreaming(input),
-    ]);
+    // 有界并发：避免每 30s 一次占满共享池的 5 条连接。
+    const scanTasks = [
+      () => history().listRowsPendingBilling({ ...input, provider: 'openrouter' }),
+      () => history().listRowsPendingBilling({ ...input, provider: 'venice' }),
+      () => history().listRowsMissingProviderIdentity(input),
+      () => openRouterHistory().listRowsMissingGenerationData(input),
+      () => history().listStaleStreaming(input),
+    ];
+    const scans = await runSettledWithConcurrency(scanTasks, SCAN_CONCURRENCY);
     const rowsById = new Map<string, ChatHistorySyncRow>();
     for (const [index, scan] of scans.entries()) {
       if (scan.status === 'rejected') {
@@ -227,7 +258,9 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
         }
         // Local cancellation/deadline remains the billing outcome even if upstream later stops.
         const finishReason =
-          record.llm_finish_reason === 'cancelled' || record.llm_finish_reason === 'timeout'
+          record.llm_finish_reason === 'cancelled' ||
+          record.llm_finish_reason === 'user_cancelled' ||
+          record.llm_finish_reason === 'timeout'
             ? record.llm_finish_reason
             : providerMetadata.finish_reason;
 
@@ -477,7 +510,7 @@ export async function reconcileCharge(input: {
 
   const result = await applyLlmCharge(command);
   return {
-    settled: true,
+    settled: !result.pending,
     intendedDeduction: result.calculatedAmount,
     deductionRate: result.chargedAmount,
   };

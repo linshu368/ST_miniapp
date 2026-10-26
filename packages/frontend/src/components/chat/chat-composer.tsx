@@ -6,6 +6,7 @@ import { Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { PH_CHAT_REPLAY_VISIBLE_CLASS } from '@/lib/telemetry/masking';
 import { ChatReplyPreferences } from './chat-reply-preferences';
+import { ChatThinkingToggle } from './chat-thinking';
 import {
   composerViewportLimits,
   isComposerSubmitKey,
@@ -34,6 +35,8 @@ interface ChatComposerProps {
   leftSlot?: ReactNode;
   detailsDefaultOpen: ReplyDetailsDefaultOpen;
   onDetailsDefaultOpenChange: (value: ReplyDetailsDefaultOpen) => void;
+  thinkingEnabled: boolean;
+  onThinkingEnabledChange: (enabled: boolean) => void;
 }
 
 export function ChatComposer({
@@ -48,6 +51,8 @@ export function ChatComposer({
   leftSlot,
   detailsDefaultOpen,
   onDetailsDefaultOpenChange,
+  thinkingEnabled,
+  onThinkingEnabledChange,
 }: ChatComposerProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const compositionActiveRef = useRef(false);
@@ -100,6 +105,13 @@ export function ChatComposer({
         maxContentHeight={limits.preferences}
         detailsDefaultOpen={detailsDefaultOpen}
         onDetailsDefaultOpenChange={onDetailsDefaultOpenChange}
+        thinkingControl={
+          <ChatThinkingToggle
+            enabled={thinkingEnabled}
+            disabled={generating || disabled}
+            onChange={onThinkingEnabledChange}
+          />
+        }
       />
       <div
         className={cn(

@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "updates": [
+    {
+      "operation": "update",
+      "module_id": "frontend.business.wallet-payment",
+      "target": ".trellis/spec/frontend/app/modules/business/wallet-payment.md",
+      "expected_sha256": "bf8d70ad7b2c31f3e8649b8bfbb07460f4c4cd881c312c7ab3cd43d08cf6c8d0",
+      "content": "---\nmodule_id: frontend.business.wallet-payment\ntitle: 钱包、签到与充值\nscope: frontend\ncategory: business\nstatus: active\nowners: [frontend]\nlast_verified_task: .trellis/tasks/10-23-profile-experience/\nlast_verified_at: 2026-10-23\n---\n\n# 钱包、签到与充值\n\n## 职责与边界\n\n展示余额、消费、签到、充值套餐、订单状态和支付回跳。\n\n## 当前状态\n\n钱包与支付页面已使用统一 API hooks；结算真相在服务端。\n\n个人中心优先签到和充值，消费明细降低视觉权重。星尘充值与VIP月卡独立购买；未开通会员首先展示套餐发布的专项星尘赠送，再展示签到加成、对话折扣和模型解锁。已开通显示金色身份卡、到期时间与权益状态。VIP只展示并选择month；月卡缺失/不可售不得回退week，历史周卡订单和资格不受影响。\n\n## 入口与调用者\n\n用户从个人中心进入钱包/充值流程。个人中心「星尘充值」点击同步建立独立充值 Replay context，SDK 启动尝试后发送 `recharge_entry_clicked`；不会伪造聊天会话。外部支付前暂停 MiniApp 录制，可信回流后恢复；主动充值启动时清除旧聊天会话属性，防止误归因。\n\n## 涉及文件\n\n| 路径                                                  | 职责                     |\n| ----------------------------------------------------- | ------------------------ |\n| `packages/frontend/src/app/(main)/profile/page.tsx`   | 个人中心充值入口点击埋点 |\n| `packages/frontend/src/app/(main)/profile/recharge/`  | 充值页面                 |\n| `packages/frontend/src/app/(main)/profile/orders/`    | 订单页面                 |\n| `packages/frontend/src/app/(main)/profile/spending/`  | 消费页面                 |\n| `packages/frontend/src/lib/payment/flow-telemetry.ts` | 支付漏斗与入口点击事件   |\n| `packages/frontend/src/lib/api/free-quota.ts`         | 额度 hooks               |\n| `packages/frontend/src/lib/api/payment.ts`            | 支付 hooks               |\n\n## 关键实现链路\n\n套餐/余额 query → 创建订单 → 外部支付 → 订单轮询/回跳 → 缓存刷新。\n\n## 数据、契约与外部依赖\n\n消费 shared wallet/payment 契约、Backend 和外部支付页。\n\n## 关键节点与约束\n\n前端轮询不执行入账真相；支付成功后以服务端订单/余额为准。\n\n签到POST确认后直接使用响应中的钱包和签到DTO同步缓存，不自行加钱；失败保留重试。支付渠道仍使用现有服务端开关与默认渠道（本次只读核对production为支付宝开启、微信关闭），不以预览fixture替代上线配置。折数只格式化已发布比率，0.95显示9.5折，不改变计费。\n\n## 验证方式\n\nFrontend tests/build 与 test 支付人工 smoke。\n\n## 已知缺口与待核验项\n\nWebView 回跳和第三方页面兼容需真机验证。\n\n## 关联模块\n\n`backend.business.wallet-payment`、`shared.business.wallet-payment-contracts`。\n\n## 变更记录\n\n- 2026-10-20：任务 `Remove confirmed repository noise`（`.trellis/tasks/archive/2026-10/10-20-remove-confirmed-repository-noise/`）删除无法恢复的乱码变更记录；commit：`63eee1e847f678f4b2c434f872425a40fc7f891a`。\n",
+      "change_summary": "记录我的页层级、独立星尘/月卡购买、赠送主利益、会员身份与服务端确认状态",
+      "evidence": [
+        "packages/frontend/src/app/(main)/profile/page.tsx",
+        "packages/frontend/src/app/(main)/profile/recharge/page.tsx",
+        "packages/frontend/src/app/(main)/vip/page.tsx",
+        "packages/frontend/src/components/vip/vip-entry-card.tsx",
+        "packages/frontend/src/lib/vip/presentation.test.ts",
+        ".trellis/tasks/10-23-profile-experience/verification.md"
+      ]
+    },
+    {
+      "operation": "update",
+      "module_id": "frontend.business.engagement-support",
+      "target": ".trellis/spec/frontend/app/modules/business/engagement-support.md",
+      "expected_sha256": "9cfc07f79e03b2b501eccd4f4d49ace7b7956f607a415a9bbb0d17a7321c3449",
+      "content": "---\nmodule_id: frontend.business.engagement-support\ntitle: 个人互动、通知与客服\nscope: frontend\ncategory: business\nstatus: active\nowners: [frontend]\nlast_verified_task: .trellis/tasks/10-23-profile-experience/\nlast_verified_at: 2026-10-23\n---\n\n# 个人互动、通知与客服\n\n## 职责与边界\n\n承载官方社区、邀请、消息中心和站内客服 UI。\n\n## 当前状态\n\n个人中心相关入口与主要查询/变更操作已落地。\n\n我的页使用紧凑身份栏、消息入口、独立机器人客服卡和分组邀请/社区入口。机器人仅为现有客服入口的装饰，无新增机器人后端。\n\n## 入口与调用者\n\n用户从 `/profile`、消息中心和客服页面进入。\n\n## 涉及文件\n\n| 路径                                                | 职责                   |\n| --------------------------------------------------- | ---------------------- |\n| `packages/frontend/src/app/(main)/profile/page.tsx` | 个人中心               |\n| `packages/frontend/src/components/profile/`         | 社区/邀请组件          |\n| `packages/frontend/src/lib/api/`                    | 互动、通知与客服 hooks |\n\n## 关键实现链路\n\n页面 → query/mutation → Backend 业务校验 → 缓存更新和结果提示。\n\n## 数据、契约与外部依赖\n\n消费 community/invite/notifications/support 契约。\n\n## 关键节点与约束\n\nsession 去重仅用于交互，不可替代奖励幂等；输入正文不写遥测。\n\n社区入口仅在服务端确认claim_status=rewarded后隐藏；点击入群、pending、not_member或错误不能隐藏。verify的rewarded/already_rewarded结果同步已有entry缓存，成功Sheet保持挂载，避免入口消失打断到账反馈。签到与未完成社区读取复用前台恢复刷新，不新增后台定时器。\n\n## 验证方式\n\nFrontend tests/build 与用户主路径人工回归。\n\n## 已知缺口与待核验项\n\nTelegram 社区跳转与真实成员校验需真机验证。\n\n## 关联模块\n\n`backend.business.engagement-support`、`shared.business.engagement-support-contracts`。\n\n## 变更记录\n\n- 2026-10-20：任务 `Remove confirmed repository noise`（`.trellis/tasks/archive/2026-10/10-20-remove-confirmed-repository-noise/`）移除已退场许愿池的模块事实并保留其余互动能力边界；commit：`63eee1e847f678f4b2c434f872425a40fc7f891a`。\n",
+      "change_summary": "记录分组服务、机器人客服、社区奖励确认后隐藏与弹窗保留",
+      "evidence": [
+        "packages/frontend/src/app/(main)/profile/page.tsx",
+        "packages/frontend/src/lib/api/community.ts",
+        "packages/frontend/src/lib/api/profile-actions.test.ts",
+        ".trellis/tasks/10-23-profile-experience/verification.md"
+      ]
+    }
+  ]
+}

@@ -34,11 +34,14 @@ export function useImageConfigQuery(enabled = true) {
   });
 }
 
-export function useSessionImagesQuery(sessionId: string | undefined) {
+export function useSessionImagesQuery(
+  sessionId: string | undefined,
+  options: { enabled?: boolean } = {}
+) {
   const queryClient = useQueryClient();
   return useQuery<GetSessionImagesData>({
     queryKey: imageKeys.session(sessionId ?? ''),
-    enabled: Boolean(sessionId),
+    enabled: Boolean(sessionId) && options.enabled !== false,
     queryFn: async () => {
       if (!sessionId) throw new Error('session id is required');
       const next = await apiClient<GetSessionImagesData>(

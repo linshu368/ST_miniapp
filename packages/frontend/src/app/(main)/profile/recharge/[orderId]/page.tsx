@@ -172,6 +172,8 @@ export default function PaymentPendingPage() {
     if (order?.status !== 'completed') return;
     void queryClient.invalidateQueries({ queryKey: paymentKeys.wallet() });
     if (order.product_type === 'vip') {
+      // 开通会改变签到加成，回到“我的”时不能继续显示开通前的缓存额度。
+      void queryClient.invalidateQueries({ queryKey: paymentKeys.checkin() });
       void queryClient.invalidateQueries({ queryKey: vipKeys.status });
       void queryClient.invalidateQueries({ queryKey: modelCatalogKeys.detail });
     }

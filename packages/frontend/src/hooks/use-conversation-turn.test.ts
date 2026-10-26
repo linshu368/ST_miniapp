@@ -238,13 +238,18 @@ describe('findPendingTurnMessage', () => {
   });
 });
 
-function RenderTurn(sessionId = 's1', persistedMessages: ChatMessage[] = []) {
+function RenderTurn(
+  sessionId = 's1',
+  persistedMessages: ChatMessage[] = [],
+  thinkingEnabled = true
+) {
   runtime.index = 0;
   const result = useConversationTurn({
     characterId: 'c1',
     sessionId,
     selectedModelId: 'm1',
     selectedModelUsesFreeQuota: false,
+    thinkingEnabled,
     persistedMessages,
     returnTo: '/chat/c1',
     onSessionGone: vi.fn(),
@@ -256,6 +261,178 @@ function RenderTurn(sessionId = 's1', persistedMessages: ChatMessage[] = []) {
 }
 
 describe('useConversationTurn asynchronous ownership', () => {
+  it('the first displayed thinking character satisfies the same deadline as an answer character', async () => {
+    let options!: Parameters<
+      typeof import('@/lib/api/conversation-stream').streamConversationTurn
+    >[0];
+    let finish!: () => void;
+    runtime.stream.mockImplementation((value) => {
+      options = value;
+      return new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+    });
+    const run = RenderTurn().runTurn({ mode: 'send', content: 'hello' });
+    options.onStart({
+      type: 'start',
+      assistant_message_id: 'a1',
+      user_message_id: 'u1',
+      turn_index: 1,
+      revision: 0,
+    });
+    options.onFirstDeltaReceived?.();
+    options.onReasoning?.('思');
+    const active = RenderTurn();
+    expect(active.firstTokenObservation).not.toBeNull();
+    active.onFirstTokenDisplayed(active.firstTokenObservation!, performance.now());
+    await vi.advanceTimersByTimeAsync(6_100);
+    const after = RenderTurn();
+    expect(after.firstTokenObservation).toBeNull();
+    expect(after.generating).toBe(true);
+    expect(after.streamError).toBeNull();
+    expect(runtime.cancel).not.toHaveBeenCalled();
+    expect(after.streaming?.text).toBe('');
+    expect(after.thinkingByMessage['s1:a1:0']).toBe('思');
+    finish();
+    await run;
+  });
+
+  it.each([
+    ['normal', false],
+    ['deep-thinking', true],
+  ] as const)('stops a silent %s reply at the 10s user deadline', async (_, thinkingEnabled) => {
+    let options!: Parameters<
+      typeof import('@/lib/api/conversation-stream').streamConversationTurn
+    >[0];
+    let finish!: () => void;
+    runtime.stream.mockImplementation((value) => {
+      options = value;
+      return new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+    });
+    const run = RenderTurn('s1', [], thinkingEnabled).runTurn({ mode: 'send', content: 'hello' });
+    options.onStart({
+      type: 'start',
+      assistant_message_id: 'a1',
+      user_message_id: 'u1',
+      turn_index: 1,
+      revision: 0,
+    });
+    runtime.cancel.mockResolvedValue({
+      message: message({
+        id: 'a1',
+        session_id: 's1',
+        turn_index: 1,
+        revision: 0,
+        status: 'interrupted',
+        content: '',
+      }),
+    });
+    await vi.advanceTimersByTimeAsync(10_100);
+    const waiting = RenderTurn('s1', [], thinkingEnabled);
+    expect(waiting.firstTokenObservation).toBeNull();
+    expect(waiting.streamError).toBe('这次回应稍慢，再试一次吧');
+    expect(runtime.cancel).toHaveBeenCalledExactlyOnceWith({
+      sessionId: 's1',
+      assistantMessageId: 'a1',
+      reason: 'first_token_timeout',
+    });
+    finish();
+    await run;
+  });
+
+  it('keeps thinking separate after completion, snapshots the switch and clears on session change', async () => {
+    const streams: {
+      options: Parameters<typeof import('@/lib/api/conversation-stream').streamConversationTurn>[0];
+      resolve: () => void;
+    }[] = [];
+    runtime.stream.mockImplementation(
+      (options) => new Promise<void>((resolve) => streams.push({ options, resolve }))
+    );
+    const run = RenderTurn().runTurn({ mode: 'send', content: 'hello' });
+    const first = streams[0]!;
+    first.options.onStart({
+      type: 'start',
+      assistant_message_id: 'a1',
+      user_message_id: 'u1',
+      turn_index: 1,
+      revision: 0,
+    });
+    // A rerender with a different preference must not change the request already submitted.
+    RenderTurn('s1', [], false);
+    expect(first.options.thinkingEnabled).toBe(true);
+    first.options.onReasoning?.('公开思考');
+    first.options.onDelta('正文');
+    expect(RenderTurn().thinkingByMessage['s1:a1:0']).toBe('公开思考');
+    expect(RenderTurn().streaming?.text).toBe('正文');
+    first.options.onDone({
+      type: 'done',
+      assistant_message_id: 'a1',
+      status: 'complete',
+      finish_reason: 'stop',
+    });
+    first.resolve();
+    await run;
+    expect(RenderTurn().thinkingByMessage['s1:a1:0']).toBe('公开思考');
+    first.options.onReasoning?.('late after done');
+    expect(RenderTurn().thinkingByMessage['s1:a1:0']).toBe('公开思考');
+    const regenerate = RenderTurn('s1', [], false).runTurn({ mode: 'regenerate' });
+    expect(streams[1]!.options.thinkingEnabled).toBe(false);
+    streams[1]!.options.onStart({
+      type: 'start',
+      assistant_message_id: 'a2',
+      user_message_id: null,
+      turn_index: 1,
+      revision: 1,
+    });
+    streams[1]!.options.onReasoning?.('off should ignore');
+    expect(RenderTurn().thinkingByMessage['s1:a2:1']).toBeUndefined();
+    streams[1]!.resolve();
+    await regenerate;
+    RenderTurn('s2');
+    expect(RenderTurn('s2').thinkingByMessage).toEqual({});
+  });
+
+  it('confirmed cancellation ignores late thinking from that request', async () => {
+    let options!: Parameters<
+      typeof import('@/lib/api/conversation-stream').streamConversationTurn
+    >[0];
+    let finish!: () => void;
+    runtime.stream.mockImplementation((value) => {
+      options = value;
+      return new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+    });
+    const run = RenderTurn().runTurn({ mode: 'send', content: 'hello' });
+    options.onStart({
+      type: 'start',
+      assistant_message_id: 'a1',
+      user_message_id: 'u1',
+      turn_index: 1,
+      revision: 0,
+    });
+    options.onReasoning?.('before cancel');
+    runtime.cancel.mockResolvedValue({
+      message: message({
+        id: 'a1',
+        session_id: 's1',
+        turn_index: 1,
+        revision: 0,
+        content: '',
+        status: 'interrupted',
+        finish_reason: 'cancelled',
+      }),
+    });
+    await RenderTurn().abort();
+    options.onReasoning?.('after cancel');
+    expect(RenderTurn().thinkingByMessage['s1:a1:0']).toBe('before cancel');
+    expect(RenderTurn().generating).toBe(false);
+    finish();
+    await run;
+  });
+
   it('已接受的中途错误和未知接受状态的本地超时不恢复重复草稿', async () => {
     runtime.stream.mockImplementation(async (options) => {
       options.onStart({
@@ -301,7 +478,11 @@ describe('useConversationTurn asynchronous ownership', () => {
     expect(after.generating).toBe(true);
     expect(after.cancelling).toBe(false);
     expect(after.streamError).toContain('请稍后重试');
-    expect(runtime.cancel).toHaveBeenCalledWith({ sessionId: 's1', assistantMessageId: 'a1' });
+    expect(runtime.cancel).toHaveBeenCalledWith({
+      sessionId: 's1',
+      assistantMessageId: 'a1',
+      reason: 'user_stop',
+    });
     await after.abort();
     expect(runtime.cancel).toHaveBeenCalledTimes(2);
   });
@@ -319,6 +500,7 @@ describe('useConversationTurn asynchronous ownership', () => {
     const next = RenderTurn('s2');
     const nextRun = next.runTurn({ mode: 'send', content: 'new' });
     streams[0]!.options.onDelta('late');
+    streams[0]!.options.onReasoning?.('late thinking');
     streams[0]!.options.onDone({
       type: 'done',
       assistant_message_id: 'old',
@@ -331,6 +513,7 @@ describe('useConversationTurn asynchronous ownership', () => {
     expect(current.generating).toBe(true);
     expect(current.streaming?.userMessage?.content).toBe('new');
     expect(current.streaming?.text).toBe('');
+    expect(current.thinkingByMessage).toEqual({});
     expect(runtime.client.invalidateQueries).not.toHaveBeenCalled();
     streams[1]!.resolve();
     await nextRun;
@@ -375,7 +558,11 @@ describe('useConversationTurn asynchronous ownership', () => {
     await vi.advanceTimersByTimeAsync(500);
     await cancellation;
     expect(runtime.cancel).toHaveBeenCalledTimes(1);
-    expect(runtime.cancel).toHaveBeenCalledWith({ sessionId: 's1', assistantMessageId: 'late-a1' });
+    expect(runtime.cancel).toHaveBeenCalledWith({
+      sessionId: 's1',
+      assistantMessageId: 'late-a1',
+      reason: 'user_stop',
+    });
     expect(RenderTurn().cancelling).toBe(false);
     finish();
     await run;
@@ -499,7 +686,11 @@ describe('useConversationTurn asynchronous ownership', () => {
     expect(runtime.stream).toHaveBeenCalledTimes(1);
     const active = RenderTurn();
     await active.abort();
-    expect(runtime.cancel).toHaveBeenCalledWith({ sessionId: 's1', assistantMessageId: 'a1' });
+    expect(runtime.cancel).toHaveBeenCalledWith({
+      sessionId: 's1',
+      assistantMessageId: 'a1',
+      reason: 'user_stop',
+    });
     const cacheUpdater = runtime.client.setQueryData.mock.calls.at(-1)?.[1] as (
       detail: unknown
     ) => { messages: ChatMessage[] };

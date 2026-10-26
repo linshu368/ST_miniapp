@@ -109,6 +109,7 @@ describe('resolveBillingChatStatus', () => {
         generationStatus: 'stream_interrupted',
         finishReason: null,
         generationId: 'gen-1',
+        replyOutcome: 'incomplete',
       })
     ).toBe('success');
   });
@@ -119,6 +120,7 @@ describe('resolveBillingChatStatus', () => {
         generationStatus: 'success',
         finishReason: 'length',
         generationId: 'gen-1',
+        replyOutcome: 'incomplete',
       })
     ).toBe('success');
     expect(
@@ -126,6 +128,7 @@ describe('resolveBillingChatStatus', () => {
         generationStatus: 'stream_interrupted',
         finishReason: 'length',
         generationId: 'gen-1',
+        replyOutcome: 'incomplete',
       })
     ).toBe('stream_interrupted');
     expect(
@@ -133,6 +136,7 @@ describe('resolveBillingChatStatus', () => {
         generationStatus: 'upstream_error',
         finishReason: 'stop',
         generationId: 'gen-1',
+        replyOutcome: 'incomplete',
       })
     ).toBe('upstream_error');
   });
@@ -143,6 +147,18 @@ describe('resolveBillingChatStatus', () => {
         generationStatus: 'stream_interrupted',
         finishReason: null,
         generationId: null,
+        replyOutcome: 'empty',
+      })
+    ).toBe('stream_interrupted');
+  });
+
+  it('downgrades terminal empty replies so success + stop cannot bill', () => {
+    expect(
+      resolveBillingChatStatus({
+        generationStatus: 'success',
+        finishReason: 'stop',
+        generationId: 'gen-1',
+        replyOutcome: 'empty',
       })
     ).toBe('stream_interrupted');
   });
@@ -162,6 +178,7 @@ describe('applyLlmCharge', () => {
     const result = await applyLlmCharge(command());
 
     expect(result).toEqual({
+      pending: false,
       replyOutcome: 'complete',
       billingChatStatus: 'success',
       chargedAmount: 50,
@@ -177,6 +194,56 @@ describe('applyLlmCharge', () => {
       billing_mode: 'fixed_tier',
       requested_model: 'anthropic/claude-sonnet-4.5',
       fixed_deduction: 50,
+    });
+    expect(finalizePending).toHaveBeenCalledWith('charge-1', true);
+  });
+
+  it('waits for a display receipt without consuming the free reservation', async () => {
+    chargeLlmUsage.mockResolvedValueOnce({
+      charge: { status: 'pending', charged_amount: 0, calculated_amount: 50 },
+    });
+    const result = await applyLlmCharge(command());
+    expect(result.pending).toBe(true);
+    expect(result.chargedAmount).toBe(0);
+    expect(finalizePending).not.toHaveBeenCalled();
+  });
+
+  it('releases the free reservation when the database waives an unseen reply', async () => {
+    chargeLlmUsage.mockResolvedValueOnce({
+      charge: {
+        status: 'failed',
+        charged_amount: 0,
+        calculated_amount: 50,
+        metadata: { delivery_billing_gate: 'waived' },
+      },
+    });
+    const result = await applyLlmCharge(command());
+    expect(result.pending).toBe(false);
+    expect(result.chargedAmount).toBe(0);
+    expect(finalizePending).toHaveBeenCalledWith('charge-1', false);
+  });
+
+  it('uses the database manual-stop gate to consume the free entitlement with no visible body', async () => {
+    chargeLlmUsage.mockResolvedValueOnce({
+      charge: {
+        status: 'free',
+        charged_amount: 0,
+        calculated_amount: 0,
+        metadata: { delivery_billing_gate: 'user_stopped' },
+      },
+    });
+    await applyLlmCharge(
+      command({
+        generationStatus: 'stream_interrupted',
+        finishReason: 'user_cancelled',
+        assistantReply: null,
+        calculatedAmount: 0,
+      })
+    );
+    expect(lastCharge().metadata).toMatchObject({
+      finish_reason: 'user_cancelled',
+      reply_outcome: 'empty',
+      chat_status: 'stream_interrupted',
     });
     expect(finalizePending).toHaveBeenCalledWith('charge-1', true);
   });
@@ -208,16 +275,34 @@ describe('applyLlmCharge', () => {
     expect(finalizePending).toHaveBeenCalledWith('charge-1', false);
   });
 
-  it('empty reply is labeled empty and still records a charge', async () => {
+  it('terminal empty reply records a non-billable settlement detail', async () => {
     const result = await applyLlmCharge(command({ assistantReply: '  ' }));
+
+    expect(result.replyOutcome).toBe('empty');
+    expect(result.billingChatStatus).toBe('stream_interrupted');
+    expect(lastCharge().metadata).toMatchObject({
+      chat_status: 'stream_interrupted',
+      generation_status: 'success',
+      reply_outcome: 'empty',
+      reply_char_count: 2,
+      billing_gate: 'non_billable',
+      finish_reason: 'stop',
+    });
+    expect(finalizePending).toHaveBeenCalledWith('charge-1', false);
+  });
+
+  it('empty reply with pending finish_reason stays pending for sync re-entry', async () => {
+    const result = await applyLlmCharge(command({ assistantReply: '', finishReason: null }));
 
     expect(result.replyOutcome).toBe('empty');
     expect(result.billingChatStatus).toBe('success');
     expect(lastCharge().metadata).toMatchObject({
+      chat_status: 'success',
       reply_outcome: 'empty',
-      reply_char_count: 2,
+      billing_gate: 'pending_finish_reason',
+      finish_reason: null,
     });
-    expect(finalizePending).toHaveBeenCalledWith('charge-1', false);
+    expect(finalizePending).not.toHaveBeenCalled();
   });
 
   it('upstream_error keeps chat_status and does not bill', async () => {

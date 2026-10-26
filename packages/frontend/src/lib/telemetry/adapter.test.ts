@@ -122,6 +122,8 @@ describe('PostHog adapter', () => {
         autocapture: false,
         enable_recording_console_log: false,
         capture_performance: false,
+        advanced_disable_feature_flags: true,
+        advanced_disable_flags: true,
       })
     );
     expect(client.identify).toHaveBeenCalledWith('123456789');

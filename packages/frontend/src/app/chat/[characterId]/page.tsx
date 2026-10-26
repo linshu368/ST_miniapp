@@ -3,7 +3,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { AlertCircle, X } from 'lucide-react';
-import { TEXT_POSTPROCESS_LIMITS, type ChatMessage } from '@miniapp/shared';
+import {
+  FIRST_TOKEN_RETRY_MESSAGE,
+  TEXT_POSTPROCESS_LIMITS,
+  type ChatMessage,
+} from '@miniapp/shared';
 import type { ReplyChoicePayload } from '@miniapp/reply-renderer';
 
 import { ChatComposer, MAX_USER_INPUT_LENGTH } from '@/components/chat/chat-composer';
@@ -52,7 +56,15 @@ import { planMessageReply } from '@/lib/text-postprocess/reply-plan';
 import { useUserProfileStore } from '@/stores/user-profile-store';
 import { redirectToRecharge, redirectToRechargeFromError } from '@/lib/recharge-redirect';
 import { useTelegramBackButton } from '@/lib/telegram';
+import { getRawInitData } from '@/lib/telegram/auth';
+import { parseTelegramUser } from '@/lib/telegram/user';
+import { readThinkingPreference, writeThinkingPreference } from '@/lib/chat-thinking';
 import { useVisualViewportHeight } from '@/lib/use-visual-viewport-height';
+import {
+  markCriticalSettled,
+  useEntryBackgroundReady,
+  useEntryEnrichReady,
+} from '@/lib/entry-phase';
 import { usePageReady } from '@/lib/perf/page-ready';
 import {
   DEFAULT_REPLY_DETAILS_OPEN,
@@ -75,15 +87,42 @@ export default function SelfHostedChatPage() {
     DEFAULT_REPLY_DETAILS_OPEN
   );
   const displayName = useUserProfileStore((state) => state.displayName);
+  const userScope = String(
+    (typeof window === 'undefined' ? undefined : parseTelegramUser(getRawInitData()).id) ?? 'local'
+  );
+  const [thinkingPreference, setThinkingPreference] = useState<{
+    scope: string | null;
+    enabled: boolean;
+  }>({ scope: null, enabled: true });
+  const thinkingEnabled =
+    thinkingPreference.scope === userScope ? thinkingPreference.enabled : true;
+
+  useEffect(() => {
+    setThinkingPreference({ scope: userScope, enabled: readThinkingPreference(userScope) });
+  }, [userScope]);
+
+  const changeThinkingEnabled = useCallback(
+    (enabled: boolean) => {
+      setThinkingPreference({ scope: userScope, enabled });
+      writeThinkingPreference(userScope, enabled);
+    },
+    [userScope]
+  );
 
   const session = useChatSession(characterId);
   const { activeSessionId, returnTo, abandonSession } = session;
+  const enrichReady = useEntryEnrichReady();
+  const backgroundReady = useEntryBackgroundReady();
   const { value: draft, setValue: setDraft } = useMemoryDraft(
     activeSessionId ? `chat:${activeSessionId}` : null
   );
   // 可用 = 会话已建立且历史消息已加载（新会话的创建耗时也算在用户等待里）。
   usePageReady('/chat/:id', session.ready);
-  const modelCatalogQuery = useModelCatalogQuery();
+  // 会话就绪或创建/加载失败都结算 P0，放行模型目录等 enrich。
+  useEffect(() => {
+    if (session.ready || session.entryError) markCriticalSettled();
+  }, [session.ready, session.entryError]);
+  const modelCatalogQuery = useModelCatalogQuery({ enabled: enrichReady });
   const selectedModelId = modelCatalogQuery.data?.selected_model_id ?? null;
   const selectedModelUsesFreeQuota = useMemo(() => {
     const catalog = modelCatalogQuery.data?.catalog;
@@ -98,6 +137,7 @@ export default function SelfHostedChatPage() {
     characterId,
     conversationSessionId: activeSessionId,
     selectedModelId,
+    pageReady: session.ready,
   });
 
   const persisted = useMemo(
@@ -180,6 +220,7 @@ export default function SelfHostedChatPage() {
     setStreamError,
     streamError,
     streaming,
+    thinkingByMessage,
   } = useConversationTurn({
     characterId,
     firstTokenDeadlineMs: modelCatalogQuery.data?.catalog.first_token_deadline_ms,
@@ -187,6 +228,7 @@ export default function SelfHostedChatPage() {
     sessionId: activeSessionId,
     selectedModelId,
     selectedModelUsesFreeQuota,
+    thinkingEnabled,
     persistedMessages: persisted,
     returnTo,
     onSessionGone: abandonSessionWithDraft,
@@ -194,12 +236,16 @@ export default function SelfHostedChatPage() {
     onRestoreSendContent: restoreSendContent,
   });
 
-  const userSettingsQuery = useUserSettingsQuery();
-  const voiceConfigQuery = useVoiceConfigQuery();
-  const sessionVoiceQuery = useSessionVoiceQuery(activeSessionId ?? undefined);
+  const userSettingsQuery = useUserSettingsQuery({ enabled: backgroundReady });
+  const voiceConfigQuery = useVoiceConfigQuery(backgroundReady);
+  const sessionVoiceQuery = useSessionVoiceQuery(activeSessionId ?? undefined, {
+    enabled: backgroundReady,
+  });
   const generateVoice = useGenerateVoiceMutation(activeSessionId ?? undefined);
-  const imageConfigQuery = useImageConfigQuery();
-  const sessionImagesQuery = useSessionImagesQuery(activeSessionId ?? undefined);
+  const imageConfigQuery = useImageConfigQuery(backgroundReady);
+  const sessionImagesQuery = useSessionImagesQuery(activeSessionId ?? undefined, {
+    enabled: backgroundReady,
+  });
   const describeImage = useCreateImageDescriptionMutation(activeSessionId ?? undefined);
   const createImage = useCreateMessageImageMutation(activeSessionId ?? undefined);
   const viewportHeight = useVisualViewportHeight();
@@ -252,7 +298,7 @@ export default function SelfHostedChatPage() {
     [sessionImagesQuery.data]
   );
   const playbackRate = voiceConfigQuery.data?.config.playback_rate ?? 1;
-  const freeQuota = useCharacterFreeQuotaQuery(characterId);
+  const freeQuota = useCharacterFreeQuotaQuery(characterId, { enabled: enrichReady });
   const freeRoundActive = Boolean(
     freeQuota.data && !freeQuota.data.exhausted && selectedModelUsesFreeQuota
   );
@@ -436,6 +482,7 @@ export default function SelfHostedChatPage() {
         }
         onChoice={handleChoice}
         detailsDefaultOpen={detailsDefaultOpen}
+        thinkingByMessage={thinkingByMessage}
         renderFooter={(message) => {
           const showVoice = canGenerateVoice(message);
           const messageImage = imageByMessage.get(message.id);
@@ -531,14 +578,34 @@ export default function SelfHostedChatPage() {
       />
 
       {streamError ? (
-        <div className="mx-4 mb-2 flex items-center gap-2 rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2">
-          <AlertCircle className="h-4 w-4 shrink-0 text-destructive" aria-hidden />
-          <span className="min-w-0 flex-1 text-[12px] text-destructive">{streamError}</span>
+        <div
+          role="status"
+          aria-live="polite"
+          className={
+            streamError === FIRST_TOKEN_RETRY_MESSAGE
+              ? 'mx-4 mb-2 flex items-center gap-2 px-3 py-2 text-muted-foreground'
+              : 'mx-4 mb-2 flex items-center gap-2 rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-destructive'
+          }
+        >
+          {streamError !== FIRST_TOKEN_RETRY_MESSAGE ? (
+            <AlertCircle className="h-4 w-4 shrink-0" aria-hidden />
+          ) : null}
+          <span className="min-w-0 flex-1 text-[12px]">{streamError}</span>
+          {streamError === FIRST_TOKEN_RETRY_MESSAGE && canRegenerate ? (
+            <button
+              type="button"
+              onClick={() => void runTurn({ mode: 'regenerate' })}
+              disabled={generating || serverBusy}
+              className="shrink-0 text-[12px] underline decoration-current/30 underline-offset-4 hover:text-foreground disabled:opacity-50"
+            >
+              再试一次
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={() => setStreamError(null)}
             aria-label="关闭提示"
-            className="shrink-0 text-destructive/70 hover:text-destructive"
+            className="shrink-0 opacity-60 hover:opacity-100"
           >
             <X className="h-3.5 w-3.5" aria-hidden />
           </button>
@@ -556,6 +623,8 @@ export default function SelfHostedChatPage() {
         disabled={!session.ready || serverBusy}
         detailsDefaultOpen={detailsDefaultOpen}
         onDetailsDefaultOpenChange={handleDetailsDefaultOpenChange}
+        thinkingEnabled={thinkingEnabled}
+        onThinkingEnabledChange={changeThinkingEnabled}
         leftSlot={
           <ChatToolsSheet
             onCreateConversation={() => {

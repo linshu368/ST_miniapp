@@ -8,8 +8,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Gem,
-  History,
-  Crown,
   Receipt,
   ShieldCheck,
   Sparkles,
@@ -24,7 +22,7 @@ import {
 import { AlipayIcon, WeChatPayIcon } from '@/components/icons';
 import { AlipayPaymentGuidanceDialog } from '@/components/payment/alipay-payment-guidance-dialog';
 import { PaymentVpnPromptDialog } from '@/components/payment/payment-vpn-prompt-dialog';
-import { VipPlanCard } from '@/components/payment/vip-plan-card';
+import { VipEntryCard } from '@/components/vip/vip-entry-card';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -44,6 +42,7 @@ import {
   useCheckoutConfirmationMutation,
   useCreatePaymentOrderMutation,
   usePaymentPlansQuery,
+  useWalletBalanceQuery,
 } from '@/lib/api/payment';
 import { useVipStatusQuery } from '@/lib/api/vip';
 import {
@@ -58,13 +57,12 @@ import {
 } from '@/lib/payment/flow-telemetry';
 import { openCreatedPayment } from '@/lib/payment/open-created-payment';
 import { clearCheckoutConfirmation } from '@/lib/payment/open-storage';
-import { paymentTypeLabel, safePaymentReturnTo } from '@/lib/utils/payment';
+import { formatNumber, paymentTypeLabel, safePaymentReturnTo } from '@/lib/utils/payment';
 import { feedbackAfterPaint, startAction } from '@/lib/perf/action-tracker';
 import { usePageReady } from '@/lib/perf/page-ready';
 import { useHaptic, useTelegramBackButton } from '@/lib/telegram';
 import {
   checkoutButtonLabel,
-  formatDiscountLabel,
   resolveCheckoutSelection,
   selectionKey,
 } from '@/lib/vip/presentation';
@@ -89,6 +87,7 @@ function RechargePageContent() {
   const { data, isLoading, isError, refetch } = usePaymentPlansQuery();
   usePageReady('/profile/recharge', data !== undefined);
   const vipStatus = useVipStatusQuery();
+  const wallet = useWalletBalanceQuery();
   const createOrder = useCreatePaymentOrderMutation();
   const { mutate: confirmCheckout } = useCheckoutConfirmationMutation();
   const inviteEntry = useInviteEntryStatusQuery();
@@ -126,10 +125,7 @@ function RechargePageContent() {
   );
 
   const plans = data?.plans ?? [];
-  const vipPlans = data?.vip_plans ?? [];
   const pageConfig = data?.page_config ?? DEFAULT_RECHARGE_PAGE_CONFIG;
-  const vipBenefits = vipStatus.data?.benefits;
-  const discountLabel = formatDiscountLabel(vipBenefits?.text_discount_rate ?? Number.NaN);
   const paymentPromptConfig =
     data?.payment_prompt_dialog_config ?? DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG;
   const paymentChannels = data?.payment_channels;
@@ -151,9 +147,9 @@ function RechargePageContent() {
       resolveCheckoutSelection({
         selectedKey,
         creditPlans: data?.plans ?? [],
-        vipPlans: data?.vip_plans ?? [],
+        vipPlans: [],
       }),
-    [data?.plans, data?.vip_plans, selectedKey]
+    [data?.plans, selectedKey]
   );
 
   const handleSelectCredits = useCallback(
@@ -166,15 +162,13 @@ function RechargePageContent() {
     [paymentType, whisper]
   );
 
-  const handleSelectVip = useCallback(
-    (id: string) => {
-      whisper();
-      setCheckoutError(null);
-      setSelectedKey(selectionKey('vip', id));
-      capturePaymentMethodSelected({ planId: id, paymentType });
-    },
-    [paymentType, whisper]
-  );
+  const openVip = () => {
+    // 开通会员后仍回到充值流程，并保留原聊天回流地址；不重复弹余额不足提示。
+    const rechargeReturn = returnTo
+      ? `/profile/recharge?${new URLSearchParams({ returnTo })}`
+      : '/profile/recharge';
+    router.push(`/vip?${new URLSearchParams({ returnTo: rechargeReturn })}`);
+  };
 
   const launchPayment = useCallback(
     async (result: CreatePaymentOrderData) => {
@@ -190,11 +184,14 @@ function RechargePageContent() {
   );
 
   const handleSubmit = useCallback(async () => {
-    if (!selection || createOrder.isPending || submitLock.current) return;
-    if (!selection.available) {
-      setCheckoutError('VIP 购买暂未开放，请稍后再试。');
+    if (
+      !selection ||
+      selection.kind !== 'credits' ||
+      isError ||
+      createOrder.isPending ||
+      submitLock.current
+    )
       return;
-    }
     submitLock.current = true;
     impact('light');
     setCheckoutError(null);
@@ -238,6 +235,7 @@ function RechargePageContent() {
     paymentType,
     launchPayment,
     notification,
+    isError,
   ]);
 
   const handleConfirmPayment = useCallback(() => {
@@ -264,64 +262,74 @@ function RechargePageContent() {
       data-app-shell="recharge"
       className="mx-auto flex h-[100dvh] max-w-md flex-col bg-background text-foreground"
     >
-      <div className="h-1 w-full shrink-0" style={{ backgroundColor: pageConfig.theme_color }} />
-
-      <header className="flex shrink-0 items-center gap-2 px-4 pt-[calc(env(safe-area-inset-top)+0.5rem)]">
+      <header className="flex min-h-14 shrink-0 items-center gap-2 border-b border-border/50 px-4 pt-[env(safe-area-inset-top)]">
         <Button
           variant="ghost"
           size="icon"
           onClick={goBack}
-          className="-ml-2 rounded-full text-muted-foreground hover:text-foreground"
+          className="-ml-2 rounded-full text-muted-foreground"
           aria-label="返回"
         >
           <ChevronLeft className="h-5 w-5" aria-hidden />
         </Button>
-        <h1 className="text-lg font-black tracking-wide">{pageConfig.title}</h1>
+        <h1 className="text-base font-bold">充值星尘</h1>
+        <Link
+          href="/profile/orders"
+          className="ml-auto inline-flex min-h-11 items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground"
+        >
+          <Receipt className="size-3.5" aria-hidden />
+          订单
+        </Link>
       </header>
 
-      {/* 主区域：story / cards / trust 三段走 justify-between，
-          小屏紧凑、大屏自然呼吸 */}
-      <div className="flex min-h-0 flex-1 flex-col justify-between overflow-y-auto px-4 py-4">
-        <section className="px-1">
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-sm font-medium text-foreground/90">{pageConfig.description}</p>
-            <div className="flex shrink-0 items-center gap-2">
-              <Link
-                href="/profile/orders"
-                className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1 text-xs font-bold text-foreground/90 transition-colors hover:bg-secondary hover:text-foreground"
-              >
-                <Receipt className="h-3.5 w-3.5" aria-hidden />
-                我的订单
-              </Link>
-              <Link
-                href="/profile/spending"
-                className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1 text-xs font-bold text-foreground/90 transition-colors hover:bg-secondary hover:text-foreground"
-              >
-                <History className="h-3.5 w-3.5" aria-hidden />
-                消耗明细
-              </Link>
-            </div>
+      <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden px-4 pb-5 pt-4">
+        <section aria-label="当前星尘余额" className="px-1">
+          <p className="text-[11px] text-muted-foreground">当前星尘余额</p>
+          <div className="mt-1 flex items-end justify-between gap-3">
+            <p className="min-w-0 truncate text-[30px] font-bold leading-10 tabular-nums tracking-tight">
+              {wallet.data ? formatNumber(wallet.data.total_credits ?? wallet.data.credits) : '—'}
+              <span className="ml-2 text-[11px] font-normal text-muted-foreground">星尘</span>
+            </p>
+            <p className="pb-1 text-right text-[10px] leading-4 text-muted-foreground">
+              为喜欢的故事
+              <br />
+              续上星光
+            </p>
           </div>
         </section>
 
-        <section className="flex flex-col gap-3 py-4">
+        <VipEntryCard
+          status={vipStatus.data}
+          monthlyPlan={data?.vip_plans?.find((plan) => plan.id === 'month')}
+          loading={vipStatus.isLoading || isLoading}
+          onOpen={openVip}
+        />
+
+        <section aria-label="星尘充值套餐">
+          <div className="mb-3 flex items-baseline justify-between gap-2 px-1">
+            <h2 className="text-sm font-bold">选择充值金额</h2>
+            <span className="text-[10px] text-muted-foreground">星尘即时补充 · 会员独立开通</span>
+          </div>
           {isError ? (
-            <div className="flex min-h-[180px] flex-col items-center justify-center rounded-2xl border border-destructive/25 bg-destructive/5 px-6 text-center">
+            <div className="flex min-h-[180px] flex-col items-center justify-center rounded-[22px] border border-destructive/25 bg-destructive/5 px-6 text-center">
               <AlertCircle className="h-7 w-7 text-destructive" aria-hidden />
-              <p className="mt-3 text-sm font-semibold text-foreground">充值套餐暂时无法加载</p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                请稍后重试，当前不会创建支付订单。
-              </p>
+              <p className="mt-3 text-sm font-semibold">充值套餐暂时无法加载</p>
               <Button variant="outline" size="sm" className="mt-4" onClick={() => void refetch()}>
                 重新加载
               </Button>
             </div>
-          ) : isLoading && plans.length === 0 ? (
-            Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-[68px] rounded-xl border border-border bg-card" />
-            ))
+          ) : isLoading ? (
+            <div className="grid grid-cols-2 gap-3">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <Skeleton key={i} className="h-[142px] rounded-[22px]" />
+              ))}
+            </div>
+          ) : plans.length === 0 ? (
+            <p className="rounded-[22px] border border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
+              充值套餐暂未开放，请稍后再来
+            </p>
           ) : (
-            <>
+            <div role="radiogroup" aria-label="选择星尘充值套餐" className="grid grid-cols-2 gap-3">
               {plans.map((plan) => (
                 <PlanCard
                   key={plan.id}
@@ -332,58 +340,24 @@ function RechargePageContent() {
                   onSelect={handleSelectCredits}
                 />
               ))}
-              {vipPlans.length > 0 ? (
-                <div role="radiogroup" aria-label="VIP 套餐" className="mt-1 space-y-3">
-                  <div className="flex items-center gap-2 px-1 text-[12px] font-bold text-primary">
-                    <Crown className="h-3.5 w-3.5" aria-hidden />
-                    <span>VIP 会员</span>
-                    <span className="h-px flex-1 bg-gradient-to-r from-primary/55 to-transparent" />
-                  </div>
-                  {vipPlans.map((plan) => (
-                    <VipPlanCard
-                      key={plan.id}
-                      plan={plan}
-                      selected={selectionKey('vip', plan.id) === selectedKey}
-                      discountLabel={discountLabel}
-                      checkinVipCredits={vipBenefits?.checkin_vip_credits}
-                      variant="recharge"
-                      onSelect={handleSelectVip}
-                    />
-                  ))}
-                </div>
-              ) : null}
-            </>
+            </div>
           )}
-
-          {/* 邀请快捷入口：紧挨着套餐列表，保持相同的 gap-3，并对齐高档套餐卡高度 */}
-          {inviteEntryEnabled ? (
-            <button
-              type="button"
-              onClick={goInviteCenter}
-              className="relative flex h-[86px] w-full items-center gap-3 overflow-hidden rounded-xl border border-[#d946ef] bg-[linear-gradient(135deg,rgba(74,22,87,0.96)_0%,rgba(111,23,84,0.96)_100%)] px-4 text-left shadow-[0_0_22px_rgba(217,70,239,0.28)] transition hover:opacity-80"
-            >
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-fuchsia-500 to-pink-400 text-primary-foreground shadow-md shadow-[0_4px_12px_rgba(217,70,239,0.45)]">
-                <Gem className="h-5 w-5" aria-hidden />
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[13px] font-black text-foreground">
-                  邀请好友得 2200 星尘
-                </span>
-                <span className="mt-0.5 block truncate text-[10px] text-fuchsia-100/80">
-                  分享专属链接，好友首次登录后建立邀请关系
-                </span>
-              </span>
-              <ChevronRight className="h-4 w-4 shrink-0 text-primary-foreground" aria-hidden />
-            </button>
-          ) : null}
         </section>
 
-        <section className="flex justify-center">
-          <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground/70">
-            <ShieldCheck className="h-3 w-3 text-success" aria-hidden />
-            官方认证 · 安全支付 · 积分即时到账
-          </span>
-        </section>
+        {inviteEntryEnabled ? (
+          <button
+            type="button"
+            onClick={goInviteCenter}
+            className="flex min-h-14 w-full items-center gap-3 rounded-[20px] border border-border/70 bg-card/60 px-4 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <Gem className="size-4 shrink-0 text-primary/80" aria-hidden />
+            <span className="min-w-0 flex-1 text-xs">邀请好友，也能领取星尘</span>
+            <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+          </button>
+        ) : null}
+        <p className="flex items-center justify-center gap-1 text-[10px] text-muted-foreground/70">
+          <ShieldCheck className="size-3" aria-hidden /> 安全支付 · 到账状态可在订单中查看
+        </p>
       </div>
 
       {/* 底部固定栏：单行（方法 chips + 立即支付） */}
@@ -396,8 +370,8 @@ function RechargePageContent() {
             {checkoutError}
           </p>
         ) : null}
-        <div className="flex items-center gap-3 px-4 py-3">
-          <div role="radiogroup" aria-label="支付方式" className="flex shrink-0 gap-2">
+        <div className="space-y-3 px-4 py-3">
+          <div role="radiogroup" aria-label="支付方式" className="flex flex-wrap gap-2">
             {paymentTypes.map((t) => {
               const active = paymentType === t;
               const isAlipay = t === 'alipay';
@@ -417,7 +391,7 @@ function RechargePageContent() {
                     }
                   }}
                   className={cn(
-                    'flex items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold transition-all',
+                    'flex min-h-11 items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold transition-colors',
                     // 选中态用支付渠道品牌色，不走主题 token：用户靠颜色识别微信/支付宝。
                     active
                       ? isAlipay
@@ -433,10 +407,10 @@ function RechargePageContent() {
             })}
           </div>
           <Button
-            disabled={!selection?.available || createOrder.isPending}
+            disabled={!selection?.available || isError || createOrder.isPending}
             onClick={() => void handleSubmit()}
             className={cn(
-              'flex-1 h-10 rounded-xl font-bold transition-all',
+              'h-12 w-full rounded-full text-sm font-bold transition-colors',
               selection?.available && !createOrder.isPending
                 ? 'text-primary-foreground hover:opacity-90 border-0'
                 : 'bg-secondary text-muted-foreground'
@@ -450,7 +424,7 @@ function RechargePageContent() {
             {checkoutButtonLabel({
               pending: createOrder.isPending,
               selection,
-              vipActive: vipStatus.data?.active === true,
+              vipActive: false,
               creditsButtonText: pageConfig.button_text,
             })}
           </Button>

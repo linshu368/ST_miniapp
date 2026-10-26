@@ -46,6 +46,11 @@ import { feedbackAfterPaint, startAction } from '@/lib/perf/action-tracker';
 import { getMetricDimensions } from '@/lib/perf/env-tags';
 import { getReplayLifecycle } from '@/lib/telemetry';
 import { MAIN_WALLET_NOTICE } from '@/lib/vip/presentation';
+import {
+  appendMessageThinking,
+  messageThinkingKey,
+  type MessageThinkingMap,
+} from '@/lib/chat-thinking';
 
 import { FirstTokenObservation, type FirstTokenIdentity } from '@/lib/perf/first-token-observation';
 
@@ -81,6 +86,7 @@ interface UseConversationTurnOptions {
   sessionId: string | null;
   selectedModelId: string | null;
   selectedModelUsesFreeQuota?: boolean | null;
+  thinkingEnabled?: boolean;
   persistedMessages: ChatMessage[];
   returnTo: string;
   onSessionGone: () => void;
@@ -260,6 +266,7 @@ export function useConversationTurn({
   sessionId,
   selectedModelId,
   selectedModelUsesFreeQuota,
+  thinkingEnabled = true,
   persistedMessages,
   returnTo,
   onSessionGone,
@@ -274,6 +281,11 @@ export function useConversationTurn({
   const cancelTurn = cancelMutation.mutateAsync;
 
   const [streaming, setStreaming] = useState<StreamingTurn | null>(null);
+  const [thinkingState, setThinkingState] = useState<{
+    sessionId: string | null;
+    messages: MessageThinkingMap;
+  }>({ sessionId, messages: {} });
+  const thinkingByMessage = thinkingState.sessionId === sessionId ? thinkingState.messages : {};
   const [quotaRefreshing, setQuotaRefreshing] = useState(false);
   const [replyStalled, setReplyStalled] = useState(false);
   const [streamError, setStreamError] = useState<string | null>(null);
@@ -326,6 +338,7 @@ export function useConversationTurn({
     abortRef.current?.abort();
     abortRef.current = null;
     setStreaming(null);
+    setThinkingState({ sessionId, messages: {} });
     setQuotaRefreshing(false);
     setStreamError(null);
     safelyRunTelemetry(() => getReplayLifecycle().setStreaming(false));
@@ -350,8 +363,9 @@ export function useConversationTurn({
   const serverBusy = persistedMessages.some((message) => message.status === 'streaming');
   const generating = streaming !== null || quotaRefreshing || serverBusy || cancelling;
   const lastMessage = messages.at(-1);
+  const lastThinking = lastMessage ? thinkingByMessage[messageThinkingKey(lastMessage)] : undefined;
   const replyProgressKey = streaming
-    ? `local:${streaming.assistantMessageId ?? 'waiting'}:${streaming.text.length}`
+    ? `local:${streaming.assistantMessageId ?? 'waiting'}:${streaming.text.length}:${lastThinking?.length ?? 0}`
     : serverBusy && lastMessage?.status === 'streaming'
       ? `server:${lastMessage.id}:${lastMessage.content.length}`
       : null;
@@ -636,16 +650,20 @@ export function useConversationTurn({
       if (sendAction) feedbackAfterPaint(sendAction);
 
       let assistantMessageId: string | null = null;
+      let assistantRevision = pendingRef.current.revision;
       let settledStatus: ChatMessageStatus | null = null;
 
       try {
         await streamConversationTurn({
           sessionId,
           requestId,
+          thinkingEnabled,
           content: input.content,
           signal: controller.signal,
           onDispatched: () => observation.dispatched(),
-          onFirstDeltaReceived: () => observation.received(),
+          onFirstDeltaReceived: () => {
+            if (isCurrent()) observation.received();
+          },
           onStart: (event) => {
             if (!isCurrent()) return;
             pendingRef.current = {
@@ -658,6 +676,7 @@ export function useConversationTurn({
             assistantMessageId = event.assistant_message_id;
             observation.identify(event.assistant_message_id, event.revision);
             if (!observation.timedOut) setFirstTokenObservation(observation.identity);
+            assistantRevision = event.revision;
             turnMeta.turnIndex = event.turn_index;
             turnMeta.revision = toTelemetryRevision(event.revision);
             captureTurnLifecycleEvent(sessionId, characterId, turnMeta, {
@@ -666,13 +685,40 @@ export function useConversationTurn({
             setStreaming((current) => (current ? applyStreamStart(current, event) : current));
           },
           onDelta: (text) => {
-            if (!isCurrent()) return;
+            if (!isCurrent() || observation.timedOut) return;
             setStreaming((current) => (current ? appendStreamText(current, text) : current));
+          },
+          onReasoning: (text) => {
+            if (
+              !isCurrent() ||
+              observation.timedOut ||
+              !thinkingEnabled ||
+              !assistantMessageId ||
+              !text
+            )
+              return;
+            const key = messageThinkingKey({
+              session_id: sessionId,
+              id: assistantMessageId,
+              revision: assistantRevision,
+            });
+            setThinkingState((current) => ({
+              sessionId,
+              messages: appendMessageThinking(
+                current.sessionId === sessionId ? current.messages : {},
+                key,
+                text
+              ),
+            }));
           },
           onDone: (event) => {
             if (!isCurrent()) return;
             assistantMessageId = event.assistant_message_id;
             settledStatus = event.status;
+            if (event.status !== 'complete' && !observation.hasReceivedToken) {
+              observation.unavailable('upstream_error');
+              setFirstTokenObservation(null);
+            }
           },
         });
 
@@ -713,12 +759,27 @@ export function useConversationTurn({
             });
           }
         }
-        if (error instanceof ConversationStreamError && error.code === 'first_token_timeout')
-          observation.deadlineFailed();
+        if (error instanceof ConversationStreamError) {
+          if (error.code === 'first_token_timeout') observation.deadlineFailed('server_timeout');
+          if (error.code === 'fallback_first_token_timeout')
+            observation.deadlineFailed('fallback_timeout');
+          if (error.code === 'primary_first_token_timeout')
+            observation.deadlineFailed('primary_timeout');
+        }
         observation.unavailable('upstream_error');
         setFirstTokenObservation(null);
         await handleTurnFailure(error, input, isCurrent);
-        if (observation.timedOut && isCurrent()) setStreamError(FIRST_TOKEN_RETRY_MESSAGE);
+        // Keep rolling-deploy compatibility with an old backend that may still hard-timeout.
+        if (
+          error instanceof ConversationStreamError &&
+          [
+            'first_token_timeout',
+            'fallback_first_token_timeout',
+            'primary_first_token_timeout',
+          ].includes(error.code ?? '') &&
+          isCurrent()
+        )
+          setStreamError(FIRST_TOKEN_RETRY_MESSAGE);
       } finally {
         if (!isCurrent()) return;
         requestRef.current = null;
@@ -735,6 +796,7 @@ export function useConversationTurn({
       queryClient,
       refreshQuotaAndBalance,
       selectedModelId,
+      thinkingEnabled,
       serverBusy,
       quotaRefreshing,
       sessionId,
@@ -743,7 +805,7 @@ export function useConversationTurn({
 
   const abort = useCallback(
     async (reason?: 'first_token_timeout') => {
-      if (!sessionId || cancelRef.current || (quotaRefreshing && !reason)) return;
+      if (!sessionId || cancelRef.current || quotaRefreshing) return;
       if (!reason) observationRef.current?.unavailable('cancelled');
       setFirstTokenObservation(null);
       const cancellation = Symbol('cancel');
@@ -760,7 +822,7 @@ export function useConversationTurn({
               (item) => item.role === 'assistant' && item.status === 'streaming'
             );
         let assistantMessageId = pending?.assistantMessageId ?? message?.id;
-        // 保留一次点击的取消意图，覆盖后端 20 秒准备 + 开轮 RPC；总发现等待最多 30 秒。
+        // 保留一次点击的取消意图，覆盖开轮/取消 RPC 的确认延迟；总发现等待最多 30 秒。
         const discoveryDeadline = Date.now() + CANCEL_DISCOVERY_DEADLINE_MS;
         while (!assistantMessageId && pending && Date.now() < discoveryDeadline) {
           if (!isCurrent()) return;
@@ -848,7 +910,11 @@ export function useConversationTurn({
         }
         if (!assistantMessageId) throw new Error('本次回复尚未确认，请稍后重试取消');
         if (message) observationRef.current?.identify(assistantMessageId, message.revision);
-        const result = await cancelTurn({ sessionId, assistantMessageId });
+        const result = await cancelTurn({
+          sessionId,
+          assistantMessageId,
+          reason: reason ?? 'user_stop',
+        });
         observationRef.current?.identify(result.message.id, result.message.revision);
         if (!isCurrent()) return;
         if (result.message.status === 'streaming') throw new Error('本次回复仍在生成，请重试取消');
@@ -928,7 +994,6 @@ export function useConversationTurn({
     )
       return;
     const identity = observationRef.current.identity;
-    // Completion can precede display. Keep its terminal outcome; do not cancel another revision.
     const completed = persistedMessages.find(
       (m) =>
         m.id === identity.assistantMessageId &&
@@ -965,5 +1030,6 @@ export function useConversationTurn({
     setStreamError,
     streamError,
     streaming,
+    thinkingByMessage,
   };
 }

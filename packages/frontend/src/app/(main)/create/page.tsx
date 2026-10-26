@@ -25,6 +25,7 @@ import {
 } from '@/lib/api/image-plaza';
 import type { GetImagePlazaFeedData, ImagePlazaWork, ImagePlazaFeedSort } from '@miniapp/shared';
 import { ImagePlazaHistorySheet } from '@/components/image-plaza/image-plaza-history-sheet';
+import { markCriticalSettled } from '@/lib/entry-phase';
 import {
   clearImagePlazaReturn,
   readImagePlazaReturn,
@@ -44,6 +45,9 @@ export default function CreatePage() {
   const [debouncedSearch, setDebouncedSearch] = useState(returnSnapshot?.search ?? '');
   const feed = useImagePlazaFeedQuery(debouncedSearch, tag, sort);
   usePageReady('/create', feed.data !== undefined);
+  useEffect(() => {
+    if (feed.data !== undefined || feed.isError || feed.isFetched) markCriticalSettled();
+  }, [feed.data, feed.isError, feed.isFetched]);
   const { fetchNextPage, hasNextPage, isFetchingNextPage } = feed;
   const createConversation = useCreateImagePlazaConversationMutation();
   const sentinel = useRef<HTMLDivElement | null>(null);

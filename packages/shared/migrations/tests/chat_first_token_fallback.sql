@@ -87,3 +87,43 @@ SET ROLE service_role;
 SELECT count(*) FROM miniapp_analytics.chat_first_token_facts;
 SELECT count(*) FROM miniapp_analytics.chat_first_token_report('2026-10-22 00:00:00+08','2026-10-23 00:00:00+08');
 RESET ROLE;
+
+-- v2 distinguishes actual wait, stage failures, total deadline, legacy policy and missing reports.
+DO $$
+DECLARE h uuid; p uuid; req uuid; n integer; payload jsonb; fact record; report jsonb;
+BEGIN
+  IF EXISTS(SELECT 1 FROM experience.chat_generation_requests WHERE fallback_timeout_ms IS NOT NULL) THEN
+    RAISE EXCEPTION 'Legacy rows were falsely backfilled with a fallback stage budget';
+  END IF;
+  FOR n IN 1..4 LOOP
+    BEGIN
+      PERFORM admin.validate_model_catalog_first_token(jsonb_build_object('fallback_timeout_ms', CASE n WHEN 1 THEN 0 WHEN 2 THEN -1 WHEN 3 THEN 10000 ELSE 1.5 END));
+      RAISE EXCEPTION 'Invalid fallback budget accepted';
+    EXCEPTION WHEN invalid_parameter_value THEN NULL; END;
+  END LOOP;
+  FOR n IN 1..5 LOOP
+    h:=gen_random_uuid(); p:=gen_random_uuid(); req:=gen_random_uuid();
+    INSERT INTO experience.chat_history(id,model,revision,status) VALUES(h,'v2-source',0,'streaming');
+    payload:=jsonb_build_object('request_id',req,'primary_attempt_id',p,'requested_model_id','v2-model','provider','openrouter','model','v2-source','received_at','2026-10-26 10:00:00+08','timeout_ms',4000,'fallback_timeout_ms',2000,'deadline_ms',10000,'timeout_rate_target',0.01,'catalog_version',10,'mode','send');
+    PERFORM experience.begin_chat_generation_observation(h,payload);
+    PERFORM experience.begin_chat_generation_observation(h,payload);
+    BEGIN
+      PERFORM experience.begin_chat_generation_observation(h,payload||'{"fallback_timeout_ms":1000}');
+      RAISE EXCEPTION 'Frozen fallback wait changed';
+    EXCEPTION WHEN invalid_parameter_value THEN NULL; END;
+    IF n<>4 THEN
+      PERFORM experience.report_chat_first_token('00000000-0000-0000-0000-000000000099','00000000-0000-0000-0000-000000000090',jsonb_build_object(
+        'assistant_message_id',h,'request_id',req,'revision',0,'outcome',CASE n WHEN 1 THEN 'observed' WHEN 3 THEN 'timed_out' ELSE 'not_observed' END,
+        'first_token_visible_ms',CASE WHEN n=1 THEN 7200 END,'wait_finished_ms',CASE n WHEN 3 THEN 10000 WHEN 5 THEN 3000 ELSE 7200 END,
+        'first_token_received_ms',CASE WHEN n=1 THEN 7000 END,'request_dispatched_ms',10,'backgrounded',false,
+        'reason',CASE n WHEN 2 THEN 'fallback_timeout' WHEN 3 THEN 'not_visible' WHEN 5 THEN 'upstream_error' END,'measurement_method','visible_dom_after_frame_v2'));
+    END IF;
+    SELECT * INTO fact FROM miniapp_analytics.chat_first_token_facts WHERE chat_history_id=h;
+    IF fact.fallback_timeout_ms<>2000 OR fact.first_token_deadline_ms<>10000 THEN RAISE EXCEPTION 'v2 policy snapshot lost'; END IF;
+    IF n=2 AND (fact.client_outcome<>'not_observed' OR fact.client_wait_finished_ms<>7200 OR fact.client_first_token_visible_ms IS NOT NULL) THEN RAISE EXCEPTION 'Stage failure falsified user duration'; END IF;
+    IF n=4 AND (fact.client_outcome<>'missing' OR fact.client_wait_finished_ms IS NOT NULL) THEN RAISE EXCEPTION 'Missing measurement filled with zero'; END IF;
+  END LOOP;
+  SELECT r INTO report FROM miniapp_analytics.chat_first_token_report('2026-10-26 00:00:00+08','2026-10-27 00:00:00+08') r WHERE r->>'measurement_method'='visible_dom_after_frame_v2';
+  IF (report->>'requests')::int<>4 OR abs((report->>'foreground_first_token_failure_rate_known')::numeric-3.0/4)>0.000001 THEN RAISE EXCEPTION 'Early stage failures missing from final no-token rate'; END IF;
+  IF (report->>'foreground_time_cutoff_samples')::int<>2 OR (report->>'foreground_known_result_samples')::int<>4 OR (report->>'foreground_time_cutoff_rate_known')::numeric IS DISTINCT FROM 0.5 THEN RAISE EXCEPTION 'Time cutoff conflated with upstream errors or missing reports'; END IF;
+END $$;

@@ -164,6 +164,15 @@ describe('reconcileCharge (fixed_tier pending → applyLlmCharge)', () => {
     findLlmUsageCharge.mockResolvedValue(pendingFixedCharge());
   });
 
+  it('does not mark recovery settled while a display receipt is still pending', async () => {
+    chargeLlmUsage.mockResolvedValueOnce({
+      charge: { status: 'pending', charged_amount: 0, calculated_amount: 50 },
+    });
+    const result = await reconcileCharge(syncInput({ finishReason: 'stop' }));
+    expect(result).toEqual({ settled: false, intendedDeduction: 50, deductionRate: 0 });
+    expect(finalizePending).not.toHaveBeenCalled();
+  });
+
   it('success + length after sync is incomplete, not the old complete', async () => {
     const input = syncInput({ finishReason: 'length' });
     const result = await reconcileCharge(input);
@@ -461,7 +470,7 @@ describe('reconcileCharge (A2 already charged / free)', () => {
 });
 
 describe('OpenRouter sync original-field persistence', () => {
-  it.each([null, 'cancelled', 'timeout'] as const)(
+  it.each([null, 'cancelled', 'user_cancelled', 'timeout'] as const)(
     'keeps upstream metadata immutable and uses the business finish reason %s for settlement',
     async (businessReason) => {
       vi.useFakeTimers();
@@ -603,6 +612,67 @@ describe('sync recovery sources', () => {
 });
 
 describe('durable recovery without an upstream lookup', () => {
+  it.each([false, true])(
+    'recovers a stopped terminal quote asynchronously (pending=%s)',
+    async (pending) => {
+      vi.useFakeTimers();
+      vi.clearAllMocks();
+      const input = syncInput({
+        finishReason: 'user_cancelled',
+        status: 'stream_interrupted',
+        assistantReply: null,
+      });
+      syncMocks.pendingRows.mockResolvedValue([]);
+      syncMocks.listRows.mockResolvedValue([]);
+      syncMocks.staleRows.mockResolvedValue([]);
+      syncMocks.missingRows.mockResolvedValue([
+        {
+          ...input.record,
+          llm_finish_reason: 'user_cancelled',
+          session_id: 'session-1',
+          generationId: null,
+          callProvider: 'openrouter',
+        },
+      ]);
+      findLlmUsageCharge.mockResolvedValue(null);
+      chargeLlmUsage.mockResolvedValue({
+        charge: {
+          status: pending ? 'pending' : 'charged',
+          charged_amount: pending ? 0 : 50,
+          calculated_amount: 50,
+          metadata: { delivery_billing_gate: 'user_stopped' },
+        },
+      });
+      finalizePending.mockResolvedValue(null);
+      syncMocks.recordBillingOutcome.mockResolvedValue(undefined);
+      const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), child: vi.fn() };
+      log.child.mockReturnValue(log);
+      try {
+        startChatHistorySyncJob(log as unknown as FastifyBaseLogger);
+        await vi.advanceTimersByTimeAsync(5001);
+        expect(lastCharge()).toMatchObject({
+          chargeId: 'charge-1',
+          generationId: null,
+          calculatedAmount: 50,
+          metadata: { finish_reason: 'user_cancelled' },
+        });
+        expect(syncMocks.fetchGenerationData).not.toHaveBeenCalled();
+        expect(syncMocks.recoverStale).not.toHaveBeenCalled();
+        if (pending) expect(syncMocks.recordBillingOutcome).not.toHaveBeenCalled();
+        else {
+          expect(finalizePending).toHaveBeenCalledWith('charge-1', true);
+          expect(syncMocks.recordBillingOutcome).toHaveBeenCalledWith(
+            expect.objectContaining({ billingSettledAt: expect.any(String) })
+          );
+        }
+      } finally {
+        stopChatHistorySyncJob();
+        syncMocks.missingRows.mockResolvedValue([]);
+        vi.useRealTimers();
+      }
+    }
+  );
+
   it.each(['openrouter', 'venice'] as const)(
     'recovers %s when the OpenRouter key is unavailable',
     async (provider) => {

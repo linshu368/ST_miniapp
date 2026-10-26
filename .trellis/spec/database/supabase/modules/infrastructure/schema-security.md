@@ -5,7 +5,7 @@ scope: database
 category: infrastructure
 status: active
 owners: [database]
-last_verified_task: .trellis/tasks/10-10-image-plaza-v2/
+last_verified_task: .trellis/tasks/10-23-dialogue-preference/
 last_verified_at: 2026-10-13
 ---
 
@@ -65,3 +65,11 @@ last_verified_at: 2026-10-13
 ## T10 历史处置（本地实现，未远端执行）
 
 新history_disposition只保全类型化原名调用字段/受控诊断，清父表raw并规范化已有OR诊断；不存未知JSON、自由文本错误或原始归档，Venice/业务/账务不写。LIMIT2001先预算、最多2000、指纹CAS/事务/ID/provider/类型守卫。主表DROP仅在两库未执行证明后修正：以真实snapshot schema账本边界分类旧终态账单/dedup/失败/真实pending，旧pending原样保留不伪造结算；现代未知/漏快照/身份或状态冲突/关联reserved继续阻断。先处置文件成功记账再主表DROP，TEST证据不替代Production；超窗旧账务停止自动回捞、独立核验。
+
+## 2026-10-23 可运营回复风格
+
+20261023_reply_style_options.sql（迁移交付，执行状态见任务验收）新增app_core用户偏好JSONB及校验helper/service_role-only原子更新RPC，seed空正式UI目录。扩展admin managed-key/validator和两表实际CHECK，保留前置名单/验证状态/ACL；无历史重写。事务lock5s/statement60s，repeat不覆盖运营值。测试/生产独立门禁，先迁移再消费者。
+
+## 2026-10-26 轻量经营统计
+
+`20261026_grafana_light_core.sql` 新增 miniapp_analytics.grafana_core_daily 日/型号派生汇总，运行时不依赖。owner-only refresh_grafana_core_day 一次仅处理近14天内的一天，先按 created_at 范围过滤后关联计费/供应商标量，保留实际成本覆盖率、去重每日用户和实际支付/星尘口径。只有一个30分钟 cron 更新今天/昨天，caller statement5s/lock1s/禁并行、事务 advisory lock，失败保留旧快照；读者仅 SELECT 聚合，不能刷新或接触正文。退出11个旧全历史 cron，保留其旧数据对象。生产新 cron 在实测与引导填充前关闭，执行状态见任务10-26-grafana-light-core。

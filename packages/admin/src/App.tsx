@@ -509,10 +509,44 @@ function AdminWorkspace(props: {
   >({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  // Guard immediately, before React commits busy state or a confirmation dialog resolves.
+  const configWriteInFlight = useRef(false);
   const [autoSaveStatus, setAutoSaveStatus] = useState<
     'idle' | 'pending' | 'saving' | 'saved' | 'invalid' | 'error'
   >('idle');
   const hydratedValueRef = useRef('');
+  const replyStylesDirty =
+    selectedKey === 'reply_style_options' &&
+    JSON.stringify(workingValue) !== hydratedValueRef.current;
+  const confirmDiscardReplyStyleEdits = async (): Promise<boolean> => {
+    if (!replyStylesDirty) return true;
+    const confirmed = await confirmAction(
+      '离开回复风格编辑？',
+      '还有未保存的修改。离开后将恢复到最近的草稿或正式版本。',
+      true
+    );
+    if (confirmed) {
+      setWorkingValue(
+        resolveManagedWorkingValue({
+          key: selectedKey,
+          draft: drafts.find(
+            (draft) => draft.config_key === selectedKey && draft.status === 'draft'
+          ),
+          config: configs.find((config) => config.key === selectedKey),
+        })
+      );
+    }
+    return confirmed;
+  };
+  useEffect(() => {
+    if (!replyStylesDirty) return;
+    const warnBeforeLeaving = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warnBeforeLeaving);
+    return () => window.removeEventListener('beforeunload', warnBeforeLeaving);
+  }, [replyStylesDirty]);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -660,7 +694,12 @@ function AdminWorkspace(props: {
   useEffect(() => {
     if (selectedKey !== 'llm_model_catalog' || !canWrite || loading) return;
     const serialized = JSON.stringify(workingValue);
-    if (serialized === hydratedValueRef.current) return;
+    if (serialized === hydratedValueRef.current) {
+      // Hydration or undo can cancel the debounce after it marked the old value pending.
+      // Once the editor matches the saved draft, publishing must become available again.
+      setAutoSaveStatus((status) => (status === 'pending' ? 'idle' : status));
+      return;
+    }
 
     setAutoSaveStatus('pending');
     const timer = window.setTimeout(async () => {
@@ -759,7 +798,8 @@ function AdminWorkspace(props: {
   };
 
   const handleSaveDraft = async () => {
-    if (!canWrite) return;
+    if (!canWrite || saving || loading || configWriteInFlight.current) return;
+    configWriteInFlight.current = true;
     setSaving(true);
     try {
       const parsed = parseManagedConfig(selectedKey, workingValue);
@@ -784,12 +824,22 @@ function AdminWorkspace(props: {
     } catch (error) {
       message.error(error instanceof Error ? error.message : '草稿保存失败');
     } finally {
+      configWriteInFlight.current = false;
       setSaving(false);
     }
   };
 
   const handlePublish = async () => {
-    if (!canWrite || !latestDraft) return;
+    if (
+      !canWrite ||
+      !latestDraft ||
+      saving ||
+      loading ||
+      replyStylesDirty ||
+      configWriteInFlight.current
+    )
+      return;
+    configWriteInFlight.current = true;
     setSaving(true);
     try {
       const draftValue = isTextManagedConfig(selectedKey)
@@ -810,23 +860,32 @@ function AdminWorkspace(props: {
     } catch (error) {
       message.error(error instanceof Error ? error.message : '发布失败');
     } finally {
+      configWriteInFlight.current = false;
       setSaving(false);
     }
   };
 
   const handleDiscardDraft = async () => {
-    if (!canWrite || !latestDraft || autoSaveStatus === 'pending' || autoSaveStatus === 'saving') {
+    if (
+      !canWrite ||
+      !latestDraft ||
+      saving ||
+      loading ||
+      configWriteInFlight.current ||
+      autoSaveStatus === 'pending' ||
+      autoSaveStatus === 'saving'
+    ) {
       return;
     }
-    const confirmed = await confirmAction(
-      `${props.environment === 'production' ? '生产环境：' : ''}放弃当前草稿？`,
-      '草稿会被永久删除，编辑器将恢复为当前正式版本。此操作会保留操作记录。',
-      props.environment === 'production'
-    );
-    if (!confirmed) return;
-
+    configWriteInFlight.current = true;
     setSaving(true);
     try {
+      const confirmed = await confirmAction(
+        `${props.environment === 'production' ? '生产环境：' : ''}放弃当前草稿？`,
+        '草稿会被永久删除，编辑器将恢复为当前正式版本。此操作会保留操作记录。',
+        props.environment === 'production'
+      );
+      if (!confirmed) return;
       await discardDraft(props.client, latestDraft.id);
       const publishedValue = resolveManagedWorkingValue({
         key: selectedKey,
@@ -841,12 +900,14 @@ function AdminWorkspace(props: {
     } catch (error) {
       message.error(error instanceof Error ? error.message : '放弃草稿失败');
     } finally {
+      configWriteInFlight.current = false;
       setSaving(false);
     }
   };
 
   const handleRollback = async (release: ConfigRelease) => {
-    if (!canWrite) return;
+    if (!canWrite || saving || loading || configWriteInFlight.current) return;
+    configWriteInFlight.current = true;
     setSaving(true);
     try {
       const targetValue = releasePreviewValue(release);
@@ -865,6 +926,7 @@ function AdminWorkspace(props: {
     } catch (error) {
       message.error(error instanceof Error ? error.message : '回滚失败');
     } finally {
+      configWriteInFlight.current = false;
       setSaving(false);
     }
   };
@@ -877,6 +939,7 @@ function AdminWorkspace(props: {
       extra={
         <Space>
           <Tag>正式版本 {currentConfig?.version ?? 0}</Tag>
+          {replyStylesDirty ? <Tag color="gold">有未保存修改</Tag> : null}
           {latestDraft ? <Tag color="orange">有未发布草稿</Tag> : <Tag>已同步</Tag>}
           {selectedKey === 'llm_model_catalog' ? (
             <Tag
@@ -929,7 +992,7 @@ function AdminWorkspace(props: {
         modelCatalogSection={view === 'fallback_config' ? 'fallback' : 'models'}
         value={workingValue}
         onChange={setWorkingValue}
-        disabled={!canWrite}
+        disabled={!canWrite || saving || loading}
         providerDirectories={providerDirectories}
         publishedModelIds={publishedModelIds}
         syncLoading={providerLoading}
@@ -949,7 +1012,7 @@ function AdminWorkspace(props: {
         <Button
           type="primary"
           loading={saving}
-          disabled={!canWrite || hasDuplicateOpenRouterModels}
+          disabled={!canWrite || saving || loading || hasDuplicateOpenRouterModels}
           title={hasDuplicateOpenRouterModels ? '请先处理重复的 OpenRouter 模型' : undefined}
           onClick={handleSaveDraft}
         >
@@ -960,6 +1023,9 @@ function AdminWorkspace(props: {
           loading={saving}
           disabled={
             !canWrite ||
+            saving ||
+            loading ||
+            replyStylesDirty ||
             !latestDraft ||
             autoSaveStatus === 'pending' ||
             autoSaveStatus === 'saving' ||
@@ -973,13 +1039,19 @@ function AdminWorkspace(props: {
           danger
           loading={saving}
           disabled={
-            !canWrite || !latestDraft || autoSaveStatus === 'pending' || autoSaveStatus === 'saving'
+            !canWrite ||
+            saving ||
+            loading ||
+            !latestDraft ||
+            autoSaveStatus === 'pending' ||
+            autoSaveStatus === 'saving'
           }
           onClick={() => void handleDiscardDraft()}
         >
           放弃当前草稿
         </Button>
         <Button
+          disabled={saving || loading}
           onClick={() =>
             setWorkingValue(
               resolveManagedWorkingValue({
@@ -1005,7 +1077,7 @@ function AdminWorkspace(props: {
                 <Button
                   key="rollback"
                   size="small"
-                  disabled={!canWrite}
+                  disabled={!canWrite || saving || loading}
                   onClick={() => void handleRollback(release)}
                 >
                   回滚到此版本
@@ -1044,11 +1116,15 @@ function AdminWorkspace(props: {
         </div>
         <Menu
           mode="inline"
-          defaultOpenKeys={['configs']}
+          defaultOpenKeys={['configs', 'platform_rules']}
           selectedKeys={[view === 'configs' ? configMenuKey(selectedKey) : view]}
           onClick={({ key }) => {
             void (async () => {
+              if (saving) return;
               const selection = resolveAdminMenuSelection(key);
+              if (view === 'reply_style_options' && selection.view !== 'reply_style_options') {
+                if (!(await confirmDiscardReplyStyleEdits())) return;
+              }
               if (view === 'text_postprocess' && selection.view !== 'text_postprocess') {
                 if (!(await confirmDiscardTextEdits())) return;
               }
@@ -1101,7 +1177,14 @@ function AdminWorkspace(props: {
                 { key: 'invite_program', label: '裂变邀请管理' },
                 { key: 'image_generation_config', label: '图片生成配置' },
                 { key: 'image_plaza', label: '图片广场' },
-                { key: 'platform_instructions', label: '平台规则' },
+                {
+                  key: 'platform_rules',
+                  label: '平台规则',
+                  children: [
+                    { key: 'platform_instructions', label: '主体与模块规则' },
+                    { key: 'reply_style_options', label: '回复风格' },
+                  ],
+                },
                 { key: 'vip_strategy', label: 'VIP策略' },
                 { key: 'text_postprocess', label: '回复富文本规则' },
               ],
@@ -1117,6 +1200,7 @@ function AdminWorkspace(props: {
           <Space>
             <Segmented
               value={props.environment}
+              disabled={saving}
               options={[
                 { label: '测试环境', value: 'test' },
                 { label: '生产环境', value: 'production' },
@@ -1124,7 +1208,8 @@ function AdminWorkspace(props: {
               onChange={(value) => {
                 void (async () => {
                   const next = value as AdminEnvironment;
-                  if (next === props.environment) return;
+                  if (next === props.environment || saving) return;
+                  if (!(await confirmDiscardReplyStyleEdits())) return;
                   if (view === 'text_postprocess' && !(await confirmDiscardTextEdits())) return;
                   await props.onEnvironmentChange(next);
                 })();
@@ -1138,7 +1223,16 @@ function AdminWorkspace(props: {
             <Typography.Text>
               {props.admin.display_name} · {props.admin.email} · {props.admin.role}
             </Typography.Text>
-            <Button onClick={() => void props.onLogout()}>退出</Button>
+            <Button
+              disabled={saving}
+              onClick={() =>
+                void (async () => {
+                  if (await confirmDiscardReplyStyleEdits()) await props.onLogout();
+                })()
+              }
+            >
+              退出
+            </Button>
           </Space>
         </Layout.Header>
         {props.environment === 'production' ? (
@@ -1278,7 +1372,7 @@ function AdminWorkspace(props: {
               </Card>
               {configEditorCard}
             </Space>
-          ) : view === 'configs' || view === 'fallback_config' ? (
+          ) : view === 'configs' || view === 'fallback_config' || view === 'reply_style_options' ? (
             configEditorCard
           ) : (
             <Card title="发布历史">

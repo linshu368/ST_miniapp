@@ -12,7 +12,12 @@
  */
 
 import { Transform } from 'node:stream';
-import { LLM_PROVIDER_CAPABILITIES, type LlmModelProvider } from '@miniapp/shared';
+import { StringDecoder } from 'node:string_decoder';
+import {
+  LLM_PROVIDER_CAPABILITIES,
+  MAX_CONVERSATION_REASONING_LENGTH,
+  type LlmModelProvider,
+} from '@miniapp/shared';
 import { getLlmProviderRuntimeConfig } from '../../platform/runtime-config.js';
 import { veniceFetch } from '../../platform/venice-http.js';
 
@@ -109,6 +114,7 @@ export function createSseTap(options: {
   /** 上游响应头已带 x-generation-id 时的初值 */
   generationId?: string | null;
   onDelta?: (delta: string) => void;
+  onReasoningDelta?: (delta: string) => void;
   onGenerationId?: (generationId: string) => Promise<void>;
   onEnd: (result: SseTapResult) => void | Promise<void>;
 }): SseTap {
@@ -118,7 +124,33 @@ export function createSseTap(options: {
   let usage: Record<string, unknown> | null = null;
   let responseMetadata: Record<string, unknown> = {};
   const replyChunks: string[] = [];
+  const decoder = new StringDecoder('utf8');
   let sseBuffer = '';
+  let reasoningLength = 0;
+  let structuredReasoningSeen = false;
+  let pendingOutput: Array<{ kind: 'content' | 'reasoning'; text: string }> = [];
+  const splitter = createLeadingThinkingSplitter({
+    onContent: (text) => {
+      replyChunks.push(text);
+      pendingOutput.push({ kind: 'content', text });
+    },
+    onReasoning: (text) => {
+      if (!structuredReasoningSeen) pendingOutput.push({ kind: 'reasoning', text });
+    },
+  });
+  const forwardPending = (): void => {
+    const output = pendingOutput;
+    pendingOutput = [];
+    for (const part of output) {
+      if (tap.destroyed) break;
+      if (part.kind === 'content') options.onDelta?.(part.text);
+      else if (options.onReasoningDelta && reasoningLength < MAX_CONVERSATION_REASONING_LENGTH) {
+        const visible = part.text.slice(0, MAX_CONVERSATION_REASONING_LENGTH - reasoningLength);
+        reasoningLength += visible.length;
+        if (visible) options.onReasoningDelta(visible);
+      }
+    }
+  };
 
   const snapshot = (): SseTapResult => ({
     completed: streamCompleted,
@@ -133,11 +165,11 @@ export function createSseTap(options: {
   const consumeDataLine = async (line: string): Promise<void> => {
     let json: Record<string, unknown>;
     try {
-      json = JSON.parse(line.slice(6)) as Record<string, unknown>;
+      json = JSON.parse(line.slice(5).trimStart()) as Record<string, unknown>;
     } catch {
       return;
     }
-    if (!json || typeof json !== 'object') return;
+    if (!json || typeof json !== 'object' || Array.isArray(json)) return;
     const firstId =
       !generationId && typeof json.id === 'string' && json.id.length > 0 ? json.id : null;
     if (firstId) generationId = firstId;
@@ -145,34 +177,41 @@ export function createSseTap(options: {
       usage = json.usage as Record<string, unknown>;
     }
     responseMetadata = { ...responseMetadata, ...boundedResponseMetadata(json) };
-    const choices = json.choices as
-      | Array<{ delta?: { content?: unknown }; finish_reason?: unknown }>
-      | undefined;
-    const choice = choices?.[0];
-    const delta = choice?.delta?.content;
+    const choice = Array.isArray(json.choices) ? asRecord(json.choices[0]) : null;
+    const deltaFields = asRecord(choice?.delta);
+    const delta = deltaFields?.content;
+    const reasoning = readExposedReasoning(deltaFields);
+    if (reasoning) {
+      structuredReasoningSeen = true;
+      pendingOutput.push({ kind: 'reasoning', text: reasoning });
+    }
     if (typeof delta === 'string') {
-      replyChunks.push(delta);
+      if (delta.length === 0) replyChunks.push('');
+      else splitter.push(delta, !structuredReasoningSeen);
     }
     if (typeof choice?.finish_reason === 'string') finishReason = choice.finish_reason;
     // Snapshot received text before I/O, so cleanup retains it even if identity storage fails.
     // A database failure is not malformed SSE: propagate it through pipeline cleanup.
     if (firstId) await options.onGenerationId?.(firstId);
-    if (!tap.destroyed && typeof delta === 'string') options.onDelta?.(delta);
+    forwardPending();
   };
 
   const tap = new Transform({
     transform(chunk, _encoding, callback) {
-      sseBuffer += chunk.toString();
+      // A network chunk can end halfway through a Chinese character or emoji.
+      sseBuffer += decoder.write(chunk);
       const lines = sseBuffer.split('\n');
       // 保留最后一行（可能不完整），其余行处理
       sseBuffer = lines.pop() || '';
 
       void (async () => {
         for (const line of lines) {
-          if (tap.destroyed) break;
-          if (line.trim() === 'data: [DONE]') {
+          if (tap.destroyed || streamCompleted) break;
+          if (line.startsWith('data:') && line.slice(5).trim() === '[DONE]') {
+            splitter.finish();
+            forwardPending();
             streamCompleted = true;
-          } else if (line.startsWith('data: ')) {
+          } else if (line.startsWith('data:')) {
             await consumeDataLine(line);
           }
         }
@@ -183,8 +222,13 @@ export function createSseTap(options: {
     },
     flush(callback) {
       void (async () => {
-        if (sseBuffer.trim() === 'data: [DONE]') streamCompleted = true;
-        else if (sseBuffer.startsWith('data: ')) await consumeDataLine(sseBuffer);
+        sseBuffer += decoder.end();
+        if (!streamCompleted && sseBuffer.startsWith('data:')) {
+          if (sseBuffer.slice(5).trim() === '[DONE]') streamCompleted = true;
+          else await consumeDataLine(sseBuffer);
+        }
+        splitter.finish();
+        forwardPending();
         await options.onEnd(snapshot());
       })().then(
         () => callback(),
@@ -194,6 +238,92 @@ export function createSseTap(options: {
   });
 
   return Object.assign(tap, { snapshot });
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+/** Prefer one readable representation; encrypted blocks and signatures are never exposed. */
+export function readExposedReasoning(delta: Record<string, unknown> | null): string {
+  if (!delta) return '';
+  for (const field of ['reasoning_content', 'reasoning']) {
+    if (isReadableReasoningText(delta[field])) return delta[field];
+  }
+  if (!Array.isArray(delta.reasoning_details)) return '';
+  return delta.reasoning_details
+    .flatMap((detail: unknown) => {
+      const value = asRecord(detail);
+      if (value?.type === 'reasoning.text' && isReadableReasoningText(value.text))
+        return [value.text];
+      if (value?.type === 'reasoning.summary' && isReadableReasoningText(value.summary))
+        return [value.summary];
+      return [];
+    })
+    .join('');
+}
+
+function isReadableReasoningText(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length > 0 &&
+    value.trim().replace(/\s+/g, ' ').toLowerCase() !== '[some reasoning content is encrypted]'
+  );
+}
+
+/** Only a leading provider protocol region is special; later roleplay <think> text stays literal. */
+export function createLeadingThinkingSplitter(callbacks: {
+  onContent: (text: string) => void;
+  onReasoning: (text: string) => void;
+}) {
+  let phase: 'prefix' | 'reasoning' | 'content' = 'prefix';
+  let pending = '';
+  const opening = '<think>';
+  const closing = '</think>';
+  const read = (text: string, exposeReasoning: boolean): void => {
+    if (phase === 'content') {
+      if (text) callbacks.onContent(text);
+      return;
+    }
+    pending += text;
+    if (phase === 'prefix') {
+      const candidate = pending.trimStart().toLowerCase();
+      if (candidate.startsWith(opening)) {
+        pending = pending.trimStart().slice(opening.length);
+        phase = 'reasoning';
+      } else if (opening.startsWith(candidate) && pending.length <= 256) return;
+      else {
+        phase = 'content';
+        callbacks.onContent(pending);
+        pending = '';
+        return;
+      }
+    }
+    const end = pending.toLowerCase().indexOf(closing);
+    if (end >= 0) {
+      if (exposeReasoning && end > 0) callbacks.onReasoning(pending.slice(0, end));
+      const answer = pending.slice(end + closing.length);
+      pending = '';
+      phase = 'content';
+      if (answer) callbacks.onContent(answer);
+      return;
+    }
+    let suffix = Math.min(pending.length, closing.length - 1);
+    while (suffix > 0 && !closing.startsWith(pending.slice(-suffix).toLowerCase())) suffix -= 1;
+    const ready = pending.slice(0, pending.length - suffix);
+    pending = suffix > 0 ? pending.slice(-suffix) : '';
+    if (exposeReasoning && ready) callbacks.onReasoning(ready);
+  };
+  return {
+    push: (text: string, exposeReasoning = true) => read(text, exposeReasoning),
+    finish: () => {
+      if (phase === 'prefix' && pending) callbacks.onContent(pending);
+      else if (phase === 'reasoning' && pending) callbacks.onReasoning(pending);
+      pending = '';
+    },
+  };
 }
 
 function boundedResponseMetadata(value: unknown): Record<string, unknown> {

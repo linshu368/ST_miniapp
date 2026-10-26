@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { ChevronDown, Loader2 } from 'lucide-react';
 import type { PatchGenerationConfigRequest } from '@miniapp/shared';
 
@@ -34,19 +34,22 @@ interface ChatReplyPreferencesProps {
   maxContentHeight: number;
   detailsDefaultOpen: ReplyDetailsDefaultOpen;
   onDetailsDefaultOpenChange: (value: ReplyDetailsDefaultOpen) => void;
+  thinkingControl?: ReactNode;
 }
 
-/** 输入框上方的轻量偏好抽屉；模型规则仍只经 generation-config 写入。 */
+/** 输入框上方的轻量偏好抽屉；用户偏好仍只经 generation-config 写入。 */
 export function ChatReplyPreferences({
   maxContentHeight,
   detailsDefaultOpen,
   onDetailsDefaultOpenChange,
+  thinkingControl,
 }: ChatReplyPreferencesProps) {
   const query = useGenerationConfigQuery();
   const patch = usePatchGenerationConfigMutation({
     shouldOptimisticallyUpdate: () => true,
   });
   const config = query.data?.config;
+  const styleOptions = query.data?.reply_style_options ?? [];
   const wordCountTiers = query.data?.word_count_tiers;
   const lengthOptions = (wordCountTiers?.tiers ?? [])
     .slice()
@@ -58,6 +61,9 @@ export function ChatReplyPreferences({
   const [pendingWordCount, setPendingWordCount] = useState<string | null>(null);
   const [saveFailed, setSaveFailed] = useState(false);
   const [pendingSlotValues, setPendingSlotValues] = useState<PendingSlotValues>({});
+  const [pendingStyleValues, setPendingStyleValues] = useState<Record<string, boolean>>({});
+  const [failedStyleValues, setFailedStyleValues] = useState<Record<string, boolean>>({});
+  const styleDescriptionId = useId();
   const enabledSlotLabels = SLOT_CONFIG.filter((slot) =>
     isInstructionSlotEnabled(pendingSlotValues[slot.key] ?? config?.[slot.preference])
   ).map((slot) => slot.label);
@@ -67,7 +73,10 @@ export function ChatReplyPreferences({
       ? config?.pref_word_count
       : wordCountTiers?.default_tier_id);
   const saving =
-    patch.isPending || pendingWordCount !== null || Object.keys(pendingSlotValues).length > 0;
+    patch.isPending ||
+    pendingWordCount !== null ||
+    Object.keys(pendingSlotValues).length > 0 ||
+    Object.keys(pendingStyleValues).length > 0;
   const pointerStartY = useRef<number | null>(null);
   const suppressClick = useRef(false);
   const guideClaimed = useRef(false);
@@ -92,8 +101,10 @@ export function ChatReplyPreferences({
     setSaveFailed(false);
     try {
       await patch.mutateAsync(request);
+      return true;
     } catch {
       setSaveFailed(true);
+      return false;
     }
   };
 
@@ -109,6 +120,24 @@ export function ChatReplyPreferences({
     setInstructionsDirty(false);
     if (next === (config.pref_custom_instructions ?? '')) return;
     void savePreference({ pref_custom_instructions: next.length > 0 ? next : null });
+  };
+
+  const toggleReplyStyle = (id: string) => {
+    if (!config || Object.prototype.hasOwnProperty.call(pendingStyleValues, id)) return;
+    const next = config.pref_reply_styles?.[id] !== true;
+    setPendingStyleValues((current) => ({ ...current, [id]: next }));
+    setFailedStyleValues((current) => ({ ...current, [id]: false }));
+    void savePreference({ pref_reply_styles: { [id]: next } })
+      .then((saved) => {
+        if (!saved) setFailedStyleValues((current) => ({ ...current, [id]: true }));
+      })
+      .finally(() => {
+        setPendingStyleValues((current) => {
+          if (current[id] !== next) return current;
+          const { [id]: _completed, ...remaining } = current;
+          return remaining;
+        });
+      });
   };
 
   const toggleSlot = (slot: (typeof SLOT_CONFIG)[number]) => {
@@ -137,60 +166,63 @@ export function ChatReplyPreferences({
       )}
       aria-label="回复偏好"
     >
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => {
-          if (suppressClick.current) {
-            suppressClick.current = false;
-            return;
-          }
-          changeOpen(!open);
-        }}
-        onPointerDown={(event) => {
-          pointerStartY.current = event.clientY;
-        }}
-        onPointerUp={(event) => {
-          const start = pointerStartY.current;
-          pointerStartY.current = null;
-          if (start === null) return;
-          const distance = event.clientY - start;
-          if (distance <= -20) {
-            suppressClick.current = true;
-            changeOpen(true);
-          }
-          if (distance >= 20) {
-            suppressClick.current = true;
-            changeOpen(false);
-          }
-        }}
-        onPointerCancel={() => {
-          pointerStartY.current = null;
-        }}
-        className="relative grid min-h-9 w-full shrink-0 grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-2 px-2.5 pb-1 pt-2 text-left touch-pan-x"
-      >
-        <span className="absolute left-1/2 top-0.5 h-0.5 w-8 -translate-x-1/2 rounded-full bg-muted-foreground/35" />
-        <span className="text-[11px] font-semibold text-foreground">回复偏好</span>
-        <span
-          className={cn(
-            'pointer-events-none min-w-0 truncate text-[10px] font-medium text-primary',
-            !guideVisible && 'invisible'
-          )}
-          aria-hidden={!guideVisible}
+      <div className="flex min-w-0 shrink-0 items-center gap-1">
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={() => {
+            if (suppressClick.current) {
+              suppressClick.current = false;
+              return;
+            }
+            changeOpen(!open);
+          }}
+          onPointerDown={(event) => {
+            pointerStartY.current = event.clientY;
+          }}
+          onPointerUp={(event) => {
+            const start = pointerStartY.current;
+            pointerStartY.current = null;
+            if (start === null) return;
+            const distance = event.clientY - start;
+            if (distance <= -20) {
+              suppressClick.current = true;
+              changeOpen(true);
+            }
+            if (distance >= 20) {
+              suppressClick.current = true;
+              changeOpen(false);
+            }
+          }}
+          onPointerCancel={() => {
+            pointerStartY.current = null;
+          }}
+          className="relative grid min-h-10 min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-1.5 px-2.5 pb-1 pt-2 text-left touch-pan-x"
         >
-          调整回复长度与内容
-        </span>
-        <span className="justify-self-end whitespace-nowrap text-[10px] text-muted-foreground">
-          {enabledSlotLabels.join(' · ')}
-        </span>
-        <ChevronDown
-          className={cn(
-            'size-3.5 text-muted-foreground transition-transform duration-150 motion-reduce:transition-none',
-            open && 'rotate-180'
-          )}
-          aria-hidden
-        />
-      </button>
+          <span className="absolute left-1/2 top-0.5 h-0.5 w-8 -translate-x-1/2 rounded-full bg-muted-foreground/35" />
+          <span className="text-[11px] font-semibold text-foreground">回复偏好</span>
+          <span
+            className={cn(
+              'pointer-events-none min-w-0 truncate text-[10px] font-medium text-primary',
+              !guideVisible && 'invisible'
+            )}
+            aria-hidden={!guideVisible}
+          >
+            调整回复长度与内容
+          </span>
+          <span className="hidden justify-self-end whitespace-nowrap text-[10px] text-muted-foreground min-[430px]:inline">
+            {enabledSlotLabels.join(' · ')}
+          </span>
+          <ChevronDown
+            className={cn(
+              'size-3.5 text-muted-foreground transition-transform duration-150 motion-reduce:transition-none',
+              open && 'rotate-180'
+            )}
+            aria-hidden
+          />
+        </button>
+        {thinkingControl}
+      </div>
 
       {open ? (
         <div
@@ -319,6 +351,81 @@ export function ChatReplyPreferences({
               当前回复仍可随时展开或收起
             </p>
           </section>
+
+          {styleOptions.length > 0 ? (
+            <section className="mt-3 border-t border-border/60 pt-3" aria-label="回复风格">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <h3 className="text-[11px] font-semibold text-foreground">回复风格</h3>
+                {styleOptions.length > 1 ? (
+                  <span className="text-[10px] text-muted-foreground">可同时开启</span>
+                ) : null}
+              </div>
+              <div className="space-y-1.5">
+                {styleOptions.map((option) => {
+                  const pending = Object.prototype.hasOwnProperty.call(
+                    pendingStyleValues,
+                    option.id
+                  );
+                  const enabled = pending
+                    ? pendingStyleValues[option.id] === true
+                    : config?.pref_reply_styles?.[option.id] === true;
+                  const failed = failedStyleValues[option.id] === true;
+                  const descriptionId = `${styleDescriptionId}-${option.id}`;
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      role="switch"
+                      aria-label={option.name}
+                      aria-describedby={option.description || failed ? descriptionId : undefined}
+                      aria-checked={enabled}
+                      aria-busy={pending}
+                      disabled={!config || pending}
+                      onClick={() => toggleReplyStyle(option.id)}
+                      className={cn(
+                        'flex min-h-14 w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 disabled:cursor-wait disabled:opacity-60',
+                        enabled
+                          ? 'border-primary/35 bg-primary/10'
+                          : 'border-border bg-secondary/35 hover:bg-secondary/60'
+                      )}
+                    >
+                      <span className="min-w-0 flex-1 break-words">
+                        <span className="block text-xs font-medium leading-[18px] text-foreground">
+                          {option.name}
+                        </span>
+                        <span id={descriptionId}>
+                          {option.description ? (
+                            <span className="mt-1 block text-[11px] leading-[18px] text-muted-foreground">
+                              {option.description}
+                            </span>
+                          ) : null}
+                          {failed ? (
+                            <span className="mt-1 block text-[10px] text-destructive" role="alert">
+                              未保存，请重试
+                            </span>
+                          ) : null}
+                        </span>
+                      </span>
+                      <span
+                        aria-hidden
+                        className={cn(
+                          'flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition-colors motion-reduce:transition-none',
+                          enabled ? 'bg-primary' : 'bg-muted-foreground/30'
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            'size-4 rounded-full bg-foreground shadow-sm transition-transform motion-reduce:transition-none',
+                            enabled && 'translate-x-4'
+                          )}
+                        />
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          ) : null}
 
           <label className="mt-3 block border-t border-border/60 pt-3">
             <span className="mb-1.5 block text-[11px] font-semibold text-foreground">我的偏好</span>

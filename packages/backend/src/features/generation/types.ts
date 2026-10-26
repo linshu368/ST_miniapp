@@ -36,6 +36,7 @@ export interface ResolvedModel {
   firstTokenPolicy?: {
     fallbackModelId?: string;
     timeoutMs: number;
+    fallbackTimeoutMs?: number;
     deadlineMs: number;
     timeoutRateTarget: number;
     catalogVersion: number;
@@ -64,6 +65,8 @@ export interface GenerationRequest {
    */
   historyId?: string | null;
   stream: boolean;
+  /** Defaults on; exposed reasoning is progress and never saved as reply content. */
+  thinkingEnabled?: boolean;
   /** Explicit user cancellation and the conversation deadline; disconnects do not abort. */
   signal?: AbortSignal;
   /**
@@ -86,7 +89,7 @@ export interface GenerationHooks {
   onGenerationId?: (generationId: string) => Promise<void>;
   /** Persist the quota identity and reject a turn cancelled before quota reservation. */
   onBeforeReserve?: (chargeId: string) => Promise<void>;
-  /** Claim persisted terminal status before any wallet/free-quota settlement. */
+  /** Arbitrate the persisted outcome and finalize free quota before terminal acknowledgement. */
   onBeforeSettle?: (
     result: SseTapResult,
     releaseReservation: () => Promise<void>
@@ -101,6 +104,7 @@ export interface GenerationHooks {
   onStreamOpen?: () => void;
   onFirstToken?: () => void;
   onDelta?: (text: string) => void;
+  onReasoningDelta?: (text: string) => void;
   onError?: (error: Error) => void;
   onDone?: (result: GenerationResult) => void;
 }

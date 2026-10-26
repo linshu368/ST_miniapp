@@ -23,7 +23,11 @@ import {
 } from '../../platform/model-tiers.js';
 import { getProviderPreferencesForModel } from '../../platform/provider-routing.js';
 import { readVipStrategy } from '../../platform/vip-strategy.js';
-import { LLM_PROVIDER_CAPABILITIES, type OpenRouterProviderPreferences } from '@miniapp/shared';
+import {
+  LLM_PROVIDER_CAPABILITIES,
+  MAX_CONVERSATION_REASONING_LENGTH,
+  type OpenRouterProviderPreferences,
+} from '@miniapp/shared';
 import { createLogger } from '../../lib/logger.js';
 import { settleGeneration, type GenerationSettlementEntry } from './settle.js';
 import { reserveCharacterFreeQuota, type FreeQuotaReservation } from './quota.js';
@@ -32,12 +36,14 @@ import {
   createSseTap,
   forwardToUpstream,
   resolveProviderUpstream,
+  createLeadingThinkingSplitter,
+  readExposedReasoning,
   type SseTapResult,
 } from './upstream.js';
 import { applyPromptCaching, type UpstreamMessage } from './prompt-caching.js';
 import {
-  forwardWithFirstTokenFallback,
   FirstTokenDeadlineError,
+  forwardWithFirstTokenFallback,
   type TransportModel,
 } from './first-token-fallback.js';
 import { GenerationCleanupPendingError } from './types.js';
@@ -80,6 +86,7 @@ function buildUpstreamBody(
   providerPreferences: OpenRouterProviderPreferences | null
 ): Record<string, unknown> {
   const capability = LLM_PROVIDER_CAPABILITIES[request.model.provider];
+  const thinkingEnabled = request.thinkingEnabled ?? true;
   const messages: UpstreamMessage[] =
     request.promptCaching && capability.promptCachingMode === 'openrouter_anthropic_cache_control'
       ? applyPromptCaching(request.messages, request.model.openRouterModelId)
@@ -94,14 +101,15 @@ function buildUpstreamBody(
     ...(providerPreferences ? { provider: providerPreferences } : {}),
     ...(request.model.provider === 'venice'
       ? {
-          venice_parameters: { include_venice_system_prompt: false },
-          // Chat is optimized for immediate visible replies. Venice reasoning models may emit a
-          // long reasoning_content stream before content, so keep reasoning off unless a future
-          // product setting explicitly opts in.
-          reasoning: { enabled: false },
+          venice_parameters: {
+            include_venice_system_prompt: false,
+            disable_thinking: !thinkingEnabled,
+            strip_thinking_response: !thinkingEnabled,
+          },
+          reasoning: { enabled: thinkingEnabled },
           ...(request.stream ? { stream_options: { include_usage: true } } : {}),
         }
-      : {}),
+      : { reasoning: { enabled: thinkingEnabled, exclude: !thinkingEnabled } }),
     ...(request.promptCaching &&
     capability.promptCachingMode === 'venice_prompt_cache_key' &&
     request.sessionId
@@ -163,10 +171,11 @@ export async function execute(
   const releaseReservation = (): Promise<void> =>
     (released ??= (async () => {
       const decision = await reservation.finalize(false);
-      if (reservation.granted && decision?.status !== 'released')
+      if (reservation.granted && decision?.status !== 'released' && decision?.status !== 'consumed')
         throw new GenerationCleanupPendingError();
     })());
 
+  let settleAbortedBeforeStream: (() => Promise<GenerationResult | null>) | undefined;
   try {
     signal.throwIfAborted();
     const plan = resolveBillingPlan({
@@ -247,6 +256,33 @@ export async function execute(
       provider: billing.provider,
       provider_model_id: billing.providerModelId,
     });
+    // After admission the original quote is durable. An explicit manual stop while
+    // waiting for headers is still a real round, even without a generation ID.
+    settleAbortedBeforeStream = async () => {
+      const interrupted: SseTapResult = {
+        completed: false,
+        content: '',
+        deltaCount: 0,
+        generationId: null,
+        finishReason: 'timeout',
+        usage: null,
+        responseMetadata: {},
+      };
+      const outcome = hooks?.onBeforeSettle
+        ? await hooks.onBeforeSettle(interrupted, releaseReservation)
+        : interrupted;
+      if (outcome.finishReason !== 'user_cancelled') return null;
+      await releaseReservation();
+      saveHistory({
+        assistant_reply: null,
+        status: 'stream_interrupted',
+        generation_id: null,
+        finish_reason: outcome.finishReason,
+      });
+      return finish(
+        failed({ status: 'stream_interrupted', chargeId, finishReason: outcome.finishReason })
+      );
+    };
     signal.throwIfAborted();
     let upstreamRes: Response;
     const upstreamStartedAt = Date.now();
@@ -269,12 +305,13 @@ export async function execute(
           ...request,
           model: { ...request.model, ...model, openRouterModelId: model.providerModelId },
         };
+        const body = JSON.stringify(buildUpstreamBody(actualRequest, preferences));
         attemptSignal.throwIfAborted();
         onDispatch?.();
         return forwardToUpstream({
           url: route.url,
           method: 'POST',
-          body: JSON.stringify(buildUpstreamBody(actualRequest, preferences)),
+          body,
           signal: attemptSignal,
           apiKey: route.apiKey,
           provider: model.provider,
@@ -284,9 +321,11 @@ export async function execute(
         const elapsed = performance.now() - request.firstToken.requestStartedAt;
         const delivered = await forwardWithFirstTokenFallback({
           primary: request.model,
+          thinkingEnabled: request.thinkingEnabled ?? true,
           fallbackModelId: request.model.firstTokenPolicy.fallbackModelId,
           primaryAttemptId: request.firstToken.primaryAttemptId,
           timeoutMs: request.model.firstTokenPolicy.timeoutMs,
+          fallbackTimeoutMs: request.model.firstTokenPolicy.fallbackTimeoutMs,
           remainingFirstTokenMs: request.model.firstTokenPolicy.deadlineMs - elapsed,
           remainingObservationMs: 110_000 - elapsed,
           requestStartedAt: request.firstToken.requestStartedAt,
@@ -307,12 +346,12 @@ export async function execute(
         upstreamRes = delivered.response;
       } else upstreamRes = await forward(request.model, signal);
     } catch (err) {
-      if (
-        err instanceof FirstTokenDeadlineError ||
-        signal.reason instanceof FirstTokenDeadlineError
-      )
-        throw new FirstTokenDeadlineError();
-      // 连不上上游时 ST 链路也不落 chat_history（没有 upstream_status 可记），这里保持一致
+      if (signal.aborted) {
+        const settleAbort = settleAbortedBeforeStream;
+        settleAbortedBeforeStream = undefined;
+        const stopped = await settleAbort();
+        if (stopped) return stopped;
+      }
       await releaseReservation();
       log.sys.error(
         {
@@ -326,13 +365,18 @@ export async function execute(
         'upstream request failed'
       );
       hooks?.onError?.(toError(err));
+      if (
+        err instanceof FirstTokenDeadlineError ||
+        signal.reason instanceof FirstTokenDeadlineError
+      )
+        throw err instanceof FirstTokenDeadlineError ? err : signal.reason;
       return finish(failed());
     }
 
     // 上游非 2xx → 不扣费，记录失败
     if (!upstreamRes.ok) {
       await releaseReservation();
-      const detail = await upstreamRes.text().catch(() => '');
+      await upstreamRes.body?.cancel().catch(() => undefined);
       log.sys.error(
         {
           event: 'llm.upstream.rejected',
@@ -351,7 +395,8 @@ export async function execute(
         generation_id: null,
         finish_reason: null,
       });
-      hooks?.onError?.(new Error(`upstream ${upstreamRes.status}: ${detail.slice(0, 200)}`));
+      // Provider error messages can echo prompt fragments; report status without response text.
+      hooks?.onError?.(new Error(`upstream ${upstreamRes.status}`));
       return finish(failed({ upstreamStatus: upstreamRes.status }));
     }
 
@@ -404,6 +449,7 @@ export async function execute(
       });
     }
 
+    settleAbortedBeforeStream = undefined;
     // The flush path and pipeline error path share one settlement promise. In particular,
     // a deadline during a slow CAS/quota finalize must never trigger another settlement.
     let settlement: Promise<void> | undefined;
@@ -437,15 +483,25 @@ export async function execute(
       return settlement;
     };
     let firstTokenSeen = false;
+    const noteFirstToken = (text: string): void => {
+      if (!firstTokenSeen && text.trim()) {
+        firstTokenSeen = true;
+        firstTokenAt = Date.now();
+        hooks?.onFirstToken?.();
+      }
+    };
     const tap = createSseTap({
       generationId: headerGenerationId,
       onGenerationId: request.firstToken ? undefined : hooks?.onGenerationId,
+      onReasoningDelta:
+        request.thinkingEnabled === false
+          ? undefined
+          : (delta) => {
+              noteFirstToken(delta);
+              hooks?.onReasoningDelta?.(delta);
+            },
       onDelta: (delta) => {
-        if (!firstTokenSeen) {
-          firstTokenSeen = true;
-          firstTokenAt = Date.now();
-          hooks?.onFirstToken?.();
-        }
+        noteFirstToken(delta);
         hooks?.onDelta?.(delta);
       },
       onEnd: settleOnce,
@@ -503,6 +559,14 @@ export async function execute(
       modelOpenRouterId: billing.openRouterModelId,
     });
   } catch (err) {
+    if (
+      signal.aborted &&
+      settleAbortedBeforeStream &&
+      !(err instanceof GenerationCleanupPendingError)
+    ) {
+      const stopped = await settleAbortedBeforeStream();
+      if (stopped) return stopped;
+    }
     await releaseReservation();
     throw err;
   }
@@ -597,7 +661,9 @@ async function settleStream(input: {
       model: billing.providerModelId,
       generationId: result.generationId,
     },
-    'generation produced an incomplete or empty reply, skipping deduction'
+    result.finishReason === 'user_cancelled'
+      ? 'user stopped generation; settling the accepted quote'
+      : 'generation produced an incomplete or empty reply, skipping deduction'
   );
   saveHistory({
     assistant_reply: result.deltaCount > 0 ? result.content : null,
@@ -669,12 +735,35 @@ async function consumeNonStream(input: {
   let responseParsed = false;
   let usage: Record<string, unknown> | null = null;
   let responseMetadata: Record<string, unknown> = {};
+  let exposedReasoning = '';
   try {
     const parsed = JSON.parse(responseBody);
     responseParsed = true;
     if (!generationId && typeof parsed?.id === 'string') generationId = parsed.id;
     const choice = parsed?.choices?.[0];
-    if (typeof choice?.message?.content === 'string') assistantReply = choice.message.content;
+    if (choice?.message && typeof choice.message === 'object' && !Array.isArray(choice.message)) {
+      exposedReasoning = readExposedReasoning(choice.message).slice(
+        0,
+        MAX_CONVERSATION_REASONING_LENGTH
+      );
+      const hasStructuredReasoning = exposedReasoning.length > 0;
+      if (typeof choice.message.content === 'string') {
+        const content: string[] = [];
+        const splitter = createLeadingThinkingSplitter({
+          onContent: (text) => content.push(text),
+          onReasoning: (text) => {
+            if (!hasStructuredReasoning)
+              exposedReasoning += text.slice(
+                0,
+                MAX_CONVERSATION_REASONING_LENGTH - exposedReasoning.length
+              );
+          },
+        });
+        splitter.push(choice.message.content, !hasStructuredReasoning);
+        splitter.finish();
+        assistantReply = content.join('');
+      }
+    }
     if (typeof choice?.finish_reason === 'string') finishReason = choice.finish_reason;
     if (parsed?.usage && typeof parsed.usage === 'object' && !Array.isArray(parsed.usage)) {
       usage = parsed.usage as Record<string, unknown>;
@@ -782,8 +871,13 @@ async function consumeNonStream(input: {
           }
         : undefined,
   });
+  const reasoningIsFirstToken =
+    request.thinkingEnabled !== false && exposedReasoning.trim().length > 0;
+  if (reasoningIsFirstToken) hooks?.onFirstToken?.();
+  if (request.thinkingEnabled !== false && exposedReasoning)
+    hooks?.onReasoningDelta?.(exposedReasoning);
   if (assistantReply) {
-    hooks?.onFirstToken?.();
+    if (!reasoningIsFirstToken) hooks?.onFirstToken?.();
     hooks?.onDelta?.(assistantReply);
   }
   return {

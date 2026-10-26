@@ -47,9 +47,12 @@ export function useNotificationUnreadCountQuery({
 }: { poll?: boolean; enabled?: boolean } = {}) {
   const query = useQuery({
     queryKey: notificationKeys.unread,
-    queryFn: () => apiClient<NotificationUnreadCountData>('/api/notifications/unread-count'),
+    queryFn: () =>
+      apiClient<NotificationUnreadCountData>('/api/notifications/unread-count', {
+        queuePriority: 'background',
+      }),
     enabled,
-    staleTime: 0,
+    staleTime: 30_000,
     refetchOnMount: 'always',
     refetchInterval: poll ? NOTIFICATION_POLL_MS : false,
   });

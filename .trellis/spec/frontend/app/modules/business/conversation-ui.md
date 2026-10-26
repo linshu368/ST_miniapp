@@ -5,8 +5,8 @@ scope: frontend
 category: business
 status: active
 owners: [frontend]
-last_verified_task: .trellis/tasks/10-23-experience-continuity/
-last_verified_at: 2026-10-23
+last_verified_task: .trellis/tasks/10-26-user-stop-billing/
+last_verified_at: 2026-10-26
 ---
 
 # 用户会话、语音与图片界面
@@ -95,3 +95,43 @@ last_verified_at: 2026-10-23
 中文输入法确认候选不触发聊天发送；影像描述Enter换行，Ctrl/Cmd+Enter生成。对话列表上翻不强拉回最新，提供轻量返回最新/有新回复提示；角色内历史展示单行消息摘要，查询失败与成功空记录分开，有缓存时保留记录。
 
 影像广场「我的生成」与工作室共用历史Sheet，只在打开时读取既有查询；浏览往返仅保存筛选、锚点及滚动标量，不存作品DTO/游标。历史再生成明确使用当前设置且保留composer草稿；失败刷新只查状态，不重新提交付费任务。画幅采用中文和形状示意，删除无实际选项的风格占位；保存沿既有Telegram下载能力，普通浏览器准确提示打开原图保存。真实报价、余额、幂等及后端契约不变。
+
+## Scenario: 移动端思考进度与折叠（2026-10-23）
+
+### 1. Scope / Trigger
+
+输入区提供思考开关，等待过程可见且不抢角色正文重心。
+
+### 2. Signatures
+
+`ChatComposer.thinkingEnabled/onThinkingEnabledChange`、`StreamTurnOptions.thinkingEnabled/onReasoning`、`useConversationTurn.thinkingByMessage`、`ChatThinking`。
+
+### 3. Contracts
+
+默认on，用户级设备存储只存bool，生成中锁定当次值。独立reasoning事件不进入ChatMessage.content/cache；仅当前页面按session/id/revision保留最近12条、每条64Ki字符；切会话清空，离页/刷新不持久化。消息标题为`thinking`；输入区使用Atom原子轨道图标+“深度思考”胶囊，无问号/说明弹窗，aria-pressed和开关操作名称保留。真实思考到达展开，正文开始/终态自动收起一次，手动重新展开后不被正文delta抢状态。纯转义文字/低对比度/160px内部滚动，PostHog/Sentry遮罩，无思考则“正在准备回复”。
+
+### 4. Validation & Error Matrix
+
+未知/非法思考帧跳过且不记录payload；思考先于首正文flush、终态前flush。实际思考重置idle/8秒停滞提示，但不延长150秒绝对流期限。普通与深度思考模式在6秒无公开文本时都只上报SLA超时，不显示失败、不自动取消。旧请求/取消确认后的思考不得写当前消息；存储失败降级本页默认。关闭请求与重生成一致。
+
+### 5. Good / Base / Bad Cases
+
+Good：淡色展开思考→正文自动收起→用户展开查看。Base：没有公开思考就直接正文。Bad：每片正文都强制收起，或思考增长时把翻历史的用户拉回底部。
+
+### 6. Tests Required
+
+现有SSE/hook测试加序列与迟到/取消/开关快照；chat-thinking纯逻辑验证bool存储、隔离/容量、单次自动折叠。320/375/390px、虚拟键盘压缩高度、重生成/取消本地演示检查；不冒称真实手机或模型验收。
+
+### 7. Wrong vs Correct
+
+Wrong：思考与正文合并后传给ReplyRenderer/语音/图片。Correct：`thinkingByMessage`单独展示，原正文渲染与操作不变。
+
+首字统一口径：开启深度思考时，真实思考文本首字与正文首字等效；静默思考跨过快速SLA只结束首字观测，不自动取消生成。关闭只算正文，6秒同样只结束观测、不自动取消。等待提示、thinking标题、密文占位不计；只有思考无有效正文仍不得扣费。
+
+## 2026-10-23 可运营回复风格
+
+回复偏好按generation-config公开目录动态呈现“回复风格”：纯文本名称/说明、独立多开、默认off、逐项pending与失败提示；无目录隐藏整段。React Query偏好map逐id更新/确认/回滚，无私有marker/rules、静态预设或生成接线。
+
+## 主动停止原价与权益结算（2026-10-26）
+
+取消请求显式区分user_stop与first_token_timeout。新业务标记user_cancelled在已冻结报价的生成中按原型号原价格/VIP/免费权益一次结算；免费轮消费免费次数，前端不增加扣费通知。系统超时、上游失败、历史cancelled和未报价取消保持免扣；新请求服务端策略位默认生效，取消CAS RPC按截止与已见观测裁决，不以调用方省略原因选价。免费权益先收口再解锁，钱包按原charge_id后台结算，缺generationId也不重发上游；回捞保留新业务原因及同账单幂等。契约/后端/数据库/前端联动，具体执行证据见本任务release-review。

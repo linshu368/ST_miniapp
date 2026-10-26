@@ -10,10 +10,11 @@ import {
 } from './wallet.js';
 
 export const DEFAULT_FIRST_TOKEN_TIMEOUT_MS = 4_000;
-export const DEFAULT_FIRST_TOKEN_DEADLINE_MS = 6_000;
+export const DEFAULT_FIRST_TOKEN_DEADLINE_MS = 10_000;
+export const DEFAULT_FALLBACK_TOKEN_TIMEOUT_MS = 2_000;
 export const DEFAULT_FIRST_TOKEN_TIMEOUT_RATE_TARGET = 0.01;
 export const FIRST_TOKEN_FALLBACK_MODEL_ID = 'deepseek/deepseek-v4.1-flash-1017';
-export const FIRST_TOKEN_RETRY_MESSAGE = '这次响应有点慢，请重试。';
+export const FIRST_TOKEN_RETRY_MESSAGE = '这次回应稍慢，再试一次吧';
 const FirstTokenDurationSchema = z.number().int().positive().max(110_000);
 
 export const ModelCatalogTierKeySchema = z.enum(['light', 'standard', 'premium']);
@@ -107,6 +108,7 @@ export const ModelCatalogSchema = z
         '请输入有效的 OpenRouter 模型 ID'
       )
       .default(FIRST_TOKEN_FALLBACK_MODEL_ID),
+    fallback_timeout_ms: FirstTokenDurationSchema.default(DEFAULT_FALLBACK_TOKEN_TIMEOUT_MS),
     first_token_deadline_ms: FirstTokenDurationSchema.default(DEFAULT_FIRST_TOKEN_DEADLINE_MS),
     first_token_timeout_rate_target: z
       .number()
@@ -125,6 +127,12 @@ export const ModelCatalogSchema = z
       });
     }
 
+    if (catalog.fallback_timeout_ms >= catalog.first_token_deadline_ms)
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['fallback_timeout_ms'],
+        message: '兜底等待必须短于总等待上限',
+      });
     const models = catalog.tiers.flatMap((tier) => tier.models);
     for (const [tierIndex, tier] of catalog.tiers.entries()) {
       for (const [modelIndex, model] of tier.models.entries()) {
@@ -202,10 +210,15 @@ export type ModelCatalogTier = Omit<z.infer<typeof ModelCatalogTierSchema>, 'mod
 };
 export type ModelCatalog = Omit<
   z.infer<typeof ModelCatalogSchema>,
-  'tiers' | 'first_token_deadline_ms' | 'first_token_timeout_rate_target' | 'fallback_model_id'
+  | 'tiers'
+  | 'first_token_deadline_ms'
+  | 'first_token_timeout_rate_target'
+  | 'fallback_model_id'
+  | 'fallback_timeout_ms'
 > & {
   tiers: ModelCatalogTier[];
   fallback_model_id?: string;
+  fallback_timeout_ms?: number;
   first_token_deadline_ms?: number;
   first_token_timeout_rate_target?: number;
 };

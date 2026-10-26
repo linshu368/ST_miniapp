@@ -17,8 +17,8 @@
 | `/chats`                                                            | `(main)/chats/page.tsx`，角色模块「对话」；跨角色历史与会话管理     |
 | `/create`                                                           | 影像广场入口；当前已实现图片生成链路                                |
 | `/profile`                                                          | 我的页、余额/签到、VIP 入口、设置、社区入口                         |
-| `/vip`                                                              | VIP 权益、周/月套餐与开通或续费                                     |
-| `/profile/recharge`                                                 | 星尘与 VIP 套餐互斥选择和下单；`/[orderId]` 支付等待/轮询/回跳      |
+| `/vip`                                                              | 月卡权益、会员身份、开通或续费；保留历史周卡状态展示                |
+| `/profile/recharge`                                                 | 星尘套餐独立下单、VIP权益引导；`/[orderId]` 支付等待/轮询/回跳      |
 | `/profile/orders` / `/profile/spending`                             | 订单分页与消费流水                                                  |
 | `/profile/messages` / `/profile/messages/[id]` / `/profile/support` | 通知列表、单条详情与站内客服                                        |
 | `/profile/invite`                                                   | 邀请中心、统计与分享                                                |
