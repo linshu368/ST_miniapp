@@ -96,7 +96,7 @@ OpenRouter：`reasoning:{enabled,exclude:!enabled}`；Venice：`reasoning:{enabl
 
 ### 4. Validation & Error Matrix
 
-非法bool开轮前400；上游非2xx保留既有拒绝/释放预留，不传原始错误正文给hook；首次provider ID仍先持久化再转发。关闭不发送思考；每轮思考最多64Ki字符，不保存到snapshot.content/DB/日志。取消、超时与身份写失败不重放生成；只有思考不得触发完成结算或消费免费额度；首字选择/放行独立于最终有效正文判定。
+非法bool开轮前400；上游非2xx保留既有拒绝/释放预留，不传原始错误正文给hook；首次provider ID仍先持久化再转发。关闭不发送思考；每轮思考最多64Ki字符，不保存到snapshot.content/DB/日志。普通模式保留4秒单次兜底，深度思考模式不启动快速兜底；两种模式的6秒阈值都只记录首字SLA超时，不主动取消或中断上游，并受110/120秒绝对期限和显式取消约束。只读准备使用独立20秒有限预算。取消、绝对超时与身份写失败不重放生成；只有思考不得触发完成结算或消费免费额度；首字选择/放行独立于最终有效正文判定。
 
 ### 5. Good / Base / Bad Cases
 
@@ -110,7 +110,7 @@ Good：思考→正文→DONE/stop，按原正文交付结算。Base：只正文
 
 Wrong：`replyChunks.push(reasoning)`。Correct：思考只进`onReasoningDelta`，`content/deltaCount`只统计正文，原`[DONE]+可见正文+stop`计费条件保持。
 
-首字统一口径：开启深度思考时，真实思考文本首字与正文首字等效，满足原首字放行/截止/观测；关闭只算正文。等待提示、thinking标题、密文占位不计；只有思考无有效正文仍不得扣费。
+首字统一口径：开启深度思考时，真实思考文本首字与正文首字等效并完成首字观测；静默思考跨过快速SLA时只记超时事实，不触发fallback或取消。关闭只算正文并保留4秒单次fallback，但6秒同样只观测、不终止。等待提示、thinking标题、密文占位不计；只有思考无有效正文仍不得扣费。
 
 ## 2026-10-23 可运营回复风格
 

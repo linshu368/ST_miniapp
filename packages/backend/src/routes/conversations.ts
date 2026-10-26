@@ -11,7 +11,6 @@
  */
 
 import type { FastifyBaseLogger, FastifyInstance, FastifyReply } from 'fastify';
-import { FirstTokenDeadlineError } from '../features/generation/first-token-fallback.js';
 import { GenerationObservationRepository } from '../infrastructure/repositories/GenerationObservationRepository.js';
 import { fetchModelCatalogSnapshot } from '../platform/model-tiers.js';
 import { fetchPublicReplyStyleOptions } from '../features/conversations/reply-style-options.js';
@@ -55,6 +54,7 @@ import { MiniappUserSettingsRepository } from '../infrastructure/repositories/Mi
 import {
   applyUserPlaceholderToMessages,
   applyUserPlaceholderToSession,
+  CONVERSATION_PREPARATION_TIMEOUT_MS,
   createReplyStreamSink,
   runConversationTurn,
   withConversationPreparationDeadline,
@@ -451,7 +451,7 @@ export default async function conversationRoutes(app: FastifyInstance) {
     const sink = createReplyStreamSink(reply);
     const receivedAt = Date.now();
     const receivedMonotonicAt = performance.now();
-    let preparationSignal = AbortSignal.timeout(DEFAULT_FIRST_TOKEN_DEADLINE_MS);
+    const preparationSignal = AbortSignal.timeout(CONVERSATION_PREPARATION_TIMEOUT_MS);
 
     try {
       const catalog = await withConversationPreparationDeadline(
@@ -460,10 +460,7 @@ export default async function conversationRoutes(app: FastifyInstance) {
       );
       const firstTokenDeadlineMs =
         catalog.catalog.first_token_deadline_ms ?? DEFAULT_FIRST_TOKEN_DEADLINE_MS;
-      preparationSignal = AbortSignal.timeout(
-        Math.max(1, Math.ceil(firstTokenDeadlineMs - (performance.now() - receivedMonotonicAt)))
-      );
-      // A late identity/ownership read must not open a turn after the client gave up.
+      // Preparation has its own finite budget. The first-token threshold below is observation-only.
       // Race each preparation await, never a block containing generation or quota writes.
       const dbUser = await withConversationPreparationDeadline(
         getOrCreateDbUser(tgUser),
@@ -609,14 +606,11 @@ function failTurn(
   error: unknown,
   log: RequestLogger
 ): void {
-  if (
-    error instanceof FirstTokenDeadlineError ||
-    (error instanceof Error && error.name === 'TimeoutError')
-  ) {
+  if (error instanceof Error && error.name === 'TimeoutError') {
     if (sink.opened) {
-      sink.send({ type: 'error', code: 'upstream_error', message: '这次响应有点慢，请重试。' });
+      sink.send({ type: 'error', code: 'upstream_error', message: '请求处理超时，请重试。' });
       sink.close();
-    } else void reply.status(504).send(fail('first_token_timeout', '这次响应有点慢，请重试。'));
+    } else void reply.status(504).send(fail('upstream_error', '请求处理超时，请重试。'));
     return;
   }
   if (sink.opened) {

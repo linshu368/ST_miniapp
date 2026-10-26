@@ -17,7 +17,6 @@ import {
   fetchGenerationDataForSettlement,
   buildGenerationMetadata,
 } from '../generation/openrouter-metadata.js';
-import { FirstTokenDeadlineError } from '../generation/first-token-fallback.js';
 import { GenerationObservationRepository } from '../../infrastructure/repositories/GenerationObservationRepository.js';
 import { GenerationCleanupPendingError } from '../generation/types.js';
 import type { SseTapResult } from '../generation/upstream.js';
@@ -80,6 +79,8 @@ export interface RunConversationTurnInput {
   thinkingEnabled?: boolean;
 }
 
+export const CONVERSATION_PREPARATION_TIMEOUT_MS = 20_000;
+
 let historyRepository: ConversationHistoryRepository | null = null;
 let characterRepository: CharacterCardRepository | null = null;
 let userSettingsRepository: MiniappUserSettingsRepository | null = null;
@@ -130,10 +131,11 @@ export async function runConversationTurn(
   const turnStartedAt = input.receivedAt ?? Date.now();
   const requestStartedAt =
     input.receivedMonotonicAt ?? performance.now() - (Date.now() - turnStartedAt);
-  const preparationRemainingMs =
-    (input.firstTokenDeadlineMs ?? DEFAULT_FIRST_TOKEN_DEADLINE_MS) -
-    (performance.now() - requestStartedAt);
-  if (preparationRemainingMs <= 0) throw new FirstTokenDeadlineError();
+  // The 6s first-token threshold is an SLA observation, not a preparation deadline.
+  // Keep preparation bounded independently so slow reads cannot occupy a route forever.
+  const preparationRemainingMs = CONVERSATION_PREPARATION_TIMEOUT_MS - (Date.now() - turnStartedAt);
+  if (preparationRemainingMs <= 0)
+    throw new DOMException('Conversation preparation timed out', 'TimeoutError');
   const preparationSignal = AbortSignal.timeout(Math.ceil(preparationRemainingMs));
 
   // ── 取数 ──────────────────────────────────────────────────────────────────
@@ -209,14 +211,24 @@ export async function runConversationTurn(
   let fallbackPrepared = false;
   let observationBegun = false;
   let emitted = false;
+  let firstTokenDeadlineElapsed = false;
+  let firstTokenTimeoutRecorded = false;
   const observationError = (err: unknown) =>
     log.sys.warn(
       { err, event: 'conversation.first_token.observation_failed', historyId: turn.historyId },
       '首 token 观测未写入'
     );
+  const recordFirstTokenTimeout = (): void => {
+    firstTokenDeadlineElapsed = true;
+    if (!observationBegun || firstTokenTimeoutRecorded) return;
+    firstTokenTimeoutRecorded = true;
+    void observations
+      .markServer(turn.historyId, { first_token_timeout: true })
+      .catch(observationError);
+  };
   const controller = new AbortController();
   const firstTokenTimer = setTimeout(
-    () => controller.abort(new FirstTokenDeadlineError()),
+    recordFirstTokenTimeout,
     Math.max(1, policy.deadlineMs - (performance.now() - requestStartedAt))
   );
   const timeout = setTimeout(
@@ -250,6 +262,7 @@ export async function runConversationTurn(
       await historyRecords().setPendingRequestId(turn.historyId, input.requestId);
     await observations.begin(observationInput);
     observationBegun = true;
+    if (firstTokenDeadlineElapsed) recordFirstTokenTimeout();
     controller.signal.throwIfAborted();
     // ── 组 prompt ─────────────────────────────────────────────────────────────
     const context = await historyRecords().getContextBeforeTurn(
@@ -337,8 +350,10 @@ export async function runConversationTurn(
     };
 
     const emitVisibleDelta = (type: 'delta' | 'reasoning', text: string): void => {
-      if (!emitted && performance.now() - requestStartedAt >= policy.deadlineMs)
-        controller.abort(new FirstTokenDeadlineError());
+      if (!emitted && performance.now() - requestStartedAt >= policy.deadlineMs) {
+        recordFirstTokenTimeout();
+        // controller.abort(new FirstTokenDeadlineError());
+      }
       controller.signal.throwIfAborted();
       sink.send({ type, text });
       if (!emitted && text.trim()) {
@@ -476,14 +491,6 @@ export async function runConversationTurn(
 
     return { kind: 'streamed', status };
   } catch (err) {
-    if (
-      observationBegun &&
-      (err instanceof FirstTokenDeadlineError ||
-        controller.signal.reason instanceof FirstTokenDeadlineError)
-    )
-      await observations
-        .markServer(turn.historyId, { first_token_timeout: true })
-        .catch(observationError);
     // Prompt/history/precheck failures happen after startTurn and must release the
     // persisted session too. CAS leaves a concurrent cancellation/completion intact.
     if (err instanceof GenerationCleanupPendingError) {
@@ -513,8 +520,6 @@ export async function runConversationTurn(
             ? 'timeout'
             : null,
     });
-    if (controller.signal.reason instanceof FirstTokenDeadlineError)
-      throw new FirstTokenDeadlineError();
     throw err;
   } finally {
     clearTimeout(firstTokenTimer);

@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FIRST_TOKEN_FALLBACK_MODEL_ID } from '@miniapp/shared';
 import {
   forwardWithFirstTokenFallback,
-  FirstTokenDeadlineError,
   type FirstTokenAttemptStore,
   type TransportModel,
 } from './first-token-fallback.js';
@@ -16,7 +15,6 @@ function setup(options: {
   primaryAt: number;
   fallbackAt?: number;
   fallbackModelId?: string;
-  deadline?: number;
   primary?: TransportModel;
   controls?: boolean;
   selectionDelay?: number;
@@ -102,7 +100,6 @@ function setup(options: {
     fallbackModelId: options.fallbackModelId,
     thinkingEnabled: options.thinkingEnabled ?? false,
     timeoutMs: options.timeoutMs ?? 40,
-    remainingFirstTokenMs: options.deadline ?? 60,
     remainingObservationMs: 300,
     requestStartedAt: performance.now(),
     signal: controller.signal,
@@ -160,19 +157,25 @@ describe('first-token fallback budget and delivery', () => {
     ).toBe(55);
     expect(test.calls[0]?.cancelled).toBe(true);
   });
-  it('a late primary cannot satisfy the global deadline after fallback has begun', async () => {
+  it('delivers fallback after the 6s SLA threshold instead of terminating both attempts', async () => {
     const test = setup({ primaryAt: 55, fallbackAt: 30 });
-    await vi.advanceTimersByTimeAsync(61);
-    await expect(test.result).rejects.toBeInstanceOf(FirstTokenDeadlineError);
-    expect(test.store.selectDelivery).not.toHaveBeenCalled();
-    expect(test.calls.every((c) => c.cancelled)).toBe(true);
+    await vi.advanceTimersByTimeAsync(71);
+    const delivered = await test.result;
+    expect(delivered.role).toBe('fallback');
+    expect(test.store.selectDelivery).toHaveBeenCalledWith(
+      expect.objectContaining({ role: 'fallback', first_token_ms: 30 })
+    );
+    expect(test.calls[1]?.cancelled).toBe(false);
+    await delivered.response.body?.cancel();
   });
-  it('does not give database delivery selection a fresh budget', async () => {
+  it('allows durable delivery selection to finish after the 6s SLA threshold', async () => {
     const test = setup({ primaryAt: 20, selectionDelay: 50 });
-    await vi.advanceTimersByTimeAsync(61);
-    await expect(test.result).rejects.toBeInstanceOf(FirstTokenDeadlineError);
+    await vi.advanceTimersByTimeAsync(71);
+    const delivered = await test.result;
+    expect(delivered.role).toBe('primary');
     expect(test.observations.find((a) => a.first_token_ms !== undefined)?.first_token_ms).toBe(20);
-    expect(test.calls[0]?.cancelled).toBe(true);
+    expect(test.calls[0]?.cancelled).toBe(false);
+    await delivered.response.body?.cancel();
   });
   it('dispatches the operator-selected fallback and records the same model identity', async () => {
     const test = setup({ primaryAt: 55, fallbackModelId: 'vendor/operator-flash' });
@@ -222,7 +225,6 @@ describe('first-token fallback budget and delivery', () => {
       primary: { provider: 'openrouter', providerModelId: 'selected' },
       primaryAttemptId: 'p',
       timeoutMs: 40,
-      remainingFirstTokenMs: 60,
       remainingObservationMs: 300,
       requestStartedAt: performance.now(),
       signal: new AbortController().signal,
@@ -243,7 +245,6 @@ describe('first-token fallback budget and delivery', () => {
       primary: { provider: 'openrouter', providerModelId: 'selected' },
       primaryAttemptId: 'p',
       timeoutMs: 40,
-      remainingFirstTokenMs: 60,
       remainingObservationMs: 300,
       requestStartedAt: performance.now(),
       signal: new AbortController().signal,
@@ -261,7 +262,6 @@ describe('first-token fallback budget and delivery', () => {
       reasoningAt: 3000,
       thinkingEnabled: true,
       timeoutMs: 4000,
-      deadline: 6000,
     });
     await vi.advanceTimersByTimeAsync(3001);
     const delivered = await test.result;
@@ -280,29 +280,43 @@ describe('first-token fallback budget and delivery', () => {
     await reader.cancel();
   });
 
-  it('enabled fallback reasoning stops the shared deadline and late primary cannot replace it', async () => {
+  it('enabled silent thinking keeps the primary until its first answer beyond the fast deadline', async () => {
     const test = setup({
-      primaryAt: 55,
-      fallbackAt: 100,
-      fallbackReasoningAt: 5,
+      primaryAt: 100,
       thinkingEnabled: true,
+      timeoutMs: 40,
     });
-    await vi.advanceTimersByTimeAsync(46);
+    await vi.advanceTimersByTimeAsync(61);
+    expect(test.store.prepareFallback).not.toHaveBeenCalled();
+    expect(test.calls).toHaveLength(1);
+    expect(test.calls[0]?.cancelled).toBe(false);
+    await vi.advanceTimersByTimeAsync(39);
     const delivered = await test.result;
-    expect(delivered.role).toBe('fallback');
-    const reader = delivered.response.body!.getReader();
-    expect(new TextDecoder().decode((await reader.read()).value)).toContain('兜底思考');
-    await vi.advanceTimersByTimeAsync(100);
-    expect(new TextDecoder().decode((await reader.read()).value)).toContain('兜底');
-    expect(test.store.selectDelivery).toHaveBeenCalledOnce();
+    expect(delivered.role).toBe('primary');
     expect(test.store.selectDelivery).toHaveBeenCalledWith(
-      expect.objectContaining({ role: 'fallback', first_token_ms: 5 })
+      expect.objectContaining({ first_token_ms: 100, end_reason: 'first_token_observed' })
     );
-    expect(test.calls[0]?.cancelled).toBe(true);
+    const reader = delivered.response.body!.getReader();
+    expect(new TextDecoder().decode((await reader.read()).value)).toContain('首发');
     await reader.cancel();
   });
 
-  it('off ignores reasoning from both attempts and preserves the global deadline', async () => {
+  it('enabled thinking never dispatches fallback while waiting for public reasoning or an answer', async () => {
+    const test = setup({
+      primaryAt: 100,
+      thinkingEnabled: true,
+    });
+    await vi.advanceTimersByTimeAsync(61);
+    expect(test.store.prepareFallback).not.toHaveBeenCalled();
+    expect(test.calls).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(39);
+    const delivered = await test.result;
+    expect(delivered.role).toBe('primary');
+    expect(test.store.selectDelivery).toHaveBeenCalledOnce();
+    await delivered.response.body?.cancel();
+  });
+
+  it('off ignores reasoning from both attempts and still delivers after the SLA threshold', async () => {
     const test = setup({
       primaryAt: 100,
       fallbackAt: 100,
@@ -310,11 +324,16 @@ describe('first-token fallback budget and delivery', () => {
       fallbackReasoningAt: 5,
       thinkingEnabled: false,
     });
-    await vi.advanceTimersByTimeAsync(61);
-    await expect(test.result).rejects.toBeInstanceOf(FirstTokenDeadlineError);
-    expect(test.store.selectDelivery).not.toHaveBeenCalled();
-    expect(test.observations.every((a) => a.first_token_ms === undefined)).toBe(true);
-    expect(test.calls.every((call) => call.cancelled)).toBe(true);
+    await vi.advanceTimersByTimeAsync(141);
+    const delivered = await test.result;
+    expect(delivered.role).toBe('fallback');
+    expect(test.store.selectDelivery).toHaveBeenCalledWith(
+      expect.objectContaining({ role: 'fallback', first_token_ms: 100 })
+    );
+    expect(
+      test.observations.every((a) => a.first_token_ms === undefined || a.first_token_ms === 100)
+    ).toBe(true);
+    await delivered.response.body?.cancel();
   });
 
   it.each([true, false])(

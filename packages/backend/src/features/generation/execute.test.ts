@@ -973,7 +973,7 @@ describe('fixed fallback preserves one selected-model quote', () => {
       beforeDispatch = vi.fn(),
       selectDelivery = vi.fn(async () => {});
     const deltas: string[] = [];
-    const req = request({ promptCaching: true });
+    const req = request({ promptCaching: true, thinkingEnabled: false });
     req.model.firstTokenPolicy = {
       fallbackModelId: 'vendor/operator-flash',
       timeoutMs: 30,
