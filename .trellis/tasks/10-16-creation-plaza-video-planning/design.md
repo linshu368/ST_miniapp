@@ -1,34 +1,38 @@
 # 技术设计：图片广场扩展视频 + `media_plaza` schema
 
-状态：待审核（2026-10-24）。仓库：`g:/JobLib/ST_miniapp`，分支 `feat_video_park`。
+状态：待审核（2026-10-26 补充性能设计）。仓库：`g:/JobLib/ST_miniapp`，分支 `feat_video_park`。
 
 证据等级：
-- SRC：已读源码
+
+- SRC：已读源码（含 2026-10-26 对照的 feed / studio / sentry 路径）
 - MIG：migration 文本，不代表 DB 实况
 - DOC：Venice 公开文档（见 `research/venice-video-evidence.md`）
 - 待验证：实施期需核实
 
 ## 1. 现状与复用调研
 
-| 对象 | 位置（SRC/MIG） | 结论 |
-| --- | --- | --- |
-| 广场契约 | `packages/shared/src/api/image-plaza.ts` | 扩展：feed query 加 `media`、`tags`；条目用 media 判别联合；视频 DTO 放在新文件 `video-plaza.ts` |
-| feed/详情/点赞 | `features/image-plaza/repository.ts` 中的 `listWorks/listSortedWorks/hydrateWorks`。按 like_count、initial_feed_order、published_at、id 排序；标签匹配为 `snapshot->>prompt_zh ILIKE` | 扩展：works 加 `media_type`，图片和视频共用一张投影表；视频专属字段通过 `video_artifact_id` 关联 |
-| 游标 | `feed-cursor.ts` + `ImagePlazaFeedCursorSchema`（filter 为 64 位十六进制哈希） | 复用：把 media 和 tags[] 并入 filter 哈希，游标结构不变 |
-| worker | `features/image-plaza/job.ts`：setInterval 驱动，`claim_image_plaza_jobs` 租约，`markStaleDispatchedUnknown` | 复用模式：新建 `video-job.ts`，拆成 submit/poll 两个阶段，各自独立 claim |
-| Venice HTTP | `platform/venice-http.ts` 的 `veniceFetch`（ProxyAgent）；`upstream.ts` 的错误类和响应头采集 | 复用：新建 `video-upstream.ts` |
-| 存储 | `storage.ts`：私有 bucket、签名 URL LRU（2000 条）、签名超时 | 扩展：新增 bucket 参数，新增 mp4 魔数校验 |
-| 计费原语 | `billing.apply_wallet_debit` / `refund_wallet_debit`（MIG 20260921） | 复用：视频的预扣和退款 RPC 在这两个原语外面包一层 |
-| 图片结算 | `billing.settle_image_plaza_generation`：成功后扣费，余额不足时置 failed | 不改（决策 D2：图片维持现状） |
-| 首次分享与返利 | `billing.share_image_plaza_artifact` 写 `app_core.miniapp_user_settings.image_plaza_first_share_completed_at` | 扩展：视频分享 RPC 复用同一字段和同一锁顺序 |
-| generation 边界 | `features/generation/` 下已有 `image-plaza-prompt-translate.ts`、`image-plaza-tagging.ts` | 不新增。视频关闭自动优化（D9），视频链路不调用 LLM |
-| 配置 | `features/image-plaza/config.ts`（6 个 key）；admin 的 `configSchemas.ts`、`ImagePlazaConfigEditors.tsx`（模型目录、价格公式、标签编辑） | 扩展：新 key `image_plaza_video_model_catalog`；标签加 `media_types`；DB 侧 `admin.validate_*` 同步修改 |
-| 前端 | `create/page.tsx`（516 行）、`studio/[conversationId]/page.tsx`（938 行）、`work/[workId]/page.tsx`、`components/image-plaza/*`、`lib/api/image-plaza.ts` | 扩展：页面内按 media 分支；新增 4 个小组件（见 §5） |
-| Sentry | 前端 `lib/sentry/client.ts`、`lib/perf/action-tracker.ts`（TrackedAction 联合类型）；后端 `lib/sentry.ts`、`lib/perf-metrics.ts` | 扩展：TrackedAction 加 `video_generate`，后端加视频事件和指标 |
-| seed 导入 | `seed-import.ts`、`scripts/import-image-plaza-seed.ts`（dry-run、manifest、`--target`、`--limit`）、`translate-image-plaza-seed-prompts.ts` | 复用模式：新建视频 parser 和脚本（6 列格式与图片不同，不能直接复用） |
-| 运行镜像 | `ops/docker/Dockerfile.backend`：运行层基于 `node:20-bookworm-slim`（第 116 行），第 121 行用 `apt-get install --no-install-recommends` 安装 tini/wget/openssl | 在同一条 apt 命令里加 `ffmpeg`（Debian 包自带 ffprobe），并加 `RUN ffmpeg -version && ffprobe -version` 构建期断言（D10） |
+| 对象            | 位置（SRC/MIG）                                                                                                                                                                       | 结论                                                                                                                                          |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| 广场契约        | `packages/shared/src/api/image-plaza.ts`                                                                                                                                              | 扩展：feed query 加 `media`、`tags`；条目用 media 判别联合；视频 DTO 放在新文件 `video-plaza.ts`                                              |
+| feed/详情/点赞  | `features/image-plaza/repository.ts` 中的 `listWorks/listSortedWorks/hydrateWorks`。按 like_count、initial_feed_order、published_at、id 排序；标签匹配为 `snapshot->>prompt_zh ILIKE` | 扩展：works 加 `media_type`，图片和视频共用一张投影表；视频专属字段通过 `video_artifact_id` 关联                                              |
+| 游标            | `feed-cursor.ts` + `ImagePlazaFeedCursorSchema`（filter 为 64 位十六进制哈希）                                                                                                        | 复用：把 media 和 tags[] 并入 filter 哈希，游标结构不变                                                                                       |
+| worker          | `features/image-plaza/job.ts`：setInterval 驱动，`claim_image_plaza_jobs` 租约，`markStaleDispatchedUnknown`                                                                          | 复用模式：新建 `video-job.ts`，拆成 submit/poll 两个阶段，各自独立 claim                                                                      |
+| Venice HTTP     | `platform/venice-http.ts` 的 `veniceFetch`（ProxyAgent）；`upstream.ts` 的错误类和响应头采集                                                                                          | 复用：新建 `video-upstream.ts`                                                                                                                |
+| 存储            | `storage.ts`：私有 bucket、签名 URL LRU（2000 条）、签名超时                                                                                                                          | 扩展：新增 bucket 参数，新增 mp4 魔数校验                                                                                                     |
+| 计费原语        | `billing.apply_wallet_debit` / `refund_wallet_debit`（MIG 20260921）                                                                                                                  | 复用：视频的预扣和退款 RPC 在这两个原语外面包一层                                                                                             |
+| 图片结算        | `billing.settle_image_plaza_generation`：成功后扣费，余额不足时置 failed                                                                                                              | 不改（决策 D2：图片维持现状）                                                                                                                 |
+| 首次分享与返利  | `billing.share_image_plaza_artifact` 写 `app_core.miniapp_user_settings.image_plaza_first_share_completed_at`                                                                         | 扩展：视频分享 RPC 复用同一字段和同一锁顺序                                                                                                   |
+| generation 边界 | `features/generation/` 下已有 `image-plaza-prompt-translate.ts`、`image-plaza-tagging.ts`                                                                                             | 不新增。视频关闭自动优化（D9），视频链路不调用 LLM                                                                                            |
+| 配置            | `features/image-plaza/config.ts`（6 个 key）；admin 的 `configSchemas.ts`、`ImagePlazaConfigEditors.tsx`（模型目录、价格公式、标签编辑）                                              | 扩展：新 key `image_plaza_video_model_catalog`；标签加 `media_types`；DB 侧 `admin.validate_*` 同步修改                                       |
+| 前端            | `create/page.tsx`、`studio/[conversationId]/page.tsx`、`work/[workId]/page.tsx`、`components/image-plaza/*`、`lib/api/image-plaza.ts`                                                 | 扩展：按 media 分支 + 4 小组件（§5）；**性能**：接线已有 `prefetchImagePlazaFeed`、创作预取 config、quote debounce/复用、轮询退避（§5.1–5.2） |
+| 列表请求链      | feed：runtime_config → listSortedWorks(1～2) → hydrate(artifacts∥likes) → 并发签名≤20；pageSize20、stale60s、缩略图720/72、签名 LRU                                                   | 视频混排保留该链；列表只签 poster、DTO 裁剪、tag-counts 解耦；后端 feed p95≤500ms / 前端≤800ms                                                |
+| 创作请求链      | studio：config∥conversation → quote → POST attempts(202) → 会话固定2s 全量轮询；`image_generate` 受理反馈与 `image.display.duration` 分离                                             | 视频同模式；轻量 attempt 轮询+退避；worker/Venice 耗时不进 standard API p95                                                                   |
+| Sentry          | 前端 `lib/perf/action-tracker.ts`、`page-tracker.ts`；后端 `lib/perf-metrics.ts`；规范见 `10-21-sentry-ux-monitoring`                                                                 | 扩展：`video_generate` + 视频事件；看板按列表/创作分图（§8.1）                                                                                |
+| seed 导入       | `seed-import.ts`、`scripts/import-image-plaza-seed.ts`（dry-run、manifest、`--target`、`--limit`）、`translate-image-plaza-seed-prompts.ts`                                           | 复用模式：新建视频 parser 和脚本（6 列格式与图片不同，不能直接复用）                                                                          |
+| 运行镜像        | `ops/docker/Dockerfile.backend`：运行层基于 `node:20-bookworm-slim`（第 116 行），第 121 行用 `apt-get install --no-install-recommends` 安装 tini/wget/openssl                        | 在同一条 apt 命令里加 `ffmpeg`（Debian 包自带 ffprobe），并加 `RUN ffmpeg -version && ffprobe -version` 构建期断言（D10）                     |
 
 拒绝的方案：
+
 - 通用媒体插件框架
 - 消息队列或 Redis
 - 前端直连 Venice 或 download_url
@@ -87,11 +91,11 @@ ALTER FUNCTION experience.import_image_plaza_seed_work(...) SET SCHEMA media_pla
 
 新表（每张表的 8 问说明写在 migration comment 中）：
 
-| 表 | 真相 | 写入方 | 生命周期 |
-| --- | --- | --- | --- |
-| `media_plaza.video_quotes` | 服务端权威视频报价（参数 + 星尘），10 分钟有效 | quote 路由 | 过期可清理 |
-| `media_plaza.video_attempts` | 一次视频生成请求及其上游状态机 | 视频 service、worker | 有流水的行 RESTRICT 删除 |
-| `media_plaza.video_artifacts` | 转存后的 mp4 与封面元数据 | worker、seed 导入 | 被作品引用时 RESTRICT |
+| 表                            | 真相                                           | 写入方               | 生命周期                 |
+| ----------------------------- | ---------------------------------------------- | -------------------- | ------------------------ |
+| `media_plaza.video_quotes`    | 服务端权威视频报价（参数 + 星尘），10 分钟有效 | quote 路由           | 过期可清理               |
+| `media_plaza.video_attempts`  | 一次视频生成请求及其上游状态机                 | 视频 service、worker | 有流水的行 RESTRICT 删除 |
+| `media_plaza.video_artifacts` | 转存后的 mp4 与封面元数据                      | worker、seed 导入    | 被作品引用时 RESTRICT    |
 
 **`video_attempts` 关键列**
 
@@ -129,15 +133,15 @@ ALTER FUNCTION experience.import_image_plaza_seed_work(...) SET SCHEMA media_pla
 
 全部 SECURITY DEFINER，只 GRANT 给 service_role 和 postgres。
 
-| 函数 | 行为 | 并发/幂等 |
-| --- | --- | --- |
-| `billing.reserve_media_plaza_video(attempt, user)` | 锁 attempt 再锁钱包（与 settle 锁序相同），余额足够则 `apply_wallet_debit` 并转为 submitting | 已有 reserve 时返回 already；余额不足时转为 failed（`insufficient_balance`），不产生流水 |
-| `billing.refund_media_plaza_video(attempt, reason)` | `refund_wallet_debit`，回写 refund_ledger_id | 部分唯一索引保证只退一次；重复调用返回 already |
-| `media_plaza.claim_video_submit_jobs(owner, n, lease)` | `FOR UPDATE SKIP LOCKED` 领取 submitting 且租约过期的任务 | 后续更新都带 `lease_owner` 条件，实现 fencing |
-| `media_plaza.claim_video_poll_jobs(owner, n, lease)` | 领取 queued/processing 且 `next_poll_at <= now()` 的任务 | 同上 |
-| `media_plaza.publish_video_artifact(...)` | 单事务：写 artifact，storing → ready，清空 download_url | 已 ready 直接返回 |
-| `billing.share_media_plaza_video(...)` | 生成视频作品；以预扣流水为基数发返利；写/读共享首次字段 | 锁 `miniapp_user_settings` 行，与图片分享函数锁序一致，避免跨媒体并发首次重复领取 |
-| `media_plaza.import_video_seed_work(...)` | 原子写 seed artifact + work | (origin, source_video_id) 唯一，重复返回 existing |
+| 函数                                                   | 行为                                                                                         | 并发/幂等                                                                                |
+| ------------------------------------------------------ | -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `billing.reserve_media_plaza_video(attempt, user)`     | 锁 attempt 再锁钱包（与 settle 锁序相同），余额足够则 `apply_wallet_debit` 并转为 submitting | 已有 reserve 时返回 already；余额不足时转为 failed（`insufficient_balance`），不产生流水 |
+| `billing.refund_media_plaza_video(attempt, reason)`    | `refund_wallet_debit`，回写 refund_ledger_id                                                 | 部分唯一索引保证只退一次；重复调用返回 already                                           |
+| `media_plaza.claim_video_submit_jobs(owner, n, lease)` | `FOR UPDATE SKIP LOCKED` 领取 submitting 且租约过期的任务                                    | 后续更新都带 `lease_owner` 条件，实现 fencing                                            |
+| `media_plaza.claim_video_poll_jobs(owner, n, lease)`   | 领取 queued/processing 且 `next_poll_at <= now()` 的任务                                     | 同上                                                                                     |
+| `media_plaza.publish_video_artifact(...)`              | 单事务：写 artifact，storing → ready，清空 download_url                                      | 已 ready 直接返回                                                                        |
+| `billing.share_media_plaza_video(...)`                 | 生成视频作品；以预扣流水为基数发返利；写/读共享首次字段                                      | 锁 `miniapp_user_settings` 行，与图片分享函数锁序一致，避免跨媒体并发首次重复领取        |
+| `media_plaza.import_video_seed_work(...)`              | 原子写 seed artifact + work                                                                  | (origin, source_video_id) 唯一，重复返回 existing                                        |
 
 ### 2.5 Admin 配置校验（M3：`2026MMDD_media_plaza_video_config.sql`）
 
@@ -166,17 +170,17 @@ scripts/reconcile-video-plaza.ts
 
 ### 3.2 路由
 
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| GET | `/api/image-plaza/feed?media=&tags=&tag=&search=&sort=&cursor=` | 混排。`media` 缺省时只返回图片，保护旧客户端；`tags` 优先于 `tag` |
-| GET | `/api/image-plaza/feed/tag-counts?media=&search=` | 标签计数，进程内缓存 60s，独立于列表加载 |
-| GET | `/api/image-plaza/works/:id` | 视频作品返回签名的 `video_url` 和 `poster_url` |
-| GET | `/api/image-plaza/config` | 新增 `video_models`、`default_video_model_id` |
-| POST | `/api/image-plaza/video/quotes` | 服务端按价格矩阵返回 quote_id、credits、expires_at |
-| POST | `/api/image-plaza/conversations/:id/video-attempts` | 校验 → 写 message 和 attempt → reserve RPC → 202；余额不足返回 402，且不调用上游 |
-| GET | `/api/image-plaza/video-attempts/:id` | 轻量轮询（状态、error_code、ready 后的签名地址） |
-| GET | `/api/image-plaza/video-artifacts/:id/playback` | 重签播放地址，同时校验归属或作品是否公开 |
-| POST | `/api/image-plaza/video-artifacts/:id/share` | 分享并发放返利 |
+| 方法 | 路径                                                            | 说明                                                                             |
+| ---- | --------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| GET  | `/api/image-plaza/feed?media=&tags=&tag=&search=&sort=&cursor=` | 混排。`media` 缺省时只返回图片，保护旧客户端；`tags` 优先于 `tag`                |
+| GET  | `/api/image-plaza/feed/tag-counts?media=&search=`               | 标签计数，进程内缓存 60s，独立于列表加载                                         |
+| GET  | `/api/image-plaza/works/:id`                                    | 视频作品返回签名的 `video_url` 和 `poster_url`                                   |
+| GET  | `/api/image-plaza/config`                                       | 新增 `video_models`、`default_video_model_id`                                    |
+| POST | `/api/image-plaza/video/quotes`                                 | 服务端按价格矩阵返回 quote_id、credits、expires_at                               |
+| POST | `/api/image-plaza/conversations/:id/video-attempts`             | 校验 → 写 message 和 attempt → reserve RPC → 202；余额不足返回 402，且不调用上游 |
+| GET  | `/api/image-plaza/video-attempts/:id`                           | 轻量轮询（状态、error_code、ready 后的签名地址）                                 |
+| GET  | `/api/image-plaza/video-artifacts/:id/playback`                 | 重签播放地址，同时校验归属或作品是否公开                                         |
+| POST | `/api/image-plaza/video-artifacts/:id/share`                    | 分享并发放返利                                                                   |
 
 会话详情接口新增 `include_video=1` 参数。不带该参数时过滤掉视频消息，防止旧客户端解析失败。
 
@@ -198,6 +202,7 @@ ready       --> 异步调用 /video/complete（失败最多重试 3 次，只记
 ```
 
 各阶段参数：
+
 - **submit**：每个 tick 处理 ≤2 个任务，queue 超时 60s，不重试（写操作）。拿到 queue_id 后立即写库，`next_poll_at = now() + max(10s, 预估时长/4)`。
 - **poll**：每个 tick 处理 ≤10 个任务，retrieve 超时 30s。遇到 429/500/503 时把 next_poll_at 按 10s→60s 指数退避，不计为失败。
 - **下载**：流式读取，上限 200MiB，超时 120s。下载是幂等 GET，最多重试 2 次。
@@ -216,6 +221,7 @@ ready       --> 异步调用 /video/complete（失败最多重试 3 次，只记
 ### 3.4 提示词自动优化：视频关闭（D9）
 
 Venice 的视频接口没有优化字段（DOC），用户决定视频不提供此功能：
+
 - 视频的契约、表和 provider payload 里都没有 `auto_optimize`；用户 prompt 原样发给 Venice。
 - 前端视频设置不显示该开关；从图片切到视频时不沿用图片的 `auto_optimize`。
 - 图片链路的 `auto_optimize` 不变。
@@ -224,6 +230,7 @@ Venice 的视频接口没有优化字段（DOC），用户决定视频不提供�
 ### 3.5 Provider payload
 
 `video-catalog.ts` 按 `input_mode` 选择 provider id，然后按白名单组装字段：
+
 - i2v 不发送 aspect_ratio；
 - 音频不可配置的模型不发送 audio；
 - 永远不发送 safe_mode（视频接口会以 400 拒绝未知字段）。
@@ -245,12 +252,12 @@ Venice 的视频接口没有优化字段（DOC），用户决定视频不提供�
 识别条件：queue 返回 422，或者 retrieve 返回 422 且 `error.type == 'provider_content_policy'`。
 
 处理：
+
 1. 状态置为 `moderation_rejected`，error_code 记为 `video_moderation_rejected`；
 2. 调用 refund RPC；
 3. 发送 Sentry 计数 `video.moderation_rejected{model}`。
 
 如果响应带有 `recommended_model`，只记日志，不自动切换模型。
-
 
 ## 4. 共享契约（先于消费者修改）
 
@@ -292,6 +299,7 @@ Venice 的视频接口没有优化字段（DOC），用户决定视频不提供�
 所有数据请求都通过 `lib/api/image-plaza.ts` 中的 React Query hooks 发出，组件内不直接调用 fetch。
 
 **`create/page.tsx`（广场）**
+
 - 类型筛选：在标签行和搜索框之间加分段控件。样式沿用现有排序胶囊按钮（原型只作参考，见 D7）。
 - 列表查询：`useImagePlazaFeedQuery(search, tags[], sort, media)`，queryKey 包含 media 和排好序的 tags。
 - 标签行：横向滚动的标签保留，行尾固定放一个「全部风格」按钮，点开 `style-filter-sheet.tsx`：
@@ -305,11 +313,13 @@ Venice 的视频接口没有优化字段（DOC），用户决定视频不提供�
 - 返回状态：`saveImagePlazaReturn` 需要同时保存 media 和 tags。
 
 **`work/[workId]/page.tsx`（详情）**
+
 - 播放器：`<video controls playsInline preload="metadata" poster>`；页面同时展示模型、时长、点赞、提示词。
 - 链接过期：`onError` 时调用 playback 接口重新签名一次。
 - 用同款：沿用 source_work_id 流程。后端把 `media_type`、模型和参数写进快照。
 
 **`studio/[conversationId]/page.tsx`（工作室）**
+
 - 输入栏增加「图片 / 视频」切换，切换后仍在同一会话；图片和视频各自保留草稿。
 - 视频模式的模型与设置：
   - 模型选择打开 `video-model-sheet.tsx`，复用现有模型 Sheet 的结构，只列视频模型；
@@ -330,12 +340,133 @@ Venice 的视频接口没有优化字段（DOC），用户决定视频不提供�
   - 审核拒绝时显示专用文案，并提供「修改提示词」入口。
 - 轮询：`useVideoAttemptQuery` 的间隔从 3s 开始，每次 ×1.5，上限 15s；页面隐藏时暂停，回到前台立即刷新；到达终态后停止轮询，并让会话和钱包缓存失效。
 
-**性能（需求 8）**
-- 列表按游标分页，每页 20 条；封面图宽度为 480；签名链接复用 LRU 缓存。
-- 各类 Sheet 用 `next/dynamic` 按需加载。
-- 点击「去创作」时预取 config 和 studio 路由。
-- 列表页不发出任何 mp4 请求。
+**性能（需求 8）概要** → 详见 **§5.1**（列表）与 **§5.2**（创作页）。前端只做本节已列的接线与裁剪，不另起请求层。
 
+## 5.1 列表加载性能设计（R8.A，对照当前图片广场）
+
+### 现状路径（SRC，必须保留的优点）
+
+```
+Tab/入口 → (理想) prefetchInfiniteQuery 默认 feed
+         → create/page useImagePlazaFeedQuery
+         → GET /api/image-plaza/feed?sort&tag&search&cursor
+         → getImagePlazaRuntimeConfig
+         → listSortedWorks (1～2 次 PostgREST)
+         → hydrateWorks: artifacts.in ∥ likes.in → Promise.all(sign × ≤20)
+         → 前端：stale 60s / 过期保第一页 / IO 240px / 前4 eager 其余 lazy
+```
+
+硬数字（SRC）：`IMAGE_PLAZA_PAGE_SIZE=20`；feed `AbortSignal.timeout(10_000)`；缩略图 `width:720,quality:72`；签名已发布 TTL 24h、LRU≈2000；单页业务 DB ≈4～5 次 + 冷签 ≤20。
+
+未接线：`prefetchImagePlazaFeed` 已与页面共用 `imagePlazaFeedQueryOptions`，但 `providers` / `entry-phase` **无调用方**（注释写了空闲预取）。
+
+### 三条硬约束（与 p95 同级）
+
+#### A. 游标分页（复用 `feed-cursor.ts`）
+
+| 规则        | 说明                                                                                                                                                            |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 编码        | 继续 base64url + Zod schema；`pageSize=20`，查询 `limit+1` 生成 `next_cursor`                                                                                   |
+| filter 哈希 | 现状 `sha256(JSON([search, tag]))`；扩展为纳入 **`media` + 排序后的 `tags[]`**（与单 `tag` 兼容规则：`tags` 优先）。sort/filter 与请求不一致 → `INVALID_CURSOR` |
+| 分区        | `recommended`：liked → zero（`initial_feed_order`）；`latest`：时间+id；视频混排后分区键仍在同一 works 投影上，靠 `media_type` 谓词 + 复合索引                  |
+| 前端        | `infiniteQuery` 的 `pageParam` 即服务端 cursor；筛选变更换 queryKey 并清空旧 pages；stale 刷新**只留第一页**再 refetch，避免坏游标续页                          |
+| 禁止        | offset 分页、客户端合并多筛选项结果、用上一筛选项的 cursor 请求新筛选项                                                                                         |
+
+实施检查：对 `media=video` / `tags` 多选 / 搜索组合各跑一页翻页，断言无重复 id、无回跳；EXPLAIN 游标谓词走 §2.3 索引。
+
+#### B. 列表无 MP4
+
+| 规则        | 说明                                                                                                                   |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| 渲染        | 列表仅 `<img loading=lazy                                                                                              | eager>`显示封面；禁止`<video>`、禁止 prefetch/preload mp4 |
+| DTO         | feed item **不得**含 `video_url`、storage 原 path、provider `download_url`；最多 `poster_url` + `duration_ms` + 元数据 |
+| Hydrate     | 视频行只对 `poster_path` 调签名；图片行保持现有 artifact 图签名；**零次** mp4 `createSignedUrl`                        |
+| 详情/工作室 | 进入详情或消息卡可见时再签 mp4；`preload="metadata"` + `poster`；过期走 playback 重签                                  |
+| 验收        | DevTools/网络面板：列表文档生命周期内 `mp4` / `video/` MIME 请求数 = 0                                                 |
+
+这样把“重资源”挡在首屏之外，列表 p95 只承担封面图签名与 DB，不承担视频字节。
+
+#### C. 资源走签名缓存（复用并扩展 `storage.ts` LRU）
+
+现状机制（SRC，必须保留语义）：
+
+- 私有桶；已发布作品图 TTL **24h**，私有参考/未分享产物 **15min**。
+- 进程内 `Map` LRU 上限 **2000**；键 = `path|expiresIn|widthxquality`；提前 **5min** 视为过期。
+- **为何缓存**：Supabase Smart CDN 以完整签名 URL（含 token）为键；每次重签 = CDN/浏览器全 miss + Storage 回源。缓存保证 TTL 内 URL 逐字节稳定。
+
+视频扩展：
+
+| 资源            | 桶                  | 列表是否签名              | TTL / 是否进 LRU                      | transform        |
+| --------------- | ------------------- | ------------------------- | ------------------------------------- | ---------------- |
+| 图片作品缩略图  | `image-plaza`       | 是                        | 24h / 是                              | 720×72（不恶化） |
+| 视频封面 poster | `media-plaza-video` | 是                        | 24h / 是                              | ≤480 宽          |
+| 详情/工作室 mp4 | `media-plaza-video` | **否（列表）**；详情/卡是 | 24h / 是（无 transform 或固定原画键） | 无（整文件）     |
+| 未分享私有产物  | 对应私有路径        | 否（非 feed）             | 15min / 按现逻辑短链，避免长 TTL 泄露 | 按需             |
+
+约束：
+
+- 新增 `signSharedWorkVideoPath` / `signSharedWorkPosterPath`（名称实施时可调整）必须走**同一套** `read/writeSignedUrlCache`，仅扩展 bucket 与 path assert；禁止“视频每次现签、图片走缓存”的分裂实现。
+- 多副本各自 LRU 可接受（与图片注释一致）；不为此引入 Redis，除非 p95 证明跨副本冷签是主因（届时另开任务）。
+- feed 一页 ≤20 次签名调用；热缓存命中时应接近 0 次 Storage HTTP；冷启动尖刺计入 p95，但不得改为公开读。
+- 播放重签：命中 LRU 直接返回；miss 再 `createSignedUrl` 并回写。
+
+### 其它增量
+
+| 项       | 做法                                                                         | 拒绝的替代             |
+| -------- | ---------------------------------------------------------------------------- | ---------------------- |
+| 索引     | works 增加含 `media_type` 的推荐/最新复合索引；EXPLAIN 后决定是否保留旧索引  | 每次翻页重算推荐       |
+| DTO 裁剪 | 列表不要完整长 `snapshot`；详情再取全量                                      | 详情字段塞进列表       |
+| 标签计数 | 独立 `GET /feed/tag-counts`，≥60s 缓存；失败 UI 显示“—”                      | 每次 feed 同步扫库计数 |
+| Prefetch | 接线默认 feed 预取；queryKey 含 media                                        | 进页才首请求且无缓存   |
+| 搜索     | 维持 `prompt_zh ILIKE` + 300ms debounce；搜索样本不与无筛选首屏混算 p95 门禁 | 规划阶段另起搜索引擎   |
+
+### 列表侧耗时分解与门禁归属
+
+1. **后端处理**（鉴权+config+list+hydrate+sign）→ `http.server.duration` p95 ≤ **500ms**（`kind=standard`）。其中签名段应可从日志区分 cache hit/miss（实施期可加低基数计数，禁止打 path）。
+2. **端到端 API**（含网络）→ 前端 `api.request.duration` feed p95 ≤ **800ms**。
+3. **首屏可交互** → `page.ready.duration` `/create`；以实施前实测为基线，退化 ≤10%。
+4. **硬约束验收优先于微优化**：游标正确、列表 0 mp4、公开资源签名走 LRU；三者缺一不得宣称 R8.A 完成。
+5. 冷签扇出尖刺计入 p95；不得用去掉签名/改公开桶规避。
+
+可观测：保留现有 `image_plaza.feed.completed` + `durationMs`；视频上线后按 `media` 低基数标签区分（`all|image|video`）；可选 `plaza.sign.cache_hit` count（仅 hit/miss），禁止高基数 tag。
+
+## 5.2 创作页回复生成性能设计（R8.B）
+
+### 现状路径（SRC，图片）
+
+```
+create → startAction(create_conversation) → POST conversation → setQueryData → studio
+studio 首屏：config ∥ conversation（全量 messages+attempts hydrate）
+设置变更 → POST /quotes（无 debounce）
+发送 → quote.mutateAsync → POST .../attempts (202) → startAction(image_generate).feedback（受理）
+     → conversation refetchInterval 固定 2000ms（pending/generating）
+worker：3s tick / claim≤2 / Venice≤180s / settle RPC → ready
+图 onLoad → image.display.duration（结果可见，与受理分离）
+```
+
+要点：受理反馈与出图完成**必须继续分离**（10-21）；Venice/worker 耗时进 `video.duration_to_ready` / 图片 display 指标，**不进** standard API p95。
+
+### 视频与图片共同优化
+
+| 环节     | 优化                                                                                                                                                                           | 指标                                                |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------- |
+| 进入创作 | 点「去创作」/「用同款」时 `prefetchQuery(config)` + studio 路由；会话创建成功继续写穿缓存                                                                                      | `page.ready` studio ≤1.5s（有缓存）                 |
+| 报价     | 设置变更 **debounce ≥300ms**；同 model+参数命中未过期 `quote_id` 则复用；提交前再 quote 校验失败则一次重报                                                                     | `/quotes` API p95 ≤800ms                            |
+| 提交受理 | 保持 202；校验→写库→（视频）reserve→返回；不在请求内等上游                                                                                                                     | `action.feedback` p95 ≤2.5s；`action_stall` 可告警  |
+| 状态可见 | 视频：`GET video-attempts/:id` 轻量轮询，退避 3s→×1.5→cap 15s，`document.hidden` 暂停；图片：逐步从固定 2s 全量会话轮询改为“有进行中才拉取 + 退避”，避免长会话每次全量 hydrate | attempt/conversation GET p95 ≤800ms                 |
+| 结果可见 | 视频 poster 优先（签名 LRU）；mp4 仅详情/工作室卡按需签名并写同一 LRU；列表路径零 mp4；图片保持 onLoad 上报                                                                    | `image.display.duration` / `video.attempt.terminal` |
+| Worker   | 视频 submit/poll 分 claim；poll 对 429/5xx 退避；单用户进行中视频 ≤2                                                                                                           | 不计入 standard p95                                 |
+
+### 请求优先级与超时
+
+- feed / config / conversation 首屏：沿用现有 critical / 超时策略；feed 10s 客户端超时保留。
+- attempts 提交、references 上传：长路径，bypass 繁忙队列；超时与图片同量级（提交短、上传长）。
+- 轮询请求不得打满：隐藏页暂停；终态停止；退避上限 15s。
+
+### 与计费/可靠性的边界
+
+- 性能优化不得削弱：幂等键、reserve/refund 唯一、参数与 quote 一致性校验、402 不打上游。
+- 削减 hydrate 字段时，编辑/用同款所需 `params_snapshot` 必须在 attempt/详情中仍可用。
 
 ## 6. Admin（需求 2.2、2.6）
 
@@ -359,8 +490,7 @@ Venice 的视频接口没有优化字段（DOC），用户决定视频不提供�
   - 翻译包有、原表没有的行，计入 `translation_orphan` 报告，不导入。
   - 写入方式：`snapshot.prompt_zh = prompt_zh`，`snapshot.prompt_zh_source = 'translation_pack'`。标签匹配和搜索沿用现有 `prompt_zh ILIKE` 规则，不再调用翻译脚本。
   - manifest 记录两份 xlsx 的 SHA-256；导入时如果 hash 与审核时不同，就拒绝执行。
-- 导入流程，在图片 seed 的做法前新增体积估算步骤（D13）：
-  0. **体积估算（新增，必须人工确认后才能继续）**：对原表 5,097 条的 `Video URL` 逐一发 HEAD 请求（并发度限制，见下方可靠性设计），读取 `Content-Length` 求和；按 model 分组小计；输出 `video-seed-size-report.json`（含总字节数、按模型小计、HEAD 失败/无 Content-Length 的行数清单）。脚本在打印报告后退出，不进入第 1 步，除非带 `--confirm-size <报告文件的 SHA-256>` 参数——这样人工必须先看过报告内容再决定继续，而不是盲目加一个 `--yes` 跳过。
+- 导入流程，在图片 seed 的做法前新增体积估算步骤（D13）：0. **体积估算（新增，必须人工确认后才能继续）**：对原表 5,097 条的 `Video URL` 逐一发 HEAD 请求（并发度限制，见下方可靠性设计），读取 `Content-Length` 求和；按 model 分组小计；输出 `video-seed-size-report.json`（含总字节数、按模型小计、HEAD 失败/无 Content-Length 的行数清单）。脚本在打印报告后退出，不进入第 1 步，除非带 `--confirm-size <报告文件的 SHA-256>` 参数——这样人工必须先看过报告内容再决定继续，而不是盲目加一个 `--yes` 跳过。
   1. 默认 dry-run，只输出计数和错误码；
   2. 审核 manifest，剔除涉及未成年和审核未通过的条目；
   3. 参数 `--target test|production --limit ≤500`；
@@ -376,12 +506,32 @@ Venice 的视频接口没有优化字段（DOC），用户决定视频不提供�
 
 ## 8. 监控（需求 8，遵循 10-21-sentry-ux-monitoring）
 
-**前端**
-- `TrackedAction` 增加 `video_generate`：从点击到显示“排队中”，看门狗 2.5s。
+### 8.1 两条路径的 Sentry p95 看板（必须单独成图）
+
+沿用现有指标，不新建平行埋点体系。看板按 **列表** 与 **创作受理** 拆开，禁止把 worker/Venice 耗时和 feed 画在同一 p95 门禁上。
+
+| 看板             | 查询                                                                        | 门禁                             |
+| ---------------- | --------------------------------------------------------------------------- | -------------------------------- |
+| 列表 API（前端） | `api.request.duration` p95，`route=/api/image-plaza/feed`，`outcome=ok`     | ≤800ms                           |
+| 列表 API（后端） | `http.server.duration` p95，同 route，`kind=standard`                       | ≤500ms                           |
+| 广场首屏         | `page.ready.duration` p95，`route=/create`                                  | 相对基线退化 ≤10%                |
+| 工作室首屏       | `page.ready.duration` p95，`route=/create/studio/:id`                       | ≤1.5s（有预取样本单独标注）      |
+| 生成受理         | `action.feedback.duration` p95，`action=image_generate\|video_generate`     | ≤2.5s；`action_stall` count 告警 |
+| 创作读接口       | `api.request.duration` p95：config / quotes / conversation / video-attempts | ≤800ms                           |
+| 视频完成（观测） | `video.duration_to_ready` p50/p95 按 model                                  | 不设发布门禁，用于容量与模型对比 |
+| 图片回归         | 上表图片 action + feed + `/create` ready                                    | 退化 ≤10%                        |
+
+基线：P0 在 Telegram iOS/Android 对**纯图片**路径冷/热各 ≥20 次采样，写入 task 记录后再开视频混排对比。
+
+### 8.2 前端事件
+
+- `TrackedAction` 增加 `video_generate`：从点击到显示“排队中”，看门狗 2.5s（与 `image_generate` 同语义：受理反馈，非成片）。
 - 终态上报：`sendSentryLog('video.attempt.terminal', {status, model, duration_s, elapsed_ms})`。
 - 播放失败上报：`video.playback_error`，只带错误码，不带 URL。
+- 列表/创作相关 `api.request.duration`、`page.ready.duration` 已由通用埋点覆盖；新增路由模板必须进入 `page-tracker` 的 `WATCHED_PAGES`（有测试强制一致）。
 
-**后端**
+### 8.3 后端事件与指标
+
 - 用 `sendBackendSentryLog` 上报事件：
   - `video.queue.submitted`
   - `video.queue.failed{code}`
@@ -392,22 +542,23 @@ Venice 的视频接口没有优化字段（DOC），用户决定视频不提供�
   - `video.failed_unknown`
   - `video.complete.failed`
 - `perf-metrics` 的 distribution 指标：`video.duration_to_ready`、`video.download_bytes`。
+- feed / quotes / attempts 路由继续归类：读接口 `kind=standard`；`POST .../video-attempts` 与图片 attempts 一样归 `kind=generation`（只计量受理段，不含 worker）。
 - worker 异常通过 `captureBackendException` 上报。
-- 标签只用低基数维度（model / status / code）。
-- 告警：`failed_unknown` > 0，或 1 小时内退款比例 > 30%，走现有飞书通道。
+- 标签只用低基数维度（model / status / code / media）。
+- 告警：`failed_unknown` > 0，或 1 小时内退款比例 > 30%，或 feed/受理 p95 连续破坏门禁，走现有飞书通道。
 
 ## 9. 可靠性一览
 
-| 风险 | 处理 |
-| --- | --- |
-| 超时 | quote 10s；queue 60s；retrieve 30s；下载 120s；ffmpeg/ffprobe 20s；签名沿用现有 5s |
-| 重试 | 只对幂等操作重试：retrieve、下载、complete、签名。queue 永不自动重投 |
-| 幂等 | idempotency_key；reserve、refund、publish、share 各有唯一索引；seed 按 (origin, source) 唯一 |
-| 并发 | 任务用租约 + SKIP LOCKED + lease_owner fencing；钱包行加锁；首次分享锁定同一行 |
-| 补偿 | 失败、拒审、过期自动退款；状态为 failed_unknown 的走对账脚本 |
+| 风险 | 处理                                                                                                                                                           |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 超时 | quote 10s；queue 60s；retrieve 30s；下载 120s；ffmpeg/ffprobe 20s；签名沿用现有 5s                                                                             |
+| 重试 | 只对幂等操作重试：retrieve、下载、complete、签名。queue 永不自动重投                                                                                           |
+| 幂等 | idempotency_key；reserve、refund、publish、share 各有唯一索引；seed 按 (origin, source) 唯一                                                                   |
+| 并发 | 任务用租约 + SKIP LOCKED + lease_owner fencing；钱包行加锁；首次分享锁定同一行                                                                                 |
+| 补偿 | 失败、拒审、过期自动退款；状态为 failed_unknown 的走对账脚本                                                                                                   |
 | 限流 | worker 每个 tick 有处理上限；对 429 退避；同一用户进行中的视频最多 2 个，超出返回 429；体积估算步骤的 HEAD 请求并发度限制为 10，避免打满出口带宽或触发源站限流 |
-| 降级 | 抽帧失败时用占位封面；ffmpeg 二进制缺失时启动日志报 error，并且视频目录接口隐藏视频模型；complete 失败只记日志；目录未发布时隐藏入口 |
-| 容量 | 单个视频 ≤200MiB；导入前先对全部 5,097 条 HEAD 估算总体积并人工确认（D13，仍待 B-SEED-1 确认实际 bucket 配额和转存授权） |
+| 降级 | 抽帧失败时用占位封面；ffmpeg 二进制缺失时启动日志报 error，并且视频目录接口隐藏视频模型；complete 失败只记日志；目录未发布时隐藏入口                           |
+| 容量 | 单个视频 ≤200MiB；导入前先对全部 5,097 条 HEAD 估算总体积并人工确认（D13，仍待 B-SEED-1 确认实际 bucket 配额和转存授权）                                       |
 
 ## 10. 发布顺序、停止条件、回滚
 
@@ -420,6 +571,7 @@ Venice 的视频接口没有优化字段（DOC），用户决定视频不提供�
 7. production：以上每一步单独审批。目录先只启用 Wan 3.0 Pro，观察 24 小时后再放开其他模型。
 
 停止条件，出现任一即停止：
+
 - 重复扣费或重复退款；
 - 越权签名；
 - failed_unknown 持续增长；
@@ -427,7 +579,7 @@ Venice 的视频接口没有优化字段（DOC），用户决定视频不提供�
 - 迁移锁等待超时。
 
 回滚：
+
 - 撤回视频目录发布，入口随之隐藏；worker 继续运行，把存量任务推进完。
 - M2、M3 是新增性变更，不回滚。
 - M1 回滚脚本只允许在还没有视频数据时执行；已有视频数据时只能 forward-fix。
-

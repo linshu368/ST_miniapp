@@ -2,7 +2,7 @@
   "id": "creation-plaza-video-planning",
   "name": "creation-plaza-video-planning",
   "title": "图片广场扩展视频创作 + media_plaza schema（规划）",
-  "description": "广场/工作室支持视频（筛选、全部风格多选、视频卡/详情、图片/视频切换、6 个 Venice 视频模型、编辑/重生成/分享/下载、首帧封面），迁移至独立 schema media_plaza（账务留 billing），视频预扣+失败/拒审退款，异步 queue/retrieve/complete，xlsx 5097 条种子导入，Sentry 监控。",
+  "description": "广场/工作室支持视频（筛选、全部风格多选、视频卡/详情、图片/视频切换、6 个 Venice 视频模型、编辑/重生成/分享/下载、首帧封面），迁移至独立 schema media_plaza（账务留 billing），视频预扣+失败/拒审退款，异步 queue/retrieve/complete，xlsx 5097 条种子导入；性能：列表加载与创作页生成对齐现有图片广场请求路径并压低 Sentry p95（feed/受理/首屏）。",
   "status": "planning",
   "dev_type": null,
   "scope": "cross-layer",
@@ -35,7 +35,7 @@
     "packages/frontend/src/app/(main)/create/work/[workId]/page.tsx",
     "ops/docker/Dockerfile.backend"
   ],
-  "notes": "2026-10-24 改版：D1 schema=media_plaza；D2 视频预扣+退款（图片不变）。2026-10-24 用户确认 D8 Seedance 2.0 R2V→seedance-2-0-reference-to-video-basic；D9 视频关闭自动优化；D10 安装 ffmpeg；D11 翻译包 video.xlsx 补 prompt_zh（5082/5082 命中，原表多 15 条剔除）；D12 先 test。2026-10-24 再确认 D13 导入前先 HEAD 估算体积并人工确认才能继续、D14 视频提示词不设字数上限（图片不变）。剩余阻塞：B-SEED-1(授权/实际配额，流程已由 D13 固定)。",
+  "notes": "2026-10-26 R8：列表硬约束=游标分页(filter含media/tags)+列表无MP4(只签poster)+资源走storage签名LRU(视频桶共用,公开24h)；另创作预取/报价复用/轮询退避；Sentry feed前端p95≤800ms、后端≤500ms、studio ready≤1.5s、generate受理≤2.5s、图片退化≤10%。D1–D14 已确认。剩余阻塞：B-SEED-1。",
   "meta": {
     "module_impact": {
       "schema_version": 1,

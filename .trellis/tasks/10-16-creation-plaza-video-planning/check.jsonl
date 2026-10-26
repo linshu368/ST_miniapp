@@ -9,3 +9,5 @@
 {"file": ".trellis/spec/frontend/app/testing-quality-and-deployment.md", "reason": "R2/R4/R8：UI 回归与性能"}
 {"file": ".trellis/spec/admin/app/testing-build-and-deployment.md", "reason": "R2.2/R2.6：Admin 校验与发布回滚"}
 {"file": ".trellis/tasks/10-21-sentry-ux-monitoring/design.md", "reason": "R8：事件/指标命名与低基数约束"}
+{"file": ".trellis/tasks/10-21-sentry-ux-monitoring/dashboard-and-runbook.md", "reason": "R8.C：列表/创作 p95 看板与告警口径"}
+{"file": ".trellis/tasks/10-16-creation-plaza-video-planning/design.md", "reason": "R8.A/B：§5.1 列表与 §5.2 创作性能设计核对"}
