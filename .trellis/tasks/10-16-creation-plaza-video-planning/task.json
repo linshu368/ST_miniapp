@@ -35,7 +35,7 @@
     "packages/frontend/src/app/(main)/create/work/[workId]/page.tsx",
     "ops/docker/Dockerfile.backend"
   ],
-  "notes": "2026-10-24 改版：D1 schema=media_plaza；D2 视频预扣+退款（图片不变）。2026-10-24 用户确认 D8 Seedance 2.0 R2V→seedance-2-0-reference-to-video-basic；D9 视频关闭自动优化；D10 安装 ffmpeg；D11 翻译包 video.xlsx 补 prompt_zh（5082/5082 命中，原表多 15 条剔除）；D12 先 test。2026-10-24 再确认 D13 导入前先 HEAD 估算体积并人工确认才能继续、D14 视频提示词不设字数上限（图片不变）。剩余阻塞：B-SEED-1(授权/实际配额，流程已由 D13 固定)。",
+  "notes": "2026-10-24 改版：D1 schema=media_plaza；D2 视频预扣+退款（图片不变）。2026-10-24 用户确认 D8 Seedance 2.0 R2V→seedance-2-0-reference-to-video-basic；D9 视频关闭自动优化；D10 安装 ffmpeg；D11 翻译包 video.xlsx 补 prompt_zh（5082/5082 命中，原表多 15 条剔除）；D12 先 test。2026-10-24 再确认 D13 导入前先 HEAD 估算体积并人工确认才能继续、D14 视频提示词不设字数上限（图片不变）。2026-10-26 D15：边下边播用 <video src=URL>+Range+faststart；禁止 fetch ReadableStream→blob 主路径；可选同域 /stream Range 代理。剩余阻塞：B-SEED-1(授权/实际配额，流程已由 D13 固定)。",
   "meta": {
     "module_impact": {
       "schema_version": 1,

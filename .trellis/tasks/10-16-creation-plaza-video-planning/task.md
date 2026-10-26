@@ -56,3 +56,7 @@
 - 2026-10-24 用户再确认 2 项，记为 D13、D14：
   - D13：导入前先对 5,097 条视频 URL 做 HEAD 体积估算，人工确认体积后才能继续 dry-run 后续步骤（关闭 B-SEED-1 的流程部分，实际配额数字仍要执行期核对）。
   - D14：视频提示词不设字数上限（图片 2,000 字不变），关闭 B-SEED-2。
+- 2026-10-26 补充 D15 / design §5.1：mp4 边下边播。
+  - `<video>` **不能**接收 `fetch()` 的 `ReadableStream`；`res.blob()` + `createObjectURL` 会整文件下完才播，禁止作主路径。
+  - 正确做法：可播放 URL（签名或同域 `/stream`）直接赋给 `video.src`，依赖 HTTP Range + 入库 `faststart`。
+  - 可选增加 `GET .../video-artifacts/:id/stream` 鉴权代理（支持 `206`），仍由浏览器对 `src` 发 Range。

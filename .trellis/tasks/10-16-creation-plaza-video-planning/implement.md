@@ -36,18 +36,20 @@
 
 ### P3 后端视频链路（T4）
 - 编写 `video-catalog.ts`、`video-upstream.ts`、`video-repository.ts`、`video-job.ts`、`video-media.ts`。视频不做提示词优化（D9）。
-- Dockerfile 运行层（`node:20-bookworm-slim`）在现有 apt 命令里加 `ffmpeg`，并加构建期断言 `ffmpeg -version && ffprobe -version`。`video-media.ts` 在启动时探测二进制；缺失时报 error 日志，并隐藏视频模型。
+- Dockerfile 运行层（`node:20-bookworm-slim`）在现有 apt 命令里加 `ffmpeg`，并加构建期断言 `ffmpeg -version && ffprobe -version`。`video-media.ts` 在启动时探测二进制；缺失时报 error 日志，并隐藏视频模型；入库前 remux `+faststart`（D15）。
 - 本地开发（Windows）需要 ffmpeg 在 PATH 中，或者通过 `FFMPEG_PATH`/`FFPROBE_PATH` 指定（经 `platform/config.ts` 读取），写入 README。
-- 补齐路由和 `@frontend-ready: false` 注释，同步 config.ts 环境变量。
+- 补齐路由（含 playback；按需 stream Range 代理）和 `@frontend-ready: false` 注释，同步 config.ts 环境变量。
 - 先用 mock 上游验证失败路径，再接真实 canary。
 
 ### P4 读层、分享、Admin（T5、T6）
 - feed 支持 media/tags 筛选，新增 tag-counts 接口，详情支持视频，会话增加 `include_video`。
 - 视频分享 RPC 接入。
 - Admin 新增视频目录编辑器，标签增加 media_types，参考价代理。
+- 核实签名 URL 的 Range/206；若不支持则启用同域 `/stream`（design §5.1 接法 B）。
 
 ### P5 前端（T7）
-- 按 design §5 落地：广场、详情、工作室，以及 4 个新组件。
+- 按 design §5 / §5.1 落地：广场、详情、工作室，以及 4 个新组件。
+- 播放器只把可播放 URL 赋给 `<video src>`；禁止 `fetch`→`blob`/`createObjectURL` 作播放主路径。
 - 新增 `video_generate` 埋点。
 
 ### P6 种子导入（T8）
@@ -97,12 +99,12 @@ backend、shared 没有 build script，不要虚构。真实上游调用和 DB �
 | 计费 | 重复提交同一个幂等键；并发两单只够一单；reserve 响应丢失；重复 refund | 最多扣一次、退一次；不透支 | backend 测试（mock RPC）+ test DB 手动 |
 | worker | queue 超时（结果未知）；429/503 退避；进程在 submitting 或 storing 时崩溃；双副本抢同一任务；超过 deadline | 不重复调用 queue；租约 fencing 生效；状态可解释 | backend 测试 |
 | 审核 | queue 返回 422；retrieve 返回 422 `provider_content_policy` | 状态为 moderation_rejected，退款 1 次，前端显示专用文案，Sentry 记录事件 | 测试 + canary |
-| 存储 | 伪造 MIME；超过 200MiB；ffmpeg 失败；签名过期后重新签名；越权访问 playback | 拒绝或降级处理；不泄露 URL | 测试 + 人工 |
+| 存储 | 伪造 MIME；超过 200MiB；ffmpeg/faststart 失败；地址过期后刷新；越权访问 playback/stream；stream 无 Range 或整文件进内存 | 拒绝或降级处理；不泄露 URL；stream 必须流式 + 支持 206 | 测试 + 人工 |
 | complete | 转存成功后才调用；complete 失败 | 失败只记日志，不影响 ready | 测试 |
 | 分享 | 图片先分享再分享视频；反过来；两者并发；重复分享；分享已退款的视频 | 首次分享奖励只发一次；不重复返利；已退款的拒绝 | test DB |
 | Admin | 价格矩阵缺项；默认模型被禁用；`required_reference` 配了 t2v；发布后回滚 | 无法发布；回滚后生效 | admin 测试 |
 | 前端 | 模型不支持图片时禁用附图；必须附图却没附；切换模型参数被重置；402 时草稿保留；离页后返回；轮询退避；页面隐藏时暂停 | 无静默丢图；无重复提交 | 人工（Telegram 双端） |
-| 播放 | 点击播放、暂停、拖动；签名过期；列表页 mp4 请求数 | 拖动可用；列表 mp4 请求数为 0 | 人工 |
+| 播放 | 点击播放、暂停、拖动；地址过期刷新；列表页 mp4 请求数；弱网边下边播；签名 URL 的 Range/206（或同域 stream 的 Range）；未 faststart 的对照样例 | 拖动可用；列表 mp4 请求数为 0；未下完即可出画（可见 Range/分片，而非 blob 整包后再播）；过期可恢复；faststart 缺失时记录为缺陷并修 worker | 人工 + curl Range 抽检 |
 | seed | 6 列解析；重复 id；未知模型；URL 失效；超大文件；断点续跑；重跑；翻译包缺行、字段不一致、孤儿行；xlsx hash 变化；超长 prompt（25,279 字）；HEAD 超时/404/无 Content-Length；缺 `--confirm-size`；报告 hash 与确认时不符 | 四类计数之和为 5,097；已剔除 ≥15；导入作品 `prompt_zh` 全部非空且不截断；xlsx/报告 hash 变化时拒绝执行；缺 `--confirm-size` 时在估算步骤后停止；超长 prompt 正常导入、不归为待修复；重跑无副作用；不产生扣费或返利 | 脚本 + 人工 |
 | 自动优化关闭 | 视频提交请求带 `auto_optimize`；从图片切到视频 | 返回 400；视频设置里没有该开关；图片 auto_optimize 行为不变 | shared 测试 + 人工 |
 | ffmpeg | 镜像内二进制缺失；损坏 mp4；抽帧超时 | 构建期断言失败；缺失时隐藏视频模型；损坏或超时时用占位封面并告警 | docker build + 测试 |
