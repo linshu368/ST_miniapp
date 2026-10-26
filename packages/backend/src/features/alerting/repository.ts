@@ -29,18 +29,20 @@ export class PrismaAlertPersistence implements AlertPersistence {
     cards: Record<AlertTransition, SafeAlertCard>;
     notify?: boolean;
   }): Promise<PersistResult> {
-    return prisma.$transaction(async (tx) => {
-      const existing = await tx.$queryRaw<IncidentRow[]>(Prisma.sql`
+    // maxWait 必须小于共享池 pool_timeout（生产 10s），否则池先超时、maxWait 永不生效。
+    return prisma.$transaction(
+      async (tx) => {
+        const existing = await tx.$queryRaw<IncidentRow[]>(Prisma.sql`
         SELECT id, state, severity, last_window_ended_at, last_observed_at, latest_evaluation_id
         FROM app_core.alert_incidents
         WHERE fingerprint = ${input.evaluation.fingerprint}
         FOR UPDATE
       `);
-      const row = existing[0];
+        const row = existing[0];
 
-      if (!row) {
-        if (input.evaluation.state === 'healthy') return { kind: 'duplicate' };
-        const inserted = await tx.$queryRaw<Array<{ id: bigint }>>(Prisma.sql`
+        if (!row) {
+          if (input.evaluation.state === 'healthy') return { kind: 'duplicate' };
+          const inserted = await tx.$queryRaw<Array<{ id: bigint }>>(Prisma.sql`
           INSERT INTO app_core.alert_incidents (
             fingerprint, state, severity, confidence, location, title, summary, recommended_action,
             latest_evaluation_id, latest_producer_run_id, first_firing_at, last_firing_at,
@@ -55,19 +57,19 @@ export class PrismaAlertPersistence implements AlertPersistence {
             ${JSON.stringify(input.evaluation.samples)}::jsonb
           ) RETURNING id
         `);
-        const key = await this.enqueue(tx, input, inserted[0]!.id, 'firing', input.cards.firing);
-        return key ? { kind: 'accepted', notificationKey: key } : { kind: 'accepted' };
-      }
+          const key = await this.enqueue(tx, input, inserted[0]!.id, 'firing', input.cards.firing);
+          return key ? { kind: 'accepted', notificationKey: key } : { kind: 'accepted' };
+        }
 
-      if (
-        row.latest_evaluation_id === input.evaluation.evaluation_id ||
-        !isNewer(row, input.evaluation)
-      ) {
-        return { kind: 'duplicate' };
-      }
-      const transition = transitionFor(row, input.evaluation);
-      const state = input.evaluation.state === 'healthy' ? 'recovered' : 'open';
-      await tx.$executeRaw(Prisma.sql`
+        if (
+          row.latest_evaluation_id === input.evaluation.evaluation_id ||
+          !isNewer(row, input.evaluation)
+        ) {
+          return { kind: 'duplicate' };
+        }
+        const transition = transitionFor(row, input.evaluation);
+        const state = input.evaluation.state === 'healthy' ? 'recovered' : 'open';
+        await tx.$executeRaw(Prisma.sql`
         UPDATE app_core.alert_incidents SET
           state = ${state}, severity = ${input.evaluation.severity}, confidence = ${input.evaluation.confidence},
           location = ${JSON.stringify(input.evaluation.location)}::jsonb, title = ${input.evaluation.title},
@@ -84,10 +86,12 @@ export class PrismaAlertPersistence implements AlertPersistence {
           updated_at = now()
         WHERE id = ${row.id}
       `);
-      if (!transition) return { kind: 'accepted' };
-      const key = await this.enqueue(tx, input, row.id, transition, input.cards[transition]);
-      return key ? { kind: 'accepted', notificationKey: key } : { kind: 'accepted' };
-    });
+        if (!transition) return { kind: 'accepted' };
+        const key = await this.enqueue(tx, input, row.id, transition, input.cards[transition]);
+        return key ? { kind: 'accepted', notificationKey: key } : { kind: 'accepted' };
+      },
+      { maxWait: 5_000, timeout: 15_000 }
+    );
   }
 
   private async enqueue(

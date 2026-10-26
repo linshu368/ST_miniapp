@@ -18,6 +18,8 @@ export function getModelCatalogChangeSummary(before: unknown, after: unknown): s
   const beforeModels = modelMap(previous.data);
   const afterModels = modelMap(next.data);
   const changes: string[] = [];
+  if (previous.data.fallback_timeout_ms !== next.data.fallback_timeout_ms)
+    changes.push(`兜底实际派发后等待改为 ${next.data.fallback_timeout_ms / 1000} 秒`);
   if (previous.data.fallback_model_id !== next.data.fallback_model_id)
     changes.push(`兜底模型改为 ${next.data.fallback_model_id}`);
   if (previous.data.first_token_deadline_ms !== next.data.first_token_deadline_ms)

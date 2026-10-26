@@ -1,3 +1,4 @@
+import { ReplyStyleOptionsEditor } from './ReplyStyleOptionsEditor';
 import { useState } from 'react';
 import {
   Alert,
@@ -44,6 +45,7 @@ import {
   DEFAULT_INVITE_CENTER_CONFIG,
   DEFAULT_INVITE_REWARD_RULES,
   EditableModelCatalogSchema,
+  EditableReplyStyleOptionsConfigSchema,
   EditableImagePlazaTagConfigSchema,
   ImageTextModelConfigSchema,
   type InviteCenterConfig,
@@ -433,6 +435,22 @@ export function ConfigValueEditor(props: {
         value={typeof props.value === 'number' ? props.value : undefined}
         disabled={props.disabled || isContractLimit}
         onChange={(value) => props.onChange(value ?? configMetadata[props.configKey].defaultValue)}
+      />
+    );
+  }
+
+  if (props.configKey === 'reply_style_options') {
+    const editable = EditableReplyStyleOptionsConfigSchema.safeParse(props.value);
+    if (!editable.success) {
+      return (
+        <Alert type="error" showIcon message="回复风格配置格式有误，请撤销编辑或回滚到有效版本。" />
+      );
+    }
+    return (
+      <ReplyStyleOptionsEditor
+        value={editable.data}
+        disabled={props.disabled}
+        onChange={props.onChange}
       />
     );
   }

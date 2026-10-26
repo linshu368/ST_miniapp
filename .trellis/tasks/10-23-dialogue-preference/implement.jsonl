@@ -1,0 +1,7 @@
+{"file":"AGENTS.md","reason":"Project scope, Trellis and package boundaries"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Contract and producer consumer flow"}
+{"file":".trellis/spec/frontend/app/index.md","reason":"Frontend ownership and mobile preferences"}
+{"file":".trellis/spec/backend/app/index.md","reason":"Runtime config and generation ownership"}
+{"file":".trellis/spec/admin/app/index.md","reason":"Existing publication pipeline"}
+{"file":".trellis/spec/database/supabase/index.md","reason":"Migration ownership and release boundaries"}
+{"file":".trellis/spec/shared/contracts/index.md","reason":"Shared first compatibility"}

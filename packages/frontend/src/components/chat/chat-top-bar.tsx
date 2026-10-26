@@ -6,6 +6,7 @@ import * as DialogPrimitive from '@radix-ui/react-dialog';
 
 import { FavoriteButton } from '@/components/characters/favorite-button';
 import { useModelCatalogQuery } from '@/lib/api/models';
+import { useEntryEnrichReady } from '@/lib/entry-phase';
 import { cn } from '@/lib/utils';
 
 import { ChatModelSwitcher } from './chat-model-switcher';
@@ -36,7 +37,9 @@ export function ChatTopBar({
   freeRoundActive,
 }: ChatTopBarProps) {
   const [modelOpen, setModelOpen] = useState(false);
-  const catalog = useModelCatalogQuery();
+  // 与聊天页同波：P0 会话优先；有 last-good 占位时可先展示标签。
+  const enrichReady = useEntryEnrichReady();
+  const catalog = useModelCatalogQuery({ enabled: enrichReady || modelOpen });
   const selectedId = catalog.data?.selected_model_id ?? catalog.data?.catalog.default_model_id;
   const selectedTier = catalog.data?.catalog.tiers.find((tier) =>
     tier.models.some((model) => model.id === selectedId)

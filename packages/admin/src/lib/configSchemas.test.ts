@@ -4,6 +4,8 @@ import {
   configSchemas,
   LlmPricingConfigSchema,
   managedConfigKeys,
+  EditableReplyStyleOptionsConfigSchema,
+  isTextManagedConfig,
   EditableImagePlazaTagConfigSchema,
   EditableModelCatalogSchema,
 } from './configSchemas';
@@ -172,9 +174,52 @@ describe('fallback managed configuration', () => {
     );
     catalog.fallback_model_id = 'vendor/operator-flash';
     catalog.first_token_deadline_ms = 8000;
+    catalog.fallback_timeout_ms = 2500;
     catalog.first_token_timeout_rate_target = 0.02;
     catalog.tiers[0]!.models[0]!.first_token_timeout_ms = 3500;
     const edited = EditableModelCatalogSchema.parse(catalog);
     expect(configSchemas.llm_model_catalog.parse(edited)).toEqual(catalog);
+  });
+});
+
+describe('reply style options configuration', () => {
+  const blankOption = {
+    id: 'style-example',
+    name: '',
+    description: '',
+    marker: '',
+    rules: '',
+    enabled: true,
+  };
+  it('registers one independent JSON configuration with an empty default', () => {
+    expect(managedConfigKeys).toContain('reply_style_options');
+    expect(isTextManagedConfig('reply_style_options')).toBe(false);
+    expect(configMetadata.reply_style_options.defaultValue).toEqual({ options: [] });
+    expect(configSchemas.reply_style_options.parse({ options: [] })).toEqual({ options: [] });
+  });
+  it('preserves incomplete edit rows but requires a name when saving', () => {
+    const value = { options: [blankOption] };
+    expect(EditableReplyStyleOptionsConfigSchema.parse(value)).toEqual(value);
+    expect(configSchemas.reply_style_options.safeParse(value).success).toBe(false);
+    expect(
+      configSchemas.reply_style_options.parse({
+        options: [{ ...blankOption, name: ' 自定义名称 ' }],
+      })
+    ).toEqual({ options: [{ ...blankOption, name: '自定义名称' }] });
+  });
+  it('rejects duplicate nonblank markers while allowing independent empty rule fields', () => {
+    const first = { ...blankOption, name: '选项一' };
+    const second = { ...blankOption, id: 'style-example-two', name: '选项二' };
+    expect(configSchemas.reply_style_options.safeParse({ options: [first, second] }).success).toBe(
+      true
+    );
+    expect(
+      configSchemas.reply_style_options.safeParse({
+        options: [
+          { ...first, marker: '{{EXAMPLE}}' },
+          { ...second, marker: '{{EXAMPLE}}' },
+        ],
+      }).success
+    ).toBe(false);
   });
 });

@@ -1,5 +1,7 @@
 import {
   FIRST_TOKEN_FALLBACK_MODEL_ID,
+  DEFAULT_FIRST_TOKEN_DEADLINE_MS,
+  DEFAULT_FALLBACK_TOKEN_TIMEOUT_MS,
   DEFAULT_CHARACTER_FREE_CHAT_QUOTA_LIMIT,
   DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG,
   DEFAULT_FEATURE_FREE_TRIAL_LIMIT,
@@ -30,6 +32,7 @@ import {
   PaymentPlansRuntimeConfigSchema,
   PaymentPromptDialogConfigSchema,
   RechargePageConfigSchema,
+  ReplyStyleOptionsConfigSchema,
   VIP_STRATEGY_CONFIG_KEYS,
   VipCheckinBonusConfigSchema,
   VipFeatureSwitchSchema,
@@ -55,6 +58,7 @@ export const managedConfigKeys = [
   'choice_rules',
   'status_rules',
   'memory_rules',
+  'reply_style_options',
   'pref_word_count_tiers',
   'lobby_ranking_params',
   'lobby_pinned_characters',
@@ -151,7 +155,8 @@ const EditableModelCatalogTierSchema = z.object({
 
 export const EditableModelCatalogSchema = z.object({
   fallback_model_id: z.string().default(FIRST_TOKEN_FALLBACK_MODEL_ID),
-  first_token_deadline_ms: z.number().default(6000),
+  first_token_deadline_ms: z.number().default(DEFAULT_FIRST_TOKEN_DEADLINE_MS),
+  fallback_timeout_ms: z.number().default(DEFAULT_FALLBACK_TOKEN_TIMEOUT_MS),
   first_token_timeout_rate_target: z.number().default(0.01),
   default_model_id: z.string(),
   tiers: z.array(EditableModelCatalogTierSchema),
@@ -308,6 +313,7 @@ export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   choice_rules: InstructionSlotRulesSchema,
   status_rules: InstructionSlotRulesSchema,
   memory_rules: InstructionSlotRulesSchema,
+  reply_style_options: ReplyStyleOptionsConfigSchema,
   pref_word_count_tiers: WordCountTiersConfigSchema,
   lobby_ranking_params: LobbyRankingParamsSchema,
   lobby_pinned_characters: LobbyPinnedCharactersSchema,
@@ -477,6 +483,12 @@ export const configMetadata: Record<
         '本轮需要输出记忆区。简洁更新工作记忆、历史档案和里程碑中的已发生事实；严格遵守系统固定富文本协议。',
       off: '本轮不输出记忆区，不得输出 [memory]、[/memory]、记忆标题或占位内容。',
     },
+  },
+  reply_style_options: {
+    label: '回复风格',
+    description:
+      '管理回复偏好中的选项名称、说明、展示顺序与独立开关；沿用草稿、发布和回滚。英文占位符与规则内容由你维护，本次仅存储，不参与模型生成。',
+    defaultValue: { options: [] },
   },
   pref_word_count_tiers: {
     label: '回复长度档位',
@@ -746,3 +758,21 @@ export function resolveManagedWorkingValue(input: {
   }
   return structuredClone(input.draft?.value ?? input.config?.value ?? fallback);
 }
+
+/** Keep incomplete rows intact while operators are typing; validate on save. */
+export const EditableReplyStyleOptionsConfigSchema = z
+  .object({
+    options: z.array(
+      z
+        .object({
+          id: z.string(),
+          name: z.string(),
+          description: z.string(),
+          marker: z.string(),
+          rules: z.string(),
+          enabled: z.boolean(),
+        })
+        .strict()
+    ),
+  })
+  .strict();

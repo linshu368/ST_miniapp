@@ -24,8 +24,12 @@ import {
 
 describe('discount and price display', () => {
   it('formats a server rate without assuming 88 or 95', () => {
-    expect(formatDiscountLabel(0.8)).toBe('80折');
-    expect(formatDiscountLabel(1)).toBe('100折');
+    expect(formatDiscountLabel(0.8)).toBe('8折');
+    expect(formatDiscountLabel(0.95)).toBe('9.5折');
+    expect(formatDiscountLabel(0.88)).toBe('8.8折');
+    expect(formatDiscountLabel(Number.NaN)).toBeNull();
+    expect(formatDiscountLabel(Number.POSITIVE_INFINITY)).toBeNull();
+    expect(formatDiscountLabel(1)).toBe('10折');
     expect(formatDiscountLabel(0)).toBeNull();
     expect(formatDiscountLabel(1.2)).toBeNull();
   });
@@ -44,7 +48,7 @@ describe('discount and price display', () => {
         discounted_exact: 9.6,
         payable_credits: 10,
       })?.summary
-    ).toBe('原价 12 星尘 × 80折 = 9.6，实扣 10 星尘/轮');
+    ).toBe('原价 12 星尘 × 8折 = 9.6，实扣 10 星尘/轮');
     expect(
       formatTierQuote({
         original_credits: 12,
@@ -82,7 +86,7 @@ describe('entry badge and membership label', () => {
         statusKnown: true,
         active: false,
         entryBadgeVisible: true,
-        discountLabel: '80折',
+        discountLabel: '8折',
       })
     ).toBe(true);
     expect(
@@ -90,7 +94,7 @@ describe('entry badge and membership label', () => {
         statusKnown: true,
         active: true,
         entryBadgeVisible: true,
-        discountLabel: '80折',
+        discountLabel: '8折',
       })
     ).toBe(false);
     expect(
@@ -98,7 +102,7 @@ describe('entry badge and membership label', () => {
         statusKnown: true,
         active: false,
         entryBadgeVisible: false,
-        discountLabel: '80折',
+        discountLabel: '8折',
       })
     ).toBe(false);
     expect(
@@ -106,7 +110,7 @@ describe('entry badge and membership label', () => {
         statusKnown: false,
         active: false,
         entryBadgeVisible: true,
-        discountLabel: '80折',
+        discountLabel: '8折',
       })
     ).toBe(false);
     expect(
@@ -143,7 +147,7 @@ describe('entry badge and membership label', () => {
       })
     ).toEqual({
       checkin: { extra: '+60 星尘', fallback: '每日 60' },
-      discount: '95折',
+      discount: '9.5折',
     });
     expect(vipExpiryImpactCopy(undefined)).toEqual({ checkin: null, discount: null });
   });
@@ -211,7 +215,7 @@ describe('checkout selection', () => {
     { id: 'month', price_cents: 2888, available: true },
   ];
 
-  it('keeps credits and vip mutually exclusive', () => {
+  it('resolves the selected product by its kind and catalog', () => {
     expect(
       resolveCheckoutSelection({
         selectedKey: selectionKey('credits', 'starter'),
@@ -231,6 +235,30 @@ describe('checkout selection', () => {
         selectedKey: selectionKey('credits', 'week'),
         creditPlans,
         vipPlans,
+      })
+    ).toBeNull();
+  });
+
+  it('does not cross into another product when a page supplies its own catalog', () => {
+    expect(
+      resolveCheckoutSelection({
+        selectedKey: selectionKey('vip', 'month'),
+        creditPlans,
+        vipPlans: [],
+      })
+    ).toBeNull();
+    expect(
+      resolveCheckoutSelection({
+        selectedKey: selectionKey('credits', 'starter'),
+        creditPlans: [],
+        vipPlans,
+      })
+    ).toBeNull();
+    expect(
+      resolveCheckoutSelection({
+        selectedKey: selectionKey('vip', 'month'),
+        creditPlans: [],
+        vipPlans: vipPlans.filter((plan) => plan.id === 'week'),
       })
     ).toBeNull();
   });

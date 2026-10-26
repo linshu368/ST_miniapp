@@ -136,7 +136,7 @@ describe('streamConversationTurn — 正常流', () => {
     expect(sink.done).toHaveLength(1);
   });
 
-  it('重生成不带 content，打到 regenerate 路由且 body 为空对象', async () => {
+  it('重生成不带 content，默认开启思考', async () => {
     fetchMock.mockResolvedValue(sseResponse([frame(START), frame(DONE)]));
 
     const sink = collector();
@@ -144,7 +144,7 @@ describe('streamConversationTurn — 正常流', () => {
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toContain('/api/v1/conversations/s1/regenerate');
-    expect(init.body).toBe('{}');
+    expect(JSON.parse(init.body as string)).toEqual({ thinking_enabled: true });
   });
 
   it('发消息打到 messages 路由并带上 initData', async () => {
@@ -155,7 +155,7 @@ describe('streamConversationTurn — 正常流', () => {
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toContain('/api/v1/conversations/s1/messages');
-    expect(init.body).toBe(JSON.stringify({ content: '你好' }));
+    expect(JSON.parse(init.body as string)).toEqual({ content: '你好', thinking_enabled: true });
     expect(new Headers(init.headers).get('X-Init-Data')).toBe('stub-init-data');
   });
 });
@@ -391,9 +391,156 @@ it('调用方提供的请求 UUID 同时发送到消息/重生成 body 与跟踪
     expect(JSON.parse(init.body as string)).toEqual({
       ...(content ? { content } : {}),
       request_id: requestId,
+      thinking_enabled: true,
     });
     expect(new Headers(init.headers).get('X-Request-Id')).toBe(requestId);
   }
+});
+
+describe('thinking stream', () => {
+  it.each([true, false])(
+    'counts a real thinking character as first-token reception only when enabled=%s',
+    async (thinkingEnabled) => {
+      fetchMock.mockResolvedValue(
+        sseResponse([
+          frame(START),
+          frame({ type: 'reasoning', text: '  ' }),
+          frame({ type: 'reasoning', text: '思' }),
+          frame(DONE),
+        ])
+      );
+      const sink = collector();
+      const received = vi.fn();
+      await streamConversationTurn({
+        sessionId: 's1',
+        thinkingEnabled,
+        ...sink.options,
+        onFirstDeltaReceived: received,
+      });
+      expect(received).toHaveBeenCalledTimes(thinkingEnabled ? 1 : 0);
+      expect(sink.deltas).toEqual([]);
+    }
+  );
+
+  it('flushes reasoning before the first answer and done within the same chunk', async () => {
+    fetchMock.mockResolvedValue(
+      sseResponse([
+        frame(START) +
+          frame({ type: 'reasoning', text: '先理解' }) +
+          frame({ type: 'reasoning', text: '语境' }) +
+          frame({ type: 'delta', text: '你好' }) +
+          frame(DONE) +
+          frame({ type: 'reasoning', text: 'must ignore after done' }),
+      ])
+    );
+    const calls: string[] = [];
+    await streamConversationTurn({
+      sessionId: 's1',
+      onStart: () => {},
+      onReasoning: (text) => calls.push(`think:${text}`),
+      onDelta: (text) => calls.push(`answer:${text}`),
+      onDone: () => calls.push('done'),
+    });
+    expect(calls).toEqual(['think:先理解语境', 'answer:你好', 'done']);
+  });
+
+  it.each(['error', 'eof'])(
+    'preserves pending reasoning on %s without fabricating an answer',
+    async (end) => {
+      fetchMock.mockResolvedValue(
+        sseResponse([
+          frame(START),
+          frame({ type: 'reasoning', text: '真实思考' }),
+          ...(end === 'error'
+            ? [frame({ type: 'error', code: 'upstream_error', message: 'failed' })]
+            : []),
+        ])
+      );
+      const sink = collector();
+      const thought: string[] = [];
+      await expect(
+        streamConversationTurn({
+          sessionId: 's1',
+          ...sink.options,
+          onReasoning: (text) => thought.push(text),
+        })
+      ).rejects.toBeInstanceOf(ConversationStreamError);
+      expect(thought.join('')).toBe('真实思考');
+      expect(sink.deltas).toEqual([]);
+      expect(sink.done).toEqual([]);
+    }
+  );
+
+  it.each(['hello', undefined])(
+    'sends explicit off for send/regenerate and suppresses unexpected provider thoughts (%s)',
+    async (content) => {
+      fetchMock.mockResolvedValue(
+        sseResponse([
+          frame(START),
+          frame({ type: 'reasoning', text: 'hidden' }),
+          frame({ type: 'delta', text: 'visible' }),
+          frame(DONE),
+        ])
+      );
+      const sink = collector();
+      const onReasoning = vi.fn();
+      await streamConversationTurn({
+        sessionId: 's1',
+        content,
+        thinkingEnabled: false,
+        ...sink.options,
+        onReasoning,
+      });
+      expect(JSON.parse(fetchMock.mock.calls[0]![1].body).thinking_enabled).toBe(false);
+      expect(onReasoning).not.toHaveBeenCalled();
+      expect(sink.deltas.join('')).toBe('visible');
+    }
+  );
+
+  it('ignores invalid reasoning text and unknown events without exposing their payload', async () => {
+    fetchMock.mockResolvedValue(
+      sseResponse([
+        frame(START),
+        'data: null\n\ndata: {"type":"reasoning","text":{"secret":"bad"}}\n\n',
+        frame({ type: 'delta', text: 'ok' }),
+        frame(DONE),
+      ])
+    );
+    const sink = collector();
+    const onReasoning = vi.fn();
+    await streamConversationTurn({ sessionId: 's1', ...sink.options, onReasoning });
+    expect(onReasoning).not.toHaveBeenCalled();
+    expect(sink.deltas.join('')).toBe('ok');
+  });
+
+  it('reasoning counts as progress but never extends the absolute generation deadline', async () => {
+    vi.useFakeTimers();
+    let source!: ReadableStreamDefaultController<Uint8Array>;
+    fetchMock.mockResolvedValue(
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            source = controller;
+            controller.enqueue(encoder.encode(frame(START)));
+          },
+        })
+      )
+    );
+    const sink = collector();
+    const thought = vi.fn();
+    const result = streamConversationTurn({
+      sessionId: 's1',
+      ...sink.options,
+      onReasoning: thought,
+    }).catch((error) => error);
+    await vi.advanceTimersByTimeAsync(100_000);
+    source.enqueue(encoder.encode(frame({ type: 'reasoning', text: 'continuing' })));
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(thought).toHaveBeenCalledWith('continuing');
+    expect(sink.done).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(CONVERSATION_STREAM_DEADLINE_MS - 130_000);
+    expect(await result).toMatchObject({ status: 408 });
+  });
 });
 
 it('randomUUID 不可用时仍生成符合 v4 格式的请求 UUID', () => {

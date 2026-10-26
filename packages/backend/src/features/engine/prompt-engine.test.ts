@@ -70,6 +70,13 @@ function input(overrides: Partial<EngineInput> = {}): EngineInput {
 }
 
 describe('buildPrompt', () => {
+  it('UI-only reply-style choices do not alter model messages', () => {
+    expect(
+      buildPrompt(
+        input({ userConfig: { ...USER_CONFIG, pref_reply_styles: { 'style-test': true } } })
+      ).messages
+    ).toEqual(buildPrompt(input()).messages);
+  });
   it('组装成 system + 历史 + 平台规则包装的本轮输入', () => {
     const { messages } = buildPrompt(input());
 

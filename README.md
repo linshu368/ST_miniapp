@@ -57,6 +57,8 @@ packages/backend     ───────────────────�
 
 Shared 的 `main`/`types` 直接指向 `src/index.ts`，没有独立 build 产物；修改公开出口会直接影响所有消费者。
 
+回复风格可在 Admin“平台规则 → 回复风格”维护，用户端按已发布目录动态展示独立开关。运营自填标记/规则仅存储，不参与本轮模型指令组装。`20261023_reply_style_options.sql` 提供目录managed-key和原子偏好映射；发布顺序为迁移 → Backend/Admin → Frontend。
+
 ## 3. 技术栈
 
 - **Frontend**：Next.js 14、React 18、TypeScript、TanStack React Query、Zustand、Radix UI、Tailwind CSS、Telegram SDK、Sentry。
@@ -229,3 +231,7 @@ OpenRouter 调用事实由 `experience.openrouter_chat_history` 保存，消费 
 ### OpenRouter 历史诊断清退补充
 
 T10 新增 `20261016_openrouter_history_disposition.sql`，先按现有mapper白名单保全类型化调用事实/受控诊断，丢弃其余历史诊断并清父表旧JSON；不改正文/业务终态/账单/额度。已有OR诊断同样规范化，Venice明细不写。更新尚未在两库执行的主表DROP：依赖处置成功账本，将引入snapshot前的旧终态/dedup/失败/pending明确分类，保留旧pending和原幂等键，不以settled_at为空误判或补写假结算。现代未知/冲突/未收口旧字段仍拒绝。TEST先处置、验证后再DROP；超过2000候选拒绝，Production另审批次，不重跑已记账文件。用户已明确忽略作废PR425。详见任务发布清单与T10报告，代码声明不代表已在远端处置。
+
+首 token 兜底修复的明确口径为首发实际派发后最多4秒、兜底实际派发后最多2秒、用户提交到可见首字总硬上限10秒。总时间包含前置/网络/显示；思考模式同样受约束。新增迁移须先TEST后生产，现有显式6秒配置须经运营发布改为10秒；本地代码完成不代表已上线。详见[运行与数据口径](docs/first-token-fallback.md)。
+
+新轮首 token 可见确认与计费：`20261026_first_token_visible_billing.sql` 将客户端真实可见回报加入既有计费资格判断；服务端完成而客户端超时无字时不扣星尘、不消费免费次数。缺报 pending 后保守免收，既有 sync 依据 RPC 实际 pending 保留回捞；存量政策不改。超时采用灰色轻提示。详见 `docs/first-token-fallback.md`。
