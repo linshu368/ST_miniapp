@@ -350,8 +350,10 @@ export async function runConversationTurn(
     };
 
     const emitVisibleDelta = (type: 'delta' | 'reasoning', text: string): void => {
-      if (!emitted && performance.now() - requestStartedAt >= policy.deadlineMs)
+      if (!emitted && performance.now() - requestStartedAt >= policy.deadlineMs) {
         recordFirstTokenTimeout();
+        // controller.abort(new FirstTokenDeadlineError());
+      }
       controller.signal.throwIfAborted();
       sink.send({ type, text });
       if (!emitted && text.trim()) {
