@@ -101,10 +101,10 @@ export function DramaPlayer({
 
   useEffect(() => {
     // 拖动、面板和键盘操作期间不收起；结束后重新给用户完整的 3 秒。
-    if (modalOpen || pointerDown || keyboardActive) return;
+    if (!controlsVisible || modalOpen || pointerDown || keyboardActive) return;
     const timer = window.setTimeout(() => setControlsVisible(false), 3000);
     return () => window.clearTimeout(timer);
-  }, [activity, modalOpen, pointerDown, keyboardActive]);
+  }, [activity, controlsVisible, modalOpen, pointerDown, keyboardActive]);
 
   useEffect(() => {
     const releasePointer = () => setPointerDown(false);
@@ -243,12 +243,17 @@ export function DramaPlayer({
     setActivity((value) => value + 1);
   };
 
+  const toggleControls = () => {
+    setControlsVisible((visible) => !visible);
+    setActivity((value) => value + 1);
+  };
+
   return (
     <main className="fixed inset-0 z-40 overflow-hidden bg-black text-white">
       <div
         ref={surface}
         tabIndex={0}
-        aria-label="短剧播放画面，点击显示控件，上下滑切换短剧"
+        aria-label="短剧播放画面，点击显示或隐藏控件，上下滑切换短剧"
         className="relative mx-auto h-full w-full max-w-lg overflow-hidden overscroll-none bg-zinc-950 [touch-action:pan-x_pinch-zoom]"
         onPointerDownCapture={(event) => {
           if (!event.currentTarget.contains(event.target as Node)) return;
@@ -263,6 +268,12 @@ export function DramaPlayer({
             event.stopPropagation();
             return;
           }
+          // 画面按钮自行切换显隐；捕获阶段不能先显示，否则隐藏后的再次点按仍会收起。
+          if (
+            event.target instanceof Element &&
+            event.target.closest('[data-player-toggle-controls]')
+          )
+            return;
           showControls();
         }}
         onKeyDownCapture={(event) => {
@@ -378,9 +389,10 @@ export function DramaPlayer({
         <button
           type="button"
           tabIndex={-1}
-          aria-label="显示播放控件"
+          aria-label={controlsVisible ? '隐藏播放控件' : '显示播放控件'}
+          data-player-toggle-controls
           className="absolute inset-0 h-full w-full"
-          onClick={showControls}
+          onClick={toggleControls}
         />
         <div
           aria-hidden
