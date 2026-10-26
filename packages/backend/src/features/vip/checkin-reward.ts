@@ -1,32 +1,37 @@
 import {
+  DEFAULT_CHECKIN_NEW_USER_CREDITS,
+  DEFAULT_CHECKIN_VETERAN_CREDITS,
   DEFAULT_VIP_CHECKIN_BONUS_CONFIG,
   isVipActiveAt,
-  vipCheckinBonusCredits,
+  quoteTieredCheckinReward,
   type VipCheckinBonusConfig,
 } from '@miniapp/shared';
 
-/** 预览口径与 claim_daily_checkin 一致：省略策略时按与基础奖励相同。实际发放仍以 RPC 为准。 */
+/** 预览口径与 claim_daily_checkin 一致。实际发放仍以 RPC 为准。 */
 export function quoteDailyCheckinReward(input: {
-  baseRewardCredits: number;
+  createdAt: string;
   validUntil: string | null;
   now: string;
-  bonus?: VipCheckinBonusConfig;
+  vipCredits?: VipCheckinBonusConfig;
+  newUserCredits?: number;
+  veteranCredits?: number;
 }): {
   base_reward_credits: number;
   vip_reward_credits: number;
   reward_credits: number;
+  reward_tier: 'vip' | 'new_user' | 'veteran';
+  registration_age_days: number;
 } {
-  if (!Number.isInteger(input.baseRewardCredits) || input.baseRewardCredits <= 0) {
-    throw new Error('invalid checkin base reward');
-  }
-  const vipReward = vipCheckinBonusCredits({
-    config: input.bonus ?? DEFAULT_VIP_CHECKIN_BONUS_CONFIG,
-    baseRewardCredits: input.baseRewardCredits,
+  const quote = quoteTieredCheckinReward({
     vipActive: isVipActiveAt(input.validUntil, input.now),
+    createdAt: input.createdAt,
+    now: input.now,
+    vipCredits: input.vipCredits ?? DEFAULT_VIP_CHECKIN_BONUS_CONFIG,
+    newUserCredits: input.newUserCredits ?? DEFAULT_CHECKIN_NEW_USER_CREDITS,
+    veteranCredits: input.veteranCredits ?? DEFAULT_CHECKIN_VETERAN_CREDITS,
   });
-  return {
-    base_reward_credits: input.baseRewardCredits,
-    vip_reward_credits: vipReward,
-    reward_credits: input.baseRewardCredits + vipReward,
-  };
+  if (!Number.isInteger(quote.reward_credits) || quote.reward_credits <= 0) {
+    throw new Error('invalid checkin reward');
+  }
+  return quote;
 }

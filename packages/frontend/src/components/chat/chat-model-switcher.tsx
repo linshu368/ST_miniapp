@@ -244,7 +244,7 @@ export function ChatModelSwitcher({
             <DialogTitle className="text-[17px]">标准与旗舰模型为 VIP 专属</DialogTitle>
             <DialogDescription className="mx-auto max-w-[19rem] text-[13px] leading-relaxed">
               {vipBenefits
-                ? `开通 VIP 即可畅用全部模型，每日签到还额外得 ${vipBenefits.checkin_vip_credits} 星尘（共 ${vipBenefits.checkin_base_credits + vipBenefits.checkin_vip_credits}）`
+                ? `开通 VIP 即可畅用全部模型，每日签到可得 ${vipBenefits.checkin_vip_credits} 专属星尘`
                 : '开通 VIP 即可畅用全部模型，并享受会员签到加成。'}
             </DialogDescription>
           </DialogHeader>
