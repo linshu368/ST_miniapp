@@ -13,7 +13,7 @@ docker network create "$task_network" >/dev/null
 docker run --rm -d --network "$task_network" --name "$task_container" -e POSTGRES_HOST_AUTH_METHOD=trust \
   -v "$task_root:$task_root:ro" -v "$task_dir:$task_dir:ro" postgres:17 >/dev/null
 for task_n in {1..120}; do
-  if docker exec "$task_container" pg_isready -U postgres >/dev/null 2>&1; then break; fi
+  if docker exec "$task_container" pg_isready -h 127.0.0.1 -U postgres >/dev/null 2>&1; then break; fi
   sleep 0.25
 done
 task_psql=(docker exec -i "$task_container" psql -X -U postgres -v ON_ERROR_STOP=1)
@@ -111,6 +111,11 @@ print('END $$;')
 print('RESET ROLE;')
 PYSQL
 echo 'PASS: first-token SQL identity, delivery CAS, frozen quote, reporting ACL, and 149/150 windows'
+
+# Production PostgREST retries serialization_failure indefinitely; permanent guards
+# must return a terminal HTTP conflict while preserving the existing lifecycle CAS.
+"${task_psql[@]}" -f "$task_root/packages/shared/migrations/20261026_first_token_nonretryable_conflicts.sql" >/dev/null
+"${task_psql[@]}" -f "$task_root/packages/shared/migrations/20261026_first_token_nonretryable_conflicts.sql" >/dev/null
 
 # Supabase repositories through real PostgREST; only the API port is mapped to loopback.
 docker run --rm -d --network "$task_network" --name "$task_rest_container" \
