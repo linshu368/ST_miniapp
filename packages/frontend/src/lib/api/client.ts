@@ -9,6 +9,7 @@ import {
   RequestTimeoutError,
   timedFetch,
 } from '@/lib/perf/request-timing';
+import { withRequestSlot, type RequestPriority } from '@/lib/api/request-concurrency';
 
 export const API_URL =
   process.env.NEXT_PUBLIC_API_URL || 'https://stminiapp-development.up.railway.app';
@@ -85,7 +86,14 @@ export function toApiClientError(status: number, json: unknown): ApiClientError 
 }
 
 /** 单次请求超时（毫秒）；不传则按路径取默认值。 */
-export type ApiRequestInit = RequestInit & { timeoutMs?: number };
+export type ApiRequestInit = Omit<RequestInit, 'priority'> & {
+  timeoutMs?: number;
+  /**
+   * 短请求排队优先级（勿用名 `priority`：会与 Fetch Priority Hints 的 RequestInit.priority 冲突）。
+   * 长耗时路径自动 bypass 并发帽。
+   */
+  queuePriority?: RequestPriority;
+};
 
 /** 普通接口 p95 偶发 10 秒，20 秒是「用户已经不会再等」的初值，需按基线校准。 */
 const DEFAULT_TIMEOUT_MS = DEFAULT_REQUEST_TIMEOUT_MS;
@@ -102,10 +110,53 @@ const GET_TRANSPORT_RETRY_MAX = 1;
 const GET_RETRY_BASE_DELAY_MS = 200;
 const GET_RETRY_JITTER_MS = 300;
 
+function isLongRunningPath(path: string): boolean {
+  return LONG_RUNNING_PATHS.some((pattern) => pattern.test(path));
+}
+
 function resolveTimeoutMs(path: string): number {
-  return LONG_RUNNING_PATHS.some((pattern) => pattern.test(path))
-    ? LONG_RUNNING_TIMEOUT_MS
-    : DEFAULT_TIMEOUT_MS;
+  return isLongRunningPath(path) ? LONG_RUNNING_TIMEOUT_MS : DEFAULT_TIMEOUT_MS;
+}
+
+/**
+ * 未显式传 priority 时：角色卡/会话详情等入场 P0 为 critical；其余 normal。
+ * latest-badge / latest-seen 走 normal，避免和列表抢槽。
+ */
+export function resolveRequestPriority(
+  path: string,
+  method: string,
+  explicit?: RequestPriority
+): RequestPriority | 'bypass' {
+  if (isLongRunningPath(path)) return 'bypass';
+  if (explicit) return explicit;
+
+  // 角色详情为 P0；latest-badge / latest-seen 不是。
+  if (
+    method === 'GET' &&
+    /^\/api\/characters\/[^/?]+$/.test(path) &&
+    !path.endsWith('/latest-badge') &&
+    !path.endsWith('/latest-seen')
+  ) {
+    return 'critical';
+  }
+  if (method === 'GET' && path.startsWith('/api/characters?')) return 'critical';
+  if (method === 'GET' && path === '/api/characters') return 'critical';
+  if (method === 'GET' && /^\/api\/v1\/conversations\/[^/?]+$/.test(path)) return 'critical';
+  if (
+    method === 'POST' &&
+    (path === '/api/v1/conversations' || path.startsWith('/api/v1/conversations?'))
+  ) {
+    return 'critical';
+  }
+  if (method === 'POST' && path === '/api/image-plaza/conversations') return 'critical';
+  if (method === 'GET' && path.startsWith('/api/image-plaza/feed')) return 'critical';
+  if (
+    method === 'GET' &&
+    /^\/api\/image-plaza\/(config|conversations\/[^/?]+|works\/[^/?]+)(\?|$)/.test(path)
+  ) {
+    return 'critical';
+  }
+  return 'normal';
 }
 
 function resolveMethod(options?: ApiRequestInit): string {
@@ -157,7 +208,7 @@ async function apiClientOnce<T>(path: string, options?: ApiRequestInit): Promise
 
   log.debug(`Fetching ${url}`, { hasInitData: !!initData });
 
-  const { timeoutMs, ...fetchOptions } = options ?? {};
+  const { timeoutMs, queuePriority: _queuePriority, ...fetchOptions } = options ?? {};
   const res = await timedFetch(
     url,
     { ...fetchOptions, headers },
@@ -190,22 +241,22 @@ async function apiClientOnce<T>(path: string, options?: ApiRequestInit): Promise
  * 统一的 HTTP 客户端。仅在 lib/api/ 内部使用；业务层必须走 React Query hook 包装。
  *
  * GET 在超时或网络失败时最多再试 1 次（新 requestId），用于吸收客户端→Railway
- * 的瞬时抖动；HTTP 业务错误与调用方 abort 不重试。
+ * 的瞬时抖动；HTTP 业务错误与调用方 abort 不重试。短请求经并发帽排队，critical 插队。
  */
 export async function apiClient<T>(path: string, options?: ApiRequestInit): Promise<T> {
   const method = resolveMethod(options);
+  const priority = resolveRequestPriority(path, method, options?.queuePriority);
   const maxAttempts = method === 'GET' ? 1 + GET_TRANSPORT_RETRY_MAX : 1;
+  const signal = options?.signal ?? undefined;
 
   let attempt = 0;
   for (;;) {
     try {
-      return await apiClientOnce<T>(path, options);
+      // 每次尝试单独占槽；退避在槽外，避免重试等待堵死其它 P0。
+      return await withRequestSlot(priority, signal, () => apiClientOnce<T>(path, options));
     } catch (error) {
       attempt += 1;
-      if (
-        attempt >= maxAttempts ||
-        !isRetryableGetTransportError(error, method, options?.signal ?? undefined)
-      ) {
+      if (attempt >= maxAttempts || !isRetryableGetTransportError(error, method, signal)) {
         toTransportApiError(error);
       }
       const delayMs = retryDelayMs();

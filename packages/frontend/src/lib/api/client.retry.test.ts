@@ -32,6 +32,7 @@ import {
   isRetryableGetTransportError,
   toApiClientError,
 } from './client';
+import { __resetRequestConcurrencyForTests } from './request-concurrency';
 
 describe('isRetryableGetTransportError', () => {
   it('retries GET timeout and network TypeError only', () => {
@@ -57,8 +58,10 @@ describe('isRetryableGetTransportError', () => {
 describe('apiClient GET transport retry', () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    __resetRequestConcurrencyForTests(3);
   });
   afterEach(() => {
+    __resetRequestConcurrencyForTests(3);
     vi.useRealTimers();
     vi.unstubAllGlobals();
   });

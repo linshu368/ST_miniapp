@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/dialog';
 import { ApiClientError } from '@/lib/api/client';
 import { useModelCatalogQuery, useSelectModelMutation } from '@/lib/api/models';
+import { useEntryEnrichReady } from '@/lib/entry-phase';
 import { usePaymentPlansQuery } from '@/lib/api/payment';
 import { useVipStatusQuery } from '@/lib/api/vip';
 import { redirectToRecharge } from '@/lib/recharge-redirect';
@@ -52,9 +53,11 @@ export function ChatModelSwitcher({
   freeRoundActive?: boolean;
 }) {
   const router = useRouter();
-  const { data, isLoading, isFetching } = useModelCatalogQuery();
-  const paymentPlans = usePaymentPlansQuery();
-  const vipStatus = useVipStatusQuery();
+  const enrichReady = useEntryEnrichReady();
+  const { data, isLoading, isFetching } = useModelCatalogQuery({ enabled: enrichReady });
+  // 充值套餐/VIP 只为切换引擎面板服务，跟会话 P0 错开。
+  const paymentPlans = usePaymentPlansQuery({ enabled: enrichReady });
+  const vipStatus = useVipStatusQuery({ enabled: enrichReady });
   const selectModel = useSelectModelMutation();
   const [error, setError] = useState<string | null>(null);
   const [walletAction, setWalletAction] = useState<'recharge' | null>(null);

@@ -10,7 +10,12 @@ import { INVITE_START_PARAM_PREFIX } from '@miniapp/shared';
 import { FavoriteFeedbackNotice } from '@/components/characters/favorite-feedback-notice';
 
 import { LobbyShellSkeleton } from '@/components/characters/lobby-shell-skeleton';
-import { afterFirstScreen, useAfterFirstScreen } from '@/lib/after-first-screen';
+import { afterFirstScreen } from '@/lib/after-first-screen';
+import {
+  afterEntryBackground,
+  ensureEntryPhaseWatching,
+  useEntryBackgroundReady,
+} from '@/lib/entry-phase';
 import { getQueryClient } from '@/lib/api/query-client';
 import { recordMiniappEntry } from '@/lib/api/growth';
 import { bindInvite } from '@/lib/api/invite';
@@ -51,6 +56,8 @@ export function Providers({ children }: { children: React.ReactNode }) {
     // 等首屏结束（有 4s 硬上限）再加载。采样率不变，只是首屏几秒不在录。
     void afterFirstScreen().then(() => loadSessionReplay());
     void initReplayTelemetry(telegramUser.id, afterFirstScreen);
+    // 入场分波兜底：无大厅/聊天 mark 时最迟 8s 仍放行 enrich/background。
+    ensureEntryPhaseWatching();
     // initTelegramSdk 是同步副作用,initData 在它跑完后立即可读;
     // hydrate 把 telegram first_name + localStorage 覆盖合成 displayName
     hydrateUserProfile();
@@ -109,7 +116,7 @@ function PaymentReturnRedirect() {
 function GrowthEntryReporter() {
   useEffect(() => {
     let cancelled = false;
-    void afterFirstScreen().then(() => {
+    void afterEntryBackground().then(() => {
       if (cancelled) return;
       try {
         const rawInitData = getRawInitData();
@@ -199,7 +206,7 @@ function InviteBindReporter() {
       console.error('[Invite] Unhandled error while caching invite code:', err);
     }
 
-    void afterFirstScreen().then(() => {
+    void afterEntryBackground().then(() => {
       if (cancelled) return;
       try {
         if (sessionStorage.getItem(INVITE_BIND_DONE_KEY) === '1') return;
@@ -254,9 +261,9 @@ function getStartParam(): string {
 function UserSettingsHydrator() {
   const applyServerDisplayName = useUserProfileStore((s) => s.applyServerDisplayName);
   const applyServerPhotoUrl = useUserProfileStore((s) => s.applyServerPhotoUrl);
-  // 头像/昵称可先用本地 hydrate；服务端 settings 延后到首屏后，少占入场连接。
-  const firstScreenDone = useAfterFirstScreen();
-  const { data } = useUserSettingsQuery({ enabled: firstScreenDone });
+  // 头像/昵称可先用本地 hydrate；服务端 settings 放 background，少占入场连接。
+  const backgroundReady = useEntryBackgroundReady();
+  const { data } = useUserSettingsQuery({ enabled: backgroundReady });
 
   useEffect(() => {
     if (data) {

@@ -24,7 +24,7 @@ export const favoriteKeys = {
 };
 
 async function fetchFavoriteIds(): Promise<GetCharacterFavoriteIdsData> {
-  return apiClient<GetCharacterFavoriteIdsData>('/api/favorites/ids');
+  return apiClient<GetCharacterFavoriteIdsData>('/api/favorites/ids', { queuePriority: 'normal' });
 }
 
 async function fetchFavorites(): Promise<GetCharacterFavoritesData> {

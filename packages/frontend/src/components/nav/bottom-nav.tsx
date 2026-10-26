@@ -7,7 +7,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Home, Sparkles, User } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
-import { useAfterFirstScreen } from '@/lib/after-first-screen';
+import { useEntryBackgroundReady } from '@/lib/entry-phase';
 import { prefetchImagePlazaFeed } from '@/lib/api/image-plaza';
 import { useNotificationUnreadCountQuery } from '@/lib/api/notifications';
 import { useSupportUnreadQuery } from '@/lib/api/support';
@@ -48,10 +48,10 @@ export function BottomNav() {
     }
     setRoleplayHref(readRoleplayView());
   }, [currentRoleplayPath]);
-  // 红点不在首屏关键路径上；冷启动先让给首屏，之后照常轮询。/profile 页自己的读者不受影响。
-  const firstScreenDone = useAfterFirstScreen();
-  const unread = useNotificationUnreadCountQuery({ enabled: firstScreenDone });
-  const supportUnread = useSupportUnreadQuery({ enabled: firstScreenDone });
+  // 红点与广场预取属 background：等列表/进聊 P0 与 enrich 波过去再发。
+  const backgroundReady = useEntryBackgroundReady();
+  const unread = useNotificationUnreadCountQuery({ enabled: backgroundReady });
+  const supportUnread = useSupportUnreadQuery({ enabled: backgroundReady });
   // 「我的」页里公告和客服回复各有各的红点，导航上只汇总成一个。
   const hasUnread = (unread.data?.total ?? 0) > 0 || supportUnread.data?.has_unread === true;
 
@@ -81,12 +81,11 @@ export function BottomNav() {
     return () => window.clearTimeout(timer);
   }, [router]);
 
-  // 图片广场首页数据在首屏结束后预取：点进「创作」时直接有内容可画，而不是先骨架再等 feed。
-  // 导航栏随 (main) 布局常驻，这个 effect 每个会话只跑一次。
+  // 广场 feed 预取放 background，避免与大厅列表/进聊抢连接。
   useEffect(() => {
-    if (!firstScreenDone) return;
+    if (!backgroundReady) return;
     void prefetchImagePlazaFeed(queryClient);
-  }, [firstScreenDone, queryClient]);
+  }, [backgroundReady, queryClient]);
 
   if (pathname && HIDDEN_PREFIXES.some((p) => pathname.startsWith(p))) {
     return null;

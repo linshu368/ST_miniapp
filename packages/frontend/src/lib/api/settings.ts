@@ -16,7 +16,7 @@ export const userSettingsKeys = {
 };
 
 async function fetchUserSettings(): Promise<GetUserSettingsData> {
-  return apiClient<GetUserSettingsData>('/api/users/settings');
+  return apiClient<GetUserSettingsData>('/api/users/settings', { queuePriority: 'background' });
 }
 
 async function patchUserSettings(body: PatchUserSettingsRequest): Promise<PatchUserSettingsData> {

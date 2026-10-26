@@ -15,7 +15,7 @@ import {
   useLobbyLatestBadgeQuery,
   useMarkLobbyLatestSeenMutation,
 } from '@/lib/api/characters';
-import { useAfterFirstScreen } from '@/lib/after-first-screen';
+import { markCriticalSettled, useEntryEnrichReady } from '@/lib/entry-phase';
 import { chatEntryPath } from '@/lib/chat-entry';
 import { useFavoriteIdsQuery } from '@/lib/api/favorites';
 import { useConversationsQuery } from '@/lib/api/conversations';
@@ -112,10 +112,10 @@ function neighborIds(ids: string[], anchorId: string): string[] {
 export function CharacterGallery() {
   const router = useRouter();
   const [savedDiscovery] = useState(readRoleplayDiscovery);
-  // 冷启动只保证大厅列表；收藏 id / 会话历史 / New 角标延后，避免与列表争 Railway 连接。
-  const firstScreenDone = useAfterFirstScreen();
-  const favoriteIds = useFavoriteIdsQuery({ enabled: firstScreenDone });
-  const history = useConversationsQuery(undefined, firstScreenDone);
+  // P0=列表；enrich=收藏/会话史/角标。列表有缓存或首包结算后 markCriticalSettled。
+  const enrichReady = useEntryEnrichReady();
+  const favoriteIds = useFavoriteIdsQuery({ enabled: enrichReady });
+  const history = useConversationsQuery(undefined, enrichReady);
   // message_count 不计虚拟开场白；只标记已确认的用户对话，未命中不代表从未聊过。
   const experiencedIds = useMemo(
     () =>
@@ -131,9 +131,13 @@ export function CharacterGallery() {
   const [sort, setSort] = useState<LobbySort>(
     restoreSnapshot?.sort ?? savedDiscovery.sort ?? DEFAULT_LOBBY_SORT
   );
-  const { data, isLoading, isError, isFetching } = useCharactersQuery(sort, {
+  const { data, isLoading, isError, isFetching, isFetched } = useCharactersQuery(sort, {
     skipMountRefetch: isRestoring,
   });
+  // 有可展示数据（含本地缓存）或列表已失败/完成首轮，即放行 enrich，别让旁路永远等。
+  useEffect(() => {
+    if (data !== undefined || isError || isFetched) markCriticalSettled();
+  }, [data, isError, isFetched]);
   // 大厅有本地缓存秒开：content 记用户看到列表的时刻，fresh 记最新列表到达的时刻，两者分开才看得出后端慢。
   const lobbyFresh = useFreshAfterFetch(isFetching, data !== undefined);
   usePageReady('/', data !== undefined, lobbyFresh);
@@ -151,7 +155,7 @@ export function CharacterGallery() {
   const restoredAnchorIdRef = useRef<string | null>(null);
   const restoreCalibrationUsedRef = useRef(false);
 
-  const latestBadge = useLobbyLatestBadgeQuery({ enabled: firstScreenDone });
+  const latestBadge = useLobbyLatestBadgeQuery({ enabled: enrichReady });
   const { mutate: markLatestSeen } = useMarkLobbyLatestSeenMutation();
   const markedLatestRef = useRef(false);
   // 点「最新」当场收起，不等标记已看的请求回来；点推荐、搜索、卡片都不影响。

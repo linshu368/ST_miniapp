@@ -56,6 +56,11 @@ import { getRawInitData } from '@/lib/telegram/auth';
 import { parseTelegramUser } from '@/lib/telegram/user';
 import { readThinkingPreference, writeThinkingPreference } from '@/lib/chat-thinking';
 import { useVisualViewportHeight } from '@/lib/use-visual-viewport-height';
+import {
+  markCriticalSettled,
+  useEntryBackgroundReady,
+  useEntryEnrichReady,
+} from '@/lib/entry-phase';
 import { usePageReady } from '@/lib/perf/page-ready';
 import {
   DEFAULT_REPLY_DETAILS_OPEN,
@@ -102,12 +107,18 @@ export default function SelfHostedChatPage() {
 
   const session = useChatSession(characterId);
   const { activeSessionId, returnTo, abandonSession } = session;
+  const enrichReady = useEntryEnrichReady();
+  const backgroundReady = useEntryBackgroundReady();
   const { value: draft, setValue: setDraft } = useMemoryDraft(
     activeSessionId ? `chat:${activeSessionId}` : null
   );
   // 可用 = 会话已建立且历史消息已加载（新会话的创建耗时也算在用户等待里）。
   usePageReady('/chat/:id', session.ready);
-  const modelCatalogQuery = useModelCatalogQuery();
+  // 会话就绪或创建/加载失败都结算 P0，放行模型目录等 enrich。
+  useEffect(() => {
+    if (session.ready || session.entryError) markCriticalSettled();
+  }, [session.ready, session.entryError]);
+  const modelCatalogQuery = useModelCatalogQuery({ enabled: enrichReady });
   const selectedModelId = modelCatalogQuery.data?.selected_model_id ?? null;
   const selectedModelUsesFreeQuota = useMemo(() => {
     const catalog = modelCatalogQuery.data?.catalog;
@@ -220,12 +231,16 @@ export default function SelfHostedChatPage() {
     onRestoreSendContent: restoreSendContent,
   });
 
-  const userSettingsQuery = useUserSettingsQuery();
-  const voiceConfigQuery = useVoiceConfigQuery();
-  const sessionVoiceQuery = useSessionVoiceQuery(activeSessionId ?? undefined);
+  const userSettingsQuery = useUserSettingsQuery({ enabled: backgroundReady });
+  const voiceConfigQuery = useVoiceConfigQuery(backgroundReady);
+  const sessionVoiceQuery = useSessionVoiceQuery(activeSessionId ?? undefined, {
+    enabled: backgroundReady,
+  });
   const generateVoice = useGenerateVoiceMutation(activeSessionId ?? undefined);
-  const imageConfigQuery = useImageConfigQuery();
-  const sessionImagesQuery = useSessionImagesQuery(activeSessionId ?? undefined);
+  const imageConfigQuery = useImageConfigQuery(backgroundReady);
+  const sessionImagesQuery = useSessionImagesQuery(activeSessionId ?? undefined, {
+    enabled: backgroundReady,
+  });
   const describeImage = useCreateImageDescriptionMutation(activeSessionId ?? undefined);
   const createImage = useCreateMessageImageMutation(activeSessionId ?? undefined);
   const viewportHeight = useVisualViewportHeight();
@@ -278,7 +293,7 @@ export default function SelfHostedChatPage() {
     [sessionImagesQuery.data]
   );
   const playbackRate = voiceConfigQuery.data?.config.playback_rate ?? 1;
-  const freeQuota = useCharacterFreeQuotaQuery(characterId);
+  const freeQuota = useCharacterFreeQuotaQuery(characterId, { enabled: enrichReady });
   const freeRoundActive = Boolean(
     freeQuota.data && !freeQuota.data.exhausted && selectedModelUsesFreeQuota
   );

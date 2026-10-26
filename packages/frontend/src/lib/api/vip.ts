@@ -9,10 +9,11 @@ export const vipKeys = {
   status: ['vip', 'status'] as const,
 };
 
-export function useVipStatusQuery() {
+export function useVipStatusQuery({ enabled = true }: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: vipKeys.status,
     queryFn: () => apiClient<GetVipStatusData>('/api/vip/status'),
+    enabled,
     staleTime: 15_000,
   });
 }

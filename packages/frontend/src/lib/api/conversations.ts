@@ -37,7 +37,8 @@ export function useConversationsQuery(characterId: string | undefined, enabled =
       const query = search.toString();
       return apiClient<ListConversationsData>(`/api/v1/conversations${query ? `?${query}` : ''}`);
     },
-    staleTime: 0,
+    // 大厅「聊过」标记可稍旧；拉长鲜活期减少与列表/进聊争槽。
+    staleTime: 60_000,
   });
 }
 
@@ -73,6 +74,7 @@ export function fetchConversationDetail(
   // apiClient 才能对 GET 做最多 1 次传输层重试（调用方 abort 仍不重试）。
   return apiClient<GetConversationData>(`/api/v1/conversations/${encodeURIComponent(sessionId)}`, {
     timeoutMs,
+    queuePriority: 'critical',
   });
 }
 
@@ -154,6 +156,7 @@ export function useCreateConversationMutation() {
       apiClient<CreateConversationData>('/api/v1/conversations', {
         method: 'POST',
         body: JSON.stringify({ character_id: characterId }),
+        queuePriority: 'critical',
       }),
     onSuccess: (data, characterId) => {
       // 新会话立刻可读，省掉进页面后的第一次 GET
