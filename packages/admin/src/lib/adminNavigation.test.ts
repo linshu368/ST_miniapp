@@ -26,6 +26,12 @@ describe('admin navigation', () => {
     });
   });
 
+  it('opens the fallback screen against the existing model catalog draft', () => {
+    expect(resolveAdminMenuSelection('fallback_config')).toEqual({
+      view: 'fallback_config',
+      configKey: 'llm_model_catalog',
+    });
+  });
   it('opens the outreach grant page, which sits under 运营配置 but is not a managed config', () => {
     expect(resolveAdminMenuSelection('outreach_credit_grant')).toEqual({
       view: 'outreach_credit_grant',
@@ -108,5 +114,20 @@ describe('admin navigation', () => {
     expect(resolveAdminMenuSelection('announcements')).toEqual({ view: 'announcements' });
     expect(resolveAdminMenuSelection('releases')).toEqual({ view: 'releases' });
     expect(resolveAdminMenuSelection('text_postprocess')).toEqual({ view: 'text_postprocess' });
+  });
+});
+
+describe('reply style options navigation', () => {
+  it('uses an independent page under platform rules without duplicate generic entries', () => {
+    const expected = { view: 'reply_style_options', configKey: 'reply_style_options' };
+    expect(resolveAdminMenuSelection('reply_style_options')).toEqual(expected);
+    expect(resolveAdminMenuSelection(configMenuKey('reply_style_options'))).toEqual(expected);
+    expect(sidebarManagedConfigKeys).not.toContain('reply_style_options');
+    expect(PLATFORM_INSTRUCTION_CONFIG_KEYS).toEqual([
+      'choice_rules',
+      'status_rules',
+      'memory_rules',
+      'system_instructions',
+    ]);
   });
 });

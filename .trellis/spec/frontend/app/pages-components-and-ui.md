@@ -25,6 +25,8 @@ SSE 流消息是临时客户端状态：`start` 建占位，`delta` 追加增量
 ## 个人中心、支付、通知与客服
 
 - Profile 组合 settings/wallet/checkin/invite/community/support unread，并展示总额、专项余额和 VIP 入口。VIP 页与充值页的价格、权益和剩余天数只读服务端契约，不写死折扣或金额。编辑成功同时更新 React Query cache 与相应 Zustand 展示镜像，避免双状态漂移。
+- Profile优先展示签到与充值；消费明细为余额卡内文字入口。未开通VIP以月卡赠送专项星尘为主利益，已开通则展示金色身份卡、有效期和已生效权益。`VipEntryCard`复用于Profile与充值页；`VipBenefitArt`区分会员身份与开通赠礼。月卡以外的历史会员状态继续正确显示，但不提供周卡购买选项。
+- Recharge仅选择星尘商品，VIP单独在`/vip`购买；不自动加购/合单，不共享一组单选。VIP回流到充值时保留经过校验的原始returnTo。两页支付渠道继续消费既有`payment_channels`，不因设计调整新增渠道或变更支付指引。
 - Recharge 使用 `PlanCard` 做选择，mutation 做下单；订单详情仅 pending 时 2 秒轮询，进入终态立即停止。回跳参数要校验/编码，不将支付凭证放 URL。`pay_url` 只进短 TTL sessionStorage。打开外部支付前先 `enterExternalPaymentPending` 并写入 pending 记录，再 `openLink`。Telegram 冻结恢复时 URL 通常不变，回流由根上 visibility/focus/pageshow 观察，不能只靠 `?payment=returned` / `start_param`。pending 与离开事件都不是支付失败。
 - Orders 使用有界 infinite query；Spending 使用流水 query；均提供 loading skeleton、empty、error retry 和终止状态。
 - Notifications 按 scope 查询。标记已读必须提交单条消息 id，不能只提交 scope。VIP 到期详情按通知 metadata 展示，当前权益另读 `GET /api/vip/status`，续费不改写历史正文。Support 查询会话、发送、标记已读并合理轮询/前台刷新；输入内容不得写遥测。

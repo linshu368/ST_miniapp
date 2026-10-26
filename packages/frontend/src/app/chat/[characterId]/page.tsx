@@ -52,6 +52,9 @@ import { planMessageReply } from '@/lib/text-postprocess/reply-plan';
 import { useUserProfileStore } from '@/stores/user-profile-store';
 import { redirectToRecharge, redirectToRechargeFromError } from '@/lib/recharge-redirect';
 import { useTelegramBackButton } from '@/lib/telegram';
+import { getRawInitData } from '@/lib/telegram/auth';
+import { parseTelegramUser } from '@/lib/telegram/user';
+import { readThinkingPreference, writeThinkingPreference } from '@/lib/chat-thinking';
 import { useVisualViewportHeight } from '@/lib/use-visual-viewport-height';
 import { usePageReady } from '@/lib/perf/page-ready';
 import {
@@ -75,6 +78,27 @@ export default function SelfHostedChatPage() {
     DEFAULT_REPLY_DETAILS_OPEN
   );
   const displayName = useUserProfileStore((state) => state.displayName);
+  const userScope = String(
+    (typeof window === 'undefined' ? undefined : parseTelegramUser(getRawInitData()).id) ?? 'local'
+  );
+  const [thinkingPreference, setThinkingPreference] = useState<{
+    scope: string | null;
+    enabled: boolean;
+  }>({ scope: null, enabled: true });
+  const thinkingEnabled =
+    thinkingPreference.scope === userScope ? thinkingPreference.enabled : true;
+
+  useEffect(() => {
+    setThinkingPreference({ scope: userScope, enabled: readThinkingPreference(userScope) });
+  }, [userScope]);
+
+  const changeThinkingEnabled = useCallback(
+    (enabled: boolean) => {
+      setThinkingPreference({ scope: userScope, enabled });
+      writeThinkingPreference(userScope, enabled);
+    },
+    [userScope]
+  );
 
   const session = useChatSession(characterId);
   const { activeSessionId, returnTo, abandonSession } = session;
@@ -166,6 +190,8 @@ export default function SelfHostedChatPage() {
 
   const {
     abort,
+    firstTokenObservation,
+    onFirstTokenDisplayed,
     canRegenerate,
     cancelling,
     generating,
@@ -178,12 +204,15 @@ export default function SelfHostedChatPage() {
     setStreamError,
     streamError,
     streaming,
+    thinkingByMessage,
   } = useConversationTurn({
     characterId,
+    firstTokenDeadlineMs: modelCatalogQuery.data?.catalog.first_token_deadline_ms,
     characterName: character?.name,
     sessionId: activeSessionId,
     selectedModelId,
     selectedModelUsesFreeQuota,
+    thinkingEnabled,
     persistedMessages: persisted,
     returnTo,
     onSessionGone: abandonSessionWithDraft,
@@ -400,6 +429,8 @@ export default function SelfHostedChatPage() {
       <ChatMessageList
         key={activeSessionId ?? 'pending'}
         messages={messages}
+        firstTokenObservation={firstTokenObservation}
+        onFirstTokenDisplayed={onFirstTokenDisplayed}
         characterName={character?.name ?? ''}
         characterAvatarUrl={characterAvatarUrl}
         userAvatarUrl={userAvatarUrl}
@@ -431,6 +462,7 @@ export default function SelfHostedChatPage() {
         }
         onChoice={handleChoice}
         detailsDefaultOpen={detailsDefaultOpen}
+        thinkingByMessage={thinkingByMessage}
         renderFooter={(message) => {
           const showVoice = canGenerateVoice(message);
           const messageImage = imageByMessage.get(message.id);
@@ -551,6 +583,8 @@ export default function SelfHostedChatPage() {
         disabled={!session.ready || serverBusy}
         detailsDefaultOpen={detailsDefaultOpen}
         onDetailsDefaultOpenChange={handleDetailsDefaultOpenChange}
+        thinkingEnabled={thinkingEnabled}
+        onThinkingEnabledChange={changeThinkingEnabled}
         leftSlot={
           <ChatToolsSheet
             onCreateConversation={() => {

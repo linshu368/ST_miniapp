@@ -242,6 +242,8 @@ v1 是旧 bot `SimplePromptEngine` 的忠实移植，最终形状：
 
 三个槽位的开关是用户级偏好，模式选择是会话级事实并随 revision 持久化在 `experience.chat_history`。每个会话第 1～3 个逻辑轮使用 full；第 4 轮起仅当上一逻辑轮最新 revision 的 `rich_reply_metadata.rich_reply_result` 为 `exact` 时使用 concise，`recovered`、`failed` 或缺失时恢复 full。关闭槽位使用 off。重生成根据被替换 revision 的诊断重新选择模式，而不是消费用户级计数；旧 `*_full_rules_remaining` 字段仅保留作应用回滚兼容。
 
+回复风格目录独立存储在 `runtime_config.reply_style_options`，不属于上述模型平台规则。Admin“平台规则 → 回复风格”管理名称、说明、运营自填标记/文本、顺序和启停，沿用草稿/发布/历史/回滚。generation-config API仅公开已发布启用项的id/name/description；私有marker/rules不下发、不注入模型。用户选择存为 `miniapp_user_settings.pref_reply_styles` JSONB，专用service_role invoker RPC按id原子合并，前端同样按id乐观确认/回滚。空目录隐藏用户界面区域，新项目默认关闭。迁移 `20261023_reply_style_options.sql` 须先TEST后Production再部署消费者。
+
 ### 4.4.1 AI 回复后处理与展示
 
 后处理不改变模型输入、生成计费或原始回复正文。模型输出协议以 `packages/shared/src/rich-reply-protocol.ts` 为唯一版本化事实源：固定 choices/status/memory 与中文引号对白先由 shared 解析为可信结构化 slot；原始回复不回写，已识别的畸形模块安全降级，边界不明确时保留原文；运营规则只处理其余文本。Admin 编辑的是版本化 source；Backend 发布时在可终止 Worker 中编译，并把 source 与 compiled artifact 原子写入 `app_core.text_postprocess_versions`。Frontend 与 Admin 的最终展示都复用 `@miniapp/reply-renderer`，renderer 只消费已校验 artifact 和原文，不接触发布 API、数据库或 source compiler。
@@ -682,3 +684,13 @@ Vercel 侧关键变量：`NEXT_PUBLIC_API_URL`（用户端 backend 公网域名�
 新增历史处置SQL在同一事务内规范化OR受控诊断、仅补NULL厂商原名事实并清父表旧JSON。非白名单key、referer/外部用户/嵌套response及错误自由文本明确丢弃、不归档；类型/长度/非负数/整数范围、provider与ID验证，父表及专表JSON指纹CAS保护变化，最多2000候选且预算前不解TOAST。正文、业务finish_reason、计费快照/金额/charge/dedup/quota不写；Venice仅在既有明细事实保全后清父表冗余诊断，不改变mapper/表。
 
 主表DROP文件在两库未执行，T10修正原过宽账务守卫：以schema账本checksum+applied_at定义引入快照前历史，明确终态账单/持久dedup/失败未扣/旧pending分类。旧pending保留账单和专表ID、不伪造已结算；未知成功记录、新契约漏快照、身份/状态冲突、旧字段关联reserved继续停止。健康专表调用不因清理要求中断。账务跨域仅只读；历史归档表、后台补扣worker与通用搬运层均未新增。
+
+### 首 token 兜底与业务体验数据（2026-10-23）
+
+自研 send/regenerate 仍统一进入 generation/execute：冻结原型号计费/权益、预留同一个 charge ID，然后在内部等待首发内容 token；型号等待默认 4 秒，超时只派发一次运营配置的 OpenRouter 兜底型号（默认 DeepSeek V4.1 Flash 1017，思考沿用型号默认）。进入兜底后首发只作有界观察，不得重回交付或进入旧 provider 账务同步。交付选择 RPC 与 provider 身份绑定、实际路由快照更新在同一事务内，原报价字段不变。
+
+`experience.chat_generation_requests/attempts` 拥有 revision/尝试事实，`miniapp_analytics.chat_first_token_facts/report` 仅派生投影。前端通过独立的真实可见正文 DOM 接缝报告用户总首 token；供应商 latency 和后端分段另外存。前后端共用目录中的全局上限（初始 6 秒），兜底不重置预算；超时率目标初始 1%，只供人工观察。原有整轮生命周期保护不变。
+
+Admin 在“运营配置 → 兜底配置”集中编辑兜底型号、每型号等待与全局上限/目标，复用模型目录的同一草稿/发布/恢复通路。每轮冻结兜底型号，prepare RPC 从请求快照读取，分析事实与报表保留该型号；不新增配置key或secret。客户端只能经鉴权和精确身份校验 API 回报。应用与两份基础迁移已通过 #461 生产发布，Telegram 真机验收尚未完成。
+
+Grafana 通过 `20261023_grafana_first_token_reader.sql` 正式迁移为既有登录角色授予 NOLOGIN reader 会员关系，只读新事实/报表及父表三列，正文与写权限不开放；先 TEST 后 production。独立业务看板默认最近24h、全部有请求型号，主图只使用客户端实际显示总首token秒数、兜底触发率、前台已知结果超时率，并同时展示样本与覆盖率。供应商/后端耗时保留在原始事实中供排障，不进入该业务看板。本期无 AI、自动调参或定时任务。详见 [首 token 运行说明](first-token-fallback.md)。

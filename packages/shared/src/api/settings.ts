@@ -1,5 +1,6 @@
 // MiniApp 用户设置领域的前后端共享契约
 import { z } from 'zod';
+import { ReplyStylePreferencesSchema, type ReplyStylePreferences } from './reply-style-options';
 
 /**
  * 回复长度档位 id。权威列表来自 runtime_config.pref_word_count_tiers，
@@ -39,6 +40,8 @@ export interface UserSettings {
   pref_show_options: boolean;
   pref_show_status: boolean;
   pref_show_memory: boolean;
+  /** Missing means no selected styles; independent boolean choices. */
+  pref_reply_styles?: ReplyStylePreferences;
   pref_custom_instructions: string | null;
   updated_at: string;
 }
@@ -53,6 +56,7 @@ export const UserSettingsSchema: z.ZodType<UserSettings> = z
     pref_show_options: z.boolean(),
     pref_show_status: z.boolean(),
     pref_show_memory: z.boolean(),
+    pref_reply_styles: ReplyStylePreferencesSchema.optional(),
     pref_custom_instructions: z.string().nullable(),
     updated_at: z.string(),
   })
@@ -71,6 +75,8 @@ export interface PatchUserSettingsRequest {
   pref_show_options?: boolean;
   pref_show_status?: boolean;
   pref_show_memory?: boolean;
+  /** Partial map merge; unrelated option IDs are preserved. */
+  pref_reply_styles?: ReplyStylePreferences;
   pref_custom_instructions?: string | null;
 }
 
@@ -83,6 +89,7 @@ export const PatchUserSettingsRequestSchema: z.ZodType<PatchUserSettingsRequest>
     pref_show_options: z.boolean().optional(),
     pref_show_status: z.boolean().optional(),
     pref_show_memory: z.boolean().optional(),
+    pref_reply_styles: ReplyStylePreferencesSchema.optional(),
     pref_custom_instructions: z.string().nullable().optional(),
   })
   .strict();

@@ -1,3 +1,4 @@
+import { ReplyStyleOptionsEditor } from './ReplyStyleOptionsEditor';
 import { useState } from 'react';
 import {
   Alert,
@@ -44,6 +45,7 @@ import {
   DEFAULT_INVITE_CENTER_CONFIG,
   DEFAULT_INVITE_REWARD_RULES,
   EditableModelCatalogSchema,
+  EditableReplyStyleOptionsConfigSchema,
   EditableImagePlazaTagConfigSchema,
   ImageTextModelConfigSchema,
   type InviteCenterConfig,
@@ -62,6 +64,7 @@ import {
 import { LobbyPinnedCharactersEditor } from './LobbyPinnedCharactersEditor';
 import { LobbyRankingParamsEditor } from './LobbyRankingParamsEditor';
 import { ModelCatalogEditor } from './ModelCatalogEditor';
+import { FallbackConfigEditor } from './FallbackConfigEditor';
 import { PaymentPromptDialogConfigEditor } from './PaymentPromptDialogConfigEditor';
 import { ProviderRoutingConfigEditor } from './ProviderRoutingConfigEditor';
 import { RechargePageConfigEditor } from './RechargePageConfigEditor';
@@ -241,6 +244,7 @@ function ImageTextModelConfigEditor(props: {
 
 export function ConfigValueEditor(props: {
   configKey: ManagedConfigKey;
+  modelCatalogSection?: 'models' | 'fallback';
   value: unknown;
   onChange: (value: unknown) => void;
   disabled?: boolean;
@@ -431,6 +435,22 @@ export function ConfigValueEditor(props: {
         value={typeof props.value === 'number' ? props.value : undefined}
         disabled={props.disabled || isContractLimit}
         onChange={(value) => props.onChange(value ?? configMetadata[props.configKey].defaultValue)}
+      />
+    );
+  }
+
+  if (props.configKey === 'reply_style_options') {
+    const editable = EditableReplyStyleOptionsConfigSchema.safeParse(props.value);
+    if (!editable.success) {
+      return (
+        <Alert type="error" showIcon message="回复风格配置格式有误，请撤销编辑或回滚到有效版本。" />
+      );
+    }
+    return (
+      <ReplyStyleOptionsEditor
+        value={editable.data}
+        disabled={props.disabled}
+        onChange={props.onChange}
       />
     );
   }
@@ -870,16 +890,28 @@ export function ConfigValueEditor(props: {
           message="当前模型目录尚未填写完整；内容会保留在页面，补全必填项后自动保存草稿。"
         />
       ) : null}
-      <ModelCatalogEditor
-        value={modelCatalog}
-        onChange={props.onChange}
-        disabled={props.disabled}
-        providerDirectories={props.providerDirectories}
-        publishedModelIds={props.publishedModelIds}
-        syncLoading={props.syncLoading}
-        syncError={props.syncError}
-        onRefreshProvider={props.onRefreshProvider}
-      />
+      {props.modelCatalogSection === 'fallback' ? (
+        <FallbackConfigEditor
+          value={modelCatalog}
+          onChange={props.onChange}
+          disabled={props.disabled}
+          directory={props.providerDirectories.openrouter}
+          loading={props.syncLoading.openrouter}
+          error={props.syncError.openrouter}
+          onRefresh={() => props.onRefreshProvider('openrouter')}
+        />
+      ) : (
+        <ModelCatalogEditor
+          value={modelCatalog}
+          onChange={props.onChange}
+          disabled={props.disabled}
+          providerDirectories={props.providerDirectories}
+          publishedModelIds={props.publishedModelIds}
+          syncLoading={props.syncLoading}
+          syncError={props.syncError}
+          onRefreshProvider={props.onRefreshProvider}
+        />
+      )}
     </Space>
   );
 }

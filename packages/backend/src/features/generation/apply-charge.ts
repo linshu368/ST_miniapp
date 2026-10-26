@@ -126,7 +126,6 @@ export async function applyLlmCharge(command: LlmChargeCommand): Promise<LlmChar
 
   const observed = command.observedModel?.trim() ? command.observedModel : null;
   const actualModel = observed ?? command.requestedModel;
-  const routedToDifferentModel = actualModel !== command.requestedModel;
 
   const result = await wallets().chargeLlmUsage({
     chargeId: command.chargeId,
@@ -134,7 +133,7 @@ export async function applyLlmCharge(command: LlmChargeCommand): Promise<LlmChar
     userId: command.userId,
     modelId: command.modelId,
     modelOpenRouterId: actualModel,
-    modelDisplayName: routedToDifferentModel ? actualModel : command.requestedDisplayName,
+    modelDisplayName: command.requestedDisplayName,
     catalogVersion: command.catalogVersion,
     pricingConfigVersion: command.pricingConfigVersion,
     usageCostUsd: command.usageCostUsd,

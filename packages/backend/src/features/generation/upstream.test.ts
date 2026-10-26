@@ -2,16 +2,22 @@ import { describe, expect, it, vi } from 'vitest';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { createSseTap, resolveUpstreamUrl, type SseTapResult } from './upstream.js';
+import { MAX_CONVERSATION_REASONING_LENGTH } from '@miniapp/shared';
 
 /** 把若干 chunk 灌进 tap，返回透传出去的字节与终态。 */
 async function runTap(
-  chunks: string[],
-  options: { generationId?: string | null; onDelta?: (delta: string) => void } = {}
+  chunks: Array<string | Buffer>,
+  options: {
+    generationId?: string | null;
+    onDelta?: (delta: string) => void;
+    onReasoningDelta?: (delta: string) => void;
+  } = {}
 ): Promise<{ forwarded: string; result: SseTapResult }> {
   let result: SseTapResult | null = null;
   const tap = createSseTap({
     generationId: options.generationId ?? null,
     onDelta: options.onDelta,
+    onReasoningDelta: options.onReasoningDelta,
     onEnd: (tapped) => {
       result = tapped;
     },
@@ -29,6 +35,8 @@ async function runTap(
 function sseChunk(payload: Record<string, unknown>): string {
   return `data: ${JSON.stringify(payload)}\n\n`;
 }
+
+const DELTA = (content: string) => sseChunk({ choices: [{ delta: { content } }] });
 
 const DELTA_A = sseChunk({ id: 'gen-1', choices: [{ delta: { content: '你好' } }] });
 const DELTA_B = sseChunk({ id: 'gen-1', choices: [{ delta: { content: '，世界' } }] });
@@ -128,6 +136,172 @@ describe('createSseTap', () => {
     expect(onDelta.mock.calls.map((call) => call[0])).toEqual(['你好', '，世界']);
   });
 
+  it('separates provider reasoning, prefers plain text over duplicate details, ignores encrypted data', async () => {
+    const onReasoningDelta = vi.fn();
+    const { result } = await runTap(
+      [
+        sseChunk({
+          choices: [
+            {
+              delta: {
+                reasoning: '先考虑场景',
+                reasoning_details: [{ type: 'reasoning.text', text: '先考虑场景' }],
+              },
+            },
+          ],
+        }),
+        sseChunk({ choices: [{ delta: { reasoning_content: '再保持人设' } }] }),
+        sseChunk({
+          choices: [{ delta: { reasoning_content: ' [Some reasoning content is encrypted] ' } }],
+        }),
+        sseChunk({
+          choices: [
+            {
+              delta: {
+                reasoning_details: [
+                  { type: 'reasoning.text', text: '分析' },
+                  { type: 'reasoning.summary', summary: '摘要' },
+                  { type: 'reasoning.encrypted', data: 'secret', signature: 'opaque' },
+                ],
+              },
+            },
+          ],
+        }),
+        DELTA_A,
+        'data: [DONE]\n\n',
+      ],
+      { onReasoningDelta }
+    );
+    expect(onReasoningDelta.mock.calls.map(([text]) => text)).toEqual([
+      '先考虑场景',
+      '再保持人设',
+      '分析摘要',
+    ]);
+    expect(result).toMatchObject({ content: '你好', deltaCount: 1 });
+    expect(JSON.stringify(result)).not.toContain('先考虑场景');
+    expect(JSON.stringify(result)).not.toContain('secret');
+  });
+
+  it('keeps reasoning before answer when both arrive in one frame and ignores malformed fields', async () => {
+    const order: string[] = [];
+    const { result } = await runTap(
+      [
+        sseChunk({ choices: [{ delta: { reasoning_content: '思考', content: '正文' } }] }),
+        sseChunk({
+          choices: [
+            {
+              delta: {
+                reasoning: {},
+                reasoning_details: [null, { type: 'reasoning.text', text: 1 }],
+              },
+            },
+          ],
+        }),
+        'data: [DONE]\n\n',
+        DELTA_B,
+      ],
+      {
+        onReasoningDelta: (text) => order.push(`reasoning:${text}`),
+        onDelta: (text) => order.push(`answer:${text}`),
+      }
+    );
+    expect(order).toEqual(['reasoning:思考', 'answer:正文']);
+    expect(result.content).toBe('正文');
+  });
+
+  it('does not consume an incomplete trailing frame after the terminal marker', async () => {
+    const onReasoningDelta = vi.fn();
+    const { result } = await runTap(
+      [
+        DELTA_A,
+        'data:[DONE]\n\n',
+        sseChunk({
+          choices: [{ delta: { reasoning: 'late thought', content: 'late answer' } }],
+        }).trimEnd(),
+      ],
+      { onReasoningDelta }
+    );
+    expect(result).toMatchObject({ content: '你好', completed: true });
+    expect(onReasoningDelta).not.toHaveBeenCalled();
+  });
+
+  it('caps forwarded reasoning while continuing to drain answer and usage', async () => {
+    const reasoning: string[] = [];
+    const { result } = await runTap(
+      [
+        sseChunk({
+          choices: [{ delta: { reasoning: 'a'.repeat(MAX_CONVERSATION_REASONING_LENGTH - 1) } }],
+        }),
+        sseChunk({ choices: [{ delta: { reasoning: '结尾超额' } }] }),
+        DELTA_A,
+        sseChunk({
+          choices: [{ delta: {}, finish_reason: 'stop' }],
+          usage: { completion_tokens: 99 },
+        }),
+        'data: [DONE]\n\n',
+      ],
+      { onReasoningDelta: (text) => reasoning.push(text) }
+    );
+    expect(reasoning.join('')).toHaveLength(MAX_CONVERSATION_REASONING_LENGTH);
+    expect(result).toMatchObject({
+      content: '你好',
+      completed: true,
+      usage: { completion_tokens: 99 },
+    });
+  });
+
+  it('reasoning-only output never becomes visible reply content or a content delta', async () => {
+    const { result } = await runTap([
+      sseChunk({ choices: [{ delta: { reasoning_content: '还在思考' } }] }),
+      'data: [DONE]\n\n',
+    ]);
+    expect(result).toMatchObject({ content: '', deltaCount: 0, completed: true });
+  });
+
+  it('prefers structured reasoning over duplicate legacy reasoning across chunk boundaries', async () => {
+    const reasoning: string[] = [];
+    const { result } = await runTap(
+      [
+        sseChunk({ choices: [{ delta: { reasoning: 'ABC', content: '<think>A' } }] }),
+        DELTA('BC</think>正文'),
+        'data: [DONE]\n\n',
+      ],
+      { onReasoningDelta: (text) => reasoning.push(text) }
+    );
+    expect(reasoning.join('')).toBe('ABC');
+    expect(result.content).toBe('正文');
+  });
+
+  it('splits only the leading think region across arbitrary protocol and UTF8 byte boundaries', async () => {
+    const payload = Buffer.from(
+      [
+        sseChunk({ choices: [{ delta: { content: ' \n<thi' } }] }),
+        sseChunk({ choices: [{ delta: { content: 'nk>考虑🌙场景</thi' } }] }),
+        sseChunk({ choices: [{ delta: { content: 'nk>你好，<think>这个是正文</think>' } }] }),
+        'data: [DONE]\n\n',
+      ].join('')
+    );
+    const reasoning: string[] = [];
+    const { forwarded, result } = await runTap(
+      Array.from(payload, (_byte, index) => payload.subarray(index, index + 1)),
+      { onReasoningDelta: (text) => reasoning.push(text) }
+    );
+    expect(forwarded).toBe(payload.toString());
+    expect(reasoning.join('')).toBe('考虑🌙场景');
+    expect(result.content).toBe('你好，<think>这个是正文</think>');
+  });
+
+  it('preserves literal tags in ordinary roleplay and separates unclosed leading thinking', async () => {
+    const literal = await runTap([DELTA('她说：<think>这是角色台词</think>'), 'data: [DONE]\n\n']);
+    expect(literal.result.content).toBe('她说：<think>这是角色台词</think>');
+    const thinking: string[] = [];
+    const unclosed = await runTap([DELTA('<think>未完成思考</thi')], {
+      onReasoningDelta: (text) => thinking.push(text),
+    });
+    expect(unclosed.result).toMatchObject({ content: '', deltaCount: 0, completed: false });
+    expect(thinking.join('')).toBe('未完成思考</thi');
+  });
+
   it('流被销毁导致 flush 不触发时，snapshot 仍能取到已累积的内容', async () => {
     const tap = createSseTap({ onEnd: () => undefined });
     await new Promise<void>((resolve, reject) =>
@@ -145,6 +319,39 @@ describe('resolveUpstreamUrl', () => {
 });
 
 describe('durable call identity before streaming', () => {
+  it('persists the first ID before either reasoning or visible answer is forwarded', async () => {
+    const events: string[] = [];
+    let unblock!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      unblock = resolve;
+    });
+    const tap = createSseTap({
+      onGenerationId: async () => {
+        events.push('persist');
+        await pending;
+      },
+      onReasoningDelta: (text) => events.push(`reasoning:${text}`),
+      onDelta: (text) => events.push(`answer:${text}`),
+      onEnd: () => undefined,
+    });
+    const stream = pipeline(
+      Readable.from([
+        sseChunk({ id: 'gen-1', choices: [{ delta: { reasoning: '思考', content: '正文' } }] }),
+        'data: [DONE]\n\n',
+      ]),
+      tap,
+      async (source) => {
+        for await (const _chunk of source) {
+          /* drain */
+        }
+      }
+    );
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(events).toEqual(['persist']);
+    unblock();
+    await stream;
+    expect(events).toEqual(['persist', 'reasoning:思考', 'answer:正文']);
+  });
   it('awaits ID persistence before the first delta, once per response', async () => {
     const events: string[] = [];
     let unblock!: () => void;
@@ -194,5 +401,41 @@ describe('durable call identity before streaming', () => {
     ).rejects.toThrow('ID storage failed');
     expect(tap.snapshot()).toMatchObject({ content: 'already delivered你好', completed: false });
     expect(delta).toHaveBeenCalledExactlyOnceWith('already delivered');
+  });
+
+  it('does not forward reasoning or held prefixes after destruction while awaiting provider identity', async () => {
+    const emitted = vi.fn();
+    let unblock!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      unblock = resolve;
+    });
+    const tap = createSseTap({
+      onGenerationId: () => pending,
+      onReasoningDelta: emitted,
+      onDelta: emitted,
+      onEnd: () => undefined,
+    });
+    const stream = pipeline(
+      Readable.from([
+        sseChunk({
+          id: 'gen-1',
+          choices: [{ delta: { reasoning_content: 'thought', content: '<thi' } }],
+        }),
+        'data: [DONE]\n\n',
+      ]),
+      tap,
+      async (source) => {
+        for await (const _chunk of source) {
+          /* drain */
+        }
+      }
+    );
+    const rejected = expect(stream).rejects.toThrow('cancelled test');
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    tap.destroy(new Error('cancelled test'));
+    unblock();
+    await rejected;
+    expect(emitted).not.toHaveBeenCalled();
+    expect(tap.snapshot().content).toBe('');
   });
 });

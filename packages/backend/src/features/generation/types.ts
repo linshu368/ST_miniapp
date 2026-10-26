@@ -5,6 +5,7 @@
 // 而定档扣费额又由该结果决定，余额预检再吃这个额度。
 
 import type { LlmModelProvider } from '@miniapp/shared';
+import type { FirstTokenAttemptStore } from './first-token-fallback.js';
 import type { LlmBillingSnapshot } from '../../infrastructure/repositories/ConversationHistoryRepository.js';
 import type { SseTapResult } from './upstream.js';
 import type { RequestLogger } from '../../lib/logger.js';
@@ -32,6 +33,13 @@ export interface ResolvedModel {
   tier: 'light' | 'standard' | 'premium' | null;
   isFree: boolean;
   entitlement: ResolvedTextEntitlement;
+  firstTokenPolicy?: {
+    fallbackModelId?: string;
+    timeoutMs: number;
+    deadlineMs: number;
+    timeoutRateTarget: number;
+    catalogVersion: number;
+  };
 }
 
 export interface GenerationMessage {
@@ -56,6 +64,8 @@ export interface GenerationRequest {
    */
   historyId?: string | null;
   stream: boolean;
+  /** Defaults on; exposed reasoning is progress and never saved as reply content. */
+  thinkingEnabled?: boolean;
   /** Explicit user cancellation and the conversation deadline; disconnects do not abort. */
   signal?: AbortSignal;
   /**
@@ -64,6 +74,11 @@ export interface GenerationRequest {
    * 由自研链路单独启用，避免污染 M3a 的「纯重构」判据。
    */
   promptCaching: boolean;
+  firstToken?: {
+    primaryAttemptId: string;
+    requestStartedAt: number;
+    store: FirstTokenAttemptStore;
+  };
 }
 
 export interface GenerationHooks {
@@ -88,6 +103,7 @@ export interface GenerationHooks {
   onStreamOpen?: () => void;
   onFirstToken?: () => void;
   onDelta?: (text: string) => void;
+  onReasoningDelta?: (text: string) => void;
   onError?: (error: Error) => void;
   onDone?: (result: GenerationResult) => void;
 }

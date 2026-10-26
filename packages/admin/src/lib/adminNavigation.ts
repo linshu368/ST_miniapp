@@ -3,11 +3,13 @@ import { VIP_STRATEGY_CONFIG_KEYS, type VipStrategyConfigKey } from '@miniapp/sh
 
 export type AdminViewKey =
   | 'configs'
+  | 'fallback_config'
   | 'outreach_credit_grant'
   | 'invite_program'
   | 'image_generation_config'
   | 'image_plaza'
   | 'platform_instructions'
+  | 'reply_style_options'
   | 'vip_strategy'
   | 'text_postprocess'
   | 'characters'
@@ -97,6 +99,7 @@ export const sidebarManagedConfigKeys: readonly ManagedConfigKey[] = managedConf
     !isImageGenerationConfigKey(key) &&
     !isImagePlazaConfigKey(key) &&
     !isPlatformInstructionConfigKey(key) &&
+    key !== 'reply_style_options' &&
     !isVipStrategyConfigKey(key) &&
     key !== LEGACY_MEDIA_FREE_TRIAL_LIMIT_KEY
 );
@@ -111,9 +114,13 @@ export function resolveAdminMenuSelection(key: string): {
   view: AdminViewKey;
   configKey?: ManagedConfigKey;
 } {
+  if (key === 'reply_style_options')
+    return { view: 'reply_style_options', configKey: 'reply_style_options' };
+  if (key === 'fallback_config') return { view: 'fallback_config', configKey: 'llm_model_catalog' };
   if (key.startsWith(CONFIG_PREFIX)) {
     const configKey = key.slice(CONFIG_PREFIX.length) as ManagedConfigKey;
     if (managedConfigKeys.includes(configKey)) {
+      if (configKey === 'reply_style_options') return { view: 'reply_style_options', configKey };
       // invite 三个 config 的编辑入口在「裂变邀请管理」的 tab 里，不再落到通用 configs 视图
       if (isInviteProgramConfigKey(configKey)) return { view: 'invite_program', configKey };
       if (isImageGenerationConfigKey(configKey)) {

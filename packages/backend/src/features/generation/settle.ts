@@ -21,6 +21,7 @@
  */
 
 import type { FastifyBaseLogger } from 'fastify';
+import { GenerationObservationRepository } from '../../infrastructure/repositories/GenerationObservationRepository.js';
 import { getDomainDb } from '../../lib/supabase.js';
 import {
   ConversationHistoryRepository,
@@ -51,6 +52,7 @@ import { buildVeniceMetadata } from './venice-metadata.js';
  * 在开轮 RPC 建行时就已落库，这里带着它们只是为了日志与计费快照，**不再回写**。
  */
 export interface GenerationSettlementEntry {
+  first_token_observation?: boolean;
   user_id: string | null;
   model: string;
   provider?: LlmModelProvider;
@@ -73,6 +75,7 @@ export interface GenerationSettlementEntry {
   vip_active?: boolean;
   vip_valid_until?: string | null;
   model_tier?: string | null;
+  vip_discount_config_version?: number | null;
   user_input: string;
   assistant_reply: string | null;
   history: unknown[];
@@ -172,7 +175,9 @@ export async function runSettlement(
   // 只有可能扣费的轮次才值得等上游统计；免费轮拿了也用不上。
   const provider = entry.provider ?? 'openrouter';
   const wantsUsageData =
-    provider === 'openrouter' && Boolean(entry.generation_id) && entry.fixed_deduction > 0;
+    provider === 'openrouter' &&
+    Boolean(entry.generation_id) &&
+    (entry.fixed_deduction > 0 || entry.first_token_observation);
   let finishReason = entry.finish_reason ?? null;
   let providerMetadata: OpenRouterGenerationMetadata | null = null;
   let businessFinishReason: string | undefined;
@@ -181,6 +186,16 @@ export async function runSettlement(
     const genData = await fetchUsageData(entry.generation_id as string, clog);
     if (genData) {
       providerMetadata = buildGenerationMetadata(genData);
+      if (entry.first_token_observation && entry.generation_id) {
+        try {
+          await new GenerationObservationRepository().enrichGeneration(
+            entry.generation_id,
+            providerMetadata
+          );
+        } catch (err) {
+          clog.warn({ err, event: 'llm.attempt.provider_metadata_failed' }, '供应商观测未补齐');
+        }
+      }
       if (providerMetadata.finish_reason !== null) {
         // 上游的 finish_reason 比 SSE tap 的观测值权威，拿到就用它。
         finishReason = providerMetadata.finish_reason;
@@ -485,5 +500,6 @@ function billingSnapshotFromEntry(entry: GenerationSettlementEntry): LlmBillingS
     vip_active: entry.vip_active,
     vip_valid_until: entry.vip_valid_until,
     model_tier: entry.model_tier,
+    vip_discount_config_version: entry.vip_discount_config_version,
   };
 }

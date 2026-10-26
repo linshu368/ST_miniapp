@@ -1,7 +1,9 @@
 import { getDomainDb } from '../../lib/supabase.js';
 import {
   normalizeTelegramAvatarUrl,
+  ReplyStylePreferencesSchema,
   type PatchUserSettingsRequest,
+  type ReplyStylePreferences,
   type StoredPreferredWordCount,
   type UserGenerationConfig,
   type UserSettings,
@@ -37,6 +39,7 @@ export interface MiniappUserSettingsRow {
   pref_show_options: boolean;
   pref_show_status: boolean;
   pref_show_memory: boolean;
+  pref_reply_styles: ReplyStylePreferences;
   pref_custom_instructions: string | null;
   selected_model_id: string | null;
   characters_last_seen_at: string | null;
@@ -55,6 +58,7 @@ type MutableUserSettingsFields = Partial<
     | 'pref_show_options'
     | 'pref_show_status'
     | 'pref_show_memory'
+    | 'pref_reply_styles'
     | 'pref_custom_instructions'
   >
 >;
@@ -100,8 +104,17 @@ export class MiniappUserSettingsRepository {
     await this.getOrCreate(userId, tgUser);
 
     const update = await this.normalizePatch(patch);
-    const slotPreferences = pickInstructionSlotPreferences(update);
-    const otherFields = omitInstructionSlotPreferences(update);
+    const { pref_reply_styles: replyStyles, ...ordinaryUpdate } = update;
+    const slotPreferences = pickInstructionSlotPreferences(ordinaryUpdate);
+    const otherFields = omitInstructionSlotPreferences(ordinaryUpdate);
+
+    if (replyStyles && Object.keys(replyStyles).length > 0) {
+      // Never read/replace the whole map: different switches must merge atomically in SQL.
+      const { error } = await this.db
+        .rpc('update_reply_style_preferences', { p_user_id: userId, p_patch: replyStyles })
+        .abortSignal(AbortSignal.timeout(5_000));
+      if (error) throw new Error(`原子更新回复风格偏好失败：${error.message}`);
+    }
 
     // The migration owns false -> true window resets in this RPC. Keeping these
     // fields out of any normal update prevents a concurrent profile write from
@@ -219,7 +232,7 @@ export class MiniappUserSettingsRepository {
     const { data, error } = await this.db
       .from('miniapp_user_settings')
       .select(
-        'selected_model_id, pref_word_count, pref_show_options, pref_show_status, pref_show_memory, pref_custom_instructions'
+        'selected_model_id, pref_word_count, pref_show_options, pref_show_status, pref_show_memory, pref_reply_styles, pref_custom_instructions'
       )
       .eq('user_id', userId)
       .maybeSingle();
@@ -233,6 +246,7 @@ export class MiniappUserSettingsRepository {
       | 'pref_show_options'
       | 'pref_show_status'
       | 'pref_show_memory'
+      | 'pref_reply_styles'
       | 'pref_custom_instructions'
     > | null;
 
@@ -251,6 +265,7 @@ export class MiniappUserSettingsRepository {
       pref_show_options: row?.pref_show_options ?? true,
       pref_show_status: row?.pref_show_status ?? true,
       pref_show_memory: row?.pref_show_memory ?? true,
+      pref_reply_styles: normalizeReplyStylePreferences(row?.pref_reply_styles),
       pref_custom_instructions: row?.pref_custom_instructions ?? null,
     };
   }
@@ -426,6 +441,11 @@ export class MiniappUserSettingsRepository {
     if ('pref_show_memory' in patch) {
       update.pref_show_memory = Boolean(patch.pref_show_memory);
     }
+    if ('pref_reply_styles' in patch) {
+      const parsed = ReplyStylePreferencesSchema.safeParse(patch.pref_reply_styles);
+      if (!parsed.success) throw new Error('无效的回复风格偏好');
+      update.pref_reply_styles = parsed.data;
+    }
     if ('pref_custom_instructions' in patch) {
       update.pref_custom_instructions = normalizeNullableText(patch.pref_custom_instructions, 2000);
     }
@@ -447,8 +467,8 @@ function pickInstructionSlotPreferences(
 }
 
 function omitInstructionSlotPreferences(
-  update: MutableUserSettingsFields
-): Omit<MutableUserSettingsFields, keyof InstructionSlotPreferencePatch> {
+  update: Omit<MutableUserSettingsFields, 'pref_reply_styles'>
+): Omit<MutableUserSettingsFields, keyof InstructionSlotPreferencePatch | 'pref_reply_styles'> {
   const {
     pref_show_options: _choice,
     pref_show_status: _status,
@@ -469,9 +489,15 @@ export function toUserSettings(row: MiniappUserSettingsRow): UserSettings {
     pref_show_options: row.pref_show_options ?? true,
     pref_show_status: row.pref_show_status ?? true,
     pref_show_memory: row.pref_show_memory ?? true,
+    pref_reply_styles: normalizeReplyStylePreferences(row.pref_reply_styles),
     pref_custom_instructions: row.pref_custom_instructions,
     updated_at: row.updated_at,
   };
+}
+
+function normalizeReplyStylePreferences(value: unknown): ReplyStylePreferences {
+  const parsed = ReplyStylePreferencesSchema.safeParse(value);
+  return parsed.success ? parsed.data : {};
 }
 
 function normalizeNullableText(value: unknown, maxLength: number): string | null {

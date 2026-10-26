@@ -5,7 +5,7 @@ scope: backend
 category: business
 status: active
 owners: [backend]
-last_verified_task: .trellis/tasks/10-10-image-plaza-v2/
+last_verified_task: .trellis/tasks/10-23-dialogue-preference/
 last_verified_at: 2026-10-13
 ---
 
@@ -79,3 +79,39 @@ Feed/config 始终返回启用标签目录；点击业务标签按标签中文 l
 
 - 2026-09-18：任务 `图片生成 PostHog 接入规划`（`.trellis/tasks/archive/2026-09/09-17-image-generation-posthog-plan/`）写入图片描述/受理/worker 终态 PostHog observer；commit：`7ab4a18ac4924d9a23d35dfc6f4f75be0401c9fe`。
 - 2026-10-20：任务 `Remove confirmed repository noise`（`.trellis/tasks/archive/2026-10/10-20-remove-confirmed-repository-noise/`）删除无法恢复的乱码变更记录；commit：`63eee1e847f678f4b2c434f872425a40fc7f891a`。
+
+## Scenario: 两平台思考参数与流解析（2026-10-23）
+
+### 1. Scope / Trigger
+
+新增默认开启的对话思考开关，仍只有generation一条生成/计费出口。
+
+### 2. Signatures
+
+`GenerationRequest.thinkingEnabled?:boolean`、`GenerationHooks.onReasoningDelta`、`createSseTap.onReasoningDelta`；route传递本轮值，HTTP缺字段按false兼容旧客户端，新UI默认显式true。
+
+### 3. Contracts
+
+OpenRouter：`reasoning:{enabled,exclude:!enabled}`；Venice：`reasoning:{enabled}`与`venice_parameters:{include_venice_system_prompt:false,disable_thinking:!enabled,strip_thinking_response:!enabled}`，stream继续请求usage。不开新模型目录/特殊重试。SSE读取reasoning_content/reasoning或可读details，忽略encrypted/signature及官方加密占位；同轮出现结构化思考后不重复转发旧标签内容。只识别正文前导think区，跨chunk标签/UTF8可拆分，正文中的后续字面标签保留。
+
+### 4. Validation & Error Matrix
+
+非法bool开轮前400；上游非2xx保留既有拒绝/释放预留，不传原始错误正文给hook；首次provider ID仍先持久化再转发。关闭不发送思考；每轮思考最多64Ki字符，不保存到snapshot.content/DB/日志。取消、超时与身份写失败不重放生成；只有思考不得触发完成结算或消费免费额度；首字选择/放行独立于最终有效正文判定。
+
+### 5. Good / Base / Bad Cases
+
+Good：思考→正文→DONE/stop，按原正文交付结算。Base：只正文。Bad：将reasoning_tokens再加到completion_tokens重复计费；把reasoning-only认定成功；流后自动重试。
+
+### 6. Tests Required
+
+现有upstream/execute/lifecycle与route回归：双平台on/off、默认、非法值、UTF8字节拆分、前导think拆分/正文标签保留、结构化+标签去重、密文、思考上限、ID-await销毁、只有思考无正文不扣费。
+
+### 7. Wrong vs Correct
+
+Wrong：`replyChunks.push(reasoning)`。Correct：思考只进`onReasoningDelta`，`content/deltaCount`只统计正文，原`[DONE]+可见正文+stop`计费条件保持。
+
+首字统一口径：开启深度思考时，真实思考文本首字与正文首字等效，满足原首字放行/截止/观测；关闭只算正文。等待提示、thinking标题、密文占位不计；只有思考无有效正文仍不得扣费。
+
+## 2026-10-23 可运营回复风格
+
+展示feature reply-style-options仅从runtime-config读取已发布目录，GET/PATCH严格投影id/name/description。用户pref_reply_styles默认{}，部分map只走service_role invoker RPC原子合并；公开HTTP/SSE、日志与Engine不接收marker/rules。该功能只负责UI目录与用户选择。
