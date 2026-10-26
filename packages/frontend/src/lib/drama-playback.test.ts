@@ -1,7 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import type { VideoItem } from '@miniapp/shared';
 
-import { resolveNextVideoId } from './drama-playback';
+import { resolveDramaSwipeDirection, resolveNextVideoId } from './drama-playback';
+
+describe('resolveDramaSwipeDirection', () => {
+  it('switches in opposite directions for upward and downward swipes', () => {
+    expect(resolveDramaSwipeDirection(5, -100)).toBe(1);
+    expect(resolveDramaSwipeDirection(5, 100)).toBe(-1);
+  });
+
+  it('ignores taps, short movements and predominantly horizontal drags', () => {
+    expect(resolveDramaSwipeDirection(0, 0)).toBeNull();
+    expect(resolveDramaSwipeDirection(0, 63)).toBeNull();
+    expect(resolveDramaSwipeDirection(100, 100)).toBeNull();
+    expect(resolveDramaSwipeDirection(-100, -100)).toBeNull();
+  });
+});
 
 function video(id: string): VideoItem {
   return { id, title: '', tags: [], description: '', episode: null, playable: true };

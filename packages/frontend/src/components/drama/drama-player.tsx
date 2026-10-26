@@ -25,7 +25,8 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import { useDramaDetailQuery, useDramaPlaybackQuery } from '@/lib/api/drama';
-import { resolveNextVideoId } from '@/lib/drama-playback';
+import { resolveDramaSwipeDirection, resolveNextVideoId } from '@/lib/drama-playback';
+import { suspendTelegramVerticalSwipes } from '@/lib/telegram';
 
 interface DramaPlayerProps {
   id: string;
@@ -69,10 +70,16 @@ export function DramaPlayer({
   const [duration, setDuration] = useState(0);
   const [episodesOpen, setEpisodesOpen] = useState(false);
   const [descriptionOpen, setDescriptionOpen] = useState(false);
+  const [controlsVisible, setControlsVisible] = useState(true);
+  const [activity, setActivity] = useState(0);
+  const [pointerDown, setPointerDown] = useState(false);
+  const [keyboardActive, setKeyboardActive] = useState(false);
   const [advance, setAdvance] = useState<{ id: string; number: number; seconds: number } | null>(
     null
   );
   const gesture = useRef<{ x: number; y: number } | null>(null);
+  const surface = useRef<HTMLDivElement>(null);
+  const suppressTapUntil = useRef(0);
   const wheel = useRef({ distance: 0, last: 0 });
   const wheelTimer = useRef<number | null>(null);
   const switchLock = useRef(0);
@@ -81,6 +88,37 @@ export function DramaPlayer({
     drama?.episode_count === 0 || (playback?.video_id === null && !playback.playable);
   const playbackError =
     failed || playbackQuery.isError || (playback && !playback.playable && !noEpisodes);
+
+  useEffect(() => suspendTelegramVerticalSwipes(), []);
+
+  useEffect(() => {
+    // 拖动、面板和键盘操作期间不收起；结束后重新给用户完整的 3 秒。
+    if (modalOpen || pointerDown || keyboardActive) return;
+    const timer = window.setTimeout(() => setControlsVisible(false), 3000);
+    return () => window.clearTimeout(timer);
+  }, [activity, modalOpen, pointerDown, keyboardActive]);
+
+  useEffect(() => {
+    const releasePointer = () => setPointerDown(false);
+    window.addEventListener('pointerup', releasePointer);
+    window.addEventListener('pointercancel', releasePointer);
+    const element = surface.current;
+    const preventVerticalScroll = (event: TouchEvent) => {
+      const start = gesture.current;
+      const touch = event.touches[0];
+      if (!start || !touch || event.touches.length !== 1 || !event.cancelable) return;
+      const dx = touch.clientX - start.x;
+      const dy = touch.clientY - start.y;
+      // React 的 touchmove 可能是 passive，原生非 passive 监听才能阻止浏览器下拉刷新。
+      if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx) * 1.3) event.preventDefault();
+    };
+    element?.addEventListener('touchmove', preventVerticalScroll, { passive: false });
+    return () => {
+      window.removeEventListener('pointerup', releasePointer);
+      window.removeEventListener('pointercancel', releasePointer);
+      element?.removeEventListener('touchmove', preventVerticalScroll);
+    };
+  }, []);
 
   useEffect(() => {
     if (modalOpen) {
@@ -160,12 +198,49 @@ export function DramaPlayer({
   };
 
   const ignoreGesture = (target: EventTarget | null) =>
-    target instanceof Element && Boolean(target.closest('button, a, input, [role="dialog"]'));
+    target instanceof Element &&
+    Boolean(target.closest('input, [data-player-no-swipe], [role="dialog"]'));
+
+  const showControls = () => {
+    setControlsVisible(true);
+    setActivity((value) => value + 1);
+  };
 
   return (
     <main className="fixed inset-0 z-40 overflow-hidden bg-black text-white">
       <div
+        ref={surface}
+        tabIndex={0}
+        aria-label="短剧播放画面，点击显示控件，上下滑切换短剧"
         className="relative mx-auto h-full w-full max-w-lg overflow-hidden overscroll-none bg-zinc-950 [touch-action:pan-x_pinch-zoom]"
+        onPointerDownCapture={(event) => {
+          if (!event.currentTarget.contains(event.target as Node)) return;
+          setPointerDown(true);
+          setKeyboardActive(false);
+        }}
+        onClickCapture={(event) => {
+          if (!event.currentTarget.contains(event.target as Node)) return;
+          // 滑动起点可以是简介/选集等按钮，但滑动完成不能再误触按钮的 click。
+          if (Date.now() < suppressTapUntil.current) {
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+          }
+          showControls();
+        }}
+        onKeyDownCapture={(event) => {
+          if (!event.currentTarget.contains(event.target as Node)) return;
+          setKeyboardActive(true);
+          showControls();
+          if (event.target === event.currentTarget && ['Enter', ' '].includes(event.key)) {
+            event.preventDefault();
+          }
+        }}
+        onBlurCapture={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+            setKeyboardActive(false);
+          }
+        }}
         onTouchStart={(event) => {
           const touch = event.touches[0];
           gesture.current =
@@ -176,14 +251,30 @@ export function DramaPlayer({
         onTouchCancel={() => {
           gesture.current = null;
         }}
+        onTouchMove={(event) => {
+          const touch = event.touches[0];
+          if (event.touches.length !== 1) {
+            gesture.current = null;
+            return;
+          }
+          const start = gesture.current;
+          if (start && touch && Math.hypot(touch.clientX - start.x, touch.clientY - start.y) > 10) {
+            suppressTapUntil.current = Date.now() + 500;
+          }
+        }}
         onTouchEnd={(event) => {
           const start = gesture.current;
           gesture.current = null;
           const end = event.changedTouches[0];
           if (!start || !end) return;
-          const dy = start.y - end.clientY;
-          if (Math.abs(dy) >= 64 && Math.abs(dy) > Math.abs(start.x - end.clientX) * 1.3)
-            switchDrama(dy > 0 ? 1 : -1);
+          const direction = resolveDramaSwipeDirection(
+            end.clientX - start.x,
+            end.clientY - start.y
+          );
+          if (direction) {
+            suppressTapUntil.current = Date.now() + 500;
+            switchDrama(direction);
+          }
         }}
         onWheel={(event) => {
           if (
@@ -194,6 +285,7 @@ export function DramaPlayer({
           )
             return;
           const now = Date.now();
+          setActivity((value) => value + 1);
           // 等滚动惯性结束再换剧，避免新路由把惯性尾部当成第二次手势。
           const delta =
             event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 500 : 1);
@@ -246,33 +338,42 @@ export function DramaPlayer({
               });
           }}
         />
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-label="显示播放控件"
+          className="absolute inset-0 h-full w-full"
+          onClick={showControls}
+        />
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/65 via-transparent to-black/95"
+          className={`pointer-events-none absolute inset-0 bg-gradient-to-b from-black/65 via-transparent to-black/95 transition-opacity duration-200 motion-reduce:transition-none ${controlsVisible ? 'opacity-100' : 'opacity-0'}`}
         />
-        <header className="absolute inset-x-0 top-0 z-10 flex items-center justify-between gap-3 px-4 pt-[calc(0.75rem+env(safe-area-inset-top))]">
-          <Link
-            href="/dramas"
-            aria-label="返回短剧列表"
-            className="flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-black/35"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </Link>
-          <p className="text-xs font-semibold text-white/85" aria-live="polite">
-            {currentIndex >= 0 ? `第 ${currentIndex + 1} / ${drama?.videos.length} 集` : '短剧'}
-          </p>
-          <button
-            type="button"
-            aria-label={muted ? '打开声音' : '关闭声音'}
-            aria-pressed={muted}
-            onClick={() => setMuted(!muted)}
-            className="flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-black/35"
-          >
-            {muted ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
-          </button>
-        </header>
+        {controlsVisible ? (
+          <header className="absolute inset-x-0 top-0 z-10 flex items-center justify-between gap-3 px-4 pt-[calc(0.75rem+env(safe-area-inset-top))]">
+            <Link
+              href="/dramas"
+              aria-label="返回短剧列表"
+              className="flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-black/35"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </Link>
+            <p className="text-xs font-semibold text-white/85" aria-live="polite">
+              {currentIndex >= 0 ? `第 ${currentIndex + 1} / ${drama?.videos.length} 集` : '短剧'}
+            </p>
+            <button
+              type="button"
+              aria-label={muted ? '打开声音' : '关闭声音'}
+              aria-pressed={muted}
+              onClick={() => setMuted(!muted)}
+              className="flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-black/35"
+            >
+              {muted ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
+            </button>
+          </header>
+        ) : null}
 
-        <div className="absolute inset-x-4 top-[24%] flex h-[20%] flex-col items-center justify-center gap-3 text-center">
+        <div className="pointer-events-none absolute inset-x-4 top-[24%] flex h-[20%] flex-col items-center justify-center gap-3 text-center [&_button]:pointer-events-auto">
           {noEpisodes ? (
             <>
               <AlertCircle className="h-8 w-8 text-white/60" />
@@ -322,7 +423,7 @@ export function DramaPlayer({
               aria-label="视频加载中"
               className="h-8 w-8 animate-spin text-white/80 motion-reduce:animate-none"
             />
-          ) : paused ? (
+          ) : paused && controlsVisible ? (
             <button
               type="button"
               aria-label="播放视频"
@@ -334,131 +435,137 @@ export function DramaPlayer({
           ) : null}
         </div>
 
-        <section className="absolute inset-x-0 bottom-0 z-10 space-y-3 px-5 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-8">
-          <div className="flex items-center justify-between gap-2">
-            <button
-              type="button"
-              disabled={!nextTitle || modalOpen}
-              aria-label={nextTitle ? `下一部：${nextTitle}` : '没有更多短剧'}
-              onClick={() => switchDrama(1)}
-              className="inline-flex min-h-11 items-center gap-1 rounded-full border border-white/15 bg-black/30 px-3 text-xs text-white/80 disabled:opacity-60"
-            >
-              <ChevronUp className="h-4 w-4" />
-              {queueLoading
-                ? '正在加载更多短剧…'
-                : queueFailed
-                  ? '换剧列表暂不可用'
-                  : nextTitle
-                    ? '上滑看下一部剧'
-                    : '已是最后一部剧'}
-            </button>
-            <button
-              type="button"
-              disabled={!previousTitle || modalOpen}
-              aria-label={previousTitle ? `上一部：${previousTitle}` : '没有上一部短剧'}
-              onClick={() => switchDrama(-1)}
-              className="flex h-11 w-11 items-center justify-center rounded-full border border-white/15 bg-black/30 disabled:opacity-30"
-            >
-              <ChevronDown className="h-4 w-4" />
-            </button>
-          </div>
-          {queueFailed ? (
-            <button type="button" onClick={onRetryQueue} className="min-h-11 text-xs text-primary">
-              重新加载换剧列表
-            </button>
-          ) : null}
-          {detailQuery.isLoading ? (
-            <div
-              aria-label="短剧信息加载中"
-              className="h-16 animate-pulse rounded-xl bg-white/10 motion-reduce:animate-none"
-            />
-          ) : drama ? (
-            <>
-              <h1 className="line-clamp-2 text-2xl font-bold leading-tight tracking-tight">
-                {drama.title}
-              </h1>
-              {drama.tags.length ? (
-                <div className="flex gap-1.5 overflow-hidden">
-                  {drama.tags.slice(0, 3).map((tag) => (
-                    <span
-                      key={tag}
-                      className="truncate rounded-md bg-white/10 px-2 py-1 text-[11px] text-white/75"
-                    >
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-              ) : null}
+        {controlsVisible ? (
+          <section className="absolute inset-x-0 bottom-0 z-10 space-y-3 px-5 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-8">
+            <div className="flex items-center justify-between gap-2">
               <button
                 type="button"
-                onClick={() => setDescriptionOpen(true)}
-                aria-label="查看完整简介"
-                className="block w-full text-left text-xs leading-relaxed text-white/65"
+                disabled={!nextTitle || modalOpen}
+                aria-label={nextTitle ? `下一部：${nextTitle}` : '没有更多短剧'}
+                onClick={() => switchDrama(1)}
+                className="inline-flex min-h-11 items-center gap-1 rounded-full border border-white/15 bg-black/30 px-3 text-xs text-white/80 disabled:opacity-60"
               >
-                <span className="line-clamp-1">{drama.description || '简介整理中'}</span>
+                <ChevronUp className="h-4 w-4" />
+                {queueLoading
+                  ? '正在加载更多短剧…'
+                  : queueFailed
+                    ? '换剧列表暂不可用'
+                    : nextTitle
+                      ? '上滑看下一部剧'
+                      : '已是最后一部剧'}
               </button>
-              {drama.videos.length ? (
-                <EpisodeSheet
-                  title={drama.title}
-                  videos={drama.videos}
-                  currentVideoId={currentVideoId}
-                  open={episodesOpen}
-                  onOpenChange={setEpisodesOpen}
-                  onSelect={selectEpisode}
-                />
-              ) : null}
-            </>
-          ) : (
-            <div role="alert" className="rounded-xl bg-black/50 p-3 text-sm">
-              <p>短剧信息加载失败</p>
               <button
                 type="button"
-                onClick={() => void detailQuery.refetch()}
-                className="min-h-11 text-primary"
+                disabled={!previousTitle || modalOpen}
+                aria-label={previousTitle ? `上一部：${previousTitle}` : '没有上一部短剧'}
+                onClick={() => switchDrama(-1)}
+                className="flex h-11 w-11 items-center justify-center rounded-full border border-white/15 bg-black/30 disabled:opacity-30"
               >
-                重新加载信息
+                <ChevronDown className="h-4 w-4" />
               </button>
             </div>
-          )}
-          {!noEpisodes && !playbackError ? (
-            <div className="flex items-center gap-3">
+            {queueFailed ? (
               <button
                 type="button"
-                aria-label={paused ? '播放视频' : '暂停视频'}
-                onClick={togglePlayback}
-                disabled={!playback?.playable}
-                className="flex h-11 w-8 shrink-0 items-center justify-center disabled:opacity-30"
+                onClick={onRetryQueue}
+                className="min-h-11 text-xs text-primary"
               >
-                {paused ? (
-                  <Play className="h-4 w-4 fill-white" />
-                ) : (
-                  <Pause className="h-4 w-4 fill-white" />
-                )}
+                重新加载换剧列表
               </button>
-              <input
-                type="range"
-                aria-label="播放进度"
-                min={0}
-                max={Number.isFinite(duration) && duration > 0 ? duration : 0}
-                step={0.1}
-                value={time}
-                disabled={!Number.isFinite(duration) || duration <= 0}
-                onChange={(event) => {
-                  if (videoEl) {
-                    const value = Number(event.target.value);
-                    videoEl.currentTime = value;
-                    setTime(value);
-                    setAdvance(null);
-                  }
-                }}
-                className="h-11 min-w-0 flex-1 accent-primary"
+            ) : null}
+            {detailQuery.isLoading ? (
+              <div
+                aria-label="短剧信息加载中"
+                className="h-16 animate-pulse rounded-xl bg-white/10 motion-reduce:animate-none"
               />
-              <span className="shrink-0 text-[10px] tabular-nums text-white/65">
-                {formatTime(time)} / {formatTime(duration)}
-              </span>
-            </div>
-          ) : null}
-        </section>
+            ) : drama ? (
+              <>
+                <h1 className="line-clamp-2 text-2xl font-bold leading-tight tracking-tight">
+                  {drama.title}
+                </h1>
+                {drama.tags.length ? (
+                  <div className="flex gap-1.5 overflow-hidden">
+                    {drama.tags.slice(0, 3).map((tag) => (
+                      <span
+                        key={tag}
+                        className="truncate rounded-md bg-white/10 px-2 py-1 text-[11px] text-white/75"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => setDescriptionOpen(true)}
+                  aria-label="查看完整简介"
+                  className="block w-full text-left text-xs leading-relaxed text-white/65"
+                >
+                  <span className="line-clamp-1">{drama.description || '简介整理中'}</span>
+                </button>
+                {drama.videos.length ? (
+                  <EpisodeSheet
+                    title={drama.title}
+                    videos={drama.videos}
+                    currentVideoId={currentVideoId}
+                    open={episodesOpen}
+                    onOpenChange={setEpisodesOpen}
+                    onSelect={selectEpisode}
+                  />
+                ) : null}
+              </>
+            ) : (
+              <div role="alert" className="rounded-xl bg-black/50 p-3 text-sm">
+                <p>短剧信息加载失败</p>
+                <button
+                  type="button"
+                  onClick={() => void detailQuery.refetch()}
+                  className="min-h-11 text-primary"
+                >
+                  重新加载信息
+                </button>
+              </div>
+            )}
+            {!noEpisodes && !playbackError ? (
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  aria-label={paused ? '播放视频' : '暂停视频'}
+                  onClick={togglePlayback}
+                  disabled={!playback?.playable}
+                  className="flex h-11 w-8 shrink-0 items-center justify-center disabled:opacity-30"
+                >
+                  {paused ? (
+                    <Play className="h-4 w-4 fill-white" />
+                  ) : (
+                    <Pause className="h-4 w-4 fill-white" />
+                  )}
+                </button>
+                <input
+                  type="range"
+                  aria-label="播放进度"
+                  min={0}
+                  max={Number.isFinite(duration) && duration > 0 ? duration : 0}
+                  step={0.1}
+                  value={time}
+                  disabled={!Number.isFinite(duration) || duration <= 0}
+                  onChange={(event) => {
+                    if (videoEl) {
+                      const value = Number(event.target.value);
+                      videoEl.currentTime = value;
+                      setTime(value);
+                      setAdvance(null);
+                    }
+                  }}
+                  className="h-11 min-w-0 flex-1 accent-primary"
+                />
+                <span className="shrink-0 text-[10px] tabular-nums text-white/65">
+                  {formatTime(time)} / {formatTime(duration)}
+                </span>
+              </div>
+            ) : null}
+          </section>
+        ) : null}
       </div>
       <Sheet open={descriptionOpen} onOpenChange={setDescriptionOpen}>
         <SheetContent
