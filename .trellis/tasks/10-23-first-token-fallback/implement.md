@@ -68,3 +68,11 @@ Backend以tsx运行且无独立build脚本，使用typecheck和相关测试；Fr
 用户已明确授权实现4秒首发/2秒兜底/10秒用户硬限。先修契约/config冻结，再后端真实派发计时和硬限、前端可见检测与取消，最后补齐运营文案/分析口径。每次修改由主代理执行，研究代理只读评估。
 
 验证：现有first-token-fallback、execute、conversation lifecycle/routes、FirstTokenObservation、use-conversation-turn、models/admin config测试；增加已知故障回归（延迟派发、阶段超时、全局截止、取消、reasoning、长textnode）。真实Chromium运行当前实现而非手抄替代逻辑。shared全部测试、各消费者typecheck、相关lint、frontend/admin build、migration本地数据库验证。检查长回复不被首字截止杀掉、额度仅一次释放/结算、早期fallback超时不伪称用户等满10秒。最后准备精确文件/摘要/验证清单，提交前按现有流程一次审核。
+
+## 无字零扣费与轻提示补充
+
+1. 增量迁移：新轮可见确认协议、billing 判断函数、扣费与免费额度相同闸门。
+2. apply-charge 返回实际 pending；settle/sync 保留未结算待回捞。
+3. 超时统一柔和文案/灰色提示、可重试；普通故障保留原分类。
+4. 真实 PG 验证收费与免费轮在缺报/超时/并发/晚到回报下均安全；既有 VIP、结算、同步、前端回归及 build/typecheck。
+5. 用户已授权直接发布：记录增量清单与验证后提交/推送，TEST 迁移和预览验收，再生产 stage 迁移、合并部署 pending-aware 后端、visible_billing 激活、4/2/10 配置与看板核对。

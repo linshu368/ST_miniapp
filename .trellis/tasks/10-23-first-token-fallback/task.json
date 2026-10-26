@@ -16,12 +16,12 @@
   "base_branch": "dev",
   "worktree_path": null,
   "commit": null,
-  "pr_url": null,
+  "pr_url": "https://github.com/linshu368/ST_miniapp/pull/474",
   "subtasks": [],
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "历史基础功能与Grafana已上线；本轮4/2/10及v2业务测量修复在隔离目录完成，本地验收中，尚未提交/发布。",
+  "notes": "用户明确要求改好直接发布；追加超时轻提示与客户端可见确认计费，TEST→Production 顺序继续。",
   "meta": {
     "module_impact": {
       "schema_version": 1,
@@ -35,7 +35,8 @@
         "frontend.infrastructure.client-ui-foundation",
         "shared.business.conversation-contracts",
         "database.business.conversation-storage",
-        "database.infrastructure.schema-security"
+        "database.infrastructure.schema-security",
+        "database.business.billing-payment"
       ]
     }
   }

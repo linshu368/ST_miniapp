@@ -157,3 +157,15 @@ request FK一对多、UUID主键、UNIQUE(request,role)限制至多primary/fallb
 数据库只新增最小字段与原函数/视图的兼容扩展；experience拥有请求快照，miniapp_analytics只读派生，admin拥有配置校验。无对话内容、secret、全表回填、新调度。迁移TEST后生产，再Backend/Admin，再发布4/2/10配置，Frontend，按新观测版本验收。回滚保留列/事实，恢复上版应用与显式配置；新旧客户端分版本监控，不能混合宣称目标达标。
 
 规划复核已完成；补充同型号不重复POST但仍在首发阈值失败。实现使用独立的前后端单调时钟，不增加跨端时钟同步协议；单程网络不可精确同步，最终10秒由浏览器执行。早于总上限的模型阶段失败记not_observed＋primary_timeout/fallback_timeout，并进入最终无字失败率；不得冒称用户等满10秒。新增client_wait_finished_ms固定在观测结束时，晚绑定身份不拉长。
+
+## 2026-10-26 无字零扣费补充（替代此前客户端回报不参与结算的边界）
+
+复用首 token report 的身份校验、首个结果不可覆盖、原 charge_id、charge_llm_usage、免费预留 finalize 和 30 秒 sync；不增加队列、退款服务或通用支付框架。采用先确认可见再扣费，避免先扣后退。未收到确认时延后结算；无字、超时或缺报超过服务器总预算加 15 秒回报宽限后按零费用终结。15 秒只用于接收回报，不延长用户 10 秒等待上限。缺报不能推断为用户已看到。
+
+experience.chat_generation_requests 新增 requires_visible_token，记录该轮采用的交付确认协议；存量行 false，不追溯改账，新行 true。billing.chat_delivery_billing_gate(uuid) 属 billing：这是扣费资格判断，由 charge/free-quota RPC 调用，只读 experience 的既有身份与可见事实并锁定请求，避免报告与结算竞态；不从 analytics 读取。既有 billing 终态负责拒绝后续重扣。没有 observation 的旧调用维持兼容，只有完整成功且已确认可见的新轮可扣费/消费额度。
+
+charge_llm_usage 的 fixed_tier 原价/钱包策略/幂等不变；pending 可见确认复用 pending 状态，但 metadata 单独记 delivery_billing_gate。免费额度在同一数据库资格判断下 pending 不消费、waived 释放；已终结不重复处理。后台 sync 必须依据实际 RPC pending 状态决定是否写 billing_settled_at。报告缺失偏向不收费，接受这一收入损失来保证无字不扣费；不会把上游 stop 当用户已看到。
+
+新 migration 单独执行，已 TEST apply 的 stage_budgets 文件不改。无表回填、无历史退款；新增列常量默认，函数锁短事务，security definer 固定 search_path，最小 service_role 权限。失败可回滚事务，发布后只 forward-fix，不恢复不安全扣费。计费/并发风险需要真实 PG 测试锁定：先结算后报告、timeout 重放、missing、正常可见、免费预留、并发报告/扣费、后台回捞；复用测试并允许必要的新 SQL 回归文件。
+
+发布兼容顺序：stage_budgets 结构先行；新后端识别实际 pending 后才在生产执行 visible_billing 激活协议，避免旧后端提前写 settled_at。新后端兼容旧 charge 返回，激活前仍沿用原流程。

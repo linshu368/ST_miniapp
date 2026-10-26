@@ -178,6 +178,7 @@ describe('applyLlmCharge', () => {
     const result = await applyLlmCharge(command());
 
     expect(result).toEqual({
+      pending: false,
       replyOutcome: 'complete',
       billingChatStatus: 'success',
       chargedAmount: 50,
@@ -195,6 +196,31 @@ describe('applyLlmCharge', () => {
       fixed_deduction: 50,
     });
     expect(finalizePending).toHaveBeenCalledWith('charge-1', true);
+  });
+
+  it('waits for a display receipt without consuming the free reservation', async () => {
+    chargeLlmUsage.mockResolvedValueOnce({
+      charge: { status: 'pending', charged_amount: 0, calculated_amount: 50 },
+    });
+    const result = await applyLlmCharge(command());
+    expect(result.pending).toBe(true);
+    expect(result.chargedAmount).toBe(0);
+    expect(finalizePending).not.toHaveBeenCalled();
+  });
+
+  it('releases the free reservation when the database waives an unseen reply', async () => {
+    chargeLlmUsage.mockResolvedValueOnce({
+      charge: {
+        status: 'failed',
+        charged_amount: 0,
+        calculated_amount: 50,
+        metadata: { delivery_billing_gate: 'waived' },
+      },
+    });
+    const result = await applyLlmCharge(command());
+    expect(result.pending).toBe(false);
+    expect(result.chargedAmount).toBe(0);
+    expect(finalizePending).toHaveBeenCalledWith('charge-1', false);
   });
 
   it('finish_reason still null: chat_status success, does not finalize quota', async () => {
