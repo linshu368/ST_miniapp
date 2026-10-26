@@ -169,3 +169,5 @@ charge_llm_usage 的 fixed_tier 原价/钱包策略/幂等不变；pending 可�
 新 migration 单独执行，已 TEST apply 的 stage_budgets 文件不改。无表回填、无历史退款；新增列常量默认，函数锁短事务，security definer 固定 search_path，最小 service_role 权限。失败可回滚事务，发布后只 forward-fix，不恢复不安全扣费。计费/并发风险需要真实 PG 测试锁定：先结算后报告、timeout 重放、missing、正常可见、免费预留、并发报告/扣费、后台回捞；复用测试并允许必要的新 SQL 回归文件。
 
 发布兼容顺序：stage_budgets 结构先行；新后端识别实际 pending 后才在生产执行 visible_billing 激活协议，避免旧后端提前写 settled_at。新后端兼容旧 charge 返回，激活前仍沿用原流程。
+
+超时回报与免费预留释放原子提交，立即重试仍可使用原有免费次数，不等待 30 秒 sync。增量文件 `20261026_first_token_receipt_quota_release.sql`，因 visible_billing 已在 TEST apply，不修改已执行迁移。
