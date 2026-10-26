@@ -11,6 +11,7 @@ import type {
 } from '@miniapp/shared';
 
 import { apiClient } from './client';
+import { dramaTiming } from '@/lib/perf/drama-observer';
 
 export const dramaKeys = {
   all: ['dramas'] as const,
@@ -21,26 +22,40 @@ export const dramaKeys = {
     [...dramaKeys.all, 'playback', id, videoId ?? null] as const,
 };
 
-async function fetchDramas(): Promise<DramaSummary[]> {
-  const data = await apiClient<GetDramasData>('/api/dramas');
-  return data.dramas;
+async function fetchDramas(kind: 'list' | 'queue' = 'list'): Promise<DramaSummary[]> {
+  return dramaTiming.query(kind, undefined, undefined, async (onAttempt) => {
+    const data = await apiClient<GetDramasData>('/api/dramas', { onAttempt });
+    return data.dramas;
+  });
 }
 
 async function fetchDramaDetail(id: string): Promise<DramaDetail> {
-  const data = await apiClient<GetDramaByIdData>(`/api/dramas/${encodeURIComponent(id)}`);
-  return data.drama;
+  return dramaTiming.query('detail', id, undefined, async (onAttempt) => {
+    const data = await apiClient<GetDramaByIdData>(`/api/dramas/${encodeURIComponent(id)}`, {
+      onAttempt,
+    });
+    return data.drama;
+  });
 }
 
 async function fetchDramaPlayback(id: string, videoId?: string): Promise<DramaPlayback> {
   const suffix = videoId ? `?video_id=${encodeURIComponent(videoId)}` : '';
-  const data = await apiClient<GetDramaPlaybackData>(
-    `/api/dramas/${encodeURIComponent(id)}/play${suffix}`
-  );
-  return data.playback;
+  return dramaTiming.query('playback', id, videoId, async (onAttempt) => {
+    const data = await apiClient<GetDramaPlaybackData>(
+      `/api/dramas/${encodeURIComponent(id)}/play${suffix}`,
+      { onAttempt }
+    );
+    return data.playback;
+  });
 }
 
+// 保留结果对象身份，防止 structural sharing 把本次请求映射到旧对象的计时元数据。
 export function useDramaListQuery() {
-  return useQuery({ queryKey: dramaKeys.list(), queryFn: fetchDramas });
+  return useQuery({
+    queryKey: dramaKeys.list(),
+    queryFn: () => fetchDramas(),
+    structuralSharing: false,
+  });
 }
 
 /** 换剧跨路由保留本轮列表顺序；深链没有列表缓存时才自行加载。 */
@@ -48,7 +63,7 @@ export function useDramaBrowseQueueQuery() {
   const queryClient = useQueryClient();
   return useQuery({
     queryKey: dramaKeys.browseQueue(),
-    queryFn: fetchDramas,
+    queryFn: () => fetchDramas('queue'),
     initialData: () => queryClient.getQueryData<DramaSummary[]>(dramaKeys.list()),
     staleTime: Infinity,
   });
@@ -58,6 +73,7 @@ export function useDramaDetailQuery(id: string) {
   return useQuery({
     queryKey: dramaKeys.detail(id),
     queryFn: () => fetchDramaDetail(id),
+    structuralSharing: false,
     enabled: Boolean(id),
   });
 }
@@ -71,6 +87,7 @@ export function useDramaPlaybackQuery(id: string, videoId?: string) {
   return useQuery({
     queryKey: dramaKeys.playback(id, videoId),
     queryFn: () => fetchDramaPlayback(id, videoId),
+    structuralSharing: false,
     enabled: Boolean(id),
   });
 }
@@ -85,6 +102,7 @@ export function usePrefetchDramaPlayback() {
     void queryClient.prefetchQuery({
       queryKey: dramaKeys.playback(id),
       queryFn: () => fetchDramaPlayback(id),
+      structuralSharing: false,
     });
   };
 }

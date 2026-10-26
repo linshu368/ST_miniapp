@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Clapperboard, RefreshCw } from 'lucide-react';
 import type { DramaSummary } from '@miniapp/shared';
@@ -10,6 +10,8 @@ import { characterRoomGradient } from '@/lib/utils/character-hue';
 import { useDramaListQuery, usePrefetchDramaPlayback } from '@/lib/api/drama';
 import { selectDramas } from '@/lib/drama-catalog';
 import { Input } from '@/components/ui/input';
+import { dramaTiming, coverLoadMs } from '@/lib/perf/drama-observer';
+import type { DramaTimingReport } from '@/lib/perf/drama-timing';
 
 const TAG_DISPLAY_LIMIT = 3;
 
@@ -39,6 +41,14 @@ function dramaBadge(drama: DramaSummary): { position: 'left' | 'right'; text: st
 export default function DramasPage() {
   const { data, isLoading, isError, refetch } = useDramaListQuery();
   const dramas = data ?? [];
+  useEffect(() => {
+    if (data) dramaTiming.listReady(data);
+    else if (isError) dramaTiming.listFailed();
+  }, [data, isError]);
+  const retryList = () => {
+    dramaTiming.beginList('retry');
+    void refetch();
+  };
   const [activeSort, setActiveSort] =
     useState<(typeof DRAMA_SORT_TABS)[number]['value']>('recommended');
   const [activeCategory, setActiveCategory] = useState<string>('全部');
@@ -114,7 +124,7 @@ export default function DramasPage() {
 
       {isLoading ? <DramaGridSkeleton /> : null}
 
-      {isError ? <DramaListError onRetry={() => void refetch()} /> : null}
+      {isError ? <DramaListError onRetry={retryList} /> : null}
 
       {!isLoading && !isError && dramas.length === 0 ? <DramaListEmpty /> : null}
 
@@ -153,11 +163,26 @@ function DramaCard({ drama, browseQueue }: { drama: DramaSummary; browseQueue: D
   // 封面加载失败就退回渐变占位，不影响卡片可用性
   const [coverFailed, setCoverFailed] = useState(false);
   const showCover = drama.cover_url !== null && !coverFailed;
+  const coverTiming = useRef<DramaTimingReport['cover']>({
+    outcome: drama.cover_url ? 'pending' : 'absent',
+  });
 
   return (
     <Link
       href={`/dramas/${drama.id}`}
-      onClick={() => prefetchPlayback(drama.id, browseQueue)}
+      onClick={(event) => {
+        // 新标签页有自己的时钟与观测，不能在当前页开启一条永远等不到播放器的记录。
+        if (
+          !event.metaKey &&
+          !event.ctrlKey &&
+          !event.shiftKey &&
+          !event.altKey &&
+          event.button === 0
+        ) {
+          dramaTiming.beginPlayback(drama.id, 'cover', undefined, { ...coverTiming.current! });
+        }
+        prefetchPlayback(drama.id, browseQueue);
+      }}
       className="group flex flex-col overflow-hidden rounded-[16px] border border-border bg-card text-left shadow-lg transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-2xl active:scale-95"
       aria-label={`查看 ${drama.title}`}
     >
@@ -168,11 +193,27 @@ function DramaCard({ drama, browseQueue }: { drama: DramaSummary; browseQueue: D
         {showCover ? (
           // eslint-disable-next-line @next/next/no-img-element -- 远程缩略图，走 next/image 要额外配置域名白名单，收益不大
           <img
+            ref={(image) => {
+              // SSR/浏览器缓存可能在 hydration 之前完成加载，不能只依赖 onLoad。
+              if (image)
+                coverTiming.current = image.complete
+                  ? {
+                      outcome: image.naturalWidth > 0 ? 'loaded' : 'error',
+                      loadMs: coverLoadMs(image),
+                    }
+                  : { outcome: 'pending' };
+            }}
             src={drama.cover_url!}
             alt=""
             className="absolute inset-0 h-full w-full object-cover"
             loading="lazy"
-            onError={() => setCoverFailed(true)}
+            onLoad={(event) => {
+              coverTiming.current = { outcome: 'loaded', loadMs: coverLoadMs(event.currentTarget) };
+            }}
+            onError={() => {
+              coverTiming.current = { outcome: 'error' };
+              setCoverFailed(true);
+            }}
           />
         ) : null}
         {badge ? (

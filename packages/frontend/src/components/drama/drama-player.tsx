@@ -27,6 +27,9 @@ import {
 import { useDramaDetailQuery, useDramaPlaybackQuery } from '@/lib/api/drama';
 import { resolveDramaSwipeDirection, resolveNextVideoId } from '@/lib/drama-playback';
 import { suspendTelegramVerticalSwipes } from '@/lib/telegram';
+import { dramaTiming } from '@/lib/perf/drama-observer';
+import { observeDramaMedia } from '@/lib/perf/drama-media';
+import type { DramaPlaybackTiming } from '@/lib/perf/drama-timing';
 
 interface DramaPlayerProps {
   id: string;
@@ -66,6 +69,11 @@ export function DramaPlayer({
   const [buffering, setBuffering] = useState(true);
   const [failed, setFailed] = useState(false);
   const [retryVersion, setRetryVersion] = useState(0);
+  const timingRef = useRef<{
+    videoId: string | null;
+    retryVersion: number;
+    flow: DramaPlaybackTiming;
+  } | null>(null);
   const [time, setTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [episodesOpen, setEpisodesOpen] = useState(false);
@@ -131,14 +139,40 @@ export function DramaPlayer({
   }, [modalOpen]);
 
   useEffect(() => {
+    // 当前组件只推进自己持有的记录；导航后旧组件/旧请求的迟到更新不能抢回新记录。
+    if (
+      !timingRef.current ||
+      timingRef.current.videoId !== activeVideoId ||
+      timingRef.current.retryVersion !== retryVersion
+    ) {
+      timingRef.current = {
+        videoId: activeVideoId,
+        retryVersion,
+        flow: dramaTiming.ensurePlayback(id, activeVideoId ?? undefined),
+      };
+    }
+    dramaTiming.playbackState(
+      timingRef.current.flow,
+      playback,
+      playbackQuery.isFetching,
+      playbackQuery.isError
+    );
+  }, [id, activeVideoId, playback, playbackQuery.isFetching, playbackQuery.isError, retryVersion]);
+
+  useEffect(() => {
     if (!videoEl || !playback?.playable || !playback.play_url) return;
     let cancelled = false;
     setFailed(false);
     setBuffering(true);
     setTime(0);
     setDuration(0);
+    // 上一个 effect 已绑定当前尝试；媒体 effect 仍只跟随原有 src/retry 依赖。
+    const timing = timingRef.current!.flow;
+    timing.mark('source_set');
     videoEl.src = playback.play_url;
-    void videoEl.play().catch(() => {
+    const mediaTiming = observeDramaMedia(videoEl, playback.play_url, timing);
+    void videoEl.play().catch((error: unknown) => {
+      mediaTiming.rejected(error);
       if (!cancelled) {
         setPaused(true);
         setBuffering(false);
@@ -146,6 +180,7 @@ export function DramaPlayer({
     });
     return () => {
       cancelled = true;
+      mediaTiming.dispose();
       // 换集、换剧或退出立即释放旧媒体，迟到的旧请求不能继续发声。
       videoEl.pause();
       videoEl.removeAttribute('src');
@@ -157,6 +192,7 @@ export function DramaPlayer({
     if (!advance || modalOpen) return;
     const timer = window.setTimeout(() => {
       if (advance.seconds <= 1) {
+        dramaTiming.beginPlayback(id, 'episode', advance.id).mark('player_ready');
         setActiveVideoId(advance.id);
         setAdvance(null);
       } else {
@@ -164,7 +200,7 @@ export function DramaPlayer({
       }
     }, 1000);
     return () => window.clearTimeout(timer);
-  }, [advance, modalOpen]);
+  }, [advance, modalOpen, id]);
 
   const togglePlayback = () => {
     if (!videoEl) return;
@@ -182,6 +218,7 @@ export function DramaPlayer({
     setEpisodesOpen(false);
     if (videoId !== currentVideoId) {
       videoEl?.pause();
+      dramaTiming.beginPlayback(id, 'episode', videoId).mark('player_ready');
       setActiveVideoId(videoId);
       setFailed(false);
       setBuffering(true);
@@ -386,6 +423,9 @@ export function DramaPlayer({
               <button
                 type="button"
                 onClick={() => {
+                  dramaTiming
+                    .beginPlayback(id, 'retry', activeVideoId ?? undefined)
+                    .mark('player_ready');
                   setFailed(false);
                   setRetryVersion((value) => value + 1);
                   void playbackQuery.refetch();

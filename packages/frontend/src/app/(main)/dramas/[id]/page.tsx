@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 
 import { DramaPlayer } from '@/components/drama/drama-player';
 import { useDramaBrowseQueueQuery } from '@/lib/api/drama';
+import { dramaTiming } from '@/lib/perf/drama-observer';
 
 export default function DramaDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -32,6 +33,7 @@ export default function DramaDetailPage() {
     const target = direction === 1 ? next : previous;
     if (!target || navigating.current) return;
     navigating.current = true;
+    dramaTiming.beginPlayback(target.id, 'switch');
     // 换剧不堆积历史记录；返回始终直接回到已验收的列表页。
     router.replace(`/dramas/${target.id}`, { scroll: false });
   };

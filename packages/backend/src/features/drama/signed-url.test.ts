@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { DramaSignedUrlCache } from './signed-url.js';
+import { DramaSignedUrlCache, type DramaSigningObservation } from './signed-url.js';
 
 // 这几条都是「写错了也不报错、只会悄悄退化」的逻辑：
 // Token 没复用 → CDN 永远 MISS；single-flight 失效 → 并发打爆 Storage；
@@ -108,5 +108,28 @@ describe('DramaSignedUrlCache', () => {
     expect((await cache.getPlayUrl(PATH)).playable).toBe(false);
     expect((await cache.getPlayUrl(PATH)).playable).toBe(true);
     expect(calls).toBe(2);
+  });
+  it('observes miss, single-flight waiting and hit without changing the playback contract', async () => {
+    let resolve!: (url: string) => void;
+    const cache = new DramaSignedUrlCache(
+      () =>
+        new Promise<string>((done) => {
+          resolve = done;
+        })
+    );
+    const miss: DramaSigningObservation = {};
+    const waiting: DramaSigningObservation = {};
+    const hit: DramaSigningObservation = {};
+    const first = cache.getPlayUrl(PATH, undefined, miss);
+    const second = cache.getPlayUrl(PATH, undefined, waiting);
+    expect(miss.cache).toBe('miss');
+    expect(waiting.cache).toBe('inflight');
+    resolve('https://example.invalid/media?token=private');
+    const result = await first;
+    expect(await second).toEqual(result);
+    expect(await cache.getPlayUrl(PATH, undefined, hit)).toEqual(result);
+    expect(hit.cache).toBe('hit');
+    expect(Object.keys(result).sort()).toEqual(['expires_at', 'play_url', 'playable']);
+    expect(JSON.stringify([miss, waiting, hit])).not.toContain('private');
   });
 });

@@ -69,6 +69,10 @@ export interface SanitizedLogger {
   warn(payload: Record<string, unknown>, message: string): void;
 }
 
+export interface DramaSigningObservation {
+  cache?: 'hit' | 'miss' | 'inflight';
+}
+
 export class DramaSignedUrlCache {
   private readonly entries = new Map<string, CacheEntry>();
   private readonly inFlight = new Map<string, Promise<SignedPlayback>>();
@@ -79,12 +83,17 @@ export class DramaSignedUrlCache {
    * 取一个可播放地址。失败一律降级成 playable=false，不抛异常 ——
    * 签名抖动不该让详情/列表接口变成 500，也不该污染视频的持久就绪状态。
    */
-  async getPlayUrl(objectPath: string, log?: SanitizedLogger): Promise<SignedPlayback> {
+  async getPlayUrl(
+    objectPath: string,
+    log?: SanitizedLogger,
+    observation?: DramaSigningObservation
+  ): Promise<SignedPlayback> {
     const key = `${CACHE_SCOPE}:${objectPath}`;
     const now = Date.now();
 
     const cached = this.entries.get(key);
     if (cached && cached.reusableUntilMs > now) {
+      if (observation) observation.cache = 'hit';
       return {
         playable: true,
         play_url: cached.url,
@@ -96,7 +105,11 @@ export class DramaSignedUrlCache {
 
     // 同一个对象并发请求只签一次，其余等同一个 Promise
     const pending = this.inFlight.get(key);
-    if (pending) return pending;
+    if (pending) {
+      if (observation) observation.cache = 'inflight';
+      return pending;
+    }
+    if (observation) observation.cache = 'miss';
 
     const task = this.signAndCache(key, objectPath, log).finally(() => this.inFlight.delete(key));
     this.inFlight.set(key, task);
