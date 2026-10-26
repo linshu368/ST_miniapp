@@ -602,6 +602,7 @@ describe('reasoning is progress, never a roleplay answer or billing proof', () =
     const req = request({ thinkingEnabled: true });
     req.model.firstTokenPolicy = {
       timeoutMs: 30,
+      fallbackTimeoutMs: 20,
       deadlineMs: 60,
       timeoutRateTarget: 0.01,
       catalogVersion: 12,
@@ -977,6 +978,7 @@ describe('fixed fallback preserves one selected-model quote', () => {
     req.model.firstTokenPolicy = {
       fallbackModelId: 'vendor/operator-flash',
       timeoutMs: 30,
+      fallbackTimeoutMs: 200,
       deadlineMs: 500,
       timeoutRateTarget: 0.01,
       catalogVersion: 12,
@@ -1028,3 +1030,55 @@ describe('fixed fallback preserves one selected-model quote', () => {
     expect(deltas).toEqual(['兜底']);
   });
 });
+
+it.each(['fallback', 'global'] as const)(
+  'releases free quota once without charging when %s first-token budget expires',
+  async (stage) => {
+    quotaState.granted = true;
+    const bodies: unknown[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: RequestInit) => {
+        bodies.push(JSON.parse(String(init.body)));
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              init.signal?.addEventListener('abort', () => controller.error(init.signal?.reason), {
+                once: true,
+              });
+            },
+          })
+        );
+      })
+    );
+    const req = request();
+    req.model.firstTokenPolicy = {
+      fallbackModelId: 'vendor/operator-flash',
+      timeoutMs: 20,
+      fallbackTimeoutMs: 40,
+      deadlineMs: stage === 'global' ? 80 : 500,
+      timeoutRateTarget: 0.01,
+      catalogVersion: 12,
+    };
+    req.firstToken = {
+      primaryAttemptId: 'attempt-primary',
+      requestStartedAt: performance.now(),
+      store: {
+        prepareFallback: vi.fn(async () => {
+          if (stage === 'global') await new Promise((resolve) => setTimeout(resolve, 100));
+        }),
+        observe: vi.fn(async () => {}),
+        selectDelivery: vi.fn(async () => {}),
+      },
+    };
+    const beforeReserve = vi.fn();
+    await expect(
+      execute(req, { onBeforeReserve: beforeReserve }, fakeLogger())
+    ).rejects.toMatchObject({ name: 'FirstTokenDeadlineError', stage });
+    expect(beforeReserve).toHaveBeenCalledOnce();
+    expect(quotaState.finalize).toHaveBeenCalledExactlyOnceWith(false);
+    expect(savedHistory()).toHaveLength(0);
+    expect(bodies).toHaveLength(stage === 'global' ? 1 : 2);
+    expect(req.firstToken.store.selectDelivery).not.toHaveBeenCalled();
+  }
+);

@@ -97,6 +97,9 @@ export const UserGenerationConfigSchema: z.ZodType<UserGenerationConfig> = z
  * 不会以 stream 事件的形式出现。
  */
 export type ConversationErrorCode =
+  | 'first_token_timeout'
+  | 'fallback_first_token_timeout'
+  | 'primary_first_token_timeout'
   | 'session_not_found'
   | 'character_not_found'
   /** 409：该会话已有一条 status='streaming' 的 assistant 消息尚未收口 */

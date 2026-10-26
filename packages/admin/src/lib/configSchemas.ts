@@ -1,5 +1,7 @@
 import {
   FIRST_TOKEN_FALLBACK_MODEL_ID,
+  DEFAULT_FIRST_TOKEN_DEADLINE_MS,
+  DEFAULT_FALLBACK_TOKEN_TIMEOUT_MS,
   DEFAULT_CHARACTER_FREE_CHAT_QUOTA_LIMIT,
   DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG,
   DEFAULT_FEATURE_FREE_TRIAL_LIMIT,
@@ -153,7 +155,8 @@ const EditableModelCatalogTierSchema = z.object({
 
 export const EditableModelCatalogSchema = z.object({
   fallback_model_id: z.string().default(FIRST_TOKEN_FALLBACK_MODEL_ID),
-  first_token_deadline_ms: z.number().default(6000),
+  first_token_deadline_ms: z.number().default(DEFAULT_FIRST_TOKEN_DEADLINE_MS),
+  fallback_timeout_ms: z.number().default(DEFAULT_FALLBACK_TOKEN_TIMEOUT_MS),
   first_token_timeout_rate_target: z.number().default(0.01),
   default_model_id: z.string(),
   tiers: z.array(EditableModelCatalogTierSchema),

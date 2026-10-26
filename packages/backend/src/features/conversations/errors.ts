@@ -21,6 +21,9 @@ const HTTP_STATUS: Record<ConversationErrorCode, number> = {
   // 同上：只允许对最后一轮重生成，请求本身没毛病，是会话状态不允许
   regenerate_not_allowed: 409,
   upstream_error: 502,
+  first_token_timeout: 504,
+  fallback_first_token_timeout: 504,
+  primary_first_token_timeout: 504,
 };
 
 const DEFAULT_MESSAGE: Record<ConversationErrorCode, string> = {
@@ -30,6 +33,9 @@ const DEFAULT_MESSAGE: Record<ConversationErrorCode, string> = {
   insufficient_balance: '星尘余额不足',
   regenerate_not_allowed: '只能重新生成最后一轮回复',
   upstream_error: '生成服务暂时不可用，请稍后再试',
+  first_token_timeout: '这次响应有点慢，请重试。',
+  fallback_first_token_timeout: '这次响应有点慢，请重试。',
+  primary_first_token_timeout: '这次响应有点慢，请重试。',
 };
 
 export function conversationErrorStatus(code: ConversationErrorCode): number {

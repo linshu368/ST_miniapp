@@ -199,3 +199,33 @@ Wrong：finalizeTurn 写 parent.llm_generation_id，detail 写失败靠主表补
 ## 图片生成结算结果未知
 
 存图后结算 RPC 可能已提交但响应丢失；返回 error、Promise reject 或无法确认状态时不得直接删除成果，应保图并传递结果未知，不重发 Provider/扣费。仅明确余额不足等已确认未扣款分支允许清理。后续失败标记必须保留处理中状态条件，不能覆盖原子结算已落下的 ready。消费查询需同时覆盖 image_generation 与 image_plaza_generation，余额缓存应在新 ready 后失效，不能把202受理视作已扣款。虚拟回归只证明应用边界行为，不代替数据库事务或真实扣款验收。
+
+## Scenario: 首 token 阶段与总预算（2026-10-26）
+
+### 1. Scope / Trigger
+
+自研会话发送/重生成，普通和思考模式都执行默认首发4秒、兜底2秒、用户总10秒。用户时长由客户端测量，后端独立从路由入口保护。
+
+### 2. Signatures
+
+`forwardWithFirstTokenFallback({timeoutMs,fallbackTimeoutMs,remainingFirstTokenMs,forward(...,onDispatch)})`；`FirstTokenDeadlineError(stage)`；现有 begin/report RPC 签名不变。
+
+### 3. Contracts
+
+型号等待由实际POST派发回调起计，路由/请求体准备另计；绝对阶段截止复核防止事件循环延迟让迟到token抢交付。总限优先，剩余不足缩短/跳过首发，`budget_skipped` 不填虚构派发/首字。新增nullable `fallback_timeout_ms/client_wait_finished_ms/server_timeout_stage`；旧行保持NULL，v1/v2和配置分组。原型号价格/权益一次结算。
+
+### 4. Validation & Error Matrix
+
+同型号不重复POST，仍执行首发上限；无公开思考同样切兜底。阶段失败返回 `primary_first_token_timeout/fallback_first_token_timeout`，总限为 `first_token_timeout`。安全释放/终态后发start身份再发error，支持真实客户端回报；未确认额度释放保持占用。阶段或总截止停止所有在途尝试。
+
+### 5. Good/Base/Bad Cases
+
+Good：前置1.5秒、首发4秒、切换0.1秒、兜底1秒，用户分布取实际显示约6.6秒而非4+1。Base：已开思考3秒可见，正文10秒仍可继续。Bad：为给兜底留2秒而暗中把用户总限延长。
+
+### 6. Tests Required
+
+既有fallback/execute/lifecycle测试覆盖实际POST起计、迟到计时器、总限优先、同型号、思考、一次计费/额度释放；PG17+PostgREST验证nullable兼容、身份与首次回报、ACL、配置、Grafana查询及2截断/1其他失败/1显示/1缺报对照。
+
+### 7. Wrong vs Correct
+
+Wrong：provider latency或后台写出视为用户看到，提前阶段失败漏出超时率。Correct：客户端可见结果是业务依据；时间截断率分子仅时间原因，分母为前台已知结果（显示+时间失败+其他上游失败）；缺报不算成功，另示覆盖率。

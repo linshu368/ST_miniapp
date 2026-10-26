@@ -143,3 +143,17 @@ request FK一对多、UUID主键、UNIQUE(request,role)限制至多primary/fallb
 看板以全部型号总览和四张业务趋势为主，秒/%明确，缺报/前后台和可判定占比同屏。兜底触发含触发后失败；实际看到兜底的占比另注明分母。总耗时从提交到用户首token显示，只有observed前台样本可计算分位，不能用首发p90加兜底p90合成，也不筛整条回复成功。
 
 锁5秒/语句60秒预算、事务内幂等授权；失败回滚，不重置密码，不扩grant到anon/authenticated。恢复只需REVOKE reader FROM grafana_cloud并移除新看板，保留新增事实与旧看板。验证在隔离PG17实际SET ROLE读取、正文/写入拒绝、迁移重复执行、所有看板SQL；正式库采集ACL后用真实Grafana数据源执行并浏览器检查显示，不将空数据视为0。
+
+## 2026-10-26 修复设计（覆盖旧计时规则）
+
+基线为origin/dev 812273ca，代码树与生产main cd6b3988一致。复用generation/first-token-fallback唯一两尝试编排、execute单次计费、FirstTokenObservation/既有取消、catalog草稿发布、observations RPC/facts和现有Grafana。新增fallback_timeout_ms配置及请求快照；旧行NULL不回填为2秒。总上限默认10秒，现有显式6秒需通过运营发布改为10秒，不能仅改常量假装线上已变更。
+
+计时：primary threshold在真实onDispatch启动；fallback独立2秒也在onDispatch启动，token获得后清timer，结束/取消清理；全局仍为浏览器submit monotonic clock权威，后端route monotonic clock独立硬保护，不跨设备相减/宣称网络时间同步。后端首字写出只停止后端timer，不能解除浏览器deadline。准备/选择RPC仍有限且不能绕过账户/持久化CAS；慢写入不race后在后台悄悄再提交账务。仅只读准备允许race。真实延迟/删失保持原字段。
+
+可见检测检查每个text node中可见的非空白文字片段，保留视口/滚动裁剪/隐藏/两帧绘制机会；不能仅检测首字符，不以接收事件充当可见。measurement_method新增v2，旧v1保留可读以隔离历史误判。服务端stage timeout与客户端总等待timeout区分，早于总上限失败不伪报等满10秒。
+
+可靠性：唯一交付、一次预留/结算/释放、取消CAS复用；无生成POST重试、无新增自动调参或常驻服务。思考与普通执行相同兜底规则。重复/缺失客户端报告仍受精确身份和首报约束。总硬限优先于阶段预算，不能无限延长；极端工程开销导致阶段截断必须如实保留观察终止原因。
+
+数据库只新增最小字段与原函数/视图的兼容扩展；experience拥有请求快照，miniapp_analytics只读派生，admin拥有配置校验。无对话内容、secret、全表回填、新调度。迁移TEST后生产，再Backend/Admin，再发布4/2/10配置，Frontend，按新观测版本验收。回滚保留列/事实，恢复上版应用与显式配置；新旧客户端分版本监控，不能混合宣称目标达标。
+
+规划复核已完成；补充同型号不重复POST但仍在首发阈值失败。实现使用独立的前后端单调时钟，不增加跨端时钟同步协议；单程网络不可精确同步，最终10秒由浏览器执行。早于总上限的模型阶段失败记not_observed＋primary_timeout/fallback_timeout，并进入最终无字失败率；不得冒称用户等满10秒。新增client_wait_finished_ms固定在观测结束时，晚绑定身份不拉长。

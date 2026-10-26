@@ -36,6 +36,7 @@ export interface ResolvedModel {
   firstTokenPolicy?: {
     fallbackModelId?: string;
     timeoutMs: number;
+    fallbackTimeoutMs?: number;
     deadlineMs: number;
     timeoutRateTarget: number;
     catalogVersion: number;
