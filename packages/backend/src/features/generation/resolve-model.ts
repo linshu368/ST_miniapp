@@ -13,6 +13,7 @@
 import {
   DEFAULT_FIRST_TOKEN_TIMEOUT_MS,
   DEFAULT_FIRST_TOKEN_DEADLINE_MS,
+  DEFAULT_FALLBACK_TOKEN_TIMEOUT_MS,
   DEFAULT_FIRST_TOKEN_TIMEOUT_RATE_TARGET,
   FIRST_TOKEN_FALLBACK_MODEL_ID,
   resolveEffectiveSelectedModelId,
@@ -124,6 +125,7 @@ export async function resolveModelForUser(userId: string): Promise<ResolvedModel
       timeoutMs:
         resolveEnabledCatalogModel(snapshot.catalog, selection.modelId).first_token_timeout_ms ??
         DEFAULT_FIRST_TOKEN_TIMEOUT_MS,
+      fallbackTimeoutMs: snapshot.catalog.fallback_timeout_ms ?? DEFAULT_FALLBACK_TOKEN_TIMEOUT_MS,
       deadlineMs: snapshot.catalog.first_token_deadline_ms ?? DEFAULT_FIRST_TOKEN_DEADLINE_MS,
       timeoutRateTarget:
         snapshot.catalog.first_token_timeout_rate_target ?? DEFAULT_FIRST_TOKEN_TIMEOUT_RATE_TARGET,

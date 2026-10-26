@@ -2,7 +2,7 @@
   "id": "first-token-fallback",
   "name": "first-token-fallback",
   "title": "首 token 超时兜底与体验数据基建",
-  "description": "每型号默认4秒、全局首token上限6秒、超时率目标1%；原价一次结算、完整尝试与业务首token数据、24h人工分析；暂不接AI或自动调参。",
+  "description": "10月26日修复：首发实际POST后4秒、兜底实际POST后2秒、用户提交到可见首token（含思考）10秒硬限；原价一次结算；时间截断率与业务首token分布，暂不自动调参。",
   "status": "in_progress",
   "dev_type": "fullstack",
   "scope": "shared,backend,frontend,admin,database",
@@ -12,16 +12,16 @@
   "assignee": "codex",
   "createdAt": "2026-10-23",
   "completedAt": null,
-  "branch": "feat/first-token-fallback",
+  "branch": "fix/first-token-user-budget-v2",
   "base_branch": "dev",
   "worktree_path": null,
   "commit": null,
-  "pr_url": null,
+  "pr_url": "https://github.com/linshu368/ST_miniapp/pull/474",
   "subtasks": [],
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "首token基建已通过#461生产发布；本轮继续接通Grafana最小读取授权与业务看板，不改变生成或账务行为。",
+  "notes": "用户明确要求改好直接发布；追加超时轻提示与客户端可见确认计费，TEST→Production 顺序继续。",
   "meta": {
     "module_impact": {
       "schema_version": 1,
@@ -35,7 +35,8 @@
         "frontend.infrastructure.client-ui-foundation",
         "shared.business.conversation-contracts",
         "database.business.conversation-storage",
-        "database.infrastructure.schema-security"
+        "database.infrastructure.schema-security",
+        "database.business.billing-payment"
       ]
     }
   }

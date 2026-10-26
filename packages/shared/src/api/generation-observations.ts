@@ -2,20 +2,30 @@ import { z } from 'zod';
 
 const DurationMs = z.number().finite().nonnegative().max(86_400_000);
 
-/** These are client observations, never authority for billing or model selection. */
+/** Client display receipts gate new-turn billing; prices and completion remain server-owned. */
 export const ReportFirstTokenRequestSchema = z
   .object({
     request_id: z.string().uuid(),
     assistant_message_id: z.string().uuid(),
     revision: z.number().int().nonnegative(),
-    measurement_method: z.literal('visible_dom_after_frame_v1'),
+    measurement_method: z.enum(['visible_dom_after_frame_v1', 'visible_dom_after_frame_v2']),
     outcome: z.enum(['observed', 'timed_out', 'not_observed']),
     first_token_visible_ms: DurationMs.nullable(),
+    wait_finished_ms: DurationMs.nullable().optional(),
     request_dispatched_ms: DurationMs.nullable(),
     first_token_received_ms: DurationMs.nullable(),
     backgrounded: z.boolean(),
     reason: z
-      .enum(['page_left', 'cancelled', 'superseded', 'upstream_error', 'not_visible'])
+      .enum([
+        'page_left',
+        'cancelled',
+        'superseded',
+        'upstream_error',
+        'not_visible',
+        'server_timeout',
+        'fallback_timeout',
+        'primary_timeout',
+      ])
       .nullable(),
   })
   .strict()

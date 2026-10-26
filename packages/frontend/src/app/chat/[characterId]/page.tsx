@@ -3,7 +3,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { AlertCircle, X } from 'lucide-react';
-import { TEXT_POSTPROCESS_LIMITS, type ChatMessage } from '@miniapp/shared';
+import {
+  FIRST_TOKEN_RETRY_MESSAGE,
+  TEXT_POSTPROCESS_LIMITS,
+  type ChatMessage,
+} from '@miniapp/shared';
 import type { ReplyChoicePayload } from '@miniapp/reply-renderer';
 
 import { ChatComposer, MAX_USER_INPUT_LENGTH } from '@/components/chat/chat-composer';
@@ -558,14 +562,34 @@ export default function SelfHostedChatPage() {
       />
 
       {streamError ? (
-        <div className="mx-4 mb-2 flex items-center gap-2 rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2">
-          <AlertCircle className="h-4 w-4 shrink-0 text-destructive" aria-hidden />
-          <span className="min-w-0 flex-1 text-[12px] text-destructive">{streamError}</span>
+        <div
+          role="status"
+          aria-live="polite"
+          className={
+            streamError === FIRST_TOKEN_RETRY_MESSAGE
+              ? 'mx-4 mb-2 flex items-center gap-2 px-3 py-2 text-muted-foreground'
+              : 'mx-4 mb-2 flex items-center gap-2 rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-destructive'
+          }
+        >
+          {streamError !== FIRST_TOKEN_RETRY_MESSAGE ? (
+            <AlertCircle className="h-4 w-4 shrink-0" aria-hidden />
+          ) : null}
+          <span className="min-w-0 flex-1 text-[12px]">{streamError}</span>
+          {streamError === FIRST_TOKEN_RETRY_MESSAGE && canRegenerate ? (
+            <button
+              type="button"
+              onClick={() => void runTurn({ mode: 'regenerate' })}
+              disabled={generating || serverBusy}
+              className="shrink-0 text-[12px] underline decoration-current/30 underline-offset-4 hover:text-foreground disabled:opacity-50"
+            >
+              再试一次
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={() => setStreamError(null)}
             aria-label="关闭提示"
-            className="shrink-0 text-destructive/70 hover:text-destructive"
+            className="shrink-0 opacity-60 hover:opacity-100"
           >
             <X className="h-3.5 w-3.5" aria-hidden />
           </button>

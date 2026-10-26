@@ -196,3 +196,33 @@ void followup.then(() => {
 start 尚未到达时，按本次 request_id UUID 及预期 turn_index/revision 定位消息再提交 assistant_message_id；禁止盲目取消最后一条或另一设备的同轮请求；没有匹配关联 ID 的旧行不能作为本次未 start 请求的发现结果。取消暂未确认保留占用与重试，服务端确认终态后保留用户输入和已收到正文，最新失败回复下显示“重新生成”，复用最后一轮 regeneration。
 
 所有 SSE 回调与异步刷新必须检查请求/会话身份。详情轮询可能先看到当前 revision，临时消息合并须去重并以已持久化终态为准。SSE、取消请求、详情刷新与额度刷新都有有限等待，不能因后台请求卡住永久保留 generating。实现断网/超时错误时先回查服务端，不把已经持久化的原输入再次恢复并重复发送。
+
+## Scenario: 首 token 体验预算（2026-10-26）
+
+### 1. Scope / Trigger
+
+从接受发送/重生成动作起，以同一单调时钟测量正文或开启的思考首次可见。默认10秒总硬限；网络接收和服务端写出不是显示。
+
+### 2. Signatures
+
+`FirstTokenObservation.displayed(identity,at)`、`deadlineFailed(reason)`、`observeFirstVisibleToken(node,callback)`；既有报告接口新增 `measurement_method=visible_dom_after_frame_v2` 与可选 `wait_finished_ms`。
+
+### 3. Contracts
+
+v2扫描text node全部非空白片段，检查页面前台、祖先裁剪、样式和两帧绘制机会。报告身份绑定request/session/revision，结束时固定wait_finished_ms，身份晚到不改时长。后台/缺报单列，不将未显示时长补0。不是物理屏幕像素确认。
+
+### 4. Validation & Error Matrix
+
+提前首发/兜底失败为not_observed加primary_timeout/fallback_timeout；达到总限为timed_out。截止走现有安全取消，待确认仍占用，已完成CAS不覆盖；迟到delta不继续写临时回复。普通上游错误独立上报，不混成时间截断。
+
+### 5. Good/Base/Bad Cases
+
+Good：长段文字首字符滚出但尾部可见仍确认首字。Base：可见思考先于正文即结束计时。Bad：纯空白行/等待标题算字，或把失败等候当作成功首字分布。
+
+### 6. Tests Required
+
+既有hook/observation回归覆盖10秒安全取消、早期失败真实时长、迟到身份与已显示不被覆盖；真实浏览器检查长文本/思考滚动、空白、隐藏、透明正负对照。真机WebView与真实供应商留待TEST/生产验收。
+
+### 7. Wrong vs Correct
+
+Wrong：6秒只记SLA但继续无界等字，或者以供应商latency画体验图。Correct：前台10秒截止有重试提示；看板主图显示完全无字时间截断率与客户端首token分布，同时展示缺报覆盖。

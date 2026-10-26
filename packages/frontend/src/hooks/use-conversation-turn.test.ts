@@ -300,39 +300,46 @@ describe('useConversationTurn asynchronous ownership', () => {
   it.each([
     ['normal', false],
     ['deep-thinking', true],
-  ] as const)(
-    'reports a silent %s SLA miss without auto-cancelling the in-flight reply',
-    async (_, thinkingEnabled) => {
-      let options!: Parameters<
-        typeof import('@/lib/api/conversation-stream').streamConversationTurn
-      >[0];
-      let finish!: () => void;
-      runtime.stream.mockImplementation((value) => {
-        options = value;
-        return new Promise<void>((resolve) => {
-          finish = resolve;
-        });
+  ] as const)('stops a silent %s reply at the 10s user deadline', async (_, thinkingEnabled) => {
+    let options!: Parameters<
+      typeof import('@/lib/api/conversation-stream').streamConversationTurn
+    >[0];
+    let finish!: () => void;
+    runtime.stream.mockImplementation((value) => {
+      options = value;
+      return new Promise<void>((resolve) => {
+        finish = resolve;
       });
-      const run = RenderTurn('s1', [], thinkingEnabled).runTurn({ mode: 'send', content: 'hello' });
-      options.onStart({
-        type: 'start',
-        assistant_message_id: 'a1',
-        user_message_id: 'u1',
+    });
+    const run = RenderTurn('s1', [], thinkingEnabled).runTurn({ mode: 'send', content: 'hello' });
+    options.onStart({
+      type: 'start',
+      assistant_message_id: 'a1',
+      user_message_id: 'u1',
+      turn_index: 1,
+      revision: 0,
+    });
+    runtime.cancel.mockResolvedValue({
+      message: message({
+        id: 'a1',
+        session_id: 's1',
         turn_index: 1,
         revision: 0,
-      });
-      await vi.advanceTimersByTimeAsync(6_100);
-      const waiting = RenderTurn('s1', [], thinkingEnabled);
-      expect(waiting.firstTokenObservation).toBeNull();
-      expect(waiting.generating).toBe(true);
-      expect(waiting.streamError).toBeNull();
-      expect(runtime.cancel).not.toHaveBeenCalled();
-      options.onDelta('深思后的正文');
-      expect(RenderTurn('s1', [], thinkingEnabled).streaming?.text).toBe('深思后的正文');
-      finish();
-      await run;
-    }
-  );
+        status: 'interrupted',
+        content: '',
+      }),
+    });
+    await vi.advanceTimersByTimeAsync(10_100);
+    const waiting = RenderTurn('s1', [], thinkingEnabled);
+    expect(waiting.firstTokenObservation).toBeNull();
+    expect(waiting.streamError).toBe('这次回应稍慢，再试一次吧');
+    expect(runtime.cancel).toHaveBeenCalledExactlyOnceWith({
+      sessionId: 's1',
+      assistantMessageId: 'a1',
+    });
+    finish();
+    await run;
+  });
 
   it('keeps thinking separate after completion, snapshots the switch and clears on session change', async () => {
     const streams: {
