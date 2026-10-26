@@ -1,243 +1,51 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
-import { AlertCircle, Play, RefreshCw } from 'lucide-react';
+import { useEffect, useRef } from 'react';
+import { useParams, useRouter } from 'next/navigation';
 
-import { useDramaDetailQuery, useDramaPlaybackQuery } from '@/lib/api/drama';
-import { resolveNextVideoId } from '@/lib/drama-playback';
+import { DramaPlayer } from '@/components/drama/drama-player';
+import { useDramaBrowseQueueQuery } from '@/lib/api/drama';
 
 export default function DramaDetailPage() {
   const { id } = useParams<{ id: string }>();
-
-  const detailQuery = useDramaDetailQuery(id);
-  const drama = detailQuery.data;
-  const videos = drama?.videos ?? [];
-
-  // null 表示"交给后端按默认顺序选第一集"，不需要等详情回来才知道放哪一集。
-  const [activeVideoId, setActiveVideoId] = useState<string | null>(null);
-  const playbackQuery = useDramaPlaybackQuery(id, activeVideoId ?? undefined);
-  const playback = playbackQuery.data;
-
-  const currentVideoId = playback?.video_id ?? activeVideoId;
-
-  // 用 state（回调 ref）而不是 useRef：<video> 是否已经挂载和 playback 是否已经
-  // 就绪是两件独立的异步事情（卡片点击会预取 playback，可能比详情数据更早就绪，
-  // 这期间 <video> 还没渲染）。只依赖 playback 变化触发副作用，会在 video 还没挂载时
-  // 跳过一次之后就再也不重跑——播放地址早就有了，但 src 永远没被设置。
-  const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
-  const [needsTapToPlay, setNeedsTapToPlay] = useState(false);
-  const [playbackFailed, setPlaybackFailed] = useState(false);
-
-  // 播完后自动连播前的缓冲倒计时；用下标而不是 episode 字段算第几集，
-  // 因为 episode 目前全库为空（见 repository.ts 注释），下标才是实际播放顺序。
-  const [autoAdvance, setAutoAdvance] = useState<{
-    nextVideoId: string;
-    nextEpisodeNumber: number;
-    secondsLeft: number;
-  } | null>(null);
+  const router = useRouter();
+  const queueQuery = useDramaBrowseQueueQuery();
+  const navigating = useRef(false);
 
   useEffect(() => {
-    if (!autoAdvance) return;
-    if (autoAdvance.secondsLeft <= 0) {
-      setActiveVideoId(autoAdvance.nextVideoId);
-      setAutoAdvance(null);
-      return;
-    }
-    const timer = window.setTimeout(() => {
-      setAutoAdvance((prev) => (prev ? { ...prev, secondsLeft: prev.secondsLeft - 1 } : prev));
-    }, 1000);
-    return () => window.clearTimeout(timer);
-  }, [autoAdvance]);
+    navigating.current = false;
+  }, [id]);
 
-  // 拿到签名链接立刻设 src 并尝试播放；video 元素挂载和 playback 就绪谁先谁后都要能触发。
-  useEffect(() => {
-    if (!videoEl || !playback?.playable || !playback.play_url) return;
-    videoEl.src = playback.play_url;
-    setPlaybackFailed(false);
-    setNeedsTapToPlay(false);
-    const playPromise = videoEl.play();
-    if (playPromise && typeof playPromise.catch === 'function') {
-      // Telegram WebView/部分移动浏览器会拦截非用户手势触发的 autoplay，
-      // 拦截时退化成"点击播放"覆盖层，而不是静默黑屏。
-      playPromise.catch(() => setNeedsTapToPlay(true));
-    }
-  }, [videoEl, playback?.play_url, playback?.playable]);
+  const queue = queueQuery.data ?? [];
+  const index = queue.findIndex((drama) => drama.id === id);
+  const previous =
+    index > 0
+      ? queue
+          .slice(0, index)
+          .reverse()
+          .find((drama) => drama.episode_count > 0)
+      : undefined;
+  // 深链进入的剧可能已不在列表中，仍允许从列表第一部开始继续观看。
+  const next = queue.slice(index + 1).find((drama) => drama.episode_count > 0);
 
-  const handleEnded = () => {
-    const nextVideoId = resolveNextVideoId(videos, currentVideoId);
-    if (!nextVideoId) return;
-    const nextEpisodeNumber = videos.findIndex((v) => v.id === nextVideoId) + 1;
-    setAutoAdvance({ nextVideoId, nextEpisodeNumber, secondsLeft: 3 });
+  const navigate = (direction: -1 | 1) => {
+    const target = direction === 1 ? next : previous;
+    if (!target || navigating.current) return;
+    navigating.current = true;
+    // 换剧不堆积历史记录；返回始终直接回到已验收的列表页。
+    router.replace(`/dramas/${target.id}`, { scroll: false });
   };
 
-  const handleCancelAutoAdvance = () => setAutoAdvance(null);
-
-  const handlePlayNextNow = () => {
-    if (!autoAdvance) return;
-    setActiveVideoId(autoAdvance.nextVideoId);
-    setAutoAdvance(null);
-  };
-
-  const handleTapToPlay = () => {
-    if (!videoEl) return;
-    videoEl
-      .play()
-      .then(() => setNeedsTapToPlay(false))
-      .catch(() => setNeedsTapToPlay(true));
-  };
-
-  if (detailQuery.isLoading) {
-    return <DramaDetailSkeleton />;
-  }
-
-  if (detailQuery.isError || !drama) {
-    return <DramaDetailError onRetry={() => void detailQuery.refetch()} />;
-  }
-
-  const noEpisodes = drama.episode_count === 0;
-
   return (
-    <main className="mx-auto min-h-dvh w-full max-w-screen-xl px-4 pb-8 pt-[calc(1.5rem+env(safe-area-inset-top))] text-foreground">
-      <div className="relative aspect-[9/16] w-full max-w-md overflow-hidden rounded-2xl bg-black">
-        {noEpisodes ? (
-          <NoEpisodesNotice />
-        ) : playback && !playback.playable ? (
-          <PlaybackFailedNotice onRetry={() => void playbackQuery.refetch()} />
-        ) : playbackFailed || playbackQuery.isError ? (
-          <PlaybackFailedNotice onRetry={() => void playbackQuery.refetch()} />
-        ) : (
-          <>
-            <video
-              ref={setVideoEl}
-              className="h-full w-full object-contain"
-              playsInline
-              controls
-              onEnded={handleEnded}
-              onError={() => setPlaybackFailed(true)}
-            />
-            {needsTapToPlay ? (
-              <button
-                type="button"
-                onClick={handleTapToPlay}
-                className="absolute inset-0 flex items-center justify-center bg-black/40"
-                aria-label="点击播放"
-              >
-                <span className="flex h-16 w-16 items-center justify-center rounded-full bg-white/90">
-                  <Play className="h-7 w-7 fill-black text-black" />
-                </span>
-              </button>
-            ) : null}
-            {autoAdvance ? (
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/65 text-center text-white">
-                <p className="text-sm">
-                  {autoAdvance.secondsLeft} 秒后播放第 {autoAdvance.nextEpisodeNumber} 集
-                </p>
-                <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={handleCancelAutoAdvance}
-                    className="rounded-full border border-white/40 px-4 py-1.5 text-xs font-semibold text-white/90 transition active:scale-95"
-                  >
-                    取消
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handlePlayNextNow}
-                    className="rounded-full bg-white px-4 py-1.5 text-xs font-semibold text-black transition active:scale-95"
-                  >
-                    立即播放
-                  </button>
-                </div>
-              </div>
-            ) : null}
-            {playbackQuery.isLoading ? (
-              <div className="absolute inset-0 flex items-center justify-center bg-black/30 text-sm text-white">
-                加载中…
-              </div>
-            ) : null}
-          </>
-        )}
-      </div>
-
-      <div className="mx-auto mt-4 max-w-md">
-        <div className="flex items-baseline justify-between gap-2">
-          <h1 className="text-xl font-bold">{drama.title}</h1>
-          {drama.episode_count > 0 ? (
-            <span className="shrink-0 text-xs text-muted-foreground">
-              共 {drama.episode_count} 集
-            </span>
-          ) : null}
-        </div>
-        <div className="mt-3 rounded-2xl border border-border bg-card p-3">
-          <p className="text-xs font-semibold text-muted-foreground">简介</p>
-          <p className="mt-1 whitespace-pre-line text-sm text-foreground/90">
-            {drama.description || '简介整理中'}
-          </p>
-        </div>
-        {drama.tags.length > 0 ? (
-          <div className="mt-3 flex flex-wrap gap-1.5">
-            {drama.tags.map((tag) => (
-              <span
-                key={tag}
-                className="rounded-full bg-foreground/[0.06] px-2.5 py-1 text-xs text-muted-foreground"
-              >
-                {tag}
-              </span>
-            ))}
-          </div>
-        ) : null}
-      </div>
-    </main>
-  );
-}
-
-function NoEpisodesNotice() {
-  return (
-    <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-center text-sm text-white/80">
-      <AlertCircle className="h-8 w-8 text-white/60" />
-      暂无可用集数
-    </div>
-  );
-}
-
-function PlaybackFailedNotice({ onRetry }: { onRetry: () => void }) {
-  return (
-    <div className="flex h-full w-full flex-col items-center justify-center gap-3 text-center text-sm text-white/80">
-      <AlertCircle className="h-8 w-8 text-white/60" />
-      播放链接加载失败，请重试
-      <button
-        type="button"
-        onClick={onRetry}
-        className="inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition active:scale-95"
-      >
-        <RefreshCw className="h-4 w-4" />
-        重试
-      </button>
-    </div>
-  );
-}
-
-function DramaDetailSkeleton() {
-  return (
-    <main className="mx-auto min-h-dvh w-full max-w-screen-xl px-4 pb-8 pt-[calc(1.5rem+env(safe-area-inset-top))]">
-      <div className="aspect-[9/16] w-full max-w-md animate-pulse rounded-2xl border border-border bg-card" />
-    </main>
-  );
-}
-
-function DramaDetailError({ onRetry }: { onRetry: () => void }) {
-  return (
-    <main className="mx-auto flex min-h-dvh w-full max-w-screen-xl flex-col items-center justify-center gap-3 px-4 text-center">
-      <p className="text-sm text-destructive">短剧加载失败，请稍后重试。</p>
-      <button
-        type="button"
-        onClick={onRetry}
-        className="inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition active:scale-95"
-      >
-        <RefreshCw className="h-4 w-4" />
-        重试
-      </button>
-    </main>
+    <DramaPlayer
+      key={id}
+      id={id}
+      previousTitle={previous?.title}
+      nextTitle={next?.title}
+      queueLoading={queueQuery.isLoading}
+      queueFailed={queueQuery.isError}
+      onRetryQueue={() => void queueQuery.refetch()}
+      onNavigate={navigate}
+    />
   );
 }

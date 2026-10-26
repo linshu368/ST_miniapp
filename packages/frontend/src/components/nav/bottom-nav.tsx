@@ -65,7 +65,10 @@ export function BottomNav() {
     return () => window.clearTimeout(timer);
   }, [pendingHref]);
 
-  if (pathname && HIDDEN_PREFIXES.some((p) => pathname.startsWith(p))) {
+  if (
+    pathname &&
+    (HIDDEN_PREFIXES.some((p) => pathname.startsWith(p)) || /^\/dramas\/[^/]+/.test(pathname))
+  ) {
     return null;
   }
 

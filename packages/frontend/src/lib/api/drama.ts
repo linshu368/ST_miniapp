@@ -15,6 +15,7 @@ import { apiClient } from './client';
 export const dramaKeys = {
   all: ['dramas'] as const,
   list: () => [...dramaKeys.all, 'list'] as const,
+  browseQueue: () => [...dramaKeys.all, 'browse-queue'] as const,
   detail: (id: string) => [...dramaKeys.all, 'detail', id] as const,
   playback: (id: string, videoId?: string) =>
     [...dramaKeys.all, 'playback', id, videoId ?? null] as const,
@@ -42,6 +43,17 @@ export function useDramaListQuery() {
   return useQuery({ queryKey: dramaKeys.list(), queryFn: fetchDramas });
 }
 
+/** 换剧跨路由保留本轮列表顺序；深链没有列表缓存时才自行加载。 */
+export function useDramaBrowseQueueQuery() {
+  const queryClient = useQueryClient();
+  return useQuery({
+    queryKey: dramaKeys.browseQueue(),
+    queryFn: fetchDramas,
+    initialData: () => queryClient.getQueryData<DramaSummary[]>(dramaKeys.list()),
+    staleTime: Infinity,
+  });
+}
+
 export function useDramaDetailQuery(id: string) {
   return useQuery({
     queryKey: dramaKeys.detail(id),
@@ -67,6 +79,8 @@ export function useDramaPlaybackQuery(id: string, videoId?: string) {
 export function usePrefetchDramaPlayback() {
   const queryClient = useQueryClient();
   return (id: string) => {
+    const list = queryClient.getQueryData<DramaSummary[]>(dramaKeys.list());
+    if (list) queryClient.setQueryData(dramaKeys.browseQueue(), list);
     void queryClient.prefetchQuery({
       queryKey: dramaKeys.playback(id),
       queryFn: () => fetchDramaPlayback(id),
