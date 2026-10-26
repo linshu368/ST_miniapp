@@ -147,7 +147,7 @@ describe('turn lifecycle recovery', () => {
     );
   });
 
-  it('first reasoning at 3s clears the 6s server deadline and emits the existing metric only once', async () => {
+  it('first reasoning at 3s clears the 10s server deadline and emits the existing metric only once', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
     mocks.execute.mockImplementation(async (request, hooks) => {
       await new Promise((resolve) => setTimeout(resolve, 3000));
@@ -181,38 +181,35 @@ describe('turn lifecycle recovery', () => {
   it.each([
     ['normal', false],
     ['deep-thinking', true],
-  ] as const)(
-    'records the SLA miss but lets a silent %s reply reach a later answer',
-    async (_, thinkingEnabled) => {
-      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
-      mocks.execute.mockImplementation(async (request, hooks) => {
-        hooks.onStreamOpen();
-        await new Promise((resolve) => setTimeout(resolve, 10_000));
-        request.signal.throwIfAborted();
-        hooks.onDelta('稍后的正文');
-        return {
-          status: 'stream_interrupted',
-          content: '稍后的正文',
-          finishReason: 'length',
-          generationId: 'gen',
-          chargeId: 'charge',
-        };
-      });
-      const turnInput = { ...input({ kind: 'send', content: 'original' }), thinkingEnabled };
-      const result = runConversationTurn(turnInput);
-      await vi.advanceTimersByTimeAsync(6001);
-      expect(mocks.markServer).toHaveBeenCalledWith('reply', { first_token_timeout: true });
-      expect(turnInput.sink.send).not.toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'error' })
-      );
-      await vi.advanceTimersByTimeAsync(3999);
-      await expect(result).resolves.toMatchObject({ kind: 'streamed' });
-      expect(turnInput.sink.send).toHaveBeenCalledWith({ type: 'delta', text: '稍后的正文' });
-      expect(mocks.markServer).toHaveBeenCalledWith('reply', {
-        first_token_emitted_ms: 10_000,
-      });
-    }
-  );
+  ] as const)('enforces the 10s hard limit for silent %s replies', async (_, thinkingEnabled) => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+    mocks.execute.mockImplementation(async (request, hooks) => {
+      hooks.onStreamOpen();
+      await new Promise((resolve) => setTimeout(resolve, 10_000));
+      request.signal.throwIfAborted();
+      hooks.onDelta('稍后的正文');
+      return {
+        status: 'stream_interrupted',
+        content: '稍后的正文',
+        finishReason: 'length',
+        generationId: 'gen',
+        chargeId: 'charge',
+      };
+    });
+    const turnInput = { ...input({ kind: 'send', content: 'original' }), thinkingEnabled };
+    const result = runConversationTurn(turnInput);
+    void result.catch(() => {});
+    await vi.advanceTimersByTimeAsync(10_001);
+    await expect(result).rejects.toMatchObject({ stage: 'global' });
+    expect(mocks.markServer).toHaveBeenCalledWith('reply', {
+      first_token_timeout: true,
+      server_timeout_stage: 'global',
+    });
+    expect(turnInput.sink.send).not.toHaveBeenCalledWith({ type: 'delta', text: '稍后的正文' });
+    expect(turnInput.sink.send).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'start', assistant_message_id: 'reply' })
+    );
+  });
 
   it.each(['send', 'regenerate'] as const)(
     'explicit thinking on for %s emits progress without changing saved content',
@@ -273,9 +270,9 @@ describe('turn lifecycle recovery', () => {
     await expect(
       runConversationTurn({
         ...input({ kind: 'send', content: 'original' }),
-        receivedAt: Date.now() - 20_001,
+        receivedAt: Date.now() - 10_001,
       })
-    ).rejects.toMatchObject({ name: 'TimeoutError' });
+    ).rejects.toMatchObject({ name: 'FirstTokenDeadlineError', stage: 'global' });
     expect(mocks.start).not.toHaveBeenCalled();
     expect(mocks.recover).not.toHaveBeenCalled();
   });

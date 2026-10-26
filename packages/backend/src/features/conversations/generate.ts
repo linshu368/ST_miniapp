@@ -13,6 +13,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { FirstTokenDeadlineError } from '../generation/first-token-fallback.js';
 import {
   fetchGenerationDataForSettlement,
   buildGenerationMetadata,
@@ -22,6 +23,7 @@ import { GenerationCleanupPendingError } from '../generation/types.js';
 import type { SseTapResult } from '../generation/upstream.js';
 import {
   DEFAULT_FIRST_TOKEN_DEADLINE_MS,
+  DEFAULT_FALLBACK_TOKEN_TIMEOUT_MS,
   DEFAULT_FIRST_TOKEN_TIMEOUT_MS,
   DEFAULT_FIRST_TOKEN_TIMEOUT_RATE_TARGET,
   FIRST_TOKEN_FALLBACK_MODEL_ID,
@@ -79,7 +81,7 @@ export interface RunConversationTurnInput {
   thinkingEnabled?: boolean;
 }
 
-export const CONVERSATION_PREPARATION_TIMEOUT_MS = 20_000;
+export const CONVERSATION_PREPARATION_TIMEOUT_MS = DEFAULT_FIRST_TOKEN_DEADLINE_MS;
 
 let historyRepository: ConversationHistoryRepository | null = null;
 let characterRepository: CharacterCardRepository | null = null;
@@ -131,11 +133,11 @@ export async function runConversationTurn(
   const turnStartedAt = input.receivedAt ?? Date.now();
   const requestStartedAt =
     input.receivedMonotonicAt ?? performance.now() - (Date.now() - turnStartedAt);
-  // The 6s first-token threshold is an SLA observation, not a preparation deadline.
-  // Keep preparation bounded independently so slow reads cannot occupy a route forever.
-  const preparationRemainingMs = CONVERSATION_PREPARATION_TIMEOUT_MS - (Date.now() - turnStartedAt);
-  if (preparationRemainingMs <= 0)
-    throw new DOMException('Conversation preparation timed out', 'TimeoutError');
+  // Server protection starts at route entry; only the browser can measure submit-to-display.
+  const preparationRemainingMs =
+    (input.firstTokenDeadlineMs ?? DEFAULT_FIRST_TOKEN_DEADLINE_MS) -
+    (performance.now() - requestStartedAt);
+  if (preparationRemainingMs <= 0) throw new FirstTokenDeadlineError();
   const preparationSignal = AbortSignal.timeout(Math.ceil(preparationRemainingMs));
 
   // ── 取数 ──────────────────────────────────────────────────────────────────
@@ -182,6 +184,7 @@ export async function runConversationTurn(
   const policy = {
     fallbackModelId: FIRST_TOKEN_FALLBACK_MODEL_ID,
     timeoutMs: DEFAULT_FIRST_TOKEN_TIMEOUT_MS,
+    fallbackTimeoutMs: DEFAULT_FALLBACK_TOKEN_TIMEOUT_MS,
     deadlineMs: DEFAULT_FIRST_TOKEN_DEADLINE_MS,
     timeoutRateTarget: DEFAULT_FIRST_TOKEN_TIMEOUT_RATE_TARGET,
     catalogVersion: 0,
@@ -192,6 +195,18 @@ export async function runConversationTurn(
   const observations = generationObservations();
   const primaryAttemptId = randomUUID();
   const clientRequestId = input.requestId ?? randomUUID();
+  const emitStart = (): void => {
+    sink.open();
+    sink.send({
+      type: 'start',
+      turn_index: turn.turnIndex,
+      user_message_id: mode.kind === 'send' ? `${turn.historyId}:user` : null,
+      assistant_message_id: turn.historyId,
+      revision: turn.revision,
+      thinking_enabled: thinkingEnabled,
+      postprocess_version: turn.postprocessVersion,
+    });
+  };
   const observationInput = {
     historyId: turn.historyId,
     requestId: clientRequestId,
@@ -201,6 +216,7 @@ export async function runConversationTurn(
     model: model.providerModelId,
     receivedAt: new Date(turnStartedAt).toISOString(),
     timeoutMs: policy.timeoutMs,
+    fallbackTimeoutMs: policy.fallbackTimeoutMs,
     deadlineMs: policy.deadlineMs,
     timeoutRateTarget: policy.timeoutRateTarget,
     fallbackModelId: policy.fallbackModelId,
@@ -223,12 +239,15 @@ export async function runConversationTurn(
     if (!observationBegun || firstTokenTimeoutRecorded) return;
     firstTokenTimeoutRecorded = true;
     void observations
-      .markServer(turn.historyId, { first_token_timeout: true })
+      .markServer(turn.historyId, { first_token_timeout: true, server_timeout_stage: 'global' })
       .catch(observationError);
   };
   const controller = new AbortController();
   const firstTokenTimer = setTimeout(
-    recordFirstTokenTimeout,
+    () => {
+      recordFirstTokenTimeout();
+      controller.abort(new FirstTokenDeadlineError());
+    },
     Math.max(1, policy.deadlineMs - (performance.now() - requestStartedAt))
   );
   const timeout = setTimeout(
@@ -285,19 +304,6 @@ export async function runConversationTurn(
 
     await historyRecords().setPromptHistory(turn.historyId, prompt.messages, input.requestId);
 
-    const emitStart = (): void => {
-      sink.open();
-      sink.send({
-        type: 'start',
-        turn_index: turn.turnIndex,
-        user_message_id: mode.kind === 'send' ? `${turn.historyId}:user` : null,
-        assistant_message_id: turn.historyId,
-        revision: turn.revision,
-        thinking_enabled: thinkingEnabled,
-        postprocess_version: turn.postprocessVersion,
-      });
-    };
-
     // ── 生成 ──────────────────────────────────────────────────────────────────
     const request: GenerationRequest = {
       userId,
@@ -352,7 +358,7 @@ export async function runConversationTurn(
     const emitVisibleDelta = (type: 'delta' | 'reasoning', text: string): void => {
       if (!emitted && performance.now() - requestStartedAt >= policy.deadlineMs) {
         recordFirstTokenTimeout();
-        // controller.abort(new FirstTokenDeadlineError());
+        controller.abort(new FirstTokenDeadlineError());
       }
       controller.signal.throwIfAborted();
       sink.send({ type, text });
@@ -491,6 +497,21 @@ export async function runConversationTurn(
 
     return { kind: 'streamed', status };
   } catch (err) {
+    if (
+      err instanceof FirstTokenDeadlineError ||
+      controller.signal.reason instanceof FirstTokenDeadlineError
+    ) {
+      controller.abort(err instanceof FirstTokenDeadlineError ? err : controller.signal.reason);
+      if (observationBegun) {
+        const stage = (controller.signal.reason as FirstTokenDeadlineError).stage;
+        await observations
+          .markServer(turn.historyId, {
+            first_token_timeout: stage === 'global',
+            server_timeout_stage: stage,
+          })
+          .catch(observationError);
+      }
+    }
     // Prompt/history/precheck failures happen after startTurn and must release the
     // persisted session too. CAS leaves a concurrent cancellation/completion intact.
     if (err instanceof GenerationCleanupPendingError) {
@@ -520,6 +541,12 @@ export async function runConversationTurn(
             ? 'timeout'
             : null,
     });
+    if (controller.signal.reason instanceof FirstTokenDeadlineError) {
+      // Bind the failed revision before the error so the browser can report its actual wait.
+      // This happens after safe failure/allowance cleanup, never before billing rejection.
+      if (!sink.opened) emitStart();
+      throw controller.signal.reason;
+    }
     throw err;
   } finally {
     clearTimeout(firstTokenTimer);

@@ -103,6 +103,8 @@ export interface LlmChargeCommand {
 }
 
 export interface LlmChargeResult {
+  /** A display receipt or provider finish reason is still pending. */
+  pending: boolean;
   replyOutcome: ReplyOutcome;
   billingChatStatus: string;
   /** RPC 实际扣减额 */
@@ -162,14 +164,17 @@ export async function applyLlmCharge(command: LlmChargeCommand): Promise<LlmChar
 
   // 免费额度两阶段收口：只有自然收尾的完整回复才消费预留，其余释放。
   // finish_reason 未到时保持预留，等回捞拿到终态后再走到这里。
-  if (command.finishReason !== null) {
+  if (command.finishReason !== null && result.charge.status !== 'pending') {
     await freeQuotas().finalizePending(
       command.chargeId,
-      replyOutcome === 'complete' && command.finishReason === 'stop'
+      replyOutcome === 'complete' &&
+        command.finishReason === 'stop' &&
+        result.charge.metadata?.delivery_billing_gate !== 'waived'
     );
   }
 
   return {
+    pending: result.charge.status === 'pending',
     replyOutcome,
     billingChatStatus,
     chargedAmount: Number(result.charge.charged_amount),

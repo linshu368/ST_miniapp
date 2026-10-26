@@ -97,7 +97,7 @@ export async function reportConversationFirstToken(
       );
       if (result.recorded) return;
     } catch {
-      /* Advisory metrics must not disturb conversation state. */
+      /* Missing display receipts fail closed for billing and must not interrupt the conversation. */
     }
   }
 }

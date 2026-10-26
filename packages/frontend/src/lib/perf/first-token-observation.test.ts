@@ -60,6 +60,7 @@ describe('user-visible first token observation', () => {
     );
     await vi.advanceTimersByTimeAsync(6000);
     expect(report).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(2000);
     obs.identify('discovered', 2);
     obs.identify('discovered', 2);
     expect(report).toHaveBeenCalledOnce();
@@ -67,6 +68,7 @@ describe('user-visible first token observation', () => {
       assistant_message_id: 'discovered',
       revision: 2,
       outcome: 'timed_out',
+      wait_finished_ms: 6000,
     });
   });
   it('does not count background or mismatched revisions as a visible token', async () => {
@@ -92,5 +94,31 @@ describe('user-visible first token observation', () => {
       first_token_received_ms: null,
       request_dispatched_ms: null,
     });
+  });
+  it('records an early fallback timeout as a stage failure, not a full user-deadline timeout', async () => {
+    const report = vi.fn(),
+      cancel = vi.fn();
+    const obs = new FirstTokenObservation(identity, 10000, report, cancel);
+    await vi.advanceTimersByTimeAsync(7200);
+    obs.deadlineFailed('fallback_timeout');
+    expect(report).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outcome: 'not_observed',
+        reason: 'fallback_timeout',
+        wait_finished_ms: 7200,
+        measurement_method: 'visible_dom_after_frame_v2',
+        first_token_visible_ms: null,
+      })
+    );
+    expect(cancel).not.toHaveBeenCalled();
+  });
+  it('never overwrites already displayed text with a later server error', async () => {
+    const report = vi.fn();
+    const obs = new FirstTokenObservation(identity, 10000, report, vi.fn());
+    await vi.advanceTimersByTimeAsync(2000);
+    obs.displayed(identity, performance.now());
+    obs.deadlineFailed();
+    expect(report).toHaveBeenCalledOnce();
+    expect(report.mock.calls[0]?.[0].outcome).toBe('observed');
   });
 });

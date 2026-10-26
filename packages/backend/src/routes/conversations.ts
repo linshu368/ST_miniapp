@@ -1,3 +1,4 @@
+import { FirstTokenDeadlineError } from '../features/generation/first-token-fallback.js';
 /**
  * backend / routes / conversations.ts
  *
@@ -54,7 +55,6 @@ import { MiniappUserSettingsRepository } from '../infrastructure/repositories/Mi
 import {
   applyUserPlaceholderToMessages,
   applyUserPlaceholderToSession,
-  CONVERSATION_PREPARATION_TIMEOUT_MS,
   createReplyStreamSink,
   runConversationTurn,
   withConversationPreparationDeadline,
@@ -475,7 +475,7 @@ export default async function conversationRoutes(app: FastifyInstance) {
     const sink = createReplyStreamSink(reply);
     const receivedAt = Date.now();
     const receivedMonotonicAt = performance.now();
-    const preparationSignal = AbortSignal.timeout(CONVERSATION_PREPARATION_TIMEOUT_MS);
+    let preparationSignal = AbortSignal.timeout(DEFAULT_FIRST_TOKEN_DEADLINE_MS);
 
     try {
       const catalog = await withConversationPreparationDeadline(
@@ -484,7 +484,10 @@ export default async function conversationRoutes(app: FastifyInstance) {
       );
       const firstTokenDeadlineMs =
         catalog.catalog.first_token_deadline_ms ?? DEFAULT_FIRST_TOKEN_DEADLINE_MS;
-      // Preparation has its own finite budget. The first-token threshold below is observation-only.
+      preparationSignal = AbortSignal.timeout(
+        Math.max(1, Math.ceil(firstTokenDeadlineMs - (performance.now() - receivedMonotonicAt)))
+      );
+      // Bound read-only preparation by the configured first-token budget.
       // Race each preparation await, never a block containing generation or quota writes.
       const dbUser = await withConversationPreparationDeadline(
         getOrCreateDbUser(tgUser),
@@ -630,6 +633,19 @@ function failTurn(
   error: unknown,
   log: RequestLogger
 ): void {
+  if (error instanceof FirstTokenDeadlineError) {
+    const code =
+      error.stage === 'fallback'
+        ? 'fallback_first_token_timeout'
+        : error.stage === 'primary'
+          ? 'primary_first_token_timeout'
+          : 'first_token_timeout';
+    if (sink.opened) {
+      sink.send({ type: 'error', code, message: error.message });
+      sink.close();
+    } else void reply.status(504).send(fail(code, error.message));
+    return;
+  }
   if (error instanceof Error && error.name === 'TimeoutError') {
     if (sink.opened) {
       sink.send({ type: 'error', code: 'upstream_error', message: '请求处理超时，请重试。' });

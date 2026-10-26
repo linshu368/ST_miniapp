@@ -508,7 +508,7 @@ export async function reconcileCharge(input: {
 
   const result = await applyLlmCharge(command);
   return {
-    settled: true,
+    settled: !result.pending,
     intendedDeduction: result.calculatedAmount,
     deductionRate: result.chargedAmount,
   };
