@@ -1,0 +1,38 @@
+{
+  "id": "user-stop-billing",
+  "name": "user-stop-billing",
+  "title": "主动停止按原权益结算，系统失败免扣",
+  "description": "用户主动停止按原型号原权益结算，系统超时免扣，不增扣费提醒；存量不追扣",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-26",
+  "completedAt": null,
+  "branch": "fix/user-stop-billing",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "backend.business.conversation-generation",
+        "database.business.billing-payment",
+        "shared.business.conversation-contracts",
+        "frontend.business.conversation-ui",
+        "database.business.conversation-storage"
+      ]
+    }
+  }
+}

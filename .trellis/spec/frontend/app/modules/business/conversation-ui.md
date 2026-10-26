@@ -5,8 +5,8 @@ scope: frontend
 category: business
 status: active
 owners: [frontend]
-last_verified_task: .trellis/tasks/10-23-dialogue-preference/
-last_verified_at: 2026-10-23
+last_verified_task: .trellis/tasks/10-26-user-stop-billing/
+last_verified_at: 2026-10-26
 ---
 
 # 用户会话、语音与图片界面
@@ -131,3 +131,7 @@ Wrong：思考与正文合并后传给ReplyRenderer/语音/图片。Correct：`t
 ## 2026-10-23 可运营回复风格
 
 回复偏好按generation-config公开目录动态呈现“回复风格”：纯文本名称/说明、独立多开、默认off、逐项pending与失败提示；无目录隐藏整段。React Query偏好map逐id更新/确认/回滚，无私有marker/rules、静态预设或生成接线。
+
+## 主动停止原价与权益结算（2026-10-26）
+
+取消请求显式区分user_stop与first_token_timeout。新业务标记user_cancelled在已冻结报价的生成中按原型号原价格/VIP/免费权益一次结算；免费轮消费免费次数，前端不增加扣费通知。系统超时、上游失败、历史cancelled和未报价取消保持免扣；新请求服务端策略位默认生效，取消CAS RPC按截止与已见观测裁决，不以调用方省略原因选价。免费权益先收口再解锁，钱包按原charge_id后台结算，缺generationId也不重发上游；回捞保留新业务原因及同账单幂等。契约/后端/数据库/前端联动，具体执行证据见本任务release-review。
