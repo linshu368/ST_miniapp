@@ -3,12 +3,9 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
 import { Home, Sparkles, User } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
-import { useEntryBackgroundReady } from '@/lib/entry-phase';
-import { prefetchImagePlazaFeed } from '@/lib/api/image-plaza';
 import { useNotificationUnreadCountQuery } from '@/lib/api/notifications';
 import { useSupportUnreadQuery } from '@/lib/api/support';
 import { clearLobbyReturnSnapshot } from '@/lib/lobby-return';
@@ -36,7 +33,6 @@ const HIDDEN_PREFIXES = [
 export function BottomNav() {
   const pathname = usePathname();
   const router = useRouter();
-  const queryClient = useQueryClient();
   const currentRoleplayPath = pathname === '/' || pathname === '/chats' ? pathname : null;
   const [roleplayHref, setRoleplayHref] = useState<'/' | '/chats'>('/');
 
@@ -48,10 +44,11 @@ export function BottomNav() {
     }
     setRoleplayHref(readRoleplayView());
   }, [currentRoleplayPath]);
-  // 红点与广场预取属 background：等列表/进聊 P0 与 enrich 波过去再发。
-  const backgroundReady = useEntryBackgroundReady();
-  const unread = useNotificationUnreadCountQuery({ enabled: backgroundReady });
-  const supportUnread = useSupportUnreadQuery({ enabled: backgroundReady });
+
+  // 未读属于「我的」：只在 profile 拉取/轮询。大厅、影像、聊天都不提前打，缓存仍可画红点。
+  const onProfileTab = Boolean(pathname?.startsWith('/profile'));
+  const unread = useNotificationUnreadCountQuery({ enabled: onProfileTab });
+  const supportUnread = useSupportUnreadQuery({ enabled: onProfileTab });
   // 「我的」页里公告和客服回复各有各的红点，导航上只汇总成一个。
   const hasUnread = (unread.data?.total ?? 0) > 0 || supportUnread.data?.has_unread === true;
 
@@ -66,26 +63,6 @@ export function BottomNav() {
     const timer = window.setTimeout(() => setPendingHref(null), 3000);
     return () => window.clearTimeout(timer);
   }, [pendingHref]);
-
-  // 在空闲时预取主模块，避免争抢当前页面的加载带宽。
-  useEffect(() => {
-    const prefetchAll = () => {
-      for (const item of NAV_ITEMS) router.prefetch(item.href);
-    };
-    const idle = window.requestIdleCallback;
-    if (typeof idle === 'function') {
-      const handle = idle(prefetchAll, { timeout: 4000 });
-      return () => window.cancelIdleCallback?.(handle);
-    }
-    const timer = window.setTimeout(prefetchAll, 2000);
-    return () => window.clearTimeout(timer);
-  }, [router]);
-
-  // 广场 feed 预取放 background，避免与大厅列表/进聊抢连接。
-  useEffect(() => {
-    if (!backgroundReady) return;
-    void prefetchImagePlazaFeed(queryClient);
-  }, [backgroundReady, queryClient]);
 
   if (pathname && HIDDEN_PREFIXES.some((p) => pathname.startsWith(p))) {
     return null;
@@ -116,6 +93,13 @@ export function BottomNav() {
               key={href}
               href={targetHref}
               scroll={href === '/' ? false : undefined}
+              // 不在大厅空闲预取其它 tab；真正指向该 tab 时再拉 RSC/路由。
+              onMouseEnter={() => {
+                if (!current) router.prefetch(targetHref);
+              }}
+              onTouchStart={() => {
+                if (!current) router.prefetch(targetHref);
+              }}
               onClick={(event) => {
                 if (currentRoleplayPath) rememberRoleplayScroll(currentRoleplayPath);
                 if (href === '/') {

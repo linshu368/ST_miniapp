@@ -259,11 +259,17 @@ function getStartParam(): string {
 }
 
 function UserSettingsHydrator() {
+  const pathname = usePathname();
   const applyServerDisplayName = useUserProfileStore((s) => s.applyServerDisplayName);
   const applyServerPhotoUrl = useUserProfileStore((s) => s.applyServerPhotoUrl);
-  // 头像/昵称可先用本地 hydrate；服务端 settings 放 background，少占入场连接。
+  // 大厅首屏不看服务端 settings；本地 hydrate 够用。进「我的」/聊天等再拉，避免占入场连接。
+  // profile / chat 页自己也有 reader；这里只负责写回全局 store。
+  const needsServerSettings =
+    Boolean(pathname?.startsWith('/profile')) || Boolean(pathname?.startsWith('/chat'));
   const backgroundReady = useEntryBackgroundReady();
-  const { data } = useUserSettingsQuery({ enabled: backgroundReady });
+  const { data } = useUserSettingsQuery({
+    enabled: backgroundReady && needsServerSettings,
+  });
 
   useEffect(() => {
     if (data) {
