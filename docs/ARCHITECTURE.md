@@ -687,9 +687,9 @@ Vercel 侧关键变量：`NEXT_PUBLIC_API_URL`（用户端 backend 公网域名�
 
 ### 首 token 兜底与业务体验数据（2026-10-23）
 
-自研 send/regenerate 仍统一进入 generation/execute：冻结原型号计费/权益、预留同一个 charge ID，然后在内部等待首发内容 token。普通模式的型号等待默认 4 秒，超时只派发一次运营配置的 OpenRouter 兜底型号（默认 DeepSeek V4.1 Flash 1017）；进入兜底后首发只作有界观察，不得重回交付或进入旧 provider 账务同步。深度思考模式不按快速等待切换型号，避免供应商静默推理被误判无响应。交付选择 RPC 与 provider 身份绑定、实际路由快照更新在同一事务内，原报价字段不变。
+自研 send/regenerate 统一进入generation/execute，冻结原型号计费/权益和同一个charge ID。首发实际POST起默认最多4秒，兜底实际POST起最多2秒，用户提交到实际可见首字默认10秒总硬限；前置、切换、网络和显示另计，不能称4+2等于用户总时间。思考模式不豁免，开启后的可读思考文字可作为首字。总预算不足时缩短/跳过首发，阶段截止与总截止区分记录。同型号不重复POST但仍遵守首发等待。交付选择/账务CAS不变。
 
-`experience.chat_generation_requests/attempts` 拥有 revision/尝试事实，`miniapp_analytics.chat_first_token_facts/report` 仅派生投影。前端通过独立的真实可见正文/公开思考 DOM 接缝报告用户总首 token；供应商 latency 和后端分段另外存。前后端共用目录中的 6 秒阈值只记录 SLA 超时，不再在普通或深度思考模式中自动取消或中断上游；普通模式的 4 秒单次 fallback 保留。超时率目标初始 1%，只供人工观察；只读准备使用独立 20 秒预算，原有 110/120/150 秒整轮生命周期、显式取消和计费闸门不变。
+`experience.chat_generation_requests/attempts`拥有请求/尝试事实；新增nullable兜底时限、客户端实际等待结束耗时、服务端超时阶段，旧行不回填。`miniapp_analytics.chat_first_token_facts/report`只读派生。前端`visible_dom_after_frame_v2`扫描可见非空白文字片段及滚动裁剪，修复v1只看首字符的漏判，v1/v2隔离。最终无字失败率包括提前模型超时、总截止、上游失败；后台/缺报/主动取消不算成功。客户端10秒无字提示重试并确认取消，已经完成的终态受保护，首字后不按该timer中断回复。后端以路由入口独立单调时钟保护，不能冒充客户端体验。
 
 Admin 在“运营配置 → 兜底配置”集中编辑兜底型号、每型号等待与全局上限/目标，复用模型目录的同一草稿/发布/恢复通路。每轮冻结兜底型号，prepare RPC 从请求快照读取，分析事实与报表保留该型号；不新增配置key或secret。客户端只能经鉴权和精确身份校验 API 回报。应用与两份基础迁移已通过 #461 生产发布，Telegram 真机验收尚未完成。
 

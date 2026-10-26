@@ -41,7 +41,11 @@ import {
   type SseTapResult,
 } from './upstream.js';
 import { applyPromptCaching, type UpstreamMessage } from './prompt-caching.js';
-import { forwardWithFirstTokenFallback, type TransportModel } from './first-token-fallback.js';
+import {
+  FirstTokenDeadlineError,
+  forwardWithFirstTokenFallback,
+  type TransportModel,
+} from './first-token-fallback.js';
 import { GenerationCleanupPendingError } from './types.js';
 import type {
   GenerationHooks,
@@ -273,12 +277,13 @@ export async function execute(
           ...request,
           model: { ...request.model, ...model, openRouterModelId: model.providerModelId },
         };
+        const body = JSON.stringify(buildUpstreamBody(actualRequest, preferences));
         attemptSignal.throwIfAborted();
         onDispatch?.();
         return forwardToUpstream({
           url: route.url,
           method: 'POST',
-          body: JSON.stringify(buildUpstreamBody(actualRequest, preferences)),
+          body,
           signal: attemptSignal,
           apiKey: route.apiKey,
           provider: model.provider,
@@ -292,6 +297,8 @@ export async function execute(
           fallbackModelId: request.model.firstTokenPolicy.fallbackModelId,
           primaryAttemptId: request.firstToken.primaryAttemptId,
           timeoutMs: request.model.firstTokenPolicy.timeoutMs,
+          fallbackTimeoutMs: request.model.firstTokenPolicy.fallbackTimeoutMs,
+          remainingFirstTokenMs: request.model.firstTokenPolicy.deadlineMs - elapsed,
           remainingObservationMs: 110_000 - elapsed,
           requestStartedAt: request.firstToken.requestStartedAt,
           signal,
@@ -325,6 +332,11 @@ export async function execute(
         'upstream request failed'
       );
       hooks?.onError?.(toError(err));
+      if (
+        err instanceof FirstTokenDeadlineError ||
+        signal.reason instanceof FirstTokenDeadlineError
+      )
+        throw err instanceof FirstTokenDeadlineError ? err : signal.reason;
       return finish(failed());
     }
 

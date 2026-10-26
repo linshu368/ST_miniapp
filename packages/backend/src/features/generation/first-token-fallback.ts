@@ -1,5 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { FIRST_TOKEN_FALLBACK_MODEL_ID, type LlmModelProvider } from '@miniapp/shared';
+import {
+  DEFAULT_FALLBACK_TOKEN_TIMEOUT_MS,
+  FIRST_TOKEN_FALLBACK_MODEL_ID,
+  type LlmModelProvider,
+} from '@miniapp/shared';
 import type { AttemptObservation } from '../../infrastructure/repositories/GenerationObservationRepository.js';
 import { createLeadingThinkingSplitter, readExposedReasoning } from './upstream.js';
 
@@ -11,6 +15,14 @@ export interface FirstTokenAttemptStore {
   prepareFallback(attempt: AttemptObservation, triggeredMs: number): Promise<void>;
   observe(attempt: AttemptObservation): Promise<void>;
   selectDelivery(attempt: AttemptObservation): Promise<void>;
+}
+
+/** Stage and total deadlines are different facts; neither is the response lifetime. */
+export class FirstTokenDeadlineError extends Error {
+  constructor(readonly stage: 'global' | 'primary' | 'fallback' = 'global') {
+    super('这次响应有点慢，请重试。');
+    this.name = 'FirstTokenDeadlineError';
+  }
 }
 
 interface Peeked {
@@ -27,6 +39,8 @@ export async function forwardWithFirstTokenFallback(input: {
   fallbackModelId?: string;
   primaryAttemptId: string;
   timeoutMs: number;
+  fallbackTimeoutMs?: number;
+  remainingFirstTokenMs: number;
   remainingObservationMs: number;
   requestStartedAt: number;
   signal: AbortSignal;
@@ -41,8 +55,17 @@ export async function forwardWithFirstTokenFallback(input: {
 }> {
   const fallbackModelId = input.fallbackModelId ?? FIRST_TOKEN_FALLBACK_MODEL_ID;
   input.signal.throwIfAborted();
+  if (input.remainingFirstTokenMs <= 0) throw new FirstTokenDeadlineError();
+  const deadlineAt = performance.now() + input.remainingFirstTokenMs;
+  const deadline = new AbortController();
+  const deadlineTimer = setTimeout(
+    () => deadline.abort(new FirstTokenDeadlineError()),
+    input.remainingFirstTokenMs
+  );
   const assertBudget = () => {
     input.signal.throwIfAborted();
+    deadline.signal.throwIfAborted();
+    if (performance.now() >= deadlineAt) throw new FirstTokenDeadlineError();
   };
   const observationDeadline = AbortSignal.timeout(
     Math.max(1, Math.ceil(input.remainingObservationMs))
@@ -56,6 +79,17 @@ export async function forwardWithFirstTokenFallback(input: {
   ]);
   const selectedSignal = (controller: AbortController) =>
     AbortSignal.any([input.signal, controller.signal]);
+  let thresholdTimer: ReturnType<typeof setTimeout> | undefined;
+  let fallbackTimer: ReturnType<typeof setTimeout> | undefined;
+  let fallbackDeadlineAt: number | undefined;
+  let primaryDeadlineAt: number | undefined;
+  let triggerFallback: () => void = () => {};
+  const threshold = new Promise<null>((resolve) => {
+    triggerFallback = () => resolve(null);
+  });
+  const canFallback = !(
+    input.primary.provider === 'openrouter' && input.primary.providerModelId === fallbackModelId
+  );
   let switched = false;
   let selected: Peeked | undefined;
   let primaryResult: Peeked | undefined;
@@ -84,6 +118,33 @@ export async function forwardWithFirstTokenFallback(input: {
       observation.dispatched_at = new Date().toISOString();
       observation.dispatch_offset_ms = started - input.requestStartedAt;
       record();
+      // Route lookup is engineering overhead. Model waits begin only at the actual POST.
+      if (role === 'primary') {
+        const remaining = deadlineAt - started;
+        const wait = canFallback
+          ? Math.min(
+              input.timeoutMs,
+              Math.max(
+                0,
+                remaining - (input.fallbackTimeoutMs ?? DEFAULT_FALLBACK_TOKEN_TIMEOUT_MS)
+              )
+            )
+          : input.timeoutMs;
+        primaryDeadlineAt = started + wait;
+        thresholdTimer = setTimeout(
+          canFallback
+            ? triggerFallback
+            : () => deadline.abort(new FirstTokenDeadlineError('primary')),
+          wait
+        );
+      } else if (role === 'fallback') {
+        const wait = input.fallbackTimeoutMs ?? DEFAULT_FALLBACK_TOKEN_TIMEOUT_MS;
+        fallbackDeadlineAt = started + wait;
+        fallbackTimer = setTimeout(
+          () => fallbackController.abort(new FirstTokenDeadlineError('fallback')),
+          wait
+        );
+      }
     };
     let responseBody: ReadableStream<Uint8Array> | null = null;
     let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
@@ -169,6 +230,24 @@ export async function forwardWithFirstTokenFallback(input: {
           if (item.done) break;
           continue;
         }
+        // Event-loop delay may deliver bytes before an overdue timer callback runs.
+        // Compare the absolute stage deadline so late bytes cannot steal delivery.
+        if (
+          role === 'primary' &&
+          primaryDeadlineAt !== undefined &&
+          performance.now() >= primaryDeadlineAt
+        ) {
+          if (canFallback) triggerFallback();
+          else throw new FirstTokenDeadlineError('primary');
+        }
+        if (
+          role === 'fallback' &&
+          fallbackDeadlineAt !== undefined &&
+          performance.now() >= fallbackDeadlineAt
+        )
+          throw new FirstTokenDeadlineError('fallback');
+        if (role === 'fallback') clearTimeout(fallbackTimer);
+        else clearTimeout(thresholdTimer);
         observation.first_token_ms = performance.now() - started;
         observation.observed_until_ms = observation.first_token_ms;
         observation.end_reason = 'first_token_observed';
@@ -224,28 +303,44 @@ export async function forwardWithFirstTokenFallback(input: {
       };
     } catch (error) {
       observation.observed_until_ms = performance.now() - started;
-      observation.end_reason = input.signal.aborted
-        ? 'cancelled'
-        : signal.aborted
-          ? 'observation_deadline'
-          : 'upstream_error';
+      observation.end_reason =
+        error instanceof FirstTokenDeadlineError || signal.reason instanceof FirstTokenDeadlineError
+          ? 'first_token_deadline'
+          : input.signal.aborted
+            ? 'cancelled'
+            : signal.aborted
+              ? 'observation_deadline'
+              : 'upstream_error';
       record();
       stop();
       throw error;
     }
   };
 
-  let thresholdTimer: ReturnType<typeof setTimeout> | undefined;
-  const primaryPromise = peek(input.primary, 'primary', input.primaryAttemptId, primarySignal).then(
-    (result) => {
-      primaryResult = result;
-      if (switched) result.stop();
-      return result;
-    }
-  );
+  const skipPrimary =
+    canFallback &&
+    deadlineAt - performance.now() <=
+      (input.fallbackTimeoutMs ?? DEFAULT_FALLBACK_TOKEN_TIMEOUT_MS);
+  if (skipPrimary)
+    void input.store
+      .observe({
+        id: input.primaryAttemptId,
+        role: 'primary',
+        provider: input.primary.provider,
+        model: input.primary.providerModelId,
+        end_reason: 'budget_skipped',
+      })
+      .catch(input.onObservationError);
+  const primaryPromise: Promise<Peeked | null> = skipPrimary
+    ? Promise.resolve(null)
+    : peek(input.primary, 'primary', input.primaryAttemptId, primarySignal).then((result) => {
+        primaryResult = result;
+        if (switched) result.stop();
+        return result;
+      });
   // A late observer rejection must always have a handler after the fallback takes over.
   void primaryPromise.catch(input.onObservationError);
-  const abortSignal = input.signal;
+  const abortSignal = AbortSignal.any([input.signal, deadline.signal, fallbackController.signal]);
   let removeAbort = () => {};
   const abortPromise = new Promise<never>((_, reject) => {
     const abort = () => reject(abortSignal.reason ?? new DOMException('Aborted', 'AbortError'));
@@ -254,16 +349,6 @@ export async function forwardWithFirstTokenFallback(input: {
     else abortSignal.addEventListener('abort', abort, { once: true });
   });
   try {
-    const threshold = new Promise<null>((resolve) => {
-      thresholdTimer = setTimeout(() => resolve(null), input.timeoutMs);
-    });
-    // Deep-thinking providers may legitimately stay silent before exposing reasoning or an answer.
-    // Keep the selected model in that mode; the conversation lifetime signal remains the hard bound.
-    const canFallback =
-      input.thinkingEnabled !== true &&
-      !(
-        input.primary.provider === 'openrouter' && input.primary.providerModelId === fallbackModelId
-      );
     const primary = await Promise.race([
       primaryPromise,
       ...(canFallback ? [threshold] : []),
@@ -316,5 +401,7 @@ export async function forwardWithFirstTokenFallback(input: {
   } finally {
     removeAbort();
     clearTimeout(thresholdTimer);
+    clearTimeout(fallbackTimer);
+    clearTimeout(deadlineTimer);
   }
 }

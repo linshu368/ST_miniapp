@@ -296,6 +296,7 @@ export function useConversationTurn({
   const [firstTokenObservation, setFirstTokenObservation] = useState<FirstTokenIdentity | null>(
     null
   );
+  const autoCancelRef = useRef<(requestId: string) => void>(() => {});
   const onFirstTokenDisplayed = useCallback(
     (identity: FirstTokenIdentity, at: number) => {
       if (observationRef.current?.displayed(identity, at)) {
@@ -579,8 +580,8 @@ export function useConversationTurn({
         () => {
           if (observationRef.current !== observation) return;
           setFirstTokenObservation(null);
-          // Six seconds is an observation threshold only. The stream lifetime and explicit
-          // cancellation remain the authority for both normal and deep-thinking replies.
+          setStreamError(FIRST_TOKEN_RETRY_MESSAGE);
+          autoCancelRef.current(requestId);
         }
       );
       observationRef.current = observation;
@@ -684,11 +685,18 @@ export function useConversationTurn({
             setStreaming((current) => (current ? applyStreamStart(current, event) : current));
           },
           onDelta: (text) => {
-            if (!isCurrent()) return;
+            if (!isCurrent() || observation.timedOut) return;
             setStreaming((current) => (current ? appendStreamText(current, text) : current));
           },
           onReasoning: (text) => {
-            if (!isCurrent() || !thinkingEnabled || !assistantMessageId || !text) return;
+            if (
+              !isCurrent() ||
+              observation.timedOut ||
+              !thinkingEnabled ||
+              !assistantMessageId ||
+              !text
+            )
+              return;
             const key = messageThinkingKey({
               session_id: sessionId,
               id: assistantMessageId,
@@ -707,6 +715,10 @@ export function useConversationTurn({
             if (!isCurrent()) return;
             assistantMessageId = event.assistant_message_id;
             settledStatus = event.status;
+            if (event.status !== 'complete' && !observation.hasReceivedToken) {
+              observation.unavailable('upstream_error');
+              setFirstTokenObservation(null);
+            }
           },
         });
 
@@ -747,15 +759,24 @@ export function useConversationTurn({
             });
           }
         }
-        if (error instanceof ConversationStreamError && error.code === 'first_token_timeout')
-          observation.deadlineFailed();
+        if (error instanceof ConversationStreamError) {
+          if (error.code === 'first_token_timeout') observation.deadlineFailed('server_timeout');
+          if (error.code === 'fallback_first_token_timeout')
+            observation.deadlineFailed('fallback_timeout');
+          if (error.code === 'primary_first_token_timeout')
+            observation.deadlineFailed('primary_timeout');
+        }
         observation.unavailable('upstream_error');
         setFirstTokenObservation(null);
         await handleTurnFailure(error, input, isCurrent);
         // Keep rolling-deploy compatibility with an old backend that may still hard-timeout.
         if (
           error instanceof ConversationStreamError &&
-          error.code === 'first_token_timeout' &&
+          [
+            'first_token_timeout',
+            'fallback_first_token_timeout',
+            'primary_first_token_timeout',
+          ].includes(error.code ?? '') &&
           isCurrent()
         )
           setStreamError(FIRST_TOKEN_RETRY_MESSAGE);
@@ -782,179 +803,202 @@ export function useConversationTurn({
     ]
   );
 
-  const abort = useCallback(async () => {
-    if (!sessionId || cancelRef.current || quotaRefreshing) return;
-    observationRef.current?.unavailable('cancelled');
-    setFirstTokenObservation(null);
-    const cancellation = Symbol('cancel');
-    cancelRef.current = cancellation;
-    setCancelling(true);
-    setStreamError(null);
-    const isCurrent = () => cancelRef.current === cancellation && sessionRef.current === sessionId;
-    try {
-      const pending = pendingRef.current?.sessionId === sessionId ? pendingRef.current : null;
-      let message = pending
-        ? findPendingTurnMessage(persistedMessages, pending)
-        : persistedMessages.find(
-            (item) => item.role === 'assistant' && item.status === 'streaming'
-          );
-      let assistantMessageId = pending?.assistantMessageId ?? message?.id;
-      // 保留一次点击的取消意图，覆盖后端 20 秒准备 + 开轮 RPC；总发现等待最多 30 秒。
-      const discoveryDeadline = Date.now() + CANCEL_DISCOVERY_DEADLINE_MS;
-      while (!assistantMessageId && pending && Date.now() < discoveryDeadline) {
+  const abort = useCallback(
+    async (reason?: 'first_token_timeout') => {
+      if (!sessionId || cancelRef.current || quotaRefreshing) return;
+      if (!reason) observationRef.current?.unavailable('cancelled');
+      setFirstTokenObservation(null);
+      const cancellation = Symbol('cancel');
+      cancelRef.current = cancellation;
+      setCancelling(true);
+      setStreamError(reason ? FIRST_TOKEN_RETRY_MESSAGE : null);
+      const isCurrent = () =>
+        cancelRef.current === cancellation && sessionRef.current === sessionId;
+      try {
+        const pending = pendingRef.current?.sessionId === sessionId ? pendingRef.current : null;
+        let message = pending
+          ? findPendingTurnMessage(persistedMessages, pending)
+          : persistedMessages.find(
+              (item) => item.role === 'assistant' && item.status === 'streaming'
+            );
+        let assistantMessageId = pending?.assistantMessageId ?? message?.id;
+        // 保留一次点击的取消意图，覆盖开轮/取消 RPC 的确认延迟；总发现等待最多 30 秒。
+        const discoveryDeadline = Date.now() + CANCEL_DISCOVERY_DEADLINE_MS;
+        while (!assistantMessageId && pending && Date.now() < discoveryDeadline) {
+          if (!isCurrent()) return;
+          if (pending.unaccepted) {
+            // 明确拒绝且未开轮时无可取消的服务端消息，恢复原输入并结束等待。
+            if (streaming?.mode === 'send' && streaming.userMessage)
+              onRestoreSendContent(streaming.userMessage.content);
+            setStreaming(null);
+            setStreamError('本次回复未开始，原消息已保留');
+            return;
+          }
+          assistantMessageId = pendingRef.current?.assistantMessageId ?? undefined;
+          if (assistantMessageId) break;
+          const remaining = discoveryDeadline - Date.now();
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          let detail: GetConversationData;
+          try {
+            detail = await Promise.race([
+              queryClient.fetchQuery({
+                queryKey: conversationKeys.detail(sessionId),
+                queryFn: () => fetchConversationDetail(sessionId, Math.min(10_000, remaining)),
+                staleTime: 0,
+                retry: false,
+              }),
+              new Promise<never>((_resolve, reject) => {
+                timer = setTimeout(
+                  () => reject(new Error('本次回复尚未确认，请稍后重试取消')),
+                  remaining
+                );
+              }),
+            ]).finally(() => clearTimeout(timer));
+          } catch (error) {
+            if (!isCurrent()) return;
+            if (
+              error instanceof ApiClientError &&
+              error.status >= 400 &&
+              error.status < 500 &&
+              error.status !== 408 &&
+              error.status !== 429
+            )
+              throw error;
+            assistantMessageId = pendingRef.current?.assistantMessageId ?? undefined;
+            if (assistantMessageId) break;
+            if (Date.now() >= discoveryDeadline) break;
+            await new Promise((resolve) =>
+              window.setTimeout(resolve, Math.min(1_000, discoveryDeadline - Date.now()))
+            );
+            continue;
+          }
+          if (!isCurrent()) return;
+          message = findPendingTurnMessage(detail.messages, pending);
+          assistantMessageId = pendingRef.current?.assistantMessageId ?? message?.id;
+          if (message && !pending.unaccepted) {
+            const discovered = message;
+            pending.assistantMessageId = discovered.id;
+            setStreaming((current) =>
+              current
+                ? {
+                    ...current,
+                    assistantMessageId: discovered.id,
+                    turnIndex: discovered.turn_index,
+                    revision: discovered.revision,
+                    userMessage: current.userMessage
+                      ? (detail.messages.find(
+                          (item) =>
+                            item.role === 'user' && item.turn_index === discovered.turn_index
+                        ) ?? current.userMessage)
+                      : null,
+                  }
+                : current
+            );
+          }
+          if (!assistantMessageId && Date.now() < discoveryDeadline)
+            await new Promise((resolve) =>
+              window.setTimeout(resolve, Math.min(500, discoveryDeadline - Date.now()))
+            );
+        }
         if (!isCurrent()) return;
-        if (pending.unaccepted) {
-          // 明确拒绝且未开轮时无可取消的服务端消息，恢复原输入并结束等待。
+        if (pending?.unaccepted) {
           if (streaming?.mode === 'send' && streaming.userMessage)
             onRestoreSendContent(streaming.userMessage.content);
           setStreaming(null);
           setStreamError('本次回复未开始，原消息已保留');
           return;
         }
-        assistantMessageId = pendingRef.current?.assistantMessageId ?? undefined;
-        if (assistantMessageId) break;
-        const remaining = discoveryDeadline - Date.now();
-        let timer: ReturnType<typeof setTimeout> | undefined;
-        let detail: GetConversationData;
-        try {
-          detail = await Promise.race([
-            queryClient.fetchQuery({
-              queryKey: conversationKeys.detail(sessionId),
-              queryFn: () => fetchConversationDetail(sessionId, Math.min(10_000, remaining)),
-              staleTime: 0,
-              retry: false,
-            }),
-            new Promise<never>((_resolve, reject) => {
-              timer = setTimeout(
-                () => reject(new Error('本次回复尚未确认，请稍后重试取消')),
-                remaining
-              );
-            }),
-          ]).finally(() => clearTimeout(timer));
-        } catch (error) {
-          if (!isCurrent()) return;
-          if (
-            error instanceof ApiClientError &&
-            error.status >= 400 &&
-            error.status < 500 &&
-            error.status !== 408 &&
-            error.status !== 429
-          )
-            throw error;
-          assistantMessageId = pendingRef.current?.assistantMessageId ?? undefined;
-          if (assistantMessageId) break;
-          if (Date.now() >= discoveryDeadline) break;
-          await new Promise((resolve) =>
-            window.setTimeout(resolve, Math.min(1_000, discoveryDeadline - Date.now()))
-          );
-          continue;
-        }
+        if (!assistantMessageId) throw new Error('本次回复尚未确认，请稍后重试取消');
+        if (message) observationRef.current?.identify(assistantMessageId, message.revision);
+        const result = await cancelTurn({ sessionId, assistantMessageId });
+        observationRef.current?.identify(result.message.id, result.message.revision);
         if (!isCurrent()) return;
-        message = findPendingTurnMessage(detail.messages, pending);
-        assistantMessageId = pendingRef.current?.assistantMessageId ?? message?.id;
-        if (message && !pending.unaccepted) {
-          const discovered = message;
-          pending.assistantMessageId = discovered.id;
-          setStreaming((current) =>
-            current
-              ? {
-                  ...current,
-                  assistantMessageId: discovered.id,
-                  turnIndex: discovered.turn_index,
-                  revision: discovered.revision,
-                  userMessage: current.userMessage
-                    ? (detail.messages.find(
-                        (item) => item.role === 'user' && item.turn_index === discovered.turn_index
-                      ) ?? current.userMessage)
-                    : null,
-                }
-              : current
-          );
-        }
-        if (!assistantMessageId && Date.now() < discoveryDeadline)
-          await new Promise((resolve) =>
-            window.setTimeout(resolve, Math.min(500, discoveryDeadline - Date.now()))
-          );
-      }
-      if (!isCurrent()) return;
-      if (pending?.unaccepted) {
-        if (streaming?.mode === 'send' && streaming.userMessage)
-          onRestoreSendContent(streaming.userMessage.content);
-        setStreaming(null);
-        setStreamError('本次回复未开始，原消息已保留');
-        return;
-      }
-      if (!assistantMessageId) throw new Error('本次回复尚未确认，请稍后重试取消');
-      if (message) observationRef.current?.identify(assistantMessageId, message.revision);
-      const result = await cancelTurn({ sessionId, assistantMessageId });
-      observationRef.current?.identify(result.message.id, result.message.revision);
-      if (!isCurrent()) return;
-      if (result.message.status === 'streaming') throw new Error('本次回复仍在生成，请重试取消');
-      const optimisticUser = streaming?.userMessage;
-      queryClient.setQueryData<GetConversationData>(
-        conversationKeys.detail(sessionId),
-        (detail) => {
-          if (!detail) return detail;
-          if (
-            detail.messages.some(
-              (item) =>
-                item.role === 'assistant' &&
-                item.turn_index === result.message.turn_index &&
-                item.revision > result.message.revision
+        if (result.message.status === 'streaming') throw new Error('本次回复仍在生成，请重试取消');
+        const optimisticUser = streaming?.userMessage;
+        queryClient.setQueryData<GetConversationData>(
+          conversationKeys.detail(sessionId),
+          (detail) => {
+            if (!detail) return detail;
+            if (
+              detail.messages.some(
+                (item) =>
+                  item.role === 'assistant' &&
+                  item.turn_index === result.message.turn_index &&
+                  item.revision > result.message.revision
+              )
             )
-          )
-            return detail;
-          const rows = detail.messages.filter((item) => item.id !== result.message.id);
-          if (
-            optimisticUser &&
-            !rows.some(
-              (item) => item.role === 'user' && item.turn_index === result.message.turn_index
-            )
-          ) {
-            rows.push({
-              ...optimisticUser,
-              id: `${result.message.id}:user`,
-              turn_index: result.message.turn_index,
-              revision: result.message.revision,
-            });
+              return detail;
+            const rows = detail.messages.filter((item) => item.id !== result.message.id);
+            if (
+              optimisticUser &&
+              !rows.some(
+                (item) => item.role === 'user' && item.turn_index === result.message.turn_index
+              )
+            ) {
+              rows.push({
+                ...optimisticUser,
+                id: `${result.message.id}:user`,
+                turn_index: result.message.turn_index,
+                revision: result.message.revision,
+              });
+            }
+            rows.push(result.message);
+            rows.sort(
+              (left, right) =>
+                left.turn_index - right.turn_index ||
+                (left.role === right.role ? 0 : left.role === 'user' ? -1 : 1)
+            );
+            return { ...detail, messages: rows };
           }
-          rows.push(result.message);
-          rows.sort(
-            (left, right) =>
-              left.turn_index - right.turn_index ||
-              (left.role === right.role ? 0 : left.role === 'user' ? -1 : 1)
-          );
-          return { ...detail, messages: rows };
+        );
+        // 只有服务端确认终态才撤本地占位；隔离旧 stream 的 finally 和 delta。
+        requestRef.current = null;
+        pendingRef.current = null;
+        abortRef.current?.abort();
+        abortRef.current = null;
+        setStreaming(null);
+        setQuotaRefreshing(false);
+        safelyRunTelemetry(() => getReplayLifecycle().setStreaming(false));
+        void queryClient.invalidateQueries({ queryKey: paymentKeys.wallet() });
+        void queryClient.invalidateQueries({ queryKey: freeQuotaKeys.detail(characterId) });
+      } catch (error) {
+        if (isCurrent())
+          setStreamError(error instanceof Error ? error.message : '取消失败，请重试');
+      } finally {
+        if (isCurrent()) {
+          cancelRef.current = null;
+          setCancelling(false);
         }
-      );
-      // 只有服务端确认终态才撤本地占位；隔离旧 stream 的 finally 和 delta。
-      requestRef.current = null;
-      pendingRef.current = null;
-      abortRef.current?.abort();
-      abortRef.current = null;
-      setStreaming(null);
-      setQuotaRefreshing(false);
-      safelyRunTelemetry(() => getReplayLifecycle().setStreaming(false));
-      void queryClient.invalidateQueries({ queryKey: paymentKeys.wallet() });
-      void queryClient.invalidateQueries({ queryKey: freeQuotaKeys.detail(characterId) });
-    } catch (error) {
-      if (isCurrent()) setStreamError(error instanceof Error ? error.message : '取消失败，请重试');
-    } finally {
-      if (isCurrent()) {
-        cancelRef.current = null;
-        setCancelling(false);
       }
-    }
-  }, [
-    cancelTurn,
-    characterId,
-    persistedMessages,
-    onRestoreSendContent,
-    queryClient,
-    quotaRefreshing,
-    sessionId,
-    streaming,
-  ]);
+    },
+    [
+      cancelTurn,
+      characterId,
+      persistedMessages,
+      onRestoreSendContent,
+      queryClient,
+      quotaRefreshing,
+      sessionId,
+      streaming,
+    ]
+  );
+
+  autoCancelRef.current = (requestId) => {
+    if (
+      observationRef.current?.identity.requestId !== requestId ||
+      sessionRef.current !== sessionId
+    )
+      return;
+    const identity = observationRef.current.identity;
+    const completed = persistedMessages.find(
+      (m) =>
+        m.id === identity.assistantMessageId &&
+        m.revision === identity.revision &&
+        m.status !== 'streaming'
+    );
+    if (completed && !pendingRef.current) return;
+    void abort('first_token_timeout');
+  };
 
   const quotaExhaustedNotice = freeQuotaExhaustedMessageId
     ? {

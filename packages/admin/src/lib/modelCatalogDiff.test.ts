@@ -44,11 +44,13 @@ it('describes operator fallback and wait policy changes in release history', () 
   const after = structuredClone(before);
   after.fallback_model_id = 'vendor/operator-flash';
   after.first_token_deadline_ms = 8000;
+  after.fallback_timeout_ms = 2500;
   after.first_token_timeout_rate_target = 0.02;
   after.tiers[0]!.models[0]!.first_token_timeout_ms = 3500;
   const summary = getModelCatalogChangeSummary(before, after);
   expect(summary).toContain('兜底模型改为 vendor/operator-flash');
   expect(summary).toContain('全局首 token 上限改为 8 秒');
   expect(summary).toContain('超时率目标改为 2%');
+  expect(summary).toContain('兜底实际派发后等待改为 2.5 秒');
   expect(summary).toContain('首发等待改为 3.5 秒');
 });

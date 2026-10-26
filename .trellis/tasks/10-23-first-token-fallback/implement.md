@@ -62,3 +62,9 @@ Backend以tsx运行且无独立build脚本，使用typecheck和相关测试；Fr
 ## 追加执行：Grafana读授权与业务看板
 
 沿用已审核设计和本轮明确授权：1) 角色/列级ACL只读前置核验；2) 原reader授权前向迁移、业务看板JSON、既有PG17 harness扩展；3) 实际PG17角色与全部SQL回归，静态检查；4) 呈现最终文件清单供仓库提交审核；5) 提交推送，正式workflow先TEST后production逐文件执行；6) 绑定既有数据源发布新看板，以Grafana真实查询和浏览器验证；7) 保留还原操作和准确数据覆盖说明。Supabase MCP仅做结构采集，不读业务行或执行DDL。
+
+## 2026-10-26 执行补充
+
+用户已明确授权实现4秒首发/2秒兜底/10秒用户硬限。先修契约/config冻结，再后端真实派发计时和硬限、前端可见检测与取消，最后补齐运营文案/分析口径。每次修改由主代理执行，研究代理只读评估。
+
+验证：现有first-token-fallback、execute、conversation lifecycle/routes、FirstTokenObservation、use-conversation-turn、models/admin config测试；增加已知故障回归（延迟派发、阶段超时、全局截止、取消、reasoning、长textnode）。真实Chromium运行当前实现而非手抄替代逻辑。shared全部测试、各消费者typecheck、相关lint、frontend/admin build、migration本地数据库验证。检查长回复不被首字截止杀掉、额度仅一次释放/结算、早期fallback超时不伪称用户等满10秒。最后准备精确文件/摘要/验证清单，提交前按现有流程一次审核。
