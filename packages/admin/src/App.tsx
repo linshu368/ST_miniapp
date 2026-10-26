@@ -694,7 +694,12 @@ function AdminWorkspace(props: {
   useEffect(() => {
     if (selectedKey !== 'llm_model_catalog' || !canWrite || loading) return;
     const serialized = JSON.stringify(workingValue);
-    if (serialized === hydratedValueRef.current) return;
+    if (serialized === hydratedValueRef.current) {
+      // Hydration or undo can cancel the debounce after it marked the old value pending.
+      // Once the editor matches the saved draft, publishing must become available again.
+      setAutoSaveStatus((status) => (status === 'pending' ? 'idle' : status));
+      return;
+    }
 
     setAutoSaveStatus('pending');
     const timer = window.setTimeout(async () => {
