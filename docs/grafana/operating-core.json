@@ -44,7 +44,11 @@
         "defaults": {
           "unit": "none",
           "decimals": 0,
-          "noValue": "待更新"
+          "noValue": "待更新",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
         },
         "overrides": []
       },
@@ -93,7 +97,11 @@
         "defaults": {
           "unit": "none",
           "decimals": 0,
-          "noValue": "待更新"
+          "noValue": "待更新",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
         },
         "overrides": []
       },
@@ -142,7 +150,11 @@
         "defaults": {
           "unit": "prefix:¥",
           "decimals": 2,
-          "noValue": "待更新"
+          "noValue": "待更新",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
         },
         "overrides": []
       },
@@ -190,8 +202,12 @@
       "fieldConfig": {
         "defaults": {
           "unit": "currencyUSD",
-          "decimals": 5,
-          "noValue": "待更新"
+          "decimals": 2,
+          "noValue": "待更新",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
         },
         "overrides": []
       },

@@ -63,7 +63,7 @@
         "refresh": 2,
         "multi": true,
         "includeAll": true,
-        "allValue": "__all__",
+        "allValue": "'__all__'",
         "current": {
           "text": "All",
           "value": "$__all",
