@@ -42,7 +42,7 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
+          "unit": "none",
           "decimals": 0,
           "noValue": "待更新"
         },
@@ -50,7 +50,9 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         },
@@ -89,7 +91,7 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
+          "unit": "none",
           "decimals": 0,
           "noValue": "待更新"
         },
@@ -97,7 +99,9 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         },
@@ -136,7 +140,7 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "currencyCNY",
+          "unit": "prefix:¥",
           "decimals": 2,
           "noValue": "待更新"
         },
@@ -144,7 +148,9 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         },
@@ -191,7 +197,9 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         },
@@ -274,7 +282,7 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
+          "unit": "none",
           "decimals": 0,
           "noValue": "待更新"
         },
@@ -335,7 +343,7 @@
             "properties": [
               {
                 "id": "unit",
-                "value": "currencyCNY"
+                "value": "prefix:¥"
               },
               {
                 "id": "decimals",
@@ -367,7 +375,7 @@
             "properties": [
               {
                 "id": "unit",
-                "value": "dateTimeAsIso"
+                "value": "none"
               },
               {
                 "id": "decimals",
@@ -392,7 +400,7 @@
             "type": "grafana-postgresql-datasource",
             "uid": "${DS_POSTGRES}"
           },
-          "rawSql": "SELECT metric_date AS 日期,requests AS 请求数,chat_users AS 聊天人数,charged_requests AS 扣星尘请求,charged_stars AS 实扣星尘,known_cost_requests AS 已记录成本请求,round(100.0*known_cost_requests/nullif(requests,0),1) AS 成本记录率,recorded_cost_usd AS 已记录模型成本USD,paid_orders AS 成交订单,paying_users AS 付款人数,cash_cny AS 充值实收CNY FROM miniapp_analytics.grafana_core_daily WHERE metric_scope='overall' AND metric_date BETWEEN ($__timeFrom() AT TIME ZONE 'Asia/Shanghai')::date AND ($__timeTo() AT TIME ZONE 'Asia/Shanghai')::date ORDER BY metric_date DESC",
+          "rawSql": "SELECT metric_date::text AS 日期,requests AS 请求数,chat_users AS 聊天人数,charged_requests AS 扣星尘请求,charged_stars AS 实扣星尘,known_cost_requests AS 已记录成本请求,round(100.0*known_cost_requests/nullif(requests,0),1) AS 成本记录率,recorded_cost_usd AS \"已记录模型成本USD\",paid_orders AS 成交订单,paying_users AS 付款人数,cash_cny AS \"充值实收CNY\" FROM miniapp_analytics.grafana_core_daily WHERE metric_scope='overall' AND metric_date BETWEEN ($__timeFrom() AT TIME ZONE 'Asia/Shanghai')::date AND ($__timeTo() AT TIME ZONE 'Asia/Shanghai')::date ORDER BY metric_date DESC",
           "rawQuery": true,
           "format": "table"
         }
@@ -410,7 +418,7 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
+          "unit": "none",
           "decimals": 0,
           "noValue": "待更新"
         },
@@ -471,7 +479,7 @@
             "properties": [
               {
                 "id": "unit",
-                "value": "currencyCNY"
+                "value": "prefix:¥"
               },
               {
                 "id": "decimals",
@@ -503,7 +511,7 @@
             "properties": [
               {
                 "id": "unit",
-                "value": "dateTimeAsIso"
+                "value": "none"
               },
               {
                 "id": "decimals",
@@ -528,7 +536,7 @@
             "type": "grafana-postgresql-datasource",
             "uid": "${DS_POSTGRES}"
           },
-          "rawSql": "SELECT model_id AS 型号ID,max(model_name) AS 型号,sum(requests) AS 请求数,sum(charged_requests) AS 扣星尘请求,sum(charged_stars) AS 实扣星尘,sum(known_cost_requests) AS 已记录成本请求,round(100.0*sum(known_cost_requests)/nullif(sum(requests),0),1) AS 成本记录率,sum(recorded_cost_usd) AS 已记录模型成本USD,sum(recorded_cost_usd)/nullif(sum(known_cost_requests),0) AS 每已记录请求USD FROM miniapp_analytics.grafana_core_daily WHERE metric_scope='model' AND metric_date BETWEEN ($__timeFrom() AT TIME ZONE 'Asia/Shanghai')::date AND ($__timeTo() AT TIME ZONE 'Asia/Shanghai')::date GROUP BY model_id ORDER BY sum(requests) DESC",
+          "rawSql": "SELECT model_id AS \"型号ID\",max(model_name) AS 型号,sum(requests) AS 请求数,sum(charged_requests) AS 扣星尘请求,sum(charged_stars) AS 实扣星尘,sum(known_cost_requests) AS 已记录成本请求,round(100.0*sum(known_cost_requests)/nullif(sum(requests),0),1) AS 成本记录率,sum(recorded_cost_usd) AS \"已记录模型成本USD\",sum(recorded_cost_usd)/nullif(sum(known_cost_requests),0) AS \"每已记录请求USD\" FROM miniapp_analytics.grafana_core_daily WHERE metric_scope='model' AND metric_date BETWEEN ($__timeFrom() AT TIME ZONE 'Asia/Shanghai')::date AND ($__timeTo() AT TIME ZONE 'Asia/Shanghai')::date GROUP BY model_id ORDER BY sum(requests) DESC",
           "rawQuery": true,
           "format": "table"
         }
@@ -546,7 +554,7 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
+          "unit": "none",
           "decimals": 0,
           "noValue": "待更新"
         },
@@ -607,7 +615,7 @@
             "properties": [
               {
                 "id": "unit",
-                "value": "currencyCNY"
+                "value": "prefix:¥"
               },
               {
                 "id": "decimals",
@@ -639,7 +647,7 @@
             "properties": [
               {
                 "id": "unit",
-                "value": "dateTimeAsIso"
+                "value": "none"
               },
               {
                 "id": "decimals",
@@ -664,7 +672,7 @@
             "type": "grafana-postgresql-datasource",
             "uid": "${DS_POSTGRES}"
           },
-          "rawSql": "SELECT metric_date AS 日期,refreshed_at AS 最后刷新,round(extract(epoch FROM now()-refreshed_at)/60,1) AS 距刷新分钟,requests AS 请求样本,known_cost_requests AS 成本样本 FROM miniapp_analytics.grafana_core_daily WHERE metric_scope='overall' AND metric_date>=(now() AT TIME ZONE 'Asia/Shanghai')::date-1 ORDER BY metric_date DESC",
+          "rawSql": "SELECT metric_date::text AS 日期,refreshed_at AS 最后刷新,round(extract(epoch FROM now()-refreshed_at)/60,1) AS 距刷新分钟,requests AS 请求样本,known_cost_requests AS 成本样本 FROM miniapp_analytics.grafana_core_daily WHERE metric_scope='overall' AND metric_date>=(now() AT TIME ZONE 'Asia/Shanghai')::date-1 ORDER BY metric_date DESC",
           "rawQuery": true,
           "format": "table"
         }
@@ -673,7 +681,11 @@
   ],
   "refresh": "30m",
   "schemaVersion": 42,
-  "tags": ["ST", "business", "light-core"],
+  "tags": [
+    "ST",
+    "business",
+    "light-core"
+  ],
   "templating": {
     "list": []
   },
@@ -682,7 +694,13 @@
     "to": "now"
   },
   "timepicker": {
-    "refresh_intervals": ["1m", "5m", "15m", "30m", "1h"]
+    "refresh_intervals": [
+      "1m",
+      "5m",
+      "15m",
+      "30m",
+      "1h"
+    ]
   },
   "timezone": "Asia/Shanghai",
   "title": "01｜经营核心指标（轻量）",
