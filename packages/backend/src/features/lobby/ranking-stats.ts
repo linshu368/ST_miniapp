@@ -61,9 +61,12 @@ interface ScoreRow {
 }
 
 let cache: { at: number; value: RankingSnapshot } | null = null;
+/** TTL 过期瞬间大厅列表与金框快照会同时打穿；single-flight 避免共享池扇出。 */
+let inflight: Promise<RankingSnapshot | null> | null = null;
 
 export function clearCharacterRankingScoreCache(): void {
   cache = null;
+  inflight = null;
 }
 
 /**
@@ -75,7 +78,15 @@ export function clearCharacterRankingScoreCache(): void {
 export async function loadCharacterRankingScores(): Promise<RankingSnapshot | null> {
   const now = Date.now();
   if (cache && now - cache.at < RANKING_CACHE_TTL_MS) return cache.value;
+  if (inflight) return inflight;
 
+  inflight = loadCharacterRankingScoresFresh().finally(() => {
+    inflight = null;
+  });
+  return inflight;
+}
+
+async function loadCharacterRankingScoresFresh(): Promise<RankingSnapshot | null> {
   try {
     const rows = await prisma.$queryRaw<ScoreRow[]>`
       SELECT character_id, n_c, score, min_users
@@ -102,7 +113,7 @@ export async function loadCharacterRankingScores(): Promise<RankingSnapshot | nu
           ? storedMinSample
           : DEFAULT_LOBBY_RANKING_PARAMS.min_users,
     };
-    cache = { at: now, value };
+    cache = { at: Date.now(), value };
     return value;
   } catch (error) {
     console.warn('[lobby] 读取角色排序分失败，本次退回运营顺序', error);

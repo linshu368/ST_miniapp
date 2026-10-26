@@ -13,22 +13,25 @@ import type {
 import { createRequestId, timedFetch } from '@/lib/perf/request-timing';
 
 import { apiClient } from './client';
+import { withRequestSlot } from './request-concurrency';
 import { useRefetchOnForeground } from './use-refetch-on-foreground';
 
 // ==== 纯 fetch 函数（私有，不导出给业务）====
 async function fetchCharacters(sort: LobbySort): Promise<GetCharactersData> {
-  // 大厅经 Vercel 同源代理转发，多一跳（含函数冷启动），必须和直连后端的请求一样被计时。
-  const response = await timedFetch(
-    `/api/lobby-characters?sort=${sort}`,
-    { cache: 'no-store' },
-    { requestId: createRequestId() }
-  );
-  const json = (await response.json().catch(() => null)) as ApiResponse<GetCharactersData> | null;
-  if (!response.ok || !json?.success) {
-    throw new Error(json && !json.success ? json.error.message : `API error: ${response.status}`);
-  }
-  persistCharacters(sort, json.data);
-  return json.data;
+  // 大厅经 Vercel 同源代理，不走 apiClient；仍占 critical 槽，避免与直连 Railway 旁路齐射。
+  return withRequestSlot('critical', undefined, async () => {
+    const response = await timedFetch(
+      `/api/lobby-characters?sort=${sort}`,
+      { cache: 'no-store' },
+      { requestId: createRequestId() }
+    );
+    const json = (await response.json().catch(() => null)) as ApiResponse<GetCharactersData> | null;
+    if (!response.ok || !json?.success) {
+      throw new Error(json && !json.success ? json.error.message : `API error: ${response.status}`);
+    }
+    persistCharacters(sort, json.data);
+    return json.data;
+  });
 }
 
 async function fetchCharacterById(id: string): Promise<GetCharacterByIdData> {
@@ -128,7 +131,8 @@ export function useLobbyLatestBadgeQuery({ enabled = true }: { enabled?: boolean
     queryKey: characterKeys.latestBadge(),
     queryFn: () => apiClient<LobbyLatestBadgeData>('/api/characters/latest-badge'),
     enabled,
-    staleTime: 0,
+    // 角标非 P0；拉长鲜活期，减少回前台与列表争槽。
+    staleTime: 60_000,
     refetchOnMount: 'always',
   });
   // refetch() 不受 enabled 约束，推迟期间切回前台也不能提前发。

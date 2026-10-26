@@ -16,7 +16,7 @@ export const userSettingsKeys = {
 };
 
 async function fetchUserSettings(): Promise<GetUserSettingsData> {
-  return apiClient<GetUserSettingsData>('/api/users/settings');
+  return apiClient<GetUserSettingsData>('/api/users/settings', { queuePriority: 'background' });
 }
 
 async function patchUserSettings(body: PatchUserSettingsRequest): Promise<PatchUserSettingsData> {
@@ -33,11 +33,12 @@ async function setUserAvatar(body: SetUserAvatarRequest): Promise<SetUserAvatarD
   });
 }
 
-export function useUserSettingsQuery() {
+export function useUserSettingsQuery({ enabled = true }: { enabled?: boolean } = {}) {
   return useQuery<GetUserSettingsData>({
     queryKey: userSettingsKeys.all,
     queryFn: fetchUserSettings,
     staleTime: 60_000,
+    enabled,
   });
 }
 

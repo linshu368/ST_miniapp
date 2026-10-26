@@ -1,6 +1,7 @@
 'use client';
 
 import * as Sentry from '@sentry/nextjs';
+import { markCriticalSettled } from '@/lib/entry-phase';
 import { feedbackAfterPaint, startAction } from '@/lib/perf/action-tracker';
 import { getMetricDimensions } from '@/lib/perf/env-tags';
 import {
@@ -64,6 +65,23 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
   const conversation = useImagePlazaConversationQuery(conversationId);
   const data = conversation.data?.conversation;
   usePageReady('/create/studio/:id', conversation.data !== undefined);
+  useEffect(() => {
+    if (
+      conversation.data !== undefined ||
+      conversation.isError ||
+      conversation.isFetched ||
+      config.isError ||
+      config.isFetched
+    ) {
+      markCriticalSettled();
+    }
+  }, [
+    conversation.data,
+    conversation.isError,
+    conversation.isFetched,
+    config.isError,
+    config.isFetched,
+  ]);
   const createConversation = useCreateImagePlazaConversationMutation();
   const quote = useImagePlazaQuoteMutation();
   const submit = useSubmitImagePlazaAttemptMutation(conversationId);

@@ -119,8 +119,10 @@ export class AlertDeliveryWorker {
   }
 
   private async claim(): Promise<DeliveryRow | null> {
-    return prisma.$transaction(async (tx) => {
-      const rows = await tx.$queryRaw<DeliveryRow[]>(Prisma.sql`
+    // maxWait < 共享池 pool_timeout，池满时快速失败而不是与在线请求一起挂满 10s。
+    return prisma.$transaction(
+      async (tx) => {
+        const rows = await tx.$queryRaw<DeliveryRow[]>(Prisma.sql`
         WITH due AS (
           SELECT id FROM app_core.alert_delivery_attempts
           WHERE (
@@ -138,7 +140,9 @@ export class AlertDeliveryWorker {
         FROM due WHERE attempts.id = due.id
         RETURNING attempts.id, attempts.notification_key, attempts.payload, attempts.attempt_count
       `);
-      return rows[0] ?? null;
-    });
+        return rows[0] ?? null;
+      },
+      { maxWait: 5_000, timeout: 15_000 }
+    );
   }
 }

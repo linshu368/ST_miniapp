@@ -37,9 +37,10 @@ export function useSupportUnreadQuery({
 }: { poll?: boolean; enabled?: boolean } = {}) {
   const query = useQuery({
     queryKey: supportKeys.unread,
-    queryFn: () => apiClient<SupportUnreadData>('/api/support/unread'),
+    queryFn: () =>
+      apiClient<SupportUnreadData>('/api/support/unread', { queuePriority: 'background' }),
     enabled,
-    staleTime: 0,
+    staleTime: 30_000,
     refetchOnMount: 'always',
     refetchInterval: poll ? SUPPORT_UNREAD_POLL_MS : false,
   });

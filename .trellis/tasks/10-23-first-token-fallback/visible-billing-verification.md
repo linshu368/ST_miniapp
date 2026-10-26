@@ -20,6 +20,6 @@
 - 同一 harness 的既有 T2/T3/T4/T3A/T6/T5 钱包/VIP/退款测试与 migration ledger 协议通过。
 - 代码和模拟浏览器验证不等于真实 Telegram WebView；远端 TEST/部署/配置/看板结果在发布记录中单独记录。
 
-日志保存在 /private/tmp/st-visible-*.log；不含生产业务行或密钥。
+日志保存在 /private/tmp/st-visible-\*.log；不含生产业务行或密钥。
 
 超时回报与免费预留释放原子提交，立即重试仍可使用原有免费次数，不等待 30 秒 sync。增量文件 `20261026_first_token_receipt_quota_release.sql`，因 visible_billing 已在 TEST apply，不修改已执行迁移。
