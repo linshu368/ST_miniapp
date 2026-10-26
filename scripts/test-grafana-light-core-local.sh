@@ -28,3 +28,6 @@ if "${task_psql[@]}" -c "SET statement_timeout='50ms'; SELECT pg_sleep(1)" >/dev
   echo 'FAIL: multi-statement cron timeout is ineffective' >&2;exit 1
 fi
 echo 'PASS: caller timeout interrupts statements in the same SQL batch'
+"${task_psql[@]}" -c 'DROP SCHEMA cron CASCADE' >/dev/null
+"${task_psql[@]}" -f "$task_root/packages/shared/migrations/20261026_grafana_light_core.sql" >/dev/null
+echo 'PASS: TEST without pg_cron uses the same cache/function without installing scheduler'

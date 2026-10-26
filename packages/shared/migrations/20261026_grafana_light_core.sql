@@ -102,6 +102,12 @@ REVOKE ALL ON FUNCTION miniapp_analytics.refresh_grafana_core_day(date)
 DO $$
 DECLARE v_job record; v_id bigint;
 BEGIN
+  -- TEST may not have pg_cron installed; validate the same cache/function without
+  -- adding an extension solely for testing. Production has the existing jobs.
+  IF to_regclass('cron.job') IS NULL THEN
+    RAISE NOTICE 'pg_cron unavailable: cache is ready, no scheduler configured';
+    RETURN;
+  END IF;
   -- Retire, rather than merely pause, the old full-history scheduled work.
   -- Existing objects and their historical cached data remain intact.
   FOR v_job IN SELECT jobid FROM cron.job WHERE jobname IN (
