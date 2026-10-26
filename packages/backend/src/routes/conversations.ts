@@ -266,17 +266,41 @@ export default async function conversationRoutes(app: FastifyInstance) {
 
       const query = request.query as { limit?: string; before_turn_index?: string };
       const dbUser = await getOrCreateDbUser(request.user);
+      const startedAt = performance.now();
       try {
         const [session, displayName] = await Promise.all([
           sessions.requireSession(sessionId, dbUser.id),
           settings.getDisplayName(dbUser.id),
         ]);
-        await history.recoverStaleStreaming(sessionId);
-        const openingMessage = await sessions.getCharacterFirstMes(session.character_id);
+        const sessionMs = performance.now() - startedAt;
+        // recover 与开场白互不依赖；并行少一跳再 listMessages。
+        const recoverStarted = performance.now();
+        const [, openingMessage] = await Promise.all([
+          history.recoverStaleStreaming(sessionId),
+          sessions.getCharacterFirstMes(session.character_id),
+        ]);
+        const recoverAndOpeningMs = performance.now() - recoverStarted;
+        const listStarted = performance.now();
         const page = await history.listMessages(sessionId, openingMessage, {
           limit: parsePositiveInt(query.limit),
           beforeTurnIndex: parsePositiveInt(query.before_turn_index),
         });
+        const listMs = performance.now() - listStarted;
+        const totalMs = performance.now() - startedAt;
+        if (totalMs >= 1_000) {
+          request.log.warn(
+            {
+              event: 'conversation.detail.slow',
+              sessionId,
+              totalMs: Math.round(totalMs),
+              sessionMs: Math.round(sessionMs),
+              recoverAndOpeningMs: Math.round(recoverAndOpeningMs),
+              listMs: Math.round(listMs),
+              messageCount: page.messages.length,
+            },
+            'slow conversation detail'
+          );
+        }
 
         return reply.send(
           ok<GetConversationData>({

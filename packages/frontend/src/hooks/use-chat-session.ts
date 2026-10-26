@@ -198,6 +198,9 @@ export function resetChatReplayOccupancyForTests(): void {
   leaveReplayTimer = undefined;
 }
 
+/** 会话可聊之后再闲时启动录屏，避免与会话 GET 抢连接、撑开 navigation。 */
+const CHAT_REPLAY_IDLE_TIMEOUT_MS = 2_500;
+
 /**
  * 聊天页 / 自定义语音页共用的回放绑定。
  * 不能把 end 放进 useChatSession 的 unmount：切到语音页也会卸掉那个 hook。
@@ -206,19 +209,42 @@ export function useChatReplayBinding(input: {
   characterId: string;
   conversationSessionId: string | null;
   selectedModelId: string | null;
+  /** false 时不启动录屏（等会话详情就绪）；默认 true 兼容语音子页。 */
+  pageReady?: boolean;
 }): void {
   const lifecycle = useReplayLifecycle();
+  const pageReady = input.pageReady !== false;
 
   useEffect(() => {
-    if (!input.conversationSessionId) return;
-    void lifecycle
-      .startChatReplay({
-        characterId: input.characterId,
-        conversationSessionId: input.conversationSessionId,
-        selectedModelId: input.selectedModelId,
-      })
-      .catch(() => undefined);
-  }, [input.characterId, input.conversationSessionId, input.selectedModelId, lifecycle]);
+    if (!input.conversationSessionId || !pageReady) return;
+    let cancelled = false;
+    let idleHandle: number | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const start = () => {
+      if (cancelled) return;
+      void lifecycle
+        .startChatReplay({
+          characterId: input.characterId,
+          conversationSessionId: input.conversationSessionId!,
+          selectedModelId: input.selectedModelId,
+        })
+        .catch(() => undefined);
+    };
+
+    // 功能路径零等待埋点：空闲帧再拉 PostHog / 开录屏。
+    if (typeof window.requestIdleCallback === 'function') {
+      idleHandle = window.requestIdleCallback(start, { timeout: CHAT_REPLAY_IDLE_TIMEOUT_MS });
+    } else {
+      timer = setTimeout(start, 400);
+    }
+
+    return () => {
+      cancelled = true;
+      if (idleHandle !== undefined) window.cancelIdleCallback?.(idleHandle);
+      if (timer !== undefined) clearTimeout(timer);
+    };
+  }, [input.characterId, input.conversationSessionId, input.selectedModelId, pageReady, lifecycle]);
 
   useEffect(() => {
     chatReplayOccupancy += 1;

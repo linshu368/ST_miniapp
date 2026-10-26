@@ -213,6 +213,9 @@ export function createPostHogAdapter(deps: PostHogAdapterDeps = {}) {
           disable_surveys: true,
           enable_recording_console_log: false,
           capture_performance: false,
+          // 产品不用 Feature Flags；/flags/ 在弱网 P95~3s，且会进 Sentry navigation。
+          advanced_disable_feature_flags: true,
+          advanced_disable_flags: true,
           person_profiles: 'identified_only',
           persistence: 'localStorage+cookie',
           session_recording: buildSessionRecordingOptions(),

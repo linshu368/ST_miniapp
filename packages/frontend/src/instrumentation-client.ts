@@ -16,7 +16,7 @@ const TRACES_SAMPLE_RATE = 0.2;
 const REPLAY_SESSION_SAMPLE_RATE = 0.05;
 
 // 前端在 Vercel、后端在 Railway，跨域请求默认不带 sentry-trace，前后端 trace 串不起来。
-function resolveTracePropagationTargets(): string[] {
+function resolveTracePropagationTargets(): Array<string | RegExp> {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL?.trim();
   if (!apiUrl) return [];
   try {
@@ -36,6 +36,24 @@ function isValidDsn(value: string | undefined): value is string {
   }
 }
 
+/** PostHog 请求不进 BrowserTracing，避免 /flags、batch 撑开 navigation P95。 */
+function shouldCreateSpanForRequest(url: string): boolean {
+  if (/posthog/i.test(url)) return false;
+  const posthogHost = process.env.NEXT_PUBLIC_POSTHOG_HOST?.trim();
+  if (posthogHost) {
+    try {
+      const requestOrigin = new URL(
+        url,
+        typeof window !== 'undefined' ? window.location.href : undefined
+      ).origin;
+      if (requestOrigin === new URL(posthogHost).origin) return false;
+    } catch {
+      // ignore
+    }
+  }
+  return true;
+}
+
 export const isSentryEnabled = isValidDsn(dsn) && SENTRY_ENVIRONMENTS.has(environment ?? '');
 
 if (isSentryEnabled) {
@@ -44,6 +62,17 @@ if (isSentryEnabled) {
     environment,
     tracesSampleRate: TRACES_SAMPLE_RATE,
     tracePropagationTargets: resolveTracePropagationTargets(),
+    integrations: (integrations) => {
+      const withoutDefaultTracing = integrations.filter(
+        (integration) => integration.name !== 'BrowserTracing'
+      );
+      return [
+        ...withoutDefaultTracing,
+        Sentry.browserTracingIntegration({
+          shouldCreateSpanForRequest,
+        }),
+      ];
+    },
     replaysSessionSampleRate: REPLAY_SESSION_SAMPLE_RATE,
     replaysOnErrorSampleRate: 1.0,
     enableLogs: true,

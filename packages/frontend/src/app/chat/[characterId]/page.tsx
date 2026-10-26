@@ -133,6 +133,7 @@ export default function SelfHostedChatPage() {
     characterId,
     conversationSessionId: activeSessionId,
     selectedModelId,
+    pageReady: session.ready,
   });
 
   const persisted = useMemo(
