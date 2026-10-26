@@ -56,7 +56,7 @@ function publishedStrategy(overrides: Partial<VipStrategy> = {}): VipStrategy {
     plansVersion: 1,
     discountRate: 0.95,
     discountVersion: 1,
-    checkin: { mode: 'same_as_base' },
+    checkin: 150,
     checkinVersion: 1,
     limits: { voice: 3, basic_image: 3 },
     limitsVersion: 1,

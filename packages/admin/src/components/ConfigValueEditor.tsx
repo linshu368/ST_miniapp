@@ -524,6 +524,8 @@ export function ConfigValueEditor(props: {
   if (
     props.configKey === 'miniapp_new_user_signup_bonus_credits' ||
     props.configKey === 'miniapp_daily_checkin_bonus_credits' ||
+    props.configKey === 'miniapp_checkin_new_user_credits' ||
+    props.configKey === 'miniapp_checkin_veteran_credits' ||
     props.configKey === 'miniapp_character_free_chat_quota_limit'
   ) {
     return (

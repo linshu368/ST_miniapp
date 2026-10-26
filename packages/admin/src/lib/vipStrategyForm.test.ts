@@ -9,7 +9,7 @@ import {
   VipTextDiscountRateSchema,
 } from '@miniapp/shared';
 import { configSchemas } from './configSchemas';
-import { blankToNull, checkinConfig, vipPriceLabel } from './vipStrategyForm';
+import { blankToNull, checkinAbsoluteCredits, vipPriceLabel } from './vipStrategyForm';
 
 describe('VIP strategy form', () => {
   it('shows yuan from integer cents and keeps week bonus at zero', () => {
@@ -35,9 +35,9 @@ describe('VIP strategy form', () => {
     ).toBe(false);
   });
 
-  it('only accepts a fixed bonus value in fixed mode', () => {
-    expect(checkinConfig('same_as_base', 10)).toEqual({ mode: 'same_as_base' });
-    expect(checkinConfig('fixed', 0)).toEqual({ mode: 'fixed', fixed_credits: 0 });
+  it('only accepts a nonnegative absolute VIP check-in amount', () => {
+    expect(checkinAbsoluteCredits(150)).toBe(150);
+    expect(checkinAbsoluteCredits(0)).toBe(0);
     expect(VipCheckinBonusConfigSchema.safeParse(DEFAULT_VIP_CHECKIN_BONUS_CONFIG).success).toBe(
       true
     );
@@ -48,6 +48,7 @@ describe('VIP strategy form', () => {
         fixed_credits: 10,
       }).success
     ).toBe(false);
+    expect(configSchemas.vip_checkin_bonus_config.safeParse(-1).success).toBe(false);
     expect(blankToNull('  ')).toBeNull();
     expect(blankToNull('角标')).toBe('角标');
   });

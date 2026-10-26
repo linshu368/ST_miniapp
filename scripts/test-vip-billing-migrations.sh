@@ -428,4 +428,14 @@ psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 \
   -f "$ROOT/packages/shared/migrations/20260924_vip_plans_price_1_and_2_yuan.sql" \
   >/dev/null
 
-echo "All T2, T3, T4, T3A, T6 and T5 VIP billing local checks passed."
+echo "apply 20261014_checkin_tiered_rewards.sql"
+psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 \
+  -f "$ROOT/packages/shared/migrations/20261014_checkin_tiered_rewards.sql" \
+  >/dev/null
+
+echo "run t3b check-in tier scenarios"
+psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 \
+  -f "$ROOT/packages/shared/migrations/tests/vip_checkin_tiered_t3b_scenarios.sql" \
+  >/dev/null
+
+echo "All T2, T3, T4, T3A, T6, T5 and T3B VIP billing local checks passed."
