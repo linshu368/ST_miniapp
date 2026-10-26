@@ -174,6 +174,7 @@ describe('fallback managed configuration', () => {
     );
     catalog.fallback_model_id = 'vendor/operator-flash';
     catalog.first_token_deadline_ms = 8000;
+    catalog.fallback_timeout_ms = 2500;
     catalog.first_token_timeout_rate_target = 0.02;
     catalog.tiers[0]!.models[0]!.first_token_timeout_ms = 3500;
     const edited = EditableModelCatalogSchema.parse(catalog);

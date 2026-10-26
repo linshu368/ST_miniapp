@@ -13,6 +13,7 @@ import {
 } from 'antd';
 import {
   DEFAULT_FIRST_TOKEN_DEADLINE_MS,
+  DEFAULT_FALLBACK_TOKEN_TIMEOUT_MS,
   DEFAULT_FIRST_TOKEN_TIMEOUT_MS,
   DEFAULT_FIRST_TOKEN_TIMEOUT_RATE_TARGET,
   FIRST_TOKEN_FALLBACK_MODEL_ID,
@@ -51,6 +52,7 @@ export function FallbackConfigEditor(props: {
           issue.path.some((part) =>
             [
               'fallback_model_id',
+              'fallback_timeout_ms',
               'first_token_timeout_ms',
               'first_token_deadline_ms',
               'first_token_timeout_rate_target',
@@ -93,6 +95,21 @@ export function FallbackConfigEditor(props: {
         </Space>
       </Card>
 
+      <Card size="small" title="兜底等待时间">
+        <Typography.Paragraph>兜底实际请求派发后最多等待（秒）</Typography.Paragraph>
+        <InputNumber
+          aria-label="兜底等待（秒）"
+          min={0.001}
+          max={(deadline - 1) / 1000}
+          step={0.5}
+          disabled={props.disabled}
+          value={(props.value.fallback_timeout_ms ?? DEFAULT_FALLBACK_TOKEN_TIMEOUT_MS) / 1000}
+          onChange={(value) =>
+            value !== null &&
+            props.onChange({ ...props.value, fallback_timeout_ms: Math.round(value * 1000) })
+          }
+        />
+      </Card>
       <Card size="small" title="全局等待与监控目标">
         <Row gutter={[20, 16]}>
           <Col xs={24} md={12}>
@@ -136,14 +153,14 @@ export function FallbackConfigEditor(props: {
         </Row>
         <Typography.Paragraph type="secondary" style={{ marginTop: 16, marginBottom: 0 }}>
           总等待从用户发送到界面出现第一个
-          token，包含首发与兜底全部等待；到点仍未显示则提示重试。超时率是人工监控目标，不会自动调整参数。
+          token，包含前置处理、两次模型等待、切换、网络与显示。默认首发4秒＋兜底2秒，总上限10秒，其他耗时单独计入。总上限优先，到点仍未显示则提示重试；异常工程耗时可能截断阶段等待，实际占用会如实记录。超时率是人工监控目标，不会自动调整参数。
         </Typography.Paragraph>
       </Card>
 
       <Card size="small" title="各型号首发等待时间">
         <Typography.Paragraph type="secondary">
-          新增型号默认等待 4 秒。达到等待时间仍未出首
-          token，就切换至上方兜底模型；每项必须小于全局总等待上限。
+          新增型号从实际请求派发开始最多等待 4 秒。达到等待时间仍未出首
+          token，就切换至上方兜底模型；同型号不重复请求，到点失败。思考模式同样执行。总预算不足时会提前切换；每项必须小于全局总等待上限。
         </Typography.Paragraph>
         <Table<ModelCatalogModel>
           rowKey="id"

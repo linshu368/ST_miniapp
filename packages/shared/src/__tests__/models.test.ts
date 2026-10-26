@@ -73,19 +73,31 @@ describe('ModelCatalogSchema', () => {
   it('defaults legacy models and validates manual first-token budgets', () => {
     const parsed = ModelCatalogSchema.parse(validCatalog);
     expect(parsed.fallback_model_id).toBe('deepseek/deepseek-v4.1-flash-1017');
-    expect(parsed.first_token_deadline_ms).toBe(6000);
+    expect(parsed.first_token_deadline_ms).toBe(10000);
+    expect(parsed.fallback_timeout_ms).toBe(2000);
     expect(parsed.first_token_timeout_rate_target).toBe(0.01);
     expect(parsed.tiers[0]?.models[0]?.first_token_timeout_ms).toBe(4000);
     const publicCatalog = toPublicModelCatalog(parsed);
-    expect(publicCatalog.first_token_deadline_ms).toBe(6000);
+    expect(publicCatalog.first_token_deadline_ms).toBe(10000);
     expect(publicCatalog).not.toHaveProperty('fallback_model_id');
+    expect(publicCatalog).not.toHaveProperty('fallback_timeout_ms');
     expect(publicCatalog).not.toHaveProperty('first_token_timeout_rate_target');
     expect(publicCatalog.tiers[0]?.models[0]).not.toHaveProperty('first_token_timeout_ms');
-    for (const value of [null, '4000', 0, -1, 4000.5, 6000, 110001]) {
+    for (const value of [null, '4000', 0, -1, 4000.5, 10000, 110001]) {
       const invalid = structuredClone(validCatalog) as Record<string, unknown>;
       const tiers = invalid.tiers as Array<{ models: Array<Record<string, unknown>> }>;
       tiers[0]!.models[0]!.first_token_timeout_ms = value;
       expect(ModelCatalogSchema.safeParse(invalid).success, String(value)).toBe(false);
+    }
+  });
+  it('validates the independent fallback wait against the total deadline', () => {
+    expect(
+      ModelCatalogSchema.parse({ ...validCatalog, fallback_timeout_ms: 2500 }).fallback_timeout_ms
+    ).toBe(2500);
+    for (const value of [null, '2000', 0, -1, 2000.5, 10000]) {
+      expect(
+        ModelCatalogSchema.safeParse({ ...validCatalog, fallback_timeout_ms: value }).success
+      ).toBe(false);
     }
   });
   it('accepts operator-selected fallback IDs and rejects invalid IDs', () => {

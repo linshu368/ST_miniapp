@@ -460,7 +460,7 @@ async function chargeRound(input: {
     return {
       chargedAmount: result.chargedAmount,
       intendedDeduction,
-      settled: !waitingForFinishReason,
+      settled: !waitingForFinishReason && !result.pending,
     };
   } catch (chargeErr) {
     clog.error(

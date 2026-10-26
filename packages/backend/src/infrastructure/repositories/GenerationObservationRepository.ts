@@ -17,6 +17,7 @@ export interface AttemptObservation {
   observed_until_ms?: number;
   http_status?: number;
   end_reason?:
+    | 'budget_skipped'
     | 'first_token_observed'
     | 'first_token_deadline'
     | 'completed'
@@ -44,6 +45,7 @@ export class GenerationObservationRepository {
     receivedAt: string;
     fallbackModelId?: string;
     timeoutMs: number;
+    fallbackTimeoutMs?: number;
     deadlineMs: number;
     timeoutRateTarget: number;
     catalogVersion: number;
@@ -62,6 +64,7 @@ export class GenerationObservationRepository {
           received_at: input.receivedAt,
           fallback_model_id: input.fallbackModelId,
           timeout_ms: input.timeoutMs,
+          fallback_timeout_ms: input.fallbackTimeoutMs,
           deadline_ms: input.deadlineMs,
           timeout_rate_target: input.timeoutRateTarget,
           catalog_version: input.catalogVersion,
@@ -114,6 +117,7 @@ export class GenerationObservationRepository {
     patch: {
       first_token_emitted_ms?: number;
       first_token_timeout?: boolean;
+      server_timeout_stage?: 'global' | 'primary' | 'fallback';
       billing_rejected?: boolean;
     }
   ): Promise<void> {

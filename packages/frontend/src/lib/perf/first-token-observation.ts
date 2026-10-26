@@ -6,7 +6,7 @@ export interface FirstTokenIdentity {
   revision: number;
 }
 
-/** One monotonic clock for submit, network, and display. Outcomes never control billing. */
+/** One monotonic clock for submit, network, and display. The receipt confirms display; it never selects the price. */
 export class FirstTokenObservation {
   readonly startedAt = performance.now();
   private timer: ReturnType<typeof setTimeout>;
@@ -17,6 +17,7 @@ export class FirstTokenObservation {
   private backgrounded = document.visibilityState !== 'visible';
   private reason: ReportFirstTokenRequest['reason'] = null;
   private reported = false;
+  private finishedMs: number | null = null;
   private visibility = () => {
     if (document.visibilityState !== 'visible') this.backgrounded = true;
     // Suspended browser timers cannot extend the configured user budget.
@@ -43,6 +44,9 @@ export class FirstTokenObservation {
   received(): void {
     this.receivedMs ??= performance.now() - this.startedAt;
   }
+  get hasReceivedToken(): boolean {
+    return this.receivedMs !== null;
+  }
   get timedOut(): boolean {
     return this.outcome === 'timed_out';
   }
@@ -65,8 +69,15 @@ export class FirstTokenObservation {
     this.finish();
     return true;
   }
-  deadlineFailed(): void {
-    this.expire();
+  deadlineFailed(
+    reason: 'server_timeout' | 'fallback_timeout' | 'primary_timeout' = 'server_timeout'
+  ): void {
+    if (this.outcome) return;
+    // A provider-stage failure may arrive before the user's total deadline. Keep it distinct.
+    this.outcome =
+      performance.now() - this.startedAt >= this.deadlineMs ? 'timed_out' : 'not_observed';
+    this.reason = reason;
+    this.finish();
   }
   private expire(): void {
     if (this.outcome) return;
@@ -83,6 +94,7 @@ export class FirstTokenObservation {
     }
   }
   private finish(): void {
+    this.finishedMs ??= performance.now() - this.startedAt;
     clearTimeout(this.timer);
     document.removeEventListener('visibilitychange', this.visibility);
     this.flush();
@@ -94,7 +106,8 @@ export class FirstTokenObservation {
       request_id: this.identity.requestId,
       assistant_message_id: this.identity.assistantMessageId,
       revision: this.identity.revision,
-      measurement_method: 'visible_dom_after_frame_v1',
+      measurement_method: 'visible_dom_after_frame_v2',
+      wait_finished_ms: this.finishedMs,
       outcome: this.outcome,
       first_token_visible_ms: this.visibleMs,
       request_dispatched_ms: this.dispatchedMs,
@@ -111,35 +124,47 @@ export function hasVisibleToken(node: HTMLElement): boolean {
   const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
   let text: Node | null;
   while ((text = walker.nextNode())) {
-    const index = text.textContent?.search(/\S/) ?? -1;
-    if (index < 0) continue;
-    const range = document.createRange();
-    range.setStart(text, index);
-    range.setEnd(text, index + 1);
-    for (const rect of Array.from(range.getClientRects())) {
-      let left = Math.max(0, rect.left),
-        top = Math.max(0, rect.top);
-      let right = Math.min(window.innerWidth, rect.right),
-        bottom = Math.min(window.innerHeight, rect.bottom);
-      for (let element = text.parentElement; element; element = element.parentElement) {
-        const style = getComputedStyle(element);
-        if (
-          style.display === 'none' ||
-          style.visibility !== 'visible' ||
-          Number(style.opacity) === 0
-        ) {
-          right = left;
-          break;
-        }
-        if (/(auto|scroll|hidden|clip)/.test(`${style.overflowX} ${style.overflowY}`)) {
-          const clip = element.getBoundingClientRect();
-          left = Math.max(left, clip.left);
-          right = Math.min(right, clip.right);
-          top = Math.max(top, clip.top);
-          bottom = Math.min(bottom, clip.bottom);
-        }
+    const content = text.textContent ?? '';
+    if (!/\S/.test(content)) continue;
+    let left = 0,
+      top = 0,
+      right = window.innerWidth,
+      bottom = window.innerHeight;
+    for (let element = text.parentElement; element; element = element.parentElement) {
+      const style = getComputedStyle(element);
+      if (
+        style.display === 'none' ||
+        style.visibility !== 'visible' ||
+        Number(style.opacity) === 0
+      ) {
+        right = left;
+        break;
       }
-      if (right > left && bottom > top) return true;
+      const clip = element.getBoundingClientRect();
+      if (/(auto|scroll|hidden|clip)/.test(style.overflowX)) {
+        left = Math.max(left, clip.left);
+        right = Math.min(right, clip.right);
+      }
+      if (/(auto|scroll|hidden|clip)/.test(style.overflowY)) {
+        top = Math.max(top, clip.top);
+        bottom = Math.min(bottom, clip.bottom);
+      }
+    }
+    if (right <= left || bottom <= top) continue;
+    // A streaming paragraph can be one text node whose first character has scrolled away.
+    // Check every non-whitespace run, not the first character or whitespace-only line boxes.
+    const range = document.createRange();
+    for (const match of content.matchAll(/\S+/gu)) {
+      range.setStart(text, match.index);
+      range.setEnd(text, match.index + match[0].length);
+      if (
+        Array.from(range.getClientRects()).some(
+          (rect) =>
+            Math.min(right, rect.right) > Math.max(left, rect.left) &&
+            Math.min(bottom, rect.bottom) > Math.max(top, rect.top)
+        )
+      )
+        return true;
     }
   }
   return false;

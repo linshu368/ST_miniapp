@@ -153,3 +153,7 @@ npx prisma generate
 | ST 三 schema / DECISIONS 时代的本 README | 本文件改版前的 git 历史                               |
 
 `st_platform` / `st_users` / `st_infra`（088）、`growth`（089）、`miniapp_simulation`（090）已删库。不要按「D014 三 schema」或「Studio + 数字前缀」执行新变更。
+
+### 20261026_first_token_stage_budgets.sql
+
+在20261023首token配置迁移之后，添加nullable兜底阶段时限、客户端实际等待、服务端超时阶段；扩展配置校验、原begin/report函数和invoker分析投影，不回填历史策略，不新增授权。TEST通过后单文件生产执行，再发布Backend/Admin、运营4/2/10配置、Frontend及v2看板。保留列/历史回滚应用，禁止改写旧迁移或releases。验证用`scripts/test-first-token-fallback-local.sh`（隔离本地PG17/PostgREST、reader ACL、身份/账务与v2失败率）。
