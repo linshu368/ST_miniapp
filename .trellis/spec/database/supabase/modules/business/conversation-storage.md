@@ -78,7 +78,6 @@ last_verified_at: 2026-10-27
 
 chat_generation_requests.user_stop_billing_enabled在创建请求时确定：存量false、新轮true。service-only experience.cancel_chat_generation锁定具体session/history并裁决终态原因；新请求省略reason也按手动停止处理，不允许参数直接写入免费timeout。真实primary/fallback/global阶段截断优先免扣，未验证自动截止由现有watchdog确认。报价前不伪造账单；业务原因user_cancelled由billing资格读取，原报价和charge_id不改，历史无回填。
 
-
 ## 可恢复交付协议 v3（2026-10-27）
 
 本节取代旧版“当前未可见→自动取消/免单”的运行规则。后端4秒首发、2秒兜底、10秒总首字预算仍由正式配置决定；模型在预算内选中有效首字后立即放行，意图/身份持久化与传输并行，结算前必须确认。断连写入返回false，不冒充客户端已收到；断连不终止生成。

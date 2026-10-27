@@ -5,8 +5,8 @@ scope: backend
 category: business
 status: active
 owners: [backend]
-last_verified_task: .trellis/tasks/10-10-image-plaza-v2/
-last_verified_at: 2026-10-13
+last_verified_task: .trellis/tasks/10-27-sentry-performance-optimization/
+last_verified_at: 2026-10-27
 ---
 
 # 钱包、签到与充值支付
@@ -17,7 +17,7 @@ last_verified_at: 2026-10-13
 
 ## 当前状态
 
-支付 webhook/return/query/cron 四路结算已统一到幂等出口；bonus 星尘发放统一由数据库 `billing.grant_bonus_credits` 完成，充值 `main_credits` 不走该入口。
+支付 webhook/return/query/cron 四路结算已统一到幂等出口；bonus 星尘发放统一由数据库 `billing.grant_bonus_credits` 完成，充值 `main_credits` 不走该入口。支付套餐页面把套餐、充值页、支付提示和余额不足文案合并为一次 runtime-config 批量读取，再与 VIP 策略并行；创建订单仍独立读取权威套餐，不复用页面快照。
 
 ## 入口与调用者
 
@@ -41,11 +41,11 @@ Frontend 钱包/订单页、支付网关和 Railway 支付任务调用。
 
 ## 关键节点与约束
 
-订单、流水、余额口径分离；支付结算以 `credits_added`/业务键幂等；应用层禁止手动修改 bonus 余额。
+订单、流水、余额口径分离；支付结算以 `credits_added`/业务键幂等；应用层禁止手动修改 bonus 余额。批量页面配置中套餐缺失或损坏仍 fail closed，非关键页面文案/样式保持安全默认，不能用进程缓存延长价格配置陈旧窗口。
 
 ## 验证方式
 
-Backend payment/wallet tests、对账脚本和 test 支付 smoke。
+Backend payment/wallet tests、runtime-config 批量读取与 fallback 测试、对账脚本和 test 支付 smoke。
 
 ## 已知缺口与待核验项
 
@@ -63,5 +63,6 @@ Backend payment/wallet tests、对账脚本和 test 支付 smoke。
 
 ## 变更记录
 
+- 2026-10-27：任务 `10-27-sentry-performance-optimization` 将 `/api/payment/plans` 的四条同表配置读取合并为一次批量读取，订单权威读取保持独立。
 - 2026-10-13：任务 `10-10-image-plaza-v2` 收敛分享奖励写入口并隔离种子作品。
 - 2026-10-20：任务 `Remove confirmed repository noise`（`.trellis/tasks/archive/2026-10/10-20-remove-confirmed-repository-noise/`）删除无法恢复的乱码变更记录；commit：`63eee1e847f678f4b2c434f872425a40fc7f891a`。

@@ -1,0 +1,7 @@
+{"file":".trellis/spec/backend/app/testing-scripts-and-deployment.md","reason":"Backend 自动化、人工回归与发布验证"}
+{"file":".trellis/spec/backend/app/backend-rules.md","reason":"TypeScript、route、日志与质量硬规则"}
+{"file":".trellis/spec/frontend/app/testing-quality-and-deployment.md","reason":"受影响页面 smoke 与 Sentry 发布观察边界"}
+{"file":".trellis/spec/backend/app/modules/infrastructure/runtime-data-security.md","reason":"核对实现未越过基础设施模块边界"}
+{"file":".trellis/spec/backend/app/modules/business/wallet-payment.md","reason":"核对支付配置 fail-closed 与结算边界"}
+{"file":".trellis/tasks/10-27-sentry-performance-optimization/prd.md","reason":"逐项核验验收标准"}
+{"file":".trellis/tasks/10-27-sentry-performance-optimization/design.md","reason":"核对并发、缓存、失败和恢复设计"}

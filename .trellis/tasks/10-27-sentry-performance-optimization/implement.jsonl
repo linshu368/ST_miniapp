@@ -1,0 +1,11 @@
+{"file":"README.md","reason":"仓库入口、命令与 workspace 边界"}
+{"file":"docs/ARCHITECTURE.md","reason":"跨层、八域与应用依赖边界"}
+{"file":".trellis/spec/backend/app/index.md","reason":"Backend 规范入口"}
+{"file":".trellis/spec/backend/app/data-reliability-and-security.md","reason":"timeout、重试、缓存、日志和恢复约束"}
+{"file":".trellis/spec/backend/app/routes-and-features.md","reason":"route、feature、鉴权与日志边界"}
+{"file":".trellis/spec/backend/app/modules/infrastructure/runtime-data-security.md","reason":"用户、Supabase 与 runtime config 模块事实"}
+{"file":".trellis/spec/backend/app/modules/business/wallet-payment.md","reason":"支付套餐与钱包模块边界"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"页面症状到 Backend 公共链路的跨层约束"}
+{"file":".trellis/tasks/10-21-production-request-performance/design.md","reason":"复用既有 Sentry 证据、timeout 与连接分层决策"}
+{"file":".trellis/tasks/10-21-production-request-performance/implement.md","reason":"避免重复已实施的 PostgREST timeout 和列表优化"}
+{"file":"D:/JobExe/ST/sentry/2026-10/2026-10-27  3点前.md","reason":"本任务性能与错误模块基线"}

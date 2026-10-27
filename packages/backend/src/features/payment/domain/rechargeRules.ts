@@ -1,4 +1,7 @@
-import { getDomainDb } from '../../../lib/supabase.js';
+import {
+  fetchRuntimeConfigEntries,
+  fetchRuntimeConfigEntry,
+} from '../../../platform/runtime-config.js';
 import {
   DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG,
   DEFAULT_RECHARGE_PAGE_CONFIG,
@@ -36,6 +39,38 @@ export class PaymentPlansConfigError extends Error {
   }
 }
 
+export interface PaymentPageRuntimeConfig {
+  plans: PaymentPlan[];
+  paymentChannels: PaymentChannelsConfig;
+  pageConfig: RechargePageConfig;
+  paymentPromptDialogConfig: PaymentPromptDialogConfig;
+  insufficientCreditsNotice: string;
+}
+
+const PAYMENT_PAGE_CONFIG_KEYS = [
+  PAYMENT_PLANS_CONFIG_KEY,
+  RECHARGE_PAGE_CONFIG_KEY,
+  PAYMENT_PROMPT_DIALOG_CONFIG_KEY,
+  INSUFFICIENT_CREDITS_NOTICE_CONFIG_KEY,
+] as const;
+
+/** 页面展示所需配置同表批量读取；订单创建仍单独读取权威套餐。 */
+export async function getPaymentPageRuntimeConfig(): Promise<PaymentPageRuntimeConfig> {
+  const entries = await fetchRuntimeConfigEntries(PAYMENT_PAGE_CONFIG_KEYS);
+  const payment = parsePaymentPlansRuntimeConfig(entries.get(PAYMENT_PLANS_CONFIG_KEY)?.value);
+  return {
+    plans: payment.plans,
+    paymentChannels: payment.payment_channels,
+    pageConfig: parseRechargePageConfig(entries.get(RECHARGE_PAGE_CONFIG_KEY)?.value),
+    paymentPromptDialogConfig: parsePaymentPromptDialogConfig(
+      entries.get(PAYMENT_PROMPT_DIALOG_CONFIG_KEY)?.value
+    ),
+    insufficientCreditsNotice: parseInsufficientCreditsNotice(
+      entries.get(INSUFFICIENT_CREDITS_NOTICE_CONFIG_KEY)
+    ),
+  };
+}
+
 export async function getPaymentPlans(): Promise<PaymentPlan[]> {
   return (await getPaymentPlansConfig()).plans;
 }
@@ -44,18 +79,8 @@ export async function getPaymentPlansConfig(): Promise<{
   plans: PaymentPlan[];
   paymentChannels: PaymentChannelsConfig;
 }> {
-  const db = getDomainDb('app_core');
-  const { data, error } = await db
-    .from('runtime_config')
-    .select('value')
-    .eq('key', PAYMENT_PLANS_CONFIG_KEY)
-    .maybeSingle();
-
-  if (error) {
-    throw new PaymentPlansConfigError(`读取套餐配置失败：${error.message}`);
-  }
-
-  const config = parsePaymentPlansRuntimeConfig(data?.value);
+  const entry = await fetchRuntimeConfigEntry(PAYMENT_PLANS_CONFIG_KEY);
+  const config = parsePaymentPlansRuntimeConfig(entry?.value);
   return { plans: config.plans, paymentChannels: config.payment_channels };
 }
 
@@ -77,18 +102,12 @@ export async function findPaymentPlan(planId: string): Promise<PaymentPlan | und
 }
 
 export async function getRechargePageConfig(): Promise<RechargePageConfig> {
-  const db = getDomainDb('app_core');
-  const { data, error } = await db
-    .from('runtime_config')
-    .select('value')
-    .eq('key', RECHARGE_PAGE_CONFIG_KEY)
-    .maybeSingle();
+  const entry = await fetchRuntimeConfigEntry(RECHARGE_PAGE_CONFIG_KEY);
+  return parseRechargePageConfig(entry?.value);
+}
 
-  if (error) {
-    console.warn(`[payment] 读取充值页面配置失败，使用默认配置：${error.message}`);
-    return DEFAULT_RECHARGE_PAGE_CONFIG;
-  }
-  const parsed = RechargePageConfigSchema.safeParse(data?.value);
+function parseRechargePageConfig(value: unknown): RechargePageConfig {
+  const parsed = RechargePageConfigSchema.safeParse(value);
   return parsed.success ? parsed.data : DEFAULT_RECHARGE_PAGE_CONFIG;
 }
 
@@ -98,38 +117,22 @@ export function parsePaymentPromptDialogConfig(value: unknown): PaymentPromptDia
 }
 
 export async function getPaymentPromptDialogConfig(): Promise<PaymentPromptDialogConfig> {
-  const db = getDomainDb('app_core');
-  const { data, error } = await db
-    .from('runtime_config')
-    .select('value')
-    .eq('key', PAYMENT_PROMPT_DIALOG_CONFIG_KEY)
-    .maybeSingle();
-
-  if (error) {
-    console.warn(`[payment] 读取支付提示弹窗配置失败，使用默认配置：${error.message}`);
-    return DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG;
-  }
-
-  return parsePaymentPromptDialogConfig(data?.value);
+  const entry = await fetchRuntimeConfigEntry(PAYMENT_PROMPT_DIALOG_CONFIG_KEY);
+  return parsePaymentPromptDialogConfig(entry?.value);
 }
 
 export async function getInsufficientCreditsNotice(): Promise<string> {
-  const db = getDomainDb('app_core');
-  const { data, error } = await db
-    .from('runtime_config')
-    .select('text_value,value')
-    .eq('key', INSUFFICIENT_CREDITS_NOTICE_CONFIG_KEY)
-    .maybeSingle();
+  const entry = await fetchRuntimeConfigEntry(INSUFFICIENT_CREDITS_NOTICE_CONFIG_KEY);
+  return parseInsufficientCreditsNotice(entry);
+}
 
-  if (error) {
-    console.warn(`[payment] 读取积分不足提示语失败，使用默认文案：${error.message}`);
-    return DEFAULT_INSUFFICIENT_CREDITS_NOTICE;
-  }
-
-  const textValue = typeof data?.text_value === 'string' ? data.text_value.trim() : '';
+function parseInsufficientCreditsNotice(
+  entry: { value: unknown; textValue: string | null } | null | undefined
+): string {
+  const textValue = entry?.textValue?.trim() ?? '';
   if (textValue) return textValue;
 
-  const jsonValue = typeof data?.value === 'string' ? data.value.trim() : '';
+  const jsonValue = typeof entry?.value === 'string' ? entry.value.trim() : '';
   return jsonValue || DEFAULT_INSUFFICIENT_CREDITS_NOTICE;
 }
 

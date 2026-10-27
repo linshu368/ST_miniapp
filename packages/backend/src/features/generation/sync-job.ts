@@ -41,6 +41,30 @@ const LOOKBACK_HOURS = 24;
 const BATCH_LIMIT = 50;
 /** 扫描阶段最多并行占几条共享池连接；5 路全开会在池紧张时与大厅读路径抢额度。 */
 const SCAN_CONCURRENCY = 2;
+/** 行处理会同时触发 provider 与数据库调用；3 路在缩短墙钟时间和保护共享池之间取中间值。 */
+const RECORD_CONCURRENCY = 3;
+/** Even with a 5s provider timeout, a cold backlog stays below one 30s scheduler interval. */
+const PROVIDER_FETCH_BUDGET = 9;
+const NOT_READY_BACKOFF_BASE_MS = SYNC_INTERVAL_MS;
+const NOT_READY_BACKOFF_MAX_MS = 4 * 60 * 1000;
+const RETRY_STATE_TTL_MS = LOOKBACK_HOURS * 60 * 60 * 1000;
+const RETRY_STATE_LIMIT = 2_000;
+
+interface RetryState {
+  fingerprint: string;
+  attempts: number;
+  nextRetryAt: number;
+  firstSeenAt: number;
+}
+
+type SyncRecordOutcome =
+  | 'completed'
+  | 'error_data'
+  | 'not_ready'
+  | 'recovered'
+  | 'manual_audit'
+  | 'budget_deferred'
+  | 'failed';
 
 let timerId: NodeJS.Timeout | null = null;
 let startupTimerId: NodeJS.Timeout | null = null;
@@ -48,6 +72,7 @@ let isRunning = false;
 let walletRepository: MiniappWalletRepository | null = null;
 let historyRepository: ConversationHistoryRepository | null = null;
 let openRouterHistoryRepository: OpenRouterChatHistoryRepository | null = null;
+const retryStates = new Map<string, RetryState>();
 
 /** 保持 allSettled 语义，但限制同时 in-flight 的任务数，降低对 Prisma 共享池的尖峰占用。 */
 async function runSettledWithConcurrency<T>(
@@ -115,6 +140,8 @@ export function stopChatHistorySyncJob(): void {
     clearTimeout(startupTimerId);
     startupTimerId = null;
   }
+
+  retryStates.clear();
 }
 
 async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
@@ -124,6 +151,7 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
   }
 
   isRunning = true;
+  const startedAt = Date.now();
 
   try {
     const since = new Date(Date.now() - LOOKBACK_HOURS * 60 * 60 * 1000).toISOString();
@@ -163,201 +191,132 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
       for (const row of scan.value) if (!rowsById.has(row.id)) rowsById.set(row.id, row);
     }
     const rows = [...rowsById.values()];
+    pruneRetryStates(Date.now());
 
     if (rows.length === 0) {
-      log.info('[sync-job] no incomplete chat history records found');
+      log.info(
+        {
+          kind: 'sys',
+          event: 'chathistory_sync.finished',
+          scannedCount: 0,
+          eligibleCount: 0,
+          deferredCount: 0,
+          durationMs: Date.now() - startedAt,
+        },
+        '[sync-job] sync run finished'
+      );
       return;
     }
 
-    let completedCount = 0;
-    let errorDataCount = 0;
-    let notReadyCount = 0;
-    log.info({ count: rows.length }, '[sync-job] found incomplete records to sync');
-
+    const now = Date.now();
+    const eligibleRows: ChatHistorySyncRow[] = [];
+    let deferredCount = 0;
     for (const record of rows) {
+      if (record.status !== 'streaming' && shouldDeferRecord(record, now)) deferredCount++;
+      else eligibleRows.push(record);
+    }
+
+    const openRouterIds = eligibleRows
+      .filter(
+        (record) =>
+          record.status !== 'streaming' &&
+          record.callProvider === 'openrouter' &&
+          !!record.generationId
+      )
+      .map((record) => record.id);
+    let storedGenerationData = new Map<string, Record<string, unknown>>();
+    let openRouterBatchReadFailed = false;
+    if (openRouterIds.length > 0) {
       try {
-        if (record.status === 'streaming') {
-          if (record.session_id) await history().recoverStaleStreaming(record.session_id);
-          continue;
-        }
-        const generationId = record.generationId;
-        const provider = record.callProvider;
-        if (
-          !provider ||
-          (record.llm_billing_snapshot?.provider &&
-            record.llm_billing_snapshot.provider !== provider)
-        ) {
-          log.error(
-            { event: 'chathistory_sync.provider_unresolved', id: record.id },
-            'call provider requires audit'
-          );
-          continue;
-        }
-        if (!generationId) {
-          // No upstream locator can be reconstructed after a crash. Only release an
-          // already-determined failed/cancelled call; never infer stop or regenerate.
-          if (record.status !== 'success' && record.llm_charge_id) {
-            try {
-              const result = await reconcileCharge({
-                record,
-                generationId: null,
-                genData: {},
-                finishReason: record.llm_finish_reason ?? 'error',
-              });
-              if (result.settled)
-                await history().recordBillingOutcome({
-                  historyId: record.id,
-                  intendedDeduction: result.intendedDeduction,
-                  deductionRate: result.deductionRate,
-                  billingSettledAt: new Date().toISOString(),
-                });
-            } catch (err) {
-              log.error(
-                { err, event: 'chathistory_sync.identity_cleanup_failed', id: record.id },
-                'failed call cleanup pending'
-              );
-            }
-          } else {
-            log.warn(
-              { event: 'chathistory_sync.identity_missing', id: record.id },
-              'call identity unavailable; manual audit required'
-            );
-          }
-          continue;
-        }
-        if (provider !== 'openrouter') {
-          const reconciled = await reconcileNonOpenRouterRecord({
-            record,
-            generationId,
-            provider,
-            log,
-          });
-          if (reconciled === 'settled') completedCount++;
-          else notReadyCount++;
-          continue;
-        }
-
-        const stored = await openRouterHistory().readGenerationData(record.id);
-        const storedComplete = isCompleteGenerationData(stored);
-        const fetched =
-          !storedComplete && hasOpenRouterKey() ? await fetchGenerationData(generationId) : null;
-        const genData = storedComplete ? stored : (fetched ?? stored);
-        if (!genData) {
-          notReadyCount++;
-          continue;
-        }
-
-        const providerMetadata = buildGenerationMetadata(genData);
-        try {
-          await new GenerationObservationRepository().enrichGeneration(
-            generationId,
-            providerMetadata
-          );
-        } catch (err) {
-          log.warn({ err, event: 'llm.attempt.provider_metadata_failed' }, '供应商观测未补齐');
-        }
-        // Local cancellation/deadline remains the billing outcome even if upstream later stops.
-        const finishReason =
-          record.llm_finish_reason === 'cancelled' ||
-          record.llm_finish_reason === 'user_cancelled' ||
-          record.llm_finish_reason === 'timeout'
-            ? record.llm_finish_reason
-            : providerMetadata.finish_reason;
-
-        let reconciled: ReconciledChargeResult;
-        try {
-          reconciled = await reconcileCharge({
-            record,
-            generationId,
-            genData: { usage: providerMetadata.usage, model: providerMetadata.model },
-            finishReason,
-          });
-        } catch (reconcileErr) {
-          // 保留缺失的 generation 字段，让下一轮同步继续重试计费与免费额度终结。
-          log.error(
-            {
-              kind: 'sys',
-              event: 'chathistory_sync.reconcile_failed',
-              err: reconcileErr,
-              id: record.id,
-              generationId,
-              chargeId: record.llm_charge_id,
-            },
-            'failed to reconcile LLM usage charge'
-          );
-          continue;
-        }
-
-        try {
-          await history().recordBillingOutcome({
-            historyId: record.id,
-            intendedDeduction: reconciled.intendedDeduction,
-            deductionRate: reconciled.deductionRate,
-            finishReason,
-            ...(reconciled.settled ? { billingSettledAt: new Date().toISOString() } : {}),
-          });
-        } catch (err) {
-          log.error(
-            {
-              kind: 'sys',
-              event: 'chathistory_sync.update_failed',
-              err,
-              id: record.id,
-              generationId,
-            },
-            'failed to update chat history'
-          );
-          continue;
-        }
-
-        if (!fetched) {
-          if (storedComplete && reconciled.settled) completedCount++;
-          else notReadyCount++;
-          continue;
-        }
-        try {
-          await openRouterHistory().upsert({
-            chat_history_id: record.id,
-            llm_generation_id: generationId,
-            ...providerMetadata,
-          });
-        } catch (err) {
-          log.error(
-            {
-              kind: 'sys',
-              event: 'chathistory_sync.openrouter_metadata_failed',
-              err,
-              id: record.id,
-              generationId,
-            },
-            'failed to update OpenRouter generation metadata'
-          );
-          continue;
-        }
-
-        if (isCompleteGenerationData(genData)) {
-          completedCount++;
-          log.info(
-            { id: record.id, generationId },
-            '[sync-job] successfully synced generation data'
-          );
-        } else if (genData.error) {
-          errorDataCount++;
-          log.info({ id: record.id, generationId }, '[sync-job] saved generation error data');
-        } else {
-          notReadyCount++;
-          log.info({ id: record.id, generationId }, '[sync-job] saved incomplete generation data');
-        }
+        storedGenerationData = await openRouterHistory().readGenerationDataBatch(openRouterIds);
       } catch (err) {
+        openRouterBatchReadFailed = true;
         log.error(
-          { err, event: 'chathistory_sync.record_failed', id: record.id },
-          'record deferred; remaining candidates continue'
+          { kind: 'sys', event: 'chathistory_sync.metadata_batch_read_failed', err },
+          'failed to batch-read OpenRouter generation metadata'
         );
       }
     }
 
+    let providerFetchBudget = PROVIDER_FETCH_BUDGET;
+
+    const results = await runSettledWithConcurrency(
+      eligibleRows.map((record) => async () => {
+        if (
+          openRouterBatchReadFailed &&
+          record.status !== 'streaming' &&
+          record.callProvider === 'openrouter' &&
+          !!record.generationId
+        ) {
+          return 'failed' as const;
+        }
+        const stored = storedGenerationData.get(record.id) ?? null;
+        const requiresProviderFetch =
+          record.callProvider === 'openrouter' &&
+          !!record.generationId &&
+          hasOpenRouterKey() &&
+          !isCompleteGenerationData(stored);
+        const allowProviderFetch = !requiresProviderFetch || providerFetchBudget-- > 0;
+        return processSyncRecord({
+          record,
+          storedGenerationData,
+          allowProviderFetch,
+          log,
+        });
+      }),
+      RECORD_CONCURRENCY
+    );
+
+    const counts: Record<SyncRecordOutcome, number> = {
+      completed: 0,
+      error_data: 0,
+      not_ready: 0,
+      recovered: 0,
+      manual_audit: 0,
+      budget_deferred: 0,
+      failed: 0,
+    };
+    for (const [index, result] of results.entries()) {
+      const record = eligibleRows[index];
+      if (!record) continue;
+      if (result.status === 'rejected') {
+        counts.failed++;
+        log.error(
+          { err: result.reason, event: 'chathistory_sync.record_failed', id: record.id },
+          'record deferred; remaining candidates continue'
+        );
+        continue;
+      }
+
+      counts[result.value]++;
+      if (
+        result.value === 'not_ready' ||
+        result.value === 'error_data' ||
+        result.value === 'manual_audit'
+      ) {
+        registerRetryState(record, Date.now());
+      } else if (result.value !== 'failed') {
+        retryStates.delete(record.id);
+      }
+    }
+
     log.info(
-      { scannedCount: rows.length, completedCount, errorDataCount, notReadyCount },
+      {
+        kind: 'sys',
+        event: 'chathistory_sync.finished',
+        scannedCount: rows.length,
+        eligibleCount: eligibleRows.length,
+        deferredCount,
+        completedCount: counts.completed,
+        recoveredCount: counts.recovered,
+        errorDataCount: counts.error_data,
+        notReadyCount: counts.not_ready,
+        manualAuditCount: counts.manual_audit,
+        providerBudgetDeferredCount: counts.budget_deferred,
+        failedCount: counts.failed,
+        retryStateSize: retryStates.size,
+        durationMs: Date.now() - startedAt,
+      },
       '[sync-job] sync run finished'
     );
   } catch (err) {
@@ -365,6 +324,247 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
   } finally {
     isRunning = false;
   }
+}
+
+async function processSyncRecord(input: {
+  record: ChatHistorySyncRow;
+  storedGenerationData: Map<string, Record<string, unknown>>;
+  allowProviderFetch: boolean;
+  log: FastifyBaseLogger;
+}): Promise<SyncRecordOutcome> {
+  const { record, storedGenerationData, allowProviderFetch, log } = input;
+  if (record.status === 'streaming') {
+    if (record.session_id) await history().recoverStaleStreaming(record.session_id);
+    return 'recovered';
+  }
+
+  const generationId = record.generationId;
+  const provider = record.callProvider;
+  if (
+    !provider ||
+    (record.llm_billing_snapshot?.provider && record.llm_billing_snapshot.provider !== provider)
+  ) {
+    log.error(
+      { event: 'chathistory_sync.provider_unresolved', id: record.id },
+      'call provider requires audit'
+    );
+    return 'manual_audit';
+  }
+
+  if (!generationId) {
+    // No upstream locator can be reconstructed after a crash. Only release an
+    // already-determined failed/cancelled call; never infer stop or regenerate.
+    if (record.status !== 'success' && record.llm_charge_id) {
+      try {
+        const result = await reconcileCharge({
+          record,
+          generationId: null,
+          genData: {},
+          finishReason: record.llm_finish_reason ?? 'error',
+        });
+        if (!result.settled) return 'not_ready';
+        await history().recordBillingOutcome({
+          historyId: record.id,
+          intendedDeduction: result.intendedDeduction,
+          deductionRate: result.deductionRate,
+          billingSettledAt: new Date().toISOString(),
+        });
+        return 'completed';
+      } catch (err) {
+        log.error(
+          { err, event: 'chathistory_sync.identity_cleanup_failed', id: record.id },
+          'failed call cleanup pending'
+        );
+        return 'failed';
+      }
+    }
+
+    log.warn(
+      { event: 'chathistory_sync.identity_missing', id: record.id },
+      'call identity unavailable; manual audit required'
+    );
+    return 'manual_audit';
+  }
+
+  if (provider !== 'openrouter') {
+    const reconciled = await reconcileNonOpenRouterRecord({ record, generationId, provider, log });
+    return reconciled === 'settled' ? 'completed' : 'not_ready';
+  }
+
+  const stored = storedGenerationData.get(record.id) ?? null;
+  const storedComplete = isCompleteGenerationData(stored);
+  if (!storedComplete && hasOpenRouterKey() && !allowProviderFetch) return 'budget_deferred';
+  const fetched =
+    !storedComplete && hasOpenRouterKey() ? await fetchGenerationData(generationId) : null;
+  const genData = storedComplete ? stored : (fetched ?? stored);
+  if (!genData) return 'not_ready';
+
+  const providerMetadata = buildGenerationMetadata(genData);
+  const metadataChanged = !!fetched && hasGenerationMetadataChanged(stored, providerMetadata);
+  if (metadataChanged) {
+    try {
+      await new GenerationObservationRepository().enrichGeneration(generationId, providerMetadata);
+    } catch (err) {
+      log.warn(
+        { err, event: 'llm.attempt.provider_metadata_failed', id: record.id, generationId },
+        '供应商观测未补齐'
+      );
+    }
+    try {
+      await openRouterHistory().updateKnownGenerationMetadata({
+        chat_history_id: record.id,
+        llm_generation_id: generationId,
+        ...providerMetadata,
+      });
+    } catch (err) {
+      log.error(
+        {
+          kind: 'sys',
+          event: 'chathistory_sync.openrouter_metadata_failed',
+          err,
+          id: record.id,
+          generationId,
+        },
+        'failed to update OpenRouter generation metadata'
+      );
+      return 'failed';
+    }
+  }
+
+  // Local cancellation/deadline remains the billing outcome even if upstream later stops.
+  const finishReason =
+    record.llm_finish_reason === 'cancelled' ||
+    record.llm_finish_reason === 'user_cancelled' ||
+    record.llm_finish_reason === 'timeout'
+      ? record.llm_finish_reason
+      : providerMetadata.finish_reason;
+  // Without a terminal reason, billing cannot progress. Avoid a charge lookup and an empty update.
+  if (typeof finishReason !== 'string') return genData.error ? 'error_data' : 'not_ready';
+
+  let reconciled: ReconciledChargeResult;
+  try {
+    reconciled = await reconcileCharge({
+      record,
+      generationId,
+      genData: { usage: providerMetadata.usage, model: providerMetadata.model },
+      finishReason,
+    });
+  } catch (err) {
+    log.error(
+      {
+        kind: 'sys',
+        event: 'chathistory_sync.reconcile_failed',
+        err,
+        id: record.id,
+        generationId,
+        chargeId: record.llm_charge_id,
+      },
+      'failed to reconcile LLM usage charge'
+    );
+    return 'failed';
+  }
+
+  try {
+    await history().recordBillingOutcome({
+      historyId: record.id,
+      intendedDeduction: reconciled.intendedDeduction,
+      deductionRate: reconciled.deductionRate,
+      finishReason,
+      ...(reconciled.settled ? { billingSettledAt: new Date().toISOString() } : {}),
+    });
+  } catch (err) {
+    log.error(
+      {
+        kind: 'sys',
+        event: 'chathistory_sync.update_failed',
+        err,
+        id: record.id,
+        generationId,
+      },
+      'failed to update chat history'
+    );
+    return 'failed';
+  }
+
+  return isCompleteGenerationData(genData) && reconciled.settled ? 'completed' : 'not_ready';
+}
+
+function syncRecordFingerprint(record: ChatHistorySyncRow): string {
+  return [
+    record.callProvider ?? '',
+    record.generationId ?? '',
+    record.status,
+    record.llm_finish_reason ?? '',
+    record.llm_charge_id ?? '',
+  ].join('\u001f');
+}
+
+function shouldDeferRecord(record: ChatHistorySyncRow, now: number): boolean {
+  const state = retryStates.get(record.id);
+  if (!state) return false;
+  if (now - state.firstSeenAt >= RETRY_STATE_TTL_MS) {
+    retryStates.delete(record.id);
+    return false;
+  }
+  if (state.fingerprint !== syncRecordFingerprint(record)) {
+    retryStates.delete(record.id);
+    return false;
+  }
+  return now < state.nextRetryAt;
+}
+
+function registerRetryState(record: ChatHistorySyncRow, now: number): void {
+  const fingerprint = syncRecordFingerprint(record);
+  const previous = retryStates.get(record.id);
+  const attempts = previous?.fingerprint === fingerprint ? previous.attempts + 1 : 0;
+  const delayMs = Math.min(NOT_READY_BACKOFF_BASE_MS * 2 ** attempts, NOT_READY_BACKOFF_MAX_MS);
+
+  pruneRetryStates(now);
+  if (!retryStates.has(record.id) && retryStates.size >= RETRY_STATE_LIMIT) {
+    let oldestId: string | null = null;
+    let oldestAt = Number.POSITIVE_INFINITY;
+    for (const [id, state] of retryStates) {
+      if (state.firstSeenAt < oldestAt) {
+        oldestId = id;
+        oldestAt = state.firstSeenAt;
+      }
+    }
+    if (oldestId) retryStates.delete(oldestId);
+  }
+
+  retryStates.set(record.id, {
+    fingerprint,
+    attempts,
+    nextRetryAt: now + delayMs,
+    firstSeenAt: previous?.fingerprint === fingerprint ? previous.firstSeenAt : now,
+  });
+}
+
+function pruneRetryStates(now: number): void {
+  for (const [id, state] of retryStates) {
+    if (now - state.firstSeenAt >= RETRY_STATE_TTL_MS) retryStates.delete(id);
+  }
+}
+
+function hasGenerationMetadataChanged(
+  stored: Record<string, unknown> | null,
+  next: ReturnType<typeof buildGenerationMetadata>
+): boolean {
+  if (!stored) return true;
+  return Object.entries(next).some(([key, value]) => {
+    if (value === null || value === undefined) return false;
+    return stableJson(value) !== stableJson(stored[key]);
+  });
+}
+
+function stableJson(value: unknown): string {
+  if (!value || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  const row = value as Record<string, unknown>;
+  return `{${Object.keys(row)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${stableJson(row[key])}`)
+    .join(',')}}`;
 }
 
 async function reconcileNonOpenRouterRecord(input: {

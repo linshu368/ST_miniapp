@@ -1,0 +1,32 @@
+{
+  "id": "sentry-performance-optimization",
+  "name": "sentry-performance-optimization",
+  "title": "优化 Sentry 高延迟页面与公共 API 链路",
+  "description": "根据 2026-10-27 Sentry 报告收敛认证接口重复 users 查询与 runtime_config 并发读取，降低 /profile、/chat 等页面的共享后端放大，不改变公开契约、计费或生成超时。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "backend",
+  "package": "backend",
+  "priority": "P1",
+  "creator": "cline",
+  "assignee": "cline",
+  "createdAt": "2026-10-27",
+  "completedAt": null,
+  "branch": "fix_request_speed",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": ["backend.infrastructure.runtime-data-security", "backend.business.wallet-payment"]
+    }
+  }
+}
