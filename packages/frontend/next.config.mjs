@@ -24,6 +24,7 @@ const nextConfig = {
     : {}),
   env: {
     NEXT_PUBLIC_API_URL: publicApiUrl,
+    NEXT_PUBLIC_DRAMA_RELEASE: process.env.VERCEL_GIT_COMMIT_SHA || sentryRelease || 'unknown',
   },
   // M4 容器化：产出 .next/standalone 自包含运行时（含 server.js + 最小 node_modules）。
   output: 'standalone',

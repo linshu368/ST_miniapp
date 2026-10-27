@@ -1,5 +1,7 @@
 # 轻量经营与真实首字体验
 
+短剧启动使用独立新看板 `st-drama-playback`（`drama-playback.json`），不混入经营/首token看板。新路径需独立迁移和显式启用，发布、历史导入与真机步骤见 [操作说明](drama-playback-runbook.md)。仓库JSON存在不表示线上已导入。
+
 运营入口收拢为两张看板：`st-model-overview`（经营核心）与 `chat-first-token-manual`（真实点击到可见token）。其他4个旧链接保留迁移说明，不再执行查询/变量查询。旧表和历史缓存保留，11个旧全历史cron退出。不要再整体启用旧缓存任务。
 
 ## 口径与开销

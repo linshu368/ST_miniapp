@@ -14,7 +14,7 @@ type PreviewState = {
 type Preview = {
   scenario: (name: Scenario) => Promise<void>;
   state: () => Promise<PreviewState>;
-  screenshot: (name: string) => Promise<void>;
+  screenshot: (name: string, options?: { fullPage?: boolean }) => Promise<void>;
 };
 
 export const test = base.extend<{ preview: Preview }>({
@@ -58,9 +58,12 @@ export const test = base.extend<{ preview: Preview }>({
           expect(response.ok()).toBeTruthy();
         },
         state: async () => (await request.get(`${api}/__preview/state`)).json(),
-        screenshot: async (name) => {
+        screenshot: async (name, options) => {
           await testInfo.attach(name, {
-            body: await page.screenshot({ fullPage: true }),
+            body: await page.screenshot({
+              fullPage: options?.fullPage ?? true,
+              path: testInfo.outputPath(`${name}.png`),
+            }),
             contentType: 'image/png',
           });
         },

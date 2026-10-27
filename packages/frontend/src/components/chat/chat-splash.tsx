@@ -64,14 +64,14 @@ function buildStars(id: string, count: number): Star[] {
 
 /** 等待会话就绪时保留退出/重试；快速就绪直接进入，避免连续试卡反复等待退场。 */
 export function ChatSplash({
-  backHref = '/',
+  backHref = '/characters',
   characterId,
   ready,
   error,
   onRetry,
   onVisible,
 }: {
-  backHref?: '/' | '/chats';
+  backHref?: '/characters' | '/chats';
   characterId: string;
   ready: boolean;
   error?: string | null;
@@ -103,7 +103,7 @@ export function ChatSplash({
   const visibleReportedRef = useRef(false);
 
   useEffect(() => {
-    router.prefetch('/');
+    router.prefetch('/characters');
   }, [router]);
 
   useEffect(() => {

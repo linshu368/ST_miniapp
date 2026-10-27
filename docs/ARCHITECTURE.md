@@ -369,6 +369,8 @@ T9 专表 contract：`20261016_openrouter_chat_history_drop_legacy_aliases.sql` 
 
 短剧是既有外部归档域 `drama_archive`，基础表由独立 `telegram-video-archive` 管理，不属于本仓九域治理。本次仅通过 shared migration 扩展既有 `videos.created_at`，不创建新表／schema／RPC。`DramaRepository` 经 `dramas → ai_results.drama_id` 获取剧级文字，`assemble` 统一逐字段回退；可播视频最早时间输出为 `first_published_at`，前端在完整目录上组合搜索／分类并按该字段排序，点击后保存当前播放队列顺序。外部上传端负责后续时间写入，NULL 不伪造为当前时间。迁移先于消费者发布，TEST 的补录时间不是历史上传事实，Production 不随本次执行。详见[短剧目录与时间契约](../.trellis/spec/database/supabase/drama-catalog.md)。
 
+本地短剧体验增量（尚未发布）：官方剧级点赞/评论表 `drama_archive.drama_likes`、`drama_archive.drama_comments` 和 `create_drama_comment` RPC 由 ST_miniapp backend 拥有，原归档表仍由独立上传端管理。两表仅依赖 `drama_archive.dramas(id)` 与 `app_core.users(id)`，不借用角色或影像互动表；删除根实体级联清理。service_role 只获得点赞 SELECT/INSERT/DELETE、评论 SELECT/UPDATE(deleted_at) 与发布 RPC EXECUTE，匿名/登录数据库角色不开放表或 RPC；后端 Telegram 鉴权后映射用户身份，删除附带作者条件，评论游标分页，展示匿名剧友名。发布 RPC 按用户事务锁限制每分钟3条并保证 UUID 重试幂等，软删除保留幂等/限流记录，不允许重试复活。前端 `lib/api/drama.ts` 管理互动服务器缓存；本设备收藏/观看记录仍由独立本地 store 管理。迁移先行、后端其次、前端最后；回滚应用先保留互动数据，移除表需另行确认。
+
 ### 5.2 会话存储
 
 ```
@@ -462,7 +464,7 @@ frontend 自有 Route Handler：`GET /api/lobby-characters`（白名单 sort 参
 
 ### 7.1 前端
 
-- Next.js 14 App Router，`src/app/` 下 `(main)` 分组承载底部四 Tab（大厅 `/` / 聊天 `/chats` / 创作 `/create` / 我的 `/profile`），会话页是 **`/chat/[characterId]?session=...`**（不在分组内，无底部导航），另有自定义语音台词页 `/chat/[characterId]/voice/[messageId]`。
+- Next.js 14 App Router，`src/app/` 下 `(main)` 分组在本地短剧新版中承载五入口（角色 `/characters` 与 `/chats` / AI短剧 `/dramas` / 中央播放首页 `/` / 生成 `/create` / 我的 `/profile`）；公共贴底导航共享高度、安全区和隐藏规则，会话页是 **`/chat/[characterId]?session=...`**（不在分组内，无底部导航），另有自定义语音台词页 `/chat/[characterId]/voice/[messageId]`。
 - 自研聊天 UI（M5 已交付）：`components/chat/` 下消息列表 / 气泡 / markdown（showdown + DOMPurify）/ 输入区 / 重生成 / 语音播放条 / 会话抽屉 / 工具箱；SSE 客户端是 `lib/api/conversation-stream.ts` 的 `streamConversationTurn()`（旧 `apiStreamClient` 已删除）。会话页编排：`hooks/use-chat-session.ts` 管创建 / URL `?session=` / 失效重建，`hooks/use-conversation-turn.ts` 管发消息、重生成、abort、流式临时态与失败分流；语音生成仍留在 page。余额不足跳充值统一走 `lib/recharge-redirect.ts`（同时认 `insufficient_balance` 与 `INSUFFICIENT_CREDITS`）；`apiClient` 会把对话/语音的 402 裸形状收成带金额的 `ApiClientError`。
 - 回复后处理快照由 `lib/api/text-postprocess.ts` 按消息版本批量读取；流式阶段保持 `ChatMarkdown`，终态由 `@miniapp/reply-renderer` 展示。缺失/非法 artifact、旧 `NULL` 版本或 Worker 失败均退化为完整原始 Markdown；不得在 Frontend 编译 source 或选择最新版本替代。
 - 用户生成配置有编辑界面：模型档位在 `ChatTopBar` 的引擎胶囊里，由 `ChatModelSwitcher` 展开；工具箱不再放模型入口。角色回复图片通过消息操作行与独立 Sheet 交互。VIP 详情在 `/vip`，和星尘套餐在充值页互斥选择。
@@ -562,7 +564,7 @@ packages/backend/src/
 
 **体验监控**（Sentry org `wangqiao` / project `st-miniapp`，前后端共用，靠 `service` 标签区分）：p95/p99 来自 Sentry Metrics（全量，不受 trace 采样影响），"卡了"以 warning 事件表达并自带 Replay。前端 `src/lib/perf/` 记录请求耗时与超时（`apiClient` 默认 20 秒超时，图片/语音生成等长耗时接口例外）、页面可用耗时与 4 秒卡住（大厅/聊天列表/会话页/充值）、三个核心按钮 2.5 秒无反馈、资源加载失败；后端 `lib/perf-metrics.ts` 记录每路由耗时（对话/语音/图片生成单独 `kind=generation`）、Prisma 操作耗时（连接池超时标 `pool_timeout`）、事件循环延迟。采样：trace 0.2、Replay 会话 0.05、Replay 报错 1.0。指标清单、看板与排查流程见 `.trellis/tasks/10-21-sentry-ux-monitoring/dashboard-and-runbook.md`。阈值均为初值，待基线校准。
 
-短剧列表与播放另记录用户等待、API 排队/响应头/body、媒体元数据/首帧和 Backend 查询/签名阶段。浏览器先记录本地日志，再通过鉴权 `POST /api/telemetry/drama-timing` 将有界报告交由 Backend Pino 写入 Railway；短剧专用 Sentry 上报已移除，无新数据库对象或采集服务。以 observation/list/request ID 关联，接收接口限制大小和频率，上报失败不影响播放。并行预取不能与路由耗时相加，用户浏览时间单列。口径与排查步骤见 [短剧播放耗时排查](drama-playback-timing.md)。
+短剧列表与播放另记录用户等待、API 排队/响应头/body、媒体元数据/首帧和 Backend 查询/签名阶段。浏览器通过鉴权 `POST /api/telemetry/drama-timing` 将有界报告交给 Pino；v2 增加被动媒体请求/帧处理/长任务证据、开始与至多一次网络补充。默认日志模式；对应环境执行 `20261027_drama_playback_observability.sql` 并显式开启 `DRAMA_TIMING_PERSIST_ENABLED` 后，遥测独立请求经 service_role 原子合并至 miniapp_analytics，播放API不依赖分析表。独立 Grafana `st-drama-playback` 只读分布/覆盖/单次详情，不修改经营看板；摘要全量14天、慢/失败及5%快样本明细7天，有界清理job初始关闭。没有新采集服务，URL只用于内存关联，缺失不补零，能力受TAO/WebView限制。源码/模板不代表远端已执行。口径与发布恢复见 [短剧播放耗时排查](drama-playback-timing.md) 和 [看板操作说明](grafana/drama-playback-runbook.md)。
 
 **本地页面验收**：`packages/ui-tests` 以虚构公开DTO提供HTTP/SSE场景，浏览器运行真实Frontend。手动与自动验收使用独立端口、状态和Next缓存，不依赖数据库、模型或支付；见 [移动端验收说明](../packages/ui-tests/README.md)。
 
