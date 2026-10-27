@@ -289,7 +289,7 @@ export async function runConversationTurn(
     // ── 组 prompt ─────────────────────────────────────────────────────────────
     // Context reads do not depend on this new turn's identity writes. Keep the
     // writes ordered (pending identity must never overwrite the final prompt).
-    const [, context] = await Promise.all([
+    const [registration, contextRead] = await Promise.allSettled([
       (async () => {
         if (input.requestId)
           await historyRecords().setPendingRequestId(turn.historyId, input.requestId);
@@ -303,6 +303,11 @@ export async function runConversationTurn(
         turn.contextWindowStartTurn
       ),
     ]);
+    // Finish registration before failure cleanup too. A fast context rejection
+    // must not race a late identity write or omit the failed request's facts.
+    if (registration.status === 'rejected') throw registration.reason;
+    if (contextRead.status === 'rejected') throw contextRead.reason;
+    const context = contextRead.value;
     controller.signal.throwIfAborted();
     const history = buildEngineHistory(context.messages, context.openingMessage ?? card.first_mes);
 
