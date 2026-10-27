@@ -265,7 +265,7 @@ export async function runConversationTurn(
   let pollTimer: NodeJS.Timeout | undefined;
   const pollCancellation = async (): Promise<void> => {
     try {
-      const row = await historyRecords().requireTurnById(turn.historyId);
+      const row = await historyRecords().requireTurnState(turn.historyId);
       if (row.llm_finish_reason === 'user_cancelled') clearTimeout(firstTokenTimer);
       if (row.status !== 'streaming' || row.llm_finish_reason !== null) controller.abort();
     } catch (err) {
@@ -286,18 +286,24 @@ export async function runConversationTurn(
   beginActiveDelivery(turn.historyId, userId, session.id, turn.revision);
 
   try {
-    if (input.requestId)
-      await historyRecords().setPendingRequestId(turn.historyId, input.requestId);
-    await observations.begin(observationInput);
-    observationBegun = true;
-    if (firstTokenDeadlineElapsed) recordFirstTokenTimeout();
-    controller.signal.throwIfAborted();
     // ── 组 prompt ─────────────────────────────────────────────────────────────
-    const context = await historyRecords().getContextBeforeTurn(
-      session.id,
-      turn.turnIndex,
-      turn.contextWindowStartTurn
-    );
+    // Context reads do not depend on this new turn's identity writes. Keep the
+    // writes ordered (pending identity must never overwrite the final prompt).
+    const [, context] = await Promise.all([
+      (async () => {
+        if (input.requestId)
+          await historyRecords().setPendingRequestId(turn.historyId, input.requestId);
+        await observations.begin(observationInput);
+        observationBegun = true;
+        if (firstTokenDeadlineElapsed) recordFirstTokenTimeout();
+      })(),
+      historyRecords().getContextBeforeTurn(
+        session.id,
+        turn.turnIndex,
+        turn.contextWindowStartTurn
+      ),
+    ]);
+    controller.signal.throwIfAborted();
     const history = buildEngineHistory(context.messages, context.openingMessage ?? card.first_mes);
 
     const prompt = buildPrompt({
@@ -311,7 +317,16 @@ export async function runConversationTurn(
       instructions: instructions.instructions,
     });
 
-    await historyRecords().setPromptHistory(turn.historyId, prompt.messages, input.requestId);
+    // Persist the audit/context snapshot while generation performs independent
+    // pricing/entitlement checks. The dispatch hook still requires durability.
+    const promptPersisted = historyRecords().setPromptHistory(
+      turn.historyId,
+      prompt.messages,
+      input.requestId
+    );
+    // Attach a rejection handler now; the hook/result below awaits the original
+    // promise, so a slow precheck cannot cause an unhandled rejection.
+    void promptPersisted.catch(() => {});
 
     // ── 生成 ──────────────────────────────────────────────────────────────────
     const request: GenerationRequest = {
@@ -399,6 +414,7 @@ export async function runConversationTurn(
       {
         onBeforeDispatch: async (snapshot) => {
           controller.signal.throwIfAborted();
+          await promptPersisted;
           await observations.begin({ ...observationInput, snapshot });
           controller.signal.throwIfAborted();
           emitStart();
@@ -443,6 +459,7 @@ export async function runConversationTurn(
       },
       log
     );
+    await promptPersisted;
 
     if (result.status === 'insufficient_balance' || result.denial === 'vip_required')
       await observations
