@@ -85,6 +85,8 @@ pnpm dev:admin
 
 常用检查：
 
+移动端页面预览使用 `pnpm preview:ui`，场景入口 `http://127.0.0.1:3121`。固定浏览器验收用 `pnpm test:ui --grep @profile`（或 `@roleplay` / `@chat` / `@image`）按组运行。首次安装、手机尺寸、报告及新增场景方法见 [移动端验收说明](packages/ui-tests/README.md)。该环境使用虚构数据，正式发布仍遵循既有质量检查。
+
 ```bash
 pnpm typecheck
 pnpm lint
@@ -242,7 +244,6 @@ T10 新增 `20261016_openrouter_history_disposition.sql`，先按现有mapper白
 Grafana 经营统计的轻量口径、刷新预算及发布恢复流程见 [docs/grafana/README.md](docs/grafana/README.md)。真实首字体验看板与经营日汇总分别服务用户体验与经营判断。
 
 文字回复主动停止：新版客户端显式发送 `reason=user_stop`，后端持久化 `user_cancelled`；已冻结原价的轮次按所选型号原权益结算，免费轮消费免费次数，不增加扣费弹窗。自动首字截止传 `first_token_timeout`，系统超时/失败继续免扣。历史请求策略不回填；新请求即使省略原因也由后台策略与截止事实裁决。尚未受理/报价前取消不伪造账单。发布顺序为 `20261026_user_stop_billing.sql`（TEST后production）→ Backend → 新Frontend；只回退前端停止产生新标记，保留已产生标记的结算能力。
-
 
 ## 可恢复交付协议 v3（2026-10-27）
 

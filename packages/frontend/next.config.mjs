@@ -15,6 +15,13 @@ process.env.NEXT_PUBLIC_API_URL = publicApiUrl;
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Local UI tooling uses its own cache so a preview never overwrites a normal build.
+  ...(process.env.NODE_ENV === 'development' && process.env.ST_UI_PREVIEW_MODE
+    ? {
+        distDir: process.env.ST_UI_PREVIEW_MODE === 'test' ? '.next-ui-test' : '.next-ui-preview',
+        typescript: { tsconfigPath: 'tsconfig.ui-preview.json' },
+      }
+    : {}),
   env: {
     NEXT_PUBLIC_API_URL: publicApiUrl,
   },

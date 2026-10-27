@@ -4,6 +4,8 @@
 
 当前 Vitest 重点覆盖纯逻辑/API parser/store：conversation SSE、会话标题、模型 cache、聊天入口/额度弹窗、composer 布局/回复展示、Telegram hooks/launch URL、Sentry sanitize、通知工具、用户 profile store，以及 Next lobby route。暂无完整 RTL/jsdom/E2E 体系；不能把缺失说成已覆盖。
 
+开发期页面验收位于 `packages/ui-tests`（[使用说明](../../../../packages/ui-tests/README.md)）：`pnpm preview:ui` 启动真实页面与本地虚构API，`pnpm test:ui --grep @profile` / `@roleplay` / `@chat` / `@image` 按组复跑。默认390×844、narrow项目320×568。公开契约约束fixture，未知接口501并使验收失败；无生产代理，自动浏览器拦截外网。手动3120/3121与自动3130/3131独立，串行场景重置；本地Next开关隔离缓存与派生tsconfig，生产仍用默认配置。截图/trace/报告不提交。原有逻辑/计费/迁移测试保留；系统键盘、Telegram原生保存和真实供应商调用继续专项验证。
+
 - 纯函数/转换：边界值、非法输入、时区/金额、空数组。
 - API/SSE：headers、envelope、非 2xx、abort、chunk 分割、error/EOF、cache invalidation。
 - Store：hydrate 优先级、localStorage 失败、action 不变量。
