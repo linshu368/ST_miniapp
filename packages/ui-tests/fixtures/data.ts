@@ -37,6 +37,26 @@ export const scenarios = {
     path: '/profile',
   },
   vip: { label: '已开通 VIP', description: '会员身份、每日 150 星尘、续费入口', path: '/profile' },
+  recharge: {
+    label: '星尘充值',
+    description: '四档虚构套餐、到账明细、VIP搭配与支付失败反馈',
+    path: '/profile/recharge',
+  },
+  'recharge-error': {
+    label: '充值加载失败',
+    description: '重试、订单和客服仍可访问',
+    path: '/profile/recharge',
+  },
+  'recharge-empty': {
+    label: '暂无充值套餐',
+    description: '空态不创建订单',
+    path: '/profile/recharge',
+  },
+  'recharge-unavailable': {
+    label: '支付渠道关闭',
+    description: '可查看套餐、禁止下单',
+    path: '/profile/recharge',
+  },
   dramas: {
     label: '短剧体验',
     description: '沉浸刷剧、收藏、点赞、评论、选集和本设备续看',
