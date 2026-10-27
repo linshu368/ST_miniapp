@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   ensurePlaceholder: vi.fn(),
   saveSnapshot: vi.fn(),
   markServer: vi.fn(),
+  checkpoint: vi.fn(),
 }));
 vi.mock('../../infrastructure/repositories/GenerationObservationRepository.js', () => ({
   GenerationObservationRepository: class {
@@ -25,6 +26,7 @@ vi.mock('../../infrastructure/repositories/GenerationObservationRepository.js', 
     prepareFallback = vi.fn();
     selectDelivery = vi.fn();
     markServer = mocks.markServer;
+    checkpoint = mocks.checkpoint;
   },
 }));
 vi.mock('../../infrastructure/repositories/ConversationHistoryRepository.js', () => ({
@@ -101,6 +103,7 @@ function input(mode: { kind: 'send'; content: string } | { kind: 'regenerate' })
 }
 beforeEach(() => {
   Object.values(mocks).forEach((mock) => mock.mockReset());
+  mocks.checkpoint.mockResolvedValue(undefined);
   mocks.pendingRequest.mockResolvedValue(undefined);
   mocks.recover.mockResolvedValue(undefined);
   mocks.start.mockResolvedValue({
@@ -428,4 +431,30 @@ describe('turn lifecycle recovery', () => {
       expect.objectContaining({ historyId: 'reply', status: 'upstream_error' })
     );
   });
+});
+
+it('keeps a selected token alive beyond 10s when persistence is slow and does not call a closed socket delivered', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+  mocks.execute.mockImplementation(async (request, hooks) => {
+    await new Promise((resolve) => setTimeout(resolve, 9000));
+    request.firstToken.onReady();
+    await new Promise((resolve) => setTimeout(resolve, 2500));
+    request.signal.throwIfAborted();
+    hooks.onStreamOpen();
+    hooks.onDelta('already generated');
+    expect(mocks.checkpoint).toHaveBeenCalledWith('reply', 1, 9000, 'delta', 'already generated');
+    return {
+      status: 'success',
+      content: 'already generated',
+      finishReason: 'stop',
+      generationId: 'g',
+      chargeId: 'c',
+    };
+  });
+  const turnInput = input({ kind: 'send', content: 'original' });
+  vi.mocked(turnInput.sink.send).mockReturnValue(false);
+  const result = runConversationTurn(turnInput);
+  await vi.advanceTimersByTimeAsync(11501);
+  await expect(result).resolves.toMatchObject({ kind: 'streamed' });
+  expect(mocks.markServer).not.toHaveBeenCalled();
 });
