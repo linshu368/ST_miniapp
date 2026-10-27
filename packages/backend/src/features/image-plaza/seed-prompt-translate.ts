@@ -87,7 +87,7 @@ export async function countCivitaiSeedPromptTranslatePending(): Promise<{
       count(*) FILTER (
         WHERE coalesce(snapshot->>'prompt_zh_venice_retry_failed', 'false') IN ('true', 't', '1')
       )::int AS "veniceRetryFailed"
-    FROM experience.image_plaza_works
+    FROM media_plaza.image_plaza_works
     WHERE origin = 'civitai_seed'
       AND source_platform = 'civitai'
       AND deleted_at IS NULL
@@ -110,7 +110,7 @@ export async function listCivitaiSeedWorksForPromptTranslate(input: {
     pendingOnly
       ? `
       SELECT id, snapshot
-      FROM experience.image_plaza_works
+      FROM media_plaza.image_plaza_works
       WHERE origin = 'civitai_seed'
         AND source_platform = 'civitai'
         AND deleted_at IS NULL
@@ -122,7 +122,7 @@ export async function listCivitaiSeedWorksForPromptTranslate(input: {
     `
       : `
       SELECT id, snapshot
-      FROM experience.image_plaza_works
+      FROM media_plaza.image_plaza_works
       WHERE origin = 'civitai_seed'
         AND source_platform = 'civitai'
         AND deleted_at IS NULL
@@ -158,7 +158,7 @@ export async function translateAndStoreSeedPrompt(input: {
   const { rows } = await pool.query<{ id: string; snapshot: unknown }>(
     `
       SELECT id, snapshot
-      FROM experience.image_plaza_works
+      FROM media_plaza.image_plaza_works
       WHERE id = $1::uuid
         AND origin = 'civitai_seed'
         AND source_platform = 'civitai'
@@ -198,7 +198,7 @@ export async function translateAndStoreSeedPrompt(input: {
     delete nextSnapshot.prompt_zh_failed;
     await pool.query(
       `
-        UPDATE experience.image_plaza_works
+        UPDATE media_plaza.image_plaza_works
         SET snapshot = $2::jsonb
         WHERE id = $1::uuid
           AND origin = 'civitai_seed'
@@ -229,7 +229,7 @@ async function markFailed(
   delete nextSnapshot.prompt_zh;
   await pool.query(
     `
-      UPDATE experience.image_plaza_works
+      UPDATE media_plaza.image_plaza_works
       SET snapshot = $2::jsonb
       WHERE id = $1::uuid
         AND origin = 'civitai_seed'
@@ -248,7 +248,7 @@ export async function listCivitaiSeedWorksForVeniceRetry(input: {
   const { rows } = await pool.query<{ id: string; snapshot: unknown }>(
     `
       SELECT id, snapshot
-      FROM experience.image_plaza_works
+      FROM media_plaza.image_plaza_works
       WHERE origin = 'civitai_seed'
         AND source_platform = 'civitai'
         AND deleted_at IS NULL
@@ -283,7 +283,7 @@ export async function retryFailedSeedPromptViaVenice(input: {
   const { rows } = await pool.query<{ id: string; snapshot: unknown }>(
     `
       SELECT id, snapshot
-      FROM experience.image_plaza_works
+      FROM media_plaza.image_plaza_works
       WHERE id = $1::uuid
         AND origin = 'civitai_seed'
         AND source_platform = 'civitai'
@@ -326,7 +326,7 @@ export async function retryFailedSeedPromptViaVenice(input: {
     delete nextSnapshot.prompt_zh_venice_retry_failed;
     await pool.query(
       `
-        UPDATE experience.image_plaza_works
+        UPDATE media_plaza.image_plaza_works
         SET snapshot = $2::jsonb
         WHERE id = $1::uuid
           AND origin = 'civitai_seed'
@@ -362,7 +362,7 @@ async function markVeniceRetryFailed(
   delete nextSnapshot.prompt_zh;
   await pool.query(
     `
-      UPDATE experience.image_plaza_works
+      UPDATE media_plaza.image_plaza_works
       SET snapshot = $2::jsonb
       WHERE id = $1::uuid
         AND origin = 'civitai_seed'
@@ -379,7 +379,7 @@ export async function resetVeniceRetryFailedForFinalPass(): Promise<number> {
   const pool = getPgPool();
   const { rowCount } = await pool.query(
     `
-      UPDATE experience.image_plaza_works
+      UPDATE media_plaza.image_plaza_works
       SET snapshot = (snapshot - 'prompt_zh_venice_retry_failed')
       WHERE origin = 'civitai_seed'
         AND source_platform = 'civitai'
