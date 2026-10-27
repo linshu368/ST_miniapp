@@ -1,0 +1,32 @@
+{
+  "id": "reusable-mobile-testing",
+  "name": "reusable-mobile-testing",
+  "title": "建立可复用移动端预览与页面验收",
+  "description": "固定本地模拟场景与移动端浏览器流程，减少重复验收搭建",
+  "status": "in_progress",
+  "dev_type": "test",
+  "scope": "testing",
+  "package": "frontend",
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-27",
+  "completedAt": null,
+  "branch": "chore/reusable-mobile-testing",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "用户已授权补充根AGENTS提醒并将本次变更通过dev发布main。发布前已快进最新dev 7b53d65d；排除原有VIP任务留痕。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "no_module_change",
+      "reason": "新增开发期验收工具，不改变业务模块运行时行为；仅增加显式本地启动的缓存隔离开关。"
+    }
+  }
+}

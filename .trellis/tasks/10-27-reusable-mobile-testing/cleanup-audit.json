@@ -1,0 +1,32 @@
+{
+  "date": "2026-10-27",
+  "removed": [
+    "/private/tmp/st-miniapp-ui-preview.py",
+    "/private/tmp/st-miniapp-ui-preview-extension.py",
+    "/private/tmp/st-miniapp-ui-preview.before-experience-continuity.py",
+    "/private/tmp/st-miniapp-ui-preview-state.json",
+    "/private/tmp/st-miniapp-ui-preview-contract-fixtures.json",
+    "/private/tmp/st-roleplay-agent/smoke-preview.py",
+    "/private/tmp/st-roleplay-agent/snapshot-preview.py",
+    "/private/tmp/st-roleplay-agent/prepare-build.py",
+    "/private/tmp/st-roleplay-agent/run-build.py",
+    "/private/tmp/st-roleplay-agent/run-incremental-build.py",
+    "/private/tmp/st-roleplay-agent/verify-build.py",
+    "/private/tmp/st-roleplay-agent/verify-build-sha.py",
+    "/private/tmp/st-roleplay-agent/verify-full-build.py",
+    "/private/tmp/st-roleplay-agent/build-path.txt",
+    "/private/tmp/st-profile-preview.py",
+    "/private/tmp/st-profile-public-catalog.json",
+    "/private/tmp/st-thinking-preview.py",
+    "/private/tmp/st-thinking-preview-extension.py",
+    "/private/tmp/st-thinking-preview-state.json",
+    "/private/tmp/st-dialogue-preview-api.py"
+  ],
+  "reason": "已停用的旧本地UI模拟服务、对应一次性验收/状态、已被正常pnpm构建替代的临时复制构建助手。",
+  "preserved": [
+    "现有源码逻辑/协议/计费/迁移测试",
+    "st-image-settlement-qa的实际后端扣费编排专项测试",
+    "历史验收日志、截图、发布补丁及摘要",
+    "非测试的历史实现脚本与其他开发者进程"
+  ]
+}

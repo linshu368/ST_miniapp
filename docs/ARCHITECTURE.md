@@ -558,6 +558,8 @@ packages/backend/src/
 
 **体验监控**（Sentry org `wangqiao` / project `st-miniapp`，前后端共用，靠 `service` 标签区分）：p95/p99 来自 Sentry Metrics（全量，不受 trace 采样影响），"卡了"以 warning 事件表达并自带 Replay。前端 `src/lib/perf/` 记录请求耗时与超时（`apiClient` 默认 20 秒超时，图片/语音生成等长耗时接口例外）、页面可用耗时与 4 秒卡住（大厅/聊天列表/会话页/充值）、三个核心按钮 2.5 秒无反馈、资源加载失败；后端 `lib/perf-metrics.ts` 记录每路由耗时（对话/语音/图片生成单独 `kind=generation`）、Prisma 操作耗时（连接池超时标 `pool_timeout`）、事件循环延迟。采样：trace 0.2、Replay 会话 0.05、Replay 报错 1.0。指标清单、看板与排查流程见 `.trellis/tasks/10-21-sentry-ux-monitoring/dashboard-and-runbook.md`。阈值均为初值，待基线校准。
 
+**本地页面验收**：`packages/ui-tests` 以虚构公开DTO提供HTTP/SSE场景，浏览器运行真实Frontend。手动与自动验收使用独立端口、状态和Next缓存，不依赖数据库、模型或支付；见 [移动端验收说明](../packages/ui-tests/README.md)。
+
 **CI/CD**（`.github/workflows/`）：`ci.yml`（typecheck / lint / import guard / **legacy guard** / 测试 / Docker 构建，矩阵仅 backend）、`db-migrate.yml`（手动迁移）、`pr-review.yml`、`railway-pr-env.yml`（PR 临时环境）。Vercel 和 Railway 都直接从 GitHub commit 构建；仓库不再发布 GHCR 镜像。
 
 > 运维遗留（需人工处理）：Railway production 控制台的 `nginx-pro` / `st-bundle-pro` / 卷 `st-data-pro` 与两侧 `ST_*` 变量待手动删除（见 `ops/railway/README.md`）；废弃的 `pr-276` 环境仍挂着一条 `branch=main` 的 trigger；`Dockerfile.frontend` 仍是隐式 pnpm 取包写法（backend 已在 PR #295 修复构建卡死）。
@@ -702,7 +704,6 @@ Grafana 通过 `20261023_grafana_first_token_reader.sql` 正式迁移为既有�
 `20261026_grafana_light_core.sql` 在 miniapp_analytics 增加近14天的日期/型号派生汇总，仅由owner cron维护；产品运行时与计费不依赖。一个30分钟任务只更新今天和昨天，每条SQL5s/lock1s/禁并行，报表读者仅可SELECT聚合。替代11个全历史物化刷新；旧对象/业务数据保留，冗余看板退出常驻查询。请求次数、每日独立用户、已记录成本下界、实扣星尘与completed实收分开，展示缺报/更新时间；真实首字仍来自独立客户端观测。细节与执行状态见docs/grafana/README.md和任务验收。
 
 主动停止政策（2026-10-26）：取消DTO兼容新增reason=user_stop|first_token_timeout，缺省不决定计费；服务端请求策略位既有false、新轮true。显式手动停止持久化user_cancelled，CAS完成先赢仍按完成处理；已冻结快照时按原charge_id异步结算，免费权益先收口再解除会话占用，preheader没有generationId也使用原价。billing资格user_stopped要求服务端标记与匹配快照，系统截止优先waived；免费权益消费一次。新原因不得被上游stop或sync覆盖，历史cancelled保持免扣。新增取消CAS RPC与固定默认策略列，无额外通知、轮询、cron或表/索引；异常沿用有界恢复，钱包待结算不阻挡停止确认。
-
 
 ## 可恢复交付协议 v3（2026-10-27）
 

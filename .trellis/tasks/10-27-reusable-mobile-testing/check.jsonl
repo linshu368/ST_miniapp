@@ -1,0 +1,3 @@
+{"file": "AGENTS.md", "reason": "项目规则、发布与本地验收入口"}
+{"file": ".trellis/spec/frontend/app/testing-quality-and-deployment.md", "reason": "移动端验收与现有测试边界"}
+{"file": ".trellis/spec/docs/process/index.md", "reason": "文档规则与同步责任"}
