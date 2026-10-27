@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { DramaTimingReport } from './drama-timing';
 
 const mocks = vi.hoisted(() => ({
-  upload: vi.fn(async () => {}),
+  upload: vi.fn(async (_report: DramaTimingReport) => {}),
   info: vi.fn(),
   warn: vi.fn(),
   api: vi.fn(),
@@ -90,7 +91,7 @@ describe('drama centralized logging', () => {
     dramaTiming.beginPlayback('b', 'switch').finish('playing');
     expect(mocks.upload).toHaveBeenLastCalledWith(expect.objectContaining({ outcome: 'playing' }));
   });
-  it('reports the actual lifecycle reason once and removes lifecycle listeners', () => {
+  it('reports the actual lifecycle reason once and removes lifecycle listeners', async () => {
     vi.useFakeTimers();
     const handlers = new Map<string, () => void>();
     const documentState = {
@@ -105,6 +106,8 @@ describe('drama centralized logging', () => {
     });
     const cleanup = installDramaTiming();
     dramaTiming.beginPlayback('a', 'cover');
+    expect(mocks.upload).not.toHaveBeenCalled();
+    await Promise.resolve();
     handlers.get('pagehide')?.();
     expect(mocks.upload).toHaveBeenLastCalledWith(
       expect.objectContaining({
@@ -114,7 +117,8 @@ describe('drama centralized logging', () => {
     );
     documentState.hidden = true;
     handlers.get('visibilitychange')?.();
-    expect(mocks.upload).toHaveBeenCalledTimes(1);
+    expect(mocks.upload).toHaveBeenCalledTimes(2);
+    expect(mocks.upload.mock.calls.map(([report]) => report.phase)).toEqual(['start', 'final']);
     cleanup();
     expect(handlers.size).toBe(0);
   });
