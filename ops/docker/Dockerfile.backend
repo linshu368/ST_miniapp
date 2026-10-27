@@ -119,8 +119,11 @@ FROM node:20-bookworm-slim
 # wget -> HEALTHCHECK probe; openssl -> Prisma native engine needs libssl at runtime.
 # node:20-bookworm-slim ships none of these.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      tini wget openssl \
+      tini wget openssl ffmpeg \
  && rm -rf /var/lib/apt/lists/*
+
+# Video plaza requires both binaries for metadata probing, first-frame extraction and faststart.
+RUN ffmpeg -version && ffprobe -version
 
 ENV NODE_ENV=production
 # Default listen port (source: process.env.PORT || 3001). Overridable at runtime (ENV pass-through);

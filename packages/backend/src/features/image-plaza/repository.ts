@@ -1,16 +1,21 @@
 import { Buffer } from 'node:buffer';
 import {
   ImagePlazaSnapshotSchema,
+  VideoPlazaSnapshotSchema,
   type ImagePlazaArtifact,
   type ImagePlazaAttempt,
   type ImagePlazaConversation,
   type ImagePlazaSnapshot,
   type ImagePlazaWork,
+  type PlazaFeedItem,
+  type PlazaWork,
+  type VideoPlazaAttempt,
+  type VideoPlazaSnapshot,
   type ImagePlazaFeedSort,
   type ProviderImagePlazaModel,
   type SubmitImagePlazaAttemptRequest,
 } from '@miniapp/shared';
-import { getDomainDb } from '../../lib/supabase.js';
+import { getDomainDb, plazaDb } from '../../lib/supabase.js';
 import {
   cursorFilter,
   decodeFeedCursor,
@@ -23,6 +28,8 @@ import {
   downloadPlazaImage,
   signPlazaImagePath,
   signSharedWorkImagePath,
+  signSharedVideoPath,
+  signPrivateVideoPath,
   uploadPlazaImage,
   type PlazaMimeType,
 } from './storage.js';
@@ -58,8 +65,13 @@ export interface ImagePlazaWorkerAttempt {
 interface WorkRow {
   id: string;
   user_id: string;
-  attempt_id: string;
-  artifact_id: string;
+  attempt_id: string | null;
+  artifact_id: string | null;
+  media_type?: 'image' | 'video';
+  video_artifact_id?: string | null;
+  video_attempt_id?: string | null;
+  duration_ms?: number | null;
+  description?: string;
   title: string;
   model_id: string;
   model_name: string;
@@ -71,6 +83,34 @@ interface WorkRow {
   published_at: string;
   deleted_at: string | null;
   initial_feed_order?: string | null;
+}
+
+interface VideoArtifactRow {
+  id: string;
+  attempt_id: string;
+  storage_path: string;
+  poster_path: string | null;
+  width: number;
+  height: number;
+  duration_ms: number;
+}
+
+interface VideoConversationAttemptRow {
+  id: string;
+  conversation_id: string;
+  assistant_message_id: string;
+  status: VideoPlazaAttempt['status'];
+  error_code: string | null;
+  quote_credits: number;
+  model_id: string;
+  input_mode: 't2v' | 'i2v' | 'r2v';
+  duration_s: number;
+  resolution: string;
+  aspect_ratio: string | null;
+  audio: boolean;
+  reference_artifact_id: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 interface ArtifactRow {
@@ -108,6 +148,8 @@ interface MessageRow {
   conversation_id: string;
   role: 'user' | 'assistant';
   content: string;
+  media_type?: 'image' | 'video';
+  video_attempt_id?: string | null;
   created_at: string;
 }
 
@@ -121,8 +163,8 @@ interface ConversationRow {
 }
 
 export class ImagePlazaRepository {
-  private readonly experience = getDomainDb('experience');
-  private readonly features = getDomainDb('miniapp_features');
+  private readonly experience = plazaDb();
+  private readonly features = plazaDb();
   private readonly billing = getDomainDb('billing');
   private readonly appCore = getDomainDb('app_core');
 
@@ -141,10 +183,12 @@ export class ImagePlazaRepository {
     search?: string;
     /** 业务标签中文 label；按 snapshot.prompt_zh 字面包含匹配。未传则不做标签限制。 */
     tagLabel?: string;
+    tagIds?: string[];
+    media?: 'all' | 'image' | 'video';
     cursor?: string;
     sort?: ImagePlazaFeedSort;
     limit: number;
-  }): Promise<{ works: ImagePlazaWork[]; nextCursor: string | null }> {
+  }): Promise<{ works: PlazaFeedItem[]; nextCursor: string | null }> {
     if (input.sort) return this.listSortedWorks({ ...input, sort: input.sort });
     // Feed 排序：点赞数 ↓ → 分享时间 ↓ → id ↓（稳定游标）
     let query = this.experience
@@ -165,6 +209,8 @@ export class ImagePlazaRepository {
         );
       }
     }
+    if (input.media && input.media !== 'all') query = query.eq('media_type', input.media);
+    if (input.tagIds?.length) query = query.overlaps('tags', input.tagIds);
     if (input.tagLabel) {
       // 仅匹配中文译文；无 prompt_zh 的作品不会命中。不按 works.tags 数组筛选。
       const term = escapeIlikePattern(input.tagLabel.trim().slice(0, 80));
@@ -190,7 +236,7 @@ export class ImagePlazaRepository {
     if (error) throw new Error(`image plaza feed read failed: ${error.message}`);
     const rows = (data ?? []) as WorkRow[];
     const visible = rows.slice(0, input.limit);
-    const works = await this.hydrateWorks(visible, input.userId, {
+    const works = await this.hydrateFeedWorks(visible, input.userId, {
       feedImages: true,
       includeReferences: false,
     });
@@ -208,11 +254,13 @@ export class ImagePlazaRepository {
     userId: string;
     search?: string;
     tagLabel?: string;
+    tagIds?: string[];
+    media?: 'all' | 'image' | 'video';
     cursor?: string;
     sort: ImagePlazaFeedSort;
     limit: number;
-  }): Promise<{ works: ImagePlazaWork[]; nextCursor: string | null }> {
-    const filter = feedFilter(input.search, input.tagLabel);
+  }): Promise<{ works: PlazaFeedItem[]; nextCursor: string | null }> {
+    const filter = feedFilter(input.search, input.tagLabel, input.media, input.tagIds);
     const cursor = decodeFeedCursor(input.cursor, input.sort, filter);
     const signal = AbortSignal.timeout(10_000);
     const read = async (
@@ -224,7 +272,7 @@ export class ImagePlazaRepository {
       let query = this.experience
         .from('image_plaza_works')
         .select(
-          'id,user_id,attempt_id,artifact_id,title,model_id,model_name,width,height,tags,snapshot,like_count,published_at,deleted_at,initial_feed_order::text'
+          'id,user_id,attempt_id,artifact_id,title,model_id,model_name,width,height,tags,snapshot,like_count,published_at,deleted_at,initial_feed_order::text,media_type,video_artifact_id,video_attempt_id,duration_ms,description'
         )
         .is('deleted_at', null);
       if (partition === 'liked')
@@ -242,6 +290,8 @@ export class ImagePlazaRepository {
           `snapshot->>prompt.ilike.${pattern},snapshot->>prompt_zh.ilike.${pattern}`
         );
       }
+      if (input.media && input.media !== 'all') query = query.eq('media_type', input.media);
+      if (input.tagIds?.length) query = query.overlaps('tags', input.tagIds);
       if (input.tagLabel?.trim())
         query = query.filter(
           'snapshot->>prompt_zh',
@@ -290,7 +340,7 @@ export class ImagePlazaRepository {
       nextCursor = encodeFeedCursor(next);
     }
     return {
-      works: await this.hydrateWorks(visible, input.userId, {
+      works: await this.hydrateFeedWorks(visible, input.userId, {
         feedImages: true,
         includeReferences: false,
         signal,
@@ -299,7 +349,7 @@ export class ImagePlazaRepository {
     };
   }
 
-  async getWork(workId: string, userId: string): Promise<ImagePlazaWork | null> {
+  async getWork(workId: string, userId: string): Promise<PlazaWork | null> {
     const { data, error } = await this.experience
       .from('image_plaza_works')
       .select('*')
@@ -308,7 +358,7 @@ export class ImagePlazaRepository {
       .maybeSingle();
     if (error) throw new Error(`image plaza work read failed: ${error.message}`);
     if (!data) return null;
-    return (await this.hydrateWorks([data as WorkRow], userId))[0] ?? null;
+    return (await this.hydrateDetailWorks([data as WorkRow], userId))[0] ?? null;
   }
 
   async setLike(
@@ -412,17 +462,20 @@ export class ImagePlazaRepository {
   }
 
   async createConversation(userId: string, sourceWorkId?: string): Promise<ImagePlazaConversation> {
-    let title = '新建图片创作';
-    let snapshot: ImagePlazaSnapshot | null = null;
+    let title = '新建影像创作';
+    let snapshot: ImagePlazaSnapshot | VideoPlazaSnapshot | null = null;
     if (sourceWorkId) {
       const { data, error } = await this.experience
         .from('image_plaza_works')
-        .select('title,snapshot')
+        .select('title,snapshot,media_type')
         .eq('id', sourceWorkId)
         .is('deleted_at', null)
         .maybeSingle();
       if (error || !data) throw new Error('image_plaza_source_work_not_found');
-      const parsed = ImagePlazaSnapshotSchema.safeParse(data.snapshot);
+      const parsed =
+        data.media_type === 'video'
+          ? VideoPlazaSnapshotSchema.safeParse(data.snapshot)
+          : ImagePlazaSnapshotSchema.safeParse(data.snapshot);
       if (!parsed.success) throw new Error('image_plaza_source_snapshot_invalid');
       title = `同款 · ${String(data.title).slice(0, 68)}`;
       // 同款会话只保留英文 prompt；中文译文仅用于作品详情展示与列表搜索。
@@ -841,42 +894,131 @@ export class ImagePlazaRepository {
     throw new ImagePlazaSettlementError('image_plaza_settlement_outcome_unknown');
   }
 
+  private async hydrateFeedWorks(
+    rows: WorkRow[],
+    userId: string,
+    options: { feedImages: true; includeReferences?: boolean; signal?: AbortSignal }
+  ): Promise<PlazaFeedItem[]> {
+    return (await this.hydrateWorks(rows, userId, options)) as PlazaFeedItem[];
+  }
+
+  async countWorksByTags(input: {
+    tagIds: string[];
+    media?: 'all' | 'image' | 'video';
+    search?: string;
+  }): Promise<Record<string, number>> {
+    const counts = await Promise.all(
+      input.tagIds.map(async (tagId) => {
+        let query = this.experience
+          .from('image_plaza_works')
+          .select('id', { count: 'exact', head: true })
+          .is('deleted_at', null)
+          .contains('tags', [tagId]);
+        if (input.media && input.media !== 'all') query = query.eq('media_type', input.media);
+        if (input.search?.trim()) {
+          const pattern = quotePostgrestFilterValue(
+            `%${escapeIlikePattern(input.search.trim().slice(0, 80))}%`
+          );
+          query = query.or(
+            `snapshot->>prompt.ilike.${pattern},snapshot->>prompt_zh.ilike.${pattern}`
+          );
+        }
+        const { count, error } = await query.abortSignal(AbortSignal.timeout(10_000));
+        if (error) throw new Error(`image plaza tag counts read failed: ${error.message}`);
+        return [tagId, count ?? 0] as const;
+      })
+    );
+    return Object.fromEntries(counts);
+  }
+
+  private async hydrateDetailWorks(rows: WorkRow[], userId: string): Promise<PlazaWork[]> {
+    return (await this.hydrateWorks(rows, userId)) as PlazaWork[];
+  }
+
   private async hydrateWorks(
     rows: WorkRow[],
     userId: string,
     options: { feedImages?: boolean; includeReferences?: boolean; signal?: AbortSignal } = {}
-  ): Promise<ImagePlazaWork[]> {
+  ): Promise<Array<PlazaWork | PlazaFeedItem>> {
     if (rows.length === 0) return [];
-    const artifactIds = rows.map((row) => row.artifact_id);
-    const workIds = rows.map((row) => row.id);
-    const [{ data: artifactData, error: artifactError }, { data: likeData, error: likeError }] =
-      await Promise.all([
-        this.experience
-          .from('image_plaza_artifacts')
-          .select('*')
-          .in('id', artifactIds)
-          .abortSignal(options.signal ?? AbortSignal.timeout(10_000)),
-        this.features
-          .from('image_plaza_likes')
-          .select('work_id')
-          .eq('user_id', userId)
-          .in('work_id', workIds)
-          .abortSignal(options.signal ?? AbortSignal.timeout(10_000)),
-      ]);
-    if (artifactError || likeError) throw new Error('image_plaza_work_hydration_failed');
-    const artifacts = new Map(
-      (artifactData ?? []).map((row) => [String(row.id), row as ArtifactRow])
+    const artifactIds = rows.flatMap((row) => (row.artifact_id ? [row.artifact_id] : []));
+    const videoArtifactIds = rows.flatMap((row) =>
+      row.video_artifact_id ? [row.video_artifact_id] : []
     );
-    const liked = new Set((likeData ?? []).map((row) => String(row.work_id)));
+    const workIds = rows.map((row) => row.id);
+    const [imageResult, videoResult, likeResult] = await Promise.all([
+      artifactIds.length > 0
+        ? this.experience
+            .from('image_plaza_artifacts')
+            .select('*')
+            .in('id', artifactIds)
+            .abortSignal(options.signal ?? AbortSignal.timeout(10_000))
+        : Promise.resolve({ data: [], error: null }),
+      videoArtifactIds.length > 0
+        ? this.experience
+            .from('video_artifacts')
+            .select('*')
+            .in('id', videoArtifactIds)
+            .abortSignal(options.signal ?? AbortSignal.timeout(10_000))
+        : Promise.resolve({ data: [], error: null }),
+      this.features
+        .from('image_plaza_likes')
+        .select('work_id')
+        .eq('user_id', userId)
+        .in('work_id', workIds)
+        .abortSignal(options.signal ?? AbortSignal.timeout(10_000)),
+    ]);
+    if (imageResult.error || videoResult.error || likeResult.error)
+      throw new Error('image_plaza_work_hydration_failed');
+    const artifacts = new Map(
+      (imageResult.data ?? []).map((row) => [String(row.id), row as ArtifactRow])
+    );
+    const videoArtifacts = new Map(
+      (videoResult.data ?? []).map((row) => [String(row.id), row as VideoArtifactRow])
+    );
+    const liked = new Set((likeResult.data ?? []).map((row) => String(row.work_id)));
     // 一页 20 张图逐个 await 签名会串行付 20 次 HTTP 往返；命中缓存后这些调用不再
     // 出网，未命中时也应当并发。只对已发布作品图这样做——签名是只读、无顺序依赖的。
     const works = await Promise.all(
       rows.map(async (row) => {
-        const artifact = artifacts.get(row.artifact_id);
-        const snapshot = ImagePlazaSnapshotSchema.safeParse(row.snapshot);
-        if (!artifact || !snapshot.success) throw new Error('image_plaza_work_shape_invalid');
         const publishedAt = new Date(row.published_at);
         if (Number.isNaN(publishedAt.getTime())) throw new Error('image_plaza_work_shape_invalid');
+        if (row.media_type === 'video') {
+          const artifact = row.video_artifact_id
+            ? videoArtifacts.get(row.video_artifact_id)
+            : undefined;
+          const snapshot = VideoPlazaSnapshotSchema.safeParse(row.snapshot);
+          if (!artifact || !snapshot.success) throw new Error('image_plaza_work_shape_invalid');
+          const posterUrl = artifact.poster_path
+            ? await signSharedVideoPath(artifact.poster_path)
+            : null;
+          const summary = {
+            id: row.id,
+            media_type: 'video' as const,
+            title: row.title,
+            poster_url: posterUrl,
+            duration_ms: artifact.duration_ms,
+            description: row.description ?? '',
+            model_id: row.model_id,
+            model_name: row.model_name,
+            width: row.width,
+            height: row.height,
+            tags: row.tags,
+            like_count: row.like_count,
+            liked: liked.has(row.id),
+            published_at: publishedAt.toISOString(),
+          };
+          if (options.feedImages) return summary;
+          return {
+            ...summary,
+            attempt_id: artifact.attempt_id,
+            video_url: await signSharedVideoPath(artifact.storage_path),
+            snapshot: snapshot.data,
+          };
+        }
+        const artifact = row.artifact_id ? artifacts.get(row.artifact_id) : undefined;
+        const snapshot = ImagePlazaSnapshotSchema.safeParse(row.snapshot);
+        if (!artifact || !snapshot.success) throw new Error('image_plaza_work_shape_invalid');
         const [imageUrl, referenceImageUrl] = await Promise.all([
           signSharedWorkImagePath(
             artifact.storage_path,
@@ -884,8 +1026,9 @@ export class ImagePlazaRepository {
           ),
           this.resolveReferenceImageUrl(snapshot.data.reference_artifact_id, options),
         ]);
-        return {
+        const detail: ImagePlazaWork = {
           id: row.id,
+          media_type: 'image' as const,
           title: row.title,
           image_url: imageUrl,
           reference_image_url: referenceImageUrl,
@@ -899,6 +1042,9 @@ export class ImagePlazaRepository {
           published_at: publishedAt.toISOString(),
           snapshot: snapshot.data,
         };
+        if (!options.feedImages) return detail;
+        const { reference_image_url: _reference, snapshot: _snapshot, ...summary } = detail;
+        return summary;
       })
     );
     return works;
@@ -925,16 +1071,22 @@ export class ImagePlazaRepository {
   }
 
   private async hydrateConversation(row: ConversationRow): Promise<ImagePlazaConversation> {
-    const [{ data: messages, error: messageError }, { data: attempts, error: attemptError }] =
-      await Promise.all([
-        this.experience
-          .from('image_plaza_messages')
-          .select('*')
-          .eq('conversation_id', row.id)
-          .order('created_at'),
-        this.experience.from('image_plaza_attempts').select('*').eq('conversation_id', row.id),
-      ]);
-    if (messageError || attemptError) throw new Error('image_plaza_conversation_hydration_failed');
+    const [
+      { data: messages, error: messageError },
+      { data: attempts, error: attemptError },
+      videoResult,
+    ] = await Promise.all([
+      this.experience
+        .from('image_plaza_messages')
+        .select('*')
+        .eq('conversation_id', row.id)
+        .order('created_at'),
+      this.experience.from('image_plaza_attempts').select('*').eq('conversation_id', row.id),
+      this.experience.from('video_attempts').select('*').eq('conversation_id', row.id),
+    ]);
+    const videoMissing = ['42P01', 'PGRST205'].includes(videoResult.error?.code ?? '');
+    if (messageError || attemptError || (videoResult.error && !videoMissing))
+      throw new Error('image_plaza_conversation_hydration_failed');
     const attemptRows = (attempts ?? []) as AttemptRow[];
     const artifacts = await this.getArtifacts(attemptRows.map((attempt) => attempt.id));
     const byAssistantMessage = new Map(
@@ -943,13 +1095,41 @@ export class ImagePlazaRepository {
         mapAttemptRow(attempt, artifacts.get(attempt.id) ?? []),
       ])
     );
+    const videoRows = videoMissing
+      ? []
+      : ((videoResult.data ?? []) as VideoConversationAttemptRow[]);
+    const videoArtifacts = await this.getVideoArtifacts(videoRows.map((attempt) => attempt.id));
+    const videoByAssistantMessage = new Map(
+      await Promise.all(
+        videoRows.map(
+          async (attempt) =>
+            [
+              attempt.assistant_message_id,
+              await mapVideoConversationAttempt(attempt, videoArtifacts.get(attempt.id) ?? null),
+            ] as const
+        )
+      )
+    );
     return mapConversationRow(
       row,
       ((messages ?? []) as MessageRow[]).map((message) => ({
         ...message,
         attempt: byAssistantMessage.get(message.id) ?? null,
+        videoAttempt: videoByAssistantMessage.get(message.id) ?? null,
       }))
     );
+  }
+
+  private async getVideoArtifacts(attemptIds: string[]): Promise<Map<string, VideoArtifactRow>> {
+    const result = new Map<string, VideoArtifactRow>();
+    if (attemptIds.length === 0) return result;
+    const { data, error } = await this.experience
+      .from('video_artifacts')
+      .select('*')
+      .in('attempt_id', attemptIds);
+    if (error) throw new Error(`video plaza artifacts read failed: ${error.message}`);
+    for (const row of (data ?? []) as VideoArtifactRow[]) result.set(String(row.attempt_id), row);
+    return result;
   }
 
   private async getArtifacts(attemptIds: string[]): Promise<Map<string, ImagePlazaArtifact[]>> {
@@ -1047,11 +1227,57 @@ function mapAttemptRow(row: AttemptRow, artifacts: ImagePlazaArtifact[]): ImageP
   };
 }
 
+async function mapVideoConversationAttempt(
+  row: VideoConversationAttemptRow,
+  artifact: VideoArtifactRow | null
+): Promise<VideoPlazaAttempt> {
+  return {
+    id: row.id,
+    conversation_id: row.conversation_id,
+    status: row.status,
+    error_code: row.error_code,
+    quote_credits: Number(row.quote_credits),
+    params: {
+      model_id: row.model_id,
+      input_mode: row.input_mode,
+      duration_s: row.duration_s,
+      resolution: row.resolution,
+      aspect_ratio: row.aspect_ratio,
+      audio: row.audio,
+      reference_artifact_id: row.reference_artifact_id,
+    },
+    artifact: artifact
+      ? {
+          id: artifact.id,
+          video_url: await signPrivateVideoPath(artifact.storage_path),
+          poster_url: artifact.poster_path
+            ? await signPrivateVideoPath(artifact.poster_path)
+            : null,
+          width: artifact.width,
+          height: artifact.height,
+          duration_ms: artifact.duration_ms,
+        }
+      : null,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
 function mapConversationRow(
   row: ConversationRow,
-  messages: Array<MessageRow & { attempt?: ImagePlazaAttempt | null }>
+  messages: Array<
+    MessageRow & {
+      attempt?: ImagePlazaAttempt | null;
+      videoAttempt?: VideoPlazaAttempt | null;
+    }
+  >
 ): ImagePlazaConversation {
-  const snapshot = row.snapshot === null ? null : ImagePlazaSnapshotSchema.parse(row.snapshot);
+  const snapshot =
+    row.snapshot === null
+      ? null
+      : ImagePlazaSnapshotSchema.safeParse(row.snapshot).success
+        ? ImagePlazaSnapshotSchema.parse(row.snapshot)
+        : VideoPlazaSnapshotSchema.parse(row.snapshot);
   return {
     id: row.id,
     title: row.title,
@@ -1060,7 +1286,9 @@ function mapConversationRow(
       id: message.id,
       role: message.role,
       content: message.content,
+      media_type: message.media_type ?? 'image',
       attempt: message.attempt ?? null,
+      video_attempt: message.videoAttempt ?? null,
       created_at: message.created_at,
     })),
     created_at: row.created_at,

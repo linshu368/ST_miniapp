@@ -102,6 +102,12 @@ export const config = {
     workerEnabled: process.env.IMAGE_PLAZA_WORKER_ENABLED !== 'false',
     workerIntervalMs: parseInt(process.env.IMAGE_PLAZA_WORKER_INTERVAL_MS || '3000', 10),
     workerLeaseSeconds: parseInt(process.env.IMAGE_PLAZA_WORKER_LEASE_SECONDS || '240', 10),
+    videoWorkerEnabled: process.env.VIDEO_PLAZA_WORKER_ENABLED === 'true',
+    videoWorkerIntervalMs: parseInt(process.env.VIDEO_PLAZA_WORKER_INTERVAL_MS || '3000', 10),
+    videoWorkerLeaseSeconds: parseInt(process.env.VIDEO_PLAZA_WORKER_LEASE_SECONDS || '180', 10),
+    videoPollDeadlineMs: parseInt(process.env.VIDEO_PLAZA_POLL_DEADLINE_MS || '1800000', 10),
+    ffmpegPath: process.env.FFMPEG_PATH || 'ffmpeg',
+    ffprobePath: process.env.FFPROBE_PATH || 'ffprobe',
   },
 
   // ── MiniApp 支付 ───────────────────────────────────────────────────────────

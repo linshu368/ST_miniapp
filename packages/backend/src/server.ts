@@ -4,8 +4,10 @@ import * as Sentry from '@sentry/node';
 import { buildApp } from './app.js';
 import { config } from './platform/config.js';
 import { logger } from './lib/logger.js';
+import { initializePlazaDb } from './lib/supabase.js';
 
 async function main() {
+  await initializePlazaDb();
   const app = await buildApp();
 
   await app.listen({

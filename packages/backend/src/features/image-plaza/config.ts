@@ -2,9 +2,11 @@ import {
   ImagePlazaModelCatalogSchema,
   ImagePlazaShareTipConfigSchema,
   ImagePlazaTagConfigSchema,
+  VideoPlazaModelCatalogSchema,
   type ImagePlazaModelCatalog,
   type ImagePlazaShareTipConfig,
   type ImagePlazaTagConfig,
+  type VideoPlazaModelCatalog,
 } from '@miniapp/shared';
 import { fetchRuntimeConfigEntries } from '../../platform/runtime-config.js';
 
@@ -15,6 +17,7 @@ const CONFIG_KEYS = [
   'image_plaza_tags',
   'image_plaza_share_rebate_rate',
   'image_plaza_tags_feature_enabled',
+  'image_plaza_video_model_catalog',
 ] as const;
 
 export interface ImagePlazaRuntimeConfig {
@@ -26,6 +29,8 @@ export interface ImagePlazaRuntimeConfig {
   shareTip: ImagePlazaShareTipConfig;
   tags: ImagePlazaTagConfig;
   rebateRate: number;
+  videoCatalog: VideoPlazaModelCatalog | null;
+  videoCatalogVersion: number;
 }
 
 /** 广场配置任一关键字段损坏都停止新受理，避免用未知模型或价格继续产生费用。 */
@@ -40,6 +45,10 @@ export async function getImagePlazaRuntimeConfig(): Promise<ImagePlazaRuntimeCon
   );
   const tags = ImagePlazaTagConfigSchema.safeParse(entries.get('image_plaza_tags')?.value);
   const rebateValue = entries.get('image_plaza_share_rebate_rate')?.value;
+  const videoCatalogEntry = entries.get('image_plaza_video_model_catalog');
+  const videoCatalog = videoCatalogEntry
+    ? VideoPlazaModelCatalogSchema.safeParse(videoCatalogEntry.value)
+    : null;
   const rebateRate =
     typeof rebateValue === 'number' &&
     Number.isFinite(rebateValue) &&
@@ -59,19 +68,25 @@ export async function getImagePlazaRuntimeConfig(): Promise<ImagePlazaRuntimeCon
     shareTip: shareTip.data,
     tags: tags.data,
     rebateRate,
+    videoCatalog: videoCatalog?.success ? videoCatalog.data : null,
+    videoCatalogVersion: videoCatalogEntry?.version ?? 0,
   };
 }
 
 /** Feed/bootstrap 对外标签：始终返回「全部」+ 启用且排序的目录，与自动打标开关无关。 */
 export function publicImagePlazaFeedTags(
   runtime: Pick<ImagePlazaRuntimeConfig, 'tags'>
-): Array<{ id: string; label: string }> {
-  const all = { id: 'all', label: '全部' };
+): Array<{ id: string; label: string; media_types: Array<'image' | 'video'> }> {
+  const all = { id: 'all', label: '全部', media_types: ['image', 'video'] as const };
   return [
-    all,
+    { ...all, media_types: [...all.media_types] },
     ...runtime.tags
       .filter((tag) => tag.enabled)
       .sort((a, b) => a.sort_order - b.sort_order)
-      .map(({ id, label }) => ({ id, label })),
+      .map(({ id, label, media_types }) => ({
+        id,
+        label,
+        media_types: media_types ?? ['image'],
+      })),
   ];
 }

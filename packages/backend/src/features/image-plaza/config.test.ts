@@ -10,13 +10,15 @@ const baseTags = [
 describe('publicImagePlazaFeedTags', () => {
   it('returns enabled tags sorted regardless of auto-tagging switch', () => {
     expect(publicImagePlazaFeedTags({ tags: baseTags })).toEqual([
-      { id: 'all', label: '全部' },
-      { id: 'anime', label: '动漫' },
-      { id: 'portrait', label: '人像' },
+      { id: 'all', label: '全部', media_types: ['image', 'video'] },
+      { id: 'anime', label: '动漫', media_types: ['image'] },
+      { id: 'portrait', label: '人像', media_types: ['image'] },
     ]);
   });
 
   it('omits disabled tags and does not invent business tags when catalog is empty', () => {
-    expect(publicImagePlazaFeedTags({ tags: [] })).toEqual([{ id: 'all', label: '全部' }]);
+    expect(publicImagePlazaFeedTags({ tags: [] })).toEqual([
+      { id: 'all', label: '全部', media_types: ['image', 'video'] },
+    ]);
   });
 });

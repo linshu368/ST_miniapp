@@ -30,8 +30,8 @@ vi.mock('../../platform/config.js', () => ({
     },
   },
 }));
-vi.mock('../../lib/supabase.js', () => ({
-  getDomainDb: () => ({
+vi.mock('../../lib/supabase.js', () => {
+  const getDomainDb = () => ({
     rpc: mocks.rpc,
     from: () => {
       let changes: Record<string, unknown> = {};
@@ -63,8 +63,9 @@ vi.mock('../../lib/supabase.js', () => ({
       };
       return query;
     },
-  }),
-}));
+  });
+  return { getDomainDb, plazaDb: getDomainDb };
+});
 vi.mock('./storage.js', () => ({
   uploadPlazaImage: mocks.upload,
   deletePlazaImage: mocks.remove,

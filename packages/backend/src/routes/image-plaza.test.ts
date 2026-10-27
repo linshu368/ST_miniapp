@@ -64,7 +64,11 @@ beforeEach(async () => {
     storedTags = input.tags;
     return { workId: 'work', alreadyShared: false, rewardCredits: 10 };
   });
-  mocks.work.mockImplementation(async () => ({ id: 'work', tags: [...storedTags] }));
+  mocks.work.mockImplementation(async () => ({
+    id: 'work',
+    media_type: 'image',
+    tags: [...storedTags],
+  }));
   mocks.update.mockResolvedValue(true);
   app = Fastify();
   app.addHook('preHandler', async (request) => {

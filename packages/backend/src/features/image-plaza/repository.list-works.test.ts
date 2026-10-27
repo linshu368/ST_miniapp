@@ -30,6 +30,7 @@ function createThenableBuilder(data: unknown[] = []) {
     'or',
     'filter',
     'contains',
+    'overlaps',
     'eq',
     'in',
     'gt',
@@ -46,8 +47,8 @@ function createThenableBuilder(data: unknown[] = []) {
   return builder;
 }
 
-vi.mock('../../lib/supabase.js', () => ({
-  getDomainDb: (schema: string) => {
+vi.mock('../../lib/supabase.js', () => {
+  const getDomainDb = (schema: string) => {
     if (schema === 'experience') {
       return {
         from: (table: string) => {
@@ -60,8 +61,9 @@ vi.mock('../../lib/supabase.js', () => ({
       from: () => createThenableBuilder(),
       rpc: vi.fn(),
     };
-  },
-}));
+  };
+  return { getDomainDb, plazaDb: () => getDomainDb('experience') };
+});
 
 vi.mock('./storage.js', () => ({
   deletePlazaImage: vi.fn(),
@@ -117,6 +119,26 @@ describe('ImagePlazaRepository.listWorks tagLabel filter', () => {
       '%动漫%',
     ]);
   });
+
+  it('uses array overlap for multi-select tags and filters media', async () => {
+    const repository = new ImagePlazaRepository();
+    await repository.listWorks({
+      userId: 'user-1',
+      tagIds: ['portrait', 'cinematic'],
+      media: 'video',
+      sort: 'latest',
+      limit: 20,
+    });
+    expect(state.calls.find((call) => call.method === 'overlaps')?.args).toEqual([
+      'tags',
+      ['portrait', 'cinematic'],
+    ]);
+    expect(
+      state.calls.some(
+        (call) => call.method === 'eq' && call.args[0] === 'media_type' && call.args[1] === 'video'
+      )
+    ).toBe(true);
+  });
 });
 
 describe('versioned feed cursors', () => {
@@ -135,6 +157,14 @@ describe('versioned feed cursors', () => {
   it('round trips bigint strings above JS safe integer and timestamp microseconds', () => {
     expect(decodeFeedCursor(encodeFeedCursor(zero), 'recommended', base.filter)).toEqual(zero);
     expect(cursorFilter(zero)).toContain('initial_feed_order.gt.9007199254740993');
+  });
+  it('normalizes tag order but separates media cursor chains', () => {
+    expect(feedFilter('x', undefined, 'video', ['b', 'a'])).toBe(
+      feedFilter('x', undefined, 'video', ['a', 'b'])
+    );
+    expect(feedFilter('x', undefined, 'video', ['a'])).not.toBe(
+      feedFilter('x', undefined, 'image', ['a'])
+    );
   });
   it('continues NULL tails without revisiting numbered works', () => {
     expect(cursorFilter({ ...zero, order: null })).toBe(

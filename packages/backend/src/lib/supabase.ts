@@ -69,6 +69,7 @@ export const DOMAIN_SCHEMAS = [
   'cs_platform',
   'miniapp_traffic',
   'miniapp_analytics',
+  'media_plaza',
 ] as const;
 
 export type DomainSchema = (typeof DOMAIN_SCHEMAS)[number];
@@ -92,6 +93,47 @@ export function getDomainDb(domain: DomainSchema): DomainDb {
   return getSupabaseClient().schema(domain);
 }
 
+type PlazaSchema = 'experience' | 'media_plaza';
+let resolvedPlazaSchema: PlazaSchema | null = null;
+
+/**
+ * Resolve the image/video plaza schema once before the HTTP server starts.
+ * M1 is a catalog move, so one backend release must work on both sides of it.
+ */
+export async function initializePlazaDb(): Promise<PlazaSchema> {
+  if (resolvedPlazaSchema) return resolvedPlazaSchema;
+
+  const mediaProbe = await getDomainDb('media_plaza')
+    .from('image_plaza_works')
+    .select('id', { head: true, count: 'exact' })
+    .limit(1)
+    .abortSignal(AbortSignal.timeout(5_000));
+  if (!mediaProbe.error) {
+    resolvedPlazaSchema = 'media_plaza';
+    return resolvedPlazaSchema;
+  }
+
+  if (!['42P01', 'PGRST205'].includes(mediaProbe.error.code ?? '')) {
+    throw new Error(`media_plaza schema probe failed: ${mediaProbe.error.message}`);
+  }
+
+  const legacyProbe = await getDomainDb('experience')
+    .from('image_plaza_works')
+    .select('id', { head: true, count: 'exact' })
+    .limit(1)
+    .abortSignal(AbortSignal.timeout(5_000));
+  if (legacyProbe.error) {
+    throw new Error(`legacy image plaza schema probe failed: ${legacyProbe.error.message}`);
+  }
+  resolvedPlazaSchema = 'experience';
+  return resolvedPlazaSchema;
+}
+
+/** Uses the startup-probed schema; tests/build helpers retain the legacy default. */
+export function plazaDb(): DomainDb {
+  return getDomainDb(resolvedPlazaSchema ?? 'experience');
+}
+
 /**
  * 释放脚本进程可能创建的 Realtime 连接。
  *
@@ -102,4 +144,5 @@ export async function closeSupabaseClient(): Promise<void> {
   if (!_client) return;
   await _client.removeAllChannels();
   _client = null;
+  resolvedPlazaSchema = null;
 }
