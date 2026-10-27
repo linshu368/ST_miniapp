@@ -102,6 +102,19 @@ artifact 修订（2026-09-29，仍未执行远端）：首个文件在版本表�
 
 不播种规则，不回填旧消息，不改历史 migration。已有引用时不要 DROP 快照或该列。本地协议场景是 `fixtures/text_postprocess_t2_harness.sql` 加 `tests/text_postprocess_t2_scenarios.sql`，只对临时库执行，不能当作远端发布。
 
+## 签到分档 forward-fix（2026-10-26，未部署）
+
+**禁止**再对 TEST/Production 执行 `20261014_checkin_tiered_rewards.sql`：它会用静态白名单整表替换 `admin.is_managed_config_key`，在已有 `reply_style_options` 等草稿时触发 `config_drafts_config_key_check` 23514，并可能收窄图片广场等后续 key。
+
+改用环境专用 safe 文件（单调 OR 包装白名单 + 扩 CHECK + VIP 对象转绝对整数 + `claim_daily_checkin`）：
+
+| 环境                              | 文件                                             | VIP 绝对额默认                                | 说明                                                    |
+| --------------------------------- | ------------------------------------------------ | --------------------------------------------- | ------------------------------------------------------- |
+| TEST `zoqelpfhurwehlvypryl`       | `20261026_checkin_tiered_rewards_test.sql`       | `150`（可保留已有 number / `fixed_credits`）  | 先 workflow inspect，再单文件 apply；禁止 `force_rerun` |
+| Production `wbtsfzozlmurljvglhpn` | `20261026_checkin_tiered_rewards_production.sql` | `90`（2026-10-26 只读确认自 `fixed_credits`） | TEST 成功并验收后再独立审批；禁止套用 TEST 的 150       |
+
+两文件不可交叉执行。前置：`claim_daily_checkin`、VIP validator、`config_drafts/releases` 已存在；已有 `*_before_checkin_tiers` 前置函数会拒绝重跑。成功后 Admin 校验签到三键保存/发布，抽测 VIP/新用户/老用户领取；应用回退保留新 RPC 语义，配置用 Admin 发布调整，勿恢复 object 形 `vip_checkin_bonus_config`。
+
 ## 图片广场白名单恢复（2026-10-16，未部署）
 
 `20261016_reconcile_image_plaza_managed_config_keys.sql` 修复平台规则静态白名单覆盖图片广场四个 key 的回归，同时保留现有合法 key、CHECK 表达式、验证状态与 validator 链。前置为 `20261012_image_plaza_v2.sql`；若计划部署 10/13 平台规则、10/14 标签开关迁移，先完成这些文件，再执行本恢复文件，勿倒序覆盖。

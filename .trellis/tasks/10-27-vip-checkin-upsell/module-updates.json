@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "updates": [
+    {
+      "operation": "update",
+      "module_id": "frontend.business.wallet-payment",
+      "target": ".trellis/spec/frontend/app/modules/business/wallet-payment.md",
+      "expected_sha256": "bf8d70ad7b2c31f3e8649b8bfbb07460f4c4cd881c312c7ab3cd43d08cf6c8d0",
+      "content": "---\nmodule_id: frontend.business.wallet-payment\ntitle: 钱包、签到与充值\nscope: frontend\ncategory: business\nstatus: active\nowners: [frontend]\nlast_verified_task: .trellis/tasks/10-27-vip-checkin-upsell/\nlast_verified_at: 2026-10-27\n---\n\n# 钱包、签到与充值\n\n## 职责与边界\n\n展示余额、消费、签到、充值套餐、订单状态和支付回跳。\n\n## 当前状态\n\n钱包与支付页面已使用统一 API hooks；结算真相在服务端。\n\n## 入口与调用者\n\n用户从个人中心进入钱包/充值流程。个人中心「星尘充值」点击同步建立独立充值 Replay context，SDK 启动尝试后发送 `recharge_entry_clicked`；不会伪造聊天会话。外部支付前暂停 MiniApp 录制，可信回流后恢复；主动充值启动时清除旧聊天会话属性，防止误归因。\n\n## 涉及文件\n\n| 路径                                                  | 职责                     |\n| ----------------------------------------------------- | ------------------------ |\n| `packages/frontend/src/app/(main)/profile/page.tsx`   | 个人中心充值入口点击埋点 |\n| `packages/frontend/src/app/(main)/profile/recharge/`  | 充值页面                 |\n| `packages/frontend/src/app/(main)/profile/orders/`    | 订单页面                 |\n| `packages/frontend/src/app/(main)/profile/spending/`  | 消费页面                 |\n| `packages/frontend/src/lib/payment/flow-telemetry.ts` | 支付漏斗与入口点击事件   |\n| `packages/frontend/src/lib/api/free-quota.ts`         | 额度 hooks               |\n| `packages/frontend/src/lib/api/payment.ts`            | 支付 hooks               |\n\n## 关键实现链路\n\n套餐/余额 query → 创建订单 → 外部支付 → 订单轮询/回跳 → 缓存刷新。\n\n## 数据、契约与外部依赖\n\n消费 shared wallet/payment 契约、Backend 和外部支付页。\n\n## 关键节点与约束\n\n前端轮询不执行入账真相；支付成功后以服务端订单/余额为准。\n\n## 验证方式\n\nFrontend tests/build 与 test 支付人工 smoke。\n\n## 已知缺口与待核验项\n\nWebView 回跳和第三方页面兼容需真机验证。\n\n## 关联模块\n\n`backend.business.wallet-payment`、`shared.business.wallet-payment-contracts`。\n\n## 变更记录\n\n- 2026-10-20：任务 `Remove confirmed repository noise`（`.trellis/tasks/archive/2026-10/10-20-remove-confirmed-repository-noise/`）删除无法恢复的乱码变更记录；commit：`63eee1e847f678f4b2c434f872425a40fc7f891a`。\n\n## 签到 VIP 引导（2026-10-27，本地待审核）\n\n我的页签到卡与签到成功提示共用VipCheckinUpgrade；只有已知非VIP、VIP查询无错误且benefits.checkin_vip_credits为正整数时展示，未知状态/缺权益/已开通隐藏。开通入口复用既有openVip，不自动下单。带CTA的成功提示保留到用户关闭，普通成功提示维持原计时；实际到账成功才显示。权益金额不写死，与VIP卡和权益页共读已发布服务端数据，150的运营配置由用户自行维护。虚拟预览不代表真实支付、到账或手机验收。\n",
+      "evidence": [
+        "packages/frontend/src/components/vip/vip-checkin-upgrade.tsx",
+        "packages/frontend/src/app/(main)/profile/page.tsx"
+      ],
+      "change_summary": "签到卡和成功提示的轻量VIP引导，保持权益数据来源一致"
+    }
+  ]
+}
