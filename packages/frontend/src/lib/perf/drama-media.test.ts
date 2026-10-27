@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DramaTimingTracker, type DramaTimingReport } from './drama-timing';
 import { observeDramaMedia } from './drama-media';
 import { DRAMA_TIMING_MAX_MEDIA_EVENTS, DramaTimingReportSchema } from '@miniapp/shared';
+import { mediaResourceFields, observeDramaResources } from './drama-resources';
 
 class Video extends EventTarget {
   currentSrc = 'media-a';
@@ -43,6 +44,185 @@ afterEach(() => {
 });
 
 describe('video startup observation', () => {
+  it('clips long-task evidence to the startup and metadata-to-frame windows', async () => {
+    let callback: ((list: { getEntries(): PerformanceEntry[] }) => void) | undefined;
+    vi.stubGlobal(
+      'PerformanceObserver',
+      class {
+        static supportedEntryTypes = ['longtask'];
+        constructor(listener: typeof callback) {
+          callback = listener;
+        }
+        observe() {}
+        takeRecords() {
+          return [];
+        }
+        disconnect() {}
+      }
+    );
+    const observer = bind();
+    await vi.advanceTimersByTimeAsync(100);
+    video.dispatchEvent(new Event('loadedmetadata'));
+    await vi.advanceTimersByTimeAsync(200);
+    callback?.({
+      getEntries: () =>
+        [
+          { startTime: 90, duration: 60 },
+          { startTime: 200, duration: 80 },
+        ] as PerformanceEntry[],
+    });
+    video.dispatchEvent(new Event('playing'));
+    video.frame?.();
+    expect(reports[0]?.diagnostics?.longTasks).toEqual({
+      support: 'supported',
+      count: 2,
+      totalMs: 140,
+      maxMs: 80,
+      metadataToFrameMs: 130,
+      truncated: false,
+    });
+    observer.dispose();
+  });
+  it('keeps media cleanup and terminal reporting working when optional observers throw', () => {
+    vi.stubGlobal(
+      'PerformanceObserver',
+      class {
+        static supportedEntryTypes = ['resource', 'longtask'];
+        observe() {}
+        takeRecords(): PerformanceEntry[] {
+          throw new Error('unavailable');
+        }
+        disconnect() {
+          throw new Error('unavailable');
+        }
+      }
+    );
+    const observer = bind();
+    expect(() => tracker.ensurePlayback('a').finish('error')).not.toThrow();
+    expect(reports[0]?.outcome).toBe('error');
+    expect(() => observer.dispose()).not.toThrow();
+    expect(video.cancelVideoFrameCallback).toHaveBeenCalled();
+  });
+  it('captures first-frame metadata independently of playing, including a forty-second data wait', async () => {
+    const observer = bind();
+    video.dispatchEvent(new Event('loadedmetadata'));
+    await vi.advanceTimersByTimeAsync(40_000);
+    video.dispatchEvent(new Event('loadeddata'));
+    // The fake video only needs to deliver the browser callback arguments here.
+    const frame = video.frame as
+      | ((at: number, metadata: Partial<VideoFrameCallbackMetadata>) => void)
+      | undefined;
+    frame?.(performance.now(), {
+      processingDuration: 0.012,
+      presentationTime: 39999,
+      expectedDisplayTime: 40016,
+      width: 1080,
+      height: 1920,
+    });
+    expect(reports).toHaveLength(1); // slow snapshot; playing has not arrived.
+    video.dispatchEvent(new Event('playing'));
+    expect(reports[1]?.diagnostics?.frame).toMatchObject({
+      processingMs: 12,
+      width: 1080,
+      height: 1920,
+    });
+    expect(reports[1]?.stages.metadata_to_frame).toBe(40000);
+    observer.dispose();
+  });
+
+  it('keeps hidden cross-origin timing unknown and never serializes the signed resource name', () => {
+    const limited = {
+      name: 'https://private.invalid/video?token=secret',
+      startTime: 100,
+      fetchStart: 100,
+      requestStart: 0,
+      responseStart: 0,
+      responseEnd: 7100,
+      domainLookupStart: 0,
+      domainLookupEnd: 0,
+      connectStart: 0,
+      connectEnd: 0,
+      secureConnectionStart: 0,
+      encodedBodySize: 0,
+      transferSize: 0,
+      nextHopProtocol: '',
+    } as PerformanceResourceTiming;
+    const fields = mediaResourceFields(limited, 100);
+    expect(fields).toMatchObject({ startMs: 0, responseEndMs: 7000, visibility: 'limited' });
+    expect(fields?.ttfbMs).toBeUndefined();
+    expect(fields?.encodedBodyBytes).toBeUndefined();
+    expect(JSON.stringify(fields)).not.toContain('secret');
+    expect(
+      mediaResourceFields(
+        { ...limited, requestStart: 200, responseStart: 7000 } as PerformanceResourceTiming,
+        100
+      )?.ttfbMs
+    ).toBe(6800);
+  });
+
+  it('isolates sources, freezes final snapshots and only supplements late network evidence once', async () => {
+    type Listener = (list: { getEntries(): PerformanceEntry[] }) => void;
+    let listener: Listener | undefined;
+    const disconnect = vi.fn();
+    vi.stubGlobal(
+      'PerformanceObserver',
+      class {
+        static supportedEntryTypes = ['resource'];
+        constructor(callback: Listener) {
+          listener = callback;
+        }
+        observe() {}
+        disconnect = disconnect;
+        takeRecords() {
+          return [];
+        }
+      }
+    );
+    const v2 = new DramaTimingTracker(
+      () => performance.now(),
+      () => 'network-id',
+      (r) => reports.push(r),
+      { release: 'test', sessionId: 'test-session', platform: 'ios', browser: 'webkit' }
+    );
+    const flow = v2.beginPlayback('a', 'cover');
+    flow.mark('source_set');
+    const stop = observeDramaResources('https://media.invalid/a?token=private', flow);
+    flow.finish('playing');
+    const final = reports.find((r) => r.phase === 'final')!;
+    const resource = (name: string, startTime = 1) =>
+      ({
+        entryType: 'resource',
+        name,
+        startTime,
+        fetchStart: startTime,
+        duration: 9,
+        responseEnd: 10,
+        requestStart: 2,
+        responseStart: 5,
+        domainLookupStart: 1,
+        domainLookupEnd: 1,
+        connectStart: 1,
+        connectEnd: 2,
+        secureConnectionStart: 0,
+        encodedBodySize: 2,
+        transferSize: 302,
+        nextHopProtocol: 'h2',
+      }) as PerformanceResourceTiming;
+    listener?.({
+      getEntries: () => [
+        resource('https://media.invalid/poster'),
+        resource('https://media.invalid/a?token=private', -1),
+        resource('https://media.invalid/a?token=private'),
+      ],
+    });
+    expect(final.diagnostics?.network?.entries).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(reports.map((r) => r.phase)).toEqual(['start', 'final', 'network']);
+    expect(reports[2]?.diagnostics?.network?.entries).toHaveLength(1);
+    expect(JSON.stringify(reports)).not.toContain('private');
+    stop();
+    expect(disconnect).toHaveBeenCalledTimes(1);
+  });
   it('reports startup milestones, sanitized play results and live slow/final state', async () => {
     const observer = bind();
     observer.playCalled('automatic');
