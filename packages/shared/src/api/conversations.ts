@@ -31,6 +31,8 @@ export interface ChatMessage {
   /** 重生成版本号：一轮的 user/assistant 投影共用 revision，最大 revision 是当前版本 */
   revision: number;
   content: string;
+  /** Public reasoning recovered for an active reply; absent on legacy messages. */
+  reasoning?: string;
   status: ChatMessageStatus;
   error_code: string | null;
   finish_reason: string | null;
@@ -308,6 +310,8 @@ export interface PatchGenerationConfigData {
 /** POST /api/v1/conversations/:id/cancel. The ID binds cancellation to one revision. */
 export interface CancelConversationTurnRequest {
   assistant_message_id: string;
+  /** Explicit intent; omitted legacy callers retain their cancellation policy. */
+  reason?: 'user_stop' | 'first_token_timeout';
 }
 
 /** Returns the authoritative state; a reply completed before cancellation stays complete. */

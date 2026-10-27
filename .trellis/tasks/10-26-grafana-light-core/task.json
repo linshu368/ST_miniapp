@@ -1,0 +1,32 @@
+{
+  "id": "grafana-light-core",
+  "name": "grafana-light-core",
+  "title": "Lighten Grafana to actionable core metrics",
+  "description": "",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P0",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-26",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": ["database.infrastructure.schema-security"]
+    }
+  }
+}

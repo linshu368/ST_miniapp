@@ -17,6 +17,7 @@ import { useQueryClient } from '@tanstack/react-query';
 
 import {
   ConversationStreamError,
+  CONVERSATION_RECOVERING_MESSAGE,
   createConversationRequestId,
   streamConversationTurn,
 } from '@/lib/api/conversation-stream';
@@ -285,7 +286,18 @@ export function useConversationTurn({
     sessionId: string | null;
     messages: MessageThinkingMap;
   }>({ sessionId, messages: {} });
-  const thinkingByMessage = thinkingState.sessionId === sessionId ? thinkingState.messages : {};
+  const thinkingByMessage = useMemo(() => {
+    const recovered: Record<string, string> = {};
+    for (const message of persistedMessages) {
+      if (message.reasoning) recovered[messageThinkingKey(message)] = message.reasoning;
+    }
+    if (thinkingState.sessionId === sessionId) {
+      for (const [key, text] of Object.entries(thinkingState.messages)) {
+        if (text.length > (recovered[key]?.length ?? 0)) recovered[key] = text;
+      }
+    }
+    return recovered;
+  }, [persistedMessages, thinkingState, sessionId]);
   const [quotaRefreshing, setQuotaRefreshing] = useState(false);
   const [replyStalled, setReplyStalled] = useState(false);
   const [streamError, setStreamError] = useState<string | null>(null);
@@ -296,11 +308,11 @@ export function useConversationTurn({
   const [firstTokenObservation, setFirstTokenObservation] = useState<FirstTokenIdentity | null>(
     null
   );
-  const autoCancelRef = useRef<(requestId: string) => void>(() => {});
   const onFirstTokenDisplayed = useCallback(
     (identity: FirstTokenIdentity, at: number) => {
       if (observationRef.current?.displayed(identity, at)) {
         setFirstTokenObservation(null);
+        setStreamError(null);
         reportChatLatency('chat.first_token.duration', at - observationRef.current.startedAt, {
           character_id: characterId,
         });
@@ -359,6 +371,26 @@ export function useConversationTurn({
     () => mergeStreamingMessages(persistedMessages, streaming, sessionId),
     [persistedMessages, sessionId, streaming]
   );
+
+  useEffect(() => {
+    const observation = observationRef.current;
+    if (!observation || observation.hasDisplayedToken) return;
+    const recovered = persistedMessages.find(
+      (message) =>
+        message.role === 'assistant' && message.request_id === observation.identity.requestId
+    );
+    if (!recovered) return;
+    observation.identify(recovered.id, recovered.revision);
+    if (recovered.content.trim() || recovered.reasoning?.trim()) {
+      observation.received();
+      setStreamError(null);
+      setFirstTokenObservation(observation.identity);
+    } else if (recovered.status !== 'streaming') {
+      if (recovered.finish_reason === 'timeout') observation.deadlineFailed('server_timeout');
+      else observation.unavailable('upstream_error');
+      setFirstTokenObservation(null);
+    }
+  }, [persistedMessages]);
 
   const serverBusy = persistedMessages.some((message) => message.status === 'streaming');
   const generating = streaming !== null || quotaRefreshing || serverBusy || cancelling;
@@ -462,8 +494,8 @@ export function useConversationTurn({
       }
       if (aborted) return;
 
-      if (!(error instanceof ConversationStreamError)) {
-        setStreamError('连接已中断，请确认本次回复状态，或取消后重新生成');
+      if (!(error instanceof ConversationStreamError) || error.recoverable) {
+        setStreamError(CONVERSATION_RECOVERING_MESSAGE);
         return;
       }
 
@@ -579,9 +611,8 @@ export function useConversationTurn({
         },
         () => {
           if (observationRef.current !== observation) return;
-          setFirstTokenObservation(null);
+          // A display receipt is telemetry, not authority to cancel a server-owned turn.
           setStreamError(FIRST_TOKEN_RETRY_MESSAGE);
-          autoCancelRef.current(requestId);
         }
       );
       observationRef.current = observation;
@@ -675,7 +706,7 @@ export function useConversationTurn({
             };
             assistantMessageId = event.assistant_message_id;
             observation.identify(event.assistant_message_id, event.revision);
-            if (!observation.timedOut) setFirstTokenObservation(observation.identity);
+            setFirstTokenObservation(observation.identity);
             assistantRevision = event.revision;
             turnMeta.turnIndex = event.turn_index;
             turnMeta.revision = toTelemetryRevision(event.revision);
@@ -685,18 +716,12 @@ export function useConversationTurn({
             setStreaming((current) => (current ? applyStreamStart(current, event) : current));
           },
           onDelta: (text) => {
-            if (!isCurrent() || observation.timedOut) return;
+            if (!isCurrent()) return;
+            setStreamError(null);
             setStreaming((current) => (current ? appendStreamText(current, text) : current));
           },
           onReasoning: (text) => {
-            if (
-              !isCurrent() ||
-              observation.timedOut ||
-              !thinkingEnabled ||
-              !assistantMessageId ||
-              !text
-            )
-              return;
+            if (!isCurrent() || !thinkingEnabled || !assistantMessageId || !text) return;
             const key = messageThinkingKey({
               session_id: sessionId,
               id: assistantMessageId,
@@ -766,8 +791,10 @@ export function useConversationTurn({
           if (error.code === 'primary_first_token_timeout')
             observation.deadlineFailed('primary_timeout');
         }
-        observation.unavailable('upstream_error');
-        setFirstTokenObservation(null);
+        if (error instanceof ConversationStreamError && !error.recoverable) {
+          observation.unavailable('upstream_error');
+          setFirstTokenObservation(null);
+        }
         await handleTurnFailure(error, input, isCurrent);
         // Keep rolling-deploy compatibility with an old backend that may still hard-timeout.
         if (
@@ -910,7 +937,11 @@ export function useConversationTurn({
         }
         if (!assistantMessageId) throw new Error('本次回复尚未确认，请稍后重试取消');
         if (message) observationRef.current?.identify(assistantMessageId, message.revision);
-        const result = await cancelTurn({ sessionId, assistantMessageId });
+        const result = await cancelTurn({
+          sessionId,
+          assistantMessageId,
+          reason: reason ?? 'user_stop',
+        });
         observationRef.current?.identify(result.message.id, result.message.revision);
         if (!isCurrent()) return;
         if (result.message.status === 'streaming') throw new Error('本次回复仍在生成，请重试取消');
@@ -982,23 +1013,6 @@ export function useConversationTurn({
       streaming,
     ]
   );
-
-  autoCancelRef.current = (requestId) => {
-    if (
-      observationRef.current?.identity.requestId !== requestId ||
-      sessionRef.current !== sessionId
-    )
-      return;
-    const identity = observationRef.current.identity;
-    const completed = persistedMessages.find(
-      (m) =>
-        m.id === identity.assistantMessageId &&
-        m.revision === identity.revision &&
-        m.status !== 'streaming'
-    );
-    if (completed && !pendingRef.current) return;
-    void abort('first_token_timeout');
-  };
 
   const quotaExhaustedNotice = freeQuotaExhaustedMessageId
     ? {

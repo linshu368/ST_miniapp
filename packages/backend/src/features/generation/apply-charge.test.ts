@@ -223,6 +223,31 @@ describe('applyLlmCharge', () => {
     expect(finalizePending).toHaveBeenCalledWith('charge-1', false);
   });
 
+  it('uses the database manual-stop gate to consume the free entitlement with no visible body', async () => {
+    chargeLlmUsage.mockResolvedValueOnce({
+      charge: {
+        status: 'free',
+        charged_amount: 0,
+        calculated_amount: 0,
+        metadata: { delivery_billing_gate: 'user_stopped' },
+      },
+    });
+    await applyLlmCharge(
+      command({
+        generationStatus: 'stream_interrupted',
+        finishReason: 'user_cancelled',
+        assistantReply: null,
+        calculatedAmount: 0,
+      })
+    );
+    expect(lastCharge().metadata).toMatchObject({
+      finish_reason: 'user_cancelled',
+      reply_outcome: 'empty',
+      chat_status: 'stream_interrupted',
+    });
+    expect(finalizePending).toHaveBeenCalledWith('charge-1', true);
+  });
+
   it('finish_reason still null: chat_status success, does not finalize quota', async () => {
     const result = await applyLlmCharge(command({ finishReason: null }));
 

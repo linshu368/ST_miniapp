@@ -2,6 +2,11 @@
   "private": true,
   "packageManager": "pnpm@9.15.9",
   "scripts": {
+    "preview:ui": "pnpm --filter @miniapp/ui-tests preview",
+    "test:ui:install": "pnpm --filter @miniapp/ui-tests exec playwright install chromium",
+    "test:ui": "pnpm --filter @miniapp/ui-tests test:ui",
+    "test:ui:report": "pnpm --filter @miniapp/ui-tests test:ui:report",
+    "test:ui:fixtures": "pnpm --filter @miniapp/ui-tests test:fixtures",
     "dev:frontend": "pnpm --filter @miniapp/frontend dev",
     "dev:admin": "pnpm --filter @miniapp/admin dev",
     "dev:backend": "pnpm --filter @miniapp/backend dev",

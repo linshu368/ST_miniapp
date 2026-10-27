@@ -4,6 +4,8 @@
 
 当前 Vitest 重点覆盖纯逻辑/API parser/store：conversation SSE、会话标题、模型 cache、聊天入口/额度弹窗、composer 布局/回复展示、Telegram hooks/launch URL、Sentry sanitize、通知工具、用户 profile store，以及 Next lobby route。暂无完整 RTL/jsdom/E2E 体系；不能把缺失说成已覆盖。
 
+开发期页面验收位于 `packages/ui-tests`（[使用说明](../../../../packages/ui-tests/README.md)）：`pnpm preview:ui` 启动真实页面与本地虚构API，`pnpm test:ui --grep @profile` / `@roleplay` / `@chat` / `@image` 按组复跑。默认390×844、narrow项目320×568。公开契约约束fixture，未知接口501并使验收失败；无生产代理，自动浏览器拦截外网。手动3120/3121与自动3130/3131独立，串行场景重置；本地Next开关隔离缓存与派生tsconfig，生产仍用默认配置。截图/trace/报告不提交。原有逻辑/计费/迁移测试保留；系统键盘、Telegram原生保存和真实供应商调用继续专项验证。
+
 - 纯函数/转换：边界值、非法输入、时区/金额、空数组。
 - API/SSE：headers、envelope、非 2xx、abort、chunk 分割、error/EOF、cache invalidation。
 - Store：hydrate 优先级、localStorage 失败、action 不变量。
@@ -46,3 +48,13 @@ shared contract 改动追加 `pnpm --filter @miniapp/shared test` 和所有消�
 - Preview/production 的 `NEXT_PUBLIC_API_URL` 必须指向匹配 Backend。Feature PR 按 `VERCEL_GIT_PULL_REQUEST_ID`（或自定义环境名 `pr-{n}`）1:1 指向 `https://stminiapp-pr-{n}.up.railway.app`，构建时覆盖 Preview 共享变量里上一轮 PR 的残留值；`dev` 分支指向 development，production 指向 production。构建采用 standalone 并转译 shared。环境变化同时验证 CORS、Telegram Bot WebApp URL、Sentry release/source maps。
 - 数据库 migration 和 Backend 部署与 Frontend 解耦；契约演进遵循兼容 producer-first 顺序。
 - 发布前 `build` 必须通过；发布后 smoke test 首页、health/API、聊天、支付回跳并监控错误率。回滚 Vercel deployment 时确认 Backend/契约仍向后兼容。
+
+## 短剧播放分段计时
+
+`lib/perf/drama-timing.ts` 管理列表/每次播放的单调时钟节点、查询和 HTTP 尝试；`drama-media.ts` 绑定本次 src 的事件/帧回调，`drama-observer.ts` 先用 createLogger 打印，再经 `lib/api/telemetry.ts` 的鉴权 POST 将报告集中写入 Railway；短剧专用 Sentry 上报已移除。上传 keepalive、background 优先级、总预算 5 秒且不重试，不参与播放结果；失败保留本地日志，不做离线补传。根 `PagePerfTracker` 管理入口与离开/后台监听。用户浏览时间独立于启动等待，预取与路由并行，不允许阶段简单相加。
+
+`apiClient.onAttempt` 仅为可选的本地观测回调，包含排队、响应头与 body 解析，不能传入 fetch 或改变重试/超时。短剧 query 禁用 structural sharing，以保留结果对象与本次计时 WeakMap 的对应；不改变 query key、过期时间、请求去重或视频 URL 切换策略。播放器持有本次观察对象，旧组件更新不能重建/抢占导航目标的记录。成功必须同时有首帧与 playing；兼容降级明确标记，不能使用 canplay 代替。
+
+每次等待 10 秒生成一次快照；失败、离开、后台等都生成终态，后台不计成慢播放。遥测异常不得影响请求/视频，地址/签名/对象路径不得进日志；上传契约按字段白名单和明细数量限制，禁止任意对象作为日志输入。关键回归及查询、发布、真机验收见 [排查说明](../../../../docs/drama-playback-timing.md)。
+
+媒体启动诊断在原报告的可选 `media` 中记录最多 32 条有界事件，以及慢/终态时即时 `snapshot`。`play_called/play_resolved/play_rejected/loadeddata/canplay` 首次 marks 独立于事件截断；原 `playing + first_frame` 成功条件和手动/自动 play 的业务结果保持不变。不得逐帧记录 progress/timeupdate 或周期轮询。状态只含有限数值、布尔与枚举；bufferedAheadMs 只算覆盖当前位置的连续缓冲，读取失败为缺失，不得把远端缓冲、suspend 或零/缺失数据直接解释为网络根因。reader 在终态/媒体释放时解除，旧监听/Promise 不得写新流，慢快照不可被后续事件改写。通过既有 drama-media/observer/timing 测试验证，Backend 接受新契约后再发 Frontend。

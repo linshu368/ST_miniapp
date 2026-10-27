@@ -224,9 +224,10 @@ function VipPageContent() {
             <div className="min-w-0 rounded-[20px] border border-border bg-card px-2 py-3 text-center">
               <Gift className="mx-auto size-4 text-primary" aria-hidden />
               <p className="mt-2 text-[19px] font-bold tabular-nums text-primary">
-                {benefits ? `+${formatNumber(benefits.checkin_vip_credits)}` : '—'}
+                {benefits ? formatNumber(benefits.checkin_vip_credits) : '—'}
+                <span className="ml-1 text-[10px] font-medium">星尘/天</span>
               </p>
-              <p className="mt-1 text-[10px] text-muted-foreground">每日签到多领</p>
+              <p className="mt-1 text-[10px] text-muted-foreground">每日签到奖励</p>
             </div>
             <div className="min-w-0 rounded-[20px] border border-border bg-card px-2 py-3 text-center">
               <Zap className="mx-auto size-4 text-primary" aria-hidden />
@@ -297,9 +298,8 @@ function VipPageContent() {
               ) : null}
               {benefits ? (
                 <p className="mt-3 text-[10px] leading-5 text-muted-foreground">
-                  每日签到共{' '}
-                  {formatNumber(benefits.checkin_base_credits + benefits.checkin_vip_credits)}{' '}
-                  星尘，记得来领取。
+                  会员每日签到 {formatNumber(benefits.checkin_vip_credits)} 星尘（非会员新用户每日{' '}
+                  {formatNumber(benefits.checkin_base_credits)}），记得来领取。
                 </p>
               ) : null}
             </div>

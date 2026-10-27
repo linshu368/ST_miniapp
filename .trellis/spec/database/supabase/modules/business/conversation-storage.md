@@ -5,8 +5,8 @@ scope: database
 category: business
 status: active
 owners: [database]
-last_verified_task: .trellis/tasks/10-10-image-plaza-v2/
-last_verified_at: 2026-10-13
+last_verified_task: .trellis/tasks/10-27-recoverable-chat-delivery/
+last_verified_at: 2026-10-27
 ---
 
 # 会话与语音存储
@@ -73,3 +73,21 @@ last_verified_at: 2026-09-14
 ## T10 历史处置（本地实现，未远端执行）
 
 新history_disposition只保全类型化原名调用字段/受控诊断，清父表raw并规范化已有OR诊断；不存未知JSON、自由文本错误或原始归档，Venice/业务/账务不写。LIMIT2001先预算、最多2000、指纹CAS/事务/ID/provider/类型守卫。主表DROP仅在两库未执行证明后修正：以真实snapshot schema账本边界分类旧终态账单/dedup/失败/真实pending，旧pending原样保留不伪造结算；现代未知/漏快照/身份或状态冲突/关联reserved继续阻断。先处置文件成功记账再主表DROP，TEST证据不替代Production；超窗旧账务停止自动回捞、独立核验。
+
+## 主动停止原因与政策（2026-10-26）
+
+chat_generation_requests.user_stop_billing_enabled在创建请求时确定：存量false、新轮true。service-only experience.cancel_chat_generation锁定具体session/history并裁决终态原因；新请求省略reason也按手动停止处理，不允许参数直接写入免费timeout。真实primary/fallback/global阶段截断优先免扣，未验证自动截止由现有watchdog确认。报价前不伪造账单；业务原因user_cancelled由billing资格读取，原报价和charge_id不改，历史无回填。
+
+## 可恢复交付协议 v3（2026-10-27）
+
+本节取代旧版“当前未可见→自动取消/免单”的运行规则。后端4秒首发、2秒兜底、10秒总首字预算仍由正式配置决定；模型在预算内选中有效首字后立即放行，意图/身份持久化与传输并行，结算前必须确认。断连写入返回false，不冒充客户端已收到；断连不终止生成。
+
+客户端v3记录真实接收/显示时间，收到后视口未显示不触发取消；hidden/page_left是观测中断，返回实际显示可更新记录且保留后台标记。前台超过预算未收到的事实锁存，不因后续可恢复而抹除。新策略拒绝旧页面的first_token_timeout取消指令；真实截止由生成服务控制，明确user_stop仍走原价一次结算。
+
+回复恢复复用有权限的会话详情与原活动轮询。活动快照最多128轮、125秒，每轮正文256Ki字符/公开思考64Ki字符，按user/session/revision隔离；一次first_token_preview检查点最多2048字符，最终正文仍由chat_history持久化。跨实例/进程重启读取检查点和最终结果，不宣称进程内快照持久。公开思考不写入正文或后续prompt。
+
+recoverable_delivery仅新Backend显式启用；旧请求/终结账单不回填、不追扣。离页/后台已完整保存且可取回的正常回复不免单；真实系统截止/前台无接收超时免费，主动停止原报价原权益一次。缺回报继续pending，预算+15秒仍缺报按保守免单处理，避免服务端完成先扣费而客户端随后报告失败。只有思考无完整正文不自动收费。内部billing gate复用visible返回值表示已满足该轮交付策略，并非声称用户当时正在看。
+
+唯一新增迁移20261027_recoverable_chat_delivery.sql：experience拥有策略/首字检查点，billing资格函数读取事实；analytics只追加无正文的策略/时刻/失败锁存字段。无新cron、逐token数据库写、业务回填或公开权限。先TEST、后生产迁移、后Backend/Frontend。回退保留新增对象和终账，必要时forward-fix。
+
+验证：本任务release-review记录自动化、真实PG、TEST流/浏览器和生产版本证据；测试通过不等于线上1%目标已达成。看板v3区分前台等待超时与系统无首字截断，显示分布只用浏览器业务侧实际时长，后台/缺报不填0。

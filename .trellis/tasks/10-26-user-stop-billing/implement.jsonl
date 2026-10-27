@@ -1,0 +1,5 @@
+{"file": ".trellis/tasks/10-26-user-stop-billing/prd.md", "reason": "Relevant cancellation and billing scope"}
+{"file": ".trellis/tasks/10-26-user-stop-billing/design.md", "reason": "Relevant cancellation and billing scope"}
+{"file": ".trellis/tasks/10-26-user-stop-billing/implement.md", "reason": "Relevant cancellation and billing scope"}
+{"file": ".trellis/spec/backend/app/data-reliability-and-security.md", "reason": "Relevant cancellation and billing scope"}
+{"file": ".trellis/spec/database/supabase/migrations-and-rollbacks.md", "reason": "Relevant cancellation and billing scope"}

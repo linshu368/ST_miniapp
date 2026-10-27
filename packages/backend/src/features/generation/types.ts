@@ -79,6 +79,8 @@ export interface GenerationRequest {
     primaryAttemptId: string;
     requestStartedAt: number;
     store: FirstTokenAttemptStore;
+    deferPersistence?: boolean;
+    onReady?: () => void;
   };
 }
 
@@ -89,7 +91,7 @@ export interface GenerationHooks {
   onGenerationId?: (generationId: string) => Promise<void>;
   /** Persist the quota identity and reject a turn cancelled before quota reservation. */
   onBeforeReserve?: (chargeId: string) => Promise<void>;
-  /** Claim persisted terminal status before any wallet/free-quota settlement. */
+  /** Arbitrate the persisted outcome and finalize free quota before terminal acknowledgement. */
   onBeforeSettle?: (
     result: SseTapResult,
     releaseReservation: () => Promise<void>

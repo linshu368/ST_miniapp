@@ -21,7 +21,7 @@ import {
   getPricingConfig,
   type ModelBillingContext,
 } from '../../platform/model-tiers.js';
-import { getProviderPreferencesForModel } from '../../platform/provider-routing.js';
+import { getProviderPreferencesForModels } from '../../platform/provider-routing.js';
 import { readVipStrategy } from '../../platform/vip-strategy.js';
 import {
   LLM_PROVIDER_CAPABILITIES,
@@ -71,14 +71,14 @@ type SaveHistory = (outcome: HistoryOutcome) => void;
 /** 与会话 streaming 陈旧回收口径一致，避免一轮生成无限占住会话。 */
 export const GENERATION_TIMEOUT_MS = 120_000;
 
-/** 收到流终止标记且有可见正文，说明回复已完整交付给用户。 */
-function isDeliveredReply(result: Pick<SseTapResult, 'completed' | 'content'>) {
+/** Only generation completion; actual delivery/billing eligibility is decided separately. */
+function hasCompletedReply(result: Pick<SseTapResult, 'completed' | 'content'>) {
   return result.completed && result.content.trim().length > 0;
 }
 
 /** 只有 OpenRouter 明确确认自然结束后才能最终扣费。 */
 function isBillableReply(result: Pick<SseTapResult, 'completed' | 'content' | 'finishReason'>) {
-  return isDeliveredReply(result) && result.finishReason === 'stop';
+  return hasCompletedReply(result) && result.finishReason === 'stop';
 }
 
 function buildUpstreamBody(
@@ -142,6 +142,7 @@ export async function execute(
   );
 
   let billing = selectedBilling;
+  let deliveryPersisted = Promise.resolve();
   const finish = (result: GenerationResult): GenerationResult => {
     hooks?.onDone?.(result);
     return result;
@@ -171,10 +172,11 @@ export async function execute(
   const releaseReservation = (): Promise<void> =>
     (released ??= (async () => {
       const decision = await reservation.finalize(false);
-      if (reservation.granted && decision?.status !== 'released')
+      if (reservation.granted && decision?.status !== 'released' && decision?.status !== 'consumed')
         throw new GenerationCleanupPendingError();
     })());
 
+  let settleAbortedBeforeStream: (() => Promise<GenerationResult | null>) | undefined;
   try {
     signal.throwIfAborted();
     const plan = resolveBillingPlan({
@@ -226,10 +228,20 @@ export async function execute(
       createHistoryWriter({ request, billing, plan, log })(outcome);
 
     // 模块内部已把读取 / 解析失败降级为「无规则」，这里拿到 null 就当没配置。
-    const providerPreferences =
-      billing.provider === 'openrouter'
-        ? await withAbort(getProviderPreferencesForModel(billing.providerModelId), signal)
-        : null;
+    const routingModelIds = [
+      ...new Set([
+        ...(billing.provider === 'openrouter' ? [billing.providerModelId] : []),
+        ...(request.firstToken && request.model.firstTokenPolicy?.fallbackModelId
+          ? [request.model.firstTokenPolicy.fallbackModelId]
+          : []),
+      ]),
+    ];
+    const routingPreferences = await withAbort(
+      getProviderPreferencesForModels(routingModelIds),
+      signal
+    );
+    const preferencesFor = (modelId: string) =>
+      routingPreferences[routingModelIds.indexOf(modelId)] ?? null;
     const upstream = resolveProviderUpstream(billing.provider);
     if (!upstream.apiKey) {
       await releaseReservation();
@@ -255,6 +267,33 @@ export async function execute(
       provider: billing.provider,
       provider_model_id: billing.providerModelId,
     });
+    // After admission the original quote is durable. An explicit manual stop while
+    // waiting for headers is still a real round, even without a generation ID.
+    settleAbortedBeforeStream = async () => {
+      const interrupted: SseTapResult = {
+        completed: false,
+        content: '',
+        deltaCount: 0,
+        generationId: null,
+        finishReason: 'timeout',
+        usage: null,
+        responseMetadata: {},
+      };
+      const outcome = hooks?.onBeforeSettle
+        ? await hooks.onBeforeSettle(interrupted, releaseReservation)
+        : interrupted;
+      if (outcome.finishReason !== 'user_cancelled') return null;
+      await releaseReservation();
+      saveHistory({
+        assistant_reply: null,
+        status: 'stream_interrupted',
+        generation_id: null,
+        finish_reason: outcome.finishReason,
+      });
+      return finish(
+        failed({ status: 'stream_interrupted', chargeId, finishReason: outcome.finishReason })
+      );
+    };
     signal.throwIfAborted();
     let upstreamRes: Response;
     const upstreamStartedAt = Date.now();
@@ -267,12 +306,7 @@ export async function execute(
         const route = resolveProviderUpstream(model.provider);
         if (!route.apiKey) throw new Error(`Missing key for ${model.provider}`);
         const preferences =
-          model.provider === 'openrouter'
-            ? model.providerModelId === request.model.providerModelId &&
-              model.provider === request.model.provider
-              ? providerPreferences
-              : await getProviderPreferencesForModel(model.providerModelId)
-            : null;
+          model.provider === 'openrouter' ? preferencesFor(model.providerModelId) : null;
         const actualRequest = {
           ...request,
           model: { ...request.model, ...model, openRouterModelId: model.providerModelId },
@@ -303,6 +337,8 @@ export async function execute(
           requestStartedAt: request.firstToken.requestStartedAt,
           signal,
           store: request.firstToken.store,
+          deferPersistence: request.firstToken.deferPersistence,
+          onReady: request.firstToken.onReady,
           forward,
           onObservationError: (err) =>
             log.sys.warn(
@@ -315,10 +351,16 @@ export async function execute(
           provider: delivered.model.provider,
           providerModelId: delivered.model.providerModelId,
         };
+        deliveryPersisted = delivered.deliveryPersisted;
         upstreamRes = delivered.response;
       } else upstreamRes = await forward(request.model, signal);
     } catch (err) {
-      // 连不上上游时 ST 链路也不落 chat_history（没有 upstream_status 可记），这里保持一致
+      if (signal.aborted) {
+        const settleAbort = settleAbortedBeforeStream;
+        settleAbortedBeforeStream = undefined;
+        const stopped = await settleAbort();
+        if (stopped) return stopped;
+      }
       await releaseReservation();
       log.sys.error(
         {
@@ -416,6 +458,7 @@ export async function execute(
       });
     }
 
+    settleAbortedBeforeStream = undefined;
     // The flush path and pipeline error path share one settlement promise. In particular,
     // a deadline during a slow CAS/quota finalize must never trigger another settlement.
     let settlement: Promise<void> | undefined;
@@ -423,10 +466,23 @@ export async function execute(
     let firstTokenAt: number | null = null;
     const settleOnce = (observed: SseTapResult): Promise<void> => {
       settlement ??= (async () => {
-        const interrupted = signal.aborted
+        let interrupted = signal.aborted
           ? { ...observed, completed: false, finishReason: 'timeout' }
           : observed;
         try {
+          try {
+            await deliveryPersisted;
+          } catch (err) {
+            log.sys.error(
+              { err, event: 'llm.delivery.persistence_failed', historyId: request.historyId },
+              '生成身份确认失败，保留回复但不结算'
+            );
+            interrupted = {
+              ...interrupted,
+              completed: false,
+              finishReason: 'delivery_persistence_failed',
+            };
+          }
           settledResult = hooks?.onBeforeSettle
             ? await hooks.onBeforeSettle(interrupted, releaseReservation)
             : interrupted;
@@ -514,7 +570,8 @@ export async function execute(
     const tapped = settledResult ?? tap.snapshot();
     return finish({
       status:
-        isDeliveredReply(tapped) && (tapped.finishReason === 'stop' || tapped.finishReason === null)
+        hasCompletedReply(tapped) &&
+        (tapped.finishReason === 'stop' || tapped.finishReason === null)
           ? 'success'
           : 'stream_interrupted',
       content: tapped.content,
@@ -525,6 +582,14 @@ export async function execute(
       modelOpenRouterId: billing.openRouterModelId,
     });
   } catch (err) {
+    if (
+      signal.aborted &&
+      settleAbortedBeforeStream &&
+      !(err instanceof GenerationCleanupPendingError)
+    ) {
+      const stopped = await settleAbortedBeforeStream();
+      if (stopped) return stopped;
+    }
     await releaseReservation();
     throw err;
   }
@@ -578,7 +643,7 @@ async function settleStream(input: {
   firstTokenAt: number | null;
 }): Promise<void> {
   const { result, request, billing, reservation, saveHistory, log } = input;
-  const delivered = isDeliveredReply(result);
+  const delivered = hasCompletedReply(result);
   const billable = isBillableReply(result);
   const waitingForFinishReason =
     billing.provider === 'openrouter' && delivered && result.finishReason === null;
@@ -619,7 +684,9 @@ async function settleStream(input: {
       model: billing.providerModelId,
       generationId: result.generationId,
     },
-    'generation produced an incomplete or empty reply, skipping deduction'
+    result.finishReason === 'user_cancelled'
+      ? 'user stopped generation; settling the accepted quote'
+      : 'generation produced an incomplete or empty reply, skipping deduction'
   );
   saveHistory({
     assistant_reply: result.deltaCount > 0 ? result.content : null,

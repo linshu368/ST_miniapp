@@ -26,7 +26,7 @@ export function VipEntryCard({
     benefits && benefits.text_discount_rate < 1
       ? formatDiscountLabel(benefits.text_discount_rate)
       : null;
-  const extraCheckin = benefits?.checkin_vip_credits;
+  const dailyCheckin = benefits?.checkin_vip_credits;
   const bonus = monthlyPlan?.bonus_credits ?? 0;
   const expiry = vipEntryExpiryLabel(status ?? null);
 
@@ -60,8 +60,8 @@ export function VipEntryCard({
           {expiry ?? '你的专属权益已开启'}
         </span>
         <span className="relative mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-primary/15 pt-3 text-[10px] text-[#dcc4a4]">
-          {typeof extraCheckin === 'number' && extraCheckin > 0 ? (
-            <span>每日多领 {formatNumber(extraCheckin)}</span>
+          {typeof dailyCheckin === 'number' && dailyCheckin > 0 ? (
+            <span>每日签到 {formatNumber(dailyCheckin)} 星尘</span>
           ) : null}
           {discount ? <span>对话 {discount}</span> : null}
           <span className="ml-auto inline-flex items-center gap-0.5 text-primary">
@@ -111,8 +111,14 @@ export function VipEntryCard({
         </span>
       </span>
       <span className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] leading-5 text-foreground/80">
-        {typeof extraCheckin === 'number' && extraCheckin > 0 ? (
-          <span>签到每天多领 {formatNumber(extraCheckin)}</span>
+        {typeof dailyCheckin === 'number' && dailyCheckin > 0 ? (
+          <span className="inline-flex items-baseline gap-1">
+            每日签到
+            <strong className="font-bold tabular-nums text-primary">
+              {formatNumber(dailyCheckin)}
+            </strong>
+            星尘
+          </span>
         ) : null}
         {discount ? <span>全模型对话 {discount}</span> : null}
         {!benefits ? <span>{loading ? '正在读取会员权益…' : '查看完整月卡权益'}</span> : null}

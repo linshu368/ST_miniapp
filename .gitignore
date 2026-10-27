@@ -1,6 +1,9 @@
 node_modules/
 .pnpm-store/
 .next/
+.next-ui-preview/
+.next-ui-test/
+/output/playwright/
 dist/
 .env
 .env.local

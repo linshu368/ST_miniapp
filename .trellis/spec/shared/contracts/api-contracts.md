@@ -27,6 +27,8 @@
 
 ## 设计规则
 
+短剧契约 `api/drama.ts`：列表和详情共享完整剧级文字；新增向后兼容可选 `first_published_at?: string | null`（新 Backend 必返回 ISO 时间或 NULL）。它是可播视频 `created_at` 的最早值，允许存量补录，不能当成真实历史上传证据。`VideoItem` 只承载自身原始元数据，不复用剧级 AI。具体回退和排序行为见[短剧目录契约](../../database/supabase/drama-catalog.md)。
+
 - 请求、响应、分页、错误和 SSE event 使用明确领域命名；字段可选性必须表达真实协议，不为绕过编译器滥用 `?`。
 - API DTO 只含业务所需字段，不复制数据库表；日期明确使用 ISO string，金额/credits 明确单位，ID 不混用。
 - 不可信 JSON 或跨版本运营配置使用 Zod，并以 `z.infer` 保持类型同源；简单可信编译期形状可用 interface/type。
@@ -44,3 +46,31 @@ design 必须列 producer/consumer、旧客户端、部分部署、重试/幂等
 - Admin mutation 使用 UUID `request_id`、明确 CAS 前提和稳定错误码；`RESULT_UNKNOWN` 表示提交结果未知，不等于失败，也不授权自动重试。
 - 版本批次一次最多 20 个去重正整数；每个结果独立为 snapshot/unavailable，单个坏版本不得污染整批，也不得返回 source 或内部诊断正文。
 - choice payload 是 renderer 输出的可信纯文本，但 consumer 仍负责“最新完整回复”资格、长度与防双击。
+
+取消文字回复兼容字段（2026-10-26）：CancelConversationTurnRequest.reason?: user_stop | first_token_timeout。请求创建时的服务端策略位决定新旧政策，不以是否省略字段选价；producer必须验证枚举，Frontend手动和总截止分别填写。返回ChatMessage保持原形状，不新增扣费通知字段。
+
+## 可恢复交付协议 v3（2026-10-27）
+
+本节取代旧版“当前未可见→自动取消/免单”的运行规则。后端4秒首发、2秒兜底、10秒总首字预算仍由正式配置决定；模型在预算内选中有效首字后立即放行，意图/身份持久化与传输并行，结算前必须确认。断连写入返回false，不冒充客户端已收到；断连不终止生成。
+
+客户端v3记录真实接收/显示时间，收到后视口未显示不触发取消；hidden/page_left是观测中断，返回实际显示可更新记录且保留后台标记。前台超过预算未收到的事实锁存，不因后续可恢复而抹除。新策略拒绝旧页面的first_token_timeout取消指令；真实截止由生成服务控制，明确user_stop仍走原价一次结算。
+
+回复恢复复用有权限的会话详情与原活动轮询。活动快照最多128轮、125秒，每轮正文256Ki字符/公开思考64Ki字符，按user/session/revision隔离；一次first_token_preview检查点最多2048字符，最终正文仍由chat_history持久化。跨实例/进程重启读取检查点和最终结果，不宣称进程内快照持久。公开思考不写入正文或后续prompt。
+
+recoverable_delivery仅新Backend显式启用；旧请求/终结账单不回填、不追扣。离页/后台已完整保存且可取回的正常回复不免单；真实系统截止/前台无接收超时免费，主动停止原报价原权益一次。缺回报继续pending，预算+15秒仍缺报按保守免单处理，避免服务端完成先扣费而客户端随后报告失败。只有思考无完整正文不自动收费。内部billing gate复用visible返回值表示已满足该轮交付策略，并非声称用户当时正在看。
+
+唯一新增迁移20261027_recoverable_chat_delivery.sql：experience拥有策略/首字检查点，billing资格函数读取事实；analytics只追加无正文的策略/时刻/失败锁存字段。无新cron、逐token数据库写、业务回填或公开权限。先TEST、后生产迁移、后Backend/Frontend。回退保留新增对象和终账，必要时forward-fix。
+
+验证：本任务release-review记录自动化、真实PG、TEST流/浏览器和生产版本证据；测试通过不等于线上1%目标已达成。看板v3区分前台等待超时与系统无首字截断，显示分布只用浏览器业务侧实际时长，后台/缺报不填0。
+
+短剧诊断上报契约 `api/drama-timing.ts`：`POST /api/telemetry/drama-timing` 请求为 `DramaTimingReportSchema`（嵌套 strict、有限状态、有限数值、最多 12 个 query/每 query 4 次尝试），响应 `{ accepted: true }`。body 最多 32 KiB，只允许关联 ID/耗时/状态；负查询起点用于进入前在途复用，其他耗时非负。纯函数 `dramaTimingLogFields` 统一浏览器/Railway 字段，媒体 URL/路径/签名/正文不得进入报告。Backend 先于 Frontend 发布。
+
+## 媒体启动诊断契约
+
+1. **Scope / Trigger**：只扩展短剧启动观察的可选诊断，不改变播放业务、API 次数或数据库。
+2. **Signatures**：`DramaTimingReportSchema` 增加可选 `media`；公开 `DramaMediaState`、`DramaMediaEvent` 和 `DRAMA_TIMING_MAX_MEDIA_EVENTS=32`。`dramaTimingLogFields(report)` 将 media 原样映射为日志字段。
+3. **Contracts**：media 为 `{events, eventsTruncated, snapshot?}`。事件仅允许有限 name、相对入口 atMs、trigger（automatic/user）、error 分类与 state。state 包含 readyState 0..4、networkState 0..3、paused/muted/seeking、非负有限 currentTimeMs/bufferedAheadMs 可选值、visibility（visible/hidden/unknown）。新增首次 marks 为 play_called/play_resolved/play_rejected/loadeddata/canplay。
+4. **Validation & Error Matrix**：嵌套全部 strict；超过 32 条、未知字段/枚举或非法状态/耗时返回 400；整个 body 超过 32 KiB 仍返回 413。旧客户端省略 media 接受，旧 Backend 拒绝新字段，因此必须 Backend 先发布；保留原 401/429/503 语义。
+5. **Good/Base/Bad Cases**：Good 为带等待事件和即时缓冲的慢报告；Base 为无 media 的旧报告；Bad 为 state 中夹带 URL/token、任意错误消息或非有限 bufferedAheadMs。
+6. **Tests Required**：既有 telemetry-contract.test.ts 验证旧/新报告和嵌套拒绝，backend telemetry.test.ts 验证 Pino 映射；frontend 媒体测试覆盖即时状态、截断与迟到隔离；所有 consumers typecheck。
+7. **Wrong vs Correct**：错误做法是将缺失状态记为 0、buffered 最远 end 当连续缓冲或上传原始 Error/媒体地址；正确做法是只记录当前位置连续缓冲与固定错误分类，不可读时省略。字段解释和真机场景以 docs/drama-playback-timing.md 为准。

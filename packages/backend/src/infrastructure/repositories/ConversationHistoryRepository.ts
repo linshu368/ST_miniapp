@@ -14,7 +14,7 @@
 // 用量元数据补齐 ≠ 结算完成：llm_billing_settled_at 有值才算扣费行、额度收口、金额回写都齐。
 
 import { readPostprocessVersion, type ChatMessage, type ChatMessageStatus } from '@miniapp/shared';
-import type { LlmModelProvider } from '@miniapp/shared';
+import type { LlmModelProvider, CancelConversationTurnRequest } from '@miniapp/shared';
 import type { GenerationMessage, GenerationStatus } from '../../features/generation/types.js';
 import { MiniappCharacterFreeQuotaRepository } from './MiniappCharacterFreeQuotaRepository.js';
 import { getDomainDb, type DomainDb } from '../../lib/supabase.js';
@@ -25,7 +25,7 @@ export const STREAMING_STALE_SECONDS = 120;
 
 // Explicit projections keep retiring call columns out of normal chat reads before DROP.
 const CURRENT_TURN_COLUMNS =
-  'id,user_id,model,user_input,assistant_reply,history,character_id,status,upstream_status,deduction_rate,created_at,llm_finish_reason,llm_charge_id,session_id,turn_index,revision,postprocess_version,rich_reply_metadata';
+  'id,user_id,model,user_input,assistant_reply,history,character_id,status,upstream_status,deduction_rate,created_at,llm_finish_reason,llm_charge_id,session_id,turn_index,revision,postprocess_version,rich_reply_metadata,first_token_preview';
 const TURN_COLUMNS = `${CURRENT_TURN_COLUMNS},llm_billing_snapshot,llm_billing_settled_at`;
 
 // history 是每轮完整 prompt 快照，随轮次线性变长（TOAST 大户）。读路径只需要 request_id（在 [0]）
@@ -52,6 +52,7 @@ function restoreHistoryHead(row: HeadProjectedRow): ConversationHistoryRow {
 }
 
 export interface ConversationHistoryRow {
+  first_token_preview?: { kind: 'delta' | 'reasoning'; text: string } | null;
   id: string;
   user_id: string;
   model: string;
@@ -325,17 +326,22 @@ export class ConversationHistoryRepository {
     return data as ConversationHistoryRow;
   }
 
-  async cancelTurn(sessionId: string, historyId: string): Promise<ConversationHistoryRow | null> {
+  async cancelTurn(
+    sessionId: string,
+    historyId: string,
+    reason?: CancelConversationTurnRequest['reason']
+  ): Promise<ConversationHistoryRow | null> {
+    // The persisted request policy decides manual stop versus a proven system
+    // deadline. Optional client intent cannot itself waive a valid charge.
     const { error } = await this.db
-      .from('chat_history')
-      .update({ llm_finish_reason: 'cancelled' })
-      .eq('session_id', sessionId)
-      .eq('id', historyId)
-      .eq('status', 'streaming')
-      .is('llm_finish_reason', null)
+      .rpc('cancel_chat_generation', {
+        p_session_id: sessionId,
+        p_history_id: historyId,
+        p_reason: reason ?? null,
+      })
       .abortSignal(AbortSignal.timeout(5_000));
     if (error) throw new Error(`取消对话回复失败：${error.message}`);
-    // Do not unlock before the execution owner releases the free-quota reservation.
+    // Do not unlock before the execution owner finalizes the free-quota reservation.
     // Bounded waiting also works across replicas; a dead owner is recovered by the stale guard.
     const deadline = Date.now() + 8_000;
     while (true) {
@@ -524,7 +530,7 @@ export class ConversationHistoryRepository {
       .eq('id', historyId)
       .eq('status', 'success')
       .or(
-        'llm_finish_reason.is.null,and(llm_finish_reason.neq.cancelled,llm_finish_reason.neq.timeout)'
+        'llm_finish_reason.is.null,and(llm_finish_reason.neq.cancelled,llm_finish_reason.neq.user_cancelled,llm_finish_reason.neq.timeout)'
       )
       .abortSignal(AbortSignal.timeout(5_000));
     if (error) throw new Error(`补齐生成完成原因失败：${error.message}`);
@@ -782,7 +788,12 @@ export function toChatMessages(row: ConversationHistoryRow): ChatMessage[] {
       turn_index: row.turn_index,
       role: 'assistant',
       revision: row.revision,
-      content: row.assistant_reply ?? '',
+      content:
+        row.assistant_reply ??
+        (row.first_token_preview?.kind === 'delta' ? row.first_token_preview.text : ''),
+      ...(row.status === 'streaming' && row.first_token_preview?.kind === 'reasoning'
+        ? { reasoning: row.first_token_preview.text }
+        : {}),
       status: toChatMessageStatus(row.status),
       error_code: toErrorCode(row.status),
       finish_reason: row.llm_finish_reason,

@@ -1,3 +1,4 @@
+import { beginActiveDelivery, appendActiveDelivery, endActiveDelivery } from './active-delivery.js';
 /**
  * backend / features / conversations / generate.ts
  *
@@ -195,7 +196,10 @@ export async function runConversationTurn(
   const observations = generationObservations();
   const primaryAttemptId = randomUUID();
   const clientRequestId = input.requestId ?? randomUUID();
+  let startEmitted = false;
   const emitStart = (): void => {
+    if (startEmitted) return;
+    startEmitted = true;
     sink.open();
     sink.send({
       type: 'start',
@@ -222,11 +226,14 @@ export async function runConversationTurn(
     fallbackModelId: policy.fallbackModelId,
     catalogVersion: policy.catalogVersion,
     mode: mode.kind,
+    recoverableDelivery: true,
   };
   const enrichedObserverIds = new Set<string>();
   let fallbackPrepared = false;
   let observationBegun = false;
   let emitted = false;
+  let readyMs: number | null = null;
+  let checkpoint: Promise<void> | undefined;
   let firstTokenDeadlineElapsed = false;
   let firstTokenTimeoutRecorded = false;
   const observationError = (err: unknown) =>
@@ -259,6 +266,7 @@ export async function runConversationTurn(
   const pollCancellation = async (): Promise<void> => {
     try {
       const row = await historyRecords().requireTurnById(turn.historyId);
+      if (row.llm_finish_reason === 'user_cancelled') clearTimeout(firstTokenTimer);
       if (row.status !== 'streaming' || row.llm_finish_reason !== null) controller.abort();
     } catch (err) {
       log.sys.warn(
@@ -275,6 +283,7 @@ export async function runConversationTurn(
       pollTimer = setTimeout(() => void pollCancellation(), 1_000);
   };
   pollTimer = setTimeout(() => void pollCancellation(), 1_000);
+  beginActiveDelivery(turn.historyId, userId, session.id, turn.revision);
 
   try {
     if (input.requestId)
@@ -318,6 +327,11 @@ export async function runConversationTurn(
       firstToken: {
         primaryAttemptId,
         requestStartedAt,
+        deferPersistence: true,
+        onReady: () => {
+          readyMs ??= performance.now() - requestStartedAt;
+          clearTimeout(firstTokenTimer);
+        },
         store: {
           prepareFallback: async (attempt, triggeredMs) => {
             fallbackPrepared = true;
@@ -356,15 +370,22 @@ export async function runConversationTurn(
     };
 
     const emitVisibleDelta = (type: 'delta' | 'reasoning', text: string): void => {
-      if (!emitted && performance.now() - requestStartedAt >= policy.deadlineMs) {
+      if (readyMs === null && performance.now() - requestStartedAt >= policy.deadlineMs) {
         recordFirstTokenTimeout();
         controller.abort(new FirstTokenDeadlineError());
       }
       controller.signal.throwIfAborted();
-      sink.send({ type, text });
-      if (!emitted && text.trim()) {
-        emitted = true;
+      appendActiveDelivery(turn.historyId, type, text);
+      if (text.trim() && !checkpoint) {
+        readyMs ??= performance.now() - requestStartedAt;
         clearTimeout(firstTokenTimer);
+        checkpoint = observations
+          .checkpoint(turn.historyId, turn.revision, readyMs, type, text)
+          .catch(observationError);
+      }
+      const written = sink.send({ type, text });
+      if (!emitted && text.trim() && written !== false) {
+        emitted = true;
         void observations
           .markServer(turn.historyId, {
             first_token_emitted_ms: performance.now() - requestStartedAt,
@@ -380,6 +401,7 @@ export async function runConversationTurn(
           controller.signal.throwIfAborted();
           await observations.begin({ ...observationInput, snapshot });
           controller.signal.throwIfAborted();
+          emitStart();
         },
         onBeforeReserve: async (chargeId) => {
           controller.signal.throwIfAborted();
@@ -387,6 +409,7 @@ export async function runConversationTurn(
           controller.signal.throwIfAborted();
         },
         onBeforeSettle: async (observed, releaseReservation) => {
+          await checkpoint;
           const success =
             observed.completed &&
             observed.content.trim().length > 0 &&
@@ -398,6 +421,7 @@ export async function runConversationTurn(
             status: success ? 'success' : 'stream_interrupted',
             finishReason: observed.finishReason,
           });
+          if (row.llm_finish_reason === 'user_cancelled') clearTimeout(firstTokenTimer);
           if (row.status === 'streaming') {
             // A cancel marker won the completion CAS; free quota must be released before
             // terminal acknowledgement lets the user regenerate with their original quota.
@@ -428,8 +452,18 @@ export async function runConversationTurn(
     const persisted = await historyRecords().finalizeTurn({
       historyId: turn.historyId,
       content: result.content,
-      status: current.llm_finish_reason === 'cancelled' ? 'stream_interrupted' : result.status,
-      finishReason: current.llm_finish_reason === 'cancelled' ? 'cancelled' : result.finishReason,
+      status:
+        current.llm_finish_reason === 'cancelled' ||
+        current.llm_finish_reason === 'user_cancelled' ||
+        current.llm_finish_reason === 'timeout'
+          ? 'stream_interrupted'
+          : result.status,
+      finishReason:
+        current.llm_finish_reason === 'cancelled' ||
+        current.llm_finish_reason === 'user_cancelled' ||
+        current.llm_finish_reason === 'timeout'
+          ? current.llm_finish_reason
+          : result.finishReason,
       upstreamStatus: result.upstreamStatus ?? null,
       chargeId: result.chargeId,
     });
@@ -531,12 +565,17 @@ export async function runConversationTurn(
       historyId: turn.historyId,
       content: '',
       status:
-        controller.signal.aborted || current.llm_finish_reason === 'cancelled'
+        controller.signal.aborted ||
+        current.llm_finish_reason === 'cancelled' ||
+        current.llm_finish_reason === 'user_cancelled' ||
+        current.llm_finish_reason === 'timeout'
           ? 'stream_interrupted'
           : 'upstream_error',
       finishReason:
-        current.llm_finish_reason === 'cancelled'
-          ? 'cancelled'
+        current.llm_finish_reason === 'cancelled' ||
+        current.llm_finish_reason === 'user_cancelled' ||
+        current.llm_finish_reason === 'timeout'
+          ? current.llm_finish_reason
           : controller.signal.aborted
             ? 'timeout'
             : null,
@@ -549,6 +588,7 @@ export async function runConversationTurn(
     }
     throw err;
   } finally {
+    endActiveDelivery(turn.historyId);
     clearTimeout(firstTokenTimer);
     stopped = true;
     clearTimeout(timeout);
