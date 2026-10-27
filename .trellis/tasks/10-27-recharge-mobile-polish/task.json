@@ -1,0 +1,32 @@
+{
+  "id": "recharge-mobile-polish",
+  "name": "recharge-mobile-polish",
+  "title": "充值页移动体验与视觉精修",
+  "description": "充值页层次、到账与赠送、VIP搭配和支付确认展示；用户确认后经dev发布",
+  "status": "in_progress",
+  "dev_type": "frontend",
+  "scope": "wallet-payment",
+  "package": "frontend",
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-27",
+  "completedAt": null,
+  "branch": "release/recharge-mobile-polish",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "2026-10-27用户确认本地效果并授权经dev上线；独立发布目录只含充值页改动。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": ["frontend.business.wallet-payment"]
+    }
+  }
+}

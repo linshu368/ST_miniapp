@@ -9,7 +9,8 @@ import {
   ChevronRight,
   Gem,
   Receipt,
-  ShieldCheck,
+  Check,
+  MessageCircle,
   Sparkles,
 } from 'lucide-react';
 import {
@@ -57,7 +58,12 @@ import {
 } from '@/lib/payment/flow-telemetry';
 import { openCreatedPayment } from '@/lib/payment/open-created-payment';
 import { clearCheckoutConfirmation } from '@/lib/payment/open-storage';
-import { formatNumber, paymentTypeLabel, safePaymentReturnTo } from '@/lib/utils/payment';
+import {
+  formatNumber,
+  paymentTypeLabel,
+  safePaymentReturnTo,
+  totalCredits,
+} from '@/lib/utils/payment';
 import { feedbackAfterPaint, startAction } from '@/lib/perf/action-tracker';
 import { usePageReady } from '@/lib/perf/page-ready';
 import { useHaptic, useTelegramBackButton } from '@/lib/telegram';
@@ -128,6 +134,19 @@ function RechargePageContent() {
   const pageConfig = data?.page_config ?? DEFAULT_RECHARGE_PAGE_CONFIG;
   const paymentPromptConfig =
     data?.payment_prompt_dialog_config ?? DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG;
+  // 旧的默认荧光配色使用新皮肤；运营明确配置过的颜色仍生效。
+  const selectedPlanColor =
+    pageConfig.selected_plan_color === DEFAULT_RECHARGE_PAGE_CONFIG.selected_plan_color
+      ? '#d0b99a'
+      : pageConfig.selected_plan_color;
+  const badgeColor =
+    pageConfig.badge_color === DEFAULT_RECHARGE_PAGE_CONFIG.badge_color
+      ? '#d0b99a'
+      : pageConfig.badge_color;
+  const buttonColor =
+    pageConfig.button_color === DEFAULT_RECHARGE_PAGE_CONFIG.button_color
+      ? '#ead7bc'
+      : pageConfig.button_color;
   const paymentChannels = data?.payment_channels;
   const paymentTypes = useMemo<PaymentType[]>(() => {
     if (!paymentChannels) return ['alipay'];
@@ -151,6 +170,9 @@ function RechargePageContent() {
       }),
     [data?.plans, selectedKey]
   );
+
+  const selectedPlan = plans.find((plan) => plan.id === selection?.id);
+  const paymentAvailable = paymentTypes.includes(paymentType);
 
   const handleSelectCredits = useCallback(
     (id: string) => {
@@ -187,6 +209,7 @@ function RechargePageContent() {
     if (
       !selection ||
       selection.kind !== 'credits' ||
+      !paymentAvailable ||
       isError ||
       createOrder.isPending ||
       submitLock.current
@@ -229,6 +252,7 @@ function RechargePageContent() {
     }
   }, [
     selection,
+    paymentAvailable,
     createOrder,
     impact,
     paymentPromptConfig.enabled,
@@ -260,166 +284,264 @@ function RechargePageContent() {
   return (
     <main
       data-app-shell="recharge"
-      className="mx-auto flex h-[100dvh] max-w-md flex-col bg-background text-foreground"
+      className="mx-auto flex h-[100dvh] max-w-md flex-col bg-[#191619] text-[#f2ece5]"
     >
-      <header className="flex min-h-14 shrink-0 items-center gap-2 border-b border-border/50 px-4 pt-[env(safe-area-inset-top)]">
+      <header className="grid shrink-0 grid-cols-[44px_1fr_44px] items-center px-4 pb-1 pt-[calc(env(safe-area-inset-top)+0.375rem)]">
         <Button
           variant="ghost"
           size="icon"
           onClick={goBack}
-          className="-ml-2 rounded-full text-muted-foreground"
+          className="-ml-2 size-11 rounded-full text-[#c5bdb9] hover:bg-white/5"
           aria-label="返回"
         >
-          <ChevronLeft className="h-5 w-5" aria-hidden />
+          <ChevronLeft className="size-5" aria-hidden />
         </Button>
-        <h1 className="text-base font-bold">充值星尘</h1>
+        <h1 className="text-center text-[15px] font-medium tracking-wide">充值星尘</h1>
         <Link
           href="/profile/orders"
-          className="ml-auto inline-flex min-h-11 items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground"
+          className="inline-flex min-h-11 items-center justify-end gap-1 text-[11px] text-[#aba09f] hover:text-[#f2ece5]"
         >
           <Receipt className="size-3.5" aria-hidden />
           订单
         </Link>
       </header>
 
-      <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden px-4 pb-5 pt-4">
-        <section aria-label="当前星尘余额" className="px-1">
-          <p className="text-[11px] text-muted-foreground">当前星尘余额</p>
-          <div className="mt-1 flex items-end justify-between gap-3">
-            <p className="min-w-0 truncate text-[30px] font-bold leading-10 tabular-nums tracking-tight">
-              {wallet.data ? formatNumber(wallet.data.total_credits ?? wallet.data.credits) : '—'}
-              <span className="ml-2 text-[11px] font-normal text-muted-foreground">星尘</span>
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <section
+          aria-label="当前星尘余额"
+          className="relative flex min-h-[132px] items-center justify-between gap-4 border-b border-white/[0.07] py-5"
+        >
+          <div className="relative z-10 min-w-0">
+            <p className="text-[11px] tracking-[0.08em] text-[#b0a4a2]">我的星尘</p>
+            <p className="mt-1 flex flex-wrap items-baseline gap-x-2">
+              <span className="text-[38px] font-medium leading-[46px] tabular-nums tracking-[-0.045em]">
+                {wallet.data ? formatNumber(wallet.data.total_credits ?? wallet.data.credits) : '—'}
+              </span>
+              <span className="text-[11px] text-[#b0a4a2]">可用余额</span>
             </p>
-            <p className="pb-1 text-right text-[10px] leading-4 text-muted-foreground">
-              为喜欢的故事
-              <br />
-              续上星光
+            <p className="mt-1 text-[11px] leading-5 text-[#a99b9b]">
+              {wallet.isError
+                ? '余额暂未获取，可稍后在订单中查看到账'
+                : '为心动的故事，留一点星光。'}
             </p>
+          </div>
+          <div
+            aria-hidden
+            className="pointer-events-none relative grid size-[76px] shrink-0 place-items-center rounded-full border border-[#d7bd96]/[0.12] bg-[radial-gradient(ellipse_at_center,#baa58418,transparent_70%)]"
+          >
+            <div className="absolute inset-2 rounded-full border border-[#d7bd96]/[0.07]" />
+            <Gem className="size-9 -rotate-12 text-[#d7bd96]/70" strokeWidth={0.8} />
+            <span className="absolute right-2 top-2 size-1 rounded-full bg-[#e6d3b8]/60" />
           </div>
         </section>
 
-        <VipEntryCard
-          status={vipStatus.data}
-          monthlyPlan={data?.vip_plans?.find((plan) => plan.id === 'month')}
-          loading={vipStatus.isLoading || isLoading}
-          onOpen={openVip}
-        />
-
-        <section aria-label="星尘充值套餐">
-          <div className="mb-3 flex items-baseline justify-between gap-2 px-1">
-            <h2 className="text-sm font-bold">选择充值金额</h2>
-            <span className="text-[10px] text-muted-foreground">星尘即时补充 · 会员独立开通</span>
+        <section aria-label="星尘充值套餐" className="pt-5">
+          <div className="mb-5 flex items-baseline justify-between gap-2">
+            <h2 className="text-[15px] font-medium">选择星尘套餐</h2>
+            <span className="text-[11px] text-[#c9b59a]">到账含赠送星尘</span>
           </div>
           {isError ? (
-            <div className="flex min-h-[180px] flex-col items-center justify-center rounded-[22px] border border-destructive/25 bg-destructive/5 px-6 text-center">
-              <AlertCircle className="h-7 w-7 text-destructive" aria-hidden />
-              <p className="mt-3 text-sm font-semibold">充值套餐暂时无法加载</p>
-              <Button variant="outline" size="sm" className="mt-4" onClick={() => void refetch()}>
+            <div className="flex min-h-[180px] flex-col items-center justify-center rounded-[20px] border border-white/10 bg-white/[0.025] px-6 text-center">
+              <AlertCircle className="size-6 text-[#c4aaa1]" aria-hidden />
+              <p className="mt-3 text-sm font-medium">充值套餐暂时无法加载</p>
+              <p className="mt-1 text-xs text-[#a99b9b]">稍后重试，已付款的订单仍可查看</p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-4 min-h-11 rounded-full"
+                onClick={() => void refetch()}
+              >
                 重新加载
               </Button>
             </div>
           ) : isLoading ? (
             <div className="grid grid-cols-2 gap-3">
               {Array.from({ length: 4 }).map((_, i) => (
-                <Skeleton key={i} className="h-[142px] rounded-[22px]" />
+                <Skeleton key={i} className="h-[158px] rounded-[18px] bg-white/5" />
               ))}
             </div>
           ) : plans.length === 0 ? (
-            <p className="rounded-[22px] border border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
+            <p className="rounded-[20px] border border-white/10 bg-white/[0.025] px-4 py-8 text-center text-sm text-[#b0a4a2]">
               充值套餐暂未开放，请稍后再来
             </p>
           ) : (
-            <div role="radiogroup" aria-label="选择星尘充值套餐" className="grid grid-cols-2 gap-3">
+            <div
+              role="radiogroup"
+              aria-label="选择星尘充值套餐"
+              className={cn(
+                'grid gap-x-3 gap-y-4',
+                plans.length === 1 ? 'grid-cols-1' : 'grid-cols-2'
+              )}
+            >
               {plans.map((plan) => (
                 <PlanCard
                   key={plan.id}
                   plan={plan}
                   selected={selectionKey('credits', plan.id) === selectedKey}
-                  selectedColor={pageConfig.selected_plan_color}
-                  badgeColor={pageConfig.badge_color}
+                  selectedColor={selectedPlanColor}
+                  badgeColor={badgeColor}
+                  disabled={createOrder.isPending}
                   onSelect={handleSelectCredits}
                 />
               ))}
             </div>
           )}
+          {!isLoading && !isError && plans.some((plan) => plan.bonus_credits > 0) ? (
+            <p className="mt-3 text-[10px] leading-5 text-[#a99b9b]">
+              赠送已含在到账数内，可用于轻量模型对话。
+            </p>
+          ) : null}
         </section>
 
-        {inviteEntryEnabled ? (
-          <button
-            type="button"
-            onClick={goInviteCenter}
-            className="flex min-h-14 w-full items-center gap-3 rounded-[20px] border border-border/70 bg-card/60 px-4 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        <div className="mt-6">
+          <VipEntryCard
+            status={vipStatus.data}
+            monthlyPlan={data?.vip_plans?.find((plan) => plan.id === 'month')}
+            loading={vipStatus.isLoading || isLoading}
+            onOpen={openVip}
+            variant="recharge"
+          />
+        </div>
+
+        <section
+          aria-label="充值说明"
+          className="mt-5 divide-y divide-white/[0.06] text-[11px] text-[#ad9fa0]"
+        >
+          <details className="group">
+            <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 py-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d7bfa1] [&::-webkit-details-marker]:hidden">
+              星尘和 VIP 有什么区别？
+              <ChevronRight
+                className="size-3.5 shrink-0 transition-transform group-open:rotate-90 motion-reduce:transition-none"
+                aria-hidden
+              />
+            </summary>
+            <p className="pb-4 leading-6">
+              星尘用于对话与生成等功能；VIP
+              提供会员专属权益。充值和开通会员可以搭配使用，本次只购买你选择的星尘套餐。
+            </p>
+          </details>
+          <details className="group">
+            <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 py-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d7bfa1] [&::-webkit-details-marker]:hidden">
+              付款后，星尘什么时候到账？
+              <ChevronRight
+                className="size-3.5 shrink-0 transition-transform group-open:rotate-90 motion-reduce:transition-none"
+                aria-hidden
+              />
+            </summary>
+            <p className="pb-4 leading-6">
+              {pageConfig.pending_arrival_hint}
+              。可在右上角「订单」查看进度；如遇到问题，可以联系在线客服。
+            </p>
+          </details>
+        </section>
+        <div className="mt-2 flex min-h-11 flex-wrap items-center justify-between gap-x-4 gap-y-1 text-[11px] text-[#ad9fa0]">
+          <Link
+            href="/profile/support"
+            className="inline-flex min-h-11 items-center gap-1.5 hover:text-[#e6d3b8]"
           >
-            <Gem className="size-4 shrink-0 text-primary/80" aria-hidden />
-            <span className="min-w-0 flex-1 text-xs">邀请好友，也能领取星尘</span>
-            <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-          </button>
-        ) : null}
-        <p className="flex items-center justify-center gap-1 text-[10px] text-muted-foreground/70">
-          <ShieldCheck className="size-3" aria-hidden /> 安全支付 · 到账状态可在订单中查看
-        </p>
+            <MessageCircle className="size-3.5" aria-hidden />
+            充值遇到问题？联系客服
+          </Link>
+          {inviteEntryEnabled ? (
+            <button
+              type="button"
+              onClick={goInviteCenter}
+              className="inline-flex min-h-11 items-center gap-1 hover:text-[#e6d3b8]"
+            >
+              邀请得星尘
+              <ChevronRight className="size-3" aria-hidden />
+            </button>
+          ) : null}
+        </div>
       </div>
 
-      {/* 底部固定栏：单行（方法 chips + 立即支付） */}
-      <div
-        className="shrink-0 border-t border-border bg-background/95 backdrop-blur-md"
-        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+      <footer
+        aria-label="充值确认"
+        className="z-10 shrink-0 border-t border-white/[0.08] bg-[#211d21] px-5 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-2.5 shadow-[0_-8px_24px_#00000012]"
       >
         {checkoutError ? (
-          <p role="alert" className="px-4 pt-2 text-[12px] text-destructive">
+          <p role="alert" className="pb-2 text-[12px] leading-5 text-[#e9a9a3]">
             {checkoutError}
           </p>
         ) : null}
-        <div className="space-y-3 px-4 py-3">
-          <div role="radiogroup" aria-label="支付方式" className="flex flex-wrap gap-2">
+        <div className="mb-2.5 flex min-h-11 items-center justify-between gap-2">
+          <span className="shrink-0 text-[11px] text-[#b2a5a4]">支付方式</span>
+          <div role="radiogroup" aria-label="支付方式" className="flex flex-wrap justify-end gap-2">
             {paymentTypes.map((t) => {
               const active = paymentType === t;
-              const isAlipay = t === 'alipay';
-              const Icon = isAlipay ? AlipayIcon : WeChatPayIcon;
-
+              const Icon = t === 'alipay' ? AlipayIcon : WeChatPayIcon;
               return (
                 <button
                   key={t}
                   type="button"
                   role="radio"
                   aria-checked={active}
+                  disabled={createOrder.isPending}
                   onClick={() => {
                     whisper();
                     setPaymentType(t);
-                    if (selection) {
+                    if (selection)
                       capturePaymentMethodSelected({ planId: selection.id, paymentType: t });
-                    }
                   }}
                   className={cn(
-                    'flex min-h-11 items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold transition-colors',
-                    // 选中态用支付渠道品牌色，不走主题 token：用户靠颜色识别微信/支付宝。
+                    'flex min-h-11 items-center justify-center gap-1.5 rounded-xl border px-2.5 text-xs transition-colors disabled:opacity-60',
                     active
-                      ? isAlipay
-                        ? 'border-[#1677FF] bg-[#1677FF]/15 text-[#1677FF]'
-                        : 'border-[#09B83E] bg-[#09B83E]/15 text-[#09B83E]'
-                      : 'border-border bg-card text-muted-foreground hover:bg-secondary'
+                      ? 'border-white/15 bg-white/[0.04] text-[#f2ece5]'
+                      : 'border-transparent text-[#a99b9b] hover:bg-white/5'
                   )}
                 >
-                  <Icon className="h-4 w-4" aria-hidden />
+                  <Icon
+                    className={cn('size-4', t === 'alipay' ? 'text-[#409cff]' : 'text-[#51bb7b]')}
+                    aria-hidden
+                  />
                   {paymentTypeLabel(t)}
+                  {active ? <Check className="ml-0.5 size-3 text-[#d8c1a2]" aria-hidden /> : null}
                 </button>
               );
             })}
+            {paymentTypes.length === 0 ? (
+              <span className="text-xs text-[#b2a5a4]">暂不可用，请稍后再试</span>
+            ) : null}
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <div role="status" aria-live="polite" aria-atomic="true" className="min-w-0 flex-1">
+            {selectedPlan && !isError ? (
+              <>
+                <p className="flex flex-wrap items-baseline gap-x-1 text-[#f0e5d8]">
+                  <span className="text-[10px] text-[#b2a5a4]">到账</span>
+                  <strong className="text-[21px] font-medium tabular-nums tracking-tight">
+                    {formatNumber(totalCredits(selectedPlan))}
+                  </strong>
+                  <span className="text-[10px] text-[#b2a5a4]">星尘</span>
+                </p>
+                <p className="mt-0.5 text-[10px] leading-4 text-[#baa48c]">
+                  {selectedPlan.bonus_credits > 0
+                    ? `含赠送 ${formatNumber(selectedPlan.bonus_credits)} 星尘`
+                    : '已选星尘充值套餐'}
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-[13px] text-[#e1d6cd]">
+                  {isError ? '等待套餐恢复' : '选一份星尘'}
+                </p>
+                <p className="mt-1 text-[10px] text-[#a99b9b]">确认金额后再付款</p>
+              </>
+            )}
           </div>
           <Button
-            disabled={!selection?.available || isError || createOrder.isPending}
-            onClick={() => void handleSubmit()}
-            className={cn(
-              'h-12 w-full rounded-full text-sm font-bold transition-colors',
-              selection?.available && !createOrder.isPending
-                ? 'text-primary-foreground hover:opacity-90 border-0'
-                : 'bg-secondary text-muted-foreground'
-            )}
-            style={
-              selection?.available && !createOrder.isPending
-                ? { backgroundColor: pageConfig.button_color }
-                : undefined
+            disabled={
+              !selection?.available || !paymentAvailable || isError || createOrder.isPending
             }
+            onClick={() => void handleSubmit()}
+            className="min-h-[52px] w-auto min-w-[145px] max-w-[62%] shrink-0 whitespace-normal rounded-2xl px-5 text-[13px] font-semibold leading-5 text-[#292119] shadow-none transition-colors hover:brightness-105 disabled:bg-[#393237] disabled:text-[#968a8f] disabled:opacity-100 motion-reduce:transition-none"
+            style={{
+              backgroundColor:
+                selection?.available && paymentAvailable && !isError && !createOrder.isPending
+                  ? buttonColor
+                  : undefined,
+            }}
           >
             {checkoutButtonLabel({
               pending: createOrder.isPending,
@@ -429,7 +551,7 @@ function RechargePageContent() {
             })}
           </Button>
         </div>
-      </div>
+      </footer>
       <AlipayPaymentGuidanceDialog
         open={alipayPromptOpen}
         onOpenChange={handleAlipayPromptOpenChange}
@@ -473,7 +595,7 @@ function RechargePageContent() {
             <DialogClose asChild>
               <Button
                 className="w-full rounded-xl font-bold text-primary-foreground"
-                style={{ backgroundColor: pageConfig.button_color }}
+                style={{ backgroundColor: buttonColor }}
                 onClick={() => {
                   noticeChoiceRef.current = 'recharge';
                   capturePaywallRechargeSelected();
@@ -506,7 +628,6 @@ function RechargePageContent() {
 function RechargePageSkeleton() {
   return (
     <main className="mx-auto flex h-[100dvh] max-w-md flex-col bg-background text-foreground">
-      <div className="h-1 w-full shrink-0 bg-gradient-to-r from-primary via-rose to-rose-fill" />
       <header className="flex shrink-0 items-center gap-2 px-4 pt-[calc(env(safe-area-inset-top)+0.5rem)]">
         <Skeleton className="h-8 w-8 rounded-full bg-card" />
         <Skeleton className="h-5 w-24 rounded bg-card" />
