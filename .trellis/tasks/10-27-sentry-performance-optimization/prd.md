@@ -31,13 +31,13 @@
 
 ## Acceptance Criteria
 
-- [ ] 同一用户的并发 `getOrCreateDbUser` 调用只执行一次完整用户解析；成功后短 TTL 命中只暴露 `id` 与 `created_at`。
-- [ ] 不同用户不会串用缓存；失败 Promise 清理后下一次可以重新回源；缓存达到上限时有界淘汰。
-- [ ] 需要 `source_id` / `total_round` 的现有调用方改走完整用户读取并通过 TypeScript 校验，避免误用身份缓存。
-- [ ] 相同 key 或相同 key 集合的无自定义 signal 非严格 runtime-config 并发读取只发起一次 PostgREST 请求；失败后不留拒绝态。
-- [ ] 严格读取、不同 key 集合和带调用方 signal 的读取不被错误合并。
-- [ ] `GET /api/payment/plans` 的页面配置由一次批量 runtime-config 读取解析，响应形状与 fail-closed/default 行为不变。
-- [ ] 新增并发/缓存回归测试，并运行 Backend typecheck、完整 Backend 现有测试、相关 lint/静态检查以及 `git diff --check`。
+- [x] 同一用户的并发 `getOrCreateDbUser` 调用只执行一次完整用户解析；成功后短 TTL 命中只暴露 `id` 与 `created_at`。
+- [x] 不同用户不会串用缓存；失败 Promise 清理后下一次可以重新回源；缓存达到上限时有界淘汰。
+- [x] 需要 `source_id` / `total_round` 的现有调用方改走完整用户读取并通过 TypeScript 校验，避免误用身份缓存。
+- [x] 相同 key 或相同 key 集合的无自定义 signal 非严格 runtime-config 并发读取只发起一次 PostgREST 请求；失败后不留拒绝态。
+- [x] 严格读取、不同 key 集合和带调用方 signal 的读取不被错误合并。
+- [x] `GET /api/payment/plans` 的页面配置由一次批量 runtime-config 读取解析，响应形状与 fail-closed/default 行为不变。
+- [x] 新增并发/缓存回归测试，并运行 Backend typecheck、完整 Backend 现有测试、相关 lint/静态检查以及 `git diff --check`。
 - [ ] 人工注入验证 `/profile`、`/profile/spending`、角色进入聊天、支付套餐正常/缺失/损坏三类场景；不要求修改现有 UI fixture。
 - [ ] 发布后按同环境、同 release/窗口复查页面 navigation p95、目标接口 p95/5xx、`users`/`runtime_config` 每请求比率与 dropped outcomes；失败率上升或配置传播语义异常时回滚应用版本。
 

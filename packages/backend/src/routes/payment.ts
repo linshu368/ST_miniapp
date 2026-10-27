@@ -16,10 +16,7 @@ import { requireTelegramAuth } from '../middleware/auth.js';
 import { getOrCreateDbUser } from '../lib/user.js';
 import {
   buildVipPlans,
-  getInsufficientCreditsNotice,
-  getPaymentPlansConfig,
-  getPaymentPromptDialogConfig,
-  getRechargePageConfig,
+  getPaymentPageRuntimeConfig,
   PaymentPlansConfigError,
 } from '../features/payment/domain/rechargeRules.js';
 import { readVipStrategy } from '../platform/vip-strategy.js';
@@ -67,27 +64,18 @@ export default async function paymentRoutes(app: FastifyInstance) {
   // @frontend-ready: true
   app.get('/api/payment/plans', async (request, reply) => {
     try {
-      const [
-        paymentPlansConfig,
-        insufficientCreditsNotice,
-        pageConfig,
-        paymentPromptDialogConfig,
-        strategy,
-      ] = await Promise.all([
-        getPaymentPlansConfig(),
-        getInsufficientCreditsNotice(),
-        getRechargePageConfig(),
-        getPaymentPromptDialogConfig(),
+      const [pageRuntime, strategy] = await Promise.all([
+        getPaymentPageRuntimeConfig(),
         readVipStrategy(),
       ]);
       return reply.send(
         ok<GetPaymentPlansData>({
-          plans: paymentPlansConfig.plans,
-          payment_channels: paymentPlansConfig.paymentChannels,
+          plans: pageRuntime.plans,
+          payment_channels: pageRuntime.paymentChannels,
           vip_plans: buildVipPlans(strategy.purchaseEnabled, strategy.plans),
-          page_config: pageConfig,
-          payment_prompt_dialog_config: paymentPromptDialogConfig,
-          insufficient_credits_notice: insufficientCreditsNotice,
+          page_config: pageRuntime.pageConfig,
+          payment_prompt_dialog_config: pageRuntime.paymentPromptDialogConfig,
+          insufficient_credits_notice: pageRuntime.insufficientCreditsNotice,
         })
       );
     } catch (error) {

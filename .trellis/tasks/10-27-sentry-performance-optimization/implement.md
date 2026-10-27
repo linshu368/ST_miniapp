@@ -1,6 +1,6 @@
 # 实施计划
 
-状态：规划待审核；在任务 `start` 前不修改产品代码。
+状态：本地实现与自动验证已完成；真实 Supabase API smoke、部署及发布后 Sentry 对照未执行。
 
 ## 步骤 1：身份解析 single-flight 与有界缓存
 
@@ -48,3 +48,19 @@ git diff --check
 - 对比目标 `http.server` p95/5xx；聊天 messages/regenerate 分开看准备阶段与供应商阶段。
 - 对比 Supabase `users`、`runtime_config` count / authenticated server request count，以及 internal_error、>5s 与 dropped outcomes。
 - 记录部署 SHA、窗口和采样缺口；至少观察一个完整业务高峰再判定达标。
+
+### Production 基线与判定口径
+
+- 上线前基线固定为 release `88cd811b46c2e9421875a1e9182c5efc6b7ab0eb`、2026-10-27 15:00–16:36（Asia/Shanghai）；新版本必须按独立 release 过滤，排除部署后前 5 分钟冷启动。
+- 同时保留 2026-10-26 15:00–16:36 同时段作为自然波动参照。该窗口发生 Supabase 故障，不能直接拿它证明本次代码收益。
+- 页面 p95 仅在单路由接收样本 `n >= 100` 或覆盖一个完整业务高峰后做最终结论；低样本只做预警。
+- 主要验收不是单看 Supabase 单次 p95，而是 `users`、`runtime_config` span 数 / authenticated `http.server` 数的比率下降，且目标接口 p95、5xx 不回归。
+- 推荐停止/回滚线：暖机后且 `n >= 100` 的目标页面或接口 p95 比同流量基线恶化 20%；鉴权相关 5xx 超过 1%；`/api/payment/plans` 出现 3 次连续 smoke 失败或 503 超过 1%；Supabase `internal_error`、5s/30s timeout 重新出现并与新 release 强相关。
+
+### 已识别风险
+
+- 用户身份缓存按 Backend 进程隔离，多副本不会共享；这只会降低命中率，不改变数据权威性。60 秒内若用户行被删除并以新 ID 重建，旧身份可能短暂命中；鉴权仍逐请求执行，失败不会进入缓存。
+- single-flight 会让同一时刻的等待者共享首个上游结果；一次瞬时失败可能形成相关失败，但失败不缓存，下一请求会重新读取。
+- runtime-config 的首个默认 5 秒超时会约束同键等待者；strict 和自定义 signal 不参与共享，避免取消语义串扰。
+- payment plans 批量读取由多次独立读取变为一次快照；网络失败时关键套餐继续 fail-closed 返回 503，可能形成相关失败，但不会用默认套餐创建错误订单。
+- Sentry span 在基线窗口仅约 3% 被接收，约 97% 因 `no_parent_span` 被客户端丢弃。p95 和 count 只能代表已接收样本，必须同时看 release、样本量、错误率和 dropped outcomes。
