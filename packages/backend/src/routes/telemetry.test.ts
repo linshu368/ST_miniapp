@@ -18,7 +18,7 @@ vi.mock('../lib/supabase.js', () => ({
 }));
 
 vi.mock('../lib/user.js', () => ({
-  getOrCreateDbUser: vi.fn(async () => ({
+  getOrCreateDbUserRecord: vi.fn(async () => ({
     id: '00000000-0000-0000-0000-000000000099',
     tg_id: '99999',
     total_round: 12,

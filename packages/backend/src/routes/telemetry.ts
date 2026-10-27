@@ -16,7 +16,7 @@ import {
   type PostDramaTimingData,
 } from '@miniapp/shared';
 import { requireTelegramAuth } from '../middleware/auth.js';
-import { getOrCreateDbUser } from '../lib/user.js';
+import { getOrCreateDbUserRecord } from '../lib/user.js';
 import { requestLogger } from '../lib/logger.js';
 import { MiniappWalletRepository } from '../infrastructure/repositories/MiniappWalletRepository.js';
 
@@ -96,7 +96,7 @@ export default async function telemetryRoutes(app: FastifyInstance) {
       const log = requestLogger(request.log, 'telemetry');
       const startedAt = Date.now();
       try {
-        const dbUser = await getOrCreateDbUser(request.user);
+        const dbUser = await getOrCreateDbUserRecord(request.user);
         const isPaidUser = await wallets.hasCompletedPayment(dbUser.id);
         const data = parseGetReplayContextData({
           telegram_user_id: String(request.user.id),

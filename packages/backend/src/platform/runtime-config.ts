@@ -40,6 +40,8 @@ export interface RuntimeConfigEntry {
 
 const SELECT_COLUMNS = 'key,value,text_value,version';
 const HOT_READ_TIMEOUT_MS = 5_000;
+const entryInflight = new Map<string, Promise<RuntimeConfigEntry | null>>();
+const entriesInflight = new Map<string, Promise<Map<string, RuntimeConfigEntry>>>();
 
 function toEntry(row: {
   value: unknown;
@@ -86,6 +88,23 @@ export async function fetchRuntimeConfigEntry(
   key: string,
   signal?: AbortSignal
 ): Promise<RuntimeConfigEntry | null> {
+  // 调用方自带 signal 时必须保持取消隔离，不能让一个请求中止其他消费者。
+  if (signal) return fetchRuntimeConfigEntryDirect(key, signal);
+
+  const running = entryInflight.get(key);
+  if (running) return running;
+
+  const promise = fetchRuntimeConfigEntryDirect(key).finally(() => {
+    if (entryInflight.get(key) === promise) entryInflight.delete(key);
+  });
+  entryInflight.set(key, promise);
+  return promise;
+}
+
+async function fetchRuntimeConfigEntryDirect(
+  key: string,
+  signal?: AbortSignal
+): Promise<RuntimeConfigEntry | null> {
   const db = getDomainDb('app_core');
   const request = db.from('runtime_config').select(SELECT_COLUMNS).eq('key', key);
   const bounded = signal ? request.abortSignal(signal) : request;
@@ -108,7 +127,29 @@ export async function fetchRuntimeConfigEntry(
  */
 export async function fetchRuntimeConfigEntries(
   keys: readonly string[],
-  signal: AbortSignal = AbortSignal.timeout(HOT_READ_TIMEOUT_MS)
+  signal?: AbortSignal
+): Promise<Map<string, RuntimeConfigEntry>> {
+  const normalizedKeys = [...new Set(keys)].sort();
+  if (normalizedKeys.length === 0) return new Map();
+  if (signal) return fetchRuntimeConfigEntriesDirect(normalizedKeys, signal);
+
+  const signature = normalizedKeys.join('\u0000');
+  const running = entriesInflight.get(signature);
+  if (running) return new Map(await running);
+
+  const promise = fetchRuntimeConfigEntriesDirect(
+    normalizedKeys,
+    AbortSignal.timeout(HOT_READ_TIMEOUT_MS)
+  ).finally(() => {
+    if (entriesInflight.get(signature) === promise) entriesInflight.delete(signature);
+  });
+  entriesInflight.set(signature, promise);
+  return new Map(await promise);
+}
+
+async function fetchRuntimeConfigEntriesDirect(
+  keys: readonly string[],
+  signal: AbortSignal
 ): Promise<Map<string, RuntimeConfigEntry>> {
   const db = getDomainDb('app_core');
   const { data, error } = await db
@@ -128,4 +169,10 @@ export async function fetchRuntimeConfigEntries(
     entries.set(row.key, toEntry(row));
   }
   return entries;
+}
+
+/** 测试与显式恢复入口；只清理在途引用，不缓存任何配置结果。 */
+export function clearRuntimeConfigInflightReads(): void {
+  entryInflight.clear();
+  entriesInflight.clear();
 }

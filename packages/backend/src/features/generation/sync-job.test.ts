@@ -11,7 +11,7 @@ const syncMocks = vi.hoisted(() => ({
   pendingRows: vi.fn().mockResolvedValue([]),
   missingRows: vi.fn().mockResolvedValue([]),
   upsert: vi.fn(),
-  readGenerationData: vi.fn().mockResolvedValue(null),
+  readGenerationDataBatch: vi.fn().mockResolvedValue(new Map()),
   recordBillingOutcome: vi.fn(),
   fetchGenerationData: vi.fn(),
   enrichGeneration: vi.fn().mockResolvedValue(undefined),
@@ -35,8 +35,8 @@ vi.mock('../../infrastructure/repositories/ConversationHistoryRepository.js', ()
 vi.mock('../../infrastructure/repositories/OpenRouterChatHistoryRepository.js', () => ({
   OpenRouterChatHistoryRepository: class {
     listRowsMissingGenerationData = syncMocks.listRows;
-    upsert = syncMocks.upsert;
-    readGenerationData = syncMocks.readGenerationData;
+    updateKnownGenerationMetadata = syncMocks.upsert;
+    readGenerationDataBatch = syncMocks.readGenerationDataBatch;
   },
 }));
 vi.mock('./openrouter-metadata.js', async () => ({
@@ -543,6 +543,218 @@ describe('OpenRouter sync original-field persistence', () => {
       }
     }
   );
+
+  it('processes records with at most three workers and backs off an unchanged not-ready batch', async () => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+    const input = syncInput({ finishReason: null, llmChargeId: null });
+    const records = Array.from({ length: 6 }, (_, index) => ({
+      ...input.record,
+      id: `row-${index + 1}`,
+      generationId: `gen-${index + 1}`,
+      callProvider: 'openrouter' as const,
+      llm_finish_reason: null,
+    }));
+    syncMocks.pendingRows.mockResolvedValue([]);
+    syncMocks.missingRows.mockResolvedValue([]);
+    syncMocks.staleRows.mockResolvedValue([]);
+    syncMocks.listRows.mockResolvedValue(records);
+    syncMocks.readGenerationDataBatch.mockResolvedValue(new Map());
+    syncMocks.upsert.mockResolvedValue(undefined);
+    let active = 0;
+    let maxActive = 0;
+    syncMocks.fetchGenerationData.mockImplementation(async () => {
+      active++;
+      maxActive = Math.max(maxActive, active);
+      await new Promise<void>((resolve) => setTimeout(resolve, 100));
+      active--;
+      return { usage: 0 };
+    });
+    const log = { info: vi.fn(), error: vi.fn(), warn: vi.fn(), child: vi.fn() };
+    log.child.mockReturnValue(log);
+    try {
+      startChatHistorySyncJob(log as unknown as FastifyBaseLogger);
+      await vi.advanceTimersByTimeAsync(5_001);
+      await vi.advanceTimersByTimeAsync(250);
+      expect(maxActive).toBe(3);
+      expect(syncMocks.readGenerationDataBatch).toHaveBeenCalledExactlyOnceWith(
+        records.map((record) => record.id)
+      );
+      expect(syncMocks.fetchGenerationData).toHaveBeenCalledTimes(6);
+      expect(syncMocks.upsert).toHaveBeenCalledTimes(6);
+      expect(findLlmUsageCharge).not.toHaveBeenCalled();
+      expect(syncMocks.recordBillingOutcome).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(25_000);
+      expect(syncMocks.fetchGenerationData).toHaveBeenCalledTimes(6);
+      expect(syncMocks.readGenerationDataBatch).toHaveBeenCalledOnce();
+      expect(log.info).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: 'chathistory_sync.finished',
+          scannedCount: 6,
+          eligibleCount: 0,
+          deferredCount: 6,
+        }),
+        expect.any(String)
+      );
+    } finally {
+      stopChatHistorySyncJob();
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not rewrite unchanged incomplete provider metadata', async () => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+    const input = syncInput({ finishReason: null, llmChargeId: null });
+    syncMocks.pendingRows.mockResolvedValue([]);
+    syncMocks.missingRows.mockResolvedValue([]);
+    syncMocks.staleRows.mockResolvedValue([]);
+    syncMocks.listRows.mockResolvedValue([
+      {
+        ...input.record,
+        generationId: 'gen-1',
+        callProvider: 'openrouter',
+        llm_finish_reason: null,
+      },
+    ]);
+    syncMocks.readGenerationDataBatch.mockResolvedValue(
+      new Map([['row-1', { usage: 0, llm_generation_data: { usage: 0 } }]])
+    );
+    syncMocks.fetchGenerationData.mockResolvedValue({ usage: 0 });
+    const log = { info: vi.fn(), error: vi.fn(), warn: vi.fn(), child: vi.fn() };
+    log.child.mockReturnValue(log);
+    try {
+      startChatHistorySyncJob(log as unknown as FastifyBaseLogger);
+      await vi.advanceTimersByTimeAsync(5_001);
+      expect(syncMocks.fetchGenerationData).toHaveBeenCalledOnce();
+      expect(syncMocks.enrichGeneration).not.toHaveBeenCalled();
+      expect(syncMocks.upsert).not.toHaveBeenCalled();
+      expect(findLlmUsageCharge).not.toHaveBeenCalled();
+      expect(syncMocks.recordBillingOutcome).not.toHaveBeenCalled();
+    } finally {
+      stopChatHistorySyncJob();
+      syncMocks.readGenerationDataBatch.mockResolvedValue(new Map());
+      vi.useRealTimers();
+    }
+  });
+
+  it('caps cold provider lookups per run and carries untouched candidates to the next tick', async () => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+    const input = syncInput({ finishReason: null, llmChargeId: null });
+    const records = Array.from({ length: 12 }, (_, index) => ({
+      ...input.record,
+      id: `row-${index + 1}`,
+      generationId: `gen-${index + 1}`,
+      callProvider: 'openrouter' as const,
+      llm_finish_reason: null,
+    }));
+    syncMocks.pendingRows.mockResolvedValue([]);
+    syncMocks.missingRows.mockResolvedValue([]);
+    syncMocks.staleRows.mockResolvedValue([]);
+    syncMocks.listRows.mockResolvedValue(records);
+    syncMocks.readGenerationDataBatch.mockResolvedValue(new Map());
+    syncMocks.fetchGenerationData.mockResolvedValue({ usage: 0 });
+    syncMocks.upsert.mockResolvedValue(undefined);
+    const log = { info: vi.fn(), error: vi.fn(), warn: vi.fn(), child: vi.fn() };
+    log.child.mockReturnValue(log);
+    try {
+      startChatHistorySyncJob(log as unknown as FastifyBaseLogger);
+      await vi.advanceTimersByTimeAsync(5_001);
+      expect(syncMocks.fetchGenerationData).toHaveBeenCalledTimes(9);
+      expect(log.info).toHaveBeenCalledWith(
+        expect.objectContaining({ providerBudgetDeferredCount: 3 }),
+        expect.any(String)
+      );
+
+      await vi.advanceTimersByTimeAsync(25_000);
+      expect(syncMocks.fetchGenerationData).toHaveBeenCalledTimes(12);
+    } finally {
+      stopChatHistorySyncJob();
+      vi.useRealTimers();
+    }
+  });
+
+  it('retries immediately when the business fingerprint changes during backoff', async () => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+    const input = syncInput({ finishReason: null, llmChargeId: null });
+    let record = {
+      ...input.record,
+      generationId: 'gen-1',
+      callProvider: 'openrouter' as const,
+      llm_finish_reason: null as string | null,
+    };
+    syncMocks.pendingRows.mockResolvedValue([]);
+    syncMocks.missingRows.mockResolvedValue([]);
+    syncMocks.staleRows.mockResolvedValue([]);
+    syncMocks.listRows.mockImplementation(async () => [record]);
+    syncMocks.readGenerationDataBatch.mockResolvedValue(new Map());
+    syncMocks.fetchGenerationData.mockResolvedValue({ usage: 0 });
+    syncMocks.upsert.mockResolvedValue(undefined);
+    syncMocks.recordBillingOutcome.mockResolvedValue(undefined);
+    const log = { info: vi.fn(), error: vi.fn(), warn: vi.fn(), child: vi.fn() };
+    log.child.mockReturnValue(log);
+    try {
+      startChatHistorySyncJob(log as unknown as FastifyBaseLogger);
+      await vi.advanceTimersByTimeAsync(5_001);
+      expect(syncMocks.fetchGenerationData).toHaveBeenCalledOnce();
+
+      record = { ...record, llm_finish_reason: 'timeout' };
+      await vi.advanceTimersByTimeAsync(25_000);
+      expect(syncMocks.fetchGenerationData).toHaveBeenCalledTimes(2);
+      expect(syncMocks.recordBillingOutcome).toHaveBeenCalledWith(
+        expect.objectContaining({ historyId: 'row-1', finishReason: 'timeout' })
+      );
+    } finally {
+      stopChatHistorySyncJob();
+      vi.useRealTimers();
+    }
+  });
+
+  it('never delays stale streaming recovery behind a prior retry state', async () => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+    const input = syncInput({ finishReason: null });
+    syncMocks.pendingRows.mockResolvedValue([]);
+    syncMocks.listRows.mockResolvedValue([]);
+    syncMocks.staleRows.mockResolvedValue([]);
+    syncMocks.missingRows.mockResolvedValue([
+      {
+        ...input.record,
+        generationId: null,
+        callProvider: 'openrouter',
+        llm_finish_reason: null,
+      },
+    ]);
+    const log = { info: vi.fn(), error: vi.fn(), warn: vi.fn(), child: vi.fn() };
+    log.child.mockReturnValue(log);
+    try {
+      startChatHistorySyncJob(log as unknown as FastifyBaseLogger);
+      await vi.advanceTimersByTimeAsync(5_001);
+      expect(syncMocks.recoverStale).not.toHaveBeenCalled();
+
+      syncMocks.missingRows.mockResolvedValue([]);
+      syncMocks.staleRows.mockResolvedValue([
+        {
+          ...input.record,
+          status: 'streaming',
+          session_id: 'session-1',
+          generationId: null,
+          callProvider: null,
+        },
+      ]);
+      syncMocks.recoverStale.mockResolvedValue(undefined);
+      await vi.advanceTimersByTimeAsync(25_000);
+      expect(syncMocks.recoverStale).toHaveBeenCalledExactlyOnceWith('session-1');
+    } finally {
+      stopChatHistorySyncJob();
+      syncMocks.missingRows.mockResolvedValue([]);
+      syncMocks.staleRows.mockResolvedValue([]);
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('sync recovery sources', () => {
@@ -691,12 +903,9 @@ describe('durable recovery without an upstream lookup', () => {
       syncMocks.listRows.mockResolvedValue([]);
       syncMocks.missingRows.mockResolvedValue([]);
       syncMocks.staleRows.mockResolvedValue([]);
-      syncMocks.readGenerationData.mockResolvedValue({
-        usage: 0,
-        latency: 0,
-        generation_time: 1,
-        finish_reason: 'stop',
-      });
+      syncMocks.readGenerationDataBatch.mockResolvedValue(
+        new Map([['row-1', { usage: 0, latency: 0, generation_time: 1, finish_reason: 'stop' }]])
+      );
       findLlmUsageCharge.mockResolvedValue(pendingFixedCharge());
       chargeLlmUsage.mockResolvedValue({ charge: { charged_amount: 50, calculated_amount: 50 } });
       finalizePending.mockResolvedValue(null);
@@ -714,7 +923,7 @@ describe('durable recovery without an upstream lookup', () => {
       } finally {
         stopChatHistorySyncJob();
         syncMocks.keyAvailable = true;
-        syncMocks.readGenerationData.mockResolvedValue(null);
+        syncMocks.readGenerationDataBatch.mockResolvedValue(new Map());
         vi.useRealTimers();
       }
     }
