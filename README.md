@@ -171,6 +171,8 @@ OpenRouter 调用事实由 `experience.openrouter_chat_history` 保存，消费 
 
 图片广场必须依次手动验证并执行 `20261012_image_plaza_v2.sql`、`20261013_image_plaza_seed_catalog.sql`、`20261013_image_plaza_seed_large_assets.sql` 后才能运行初始数据 apply。`image-plaza:seed` 默认只做工作簿 dry-run；真实写入还要求审核 manifest、明确 `--target test|production`、`--limit 1..500`、原图存储确认，Production 另需显式确认。普通图片保持 20 MiB，已审核 seed 原图允许至 50 MiB；来源权利/内容/元数据审核、test canary 或容量门禁未完成时不得导入。test 导入结果见任务 `10-10-image-plaza-v2`。
 
+`20261027_media_plaza_schema_move.sql` 将现有图片广场 8 张表和 3 个 RPC 物理迁入 `media_plaza`，不保留 `experience` / `miniapp_features` 兼容入口；Backend 同步直接访问新域。发布必须暂停图片广场流量，先单文件执行 M1 创建新 schema，再执行对应环境的 `postgrest-expose-media-plaza-*.sql`，随后立即部署匹配 Backend。不得在 schema 存在前提前加入 PostgREST 暴露列表。M1 回滚时继续停流，先把 `pgrst.db_schemas` 恢复为执行前值并 reload PostgREST，再执行配套 rollback、部署旧 Backend；新增视频对象后禁止使用该回滚。
+
 图片广场 TEST seed 迁移另见 [离线 SQL 导出与 Storage 迁移方法](ops/image-plaza-seed-migration.md)：不随部署执行；2026-10-20 已授权独立 Storage 本地暂存/并发上传/回读校验阶段，进度以任务和受限 report 为准，尚未执行生产 SQL。新增数据文件不得入 Git；已发现三个历史导出被跟踪，恢复 ignore 不代表清除了历史。
 
 ### AI 回复后处理
@@ -228,7 +230,7 @@ OpenRouter 调用事实由 `experience.openrouter_chat_history` 保存，消费 
 - [Grafana 用户首 token 业务看板](docs/grafana/chat-first-token.json)：用户实际显示耗时、每型号兜底触发率与超时率；读取授权通过 `20261023_grafana_first_token_reader.sql` 正式迁移。
 - [Railway 运维](ops/railway/README.md)
 - [后端日志与可观测性](.trellis/spec/backend/app/data-reliability-and-security.md)
-- [数据库域与归属](docs/ARCHITECTURE.md#51-数据库八域布局099-之后test-与生产一致)
+- [数据库域与归属](docs/ARCHITECTURE.md#51-数据库九域布局media_plaza-m1-之后)
 - [Trellis 工作流](.trellis/workflow.md)
 - [Admin spec](.trellis/spec/admin/app/index.md)
 - [Shared spec](.trellis/spec/shared/contracts/index.md)
