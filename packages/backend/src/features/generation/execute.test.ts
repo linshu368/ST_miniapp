@@ -50,7 +50,7 @@ vi.mock('../../platform/model-tiers.js', () => ({
 }));
 
 vi.mock('../../platform/provider-routing.js', () => ({
-  getProviderPreferencesForModel: async () => providerPreferences,
+  getProviderPreferencesForModels: async (ids: string[]) => ids.map(() => providerPreferences),
 }));
 
 vi.mock('../../platform/vip-strategy.js', () => ({
@@ -188,6 +188,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   Object.assign(config.venice, originalVeniceConfig);
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
@@ -570,6 +571,7 @@ describe('execute（请求体）', () => {
 
 describe('reasoning is progress, never a roleplay answer or billing proof', () => {
   it('enabled reasoning selects one attempt before forwarding and keeps its delayed answer/billing', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
     quotaState.granted = true;
     const order: string[] = [];
     const fetchMock = vi.fn(
@@ -619,7 +621,7 @@ describe('reasoning is progress, never a roleplay answer or billing proof', () =
     const onFirstToken = vi.fn(() => {
       order.push('first token');
     });
-    const result = await execute(
+    const pendingResult = execute(
       req,
       {
         onFirstToken,
@@ -628,6 +630,9 @@ describe('reasoning is progress, never a roleplay answer or billing proof', () =
       },
       fakeLogger()
     );
+    await vi.advanceTimersByTimeAsync(101);
+    const result = await pendingResult;
+    vi.useRealTimers();
     expect(result).toMatchObject({ status: 'success', content: '后回答' });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(prepareFallback).not.toHaveBeenCalled();

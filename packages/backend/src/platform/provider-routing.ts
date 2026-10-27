@@ -72,3 +72,12 @@ export async function getProviderPreferencesForModel(
   const config = await getProviderRoutingConfig();
   return resolveProviderPreferences(config, openRouterModelId);
 }
+
+/** One request snapshot for primary and fallback; never re-read configuration during handoff. */
+export async function getProviderPreferencesForModels(
+  modelIds: string[]
+): Promise<Array<OpenRouterProviderPreferences | null>> {
+  if (modelIds.length === 0) return [];
+  const config = await getProviderRoutingConfig();
+  return modelIds.map((id) => resolveProviderPreferences(config, id));
+}

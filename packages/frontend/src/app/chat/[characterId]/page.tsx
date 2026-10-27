@@ -10,6 +10,7 @@ import {
 } from '@miniapp/shared';
 import type { ReplyChoicePayload } from '@miniapp/reply-renderer';
 
+import { CONVERSATION_RECOVERING_MESSAGE } from '@/lib/api/conversation-stream';
 import { ChatComposer, MAX_USER_INPUT_LENGTH } from '@/components/chat/chat-composer';
 import { ChatMessageList } from '@/components/chat/chat-message-list';
 import { ChatMessageImageFooter } from '@/components/chat/chat-message-image';
@@ -582,12 +583,14 @@ export default function SelfHostedChatPage() {
           role="status"
           aria-live="polite"
           className={
-            streamError === FIRST_TOKEN_RETRY_MESSAGE
+            streamError === FIRST_TOKEN_RETRY_MESSAGE ||
+            streamError === CONVERSATION_RECOVERING_MESSAGE
               ? 'mx-4 mb-2 flex items-center gap-2 px-3 py-2 text-muted-foreground'
               : 'mx-4 mb-2 flex items-center gap-2 rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-destructive'
           }
         >
-          {streamError !== FIRST_TOKEN_RETRY_MESSAGE ? (
+          {streamError !== FIRST_TOKEN_RETRY_MESSAGE &&
+          streamError !== CONVERSATION_RECOVERING_MESSAGE ? (
             <AlertCircle className="h-4 w-4 shrink-0" aria-hidden />
           ) : null}
           <span className="min-w-0 flex-1 text-[12px]">{streamError}</span>

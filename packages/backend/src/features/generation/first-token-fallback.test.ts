@@ -13,6 +13,7 @@ const token = (id: string, text: string) =>
 
 function setup(options: {
   primaryAt: number;
+  deferPersistence?: boolean;
   fallbackAt?: number;
   fallbackModelId?: string;
   primary?: TransportModel;
@@ -111,6 +112,7 @@ function setup(options: {
   const result = forwardWithFirstTokenFallback({
     primary: options.primary ?? { provider: 'venice', providerModelId: 'selected' },
     primaryAttemptId: 'primary-id',
+    deferPersistence: options.deferPersistence,
     fallbackModelId: options.fallbackModelId,
     thinkingEnabled: options.thinkingEnabled ?? false,
     timeoutMs: options.timeoutMs ?? 40,
@@ -431,4 +433,33 @@ it('does not let a delayed primary token beat an overdue timer callback', async 
   } finally {
     clock.mockRestore();
   }
+});
+
+it('delivers fallback bytes before slow intent/identity persistence, but exposes a settlement gate', async () => {
+  const { result, calls } = setup({
+    primaryAt: 500,
+    fallbackAt: 8,
+    fallbackPrepareDelay: 70,
+    selectionDelay: 50,
+    deferPersistence: true,
+  });
+  let delivered = false;
+  void result.then(() => {
+    delivered = true;
+  });
+  await vi.advanceTimersByTimeAsync(49);
+  expect(delivered).toBe(true);
+  expect(calls).toHaveLength(2);
+  const response = await result;
+  expect(response.role).toBe('fallback');
+  const reader = response.response.body!.getReader();
+  expect(new TextDecoder().decode((await reader.read()).value)).toContain('兜底');
+  let persisted = false;
+  void response.deliveryPersisted.then(() => {
+    persisted = true;
+  });
+  expect(persisted).toBe(false);
+  await vi.advanceTimersByTimeAsync(120);
+  expect(persisted).toBe(true);
+  await reader.cancel();
 });

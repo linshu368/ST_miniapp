@@ -1,0 +1,38 @@
+{
+  "id": "recoverable-chat-delivery",
+  "name": "recoverable-chat-delivery",
+  "title": "修复可恢复的对话交付与计费",
+  "description": "离页不取消、恢复同一轮、兜底即时交付、计费一次；测试通过直接发布",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-27",
+  "completedAt": null,
+  "branch": "fix/recoverable-chat-delivery",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "backend.business.conversation-generation",
+        "frontend.business.conversation-ui",
+        "shared.business.conversation-contracts",
+        "database.business.conversation-storage",
+        "database.business.billing-payment"
+      ]
+    }
+  }
+}
