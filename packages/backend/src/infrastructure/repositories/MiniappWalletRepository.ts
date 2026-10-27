@@ -1,7 +1,13 @@
 import { getDomainDb } from '../../lib/supabase.js';
 import { createLogger } from '../../lib/logger.js';
 import {
+  CHECKIN_NEW_USER_CREDITS_CONFIG_KEY,
+  CHECKIN_VETERAN_CREDITS_CONFIG_KEY,
   createWalletBalanceSplit,
+  DEFAULT_CHECKIN_NEW_USER_CREDITS,
+  DEFAULT_CHECKIN_VETERAN_CREDITS,
+  DEFAULT_VIP_CHECKIN_BONUS_CONFIG,
+  parseCheckinTierCredits,
   type GetWalletBalanceData,
   type VipCheckinBonusConfig,
   type WalletSpendingRecord,
@@ -175,7 +181,8 @@ interface DailyCheckinRpcData {
 }
 
 /** 配置缺失或无法解析时的基础签到额。线上发放仍以 runtime_config 为准。 */
-export const DEFAULT_DAILY_CHECKIN_BASE_CREDITS = 60;
+/** @deprecated 遗留全员基础默认；发奖已改分档绝对额。 */
+export const DEFAULT_DAILY_CHECKIN_BASE_CREDITS = 0;
 
 /**
  * 签到状态
@@ -568,23 +575,38 @@ export class MiniappWalletRepository {
 
   async getDailyCheckinStatus(
     userId: string,
-    bonus: VipCheckinBonusConfig = { mode: 'same_as_base' }
+    input: {
+      createdAt: string;
+      vipCredits?: VipCheckinBonusConfig;
+    }
   ): Promise<DailyCheckinStatus> {
-    const { data: configRow, error: configError } = await this.appCoreDb
+    const { data: configRows, error: configError } = await this.appCoreDb
       .from('runtime_config')
-      .select('value, text_value')
-      .eq('key', 'miniapp_daily_checkin_bonus_credits')
-      .maybeSingle();
+      .select('key, value, text_value')
+      .in('key', [CHECKIN_NEW_USER_CREDITS_CONFIG_KEY, CHECKIN_VETERAN_CREDITS_CONFIG_KEY]);
 
     if (configError) {
       throw new Error(`查询签到配置失败：${configError.message}`);
     }
 
-    const now = new Date();
-    const baseRewardCredits = parsePositiveInteger(
-      configRow?.value ?? configRow?.text_value,
-      DEFAULT_DAILY_CHECKIN_BASE_CREDITS
+    const byKey = new Map(
+      (
+        (configRows as Array<{ key: string; value: unknown; text_value: string | null }> | null) ??
+        []
+      ).map((row) => [row.key, row])
     );
+    const newUserRow = byKey.get(CHECKIN_NEW_USER_CREDITS_CONFIG_KEY);
+    const veteranRow = byKey.get(CHECKIN_VETERAN_CREDITS_CONFIG_KEY);
+    const newUserCredits = parseCheckinTierCredits(
+      newUserRow?.value ?? newUserRow?.text_value,
+      DEFAULT_CHECKIN_NEW_USER_CREDITS
+    );
+    const veteranCredits = parseCheckinTierCredits(
+      veteranRow?.value ?? veteranRow?.text_value,
+      DEFAULT_CHECKIN_VETERAN_CREDITS
+    );
+
+    const now = new Date();
 
     const { data: membership, error: membershipError } = await this.db
       .from('vip_memberships')
@@ -601,10 +623,12 @@ export class MiniappWalletRepository {
       ? null
       : ((membership as { valid_until?: string } | null)?.valid_until ?? null);
     const quote = quoteDailyCheckinReward({
-      baseRewardCredits,
+      createdAt: input.createdAt,
       validUntil,
       now: now.toISOString(),
-      bonus,
+      vipCredits: input.vipCredits ?? DEFAULT_VIP_CHECKIN_BONUS_CONFIG,
+      newUserCredits,
+      veteranCredits,
     });
 
     const { data, error } = await this.featuresDb
@@ -889,16 +913,4 @@ function readRewardInteger(value: unknown): number {
     throw new Error('签到奖励返回无效');
   }
   return parsed;
-}
-
-/**
- * 解析正整数
- * @param value 值
- * @param fallback 默认值
- * @returns 正整数
- */
-function parsePositiveInteger(value: unknown, fallback: number): number {
-  const parsed = typeof value === 'number' ? value : Number(value);
-  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
-  return Math.floor(parsed);
 }

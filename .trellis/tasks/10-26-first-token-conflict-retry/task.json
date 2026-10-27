@@ -1,0 +1,32 @@
+{
+  "id": "first-token-conflict-retry",
+  "name": "first-token-conflict-retry",
+  "title": "Stop first-token conflict retry storm",
+  "description": "",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P0",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-26",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "User explicitly authorizes urgent repair and production release during outage.",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "no_module_change",
+      "reason": "Incident-only correction of explicit business-conflict SQLSTATEs; installed signatures, objects, guard logic, owners, grants, data flow and module responsibilities unchanged."
+    }
+  }
+}

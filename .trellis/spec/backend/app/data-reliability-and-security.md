@@ -53,7 +53,7 @@
 
 - 非法 session/message UUID → 400；未鉴权 → 401；非本人/不存在会话 → session_not_found。
 - 非当前回复 ID → 不改当前回复；重复取消返回实际状态。
-- 有可见正文的自然完成先赢 → 返回 complete，保留正常计费；终态空回复仍记录 empty 明细但不扣费；取消先赢 → interrupted，不扣星尘、不消费免费额度。
+- 有可见正文的自然完成先赢 → 返回 complete，保留正常计费；终态空回复仍记录 empty 明细但不扣费；取消先赢 → interrupted。旧cancelled仍免扣；新显式user_cancelled在冻结原价后按原权益结算，免费轮消费额度，系统timeout仍免扣。
 - 暂未确认取消 → CANCEL_PENDING，保持生成占用并允许重试；不是取消成功。
 - 开轮后上下文/上游/落库异常 → 条件终态恢复；详情/开轮前回收超过 120 秒 streaming 并释放预留；开轮 RPC 陈旧阈值传 24 小时，避免历史 guard 在 120 秒临界绕过额度释放。
 
@@ -259,6 +259,8 @@ Good：服务端 stop 先到，账单 pending；客户端随后超时，零费�
 ### 7. Wrong vs Correct
 
 Wrong：先扣款再以用户投诉判断退款。Correct：未确认可见不扣费，既有持久化账单终态防止后续补扣。
+
+主动停止扩展（2026-10-26）：客户端明确reason，服务端策略位与取消CAS RPC裁决新手动停止user_cancelled和自动timeout；没有原价快照/未受理/预检拒绝不收费。手动停止先收口免费权益再终态解锁，钱包按日常后台结算/回捞，可选供应商统计由既有sync补，不阻塞停止。消费权益/扣费按原charge_id幂等；系统截止资格waived优先，历史取消不重价。仅客户端自称超时或省略字段不能选择免扣政策；stage=primary/fallback即使全局flag=false仍免扣。
 
 ## 短剧请求计时
 

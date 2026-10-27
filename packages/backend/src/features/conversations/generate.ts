@@ -259,6 +259,7 @@ export async function runConversationTurn(
   const pollCancellation = async (): Promise<void> => {
     try {
       const row = await historyRecords().requireTurnById(turn.historyId);
+      if (row.llm_finish_reason === 'user_cancelled') clearTimeout(firstTokenTimer);
       if (row.status !== 'streaming' || row.llm_finish_reason !== null) controller.abort();
     } catch (err) {
       log.sys.warn(
@@ -398,6 +399,7 @@ export async function runConversationTurn(
             status: success ? 'success' : 'stream_interrupted',
             finishReason: observed.finishReason,
           });
+          if (row.llm_finish_reason === 'user_cancelled') clearTimeout(firstTokenTimer);
           if (row.status === 'streaming') {
             // A cancel marker won the completion CAS; free quota must be released before
             // terminal acknowledgement lets the user regenerate with their original quota.
@@ -428,8 +430,18 @@ export async function runConversationTurn(
     const persisted = await historyRecords().finalizeTurn({
       historyId: turn.historyId,
       content: result.content,
-      status: current.llm_finish_reason === 'cancelled' ? 'stream_interrupted' : result.status,
-      finishReason: current.llm_finish_reason === 'cancelled' ? 'cancelled' : result.finishReason,
+      status:
+        current.llm_finish_reason === 'cancelled' ||
+        current.llm_finish_reason === 'user_cancelled' ||
+        current.llm_finish_reason === 'timeout'
+          ? 'stream_interrupted'
+          : result.status,
+      finishReason:
+        current.llm_finish_reason === 'cancelled' ||
+        current.llm_finish_reason === 'user_cancelled' ||
+        current.llm_finish_reason === 'timeout'
+          ? current.llm_finish_reason
+          : result.finishReason,
       upstreamStatus: result.upstreamStatus ?? null,
       chargeId: result.chargeId,
     });
@@ -531,12 +543,17 @@ export async function runConversationTurn(
       historyId: turn.historyId,
       content: '',
       status:
-        controller.signal.aborted || current.llm_finish_reason === 'cancelled'
+        controller.signal.aborted ||
+        current.llm_finish_reason === 'cancelled' ||
+        current.llm_finish_reason === 'user_cancelled' ||
+        current.llm_finish_reason === 'timeout'
           ? 'stream_interrupted'
           : 'upstream_error',
       finishReason:
-        current.llm_finish_reason === 'cancelled'
-          ? 'cancelled'
+        current.llm_finish_reason === 'cancelled' ||
+        current.llm_finish_reason === 'user_cancelled' ||
+        current.llm_finish_reason === 'timeout'
+          ? current.llm_finish_reason
           : controller.signal.aborted
             ? 'timeout'
             : null,

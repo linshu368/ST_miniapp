@@ -224,6 +224,9 @@ $$;
 
 GRANT EXECUTE ON FUNCTION billing.complete_payment_order(TEXT, TEXT, TEXT) TO service_role, postgres;
 
+-- NOTE: T2 harness keeps a simplified claim_daily_checkin stub for billing
+-- settlement scenarios only. Production/T3 authority is
+-- 20261014_checkin_tiered_rewards.sql (VIP absolute + registration tiers).
 CREATE OR REPLACE FUNCTION miniapp_features.claim_daily_checkin(p_user_id uuid)
 RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER

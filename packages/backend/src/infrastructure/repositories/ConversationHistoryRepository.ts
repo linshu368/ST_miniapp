@@ -14,7 +14,7 @@
 // 用量元数据补齐 ≠ 结算完成：llm_billing_settled_at 有值才算扣费行、额度收口、金额回写都齐。
 
 import { readPostprocessVersion, type ChatMessage, type ChatMessageStatus } from '@miniapp/shared';
-import type { LlmModelProvider } from '@miniapp/shared';
+import type { LlmModelProvider, CancelConversationTurnRequest } from '@miniapp/shared';
 import type { GenerationMessage, GenerationStatus } from '../../features/generation/types.js';
 import { MiniappCharacterFreeQuotaRepository } from './MiniappCharacterFreeQuotaRepository.js';
 import { getDomainDb, type DomainDb } from '../../lib/supabase.js';
@@ -325,17 +325,22 @@ export class ConversationHistoryRepository {
     return data as ConversationHistoryRow;
   }
 
-  async cancelTurn(sessionId: string, historyId: string): Promise<ConversationHistoryRow | null> {
+  async cancelTurn(
+    sessionId: string,
+    historyId: string,
+    reason?: CancelConversationTurnRequest['reason']
+  ): Promise<ConversationHistoryRow | null> {
+    // The persisted request policy decides manual stop versus a proven system
+    // deadline. Optional client intent cannot itself waive a valid charge.
     const { error } = await this.db
-      .from('chat_history')
-      .update({ llm_finish_reason: 'cancelled' })
-      .eq('session_id', sessionId)
-      .eq('id', historyId)
-      .eq('status', 'streaming')
-      .is('llm_finish_reason', null)
+      .rpc('cancel_chat_generation', {
+        p_session_id: sessionId,
+        p_history_id: historyId,
+        p_reason: reason ?? null,
+      })
       .abortSignal(AbortSignal.timeout(5_000));
     if (error) throw new Error(`取消对话回复失败：${error.message}`);
-    // Do not unlock before the execution owner releases the free-quota reservation.
+    // Do not unlock before the execution owner finalizes the free-quota reservation.
     // Bounded waiting also works across replicas; a dead owner is recovered by the stale guard.
     const deadline = Date.now() + 8_000;
     while (true) {
@@ -524,7 +529,7 @@ export class ConversationHistoryRepository {
       .eq('id', historyId)
       .eq('status', 'success')
       .or(
-        'llm_finish_reason.is.null,and(llm_finish_reason.neq.cancelled,llm_finish_reason.neq.timeout)'
+        'llm_finish_reason.is.null,and(llm_finish_reason.neq.cancelled,llm_finish_reason.neq.user_cancelled,llm_finish_reason.neq.timeout)'
       )
       .abortSignal(AbortSignal.timeout(5_000));
     if (error) throw new Error(`补齐生成完成原因失败：${error.message}`);

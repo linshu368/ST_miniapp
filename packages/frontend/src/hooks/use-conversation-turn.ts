@@ -910,7 +910,11 @@ export function useConversationTurn({
         }
         if (!assistantMessageId) throw new Error('本次回复尚未确认，请稍后重试取消');
         if (message) observationRef.current?.identify(assistantMessageId, message.revision);
-        const result = await cancelTurn({ sessionId, assistantMessageId });
+        const result = await cancelTurn({
+          sessionId,
+          assistantMessageId,
+          reason: reason ?? 'user_stop',
+        });
         observationRef.current?.identify(result.message.id, result.message.revision);
         if (!isCurrent()) return;
         if (result.message.status === 'streaming') throw new Error('本次回复仍在生成，请重试取消');

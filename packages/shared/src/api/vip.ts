@@ -82,7 +82,9 @@ export const VipStatusSchema = z.object({
   benefits: z
     .object({
       text_discount_rate: z.number().finite().gt(0).max(1),
-      checkin_base_credits: z.number().int().positive(),
+      /** 营销对比用：非 VIP 新用户档签到额。 */
+      checkin_base_credits: nonnegativeInteger,
+      /** VIP 每日签到绝对额。 */
       checkin_vip_credits: nonnegativeInteger,
     })
     .optional(),

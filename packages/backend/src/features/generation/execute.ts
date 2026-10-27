@@ -171,10 +171,11 @@ export async function execute(
   const releaseReservation = (): Promise<void> =>
     (released ??= (async () => {
       const decision = await reservation.finalize(false);
-      if (reservation.granted && decision?.status !== 'released')
+      if (reservation.granted && decision?.status !== 'released' && decision?.status !== 'consumed')
         throw new GenerationCleanupPendingError();
     })());
 
+  let settleAbortedBeforeStream: (() => Promise<GenerationResult | null>) | undefined;
   try {
     signal.throwIfAborted();
     const plan = resolveBillingPlan({
@@ -255,6 +256,33 @@ export async function execute(
       provider: billing.provider,
       provider_model_id: billing.providerModelId,
     });
+    // After admission the original quote is durable. An explicit manual stop while
+    // waiting for headers is still a real round, even without a generation ID.
+    settleAbortedBeforeStream = async () => {
+      const interrupted: SseTapResult = {
+        completed: false,
+        content: '',
+        deltaCount: 0,
+        generationId: null,
+        finishReason: 'timeout',
+        usage: null,
+        responseMetadata: {},
+      };
+      const outcome = hooks?.onBeforeSettle
+        ? await hooks.onBeforeSettle(interrupted, releaseReservation)
+        : interrupted;
+      if (outcome.finishReason !== 'user_cancelled') return null;
+      await releaseReservation();
+      saveHistory({
+        assistant_reply: null,
+        status: 'stream_interrupted',
+        generation_id: null,
+        finish_reason: outcome.finishReason,
+      });
+      return finish(
+        failed({ status: 'stream_interrupted', chargeId, finishReason: outcome.finishReason })
+      );
+    };
     signal.throwIfAborted();
     let upstreamRes: Response;
     const upstreamStartedAt = Date.now();
@@ -318,7 +346,12 @@ export async function execute(
         upstreamRes = delivered.response;
       } else upstreamRes = await forward(request.model, signal);
     } catch (err) {
-      // 连不上上游时 ST 链路也不落 chat_history（没有 upstream_status 可记），这里保持一致
+      if (signal.aborted) {
+        const settleAbort = settleAbortedBeforeStream;
+        settleAbortedBeforeStream = undefined;
+        const stopped = await settleAbort();
+        if (stopped) return stopped;
+      }
       await releaseReservation();
       log.sys.error(
         {
@@ -416,6 +449,7 @@ export async function execute(
       });
     }
 
+    settleAbortedBeforeStream = undefined;
     // The flush path and pipeline error path share one settlement promise. In particular,
     // a deadline during a slow CAS/quota finalize must never trigger another settlement.
     let settlement: Promise<void> | undefined;
@@ -525,6 +559,14 @@ export async function execute(
       modelOpenRouterId: billing.openRouterModelId,
     });
   } catch (err) {
+    if (
+      signal.aborted &&
+      settleAbortedBeforeStream &&
+      !(err instanceof GenerationCleanupPendingError)
+    ) {
+      const stopped = await settleAbortedBeforeStream();
+      if (stopped) return stopped;
+    }
     await releaseReservation();
     throw err;
   }
@@ -619,7 +661,9 @@ async function settleStream(input: {
       model: billing.providerModelId,
       generationId: result.generationId,
     },
-    'generation produced an incomplete or empty reply, skipping deduction'
+    result.finishReason === 'user_cancelled'
+      ? 'user stopped generation; settling the accepted quote'
+      : 'generation produced an incomplete or empty reply, skipping deduction'
   );
   saveHistory({
     assistant_reply: result.deltaCount > 0 ? result.content : null,

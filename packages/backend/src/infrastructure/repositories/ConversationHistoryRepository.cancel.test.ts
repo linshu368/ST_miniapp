@@ -6,7 +6,11 @@ type FixtureRow = ConversationHistoryRow & {
   venice_chat_history?: { llm_generation_id: string };
 };
 
-const state = vi.hoisted(() => ({ rows: [] as FixtureRow[], release: vi.fn() }));
+const state = vi.hoisted(() => ({
+  rows: [] as FixtureRow[],
+  release: vi.fn(),
+  cancelRpc: vi.fn(),
+}));
 vi.mock('./MiniappCharacterFreeQuotaRepository.js', () => ({
   MiniappCharacterFreeQuotaRepository: class {
     finalizePending = state.release;
@@ -14,6 +18,9 @@ vi.mock('./MiniappCharacterFreeQuotaRepository.js', () => ({
 }));
 vi.mock('../../lib/supabase.js', () => ({
   getDomainDb: () => ({
+    rpc: (name: string, args: Record<string, unknown>) => ({
+      abortSignal: () => state.cancelRpc(name, args),
+    }),
     from: () => {
       let update: Record<string, unknown> | undefined;
       const filters: Array<(row: ConversationHistoryRow) => boolean> = [];
@@ -133,10 +140,110 @@ function row(overrides: Partial<FixtureRow> = {}): FixtureRow {
 beforeEach(() => {
   state.rows = [row()];
   state.release.mockReset().mockResolvedValue(null);
+  state.cancelRpc
+    .mockReset()
+    .mockImplementation(async (_name: string, args: Record<string, unknown>) => {
+      const matching = state.rows.filter(
+        (row) =>
+          row.session_id === args.p_session_id &&
+          row.id === args.p_history_id &&
+          row.status === 'streaming' &&
+          row.llm_finish_reason === null
+      );
+      matching.forEach((row) => {
+        row.llm_finish_reason =
+          args.p_reason === 'user_stop'
+            ? 'user_cancelled'
+            : args.p_reason === 'first_token_timeout'
+              ? 'timeout'
+              : 'cancelled';
+      });
+      return { data: matching.length > 0, error: null };
+    });
 });
 afterEach(() => vi.useRealTimers());
 
 describe('persisted cancellation/completion arbitration', () => {
+  it.each([
+    ['user_stop', 'user_cancelled'],
+    ['first_token_timeout', 'timeout'],
+  ] as const)(
+    'persists %s separately from legacy cancellation and cannot overwrite its winner',
+    async (reason, finishReason) => {
+      vi.useFakeTimers();
+      const repository = new ConversationHistoryRepository();
+      const pending = repository.cancelTurn('session', 'reply', reason);
+      await vi.advanceTimersByTimeAsync(8_001);
+      expect(await pending).toMatchObject({ status: 'streaming', llm_finish_reason: finishReason });
+      const repeated = repository.cancelTurn(
+        'session',
+        'reply',
+        reason === 'user_stop' ? 'first_token_timeout' : 'user_stop'
+      );
+      await vi.advanceTimersByTimeAsync(8_001);
+      expect(await repeated).toMatchObject({ llm_finish_reason: finishReason });
+    }
+  );
+
+  it('an admitted manual stop unlocks after quota completion without waiting on wallet settlement', async () => {
+    state.rows[0] = row({
+      llm_finish_reason: 'user_cancelled',
+      llm_billing_snapshot: { charge_id: 'charge', billing_mode: 'fixed_tier' } as NonNullable<
+        ConversationHistoryRow['llm_billing_snapshot']
+      >,
+    });
+    const repository = new ConversationHistoryRepository();
+    expect(
+      await repository.finalizeTurn({
+        historyId: 'reply',
+        content: 'partial',
+        status: 'stream_interrupted',
+        finishReason: 'user_cancelled',
+      })
+    ).toMatchObject({
+      status: 'stream_interrupted',
+      llm_finish_reason: 'user_cancelled',
+      llm_billing_settled_at: null,
+    });
+    expect(await repository.cancelTurn('session', 'reply', 'user_stop')).toMatchObject({
+      status: 'stream_interrupted',
+    });
+    expect(state.cancelRpc).toHaveBeenCalledWith('cancel_chat_generation', {
+      p_session_id: 'session',
+      p_history_id: 'reply',
+      p_reason: 'user_stop',
+    });
+  });
+
+  it('a rejected unverified timeout stays pending instead of claiming a free cancellation locally', async () => {
+    vi.useFakeTimers();
+    state.cancelRpc.mockResolvedValueOnce({ data: false, error: null });
+    const pending = new ConversationHistoryRepository().cancelTurn(
+      'session',
+      'reply',
+      'first_token_timeout'
+    );
+    await vi.advanceTimersByTimeAsync(8_001);
+    expect(await pending).toMatchObject({ status: 'streaming', llm_finish_reason: null });
+    expect(state.cancelRpc).toHaveBeenCalledWith('cancel_chat_generation', {
+      p_session_id: 'session',
+      p_history_id: 'reply',
+      p_reason: 'first_token_timeout',
+    });
+  });
+
+  it('pre-admission manual cancellation closes free and stale recovery preserves the manual cause', async () => {
+    state.rows[0] = row({
+      llm_finish_reason: 'user_cancelled',
+      created_at: new Date(Date.now() - 121_000).toISOString(),
+    });
+    await new ConversationHistoryRepository().recoverStaleStreaming('session');
+    expect(state.rows[0]).toMatchObject({
+      status: 'stream_interrupted',
+      llm_finish_reason: 'user_cancelled',
+    });
+  });
+
   it('cancel marker wins against success but remains busy until execution cleanup acknowledges', async () => {
     const repository = new ConversationHistoryRepository();
     const cancellation = repository.cancelTurn('session', 'reply');

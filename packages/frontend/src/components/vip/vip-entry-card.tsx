@@ -61,7 +61,7 @@ export function VipEntryCard({
         </span>
         <span className="relative mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-primary/15 pt-3 text-[10px] text-[#dcc4a4]">
           {typeof extraCheckin === 'number' && extraCheckin > 0 ? (
-            <span>每日多领 {formatNumber(extraCheckin)}</span>
+            <span>每日签到 {formatNumber(extraCheckin)}</span>
           ) : null}
           {discount ? <span>对话 {discount}</span> : null}
           <span className="ml-auto inline-flex items-center gap-0.5 text-primary">
@@ -112,7 +112,7 @@ export function VipEntryCard({
       </span>
       <span className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] leading-5 text-foreground/80">
         {typeof extraCheckin === 'number' && extraCheckin > 0 ? (
-          <span>签到每天多领 {formatNumber(extraCheckin)}</span>
+          <span>签到每天 {formatNumber(extraCheckin)}</span>
         ) : null}
         {discount ? <span>全模型对话 {discount}</span> : null}
         {!benefits ? <span>{loading ? '正在读取会员权益…' : '查看完整月卡权益'}</span> : null}

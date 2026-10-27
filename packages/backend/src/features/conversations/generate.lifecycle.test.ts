@@ -316,16 +316,64 @@ describe('turn lifecycle recovery', () => {
     expect(mocks.finalize).not.toHaveBeenCalled();
   });
 
-  it('pre-stream failure preserves the cancellation marker', async () => {
-    mocks.find.mockResolvedValue({ status: 'streaming', llm_finish_reason: 'cancelled' });
-    mocks.execute.mockRejectedValue(new Error('cancel before upstream'));
-    await expect(runConversationTurn(input({ kind: 'send', content: 'original' }))).rejects.toThrow(
-      'cancel before upstream'
+  it('manual cancellation finalizes its free entitlement before terminal acknowledgement', async () => {
+    const order: string[] = [];
+    mocks.find.mockResolvedValue({ status: 'streaming', llm_finish_reason: 'user_cancelled' });
+    mocks.finalize.mockImplementation(async (value: { status: string }) => {
+      if (value.status === 'success') {
+        order.push('completion CAS lost');
+        return { status: 'streaming', llm_finish_reason: 'user_cancelled' };
+      }
+      order.push('terminal acknowledgement');
+      return { status: 'stream_interrupted', llm_finish_reason: 'user_cancelled' };
+    });
+    mocks.execute.mockImplementation(
+      async (_request, hooks: import('../generation/types.js').GenerationHooks) => {
+        const actual = await hooks.onBeforeSettle!(
+          {
+            completed: true,
+            content: 'partial',
+            deltaCount: 1,
+            finishReason: 'stop',
+            generationId: 'gen',
+            usage: null,
+            responseMetadata: {},
+          },
+          async () => {
+            order.push('quota finalized');
+          }
+        );
+        expect(actual.finishReason).toBe('user_cancelled');
+        return {
+          status: 'stream_interrupted',
+          content: actual.content,
+          finishReason: actual.finishReason,
+          generationId: 'gen',
+          chargeId: 'charge',
+        };
+      }
     );
-    expect(mocks.finalize).toHaveBeenCalledWith(
-      expect.objectContaining({ status: 'stream_interrupted', finishReason: 'cancelled' })
-    );
+    await runConversationTurn(input({ kind: 'send', content: 'original' }));
+    expect(order.slice(0, 3)).toEqual([
+      'completion CAS lost',
+      'quota finalized',
+      'terminal acknowledgement',
+    ]);
   });
+
+  it.each(['cancelled', 'user_cancelled', 'timeout'])(
+    'pre-stream failure preserves the %s marker',
+    async (reason) => {
+      mocks.find.mockResolvedValue({ status: 'streaming', llm_finish_reason: reason });
+      mocks.execute.mockRejectedValue(new Error('cancel before upstream'));
+      await expect(
+        runConversationTurn(input({ kind: 'send', content: 'original' }))
+      ).rejects.toThrow('cancel before upstream');
+      expect(mocks.finalize).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'stream_interrupted', finishReason: reason })
+      );
+    }
+  );
   it('persists request correlation before prompt reads and passes it only to snapshot storage', async () => {
     const requestId = '11111111-2222-4333-8444-555555555555';
     const order: string[] = [];

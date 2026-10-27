@@ -2,76 +2,73 @@ import { describe, expect, it } from 'vitest';
 
 import { quoteDailyCheckinReward } from './checkin-reward.js';
 
-const NOW = '2026-09-22T00:00:00.000Z';
-
 describe('quoteDailyCheckinReward', () => {
-  it('pays the base amount when there is no membership', () => {
-    expect(quoteDailyCheckinReward({ baseRewardCredits: 60, validUntil: null, now: NOW })).toEqual({
-      base_reward_credits: 60,
-      vip_reward_credits: 0,
-      reward_credits: 60,
-    });
-  });
+  const now = '2026-10-14T12:00:00.000Z';
 
-  it('adds the same base amount once for an active VIP', () => {
+  it('quotes new-user non-VIP tier', () => {
     expect(
       quoteDailyCheckinReward({
-        baseRewardCredits: 60,
-        validUntil: '2026-10-01T00:00:00.000Z',
-        now: NOW,
-      })
-    ).toEqual({
-      base_reward_credits: 60,
-      vip_reward_credits: 60,
-      reward_credits: 120,
-    });
-  });
-
-  it('drops the bonus at the exact expiry instant and after it', () => {
-    expect(
-      quoteDailyCheckinReward({ baseRewardCredits: 60, validUntil: NOW, now: NOW })
-    ).toMatchObject({
-      vip_reward_credits: 0,
-      reward_credits: 60,
-    });
-    expect(
-      quoteDailyCheckinReward({
-        baseRewardCredits: 60,
-        validUntil: '2026-09-21T23:59:59.999Z',
-        now: NOW,
-      }).reward_credits
-    ).toBe(60);
-  });
-
-  it('uses one timestamp for the boundary one millisecond later', () => {
-    expect(
-      quoteDailyCheckinReward({
-        baseRewardCredits: 60,
-        validUntil: '2026-09-22T00:00:00.001Z',
-        now: NOW,
-      }).reward_credits
-    ).toBe(120);
-  });
-
-  it('uses a fixed published bonus only while VIP is active', () => {
-    expect(
-      quoteDailyCheckinReward({
-        baseRewardCredits: 60,
-        validUntil: '2026-10-01T00:00:00.000Z',
-        now: NOW,
-        bonus: { mode: 'fixed', fixed_credits: 10 },
-      })
-    ).toEqual({
-      base_reward_credits: 60,
-      vip_reward_credits: 10,
-      reward_credits: 70,
-    });
-    expect(
-      quoteDailyCheckinReward({
-        baseRewardCredits: 60,
+        createdAt: '2026-10-10T00:00:00.000Z',
         validUntil: null,
-        now: NOW,
-        bonus: { mode: 'fixed', fixed_credits: 10 },
+        now,
+        vipCredits: 150,
+        newUserCredits: 60,
+        veteranCredits: 15,
+      })
+    ).toMatchObject({
+      base_reward_credits: 60,
+      vip_reward_credits: 0,
+      reward_credits: 60,
+      reward_tier: 'new_user',
+    });
+  });
+
+  it('quotes veteran non-VIP tier', () => {
+    expect(
+      quoteDailyCheckinReward({
+        createdAt: '2026-01-01T00:00:00.000Z',
+        validUntil: null,
+        now,
+        vipCredits: 150,
+        newUserCredits: 60,
+        veteranCredits: 15,
+      })
+    ).toMatchObject({
+      base_reward_credits: 15,
+      vip_reward_credits: 0,
+      reward_credits: 15,
+      reward_tier: 'veteran',
+    });
+  });
+
+  it('quotes absolute VIP credits regardless of registration age', () => {
+    expect(
+      quoteDailyCheckinReward({
+        createdAt: '2026-01-01T00:00:00.000Z',
+        validUntil: '2026-10-20T00:00:00.000Z',
+        now,
+        vipCredits: 150,
+        newUserCredits: 60,
+        veteranCredits: 15,
+      })
+    ).toEqual({
+      base_reward_credits: 0,
+      vip_reward_credits: 150,
+      reward_credits: 150,
+      reward_tier: 'vip',
+      registration_age_days: expect.any(Number),
+    });
+  });
+
+  it('ignores VIP absolute amount when membership is inactive', () => {
+    expect(
+      quoteDailyCheckinReward({
+        createdAt: '2026-10-10T00:00:00.000Z',
+        validUntil: '2026-10-01T00:00:00.000Z',
+        now,
+        vipCredits: 150,
+        newUserCredits: 60,
+        veteranCredits: 15,
       }).vip_reward_credits
     ).toBe(0);
   });
