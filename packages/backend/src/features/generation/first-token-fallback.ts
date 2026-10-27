@@ -185,6 +185,9 @@ export async function forwardWithFirstTokenFallback(input: {
       let buffer = '';
       let bytes = 0;
       let hasVisibleToken = false;
+      let terminal = false;
+      let terminalReason: 'upstream_error' | 'stream_interrupted' = 'stream_interrupted';
+      let eventType = '';
       const splitter = createLeadingThinkingSplitter({
         onContent: (text) => {
           if (text.trim()) hasVisibleToken = true;
@@ -214,7 +217,24 @@ export async function forwardWithFirstTokenFallback(input: {
         let identityObserved = false;
         for (const raw of lines) {
           const line = raw.trimEnd();
-          if (!line.startsWith('data:') || line.slice(5).trim() === '[DONE]') continue;
+          if (!line) {
+            eventType = '';
+            continue;
+          }
+          if (line.startsWith('event:')) {
+            eventType = line.slice(6).trim();
+            continue;
+          }
+          if (!line.startsWith('data:')) continue;
+          if (eventType === 'error') {
+            terminal = true;
+            terminalReason = 'upstream_error';
+            break;
+          }
+          if (line.slice(5).trim() === '[DONE]') {
+            terminal = true;
+            break;
+          }
           let value: Record<string, unknown>;
           try {
             value = JSON.parse(line.slice(5).trim()) as typeof value;
@@ -227,16 +247,28 @@ export async function forwardWithFirstTokenFallback(input: {
             identityObserved = true;
           }
           const choice = Array.isArray(value.choices) ? value.choices[0] : null;
+          if (value.error != null || choice?.error != null || value.type === 'error') {
+            terminal = true;
+            terminalReason = 'upstream_error';
+            break;
+          }
           const delta = choice && typeof choice === 'object' ? choice.delta : null;
-          if (!delta || typeof delta !== 'object' || Array.isArray(delta)) continue;
-          if (input.thinkingEnabled !== false && readExposedReasoning(delta).trim())
-            hasVisibleToken = true;
-          if (typeof delta.content === 'string') splitter.push(delta.content);
+          if (delta && typeof delta === 'object' && !Array.isArray(delta)) {
+            if (input.thinkingEnabled !== false && readExposedReasoning(delta).trim())
+              hasVisibleToken = true;
+            if (typeof delta.content === 'string') splitter.push(delta.content);
+            if (typeof delta.refusal === 'string' && delta.refusal.trim()) {
+              terminal = true;
+              terminalReason = 'upstream_error';
+            }
+          }
+          if (typeof choice?.finish_reason === 'string' && choice.finish_reason) terminal = true;
+          if (terminal) break;
         }
         if (identityObserved) record();
-        if (item.done) splitter.finish();
+        if (item.done || terminal) splitter.finish();
         if (!hasVisibleToken) {
-          if (item.done) break;
+          if (item.done || terminal) break;
           continue;
         }
         // Event-loop delay may deliver bytes before an overdue timer callback runs.
@@ -298,10 +330,11 @@ export async function forwardWithFirstTokenFallback(input: {
         };
         return { response, observation, stop, replay };
       }
-      observation.end_reason = 'stream_interrupted';
+      observation.end_reason = terminalReason;
       observation.observed_until_ms = performance.now() - started;
       record();
-      signal.removeEventListener('abort', stop);
+      // An explicit terminal frame may arrive long before the provider closes its socket.
+      stop();
       const headers = new Headers(response.headers);
       headers.delete('x-generation-id');
       return {
@@ -342,11 +375,23 @@ export async function forwardWithFirstTokenFallback(input: {
       .catch(input.onObservationError);
   const primaryPromise: Promise<Peeked | null> = skipPrimary
     ? Promise.resolve(null)
-    : peek(input.primary, 'primary', input.primaryAttemptId, primarySignal).then((result) => {
-        primaryResult = result;
-        if (switched) result.stop();
-        return result;
-      });
+    : peek(input.primary, 'primary', input.primaryAttemptId, primarySignal)
+        .then((result) => {
+          primaryResult = result;
+          if (switched || result.observation.first_token_ms === undefined) result.stop();
+          // A failed primary has nothing left worth waiting for. Reuse the single fallback
+          // path even when both model IDs match: a known failure permits one bounded retry.
+          return result.observation.first_token_ms === undefined ? null : result;
+        })
+        .catch((error: unknown) => {
+          if (
+            primarySignal.aborted ||
+            deadline.signal.aborted ||
+            error instanceof FirstTokenDeadlineError
+          )
+            throw error;
+          return null;
+        });
   // A late observer rejection must always have a handler after the fallback takes over.
   void primaryPromise.catch(input.onObservationError);
   const abortSignal = AbortSignal.any([input.signal, deadline.signal, fallbackController.signal]);
@@ -370,6 +415,7 @@ export async function forwardWithFirstTokenFallback(input: {
     const role = primary === null ? 'fallback' : 'primary';
     if (primary === null) {
       switched = true;
+      clearTimeout(thresholdTimer);
       const id = randomUUID();
       const attempt: AttemptObservation = {
         id,
