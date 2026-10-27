@@ -159,8 +159,8 @@ function VipExpiryBody({
         <ul className="space-y-1.5">
           {checkin ? (
             <li>
-              · 每日签到额外 <strong className="font-black text-primary">{checkin.extra}</strong>
-              （签到奖励回落为{checkin.fallback}）
+              · 每日签到 <strong className="font-black text-primary">{checkin.extra}</strong>
+              （到期后回落为{checkin.fallback}）
             </li>
           ) : null}
           <li>· 标准与旗舰模型使用权限</li>
@@ -191,8 +191,8 @@ function VipExpiryBody({
       <ul className="space-y-1.5">
         {checkin ? (
           <li>
-            · 每日签到额外 <strong className="font-black text-primary">{checkin.extra}</strong>{' '}
-            停止发放（签到奖励回落为{checkin.fallback}）
+            · 每日签到 <strong className="font-black text-primary">{checkin.extra}</strong>{' '}
+            停止发放（到期后回落为{checkin.fallback}）
           </li>
         ) : null}
         <li>

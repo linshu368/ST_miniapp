@@ -26,7 +26,7 @@ describe('interpretVipStrategy', () => {
         ['vip_reminders_enabled', entry(false, 1)],
         ['vip_plans_config', entry(plans, 8)],
         ['vip_text_discount_rate', entry(0.8, 5)],
-        ['vip_checkin_bonus_config', entry({ mode: 'fixed', fixed_credits: 10 }, 6)],
+        ['vip_checkin_bonus_config', entry(150, 6)],
         ['feature_free_trial_limits', entry({ voice: 0, basic_image: 20 }, 7)],
       ])
     );
@@ -36,7 +36,7 @@ describe('interpretVipStrategy', () => {
     expect(strategy.plansVersion).toBe(8);
     expect(strategy.discountRate).toBe(0.8);
     expect(strategy.discountVersion).toBe(5);
-    expect(strategy.checkin).toEqual({ mode: 'fixed', fixed_credits: 10 });
+    expect(strategy.checkin).toBe(150);
     expect(strategy.limits).toEqual({ voice: 0, basic_image: 20 });
     expect(strategy.fallbacks).toEqual([]);
   });
@@ -73,7 +73,7 @@ describe('interpretVipStrategy', () => {
     expect(damaged.remindersEnabled).toBe(false);
     expect(damaged.discountRate).toBe(0.95);
     expect(damaged.limits).toEqual(DEFAULT_FEATURE_FREE_TRIAL_LIMITS);
-    expect(damaged.checkin).toEqual({ mode: 'same_as_base' });
+    expect(damaged.checkin).toBe(150);
     expect(damaged.fallbacks.every((item) => item.reason === 'invalid')).toBe(true);
   });
 });

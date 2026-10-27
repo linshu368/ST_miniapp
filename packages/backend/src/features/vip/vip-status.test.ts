@@ -20,7 +20,7 @@ vi.mock('../../platform/runtime-config.js', () => ({
 }));
 
 describe('published VIP benefits', () => {
-  it('previews 95% and the VIP signup reward even without membership', async () => {
+  it('previews 95% and absolute VIP check-in credits even without membership', async () => {
     vi.mocked(readVipStrategy).mockResolvedValue(interpretVipStrategy(new Map()));
     vi.mocked(fetchRuntimeConfigEntryStrict).mockResolvedValue({
       value: 60,
@@ -30,15 +30,15 @@ describe('published VIP benefits', () => {
     expect(await readVipBenefits()).toEqual({
       text_discount_rate: 0.95,
       checkin_base_credits: 60,
-      checkin_vip_credits: 60,
+      checkin_vip_credits: 150,
     });
   });
 
-  it('uses the published fixed bonus instead of assuming a doubled reward', async () => {
+  it('uses the published absolute VIP check-in amount', async () => {
     const strategy = interpretVipStrategy(new Map());
     vi.mocked(readVipStrategy).mockResolvedValue({
       ...strategy,
-      checkin: { mode: 'fixed', fixed_credits: 20 },
+      checkin: 20,
     });
     vi.mocked(fetchRuntimeConfigEntryStrict).mockResolvedValue({
       value: null,

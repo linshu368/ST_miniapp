@@ -10,7 +10,6 @@ import {
   InputNumber,
   List,
   Modal,
-  Radio,
   Space,
   Switch,
   Tag,
@@ -50,7 +49,12 @@ import {
   resolveManagedWorkingValue,
 } from '../lib/configSchemas';
 import type { AdminEnvironment } from '../lib/environment';
-import { blankToNull, checkinConfig, vipPriceLabel, withPlanPatch } from '../lib/vipStrategyForm';
+import {
+  blankToNull,
+  checkinAbsoluteCredits,
+  vipPriceLabel,
+  withPlanPatch,
+} from '../lib/vipStrategyForm';
 
 function confirmWrite(
   environment: AdminEnvironment,
@@ -274,7 +278,7 @@ function asPlans(value: unknown): VipPlansConfig {
 
 function asCheckin(value: unknown): VipCheckinBonusConfig {
   const parsed = VipCheckinBonusConfigSchema.safeParse(value);
-  return parsed.success ? parsed.data : { ...DEFAULT_VIP_CHECKIN_BONUS_CONFIG };
+  return parsed.success ? parsed.data : DEFAULT_VIP_CHECKIN_BONUS_CONFIG;
 }
 
 function asLimits(value: unknown): FeatureFreeTrialLimits {
@@ -398,7 +402,7 @@ export function VipStrategyView(props: {
       <Card title="VIP策略">
         <Typography.Paragraph type="secondary">
           管理当前{props.environment === 'production' ? '生产' : '测试'}
-          环境的 VIP 购买、商品、生成折扣、签到加成和媒体免费次数。保存草稿不会立即生效。
+          环境的 VIP 购买、商品、生成折扣、签到绝对额和媒体免费次数。保存草稿不会立即生效。
           价格只按整数分发布，页面上的元仅用于对照。
         </Typography.Paragraph>
         {!props.canWrite ? (
@@ -486,35 +490,23 @@ export function VipStrategyView(props: {
         }}
       </StrategyKeyCard>
 
-      <Typography.Title level={4}>签到加成</Typography.Title>
+      <Typography.Title level={4}>签到奖励</Typography.Title>
       <StrategyKeyCard {...shared} configKey="vip_checkin_bonus_config">
         {(value, onChange) => {
           const checkin = asCheckin(value);
-          const fixedCredits = checkin.mode === 'fixed' ? checkin.fixed_credits : 0;
           return (
             <Space direction="vertical">
-              <Radio.Group
-                disabled={!props.canWrite}
-                value={checkin.mode}
-                onChange={(event) =>
-                  onChange(
-                    checkinConfig(event.target.value as VipCheckinBonusConfig['mode'], fixedCredits)
-                  )
-                }
-              >
-                <Radio value="same_as_base">与当次基础奖励相同</Radio>
-                <Radio value="fixed">固定专项星尘</Radio>
-              </Radio.Group>
+              <Typography.Text>VIP 每日签到专项星尘（绝对额）</Typography.Text>
               <InputNumber
                 min={0}
                 max={VIP_CHECKIN_FIXED_CREDITS_MAX}
                 precision={0}
-                disabled={!props.canWrite || checkin.mode !== 'fixed'}
-                value={fixedCredits}
+                disabled={!props.canWrite}
+                value={checkin}
                 addonAfter="星尘"
                 onChange={(next) => {
-                  if (checkin.mode === 'fixed' && typeof next === 'number') {
-                    onChange(checkinConfig('fixed', next));
+                  if (typeof next === 'number') {
+                    onChange(checkinAbsoluteCredits(next));
                   }
                 }}
               />

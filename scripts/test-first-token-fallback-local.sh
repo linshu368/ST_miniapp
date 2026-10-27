@@ -13,7 +13,7 @@ docker network create "$task_network" >/dev/null
 docker run --rm -d --network "$task_network" --name "$task_container" -e POSTGRES_HOST_AUTH_METHOD=trust \
   -v "$task_root:$task_root:ro" -v "$task_dir:$task_dir:ro" postgres:17 >/dev/null
 for task_n in {1..120}; do
-  if docker exec "$task_container" pg_isready -U postgres >/dev/null 2>&1; then break; fi
+  if docker exec "$task_container" pg_isready -h 127.0.0.1 -U postgres >/dev/null 2>&1; then break; fi
   sleep 0.25
 done
 task_psql=(docker exec -i "$task_container" psql -X -U postgres -v ON_ERROR_STOP=1)
@@ -112,6 +112,11 @@ print('RESET ROLE;')
 PYSQL
 echo 'PASS: first-token SQL identity, delivery CAS, frozen quote, reporting ACL, and 149/150 windows'
 
+# Production PostgREST retries serialization_failure indefinitely; permanent guards
+# must return a terminal HTTP conflict while preserving the existing lifecycle CAS.
+"${task_psql[@]}" -f "$task_root/packages/shared/migrations/20261026_first_token_nonretryable_conflicts.sql" >/dev/null
+"${task_psql[@]}" -f "$task_root/packages/shared/migrations/20261026_first_token_nonretryable_conflicts.sql" >/dev/null
+
 # Supabase repositories through real PostgREST; only the API port is mapped to loopback.
 docker run --rm -d --network "$task_network" --name "$task_rest_container" \
   -e PGRST_DB_URI="postgres://postgres@$task_container:5432/postgres" \
@@ -163,6 +168,19 @@ wait "$task_report_pid"
 wait "$task_charge_pid"
 "${task_psql[@]}" -c "SELECT visible_billing_test.charge('00000000-0000-4000-8000-000000000091'); SELECT vip_t4_test.assert(NOT EXISTS(SELECT 1 FROM billing.wallet_ledger WHERE debit_key='00000000-0000-4000-8000-000000000091'),'concurrent no-token timeout was charged');" >/dev/null
 echo 'PASS: visible token receipt, zero debit/quota on timeout/missing, late replay and concurrent settlement'
+
+# Explicit user stops are a new persisted reason; legacy/system outcomes stay free.
+"${task_psql[@]}" -f "$task_root/packages/shared/migrations/20261026_user_stop_billing.sql" >/dev/null
+"${task_psql[@]}" -f "$task_root/packages/shared/migrations/20261026_user_stop_billing.sql" >/dev/null
+"${task_psql[@]}" -f "$task_root/packages/shared/migrations/tests/user_stop_billing.sql" >/dev/null
+"${task_psql[@]}" -c "SELECT user_stop_test.charge('00000000-0000-4000-8000-0000000001ab');" >/dev/null &
+task_stop_first_pid=$!
+"${task_psql[@]}" -c "SELECT user_stop_test.charge('00000000-0000-4000-8000-0000000001ab');" >/dev/null &
+task_stop_second_pid=$!
+wait "$task_stop_first_pid"
+wait "$task_stop_second_pid"
+"${task_psql[@]}" -c "SELECT vip_t4_test.assert((SELECT count(*)=1 AND sum(abs(amount))=29 FROM billing.wallet_ledger WHERE debit_key='00000000-0000-4000-8000-0000000001ab'),'concurrent user stop double debit');" >/dev/null
+echo 'PASS: explicit stop original quote/entitlement once; system timeout and legacy cancellations stay free'
 
 # Run the existing real wallet/free-quota migration suite in another disposable DB.
 mkdir "$task_dir/bin"

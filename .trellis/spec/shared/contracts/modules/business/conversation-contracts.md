@@ -5,8 +5,8 @@ scope: shared
 category: business
 status: active
 owners: [shared]
-last_verified_task: .trellis/tasks/10-23-dialogue-preference/
-last_verified_at: 2026-10-13
+last_verified_task: .trellis/tasks/10-26-user-stop-billing/
+last_verified_at: 2026-10-26
 ---
 
 # 会话与语音共享契约
@@ -96,3 +96,7 @@ Wrong：`{type:'delta',text:reasoning}`。Correct：`{type:'reasoning',text}` �
 ## 2026-10-23 可运营回复风格
 
 reply-style-options定义内部目录与公开metadata两个strictschema；公开仅id/name/description。两套用户偏好DTO增加optional pref_reply_styles布尔map，PATCH是部分map赋值。id为style-前缀、目录最多24项、偏好最多64键；旧响应缺失兼容。标记与规则不是公开用户数据。
+
+## 主动停止原价与权益结算（2026-10-26）
+
+取消请求显式区分user_stop与first_token_timeout。新业务标记user_cancelled在已冻结报价的生成中按原型号原价格/VIP/免费权益一次结算；免费轮消费免费次数，前端不增加扣费通知。系统超时、上游失败、历史cancelled和未报价取消保持免扣；新请求服务端策略位默认生效，取消CAS RPC按截止与已见观测裁决，不以调用方省略原因选价。免费权益先收口再解锁，钱包按原charge_id后台结算，缺generationId也不重发上游；回捞保留新业务原因及同账单幂等。契约/后端/数据库/前端联动，具体执行证据见本任务release-review。

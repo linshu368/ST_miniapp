@@ -210,7 +210,7 @@ SSE 事件契约定义在 `shared/src/api/conversations.ts`：`start`（带 mess
 
 **硬约束**：SSE 首字节写出之前不能有任何可能失败的判定。402（余额不足）、409（会话忙 / 不可重生成）、404 全部以 HTTP 状态码 + JSON 返回；响应头一旦发出就只能降级成流内 `error` 事件。所以响应头推迟到上游已 2xx 的 `onStreamOpen` 才写——不是等第一个 token，否则客户端要白等一整个上游首 token 延迟才能挂上占位气泡。
 
-取消契约为 `{ assistant_message_id: string }` → `{ message: ChatMessage }`（统一 envelope），只允许本人会话内对应当前回复。取消先设置 `streaming.llm_finish_reason=cancelled`，正常完成只能在没有取消标记时抢占终态；取消确认后为 `stream_interrupted`，已有正文保留，计费回捞不得覆盖取消标记并恢复扣费。取消接口有限等待；暂未确认不释放 UI 占用，允许重试。活跃生成整体截止 110 秒，预留清理余量；详情查询与开轮前按 120 秒回收残留生成并释放对应额度预留；开轮 RPC 传入较长陈旧阈值，防止历史 guard 绕过额度释放；不会把旧请求成功结果覆盖到新 revision。
+取消契约为 `{ assistant_message_id: string, reason?: user_stop | first_token_timeout }` → `{ message: ChatMessage }`（统一 envelope），只允许本人会话内对应当前回复。取消CAS RPC先按服务端请求政策和截止事实设置 `streaming.llm_finish_reason=user_cancelled|timeout|cancelled`，正常完成只能在没有取消标记时抢占终态；取消确认后为 `stream_interrupted`，已有正文保留，计费回捞不得覆盖业务原因；新主动停止沿用原报价，旧取消/系统失败免扣。取消接口有限等待；暂未确认不释放 UI 占用，允许重试。活跃生成整体截止 110 秒，预留清理余量；详情查询与开轮前按 120 秒回收残留生成并释放对应额度预留；开轮 RPC 传入较长陈旧阈值，防止历史 guard 绕过额度释放；不会把旧请求成功结果覆盖到新 revision。
 
 新客户端 send/regenerate 携带可选 `request_id` UUID，后端将其作为辅助属性保留在 `chat_history.history` 首条快照记录，`ChatMessage.request_id` 可选公开给客户端。它只关联本次取消，不是计费或生成幂等键；上游 prompt 不包含该属性。首字前发现 ID 必须同时匹配 request_id/turn_index/revision，防止多端并发误取消；旧客户端/旧记录兼容。
 
@@ -291,7 +291,7 @@ T9 专表 contract：`20261016_openrouter_chat_history_drop_legacy_aliases.sql` 
 - 定档扣费（`billing_mode: 'fixed_tier'`，配置在 `runtime_config.llm_pricing_config`；084/085 之后模型目录用 `is_free` 标免费模型，不再有展示价与 markup）。
 - 免费额度按**用户 × 角色**计轮，上限来自 `runtime_config.miniapp_character_free_chat_quota_limit`（默认 40）。
 - 实扣走 RPC `billing.charge_llm_usage`，幂等键是 `charge_id`。
-- **finish_reason 计费闸门（081/082）**：固定档只有 `status=success`、`finish_reason='stop'` 且存在可见正文的自然收尾才扣星尘；finish_reason 未到时挂 `pending` 等 sync-job 回捞后结算；空回复、截断（length）、中断、上游错误一律不扣费。消费明细仍带 `reply_outcome`（complete / incomplete / empty）体验口径标签。
+- **finish_reason 计费闸门（081/082）**：固定档只有 `status=success`、`finish_reason='stop'` 且存在可见正文的自然收尾才扣星尘；finish_reason 未到时挂 `pending` 等 sync-job 回捞后结算；空回复、截断（length）、系统中断和上游错误不扣费；显式用户主动停止是受控例外，按持久化原价与权益结算。消费明细仍带 `reply_outcome`（complete / incomplete / empty）体验口径标签。
 - **VIP 生成折扣与钱包分配**：有效会员的文本、语音和图片付费生成在受理时写入计费快照，按原价 × 已发布 `vip_text_discount_rate` 四舍五入为整数；免费体验仍优先且不叠加折扣，之后改配置不重算已受理快照。轻量文本先扣 `main_credits`，不足再扣 `bonus_credits`；标准/旗舰文本和媒体只扣 `main_credits`。余额不够则整笔拒绝。已扣费后的失败按各自既有退款/清理路径幂等收口，不在 route 里直接改余额。
 - **完成态拆开**：用量元数据补齐 ≠ 结算完成。`experience.chat_history.llm_billing_snapshot` 保存请求时定价快照；`llm_billing_settled_at` 有值才表示扣费行存在、额度已收口、金额已回写。短暂扣费 / 额度 / 回写失败时元数据仍可先落，回捞按快照补建，不重新定价。
 
@@ -322,9 +322,9 @@ T9 专表 contract：`20261016_openrouter_chat_history_drop_legacy_aliases.sql` 
 
 ### 4.8 VIP 会员、策略与到期提醒
 
-资格真相在 `billing.vip_memberships`。`GET /api/vip/status` 与 `POST /api/vip/entry-viewed` 由 `routes/vip.ts` 提供；`active` 只比较服务端 `valid_until` 与当前时间。`benefits` 把已发布折扣、签到基础值和 VIP 加成给未开通用户展示，缺字段时前端不补数字。一次性角标由 `entry-viewed` 在服务端记住。
+资格真相在 `billing.vip_memberships`。`GET /api/vip/status` 与 `POST /api/vip/entry-viewed` 由 `routes/vip.ts` 提供；`active` 只比较服务端 `valid_until` 与当前时间。`benefits` 把已发布折扣、非 VIP 新用户签到档（对比用）和 VIP 签到绝对额给未开通用户展示，缺字段时前端不补数字。一次性角标由 `entry-viewed` 在服务端记住。
 
-商品、生成折扣、签到加成和媒体免费上限都在 Admin「VIP策略」里草稿/发布，经 `platform/runtime-config.ts` 读取。配置键是 `vip_purchase_enabled`、`vip_reminders_enabled`、`vip_plans_config`、`vip_text_discount_rate`、`vip_checkin_bonus_config`、`feature_free_trial_limits`；键名因兼容保留，但折扣同时适用于文本、语音与图片付费生成。代码损坏回退是周卡 100 分 / 7 天、月卡 200 分 / 31 天 / 3000 专项星尘、折扣 0.95、签到加成为与基础值相同的额外星尘、语音和初级图片各 3 次。周卡赠送固定为 0。已创建订单、已受理生成和已领取签到继续用各自快照。
+商品、生成折扣、VIP 签到绝对额和媒体免费上限都在 Admin「VIP策略」里草稿/发布，经 `platform/runtime-config.ts` 读取。配置键是 `vip_purchase_enabled`、`vip_reminders_enabled`、`vip_plans_config`、`vip_text_discount_rate`、`vip_checkin_bonus_config`、`feature_free_trial_limits`；键名因兼容保留，但折扣同时适用于文本、语音与图片付费生成。非 VIP 签到分档由通用配置 `miniapp_checkin_new_user_credits`（注册≤14 天）与 `miniapp_checkin_veteran_credits`（注册>14 天）控制；遗留键 `miniapp_daily_checkin_bonus_credits` 保留可编辑但发奖不再读取。代码损坏回退是周卡 100 分 / 7 天、月卡 200 分 / 31 天 / 3000 专项星尘、折扣 0.95、VIP 签到绝对额 150、语音和初级图片各 3 次。周卡赠送固定为 0。已创建订单、已受理生成和已领取签到继续用各自快照。
 
 `20260924_vip_plans_price_1_and_2_yuan.sql` 只改已发布配置和未发布草稿的 `price_cents`。任务日志没有记录该文件在 test 或 Production 的 apply；未执行前，页面价格仍是当时已发布值。T8 不补执行。
 
@@ -696,3 +696,9 @@ Admin 在“运营配置 → 兜底配置”集中编辑兜底型号、每型号
 Grafana 通过 `20261023_grafana_first_token_reader.sql` 正式迁移为既有登录角色授予 NOLOGIN reader 会员关系，只读新事实/报表及父表三列，正文与写权限不开放；先 TEST 后 production。独立业务看板默认最近24h、全部有请求型号，主图只使用客户端实际显示总首token秒数、兜底触发率、前台已知结果超时率，并同时展示样本与覆盖率。供应商/后端耗时保留在原始事实中供排障，不进入该业务看板。本期无 AI、自动调参或定时任务。详见 [首 token 运行说明](first-token-fallback.md)。
 
 新轮首 token 可见确认与计费：`20261026_first_token_visible_billing.sql` 将客户端真实可见回报加入既有计费资格判断；服务端完成而客户端超时无字时不扣星尘、不消费免费次数。缺报 pending 后保守免收，既有 sync 依据 RPC 实际 pending 保留回捞；存量政策不改。超时采用灰色轻提示。详见 `docs/first-token-fallback.md`。
+
+### Grafana 轻量经营投影（2026-10-26）
+
+`20261026_grafana_light_core.sql` 在 miniapp_analytics 增加近14天的日期/型号派生汇总，仅由owner cron维护；产品运行时与计费不依赖。一个30分钟任务只更新今天和昨天，每条SQL5s/lock1s/禁并行，报表读者仅可SELECT聚合。替代11个全历史物化刷新；旧对象/业务数据保留，冗余看板退出常驻查询。请求次数、每日独立用户、已记录成本下界、实扣星尘与completed实收分开，展示缺报/更新时间；真实首字仍来自独立客户端观测。细节与执行状态见docs/grafana/README.md和任务验收。
+
+主动停止政策（2026-10-26）：取消DTO兼容新增reason=user_stop|first_token_timeout，缺省不决定计费；服务端请求策略位既有false、新轮true。显式手动停止持久化user_cancelled，CAS完成先赢仍按完成处理；已冻结快照时按原charge_id异步结算，免费权益先收口再解除会话占用，preheader没有generationId也使用原价。billing资格user_stopped要求服务端标记与匹配快照，系统截止优先waived；免费权益消费一次。新原因不得被上游stop或sync覆盖，历史cancelled保持免扣。新增取消CAS RPC与固定默认策略列，无额外通知、轮询、cron或表/索引；异常沿用有界恢复，钱包待结算不阻挡停止确认。

@@ -9,7 +9,7 @@ const snapshots = {
 };
 
 vi.mock('../platform/vip-strategy.js', () => ({
-  readVipStrategy: vi.fn(async () => ({ discountRate: 0.95, checkin: { mode: 'same_as_base' } })),
+  readVipStrategy: vi.fn(async () => ({ discountRate: 0.95, checkin: 150 })),
 }));
 vi.mock('../platform/runtime-config.js', () => ({
   fetchRuntimeConfigEntryStrict: vi.fn(async () => ({ value: 60, textValue: null, version: 1 })),
@@ -106,7 +106,7 @@ describe('VIP status routes', () => {
       const expected = {
         text_discount_rate: 0.95,
         checkin_base_credits: 60,
-        checkin_vip_credits: 60,
+        checkin_vip_credits: 150,
       };
       const before = await app.inject({ method: 'GET', url: '/api/vip/status' });
       expect(before.json()).toMatchObject({

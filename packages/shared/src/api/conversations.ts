@@ -308,6 +308,8 @@ export interface PatchGenerationConfigData {
 /** POST /api/v1/conversations/:id/cancel. The ID binds cancellation to one revision. */
 export interface CancelConversationTurnRequest {
   assistant_message_id: string;
+  /** Explicit intent; omitted legacy callers retain their cancellation policy. */
+  reason?: 'user_stop' | 'first_token_timeout';
 }
 
 /** Returns the authoritative state; a reply completed before cancellation stays complete. */
