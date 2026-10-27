@@ -2,7 +2,7 @@
 
 短剧耗时直接记录到日志：浏览器使用现有 `createLogger`，前端报告经鉴权发送到 `POST /api/telemetry/drama-timing`，Backend 用现有 Pino 写入 Railway。短剧专用 Sentry Logs、Metrics 和 warning 事件已移除；其他业务和通用 HTTP/异常监控保持原有行为。
 
-计时不改变播放超时、重试、预取、签名有效期、媒体加载或自动播放策略。无需新环境变量、数据库对象或迁移。
+计时不改变播放超时、重试、预取、签名有效期、媒体加载或自动播放策略。默认保持日志模式；新增 v2 诊断与可选 Grafana 落表实现，需先执行对应环境的 `20261027_drama_playback_observability.sql`，再设置 `DRAMA_TIMING_PERSIST_ENABLED=true` 并重新部署 Backend。源文件存在不代表远端已经迁移或启用。发布、历史导入与真机验收见 [短剧看板操作说明](grafana/drama-playback-runbook.md)。
 
 ## 起止与口径
 
@@ -42,7 +42,19 @@
 
 后台沿用原有 `outcome=background` 并结束观察，可从生命周期事件与 visibility 辨识；恢复不重新累计本次启动。用户手动 play 的结果只补诊断，保持原有 UI/终态处理；自动播放拒绝后的手动恢复不覆盖已结束的 autoplay_blocked。首帧成功后不采集播放中操作或卡顿。
 
-本轮未采集媒体 Resource Timing/首字节，也未验证 HTTP Range、CDN 命中或 moov 前置。元数据已到意味着浏览器已取得解析所需的信息，并不意味着日志中具有首字节计时。传输层原因仍需浏览器真实媒体请求取证，禁止把签名缓存或 API body 耗时当作媒体传输指标。
+旧版报告没有媒体 Resource Timing/首字节。v2 被动读取当前源的可见资源条目，并明确区分 unsupported/no_entry/limited/available；跨域、WebView、在途请求等限制仍可能导致缺失。条目不提供原始 Range 区间/CDN 命中，不能自动证明某个两字节请求的原因；这些仍需真实网络或供应商证据。禁止把签名缓存或 API body 耗时当作媒体传输指标。
+
+## v2 统计与能力边界
+
+- 播放报告增加 `version=2/context`，含前端 release、随机页面会话、粗平台/浏览器大版本；不上传完整 UA、IP 或 Telegram 身份。Vercel 构建 SHA 自动注入 `NEXT_PUBLIC_DRAMA_RELEASE`，后端版本独立记录。
+- 新增轻量 `phase=start`，在点击处理完成后的微任务中排队，继续使用 background 优先级；原 slow/final 保留，网络迟到最多补一次 `phase=network`，每次最多四次上报。不补报离线历史，不承诺完全未送达尝试的真实分母。
+- `diagnostics.network.entries` 最多16条，以 src 精确匹配、代际与时间窗口隔离，URL 只留瞬时匹配内存。记录可见的相对请求边界、DNS/连接/TLS、TTFB 和浏览器字节字段；0/不可见字段不能直接证明缓存。final 不等待请求完成；尾观察最多5秒且不晚于设置源后60秒，后台/切源立即释放。`closed` 描述窗口关闭，不等同网络请求失败。
+- 帧回调记录处理时长和送往合成器/预期显示时间，处理时长缺失保持缺失；不是“元数据到首帧的纯解码时间”。支持时只汇总长任务，最多128条内部区间，输出计数/总时长/最大值/元数据至首帧重叠时长；截断显式标记，不逐帧轮询。
+- 首帧等待为 `first_frame` 偏移；启动完成为 `max(first_frame,playing)`，两者均到才成功。分析视图细分源→元数据、元数据→loadeddata、loadeddata→frame、frame→启动完成。缺失/逆序为 NULL，不能截为0。导航/预取并行，阶段P95不能相加。
+- `miniapp_analytics.drama_playback_observations` 每环境/观察一行，数据库RPC原子合并乱序与重复；首个final不可被start/slow/冲突final改写。summary全量；慢/失败诊断全量、快速成功明细确定性5%。可见网络摘要和帧/长任务摘要也全量保存，避免明细采样影响分布。
+- 摘要14天、详细数据7天；受限清理job初始关闭，验证容量后启用。仅service_role写，Grafana NOLOGIN reader只读，anon/authenticated无权限。无业务外键，播放API不读写此表。
+- 持久化开启时写入成功后返回 `accepted:true,persisted:true`；DB短超时2秒、单进程最多2个在途写、过载429/故障503。默认日志模式保留旧 `accepted:true`。环境开关启动时读取，关闭后需重新部署；遥测请求独立于播放请求。
+- Grafana 独立 UID `st-drama-playback`，只新增短剧看板，不修改经营/首token看板。默认24小时、5分钟刷新、最多读14天，复用现有只读数据源与连接上限。分位数附有效N，退出/后台/无终态单列，不把缺报算成功；旧日志标legacy且不能补回新字段。
 
 ## 上报可靠性与容量
 

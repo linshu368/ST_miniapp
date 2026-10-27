@@ -9,6 +9,17 @@
  */
 
 import { getDomainDb } from '../lib/supabase.js';
+import { config } from './config.js';
+
+/** Deployment opt-in: a compatible backend may ship before the manual analytics migration. */
+export function getDramaTimingPersistenceConfig() {
+  const candidate = process.env.RAILWAY_GIT_COMMIT_SHA || process.env.SENTRY_RELEASE || 'unknown';
+  return {
+    enabled: process.env.DRAMA_TIMING_PERSIST_ENABLED === 'true',
+    environment: config.database.target,
+    release: /^[a-zA-Z0-9_.-]{1,128}$/.test(candidate) ? candidate : 'unknown',
+  };
+}
 
 export interface LlmProviderRuntimeConfig {
   baseUrl: string;

@@ -1,10 +1,13 @@
 import Fastify from 'fastify';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { DramaTimingReportSchema } from '@miniapp/shared';
+import { railwayDramaReport } from '../scripts/import-drama-timing.js';
 
 const wallets = {
   hasCompletedPayment: vi.fn(async () => false),
 };
 const timingLogs = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }));
+const persistence = vi.hoisted(() => ({ rpc: vi.fn() }));
 vi.mock('../lib/logger.js', () => ({
   requestLogger: () => ({
     biz: { info: timingLogs.info, warn: timingLogs.warn },
@@ -14,7 +17,7 @@ vi.mock('../lib/logger.js', () => ({
 
 vi.mock('../lib/supabase.js', () => ({
   getSupabaseClient: () => ({ schema: () => ({}) }),
-  getDomainDb: () => ({}),
+  getDomainDb: () => ({ rpc: persistence.rpc }),
 }));
 
 vi.mock('../lib/user.js', () => ({
@@ -128,10 +131,40 @@ describe('POST /api/telemetry/drama-timing', () => {
       },
     ],
   };
+  it('imports a sanitized Railway envelope and refuses invalid playback fields', () => {
+    const parsed = railwayDramaReport({
+      timestamp: '2026-10-27T10:00:00Z',
+      attributes: [
+        { key: 'event', value: '"drama.frontend_timing"' },
+        ...Object.entries({
+          type: 'playback',
+          phase: 'final',
+          observation_id: 'sample',
+          outcome: 'playing',
+          elapsed_ms: 100,
+          marks: {},
+          queries: [],
+          token: 'must-not-store',
+        }).map(([key, value]) => ({ key, value: JSON.stringify(value) })),
+      ],
+    });
+    expect(parsed?.report.id).toBe('sample');
+    expect(parsed?.receivedAt).toBe('2026-10-27T10:00:00.000Z');
+    expect(JSON.stringify(parsed)).not.toContain('must-not-store');
+    expect(() =>
+      railwayDramaReport({
+        event: 'drama.frontend_timing',
+        type: 'playback',
+        marks: { url: 'secret' },
+      })
+    ).toThrow();
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubEnv('DEV_AUTH_BYPASS', '1');
     vi.stubEnv('MOCK_AUTH', '');
+    vi.stubEnv('DRAMA_TIMING_PERSIST_ENABLED', 'false');
+    persistence.rpc.mockReturnValue({ abortSignal: async () => ({ data: 'stored', error: null }) });
   });
   afterEach(() => {
     vi.unstubAllEnvs();
@@ -186,6 +219,70 @@ describe('POST /api/telemetry/drama-timing', () => {
     } finally {
       await app.close();
     }
+  });
+
+  it('acknowledges opt-in analytics only after storage and preserves the legacy logging mode', async () => {
+    vi.stubEnv('DRAMA_TIMING_PERSIST_ENABLED', 'true');
+    const app = await buildApp();
+    try {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/telemetry/drama-timing',
+        payload: report,
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({ success: true, data: { accepted: true, persisted: true } });
+      expect(persistence.rpc).toHaveBeenCalledWith(
+        'record_drama_playback_observation',
+        expect.objectContaining({
+          p_environment: 'test',
+          p_report: report,
+          p_source: 'live',
+        })
+      );
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('reports storage errors without claiming durability or writing raw payloads to error logs', async () => {
+    vi.stubEnv('DRAMA_TIMING_PERSIST_ENABLED', 'true');
+    persistence.rpc.mockReturnValue({
+      abortSignal: async () => ({ data: null, error: { code: 'db_unavailable' } }),
+    });
+    const app = await buildApp();
+    try {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/telemetry/drama-timing',
+        payload: report,
+      });
+      expect(response.statusCode).toBe(503);
+      expect(timingLogs.error).toHaveBeenCalledWith(
+        expect.objectContaining({ event: 'drama.timing_persist_failed' }),
+        expect.any(String)
+      );
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('bounds concurrent telemetry writes and rejects overload instead of accumulating a queue', async () => {
+    const { DramaTimingRepository, DramaTimingBusyError } =
+      await import('../features/drama/timing-repository.js');
+    const pending: Array<(result: { data: string; error: null }) => void> = [];
+    persistence.rpc.mockReturnValue({
+      abortSignal: () => new Promise((resolve) => pending.push(resolve)),
+    });
+    const repository = new DramaTimingRepository();
+    const context = { environment: 'test', release: 'test' };
+    const a = repository.persist(DramaTimingReportSchema.parse(report), context);
+    const b = repository.persist(DramaTimingReportSchema.parse(report), context);
+    await expect(
+      repository.persist(DramaTimingReportSchema.parse(report), context)
+    ).rejects.toBeInstanceOf(DramaTimingBusyError);
+    for (const resolve of pending) resolve({ data: 'stored', error: null });
+    await expect(Promise.all([a, b])).resolves.toEqual(['stored', 'stored']);
   });
 
   it('accepts media diagnostics through the existing log mapper and rejects unknown nested fields', async () => {

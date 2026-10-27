@@ -1,0 +1,36 @@
+{
+  "id": "drama-playback-observability",
+  "name": "drama-playback-observability",
+  "title": "短剧播放耗时监控与 Grafana 接入方案",
+  "description": "已获用户审阅通过，实施短剧播放分段、媒体诊断、轻量统计与 Grafana；生产迁移发布独立确认。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "observability",
+  "package": "backend",
+  "priority": "P2",
+  "creator": "linshu",
+  "assignee": "linshu",
+  "createdAt": "2026-10-27",
+  "completedAt": null,
+  "branch": "codex/drama-playback-production",
+  "base_branch": "main",
+  "worktree_path": "/Users/qj/.codex/worktrees/drama-playback-monitoring/ST_miniAPP",
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "2026-10-27用户明确授权跳过TEST采集验收，直接合main并执行production迁移。基于最新main仅提取本次监控提交，持久化开关迁移前保持关闭。远端结果见verification.md。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "frontend.infrastructure.client-ui-foundation",
+        "backend.infrastructure.runtime-data-security",
+        "database.infrastructure.schema-security"
+      ]
+    }
+  }
+}
