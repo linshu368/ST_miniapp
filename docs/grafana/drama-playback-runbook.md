@@ -13,6 +13,12 @@
 
 正式启用时读回此UID最新版本，将本地JSON的 `${DS_POSTGRES}` 绑定为已核验UID，去除导入专用 `__inputs`；仅更新此独立看板并保留folder/id/version、检查版本冲突。迁移/权限/发布门禁通过后才能启用；逐一执行统计/变量SQL并检查真实渲染。
 
+## 生产 cron 权限兼容修复
+
+原迁移 `20261027_drama_playback_observability.sql` 在production因直接UPDATE cron.job被拒绝而整笔回滚（run 40508353977）；只读核验新表/视图均不存在。原文件及认领checksum保留，不重写、不强制重跑、不伪造成功账本。后续新安装和本次恢复均只执行自包含 `20261027_drama_playback_observability_forward_fix.sql`，通过官方 cron.alter_job 将本功能新job设为inactive，不操作其他任务。该函数及postgres执行权限已在production catalog确认。
+
+本地验证增加受限迁移角色：可SELECT cron.job、不能UPDATE，只能经SECURITY DEFINER模拟的cron函数管理。验证前向修复重复执行后只有一个关闭的job；其余原子合并/ACL/5万样本面板SQL继续复跑。
+
 ## 本次发布决定（2026-10-27）
 
 用户明确授权跳过TEST采集验收，直接合main并执行production迁移。本次保留本地整合验证、生产对象/权限预检、默认关闭开关、单文件迁移与发布后验证；没有执行的TEST/真机项目标记未验收。下方是通常顺序，本次TEST门禁按该授权跳过；仅提取监控提交进入main，保留main既有业务改动。
@@ -20,7 +26,7 @@
 ## 顺序与停止条件
 
 1. 本地 `bash scripts/test-drama-observability-local.sh`：需本机PG17，非默认安装可指定 `DRAMA_PG_BIN`。使用全新临时cluster，不读取远端连接。验证重复迁移、并发/乱序、权限、保留期及5万条合成样本下的全部面板/变量SQL，每SQL5秒预算；不代表生产性能。
-2. 核对TEST目标shape：miniapp_analytics存在、没有同名异构对象、service_role和Grafana reader属性/已有权限。通过Database Migration工作流逐文件执行 `20261027_drama_playback_observability.sql`，验证table/RPC/view/ACL和目标迁移账本。
+2. 核对TEST目标shape：miniapp_analytics存在、没有同名异构对象、service_role和Grafana reader属性/已有权限。通过Database Migration工作流逐文件执行 `20261027_drama_playback_observability_forward_fix.sql`，验证table/RPC/view/ACL和目标迁移账本。
 3. 先发布兼容Backend。显式开启TEST的 `DRAMA_TIMING_PERSIST_ENABLED=true` 并重新部署，确认遥测200且 `data.persisted=true`；未迁移时保持false沿用Pino日志。再发布Frontend并确认前端release正确。
 4. 在TEST数据源验收新看板每个面板的查询和实际渲染，不能只看SQL成功。默认24h/5m刷新，可手动刷新查刚产生的观察。无浏览器/插件访问时这一步保持未验证。
 5. 独立生产确认后，重复生产shape/权限/容量、单migration→Backend开关→Frontend→新看板。生产不是TEST的同构假设。上线前实测日N/行大小、写时延/拒绝率与查询预算。

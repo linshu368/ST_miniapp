@@ -39,3 +39,5 @@
 生产预检：miniapp_analytics owner postgres；新表/视图/reader均不存在；grafana_cloud非super/BYPASSRLS；service_role已有BYPASSRLS。Railway production stminiapp追踪main、现有部署SUCCESS，无待应用改动，未设置持久化开关（默认关闭）。数据库写入只涉及本功能新增分析对象，无业务表/FK/触发器改动；清理job初始关闭。
 
 最新main整合复验：`pnpm -r typecheck`、shared 180 tests、Backend 984 tests、Frontend 453 tests及Frontend/Admin生产build全部通过；未改产品代码。发布前production `/health`返回200/status ok。
+
+发布PR #510已合main，commit 1291605c；原PR #509已关闭，避免重复进入dev。production初次迁移run 40508353977失败于UPDATE cron.job权限；BEGIN内未COMMIT，断连回滚，只读确认新表/视图NULL。production catalog确认cron.alter_job存在且postgres可执行。保留失败文件/认领原checksum，以自包含forward-fix恢复，不改历史文件、不伪造成功账本；持久化仍关闭。
