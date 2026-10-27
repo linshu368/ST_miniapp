@@ -48,3 +48,13 @@ design 必须列 producer/consumer、旧客户端、部分部署、重试/幂等
 - choice payload 是 renderer 输出的可信纯文本，但 consumer 仍负责“最新完整回复”资格、长度与防双击。
 
 短剧诊断上报契约 `api/drama-timing.ts`：`POST /api/telemetry/drama-timing` 请求为 `DramaTimingReportSchema`（嵌套 strict、有限状态、有限数值、最多 12 个 query/每 query 4 次尝试），响应 `{ accepted: true }`。body 最多 32 KiB，只允许关联 ID/耗时/状态；负查询起点用于进入前在途复用，其他耗时非负。纯函数 `dramaTimingLogFields` 统一浏览器/Railway 字段，媒体 URL/路径/签名/正文不得进入报告。Backend 先于 Frontend 发布。
+
+## 媒体启动诊断契约
+
+1. **Scope / Trigger**：只扩展短剧启动观察的可选诊断，不改变播放业务、API 次数或数据库。
+2. **Signatures**：`DramaTimingReportSchema` 增加可选 `media`；公开 `DramaMediaState`、`DramaMediaEvent` 和 `DRAMA_TIMING_MAX_MEDIA_EVENTS=32`。`dramaTimingLogFields(report)` 将 media 原样映射为日志字段。
+3. **Contracts**：media 为 `{events, eventsTruncated, snapshot?}`。事件仅允许有限 name、相对入口 atMs、trigger（automatic/user）、error 分类与 state。state 包含 readyState 0..4、networkState 0..3、paused/muted/seeking、非负有限 currentTimeMs/bufferedAheadMs 可选值、visibility（visible/hidden/unknown）。新增首次 marks 为 play_called/play_resolved/play_rejected/loadeddata/canplay。
+4. **Validation & Error Matrix**：嵌套全部 strict；超过 32 条、未知字段/枚举或非法状态/耗时返回 400；整个 body 超过 32 KiB 仍返回 413。旧客户端省略 media 接受，旧 Backend 拒绝新字段，因此必须 Backend 先发布；保留原 401/429/503 语义。
+5. **Good/Base/Bad Cases**：Good 为带等待事件和即时缓冲的慢报告；Base 为无 media 的旧报告；Bad 为 state 中夹带 URL/token、任意错误消息或非有限 bufferedAheadMs。
+6. **Tests Required**：既有 telemetry-contract.test.ts 验证旧/新报告和嵌套拒绝，backend telemetry.test.ts 验证 Pino 映射；frontend 媒体测试覆盖即时状态、截断与迟到隔离；所有 consumers typecheck。
+7. **Wrong vs Correct**：错误做法是将缺失状态记为 0、buffered 最远 end 当连续缓冲或上传原始 Error/媒体地址；正确做法是只记录当前位置连续缓冲与固定错误分类，不可读时省略。字段解释和真机场景以 docs/drama-playback-timing.md 为准。

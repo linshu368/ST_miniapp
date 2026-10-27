@@ -188,6 +188,46 @@ describe('POST /api/telemetry/drama-timing', () => {
     }
   });
 
+  it('accepts media diagnostics through the existing log mapper and rejects unknown nested fields', async () => {
+    const app = await buildApp();
+    const state = {
+      readyState: 1,
+      networkState: 2,
+      paused: true,
+      muted: false,
+      seeking: false,
+      currentTimeMs: 0,
+      bufferedAheadMs: 0,
+      visibility: 'hidden',
+    };
+    const media = {
+      events: [{ name: 'waiting', atMs: 500, state }],
+      eventsTruncated: false,
+      snapshot: state,
+    };
+    try {
+      const accepted = await app.inject({
+        method: 'POST',
+        url: '/api/telemetry/drama-timing',
+        payload: { ...report, media },
+      });
+      expect(accepted.statusCode).toBe(200);
+      expect(timingLogs.info).toHaveBeenCalledWith(
+        expect.objectContaining({ media }),
+        'drama frontend timing'
+      );
+      const rejected = await app.inject({
+        method: 'POST',
+        url: '/api/telemetry/drama-timing',
+        payload: { ...report, media: { ...media, snapshot: { ...state, play_url: 'private' } } },
+      });
+      expect(rejected.statusCode).toBe(400);
+      expect(timingLogs.info).toHaveBeenCalledTimes(1);
+    } finally {
+      await app.close();
+    }
+  });
+
   it('rejects unknown or credential-bearing fields, invalid durations, and oversized bodies', async () => {
     const app = await buildApp();
     try {

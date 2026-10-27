@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 export const DRAMA_TIMING_BODY_LIMIT = 32 * 1024;
 export const DRAMA_TIMING_UPLOAD_TIMEOUT_MS = 5_000;
+export const DRAMA_TIMING_MAX_MEDIA_EVENTS = 32;
 
 // 标识只用于串联日志；允许旧 WebView 的 web-* fallback，但不接受 URL 或任意正文。
 const Id = z
@@ -11,6 +12,48 @@ const Id = z
   .regex(/^[a-zA-Z0-9_-]+$/);
 const Duration = z.number().finite().nonnegative();
 const Offset = z.number().finite();
+
+const MediaStateSchema = z
+  .object({
+    readyState: z.number().int().min(0).max(4),
+    networkState: z.number().int().min(0).max(3),
+    paused: z.boolean(),
+    muted: z.boolean(),
+    seeking: z.boolean(),
+    currentTimeMs: Duration.optional(),
+    bufferedAheadMs: Duration.optional(),
+    visibility: z.enum(['visible', 'hidden', 'unknown']),
+  })
+  .strict();
+
+const MediaEventSchema = z
+  .object({
+    name: z.enum([
+      'play_called',
+      'play_resolved',
+      'play_rejected',
+      'loadedmetadata',
+      'loadeddata',
+      'canplay',
+      'play',
+      'playing',
+      'first_frame',
+      'waiting',
+      'stalled',
+      'suspend',
+      'pause',
+      'user_play',
+      'user_pause',
+      'user_retry',
+      'visibility_hidden',
+      'pagehide',
+    ]),
+    atMs: Duration,
+    trigger: z.enum(['automatic', 'user']).optional(),
+    error: z.enum(['not_allowed', 'aborted', 'not_supported', 'other']).optional(),
+    state: MediaStateSchema.optional(),
+  })
+  .strict();
 
 export const DramaTimingReportSchema = z
   .object({
@@ -40,6 +83,11 @@ export const DramaTimingReportSchema = z
         metadata: Duration.optional(),
         first_frame: Duration.optional(),
         playing: Duration.optional(),
+        play_called: Duration.optional(),
+        play_resolved: Duration.optional(),
+        play_rejected: Duration.optional(),
+        loadeddata: Duration.optional(),
+        canplay: Duration.optional(),
       })
       .strict(),
     stages: z
@@ -79,6 +127,14 @@ export const DramaTimingReportSchema = z
       .strict()
       .optional(),
     queryDetailsTruncated: z.boolean().optional(),
+    media: z
+      .object({
+        events: z.array(MediaEventSchema).max(DRAMA_TIMING_MAX_MEDIA_EVENTS),
+        eventsTruncated: z.boolean(),
+        snapshot: MediaStateSchema.optional(),
+      })
+      .strict()
+      .optional(),
     queries: z
       .array(
         z
@@ -121,6 +177,8 @@ export const DramaTimingReportSchema = z
   .strict();
 
 export type DramaTimingReport = z.infer<typeof DramaTimingReportSchema>;
+export type DramaMediaState = z.infer<typeof MediaStateSchema>;
+export type DramaMediaEvent = z.infer<typeof MediaEventSchema>;
 
 export const PostDramaTimingDataSchema = z.object({ accepted: z.literal(true) }).strict();
 export type PostDramaTimingData = z.infer<typeof PostDramaTimingDataSchema>;
@@ -156,5 +214,6 @@ export function dramaTimingLogFields(report: DramaTimingReport) {
     marks: report.marks,
     queries: report.queries,
     query_details_truncated: report.queryDetailsTruncated,
+    media: report.media,
   };
 }

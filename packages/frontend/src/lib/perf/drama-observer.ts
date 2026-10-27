@@ -55,7 +55,7 @@ export function installDramaTiming(): () => void {
   const hidden = () => {
     if (document.hidden) dramaTiming.background();
   };
-  const pagehide = () => dramaTiming.background();
+  const pagehide = () => dramaTiming.background('pagehide');
   document.addEventListener('click', click, true);
   document.addEventListener('visibilitychange', hidden);
   window.addEventListener('pagehide', pagehide);

@@ -74,6 +74,7 @@ export function DramaPlayer({
     retryVersion: number;
     flow: DramaPlaybackTiming;
   } | null>(null);
+  const mediaTimingRef = useRef<ReturnType<typeof observeDramaMedia> | null>(null);
   const [time, setTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [episodesOpen, setEpisodesOpen] = useState(false);
@@ -171,16 +172,22 @@ export function DramaPlayer({
     timing.mark('source_set');
     videoEl.src = playback.play_url;
     const mediaTiming = observeDramaMedia(videoEl, playback.play_url, timing);
-    void videoEl.play().catch((error: unknown) => {
-      mediaTiming.rejected(error);
-      if (!cancelled) {
-        setPaused(true);
-        setBuffering(false);
-      }
-    });
+    mediaTimingRef.current = mediaTiming;
+    mediaTiming.playCalled('automatic');
+    void videoEl
+      .play()
+      .then(() => mediaTiming.resolved('automatic'))
+      .catch((error: unknown) => {
+        mediaTiming.rejected(error);
+        if (!cancelled) {
+          setPaused(true);
+          setBuffering(false);
+        }
+      });
     return () => {
       cancelled = true;
       mediaTiming.dispose();
+      if (mediaTimingRef.current === mediaTiming) mediaTimingRef.current = null;
       // 换集、换剧或退出立即释放旧媒体，迟到的旧请求不能继续发声。
       videoEl.pause();
       videoEl.removeAttribute('src');
@@ -206,11 +213,21 @@ export function DramaPlayer({
     if (!videoEl) return;
     setAdvance(null);
     if (videoEl.paused) {
-      void videoEl.play().catch(() => {
-        setPaused(true);
-        setBuffering(false);
-      });
-    } else videoEl.pause();
+      timingRef.current?.flow.mediaEvent('user_play');
+      const mediaTiming = mediaTimingRef.current;
+      mediaTiming?.playCalled('user');
+      void videoEl
+        .play()
+        .then(() => mediaTiming?.resolved('user'))
+        .catch((error: unknown) => {
+          mediaTiming?.rejected(error, 'user');
+          setPaused(true);
+          setBuffering(false);
+        });
+    } else {
+      timingRef.current?.flow.mediaEvent('user_pause');
+      videoEl.pause();
+    }
   };
 
   const selectEpisode = (videoId: string) => {
@@ -435,9 +452,9 @@ export function DramaPlayer({
               <button
                 type="button"
                 onClick={() => {
-                  dramaTiming
-                    .beginPlayback(id, 'retry', activeVideoId ?? undefined)
-                    .mark('player_ready');
+                  const timing = dramaTiming.beginPlayback(id, 'retry', activeVideoId ?? undefined);
+                  timing.mark('player_ready');
+                  timing.mediaEvent('user_retry');
                   setFailed(false);
                   setRetryVersion((value) => value + 1);
                   void playbackQuery.refetch();

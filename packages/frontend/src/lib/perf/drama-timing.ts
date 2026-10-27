@@ -1,4 +1,10 @@
-import type { DramaPlayback, DramaTimingReport } from '@miniapp/shared';
+import {
+  DRAMA_TIMING_MAX_MEDIA_EVENTS,
+  type DramaPlayback,
+  type DramaTimingReport,
+  type DramaMediaEvent,
+  type DramaMediaState,
+} from '@miniapp/shared';
 export type { DramaTimingReport } from '@miniapp/shared';
 import type { ApiAttemptTiming } from '@/lib/api/client';
 
@@ -18,7 +24,12 @@ type Mark =
   | 'source_set'
   | 'metadata'
   | 'first_frame'
-  | 'playing';
+  | 'playing'
+  | 'play_called'
+  | 'play_resolved'
+  | 'play_rejected'
+  | 'loadeddata'
+  | 'canplay';
 
 export interface DramaQueryTiming {
   kind: DramaQueryKind;
@@ -58,6 +69,9 @@ export class DramaPlaybackTiming {
   private timer: ReturnType<typeof setTimeout>;
   private endAt?: number;
   private queriesTruncated = false;
+  private mediaEvents: DramaMediaEvent[] = [];
+  private mediaEventsTruncated = false;
+  private readMediaState?: () => DramaMediaState | undefined;
 
   constructor(
     readonly id: string,
@@ -77,6 +91,40 @@ export class DramaPlaybackTiming {
   mark(mark: Mark): void {
     if (this.outcome || this.marks[mark] !== undefined) return;
     this.marks[mark] = this.now();
+  }
+
+  bindMediaState(read: () => DramaMediaState | undefined): () => void {
+    if (this.outcome) return () => {};
+    this.readMediaState = read;
+    return () => {
+      if (this.readMediaState === read) this.readMediaState = undefined;
+    };
+  }
+
+  private mediaSnapshot(): DramaMediaState | undefined {
+    try {
+      return this.readMediaState?.();
+    } catch {
+      // WebView 的媒体属性/TimeRanges 读取失败不能中断播放或丢掉整条报告。
+      return undefined;
+    }
+  }
+
+  mediaEvent(
+    name: DramaMediaEvent['name'],
+    detail: Pick<DramaMediaEvent, 'trigger' | 'error'> = {}
+  ): void {
+    if (this.outcome) return;
+    if (this.mediaEvents.length >= DRAMA_TIMING_MAX_MEDIA_EVENTS) {
+      this.mediaEventsTruncated = true;
+      return;
+    }
+    this.mediaEvents.push({
+      name,
+      atMs: rounded(this.now() - this.startedAt),
+      ...detail,
+      state: this.mediaSnapshot(),
+    });
   }
 
   addQuery(query: DramaQueryTiming): void {
@@ -111,6 +159,7 @@ export class DramaPlaybackTiming {
     this.outcome = outcome;
     clearTimeout(this.timer);
     this.report('final');
+    this.readMediaState = undefined;
   }
 
   private report(phase: 'slow' | 'final'): void {
@@ -158,6 +207,15 @@ export class DramaPlaybackTiming {
           }
         : undefined,
       queryDetailsTruncated: this.queriesTruncated,
+      media:
+        this.readMediaState || this.mediaEvents.length > 0
+          ? {
+              // 慢报告必须固定当时的数据，后续事件不能改写已发送的快照。
+              events: this.mediaEvents.slice(),
+              eventsTruncated: this.mediaEventsTruncated,
+              snapshot: this.mediaSnapshot(),
+            }
+          : undefined,
       queries: this.queries.map((query) => queryReport(query, this.startedAt, end)),
     });
   }
@@ -359,7 +417,8 @@ export class DramaTimingTracker {
     else if (!data && isError) timing.finish('error');
   }
 
-  background(): void {
+  background(reason: 'visibility_hidden' | 'pagehide' = 'visibility_hidden'): void {
+    this.playback?.mediaEvent(reason);
     this.playback?.finish('background');
     this.endList();
     this.list = undefined;

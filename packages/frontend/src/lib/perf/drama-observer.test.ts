@@ -90,6 +90,34 @@ describe('drama centralized logging', () => {
     dramaTiming.beginPlayback('b', 'switch').finish('playing');
     expect(mocks.upload).toHaveBeenLastCalledWith(expect.objectContaining({ outcome: 'playing' }));
   });
+  it('reports the actual lifecycle reason once and removes lifecycle listeners', () => {
+    vi.useFakeTimers();
+    const handlers = new Map<string, () => void>();
+    const documentState = {
+      hidden: false,
+      addEventListener: (name: string, callback: () => void) => handlers.set(name, callback),
+      removeEventListener: (name: string) => handlers.delete(name),
+    };
+    vi.stubGlobal('document', documentState);
+    vi.stubGlobal('window', {
+      addEventListener: (name: string, callback: () => void) => handlers.set(name, callback),
+      removeEventListener: (name: string) => handlers.delete(name),
+    });
+    const cleanup = installDramaTiming();
+    dramaTiming.beginPlayback('a', 'cover');
+    handlers.get('pagehide')?.();
+    expect(mocks.upload).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        outcome: 'background',
+        media: expect.objectContaining({ events: [expect.objectContaining({ name: 'pagehide' })] }),
+      })
+    );
+    documentState.hidden = true;
+    handlers.get('visibilitychange')?.();
+    expect(mocks.upload).toHaveBeenCalledTimes(1);
+    cleanup();
+    expect(handlers.size).toBe(0);
+  });
   it('does not start a false wait when clicking the already-active drama navigation tab', () => {
     vi.useFakeTimers();
     class Link {
