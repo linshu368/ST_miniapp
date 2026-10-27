@@ -4,6 +4,8 @@ import {
   type DramaTimingReport,
   type DramaMediaEvent,
   type DramaMediaState,
+  type DramaStartupDiagnostics,
+  type DramaNetworkTiming,
 } from '@miniapp/shared';
 export type { DramaTimingReport } from '@miniapp/shared';
 import type { ApiAttemptTiming } from '@/lib/api/client';
@@ -72,6 +74,10 @@ export class DramaPlaybackTiming {
   private mediaEvents: DramaMediaEvent[] = [];
   private mediaEventsTruncated = false;
   private readMediaState?: () => DramaMediaState | undefined;
+  private diagnostics: DramaStartupDiagnostics = {};
+  private readLongTasks?: () => DramaStartupDiagnostics['longTasks'];
+  private finishListeners = new Set<(outcome: DramaOutcome) => void>();
+  private networkReported = false;
 
   constructor(
     readonly id: string,
@@ -83,9 +89,41 @@ export class DramaPlaybackTiming {
     private readonly now: () => number,
     private readonly emit: (report: DramaTimingReport) => void,
     private readonly list?: ListTiming,
-    private readonly cover?: DramaTimingReport['cover']
+    private readonly cover?: DramaTimingReport['cover'],
+    private readonly context?: DramaTimingReport['context']
   ) {
     this.timer = setTimeout(() => this.report('slow'), SLOW_MS);
+    if (context) this.report('start');
+  }
+
+  offset(at = this.now()): number {
+    return at - this.startedAt;
+  }
+
+  onFinish(listener: (outcome: DramaOutcome) => void): () => void {
+    this.finishListeners.add(listener);
+    return () => {
+      this.finishListeners.delete(listener);
+    };
+  }
+
+  recordFrame(frame: NonNullable<DramaStartupDiagnostics['frame']>): void {
+    if (!this.outcome && !this.diagnostics.frame) this.diagnostics.frame = frame;
+  }
+
+  bindLongTasks(read: () => DramaStartupDiagnostics['longTasks']): () => void {
+    this.readLongTasks = read;
+    return () => {
+      if (this.readLongTasks === read) this.readLongTasks = undefined;
+    };
+  }
+
+  networkTiming(network: DramaNetworkTiming, supplement = false): void {
+    this.diagnostics.network = network;
+    if (supplement && this.context && !this.networkReported) {
+      this.networkReported = true;
+      this.report('network');
+    }
   }
 
   mark(mark: Mark): void {
@@ -159,10 +197,18 @@ export class DramaPlaybackTiming {
     this.outcome = outcome;
     clearTimeout(this.timer);
     this.report('final');
+    for (const listener of this.finishListeners) {
+      try {
+        listener(outcome);
+      } catch {
+        /* 诊断清理不改变播放终态。 */
+      }
+    }
+    this.finishListeners.clear();
     this.readMediaState = undefined;
   }
 
-  private report(phase: 'slow' | 'final'): void {
+  private report(phase: DramaTimingReport['phase']): void {
     if (phase === 'slow' && this.outcome) return;
     const end = this.endAt ?? this.now();
     const marks = Object.fromEntries(
@@ -181,9 +227,17 @@ export class DramaPlaybackTiming {
     between('source_to_frame', this.marks.source_set, this.marks.first_frame);
     between('source_to_playing', this.marks.source_set, this.marks.playing);
     const list = this.list;
+    try {
+      const longTasks = this.readLongTasks?.();
+      if (longTasks) this.diagnostics.longTasks = longTasks;
+    } catch {
+      /* Optional WebView diagnostics must never suppress the terminal report. */
+    }
     this.emit({
       type: 'playback',
       phase,
+      ...(this.context ? { version: 2 as const, context: this.context } : {}),
+      diagnostics: phase === 'start' ? undefined : { ...this.diagnostics },
       id: this.id,
       entry: this.entry,
       dramaId: this.dramaId,
@@ -271,7 +325,8 @@ export class DramaTimingTracker {
   constructor(
     private readonly now: () => number,
     private readonly newId: () => string,
-    private readonly reporter: (report: DramaTimingReport) => void
+    private readonly reporter: (report: DramaTimingReport) => void,
+    private readonly context?: DramaTimingReport['context']
   ) {}
 
   private emit = (report: DramaTimingReport): void => {
@@ -389,7 +444,8 @@ export class DramaTimingTracker {
       this.now,
       this.emit,
       entry === 'cover' ? this.list : undefined,
-      cover
+      cover,
+      this.context
     );
     this.playback = playback;
     for (const query of this.pending) if (this.matches(query, playback)) playback.addQuery(query);
