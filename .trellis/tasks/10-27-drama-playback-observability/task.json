@@ -16,12 +16,12 @@
   "base_branch": "main",
   "worktree_path": "/Users/qj/.codex/worktrees/drama-playback-monitoring/ST_miniAPP",
   "commit": null,
-  "pr_url": "https://github.com/linshu368/ST_miniapp/pull/510",
+  "pr_url": "https://github.com/linshu368/ST_miniapp/pull/513",
   "subtasks": [],
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "用户已授权直接生产发布。#510已合main，首次migration因托管cron表不可直接UPDATE而整体回滚；原checksum保持，前向修复改用官方cron.alter_job，本地补充受限角色回归，迁移开关保持关闭直到成功。",
+  "notes": "已按用户授权跳过TEST/指定真机验收。#510/#513已合main，production forward-fix migration已成功记账，持久化已开启且部署SUCCESS；独立Grafana v2查询/渲染与真实v2成功播放样本已核验。仍需生产容量/清理启用和成熟样本分析；详细执行见verification.md。",
   "meta": {
     "module_impact": {
       "schema_version": 1,

@@ -41,3 +41,17 @@
 最新main整合复验：`pnpm -r typecheck`、shared 180 tests、Backend 984 tests、Frontend 453 tests及Frontend/Admin生产build全部通过；未改产品代码。发布前production `/health`返回200/status ok。
 
 发布PR #510已合main，commit 1291605c；原PR #509已关闭，避免重复进入dev。production初次迁移run 40508353977失败于UPDATE cron.job权限；BEGIN内未COMMIT，断连回滚，只读确认新表/视图NULL。production catalog确认cron.alter_job存在且postgres可执行。保留失败文件/认领原checksum，以自包含forward-fix恢复，不改历史文件、不伪造成功账本；持久化仍关闭。
+
+## Production 生效结果（2026-10-27T21:14:03+08:00）
+
+- main已合PR #510（1291605c）及cron兼容修复 #513（09da8b01）。修复PR Quality Gate/Docker/Vercel全部通过；自动review仍因上游API402无报告，未记为审阅通过。
+- Database Migration run 40509042505成功COMMIT并记账20261027_drama_playback_observability_forward_fix.sql；checksum f97a543117966af3c14527b6df6737a1e9e44a8de6e8ef10e42a047441c1e3c0。原失败run40508353977和认领保留，不改checksum。
+- 实际生产对象/ACL核验：table/view存在、RLS开启；Grafana view SELECT=true，INSERT/RPC=false；anon SELECT=false、authenticated INSERT=false；service_role INSERT/RPC=true。
+- 生产12面板+6变量SQL全部通过；独立UID st-drama-playback已更新version2，实际Image Renderer已确认有数据渲染；经营看板摘要保持不变。
+- Railway stminiapp deployment3b6e3a4c-5718-402d-91d7-1c5d8a519523 SUCCESS（09da8b01）。只核对非敏感配置：DATABASE_ENV/NODE_ENV=production、project ref正确、DRAMA_TIMING_PERSIST_ENABLED=true；前端09da8b01部署成功。
+- 后端health200/status ok；实际FRONTEND_URL https://app.themijing.com 的OPTIONS预检204，/dramas页面200；无鉴权遥测POST401。采集失败日志初查0条。
+- 初始真实v2观察已入库；最后渲染快照6次观察/5终态/2成功/3autoplay_blocked/1未完成，2成功有完整启动计时；前后端release均09da8b01。只证明采集闭环，不推断性能分布或罕见慢事件消失，不替代用户已跳过的真机验证。
+- 发布期间48个5xx均为两个临时Vercel Preview源被既有CORS拒绝的OPTIONS，非播放/遥测失败。诊断时另用未配置的默认Vercel别名探测产生1次相同拒绝；按实际配置域名重验204，未放宽CORS或改业务功能。
+- 清理job通过官方cron.alter_job保持inactive；尚未启用定期清理、未导入旧生产日志。后续需按实际容量启用清理并在采样窗口成熟后分析。
+
+本次用户授权的production上线已完成。详细事实先记在本发布分支与PR #513结果区，避免为纯验收文档再次触发生产重部署。
