@@ -137,6 +137,20 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe('turn lifecycle recovery', () => {
+  it('joins parallel identity writes before cleaning up an early context failure', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+    mocks.begin.mockImplementation(() => new Promise((resolve) => setTimeout(resolve, 300)));
+    mocks.context.mockRejectedValue(new Error('context unavailable'));
+    const pending = runConversationTurn(input({ kind: 'send', content: 'original' }));
+    void pending.catch(() => {});
+    await vi.advanceTimersByTimeAsync(100);
+    expect(mocks.finalize).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(201);
+    await expect(pending).rejects.toThrow('context unavailable');
+    expect(mocks.finalize).toHaveBeenCalledOnce();
+    expect(mocks.execute).not.toHaveBeenCalled();
+  });
+
   it('overlaps independent context and pricing preparation without dispatching before durable identity', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
     const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
