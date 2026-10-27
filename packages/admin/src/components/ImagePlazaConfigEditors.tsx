@@ -20,6 +20,8 @@ import type {
   ImagePlazaShareTipConfig,
   ImagePlazaTagConfig,
   ProviderImagePlazaModel,
+  ProviderVideoPlazaModel,
+  VideoPlazaModelCatalog,
 } from '@miniapp/shared';
 import { ImagePlazaTagConfigSchema } from '@miniapp/shared';
 import {
@@ -326,6 +328,169 @@ export function ImagePlazaModelCatalogEditor(props: {
   );
 }
 
+export function VideoPlazaModelCatalogEditor(props: {
+  value: VideoPlazaModelCatalog;
+  disabled?: boolean;
+  onChange: (value: VideoPlazaModelCatalog) => void;
+}) {
+  const patchModel = (index: number, patch: Partial<ProviderVideoPlazaModel>) => {
+    const models = structuredClone(props.value.models);
+    models[index] = { ...models[index], ...patch };
+    props.onChange({ ...props.value, models });
+  };
+  return (
+    <Space direction="vertical" size="middle" className="editor-stack">
+      <Alert
+        type="warning"
+        showIcon
+        message="占位价格禁止直接发布"
+        description="默认目录只用于提供六个目标模型的能力骨架；必须先根据 Venice /video/quote 核价并补全真实星尘价格。"
+      />
+      <div>
+        <Typography.Text strong>默认模型</Typography.Text>
+        <Select
+          className="field-full"
+          value={props.value.default_model_id}
+          disabled={props.disabled}
+          options={props.value.models
+            .filter((item) => item.enabled)
+            .map((item) => ({ value: item.id, label: item.name }))}
+          onChange={(default_model_id) => props.onChange({ ...props.value, default_model_id })}
+        />
+      </div>
+      {props.value.models.map((model, index) => (
+        <Card
+          key={model.id}
+          size="small"
+          title={`${index + 1}. ${model.name}`}
+          extra={
+            <Switch
+              checked={model.enabled}
+              disabled={props.disabled}
+              checkedChildren="上架"
+              unCheckedChildren="下架"
+              onChange={(enabled) => patchModel(index, { enabled })}
+            />
+          }
+        >
+          <Row gutter={[12, 12]}>
+            <Col xs={24} md={8}>
+              <Typography.Text>业务 ID</Typography.Text>
+              <Input value={model.id} disabled />
+            </Col>
+            <Col xs={24} md={8}>
+              <Typography.Text>名称</Typography.Text>
+              <Input
+                value={model.name}
+                disabled={props.disabled}
+                onChange={(event) => patchModel(index, { name: event.target.value })}
+              />
+            </Col>
+            <Col xs={24} md={8}>
+              <Typography.Text>附图模式</Typography.Text>
+              <Select
+                className="field-full"
+                value={model.image_input}
+                disabled={props.disabled}
+                options={[
+                  'none',
+                  'optional_first_frame',
+                  'optional_reference',
+                  'required_reference',
+                ].map((value) => ({ value, label: value }))}
+                onChange={(image_input) => patchModel(index, { image_input })}
+              />
+            </Col>
+            {(['t2v', 'i2v', 'r2v'] as const).map((mode) => (
+              <Col key={mode} xs={24} md={8}>
+                <Typography.Text>{mode} Provider ID</Typography.Text>
+                <Input
+                  value={model.provider_ids[mode] ?? ''}
+                  disabled={props.disabled}
+                  onChange={(event) =>
+                    patchModel(index, {
+                      provider_ids: {
+                        ...model.provider_ids,
+                        [mode]: event.target.value.trim() || undefined,
+                      },
+                    })
+                  }
+                />
+              </Col>
+            ))}
+            <Col span={24}>
+              <Typography.Text>说明</Typography.Text>
+              <Input
+                value={model.description}
+                disabled={props.disabled}
+                maxLength={240}
+                onChange={(event) => patchModel(index, { description: event.target.value })}
+              />
+            </Col>
+            <Col xs={24} md={8}>
+              <Typography.Text>时长（秒）</Typography.Text>
+              <Select
+                mode="tags"
+                className="field-full"
+                value={model.durations.map(String)}
+                disabled={props.disabled}
+                onChange={(values) =>
+                  patchModel(index, {
+                    durations: values
+                      .map(Number)
+                      .filter((value) => Number.isInteger(value) && value > 0),
+                  })
+                }
+              />
+            </Col>
+            <Col xs={24} md={8}>
+              <Typography.Text>清晰度</Typography.Text>
+              <Select
+                mode="tags"
+                className="field-full"
+                value={model.resolutions}
+                disabled={props.disabled}
+                onChange={(resolutions) => patchModel(index, { resolutions })}
+              />
+            </Col>
+            <Col xs={24} md={8}>
+              <Typography.Text>画幅</Typography.Text>
+              <Select
+                mode="tags"
+                className="field-full"
+                value={model.aspect_ratios}
+                disabled={props.disabled}
+                onChange={(aspect_ratios) => patchModel(index, { aspect_ratios })}
+              />
+            </Col>
+            <Col span={24}>
+              <Typography.Text strong>价格矩阵（星尘）</Typography.Text>
+              <div className="mt-2 grid gap-2 md:grid-cols-2">
+                {Object.entries(model.price_matrix).map(([key, credits]) => (
+                  <InputNumber
+                    key={key}
+                    addonBefore={key}
+                    min={1}
+                    max={1_000_000}
+                    precision={1}
+                    value={credits}
+                    disabled={props.disabled}
+                    onChange={(value) =>
+                      patchModel(index, {
+                        price_matrix: { ...model.price_matrix, [key]: value ?? 1 },
+                      })
+                    }
+                  />
+                ))}
+              </div>
+            </Col>
+          </Row>
+        </Card>
+      ))}
+    </Space>
+  );
+}
+
 function PricingRow(props: {
   label: string;
   credits: number;
@@ -544,6 +709,20 @@ export function ImagePlazaTagsEditor(props: {
                 onChange={(enabled) => update(index, { enabled })}
               />
             </Col>
+            <Col xs={24} md={8}>
+              <Select
+                mode="multiple"
+                aria-label={`标签 ${index + 1} 适用媒体`}
+                className="field-full"
+                value={tag.media_types}
+                disabled={props.disabled}
+                options={[
+                  { value: 'image', label: '图片' },
+                  { value: 'video', label: '视频' },
+                ]}
+                onChange={(media_types) => update(index, { media_types })}
+              />
+            </Col>
             <Col xs={8} md={3}>
               <InputNumber
                 min={0}
@@ -581,6 +760,7 @@ export function ImagePlazaTagsEditor(props: {
               label: '新标签',
               enabled: true,
               sort_order: props.value.length,
+              media_types: ['image'],
             },
           ]);
         }}

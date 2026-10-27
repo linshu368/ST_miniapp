@@ -24,6 +24,7 @@ import {
   ImagePlazaModelCatalogSchema,
   ImagePlazaShareTipConfigSchema,
   ImagePlazaTagConfigSchema,
+  VideoPlazaModelCatalogSchema,
   LlmPricingConfigSchema,
   MAX_FEATURE_FREE_TRIAL_LIMIT,
   ModelCatalogSchema,
@@ -60,6 +61,7 @@ import {
   ImagePlazaModelCatalogEditor,
   ImagePlazaShareTipEditor,
   ImagePlazaTagsEditor,
+  VideoPlazaModelCatalogEditor,
 } from './ImagePlazaConfigEditors';
 import { LobbyPinnedCharactersEditor } from './LobbyPinnedCharactersEditor';
 import { LobbyRankingParamsEditor } from './LobbyRankingParamsEditor';
@@ -293,6 +295,20 @@ export function ConfigValueEditor(props: {
     );
   }
 
+  if (props.configKey === 'image_plaza_video_model_catalog') {
+    const parsed = VideoPlazaModelCatalogSchema.safeParse(props.value);
+    const fallback = VideoPlazaModelCatalogSchema.parse(
+      configMetadata.image_plaza_video_model_catalog.defaultValue
+    );
+    return (
+      <VideoPlazaModelCatalogEditor
+        value={parsed.success ? parsed.data : fallback}
+        disabled={props.disabled}
+        onChange={props.onChange}
+      />
+    );
+  }
+
   if (props.configKey === 'image_plaza_share_tip') {
     const parsed = ImagePlazaShareTipConfigSchema.safeParse(props.value);
     const fallback = ImagePlazaShareTipConfigSchema.parse(
@@ -332,12 +348,14 @@ export function ConfigValueEditor(props: {
   if (props.configKey === 'image_plaza_tags') {
     const parsed = EditableImagePlazaTagConfigSchema.safeParse(props.value);
     const fallback = ImagePlazaTagConfigSchema.parse(configMetadata.image_plaza_tags.defaultValue);
+    const value = parsed.success
+      ? parsed.data.map((tag) => ({
+          ...tag,
+          media_types: tag.media_types ?? ['image' as const],
+        }))
+      : fallback;
     return (
-      <ImagePlazaTagsEditor
-        value={parsed.success ? parsed.data : fallback}
-        disabled={props.disabled}
-        onChange={props.onChange}
-      />
+      <ImagePlazaTagsEditor value={value} disabled={props.disabled} onChange={props.onChange} />
     );
   }
 

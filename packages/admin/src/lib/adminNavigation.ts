@@ -52,6 +52,7 @@ export type ImageGenerationConfigKey = (typeof IMAGE_GENERATION_CONFIG_KEYS)[num
 
 export const IMAGE_PLAZA_CONFIG_KEYS = [
   'image_plaza_model_catalog',
+  'image_plaza_video_model_catalog',
   'image_plaza_share_tip',
   'image_plaza_tags',
   // 'image_plaza_tags_feature_enabled',

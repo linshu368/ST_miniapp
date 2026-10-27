@@ -182,6 +182,25 @@ describe('fallback managed configuration', () => {
   });
 });
 
+describe('video plaza managed catalog', () => {
+  it('registers a valid six-model draft and rejects unsafe publish shapes', () => {
+    const key = 'image_plaza_video_model_catalog' as const;
+    expect(managedConfigKeys).toContain(key);
+    const catalog = configSchemas[key].parse(configMetadata[key].defaultValue);
+    expect(catalog.models).toHaveLength(6);
+    const disabledDefault = structuredClone(catalog);
+    disabledDefault.models.find(
+      (model: { id: string }) => model.id === disabledDefault.default_model_id
+    )!.enabled = false;
+    expect(configSchemas[key].safeParse(disabledDefault).success).toBe(false);
+    const missingPrice = structuredClone(catalog);
+    delete missingPrice.models[0]!.price_matrix[
+      Object.keys(missingPrice.models[0]!.price_matrix)[0]!
+    ];
+    expect(configSchemas[key].safeParse(missingPrice).success).toBe(false);
+  });
+});
+
 describe('reply style options configuration', () => {
   const blankOption = {
     id: 'style-example',

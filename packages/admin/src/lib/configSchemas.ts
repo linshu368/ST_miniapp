@@ -26,6 +26,7 @@ import {
   ImagePlazaModelCatalogSchema,
   ImagePlazaShareTipConfigSchema,
   ImagePlazaTagConfigSchema,
+  VideoPlazaModelCatalogSchema,
   LobbyPinnedCharactersSchema,
   LobbyRankingParamsSchema,
   MediaFeatureFreeTrialLimitSchema,
@@ -86,6 +87,7 @@ export const managedConfigKeys = [
   'image_generation_failed_hint',
   'image_failed_unknown_hint',
   'image_plaza_model_catalog',
+  'image_plaza_video_model_catalog',
   'image_plaza_share_tip',
   'image_plaza_tags',
   'image_plaza_tags_feature_enabled',
@@ -174,6 +176,7 @@ export const EditableImagePlazaTagConfigSchema = z.array(
     label: z.string(),
     enabled: z.boolean(),
     sort_order: z.number(),
+    media_types: z.array(z.enum(['image', 'video'])).optional(),
   })
 );
 
@@ -347,6 +350,7 @@ export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   image_generation_failed_hint: z.string().trim().min(1).max(200),
   image_failed_unknown_hint: z.string().trim().min(1).max(200),
   image_plaza_model_catalog: ImagePlazaModelCatalogSchema,
+  image_plaza_video_model_catalog: VideoPlazaModelCatalogSchema,
   image_plaza_share_tip: ImagePlazaShareTipConfigSchema,
   image_plaza_tags: ImagePlazaTagConfigSchema,
   image_plaza_tags_feature_enabled: z.boolean(),
@@ -358,6 +362,163 @@ export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   vip_checkin_bonus_config: VipCheckinBonusConfigSchema,
   feature_free_trial_limits: FeatureFreeTrialLimitsSchema,
 };
+
+function createDefaultVideoCatalog() {
+  const model = (
+    input: {
+      id: string;
+      name: string;
+      provider_ids: { t2v?: string; i2v?: string; r2v?: string };
+      image_input: 'none' | 'optional_first_frame' | 'optional_reference' | 'required_reference';
+      durations: number[];
+      resolutions: string[];
+      aspect_ratios: string[];
+      audio_configurable: boolean;
+      default_audio: boolean;
+      min_short_side?: number;
+      min_ratio?: number;
+      max_ratio?: number;
+      enabled?: boolean;
+      seed_aliases?: string[];
+    },
+    sort_order: number
+  ) => ({
+    ...input,
+    description: '发布前请核对 Venice 能力与真实报价',
+    default_duration: input.durations[0],
+    default_resolution: input.resolutions[0],
+    default_aspect_ratio: input.aspect_ratios[0] ?? null,
+    image_constraints: {
+      ...(input.min_short_side ? { min_short_side: input.min_short_side } : {}),
+      ...(input.min_ratio ? { min_ratio: input.min_ratio } : {}),
+      ...(input.max_ratio ? { max_ratio: input.max_ratio } : {}),
+    },
+    enabled: input.enabled ?? false,
+    sort_order,
+    seed_aliases: input.seed_aliases ?? [],
+    price_matrix: Object.fromEntries(
+      input.durations.flatMap((duration) =>
+        input.resolutions.flatMap((resolution) =>
+          (input.audio_configurable ? [false, true] : [input.default_audio]).map((audio) => [
+            `${duration}|${resolution}|${audio ? 1 : 0}`,
+            1,
+          ])
+        )
+      )
+    ),
+  });
+  const sixRatios = ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9'];
+  return {
+    default_model_id: 'wan-3-0-pro',
+    models: [
+      model(
+        {
+          id: 'wan-3-0-pro',
+          name: 'Wan 3.0 Pro',
+          provider_ids: {
+            t2v: 'wan-3-0-pro-text-to-video',
+            i2v: 'wan-3-0-pro-image-to-video',
+            r2v: 'wan-3-0-pro-reference-to-video',
+          },
+          image_input: 'optional_first_frame',
+          durations: [2, 5, 10, 15, 20, 25, 30],
+          resolutions: ['1080p', '2k', '4k'],
+          aspect_ratios: sixRatios.slice(0, 5),
+          audio_configurable: true,
+          default_audio: true,
+          min_short_side: 240,
+          enabled: true,
+        },
+        0
+      ),
+      model(
+        {
+          id: 'wan-3-0-reference',
+          name: 'Wan 3.0 Reference',
+          provider_ids: { r2v: 'wan-3-0-reference-to-video' },
+          image_input: 'required_reference',
+          durations: [2, 5, 10, 15, 20, 25, 30],
+          resolutions: ['1080p', '720p', '480p'],
+          aspect_ratios: ['adaptive', ...sixRatios.slice(0, 5)],
+          audio_configurable: true,
+          default_audio: true,
+          min_short_side: 240,
+        },
+        1
+      ),
+      model(
+        {
+          id: 'minimax-h3-max',
+          name: 'MiniMax H3 Max',
+          provider_ids: {
+            t2v: 'minimax-h3-max-text-to-video',
+            i2v: 'minimax-h3-max-image-to-video',
+          },
+          image_input: 'optional_first_frame',
+          durations: Array.from({ length: 11 }, (_, index) => index + 5),
+          resolutions: ['480P', '768P', '1080P'],
+          aspect_ratios: sixRatios,
+          audio_configurable: false,
+          default_audio: true,
+        },
+        2
+      ),
+      model(
+        {
+          id: 'minimax-h3-max-r2v',
+          name: 'MiniMax H3 Max R2V',
+          provider_ids: { r2v: 'minimax-h3-max-reference-to-video' },
+          image_input: 'required_reference',
+          durations: Array.from({ length: 11 }, (_, index) => index + 5),
+          resolutions: ['480P', '768P', '1080P'],
+          aspect_ratios: ['adaptive', ...sixRatios],
+          audio_configurable: false,
+          default_audio: true,
+          min_short_side: 256,
+          min_ratio: 0.4,
+          max_ratio: 2.5,
+        },
+        3
+      ),
+      model(
+        {
+          id: 'seedance-1-5-pro',
+          name: 'Seedance 1.5 Pro',
+          provider_ids: {
+            t2v: 'seedance-1-5-pro-text-to-video-basic',
+            i2v: 'seedance-1-5-pro-image-to-video-basic',
+          },
+          image_input: 'optional_first_frame',
+          durations: Array.from({ length: 9 }, (_, index) => index + 4),
+          resolutions: ['1080p', '720p', '480p'],
+          aspect_ratios: sixRatios,
+          audio_configurable: true,
+          default_audio: true,
+          min_short_side: 300,
+          min_ratio: 0.4,
+          max_ratio: 2.5,
+        },
+        4
+      ),
+      model(
+        {
+          id: 'seedance-2-0-r2v',
+          name: 'Seedance 2.0 R2V',
+          provider_ids: { r2v: 'seedance-2-0-reference-to-video-basic' },
+          image_input: 'required_reference',
+          durations: Array.from({ length: 12 }, (_, index) => index + 4),
+          resolutions: ['4k', '1080p', '720p', '480p'],
+          aspect_ratios: sixRatios,
+          audio_configurable: true,
+          default_audio: true,
+          min_short_side: 300,
+          seed_aliases: ['Seedance 2.0 R2V Enhanced'],
+        },
+        5
+      ),
+    ],
+  };
+}
 
 export const configMetadata: Record<
   ManagedConfigKey,
@@ -695,6 +856,12 @@ export const configMetadata: Record<
       })),
     },
   },
+  image_plaza_video_model_catalog: {
+    label: '视频模型管理',
+    description:
+      '管理视频模型能力、Provider ID 与时长×清晰度×声音价格矩阵；发布前必须用真实参考价替换占位价格。',
+    defaultValue: createDefaultVideoCatalog(),
+  },
   image_plaza_share_tip: {
     label: '弹窗配置',
     description:
@@ -711,9 +878,9 @@ export const configMetadata: Record<
     label: '内容标签',
     description: '管理广场筛选标签；“全部”为系统固定项，删除标签不会删除历史作品。',
     defaultValue: [
-      { id: 'portrait', label: '人像', enabled: true, sort_order: 0 },
-      { id: 'anime', label: '动漫', enabled: true, sort_order: 1 },
-      { id: 'poster', label: '海报', enabled: true, sort_order: 2 },
+      { id: 'portrait', label: '人像', enabled: true, sort_order: 0, media_types: ['image'] },
+      { id: 'anime', label: '动漫', enabled: true, sort_order: 1, media_types: ['image'] },
+      { id: 'poster', label: '海报', enabled: true, sort_order: 2, media_types: ['image'] },
     ],
   },
   image_plaza_tags_feature_enabled: {
