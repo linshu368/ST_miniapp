@@ -5,7 +5,7 @@ scope: backend
 category: business
 status: active
 owners: [backend]
-last_verified_task: .trellis/tasks/10-27-immediate-pretoken-fallback/
+last_verified_task: .trellis/tasks/10-27-chat-preparation-db-pressure/
 last_verified_at: 2026-10-27
 ---
 
@@ -139,3 +139,8 @@ recoverable_delivery仅新Backend显式启用；旧请求/终结账单不回填�
 ## 首发明确失败立即兜底（2026-10-27）
 
 首个可见 token 前，HTTP 非 2xx、连接/读取异常、空 EOF/DONE、流内 error、refusal 或无输出 finish_reason 立即进入同一条单次兜底流程，不等首发阈值，也不等结束帧后的连接关闭。先看到公开思考或正文则保留该模型，不混入另一模型；显式取消、全局截止和观察期限终止不触发重试。首发型号等于兜底时，明确失败允许一次顺序重试，静默等待仍不并发重发相同型号。切换清掉旧首发计时器，兜底仍受自身2秒和原总10秒预算约束。失败观测复用原 attempt；报价/权益/charge_id 沿用用户选择，成功一次结算、两次失败免扣，不新增表、统计任务或 API。验证由 first-token-fallback.test.ts 和 execute.test.ts 覆盖双平台、付费/免费及取消/期限竞态。
+
+
+## 聊天准备阶段减负（2026-10-27）
+
+取消轮询只取 status,llm_finish_reason；新轮身份写入与历史上下文读取并行，prompt 快照保存与独立定价/权益准备并行，真正派发前仍 await 身份、快照、报价。首字观测/检查点/供应商补录不阻塞显示，结算继续等待必要的交付事实。4/2/10 秒与计费语义不变。

@@ -326,6 +326,20 @@ export class ConversationHistoryRepository {
     return data as ConversationHistoryRow;
   }
 
+  /** Cancellation polling must not fetch/detoast the full prompt or reply every second. */
+  async requireTurnState(
+    historyId: string
+  ): Promise<Pick<ConversationHistoryRow, 'status' | 'llm_finish_reason'>> {
+    const { data, error } = await this.db
+      .from('chat_history')
+      .select('status,llm_finish_reason')
+      .eq('id', historyId)
+      .abortSignal(AbortSignal.timeout(5_000))
+      .single();
+    if (error) throw new Error(`读取对话状态失败：${error.message}`);
+    return data;
+  }
+
   async cancelTurn(
     sessionId: string,
     historyId: string,

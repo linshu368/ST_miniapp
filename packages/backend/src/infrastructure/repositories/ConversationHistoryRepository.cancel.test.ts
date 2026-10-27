@@ -10,6 +10,7 @@ const state = vi.hoisted(() => ({
   rows: [] as FixtureRow[],
   release: vi.fn(),
   cancelRpc: vi.fn(),
+  select: vi.fn(),
 }));
 vi.mock('./MiniappCharacterFreeQuotaRepository.js', () => ({
   MiniappCharacterFreeQuotaRepository: class {
@@ -31,6 +32,7 @@ vi.mock('../../lib/supabase.js', () => ({
           return query;
         },
         select(columns = '') {
+          state.select(columns);
           for (const table of ['openrouter_chat_history', 'venice_chat_history'] as const) {
             if (columns.includes(table + '!inner'))
               filters.push((row) => !!(row as FixtureRow)[table]);
@@ -138,6 +140,7 @@ function row(overrides: Partial<FixtureRow> = {}): FixtureRow {
   };
 }
 beforeEach(() => {
+  state.select.mockReset();
   state.rows = [row()];
   state.release.mockReset().mockResolvedValue(null);
   state.cancelRpc
@@ -160,6 +163,20 @@ beforeEach(() => {
       });
       return { data: matching.length > 0, error: null };
     });
+});
+
+describe('bounded cancellation state reads', () => {
+  it.each([null, 'user_cancelled', 'timeout'])(
+    'reads authoritative state without fetching prompt/reply for %s',
+    async (finishReason) => {
+      state.rows = [row({ llm_finish_reason: finishReason })];
+      expect(await new ConversationHistoryRepository().requireTurnState('reply')).toMatchObject({
+        status: 'streaming',
+        llm_finish_reason: finishReason,
+      });
+      expect(state.select).toHaveBeenCalledExactlyOnceWith('status,llm_finish_reason');
+    }
+  );
 });
 afterEach(() => vi.useRealTimers());
 

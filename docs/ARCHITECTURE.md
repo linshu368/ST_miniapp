@@ -38,7 +38,7 @@
 8. **数据库按八个归属域划分，新表必须声明归属域**（迁移文件头部注释 `-- domain: xxx`）；**跨域访问只准走 RPC / repository / API**，不得直接 SELECT/JOIN 另一个域的表。允许的惯例：指向根实体（`users` / `characters`）的 FK；`miniapp_analytics` 只读其他域，任何域不得反向读它。存量豁免（收口前不再新增同类）：
    - `users.total_round` / `miniapp_user_settings.total_round` 由 experience 链路回写；
    - `miniapp_features.character_ranking_scores` 由 lobby 定时任务直接聚合 `experience.chat_history`；
-   - `experience.chat_history.llm_charge_id` 软引用 `billing.llm_usage_charges`；
+   - `experience.chat_history.llm_charge_id` 软引用 `billing.llm_usage_charges`；按编号回查由 `idx_chat_history_llm_charge_id` 非空部分索引支持，禁止在计费门禁扫描整张历史表。
    - `notifications.created_by`、`support_messages.agent_user_id` FK → `admin.admin_users`。
 9. **迁移不随部署自动执行**：`packages/shared/migrations/*.sql` 由 GitHub Actions `Database Migration` 手动逐个触发；`mode=inspect` 只读互证，`mode=apply` 查账本、执行、记账在同一次调用里。执行状态在 `supabase_migrations.repo_migrations`（首次）和 `repo_migration_events`（含 `force_rerun` 历史）。2026-09-10 起新迁移命名 `YYYYMMDD_描述.sql`（CI 拦旧式编号）；历史存量存在重号（见 §7.4），**不要按序号推断内容**。改库只有仓库迁移一条路，禁止 Management API / Studio 直改。生产禁止跑 `104_rollback_voice_billing.sql`。
 10. **TypeScript 严格模式，禁止 `any`**。
@@ -722,3 +722,5 @@ recoverable_delivery仅新Backend显式启用；旧请求/终结账单不回填�
 唯一新增迁移20261027_recoverable_chat_delivery.sql：experience拥有策略/首字检查点，billing资格函数读取事实；analytics只追加无正文的策略/时刻/失败锁存字段。无新cron、逐token数据库写、业务回填或公开权限。先TEST、后生产迁移、后Backend/Frontend。回退保留新增对象和终账，必要时forward-fix。
 
 验证：本任务release-review记录自动化、真实PG、TEST流/浏览器和生产版本证据；测试通过不等于线上1%目标已达成。看板v3区分前台等待超时与系统无首字截断，显示分布只用浏览器业务侧实际时长，后台/缺报不填0。
+
+聊天出字准备：上下文读取与新轮身份写入并行，prompt 保存与独立报价/权益准备并行；派发前保持必要持久化门禁。停止轮询仅投影两个状态字段，交付观测/供应商补录不占首字路径。相关迁移与验证见 `.trellis/tasks/10-27-chat-preparation-db-pressure/`。
