@@ -284,27 +284,243 @@ describe('first-token fallback budget and delivery', () => {
     await expect(test.result).rejects.toThrow('cancelled');
     expect(test.store.prepareFallback).not.toHaveBeenCalled();
   });
-  it('does not fallback on an early HTTP rejection', async () => {
+  it.each([
+    'http_401',
+    'http_403',
+    'http_429',
+    'http_503',
+    'missing_body',
+    'connect_error',
+    'read_error',
+    'empty_eof',
+    'empty_done',
+    'stream_error',
+    'choice_error',
+    'event_error',
+    'event_error_text',
+    'refusal',
+    'finish_without_delta',
+    'finish_empty_delta',
+  ])('immediately falls back on %s before the first visible token', async (failure) => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+    const observations: AttemptObservation[] = [];
+    const cancelled = vi.fn();
     const store = {
-      prepareFallback: vi.fn(),
-      observe: vi.fn(async () => {}),
-      selectDelivery: vi.fn(),
+      prepareFallback: vi.fn(async () => {}),
+      observe: vi.fn(async (a: AttemptObservation) => {
+        observations.push(a);
+      }),
+      selectDelivery: vi.fn(async () => {}),
     };
-    const result = await forwardWithFirstTokenFallback({
+    let calls = 0;
+    const result = forwardWithFirstTokenFallback({
       primary: { provider: 'openrouter', providerModelId: 'selected' },
       primaryAttemptId: 'p',
-      timeoutMs: 40,
-      fallbackTimeoutMs: 20,
-      remainingFirstTokenMs: 100,
-      remainingObservationMs: 300,
+      timeoutMs: 4000,
+      fallbackTimeoutMs: 2000,
+      remainingFirstTokenMs: 10000,
+      remainingObservationMs: 110000,
       requestStartedAt: performance.now(),
       signal: new AbortController().signal,
       store,
-      forward: async () => new Response('rejected', { status: 503 }),
+      forward: async (_model, _signal, onDispatch) => {
+        onDispatch();
+        if (++calls === 2) return new Response(token('fallback-id', '兜底'));
+        if (failure.startsWith('http_'))
+          return new Response('rejected', { status: Number(failure.slice(5)) });
+        if (failure === 'missing_body') return new Response(null);
+        if (failure === 'connect_error') throw new Error('connection reset');
+        if (failure === 'empty_eof')
+          return new Response('data: {"choices":[{"delta":{"content":" "}}]}\n\n');
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start(c) {
+              if (failure === 'read_error') {
+                c.error(new Error('read failed'));
+                return;
+              }
+              const frames: Record<string, string> = {
+                empty_done: 'data: [DONE]\n\n',
+                stream_error: 'data: {"id":"failed-id","error":{"code":503}}\n\n',
+                choice_error: 'data: {"choices":[{"error":{"code":503}}]}\n\n',
+                event_error: 'event: error\ndata: {"message":"unavailable"}\n\n',
+                event_error_text: 'event: error\ndata: Service unavailable\n\n',
+                refusal: 'data: {"choices":[{"delta":{"refusal":"unavailable"}}]}\n\n',
+                finish_without_delta: 'data: {"choices":[{"finish_reason":"content_filter"}]}\n\n',
+                finish_empty_delta: 'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n',
+              };
+              c.enqueue(new TextEncoder().encode(frames[failure]));
+              // Deliberately do not close: terminal protocol events must not wait for EOF.
+            },
+            cancel: cancelled,
+          })
+        );
+      },
       onObservationError: vi.fn(),
     });
-    expect(result.response.status).toBe(503);
-    expect(store.prepareFallback).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    const delivered = await result;
+    expect(delivered.role).toBe('fallback');
+    expect(calls).toBe(2);
+    expect(store.prepareFallback).toHaveBeenCalledWith(expect.anything(), 0);
+    expect(store.selectDelivery).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ role: 'fallback' })
+    );
+    expect(observations).toContainEqual(
+      expect.objectContaining({
+        role: 'primary',
+        end_reason: expect.stringMatching(/upstream_error|stream_interrupted/),
+      })
+    );
+    if (failure === 'stream_error')
+      expect(observations).toContainEqual(expect.objectContaining({ generation_id: 'failed-id' }));
+    if (
+      [
+        'empty_done',
+        'stream_error',
+        'choice_error',
+        'event_error',
+        'event_error_text',
+        'refusal',
+        'finish_without_delta',
+        'finish_empty_delta',
+      ].includes(failure)
+    )
+      expect(cancelled).toHaveBeenCalled();
+    await delivered.response.body?.cancel();
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(calls).toBe(2);
+  });
+
+  it('retries the same fallback model once after failure and clears its primary deadline', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+    let calls = 0;
+    const result = forwardWithFirstTokenFallback({
+      primary: { provider: 'openrouter', providerModelId: FIRST_TOKEN_FALLBACK_MODEL_ID },
+      primaryAttemptId: 'p',
+      timeoutMs: 40,
+      fallbackTimeoutMs: 100,
+      remainingFirstTokenMs: 200,
+      remainingObservationMs: 300,
+      requestStartedAt: performance.now(),
+      signal: new AbortController().signal,
+      store: {
+        prepareFallback: vi.fn(async () => {}),
+        observe: vi.fn(async () => {}),
+        selectDelivery: vi.fn(async () => {}),
+      },
+      forward: async (_model, _signal, dispatch) => {
+        dispatch();
+        if (++calls === 1) return new Response(null, { status: 503 });
+        await new Promise((resolve) => setTimeout(resolve, 60));
+        return new Response(token('fallback', '恢复'));
+      },
+      onObservationError: vi.fn(),
+    });
+    void result.catch(() => {});
+    await vi.advanceTimersByTimeAsync(61);
+    expect((await result).role).toBe('fallback');
+    expect(calls).toBe(2);
+    await (await result).response.body?.cancel();
+  });
+
+  it('reassembles a split error frame and falls back before EOF or the threshold', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+    let calls = 0;
+    const result = forwardWithFirstTokenFallback({
+      primary: { provider: 'venice', providerModelId: 'selected' },
+      primaryAttemptId: 'p',
+      timeoutMs: 4000,
+      fallbackTimeoutMs: 2000,
+      remainingFirstTokenMs: 10000,
+      remainingObservationMs: 110000,
+      requestStartedAt: performance.now(),
+      signal: new AbortController().signal,
+      store: {
+        prepareFallback: vi.fn(async () => {}),
+        observe: vi.fn(async () => {}),
+        selectDelivery: vi.fn(async () => {}),
+      },
+      forward: async (_model, _signal, dispatch) => {
+        dispatch();
+        if (++calls === 2) return new Response(token('f', '兜底'));
+        return new Response(
+          new ReadableStream({
+            start(c) {
+              c.enqueue(new TextEncoder().encode('data: {"err'));
+              setTimeout(() => c.enqueue(new TextEncoder().encode('or":{"code":503}}\n\n')), 5);
+            },
+          })
+        );
+      },
+      onObservationError: vi.fn(),
+    });
+    await vi.advanceTimersByTimeAsync(6);
+    expect((await result).role).toBe('fallback');
+    expect(calls).toBe(2);
+    await (await result).response.body?.cancel();
+  });
+
+  it.each([
+    'user_cancelled',
+    'global_expired',
+    'fallback_failed',
+    'token_before_error',
+    'reasoning_before_error',
+  ])('respects the no-more-attempts boundary: %s', async (scenario) => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+    const controller = new AbortController();
+    let calls = 0;
+    const store = {
+      prepareFallback: vi.fn(async () => {}),
+      observe: vi.fn(async () => {}),
+      selectDelivery: vi.fn(async () => {}),
+    };
+    const result = forwardWithFirstTokenFallback({
+      primary: { provider: 'venice', providerModelId: 'selected' },
+      primaryAttemptId: 'p',
+      thinkingEnabled: true,
+      timeoutMs: 4000,
+      fallbackTimeoutMs: 2000,
+      remainingFirstTokenMs: 10000,
+      remainingObservationMs: 110000,
+      requestStartedAt: performance.now(),
+      signal: controller.signal,
+      store,
+      forward: async (_model, _signal, dispatch) => {
+        calls++;
+        if (scenario !== 'global_expired') dispatch();
+        if (scenario === 'user_cancelled') {
+          controller.abort(new Error('user cancelled'));
+          throw new Error('connection closed');
+        }
+        if (scenario === 'global_expired') {
+          await new Promise((resolve) => setTimeout(resolve, 10001));
+          throw new Error('late failure');
+        }
+        if (scenario === 'token_before_error' || scenario === 'reasoning_before_error') {
+          const first =
+            scenario === 'token_before_error'
+              ? token('p', '可见正文')
+              : 'data: {"choices":[{"delta":{"reasoning":"公开思考"}}]}\n\n';
+          return new Response(first + 'data: {"error":{"code":503}}\n\n');
+        }
+        return new Response(null, { status: 503 });
+      },
+      onObservationError: vi.fn(),
+    });
+    void result.catch(() => {});
+    await vi.advanceTimersByTimeAsync(scenario === 'global_expired' ? 10002 : 1);
+    if (scenario === 'user_cancelled') await expect(result).rejects.toThrow('user cancelled');
+    else if (scenario === 'global_expired')
+      await expect(result).rejects.toMatchObject({ stage: 'global' });
+    else {
+      const delivered = await result;
+      expect(delivered.role).toBe(scenario === 'fallback_failed' ? 'fallback' : 'primary');
+      await delivered.response.body?.cancel();
+    }
+    expect(calls).toBe(scenario === 'fallback_failed' ? 2 : 1);
+    expect(store.prepareFallback).toHaveBeenCalledTimes(scenario === 'fallback_failed' ? 1 : 0);
   });
   it('reads an EOF token without a trailing newline', async () => {
     const store = {
