@@ -1,7 +1,7 @@
 # ST_miniAPP 架构说明
 
 > 本文档描述项目当前架构（2026-09-30 更新，基于 2026-08-12 自研引擎版重写）。
-> 八域划分与跨域豁免以本文 §5.1 和铁律 8 为准。ST 替换动机、归属地图原稿、099 割接剧本已移出工作区，取回方式见 §12。
+> 九域划分与跨域豁免以本文 §5.1 和铁律 8 为准。ST 替换动机、归属地图原稿、099 割接剧本已移出工作区，取回方式见 §12。
 >
 > **状态口径**（每条能力都带标注，不标注即为 ✅）：
 >
@@ -24,7 +24,7 @@
 
 ## 1. 架构铁律（违反即拦截）
 
-离线数据运维补充：2026-10-19 的 Civitai seed TEST 导出复用既有 `experience.import_image_plaza_seed_work` 初始化目标作品，不迁移测试用户/点赞/账务；图片实体必须独立迁移。2026-10-20 新增离线 Storage 工具，固定 TEST → 本地 SHA-256 暂存 → production 仅新增上传/回读校验，有限并发且不覆盖冲突对象。该工具不改变运行时边界，不自动执行生产 SQL；实际完成状态以任务/report 为准。操作方法见 [seed 迁移说明](../ops/image-plaza-seed-migration.md)。
+离线数据运维补充：2026-10-19 的 Civitai seed TEST 导出最初复用 `experience.import_image_plaza_seed_work` 初始化目标作品；M1 后该 RPC 位于 `media_plaza`。该流程不迁移测试用户/点赞/账务，图片实体必须独立迁移。2026-10-20 新增离线 Storage 工具，固定 TEST → 本地 SHA-256 暂存 → production 仅新增上传/回读校验，有限并发且不覆盖冲突对象。该工具不改变运行时边界，不自动执行生产 SQL；实际完成状态以任务/report 为准。操作方法见 [seed 迁移说明](../ops/image-plaza-seed-migration.md)。
 
 1. **对外数据形状先定义在 `packages/shared/`**，再写 handler。backend 不得在包内私定对外类型。
 2. **每条路由注册上方必须有 `@frontend-ready: true|false — 原因`**，半成品要写出带业务含义的原因。
@@ -35,7 +35,7 @@
    同类纪律还有三条，一并由 CI 的 legacy guard 拦（见 §7.5）：`experience.chat_history` 只由 `ConversationHistoryRepository` 读写；支付到账只由 `PaymentSettlement.settlePaidOrder` 入账；OpenRouter 用量统计只由 `generation/openrouter-metadata.ts` 读取。
    **现行应用的星尘发放（注册 / 签到 / 运营赠送 / 邀请 / 社群）只发生在数据库 `SECURITY DEFINER` RPC 内**，且对应发奖 RPC 的「钱包 upsert + `bonus_credits` 加值 + `wallet_ledger` 记账」都收口在唯一入口 **`billing.grant_bonus_credits`**（`20260911_billing_grant_bonus_credits.sql`）；业务判定（配置、去重、上限、通知、审计）留在各 RPC。应用层只调 RPC、不做手动余额加减。CI 由 legacy guard `wallet-bonus-grant` 拦新迁移里再出现 `bonus_credits = bonus_credits + …`（见 §7.5）。充值入账（动 `main_credits` 与支付字段）是另一条已收口的路径，不走这个入口。发奖 RPC 的挂点：邀请「聊天轮数」在 `generation/settle.ts` 结算成功后触发，「首次付费」在 `PaymentSettlement.settlePaidOrder` 入账后触发（`lib/invite-rewards.ts`），社群入群在 `routes/community.ts`（webhook 自动 + 既有成员手动校验）。
 7. **`runtime_config` 只有一个读取入口**：`backend/src/platform/runtime-config.ts`（表在 `app_core.runtime_config`）。模型目录、定价、平台规则模板都从这里取，不允许并行实现第二套读法。
-8. **数据库按八个归属域划分，新表必须声明归属域**（迁移文件头部注释 `-- domain: xxx`）；**跨域访问只准走 RPC / repository / API**，不得直接 SELECT/JOIN 另一个域的表。允许的惯例：指向根实体（`users` / `characters`）的 FK；`miniapp_analytics` 只读其他域，任何域不得反向读它。存量豁免（收口前不再新增同类）：
+8. **数据库按九个归属域划分，新表必须声明归属域**（迁移文件头部注释 `-- domain: xxx`）；**跨域访问只准走 RPC / repository / API**，不得直接 SELECT/JOIN 另一个域的表。允许的惯例：指向根实体（`users` / `characters`）的 FK；`miniapp_analytics` 只读其他域，任何域不得反向读它。存量豁免（收口前不再新增同类）：
    - `users.total_round` / `miniapp_user_settings.total_round` 由 experience 链路回写；
    - `miniapp_features.character_ranking_scores` 由 lobby 定时任务直接聚合 `experience.chat_history`；
    - `experience.chat_history.llm_charge_id` 软引用 `billing.llm_usage_charges`；按编号回查由 `idx_chat_history_llm_charge_id` 非空部分索引支持，禁止在计费门禁扫描整张历史表。
@@ -84,13 +84,14 @@
                ▼                          ▼               ▼
 ┌────────────────────────────────────┐ ┌──────────────┐ ┌──────────────────┐
 │ Supabase（PostgreSQL + Storage）    │ │ OpenRouter   │ │ MiniMax TTS      │
-│  八域布局（099 之后）：              │ │ （LLM 上游）  │ │ DeepSeek（写稿）  │
+│  九域布局（media_plaza M1 后）：      │ │ （LLM 上游）  │ │ DeepSeek（写稿）  │
 │  ├ app_core      用户/角色卡/配置   │ │ 平台真实 key │ │ （语音链路上游）  │
 │  ├ experience    会话/chat_history/ │ │ 只在 backend │ └──────────────────┘
 │  │               语音元数据          │ └──────────────┘
 │  ├ billing       钱包/订单/计费/额度 │
 │  ├ miniapp_features 收藏/签到/通知/  │      ⑤ Telegram Bot webhook
 │  │               通知/排序分         │      → /api/telegram/webhook
+│  ├ media_plaza   图片广场全生命周期  │
 │  ├ cs_platform   旧回访/客服（已停用）│
 │  ├ miniapp_traffic  渠道归因         │  Railway 另有支付任务；development 另有提醒 Cron：
 │  ├ miniapp_analytics 看数视图        │   · payment-reconcile-cron（常驻对账）
@@ -338,34 +339,35 @@ T9 专表 contract：`20261016_openrouter_chat_history_drop_legacy_aliases.sql` 
 
 图片广场与角色回复图片完全独立：共享契约在 `shared/src/api/image-plaza.ts`，Backend 在 `features/image-plaza/` 与 `routes/image-plaza.ts`，Frontend 使用 `/create`、`/create/work/[workId]` 和 `/create/studio/[conversationId]`。报价、异步 Venice 生成、Storage、结算、分享返利、feed/详情/点赞/用同款都走这套独立链路；提示词在 textarea、shared schema、作品快照、attempt/message、数据库和上游调用中统一最多 2,000 字，不静默截断。Feed 始终返回启用标签目录；业务标签按 `snapshot.prompt_zh` 中文 label 字面包含筛选，「全部」不限制；`image_plaza_tags_feature_enabled` 只控制分享自动打标。
 
-`experience.image_plaza_works` 是公开作品投影，`experience.image_plaza_artifacts` 保存自有 Storage 元数据。`origin=generated` 必须关联真实用户和已结算 attempt；`origin=civitai_seed` 不得伪造用户、会话、attempt 或账务，只在内部保存 Civitai source ID/URL/heat，公开 DTO 仅返回自有签名 URL、模型和作品快照。本地 `like_count` 始终只由 `miniapp_features.image_plaza_likes` 重算，不能混入来源热度。分享返利仍只允许 generated artifact，并通过 `billing.grant_bonus_credits` 发放。
+`media_plaza.image_plaza_works` 是公开作品投影，`media_plaza.image_plaza_artifacts` 保存自有 Storage 元数据。`origin=generated` 必须关联真实用户和已结算 attempt；`origin=civitai_seed` 不得伪造用户、会话、attempt 或账务，只在内部保存 Civitai source ID/URL/heat，公开 DTO 仅返回自有签名 URL、模型和作品快照。本地 `like_count` 始终只由 `media_plaza.image_plaza_likes` 重算，不能混入来源热度。分享返利仍只允许 generated artifact，并通过 `billing.grant_bonus_credits` 发放。
 
-初始目录只允许用 `image-plaza:seed` 离线命令导入：默认 dry-run；真实 apply 必须有逐 ID 权利/内容/元数据审核清单、明确数据库目标、原图存储确认和 1–500 条显式批次。下载固定 HTTPS `image.civitai.com`，重定向仅允许 Civitai 精确主机白名单，并有有限超时/重试、普通图 20 MiB/seed 原图 50 MiB 上限和真实 MIME/尺寸校验；需要代理时显式使用 ProxyAgent，TLS 校验关闭则拒绝执行。图片转存私有 `image-plaza` bucket，并通过 `experience.import_image_plaza_seed_work` 原子写 artifact/work。8,227 条源数据中 8,054 条通过 2,000 字长度门禁，test 已导入 8,032 条，22 条源站和官方 API 均不可用记录隔离；production 未写入。
+初始目录只允许用 `image-plaza:seed` 离线命令导入：默认 dry-run；真实 apply 必须有逐 ID 权利/内容/元数据审核清单、明确数据库目标、原图存储确认和 1–500 条显式批次。下载固定 HTTPS `image.civitai.com`，重定向仅允许 Civitai 精确主机白名单，并有有限超时/重试、普通图 20 MiB/seed 原图 50 MiB 上限和真实 MIME/尺寸校验；需要代理时显式使用 ProxyAgent，TLS 校验关闭则拒绝执行。图片转存私有 `image-plaza` bucket，并通过 `media_plaza.import_image_plaza_seed_work` 原子写 artifact/work。8,227 条源数据中 8,054 条通过 2,000 字长度门禁，test 已导入 8,032 条，22 条源站和官方 API 均不可用记录隔离；production 未写入。
 
 ---
 
 ## 5. 数据模型与真相归属
 
-### 5.1 数据库八域布局（099 之后，test 与生产一致）
+### 5.1 数据库九域布局（media_plaza M1 之后）
 
-| Schema              | 归属域           | 内容                                                                                                                                                                                                                                                                                                                                                                                                         |
-| ------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `app_core`          | 跨模块根数据     | `users` / `miniapp_user_settings` / `characters` / `runtime_config` / `text_postprocess_versions`                                                                                                                                                                                                                                                                                                            |
-| `experience`        | 核心互动内容     | `chat_sessions` / `chat_history` / `chat_message_audio` / `chat_message_images`（图片 attempt 与租约）/ `image_plaza_*` 会话、报价、attempt、artifact 与公开作品 / 视图 `current_chat_history`；Venice 一对一调用明细表已存在（TEST/Production 的 20260929 文件未记账漂移不可重跑）；OpenRouter 明细表 TEST/Production 四份 migration 已于 2026-10-16 T5 核验记账且 checksum 一致，主表清退仍待独立实施/验收 |
-| `billing`           | 钱               | `payment_orders` / `wallet_ledger` / `user_wallets` / `llm_usage_charges` / `llm_usage_charge_dedup` / `character_free_chat_quotas` / `vip_memberships` / `vip_purchase_grants` / `feature_free_trials` / `image_plaza_share_rewards` / `wallet_refunds` / `_decisions`                                                                                                                                      |
-| `miniapp_features`  | 产品功能状态     | `character_favorites` / `character_ranking_scores` / `daily_checkins` / `notifications` / `notification_reads` / `image_plaza_likes` / `community_reward_claims` / `telegram_community_update_receipts`（108）；`wish_roles` 仅保留历史数据，无应用层消费者                                                                                                                                                  |
-| `cs_platform`       | 旧客服（已停用） | 旧 CS 回访画像与会话、`support_conversations` / `support_messages` 历史；客服已迁到独立仓库 `linshu368/ST_cs_platform`（库里 `cs` schema），本表只读保留                                                                                                                                                                                                                                                     |
-| `admin`             | 运营管理         | 运营台账号、文本后处理草稿 / 发布请求 / 审计及其他运营配置过程事实                                                                                                                                                                                                                                                                                                                                           |
-| `miniapp_traffic`   | 渠道归因         | `botlinks` + 裂变邀请三表 `invite_codes` / `invite_relations` / `invite_reward_logs`（105，acquisition 域，名称不改）                                                                                                                                                                                                                                                                                        |
-| `miniapp_analytics` | 看数             | 只读视图；红线：不得成为任何运行时依赖                                                                                                                                                                                                                                                                                                                                                                       |
-| `miniapp`           | —                | **空壳**，批次 D 观察期后删除 ⏳                                                                                                                                                                                                                                                                                                                                                                             |
-| `public`            | —                | 旧 bot 残留函数（数据已迁出本库；函数存废另开评审）                                                                                                                                                                                                                                                                                                                                                          |
+| Schema              | 归属域           | 内容                                                                                                                                                                                                                                                                                                                                              |
+| ------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `app_core`          | 跨模块根数据     | `users` / `miniapp_user_settings` / `characters` / `runtime_config` / `text_postprocess_versions`                                                                                                                                                                                                                                                 |
+| `experience`        | 核心互动内容     | `chat_sessions` / `chat_history` / `chat_message_audio` / `chat_message_images`（图片 attempt 与租约）/ 视图 `current_chat_history`；Venice 一对一调用明细表已存在（TEST/Production 的 20260929 文件未记账漂移不可重跑）；OpenRouter 明细表 TEST/Production 四份 migration 已于 2026-10-16 T5 核验记账且 checksum 一致，主表清退仍待独立实施/验收 |
+| `media_plaza`       | 图片创作广场     | 8 张 `image_plaza_*` 表（会话、消息、报价、参考图、attempt、artifact、作品、点赞）与 3 个图片广场 RPC；Backend 直接访问，不保留旧 schema 兼容入口                                                                                                                                                                                                 |
+| `billing`           | 钱               | `payment_orders` / `wallet_ledger` / `user_wallets` / `llm_usage_charges` / `llm_usage_charge_dedup` / `character_free_chat_quotas` / `vip_memberships` / `vip_purchase_grants` / `feature_free_trials` / `image_plaza_share_rewards` / `wallet_refunds` / `_decisions`                                                                           |
+| `miniapp_features`  | 产品功能状态     | `character_favorites` / `character_ranking_scores` / `daily_checkins` / `notifications` / `notification_reads` / `community_reward_claims` / `telegram_community_update_receipts`（108）；`wish_roles` 仅保留历史数据，无应用层消费者                                                                                                             |
+| `cs_platform`       | 旧客服（已停用） | 旧 CS 回访画像与会话、`support_conversations` / `support_messages` 历史；客服已迁到独立仓库 `linshu368/ST_cs_platform`（库里 `cs` schema），本表只读保留                                                                                                                                                                                          |
+| `admin`             | 运营管理         | 运营台账号、文本后处理草稿 / 发布请求 / 审计及其他运营配置过程事实                                                                                                                                                                                                                                                                                |
+| `miniapp_traffic`   | 渠道归因         | `botlinks` + 裂变邀请三表 `invite_codes` / `invite_relations` / `invite_reward_logs`（105，acquisition 域，名称不改）                                                                                                                                                                                                                             |
+| `miniapp_analytics` | 看数             | 只读视图；红线：不得成为任何运行时依赖                                                                                                                                                                                                                                                                                                            |
+| `miniapp`           | —                | **空壳**，批次 D 观察期后删除 ⏳                                                                                                                                                                                                                                                                                                                  |
+| `public`            | —                | 旧 bot 残留函数（数据已迁出本库；函数存废另开评审）                                                                                                                                                                                                                                                                                               |
 
 已删除的 schema：`st_platform` / `st_users` / `st_infra`（088，含酒馆格式平台预设）、`growth`（089，归因功能收敛进 `miniapp_traffic`）、`miniapp_simulation`（090，保留 `characters.is_test`）。
 
 三张钱表的口径纪律：**支付金额以订单为准，星尘变动以流水为准，钱包余额只是可重建的当前状态。**
 
-短剧是既有外部归档域 `drama_archive`，基础表由独立 `telegram-video-archive` 管理，不代表八域治理已经扩展。本次仅通过 shared migration 扩展既有 `videos.created_at`，不创建新表／schema／RPC。`DramaRepository` 经 `dramas → ai_results.drama_id` 获取剧级文字，`assemble` 统一逐字段回退；可播视频最早时间输出为 `first_published_at`，前端在完整目录上组合搜索／分类并按该字段排序，点击后保存当前播放队列顺序。外部上传端负责后续时间写入，NULL 不伪造为当前时间。迁移先于消费者发布，TEST 的补录时间不是历史上传事实，Production 不随本次执行。详见[短剧目录与时间契约](../.trellis/spec/database/supabase/drama-catalog.md)。
+短剧是既有外部归档域 `drama_archive`，基础表由独立 `telegram-video-archive` 管理，不属于本仓九域治理。本次仅通过 shared migration 扩展既有 `videos.created_at`，不创建新表／schema／RPC。`DramaRepository` 经 `dramas → ai_results.drama_id` 获取剧级文字，`assemble` 统一逐字段回退；可播视频最早时间输出为 `first_published_at`，前端在完整目录上组合搜索／分类并按该字段排序，点击后保存当前播放队列顺序。外部上传端负责后续时间写入，NULL 不伪造为当前时间。迁移先于消费者发布，TEST 的补录时间不是历史上传事实，Production 不随本次执行。详见[短剧目录与时间契约](../.trellis/spec/database/supabase/drama-catalog.md)。
 
 ### 5.2 会话存储
 
@@ -405,8 +407,8 @@ experience.chat_sessions  1 ─── N  experience.chat_history
 | 回复后处理运营过程 | `admin` 草稿 / 发布请求 / 审计对象                                                             | Admin 是唯一权威写入入口；发布事务原子切换 runtime 指针                |
 | 语音消息           | `experience.chat_message_audio` + Storage `miniapp-chat-voice`                                 | 每条 assistant 回复的 TTS 产物元数据                                   |
 | 图片消息           | `experience.chat_message_images` + Storage `miniapp-chat-images`                               | 每条 assistant 回复的图片 attempts、current 与内部任务状态             |
-| 图片广场作品       | `experience.image_plaza_works` / `image_plaza_artifacts` + Storage `image-plaza`               | generated 与 seed 共用公开投影；source 字段仅内部可见                  |
-| 图片广场本地点赞   | `miniapp_features.image_plaza_likes`                                                           | 唯一决定公开 `like_count`，与来源热度隔离                              |
+| 图片广场作品       | `media_plaza.image_plaza_works` / `image_plaza_artifacts` + Storage `image-plaza`              | generated 与 seed 共用公开投影；source 字段仅内部可见                  |
+| 图片广场本地点赞   | `media_plaza.image_plaza_likes`                                                                | 唯一决定公开 `like_count`，与来源热度隔离                              |
 | 用户生成配置       | `app_core.miniapp_user_settings`                                                               | `selected_model_id` + 三个 `pref_*` + 语音偏好；用户级生效             |
 | 钱包 / 订单 / 签到 | `billing.user_wallets` / `payment_orders` / `wallet_ledger`、`miniapp_features.daily_checkins` | `payment_orders.settled_by` 记录入账路径（103）                        |
 | VIP 资格与免费体验 | `billing.vip_memberships` / `vip_purchase_grants` / `feature_free_trials`                      | 权益配置在 `runtime_config`；订单快照和已消费次数不随配置回滚改写      |
@@ -501,7 +503,7 @@ packages/backend/src/
 
 - 位置 `packages/shared/migrations/`（`archive/` 另存 087 删除的 admin RPC 定义备查）。
 - **命名规则（2026-09-10 起）**：新迁移一律 `YYYYMMDD_描述.sql`。三位数字编号已停用并由 CI 拦截（`pnpm lint:migrations`，冻结清单在 `scripts/check-migration-filenames.mjs`）——历史上 021/030/031/032/053/065/086/088/092/093/095 撞号，100 号立规后 105/108/109 又各撞一对。
-- **迁移账本**：`supabase_migrations.repo_migrations` 记录每个环境实际执行过的文件（filename / checksum / applied_by / applied_at）。这是平台 schema 上的仓库账本，不是八个业务域的表，也不是 CLI 的 `schema_migrations`。`Database Migration` workflow 的 `apply` 把查账本、执行 SQL、写账本放在同一次调用（`scripts/apply-repo-migration.sh`）：已记录且 checksum 一致则拒绝重跑；checksum 不一致报 `MIGRATION_CHECKSUM_DRIFT`（不要改旧文件再跑，写新迁移）；账本表不存在时除 `20260910_schema_migrations_ledger.sql` 外直接失败，不再静默放行。`force_rerun` 只允许文件未改时再执行一遍 SQL，**不覆盖**首次 `applied_at` / checksum，历史写在 `repo_migration_events`（`20260914_repo_migration_ledger_events.sql`）。Apply 与 Record 之间用 `repo_migration_claims` 认领，避免「库已变、账本没有」。`mode=inspect` 用仓库日期命名文件的 sha256 对账本，并探 R3 `grant_bonus_credits`、111 `st_handle` 可空、A 的结算两列。账本只覆盖 2026-09-10 后的新迁移，存量不回填。生产环境拒绝 `104_rollback_voice_billing.sql`。本地协议回归：`pnpm test:migration-ledger`。
+- **迁移账本**：`supabase_migrations.repo_migrations` 记录每个环境实际执行过的文件（filename / checksum / applied_by / applied_at）。这是平台 schema 上的仓库账本，不是九个业务域的表，也不是 CLI 的 `schema_migrations`。`Database Migration` workflow 的 `apply` 把查账本、执行 SQL、写账本放在同一次调用（`scripts/apply-repo-migration.sh`）：已记录且 checksum 一致则拒绝重跑；checksum 不一致报 `MIGRATION_CHECKSUM_DRIFT`（不要改旧文件再跑，写新迁移）；账本表不存在时除 `20260910_schema_migrations_ledger.sql` 外直接失败，不再静默放行。`force_rerun` 只允许文件未改时再执行一遍 SQL，**不覆盖**首次 `applied_at` / checksum，历史写在 `repo_migration_events`（`20260914_repo_migration_ledger_events.sql`）。Apply 与 Record 之间用 `repo_migration_claims` 认领，避免「库已变、账本没有」。`mode=inspect` 用仓库日期命名文件的 sha256 对账本，并探 R3 `grant_bonus_credits`、111 `st_handle` 可空、A 的结算两列。账本只覆盖 2026-09-10 后的新迁移，存量不回填。生产环境拒绝 `104_rollback_voice_billing.sql`。本地协议回归：`pnpm test:migration-ledger`。
 - **历史存量编号必须小心**（均已冻结，仅供查档）：
   - 021 / 030 / 031 / 032 / 053 / 065 历史重号，同号无依赖，按文件名字母序执行；
   - 086 / 088 / 092 / 093 / 095 与 105 / 108 / 109 也各有两个文件，来自并行发布线，**同号但含义不同，不要按序号推断内容**；
@@ -665,7 +667,7 @@ Vercel 侧关键变量：`NEXT_PUBLIC_API_URL`（用户端 backend 公网域名�
 
 | 文档                                   | 内容                                 |
 | -------------------------------------- | ------------------------------------ |
-| 本文件                                 | 架构铁律、包边界、八域、迁移与验证   |
+| 本文件                                 | 架构铁律、包边界、九域、迁移与验证   |
 | `ops/railway/README.md`                | Railway 部署拓扑与运维流程           |
 | `packages/shared/migrations/README.md` | 迁移执行通道、命名、账本（操作备忘） |
 
