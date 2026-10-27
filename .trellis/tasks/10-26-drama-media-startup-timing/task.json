@@ -1,0 +1,32 @@
+{
+  "id": "drama-media-startup-timing",
+  "name": "drama-media-startup-timing",
+  "title": "短剧媒体启动最小诊断打点",
+  "description": "在现有集中日志中补充媒体里程碑、等待状态和启动期间用户操作；用户已确认上一轮三类最小打点方案。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "cross-package",
+  "package": "cross-package",
+  "priority": "P2",
+  "creator": "linshu",
+  "assignee": "linshu",
+  "createdAt": "2026-10-26",
+  "completedAt": null,
+  "branch": "dev_video_1021",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "用户明确回复“ok，先补充上述最小打点，看下耗时详情”，已审核的上一轮方案在本任务落盘，未新增产品取舍；不含提交/推送/部署授权。 2026-10-27 用户明确授权“提交并推送”，仅本次短剧打点相关代码、测试、规范和任务记录，不含其他工作区改动。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "no_module_change",
+      "reason": "已登记模块未覆盖短剧业务；本次只扩展现有短剧专项诊断契约和媒体观察，不改变已登记基建模块行为。专题spec同步新字段与生命周期。"
+    }
+  }
+}

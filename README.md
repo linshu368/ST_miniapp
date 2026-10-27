@@ -3,6 +3,7 @@
 ST_miniapp 是围绕 Telegram MiniApp、AI 角色聊天、钱包/支付、语音、增长运营和客服能力构建的 pnpm monorepo。仓库包含面向用户的 Next.js 前端、Fastify API、内部运营 SPA、共享契约/迁移包，以及由 Frontend 和 Admin 共用的回复渲染包。客服平台已拆到独立仓库 [`linshu368/ST_cs_platform`](https://github.com/linshu368/ST_cs_platform)，本仓库只保留 Bot 消息转发和 `/api/support/*` 代理。
 
 > 深层架构、数据流和路由清单见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)；Railway 生产运维见 [`ops/railway/README.md`](ops/railway/README.md)。本文负责新成员入门、依赖关系、环境、命令和交付约定。
+> 短剧慢播放的分段口径、前端集中上报／Railway 日志查询与真机验收见 [短剧播放耗时排查](docs/drama-playback-timing.md)。
 
 > 图片广场 Admin 保存草稿触发 `config_drafts_config_key_check` 的兼容修复：新增 `20261016_reconcile_image_plaza_managed_config_keys.sql`，保留现有白名单并恢复四个图片广场 key，不改正式配置。尚待 TEST workflow 单文件执行及保存/发布验收；详见迁移目录 README，Production 另行审批。
 
@@ -140,6 +141,8 @@ anon key 是浏览器公开配置，但仍应按环境隔离；service-role 绝�
 Admin Vercel Preview 在构建期固定 API 映射：普通 branch Preview 与 `dev -> main` 发布 PR 必须配置 HTTPS 的 `VITE_ADMIN_TEST_API_URL`；目标分支为 `dev` 的功能 PR 固定使用 `https://stminiapp-pr-<PR号>.up.railway.app`。构建会拒绝缺失或非 HTTPS 的稳定 TEST 映射；PR Railway workflow 同时验证后端健康和 Admin 代理的 Vercel CORS 预检。
 
 ## 6. Supabase 与数据库迁移
+
+短剧目录复用 `/api/dramas` 的完整标题、标签、简介，在前端做搜索／分类交集和排序。剧级文字逐字段采用 `dramas → 同剧 ai_results → 空值`；“最新”采用可播视频最早的 `created_at`，推荐保留接口顺序。`20261026_drama_video_created_at.sql` 仅计划用于 TEST：为已核验的 577 条存量按来源／消息升序补录展示时间，新增视频由独立上传端在首次上传成功时写入（本仓库不改该脚本）。先迁移验收，再发布 Backend／Frontend；当前远端执行状态和验证限制见[任务记录](.trellis/tasks/10-26-drama-mvp-search-latest/verification.md)，字段及恢复约定见[短剧目录契约](.trellis/spec/database/supabase/drama-catalog.md)。
 
 ```bash
 pnpm supabase:start

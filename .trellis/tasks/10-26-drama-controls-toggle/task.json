@@ -1,0 +1,35 @@
+{
+  "id": "drama-controls-toggle",
+  "name": "drama-controls-toggle",
+  "title": "短剧播放画面点按切换控件显隐",
+  "description": "只实现短剧画面点按切换控件显隐，保留 3 秒自动收起；默认入口仅给思路，自动播放暂缓。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "frontend",
+  "package": "frontend",
+  "priority": "P2",
+  "creator": "linshu",
+  "assignee": "linshu",
+  "createdAt": "2026-10-26",
+  "completedAt": null,
+  "branch": "dev_video_1021",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "packages/frontend/src/components/drama/drama-player.tsx",
+    ".trellis/spec/frontend/app/pages-components-and-ui.md"
+  ],
+  "notes": "用户在初始方案后的后续消息明确缩小范围并授权实施第 1 项及提交；轻量任务。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "no_module_change",
+      "reason": "短剧业务未登记为独立模块；只改变既有播放器局部显隐，不改变公共 UI、路由、API、鉴权或已登记模块行为。"
+    }
+  }
+}

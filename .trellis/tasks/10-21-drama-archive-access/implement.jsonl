@@ -1,0 +1,4 @@
+{"action": "read", "file": ".trellis/spec/database/supabase/index.md", "reason": "迁移唯一来源、八域判定入口与证据标签规则"}
+{"action": "read", "file": ".trellis/spec/database/supabase/schema-and-object-conventions.md", "reason": "判断 drama_archive 不在八域地图内这一缺口的处理原则（不得新建 schema，但本任务不新建）"}
+{"action": "read", "file": ".trellis/spec/database/supabase/migrations-and-rollbacks.md", "reason": "migration 命名、workflow_dispatch 单文件执行与执行顺序规则"}
+{"action": "read", "file": ".trellis/spec/database/supabase/security-rls-and-grants.md", "reason": "GRANT 与 RLS/policy 同时审查的硬性要求，以及 service_role 使用边界"}
