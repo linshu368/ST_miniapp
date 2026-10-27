@@ -35,7 +35,8 @@ SSE 流消息是临时客户端状态：`start` 建占位，`delta` 追加增量
 ## 个人中心、支付、通知与客服
 
 - Profile 组合 settings/wallet/checkin/invite/community/support unread，并展示总额、专项余额和 VIP 入口。VIP 页与充值页的价格、权益和剩余天数只读服务端契约，不写死折扣或金额。编辑成功同时更新 React Query cache 与相应 Zustand 展示镜像，避免双状态漂移。
-- Profile把余额/充值和每日签到放在同一日常使用区；消费明细为余额内低调文字入口。非会员签到旁用紧凑行提示VIP恢复每日签到额度，签到成功弹层继续保留完整引导。未开通VIP以月卡赠送专项星尘为主利益，已开通则展示暖金身份卡、有效期和已生效权益；客服和社群合并为安静的服务区。`VipEntryCard`的profile变体仅用于个人中心，充值页保留默认展示；`VipBenefitArt`区分会员身份与开通赠礼。月卡以外的历史会员状态继续正确显示，但不提供周卡购买选项。
+- Profile把余额/充值和每日签到放在同一日常使用区；消费明细为余额内低调文字入口。非会员签到旁用紧凑行提示VIP恢复每日签到额度，签到成功弹层继续保留完整引导。未开通VIP以月卡赠送专项星尘为主利益，已开通则展示暖金身份卡、有效期和已生效权益；客服和社群合并为安静的服务区。`VipEntryCard`的profile变体仅用于个人中心，recharge变体在充值套餐下方展示独立的搭配权益；`VipBenefitArt`区分会员身份与开通赠礼。月卡以外的历史会员状态继续正确显示，但不提供周卡购买选项。
+- Recharge按“账户余额 → 金额套餐 → VIP搭配权益 → 说明/客服”组织；多套餐两列、单套餐全宽。`PlanCard`大字显示总到账，独立强调bonus_credits赠送，实付移到卡片底部；有有效original_price_cents时复用savingsCents显示原价差额，没有则省略，不把专项赠送等价折现。底部固定栏显示含赠送明细；保持显式选择，不自动预选高价。默认旧粉/橙/紫样式在该页映射为暖黑/米白/香槟，非默认运营色仍保留。配置关闭全部支付渠道时按钮禁用且handler不下单；支付期间禁用套餐/渠道切换。
 - Recharge仅选择星尘商品，VIP单独在`/vip`购买；不自动加购/合单，不共享一组单选。VIP回流到充值时保留经过校验的原始returnTo。两页支付渠道继续消费既有`payment_channels`，不因设计调整新增渠道或变更支付指引。
 - Recharge 使用 `PlanCard` 做选择，mutation 做下单；订单详情仅 pending 时 2 秒轮询，进入终态立即停止。回跳参数要校验/编码，不将支付凭证放 URL。`pay_url` 只进短 TTL sessionStorage。打开外部支付前先 `enterExternalPaymentPending` 并写入 pending 记录，再 `openLink`。Telegram 冻结恢复时 URL 通常不变，回流由根上 visibility/focus/pageshow 观察，不能只靠 `?payment=returned` / `start_param`。pending 与离开事件都不是支付失败。
 - Orders 使用有界 infinite query；Spending 使用流水 query；均提供 loading skeleton、empty、error retry 和终止状态。

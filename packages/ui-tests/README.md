@@ -25,6 +25,7 @@ pnpm preview:ui
 
 ```bash
 pnpm test:ui --grep @profile       # 签到、VIP、充值与社群展示
+pnpm test:ui --grep @recharge      # 充值金额、到账确认、失败恢复、VIP回流和窄屏
 pnpm test:ui --grep @roleplay      # 角色发现、进入对话与返回
 pnpm test:ui --grep @chat          # 深度思考、回复偏好、多行输入、余额不足
 pnpm test:ui --grep @drama         # 视频首页、双列剧场、选集、追剧、续看与错误恢复
@@ -102,3 +103,14 @@ pnpm test:ui:fixtures            # 模拟服务本身的协议与隔离检查
 公共导航适配沿用 roleplay.spec.ts 的 `@navigation @layout`：五入口在角色发现/对话、剧场、首页、影像、我的保持统一几何、选中状态和底部空间；首页纯净模式隐藏后退出恢复；末项/作品操作条不受遮挡；工作室、VIP/充值、消息和客服隐藏底栏且无空占位。可运行 `pnpm test:ui --grep @navigation` 复用390/320尺寸，客服空会话使用既有fixture协议，无外部服务依赖。
 
 个人中心视觉验收继续复用 `@profile`：普通/VIP首屏手机截图，余额→签到→会员的层次与主要操作44px触区；保留真实模拟签到到账、两处会员引导、失败重试、社群领奖隐藏与充值跳转。导航可见名称为「AI短剧」「生成」，内部剧场/影像广场业务和路由不变。
+
+## 充值页精修
+
+复用 `profile.spec.ts` 的 `@recharge`：390/320尺寸的双列金额/单套餐全宽、不预选套餐、总到账/含赠送/实付、固定付款栏、客服与说明可达；保留渠道/下单参数、失败后的选择、VIP嵌套回流。金额全部为虚构示例，POST订单固定模拟失败，不发生真实付款。
+
+- `recharge`：四档虚构套餐与VIP搭配展示。
+- `recharge-error`：加载失败，保留重试与订单入口。
+- `recharge-empty`：空套餐，不可下单。
+- `recharge-unavailable`：全部支付渠道关闭时禁止下单。
+
+充值收益展示复验同样运行 `@recharge`：到账字体明显大于卡片价格，赠送独立展示，配置原价后显示原价差额，缺少原价不编造省额；390/320布局不会横向裁切。`recharge`中¥36/¥88/¥168为本地演示原价，与线上配置无关。
