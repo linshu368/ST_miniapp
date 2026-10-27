@@ -31,3 +31,11 @@
 ## 下一步
 
 允许推送后创建面向dev的PR，先完成TEST单文件迁移和Preview；用户按runbook真机验证。生产发布/迁移按仓库流程独立确认。Grafana骨架已创建，发布门禁通过后在同一独立UID启用正式配置，先读回当前版本，只更新此看板并逐一验收查询/渲染。
+
+## 生产发布授权与执行（2026-10-27）
+
+用户明确选择跳过TEST采集验收，授权直接合main并执行production迁移；原TEST/真机门禁本次不执行，不将其写成通过。为保持线上业务，仍执行本地整合验证和生产shape/权限只读预检，持久化开关迁移前关闭。生产baseline为main a9881bac，仅cherry-pick监控提交至codex/drama-playback-production，保留上游所有业务行为。
+
+生产预检：miniapp_analytics owner postgres；新表/视图/reader均不存在；grafana_cloud非super/BYPASSRLS；service_role已有BYPASSRLS。Railway production stminiapp追踪main、现有部署SUCCESS，无待应用改动，未设置持久化开关（默认关闭）。数据库写入只涉及本功能新增分析对象，无业务表/FK/触发器改动；清理job初始关闭。
+
+最新main整合复验：`pnpm -r typecheck`、shared 180 tests、Backend 984 tests、Frontend 453 tests及Frontend/Admin生产build全部通过；未改产品代码。发布前production `/health`返回200/status ok。

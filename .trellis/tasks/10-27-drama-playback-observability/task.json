@@ -12,8 +12,8 @@
   "assignee": "linshu",
   "createdAt": "2026-10-27",
   "completedAt": null,
-  "branch": "codex/drama-playback-monitoring",
-  "base_branch": "dev",
+  "branch": "codex/drama-playback-production",
+  "base_branch": "main",
   "worktree_path": "/Users/qj/.codex/worktrees/drama-playback-monitoring/ST_miniAPP",
   "commit": null,
   "pr_url": null,
@@ -21,7 +21,7 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "已审阅主路径，本地实现验证完成。Grafana插件已连接，独立UID st-drama-playback骨架已创建；生产新表/视图待迁移，统计暂禁用，结构查询通过。未推送/部署/远端迁移；用户待Preview后协助真机。见verification.md。",
+  "notes": "2026-10-27用户明确授权跳过TEST采集验收，直接合main并执行production迁移。基于最新main仅提取本次监控提交，持久化开关迁移前保持关闭。远端结果见verification.md。",
   "meta": {
     "module_impact": {
       "schema_version": 1,
