@@ -5,8 +5,7 @@ import Link from 'next/link';
 import {
   AlertCircle,
   ArrowLeft,
-  ChevronDown,
-  ChevronUp,
+  ArrowUpDown,
   Loader2,
   Pause,
   Play,
@@ -506,32 +505,15 @@ export function DramaPlayer({
 
         {controlsVisible ? (
           <section className="absolute inset-x-0 bottom-0 z-10 space-y-3 px-5 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-8">
-            <div className="flex items-center justify-between gap-2">
-              <button
-                type="button"
-                disabled={!nextTitle || modalOpen}
-                aria-label={nextTitle ? `下一部：${nextTitle}` : '没有更多短剧'}
-                onClick={() => switchDrama(1)}
-                className="inline-flex min-h-11 items-center gap-1 rounded-full border border-white/15 bg-black/30 px-3 text-xs text-white/80 disabled:opacity-60"
-              >
-                <ChevronUp className="h-4 w-4" />
+            <div className="flex items-center">
+              <p className="pointer-events-none inline-flex min-h-11 items-center gap-1 rounded-full border border-white/15 bg-black/30 px-3 text-xs text-white/80">
+                <ArrowUpDown aria-hidden="true" className="h-4 w-4" />
                 {queueLoading
                   ? '正在加载更多短剧…'
                   : queueFailed
                     ? '换剧列表暂不可用'
-                    : nextTitle
-                      ? '上滑看下一部剧'
-                      : '已是最后一部剧'}
-              </button>
-              <button
-                type="button"
-                disabled={!previousTitle || modalOpen}
-                aria-label={previousTitle ? `上一部：${previousTitle}` : '没有上一部短剧'}
-                onClick={() => switchDrama(-1)}
-                className="flex h-11 w-11 items-center justify-center rounded-full border border-white/15 bg-black/30 disabled:opacity-30"
-              >
-                <ChevronDown className="h-4 w-4" />
-              </button>
+                    : '上下滑可切换剧集'}
+              </p>
             </div>
             {queueFailed ? (
               <button
