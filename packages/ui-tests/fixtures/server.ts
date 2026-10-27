@@ -102,6 +102,51 @@ export function createPreviewServer(apiPort: number, appPort: number) {
     quotes.clear();
     requests.length = 0;
     unhandled.length = 0;
+    if (next === 'recharge' || next === 'recharge-unavailable') {
+      const basePlan = data.plans.plans[0]!;
+      data.plans.plans = [
+        { ...basePlan, variant: 'entry', badge_text: null, highlight_text: null },
+        {
+          ...basePlan,
+          id: 'preview-credits-30',
+          price_cents: 3000,
+          original_price_cents: 3600,
+          credits_amount: 18000,
+          bonus_credits: 3600,
+          badge_text: '推荐',
+          highlight_text: null,
+        },
+        {
+          ...basePlan,
+          id: 'preview-credits-68',
+          variant: 'standard',
+          price_cents: 6800,
+          original_price_cents: 8800,
+          credits_amount: 40800,
+          bonus_credits: 10200,
+          badge_text: null,
+          highlight_text: null,
+        },
+        {
+          ...basePlan,
+          id: 'preview-credits-128',
+          variant: 'premium',
+          price_cents: 12800,
+          original_price_cents: 16800,
+          credits_amount: 76800,
+          bonus_credits: 27200,
+          badge_text: null,
+          highlight_text: null,
+        },
+      ];
+    }
+    if (next === 'recharge-empty') data.plans.plans = [];
+    if (next === 'recharge-unavailable')
+      data.plans.payment_channels = {
+        alipay_enabled: false,
+        wxpay_enabled: false,
+        default_payment_type: 'alipay',
+      };
     if (next === 'vip')
       Object.assign(data.vip, {
         active: true,
@@ -468,6 +513,10 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         return;
       }
       if (path === '/api/payment/plans' && method === 'GET') {
+        if (scenario === 'recharge-error') {
+          fail(res, 503, 'preview_unavailable', '充值套餐暂不可用');
+          return;
+        }
         ok(res, data.plans);
         return;
       }
