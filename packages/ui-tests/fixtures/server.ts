@@ -3,6 +3,12 @@ import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 import {
+  CreateDramaCommentSchema,
+  SetDramaLikeSchema,
+  type DramaComment,
+  type GetDramaSocialData,
+  type GetDramaCommentsData,
+  type CreateDramaCommentData,
   ImagePlazaConversationSchema,
   ImagePlazaQuoteRequestSchema,
   PatchGenerationConfigRequestSchema,
@@ -12,6 +18,10 @@ import {
   type ChatMessage,
   type ConversationStreamEvent,
   type ImagePlazaAttempt,
+  type GetDramasData,
+  type GetDramaByIdData,
+  type GetDramaPlaybackData,
+  type GetSupportConversationData,
 } from '@miniapp/shared';
 import {
   IDS,
@@ -38,6 +48,34 @@ export function createPreviewServer(apiPort: number, appPort: number) {
   let claimed = false;
   let epoch = 0;
   let favoriteIds = new Set<string>();
+  const dramaLikes = new Set<string>();
+  const dramaComments = new Map<string, DramaComment[]>();
+  let commentFailureDelivered = false;
+  function commentsFor(id: string) {
+    if (!dramaComments.has(id)) {
+      const samples = [
+        '这个开头留了悬念，想看后面怎么解释。',
+        '喜欢这种不拖沓的节奏。',
+        '刚看到第二集，细节终于连起来了。',
+      ];
+      dramaComments.set(
+        id,
+        Array.from({ length: 23 }, (_, i) => ({
+          id: `80000000-0000-4000-8000-${String(i + 1).padStart(12, '0')}`,
+          author: `剧友 ${String(i + 1).padStart(6, '0')}`,
+          is_mine: false,
+          body: i < 3 ? samples[i]! : `这是第 ${i + 1} 位演示观众的追剧感受。`,
+          created_at: new Date(Date.now() - (i + 1) * 3600_000).toISOString(),
+        }))
+      );
+    }
+    return dramaComments.get(id)!;
+  }
+  const socialFor = (id: string) => ({
+    liked: dramaLikes.has(id),
+    like_count: 127 + Number(dramaLikes.has(id)),
+    comment_count: commentsFor(id).length,
+  });
   let pendingImages = new Map<
     string,
     { readyAt: number; failed: boolean; attempt: ImagePlazaAttempt }
@@ -57,6 +95,9 @@ export function createPreviewServer(apiPort: number, appPort: number) {
     claimed = next === 'checked';
     favoriteIds = new Set();
     pendingImages = new Map();
+    dramaLikes.clear();
+    dramaComments.clear();
+    commentFailureDelivered = false;
     imageKeys.clear();
     quotes.clear();
     requests.length = 0;
@@ -71,6 +112,7 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         entry_badge_visible: false,
       });
     if (next === 'empty') {
+      data.dramas = [];
       data.characters = [];
       data.sessions = [];
       data.works = [];
@@ -194,6 +236,41 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         return;
       }
 
+      if (path === '/assets/drama-preview.mp4' && (method === 'GET' || method === 'HEAD')) {
+        const video = await readFile(new URL('./assets/drama-preview.mp4', import.meta.url));
+        const range = req.headers.range;
+        const match = range?.match(/^bytes=(\d*)-(\d*)$/);
+        const suffix = match && !match[1] ? Number(match[2]) : null;
+        const start =
+          suffix !== null ? Math.max(0, video.length - suffix) : Number(match?.[1] || 0);
+        const end =
+          match?.[2] && suffix === null
+            ? Math.min(Number(match[2]), video.length - 1)
+            : video.length - 1;
+        if (
+          range &&
+          (!match ||
+            (!match[1] && !match[2]) ||
+            suffix === 0 ||
+            !Number.isSafeInteger(start) ||
+            !Number.isSafeInteger(end) ||
+            start > end ||
+            start >= video.length)
+        ) {
+          res.writeHead(416, { 'Content-Range': `bytes */${video.length}` }).end();
+          return;
+        }
+        res.writeHead(range ? 206 : 200, {
+          'Content-Type': 'video/mp4',
+          'Accept-Ranges': 'bytes',
+          'Content-Length': end - start + 1,
+          'Cache-Control': 'public, max-age=3600',
+          ...(range ? { 'Content-Range': `bytes ${start}-${end}/${video.length}` } : {}),
+        });
+        res.end(method === 'HEAD' ? undefined : video.subarray(start, end + 1));
+        return;
+      }
+
       const request = {
         method,
         path,
@@ -209,6 +286,109 @@ export function createPreviewServer(apiPort: number, appPort: number) {
       reconcileImages();
       if (method === 'POST' && /^\/api\/telemetry\/(page|action|drama|request)/.test(path)) {
         ok(res, { recorded: true });
+        return;
+      }
+      if (path === '/api/dramas' && method === 'GET') {
+        if (scenario === 'drama-list-error') {
+          fail(res, 503, 'preview_unavailable', '目录暂不可用');
+          return;
+        }
+        const dramas = data.dramas.map(({ videos, ...drama }) => ({
+          ...drama,
+          episode_count: videos.length,
+        }));
+        ok(res, { dramas } satisfies GetDramasData);
+        return;
+      }
+      const interaction = path.match(
+        /^\/api\/dramas\/([^/]+)\/(social|like|comments)(?:\/([^/]+))?$/
+      );
+      if (interaction) {
+        const [, id, action, commentId] = interaction;
+        if (!id || !data.dramas.some((item) => item.id === id)) {
+          fail(res, 404, 'NOT_FOUND', '短剧不存在');
+          return;
+        }
+        if (action === 'social' && method === 'GET') {
+          ok(res, { social: socialFor(id) } satisfies GetDramaSocialData);
+          return;
+        }
+        if (action === 'like' && method === 'PUT') {
+          if (scenario === 'drama-interaction-error') {
+            fail(res, 503, 'SERVICE_UNAVAILABLE', '点赞暂时不可用');
+            return;
+          }
+          const input = SetDramaLikeSchema.parse(body);
+          if (input.liked) dramaLikes.add(id);
+          else dramaLikes.delete(id);
+          ok(res, { social: socialFor(id) } satisfies GetDramaSocialData);
+          return;
+        }
+        if (action === 'comments') {
+          const comments = commentsFor(id);
+          if (method === 'GET') {
+            const offset = Number(url.searchParams.get('cursor') || 0);
+            ok(res, {
+              comments: comments.slice(offset, offset + 20),
+              next_cursor: comments.length > offset + 20 ? String(offset + 20) : null,
+            } satisfies GetDramaCommentsData);
+            return;
+          }
+          if (method === 'POST') {
+            const input = CreateDramaCommentSchema.parse(body);
+            let comment = comments.find((item) => item.id === input.id);
+            if (!comment) {
+              comment = { ...input, author: '剧友 演示', is_mine: true, created_at: stamp() };
+              comments.unshift(comment);
+            }
+            // Simulate a committed request with a lost response; retry must keep its UUID.
+            if (scenario === 'drama-interaction-error' && !commentFailureDelivered) {
+              commentFailureDelivered = true;
+              fail(res, 503, 'SERVICE_UNAVAILABLE', '响应暂不可达');
+              return;
+            }
+            ok(res, { comment } satisfies CreateDramaCommentData);
+            return;
+          }
+          if (method === 'DELETE' && commentId) {
+            const index = comments.findIndex((item) => item.id === commentId && item.is_mine);
+            if (index >= 0) comments.splice(index, 1);
+            ok(res, { deleted: true });
+            return;
+          }
+        }
+        fail(res, 405, 'METHOD_NOT_ALLOWED', '方法不支持');
+        return;
+      }
+      const dramaRoute = path.match(/^\/api\/dramas\/([^/]+)(\/play)?$/);
+      if (dramaRoute && method === 'GET') {
+        const drama = data.dramas.find((item) => item.id === dramaRoute[1]);
+        if (!drama) {
+          fail(res, 404, 'NOT_FOUND', '短剧不存在');
+          return;
+        }
+        if (!dramaRoute[2]) {
+          ok(res, { drama } satisfies GetDramaByIdData);
+          return;
+        }
+        if (scenario === 'drama-play-error') {
+          fail(res, 503, 'preview_unavailable', '播放暂不可用');
+          return;
+        }
+        const videoId = url.searchParams.get('video_id');
+        const video = videoId ? drama.videos.find((item) => item.id === videoId) : drama.videos[0];
+        if (!video) {
+          fail(res, 404, 'NOT_FOUND', '视频不存在');
+          return;
+        }
+        ok(res, {
+          playback: {
+            video_id: video.id,
+            playable: true,
+            play_url: `${api}/assets/drama-preview.mp4?episode=${video.id}`,
+            expires_at: new Date(Date.now() + 3_600_000).toISOString(),
+          },
+        } satisfies GetDramaPlaybackData);
         return;
       }
       if (path === '/api/users/settings') {
@@ -318,6 +498,10 @@ export function createPreviewServer(apiPort: number, appPort: number) {
       }
       if (path === '/api/support/unread' && method === 'GET') {
         ok(res, { has_unread: false });
+        return;
+      }
+      if (path === '/api/support/conversation' && method === 'GET') {
+        ok(res, { conversation: null } satisfies GetSupportConversationData);
         return;
       }
       if (path === '/api/invite/entry-status' && method === 'GET') {

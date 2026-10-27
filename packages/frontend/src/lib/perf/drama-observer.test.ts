@@ -122,36 +122,43 @@ describe('drama centralized logging', () => {
     cleanup();
     expect(handlers.size).toBe(0);
   });
-  it('does not start a false wait when clicking the already-active drama navigation tab', () => {
-    vi.useFakeTimers();
-    class Link {
-      closest() {
-        return this;
+  it.each(['/', '/dramas'])(
+    'does not start a false wait when clicking the active drama entry %s',
+    (targetPath) => {
+      vi.useFakeTimers();
+      class Link {
+        closest() {
+          return this;
+        }
+        getAttribute(name: string) {
+          return name === 'href' ? targetPath : null;
+        }
       }
-      getAttribute(name: string) {
-        return name === 'href' ? '/dramas' : null;
-      }
+      const handlers = new Map<string, (event: MouseEvent) => void>();
+      const location = { pathname: targetPath };
+      vi.stubGlobal('Element', Link);
+      vi.stubGlobal('document', {
+        hidden: false,
+        addEventListener: (name: string, callback: (event: MouseEvent) => void) =>
+          handlers.set(name, callback),
+        removeEventListener: vi.fn(),
+      });
+      vi.stubGlobal('window', {
+        location,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      });
+      const begin = vi.spyOn(dramaTiming, 'beginList');
+      const cleanup = installDramaTiming();
+      const click = { target: new Link(), button: 0 } as unknown as MouseEvent;
+      handlers.get('click')?.(click);
+      expect(begin).not.toHaveBeenCalled();
+      location.pathname = '/profile';
+      handlers.get('click')?.(click);
+      expect(begin).toHaveBeenCalledWith('navigation_click');
+      cleanup();
     }
-    const handlers = new Map<string, (event: MouseEvent) => void>();
-    const location = { pathname: '/dramas' };
-    vi.stubGlobal('Element', Link);
-    vi.stubGlobal('document', {
-      hidden: false,
-      addEventListener: (name: string, callback: (event: MouseEvent) => void) =>
-        handlers.set(name, callback),
-      removeEventListener: vi.fn(),
-    });
-    vi.stubGlobal('window', { location, addEventListener: vi.fn(), removeEventListener: vi.fn() });
-    const begin = vi.spyOn(dramaTiming, 'beginList');
-    const cleanup = installDramaTiming();
-    const click = { target: new Link(), button: 0 } as unknown as MouseEvent;
-    handlers.get('click')?.(click);
-    expect(begin).not.toHaveBeenCalled();
-    location.pathname = '/profile';
-    handlers.get('click')?.(click);
-    expect(begin).toHaveBeenCalledWith('navigation_click');
-    cleanup();
-  });
+  );
 });
 
 describe('drama upload transport', () => {

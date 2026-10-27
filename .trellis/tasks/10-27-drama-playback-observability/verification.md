@@ -41,3 +41,11 @@
 最新main整合复验：`pnpm -r typecheck`、shared 180 tests、Backend 984 tests、Frontend 453 tests及Frontend/Admin生产build全部通过；未改产品代码。发布前production `/health`返回200/status ok。
 
 发布PR #510已合main，commit 1291605c；原PR #509已关闭，避免重复进入dev。production初次迁移run 40508353977失败于UPDATE cron.job权限；BEGIN内未COMMIT，断连回滚，只读确认新表/视图NULL。production catalog确认cron.alter_job存在且postgres可执行。保留失败文件/认领原checksum，以自包含forward-fix恢复，不改历史文件、不伪造成功账本；持久化仍关闭。
+
+## main监控回同步dev与TEST schema（2026-10-27T21:27+08:00）
+
+用户授权将本次main监控发布同步回dev，并允许TEST迁移但不启用采集/cron。同步分支codex/sync-drama-main-to-dev以merge保留main09da8b01祖先关系；唯一冲突保留dev生产schema脚本中drama_archive保护。执行中dev推进至2faa63ef（#511）并已包含#510，因此再次merge最新dev，原样保留其业务代码，最终增量仅#513修复及文档/载荷（运行时产品代码相对最新dev无差异）。
+
+TEST目标zoqelpfhurwehlvypryl/DATABASE_ENV=test，Database Migration run40511201301的job122213273689 SUCCESS；只读核验forward-fix账本checksum f97a543117966af3c14527b6df6737a1e9e44a8de6e8ef10e42a047441c1e3c0，表/view存在、RLS开启、service_role可RPC、anon不可读、service_role不可cleanup。TEST无pg_cron，迁移跳过cron分支，未创建/运行job，未调用清理函数；持久化开关未设置（默认关闭），未改production。
+
+整合复验：全仓typecheck；shared180、Backend991、Frontend454 tests通过；本功能PG17重复前向迁移/托管cron权限/并发/ACL/保留期/5万合成观察全部面板SQL通过。模块全局校验被上游drama-experience.md缺少“当前状态”章节阻塞，未扩范围修改；本任务3个模块的载荷target/hash已与最新dev同步并独立核验。

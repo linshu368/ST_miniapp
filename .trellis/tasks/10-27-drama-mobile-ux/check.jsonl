@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/frontend/app/index.md", "reason": "前端规范与验证"}
+{"file": ".trellis/spec/frontend/app/modules/business/drama-experience.md", "reason": "短剧现有产品约定"}
+{"file": "packages/ui-tests/README.md", "reason": "复用移动验收"}
+{"file": ".trellis/spec/frontend/app/modules/business/wallet-payment.md", "reason": "个人中心与会员数据边界"}
+{"file": ".trellis/spec/frontend/app/pages-components-and-ui.md", "reason": "展示及交互约束"}
+{"file": ".trellis/spec/frontend/app/modules/infrastructure/client-ui-foundation.md", "reason": "公共导航与安全区"}

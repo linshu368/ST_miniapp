@@ -9,6 +9,8 @@
 - [个人互动、通知与客服](business/engagement-support.md) — `frontend.business.engagement-support` · `active`
 - [钱包、签到与充值](business/wallet-payment.md) — `frontend.business.wallet-payment` · `active`
 
+- [短剧首页、剧场与本设备追剧](business/drama-experience.md) — `frontend.business.drama-experience` · `active`
+
 ## infrastructure
 
 - [API、Telegram 与 UI 基建](infrastructure/client-ui-foundation.md) — `frontend.infrastructure.client-ui-foundation` · `active`

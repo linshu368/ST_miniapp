@@ -61,7 +61,7 @@ function browserContext(): NonNullable<DramaTimingReport['context']> {
   };
 }
 // 直接打开列表时包含文档加载与 hydration；站内入口由 click capture 起计。
-if (typeof window !== 'undefined' && window.location.pathname === '/dramas') {
+if (typeof window !== 'undefined' && ['/', '/dramas'].includes(window.location.pathname)) {
   dramaTiming.beginList('document_navigation', 0);
 }
 
@@ -78,10 +78,11 @@ export function installDramaTiming(): () => void {
     )
       return;
     const link = event.target instanceof Element ? event.target.closest('a') : null;
+    const href = link?.getAttribute('href');
     if (
-      link?.getAttribute('href') === '/dramas' &&
-      link.getAttribute('target') !== '_blank' &&
-      window.location.pathname !== '/dramas'
+      (href === '/' || href === '/dramas') &&
+      link?.getAttribute('target') !== '_blank' &&
+      window.location.pathname !== href
     )
       dramaTiming.beginList('navigation_click');
   };
