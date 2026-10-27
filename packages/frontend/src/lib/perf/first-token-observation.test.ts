@@ -37,18 +37,45 @@ describe('user-visible first token observation', () => {
     await vi.advanceTimersByTimeAsync(6000);
     expect(timeout).not.toHaveBeenCalled();
   });
-  it('times out even if a token was received before the deadline, but never displayed', async () => {
+  it('does not time out received text outside the viewport; records its eventual real display', async () => {
     const report = vi.fn(),
       timeout = vi.fn();
     const obs = new FirstTokenObservation(identity, 6000, report, timeout);
-    await vi.advanceTimersByTimeAsync(5000);
+    await vi.advanceTimersByTimeAsync(2000);
     obs.received();
-    await vi.advanceTimersByTimeAsync(1000);
-    expect(timeout).toHaveBeenCalledOnce();
-    expect(report).toHaveBeenCalledWith(
-      expect.objectContaining({ outcome: 'timed_out', first_token_visible_ms: null })
+    await vi.advanceTimersByTimeAsync(18000);
+    expect(timeout).not.toHaveBeenCalled();
+    expect(obs.displayed(identity, performance.now())).toBe(true);
+    expect(report).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        outcome: 'observed',
+        first_token_visible_ms: 20000,
+        first_token_received_ms: 2000,
+      })
     );
-    expect(obs.displayed(identity, performance.now())).toBe(false);
+  });
+  it('background across the deadline never triggers cancellation or a fake timeout', async () => {
+    const report = vi.fn(),
+      timeout = vi.fn();
+    const obs = new FirstTokenObservation(identity, 10000, report, timeout);
+    await vi.advanceTimersByTimeAsync(1000);
+    page.visibilityState = 'hidden';
+    page.dispatchEvent(new Event('visibilitychange'));
+    await vi.advanceTimersByTimeAsync(20000);
+    expect(timeout).not.toHaveBeenCalled();
+    expect(report).toHaveBeenLastCalledWith(
+      expect.objectContaining({ outcome: 'not_observed', reason: 'page_left', backgrounded: true })
+    );
+    page.visibilityState = 'visible';
+    obs.received();
+    expect(obs.displayed(identity, performance.now())).toBe(true);
+    expect(report).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        outcome: 'observed',
+        backgrounded: true,
+        first_token_visible_ms: 21000,
+      })
+    );
   });
   it('defers reporting until the exact revision is discovered after a pre-start timeout', async () => {
     const report = vi.fn();
@@ -106,7 +133,7 @@ describe('user-visible first token observation', () => {
         outcome: 'not_observed',
         reason: 'fallback_timeout',
         wait_finished_ms: 7200,
-        measurement_method: 'visible_dom_after_frame_v2',
+        measurement_method: 'visible_dom_after_frame_v3',
         first_token_visible_ms: null,
       })
     );

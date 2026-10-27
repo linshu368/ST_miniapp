@@ -19,9 +19,10 @@ export class FirstTokenObservation {
   private reported = false;
   private finishedMs: number | null = null;
   private visibility = () => {
-    if (document.visibilityState !== 'visible') this.backgrounded = true;
-    // Suspended browser timers cannot extend the configured user budget.
-    if (!this.outcome && performance.now() - this.startedAt >= this.deadlineMs) this.expire();
+    if (document.visibilityState !== 'visible') {
+      this.backgrounded = true;
+      this.unavailable('page_left');
+    }
   };
 
   constructor(
@@ -43,6 +44,11 @@ export class FirstTokenObservation {
   }
   received(): void {
     this.receivedMs ??= performance.now() - this.startedAt;
+    // A received token must not be cancelled because the user is reading older messages.
+    clearTimeout(this.timer);
+  }
+  get hasDisplayedToken(): boolean {
+    return this.outcome === 'observed';
   }
   get hasReceivedToken(): boolean {
     return this.receivedMs !== null;
@@ -52,7 +58,8 @@ export class FirstTokenObservation {
   }
   displayed(identity: FirstTokenIdentity, at: number): boolean {
     if (
-      this.outcome ||
+      this.outcome === 'observed' ||
+      (this.outcome === 'not_observed' && this.reason !== 'page_left') ||
       document.visibilityState !== 'visible' ||
       identity.requestId !== this.identity.requestId ||
       identity.assistantMessageId !== this.identity.assistantMessageId ||
@@ -60,12 +67,11 @@ export class FirstTokenObservation {
     )
       return false;
     const duration = at - this.startedAt;
-    if (duration >= this.deadlineMs) {
-      this.expire();
-      return false;
-    }
+    this.reported = false;
     this.outcome = 'observed';
+    this.reason = null;
     this.visibleMs = duration;
+    this.finishedMs = duration;
     this.finish();
     return true;
   }
@@ -80,7 +86,12 @@ export class FirstTokenObservation {
     this.finish();
   }
   private expire(): void {
-    if (this.outcome) return;
+    if (this.outcome || this.receivedMs !== null) return;
+    if (this.backgrounded || document.visibilityState !== 'visible') {
+      this.backgrounded = true;
+      this.unavailable('page_left');
+      return;
+    }
     this.outcome = 'timed_out';
     this.reason = 'not_visible';
     this.finish();
@@ -106,7 +117,7 @@ export class FirstTokenObservation {
       request_id: this.identity.requestId,
       assistant_message_id: this.identity.assistantMessageId,
       revision: this.identity.revision,
-      measurement_method: 'visible_dom_after_frame_v2',
+      measurement_method: 'visible_dom_after_frame_v3',
       wait_finished_ms: this.finishedMs,
       outcome: this.outcome,
       first_token_visible_ms: this.visibleMs,

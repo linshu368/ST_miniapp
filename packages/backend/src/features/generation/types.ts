@@ -79,6 +79,8 @@ export interface GenerationRequest {
     primaryAttemptId: string;
     requestStartedAt: number;
     store: FirstTokenAttemptStore;
+    deferPersistence?: boolean;
+    onReady?: () => void;
   };
 }
 
