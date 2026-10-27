@@ -200,7 +200,7 @@ export default function CreatePage() {
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
-      className="mx-auto min-h-screen w-full max-w-screen-xl overscroll-y-contain bg-background text-foreground"
+      className="mx-auto min-h-[calc(100dvh-var(--app-nav-space))] w-full max-w-screen-xl overscroll-y-contain bg-background text-foreground"
     >
       {pullDistance > 0 || isPullRefreshing ? (
         <div
@@ -362,7 +362,7 @@ export default function CreatePage() {
         </div>
       </section>
       {createConversation.isError ? (
-        <p className="fixed bottom-28 left-1/2 z-50 -translate-x-1/2 rounded-full bg-destructive px-4 py-2 text-xs font-bold text-destructive-foreground">
+        <p className="fixed bottom-[calc(var(--app-nav-space)+1rem)] left-1/2 z-50 -translate-x-1/2 rounded-full bg-destructive px-4 py-2 text-xs font-bold text-destructive-foreground">
           创建会话失败，请重试
         </p>
       ) : null}

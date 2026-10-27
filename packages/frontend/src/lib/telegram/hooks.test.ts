@@ -71,6 +71,8 @@ beforeEach(() => {
 describe('suspendTelegramVerticalSwipes', () => {
   it('disables native minimizing while watching and restores it on exit', () => {
     stubWindow();
+    // 真实 SDK mount 会先把竖滑状态设为 false。
+    swipeMount.mockImplementationOnce(() => swipeEnabled.mockReturnValue(false));
     const restore = suspendTelegramVerticalSwipes();
     expect(swipeMount).toHaveBeenCalledOnce();
     expect(disableSwipe).toHaveBeenCalledOnce();

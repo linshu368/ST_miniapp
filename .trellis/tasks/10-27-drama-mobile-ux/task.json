@@ -1,0 +1,38 @@
+{
+  "id": "drama-mobile-ux",
+  "name": "drama-mobile-ux",
+  "title": "短剧移动端体验重构",
+  "description": "参考用户红果截图细化移动 UI，并补齐官方短剧的收藏、点赞和评论；仅本地未发布",
+  "status": "in_progress",
+  "dev_type": "fullstack",
+  "scope": "drama",
+  "package": "frontend,backend,shared",
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-27",
+  "completedAt": null,
+  "branch": "research/drama-mobile-ux",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "第二轮完成黑灰移动UI和官方剧收藏/点赞/评论；13项短剧与3项角色回归、179 shared/449 frontend/21 backend测试、全包typecheck、两端build、隔离PG迁移通过。仅本地未发布。 用户补充夜间暧昧气质，完成暖黑/米白/低饱和玫瑰主题，最终6项布局互动复验通过。 第六轮六项产品体验与发现/追剧区分完成；37场景首轮32通过，5项问题修复后11项复验通过，另移动真实触摸进度2尺寸通过，前端lint/build/typecheck及相关22单测通过。仅本地未发布。 最终5项体验收尾完成：重试与换签名保位、指定选集参数消费、缓存目录失败不中断、追剧位置与长选集定位。44项首轮43通过1问题修正，12项相关复验及2尺寸截图复验通过；57单测/4fixture/类型/lint/最终build通过。仍仅本地未发布。 公共五入口适配完成：统一贴底暖黑导航与中央播放符号，共享高度/安全区/隐藏规则，其他页面仅调整底部布局。20项初验18通过，2项懒加载等待修正后复验通过；类型/build/20单测/4fixture通过。仅本地未发布。 用户追加导航命名与个人中心视觉精修已完成：AI短剧/生成、静态折叠播放符号、日常账户与会员服务层次。8移动流程及17VIP单测/类型/lint/build通过；仅本地未发布。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "frontend.infrastructure.client-ui-foundation",
+        "frontend.business.character-lobby",
+        "frontend.business.conversation-ui",
+        "frontend.business.drama-experience",
+        "frontend.business.wallet-payment"
+      ]
+    }
+  }
+}

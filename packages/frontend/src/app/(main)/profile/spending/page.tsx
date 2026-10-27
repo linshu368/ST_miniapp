@@ -26,7 +26,7 @@ export default function SpendingPage() {
   );
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col bg-background text-foreground">
+    <main className="mx-auto flex min-h-[calc(100dvh-var(--app-nav-space))] max-w-md flex-col bg-background text-foreground">
       <header className="sticky top-0 z-20 flex items-center gap-2 border-b border-border bg-background/80 px-3 py-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] backdrop-blur-xl">
         <Button
           variant="ghost"

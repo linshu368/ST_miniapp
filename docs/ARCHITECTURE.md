@@ -367,6 +367,8 @@ T9 专表 contract：`20261016_openrouter_chat_history_drop_legacy_aliases.sql` 
 
 短剧是既有外部归档域 `drama_archive`，基础表由独立 `telegram-video-archive` 管理，不代表八域治理已经扩展。本次仅通过 shared migration 扩展既有 `videos.created_at`，不创建新表／schema／RPC。`DramaRepository` 经 `dramas → ai_results.drama_id` 获取剧级文字，`assemble` 统一逐字段回退；可播视频最早时间输出为 `first_published_at`，前端在完整目录上组合搜索／分类并按该字段排序，点击后保存当前播放队列顺序。外部上传端负责后续时间写入，NULL 不伪造为当前时间。迁移先于消费者发布，TEST 的补录时间不是历史上传事实，Production 不随本次执行。详见[短剧目录与时间契约](../.trellis/spec/database/supabase/drama-catalog.md)。
 
+本地短剧体验增量（尚未发布）：官方剧级点赞/评论表 `drama_archive.drama_likes`、`drama_archive.drama_comments` 和 `create_drama_comment` RPC 由 ST_miniapp backend 拥有，原归档表仍由独立上传端管理。两表仅依赖 `drama_archive.dramas(id)` 与 `app_core.users(id)`，不借用角色或影像互动表；删除根实体级联清理。service_role 只获得点赞 SELECT/INSERT/DELETE、评论 SELECT/UPDATE(deleted_at) 与发布 RPC EXECUTE，匿名/登录数据库角色不开放表或 RPC；后端 Telegram 鉴权后映射用户身份，删除附带作者条件，评论游标分页，展示匿名剧友名。发布 RPC 按用户事务锁限制每分钟3条并保证 UUID 重试幂等，软删除保留幂等/限流记录，不允许重试复活。前端 `lib/api/drama.ts` 管理互动服务器缓存；本设备收藏/观看记录仍由独立本地 store 管理。迁移先行、后端其次、前端最后；回滚应用先保留互动数据，移除表需另行确认。
+
 ### 5.2 会话存储
 
 ```
@@ -460,7 +462,7 @@ frontend 自有 Route Handler：`GET /api/lobby-characters`（白名单 sort 参
 
 ### 7.1 前端
 
-- Next.js 14 App Router，`src/app/` 下 `(main)` 分组承载底部四 Tab（大厅 `/` / 聊天 `/chats` / 创作 `/create` / 我的 `/profile`），会话页是 **`/chat/[characterId]?session=...`**（不在分组内，无底部导航），另有自定义语音台词页 `/chat/[characterId]/voice/[messageId]`。
+- Next.js 14 App Router，`src/app/` 下 `(main)` 分组在本地短剧新版中承载五入口（角色 `/characters` 与 `/chats` / AI短剧 `/dramas` / 中央播放首页 `/` / 生成 `/create` / 我的 `/profile`）；公共贴底导航共享高度、安全区和隐藏规则，会话页是 **`/chat/[characterId]?session=...`**（不在分组内，无底部导航），另有自定义语音台词页 `/chat/[characterId]/voice/[messageId]`。
 - 自研聊天 UI（M5 已交付）：`components/chat/` 下消息列表 / 气泡 / markdown（showdown + DOMPurify）/ 输入区 / 重生成 / 语音播放条 / 会话抽屉 / 工具箱；SSE 客户端是 `lib/api/conversation-stream.ts` 的 `streamConversationTurn()`（旧 `apiStreamClient` 已删除）。会话页编排：`hooks/use-chat-session.ts` 管创建 / URL `?session=` / 失效重建，`hooks/use-conversation-turn.ts` 管发消息、重生成、abort、流式临时态与失败分流；语音生成仍留在 page。余额不足跳充值统一走 `lib/recharge-redirect.ts`（同时认 `insufficient_balance` 与 `INSUFFICIENT_CREDITS`）；`apiClient` 会把对话/语音的 402 裸形状收成带金额的 `ApiClientError`。
 - 回复后处理快照由 `lib/api/text-postprocess.ts` 按消息版本批量读取；流式阶段保持 `ChatMarkdown`，终态由 `@miniapp/reply-renderer` 展示。缺失/非法 artifact、旧 `NULL` 版本或 Worker 失败均退化为完整原始 Markdown；不得在 Frontend 编译 source 或选择最新版本替代。
 - 用户生成配置有编辑界面：模型档位在 `ChatTopBar` 的引擎胶囊里，由 `ChatModelSwitcher` 展开；工具箱不再放模型入口。角色回复图片通过消息操作行与独立 Sheet 交互。VIP 详情在 `/vip`，和星尘套餐在充值页互斥选择。
