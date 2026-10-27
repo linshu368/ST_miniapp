@@ -5,8 +5,8 @@ scope: frontend
 category: infrastructure
 status: active
 owners: [frontend]
-last_verified_task: .trellis/tasks/10-10-image-plaza-v2/
-last_verified_at: 2026-10-12
+last_verified_task: .trellis/tasks/10-27-drama-mobile-ux/
+last_verified_at: 2026-10-27
 ---
 
 # API、Telegram 与 UI 基建
@@ -61,9 +61,13 @@ Telegram WebView 差异需持续人工回归；打开 Production PostHog 是独�
 
 ## 图片创作广场 V2（2026-10-12）
 
-图片广场的配置、瀑布流、会话、报价、生成、点赞与分享均通过统一 API client 和 React Query 缓存；Studio 与作品详情属于隐藏底栏的沉浸式路由，私有对象只消费后端签发的短期 URL。
+图片广场的配置、瀑布流、会话、报价、生成、点赞与分享均通过统一 API client 和 React Query 缓存；Studio 隐藏底栏；当前作品详情保留公共导航，其操作条位于导航上方，私有对象只消费后端签发的短期 URL。
 
 ## 变更记录
 
 - 2026-09-18：任务 `图片生成 PostHog 接入规划`（`.trellis/tasks/archive/2026-09/09-17-image-generation-posthog-plan/`）记录图片业务事件复用现有 replay lifecycle 与 shared schema；commit：`7ab4a18ac4924d9a23d35dfc6f4f75be0401c9fe`。
 - 2026-10-20：任务 `Remove confirmed repository noise`（`.trellis/tasks/archive/2026-10/10-20-remove-confirmed-repository-noise/`）移除已删除的 Mock 与表单脚手架事实并同步当前前端基础设施边界；commit：`63eee1e847f678f4b2c434f872425a40fc7f891a`。
+
+## 五入口公共导航适配（2026-10-27，本地）
+
+BottomNav 在角色/AI短剧/首页/生成/我的统一贴底暖黑五入口，中央播放符号保留，中央使用无底座折叠播放标记，当前栏目用字重/图标轻底托反馈；未读点仍属于我的，角色入口保留最后栏目。BottomNav 导出的 isBottomNavHidden 同时约束 MainLayout 内容留白，避免隐藏底栏后残留空白。globals.css 的 --app-nav-height / --app-nav-space 是高度与安全区来源；短剧固定滚动区、普通入口最小高度、影像作品操作条与提示同步使用。没有更改各闭环业务接口或内部操作。

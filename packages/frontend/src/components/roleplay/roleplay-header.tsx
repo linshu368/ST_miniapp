@@ -7,7 +7,7 @@ import { rememberRoleplayScroll, rememberRoleplayView } from '@/lib/roleplay-nav
 import { cn } from '@/lib/utils';
 
 const VIEWS = [
-  { key: 'discover', href: '/', label: '发现' },
+  { key: 'discover', href: '/characters', label: '发现' },
   { key: 'conversations', href: '/chats', label: '对话' },
 ] as const;
 
@@ -18,7 +18,7 @@ export function RoleplayHeader({
   active: 'discover' | 'conversations';
   children?: ReactNode;
 }) {
-  const currentPath = active === 'discover' ? '/' : '/chats';
+  const currentPath = active === 'discover' ? '/characters' : '/chats';
 
   useEffect(() => {
     rememberRoleplayView(currentPath);

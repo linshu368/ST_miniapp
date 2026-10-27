@@ -23,6 +23,7 @@ export const ENTRY_WINDOW_MS = 10_000;
  */
 export const WATCHED_PAGES = new Set([
   '/',
+  '/characters',
   '/chats',
   '/chat/:id',
   '/chat/:id/voice/:id',

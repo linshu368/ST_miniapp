@@ -1,6 +1,6 @@
 import type { LobbySort } from '@miniapp/shared';
 
-export type RoleplayView = '/' | '/chats';
+export type RoleplayView = '/characters' | '/chats';
 export type RoleplaySource = 'discover' | 'conversations';
 
 const VIEW_KEY = 'miniapp:roleplay-view:v1';
@@ -28,11 +28,11 @@ export function resolveRoleplaySource(value: string | null | undefined): Rolepla
 }
 
 export function roleplayReturnPath(source: string | null | undefined): RoleplayView {
-  return resolveRoleplaySource(source) === 'conversations' ? '/chats' : '/';
+  return resolveRoleplaySource(source) === 'conversations' ? '/chats' : '/characters';
 }
 
 export function readRoleplayView(): RoleplayView {
-  return read(VIEW_KEY) === '/chats' ? '/chats' : '/';
+  return read(VIEW_KEY) === '/chats' ? '/chats' : '/characters';
 }
 
 export function rememberRoleplayView(path: RoleplayView): void {

@@ -140,7 +140,7 @@ export function CharacterGallery() {
   }, [data, isError, isFetched]);
   // 大厅有本地缓存秒开：content 记用户看到列表的时刻，fresh 记最新列表到达的时刻，两者分开才看得出后端慢。
   const lobbyFresh = useFreshAfterFetch(isFetching, data !== undefined);
-  usePageReady('/', data !== undefined, lobbyFresh);
+  usePageReady('/characters', data !== undefined, lobbyFresh);
   const [query, setQuery] = useState(restoreSnapshot?.query ?? savedDiscovery.query);
   const [favoritesOnly, setFavoritesOnly] = useState(
     restoreSnapshot?.favoritesOnly ?? savedDiscovery.favoritesOnly
@@ -266,7 +266,7 @@ export function CharacterGallery() {
     )
       return;
     generalScrollRestored.current = true;
-    restoreRoleplayScroll('/');
+    restoreRoleplayScroll('/characters');
   }, [data, restoreSnapshot, favoritesOnly, favoriteIds.isPending]);
 
   const [renderLimit, setRenderLimit] = useState(INITIAL_RENDER_COUNT);
@@ -663,10 +663,10 @@ export function CharacterGallery() {
             clearLobbyReturnSnapshot();
             // 用户主动取消进入，不是卡住；不清掉的话 2.5 秒后看门狗会补发一条假的 action_stall。
             discardPendingAction('select_character');
-            // 当前本来就在大厅，直接 replace('/') 可能被 Next.js 当成同路由而忽略。
+            // 当前本来就在大厅，直接 replace('/characters') 可能被 Next.js 当成同路由而忽略。
             // 唯一查询参数会启动一笔新的 SPA 导航，并让 App Router 放弃在途角色导航，
             // 同时保留 query cache 与 Telegram SDK。
-            router.replace(`/?entry_cancelled=${Date.now()}`);
+            router.replace(`/characters?entry_cancelled=${Date.now()}`);
             return;
           }
           setPreviewId(null);
@@ -677,7 +677,7 @@ export function CharacterGallery() {
           captureReturnSnapshot(id);
           setEnteringId(id);
           startPendingAction('select_character');
-          rememberRoleplayScroll('/');
+          rememberRoleplayScroll('/characters');
           router.push(chatEntryPath(id, { sessionId, source: 'discover' }));
         }}
       />

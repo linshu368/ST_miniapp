@@ -8,11 +8,38 @@ export function VipCheckinUpgrade({
   dailyCredits,
   onOpen,
   pending = false,
+  compact = false,
 }: {
   dailyCredits: number;
   onOpen: () => void;
   pending?: boolean;
+  compact?: boolean;
 }) {
+  if (compact) {
+    return (
+      <button
+        type="button"
+        disabled={pending}
+        onClick={onOpen}
+        aria-label={`开通 VIP，立即恢复每天签到 ${formatNumber(dailyCredits)} 星尘`}
+        className="group flex min-h-12 w-full items-center gap-2.5 rounded-lg py-2 text-left text-[#cdb3a4] transition-colors hover:text-[#f0d5bf] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d7b4bf] disabled:opacity-60 motion-reduce:transition-none"
+      >
+        <Crown className="size-3.5 shrink-0" aria-hidden />
+        <span className="min-w-0 flex-1 text-[11px] leading-[18px]">
+          开通 VIP，签到立即恢复
+          <span className="ml-1 inline-block font-semibold text-[#efd8c2]">
+            {formatNumber(dailyCredits)} 星尘 / 天
+          </span>
+        </span>
+        {pending ? (
+          <Loader2 className="size-3.5 shrink-0 animate-spin" aria-hidden />
+        ) : (
+          <ChevronRight className="size-3.5 shrink-0" aria-hidden />
+        )}
+      </button>
+    );
+  }
+
   return (
     <button
       type="button"

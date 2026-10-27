@@ -24,6 +24,8 @@
     --input: 240 5.9% 90%;
     --ring: 240 5.9% 10%;
     --radius: 0.625rem;
+    --app-nav-height: 4.125rem;
+    --app-nav-space: calc(var(--app-nav-height) + env(safe-area-inset-bottom));
 
     /* 扩展语义色的浅色兜底；App 目前始终以 .dark 运行，这里只为避免变量未定义。 */
     --bubble-user: 32 30% 94%;
