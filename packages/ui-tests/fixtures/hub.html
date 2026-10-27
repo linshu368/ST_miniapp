@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="zh-CN">
+  <meta charset="UTF-8" /><meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>ST · 移动端验收</title>
+  <style>
+    :root {
+      font-family:
+        system-ui,
+        -apple-system,
+        sans-serif;
+      color: #eeeaf8;
+      background: #13121b;
+      color-scheme: dark;
+    }
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      max-width: 900px;
+      margin: auto;
+      padding: 36px 20px 60px;
+    }
+    small {
+      color: #b4a2df;
+      letter-spacing: 0.12em;
+    }
+    h1 {
+      font-size: 28px;
+      margin: 12px 0;
+    }
+    p {
+      color: #b1acbf;
+      line-height: 1.8;
+    }
+    nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 24px 0;
+    }
+    a,
+    button {
+      font: inherit;
+      text-decoration: none;
+      color: inherit;
+      border: 1px solid #494052;
+      border-radius: 12px;
+      padding: 12px 16px;
+      background: #24202f;
+      cursor: pointer;
+    }
+    a:hover,
+    button:hover {
+      border-color: #a78bfa;
+      background: #30283f;
+    }
+    #scenes {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+      gap: 12px;
+    }
+    #scenes button {
+      text-align: left;
+      min-height: 110px;
+    }
+    strong {
+      display: block;
+      margin-bottom: 8px;
+    }
+    span {
+      font-size: 13px;
+      line-height: 1.6;
+      color: #b9b1c6;
+    }
+    #status {
+      min-height: 30px;
+      color: #c4b5fd;
+    }
+    footer {
+      margin-top: 24px;
+      font-size: 13px;
+      color: #8e879c;
+    }
+    button:disabled {
+      opacity: 0.5;
+    }
+  </style>
+  <small>ST MINIAPP · LOCAL PREVIEW</small>
+  <h1>移动端验收</h1>
+  <p>
+    选择场景会重置本地数据，再打开实际页面。页面修改后会自动更新。<br />此处全部是模拟数据，真实支付与模型调用未启用。
+  </p>
+  <nav id="nav"></nav>
+  <p id="status" role="status"></p>
+  <section id="scenes" aria-label="验收场景"></section>
+  <footer>
+    手动预览和自动检查使用独立端口。每套环境一次使用一个场景。手机键盘、相册与真实支付需要专项验证。
+  </footer>
+  <script>
+    const config = __BOOTSTRAP__;
+    const status = document.getElementById('status');
+    for (const [title, path] of [
+      ['角色', '/'],
+      ['对话', '/chats'],
+      ['影像', '/create'],
+      ['我的', '/profile'],
+      ['VIP', '/vip'],
+      ['充值', '/profile/recharge'],
+    ]) {
+      const link = document.createElement('a');
+      link.textContent = title;
+      link.href = config.app + path;
+      document.getElementById('nav').append(link);
+    }
+    status.textContent = '当前场景：' + config.scenarios[config.current].label;
+    for (const [id, scene] of Object.entries(config.scenarios)) {
+      const button = document.createElement('button');
+      const title = document.createElement('strong');
+      title.textContent = scene.label;
+      const detail = document.createElement('span');
+      detail.textContent = scene.description;
+      button.append(title, detail);
+      button.onclick = async () => {
+        button.disabled = true;
+        status.textContent = '正在准备场景…';
+        try {
+          const res = await fetch('/__preview/reset', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ scenario: id }),
+          });
+          if (!res.ok) throw new Error('场景切换未成功');
+          location.href = config.app + scene.path;
+        } catch (error) {
+          status.textContent = error.message;
+          button.disabled = false;
+        }
+      };
+      document.getElementById('scenes').append(button);
+    }
+  </script>
+</html>
