@@ -4,18 +4,24 @@
 -- into the release record. A NULL role GUC is valid when Supabase's platform
 -- configuration owns the list; this script then establishes the reviewed
 -- explicit override. Any unknown non-NULL value still fails shut.
+-- Reviewed 2026-10-27 baseline includes the externally managed drama_archive;
+-- preserve its position and append media_plaza without reordering prior items.
 BEGIN;
 DO $$
 DECLARE
   v_current TEXT;
   v_setting_count INTEGER;
   v_baseline CONSTANT TEXT :=
-    'graphql_public, miniapp, miniapp_analytics, miniapp_traffic, cs_platform, admin, app_core, miniapp_features, experience, billing';
+    'graphql_public, miniapp, miniapp_analytics, miniapp_traffic, cs_platform, admin, app_core, miniapp_features, experience, billing, drama_archive';
   v_target CONSTANT TEXT :=
-    'graphql_public, miniapp, miniapp_analytics, miniapp_traffic, cs_platform, admin, app_core, miniapp_features, experience, billing, media_plaza';
+    'graphql_public, miniapp, miniapp_analytics, miniapp_traffic, cs_platform, admin, app_core, miniapp_features, experience, billing, drama_archive, media_plaza';
 BEGIN
   IF to_regnamespace('media_plaza') IS NULL THEN
     RAISE EXCEPTION 'media_plaza schema is absent; run 20261027_media_plaza_schema_move.sql first';
+  END IF;
+
+  IF to_regnamespace('drama_archive') IS NULL THEN
+    RAISE EXCEPTION 'production baseline exposes drama_archive, but that schema is absent';
   END IF;
 
   SELECT
@@ -37,7 +43,7 @@ BEGIN
 END;
 $$;
 ALTER ROLE authenticator SET pgrst.db_schemas =
-  'graphql_public, miniapp, miniapp_analytics, miniapp_traffic, cs_platform, admin, app_core, miniapp_features, experience, billing, media_plaza';
+  'graphql_public, miniapp, miniapp_analytics, miniapp_traffic, cs_platform, admin, app_core, miniapp_features, experience, billing, drama_archive, media_plaza';
 COMMIT;
 NOTIFY pgrst, 'reload config';
 NOTIFY pgrst, 'reload schema';
@@ -46,5 +52,6 @@ NOTIFY pgrst, 'reload schema';
 -- forbidden after video data exists. If the preflight role GUC was NULL, use:
 -- ALTER ROLE authenticator RESET pgrst.db_schemas;
 -- If it was the explicit production baseline, restore that exact baseline with
--- ALTER ROLE authenticator SET pgrst.db_schemas = '...';
+-- ALTER ROLE authenticator SET pgrst.db_schemas =
+--   'graphql_public, miniapp, miniapp_analytics, miniapp_traffic, cs_platform, admin, app_core, miniapp_features, experience, billing, drama_archive';
 -- Never copy TEST settings. Reload both PostgREST config and schema afterward.
