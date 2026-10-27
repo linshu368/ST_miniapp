@@ -1,0 +1,38 @@
+{
+  "id": "drama-mvp-search-latest",
+  "name": "drama-mvp-search-latest",
+  "title": "短剧 MVP 检索与最新排序",
+  "description": "短剧检索、剧级元数据回退和首次上架排序已本地实现；迁移与现有验证通过，待最终人工审阅及仅 TEST workflow 执行／验收。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "cross-package",
+  "package": "cross-package",
+  "priority": "P2",
+  "creator": "linshu",
+  "assignee": "linshu",
+  "createdAt": "2026-10-26",
+  "completedAt": null,
+  "branch": "dev_video_1021",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "packages/shared/src/api/drama.ts",
+    "packages/backend/src/features/drama/repository.ts",
+    "packages/backend/src/features/drama/assemble.ts",
+    "packages/frontend/src/app/(main)/dramas/page.tsx",
+    "packages/shared/migrations/"
+  ],
+  "notes": "2026-10-26 用户明确要求按现有轻量计划执行，视为规划审核通过。已确认 ST_telegrambot/testdb 正式 TEST ref zoqelpfhurwehlvypryl；MCP catalog 核验剧级 AI 已落库、created_at 缺失，HTTP HEAD 精确计数 dramas=69/videos=577/ai_results=5，单剧最多156条视频。仅 TEST，Production 不在范围。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "no_module_change",
+      "reason": "现有登记模块未覆盖短剧业务；本次只扩展现有 drama_archive 表与短剧 DTO/取数/UI，不改变已登记模块的配置、鉴权、迁移通道或八域约定。短剧专项契约记录在专题 spec，不新建模块体系。"
+    }
+  }
+}

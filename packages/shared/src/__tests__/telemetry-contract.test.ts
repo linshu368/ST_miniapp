@@ -10,6 +10,9 @@ import {
   isForbiddenTelemetryPropertyKey,
   parseGetReplayContextData,
   parseReplayTelemetryEvent,
+  DramaTimingReportSchema,
+  DRAMA_TIMING_MAX_MEDIA_EVENTS,
+  dramaTimingLogFields,
 } from '../index.js';
 
 const replayContextId = '11111111-1111-4111-8111-111111111111';
@@ -25,6 +28,82 @@ const chatIdentity = {
   conversation_session_id: sessionId,
   selected_model_id: 'gpt-4o',
 };
+
+describe('drama timing upload contract', () => {
+  const report = {
+    type: 'playback',
+    phase: 'final',
+    id: 'web-observation',
+    outcome: 'playing',
+    elapsedMs: 100,
+    marks: {},
+    stages: {},
+    queries: [],
+  };
+  it('accepts old reports and bounded media details, rejecting nested secrets and invalid state', () => {
+    const state = {
+      readyState: 1,
+      networkState: 2,
+      paused: false,
+      muted: true,
+      seeking: false,
+      currentTimeMs: 0,
+      bufferedAheadMs: 1500,
+      visibility: 'visible',
+    };
+    const media = {
+      events: [{ name: 'waiting', atMs: 123, state }],
+      eventsTruncated: false,
+      snapshot: state,
+    };
+    expect(DramaTimingReportSchema.safeParse(report).success).toBe(true);
+    const parsed = DramaTimingReportSchema.parse({ ...report, media });
+    expect(dramaTimingLogFields(parsed).media).toEqual(media);
+    for (const invalidMedia of [
+      { ...media, token: 'secret' },
+      { ...media, snapshot: { ...state, url: 'private' } },
+      { ...media, snapshot: { ...state, readyState: 5 } },
+      { ...media, snapshot: { ...state, networkState: -1 } },
+      { ...media, snapshot: { ...state, bufferedAheadMs: Infinity } },
+      { ...media, events: [{ name: 'waiting', atMs: -1 }] },
+      { ...media, events: [{ name: 'play_rejected', atMs: 1, error: 'arbitrary-message' }] },
+      {
+        ...media,
+        events: [{ name: 'waiting', atMs: 1, state: { ...state, object_path: 'private' } }],
+      },
+      { ...media, events: Array(DRAMA_TIMING_MAX_MEDIA_EVENTS + 1).fill(media.events[0]) },
+    ])
+      expect(DramaTimingReportSchema.safeParse({ ...report, media: invalidMedia }).success).toBe(
+        false
+      );
+  });
+  it('bounds query and HTTP detail counts and rejects arbitrary log fields', () => {
+    const query = { kind: 'playback', startMs: -1, durationMs: 1, outcome: 'ok', attempts: [] };
+    expect(DramaTimingReportSchema.safeParse({ ...report, queries: [query] }).success).toBe(true);
+    expect(
+      DramaTimingReportSchema.safeParse({ ...report, queries: Array(13).fill(query) }).success
+    ).toBe(false);
+    expect(DramaTimingReportSchema.safeParse({ ...report, stages: { token: 1 } }).success).toBe(
+      false
+    );
+    expect(DramaTimingReportSchema.safeParse({ ...report, elapsedMs: Infinity }).success).toBe(
+      false
+    );
+    const attempt = { requestId: 'request-id', startMs: 0, totalMs: 1, outcome: 'ok' };
+    expect(
+      DramaTimingReportSchema.safeParse({
+        ...report,
+        queries: [{ ...query, attempts: Array(5).fill(attempt) }],
+      }).success
+    ).toBe(false);
+    expect(
+      DramaTimingReportSchema.safeParse({
+        ...report,
+        queries: [{ ...query, attempts: [{ ...attempt, headers: {} }] }],
+      }).success
+    ).toBe(false);
+  });
+});
 
 describe('replay context contract', () => {
   it('accepts an empty GET query', () => {

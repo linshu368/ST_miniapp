@@ -276,3 +276,11 @@ recoverable_delivery仅新Backend显式启用；旧请求/终结账单不回填�
 唯一新增迁移20261027_recoverable_chat_delivery.sql：experience拥有策略/首字检查点，billing资格函数读取事实；analytics只追加无正文的策略/时刻/失败锁存字段。无新cron、逐token数据库写、业务回填或公开权限。先TEST、后生产迁移、后Backend/Frontend。回退保留新增对象和终账，必要时forward-fix。
 
 验证：本任务release-review记录自动化、真实PG、TEST流/浏览器和生产版本证据；测试通过不等于线上1%目标已达成。看板v3区分前台等待超时与系统无首字截断，显示分布只用浏览器业务侧实际时长，后台/缺报不填0。
+
+## 短剧请求计时
+
+短剧路由在自身 Fastify 封装作用域记录 `drama.request_timing`（现有 requestLogger/Pino，source=backend）。短剧专用 Sentry 指标已移除，按现有 X-Request-Id 关联前端。新增鉴权 `POST /api/telemetry/drama-timing`：shared schema 校验有界客户端报告，写 `drama.frontend_timing`（source=frontend），保留 observation/list/request ID，接收请求 ID 独立为 upload_request_id；不查写数据库。32 KiB body、12 queries/4 attempts、每用户每进程 120 次/分钟及全进程 1000 次/分钟限额，限流表最多 2000 项；503 不确认接收，429 不重试。客户端自报数据不能用作计费/权限事实。onResponse 覆盖成功、鉴权拒绝、参数/不存在、查询错误、无视频和签名失败，保留 auth/db_read/assemble/sign/total 毫秒与签名缓存 hit/miss/inflight。鉴权直接发送响应时 onResponse 可能早于 preHandler finally，需要采集当前阶段已用时间。
+
+`db_read` 是 repository 整体等待（含 PostgREST 往返），不是 SQL 独占时间。日志不得包含 object_path、签名 URL 或 Token；前端输入拒绝未知字段和任意正文。观测失败不能改变业务响应。无数据库或部署配置变更；具体口径与验证见 [短剧耗时排查](../../../../docs/drama-playback-timing.md)。
+
+媒体启动详情通过同一 shared schema 的可选 `media` 接收并映射日志，不建新路由或数据库写入。最多 32 条有限事件、一个即时 snapshot，嵌套字段严格校验，不接收原始异常/媒体 URL/请求头。旧报告仍接受；扩展 Backend validator 必须先部署，新 Frontend 才能发送 media，否则旧 Backend 返回 400。32 KiB、限流和观测故障隔离保持原值；客户端媒体状态不能推断成服务端传输或安全事实。
