@@ -40,6 +40,38 @@ describe('drama timing upload contract', () => {
     stages: {},
     queries: [],
   };
+  it('versions start/network phases and rejects resource URLs, overflow and invalid frame values', () => {
+    const context = {
+      release: 'abc123',
+      sessionId: 'random-session',
+      platform: 'ios',
+      browser: 'webkit',
+    };
+    expect(
+      DramaTimingReportSchema.safeParse({ ...report, phase: 'start', outcome: 'waiting' }).success
+    ).toBe(false);
+    expect(
+      DramaTimingReportSchema.safeParse({
+        ...report,
+        phase: 'start',
+        outcome: 'waiting',
+        version: 2,
+        context,
+      }).success
+    ).toBe(true);
+    expect(DramaTimingReportSchema.safeParse({ ...report, version: 2 }).success).toBe(false);
+    const entry = { startMs: 0, fetchStartMs: 0, responseEndMs: 7000, visibility: 'limited' };
+    const diagnostics = { network: { status: 'limited', entries: [entry], truncated: false } };
+    const valid = { ...report, phase: 'network', version: 2, context, diagnostics };
+    expect(DramaTimingReportSchema.safeParse(valid).success).toBe(true);
+    for (const bad of [
+      { network: { ...diagnostics.network, entries: [{ ...entry, url: 'signed-secret' }] } },
+      { network: { ...diagnostics.network, entries: Array(17).fill(entry) } },
+      { frame: { callbackAtMs: 10, processingMs: -1 } },
+      { frame: { callbackAtMs: 10, processingMs: Infinity } },
+    ])
+      expect(DramaTimingReportSchema.safeParse({ ...valid, diagnostics: bad }).success).toBe(false);
+  });
   it('accepts old reports and bounded media details, rejecting nested secrets and invalid state', () => {
     const state = {
       readyState: 1,
