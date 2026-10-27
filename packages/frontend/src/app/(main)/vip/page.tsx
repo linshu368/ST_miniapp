@@ -225,8 +225,9 @@ function VipPageContent() {
               <Gift className="mx-auto size-4 text-primary" aria-hidden />
               <p className="mt-2 text-[19px] font-bold tabular-nums text-primary">
                 {benefits ? formatNumber(benefits.checkin_vip_credits) : '—'}
+                <span className="ml-1 text-[10px] font-medium">星尘/天</span>
               </p>
-              <p className="mt-1 text-[10px] text-muted-foreground">每日签到专属</p>
+              <p className="mt-1 text-[10px] text-muted-foreground">每日签到奖励</p>
             </div>
             <div className="min-w-0 rounded-[20px] border border-border bg-card px-2 py-3 text-center">
               <Zap className="mx-auto size-4 text-primary" aria-hidden />
