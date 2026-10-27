@@ -185,7 +185,7 @@ export default function SelfHostedChatPage() {
   useTelegramBackButton(goBack);
 
   useEffect(() => {
-    router.prefetch('/');
+    router.prefetch('/characters');
   }, [router]);
 
   const restoreSendContent = useCallback(

@@ -26,7 +26,7 @@ describe('roleplay entry origins', () => {
   });
   it('returns old and untrusted links to discovery', () => {
     for (const source of [undefined, null, '', 'https://other.test', '/profile', 'CONVERSATIONS']) {
-      expect(roleplayReturnPath(source)).toBe('/');
+      expect(roleplayReturnPath(source)).toBe('/characters');
       expect(resolveRoleplaySource(source)).toBe('discover');
     }
   });

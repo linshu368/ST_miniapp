@@ -72,7 +72,13 @@ export function Providers({ children }: { children: React.ReactNode }) {
       {telegramReady ? <UserSettingsHydrator /> : null}
       {telegramReady ? <ReplayLifecycleOwner /> : null}
       {telegramReady ? <PagePerfTracker /> : null}
-      {telegramReady ? children : pathname === '/' ? <LobbyShellSkeleton /> : null}
+      {telegramReady ? (
+        children
+      ) : pathname === '/characters' ? (
+        <LobbyShellSkeleton />
+      ) : pathname === '/' ? (
+        <div aria-label="首页加载中" className="fixed inset-0 bg-black" />
+      ) : null}
       {telegramReady ? <FavoriteFeedbackNotice /> : null}
       {showQueryDevtools ? <ReactQueryDevtools initialIsOpen={false} /> : null}
     </QueryClientProvider>
