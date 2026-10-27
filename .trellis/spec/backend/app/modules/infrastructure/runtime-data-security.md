@@ -5,7 +5,7 @@ scope: backend
 category: infrastructure
 status: active
 owners: [backend]
-last_verified_task: .trellis/tasks/10-27-sentry-performance-optimization/
+last_verified_task: .trellis/tasks/10-16-creation-plaza-video-planning/
 last_verified_at: 2026-10-27
 ---
 
@@ -27,7 +27,6 @@ MiniApp 已鉴权接口通过 `lib/user.ts` 把同一 Telegram 用户的并发 g
 
 | 路径                                                               | 职责                                     |
 | ------------------------------------------------------------------ | ---------------------------------------- |
-| `packages/backend/src/lib/supabase.ts`                             | 按域数据库 client                        |
 | `packages/backend/src/platform/runtime-config.ts`                  | DB 运行配置入口                          |
 | `packages/backend/src/platform/model-tiers.ts`                     | 模型目录读取/缓存                        |
 | `packages/backend/src/middleware/auth.ts`                          | Telegram 鉴权                            |
@@ -65,10 +64,13 @@ PostHog capture 用 Node 原生 fetch、短超时、无重试；支付按 `order
 
 视频目录来自独立 managed key，只有 `VIDEO_PLAZA_WORKER_ENABLED=true`、Venice key 存在且启动时 ffmpeg/ffprobe 探测成功才对前端公开。视频与 poster 均在私有 `media-plaza-video` bucket；公开作品使用 24 小时稳定签名并进入同一有界 LRU，未公开产物使用短签。列表禁止返回/预签 MP4，日志不得记录下载 URL、提示词或参考图签名。
 
+图片广场的 8 张表、3 个图片 RPC 与 PostgREST schema 暴露已在 TEST、Production 完成切换。图片 repository、视频 repository 和 seed 工具统一通过 `getDomainDb('media_plaza')` 直接访问，不探测或回退 `experience` / `miniapp_features` 旧路径；后续视频 M2/M3 以该已完成的物理迁移为前置条件。
+
 初始数据导入器只接受 `image.civitai.com` HTTPS 源 URL，重定向逐跳限制在 `image.civitai.com`、`blobs-b2.civitai.com` 精确白名单，并设置 30 秒超时、最多 3 次安全重试、种子原图 50 MiB 流式上限、内容类型/魔数/尺寸校验；普通用户图片仍保持 20 MiB。需要代理时显式使用 HTTPS ProxyAgent，TLS 校验被关闭时拒绝执行。日志不记录提示词或源 URL；apply 需显式目标、有限批次与审核清单，Storage 路径按 Civitai Image ID 确定且禁止覆盖。
 
 ## 变更记录
 
+- 2026-10-27：任务 `10-16-creation-plaza-video-planning` 合并已完成的图片 M1：TEST、Production 统一直连 `media_plaza`，删除双读/旧 schema 回退口径；视频 M2/M3 仍需按环境单独执行和验收。
 - 2026-10-27：任务 `10-27-sentry-performance-optimization` 增加不可变用户身份 bounded cache/single-flight，并为非严格 runtime-config 读取增加无 TTL 的在途合并。
 
 - 2026-10-15：任务 `10-15-image-plaza-tag-prompt-filter` 明确 `image_plaza_tags_feature_enabled` 只控制分享自动打标。

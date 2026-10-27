@@ -49,7 +49,7 @@ function createThenableBuilder(data: unknown[] = []) {
 
 vi.mock('../../lib/supabase.js', () => {
   const getDomainDb = (schema: string) => {
-    if (schema === 'experience') {
+    if (schema === 'media_plaza') {
       return {
         from: (table: string) => {
           state.calls.push({ method: 'from', args: [table] });
@@ -62,7 +62,7 @@ vi.mock('../../lib/supabase.js', () => {
       rpc: vi.fn(),
     };
   };
-  return { getDomainDb, plazaDb: () => getDomainDb('experience') };
+  return { getDomainDb };
 });
 
 vi.mock('./storage.js', () => ({

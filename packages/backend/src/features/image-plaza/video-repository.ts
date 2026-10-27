@@ -5,7 +5,7 @@ import {
   type VideoPlazaInputMode,
   type VideoPlazaQuoteData,
 } from '@miniapp/shared';
-import { getDomainDb, plazaDb } from '../../lib/supabase.js';
+import { getDomainDb } from '../../lib/supabase.js';
 import { signPlazaImagePath, signPrivateVideoPath } from './storage.js';
 
 interface VideoQuoteRow {
@@ -51,7 +51,7 @@ interface VideoArtifactRow {
 }
 
 export class VideoPlazaRepository {
-  private readonly plaza = plazaDb();
+  private readonly plaza = getDomainDb('media_plaza');
   private readonly billing = getDomainDb('billing');
 
   async createQuote(input: {

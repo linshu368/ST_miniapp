@@ -1,0 +1,5 @@
+{"file":".trellis/spec/database/supabase/index.md","reason":"Check database-scope compliance"}
+{"file":".trellis/spec/database/supabase/schema-and-object-conventions.md","reason":"Check media_plaza ownership and cross-schema dependencies"}
+{"file":".trellis/spec/database/supabase/migrations-and-rollbacks.md","reason":"Check preflight, postflight, release order, and rollback"}
+{"file":".trellis/spec/database/supabase/security-rls-and-grants.md","reason":"Check RLS, ACLs, and function execution"}
+{"file":".trellis/spec/backend/app/testing-scripts-and-deployment.md","reason":"Check backend tests and deployment sequencing"}

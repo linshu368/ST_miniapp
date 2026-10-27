@@ -39,9 +39,9 @@
 
 ### P2 迁移（T3）
 
-- 写 M1、M2、M3 及对应回滚脚本，并做 preflight/postflight 断言（design §2）。
-- 后端加入 `plazaDb()` 双读探测；`DOMAIN_SCHEMAS` 加入 media_plaza；准备 PostgREST 暴露 SQL。
-- 在 test 逐个文件执行，执行前后各记录一次 shape、权限、锁耗时。执行完 M1 立即跑图片回归。
+- M1、PostgREST 暴露与 `DOMAIN_SCHEMAS` 扩域已在 TEST、Production 完成；保留已执行 SQL 原文，不重跑、不纳入本次视频回滚。
+- 后端图片、视频 repository 与 seed 工具统一通过 `getDomainDb('media_plaza')` 直连，删除 `plazaDb()` 探测、双读和旧 schema 回退。
+- TEST 先只读核验 M1 shape、权限/RLS、3 个 RPC 与图片关键读写，再逐文件执行 M2、smoke、M3；每一步记录前后 shape、权限、锁耗时和关键读写。Production 的 M2/M3 另行审批。
 
 ### P3 后端视频链路（T4）
 
@@ -112,7 +112,8 @@ backend、shared 没有 build script，不要虚构。真实上游调用和 DB �
 
 | 领域          | 场景                                                                                                                                                                                                                    | 通过标准                                                                                                                                                                                                           | 自动/人工                               |
 | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------- |
-| 迁移 M1       | preflight 发现残留引用；锁超时；回滚演练；迁移后图片全链路                                                                                                                                                              | 发现残留或锁超时即中止；回滚后结构与迁移前一致；图片回归全部通过                                                                                                                                                   | 人工 + SQL 断言                         |
+| M1 前置核验   | 8 张表、3 个 RPC、权限/RLS、PostgREST 暴露、旧 schema 残留和图片全链路                                                                                                                                                  | TEST/Production 当前 shape 与 M1 postflight 一致；后端只访问 `media_plaza`；异常停止 M2/M3 并 forward-fix，不重跑/回滚 M1                                                                                          | 人工 + SQL 断言                         |
+| 视频 M2/M3    | 锁超时、部分执行、权限/RLS、配置 validator、关键 RPC 和图片回归                                                                                                                                                         | 任一步异常立即停止；M2 smoke 通过后才能执行 M3；图片回归不退化                                                                                                                                                     | 人工 + SQL 断言                         |
 | 契约          | 旧客户端不传 media/tags；旧 tag 配置不含 media_types；未知 status                                                                                                                                                       | 旧 payload 仍可解析；非法值在边界被拒绝                                                                                                                                                                            | shared 测试                             |
 | feed          | media×sort×search×tags 组合；多标签 OR；切换 media 后游标作废；计数失败                                                                                                                                                 | 无重复、无遗漏；计数显示“—”而不是 0                                                                                                                                                                                | backend 测试 + 人工                     |
 | 计费          | 重复提交同一个幂等键；并发两单只够一单；reserve 响应丢失；重复 refund                                                                                                                                                   | 最多扣一次、退一次；不透支                                                                                                                                                                                         | backend 测试（mock RPC）+ test DB 手动  |
@@ -140,4 +141,4 @@ backend、shared 没有 build script，不要虚构。真实上游调用和 DB �
 - Admin 与 Frontend production build 通过；
 - migration filename、legacy reference 与 import lint 通过；
 - Docker CLI 不可用，后端镜像构建未执行；
-- test/production migration、Venice canary、Sentry p95 与 seed 转存仍受外部门禁约束，未执行。
+- 图片 M1 与 PostgREST 暴露已由用户确认在 TEST、Production 完成；视频 M2/M3、Venice canary、Sentry p95 与 seed 转存仍受外部门禁约束，未执行。

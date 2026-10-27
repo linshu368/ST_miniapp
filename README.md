@@ -175,7 +175,7 @@ OpenRouter 调用事实由 `experience.openrouter_chat_history` 保存，消费 
 
 图片广场必须依次手动验证并执行 `20261012_image_plaza_v2.sql`、`20261013_image_plaza_seed_catalog.sql`、`20261013_image_plaza_seed_large_assets.sql` 后才能运行初始数据 apply。`image-plaza:seed` 默认只做工作簿 dry-run；真实写入还要求审核 manifest、明确 `--target test|production`、`--limit 1..500`、原图存储确认，Production 另需显式确认。普通图片保持 20 MiB，已审核 seed 原图允许至 50 MiB；来源权利/内容/元数据审核、test canary 或容量门禁未完成时不得导入。test 导入结果见任务 `10-10-image-plaza-v2`。
 
-视频广场迁移按 `20261027_media_plaza_schema_move.sql` → 图片回归 → `20261027_media_plaza_video.sql` → `20261027_media_plaza_video_config.sql` 逐文件在 test 执行；PostgREST 暴露脚本位于 `ops/schema-split/`。这些文件目前只是仓库声明，不代表任一远程环境已执行。视频 seed 必须先对全部 5,097 个 URL 运行 HEAD 估算并人工核对报告与 bucket 配额，apply 还需 `--confirm-size <报告SHA-256>`、明确 `--target`、显式 `--limit 1..500`；B-SEED-1 未关闭前不得实际转存，Production 始终单独审批。
+图片广场 M1（`20261027_media_plaza_schema_move.sql`）及 PostgREST 暴露已由用户确认在 TEST、Production 完成：8 张图片表和 3 个图片 RPC 已位于 `media_plaza`，Backend 只直连新域，不保留旧 schema 双读。视频广场后续只需按 `20261027_media_plaza_video.sql` → `20261027_media_plaza_video_config.sql` 逐文件先在 TEST 执行并验证，禁止重跑 M1；Production 视频迁移仍需单独审批。视频 seed 必须先对全部 5,097 个 URL 运行 HEAD 估算并人工核对报告与 bucket 配额，apply 还需 `--confirm-size <报告SHA-256>`、明确 `--target`、显式 `--limit 1..500`；B-SEED-1 未关闭前不得实际转存。
 
 图片广场 TEST seed 迁移另见 [离线 SQL 导出与 Storage 迁移方法](ops/image-plaza-seed-migration.md)：不随部署执行；2026-10-20 已授权独立 Storage 本地暂存/并发上传/回读校验阶段，进度以任务和受限 report 为准，尚未执行生产 SQL。新增数据文件不得入 Git；已发现三个历史导出被跟踪，恢复 ignore 不代表清除了历史。
 
@@ -234,7 +234,7 @@ OpenRouter 调用事实由 `experience.openrouter_chat_history` 保存，消费 
 - [Grafana 用户首 token 业务看板](docs/grafana/chat-first-token.json)：用户实际显示耗时、每型号兜底触发率与超时率；读取授权通过 `20261023_grafana_first_token_reader.sql` 正式迁移。
 - [Railway 运维](ops/railway/README.md)
 - [后端日志与可观测性](.trellis/spec/backend/app/data-reliability-and-security.md)
-- [数据库域与归属](docs/ARCHITECTURE.md#51-数据库八域布局099-之后test-与生产一致)
+- [数据库域与归属](docs/ARCHITECTURE.md#51-数据库九域布局media_plaza-m1-之后)
 - [Trellis 工作流](.trellis/workflow.md)
 - [Admin spec](.trellis/spec/admin/app/index.md)
 - [Shared spec](.trellis/spec/shared/contracts/index.md)

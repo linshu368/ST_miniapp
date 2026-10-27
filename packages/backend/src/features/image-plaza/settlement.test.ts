@@ -64,7 +64,7 @@ vi.mock('../../lib/supabase.js', () => {
       return query;
     },
   });
-  return { getDomainDb, plazaDb: getDomainDb };
+  return { getDomainDb };
 });
 vi.mock('./storage.js', () => ({
   uploadPlazaImage: mocks.upload,

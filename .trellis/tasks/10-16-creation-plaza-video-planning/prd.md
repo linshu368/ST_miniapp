@@ -1,17 +1,17 @@
 # 图片广场扩展视频创作（规划）
 
-状态：planning（2026-10-26 补充性能与播放设计）。本轮只修改规划文档：不改产品代码，不建 migration，不调用付费接口，不执行 `task.py start`。
+状态：in_progress（2026-10-27 已进入实施；图片 M1 与 PostgREST 暴露已在 TEST、Production 完成，视频 M2/M3 尚未执行）。
 证据：`research/venice-video-evidence.md`、`research/seed-and-prototype-evidence.md`；性能基线对照现有图片广场源码（feed / studio）与 `10-21-sentry-ux-monitoring`、归档 `10-19-image-plaza-performance-plan`。
 
 ## 目标
 
-在不破坏现有图片广场的前提下，让广场和创作页支持视频：发现、详情播放、创作、编辑、重生成、分享、下载。同时把广场相关数据迁到独立 schema `media_plaza`。
+在已完成图片广场物理迁移并由后端直连 `media_plaza` 的基础上，让广场和创作页支持视频：发现、详情播放、创作、编辑、重生成、分享、下载。
 
 ## 已确认决策
 
 | #   | 决策                                                                                                                                                                                                                                                         | 来源                                             |
 | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------ |
-| D1  | 新 schema 命名为 `media_plaza`。迁入范围：`experience.image_plaza_*`（会话、消息、报价、参考图、attempt、artifact、作品）、`miniapp_features.image_plaza_likes`，以及所有新建视频表。**账务留在 billing**（share_rewards、wallet_ledger）                    | 用户 2026-10-24                                  |
+| D1  | schema 命名为 `media_plaza`。8 张图片表和 3 个图片 RPC 已在 TEST、Production 完成物理迁移，后端直接访问新 schema；所有新视频表也归入该域。**账务留在 billing**（share_rewards、wallet_ledger）                                                               | 用户 2026-10-24、2026-10-27                      |
 | D2  | 视频计费：提交时原子**预扣**星尘；上游失败、审核拒绝、过期、超时都**自动退款**。图片维持现状（成功后扣费）                                                                                                                                                   | 用户 2026-10-24（取代旧 PRD 中“视频成功后扣费”） |
 | D3  | 视频上游为 Venice 异步队列：quote → queue → retrieve 轮询 → 本地转存 → complete                                                                                                                                                                              | 用户需求 7/8                                     |
 | D4  | 每次视频提交附 0～1 张图片，按模型能力作为首帧或参考图；不支持图片的模型禁止附图并给出提示                                                                                                                                                                   | 旧 PRD 已确认，需求 2.5                          |
@@ -29,19 +29,20 @@
 
 ## 功能需求与验收
 
-### R1 新 schema（需求 1）
+### R1 `media_plaza` 前置状态（需求 1，已完成）
 
-- 新建 `media_plaza` schema，并通过 ADR 扩展八域常量。ADR 写入 design §2。
-- 图片广场现有表用 `ALTER TABLE … SET SCHEMA` 迁入，函数也迁入，视频表新建在其中。
-- 旧位置不保留同名可写表。迁移窗口内，后端通过一个 `PLAZA_SCHEMA` 常量统一切换。
+- `media_plaza` 已加入域常量并通过 PostgREST 暴露。
+- 图片广场现有 8 张表和 3 个图片 RPC 已用 M1 迁入；旧位置不保留兼容表、视图或同名可写对象。
+- 后端通过 `getDomainDb('media_plaza')` 直接访问，不保留 `PLAZA_SCHEMA`、启动探测、双读或旧 schema 回退。
+- 视频 M2/M3 只在该前置状态核验通过后执行，不重复执行 M1。
 
 验收：
 
-- 迁移后图片 feed、详情、点赞、会话、生成、分享、seed 导入在 test 回归全部通过。
+- 图片 feed、详情、点赞、会话、生成、分享、seed 导入在 test 回归全部通过。
 - 旧 schema 中不再有 `image_plaza_*` 表。
 - 权限、RLS 与迁移前一致：service_role 可用，anon/authenticated 拒绝。
 - PostgREST 已暴露该 schema。
-- 回滚脚本在 test 演练通过。
+- M1 已同时落到 TEST、Production，不再作为视频发布流程中的可回滚步骤；后续异常采用 forward-fix，禁止重跑 M1。
 
 ### R2 广场视频（需求 2）
 

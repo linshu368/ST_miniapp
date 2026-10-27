@@ -1,11 +1,11 @@
 # 技术设计：图片广场扩展视频 + `media_plaza` schema
 
-状态：待审核（2026-10-26 补充性能设计）。仓库：`g:/JobLib/ST_miniapp`，分支 `feat_video_park`。
+状态：实施中（2026-10-27 合并图片 M1 已完成事实）。仓库：`D:/codeReposity/wq/ST_miniapp`，分支 `feat_video_park`。
 
 证据等级：
 
 - SRC：已读源码（含 2026-10-26 对照的 feed / studio / sentry 路径）
-- MIG：migration 文本，不代表 DB 实况
+- MIG：migration 文本；图片 M1 与 PostgREST 暴露的 TEST、Production 实况由用户于 2026-10-27 确认，视频 M2/M3 仍不得据本地文件推断为已执行
 - DOC：Venice 公开文档（见 `research/venice-video-evidence.md`）
 - 待验证：实施期需核实
 
@@ -62,7 +62,7 @@
   - `docs/ARCHITECTURE.md` 域表同步。
   - 检查 `scripts/check-legacy-references.mjs`、`scripts/export-image-plaza-seed.mjs` 中的 schema 字面量。
 
-### 2.2 M1：迁移现有对象（`2026MMDD_media_plaza_schema_move.sql`）
+### 2.2 M1：迁移现有对象（已完成前置，`20261027_media_plaza_schema_move.sql`）
 
 ```sql
 SET lock_timeout = '5s';
@@ -85,8 +85,8 @@ ALTER FUNCTION experience.import_image_plaza_seed_work(...) SET SCHEMA media_pla
   - 发现未登记的引用时 RAISE，中止迁移。
   - postflight 断言旧 schema 已无 `image_plaza_*` 对象。
 - **锁与执行窗口**：AccessExclusive 锁，`lock_timeout` 5s，低峰执行。执行前先设 `IMAGE_PLAZA_WORKER_ENABLED=false`。
-- **后端双读窗口**：后端用单一常量 `plazaDb()` 访问。启动时探测 `media_plaza.image_plaza_works` 是否存在并缓存结果，因此一个后端版本能跨越迁移前后两种结构；下一个版本删除探测。
-- **回滚**：附带回滚脚本，反向 `SET SCHEMA` 并恢复两个 billing 函数的旧函数体，在 test 演练。
+- **当前实况**：TEST、Production 已完成 M1 与 PostgREST 暴露；后端统一用 `getDomainDb('media_plaza')` 直连，不再保留启动探测、双读或旧 schema 回退。
+- **恢复策略**：回滚脚本仅作为 M1 执行前设计记录保留。两套环境均已完成切换，视频发布流程不得重跑或回滚 M1；发现差异时停止 M2/M3 并采用 forward-fix。
 
 ### 2.3 M2：视频对象（`2026MMDD_media_plaza_video.sql`）
 
@@ -640,12 +640,13 @@ worker：3s tick / claim≤2 / Venice≤180s / settle RPC → ready
 ## 10. 发布顺序、停止条件、回滚
 
 1. 架构评审 ADR；确认 B-SEED-1（其余阻塞项已由 D8–D14 关闭）。
-2. 后端 v1：包含 `plazaDb()` 双读探测和装有 ffmpeg 的镜像；视频目录发布前，视频路由一律返回 404。部署到 test。
-3. test 环境依次执行：PostgREST 暴露 → M1 → 回归 → M2 → M3。每次只执行一个文件，前后各记录一次表结构。
-4. 后端 v2 上线视频路由和 worker（worker 默认关闭）；同时上线前端和 Admin。视频入口仅在 `video_models.length>0` 时显示。
-5. test canary：每个模型的 t2v、i2v、r2v 各调用 1 次；演练拒审退款和崩溃恢复。
-6. seed 先在 test 跑小批，再全量。
-7. production：以上每一步单独审批。目录先只启用 Wan 3.0 Pro，观察 24 小时后再放开其他模型。
+2. TEST 只读核验图片 M1 现状：8 张表、3 个 RPC、权限/RLS、PostgREST 暴露和图片消费者直连均符合预期；任何偏差先 forward-fix，禁止重跑 M1。
+3. 部署包含 `getDomainDb('media_plaza')` 直连和 ffmpeg 的后端；视频目录发布前，视频路由一律返回 404。
+4. TEST 依次执行 M2 → smoke/shape/权限检查 → M3 → 配置校验。每次只执行一个文件，前后各记录一次结构和关键读写。
+5. 上线视频路由和 worker（worker 默认关闭），同时上线前端和 Admin。视频入口仅在 `video_models.length>0` 时显示。
+6. TEST canary：每个模型的 t2v、i2v、r2v 各调用 1 次；演练拒审退款和崩溃恢复。
+7. seed 先在 TEST 跑小批，再全量。
+8. 观察 24 小时后单独申请 Production 的 M2/M3 与应用发布；目录先只启用 Wan 3.0 Pro，再按观测放开其他模型。
 
 停止条件，出现任一即停止：
 
@@ -659,4 +660,4 @@ worker：3s tick / claim≤2 / Venice≤180s / settle RPC → ready
 
 - 撤回视频目录发布，入口随之隐藏；worker 继续运行，把存量任务推进完。
 - M2、M3 是新增性变更，不回滚。
-- M1 回滚脚本只允许在还没有视频数据时执行；已有视频数据时只能 forward-fix。
+- M1 已在 TEST、Production 完成，不属于本次视频发布的回滚面；不得重跑或回滚，只能 forward-fix。

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import XLSX from 'xlsx';
 import type { VideoPlazaModelCatalog } from '@miniapp/shared';
-import { plazaDb } from '../../lib/supabase.js';
+import { getDomainDb } from '../../lib/supabase.js';
 import { deletePlazaVideoAssets, uploadPlazaVideoAsset } from './storage.js';
 import { prepareVideo } from './video-media.js';
 
@@ -224,7 +224,7 @@ export async function importVideoSeedRow(
   catalog: VideoPlazaModelCatalog
 ): Promise<'imported' | 'already_imported'> {
   assertSourceUrl(row.videoUrl);
-  const db = plazaDb();
+  const db = getDomainDb('media_plaza');
   const { data: existing, error: existingError } = await db
     .from('video_artifacts')
     .select('id,source_video_url')

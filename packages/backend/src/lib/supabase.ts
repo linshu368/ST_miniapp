@@ -4,7 +4,7 @@
  * Supabase service_role 客户端（绕过 RLS），用于 RPC 与 Prisma 未声明的 schema。
  * Prisma 已声明的三个域（app_core / miniapp_features / billing）优先走 Prisma。
  *
- * 业务表按归属域分布在八个物理 schema 里（migration 099），所以访问入口是
+ * 业务表按归属域分布在九个物理 schema 里（migration 099 + media_plaza M1），所以访问入口是
  * getDomainDb(域名) —— 每次都要显式说出访问哪个域，没有「默认域」这种东西。
  * 归属与跨域豁免见 docs/ARCHITECTURE.md 铁律 8 与 §5.1。
  */
@@ -57,7 +57,7 @@ export function getSupabaseClient(): SupabaseClient {
 /**
  * 归属域对应的物理 schema。
  *
- * 既有八域由 migration 099 收口。
+ * 前八域由 migration 099 收口，media_plaza 由独立 M1 迁移加入。
  * 一个 repository 横跨多个域时必须显式取多个域客户端，不要图省事共用一个。
  */
 export const DOMAIN_SCHEMAS = [
@@ -70,9 +70,9 @@ export const DOMAIN_SCHEMAS = [
   'miniapp_traffic',
   'miniapp_analytics',
   'media_plaza',
-  // 第九个域，游离于八域地图之外：telegram-video-archive 项目直接对 Supabase 建的短剧归档
+  // 业务九域之外的外部域：telegram-video-archive 项目直接对 Supabase 建的短剧归档
   // schema，不经本仓库迁移通道产生，暂未登记进
-  // .trellis/spec/database/supabase/schema-and-object-conventions.md 的八域地图（已知缺口，
+  // .trellis/spec/database/supabase/schema-and-object-conventions.md 的九域地图（已知缺口，
   // 见 .trellis/tasks/10-21-drama-archive-access/prd.md Open Issue，二期处理）。
   'drama_archive',
 ] as const;
@@ -98,47 +98,6 @@ export function getDomainDb(domain: DomainSchema): DomainDb {
   return getSupabaseClient().schema(domain);
 }
 
-type PlazaSchema = 'experience' | 'media_plaza';
-let resolvedPlazaSchema: PlazaSchema | null = null;
-
-/**
- * Resolve the image/video plaza schema once before the HTTP server starts.
- * M1 is a catalog move, so one backend release must work on both sides of it.
- */
-export async function initializePlazaDb(): Promise<PlazaSchema> {
-  if (resolvedPlazaSchema) return resolvedPlazaSchema;
-
-  const mediaProbe = await getDomainDb('media_plaza')
-    .from('image_plaza_works')
-    .select('id', { head: true, count: 'exact' })
-    .limit(1)
-    .abortSignal(AbortSignal.timeout(5_000));
-  if (!mediaProbe.error) {
-    resolvedPlazaSchema = 'media_plaza';
-    return resolvedPlazaSchema;
-  }
-
-  if (!['42P01', 'PGRST205'].includes(mediaProbe.error.code ?? '')) {
-    throw new Error(`media_plaza schema probe failed: ${mediaProbe.error.message}`);
-  }
-
-  const legacyProbe = await getDomainDb('experience')
-    .from('image_plaza_works')
-    .select('id', { head: true, count: 'exact' })
-    .limit(1)
-    .abortSignal(AbortSignal.timeout(5_000));
-  if (legacyProbe.error) {
-    throw new Error(`legacy image plaza schema probe failed: ${legacyProbe.error.message}`);
-  }
-  resolvedPlazaSchema = 'experience';
-  return resolvedPlazaSchema;
-}
-
-/** Uses the startup-probed schema; tests/build helpers retain the legacy default. */
-export function plazaDb(): DomainDb {
-  return getDomainDb(resolvedPlazaSchema ?? 'experience');
-}
-
 /**
  * 释放脚本进程可能创建的 Realtime 连接。
  *
@@ -149,5 +108,4 @@ export async function closeSupabaseClient(): Promise<void> {
   if (!_client) return;
   await _client.removeAllChannels();
   _client = null;
-  resolvedPlazaSchema = null;
 }

@@ -15,7 +15,7 @@ import {
   type ProviderImagePlazaModel,
   type SubmitImagePlazaAttemptRequest,
 } from '@miniapp/shared';
-import { getDomainDb, plazaDb } from '../../lib/supabase.js';
+import { getDomainDb } from '../../lib/supabase.js';
 import {
   cursorFilter,
   decodeFeedCursor,
@@ -163,8 +163,7 @@ interface ConversationRow {
 }
 
 export class ImagePlazaRepository {
-  private readonly experience = plazaDb();
-  private readonly features = plazaDb();
+  private readonly plaza = getDomainDb('media_plaza');
   private readonly billing = getDomainDb('billing');
   private readonly appCore = getDomainDb('app_core');
 
@@ -191,7 +190,7 @@ export class ImagePlazaRepository {
   }): Promise<{ works: PlazaFeedItem[]; nextCursor: string | null }> {
     if (input.sort) return this.listSortedWorks({ ...input, sort: input.sort });
     // Feed 排序：点赞数 ↓ → 分享时间 ↓ → id ↓（稳定游标）
-    let query = this.experience
+    let query = this.plaza
       .from('image_plaza_works')
       .select('*')
       .is('deleted_at', null)
@@ -269,7 +268,7 @@ export class ImagePlazaRepository {
       exclude: string[] = []
     ) => {
       // Cast bigint before JSON serialization; Number would silently lose deep cursor precision.
-      let query = this.experience
+      let query = this.plaza
         .from('image_plaza_works')
         .select(
           'id,user_id,attempt_id,artifact_id,title,model_id,model_name,width,height,tags,snapshot,like_count,published_at,deleted_at,initial_feed_order::text,media_type,video_artifact_id,video_attempt_id,duration_ms,description'
@@ -350,7 +349,7 @@ export class ImagePlazaRepository {
   }
 
   async getWork(workId: string, userId: string): Promise<PlazaWork | null> {
-    const { data, error } = await this.experience
+    const { data, error } = await this.plaza
       .from('image_plaza_works')
       .select('*')
       .eq('id', workId)
@@ -366,7 +365,7 @@ export class ImagePlazaRepository {
     workId: string,
     liked: boolean
   ): Promise<{ liked: boolean; likeCount: number }> {
-    const { data, error } = await this.experience.rpc('set_image_plaza_like', {
+    const { data, error } = await this.plaza.rpc('set_image_plaza_like', {
       p_user_id: userId,
       p_work_id: workId,
       p_liked: liked,
@@ -397,7 +396,7 @@ export class ImagePlazaRepository {
       throw new Error('image_plaza_model_does_not_support_edit');
     }
     const expiresAt = new Date(Date.now() + 5 * 60_000).toISOString();
-    const { data, error } = await this.experience
+    const { data, error } = await this.plaza
       .from('image_plaza_quotes')
       .insert({
         user_id: input.userId,
@@ -436,7 +435,7 @@ export class ImagePlazaRepository {
       bytes: input.bytes,
       declaredMimeType: input.mimeType,
     });
-    const { data, error } = await this.experience
+    const { data, error } = await this.plaza
       .from('image_plaza_reference_assets')
       .insert({
         id: referenceId,
@@ -465,7 +464,7 @@ export class ImagePlazaRepository {
     let title = '新建影像创作';
     let snapshot: ImagePlazaSnapshot | VideoPlazaSnapshot | null = null;
     if (sourceWorkId) {
-      const { data, error } = await this.experience
+      const { data, error } = await this.plaza
         .from('image_plaza_works')
         .select('title,snapshot,media_type')
         .eq('id', sourceWorkId)
@@ -482,7 +481,7 @@ export class ImagePlazaRepository {
       const { prompt_zh: _promptZh, ...useSameSnapshot } = parsed.data;
       snapshot = useSameSnapshot;
     }
-    const { data, error } = await this.experience
+    const { data, error } = await this.plaza
       .from('image_plaza_conversations')
       .insert({ user_id: userId, title, source_work_id: sourceWorkId ?? null, snapshot })
       .select('*')
@@ -496,7 +495,7 @@ export class ImagePlazaRepository {
   async listConversations(
     userId: string
   ): Promise<Array<Omit<ImagePlazaConversation, 'messages'>>> {
-    const { data, error } = await this.experience
+    const { data, error } = await this.plaza
       .from('image_plaza_conversations')
       .select('*')
       .eq('user_id', userId)
@@ -514,7 +513,7 @@ export class ImagePlazaRepository {
     conversationId: string,
     userId: string
   ): Promise<ImagePlazaConversation | null> {
-    const { data, error } = await this.experience
+    const { data, error } = await this.plaza
       .from('image_plaza_conversations')
       .select('*')
       .eq('id', conversationId)
@@ -537,13 +536,13 @@ export class ImagePlazaRepository {
     );
     if (existing) return existing;
     const [{ data: conversation }, { data: quote }, wallet] = await Promise.all([
-      this.experience
+      this.plaza
         .from('image_plaza_conversations')
         .select('id')
         .eq('id', input.conversationId)
         .eq('user_id', input.userId)
         .maybeSingle(),
-      this.experience
+      this.plaza
         .from('image_plaza_quotes')
         .select('*')
         .eq('id', input.body.quote_id)
@@ -576,23 +575,23 @@ export class ImagePlazaRepository {
     if ((input.body.mode !== 't2i') !== Boolean(input.body.reference_artifact_id)) {
       throw new Error('image_plaza_reference_mode_mismatch');
     }
-    const { data: userMessage, error: userError } = await this.experience
+    const { data: userMessage, error: userError } = await this.plaza
       .from('image_plaza_messages')
       .insert({ conversation_id: input.conversationId, role: 'user', content: input.body.prompt })
       .select('id')
       .single();
     if (userError || !userMessage)
       throw new Error(`image plaza message create failed: ${userError?.message}`);
-    const { data: assistantMessage, error: assistantError } = await this.experience
+    const { data: assistantMessage, error: assistantError } = await this.plaza
       .from('image_plaza_messages')
       .insert({ conversation_id: input.conversationId, role: 'assistant', content: '生成中' })
       .select('id')
       .single();
     if (assistantError || !assistantMessage) {
-      await this.experience.from('image_plaza_messages').delete().eq('id', userMessage.id);
+      await this.plaza.from('image_plaza_messages').delete().eq('id', userMessage.id);
       throw new Error(`image plaza placeholder create failed: ${assistantError?.message}`);
     }
-    const { data: attempt, error: attemptError } = await this.experience
+    const { data: attempt, error: attemptError } = await this.plaza
       .from('image_plaza_attempts')
       .insert({
         user_id: input.userId,
@@ -617,7 +616,7 @@ export class ImagePlazaRepository {
       .select('*')
       .single();
     if (attemptError || !attempt) {
-      await this.experience
+      await this.plaza
         .from('image_plaza_messages')
         .delete()
         .in('id', [userMessage.id, assistantMessage.id]);
@@ -629,7 +628,7 @@ export class ImagePlazaRepository {
       if (raced) return raced;
       throw new Error(`image plaza attempt create failed: ${attemptError?.message}`);
     }
-    await this.experience
+    await this.plaza
       .from('image_plaza_conversations')
       .update({ updated_at: new Date().toISOString() })
       .eq('id', input.conversationId);
@@ -637,7 +636,7 @@ export class ImagePlazaRepository {
   }
 
   async getAttempt(attemptId: string, userId: string): Promise<ImagePlazaAttempt | null> {
-    const { data, error } = await this.experience
+    const { data, error } = await this.plaza
       .from('image_plaza_attempts')
       .select('*')
       .eq('id', attemptId)
@@ -680,13 +679,13 @@ export class ImagePlazaRepository {
   }
 
   async getArtifactModelId(artifactId: string, userId: string): Promise<string> {
-    const { data: artifact, error: artifactError } = await this.experience
+    const { data: artifact, error: artifactError } = await this.plaza
       .from('image_plaza_artifacts')
       .select('attempt_id')
       .eq('id', artifactId)
       .maybeSingle();
     if (artifactError || !artifact) throw new Error('image_plaza_artifact_not_found');
-    const { data: attempt, error: attemptError } = await this.experience
+    const { data: attempt, error: attemptError } = await this.plaza
       .from('image_plaza_attempts')
       .select('model_id')
       .eq('id', String(artifact.attempt_id))
@@ -698,13 +697,13 @@ export class ImagePlazaRepository {
   }
 
   async loadSharePrompt(artifactId: string, userId: string): Promise<string> {
-    const { data: artifact, error: artifactError } = await this.experience
+    const { data: artifact, error: artifactError } = await this.plaza
       .from('image_plaza_artifacts')
       .select('attempt_id')
       .eq('id', artifactId)
       .maybeSingle();
     if (artifactError || !artifact) throw new Error('image_plaza_artifact_not_found');
-    const { data: attempt, error: attemptError } = await this.experience
+    const { data: attempt, error: attemptError } = await this.plaza
       .from('image_plaza_attempts')
       .select('prompt')
       .eq('id', String(artifact.attempt_id))
@@ -720,7 +719,7 @@ export class ImagePlazaRepository {
   async updateWorkTagsIfEmpty(workId: string, userId: string, tags: string[]): Promise<boolean> {
     if (tags.length === 0) return false;
     // 单次条件写保持并发安全；不调用分享 RPC，因此不会再次发放返利。
-    const { data, error } = await this.experience
+    const { data, error } = await this.plaza
       .from('image_plaza_works')
       .update({ tags })
       .eq('id', workId)
@@ -737,7 +736,7 @@ export class ImagePlazaRepository {
     limit: number,
     leaseSeconds: number
   ): Promise<ImagePlazaWorkerAttempt[]> {
-    const { data, error } = await this.experience.rpc('claim_image_plaza_jobs', {
+    const { data, error } = await this.plaza.rpc('claim_image_plaza_jobs', {
       p_worker_id: workerId,
       p_limit: limit,
       p_lease_seconds: leaseSeconds,
@@ -761,7 +760,7 @@ export class ImagePlazaRepository {
   }
 
   async markGenerating(attemptId: string, providerRequestId?: string | null): Promise<void> {
-    const { error } = await this.experience
+    const { error } = await this.plaza
       .from('image_plaza_attempts')
       .update({
         status: 'generating',
@@ -778,7 +777,7 @@ export class ImagePlazaRepository {
     providerRequestId: string | null
   ): Promise<void> {
     if (!providerRequestId) return;
-    const { error } = await this.experience
+    const { error } = await this.plaza
       .from('image_plaza_attempts')
       .update({ provider_request_id: providerRequestId.slice(0, 240) })
       .eq('id', attemptId)
@@ -787,7 +786,7 @@ export class ImagePlazaRepository {
   }
 
   async markFailed(attemptId: string, code: string, outcomeUnknown: boolean): Promise<void> {
-    const { error } = await this.experience
+    const { error } = await this.plaza
       .from('image_plaza_attempts')
       .update({
         status: outcomeUnknown ? 'failed_unknown' : 'failed',
@@ -803,7 +802,7 @@ export class ImagePlazaRepository {
   }
 
   async markStaleDispatchedUnknown(olderThanIso: string): Promise<void> {
-    const { error } = await this.experience
+    const { error } = await this.plaza
       .from('image_plaza_attempts')
       .update({
         status: 'failed_unknown',
@@ -820,7 +819,7 @@ export class ImagePlazaRepository {
     referenceId: string,
     userId: string
   ): Promise<{ bytes: Buffer; mimeType: PlazaMimeType }> {
-    const { data, error } = await this.experience
+    const { data, error } = await this.plaza
       .from('image_plaza_reference_assets')
       .select('storage_path,mime_type,user_id')
       .eq('id', referenceId)
@@ -848,7 +847,7 @@ export class ImagePlazaRepository {
       bytes: input.bytes,
       declaredMimeType: input.mimeType,
     });
-    await this.experience
+    await this.plaza
       .from('image_plaza_attempts')
       .update({ status: 'storing', updated_at: new Date().toISOString() })
       .eq('id', input.attempt.id)
@@ -909,7 +908,7 @@ export class ImagePlazaRepository {
   }): Promise<Record<string, number>> {
     const counts = await Promise.all(
       input.tagIds.map(async (tagId) => {
-        let query = this.experience
+        let query = this.plaza
           .from('image_plaza_works')
           .select('id', { count: 'exact', head: true })
           .is('deleted_at', null)
@@ -948,20 +947,20 @@ export class ImagePlazaRepository {
     const workIds = rows.map((row) => row.id);
     const [imageResult, videoResult, likeResult] = await Promise.all([
       artifactIds.length > 0
-        ? this.experience
+        ? this.plaza
             .from('image_plaza_artifacts')
             .select('*')
             .in('id', artifactIds)
             .abortSignal(options.signal ?? AbortSignal.timeout(10_000))
         : Promise.resolve({ data: [], error: null }),
       videoArtifactIds.length > 0
-        ? this.experience
+        ? this.plaza
             .from('video_artifacts')
             .select('*')
             .in('id', videoArtifactIds)
             .abortSignal(options.signal ?? AbortSignal.timeout(10_000))
         : Promise.resolve({ data: [], error: null }),
-      this.features
+      this.plaza
         .from('image_plaza_likes')
         .select('work_id')
         .eq('user_id', userId)
@@ -1061,7 +1060,7 @@ export class ImagePlazaRepository {
     options: { includeReferences?: boolean }
   ): Promise<string | null> {
     if (options.includeReferences === false || !referenceArtifactId) return null;
-    const { data: reference } = await this.experience
+    const { data: reference } = await this.plaza
       .from('image_plaza_reference_assets')
       .select('storage_path')
       .eq('id', referenceArtifactId)
@@ -1076,13 +1075,13 @@ export class ImagePlazaRepository {
       { data: attempts, error: attemptError },
       videoResult,
     ] = await Promise.all([
-      this.experience
+      this.plaza
         .from('image_plaza_messages')
         .select('*')
         .eq('conversation_id', row.id)
         .order('created_at'),
-      this.experience.from('image_plaza_attempts').select('*').eq('conversation_id', row.id),
-      this.experience.from('video_attempts').select('*').eq('conversation_id', row.id),
+      this.plaza.from('image_plaza_attempts').select('*').eq('conversation_id', row.id),
+      this.plaza.from('video_attempts').select('*').eq('conversation_id', row.id),
     ]);
     const videoMissing = ['42P01', 'PGRST205'].includes(videoResult.error?.code ?? '');
     if (messageError || attemptError || (videoResult.error && !videoMissing))
@@ -1123,7 +1122,7 @@ export class ImagePlazaRepository {
   private async getVideoArtifacts(attemptIds: string[]): Promise<Map<string, VideoArtifactRow>> {
     const result = new Map<string, VideoArtifactRow>();
     if (attemptIds.length === 0) return result;
-    const { data, error } = await this.experience
+    const { data, error } = await this.plaza
       .from('video_artifacts')
       .select('*')
       .in('attempt_id', attemptIds);
@@ -1135,7 +1134,7 @@ export class ImagePlazaRepository {
   private async getArtifacts(attemptIds: string[]): Promise<Map<string, ImagePlazaArtifact[]>> {
     const result = new Map<string, ImagePlazaArtifact[]>();
     if (attemptIds.length === 0) return result;
-    const { data, error } = await this.experience
+    const { data, error } = await this.plaza
       .from('image_plaza_artifacts')
       .select('*')
       .in('attempt_id', attemptIds)
@@ -1161,7 +1160,7 @@ export class ImagePlazaRepository {
     key: string,
     body: SubmitImagePlazaAttemptRequest
   ): Promise<ImagePlazaAttempt | null> {
-    const { data, error } = await this.experience
+    const { data, error } = await this.plaza
       .from('image_plaza_attempts')
       .select('*')
       .eq('user_id', userId)
@@ -1189,7 +1188,7 @@ export class ImagePlazaRepository {
 
   /** 公开作品使用过的参考图可被“用同款”复用；其他用户私有上传仍不可访问。 */
   private async canAccessReference(referenceId: string, userId: string): Promise<boolean> {
-    const { data: owned, error: ownedError } = await this.experience
+    const { data: owned, error: ownedError } = await this.plaza
       .from('image_plaza_reference_assets')
       .select('id')
       .eq('id', referenceId)
@@ -1198,7 +1197,7 @@ export class ImagePlazaRepository {
     if (ownedError) throw new Error(`image plaza reference read failed: ${ownedError.message}`);
     if (owned) return true;
 
-    const { data: publicWork, error: workError } = await this.experience
+    const { data: publicWork, error: workError } = await this.plaza
       .from('image_plaza_works')
       .select('id')
       .contains('snapshot', { reference_artifact_id: referenceId })

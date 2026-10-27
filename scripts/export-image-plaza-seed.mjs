@@ -85,14 +85,14 @@ async function main() {
       await client.query(`SELECT
       count(*) FILTER (WHERE deleted_at IS NULL)::INTEGER AS active,
       count(*) FILTER (WHERE deleted_at IS NOT NULL)::INTEGER AS deleted
-      FROM experience.image_plaza_works WHERE origin = 'civitai_seed'`)
+      FROM media_plaza.image_plaza_works WHERE origin = 'civitai_seed'`)
     ).rows[0];
     if (counts.active < 1 || counts.active > 20000)
       throw new Error('active_seed_count_outside_capacity');
     const invalid = (
       await client.query(`SELECT count(*)::INTEGER AS count
-      FROM experience.image_plaza_works w
-      LEFT JOIN experience.image_plaza_artifacts a ON a.id = w.artifact_id
+      FROM media_plaza.image_plaza_works w
+      LEFT JOIN media_plaza.image_plaza_artifacts a ON a.id = w.artifact_id
       WHERE w.origin = 'civitai_seed' AND w.deleted_at IS NULL AND (
         a.id IS NULL OR a.origin IS DISTINCT FROM 'civitai_seed'
         OR a.source_platform IS DISTINCT FROM 'civitai' OR w.source_platform IS DISTINCT FROM 'civitai'
@@ -107,8 +107,8 @@ async function main() {
       w.model_name, w.width, w.height, w.tags, w.snapshot,
       to_char(w.published_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS published_at,
       a.storage_path, a.mime_type, a.byte_size
-      FROM experience.image_plaza_works w
-      JOIN experience.image_plaza_artifacts a ON a.id = w.artifact_id
+      FROM media_plaza.image_plaza_works w
+      JOIN media_plaza.image_plaza_artifacts a ON a.id = w.artifact_id
       WHERE w.origin = 'civitai_seed' AND w.deleted_at IS NULL
       ORDER BY w.source_image_id LIMIT 20001`)
     ).rows;
