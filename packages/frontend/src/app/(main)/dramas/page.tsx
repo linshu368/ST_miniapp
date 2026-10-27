@@ -19,7 +19,6 @@ const DRAMA_SORT_TABS = [
   { value: 'recommended', label: '推荐' },
   { value: 'latest', label: '最新' },
 ] as const;
-const DRAMA_CATEGORIES = ['全部', '悬疑', '科幻', '古风', '恋爱', '喜剧', '治愈', '脑洞'] as const;
 
 function formatDuration(seconds: number): string {
   const mins = Math.floor(seconds / 60);
@@ -51,9 +50,8 @@ export default function DramasPage() {
   };
   const [activeSort, setActiveSort] =
     useState<(typeof DRAMA_SORT_TABS)[number]['value']>('recommended');
-  const [activeCategory, setActiveCategory] = useState<string>('全部');
   const [keyword, setKeyword] = useState('');
-  const visibleDramas = selectDramas(dramas, keyword, activeCategory, activeSort);
+  const visibleDramas = selectDramas(dramas, keyword, '全部', activeSort);
 
   return (
     <main className="mx-auto min-h-dvh w-full max-w-screen-xl px-4 pb-8 pt-[calc(1.5rem+env(safe-area-inset-top))] text-foreground">
@@ -72,7 +70,7 @@ export default function DramasPage() {
         />
       </div>
 
-      <div role="tablist" aria-label="短剧排序" className="mb-2 flex items-center gap-2">
+      <div role="tablist" aria-label="短剧排序" className="mb-4 flex items-center gap-2">
         {DRAMA_SORT_TABS.map((tab) => {
           const active = activeSort === tab.value;
           return (
@@ -95,33 +93,6 @@ export default function DramasPage() {
         })}
       </div>
 
-      <div
-        role="tablist"
-        aria-label="短剧分类"
-        className="mb-4 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-      >
-        {DRAMA_CATEGORIES.map((category) => {
-          const active = activeCategory === category;
-          return (
-            <button
-              key={category}
-              type="button"
-              role="tab"
-              aria-selected={active}
-              onClick={() => setActiveCategory(category)}
-              className={cn(
-                'shrink-0 rounded-full border px-3 py-1 text-[12px] transition-all',
-                active
-                  ? 'border-primary/30 bg-primary/10 text-primary'
-                  : 'border-border text-muted-foreground hover:bg-card hover:text-foreground'
-              )}
-            >
-              {category}
-            </button>
-          );
-        })}
-      </div>
-
       {isLoading ? <DramaGridSkeleton /> : null}
 
       {isError ? <DramaListError onRetry={retryList} /> : null}
@@ -134,10 +105,7 @@ export default function DramasPage() {
           <button
             type="button"
             className="mt-3 rounded-full px-4 py-2 text-sm text-primary"
-            onClick={() => {
-              setKeyword('');
-              setActiveCategory('全部');
-            }}
+            onClick={() => setKeyword('')}
           >
             清除筛选
           </button>
