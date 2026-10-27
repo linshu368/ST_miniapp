@@ -28,6 +28,7 @@ import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Input } from '@/components/ui/input';
 import { VipEntryCard } from '@/components/vip/vip-entry-card';
+import { VipCheckinUpgrade } from '@/components/vip/vip-checkin-upgrade';
 
 import {
   paymentKeys,
@@ -74,6 +75,15 @@ export default function ProfilePage() {
   const checkin = checkinQ.data?.checkin;
   const claimCheckin = useDailyCheckinMutation();
   const vipStatus = useVipStatusQuery();
+  const vipDailyCredits = vipStatus.data?.benefits?.checkin_vip_credits;
+  const checkinUpgradeCredits =
+    !vipStatus.isError &&
+    vipStatus.data?.active === false &&
+    typeof vipDailyCredits === 'number' &&
+    Number.isInteger(vipDailyCredits) &&
+    vipDailyCredits > 0
+      ? vipDailyCredits
+      : null;
   const paymentPlans = usePaymentPlansQuery();
   const markVipSeen = useMarkVipEntryViewedMutation();
   const inviteEntry = useInviteEntryStatusQuery();
@@ -100,13 +110,14 @@ export default function ProfilePage() {
   }, [isEditing]);
 
   useEffect(() => {
-    if (!checkinToast) return;
+    // A confirmation with a CTA must remain available until the user opens or dismisses it.
+    if (!checkinToast || checkinUpgradeCredits !== null) return;
     const timer = window.setTimeout(
       () => setCheckinToast(null),
       checkinToast.length > 1 ? 3200 : 1500
     );
     return () => window.clearTimeout(timer);
-  }, [checkinToast]);
+  }, [checkinToast, checkinUpgradeCredits]);
 
   useEffect(() => {
     const previous = previousCommunityStatus.current;
@@ -449,6 +460,15 @@ export default function ProfilePage() {
             签到未成功，请再试一次。
           </p>
         ) : null}
+        {checkinUpgradeCredits !== null ? (
+          <div className="mt-4 border-t border-primary/15 pt-3">
+            <VipCheckinUpgrade
+              dailyCredits={checkinUpgradeCredits}
+              onOpen={() => void openVip()}
+              pending={markVipSeen.isPending}
+            />
+          </div>
+        ) : null}
       </section>
 
       <section
@@ -599,7 +619,7 @@ export default function ProfilePage() {
           <div
             role="status"
             aria-live="polite"
-            className="pointer-events-auto relative w-full max-w-[320px] rounded-[24px] border border-primary/25 bg-card/95 px-5 py-4 shadow-[0_20px_60px_rgb(0_0_0/40%)] backdrop-blur-xl"
+            className="pointer-events-auto relative w-full max-w-[352px] rounded-[24px] border border-primary/25 bg-card/95 px-5 py-4 shadow-[0_20px_60px_rgb(0_0_0/40%)] backdrop-blur-xl"
           >
             <button
               type="button"
@@ -622,6 +642,20 @@ export default function ProfilePage() {
                 ))}
               </div>
             </div>
+            {checkinUpgradeCredits !== null ? (
+              <div className="mt-4 border-t border-border/70 pt-3">
+                <VipCheckinUpgrade
+                  dailyCredits={checkinUpgradeCredits}
+                  onOpen={() => void openVip()}
+                  pending={markVipSeen.isPending}
+                />
+                {vipError ? (
+                  <p role="alert" className="mt-2 text-xs text-destructive">
+                    {vipError}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         </div>
       ) : null}

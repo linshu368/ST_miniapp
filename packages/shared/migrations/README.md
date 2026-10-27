@@ -108,10 +108,10 @@ artifact 修订（2026-09-29，仍未执行远端）：首个文件在版本表�
 
 改用环境专用 safe 文件（单调 OR 包装白名单 + 扩 CHECK + VIP 对象转绝对整数 + `claim_daily_checkin`）：
 
-| 环境 | 文件 | VIP 绝对额默认 | 说明 |
-| --- | --- | --- | --- |
-| TEST `zoqelpfhurwehlvypryl` | `20261026_checkin_tiered_rewards_test.sql` | `150`（可保留已有 number / `fixed_credits`） | 先 workflow inspect，再单文件 apply；禁止 `force_rerun` |
-| Production `wbtsfzozlmurljvglhpn` | `20261026_checkin_tiered_rewards_production.sql` | `90`（2026-10-26 只读确认自 `fixed_credits`） | TEST 成功并验收后再独立审批；禁止套用 TEST 的 150 |
+| 环境                              | 文件                                             | VIP 绝对额默认                                | 说明                                                    |
+| --------------------------------- | ------------------------------------------------ | --------------------------------------------- | ------------------------------------------------------- |
+| TEST `zoqelpfhurwehlvypryl`       | `20261026_checkin_tiered_rewards_test.sql`       | `150`（可保留已有 number / `fixed_credits`）  | 先 workflow inspect，再单文件 apply；禁止 `force_rerun` |
+| Production `wbtsfzozlmurljvglhpn` | `20261026_checkin_tiered_rewards_production.sql` | `90`（2026-10-26 只读确认自 `fixed_credits`） | TEST 成功并验收后再独立审批；禁止套用 TEST 的 150       |
 
 两文件不可交叉执行。前置：`claim_daily_checkin`、VIP validator、`config_drafts/releases` 已存在；已有 `*_before_checkin_tiers` 前置函数会拒绝重跑。成功后 Admin 校验签到三键保存/发布，抽测 VIP/新用户/老用户领取；应用回退保留新 RPC 语义，配置用 Admin 发布调整，勿恢复 object 形 `vip_checkin_bonus_config`。
 
