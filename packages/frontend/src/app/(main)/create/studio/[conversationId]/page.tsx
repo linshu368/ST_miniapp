@@ -24,6 +24,9 @@ import {
   type ImagePlazaAspectRatio,
   type ImagePlazaMode,
   type ImagePlazaModel,
+  type VideoPlazaAttempt,
+  type VideoPlazaModel,
+  type VideoPlazaQuoteData,
 } from '@miniapp/shared';
 import {
   fileToImagePlazaPayload,
@@ -35,14 +38,22 @@ import {
   useShareImagePlazaMutation,
   useSubmitImagePlazaAttemptMutation,
   useUploadImagePlazaReferenceMutation,
+  useShareVideoPlazaMutation,
+  useSubmitVideoPlazaAttemptMutation,
+  useVideoPlazaAttemptQuery,
+  useVideoPlazaQuoteMutation,
 } from '@/lib/api/image-plaza';
 import { StudioArtifactCard } from '@/components/image-plaza/studio-artifact-card';
 import { StudioSettingsDialog } from '@/components/image-plaza/studio-settings-dialog';
+import { StudioVideoCard } from '@/components/image-plaza/studio-video-card';
+import { VideoModelSheet } from '@/components/image-plaza/video-model-sheet';
+import { VideoSettingsDialog } from '@/components/image-plaza/video-settings-dialog';
 import { ImagePlazaHistorySheet } from '@/components/image-plaza/image-plaza-history-sheet';
 import { useMemoryDraft } from '@/hooks/use-memory-draft';
 import { useTelegramBackButton } from '@/lib/telegram';
 import { usePageReady } from '@/lib/perf/page-ready';
 import { useVisualViewportHeight } from '@/lib/use-visual-viewport-height';
+import { sendSentryLog } from '@/lib/sentry/client';
 import {
   Sheet,
   SheetClose,
@@ -87,6 +98,9 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
   const submit = useSubmitImagePlazaAttemptMutation(conversationId);
   const upload = useUploadImagePlazaReferenceMutation();
   const share = useShareImagePlazaMutation();
+  const videoQuote = useVideoPlazaQuoteMutation();
+  const submitVideo = useSubmitVideoPlazaAttemptMutation(conversationId);
+  const shareVideo = useShareVideoPlazaMutation();
   const fileInput = useRef<HTMLInputElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const messagesRef = useRef<HTMLDivElement | null>(null);
@@ -100,6 +114,7 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
   // 从点击生成到图片真正解码展示出来的耗时；只算最新这一次生成，图片 onLoad 消费后清掉。
   const genStartedAt = useRef<number | null>(null);
   const genReported = useRef(false);
+  const videoQuoteCache = useRef<{ key: string; value: VideoPlazaQuoteData } | null>(null);
   const reportArtifactVisible = () => {
     if (genReported.current || genStartedAt.current === null) return;
     genReported.current = true;
@@ -125,6 +140,15 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
     setValue: setPrompt,
     clearIfUnchanged,
   } = useMemoryDraft(`image-plaza:${conversationId}`, data?.snapshot?.prompt ?? '');
+  const {
+    value: videoPrompt,
+    setValue: setVideoPrompt,
+    clearIfUnchanged: clearVideoIfUnchanged,
+  } = useMemoryDraft(
+    `video-plaza:${conversationId}`,
+    data?.snapshot && 'input_mode' in data.snapshot ? data.snapshot.prompt : ''
+  );
+  const [mediaMode, setMediaMode] = useState<'image' | 'video'>('image');
   const [modelId, setModelId] = useState('seedream-v5-pro');
   const [aspectRatio, setAspectRatio] = useState<ImagePlazaAspectRatio>('2:3');
   const [resolution, setResolution] = useState<'1K' | '2K' | 'fixed'>('1K');
@@ -139,42 +163,87 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
   const [shareTipOpen, setShareTipOpen] = useState(false);
   const [rewardBadgeVisible, setRewardBadgeVisible] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [videoModelOpen, setVideoModelOpen] = useState(false);
+  const [videoSettingsOpen, setVideoSettingsOpen] = useState(false);
+  const [videoModelId, setVideoModelId] = useState('');
+  const [videoDuration, setVideoDuration] = useState(5);
+  const [videoResolution, setVideoResolution] = useState('720p');
+  const [videoAspectRatio, setVideoAspectRatio] = useState<string | null>(null);
+  const [videoAudio, setVideoAudio] = useState(true);
   const [submittingSource, setSubmittingSource] = useState<string | null>(null);
   const returnToGallery = useCallback(() => router.push('/create', { scroll: false }), [router]);
   useTelegramBackButton(returnToGallery);
 
   const models = useMemo(() => config.data?.models ?? [], [config.data?.models]);
   const model = models.find((item) => item.id === modelId) ?? models[0];
+  const videoModels = useMemo(() => config.data?.video_models ?? [], [config.data?.video_models]);
+  const videoModel = videoModels.find((item) => item.id === videoModelId) ?? videoModels[0];
   useEffect(() => {
     if (initialized || !data || models.length === 0) return;
     const snapshot = data.snapshot;
+    const imageSnapshot = snapshot && 'mode' in snapshot ? snapshot : null;
     const target =
-      models.find((item) => item.id === snapshot?.model_id) ??
+      models.find((item) => item.id === imageSnapshot?.model_id) ??
       models.find((item) => item.id === 'seedream-v5-pro') ??
       models[0];
     if (!target) return;
     setModelId(target.id);
     setAspectRatio(
-      snapshot && target.aspect_ratios.includes(snapshot.aspect_ratio)
-        ? snapshot.aspect_ratio
+      imageSnapshot && target.aspect_ratios.includes(imageSnapshot.aspect_ratio)
+        ? imageSnapshot.aspect_ratio
         : (target.aspect_ratios[0] ?? '1:1')
     );
     setResolution(
-      snapshot && target.resolutions.some((item) => item.id === snapshot.resolution)
-        ? snapshot.resolution
+      imageSnapshot && target.resolutions.some((item) => item.id === imageSnapshot.resolution)
+        ? imageSnapshot.resolution
         : (target.resolutions[0]?.id ?? 'fixed')
     );
-    setReasoning(snapshot?.reasoning ?? false);
-    setAutoOptimize(snapshot?.auto_optimize ?? true);
-    const canKeepReference = Boolean(snapshot?.reference_artifact_id && target.supports_i2i);
-    setReferenceArtifactId(canKeepReference ? (snapshot?.reference_artifact_id ?? null) : null);
-    setMode(canKeepReference ? (snapshot?.mode ?? 'i2i') : 't2i');
-    if (snapshot?.reference_artifact_id && !target.supports_i2i) {
+    setReasoning(imageSnapshot?.reasoning ?? false);
+    setAutoOptimize(imageSnapshot?.auto_optimize ?? true);
+    const canKeepReference = Boolean(imageSnapshot?.reference_artifact_id && target.supports_i2i);
+    setReferenceArtifactId(
+      canKeepReference ? (imageSnapshot?.reference_artifact_id ?? null) : null
+    );
+    setMode(canKeepReference ? (imageSnapshot?.mode ?? 'i2i') : 't2i');
+    if (imageSnapshot?.reference_artifact_id && !target.supports_i2i) {
       setNotice('原模型已不可用，当前模型不支持参考图，已改为文生图');
       window.setTimeout(() => setNotice(''), 3200);
     }
+    if (snapshot && 'input_mode' in snapshot && videoModels.length) {
+      const targetVideo =
+        videoModels.find((item) => item.id === snapshot.model_id) ?? videoModels[0];
+      if (targetVideo) {
+        setMediaMode('video');
+        setVideoModelId(targetVideo.id);
+        setVideoDuration(
+          targetVideo.durations.includes(snapshot.duration_s)
+            ? snapshot.duration_s
+            : targetVideo.default_duration
+        );
+        setVideoResolution(
+          targetVideo.resolutions.includes(snapshot.resolution)
+            ? snapshot.resolution
+            : targetVideo.default_resolution
+        );
+        setVideoAspectRatio(
+          snapshot.aspect_ratio !== null &&
+            targetVideo.aspect_ratios.includes(snapshot.aspect_ratio)
+            ? snapshot.aspect_ratio
+            : targetVideo.default_aspect_ratio
+        );
+        setVideoAudio(targetVideo.audio_configurable ? snapshot.audio : targetVideo.default_audio);
+        setReferenceArtifactId(snapshot.reference_artifact_id);
+      }
+    } else if (videoModels.length) {
+      const defaultVideo =
+        videoModels.find((item) => item.id === config.data?.default_video_model_id) ??
+        videoModels[0];
+      if (defaultVideo) resetVideoSettings(defaultVideo);
+    }
     setInitialized(true);
-  }, [data, initialized, models]);
+    // resetVideoSettings only writes local state and intentionally follows the fetched catalogs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, initialized, models, videoModels, config.data?.default_video_model_id]);
 
   useEffect(() => {
     if (!initialized || !model) return;
@@ -218,6 +287,90 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
     );
     setReasoning(false);
     setAutoOptimize(true);
+  };
+
+  const resetVideoSettings = (target = videoModel) => {
+    if (!target) return;
+    setVideoModelId(target.id);
+    setVideoDuration(target.default_duration);
+    setVideoResolution(target.default_resolution);
+    setVideoAspectRatio(target.default_aspect_ratio);
+    setVideoAudio(target.default_audio);
+  };
+
+  const videoInputMode = (target = videoModel): 't2v' | 'i2v' | 'r2v' => {
+    if (!referenceArtifactId || target?.image_input === 'none') return 't2v';
+    return target?.image_input === 'optional_first_frame' ? 'i2v' : 'r2v';
+  };
+
+  const videoQuoteRequest = videoModel
+    ? {
+        model_id: videoModel.id,
+        input_mode: videoInputMode(videoModel),
+        duration_s: videoDuration,
+        resolution: videoResolution,
+        aspect_ratio: videoAspectRatio,
+        audio: videoAudio,
+      }
+    : null;
+  const videoQuoteKey = videoQuoteRequest ? JSON.stringify(videoQuoteRequest) : '';
+
+  useEffect(() => {
+    if (!initialized || mediaMode !== 'video' || !videoQuoteRequest) return;
+    const timer = window.setTimeout(() => {
+      videoQuote.mutate(videoQuoteRequest, {
+        onSuccess: (value) => {
+          videoQuoteCache.current = { key: videoQuoteKey, value };
+        },
+      });
+    }, 350);
+    return () => window.clearTimeout(timer);
+    // The request object is represented by the stable serialized key.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialized, mediaMode, videoQuoteKey]);
+
+  const selectVideoModel = (next: VideoPlazaModel) => {
+    if (referenceArtifactId && next.image_input === 'none') {
+      clearReference();
+      showNotice('该模型不支持参考图，已移除图片');
+    }
+    resetVideoSettings(next);
+  };
+
+  const generateVideo = async (nextPrompt = videoPrompt, source = 'video-composer') => {
+    if (!videoModel || !videoQuoteRequest || !nextPrompt.trim() || sending.current) return;
+    if (videoModel.image_input === 'required_reference' && !referenceArtifactId) {
+      showNotice('当前模型必须添加参考图');
+      return;
+    }
+    if (localPreview && referenceStatus !== 'ready') return;
+    sending.current = true;
+    setSubmittingSource(source);
+    const action = startAction('video_generate');
+    try {
+      const cached = videoQuoteCache.current;
+      const quoted =
+        cached?.key === videoQuoteKey && Date.parse(cached.value.expires_at) > Date.now() + 5_000
+          ? cached.value
+          : await videoQuote.mutateAsync(videoQuoteRequest);
+      videoQuoteCache.current = { key: videoQuoteKey, value: quoted };
+      await submitVideo.mutateAsync({
+        prompt: nextPrompt.trim(),
+        quote_id: quoted.quote_id,
+        idempotency_key: crypto.randomUUID(),
+        reference_artifact_id: referenceArtifactId,
+      });
+      if (source === 'video-composer') clearVideoIfUnchanged(nextPrompt);
+      followLatestRef.current = true;
+      scrollToLatest();
+      feedbackAfterPaint(action);
+    } catch (error) {
+      action.feedback();
+      showNotice(error instanceof Error ? error.message : '视频提交失败，请重试');
+    } finally {
+      sending.current = false;
+      setSubmittingSource(null);
+    }
   };
 
   const scrollToLatest = () => {
@@ -325,7 +478,11 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
 
   const chooseReference = async (file?: File) => {
     if (!file || !model) return;
-    if (!model.supports_i2i) {
+    const referenceAllowed =
+      mediaMode === 'video'
+        ? Boolean(videoModel && videoModel.image_input !== 'none')
+        : model.supports_i2i;
+    if (!referenceAllowed) {
       showNotice('当前模型不支持添加参考图');
       return;
     }
@@ -339,7 +496,7 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
       referenceFile.current = file;
       setLocalPreview(preview);
       setReferenceStatus('reading');
-      setMode('i2i');
+      if (mediaMode === 'image') setMode('i2i');
     } catch (error) {
       showNotice(error instanceof Error ? error.message : '无法预览图片');
       return;
@@ -378,6 +535,26 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
         tags: [],
       });
       setShareTipOpen(false);
+      showNotice(
+        result.already_shared
+          ? '作品已在广场'
+          : result.reward_credits > 0
+            ? `分享成功，返还 ${result.reward_credits} 星尘`
+            : '分享成功'
+      );
+    } catch (error) {
+      showNotice(error instanceof Error ? error.message : '分享失败');
+    }
+  };
+
+  const confirmVideoShare = async (artifactId: string, prompt: string) => {
+    try {
+      const result = await shareVideo.mutateAsync({
+        artifact_id: artifactId,
+        title: (data?.title ?? '我的视频作品').slice(0, 80),
+        description: prompt.trim().slice(0, 500),
+        tags: [],
+      });
       showNotice(
         result.already_shared
           ? '作品已在广场'
@@ -444,7 +621,9 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
           <div className="min-w-0">
             <h1 className="truncate text-sm font-black">{data.title}</h1>
             <p className="truncate text-[11px] text-muted-foreground">
-              {model.name} · {aspectRatio} · {resolution}
+              {mediaMode === 'video' && videoModel
+                ? `${videoModel.name} · ${videoDuration}s · ${videoResolution}`
+                : `${model.name} · ${aspectRatio} · ${resolution}`}
             </p>
           </div>
         </div>
@@ -519,6 +698,35 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
                   <p className="max-w-[86%] rounded-[1.35rem] rounded-br-md border border-border bg-card px-4 py-3 text-sm leading-6 text-foreground shadow-sm">
                     {message.content}
                   </p>
+                ) : message.video_attempt ? (
+                  <VideoAttemptCard
+                    initialAttempt={message.video_attempt}
+                    prompt={
+                      data.messages
+                        .slice(0, messageIndex)
+                        .reverse()
+                        .find((item) => item.role === 'user')?.content ?? ''
+                    }
+                    sharing={shareVideo.isPending}
+                    onEdit={(attempt, value) => {
+                      const target = videoModels.find(
+                        (item) => item.id === attempt.params.model_id
+                      );
+                      setMediaMode('video');
+                      setVideoPrompt(value);
+                      if (target) {
+                        setVideoModelId(target.id);
+                        setVideoDuration(attempt.params.duration_s);
+                        setVideoResolution(attempt.params.resolution);
+                        setVideoAspectRatio(attempt.params.aspect_ratio);
+                        setVideoAudio(attempt.params.audio);
+                      }
+                      setReferenceArtifactId(attempt.params.reference_artifact_id);
+                    }}
+                    onRegenerate={(value) => void generateVideo(value, message.id)}
+                    onShare={(artifactId, prompt) => void confirmVideoShare(artifactId, prompt)}
+                    onNotice={showNotice}
+                  />
                 ) : message.attempt ? (
                   <div className="space-y-5">
                     <AttemptCard
@@ -568,6 +776,25 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
         style={{ maxHeight: viewportHeight ? viewportHeight * 0.7 : '70dvh' }}
       >
         <div className="flex min-h-0 flex-col rounded-[2rem] border border-border bg-card p-3 shadow-[0_-12px_50px_rgba(0,0,0,0.2)] min-[360px]:p-4">
+          {videoModels.length ? (
+            <div
+              className="mb-3 grid grid-cols-2 rounded-xl bg-background/60 p-1"
+              role="group"
+              aria-label="创作类型"
+            >
+              {(['image', 'video'] as const).map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={mediaMode === value}
+                  onClick={() => setMediaMode(value)}
+                  className={`min-h-9 rounded-lg text-xs font-bold ${mediaMode === value ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}`}
+                >
+                  {value === 'image' ? '图片' : '视频'}
+                </button>
+              ))}
+            </div>
+          ) : null}
           <div className="chat-scroll-area min-h-0 overflow-y-auto overscroll-contain">
             {localPreview || reference || referenceArtifactId ? (
               <div className="mb-2 flex items-center gap-2 rounded-2xl bg-card p-2 ring-1 ring-border">
@@ -590,7 +817,11 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
                         ? '上传中…'
                         : referenceStatus === 'error'
                           ? '上传失败，请重试或移除'
-                          : '已添加参考图'}
+                          : mediaMode === 'video'
+                            ? videoModel?.image_input === 'optional_first_frame'
+                              ? '已添加首帧图'
+                              : '已添加参考图'
+                            : '已添加参考图'}
                   </p>
                   {referenceStatus === 'error' ? (
                     <button
@@ -601,24 +832,26 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
                       重试上传
                     </button>
                   ) : null}
-                  <div className="mt-1 flex gap-2 text-[11px]">
-                    <button
-                      type="button"
-                      onClick={() => setMode('i2i')}
-                      className={mode === 'i2i' ? 'text-primary' : 'text-muted-foreground'}
-                    >
-                      参考生成
-                    </button>
-                    {model.supports_edit ? (
+                  {mediaMode === 'image' ? (
+                    <div className="mt-1 flex gap-2 text-[11px]">
                       <button
                         type="button"
-                        onClick={() => setMode('edit')}
-                        className={mode === 'edit' ? 'text-primary' : 'text-muted-foreground'}
+                        onClick={() => setMode('i2i')}
+                        className={mode === 'i2i' ? 'text-primary' : 'text-muted-foreground'}
                       >
-                        编辑图片
+                        参考生成
                       </button>
-                    ) : null}
-                  </div>
+                      {model.supports_edit ? (
+                        <button
+                          type="button"
+                          onClick={() => setMode('edit')}
+                          className={mode === 'edit' ? 'text-primary' : 'text-muted-foreground'}
+                        >
+                          编辑图片
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </div>
                 <button
                   type="button"
@@ -632,10 +865,12 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
             ) : null}
 
             <textarea
-              value={prompt}
-              maxLength={IMAGE_PLAZA_PROMPT_MAX_CHARS}
+              value={mediaMode === 'video' ? videoPrompt : prompt}
+              maxLength={mediaMode === 'video' ? undefined : IMAGE_PLAZA_PROMPT_MAX_CHARS}
               onChange={(event) =>
-                setPrompt(event.target.value.slice(0, IMAGE_PLAZA_PROMPT_MAX_CHARS))
+                mediaMode === 'video'
+                  ? setVideoPrompt(event.target.value)
+                  : setPrompt(event.target.value.slice(0, IMAGE_PLAZA_PROMPT_MAX_CHARS))
               }
               onKeyDown={(event) => {
                 if (
@@ -644,11 +879,12 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
                   !event.nativeEvent.isComposing
                 ) {
                   event.preventDefault();
-                  void generate();
+                  if (mediaMode === 'video') void generateVideo();
+                  else void generate();
                 }
               }}
               rows={4}
-              placeholder="描述你想生成的画面…"
+              placeholder={mediaMode === 'video' ? '描述你想生成的视频…' : '描述你想生成的画面…'}
               className="min-h-24 w-full resize-none overflow-y-auto bg-transparent text-base leading-7 outline-none placeholder:text-muted-foreground"
             />
           </div>
@@ -666,84 +902,107 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
             <button
               type="button"
               onClick={() => fileInput.current?.click()}
-              disabled={!model.supports_i2i}
+              disabled={
+                mediaMode === 'video' ? videoModel?.image_input === 'none' : !model.supports_i2i
+              }
               aria-label="添加参考图"
-              title={model.supports_i2i ? '添加参考图' : '当前模型不支持参考图'}
+              title={
+                (mediaMode === 'video' ? videoModel?.image_input !== 'none' : model.supports_i2i)
+                  ? '添加参考图'
+                  : '当前模型不支持参考图'
+              }
               className="grid size-11 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-background/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"
             >
               <ImagePlus className="size-5" aria-hidden />
             </button>
             <button
               type="button"
-              onClick={() => setSettingsOpen(true)}
+              onClick={() =>
+                mediaMode === 'video' ? setVideoSettingsOpen(true) : setSettingsOpen(true)
+              }
               aria-label="打开生成设置"
               title="生成设置"
               className="grid size-11 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-background/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <Settings2 className="size-5" aria-hidden />
             </button>
-            <Sheet>
-              <SheetTrigger asChild>
-                <button
-                  type="button"
-                  aria-label={`选择模型，当前为 ${model.name}`}
-                  title={model.name}
-                  className="flex min-h-11 min-w-11 max-w-56 flex-1 items-center justify-center gap-0.5 rounded-full bg-background/45 px-2 text-xs font-medium text-foreground/80 transition-colors hover:bg-background/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <span className="min-w-0 truncate">{model.name}</span>
-                  <ChevronDown className="size-3 shrink-0 text-muted-foreground" aria-hidden />
-                </button>
-              </SheetTrigger>
-              <SheetContent
-                side="bottom"
-                overlayClassName="bg-black/80 backdrop-blur-none motion-reduce:data-[state=open]:animate-none motion-reduce:data-[state=closed]:animate-none"
-                className="mx-auto flex max-h-[76dvh] w-full max-w-3xl flex-col gap-0 overflow-hidden rounded-t-[1.25rem] border-border bg-card p-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] shadow-[0_-18px_42px_rgba(0,0,0,0.3)] motion-reduce:transition-none motion-reduce:data-[state=open]:animate-none motion-reduce:data-[state=closed]:animate-none"
-              >
-                <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-3 text-left">
-                  <SheetTitle className="flex-1 text-base font-extrabold leading-none tracking-tight">
-                    选择模型
-                  </SheetTitle>
-                  <SheetClose
+            {mediaMode === 'image' ? (
+              <Sheet>
+                <SheetTrigger asChild>
+                  <button
                     type="button"
-                    aria-label="关闭模型选择"
-                    className="grid size-9 place-items-center rounded-lg text-muted-foreground transition active:bg-background"
+                    aria-label={`选择模型，当前为 ${model.name}`}
+                    title={model.name}
+                    className="flex min-h-11 min-w-11 max-w-56 flex-1 items-center justify-center gap-0.5 rounded-full bg-background/45 px-2 text-xs font-medium text-foreground/80 transition-colors hover:bg-background/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
-                    <X className="size-5" />
-                  </SheetClose>
-                </div>
-                <SheetDescription className="sr-only">
-                  当前模型为 {model.name}，选择后自动关闭。
-                </SheetDescription>
-                <div className="chat-scroll-area min-h-0 space-y-1 overflow-y-auto overscroll-contain pt-2">
-                  {models.map((item) => (
-                    <SheetClose key={item.id} asChild>
-                      <button
-                        type="button"
-                        aria-pressed={item.id === model.id}
-                        onClick={() => selectModel(item)}
-                        className={`w-full rounded-xl p-3 text-left ${item.id === model.id ? 'bg-primary/10 text-primary' : 'hover:bg-background'}`}
-                      >
-                        <span className="flex items-center justify-between gap-2 text-sm font-black">
-                          <span className="min-w-0 break-words">{item.name}</span>
-                          {item.id === model.id ? <Check className="size-4 shrink-0" /> : null}
-                        </span>
-                        <span className="mt-1 block break-words text-xs leading-5 text-muted-foreground">
-                          {item.description}
-                        </span>
-                      </button>
+                    <span className="min-w-0 truncate">{model.name}</span>
+                    <ChevronDown className="size-3 shrink-0 text-muted-foreground" aria-hidden />
+                  </button>
+                </SheetTrigger>
+                <SheetContent
+                  side="bottom"
+                  overlayClassName="bg-black/80 backdrop-blur-none motion-reduce:data-[state=open]:animate-none motion-reduce:data-[state=closed]:animate-none"
+                  className="mx-auto flex max-h-[76dvh] w-full max-w-3xl flex-col gap-0 overflow-hidden rounded-t-[1.25rem] border-border bg-card p-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] shadow-[0_-18px_42px_rgba(0,0,0,0.3)] motion-reduce:transition-none motion-reduce:data-[state=open]:animate-none motion-reduce:data-[state=closed]:animate-none"
+                >
+                  <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-3 text-left">
+                    <SheetTitle className="flex-1 text-base font-extrabold leading-none tracking-tight">
+                      选择模型
+                    </SheetTitle>
+                    <SheetClose
+                      type="button"
+                      aria-label="关闭模型选择"
+                      className="grid size-9 place-items-center rounded-lg text-muted-foreground transition active:bg-background"
+                    >
+                      <X className="size-5" />
                     </SheetClose>
-                  ))}
-                </div>
-              </SheetContent>
-            </Sheet>
+                  </div>
+                  <SheetDescription className="sr-only">
+                    当前模型为 {model.name}，选择后自动关闭。
+                  </SheetDescription>
+                  <div className="chat-scroll-area min-h-0 space-y-1 overflow-y-auto overscroll-contain pt-2">
+                    {models.map((item) => (
+                      <SheetClose key={item.id} asChild>
+                        <button
+                          type="button"
+                          aria-pressed={item.id === model.id}
+                          onClick={() => selectModel(item)}
+                          className={`w-full rounded-xl p-3 text-left ${item.id === model.id ? 'bg-primary/10 text-primary' : 'hover:bg-background'}`}
+                        >
+                          <span className="flex items-center justify-between gap-2 text-sm font-black">
+                            <span className="min-w-0 break-words">{item.name}</span>
+                            {item.id === model.id ? <Check className="size-4 shrink-0" /> : null}
+                          </span>
+                          <span className="mt-1 block break-words text-xs leading-5 text-muted-foreground">
+                            {item.description}
+                          </span>
+                        </button>
+                      </SheetClose>
+                    ))}
+                  </div>
+                </SheetContent>
+              </Sheet>
+            ) : videoModel ? (
+              <button
+                type="button"
+                onClick={() => setVideoModelOpen(true)}
+                aria-label={`选择视频模型，当前为 ${videoModel.name}`}
+                className="flex min-h-11 min-w-11 max-w-56 flex-1 items-center justify-center gap-1 rounded-full bg-background/45 px-2 text-xs font-medium"
+              >
+                <span className="truncate">{videoModel.name}</span>
+                <ChevronDown className="size-3" />
+              </button>
+            ) : null}
             <button
               type="button"
-              onClick={() => void generate()}
+              onClick={() => (mediaMode === 'video' ? void generateVideo() : void generate())}
               disabled={
-                !prompt.trim() ||
+                !(mediaMode === 'video' ? videoPrompt : prompt).trim() ||
                 submittingSource !== null ||
-                submit.isPending ||
-                quote.isPending ||
+                (mediaMode === 'video' ? submitVideo.isPending : submit.isPending) ||
+                (mediaMode === 'video' ? videoQuote.isPending : quote.isPending) ||
+                (mediaMode === 'video' &&
+                  videoModel?.image_input === 'required_reference' &&
+                  !referenceArtifactId) ||
                 Boolean(localPreview && referenceStatus !== 'ready')
               }
               aria-label="发送生成"
@@ -760,7 +1019,17 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
                 id="image-generation-quote"
                 className="whitespace-nowrap text-xs font-medium tabular-nums opacity-75"
               >
-                {quote.isPending ? '报价中' : quote.data ? `✦ ${quote.data.credits}` : '✦ --'}
+                {mediaMode === 'video'
+                  ? videoQuote.isPending
+                    ? '报价中'
+                    : videoQuoteCache.current?.key === videoQuoteKey
+                      ? `✦ ${videoQuoteCache.current.value.credits}`
+                      : '✦ --'
+                  : quote.isPending
+                    ? '报价中'
+                    : quote.data
+                      ? `✦ ${quote.data.credits}`
+                      : '✦ --'}
               </span>
             </button>
           </div>
@@ -781,6 +1050,31 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
         onAutoOptimizeChange={setAutoOptimize}
         onReset={resetSettings}
       />
+      {videoModel ? (
+        <>
+          <VideoModelSheet
+            open={videoModelOpen}
+            onOpenChange={setVideoModelOpen}
+            models={videoModels}
+            selectedId={videoModel.id}
+            onSelect={selectVideoModel}
+          />
+          <VideoSettingsDialog
+            open={videoSettingsOpen}
+            onOpenChange={setVideoSettingsOpen}
+            model={videoModel}
+            duration={videoDuration}
+            resolution={videoResolution}
+            aspectRatio={videoAspectRatio}
+            audio={videoAudio}
+            onDurationChange={setVideoDuration}
+            onResolutionChange={setVideoResolution}
+            onAspectRatioChange={setVideoAspectRatio}
+            onAudioChange={setVideoAudio}
+            onReset={() => resetVideoSettings(videoModel)}
+          />
+        </>
+      ) : null}
 
       {shareTipOpen && shareArtifact ? (
         <div
@@ -843,6 +1137,75 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
         </p>
       ) : null}
     </main>
+  );
+}
+
+function VideoAttemptCard(props: {
+  initialAttempt: VideoPlazaAttempt;
+  prompt: string;
+  sharing: boolean;
+  onEdit: (attempt: VideoPlazaAttempt, prompt: string) => void;
+  onRegenerate: (prompt: string) => void;
+  onShare: (artifactId: string, prompt: string) => void;
+  onNotice: (message: string) => void;
+}) {
+  const query = useVideoPlazaAttemptQuery(props.initialAttempt.id);
+  const attempt = query.data?.attempt ?? props.initialAttempt;
+  const reported = useRef<string | null>(null);
+  const terminal = ['ready', 'failed', 'moderation_rejected', 'expired', 'failed_unknown'].includes(
+    attempt.status
+  );
+  useEffect(() => {
+    if (!terminal || reported.current === attempt.status) return;
+    reported.current = attempt.status;
+    sendSentryLog(attempt.status === 'ready' ? 'info' : 'warn', 'video.attempt.terminal', {
+      status: attempt.status,
+      model: attempt.params.model_id,
+      duration_s: attempt.params.duration_s,
+      elapsed_ms: Math.max(0, Date.now() - Date.parse(attempt.created_at)),
+    });
+  }, [attempt, terminal]);
+  if (!terminal)
+    return (
+      <div className="flex min-h-44 flex-col items-center justify-center gap-3 rounded-3xl bg-card text-sm text-muted-foreground ring-1 ring-border">
+        <LoaderCircle className="size-6 animate-spin" />
+        <p>{attempt.status === 'queued' ? '已排队，正在等待生成…' : '正在生成视频…'}</p>
+        <p className="text-xs">可以离开页面，稍后从“我的生成”回来查看。</p>
+      </div>
+    );
+  if (attempt.status !== 'ready' || !attempt.artifact)
+    return (
+      <div className="rounded-3xl bg-card p-5 ring-1 ring-border">
+        <p className="font-bold">
+          {attempt.status === 'moderation_rejected'
+            ? '内容未通过审核，星尘已退回'
+            : attempt.status === 'failed_unknown'
+              ? '上游结果未知，请勿重复提交'
+              : '视频生成失败，星尘已退回'}
+        </p>
+        {attempt.error_code ? (
+          <p className="mt-2 text-xs text-muted-foreground">错误码：{attempt.error_code}</p>
+        ) : null}
+        <button
+          type="button"
+          onClick={() => props.onRegenerate(props.prompt)}
+          className="mt-3 rounded-full bg-primary px-4 py-2 text-xs font-bold text-primary-foreground"
+        >
+          按当前设置再生成
+        </button>
+      </div>
+    );
+  return (
+    <StudioVideoCard
+      artifact={attempt.artifact}
+      status={attempt.status}
+      prompt={props.prompt}
+      sharing={props.sharing}
+      onEdit={() => props.onEdit(attempt, props.prompt)}
+      onRegenerate={() => props.onRegenerate(props.prompt)}
+      onShare={() => props.onShare(attempt.artifact!.id, props.prompt)}
+      onNotice={props.onNotice}
+    />
   );
 }
 

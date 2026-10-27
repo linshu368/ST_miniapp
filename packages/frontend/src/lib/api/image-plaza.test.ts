@@ -19,6 +19,7 @@ vi.mock('./client', () => ({ apiClient: vi.fn(), ApiClientError: class extends E
 function work(id: string): ImagePlazaWork {
   return {
     id,
+    media_type: 'image',
     title: 'Example',
     image_url: 'https://example.com/image.png',
     reference_image_url: null,

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
 import {
   infiniteQueryOptions,
   useInfiniteQuery,
@@ -22,8 +22,8 @@ import type {
   GetImagePlazaWorkData,
   ImagePlazaQuoteData,
   ImagePlazaQuoteRequest,
-  ImagePlazaWork,
   ImagePlazaFeedSort,
+  PlazaWork,
   SetImagePlazaLikeData,
   ShareImagePlazaWorkData,
   ShareImagePlazaWorkRequest,
@@ -31,6 +31,15 @@ import type {
   SubmitImagePlazaAttemptRequest,
   UploadImagePlazaReferenceData,
   UploadImagePlazaReferenceRequest,
+  GetVideoPlazaAttemptData,
+  GetVideoPlazaPlaybackData,
+  GetVideoPlazaTagCountsData,
+  ShareVideoPlazaWorkData,
+  ShareVideoPlazaWorkRequest,
+  SubmitVideoPlazaAttemptData,
+  SubmitVideoPlazaAttemptRequest,
+  VideoPlazaQuoteData,
+  VideoPlazaQuoteRequest,
 } from '@miniapp/shared';
 import { apiClient, ApiClientError } from './client';
 import { paymentKeys } from './payment';
@@ -38,13 +47,126 @@ import { paymentKeys } from './payment';
 export const imagePlazaKeys = {
   all: ['image-plaza'] as const,
   config: () => [...imagePlazaKeys.all, 'config'] as const,
-  feed: (search: string, tag: string, sort: ImagePlazaFeedSort = 'recommended') =>
-    [...imagePlazaKeys.all, 'feed', 1, search.trim(), tag, sort] as const,
+  feed: (
+    search: string,
+    tags: string | string[],
+    sort: ImagePlazaFeedSort = 'recommended',
+    media: 'all' | 'image' | 'video' = 'all'
+  ) =>
+    [
+      ...imagePlazaKeys.all,
+      'feed',
+      2,
+      search.trim(),
+      Array.isArray(tags) ? [...tags].sort() : tags === 'all' ? [] : [tags],
+      sort,
+      media,
+    ] as const,
+  tagCounts: (search: string, media: 'all' | 'image' | 'video') =>
+    [...imagePlazaKeys.all, 'tag-counts', search.trim(), media] as const,
   work: (id: string) => [...imagePlazaKeys.all, 'work', id] as const,
   conversations: () => [...imagePlazaKeys.all, 'conversations'] as const,
   conversation: (id: string) => [...imagePlazaKeys.all, 'conversation', id] as const,
+  videoAttempt: (id: string) => [...imagePlazaKeys.all, 'video-attempt', id] as const,
+  videoPlayback: (id: string) => [...imagePlazaKeys.all, 'video-playback', id] as const,
   attempt: (id: string) => [...imagePlazaKeys.all, 'attempt', id] as const,
 };
+
+export function useVideoPlazaQuoteMutation() {
+  return useMutation({
+    mutationFn: (body: VideoPlazaQuoteRequest) =>
+      apiClient<VideoPlazaQuoteData>('/api/image-plaza/video-quotes', {
+        method: 'POST',
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(10_000),
+      }),
+  });
+}
+
+export function useSubmitVideoPlazaAttemptMutation(conversationId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (body: SubmitVideoPlazaAttemptRequest) =>
+      apiClient<SubmitVideoPlazaAttemptData>(
+        `/api/image-plaza/conversations/${conversationId}/video-attempts`,
+        { method: 'POST', body: JSON.stringify(body), signal: AbortSignal.timeout(15_000) }
+      ),
+    onSuccess: ({ attempt }) => {
+      client.setQueryData<GetVideoPlazaAttemptData>(imagePlazaKeys.videoAttempt(attempt.id), {
+        attempt,
+      });
+      void client.invalidateQueries({ queryKey: imagePlazaKeys.conversation(conversationId) });
+      void client.invalidateQueries({ queryKey: paymentKeys.wallet() });
+    },
+  });
+}
+
+export function useVideoPlazaAttemptQuery(attemptId: string) {
+  const client = useQueryClient();
+  const terminalSeen = useRef<string | null>(null);
+  const query = useQuery({
+    queryKey: imagePlazaKeys.videoAttempt(attemptId),
+    queryFn: ({ signal }) =>
+      apiClient<GetVideoPlazaAttemptData>(`/api/image-plaza/video-attempts/${attemptId}`, {
+        signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
+      }),
+    enabled: Boolean(attemptId),
+    refetchInterval: (query) => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return false;
+      const status = query.state.data?.attempt.status;
+      return status &&
+        !['ready', 'failed', 'moderation_rejected', 'expired', 'failed_unknown'].includes(status)
+        ? Math.min(15_000, Math.round(3_000 * 1.5 ** Math.min(query.state.dataUpdateCount, 5)))
+        : false;
+    },
+  });
+  const { refetch } = query;
+  useEffect(() => {
+    const status = query.data?.attempt.status;
+    if (
+      !status ||
+      !['ready', 'failed', 'moderation_rejected', 'expired', 'failed_unknown'].includes(status) ||
+      terminalSeen.current === status
+    )
+      return;
+    terminalSeen.current = status;
+    void client.invalidateQueries({ queryKey: paymentKeys.wallet() });
+  }, [client, query.data?.attempt.status]);
+  useEffect(() => {
+    const resume = () => {
+      if (document.visibilityState === 'visible' && attemptId) void refetch();
+    };
+    document.addEventListener('visibilitychange', resume);
+    return () => document.removeEventListener('visibilitychange', resume);
+  }, [attemptId, refetch]);
+  return query;
+}
+
+export function useVideoPlazaPlaybackMutation(attemptId: string) {
+  return useMutation({
+    mutationFn: () =>
+      apiClient<GetVideoPlazaPlaybackData>(
+        `/api/image-plaza/video-attempts/${attemptId}/playback`,
+        { signal: AbortSignal.timeout(10_000) }
+      ),
+  });
+}
+
+export function useShareVideoPlazaMutation() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (body: ShareVideoPlazaWorkRequest) =>
+      apiClient<ShareVideoPlazaWorkData>('/api/image-plaza/video-share', {
+        method: 'POST',
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(15_000),
+      }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: [...imagePlazaKeys.all, 'feed'] });
+      void client.invalidateQueries({ queryKey: paymentKeys.wallet() });
+    },
+  });
+}
 
 export const IMAGE_PLAZA_FEED_STALE_TIME_MS = 60_000;
 
@@ -60,15 +182,22 @@ export function useImagePlazaConfigQuery() {
  * feed 的查询配置只此一份：页面 hook 与导航栏的空闲预取共用同一个 key 和 queryFn，
  * 否则预取写进缓存的数据页面读不到。
  */
-function imagePlazaFeedQueryOptions(search: string, tag: string, sort: ImagePlazaFeedSort) {
+function imagePlazaFeedQueryOptions(
+  search: string,
+  tags: string | string[],
+  sort: ImagePlazaFeedSort,
+  media: 'all' | 'image' | 'video' = 'all'
+) {
+  const selectedTags = Array.isArray(tags) ? [...tags].sort() : tags === 'all' ? [] : [tags];
   return infiniteQueryOptions({
-    queryKey: imagePlazaKeys.feed(search, tag, sort),
+    queryKey: imagePlazaKeys.feed(search, selectedTags, sort, media),
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam, signal }) => {
       const params = new URLSearchParams();
       params.set('sort', sort);
+      if (media !== 'all') params.set('media', media);
       if (search.trim()) params.set('search', search.trim());
-      if (tag !== 'all') params.set('tag', tag);
+      if (selectedTags.length) params.set('tags', selectedTags.join(','));
       if (pageParam) params.set('cursor', pageParam);
       return apiClient<GetImagePlazaFeedData>(`/api/image-plaza/feed?${params.toString()}`, {
         signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
@@ -87,23 +216,32 @@ function imagePlazaFeedQueryOptions(search: string, tag: string, sort: ImagePlaz
  * 预取只负责让「点进创作」时已经有数据可画。
  */
 export function prefetchImagePlazaFeed(client: QueryClient): Promise<void> {
-  return client.prefetchInfiniteQuery(imagePlazaFeedQueryOptions('', 'all', 'recommended'));
+  return client.prefetchInfiniteQuery(imagePlazaFeedQueryOptions('', [], 'recommended', 'all'));
+}
+
+export function prefetchImagePlazaConfig(client: QueryClient): Promise<void> {
+  return client.prefetchQuery({
+    queryKey: imagePlazaKeys.config(),
+    queryFn: () => apiClient<GetImagePlazaConfigData>('/api/image-plaza/config'),
+    staleTime: 60_000,
+  });
 }
 
 export function useImagePlazaFeedQuery(
   search: string,
-  tag: string,
-  sort: ImagePlazaFeedSort = 'recommended'
+  tags: string | string[],
+  sort: ImagePlazaFeedSort = 'recommended',
+  media: 'all' | 'image' | 'video' = 'all'
 ) {
   const client = useQueryClient();
   const query = useInfiniteQuery({
-    ...imagePlazaFeedQueryOptions(search, tag, sort),
+    ...imagePlazaFeedQueryOptions(search, tags, sort, media),
     refetchOnMount: false,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   });
   useEffect(() => {
-    const key = imagePlazaKeys.feed(search, tag, sort);
+    const key = imagePlazaKeys.feed(search, tags, sort, media);
     const state = client.getQueryState(key);
     const stale =
       state?.isInvalidated ||
@@ -120,21 +258,21 @@ export function useImagePlazaFeedQuery(
       { updatedAt: state?.dataUpdatedAt }
     );
     void client.refetchQueries({ queryKey: key, exact: true });
-  }, [client, search, tag, sort]);
+  }, [client, search, tags, sort, media]);
   const subscribe = useCallback(
     (notify: () => void) => client.getQueryCache().subscribe(notify),
     [client]
   );
   const paginationInvalidated = useSyncExternalStore(
     subscribe,
-    () => client.getQueryState(imagePlazaKeys.feed(search, tag, sort))?.isInvalidated === true,
+    () =>
+      client.getQueryState(imagePlazaKeys.feed(search, tags, sort, media))?.isInvalidated === true,
     () => false
   );
   return { ...query, paginationInvalidated };
 }
 
 export function useImagePlazaWorkQuery(id: string) {
-  const client = useQueryClient();
   return useQuery<GetImagePlazaWorkData>({
     queryKey: imagePlazaKeys.work(id),
     queryFn: ({ signal }) =>
@@ -143,16 +281,27 @@ export function useImagePlazaWorkQuery(id: string) {
       }),
     enabled: Boolean(id),
     staleTime: 60_000,
-    placeholderData: () => {
-      const feeds = client.getQueriesData<InfiniteData<GetImagePlazaFeedData>>({
-        queryKey: [...imagePlazaKeys.all, 'feed'],
-      });
-      for (const [, feed] of feeds) {
-        const work = feed?.pages.flatMap((page) => page.items).find((item) => item.id === id);
-        if (work) return { work };
-      }
-      return undefined;
+  });
+}
+
+export function useImagePlazaTagCountsQuery(
+  search: string,
+  media: 'all' | 'image' | 'video',
+  enabled = true
+) {
+  return useQuery({
+    queryKey: imagePlazaKeys.tagCounts(search, media),
+    queryFn: ({ signal }) => {
+      const params = new URLSearchParams({ media });
+      if (search.trim()) params.set('search', search.trim());
+      return apiClient<GetVideoPlazaTagCountsData>(
+        `/api/image-plaza/feed/tag-counts?${params.toString()}`,
+        { signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]) }
+      );
     },
+    enabled,
+    staleTime: 60_000,
+    retry: false,
   });
 }
 
@@ -169,7 +318,7 @@ export function useImagePlazaConversationQuery(id: string) {
     queryKey: imagePlazaKeys.conversation(id),
     queryFn: async () => {
       const next = await apiClient<GetImagePlazaConversationData>(
-        `/api/image-plaza/conversations/${id}`
+        `/api/image-plaza/conversations/${id}?include_video=1`
       );
       const current = client.getQueryData<GetImagePlazaConversationData>(
         imagePlazaKeys.conversation(id)
@@ -254,7 +403,7 @@ export function useSubmitImagePlazaAttemptMutation(conversationId: string) {
   });
 }
 
-type LikeFields = Pick<ImagePlazaWork, 'liked' | 'like_count'>;
+type LikeFields = Pick<PlazaWork, 'liked' | 'like_count'>;
 type LikeSnapshot = { key: QueryKey; fields: LikeFields };
 
 /** Patch only the target's fields so another work's concurrent mutation is never rolled back. */

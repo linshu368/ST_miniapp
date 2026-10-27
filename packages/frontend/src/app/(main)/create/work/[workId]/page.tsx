@@ -10,6 +10,7 @@ import {
   useCreateImagePlazaConversationMutation,
   useImagePlazaWorkQuery,
   useSetImagePlazaLikeMutation,
+  useVideoPlazaPlaybackMutation,
 } from '@/lib/api/image-plaza';
 
 export default function ImagePlazaWorkPage() {
@@ -27,11 +28,18 @@ function ImagePlazaWorkDetail({ workId }: { workId: string }) {
   const createConversation = useCreateImagePlazaConversationMutation();
   const [showReference, setShowReference] = useState(false);
   const work = query.data?.work;
-  const [displayedImage, setDisplayedImage] = useState<string | null>(work?.image_url ?? null);
+  const videoWork = work?.media_type === 'video' ? work : null;
+  const playback = useVideoPlazaPlaybackMutation(videoWork?.attempt_id ?? '');
+  const imageWork = work?.media_type === 'image' ? work : null;
+  const [displayedImage, setDisplayedImage] = useState<string | null>(imageWork?.image_url ?? null);
   const [failedImage, setFailedImage] = useState(false);
   const [retryImage, setRetryImage] = useState(0);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [videoRefreshAttempted, setVideoRefreshAttempted] = useState(false);
   const imageUrl =
-    showReference && work?.reference_image_url ? work.reference_image_url : work?.image_url;
+    showReference && imageWork?.reference_image_url
+      ? imageWork.reference_image_url
+      : imageWork?.image_url;
 
   useEffect(() => {
     if (!imageUrl) return;
@@ -52,6 +60,10 @@ function ImagePlazaWorkDetail({ workId }: { workId: string }) {
       image.onerror = null;
     };
   }, [imageUrl, retryImage]);
+
+  useEffect(() => {
+    if (videoWork?.video_url) setVideoUrl(videoWork.video_url);
+  }, [videoWork?.video_url]);
 
   if (query.isLoading)
     return (
@@ -98,16 +110,34 @@ function ImagePlazaWorkDetail({ workId }: { workId: string }) {
           className="relative mx-auto overflow-hidden rounded-[1.75rem] bg-card ring-1 ring-border"
           style={{ aspectRatio: `${work.width} / ${work.height}`, maxHeight: '72vh' }}
         >
-          <img
-            src={displayedImage ?? work.image_url}
-            alt={showReference ? `${work.title}参考图` : work.title}
-            width={work.width}
-            height={work.height}
-            loading="lazy"
-            decoding="async"
-            className="h-full w-full object-contain"
-          />
-          {displayedImage !== imageUrl && !failedImage ? (
+          {work.media_type === 'video' ? (
+            <video
+              src={videoUrl ?? work.video_url}
+              poster={work.poster_url ?? undefined}
+              controls
+              playsInline
+              preload="metadata"
+              onError={() => {
+                if (videoRefreshAttempted || playback.isPending) return;
+                setVideoRefreshAttempted(true);
+                playback.mutate(undefined, {
+                  onSuccess: (fresh) => setVideoUrl(fresh.video_url),
+                });
+              }}
+              className="h-full w-full object-contain"
+            />
+          ) : (
+            <img
+              src={displayedImage ?? work.image_url}
+              alt={showReference ? `${work.title}参考图` : work.title}
+              width={work.width}
+              height={work.height}
+              loading="lazy"
+              decoding="async"
+              className="h-full w-full object-contain"
+            />
+          )}
+          {work.media_type === 'image' && displayedImage !== imageUrl && !failedImage ? (
             <span
               role="status"
               className="absolute bottom-3 left-3 rounded-full bg-black/60 px-3 py-1 text-xs text-white"
@@ -116,7 +146,7 @@ function ImagePlazaWorkDetail({ workId }: { workId: string }) {
             </span>
           ) : null}
         </div>
-        {failedImage ? (
+        {work.media_type === 'image' && failedImage ? (
           <button
             type="button"
             className="mt-3 text-xs text-primary"
@@ -128,7 +158,7 @@ function ImagePlazaWorkDetail({ workId }: { workId: string }) {
             图片加载失败，点击重试
           </button>
         ) : null}
-        {work.reference_image_url ? (
+        {work.media_type === 'image' && work.reference_image_url ? (
           <div className="mt-3 flex justify-center">
             <button
               type="button"

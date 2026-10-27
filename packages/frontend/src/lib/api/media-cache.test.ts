@@ -224,8 +224,10 @@ function plazaData(...attempts: ImagePlazaAttempt[]): GetImagePlazaConversationD
       messages: attempts.map((item) => ({
         id: item.id,
         role: 'assistant',
+        media_type: 'image',
         content: item.status === 'ready' ? '生成完成' : '生成中',
         attempt: item,
+        video_attempt: null,
         created_at: item.created_at,
       })),
       created_at: '2026-10-23T00:00:00Z',
@@ -241,6 +243,7 @@ function shareData(reward: number): ShareImagePlazaWorkData {
   return {
     work: {
       id: '55555555-5555-4555-8555-555555555555',
+      media_type: 'image',
       title: 'Virtual artwork',
       image_url: 'https://images.example.test/generated.webp',
       reference_image_url: null,
@@ -344,7 +347,9 @@ describe('image plaza settlement cache refresh', () => {
       expect(client.getQueryState(['wallet'])?.isInvalidated).toBe(false);
       expect(apiClient).toHaveBeenCalledTimes(2);
       for (const call of vi.mocked(apiClient).mock.calls) {
-        expect(call).toEqual([`/api/image-plaza/conversations/${plazaConversationId}`]);
+        expect(call).toEqual([
+          `/api/image-plaza/conversations/${plazaConversationId}?include_video=1`,
+        ]);
       }
     }
   );
@@ -419,7 +424,7 @@ describe('image plaza settlement cache refresh', () => {
     expect(client.getQueryData(imagePlazaKeys.conversation(plazaConversationId))).toEqual(before);
     expect(invalidate).not.toHaveBeenCalled();
     expect(apiClient).toHaveBeenCalledExactlyOnceWith(
-      `/api/image-plaza/conversations/${plazaConversationId}`
+      `/api/image-plaza/conversations/${plazaConversationId}?include_video=1`
     );
   });
 
