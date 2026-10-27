@@ -32,7 +32,8 @@ import {
   isRetryableGetTransportError,
   toApiClientError,
 } from './client';
-import { __resetRequestConcurrencyForTests } from './request-concurrency';
+import { __resetRequestConcurrencyForTests, withRequestSlot } from './request-concurrency';
+import type { ApiAttemptTiming } from './client';
 
 describe('isRetryableGetTransportError', () => {
   it('retries GET timeout and network TypeError only', () => {
@@ -57,13 +58,14 @@ describe('isRetryableGetTransportError', () => {
 
 describe('apiClient GET transport retry', () => {
   beforeEach(() => {
-    vi.useFakeTimers();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
     __resetRequestConcurrencyForTests(3);
   });
   afterEach(() => {
     __resetRequestConcurrencyForTests(3);
     vi.useRealTimers();
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   it('retries once after RequestTimeoutError then succeeds', async () => {
@@ -108,5 +110,132 @@ describe('apiClient GET transport retry', () => {
     await vi.advanceTimersByTimeAsync(600);
     await assertion;
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('includes queue wait, response headers and body parsing without leaking observation options into fetch', async () => {
+    __resetRequestConcurrencyForTests(1);
+    let release!: () => void;
+    const blocker = withRequestSlot(
+      'normal',
+      undefined,
+      () =>
+        new Promise<void>((done) => {
+          release = done;
+        })
+    );
+    await Promise.resolve();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_url: string, init: RequestInit) => {
+        expect(init).not.toHaveProperty('onAttempt');
+        const response = new Response('{}', { status: 200 });
+        vi.spyOn(response, 'json').mockImplementation(
+          () =>
+            new Promise((resolve) =>
+              setTimeout(() => resolve({ success: true, data: { ok: true } }), 1500)
+            )
+        );
+        return new Promise<Response>((resolve) => setTimeout(() => resolve(response), 500));
+      })
+    );
+    const attempts: ApiAttemptTiming[] = [];
+    const pending = apiClient('/api/dramas', { onAttempt: (attempt) => attempts.push(attempt) });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(fetch).not.toHaveBeenCalled();
+    release();
+    await blocker;
+    await vi.advanceTimersByTimeAsync(2000);
+    await expect(pending).resolves.toEqual({ ok: true });
+    expect(attempts).toHaveLength(1);
+    expect(attempts[0]).toMatchObject({
+      queuedAt: 0,
+      dispatchedAt: 1000,
+      headersAt: 1500,
+      endedAt: 3000,
+      outcome: 'ok',
+      status: 200,
+    });
+  });
+
+  it('retains each transport retry request ID and keeps backoff outside attempt duration', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(
+        (_url: string, init: RequestInit) =>
+          new Promise<Response>((_resolve, reject) =>
+            init.signal?.addEventListener('abort', () =>
+              reject(new DOMException('timeout', 'AbortError'))
+            )
+          )
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ success: true, data: {} }), { status: 200 })
+      );
+    vi.stubGlobal('fetch', fetchMock);
+    const attempts: ApiAttemptTiming[] = [];
+    const pending = apiClient('/api/dramas', {
+      timeoutMs: 20_000,
+      onAttempt: (attempt) => attempts.push(attempt),
+    });
+    await vi.advanceTimersByTimeAsync(20_200);
+    await pending;
+    expect(attempts).toHaveLength(2);
+    expect(attempts[0]).toMatchObject({ queuedAt: 0, endedAt: 20_000, outcome: 'timeout' });
+    expect(attempts[1]).toMatchObject({ queuedAt: 20_200, outcome: 'ok' });
+    expect(attempts[0]?.requestId).not.toBe(attempts[1]?.requestId);
+    expect((fetchMock.mock.calls[1]?.[1] as RequestInit).headers).toBeInstanceOf(Headers);
+    expect(
+      new Headers((fetchMock.mock.calls[1]?.[1] as RequestInit).headers).get('X-Request-Id')
+    ).toBe(attempts[1]?.requestId);
+  });
+
+  it('observation exceptions cannot fail or retry a successful request', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(JSON.stringify({ success: true, data: {} }), { status: 200 })
+        )
+    );
+    await expect(
+      apiClient('/api/dramas', {
+        onAttempt: () => {
+          throw new Error('observer failed');
+        },
+      })
+    ).resolves.toEqual({});
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('records cancellation while queued without pretending the request reached the server', async () => {
+    __resetRequestConcurrencyForTests(1);
+    let release!: () => void;
+    const blocker = withRequestSlot(
+      'normal',
+      undefined,
+      () =>
+        new Promise<void>((done) => {
+          release = done;
+        })
+    );
+    await Promise.resolve();
+    vi.stubGlobal('fetch', vi.fn());
+    const controller = new AbortController();
+    const attempts: ApiAttemptTiming[] = [];
+    const pending = apiClient('/api/dramas', {
+      signal: controller.signal,
+      onAttempt: (attempt) => attempts.push(attempt),
+    });
+    const rejected = expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    await vi.advanceTimersByTimeAsync(500);
+    controller.abort();
+    await rejected;
+    expect(attempts[0]).toMatchObject({ endedAt: 500, outcome: 'aborted' });
+    expect(attempts[0]?.dispatchedAt).toBeUndefined();
+    expect(fetch).not.toHaveBeenCalled();
+    release();
+    await blocker;
   });
 });

@@ -5,6 +5,7 @@ import {
   openPaymentUrl,
   openTelegramCommunity,
   requestTelegramFileDownload,
+  suspendTelegramVerticalSwipes,
 } from './hooks';
 
 const openLink = vi.fn();
@@ -13,6 +14,13 @@ const openTelegramLink = vi.fn();
 const telegramLinkAvailable = vi.fn(() => true);
 const downloadFile = vi.fn<(url: string, fileName: string) => Promise<void>>();
 const downloadAvailable = vi.fn(() => true);
+const swipeAvailable = vi.fn(() => true);
+const swipeMounted = vi.fn(() => false);
+const swipeEnabled = vi.fn(() => true);
+const swipeMount = vi.fn();
+const swipeUnmount = vi.fn();
+const disableSwipe = vi.fn();
+const enableSwipe = vi.fn();
 
 vi.mock('@telegram-apps/sdk-react', () => ({
   backButton: {
@@ -26,6 +34,14 @@ vi.mock('@telegram-apps/sdk-react', () => ({
     isAvailable: () => downloadAvailable(),
   }),
   hapticFeedback: {},
+  swipeBehavior: {
+    mount: Object.assign(() => swipeMount(), { isAvailable: () => swipeAvailable() }),
+    isMounted: () => swipeMounted(),
+    isVerticalEnabled: () => swipeEnabled(),
+    disableVertical: () => disableSwipe(),
+    enableVertical: () => enableSwipe(),
+    unmount: () => swipeUnmount(),
+  },
   isTMA: () => true,
   openLink: Object.assign((url: string) => openLink(url), { isAvailable: () => isAvailable() }),
   openTelegramLink: Object.assign((url: string) => openTelegramLink(url), {
@@ -47,6 +63,54 @@ beforeEach(() => {
   telegramLinkAvailable.mockReturnValue(true);
   downloadAvailable.mockReturnValue(true);
   downloadFile.mockResolvedValue();
+  swipeAvailable.mockReturnValue(true);
+  swipeMounted.mockReturnValue(false);
+  swipeEnabled.mockReturnValue(true);
+});
+
+describe('suspendTelegramVerticalSwipes', () => {
+  it('disables native minimizing while watching and restores it on exit', () => {
+    stubWindow();
+    const restore = suspendTelegramVerticalSwipes();
+    expect(swipeMount).toHaveBeenCalledOnce();
+    expect(disableSwipe).toHaveBeenCalledOnce();
+    expect(enableSwipe).not.toHaveBeenCalled();
+    restore();
+    expect(enableSwipe).toHaveBeenCalledOnce();
+    expect(swipeUnmount).toHaveBeenCalledOnce();
+  });
+
+  it('preserves a pre-existing disabled state and mounted owner', () => {
+    stubWindow();
+    swipeMounted.mockReturnValue(true);
+    swipeEnabled.mockReturnValue(false);
+    const restore = suspendTelegramVerticalSwipes();
+    expect(disableSwipe).toHaveBeenCalledOnce();
+    restore();
+    expect(swipeMount).not.toHaveBeenCalled();
+    expect(enableSwipe).not.toHaveBeenCalled();
+    expect(swipeUnmount).not.toHaveBeenCalled();
+  });
+
+  it('does nothing for unsupported clients or server rendering', () => {
+    stubWindow();
+    swipeAvailable.mockReturnValue(false);
+    suspendTelegramVerticalSwipes()();
+    vi.stubGlobal('window', undefined);
+    suspendTelegramVerticalSwipes()();
+    expect(disableSwipe).not.toHaveBeenCalled();
+    expect(swipeMount).not.toHaveBeenCalled();
+  });
+
+  it('does not break navigation if restoring the native bridge fails', () => {
+    stubWindow();
+    const restore = suspendTelegramVerticalSwipes();
+    enableSwipe.mockImplementationOnce(() => {
+      throw new Error('client disconnected');
+    });
+    expect(restore).not.toThrow();
+    expect(swipeUnmount).toHaveBeenCalledOnce();
+  });
 });
 
 describe('openTelegramCommunity', () => {

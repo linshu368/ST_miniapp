@@ -8,7 +8,9 @@ const NAV_HIDDEN_PREFIXES = ['/profile/recharge', '/create/studio', '/vip'];
 export default function MainLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const hideBottomNav =
-    pathname && NAV_HIDDEN_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+    pathname &&
+    (NAV_HIDDEN_PREFIXES.some((prefix) => pathname.startsWith(prefix)) ||
+      /^\/dramas\/[^/]+/.test(pathname));
 
   return (
     <>

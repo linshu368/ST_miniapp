@@ -1,0 +1,3 @@
+{"action": "read", "file": "docs/短剧视频接入方案.md", "reason": "本次父任务的来源方案文档，用户已确认思路"}
+{"action": "read", "file": "docs/ARCHITECTURE.md", "reason": "跨包边界、域划分铁律的基线来源"}
+{"action": "read", "file": ".trellis/spec/database/supabase/schema-and-object-conventions.md", "reason": "drama_archive 游离在八域地图外这一缺口的判定依据"}
