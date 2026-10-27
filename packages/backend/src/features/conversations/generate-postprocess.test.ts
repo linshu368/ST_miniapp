@@ -30,6 +30,7 @@ vi.mock('../../infrastructure/repositories/GenerationObservationRepository.js', 
     observe = vi.fn();
     prepareFallback = vi.fn();
     selectDelivery = vi.fn();
+    checkpoint = vi.fn(async () => {});
     markServer = vi.fn().mockResolvedValue(undefined);
   },
 }));
@@ -42,6 +43,7 @@ vi.mock('../../infrastructure/repositories/ConversationHistoryRepository.js', ()
     setPromptHistory = mocks.setPromptHistory;
     finalizeTurn = mocks.finalizeTurn;
     requireTurnById = mocks.requireTurnById;
+    requireTurnState = mocks.requireTurnById;
     saveRichReplyMetadata = mocks.saveRichReplyMetadata;
   },
 }));

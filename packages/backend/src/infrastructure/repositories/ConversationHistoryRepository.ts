@@ -25,7 +25,7 @@ export const STREAMING_STALE_SECONDS = 120;
 
 // Explicit projections keep retiring call columns out of normal chat reads before DROP.
 const CURRENT_TURN_COLUMNS =
-  'id,user_id,model,user_input,assistant_reply,history,character_id,status,upstream_status,deduction_rate,created_at,llm_finish_reason,llm_charge_id,session_id,turn_index,revision,postprocess_version,rich_reply_metadata';
+  'id,user_id,model,user_input,assistant_reply,history,character_id,status,upstream_status,deduction_rate,created_at,llm_finish_reason,llm_charge_id,session_id,turn_index,revision,postprocess_version,rich_reply_metadata,first_token_preview';
 const TURN_COLUMNS = `${CURRENT_TURN_COLUMNS},llm_billing_snapshot,llm_billing_settled_at`;
 
 // history 是每轮完整 prompt 快照，随轮次线性变长（TOAST 大户）。读路径只需要 request_id（在 [0]）
@@ -52,6 +52,7 @@ function restoreHistoryHead(row: HeadProjectedRow): ConversationHistoryRow {
 }
 
 export interface ConversationHistoryRow {
+  first_token_preview?: { kind: 'delta' | 'reasoning'; text: string } | null;
   id: string;
   user_id: string;
   model: string;
@@ -323,6 +324,20 @@ export class ConversationHistoryRepository {
       .single();
     if (error) throw new Error(`读取对话终态失败：${error.message}`);
     return data as ConversationHistoryRow;
+  }
+
+  /** Cancellation polling must not fetch/detoast the full prompt or reply every second. */
+  async requireTurnState(
+    historyId: string
+  ): Promise<Pick<ConversationHistoryRow, 'status' | 'llm_finish_reason'>> {
+    const { data, error } = await this.db
+      .from('chat_history')
+      .select('status,llm_finish_reason')
+      .eq('id', historyId)
+      .abortSignal(AbortSignal.timeout(5_000))
+      .single();
+    if (error) throw new Error(`读取对话状态失败：${error.message}`);
+    return data;
   }
 
   async cancelTurn(
@@ -787,7 +802,12 @@ export function toChatMessages(row: ConversationHistoryRow): ChatMessage[] {
       turn_index: row.turn_index,
       role: 'assistant',
       revision: row.revision,
-      content: row.assistant_reply ?? '',
+      content:
+        row.assistant_reply ??
+        (row.first_token_preview?.kind === 'delta' ? row.first_token_preview.text : ''),
+      ...(row.status === 'streaming' && row.first_token_preview?.kind === 'reasoning'
+        ? { reasoning: row.first_token_preview.text }
+        : {}),
       status: toChatMessageStatus(row.status),
       error_code: toErrorCode(row.status),
       finish_reason: row.llm_finish_reason,

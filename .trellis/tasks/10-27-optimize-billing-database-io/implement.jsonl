@@ -1,0 +1,4 @@
+{"file":".trellis/spec/database/supabase/index.md","reason":"数据库迁移、环境证据和单文件发布总入口"}
+{"file":".trellis/spec/database/supabase/migrations-and-rollbacks.md","reason":"并发索引、账本、停止条件与恢复规则"}
+{"file":".trellis/spec/backend/app/data-reliability-and-security.md","reason":"后台任务、数据库容量和可观测性边界"}
+{"file":".trellis/tasks/10-27-optimize-billing-database-io/research/incident-and-release-evidence.md","reason":"事故根因、权威上游版本和远端 postflight 证据"}

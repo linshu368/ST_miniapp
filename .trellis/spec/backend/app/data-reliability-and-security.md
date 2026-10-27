@@ -261,3 +261,35 @@ Good：服务端 stop 先到，账单 pending；客户端随后超时，零费�
 Wrong：先扣款再以用户投诉判断退款。Correct：未确认可见不扣费，既有持久化账单终态防止后续补扣。
 
 主动停止扩展（2026-10-26）：客户端明确reason，服务端策略位与取消CAS RPC裁决新手动停止user_cancelled和自动timeout；没有原价快照/未受理/预检拒绝不收费。手动停止先收口免费权益再终态解锁，钱包按日常后台结算/回捞，可选供应商统计由既有sync补，不阻塞停止。消费权益/扣费按原charge_id幂等；系统截止资格waived优先，历史取消不重价。仅客户端自称超时或省略字段不能选择免扣政策；stage=primary/fallback即使全局flag=false仍免扣。
+
+## 可恢复交付协议 v3（2026-10-27）
+
+本节取代旧版“当前未可见→自动取消/免单”的运行规则。后端4秒首发、2秒兜底、10秒总首字预算仍由正式配置决定；模型在预算内选中有效首字后立即放行，意图/身份持久化与传输并行，结算前必须确认。断连写入返回false，不冒充客户端已收到；断连不终止生成。
+
+客户端v3记录真实接收/显示时间，收到后视口未显示不触发取消；hidden/page_left是观测中断，返回实际显示可更新记录且保留后台标记。前台超过预算未收到的事实锁存，不因后续可恢复而抹除。新策略拒绝旧页面的first_token_timeout取消指令；真实截止由生成服务控制，明确user_stop仍走原价一次结算。
+
+回复恢复复用有权限的会话详情与原活动轮询。活动快照最多128轮、125秒，每轮正文256Ki字符/公开思考64Ki字符，按user/session/revision隔离；一次first_token_preview检查点最多2048字符，最终正文仍由chat_history持久化。跨实例/进程重启读取检查点和最终结果，不宣称进程内快照持久。公开思考不写入正文或后续prompt。
+
+recoverable_delivery仅新Backend显式启用；旧请求/终结账单不回填、不追扣。离页/后台已完整保存且可取回的正常回复不免单；真实系统截止/前台无接收超时免费，主动停止原报价原权益一次。缺回报继续pending，预算+15秒仍缺报按保守免单处理，避免服务端完成先扣费而客户端随后报告失败。只有思考无完整正文不自动收费。内部billing gate复用visible返回值表示已满足该轮交付策略，并非声称用户当时正在看。
+
+唯一新增迁移20261027_recoverable_chat_delivery.sql：experience拥有策略/首字检查点，billing资格函数读取事实；analytics只追加无正文的策略/时刻/失败锁存字段。无新cron、逐token数据库写、业务回填或公开权限。先TEST、后生产迁移、后Backend/Frontend。回退保留新增对象和终账，必要时forward-fix。
+
+验证：本任务release-review记录自动化、真实PG、TEST流/浏览器和生产版本证据；测试通过不等于线上1%目标已达成。看板v3区分前台等待超时与系统无首字截断，显示分布只用浏览器业务侧实际时长，后台/缺报不填0。
+
+## 短剧请求计时
+
+短剧路由在自身 Fastify 封装作用域记录 `drama.request_timing`（现有 requestLogger/Pino，source=backend）。短剧专用 Sentry 指标已移除，按现有 X-Request-Id 关联前端。新增鉴权 `POST /api/telemetry/drama-timing`：shared schema 校验有界客户端报告，写 `drama.frontend_timing`（source=frontend），保留 observation/list/request ID，接收请求 ID 独立为 upload_request_id；不查写数据库。32 KiB body、12 queries/4 attempts、每用户每进程 120 次/分钟及全进程 1000 次/分钟限额，限流表最多 2000 项；503 不确认接收，429 不重试。客户端自报数据不能用作计费/权限事实。onResponse 覆盖成功、鉴权拒绝、参数/不存在、查询错误、无视频和签名失败，保留 auth/db_read/assemble/sign/total 毫秒与签名缓存 hit/miss/inflight。鉴权直接发送响应时 onResponse 可能早于 preHandler finally，需要采集当前阶段已用时间。
+
+`db_read` 是 repository 整体等待（含 PostgREST 往返），不是 SQL 独占时间。日志不得包含 object_path、签名 URL 或 Token；前端输入拒绝未知字段和任意正文。观测失败不能改变业务响应。无数据库或部署配置变更；具体口径与验证见 [短剧耗时排查](../../../../docs/drama-playback-timing.md)。
+
+媒体启动详情通过同一 shared schema 的可选 `media` 接收并映射日志，不建新路由或数据库写入。最多 32 条有限事件、一个即时 snapshot，嵌套字段严格校验，不接收原始异常/媒体 URL/请求头。旧报告仍接受；扩展 Backend validator 必须先部署，新 Frontend 才能发送 media，否则旧 Backend 返回 400。32 KiB、限流和观测故障隔离保持原值；客户端媒体状态不能推断成服务端传输或安全事实。
+
+## 首发明确失败立即兜底（2026-10-27）
+
+首个可见 token 前，HTTP 非 2xx、连接/读取异常、空 EOF/DONE、流内 error、refusal 或无输出 finish_reason 立即进入同一条单次兜底流程，不等首发阈值，也不等结束帧后的连接关闭。先看到公开思考或正文则保留该模型，不混入另一模型；显式取消、全局截止和观察期限终止不触发重试。首发型号等于兜底时，明确失败允许一次顺序重试，静默等待仍不并发重发相同型号。切换清掉旧首发计时器，兜底仍受自身2秒和原总10秒预算约束。失败观测复用原 attempt；报价/权益/charge_id 沿用用户选择，成功一次结算、两次失败免扣，不新增表、统计任务或 API。验证由 first-token-fallback.test.ts 和 execute.test.ts 覆盖双平台、付费/免费及取消/期限竞态。
+
+## 出字路径与数据库容量的发布检查
+
+新增高频查询（包括计费门禁、幂等补偿、每轮/每秒轮询）必须在目标环境核对索引、过滤条件与 EXPLAIN，不以小 TEST 库的单测通过替代生产规模评估。按唯一身份查找不得无索引扫描大表；轮询只投影状态字段，不拉取正文或完整 prompt。容量诊断优先日志聚合、统计元数据和 EXPLAIN，禁止为了验证慢而在生产跑无界 EXPLAIN ANALYZE。
+
+出字前每项数据库读写须说明业务必要性和依赖：权限、权益、幂等身份、可恢复报价必须保留；观测、供应商补录走异步且有限并发，独立准备可并行。新增定时任务说明窗口、频率、并发与查询计划；不允许逐 token 落表或全历史反复刷新。发布验收包含真实派发偏移和用户点击到首 token 的分布，不能用供应商 latency 代替，不以延长截止掩盖自身等待。

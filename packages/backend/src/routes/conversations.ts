@@ -1,3 +1,4 @@
+import { recoverActiveDelivery } from '../features/conversations/active-delivery.js';
 import { FirstTokenDeadlineError } from '../features/generation/first-token-fallback.js';
 /**
  * backend / routes / conversations.ts
@@ -308,7 +309,10 @@ export default async function conversationRoutes(app: FastifyInstance) {
         return reply.send(
           ok<GetConversationData>({
             session: applyUserPlaceholderToSession(toChatSession(session), displayName),
-            messages: applyUserPlaceholderToMessages(page.messages, displayName),
+            messages: applyUserPlaceholderToMessages(
+              recoverActiveDelivery(page.messages, dbUser.id, sessionId),
+              displayName
+            ),
             has_more: page.hasMore,
           })
         );

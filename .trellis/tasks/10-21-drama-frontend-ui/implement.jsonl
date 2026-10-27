@@ -1,0 +1,3 @@
+{"action": "read", "file": ".trellis/spec/frontend/app/architecture-routes-and-files.md", "reason": "App Router 页面职责划分与底部导航可见性规则"}
+{"action": "read", "file": ".trellis/spec/frontend/app/pages-components-and-ui.md", "reason": "页面/组件使用与 UI 规范，loading/error/empty 态覆盖要求"}
+{"action": "read", "file": ".trellis/spec/frontend/app/api-dataflow-and-state.md", "reason": "React Query hooks 与状态管理分层规则"}

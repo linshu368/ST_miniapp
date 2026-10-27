@@ -300,47 +300,49 @@ describe('useConversationTurn asynchronous ownership', () => {
   it.each([
     ['normal', false],
     ['deep-thinking', true],
-  ] as const)('stops a silent %s reply at the 10s user deadline', async (_, thinkingEnabled) => {
-    let options!: Parameters<
-      typeof import('@/lib/api/conversation-stream').streamConversationTurn
-    >[0];
-    let finish!: () => void;
-    runtime.stream.mockImplementation((value) => {
-      options = value;
-      return new Promise<void>((resolve) => {
-        finish = resolve;
+  ] as const)(
+    'reports a silent %s deadline without cancelling the server-owned reply',
+    async (_, thinkingEnabled) => {
+      let options!: Parameters<
+        typeof import('@/lib/api/conversation-stream').streamConversationTurn
+      >[0];
+      let finish!: () => void;
+      runtime.stream.mockImplementation((value) => {
+        options = value;
+        return new Promise<void>((resolve) => {
+          finish = resolve;
+        });
       });
-    });
-    const run = RenderTurn('s1', [], thinkingEnabled).runTurn({ mode: 'send', content: 'hello' });
-    options.onStart({
-      type: 'start',
-      assistant_message_id: 'a1',
-      user_message_id: 'u1',
-      turn_index: 1,
-      revision: 0,
-    });
-    runtime.cancel.mockResolvedValue({
-      message: message({
-        id: 'a1',
-        session_id: 's1',
+      const run = RenderTurn('s1', [], thinkingEnabled).runTurn({ mode: 'send', content: 'hello' });
+      options.onStart({
+        type: 'start',
+        assistant_message_id: 'a1',
+        user_message_id: 'u1',
         turn_index: 1,
         revision: 0,
-        status: 'interrupted',
-        content: '',
-      }),
-    });
-    await vi.advanceTimersByTimeAsync(10_100);
-    const waiting = RenderTurn('s1', [], thinkingEnabled);
-    expect(waiting.firstTokenObservation).toBeNull();
-    expect(waiting.streamError).toBe('这次回应稍慢，再试一次吧');
-    expect(runtime.cancel).toHaveBeenCalledExactlyOnceWith({
-      sessionId: 's1',
-      assistantMessageId: 'a1',
-      reason: 'first_token_timeout',
-    });
-    finish();
-    await run;
-  });
+      });
+      runtime.cancel.mockResolvedValue({
+        message: message({
+          id: 'a1',
+          session_id: 's1',
+          turn_index: 1,
+          revision: 0,
+          status: 'interrupted',
+          content: '',
+        }),
+      });
+      await vi.advanceTimersByTimeAsync(10_100);
+      const waiting = RenderTurn('s1', [], thinkingEnabled);
+      expect(waiting.firstTokenObservation?.assistantMessageId).toBe('a1');
+      expect(waiting.streamError).toBe('这次回应稍慢，再试一次吧');
+      expect(runtime.cancel).not.toHaveBeenCalled();
+      options.onFirstDeltaReceived?.();
+      options.onDelta('迟到但可交付');
+      expect(RenderTurn('s1', [], thinkingEnabled).messages.at(-1)?.content).toBe('迟到但可交付');
+      finish();
+      await run;
+    }
+  );
 
   it('keeps thinking separate after completion, snapshots the switch and clears on session change', async () => {
     const streams: {
@@ -703,4 +705,40 @@ describe('useConversationTurn asynchronous ownership', () => {
     await run;
     expect(RenderTurn().streaming).toBeNull();
   });
+});
+
+it('recovers a disconnected accepted reply from the same revision without another generation or cancellation', async () => {
+  let options!: Parameters<
+    typeof import('@/lib/api/conversation-stream').streamConversationTurn
+  >[0];
+  runtime.stream.mockImplementation(async (value) => {
+    options = value;
+    value.onStart({
+      type: 'start',
+      assistant_message_id: 'a1',
+      user_message_id: 'u1',
+      turn_index: 1,
+      revision: 0,
+    });
+    throw new ConversationStreamError('connection closed', 200, 'upstream_error', undefined, true);
+  });
+  await RenderTurn('s1', [], true).runTurn({ mode: 'send', content: 'hello' });
+  const recovered = message({
+    id: 'a1',
+    session_id: 's1',
+    request_id: options.requestId,
+    turn_index: 1,
+    revision: 0,
+    status: 'streaming',
+    content: '恢复的正文',
+    reasoning: '恢复的思考',
+  });
+  RenderTurn('s1', [recovered], true);
+  const view = RenderTurn('s1', [recovered], true);
+  expect(view.messages.at(-1)?.content).toBe('恢复的正文');
+  expect(view.thinkingByMessage['s1:a1:0']).toBe('恢复的思考');
+  expect(view.streamError).toBeNull();
+  expect(view.firstTokenObservation?.assistantMessageId).toBe('a1');
+  expect(runtime.stream).toHaveBeenCalledOnce();
+  expect(runtime.cancel).not.toHaveBeenCalled();
 });

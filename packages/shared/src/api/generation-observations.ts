@@ -8,7 +8,11 @@ export const ReportFirstTokenRequestSchema = z
     request_id: z.string().uuid(),
     assistant_message_id: z.string().uuid(),
     revision: z.number().int().nonnegative(),
-    measurement_method: z.enum(['visible_dom_after_frame_v1', 'visible_dom_after_frame_v2']),
+    measurement_method: z.enum([
+      'visible_dom_after_frame_v1',
+      'visible_dom_after_frame_v2',
+      'visible_dom_after_frame_v3',
+    ]),
     outcome: z.enum(['observed', 'timed_out', 'not_observed']),
     first_token_visible_ms: DurationMs.nullable(),
     wait_finished_ms: DurationMs.nullable().optional(),

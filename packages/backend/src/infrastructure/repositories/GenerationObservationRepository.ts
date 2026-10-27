@@ -51,6 +51,7 @@ export class GenerationObservationRepository {
     catalogVersion: number;
     mode: 'send' | 'regenerate';
     snapshot?: LlmBillingSnapshot;
+    recoverableDelivery?: boolean;
   }): Promise<void> {
     const { error } = await this.db
       .rpc('begin_chat_generation_observation', {
@@ -70,6 +71,7 @@ export class GenerationObservationRepository {
           catalog_version: input.catalogVersion,
           mode: input.mode,
           snapshot: input.snapshot,
+          recoverable_delivery: input.recoverableDelivery ?? false,
         },
       })
       .abortSignal(AbortSignal.timeout(5_000));
@@ -110,6 +112,25 @@ export class GenerationObservationRepository {
       })
       .abortSignal(AbortSignal.timeout(5_000));
     if (error) throw new Error('确认生成交付身份失败', { cause: error });
+  }
+
+  async checkpoint(
+    historyId: string,
+    revision: number,
+    readyMs: number,
+    kind: 'delta' | 'reasoning',
+    text: string
+  ): Promise<void> {
+    const { error } = await this.db
+      .rpc('record_chat_delivery_preview', {
+        p_history_id: historyId,
+        p_revision: revision,
+        p_ready_ms: readyMs,
+        p_kind: kind,
+        p_text: text.trimStart().slice(0, 2048),
+      })
+      .abortSignal(AbortSignal.timeout(5_000));
+    if (error) throw new Error('保存可恢复首字失败', { cause: error });
   }
 
   async markServer(

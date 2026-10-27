@@ -26,6 +26,7 @@ import telemetryRoutes from './routes/telemetry.js';
 import alertRoutes from './routes/alerts.js';
 import textPostprocessRoutes from './routes/text-postprocess.js';
 import imagePlazaRoutes from './routes/image-plaza.js';
+import dramaRoutes from './routes/drama.js';
 import { shutdownTextPostprocessValidation } from './features/text-postprocess/validate-pool.js';
 import { startChatHistorySyncJob, stopChatHistorySyncJob } from './features/generation/index.js';
 import { startChatImageGenerationJob, stopChatImageGenerationJob } from './features/image/job.js';
@@ -145,6 +146,7 @@ export async function buildApp() {
   await app.register(alertRoutes);
   await app.register(textPostprocessRoutes);
   await app.register(imagePlazaRoutes);
+  await app.register(dramaRoutes);
 
   app.addContentTypeParser(
     ['application/octet-stream', 'multipart/form-data'],

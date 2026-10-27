@@ -19,6 +19,7 @@ import { createLogger } from '@/lib/logger';
 import { API_URL } from './client';
 
 const log = createLogger('conversation-stream');
+export const CONVERSATION_RECOVERING_MESSAGE = '正在接回这条回复，请稍候';
 
 export interface InsufficientBalanceDetail {
   creditsRequired: number;
@@ -34,7 +35,8 @@ export class ConversationStreamError extends Error {
     message: string,
     readonly status: number,
     readonly code?: ConversationErrorCode | string,
-    readonly balance?: InsufficientBalanceDetail
+    readonly balance?: InsufficientBalanceDetail,
+    readonly recoverable = false
   ) {
     super(message);
     this.name = 'ConversationStreamError';
@@ -201,7 +203,13 @@ async function readConversationStream(options: StreamTurnOptions): Promise<void>
 
   if (!response.ok) throw await toStreamError(response);
   if (!response.body) {
-    throw new ConversationStreamError('响应体为空', response.status, 'upstream_error');
+    throw new ConversationStreamError(
+      '响应体为空',
+      response.status,
+      'upstream_error',
+      undefined,
+      true
+    );
   }
 
   const reader = response.body.getReader();
@@ -291,7 +299,13 @@ async function readConversationStream(options: StreamTurnOptions): Promise<void>
   }
 
   if (!finished) {
-    throw new ConversationStreamError('生成中断，请稍后重试', response.status, 'upstream_error');
+    throw new ConversationStreamError(
+      '生成中断，请稍后重试',
+      response.status,
+      'upstream_error',
+      undefined,
+      true
+    );
   }
 }
 
@@ -309,7 +323,13 @@ export async function streamConversationTurn(options: StreamTurnOptions): Promis
   });
   const timeout = () => {
     rejectStopped(
-      new ConversationStreamError('回复等待超时，请取消本次回复后重新生成', 408, 'upstream_error')
+      new ConversationStreamError(
+        CONVERSATION_RECOVERING_MESSAGE,
+        408,
+        'upstream_error',
+        undefined,
+        true
+      )
     );
     controller.abort();
   };

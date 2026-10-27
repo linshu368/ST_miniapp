@@ -1,0 +1,4 @@
+{"file":".trellis/spec/database/supabase/index.md","reason":"核对 test-first、生产独立确认、权限和回滚要求"}
+{"file":".trellis/spec/database/supabase/migrations-and-rollbacks.md","reason":"核对 concurrent 索引、账本与结果未知处理"}
+{"file":".trellis/spec/backend/app/testing-scripts-and-deployment.md","reason":"核对 Railway 发布与最终验证要求"}
+{"file":".trellis/tasks/10-27-optimize-billing-database-io/research/incident-and-release-evidence.md","reason":"复核三方证据和剩余风险"}

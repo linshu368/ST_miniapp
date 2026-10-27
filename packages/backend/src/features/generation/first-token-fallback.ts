@@ -36,6 +36,8 @@ export async function forwardWithFirstTokenFallback(input: {
   primary: TransportModel;
   /** Only reasoning actually enabled for browser display may stop the visible-token deadline. */
   thinkingEnabled?: boolean;
+  deferPersistence?: boolean;
+  onReady?: () => void;
   fallbackModelId?: string;
   primaryAttemptId: string;
   timeoutMs: number;
@@ -52,6 +54,7 @@ export async function forwardWithFirstTokenFallback(input: {
   model: TransportModel;
   role: 'primary' | 'fallback';
   firstTokenAt: number;
+  deliveryPersisted: Promise<void>;
 }> {
   const fallbackModelId = input.fallbackModelId ?? FIRST_TOKEN_FALLBACK_MODEL_ID;
   input.signal.throwIfAborted();
@@ -93,6 +96,7 @@ export async function forwardWithFirstTokenFallback(input: {
   let switched = false;
   let selected: Peeked | undefined;
   let primaryResult: Peeked | undefined;
+  let fallbackPrepared = Promise.resolve();
 
   const peek = async (
     model: TransportModel,
@@ -111,7 +115,12 @@ export async function forwardWithFirstTokenFallback(input: {
     let writes = Promise.resolve();
     const record = () => {
       const snapshot = { ...observation };
-      writes = writes.then(() => input.store.observe(snapshot)).catch(input.onObservationError);
+      writes = writes
+        .then(async () => {
+          if (role === 'fallback') await fallbackPrepared;
+          await input.store.observe(snapshot);
+        })
+        .catch(input.onObservationError);
     };
     const onDispatch = () => {
       started = performance.now();
@@ -176,6 +185,9 @@ export async function forwardWithFirstTokenFallback(input: {
       let buffer = '';
       let bytes = 0;
       let hasVisibleToken = false;
+      let terminal = false;
+      let terminalReason: 'upstream_error' | 'stream_interrupted' = 'stream_interrupted';
+      let eventType = '';
       const splitter = createLeadingThinkingSplitter({
         onContent: (text) => {
           if (text.trim()) hasVisibleToken = true;
@@ -205,7 +217,24 @@ export async function forwardWithFirstTokenFallback(input: {
         let identityObserved = false;
         for (const raw of lines) {
           const line = raw.trimEnd();
-          if (!line.startsWith('data:') || line.slice(5).trim() === '[DONE]') continue;
+          if (!line) {
+            eventType = '';
+            continue;
+          }
+          if (line.startsWith('event:')) {
+            eventType = line.slice(6).trim();
+            continue;
+          }
+          if (!line.startsWith('data:')) continue;
+          if (eventType === 'error') {
+            terminal = true;
+            terminalReason = 'upstream_error';
+            break;
+          }
+          if (line.slice(5).trim() === '[DONE]') {
+            terminal = true;
+            break;
+          }
           let value: Record<string, unknown>;
           try {
             value = JSON.parse(line.slice(5).trim()) as typeof value;
@@ -218,16 +247,28 @@ export async function forwardWithFirstTokenFallback(input: {
             identityObserved = true;
           }
           const choice = Array.isArray(value.choices) ? value.choices[0] : null;
+          if (value.error != null || choice?.error != null || value.type === 'error') {
+            terminal = true;
+            terminalReason = 'upstream_error';
+            break;
+          }
           const delta = choice && typeof choice === 'object' ? choice.delta : null;
-          if (!delta || typeof delta !== 'object' || Array.isArray(delta)) continue;
-          if (input.thinkingEnabled !== false && readExposedReasoning(delta).trim())
-            hasVisibleToken = true;
-          if (typeof delta.content === 'string') splitter.push(delta.content);
+          if (delta && typeof delta === 'object' && !Array.isArray(delta)) {
+            if (input.thinkingEnabled !== false && readExposedReasoning(delta).trim())
+              hasVisibleToken = true;
+            if (typeof delta.content === 'string') splitter.push(delta.content);
+            if (typeof delta.refusal === 'string' && delta.refusal.trim()) {
+              terminal = true;
+              terminalReason = 'upstream_error';
+            }
+          }
+          if (typeof choice?.finish_reason === 'string' && choice.finish_reason) terminal = true;
+          if (terminal) break;
         }
         if (identityObserved) record();
-        if (item.done) splitter.finish();
+        if (item.done || terminal) splitter.finish();
         if (!hasVisibleToken) {
-          if (item.done) break;
+          if (item.done || terminal) break;
           continue;
         }
         // Event-loop delay may deliver bytes before an overdue timer callback runs.
@@ -289,10 +330,11 @@ export async function forwardWithFirstTokenFallback(input: {
         };
         return { response, observation, stop, replay };
       }
-      observation.end_reason = 'stream_interrupted';
+      observation.end_reason = terminalReason;
       observation.observed_until_ms = performance.now() - started;
       record();
-      signal.removeEventListener('abort', stop);
+      // An explicit terminal frame may arrive long before the provider closes its socket.
+      stop();
       const headers = new Headers(response.headers);
       headers.delete('x-generation-id');
       return {
@@ -333,11 +375,23 @@ export async function forwardWithFirstTokenFallback(input: {
       .catch(input.onObservationError);
   const primaryPromise: Promise<Peeked | null> = skipPrimary
     ? Promise.resolve(null)
-    : peek(input.primary, 'primary', input.primaryAttemptId, primarySignal).then((result) => {
-        primaryResult = result;
-        if (switched) result.stop();
-        return result;
-      });
+    : peek(input.primary, 'primary', input.primaryAttemptId, primarySignal)
+        .then((result) => {
+          primaryResult = result;
+          if (switched || result.observation.first_token_ms === undefined) result.stop();
+          // A failed primary has nothing left worth waiting for. Reuse the single fallback
+          // path even when both model IDs match: a known failure permits one bounded retry.
+          return result.observation.first_token_ms === undefined ? null : result;
+        })
+        .catch((error: unknown) => {
+          if (
+            primarySignal.aborted ||
+            deadline.signal.aborted ||
+            error instanceof FirstTokenDeadlineError
+          )
+            throw error;
+          return null;
+        });
   // A late observer rejection must always have a handler after the fallback takes over.
   void primaryPromise.catch(input.onObservationError);
   const abortSignal = AbortSignal.any([input.signal, deadline.signal, fallbackController.signal]);
@@ -361,6 +415,7 @@ export async function forwardWithFirstTokenFallback(input: {
     const role = primary === null ? 'fallback' : 'primary';
     if (primary === null) {
       switched = true;
+      clearTimeout(thresholdTimer);
       const id = randomUUID();
       const attempt: AttemptObservation = {
         id,
@@ -369,21 +424,33 @@ export async function forwardWithFirstTokenFallback(input: {
         model: fallbackModelId,
       };
       assertBudget();
-      await Promise.race([
-        input.store.prepareFallback(attempt, performance.now() - input.requestStartedAt),
-        abortPromise,
-      ]);
+      fallbackPrepared = input.store.prepareFallback(
+        attempt,
+        performance.now() - input.requestStartedAt
+      );
+      void fallbackPrepared.catch(input.onObservationError);
+      if (!input.deferPersistence) await Promise.race([fallbackPrepared, abortPromise]);
       selected = await Promise.race([
         peek(model, 'fallback', id, selectedSignal(fallbackController)),
         abortPromise,
       ]);
     } else selected = primary;
     assertBudget();
+    let deliveryPersisted = Promise.resolve();
     if (selected.observation.first_token_ms !== undefined) {
-      await Promise.race([input.store.selectDelivery(selected.observation), abortPromise]);
+      input.onReady?.();
+      // Once a usable token wins within budget, identity storage may not eat its delivery time.
+      deliveryPersisted = fallbackPrepared.then(() =>
+        input.store.selectDelivery(selected!.observation)
+      );
+      void deliveryPersisted.catch(input.onObservationError);
+      if (!input.deferPersistence) {
+        await Promise.race([deliveryPersisted, abortPromise]);
+        assertBudget();
+      }
     }
-    assertBudget();
     return {
+      deliveryPersisted,
       response: selected.replay(),
       model,
       role,

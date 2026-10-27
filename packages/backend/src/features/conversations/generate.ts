@@ -1,3 +1,4 @@
+import { beginActiveDelivery, appendActiveDelivery, endActiveDelivery } from './active-delivery.js';
 /**
  * backend / features / conversations / generate.ts
  *
@@ -195,7 +196,10 @@ export async function runConversationTurn(
   const observations = generationObservations();
   const primaryAttemptId = randomUUID();
   const clientRequestId = input.requestId ?? randomUUID();
+  let startEmitted = false;
   const emitStart = (): void => {
+    if (startEmitted) return;
+    startEmitted = true;
     sink.open();
     sink.send({
       type: 'start',
@@ -222,11 +226,14 @@ export async function runConversationTurn(
     fallbackModelId: policy.fallbackModelId,
     catalogVersion: policy.catalogVersion,
     mode: mode.kind,
+    recoverableDelivery: true,
   };
   const enrichedObserverIds = new Set<string>();
   let fallbackPrepared = false;
   let observationBegun = false;
   let emitted = false;
+  let readyMs: number | null = null;
+  let checkpoint: Promise<void> | undefined;
   let firstTokenDeadlineElapsed = false;
   let firstTokenTimeoutRecorded = false;
   const observationError = (err: unknown) =>
@@ -258,7 +265,7 @@ export async function runConversationTurn(
   let pollTimer: NodeJS.Timeout | undefined;
   const pollCancellation = async (): Promise<void> => {
     try {
-      const row = await historyRecords().requireTurnById(turn.historyId);
+      const row = await historyRecords().requireTurnState(turn.historyId);
       if (row.llm_finish_reason === 'user_cancelled') clearTimeout(firstTokenTimer);
       if (row.status !== 'streaming' || row.llm_finish_reason !== null) controller.abort();
     } catch (err) {
@@ -276,20 +283,32 @@ export async function runConversationTurn(
       pollTimer = setTimeout(() => void pollCancellation(), 1_000);
   };
   pollTimer = setTimeout(() => void pollCancellation(), 1_000);
+  beginActiveDelivery(turn.historyId, userId, session.id, turn.revision);
 
   try {
-    if (input.requestId)
-      await historyRecords().setPendingRequestId(turn.historyId, input.requestId);
-    await observations.begin(observationInput);
-    observationBegun = true;
-    if (firstTokenDeadlineElapsed) recordFirstTokenTimeout();
-    controller.signal.throwIfAborted();
     // ── 组 prompt ─────────────────────────────────────────────────────────────
-    const context = await historyRecords().getContextBeforeTurn(
-      session.id,
-      turn.turnIndex,
-      turn.contextWindowStartTurn
-    );
+    // Context reads do not depend on this new turn's identity writes. Keep the
+    // writes ordered (pending identity must never overwrite the final prompt).
+    const [registration, contextRead] = await Promise.allSettled([
+      (async () => {
+        if (input.requestId)
+          await historyRecords().setPendingRequestId(turn.historyId, input.requestId);
+        await observations.begin(observationInput);
+        observationBegun = true;
+        if (firstTokenDeadlineElapsed) recordFirstTokenTimeout();
+      })(),
+      historyRecords().getContextBeforeTurn(
+        session.id,
+        turn.turnIndex,
+        turn.contextWindowStartTurn
+      ),
+    ]);
+    // Finish registration before failure cleanup too. A fast context rejection
+    // must not race a late identity write or omit the failed request's facts.
+    if (registration.status === 'rejected') throw registration.reason;
+    if (contextRead.status === 'rejected') throw contextRead.reason;
+    const context = contextRead.value;
+    controller.signal.throwIfAborted();
     const history = buildEngineHistory(context.messages, context.openingMessage ?? card.first_mes);
 
     const prompt = buildPrompt({
@@ -303,7 +322,16 @@ export async function runConversationTurn(
       instructions: instructions.instructions,
     });
 
-    await historyRecords().setPromptHistory(turn.historyId, prompt.messages, input.requestId);
+    // Persist the audit/context snapshot while generation performs independent
+    // pricing/entitlement checks. The dispatch hook still requires durability.
+    const promptPersisted = historyRecords().setPromptHistory(
+      turn.historyId,
+      prompt.messages,
+      input.requestId
+    );
+    // Attach a rejection handler now; the hook/result below awaits the original
+    // promise, so a slow precheck cannot cause an unhandled rejection.
+    void promptPersisted.catch(() => {});
 
     // ── 生成 ──────────────────────────────────────────────────────────────────
     const request: GenerationRequest = {
@@ -319,6 +347,11 @@ export async function runConversationTurn(
       firstToken: {
         primaryAttemptId,
         requestStartedAt,
+        deferPersistence: true,
+        onReady: () => {
+          readyMs ??= performance.now() - requestStartedAt;
+          clearTimeout(firstTokenTimer);
+        },
         store: {
           prepareFallback: async (attempt, triggeredMs) => {
             fallbackPrepared = true;
@@ -357,15 +390,22 @@ export async function runConversationTurn(
     };
 
     const emitVisibleDelta = (type: 'delta' | 'reasoning', text: string): void => {
-      if (!emitted && performance.now() - requestStartedAt >= policy.deadlineMs) {
+      if (readyMs === null && performance.now() - requestStartedAt >= policy.deadlineMs) {
         recordFirstTokenTimeout();
         controller.abort(new FirstTokenDeadlineError());
       }
       controller.signal.throwIfAborted();
-      sink.send({ type, text });
-      if (!emitted && text.trim()) {
-        emitted = true;
+      appendActiveDelivery(turn.historyId, type, text);
+      if (text.trim() && !checkpoint) {
+        readyMs ??= performance.now() - requestStartedAt;
         clearTimeout(firstTokenTimer);
+        checkpoint = observations
+          .checkpoint(turn.historyId, turn.revision, readyMs, type, text)
+          .catch(observationError);
+      }
+      const written = sink.send({ type, text });
+      if (!emitted && text.trim() && written !== false) {
+        emitted = true;
         void observations
           .markServer(turn.historyId, {
             first_token_emitted_ms: performance.now() - requestStartedAt,
@@ -379,8 +419,10 @@ export async function runConversationTurn(
       {
         onBeforeDispatch: async (snapshot) => {
           controller.signal.throwIfAborted();
+          await promptPersisted;
           await observations.begin({ ...observationInput, snapshot });
           controller.signal.throwIfAborted();
+          emitStart();
         },
         onBeforeReserve: async (chargeId) => {
           controller.signal.throwIfAborted();
@@ -388,6 +430,7 @@ export async function runConversationTurn(
           controller.signal.throwIfAborted();
         },
         onBeforeSettle: async (observed, releaseReservation) => {
+          await checkpoint;
           const success =
             observed.completed &&
             observed.content.trim().length > 0 &&
@@ -421,6 +464,7 @@ export async function runConversationTurn(
       },
       log
     );
+    await promptPersisted;
 
     if (result.status === 'insufficient_balance' || result.denial === 'vip_required')
       await observations
@@ -566,6 +610,7 @@ export async function runConversationTurn(
     }
     throw err;
   } finally {
+    endActiveDelivery(turn.historyId);
     clearTimeout(firstTokenTimer);
     stopped = true;
     clearTimeout(timeout);

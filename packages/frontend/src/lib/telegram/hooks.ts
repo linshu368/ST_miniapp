@@ -12,6 +12,7 @@ import {
   isTMA,
   openLink,
   openTelegramLink,
+  swipeBehavior,
 } from '@telegram-apps/sdk-react';
 
 export {
@@ -20,6 +21,41 @@ export {
   useRawInitData,
   useRawLaunchParams,
 } from '@telegram-apps/sdk-react';
+
+/** 播放页接管竖向滑动，避免下滑被 Telegram 用于收起 WebView；退出恢复原设置。 */
+export function suspendTelegramVerticalSwipes(): () => void {
+  const noop = () => {};
+  let ownsMount = false;
+  const unmountOwned = () => {
+    try {
+      if (ownsMount) swipeBehavior.unmount();
+    } catch {
+      // SDK 已被其他生命周期清理时，无需阻塞页面退出。
+    }
+  };
+  try {
+    if (typeof window === 'undefined' || !isTMA() || !swipeBehavior.mount.isAvailable()) {
+      return noop;
+    }
+    ownsMount = !swipeBehavior.isMounted();
+    if (ownsMount) swipeBehavior.mount();
+    const wasEnabled = swipeBehavior.isVerticalEnabled();
+    swipeBehavior.disableVertical();
+    return () => {
+      try {
+        if (wasEnabled) swipeBehavior.enableVertical();
+      } catch {
+        // 退出期间客户端已断开时，恢复失败不应影响导航。
+      } finally {
+        unmountOwned();
+      }
+    };
+  } catch {
+    // 普通浏览器或旧客户端不能控制原生手势，页面内按钮和触摸识别继续可用。
+    unmountOwned();
+    return noop;
+  }
+}
 
 /** 挂载 Telegram 原生返回键，点击时触发 onClick。
  *  非 TMA 环境下静默跳过（开发期浏览器不生效）。

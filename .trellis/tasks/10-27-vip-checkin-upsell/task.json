@@ -1,0 +1,32 @@
+{
+  "id": "vip-checkin-upsell",
+  "name": "vip-checkin-upsell",
+  "title": "签到入口 VIP 权益引导与每日金额展示",
+  "description": "按用户更正对齐最新origin/dev，发布已批准的四个签到VIP引导前端文件；保留main已上线迁移记录，经dev→main正式发布。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "frontend",
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-27",
+  "completedAt": null,
+  "branch": "feat/vip-checkin-upsell-dev",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "2026-10-27用户批准预览，并更正为从dev上线。dev04d5d1aa与main d1ae70a8业务树一致，仅缺两份main已上线签到迁移及说明；功能分支从dev新建并回同步main历史，已批准四个产品文件SHA256不变。无新SQL/后端/发奖配置变更。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": ["frontend.business.wallet-payment"]
+    }
+  }
+}

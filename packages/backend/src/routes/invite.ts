@@ -23,7 +23,7 @@ import {
   type InviteStatsData,
 } from '@miniapp/shared';
 import { requireTelegramAuth } from '../middleware/auth.js';
-import { getOrCreateDbUser } from '../lib/user.js';
+import { getOrCreateDbUser, getOrCreateDbUserRecord } from '../lib/user.js';
 import { getDomainDb } from '../lib/supabase.js';
 import { fetchRuntimeConfigEntry } from '../platform/runtime-config.js';
 import { buildMiniappDeepLink } from '../lib/telegram-links.js';
@@ -144,7 +144,7 @@ export default async function inviteRoutes(app: FastifyInstance) {
       return reply.send(ok<InviteBindData>({ status: 'invalid_code' }));
     }
 
-    const dbUser = await getOrCreateDbUser(request.user);
+    const dbUser = await getOrCreateDbUserRecord(request.user);
     const { data, error } = await getDomainDb('miniapp_traffic').rpc('bind_invite', {
       p_invitee_user_id: dbUser.id,
       p_invite_code: inviteCode,

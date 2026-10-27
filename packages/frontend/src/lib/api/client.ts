@@ -85,9 +85,22 @@ export function toApiClientError(status: number, json: unknown): ApiClientError 
   return new ApiClientError(`API error: ${status}`, status);
 }
 
+/** 仅供调用方观测；时刻均来自 performance.now()，不含 URL/请求或响应正文。 */
+export interface ApiAttemptTiming {
+  requestId: string;
+  queuedAt: number;
+  dispatchedAt?: number;
+  headersAt?: number;
+  endedAt?: number;
+  status?: number;
+  outcome?: 'ok' | 'timeout' | 'aborted' | 'http_error' | 'error';
+}
+
 /** 单次请求超时（毫秒）；不传则按路径取默认值。 */
 export type ApiRequestInit = Omit<RequestInit, 'priority'> & {
   timeoutMs?: number;
+  /** 只在明确需要分段计时时传入；回调异常不会影响请求。对象随本次尝试推进。 */
+  onAttempt?: (timing: ApiAttemptTiming) => void;
   /**
    * 短请求排队优先级（勿用名 `priority`：会与 Fetch Priority Hints 的 RequestInit.priority 冲突）。
    * 长耗时路径自动 bypass 并发帽。
@@ -194,12 +207,16 @@ function sleep(ms: number): Promise<void> {
   });
 }
 
-async function apiClientOnce<T>(path: string, options?: ApiRequestInit): Promise<T> {
+async function apiClientOnce<T>(
+  path: string,
+  options?: ApiRequestInit,
+  timing?: ApiAttemptTiming
+): Promise<T> {
   const url = `${API_URL}${path}`;
 
   const initData = getRawInitData();
   const headers = new Headers(options?.headers);
-  const requestId = createRequestId();
+  const requestId = timing?.requestId ?? createRequestId();
   headers.set('X-Request-Id', requestId);
   if (options?.body) {
     headers.set('Content-Type', 'application/json');
@@ -208,7 +225,12 @@ async function apiClientOnce<T>(path: string, options?: ApiRequestInit): Promise
 
   log.debug(`Fetching ${url}`, { hasInitData: !!initData });
 
-  const { timeoutMs, queuePriority: _queuePriority, ...fetchOptions } = options ?? {};
+  const {
+    timeoutMs,
+    queuePriority: _queuePriority,
+    onAttempt: _onAttempt,
+    ...fetchOptions
+  } = options ?? {};
   const res = await timedFetch(
     url,
     { ...fetchOptions, headers },
@@ -218,6 +240,10 @@ async function apiClientOnce<T>(path: string, options?: ApiRequestInit): Promise
     // 保留 RequestTimeoutError，供外层决定是否对 GET 再试一次。
     throw error;
   });
+  if (timing) {
+    timing.headersAt = performance.now();
+    timing.status = res.status;
+  }
   const json = (await res.json().catch(() => null)) as ApiResponse<T> | null;
 
   if (!res.ok) {
@@ -253,7 +279,36 @@ export async function apiClient<T>(path: string, options?: ApiRequestInit): Prom
   for (;;) {
     try {
       // 每次尝试单独占槽；退避在槽外，避免重试等待堵死其它 P0。
-      return await withRequestSlot(priority, signal, () => apiClientOnce<T>(path, options));
+      const timing: ApiAttemptTiming | undefined = options?.onAttempt
+        ? { requestId: createRequestId(), queuedAt: performance.now() }
+        : undefined;
+      if (timing) {
+        try {
+          options?.onAttempt?.(timing);
+        } catch {
+          /* 观测不能改变请求语义。 */
+        }
+      }
+      try {
+        const result = await withRequestSlot(priority, signal, () => {
+          if (timing) timing.dispatchedAt = performance.now();
+          return apiClientOnce<T>(path, options, timing);
+        });
+        if (timing) timing.outcome = 'ok';
+        return result;
+      } catch (error) {
+        if (timing)
+          timing.outcome = signal?.aborted
+            ? 'aborted'
+            : error instanceof RequestTimeoutError
+              ? 'timeout'
+              : error instanceof ApiClientError
+                ? 'http_error'
+                : 'error';
+        throw error;
+      } finally {
+        if (timing) timing.endedAt = performance.now();
+      }
     } catch (error) {
       attempt += 1;
       if (attempt >= maxAttempts || !isRetryableGetTransportError(error, method, signal)) {

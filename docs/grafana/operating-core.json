@@ -54,9 +54,7 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -107,9 +105,7 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -160,9 +156,7 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -213,9 +207,7 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -697,11 +689,7 @@
   ],
   "refresh": "30m",
   "schemaVersion": 42,
-  "tags": [
-    "ST",
-    "business",
-    "light-core"
-  ],
+  "tags": ["ST", "business", "light-core"],
   "templating": {
     "list": []
   },
@@ -710,13 +698,7 @@
     "to": "now"
   },
   "timepicker": {
-    "refresh_intervals": [
-      "1m",
-      "5m",
-      "15m",
-      "30m",
-      "1h"
-    ]
+    "refresh_intervals": ["1m", "5m", "15m", "30m", "1h"]
   },
   "timezone": "Asia/Shanghai",
   "title": "01｜经营核心指标（轻量）",

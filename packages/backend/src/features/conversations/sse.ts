@@ -24,7 +24,7 @@ export interface ConversationStreamSink {
   readonly clientGone: boolean;
   /** 写出 SSE 响应头。重复调用无副作用 */
   open(): void;
-  send(event: ConversationStreamEvent): void;
+  send(event: ConversationStreamEvent): boolean | void;
   close(): void;
 }
 
@@ -56,6 +56,7 @@ export function createReplyStreamSink(reply: FastifyReply): ConversationStreamSi
       opened = true;
       // 交出 reply 的所有权，之后由本 sink 独占裸响应，Fastify 不再尝试序列化任何东西。
       reply.hijack();
+      if (!writable()) return;
       // 连带把 Fastify 已经挂在 reply 上的响应头一起发出去。hijack 之后没人替我们发它们，
       // 而 @fastify/cors 正是在 onRequest 里用 reply.header() 写的 Access-Control-*：
       // 漏掉这批头，浏览器会直接拒收这条跨域流（前端报网络异常），后端却照常生成、
@@ -70,12 +71,30 @@ export function createReplyStreamSink(reply: FastifyReply): ConversationStreamSi
         // 反代默认会缓冲响应，缓冲住就没有「流式」可言了
         'X-Accel-Buffering': 'no',
       };
-      reply.raw.writeHead(200, headers);
-      reply.raw.flushHeaders();
+      try {
+        reply.raw.writeHead(200, headers);
+        reply.raw.flushHeaders();
+      } catch (err) {
+        clientGone = true;
+        reply.log?.warn(
+          { err, event: 'conversation.stream.open_failed' },
+          '连接已失效，继续保存本轮回复'
+        );
+      }
     },
     send(event) {
-      if (!opened || !writable()) return;
-      reply.raw.write(encodeStreamEvent(event));
+      if (!opened || !writable()) return false;
+      try {
+        reply.raw.write(encodeStreamEvent(event));
+        return true;
+      } catch (err) {
+        clientGone = true;
+        reply.log?.warn(
+          { err, event: 'conversation.stream.write_failed' },
+          '连接已失效，继续保存本轮回复'
+        );
+        return false;
+      }
     },
     close() {
       if (!opened || closed) return;
