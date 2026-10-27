@@ -145,3 +145,20 @@ describe('createReplyStreamSink', () => {
     expect(raw.chunks).toEqual([]);
   });
 });
+
+it('opening after departure and failed writes do not destroy the recoverable generation', () => {
+  const first = fakeReply();
+  const gone = createReplyStreamSink(first.reply);
+  first.raw.emit('close');
+  gone.open();
+  expect(first.raw.head).toBeNull();
+  expect(gone.send({ type: 'delta', text: 'still saved by caller' })).toBe(false);
+  const second = fakeReply();
+  const sink = createReplyStreamSink(second.reply);
+  sink.open();
+  vi.spyOn(second.raw, 'write').mockImplementation(() => {
+    throw new Error('socket closed');
+  });
+  expect(sink.send({ type: 'delta', text: 'recoverable' })).toBe(false);
+  expect(sink.clientGone).toBe(true);
+});

@@ -36,6 +36,8 @@ export async function forwardWithFirstTokenFallback(input: {
   primary: TransportModel;
   /** Only reasoning actually enabled for browser display may stop the visible-token deadline. */
   thinkingEnabled?: boolean;
+  deferPersistence?: boolean;
+  onReady?: () => void;
   fallbackModelId?: string;
   primaryAttemptId: string;
   timeoutMs: number;
@@ -52,6 +54,7 @@ export async function forwardWithFirstTokenFallback(input: {
   model: TransportModel;
   role: 'primary' | 'fallback';
   firstTokenAt: number;
+  deliveryPersisted: Promise<void>;
 }> {
   const fallbackModelId = input.fallbackModelId ?? FIRST_TOKEN_FALLBACK_MODEL_ID;
   input.signal.throwIfAborted();
@@ -93,6 +96,7 @@ export async function forwardWithFirstTokenFallback(input: {
   let switched = false;
   let selected: Peeked | undefined;
   let primaryResult: Peeked | undefined;
+  let fallbackPrepared = Promise.resolve();
 
   const peek = async (
     model: TransportModel,
@@ -111,7 +115,12 @@ export async function forwardWithFirstTokenFallback(input: {
     let writes = Promise.resolve();
     const record = () => {
       const snapshot = { ...observation };
-      writes = writes.then(() => input.store.observe(snapshot)).catch(input.onObservationError);
+      writes = writes
+        .then(async () => {
+          if (role === 'fallback') await fallbackPrepared;
+          await input.store.observe(snapshot);
+        })
+        .catch(input.onObservationError);
     };
     const onDispatch = () => {
       started = performance.now();
@@ -369,21 +378,33 @@ export async function forwardWithFirstTokenFallback(input: {
         model: fallbackModelId,
       };
       assertBudget();
-      await Promise.race([
-        input.store.prepareFallback(attempt, performance.now() - input.requestStartedAt),
-        abortPromise,
-      ]);
+      fallbackPrepared = input.store.prepareFallback(
+        attempt,
+        performance.now() - input.requestStartedAt
+      );
+      void fallbackPrepared.catch(input.onObservationError);
+      if (!input.deferPersistence) await Promise.race([fallbackPrepared, abortPromise]);
       selected = await Promise.race([
         peek(model, 'fallback', id, selectedSignal(fallbackController)),
         abortPromise,
       ]);
     } else selected = primary;
     assertBudget();
+    let deliveryPersisted = Promise.resolve();
     if (selected.observation.first_token_ms !== undefined) {
-      await Promise.race([input.store.selectDelivery(selected.observation), abortPromise]);
+      input.onReady?.();
+      // Once a usable token wins within budget, identity storage may not eat its delivery time.
+      deliveryPersisted = fallbackPrepared.then(() =>
+        input.store.selectDelivery(selected!.observation)
+      );
+      void deliveryPersisted.catch(input.onObservationError);
+      if (!input.deferPersistence) {
+        await Promise.race([deliveryPersisted, abortPromise]);
+        assertBudget();
+      }
     }
-    assertBudget();
     return {
+      deliveryPersisted,
       response: selected.replay(),
       model,
       role,
