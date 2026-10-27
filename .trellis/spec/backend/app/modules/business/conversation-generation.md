@@ -72,6 +72,8 @@ OpenRouter mapper、计费读取和回捞仓储统一使用专表的厂商原名
 
 Feed/config 始终返回启用标签目录；点击业务标签按标签中文 label 在 `snapshot.prompt_zh` 字面包含筛选，「全部」不限制标签。`image_plaza_tags_feature_enabled` 只控制分享时空 tags 的自动打标。
 
+视频创作复用该模块的会话与公开作品投影，但走独立 `video-repository`、`video-upstream`、`video-job`：提交只预扣并返回 202，queue 超时记 `failed_unknown` 且不自动重投；retrieve/download/complete 仅做有限安全重试。视频不调用 LLM 提示词优化。列表 DTO 不含 MP4，详情/工作室签名 URL 复用 `storage.ts` 的有界 LRU。
+
 ## 变更记录
 
 - 2026-10-15：任务 `10-15-image-plaza-tag-prompt-filter` 解耦标签展示与自动打标，feed 标签筛选改为 `prompt_zh` 中文包含匹配。

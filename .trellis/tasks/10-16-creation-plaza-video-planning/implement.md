@@ -1,19 +1,19 @@
-# 执行计划（待审核；任务保持 planning）
+# 执行计划（执行中）
 
 参考：design.md（§ 编号）、prd.md（R 编号）、task.md（任务 ID）。
 2026-10-26：补充列表加载 / 创作页生成的性能门禁与验证（R8.A/B/C，design §5.2–5.3、§8.1）。
 
 ## 0. 开工门禁
 
-- [ ] PRD/design 审核通过，ADR（design §2.1）通过架构评审。
+- [x] PRD/design 审核通过，ADR（design §2.1）通过架构评审（用户 2026-10-27 明确批准开始执行）。
 - [x] B-MODEL-1 → D8：Seedance 2.0 R2V 映射到 `seedance-2-0-reference-to-video-basic`。
 - [x] B-OPT-1 → D9：视频关闭自动优化提示词。
 - [x] B-FFMPEG-1 → D10：安装 ffmpeg。P3 里记录镜像体积和构建耗时的前后对比。
 - [x] B-ENV-1 → D12：先在 test 执行。每次执行前在记录里核对连接目标，并采集结构快照（只读，不读业务行）。
 - [x] B-SEED-2 → D14：视频提示词不设字数上限，图片不变。
 - [ ] B-SEED-1：种子转存授权与 bucket 实际配额已确认。流程已定（D13）：P6 先跑体积估算脚本（对 5,097 条 HEAD 求和），人工看过报告后带 `--confirm-size <报告 hash>` 才能继续 dry-run。
-- [ ] 基于最新 `origin/dev` 开 feature 分支，PR 目标为 dev。不在规划阶段切换分支。
-- [ ] 测试文件范围：本任务涉及计费、并发、契约、迁移，规划确认**需要**回归测试，清单见 §3。审核批准后才创建测试文件。
+- [x] 当前在 `feat_video_park`，已合并最新 `dev`；PR 目标为 dev。
+- [x] 测试文件范围：本任务涉及计费、并发、契约、迁移，规划确认**需要**回归测试，清单见 §3。审核批准后才创建测试文件。
 - [ ] P0 性能基线已写入任务记录（feed / studio ready / image_generate），否则不得将“退化 ≤10%”当作门禁。
 
 ## 1. 分阶段交付
@@ -133,12 +133,11 @@ backend、shared 没有 build script，不要虚构。真实上游调用和 DB �
 | 性能-回归     | 纯图片 feed / 点赞 / image_generate 对照 P0 基线                                                                                                                                                                        | 相关 p95 退化 ≤10%                                                                                                                                                                                                 | 人工 + 看板对照                         |
 | 监控          | 各终态都上报事件；列表与创作分图；metrics 只用低基数 tag                                                                                                                                                                | Sentry 看板可见两条路径 p95 与视频状态分布                                                                                                                                                                         | 人工                                    |
 
-## 4. 本轮（规划）验证
+## 4. 本轮执行验证
 
-只修改任务目录下的文档。检查内容：
-
-- R1–R8 和 2.1–2.8 每一项都能映射到 design 和 task；
-- JSON 能被正常解析；
-- 引用的路径都存在。
-
-产品命令不运行，原因是本轮没有产品代码变更。
+- `pnpm -r typecheck` 通过；
+- shared/backend/admin/frontend 完整测试分别通过 184/903/122/390 项；
+- Admin 与 Frontend production build 通过；
+- migration filename、legacy reference 与 import lint 通过；
+- Docker CLI 不可用，后端镜像构建未执行；
+- test/production migration、Venice canary、Sentry p95 与 seed 转存仍受外部门禁约束，未执行。

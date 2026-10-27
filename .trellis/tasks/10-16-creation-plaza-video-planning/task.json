@@ -1,9 +1,9 @@
 {
   "id": "creation-plaza-video-planning",
   "name": "creation-plaza-video-planning",
-  "title": "图片广场扩展视频创作 + media_plaza schema（规划）",
+  "title": "图片广场扩展视频创作 + media_plaza schema（执行中）",
   "description": "广场/工作室支持视频（筛选、全部风格多选、视频卡/详情、边下边播、图片/视频切换、6 个 Venice 视频模型、编辑/重生成/分享/下载、首帧封面），迁移至独立 schema media_plaza（账务留 billing），视频预扣+失败/拒审退款，异步 queue/retrieve/complete，xlsx 5097 条种子导入；性能：列表加载与创作页生成对齐现有图片广场请求路径并压低 Sentry p95（feed/受理/首屏）。",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": "cross-layer",
   "package": "backend",
@@ -39,7 +39,19 @@
   "meta": {
     "module_impact": {
       "schema_version": 1,
-      "mode": "pending"
+      "mode": "changes",
+      "modules": [
+        "frontend.business.conversation-ui",
+        "frontend.infrastructure.client-ui-foundation",
+        "backend.business.conversation-generation",
+        "backend.business.wallet-payment",
+        "backend.infrastructure.runtime-data-security",
+        "admin.business.operations",
+        "shared.business.conversation-contracts",
+        "database.business.conversation-storage",
+        "database.business.billing-payment",
+        "database.infrastructure.schema-security"
+      ]
     }
   }
 }

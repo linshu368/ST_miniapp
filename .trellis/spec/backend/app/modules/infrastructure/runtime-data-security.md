@@ -57,6 +57,8 @@ PostHog capture 用 Node 原生 fetch、短超时、无重试；支付按 `order
 
 图片广场目录、价格、标签、分享提示与开关从统一 runtime-config 入口读取并 fail closed；Venice 凭据只在服务端环境读取。原图和参考图存私有 bucket，HTTP 只返回短期签名 URL；worker 使用数据库租约恢复，日志只记允许字段与结果摘要。`image_plaza_tags_feature_enabled` 仅门控分享自动打标，不门控 feed 标签目录返回。
 
+视频目录来自独立 managed key，只有 `VIDEO_PLAZA_WORKER_ENABLED=true`、Venice key 存在且启动时 ffmpeg/ffprobe 探测成功才对前端公开。视频与 poster 均在私有 `media-plaza-video` bucket；公开作品使用 24 小时稳定签名并进入同一有界 LRU，未公开产物使用短签。列表禁止返回/预签 MP4，日志不得记录下载 URL、提示词或参考图签名。
+
 初始数据导入器只接受 `image.civitai.com` HTTPS 源 URL，重定向逐跳限制在 `image.civitai.com`、`blobs-b2.civitai.com` 精确白名单，并设置 30 秒超时、最多 3 次安全重试、种子原图 50 MiB 流式上限、内容类型/魔数/尺寸校验；普通用户图片仍保持 20 MiB。需要代理时显式使用 HTTPS ProxyAgent，TLS 校验被关闭时拒绝执行。日志不记录提示词或源 URL；apply 需显式目标、有限批次与审核清单，Storage 路径按 Civitai Image ID 确定且禁止覆盖。
 
 ## 变更记录

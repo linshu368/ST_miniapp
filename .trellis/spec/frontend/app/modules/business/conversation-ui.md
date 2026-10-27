@@ -75,7 +75,7 @@ last_verified_at: 2026-10-26
 
 ## 影像广场（图片创作广场 V2，2026-10-12）
 
-影像广场当前已实现图片生成，使用 `/create`、`/create/studio/[conversationId]` 与 `/create/work/[workId]` 独立路由；服务端数据统一由 `src/lib/api/image-plaza.ts` 的 React Query hooks 获取，不与聊天图片生成状态混用。
+影像广场使用 `/create`、`/create/studio/[conversationId]` 与 `/create/work/[workId]` 独立路由；服务端数据统一由 `src/lib/api/image-plaza.ts` 的 React Query hooks 获取，不与聊天图片生成状态混用。当前代码支持图片/视频混排、媒体与多标签筛选、同一会话内切换创作；列表视频只加载 poster，MP4 仅在详情/工作室以原生 `<video src>` 请求。远程迁移与视频目录未发布时，配置返回空视频模型并隐藏入口。
 
 提示词手工输入与快照复用统一受 Shared 的 2000 字上限约束；“用同款”恢复初始作品快照，并保留种子作品 `auto_optimize=false`，避免再次改写原始提示词。真实移动端与 test 数据链路仍需人工验收。
 

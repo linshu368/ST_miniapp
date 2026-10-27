@@ -61,6 +61,8 @@ Admin test/typecheck/build 与 test 环境人工 smoke。
 
 Admin 在现有配置草稿、发布、回滚链路中增加图片广场模型目录、首次分享提示与标签管理；模型页包含上架星尘价计算器，但最终发布值仍是服务端权威 credits。配置 schema 同时在 shared 和数据库发布校验器中约束。`image_plaza_tags_feature_enabled` 文案仅描述分享自动打标，不描述广场标签展示。
 
+同一工作区新增 `image_plaza_video_model_catalog`：维护六个视频模型的 t2v/i2v/r2v Provider 映射、能力与完整价格矩阵；默认值中的价格只作未发布占位，必须核价后才允许运营发布。标签目录增加 `media_types` 多选，旧配置缺省为仅图片。
+
 ## 变更记录
 
 - 2026-10-16：标准价改为目录顶层可选 standard_prices 元数据，随草稿保存并回填，公开模型与实际扣费仍仅使用原模型字段/credits；统一参数仍为页面临时值。旧目录无标准价时留空，不反推。

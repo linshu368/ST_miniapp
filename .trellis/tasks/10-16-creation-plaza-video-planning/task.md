@@ -1,4 +1,4 @@
-# 任务清单（planning；清单本身不构成开工授权）
+# 任务清单（执行中）
 
 ## 需求追溯
 
@@ -22,26 +22,28 @@
 
 ## 任务
 
-| ID  | 状态        | 内容                                                                                                                         | 依赖     | 完成条件                                                               |
-| --- | ----------- | ---------------------------------------------------------------------------------------------------------------------------- | -------- | ---------------------------------------------------------------------- |
-| R1  | Done        | 2026-10-24 证据采集（Venice 目录与文档、xlsx、原型、代码现状）                                                               | —        | 写入 `research/*.md`                                                   |
-| R2  | Done        | 改版 PRD、design、implement、task、jsonl                                                                                     | R1       | 8 项需求全部可追溯                                                     |
-| G1  | Done        | 用户决策：schema 名为 `media_plaza`（账务留在 billing）；视频预扣 + 退款                                                     | —        | 写入 PRD D1/D2                                                         |
-| G2  | In Progress | 2026-10-24 已关闭 B-MODEL-1/B-OPT-1/B-FFMPEG-1/B-ENV-1/B-SEED-2（D8–D14）；剩余 B-SEED-1（授权/实际配额，流程已由 D13 固定） | —        | 剩余 1 项确认                                                          |
-| G3  | Blocked     | 审核与架构评审（ADR），之后执行 `task.py start`                                                                              | G2       | 批准                                                                   |
-| T1  | Todo        | Venice 价格与 canary 证据；图片广场列表/创作 Sentry p95 基线（冷热各≥20）                                                    | G3       | 6 个模型证据矩阵 + 价格草案 + 基线表写入记录                           |
-| T2  | Todo        | shared 契约                                                                                                                  | G3       | shared 测试通过，所有消费者 typecheck 通过                             |
-| T3  | Todo        | M1/M2/M3 + 回滚脚本 + plazaDb 双读 + DOMAIN_SCHEMAS + PostgREST                                                              | T2       | test 逐文件执行通过；图片回归通过；回滚演练通过                        |
-| T4  | Todo        | 视频 worker/upstream/计费/审核/封面 + Dockerfile 加 ffmpeg（视频无提示词优化）                                               | T2 T3    | §3 失败路径场景全部通过                                                |
-| T5  | Todo        | feed 游标+media/tags、列表无 MP4、签名 LRU 扩视频桶、DTO 裁剪、tag-counts、详情、分享                                        | T3       | 游标不串链；列表 mp4=0；公开资源热签走 LRU；旧客户端兼容               |
-| T6  | Todo        | Admin 视频目录、标签 media_types、参考价代理                                                                                 | T2 T3    | 非法配置无法发布                                                       |
-| T7  | Todo        | 前端广场/详情/工作室 + 4 组件；接线 feed 预取；创作预取/报价复用/轮询退避；埋点                                              | T4 T5 T6 | Telegram 双端验证；列表零 mp4；受理与首屏达 R8 预算                    |
-| T8  | Todo        | 体积估算+人工确认（D13）→ 视频 seed 导入（原表 + 翻译包 prompt_zh 对照，提示词不设上限 D14）与对账，先在 test 执行           | T3 T4    | 5,097 条归入四类（已剔除 ≥15），prompt_zh 全部非空不截断，重跑无副作用 |
-| T9  | Todo        | 全量验证、canary；列表/创作 Sentry p95 门禁；图片回归 ≤10%；看板分图                                                         | T7 T8    | implement §2/§3 全部通过；R8.A/B/C 达标                                |
-| T10 | Todo        | 文档同步与 production 灰度                                                                                                   | T9       | 单独审批，按 design §10 执行                                           |
+| ID  | 状态        | 内容                                                                                                                         | 依赖     | 完成条件                                             |
+| --- | ----------- | ---------------------------------------------------------------------------------------------------------------------------- | -------- | ---------------------------------------------------- |
+| R1  | Done        | 2026-10-24 证据采集（Venice 目录与文档、xlsx、原型、代码现状）                                                               | —        | 写入 `research/*.md`                                 |
+| R2  | Done        | 改版 PRD、design、implement、task、jsonl                                                                                     | R1       | 8 项需求全部可追溯                                   |
+| G1  | Done        | 用户决策：schema 名为 `media_plaza`（账务留在 billing）；视频预扣 + 退款                                                     | —        | 写入 PRD D1/D2                                       |
+| G2  | In Progress | 2026-10-24 已关闭 B-MODEL-1/B-OPT-1/B-FFMPEG-1/B-ENV-1/B-SEED-2（D8–D14）；剩余 B-SEED-1（授权/实际配额，流程已由 D13 固定） | —        | 剩余 1 项确认                                        |
+| G3  | Done        | 审核与架构评审（ADR），之后执行 `task.py start`                                                                              | G2       | 用户于 2026-10-27 明确批准开始执行                   |
+| T1  | Blocked     | Venice 价格与 canary 证据；图片广场列表/创作 Sentry p95 基线（冷热各≥20）                                                    | G3       | 等待真实供应商密钥与监控环境                         |
+| T2  | Done        | shared 契约                                                                                                                  | G3       | shared 测试及全仓 typecheck 已通过                   |
+| T3  | In Progress | M1/M2/M3 + 回滚脚本 + plazaDb 双读 + DOMAIN_SCHEMAS + PostgREST                                                              | T2       | 本地脚本完成；待 test 逐文件执行及回滚演练           |
+| T4  | In Progress | 视频 worker/upstream/计费/审核/封面 + Dockerfile 加 ffmpeg（视频无提示词优化）                                               | T2 T3    | 本地实现和单测完成；待 Docker 构建与供应商 canary    |
+| T5  | In Progress | feed 游标+media/tags、列表无 MP4、签名 LRU 扩视频桶、DTO 裁剪、tag-counts、详情、分享                                        | T3       | 本地实现和单测完成；待真实 Range/签名资源人工验证    |
+| T6  | In Progress | Admin 视频目录、标签 media_types、参考价代理                                                                                 | T2 T3    | 目录和标签编辑器完成；待真实参考价接线               |
+| T7  | In Progress | 前端广场/详情/工作室 + 4 组件；接线 feed 预取；创作预取/报价复用/轮询退避；埋点                                              | T4 T5 T6 | 实现、测试和构建完成；待 Telegram 双端及 R8 预算验证 |
+| T8  | Blocked     | 体积估算+人工确认（D13）→ 视频 seed 导入（原表 + 翻译包 prompt_zh 对照，提示词不设上限 D14）与对账，先在 test 执行           | T3 T4    | 脚本完成；等待 B-SEED-1 后才能估算确认和导入         |
+| T9  | In Progress | 全量验证、canary；列表/创作 Sentry p95 门禁；图片回归 ≤10%；看板分图                                                         | T7 T8    | 本地检查通过；外部 canary、Sentry 与人工验证未完成   |
+| T10 | In Progress | 文档同步与 production 灰度                                                                                                   | T9       | 本地文档已同步；production 仍需单独审批              |
 
 ## 记录
 
+- 2026-10-27 本地实现验证：`pnpm -r typecheck`；shared 184、backend 903、admin 122、frontend 390 项测试通过；Admin/Frontend production build 通过；migration/legacy/import lint 通过。Docker CLI 不可用，未构建后端镜像；未执行远程迁移、供应商 canary 或 seed 导入。
+- 2026-10-27 用户明确批准开始执行；B-SEED-1 继续作为实际 seed 转存和 production 灰度门禁，不阻止本地实现与验证。
 - 2026-10-26 再补：列表三条硬约束写死——**游标分页**（filter 含 media/tags）、**列表无 MP4**（只签 poster）、**资源走签名 LRU**（扩展 `storage.ts` 至视频桶，24h 稳定 URL）。与 p95 同级验收。
 - 2026-10-26 补充性能设计（用户要求）：结合当前图片广场列表与数据请求现状，把 R8 拆成列表加载（R8.A）、创作页回复生成（R8.B）、Sentry p95 预算（R8.C）。合并 D15 播放设计后对应 design §5.2/§5.3，并加厚 §8.1；implement P0/P4/P5 与验证表同步。仍保持 planning，未改产品代码。
 - 2026-10-24 改版。取代 10-16 版的规划，主要差异：
@@ -51,7 +53,7 @@
   - 6 个模型已核对 Venice id，其中 Seedance 2.0 R2V Enhanced 缺失；
   - safe_mode 和 prompt 优化在视频接口中都没有对应字段；
   - 镜像中没有 ffmpeg。
-- 本轮没有改产品代码，没有建 SQL，没有调用付费接口，没有写数据库。
+- 规划阶段没有调用付费接口或写数据库；执行阶段仍保持远程数据库、付费接口和 seed 转存未执行。
 - 2026-10-24 用户确认 5 项，记为 D8–D12：Seedance 映射；视频关闭自动优化；安装 ffmpeg；用翻译包 video.xlsx 补 prompt_zh；先在 test 执行。
   - 翻译包对照已实测（只读本地 xlsx）：5,082/5,082 命中，三项字段全部一致，原表多出 15 条。
   - 新发现：超过 2,000 字的提示词有 879 条，列为 B-SEED-2。
