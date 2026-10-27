@@ -5,7 +5,7 @@ scope: database
 category: business
 status: active
 owners: [database]
-last_verified_task: .trellis/tasks/10-27-recoverable-chat-delivery/
+last_verified_task: .trellis/tasks/10-27-chat-preparation-db-pressure/
 last_verified_at: 2026-10-27
 ---
 
@@ -61,8 +61,8 @@ last_verified_at: 2026-10-27
 
 - 2026-10-13：任务 `10-10-image-plaza-v2` 增加初始作品来源模型和 2000 字约束前向迁移。
 
-last_verified_task: .trellis/tasks/09-11-chat-image-generation-plan/
-last_verified_at: 2026-09-14
+last_verified_task: .trellis/tasks/10-27-chat-preparation-db-pressure/
+last_verified_at: 2026-10-27
 
 - 2026-10-20：任务 `Remove confirmed repository noise`（`.trellis/tasks/archive/2026-10/10-20-remove-confirmed-repository-noise/`）删除重复的历史变更记录；commit：`63eee1e847f678f4b2c434f872425a40fc7f891a`。
 
@@ -92,3 +92,8 @@ recoverable_delivery仅新Backend显式启用；旧请求/终结账单不回填�
 唯一新增迁移20261027_recoverable_chat_delivery.sql：experience拥有策略/首字检查点，billing资格函数读取事实；analytics只追加无正文的策略/时刻/失败锁存字段。无新cron、逐token数据库写、业务回填或公开权限。先TEST、后生产迁移、后Backend/Frontend。回退保留新增对象和终账，必要时forward-fix。
 
 验证：本任务release-review记录自动化、真实PG、TEST流/浏览器和生产版本证据；测试通过不等于线上1%目标已达成。看板v3区分前台等待超时与系统无首字截断，显示分布只用浏览器业务侧实际时长，后台/缺报不填0。
+
+
+## 聊天准备阶段减负（2026-10-27）
+
+新增 migration 20261027_chat_charge_lookup_index.sql，为高频 llm_charge_id 等值查找建立非空部分 B-tree。生产原查询计划为全表扫描；索引 CONCURRENTLY、无外层事务、有限资源/超时，失败无效索引先核验再恢复。不改收费函数、历史数据或权限。执行证据见任务 release-review。

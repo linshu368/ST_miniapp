@@ -43,6 +43,7 @@ vi.mock('../../infrastructure/repositories/ConversationHistoryRepository.js', ()
     setPromptHistory = mocks.setPromptHistory;
     finalizeTurn = mocks.finalizeTurn;
     requireTurnById = mocks.requireTurnById;
+    requireTurnState = mocks.requireTurnById;
     saveRichReplyMetadata = mocks.saveRichReplyMetadata;
   },
 }));
