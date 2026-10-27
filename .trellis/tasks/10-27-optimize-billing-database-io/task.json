@@ -1,0 +1,40 @@
+{
+  "id": "optimize-billing-database-io",
+  "name": "optimize-billing-database-io",
+  "title": "降低计费链路数据库 IO 并稳定服务",
+  "description": "对账已上线的计费索引与准备阶段降压修复，并继续消除 sync job N+1、重复上游请求和无变化写入。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "backend,database",
+  "package": "backend",
+  "priority": "P2",
+  "creator": "cline",
+  "assignee": "cline",
+  "createdAt": "2026-10-27",
+  "completedAt": null,
+  "branch": "fix_request_speed",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "packages/shared/migrations/20261027_chat_charge_lookup_index.sql",
+    "packages/backend/src/features/conversations/generate.ts",
+    "packages/backend/src/infrastructure/repositories/ConversationHistoryRepository.ts",
+    "packages/backend/src/infrastructure/repositories/OpenRouterChatHistoryRepository.ts",
+    "packages/backend/src/infrastructure/repositories/OpenRouterChatHistoryRepository.test.ts",
+    "packages/backend/src/features/generation/sync-job.ts",
+    "packages/backend/src/features/generation/sync-job.test.ts"
+  ],
+  "notes": "第一阶段已由 upstream release 完成 TEST/Production migration 与 Railway main 发布。第二阶段经用户授权在当前分支继续优化 sync job；不新增 DDL，不自动部署。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "no_module_change",
+      "reason": "本轮只在既有五路恢复、行失败隔离和 OpenRouter 专表边界内调整批量读取、并发、退避与日志；不改变模块职责、公开契约、数据库对象、配置或业务状态机。"
+    }
+  }
+}

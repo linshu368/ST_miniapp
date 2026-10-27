@@ -13,12 +13,7 @@
   "schemaVersion": 39,
   "version": 1,
   "timezone": "Asia/Shanghai",
-  "tags": [
-    "ST",
-    "chat",
-    "business-first-token",
-    "fallback"
-  ],
+  "tags": ["ST", "chat", "business-first-token", "fallback"],
   "time": {
     "from": "now-24h",
     "to": "now"
@@ -157,10 +152,7 @@
                 "id": "custom.lineStyle",
                 "value": {
                   "fill": "dash",
-                  "dash": [
-                    6,
-                    4
-                  ]
+                  "dash": [6, 4]
                 }
               }
             ]
@@ -171,9 +163,7 @@
         "legend": {
           "displayMode": "table",
           "placement": "bottom",
-          "calcs": [
-            "lastNotNull"
-          ]
+          "calcs": ["lastNotNull"]
         },
         "tooltip": {
           "mode": "multi",
@@ -714,9 +704,7 @@
         "legend": {
           "displayMode": "table",
           "placement": "bottom",
-          "calcs": [
-            "lastNotNull"
-          ]
+          "calcs": ["lastNotNull"]
         },
         "tooltip": {
           "mode": "multi",
@@ -770,9 +758,7 @@
         "legend": {
           "displayMode": "table",
           "placement": "bottom",
-          "calcs": [
-            "lastNotNull"
-          ]
+          "calcs": ["lastNotNull"]
         },
         "tooltip": {
           "mode": "multi",
@@ -826,9 +812,7 @@
         "legend": {
           "displayMode": "table",
           "placement": "bottom",
-          "calcs": [
-            "lastNotNull"
-          ]
+          "calcs": ["lastNotNull"]
         },
         "tooltip": {
           "mode": "multi",

@@ -5,8 +5,8 @@ scope: backend
 category: infrastructure
 status: active
 owners: [backend]
-last_verified_task: .trellis/tasks/10-10-image-plaza-v2/
-last_verified_at: 2026-10-13
+last_verified_task: .trellis/tasks/10-27-sentry-performance-optimization/
+last_verified_at: 2026-10-27
 ---
 
 # 运行时、鉴权与数据访问基建
@@ -17,7 +17,9 @@ last_verified_at: 2026-10-13
 
 Supabase 按域访问，服务日志使用 Pino；模型目录由 `platform/model-tiers.ts` 集中读取 `llm_model_catalog`，损坏时降级到 `DEFAULT_CATALOG`，不再读取旧 tiers key。PostHog capture 使用 `POSTHOG_API_KEY`/`POSTHOG_HOST`/`POSTHOG_TIMEOUT_MS`，缺 key 或非法 host 时 no-op。
 
-`runtime-config.ts` 的单键读取支持调用方传入取消信号，供 Admin 状态读取等严格查询使用。对话的文本后处理版本不再由进程缓存维护，而由数据库开轮事务读取权威指针并绑定。
+`runtime-config.ts` 的单键读取支持调用方传入取消信号，供 Admin 状态读取等严格查询使用。无调用方 signal 的非严格单键和相同键集批量读取会在进程内合并同时在途的 Promise，但不跨请求缓存配置结果；严格读取和自定义 signal 始终保持独立取消边界。对话的文本后处理版本不再由进程缓存维护，而由数据库开轮事务读取权威指针并绑定。
+
+MiniApp 已鉴权接口通过 `lib/user.ts` 把同一 Telegram 用户的并发 get-or-create 合并，并以 60 秒、最多 5000 项缓存不可变的内部 `id`/`created_at`。Telegram initData 仍逐请求验证，`source_id`、累计轮次、钱包、权益和额度不进入身份缓存；首次创建仍由 `tg_id` 唯一约束与回读保证幂等。
 
 ## 入口与调用者
 
@@ -43,7 +45,11 @@ PostHog capture 用 Node 原生 fetch、短超时、无重试；支付按 `order
 
 ## 关键节点与约束
 
+用户身份缓存只减少重复映射读取，不是鉴权或业务状态真相；失败不缓存，多副本各自缓存不影响正确性。runtime-config single-flight 只共享完全相同的当前读取，失败后清理，不增加配置传播陈旧窗口，也不叠加 Supabase SDK 的 GET 自动重试。
+
 ## 验证方式
+
+`lib/user.test.ts` 覆盖同用户合并、用户隔离、失败恢复、TTL 与容量；`platform/runtime-config.test.ts` 覆盖单键/键集、严格/自定义 signal 隔离和失败恢复。运行 Backend typecheck 与完整非 integration 测试。
 
 ## 已知缺口与待核验项
 
@@ -60,6 +66,8 @@ PostHog capture 用 Node 原生 fetch、短超时、无重试；支付按 `order
 初始数据导入器只接受 `image.civitai.com` HTTPS 源 URL，重定向逐跳限制在 `image.civitai.com`、`blobs-b2.civitai.com` 精确白名单，并设置 30 秒超时、最多 3 次安全重试、种子原图 50 MiB 流式上限、内容类型/魔数/尺寸校验；普通用户图片仍保持 20 MiB。需要代理时显式使用 HTTPS ProxyAgent，TLS 校验被关闭时拒绝执行。日志不记录提示词或源 URL；apply 需显式目标、有限批次与审核清单，Storage 路径按 Civitai Image ID 确定且禁止覆盖。
 
 ## 变更记录
+
+- 2026-10-27：任务 `10-27-sentry-performance-optimization` 增加不可变用户身份 bounded cache/single-flight，并为非严格 runtime-config 读取增加无 TTL 的在途合并。
 
 - 2026-10-15：任务 `10-15-image-plaza-tag-prompt-filter` 明确 `image_plaza_tags_feature_enabled` 只控制分享自动打标。
 - 2026-10-13：任务 `10-10-image-plaza-v2` 记录种子导入的网络、内容、日志和环境门禁。

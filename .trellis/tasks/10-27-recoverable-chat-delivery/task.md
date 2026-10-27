@@ -1,4 +1,5 @@
 # 执行清单
+
 - T1 [done] 调研、跨层设计、风险与授权确认。
 - T2 [pending] Shared/DB策略、恢复检查点和收费资格。
 - T3 [pending] Backend即时交付、恢复与发送标记。

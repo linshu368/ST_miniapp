@@ -12,6 +12,10 @@ interface OpenRouterCandidateRow {
   llm_generation_id: string | null;
 }
 
+const GENERATION_DATA_SELECT =
+  'chat_history_id,provider_name,finish_reason,usage,usage_cache,native_tokens_cached,native_tokens_reasoning,native_tokens_completion,native_tokens_prompt,latency,generation_time,model,llm_generation_data';
+const GENERATION_DATA_BATCH_SIZE = 50;
+
 /** Stores only OpenRouter call metadata; parent chat_history remains the business and billing record. */
 export class OpenRouterChatHistoryRepository {
   constructor(private readonly db: DomainDb = getDomainDb('experience')) {}
@@ -78,17 +82,56 @@ export class OpenRouterChatHistoryRepository {
     if (error) throw new Error(`回写 OpenRouter 调用明细失败：${error.message}`);
   }
 
-  async readGenerationData(chatHistoryId: string): Promise<Record<string, unknown> | null> {
+  /** Batch-load facts for the sync worker so a 50-row recovery batch costs one read, not N reads. */
+  async readGenerationDataBatch(
+    chatHistoryIds: string[]
+  ): Promise<Map<string, Record<string, unknown>>> {
+    const ids = [...new Set(chatHistoryIds.filter((id) => id.length > 0))];
+    const result = new Map<string, Record<string, unknown>>();
+
+    for (let offset = 0; offset < ids.length; offset += GENERATION_DATA_BATCH_SIZE) {
+      const batch = ids.slice(offset, offset + GENERATION_DATA_BATCH_SIZE);
+      const { data, error } = await this.db
+        .from('openrouter_chat_history')
+        .select(GENERATION_DATA_SELECT)
+        .in('chat_history_id', batch)
+        .abortSignal(AbortSignal.timeout(5_000));
+      if (error) throw new Error('批量读取 OpenRouter 已存调用事实失败', { cause: error });
+
+      for (const value of data ?? []) {
+        const row = value as Record<string, unknown> & { chat_history_id?: unknown };
+        if (typeof row.chat_history_id !== 'string') continue;
+        const { chat_history_id: chatHistoryId, ...generationData } = row;
+        result.set(chatHistoryId, generationData);
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Sync candidates already proved the identity exists. Guarding both IDs avoids the placeholder
+   * CAS/read-back sequence on every metadata refresh while still refusing an identity conflict.
+   */
+  async updateKnownGenerationMetadata(
+    metadata: OpenRouterChatHistoryMetadata & { llm_generation_id: string }
+  ): Promise<void> {
+    const { chat_history_id: chatHistoryId, llm_generation_id: generationId, ...fields } = metadata;
     const { data, error } = await this.db
       .from('openrouter_chat_history')
-      .select(
-        'provider_name,finish_reason,usage,usage_cache,native_tokens_cached,native_tokens_reasoning,native_tokens_completion,native_tokens_prompt,latency,generation_time,model'
-      )
+      .update({
+        ...Object.fromEntries(
+          Object.entries(fields).filter(([, value]) => value !== null && value !== undefined)
+        ),
+        updated_at: new Date().toISOString(),
+      })
       .eq('chat_history_id', chatHistoryId)
+      .eq('llm_generation_id', generationId)
+      .select('chat_history_id')
       .abortSignal(AbortSignal.timeout(5_000))
       .maybeSingle();
-    if (error) throw new Error('读取 OpenRouter 已存调用事实失败', { cause: error });
-    return data;
+    if (error) throw new Error('回写 OpenRouter 调用明细失败', { cause: error });
+    if (!data) throw new Error('OpenRouter 调用身份已变化或不存在');
   }
 
   /**

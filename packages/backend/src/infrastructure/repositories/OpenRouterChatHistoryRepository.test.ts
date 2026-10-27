@@ -13,6 +13,7 @@ const state = vi.hoisted(() => ({
   },
   candidate: {
     select: vi.fn(),
+    in: vi.fn(),
     not: vi.fn(),
     gte: vi.fn(),
     or: vi.fn(),
@@ -109,6 +110,49 @@ describe('OpenRouterChatHistoryRepository', () => {
     expect(rows).toEqual([
       { id: 'turn-1', status: 'success', generationId: 'gen-1', callProvider: 'openrouter' },
     ]);
+  });
+
+  it('batch-loads generation data in chunks instead of one read per history row', async () => {
+    const ids = Array.from({ length: 52 }, (_, index) => `turn-${index + 1}`);
+    state.candidate.abortSignal
+      .mockResolvedValueOnce({
+        data: [
+          {
+            chat_history_id: 'turn-1',
+            usage: 0,
+            finish_reason: null,
+            llm_generation_data: { usage: 0 },
+          },
+        ],
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: [{ chat_history_id: 'turn-52', usage: 1, finish_reason: 'stop' }],
+        error: null,
+      });
+
+    const result = await new OpenRouterChatHistoryRepository().readGenerationDataBatch(ids);
+
+    expect(state.candidate.in).toHaveBeenNthCalledWith(1, 'chat_history_id', ids.slice(0, 50));
+    expect(state.candidate.in).toHaveBeenNthCalledWith(2, 'chat_history_id', ids.slice(50));
+    expect(result.get('turn-1')).toMatchObject({ usage: 0, finish_reason: null });
+    expect(result.get('turn-52')).toMatchObject({ usage: 1, finish_reason: 'stop' });
+  });
+
+  it('updates a known generation with one identity-guarded write', async () => {
+    await new OpenRouterChatHistoryRepository().updateKnownGenerationMetadata({
+      chat_history_id: 'turn-1',
+      llm_generation_id: 'gen-1',
+      usage: 0,
+      finish_reason: null,
+    });
+
+    expect(state.update).toHaveBeenCalledWith(
+      expect.objectContaining({ usage: 0, updated_at: expect.any(String) })
+    );
+    expect(state.identity.eq).toHaveBeenCalledWith('chat_history_id', 'turn-1');
+    expect(state.identity.eq).toHaveBeenCalledWith('llm_generation_id', 'gen-1');
+    expect(state.upsert).not.toHaveBeenCalled();
   });
 });
 
