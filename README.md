@@ -122,6 +122,8 @@ pnpm --filter @miniapp/backend video-plaza:seed-validate-playback -- --target te
 pnpm --filter @miniapp/backend video-plaza:seed-sql -- --target test --processed-manifest <processed-manifest.json> --upload-state <upload-state.json> --catalog <审核后的模型目录.json> --output packages/shared/migrations/<YYYYMMDD>_media_plaza_video_seed_test_10.sql --confirm-project-ref <TEST_REF>
 ```
 
+TEST 视频种子 SQL 只能通过 GitHub Actions `Database Migration` 选择 `environment=test` 单文件执行。工作流会向该次 `psql` 会话注入 TEST project ref 与 Storage 已核验标记；执行脚本会拒绝把 `_seed_test_` 文件用于 production，也会拒绝缺少这些确认值的直接执行。
+
 ## 5. 环境变量
 
 不要提交真实 `.env`。浏览器端 `NEXT_PUBLIC_*` 与 `VITE_*` 会进入 bundle，不能存放 secret。完整变量以各包 `.env.example`、源码读取点和部署平台为准。

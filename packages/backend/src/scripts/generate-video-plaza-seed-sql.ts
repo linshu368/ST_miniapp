@@ -158,10 +158,8 @@ function renderSql(payload: SqlPayloadRow[], projectRef: string, manifestSha256:
 -- TEST-only data migration generated from verified private Storage objects.
 -- project_ref: ${projectRef}
 -- processed_manifest_sha256: ${manifestSha256}
--- Execute interactively in one psql session only after:
---   SET app.seed_target = 'test';
---   SET app.seed_project_ref = '${projectRef}';
---   SET app.seed_storage_verified = 'yes';
+-- Execute only through the repository Database Migration workflow. The workflow injects
+-- the TEST identity and approval settings into this migration's psql session.
 -- Recovery: transaction failure rolls back all 10 DB rows. Storage objects are immutable and retained.
 BEGIN;
 SET LOCAL lock_timeout = '5s';
