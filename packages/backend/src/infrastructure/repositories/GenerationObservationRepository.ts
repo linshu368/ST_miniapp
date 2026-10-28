@@ -52,6 +52,7 @@ export class GenerationObservationRepository {
     mode: 'send' | 'regenerate';
     snapshot?: LlmBillingSnapshot;
     recoverableDelivery?: boolean;
+    measurementMethod?: 'client_committed_v4';
   }): Promise<void> {
     const { error } = await this.db
       .rpc('begin_chat_generation_observation', {
@@ -72,6 +73,7 @@ export class GenerationObservationRepository {
           mode: input.mode,
           snapshot: input.snapshot,
           recoverable_delivery: input.recoverableDelivery ?? false,
+          measurement_method: input.measurementMethod,
         },
       })
       .abortSignal(AbortSignal.timeout(5_000));

@@ -137,6 +137,19 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe('turn lifecycle recovery', () => {
+  it.each([undefined, 'client_committed_v4'] as const)(
+    'persists the %s cohort during the existing initial observation write',
+    async (firstTokenMeasurement) => {
+      await runConversationTurn({
+        ...input({ kind: 'send', content: 'original' }),
+        firstTokenMeasurement,
+      });
+      expect(mocks.begin).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ measurementMethod: firstTokenMeasurement })
+      );
+    }
+  );
+
   it('joins parallel identity writes before cleaning up an early context failure', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
     mocks.begin.mockImplementation(() => new Promise((resolve) => setTimeout(resolve, 300)));

@@ -41,7 +41,7 @@ beforeEach(() => {
   state.parent.select.mockReturnValue(state.parent);
   state.parent.in.mockReturnValue(state.parent);
   state.parent.abortSignal.mockResolvedValue({
-    data: [{ id: 'turn-1', status: 'success' }],
+    data: [{ id: 'turn-1', status: 'success', llm_billing_settled_at: '2026-10-28T00:00:00Z' }],
     error: null,
   });
   for (const mock of Object.values(state.identity)) mock.mockReturnValue(state.identity);
@@ -107,8 +107,17 @@ describe('OpenRouterChatHistoryRepository', () => {
     expect(state.candidate.gte).toHaveBeenCalledWith('created_at', '2026-10-16T00:00:00Z');
     expect(state.candidate.limit).toHaveBeenCalledWith(50);
     expect(state.parent.in).toHaveBeenCalledWith('id', ['turn-1']);
+    expect(state.parent.select).toHaveBeenCalledWith(
+      expect.stringContaining('llm_billing_settled_at')
+    );
     expect(rows).toEqual([
-      { id: 'turn-1', status: 'success', generationId: 'gen-1', callProvider: 'openrouter' },
+      {
+        id: 'turn-1',
+        status: 'success',
+        llm_billing_settled_at: '2026-10-28T00:00:00Z',
+        generationId: 'gen-1',
+        callProvider: 'openrouter',
+      },
     ]);
   });
 

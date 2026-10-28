@@ -1,0 +1,5 @@
+{"file": ".trellis/tasks/10-28-client-ready-first-token/design.md", "reason": "v4交付与计费恢复的跨层约束"}
+{"file": ".trellis/spec/frontend/app/api-dataflow-and-state.md", "reason": "v4交付与计费恢复的跨层约束"}
+{"file": ".trellis/spec/backend/app/data-reliability-and-security.md", "reason": "v4交付与计费恢复的跨层约束"}
+{"file": ".trellis/spec/shared/contracts/api-contracts.md", "reason": "v4交付与计费恢复的跨层约束"}
+{"file": ".trellis/spec/database/supabase/migrations-and-rollbacks.md", "reason": "v4交付与计费恢复的跨层约束"}

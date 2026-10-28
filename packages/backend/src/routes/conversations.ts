@@ -407,6 +407,12 @@ export default async function conversationRoutes(app: FastifyInstance) {
       }
 
       const body = (request.body ?? {}) as Partial<SendMessageRequest>;
+      if (
+        body.first_token_measurement !== undefined &&
+        body.first_token_measurement !== 'client_committed_v4'
+      ) {
+        return reply.status(400).send(fail('BAD_REQUEST', '首字观测版本无效'));
+      }
       if (body.thinking_enabled !== undefined && typeof body.thinking_enabled !== 'boolean') {
         return reply.status(400).send(fail('BAD_REQUEST', '思考开关无效'));
       }
@@ -428,6 +434,7 @@ export default async function conversationRoutes(app: FastifyInstance) {
         sessionId,
         mode: { kind: 'send', content },
         requestId: body.request_id,
+        firstTokenMeasurement: body.first_token_measurement,
         thinkingEnabled: body.thinking_enabled ?? false,
         tgUser: request.user,
         baseLog: request.log,
@@ -448,6 +455,12 @@ export default async function conversationRoutes(app: FastifyInstance) {
       }
 
       const body = (request.body ?? {}) as Partial<RegenerateRequest>;
+      if (
+        body.first_token_measurement !== undefined &&
+        body.first_token_measurement !== 'client_committed_v4'
+      ) {
+        return reply.status(400).send(fail('BAD_REQUEST', '首字观测版本无效'));
+      }
       if (body.thinking_enabled !== undefined && typeof body.thinking_enabled !== 'boolean') {
         return reply.status(400).send(fail('BAD_REQUEST', '思考开关无效'));
       }
@@ -459,6 +472,7 @@ export default async function conversationRoutes(app: FastifyInstance) {
         sessionId,
         mode: { kind: 'regenerate' },
         requestId: body.request_id,
+        firstTokenMeasurement: body.first_token_measurement,
         thinkingEnabled: body.thinking_enabled ?? false,
         tgUser: request.user,
         baseLog: request.log,
@@ -475,6 +489,7 @@ export default async function conversationRoutes(app: FastifyInstance) {
     baseLog: FastifyBaseLogger;
     requestId?: string;
     thinkingEnabled: boolean;
+    firstTokenMeasurement?: 'client_committed_v4';
   }): Promise<undefined> {
     const { reply, sessionId, mode, tgUser, baseLog } = input;
     const log = requestLogger(baseLog, 'conversations');
@@ -516,6 +531,7 @@ export default async function conversationRoutes(app: FastifyInstance) {
         firstTokenDeadlineMs,
         requestId: input.requestId,
         thinkingEnabled: input.thinkingEnabled,
+        firstTokenMeasurement: input.firstTokenMeasurement,
       });
       finishTurn(reply, outcome);
       return undefined;

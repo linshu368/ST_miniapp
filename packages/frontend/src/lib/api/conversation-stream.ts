@@ -196,6 +196,7 @@ async function readConversationStream(options: StreamTurnOptions): Promise<void>
       ...(content === undefined ? {} : { content }),
       ...(options.requestId ? { request_id: options.requestId } : {}),
       thinking_enabled: options.thinkingEnabled ?? true,
+      first_token_measurement: 'client_committed_v4',
     }),
     signal,
     cache: 'no-store',

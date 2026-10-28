@@ -4,7 +4,9 @@ import type { ChatMessage } from '@miniapp/shared';
 import {
   appendStreamText,
   applyStreamStart,
+  hasPersistedStreamReplacement,
   mergeStreamingMessages,
+  prunePersistedStreamingTurns,
   type StreamingTurn,
 } from './merge-streaming-messages';
 
@@ -210,4 +212,82 @@ it('重生成等待 start 时不会隐藏另一设备新接受的同版本回复
     's1'
   );
   expect(result.map((item) => item.id)).toEqual(['u1', 'B']);
+});
+
+it.each([
+  { content: '短' },
+  { request_id: 'other-request', content: '另一请求更长的正文' },
+  { session_id: 'other-session', content: '另一会话更长的正文' },
+])('retains terminal local text until the exact durable response catches up: %j', (override) => {
+  const local = streaming({ status: 'interrupted', text: '已收到的长正文' });
+  const stale = message({
+    id: 'a2',
+    turn_index: 2,
+    request_id: 'request-A',
+    status: 'interrupted',
+    ...override,
+  });
+  const result = mergeStreamingMessages([stale], local, 's1');
+  expect(result.at(-1)).toMatchObject({
+    id: 'a2',
+    revision: 0,
+    request_id: 'request-A',
+    content: '已收到的长正文',
+    status: 'interrupted',
+  });
+});
+
+it('an older server revision cannot replace a retained newer response', () => {
+  const local = streaming({ status: 'interrupted', revision: 1, text: '新版本正文' });
+  const stale = message({
+    id: 'a2',
+    request_id: 'request-A',
+    revision: 0,
+    content: '旧版本更长的正文',
+  });
+  expect(hasPersistedStreamReplacement([stale], local, 's1')).toBe(false);
+  expect(mergeStreamingMessages([stale], local, 's1').at(-1)).toMatchObject({
+    revision: 1,
+    content: '新版本正文',
+  });
+});
+
+it.each(['streaming', 'complete'] as const)(
+  'a newer server revision supersedes an older active or retained response while %s',
+  (status) => {
+    const newer = message({
+      id: 'a2',
+      request_id: 'request-B',
+      revision: 1,
+      content: '新',
+      status,
+    });
+    for (const localStatus of [undefined, 'interrupted'] as const) {
+      const local = streaming({ status: localStatus, text: '旧版本已收到的长正文' });
+      const persisted = [newer];
+      expect(hasPersistedStreamReplacement(persisted, local, 's1')).toBe(true);
+      expect(mergeStreamingMessages(persisted, local, 's1')).toBe(persisted);
+    }
+  }
+);
+
+it('accepting a regenerated revision also prunes retained older text instead of resurrecting it', () => {
+  const previous = streaming({ status: 'complete', text: '旧回复较长', revision: 0 });
+  const current = streaming({
+    mode: 'regenerate',
+    assistantMessageId: 'a2',
+    requestId: 'request-B',
+    revision: 1,
+    userMessage: null,
+    status: 'complete',
+    text: '新回复',
+    retained: [previous],
+  });
+  const persisted = [
+    message({ id: 'a2', request_id: 'request-B', revision: 1, content: '新回复' }),
+  ];
+  expect(mergeStreamingMessages(persisted, current, 's1')).toEqual(persisted);
+  const pruned = prunePersistedStreamingTurns(current, persisted, 's1');
+  expect(pruned).toBeNull();
+  expect(mergeStreamingMessages(persisted, pruned, 's1')).toBe(persisted);
 });

@@ -65,6 +65,7 @@ interface WalletRpcResult {
   checkin?: DailyCheckinRpcData;
   /** 扣费 */
   charge?: LlmUsageChargeRow;
+  archived_charge?: ArchivedLlmUsageCharge;
   /** 扣费状态 */
   charge_status?: string;
   /** 对账状态 */
@@ -126,6 +127,24 @@ export interface LlmUsageChargeRow {
   /** 对账时间 */
   reconciled_at: string | null;
 }
+
+/** Permanent dedup facts survive the 100-detail retention cap; no price is reconstructed. */
+export interface ArchivedLlmUsageCharge {
+  charge_key: string;
+  generation_id: string | null;
+  user_id: string;
+  status: Exclude<LlmUsageChargeRow['status'], 'pending'>;
+  charged_amount: NumericValue;
+}
+
+export type ChargeLlmUsageResult =
+  | {
+      kind: 'detailed';
+      wallet: MiniappWalletRow;
+      charge: LlmUsageChargeRow;
+      alreadyCharged: boolean;
+    }
+  | { kind: 'archived'; archivedCharge: ArchivedLlmUsageCharge; alreadyCharged: true };
 
 /**
  * 扣费 LLM 用量输入
@@ -296,11 +315,7 @@ export class MiniappWalletRepository {
    * @param input 扣费 LLM 用量输入
    * @returns 扣费 LLM 用量结果
    */
-  async chargeLlmUsage(input: ChargeLlmUsageInput): Promise<{
-    wallet: MiniappWalletRow;
-    charge: LlmUsageChargeRow;
-    alreadyCharged: boolean;
-  }> {
+  async chargeLlmUsage(input: ChargeLlmUsageInput): Promise<ChargeLlmUsageResult> {
     const { data, error } = await this.db.rpc('charge_llm_usage', {
       p_charge_key: input.chargeId,
       p_generation_id: input.generationId,
@@ -319,11 +334,30 @@ export class MiniappWalletRepository {
     });
 
     if (error) throw new Error(`记录 LLM 用量扣费失败：${error.message}`);
-    const result = data as WalletRpcResult;
-    if (!result.wallet || !result.charge) {
+    const result = data as WalletRpcResult | null;
+    if (result?.charge_status === 'already_archived') {
+      const archived = result.archived_charge;
+      if (
+        !archived ||
+        archived.user_id !== input.userId ||
+        (archived.charge_key !== input.chargeId &&
+          !(input.generationId && archived.generation_id === input.generationId)) ||
+        !['failed', 'free', 'charged', 'partial', 'reconciled', 'historical'].includes(
+          archived.status
+        ) ||
+        archived.charged_amount === null ||
+        !Number.isFinite(Number(archived.charged_amount)) ||
+        Number(archived.charged_amount) < 0
+      ) {
+        throw new Error('记录 LLM 用量扣费失败：归档结果不完整');
+      }
+      return { kind: 'archived', archivedCharge: archived, alreadyCharged: true };
+    }
+    if (!result?.wallet || !result.charge) {
       throw new Error('记录 LLM 用量扣费失败：返回结果不完整');
     }
     return {
+      kind: 'detailed',
       wallet: normalizeWallet(result.wallet),
       charge: result.charge,
       alreadyCharged: result.charge_status === 'already_charged',

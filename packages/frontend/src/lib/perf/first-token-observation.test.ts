@@ -13,8 +13,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe('user-visible first token observation', () => {
-  it('uses submit-to-display timing, independently of token reception and stream completion', async () => {
+describe('client-committed first token observation', () => {
+  it('uses submit-to-commit timing, independently of token reception and stream completion', async () => {
     const report = vi.fn(),
       timeout = vi.fn();
     const obs = new FirstTokenObservation(identity, 6000, report, timeout);
@@ -24,7 +24,7 @@ describe('user-visible first token observation', () => {
     obs.received();
     expect(report).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1200);
-    expect(obs.displayed(identity, performance.now())).toBe(true);
+    expect(obs.committed(identity, performance.now())).toBe(true);
     expect(report).toHaveBeenCalledWith(
       expect.objectContaining({
         outcome: 'observed',
@@ -37,22 +37,39 @@ describe('user-visible first token observation', () => {
     await vi.advanceTimersByTimeAsync(6000);
     expect(timeout).not.toHaveBeenCalled();
   });
-  it('does not time out received text outside the viewport; records its eventual real display', async () => {
+  it('received text does not stop the deadline; a late commit cannot replace a timeout', async () => {
     const report = vi.fn(),
       timeout = vi.fn();
-    const obs = new FirstTokenObservation(identity, 6000, report, timeout);
+    const obs = new FirstTokenObservation(identity, 10000, report, timeout);
     await vi.advanceTimersByTimeAsync(2000);
     obs.received();
     await vi.advanceTimersByTimeAsync(18000);
-    expect(timeout).not.toHaveBeenCalled();
-    expect(obs.displayed(identity, performance.now())).toBe(true);
-    expect(report).toHaveBeenLastCalledWith(
+    expect(timeout).toHaveBeenCalledOnce();
+    expect(obs.committed(identity, performance.now())).toBe(false);
+    expect(report).toHaveBeenCalledOnce();
+    expect(report).toHaveBeenCalledWith(
       expect.objectContaining({
-        outcome: 'observed',
-        first_token_visible_ms: 20000,
+        outcome: 'timed_out',
+        wait_finished_ms: 10000,
+        first_token_visible_ms: null,
         first_token_received_ms: 2000,
       })
     );
+  });
+  it('checks the absolute deadline when the timer is delayed by the main thread', () => {
+    const report = vi.fn(),
+      timeout = vi.fn();
+    const obs = new FirstTokenObservation(identity, 10000, report, timeout);
+    vi.spyOn(performance, 'now').mockReturnValue(obs.startedAt + 10000);
+    expect(obs.committed(identity, performance.now())).toBe(false);
+    expect(timeout).toHaveBeenCalledOnce();
+    expect(report).toHaveBeenCalledOnce();
+    expect(report.mock.calls[0]?.[0]).toMatchObject({
+      outcome: 'timed_out',
+      wait_finished_ms: 10000,
+      first_token_visible_ms: null,
+    });
+    vi.restoreAllMocks();
   });
   it('background across the deadline never triggers cancellation or a fake timeout', async () => {
     const report = vi.fn(),
@@ -68,14 +85,15 @@ describe('user-visible first token observation', () => {
     );
     page.visibilityState = 'visible';
     obs.received();
-    expect(obs.displayed(identity, performance.now())).toBe(true);
-    expect(report).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        outcome: 'observed',
-        backgrounded: true,
-        first_token_visible_ms: 21000,
-      })
-    );
+    expect(obs.committed(identity, performance.now())).toBe(false);
+    expect(report).toHaveBeenCalledOnce();
+    expect(report.mock.calls[0]?.[0]).toMatchObject({
+      outcome: 'not_observed',
+      reason: 'page_left',
+      wait_finished_ms: 1000,
+      first_token_visible_ms: null,
+      first_token_received_ms: null,
+    });
   });
   it('defers reporting until the exact revision is discovered after a pre-start timeout', async () => {
     const report = vi.fn();
@@ -98,19 +116,59 @@ describe('user-visible first token observation', () => {
       wait_finished_ms: 6000,
     });
   });
-  it('does not count background or mismatched revisions as a visible token', async () => {
+  it('rejects mismatched requests and revisions without ending the observation', () => {
     const report = vi.fn();
-    const obs = new FirstTokenObservation(identity, 6000, report, vi.fn());
-    page.visibilityState = 'hidden';
-    page.dispatchEvent(new Event('visibilitychange'));
-    await vi.advanceTimersByTimeAsync(3000);
-    expect(obs.displayed(identity, performance.now())).toBe(false);
-    page.visibilityState = 'visible';
-    page.dispatchEvent(new Event('visibilitychange'));
-    expect(obs.displayed({ ...identity, revision: 1 }, performance.now())).toBe(false);
-    expect(obs.displayed(identity, performance.now())).toBe(true);
-    expect(report.mock.calls[0]?.[0].backgrounded).toBe(true);
+    const obs = new FirstTokenObservation(identity, 10000, report, vi.fn());
+    expect(obs.committed({ ...identity, requestId: 'another' }, performance.now())).toBe(false);
+    expect(obs.committed({ ...identity, assistantMessageId: 'another' }, performance.now())).toBe(
+      false
+    );
+    expect(obs.committed({ ...identity, revision: 1 }, performance.now())).toBe(false);
+    expect(report).not.toHaveBeenCalled();
+    expect(obs.committed(identity, performance.now())).toBe(true);
+    expect(obs.committed(identity, performance.now())).toBe(false);
+    expect(report).toHaveBeenCalledOnce();
   });
+  it('classifies an initially hidden page separately and never reports it as a foreground success', () => {
+    page.visibilityState = 'hidden';
+    const report = vi.fn();
+    const obs = new FirstTokenObservation(identity, 10000, report, vi.fn());
+    page.visibilityState = 'visible';
+    expect(obs.committed(identity, performance.now())).toBe(false);
+    expect(report).toHaveBeenCalledOnce();
+    expect(report.mock.calls[0]?.[0]).toMatchObject({
+      outcome: 'not_observed',
+      reason: 'page_left',
+      backgrounded: true,
+    });
+  });
+  it.each(['cancelled', 'superseded', 'upstream_error'] as const)(
+    'keeps the first %s terminal result and its diagnostic timestamps',
+    async (reason) => {
+      const report = vi.fn();
+      const obs = new FirstTokenObservation(
+        { ...identity, assistantMessageId: null },
+        10000,
+        report,
+        vi.fn()
+      );
+      await vi.advanceTimersByTimeAsync(500);
+      obs.unavailable(reason);
+      await vi.advanceTimersByTimeAsync(1000);
+      obs.received();
+      obs.dispatched();
+      obs.identify('a', 0);
+      expect(obs.committed(identity, performance.now())).toBe(false);
+      expect(report).toHaveBeenCalledOnce();
+      expect(report.mock.calls[0]?.[0]).toMatchObject({
+        outcome: 'not_observed',
+        reason,
+        wait_finished_ms: 500,
+        first_token_received_ms: null,
+        request_dispatched_ms: null,
+      });
+    }
+  );
   it('leaves unavailable measurements null instead of inventing a zero', () => {
     const report = vi.fn();
     const obs = new FirstTokenObservation(identity, 6000, report, vi.fn());
@@ -133,17 +191,17 @@ describe('user-visible first token observation', () => {
         outcome: 'not_observed',
         reason: 'fallback_timeout',
         wait_finished_ms: 7200,
-        measurement_method: 'visible_dom_after_frame_v3',
+        measurement_method: 'client_committed_v4',
         first_token_visible_ms: null,
       })
     );
     expect(cancel).not.toHaveBeenCalled();
   });
-  it('never overwrites already displayed text with a later server error', async () => {
+  it('never overwrites already committed text with a later server error', async () => {
     const report = vi.fn();
     const obs = new FirstTokenObservation(identity, 10000, report, vi.fn());
     await vi.advanceTimersByTimeAsync(2000);
-    obs.displayed(identity, performance.now());
+    obs.committed(identity, performance.now());
     obs.deadlineFailed();
     expect(report).toHaveBeenCalledOnce();
     expect(report.mock.calls[0]?.[0].outcome).toBe('observed');

@@ -351,3 +351,40 @@ describe('applyLlmCharge', () => {
     expect(chargeLlmUsage).toHaveBeenCalledOnce();
   });
 });
+
+describe('archived settlement recovery', () => {
+  beforeEach(() => {
+    chargeLlmUsage.mockReset();
+    finalizePending.mockReset();
+  });
+
+  it.each([
+    ['failed', 0, 'timeout', false],
+    ['failed', 0, 'stop', false],
+    ['charged', 29, 'user_cancelled', true],
+    ['free', 0, 'stop', true],
+  ] as const)(
+    'recovers %s / %s / %s without inventing a quote',
+    async (status, amount, finishReason, consume) => {
+      chargeLlmUsage.mockResolvedValue({
+        kind: 'archived',
+        archivedCharge: { status, charged_amount: amount },
+        alreadyCharged: true,
+      });
+      const result = await applyLlmCharge(command({ finishReason }));
+      expect(result).toMatchObject({ pending: false, chargedAmount: amount });
+      expect(result).not.toHaveProperty('calculatedAmount');
+      expect(finalizePending).toHaveBeenCalledExactlyOnceWith('charge-1', consume);
+    }
+  );
+
+  it('does not mark an archived result recovered if quota finalization fails', async () => {
+    chargeLlmUsage.mockResolvedValue({
+      kind: 'archived',
+      archivedCharge: { status: 'free', charged_amount: 0 },
+      alreadyCharged: true,
+    });
+    finalizePending.mockRejectedValueOnce(new Error('quota unavailable'));
+    await expect(applyLlmCharge(command())).rejects.toThrow('quota unavailable');
+  });
+});
