@@ -49,6 +49,13 @@
 - Error dataset 为 0 不能证明无错误；Railway 仍出现 sync-job generation error、AbortError 和 stream started then failed。
 - drama repository 抛通用错误，丢失 PostgREST cause；必须先修复错误分类。
 
+## 短剧、影像广场与大厅隔离基线
+
+- 短剧相关 Home navigation 6.27s、Home pageload 9.67s、Dramas 4.37s、Drama detail 3.86s；页面耗时明显不能只用普通 API 延迟解释，需补齐播放首帧、chunk、媒体和渲染瀑布。
+- 影像广场 Create 5.09s、Backend feed 3.24s，而 Supabase 数据库边缘 P95 约 0.46s；优先定位 hydrate、签名、应用处理、媒体下载/解码和前端 commit。
+- 大厅保护基线为 `/characters` navigation 4.59s 及根 Providers 启动链路；候选版本必须证明没有未触发的短剧/影像 API、业务 chunk、媒体、签名 URL、长任务或请求槽竞争。
+- 后续同口径记录请求数、传输字节、已执行 JS、长任务、React commit、队列等待和导航 P95；可归因于短剧/影像优化的大厅生产回退超过 5% 即停止发布。
+
 ## 决策
 
 1. P0：观测可信度、导航 epoch/取消/重试、戏剧首屏和遥测隔离。

@@ -39,8 +39,11 @@
 
 ### 4.2 P0：戏剧首屏
 
+- 先记录 `导航 -> 目录/详情/play -> 视频 metadata -> 首帧` 的完整瀑布，并拆分请求排队、Backend、Supabase、媒体连接/下载/解码和 React commit；分别验证冷/热缓存、弱网和 SPA 返回场景。
 - 已有 activeId 时，play 请求与目录并行；play 为 critical。
 - detail/social/相邻目录和评论在播放地址或首帧后加载。
+- 播放器、评论和选集按路由拆分动态 chunk；首屏只预载必要 metadata 与首个可播放资源，不允许播放器依赖进入根布局或角色大厅 bundle。
+- 控制卡片批量挂载、图片 priority 和视频 preload；离开短剧路由时取消可取消的目录、社交、play、封面预取和未开始媒体请求。
 - telemetry 验证后立即 202，进入有界队列；过载时丢弃普通样本并计数，错误/慢请求/终态保留。
 - 先根据保留的 Supabase error code 消除 5xx，再评估 30–60 秒 catalog SWR/ETag。
 - 若并行化仍达不到目标，再设计最小首屏聚合响应；新 DTO 必须先进入 shared。
@@ -54,14 +57,25 @@
 
 ### 4.4 P1：图片广场和文本后处理
 
+- 先拆分 `路由 chunk -> feed 配置/查询 -> hydrate -> 签名 -> 下载/解码 -> 首个可见内容`，明确 Backend 3.24 秒与 Supabase 边缘约 0.46 秒之间的耗时归属。
 - 图片 feed 配置使用有界短 TTL/inflight cache；失败 promise 不入缓存。
 - 查询改显式投影；逐图签名改为一次批量签名，缓存 TTL 必须短于真实 URL expiry。
-- Frontend 复用现有 feed prefetch，使用响应式尺寸/WebP 并控制 DOM 数量。
+- feed prefetch 仅在明确导航意图，或进入影像广场后满足网络/idle 门禁时执行；不得由根 Providers 或 `/characters` 在大厅稳定前触发。
+- 编辑器、详情和生成工具按需动态加载；首个可见媒体使用高优先级，其余媒体懒加载和异步解码，并控制 DOM 数量；离开影像广场时取消分页、签名和未开始媒体请求。
 - Text postprocess immutable version 使用有界 LRU；只批读 miss，失败不做长负缓存，数据库请求 2 秒超时。
+
+### 4.4.1 大厅加载隔离与非回归
+
+- `/characters` 与根 shell 只拥有大厅启动所需依赖，不导入短剧播放器、影像编辑器/生成器或它们的路由状态。
+- route epoch 隔离并发；从短剧或影像广场返回大厅后，旧路由请求不得继续占用 critical 槽位，telemetry 使用独立有界队列。
+- 共享组件仅复用无副作用的展示层；不得把预取、SDK 初始化、媒体探测或路由专属 query subscription 提升到根层。
+- 发布门禁比较大厅请求数、传输字节、已执行 JS、长任务、React commit 和导航 P95；任一可归因于短剧/影像优化的生产回退超过 5% 即停止该批次。
 
 ### 4.5 P1/P2：生成链路
 
-- 先观察最新 first-token release 满 24 小时。若 client-visible P95 已稳定达标，停止侵入式改造。
+- 本节在 2026-10-29 整体复盘和用户再次确认前冻结：不得修改 first-token、fallback/竞速、provider 路由、客户端可见确认、计费资格、终态持久化、相关 migration 或 runtime config。
+- 冻结期间只允许只读观察最新 first-token release，按 release 分窗积累满 24 小时的样本；不得以“补指标”为由改变现有 first-token 运行语义。
+- 若复盘显示 client-visible P95 已稳定达标，停止侵入式改造；若未达标，也必须先取得用户明确授权才进入以下候选方案。
 - 否则建立请求级 `GenerationConfigSnapshot`，批量读取并透传模型、展示、规则和计费所需事实。
 - 展示类配置可短 SWR；价格、额度、计费和正式 postprocess snapshot 过期后 fail-closed。
 - 保留 10 秒总 TTFT、现有 hedged fallback 和 loser cancel；不增加总 deadline 外串行重试。
@@ -95,10 +109,13 @@
 - 不先扩 Railway；资源未饱和，扩 replica 还会放大本地 cache 与 background job 协调问题。
 - 不新建数据库表承载性能状态；优先使用现有指标、RPC 和 runtime config。
 - 不用 public bucket 替代私有签名 URL，除非另行完成安全评审。
+- 不为缩短二次进入时间而在全局启动阶段预载全部短剧/影像 chunk 或媒体；路由局部、可取消的按需加载是本任务的最小充分方案。
 
 ## 7. 演进、发布与恢复
 
 按“观测 -> 调度 -> drama -> image/text -> generation -> DB”发布。每批通过 runtime config 或本地 feature flag 可关闭；比较同一 release 前后 2 小时和 24 小时窗口。
+
+生成批次是独立门禁：2026-10-29 复盘前不能与观测、导航、drama、image/text 批次一起实施，也不能因其他批次获批而推断其已获授权。
 
 停止条件：5xx 增加 0.2 个百分点、TTFT/导航 P95 恶化 10%、delivery failure 超过 0.5%、计费/额度不一致、队列持续丢弃或内存无界增长。前端调度可回退旧策略；cache 可全关；provider 策略可回退现有固定规则；索引仅以独立 `CONCURRENTLY` migration 手工执行并保留 drop-index 回滚说明。
 
