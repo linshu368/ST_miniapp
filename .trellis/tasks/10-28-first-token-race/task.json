@@ -1,0 +1,37 @@
+{
+  "id": "first-token-race",
+  "name": "first-token-race",
+  "title": "首发与兜底竞争交付并保留排查记录",
+  "description": "10秒内保留首发与兜底竞争，赢家确定即取消败方，诊断片段异步保存且只交付收费一次",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "backend,database,admin,shared",
+  "package": "backend",
+  "priority": "P1",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-28",
+  "completedAt": null,
+  "branch": "fix/first-token-race",
+  "base_branch": "dev",
+  "worktree_path": "/private/tmp/st-first-token-delivery",
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "backend.business.conversation-generation",
+        "database.business.conversation-storage",
+        "admin.business.operations",
+        "shared.business.conversation-contracts"
+      ]
+    }
+  }
+}

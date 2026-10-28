@@ -168,7 +168,7 @@ describe('platform instruction slot registration', () => {
 });
 
 describe('fallback managed configuration', () => {
-  it('preserves fallback selection, global settings and every model wait through editor and save parsing', () => {
+  it('preserves fallback selection, shared deadline and overlapping launch thresholds through editor and save parsing', () => {
     const catalog = configSchemas.llm_model_catalog.parse(
       configMetadata.llm_model_catalog.defaultValue
     );
@@ -176,7 +176,7 @@ describe('fallback managed configuration', () => {
     catalog.first_token_deadline_ms = 8000;
     catalog.fallback_timeout_ms = 2500;
     catalog.first_token_timeout_rate_target = 0.02;
-    catalog.tiers[0]!.models[0]!.first_token_timeout_ms = 3500;
+    catalog.tiers[0]!.models[0]!.first_token_timeout_ms = 7500;
     const edited = EditableModelCatalogSchema.parse(catalog);
     expect(configSchemas.llm_model_catalog.parse(edited)).toEqual(catalog);
   });
