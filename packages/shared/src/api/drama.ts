@@ -104,6 +104,17 @@ export interface GetDramaPlaybackData {
   playback: DramaPlayback;
 }
 
+/** One Preview-only experiment; these identifiers never select a database row. */
+export const DRAMA_CDN_SAMPLE_ID = '1fc8b3d5-9426-5ce6-b675-d98074da4801';
+export const DramaCdnRouteSchema = z.enum(['original', 'bunny']);
+export type DramaCdnRoute = z.infer<typeof DramaCdnRouteSchema>;
+export const DramaCdnPlaybackQuerySchema = z
+  .object({
+    video_id: z.literal(DRAMA_CDN_SAMPLE_ID),
+    route: DramaCdnRouteSchema,
+  })
+  .strict();
+
 /** 互动只针对官方发布的剧，不包含创作者或关注关系。 */
 export interface DramaSocial {
   liked: boolean;

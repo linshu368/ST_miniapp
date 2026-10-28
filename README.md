@@ -4,6 +4,7 @@ ST_miniapp 是围绕 Telegram MiniApp、AI 角色聊天、钱包/支付、语音
 
 > 深层架构、数据流和路由清单见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)；Railway 生产运维见 [`ops/railway/README.md`](ops/railway/README.md)。本文负责新成员入门、依赖关系、环境、命令和交付约定。
 > 短剧慢播放的分段口径、前端集中上报／Railway 日志查询与真机验收见 [短剧播放耗时排查](docs/drama-playback-timing.md)。
+> 内部 Bunny 手机单轮实验仅在独立 PR Preview 开放，使用固定生产单对象临时凭证、TEST 后端及内部名单；发布、回退和收尾见 [验收说明](ops/drama-bunny-preview/README.md)。部署成功不代表手机性能通过。
 
 > 短剧启动新增独立 Grafana 模板 `st-drama-playback`：v2 媒体网络/首帧诊断、分析域原子落表及有界历史导入。先执行对应环境的 `20261027_drama_playback_observability.sql`，再显式启用 `DRAMA_TIMING_PERSIST_ENABLED`；默认保留日志模式。代码不代表已部署，步骤和恢复见 [短剧看板操作说明](docs/grafana/drama-playback-runbook.md)。
 

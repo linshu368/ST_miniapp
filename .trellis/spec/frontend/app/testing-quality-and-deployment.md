@@ -42,6 +42,8 @@ shared contract 改动追加 `pnpm --filter @miniapp/shared test` 和所有消�
 
 ## Vercel 部署
 
+固定 Bunny 手机实验使用独立 `/drama-cdn-experiment` 和真实 `DramaPlayer`，取址沿用 `lib/api/drama.ts`，实验缓存键隔离于普通播放，不因 focus/reconnect 自动换 URL。正式顺序 AB/BA/AB，起播含取址/播放器等待、另存 src→首帧；seek 先检查 buffered，再分别记录目标帧和恢复推进，15 秒有界且不自动重试。失败/中断/回退存本机有界记录，不采集签名或原始 HAR；缓存头不可读必须 UNKNOWN。真实 Telegram 手机是性能门禁，参见 [本轮说明](../../../../ops/drama-bunny-preview/README.md)。
+
 - Frontend 部署 Vercel，配置见根/包部署文件和 `next.config.mjs`；`NEXT_PUBLIC_*` 都是公开值，secret 不得使用此前缀。
 - Next.js 只把**静态成员访问** `process.env.NEXT_PUBLIC_*` 内联进客户端包。经 `const env = process.env` 再读属性时，Preview/生产 bundle 里永远是 `undefined`，PostHog adapter 会走 `missing_config` no-op。`readPostHogBrowserEnv` 必须静态读取 `NEXT_PUBLIC_POSTHOG_KEY/HOST`。
 - Preview 可注入 PostHog 公开变量做真机验收；Production 留空即关闭。打开生产采集是独立运维步骤，不随功能 PR 默认启用，也不改变现有 Sentry Replay。

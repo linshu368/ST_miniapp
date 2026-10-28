@@ -37,7 +37,7 @@ import { resolveNextVideoId } from '@/lib/drama-playback';
 import { dramaTiming } from '@/lib/perf/drama-observer';
 import { observeDramaMedia } from '@/lib/perf/drama-media';
 import type { DramaPlaybackTiming } from '@/lib/perf/drama-timing';
-import type { DramaSummary } from '@miniapp/shared';
+import type { DramaSummary, DramaCdnRoute } from '@miniapp/shared';
 import { cn } from '@/lib/utils';
 import {
   useDramaLibraryStore,
@@ -45,6 +45,14 @@ import {
 } from '@/stores/drama-library-store';
 
 interface DramaPlayerProps {
+  experiment?: {
+    route: DramaCdnRoute;
+    attempt: number;
+    enabled: boolean;
+    preservePosition: boolean;
+    onMedia: (video: HTMLVideoElement, timing: DramaPlaybackTiming) => () => void;
+    onAddressError: () => void;
+  };
   id: string;
   embedded?: boolean;
   returnToHome?: boolean;
@@ -75,6 +83,7 @@ const ignoreGesture = (target: EventTarget | null) =>
   );
 
 export function DramaPlayer({
+  experiment,
   id,
   embedded = false,
   returnToHome = false,
@@ -91,7 +100,7 @@ export function DramaPlayer({
   onNavigate,
 }: DramaPlayerProps) {
   const router = useRouter();
-  const detailQuery = useDramaDetailQuery(id);
+  const detailQuery = useDramaDetailQuery(id, Boolean(experiment));
   const drama = detailQuery.data;
   const like = useDramaLikeMutation(id);
   const likeBusy = useRef(false);
@@ -145,11 +154,16 @@ export function DramaPlayer({
     });
   };
   // 播放与详情并行，元数据加载不阻塞首集的视频元素挂载或签名请求。
-  const playbackQuery = useDramaPlaybackQuery(id, activeVideoId ?? undefined);
+  const playbackQuery = useDramaPlaybackQuery(id, activeVideoId ?? undefined, experiment);
   const playback = playbackQuery.data;
   // Likes/comments are not needed for first frame. Start them after playback has
   // either resolved or failed so they cannot compete for the media URL.
-  const social = useDramaSocialQuery(id, !playbackQuery.isPending);
+  const social = useDramaSocialQuery(id, !experiment && !playbackQuery.isPending);
+  const experimentRef = useRef(experiment);
+  experimentRef.current = experiment;
+  useEffect(() => {
+    if (playbackQuery.isError) experimentRef.current?.onAddressError();
+  }, [playbackQuery.isError]);
   const currentVideoId = playback?.video_id ?? activeVideoId;
   const currentIndex = drama?.videos.findIndex((video) => video.id === currentVideoId) ?? -1;
   const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
@@ -164,6 +178,7 @@ export function DramaPlayer({
     videoId: string | null;
     retryVersion: number;
     flow: DramaPlaybackTiming;
+    experimentAttempt?: number;
   } | null>(null);
   const mediaTimingRef = useRef<ReturnType<typeof observeDramaMedia> | null>(null);
   const [time, setTime] = useState(0);
@@ -432,12 +447,16 @@ export function DramaPlayer({
     if (
       !timingRef.current ||
       timingRef.current.videoId !== activeVideoId ||
-      timingRef.current.retryVersion !== retryVersion
+      timingRef.current.retryVersion !== retryVersion ||
+      timingRef.current.experimentAttempt !== experimentRef.current?.attempt
     ) {
       timingRef.current = {
         videoId: activeVideoId,
         retryVersion,
-        flow: dramaTiming.ensurePlayback(id, activeVideoId ?? undefined),
+        experimentAttempt: experimentRef.current?.attempt,
+        flow: experimentRef.current
+          ? dramaTiming.beginPlayback(id, 'direct', activeVideoId ?? undefined)
+          : dramaTiming.ensurePlayback(id, activeVideoId ?? undefined),
       };
     }
     dramaTiming.playbackState(
@@ -446,7 +465,15 @@ export function DramaPlayer({
       playbackQuery.isFetching,
       playbackQuery.isError
     );
-  }, [id, activeVideoId, playback, playbackQuery.isFetching, playbackQuery.isError, retryVersion]);
+  }, [
+    id,
+    activeVideoId,
+    playback,
+    playbackQuery.isFetching,
+    playbackQuery.isError,
+    retryVersion,
+    experiment?.attempt,
+  ]);
 
   useEffect(() => {
     if (!videoEl || !playback?.playable || !playback.play_url || retryState !== 'idle') return;
@@ -460,8 +487,16 @@ export function DramaPlayer({
     setDuration(0);
     setFinished(false);
     const checkpoint = sourceCheckpoint.current;
-    const sameEpisode = checkpoint?.videoId === playback.video_id;
-    const keepPaused = sameEpisode && checkpoint.paused && checkpoint.retryVersion === retryVersion;
+    const sameEpisode =
+      checkpoint?.videoId === playback.video_id &&
+      (!experimentRef.current || experimentRef.current.preservePosition);
+    if (experimentRef.current && !experimentRef.current.preservePosition)
+      resumePending.current = false;
+    const keepPaused =
+      sameEpisode &&
+      !experimentRef.current &&
+      checkpoint.paused &&
+      checkpoint.retryVersion === retryVersion;
     if (sameEpisode && !resumePending.current) {
       // 网络恢复可能自动更新同一集的签名，仍需保留原位置与暂停状态。
       resume.current = {
@@ -478,6 +513,19 @@ export function DramaPlayer({
     timing.mark('source_set');
     videoEl.src = playback.play_url;
     const mediaTiming = observeDramaMedia(videoEl, playback.play_url, timing);
+    const stopExperiment = experimentRef.current?.onMedia(videoEl, timing);
+    // A cached media URL never extends the server's bounded experiment capability.
+    const experimentExpiry =
+      experimentRef.current && playback.expires_at
+        ? window.setTimeout(
+            () => {
+              videoEl.pause();
+              setFailed(true);
+              experimentRef.current?.onAddressError();
+            },
+            Math.max(0, Date.parse(playback.expires_at) - Date.now())
+          )
+        : undefined;
     mediaTimingRef.current = mediaTiming;
     const start = async () => {
       if (keepPaused || document.visibilityState === 'hidden') {
@@ -527,6 +575,8 @@ export function DramaPlayer({
       persistProgress.current(videoEl, true);
       mediaOwner.current = null;
       mediaTiming.dispose();
+      stopExperiment?.();
+      if (experimentExpiry !== undefined) window.clearTimeout(experimentExpiry);
       if (mediaTimingRef.current === mediaTiming) mediaTimingRef.current = null;
       // 换集、换剧或退出立即释放旧媒体，迟到的旧请求不能继续发声。
       videoEl.pause();
@@ -538,11 +588,13 @@ export function DramaPlayer({
     playback?.play_url,
     playback?.playable,
     playback?.video_id,
+    playback?.expires_at,
     retryVersion,
     retryState,
     setPlaybackPreferences,
     cancelPictureTap,
     setControlsVisible,
+    experiment?.attempt,
   ]);
 
   useEffect(() => {
@@ -654,6 +706,10 @@ export function DramaPlayer({
   };
 
   const retryPlayback = async () => {
+    if (experiment) {
+      experiment.onAddressError();
+      return;
+    }
     if (retryState === 'loading') return;
     const attempt = ++retryAttempt.current;
     if (videoEl) {

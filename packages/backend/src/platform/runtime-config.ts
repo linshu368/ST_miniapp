@@ -10,6 +10,26 @@
 
 import { getDomainDb } from '../lib/supabase.js';
 import { config } from './config.js';
+import type { DramaCdnConfig } from '../features/drama/cdn-experiment.js';
+
+/** Deployment-only, closed by default and impossible to enable on stable TEST/production. */
+export function getDramaCdnExperimentConfig(): DramaCdnConfig {
+  return {
+    enabled:
+      process.env.DRAMA_CDN_EXPERIMENT_ENABLED === 'true' &&
+      /^pr-\d+$/.test(process.env.RAILWAY_ENVIRONMENT_NAME ?? '') &&
+      config.database.target === 'test' &&
+      process.env.DEV_AUTH_BYPASS !== '1' &&
+      process.env.MOCK_AUTH !== '1',
+    userIds: (process.env.DRAMA_CDN_EXPERIMENT_USER_IDS ?? '')
+      .split(',')
+      .filter((id) => /^[1-9]\d{0,14}$/.test(id.trim()))
+      .map((id) => Number(id.trim())),
+    sourceUrl: process.env.DRAMA_CDN_EXPERIMENT_SOURCE_URL ?? '',
+    tokenKey: process.env.DRAMA_CDN_EXPERIMENT_TOKEN_KEY ?? '',
+    deadlineMs: Date.parse(process.env.DRAMA_CDN_EXPERIMENT_DEADLINE ?? ''),
+  };
+}
 
 /** Deployment opt-in: a compatible backend may ship before the manual analytics migration. */
 export function getDramaTimingPersistenceConfig() {

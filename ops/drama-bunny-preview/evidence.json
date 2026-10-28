@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "status": "ready_for_preview_deploy",
+  "base_commit": "4e1ed2eb",
+  "branch": "codex/drama-bunny-preview",
+  "sample": {
+    "id": "1fc8b3d5-9426-5ce6-b675-d98074da4801",
+    "bytes": 46518538,
+    "environment": "production-single-object-capability"
+  },
+  "preview_database": "test",
+  "test_bot": "ceshi_miniapp_bot",
+  "phone_round": {
+    "status": "awaiting_real_phone",
+    "order": ["A", "B", "B", "A", "A", "B"],
+    "trials": [],
+    "performance_accepted": false
+  },
+  "shutdown": {
+    "bunny_block_rule": "Experiment closed",
+    "initially_closed": true,
+    "final_closed_verified": false
+  },
+  "validation": {
+    "backend_related": "19 passed",
+    "shared": "185 passed",
+    "frontend_related": "64 passed before transport opt-out; full suite includes these",
+    "frontend_full": "484 passed; 5 failed in unchanged media-cache.test.ts expecting one argument while unchanged image-plaza query supplies signal/priority options; API client is mocked in this test",
+    "typecheck": "pnpm -r typecheck passed",
+    "build": "frontend and admin builds passed; final build after transport opt-out pending",
+    "ui_initial_failure": "Playwright executable absent; no page scenario executed; installation in progress",
+    "guards": "import, legacy and migration-name checks passed"
+  }
+}

@@ -14,6 +14,7 @@ import type {
   CreateDramaComment,
   CreateDramaCommentData,
   DramaSocial,
+  DramaCdnRoute,
 } from '@miniapp/shared';
 
 import { apiClient } from './client';
@@ -139,14 +140,21 @@ async function fetchDramas(
   });
 }
 
-async function fetchDramaDetail(id: string, signal?: AbortSignal): Promise<DramaDetail> {
+async function fetchDramaDetail(
+  id: string,
+  signal?: AbortSignal,
+  experiment = false
+): Promise<DramaDetail> {
   return dramaTiming.query('detail', id, undefined, async (onAttempt) => {
-    const data = await apiClient<GetDramaByIdData>(`/api/dramas/${encodeURIComponent(id)}`, {
-      onAttempt,
-      signal,
-      timeoutMs: 5000,
-      queuePriority: 'normal',
-    });
+    const data = await apiClient<GetDramaByIdData>(
+      experiment ? '/api/drama-cdn-experiment/sample' : `/api/dramas/${encodeURIComponent(id)}`,
+      {
+        onAttempt,
+        signal,
+        timeoutMs: 5000,
+        queuePriority: 'normal',
+      }
+    );
     return data.drama;
   });
 }
@@ -154,13 +162,22 @@ async function fetchDramaDetail(id: string, signal?: AbortSignal): Promise<Drama
 async function fetchDramaPlayback(
   id: string,
   videoId?: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  experimentRoute?: DramaCdnRoute
 ): Promise<DramaPlayback> {
   const suffix = videoId ? `?video_id=${encodeURIComponent(videoId)}` : '';
   return dramaTiming.query('playback', id, videoId, async (onAttempt) => {
     const data = await apiClient<GetDramaPlaybackData>(
-      `/api/dramas/${encodeURIComponent(id)}/play${suffix}`,
-      { onAttempt, signal, timeoutMs: 5000, queuePriority: 'critical' }
+      experimentRoute
+        ? `/api/drama-cdn-experiment/play?video_id=${encodeURIComponent(videoId ?? id)}&route=${experimentRoute}`
+        : `/api/dramas/${encodeURIComponent(id)}/play${suffix}`,
+      {
+        onAttempt,
+        signal,
+        timeoutMs: 5000,
+        queuePriority: 'critical',
+        ...(experimentRoute ? { transportRetry: false as const } : {}),
+      }
     );
     return data.playback;
   });
@@ -188,10 +205,10 @@ export function useDramaBrowseQueueQuery() {
   });
 }
 
-export function useDramaDetailQuery(id: string) {
+export function useDramaDetailQuery(id: string, experiment = false) {
   return useQuery({
-    queryKey: dramaKeys.detail(id),
-    queryFn: ({ signal }) => fetchDramaDetail(id, signal),
+    queryKey: experiment ? ['drama-cdn-experiment', 'detail', id] : dramaKeys.detail(id),
+    queryFn: ({ signal }) => fetchDramaDetail(id, signal, experiment),
     structuralSharing: false,
     enabled: Boolean(id),
     retry: false,
@@ -203,12 +220,21 @@ export function useDramaDetailQuery(id: string) {
  * 换集时传目标 video id。签名链接有效期 1 小时，用全局默认 staleTime（30s）
  * 已明显短于 TTL，重新进入详情页即可拿到新链接，不需要单独调大/调小。
  */
-export function useDramaPlaybackQuery(id: string, videoId?: string) {
+export function useDramaPlaybackQuery(
+  id: string,
+  videoId?: string,
+  experiment?: { route: DramaCdnRoute; attempt: number; enabled: boolean }
+) {
   return useQuery({
-    queryKey: dramaKeys.playback(id, videoId),
-    queryFn: ({ signal }) => fetchDramaPlayback(id, videoId, signal),
+    queryKey: experiment
+      ? ['drama-cdn-experiment', 'playback', id, experiment.route, experiment.attempt]
+      : dramaKeys.playback(id, videoId),
+    queryFn: ({ signal }) => fetchDramaPlayback(id, videoId, signal, experiment?.route),
     structuralSharing: false,
-    enabled: Boolean(id),
+    enabled: Boolean(id) && (!experiment || experiment.enabled),
+    ...(experiment
+      ? { refetchOnWindowFocus: false, refetchOnReconnect: false, staleTime: Infinity, gcTime: 0 }
+      : {}),
     retry: false,
   });
 }

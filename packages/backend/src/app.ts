@@ -27,6 +27,7 @@ import alertRoutes from './routes/alerts.js';
 import textPostprocessRoutes from './routes/text-postprocess.js';
 import imagePlazaRoutes from './routes/image-plaza.js';
 import dramaRoutes from './routes/drama.js';
+import dramaCdnExperimentRoutes from './routes/drama-cdn-experiment.js';
 import dramaInteractionRoutes from './routes/drama-interactions.js';
 import { shutdownTextPostprocessValidation } from './features/text-postprocess/validate-pool.js';
 import { startChatHistorySyncJob, stopChatHistorySyncJob } from './features/generation/index.js';
@@ -143,6 +144,7 @@ export async function buildApp() {
   await app.register(textPostprocessRoutes);
   await app.register(imagePlazaRoutes);
   await app.register(dramaRoutes);
+  await app.register(dramaCdnExperimentRoutes);
   await app.register(dramaInteractionRoutes);
 
   app.addContentTypeParser(
