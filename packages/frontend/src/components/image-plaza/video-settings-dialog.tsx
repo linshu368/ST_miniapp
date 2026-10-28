@@ -77,6 +77,7 @@ export function VideoSettingsDialog(props: {
             label="清晰度"
             values={props.model.resolutions}
             value={props.resolution}
+            render={(value) => value.toUpperCase()}
             onChange={props.onResolutionChange}
           />
           {props.model.aspect_ratios.length ? (

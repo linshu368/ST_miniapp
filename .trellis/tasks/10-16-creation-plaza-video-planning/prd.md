@@ -33,6 +33,7 @@
 | D20 | 种子发布改成环境隔离的两阶段流程：**TEST 只导入 10 条代表性 canary**（10 个视频 + 10 个 poster + 10 条 DB 数据）；**Supabase main/Production 先只上传全部 4,000 组最终对象，不写业务表**，上传与核验完成后再由 manifest 生成数据库 SQL，等正式上线窗口按批执行。禁止把 TEST 对象或 TEST 数据结论当成 Production 实况。 | 用户 2026-10-28                                  |
 | D21 | 播放链路复用短剧模块已经验证过的模式：点击/临近播放只预取播放地址、不在列表请求 MP4；服务端稳定复用同一签名 URL、同 key single-flight、显式超时与脱敏日志；换签名后保留播放位置；前端分别观测地址取得、metadata、首帧、playing、waiting/stalled 与连续缓冲。                                                           | 用户 2026-10-28                                  |
 | D22 | Production 数据导入 SQL 复用 `media_plaza.import_video_seed_work`，不另写一套裸 INSERT 业务逻辑；由最终 main 上传 manifest 离线生成 8 个有序的 500 条 data migration，并附 preflight/postflight 与受保护的下线/forward-fix SQL。每个文件单独事务、单独账本，全部完成前视频 seed 入口保持关闭。                         | 用户 2026-10-28                                  |
+| D23 | Admin 与 Frontend 的视频参数只开放产品统一集合：5/10 秒、16:9/9:16/1:1、720P/1080P；每个模型取该集合与 Venice 实际能力的交集。界面统一用大写 P 展示，提交仍保留供应商要求的原始大小写（MiniMax `1080P`，Wan/Seedance `1080p`）。旧目录在编辑/消费时收窄，不把供应商不支持的组合补入。                                  | 用户 2026-10-28                                  |
 
 ## 功能需求与验收
 
@@ -163,6 +164,7 @@
   - 实施时如果出现命中但模型、热度、英文不一致的行，这些行归为「待修复」，不导入。
 - 涉及未成年的内容被剔除，审核未通过的不公开。
 - 6 个视频模型写入目录种子（参数见 research），全部启用。Seedance 2.0 R2V 按 D8 映射。
+- 视频模型的时长、画幅、清晰度按 D23 收口；Wan 3.0 Pro 与 MiniMax 当前没有可用 720P，因此只展示 1080P，其余支持模型展示 720P/1080P。
 
 验收：
 

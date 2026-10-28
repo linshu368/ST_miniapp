@@ -20,6 +20,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   IMAGE_PLAZA_PROMPT_MAX_CHARS,
+  selectSupportedVideoPlazaOptions,
   type ImagePlazaArtifact,
   type ImagePlazaAspectRatio,
   type ImagePlazaMode,
@@ -176,7 +177,14 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
 
   const models = useMemo(() => config.data?.models ?? [], [config.data?.models]);
   const model = models.find((item) => item.id === modelId) ?? models[0];
-  const videoModels = useMemo(() => config.data?.video_models ?? [], [config.data?.video_models]);
+  const videoModels = useMemo(
+    () =>
+      (config.data?.video_models ?? []).flatMap((item) => {
+        const supported = selectSupportedVideoPlazaOptions(item);
+        return supported ? [{ ...item, ...supported }] : [];
+      }),
+    [config.data?.video_models]
+  );
   const videoModel = videoModels.find((item) => item.id === videoModelId) ?? videoModels[0];
   useEffect(() => {
     if (initialized || !data || models.length === 0) return;
@@ -289,7 +297,7 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
     setAutoOptimize(true);
   };
 
-  const resetVideoSettings = (target = videoModel) => {
+  const resetVideoSettings = (target: VideoPlazaModel | undefined = videoModel) => {
     if (!target) return;
     setVideoModelId(target.id);
     setVideoDuration(target.default_duration);

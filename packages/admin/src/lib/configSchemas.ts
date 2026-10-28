@@ -26,7 +26,9 @@ import {
   ImagePlazaModelCatalogSchema,
   ImagePlazaShareTipConfigSchema,
   ImagePlazaTagConfigSchema,
+  selectSupportedVideoPlazaOptions,
   VideoPlazaModelCatalogSchema,
+  type VideoPlazaModelCatalog,
   LobbyPinnedCharactersSchema,
   LobbyRankingParamsSchema,
   MediaFeatureFreeTrialLimitSchema,
@@ -350,7 +352,9 @@ export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   image_generation_failed_hint: z.string().trim().min(1).max(200),
   image_failed_unknown_hint: z.string().trim().min(1).max(200),
   image_plaza_model_catalog: ImagePlazaModelCatalogSchema,
-  image_plaza_video_model_catalog: VideoPlazaModelCatalogSchema,
+  image_plaza_video_model_catalog: VideoPlazaModelCatalogSchema.transform(
+    normalizeVideoPlazaCatalogOptions
+  ),
   image_plaza_share_tip: ImagePlazaShareTipConfigSchema,
   image_plaza_tags: ImagePlazaTagConfigSchema,
   image_plaza_tags_feature_enabled: z.boolean(),
@@ -407,7 +411,7 @@ function createDefaultVideoCatalog() {
       )
     ),
   });
-  const sixRatios = ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9'];
+  const supportedRatios = ['16:9', '9:16', '1:1'];
   return {
     default_model_id: 'wan-3-0-pro',
     models: [
@@ -421,9 +425,9 @@ function createDefaultVideoCatalog() {
             r2v: 'wan-3-0-pro-reference-to-video',
           },
           image_input: 'optional_first_frame',
-          durations: [2, 5, 10, 15, 20, 25, 30],
-          resolutions: ['1080p', '2k', '4k'],
-          aspect_ratios: sixRatios.slice(0, 5),
+          durations: [5, 10],
+          resolutions: ['1080p'],
+          aspect_ratios: supportedRatios,
           audio_configurable: true,
           default_audio: true,
           min_short_side: 240,
@@ -437,9 +441,9 @@ function createDefaultVideoCatalog() {
           name: 'Wan 3.0 Reference',
           provider_ids: { r2v: 'wan-3-0-reference-to-video' },
           image_input: 'required_reference',
-          durations: [2, 5, 10, 15, 20, 25, 30],
-          resolutions: ['1080p', '720p', '480p'],
-          aspect_ratios: ['adaptive', ...sixRatios.slice(0, 5)],
+          durations: [5, 10],
+          resolutions: ['720p', '1080p'],
+          aspect_ratios: supportedRatios,
           audio_configurable: true,
           default_audio: true,
           min_short_side: 240,
@@ -455,9 +459,9 @@ function createDefaultVideoCatalog() {
             i2v: 'minimax-h3-max-image-to-video',
           },
           image_input: 'optional_first_frame',
-          durations: Array.from({ length: 11 }, (_, index) => index + 5),
-          resolutions: ['480P', '768P', '1080P'],
-          aspect_ratios: sixRatios,
+          durations: [5, 10],
+          resolutions: ['1080P'],
+          aspect_ratios: supportedRatios,
           audio_configurable: false,
           default_audio: true,
         },
@@ -469,9 +473,9 @@ function createDefaultVideoCatalog() {
           name: 'MiniMax H3 Max R2V',
           provider_ids: { r2v: 'minimax-h3-max-reference-to-video' },
           image_input: 'required_reference',
-          durations: Array.from({ length: 11 }, (_, index) => index + 5),
-          resolutions: ['480P', '768P', '1080P'],
-          aspect_ratios: ['adaptive', ...sixRatios],
+          durations: [5, 10],
+          resolutions: ['1080P'],
+          aspect_ratios: supportedRatios,
           audio_configurable: false,
           default_audio: true,
           min_short_side: 256,
@@ -489,9 +493,9 @@ function createDefaultVideoCatalog() {
             i2v: 'seedance-1-5-pro-image-to-video-basic',
           },
           image_input: 'optional_first_frame',
-          durations: Array.from({ length: 9 }, (_, index) => index + 4),
-          resolutions: ['1080p', '720p', '480p'],
-          aspect_ratios: sixRatios,
+          durations: [5, 10],
+          resolutions: ['720p', '1080p'],
+          aspect_ratios: supportedRatios,
           audio_configurable: true,
           default_audio: true,
           min_short_side: 300,
@@ -506,9 +510,9 @@ function createDefaultVideoCatalog() {
           name: 'Seedance 2.0 R2V',
           provider_ids: { r2v: 'seedance-2-0-reference-to-video-basic' },
           image_input: 'required_reference',
-          durations: Array.from({ length: 12 }, (_, index) => index + 4),
-          resolutions: ['4k', '1080p', '720p', '480p'],
-          aspect_ratios: sixRatios,
+          durations: [5, 10],
+          resolutions: ['720p', '1080p'],
+          aspect_ratios: supportedRatios,
           audio_configurable: true,
           default_audio: true,
           min_short_side: 300,
@@ -517,6 +521,45 @@ function createDefaultVideoCatalog() {
         5
       ),
     ],
+  };
+}
+
+export function getDefaultVideoPlazaModelOptions(modelId: string): {
+  durations: number[];
+  resolutions: string[];
+  aspect_ratios: string[];
+} | null {
+  const model = createDefaultVideoCatalog().models.find((item) => item.id === modelId);
+  return model
+    ? {
+        durations: [...model.durations],
+        resolutions: [...model.resolutions],
+        aspect_ratios: [...model.aspect_ratios],
+      }
+    : null;
+}
+
+export function normalizeVideoPlazaCatalogOptions(
+  catalog: VideoPlazaModelCatalog
+): VideoPlazaModelCatalog {
+  return {
+    ...catalog,
+    models: catalog.models.map((model) => {
+      const supported = selectSupportedVideoPlazaOptions(model);
+      if (!supported) return model;
+      const audioValues = model.audio_configurable ? [false, true] : [model.default_audio];
+      const price_matrix = Object.fromEntries(
+        supported.durations.flatMap((duration) =>
+          supported.resolutions.flatMap((resolution) =>
+            audioValues.map((audio) => {
+              const key = `${duration}|${resolution}|${audio ? 1 : 0}`;
+              return [key, model.price_matrix[key] ?? 1];
+            })
+          )
+        )
+      );
+      return { ...model, ...supported, price_matrix };
+    }),
   };
 }
 

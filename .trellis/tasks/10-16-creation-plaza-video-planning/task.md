@@ -44,6 +44,7 @@
 
 - 2026-10-28 TEST 10 条执行：锁定报告复验通过；本地四路下载、最多两路 FFmpeg 完成 10/10，9 条转码、1 条 remux，六模型分布 2/2/2/2/1/1；全部 H.264/yuv420p、音频 AAC/无、GOP ≤2s、`moov < mdat` 且 `moov` 最大 115,736 bytes，并通过 0/10/50/90% 解码。源视频 93,964,071 bytes，处理后视频 49,495,483 bytes，poster 583,363 bytes；processed manifest SHA-256=`161dc1d37ba75c570ff78ac856386d4581084f20e9bc7336cbb8693c82f0d074`。
 - 2026-10-28 TEST Storage 执行：只读身份/私有桶预检通过后，以 6MiB TUS 分块、4 路并发上传 10 视频 + 10 poster；`x-upsert:false`，20/20 对象通过认证 Range 回读与大小校验。签名 URL 首段 Range p95=1,873.0ms，中段 Range p95=967.3ms（同 URL 复用），达到参考网络 2s 预算。尚未写数据库；TEST 已发布视频模型目录仍缺失，必须先由运营审核/发布目录，再生成并执行 10 条 TEST SQL。
+- 2026-10-28 用户新增 D23：Admin/Frontend 视频选项只保留 5/10 秒、16:9/9:16/1:1、720P/1080P，并按模型真实能力取交集；供应商值大小写保持原样，UI 统一大写展示。旧目录由 Admin/Frontend 消费侧收窄，Admin 同步裁剪价格矩阵。
 - 2026-10-28 用户新增 D20–D22：参考短剧播放链路优化；TEST 因容量只导入 10 条；main/Production 先上传全部 4,000 组私有对象但不写业务表，完成后从锁定 upload manifest 生成 8×500 migration，等上线窗口逐文件执行。上传器与 SQL 生成器物理分离，生产对象使用不可变 hash 路径；入口在八批与 postflight 完成前保持关闭。D17 审核门禁继续有效，本次仅更新规划，未运行 FFmpeg、未上传、未写库。
 - 2026-10-28 短剧复用结论：采用稳定签名 URL、同 key single-flight、5s 签名超时、点击/临近播放只预取地址、换签保留 currentTime/paused、旧 source 释放，以及 address/metadata/first-frame/seek/buffer 分段观测；不复制短剧 UI，不在当前自建 ABR。
 - 2026-10-27 用户确认 D16：总量只保留 4,000 条，模型间尽量均匀，模型内按热度取舍。翻译命中 5,082 条的 URL 排除前水位填充配额为 711 / 952 / 583 / 682 / 952 / 120；同热度用 source_video_id 稳定排序。

@@ -648,6 +648,7 @@ worker：3s tick / claim≤2 / Venice≤180s / settle RPC → ready
 - 模型目录：推荐由运营在 Admin 中录入并确认价格，迁移不预置。
   - 默认模型 Wan 3.0 Pro，映射见 research。
   - Seedance 2.0 R2V 映射到 `seedance-2-0-reference-to-video-basic`（D8），只有 r2v，必须带图。种子里的模型标签 `Seedance 2.0 R2V Enhanced` 通过 `seed_aliases` 映射到这个 model id，使“用同款”可用。
+  - 参数能力按 D23 取产品集合与 provider 约束的交集。共享纯函数负责过滤与默认值回落；Admin 在过滤后同步裁剪价格矩阵，Frontend 对已发布旧目录再做一次消费侧过滤。分辨率显示统一大写，向 provider 提交时保留目录原值大小写，避免 MiniMax/Wan/Seedance 契约分叉。
 - 提示词长度：视频不设字数上限（D14）。`prompt`/`prompt_zh` 原样写入 `TEXT` 列，不因长度隔离、不截断；原表 879 条英文超 2,000 字、翻译包 129 条中文超 2,000 字都正常导入。分类四类（已导入/已存在/待修复/已剔除）不含“提示词过长”。
 - 排序：外部热度存入 `source_heat`，排序沿用 20261019 的 `initial_feed_order` 规则；不写入本地点赞。
 

@@ -49,6 +49,7 @@ import {
   EditableReplyStyleOptionsConfigSchema,
   EditableImagePlazaTagConfigSchema,
   ImageTextModelConfigSchema,
+  normalizeVideoPlazaCatalogOptions,
   type InviteCenterConfig,
   type InviteRewardRulesConfig,
   type ImageTextModelConfig,
@@ -300,9 +301,10 @@ export function ConfigValueEditor(props: {
     const fallback = VideoPlazaModelCatalogSchema.parse(
       configMetadata.image_plaza_video_model_catalog.defaultValue
     );
+    const value = normalizeVideoPlazaCatalogOptions(parsed.success ? parsed.data : fallback);
     return (
       <VideoPlazaModelCatalogEditor
-        value={parsed.success ? parsed.data : fallback}
+        value={value}
         disabled={props.disabled}
         onChange={props.onChange}
       />

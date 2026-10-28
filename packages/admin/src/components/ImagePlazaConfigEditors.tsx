@@ -31,6 +31,10 @@ import {
   recalculateImagePlazaCatalog,
   type ImagePlazaPricingFactors,
 } from '../lib/imagePlazaPricing';
+import {
+  getDefaultVideoPlazaModelOptions,
+  normalizeVideoPlazaCatalogOptions,
+} from '../lib/configSchemas';
 
 const RATIOS: ImagePlazaAspectRatio[] = [
   '1:1',
@@ -338,13 +342,18 @@ export function VideoPlazaModelCatalogEditor(props: {
     models[index] = { ...models[index], ...patch };
     props.onChange({ ...props.value, models });
   };
+  const patchModelOptions = (index: number, patch: Partial<ProviderVideoPlazaModel>) => {
+    const models = structuredClone(props.value.models);
+    models[index] = { ...models[index], ...patch };
+    props.onChange(normalizeVideoPlazaCatalogOptions({ ...props.value, models }));
+  };
   return (
     <Space direction="vertical" size="middle" className="editor-stack">
       <Alert
         type="warning"
         showIcon
         message="占位价格禁止直接发布"
-        description="默认目录只用于提供六个目标模型的能力骨架；必须先根据 Venice /video/quote 核价并补全真实星尘价格。"
+        description="时长固定为 5/10 秒，画幅固定为 16:9、9:16、1:1，清晰度按各模型能力限制为 720P/1080P；发布前仍须根据 Venice /video/quote 核价并补全真实星尘价格。"
       />
       <div>
         <Typography.Text strong>默认模型</Typography.Text>
@@ -430,37 +439,43 @@ export function VideoPlazaModelCatalogEditor(props: {
             <Col xs={24} md={8}>
               <Typography.Text>时长（秒）</Typography.Text>
               <Select
-                mode="tags"
+                mode="multiple"
                 className="field-full"
                 value={model.durations.map(String)}
                 disabled={props.disabled}
-                onChange={(values) =>
-                  patchModel(index, {
-                    durations: values
-                      .map(Number)
-                      .filter((value) => Number.isInteger(value) && value > 0),
-                  })
-                }
+                options={(
+                  getDefaultVideoPlazaModelOptions(model.id)?.durations ?? model.durations
+                ).map((value) => ({
+                  value: String(value),
+                  label: `${value} 秒`,
+                }))}
+                onChange={(values) => patchModelOptions(index, { durations: values.map(Number) })}
               />
             </Col>
             <Col xs={24} md={8}>
               <Typography.Text>清晰度</Typography.Text>
               <Select
-                mode="tags"
+                mode="multiple"
                 className="field-full"
                 value={model.resolutions}
                 disabled={props.disabled}
-                onChange={(resolutions) => patchModel(index, { resolutions })}
+                options={(
+                  getDefaultVideoPlazaModelOptions(model.id)?.resolutions ?? model.resolutions
+                ).map((value) => ({ value, label: value.toUpperCase() }))}
+                onChange={(resolutions) => patchModelOptions(index, { resolutions })}
               />
             </Col>
             <Col xs={24} md={8}>
               <Typography.Text>画幅</Typography.Text>
               <Select
-                mode="tags"
+                mode="multiple"
                 className="field-full"
                 value={model.aspect_ratios}
                 disabled={props.disabled}
-                onChange={(aspect_ratios) => patchModel(index, { aspect_ratios })}
+                options={(
+                  getDefaultVideoPlazaModelOptions(model.id)?.aspect_ratios ?? model.aspect_ratios
+                ).map((value) => ({ value, label: value }))}
+                onChange={(aspect_ratios) => patchModelOptions(index, { aspect_ratios })}
               />
             </Col>
             <Col span={24}>

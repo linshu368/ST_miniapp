@@ -8,6 +8,7 @@ import {
   isTextManagedConfig,
   EditableImagePlazaTagConfigSchema,
   EditableModelCatalogSchema,
+  normalizeVideoPlazaCatalogOptions,
 } from './configSchemas';
 
 describe('editable image plaza tags', () => {
@@ -188,6 +189,18 @@ describe('video plaza managed catalog', () => {
     expect(managedConfigKeys).toContain(key);
     const catalog = configSchemas[key].parse(configMetadata[key].defaultValue);
     expect(catalog.models).toHaveLength(6);
+    const normalized = normalizeVideoPlazaCatalogOptions(catalog);
+    expect(normalized.models.every((model) => model.durations.join(',') === '5,10')).toBe(true);
+    expect(
+      normalized.models.every((model) => model.aspect_ratios.join(',') === '16:9,9:16,1:1')
+    ).toBe(true);
+    expect(
+      normalized.models.every((model) =>
+        model.resolutions.every((resolution) =>
+          ['720p', '1080p'].includes(resolution.toLowerCase())
+        )
+      )
+    ).toBe(true);
     const disabledDefault = structuredClone(catalog);
     disabledDefault.models.find(
       (model: { id: string }) => model.id === disabledDefault.default_model_id
@@ -198,6 +211,44 @@ describe('video plaza managed catalog', () => {
       Object.keys(missingPrice.models[0]!.price_matrix)[0]!
     ];
     expect(configSchemas[key].safeParse(missingPrice).success).toBe(false);
+  });
+
+  it('narrows a legacy provider superset and rebuilds its price matrix before saving', () => {
+    const key = 'image_plaza_video_model_catalog' as const;
+    const legacy = configSchemas[key].parse(configMetadata[key].defaultValue);
+    const model = legacy.models[0]!;
+    model.durations = [2, 5, 10];
+    model.resolutions = ['1080p', '2k'];
+    model.aspect_ratios = ['16:9', '9:16', '1:1', '4:3'];
+    model.default_duration = 2;
+    model.default_resolution = '2k';
+    model.default_aspect_ratio = '4:3';
+    model.price_matrix = Object.fromEntries(
+      model.durations.flatMap((duration: number) =>
+        model.resolutions.flatMap((resolution: string) =>
+          [false, true].map((audio) => [
+            `${duration}|${resolution}|${audio ? 1 : 0}`,
+            duration === 5 && resolution === '1080p' && audio ? 35 : 1,
+          ])
+        )
+      )
+    );
+
+    const parsed = configSchemas[key].parse(legacy);
+    expect(parsed.models[0]).toMatchObject({
+      durations: [5, 10],
+      resolutions: ['1080p'],
+      aspect_ratios: ['16:9', '9:16', '1:1'],
+      default_duration: 5,
+      default_resolution: '1080p',
+      default_aspect_ratio: '16:9',
+    });
+    expect(parsed.models[0]!.price_matrix).toEqual({
+      '5|1080p|0': 1,
+      '5|1080p|1': 35,
+      '10|1080p|0': 1,
+      '10|1080p|1': 1,
+    });
   });
 });
 

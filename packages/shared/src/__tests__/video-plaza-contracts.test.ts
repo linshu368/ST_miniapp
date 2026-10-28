@@ -6,8 +6,10 @@ import {
 } from '../api/image-plaza.js';
 import {
   ProviderVideoPlazaModelSchema,
+  selectSupportedVideoPlazaOptions,
   SubmitVideoPlazaAttemptRequestSchema,
   VideoPlazaModelCatalogSchema,
+  VideoPlazaModelSchema,
   VideoPlazaSnapshotSchema,
 } from '../api/video-plaza.js';
 
@@ -44,6 +46,30 @@ function videoModel(overrides: Record<string, unknown> = {}) {
 }
 
 describe('video plaza model catalog', () => {
+  it('intersects provider capabilities with the product duration, quality, and ratio options', () => {
+    const selected = selectSupportedVideoPlazaOptions(
+      VideoPlazaModelSchema.parse(
+        videoModel({
+          durations: [2, 5, 10, 15],
+          resolutions: ['480P', '768P', '1080P'],
+          aspect_ratios: ['adaptive', '16:9', '9:16', '1:1', '4:3'],
+          default_duration: 15,
+          default_resolution: '768P',
+          default_aspect_ratio: 'adaptive',
+        })
+      )
+    );
+
+    expect(selected).toEqual({
+      durations: [5, 10],
+      resolutions: ['1080P'],
+      aspect_ratios: ['16:9', '9:16', '1:1'],
+      default_duration: 5,
+      default_resolution: '1080P',
+      default_aspect_ratio: '16:9',
+    });
+  });
+
   it('accepts a complete provider mapping and exact price matrix', () => {
     const model = ProviderVideoPlazaModelSchema.parse(videoModel());
     expect(model.provider_ids.i2v).toBe('wan-3-0-pro-image-to-video');

@@ -2,6 +2,10 @@ import { z } from 'zod';
 
 export const VIDEO_PLAZA_MAX_FILE_BYTES = 200 * 1024 * 1024;
 
+export const VIDEO_PLAZA_SUPPORTED_DURATIONS = [5, 10] as const;
+export const VIDEO_PLAZA_SUPPORTED_RESOLUTIONS = ['720p', '1080p'] as const;
+export const VIDEO_PLAZA_SUPPORTED_ASPECT_RATIOS = ['16:9', '9:16', '1:1'] as const;
+
 export const VideoPlazaInputModeSchema = z.enum(['t2v', 'i2v', 'r2v']);
 export type VideoPlazaInputMode = z.infer<typeof VideoPlazaInputModeSchema>;
 
@@ -36,6 +40,51 @@ export const VideoPlazaModelSchema = z.object({
   image_constraints: VideoPlazaImageConstraintsSchema.default({}),
 });
 export type VideoPlazaModel = z.infer<typeof VideoPlazaModelSchema>;
+
+/**
+ * Product options are narrower than provider capabilities. Resolution matching is
+ * case-insensitive because Venice currently requires provider-specific casing
+ * (for example MiniMax uses 1080P while Wan and Seedance use 1080p).
+ */
+export function selectSupportedVideoPlazaOptions(model: VideoPlazaModel): {
+  durations: number[];
+  resolutions: string[];
+  aspect_ratios: string[];
+  default_duration: number;
+  default_resolution: string;
+  default_aspect_ratio: string;
+} | null {
+  const durations = VIDEO_PLAZA_SUPPORTED_DURATIONS.filter((value) =>
+    model.durations.includes(value)
+  );
+  const resolutions = VIDEO_PLAZA_SUPPORTED_RESOLUTIONS.flatMap((supported) => {
+    const providerValue = model.resolutions.find(
+      (value) => value.toLowerCase() === supported.toLowerCase()
+    );
+    return providerValue ? [providerValue] : [];
+  });
+  const aspect_ratios = VIDEO_PLAZA_SUPPORTED_ASPECT_RATIOS.filter((value) =>
+    model.aspect_ratios.includes(value)
+  );
+  if (!durations.length || !resolutions.length || !aspect_ratios.length) return null;
+
+  return {
+    durations,
+    resolutions,
+    aspect_ratios,
+    default_duration: durations.some((value) => value === model.default_duration)
+      ? model.default_duration
+      : durations[0]!,
+    default_resolution: resolutions.includes(model.default_resolution)
+      ? model.default_resolution
+      : resolutions[0]!,
+    default_aspect_ratio:
+      model.default_aspect_ratio &&
+      aspect_ratios.some((value) => value === model.default_aspect_ratio)
+        ? model.default_aspect_ratio
+        : aspect_ratios[0]!,
+  };
+}
 
 const ProviderVideoPlazaModelBaseSchema = VideoPlazaModelSchema.extend({
   provider_ids: z.object({
