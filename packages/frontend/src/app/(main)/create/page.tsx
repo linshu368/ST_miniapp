@@ -33,6 +33,20 @@ import {
   saveImagePlazaReturn,
 } from '@/lib/image-plaza-return';
 
+type NavigatorWithConnection = Navigator & {
+  connection?: { saveData?: boolean; effectiveType?: string };
+};
+
+function canPrefetchWorkRoute(): boolean {
+  if (document.visibilityState !== 'visible' || navigator.onLine === false) return false;
+  const connection = (navigator as NavigatorWithConnection).connection;
+  return (
+    connection?.saveData !== true &&
+    connection?.effectiveType !== 'slow-2g' &&
+    connection?.effectiveType !== '2g'
+  );
+}
+
 export default function CreatePage() {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -334,10 +348,12 @@ export default function CreatePage() {
                   <PlazaCard
                     key={work.id}
                     work={work}
-                    priority={columnIndex + rowIndex * 2 < 4}
+                    priority={columnIndex + rowIndex * 2 < 2}
                     useSamePending={pendingSourceWorkId === work.id}
                     interactionDisabled={createConversation.isPending}
-                    onPrefetch={() => router.prefetch(`/create/work/${work.id}`)}
+                    onPrefetch={() => {
+                      if (canPrefetchWorkRoute()) router.prefetch(`/create/work/${work.id}`);
+                    }}
                     onOpen={() => saveReturn(work.id)}
                     onUseSame={() => startStudio(work.id)}
                   />
@@ -408,6 +424,7 @@ function PlazaCard(props: {
       ) : null}
       <Link
         href={`/create/work/${props.work.id}`}
+        prefetch={false}
         aria-label={`查看作品：${props.work.title}`}
         onPointerEnter={props.onPrefetch}
         onFocus={props.onPrefetch}
@@ -426,7 +443,7 @@ function PlazaCard(props: {
             width={props.work.width}
             height={props.work.height}
             loading={props.priority ? 'eager' : 'lazy'}
-            fetchPriority={props.priority ? 'high' : 'auto'}
+            fetchPriority={props.priority ? 'high' : 'low'}
             decoding="async"
             onLoad={() => setImageLoaded(true)}
             className={`absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-[1.02] ${

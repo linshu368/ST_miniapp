@@ -28,8 +28,33 @@ export interface ImagePlazaRuntimeConfig {
   rebateRate: number;
 }
 
+const CONFIG_CACHE_TTL_MS = 5_000;
+let cachedConfig: { value: ImagePlazaRuntimeConfig; expiresAt: number } | null = null;
+let configInflight: Promise<ImagePlazaRuntimeConfig> | null = null;
+
 /** 广场配置任一关键字段损坏都停止新受理，避免用未知模型或价格继续产生费用。 */
 export async function getImagePlazaRuntimeConfig(): Promise<ImagePlazaRuntimeConfig> {
+  return loadImagePlazaRuntimeConfig();
+}
+
+/** Feed/display reads may briefly reuse config; quote and generation paths remain uncached. */
+export async function getImagePlazaFeedRuntimeConfig(): Promise<ImagePlazaRuntimeConfig> {
+  if (cachedConfig && cachedConfig.expiresAt > Date.now()) return cachedConfig.value;
+  if (configInflight) return configInflight;
+
+  const operation = loadImagePlazaRuntimeConfig();
+  configInflight = operation;
+  try {
+    const value = await operation;
+    cachedConfig = { value, expiresAt: Date.now() + CONFIG_CACHE_TTL_MS };
+    return value;
+  } finally {
+    // Failed reads are deliberately not cached, so the next request may recover immediately.
+    if (configInflight === operation) configInflight = null;
+  }
+}
+
+async function loadImagePlazaRuntimeConfig(): Promise<ImagePlazaRuntimeConfig> {
   const entries = await fetchRuntimeConfigEntries(CONFIG_KEYS);
   const enabled = entries.get('image_plaza_enabled')?.value === true;
   const tagsFeatureEnabled = entries.get('image_plaza_tags_feature_enabled')?.value !== false;
