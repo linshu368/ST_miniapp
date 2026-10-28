@@ -21,3 +21,4 @@
 {"file": "packages/backend/src/features/image-plaza/repository.ts", "reason": "现状 listSortedWorks/hydrateWorks/720 缩略图，列表 DTO 与 poster 签名扩展点"}
 {"file": ".trellis/tasks/archive/2026-10/10-20-image-plaza-seed-production/design.md", "reason": "seed 导入流程与门禁先例"}
 {"file": ".trellis/tasks/10-16-creation-plaza-video-planning/research/tag-filter-groups-20261028.md", "reason": "Reviewed tag grouping and filtering design"}
+{"file": ".trellis/tasks/10-16-creation-plaza-video-planning/research/creation-studio-video-ux-gap-20261028.md", "reason": "创作页图片/视频切换、reference 保留、来源默认类型、视频操作与图片转视频的源码缺口和最小方案"}

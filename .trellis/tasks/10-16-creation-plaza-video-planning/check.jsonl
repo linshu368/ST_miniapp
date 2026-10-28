@@ -13,3 +13,4 @@
 {"file": ".trellis/tasks/10-16-creation-plaza-video-planning/design.md", "reason": "R8.A/B：§5.2 列表与 §5.3 创作性能设计核对"}
 {"file": ".trellis/spec/backend/app/testing-scripts-and-deployment.md", "reason": "Backend route and repository verification"}
 {"file": ".trellis/tasks/10-16-creation-plaza-video-planning/research/tag-filter-groups-20261028.md", "reason": "Acceptance and compatibility checklist"}
+{"file": ".trellis/tasks/10-16-creation-plaza-video-planning/research/creation-studio-video-ux-gap-20261028.md", "reason": "核对图片/视频入口、reference retained/active、artifact 幂等映射及四项视频结果操作的失败路径"}
