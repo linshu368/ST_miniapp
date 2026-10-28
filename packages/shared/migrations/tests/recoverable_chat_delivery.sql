@@ -187,3 +187,152 @@ DO $$ DECLARE report jsonb; BEGIN
  PERFORM vip_t4_test.assert((report->>'missing_client_reports')::int=1 AND (report->>'page_left_requests')::int=2 AND (report->>'backgrounded_requests')::int=1,'v4 lost coverage exclusions');
  PERFORM vip_t4_test.assert(NOT has_function_privilege('grafana_cloud','experience.report_chat_first_token(uuid,uuid,jsonb)','EXECUTE') AND NOT has_function_privilege('authenticated','experience.begin_chat_generation_observation(uuid,jsonb)','EXECUTE'),'v4 broadened writer ACL');
 END $$;
+-- Race policy: two attempts remain diagnostics for one original charge/request.
+-- These helpers are local fixtures only; neither is installed in a deployed schema.
+CREATE FUNCTION recoverable_test.race_start(k uuid) RETURNS void LANGUAGE plpgsql AS $$
+DECLARE a experience.chat_generation_attempts%ROWTYPE;
+BEGIN
+ PERFORM recoverable_test.start_v4(k);
+ UPDATE experience.chat_generation_requests SET requested_model_id='race-fixture' WHERE chat_history_id=k;
+ PERFORM experience.prepare_chat_generation_fallback(k,gen_random_uuid(),4000);
+ FOR a IN SELECT * FROM experience.chat_generation_attempts WHERE chat_history_id=k LOOP
+  PERFORM experience.observe_chat_generation_attempt(k,jsonb_build_object('id',a.id,'role',a.role,
+   'provider',a.provider,'model',a.provider_model_id,'generation_id','race-'||a.id,
+   'dispatch_offset_ms',CASE WHEN a.role='primary' THEN 0 ELSE 4000 END,
+   'first_token_ms',CASE WHEN a.role='primary' THEN 5100 ELSE 3000 END,'end_reason','first_token_observed'));
+ END LOOP;
+END $$;
+CREATE FUNCTION recoverable_test.race_claim(k uuid, attempt_role text, hold_lock boolean DEFAULT false)
+RETURNS boolean LANGUAGE plpgsql AS $$ DECLARE a experience.chat_generation_attempts%ROWTYPE; BEGIN
+ SELECT * INTO STRICT a FROM experience.chat_generation_attempts WHERE chat_history_id=k AND role=attempt_role;
+ PERFORM experience.select_chat_generation_delivery(k,a.id,a.generation_id);
+ IF hold_lock THEN PERFORM pg_sleep(0.4); END IF;
+ RETURN true;
+EXCEPTION WHEN SQLSTATE 'PT409' THEN RETURN false;
+END $$;
+CREATE FUNCTION recoverable_test.race_finish(k uuid) RETURNS void LANGUAGE plpgsql AS $$
+DECLARE a experience.chat_generation_attempts%ROWTYPE; quote jsonb;
+BEGIN
+ SELECT winner.* INTO STRICT a FROM experience.chat_generation_requests r
+ JOIN experience.chat_generation_attempts winner ON winner.id=r.delivery_attempt_id WHERE r.chat_history_id=k;
+ SELECT llm_billing_snapshot INTO quote FROM experience.chat_history WHERE id=k;
+ PERFORM vip_t4_test.assert(quote->>'charge_id'=k::text AND (quote->>'payable_credits')::numeric=29
+   AND quote->>'provider_model_id'=a.provider_model_id,'winner changed the frozen original quote');
+ PERFORM vip_t4_test.assert((SELECT count(*)=1 FROM experience.openrouter_chat_history WHERE chat_history_id=k)
+   AND (SELECT llm_generation_id=a.generation_id FROM experience.openrouter_chat_history WHERE chat_history_id=k),
+   'loser entered billing metadata or winner identity changed');
+ PERFORM vip_t4_test.assert(NOT recoverable_test.race_claim(k,CASE WHEN a.role='primary' THEN 'fallback' ELSE 'primary' END),
+   'second attempt reclaimed chosen delivery');
+ PERFORM experience.record_chat_delivery_preview(k,0,7200,'delta','winning reply');
+ UPDATE experience.chat_history SET status='success',llm_finish_reason='stop',assistant_reply='winning reply' WHERE id=k;
+ PERFORM recoverable_test.report_v4(k,'observed',NULL,7200,false,7300);
+END $$;
+DO $$
+DECLARE k uuid:='00000000-0000-4000-8000-0000000002d1'; a experience.chat_generation_attempts%ROWTYPE;
+ payload jsonb; saved jsonb; before_tid text; bad jsonb;
+BEGIN
+ PERFORM recoverable_test.race_start(k);
+ PERFORM vip_t4_test.assert(recoverable_test.race_claim(k,'primary'),'primary could not win after fallback started');
+ PERFORM vip_t4_test.assert(recoverable_test.race_claim(k,'primary'),'winner replay not idempotent');
+ SELECT * INTO STRICT a FROM experience.chat_generation_attempts WHERE chat_history_id=k AND role='fallback';
+ payload:=jsonb_build_object('id',a.id,'role',a.role,'provider',a.provider,'model',a.provider_model_id);
+ BEGIN
+  UPDATE experience.chat_generation_attempts SET discarded_response=jsonb_build_object(
+   'reason',NULL,'content','','reasoning','','truncated',false) WHERE id=a.id;
+  RAISE EXCEPTION 'JSON null bypassed loser snapshot CHECK';
+ EXCEPTION WHEN check_violation THEN NULL; END;
+ FOREACH bad IN ARRAY ARRAY['null'::jsonb,'[]','{}','{"reason":null,"content":"","reasoning":"","truncated":false}',
+   '{"reason":"race_lost","content":1,"reasoning":"","truncated":false}',
+   '{"reason":"race_lost","content":"","reasoning":"","truncated":"false"}'] LOOP
+  BEGIN
+   PERFORM experience.observe_chat_generation_attempt(k,payload||jsonb_build_object('discarded_response',bad));
+   RAISE EXCEPTION 'Malformed loser snapshot accepted';
+  EXCEPTION WHEN invalid_parameter_value THEN NULL; END;
+ END LOOP;
+ PERFORM experience.observe_chat_generation_attempt(k,payload||jsonb_build_object('discarded_response',jsonb_build_object(
+   'reason','race_lost','content',repeat('界',2200),'reasoning','public reasoning','truncated',false,'private_provider_object','must disappear')));
+ SELECT discarded_response,ctid::text INTO saved,before_tid FROM experience.chat_generation_attempts WHERE id=a.id;
+ PERFORM vip_t4_test.assert(length(saved->>'content')=2048 AND saved->>'reasoning'='public reasoning'
+   AND (saved->>'truncated')::boolean AND NOT saved ? 'private_provider_object','diagnostic allowlist/truncation failed');
+ PERFORM experience.observe_chat_generation_attempt(k,payload||jsonb_build_object('discarded_response',jsonb_build_object(
+   'reason','race_lost','content','replacement','reasoning',repeat('x',9000),'truncated',true)));
+ PERFORM vip_t4_test.assert((SELECT discarded_response=saved AND ctid::text=before_tid AND end_reason='cancelled'
+   FROM experience.chat_generation_attempts WHERE id=a.id),'replayed loser snapshot overwrote data or performed UPDATE');
+ PERFORM recoverable_test.race_finish(k);
+ PERFORM visible_billing_test.charge(k); PERFORM visible_billing_test.charge(k);
+ PERFORM vip_t4_test.assert((SELECT count(*)=1 AND sum(abs(amount))=30 FROM billing.wallet_ledger WHERE debit_key=k::text),
+   'primary after fallback charged more than once');
+ PERFORM vip_t4_test.assert((SELECT assistant_reply='winning reply' FROM experience.chat_history WHERE id=k),'loser diagnostic leaked into user reply');
+ -- A second fixture is claimed concurrently from independent psql connections.
+ PERFORM recoverable_test.race_start('00000000-0000-4000-8000-0000000002d2');
+END $$;
+-- Fallback intent/diagnostic writes can arrive after primary delivery has already
+-- completed. Storage latency must not force delivery to wait or lose its audit.
+DO $$
+DECLARE k uuid:='00000000-0000-4000-8000-0000000002d3'; p uuid; f uuid:=gen_random_uuid();
+ model_name text; winner_before uuid; tid_before text; before_quote jsonb; bad_time numeric;
+BEGIN
+ PERFORM recoverable_test.start_v4(k);
+ UPDATE experience.chat_generation_requests SET requested_model_id='race-late-fixture' WHERE chat_history_id=k;
+ SELECT id INTO p FROM experience.chat_generation_attempts WHERE chat_history_id=k AND role='primary';
+ PERFORM experience.select_chat_generation_delivery(k,p,'late-intent-primary');
+ PERFORM experience.record_chat_delivery_preview(k,0,5000,'delta','selected primary');
+ UPDATE experience.chat_history SET status='success',llm_finish_reason='stop',assistant_reply='selected primary' WHERE id=k;
+ PERFORM recoverable_test.report_v4(k,'observed',NULL,5000,false,5100);
+ PERFORM visible_billing_test.charge(k);
+ SELECT llm_billing_snapshot INTO before_quote FROM experience.chat_history WHERE id=k;
+ SELECT delivery_attempt_id INTO winner_before FROM experience.chat_generation_requests WHERE chat_history_id=k;
+ FOREACH bad_time IN ARRAY ARRAY[NULL::numeric,-1::numeric,10000::numeric,11000::numeric,'NaN'::numeric] LOOP
+  BEGIN
+   PERFORM experience.prepare_chat_generation_fallback(k,f,bad_time);
+   RAISE EXCEPTION 'Fallback intent accepted invalid trigger time';
+  EXCEPTION WHEN invalid_parameter_value THEN NULL; END;
+ END LOOP;
+ PERFORM experience.prepare_chat_generation_fallback(k,f,4000);
+ SELECT provider_model_id,ctid::text INTO model_name,tid_before FROM experience.chat_generation_attempts WHERE id=f;
+ PERFORM experience.prepare_chat_generation_fallback(k,f,4000);
+ PERFORM vip_t4_test.assert((SELECT ctid::text=tid_before FROM experience.chat_generation_attempts WHERE id=f),
+   'same fallback identity replay performed UPDATE');
+ BEGIN
+  PERFORM experience.prepare_chat_generation_fallback(k,gen_random_uuid(),4000);
+  RAISE EXCEPTION 'A second fallback identity was accepted';
+ EXCEPTION WHEN SQLSTATE 'PT409' THEN NULL; END;
+ PERFORM experience.observe_chat_generation_attempt(k,jsonb_build_object('id',f,'role','fallback','provider','openrouter',
+  'model',model_name,'generation_id','late-loser','end_reason','cancelled','discarded_response',jsonb_build_object(
+   'reason','race_lost','content','already received fragment','reasoning','','truncated',false)));
+ PERFORM vip_t4_test.assert((SELECT delivery_attempt_id=winner_before FROM experience.chat_generation_requests WHERE chat_history_id=k)
+  AND (SELECT status='success' AND assistant_reply='selected primary' AND llm_billing_snapshot=before_quote FROM experience.chat_history WHERE id=k),
+  'late fallback intent changed delivery or business outcome');
+ PERFORM vip_t4_test.assert((SELECT provider_model_id=(SELECT fallback_model_id FROM experience.chat_generation_requests WHERE chat_history_id=k)
+  AND discarded_response->>'content'='already received fragment' FROM experience.chat_generation_attempts WHERE id=f),
+  'late loser lost frozen route or diagnostic');
+ PERFORM visible_billing_test.charge(k);
+ PERFORM vip_t4_test.assert((SELECT count(*)=1 FROM billing.wallet_ledger WHERE debit_key=k::text),'late loser caused another charge');
+
+ k:='00000000-0000-4000-8000-0000000002d4'; f:=gen_random_uuid();
+ PERFORM recoverable_test.start_v4(k);
+ UPDATE experience.chat_generation_requests SET requested_model_id='race-cutoff-fixture',first_token_timeout=true,
+  server_timeout_stage='global' WHERE chat_history_id=k;
+ UPDATE experience.chat_history SET status='stream_interrupted',llm_finish_reason='timeout' WHERE id=k;
+ PERFORM experience.prepare_chat_generation_fallback(k,f,4000);
+ PERFORM vip_t4_test.assert((SELECT delivery_attempt_id IS NULL AND first_token_timeout FROM experience.chat_generation_requests WHERE chat_history_id=k),
+  'late intent reopened a timed-out request');
+ PERFORM vip_t4_test.assert(billing.chat_delivery_billing_gate(k)='waived','late intent charged a system timeout');
+END $$;
+SET ROLE grafana_cloud;
+SELECT count(*) FROM miniapp_analytics.chat_first_token_facts;
+DO $$ BEGIN
+ BEGIN
+  PERFORM discarded_response FROM experience.chat_generation_attempts LIMIT 1;
+  RAISE EXCEPTION 'Grafana read discarded reply content';
+ EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+END $$;
+RESET ROLE;
+DO $$ DECLARE reader text; BEGIN
+ FOREACH reader IN ARRAY ARRAY['first_token_metrics_reader','grafana_cloud','anon','authenticated'] LOOP
+  PERFORM vip_t4_test.assert(NOT has_column_privilege(reader,'experience.chat_generation_attempts','discarded_response','SELECT'),
+   'non-service role can read loser content: '||reader);
+ END LOOP;
+ PERFORM vip_t4_test.assert(has_column_privilege('service_role','experience.chat_generation_attempts','discarded_response','SELECT'),
+   'server cannot read its diagnostic snapshot');
+END $$;

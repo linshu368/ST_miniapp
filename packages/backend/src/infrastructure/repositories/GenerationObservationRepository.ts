@@ -29,6 +29,13 @@ export interface AttemptObservation {
   provider_name?: string;
   provider_reported_model?: string;
   finish_reason?: string;
+  /** Only already-received loser fragments; never user delivery or billing metadata. */
+  discarded_response?: {
+    reason: 'race_lost';
+    content: string;
+    reasoning: string;
+    truncated: boolean;
+  };
 }
 
 /** Raw generation facts live beside their revision; analytics never owns runtime state. */

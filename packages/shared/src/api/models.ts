@@ -9,8 +9,10 @@ import {
   type WalletContractResult,
 } from './wallet.js';
 
+/** Delay after primary dispatch before starting the fallback; primary remains eligible. */
 export const DEFAULT_FIRST_TOKEN_TIMEOUT_MS = 4_000;
 export const DEFAULT_FIRST_TOKEN_DEADLINE_MS = 10_000;
+/** Legacy name: reserve before the shared deadline for launching fallback, not its lifetime. */
 export const DEFAULT_FALLBACK_TOKEN_TIMEOUT_MS = 2_000;
 export const DEFAULT_FIRST_TOKEN_TIMEOUT_RATE_TARGET = 0.01;
 export const FIRST_TOKEN_FALLBACK_MODEL_ID = 'deepseek/deepseek-v4.1-flash-1017';
@@ -81,6 +83,7 @@ export const ModelCatalogModelSchema = z.object({
   tagline: z.string().trim().min(1).max(40),
   /** Whether this model receives the per-character free chat quota. */
   is_free: z.boolean(),
+  /** Starts fallback after this primary dispatch delay; does not cancel the primary attempt. */
   first_token_timeout_ms: FirstTokenDurationSchema.default(DEFAULT_FIRST_TOKEN_TIMEOUT_MS),
   enabled: z.boolean(),
   sort_order: z.number().int().nonnegative(),
@@ -108,6 +111,7 @@ export const ModelCatalogSchema = z
         '请输入有效的 OpenRouter 模型 ID'
       )
       .default(FIRST_TOKEN_FALLBACK_MODEL_ID),
+    /** Launch reserve when preparation consumes the total budget; both attempts share the deadline. */
     fallback_timeout_ms: FirstTokenDurationSchema.default(DEFAULT_FALLBACK_TOKEN_TIMEOUT_MS),
     first_token_deadline_ms: FirstTokenDurationSchema.default(DEFAULT_FIRST_TOKEN_DEADLINE_MS),
     first_token_timeout_rate_target: z
@@ -131,7 +135,7 @@ export const ModelCatalogSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['fallback_timeout_ms'],
-        message: '兜底等待必须短于总等待上限',
+        message: '兜底预留时间必须短于总等待上限',
       });
     const models = catalog.tiers.flatMap((tier) => tier.models);
     for (const [tierIndex, tier] of catalog.tiers.entries()) {
@@ -140,7 +144,7 @@ export const ModelCatalogSchema = z
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
             path: ['tiers', tierIndex, 'models', modelIndex, 'first_token_timeout_ms'],
-            message: '首发等待必须短于全局首 token 上限',
+            message: '启动兜底阈值必须短于总等待上限',
           });
       }
     }
