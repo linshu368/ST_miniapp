@@ -109,8 +109,8 @@ export interface LlmChargeResult {
   billingChatStatus: string;
   /** RPC 实际扣减额 */
   chargedAmount: number;
-  /** RPC 记录的应扣额 */
-  calculatedAmount: number;
+  /** Archived dedup has no quoted price; leave the existing history amount intact. */
+  calculatedAmount?: number;
 }
 
 /**
@@ -161,6 +161,25 @@ export async function applyLlmCharge(command: LlmChargeCommand): Promise<LlmChar
       }),
     },
   });
+
+  if (result.kind === 'archived') {
+    // A permanent terminal result is authoritative after detail retention. Recover
+    // a missing quota finalization without inventing a charge or repricing history.
+    if (command.finishReason !== null) {
+      await freeQuotas().finalizePending(
+        command.chargeId,
+        result.archivedCharge.status !== 'failed' &&
+          (command.finishReason === 'user_cancelled' ||
+            (replyOutcome === 'complete' && command.finishReason === 'stop'))
+      );
+    }
+    return {
+      pending: false,
+      replyOutcome,
+      billingChatStatus,
+      chargedAmount: Number(result.archivedCharge.charged_amount),
+    };
+  }
 
   // 免费额度两阶段收口：只有自然收尾的完整回复才消费预留，其余释放。
   // finish_reason 未到时保持预留，等回捞拿到终态后再走到这里。

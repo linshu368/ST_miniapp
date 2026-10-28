@@ -144,7 +144,10 @@ describe('streamConversationTurn — 正常流', () => {
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toContain('/api/v1/conversations/s1/regenerate');
-    expect(JSON.parse(init.body as string)).toEqual({ thinking_enabled: true });
+    expect(JSON.parse(init.body as string)).toEqual({
+      thinking_enabled: true,
+      first_token_measurement: 'client_committed_v4',
+    });
   });
 
   it('发消息打到 messages 路由并带上 initData', async () => {
@@ -155,7 +158,11 @@ describe('streamConversationTurn — 正常流', () => {
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toContain('/api/v1/conversations/s1/messages');
-    expect(JSON.parse(init.body as string)).toEqual({ content: '你好', thinking_enabled: true });
+    expect(JSON.parse(init.body as string)).toEqual({
+      content: '你好',
+      thinking_enabled: true,
+      first_token_measurement: 'client_committed_v4',
+    });
     expect(new Headers(init.headers).get('X-Init-Data')).toBe('stub-init-data');
   });
 });
@@ -392,6 +399,7 @@ it('调用方提供的请求 UUID 同时发送到消息/重生成 body 与跟踪
       ...(content ? { content } : {}),
       request_id: requestId,
       thinking_enabled: true,
+      first_token_measurement: 'client_committed_v4',
     });
     expect(new Headers(init.headers).get('X-Request-Id')).toBe(requestId);
   }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  ReportFirstTokenRequestSchema,
   GetReplayContextDataSchema,
   GetReplayContextQuerySchema,
   PaymentSettlementSourceSchema,
@@ -487,6 +488,54 @@ describe('replay telemetry events', () => {
       ReplayTelemetryEventSchema.safeParse({
         ...base,
         pay_url: 'https://pay.example/checkout',
+      }).success
+    ).toBe(false);
+  });
+});
+
+describe('first-token delivery contract versions', () => {
+  const delivery = {
+    request_id: replayContextId,
+    assistant_message_id: characterId,
+    revision: 0,
+    outcome: 'observed',
+    first_token_visible_ms: 1250,
+    wait_finished_ms: 1250,
+    request_dispatched_ms: 20,
+    first_token_received_ms: 1200,
+    backgrounded: false,
+    reason: null,
+  };
+  it.each([
+    'visible_dom_after_frame_v1',
+    'visible_dom_after_frame_v2',
+    'visible_dom_after_frame_v3',
+    'client_committed_v4',
+  ])('accepts %s without conflating historical measurement versions', (measurement_method) => {
+    expect(ReportFirstTokenRequestSchema.parse({ ...delivery, measurement_method })).toMatchObject({
+      measurement_method,
+      first_token_visible_ms: 1250,
+    });
+  });
+  it('keeps unavailable durations null and rejects an invented successful timeout', () => {
+    const timedOut = {
+      ...delivery,
+      measurement_method: 'client_committed_v4',
+      outcome: 'timed_out',
+      wait_finished_ms: 10000,
+      first_token_visible_ms: null,
+      reason: 'not_visible',
+    };
+    expect(ReportFirstTokenRequestSchema.safeParse(timedOut).success).toBe(true);
+    expect(
+      ReportFirstTokenRequestSchema.safeParse({ ...timedOut, first_token_visible_ms: 10000 })
+        .success
+    ).toBe(false);
+    expect(
+      ReportFirstTokenRequestSchema.safeParse({
+        ...delivery,
+        measurement_method: 'client_committed_v4',
+        first_token_received_ms: 1251,
       }).success
     ).toBe(false);
   });

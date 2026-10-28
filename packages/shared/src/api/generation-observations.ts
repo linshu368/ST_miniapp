@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 const DurationMs = z.number().finite().nonnegative().max(86_400_000);
 
-/** Client display receipts gate new-turn billing; prices and completion remain server-owned. */
+/** Versioned client-delivery outcomes; prices and generation completion remain server-owned. */
 export const ReportFirstTokenRequestSchema = z
   .object({
     request_id: z.string().uuid(),
@@ -12,8 +12,10 @@ export const ReportFirstTokenRequestSchema = z
       'visible_dom_after_frame_v1',
       'visible_dom_after_frame_v2',
       'visible_dom_after_frame_v3',
+      'client_committed_v4',
     ]),
     outcome: z.enum(['observed', 'timed_out', 'not_observed']),
+    /** v1–v3: DOM visibility. v4: React message commit. Compare only within the same version. */
     first_token_visible_ms: DurationMs.nullable(),
     wait_finished_ms: DurationMs.nullable().optional(),
     request_dispatched_ms: DurationMs.nullable(),
@@ -38,7 +40,7 @@ export const ReportFirstTokenRequestSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['first_token_visible_ms'],
-        message: 'Only an observed display has a visible-token duration',
+        message: 'Only an observed token has a delivery duration',
       });
     }
     if (
@@ -49,7 +51,7 @@ export const ReportFirstTokenRequestSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['first_token_received_ms'],
-        message: 'Reception cannot follow display',
+        message: 'Reception cannot follow client delivery',
       });
     }
   });

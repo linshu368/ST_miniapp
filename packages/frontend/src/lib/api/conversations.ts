@@ -97,7 +97,7 @@ export async function reportConversationFirstToken(
       );
       if (result.recorded) return;
     } catch {
-      /* Missing display receipts fail closed for billing and must not interrupt the conversation. */
+      /* A missing client-delivery report must not interrupt the conversation. */
     }
   }
 }
