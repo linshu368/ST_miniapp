@@ -221,6 +221,43 @@ ready       --> 异步调用 /video/complete（失败最多重试 3 次，只记
   - submitting 状态、没有 queue_id 且租约已过期的任务，视为“请求可能已发出”，标记为 failed_unknown。这与图片的 `markStaleDispatchedUnknown` 处理一致。
 - **对账脚本** `scripts/reconcile-video-plaza.ts`（运维用）：对 failed_unknown 任务调用 retrieve 核实结果，然后发布或退款。默认 dry-run。
 
+### 3.3.1 FFmpeg 与文件处理方案（D17，执行前待用户确认）
+
+本节是完整视频下载、FFmpeg 处理和 Supabase 写入的前置门禁。方案获用户明确确认前，只允许 HEAD、xlsx 解析和本地 dry-run；不得下载视频正文、启动 FFmpeg 或写远程环境。
+
+**处理决策矩阵**
+
+1. 下载先流式写入独立临时目录的 `input.mp4.part`，边写边累计字节与 SHA-256；同时用响应头和实际计数双重执行 200MiB 上限。完成后原子改名为 `input.mp4`，全流程不把完整输入/输出同时保留为 Node `Buffer`。
+2. `ffprobe` 先读取容器、视频/音频 codec、profile、pixel format、宽高、帧率、时长、码率和起始时间；另用 MP4 顶层 atom 扫描确认 `moov` 是否位于 `mdat` 前，并读取关键帧时间/字节位置，计算首关键帧位置与最大 GOP 间隔。
+3. 分三路处理：
+   - 已是 MP4、H.264、`yuv420p`，音频为空或 AAC，`moov < mdat`，首关键帧接近 0、最大关键帧间隔 ≤2 秒、帧率 ≤30fps，且任一 GOP 的字节跨度不超过约 1.5MiB：原文件直通，不重新编码；
+   - codec、GOP 与码率可兼容，但 `moov` 在尾部或时间戳需整理：只做 `-map 0:v:0 -map 0:a:0? -sn -dn -c copy -movflags +faststart` remux；remux 不能改变关键帧间隔，GOP 不合格不能走此分支。只清理明确不需要的 global tag，不能误删 rotation/display matrix 与色彩信息；
+   - HEVC/AV1/VP9、10-bit/非 `yuv420p`、非 AAC 音频、超过 30fps、关键帧/码率预算不合格或 probe/解码抽检失败：转为 H.264/AAC。建议参数为 `libx264 -preset fast -crf 23 -maxrate 6M -bufsize 12M -pix_fmt yuv420p -profile:v high -level 4.1`，最长边限制 1920 且不放大、帧率上限 30fps，AAC 128k/48kHz/双声道，首帧为 IDR 并约每 2 秒强制关键帧，输出仍加 `+faststart`。6Mbps 上限使 2 秒 GOP 的媒体负载约受控在 1.5MiB，给 10Mbps 参考网络留出 RTT/签名/解码时间。旋转/display matrix 与色彩信息必须保留；HDR/HLG/PQ 输入先停止并抽样评审 tone-map，不能直接压成 SDR。不采用 fMP4/MSE/HLS，避免为当前短视频 progressive playback 引入额外清单、切片和播放器状态。
+4. 输出后再次 `ffprobe`，并断言：恰好一个可播放视频流、可选一个音频流、时长/宽高为正、文件 ≤200MiB、`ftyp` 合法、`moov < mdat`、首关键帧接近 0、最大关键帧间隔 ≤2 秒、前几秒可解码。任何断言失败都不上传。
+5. 封面从首个有效画面生成 JPEG；长边限制 960、不放大、质量约 85，并记录实际封面宽高。0 秒黑帧时允许在 0.1 秒重试一次；封面失败使用已有占位图，但视频本身未通过 faststart/解码校验时禁止发布。
+
+**资源与并发**
+
+- 用户要求的总并发为 4 条端到端 lane；禁止再并行启动多个导入进程绕过上限。每条 lane 为“下载 → probe → 处理 → 校验 → 上传 → RPC”。
+- 下载/remux 最多 4 路；真正 H.264 转码另设 CPU semaphore，当前 16 逻辑核机器先限制 2 路、每路 `-threads 4`，其余 lane 等待，防止 4 个编码器抢满 CPU 反而降低吞吐。
+- 临时盘按最坏输入+输出 `4 × (200MiB + 200MiB)` 计算，并要求至少 4GiB 空闲后才启动；当前临时盘只读检查约有 31.8GiB 可用。任务结束或失败都在 `finally` 清理独立目录。
+- 下载采用连接/响应头超时与 30 秒 idle timeout，整体上限建议 10 分钟；只对 GET、HEAD、TUS chunk 这类幂等操作做有限指数退避。FFmpeg remux 120 秒，转码按时长动态预算并设置绝对上限，超时终止子进程组。
+
+**上传、缓存与播放**
+
+- MP4 大多超过 6MiB，使用 Supabase TUS resumable upload 的直连 Storage hostname、固定 6MiB chunk、`upsert=false`；poster 使用标准上传。对象路径保持不可变，manifest 记录源/输出 SHA-256、字节数和处理分支，崩溃后只能在校验一致时续传/复用。
+- 私有桶保持 `video/mp4` 与 poster MIME 白名单；在 DB RPC 前验证对象大小与 metadata，RPC 失败清理本次新建对象。数据库仍以 `(origin, source_video_id)` 唯一约束兜底。
+- `<video src>` 直接使用可播放 URL，依赖 `Range`/`206`、`faststart` 与 ≤2 秒 GOP，禁止 `fetch → blob`。列表仍为零 MP4；单视频详情/ready 卡在可见后允许对唯一活动视频使用 `preload="auto"` 争取 2 秒快开，离页/隐藏时移除 `src`，开启省流量时降为 `metadata`。
+- Supabase 对每个 signed token 使用独立 CDN cache key，因此签名缓存必须复用**同一个 URL**：公开作品 24h、私有作品 15min，LRU 最大 2,000，并对同 key 加 single-flight 防止并发签名风暴。多实例部署前再评估共享缓存，不预建 Redis。
+- 现有上传的 `cacheControl=31536000` 不能直接沿用到未公开视频：signed token 过期与 CDN 响应缓存 TTL 相互独立。私有资源先使用不超过 15 分钟的对象缓存策略；公开作品的长缓存只有在确认撤回/删除语义后才能放宽。紧急撤权依靠删除对象，而不是只等待签名过期。
+
+**确认后的 canary 与停止条件**
+
+- 先按 6 个模型各取可用样本，覆盖直通、remux、转码三类；生成 codec/处理分支/输入输出字节/耗时清单，经人工复核后才允许 4 路批量处理。
+- TEST 私有桶逐项验证未签名访问拒绝、签名 URL `Range: bytes=0-1` 返回 `206`/正确 `Content-Range`、拖动可恢复、同对象重复请求复用同一签名 URL。
+- 网络节流验收：参考网络固定为下行 ≥10Mbps、RTT ≤100ms、无丢包；冷缓存点击到首个解码帧 p95 ≤2s，跳转未缓存位置到新画面 p95 ≤2s，列表页 MP4 请求数仍为 0。另做约 1.6Mbps/150ms RTT 观测但不承诺单码率 MP4 绝对 2 秒；若弱网也必须达标，则提前接入 ABR 点播而不是继续压低单文件画质。
+- 任一出现输出不可解码、`moov` 未前置、URL 越权、内存随文件大小线性堆积、HDR 未覆盖，或转码/上传失败率 >2%，立即停止批量处理并保留 manifest 供恢复。若 canary 中需要完整转码的比例 >10%，先重新估算总耗时与转码后容量并再次请用户确认，不直接跑 4,000 条。
+
 ### 3.4 提示词自动优化：视频关闭（D9）
 
 Venice 的视频接口没有优化字段（DOC），用户决定视频不提供此功能：
@@ -316,6 +353,16 @@ Venice 的视频接口没有优化字段（DOC），用户决定视频不提供�
 | MediaSource + `SourceBuffer.appendBuffer` 边收边 append                               | 理论上能，但要 fMP4/分片，普通 progressive mp4 不兼容 | **本任务不做**               |
 
 要点：**不存在「把 `fetch()` 的 ReadableStream 传入 `<video>`」这条 API。** 边下边播靠的是「给一个支持 Range 的 URL，让浏览器自己拉」，而不是前端先 `fetch` 再手工喂字节。
+
+#### 播放源抽象与 CDN 点播演进（D18）
+
+- route 不直接拼 Storage URL，只调用单一 `VideoDeliveryProvider.getPlaybackSource(artifact, viewer)`。当前实现为 `supabase_progressive`，内部签私有桶 URL；页面永远不接触 `storage_path`。
+- shared playback DTO 以可加字段的描述对象表达：`provider`、`format: progressive_mp4`、`url`、`mime_type`、`expires_at`。当前保留已有 `video_url` 兼容字段；未来增加 `hls`/`dash` source 时为加法演进，不改变作品/attempt ID。
+- 前端收口到一个 VideoPlayer adapter：当前把 progressive URL 直接交给原生 `<video>`；未来 iOS/WebKit 可直接接 HLS，其他端按真实需要再引入 hls.js。当前不提前引入 HLS 依赖或 MSE 状态机。
+- `media_plaza.video_artifacts` 与私有桶对象继续是 canonical source。未来 CDN ingestion、转码状态、外部 asset/playback ID 用 `media_plaza` 域内的新映射表和单独 migration 承载，不把供应商字段塞进现有 snapshot，也不在本次提前创建空表。
+- CDN adapter 需支持异步 ingest、幂等 webhook、状态轮询、删除/撤权和 origin 回退；发布时优先 CDN source，CDN 未 ready 或故障时仅在符合 2 秒 SLO 的情况下回退 Supabase progressive。
+- CDN ABR 推荐 2 秒 CMAF segment/GOP 对齐，至少准备低码率启动档与 720p/1080p 档；这样弱网可先起低清晰度再自适应，而不是要求单码率 MP4 在任意带宽下绝对 2 秒。
+- D19 明确本次不在 Supabase 私有桶自建 HLS/DASH 或多份 MP4 梯度：避免 4,000 条产生 2–3 倍存储、海量小对象和逐 segment 鉴权复杂度。当前只交付标准 progressive MP4；弱网 ABR 由后续点播平台负责。
 
 #### 推荐接法 A：签名 URL（默认）
 
@@ -568,6 +615,9 @@ worker：3s tick / claim≤2 / Venice≤180s / settle RPC → ready
   - 写入方式：`snapshot.prompt_zh = prompt_zh`，`snapshot.prompt_zh_source = 'translation_pack'`。标签匹配和搜索沿用现有 `prompt_zh ILIKE` 规则，不再调用翻译脚本。
   - manifest 记录两份 xlsx 的 SHA-256；导入时如果 hash 与审核时不同，就拒绝执行。
 - 导入流程，在图片 seed 的做法前新增体积估算步骤（D13）：0. **体积估算（新增，必须人工确认后才能继续）**：对原表 5,097 条的 `Video URL` 逐一发 HEAD 请求（并发度限制，见下方可靠性设计），读取 `Content-Length` 求和；按 model 分组小计；输出 `video-seed-size-report.json`（含总字节数、按模型小计、HEAD 失败/无 Content-Length 的行数清单）。脚本在打印报告后退出，不进入第 1 步，除非带 `--confirm-size <报告文件的 SHA-256>` 参数——这样人工必须先看过报告内容再决定继续，而不是盲目加一个 `--yes` 跳过。
+  - 2026-10-27 首轮只读实测：5,097 条中 5,055 条一次成功；42 条重试后恢复 32 条，最终已知 5,087 条共 48.569 GiB，剩余 9 条 404、1 条连续网络失败。报告 SHA-256 与重试报告分别保留在工作目录外，不提交 Git。
+  - D16 之后容量门禁改为只统计最终入选的 4,000 条；原 5,097 条报告仅作为候选集证据，不能直接作为实际转存容量。
+  - 2026-10-27 D16 最终报告：5,082 个翻译命中候选中 5,073 个 URL 可访问，9 个连续三轮为 404；水位填充后选满 4,000 条，源文件总量 43,593,139,500 bytes（40.599 GiB），平均 10.39MiB。最终报告 SHA-256 为 `f4004258ecd11d91088a7dabc670420e5cb1c10d0fafde8f949fa7c12dd8b1c4`；该值只覆盖源文件 Content-Length，未包含转码大小变化和 poster，D17 canary 后仍需复核最终存储预算。
   1. 默认 dry-run，只输出计数和错误码；
   2. 审核 manifest，剔除涉及未成年和审核未通过的条目；
   3. 参数 `--target test|production --limit ≤500`；
@@ -575,6 +625,12 @@ worker：3s tick / claim≤2 / Venice≤180s / settle RPC → ready
   5. 用 ffprobe 取元数据，并截取首帧作为封面；
   6. 通过 RPC 写入；
   7. 支持断点续跑。
+- 4,000 条选样（D16）：
+  - 输入先经过翻译包一致性、重复 ID 和 URL 可访问性过滤，再参与配额计算；不可访问 URL 不占名额。
+  - 使用 max-min fair（水位填充）分配：先平均分给 6 个模型，某模型候选不足则全取，并把余量继续平均分给尚有候选的模型，直到总数为 4,000。
+  - 当前 5,082 条翻译命中基线在 URL 排除前的配额为：MiniMax H3 Max 711、MiniMax H3 Max R2V 952、Seedance 1.5 Pro 583、Seedance 2.0 R2V Enhanced 682、Wan 3.0 Pro 952、Wan 3.0 Reference 120。
+  - 每个模型内部按 `source_heat DESC, source_video_id ASC` 排序；第二排序键是确定性 tie-break，避免同热度数据在重跑时漂移。
+  - manifest 必须记录候选数、最终配额、cutoff heat、cutoff 同分数量、入选 ID 摘要和排除原因；若可访问候选不足 4,000 则停止，不自动降低目标。
 - 模型目录：推荐由运营在 Admin 中录入并确认价格，迁移不预置。
   - 默认模型 Wan 3.0 Pro，映射见 research。
   - Seedance 2.0 R2V 映射到 `seedance-2-0-reference-to-video-basic`（D8），只有 r2v，必须带图。种子里的模型标签 `Seedance 2.0 R2V Enhanced` 通过 `seed_aliases` 映射到这个 model id，使“用同款”可用。
@@ -605,6 +661,7 @@ worker：3s tick / claim≤2 / Venice≤180s / settle RPC → ready
 - `TrackedAction` 增加 `video_generate`：从点击到显示“排队中”，看门狗 2.5s（与 `image_generate` 同语义：受理反馈，非成片）。
 - 终态上报：`sendSentryLog('video.attempt.terminal', {status, model, duration_s, elapsed_ms})`。
 - 播放失败上报：`video.playback_error`，只带错误码，不带 URL。
+- 快开上报：`video.startup_ms` 从 `play()` 到首个解码帧（优先 `requestVideoFrameCallback`，降级 `playing`）；`video.seek_ms` 从 `seeking` 到目标位置首帧。只带 provider/format/cache_state 等低基数标签，不带 URL。
 - 列表/创作相关 `api.request.duration`、`page.ready.duration` 已由通用埋点覆盖；新增路由模板必须进入 `page-tracker` 的 `WATCHED_PAGES`（有测试强制一致）。
 
 ### 8.3 后端事件与指标
@@ -631,7 +688,7 @@ worker：3s tick / claim≤2 / Venice≤180s / settle RPC → ready
 | 超时 | quote 10s；queue 60s；retrieve 30s；下载 120s；ffmpeg/ffprobe/faststart remux 20s；签名沿用现有 5s；同域 stream 单次 Range 切片读取超时单独设限（建议 ≤30s），避免一次挂死整段播放 |
 | 重试 | 只对幂等操作重试：retrieve、下载、complete、签名。queue 永不自动重投                                                                                                               |
 | 幂等 | idempotency_key；reserve、refund、publish、share 各有唯一索引；seed 按 (origin, source) 唯一                                                                                       |
-| 并发 | 任务用租约 + SKIP LOCKED + lease_owner fencing；钱包行加锁；首次分享锁定同一行                                                                                                     |
+| 并发 | 任务用租约 + SKIP LOCKED + lease_owner fencing；钱包行加锁；首次分享锁定同一行；seed 端到端 worker 固定最多 4 路，批次最多 500，不能通过并行启动多个脚本绕过总并发上限             |
 | 补偿 | 失败、拒审、过期自动退款；状态为 failed_unknown 的走对账脚本                                                                                                                       |
 | 限流 | worker 每个 tick 有处理上限；对 429 退避；同一用户进行中的视频最多 2 个，超出返回 429；体积估算步骤的 HEAD 请求并发度限制为 10，避免打满出口带宽或触发源站限流                     |
 | 降级 | 抽帧失败时用占位封面；ffmpeg 二进制缺失时启动日志报 error，并且视频目录接口隐藏视频模型；complete 失败只记日志；目录未发布时隐藏入口                                               |

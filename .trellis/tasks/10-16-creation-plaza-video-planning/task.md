@@ -13,7 +13,7 @@
 | 2.6 Admin 模型 media_type                            | R2                                | §2.5、§6           | T6             |
 | 2.7 编辑/重生成/分享/下载                            | R2                                | §2.4、§5           | T5 T7          |
 | 2.8 参考图持久化 + 首帧封面                          | R2                                | §2.3、§3.3         | T4             |
-| 3 种子 + 6 个模型                                    | R3                                | §7、research       | T1 T8          |
+| 3 种子 + 6 个模型（均匀热度 Top 4,000）              | R3、D16                           | §7、research       | T1 T8          |
 | 4 原型仅作参考                                       | R4                                | §5（D7）           | T7             |
 | 5 计费                                               | R5                                | §2.4、§3.6         | T3 T4          |
 | 6 审核拒绝                                           | R6                                | §3.3、§3.7         | T4 T7          |
@@ -36,11 +36,18 @@
 | T5  | In Progress | feed 游标+media/tags、列表无 MP4、签名 LRU 扩视频桶、DTO 裁剪、tag-counts、详情、分享                                        | T3       | 本地实现和单测完成；待真实 Range/签名资源人工验证    |
 | T6  | In Progress | Admin 视频目录、标签 media_types、参考价代理                                                                                 | T2 T3    | 目录和标签编辑器完成；待真实参考价接线               |
 | T7  | In Progress | 前端广场/详情/工作室 + 4 组件；接线 feed 预取；创作预取/报价复用/轮询退避；埋点                                              | T4 T5 T6 | 实现、测试和构建完成；待 Telegram 双端及 R8 预算验证 |
-| T8  | Blocked     | 体积估算+人工确认（D13）→ 视频 seed 导入（原表 + 翻译包 prompt_zh 对照，提示词不设上限 D14）与对账，先在 test 执行           | T3 T4    | 脚本完成；等待 B-SEED-1 后才能估算确认和导入         |
+| T8  | In Progress | 体积估算+人工确认（D13）→ 均匀热度 Top 4,000（D16）→ FFmpeg 方案人工确认（D17）→ seed 导入与对账；当前只读/本地规划          | T3 T4    | 容量、manifest、媒体方案三项确认后再申请 TEST apply  |
 | T9  | In Progress | 全量验证、canary；列表/创作 Sentry p95 门禁；图片回归 ≤10%；看板分图                                                         | T7 T8    | 本地检查通过；外部 canary、Sentry 与人工验证未完成   |
 | T10 | In Progress | 文档同步与 production 灰度                                                                                                   | T9       | 本地文档已同步；production 仍需单独审批              |
 
 ## 记录
+
+- 2026-10-27 用户确认 D16：总量只保留 4,000 条，模型间尽量均匀，模型内按热度取舍。翻译命中 5,082 条的 URL 排除前水位填充配额为 711 / 952 / 583 / 682 / 952 / 120；同热度用 source_video_id 稳定排序。
+- 2026-10-27 用户新增 D17：Supabase 上传前必须先规划 FFmpeg 编码与文件处理以支持快速打开，并由用户确认后再执行。门禁前不得完整下载、运行 FFmpeg 或写远程环境。
+- 2026-10-27 用户新增 D18：参考网络下播放快开与未缓存 seek 的 p95 均 ≤2 秒；处理门禁增加 GOP/关键帧检查。播放层预留 provider/format adapter，后续 CDN 点播以加法方式接入，当前不提前引入 HLS/MSE 实现。
+- 2026-10-27 用户确认 D19：本次不做 ABR/HLS/DASH，只优化 Supabase 私有桶中的 progressive MP4；后续通过 CDN 点播平台接入 ABR。
+- 2026-10-27 D16 最终只读容量报告：5,082 个候选中 5,073 个 URL 可访问，9 个连续三轮为 404；均匀热度 Top 4,000 共 43,593,139,500 bytes（40.599 GiB），报告 SHA-256=`f4004258ecd11d91088a7dabc670420e5cb1c10d0fafde8f949fa7c12dd8b1c4`。仍未完整下载、运行 FFmpeg 或写 Supabase。
+- 2026-10-27 只读容量统计：全候选 5,097 条中 5,087 条最终取得 Content-Length，共 48.569 GiB；9 条 404、1 条连续网络失败。未执行 seed dry-run/apply，未写数据库或私有桶；最终容量需按 D16 的 4,000 条集合重算。
 
 - 2026-10-27 合并图片 M1 后复验：Backend typecheck 与 991 项测试、Shared 186 项测试、Frontend/Admin/Reply Renderer typecheck、migration/legacy/import lint、两份 Trellis context validate 均通过。`pnpm -r typecheck` 仅因 `packages/ui-tests` 未安装本地依赖而缺少 `@types/node`；Frontend/Admin build 分别因当前 `node_modules` 缺少 Next `./impl`、`source-map-js` 依赖而未完成，未出现本次代码的类型错误。
 - 2026-10-27 用户确认 TEST、Production 已完成图片 M1（8 张表、3 个 RPC）和 PostgREST `media_plaza` 暴露；本分支按直接访问新 schema 合并，不重跑/回滚 M1。视频 M2/M3、供应商 canary 与 seed 导入仍未执行。

@@ -3,16 +3,35 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import XLSX from 'xlsx';
 import { afterEach, describe, expect, it } from 'vitest';
-import { auditVideoSeedWorkbooks } from './video-seed-import.js';
+import {
+  auditVideoSeedWorkbooks,
+  closeVideoSeedImportResources,
+  headVideoSize,
+  selectBalancedTopVideoSeedRows,
+} from './video-seed-import.js';
 
 const directories: string[] = [];
 afterEach(async () => {
+  await closeVideoSeedImportResources();
   await Promise.all(
     directories.splice(0).map((path) => rm(path, { recursive: true, force: true }))
   );
 });
 
 describe('video seed workbook audit', () => {
+  it('refuses remote reads when TLS verification is disabled', async () => {
+    const previous = process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+    process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+    try {
+      await expect(headVideoSize('https://image.civitai.com/a/video.mp4')).rejects.toThrow(
+        'video_seed_tls_verification_disabled'
+      );
+    } finally {
+      if (previous === undefined) delete process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+      else process.env.NODE_TLS_REJECT_UNAUTHORIZED = previous;
+    }
+  });
+
   it('preserves long prompts, excludes untranslated source rows and reports translation orphans', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'video-seed-test-'));
     directories.push(directory);
@@ -82,6 +101,61 @@ describe('video seed workbook audit', () => {
     });
   });
 });
+
+describe('balanced video seed selection', () => {
+  it('redistributes unused quotas and uses a stable heat tie-break', () => {
+    const rows = [
+      seedRow('model-a', 'a-2', 10),
+      seedRow('model-a', 'a-1', 10),
+      seedRow('model-b', 'b-1', 30),
+      seedRow('model-b', 'b-2', 20),
+      seedRow('model-b', 'b-3', 10),
+      seedRow('model-b', 'b-4', 1),
+      seedRow('model-c', 'c-1', 40),
+      seedRow('model-c', 'c-2', 30),
+      seedRow('model-c', 'c-3', 20),
+      seedRow('model-c', 'c-4', 10),
+    ];
+
+    const selection = selectBalancedTopVideoSeedRows(rows, 8);
+
+    expect(selection.groups.map(({ modelId, quota }) => ({ modelId, quota }))).toEqual([
+      { modelId: 'model-a', quota: 2 },
+      { modelId: 'model-b', quota: 3 },
+      { modelId: 'model-c', quota: 3 },
+    ]);
+    expect(selection.rows.map((row) => row.sourceVideoId)).toEqual([
+      'a-1',
+      'b-1',
+      'c-1',
+      'a-2',
+      'b-2',
+      'c-2',
+      'b-3',
+      'c-3',
+    ]);
+  });
+
+  it('rejects a target larger than the available candidates', () => {
+    expect(() => selectBalancedTopVideoSeedRows([seedRow('model-a', 'a-1', 1)], 2)).toThrow(
+      'video_seed_selection_insufficient_candidates'
+    );
+  });
+});
+
+function seedRow(modelId: string, sourceVideoId: string, sourceHeat: number) {
+  return {
+    rowNumber: sourceHeat,
+    sourceModelName: modelId,
+    modelId,
+    prompt: 'prompt',
+    promptZh: '提示词',
+    videoUrl: `https://image.civitai.com/${sourceVideoId}.mp4`,
+    sourceVideoId,
+    sourceHeat,
+    publishedAt: '2026-01-01T00:00:00.000Z',
+  };
+}
 
 function writeWorkbook(path: string, name: string, rows: unknown[][]): void {
   const workbook = XLSX.utils.book_new();

@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
+import { fetch as undiciFetch, ProxyAgent, type Dispatcher } from 'undici';
 import XLSX from 'xlsx';
 import type { VideoPlazaModelCatalog } from '@miniapp/shared';
 import { getDomainDb } from '../../lib/supabase.js';
@@ -24,6 +25,15 @@ const MODEL_IDS: Record<string, string> = {
   'Seedance 2.0 R2V Enhanced': 'seedance-2-0-r2v',
 };
 const MAX_VIDEO_BYTES = 200 * 1024 * 1024;
+const MAX_REDIRECTS = 3;
+const CIVITAI_VIDEO_HOSTS = new Set(['image.civitai.com', 'blobs-b2.civitai.com']);
+let videoSeedProxyAgent: ProxyAgent | undefined;
+
+export async function closeVideoSeedImportResources(): Promise<void> {
+  const proxyAgent = videoSeedProxyAgent;
+  videoSeedProxyAgent = undefined;
+  if (proxyAgent) await proxyAgent.destroy();
+}
 
 export interface VideoSeedSourceRow {
   rowNumber: number;
@@ -46,6 +56,20 @@ export interface VideoSeedAudit {
   duplicateIds: number;
   translationOrphans: number;
   rows: VideoSeedSourceRow[];
+}
+
+export interface VideoSeedSelectionGroup {
+  modelId: string;
+  modelName: string;
+  candidateCount: number;
+  quota: number;
+  cutoffHeat: number;
+  cutoffTieCount: number;
+}
+
+export interface VideoSeedSelection {
+  rows: VideoSeedSourceRow[];
+  groups: VideoSeedSelectionGroup[];
 }
 
 export function readVideoSourceRows(
@@ -146,6 +170,94 @@ export function auditVideoSeedWorkbooks(
   };
 }
 
+/**
+ * Max-min fair allocation keeps small model catalogs represented without allowing large catalogs
+ * to consume their places. Rows are interleaved by rank so early canary batches also cover models.
+ */
+export function selectBalancedTopVideoSeedRows(
+  rows: VideoSeedSourceRow[],
+  targetCount: number
+): VideoSeedSelection {
+  if (!Number.isSafeInteger(targetCount) || targetCount < 1)
+    throw new Error('video_seed_selection_target_invalid');
+  if (rows.length < targetCount) throw new Error('video_seed_selection_insufficient_candidates');
+
+  const byModel = new Map<string, VideoSeedSourceRow[]>();
+  for (const row of rows) {
+    const group = byModel.get(row.modelId) ?? [];
+    group.push(row);
+    byModel.set(row.modelId, group);
+  }
+  const models = [...byModel.entries()]
+    .map(([modelId, candidates]) => ({
+      modelId,
+      modelName: candidates[0]?.sourceModelName ?? modelId,
+      candidates: [...candidates].sort(compareVideoSeedRank),
+      quota: 0,
+    }))
+    .sort((left, right) => compareStableText(left.modelId, right.modelId));
+  if (!models.length) throw new Error('video_seed_selection_insufficient_candidates');
+
+  let remaining = targetCount;
+  let active = [...models];
+  while (remaining > 0) {
+    if (!active.length) throw new Error('video_seed_selection_insufficient_candidates');
+    const evenShare = Math.floor(remaining / active.length);
+    const exhausted = active.filter((model) => model.candidates.length - model.quota <= evenShare);
+    if (exhausted.length) {
+      const exhaustedIds = new Set(exhausted.map((model) => model.modelId));
+      for (const model of exhausted) {
+        const available = model.candidates.length - model.quota;
+        model.quota += available;
+        remaining -= available;
+      }
+      active = active.filter((model) => !exhaustedIds.has(model.modelId));
+      continue;
+    }
+    const remainder = remaining % active.length;
+    for (let index = 0; index < active.length; index += 1) {
+      active[index]!.quota += evenShare + (index < remainder ? 1 : 0);
+    }
+    remaining = 0;
+  }
+
+  const selected: VideoSeedSourceRow[] = [];
+  const maxQuota = Math.max(...models.map((model) => model.quota));
+  for (let rank = 0; rank < maxQuota; rank += 1) {
+    for (const model of models) {
+      const row = rank < model.quota ? model.candidates[rank] : undefined;
+      if (row) selected.push(row);
+    }
+  }
+  if (selected.length !== targetCount) throw new Error('video_seed_selection_count_mismatch');
+
+  return {
+    rows: selected,
+    groups: models.map((model) => {
+      const cutoffHeat = model.candidates[model.quota - 1]?.sourceHeat;
+      if (cutoffHeat === undefined) throw new Error('video_seed_selection_count_mismatch');
+      return {
+        modelId: model.modelId,
+        modelName: model.modelName,
+        candidateCount: model.candidates.length,
+        quota: model.quota,
+        cutoffHeat,
+        cutoffTieCount: model.candidates.filter((row) => row.sourceHeat === cutoffHeat).length,
+      };
+    }),
+  };
+}
+
+function compareVideoSeedRank(left: VideoSeedSourceRow, right: VideoSeedSourceRow): number {
+  return (
+    right.sourceHeat - left.sourceHeat || compareStableText(left.sourceVideoId, right.sourceVideoId)
+  );
+}
+
+function compareStableText(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
 export async function workbookSha256(path: string): Promise<string> {
   return createHash('sha256')
     .update(await readFile(path))
@@ -154,14 +266,12 @@ export async function workbookSha256(path: string): Promise<string> {
 
 export async function headVideoSize(url: string): Promise<number> {
   assertSourceUrl(url);
+  assertTlsVerificationEnabled();
+  const dispatcher = getVideoSeedDispatcher();
   let last: unknown;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
-      const response = await fetch(url, {
-        method: 'HEAD',
-        redirect: 'error',
-        signal: AbortSignal.timeout(30_000),
-      });
+      const response = await fetchCivitaiVideo(url, 'HEAD', 30_000, dispatcher);
       if (!response.ok) throw new Error(`head_http_${response.status}`);
       const size = Number(response.headers.get('content-length'));
       if (!Number.isSafeInteger(size) || size < 1) throw new Error('head_content_length_missing');
@@ -175,14 +285,13 @@ export async function headVideoSize(url: string): Promise<number> {
 }
 
 async function downloadSeedVideo(url: string): Promise<Buffer> {
+  assertTlsVerificationEnabled();
+  const dispatcher = getVideoSeedDispatcher();
   let last: unknown;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     let response: Response;
     try {
-      response = await fetch(url, {
-        redirect: 'error',
-        signal: AbortSignal.timeout(120_000),
-      });
+      response = await fetchCivitaiVideo(url, 'GET', 120_000, dispatcher);
     } catch (err) {
       last = err;
       if (attempt < 2) {
@@ -346,4 +455,64 @@ function assertSourceUrl(value: string): void {
   const url = new URL(value);
   if (url.protocol !== 'https:' || url.hostname !== 'image.civitai.com')
     throw new Error('video_seed_source_url_rejected');
+}
+
+async function fetchCivitaiVideo(
+  sourceUrl: string,
+  method: 'HEAD' | 'GET',
+  timeoutMs: number,
+  dispatcher: Dispatcher | undefined
+): Promise<Response> {
+  let currentUrl = assertCivitaiVideoUrl(sourceUrl, true);
+  for (let redirect = 0; redirect <= MAX_REDIRECTS; redirect += 1) {
+    const response = (await undiciFetch(currentUrl, {
+      method,
+      redirect: 'manual',
+      signal: AbortSignal.timeout(timeoutMs),
+      ...(dispatcher ? { dispatcher } : {}),
+    })) as unknown as Response;
+    if (response.status < 300 || response.status >= 400) return response;
+    const location = response.headers.get('location');
+    await response.body?.cancel();
+    if (!location || redirect === MAX_REDIRECTS) {
+      throw new Error('video_seed_redirect_invalid');
+    }
+    currentUrl = assertCivitaiVideoUrl(new URL(location, currentUrl).toString(), false);
+  }
+  throw new Error('video_seed_redirect_invalid');
+}
+
+function assertCivitaiVideoUrl(value: string, sourceOnly: boolean): string {
+  const url = new URL(value);
+  if (
+    url.protocol !== 'https:' ||
+    (sourceOnly ? url.hostname !== 'image.civitai.com' : !CIVITAI_VIDEO_HOSTS.has(url.hostname)) ||
+    url.username ||
+    url.password
+  ) {
+    throw new Error('video_seed_source_url_rejected');
+  }
+  return url.toString();
+}
+
+function assertTlsVerificationEnabled(): void {
+  if (process.env.NODE_TLS_REJECT_UNAUTHORIZED === '0') {
+    throw new Error('video_seed_tls_verification_disabled');
+  }
+}
+
+function getVideoSeedDispatcher(): Dispatcher | undefined {
+  const proxyUrl = process.env.HTTPS_PROXY?.trim() || process.env.https_proxy?.trim();
+  if (!proxyUrl) return undefined;
+  let parsed: URL;
+  try {
+    parsed = new URL(proxyUrl);
+  } catch {
+    throw new Error('video_seed_proxy_url_invalid');
+  }
+  if ((parsed.protocol !== 'http:' && parsed.protocol !== 'https:') || parsed.hash) {
+    throw new Error('video_seed_proxy_url_invalid');
+  }
+  videoSeedProxyAgent ??= new ProxyAgent(parsed.toString());
+  return videoSeedProxyAgent;
 }

@@ -4,7 +4,9 @@ import { readFile } from 'node:fs/promises';
 import { isAbsolute, resolve } from 'node:path';
 import {
   auditVideoSeedWorkbooks,
+  closeVideoSeedImportResources,
   importVideoSeedRow,
+  selectBalancedTopVideoSeedRows,
   workbookSha256,
 } from '../features/image-plaza/video-seed-import.js';
 import { getImagePlazaRuntimeConfig } from '../features/image-plaza/config.js';
@@ -15,9 +17,17 @@ let exitCode = 0;
 try {
   const options = parseArgs(process.argv.slice(2));
   const audit = auditVideoSeedWorkbooks(options.input, options.translations);
+  const selection = selectBalancedTopVideoSeedRows(audit.rows, 4_000);
+  const inputSha256 = await workbookSha256(options.input);
+  const translationsSha256 = await workbookSha256(options.translations);
   console.log(
-    `video seed ${options.apply ? 'apply' : 'dry-run'} total=${audit.total} eligible=${audit.eligible} excluded=${audit.excluded} needs_repair=${audit.needsRepair} invalid=${audit.invalid} duplicate_ids=${audit.duplicateIds} translation_orphans=${audit.translationOrphans} input_sha256=${await workbookSha256(options.input)} translations_sha256=${await workbookSha256(options.translations)}`
+    `video seed ${options.apply ? 'apply' : 'dry-run'} total=${audit.total} eligible=${audit.eligible} selected=${selection.rows.length} excluded=${audit.excluded} needs_repair=${audit.needsRepair} invalid=${audit.invalid} duplicate_ids=${audit.duplicateIds} translation_orphans=${audit.translationOrphans} input_sha256=${inputSha256} translations_sha256=${translationsSha256}`
   );
+  for (const group of selection.groups) {
+    console.log(
+      `video seed selection model=${group.modelId} candidates=${group.candidateCount} quota=${group.quota} cutoff_heat=${group.cutoffHeat} cutoff_ties=${group.cutoffTieCount}`
+    );
+  }
   if (
     audit.total !== 5_097 ||
     audit.eligible !== 5_082 ||
@@ -29,10 +39,21 @@ try {
   )
     throw new Error('video_seed_audit_baseline_mismatch');
   if (options.apply) {
-    await assertApplyGates(options);
+    const reviewedIds = await assertApplyGates(
+      options,
+      audit.rows,
+      inputSha256,
+      translationsSha256
+    );
     const runtime = await getImagePlazaRuntimeConfig();
     if (!runtime.videoCatalog) throw new Error('video_seed_catalog_unavailable');
-    const selected = audit.rows.slice(options.offset, options.offset + options.limit);
+    const rowsById = new Map(audit.rows.map((row) => [row.sourceVideoId, row] as const));
+    const reviewedRows = reviewedIds.map((id) => {
+      const row = rowsById.get(id);
+      if (!row) throw new Error('video_seed_size_report_selection_unknown');
+      return row;
+    });
+    const selected = reviewedRows.slice(options.offset, options.offset + options.limit);
     let imported = 0;
     let alreadyImported = 0;
     let failed = 0;
@@ -65,6 +86,9 @@ try {
   console.error(err instanceof Error ? err.message : 'video_seed_import_failed');
   exitCode = 1;
 } finally {
+  await closeVideoSeedImportResources().catch(() => {
+    exitCode = 1;
+  });
   await closeSupabaseClient().catch(() => {
     exitCode = 1;
   });
@@ -83,17 +107,72 @@ interface Options {
   limit: number;
   concurrency: number;
 }
-async function assertApplyGates(options: Options) {
+async function assertApplyGates(
+  options: Options,
+  rows: ReturnType<typeof auditVideoSeedWorkbooks>['rows'],
+  inputSha256: string,
+  translationsSha256: string
+): Promise<string[]> {
   if (!options.confirmSize) throw new Error('video_seed_apply_requires_confirm_size');
-  const reportHash = createHash('sha256')
-    .update(await readFile(options.report))
-    .digest('hex');
+  const reportBytes = await readFile(options.report);
+  const reportHash = createHash('sha256').update(reportBytes).digest('hex');
   if (reportHash !== options.confirmSize.toLowerCase())
     throw new Error('video_seed_size_report_hash_mismatch');
+  const report = parseSelectionReport(reportBytes.toString('utf8'));
+  if (report.inputSha256 !== inputSha256 || report.translationsSha256 !== translationsSha256)
+    throw new Error('video_seed_size_report_workbook_mismatch');
+  const failedRows = new Set(report.failedRowNumbers);
+  const expected = selectBalancedTopVideoSeedRows(
+    rows.filter((row) => !failedRows.has(row.rowNumber)),
+    4_000
+  ).rows.map((row) => row.sourceVideoId);
+  if (
+    expected.length !== report.selectedIds.length ||
+    expected.some((id, index) => id !== report.selectedIds[index])
+  )
+    throw new Error('video_seed_size_report_selection_mismatch');
   if (!options.target || options.target !== config.database.target)
     throw new Error('video_seed_target_mismatch');
   if (options.target === 'production' && !options.confirmProduction)
     throw new Error('video_seed_production_requires_confirmation');
+  return report.selectedIds;
+}
+
+function parseSelectionReport(contents: string): {
+  inputSha256: string;
+  translationsSha256: string;
+  selectedIds: string[];
+  failedRowNumbers: number[];
+} {
+  const value: unknown = JSON.parse(contents);
+  if (!value || typeof value !== 'object') throw new Error('video_seed_size_report_invalid');
+  const report = value as Record<string, unknown>;
+  if (report.version !== 2 || report.target_rows !== 4_000 || report.selected_rows !== 4_000)
+    throw new Error('video_seed_size_report_invalid');
+  if (typeof report.input_sha256 !== 'string' || typeof report.translations_sha256 !== 'string')
+    throw new Error('video_seed_size_report_invalid');
+  if (!Array.isArray(report.selected) || !Array.isArray(report.failures))
+    throw new Error('video_seed_size_report_invalid');
+  const selectedIds = report.selected.map((item) => {
+    if (!item || typeof item !== 'object') throw new Error('video_seed_size_report_invalid');
+    const id = (item as Record<string, unknown>).source_video_id;
+    if (typeof id !== 'string' || !id) throw new Error('video_seed_size_report_invalid');
+    return id;
+  });
+  const failedRowNumbers = report.failures.map((item) => {
+    if (!item || typeof item !== 'object') throw new Error('video_seed_size_report_invalid');
+    const rowNumber = (item as Record<string, unknown>).row_number;
+    if (!Number.isSafeInteger(rowNumber)) throw new Error('video_seed_size_report_invalid');
+    return rowNumber as number;
+  });
+  if (new Set(selectedIds).size !== selectedIds.length)
+    throw new Error('video_seed_size_report_invalid');
+  return {
+    inputSha256: report.input_sha256,
+    translationsSha256: report.translations_sha256,
+    selectedIds,
+    failedRowNumbers,
+  };
 }
 function parseArgs(args: string[]): Options {
   const result: Options = {
