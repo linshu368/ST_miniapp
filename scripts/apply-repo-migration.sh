@@ -226,10 +226,12 @@ record_ledger_with_retry() {
 apply_sql() {
   # 迁移文件自己带 BEGIN/COMMIT。这里不再包一层，避免套娃事务把文件里的 COMMIT 提交掉外层。
   if [[ "$MIGRATION_NAME" == *_media_plaza_video_seed_test_* ]]; then
-    # Custom GUCs stay scoped to this psql process. The SQL independently verifies every
-    # Storage object before importing, so the approval flag cannot bypass object checks.
-    PGOPTIONS="${PGOPTIONS:-} -c app.seed_target=test -c app.seed_project_ref=${SEED_PROJECT_REF} -c app.seed_storage_verified=yes" \
-      psql --no-psqlrc -d "$DB_URL" --set ON_ERROR_STOP=1 --file "$MIGRATION_FILE"
+    # Supavisor does not preserve custom GUCs supplied as startup parameters. Open the
+    # transaction first so transaction pooling pins one backend, then set the approvals
+    # in that same psql session before the migration performs its independent checks.
+    psql --no-psqlrc -d "$DB_URL" --set ON_ERROR_STOP=1 \
+      --command "BEGIN; SELECT set_config('app.seed_target', 'test', true), set_config('app.seed_project_ref', '${SEED_PROJECT_REF}', true), set_config('app.seed_storage_verified', 'yes', true);" \
+      --file "$MIGRATION_FILE"
     return
   fi
   psql_cmd --file "$MIGRATION_FILE"
