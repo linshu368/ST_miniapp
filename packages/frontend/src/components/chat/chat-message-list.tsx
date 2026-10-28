@@ -7,7 +7,6 @@ import type { ReplyChoicePayload } from '@miniapp/reply-renderer';
 
 import type { AssistantBodyPlan } from '@/lib/text-postprocess/reply-plan';
 
-import type { FirstTokenIdentity } from '@/lib/perf/first-token-observation';
 import { cn } from '@/lib/utils';
 import { PH_CHAT_REPLAY_VISIBLE_CLASS } from '@/lib/telemetry/masking';
 import { ChatMessageBubble, ChatTypingBubble } from './chat-message-bubble';
@@ -19,8 +18,6 @@ const STICK_TO_BOTTOM_THRESHOLD_PX = 120;
 interface ChatMessageListProps {
   /** 已按 turn_index 升序，包含正在流式写入的那条 */
   messages: ChatMessage[];
-  firstTokenObservation?: FirstTokenIdentity | null;
-  onFirstTokenDisplayed?: (identity: FirstTokenIdentity, at: number) => void;
   characterName: string;
   characterAvatarUrl: string | null;
   userAvatarUrl: string | null;
@@ -46,8 +43,6 @@ interface ChatMessageListProps {
 
 export function ChatMessageList({
   messages,
-  firstTokenObservation,
-  onFirstTokenDisplayed,
   characterName,
   characterAvatarUrl,
   userAvatarUrl,
@@ -160,12 +155,6 @@ export function ChatMessageList({
             <ChatMessageBubble
               key={`${message.id}:${message.revision}`}
               message={message}
-              onFirstTokenDisplayed={
-                firstTokenObservation?.assistantMessageId === message.id &&
-                firstTokenObservation.revision === message.revision
-                  ? (at) => onFirstTokenDisplayed?.(firstTokenObservation, at)
-                  : undefined
-              }
               characterName={characterName}
               characterAvatarUrl={characterAvatarUrl}
               userAvatarUrl={userAvatarUrl}

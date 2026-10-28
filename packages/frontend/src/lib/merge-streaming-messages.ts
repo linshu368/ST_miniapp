@@ -1,6 +1,7 @@
 import {
   readPostprocessVersion,
   type ChatMessage,
+  type ChatMessageStatus,
   type ConversationStreamStartEvent,
 } from '@miniapp/shared';
 
@@ -16,6 +17,10 @@ export interface StreamingTurn {
   turnIndex: number;
   revision: number;
   text: string;
+  /** Retain flushed text after the local stream ends until this revision is durable. */
+  status?: Exclude<ChatMessageStatus, 'streaming'>;
+  /** Unacknowledged terminal responses survive starting the next local turn. */
+  retained?: Omit<StreamingTurn, 'retained'>[];
   /**
    * 只来自本轮 start。缺失按 null。增量到达时不能改写，也不能改读当前配置。
    * start 之前还没有 assistant 气泡，这个 null 不会被展示成另一条规则。
@@ -49,12 +54,60 @@ export function appendStreamText(turn: StreamingTurn, text: string): StreamingTu
   return { ...turn, text: turn.text + text };
 }
 
+/** A newer server revision supersedes old local text; the same revision must retain it. */
+export function hasPersistedStreamReplacement(
+  persisted: ChatMessage[],
+  streaming: StreamingTurn,
+  sessionId: string | null
+): boolean {
+  return persisted.some(
+    (message) =>
+      message.role === 'assistant' &&
+      message.session_id === sessionId &&
+      message.id === streaming.assistantMessageId &&
+      (message.revision > streaming.revision ||
+        (message.revision === streaming.revision &&
+          message.request_id === streaming.requestId &&
+          message.status !== 'streaming' &&
+          message.content.length >= streaming.text.length))
+  );
+}
+
+export function dropCurrentStreamingTurn(turn: StreamingTurn | null): StreamingTurn | null {
+  const retained = turn?.retained ?? [];
+  const previous = retained.at(-1);
+  return previous ? { ...previous, retained: retained.slice(0, -1) } : null;
+}
+
+export function prunePersistedStreamingTurns(
+  turn: StreamingTurn | null,
+  persisted: ChatMessage[],
+  sessionId: string | null
+): StreamingTurn | null {
+  if (!turn) return null;
+  const retained = turn.retained?.filter(
+    (previous) => !hasPersistedStreamReplacement(persisted, previous, sessionId)
+  );
+  const next = retained?.length !== turn.retained?.length ? { ...turn, retained } : turn;
+  return turn.status && hasPersistedStreamReplacement(persisted, turn, sessionId)
+    ? dropCurrentStreamingTurn(next)
+    : next;
+}
+
 export function mergeStreamingMessages(
   persisted: ChatMessage[],
   streaming: StreamingTurn | null,
   sessionId: string | null
 ): ChatMessage[] {
   if (!streaming) return persisted;
+  if (streaming.retained?.length) {
+    const { retained, ...current } = streaming;
+    const withRetained = retained.reduce(
+      (messages, previous) => mergeStreamingMessages(messages, previous, sessionId),
+      persisted
+    );
+    return mergeStreamingMessages(withRetained, current, sessionId);
+  }
 
   // 重生成写的是同一轮的新版本，落库的旧版本要让位，否则会并排出现两条 assistant
   const base =
@@ -69,6 +122,9 @@ export function mergeStreamingMessages(
   const persistedAssistant = persisted.find(
     (message) =>
       message.role === 'assistant' &&
+      message.session_id === sessionId &&
+      message.revision === streaming.revision &&
+      (!streaming.status || message.request_id === streaming.requestId) &&
       (streaming.assistantMessageId
         ? message.id === streaming.assistantMessageId
         : Boolean(streaming.requestId) &&
@@ -77,7 +133,11 @@ export function mergeStreamingMessages(
           message.revision === streaming.revision)
   );
   // 详情轮询可能先于 SSE done，已确认终态时优先展示服务端正文。
-  if (persistedAssistant && persistedAssistant.status !== 'streaming') return persisted;
+  if (
+    hasPersistedStreamReplacement(persisted, streaming, sessionId) ||
+    (!streaming.status && persistedAssistant && persistedAssistant.status !== 'streaming')
+  )
+    return persisted;
   const persistedUser = streaming.userMessage
     ? persisted.find(
         (message) =>
@@ -106,7 +166,7 @@ export function mergeStreamingMessages(
         persistedAssistant && persistedAssistant.content.length > streaming.text.length
           ? persistedAssistant.content
           : streaming.text,
-      status: 'streaming',
+      status: streaming.status ?? 'streaming',
       error_code: null,
       finish_reason: null,
       model_id: null,

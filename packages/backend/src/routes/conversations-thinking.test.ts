@@ -180,6 +180,55 @@ async function buildApp() {
 
 describe('thinking request validation before accepting a conversation turn', () => {
   it.each(['messages', 'regenerate'] as const)(
+    '%s declares v4 before generation and keeps legacy requests compatible',
+    async (path) => {
+      const app = await buildApp();
+      try {
+        for (const measurement of [undefined, 'client_committed_v4'] as const) {
+          const response = await app.inject({
+            method: 'POST',
+            url: `/api/v1/conversations/${SESSION}/${path}`,
+            payload: {
+              ...(path === 'messages' ? { content: 'hello' } : {}),
+              ...(measurement ? { first_token_measurement: measurement } : {}),
+            },
+          });
+          expect(response.statusCode).toBe(502);
+          expect(routing.runTurn).toHaveBeenLastCalledWith(
+            expect.objectContaining({ firstTokenMeasurement: measurement })
+          );
+        }
+      } finally {
+        await app.close();
+      }
+    }
+  );
+
+  it.each(['messages', 'regenerate'] as const)(
+    '%s rejects invalid measurement declarations before database work',
+    async (path) => {
+      const app = await buildApp();
+      try {
+        for (const measurement of [null, 1, {}, 'received', 'visible_dom_after_frame_v3']) {
+          const response = await app.inject({
+            method: 'POST',
+            url: `/api/v1/conversations/${SESSION}/${path}`,
+            payload: {
+              ...(path === 'messages' ? { content: 'hello' } : {}),
+              first_token_measurement: measurement,
+            },
+          });
+          expect(response.statusCode).toBe(400);
+        }
+        expect(routing.user).not.toHaveBeenCalled();
+        expect(routing.runTurn).not.toHaveBeenCalled();
+      } finally {
+        await app.close();
+      }
+    }
+  );
+
+  it.each(['messages', 'regenerate'] as const)(
     '%s accepts omitted/true/false with legacy default off',
     async (path) => {
       const app = await buildApp();
