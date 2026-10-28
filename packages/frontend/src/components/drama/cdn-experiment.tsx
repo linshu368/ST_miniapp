@@ -1,36 +1,24 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { DRAMA_CDN_SAMPLE_ID, type DramaCdnRoute } from '@miniapp/shared';
+import { DRAMA_CDN_SAMPLE_ID, type DramaCdnRoute, type DramaCdnEvidence } from '@miniapp/shared';
 import { DramaPlayer } from './drama-player';
 import type { DramaPlaybackTiming } from '@/lib/perf/drama-timing';
-import { measureCdnSeek, type CdnSeekResult } from '@/lib/perf/drama-cdn-seek';
+import { measureCdnSeek } from '@/lib/perf/drama-cdn-seek';
 import { API_URL } from '@/lib/api/client';
+import { useDramaCdnEvidenceMutation } from '@/lib/api/telemetry';
+import { createRequestId } from '@/lib/perf/request-timing';
+import { useDramaLibraryStore } from '@/stores/drama-library-store';
 
 const ORDER: DramaCdnRoute[] = ['original', 'bunny', 'bunny', 'original', 'original', 'bunny'];
 const STORAGE_KEY = 'st.drama-cdn-phone-round.v1';
-type Trial = {
-  sequence: number;
-  route: DramaCdnRoute;
-  purpose: 'formal' | 'functional' | 'fallback';
-  started_at: string;
-  startup_outcome: string;
-  startup_ms?: number;
-  startup_ready_ms?: number;
-  elapsed_ms?: number;
-  source_to_frame_ms?: number;
-  frame_method?: string;
-  media_error?: number;
-  seek?: CdnSeekResult;
-  startup_cache: 'UNKNOWN';
-  seek_cache: 'UNKNOWN';
-  fallback_from_seconds?: number;
-  fallback_resumed_seconds?: number;
-  interruption?: 'before_seek';
-  after_startup_outcome?: string;
-};
+type Trial = DramaCdnEvidence['trials'][number];
 type Evidence = {
   schema_version: 1;
+  round_id?: string;
+  automatic?: boolean;
+  muted?: boolean;
+  platform?: DramaCdnEvidence['platform'];
   release: string;
   backend: string;
   sample: string;
@@ -43,12 +31,13 @@ type Evidence = {
 };
 const freshEvidence = (): Evidence => ({
   schema_version: 1,
+  round_id: createRequestId(),
   release: process.env.NEXT_PUBLIC_DRAMA_RELEASE ?? 'unknown',
   backend: API_URL,
   sample: DRAMA_CDN_SAMPLE_ID,
   bytes: 46518538,
   scope:
-    'Telegram phone; button click through address API/player to first frame; route already mounted; source_to_frame separate; 15s timeout; no automatic retry',
+    'Telegram phone; attempt start including address API to first frame; excludes prior navigation and inter-attempt pause; source_to_frame separate; 15s timeout; no automatic retry',
   same_phone_network_proxy: false,
   formal_started: false,
   trials: [],
@@ -64,6 +53,14 @@ export function CdnExperiment() {
     preservePosition: false,
   });
   const [busy, setBusy] = useState(false);
+  const [automatic, setAutomatic] = useState(false);
+  const autoRef = useRef(false);
+  const nextTimer = useRef<ReturnType<typeof setTimeout>>();
+  const startRef = useRef<(route: DramaCdnRoute, purpose: Trial['purpose']) => void>(() => {});
+  const seekRef = useRef<() => void>(() => {});
+  const advanceRef = useRef<() => void>(() => {});
+  const submitRef = useRef<() => void>(() => {});
+  const upload = useDramaCdnEvidenceMutation();
   const [readyToSeek, setReadyToSeek] = useState(false);
   const [showReport, setShowReport] = useState(false);
   const [notice, setNotice] = useState('先完成接入检查，再开始唯一一轮正式对照。');
@@ -74,6 +71,7 @@ export function CdnExperiment() {
     timer?: ReturnType<typeof setTimeout>;
     terminal: boolean;
     stopSeek?: () => void;
+    seekStarted?: boolean;
   }>();
   const persist = useCallback((next: Evidence) => {
     reportRef.current = next;
@@ -123,14 +121,24 @@ export function CdnExperiment() {
       run.terminal = true;
       clearTimeout(run.timer);
       const trial = reportRef.current.trials[run.index];
+      patch.elapsed_ms ??= Math.round((performance.now() - run.started) * 10) / 10;
       update(
         run.index,
-        trial?.startup_outcome === 'playing' && patch.startup_outcome !== 'playing'
+        trial?.startup_outcome === 'playing' &&
+          patch.startup_outcome &&
+          patch.startup_outcome !== 'playing'
           ? { interruption: 'before_seek', after_startup_outcome: patch.startup_outcome }
           : patch
       );
       setBusy(false);
       setReadyToSeek(false);
+      if (trial?.purpose === 'fallback') {
+        autoRef.current = false;
+        setAutomatic(false);
+        submitRef.current();
+      } else if (autoRef.current) {
+        nextTimer.current = setTimeout(() => advanceRef.current(), 400);
+      }
     },
     [update]
   );
@@ -167,8 +175,10 @@ export function CdnExperiment() {
           ...(trial?.purpose === 'fallback' ? { fallback_resumed_seconds: video.currentTime } : {}),
         };
         update(run.index, patch);
-        if (outcome === 'playing' && trial?.purpose === 'formal') setReadyToSeek(true);
-        else finish(patch);
+        if (outcome === 'playing' && trial?.purpose === 'formal') {
+          setReadyToSeek(true);
+          if (autoRef.current) queueMicrotask(() => seekRef.current());
+        } else finish(patch);
       });
       return () => {
         stop();
@@ -179,7 +189,7 @@ export function CdnExperiment() {
   );
   const start = (route: DramaCdnRoute, purpose: Trial['purpose']) => {
     if (reportRef.current.closed && purpose !== 'fallback') return;
-    if (busy && purpose !== 'fallback') return;
+    if (active.current && !active.current.terminal && purpose !== 'fallback') return;
     if (reportRef.current.trials.length >= 18) return;
     const previous = active.current;
     const seconds = previous?.video?.currentTime;
@@ -198,6 +208,7 @@ export function CdnExperiment() {
           route,
           purpose,
           started_at: new Date().toISOString(),
+          release: process.env.NEXT_PUBLIC_DRAMA_RELEASE ?? 'unknown',
           startup_outcome: 'pending',
           startup_cache: 'UNKNOWN',
           seek_cache: 'UNKNOWN',
@@ -219,15 +230,21 @@ export function CdnExperiment() {
       preservePosition: purpose === 'fallback',
     });
   };
+  startRef.current = start;
   const seek = () => {
     const run = active.current;
-    if (!run?.video || !readyToSeek || run.terminal) return;
+    if (
+      !run?.video ||
+      run.terminal ||
+      run.seekStarted ||
+      reportRef.current.trials[run.index]?.startup_outcome !== 'playing'
+    )
+      return;
+    run.seekStarted = true;
     setReadyToSeek(false);
     run.stopSeek = measureCdnSeek(run.video, (result) => {
       if (active.current !== run || run.terminal) return;
-      update(run.index, { seek: result });
-      run.terminal = true;
-      setBusy(false);
+      finish({ seek: result });
       run.video?.pause();
       setNotice(
         result.outcome === 'playing'
@@ -236,17 +253,76 @@ export function CdnExperiment() {
       );
     });
   };
+  seekRef.current = seek;
+  advanceRef.current = () => {
+    if (!autoRef.current || document.hidden) return;
+    const current = reportRef.current;
+    const count = current.trials.filter((trial) => trial.purpose === 'formal').length;
+    if (count >= 6) {
+      persist({ ...current, closed: true });
+      setNotice('三组已结束，自动回原路径并提交结果。');
+      startRef.current('original', 'fallback');
+    } else startRef.current(ORDER[count]!, 'formal');
+  };
+  submitRef.current = () => {
+    const current = reportRef.current;
+    const payload: DramaCdnEvidence = {
+      type: 'cdn_experiment',
+      schema_version: 1,
+      id: current.round_id ?? createRequestId(),
+      release: process.env.NEXT_PUBLIC_DRAMA_RELEASE ?? 'unknown',
+      sample: DRAMA_CDN_SAMPLE_ID,
+      bytes: 46518538,
+      same_phone_network_proxy: current.same_phone_network_proxy,
+      formal_started: current.formal_started,
+      closed: Boolean(current.closed),
+      automatic: Boolean(current.automatic),
+      muted: Boolean(current.muted),
+      platform: current.platform ?? 'unknown',
+      trials: current.trials,
+    };
+    upload.mutate(payload, {
+      onSuccess: () => setNotice('结果已提交；请回复本聊天“已完成”，由我读取。'),
+      onError: () => setNotice('提交失败，本机结果保留；可点“重发结果”，不会重跑测量。'),
+    });
+  };
+  const startAutomatic = () => {
+    if (
+      autoRef.current ||
+      (active.current && !active.current.terminal) ||
+      !reportRef.current.same_phone_network_proxy
+    )
+      return;
+    const ua = navigator.userAgent;
+    useDramaLibraryStore.getState().setPlaybackPreferences({ muted: true });
+    persist({
+      ...reportRef.current,
+      round_id: reportRef.current.round_id ?? createRequestId(),
+      automatic: true,
+      muted: true,
+      platform: /iPad|iPhone|iPod/.test(ua) ? 'ios' : /Android/.test(ua) ? 'android' : 'desktop',
+    });
+    autoRef.current = true;
+    setAutomatic(true);
+    advanceRef.current();
+  };
   useEffect(() => {
     const interrupt = () => {
       if (document.hidden) {
+        autoRef.current = false;
+        setAutomatic(false);
+        clearTimeout(nextTimer.current);
         active.current?.stopSeek?.();
         finish({ startup_outcome: 'interrupted' });
+        if (reportRef.current.formal_started) submitRef.current();
       }
     };
     document.addEventListener('visibilitychange', interrupt);
     return () => {
       document.removeEventListener('visibilitychange', interrupt);
       clearTimeout(active.current?.timer);
+      clearTimeout(nextTimer.current);
+      autoRef.current = false;
     };
   }, [finish]);
   const count = report.trials.filter((trial) => trial.purpose === 'formal').length;
@@ -281,7 +357,17 @@ export function CdnExperiment() {
             </>
           )}
           <button
-            disabled={busy || report.closed || count >= 6 || !report.same_phone_network_proxy}
+            disabled={
+              busy || automatic || report.closed || count >= 6 || !report.same_phone_network_proxy
+            }
+            onClick={startAutomatic}
+          >
+            自动跑完三组
+          </button>
+          <button
+            disabled={
+              automatic || busy || report.closed || count >= 6 || !report.same_phone_network_proxy
+            }
             onClick={() => start(ORDER[count]!, 'formal')}
           >
             {count === 0
@@ -290,17 +376,26 @@ export function CdnExperiment() {
                 ? `下一次 ${ORDER[count] === 'bunny' ? 'B' : 'A'}`
                 : '三组已结束'}
           </button>
-          <button disabled={!readyToSeek} onClick={seek}>
+          <button disabled={automatic || !readyToSeek} onClick={seek}>
             测 72% 未缓冲 seek
           </button>
           <button
             onClick={() => {
+              autoRef.current = false;
+              setAutomatic(false);
+              clearTimeout(nextTimer.current);
               persist({ ...reportRef.current, closed: true });
               setNotice('Bunny 已在本机关闭，重新请求原地址并保留位置。');
               start('original', 'fallback');
             }}
           >
             关闭实验并回原路径
+          </button>
+          <button
+            disabled={automatic || busy || upload.isPending || !report.trials.length}
+            onClick={() => submitRef.current()}
+          >
+            重发结果
           </button>
           <button onClick={() => setShowReport((value) => !value)}>结果 / 复制</button>
         </div>

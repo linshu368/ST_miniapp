@@ -12,6 +12,7 @@ import {
   type GetReplayContextData,
   DRAMA_TIMING_BODY_LIMIT,
   DramaTimingReportSchema,
+  DramaCdnEvidenceSchema,
   dramaTimingLogFields,
   type PostDramaTimingData,
 } from '@miniapp/shared';
@@ -21,7 +22,10 @@ import { requestLogger } from '../lib/logger.js';
 import { MiniappWalletRepository } from '../infrastructure/repositories/MiniappWalletRepository.js';
 import { DramaTimingRepository } from '../features/drama/timing-repository.js';
 import { DramaTimingProcessor } from '../features/drama/timing-processor.js';
-import { getDramaTimingPersistenceConfig } from '../platform/runtime-config.js';
+import {
+  getDramaTimingPersistenceConfig,
+  getDramaCdnExperimentConfig,
+} from '../platform/runtime-config.js';
 
 export default async function telemetryRoutes(app: FastifyInstance) {
   const wallets = new MiniappWalletRepository();
@@ -70,6 +74,25 @@ export default async function telemetryRoutes(app: FastifyInstance) {
       userWindow.count += 1;
       uploadWindows.set(userId, userWindow);
 
+      const experiment = DramaCdnEvidenceSchema.safeParse(request.body);
+      if (experiment.success) {
+        const cfg = getDramaCdnExperimentConfig();
+        if (!cfg.enabled || !cfg.userIds.includes(userId))
+          return reply.status(403).send(fail('FORBIDDEN', 'Experiment upload unavailable'));
+        try {
+          requestLogger(request.log, 'drama').biz.info(
+            {
+              event: 'drama.cdn_experiment_evidence',
+              upload_request_id: request.id,
+              evidence: experiment.data,
+            },
+            'bounded phone experiment evidence'
+          );
+          return reply.status(202).send(ok<PostDramaTimingData>({ accepted: true }));
+        } catch {
+          return reply.status(503).send(fail('UNAVAILABLE', 'Experiment evidence not recorded'));
+        }
+      }
       const parsed = DramaTimingReportSchema.safeParse(request.body);
       if (!parsed.success)
         return reply.status(400).send(fail('BAD_REQUEST', 'Invalid timing report'));

@@ -4,6 +4,9 @@ import { readFile } from 'node:fs/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 import {
   CreateDramaCommentSchema,
+  DRAMA_CDN_SAMPLE_ID,
+  DramaCdnPlaybackQuerySchema,
+  DramaCdnEvidenceSchema,
   SetDramaLikeSchema,
   type DramaComment,
   type GetDramaSocialData,
@@ -329,6 +332,45 @@ export function createPreviewServer(apiPort: number, appPort: number) {
       requests.push(request);
       if (requests.length > 500) requests.shift();
       reconcileImages();
+      if (path === '/api/telemetry/drama-timing' && method === 'POST') {
+        if (
+          typeof body === 'object' &&
+          body !== null &&
+          'type' in body &&
+          body.type === 'cdn_experiment'
+        )
+          DramaCdnEvidenceSchema.parse(body);
+        ok(res, { accepted: true });
+        return;
+      }
+      if (path === '/api/drama-cdn-experiment/sample' && method === 'GET') {
+        const sample = data.dramas[0]!;
+        ok(res, {
+          drama: {
+            ...sample,
+            id: DRAMA_CDN_SAMPLE_ID,
+            episode_count: 1,
+            videos: [{ ...sample.videos[0]!, id: DRAMA_CDN_SAMPLE_ID }],
+          },
+        } satisfies GetDramaByIdData);
+        return;
+      }
+      if (path === '/api/drama-cdn-experiment/play' && method === 'GET') {
+        const input = DramaCdnPlaybackQuerySchema.parse(Object.fromEntries(url.searchParams));
+        if (scenario === 'drama-play-error' && input.route === 'bunny') {
+          fail(res, 503, 'preview_unavailable', '虚构的 CDN 取址失败');
+          return;
+        }
+        ok(res, {
+          playback: {
+            video_id: DRAMA_CDN_SAMPLE_ID,
+            playable: true,
+            play_url: `${api}/assets/drama-preview.mp4?cdn_route=${input.route}`,
+            expires_at: new Date(Date.now() + 3_600_000).toISOString(),
+          },
+        } satisfies GetDramaPlaybackData);
+        return;
+      }
       if (method === 'POST' && /^\/api\/telemetry\/(page|action|drama|request)/.test(path)) {
         ok(res, { recorded: true });
         return;

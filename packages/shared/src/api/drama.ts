@@ -115,6 +115,86 @@ export const DramaCdnPlaybackQuerySchema = z
   })
   .strict();
 
+const CdnOutcome = z.enum([
+  'pending',
+  'playing',
+  'error',
+  'unplayable',
+  'autoplay_blocked',
+  'switched',
+  'left',
+  'background',
+  'address_error',
+  'timeout',
+  'interrupted',
+]);
+const CdnDuration = z.number().finite().nonnegative().max(600_000);
+const CdnSeconds = z.number().finite().nonnegative().max(1e7);
+const CdnRelease = z.string().regex(/^[a-zA-Z0-9_.-]{1,128}$/);
+/** Bounded experiment evidence only: no arbitrary text, URLs, headers, or media credentials. */
+export const DramaCdnEvidenceSchema = z
+  .object({
+    type: z.literal('cdn_experiment'),
+    schema_version: z.literal(1),
+    id: z.string().regex(/^[a-zA-Z0-9_-]{1,128}$/),
+    release: CdnRelease,
+    sample: z.literal(DRAMA_CDN_SAMPLE_ID),
+    bytes: z.literal(46518538),
+    same_phone_network_proxy: z.boolean(),
+    formal_started: z.boolean(),
+    closed: z.boolean(),
+    automatic: z.boolean(),
+    muted: z.boolean(),
+    platform: z.enum(['ios', 'android', 'desktop', 'unknown']),
+    trials: z
+      .array(
+        z
+          .object({
+            sequence: z.number().int().min(1).max(18),
+            route: DramaCdnRouteSchema,
+            purpose: z.enum(['formal', 'functional', 'fallback']),
+            started_at: z.string().datetime(),
+            release: CdnRelease.optional(),
+            startup_outcome: CdnOutcome,
+            startup_ms: CdnDuration.optional(),
+            startup_ready_ms: CdnDuration.optional(),
+            elapsed_ms: CdnDuration.optional(),
+            source_to_frame_ms: CdnDuration.optional(),
+            frame_method: z.enum(['video_frame_callback', 'playing_and_timeupdate']).optional(),
+            media_error: z.number().int().min(1).max(4).optional(),
+            startup_cache: z.literal('UNKNOWN'),
+            seek_cache: z.literal('UNKNOWN'),
+            fallback_from_seconds: CdnSeconds.optional(),
+            fallback_resumed_seconds: CdnSeconds.optional(),
+            interruption: z.literal('before_seek').optional(),
+            after_startup_outcome: CdnOutcome.optional(),
+            seek: z
+              .object({
+                outcome: z.enum([
+                  'playing',
+                  'timeout',
+                  'error',
+                  'buffered',
+                  'unknown_buffer',
+                  'interrupted',
+                ]),
+                target_seconds: CdnSeconds,
+                buffered: z.array(z.tuple([CdnSeconds, CdnSeconds])).max(16),
+                target_frame_ms: CdnDuration.optional(),
+                resumed_ms: CdnDuration.optional(),
+                frame_method: z.enum(['video_frame_callback', 'playing_and_timeupdate']),
+                media_error: z.number().int().min(1).max(4).optional(),
+              })
+              .strict()
+              .optional(),
+          })
+          .strict()
+      )
+      .max(18),
+  })
+  .strict();
+export type DramaCdnEvidence = z.infer<typeof DramaCdnEvidenceSchema>;
+
 /** 互动只针对官方发布的剧，不包含创作者或关注关系。 */
 export interface DramaSocial {
   liked: boolean;

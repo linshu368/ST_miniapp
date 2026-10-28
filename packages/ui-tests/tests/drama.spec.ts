@@ -1,5 +1,9 @@
 import type { Locator, Page } from '@playwright/test';
-import type { GetDramaPlaybackData } from '@miniapp/shared';
+import {
+  DramaCdnEvidenceSchema,
+  type DramaCdnEvidence,
+  type GetDramaPlaybackData,
+} from '@miniapp/shared';
 import { test, expect, expectMobileLayout } from './fixtures.js';
 
 const firstDrama = '60000000-0000-4000-8000-000000000001';
@@ -8,6 +12,61 @@ const secondDrama = '60000000-0000-4000-8000-000000000002';
 const longDrama = '60000000-0000-4000-8000-000000000012';
 const tabs = (page: Page) => page.getByRole('navigation', { name: '短剧栏目' });
 const mainNav = (page: Page) => page.getByRole('navigation', { name: '主导航' });
+
+test('@drama @layout CDN 一次点击自动完成固定顺序、回退并提交有界结果', async ({
+  page,
+  preview,
+}) => {
+  await preview.scenario('dramas');
+  let evidence: DramaCdnEvidence | undefined;
+  page.on('request', (request) => {
+    if (request.url().endsWith('/api/telemetry/drama-timing') && request.method() === 'POST') {
+      const parsed = DramaCdnEvidenceSchema.safeParse(request.postDataJSON());
+      if (parsed.success) evidence = parsed.data;
+    }
+  });
+  await page.goto('/drama-cdn-experiment');
+  await page
+    .getByRole('checkbox', { name: '确认真实 Telegram 手机，同手机 / 网络 / 代理状态全程不变' })
+    .check();
+  await page.getByRole('button', { name: '自动跑完三组' }).click();
+  await expect(page.getByText('结果已提交；请回复本聊天“已完成”，由我读取。')).toBeVisible({
+    timeout: 35_000,
+  });
+  expect(
+    evidence?.trials.filter((trial) => trial.purpose === 'formal').map((trial) => trial.route)
+  ).toEqual(['original', 'bunny', 'bunny', 'original', 'original', 'bunny']);
+  expect(evidence?.trials.filter((trial) => trial.purpose === 'fallback')).toHaveLength(1);
+  expect(evidence?.trials.every((trial) => trial.startup_outcome !== 'pending')).toBe(true);
+  expect(evidence?.automatic).toBe(true);
+  await expectMobileLayout(page);
+});
+
+test('@drama CDN 自动轮次保留三次地址失败而不重试或补测', async ({ page, preview }) => {
+  await preview.scenario('drama-play-error');
+  let evidence: DramaCdnEvidence | undefined;
+  page.on('request', (request) => {
+    if (request.url().endsWith('/api/telemetry/drama-timing') && request.method() === 'POST') {
+      const parsed = DramaCdnEvidenceSchema.safeParse(request.postDataJSON());
+      if (parsed.success) evidence = parsed.data;
+    }
+  });
+  await page.goto('/drama-cdn-experiment');
+  await page.getByRole('checkbox').check();
+  await page.getByRole('button', { name: '自动跑完三组' }).click();
+  await expect(page.getByText('结果已提交；请回复本聊天“已完成”，由我读取。')).toBeVisible({
+    timeout: 35_000,
+  });
+  const formal = evidence?.trials.filter((trial) => trial.purpose === 'formal') ?? [];
+  expect(formal).toHaveLength(6);
+  expect(
+    formal.filter((trial) => trial.route === 'bunny').map((trial) => trial.startup_outcome)
+  ).toEqual(['address_error', 'address_error', 'address_error']);
+  const state = await preview.state();
+  expect(
+    state.requests.filter((request) => request.path.startsWith('/api/drama-cdn-experiment/play'))
+  ).toHaveLength(7);
+});
 
 async function pauseReadyVideo(page: Page) {
   const video = page.locator('video');

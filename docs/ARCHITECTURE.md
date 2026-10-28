@@ -24,7 +24,7 @@
 
 ## 1. 架构铁律（违反即拦截）
 
-内部 Bunny Preview 实验：`/drama-cdn-experiment` 复用真实播放器，独立 manifest/play 接口仅在 PR/TEST、真实 Telegram 验签、内部名单和固定样本校验后返回单对象临时能力。生产凭证不进入 Preview；媒体直接走 Supabase 或 Bunny Standard，默认播放不切流。限时源签名及 Bunny 用户 token 分离，截止停止 B，A 仍按源有效期回退；本地最多六次正式记录及有界功能/回退记录，无新表或监控服务。发布与收尾见 [操作说明](../ops/drama-bunny-preview/README.md)，手机性能待真实验收。
+内部 Bunny Preview 实验：`/drama-cdn-experiment` 复用真实播放器，独立 manifest/play 接口仅在 PR/TEST、真实 Telegram 验签、内部名单和固定样本校验后返回单对象临时能力。生产凭证不进入 Preview；媒体直接走 Supabase 或 Bunny Standard，默认播放不切流。限时源签名及 Bunny 用户 token 分离，截止停止 B，A 仍按源有效期回退；本地最多六次正式记录及有界功能/回退记录，无新表或监控服务。发布与收尾见 [操作说明](../ops/drama-bunny-preview/README.md)，手机性能待真实验收。 自动模式一次点击依序六次，首帧后自动 seek，全部结束并回退后复用现有 telemetry endpoint/Pino 提交 strict 逐次证据；只读回日志，不写分析表，不新增队列或监控服务。
 
 离线数据运维补充：2026-10-19 的 Civitai seed TEST 导出最初复用 `experience.import_image_plaza_seed_work` 初始化目标作品；M1 后该 RPC 位于 `media_plaza`。该流程不迁移测试用户/点赞/账务，图片实体必须独立迁移。2026-10-20 新增离线 Storage 工具，固定 TEST → 本地 SHA-256 暂存 → production 仅新增上传/回读校验，有限并发且不覆盖冲突对象。该工具不改变运行时边界，不自动执行生产 SQL；实际完成状态以任务/report 为准。操作方法见 [seed 迁移说明](../ops/image-plaza-seed-migration.md)。
 

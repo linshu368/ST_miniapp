@@ -62,3 +62,5 @@ v2 的实现/口径与验收见 [短剧看板操作说明](../../../../docs/graf
 每次等待 10 秒生成一次快照；失败、离开、后台等都生成终态，后台不计成慢播放。遥测异常不得影响请求/视频，地址/签名/对象路径不得进日志；上传契约按字段白名单和明细数量限制，禁止任意对象作为日志输入。关键回归及查询、发布、真机验收见 [排查说明](../../../../docs/drama-playback-timing.md)。
 
 媒体启动诊断在原报告的可选 `media` 中记录最多 32 条有界事件，以及慢/终态时即时 `snapshot`。`play_called/play_resolved/play_rejected/loadeddata/canplay` 首次 marks 独立于事件截断；原 `playing + first_frame` 成功条件和手动/自动 play 的业务结果保持不变。不得逐帧记录 progress/timeupdate 或周期轮询。状态只含有限数值、布尔与枚举；bufferedAheadMs 只算覆盖当前位置的连续缓冲，读取失败为缺失，不得把远端缓冲、suspend 或零/缺失数据直接解释为网络根因。reader 在终态/媒体释放时解除，旧监听/Promise 不得写新流，慢快照不可被后续事件改写。通过既有 drama-media/observer/timing 测试验证，Backend 接受新契约后再发 Frontend。
+
+内部固定样本实验另提供一次点击自动 AB/BA/AB：统一静音，首帧与 playing 后立即进行未缓冲 seek，失败保留并推进，组间400ms不计起播；后台停止、不自动补测。结束后自动回原路径，再用现有 telemetry API 提交 strict 脱敏报告，提交失败只重发结果。`packages/ui-tests` 的现有 dramas fixture 和 CDN 用例覆盖顺序、取址失败继续、回退/提交及窄屏；这些是虚构流程验证，不能替代 Telegram 真机性能。
