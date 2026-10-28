@@ -34,10 +34,12 @@ export function useDramaSocialQuery(id: string, enabled = true) {
   return useQuery({
     enabled,
     queryKey: dramaKeys.social(id),
-    queryFn: async () =>
+    queryFn: async ({ signal }) =>
       (
         await apiClient<GetDramaSocialData>(`/api/dramas/${encodeURIComponent(id)}/social`, {
-          timeoutMs: 8000,
+          signal,
+          timeoutMs: 5000,
+          queuePriority: 'background',
         })
       ).social,
     retry: false,
@@ -83,10 +85,10 @@ export function useDramaCommentsQuery(id: string, enabled: boolean) {
   return useInfiniteQuery({
     queryKey: dramaKeys.comments(id),
     initialPageParam: null as string | null,
-    queryFn: ({ pageParam }) =>
+    queryFn: ({ pageParam, signal }) =>
       apiClient<GetDramaCommentsData>(
         `/api/dramas/${encodeURIComponent(id)}/comments${pageParam ? `?cursor=${encodeURIComponent(pageParam)}` : ''}`,
-        { timeoutMs: 8000 }
+        { signal, timeoutMs: 5000, queuePriority: 'background' }
       ),
     getNextPageParam: (last) => last.next_cursor,
     enabled,
@@ -122,28 +124,43 @@ export function useDramaCommentMutations(id: string) {
   return { create, remove };
 }
 
-async function fetchDramas(kind: 'list' | 'queue' = 'list'): Promise<DramaSummary[]> {
+async function fetchDramas(
+  kind: 'list' | 'queue' = 'list',
+  signal?: AbortSignal
+): Promise<DramaSummary[]> {
   return dramaTiming.query(kind, undefined, undefined, async (onAttempt) => {
-    const data = await apiClient<GetDramasData>('/api/dramas', { onAttempt });
+    const data = await apiClient<GetDramasData>('/api/dramas', {
+      onAttempt,
+      signal,
+      timeoutMs: 5000,
+      queuePriority: kind === 'list' ? 'critical' : 'background',
+    });
     return data.dramas;
   });
 }
 
-async function fetchDramaDetail(id: string): Promise<DramaDetail> {
+async function fetchDramaDetail(id: string, signal?: AbortSignal): Promise<DramaDetail> {
   return dramaTiming.query('detail', id, undefined, async (onAttempt) => {
     const data = await apiClient<GetDramaByIdData>(`/api/dramas/${encodeURIComponent(id)}`, {
       onAttempt,
+      signal,
+      timeoutMs: 5000,
+      queuePriority: 'normal',
     });
     return data.drama;
   });
 }
 
-async function fetchDramaPlayback(id: string, videoId?: string): Promise<DramaPlayback> {
+async function fetchDramaPlayback(
+  id: string,
+  videoId?: string,
+  signal?: AbortSignal
+): Promise<DramaPlayback> {
   const suffix = videoId ? `?video_id=${encodeURIComponent(videoId)}` : '';
   return dramaTiming.query('playback', id, videoId, async (onAttempt) => {
     const data = await apiClient<GetDramaPlaybackData>(
       `/api/dramas/${encodeURIComponent(id)}/play${suffix}`,
-      { onAttempt }
+      { onAttempt, signal, timeoutMs: 5000, queuePriority: 'critical' }
     );
     return data.playback;
   });
@@ -153,8 +170,9 @@ async function fetchDramaPlayback(id: string, videoId?: string): Promise<DramaPl
 export function useDramaListQuery() {
   return useQuery({
     queryKey: dramaKeys.list(),
-    queryFn: () => fetchDramas(),
+    queryFn: ({ signal }) => fetchDramas('list', signal),
     structuralSharing: false,
+    retry: false,
   });
 }
 
@@ -163,18 +181,20 @@ export function useDramaBrowseQueueQuery() {
   const queryClient = useQueryClient();
   return useQuery({
     queryKey: dramaKeys.browseQueue(),
-    queryFn: () => fetchDramas('queue'),
+    queryFn: ({ signal }) => fetchDramas('queue', signal),
     initialData: () => queryClient.getQueryData<DramaSummary[]>(dramaKeys.list()),
     staleTime: Infinity,
+    retry: false,
   });
 }
 
 export function useDramaDetailQuery(id: string) {
   return useQuery({
     queryKey: dramaKeys.detail(id),
-    queryFn: () => fetchDramaDetail(id),
+    queryFn: ({ signal }) => fetchDramaDetail(id, signal),
     structuralSharing: false,
     enabled: Boolean(id),
+    retry: false,
   });
 }
 
@@ -186,9 +206,10 @@ export function useDramaDetailQuery(id: string) {
 export function useDramaPlaybackQuery(id: string, videoId?: string) {
   return useQuery({
     queryKey: dramaKeys.playback(id, videoId),
-    queryFn: () => fetchDramaPlayback(id, videoId),
+    queryFn: ({ signal }) => fetchDramaPlayback(id, videoId, signal),
     structuralSharing: false,
     enabled: Boolean(id),
+    retry: false,
   });
 }
 
@@ -199,12 +220,12 @@ export function usePreloadDramaPlayback() {
     (id: string, videoId?: string) => {
       void client.prefetchQuery({
         queryKey: dramaKeys.playback(id, videoId),
-        queryFn: () => fetchDramaPlayback(id, videoId),
+        queryFn: ({ signal }) => fetchDramaPlayback(id, videoId, signal),
         retry: false,
       });
       void client.prefetchQuery({
         queryKey: dramaKeys.detail(id),
-        queryFn: () => fetchDramaDetail(id),
+        queryFn: ({ signal }) => fetchDramaDetail(id, signal),
         retry: false,
       });
     },
@@ -221,8 +242,9 @@ export function usePrefetchDramaPlayback() {
     if (list) queryClient.setQueryData(dramaKeys.browseQueue(), list);
     void queryClient.prefetchQuery({
       queryKey: dramaKeys.playback(id, videoId),
-      queryFn: () => fetchDramaPlayback(id, videoId),
+      queryFn: ({ signal }) => fetchDramaPlayback(id, videoId, signal),
       structuralSharing: false,
+      retry: false,
     });
   };
 }

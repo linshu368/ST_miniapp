@@ -93,7 +93,6 @@ export function DramaPlayer({
   const router = useRouter();
   const detailQuery = useDramaDetailQuery(id);
   const drama = detailQuery.data;
-  const social = useDramaSocialQuery(id);
   const like = useDramaLikeMutation(id);
   const likeBusy = useRef(false);
   const [feedback, setFeedback] = useState('');
@@ -148,6 +147,9 @@ export function DramaPlayer({
   // 播放与详情并行，元数据加载不阻塞首集的视频元素挂载或签名请求。
   const playbackQuery = useDramaPlaybackQuery(id, activeVideoId ?? undefined);
   const playback = playbackQuery.data;
+  // Likes/comments are not needed for first frame. Start them after playback has
+  // either resolved or failed so they cannot compete for the media URL.
+  const social = useDramaSocialQuery(id, !playbackQuery.isPending);
   const currentVideoId = playback?.video_id ?? activeVideoId;
   const currentIndex = drama?.videos.findIndex((video) => video.id === currentVideoId) ?? -1;
   const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
@@ -885,7 +887,14 @@ export function DramaPlayer({
               {available ? (
                 <>
                   {cover ? (
-                    <img src={cover} alt="" className="h-full w-full object-cover opacity-60" />
+                    <img
+                      src={cover}
+                      alt=""
+                      loading="lazy"
+                      decoding="async"
+                      fetchPriority="low"
+                      className="h-full w-full object-cover opacity-60"
+                    />
                   ) : null}
                   <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-black/20" />
                   <div className="absolute inset-x-6 bottom-24 text-[#eee7e2]">
@@ -916,7 +925,7 @@ export function DramaPlayer({
             )}
             playsInline
             muted={muted}
-            preload="metadata"
+            preload="auto"
             poster={info?.cover_url ?? undefined}
             aria-label={info ? `${info.title}，第 ${episodeNumber} 集` : '短剧播放器'}
             onPlaying={() => {

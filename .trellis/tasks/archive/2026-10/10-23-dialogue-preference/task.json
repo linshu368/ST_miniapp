@@ -1,0 +1,47 @@
+{
+  "id": "dialogue-preference",
+  "name": "dialogue-preference",
+  "title": "可运营回复风格独立页面与手机开关",
+  "description": "运营自定义目录及用户端展示/独立开关保存；仅UI数据流，不接模型规则注入。基于main1341605c，保留上游思考与性能修复。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-23",
+  "completedAt": "2026-10-28",
+  "branch": "feat/dialogue-preference",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "当前实现及本地验证完成，发布门禁中。无远端写入，原用户调研文件未纳入。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "legacy_exempt",
+      "reason": "??? 2026-10-28 ???????? 10 ? 26 ????????? 10-27-sentry-performance-optimization????????? meta.archived_module_impact???????? module-updates.historical.json?????????????????????????????????????????????"
+    },
+    "archived_module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "frontend.business.conversation-ui",
+        "backend.business.conversation-generation",
+        "admin.business.operations",
+        "shared.business.conversation-contracts",
+        "database.infrastructure.schema-security"
+      ]
+    },
+    "archive_confirmation": {
+      "date": "2026-10-28",
+      "source": "??????? 10-27-sentry-performance-optimization ?? 10 ? 26 ??????"
+    }
+  }
+}

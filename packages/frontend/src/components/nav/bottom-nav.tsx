@@ -24,6 +24,23 @@ const NAV_ITEMS = [
   { href: '/profile', label: '我的', Icon: User },
 ] as const;
 
+const HEAVY_ROUTE_HREFS = new Set<string>(['/', '/dramas', '/create']);
+
+type NavigatorWithConnection = Navigator & {
+  connection?: { saveData?: boolean; effectiveType?: string };
+};
+
+function canPrefetchHeavyRoute(): boolean {
+  if (typeof document === 'undefined' || document.visibilityState !== 'visible') return false;
+  const connection = (navigator as NavigatorWithConnection).connection;
+  return (
+    navigator.onLine !== false &&
+    connection?.saveData !== true &&
+    connection?.effectiveType !== 'slow-2g' &&
+    connection?.effectiveType !== '2g'
+  );
+}
+
 // 深层页面（支付流程、沉浸式输入页、消息与客服会话）隐藏底部导航，让主内容拿满可视高度
 const HIDDEN_PREFIXES = [
   '/profile/recharge',
@@ -108,18 +125,22 @@ export function BottomNav() {
               : href === '/'
                 ? pathname === '/'
                 : pathname?.startsWith(href);
+          const isHeavyRoute = HEAVY_ROUTE_HREFS.has(href);
+          const prefetchOnIntent = () => {
+            if (!current && (!isHeavyRoute || canPrefetchHeavyRoute())) {
+              router.prefetch(targetHref);
+            }
+          };
           return (
             <Link
               key={href}
               href={targetHref}
+              prefetch={isHeavyRoute ? false : undefined}
               scroll={href === '/characters' ? false : undefined}
               // 不在大厅空闲预取其它 tab；真正指向该 tab 时再拉 RSC/路由。
-              onMouseEnter={() => {
-                if (!current) router.prefetch(targetHref);
-              }}
-              onTouchStart={() => {
-                if (!current) router.prefetch(targetHref);
-              }}
+              onMouseEnter={prefetchOnIntent}
+              onFocus={prefetchOnIntent}
+              onTouchStart={prefetchOnIntent}
               onClick={(event) => {
                 if (currentRoleplayPath) rememberRoleplayScroll(currentRoleplayPath);
                 if (href === '/characters') {

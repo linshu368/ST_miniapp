@@ -1,0 +1,53 @@
+{
+  "id": "drama-video-integration",
+  "name": "drama-video-integration",
+  "title": "短剧视频接入 miniapp（MVP 最小闭环）",
+  "description": "把 telegram-video-archive 归档进 drama_archive（test 库）的短剧视频接入 ST_miniAPP，打通最小闭环：短剧 tab 列表 -> 详情 -> 播放。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": "cross-package",
+  "package": "cross-package",
+  "priority": "P1",
+  "creator": "linshu",
+  "assignee": "linshu",
+  "createdAt": "2026-10-21",
+  "completedAt": "2026-10-28",
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "10-21-drama-archive-access",
+    "10-21-drama-api-contract-backend",
+    "10-21-drama-frontend-ui"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "legacy_exempt",
+      "reason": "??? 2026-10-28 ???????? 10 ? 26 ????????? 10-27-sentry-performance-optimization????????? meta.archived_module_impact???????? module-updates.historical.json?????????????????????????????????????????????"
+    },
+    "archived_module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "database.business.drama-archive",
+        "database.infrastructure.schema-security",
+        "backend.infrastructure.runtime-data-security",
+        "shared.business.drama-contracts",
+        "backend.business.drama",
+        "frontend.business.drama",
+        "frontend.infrastructure.client-ui-foundation"
+      ]
+    },
+    "archive_confirmation": {
+      "date": "2026-10-28",
+      "source": "??????? 10-27-sentry-performance-optimization ?? 10 ? 26 ??????"
+    }
+  }
+}

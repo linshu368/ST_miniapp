@@ -19,14 +19,15 @@ export function DramaHome() {
   const activeId = useDramaLibraryStore((state) => state.browse.activeId);
   const setBrowse = useDramaLibraryStore((state) => state.setBrowse);
   const queue = (query.data ?? []).filter((drama) => drama.episode_count > 0);
-  const index = Math.max(
-    0,
-    queue.findIndex((drama) => drama.id === activeId)
-  );
+  const activeIndex = queue.findIndex((drama) => drama.id === activeId);
+  const index = activeIndex >= 0 ? activeIndex : 0;
   const current = queue[index];
   const currentId = current?.id;
+  // A remembered drama can start its playback request while the catalog refreshes.
+  // The refreshed catalog remains authoritative and corrects a removed/stale id.
+  const playerId = currentId ?? (query.data === undefined ? activeId : null);
   // 后台推荐刷新失败不影响已有内容，避免正在播放的剧被错误页卸载。
-  const hasPlayer = hydrated && Boolean(current);
+  const hasPlayer = hydrated && Boolean(playerId);
   useEffect(() => {
     // 首次推荐也记住当前剧；后台重排列表不能替用户换掉正在看的内容。
     if (hydrated && currentId && activeId !== currentId) setBrowse({ activeId: currentId });
@@ -104,14 +105,14 @@ export function DramaHome() {
             controlsVisible ? 'bottom-[var(--app-nav-space)]' : 'bottom-0'
           )}
         >
-          {!hydrated || (query.isLoading && !current) ? (
+          {!hydrated || (query.isLoading && !playerId) ? (
             <div
               role="status"
               className="flex h-full items-center justify-center text-sm text-[#eee7e2]/40"
             >
               <span className="animate-pulse">好戏，即将开始</span>
             </div>
-          ) : !current ? (
+          ) : !playerId ? (
             <div
               role="status"
               className="flex h-full flex-col items-center justify-center px-8 text-center"
@@ -135,9 +136,9 @@ export function DramaHome() {
             </div>
           ) : (
             <DramaPlayer
-              key={current.id}
-              id={current.id}
-              summary={current}
+              key={playerId}
+              id={playerId}
+              summary={current?.id === playerId ? current : undefined}
               embedded
               previousTitle={queue[index - 1]?.title}
               previousCoverUrl={queue[index - 1]?.cover_url ?? undefined}

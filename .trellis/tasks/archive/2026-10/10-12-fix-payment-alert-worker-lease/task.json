@@ -1,0 +1,41 @@
+{
+  "id": "fix-payment-alert-worker-lease",
+  "name": "fix-payment-alert-worker-lease",
+  "title": "修复支付告警 Worker 锁连接生命周期",
+  "description": "用单连接 PostgreSQL advisory lock 修复支付告警 Worker 的连接池耗尽与失联；不改支付主链路、规则或数据库结构。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": "Backend payment alert monitor session advisory-lock lifecycle and regression coverage; no migration, payment-rule, or runtime-config change.",
+  "package": "backend",
+  "priority": "P0",
+  "creator": "linshu",
+  "assignee": "linshu",
+  "createdAt": "2026-10-12",
+  "completedAt": "2026-10-28",
+  "branch": "codex/fix-payment-alert-worker-lease",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "legacy_exempt",
+      "reason": "??? 2026-10-28 ???????? 10 ? 26 ????????? 10-27-sentry-performance-optimization????????? meta.archived_module_impact???????? module-updates.historical.json?????????????????????????????????????????????"
+    },
+    "archived_module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": ["backend.business.wallet-payment", "backend.infrastructure.runtime-data-security"]
+    },
+    "archive_confirmation": {
+      "date": "2026-10-28",
+      "source": "??????? 10-27-sentry-performance-optimization ?? 10 ? 26 ??????"
+    }
+  }
+}
