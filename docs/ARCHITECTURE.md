@@ -750,3 +750,9 @@ send/regenerate 携带可选 `first_token_measurement`；后端通过既有 begi
 只消费赢家的replay与原charge_id结算，原报价/权益、超时免扣、主动停止和离页恢复规则不变。败方立即取消，不为排查drain；只把已接收的正文/公开思考有界片段和race_lost原因并入原attempt一次异步终态写，不发给用户、不进上下文、不另计费。正常attempt最多派发/终态两次observe；删除旧首发额外元数据补读，无新cron/轮询。diagnostic保存不阻塞首字，赢家身份仍须持久化才能结算。
 
 新迁移`20261028_first_token_race.sql`扩展现有attempt诊断列并解除禁止首发回赢的守卫，保留数据库单赢家CAS/PT409；Grafana仅获原指标列权限，不能读诊断正文。先本地与TEST验证、合dev，再生产迁移和应用/Admin/看板。回退应用保留诊断列与原账务，不扩权限，不改历史数据。
+
+## pr-525 Preview 短剧 Bunny 分发（本分支实施，待发布）
+
+本分支已实现 pr-525 普通短剧播放的 Bunny 适配：只有 Railway 环境名 pr-525、数据库 target=test 且 DRAMA_CDN_ENABLED=true 时，正常 /api/dramas/:id/play 返回 Bunny 地址；DRAMA_CDN_TOKEN_KEY 仅存 Backend。移除独立 /drama-cdn-experiment 页面与专用接口、用户/样本白名单。正常 Telegram 鉴权、剧/集归属和私有桶保持；其他环境仍走 Supabase。云配置/部署和真实媒体验收尚未完成，不能把本地实现视为 Preview 已切流。操作与恢复见 ops/drama-bunny-preview/README.md。
+
+Backend 复用 DramaSignedUrlCache 的有界缓存和 single-flight，先申请 TEST 对象级短期源签名，再按完整对象路径与 origin_token 生成 Bunny HMAC-SHA256 token。用户 URL 到期早于源签名至少60秒；缓存不得改写原到期时间。Bunny 规则只将 /preview-test/\* 映射到固定 TEST host 的 drama-videos 私有桶。无数据库迁移、媒体代理、转码或存储复制；启用配置错误返回不可播，不静默直连掩盖切流失败。

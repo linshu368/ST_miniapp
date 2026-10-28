@@ -8,11 +8,6 @@ const wallets = {
 };
 const timingLogs = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }));
 const persistence = vi.hoisted(() => ({ rpc: vi.fn() }));
-const cdnAccess = vi.hoisted(() => ({ enabled: false, userIds: [99999] }));
-vi.mock('../platform/runtime-config.js', async (original) => ({
-  ...(await original<typeof import('../platform/runtime-config.js')>()),
-  getDramaCdnExperimentConfig: () => cdnAccess,
-}));
 vi.mock('../lib/logger.js', () => ({
   requestLogger: () => ({
     biz: { info: timingLogs.info, warn: timingLogs.warn },
@@ -166,7 +161,6 @@ describe('POST /api/telemetry/drama-timing', () => {
   });
   beforeEach(() => {
     vi.clearAllMocks();
-    cdnAccess.enabled = false;
     vi.stubEnv('DEV_AUTH_BYPASS', '1');
     vi.stubEnv('MOCK_AUTH', '');
     vi.stubEnv('DRAMA_TIMING_PERSIST_ENABLED', 'false');
@@ -177,72 +171,17 @@ describe('POST /api/telemetry/drama-timing', () => {
     vi.restoreAllMocks();
   });
 
-  const cdnEvidence = {
-    type: 'cdn_experiment',
-    schema_version: 1,
-    id: 'unit-round',
-    release: 'unit-release',
-    sample: '1fc8b3d5-9426-5ce6-b675-d98074da4801',
-    bytes: 46518538,
-    same_phone_network_proxy: true,
-    formal_started: true,
-    closed: true,
-    automatic: true,
-    muted: true,
-    platform: 'android',
-    trials: [],
-  };
-  it('accepts only bounded internal experiment evidence through existing logs, without database persistence', async () => {
-    cdnAccess.enabled = true;
+  it('rejects retired experiment uploads without recording them', async () => {
     const app = await buildApp();
     try {
       const response = await app.inject({
         method: 'POST',
         url: '/api/telemetry/drama-timing',
-        payload: cdnEvidence,
+        payload: { type: 'cdn_experiment', id: 'retired' },
       });
-      expect(response.statusCode).toBe(202);
-      expect(timingLogs.info).toHaveBeenCalledWith(
-        expect.objectContaining({ event: 'drama.cdn_experiment_evidence', evidence: cdnEvidence }),
-        expect.any(String)
-      );
+      expect(response.statusCode).toBe(400);
+      expect(timingLogs.info).not.toHaveBeenCalled();
       expect(persistence.rpc).not.toHaveBeenCalled();
-      const invalid = await app.inject({
-        method: 'POST',
-        url: '/api/telemetry/drama-timing',
-        payload: { ...cdnEvidence, token: 'must-not-log' },
-      });
-      expect(invalid.statusCode).toBe(400);
-      expect(JSON.stringify(timingLogs.info.mock.calls)).not.toContain('must-not-log');
-    } finally {
-      await app.close();
-    }
-  });
-  it('rejects experiment uploads outside the whitelist and reports failed logging instead of false acceptance', async () => {
-    const app = await buildApp();
-    try {
-      expect(
-        (
-          await app.inject({
-            method: 'POST',
-            url: '/api/telemetry/drama-timing',
-            payload: cdnEvidence,
-          })
-        ).statusCode
-      ).toBe(403);
-      cdnAccess.enabled = true;
-      timingLogs.info.mockImplementationOnce(() => {
-        throw new Error('logging unavailable');
-      });
-      expect(
-        (
-          await app.inject({
-            method: 'POST',
-            url: '/api/telemetry/drama-timing',
-            payload: cdnEvidence,
-          })
-        ).statusCode
-      ).toBe(503);
     } finally {
       await app.close();
     }

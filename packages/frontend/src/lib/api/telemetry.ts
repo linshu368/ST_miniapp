@@ -1,6 +1,6 @@
 'use client';
 
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import {
   parseGetReplayContextData,
   DRAMA_TIMING_BODY_LIMIT,
@@ -10,33 +10,11 @@ import {
   type DramaTimingReport,
   type PostDramaTimingData,
   type GetReplayContextData,
-  DramaCdnEvidenceSchema,
-  type DramaCdnEvidence,
 } from '@miniapp/shared';
 
 import { apiClient } from './client';
 
 export const REPLAY_CONTEXT_TIMEOUT_MS = 4_000;
-
-/** One submission after playback/seek/fallback timing has ended; no automatic retry. */
-export function useDramaCdnEvidenceMutation() {
-  return useMutation({
-    mutationFn: async (report: DramaCdnEvidence) => {
-      const body = JSON.stringify(DramaCdnEvidenceSchema.parse(report));
-      if (new TextEncoder().encode(body).byteLength > DRAMA_TIMING_BODY_LIMIT)
-        throw new Error('report_too_large');
-      const result = await apiClient<PostDramaTimingData>('/api/telemetry/drama-timing', {
-        method: 'POST',
-        body,
-        timeoutMs: DRAMA_TIMING_UPLOAD_TIMEOUT_MS,
-        queuePriority: 'background',
-        keepalive: true,
-      });
-      return PostDramaTimingDataSchema.parse(result);
-    },
-    retry: false,
-  });
-}
 
 /** 单次、低优先级上报；总预算包括排队和响应体，不能拖住播放或无限积压。 */
 export async function uploadDramaTiming(report: DramaTimingReport): Promise<void> {

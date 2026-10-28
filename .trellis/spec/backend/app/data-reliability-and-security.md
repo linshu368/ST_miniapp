@@ -303,3 +303,33 @@ recoverable_delivery仅新Backend显式启用；旧请求/终结账单不回填�
 只消费赢家的replay与原charge_id结算，原报价/权益、超时免扣、主动停止和离页恢复规则不变。败方立即取消，不为排查drain；只把已接收的正文/公开思考有界片段和race_lost原因并入原attempt一次异步终态写，不发给用户、不进上下文、不另计费。正常attempt最多派发/终态两次observe；删除旧首发额外元数据补读，无新cron/轮询。diagnostic保存不阻塞首字，赢家身份仍须持久化才能结算。
 
 新迁移`20261028_first_token_race.sql`扩展现有attempt诊断列并解除禁止首发回赢的守卫，保留数据库单赢家CAS/PT409；Grafana仅获原指标列权限，不能读诊断正文。先本地与TEST验证、合dev，再生产迁移和应用/Admin/看板。回退应用保留诊断列与原账务，不扩权限，不改历史数据。
+
+## Scenario: pr-525 Preview 普通短剧 Bunny 分发
+
+### 1. Scope / Trigger
+
+仅 PR #525 Preview 的普通短剧播放；不能扩展到 production/development，不能沿用单样本实验入口。
+
+### 2. Signatures
+
+getDramaPlaybackCdnConfig(): DramaPlaybackCdnConfig | null；buildBunnyPlayback(objectPath, sourceUrl, tokenKey, now) 返回 url/expiresAtMs；GET /api/dramas/:id/play 响应不变。
+
+### 3. Contracts
+
+DRAMA_CDN_ENABLED=true + RAILWAY_ENVIRONMENT_NAME=pr-525 + database.target=test 才启用；TEST host固定 zoqelpfhurwehlvypryl.supabase.co，CDN host固定 stminiappvid20261028.b-cdn.net。密钥仅 Backend，不使用 NEXT_PUBLIC，不接收任意 origin。CDN签名必须绑定完整对象路径和源 origin_token，不能忽略用户可修改的查询参数。
+
+### 4. Validation & Error Matrix
+
+非目标环境/未启用→原Supabase；已启用但key缺失、源host错误或鉴权旁路→不可播；签发失败/超时/源期限不足→不可播；未鉴权/跨剧video仍由原路由拒绝。配置错误不能静默直连；日志只记允许的错误码。
+
+### 5. Good/Base/Bad Cases
+
+Good：鉴权与归属后签TEST单对象，CDN签名覆盖源token并早于源到期。Base：关闭Preview配置走原路径。Bad：CDN拿到全库service-role，或只换域名却未配置私有回源。
+
+### 6. Tests Required
+
+扩展既有signed-url/runtime-config/drama-timing回归，覆盖两对象隔离、完整URL复用、轮换配置、TTL、源token绑定与PR/TEST门禁。复用@drama验证普通页面和旧实验404；部署后仍须真实Range和Telegram验收。
+
+### 7. Wrong vs Correct
+
+Wrong：把旧单样本规则解除白名单后称为全量Bunny。Correct：固定TEST桶动态回源，不同真实对象均通过206/Range与字节核验，旧实验路径继续关闭。

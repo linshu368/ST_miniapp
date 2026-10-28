@@ -61,7 +61,7 @@ describe('apiClient GET transport retry', () => {
     const fetchMock = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'));
     vi.stubGlobal('fetch', fetchMock);
     await expect(
-      apiClient('/api/drama-cdn-experiment/play', { transportRetry: false })
+      apiClient('/api/transport-retry-fixture', { transportRetry: false })
     ).rejects.toThrow('Failed to fetch');
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(fetchMock.mock.calls[0]?.[1]).not.toHaveProperty('transportRetry');

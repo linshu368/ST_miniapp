@@ -1,14 +1,21 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   getDomainDb: vi.fn(),
+  config: {
+    database: { target: 'test' as 'test' | 'production' },
+    supabase: { url: 'https://zoqelpfhurwehlvypryl.supabase.co' },
+  },
 }));
+
+vi.mock('./config.js', () => ({ config: mocks.config }));
 
 vi.mock('../lib/supabase.js', () => ({
   getDomainDb: mocks.getDomainDb,
 }));
 
 import {
+  getDramaPlaybackCdnConfig,
   clearRuntimeConfigInflightReads,
   fetchRuntimeConfigEntries,
   fetchRuntimeConfigEntry,
@@ -166,5 +173,55 @@ describe('runtime config in-flight reads', () => {
     ]);
 
     expect(readEntries).toHaveBeenCalledTimes(4);
+  });
+});
+
+describe('drama CDN deployment boundary', () => {
+  const originalTarget = mocks.config.database.target;
+  const originalUrl = mocks.config.supabase.url;
+  beforeEach(() => {
+    vi.stubEnv('DRAMA_CDN_ENABLED', 'true');
+    vi.stubEnv('DRAMA_CDN_TOKEN_KEY', 'fictional-key');
+    vi.stubEnv('RAILWAY_ENVIRONMENT_NAME', 'pr-525');
+    vi.stubEnv('DEV_AUTH_BYPASS', '0');
+    vi.stubEnv('MOCK_AUTH', '0');
+    mocks.config.database.target = 'test';
+    mocks.config.supabase.url = 'https://zoqelpfhurwehlvypryl.supabase.co';
+  });
+  afterEach(() => {
+    mocks.config.database.target = originalTarget;
+    mocks.config.supabase.url = originalUrl;
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+  it('enables ordinary playback for pr-525 TEST without account or sample selectors', () => {
+    expect(getDramaPlaybackCdnConfig()).toEqual({ tokenKey: 'fictional-key' });
+  });
+  it.each(['production', 'development', 'pr-526', ''])(
+    'keeps Supabase for environment %s',
+    (name) => {
+      vi.stubEnv('RAILWAY_ENVIRONMENT_NAME', name);
+      expect(getDramaPlaybackCdnConfig()).toBeNull();
+    }
+  );
+  it('keeps production data and disabled previews off Bunny', () => {
+    mocks.config.database.target = 'production';
+    expect(getDramaPlaybackCdnConfig()).toBeNull();
+    mocks.config.database.target = 'test';
+    vi.stubEnv('DRAMA_CDN_ENABLED', 'false');
+    expect(getDramaPlaybackCdnConfig()).toBeNull();
+  });
+  it('refuses invalid credentials, source or authentication bypass', () => {
+    vi.stubEnv('DRAMA_CDN_TOKEN_KEY', '');
+    expect(() => getDramaPlaybackCdnConfig()).toThrow('drama_cdn_config_invalid');
+    vi.stubEnv('DRAMA_CDN_TOKEN_KEY', 'fictional-key');
+    vi.stubEnv('DEV_AUTH_BYPASS', '1');
+    expect(() => getDramaPlaybackCdnConfig()).toThrow('drama_cdn_config_invalid');
+    vi.stubEnv('DEV_AUTH_BYPASS', '0');
+    vi.stubEnv('MOCK_AUTH', '1');
+    expect(() => getDramaPlaybackCdnConfig()).toThrow('drama_cdn_config_invalid');
+    vi.stubEnv('MOCK_AUTH', '0');
+    mocks.config.supabase.url = 'https://another.supabase.co';
+    expect(() => getDramaPlaybackCdnConfig()).toThrow('drama_cdn_config_invalid');
   });
 });

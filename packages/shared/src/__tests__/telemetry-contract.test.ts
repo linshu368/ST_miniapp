@@ -1,4 +1,3 @@
-import { DramaCdnEvidenceSchema } from '../api/drama';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -539,44 +538,5 @@ describe('first-token delivery contract versions', () => {
         first_token_received_ms: 1251,
       }).success
     ).toBe(false);
-  });
-});
-
-describe('bounded phone CDN evidence', () => {
-  const evidence = {
-    type: 'cdn_experiment',
-    schema_version: 1,
-    id: 'one-round',
-    release: 'unit-release',
-    sample: '1fc8b3d5-9426-5ce6-b675-d98074da4801',
-    bytes: 46518538,
-    same_phone_network_proxy: true,
-    formal_started: true,
-    closed: true,
-    automatic: true,
-    muted: true,
-    platform: 'android',
-    trials: [
-      {
-        sequence: 1,
-        route: 'original',
-        purpose: 'formal',
-        started_at: '2026-10-28T13:00:00Z',
-        startup_outcome: 'timeout',
-        startup_cache: 'UNKNOWN',
-        seek_cache: 'UNKNOWN',
-      },
-    ],
-  };
-  it('preserves failures while rejecting credentials, arbitrary fields, invalid samples and unbounded detail', () => {
-    expect(DramaCdnEvidenceSchema.safeParse(evidence).success).toBe(true);
-    for (const invalid of [
-      { ...evidence, token: 'secret' },
-      { ...evidence, sample: 'other' },
-      { ...evidence, trials: Array(19).fill(evidence.trials[0]) },
-      { ...evidence, trials: [{ ...evidence.trials[0], play_url: 'https://example.invalid' }] },
-      { ...evidence, trials: [{ ...evidence.trials[0], startup_ms: Infinity }] },
-    ])
-      expect(DramaCdnEvidenceSchema.safeParse(invalid).success).toBe(false);
   });
 });
