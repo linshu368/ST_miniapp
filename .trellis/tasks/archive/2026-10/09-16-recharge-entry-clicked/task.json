@@ -1,0 +1,41 @@
+{
+  "id": "recharge-entry-clicked",
+  "name": "recharge-entry-clicked",
+  "title": "个人中心星尘充值入口点击埋点",
+  "description": "",
+  "status": "completed",
+  "dev_type": null,
+  "scope": "cross-package",
+  "package": "frontend",
+  "priority": "P2",
+  "creator": "linshu",
+  "assignee": "linshu",
+  "createdAt": "2026-09-16",
+  "completedAt": "2026-10-28",
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "09-15-user-behavior-replay",
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "legacy_exempt",
+      "reason": "??? 2026-10-28 ???????? 10 ? 26 ????????? 10-27-sentry-performance-optimization????????? meta.archived_module_impact???????? module-updates.historical.json?????????????????????????????????????????????"
+    },
+    "archived_module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": ["shared.business.wallet-payment-contracts", "frontend.business.wallet-payment"]
+    },
+    "archive_confirmation": {
+      "date": "2026-10-28",
+      "source": "??????? 10-27-sentry-performance-optimization ?? 10 ? 26 ??????"
+    }
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "id": "drama-api-contract-backend",
+  "name": "drama-api-contract-backend",
+  "title": "drama api contract backend",
+  "description": "Legacy task metadata reconstructed for requested archive.",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": "cross-package",
+  "priority": "P2",
+  "creator": "unknown",
+  "assignee": "unknown",
+  "createdAt": "2026-10-21",
+  "completedAt": "2026-10-28",
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "task.json was missing in the legacy task directory before archival.",
+  "meta": {
+    "archived_module_impact": {
+      "schema_version": 1,
+      "mode": "unknown"
+    },
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "legacy_exempt",
+      "reason": "??? 2026-10-28 ???????? 10 ? 26 ????????? 10-27-sentry-performance-optimization????????? meta.archived_module_impact???????? module-updates.historical.json?????????????????????????????????????????????"
+    },
+    "archive_confirmation": {
+      "date": "2026-10-28",
+      "source": "??????? 10-27-sentry-performance-optimization ?? 10 ? 26 ??????"
+    }
+  }
+}
