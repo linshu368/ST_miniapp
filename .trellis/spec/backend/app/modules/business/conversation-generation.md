@@ -70,11 +70,13 @@ OpenRouter mapper、计费读取和回捞仓储统一使用专表的厂商原名
 
 审核后的 Civitai 初始数据通过独立离线导入器进入公开作品，不伪造用户、会话或生成 attempt。导入保留最多 2000 字原始提示词与模型映射，超限行隔离且不截断；apply 必须同时提供逐条审核清单、明确 test/production 目标、原图存储确认和有限批次，生产还需额外确认。
 
-Feed/config 始终返回启用标签目录；点击业务标签按标签中文 label 在 `snapshot.prompt_zh` 字面包含筛选，「全部」不限制标签。`image_plaza_tags_feature_enabled` 只控制分享时空 tags 的自动打标。
+Feed/config 始终返回图片与视频共用的启用标签目录及分组元数据；单标签、多标签和计数都按标签中文 label 在 `snapshot.prompt_zh` 做转义后的字面包含匹配，多标签为 OR，再与 search/media 取交集，不按作品 `tags` 数组筛选。「全部」不限制标签。`image_plaza_tags_feature_enabled` 只控制分享时空 tags 的自动打标。
 
 视频创作复用该模块的会话与公开作品投影，但走独立 `video-repository`、`video-upstream`、`video-job`：提交只预扣并返回 202，queue 超时记 `failed_unknown` 且不自动重投；retrieve/download/complete 仅做有限安全重试。视频不调用 LLM 提示词优化。列表 DTO 不含 MP4，详情/工作室签名 URL 复用 `storage.ts` 的有界 LRU。
 
 ## 变更记录
+
+- 2026-10-28：任务 `10-16-creation-plaza-video-planning` 统一图片/视频标签目录，并将多标签与计数收口到 `prompt_zh` ILIKE。
 
 - 2026-10-15：任务 `10-15-image-plaza-tag-prompt-filter` 解耦标签展示与自动打标，feed 标签筛选改为 `prompt_zh` 中文包含匹配。
 - 2026-10-13：任务 `10-10-image-plaza-v2` 增加经审核初始作品的离线导入路径与 apply 门禁。

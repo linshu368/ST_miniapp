@@ -11,3 +11,5 @@
 {"file": ".trellis/tasks/archive/2026-10/10-21-sentry-ux-monitoring/design.md", "reason": "R8：事件/指标命名与低基数约束"}
 {"file": ".trellis/tasks/archive/2026-10/10-21-sentry-ux-monitoring/dashboard-and-runbook.md", "reason": "R8.C：列表/创作 p95 看板与告警口径"}
 {"file": ".trellis/tasks/10-16-creation-plaza-video-planning/design.md", "reason": "R8.A/B：§5.2 列表与 §5.3 创作性能设计核对"}
+{"file": ".trellis/spec/backend/app/testing-scripts-and-deployment.md", "reason": "Backend route and repository verification"}
+{"file": ".trellis/tasks/10-16-creation-plaza-video-planning/research/tag-filter-groups-20261028.md", "reason": "Acceptance and compatibility checklist"}

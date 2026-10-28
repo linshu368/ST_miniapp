@@ -341,12 +341,12 @@ Venice 的视频接口没有优化字段（DOC），用户决定视频不提供�
 
 `image-plaza.ts` 的兼容修改：
 
-- `ImagePlazaFeedQuerySchema` 增加 `media?: 'all'|'image'|'video'` 和 `tags?: string`（逗号分隔，最多 10 个）。
+- `ImagePlazaFeedQuerySchema` 增加 `media?: 'all'|'image'|'video'` 和 `tags?: string`（逗号分隔，最多 80 个，与标签目录上限一致）。
 - `ImagePlazaWorkSchema` 增加 `media_type`，默认值 `'image'`。
 - 新增 `PlazaFeedItemSchema`，按 `media_type` 做 discriminatedUnion。请求不带 `media` 时，服务端只返回图片，旧客户端不受影响。
 - `ImagePlazaMessageSchema` 增加 `media_type`（默认 `image`）和 `video_attempt`（可为 null）。
-- `ImagePlazaTagConfigSchema` 的每一项增加 `media_types`，默认 `['image']`，因此旧配置无需迁移即可解析。
-- `GetImagePlazaConfigDataSchema` 增加 `video_models`、`default_video_model_id`，`tags[]` 增加 `media_types`。
+- `ImagePlazaTagConfigSchema` 的每一项增加 `group_id`、`group_label`、`group_sort_order` 和 `group_layout(chips|grid)`；旧配置缺失时归入默认「风格」组。历史 `media_types` 可兼容读取但运行时忽略。
+- `GetImagePlazaConfigDataSchema` 增加 `video_models`、`default_video_model_id`；公开 `tags[]` 返回分组元数据，并保留统一为 image+video 的 `media_types` 兼容字段供旧 Frontend 混部。
 
 ## 5. 前端（需求 2.1–2.7、8）
 
@@ -442,8 +442,10 @@ videoEl.srcObject = res.body as unknown as MediaStream; // 类型都不对，运
 - 类型筛选：在标签行和搜索框之间加分段控件。样式沿用现有排序胶囊按钮（原型只作参考，见 D7）。
 - 列表查询：`useImagePlazaFeedQuery(search, tags[], sort, media)`，queryKey 包含 media 和排好序的 tags。
 - 标签行：横向滚动的标签保留，行尾固定放一个「全部风格」按钮，点开 `style-filter-sheet.tsx`：
-  - 基于现有 Sheet，支持多选；
-  - 各标签计数由 `useImagePlazaTagCountsQuery` 懒加载，加载失败显示“—”。
+  - 滚动容器与固定按钮为同级 flex 子项；滚动容器 `min-width: 0`，按钮 `shrink-0`，保证窄屏不随标签滚走；
+  - 基于现有 Sheet，按 group 排序并支持 chip/grid 两种布局；空选择作为“全部展示”的压缩状态，面板视觉上默认全选；首次取消时展开为“其余全部选中”，恢复全量时重新归一为空选择；
+  - 顶部「不限」复位全部展示，普通快捷标签可收窄到单一标签；
+  - 各标签计数由 `useImagePlazaTagCountsQuery` 获取，加载失败显示“—”。
 - 视频卡片：
   - 封面用 `<img loading=lazy>`，图片走 transform 缩略图；
   - 角标显示 `m:ss` 时长，叠加播放图标；
@@ -611,9 +613,17 @@ worker：3s tick / claim≤2 / Venice≤180s / settle RPC → ready
 - `ImagePlazaConfigEditors.tsx`：
   - 新增 `VideoPlazaModelCatalogEditor`，复用 `PricingRow` 和汇率公式。每个模型维护两部分：duration×resolution×audio 价格表，以及 provider id 映射。
   - 「刷新参考价」调用 backend admin 代理 `/video/quote`，结果只回填到标准价参考列。
-- `ImagePlazaTagsEditor`：每个标签增加 `media_types` 多选（图片/视频）。
+- `ImagePlazaTagsEditor`：移除 `media_types`；每个标签维护分组 ID/名称/组顺序、chip/grid 布局和标签顺序。同一 group id 的元数据必须一致。
 - `configSchemas.ts`：注册 `image_plaza_video_model_catalog`，用 shared schema 校验；DB 侧由 M3 同步。
 - 发布和回滚流程不变。
+
+### 6.1 标签分组与筛选可靠性修订（D24）
+
+- feed route 将已校验 tag id 映射为 label，repository 对 `snapshot->>prompt_zh` 生成转义后的 OR ILIKE；图片、视频、单 tag 和多 tags 共用同一路径，不再调用 `overlaps('tags', ...)`。
+- tag-counts 接收 `{id,label}` 目录并使用相同 ILIKE 语义；服务端采用有限并发分批查询，60 秒缓存与 10 秒超时保持不变。
+- `feedFilter` 对排序后的 label、search、media 做哈希，筛选变化后游标拒绝复用。
+- 新 forward migration 只替换 `admin.validate_image_plaza_tags(jsonb)`；接受旧 payload 和新分组字段，拒绝非法/冲突分组。函数 schema、security invoker、search_path 和既有 ACL 不变，无表锁、数据回填或业务行访问。
+- 发布顺序为 TEST migration → Backend → Admin/Frontend；旧配置与旧客户端按兼容字段继续工作。回退应用不回退 validator，必要时 forward-fix。
 
 ## 7. 种子数据（需求 3）
 

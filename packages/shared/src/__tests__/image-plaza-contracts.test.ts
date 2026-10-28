@@ -126,6 +126,33 @@ describe('image plaza managed config schemas', () => {
       ]).success
     ).toBe(false);
   });
+
+  it('accepts grouped tags and rejects conflicting metadata for one group id', () => {
+    const base = {
+      enabled: true,
+      group_id: 'scene',
+      group_label: '场景',
+      group_sort_order: 2,
+      group_layout: 'chips' as const,
+    };
+    expect(
+      ImagePlazaTagConfigSchema.safeParse([
+        { ...base, id: 'indoor', label: '室内', sort_order: 0 },
+        { ...base, id: 'outdoor', label: '户外', sort_order: 1 },
+      ]).success
+    ).toBe(true);
+    expect(
+      ImagePlazaTagConfigSchema.safeParse([
+        { ...base, id: 'indoor', label: '室内', sort_order: 0 },
+        { ...base, id: 'outdoor', label: '户外', sort_order: 1, group_layout: 'grid' },
+      ]).success
+    ).toBe(false);
+    expect(
+      ImagePlazaTagConfigSchema.safeParse([
+        { ...base, id: 'indoor', label: '室内', sort_order: 0, group_id: 'all' },
+      ]).success
+    ).toBe(false);
+  });
 });
 
 describe('image plaza prompt limit', () => {

@@ -10,14 +10,11 @@ export type FeedCursor = ImagePlazaFeedCursor;
 
 export function feedFilter(
   search?: string,
-  tagLabel?: string,
-  media: 'all' | 'image' | 'video' = 'all',
-  tagIds: string[] = []
+  tagLabels: string[] = [],
+  media: 'all' | 'image' | 'video' = 'all'
 ): string {
   return createHash('sha256')
-    .update(
-      JSON.stringify([search?.trim() ?? '', tagLabel?.trim() ?? '', media, [...tagIds].sort()])
-    )
+    .update(JSON.stringify([search?.trim() ?? '', [...tagLabels].sort(), media]))
     .digest('hex');
 }
 

@@ -42,6 +42,9 @@
 
 ## 记录
 
+- 2026-10-28 用户修订 R2.2：图片/视频改为共用标签目录；「全部风格」固定右侧，底部面板按运营分组并默认全部展示，标签和计数统一按 `prompt_zh` label 模糊匹配。实现前已补充 `research/tag-filter-groups-20261028.md`，覆盖复用、可靠性、兼容/恢复和验证门禁。
+- 2026-10-28 R2.2 本地实现完成：shared 分组契约与 `admin.validate_image_plaza_tags` forward-only migration、Backend 多标签 `prompt_zh` OR 模糊匹配/计数、Admin 分组编辑器、Frontend 固定筛选入口与分组底部面板均已落地。shared 194 项、Backend 85 项、Admin 17 项、Frontend API 9 项、UI fixture 4 项及 Playwright `@image` 7 项通过；Frontend/Admin build、受影响包 typecheck、Frontend lint、migration lint 通过。迁移尚未连接或执行任何远程环境，本机无 Docker/psql，需按 TEST 单文件执行并核验 shape/ACL/旧配置读取后再发布 Backend → Admin/Frontend。
+
 - 2026-10-28 TEST 数据库导入完成：GitHub Actions `Database Migration` 第 261 次执行因 Supavisor 丢弃启动参数中的自定义 GUC 而被迁移守卫拒绝，事务整体回滚；只读核验确认 work/artifact/ledger 均为 0，仅保留 checksum 匹配的失败认领。修复为在同一 `psql` 事务会话中设置 TEST 审批 GUC 后，第 262 次安全续跑成功。最终只读 postflight：迁移账本 1/1 且 checksum=`faf91f98e550bb35459eec83eaeca3f32febd068aaaa306bdf934eec3fb902b9`，未完成认领 0，10/10 work 与 10/10 artifact 关联及元数据一致，私有 bucket 有效，20/20 Storage 对象路径/大小/MIME 精确匹配。六模型目录 JSON 与 32 个真实报价键已经生成并校验，但 TEST Admin draft/release 仍为 0，目录发布继续走 Admin 审核流程，不由 seed migration 绕过审计。
 - 2026-10-28 TEST 10 条执行：锁定报告复验通过；本地四路下载、最多两路 FFmpeg 完成 10/10，9 条转码、1 条 remux，六模型分布 2/2/2/2/1/1；全部 H.264/yuv420p、音频 AAC/无、GOP ≤2s、`moov < mdat` 且 `moov` 最大 115,736 bytes，并通过 0/10/50/90% 解码。源视频 93,964,071 bytes，处理后视频 49,495,483 bytes，poster 583,363 bytes；processed manifest SHA-256=`161dc1d37ba75c570ff78ac856386d4581084f20e9bc7336cbb8693c82f0d074`。
 - 2026-10-28 TEST Storage 执行：只读身份/私有桶预检通过后，以 6MiB TUS 分块、4 路并发上传 10 视频 + 10 poster；`x-upsert:false`，20/20 对象通过认证 Range 回读与大小校验。签名 URL 首段 Range p95=1,873.0ms，中段 Range p95=967.3ms（同 URL 复用），达到参考网络 2s 预算。尚未写数据库；TEST 已发布视频模型目录仍缺失，必须先由运营审核/发布目录，再生成并执行 10 条 TEST SQL。

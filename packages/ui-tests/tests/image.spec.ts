@@ -1,5 +1,34 @@
 import { test, expect, studioPath, expectMobileLayout } from './fixtures.js';
 
+test('@image @layout 标签横滑不带走固定筛选，底部面板按分组切换', async ({ page, preview }) => {
+  await page.goto('/create');
+  const scroll = page.locator('[data-image-plaza-tags-scroll]');
+  const trigger = page.locator('[data-image-plaza-filter-trigger]');
+  await expect(scroll).toBeVisible();
+  await expect(trigger).toBeInViewport();
+  const before = await trigger.boundingBox();
+  await scroll.evaluate((node) => {
+    node.scrollLeft = node.scrollWidth;
+  });
+  const after = await trigger.boundingBox();
+  expect(Math.abs((after?.x ?? 0) - (before?.x ?? 0))).toBeLessThan(1);
+
+  await trigger.click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole('heading', { name: '风格' })).toBeVisible();
+  await expect(dialog.getByRole('heading', { name: '场景' })).toBeVisible();
+  await expect(dialog.getByRole('heading', { name: '模型' })).toBeVisible();
+  const outdoor = dialog.getByRole('button', { name: /户外/ });
+  await expect(outdoor).toHaveAttribute('aria-pressed', 'true');
+  await outdoor.click();
+  await expect(outdoor).toHaveAttribute('aria-pressed', 'false');
+  await dialog.getByRole('button', { name: '全部展示' }).click();
+  await expect(outdoor).toHaveAttribute('aria-pressed', 'true');
+  await expectMobileLayout(page);
+  await preview.screenshot('标签分组筛选');
+});
+
 test('@image @layout 广场用同款进入工作室，设置与模拟生成结果', async ({ page, preview }) => {
   await page.goto('/create');
   await page.getByRole('button', { name: '用同款：薄雾中的山谷', exact: true }).click();

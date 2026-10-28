@@ -21,6 +21,8 @@ import {
   DEFAULT_RECHARGE_PAGE_CONFIG,
   DEFAULT_WORD_COUNT_TIERS_CONFIG,
   FreeQuotaExhaustedDialogConfigSchema,
+  IMAGE_PLAZA_DEFAULT_TAG_GROUP_ID,
+  IMAGE_PLAZA_DEFAULT_TAG_GROUP_LABEL,
   ImagePlazaModelCatalogSchema,
   ImagePlazaShareTipConfigSchema,
   ImagePlazaTagConfigSchema,
@@ -353,7 +355,10 @@ export function ConfigValueEditor(props: {
     const value = parsed.success
       ? parsed.data.map((tag) => ({
           ...tag,
-          media_types: tag.media_types ?? ['image' as const],
+          group_id: tag.group_id ?? IMAGE_PLAZA_DEFAULT_TAG_GROUP_ID,
+          group_label: tag.group_label ?? IMAGE_PLAZA_DEFAULT_TAG_GROUP_LABEL,
+          group_sort_order: tag.group_sort_order ?? 0,
+          group_layout: tag.group_layout ?? ('chips' as const),
         }))
       : fallback;
     return (

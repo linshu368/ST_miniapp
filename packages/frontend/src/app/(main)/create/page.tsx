@@ -63,14 +63,22 @@ export default function CreatePage() {
   );
   const [media, setMedia] = useState<'all' | 'image' | 'video'>(returnSnapshot?.media ?? 'all');
   const [tags, setTags] = useState<GetImagePlazaFeedData['tags']>([
-    { id: 'all', label: '全部', media_types: ['image', 'video'] },
+    {
+      id: 'all',
+      label: '全部',
+      group_id: 'style',
+      group_label: '风格',
+      group_sort_order: 0,
+      group_layout: 'chips',
+      media_types: ['image', 'video'],
+    },
   ]);
   const [sort, setSort] = useState<ImagePlazaFeedSort>(returnSnapshot?.sort ?? 'recommended');
   const [debouncedSearch, setDebouncedSearch] = useState(returnSnapshot?.search ?? '');
   const stableTags = useMemo(() => [...selectedTags].sort(), [selectedTags]);
   const feed = useImagePlazaFeedQuery(debouncedSearch, stableTags, sort, media);
-  const [countsEnabled, setCountsEnabled] = useState(false);
-  const tagCounts = useImagePlazaTagCountsQuery(debouncedSearch, media, countsEnabled);
+  const availableTags = useMemo(() => tags.filter((item) => item.id !== 'all'), [tags]);
+  const tagCounts = useImagePlazaTagCountsQuery(debouncedSearch, media, availableTags.length > 0);
   usePageReady('/create', feed.data !== undefined);
   useEffect(() => {
     if (feed.data !== undefined || feed.isError || feed.isFetched) markCriticalSettled();
@@ -283,15 +291,6 @@ export default function CreatePage() {
               aria-pressed={media === value}
               onClick={() => {
                 setMedia(value);
-                setSelectedTags((current) =>
-                  current.filter((id) =>
-                    tags.some(
-                      (tagItem) =>
-                        tagItem.id === id &&
-                        (value === 'all' || tagItem.media_types.includes(value))
-                    )
-                  )
-                );
               }}
               className={`min-h-9 rounded-lg text-xs font-bold ${media === value ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}`}
             >
@@ -312,42 +311,46 @@ export default function CreatePage() {
         <div className="mt-1 space-y-1">
           {tags.some((item) => item.id !== 'all') ? (
             <div
-              className="flex min-w-0 items-center gap-2 overflow-x-auto py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              className="flex min-w-0 items-center gap-2 py-1"
               role="group"
               aria-label="作品标签"
             >
-              {tags
-                .filter(
-                  (item) =>
-                    item.id !== 'all' && (media === 'all' || item.media_types.includes(media))
-                )
-                .slice(0, 6)
-                .map((item) => (
+              <div
+                data-image-plaza-tags-scroll
+                className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              >
+                <button
+                  type="button"
+                  aria-pressed={selectedTags.length === 0}
+                  onClick={() => setSelectedTags([])}
+                  className={`shrink-0 whitespace-nowrap rounded-xl border px-3 py-2 text-[13px] font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary ${selectedTags.length === 0 ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border bg-card text-muted-foreground'}`}
+                >
+                  不限
+                </button>
+                {availableTags.map((item) => (
                   <button
                     key={item.id}
                     type="button"
                     aria-pressed={selectedTags.includes(item.id)}
                     onClick={() =>
                       setSelectedTags((current) =>
-                        current.includes(item.id)
-                          ? current.filter((id) => id !== item.id)
-                          : [...current, item.id]
+                        current.length === 1 && current[0] === item.id ? [] : [item.id]
                       )
                     }
-                    className={`relative shrink-0 whitespace-nowrap rounded-full border px-4 py-1.5 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary ${selectedTags.includes(item.id) ? 'border-primary/30 bg-primary/10 text-primary' : 'border-transparent text-muted-foreground hover:bg-card hover:text-foreground'}`}
+                    className={`relative shrink-0 whitespace-nowrap rounded-xl border px-3 py-2 text-[13px] font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary ${selectedTags.includes(item.id) ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border bg-card text-muted-foreground hover:text-foreground'}`}
                   >
-                    {item.label}
+                    {item.label}{' '}
+                    <span className="text-xs font-normal opacity-70">
+                      {tagCounts.isError ? '—' : (tagCounts.data?.counts[item.id] ?? '…')}
+                    </span>
                   </button>
                 ))}
+              </div>
               <StyleFilterSheet
-                tags={tags.filter(
-                  (item) =>
-                    item.id !== 'all' && (media === 'all' || item.media_types.includes(media))
-                )}
+                tags={availableTags}
                 selected={selectedTags}
                 counts={tagCounts.data?.counts}
                 countsFailed={tagCounts.isError}
-                onOpen={() => setCountsEnabled(true)}
                 onChange={setSelectedTags}
               />
             </div>

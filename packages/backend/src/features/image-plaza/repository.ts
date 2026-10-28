@@ -183,9 +183,8 @@ export class ImagePlazaRepository {
   async listWorks(input: {
     userId: string;
     search?: string;
-    /** 业务标签中文 label；按 snapshot.prompt_zh 字面包含匹配。未传则不做标签限制。 */
-    tagLabel?: string;
-    tagIds?: string[];
+    /** 业务标签中文 label；按 snapshot.prompt_zh 字面 OR 包含匹配。未传则不做标签限制。 */
+    tagLabels?: string[];
     media?: 'all' | 'image' | 'video';
     cursor?: string;
     sort?: ImagePlazaFeedSort;
@@ -212,14 +211,10 @@ export class ImagePlazaRepository {
       }
     }
     if (input.media && input.media !== 'all') query = query.eq('media_type', input.media);
-    if (input.tagIds?.length) query = query.overlaps('tags', input.tagIds);
-    if (input.tagLabel) {
+    const tagFilter = promptZhTagFilter(input.tagLabels);
+    if (tagFilter) {
       // 仅匹配中文译文；无 prompt_zh 的作品不会命中。不按 works.tags 数组筛选。
-      const term = escapeIlikePattern(input.tagLabel.trim().slice(0, 80));
-      if (term) {
-        const pattern = `%${term}%`;
-        query = query.filter('snapshot->>prompt_zh', 'ilike', pattern);
-      }
+      query = query.or(tagFilter);
     }
     const cursor = decodeCursor(input.cursor);
     if (cursor) {
@@ -255,14 +250,13 @@ export class ImagePlazaRepository {
   private async listSortedWorks(input: {
     userId: string;
     search?: string;
-    tagLabel?: string;
-    tagIds?: string[];
+    tagLabels?: string[];
     media?: 'all' | 'image' | 'video';
     cursor?: string;
     sort: ImagePlazaFeedSort;
     limit: number;
   }): Promise<{ works: PlazaFeedItem[]; nextCursor: string | null }> {
-    const filter = feedFilter(input.search, input.tagLabel, input.media, input.tagIds);
+    const filter = feedFilter(input.search, input.tagLabels, input.media);
     const cursor = decodeFeedCursor(input.cursor, input.sort, filter);
     const signal = AbortSignal.timeout(10_000);
     const read = async (
@@ -288,13 +282,8 @@ export class ImagePlazaRepository {
         );
       }
       if (input.media && input.media !== 'all') query = query.eq('media_type', input.media);
-      if (input.tagIds?.length) query = query.overlaps('tags', input.tagIds);
-      if (input.tagLabel?.trim())
-        query = query.filter(
-          'snapshot->>prompt_zh',
-          'ilike',
-          `%${escapeIlikePattern(input.tagLabel.trim().slice(0, 80))}%`
-        );
+      const tagFilter = promptZhTagFilter(input.tagLabels);
+      if (tagFilter) query = query.or(tagFilter);
       if (cursor?.partition === partition) query = query.or(cursorFilter(cursor));
       // These IDs came from this bounded DB page, not arbitrary request filter syntax.
       if (exclude.length) query = query.not('id', 'in', `(${exclude.join(',')})`);
@@ -900,31 +889,42 @@ export class ImagePlazaRepository {
   }
 
   async countWorksByTags(input: {
-    tagIds: string[];
+    tags: Array<{ id: string; label: string }>;
     media?: 'all' | 'image' | 'video';
     search?: string;
   }): Promise<Record<string, number>> {
-    const counts = await Promise.all(
-      input.tagIds.map(async (tagId) => {
-        let query = this.plaza
-          .from('image_plaza_works')
-          .select('id', { count: 'exact', head: true })
-          .is('deleted_at', null)
-          .contains('tags', [tagId]);
-        if (input.media && input.media !== 'all') query = query.eq('media_type', input.media);
-        if (input.search?.trim()) {
-          const pattern = quotePostgrestFilterValue(
-            `%${escapeIlikePattern(input.search.trim().slice(0, 80))}%`
-          );
-          query = query.or(
-            `snapshot->>prompt.ilike.${pattern},snapshot->>prompt_zh.ilike.${pattern}`
-          );
-        }
-        const { count, error } = await query.abortSignal(AbortSignal.timeout(10_000));
-        if (error) throw new Error(`image plaza tag counts read failed: ${error.message}`);
-        return [tagId, count ?? 0] as const;
-      })
-    );
+    const counts: Array<readonly [string, number]> = [];
+    const concurrency = 6;
+    for (let offset = 0; offset < input.tags.length; offset += concurrency) {
+      const batch = input.tags.slice(offset, offset + concurrency);
+      counts.push(
+        ...(await Promise.all(
+          batch.map(async (tag) => {
+            let query = this.plaza
+              .from('image_plaza_works')
+              .select('id', { count: 'exact', head: true })
+              .is('deleted_at', null)
+              .filter(
+                'snapshot->>prompt_zh',
+                'ilike',
+                `%${escapeIlikePattern(tag.label.trim().slice(0, 80))}%`
+              );
+            if (input.media && input.media !== 'all') query = query.eq('media_type', input.media);
+            if (input.search?.trim()) {
+              const pattern = quotePostgrestFilterValue(
+                `%${escapeIlikePattern(input.search.trim().slice(0, 80))}%`
+              );
+              query = query.or(
+                `snapshot->>prompt.ilike.${pattern},snapshot->>prompt_zh.ilike.${pattern}`
+              );
+            }
+            const { count, error } = await query.abortSignal(AbortSignal.timeout(10_000));
+            if (error) throw new Error('image plaza tag counts read failed', { cause: error });
+            return [tag.id, count ?? 0] as const;
+          })
+        ))
+      );
+    }
     return Object.fromEntries(counts);
   }
 
@@ -1326,6 +1326,18 @@ function escapeIlikePattern(value: string): string {
 /** PostgREST `.or()` 值含逗号/点号等时需双引号包裹，并转义内部引号与反斜杠。 */
 function quotePostgrestFilterValue(value: string): string {
   return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+}
+
+function promptZhTagFilter(labels: string[] | undefined): string | null {
+  const terms = [
+    ...new Set(
+      (labels ?? []).map((label) => escapeIlikePattern(label.trim().slice(0, 80))).filter(Boolean)
+    ),
+  ];
+  if (terms.length === 0) return null;
+  return terms
+    .map((term) => `snapshot->>prompt_zh.ilike.${quotePostgrestFilterValue(`%${term}%`)}`)
+    .join(',');
 }
 
 function encodeCursor(likeCount: number, publishedAt: string, id: string): string {

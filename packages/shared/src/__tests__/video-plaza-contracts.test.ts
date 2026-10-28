@@ -157,17 +157,22 @@ describe('image plaza compatibility extensions', () => {
     ).toEqual({ media: 'video', tags: 'portrait,cinematic' });
     expect(
       ImagePlazaFeedQuerySchema.safeParse({
-        tags: Array.from({ length: 11 }, (_, i) => i).join(','),
+        tags: Array.from({ length: 81 }, (_, i) => i).join(','),
       }).success
     ).toBe(false);
   });
 
-  it('defaults old tag and config payloads to image-only with video disabled', () => {
+  it('defaults old tag payloads to one shared group with video disabled', () => {
     expect(
       ImagePlazaTagConfigSchema.parse([
         { id: 'portrait', label: '人像', enabled: true, sort_order: 0 },
-      ])[0]?.media_types
-    ).toEqual(['image']);
+      ])[0]
+    ).toMatchObject({
+      group_id: 'style',
+      group_label: '风格',
+      group_sort_order: 0,
+      group_layout: 'chips',
+    });
 
     const parsed = GetImagePlazaConfigDataSchema.parse({
       enabled: true,
@@ -185,6 +190,11 @@ describe('image plaza compatibility extensions', () => {
     });
     expect(parsed.video_models).toEqual([]);
     expect(parsed.default_video_model_id).toBeNull();
-    expect(parsed.tags[0]?.media_types).toEqual(['image']);
+    expect(parsed.tags[0]).toMatchObject({
+      group_id: 'style',
+      group_label: '风格',
+      group_layout: 'chips',
+      media_types: ['image', 'video'],
+    });
   });
 });

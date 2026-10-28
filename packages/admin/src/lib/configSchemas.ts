@@ -178,7 +178,10 @@ export const EditableImagePlazaTagConfigSchema = z.array(
     label: z.string(),
     enabled: z.boolean(),
     sort_order: z.number(),
-    media_types: z.array(z.enum(['image', 'video'])).optional(),
+    group_id: z.string().optional(),
+    group_label: z.string().optional(),
+    group_sort_order: z.number().optional(),
+    group_layout: z.enum(['chips', 'grid']).optional(),
   })
 );
 
@@ -919,11 +922,39 @@ export const configMetadata: Record<
   },
   image_plaza_tags: {
     label: '内容标签',
-    description: '管理广场筛选标签；“全部”为系统固定项，删除标签不会删除历史作品。',
+    description:
+      '管理图片/视频共用的广场筛选标签与分组；“全部”为系统固定项，删除标签不会删除历史作品。',
     defaultValue: [
-      { id: 'portrait', label: '人像', enabled: true, sort_order: 0, media_types: ['image'] },
-      { id: 'anime', label: '动漫', enabled: true, sort_order: 1, media_types: ['image'] },
-      { id: 'poster', label: '海报', enabled: true, sort_order: 2, media_types: ['image'] },
+      {
+        id: 'portrait',
+        label: '人像',
+        enabled: true,
+        sort_order: 0,
+        group_id: 'style',
+        group_label: '风格',
+        group_sort_order: 0,
+        group_layout: 'chips',
+      },
+      {
+        id: 'anime',
+        label: '动漫',
+        enabled: true,
+        sort_order: 1,
+        group_id: 'style',
+        group_label: '风格',
+        group_sort_order: 0,
+        group_layout: 'chips',
+      },
+      {
+        id: 'poster',
+        label: '海报',
+        enabled: true,
+        sort_order: 2,
+        group_id: 'style',
+        group_label: '风格',
+        group_sort_order: 0,
+        group_layout: 'chips',
+      },
     ],
   },
   image_plaza_tags_feature_enabled: {

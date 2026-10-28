@@ -75,11 +75,13 @@ last_verified_at: 2026-10-28
 
 ## 影像广场（图片创作广场 V2，2026-10-12）
 
-影像广场使用 `/create`、`/create/studio/[conversationId]` 与 `/create/work/[workId]` 独立路由；服务端数据统一由 `src/lib/api/image-plaza.ts` 的 React Query hooks 获取，不与聊天图片生成状态混用。当前代码支持图片/视频混排、媒体与多标签筛选、同一会话内切换创作；列表视频只加载 poster，MP4 仅在详情/工作室以原生 `<video src>` 请求。远程迁移与视频目录未发布时，配置返回空视频模型并隐藏入口。
+影像广场使用 `/create`、`/create/studio/[conversationId]` 与 `/create/work/[workId]` 独立路由；服务端数据统一由 `src/lib/api/image-plaza.ts` 的 React Query hooks 获取，不与聊天图片生成状态混用。当前代码支持图片/视频混排、媒体与多标签筛选、同一会话内切换创作；标签横滑区与右侧固定「全部风格」分离，底部 Sheet 按运营分组和 chip/grid 布局展示，默认全部展示并可逐项取消。图片/视频共用标签目录，切换媒体只改变作品与计数。列表视频只加载 poster，MP4 仅在详情/工作室以原生 `<video src>` 请求。远程迁移与视频目录未发布时，配置返回空视频模型并隐藏入口。
 
 提示词手工输入与快照复用统一受 Shared 的 2000 字上限约束；“用同款”恢复初始作品快照，并保留种子作品 `auto_optimize=false`，避免再次改写原始提示词。真实移动端与 test 数据链路仍需人工验收。
 
 ## 变更记录
+
+- 2026-10-28：任务 `10-16-creation-plaza-video-planning` 将标签筛选改为固定入口、分组底部面板和图片/视频统一目录。
 
 - 2026-10-23：任务 `10-23-roleplay-module-navigation` 将历史会话移入角色模块「对话」，收藏归入发现，统一有限来源及顶部/Telegram/Splash 返回；影像广场保持独立生成链路。
 

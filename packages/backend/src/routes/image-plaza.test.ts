@@ -109,7 +109,7 @@ describe('image plaza feed contract', () => {
       userId: 'owner',
       sort: 'recommended',
       search: 'cat',
-      tagLabel: '肖像',
+      tagLabels: ['肖像'],
       limit: 20,
     });
     expect((await app.inject('/api/image-plaza/feed')).statusCode).toBe(200);

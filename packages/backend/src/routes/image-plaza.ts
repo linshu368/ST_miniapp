@@ -141,15 +141,12 @@ export default async function imagePlazaRoutes(app: FastifyInstance) {
         if (tagConfigs.some((item) => !item)) {
           return reply.status(400).send(fail('BAD_REQUEST', '标签无效'));
         }
-        const tagConfig = tagConfigs.length === 1 ? tagConfigs[0] : undefined;
+        const tagLabels = tagConfigs.flatMap((item) => (item ? [item.label] : []));
         const media = query.media ?? 'all';
-        if (media !== 'all' && tagConfigs.some((item) => !item?.media_types.includes(media)))
-          return reply.status(400).send(fail('BAD_REQUEST', '标签不适用于当前媒体类型'));
         const page = await repository.listWorks({
           userId: context.id,
           ...(search ? { search } : {}),
-          ...(tagConfig && !query.tags && media !== 'video' ? { tagLabel: tagConfig.label } : {}),
-          ...(query.tags || media === 'video' || tagIds.length > 1 ? { tagIds } : {}),
+          ...(tagLabels.length ? { tagLabels } : {}),
           ...(query.media ? { media } : {}),
           ...(cursor ? { cursor } : {}),
           ...(query.sort ? { sort: query.sort } : {}),
@@ -162,7 +159,7 @@ export default async function imagePlazaRoutes(app: FastifyInstance) {
             count: page.works.length,
             hasCursor: Boolean(cursor),
             hasSearch: Boolean(search),
-            hasTag: Boolean(tagId),
+            hasTag: tagIds.length > 0,
             durationMs: Math.round(performance.now() - startedAt),
           },
           'Image plaza feed completed'
@@ -329,23 +326,19 @@ export default async function imagePlazaRoutes(app: FastifyInstance) {
       if (!parsed.success) return reply.status(400).send(fail('BAD_REQUEST', '标签计数参数无效'));
       try {
         const runtime = await getImagePlazaRuntimeConfig();
-        const tagIds = runtime.tags
-          .filter(
-            (tag) =>
-              tag.enabled &&
-              (parsed.data.media === 'all' || tag.media_types.includes(parsed.data.media))
-          )
-          .map((tag) => tag.id);
+        const tags = runtime.tags
+          .filter((tag) => tag.enabled)
+          .map(({ id, label }) => ({ id, label }));
         const cacheKey = JSON.stringify([
           parsed.data.media,
           parsed.data.search?.trim().toLocaleLowerCase() ?? '',
-          tagIds,
+          tags,
         ]);
         const cached = tagCountCache.get(cacheKey);
         if (cached && cached.expiresAt > Date.now())
           return reply.send(ok<GetVideoPlazaTagCountsData>({ counts: cached.counts }));
         const counts = await repository.countWorksByTags({
-          tagIds,
+          tags,
           media: parsed.data.media,
           ...(parsed.data.search ? { search: parsed.data.search } : {}),
         });
@@ -444,11 +437,7 @@ export default async function imagePlazaRoutes(app: FastifyInstance) {
       if (!body.success) return reply.status(400).send(fail('BAD_REQUEST', '视频分享参数无效'));
       try {
         const runtime = await requireEnabled();
-        const enabledTags = new Set(
-          runtime.tags
-            .filter((tag) => tag.enabled && tag.media_types.includes('video'))
-            .map((tag) => tag.id)
-        );
+        const enabledTags = new Set(runtime.tags.filter((tag) => tag.enabled).map((tag) => tag.id));
         if (body.data.tags.some((tag) => !enabledTags.has(tag)))
           return reply.status(400).send(fail('BAD_REQUEST', '视频标签无效'));
         const modelId = await videos().getArtifactModelId(body.data.artifact_id, context.id);

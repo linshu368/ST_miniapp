@@ -1,5 +1,26 @@
-import 'dotenv/config';
+import { readFileSync, existsSync } from 'node:fs';
+import { resolve } from 'node:path';
+import dotenv from 'dotenv';
+import { ProxyAgent, setGlobalDispatcher } from 'undici';
 import { createDatabaseConfig, resolveDefaultUserAvatarUrl } from '@miniapp/shared';
+
+dotenv.config();
+
+// 空字符串也算“已设置”，会挡住 .env；只补本地出站代理，不动其它变量。
+if (!process.env.HTTPS_PROXY?.trim() && !process.env.HTTP_PROXY?.trim()) {
+  const envPath = resolve(process.cwd(), '.env');
+  if (existsSync(envPath)) {
+    const parsed = dotenv.parse(readFileSync(envPath));
+    if (parsed.HTTPS_PROXY?.trim()) process.env.HTTPS_PROXY = parsed.HTTPS_PROXY.trim();
+    if (parsed.HTTP_PROXY?.trim()) process.env.HTTP_PROXY = parsed.HTTP_PROXY.trim();
+  }
+}
+
+// 本地 HTTPS_PROXY 需在首次 fetch 前挂上；Node 默认不读系统代理。
+const outboundHttpsProxy = process.env.HTTPS_PROXY?.trim() || process.env.HTTP_PROXY?.trim() || '';
+if (outboundHttpsProxy) {
+  setGlobalDispatcher(new ProxyAgent(outboundHttpsProxy));
+}
 
 const nodeEnv = process.env.NODE_ENV || 'development';
 const databaseConfig = createDatabaseConfig({

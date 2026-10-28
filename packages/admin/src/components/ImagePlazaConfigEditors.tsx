@@ -667,13 +667,40 @@ export function ImagePlazaTagsEditor(props: {
     next[index] = { ...next[index], ...patch };
     props.onChange(next);
   };
+  const updateGroup = (
+    index: number,
+    patch: Pick<
+      Partial<ImagePlazaTagConfig[number]>,
+      'group_label' | 'group_sort_order' | 'group_layout'
+    >
+  ) => {
+    const groupId = props.value[index]?.group_id;
+    props.onChange(
+      props.value.map((tag) => (tag.group_id === groupId ? { ...tag, ...patch } : tag))
+    );
+  };
+  const moveToGroup = (index: number, groupId: string) => {
+    const existing = props.value.find(
+      (tag, itemIndex) => itemIndex !== index && tag.group_id === groupId
+    );
+    update(index, {
+      group_id: groupId,
+      ...(existing
+        ? {
+            group_label: existing.group_label,
+            group_sort_order: existing.group_sort_order,
+            group_layout: existing.group_layout,
+          }
+        : {}),
+    });
+  };
   return (
     <Space direction="vertical" size="middle" className="editor-stack">
       <Alert
         showIcon
         type="info"
-        message="“全部”是系统固定标签"
-        description="删除运营标签只影响后续筛选入口，不会删除作品或改写历史作品标签。"
+        message="图片与视频共用同一标签目录"
+        description="“全部”是系统固定项；筛选按标签名称模糊匹配 prompt_zh。相同分组 ID 会共享分组名称、顺序和布局。"
       />
       {!validation.success && (
         <Alert
@@ -699,7 +726,7 @@ export function ImagePlazaTagsEditor(props: {
       {props.value.map((tag, index) => (
         <Card key={rowKeys[index]} size="small">
           <Row gutter={[12, 12]} align="middle">
-            <Col xs={24} md={7}>
+            <Col xs={24} md={6}>
               <Input
                 addonBefore="ID"
                 aria-label={`标签 ${index + 1} ID`}
@@ -708,7 +735,7 @@ export function ImagePlazaTagsEditor(props: {
                 onChange={(event) => update(index, { id: event.target.value })}
               />
             </Col>
-            <Col xs={24} md={7}>
+            <Col xs={24} md={6}>
               <Input
                 addonBefore="名称"
                 aria-label={`标签 ${index + 1} 名称`}
@@ -724,22 +751,9 @@ export function ImagePlazaTagsEditor(props: {
                 onChange={(enabled) => update(index, { enabled })}
               />
             </Col>
-            <Col xs={24} md={8}>
-              <Select
-                mode="multiple"
-                aria-label={`标签 ${index + 1} 适用媒体`}
-                className="field-full"
-                value={tag.media_types}
-                disabled={props.disabled}
-                options={[
-                  { value: 'image', label: '图片' },
-                  { value: 'video', label: '视频' },
-                ]}
-                onChange={(media_types) => update(index, { media_types })}
-              />
-            </Col>
             <Col xs={8} md={3}>
               <InputNumber
+                addonBefore="标签顺序"
                 min={0}
                 precision={0}
                 value={tag.sort_order}
@@ -747,7 +761,7 @@ export function ImagePlazaTagsEditor(props: {
                 onChange={(sort_order) => update(index, { sort_order: sort_order ?? 0 })}
               />
             </Col>
-            <Col xs={8} md={4}>
+            <Col xs={8} md={6}>
               <Button
                 danger
                 block
@@ -760,6 +774,50 @@ export function ImagePlazaTagsEditor(props: {
                 删除
               </Button>
             </Col>
+            <Col xs={24} md={6}>
+              <Input
+                addonBefore="分组 ID"
+                aria-label={`标签 ${index + 1} 分组 ID`}
+                value={tag.group_id}
+                disabled={props.disabled}
+                onChange={(event) => moveToGroup(index, event.target.value)}
+              />
+            </Col>
+            <Col xs={24} md={6}>
+              <Input
+                addonBefore="分组名称"
+                aria-label={`标签 ${index + 1} 分组名称`}
+                value={tag.group_label}
+                disabled={props.disabled}
+                onChange={(event) => updateGroup(index, { group_label: event.target.value })}
+              />
+            </Col>
+            <Col xs={12} md={6}>
+              <InputNumber
+                addonBefore="分组顺序"
+                className="field-full"
+                min={0}
+                precision={0}
+                value={tag.group_sort_order}
+                disabled={props.disabled}
+                onChange={(group_sort_order) =>
+                  updateGroup(index, { group_sort_order: group_sort_order ?? 0 })
+                }
+              />
+            </Col>
+            <Col xs={12} md={6}>
+              <Select
+                aria-label={`标签 ${index + 1} 分组布局`}
+                className="field-full"
+                value={tag.group_layout}
+                disabled={props.disabled}
+                options={[
+                  { value: 'chips', label: '标签流式布局' },
+                  { value: 'grid', label: '卡片网格布局' },
+                ]}
+                onChange={(group_layout) => updateGroup(index, { group_layout })}
+              />
+            </Col>
           </Row>
         </Card>
       ))}
@@ -767,6 +825,7 @@ export function ImagePlazaTagsEditor(props: {
         block
         disabled={props.disabled}
         onClick={() => {
+          const previous = props.value.at(-1);
           setRowKeys((current) => [...current, crypto.randomUUID()]);
           props.onChange([
             ...props.value,
@@ -775,7 +834,10 @@ export function ImagePlazaTagsEditor(props: {
               label: '新标签',
               enabled: true,
               sort_order: props.value.length,
-              media_types: ['image'],
+              group_id: previous?.group_id ?? 'style',
+              group_label: previous?.group_label ?? '风格',
+              group_sort_order: previous?.group_sort_order ?? 0,
+              group_layout: previous?.group_layout ?? 'chips',
             },
           ]);
         }}

@@ -99,19 +99,43 @@ async function loadImagePlazaRuntimeConfig(): Promise<ImagePlazaRuntimeConfig> {
 }
 
 /** Feed/bootstrap 对外标签：始终返回「全部」+ 启用且排序的目录，与自动打标开关无关。 */
-export function publicImagePlazaFeedTags(
-  runtime: Pick<ImagePlazaRuntimeConfig, 'tags'>
-): Array<{ id: string; label: string; media_types: Array<'image' | 'video'> }> {
-  const all = { id: 'all', label: '全部', media_types: ['image', 'video'] as const };
+export function publicImagePlazaFeedTags(runtime: Pick<ImagePlazaRuntimeConfig, 'tags'>): Array<{
+  id: string;
+  label: string;
+  group_id: string;
+  group_label: string;
+  group_sort_order: number;
+  group_layout: 'chips' | 'grid';
+  media_types: Array<'image' | 'video'>;
+}> {
+  const all = {
+    id: 'all',
+    label: '全部',
+    group_id: 'style',
+    group_label: '风格',
+    group_sort_order: 0,
+    group_layout: 'chips' as const,
+    media_types: ['image', 'video'] as const,
+  };
   return [
     { ...all, media_types: [...all.media_types] },
     ...runtime.tags
       .filter((tag) => tag.enabled)
-      .sort((a, b) => a.sort_order - b.sort_order)
-      .map(({ id, label, media_types }) => ({
+      .sort(
+        (a, b) =>
+          a.group_sort_order - b.group_sort_order ||
+          a.sort_order - b.sort_order ||
+          a.id.localeCompare(b.id)
+      )
+      .map(({ id, label, group_id, group_label, group_sort_order, group_layout }) => ({
         id,
         label,
-        media_types: media_types ?? ['image'],
+        group_id,
+        group_label,
+        group_sort_order,
+        group_layout,
+        // 旧客户端仍读取该字段；统一目录下所有标签都适用于图片和视频。
+        media_types: ['image', 'video'] as Array<'image' | 'video'>,
       })),
   ];
 }

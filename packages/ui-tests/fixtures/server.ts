@@ -833,6 +833,14 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         });
         return;
       }
+      if (path === '/api/image-plaza/feed/tag-counts' && method === 'GET') {
+        ok(res, {
+          counts: Object.fromEntries(
+            data.imageConfig.tags.map((tag, index) => [tag.id, Math.max(1, 12 - index)])
+          ),
+        });
+        return;
+      }
       if (path.startsWith('/api/image-plaza/works/') && method === 'GET') {
         const work = data.works.find((item) => item.id === path.split('/').pop());
         if (work) ok(res, { work });
@@ -911,10 +919,20 @@ export function createPreviewServer(apiPort: number, appPort: number) {
               id: randomUUID(),
               role: 'user',
               content: input.prompt,
+              media_type: 'image',
               attempt: null,
+              video_attempt: null,
               created_at: stamp(),
             },
-            { id: randomUUID(), role: 'assistant', content: '', attempt, created_at: stamp() }
+            {
+              id: randomUUID(),
+              role: 'assistant',
+              content: '',
+              media_type: 'image',
+              attempt,
+              video_attempt: null,
+              created_at: stamp(),
+            }
           );
           studio.snapshot = {
             ...input,
@@ -944,7 +962,7 @@ export function createPreviewServer(apiPort: number, appPort: number) {
   return { server, reset };
 }
 
-if (process.argv[1]?.endsWith('/fixtures/server.ts')) {
+if (process.argv[1]?.replaceAll('\\', '/').endsWith('/fixtures/server.ts')) {
   const apiPort = Number(process.env.ST_UI_API_PORT ?? 3121);
   const appPort = Number(process.env.ST_UI_APP_PORT ?? 3120);
   const { server } = createPreviewServer(apiPort, appPort);

@@ -20,3 +20,4 @@
 {"file": "packages/frontend/src/lib/api/image-plaza.ts", "reason": "现状 feed stale/prefetch/轮询 2s，实施时接线与退避"}
 {"file": "packages/backend/src/features/image-plaza/repository.ts", "reason": "现状 listSortedWorks/hydrateWorks/720 缩略图，列表 DTO 与 poster 签名扩展点"}
 {"file": ".trellis/tasks/archive/2026-10/10-20-image-plaza-seed-production/design.md", "reason": "seed 导入流程与门禁先例"}
+{"file": ".trellis/tasks/10-16-creation-plaza-video-planning/research/tag-filter-groups-20261028.md", "reason": "Reviewed tag grouping and filtering design"}

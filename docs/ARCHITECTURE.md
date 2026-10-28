@@ -338,7 +338,7 @@ T9 专表 contract：`20261016_openrouter_chat_history_drop_legacy_aliases.sql` 
 
 ### 4.9 图片与视频创作广场（图片 M1 已执行；视频 migration/canary 待执行）
 
-图片广场与角色回复图片完全独立：共享契约在 `shared/src/api/image-plaza.ts`，Backend 在 `features/image-plaza/` 与 `routes/image-plaza.ts`，Frontend 使用 `/create`、`/create/work/[workId]` 和 `/create/studio/[conversationId]`。报价、异步 Venice 生成、Storage、结算、分享返利、feed/详情/点赞/用同款都走这套独立链路；提示词在 textarea、shared schema、作品快照、attempt/message、数据库和上游调用中统一最多 2,000 字，不静默截断。Feed 始终返回启用标签目录；业务标签按 `snapshot.prompt_zh` 中文 label 字面包含筛选，「全部」不限制；`image_plaza_tags_feature_enabled` 只控制分享自动打标。
+图片广场与角色回复图片完全独立：共享契约在 `shared/src/api/image-plaza.ts`，Backend 在 `features/image-plaza/` 与 `routes/image-plaza.ts`，Frontend 使用 `/create`、`/create/work/[workId]` 和 `/create/studio/[conversationId]`。报价、异步 Venice 生成、Storage、结算、分享返利、feed/详情/点赞/用同款都走这套独立链路；提示词在 textarea、shared schema、作品快照、attempt/message、数据库和上游调用中统一最多 2,000 字，不静默截断。Feed/config 始终返回图片与视频共用的启用标签目录，目录支持运营分组、顺序与 chip/grid 布局；单/多标签和计数都按配置 label 对 `snapshot.prompt_zh` 做转义后的字面包含匹配，「全部」不限制，不按作品 `tags` 数组筛选。`image_plaza_tags_feature_enabled` 只控制分享自动打标。
 
 图片 M1 与 PostgREST 暴露已在 TEST、Production 完成，8 张图片表和 3 个图片 RPC 统一位于 `media_plaza`；Backend 不再探测或回退旧 schema。仓库已实现视频扩展，但视频 M2/M3、Venice canary 与发布尚未执行：图片与视频共用会话、作品投影、点赞及首次分享奖励；视频使用 10 分钟权威报价、预扣/失败退款、租约 worker、私有 `media-plaza-video` bucket 和 `ffmpeg +faststart`。列表只返回并签名 poster，详情/工作室才返回可直接放入 `<video src>` 的 MP4 签名 URL；浏览器依赖 HTTP Range，不走 fetch→blob。视频提示词不设业务字符上限，也不发送图片链路的自动优化字段。
 
