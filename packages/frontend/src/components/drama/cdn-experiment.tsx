@@ -16,6 +16,8 @@ type Trial = {
   started_at: string;
   startup_outcome: string;
   startup_ms?: number;
+  startup_ready_ms?: number;
+  elapsed_ms?: number;
   source_to_frame_ms?: number;
   frame_method?: string;
   media_error?: number;
@@ -147,7 +149,15 @@ export function CdnExperiment() {
         const trial = reportRef.current.trials[run.index];
         const patch: Partial<Trial> = {
           startup_outcome: outcome,
-          startup_ms: Math.round((performance.now() - run.started) * 10) / 10,
+          startup_ms:
+            outcome === 'playing' && timing.marks.first_frame !== undefined
+              ? Math.round((timing.marks.first_frame - run.started) * 10) / 10
+              : undefined,
+          startup_ready_ms:
+            outcome === 'playing'
+              ? Math.round((performance.now() - run.started) * 10) / 10
+              : undefined,
+          elapsed_ms: Math.round((performance.now() - run.started) * 10) / 10,
           source_to_frame_ms:
             timing.marks.first_frame !== undefined && timing.marks.source_set !== undefined
               ? Math.round((timing.marks.first_frame - timing.marks.source_set) * 10) / 10
