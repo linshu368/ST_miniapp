@@ -25,10 +25,11 @@ type LedgerFixtureRow = {
   created_at: string;
 };
 
-const spendingDb = vi.hoisted(() => ({ ledger: [] as LedgerFixtureRow[] }));
+const spendingDb = vi.hoisted(() => ({ ledger: [] as LedgerFixtureRow[], rpc: vi.fn() }));
 
 vi.mock('../../lib/supabase.js', () => ({
   getDomainDb: () => ({
+    rpc: spendingDb.rpc,
     from: (table: string) => {
       let rows: LedgerFixtureRow[] = table === 'wallet_ledger' ? [...spendingDb.ledger] : [];
       const query = {
@@ -297,5 +298,64 @@ describe('listSpending image ledger coverage', () => {
 
   it('returns no spending when no matching ledger entries exist', async () => {
     expect(await new MiniappWalletRepository().listSpending('no-ledger-user')).toEqual([]);
+  });
+});
+
+describe('chargeLlmUsage archived result', () => {
+  const input = {
+    chargeId: 'charge-1',
+    generationId: 'gen-1',
+    userId: 'user-1',
+    modelId: null,
+    modelOpenRouterId: 'test/model',
+    modelDisplayName: 'Test',
+    catalogVersion: 1,
+    pricingConfigVersion: 1,
+    usageCostUsd: null,
+    exchangeRate: 1,
+    modelMarkup: 1,
+    calculatedAmount: 50,
+    fallbackUsed: false,
+  };
+  const archived = {
+    charge_key: 'charge-1',
+    generation_id: 'gen-1',
+    user_id: 'user-1',
+    status: 'failed',
+    charged_amount: 0,
+  };
+
+  it('accepts permanent zero-charge proof without manufacturing a wallet or charge detail', async () => {
+    spendingDb.rpc.mockResolvedValueOnce({
+      data: { charge_status: 'already_archived', archived_charge: archived },
+      error: null,
+    });
+    const result = await new MiniappWalletRepository().chargeLlmUsage(input);
+    expect(result).toEqual({ kind: 'archived', archivedCharge: archived, alreadyCharged: true });
+    expect(result).not.toHaveProperty('charge');
+    expect(result).not.toHaveProperty('wallet');
+  });
+
+  it.each([
+    null,
+    { charge_status: 'already_charged', charge: null, wallet: null },
+    { charge_status: 'already_archived', archived_charge: { ...archived, status: 'pending' } },
+    {
+      charge_status: 'already_archived',
+      archived_charge: { ...archived, user_id: 'another-user' },
+    },
+    {
+      charge_status: 'already_archived',
+      archived_charge: { ...archived, charged_amount: 'invalid' },
+    },
+    {
+      charge_status: 'already_archived',
+      archived_charge: { ...archived, charge_key: 'other', generation_id: 'other' },
+    },
+  ])('rejects incomplete or mismatched proof %j', async (data) => {
+    spendingDb.rpc.mockResolvedValueOnce({ data, error: null });
+    await expect(new MiniappWalletRepository().chargeLlmUsage(input)).rejects.toThrow(
+      '记录 LLM 用量扣费失败'
+    );
   });
 });

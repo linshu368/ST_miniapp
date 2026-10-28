@@ -1,0 +1,47 @@
+{
+  "id": "sentry-ux-monitoring",
+  "name": "sentry-ux-monitoring",
+  "title": "Sentry 体验与可用性监控",
+  "description": "系统化捕捉用户偶发卡顿/打不开：前端体感埋点、后端耗时与连接池指标、p95 基线；飞书告警为最后一期",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P1",
+  "creator": "linshu368",
+  "assignee": "linshu368",
+  "createdAt": "2026-10-21",
+  "completedAt": "2026-10-28",
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "legacy_exempt",
+      "reason": "??? 2026-10-28 ???????? 10 ? 26 ????????? 10-27-sentry-performance-optimization????????? meta.archived_module_impact???????? module-updates.historical.json?????????????????????????????????????????????"
+    },
+    "archived_module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "frontend.infrastructure.client-ui-foundation",
+        "frontend.business.character-lobby",
+        "frontend.business.conversation-ui",
+        "frontend.business.wallet-payment",
+        "backend.infrastructure.runtime-data-security"
+      ]
+    },
+    "archive_confirmation": {
+      "date": "2026-10-28",
+      "source": "??????? 10-27-sentry-performance-optimization ?? 10 ? 26 ??????"
+    }
+  }
+}

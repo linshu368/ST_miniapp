@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  ReportFirstTokenRequestSchema,
   GetReplayContextDataSchema,
   GetReplayContextQuerySchema,
   PaymentSettlementSourceSchema,
@@ -40,6 +41,38 @@ describe('drama timing upload contract', () => {
     stages: {},
     queries: [],
   };
+  it('versions start/network phases and rejects resource URLs, overflow and invalid frame values', () => {
+    const context = {
+      release: 'abc123',
+      sessionId: 'random-session',
+      platform: 'ios',
+      browser: 'webkit',
+    };
+    expect(
+      DramaTimingReportSchema.safeParse({ ...report, phase: 'start', outcome: 'waiting' }).success
+    ).toBe(false);
+    expect(
+      DramaTimingReportSchema.safeParse({
+        ...report,
+        phase: 'start',
+        outcome: 'waiting',
+        version: 2,
+        context,
+      }).success
+    ).toBe(true);
+    expect(DramaTimingReportSchema.safeParse({ ...report, version: 2 }).success).toBe(false);
+    const entry = { startMs: 0, fetchStartMs: 0, responseEndMs: 7000, visibility: 'limited' };
+    const diagnostics = { network: { status: 'limited', entries: [entry], truncated: false } };
+    const valid = { ...report, phase: 'network', version: 2, context, diagnostics };
+    expect(DramaTimingReportSchema.safeParse(valid).success).toBe(true);
+    for (const bad of [
+      { network: { ...diagnostics.network, entries: [{ ...entry, url: 'signed-secret' }] } },
+      { network: { ...diagnostics.network, entries: Array(17).fill(entry) } },
+      { frame: { callbackAtMs: 10, processingMs: -1 } },
+      { frame: { callbackAtMs: 10, processingMs: Infinity } },
+    ])
+      expect(DramaTimingReportSchema.safeParse({ ...valid, diagnostics: bad }).success).toBe(false);
+  });
   it('accepts old reports and bounded media details, rejecting nested secrets and invalid state', () => {
     const state = {
       readyState: 1,
@@ -455,6 +488,54 @@ describe('replay telemetry events', () => {
       ReplayTelemetryEventSchema.safeParse({
         ...base,
         pay_url: 'https://pay.example/checkout',
+      }).success
+    ).toBe(false);
+  });
+});
+
+describe('first-token delivery contract versions', () => {
+  const delivery = {
+    request_id: replayContextId,
+    assistant_message_id: characterId,
+    revision: 0,
+    outcome: 'observed',
+    first_token_visible_ms: 1250,
+    wait_finished_ms: 1250,
+    request_dispatched_ms: 20,
+    first_token_received_ms: 1200,
+    backgrounded: false,
+    reason: null,
+  };
+  it.each([
+    'visible_dom_after_frame_v1',
+    'visible_dom_after_frame_v2',
+    'visible_dom_after_frame_v3',
+    'client_committed_v4',
+  ])('accepts %s without conflating historical measurement versions', (measurement_method) => {
+    expect(ReportFirstTokenRequestSchema.parse({ ...delivery, measurement_method })).toMatchObject({
+      measurement_method,
+      first_token_visible_ms: 1250,
+    });
+  });
+  it('keeps unavailable durations null and rejects an invented successful timeout', () => {
+    const timedOut = {
+      ...delivery,
+      measurement_method: 'client_committed_v4',
+      outcome: 'timed_out',
+      wait_finished_ms: 10000,
+      first_token_visible_ms: null,
+      reason: 'not_visible',
+    };
+    expect(ReportFirstTokenRequestSchema.safeParse(timedOut).success).toBe(true);
+    expect(
+      ReportFirstTokenRequestSchema.safeParse({ ...timedOut, first_token_visible_ms: 10000 })
+        .success
+    ).toBe(false);
+    expect(
+      ReportFirstTokenRequestSchema.safeParse({
+        ...delivery,
+        measurement_method: 'client_committed_v4',
+        first_token_received_ms: 1251,
       }).success
     ).toBe(false);
   });

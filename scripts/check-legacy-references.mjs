@@ -161,6 +161,8 @@ const RULES = [
     allow: [
       'packages/backend/src/features/generation/apply-charge.ts',
       'packages/backend/src/infrastructure/repositories/MiniappWalletRepository.ts',
+      // Repository contract tests validate terminal archived RPC results; no runtime billing path.
+      'packages/backend/src/infrastructure/repositories/MiniappWalletRepository.test.ts',
       'packages/backend/src/features/generation/apply-charge.test.ts',
       'packages/backend/src/features/generation/sync-job.test.ts',
     ],

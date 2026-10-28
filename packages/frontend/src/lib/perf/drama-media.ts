@@ -1,5 +1,6 @@
 import type { DramaPlaybackTiming } from './drama-timing';
 import type { DramaMediaEvent, DramaMediaState } from '@miniapp/shared';
+import { observeDramaLongTasks, observeDramaResources } from './drama-resources';
 
 function mediaState(video: HTMLVideoElement): DramaMediaState {
   const currentTime = video.currentTime;
@@ -65,6 +66,8 @@ export function observeDramaMedia(
   let useFrameCallback = typeof video.requestVideoFrameCallback === 'function';
   // 本观察器只绑定新 src，旧视频的 currentTime 不能作为新视频的推进基线。
   const initialTime = 0;
+  const stopResources = observeDramaResources(source, timing);
+  const stopLongTasks = observeDramaLongTasks(timing);
   const current = () => !disposed && !timing.outcome && video.currentSrc === source;
   const unbindState = timing.bindMediaState(() =>
     !disposed && video.currentSrc === source ? mediaState(video) : undefined
@@ -128,7 +131,7 @@ export function observeDramaMedia(
   const requestFrame = () => {
     if (!useFrameCallback) return;
     try {
-      callbackId = video.requestVideoFrameCallback(() => {
+      callbackId = video.requestVideoFrameCallback((_at, metadata) => {
         if (disposed || timing.outcome) return;
         // 换 src 后第一条回调仍可能属于上一资源，继续等本次资源的帧。
         if (!current() || video.readyState < 2) {
@@ -136,6 +139,30 @@ export function observeDramaMedia(
           return;
         }
         frame = true;
+        timing.recordFrame({
+          callbackAtMs: Math.max(0, timing.offset()),
+          presentationAtMs:
+            metadata && Number.isFinite(metadata.presentationTime)
+              ? timing.offset(metadata.presentationTime)
+              : undefined,
+          expectedDisplayAtMs:
+            metadata && Number.isFinite(metadata.expectedDisplayTime)
+              ? timing.offset(metadata.expectedDisplayTime)
+              : undefined,
+          processingMs:
+            metadata &&
+            typeof metadata.processingDuration === 'number' &&
+            Number.isFinite(metadata.processingDuration) &&
+            metadata.processingDuration >= 0
+              ? metadata.processingDuration * 1000
+              : undefined,
+          width:
+            metadata && metadata.width > 0 && metadata.width <= 32768 ? metadata.width : undefined,
+          height:
+            metadata && metadata.height > 0 && metadata.height <= 32768
+              ? metadata.height
+              : undefined,
+        });
         timing.frameMethod = 'video_frame_callback';
         timing.mark('first_frame');
         timing.mediaEvent('first_frame');
@@ -170,6 +197,8 @@ export function observeDramaMedia(
       );
     },
     dispose() {
+      stopResources();
+      stopLongTasks();
       disposed = true;
       unbindState();
       video.removeEventListener('loadedmetadata', metadata);

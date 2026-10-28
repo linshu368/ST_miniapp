@@ -1,0 +1,651 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_POSTGRES",
+      "label": "现有PostgreSQL只读数据源",
+      "type": "datasource",
+      "pluginId": "grafana-postgresql-datasource",
+      "pluginName": "PostgreSQL"
+    }
+  ],
+  "uid": "st-drama-playback",
+  "title": "短剧｜启动耗时与诊断",
+  "schemaVersion": 39,
+  "version": 1,
+  "timezone": "Asia/Shanghai",
+  "tags": ["ST", "drama", "startup"],
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "refresh": "5m",
+  "editable": true,
+  "description": "客户端自报启动诊断。已知观察不等于全部尝试；缺失不补0，slow/final去重，旧/新版本与降级口径分层。读近14天；遥测失败不影响视频。",
+  "templating": {
+    "list": [
+      {
+        "name": "environment",
+        "label": "环境",
+        "type": "custom",
+        "query": "production,test",
+        "current": {
+          "text": "production",
+          "value": "production"
+        },
+        "options": [
+          {
+            "text": "production",
+            "value": "production",
+            "selected": true
+          },
+          {
+            "text": "test",
+            "value": "test",
+            "selected": false
+          }
+        ]
+      },
+      {
+        "name": "release",
+        "label": "前端版本",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "${DS_POSTGRES}"
+        },
+        "query": "SELECT '__all__' AS __value,'全部' AS __text UNION ALL SELECT DISTINCT client_release AS __value,client_release AS __text FROM miniapp_analytics.drama_playback_facts WHERE $__timeFilter(first_seen_at) AND first_seen_at>=now()-interval '14 days' AND environment=${environment:sqlstring} AND client_release IS NOT NULL ORDER BY 2",
+        "refresh": 2,
+        "multi": false,
+        "includeAll": false,
+        "current": {
+          "text": "全部",
+          "value": "__all__"
+        },
+        "options": []
+      },
+      {
+        "name": "platform",
+        "label": "平台",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "${DS_POSTGRES}"
+        },
+        "query": "SELECT '__all__' AS __value,'全部' AS __text UNION ALL SELECT DISTINCT platform AS __value,platform AS __text FROM miniapp_analytics.drama_playback_facts WHERE $__timeFilter(first_seen_at) AND first_seen_at>=now()-interval '14 days' AND environment=${environment:sqlstring} AND platform IS NOT NULL ORDER BY 2",
+        "refresh": 2,
+        "multi": false,
+        "includeAll": false,
+        "current": {
+          "text": "全部",
+          "value": "__all__"
+        },
+        "options": []
+      },
+      {
+        "name": "entry",
+        "label": "入口",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "${DS_POSTGRES}"
+        },
+        "query": "SELECT '__all__' AS __value,'全部' AS __text UNION ALL SELECT DISTINCT entry AS __value,entry AS __text FROM miniapp_analytics.drama_playback_facts WHERE $__timeFilter(first_seen_at) AND first_seen_at>=now()-interval '14 days' AND environment=${environment:sqlstring} AND entry IS NOT NULL ORDER BY 2",
+        "refresh": 2,
+        "multi": false,
+        "includeAll": false,
+        "current": {
+          "text": "全部",
+          "value": "__all__"
+        },
+        "options": []
+      },
+      {
+        "name": "video",
+        "label": "视频ID",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "${DS_POSTGRES}"
+        },
+        "query": "SELECT '__all__' AS __value,'全部' AS __text UNION ALL SELECT DISTINCT video_id AS __value,video_id AS __text FROM miniapp_analytics.drama_playback_facts WHERE $__timeFilter(first_seen_at) AND first_seen_at>=now()-interval '14 days' AND environment=${environment:sqlstring} AND video_id IS NOT NULL ORDER BY 2",
+        "refresh": 2,
+        "multi": false,
+        "includeAll": false,
+        "current": {
+          "text": "全部",
+          "value": "__all__"
+        },
+        "options": []
+      },
+      {
+        "name": "measurement",
+        "label": "口径版本",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "${DS_POSTGRES}"
+        },
+        "query": "SELECT '__all__' AS __value,'全部' AS __text UNION ALL SELECT DISTINCT measurement_version::text AS __value,measurement_version::text AS __text FROM miniapp_analytics.drama_playback_facts WHERE $__timeFilter(first_seen_at) AND first_seen_at>=now()-interval '14 days' AND environment=${environment:sqlstring} AND measurement_version::text IS NOT NULL ORDER BY 2",
+        "refresh": 2,
+        "multi": false,
+        "includeAll": false,
+        "current": {
+          "text": "全部",
+          "value": "__all__"
+        },
+        "options": []
+      },
+      {
+        "name": "frame",
+        "label": "首帧测量方式",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "${DS_POSTGRES}"
+        },
+        "query": "SELECT '__all__' AS __value,'全部' AS __text UNION ALL SELECT DISTINCT frame_method AS __value,frame_method AS __text FROM miniapp_analytics.drama_playback_facts WHERE $__timeFilter(first_seen_at) AND first_seen_at>=now()-interval '14 days' AND environment=${environment:sqlstring} AND frame_method IS NOT NULL ORDER BY 2",
+        "refresh": 2,
+        "multi": false,
+        "includeAll": false,
+        "current": {
+          "text": "全部",
+          "value": "__all__"
+        },
+        "options": []
+      },
+      {
+        "name": "observation",
+        "label": "单次observation_id",
+        "type": "textbox",
+        "query": "",
+        "current": {
+          "text": "",
+          "value": ""
+        },
+        "options": []
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "采集覆盖与结果：已知观察，不等于全部尝试",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_POSTGRES}"
+      },
+      "description": "两分钟是完整性观察窗口，不是播放超时。完全未送达不可见；丢失率需与Railway接收/失败计数核对。",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_POSTGRES}"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT count(*) AS \"已知观察\",count(*) FILTER(WHERE start_received_at IS NOT NULL) AS \"有开始报告\",\ncount(*) FILTER(WHERE final_received_at IS NOT NULL) AS \"有终态\",count(*) FILTER(WHERE outcome='playing') AS \"成功\",\ncount(*) FILTER(WHERE outcome='error') AS \"错误\",count(*) FILTER(WHERE outcome='autoplay_blocked') AS \"自动播放受限\",\ncount(*) FILTER(WHERE outcome IN ('left','switched')) AS \"退出或切换\",count(*) FILTER(WHERE outcome='background') AS \"后台\",\ncount(*) FILTER(WHERE final_received_at IS NULL AND first_seen_at<now()-interval '2 minutes') AS \"成熟窗口无终态\",\ncount(*) FILTER(WHERE first_seen_at>=now()-interval '2 minutes' AND final_received_at IS NULL) AS \"仍在观察窗口\",\ncount(*) FILTER(WHERE network_status='available') AS \"有网络细节\",count(*) FILTER(WHERE event_order_anomaly) AS \"事件顺序异常\",\ncount(*) FILTER(WHERE frame_processing_ms IS NOT NULL) AS \"可读首帧处理N\",count(*) FILTER(WHERE diagnostic_summary#>>'{longTasks,support}'='supported') AS \"支持长任务N\",count(*) FILTER(WHERE diagnostic_summary#>>'{longTasks,truncated}'='true' OR network_summary->>'truncated'='true') AS \"诊断截断N\",count(DISTINCT video_id) AS \"视频数\",count(DISTINCT session_id) AS \"随机会话数\",max(last_received_at) AS \"最后落表时间\"\nFROM miniapp_analytics.drama_playback_facts WHERE $__timeFilter(first_seen_at) AND first_seen_at>=now()-interval '14 days' AND environment=${environment:sqlstring}\nAND (${release:sqlstring}='__all__' OR client_release=${release:sqlstring})\nAND (${platform:sqlstring}='__all__' OR platform=${platform:sqlstring})\nAND (${entry:sqlstring}='__all__' OR entry=${entry:sqlstring})\nAND (${video:sqlstring}='__all__' OR video_id=${video:sqlstring})\nAND (${measurement:sqlstring}='__all__' OR measurement_version::text=${measurement:sqlstring})\nAND (${frame:sqlstring}='__all__' OR frame_method=${frame:sqlstring})"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "成功启动：首帧与启动完成分位（毫秒）",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_POSTGRES}"
+      },
+      "description": "只统计成功启动，timeupdate降级须按测量方式分层；各阶段P95不能相加。",
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 24,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_POSTGRES}"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT metric AS \"指标\",count(ms) AS \"有效样本N\",percentile_cont(0.5) WITHIN GROUP(ORDER BY ms) AS \"P50_ms\",\npercentile_cont(0.9) WITHIN GROUP(ORDER BY ms) AS \"P90_ms\",percentile_cont(0.95) WITHIN GROUP(ORDER BY ms) AS \"P95_ms\",\nCASE WHEN count(ms)>=1000 THEN percentile_cont(0.99) WITHIN GROUP(ORDER BY ms) END AS \"P99_ms\",\nCASE WHEN count(ms)<100 THEN 'P95样本不足，勿作稳定性结论' ELSE '结合平台/视频/会话覆盖判断' END AS \"样本说明\"\nFROM (SELECT * FROM miniapp_analytics.drama_playback_facts WHERE $__timeFilter(first_seen_at) AND first_seen_at>=now()-interval '14 days' AND environment=${environment:sqlstring}\nAND (${release:sqlstring}='__all__' OR client_release=${release:sqlstring})\nAND (${platform:sqlstring}='__all__' OR platform=${platform:sqlstring})\nAND (${entry:sqlstring}='__all__' OR entry=${entry:sqlstring})\nAND (${video:sqlstring}='__all__' OR video_id=${video:sqlstring})\nAND (${measurement:sqlstring}='__all__' OR measurement_version::text=${measurement:sqlstring})\nAND (${frame:sqlstring}='__all__' OR frame_method=${frame:sqlstring}) AND outcome='playing') f CROSS JOIN LATERAL (VALUES ('首帧',first_frame_ms),('启动完成',startup_ms)) v(metric,ms)\nGROUP BY metric"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "启动完成趋势（成功样本，毫秒）",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_POSTGRES}"
+      },
+      "description": "15分钟桶；每桶N请结合观察数趋势，少样本波动不视为确定退化。",
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 24,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_POSTGRES}"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT $__timeGroupAlias(first_seen_at,'15m'),percentile_cont(0.5) WITHIN GROUP(ORDER BY startup_ms) AS p50_ms,percentile_cont(0.95) WITHIN GROUP(ORDER BY startup_ms) AS p95_ms FROM miniapp_analytics.drama_playback_facts WHERE $__timeFilter(first_seen_at) AND first_seen_at>=now()-interval '14 days' AND environment=${environment:sqlstring}\nAND (${release:sqlstring}='__all__' OR client_release=${release:sqlstring})\nAND (${platform:sqlstring}='__all__' OR platform=${platform:sqlstring})\nAND (${entry:sqlstring}='__all__' OR entry=${entry:sqlstring})\nAND (${video:sqlstring}='__all__' OR video_id=${video:sqlstring})\nAND (${measurement:sqlstring}='__all__' OR measurement_version::text=${measurement:sqlstring})\nAND (${frame:sqlstring}='__all__' OR frame_method=${frame:sqlstring}) AND outcome='playing' AND startup_ms IS NOT NULL GROUP BY 1 ORDER BY 1"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "观察数趋势（每15分钟）",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_POSTGRES}"
+      },
+      "description": "",
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 24,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_POSTGRES}"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT $__timeGroupAlias(first_seen_at,'15m'),count(*) AS known_observations,count(*) FILTER(WHERE outcome='playing') AS successful_observations FROM miniapp_analytics.drama_playback_facts WHERE $__timeFilter(first_seen_at) AND first_seen_at>=now()-interval '14 days' AND environment=${environment:sqlstring}\nAND (${release:sqlstring}='__all__' OR client_release=${release:sqlstring})\nAND (${platform:sqlstring}='__all__' OR platform=${platform:sqlstring})\nAND (${entry:sqlstring}='__all__' OR entry=${entry:sqlstring})\nAND (${video:sqlstring}='__all__' OR video_id=${video:sqlstring})\nAND (${measurement:sqlstring}='__all__' OR measurement_version::text=${measurement:sqlstring})\nAND (${frame:sqlstring}='__all__' OR frame_method=${frame:sqlstring}) GROUP BY 1 ORDER BY 1"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "阶段耗时：完成区间的条件分位（毫秒）",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_POSTGRES}"
+      },
+      "description": "各阶段分母可能不同，缺失/逆序为NULL。元数据→画面数据不是纯下载，画面数据→首帧不是纯解码。",
+      "gridPos": {
+        "x": 0,
+        "y": 32,
+        "w": 24,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_POSTGRES}"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "WITH f AS (SELECT * FROM miniapp_analytics.drama_playback_facts WHERE $__timeFilter(first_seen_at) AND first_seen_at>=now()-interval '14 days' AND environment=${environment:sqlstring}\nAND (${release:sqlstring}='__all__' OR client_release=${release:sqlstring})\nAND (${platform:sqlstring}='__all__' OR platform=${platform:sqlstring})\nAND (${entry:sqlstring}='__all__' OR entry=${entry:sqlstring})\nAND (${video:sqlstring}='__all__' OR video_id=${video:sqlstring})\nAND (${measurement:sqlstring}='__all__' OR measurement_version::text=${measurement:sqlstring})\nAND (${frame:sqlstring}='__all__' OR frame_method=${frame:sqlstring})) SELECT stage AS \"阶段\",count(*) AS \"已知观察N\",count(*) FILTER(WHERE reached_start) AS \"达到阶段起点N\",count(ms) AS \"阶段完成N\",percentile_cont(0.5) WITHIN GROUP(ORDER BY ms) AS \"P50_ms\",percentile_cont(0.95) WITHIN GROUP(ORDER BY ms) AS \"P95_ms\",max(ms) AS \"最大_ms\" FROM f CROSS JOIN LATERAL (VALUES ('进入→设置源',entry_to_source_ms,true),('源→元数据',source_to_metadata_ms,entry_to_source_ms IS NOT NULL),('元数据→画面数据',metadata_to_data_ms,summary#>'{marks,metadata}' IS NOT NULL),('画面数据→首帧',data_to_frame_ms,summary#>'{marks,loadeddata}' IS NOT NULL),('首帧→启动完成',frame_to_startup_ms,first_frame_ms IS NOT NULL)) v(stage,ms,reached_start) GROUP BY stage"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "成功启动耗时分布（含40秒以上尾部）",
+      "type": "barchart",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_POSTGRES}"
+      },
+      "description": "失败/后台/退出不填0、不混入成功分布。",
+      "gridPos": {
+        "x": 0,
+        "y": 40,
+        "w": 24,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_POSTGRES}"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT CASE WHEN startup_ms<1000 THEN '01. 0–1秒' WHEN startup_ms<2000 THEN '02. 1–2秒' WHEN startup_ms<5000 THEN '03. 2–5秒' WHEN startup_ms<10000 THEN '04. 5–10秒' WHEN startup_ms<20000 THEN '05. 10–20秒' WHEN startup_ms<40000 THEN '06. 20–40秒' ELSE '07. 40秒及以上' END AS \"耗时区间\",count(*) AS \"成功样本数\" FROM miniapp_analytics.drama_playback_facts WHERE $__timeFilter(first_seen_at) AND first_seen_at>=now()-interval '14 days' AND environment=${environment:sqlstring}\nAND (${release:sqlstring}='__all__' OR client_release=${release:sqlstring})\nAND (${platform:sqlstring}='__all__' OR platform=${platform:sqlstring})\nAND (${entry:sqlstring}='__all__' OR entry=${entry:sqlstring})\nAND (${video:sqlstring}='__all__' OR video_id=${video:sqlstring})\nAND (${measurement:sqlstring}='__all__' OR measurement_version::text=${measurement:sqlstring})\nAND (${frame:sqlstring}='__all__' OR frame_method=${frame:sqlstring}) AND outcome='playing' AND startup_ms IS NOT NULL GROUP BY 1 ORDER BY 1"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "慢观察的主要等待阶段（完整主线子集）",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_POSTGRES}"
+      },
+      "description": "每个观察只选其最大互斥区间；仅阶段归类，不能直接认定网络/解码根因。未覆盖样本看阶段完成N。",
+      "gridPos": {
+        "x": 0,
+        "y": 48,
+        "w": 24,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_POSTGRES}"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "WITH f AS (SELECT * FROM miniapp_analytics.drama_playback_facts WHERE $__timeFilter(first_seen_at) AND first_seen_at>=now()-interval '14 days' AND environment=${environment:sqlstring}\nAND (${release:sqlstring}='__all__' OR client_release=${release:sqlstring})\nAND (${platform:sqlstring}='__all__' OR platform=${platform:sqlstring})\nAND (${entry:sqlstring}='__all__' OR entry=${entry:sqlstring})\nAND (${video:sqlstring}='__all__' OR video_id=${video:sqlstring})\nAND (${measurement:sqlstring}='__all__' OR measurement_version::text=${measurement:sqlstring})\nAND (${frame:sqlstring}='__all__' OR frame_method=${frame:sqlstring}) AND outcome='playing' AND startup_ms>=10000 AND metadata_to_data_ms IS NOT NULL AND data_to_frame_ms IS NOT NULL AND source_to_metadata_ms IS NOT NULL AND frame_to_startup_ms IS NOT NULL) SELECT biggest.stage AS \"主要等待阶段\",count(*) AS \"慢样本数\",avg(biggest.ms/nullif(startup_ms,0))*100 AS \"平均占启动百分比\" FROM f CROSS JOIN LATERAL (SELECT * FROM (VALUES ('进入→设置源',entry_to_source_ms),('源→元数据',source_to_metadata_ms),('元数据→画面数据',metadata_to_data_ms),('画面数据→首帧',data_to_frame_ms),('首帧→启动完成',frame_to_startup_ms)) v(stage,ms) ORDER BY ms DESC LIMIT 1) biggest GROUP BY biggest.stage"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "重点诊断：网络／帧处理／主线程（毫秒）",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_POSTGRES}"
+      },
+      "description": "TTFB含网络/边缘/源站，连接段可能含TLS。缺失不是0，网络可见子集不能外推全部平台。",
+      "gridPos": {
+        "x": 0,
+        "y": 56,
+        "w": 24,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_POSTGRES}"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "WITH f AS (SELECT * FROM miniapp_analytics.drama_playback_facts WHERE $__timeFilter(first_seen_at) AND first_seen_at>=now()-interval '14 days' AND environment=${environment:sqlstring}\nAND (${release:sqlstring}='__all__' OR client_release=${release:sqlstring})\nAND (${platform:sqlstring}='__all__' OR platform=${platform:sqlstring})\nAND (${entry:sqlstring}='__all__' OR entry=${entry:sqlstring})\nAND (${video:sqlstring}='__all__' OR video_id=${video:sqlstring})\nAND (${measurement:sqlstring}='__all__' OR measurement_version::text=${measurement:sqlstring})\nAND (${frame:sqlstring}='__all__' OR frame_method=${frame:sqlstring})) SELECT metric AS \"指标\",count(ms) AS \"可观测N\",count(*) AS \"已知观察N\",percentile_cont(0.5) WITHIN GROUP(ORDER BY ms) AS \"P50_ms\",percentile_cont(0.95) WITHIN GROUP(ORDER BY ms) AS \"P95_ms\",max(ms) AS \"最大_ms\" FROM f CROSS JOIN LATERAL (VALUES ('首个可读请求TTFB',first_ttfb_ms),('可读请求最大TTFB',max_ttfb_ms),('可读请求最大连接段',max_connect_ms),('元数据→首帧',metadata_to_frame_ms),('首帧处理',frame_processing_ms),('元数据→首帧重叠长任务',metadata_frame_longtask_ms)) v(metric,ms) GROUP BY metric"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "结果与慢比例：分母分开",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_POSTGRES}"
+      },
+      "description": "≥10秒为诊断阈值，不中断播放。24小时本身不能保证置信，重复会话/视频非独立样本。",
+      "gridPos": {
+        "x": 0,
+        "y": 64,
+        "w": 24,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_POSTGRES}"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT count(*) AS \"已知观察N\",count(*) FILTER(WHERE outcome='playing' AND startup_ms IS NOT NULL) AS \"可测成功N\",count(*) FILTER(WHERE outcome='playing' AND startup_ms>=10000) AS \"成功慢N\",100.0*count(*) FILTER(WHERE outcome='playing' AND startup_ms>=10000)/nullif(count(*) FILTER(WHERE outcome='playing' AND startup_ms IS NOT NULL),0) AS \"成功样本慢百分比\",count(*) FILTER(WHERE slow_received_at IS NOT NULL OR elapsed_ms>=10000) AS \"已知等待至少10秒N\" FROM miniapp_analytics.drama_playback_facts WHERE $__timeFilter(first_seen_at) AND first_seen_at>=now()-interval '14 days' AND environment=${environment:sqlstring}\nAND (${release:sqlstring}='__all__' OR client_release=${release:sqlstring})\nAND (${platform:sqlstring}='__all__' OR platform=${platform:sqlstring})\nAND (${entry:sqlstring}='__all__' OR entry=${entry:sqlstring})\nAND (${video:sqlstring}='__all__' OR video_id=${video:sqlstring})\nAND (${measurement:sqlstring}='__all__' OR measurement_version::text=${measurement:sqlstring})\nAND (${frame:sqlstring}='__all__' OR frame_method=${frame:sqlstring})"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "最慢／失败观察：用ID查看下方详情",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_POSTGRES}"
+      },
+      "description": "将 observation_id 填到顶部单次观察变量；详情保留慢/失败100%、快成功确定性5%。未知终态elapsed是已知快照下界。",
+      "gridPos": {
+        "x": 0,
+        "y": 72,
+        "w": 24,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_POSTGRES}"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT observation_id,first_seen_at,outcome,entry,platform,client_release,video_id,frame_method,startup_ms,first_frame_ms,elapsed_ms,source_to_metadata_ms,metadata_to_data_ms,data_to_frame_ms,frame_to_startup_ms,network_status,max_ttfb_ms,(final_detail IS NOT NULL OR slow_detail IS NOT NULL) AS has_detailed_sample FROM miniapp_analytics.drama_playback_facts WHERE $__timeFilter(first_seen_at) AND first_seen_at>=now()-interval '14 days' AND environment=${environment:sqlstring}\nAND (${release:sqlstring}='__all__' OR client_release=${release:sqlstring})\nAND (${platform:sqlstring}='__all__' OR platform=${platform:sqlstring})\nAND (${entry:sqlstring}='__all__' OR entry=${entry:sqlstring})\nAND (${video:sqlstring}='__all__' OR video_id=${video:sqlstring})\nAND (${measurement:sqlstring}='__all__' OR measurement_version::text=${measurement:sqlstring})\nAND (${frame:sqlstring}='__all__' OR frame_method=${frame:sqlstring}) ORDER BY CASE WHEN outcome='playing' THEN startup_ms ELSE elapsed_ms END DESC NULLS LAST LIMIT 100"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "单次观察：相对时间线（毫秒）",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_POSTGRES}"
+      },
+      "description": "相对本次入口计时；网络可能并行/截断/不可见。资源详情没有Range头或签名URL。只输出所选观察。",
+      "gridPos": {
+        "x": 0,
+        "y": 80,
+        "w": 24,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_POSTGRES}"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "WITH f AS (SELECT * FROM miniapp_analytics.drama_playback_facts WHERE $__timeFilter(first_seen_at) AND first_seen_at>=now()-interval '14 days' AND environment=${environment:sqlstring}\nAND (${release:sqlstring}='__all__' OR client_release=${release:sqlstring})\nAND (${platform:sqlstring}='__all__' OR platform=${platform:sqlstring})\nAND (${entry:sqlstring}='__all__' OR entry=${entry:sqlstring})\nAND (${video:sqlstring}='__all__' OR video_id=${video:sqlstring})\nAND (${measurement:sqlstring}='__all__' OR measurement_version::text=${measurement:sqlstring})\nAND (${frame:sqlstring}='__all__' OR frame_method=${frame:sqlstring}) AND observation_id=${observation:sqlstring}), timeline AS (\nSELECT observation_id,'mark' AS kind,k AS node,v::double precision AS start_ms,NULL::double precision AS end_ms,NULL::text AS state FROM f CROSS JOIN LATERAL jsonb_each_text(summary->'marks') m(k,v)\nUNION ALL SELECT observation_id,'media',e->>'name',(e->>'atMs')::double precision,NULL,(e->'state')::text FROM f CROSS JOIN LATERAL jsonb_array_elements(COALESCE(final_detail#>'{media,events}',slow_detail#>'{media,events}','[]'::jsonb)) e\nUNION ALL SELECT observation_id,'network','visible_media_request',(e->>'startMs')::double precision,(e->>'responseEndMs')::double precision,e::text FROM f CROSS JOIN LATERAL jsonb_array_elements(COALESCE(network_detail#>'{network,entries}',final_detail#>'{diagnostics,network,entries}',slow_detail#>'{diagnostics,network,entries}','[]'::jsonb)) e\n) SELECT * FROM timeline ORDER BY start_ms,kind"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "单次观察：API请求与快照证据",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_POSTGRES}"
+      },
+      "description": "queries.attempts.requestId用于Railway event=drama.request_timing关联；API headersMs不是视频TTFB。详情过期或快样本未抽中时保留summary，缺失不表示未发生。",
+      "gridPos": {
+        "x": 0,
+        "y": 88,
+        "w": 24,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_POSTGRES}"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT observation_id,summary->'marks' AS marks,diagnostic_summary,network_summary,COALESCE(final_detail->'queries',slow_detail->'queries') AS api_queries,slow_detail#>'{media,snapshot}' AS slow_snapshot,final_detail#>'{media,snapshot}' AS final_snapshot FROM miniapp_analytics.drama_playback_facts WHERE $__timeFilter(first_seen_at) AND first_seen_at>=now()-interval '14 days' AND environment=${environment:sqlstring}\nAND (${release:sqlstring}='__all__' OR client_release=${release:sqlstring})\nAND (${platform:sqlstring}='__all__' OR platform=${platform:sqlstring})\nAND (${entry:sqlstring}='__all__' OR entry=${entry:sqlstring})\nAND (${video:sqlstring}='__all__' OR video_id=${video:sqlstring})\nAND (${measurement:sqlstring}='__all__' OR measurement_version::text=${measurement:sqlstring})\nAND (${frame:sqlstring}='__all__' OR frame_method=${frame:sqlstring}) AND observation_id=${observation:sqlstring}"
+        }
+      ]
+    }
+  ],
+  "annotations": {
+    "list": []
+  }
+}

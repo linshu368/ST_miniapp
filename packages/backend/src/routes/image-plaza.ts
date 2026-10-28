@@ -35,6 +35,7 @@ import {
   type GetVideoPlazaTagCountsData,
 } from '@miniapp/shared';
 import {
+  getImagePlazaFeedRuntimeConfig,
   getImagePlazaRuntimeConfig,
   publicImagePlazaFeedTags,
 } from '../features/image-plaza/config.js';
@@ -62,7 +63,7 @@ export default async function imagePlazaRoutes(app: FastifyInstance) {
       const context = await userContext(request, reply);
       if (!context) return;
       try {
-        const runtime = await getImagePlazaRuntimeConfig();
+        const runtime = await getImagePlazaFeedRuntimeConfig();
         return reply.send(
           ok<GetImagePlazaConfigData>({
             enabled: runtime.enabled,
@@ -124,7 +125,7 @@ export default async function imagePlazaRoutes(app: FastifyInstance) {
         if (!parsed.success) return reply.status(400).send(fail('BAD_REQUEST', '广场查询参数无效'));
         const query = parsed.data;
         const startedAt = performance.now();
-        const runtime = await getImagePlazaRuntimeConfig();
+        const runtime = await getImagePlazaFeedRuntimeConfig();
         const tagId = typeof query.tag === 'string' && query.tag !== 'all' ? query.tag : undefined;
         const tagIds = [
           ...(tagId ? [tagId] : []),

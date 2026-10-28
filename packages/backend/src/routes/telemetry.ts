@@ -19,16 +19,24 @@ import { requireTelegramAuth } from '../middleware/auth.js';
 import { getOrCreateDbUserRecord } from '../lib/user.js';
 import { requestLogger } from '../lib/logger.js';
 import { MiniappWalletRepository } from '../infrastructure/repositories/MiniappWalletRepository.js';
+import { DramaTimingRepository } from '../features/drama/timing-repository.js';
+import { DramaTimingProcessor } from '../features/drama/timing-processor.js';
+import { getDramaTimingPersistenceConfig } from '../platform/runtime-config.js';
 
 export default async function telemetryRoutes(app: FastifyInstance) {
   const wallets = new MiniappWalletRepository();
+  const timingRepository = new DramaTimingRepository();
+  const timingConfig = getDramaTimingPersistenceConfig();
+  const timingProcessor = new DramaTimingProcessor(timingRepository, timingConfig);
+
+  app.addHook('onClose', async () => timingProcessor.close());
 
   // 仅保护本进程的诊断日志容量，不作为业务限流或跨副本一致性机制。
   const uploadWindows = new Map<number, { startedAt: number; count: number }>();
   let totalWindow = { startedAt: performance.now(), count: 0 };
   const windowMs = 60_000;
 
-  // @frontend-ready: true — 手机端的短剧分段耗时集中写入 Railway，不写数据库。
+  // @frontend-ready: true — 保留 Railway 诊断；显式启用后写分析表，不参与视频播放。
   app.post(
     '/api/telemetry/drama-timing',
     {
@@ -75,9 +83,21 @@ export default async function telemetryRoutes(app: FastifyInstance) {
           { err, event: 'drama.timing_log_failed', observation_id: parsed.data.id },
           'drama frontend timing log failed'
         );
-        return reply.status(503).send(fail('INTERNAL_ERROR', 'Timing log unavailable'));
       }
-      return reply.send(ok<PostDramaTimingData>({ accepted: true }));
+      if (timingConfig.enabled && parsed.data.type === 'playback') {
+        if (!timingProcessor.enqueue(parsed.data, log)) {
+          log.sys.warn(
+            {
+              event: 'drama.timing_dropped',
+              observation_id: parsed.data.id,
+              reason: 'persistence_queue_full',
+              ...timingProcessor.stats(),
+            },
+            'drama timing dropped by persistence budget'
+          );
+        }
+      }
+      return reply.status(202).send(ok<PostDramaTimingData>({ accepted: true }));
     }
   );
 

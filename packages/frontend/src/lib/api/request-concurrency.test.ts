@@ -66,6 +66,37 @@ describe('withRequestSlot', () => {
     await hold;
   });
 
+  it('keeps one slot available for critical work', async () => {
+    __resetRequestConcurrencyForTests(3);
+
+    let releaseFirst!: () => void;
+    let releaseSecond!: () => void;
+    const first = withRequestSlot(
+      'normal',
+      undefined,
+      () => new Promise<void>((resolve) => (releaseFirst = resolve))
+    );
+    const second = withRequestSlot(
+      'background',
+      undefined,
+      () => new Promise<void>((resolve) => (releaseSecond = resolve))
+    );
+    const queued = withRequestSlot('normal', undefined, async () => 'queued');
+    await Promise.resolve();
+
+    expect(getRequestConcurrencyStats()).toMatchObject({ inFlight: 2, waiting: 1 });
+    await expect(withRequestSlot('critical', undefined, async () => 'critical')).resolves.toBe(
+      'critical'
+    );
+    expect(getRequestConcurrencyStats()).toMatchObject({ inFlight: 2, waiting: 1 });
+
+    releaseFirst();
+    await first;
+    await expect(queued).resolves.toBe('queued');
+    releaseSecond();
+    await second;
+  });
+
   it('aborts while waiting without occupying a slot', async () => {
     __resetRequestConcurrencyForTests(1);
     let releaseHold!: () => void;

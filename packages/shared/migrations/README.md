@@ -170,3 +170,11 @@ npx prisma generate
 ### 20261026_first_token_stage_budgets.sql
 
 在20261023首token配置迁移之后，添加nullable兜底阶段时限、客户端实际等待、服务端超时阶段；扩展配置校验、原begin/report函数和invoker分析投影，不回填历史策略，不新增授权。TEST通过后单文件生产执行，再发布Backend/Admin、运营4/2/10配置、Frontend及v2看板。保留列/历史回滚应用，禁止改写旧迁移或releases。验证用`scripts/test-first-token-fallback-local.sh`（隔离本地PG17/PostgREST、reader ACL、身份/账务与v2失败率）。
+
+# 短剧启动分析（2026-10-27，待远端执行）
+
+`20261027_drama_playback_observability.sql` 仅新增 miniapp_analytics 的观察表、原子合并RPC、只读事实view、reader授权及初始关闭的有界清理job。无业务外键/写入，service_role写、浏览器角色无权限，Grafana只读；摘要14天/明细7天。先用 `bash scripts/test-drama-observability-local.sh` 验证本地PG17，再独立核对TEST/生产shape，通过Database Migration单文件流程执行。Backend开关默认false，迁移后才启用；回退关闭开关/清理job、撤reader，保留表，无业务数据恢复。详见 [发布与验收](../../../docs/grafana/drama-playback-runbook.md)，源码不代表已迁移。
+
+## 短剧生产 cron 权限 forward-fix
+
+原 `20261027_drama_playback_observability.sql` 的production事务在直接UPDATE cron.job时被Supabase托管权限拒绝并回滚，源文件/失败认领不改写。新安装或恢复改为单独执行自包含 `20261027_drama_playback_observability_forward_fix.sql`，只将cron关闭动作替换为官方cron.alter_job；本功能对象/权限/数据策略不变。执行前确认对象回滚、目标函数存在且迁移角色可执行；job保持inactive。

@@ -2,176 +2,474 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Clapperboard, RefreshCw } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Bookmark, Check, ChevronRight, Clapperboard, Clock3, Play, Search, X } from 'lucide-react';
 import type { DramaSummary } from '@miniapp/shared';
 
-import { cn } from '@/lib/utils';
-import { characterRoomGradient } from '@/lib/utils/character-hue';
 import { useDramaListQuery, usePrefetchDramaPlayback } from '@/lib/api/drama';
 import { selectDramas } from '@/lib/drama-catalog';
-import { Input } from '@/components/ui/input';
+import { markCriticalSettled } from '@/lib/entry-phase';
 import { dramaTiming, coverLoadMs } from '@/lib/perf/drama-observer';
-import type { DramaTimingReport } from '@/lib/perf/drama-timing';
+import { cn } from '@/lib/utils';
+import {
+  useDramaLibraryStore,
+  useHydrateDramaLibrary,
+  type DramaProgress,
+  type DramaLibraryPosition,
+} from '@/stores/drama-library-store';
 
-const TAG_DISPLAY_LIMIT = 3;
-
-const DRAMA_SORT_TABS = [
-  { value: 'recommended', label: '推荐' },
-  { value: 'latest', label: '最新' },
+const TABS = [
+  { value: 'theater', label: '剧场' },
+  { value: 'library', label: '追剧' },
 ] as const;
-const DRAMA_CATEGORIES = ['全部', '悬疑', '科幻', '古风', '恋爱', '喜剧', '治愈', '脑洞'] as const;
+const CATEGORIES = ['全部', '悬疑', '恋爱', '古风', '科幻', '喜剧', '治愈', '脑洞'];
 
-function formatDuration(seconds: number): string {
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  return `${mins}:${secs.toString().padStart(2, '0')}`;
+function readLibraryPosition(element: HTMLDivElement, preferredId?: string): DramaLibraryPosition {
+  const bounds = element.getBoundingClientRect();
+  const rows = Array.from(element.querySelectorAll<HTMLElement>('[data-library-drama-id]'));
+  const anchor = preferredId
+    ? rows.find((row) => row.dataset.libraryDramaId === preferredId)
+    : rows.find((row) => row.getBoundingClientRect().bottom > bounds.top + 1);
+  return {
+    scroll: element.scrollTop,
+    anchorId: anchor?.dataset.libraryDramaId ?? null,
+    anchorOffset: anchor ? anchor.getBoundingClientRect().top - bounds.top : 0,
+  };
 }
 
-/** 徽标规则：单集且有时长显示时长，多集显示集数，其余不显示。 */
-function dramaBadge(drama: DramaSummary): { position: 'left' | 'right'; text: string } | null {
-  if (drama.episode_count === 1 && drama.duration_seconds !== null) {
-    return { position: 'right', text: formatDuration(drama.duration_seconds) };
-  }
-  if (drama.episode_count > 1) {
-    return { position: 'left', text: `${drama.episode_count}集` };
-  }
-  return null;
+function saveLibraryPosition(filter: 'saved' | 'recent', position: DramaLibraryPosition) {
+  const state = useDramaLibraryStore.getState();
+  state.setBrowse({ libraryPositions: { ...state.browse.libraryPositions, [filter]: position } });
 }
 
 export default function DramasPage() {
+  const router = useRouter();
   const { data, isLoading, isError, refetch } = useDramaListQuery();
+  const hydrated = useHydrateDramaLibrary();
+  const browse = useDramaLibraryStore((state) => state.browse);
+  const setBrowse = useDramaLibraryStore((state) => state.setBrowse);
+  const history = useDramaLibraryStore((state) => state.history);
+  const saved = useDramaLibraryStore((state) => state.saved);
+  const persistent = useDramaLibraryStore((state) => state.persistent);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const libraryScrollRef = useRef<HTMLDivElement>(null);
+  const openedLibraryPosition = useRef<DramaLibraryPosition | null>(null);
+  const focusSearch = useRef(false);
+  const restoreSearchScroll = useRef<number | null>(null);
   const dramas = data ?? [];
+  const searching = Boolean(browse.keyword.trim());
+  const visibleDramas = selectDramas(
+    dramas,
+    browse.keyword,
+    searching ? '全部' : browse.category,
+    browse.sort
+  );
+  const recent = dramas
+    .filter((drama) => history[drama.id])
+    .sort((a, b) => (history[b.id]?.updatedAt ?? 0) - (history[a.id]?.updatedAt ?? 0));
+  const library =
+    browse.libraryFilter === 'recent'
+      ? recent
+      : saved.flatMap((id) => dramas.find((drama) => drama.id === id) ?? []);
+  // 试看仍可在「最近看过」找到，但不能挤掉用户正在追的故事。
+  const continuing = recent
+    .filter((drama) => {
+      const progress = history[drama.id]!;
+      return !progress.completed && (progress.engagedAt === undefined || progress.engagedAt > 0);
+    })
+    .sort((a, b) => {
+      const first = history[a.id]!;
+      const second = history[b.id]!;
+      return (second.engagedAt ?? second.updatedAt) - (first.engagedAt ?? first.updatedAt);
+    });
+  const latest = continuing[0];
+
   useEffect(() => {
+    if (data !== undefined || isError) markCriticalSettled();
     if (data) dramaTiming.listReady(data);
     else if (isError) dramaTiming.listFailed();
   }, [data, isError]);
-  const retryList = () => {
+
+  useEffect(() => {
+    if (browse.tab !== 'theater' || !hydrated) return;
+    const scrollElement = scrollRef.current;
+    if (scrollElement) scrollElement.scrollTop = useDramaLibraryStore.getState().browse.scroll;
+    if (focusSearch.current) {
+      searchRef.current?.focus();
+      focusSearch.current = false;
+    }
+    return () => {
+      if (scrollElement)
+        useDramaLibraryStore.getState().setBrowse({ scroll: scrollElement.scrollTop });
+    };
+  }, [browse.tab, hydrated, isLoading]);
+
+  useEffect(() => {
+    if (browse.tab !== 'library' || !hydrated || isLoading) return;
+    const element = libraryScrollRef.current;
+    if (!element) return;
+    const filter = browse.libraryFilter;
+    let position = useDramaLibraryStore.getState().browse.libraryPositions[filter];
+    openedLibraryPosition.current = null;
+    element.scrollTop = position.scroll;
+    const anchor = Array.from(
+      element.querySelectorAll<HTMLElement>('[data-library-drama-id]')
+    ).find((row) => row.dataset.libraryDramaId === position.anchorId);
+    if (anchor) {
+      // 最近看过会重排，优先找回刚点过的那部，而不是死守失效的像素位置。
+      element.scrollTop +=
+        anchor.getBoundingClientRect().top -
+        element.getBoundingClientRect().top -
+        position.anchorOffset;
+    }
+    const remember = () => {
+      position = readLibraryPosition(element);
+    };
+    remember();
+    element.addEventListener('scroll', remember, { passive: true });
+    return () => {
+      element.removeEventListener('scroll', remember);
+      saveLibraryPosition(filter, openedLibraryPosition.current ?? position);
+    };
+  }, [browse.tab, browse.libraryFilter, hydrated, isLoading]);
+
+  useEffect(() => {
+    if (!searching && restoreSearchScroll.current !== null) {
+      if (scrollRef.current) scrollRef.current.scrollTop = restoreSearchScroll.current;
+      restoreSearchScroll.current = null;
+    }
+  }, [searching]);
+
+  const rememberScroll = () => {
+    if (browse.tab === 'theater') setBrowse({ scroll: scrollRef.current?.scrollTop ?? 0 });
+  };
+  const switchTab = (tab: typeof browse.tab) => {
+    rememberScroll();
+    setBrowse({ tab });
+  };
+  const openSearch = () => {
+    focusSearch.current = true;
+    switchTab('theater');
+    if (browse.tab === 'theater') searchRef.current?.focus();
+  };
+  const filter = (patch: Partial<typeof browse>) => {
+    setBrowse({ ...patch, scroll: 0 });
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+  };
+  const updateKeyword = (keyword: string) => {
+    const enteringSearch = !searching && Boolean(keyword.trim());
+    const leavingSearch = searching && !keyword.trim();
+    const scroll = leavingSearch ? (browse.searchReturnScroll ?? 0) : 0;
+    if (leavingSearch) restoreSearchScroll.current = scroll;
+    setBrowse({
+      keyword,
+      scroll,
+      searchReturnScroll: enteringSearch
+        ? (scrollRef.current?.scrollTop ?? 0)
+        : leavingSearch
+          ? null
+          : browse.searchReturnScroll,
+    });
+    if (scrollRef.current) scrollRef.current.scrollTop = scroll;
+  };
+  const retry = () => {
     dramaTiming.beginList('retry');
     void refetch();
   };
-  const [activeSort, setActiveSort] =
-    useState<(typeof DRAMA_SORT_TABS)[number]['value']>('recommended');
-  const [activeCategory, setActiveCategory] = useState<string>('全部');
-  const [keyword, setKeyword] = useState('');
-  const visibleDramas = selectDramas(dramas, keyword, activeCategory, activeSort);
 
   return (
-    <main className="mx-auto min-h-dvh w-full max-w-screen-xl px-4 pb-8 pt-[calc(1.5rem+env(safe-area-inset-top))] text-foreground">
-      <header className="mb-3">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Dramas</p>
-        <h1 className="mt-1 text-2xl font-bold">短剧</h1>
-      </header>
-
-      <div role="search" aria-label="搜索短剧" className="mb-3">
-        <Input
-          type="search"
-          aria-label="搜索标题、标签或简介"
-          placeholder="搜索标题、标签或简介"
-          value={keyword}
-          onChange={(event) => setKeyword(event.target.value)}
-        />
-      </div>
-
-      <div role="tablist" aria-label="短剧排序" className="mb-2 flex items-center gap-2">
-        {DRAMA_SORT_TABS.map((tab) => {
-          const active = activeSort === tab.value;
-          return (
+    <main
+      className="fixed inset-0 z-30 overflow-hidden bg-[#121113] text-[#eee7e2]"
+      aria-label="短剧"
+    >
+      <div className="relative mx-auto h-full max-w-lg">
+        <header className={cn('relative z-20 px-5 pt-[env(safe-area-inset-top)]', 'bg-[#121113]')}>
+          <div className="flex h-[60px] items-center justify-between">
+            <nav aria-label="短剧栏目" className="flex h-full items-center gap-7">
+              {TABS.map((tab) => (
+                <button
+                  key={tab.value}
+                  type="button"
+                  aria-current={browse.tab === tab.value ? 'page' : undefined}
+                  onClick={() => switchTab(tab.value)}
+                  className={cn(
+                    'relative flex h-full min-w-11 items-center justify-center text-[18px] transition-colors',
+                    browse.tab === tab.value
+                      ? 'font-bold text-[#eee7e2]'
+                      : 'font-medium text-[#eee7e2]/50'
+                  )}
+                >
+                  {tab.label}
+                  {browse.tab === tab.value ? (
+                    <span
+                      aria-hidden
+                      className="absolute bottom-1.5 h-0.5 w-4 rounded-full bg-white"
+                    />
+                  ) : null}
+                </button>
+              ))}
+            </nav>
             <button
-              key={tab.value}
               type="button"
-              role="tab"
-              aria-selected={active}
-              onClick={() => setActiveSort(tab.value)}
-              className={cn(
-                'rounded-full border px-4 py-1.5 text-[13px] transition-all',
-                active
-                  ? 'border-primary/30 bg-primary/10 text-primary'
-                  : 'border-transparent text-muted-foreground hover:bg-card hover:text-foreground'
-              )}
+              aria-label="搜索短剧"
+              onClick={openSearch}
+              className="-mr-2 flex h-11 w-11 items-center justify-center rounded-full active:bg-white/10"
             >
-              {tab.label}
+              <Search className="h-[22px] w-[22px]" />
             </button>
-          );
-        })}
-      </div>
+          </div>
+        </header>
 
-      <div
-        role="tablist"
-        aria-label="短剧分类"
-        className="mb-4 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-      >
-        {DRAMA_CATEGORIES.map((category) => {
-          const active = activeCategory === category;
-          return (
-            <button
-              key={category}
-              type="button"
-              role="tab"
-              aria-selected={active}
-              onClick={() => setActiveCategory(category)}
-              className={cn(
-                'shrink-0 rounded-full border px-3 py-1 text-[12px] transition-all',
-                active
-                  ? 'border-primary/30 bg-primary/10 text-primary'
-                  : 'border-border text-muted-foreground hover:bg-card hover:text-foreground'
+        {isLoading || !hydrated ? (
+          <div className="space-y-5 px-4 pt-5" aria-label="短剧加载中">
+            <div className="h-11 animate-pulse rounded-xl bg-white/5" />
+            <div className="grid grid-cols-2 gap-3">
+              {Array.from({ length: 6 }, (_, i) => (
+                <div key={i} className="aspect-[3/4] animate-pulse rounded-lg bg-white/5" />
+              ))}
+            </div>
+          </div>
+        ) : isError ? (
+          <EmptyState
+            title="短剧暂时没加载出来"
+            detail="网络可能开了个小差，再试一次就好。"
+            action="重新加载"
+            onAction={retry}
+          />
+        ) : !dramas.length ? (
+          <EmptyState
+            title="好戏，即将开场"
+            detail="短剧正在陆续上架，稍后回来看看。"
+            action="刷新看看"
+            onAction={retry}
+          />
+        ) : browse.tab === 'theater' ? (
+          <div className="absolute inset-x-0 bottom-[var(--app-nav-space)] top-[calc(60px+env(safe-area-inset-top))] flex flex-col">
+            <div className="shrink-0 bg-[#121113] px-4 pb-2">
+              <div
+                role="search"
+                className="relative mt-2 flex h-11 items-center rounded-xl bg-white/[0.065]"
+              >
+                <Search aria-hidden className="ml-3 h-[18px] w-[18px] shrink-0 text-[#eee7e2]/40" />
+                <input
+                  ref={searchRef}
+                  type="search"
+                  aria-label="搜索短剧名称或题材"
+                  placeholder="搜剧名，找你想看的故事"
+                  value={browse.keyword}
+                  maxLength={100}
+                  onChange={(event) => updateKeyword(event.target.value)}
+                  className="h-full min-w-0 flex-1 bg-transparent px-2 text-sm text-[#eee7e2] outline-none placeholder:text-[#eee7e2]/35 [&::-webkit-search-cancel-button]:hidden"
+                />
+                {browse.keyword ? (
+                  <button
+                    type="button"
+                    aria-label="清除搜索"
+                    onClick={() => updateKeyword('')}
+                    className="flex h-11 w-11 items-center justify-center"
+                  >
+                    <X className="h-4 w-4 text-[#eee7e2]/60" />
+                  </button>
+                ) : null}
+              </div>
+              {searching ? (
+                <div className="mt-2 flex min-h-11 items-center justify-between text-xs">
+                  <span className="text-[#eee7e2]/45">全部短剧中搜索</span>
+                  <button
+                    type="button"
+                    onClick={() => updateKeyword('')}
+                    className="-mr-2 min-h-11 px-2 text-[#c4a0a7]"
+                  >
+                    退出搜索
+                  </button>
+                </div>
+              ) : (
+                <div
+                  aria-label="短剧分类"
+                  className="-mx-4 mt-2 flex overflow-x-auto px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                >
+                  {CATEGORIES.map((category) => (
+                    <button
+                      key={category}
+                      type="button"
+                      aria-pressed={browse.category === category}
+                      onClick={() => filter({ category })}
+                      className={cn(
+                        'mr-1 min-h-11 shrink-0 px-3 text-sm',
+                        browse.category === category
+                          ? 'font-semibold text-[#eee7e2]'
+                          : 'text-[#eee7e2]/55'
+                      )}
+                    >
+                      {category}
+                    </button>
+                  ))}
+                </div>
               )}
+            </div>
+            <div
+              ref={scrollRef}
+              className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-6 [scrollbar-width:none]"
             >
-              {category}
-            </button>
-          );
-        })}
+              {latest && history[latest.id] && !searching && browse.category === '全部' ? (
+                <ContinueWatching
+                  drama={latest}
+                  progress={history[latest.id]!}
+                  queue={continuing}
+                  onOpen={rememberScroll}
+                />
+              ) : null}
+              <div className="mb-1 mt-0 flex items-center justify-between gap-2">
+                <h1 className="text-sm font-medium text-[#eee7e2]/75">
+                  {searching
+                    ? '搜索结果'
+                    : browse.category === '全部'
+                      ? '发现好剧'
+                      : `${browse.category}剧场`}
+                </h1>
+                <div className="flex text-xs">
+                  {(['recommended', 'latest'] as const).map((sort) => (
+                    <button
+                      key={sort}
+                      type="button"
+                      aria-pressed={browse.sort === sort}
+                      onClick={() => filter({ sort })}
+                      className={cn(
+                        'min-h-11 px-2',
+                        browse.sort === sort ? 'font-medium text-[#eee7e2]' : 'text-[#eee7e2]/40'
+                      )}
+                    >
+                      {sort === 'recommended' ? '精选' : '最新'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {visibleDramas.length ? (
+                <div className="grid grid-cols-2 gap-3">
+                  {visibleDramas.map((drama, index) => (
+                    <DramaCard
+                      key={drama.id}
+                      drama={drama}
+                      queue={visibleDramas}
+                      progress={history[drama.id]}
+                      onOpen={rememberScroll}
+                      priority={index < 2}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <EmptyState
+                  title="还没找到这部剧"
+                  detail="换个名字，或试试其他题材。"
+                  action={searching ? '返回剧场' : '清除筛选'}
+                  onAction={() => (searching ? updateKeyword('') : filter({ category: '全部' }))}
+                />
+              )}
+              {visibleDramas.length ? (
+                <p className="pb-2 pt-8 text-center text-[11px] text-[#eee7e2]/30">
+                  找个故事，慢慢入戏
+                </p>
+              ) : null}
+            </div>
+          </div>
+        ) : (
+          <div className="absolute inset-x-0 bottom-[var(--app-nav-space)] top-[calc(60px+env(safe-area-inset-top))] flex flex-col px-4">
+            <div className="flex shrink-0 items-center gap-2 pb-4 pt-3">
+              {(['saved', 'recent'] as const).map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={browse.libraryFilter === value}
+                  onClick={() => setBrowse({ libraryFilter: value })}
+                  className={cn(
+                    'min-h-11 rounded-full px-5 text-sm',
+                    browse.libraryFilter === value
+                      ? 'bg-[#dfd2cf] text-[#211d20] font-semibold'
+                      : 'bg-white/5 text-[#eee7e2]/55'
+                  )}
+                >
+                  {value === 'saved' ? '已收藏' : '最近看过'}
+                </button>
+              ))}
+              <span className="ml-auto text-xs text-[#eee7e2]/35">{library.length} 部</span>
+            </div>
+            <div
+              key={browse.libraryFilter}
+              ref={libraryScrollRef}
+              aria-label={browse.libraryFilter === 'saved' ? '已收藏短剧列表' : '最近看过短剧列表'}
+              className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-5"
+            >
+              {library.length ? (
+                <div className="space-y-5">
+                  {library.map((drama) => (
+                    <LibraryRow
+                      key={drama.id}
+                      drama={drama}
+                      progress={history[drama.id]}
+                      queue={library}
+                      onOpen={() => {
+                        if (!libraryScrollRef.current) return;
+                        const position = readLibraryPosition(libraryScrollRef.current, drama.id);
+                        openedLibraryPosition.current = position;
+                        saveLibraryPosition(browse.libraryFilter, position);
+                      }}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <EmptyState
+                  title={
+                    browse.libraryFilter === 'saved' ? '喜欢的故事，留在这里' : '从一个好故事开始'
+                  }
+                  detail={
+                    browse.libraryFilter === 'saved'
+                      ? '看到喜欢的剧，点一下「收藏」，下次接着看。'
+                      : '看过的短剧会自动留在这里，随时继续。'
+                  }
+                  action="去发现好剧"
+                  onAction={() => router.push('/')}
+                />
+              )}
+              <p className="px-4 pb-3 pt-7 text-center text-[11px] leading-relaxed text-[#eee7e2]/35">
+                {persistent
+                  ? '收藏与观看进度保存在当前设备'
+                  : '当前无法保存到设备，记录仅在本次打开期间保留'}
+              </p>
+            </div>
+          </div>
+        )}
       </div>
-
-      {isLoading ? <DramaGridSkeleton /> : null}
-
-      {isError ? <DramaListError onRetry={retryList} /> : null}
-
-      {!isLoading && !isError && dramas.length === 0 ? <DramaListEmpty /> : null}
-
-      {!isLoading && !isError && dramas.length > 0 && visibleDramas.length === 0 ? (
-        <div role="status" className="rounded-3xl border border-border bg-card p-8 text-center">
-          <p className="font-semibold">没有找到匹配的短剧</p>
-          <button
-            type="button"
-            className="mt-3 rounded-full px-4 py-2 text-sm text-primary"
-            onClick={() => {
-              setKeyword('');
-              setActiveCategory('全部');
-            }}
-          >
-            清除筛选
-          </button>
-        </div>
-      ) : null}
-
-      {!isLoading && !isError && visibleDramas.length > 0 ? (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-          {visibleDramas.map((drama) => (
-            <DramaCard key={drama.id} drama={drama} browseQueue={visibleDramas} />
-          ))}
-        </div>
-      ) : null}
     </main>
   );
 }
 
-function DramaCard({ drama, browseQueue }: { drama: DramaSummary; browseQueue: DramaSummary[] }) {
-  const prefetchPlayback = usePrefetchDramaPlayback();
-  const gradient = characterRoomGradient(drama.id);
-  const badge = dramaBadge(drama);
-  const tags = drama.tags.slice(0, TAG_DISPLAY_LIMIT);
-  // 封面加载失败就退回渐变占位，不影响卡片可用性
-  const [coverFailed, setCoverFailed] = useState(false);
-  const showCover = drama.cover_url !== null && !coverFailed;
-  const coverTiming = useRef<DramaTimingReport['cover']>({
-    outcome: drama.cover_url ? 'pending' : 'absent',
-  });
-
+function DramaLink({
+  drama,
+  queue,
+  onOpen,
+  children,
+  className,
+  label,
+}: {
+  drama: DramaSummary;
+  queue: DramaSummary[];
+  onOpen?: () => void;
+  children: React.ReactNode;
+  className?: string;
+  label?: string;
+}) {
+  const prefetch = usePrefetchDramaPlayback();
   return (
     <Link
       href={`/dramas/${drama.id}`}
+      prefetch={false}
+      className={className}
+      aria-label={label ?? `观看 ${drama.title}`}
       onClick={(event) => {
-        // 新标签页有自己的时钟与观测，不能在当前页开启一条永远等不到播放器的记录。
+        onOpen?.();
+        const progress = useDramaLibraryStore.getState().history[drama.id];
+        const videoId = progress && !progress.completed ? progress.videoId : undefined;
         if (
           !event.metaKey &&
           !event.ctrlKey &&
@@ -179,110 +477,219 @@ function DramaCard({ drama, browseQueue }: { drama: DramaSummary; browseQueue: D
           !event.altKey &&
           event.button === 0
         ) {
-          dramaTiming.beginPlayback(drama.id, 'cover', undefined, { ...coverTiming.current! });
+          const image = event.currentTarget.querySelector('img');
+          const cover = !drama.cover_url
+            ? { outcome: 'absent' as const }
+            : image
+              ? image.complete
+                ? {
+                    outcome: image.naturalWidth > 0 ? ('loaded' as const) : ('error' as const),
+                    loadMs: coverLoadMs(image),
+                  }
+                : { outcome: 'pending' as const }
+              : { outcome: 'error' as const };
+          dramaTiming.beginPlayback(drama.id, 'cover', videoId, cover);
         }
-        prefetchPlayback(drama.id, browseQueue);
+        prefetch(drama.id, queue, videoId);
       }}
-      className="group flex flex-col overflow-hidden rounded-[16px] border border-border bg-card text-left shadow-lg transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-2xl active:scale-95"
-      aria-label={`查看 ${drama.title}`}
     >
-      <div
-        className="relative aspect-[3/4] w-full shrink-0 overflow-hidden"
-        style={{ background: gradient }}
-      >
-        {showCover ? (
-          // eslint-disable-next-line @next/next/no-img-element -- 远程缩略图，走 next/image 要额外配置域名白名单，收益不大
-          <img
-            ref={(image) => {
-              // SSR/浏览器缓存可能在 hydration 之前完成加载，不能只依赖 onLoad。
-              if (image)
-                coverTiming.current = image.complete
-                  ? {
-                      outcome: image.naturalWidth > 0 ? 'loaded' : 'error',
-                      loadMs: coverLoadMs(image),
-                    }
-                  : { outcome: 'pending' };
-            }}
-            src={drama.cover_url!}
-            alt=""
-            className="absolute inset-0 h-full w-full object-cover"
-            loading="lazy"
-            onLoad={(event) => {
-              coverTiming.current = { outcome: 'loaded', loadMs: coverLoadMs(event.currentTarget) };
-            }}
-            onError={() => {
-              coverTiming.current = { outcome: 'error' };
-              setCoverFailed(true);
-            }}
-          />
-        ) : null}
-        {badge ? (
-          <span
-            className={cn(
-              'absolute top-2 z-10 rounded-full bg-black/55 px-2 py-0.5 text-[11px] font-semibold text-white backdrop-blur-sm',
-              badge.position === 'left' ? 'left-2' : 'right-2'
-            )}
-          >
-            {badge.text}
-          </span>
-        ) : null}
-        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent p-3 pt-8">
-          <p className="line-clamp-2 text-sm font-semibold text-white">{drama.title}</p>
-        </div>
-      </div>
-      <div className="flex flex-wrap gap-1 p-2.5">
-        {tags.length > 0 ? (
-          tags.map((tag) => (
-            <span
-              key={tag}
-              className="rounded-full bg-foreground/[0.06] px-2 py-0.5 text-[11px] text-muted-foreground"
-            >
-              {tag}
-            </span>
-          ))
-        ) : (
-          <span className="text-[11px] text-muted-foreground">标签生成中</span>
-        )}
-      </div>
+      {children}
     </Link>
   );
 }
 
-function DramaGridSkeleton() {
+function Poster({
+  drama,
+  className,
+  priority = false,
+}: {
+  drama: DramaSummary;
+  className?: string;
+  priority?: boolean;
+}) {
+  const [failed, setFailed] = useState(false);
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4" aria-label="加载中">
-      {Array.from({ length: 6 }).map((_, i) => (
-        <div
-          key={i}
-          className="aspect-[3/4] w-full animate-pulse rounded-[16px] border border-border bg-card"
+    <div className={cn('relative overflow-hidden bg-[#2a272a]', className)}>
+      <Clapperboard
+        aria-hidden
+        className="absolute left-1/2 top-1/2 h-7 w-7 -translate-x-1/2 -translate-y-1/2 text-[#eee7e2]/15"
+      />
+      {drama.cover_url && !failed ? (
+        <img
+          src={drama.cover_url}
+          alt=""
+          loading={priority ? 'eager' : 'lazy'}
+          decoding="async"
+          fetchPriority={priority ? 'high' : 'low'}
+          className="absolute inset-0 h-full w-full object-cover"
+          onError={() => setFailed(true)}
         />
-      ))}
+      ) : null}
     </div>
   );
 }
 
-function DramaListError({ onRetry }: { onRetry: () => void }) {
+function DramaCard({
+  drama,
+  queue,
+  progress,
+  onOpen,
+  priority,
+}: {
+  drama: DramaSummary;
+  queue: DramaSummary[];
+  progress?: DramaProgress;
+  onOpen: () => void;
+  priority: boolean;
+}) {
   return (
-    <div className="rounded-3xl border border-destructive/30 bg-destructive/10 p-5">
-      <p className="text-sm text-destructive">短剧加载失败，请稍后重试。</p>
+    <DramaLink
+      drama={drama}
+      queue={queue}
+      onOpen={onOpen}
+      className="min-w-0 overflow-hidden rounded-xl bg-[#1f1d20] pb-3 [content-visibility:auto] [contain-intrinsic-size:0_320px] active:opacity-70"
+    >
+      <div className="relative">
+        <Poster drama={drama} priority={priority} className="aspect-[3/4] w-full" />
+        <div className="absolute inset-x-0 bottom-0 rounded-b-lg bg-gradient-to-t from-black/75 to-transparent px-2 pb-2 pt-6 text-[10px] text-[#eee7e2]/90">
+          {progress
+            ? progress.completed
+              ? '已看完'
+              : `看到第 ${progress.episode} 集`
+            : drama.episode_count
+              ? `${drama.episode_count} 集`
+              : '即将开播'}
+        </div>
+      </div>
+      <h2 className="mx-2.5 mt-2.5 line-clamp-2 text-[14px] font-medium leading-[21px]">
+        {drama.title}
+      </h2>
+      {drama.description ? (
+        <p className="mx-2.5 mt-1.5 line-clamp-1 text-[11px] leading-5 text-[#eee7e2]/40">
+          {drama.description}
+        </p>
+      ) : null}
+    </DramaLink>
+  );
+}
+
+function ContinueWatching({
+  drama,
+  progress,
+  queue,
+  onOpen,
+}: {
+  drama: DramaSummary;
+  progress: DramaProgress;
+  queue: DramaSummary[];
+  onOpen: () => void;
+}) {
+  return (
+    <DramaLink
+      drama={drama}
+      queue={queue}
+      onOpen={onOpen}
+      label={`继续观看 ${drama.title}`}
+      className="mb-3 mt-1 flex items-center gap-2 rounded-xl bg-white/5 px-3 py-3"
+    >
+      <Clock3 className="h-4 w-4 shrink-0 text-[#c4a0a7]" />
+      <span className="min-w-0 flex-1 truncate text-xs text-[#eee7e2]/70">
+        {progress.completed ? '再看一遍' : '接着看'} · {drama.title}
+      </span>
+      <span className="shrink-0 text-[11px] text-[#eee7e2]/40">第 {progress.episode} 集</span>
+      <ChevronRight className="h-4 w-4 shrink-0 text-[#eee7e2]/40" />
+    </DramaLink>
+  );
+}
+
+function LibraryRow({
+  drama,
+  progress,
+  queue,
+  onOpen,
+}: {
+  drama: DramaSummary;
+  progress?: DramaProgress;
+  queue: DramaSummary[];
+  onOpen: () => void;
+}) {
+  const saved = useDramaLibraryStore((state) => state.saved.includes(drama.id));
+  const toggleSaved = useDramaLibraryStore((state) => state.toggleSaved);
+  return (
+    <article className="relative" data-library-drama-id={drama.id}>
+      <DramaLink
+        drama={drama}
+        queue={queue}
+        onOpen={onOpen}
+        label={`${progress?.completed ? '重看' : '继续观看'} ${drama.title}`}
+        className="flex min-w-0 gap-3 rounded-xl active:bg-white/[0.035] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#c99ea7]/60"
+      >
+        <Poster drama={drama} className="aspect-[3/4] w-[82px] shrink-0 rounded-lg" />
+        <div className="flex min-w-0 flex-1 flex-col justify-between py-1">
+          <div className="min-w-0 pr-10">
+            <h2 className="truncate text-[15px] font-semibold">{drama.title}</h2>
+            <p className="mt-1.5 text-xs text-[#eee7e2]/40">共 {drama.episode_count} 集</p>
+          </div>
+          <div className="flex min-h-11 items-center justify-between gap-1">
+            <span className="truncate text-[11px] text-[#eee7e2]/45">
+              {progress
+                ? progress.completed
+                  ? '已看完'
+                  : `看到第 ${progress.episode} 集`
+                : '还没开始看'}
+            </span>
+            <span className="flex shrink-0 items-center gap-1 pl-3 text-xs font-semibold text-[#c4a0a7]">
+              {progress ? (progress.completed ? '再看一遍' : '继续看') : '开始看'}
+              <Play className="h-3 w-3 fill-current" />
+            </span>
+          </div>
+        </div>
+      </DramaLink>
       <button
         type="button"
-        onClick={onRetry}
-        className="mt-3 inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition active:scale-95"
+        aria-label={`${saved ? '取消收藏' : '收藏'} ${drama.title}`}
+        aria-pressed={saved}
+        onClick={() => toggleSaved(drama.id)}
+        className="absolute -right-2 -top-1 flex h-11 w-11 items-center justify-center rounded-full active:bg-white/5"
       >
-        <RefreshCw className="h-4 w-4" />
-        重试
+        {saved ? (
+          <Check className="h-5 w-5 text-[#c4a0a7]" />
+        ) : (
+          <Bookmark className="h-5 w-5 text-[#eee7e2]/50" />
+        )}
       </button>
-    </div>
+    </article>
   );
 }
 
-function DramaListEmpty() {
+function EmptyState({
+  title,
+  detail,
+  action,
+  onAction,
+}: {
+  title: string;
+  detail: string;
+  action: string;
+  onAction: () => void;
+}) {
   return (
-    <div className="rounded-3xl border border-border bg-card p-8 text-center">
-      <Clapperboard className="mx-auto h-9 w-9 text-primary" />
-      <h2 className="mt-3 font-semibold">短剧正在上架中</h2>
-      <p className="mt-1 text-sm text-muted-foreground">很快就能刷到新内容，先去逛逛别的吧。</p>
+    <div
+      role="status"
+      className="mx-auto flex max-w-xs flex-col items-center px-4 py-12 text-center"
+    >
+      <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-white/5">
+        <Clapperboard className="h-7 w-7 text-[#eee7e2]/35" />
+      </div>
+      <h2 className="text-lg font-semibold">{title}</h2>
+      <p className="mt-2 text-sm leading-6 text-[#eee7e2]/45">{detail}</p>
+      <button
+        type="button"
+        onClick={onAction}
+        className="mt-6 min-h-11 rounded-full bg-[#c99ea7] px-6 text-sm font-semibold text-[#eee7e2] active:bg-[#ba8b96]"
+      >
+        {action}
+      </button>
     </div>
   );
 }

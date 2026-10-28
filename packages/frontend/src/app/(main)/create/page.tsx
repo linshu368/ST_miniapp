@@ -37,6 +37,20 @@ import {
   saveImagePlazaReturn,
 } from '@/lib/image-plaza-return';
 
+type NavigatorWithConnection = Navigator & {
+  connection?: { saveData?: boolean; effectiveType?: string };
+};
+
+function canPrefetchWorkRoute(): boolean {
+  if (document.visibilityState !== 'visible' || navigator.onLine === false) return false;
+  const connection = (navigator as NavigatorWithConnection).connection;
+  return (
+    connection?.saveData !== true &&
+    connection?.effectiveType !== 'slow-2g' &&
+    connection?.effectiveType !== '2g'
+  );
+}
+
 export default function CreatePage() {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -215,7 +229,7 @@ export default function CreatePage() {
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
-      className="mx-auto min-h-screen w-full max-w-screen-xl overscroll-y-contain bg-background text-foreground"
+      className="mx-auto min-h-[calc(100dvh-var(--app-nav-space))] w-full max-w-screen-xl overscroll-y-contain bg-background text-foreground"
     >
       {pullDistance > 0 || isPullRefreshing ? (
         <div
@@ -407,10 +421,12 @@ export default function CreatePage() {
                   <PlazaCard
                     key={work.id}
                     work={work}
-                    priority={columnIndex + rowIndex * 2 < 4}
+                    priority={columnIndex + rowIndex * 2 < 2}
                     useSamePending={pendingSourceWorkId === work.id}
                     interactionDisabled={createConversation.isPending}
-                    onPrefetch={() => router.prefetch(`/create/work/${work.id}`)}
+                    onPrefetch={() => {
+                      if (canPrefetchWorkRoute()) router.prefetch(`/create/work/${work.id}`);
+                    }}
                     onOpen={() => saveReturn(work.id)}
                     onUseSame={() => startStudio(work.id)}
                   />
@@ -435,7 +451,7 @@ export default function CreatePage() {
         </div>
       </section>
       {createConversation.isError ? (
-        <p className="fixed bottom-28 left-1/2 z-50 -translate-x-1/2 rounded-full bg-destructive px-4 py-2 text-xs font-bold text-destructive-foreground">
+        <p className="fixed bottom-[calc(var(--app-nav-space)+1rem)] left-1/2 z-50 -translate-x-1/2 rounded-full bg-destructive px-4 py-2 text-xs font-bold text-destructive-foreground">
           创建会话失败，请重试
         </p>
       ) : null}
@@ -483,6 +499,7 @@ function PlazaCard(props: {
       ) : null}
       <Link
         href={`/create/work/${props.work.id}`}
+        prefetch={false}
         aria-label={`查看作品：${props.work.title}`}
         onPointerEnter={props.onPrefetch}
         onFocus={props.onPrefetch}
@@ -502,7 +519,7 @@ function PlazaCard(props: {
               width={props.work.width}
               height={props.work.height}
               loading={props.priority ? 'eager' : 'lazy'}
-              fetchPriority={props.priority ? 'high' : 'auto'}
+              fetchPriority={props.priority ? 'high' : 'low'}
               decoding="async"
               onLoad={() => setImageLoaded(true)}
               className={`absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-[1.02] ${

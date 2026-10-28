@@ -242,14 +242,11 @@ export default function ProfilePage() {
   return (
     <main
       data-app-shell="profile"
-      className="relative mx-auto min-h-[calc(100dvh-5.5rem)] w-full max-w-lg bg-background px-4 pb-5 pt-[calc(env(safe-area-inset-top)+1rem)]"
+      className="relative mx-auto min-h-[calc(100dvh-var(--app-nav-space))] w-full max-w-lg bg-[#19171a] px-4 pb-7 pt-[calc(env(safe-area-inset-top)+1.5rem)]"
     >
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-0 h-60 bg-[radial-gradient(ellipse_at_top_left,hsl(var(--primary)/0.1),transparent_70%)]"
-      />
+      <h1 className="sr-only">我的</h1>
 
-      <header className="relative z-20 flex items-center gap-3 px-1 pb-5">
+      <header className="relative z-20 flex items-center gap-3.5 px-1 pb-6">
         <div ref={avatarMenuRef} className="relative shrink-0">
           <button
             type="button"
@@ -263,10 +260,10 @@ export default function ProfilePage() {
             className="group relative block rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-4 focus-visible:ring-offset-background"
           >
             <Avatar
-              className={`size-16 ring-2 ring-offset-2 ring-offset-background transition group-hover:brightness-90 ${vipStatus.data?.active ? 'ring-primary/70 shadow-[0_0_20px_hsl(var(--glow)/0.15)]' : 'ring-border'}`}
+              className={`size-14 ring-1 ring-offset-[3px] ring-offset-[#19171a] transition group-hover:brightness-90 ${vipStatus.data?.active ? 'ring-[#d5b99d]/65' : 'ring-white/15'}`}
             >
               {photoUrl ? <AvatarImage src={photoUrl} alt={displayName} /> : null}
-              <AvatarFallback className="bg-gradient-to-br from-primary via-rose to-rose-fill text-2xl font-black text-primary-foreground">
+              <AvatarFallback className="bg-[#3c303a] text-xl font-medium text-[#e5cbd5]">
                 {displayName.slice(0, 1).toUpperCase() || '我'}
               </AvatarFallback>
             </Avatar>
@@ -363,7 +360,7 @@ export default function ProfilePage() {
             <button
               type="button"
               onClick={startEdit}
-              className="flex min-h-11 max-w-full items-center gap-2 rounded-lg text-left text-lg font-bold tracking-tight focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="flex min-h-11 max-w-full items-center gap-2 rounded-lg text-left text-lg font-semibold tracking-tight focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               aria-label="编辑显示名"
             >
               <span className="truncate">{displayName || '设置昵称'}</span>
@@ -385,7 +382,7 @@ export default function ProfilePage() {
         <Link
           href="/profile/messages"
           aria-label={`消息中心${(unread.data?.total ?? 0) > 0 ? '，有未读消息' : ''}`}
-          className="relative grid size-11 shrink-0 place-items-center rounded-full border border-border/70 bg-card/70 text-muted-foreground transition hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="relative grid size-11 shrink-0 place-items-center rounded-full bg-white/[0.04] text-[#bcb2bb] transition hover:bg-white/[0.08] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <Bell className="size-[18px]" aria-hidden />
           {(unread.data?.total ?? 0) > 0 ? (
@@ -394,143 +391,142 @@ export default function ProfilePage() {
         </Link>
       </header>
 
-      <section
-        aria-label="每日签到"
-        className={`relative overflow-hidden rounded-[24px] border p-4 ${hasClaimed ? 'border-border bg-card/60' : 'border-primary/25 bg-[linear-gradient(115deg,hsl(var(--primary)/0.15),hsl(var(--card))_75%)]'}`}
-      >
-        <div className="flex items-center gap-3">
-          <span
-            className={`grid size-11 shrink-0 place-items-center rounded-2xl ${hasClaimed ? 'bg-secondary text-muted-foreground' : 'bg-primary/15 text-primary'}`}
-          >
-            {hasClaimed ? (
-              <Check className="size-5" aria-hidden />
+      <div className="relative overflow-hidden rounded-[24px] border border-white/[0.07] bg-[#252227]">
+        <section aria-label="我的星尘" className="relative px-5 pb-1 pt-5">
+          <div className="relative flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="flex items-center gap-1.5 text-[11px] font-medium text-[#b7aeb5]">
+                <Gem className="size-3.5" aria-hidden />
+                星尘余额
+              </p>
+              <p className="mt-2 flex min-w-0 items-baseline gap-1.5">
+                <span className="truncate text-[36px] font-medium leading-none tabular-nums tracking-[-0.04em] text-[#f4eeeb]">
+                  {typeof credits === 'number' ? formatNumber(credits) : '—'}
+                </span>
+                <span className="shrink-0 text-[11px] text-muted-foreground">星尘</span>
+              </p>
+            </div>
+            <Link
+              href="/profile/recharge"
+              aria-label="前往星尘充值"
+              onClick={() => captureRechargeEntryClicked({ telegramUserId })}
+              className="relative inline-flex min-h-11 shrink-0 items-center justify-center gap-1 rounded-full bg-[#eee5e0] px-3.5 text-xs font-semibold text-[#332a2f] transition-colors hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d7b4bf] focus-visible:ring-offset-2 focus-visible:ring-offset-[#252227] motion-reduce:transition-none"
+            >
+              充值星尘
+              <ArrowUpRight className="size-4" aria-hidden />
+            </Link>
+          </div>
+          <div className="relative mt-1 flex min-h-11 items-center justify-between gap-2">
+            {wallet.isError ? (
+              <button
+                type="button"
+                onClick={() => void wallet.refetch()}
+                disabled={wallet.isFetching}
+                className="min-h-11 text-left text-[11px] text-destructive disabled:opacity-60"
+              >
+                {wallet.isFetching ? '正在重试…' : '余额加载失败，重试'}
+              </button>
             ) : (
-              <Gift className="size-5" aria-hidden />
+              <p className="min-w-0 truncate text-[11px] text-muted-foreground">
+                {typeof bonusCredits === 'number'
+                  ? `内含专项星尘 ${formatNumber(bonusCredits)}`
+                  : '正在读取余额…'}
+              </p>
             )}
-          </span>
-          <div className="min-w-0 flex-1">
-            <h1 className="text-sm font-bold">每日签到</h1>
-            <p
-              className="mt-1 text-xs leading-5 text-muted-foreground"
-              role={!checkin ? 'status' : undefined}
+            <Link
+              href="/profile/spending"
+              className="inline-flex min-h-11 shrink-0 items-center gap-0.5 text-[11px] text-muted-foreground/80 transition hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              {checkinReadFailed ? (
-                '暂时无法确认签到状态'
-              ) : !checkin ? (
-                '正在查看今日奖励…'
-              ) : hasClaimed ? (
-                '今日星尘已领取'
+              消费明细
+              <ChevronRight className="size-3" aria-hidden />
+            </Link>
+          </div>
+        </section>
+
+        <section
+          aria-label="每日签到"
+          className="relative mx-5 border-t border-white/[0.07] pb-1 pt-3"
+        >
+          <div className="flex items-center gap-3">
+            <span
+              className={`grid size-9 shrink-0 place-items-center rounded-xl ${hasClaimed ? 'bg-white/[0.03] text-[#a79da6]' : 'bg-[#d7b4bf]/10 text-[#dcc0ca]'}`}
+            >
+              {hasClaimed ? (
+                <Check className="size-5" aria-hidden />
               ) : (
-                <>
-                  <span className="font-bold tabular-nums text-primary">
-                    +{formatNumber(checkin.reward_credits)}
-                  </span>{' '}
-                  星尘待领取
-                </>
+                <Gift className="size-5" aria-hidden />
               )}
-            </p>
-          </div>
-          <Button
-            type="button"
-            disabled={
-              claimCheckin.isPending ||
-              (!checkin?.can_claim && !checkinReadFailed) ||
-              (checkinReadFailed && checkinQ.isFetching)
-            }
-            onClick={() => (checkinReadFailed ? void checkinQ.refetch() : void claimDailyCheckin())}
-            aria-label={checkinReadFailed ? '重试加载签到' : '每日签到'}
-            className={`min-h-11 shrink-0 rounded-full px-4 text-xs font-bold shadow-none ${hasClaimed ? 'bg-secondary text-muted-foreground disabled:opacity-100' : ''}`}
-          >
-            {claimCheckin.isPending ? (
-              <Loader2 className="size-3.5 animate-spin" aria-hidden />
-            ) : null}
-            {claimCheckin.isPending
-              ? '领取中'
-              : checkinReadFailed
-                ? '重试'
-                : hasClaimed
-                  ? '已签到'
-                  : !checkin
-                    ? '加载中'
-                    : '签到领奖'}
-          </Button>
-        </div>
-        {claimCheckin.isError ? (
-          <p role="alert" className="mt-2 pl-14 text-xs text-destructive">
-            签到未成功，请再试一次。
-          </p>
-        ) : null}
-        {checkinUpgradeCredits !== null ? (
-          <div className="mt-4 border-t border-primary/15 pt-3">
-            <VipCheckinUpgrade
-              dailyCredits={checkinUpgradeCredits}
-              onOpen={() => void openVip()}
-              pending={markVipSeen.isPending}
-            />
-          </div>
-        ) : null}
-      </section>
-
-      <section
-        aria-label="我的星尘"
-        className="relative mt-3 overflow-hidden rounded-[26px] border border-border bg-card px-5 pb-2 pt-5"
-      >
-        <div
-          aria-hidden
-          className="pointer-events-none absolute -right-8 -top-12 size-40 rounded-full bg-[radial-gradient(circle,hsl(var(--glow)/0.12),transparent_70%)]"
-        />
-        <div className="relative flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-              <Gem className="size-3.5" aria-hidden />
-              星尘余额
-            </p>
-            <p className="mt-2 flex min-w-0 items-baseline gap-1.5">
-              <span className="truncate text-[34px] font-bold leading-none tabular-nums tracking-tight">
-                {typeof credits === 'number' ? formatNumber(credits) : '—'}
-              </span>
-              <span className="shrink-0 text-[11px] text-muted-foreground">星尘</span>
-            </p>
-          </div>
-          <Link
-            href="/profile/recharge"
-            aria-label="前往星尘充值"
-            onClick={() => captureRechargeEntryClicked({ telegramUserId })}
-            className="relative inline-flex min-h-12 shrink-0 items-center justify-center gap-1.5 rounded-full bg-primary px-4 text-sm font-bold text-primary-foreground shadow-[0_6px_22px_hsl(var(--glow)/0.14)] transition hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
-          >
-            充值星尘
-            <ArrowUpRight className="size-4" aria-hidden />
-          </Link>
-        </div>
-        <div className="relative mt-1 flex min-h-11 items-center justify-between gap-2">
-          {wallet.isError ? (
-            <button
+            </span>
+            <div className="min-w-0 flex-1">
+              <h2 className="text-[13px] font-medium text-[#eee7e5]">每日签到</h2>
+              <p
+                className="mt-0.5 text-[11px] leading-5 text-[#aaa0a9]"
+                role={!checkin ? 'status' : undefined}
+              >
+                {checkinReadFailed ? (
+                  '暂时无法确认签到状态'
+                ) : !checkin ? (
+                  '正在查看今日奖励…'
+                ) : hasClaimed ? (
+                  '今日星尘已领取'
+                ) : (
+                  <>
+                    <span className="font-medium tabular-nums text-[#dcc0ca]">
+                      +{formatNumber(checkin.reward_credits)}
+                    </span>{' '}
+                    星尘待领取
+                  </>
+                )}
+              </p>
+            </div>
+            <Button
               type="button"
-              onClick={() => void wallet.refetch()}
-              disabled={wallet.isFetching}
-              className="min-h-11 text-left text-[11px] text-destructive disabled:opacity-60"
+              disabled={
+                claimCheckin.isPending ||
+                (!checkin?.can_claim && !checkinReadFailed) ||
+                (checkinReadFailed && checkinQ.isFetching)
+              }
+              onClick={() =>
+                checkinReadFailed ? void checkinQ.refetch() : void claimDailyCheckin()
+              }
+              aria-label={checkinReadFailed ? '重试加载签到' : '每日签到'}
+              className={`min-h-11 shrink-0 rounded-full px-4 text-xs font-medium shadow-none ${hasClaimed ? 'bg-white/[0.04] text-[#a79da6] disabled:opacity-100' : 'bg-[#d7b4bf]/15 text-[#ecd2dc] hover:bg-[#d7b4bf]/25'}`}
             >
-              {wallet.isFetching ? '正在重试…' : '余额加载失败，重试'}
-            </button>
-          ) : (
-            <p className="min-w-0 truncate text-[11px] text-muted-foreground">
-              {typeof bonusCredits === 'number'
-                ? `内含专项星尘 ${formatNumber(bonusCredits)}`
-                : '正在读取余额…'}
+              {claimCheckin.isPending ? (
+                <Loader2 className="size-3.5 animate-spin" aria-hidden />
+              ) : null}
+              {claimCheckin.isPending
+                ? '领取中'
+                : checkinReadFailed
+                  ? '重试'
+                  : hasClaimed
+                    ? '已签到'
+                    : !checkin
+                      ? '加载中'
+                      : '签到领奖'}
+            </Button>
+          </div>
+          {claimCheckin.isError ? (
+            <p role="alert" className="mt-2 pl-14 text-xs text-destructive">
+              签到未成功，请再试一次。
             </p>
-          )}
-          <Link
-            href="/profile/spending"
-            className="inline-flex min-h-11 shrink-0 items-center gap-0.5 text-[11px] text-muted-foreground/80 transition hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            消费明细
-            <ChevronRight className="size-3" aria-hidden />
-          </Link>
-        </div>
-      </section>
+          ) : null}
+          {checkinUpgradeCredits !== null ? (
+            <div className="mt-1">
+              <VipCheckinUpgrade
+                compact
+                dailyCredits={checkinUpgradeCredits}
+                onOpen={() => void openVip()}
+                pending={markVipSeen.isPending}
+              />
+            </div>
+          ) : null}
+        </section>
+      </div>
 
-      <section aria-label="VIP 会员权益" className="relative mt-3">
+      <section aria-label="VIP 会员权益" className="relative mt-4">
         <VipEntryCard
+          variant="profile"
           status={vipStatus.data}
           monthlyPlan={paymentPlans.data?.vip_plans?.find((plan) => plan.id === 'month')}
           loading={vipStatus.isLoading || paymentPlans.isLoading}
@@ -547,65 +543,69 @@ export default function ProfilePage() {
         ) : null}
       </section>
 
-      <Link
-        href="/profile/support"
-        aria-label={supportUnread.data?.has_unread ? '联系客服，有新回复' : '联系客服'}
-        className="group relative mt-4 flex min-h-24 items-center gap-3 overflow-hidden rounded-[24px] border border-border/70 bg-[linear-gradient(110deg,hsl(var(--rose)/0.08),hsl(var(--card))_75%)] px-4 py-3 transition hover:border-primary/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        <SupportMascot />
-        <span className="min-w-0 flex-1">
-          <span className="block text-sm font-bold">客服小助手</span>
-          <span className="mt-1 block text-xs leading-5 text-muted-foreground">
-            {supportUnread.data?.has_unread ? '有新回复，点这里查看' : '遇到问题，来找我聊聊'}
-          </span>
-        </span>
-        {supportUnread.data?.has_unread ? (
-          <span className="size-2 shrink-0 rounded-full bg-rose" aria-hidden />
-        ) : null}
-        <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-      </Link>
+      <section aria-label="服务与帮助" className="relative mt-6">
+        <h2 className="mb-2.5 px-1 text-[11px] font-medium tracking-wider text-[#a79da6]">
+          服务与帮助
+        </h2>
+        <div className="overflow-hidden rounded-[20px] bg-[#222024]">
+          <Link
+            href="/profile/support"
+            aria-label={supportUnread.data?.has_unread ? '联系客服，有新回复' : '联系客服'}
+            className="group relative flex min-h-[76px] items-center gap-3 px-4 py-2.5 transition-colors hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#d7b4bf]"
+          >
+            <SupportMascot />
+            <span className="min-w-0 flex-1">
+              <span className="block text-[13px] font-medium">客服小助手</span>
+              <span className="mt-1 block text-[11px] leading-5 text-[#a89fa7]">
+                {supportUnread.data?.has_unread ? '有新回复，点这里查看' : '遇到问题，来找我聊聊'}
+              </span>
+            </span>
+            {supportUnread.data?.has_unread ? (
+              <span className="size-2 shrink-0 rounded-full bg-rose" aria-hidden />
+            ) : null}
+            <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+          </Link>
 
-      {inviteEntry.data?.entry_enabled ||
-      (communityEntry.data?.enabled && communityEntry.data.claim_status !== 'rewarded') ? (
-        <section aria-label="更多服务" className="relative mt-5">
-          <h2 className="mb-2 px-1 text-[11px] font-medium tracking-wide text-muted-foreground">
-            更多服务
-          </h2>
-          <div className="divide-y divide-border/60 overflow-hidden rounded-[24px] border border-border/70 bg-card/60">
-            {inviteEntry.data?.entry_enabled ? (
-              <ProfileRow
-                href="/profile/invite"
-                Icon={Gift}
-                title="邀请有礼"
-                subtitle="和朋友一起探索秘境"
-                trailing={
-                  !inviteEntry.data.center_entered ? (
-                    <span className="text-[11px] font-medium tabular-nums text-primary">
-                      2200 星尘
-                    </span>
-                  ) : undefined
-                }
-              />
-            ) : null}
-            {communityEntry.data?.enabled && communityEntry.data.claim_status !== 'rewarded' ? (
-              <ProfileRow
-                onClick={() => setCommunityOpen(true)}
-                Icon={Send}
-                title="官方社群"
-                subtitle="加入社群，和大家交流玩法"
-                trailing={
-                  communityEntry.data.claim_status === 'unclaimed' ||
-                  communityEntry.data.claim_status === 'existing_member' ? (
-                    <span className="text-[11px] font-medium tabular-nums text-primary">
-                      {formatNumber(communityEntry.data.reward_credits)} 星尘
-                    </span>
-                  ) : undefined
-                }
-              />
-            ) : null}
-          </div>
-        </section>
-      ) : null}
+          {inviteEntry.data?.entry_enabled ||
+          (communityEntry.data?.enabled && communityEntry.data.claim_status !== 'rewarded') ? (
+            <section aria-label="更多服务" className="relative border-t border-white/[0.05]">
+              <div className="divide-y divide-white/[0.05]">
+                {inviteEntry.data?.entry_enabled ? (
+                  <ProfileRow
+                    href="/profile/invite"
+                    Icon={Gift}
+                    title="邀请有礼"
+                    subtitle="和朋友一起探索秘境"
+                    trailing={
+                      !inviteEntry.data.center_entered ? (
+                        <span className="text-[11px] font-medium tabular-nums text-primary">
+                          2200 星尘
+                        </span>
+                      ) : undefined
+                    }
+                  />
+                ) : null}
+                {communityEntry.data?.enabled && communityEntry.data.claim_status !== 'rewarded' ? (
+                  <ProfileRow
+                    onClick={() => setCommunityOpen(true)}
+                    Icon={Send}
+                    title="官方社群"
+                    subtitle="加入社群，和大家交流玩法"
+                    trailing={
+                      communityEntry.data.claim_status === 'unclaimed' ||
+                      communityEntry.data.claim_status === 'existing_member' ? (
+                        <span className="text-[11px] font-medium tabular-nums text-primary">
+                          {formatNumber(communityEntry.data.reward_credits)} 星尘
+                        </span>
+                      ) : undefined
+                    }
+                  />
+                ) : null}
+              </div>
+            </section>
+          ) : null}
+        </div>
+      </section>
       {communityEntry.data ? (
         <CommunitySheet
           open={communityOpen}
@@ -668,42 +668,32 @@ function SupportMascot() {
     <svg
       aria-hidden
       viewBox="0 0 72 72"
-      className="size-16 shrink-0 transition-transform duration-200 motion-safe:group-hover:-rotate-3"
+      className="size-11 shrink-0 text-[#d6beca] transition-transform duration-200 motion-safe:group-hover:-rotate-3"
       fill="none"
     >
-      <ellipse cx="36" cy="65" rx="20" ry="3" fill="hsl(var(--primary) / 0.1)" />
-      <path d="M36 18V11" stroke="hsl(var(--primary))" strokeWidth="2.5" strokeLinecap="round" />
-      <circle cx="36" cy="8" r="3.5" fill="hsl(var(--primary))" />
-      <rect x="7" y="29" width="6" height="15" rx="3" fill="hsl(var(--primary) / 0.5)" />
-      <rect x="59" y="29" width="6" height="15" rx="3" fill="hsl(var(--primary) / 0.5)" />
+      <ellipse cx="36" cy="65" rx="20" ry="3" fill="#d6beca12" />
+      <path d="M36 18V11" stroke="#d6beca" strokeWidth="2.5" strokeLinecap="round" />
+      <circle cx="36" cy="8" r="3.5" fill="#d6beca" />
+      <rect x="7" y="29" width="6" height="15" rx="3" fill="#d6beca80" />
+      <rect x="59" y="29" width="6" height="15" rx="3" fill="#d6beca80" />
       <rect
         x="13"
         y="19"
         width="46"
         height="35"
         rx="15"
-        fill="hsl(var(--primary) / 0.2)"
-        stroke="hsl(var(--primary) / 0.65)"
+        fill="#d6beca22"
+        stroke="#d6becaa6"
         strokeWidth="1.5"
       />
       <rect x="19" y="25" width="34" height="22" rx="9" fill="hsl(var(--background))" />
-      <path
-        d="M27 33V34M45 33V34"
-        stroke="hsl(var(--primary))"
-        strokeWidth="4"
-        strokeLinecap="round"
-      />
-      <path
-        d="M32 39Q36 43 40 39"
-        stroke="hsl(var(--primary))"
-        strokeWidth="2"
-        strokeLinecap="round"
-      />
+      <path d="M27 33V34M45 33V34" stroke="#d6beca" strokeWidth="4" strokeLinecap="round" />
+      <path d="M32 39Q36 43 40 39" stroke="#d6beca" strokeWidth="2" strokeLinecap="round" />
       <ellipse cx="24" cy="39" rx="3" ry="1.8" fill="hsl(var(--rose) / 0.55)" />
       <ellipse cx="48" cy="39" rx="3" ry="1.8" fill="hsl(var(--rose) / 0.55)" />
       <path
         d="M26 55V60H46V55"
-        stroke="hsl(var(--primary) / 0.45)"
+        stroke="#d6beca73"
         strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -740,12 +730,12 @@ function ProfileRow({
   const content = (
     <>
       <span
-        className={`flex size-9 shrink-0 items-center justify-center rounded-xl ${iconClassName ?? 'bg-secondary text-muted-foreground'}`}
+        className={`flex size-9 shrink-0 items-center justify-center rounded-xl ${iconClassName ?? 'bg-white/[0.03] text-[#b6a6b4]'}`}
       >
         <Icon className="h-[18px] w-[18px]" aria-hidden />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[13px] font-semibold text-foreground">{title}</span>
+        <span className="block truncate text-[13px] font-medium text-foreground">{title}</span>
         <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{subtitle}</span>
       </span>
       <span className="flex shrink-0 items-center gap-2">
@@ -762,7 +752,7 @@ function ProfileRow({
     </>
   );
   const className =
-    'flex min-h-[74px] w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-secondary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring';
+    'flex min-h-[72px] w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring';
   return href ? (
     <Link href={href} className={className}>
       {content}

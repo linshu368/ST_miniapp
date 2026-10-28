@@ -1,0 +1,12 @@
+{"file":".trellis/spec/frontend/app/index.md","reason":"Frontend 不可谈判规则与最低验证"}
+{"file":".trellis/spec/frontend/app/api-dataflow-and-state.md","reason":"React Query、取消、重试与服务端状态边界"}
+{"file":".trellis/spec/frontend/app/testing-quality-and-deployment.md","reason":"前端性能、Sentry、构建与人工验收"}
+{"file":".trellis/spec/backend/app/routes-and-features.md","reason":"Route/feature 分层、SSE 与 @frontend-ready"}
+{"file":".trellis/spec/backend/app/data-reliability-and-security.md","reason":"超时、重试、幂等、日志与可观测性"}
+{"file":".trellis/spec/shared/contracts/api-contracts.md","reason":"公开 DTO 与兼容发布规则"}
+{"file":".trellis/spec/database/supabase/index.md","reason":"数据库工作前置门禁"}
+{"file":".trellis/spec/database/supabase/schema-and-object-conventions.md","reason":"对象域归属与权威写入方"}
+{"file":".trellis/spec/database/supabase/migrations-and-rollbacks.md","reason":"单文件迁移、发布和回滚"}
+{"file":".trellis/spec/database/supabase/security-rls-and-grants.md","reason":"Data API、RLS 与授权边界"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"跨层输入输出和失败路径"}
+{"file":".trellis/tasks/10-28-sentry-cross-layer-performance-optimization/research/performance-baseline.md","reason":"生产证据、优先级和停止条件"}

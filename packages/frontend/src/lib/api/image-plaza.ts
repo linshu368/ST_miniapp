@@ -173,8 +173,10 @@ export const IMAGE_PLAZA_FEED_STALE_TIME_MS = 60_000;
 export function useImagePlazaConfigQuery() {
   return useQuery({
     queryKey: imagePlazaKeys.config(),
-    queryFn: () => apiClient<GetImagePlazaConfigData>('/api/image-plaza/config'),
+    queryFn: ({ signal }) =>
+      apiClient<GetImagePlazaConfigData>('/api/image-plaza/config', { signal }),
     staleTime: 60_000,
+    retry: false,
   });
 }
 
@@ -206,8 +208,7 @@ function imagePlazaFeedQueryOptions(
     getNextPageParam: (page: GetImagePlazaFeedData) => page.next_cursor ?? undefined,
     staleTime: IMAGE_PLAZA_FEED_STALE_TIME_MS,
     // A different filter/order must never display or continue the previous cursor chain.
-    retry: (count: number, error: Error) =>
-      count < 1 && !(error instanceof ApiClientError && error.status < 500),
+    retry: false,
   });
 }
 
@@ -281,6 +282,9 @@ export function useImagePlazaWorkQuery(id: string) {
       }),
     enabled: Boolean(id),
     staleTime: 60_000,
+    // Upstream also seeds placeholderData from feed cards; this branch's PlazaFeedItem
+    // omits snapshot/detail fields, so feed reuse would break detail first paint.
+    retry: false,
   });
 }
 
@@ -308,7 +312,9 @@ export function useImagePlazaTagCountsQuery(
 export function useImagePlazaConversationsQuery() {
   return useQuery({
     queryKey: imagePlazaKeys.conversations(),
-    queryFn: () => apiClient<GetImagePlazaConversationsData>('/api/image-plaza/conversations'),
+    queryFn: ({ signal }) =>
+      apiClient<GetImagePlazaConversationsData>('/api/image-plaza/conversations', { signal }),
+    retry: false,
   });
 }
 
@@ -316,9 +322,10 @@ export function useImagePlazaConversationQuery(id: string) {
   const client = useQueryClient();
   return useQuery({
     queryKey: imagePlazaKeys.conversation(id),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const next = await apiClient<GetImagePlazaConversationData>(
-        `/api/image-plaza/conversations/${id}?include_video=1`
+        `/api/image-plaza/conversations/${id}?include_video=1`,
+        { signal }
       );
       const current = client.getQueryData<GetImagePlazaConversationData>(
         imagePlazaKeys.conversation(id)
@@ -339,6 +346,7 @@ export function useImagePlazaConversationQuery(id: string) {
       return next;
     },
     enabled: Boolean(id),
+    retry: false,
     refetchInterval: (query) => {
       const conversation = query.state.data?.conversation;
       return conversation?.messages.some((message) =>

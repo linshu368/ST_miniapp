@@ -187,6 +187,8 @@ export interface DeleteConversationData {
 // ==== POST /api/v1/conversations/:id/regenerate ====
 
 export interface SendMessageRequest {
+  /** Delivery measurement version for this turn, including clients that never report. */
+  first_token_measurement?: 'client_committed_v4';
   /** Correlation only; not an idempotency key or a billing identifier. */
   request_id?: string;
   content: string;
@@ -196,6 +198,7 @@ export interface SendMessageRequest {
 
 /** 重生成只作用于最后一轮，轮次由后端判定，无需入参 */
 export interface RegenerateRequest {
+  first_token_measurement?: 'client_committed_v4';
   request_id?: string;
   thinking_enabled?: boolean;
 }

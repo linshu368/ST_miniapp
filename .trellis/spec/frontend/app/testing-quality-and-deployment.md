@@ -51,6 +51,8 @@ shared contract 改动追加 `pnpm --filter @miniapp/shared test` 和所有消�
 
 ## 短剧播放分段计时
 
+v2 的实现/口径与验收见 [短剧看板操作说明](../../../../docs/grafana/drama-playback-runbook.md)。复用原tracker，新增轻量start（微任务让点击先发/play）、被动媒体网络与首帧/长任务摘要；最多16资源条目/128内部长任务区间，所有截断显式。成功后只有最多5秒的网络尾观察，可补一次network报告；不改播放终态，不采集播放中卡顿。缺失与逆序在分析视图保持NULL，首帧/启动完成分开。Backend先兼容契约；分析表未迁移/启用前继续日志模式。
+
 `lib/perf/drama-timing.ts` 管理列表/每次播放的单调时钟节点、查询和 HTTP 尝试；`drama-media.ts` 绑定本次 src 的事件/帧回调，`drama-observer.ts` 先用 createLogger 打印，再经 `lib/api/telemetry.ts` 的鉴权 POST 将报告集中写入 Railway；短剧专用 Sentry 上报已移除。上传 keepalive、background 优先级、总预算 5 秒且不重试，不参与播放结果；失败保留本地日志，不做离线补传。根 `PagePerfTracker` 管理入口与离开/后台监听。用户浏览时间独立于启动等待，预取与路由并行，不允许阶段简单相加。
 
 `apiClient.onAttempt` 仅为可选的本地观测回调，包含排队、响应头与 body 解析，不能传入 fetch 或改变重试/超时。短剧 query 禁用 structural sharing，以保留结果对象与本次计时 WeakMap 的对应；不改变 query key、过期时间、请求去重或视频 URL 切换策略。播放器持有本次观察对象，旧组件更新不能重建/抢占导航目标的记录。成功必须同时有首帧与 playing；兼容降级明确标记，不能使用 canplay 代替。

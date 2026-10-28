@@ -3,6 +3,7 @@ import { z } from 'zod';
 export const DRAMA_TIMING_BODY_LIMIT = 32 * 1024;
 export const DRAMA_TIMING_UPLOAD_TIMEOUT_MS = 5_000;
 export const DRAMA_TIMING_MAX_MEDIA_EVENTS = 32;
+export const DRAMA_TIMING_MAX_RESOURCES = 16;
 
 // 标识只用于串联日志；允许旧 WebView 的 web-* fallback，但不接受 URL 或任意正文。
 const Id = z
@@ -12,6 +13,67 @@ const Id = z
   .regex(/^[a-zA-Z0-9_-]+$/);
 const Duration = z.number().finite().nonnegative();
 const Offset = z.number().finite();
+const Label = z
+  .string()
+  .min(1)
+  .max(128)
+  .regex(/^[a-zA-Z0-9_.-]+$/);
+
+const ResourceSchema = z
+  .object({
+    startMs: Offset,
+    fetchStartMs: Offset,
+    requestStartMs: Offset.optional(),
+    responseStartMs: Offset.optional(),
+    responseEndMs: Offset,
+    dnsMs: Duration.optional(),
+    connectMs: Duration.optional(),
+    tlsMs: Duration.optional(),
+    ttfbMs: Duration.optional(),
+    responseMs: Duration.optional(),
+    encodedBodyBytes: z.number().int().nonnegative().max(1e12).optional(),
+    transferBytes: z.number().int().nonnegative().max(1e12).optional(),
+    protocol: z.enum(['h2', 'h3', 'http1', 'other']).optional(),
+    visibility: z.enum(['detailed', 'limited']),
+  })
+  .strict();
+
+const NetworkSchema = z
+  .object({
+    status: z.enum(['unsupported', 'no_entry', 'limited', 'available']),
+    entries: z.array(ResourceSchema).max(DRAMA_TIMING_MAX_RESOURCES),
+    truncated: z.boolean(),
+    closed: z.enum(['deadline', 'terminal_tail', 'released']).optional(),
+  })
+  .strict();
+
+const DiagnosticsSchema = z
+  .object({
+    network: NetworkSchema.optional(),
+    frame: z
+      .object({
+        callbackAtMs: Duration,
+        presentationAtMs: Offset.optional(),
+        expectedDisplayAtMs: Offset.optional(),
+        processingMs: Duration.optional(),
+        width: z.number().int().min(1).max(32768).optional(),
+        height: z.number().int().min(1).max(32768).optional(),
+      })
+      .strict()
+      .optional(),
+    longTasks: z
+      .object({
+        support: z.enum(['supported', 'unsupported']),
+        count: z.number().int().nonnegative().max(100000),
+        totalMs: Duration,
+        maxMs: Duration,
+        metadataToFrameMs: Duration.optional(),
+        truncated: z.boolean(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
 
 const MediaStateSchema = z
   .object({
@@ -58,7 +120,19 @@ const MediaEventSchema = z
 export const DramaTimingReportSchema = z
   .object({
     type: z.enum(['list', 'playback']),
-    phase: z.enum(['slow', 'final']),
+    phase: z.enum(['start', 'slow', 'final', 'network']),
+    version: z.literal(2).optional(),
+    context: z
+      .object({
+        release: Label,
+        sessionId: Id,
+        platform: z.enum(['ios', 'android', 'desktop', 'unknown']),
+        browser: z.enum(['webkit', 'chromium', 'firefox', 'other']),
+        browserMajor: z.number().int().min(1).max(1000).optional(),
+      })
+      .strict()
+      .optional(),
+    diagnostics: DiagnosticsSchema.optional(),
     id: Id,
     entry: z.enum(['cover', 'switch', 'episode', 'retry', 'direct']).optional(),
     dramaId: Id.optional(),
@@ -174,13 +248,35 @@ export const DramaTimingReportSchema = z
       )
       .max(12),
   })
-  .strict();
+  .strict()
+  .superRefine((report, ctx) => {
+    if (
+      (report.phase === 'start' || report.phase === 'network') &&
+      (report.version !== 2 || report.type !== 'playback')
+    ) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Phase requires v2 playback' });
+    }
+    if (report.version === 2 && !report.context) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'v2 requires context' });
+    }
+    if (report.phase === 'start' && report.outcome !== 'waiting') {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Start must be waiting' });
+    }
+  });
 
 export type DramaTimingReport = z.infer<typeof DramaTimingReportSchema>;
 export type DramaMediaState = z.infer<typeof MediaStateSchema>;
 export type DramaMediaEvent = z.infer<typeof MediaEventSchema>;
+export type DramaNetworkTiming = z.infer<typeof NetworkSchema>;
+export type DramaResourceTiming = z.infer<typeof ResourceSchema>;
+export type DramaStartupDiagnostics = z.infer<typeof DiagnosticsSchema>;
 
-export const PostDramaTimingDataSchema = z.object({ accepted: z.literal(true) }).strict();
+export const PostDramaTimingDataSchema = z
+  .object({
+    accepted: z.literal(true),
+    persisted: z.boolean().optional(),
+  })
+  .strict();
 export type PostDramaTimingData = z.infer<typeof PostDramaTimingDataSchema>;
 
 /** 浏览器和 Railway 采用同一字段口径；只能传入允许字段的计时报告。 */
@@ -194,6 +290,9 @@ export function dramaTimingLogFields(report: DramaTimingReport) {
     video_id: report.videoId,
     type: report.type,
     phase: report.phase,
+    version: report.version,
+    context: report.context,
+    diagnostics: report.diagnostics,
     entry: report.entry,
     outcome: report.outcome,
     elapsed_ms: report.elapsedMs,

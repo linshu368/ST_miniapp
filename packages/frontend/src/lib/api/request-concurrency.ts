@@ -13,10 +13,11 @@ const PRIORITY_RANK: Record<RequestPriority, number> = {
 
 /** Telegram WebView 下同主机并行连接有限；3 兼顾吞吐与边缘排队。 */
 let maxInFlight = 3;
-let inFlight = 0;
+let inFlightCritical = 0;
+let inFlightNonCritical = 0;
 
 type Waiter = {
-  rank: number;
+  priority: RequestPriority;
   resolve: () => void;
   reject: (error: Error) => void;
   signal?: AbortSignal;
@@ -25,10 +26,29 @@ type Waiter = {
 
 const waiters: Waiter[] = [];
 
+function totalInFlight(): number {
+  return inFlightCritical + inFlightNonCritical;
+}
+
+function canAcquire(priority: RequestPriority): boolean {
+  if (priority === 'critical') return totalInFlight() < maxInFlight;
+  // Keep one connection available for navigation/playback work. A test or
+  // constrained WebView configured with a single slot must still make progress.
+  const nonCriticalLimit = maxInFlight > 1 ? maxInFlight - 1 : 1;
+  return totalInFlight() < nonCriticalLimit;
+}
+
+function markAcquired(priority: RequestPriority): void {
+  if (priority === 'critical') inFlightCritical += 1;
+  else inFlightNonCritical += 1;
+}
+
 function wakeNext(): void {
-  while (inFlight < maxInFlight && waiters.length > 0) {
-    waiters.sort((a, b) => a.rank - b.rank);
-    const next = waiters.shift();
+  while (totalInFlight() < maxInFlight && waiters.length > 0) {
+    waiters.sort((a, b) => PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority]);
+    const nextIndex = waiters.findIndex((waiter) => canAcquire(waiter.priority));
+    if (nextIndex < 0) return;
+    const [next] = waiters.splice(nextIndex, 1);
     if (!next) return;
     if (next.signal?.aborted) {
       next.reject(
@@ -41,7 +61,7 @@ function wakeNext(): void {
     if (next.onAbort && next.signal) {
       next.signal.removeEventListener('abort', next.onAbort);
     }
-    inFlight += 1;
+    markAcquired(next.priority);
     next.resolve();
   }
 }
@@ -52,13 +72,13 @@ function acquire(priority: RequestPriority, signal?: AbortSignal): Promise<void>
       signal.reason instanceof Error ? signal.reason : new DOMException('Aborted', 'AbortError')
     );
   }
-  if (inFlight < maxInFlight) {
-    inFlight += 1;
+  if (canAcquire(priority)) {
+    markAcquired(priority);
     return Promise.resolve();
   }
   return new Promise<void>((resolve, reject) => {
     const waiter: Waiter = {
-      rank: PRIORITY_RANK[priority],
+      priority,
       resolve,
       reject,
       signal,
@@ -76,8 +96,9 @@ function acquire(priority: RequestPriority, signal?: AbortSignal): Promise<void>
   });
 }
 
-function release(): void {
-  inFlight = Math.max(0, inFlight - 1);
+function release(priority: RequestPriority): void {
+  if (priority === 'critical') inFlightCritical = Math.max(0, inFlightCritical - 1);
+  else inFlightNonCritical = Math.max(0, inFlightNonCritical - 1);
   wakeNext();
 }
 
@@ -95,7 +116,7 @@ export async function withRequestSlot<T>(
   try {
     return await run();
   } finally {
-    release();
+    release(priority);
   }
 }
 
@@ -104,13 +125,14 @@ export function getRequestConcurrencyStats(): {
   waiting: number;
   maxInFlight: number;
 } {
-  return { inFlight, waiting: waiters.length, maxInFlight };
+  return { inFlight: totalInFlight(), waiting: waiters.length, maxInFlight };
 }
 
 /** 仅测试：恢复默认帽与空队列。 */
 export function __resetRequestConcurrencyForTests(nextMax = 3): void {
   maxInFlight = nextMax;
-  inFlight = 0;
+  inFlightCritical = 0;
+  inFlightNonCritical = 0;
   for (const waiter of waiters.splice(0, waiters.length)) {
     if (waiter.onAbort && waiter.signal) {
       waiter.signal.removeEventListener('abort', waiter.onAbort);

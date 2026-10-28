@@ -1,0 +1,47 @@
+{
+  "id": "checkin-tiered-rewards",
+  "name": "checkin-tiered-rewards",
+  "title": "签到奖励分档与VIP总额配置",
+  "description": "",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P2",
+  "creator": "cline",
+  "assignee": "cline",
+  "createdAt": "2026-10-14",
+  "completedAt": "2026-10-28",
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "legacy_exempt",
+      "reason": "??? 2026-10-28 ???????? 10 ? 26 ????????? 10-27-sentry-performance-optimization????????? meta.archived_module_impact???????? module-updates.historical.json?????????????????????????????????????????????"
+    },
+    "archived_module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "backend.business.wallet-payment",
+        "frontend.business.wallet-payment",
+        "admin.business.operations",
+        "shared.business.wallet-payment-contracts",
+        "database.business.billing-payment"
+      ]
+    },
+    "archive_confirmation": {
+      "date": "2026-10-28",
+      "source": "??????? 10-27-sentry-performance-optimization ?? 10 ? 26 ??????"
+    }
+  }
+}

@@ -8,7 +8,6 @@ import {
   type ThinkingDisclosurePhase,
 } from '@/lib/chat-thinking';
 import { PH_MASK_TEXT_CLASS, PH_NO_CAPTURE_CLASS } from '@/lib/telemetry/masking';
-import { observeFirstVisibleToken } from '@/lib/perf/first-token-observation';
 import { cn } from '@/lib/utils';
 
 export function ChatThinkingToggle({
@@ -46,12 +45,10 @@ export function ChatThinking({
   text,
   streaming,
   content,
-  onFirstTokenDisplayed,
 }: {
   text: string;
   streaming: boolean;
   content: string;
-  onFirstTokenDisplayed?: (at: number) => void;
 }) {
   const id = useId();
   const phase = thinkingDisclosurePhase(streaming, content);
@@ -61,17 +58,6 @@ export function ChatThinking({
   const open = thinkingDisclosureOpen(phase, manual);
   const scrollRef = useRef<HTMLDivElement>(null);
   const followRef = useRef(true);
-  const [textNode, setTextNode] = useState<HTMLParagraphElement | null>(null);
-  const displayCallback = useRef(onFirstTokenDisplayed);
-  displayCallback.current = onFirstTokenDisplayed;
-  const observingDisplay = Boolean(onFirstTokenDisplayed);
-
-  useEffect(() => {
-    // Observe provider text only. The heading/spinner is feedback, never a first token.
-    if (textNode && observingDisplay)
-      return observeFirstVisibleToken(textNode, (at) => displayCallback.current?.(at));
-  }, [textNode, observingDisplay]);
-
   useEffect(() => {
     const node = scrollRef.current;
     if (open && node && followRef.current) node.scrollTop = node.scrollHeight;
@@ -120,9 +106,7 @@ export function ChatThinking({
           aria-label="思考内容"
           className="chat-scroll-area max-h-40 overflow-y-auto overscroll-contain border-l-2 border-border/70 pl-3 pr-1 text-[12px] leading-[1.8] text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border"
         >
-          <p ref={setTextNode} className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
-            {text}
-          </p>
+          <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{text}</p>
         </div>
       ) : null}
     </section>

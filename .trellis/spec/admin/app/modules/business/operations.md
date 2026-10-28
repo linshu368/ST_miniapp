@@ -5,8 +5,8 @@ scope: admin
 category: business
 status: active
 owners: [admin]
-last_verified_task: .trellis/tasks/10-23-dialogue-preference/
-last_verified_at: 2026-10-12
+last_verified_task: .trellis/tasks/10-28-first-token-race/
+last_verified_at: 2026-10-28
 ---
 
 # 配置、内容与增长运营
@@ -62,6 +62,14 @@ Admin test/typecheck/build 与 test 环境人工 smoke。
 Admin 在现有配置草稿、发布、回滚链路中增加图片广场模型目录、首次分享提示与标签管理；模型页包含上架星尘价计算器，但最终发布值仍是服务端权威 credits。配置 schema 同时在 shared 和数据库发布校验器中约束。`image_plaza_tags_feature_enabled` 文案仅描述分享自动打标，不描述广场标签展示。
 
 同一工作区新增 `image_plaza_video_model_catalog`：维护六个视频模型的 t2v/i2v/r2v Provider 映射、能力与完整价格矩阵；默认值中的价格只作未发布占位，必须核价后才允许运营发布。标签目录增加 `media_types` 多选，旧配置缺省为仅图片。
+
+## 兜底配置与竞争交付（2026-10-28）
+
+`FallbackConfigEditor` 继续使用模型目录的草稿→保存→发布链路。每型号 `first_token_timeout_ms` 默认4000ms，表示从首发实际派发到启动兜底的阈值；触发后首发继续竞争。顶层 `fallback_timeout_ms` 保留字段名与2000ms默认值，展示为“兜底预留时间”，仅用于前置过慢时在总截止前提前启动兜底，不限制兜底自身时长。两项都须为正整数且小于总等待上限，不将两项相加当作顺序阶段预算。
+
+所有尝试共享 `first_token_deadline_ms`，默认10000ms；先出有效首字的一方负责回复，另一方立即停止。同型号静默等待不重复请求，明确失败最多顺序重试一次。兜底型号仍可运营选择，报价/权益沿用户所选型号，只结算一次。超时率目标默认1%，仅供人工监控；AI自动调参未启用。
+
+编辑器说明、可访问名称、校验报错与发布差异摘要必须使用同一语义。保留“先保存草稿，再发布当前草稿”；本次只改变执行语义和文案，数值未变，无需操作生产配置发布。Admin/shared既有schema与差异测试核对保存兼容和发布说明，实际部署状态以任务发布记录为准。
 
 ## 变更记录
 

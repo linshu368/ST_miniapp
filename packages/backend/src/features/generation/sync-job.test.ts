@@ -164,6 +164,20 @@ describe('reconcileCharge (fixed_tier pending → applyLlmCharge)', () => {
     findLlmUsageCharge.mockResolvedValue(pendingFixedCharge());
   });
 
+  it('recovers an archived charge with a missing settled marker without reconstructing its quote', async () => {
+    findLlmUsageCharge.mockResolvedValue(null);
+    chargeLlmUsage.mockResolvedValue({
+      kind: 'archived',
+      archivedCharge: { status: 'failed', charged_amount: 0 },
+      alreadyCharged: true,
+    });
+    const result = await reconcileCharge(
+      syncInput({ finishReason: 'timeout', status: 'stream_interrupted' })
+    );
+    expect(result).toEqual({ settled: true, intendedDeduction: undefined, deductionRate: 0 });
+    expect(finalizePending).toHaveBeenCalledExactlyOnceWith('charge-1', false);
+  });
+
   it('does not mark recovery settled while a display receipt is still pending', async () => {
     chargeLlmUsage.mockResolvedValueOnce({
       charge: { status: 'pending', charged_amount: 0, calculated_amount: 50 },
@@ -989,4 +1003,100 @@ it('uses a proven Venice detail source when a legacy snapshot omitted provider',
   finalizePending.mockResolvedValue(null);
   await reconcileCharge({ ...input, record: { ...input.record, callProvider: 'venice' } });
   expect(lastCharge().metadata).toMatchObject({ provider: 'venice' });
+});
+
+describe('settled metadata recovery and failure backoff', () => {
+  const raw = {
+    provider_name: 'Test',
+    model: 'test/model',
+    usage: 0.01,
+    finish_reason: 'stop',
+    latency: 10,
+    generation_time: 20,
+  };
+  beforeEach(() => {
+    vi.clearAllMocks();
+    syncMocks.keyAvailable = true;
+    syncMocks.pendingRows.mockResolvedValue([]);
+    syncMocks.missingRows.mockResolvedValue([]);
+    syncMocks.staleRows.mockResolvedValue([]);
+    syncMocks.readGenerationDataBatch.mockResolvedValue(new Map());
+    syncMocks.fetchGenerationData.mockResolvedValue(raw);
+    syncMocks.upsert.mockResolvedValue(undefined);
+    findLlmUsageCharge.mockResolvedValue(pendingFixedCharge());
+  });
+
+  it('repairs settled provider metadata without reopening a pruned charge or rewriting amounts', async () => {
+    vi.useFakeTimers();
+    syncMocks.listRows.mockResolvedValue([
+      {
+        ...syncInput({ finishReason: 'timeout', status: 'stream_interrupted' }).record,
+        generationId: 'gen-1',
+        callProvider: 'openrouter',
+        llm_finish_reason: 'timeout',
+        llm_billing_settled_at: '2026-10-28T00:00:00Z',
+      },
+    ]);
+    syncMocks.pendingRows.mockResolvedValue([
+      {
+        ...syncInput({ finishReason: 'timeout', status: 'stream_interrupted' }).record,
+        generationId: 'gen-1',
+        callProvider: 'openrouter',
+        llm_finish_reason: 'timeout',
+        llm_billing_settled_at: null,
+      },
+    ]);
+    const log = { info: vi.fn(), error: vi.fn(), warn: vi.fn(), child: vi.fn() };
+    log.child.mockReturnValue(log);
+    try {
+      startChatHistorySyncJob(log as unknown as FastifyBaseLogger);
+      await vi.advanceTimersByTimeAsync(5_001);
+      expect(syncMocks.upsert).toHaveBeenCalledOnce();
+      expect(findLlmUsageCharge).not.toHaveBeenCalled();
+      expect(chargeLlmUsage).not.toHaveBeenCalled();
+      expect(finalizePending).not.toHaveBeenCalled();
+      expect(syncMocks.recordBillingOutcome).not.toHaveBeenCalled();
+    } finally {
+      stopChatHistorySyncJob();
+      vi.useRealTimers();
+    }
+  });
+
+  it.each(['charge', 'provider'] as const)(
+    'backs off %s failures and immediately resumes after settlement state changes',
+    async (failure) => {
+      vi.useFakeTimers();
+      const record = {
+        ...syncInput().record,
+        generationId: 'gen-1',
+        callProvider: 'openrouter',
+        llm_finish_reason: 'stop',
+        llm_billing_settled_at: null as string | null,
+      };
+      syncMocks.listRows.mockResolvedValue([record]);
+      chargeLlmUsage.mockRejectedValue(new Error('incomplete charge result'));
+      if (failure === 'provider')
+        syncMocks.fetchGenerationData.mockRejectedValue(new Error('provider unavailable'));
+      const log = { info: vi.fn(), error: vi.fn(), warn: vi.fn(), child: vi.fn() };
+      log.child.mockReturnValue(log);
+      try {
+        startChatHistorySyncJob(log as unknown as FastifyBaseLogger);
+        await vi.advanceTimersByTimeAsync(5_001);
+        expect(syncMocks.fetchGenerationData).toHaveBeenCalledTimes(1);
+        await vi.advanceTimersByTimeAsync(25_000);
+        expect(syncMocks.fetchGenerationData).toHaveBeenCalledTimes(1);
+        await vi.advanceTimersByTimeAsync(30_000);
+        expect(syncMocks.fetchGenerationData).toHaveBeenCalledTimes(2);
+        record.llm_billing_settled_at = '2026-10-28T00:00:00Z';
+        syncMocks.fetchGenerationData.mockResolvedValue(raw);
+        await vi.advanceTimersByTimeAsync(30_000);
+        expect(syncMocks.fetchGenerationData).toHaveBeenCalledTimes(3);
+        expect(syncMocks.recordBillingOutcome).not.toHaveBeenCalled();
+        expect(chargeLlmUsage).toHaveBeenCalledTimes(failure === 'charge' ? 2 : 0);
+      } finally {
+        stopChatHistorySyncJob();
+        vi.useRealTimers();
+      }
+    }
+  );
 });

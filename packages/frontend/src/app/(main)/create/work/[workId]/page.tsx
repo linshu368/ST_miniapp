@@ -89,7 +89,7 @@ function ImagePlazaWorkDetail({ workId }: { workId: string }) {
       </PageMessage>
     );
   return (
-    <main className="mx-auto min-h-screen w-full max-w-2xl bg-background pb-32 text-foreground">
+    <main className="mx-auto min-h-[calc(100dvh-var(--app-nav-space))] w-full max-w-2xl bg-background pb-24 text-foreground">
       <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-border/60 bg-background/90 px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] backdrop-blur-xl">
         <button
           type="button"
@@ -196,7 +196,11 @@ function ImagePlazaWorkDetail({ workId }: { workId: string }) {
         </div>
       </section>
 
-      <div className="fixed inset-x-0 bottom-[calc(5.8rem+env(safe-area-inset-bottom))] z-30 mx-auto flex w-[calc(100%-1.5rem)] max-w-xl items-center gap-2 rounded-[1.35rem] border border-border bg-card/95 p-2 shadow-2xl backdrop-blur-xl">
+      <div
+        role="group"
+        aria-label="作品操作"
+        className="fixed inset-x-0 bottom-[calc(var(--app-nav-space)+0.75rem)] z-30 mx-auto flex w-[calc(100%-1.5rem)] max-w-xl items-center gap-2 rounded-[1.35rem] border border-border bg-card/95 p-2 shadow-2xl backdrop-blur-xl"
+      >
         <button
           type="button"
           disabled={like.isPending || query.isPlaceholderData}
@@ -228,7 +232,7 @@ function ImagePlazaWorkDetail({ workId }: { workId: string }) {
       {like.isError || createConversation.isError ? (
         <p
           role="alert"
-          className="fixed inset-x-4 bottom-48 z-40 rounded-xl bg-destructive p-3 text-center text-xs text-destructive-foreground"
+          className="fixed inset-x-4 bottom-[calc(var(--app-nav-space)+6rem)] z-40 rounded-xl bg-destructive p-3 text-center text-xs text-destructive-foreground"
         >
           {like.isError
             ? '点赞结果未确认，请刷新后重试'
@@ -242,7 +246,7 @@ function ImagePlazaWorkDetail({ workId }: { workId: string }) {
 function PageMessage({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   return (
-    <main className="grid min-h-screen place-items-center bg-background text-sm font-bold text-muted-foreground">
+    <main className="grid min-h-[calc(100dvh-var(--app-nav-space))] place-items-center bg-background text-sm font-bold text-muted-foreground">
       <div className="flex flex-col items-center px-5 text-center">
         {children}
         <button

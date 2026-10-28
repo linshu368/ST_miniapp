@@ -1,0 +1,45 @@
+{
+  "id": "mobile-virtual-qa",
+  "name": "mobile-virtual-qa",
+  "title": "移动端虚拟验收与影像账单修复",
+  "description": "虚拟检查移动键盘压缩空间、图片保存和生成状态，修复影像消费漏显示及余额刷新。",
+  "status": "completed",
+  "dev_type": "fullstack",
+  "scope": "frontend,backend",
+  "package": "backend",
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-23",
+  "completedAt": "2026-10-28",
+  "branch": "fix/mobile-virtual-qa",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "本地虚拟验收及修复完成；前端325/后端76测试、类型、lint、构建通过，独立审查无阻塞。未commit/push/发布；真实设备/Provider/数据库扣款不在本轮实测范围。 用户已授权正式上线并免除真机追加实测；按feature→dev→main发布。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "legacy_exempt",
+      "reason": "??? 2026-10-28 ???????? 10 ? 26 ????????? 10-27-sentry-performance-optimization????????? meta.archived_module_impact???????? module-updates.historical.json?????????????????????????????????????????????"
+    },
+    "archived_module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "frontend.business.conversation-ui",
+        "frontend.business.wallet-payment",
+        "backend.business.wallet-payment"
+      ]
+    },
+    "archive_confirmation": {
+      "date": "2026-10-28",
+      "source": "??????? 10-27-sentry-performance-optimization ?? 10 ? 26 ??????"
+    }
+  }
+}

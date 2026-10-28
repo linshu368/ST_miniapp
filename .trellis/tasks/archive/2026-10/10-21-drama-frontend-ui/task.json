@@ -1,0 +1,41 @@
+{
+  "id": "drama-frontend-ui",
+  "name": "drama-frontend-ui",
+  "title": "短剧前端列表/播放页与底部导航",
+  "description": "新增前端短剧 tab、列表页、播放页与占位态 UI，接入 drama API。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": "frontend",
+  "priority": "P1",
+  "creator": "linshu",
+  "assignee": "linshu",
+  "createdAt": "2026-10-21",
+  "completedAt": "2026-10-28",
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "10-21-drama-video-integration",
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "legacy_exempt",
+      "reason": "??? 2026-10-28 ???????? 10 ? 26 ????????? 10-27-sentry-performance-optimization????????? meta.archived_module_impact???????? module-updates.historical.json?????????????????????????????????????????????"
+    },
+    "archived_module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": ["frontend.business.drama", "frontend.infrastructure.client-ui-foundation"]
+    },
+    "archive_confirmation": {
+      "date": "2026-10-28",
+      "source": "??????? 10-27-sentry-performance-optimization ?? 10 ? 26 ??????"
+    }
+  }
+}

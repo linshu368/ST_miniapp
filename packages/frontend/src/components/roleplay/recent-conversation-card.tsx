@@ -62,8 +62,8 @@ export function RecentConversationCard() {
         href={chatEntryPath(recent.character_id, { sessionId: recent.id, source: 'discover' })}
         prefetch={false}
         onClick={() => {
-          rememberRoleplayView('/');
-          rememberRoleplayScroll('/');
+          rememberRoleplayView('/characters');
+          rememberRoleplayScroll('/characters');
         }}
         aria-label={`接着聊：${title}`}
         className="flex items-center gap-3 rounded-2xl border border-border/70 bg-card/50 px-3 py-3 transition-colors hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"

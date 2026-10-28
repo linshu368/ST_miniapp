@@ -164,7 +164,7 @@ export class OpenRouterChatHistoryRepository {
     const { data: histories, error: historyError } = await this.db
       .from('chat_history')
       .select(
-        'id, user_id, model, llm_finish_reason, llm_charge_id, assistant_reply, status, llm_billing_snapshot,venice_chat_history!left(chat_history_id)'
+        'id, user_id, model, llm_finish_reason, llm_charge_id, assistant_reply, status, llm_billing_snapshot, llm_billing_settled_at,venice_chat_history!left(chat_history_id)'
       )
       .in('id', ids)
       .abortSignal(AbortSignal.timeout(5_000));

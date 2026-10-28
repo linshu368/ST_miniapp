@@ -152,5 +152,5 @@ export function clearLobbyReturnSnapshot(): void {
 }
 
 export function returnToLobby(push: (href: string) => void): void {
-  push('/');
+  push('/characters');
 }

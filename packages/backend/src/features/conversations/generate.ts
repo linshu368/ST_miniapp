@@ -15,10 +15,6 @@ import { beginActiveDelivery, appendActiveDelivery, endActiveDelivery } from './
 
 import { randomUUID } from 'node:crypto';
 import { FirstTokenDeadlineError } from '../generation/first-token-fallback.js';
-import {
-  fetchGenerationDataForSettlement,
-  buildGenerationMetadata,
-} from '../generation/openrouter-metadata.js';
 import { GenerationObservationRepository } from '../../infrastructure/repositories/GenerationObservationRepository.js';
 import { GenerationCleanupPendingError } from '../generation/types.js';
 import type { SseTapResult } from '../generation/upstream.js';
@@ -80,6 +76,7 @@ export interface RunConversationTurnInput {
   /** Caller correlation, persisted for safe pre-start cancellation matching. */
   requestId?: string;
   thinkingEnabled?: boolean;
+  firstTokenMeasurement?: 'client_committed_v4';
 }
 
 export const CONVERSATION_PREPARATION_TIMEOUT_MS = DEFAULT_FIRST_TOKEN_DEADLINE_MS;
@@ -227,9 +224,9 @@ export async function runConversationTurn(
     catalogVersion: policy.catalogVersion,
     mode: mode.kind,
     recoverableDelivery: true,
+    // Declare the cohort with the existing insert so missing reports remain measurable.
+    measurementMethod: input.firstTokenMeasurement,
   };
-  const enrichedObserverIds = new Set<string>();
-  let fallbackPrepared = false;
   let observationBegun = false;
   let emitted = false;
   let readyMs: number | null = null;
@@ -353,33 +350,11 @@ export async function runConversationTurn(
           clearTimeout(firstTokenTimer);
         },
         store: {
-          prepareFallback: async (attempt, triggeredMs) => {
-            fallbackPrepared = true;
-            await observations.prepareFallback(turn.historyId, attempt, triggeredMs);
-          },
-          observe: async (attempt) => {
-            await observations.observe(turn.historyId, attempt);
-            // The discarded primary stops at its first token; read only bounded provider metadata.
-            if (
-              fallbackPrepared &&
-              attempt.role === 'primary' &&
-              attempt.provider === 'openrouter' &&
-              attempt.generation_id &&
-              attempt.end_reason &&
-              !enrichedObserverIds.has(attempt.generation_id)
-            ) {
-              enrichedObserverIds.add(attempt.generation_id);
-              void fetchGenerationDataForSettlement(attempt.generation_id)
-                .then(async (data) => {
-                  if (data)
-                    await observations.enrichGeneration(
-                      attempt.generation_id!,
-                      buildGenerationMetadata(data)
-                    );
-                })
-                .catch(observationError);
-            }
-          },
+          prepareFallback: (attempt, triggeredMs) =>
+            observations.prepareFallback(turn.historyId, attempt, triggeredMs),
+          // Each attempt carries its own bounded terminal diagnostic. Winner metadata
+          // follows normal settlement; the cancelled loser never needs a second fetch.
+          observe: (attempt) => observations.observe(turn.historyId, attempt),
           selectDelivery: (attempt) => observations.selectDelivery(turn.historyId, attempt),
         },
       },

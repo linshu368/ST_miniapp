@@ -1,6 +1,7 @@
 'use client';
 
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback } from 'react';
 import type {
   DramaDetail,
   DramaPlayback,
@@ -8,6 +9,11 @@ import type {
   GetDramaByIdData,
   GetDramaPlaybackData,
   GetDramasData,
+  GetDramaSocialData,
+  GetDramaCommentsData,
+  CreateDramaComment,
+  CreateDramaCommentData,
+  DramaSocial,
 } from '@miniapp/shared';
 
 import { apiClient } from './client';
@@ -18,32 +24,143 @@ export const dramaKeys = {
   list: () => [...dramaKeys.all, 'list'] as const,
   browseQueue: () => [...dramaKeys.all, 'browse-queue'] as const,
   detail: (id: string) => [...dramaKeys.all, 'detail', id] as const,
+  social: (id: string) => [...dramaKeys.all, 'social', id] as const,
+  comments: (id: string) => [...dramaKeys.all, 'comments', id] as const,
   playback: (id: string, videoId?: string) =>
     [...dramaKeys.all, 'playback', id, videoId ?? null] as const,
 };
 
-async function fetchDramas(kind: 'list' | 'queue' = 'list'): Promise<DramaSummary[]> {
+export function useDramaSocialQuery(id: string, enabled = true) {
+  return useQuery({
+    enabled,
+    queryKey: dramaKeys.social(id),
+    queryFn: async ({ signal }) =>
+      (
+        await apiClient<GetDramaSocialData>(`/api/dramas/${encodeURIComponent(id)}/social`, {
+          signal,
+          timeoutMs: 5000,
+          queuePriority: 'background',
+        })
+      ).social,
+    retry: false,
+    staleTime: 30_000,
+  });
+}
+
+export function useDramaLikeMutation(id: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationKey: [...dramaKeys.social(id), 'like'],
+    mutationFn: (liked: boolean) =>
+      apiClient<GetDramaSocialData>(`/api/dramas/${encodeURIComponent(id)}/like`, {
+        method: 'PUT',
+        body: JSON.stringify({ liked }),
+        timeoutMs: 8000,
+      }),
+    onMutate: async (liked) => {
+      await client.cancelQueries({ queryKey: dramaKeys.social(id) });
+      const previous = client.getQueryData<DramaSocial>(dramaKeys.social(id));
+      if (previous)
+        client.setQueryData(dramaKeys.social(id), {
+          ...previous,
+          liked,
+          like_count: Math.max(
+            0,
+            previous.like_count + (liked === previous.liked ? 0 : liked ? 1 : -1)
+          ),
+        });
+      return { previous };
+    },
+    onSuccess: (data) => client.setQueryData(dramaKeys.social(id), data.social),
+    onError: (_err, _liked, context) => {
+      if (context?.previous) client.setQueryData(dramaKeys.social(id), context.previous);
+      // A timeout can arrive after the write committed. Recover truth instead of guessing.
+      void client.invalidateQueries({ queryKey: dramaKeys.social(id) });
+    },
+    retry: false,
+  });
+}
+
+export function useDramaCommentsQuery(id: string, enabled: boolean) {
+  return useInfiniteQuery({
+    queryKey: dramaKeys.comments(id),
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam, signal }) =>
+      apiClient<GetDramaCommentsData>(
+        `/api/dramas/${encodeURIComponent(id)}/comments${pageParam ? `?cursor=${encodeURIComponent(pageParam)}` : ''}`,
+        { signal, timeoutMs: 5000, queuePriority: 'background' }
+      ),
+    getNextPageParam: (last) => last.next_cursor,
+    enabled,
+    retry: false,
+  });
+}
+
+export function useDramaCommentMutations(id: string) {
+  const client = useQueryClient();
+  const refresh = () => {
+    void client.invalidateQueries({ queryKey: dramaKeys.comments(id) });
+    void client.invalidateQueries({ queryKey: dramaKeys.social(id) });
+  };
+  const create = useMutation({
+    mutationFn: (body: CreateDramaComment) =>
+      apiClient<CreateDramaCommentData>(`/api/dramas/${encodeURIComponent(id)}/comments`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+        timeoutMs: 8000,
+      }),
+    onSuccess: refresh,
+    retry: false,
+  });
+  const remove = useMutation({
+    mutationFn: (commentId: string) =>
+      apiClient<{ deleted: boolean }>(
+        `/api/dramas/${encodeURIComponent(id)}/comments/${encodeURIComponent(commentId)}`,
+        { method: 'DELETE', timeoutMs: 8000 }
+      ),
+    onSuccess: refresh,
+    retry: false,
+  });
+  return { create, remove };
+}
+
+async function fetchDramas(
+  kind: 'list' | 'queue' = 'list',
+  signal?: AbortSignal
+): Promise<DramaSummary[]> {
   return dramaTiming.query(kind, undefined, undefined, async (onAttempt) => {
-    const data = await apiClient<GetDramasData>('/api/dramas', { onAttempt });
+    const data = await apiClient<GetDramasData>('/api/dramas', {
+      onAttempt,
+      signal,
+      timeoutMs: 5000,
+      queuePriority: kind === 'list' ? 'critical' : 'background',
+    });
     return data.dramas;
   });
 }
 
-async function fetchDramaDetail(id: string): Promise<DramaDetail> {
+async function fetchDramaDetail(id: string, signal?: AbortSignal): Promise<DramaDetail> {
   return dramaTiming.query('detail', id, undefined, async (onAttempt) => {
     const data = await apiClient<GetDramaByIdData>(`/api/dramas/${encodeURIComponent(id)}`, {
       onAttempt,
+      signal,
+      timeoutMs: 5000,
+      queuePriority: 'normal',
     });
     return data.drama;
   });
 }
 
-async function fetchDramaPlayback(id: string, videoId?: string): Promise<DramaPlayback> {
+async function fetchDramaPlayback(
+  id: string,
+  videoId?: string,
+  signal?: AbortSignal
+): Promise<DramaPlayback> {
   const suffix = videoId ? `?video_id=${encodeURIComponent(videoId)}` : '';
   return dramaTiming.query('playback', id, videoId, async (onAttempt) => {
     const data = await apiClient<GetDramaPlaybackData>(
       `/api/dramas/${encodeURIComponent(id)}/play${suffix}`,
-      { onAttempt }
+      { onAttempt, signal, timeoutMs: 5000, queuePriority: 'critical' }
     );
     return data.playback;
   });
@@ -53,8 +170,9 @@ async function fetchDramaPlayback(id: string, videoId?: string): Promise<DramaPl
 export function useDramaListQuery() {
   return useQuery({
     queryKey: dramaKeys.list(),
-    queryFn: () => fetchDramas(),
+    queryFn: ({ signal }) => fetchDramas('list', signal),
     structuralSharing: false,
+    retry: false,
   });
 }
 
@@ -63,18 +181,20 @@ export function useDramaBrowseQueueQuery() {
   const queryClient = useQueryClient();
   return useQuery({
     queryKey: dramaKeys.browseQueue(),
-    queryFn: () => fetchDramas('queue'),
+    queryFn: ({ signal }) => fetchDramas('queue', signal),
     initialData: () => queryClient.getQueryData<DramaSummary[]>(dramaKeys.list()),
     staleTime: Infinity,
+    retry: false,
   });
 }
 
 export function useDramaDetailQuery(id: string) {
   return useQuery({
     queryKey: dramaKeys.detail(id),
-    queryFn: () => fetchDramaDetail(id),
+    queryFn: ({ signal }) => fetchDramaDetail(id, signal),
     structuralSharing: false,
     enabled: Boolean(id),
+    retry: false,
   });
 }
 
@@ -86,23 +206,45 @@ export function useDramaDetailQuery(id: string) {
 export function useDramaPlaybackQuery(id: string, videoId?: string) {
   return useQuery({
     queryKey: dramaKeys.playback(id, videoId),
-    queryFn: () => fetchDramaPlayback(id, videoId),
+    queryFn: ({ signal }) => fetchDramaPlayback(id, videoId, signal),
     structuralSharing: false,
     enabled: Boolean(id),
+    retry: false,
   });
+}
+
+/** 临近片尾预取下一条，不改变用户从剧场进入时的筛选队列。 */
+export function usePreloadDramaPlayback() {
+  const client = useQueryClient();
+  return useCallback(
+    (id: string, videoId?: string) => {
+      void client.prefetchQuery({
+        queryKey: dramaKeys.playback(id, videoId),
+        queryFn: ({ signal }) => fetchDramaPlayback(id, videoId, signal),
+        retry: false,
+      });
+      void client.prefetchQuery({
+        queryKey: dramaKeys.detail(id),
+        queryFn: ({ signal }) => fetchDramaDetail(id, signal),
+        retry: false,
+      });
+    },
+    [client]
+  );
 }
 
 /** 点击卡片时顺手预取首集播放地址，省掉路由跳转后再发请求的一小段延迟。 */
 export function usePrefetchDramaPlayback() {
   const queryClient = useQueryClient();
-  return (id: string, browseQueue?: DramaSummary[]) => {
+  return (id: string, browseQueue?: DramaSummary[], videoId?: string) => {
     // 点击时固定当前筛选/排序后的队列，保证进入播放后的上下滑仍沿用所见顺序。
     const list = browseQueue ?? queryClient.getQueryData<DramaSummary[]>(dramaKeys.list());
     if (list) queryClient.setQueryData(dramaKeys.browseQueue(), list);
     void queryClient.prefetchQuery({
-      queryKey: dramaKeys.playback(id),
-      queryFn: () => fetchDramaPlayback(id),
+      queryKey: dramaKeys.playback(id, videoId),
+      queryFn: ({ signal }) => fetchDramaPlayback(id, videoId, signal),
       structuralSharing: false,
+      retry: false,
     });
   };
 }

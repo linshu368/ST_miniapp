@@ -113,6 +113,9 @@ interface VideoConversationAttemptRow {
   updated_at: string;
 }
 
+const WORK_COLUMNS =
+  'id,user_id,attempt_id,artifact_id,title,model_id,model_name,width,height,tags,snapshot,like_count,published_at,deleted_at,initial_feed_order::text,media_type,video_artifact_id,video_attempt_id,duration_ms,description';
+
 interface ArtifactRow {
   id: string;
   attempt_id: string;
@@ -192,7 +195,7 @@ export class ImagePlazaRepository {
     // Feed 排序：点赞数 ↓ → 分享时间 ↓ → id ↓（稳定游标）
     let query = this.plaza
       .from('image_plaza_works')
-      .select('*')
+      .select(WORK_COLUMNS)
       .is('deleted_at', null)
       .order('like_count', { ascending: false })
       .order('published_at', { ascending: false })
@@ -232,7 +235,7 @@ export class ImagePlazaRepository {
       );
     }
     const { data, error } = await query;
-    if (error) throw new Error(`image plaza feed read failed: ${error.message}`);
+    if (error) throw new Error('image plaza feed read failed', { cause: error });
     const rows = (data ?? []) as WorkRow[];
     const visible = rows.slice(0, input.limit);
     const works = await this.hydrateFeedWorks(visible, input.userId, {
@@ -268,12 +271,7 @@ export class ImagePlazaRepository {
       exclude: string[] = []
     ) => {
       // Cast bigint before JSON serialization; Number would silently lose deep cursor precision.
-      let query = this.plaza
-        .from('image_plaza_works')
-        .select(
-          'id,user_id,attempt_id,artifact_id,title,model_id,model_name,width,height,tags,snapshot,like_count,published_at,deleted_at,initial_feed_order::text,media_type,video_artifact_id,video_attempt_id,duration_ms,description'
-        )
-        .is('deleted_at', null);
+      let query = this.plaza.from('image_plaza_works').select(WORK_COLUMNS).is('deleted_at', null);
       if (partition === 'liked')
         query = query.gt('like_count', 0).order('like_count', { ascending: false });
       if (partition === 'zero')
@@ -301,7 +299,7 @@ export class ImagePlazaRepository {
       // These IDs came from this bounded DB page, not arbitrary request filter syntax.
       if (exclude.length) query = query.not('id', 'in', `(${exclude.join(',')})`);
       const { data, error } = await query.limit(limit).abortSignal(signal);
-      if (error) throw new Error(`image plaza feed read failed: ${error.message}`);
+      if (error) throw new Error('image plaza feed read failed', { cause: error });
       return (data ?? []) as WorkRow[];
     };
     let rows: WorkRow[];
@@ -949,7 +947,7 @@ export class ImagePlazaRepository {
       artifactIds.length > 0
         ? this.plaza
             .from('image_plaza_artifacts')
-            .select('*')
+            .select('id,storage_path')
             .in('id', artifactIds)
             .abortSignal(options.signal ?? AbortSignal.timeout(10_000))
         : Promise.resolve({ data: [], error: null }),
@@ -967,8 +965,11 @@ export class ImagePlazaRepository {
         .in('work_id', workIds)
         .abortSignal(options.signal ?? AbortSignal.timeout(10_000)),
     ]);
-    if (imageResult.error || videoResult.error || likeResult.error)
-      throw new Error('image_plaza_work_hydration_failed');
+    if (imageResult.error || videoResult.error || likeResult.error) {
+      throw new Error('image_plaza_work_hydration_failed', {
+        cause: imageResult.error ?? videoResult.error ?? likeResult.error,
+      });
+    }
     const artifacts = new Map(
       (imageResult.data ?? []).map((row) => [String(row.id), row as ArtifactRow])
     );
@@ -976,8 +977,31 @@ export class ImagePlazaRepository {
       (videoResult.data ?? []).map((row) => [String(row.id), row as VideoArtifactRow])
     );
     const liked = new Set((likeResult.data ?? []).map((row) => String(row.work_id)));
-    // 一页 20 张图逐个 await 签名会串行付 20 次 HTTP 往返；命中缓存后这些调用不再
-    // 出网，未命中时也应当并发。只对已发布作品图这样做——签名是只读、无顺序依赖的。
+    // Feed transformations stay parallel; per-key single-flight removes duplicate concurrent
+    // signing calls without changing the 720px/quality-72 media shape.
+    const imagePrepared = rows
+      .filter((row) => row.media_type !== 'video')
+      .map((row) => {
+        const artifact = row.artifact_id ? artifacts.get(row.artifact_id) : undefined;
+        const snapshot = ImagePlazaSnapshotSchema.safeParse(row.snapshot);
+        if (!artifact || !snapshot.success) throw new Error('image_plaza_work_shape_invalid');
+        const publishedAt = new Date(row.published_at);
+        if (Number.isNaN(publishedAt.getTime())) throw new Error('image_plaza_work_shape_invalid');
+        return { row, artifact, snapshot: snapshot.data, publishedAt };
+      });
+    const imagePreparedById = new Map(imagePrepared.map((item) => [item.row.id, item]));
+    const imageUrlsPromise = Promise.all(
+      imagePrepared.map(
+        async ({ artifact }) =>
+          [
+            artifact.storage_path,
+            await signSharedWorkImagePath(
+              artifact.storage_path,
+              options.feedImages ? { width: 720, quality: 72 } : undefined
+            ),
+          ] as const
+      )
+    ).then((entries) => new Map(entries));
     const works = await Promise.all(
       rows.map(async (row) => {
         const publishedAt = new Date(row.published_at);
@@ -1015,16 +1039,15 @@ export class ImagePlazaRepository {
             snapshot: snapshot.data,
           };
         }
-        const artifact = row.artifact_id ? artifacts.get(row.artifact_id) : undefined;
-        const snapshot = ImagePlazaSnapshotSchema.safeParse(row.snapshot);
-        if (!artifact || !snapshot.success) throw new Error('image_plaza_work_shape_invalid');
-        const [imageUrl, referenceImageUrl] = await Promise.all([
-          signSharedWorkImagePath(
-            artifact.storage_path,
-            options.feedImages ? { width: 720, quality: 72 } : undefined
-          ),
-          this.resolveReferenceImageUrl(snapshot.data.reference_artifact_id, options),
+        const prepared = imagePreparedById.get(row.id);
+        if (!prepared) throw new Error('image_plaza_work_shape_invalid');
+        const { artifact, snapshot } = prepared;
+        const [imageUrls, referenceImageUrl] = await Promise.all([
+          imageUrlsPromise,
+          this.resolveReferenceImageUrl(snapshot.reference_artifact_id, options),
         ]);
+        const imageUrl = imageUrls.get(artifact.storage_path);
+        if (!imageUrl) throw new Error('image_plaza_storage_sign_failed');
         const detail: ImagePlazaWork = {
           id: row.id,
           media_type: 'image' as const,
@@ -1039,7 +1062,7 @@ export class ImagePlazaRepository {
           like_count: row.like_count,
           liked: liked.has(row.id),
           published_at: publishedAt.toISOString(),
-          snapshot: snapshot.data,
+          snapshot,
         };
         if (!options.feedImages) return detail;
         const { reference_image_url: _reference, snapshot: _snapshot, ...summary } = detail;

@@ -3,9 +3,10 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { Clapperboard, Home, Sparkles, User } from 'lucide-react';
+import { Clapperboard, MessagesSquare, Play, Sparkles, User } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
+import { useDramaLibraryStore } from '@/stores/drama-library-store';
 import { useNotificationUnreadCountQuery } from '@/lib/api/notifications';
 import { useSupportUnreadQuery } from '@/lib/api/support';
 import { clearLobbyReturnSnapshot } from '@/lib/lobby-return';
@@ -16,11 +17,29 @@ import {
 } from '@/lib/roleplay-navigation';
 
 const NAV_ITEMS = [
-  { href: '/', label: '角色', Icon: Home },
-  { href: '/dramas', label: '短剧', Icon: Clapperboard },
-  { href: '/create', label: '影像', Icon: Sparkles },
+  { href: '/characters', label: '角色', Icon: MessagesSquare },
+  { href: '/dramas', label: 'AI短剧', Icon: Clapperboard },
+  { href: '/', label: '首页', Icon: Play },
+  { href: '/create', label: '生成', Icon: Sparkles },
   { href: '/profile', label: '我的', Icon: User },
 ] as const;
+
+const HEAVY_ROUTE_HREFS = new Set<string>(['/', '/dramas', '/create']);
+
+type NavigatorWithConnection = Navigator & {
+  connection?: { saveData?: boolean; effectiveType?: string };
+};
+
+function canPrefetchHeavyRoute(): boolean {
+  if (typeof document === 'undefined' || document.visibilityState !== 'visible') return false;
+  const connection = (navigator as NavigatorWithConnection).connection;
+  return (
+    navigator.onLine !== false &&
+    connection?.saveData !== true &&
+    connection?.effectiveType !== 'slow-2g' &&
+    connection?.effectiveType !== '2g'
+  );
+}
 
 // 深层页面（支付流程、沉浸式输入页、消息与客服会话）隐藏底部导航，让主内容拿满可视高度
 const HIDDEN_PREFIXES = [
@@ -31,11 +50,21 @@ const HIDDEN_PREFIXES = [
   '/vip',
 ];
 
+export function isBottomNavHidden(pathname: string | null, controlsVisible = true) {
+  return Boolean(
+    pathname &&
+    ((pathname === '/' && !controlsVisible) ||
+      HIDDEN_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)) ||
+      /^\/dramas\/[^/]+/.test(pathname))
+  );
+}
+
 export function BottomNav() {
   const pathname = usePathname();
+  const dramaControlsVisible = useDramaLibraryStore((state) => state.playbackControlsVisible);
   const router = useRouter();
-  const currentRoleplayPath = pathname === '/' || pathname === '/chats' ? pathname : null;
-  const [roleplayHref, setRoleplayHref] = useState<'/' | '/chats'>('/');
+  const currentRoleplayPath = pathname === '/characters' || pathname === '/chats' ? pathname : null;
+  const [roleplayHref, setRoleplayHref] = useState<'/characters' | '/chats'>('/characters');
 
   useEffect(() => {
     if (currentRoleplayPath) {
@@ -65,10 +94,7 @@ export function BottomNav() {
     return () => window.clearTimeout(timer);
   }, [pendingHref]);
 
-  if (
-    pathname &&
-    (HIDDEN_PREFIXES.some((p) => pathname.startsWith(p)) || /^\/dramas\/[^/]+/.test(pathname))
-  ) {
+  if (isBottomNavHidden(pathname, dramaControlsVisible)) {
     return null;
   }
 
@@ -76,96 +102,123 @@ export function BottomNav() {
 
   return (
     <div
-      className="pointer-events-none fixed inset-x-0 bottom-4 z-40 flex justify-center px-4 sm:bottom-6"
+      className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center bg-[#19171a]"
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
       {/* 不用 backdrop-blur：导航悬浮在持续滚动、带流光动画的列表上方，模糊要每帧重采样背后内容，
           弱机 WebView 上会占满合成线程（大厅卡片去模糊同理），点按响应也会被拖慢。 */}
       <nav
         aria-label="主导航"
-        className="pointer-events-auto grid w-full max-w-[390px] grid-cols-4 gap-1 rounded-[1.65rem] border border-border bg-card/[0.97] p-1.5 text-foreground shadow-[0_14px_38px_rgba(0,0,0,0.38)]"
+        className="pointer-events-auto grid h-[var(--app-nav-height)] w-full max-w-lg grid-cols-5 items-center gap-1 border-t border-white/[0.055] px-2 text-[#eee7e2]"
       >
         {NAV_ITEMS.map(({ href, label, Icon }) => {
-          const targetHref = href === '/' ? (currentRoleplayPath ?? roleplayHref) : href;
+          const targetHref = href === '/characters' ? (currentRoleplayPath ?? roleplayHref) : href;
           const active =
-            href === '/'
-              ? highlighted === '/' || highlighted === '/chats'
-              : highlighted?.startsWith(href);
-          const current = href === '/' ? Boolean(currentRoleplayPath) : pathname?.startsWith(href);
+            href === '/characters'
+              ? highlighted === '/characters' || highlighted === '/chats'
+              : href === '/'
+                ? highlighted === '/'
+                : highlighted?.startsWith(href);
+          const current =
+            href === '/characters'
+              ? Boolean(currentRoleplayPath)
+              : href === '/'
+                ? pathname === '/'
+                : pathname?.startsWith(href);
+          const isHeavyRoute = HEAVY_ROUTE_HREFS.has(href);
+          const prefetchOnIntent = () => {
+            if (!current && (!isHeavyRoute || canPrefetchHeavyRoute())) {
+              router.prefetch(targetHref);
+            }
+          };
           return (
             <Link
               key={href}
               href={targetHref}
-              scroll={href === '/' ? false : undefined}
+              prefetch={isHeavyRoute ? false : undefined}
+              scroll={href === '/characters' ? false : undefined}
               // 不在大厅空闲预取其它 tab；真正指向该 tab 时再拉 RSC/路由。
-              onMouseEnter={() => {
-                if (!current) router.prefetch(targetHref);
-              }}
-              onTouchStart={() => {
-                if (!current) router.prefetch(targetHref);
-              }}
+              onMouseEnter={prefetchOnIntent}
+              onFocus={prefetchOnIntent}
+              onTouchStart={prefetchOnIntent}
               onClick={(event) => {
                 if (currentRoleplayPath) rememberRoleplayScroll(currentRoleplayPath);
-                if (href === '/') {
-                  rememberRoleplayView(targetHref === '/chats' ? '/chats' : '/');
+                if (href === '/characters') {
+                  rememberRoleplayView(targetHref === '/chats' ? '/chats' : '/characters');
                   if (currentRoleplayPath) {
                     event.preventDefault();
-                    if (currentRoleplayPath === '/') clearLobbyReturnSnapshot();
+                    if (currentRoleplayPath === '/characters') clearLobbyReturnSnapshot();
                     window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
                     rememberRoleplayScroll(currentRoleplayPath);
                   }
                 }
-                setPendingHref(targetHref);
+                if (!current) setPendingHref(targetHref);
               }}
               aria-current={current ? 'page' : undefined}
               aria-label={label}
               className={cn(
-                'group relative isolate flex h-[58px] min-w-0 flex-col items-center justify-center gap-1 overflow-hidden rounded-[1.3rem] px-2 transition-[color,background-color,box-shadow,transform] duration-300 ease-out active:scale-[0.97]',
-                active
-                  ? 'bg-foreground/[0.06] text-primary ring-1 ring-inset ring-foreground/[0.08]'
-                  : 'text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground/75'
+                'group relative flex h-[58px] min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-1 transition-[color,background-color,transform] duration-150 active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#d7b4bf] motion-reduce:transition-none',
+                href === '/'
+                  ? 'px-0'
+                  : active
+                    ? 'text-[#f0e3e6]'
+                    : 'text-[#9f969d] hover:text-[#eee7e2] active:bg-white/[0.04]'
               )}
             >
-              {active ? (
+              {href === '/' ? (
+                <svg
+                  aria-hidden="true"
+                  viewBox="0 0 44 44"
+                  fill="none"
+                  className={cn(
+                    'h-[38px] w-[38px] transition-colors duration-150 motion-reduce:transition-none',
+                    active ? 'text-[#f3e6e9]' : 'text-[#c9adb8]'
+                  )}
+                >
+                  <path
+                    d="M10.5 9.6C8.3 8.4 5.6 10 5.6 12.5v19c0 2.5 2.7 4.1 4.9 2.9l7-4V13.6l-7-4Z"
+                    fill={active ? '#b78599' : '#745460'}
+                  />
+                  <path
+                    fillRule="evenodd"
+                    clipRule="evenodd"
+                    d="M17.6 6.9c-2.7-1.6-6.1.4-6.1 3.5v23.2c0 3.1 3.4 5.1 6.1 3.5l20.1-11.6c2.7-1.6 2.7-5.4 0-7L17.6 6.9Zm1.1 8.5c-.5-.3-1.2.1-1.2.7v11.8c0 .6.7 1 1.2.7l10.2-5.9c.5-.3.5-1.1 0-1.4l-10.2-5.9Z"
+                    fill="currentColor"
+                  />
+                  <path
+                    d="M17.6 6.9 37.7 18.5"
+                    stroke={active ? '#fff7f4' : '#e7cfd6'}
+                    strokeWidth="1.1"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              ) : (
                 <>
                   <span
-                    aria-hidden
-                    className="absolute inset-0 -z-10 bg-[linear-gradient(180deg,hsl(var(--foreground)/0.035),transparent_72%)]"
-                  />
+                    className={cn(
+                      'relative flex h-7 w-11 items-center justify-center rounded-full transition-colors duration-150 motion-reduce:transition-none',
+                      active ? 'bg-[#d7b4bf]/[0.08]' : 'bg-transparent'
+                    )}
+                  >
+                    <Icon size={21} strokeWidth={active ? 1.9 : 1.65} aria-hidden="true" />
+                    {href === '/profile' && hasUnread ? (
+                      <span
+                        role="status"
+                        aria-label="有未读消息"
+                        className="absolute right-1.5 top-0.5 h-1.5 w-1.5 rounded-full bg-[#d9919b] ring-2 ring-[#19171a]"
+                      />
+                    ) : null}
+                  </span>
                   <span
-                    aria-hidden
-                    className="absolute bottom-1.5 left-1/2 h-0.5 w-5 -translate-x-1/2 rounded-full bg-primary"
-                  />
+                    className={cn(
+                      'whitespace-nowrap text-[11px] leading-none',
+                      active ? 'font-semibold' : 'font-medium'
+                    )}
+                  >
+                    {label}
+                  </span>
                 </>
-              ) : null}
-              <span
-                className={cn(
-                  'relative flex h-7 w-10 items-center justify-center transition-colors duration-300',
-                  !active && 'group-hover:text-foreground/80'
-                )}
-              >
-                <Icon
-                  size={19}
-                  strokeWidth={active ? 2.5 : 2}
-                  aria-hidden="true"
-                  className={cn('transition-transform duration-300', active && 'scale-105')}
-                />
-                {href === '/profile' && hasUnread ? (
-                  <span
-                    role="status"
-                    aria-label="有未读消息"
-                    className="absolute right-1.5 top-0.5 h-2 w-2 rounded-full bg-destructive ring-2 ring-card"
-                  />
-                ) : null}
-              </span>
-              <span
-                className={cn(
-                  'text-[10px] font-semibold leading-none tracking-[0.08em] transition-all duration-300',
-                  active ? 'opacity-100' : 'opacity-75 group-hover:opacity-100'
-                )}
-              >
-                {label}
-              </span>
+              )}
             </Link>
           );
         })}

@@ -81,7 +81,7 @@ export async function uploadPlazaImage(input: {
       cacheControl: '31536000',
       upsert: false,
     });
-  if (error) throw new Error(`image_plaza_storage_upload_failed:${error.message}`);
+  if (error) throw new Error('image_plaza_storage_upload_failed', { cause: error });
   return {
     storagePath,
     mimeType: validated.mimeType,
@@ -113,7 +113,7 @@ export async function uploadSeedPlazaImage(input: {
       cacheControl: '31536000',
       upsert: false,
     });
-  if (error) throw new Error(`image_plaza_storage_upload_failed:${error.message}`);
+  if (error) throw new Error('image_plaza_storage_upload_failed', { cause: error });
   return {
     storagePath,
     mimeType: validated.mimeType,
@@ -144,6 +144,8 @@ export async function uploadSeedPlazaImage(input: {
  */
 const SIGNED_URL_CACHE_MAX_ENTRIES = 2000;
 const signedUrlCache = new Map<string, { url: string; expiresAt: number }>();
+const SIGNED_URL_INFLIGHT_MAX_ENTRIES = 256;
+const signedUrlInflight = new Map<string, Promise<string>>();
 
 /** 提前 5 分钟失效，避免把即将过期的 URL 发给客户端。 */
 const SIGNED_URL_REFRESH_MARGIN_MS = 5 * 60 * 1000;
@@ -193,22 +195,35 @@ export async function signPlazaImagePath(
   const cacheKey = signedUrlCacheKey(BUCKET, path, expiresInSeconds, transform);
   const cached = readSignedUrlCache(cacheKey);
   if (cached) return cached;
+  const inflight = signedUrlInflight.get(cacheKey);
+  if (inflight) return inflight;
 
   // 签名失败会让整页图片 500，所以给显式超时。Storage SDK 的 createSignedUrl 直接
   // 返回 Promise、不支持 abortSignal，只能用赛跑的方式兜住——签名是只读操作，
   // 超时后放弃等待不会留下半成品。
-  const { data, error } = await withTimeout(
-    getSupabaseClient()
-      .storage.from(BUCKET)
-      .createSignedUrl(path, expiresInSeconds, {
-        ...(transform ? { transform } : {}),
-      }),
-    10_000,
-    'image_plaza_storage_sign_timeout'
-  );
-  if (error || !data?.signedUrl) throw new Error('image_plaza_storage_sign_failed');
-  writeSignedUrlCache(cacheKey, data.signedUrl, expiresInSeconds);
-  return data.signedUrl;
+  const operation = (async () => {
+    const { data, error } = await withTimeout(
+      getSupabaseClient()
+        .storage.from(BUCKET)
+        .createSignedUrl(path, expiresInSeconds, {
+          ...(transform ? { transform } : {}),
+        }),
+      10_000,
+      'image_plaza_storage_sign_timeout'
+    );
+    if (error) throw new Error('image_plaza_storage_sign_failed', { cause: error });
+    if (!data?.signedUrl) throw new Error('image_plaza_storage_sign_failed');
+    writeSignedUrlCache(cacheKey, data.signedUrl, expiresInSeconds);
+    return data.signedUrl;
+  })();
+  if (signedUrlInflight.size >= SIGNED_URL_INFLIGHT_MAX_ENTRIES) return operation;
+
+  let tracked: Promise<string>;
+  tracked = operation.finally(() => {
+    if (signedUrlInflight.get(cacheKey) === tracked) signedUrlInflight.delete(cacheKey);
+  });
+  signedUrlInflight.set(cacheKey, tracked);
+  return tracked;
 }
 
 /** 超时即拒绝；原 Promise 的后续结果被 race 吞掉，不会产生未处理拒绝。 */
@@ -310,7 +325,7 @@ export async function downloadPlazaImage(path: string): Promise<Buffer> {
 export async function deletePlazaImage(path: string): Promise<void> {
   assertPlazaPath(path);
   const { error } = await getSupabaseClient().storage.from(BUCKET).remove([path]);
-  if (error) throw new Error(`image_plaza_storage_delete_failed:${error.message}`);
+  if (error) throw new Error('image_plaza_storage_delete_failed', { cause: error });
 }
 
 function assertPlazaPath(path: string): void {
