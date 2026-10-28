@@ -77,6 +77,8 @@ SQL
 # must return a terminal HTTP conflict while preserving the existing lifecycle CAS.
 "${task_psql[@]}" -f "$task_root/packages/shared/migrations/20261026_first_token_nonretryable_conflicts.sql" >/dev/null
 "${task_psql[@]}" -f "$task_root/packages/shared/migrations/20261026_first_token_nonretryable_conflicts.sql" >/dev/null
+"${task_psql[@]}" -f "$task_root/packages/shared/migrations/20261028_first_token_race.sql" >/dev/null
+"${task_psql[@]}" -f "$task_root/packages/shared/migrations/20261028_first_token_race.sql" >/dev/null
 
 # Supabase repositories through real PostgREST; only the API port is mapped to loopback.
 docker run --rm -d --network "$task_network" --name "$task_rest_container" \
@@ -150,6 +152,23 @@ echo 'PASS: explicit stop original quote/entitlement once; system timeout and le
 "${task_psql[@]}" -f "$task_root/packages/shared/migrations/20261028_client_committed_first_token.sql" >/dev/null
 "${task_psql[@]}" -f "$task_root/packages/shared/migrations/tests/recoverable_chat_delivery.sql" >/dev/null
 echo 'PASS: recoverable/v4 commit delivery, immutable receipt, cutoff/quota, departure and original user-stop price'
+
+# Competing database transactions must still bind exactly one provider identity.
+"${task_psql[@]}" -c "SELECT recoverable_test.race_claim('00000000-0000-4000-8000-0000000002d2','primary',true);" >"$task_dir/race-primary.log" &
+task_race_primary_pid=$!
+"${task_psql[@]}" -c "SELECT recoverable_test.race_claim('00000000-0000-4000-8000-0000000002d2','fallback',true);" >"$task_dir/race-fallback.log" &
+task_race_fallback_pid=$!
+wait "$task_race_primary_pid"
+wait "$task_race_fallback_pid"
+"${task_psql[@]}" -c "SELECT recoverable_test.race_finish('00000000-0000-4000-8000-0000000002d2');" >/dev/null
+"${task_psql[@]}" -c "SELECT visible_billing_test.charge('00000000-0000-4000-8000-0000000002d2');" >/dev/null &
+task_race_first_charge_pid=$!
+"${task_psql[@]}" -c "SELECT visible_billing_test.charge('00000000-0000-4000-8000-0000000002d2');" >/dev/null &
+task_race_second_charge_pid=$!
+wait "$task_race_first_charge_pid"
+wait "$task_race_second_charge_pid"
+"${task_psql[@]}" -c "SELECT vip_t4_test.assert((SELECT count(*)=1 AND sum(abs(amount))=30 FROM billing.wallet_ledger WHERE debit_key='00000000-0000-4000-8000-0000000002d2'),'racing attempts caused duplicate debit');" >/dev/null
+echo 'PASS: primary may win after fallback, concurrent winner CAS, loser privacy and once-only debit'
 
 # Install the real retention/dedup contract in this disposable billing fixture.
 python3 - "$task_root" <<'PYRETENTION' | "${task_psql[@]}" >/dev/null

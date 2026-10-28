@@ -1134,7 +1134,7 @@ describe('fixed fallback preserves one selected-model quote', () => {
         fixed_deduction: free ? 0 : 48,
       });
       expect(entry.charge_id).toBe(beforeReserve.mock.calls[0]?.[0]);
-      // Let the bounded primary observer finish; it must never emit or settle a second reply.
+      // The loser is cancelled, not drained for a second reply or settlement.
       await new Promise((r) => setTimeout(r, 115));
       expect(savedHistory()).toHaveLength(1);
       expect(deltas).toEqual(['兜底']);
@@ -1176,9 +1176,9 @@ it.each([false, true])(
   }
 );
 
-it.each(['fallback', 'global'] as const)(
-  'releases free quota once without charging when %s first-token budget expires',
-  async (stage) => {
+it.each([false, true])(
+  'releases free quota once at the shared deadline (slow fallback persistence=%s)',
+  async (slowPersistence) => {
     quotaState.granted = true;
     const bodies: unknown[] = [];
     vi.stubGlobal(
@@ -1201,7 +1201,7 @@ it.each(['fallback', 'global'] as const)(
       fallbackModelId: 'vendor/operator-flash',
       timeoutMs: 20,
       fallbackTimeoutMs: 40,
-      deadlineMs: stage === 'global' ? 80 : 500,
+      deadlineMs: 80,
       timeoutRateTarget: 0.01,
       catalogVersion: 12,
     };
@@ -1210,7 +1210,7 @@ it.each(['fallback', 'global'] as const)(
       requestStartedAt: performance.now(),
       store: {
         prepareFallback: vi.fn(async () => {
-          if (stage === 'global') await new Promise((resolve) => setTimeout(resolve, 100));
+          if (slowPersistence) await new Promise((resolve) => setTimeout(resolve, 100));
         }),
         observe: vi.fn(async () => {}),
         selectDelivery: vi.fn(async () => {}),
@@ -1219,11 +1219,123 @@ it.each(['fallback', 'global'] as const)(
     const beforeReserve = vi.fn();
     await expect(
       execute(req, { onBeforeReserve: beforeReserve }, fakeLogger())
-    ).rejects.toMatchObject({ name: 'FirstTokenDeadlineError', stage });
+    ).rejects.toMatchObject({ name: 'FirstTokenDeadlineError', stage: 'global' });
     expect(beforeReserve).toHaveBeenCalledOnce();
     expect(quotaState.finalize).toHaveBeenCalledExactlyOnceWith(false);
     expect(savedHistory()).toHaveLength(0);
-    expect(bodies).toHaveLength(stage === 'global' ? 1 : 2);
+    expect(bodies).toHaveLength(slowPersistence ? 1 : 2);
     expect(req.firstToken.store.selectDelivery).not.toHaveBeenCalled();
   }
 );
+
+describe('competing attempts share one delivery and settlement', () => {
+  it.each(
+    [false, true].flatMap((free) =>
+      (['openrouter', 'venice'] as const).flatMap((provider) =>
+        (['primary', 'fallback'] as const).map((winner) => ({ free, provider, winner }))
+      )
+    )
+  )(
+    'keeps the $winner reply with one original quote ($provider, free=$free)',
+    async ({ free, provider, winner }) => {
+      billingContext = { ...defaultBillingContext, provider, isFree: free };
+      if (provider === 'venice') vi.stubEnv('VENICE_API_KEY', 'test-venice-key');
+      quotaState.granted = free;
+      const attempts: Array<{ role: 'primary' | 'fallback'; signal: AbortSignal }> = [];
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (_url: string, init: RequestInit) => {
+          const role = attempts.length === 0 ? 'primary' : 'fallback';
+          const signal = init.signal!;
+          attempts.push({ role, signal });
+          return new Response(
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                // Both contenders exceed their old stage limits. Only the shared deadline
+                // can reject the first available reply after the second POST has started.
+                const delay = role === winner ? 65 : 160;
+                const timer = setTimeout(() => {
+                  controller.enqueue(
+                    new TextEncoder().encode(
+                      `data: ${JSON.stringify({ id: `${role}-race-id`, choices: [{ delta: { content: `${role} reply` }, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n`
+                    )
+                  );
+                  controller.close();
+                }, delay);
+                signal.addEventListener(
+                  'abort',
+                  () => {
+                    clearTimeout(timer);
+                    controller.error(signal.reason);
+                  },
+                  { once: true }
+                );
+              },
+            })
+          );
+        })
+      );
+      const selected = vi.fn(
+        async (
+          _attempt: import('../../infrastructure/repositories/GenerationObservationRepository.js').AttemptObservation
+        ) => {}
+      );
+      const beforeReserve = vi.fn();
+      const beforeDispatch = vi.fn();
+      const onReady = vi.fn();
+      const deltas: string[] = [];
+      const req = request({ thinkingEnabled: false });
+      req.model.firstTokenPolicy = {
+        fallbackModelId: 'vendor/operator-flash',
+        timeoutMs: 20,
+        fallbackTimeoutMs: 25,
+        deadlineMs: 400,
+        timeoutRateTarget: 0.01,
+        catalogVersion: 12,
+      };
+      req.firstToken = {
+        primaryAttemptId: 'primary-race-attempt',
+        requestStartedAt: performance.now(),
+        deferPersistence: true,
+        onReady,
+        store: {
+          prepareFallback: vi.fn(async () => {}),
+          observe: vi.fn(async () => {}),
+          selectDelivery: selected,
+        },
+      };
+      const result = await execute(
+        req,
+        {
+          onBeforeReserve: beforeReserve,
+          onBeforeDispatch: beforeDispatch,
+          onDelta: (text) => deltas.push(text),
+        },
+        fakeLogger()
+      );
+      expect(result).toMatchObject({ status: 'success', content: `${winner} reply` });
+      expect(attempts).toHaveLength(2);
+      expect(attempts.find((attempt) => attempt.role !== winner)?.signal.aborted).toBe(true);
+      expect(deltas).toEqual([`${winner} reply`]);
+      expect(onReady).toHaveBeenCalledOnce();
+      expect(selected).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ role: winner, generation_id: `${winner}-race-id` })
+      );
+      expect(beforeReserve).toHaveBeenCalledOnce();
+      expect(beforeDispatch).toHaveBeenCalledOnce();
+      expect(savedHistory()).toHaveLength(1);
+      expect(savedHistory()[0]).toMatchObject({
+        generation_id: `${winner}-race-id`,
+        assistant_reply: `${winner} reply`,
+        provider: winner === 'fallback' ? 'openrouter' : provider,
+        provider_model_id:
+          winner === 'fallback' ? 'vendor/operator-flash' : defaultBillingContext.providerModelId,
+        model_id: defaultBillingContext.modelId,
+        fixed_deduction: free ? 0 : 48,
+        charge_id: beforeReserve.mock.calls[0]?.[0],
+      });
+      if (free) expect(quotaState.finalize).toHaveBeenCalledExactlyOnceWith(true);
+      else expect(quotaState.finalize).not.toHaveBeenCalled();
+    }
+  );
+});

@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/backend/app/data-reliability-and-security.md", "reason": "生成/计费/有界I/O"}
+{"file": ".trellis/spec/backend/app/testing-scripts-and-deployment.md", "reason": "真实SSE/部署验收"}
+{"file": ".trellis/spec/database/supabase/migrations-and-rollbacks.md", "reason": "迁移顺序/恢复"}
+{"file": ".trellis/spec/database/supabase/security-rls-and-grants.md", "reason": "诊断正文权限"}
+{"file": ".trellis/spec/admin/app/index.md", "reason": "运营配置展示"}
+{"file": ".trellis/spec/shared/contracts/api-contracts.md", "reason": "兼容配置"}
+{"file": ".trellis/tasks/10-28-first-token-race/design.md", "reason": "已研究的最小跨层方案"}

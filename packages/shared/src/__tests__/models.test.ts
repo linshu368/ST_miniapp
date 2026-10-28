@@ -90,7 +90,7 @@ describe('ModelCatalogSchema', () => {
       expect(ModelCatalogSchema.safeParse(invalid).success, String(value)).toBe(false);
     }
   });
-  it('validates the independent fallback wait against the total deadline', () => {
+  it('validates the fallback launch reserve against the shared deadline', () => {
     expect(
       ModelCatalogSchema.parse({ ...validCatalog, fallback_timeout_ms: 2500 }).fallback_timeout_ms
     ).toBe(2500);
@@ -99,6 +99,11 @@ describe('ModelCatalogSchema', () => {
         ModelCatalogSchema.safeParse({ ...validCatalog, fallback_timeout_ms: value }).success
       ).toBe(false);
     }
+    const overlapping = ModelCatalogSchema.parse({ ...validCatalog, fallback_timeout_ms: 7000 });
+    expect(overlapping.tiers[0]?.models[0]?.first_token_timeout_ms).toBe(4000);
+    expect(overlapping.fallback_timeout_ms).toBe(7000);
+    // Launch thresholds can overlap; the schema must not sum them as sequential lifetimes.
+    expect(overlapping.first_token_deadline_ms).toBe(10000);
   });
   it('accepts operator-selected fallback IDs and rejects invalid IDs', () => {
     expect(

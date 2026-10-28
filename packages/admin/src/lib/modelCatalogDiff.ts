@@ -19,7 +19,7 @@ export function getModelCatalogChangeSummary(before: unknown, after: unknown): s
   const afterModels = modelMap(next.data);
   const changes: string[] = [];
   if (previous.data.fallback_timeout_ms !== next.data.fallback_timeout_ms)
-    changes.push(`兜底实际派发后等待改为 ${next.data.fallback_timeout_ms / 1000} 秒`);
+    changes.push(`兜底预留时间改为 ${next.data.fallback_timeout_ms / 1000} 秒`);
   if (previous.data.fallback_model_id !== next.data.fallback_model_id)
     changes.push(`兜底模型改为 ${next.data.fallback_model_id}`);
   if (previous.data.first_token_deadline_ms !== next.data.first_token_deadline_ms)
@@ -35,7 +35,7 @@ export function getModelCatalogChangeSummary(before: unknown, after: unknown): s
     }
     if (oldModel.first_token_timeout_ms !== model.first_token_timeout_ms)
       changes.push(
-        `“${model.display_name}”首发等待改为 ${(model.first_token_timeout_ms ?? 4000) / 1000} 秒`
+        `“${model.display_name}”启动兜底阈值改为 ${(model.first_token_timeout_ms ?? 4000) / 1000} 秒`
       );
     if (oldModel.enabled !== model.enabled) {
       changes.push(`${model.enabled ? '上架' : '下架'}“${model.display_name}”`);
