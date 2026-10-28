@@ -1,0 +1,151 @@
+I6 start 2026-09-15T19:40:25+08:00
+
+===== shared-typecheck START 2026-09-15T19:40:25+08:00 =====
+
+> @miniapp/shared@0.0.1 typecheck /Users/qj/python_project/ST_miniAPP/packages/shared
+> tsc --noEmit
+
+===== shared-typecheck EXIT  2026-09-15T19:40:27+08:00 =====
+
+===== shared-test START 2026-09-15T19:40:27+08:00 =====
+
+> @miniapp/shared@0.0.1 test /Users/qj/python_project/ST_miniAPP/packages/shared
+> vitest run
+
+
+ RUN  v4.1.7 /Users/qj/python_project/ST_miniAPP/packages/shared
+
+
+ Test Files  8 passed (8)
+      Tests  56 passed (56)
+   Start at  19:40:28
+   Duration  478ms (transform 596ms, setup 0ms, import 929ms, tests 84ms, environment 1ms)
+
+===== shared-test EXIT  2026-09-15T19:40:28+08:00 =====
+
+===== backend-typecheck START 2026-09-15T19:40:28+08:00 =====
+
+> @miniapp/backend@0.0.1 typecheck /Users/qj/python_project/ST_miniAPP/packages/backend
+> tsc --noEmit
+
+===== backend-typecheck EXIT  2026-09-15T19:40:34+08:00 =====
+
+===== backend-test START 2026-09-15T19:40:34+08:00 =====
+
+> @miniapp/backend@0.0.1 test /Users/qj/python_project/ST_miniAPP/packages/backend
+> vitest run --exclude '**/*.integration.test.ts'
+
+
+ RUN  v4.1.7 /Users/qj/python_project/ST_miniAPP/packages/backend
+
+
+ Test Files  51 passed (51)
+      Tests  435 passed (435)
+   Start at  19:40:35
+   Duration  3.53s (transform 3.14s, setup 0ms, import 10.94s, tests 1.57s, environment 20ms)
+
+===== backend-test EXIT  2026-09-15T19:40:38+08:00 =====
+
+===== frontend-typecheck START 2026-09-15T19:40:38+08:00 =====
+
+> @miniapp/frontend@0.0.1 typecheck /Users/qj/python_project/ST_miniAPP/packages/frontend
+> tsc --noEmit
+
+===== frontend-typecheck EXIT  2026-09-15T19:40:42+08:00 =====
+
+===== frontend-test START 2026-09-15T19:40:42+08:00 =====
+
+> @miniapp/frontend@0.0.1 test /Users/qj/python_project/ST_miniAPP/packages/frontend
+> vitest run
+
+
+ RUN  v4.1.7 /Users/qj/python_project/ST_miniAPP/packages/frontend
+
+
+ Test Files  25 passed (25)
+      Tests  106 passed (106)
+   Start at  19:40:42
+   Duration  3.11s (transform 2.13s, setup 0ms, import 11.33s, tests 482ms, environment 4ms)
+
+===== frontend-test EXIT  2026-09-15T19:40:46+08:00 =====
+
+===== frontend-lint START 2026-09-15T19:40:46+08:00 =====
+
+> @miniapp/frontend@0.0.1 lint /Users/qj/python_project/ST_miniAPP/packages/frontend
+> next lint --dir src
+
+✔ No ESLint warnings or errors
+===== frontend-lint EXIT  2026-09-15T19:40:49+08:00 =====
+
+===== frontend-build START 2026-09-15T19:40:49+08:00 =====
+
+> @miniapp/frontend@0.0.1 build /Users/qj/python_project/ST_miniAPP/packages/frontend
+> next build
+
+  ▲ Next.js 14.2.35
+  - Environments: .env.local
+  - Experiments (use with caution):
+    · instrumentationHook
+    · outputFileTracingRoot
+
+   Creating an optimized production build ...
+ ✓ Compiled successfully
+   Linting and checking validity of types ...
+   Collecting page data ...
+   Generating static pages (0/14) ...
+   Generating static pages (3/14) 
+   Generating static pages (6/14) 
+   Generating static pages (10/14) 
+ ✓ Generating static pages (14/14)
+   Finalizing page optimization ...
+   Collecting build traces ...
+
+Route (app)                                Size     First Load JS
+┌ ○ /                                      10.6 kB         232 kB
+├ ○ /_not-found                            884 B           191 kB
+├ ƒ /api/lobby-characters                  0 B                0 B
+├ ƒ /chat/[characterId]                    60.7 kB         317 kB
+├ ƒ /chat/[characterId]/voice/[messageId]  6.55 kB         243 kB
+├ ○ /chats                                 5.25 kB         233 kB
+├ ○ /create                                868 B           193 kB
+├ ○ /create/wish                           9.76 kB         237 kB
+├ ○ /profile                               13.6 kB         260 kB
+├ ○ /profile/invite                        4.8 kB          243 kB
+├ ○ /profile/messages                      5.46 kB         236 kB
+├ ○ /profile/orders                        3.94 kB         256 kB
+├ ○ /profile/recharge                      9 kB            263 kB
+├ ƒ /profile/recharge/[orderId]            3.4 kB          245 kB
+├ ○ /profile/spending                      3.17 kB         237 kB
+└ ○ /profile/support                       5.54 kB         236 kB
++ First Load JS shared by all              190 kB
+  ├ chunks/7213-3471450106f984e8.js        128 kB
+  ├ chunks/a7067448-f9c8c99ec09e2947.js    53.6 kB
+  └ other shared chunks (total)            7.75 kB
+
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+
+===== frontend-build EXIT  2026-09-15T19:41:18+08:00 =====
+
+===== repo-typecheck START 2026-09-15T19:41:18+08:00 =====
+Scope: 5 of 6 workspace projects
+packages/shared typecheck$ tsc --noEmit
+packages/shared typecheck: Done
+packages/admin typecheck$ tsc --noEmit
+packages/backend typecheck$ tsc --noEmit
+packages/cs-platform typecheck$ tsc --noEmit
+packages/frontend typecheck$ tsc --noEmit
+packages/cs-platform typecheck: Done
+packages/frontend typecheck: Done
+packages/admin typecheck: Done
+packages/backend typecheck: Done
+===== repo-typecheck EXIT  2026-09-15T19:41:29+08:00 =====
+
+===== lint-imports START 2026-09-15T19:41:29+08:00 =====
+
+> @ lint:imports /Users/qj/python_project/ST_miniAPP
+> eslint --no-eslintrc -c .eslintrc.json 'packages/*/src/**/*.{ts,tsx}' --rule '{}' --no-inline-config
+
+===== lint-imports EXIT  2026-09-15T19:41:33+08:00 =====
+I6_FAILS=0

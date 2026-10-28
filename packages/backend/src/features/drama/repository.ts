@@ -149,7 +149,7 @@ export class DramaRepository {
   /** 全目录用于前端检索；TEST 已核验顶层/单剧数量均低于 PostgREST 行上限。 */
   async listDramas(): Promise<DramaRow[]> {
     const { data, error } = await this.query(LIST_COLUMNS, ['upload', 'cover_upload']);
-    if (error) throw new Error('drama list read failed');
+    if (error) throw new Error('drama list read failed', { cause: error });
     return ((data as unknown as RawDrama[] | null) ?? []).map(toDramaRow);
   }
 
@@ -158,7 +158,7 @@ export class DramaRepository {
     const { data, error } = await this.query(DETAIL_COLUMNS, ['upload', 'cover_upload'])
       .eq('id', id)
       .maybeSingle();
-    if (error) throw new Error('drama detail read failed');
+    if (error) throw new Error('drama detail read failed', { cause: error });
     return data ? toDramaRow(data as unknown as RawDrama) : null;
   }
 
@@ -169,7 +169,7 @@ export class DramaRepository {
    */
   async getDramaForPlayback(id: string): Promise<DramaRow | null> {
     const { data, error } = await this.query(PLAY_COLUMNS).eq('id', id).maybeSingle();
-    if (error) throw new Error('drama playback read failed');
+    if (error) throw new Error('drama playback read failed', { cause: error });
     return data ? toDramaRow(data as unknown as RawDrama) : null;
   }
 }

@@ -347,13 +347,14 @@ export default function DramasPage() {
               </div>
               {visibleDramas.length ? (
                 <div className="grid grid-cols-2 gap-3">
-                  {visibleDramas.map((drama) => (
+                  {visibleDramas.map((drama, index) => (
                     <DramaCard
                       key={drama.id}
                       drama={drama}
                       queue={visibleDramas}
                       progress={history[drama.id]}
                       onOpen={rememberScroll}
+                      priority={index < 2}
                     />
                   ))}
                 </div>
@@ -462,6 +463,7 @@ function DramaLink({
   return (
     <Link
       href={`/dramas/${drama.id}`}
+      prefetch={false}
       className={className}
       aria-label={label ?? `观看 ${drama.title}`}
       onClick={(event) => {
@@ -496,7 +498,15 @@ function DramaLink({
   );
 }
 
-function Poster({ drama, className }: { drama: DramaSummary; className?: string }) {
+function Poster({
+  drama,
+  className,
+  priority = false,
+}: {
+  drama: DramaSummary;
+  className?: string;
+  priority?: boolean;
+}) {
   const [failed, setFailed] = useState(false);
   return (
     <div className={cn('relative overflow-hidden bg-[#2a272a]', className)}>
@@ -508,7 +518,9 @@ function Poster({ drama, className }: { drama: DramaSummary; className?: string 
         <img
           src={drama.cover_url}
           alt=""
-          loading="lazy"
+          loading={priority ? 'eager' : 'lazy'}
+          decoding="async"
+          fetchPriority={priority ? 'high' : 'low'}
           className="absolute inset-0 h-full w-full object-cover"
           onError={() => setFailed(true)}
         />
@@ -522,21 +534,23 @@ function DramaCard({
   queue,
   progress,
   onOpen,
+  priority,
 }: {
   drama: DramaSummary;
   queue: DramaSummary[];
   progress?: DramaProgress;
   onOpen: () => void;
+  priority: boolean;
 }) {
   return (
     <DramaLink
       drama={drama}
       queue={queue}
       onOpen={onOpen}
-      className="min-w-0 overflow-hidden rounded-xl bg-[#1f1d20] pb-3 active:opacity-70"
+      className="min-w-0 overflow-hidden rounded-xl bg-[#1f1d20] pb-3 [content-visibility:auto] [contain-intrinsic-size:0_320px] active:opacity-70"
     >
       <div className="relative">
-        <Poster drama={drama} className="aspect-[3/4] w-full" />
+        <Poster drama={drama} priority={priority} className="aspect-[3/4] w-full" />
         <div className="absolute inset-x-0 bottom-0 rounded-b-lg bg-gradient-to-t from-black/75 to-transparent px-2 pb-2 pt-6 text-[10px] text-[#eee7e2]/90">
           {progress
             ? progress.completed

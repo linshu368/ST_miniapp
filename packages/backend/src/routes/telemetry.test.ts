@@ -11,7 +11,7 @@ const persistence = vi.hoisted(() => ({ rpc: vi.fn() }));
 vi.mock('../lib/logger.js', () => ({
   requestLogger: () => ({
     biz: { info: timingLogs.info, warn: timingLogs.warn },
-    sys: { error: timingLogs.error },
+    sys: { error: timingLogs.error, warn: timingLogs.warn },
   }),
 }));
 
@@ -195,7 +195,7 @@ describe('POST /api/telemetry/drama-timing', () => {
         url: '/api/telemetry/drama-timing',
         payload: report,
       });
-      expect(response.statusCode).toBe(200);
+      expect(response.statusCode).toBe(202);
       expect(response.json()).toEqual({ success: true, data: { accepted: true } });
       expect(timingLogs.info).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -214,14 +214,14 @@ describe('POST /api/telemetry/drama-timing', () => {
         url: '/api/telemetry/drama-timing',
         payload: { ...report, phase: 'slow', outcome: 'waiting' },
       });
-      expect(slow.statusCode).toBe(200);
+      expect(slow.statusCode).toBe(202);
       expect(timingLogs.warn).toHaveBeenCalledTimes(1);
     } finally {
       await app.close();
     }
   });
 
-  it('acknowledges opt-in analytics only after storage and preserves the legacy logging mode', async () => {
+  it('acknowledges opt-in analytics before bounded background storage', async () => {
     vi.stubEnv('DRAMA_TIMING_PERSIST_ENABLED', 'true');
     const app = await buildApp();
     try {
@@ -230,15 +230,17 @@ describe('POST /api/telemetry/drama-timing', () => {
         url: '/api/telemetry/drama-timing',
         payload: report,
       });
-      expect(response.statusCode).toBe(200);
-      expect(response.json()).toEqual({ success: true, data: { accepted: true, persisted: true } });
-      expect(persistence.rpc).toHaveBeenCalledWith(
-        'record_drama_playback_observation',
-        expect.objectContaining({
-          p_environment: 'test',
-          p_report: report,
-          p_source: 'live',
-        })
+      expect(response.statusCode).toBe(202);
+      expect(response.json()).toEqual({ success: true, data: { accepted: true } });
+      await vi.waitFor(() =>
+        expect(persistence.rpc).toHaveBeenCalledWith(
+          'record_drama_playback_observation',
+          expect.objectContaining({
+            p_environment: 'test',
+            p_report: report,
+            p_source: 'live',
+          })
+        )
       );
     } finally {
       await app.close();
@@ -257,10 +259,12 @@ describe('POST /api/telemetry/drama-timing', () => {
         url: '/api/telemetry/drama-timing',
         payload: report,
       });
-      expect(response.statusCode).toBe(503);
-      expect(timingLogs.error).toHaveBeenCalledWith(
-        expect.objectContaining({ event: 'drama.timing_persist_failed' }),
-        expect.any(String)
+      expect(response.statusCode).toBe(202);
+      await vi.waitFor(() =>
+        expect(timingLogs.error).toHaveBeenCalledWith(
+          expect.objectContaining({ event: 'drama.timing_persist_failed' }),
+          expect.any(String)
+        )
       );
     } finally {
       await app.close();
@@ -283,6 +287,40 @@ describe('POST /api/telemetry/drama-timing', () => {
     ).rejects.toBeInstanceOf(DramaTimingBusyError);
     for (const resolve of pending) resolve({ data: 'stored', error: null });
     await expect(Promise.all([a, b])).resolves.toEqual(['stored', 'stored']);
+  });
+
+  it('acknowledges and records a drop when the bounded persistence queue is full', async () => {
+    vi.stubEnv('DRAMA_TIMING_PERSIST_ENABLED', 'true');
+    const pending: Array<(result: { data: string; error: null }) => void> = [];
+    persistence.rpc.mockReturnValue({
+      abortSignal: () => new Promise((resolve) => pending.push(resolve)),
+    });
+    const app = await buildApp();
+    try {
+      const responses = await Promise.all(
+        Array.from({ length: 35 }, () =>
+          app.inject({ method: 'POST', url: '/api/telemetry/drama-timing', payload: report })
+        )
+      );
+      expect(responses.every((response) => response.statusCode === 202)).toBe(true);
+      expect(timingLogs.warn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: 'drama.timing_dropped',
+          reason: 'persistence_queue_full',
+        }),
+        expect.any(String)
+      );
+    } finally {
+      const closing = app.close();
+      await vi.waitFor(() =>
+        expect(timingLogs.warn).toHaveBeenCalledWith(
+          expect.objectContaining({ event: 'drama.timing_dropped', reason: 'shutdown' }),
+          expect.any(String)
+        )
+      );
+      for (const resolve of pending) resolve({ data: 'stored', error: null });
+      await closing;
+    }
   });
 
   it('accepts media diagnostics through the existing log mapper and rejects unknown nested fields', async () => {
@@ -308,7 +346,7 @@ describe('POST /api/telemetry/drama-timing', () => {
         url: '/api/telemetry/drama-timing',
         payload: { ...report, media },
       });
-      expect(accepted.statusCode).toBe(200);
+      expect(accepted.statusCode).toBe(202);
       expect(timingLogs.info).toHaveBeenCalledWith(
         expect.objectContaining({ media }),
         'drama frontend timing'
@@ -367,7 +405,7 @@ describe('POST /api/telemetry/drama-timing', () => {
               payload: report,
             })
           ).statusCode
-        ).toBe(200);
+        ).toBe(202);
       }
       const limited = await app.inject({
         method: 'POST',
@@ -380,13 +418,13 @@ describe('POST /api/telemetry/drama-timing', () => {
       expect(
         (await app.inject({ method: 'POST', url: '/api/telemetry/drama-timing', payload: report }))
           .statusCode
-      ).toBe(200);
+      ).toBe(202);
     } finally {
       await app.close();
     }
   });
 
-  it('does not acknowledge acceptance when the log sink fails', async () => {
+  it('keeps telemetry non-blocking when the primary log sink fails', async () => {
     timingLogs.info.mockImplementationOnce(() => {
       throw new Error('log sink failed');
     });
@@ -397,7 +435,7 @@ describe('POST /api/telemetry/drama-timing', () => {
         url: '/api/telemetry/drama-timing',
         payload: report,
       });
-      expect(response.statusCode).toBe(503);
+      expect(response.statusCode).toBe(202);
       expect(timingLogs.error).toHaveBeenCalledWith(
         expect.objectContaining({
           event: 'drama.timing_log_failed',

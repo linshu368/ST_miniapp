@@ -1,0 +1,41 @@
+{
+  "id": "profile-experience",
+  "name": "profile-experience",
+  "title": "我的页面层级与签到充值体验重构",
+  "description": "移动端我的页信息层级、突出签到充值、机器人客服、社群奖励完成后隐藏、弱化消费明细。",
+  "status": "completed",
+  "dev_type": "frontend",
+  "scope": "frontend",
+  "package": "frontend",
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-23",
+  "completedAt": "2026-10-28",
+  "branch": "release/profile-vip-experience",
+  "base_branch": "main",
+  "worktree_path": "/Users/qianpeijia/Documents/ChatGPT/角色扮演/ST_miniapp-profile-release",
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "用户2026-10-23授权上线，并明确只发本次改动、不动他人的dev。发布从main ac48ab6a隔离迁移本任务差异；不合并dev，不修改dev或其他开发分支。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "legacy_exempt",
+      "reason": "??? 2026-10-28 ???????? 10 ? 26 ????????? 10-27-sentry-performance-optimization????????? meta.archived_module_impact???????? module-updates.historical.json?????????????????????????????????????????????"
+    },
+    "archived_module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": ["frontend.business.wallet-payment", "frontend.business.engagement-support"]
+    },
+    "archive_confirmation": {
+      "date": "2026-10-28",
+      "source": "??????? 10-27-sentry-performance-optimization ?? 10 ? 26 ??????"
+    }
+  }
+}

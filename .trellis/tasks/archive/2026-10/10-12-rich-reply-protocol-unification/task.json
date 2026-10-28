@@ -1,0 +1,32 @@
+{
+  "id": "rich-reply-protocol-unification",
+  "name": "rich-reply-protocol-unification",
+  "title": "Rich reply protocol and authoring unification",
+  "description": "Use the attached post-processing rules as the single source of truth, retire the INTERACTION_MODE placeholder, and plan a maintainable structured rich-reply protocol with atomic template/CSS validation and shared end-to-end fixtures.",
+  "status": "completed",
+  "dev_type": null,
+  "scope": "admin,backend,shared,reply-renderer,frontend,database,docs",
+  "package": "backend",
+  "priority": "P1",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-12",
+  "completedAt": "2026-10-28",
+  "branch": null,
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "no_module_change",
+      "reason": "This evolves the existing engine platform-instructions and text-postprocess contracts; update their existing specs without registering a new module."
+    }
+  }
+}

@@ -1,0 +1,9 @@
+{"file":".trellis/spec/frontend/app/index.md","reason":"核对前端 API hooks、类型与验证命令"}
+{"file":".trellis/spec/backend/app/index.md","reason":"核对 Backend 分层、日志、路由注释和验证"}
+{"file":".trellis/spec/shared/contracts/testing-and-change-management.md","reason":"核对契约消费者和兼容性"}
+{"file":".trellis/spec/database/supabase/migrations-and-rollbacks.md","reason":"核对迁移证据、锁、容量与回滚"}
+{"file":".trellis/spec/database/supabase/security-rls-and-grants.md","reason":"核对 RLS、grant 和 service role 边界"}
+{"file":".trellis/tasks/10-28-sentry-cross-layer-performance-optimization/prd.md","reason":"逐项核对验收标准"}
+{"file":".trellis/tasks/10-28-sentry-cross-layer-performance-optimization/design.md","reason":"核对可靠性、最小充分方案和发布恢复"}
+{"file":".trellis/tasks/10-28-sentry-cross-layer-performance-optimization/implement.md","reason":"核对分批验证命令和停止条件"}
+{"file":".trellis/tasks/10-28-sentry-cross-layer-performance-optimization/research/performance-baseline.md","reason":"核对生产基线与优化后对照"}

@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   list: vi.fn(),
 }));
 vi.mock('../features/image-plaza/config.js', () => ({
+  getImagePlazaFeedRuntimeConfig: mocks.runtime,
   getImagePlazaRuntimeConfig: mocks.runtime,
   publicImagePlazaFeedTags: () => [{ id: 'all', label: '全部' }],
 }));
