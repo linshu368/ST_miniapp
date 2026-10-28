@@ -96,6 +96,11 @@ export const scenarios = {
     description: '失败与重新生成入口',
     path: `/chat/${IDS.character}?session=${IDS.session}&from=discover`,
   },
+  'chat-partial-error': {
+    label: '文字与失败同批返回',
+    description: '已收到的文字保留，首字只确认一次',
+    path: `/chat/${IDS.character}?session=${IDS.session}&from=discover`,
+  },
   'no-balance': {
     label: '余额不足',
     description: '聊天、影像的余额不足提示',

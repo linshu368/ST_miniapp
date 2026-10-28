@@ -783,8 +783,12 @@ export function createPreviewServer(apiPort: number, appPort: number) {
             if (!res.writableEnded) res.end();
             return;
           }
-          if (scenario === 'chat-error') {
-            message.status = 'failed';
+          if (scenario === 'chat-error' || scenario === 'chat-partial-error') {
+            if (scenario === 'chat-partial-error') {
+              message.content = '旅人已经说出口的话会留在这里。';
+              write({ type: 'delta', text: message.content });
+            }
+            message.status = scenario === 'chat-partial-error' ? 'interrupted' : 'failed';
             message.error_code = 'upstream_error';
             write({ type: 'error', code: 'upstream_error', message: '本次回复暂未完成，请重试' });
           } else {

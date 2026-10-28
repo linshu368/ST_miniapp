@@ -19,6 +19,8 @@ const runtime = vi.hoisted(() => ({
   slots: [] as unknown[],
   index: 0,
   effects: [] as (() => void)[],
+  layoutEffects: [] as (() => void)[],
+  reportFirstToken: vi.fn().mockResolvedValue(undefined),
   restore: vi.fn(),
   stream: vi.fn(),
   cancel: vi.fn(),
@@ -46,6 +48,13 @@ vi.mock('react', async (importOriginal) => ({
   },
   useCallback: (callback: unknown) => callback,
   useMemo: (callback: () => unknown) => callback(),
+  useLayoutEffect: (callback: () => void, deps: unknown[]) => {
+    const index = runtime.index++;
+    const previous = runtime.slots[index] as unknown[] | undefined;
+    if (!previous || previous.some((value, item) => value !== deps[item]))
+      runtime.layoutEffects.push(callback);
+    runtime.slots[index] = deps;
+  },
   useEffect: (callback: () => void, deps: unknown[]) => {
     const index = runtime.index++;
     const previous = runtime.slots[index] as unknown[] | undefined;
@@ -62,7 +71,7 @@ vi.mock('@/lib/api/conversation-stream', async (importOriginal) => ({
 vi.mock('@/lib/api/conversations', () => ({
   conversationKeys: { detail: (id: string) => ['conversations', 'detail', id] },
   fetchConversationDetail: runtime.fetchDetail,
-  reportConversationFirstToken: vi.fn().mockResolvedValue(undefined),
+  reportConversationFirstToken: runtime.reportFirstToken,
   useCancelConversationTurnMutation: () => ({ mutateAsync: runtime.cancel }),
 }));
 vi.mock('@/lib/api/free-quota', () => ({
@@ -80,6 +89,7 @@ beforeEach(() => {
   runtime.slots = [];
   runtime.index = 0;
   runtime.effects = [];
+  runtime.layoutEffects = [];
   vi.clearAllMocks();
   runtime.client.invalidateQueries.mockResolvedValue(undefined);
 });
@@ -256,12 +266,13 @@ function RenderTurn(
     goBack: vi.fn(),
     onRestoreSendContent: runtime.restore,
   });
+  for (const effect of runtime.layoutEffects.splice(0)) effect();
   for (const effect of runtime.effects.splice(0)) effect();
   return result;
 }
 
 describe('useConversationTurn asynchronous ownership', () => {
-  it('the first displayed thinking character satisfies the same deadline as an answer character', async () => {
+  it('the first committed thinking character satisfies the same deadline as an answer character', async () => {
     let options!: Parameters<
       typeof import('@/lib/api/conversation-stream').streamConversationTurn
     >[0];
@@ -282,12 +293,17 @@ describe('useConversationTurn asynchronous ownership', () => {
     });
     options.onFirstDeltaReceived?.();
     options.onReasoning?.('思');
-    const active = RenderTurn();
-    expect(active.firstTokenObservation).not.toBeNull();
-    active.onFirstTokenDisplayed(active.firstTokenObservation!, performance.now());
+    RenderTurn();
+    expect(runtime.reportFirstToken).toHaveBeenCalledWith(
+      's1',
+      expect.objectContaining({
+        outcome: 'observed',
+        measurement_method: 'client_committed_v4',
+      })
+    );
     await vi.advanceTimersByTimeAsync(6_100);
     const after = RenderTurn();
-    expect(after.firstTokenObservation).toBeNull();
+    expect(runtime.reportFirstToken).toHaveBeenCalledOnce();
     expect(after.generating).toBe(true);
     expect(after.streamError).toBeNull();
     expect(runtime.cancel).not.toHaveBeenCalled();
@@ -333,12 +349,296 @@ describe('useConversationTurn asynchronous ownership', () => {
       });
       await vi.advanceTimersByTimeAsync(10_100);
       const waiting = RenderTurn('s1', [], thinkingEnabled);
-      expect(waiting.firstTokenObservation?.assistantMessageId).toBe('a1');
+      expect(runtime.reportFirstToken).toHaveBeenCalledWith(
+        's1',
+        expect.objectContaining({
+          assistant_message_id: 'a1',
+          outcome: 'timed_out',
+          first_token_visible_ms: null,
+        })
+      );
       expect(waiting.streamError).toBe('这次回应稍慢，再试一次吧');
       expect(runtime.cancel).not.toHaveBeenCalled();
       options.onFirstDeltaReceived?.();
       options.onDelta('迟到但可交付');
       expect(RenderTurn('s1', [], thinkingEnabled).messages.at(-1)?.content).toBe('迟到但可交付');
+      expect(RenderTurn('s1', [], thinkingEnabled).streamError).toBeNull();
+      expect(runtime.reportFirstToken).toHaveBeenCalledOnce();
+      finish();
+      await run;
+    }
+  );
+
+  it('keeps the deadline running after receiving text until React commits the message', async () => {
+    let options!: Parameters<
+      typeof import('@/lib/api/conversation-stream').streamConversationTurn
+    >[0];
+    let finish!: () => void;
+    runtime.stream.mockImplementation((value) => {
+      options = value;
+      return new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+    });
+    const run = RenderTurn().runTurn({ mode: 'send', content: 'hello' });
+    options.onStart({
+      type: 'start',
+      assistant_message_id: 'a1',
+      user_message_id: 'u1',
+      turn_index: 1,
+      revision: 0,
+    });
+    await vi.advanceTimersByTimeAsync(2000);
+    options.onFirstDeltaReceived?.();
+    options.onDelta('已经收到，但还未提交');
+    expect(runtime.reportFirstToken).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(8100);
+    expect(runtime.reportFirstToken).toHaveBeenCalledWith(
+      's1',
+      expect.objectContaining({
+        outcome: 'timed_out',
+        first_token_visible_ms: null,
+        first_token_received_ms: 2000,
+      })
+    );
+    expect(RenderTurn().messages.at(-1)?.content).toBe('已经收到，但还未提交');
+    expect(RenderTurn().streamError).toBeNull();
+    expect(runtime.reportFirstToken).toHaveBeenCalledOnce();
+    expect(runtime.cancel).not.toHaveBeenCalled();
+    finish();
+    await run;
+  });
+
+  it('does not erase the timeout hint on a late start, empty delta or an older revision', async () => {
+    let options!: Parameters<
+      typeof import('@/lib/api/conversation-stream').streamConversationTurn
+    >[0];
+    let finish!: () => void;
+    runtime.stream.mockImplementation((value) => {
+      options = value;
+      return new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+    });
+    const run = RenderTurn().runTurn({ mode: 'regenerate' });
+    await vi.advanceTimersByTimeAsync(10100);
+    expect(runtime.reportFirstToken).not.toHaveBeenCalled();
+    options.onStart({
+      type: 'start',
+      assistant_message_id: 'a1',
+      user_message_id: null,
+      turn_index: 1,
+      revision: 1,
+    });
+    options.onDelta('  ');
+    expect(RenderTurn().streamError).toBe('这次回应稍慢，再试一次吧');
+    const older = message({
+      id: 'a1',
+      session_id: 's1',
+      request_id: options.requestId,
+      turn_index: 1,
+      revision: 0,
+      content: '旧版本正文',
+    });
+    RenderTurn('s1', [older]);
+    expect(RenderTurn('s1', [older]).streamError).toBe('这次回应稍慢，再试一次吧');
+    const unrelated = { ...older, revision: 1, request_id: 'other-request' };
+    RenderTurn('s1', [unrelated]);
+    expect(RenderTurn('s1', [unrelated]).streamError).toBe('这次回应稍慢，再试一次吧');
+    const empty = { ...older, revision: 1, content: '', status: 'failed' as const };
+    RenderTurn('s1', [empty]);
+    expect(RenderTurn('s1', [empty]).streamError).toBe('这次回应稍慢，再试一次吧');
+    expect(runtime.reportFirstToken).toHaveBeenCalledOnce();
+    expect(runtime.reportFirstToken).toHaveBeenCalledWith(
+      's1',
+      expect.objectContaining({
+        revision: 1,
+        outcome: 'timed_out',
+        wait_finished_ms: 10000,
+      })
+    );
+    finish();
+    await run;
+  });
+
+  it('separates background recovery from foreground delivery without cancelling generation or reporting twice', async () => {
+    let options!: Parameters<
+      typeof import('@/lib/api/conversation-stream').streamConversationTurn
+    >[0];
+    let finish!: () => void;
+    runtime.stream.mockImplementation((value) => {
+      options = value;
+      return new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+    });
+    const run = RenderTurn().runTurn({ mode: 'send', content: 'hello' });
+    options.onStart({
+      type: 'start',
+      assistant_message_id: 'a1',
+      user_message_id: 'u1',
+      turn_index: 1,
+      revision: 0,
+    });
+    await vi.advanceTimersByTimeAsync(1000);
+    Object.assign(document, { visibilityState: 'hidden' });
+    document.dispatchEvent(new Event('visibilitychange'));
+    await vi.advanceTimersByTimeAsync(15000);
+    Object.assign(document, { visibilityState: 'visible' });
+    document.dispatchEvent(new Event('visibilitychange'));
+    options.onFirstDeltaReceived?.();
+    options.onDelta('回来继续看');
+    expect(RenderTurn().messages.at(-1)?.content).toBe('回来继续看');
+    expect(RenderTurn().streamError).toBeNull();
+    expect(runtime.reportFirstToken).toHaveBeenCalledOnce();
+    expect(runtime.reportFirstToken).toHaveBeenCalledWith(
+      's1',
+      expect.objectContaining({
+        outcome: 'not_observed',
+        reason: 'page_left',
+        backgrounded: true,
+        first_token_visible_ms: null,
+      })
+    );
+    expect(runtime.cancel).not.toHaveBeenCalled();
+    finish();
+    await run;
+  });
+
+  it.each(['streaming', 'complete'] as const)(
+    'clears a %s reply before a new session can commit its queued token',
+    async (status) => {
+      const streams: {
+        options: Parameters<
+          typeof import('@/lib/api/conversation-stream').streamConversationTurn
+        >[0];
+        resolve: () => void;
+      }[] = [];
+      runtime.stream.mockImplementation(
+        (options) => new Promise<void>((resolve) => streams.push({ options, resolve }))
+      );
+      const firstRun = RenderTurn().runTurn({ mode: 'send', content: 'first' });
+      const first = streams[0]!;
+      first.options.onStart({
+        type: 'start',
+        assistant_message_id: 'a1',
+        user_message_id: 'u1',
+        turn_index: 1,
+        revision: 0,
+      });
+      await vi.advanceTimersByTimeAsync(2000);
+      first.options.onFirstDeltaReceived?.();
+      first.options.onDelta('旧会话已收到但尚未提交的文字');
+      if (status === 'complete') {
+        first.options.onDone({
+          type: 'done',
+          assistant_message_id: 'a1',
+          status: 'complete',
+          finish_reason: 'stop',
+        });
+        first.resolve();
+        await firstRun;
+      }
+      // React layout effects run before passive effects. Session cleanup must precede
+      // the commit observer when both the queued token and session change render together.
+      RenderTurn('s2');
+      expect(runtime.reportFirstToken).toHaveBeenCalledExactlyOnceWith(
+        's1',
+        expect.objectContaining({
+          request_id: first.options.requestId,
+          outcome: 'not_observed',
+          reason: 'page_left',
+          first_token_visible_ms: null,
+        })
+      );
+      first.options.onDelta('离开后旧流又到了');
+      first.resolve();
+      await firstRun;
+      expect(RenderTurn('s2').messages).toEqual([]);
+      expect(runtime.cancel).not.toHaveBeenCalled();
+
+      const recovered = message({
+        id: 'a1',
+        session_id: 's1',
+        request_id: first.options.requestId,
+        turn_index: 1,
+        revision: 0,
+        content: '返回后看到完整旧回复',
+      });
+      RenderTurn('s1', [recovered]);
+      expect(RenderTurn('s1', [recovered]).messages).toEqual([recovered]);
+      expect(runtime.reportFirstToken).toHaveBeenCalledOnce();
+
+      const secondRun = RenderTurn('s2').runTurn({ mode: 'send', content: 'second' });
+      const second = streams[1]!;
+      second.options.onStart({
+        type: 'start',
+        assistant_message_id: 'a2',
+        user_message_id: 'u2',
+        turn_index: 1,
+        revision: 0,
+      });
+      second.options.onFirstDeltaReceived?.();
+      second.options.onDelta('新会话首字');
+      expect(RenderTurn('s2').messages.at(-1)?.content).toBe('新会话首字');
+      expect(runtime.reportFirstToken).toHaveBeenCalledTimes(2);
+      expect(runtime.reportFirstToken).toHaveBeenLastCalledWith(
+        's2',
+        expect.objectContaining({
+          request_id: second.options.requestId,
+          assistant_message_id: 'a2',
+          outcome: 'observed',
+        })
+      );
+      second.resolve();
+      await secondRun;
+    }
+  );
+
+  it.each([true, false])(
+    'uses the submitted thinking preference (%s) after the preference changes',
+    async (submittedThinking) => {
+      let options!: Parameters<
+        typeof import('@/lib/api/conversation-stream').streamConversationTurn
+      >[0];
+      let finish!: () => void;
+      runtime.stream.mockImplementation((value) => {
+        options = value;
+        return new Promise<void>((resolve) => {
+          finish = resolve;
+        });
+      });
+      const run = RenderTurn('s1', [], submittedThinking).runTurn({
+        mode: 'send',
+        content: 'hello',
+      });
+      options.onStart({
+        type: 'start',
+        assistant_message_id: 'a1',
+        user_message_id: 'u1',
+        turn_index: 1,
+        revision: 0,
+      });
+      // Recovery may carry reasoning even when a subsequent settings render has changed.
+      const recovered = message({
+        id: 'a1',
+        session_id: 's1',
+        request_id: options.requestId,
+        turn_index: 1,
+        revision: 0,
+        content: '',
+        reasoning: '思考',
+        status: 'streaming',
+      });
+      RenderTurn('s1', [recovered], !submittedThinking);
+      expect(runtime.reportFirstToken).toHaveBeenCalledTimes(submittedThinking ? 1 : 0);
+      options.onDelta('正文');
+      RenderTurn('s1', [recovered], !submittedThinking);
+      expect(runtime.reportFirstToken).toHaveBeenCalledOnce();
+      expect(runtime.reportFirstToken).toHaveBeenCalledWith(
+        's1',
+        expect.objectContaining({ outcome: 'observed' })
+      );
       finish();
       await run;
     }
@@ -738,7 +1038,204 @@ it('recovers a disconnected accepted reply from the same revision without anothe
   expect(view.messages.at(-1)?.content).toBe('恢复的正文');
   expect(view.thinkingByMessage['s1:a1:0']).toBe('恢复的思考');
   expect(view.streamError).toBeNull();
-  expect(view.firstTokenObservation?.assistantMessageId).toBe('a1');
+  expect(runtime.reportFirstToken).toHaveBeenCalledOnce();
+  expect(runtime.reportFirstToken).toHaveBeenCalledWith(
+    's1',
+    expect.objectContaining({
+      assistant_message_id: 'a1',
+      outcome: 'observed',
+      measurement_method: 'client_committed_v4',
+    })
+  );
   expect(runtime.stream).toHaveBeenCalledOnce();
   expect(runtime.cancel).not.toHaveBeenCalled();
+});
+
+describe('terminal SSE batches retain delivered text until persistence catches up', () => {
+  it.each([
+    ['body', 'error', 2000],
+    ['reasoning', 'error', 2000],
+    ['body', 'done', 2000],
+    ['reasoning', 'done', 2000],
+    ['body', 'error', 10000],
+    ['reasoning', 'error', 10000],
+    ['body', 'done', 10000],
+    ['reasoning', 'done', 10000],
+  ] as const)(
+    '%s + %s commits at %s ms, with no transient disappearance',
+    async (part, end, commitMs) => {
+      let options!: Parameters<
+        typeof import('@/lib/api/conversation-stream').streamConversationTurn
+      >[0];
+      let resolve!: () => void;
+      let reject!: (error: unknown) => void;
+      runtime.stream.mockImplementation((value) => {
+        options = value;
+        return new Promise<void>((yes, no) => {
+          resolve = yes;
+          reject = no;
+        });
+      });
+      const run = RenderTurn().runTurn({ mode: 'send', content: 'hello' });
+      options.onStart({
+        type: 'start',
+        assistant_message_id: 'a1',
+        user_message_id: 'u1',
+        turn_index: 1,
+        revision: 0,
+      });
+      await vi.advanceTimersByTimeAsync(2000);
+      options.onFirstDeltaReceived?.();
+      if (part === 'body') options.onDelta('已经交付的文字');
+      else options.onReasoning?.('已经交付的思考');
+      if (end === 'error')
+        reject(new ConversationStreamError('upstream failed', 200, 'upstream_error'));
+      else {
+        options.onDone({
+          type: 'done',
+          assistant_message_id: 'a1',
+          status: 'complete',
+          finish_reason: 'stop',
+        });
+        resolve();
+      }
+      await run;
+      expect(runtime.reportFirstToken).not.toHaveBeenCalled();
+      if (commitMs > 2000) await vi.advanceTimersByTimeAsync(commitMs - 2000);
+      const committed = RenderTurn();
+      expect(committed.messages.at(-1)).toMatchObject({
+        id: 'a1',
+        content: part === 'body' ? '已经交付的文字' : '',
+        status: end === 'done' ? 'complete' : 'interrupted',
+      });
+      expect(committed.generating).toBe(false);
+      expect(committed.streaming).toBeNull();
+      if (part === 'reasoning')
+        expect(committed.thinkingByMessage['s1:a1:0']).toBe('已经交付的思考');
+      expect(runtime.reportFirstToken).toHaveBeenCalledExactlyOnceWith(
+        's1',
+        expect.objectContaining({
+          outcome: commitMs < 10000 ? 'observed' : 'timed_out',
+          first_token_visible_ms: commitMs < 10000 ? commitMs : null,
+          first_token_received_ms: 2000,
+        })
+      );
+      expect(RenderTurn().messages.at(-1)?.id).toBe('a1');
+      const durable = message({
+        id: 'a1',
+        session_id: 's1',
+        request_id: options.requestId,
+        turn_index: 1,
+        revision: 0,
+        content: part === 'body' ? '已经交付的文字（持久化）' : '',
+        status: 'complete',
+      });
+      RenderTurn('s1', [durable]);
+      expect(RenderTurn('s1', [durable]).messages).toEqual([durable]);
+      expect(runtime.reportFirstToken).toHaveBeenCalledOnce();
+      expect(runtime.cancel).not.toHaveBeenCalled();
+    }
+  );
+
+  it('immediately records an empty explicit error without waiting for the deadline', async () => {
+    runtime.stream.mockImplementation(async (options) => {
+      options.onStart({
+        type: 'start',
+        assistant_message_id: 'a1',
+        user_message_id: 'u1',
+        turn_index: 1,
+        revision: 0,
+      });
+      throw new ConversationStreamError('upstream failed', 200, 'upstream_error');
+    });
+    await RenderTurn().runTurn({ mode: 'send', content: 'hello' });
+    expect(runtime.reportFirstToken).toHaveBeenCalledExactlyOnceWith(
+      's1',
+      expect.objectContaining({
+        outcome: 'not_observed',
+        reason: 'upstream_error',
+        first_token_received_ms: null,
+      })
+    );
+    expect(RenderTurn().messages).toEqual([]);
+    await vi.advanceTimersByTimeAsync(11000);
+    expect(runtime.reportFirstToken).toHaveBeenCalledOnce();
+  });
+
+  it('keeps an unacknowledged terminal reply when the next turn starts from an old server snapshot', async () => {
+    const streams: {
+      options: Parameters<typeof import('@/lib/api/conversation-stream').streamConversationTurn>[0];
+      resolve: () => void;
+    }[] = [];
+    runtime.stream.mockImplementation(
+      (options) => new Promise<void>((resolve) => streams.push({ options, resolve }))
+    );
+    const firstRun = RenderTurn().runTurn({ mode: 'send', content: 'first' });
+    const first = streams[0]!;
+    first.options.onStart({
+      type: 'start',
+      assistant_message_id: 'a1',
+      user_message_id: 'u1',
+      turn_index: 1,
+      revision: 0,
+    });
+    first.options.onFirstDeltaReceived?.();
+    first.options.onDelta('first response');
+    first.options.onDone({
+      type: 'done',
+      assistant_message_id: 'a1',
+      status: 'complete',
+      finish_reason: 'stop',
+    });
+    first.resolve();
+    await firstRun;
+    const secondRun = RenderTurn().runTurn({ mode: 'send', content: 'second' });
+    const waiting = RenderTurn();
+    expect(
+      waiting.messages.some((item) => item.id === 'a1' && item.content === 'first response')
+    ).toBe(true);
+    expect(waiting.streaming?.turnIndex).toBe(2);
+    streams[1]!.options.onStart({
+      type: 'start',
+      assistant_message_id: 'a2',
+      user_message_id: 'u2',
+      turn_index: 2,
+      revision: 0,
+    });
+    streams[1]!.options.onFirstDeltaReceived?.();
+    streams[1]!.options.onDelta('second response');
+    streams[1]!.options.onDone({
+      type: 'done',
+      assistant_message_id: 'a2',
+      status: 'complete',
+      finish_reason: 'stop',
+    });
+    streams[1]!.resolve();
+    await secondRun;
+    expect(
+      RenderTurn()
+        .messages.filter((item) => item.role === 'assistant')
+        .map((item) => item.content)
+    ).toEqual(['first response', 'second response']);
+    const durable = [
+      message({
+        id: 'a1',
+        session_id: 's1',
+        request_id: first.options.requestId,
+        turn_index: 1,
+        revision: 0,
+        content: 'first response',
+      }),
+      message({
+        id: 'a2',
+        session_id: 's1',
+        request_id: streams[1]!.options.requestId,
+        turn_index: 2,
+        revision: 0,
+        content: 'second response',
+      }),
+    ];
+    RenderTurn('s1', durable);
+    expect(RenderTurn('s1', durable).messages).toEqual(durable);
+  });
 });

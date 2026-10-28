@@ -80,6 +80,7 @@ export interface RunConversationTurnInput {
   /** Caller correlation, persisted for safe pre-start cancellation matching. */
   requestId?: string;
   thinkingEnabled?: boolean;
+  firstTokenMeasurement?: 'client_committed_v4';
 }
 
 export const CONVERSATION_PREPARATION_TIMEOUT_MS = DEFAULT_FIRST_TOKEN_DEADLINE_MS;
@@ -227,6 +228,8 @@ export async function runConversationTurn(
     catalogVersion: policy.catalogVersion,
     mode: mode.kind,
     recoverableDelivery: true,
+    // Declare the cohort with the existing insert so missing reports remain measurable.
+    measurementMethod: input.firstTokenMeasurement,
   };
   const enrichedObserverIds = new Set<string>();
   let fallbackPrepared = false;

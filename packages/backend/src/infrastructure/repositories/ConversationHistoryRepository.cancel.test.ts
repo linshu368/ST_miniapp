@@ -432,5 +432,6 @@ describe('billing recovery candidate selection', () => {
       )
     ).flat();
     expect(rows.map((item) => item.id)).toEqual(['openrouter', 'venice']);
+    expect(state.select).toHaveBeenCalledWith(expect.stringContaining('llm_billing_settled_at'));
   });
 });
