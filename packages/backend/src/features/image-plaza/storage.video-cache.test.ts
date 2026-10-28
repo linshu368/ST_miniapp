@@ -37,4 +37,28 @@ describe('video signed URL cache', () => {
     await signSharedVideoPath(path);
     expect(state.createSignedUrl).toHaveBeenCalledTimes(2);
   });
+
+  it('coalesces concurrent signing for the same video path', async () => {
+    const path = `media-plaza-video/attempts/33333333-3333-4333-8333-${crypto.randomUUID().slice(-12)}/video.mp4`;
+    let release: (() => void) | undefined;
+    state.createSignedUrl.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = () =>
+            resolve({
+              data: { signedUrl: `https://storage.example.test/${path}` },
+              error: null,
+            });
+        })
+    );
+
+    const requests = Array.from({ length: 8 }, () => signSharedVideoPath(path));
+    await vi.waitFor(() => expect(state.createSignedUrl).toHaveBeenCalledTimes(1));
+    release?.();
+
+    await expect(Promise.all(requests)).resolves.toEqual(
+      Array.from({ length: 8 }, () => `https://storage.example.test/${path}`)
+    );
+    expect(state.createSignedUrl).toHaveBeenCalledTimes(1);
+  });
 });

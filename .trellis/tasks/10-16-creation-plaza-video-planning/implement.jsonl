@@ -14,9 +14,9 @@
 {"file": ".trellis/spec/frontend/app/pages-components-and-ui.md", "reason": "沿用现有组件与视觉"}
 {"file": ".trellis/spec/admin/app/ui-state-and-validation.md", "reason": "Admin 配置编辑与校验"}
 {"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "跨 DB/后端/前端/Admin 改动顺序"}
-{"file": ".trellis/tasks/10-21-sentry-ux-monitoring/design.md", "reason": "Sentry 事件/指标/action-tracker 规范"}
-{"file": ".trellis/tasks/10-21-sentry-ux-monitoring/dashboard-and-runbook.md", "reason": "R8.C：现有 api/page/action 指标与 p95 看板拆分"}
+{"file": ".trellis/tasks/archive/2026-10/10-21-sentry-ux-monitoring/design.md", "reason": "Sentry 事件/指标/action-tracker 规范"}
+{"file": ".trellis/tasks/archive/2026-10/10-21-sentry-ux-monitoring/dashboard-and-runbook.md", "reason": "R8.C：现有 api/page/action 指标与 p95 看板拆分"}
 {"file": ".trellis/tasks/archive/2026-10/10-19-image-plaza-performance-plan/prd.md", "reason": "图片广场性能回归：点赞反馈与路径退化≤10% 先例"}
 {"file": "packages/frontend/src/lib/api/image-plaza.ts", "reason": "现状 feed stale/prefetch/轮询 2s，实施时接线与退避"}
 {"file": "packages/backend/src/features/image-plaza/repository.ts", "reason": "现状 listSortedWorks/hydrateWorks/720 缩略图，列表 DTO 与 poster 签名扩展点"}
-{"file": ".trellis/tasks/10-20-image-plaza-seed-production/design.md", "reason": "seed 导入流程与门禁先例"}
+{"file": ".trellis/tasks/archive/2026-10/10-20-image-plaza-seed-production/design.md", "reason": "seed 导入流程与门禁先例"}

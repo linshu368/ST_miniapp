@@ -11,30 +11,32 @@
 
 ## 1. 现状与复用调研
 
-| 对象            | 位置（SRC/MIG）                                                                                                                                                                       | 结论                                                                                                                                          |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| 广场契约        | `packages/shared/src/api/image-plaza.ts`                                                                                                                                              | 扩展：feed query 加 `media`、`tags`；条目用 media 判别联合；视频 DTO 放在新文件 `video-plaza.ts`                                              |
-| feed/详情/点赞  | `features/image-plaza/repository.ts` 中的 `listWorks/listSortedWorks/hydrateWorks`。按 like_count、initial_feed_order、published_at、id 排序；标签匹配为 `snapshot->>prompt_zh ILIKE` | 扩展：works 加 `media_type`，图片和视频共用一张投影表；视频专属字段通过 `video_artifact_id` 关联                                              |
-| 游标            | `feed-cursor.ts` + `ImagePlazaFeedCursorSchema`（filter 为 64 位十六进制哈希）                                                                                                        | 复用：把 media 和 tags[] 并入 filter 哈希，游标结构不变                                                                                       |
-| worker          | `features/image-plaza/job.ts`：setInterval 驱动，`claim_image_plaza_jobs` 租约，`markStaleDispatchedUnknown`                                                                          | 复用模式：新建 `video-job.ts`，拆成 submit/poll 两个阶段，各自独立 claim                                                                      |
-| Venice HTTP     | `platform/venice-http.ts` 的 `veniceFetch`（ProxyAgent）；`upstream.ts` 的错误类和响应头采集                                                                                          | 复用：新建 `video-upstream.ts`                                                                                                                |
-| 存储            | `storage.ts`：私有 bucket、签名 URL LRU（2000 条）、签名超时                                                                                                                          | 扩展：新增 bucket 参数，新增 mp4 魔数校验                                                                                                     |
-| 计费原语        | `billing.apply_wallet_debit` / `refund_wallet_debit`（MIG 20260921）                                                                                                                  | 复用：视频的预扣和退款 RPC 在这两个原语外面包一层                                                                                             |
-| 图片结算        | `billing.settle_image_plaza_generation`：成功后扣费，余额不足时置 failed                                                                                                              | 不改（决策 D2：图片维持现状）                                                                                                                 |
-| 首次分享与返利  | `billing.share_image_plaza_artifact` 写 `app_core.miniapp_user_settings.image_plaza_first_share_completed_at`                                                                         | 扩展：视频分享 RPC 复用同一字段和同一锁顺序                                                                                                   |
-| generation 边界 | `features/generation/` 下已有 `image-plaza-prompt-translate.ts`、`image-plaza-tagging.ts`                                                                                             | 不新增。视频关闭自动优化（D9），视频链路不调用 LLM                                                                                            |
-| 配置            | `features/image-plaza/config.ts`（6 个 key）；admin 的 `configSchemas.ts`、`ImagePlazaConfigEditors.tsx`（模型目录、价格公式、标签编辑）                                              | 扩展：新 key `image_plaza_video_model_catalog`；标签加 `media_types`；DB 侧 `admin.validate_*` 同步修改                                       |
-| 前端            | `create/page.tsx`、`studio/[conversationId]/page.tsx`、`work/[workId]/page.tsx`、`components/image-plaza/*`、`lib/api/image-plaza.ts`                                                 | 扩展：按 media 分支 + 4 小组件（§5）；**性能**：接线已有 `prefetchImagePlazaFeed`、创作预取 config、quote debounce/复用、轮询退避（§5.2–5.3） |
-| 列表请求链      | feed：runtime_config → listSortedWorks(1～2) → hydrate(artifacts∥likes) → 并发签名≤20；pageSize20、stale60s、缩略图720/72、签名 LRU                                                   | 视频混排保留该链；列表只签 poster、DTO 裁剪、tag-counts 解耦；后端 feed p95≤500ms / 前端≤800ms                                                |
-| 创作请求链      | studio：config∥conversation → quote → POST attempts(202) → 会话固定2s 全量轮询；`image_generate` 受理反馈与 `image.display.duration` 分离                                             | 视频同模式；轻量 attempt 轮询+退避；worker/Venice 耗时不进 standard API p95                                                                   |
-| Sentry          | 前端 `lib/perf/action-tracker.ts`、`page-tracker.ts`；后端 `lib/perf-metrics.ts`；规范见 `10-21-sentry-ux-monitoring`                                                                 | 扩展：`video_generate` + 视频事件；看板按列表/创作分图（§8.1）                                                                                |
-| seed 导入       | `seed-import.ts`、`scripts/import-image-plaza-seed.ts`（dry-run、manifest、`--target`、`--limit`）、`translate-image-plaza-seed-prompts.ts`                                           | 复用模式：新建视频 parser 和脚本（6 列格式与图片不同，不能直接复用）                                                                          |
-| 运行镜像        | `ops/docker/Dockerfile.backend`：运行层基于 `node:20-bookworm-slim`（第 116 行），第 121 行用 `apt-get install --no-install-recommends` 安装 tini/wget/openssl                        | 在同一条 apt 命令里加 `ffmpeg`（Debian 包自带 ffprobe），并加 `RUN ffmpeg -version && ffprobe -version` 构建期断言（D10）                     |
+| 对象            | 位置（SRC/MIG）                                                                                                                                                                       | 结论                                                                                                                                           |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| 广场契约        | `packages/shared/src/api/image-plaza.ts`                                                                                                                                              | 扩展：feed query 加 `media`、`tags`；条目用 media 判别联合；视频 DTO 放在新文件 `video-plaza.ts`                                               |
+| feed/详情/点赞  | `features/image-plaza/repository.ts` 中的 `listWorks/listSortedWorks/hydrateWorks`。按 like_count、initial_feed_order、published_at、id 排序；标签匹配为 `snapshot->>prompt_zh ILIKE` | 扩展：works 加 `media_type`，图片和视频共用一张投影表；视频专属字段通过 `video_artifact_id` 关联                                               |
+| 游标            | `feed-cursor.ts` + `ImagePlazaFeedCursorSchema`（filter 为 64 位十六进制哈希）                                                                                                        | 复用：把 media 和 tags[] 并入 filter 哈希，游标结构不变                                                                                        |
+| worker          | `features/image-plaza/job.ts`：setInterval 驱动，`claim_image_plaza_jobs` 租约，`markStaleDispatchedUnknown`                                                                          | 复用模式：新建 `video-job.ts`，拆成 submit/poll 两个阶段，各自独立 claim                                                                       |
+| Venice HTTP     | `platform/venice-http.ts` 的 `veniceFetch`（ProxyAgent）；`upstream.ts` 的错误类和响应头采集                                                                                          | 复用：新建 `video-upstream.ts`                                                                                                                 |
+| 存储            | `storage.ts`：私有 bucket、签名 URL LRU（2000 条）、签名超时；当前视频签名已复用稳定 URL，但 `signVideoPath` 尚未像图片签名一样接入 inflight map                                      | 扩展：新增 bucket 参数、mp4 校验；把视频签名纳入有界 single-flight，并按 4,000 视频 + poster 的工作集复核缓存容量                              |
+| 短剧播放        | `features/drama/signed-url.ts`、`routes/drama.ts`、`components/drama/drama-player.tsx`、`lib/api/drama.ts`、`lib/perf/drama-*`                                                        | 复用行为：5s 签名超时、稳定 URL、同 key single-flight、点击/临近播放地址预取、换签保留位置、旧 src 释放、首帧与缓冲分阶段观测；不复制短剧 UI   |
+| 计费原语        | `billing.apply_wallet_debit` / `refund_wallet_debit`（MIG 20260921）                                                                                                                  | 复用：视频的预扣和退款 RPC 在这两个原语外面包一层                                                                                              |
+| 图片结算        | `billing.settle_image_plaza_generation`：成功后扣费，余额不足时置 failed                                                                                                              | 不改（决策 D2：图片维持现状）                                                                                                                  |
+| 首次分享与返利  | `billing.share_image_plaza_artifact` 写 `app_core.miniapp_user_settings.image_plaza_first_share_completed_at`                                                                         | 扩展：视频分享 RPC 复用同一字段和同一锁顺序                                                                                                    |
+| generation 边界 | `features/generation/` 下已有 `image-plaza-prompt-translate.ts`、`image-plaza-tagging.ts`                                                                                             | 不新增。视频关闭自动优化（D9），视频链路不调用 LLM                                                                                             |
+| 配置            | `features/image-plaza/config.ts`（6 个 key）；admin 的 `configSchemas.ts`、`ImagePlazaConfigEditors.tsx`（模型目录、价格公式、标签编辑）                                              | 扩展：新 key `image_plaza_video_model_catalog`；标签加 `media_types`；DB 侧 `admin.validate_*` 同步修改                                        |
+| 前端            | `create/page.tsx`、`studio/[conversationId]/page.tsx`、`work/[workId]/page.tsx`、`components/image-plaza/*`、`lib/api/image-plaza.ts`                                                 | 扩展：按 media 分支 + 4 小组件（§5）；**性能**：接线已有 `prefetchImagePlazaFeed`、创作预取 config、quote debounce/复用、轮询退避（§5.2–5.3）  |
+| 列表请求链      | feed：runtime_config → listSortedWorks(1～2) → hydrate(artifacts∥likes) → 并发签名≤20；pageSize20、stale60s、缩略图720/72、签名 LRU                                                   | 视频混排保留该链；列表只签 poster、DTO 裁剪、tag-counts 解耦；后端 feed p95≤500ms / 前端≤800ms                                                 |
+| 创作请求链      | studio：config∥conversation → quote → POST attempts(202) → 会话固定2s 全量轮询；`image_generate` 受理反馈与 `image.display.duration` 分离                                             | 视频同模式；轻量 attempt 轮询+退避；worker/Venice 耗时不进 standard API p95                                                                    |
+| Sentry          | 前端 `lib/perf/action-tracker.ts`、`page-tracker.ts`；后端 `lib/perf-metrics.ts`；规范见 `10-21-sentry-ux-monitoring`                                                                 | 扩展：`video_generate` + 视频事件；看板按列表/创作分图（§8.1）                                                                                 |
+| seed 导入       | `seed-import.ts`、`scripts/import-image-plaza-seed.ts`；`20261019_image_plaza_seed_bootstrap.sql` 已有“先 Storage、后受审 payload、对象 metadata 前置检查、RPC 幂等导入”的模式        | 扩展：视频 parser 独立；上传程序与 SQL 生成程序物理分离；SQL 复用既有 video seed RPC 和 migration 账本，不保留“单条上传后立即 RPC”的旧执行模式 |
+| 运行镜像        | `ops/docker/Dockerfile.backend`：运行层基于 `node:20-bookworm-slim`（第 116 行），第 121 行用 `apt-get install --no-install-recommends` 安装 tini/wget/openssl                        | 在同一条 apt 命令里加 `ffmpeg`（Debian 包自带 ffprobe），并加 `RUN ffmpeg -version && ffprobe -version` 构建期断言（D10）                      |
 
 拒绝的方案：
 
 - 通用媒体插件框架
 - 消息队列或 Redis
+- 为未来 CDN 提前创建空映射表、引入 HLS SDK 或双写两个点播供应商
 - 前端直连 Venice 或 download_url
 - 独立的视频会话表（违背决策 D5）
 - 转码/HLS / MediaSource + fMP4（本任务 mp4 progressive 即可；MSE 需碎片化封装，Telegram WebView 兼容与转码成本都不划算）
@@ -228,28 +230,30 @@ ready       --> 异步调用 /video/complete（失败最多重试 3 次，只记
 **处理决策矩阵**
 
 1. 下载先流式写入独立临时目录的 `input.mp4.part`，边写边累计字节与 SHA-256；同时用响应头和实际计数双重执行 200MiB 上限。完成后原子改名为 `input.mp4`，全流程不把完整输入/输出同时保留为 Node `Buffer`。
-2. `ffprobe` 先读取容器、视频/音频 codec、profile、pixel format、宽高、帧率、时长、码率和起始时间；另用 MP4 顶层 atom 扫描确认 `moov` 是否位于 `mdat` 前，并读取关键帧时间/字节位置，计算首关键帧位置与最大 GOP 间隔。
+2. `ffprobe` 先读取容器、视频/音频 codec、profile、pixel format、宽高、帧率、时长、码率和起始时间；另用 MP4 顶层 atom 扫描确认 `moov` 是否位于 `mdat` 前，并读取关键帧时间/字节位置，计算首关键帧位置与最大 GOP 间隔。`moov` 本身也纳入启动预算，目标不超过 256KiB；异常大的索引/metadata 不能仅因“已前置”就直通。
 3. 分三路处理：
    - 已是 MP4、H.264、`yuv420p`，音频为空或 AAC，`moov < mdat`，首关键帧接近 0、最大关键帧间隔 ≤2 秒、帧率 ≤30fps，且任一 GOP 的字节跨度不超过约 1.5MiB：原文件直通，不重新编码；
    - codec、GOP 与码率可兼容，但 `moov` 在尾部或时间戳需整理：只做 `-map 0:v:0 -map 0:a:0? -sn -dn -c copy -movflags +faststart` remux；remux 不能改变关键帧间隔，GOP 不合格不能走此分支。只清理明确不需要的 global tag，不能误删 rotation/display matrix 与色彩信息；
    - HEVC/AV1/VP9、10-bit/非 `yuv420p`、非 AAC 音频、超过 30fps、关键帧/码率预算不合格或 probe/解码抽检失败：转为 H.264/AAC。建议参数为 `libx264 -preset fast -crf 23 -maxrate 6M -bufsize 12M -pix_fmt yuv420p -profile:v high -level 4.1`，最长边限制 1920 且不放大、帧率上限 30fps，AAC 128k/48kHz/双声道，首帧为 IDR 并约每 2 秒强制关键帧，输出仍加 `+faststart`。6Mbps 上限使 2 秒 GOP 的媒体负载约受控在 1.5MiB，给 10Mbps 参考网络留出 RTT/签名/解码时间。旋转/display matrix 与色彩信息必须保留；HDR/HLG/PQ 输入先停止并抽样评审 tone-map，不能直接压成 SDR。不采用 fMP4/MSE/HLS，避免为当前短视频 progressive playback 引入额外清单、切片和播放器状态。
-4. 输出后再次 `ffprobe`，并断言：恰好一个可播放视频流、可选一个音频流、时长/宽高为正、文件 ≤200MiB、`ftyp` 合法、`moov < mdat`、首关键帧接近 0、最大关键帧间隔 ≤2 秒、前几秒可解码。任何断言失败都不上传。
+4. 输出后再次 `ffprobe`，并断言：恰好一个可播放视频流、可选一个音频流、时长/宽高为正、文件 ≤200MiB、`ftyp` 合法、`moov < mdat`、首关键帧接近 0、最大关键帧间隔 ≤2 秒、关键帧索引可 seek、前几秒与 10%/50%/90% 位置均可解码。任何断言失败都不上传。
 5. 封面从首个有效画面生成 JPEG；长边限制 960、不放大、质量约 85，并记录实际封面宽高。0 秒黑帧时允许在 0.1 秒重试一次；封面失败使用已有占位图，但视频本身未通过 faststart/解码校验时禁止发布。
 
 **资源与并发**
 
-- 用户要求的总并发为 4 条端到端 lane；禁止再并行启动多个导入进程绕过上限。每条 lane 为“下载 → probe → 处理 → 校验 → 上传 → RPC”。
+- 用户要求的总并发为 4 条端到端 lane；禁止再并行启动多个导入进程绕过上限。每条 lane 为“下载 → probe → 处理 → 校验 → 上传 → Storage metadata 核验 → manifest 落盘”，**不连接数据库、不调用 RPC**。
 - 下载/remux 最多 4 路；真正 H.264 转码另设 CPU semaphore，当前 16 逻辑核机器先限制 2 路、每路 `-threads 4`，其余 lane 等待，防止 4 个编码器抢满 CPU 反而降低吞吐。
 - 临时盘按最坏输入+输出 `4 × (200MiB + 200MiB)` 计算，并要求至少 4GiB 空闲后才启动；当前临时盘只读检查约有 31.8GiB 可用。任务结束或失败都在 `finally` 清理独立目录。
 - 下载采用连接/响应头超时与 30 秒 idle timeout，整体上限建议 10 分钟；只对 GET、HEAD、TUS chunk 这类幂等操作做有限指数退避。FFmpeg remux 120 秒，转码按时长动态预算并设置绝对上限，超时终止子进程组。
 
 **上传、缓存与播放**
 
-- MP4 大多超过 6MiB，使用 Supabase TUS resumable upload 的直连 Storage hostname、固定 6MiB chunk、`upsert=false`；poster 使用标准上传。对象路径保持不可变，manifest 记录源/输出 SHA-256、字节数和处理分支，崩溃后只能在校验一致时续传/复用。
-- 私有桶保持 `video/mp4` 与 poster MIME 白名单；在 DB RPC 前验证对象大小与 metadata，RPC 失败清理本次新建对象。数据库仍以 `(origin, source_video_id)` 唯一约束兜底。
+- MP4 大多超过 6MiB，使用 Supabase TUS resumable upload 的直连 Storage hostname、固定 6MiB chunk、`upsert=false`；poster 使用标准上传。TUS upload URL 最长只按 24 小时恢复，超时后创建新 upload URL，但仍写同一不可变目标路径；相同路径并发完成时把 `409` 当冲突并核验既有对象，禁止用 upsert 掩盖竞态。
+- 对象路径固定为 `media-plaza-video/imports/civitai/<safe-source-id>/<bundle-sha12>/video.mp4|poster.jpg`；处理参数或内容改变会产生新路径，不覆盖旧对象。manifest 记录源/输出 SHA-256、字节数、codec/关键帧摘要、处理分支、FFmpeg 版本与配置指纹、TUS fingerprint、目标环境身份和上传核验结果。
+- 私有桶保持 `video/mp4` 与 poster MIME 白名单；上传设置 `cacheControl=86400`，与已发布作品 24h 稳定签名 URL 对齐。token 有效期和对象/browser cache TTL 是两套独立时钟；紧急撤权以删除对象为准，不能只等 token 过期。上传后核对 `storage.objects` 的 bucket/path/size/MIME/custom SHA metadata；只把“已上传且核验”写入 main upload manifest。
+- Production/main Storage 全量阶段允许 4,000 组对象处于“有对象、无业务行”的受控中间态；失败不自动删除已经核验通过的对象，重跑从 manifest 续传。只有 manifest 中本次创建但未核验的对象进入隔离/清理清单。
 - `<video src>` 直接使用可播放 URL，依赖 `Range`/`206`、`faststart` 与 ≤2 秒 GOP，禁止 `fetch → blob`。列表仍为零 MP4；单视频详情/ready 卡在可见后允许对唯一活动视频使用 `preload="auto"` 争取 2 秒快开，离页/隐藏时移除 `src`，开启省流量时降为 `metadata`。
-- Supabase 对每个 signed token 使用独立 CDN cache key，因此签名缓存必须复用**同一个 URL**：公开作品 24h、私有作品 15min，LRU 最大 2,000，并对同 key 加 single-flight 防止并发签名风暴。多实例部署前再评估共享缓存，不预建 Redis。
-- 现有上传的 `cacheControl=31536000` 不能直接沿用到未公开视频：signed token 过期与 CDN 响应缓存 TTL 相互独立。私有资源先使用不超过 15 分钟的对象缓存策略；公开作品的长缓存只有在确认撤回/删除语义后才能放宽。紧急撤权依靠删除对象，而不是只等待签名过期。
+- Supabase 对每个 signed token 使用独立 CDN cache key，因此签名缓存必须复用**同一个 URL**：已发布作品 24h、未分享私有作品 15min，并对同 key 加 single-flight 防止并发签名风暴。现有 2,000 条共享 LRU 小于 4,000 个 poster + 4,000 个 mp4 的工作集；实施时先以有界 10,000 条上限（含图片）做内存基线，若实际 URL 长度导致额外堆内存 >20MiB，则拆成 poster/video 两个有界池而不是引入 Redis。
+- 上传到 main 但尚无 DB 行的对象不会获得播放签名，因此 `cacheControl=86400` 不会让它们提前公开；TEST/上线后的撤回仍以删除对象并等待 CDN 失效传播为准。签名 URL、token、object path 不进入业务日志、性能上报或 SQL 结果输出。
 
 **确认后的 canary 与停止条件**
 
@@ -257,6 +261,16 @@ ready       --> 异步调用 /video/complete（失败最多重试 3 次，只记
 - TEST 私有桶逐项验证未签名访问拒绝、签名 URL `Range: bytes=0-1` 返回 `206`/正确 `Content-Range`、拖动可恢复、同对象重复请求复用同一签名 URL。
 - 网络节流验收：参考网络固定为下行 ≥10Mbps、RTT ≤100ms、无丢包；冷缓存点击到首个解码帧 p95 ≤2s，跳转未缓存位置到新画面 p95 ≤2s，列表页 MP4 请求数仍为 0。另做约 1.6Mbps/150ms RTT 观测但不承诺单码率 MP4 绝对 2 秒；若弱网也必须达标，则提前接入 ABR 点播而不是继续压低单文件画质。
 - 任一出现输出不可解码、`moov` 未前置、URL 越权、内存随文件大小线性堆积、HDR 未覆盖，或转码/上传失败率 >2%，立即停止批量处理并保留 manifest 供恢复。若 canary 中需要完整转码的比例 >10%，先重新估算总耗时与转码后容量并再次请用户确认，不直接跑 4,000 条。
+
+### 3.3.2 短剧播放链路复用边界（D21）
+
+短剧模块已证明的不是“某个编码参数”，而是从地址获取到首帧的完整控制与观测方式。本任务复用以下语义：
+
+- Backend 签名：显式 5 秒超时；同 path + scope 并发请求共享一个 Promise；缓存命中返回逐字节相同的 URL 与原始到期时间；失败只记录脱敏原因，不记录 URL/token/path。
+- 地址预取：用户点击视频卡片时预取 playback JSON，临近自动播放时也可只预取下一条播放地址；feed DOM 生命周期内仍禁止创建 `<video>` 或请求 MP4。预取地址和预取媒体字节必须在指标上分开。
+- 播放换源：签名过期或网络恢复重签时，先保存 `video_id/currentTime/paused`，新地址 `loadedmetadata` 后恢复原位置；旧 source 立即 pause、移除 `src` 并 `load()`，迟到事件不能污染新 source。
+- 快开/seek 观测：地址阶段记录 API/签名 cache=`hit|miss|inflight`；媒体阶段记录 `source_set → loadedmetadata → loadeddata/canplay → playing + first_frame`，首帧优先 `requestVideoFrameCallback`、旧 WebView 降级为 playing 后 currentTime 推进。另记录 seeking 到新位置首帧、waiting/stalled 与当前位置连续 `bufferedAheadMs`，但不把 `canplay` 或 `play()` Promise 单独算成功。
+- 页面策略：列表零 MP4；详情在明确播放意图后使用 `preload="auto"` 争取 2 秒快开，未点击时保持 poster/metadata；隐藏、换作品或离页释放 source。该策略与短剧“临近片尾只预取下一条地址”一致，不做后台无界预加载。
 
 ### 3.4 提示词自动优化：视频关闭（D9）
 
@@ -618,13 +632,13 @@ worker：3s tick / claim≤2 / Venice≤180s / settle RPC → ready
   - 2026-10-27 首轮只读实测：5,097 条中 5,055 条一次成功；42 条重试后恢复 32 条，最终已知 5,087 条共 48.569 GiB，剩余 9 条 404、1 条连续网络失败。报告 SHA-256 与重试报告分别保留在工作目录外，不提交 Git。
   - D16 之后容量门禁改为只统计最终入选的 4,000 条；原 5,097 条报告仅作为候选集证据，不能直接作为实际转存容量。
   - 2026-10-27 D16 最终报告：5,082 个翻译命中候选中 5,073 个 URL 可访问，9 个连续三轮为 404；水位填充后选满 4,000 条，源文件总量 43,593,139,500 bytes（40.599 GiB），平均 10.39MiB。最终报告 SHA-256 为 `f4004258ecd11d91088a7dabc670420e5cb1c10d0fafde8f949fa7c12dd8b1c4`；该值只覆盖源文件 Content-Length，未包含转码大小变化和 poster，D17 canary 后仍需复核最终存储预算。
-  1. 默认 dry-run，只输出计数和错误码；
-  2. 审核 manifest，剔除涉及未成年和审核未通过的条目；
-  3. 参数 `--target test|production --limit ≤500`；
-  4. 下载限制：SSRF 白名单只放行 `image.civitai.com`，单文件上限 200MiB，超时 120s，最多重试 2 次；
-  5. 用 ffprobe 取元数据，并截取首帧作为封面；
-  6. 通过 RPC 写入；
-  7. 支持断点续跑。
+  1. 默认 dry-run，只输出计数和错误码；审核最终 Top 4,000 selection manifest，剔除涉及未成年和审核未通过的条目。
+  2. 用户批准 D17 后，先在本地处理最多 10 条候选并生成处理报告；TEST canary 固定为最终 4,000 的确定性子集，六模型至少各 1 条，其余覆盖 direct/remux/transcode 与大小/时长边界。
+  3. TEST 仅上传这 10 组对象，再用同一 SQL 生成器输出 TEST 10 条 migration；验证 Storage 私有访问、Range/206、签名缓存、2 秒启动/seek、SQL 幂等与 DB/Storage 对账。禁止 TEST 全量。
+  4. TEST 通过并再次确认 main/Production 身份与容量后，4 路处理并上传全部 4,000 组对象到 main 私有桶；该程序只接受 `--phase assets`，不得初始化 DB client。下载 SSRF 白名单只允许 `image.civitai.com`，单文件 ≤200MiB，有限重试与断点续传。
+  5. 生成 `processed-manifest.json` 与环境专属的 `main-upload-manifest.json`：每条必须同时记录 source/workbook/report hash、选择序位、模型、处理分支、输入/输出/poster SHA-256、媒体元数据、不可变 object path、目标环境、上传/metadata 核验状态；manifest 自身再计算 SHA-256 并只读锁定。
+  6. 只有 main manifest 恰好 4,000 条、8,000 个对象全部 verified、0 failed/0 pending，才允许离线生成 Production SQL。SQL 生成器不连远端、不读取 service key，仅把 manifest 与翻译数据转成受审 migration payload。
+  7. 上线窗口按顺序执行 8 个每批 500 条的 migration；全部完成前视频 seed 入口/目录保持关闭。最后执行只读 postflight，确认 4,000 work + 4,000 artifact、0 缺对象、0 冲突后再开入口。
 - 4,000 条选样（D16）：
   - 输入先经过翻译包一致性、重复 ID 和 URL 可访问性过滤，再参与配额计算；不可访问 URL 不占名额。
   - 使用 max-min fair（水位填充）分配：先平均分给 6 个模型，某模型候选不足则全取，并把余量继续平均分给尚有候选的模型，直到总数为 4,000。
@@ -636,6 +650,29 @@ worker：3s tick / claim≤2 / Venice≤180s / settle RPC → ready
   - Seedance 2.0 R2V 映射到 `seedance-2-0-reference-to-video-basic`（D8），只有 r2v，必须带图。种子里的模型标签 `Seedance 2.0 R2V Enhanced` 通过 `seed_aliases` 映射到这个 model id，使“用同款”可用。
 - 提示词长度：视频不设字数上限（D14）。`prompt`/`prompt_zh` 原样写入 `TEXT` 列，不因长度隔离、不截断；原表 879 条英文超 2,000 字、翻译包 129 条中文超 2,000 字都正常导入。分类四类（已导入/已存在/待修复/已剔除）不含“提示词过长”。
 - 排序：外部热度存入 `source_heat`，排序沿用 20261019 的 `initial_feed_order` 规则；不写入本地点赞。
+
+### 7.1 main/Production Storage 与 SQL 发布包（D20–D22）
+
+**物理隔离**
+
+- main 上传前只读核对 `media-plaza-video` 私有 bucket、200MiB 单对象限额与 MIME 白名单。若 bucket/M2 基础对象尚不存在，先走现有 `20261027_media_plaza_video.sql` 的独立 Production 审批与 migration workflow 建立结构；这一步允许建空表和 bucket，但必须保持 seed work/artifact 为 0，禁止为了赶上传而在 Studio 手工建桶造成 migration drift。
+- `upload-video-plaza-seed-assets.ts` 只做下载/处理/上传/对象核验，不导入 `getDomainDb`、不调用 PostgREST RPC、没有 `--apply` 或 `--write-db` 参数。启动前从非 secret URL 解析 project ref，与命令中显式允许的 main ref 比较；目标不一致立即停止。
+- `generate-video-plaza-seed-sql.ts` 只读 xlsx、selection report、processed manifest 和 main upload manifest，离线生成 SQL；不含网络调用。旧 `importVideoSeedRow` 的“上传后立即 RPC，RPC 失败删除对象”执行模式退役，避免在 main 全量上传阶段误写库或误删已核验对象。
+- TEST 与 main 使用相同的不可变相对 object path，但属于不同 project/bucket；manifest 必须带环境身份与 bucket，不能把 TEST 的 verified 状态复制给 main。
+
+**SQL 形态**
+
+- 复用 `20261019_image_plaza_seed_bootstrap.sql` 的成熟模式：每个 migration 自带 `BEGIN/COMMIT`、`lock_timeout='5s'`、`statement_timeout='15min'`、payload hash、数量/重复 ID 检查、私有 bucket 前置检查、`storage.objects` size/MIME/custom hash 核验和稳定 source ID 顺序。
+- 每行调用现有 `media_plaza.import_video_seed_work(...)`；它已有 advisory xact lock、`(origin, source_video_id)` 幂等和冲突拒绝。禁止生成绕过 RPC 的 artifact/work 裸 INSERT，避免 SQL 与运行时业务约束分叉。
+- TEST 输出一个显式 `_test_canary` 文件；Production 输出 8 个显式 `_production_01`…`_08` 有序文件，每个最多 500 条，全部放在唯一 migration 源 `packages/shared/migrations/`，由 `Database Migration` workflow 一次一个文件执行并记账。实施时同步给 workflow 增加环境后缀拒绝规则，TEST 文件不能选 production、Production seed 文件不能选 test；文件头再写前批依赖、main manifest SHA-256、selection report SHA-256 与 batch 范围，避免只靠人工辨认环境。
+- 每批允许“新导入或完全一致的已存在”，但任何 path/source URL/snapshot/metadata 冲突整批回滚；批末断言本批 500 个 source ID 全部存在且引用对象一致。第 8 批再断言完整集合 4,000 条，无遗漏或额外覆盖。
+- 同时生成不写库的 `preflight.sql`、`postflight.sql` 与对账摘要。preflight 检查 schema/RPC 签名与 owner/ACL、bucket 私有和限额、8,000 对象、既有 seed 冲突、锁/容量；postflight 检查数量、FK、媒体元数据、模型分布、对象缺失和账务/返利零变化。
+
+**失败、恢复与下线**
+
+- 某批失败只回滚该批；已记账批次不 force-rerun、不改历史文件，修复后生成新的 forward-fix migration。入口保持关闭，因此允许从下一未完成批继续，不要求把已成功的前批删除重来。
+- DB 尚未发布时，main 对象由 manifest 管理为 staging-in-place；暂停发布不删除。确认放弃整批后才用精确 manifest 路径生成清理清单，人工复核后删除，禁止按 prefix 递归清空 bucket。
+- 上线前若必须撤回，可对精确 source ID 做受保护 hard rollback，但前置必须断言 `like_count=0`、无 like/reward/外部引用且入口从未开放。入口开放后不再 hard delete；生成新 forward-fix 将精确 works 软删除/下架，保留 artifact 与对象，待引用和缓存窗口结束后另行清理。
 
 ## 8. 监控（需求 8，遵循 10-21-sentry-ux-monitoring）
 
@@ -683,16 +720,17 @@ worker：3s tick / claim≤2 / Venice≤180s / settle RPC → ready
 
 ## 9. 可靠性一览
 
-| 风险 | 处理                                                                                                                                                                               |
-| ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 超时 | quote 10s；queue 60s；retrieve 30s；下载 120s；ffmpeg/ffprobe/faststart remux 20s；签名沿用现有 5s；同域 stream 单次 Range 切片读取超时单独设限（建议 ≤30s），避免一次挂死整段播放 |
-| 重试 | 只对幂等操作重试：retrieve、下载、complete、签名。queue 永不自动重投                                                                                                               |
-| 幂等 | idempotency_key；reserve、refund、publish、share 各有唯一索引；seed 按 (origin, source) 唯一                                                                                       |
-| 并发 | 任务用租约 + SKIP LOCKED + lease_owner fencing；钱包行加锁；首次分享锁定同一行；seed 端到端 worker 固定最多 4 路，批次最多 500，不能通过并行启动多个脚本绕过总并发上限             |
-| 补偿 | 失败、拒审、过期自动退款；状态为 failed_unknown 的走对账脚本                                                                                                                       |
-| 限流 | worker 每个 tick 有处理上限；对 429 退避；同一用户进行中的视频最多 2 个，超出返回 429；体积估算步骤的 HEAD 请求并发度限制为 10，避免打满出口带宽或触发源站限流                     |
-| 降级 | 抽帧失败时用占位封面；ffmpeg 二进制缺失时启动日志报 error，并且视频目录接口隐藏视频模型；complete 失败只记日志；目录未发布时隐藏入口                                               |
-| 容量 | 单个视频 ≤200MiB；导入前先对全部 5,097 条 HEAD 估算总体积并人工确认（D13，仍待 B-SEED-1 确认实际 bucket 配额和转存授权）                                                           |
+| 风险   | 处理                                                                                                                                                                               |
+| ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 超时   | quote 10s；queue 60s；retrieve 30s；下载 120s；ffmpeg/ffprobe/faststart remux 20s；签名沿用现有 5s；同域 stream 单次 Range 切片读取超时单独设限（建议 ≤30s），避免一次挂死整段播放 |
+| 重试   | 只对幂等操作重试：retrieve、下载、complete、签名。queue 永不自动重投                                                                                                               |
+| 幂等   | idempotency_key；reserve、refund、publish、share 各有唯一索引；seed 按 (origin, source) 唯一；不可变 hash path + `upsert=false`；SQL 重放只接受逐字段完全一致的 existing           |
+| 并发   | 任务用租约 + SKIP LOCKED + lease_owner fencing；钱包行加锁；首次分享锁定同一行；seed 资产 worker 固定最多 4 路、转码最多 2 路；SQL 每文件 500 条并按 source ID 稳定锁序            |
+| 补偿   | 失败、拒审、过期自动退款；状态为 failed_unknown 的走对账脚本                                                                                                                       |
+| 限流   | worker 每个 tick 有处理上限；对 429 退避；同一用户进行中的视频最多 2 个，超出返回 429；体积估算步骤的 HEAD 请求并发度限制为 10，避免打满出口带宽或触发源站限流                     |
+| 降级   | 抽帧失败时用占位封面；ffmpeg 二进制缺失时启动日志报 error，并且视频目录接口隐藏视频模型；complete 失败只记日志；目录未发布时隐藏入口                                               |
+| 容量   | 单个视频 ≤200MiB；Top 4,000 源文件已估 40.599GiB，canary 后按真实输出 + poster + 失败恢复余量重算；TEST 只保留 10 组，main 才保留 4,000 组                                         |
+| 可观测 | manifest 记录 lane/阶段/耗时/重试/处理分支/字节与错误码；签名记录 hit/miss/inflight 但不含 URL/path/token；播放区分地址、metadata、首帧、seek 与 waiting/stalled                   |
 
 ## 10. 发布顺序、停止条件、回滚
 
@@ -702,8 +740,10 @@ worker：3s tick / claim≤2 / Venice≤180s / settle RPC → ready
 4. TEST 依次执行 M2 → smoke/shape/权限检查 → M3 → 配置校验。每次只执行一个文件，前后各记录一次结构和关键读写。
 5. 上线视频路由和 worker（worker 默认关闭），同时上线前端和 Admin。视频入口仅在 `video_models.length>0` 时显示。
 6. TEST canary：每个模型的 t2v、i2v、r2v 各调用 1 次；演练拒审退款和崩溃恢复。
-7. seed 先在 TEST 跑小批，再全量。
-8. 观察 24 小时后单独申请 Production 的 M2/M3 与应用发布；目录先只启用 Wan 3.0 Pro，再按观测放开其他模型。
+7. D17 方案获用户确认后，本地处理 canary；TEST 只上传并导入 10 条，完成 Range、首帧、seek、签名缓存、SQL 幂等与对账验收，禁止 TEST 全量。
+8. 单独确认 main/Production project 身份、私有 bucket 与真实容量；先上传并核验全部 4,000 组对象，业务表保持 0 条新增。完成后锁定 main upload manifest。
+9. 从锁定 manifest 生成并审核 8×500 data migrations + preflight/postflight；先跑 Production preflight，再在上线窗口逐文件执行。任一批失败保持入口关闭，按 forward-fix 恢复。
+10. 八批与 postflight 全通过后再发布/打开 seed 视频入口；目录先只启用 Wan 3.0 Pro，再按播放与错误观测放开其他模型。后续点播 CDN 以 delivery provider 新实现接入，不迁移作品 ID。
 
 停止条件，出现任一即停止：
 

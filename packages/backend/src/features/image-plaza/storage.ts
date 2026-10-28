@@ -142,7 +142,7 @@ export async function uploadSeedPlazaImage(input: {
  * 只要它自身在 TTL 内稳定，CDN 就能命中。进程内存上限按条目数硬性截断，避免
  * 无界增长。
  */
-const SIGNED_URL_CACHE_MAX_ENTRIES = 2000;
+const SIGNED_URL_CACHE_MAX_ENTRIES = 10_000;
 const signedUrlCache = new Map<string, { url: string; expiresAt: number }>();
 const SIGNED_URL_INFLIGHT_MAX_ENTRIES = 256;
 const signedUrlInflight = new Map<string, Promise<string>>();
@@ -293,14 +293,26 @@ async function signVideoPath(path: string, expiresInSeconds: number): Promise<st
   const cacheKey = signedUrlCacheKey(VIDEO_BUCKET, path, expiresInSeconds);
   const cached = readSignedUrlCache(cacheKey);
   if (cached) return cached;
-  const { data, error } = await withTimeout(
-    getSupabaseClient().storage.from(VIDEO_BUCKET).createSignedUrl(path, expiresInSeconds),
-    10_000,
-    'video_plaza_storage_sign_timeout'
-  );
-  if (error || !data?.signedUrl) throw new Error('video_plaza_storage_sign_failed');
-  writeSignedUrlCache(cacheKey, data.signedUrl, expiresInSeconds);
-  return data.signedUrl;
+  const inflight = signedUrlInflight.get(cacheKey);
+  if (inflight) return inflight;
+  const operation = (async () => {
+    const { data, error } = await withTimeout(
+      getSupabaseClient().storage.from(VIDEO_BUCKET).createSignedUrl(path, expiresInSeconds),
+      10_000,
+      'video_plaza_storage_sign_timeout'
+    );
+    if (error || !data?.signedUrl) throw new Error('video_plaza_storage_sign_failed');
+    writeSignedUrlCache(cacheKey, data.signedUrl, expiresInSeconds);
+    return data.signedUrl;
+  })();
+  if (signedUrlInflight.size >= SIGNED_URL_INFLIGHT_MAX_ENTRIES) return operation;
+
+  let tracked: Promise<string>;
+  tracked = operation.finally(() => {
+    if (signedUrlInflight.get(cacheKey) === tracked) signedUrlInflight.delete(cacheKey);
+  });
+  signedUrlInflight.set(cacheKey, tracked);
+  return tracked;
 }
 
 function assertVideoPath(path: string): void {

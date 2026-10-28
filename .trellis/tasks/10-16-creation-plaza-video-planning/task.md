@@ -22,26 +22,30 @@
 
 ## 任务
 
-| ID  | 状态        | 内容                                                                                                                         | 依赖     | 完成条件                                             |
-| --- | ----------- | ---------------------------------------------------------------------------------------------------------------------------- | -------- | ---------------------------------------------------- |
-| R1  | Done        | 2026-10-24 证据采集（Venice 目录与文档、xlsx、原型、代码现状）                                                               | —        | 写入 `research/*.md`                                 |
-| R2  | Done        | 改版 PRD、design、implement、task、jsonl                                                                                     | R1       | 8 项需求全部可追溯                                   |
-| G1  | Done        | 用户决策：schema 名为 `media_plaza`（账务留在 billing）；视频预扣 + 退款                                                     | —        | 写入 PRD D1/D2                                       |
-| G2  | In Progress | 2026-10-24 已关闭 B-MODEL-1/B-OPT-1/B-FFMPEG-1/B-ENV-1/B-SEED-2（D8–D14）；剩余 B-SEED-1（授权/实际配额，流程已由 D13 固定） | —        | 剩余 1 项确认                                        |
-| G3  | Done        | 审核与架构评审（ADR），之后执行 `task.py start`                                                                              | G2       | 用户于 2026-10-27 明确批准开始执行                   |
-| T1  | Blocked     | Venice 价格与 canary 证据；图片广场列表/创作 Sentry p95 基线（冷热各≥20）                                                    | G3       | 等待真实供应商密钥与监控环境                         |
-| T2  | Done        | shared 契约                                                                                                                  | G3       | shared 测试及全仓 typecheck 已通过                   |
-| T3  | In Progress | 合并已完成的 M1/PostgREST/直连改动；继续推进视频 M2/M3，不保留旧 schema 回退                                                 | T2       | M1 两环境完成；待 TEST 执行并验证 M2/M3              |
-| T4  | In Progress | 视频 worker/upstream/计费/审核/封面 + Dockerfile 加 ffmpeg（视频无提示词优化）                                               | T2 T3    | 本地实现和单测完成；待 Docker 构建与供应商 canary    |
-| T5  | In Progress | feed 游标+media/tags、列表无 MP4、签名 LRU 扩视频桶、DTO 裁剪、tag-counts、详情、分享                                        | T3       | 本地实现和单测完成；待真实 Range/签名资源人工验证    |
-| T6  | In Progress | Admin 视频目录、标签 media_types、参考价代理                                                                                 | T2 T3    | 目录和标签编辑器完成；待真实参考价接线               |
-| T7  | In Progress | 前端广场/详情/工作室 + 4 组件；接线 feed 预取；创作预取/报价复用/轮询退避；埋点                                              | T4 T5 T6 | 实现、测试和构建完成；待 Telegram 双端及 R8 预算验证 |
-| T8  | In Progress | 体积估算+人工确认（D13）→ 均匀热度 Top 4,000（D16）→ FFmpeg 方案人工确认（D17）→ seed 导入与对账；当前只读/本地规划          | T3 T4    | 容量、manifest、媒体方案三项确认后再申请 TEST apply  |
-| T9  | In Progress | 全量验证、canary；列表/创作 Sentry p95 门禁；图片回归 ≤10%；看板分图                                                         | T7 T8    | 本地检查通过；外部 canary、Sentry 与人工验证未完成   |
-| T10 | In Progress | 文档同步与 production 灰度                                                                                                   | T9       | 本地文档已同步；production 仍需单独审批              |
+| ID  | 状态        | 内容                                                                                                                                                | 依赖     | 完成条件                                                                       |
+| --- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------ |
+| R1  | Done        | 2026-10-24 证据采集（Venice 目录与文档、xlsx、原型、代码现状）                                                                                      | —        | 写入 `research/*.md`                                                           |
+| R2  | Done        | 改版 PRD、design、implement、task、jsonl                                                                                                            | R1       | 8 项需求全部可追溯                                                             |
+| G1  | Done        | 用户决策：schema 名为 `media_plaza`（账务留在 billing）；视频预扣 + 退款                                                                            | —        | 写入 PRD D1/D2                                                                 |
+| G2  | In Progress | 2026-10-24 已关闭 B-MODEL-1/B-OPT-1/B-FFMPEG-1/B-ENV-1/B-SEED-2（D8–D14）；剩余 B-SEED-1（授权/实际配额，流程已由 D13 固定）                        | —        | 剩余 1 项确认                                                                  |
+| G3  | Done        | 审核与架构评审（ADR），之后执行 `task.py start`                                                                                                     | G2       | 用户于 2026-10-27 明确批准开始执行                                             |
+| T1  | Blocked     | Venice 价格与 canary 证据；图片广场列表/创作 Sentry p95 基线（冷热各≥20）                                                                           | G3       | 等待真实供应商密钥与监控环境                                                   |
+| T2  | Done        | shared 契约                                                                                                                                         | G3       | shared 测试及全仓 typecheck 已通过                                             |
+| T3  | In Progress | 合并已完成的 M1/PostgREST/直连改动；继续推进视频 M2/M3，不保留旧 schema 回退                                                                        | T2       | M1 两环境完成；待 TEST 执行并验证 M2/M3                                        |
+| T4  | In Progress | 视频 worker/upstream/计费/审核/封面 + Dockerfile 加 ffmpeg（视频无提示词优化）                                                                      | T2 T3    | 本地实现和单测完成；待 Docker 构建与供应商 canary                              |
+| T5  | In Progress | feed 游标+media/tags、列表无 MP4、签名 LRU 扩视频桶、DTO 裁剪、tag-counts、详情、分享                                                               | T3       | 本地实现和单测完成；待真实 Range/签名资源人工验证                              |
+| T6  | In Progress | Admin 视频目录、标签 media_types、参考价代理                                                                                                        | T2 T3    | 目录和标签编辑器完成；待真实参考价接线                                         |
+| T7  | In Progress | 前端广场/详情/工作室 + 4 组件；接线 feed 预取；创作预取/报价复用/轮询退避；埋点                                                                     | T4 T5 T6 | 实现、测试和构建完成；待 Telegram 双端及 R8 预算验证                           |
+| T8  | In Progress | 体积估算+Top 4,000（已完成）→ D17 方案确认 → TEST 10 条 → main Storage 4,000 组纯资产上传 → 生成/审核 8×500 SQL → 上线执行与对账；当前只读/本地规划 | T3 T4    | 用户确认媒体方案；TEST 10 条通过；main manifest 全 verified；上线 SQL 全部记账 |
+| T9  | In Progress | 全量验证、canary；列表/创作 Sentry p95 门禁；图片回归 ≤10%；看板分图                                                                                | T7 T8    | 本地检查通过；外部 canary、Sentry 与人工验证未完成                             |
+| T10 | In Progress | 文档同步与 production 灰度                                                                                                                          | T9       | 本地文档已同步；production 仍需单独审批                                        |
 
 ## 记录
 
+- 2026-10-28 TEST 10 条执行：锁定报告复验通过；本地四路下载、最多两路 FFmpeg 完成 10/10，9 条转码、1 条 remux，六模型分布 2/2/2/2/1/1；全部 H.264/yuv420p、音频 AAC/无、GOP ≤2s、`moov < mdat` 且 `moov` 最大 115,736 bytes，并通过 0/10/50/90% 解码。源视频 93,964,071 bytes，处理后视频 49,495,483 bytes，poster 583,363 bytes；processed manifest SHA-256=`161dc1d37ba75c570ff78ac856386d4581084f20e9bc7336cbb8693c82f0d074`。
+- 2026-10-28 TEST Storage 执行：只读身份/私有桶预检通过后，以 6MiB TUS 分块、4 路并发上传 10 视频 + 10 poster；`x-upsert:false`，20/20 对象通过认证 Range 回读与大小校验。签名 URL 首段 Range p95=1,873.0ms，中段 Range p95=967.3ms（同 URL 复用），达到参考网络 2s 预算。尚未写数据库；TEST 已发布视频模型目录仍缺失，必须先由运营审核/发布目录，再生成并执行 10 条 TEST SQL。
+- 2026-10-28 用户新增 D20–D22：参考短剧播放链路优化；TEST 因容量只导入 10 条；main/Production 先上传全部 4,000 组私有对象但不写业务表，完成后从锁定 upload manifest 生成 8×500 migration，等上线窗口逐文件执行。上传器与 SQL 生成器物理分离，生产对象使用不可变 hash 路径；入口在八批与 postflight 完成前保持关闭。D17 审核门禁继续有效，本次仅更新规划，未运行 FFmpeg、未上传、未写库。
+- 2026-10-28 短剧复用结论：采用稳定签名 URL、同 key single-flight、5s 签名超时、点击/临近播放只预取地址、换签保留 currentTime/paused、旧 source 释放，以及 address/metadata/first-frame/seek/buffer 分段观测；不复制短剧 UI，不在当前自建 ABR。
 - 2026-10-27 用户确认 D16：总量只保留 4,000 条，模型间尽量均匀，模型内按热度取舍。翻译命中 5,082 条的 URL 排除前水位填充配额为 711 / 952 / 583 / 682 / 952 / 120；同热度用 source_video_id 稳定排序。
 - 2026-10-27 用户新增 D17：Supabase 上传前必须先规划 FFmpeg 编码与文件处理以支持快速打开，并由用户确认后再执行。门禁前不得完整下载、运行 FFmpeg 或写远程环境。
 - 2026-10-27 用户新增 D18：参考网络下播放快开与未缓存 seek 的 p95 均 ≤2 秒；处理门禁增加 GOP/关键帧检查。播放层预留 provider/format adapter，后续 CDN 点播以加法方式接入，当前不提前引入 HLS/MSE 实现。

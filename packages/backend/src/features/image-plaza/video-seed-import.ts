@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { createWriteStream } from 'node:fs';
+import { mkdir, readFile, rename, rm } from 'node:fs/promises';
+import { Readable, Transform } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import { dirname } from 'node:path';
 import { fetch as undiciFetch, ProxyAgent, type Dispatcher } from 'undici';
 import XLSX from 'xlsx';
-import type { VideoPlazaModelCatalog } from '@miniapp/shared';
-import { getDomainDb } from '../../lib/supabase.js';
-import { deletePlazaVideoAssets, uploadPlazaVideoAsset } from './storage.js';
-import { prepareVideo } from './video-media.js';
 
 const SOURCE_HEADERS = [
   'Venice 模型',
@@ -70,6 +70,12 @@ export interface VideoSeedSelectionGroup {
 export interface VideoSeedSelection {
   rows: VideoSeedSourceRow[];
   groups: VideoSeedSelectionGroup[];
+}
+
+export interface DownloadedVideoFile {
+  path: string;
+  bytes: number;
+  sha256: string;
 }
 
 export function readVideoSourceRows(
@@ -248,6 +254,25 @@ export function selectBalancedTopVideoSeedRows(
   };
 }
 
+export function selectVideoSeedCanaryRows(
+  selection: VideoSeedSelection,
+  targetCount: number
+): VideoSeedSourceRow[] {
+  if (
+    !Number.isSafeInteger(targetCount) ||
+    targetCount < 1 ||
+    targetCount > selection.rows.length
+  ) {
+    throw new Error('video_seed_canary_target_invalid');
+  }
+  const rows = selection.rows.slice(0, targetCount);
+  const modelCount = selection.groups.length;
+  if (targetCount >= modelCount && new Set(rows.map((row) => row.modelId)).size !== modelCount) {
+    throw new Error('video_seed_canary_model_coverage_failed');
+  }
+  return rows;
+}
+
 function compareVideoSeedRank(left: VideoSeedSourceRow, right: VideoSeedSourceRow): number {
   return (
     right.sourceHeat - left.sourceHeat || compareStableText(left.sourceVideoId, right.sourceVideoId)
@@ -284,11 +309,18 @@ export async function headVideoSize(url: string): Promise<number> {
   throw last instanceof Error ? last : new Error('video_seed_head_failed');
 }
 
-async function downloadSeedVideo(url: string): Promise<Buffer> {
+export async function downloadSeedVideoToFile(
+  url: string,
+  destinationPath: string
+): Promise<DownloadedVideoFile> {
+  assertSourceUrl(url);
   assertTlsVerificationEnabled();
   const dispatcher = getVideoSeedDispatcher();
+  await mkdir(dirname(destinationPath), { recursive: true });
+  const partialPath = `${destinationPath}.part`;
   let last: unknown;
   for (let attempt = 0; attempt < 3; attempt += 1) {
+    await rm(partialPath, { force: true });
     let response: Response;
     try {
       response = await fetchCivitaiVideo(url, 'GET', 120_000, dispatcher);
@@ -313,106 +345,43 @@ async function downloadSeedVideo(url: string): Promise<Buffer> {
     const declared = Number(response.headers.get('content-length') ?? 0);
     if (declared > MAX_VIDEO_BYTES) throw new Error('video_seed_asset_too_large');
     try {
-      const bytes = Buffer.from(await response.arrayBuffer());
-      if (bytes.byteLength < 1 || bytes.byteLength > MAX_VIDEO_BYTES)
-        throw new Error('video_seed_asset_too_large');
-      return bytes;
+      if (!response.body) throw new Error('video_seed_download_body_missing');
+      const hash = createHash('sha256');
+      let bytes = 0;
+      const limit = new Transform({
+        transform(chunk: Buffer, _encoding, callback) {
+          bytes += chunk.byteLength;
+          if (bytes > MAX_VIDEO_BYTES) {
+            callback(new Error('video_seed_asset_too_large'));
+            return;
+          }
+          hash.update(chunk);
+          callback(null, chunk);
+        },
+      });
+      await pipeline(
+        Readable.fromWeb(response.body as Parameters<typeof Readable.fromWeb>[0]),
+        limit,
+        createWriteStream(partialPath, { flags: 'wx' })
+      );
+      if (bytes < 1 || (declared > 0 && declared !== bytes)) {
+        throw new Error('video_seed_download_size_mismatch');
+      }
+      await rename(partialPath, destinationPath);
+      return { path: destinationPath, bytes, sha256: hash.digest('hex') };
     } catch (err) {
-      if (err instanceof Error && err.message === 'video_seed_asset_too_large') throw err;
+      if (err instanceof Error && err.message === 'video_seed_asset_too_large') {
+        await rm(partialPath, { force: true });
+        throw err;
+      }
       last = err;
       if (attempt < 2) {
         await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** attempt));
       }
     }
   }
+  await rm(partialPath, { force: true });
   throw last instanceof Error ? last : new Error('video_seed_download_failed');
-}
-
-export async function importVideoSeedRow(
-  row: VideoSeedSourceRow,
-  catalog: VideoPlazaModelCatalog
-): Promise<'imported' | 'already_imported'> {
-  assertSourceUrl(row.videoUrl);
-  const db = getDomainDb('media_plaza');
-  const { data: existing, error: existingError } = await db
-    .from('video_artifacts')
-    .select('id,source_video_url')
-    .eq('origin', 'civitai_seed')
-    .eq('source_video_id', row.sourceVideoId)
-    .maybeSingle();
-  if (existingError) throw new Error(`video_seed_existing_read_failed:${existingError.message}`);
-  if (existing) {
-    if (existing.source_video_url !== row.videoUrl)
-      throw new Error('video_seed_idempotency_conflict');
-    return 'already_imported';
-  }
-  const model = catalog.models.find(
-    (item) => item.id === row.modelId || item.seed_aliases.includes(row.sourceModelName)
-  );
-  if (!model) throw new Error('video_seed_model_unavailable');
-  const bytes = await downloadSeedVideo(row.videoUrl);
-  const prepared = await prepareVideo(bytes);
-  const safeId = row.sourceVideoId.replace(/[^a-z0-9._-]+/gi, '-').slice(0, 120);
-  const videoPath = `media-plaza-video/imports/civitai/${safeId}/video.mp4`;
-  const posterPath = `media-plaza-video/imports/civitai/${safeId}/poster.jpg`;
-  try {
-    await uploadPlazaVideoAsset({
-      path: videoPath,
-      bytes: prepared.video,
-      contentType: 'video/mp4',
-    });
-    await uploadPlazaVideoAsset({
-      path: posterPath,
-      bytes: prepared.poster,
-      contentType: 'image/jpeg',
-    });
-    const resolution = model.default_resolution;
-    const aspectRatio = model.default_aspect_ratio;
-    const duration = model.durations.reduce(
-      (best, value) =>
-        Math.abs(value * 1000 - prepared.durationMs) < Math.abs(best * 1000 - prepared.durationMs)
-          ? value
-          : best,
-      model.default_duration
-    );
-    const snapshot = {
-      prompt: row.prompt,
-      prompt_zh: row.promptZh,
-      prompt_zh_source: 'translation_pack',
-      model_id: model.id,
-      input_mode: model.image_input === 'required_reference' ? 'r2v' : 't2v',
-      duration_s: duration,
-      resolution,
-      aspect_ratio: aspectRatio,
-      audio: model.default_audio,
-      reference_artifact_id: null,
-      source_heat: row.sourceHeat,
-    };
-    const { error } = await db.rpc('import_video_seed_work', {
-      p_source_video_id: row.sourceVideoId,
-      p_source_video_url: row.videoUrl,
-      p_source_heat: row.sourceHeat,
-      p_storage_path: videoPath,
-      p_byte_size: prepared.video.byteLength,
-      p_width: prepared.width,
-      p_height: prepared.height,
-      p_duration_ms: prepared.durationMs,
-      p_poster_path: posterPath,
-      p_poster_width: prepared.width,
-      p_poster_height: prepared.height,
-      p_title: row.promptZh.slice(0, 80),
-      p_description: row.promptZh.slice(0, 500),
-      p_model_id: model.id,
-      p_model_name: model.name,
-      p_snapshot: snapshot,
-      p_published_at: row.publishedAt,
-    });
-    if (error) throw new Error(`video_seed_import_rpc_failed:${error.message}`);
-    return 'imported';
-  } catch (err) {
-    await deletePlazaVideoAssets([videoPath, posterPath]).catch(() => undefined);
-    throw err;
-  }
 }
 
 function readSheet(path: string, headers: readonly string[]): Record<string, unknown>[] {

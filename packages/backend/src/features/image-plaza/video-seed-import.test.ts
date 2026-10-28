@@ -8,6 +8,7 @@ import {
   closeVideoSeedImportResources,
   headVideoSize,
   selectBalancedTopVideoSeedRows,
+  selectVideoSeedCanaryRows,
 } from './video-seed-import.js';
 
 const directories: string[] = [];
@@ -140,6 +141,18 @@ describe('balanced video seed selection', () => {
     expect(() => selectBalancedTopVideoSeedRows([seedRow('model-a', 'a-1', 1)], 2)).toThrow(
       'video_seed_selection_insufficient_candidates'
     );
+  });
+
+  it('takes a deterministic ten-row canary covering every selected model', () => {
+    const rows = Array.from({ length: 18 }, (_, index) =>
+      seedRow(`model-${index % 6}`, `id-${index}`, 100 - index)
+    );
+    const selection = selectBalancedTopVideoSeedRows(rows, 18);
+
+    const canary = selectVideoSeedCanaryRows(selection, 10);
+
+    expect(canary).toEqual(selection.rows.slice(0, 10));
+    expect(new Set(canary.map((row) => row.modelId)).size).toBe(6);
   });
 });
 
