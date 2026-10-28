@@ -5,6 +5,8 @@ ST_miniapp 是围绕 Telegram MiniApp、AI 角色聊天、钱包/支付、语音
 > 深层架构、数据流和路由清单见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)；Railway 生产运维见 [`ops/railway/README.md`](ops/railway/README.md)。本文负责新成员入门、依赖关系、环境、命令和交付约定。
 > 短剧慢播放的分段口径、前端集中上报／Railway 日志查询与真机验收见 [短剧播放耗时排查](docs/drama-playback-timing.md)。
 
+> 短剧启动新增独立 Grafana 模板 `st-drama-playback`：v2 媒体网络/首帧诊断、分析域原子落表及有界历史导入。先执行对应环境的 `20261027_drama_playback_observability.sql`，再显式启用 `DRAMA_TIMING_PERSIST_ENABLED`；默认保留日志模式。代码不代表已部署，步骤和恢复见 [短剧看板操作说明](docs/grafana/drama-playback-runbook.md)。
+
 > 图片广场 Admin 保存草稿触发 `config_drafts_config_key_check` 的兼容修复：新增 `20261016_reconcile_image_plaza_managed_config_keys.sql`，保留现有白名单并恢复四个图片广场 key，不改正式配置。尚待 TEST workflow 单文件执行及保存/发布验收；详见迁移目录 README，Production 另行审批。
 
 ## 0. 运行环境
@@ -146,6 +148,8 @@ Admin Vercel Preview 在构建期固定 API 映射：普通 branch Preview 与 `
 
 短剧目录复用 `/api/dramas` 的完整标题、标签、简介，在前端做搜索／分类交集和排序。剧级文字逐字段采用 `dramas → 同剧 ai_results → 空值`；“最新”采用可播视频最早的 `created_at`，推荐保留接口顺序。`20261026_drama_video_created_at.sql` 仅计划用于 TEST：为已核验的 577 条存量按来源／消息升序补录展示时间，新增视频由独立上传端在首次上传成功时写入（本仓库不改该脚本）。先迁移验收，再发布 Backend／Frontend；当前远端执行状态和验证限制见[任务记录](.trellis/tasks/10-26-drama-mvp-search-latest/verification.md)，字段及恢复约定见[短剧目录契约](.trellis/spec/database/supabase/drama-catalog.md)。
 
+本地待评审短剧新版以 `/` 沉浸首页、`/dramas` 双列剧场为两个入口，角色发现位于 `/characters`。公共底栏统一为「角色 / AI短剧 / 中央播放首页 / 生成 / 我的」五入口，共享高度、安全区与隐藏规则，角色和影像内部交互保持独立。所有短剧由官方发布，不提供博主关注。收藏/续看仍保存在本设备；点赞与评论通过鉴权互动 API。新表和 RPC 仅在 `drama_archive`，发布须先执行 `20261027_drama_interactions.sql`；当前未执行线上迁移/发布。隔离验证：`bash scripts/test-drama-interactions-migration.sh`（需本机 Docker 与 postgres:17）；固定手机验收：`pnpm test:ui --grep @drama`。详见[本轮验收记录](.trellis/tasks/10-27-drama-mobile-ux/verification.md)。
+
 ```bash
 pnpm supabase:start
 pnpm supabase:status
@@ -154,6 +158,7 @@ pnpm supabase:link:test
 ```
 
 - `packages/shared/migrations/` 是唯一 SQL migration 来源；不要复制到 `supabase/migrations/`。
+- 聊天计费资格按 `chat_history.llm_charge_id` 查找，需先执行 `20261027_chat_charge_lookup_index.sql`（TEST→生产、CONCURRENTLY、无外层事务）；高频查询须核对生产计划，取消轮询不得读取完整 prompt。
 - `supabase/config.toml` 的 migration schema path 当前不会自动重放 shared migrations，因此本地 reset/push 不代表项目迁移链已完整执行。
 - 远端 migration 默认通过 [`.github/workflows/db-migrate.yml`](.github/workflows/db-migrate.yml) 的手工 `workflow_dispatch` 单文件执行；保留项目 ref 校验、production 明文确认和环境并发锁。先测试后生产，每一步记录前后结构、RLS/grants、关键读写、锁/容量和回滚。
 - 2026-09-10 起新 migration 使用 `YYYYMMDD_描述.sql`；workflow 以 `psql --file` 执行，并在 `supabase_migrations.repo_migrations` 中按 filename/checksum 查重和记账。历史三位编号文件已冻结且可能重号，不得按编号推断环境状态。
@@ -169,6 +174,8 @@ OpenRouter 调用事实由 `experience.openrouter_chat_history` 保存，消费 
 新发送和重生成通过数据库 current-postprocess RPC，在既有开轮事务内读取 `app_core.runtime_config` 的正式指针、校验对应不可变 artifact 快照并写入 `chat_history.postprocess_version`。开轮成功必返回非空版本；配置缺失、协议错版、快照不可用或新 RPC 未部署时拒绝开轮且不调用 LLM，不再因 Backend 冷启动生成永久无版本消息。旧显式 wrapper 的 `NULL=不绑定` 兼容语义保留，旧消息不回填；应用发布顺序为 migration → Backend。
 
 图片广场必须依次手动验证并执行 `20261012_image_plaza_v2.sql`、`20261013_image_plaza_seed_catalog.sql`、`20261013_image_plaza_seed_large_assets.sql` 后才能运行初始数据 apply。`image-plaza:seed` 默认只做工作簿 dry-run；真实写入还要求审核 manifest、明确 `--target test|production`、`--limit 1..500`、原图存储确认，Production 另需显式确认。普通图片保持 20 MiB，已审核 seed 原图允许至 50 MiB；来源权利/内容/元数据审核、test canary 或容量门禁未完成时不得导入。test 导入结果见任务 `10-10-image-plaza-v2`。
+
+`20261027_media_plaza_schema_move.sql` 将现有图片广场 8 张表和 3 个 RPC 物理迁入 `media_plaza`，不保留 `experience` / `miniapp_features` 兼容入口；Backend 同步直接访问新域。发布必须暂停图片广场流量，先单文件执行 M1 创建新 schema，再执行对应环境的 `postgrest-expose-media-plaza-*.sql`，随后立即部署匹配 Backend。不得在 schema 存在前提前加入 PostgREST 暴露列表。M1 回滚时继续停流，先把 `pgrst.db_schemas` 恢复为执行前值并 reload PostgREST，再执行配套 rollback、部署旧 Backend；新增视频对象后禁止使用该回滚。
 
 图片广场 TEST seed 迁移另见 [离线 SQL 导出与 Storage 迁移方法](ops/image-plaza-seed-migration.md)：不随部署执行；2026-10-20 已授权独立 Storage 本地暂存/并发上传/回读校验阶段，进度以任务和受限 report 为准，尚未执行生产 SQL。新增数据文件不得入 Git；已发现三个历史导出被跟踪，恢复 ignore 不代表清除了历史。
 
@@ -224,10 +231,10 @@ OpenRouter 调用事实由 `experience.openrouter_chat_history` 保存，消费 
 
 - [系统架构](docs/ARCHITECTURE.md)
 - [首 token 兜底、数据口径与人工观察](docs/first-token-fallback.md)
-- [Grafana 用户首 token 业务看板](docs/grafana/chat-first-token.json)：用户实际显示耗时、每型号兜底触发率与超时率；读取授权通过 `20261023_grafana_first_token_reader.sql` 正式迁移。
+- [Grafana 用户首 token 业务看板](docs/grafana/chat-first-token.json)：客户端首字交付耗时、每型号兜底触发率与超时率（v4当前标准见文末）；读取授权通过 `20261023_grafana_first_token_reader.sql` 正式迁移。
 - [Railway 运维](ops/railway/README.md)
 - [后端日志与可观测性](.trellis/spec/backend/app/data-reliability-and-security.md)
-- [数据库域与归属](docs/ARCHITECTURE.md#51-数据库八域布局099-之后test-与生产一致)
+- [数据库域与归属](docs/ARCHITECTURE.md#51-数据库九域布局media_plaza-m1-之后)
 - [Trellis 工作流](.trellis/workflow.md)
 - [Admin spec](.trellis/spec/admin/app/index.md)
 - [Shared spec](.trellis/spec/shared/contracts/index.md)
@@ -237,7 +244,7 @@ OpenRouter 调用事实由 `experience.openrouter_chat_history` 保存，消费 
 
 T10 新增 `20261016_openrouter_history_disposition.sql`，先按现有mapper白名单保全类型化调用事实/受控诊断，丢弃其余历史诊断并清父表旧JSON；不改正文/业务终态/账单/额度。已有OR诊断同样规范化，Venice明细不写。更新尚未在两库执行的主表DROP：依赖处置成功账本，将引入snapshot前的旧终态/dedup/失败/pending明确分类，保留旧pending和原幂等键，不以settled_at为空误判或补写假结算。现代未知/冲突/未收口旧字段仍拒绝。TEST先处置、验证后再DROP；超过2000候选拒绝，Production另审批次，不重跑已记账文件。用户已明确忽略作废PR425。详见任务发布清单与T10报告，代码声明不代表已在远端处置。
 
-首 token 兜底修复的明确口径为首发实际派发后最多4秒、兜底实际派发后最多2秒、用户提交到可见首字总硬上限10秒。总时间包含前置/网络/显示；思考模式同样受约束。新增迁移须先TEST后生产，现有显式6秒配置须经运营发布改为10秒；本地代码完成不代表已上线。详见[运行与数据口径](docs/first-token-fallback.md)。
+当前首 token 竞争策略为首发派发后默认4秒启动兜底、原首发继续，两路共同受10秒首字总上限约束；兜底默认2秒参数用于预留提前启动预算，不是运行硬截止。赢家确定即取消败方，原价格权益只结算一次。总时间包含前置/网络/界面交付；思考模式同样受约束。迁移先TEST后生产，本地代码完成不代表已上线。详见[运行与数据口径](docs/first-token-fallback.md)。
 
 新轮首 token 可见确认与计费：`20261026_first_token_visible_billing.sql` 将客户端真实可见回报加入既有计费资格判断；服务端完成而客户端超时无字时不扣星尘、不消费免费次数。缺报 pending 后保守免收，既有 sync 依据 RPC 实际 pending 保留回捞；存量政策不改。超时采用灰色轻提示。详见 `docs/first-token-fallback.md`。
 
@@ -245,7 +252,7 @@ Grafana 经营统计的轻量口径、刷新预算及发布恢复流程见 [docs
 
 文字回复主动停止：新版客户端显式发送 `reason=user_stop`，后端持久化 `user_cancelled`；已冻结原价的轮次按所选型号原权益结算，免费轮消费免费次数，不增加扣费弹窗。自动首字截止传 `first_token_timeout`，系统超时/失败继续免扣。历史请求策略不回填；新请求即使省略原因也由后台策略与截止事实裁决。尚未受理/报价前取消不伪造账单。发布顺序为 `20261026_user_stop_billing.sql`（TEST后production）→ Backend → 新Frontend；只回退前端停止产生新标记，保留已产生标记的结算能力。
 
-## 可恢复交付协议 v3（2026-10-27）
+## 历史：可恢复交付协议 v3（2026-10-27）
 
 本节取代旧版“当前未可见→自动取消/免单”的运行规则。后端4秒首发、2秒兜底、10秒总首字预算仍由正式配置决定；模型在预算内选中有效首字后立即放行，意图/身份持久化与传输并行，结算前必须确认。断连写入返回false，不冒充客户端已收到；断连不终止生成。
 
@@ -258,3 +265,23 @@ recoverable_delivery仅新Backend显式启用；旧请求/终结账单不回填�
 唯一新增迁移20261027_recoverable_chat_delivery.sql：experience拥有策略/首字检查点，billing资格函数读取事实；analytics只追加无正文的策略/时刻/失败锁存字段。无新cron、逐token数据库写、业务回填或公开权限。先TEST、后生产迁移、后Backend/Frontend。回退保留新增对象和终账，必要时forward-fix。
 
 验证：本任务release-review记录自动化、真实PG、TEST流/浏览器和生产版本证据；测试通过不等于线上1%目标已达成。看板v3区分前台等待超时与系统无首字截断，显示分布只用浏览器业务侧实际时长，后台/缺报不填0。
+
+## 客户端首字交付 v4（2026-10-28）
+
+新客户端用 `client_committed_v4` 替换屏幕可见检测：提交动作 → 本轮正文或已开启的公开思考首次提交到 React 消息界面状态。它是业务侧交付口径，不是像素/阅读证明。滚动位置、气泡是否在视口、思考是否折叠均不参与；received 仅供分段排查，不能取消截止。提交时间达到当轮 deadline 即归超时，计时器延迟不能变成超时后的成功。
+
+send/regenerate 携带可选 `first_token_measurement`；后端通过既有 begin RPC 的同一次 INSERT 写入现有 measurement_method，缺报请求仍属于 v4。每轮首次结果不可改写；离页/后台独立终态，生成仍可继续并在返回时恢复。迟到回复可展示但不改写已超时记录。旧 v1-v3 保留兼容，历史独立筛选。
+
+统计复用现有 first_token_visible_ms 列承载按版本定义的时长，不增加表、cron、轮询或逐 token 写入。主指标为前台已知结果的无字时间截断率；成功分布只取截止前已交付样本，离页/缺报及覆盖率同时显示。后台和缺报不能当成功，不用服务端或供应商 latency 填补客户端数据。v4只改变观测口径；最新竞争策略见后文，总首字上限10秒与1%目标保留。
+
+系统超时免费、免费预留释放；主动停止沿原报价/权益一次结算。计费继续用一次交付结果和服务端持久化终态保障正确性，不依赖滚动/阅读。已结算记录只补调用元数据，不重进计费；归档明细依永久去重返回显式 archived 终态，不重扣、不伪造账单；failed 进入已有有界退避。缺报沿用原预算+15秒保守收口，不增加新计费任务。
+
+迁移为 `20261028_client_committed_first_token.sql`、`20261028_llm_archived_charge_result.sql`，均仅替换既有函数，保留 ACL 和历史数据。先 TEST 验证、合 dev，再生产迁移 → Backend → Frontend/看板。发布证据见任务 release-review；1%是否达成须由上线后的 v4 样本判断。
+
+## 首发与兜底竞争交付（2026-10-28）
+
+首发实际派发后达到型号阈值（默认4秒）启动兜底，首发继续；两路共用原10秒首字截止，任一路先出现有效正文或已开启公开思考即锁定唯一赢家，立即中止败方。`fallback_timeout_ms`字段保留兼容，默认2000仅作为前置过慢时提前启动兜底的预留时间，不再是兜底自身硬截止。同型号不并发重复请求，可等到总截止；首发明确失败只允许一次顺序兜底。历史阶段预算不回填，新旧策略按实际发布时刻分窗；客户端仍用v4，总耗时不相加两路并行等待。
+
+只消费赢家的replay与原charge_id结算，原报价/权益、超时免扣、主动停止和离页恢复规则不变。败方立即取消，不为排查drain；只把已接收的正文/公开思考有界片段和race_lost原因并入原attempt一次异步终态写，不发给用户、不进上下文、不另计费。正常attempt最多派发/终态两次observe；删除旧首发额外元数据补读，无新cron/轮询。diagnostic保存不阻塞首字，赢家身份仍须持久化才能结算。
+
+新迁移`20261028_first_token_race.sql`扩展现有attempt诊断列并解除禁止首发回赢的守卫，保留数据库单赢家CAS/PT409；Grafana仅获原指标列权限，不能读诊断正文。先本地与TEST验证、合dev，再生产迁移和应用/Admin/看板。回退应用保留诊断列与原账务，不扩权限，不改历史数据。

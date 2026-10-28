@@ -15,10 +15,6 @@ import { beginActiveDelivery, appendActiveDelivery, endActiveDelivery } from './
 
 import { randomUUID } from 'node:crypto';
 import { FirstTokenDeadlineError } from '../generation/first-token-fallback.js';
-import {
-  fetchGenerationDataForSettlement,
-  buildGenerationMetadata,
-} from '../generation/openrouter-metadata.js';
 import { GenerationObservationRepository } from '../../infrastructure/repositories/GenerationObservationRepository.js';
 import { GenerationCleanupPendingError } from '../generation/types.js';
 import type { SseTapResult } from '../generation/upstream.js';
@@ -80,6 +76,7 @@ export interface RunConversationTurnInput {
   /** Caller correlation, persisted for safe pre-start cancellation matching. */
   requestId?: string;
   thinkingEnabled?: boolean;
+  firstTokenMeasurement?: 'client_committed_v4';
 }
 
 export const CONVERSATION_PREPARATION_TIMEOUT_MS = DEFAULT_FIRST_TOKEN_DEADLINE_MS;
@@ -227,9 +224,9 @@ export async function runConversationTurn(
     catalogVersion: policy.catalogVersion,
     mode: mode.kind,
     recoverableDelivery: true,
+    // Declare the cohort with the existing insert so missing reports remain measurable.
+    measurementMethod: input.firstTokenMeasurement,
   };
-  const enrichedObserverIds = new Set<string>();
-  let fallbackPrepared = false;
   let observationBegun = false;
   let emitted = false;
   let readyMs: number | null = null;
@@ -265,7 +262,7 @@ export async function runConversationTurn(
   let pollTimer: NodeJS.Timeout | undefined;
   const pollCancellation = async (): Promise<void> => {
     try {
-      const row = await historyRecords().requireTurnById(turn.historyId);
+      const row = await historyRecords().requireTurnState(turn.historyId);
       if (row.llm_finish_reason === 'user_cancelled') clearTimeout(firstTokenTimer);
       if (row.status !== 'streaming' || row.llm_finish_reason !== null) controller.abort();
     } catch (err) {
@@ -286,18 +283,29 @@ export async function runConversationTurn(
   beginActiveDelivery(turn.historyId, userId, session.id, turn.revision);
 
   try {
-    if (input.requestId)
-      await historyRecords().setPendingRequestId(turn.historyId, input.requestId);
-    await observations.begin(observationInput);
-    observationBegun = true;
-    if (firstTokenDeadlineElapsed) recordFirstTokenTimeout();
-    controller.signal.throwIfAborted();
     // ── 组 prompt ─────────────────────────────────────────────────────────────
-    const context = await historyRecords().getContextBeforeTurn(
-      session.id,
-      turn.turnIndex,
-      turn.contextWindowStartTurn
-    );
+    // Context reads do not depend on this new turn's identity writes. Keep the
+    // writes ordered (pending identity must never overwrite the final prompt).
+    const [registration, contextRead] = await Promise.allSettled([
+      (async () => {
+        if (input.requestId)
+          await historyRecords().setPendingRequestId(turn.historyId, input.requestId);
+        await observations.begin(observationInput);
+        observationBegun = true;
+        if (firstTokenDeadlineElapsed) recordFirstTokenTimeout();
+      })(),
+      historyRecords().getContextBeforeTurn(
+        session.id,
+        turn.turnIndex,
+        turn.contextWindowStartTurn
+      ),
+    ]);
+    // Finish registration before failure cleanup too. A fast context rejection
+    // must not race a late identity write or omit the failed request's facts.
+    if (registration.status === 'rejected') throw registration.reason;
+    if (contextRead.status === 'rejected') throw contextRead.reason;
+    const context = contextRead.value;
+    controller.signal.throwIfAborted();
     const history = buildEngineHistory(context.messages, context.openingMessage ?? card.first_mes);
 
     const prompt = buildPrompt({
@@ -311,7 +319,16 @@ export async function runConversationTurn(
       instructions: instructions.instructions,
     });
 
-    await historyRecords().setPromptHistory(turn.historyId, prompt.messages, input.requestId);
+    // Persist the audit/context snapshot while generation performs independent
+    // pricing/entitlement checks. The dispatch hook still requires durability.
+    const promptPersisted = historyRecords().setPromptHistory(
+      turn.historyId,
+      prompt.messages,
+      input.requestId
+    );
+    // Attach a rejection handler now; the hook/result below awaits the original
+    // promise, so a slow precheck cannot cause an unhandled rejection.
+    void promptPersisted.catch(() => {});
 
     // ── 生成 ──────────────────────────────────────────────────────────────────
     const request: GenerationRequest = {
@@ -333,33 +350,11 @@ export async function runConversationTurn(
           clearTimeout(firstTokenTimer);
         },
         store: {
-          prepareFallback: async (attempt, triggeredMs) => {
-            fallbackPrepared = true;
-            await observations.prepareFallback(turn.historyId, attempt, triggeredMs);
-          },
-          observe: async (attempt) => {
-            await observations.observe(turn.historyId, attempt);
-            // The discarded primary stops at its first token; read only bounded provider metadata.
-            if (
-              fallbackPrepared &&
-              attempt.role === 'primary' &&
-              attempt.provider === 'openrouter' &&
-              attempt.generation_id &&
-              attempt.end_reason &&
-              !enrichedObserverIds.has(attempt.generation_id)
-            ) {
-              enrichedObserverIds.add(attempt.generation_id);
-              void fetchGenerationDataForSettlement(attempt.generation_id)
-                .then(async (data) => {
-                  if (data)
-                    await observations.enrichGeneration(
-                      attempt.generation_id!,
-                      buildGenerationMetadata(data)
-                    );
-                })
-                .catch(observationError);
-            }
-          },
+          prepareFallback: (attempt, triggeredMs) =>
+            observations.prepareFallback(turn.historyId, attempt, triggeredMs),
+          // Each attempt carries its own bounded terminal diagnostic. Winner metadata
+          // follows normal settlement; the cancelled loser never needs a second fetch.
+          observe: (attempt) => observations.observe(turn.historyId, attempt),
           selectDelivery: (attempt) => observations.selectDelivery(turn.historyId, attempt),
         },
       },
@@ -399,6 +394,7 @@ export async function runConversationTurn(
       {
         onBeforeDispatch: async (snapshot) => {
           controller.signal.throwIfAborted();
+          await promptPersisted;
           await observations.begin({ ...observationInput, snapshot });
           controller.signal.throwIfAborted();
           emitStart();
@@ -443,6 +439,7 @@ export async function runConversationTurn(
       },
       log
     );
+    await promptPersisted;
 
     if (result.status === 'insufficient_balance' || result.denial === 'vip_required')
       await observations

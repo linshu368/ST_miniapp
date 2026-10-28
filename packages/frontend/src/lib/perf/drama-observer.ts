@@ -13,22 +13,55 @@ function reportTiming(report: DramaTimingReport): void {
   if (report.phase === 'slow') log.warn(fields);
   else log.info(fields);
   // 上报不参与播放状态机；失败保留本地诊断，不递归记录成新的播放样本。
-  void uploadDramaTiming(report).catch(() => {
-    log.warn({
-      event: 'drama.timing_upload_failed',
-      observation_id: report.id,
-      phase: report.phase,
+  const upload = () => {
+    void uploadDramaTiming(report).catch(() => {
+      log.warn({
+        event: 'drama.timing_upload_failed',
+        observation_id: report.id,
+        phase: report.phase,
+      });
     });
-  });
+  };
+  // Let the click handler enqueue /play before the new background start report takes a slot.
+  if (report.phase === 'start') queueMicrotask(upload);
+  else upload();
 }
 
 export const dramaTiming = new DramaTimingTracker(
   () => performance.now(),
   createRequestId,
-  reportTiming
+  reportTiming,
+  browserContext()
 );
+
+/** 只输出粗平台/大版本，不发送完整 UA 或持久用户标识。 */
+function browserContext(): NonNullable<DramaTimingReport['context']> {
+  const ua = typeof navigator === 'undefined' ? '' : navigator.userAgent;
+  const browser = /Firefox\//.test(ua)
+    ? 'firefox'
+    : /(?:Chrome|Chromium|CriOS)\//.test(ua)
+      ? 'chromium'
+      : /AppleWebKit\//.test(ua)
+        ? 'webkit'
+        : 'other';
+  const version = /(?:Firefox|Chrome|Chromium|CriOS|Version)\/(\d+)/.exec(ua)?.[1];
+  const rawRelease = process.env.NEXT_PUBLIC_DRAMA_RELEASE || 'unknown';
+  return {
+    release: /^[a-zA-Z0-9_.-]{1,128}$/.test(rawRelease) ? rawRelease : 'unknown',
+    sessionId: createRequestId(),
+    platform: /iPad|iPhone|iPod/.test(ua)
+      ? 'ios'
+      : /Android/.test(ua)
+        ? 'android'
+        : ua
+          ? 'desktop'
+          : 'unknown',
+    browser,
+    browserMajor: version && Number(version) <= 1000 ? Number(version) : undefined,
+  };
+}
 // 直接打开列表时包含文档加载与 hydration；站内入口由 click capture 起计。
-if (typeof window !== 'undefined' && window.location.pathname === '/dramas') {
+if (typeof window !== 'undefined' && ['/', '/dramas'].includes(window.location.pathname)) {
   dramaTiming.beginList('document_navigation', 0);
 }
 
@@ -45,10 +78,11 @@ export function installDramaTiming(): () => void {
     )
       return;
     const link = event.target instanceof Element ? event.target.closest('a') : null;
+    const href = link?.getAttribute('href');
     if (
-      link?.getAttribute('href') === '/dramas' &&
-      link.getAttribute('target') !== '_blank' &&
-      window.location.pathname !== '/dramas'
+      (href === '/' || href === '/dramas') &&
+      link?.getAttribute('target') !== '_blank' &&
+      window.location.pathname !== href
     )
       dramaTiming.beginList('navigation_click');
   };

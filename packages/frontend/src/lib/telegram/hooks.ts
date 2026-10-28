@@ -38,8 +38,9 @@ export function suspendTelegramVerticalSwipes(): () => void {
       return noop;
     }
     ownsMount = !swipeBehavior.isMounted();
-    if (ownsMount) swipeBehavior.mount();
+    // SDK 3.x mount 本身会改写为禁用，必须先记录进入前的状态。
     const wasEnabled = swipeBehavior.isVerticalEnabled();
+    if (ownsMount) swipeBehavior.mount();
     swipeBehavior.disableVertical();
     return () => {
       try {

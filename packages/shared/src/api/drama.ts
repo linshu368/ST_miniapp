@@ -1,3 +1,5 @@
+import { z } from 'zod';
+
 // 短剧浏览与播放契约。
 //
 // 数据源是 telegram-video-archive 直接建在 Supabase 上的 drama_archive schema，
@@ -100,4 +102,46 @@ export interface GetDramaByIdData {
 // GET /api/dramas/:id/play 的响应体
 export interface GetDramaPlaybackData {
   playback: DramaPlayback;
+}
+
+/** 互动只针对官方发布的剧，不包含创作者或关注关系。 */
+export interface DramaSocial {
+  liked: boolean;
+  like_count: number;
+  comment_count: number;
+}
+
+export const SetDramaLikeSchema = z.object({ liked: z.boolean() }).strict();
+export const CreateDramaCommentSchema = z
+  .object({
+    /** 重试复用同一个 ID，避免网络超时后重复发表。 */
+    id: z.string().uuid(),
+    body: z
+      .string()
+      .trim()
+      .min(1)
+      .max(500)
+      .refine((value) => !/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(value)),
+  })
+  .strict();
+export type CreateDramaComment = z.infer<typeof CreateDramaCommentSchema>;
+
+export interface DramaComment {
+  id: string;
+  /** 稳定匿名剧友名，不暴露用户 ID、用户名或 Telegram 资料。 */
+  author: string;
+  is_mine: boolean;
+  body: string;
+  created_at: string;
+}
+
+export interface GetDramaSocialData {
+  social: DramaSocial;
+}
+export interface GetDramaCommentsData {
+  comments: DramaComment[];
+  next_cursor: string | null;
+}
+export interface CreateDramaCommentData {
+  comment: DramaComment;
 }

@@ -5,15 +5,15 @@ scope: database
 category: infrastructure
 status: active
 owners: [database]
-last_verified_task: .trellis/tasks/10-23-dialogue-preference/
-last_verified_at: 2026-10-13
+last_verified_task: .trellis/tasks/10-27-media-plaza-schema-move/
+last_verified_at: 2026-10-27
 ---
 
 # Schema、RLS 与迁移执行基建
 
 ## 职责与边界
 
-定义八域归属、跨域边界、RLS/grant、日期命名、账本治理和 `psql` 单文件迁移纪律。生产迁移必须测试优先、人工执行并记录 shape、权限、容量与回滚。
+定义九域归属、跨域边界、RLS/grant、日期命名、账本治理和 `psql` 单文件迁移纪律。生产迁移必须测试优先、人工执行并记录 shape、权限、容量与回滚。
 
 ## 当前状态
 
@@ -48,15 +48,16 @@ last_verified_at: 2026-10-13
 
 ## 图片创作广场 V2（2026-10-12）
 
-图片广场对象按 experience、miniapp_features、billing、app_core 四域归属；表启用 RLS 并撤销浏览器角色权限，SECURITY DEFINER RPC 固定 `search_path` 且只授权 service_role/postgres。Storage bucket 保持私有；Admin 发布链扩展深层 JSON 校验。迁移仍需在明确 test 目标后单文件人工执行并验证。
+`20261027_media_plaza_schema_move.sql` 执行后，图片广场 8 张运行时表与 3 个 RPC 统一归 `media_plaza`；计费与运行时配置仍分别归 `billing`、`app_core`。表保留 RLS，schema/table/function 撤销浏览器角色权限并只授权 service_role/postgres。迁移不保留旧 schema 兼容入口，必须暂停图片广场流量、执行 M1、暴露已创建的新 schema 并立即部署匹配 Backend；不得提前暴露不存在的 schema。
 
-`20261013_image_plaza_seed_catalog.sql` 提供 `experience.import_image_plaza_seed_work` SECURITY DEFINER RPC，固定 `search_path`，撤销 public/anon/authenticated 并仅授予 service_role/postgres；导入以来源 ID advisory transaction lock 保证幂等并检测漂移。`20261013_image_plaza_seed_large_assets.sql` 前向同步 RPC、artifact CHECK 与私有 bucket 的 50 MiB seed 容量；三份 migration 的 SQL、权限/RLS、幂等和容量 shape 已在 test 项目验证，production 仍需独立发布确认。
+`20261013_image_plaza_seed_catalog.sql` 初始创建的导入 RPC 会由 M1 移至 `media_plaza.import_image_plaza_seed_work`；其 SECURITY DEFINER、固定 `search_path`、最小权限、来源 ID advisory transaction lock 与漂移检测语义不变。`20261013_image_plaza_seed_large_assets.sql` 的 artifact CHECK 与私有 bucket 50 MiB seed 容量不变。
 
 ## 变更记录
 
+- 2026-10-27：任务 `10-27-media-plaza-schema-move` 批准第九域 `media_plaza`，记录无兼容层的 M1/Backend 协调割接与 M1-only 回滚。
 - 2026-10-13：任务 `10-10-image-plaza-v2` 记录种子导入 RPC 的权限和幂等边界。
 
-定义八域归属、跨域边界、RLS/grant，以及日期命名、账本治理和 `psql` 单文件迁移纪律。
+定义九域归属、跨域边界、RLS/grant，以及日期命名、账本治理和 `psql` 单文件迁移纪律。
 
 ## T9 专表旧别名清理（本地实现，远端未执行）
 

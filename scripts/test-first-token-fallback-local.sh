@@ -77,6 +77,8 @@ SQL
 # must return a terminal HTTP conflict while preserving the existing lifecycle CAS.
 "${task_psql[@]}" -f "$task_root/packages/shared/migrations/20261026_first_token_nonretryable_conflicts.sql" >/dev/null
 "${task_psql[@]}" -f "$task_root/packages/shared/migrations/20261026_first_token_nonretryable_conflicts.sql" >/dev/null
+"${task_psql[@]}" -f "$task_root/packages/shared/migrations/20261028_first_token_race.sql" >/dev/null
+"${task_psql[@]}" -f "$task_root/packages/shared/migrations/20261028_first_token_race.sql" >/dev/null
 
 # Supabase repositories through real PostgREST; only the API port is mapped to loopback.
 docker run --rm -d --network "$task_network" --name "$task_rest_container" \
@@ -146,8 +148,37 @@ echo 'PASS: explicit stop original quote/entitlement once; system timeout and le
 # Recoverable delivery: additive migration, old policy preserved, once-only billing.
 "${task_psql[@]}" -f "$task_root/packages/shared/migrations/20261027_recoverable_chat_delivery.sql" >/dev/null
 "${task_psql[@]}" -f "$task_root/packages/shared/migrations/20261027_recoverable_chat_delivery.sql" >/dev/null
+"${task_psql[@]}" -f "$task_root/packages/shared/migrations/20261028_client_committed_first_token.sql" >/dev/null
+"${task_psql[@]}" -f "$task_root/packages/shared/migrations/20261028_client_committed_first_token.sql" >/dev/null
 "${task_psql[@]}" -f "$task_root/packages/shared/migrations/tests/recoverable_chat_delivery.sql" >/dev/null
-echo 'PASS: recoverable delivery, departure, genuine cutoff, original quote and once-only quota'
+echo 'PASS: recoverable/v4 commit delivery, immutable receipt, cutoff/quota, departure and original user-stop price'
+
+# Competing database transactions must still bind exactly one provider identity.
+"${task_psql[@]}" -c "SELECT recoverable_test.race_claim('00000000-0000-4000-8000-0000000002d2','primary',true);" >"$task_dir/race-primary.log" &
+task_race_primary_pid=$!
+"${task_psql[@]}" -c "SELECT recoverable_test.race_claim('00000000-0000-4000-8000-0000000002d2','fallback',true);" >"$task_dir/race-fallback.log" &
+task_race_fallback_pid=$!
+wait "$task_race_primary_pid"
+wait "$task_race_fallback_pid"
+"${task_psql[@]}" -c "SELECT recoverable_test.race_finish('00000000-0000-4000-8000-0000000002d2');" >/dev/null
+"${task_psql[@]}" -c "SELECT visible_billing_test.charge('00000000-0000-4000-8000-0000000002d2');" >/dev/null &
+task_race_first_charge_pid=$!
+"${task_psql[@]}" -c "SELECT visible_billing_test.charge('00000000-0000-4000-8000-0000000002d2');" >/dev/null &
+task_race_second_charge_pid=$!
+wait "$task_race_first_charge_pid"
+wait "$task_race_second_charge_pid"
+"${task_psql[@]}" -c "SELECT vip_t4_test.assert((SELECT count(*)=1 AND sum(abs(amount))=30 FROM billing.wallet_ledger WHERE debit_key='00000000-0000-4000-8000-0000000002d2'),'racing attempts caused duplicate debit');" >/dev/null
+echo 'PASS: primary may win after fallback, concurrent winner CAS, loser privacy and once-only debit'
+
+# Install the real retention/dedup contract in this disposable billing fixture.
+python3 - "$task_root" <<'PYRETENTION' | "${task_psql[@]}" >/dev/null
+import pathlib,sys
+print((pathlib.Path(sys.argv[1])/'packages/shared/migrations/053_llm_spending_retention.sql').read_text().replace('miniapp.','billing.'))
+PYRETENTION
+"${task_psql[@]}" -f "$task_root/packages/shared/migrations/20261028_llm_archived_charge_result.sql" >/dev/null
+"${task_psql[@]}" -f "$task_root/packages/shared/migrations/20261028_llm_archived_charge_result.sql" >/dev/null
+"${task_psql[@]}" -f "$task_root/packages/shared/migrations/tests/llm_archived_charge_result.sql" >/dev/null
+echo 'PASS: real detail retention, permanent dedup replay, pending gate and unknown conflict rollback'
 
 # Execute the exported dashboard queries after replacing Grafana macros with fixed local fixtures.
 python3 - "$task_root/docs/grafana/chat-first-token.json" <<'PYSQL' | "${task_psql[@]}" >/dev/null
@@ -168,25 +199,33 @@ for panel in dashboard['panels']:
    print(resolved(target['rawSql'],selection)+';')
    print(resolved(target['rawSql'],selection,True)+';')
    print(resolved(target['rawSql'].replace('${measurement:sqlstring}',"'visible_dom_after_frame_v3'"),selection,True)+';')
+   print(resolved(target['rawSql'].replace('${measurement:sqlstring}',"'client_committed_v4'"),selection,True)+';')
 summary=next(p for p in dashboard['panels'] if p['id']==2)['targets'][0]['rawSql']
 cohorts=next(p for p in dashboard['panels'] if p['id']==7)['targets'][0]['rawSql']
 print('DO $$ DECLARE r jsonb; BEGIN')
 print('SELECT to_jsonb(q) INTO r FROM ('+resolved(summary,"'selected'")+') q WHERE q."首发等待"=4;')
-print('''IF (r->>'请求量')::int<>149 OR (r->>'前台已看到样本')::int<>148
- OR (r->>'用户总首 token P90')::numeric IS DISTINCT FROM 5.2
+print('''IF (r->>'请求量')::int<>149 OR (r->>'前台已交付样本')::int<>148
+ OR (r->>'客户端首字交付 P90')::numeric IS DISTINCT FROM 5.2
  OR (r->>'兜底触发率')::numeric IS DISTINCT FROM 100
  OR abs((r->>'前台已知结果超时率')::numeric - 100.0/149)>0.00001
  OR (r->>'回报覆盖率')::numeric IS DISTINCT FROM 100
  THEN RAISE EXCEPTION 'Dashboard business metrics or seconds conversion changed'; END IF;''')
 print('IF NOT COALESCE((SELECT bool_and("总等待上限"=6) FROM ('+resolved(cohorts,"'selected'")+') q),false) THEN RAISE EXCEPTION \'Dashboard loses frozen global limit\'; END IF;')
 print('SELECT to_jsonb(q) INTO r FROM ('+resolved(summary,"'v2-model'",True)+') q;')
-print("IF (r->>'请求量')::int<>5 OR (r->>'前台首字等待超时率')::numeric IS DISTINCT FROM 50 OR (r->>'最终无字失败率')::numeric IS DISTINCT FROM 75 OR (r->>'其他错误无字样本')::int<>1 OR (r->>'缺报请求')::int<>1 THEN RAISE EXCEPTION 'Dashboard conflates time cutoffs, upstream errors or missing reports'; END IF;")
+print("IF (r->>'请求量')::int<>5 OR (r->>'前台首字等待超时率')::numeric IS DISTINCT FROM 50 OR (r->>'首字交付失败率')::numeric IS DISTINCT FROM 75 OR (r->>'其他错误无字样本')::int<>1 OR (r->>'缺报请求')::int<>1 THEN RAISE EXCEPTION 'Dashboard conflates time cutoffs, upstream errors or missing reports'; END IF;")
 histogram=next(p for p in dashboard['panels'] if p['id']==8)['targets'][0]['rawSql']
 print('SELECT to_jsonb(q) INTO r FROM ('+resolved(histogram,"'v2-model'",True)+') q WHERE q."点击到首token"=\'6–8秒\';')
-print("IF (r->>'已显示样本占比')::numeric IS DISTINCT FROM 100 THEN RAISE EXCEPTION 'Visible token distribution used failure waits or server latency'; END IF;")
+print("IF (r->>'成功交付样本占比')::numeric IS DISTINCT FROM 100 THEN RAISE EXCEPTION 'Visible token distribution used failure waits or server latency'; END IF;")
 v3summary=resolved(summary.replace('${measurement:sqlstring}',"'visible_dom_after_frame_v3'"),"'recoverable-model'",True)
 print('SELECT to_jsonb(q) INTO r FROM ('+v3summary+') q;')
 print("IF (r->>'前台首字等待超时率')::numeric IS DISTINCT FROM 50 THEN RAISE EXCEPTION 'Recovery hid previous foreground waiting failure'; END IF;")
+v4summary=resolved(summary.replace('${measurement:sqlstring}',"'client_committed_v4'"),"'client-v4-model'",True)
+print('SELECT to_jsonb(q) INTO r FROM ('+v4summary+') q;')
+print("IF (r->>'请求量')::int<>9 OR (r->>'前台首字等待超时率')::numeric IS DISTINCT FROM 60 OR (r->>'客户端首字交付 P95')::numeric IS DISTINCT FROM 3.2 OR (r->>'缺报请求')::int<>1 OR (r->>'离页或后台请求')::int<>2 OR (r->>'手动停止请求')::int<>1 THEN RAISE EXCEPTION 'Dashboard v4 mixed legacy, departure, missing reports or late recovery'; END IF;")
+v4histogram=resolved(histogram.replace('${measurement:sqlstring}',"'client_committed_v4'"),"'client-v4-model'",True)
+print('SELECT to_jsonb(q) INTO r FROM ('+v4histogram+') q WHERE q."点击到首token"=\'3–4秒\';')
+print("IF (r->>'成功交付样本占比')::numeric IS DISTINCT FROM 100 THEN RAISE EXCEPTION 'Dashboard v4 distribution includes late delivery'; END IF;")
+print('IF EXISTS(SELECT 1 FROM ('+v4histogram+') q WHERE q."点击到首token"=\'10秒及以上\') THEN RAISE EXCEPTION \'Dashboard v4 presents late deliveries as success\'; END IF;')
 print('END $$;')
 print('RESET ROLE;')
 PYSQL

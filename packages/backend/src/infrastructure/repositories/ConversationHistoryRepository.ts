@@ -114,6 +114,7 @@ export interface ChatHistorySyncRow {
   assistant_reply: string | null;
   status: string;
   llm_billing_snapshot: LlmBillingSnapshot | null;
+  llm_billing_settled_at: string | null;
 }
 
 export interface StartedHistoryTurn {
@@ -326,6 +327,20 @@ export class ConversationHistoryRepository {
     return data as ConversationHistoryRow;
   }
 
+  /** Cancellation polling must not fetch/detoast the full prompt or reply every second. */
+  async requireTurnState(
+    historyId: string
+  ): Promise<Pick<ConversationHistoryRow, 'status' | 'llm_finish_reason'>> {
+    const { data, error } = await this.db
+      .from('chat_history')
+      .select('status,llm_finish_reason')
+      .eq('id', historyId)
+      .abortSignal(AbortSignal.timeout(5_000))
+      .single();
+    if (error) throw new Error(`读取对话状态失败：${error.message}`);
+    return data;
+  }
+
   async cancelTurn(
     sessionId: string,
     historyId: string,
@@ -442,7 +457,7 @@ export class ConversationHistoryRepository {
     const { data, error } = await this.db
       .from('chat_history')
       .select(
-        `id,user_id,model,llm_finish_reason,llm_charge_id,assistant_reply,status,llm_billing_snapshot,${table}!inner(llm_generation_id),${other}!left(llm_generation_id)`
+        `id,user_id,model,llm_finish_reason,llm_charge_id,assistant_reply,status,llm_billing_snapshot,llm_billing_settled_at,${table}!inner(llm_generation_id),${other}!left(llm_generation_id)`
       )
       .not(`${table}.llm_generation_id`, 'is', null)
       .not('llm_billing_snapshot', 'is', null)
@@ -464,7 +479,7 @@ export class ConversationHistoryRepository {
     const { data, error } = await this.db
       .from('chat_history')
       .select(
-        'id,user_id,model,session_id,llm_finish_reason,llm_charge_id,assistant_reply,status,llm_billing_snapshot,openrouter_chat_history!left(llm_generation_id),venice_chat_history!left(llm_generation_id),or_presence:openrouter_chat_history!left(chat_history_id),venice_presence:venice_chat_history!left(chat_history_id)'
+        'id,user_id,model,session_id,llm_finish_reason,llm_charge_id,assistant_reply,status,llm_billing_snapshot,llm_billing_settled_at,openrouter_chat_history!left(llm_generation_id),venice_chat_history!left(llm_generation_id),or_presence:openrouter_chat_history!left(chat_history_id),venice_presence:venice_chat_history!left(chat_history_id)'
       )
       .not('openrouter_chat_history.llm_generation_id', 'is', null)
       .not('venice_chat_history.llm_generation_id', 'is', null)
@@ -503,7 +518,7 @@ export class ConversationHistoryRepository {
     const { data, error } = await this.db
       .from('chat_history')
       .select(
-        'id,user_id,model,session_id,llm_finish_reason,llm_charge_id,assistant_reply,status,llm_billing_snapshot'
+        'id,user_id,model,session_id,llm_finish_reason,llm_charge_id,assistant_reply,status,llm_billing_snapshot,llm_billing_settled_at'
       )
       .eq('status', 'streaming')
       .gte('created_at', input.since)

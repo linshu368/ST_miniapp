@@ -259,7 +259,7 @@ export async function importSeedRow(
   } as const;
 
   try {
-    const { data, error } = await getDomainDb('experience').rpc('import_image_plaza_seed_work', {
+    const { data, error } = await getDomainDb('media_plaza').rpc('import_image_plaza_seed_work', {
       p_source_image_id: row.sourceImageId,
       p_source_image_url: row.imageUrl,
       p_source_heat: row.sourceHeat,
@@ -296,7 +296,7 @@ async function findExistingSeed(sourceImageId: string): Promise<{
   modelId: string;
   prompt: string;
 } | null> {
-  const { data, error } = await getDomainDb('experience')
+  const { data, error } = await getDomainDb('media_plaza')
     .from('image_plaza_works')
     .select('source_image_url,model_id,snapshot')
     .eq('origin', 'civitai_seed')
@@ -314,7 +314,7 @@ async function findExistingSeed(sourceImageId: string): Promise<{
 }
 
 async function isStoragePathReferenced(storagePath: string): Promise<boolean> {
-  const { data, error } = await getDomainDb('experience')
+  const { data, error } = await getDomainDb('media_plaza')
     .from('image_plaza_artifacts')
     .select('id')
     .eq('storage_path', storagePath)

@@ -1,0 +1,7 @@
+{"file":".trellis/spec/database/supabase/index.md","reason":"Supabase migration entry point and project constraints"}
+{"file":".trellis/spec/database/supabase/schema-and-object-conventions.md","reason":"Eight-domain ownership and schema placement rules"}
+{"file":".trellis/spec/database/supabase/migrations-and-rollbacks.md","reason":"Transactional migration, rollout, and rollback requirements"}
+{"file":".trellis/spec/database/supabase/security-rls-and-grants.md","reason":"Schema, table, RLS, and routine privilege requirements"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Compatibility and consumer impact analysis"}
+{"file":".trellis/spec/backend/app/index.md","reason":"Backend repository and validation entry point"}
+{"file":".trellis/spec/backend/app/data-reliability-and-security.md","reason":"Database access and coordinated release requirements"}

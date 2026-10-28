@@ -48,7 +48,7 @@ function createThenableBuilder(data: unknown[] = []) {
 
 vi.mock('../../lib/supabase.js', () => ({
   getDomainDb: (schema: string) => {
-    if (schema === 'experience') {
+    if (schema === 'media_plaza') {
       return {
         from: (table: string) => {
           state.calls.push({ method: 'from', args: [table] });

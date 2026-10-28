@@ -86,7 +86,7 @@ export function FallbackConfigEditor(props: {
             onChange={(fallback_model_id) => props.onChange({ ...props.value, fallback_model_id })}
           />
           <Typography.Text type="secondary">
-            使用现有 OpenRouter key。切换后按用户所选型号的价格与权益，只结算一次。
+            使用现有 OpenRouter key。首发或兜底获胜，都按用户所选型号的价格与权益，只结算一次。
           </Typography.Text>
           {props.error ? <Alert type="error" showIcon message={props.error} /> : null}
           {!props.directory && !props.loading ? (
@@ -95,10 +95,10 @@ export function FallbackConfigEditor(props: {
         </Space>
       </Card>
 
-      <Card size="small" title="兜底等待时间">
-        <Typography.Paragraph>兜底实际请求派发后最多等待（秒）</Typography.Paragraph>
+      <Card size="small" title="兜底预留时间">
+        <Typography.Paragraph>前置处理过慢时，为提前启动兜底预留（秒）</Typography.Paragraph>
         <InputNumber
-          aria-label="兜底等待（秒）"
+          aria-label="兜底预留时间（秒）"
           min={0.001}
           max={(deadline - 1) / 1000}
           step={0.5}
@@ -109,6 +109,9 @@ export function FallbackConfigEditor(props: {
             props.onChange({ ...props.value, fallback_timeout_ms: Math.round(value * 1000) })
           }
         />
+        <Typography.Paragraph type="secondary" style={{ marginTop: 12, marginBottom: 0 }}>
+          默认将总截止前2秒作为最迟启动点；如果前置处理已超过这个时刻，就立即启动。兜底仍可等待至共同截止，剩余时间以实际预算为准。
+        </Typography.Paragraph>
       </Card>
       <Card size="small" title="全局等待与监控目标">
         <Row gutter={[20, 16]}>
@@ -152,15 +155,15 @@ export function FallbackConfigEditor(props: {
           </Col>
         </Row>
         <Typography.Paragraph type="secondary" style={{ marginTop: 16, marginBottom: 0 }}>
-          总等待从用户发送到界面出现第一个
-          token，包含前置处理、两次模型等待、切换、网络与显示。默认首发4秒＋兜底2秒，总上限10秒，其他耗时单独计入。总上限优先，到点仍未显示则提示重试；异常工程耗时可能截断阶段等待，实际占用会如实记录。超时率是人工监控目标，不会自动调整参数。
+          总等待从用户发送到首个正文或已开启思考的 token
+          进入消息界面，包含前置处理、模型请求、网络与客户端处理。默认首发等待4秒启动兜底，首发继续；所有请求共用10秒总截止。先出有效首字的一方负责本轮回复，另一方立即停止。到总截止仍未交付首字则轻提示重试。超时率是人工监控目标，不会自动调整参数。
         </Typography.Paragraph>
       </Card>
 
-      <Card size="small" title="各型号首发等待时间">
+      <Card size="small" title="各型号启动兜底阈值">
         <Typography.Paragraph type="secondary">
-          新增型号从实际请求派发开始最多等待 4 秒。达到等待时间仍未出首
-          token，就切换至上方兜底模型；同型号不重复请求，到点失败。思考模式同样执行。总预算不足时会提前切换；每项必须小于全局总等待上限。
+          新增型号默认从首发实际请求派发开始等待4秒，仍未出有效首 token
+          就启动上方兜底模型，首发继续竞争。首字前明确失败立即启用兜底；同型号静默等待不重复请求，继续至总截止，明确失败最多顺序重试一次。思考模式同样执行；前置处理过慢时按预留时间提前启动。每项必须小于总等待上限。
         </Typography.Paragraph>
         <Table<ModelCatalogModel>
           rowKey="id"
@@ -190,12 +193,12 @@ export function FallbackConfigEditor(props: {
               ),
             },
             {
-              title: '等待时间（秒）',
+              title: '启动兜底阈值（秒）',
               key: 'wait',
               width: 180,
               render: (_, model) => (
                 <InputNumber
-                  aria-label={`${model.display_name}首发等待（秒）`}
+                  aria-label={`${model.display_name}启动兜底阈值（秒）`}
                   min={0.001}
                   max={(deadline - 1) / 1000}
                   step={0.5}

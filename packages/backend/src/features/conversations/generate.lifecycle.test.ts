@@ -18,10 +18,11 @@ const mocks = vi.hoisted(() => ({
   saveSnapshot: vi.fn(),
   markServer: vi.fn(),
   checkpoint: vi.fn(),
+  begin: vi.fn(),
 }));
 vi.mock('../../infrastructure/repositories/GenerationObservationRepository.js', () => ({
   GenerationObservationRepository: class {
-    begin = vi.fn();
+    begin = mocks.begin;
     observe = vi.fn();
     prepareFallback = vi.fn();
     selectDelivery = vi.fn();
@@ -40,6 +41,7 @@ vi.mock('../../infrastructure/repositories/ConversationHistoryRepository.js', ()
     setPromptHistory = mocks.prompt;
     finalizeTurn = mocks.finalize;
     requireTurnById = mocks.find;
+    requireTurnState = mocks.find;
   },
 }));
 vi.mock('../../infrastructure/repositories/OpenRouterChatHistoryRepository.js', () => ({
@@ -135,6 +137,93 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe('turn lifecycle recovery', () => {
+  it.each([undefined, 'client_committed_v4'] as const)(
+    'persists the %s cohort during the existing initial observation write',
+    async (firstTokenMeasurement) => {
+      await runConversationTurn({
+        ...input({ kind: 'send', content: 'original' }),
+        firstTokenMeasurement,
+      });
+      expect(mocks.begin).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ measurementMethod: firstTokenMeasurement })
+      );
+    }
+  );
+
+  it('joins parallel identity writes before cleaning up an early context failure', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+    mocks.begin.mockImplementation(() => new Promise((resolve) => setTimeout(resolve, 300)));
+    mocks.context.mockRejectedValue(new Error('context unavailable'));
+    const pending = runConversationTurn(input({ kind: 'send', content: 'original' }));
+    void pending.catch(() => {});
+    await vi.advanceTimersByTimeAsync(100);
+    expect(mocks.finalize).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(201);
+    await expect(pending).rejects.toThrow('context unavailable');
+    expect(mocks.finalize).toHaveBeenCalledOnce();
+    expect(mocks.execute).not.toHaveBeenCalled();
+  });
+
+  it('overlaps independent context and pricing preparation without dispatching before durable identity', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+    const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+    let snapshotSaved = false;
+    let dispatched = false;
+    mocks.pendingRequest.mockImplementation(() => pause(300));
+    mocks.begin.mockImplementation(() => pause(300));
+    mocks.context.mockImplementation(async () => {
+      await pause(600);
+      return { messages: [], openingMessage: 'hello', truncatedTurns: 0 };
+    });
+    mocks.prompt.mockImplementation(async () => {
+      await pause(500);
+      snapshotSaved = true;
+    });
+    mocks.execute.mockImplementation(async (_request, hooks) => {
+      // Independent pricing/entitlement reads can start while the prompt is saved.
+      expect(snapshotSaved).toBe(false);
+      await pause(500);
+      await hooks.onBeforeDispatch({ charge_id: 'charge' });
+      expect(snapshotSaved).toBe(true);
+      dispatched = true;
+      return {
+        status: 'upstream_error',
+        content: '',
+        finishReason: null,
+        generationId: null,
+        chargeId: null,
+      };
+    });
+    const pending = runConversationTurn({
+      ...input({ kind: 'send', content: 'original' }),
+      requestId: 'request',
+    });
+    await vi.advanceTimersByTimeAsync(1399);
+    expect(dispatched).toBe(false);
+    await vi.advanceTimersByTimeAsync(2);
+    await pending;
+    expect(dispatched).toBe(true);
+    expect(mocks.begin).toHaveBeenCalledTimes(2);
+    // Serial preparation required 2500ms with these same dependency delays.
+    expect(performance.now()).toBeLessThan(1500);
+  });
+
+  it('failed snapshot prevents dispatch even when pricing has already completed', async () => {
+    let dispatched = false;
+    mocks.prompt.mockRejectedValue(new Error('snapshot unavailable'));
+    mocks.execute.mockImplementation(async (_request, hooks) => {
+      await hooks.onBeforeDispatch({ charge_id: 'charge' });
+      dispatched = true;
+    });
+    await expect(runConversationTurn(input({ kind: 'send', content: 'original' }))).rejects.toThrow(
+      'snapshot unavailable'
+    );
+    expect(dispatched).toBe(false);
+    expect(mocks.finalize).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'upstream_error' })
+    );
+  });
+
   it('legacy missing flag is off and cannot emit unexpected reasoning', async () => {
     const turnInput = input({ kind: 'send', content: 'original' });
     await runConversationTurn(turnInput);

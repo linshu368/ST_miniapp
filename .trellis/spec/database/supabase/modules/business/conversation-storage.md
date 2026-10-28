@@ -5,8 +5,8 @@ scope: database
 category: business
 status: active
 owners: [database]
-last_verified_task: .trellis/tasks/10-27-recoverable-chat-delivery/
-last_verified_at: 2026-10-27
+last_verified_task: .trellis/tasks/10-28-first-token-race/
+last_verified_at: 2026-10-28
 ---
 
 # 会话与语音存储
@@ -61,8 +61,8 @@ last_verified_at: 2026-10-27
 
 - 2026-10-13：任务 `10-10-image-plaza-v2` 增加初始作品来源模型和 2000 字约束前向迁移。
 
-last_verified_task: .trellis/tasks/09-11-chat-image-generation-plan/
-last_verified_at: 2026-09-14
+last_verified_task: .trellis/tasks/10-28-first-token-race/
+last_verified_at: 2026-10-28
 
 - 2026-10-20：任务 `Remove confirmed repository noise`（`.trellis/tasks/archive/2026-10/10-20-remove-confirmed-repository-noise/`）删除重复的历史变更记录；commit：`63eee1e847f678f4b2c434f872425a40fc7f891a`。
 
@@ -78,7 +78,7 @@ last_verified_at: 2026-09-14
 
 chat_generation_requests.user_stop_billing_enabled在创建请求时确定：存量false、新轮true。service-only experience.cancel_chat_generation锁定具体session/history并裁决终态原因；新请求省略reason也按手动停止处理，不允许参数直接写入免费timeout。真实primary/fallback/global阶段截断优先免扣，未验证自动截止由现有watchdog确认。报价前不伪造账单；业务原因user_cancelled由billing资格读取，原报价和charge_id不改，历史无回填。
 
-## 可恢复交付协议 v3（2026-10-27）
+## 历史：可恢复交付协议 v3（2026-10-27）
 
 本节取代旧版“当前未可见→自动取消/免单”的运行规则。后端4秒首发、2秒兜底、10秒总首字预算仍由正式配置决定；模型在预算内选中有效首字后立即放行，意图/身份持久化与传输并行，结算前必须确认。断连写入返回false，不冒充客户端已收到；断连不终止生成。
 
@@ -91,3 +91,27 @@ recoverable_delivery仅新Backend显式启用；旧请求/终结账单不回填�
 唯一新增迁移20261027_recoverable_chat_delivery.sql：experience拥有策略/首字检查点，billing资格函数读取事实；analytics只追加无正文的策略/时刻/失败锁存字段。无新cron、逐token数据库写、业务回填或公开权限。先TEST、后生产迁移、后Backend/Frontend。回退保留新增对象和终账，必要时forward-fix。
 
 验证：本任务release-review记录自动化、真实PG、TEST流/浏览器和生产版本证据；测试通过不等于线上1%目标已达成。看板v3区分前台等待超时与系统无首字截断，显示分布只用浏览器业务侧实际时长，后台/缺报不填0。
+
+## 聊天准备阶段减负（2026-10-27）
+
+新增 migration 20261027_chat_charge_lookup_index.sql，为高频 llm_charge_id 等值查找建立非空部分 B-tree。生产原查询计划为全表扫描；索引 CONCURRENTLY、无外层事务、有限资源/超时，失败无效索引先核验再恢复。不改收费函数、历史数据或权限。执行证据见任务 release-review。
+
+## 客户端首字交付 v4（2026-10-28）
+
+新客户端用 `client_committed_v4` 替换屏幕可见检测：提交动作 → 本轮正文或已开启的公开思考首次提交到 React 消息界面状态。它是业务侧交付口径，不是像素/阅读证明。滚动位置、气泡是否在视口、思考是否折叠均不参与；received 仅供分段排查，不能取消截止。提交时间达到当轮 deadline 即归超时，计时器延迟不能变成超时后的成功。
+
+send/regenerate 携带可选 `first_token_measurement`；后端通过既有 begin RPC 的同一次 INSERT 写入现有 measurement_method，缺报请求仍属于 v4。每轮首次结果不可改写；离页/后台独立终态，生成仍可继续并在返回时恢复。迟到回复可展示但不改写已超时记录。旧 v1-v3 保留兼容，历史独立筛选。
+
+统计复用现有 first_token_visible_ms 列承载按版本定义的时长，不增加表、cron、轮询或逐 token 写入。主指标为前台已知结果的无字时间截断率；成功分布只取截止前已交付样本，离页/缺报及覆盖率同时显示。后台和缺报不能当成功，不用服务端或供应商 latency 填补客户端数据。v4只改变观测口径；最新竞争策略见后文，总首字上限10秒与1%目标保留。
+
+系统超时免费、免费预留释放；主动停止沿原报价/权益一次结算。计费继续用一次交付结果和服务端持久化终态保障正确性，不依赖滚动/阅读。已结算记录只补调用元数据，不重进计费；归档明细依永久去重返回显式 archived 终态，不重扣、不伪造账单；failed 进入已有有界退避。缺报沿用原预算+15秒保守收口，不增加新计费任务。
+
+迁移为 `20261028_client_committed_first_token.sql`、`20261028_llm_archived_charge_result.sql`，均仅替换既有函数，保留 ACL 和历史数据。先 TEST 验证、合 dev，再生产迁移 → Backend → Frontend/看板。发布证据见任务 release-review；1%是否达成须由上线后的 v4 样本判断。
+
+## 首发与兜底竞争交付（2026-10-28）
+
+首发实际派发后达到型号阈值（默认4秒）启动兜底，首发继续；两路共用原10秒首字截止，任一路先出现有效正文或已开启公开思考即锁定唯一赢家，立即中止败方。`fallback_timeout_ms`字段保留兼容，默认2000仅作为前置过慢时提前启动兜底的预留时间，不再是兜底自身硬截止。同型号不并发重复请求，可等到总截止；首发明确失败只允许一次顺序兜底。历史阶段预算不回填，新旧策略按实际发布时刻分窗；客户端仍用v4，总耗时不相加两路并行等待。
+
+只消费赢家的replay与原charge_id结算，原报价/权益、超时免扣、主动停止和离页恢复规则不变。败方立即取消，不为排查drain；只把已接收的正文/公开思考有界片段和race_lost原因并入原attempt一次异步终态写，不发给用户、不进上下文、不另计费。正常attempt最多派发/终态两次observe；删除旧首发额外元数据补读，无新cron/轮询。diagnostic保存不阻塞首字，赢家身份仍须持久化才能结算。
+
+新迁移`20261028_first_token_race.sql`扩展现有attempt诊断列并解除禁止首发回赢的守卫，保留数据库单赢家CAS/PT409；Grafana仅获原指标列权限，不能读诊断正文。先本地与TEST验证、合dev，再生产迁移和应用/Admin/看板。回退应用保留诊断列与原账务，不扩权限，不改历史数据。

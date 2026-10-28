@@ -30,6 +30,8 @@
 
 ## 可观测性与发布
 
+短剧v2遥测的分析持久化由 `platform/runtime-config.ts` 集中读取 `DRAMA_TIMING_PERSIST_ENABLED`（默认false，部署时生效），环境使用数据库target=test|production，不能把development直接写成分析环境。仅遥测路由调用 `features/drama/timing-repository.ts` 的2秒/最多2并发RPC；原子合并成功后才确认persisted，失败503/过载429，原Pino日志保留，不加入播放接口。分析域权限、单migration、保留期和独立Grafana步骤见 [操作说明](../../../../docs/grafana/drama-playback-runbook.md)。
+
 - 使用现有 pino、`requestLogger`；原始异常写 `{ err }`。Sentry 先脱敏再附 context。
 - 关键流程记录阶段、耗时、状态/计数、安全幂等摘要、provider/request id；job 记录扫描/推进/失败数，禁止逐行高频 info。
 - PostHog 支付终态是非核心观测：`POSTHOG_API_KEY`/`POSTHOG_HOST` 经 `platform/config.ts` 读取；`posthog-capture.ts` 用 Node 原生 fetch、短超时、无重试。只在 `complete`/`markFailed` 成功落库后异步发送 `payment_order_settled`/`payment_order_failed`。未配置时不反查用户。失败只记安全摘要，不得回滚或延迟结算。禁止把 token、`pay_url`、initData、错误 body 送往 PostHog。Production key 留空即关闭。
@@ -200,7 +202,7 @@ Wrong：finalizeTurn 写 parent.llm_generation_id，detail 写失败靠主表补
 
 存图后结算 RPC 可能已提交但响应丢失；返回 error、Promise reject 或无法确认状态时不得直接删除成果，应保图并传递结果未知，不重发 Provider/扣费。仅明确余额不足等已确认未扣款分支允许清理。后续失败标记必须保留处理中状态条件，不能覆盖原子结算已落下的 ready。消费查询需同时覆盖 image_generation 与 image_plaza_generation，余额缓存应在新 ready 后失效，不能把202受理视作已扣款。虚拟回归只证明应用边界行为，不代替数据库事务或真实扣款验收。
 
-## Scenario: 首 token 阶段与总预算（2026-10-26）
+## 历史：首 token 阶段与总预算（2026-10-26，竞争策略见文末）
 
 ### 1. Scope / Trigger
 
@@ -283,3 +285,21 @@ recoverable_delivery仅新Backend显式启用；旧请求/终结账单不回填�
 `db_read` 是 repository 整体等待（含 PostgREST 往返），不是 SQL 独占时间。日志不得包含 object_path、签名 URL 或 Token；前端输入拒绝未知字段和任意正文。观测失败不能改变业务响应。无数据库或部署配置变更；具体口径与验证见 [短剧耗时排查](../../../../docs/drama-playback-timing.md)。
 
 媒体启动详情通过同一 shared schema 的可选 `media` 接收并映射日志，不建新路由或数据库写入。最多 32 条有限事件、一个即时 snapshot，嵌套字段严格校验，不接收原始异常/媒体 URL/请求头。旧报告仍接受；扩展 Backend validator 必须先部署，新 Frontend 才能发送 media，否则旧 Backend 返回 400。32 KiB、限流和观测故障隔离保持原值；客户端媒体状态不能推断成服务端传输或安全事实。
+
+## 首发明确失败立即兜底（2026-10-27）
+
+首个可见 token 前，HTTP 非 2xx、连接/读取异常、空 EOF/DONE、流内 error、refusal 或无输出 finish_reason 立即进入同一条单次兜底流程，不等首发阈值，也不等结束帧后的连接关闭。先看到公开思考或正文则保留该模型，不混入另一模型；显式取消、全局截止和观察期限终止不触发重试。首发型号等于兜底时，明确失败允许一次顺序重试，静默等待仍不并发重发相同型号。切换清掉旧首发计时器，兜底仍受自身2秒和原总10秒预算约束。失败观测复用原 attempt；报价/权益/charge_id 沿用用户选择，成功一次结算、两次失败免扣，不新增表、统计任务或 API。验证由 first-token-fallback.test.ts 和 execute.test.ts 覆盖双平台、付费/免费及取消/期限竞态。
+
+## 出字路径与数据库容量的发布检查
+
+新增高频查询（包括计费门禁、幂等补偿、每轮/每秒轮询）必须在目标环境核对索引、过滤条件与 EXPLAIN，不以小 TEST 库的单测通过替代生产规模评估。按唯一身份查找不得无索引扫描大表；轮询只投影状态字段，不拉取正文或完整 prompt。容量诊断优先日志聚合、统计元数据和 EXPLAIN，禁止为了验证慢而在生产跑无界 EXPLAIN ANALYZE。
+
+出字前每项数据库读写须说明业务必要性和依赖：权限、权益、幂等身份、可恢复报价必须保留；观测、供应商补录走异步且有限并发，独立准备可并行。新增定时任务说明窗口、频率、并发与查询计划；不允许逐 token 落表或全历史反复刷新。发布验收包含真实派发偏移和用户点击到首 token 的分布，不能用供应商 latency 代替，不以延长截止掩盖自身等待。
+
+## 首发与兜底竞争交付（2026-10-28）
+
+首发实际派发后达到型号阈值（默认4秒）启动兜底，首发继续；两路共用原10秒首字截止，任一路先出现有效正文或已开启公开思考即锁定唯一赢家，立即中止败方。`fallback_timeout_ms`字段保留兼容，默认2000仅作为前置过慢时提前启动兜底的预留时间，不再是兜底自身硬截止。同型号不并发重复请求，可等到总截止；首发明确失败只允许一次顺序兜底。历史阶段预算不回填，新旧策略按实际发布时刻分窗；客户端仍用v4，总耗时不相加两路并行等待。
+
+只消费赢家的replay与原charge_id结算，原报价/权益、超时免扣、主动停止和离页恢复规则不变。败方立即取消，不为排查drain；只把已接收的正文/公开思考有界片段和race_lost原因并入原attempt一次异步终态写，不发给用户、不进上下文、不另计费。正常attempt最多派发/终态两次observe；删除旧首发额外元数据补读，无新cron/轮询。diagnostic保存不阻塞首字，赢家身份仍须持久化才能结算。
+
+新迁移`20261028_first_token_race.sql`扩展现有attempt诊断列并解除禁止首发回赢的守卫，保留数据库单赢家CAS/PT409；Grafana仅获原指标列权限，不能读诊断正文。先本地与TEST验证、合dev，再生产迁移和应用/Admin/看板。回退应用保留诊断列与原账务，不扩权限，不改历史数据。

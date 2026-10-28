@@ -1,15 +1,29 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useCallback, useEffect, useRef } from 'react';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 
 import { DramaPlayer } from '@/components/drama/drama-player';
 import { useDramaBrowseQueueQuery } from '@/lib/api/drama';
 import { dramaTiming } from '@/lib/perf/drama-observer';
+import { useHydrateDramaLibrary } from '@/stores/drama-library-store';
 
 export default function DramaDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const returnToHome = searchParams.get('from') === 'feed';
+  const selectedVideo = searchParams.get('video');
+  const initialVideoId =
+    selectedVideo && /^[a-zA-Z0-9_-]{1,100}$/.test(selectedVideo) ? selectedVideo : undefined;
+  const acceptInitialVideo = useCallback(() => {
+    if (!selectedVideo) return;
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('video');
+    const query = params.toString();
+    router.replace(`/dramas/${id}${query ? `?${query}` : ''}`, { scroll: false });
+  }, [id, router, searchParams, selectedVideo]);
+  const hydrated = useHydrateDramaLibrary();
   const queueQuery = useDramaBrowseQueueQuery();
   const navigating = useRef(false);
 
@@ -35,16 +49,23 @@ export default function DramaDetailPage() {
     navigating.current = true;
     dramaTiming.beginPlayback(target.id, 'switch');
     // 换剧不堆积历史记录；返回始终直接回到已验收的列表页。
-    router.replace(`/dramas/${target.id}`, { scroll: false });
+    router.replace(`/dramas/${target.id}${returnToHome ? '?from=feed' : ''}`, { scroll: false });
   };
+
+  if (!hydrated)
+    return <div aria-label="正在恢复观看位置" className="fixed inset-0 z-40 bg-black" />;
 
   return (
     <DramaPlayer
       key={id}
       id={id}
+      returnToHome={returnToHome}
+      initialVideoId={initialVideoId}
+      onInitialVideoAccepted={acceptInitialVideo}
+      summary={queue[index]}
       previousTitle={previous?.title}
       nextTitle={next?.title}
-      queueLoading={queueQuery.isLoading}
+      nextDramaId={next?.id}
       queueFailed={queueQuery.isError}
       onRetryQueue={() => void queueQuery.refetch()}
       onNavigate={navigate}

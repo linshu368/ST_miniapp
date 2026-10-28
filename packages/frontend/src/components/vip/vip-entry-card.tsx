@@ -13,12 +13,14 @@ export function VipEntryCard({
   loading = false,
   disabled = false,
   onOpen,
+  variant = 'default',
 }: {
   status: VipStatus | undefined;
   monthlyPlan: VipPlan | undefined;
   loading?: boolean;
   disabled?: boolean;
   onOpen: () => void;
+  variant?: 'default' | 'profile' | 'recharge';
 }) {
   const active = status?.active === true;
   const benefits = status?.benefits;
@@ -29,6 +31,140 @@ export function VipEntryCard({
   const dailyCheckin = benefits?.checkin_vip_credits;
   const bonus = monthlyPlan?.bonus_credits ?? 0;
   const expiry = vipEntryExpiryLabel(status ?? null);
+
+  if (variant === 'recharge') {
+    return (
+      <button
+        type="button"
+        onClick={onOpen}
+        disabled={disabled || (!active && loading)}
+        aria-label={active ? '查看 VIP 权益与续费' : '开通 VIP，查看月卡权益'}
+        className="group relative w-full overflow-hidden rounded-[20px] border border-[#cfb897]/20 bg-[linear-gradient(110deg,#302929,#252124)] p-4 text-left text-[#e6cdaa] transition-colors hover:border-[#cfb897]/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d7bfa1] disabled:opacity-60 motion-reduce:transition-none"
+      >
+        <span className="flex items-center gap-2">
+          <Crown className="size-4 shrink-0" strokeWidth={1.5} aria-hidden />
+          <span className="text-[11px] font-medium tracking-wider">
+            {active ? 'VIP 权益生效中' : '搭配 VIP，聊天更尽兴'}
+          </span>
+          <span className="ml-auto inline-flex shrink-0 items-center gap-0.5 text-[11px] text-[#cfb897]">
+            {active ? '会员中心' : '查看权益'}
+            <ChevronRight className="size-3.5" aria-hidden />
+          </span>
+        </span>
+        <span className="mt-3 block text-[15px] font-medium leading-6 text-[#f0dfc8]">
+          {active ? (
+            discount ? (
+              `每次对话，已享 ${discount} 优惠`
+            ) : (
+              '你的会员权益已开启'
+            )
+          ) : bonus > 0 ? (
+            <>
+              开通赠{' '}
+              <strong className="text-[22px] font-medium tabular-nums tracking-tight">
+                {formatNumber(bonus)}
+              </strong>{' '}
+              专项星尘
+            </>
+          ) : (
+            '解锁月卡专属权益'
+          )}
+        </span>
+        <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] leading-5 text-[#bca99a]">
+          {typeof dailyCheckin === 'number' && dailyCheckin > 0 ? (
+            <span>每日签到 {formatNumber(dailyCheckin)} 星尘</span>
+          ) : null}
+          {!active && discount ? <span>对话享 {discount}</span> : null}
+          {active && expiry ? <span>{expiry}</span> : null}
+          {!benefits ? <span>{loading ? '正在读取会员权益…' : '查看完整月卡权益'}</span> : null}
+        </span>
+        {!active && bonus > 0 ? (
+          <span className="mt-2 block border-t border-[#cfb897]/10 pt-2 text-[10px] leading-4 text-[#a99b92]">
+            专项星尘用于轻量模型对话 · 会员单独开通
+          </span>
+        ) : null}
+      </button>
+    );
+  }
+
+  if (variant === 'profile') {
+    return (
+      <button
+        type="button"
+        onClick={onOpen}
+        disabled={disabled || (!active && loading)}
+        aria-label={active ? '查看 VIP 权益与续费' : '开通 VIP，查看月卡权益'}
+        className="group relative w-full overflow-hidden rounded-[22px] border border-[#d8bca0]/20 bg-[linear-gradient(120deg,#332b2b,#272126_65%,#30262c)] px-5 pb-4 pt-4 text-left text-[#eed7bf] transition-colors hover:border-[#d8bca0]/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d7b4bf] disabled:opacity-60 motion-reduce:transition-none"
+      >
+        <span
+          aria-hidden
+          className="pointer-events-none absolute -right-16 -top-24 size-64 rounded-full border border-[#eed7bf]/[0.07] shadow-[0_0_0_20px_rgb(238_215_191/0.025),0_0_0_40px_rgb(238_215_191/0.02)]"
+        />
+        <span className="relative flex items-center justify-between gap-3">
+          <span className="inline-flex items-center gap-2">
+            <Crown className="size-4" strokeWidth={1.5} aria-hidden />
+            <span className="text-[11px] font-medium tracking-[0.12em]">
+              {active ? '秘境 · VIP' : 'VIP 月卡'}
+            </span>
+          </span>
+          <span className="text-[10px] text-[#bda99c]">{active ? '权益生效中' : '会员开通礼'}</span>
+        </span>
+        <span className="relative mt-4 flex items-center justify-between gap-3">
+          <span className="min-w-0">
+            {active ? (
+              <>
+                <span className="block text-[24px] font-medium tracking-[0.08em]">尊享会员</span>
+                <span className="mt-1 block text-[11px] leading-5 text-[#bda99c]">
+                  {expiry ?? '你的专属权益已开启'}
+                </span>
+              </>
+            ) : bonus > 0 ? (
+              <>
+                <span className="block text-[11px] text-[#c9b5a6]">开通即赠专项星尘</span>
+                <span className="mt-0.5 block text-[38px] font-medium leading-[44px] tabular-nums tracking-[-0.04em]">
+                  {formatNumber(bonus)}
+                </span>
+              </>
+            ) : (
+              <span className="block text-lg font-medium leading-7">让每一次相遇，更尽兴</span>
+            )}
+          </span>
+          <span className="inline-flex min-h-11 shrink-0 items-center gap-1 rounded-full border border-[#ead0b6]/25 bg-[#ead0b6]/[0.06] px-3 text-xs font-medium transition-colors group-hover:bg-[#ead0b6]/10">
+            {loading || disabled ? <Loader2 className="size-3 animate-spin" aria-hidden /> : null}
+            {active ? '会员中心' : '开通 VIP'}
+            <ChevronRight className="size-3.5" aria-hidden />
+          </span>
+        </span>
+        <span className="relative mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-[#eed7bf]/10 pt-3 text-[11px] leading-5 text-[#c9b5a6]">
+          {typeof dailyCheckin === 'number' && dailyCheckin > 0 ? (
+            <span>
+              每日签到{' '}
+              <strong className="font-medium tabular-nums text-[#f0dcc6]">
+                {formatNumber(dailyCheckin)}
+              </strong>{' '}
+              星尘
+            </span>
+          ) : null}
+          {discount ? (
+            <span>
+              对话享 <strong className="font-medium text-[#f0dcc6]">{discount}</strong>
+            </span>
+          ) : null}
+          {!benefits ? <span>{loading ? '正在读取会员权益…' : '查看完整月卡权益'}</span> : null}
+        </span>
+        {!active ? (
+          <span className="relative mt-1 flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-[10px] leading-4 text-[#ad9a91]">
+            <span>{bonus > 0 ? '专项星尘用于轻量模型对话' : '查看月卡内容与专属权益'}</span>
+            {monthlyPlan ? (
+              <span>
+                ¥{formatYuanShort(monthlyPlan.price_cents)} / {monthlyPlan.duration_days} 天
+              </span>
+            ) : null}
+          </span>
+        ) : null}
+      </button>
+    );
+  }
 
   if (active) {
     return (

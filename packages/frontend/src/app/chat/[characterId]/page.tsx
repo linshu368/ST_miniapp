@@ -185,7 +185,7 @@ export default function SelfHostedChatPage() {
   useTelegramBackButton(goBack);
 
   useEffect(() => {
-    router.prefetch('/');
+    router.prefetch('/characters');
   }, [router]);
 
   const restoreSendContent = useCallback(
@@ -207,8 +207,6 @@ export default function SelfHostedChatPage() {
 
   const {
     abort,
-    firstTokenObservation,
-    onFirstTokenDisplayed,
     canRegenerate,
     cancelling,
     generating,
@@ -450,8 +448,6 @@ export default function SelfHostedChatPage() {
       <ChatMessageList
         key={activeSessionId ?? 'pending'}
         messages={messages}
-        firstTokenObservation={firstTokenObservation}
-        onFirstTokenDisplayed={onFirstTokenDisplayed}
         characterName={character?.name ?? ''}
         characterAvatarUrl={characterAvatarUrl}
         userAvatarUrl={userAvatarUrl}

@@ -1,0 +1,3 @@
+- [ ] T1 并发索引与窄取消读取（migration/repository/generate/已有测试）
+- [ ] T2 前置并行边界审查与必要优化（generate/已有 lifecycle 测试）
+- [ ] T3 TEST → dev → production，验收与发布证据

@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { DramaTimingReport } from './drama-timing';
 
 const mocks = vi.hoisted(() => ({
-  upload: vi.fn(async () => {}),
+  upload: vi.fn(async (_report: DramaTimingReport) => {}),
   info: vi.fn(),
   warn: vi.fn(),
   api: vi.fn(),
@@ -90,7 +91,7 @@ describe('drama centralized logging', () => {
     dramaTiming.beginPlayback('b', 'switch').finish('playing');
     expect(mocks.upload).toHaveBeenLastCalledWith(expect.objectContaining({ outcome: 'playing' }));
   });
-  it('reports the actual lifecycle reason once and removes lifecycle listeners', () => {
+  it('reports the actual lifecycle reason once and removes lifecycle listeners', async () => {
     vi.useFakeTimers();
     const handlers = new Map<string, () => void>();
     const documentState = {
@@ -105,6 +106,8 @@ describe('drama centralized logging', () => {
     });
     const cleanup = installDramaTiming();
     dramaTiming.beginPlayback('a', 'cover');
+    expect(mocks.upload).not.toHaveBeenCalled();
+    await Promise.resolve();
     handlers.get('pagehide')?.();
     expect(mocks.upload).toHaveBeenLastCalledWith(
       expect.objectContaining({
@@ -114,40 +117,48 @@ describe('drama centralized logging', () => {
     );
     documentState.hidden = true;
     handlers.get('visibilitychange')?.();
-    expect(mocks.upload).toHaveBeenCalledTimes(1);
+    expect(mocks.upload).toHaveBeenCalledTimes(2);
+    expect(mocks.upload.mock.calls.map(([report]) => report.phase)).toEqual(['start', 'final']);
     cleanup();
     expect(handlers.size).toBe(0);
   });
-  it('does not start a false wait when clicking the already-active drama navigation tab', () => {
-    vi.useFakeTimers();
-    class Link {
-      closest() {
-        return this;
+  it.each(['/', '/dramas'])(
+    'does not start a false wait when clicking the active drama entry %s',
+    (targetPath) => {
+      vi.useFakeTimers();
+      class Link {
+        closest() {
+          return this;
+        }
+        getAttribute(name: string) {
+          return name === 'href' ? targetPath : null;
+        }
       }
-      getAttribute(name: string) {
-        return name === 'href' ? '/dramas' : null;
-      }
+      const handlers = new Map<string, (event: MouseEvent) => void>();
+      const location = { pathname: targetPath };
+      vi.stubGlobal('Element', Link);
+      vi.stubGlobal('document', {
+        hidden: false,
+        addEventListener: (name: string, callback: (event: MouseEvent) => void) =>
+          handlers.set(name, callback),
+        removeEventListener: vi.fn(),
+      });
+      vi.stubGlobal('window', {
+        location,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      });
+      const begin = vi.spyOn(dramaTiming, 'beginList');
+      const cleanup = installDramaTiming();
+      const click = { target: new Link(), button: 0 } as unknown as MouseEvent;
+      handlers.get('click')?.(click);
+      expect(begin).not.toHaveBeenCalled();
+      location.pathname = '/profile';
+      handlers.get('click')?.(click);
+      expect(begin).toHaveBeenCalledWith('navigation_click');
+      cleanup();
     }
-    const handlers = new Map<string, (event: MouseEvent) => void>();
-    const location = { pathname: '/dramas' };
-    vi.stubGlobal('Element', Link);
-    vi.stubGlobal('document', {
-      hidden: false,
-      addEventListener: (name: string, callback: (event: MouseEvent) => void) =>
-        handlers.set(name, callback),
-      removeEventListener: vi.fn(),
-    });
-    vi.stubGlobal('window', { location, addEventListener: vi.fn(), removeEventListener: vi.fn() });
-    const begin = vi.spyOn(dramaTiming, 'beginList');
-    const cleanup = installDramaTiming();
-    const click = { target: new Link(), button: 0 } as unknown as MouseEvent;
-    handlers.get('click')?.(click);
-    expect(begin).not.toHaveBeenCalled();
-    location.pathname = '/profile';
-    handlers.get('click')?.(click);
-    expect(begin).toHaveBeenCalledWith('navigation_click');
-    cleanup();
-  });
+  );
 });
 
 describe('drama upload transport', () => {

@@ -29,6 +29,13 @@ export interface AttemptObservation {
   provider_name?: string;
   provider_reported_model?: string;
   finish_reason?: string;
+  /** Only already-received loser fragments; never user delivery or billing metadata. */
+  discarded_response?: {
+    reason: 'race_lost';
+    content: string;
+    reasoning: string;
+    truncated: boolean;
+  };
 }
 
 /** Raw generation facts live beside their revision; analytics never owns runtime state. */
@@ -52,6 +59,7 @@ export class GenerationObservationRepository {
     mode: 'send' | 'regenerate';
     snapshot?: LlmBillingSnapshot;
     recoverableDelivery?: boolean;
+    measurementMethod?: 'client_committed_v4';
   }): Promise<void> {
     const { error } = await this.db
       .rpc('begin_chat_generation_observation', {
@@ -72,6 +80,7 @@ export class GenerationObservationRepository {
           mode: input.mode,
           snapshot: input.snapshot,
           recoverable_delivery: input.recoverableDelivery ?? false,
+          measurement_method: input.measurementMethod,
         },
       })
       .abortSignal(AbortSignal.timeout(5_000));

@@ -27,7 +27,7 @@ import { cn } from '@/lib/utils';
 
 export default function ChatsPage() {
   return (
-    <main className="min-h-dvh bg-background pb-8 text-foreground">
+    <main className="min-h-[calc(100dvh-var(--app-nav-space))] bg-background pb-8 text-foreground">
       <RoleplayHeader active="conversations" />
       <ConversationHistoryList />
     </main>
@@ -273,8 +273,8 @@ function HistoryEmpty() {
       <h2 className="mt-3 font-semibold">还没有对话</h2>
       <p className="mt-1 text-sm text-muted-foreground">选一个喜欢的角色，开始你的第一段故事。</p>
       <Link
-        href="/"
-        onClick={() => rememberRoleplayView('/')}
+        href="/characters"
+        onClick={() => rememberRoleplayView('/characters')}
         className="mt-4 inline-flex min-h-11 items-center rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition active:scale-95"
       >
         去发现角色

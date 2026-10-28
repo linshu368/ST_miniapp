@@ -188,7 +188,14 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
         );
         continue;
       }
-      for (const row of scan.value) if (!rowsById.has(row.id)) rowsById.set(row.id, row);
+      for (const row of scan.value) {
+        const previous = rowsById.get(row.id);
+        // Settlement can complete between the independent scans. Never let an
+        // earlier pending snapshot discard the later terminal marker.
+        if (!previous || (row.llm_billing_settled_at && !previous.llm_billing_settled_at)) {
+          rowsById.set(row.id, row);
+        }
+      }
     }
     const rows = [...rowsById.values()];
     pruneRetryStates(Date.now());
@@ -281,6 +288,7 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
       if (!record) continue;
       if (result.status === 'rejected') {
         counts.failed++;
+        registerRetryState(record, Date.now());
         log.error(
           { err: result.reason, event: 'chathistory_sync.record_failed', id: record.id },
           'record deferred; remaining candidates continue'
@@ -292,10 +300,11 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
       if (
         result.value === 'not_ready' ||
         result.value === 'error_data' ||
-        result.value === 'manual_audit'
+        result.value === 'manual_audit' ||
+        result.value === 'failed'
       ) {
         registerRetryState(record, Date.now());
-      } else if (result.value !== 'failed') {
+      } else {
         retryStates.delete(record.id);
       }
     }
@@ -349,6 +358,10 @@ async function processSyncRecord(input: {
       'call provider requires audit'
     );
     return 'manual_audit';
+  }
+
+  if (record.llm_billing_settled_at && (provider !== 'openrouter' || !generationId)) {
+    return 'completed';
   }
 
   if (!generationId) {
@@ -431,6 +444,12 @@ async function processSyncRecord(input: {
     }
   }
 
+  // Provider latency can remain absent after settlement. Metadata repair must not
+  // re-enter billing (whose full charge detail may already have been pruned).
+  if (record.llm_billing_settled_at) {
+    return isCompleteGenerationData(genData) ? 'completed' : 'not_ready';
+  }
+
   // Local cancellation/deadline remains the billing outcome even if upstream later stops.
   const finishReason =
     record.llm_finish_reason === 'cancelled' ||
@@ -496,6 +515,7 @@ function syncRecordFingerprint(record: ChatHistorySyncRow): string {
     record.status,
     record.llm_finish_reason ?? '',
     record.llm_charge_id ?? '',
+    record.llm_billing_settled_at ?? '',
   ].join('\u001f');
 }
 

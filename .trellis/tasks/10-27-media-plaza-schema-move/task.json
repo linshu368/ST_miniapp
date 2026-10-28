@@ -1,0 +1,35 @@
+{
+  "id": "media-plaza-schema-move",
+  "name": "media-plaza-schema-move",
+  "title": "Move image plaza tables to media_plaza",
+  "description": "Move the eight existing image plaza tables into media_plaza and switch all backend image-plaza consumers directly to the new schema.",
+  "status": "in_progress",
+  "dev_type": "database",
+  "scope": "shared migrations and backend image-plaza database access",
+  "package": "backend,shared",
+  "priority": "P2",
+  "creator": "cline",
+  "assignee": "cline",
+  "createdAt": "2026-10-27",
+  "completedAt": null,
+  "branch": "feat/media-plaza-schema-move",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "database.infrastructure.schema-security",
+        "backend.infrastructure.runtime-data-security"
+      ]
+    }
+  }
+}

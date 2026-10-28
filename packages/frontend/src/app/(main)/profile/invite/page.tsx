@@ -64,7 +64,7 @@ export default function InviteCenterPage() {
   }, []);
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col bg-background text-foreground">
+    <main className="mx-auto flex min-h-[calc(100dvh-var(--app-nav-space))] max-w-md flex-col bg-background text-foreground">
       <header className="sticky top-0 z-20 border-b border-border bg-background/80 pt-[env(safe-area-inset-top)] backdrop-blur-xl">
         <div className="flex items-center gap-2 px-3 py-3">
           <Button
@@ -107,10 +107,7 @@ export default function InviteCenterPage() {
         </div>
       </header>
 
-      <section
-        role="tabpanel"
-        className="flex flex-1 flex-col px-4 py-4 pb-[calc(env(safe-area-inset-bottom)+6.5rem)]"
-      >
+      <section role="tabpanel" className="flex flex-1 flex-col px-4 py-4">
         {entryDisabled ? (
           <DisabledState />
         ) : tab === 'invite' ? (

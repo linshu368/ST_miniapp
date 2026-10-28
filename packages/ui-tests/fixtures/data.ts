@@ -18,6 +18,7 @@ import {
   type ImagePlazaConversation,
   type GetVoiceConfigData,
   type GetImageConfigData,
+  type DramaDetail,
 } from '@miniapp/shared';
 
 export const IDS = {
@@ -36,6 +37,46 @@ export const scenarios = {
     path: '/profile',
   },
   vip: { label: '已开通 VIP', description: '会员身份、每日 150 星尘、续费入口', path: '/profile' },
+  recharge: {
+    label: '星尘充值',
+    description: '四档虚构套餐、到账明细、VIP搭配与支付失败反馈',
+    path: '/profile/recharge',
+  },
+  'recharge-error': {
+    label: '充值加载失败',
+    description: '重试、订单和客服仍可访问',
+    path: '/profile/recharge',
+  },
+  'recharge-empty': {
+    label: '暂无充值套餐',
+    description: '空态不创建订单',
+    path: '/profile/recharge',
+  },
+  'recharge-unavailable': {
+    label: '支付渠道关闭',
+    description: '可查看套餐、禁止下单',
+    path: '/profile/recharge',
+  },
+  dramas: {
+    label: '短剧体验',
+    description: '沉浸刷剧、收藏、点赞、评论、选集和本设备续看',
+    path: '/',
+  },
+  'drama-interaction-error': {
+    label: '短剧互动失败',
+    description: '点赞失败恢复、评论草稿保留、重试不重复',
+    path: '/',
+  },
+  'drama-list-error': {
+    label: '短剧列表失败',
+    description: '目录读取失败与重试入口',
+    path: '/dramas',
+  },
+  'drama-play-error': {
+    label: '短剧播放失败',
+    description: '视频地址失败，保留重试和换剧',
+    path: '/dramas',
+  },
   checked: { label: '今日已签到', description: '已领取状态及会员引导', path: '/profile' },
   'checkin-error': { label: '签到失败', description: '失败反馈与再次操作', path: '/profile' },
   'vip-error': { label: '权益暂不可读', description: '不展示未经确认的会员收益', path: '/profile' },
@@ -44,7 +85,7 @@ export const scenarios = {
     description: '官方社群入口隐藏',
     path: '/profile',
   },
-  empty: { label: '空列表', description: '角色、对话与影像的空状态', path: '/' },
+  empty: { label: '空列表', description: '角色、对话与影像的空状态', path: '/characters' },
   'chat-slow': {
     label: '慢速思考',
     description: '先显示思考，正文开始后自动折叠',
@@ -53,6 +94,11 @@ export const scenarios = {
   'chat-error': {
     label: '聊天生成失败',
     description: '失败与重新生成入口',
+    path: `/chat/${IDS.character}?session=${IDS.session}&from=discover`,
+  },
+  'chat-partial-error': {
+    label: '文字与失败同批返回',
+    description: '已收到的文字保留，首字只确认一次',
     path: `/chat/${IDS.character}?session=${IDS.session}&from=discover`,
   },
   'no-balance': {
@@ -78,6 +124,63 @@ export function isScenario(value: unknown): value is Scenario {
 
 export function makeData(api: string) {
   const now = stamp();
+  const dramas: DramaDetail[] = (
+    [
+      ['雾城来信', '悬疑'],
+      ['长安月未央', '古风'],
+      ['星期五的告白', '恋爱'],
+      ['星海之外', '科幻'],
+      ['今天也要笑', '喜剧'],
+      ['山间有晴', '治愈'],
+      ['回到昨天的便利店', '脑洞'],
+      ['借你一场夏天', '恋爱'],
+      ['无人到站', '悬疑'],
+      ['晚风不迟', '治愈'],
+      ['她的第七封信', '古风'],
+      ['时光旅人', '科幻'],
+    ] as const
+  ).map(([title, category], index) => ({
+    id: `60000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+    title,
+    tags:
+      index === 0
+        ? ['悬疑', '剧情反转', '双向试探', '久别重逢', '身份谜团', '层层揭开真相']
+        : index === 1
+          ? ['古风', '宫廷故事', '克制心动', '棋逢对手', '暗藏心事']
+          : index === 2
+            ? ['恋爱', '双向暗恋', '青春校园', '甜蜜日常']
+            : index === 3
+              ? [
+                  '科幻',
+                  '跨越星海寻找失落的记忆',
+                  '时空交错',
+                  '未知文明',
+                  '命运重逢',
+                  '星际冒险',
+                  '温柔守护',
+                  '寻找答案',
+                ]
+              : index === 9
+                ? []
+                : [category, index % 2 ? '温暖故事' : '剧情反转'],
+    description: `${title}：一次意外的相遇，让平静的生活有了新的方向。本地预览示例，用于体验列表、播放、选集和返回。`,
+    cover_url: `${api}/assets/scene.svg?tone=${index % 3}`,
+    first_published_at: new Date(Date.UTC(2026, 9, 27 - index)).toISOString(),
+    // 保留前几部短素材，最后一部覆盖窄屏长选集与跨分组定位。
+    episode_count: index === 4 ? 1 : index === 11 ? 66 : 8 + index,
+    duration_seconds: index === 4 ? 5 : null,
+    videos: Array.from(
+      { length: index === 4 ? 1 : index === 11 ? 66 : 8 + index },
+      (_, episode) => ({
+        id: `70000000-0000-4000-8000-${String(index * 100 + episode + 1).padStart(12, '0')}`,
+        title: `第 ${episode + 1} 集`,
+        tags: [],
+        description: '',
+        episode: String(episode + 1),
+        playable: true,
+      })
+    ),
+  }));
   const characters: CharacterDetail[] = Array.from({ length: 18 }, (_, index) => ({
     id:
       index === 0
@@ -310,6 +413,7 @@ export function makeData(api: string) {
     updated_at: now,
   };
   return {
+    dramas,
     characters,
     sessions: [session],
     messages,
