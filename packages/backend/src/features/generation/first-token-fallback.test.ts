@@ -143,22 +143,20 @@ describe('first-token fallback budget and delivery', () => {
     await reader.cancel();
     expect(test.observations.find((a) => a.first_token_ms !== undefined)?.first_token_ms).toBe(20);
   });
-  it('switches at the primary wait boundary without dispatching twice', async () => {
+  it('a primary ready at its trigger boundary remains eligible and cancels the other attempt', async () => {
     const test = setup({ primaryAt: 40 });
     await vi.advanceTimersByTimeAsync(49);
     const delivered = await test.result;
-    expect(delivered.role).toBe('fallback');
+    expect(delivered.role).toBe('primary');
     expect(test.calls).toHaveLength(2);
+    expect(test.calls[1]?.cancelled).toBe(true);
+    expect(test.store.selectDelivery).toHaveBeenCalledOnce();
     await delivered.response.body?.cancel();
   });
-  it('never switches back to a late primary, but records its exact first token', async () => {
+  it('a fallback winner immediately cancels primary without waiting to observe its later token', async () => {
     const test = setup({ primaryAt: 55, controls: true });
     await vi.advanceTimersByTimeAsync(11);
-    expect(
-      test.observations.some(
-        (a) => a.generation_id === 'primary-gen' && a.first_token_ms === undefined
-      )
-    ).toBe(true);
+    expect(test.observations).toHaveLength(1);
     await vi.advanceTimersByTimeAsync(45);
     const delivered = await test.result;
     expect(delivered.role).toBe('fallback');
@@ -169,25 +167,54 @@ describe('first-token fallback budget and delivery', () => {
     expect(first).not.toContain('首发');
     await reader.cancel();
     expect(test.store.prepareFallback).toHaveBeenCalledOnce();
+    expect(test.observations.find((a) => a.role === 'primary' && a.end_reason)).toMatchObject({
+      generation_id: 'primary-gen',
+      end_reason: 'cancelled',
+      observed_until_ms: 48,
+      discarded_response: { reason: 'race_lost', content: '', reasoning: '', truncated: false },
+    });
     expect(
-      test.observations.find((a) => a.role === 'primary' && a.first_token_ms !== undefined)
-        ?.first_token_ms
-    ).toBe(55);
+      test.observations.some((a) => a.role === 'primary' && a.first_token_ms !== undefined)
+    ).toBe(false);
     expect(test.calls[0]?.cancelled).toBe(true);
+    expect(test.observations.filter((a) => a.role === 'primary')).toHaveLength(2);
+    expect(test.observations.filter((a) => a.role === 'fallback')).toHaveLength(2);
   });
-  it('stops both attempts when fallback reaches its own 2s budget', async () => {
+  it('fallback may win after its old 2s stage budget while still inside the total budget', async () => {
     const test = setup({ primaryAt: 100, fallbackAt: 30 });
-    await vi.advanceTimersByTimeAsync(61);
-    await expect(test.result).rejects.toMatchObject({ stage: 'fallback' });
+    await vi.advanceTimersByTimeAsync(71);
+    const delivered = await test.result;
+    expect(delivered.role).toBe('fallback');
+    expect(delivered.firstTokenAt).toBe(70);
+    expect(test.calls[0]?.cancelled).toBe(true);
+    expect(test.store.selectDelivery).toHaveBeenCalledOnce();
+    await delivered.response.body?.cancel();
+  });
+  it('a primary arriving after fallback starts can still win and cancel fallback immediately', async () => {
+    const test = setup({ primaryAt: 50, fallbackAt: 20 });
+    await vi.advanceTimersByTimeAsync(51);
+    const delivered = await test.result;
+    expect(delivered.role).toBe('primary');
+    expect(delivered.firstTokenAt).toBe(50);
+    expect(test.calls[1]?.cancelled).toBe(true);
+    expect(test.store.selectDelivery).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ role: 'primary' })
+    );
+    const reader = delivered.response.body!.getReader();
+    expect(new TextDecoder().decode((await reader.read()).value)).toContain('首发');
+    await reader.cancel();
+  });
+  it('the common absolute deadline cancels both silent attempts exactly once', async () => {
+    const test = setup({ primaryAt: 100, fallbackAt: 100 });
+    await vi.advanceTimersByTimeAsync(101);
+    await expect(test.result).rejects.toMatchObject({ stage: 'global' });
+    expect(test.calls).toHaveLength(2);
     expect(test.calls.every((c) => c.cancelled)).toBe(true);
     expect(test.store.selectDelivery).not.toHaveBeenCalled();
-    expect(test.observations).toContainEqual(
-      expect.objectContaining({
-        role: 'fallback',
-        end_reason: 'first_token_deadline',
-        observed_until_ms: 20,
-      })
+    expect(test.observations.filter((a) => a.end_reason === 'first_token_deadline')).toHaveLength(
+      2
     );
+    expect(test.observations).toHaveLength(4);
   });
   it('counts model waits from actual dispatch and does not charge slow preparation to fallback', async () => {
     const test = setup({
@@ -264,14 +291,28 @@ describe('first-token fallback budget and delivery', () => {
     await delivered.response.body?.cancel();
     test.controller.abort();
   });
-  it('does not dispatch the same model twice and still enforces its primary wait', async () => {
+  it('the same model uses one POST and may deliver after the primary trigger up to the total deadline', async () => {
     const test = setup({
       primaryAt: 55,
       primary: { provider: 'openrouter', providerModelId: 'vendor/operator-flash' },
       fallbackModelId: 'vendor/operator-flash',
     });
-    await vi.advanceTimersByTimeAsync(41);
-    await expect(test.result).rejects.toMatchObject({ stage: 'primary' });
+    await vi.advanceTimersByTimeAsync(56);
+    const delivered = await test.result;
+    expect(delivered.role).toBe('primary');
+    expect(test.calls).toHaveLength(1);
+    expect(test.calls[0]?.cancelled).toBe(false);
+    expect(test.store.prepareFallback).not.toHaveBeenCalled();
+    await delivered.response.body?.cancel();
+  });
+  it('the same silent model is stopped at the total deadline without a duplicate POST', async () => {
+    const test = setup({
+      primaryAt: 100,
+      primary: { provider: 'openrouter', providerModelId: 'vendor/operator-flash' },
+      fallbackModelId: 'vendor/operator-flash',
+    });
+    await vi.advanceTimersByTimeAsync(101);
+    await expect(test.result).rejects.toMatchObject({ stage: 'global' });
     expect(test.calls).toHaveLength(1);
     expect(test.calls[0]?.cancelled).toBe(true);
     expect(test.store.prepareFallback).not.toHaveBeenCalled();
@@ -579,7 +620,7 @@ describe('first-token fallback budget and delivery', () => {
     await delivered.response.body?.cancel();
     test.controller.abort();
   });
-  it('disabled reasoning cannot stop the fallback stage timeout', async () => {
+  it('disabled reasoning cannot stop the common first-token deadline', async () => {
     const test = setup({
       primaryAt: 100,
       fallbackAt: 100,
@@ -587,8 +628,8 @@ describe('first-token fallback budget and delivery', () => {
       fallbackReasoningAt: 5,
       thinkingEnabled: false,
     });
-    await vi.advanceTimersByTimeAsync(61);
-    await expect(test.result).rejects.toMatchObject({ stage: 'fallback' });
+    await vi.advanceTimersByTimeAsync(101);
+    await expect(test.result).rejects.toMatchObject({ stage: 'global' });
     expect(test.store.selectDelivery).not.toHaveBeenCalled();
   });
 
@@ -607,14 +648,14 @@ describe('first-token fallback budget and delivery', () => {
       expect(
         test.observations.find((a) => a.role === 'primary' && a.first_token_ms !== undefined)
           ?.first_token_ms
-      ).toBe(thinkingEnabled ? 11 : 55);
+      ).toBe(thinkingEnabled ? 11 : undefined);
       await delivered.response.body?.cancel();
       test.controller.abort();
     }
   );
 });
 
-it('does not let a delayed primary token beat an overdue timer callback', async () => {
+it('an overdue trigger does not discard an already ready primary inside the total deadline', async () => {
   let now = 0;
   const clock = vi.spyOn(performance, 'now').mockImplementation(() => now);
   const store = {
@@ -641,9 +682,9 @@ it('does not let a delayed primary token beat an overdue timer callback', async 
         return new Response(token('g', '字'));
       },
     });
-    expect(delivered.role).toBe('fallback');
+    expect(delivered.role).toBe('primary');
     expect(store.selectDelivery).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ role: 'fallback' })
+      expect.objectContaining({ role: 'primary' })
     );
     await delivered.response.body?.cancel();
   } finally {
@@ -679,3 +720,288 @@ it('delivers fallback bytes before slow intent/identity persistence, but exposes
   expect(persisted).toBe(true);
   await reader.cancel();
 });
+
+it.each([
+  { winningRole: 'primary', raw: '旧'.repeat(3000), expected: '旧'.repeat(2048) },
+  { winningRole: 'fallback', raw: '旧'.repeat(2047) + '😀tail', expected: '旧'.repeat(2047) },
+])(
+  'same-batch tokens lock $winningRole once, abort the loser and save bounded Unicode-safe text',
+  async ({ winningRole, raw, expected }) => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+    const attempts: Array<{
+      controller: ReadableStreamDefaultController<Uint8Array>;
+      signal: AbortSignal;
+      cancelled: ReturnType<typeof vi.fn>;
+    }> = [];
+    const observations: AttemptObservation[] = [];
+    const store = {
+      prepareFallback: vi.fn(async () => {}),
+      observe: vi.fn(async (attempt: AttemptObservation) => {
+        observations.push(attempt);
+      }),
+      selectDelivery: vi.fn(async () => {}),
+    };
+    const onReady = vi.fn();
+    const response = forwardWithFirstTokenFallback({
+      primary: { provider: 'openrouter', providerModelId: 'primary' },
+      primaryAttemptId: 'primary-id',
+      timeoutMs: 40,
+      fallbackTimeoutMs: 20,
+      remainingFirstTokenMs: 100,
+      remainingObservationMs: 300,
+      requestStartedAt: performance.now(),
+      signal: new AbortController().signal,
+      store,
+      onReady,
+      thinkingEnabled: true,
+      deferPersistence: true,
+      onObservationError: vi.fn(),
+      forward: async (_model, signal, onDispatch) => {
+        onDispatch();
+        const cancelled = vi.fn();
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            attempts.push({ controller, signal, cancelled });
+          },
+          cancel: cancelled,
+        });
+        return new Response(stream);
+      },
+    });
+    await vi.advanceTimersByTimeAsync(41);
+    expect(attempts).toHaveLength(2);
+    const winningIndex = winningRole === 'primary' ? 0 : 1;
+    const losingIndex = 1 - winningIndex;
+    attempts[winningIndex]!.controller.enqueue(new TextEncoder().encode(token('winner', '赢家')));
+    attempts[losingIndex]!.controller.enqueue(
+      new TextEncoder().encode(
+        `data:${JSON.stringify({ id: 'loser', choices: [{ delta: { content: raw, reasoning: raw.replaceAll('旧', '思') } }] })}\n\n`
+      )
+    );
+    const selected = await response;
+    await vi.advanceTimersByTimeAsync(0);
+    expect(selected.role).toBe(winningRole);
+    expect(attempts[losingIndex]!.signal.aborted).toBe(true);
+    expect(attempts[losingIndex]!.cancelled).toHaveBeenCalledOnce();
+    expect(attempts[winningIndex]!.signal.aborted).toBe(false);
+    expect(onReady).toHaveBeenCalledOnce();
+    expect(store.selectDelivery).toHaveBeenCalledOnce();
+    const reader = selected.response.body!.getReader();
+    const delivered = new TextDecoder().decode((await reader.read()).value);
+    expect(delivered).toContain('赢家');
+    expect(delivered).not.toContain('旧');
+    const losingObservation = observations.find((a) => a.discarded_response);
+    expect(losingObservation?.first_token_ms).toBe(winningRole === 'primary' ? 1 : 41);
+    const discarded = losingObservation?.discarded_response;
+    expect(discarded).toEqual({
+      reason: 'race_lost',
+      content: expected,
+      reasoning: expected.replaceAll('旧', '思'),
+      truncated: true,
+    });
+    expect(observations).toHaveLength(4);
+    for (const role of ['primary', 'fallback'])
+      expect(observations.filter((a) => a.role === role)).toHaveLength(2);
+    await reader.cancel();
+  }
+);
+
+it('a fallback failure leaves an in-flight primary eligible until the common deadline', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+  let count = 0;
+  const store = {
+    prepareFallback: vi.fn(async () => {}),
+    observe: vi.fn(async () => {}),
+    selectDelivery: vi.fn(async () => {}),
+  };
+  const result = forwardWithFirstTokenFallback({
+    primary: { provider: 'openrouter', providerModelId: 'primary' },
+    primaryAttemptId: 'p',
+    timeoutMs: 40,
+    fallbackTimeoutMs: 20,
+    remainingFirstTokenMs: 100,
+    remainingObservationMs: 300,
+    requestStartedAt: performance.now(),
+    signal: new AbortController().signal,
+    store,
+    onObservationError: vi.fn(),
+    forward: async (_model, signal, onDispatch) => {
+      onDispatch();
+      if (++count === 2) return new Response(null, { status: 503 });
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            const timer = setTimeout(
+              () => controller.enqueue(new TextEncoder().encode(token('primary', '首发可用'))),
+              70
+            );
+            signal.addEventListener(
+              'abort',
+              () => {
+                clearTimeout(timer);
+                controller.error(signal.reason);
+              },
+              { once: true }
+            );
+          },
+        })
+      );
+    },
+  });
+  await vi.advanceTimersByTimeAsync(71);
+  const selected = await result;
+  expect(selected.role).toBe('primary');
+  expect(count).toBe(2);
+  expect(store.selectDelivery).toHaveBeenCalledOnce();
+  await selected.response.body?.cancel();
+});
+
+it('a primary winner does not await a slow fallback intent and the cancelled fallback never dispatches later', async () => {
+  const test = setup({ primaryAt: 50, fallbackPrepareDelay: 120 });
+  let returned = false;
+  void test.result.then(() => {
+    returned = true;
+  });
+  await vi.advanceTimersByTimeAsync(51);
+  expect(returned).toBe(true);
+  const selected = await test.result;
+  expect(selected.role).toBe('primary');
+  expect(test.calls).toHaveLength(1);
+  expect(test.store.selectDelivery).toHaveBeenCalledOnce();
+  await vi.advanceTimersByTimeAsync(150);
+  expect(test.calls).toHaveLength(1);
+  expect(test.observations.find((a) => a.role === 'fallback')).toMatchObject({
+    end_reason: 'cancelled',
+    discarded_response: { reason: 'race_lost', content: '', reasoning: '', truncated: false },
+  });
+  await selected.response.body?.cancel();
+});
+
+it('slow or failed diagnostic writes never delay first-token delivery', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+  let count = 0;
+  const onObservationError = vi.fn();
+  const store = {
+    prepareFallback: vi.fn(async () => {}),
+    observe: vi.fn(async () => {
+      await new Promise((r) => setTimeout(r, 200));
+      throw new Error('observation unavailable');
+    }),
+    selectDelivery: vi.fn(async () => {}),
+  };
+  const result = forwardWithFirstTokenFallback({
+    primary: { provider: 'openrouter', providerModelId: 'primary' },
+    primaryAttemptId: 'p',
+    timeoutMs: 40,
+    fallbackTimeoutMs: 20,
+    remainingFirstTokenMs: 100,
+    remainingObservationMs: 300,
+    requestStartedAt: performance.now(),
+    signal: new AbortController().signal,
+    store,
+    deferPersistence: true,
+    onObservationError,
+    forward: async (_model, _signal, onDispatch) => {
+      onDispatch();
+      if (++count === 2) return new Response(token('f', '兜底'));
+      return new Response(new ReadableStream<Uint8Array>());
+    },
+  });
+  let returned = false;
+  void result.then(() => {
+    returned = true;
+  });
+  await vi.advanceTimersByTimeAsync(41);
+  expect(returned).toBe(true);
+  const selected = await result;
+  expect(selected.role).toBe('fallback');
+  await selected.deliveryPersisted;
+  expect(onObservationError).not.toHaveBeenCalled();
+  await vi.advanceTimersByTimeAsync(400);
+  expect(onObservationError).toHaveBeenCalledTimes(4);
+  expect(store.observe).toHaveBeenCalledTimes(4);
+  await selected.response.body?.cancel();
+});
+
+it('a cancelled loser whose transport ignores abort still has its late response body closed', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+  let count = 0;
+  let lateResponse!: (response: Response) => void;
+  const closed = vi.fn(),
+    observations: AttemptObservation[] = [];
+  const store = {
+    prepareFallback: vi.fn(async () => {}),
+    observe: vi.fn(async (a: AttemptObservation) => {
+      observations.push(a);
+    }),
+    selectDelivery: vi.fn(async () => {}),
+  };
+  const result = forwardWithFirstTokenFallback({
+    primary: { provider: 'openrouter', providerModelId: 'primary' },
+    primaryAttemptId: 'p',
+    timeoutMs: 40,
+    fallbackTimeoutMs: 20,
+    remainingFirstTokenMs: 100,
+    remainingObservationMs: 300,
+    requestStartedAt: performance.now(),
+    signal: new AbortController().signal,
+    store,
+    onObservationError: vi.fn(),
+    forward: async (_model, _signal, onDispatch) => {
+      onDispatch();
+      if (++count === 1)
+        return new Promise<Response>((resolve) => {
+          lateResponse = resolve;
+        });
+      return new Response(token('f', '赢家'));
+    },
+  });
+  await vi.advanceTimersByTimeAsync(41);
+  const selected = await result;
+  expect(selected.role).toBe('fallback');
+  expect(observations.filter((a) => a.role === 'primary')).toHaveLength(2);
+  lateResponse(new Response(new ReadableStream<Uint8Array>({ cancel: closed })));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(closed).toHaveBeenCalledOnce();
+  expect(observations.filter((a) => a.role === 'primary')).toHaveLength(2);
+  expect(store.selectDelivery).toHaveBeenCalledOnce();
+  await selected.response.body?.cancel();
+});
+
+it.each([100, 101])(
+  'an overdue deadline rejects a token at %s ms even before the timer callback executes',
+  async (nowAtToken) => {
+    let now = 0;
+    const clock = vi.spyOn(performance, 'now').mockImplementation(() => now);
+    const store = {
+      prepareFallback: vi.fn(async () => {}),
+      observe: vi.fn(async () => {}),
+      selectDelivery: vi.fn(async () => {}),
+    };
+    try {
+      await expect(
+        forwardWithFirstTokenFallback({
+          primary: { provider: 'openrouter', providerModelId: 'primary' },
+          primaryAttemptId: 'p',
+          timeoutMs: 40,
+          fallbackTimeoutMs: 20,
+          remainingFirstTokenMs: 100,
+          remainingObservationMs: 300,
+          requestStartedAt: 0,
+          signal: new AbortController().signal,
+          store,
+          onObservationError: vi.fn(),
+          forward: async (_model, _signal, onDispatch) => {
+            onDispatch();
+            now = nowAtToken;
+            return new Response(token('late', '晚到'));
+          },
+        })
+      ).rejects.toMatchObject({ stage: 'global' });
+      expect(store.selectDelivery).not.toHaveBeenCalled();
+      expect(store.prepareFallback).not.toHaveBeenCalled();
+    } finally {
+      clock.mockRestore();
+    }
+  }
+);
