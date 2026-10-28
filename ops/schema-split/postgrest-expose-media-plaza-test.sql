@@ -10,12 +10,21 @@ DECLARE
   v_current TEXT;
   v_setting_count INTEGER;
   v_baseline CONSTANT TEXT :=
-    'public, graphql_public, miniapp, miniapp_traffic, admin, cs_platform, app_core, miniapp_features, experience, billing';
-  v_target CONSTANT TEXT :=
+    'public, graphql_public, miniapp, miniapp_traffic, admin, cs_platform, app_core, miniapp_features, experience, billing, drama_archive';
+  -- The first version of this file accidentally replaced drama_archive with
+  -- media_plaza. Accept that one known-bad value only so already affected TEST
+  -- environments can be repaired by rerunning this script.
+  v_regressed CONSTANT TEXT :=
     'public, graphql_public, miniapp, miniapp_traffic, admin, cs_platform, app_core, miniapp_features, experience, billing, media_plaza';
+  v_target CONSTANT TEXT :=
+    'public, graphql_public, miniapp, miniapp_traffic, admin, cs_platform, app_core, miniapp_features, experience, billing, drama_archive, media_plaza';
 BEGIN
   IF to_regnamespace('media_plaza') IS NULL THEN
     RAISE EXCEPTION 'media_plaza schema is absent; run 20261027_media_plaza_schema_move.sql first';
+  END IF;
+
+  IF to_regnamespace('drama_archive') IS NULL THEN
+    RAISE EXCEPTION 'drama_archive schema is absent; refusing to expose a missing schema';
   END IF;
 
   SELECT
@@ -31,13 +40,13 @@ BEGIN
     RAISE EXCEPTION 'multiple TEST pgrst.db_schemas role settings found; review role/database precedence';
   END IF;
 
-  IF v_current IS NOT NULL AND v_current NOT IN (v_baseline, v_target) THEN
+  IF v_current IS NOT NULL AND v_current NOT IN (v_baseline, v_regressed, v_target) THEN
     RAISE EXCEPTION 'unexpected TEST pgrst.db_schemas: %', v_current;
   END IF;
 END;
 $$;
 ALTER ROLE authenticator SET pgrst.db_schemas =
-  'public, graphql_public, miniapp, miniapp_traffic, admin, cs_platform, app_core, miniapp_features, experience, billing, media_plaza';
+  'public, graphql_public, miniapp, miniapp_traffic, admin, cs_platform, app_core, miniapp_features, experience, billing, drama_archive, media_plaza';
 COMMIT;
 NOTIFY pgrst, 'reload config';
 NOTIFY pgrst, 'reload schema';
@@ -47,5 +56,5 @@ NOTIFY pgrst, 'reload schema';
 -- ALTER ROLE authenticator RESET pgrst.db_schemas;
 -- If the preflight value was the explicit TEST baseline, restore it with:
 -- ALTER ROLE authenticator SET pgrst.db_schemas =
---   'public, graphql_public, miniapp, miniapp_traffic, admin, cs_platform, app_core, miniapp_features, experience, billing';
+--   'public, graphql_public, miniapp, miniapp_traffic, admin, cs_platform, app_core, miniapp_features, experience, billing, drama_archive';
 -- Then reload both PostgREST config and schema.
