@@ -102,6 +102,21 @@ export const scenarios = {
     description: '先显示思考，正文开始后自动折叠',
     path: `/chat/${IDS.character}?session=${IDS.session}&from=discover`,
   },
+  'chat-branch': {
+    label: '历史对话分支',
+    description: '200轮虚构对话，从早期或近期回复开启独立分支',
+    path: `/chat/${IDS.character}?session=${IDS.session}&from=discover`,
+  },
+  'chat-branch-error': {
+    label: '分支失败恢复',
+    description: '创建已完成但响应丢失，同请求重试不重复创建',
+    path: `/chat/${IDS.character}?session=${IDS.session}&from=discover`,
+  },
+  'chat-like-error': {
+    label: '回复点赞失败',
+    description: '即时点亮、保存失败恢复与再次点赞，不打断输入',
+    path: `/chat/${IDS.character}?session=${IDS.session}&from=discover`,
+  },
   'chat-error': {
     label: '聊天生成失败',
     description: '失败与重新生成入口',

@@ -1,0 +1,37 @@
+{
+  "id": "conversation-branches",
+  "name": "conversation-branches",
+  "title": "历史对话分支与上下文窗口",
+  "description": "任意历史轮次开启独立分支，继承最多配置低水位轮数，复用原A/B窗口和本地验收。",
+  "status": "in_progress",
+  "dev_type": "fullstack",
+  "scope": null,
+  "package": "backend",
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-29",
+  "completedAt": null,
+  "branch": "feat/conversation-branches",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "本地开发与验收完成；未暂存/提交/推送，未执行远端迁移。待用户查看，提交须按最终差异审核。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "backend.business.conversation-generation",
+        "frontend.business.conversation-ui",
+        "database.business.conversation-storage",
+        "shared.business.conversation-contracts"
+      ]
+    }
+  }
+}

@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { ChatMessage } from '@miniapp/shared';
 
-import { getChatReplyPresentation } from './chat-reply-presentation';
+import {
+  canBranchFromMessage,
+  canLikeMessage,
+  getChatReplyPresentation,
+} from './chat-reply-presentation';
 
 function assistant(overrides: Partial<ChatMessage> = {}): ChatMessage {
   return {
@@ -44,5 +48,27 @@ describe('getChatReplyPresentation', () => {
 
   it('生成中不提前判定终态', () => {
     expect(getChatReplyPresentation(assistant({ status: 'streaming' }))).toBeNull();
+  });
+});
+
+describe('可用的回复操作（分支与点赞）', () => {
+  it('历史完整回复与继承回复都可操作，不局限于最新一轮', () => {
+    expect(canBranchFromMessage(assistant({ turn_index: 20 }))).toBe(true);
+    expect(canBranchFromMessage(assistant({ inherited: true }))).toBe(true);
+    expect(canLikeMessage(assistant({ turn_index: 20 }))).toBe(true);
+    expect(canLikeMessage(assistant({ inherited: true }))).toBe(true);
+  });
+
+  it.each<Partial<ChatMessage>>([
+    { turn_index: 0 },
+    { role: 'user' },
+    { content: '   ' },
+    { status: 'streaming' },
+    { status: 'failed' },
+    { status: 'interrupted' },
+    { finish_reason: 'length' },
+  ])('不为未完成、空白或非回复内容提供入口: %j', (overrides) => {
+    expect(canBranchFromMessage(assistant(overrides))).toBe(false);
+    expect(canLikeMessage(assistant(overrides))).toBe(false);
   });
 });

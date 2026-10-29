@@ -14,7 +14,11 @@
 // 用量元数据补齐 ≠ 结算完成：llm_billing_settled_at 有值才算扣费行、额度收口、金额回写都齐。
 
 import { readPostprocessVersion, type ChatMessage, type ChatMessageStatus } from '@miniapp/shared';
-import type { LlmModelProvider, CancelConversationTurnRequest } from '@miniapp/shared';
+import type {
+  LlmModelProvider,
+  CancelConversationTurnRequest,
+  SetMessageLikeData,
+} from '@miniapp/shared';
 import type { GenerationMessage, GenerationStatus } from '../../features/generation/types.js';
 import { MiniappCharacterFreeQuotaRepository } from './MiniappCharacterFreeQuotaRepository.js';
 import { getDomainDb, type DomainDb } from '../../lib/supabase.js';
@@ -35,6 +39,8 @@ const CURRENT_TURN_HEAD_COLUMNS = CURRENT_TURN_COLUMNS.replace(
   ',history,',
   ',history_head:history->0,history_next:history->1,'
 );
+const SESSION_TURN_HEAD_COLUMNS = `${CURRENT_TURN_HEAD_COLUMNS},is_inherited`;
+const MESSAGE_DISPLAY_COLUMNS = `${SESSION_TURN_HEAD_COLUMNS},liked`;
 
 type HeadProjectedRow = Omit<ConversationHistoryRow, 'history'> & {
   history?: unknown[];
@@ -52,6 +58,8 @@ function restoreHistoryHead(row: HeadProjectedRow): ConversationHistoryRow {
 }
 
 export interface ConversationHistoryRow {
+  is_inherited?: boolean;
+  liked?: boolean;
   first_token_preview?: { kind: 'delta' | 'reasoning'; text: string } | null;
   id: string;
   user_id: string;
@@ -139,6 +147,33 @@ export interface ConversationContext {
 
 export class ConversationHistoryRepository {
   constructor(private readonly db: DomainDb = getDomainDb('experience')) {}
+
+  /** Explicit target state makes retries safe; the RPC owns session/revision authorization. */
+  async setMessageLike(input: {
+    userId: string;
+    sessionId: string;
+    messageId: string;
+    liked: boolean;
+  }): Promise<SetMessageLikeData> {
+    const { data, error } = await this.db
+      .rpc('set_chat_message_like', {
+        p_user_id: input.userId,
+        p_session_id: input.sessionId,
+        p_message_id: input.messageId,
+        p_liked: input.liked,
+      })
+      .abortSignal(AbortSignal.timeout(5_000));
+    if (error) throwConversationRpcError(error, '更新回复点赞失败');
+    const result = data as SetMessageLikeData | null;
+    if (
+      result?.session_id !== input.sessionId ||
+      result.message_id !== input.messageId ||
+      result.liked !== input.liked
+    ) {
+      throw new Error('更新回复点赞结果字段不完整');
+    }
+    return { session_id: result.session_id, message_id: result.message_id, liked: result.liked };
+  }
 
   async startTurn(input: {
     sessionId: string;
@@ -570,8 +605,8 @@ export class ConversationHistoryRepository {
         : readWindowStart(knownWindowStartTurn);
 
     const base = this.db
-      .from('current_chat_history')
-      .select(CURRENT_TURN_HEAD_COLUMNS)
+      .from('session_chat_history')
+      .select(SESSION_TURN_HEAD_COLUMNS)
       .eq('session_id', sessionId);
 
     // 已泄洪时窗口不含 turn 1，但开场白要从 turn 1 的 prompt 快照取。
@@ -645,8 +680,8 @@ export class ConversationHistoryRepository {
     const turnLimit = Math.max(Math.ceil(limit / 2), 1);
 
     let query = this.db
-      .from('current_chat_history')
-      .select(CURRENT_TURN_HEAD_COLUMNS)
+      .from('session_chat_history')
+      .select(MESSAGE_DISPLAY_COLUMNS)
       .eq('session_id', sessionId)
       .not('turn_index', 'is', null);
     if (typeof options.beforeTurnIndex === 'number') {
@@ -655,7 +690,8 @@ export class ConversationHistoryRepository {
 
     const { data, error } = await query
       .order('turn_index', { ascending: false })
-      .limit(turnLimit + 1);
+      .limit(turnLimit + 1)
+      .abortSignal(AbortSignal.timeout(5_000));
     if (error) throw new Error(`查询会话消息失败：${error.message}`);
 
     const latest = ((data ?? []) as unknown as HeadProjectedRow[]).map(restoreHistoryHead);
@@ -784,6 +820,7 @@ export function toChatMessages(row: ConversationHistoryRow): ChatMessage[] {
   return [
     {
       id: `${row.id}:user`,
+      ...(row.is_inherited ? { inherited: true } : {}),
       session_id: row.session_id,
       turn_index: row.turn_index,
       role: 'user',
@@ -798,7 +835,11 @@ export function toChatMessages(row: ConversationHistoryRow): ChatMessage[] {
     },
     {
       id: row.id,
-      ...(extractRequestId(row.history) ? { request_id: extractRequestId(row.history)! } : {}),
+      ...(row.is_inherited ? { inherited: true } : {}),
+      ...(typeof row.liked === 'boolean' ? { liked: row.liked } : {}),
+      ...(!row.is_inherited && extractRequestId(row.history)
+        ? { request_id: extractRequestId(row.history)! }
+        : {}),
       session_id: row.session_id,
       turn_index: row.turn_index,
       role: 'assistant',

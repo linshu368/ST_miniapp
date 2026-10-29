@@ -4,13 +4,19 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   CancelConversationTurnData,
   CancelConversationTurnRequest,
+  ChatMessage,
   CreateConversationData,
   DeleteConversationData,
+  ForkConversationData,
+  ForkConversationRequest,
   GetConversationData,
   ListConversationsData,
+  SetMessageLikeData,
+  SetMessageLikeRequest,
   UpdateConversationData,
 } from '@miniapp/shared';
 import { apiClient } from './client';
+import { characterSocialKeys, refreshCharacterSocial } from './character-social';
 
 export const conversationKeys = {
   all: ['conversations'] as const,
@@ -147,6 +153,82 @@ export function useCreateConversationMutation() {
         has_more: false,
       });
       void queryClient.invalidateQueries({ queryKey: conversationKeys.lists });
+    },
+  });
+}
+
+/** 分支是一个独立会话；只更新新详情与会话列表，不改写来源缓存。 */
+export function useForkConversationMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    retry: false,
+    mutationFn: ({ sessionId, ...body }: ForkConversationRequest & { sessionId: string }) =>
+      apiClient<ForkConversationData>(
+        `/api/v1/conversations/${encodeURIComponent(sessionId)}/branch`,
+        {
+          method: 'POST',
+          body: JSON.stringify(body),
+          timeoutMs: 15_000,
+          queuePriority: 'critical',
+        }
+      ),
+    onSuccess: (data) => {
+      queryClient.setQueryData(conversationKeys.detail(data.session.id), data);
+      void queryClient.invalidateQueries({ queryKey: conversationKeys.lists });
+    },
+  });
+}
+
+/** 点赞属于会话内某个固定版本，不能只按轮次或来源消息复用。 */
+export function applyMessageLike(messages: ChatMessage[], data: SetMessageLikeData): ChatMessage[] {
+  return messages.map((message) =>
+    message.session_id === data.session_id && message.id === data.message_id
+      ? { ...message, liked: data.liked }
+      : message
+  );
+}
+
+export function useSetMessageLikeMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    retry: false,
+    mutationFn: ({
+      sessionId,
+      messageId,
+      liked,
+    }: SetMessageLikeRequest & { sessionId: string; messageId: string }) =>
+      apiClient<SetMessageLikeData>(
+        `/api/v1/conversations/${encodeURIComponent(sessionId)}/messages/${encodeURIComponent(messageId)}/like`,
+        { method: 'PUT', body: JSON.stringify({ liked }), timeoutMs: 10_000 }
+      ),
+    onSuccess: async (data) => {
+      // 停止写入前发出的详情请求，避免旧 liked 值晚到后覆盖刚确认的反馈。
+      await queryClient.cancelQueries({
+        queryKey: conversationKeys.detail(data.session_id),
+        exact: true,
+      });
+      queryClient.setQueryData<GetConversationData>(
+        conversationKeys.detail(data.session_id),
+        (current) =>
+          current ? { ...current, messages: applyMessageLike(current.messages, data) } : current
+      );
+      const characterId = queryClient.getQueryData<GetConversationData>(
+        conversationKeys.detail(data.session_id)
+      )?.session.character_id;
+      if (characterId) {
+        // 已保存的点赞不因次要计数刷新失败而回滚；下次进入大厅仍可重新读取。
+        void refreshCharacterSocial(queryClient, characterId).catch(() =>
+          queryClient.invalidateQueries({
+            queryKey: characterSocialKeys.viewer(),
+            predicate: (query) =>
+              (query.queryKey[2] === 'social' || query.queryKey[2] === 'batch') &&
+              query.queryKey.slice(3).includes(characterId),
+            refetchType: 'none',
+          })
+        );
+      }
     },
   });
 }
