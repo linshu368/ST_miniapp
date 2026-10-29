@@ -2,6 +2,7 @@ import { createServer, type Server } from 'node:http';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   engineeringRoute,
+  observeChatFirstToken,
   observeGenerationAttempt,
   observeGenerationDispatch,
   observeGenerationTerminal,
@@ -99,6 +100,23 @@ describe('engineering telemetry boundary', () => {
       generation_id: 'PRIVATE_GENERATION_ID',
     };
     observeGenerationAttempt(unsafe);
+    observeChatFirstToken({
+      requestedModel: 'selected-catalog-model',
+      stage: 'accepted',
+      deadlineMs: 6000,
+      triggerMs: 2000,
+    });
+    observeChatFirstToken({
+      requestedModel: 'selected-catalog-model',
+      stage: 'fallback_dispatched',
+    });
+    observeChatFirstToken({
+      requestedModel: 'selected-catalog-model',
+      stage: 'selected',
+      winner: 'primary',
+      fallbackDispatched: true,
+      elapsedMs: 3900,
+    });
     await secondStop();
     // 一份 app 关闭不能停止仍被另一个 app 使用的进程级 provider。
     observeGenerationTerminal({
@@ -115,6 +133,10 @@ describe('engineering telemetry boundary', () => {
     expect(wire).toContain('first_token_observed');
     expect(wire).toContain('filtered');
     expect(wire).toContain('st-miniapp-backend');
+    expect(wire).toContain('chat.first_token');
+    expect(wire).toContain('selected-catalog-model');
+    expect(wire).toContain('fallback_started');
+    expect(wire).toContain('st_chat_fallback_dispatches');
     expect(sink.received.some((r) => r.path === '/v1/logs')).toBe(true);
     const metrics = sink.received.filter((r) => r.path === '/v1/metrics');
     expect(metrics).toHaveLength(1);

@@ -236,6 +236,8 @@ describe('turn lifecycle recovery', () => {
         type: 'start',
         thinking_enabled: false,
         first_token_deadline_ms: 6000,
+        requested_model_id: 'model',
+        fallback_trigger_ms: 4000,
       })
     );
     expect(turnInput.sink.send).not.toHaveBeenCalledWith(

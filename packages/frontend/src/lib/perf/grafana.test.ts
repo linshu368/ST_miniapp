@@ -61,6 +61,37 @@ describe('bounded engineering Faro exporter', () => {
     expect(fake.transport).not.toHaveBeenCalled();
   });
 
+  it('exports only bounded public catalog model and numeric policy fields for first-token analysis', async () => {
+    const fake = fakeSdk();
+    const exporter = createEngineeringExporter(async () => fake.sdk);
+    await exporter.initialize();
+    exporter.measurement('roleplay.first_token', 2100, {
+      requested_model: 'deepseek-v4-flash',
+      deadline_ms: 6000,
+      outcome: 'observed',
+      request_id: 'PRIVATE_REQUEST',
+      user_id: 'PRIVATE_USER',
+    });
+    expect(fake.measurement).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        context: expect.objectContaining({
+          requested_model: 'deepseek-v4-flash',
+          deadline_ms: '6000',
+        }),
+      })
+    );
+    exporter.event('roleplay.terminal', {
+      requested_model: '11111111-1111-4111-8111-111111111111',
+      deadline_ms: true,
+      outcome: 'timed_out',
+    });
+    const attrs = fake.event.mock.calls.at(-1)![1];
+    expect(attrs.requested_model).toBe('unknown');
+    expect(attrs.deadline_ms).toBeUndefined();
+    expect(JSON.stringify(fake.measurement.mock.calls)).not.toMatch(/PRIVATE_|request_id|user_id/);
+  });
+
   it('initializes once, transports only approved custom signals and strips unsafe fields twice', async () => {
     const fake = fakeSdk();
     const loader = vi.fn(async () => fake.sdk);

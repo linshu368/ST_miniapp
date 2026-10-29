@@ -21,6 +21,77 @@ afterEach(() => {
 });
 
 describe('client-committed first token observation', () => {
+  it('attributes delivery to the frozen server model rather than a stale catalog selection', () => {
+    const obs = new FirstTokenObservation(
+      { ...identity, assistantMessageId: null },
+      6000,
+      vi.fn(),
+      vi.fn(),
+      true,
+      'send',
+      'stale-model'
+    );
+    obs.identify(identity.assistantMessageId, identity.revision, 6000, 'server-model', 2000);
+    obs.committed(identity, performance.now());
+    expect(engineering.event).toHaveBeenCalledWith(
+      'roleplay.terminal',
+      expect.objectContaining({
+        requested_model: 'server-model',
+        deadline_ms: 6000,
+        trigger_ms: 2000,
+      })
+    );
+  });
+
+  it('separates an explicit admission rejection without changing its original business receipt', () => {
+    const report = vi.fn();
+    const obs = new FirstTokenObservation(
+      { ...identity, assistantMessageId: null },
+      6000,
+      report,
+      vi.fn()
+    );
+    obs.unavailable('upstream_error', 'rejected');
+    expect(engineering.event).toHaveBeenCalledWith(
+      'roleplay.terminal',
+      expect.objectContaining({ outcome: 'rejected' })
+    );
+    expect(report).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'not_observed', reason: 'upstream_error' })
+    );
+  });
+
+  it('keeps the selected catalog model and frozen deadline on the single business terminal', async () => {
+    const report = vi.fn();
+    const obs = new FirstTokenObservation(
+      identity,
+      6000,
+      report,
+      vi.fn(),
+      true,
+      'send',
+      'deepseek-v4-flash'
+    );
+    await vi.advanceTimersByTimeAsync(2500);
+    obs.received();
+    await vi.advanceTimersByTimeAsync(200);
+    obs.committed(identity, performance.now());
+    expect(engineering.measurement).toHaveBeenCalledWith(
+      'roleplay.first_token',
+      2700,
+      expect.objectContaining({
+        requested_model: 'deepseek-v4-flash',
+        deadline_ms: 6000,
+        outcome: 'observed',
+      })
+    );
+    obs.committed(identity, performance.now());
+    expect(
+      engineering.event.mock.calls.filter(([name]) => name === 'roleplay.terminal')
+    ).toHaveLength(1);
+    expect(report).toHaveBeenCalledOnce();
+  });
+
   it('mirrors pre-start timeouts once without waiting for business identity or exporting it', async () => {
     const report = vi.fn();
     const obs = new FirstTokenObservation(

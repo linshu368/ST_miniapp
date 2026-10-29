@@ -104,3 +104,21 @@ Faro 2.13 默认 `FetchTransport.send` 强制添加 `Idempotency-Key`，当前�
 回滚：后端关闭 ENGINEERING_TELEMETRY_ENABLED 并重启；前端关闭 NEXT_PUBLIC_GRAFANA_ENABLED 后重新构建发布。Collector关闭只影响新遥测；原Sentry/业务事实/经营SQL均保留，不需要数据库回滚，不启用旧重cron。
 
 日常维护只维护现有 owner、统一出口白名单和这组版本化看板。新页面/交互按实际价值**非常建议**补 ready/测量，不为每个普通按钮建一套监控。没有当前决策价值的细碎指标本期不加。
+
+## 兜底与业务首字专项接入（2026-10-29，TEST候选）
+
+本节为专项候选源码；新架子已另行部署，本批埋点尚未发布，未切换或停用旧SQL看板。复用同一Faro与OTel/Alloy出口，不增加数据库I/O、配置查询、遥测路由、表、cron或采集服务。现有交付、恢复、赢家和一次计费事实继续保留；纯监控展示迁往Loki/Metrics，不能直接删掉计费资格所依赖的首份结果。
+
+客户端FirstTokenObservation同一终态镜像增加公开目录的requested_model（所选型号，最多64种）与客户端本轮deadline_ms、trigger_ms。SSE start可选requested_model_id使用既有解析出的公开型号ID校正过期客户端选择，不新增读取；旧服务兼容客户端发送时快照，首帧前无法确认的情况不冒充服务端冻结事实。deadline/trigger是日志标量，不创建无限Prometheus标签；SSE修正旧缓存仍按原点击时钟，原6秒补报修复已一起适配。正文/已开启思考的首token进入React提交消息界面才是成功；供应商或服务端已有首字不代替客户端交付。关闭遥测、401、队列溢出或发送失败不得阻塞业务回执。
+
+角色扮演看板增加专项行：按所选型号的总截止无字率（timed_out/已知前台首字结果，目标1%）、成功P50/P95、成功首字分布、结果样本与离页/后台/停止构成。默认6000ms，可独立选择历史10000ms；成功分布严格在对应预算内。仅原日志字段计数/聚合，不查询Supabase；没有数据不填成功或0毫秒。未知型号单列unknown/other，不把用户/会话/请求ID做标签。型号为公开目录稳定ID，动态新增不需改监控代码。
+
+服务端额外四个计数器：st_chat_requests（创建本轮身份后一次受理）、st_chat_fallback_dispatches（真实兜底POST派发）、st_chat_first_token_selections（唯一首字赢家，winner与fallback_started）、st_chat_first_token_timeouts（既有总截止锁存一次）。全部按requested_model聚合，单位与\_total翻译须由实际TEST验证。st_chat_server_first_token仅供服务端排障，从路由时钟到首字选中，绝不画成用户总耗时。chat.first_token日志保留安全阶段、elapsed_ms、deadline_ms和trigger_ms标量，无正文、推理、个人身份或凭证。
+
+触发率=实际兜底派发/受理；兜底首字选中比例=选中fallback/全部选中。后者仅表示服务端选择，不能冒称客户端最终收到的替代率；客户端主图仍独立裁决。原attempt指标/日志继续辅助定位错误、headers、首字和竞败，不把race_lost算供应商故障，不相加并行等待或相减独立P95。计数器increase是窗口估计，低样本需同时看客户端已收到终态样本。
+
+现有SDK/Collector健康继续独立显示。开始/终态的窗口差额不是精确缺报，也不能据缺报证明用户未收到；两份信号同时丢失仍可能不可见。监控数据只用于观测，不用它做钱包扣费或补扣。当前不接自动调参或损失函数，也不把整条回复耗时混入首字专项。
+
+本地复用固定Faro→Alloy→Loki合成验证：型号A两次成功（1000/5999ms）、一次6000ms截断、一次离页、一次明确受理拒绝、一次未受理拒绝；型号B一次2000ms成功。验证A截断率1/3（离页/未受理拒绝不稀释）、B为0、成功P95小于6000、所有Loki面板语法和分布。服务端真实OTLP合成接收端验证字段安全、秒单位和独立请求/派发/赢家计数；真实模型与生产数据不参与。
+
+下一步沿原框架TEST接入门禁：真实Cloud字段/指标名、按型号出图与采集丢弃核对后再生产启用；确认替代有效再退役对应纯监控SQL，旧业务事实与经营看板不删、不重启旧全量cron。候选源码通过不等于线上已经切源。

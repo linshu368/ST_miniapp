@@ -452,6 +452,8 @@ async function executeGeneration(
         const elapsed = performance.now() - request.firstToken.requestStartedAt;
         const delivered = await forwardWithFirstTokenFallback({
           primary: request.model,
+          requestedModelId: request.model.modelId,
+          totalBudgetMs: request.model.firstTokenPolicy.deadlineMs,
           thinkingEnabled: request.thinkingEnabled ?? true,
           fallbackModelId: request.model.firstTokenPolicy.fallbackModelId,
           primaryAttemptId: request.firstToken.primaryAttemptId,
