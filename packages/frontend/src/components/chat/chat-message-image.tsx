@@ -307,26 +307,31 @@ export function ChatMessageImageFooter({
     }
   };
 
+  const imageActionLabel =
+    latest?.status === 'failed' || latest?.status === 'failed_unknown' ? '重试出图' : '看看TA';
   const imageAction = busy ? (
-    <span className="flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] font-medium text-muted-foreground">
-      <Loader2 className="size-3.5 animate-spin" aria-hidden />
-      正在出图
+    <span
+      role="status"
+      title="正在出图"
+      className="inline-flex size-11 shrink-0 items-center justify-center rounded-full text-muted-foreground/70"
+    >
+      <Loader2 className="size-4 animate-spin" aria-hidden />
+      <span className="sr-only">正在出图</span>
     </span>
   ) : image.canGenerate && generationEnabled ? (
-    <span className="flex items-center gap-1">
-      <button
-        type="button"
-        onClick={() =>
-          latest?.status === 'failed' || latest?.status === 'failed_unknown'
-            ? openRetryFlow()
-            : void openDefaultFlow()
-        }
-        className="flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] font-medium text-primary transition-colors hover:bg-secondary"
-      >
-        <Eye className="size-3.5" aria-hidden />
-        {latest?.status === 'failed' || latest?.status === 'failed_unknown' ? '重试出图' : '看看TA'}
-      </button>
-    </span>
+    <button
+      type="button"
+      aria-label={imageActionLabel}
+      title={imageActionLabel}
+      onClick={() =>
+        latest?.status === 'failed' || latest?.status === 'failed_unknown'
+          ? openRetryFlow()
+          : void openDefaultFlow()
+      }
+      className="inline-flex size-11 shrink-0 items-center justify-center rounded-full text-muted-foreground/70 transition-colors hover:bg-secondary hover:text-foreground active:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <Eye className="size-4" aria-hidden />
+    </button>
   ) : null;
 
   return (

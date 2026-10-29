@@ -1,4 +1,5 @@
 import { recoverActiveDelivery } from '../features/conversations/active-delivery.js';
+import { fetchContextWindowLimits } from '../features/conversations/context-window.js';
 import { FirstTokenDeadlineError } from '../features/generation/first-token-fallback.js';
 /**
  * backend / routes / conversations.ts
@@ -22,6 +23,8 @@ import {
   fail,
   ok,
   PatchGenerationConfigRequestSchema,
+  ForkConversationRequestSchema,
+  SetMessageLikeRequestSchema,
 } from '@miniapp/shared';
 import type {
   CancelConversationTurnRequest,
@@ -30,6 +33,7 @@ import type {
   CreateConversationRequest,
   DeleteConversationData,
   GetConversationData,
+  ForkConversationData,
   GetGenerationConfigData,
   InsufficientBalanceErrorResponse,
   ListConversationsData,
@@ -40,6 +44,7 @@ import type {
   UpdateConversationData,
   SendMessageRequest,
   RegenerateRequest,
+  SetMessageLikeData,
 } from '@miniapp/shared';
 import { requireTelegramAuth, type TelegramUser } from '../middleware/auth.js';
 import { getOrCreateDbUser } from '../lib/user.js';
@@ -166,7 +171,131 @@ export default async function conversationRoutes(app: FastifyInstance) {
     }
   );
 
+  // @frontend-ready: true
+  app.put(
+    '/api/v1/conversations/:id/messages/:messageId/like',
+    { preHandler: [requireTelegramAuth] },
+    async (request, reply) => {
+      reply.header('Cache-Control', 'no-store');
+      if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
+      const { id: sessionId, messageId } = request.params as { id?: string; messageId?: string };
+      const parsed = SetMessageLikeRequestSchema.safeParse(request.body);
+      if (
+        !sessionId ||
+        !UUID_PATTERN.test(sessionId) ||
+        !messageId ||
+        !UUID_PATTERN.test(messageId) ||
+        !parsed.success
+      ) {
+        return reply.status(400).send(fail('BAD_REQUEST', '会话、回复或点赞状态无效'));
+      }
+      const log = requestLogger(request.log, 'conversations');
+      const startedAt = Date.now();
+      const dbUser = await getOrCreateDbUser(request.user);
+      try {
+        const result = await history.setMessageLike({
+          userId: dbUser.id,
+          sessionId,
+          messageId,
+          liked: parsed.data.liked,
+        });
+        log.biz.info(
+          {
+            event: 'conversation.reply.like_updated',
+            userId: dbUser.id,
+            sessionId,
+            messageId,
+            liked: result.liked,
+            elapsedMs: Date.now() - startedAt,
+          },
+          '回复点赞已更新'
+        );
+        return reply.send(ok<SetMessageLikeData>(result));
+      } catch (err) {
+        if (sendConversationError(reply, err)) return;
+        log.sys.error(
+          {
+            event: 'conversation.reply.like_failed',
+            userId: dbUser.id,
+            sessionId,
+            messageId,
+            elapsedMs: Date.now() - startedAt,
+          },
+          '回复点赞更新失败'
+        );
+        return reply.status(500).send(fail('INTERNAL_ERROR', '点赞状态暂未保存，请重试'));
+      }
+    }
+  );
+
   // ── 会话 CRUD ─────────────────────────────────────────────────────────────
+
+  // @frontend-ready: true
+  app.post(
+    '/api/v1/conversations/:id/branch',
+    { preHandler: [requireTelegramAuth] },
+    async (request, reply) => {
+      reply.header('Cache-Control', 'no-store');
+      if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
+      const sourceSessionId = (request.params as { id?: string }).id;
+      const parsed = ForkConversationRequestSchema.safeParse(request.body);
+      if (!sourceSessionId || !UUID_PATTERN.test(sourceSessionId) || !parsed.success) {
+        return reply.status(400).send(fail('BAD_REQUEST', '分支会话或回复 ID 无效'));
+      }
+      const log = requestLogger(request.log, 'conversations');
+      const startedAt = Date.now();
+      const dbUser = await getOrCreateDbUser(request.user);
+      try {
+        const limits = await fetchContextWindowLimits();
+        // The RPC owns authorization and idempotency together: a retry may recover
+        // an already-created branch even after its original conversation was deleted.
+        const [branched, displayName] = await Promise.all([
+          sessions.forkSession({
+            userId: dbUser.id,
+            sourceSessionId,
+            messageId: parsed.data.message_id,
+            requestId: parsed.data.request_id,
+            retainTurns: limits.retainTurns,
+          }),
+          settings.getDisplayName(dbUser.id),
+        ]);
+        const openingMessage = await sessions.getCharacterFirstMes(branched.character_id);
+        const page = await history.listMessages(branched.id, openingMessage);
+        log.biz.info(
+          {
+            event: 'conversation.session.branched',
+            userId: dbUser.id,
+            sourceSessionId,
+            sessionId: branched.id,
+            inheritedTurns: branched.branch_inherited_turns,
+            elapsedMs: Date.now() - startedAt,
+          },
+          '已开启对话分支'
+        );
+        return reply.send(
+          ok<ForkConversationData>({
+            session: applyUserPlaceholderToSession(toChatSession(branched), displayName),
+            messages: applyUserPlaceholderToMessages(page.messages, displayName),
+            has_more: page.hasMore,
+          })
+        );
+      } catch (err) {
+        if (sendConversationError(reply, err)) return;
+        log.sys.error(
+          {
+            event: 'conversation.session.branch_failed',
+            // Repository errors can contain upstream details. Branch logs only
+            // retain identifiers and timing, never history or a database payload.
+            userId: dbUser.id,
+            sourceSessionId,
+            elapsedMs: Date.now() - startedAt,
+          },
+          '开启对话分支失败'
+        );
+        return reply.status(500).send(fail('INTERNAL_ERROR', '分支暂未打开，请重试'));
+      }
+    }
+  );
 
   // @frontend-ready: true
   app.post(
