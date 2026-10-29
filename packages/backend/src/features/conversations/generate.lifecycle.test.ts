@@ -236,6 +236,8 @@ describe('turn lifecycle recovery', () => {
         type: 'start',
         thinking_enabled: false,
         first_token_deadline_ms: 6000,
+        requested_model_id: 'model',
+        fallback_trigger_ms: 4000,
       })
     );
     expect(turnInput.sink.send).not.toHaveBeenCalledWith(
@@ -243,7 +245,7 @@ describe('turn lifecycle recovery', () => {
     );
   });
 
-  it('first reasoning at 3s clears the 6s server deadline and emits the existing metric only once', async () => {
+  it('first reasoning at 3s clears the 6s deadline without an extra monitoring DB write', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
     mocks.execute.mockImplementation(async (request, hooks) => {
       await new Promise((resolve) => setTimeout(resolve, 3000));
@@ -264,14 +266,12 @@ describe('turn lifecycle recovery', () => {
     const result = runConversationTurn(turnInput);
     await vi.advanceTimersByTimeAsync(3001);
     expect(turnInput.sink.send).toHaveBeenCalledWith({ type: 'reasoning', text: '真实思考' });
-    expect(mocks.markServer).toHaveBeenCalledExactlyOnceWith('reply', {
-      first_token_emitted_ms: expect.any(Number),
-    });
-    expect(mocks.markServer.mock.calls[0]?.[1].first_token_emitted_ms).toBeLessThan(6000);
+    expect(mocks.markServer).not.toHaveBeenCalled();
+    expect(mocks.checkpoint).toHaveBeenCalledOnce();
     await vi.advanceTimersByTimeAsync(7000);
     await expect(result).resolves.toMatchObject({ kind: 'streamed' });
     expect(turnInput.sink.send).toHaveBeenCalledWith({ type: 'delta', text: '正文' });
-    expect(mocks.markServer).toHaveBeenCalledTimes(1);
+    expect(mocks.markServer).not.toHaveBeenCalled();
   });
 
   it.each([

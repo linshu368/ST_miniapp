@@ -59,11 +59,43 @@
         "name": "browser_selector",
         "label": "浏览器流选择器（接入时核验）",
         "type": "textbox",
-        "query": "{app=\"st-miniapp\"}",
+        "query": "{service_name=\"st-miniapp\"}",
         "current": {
-          "text": "{app=\"st-miniapp\"}",
-          "value": "{app=\"st-miniapp\"}"
+          "text": "{service_name=\"st-miniapp\"}",
+          "value": "{service_name=\"st-miniapp\"}"
         }
+      },
+      {
+        "name": "requested_model",
+        "label": "用户所选型号（.* 为全部）",
+        "type": "textbox",
+        "query": ".*",
+        "current": {
+          "text": ".*",
+          "value": ".*"
+        }
+      },
+      {
+        "name": "deadline_ms",
+        "label": "首字预算（毫秒）",
+        "type": "custom",
+        "query": "6000,10000",
+        "current": {
+          "text": "6000",
+          "value": "6000"
+        },
+        "options": [
+          {
+            "text": "6000",
+            "value": "6000",
+            "selected": true
+          },
+          {
+            "text": "10000",
+            "value": "10000",
+            "selected": false
+          }
+        ]
       }
     ]
   },
@@ -74,7 +106,7 @@
       "type": "link"
     },
     {
-      "title": "既有首字回执（保留）",
+      "title": "旧首字业务记录（切源前过渡）",
       "url": "/d/chat-first-token-manual",
       "type": "link"
     },
@@ -97,12 +129,391 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**待 TEST Cloud 接入验证；不是线上验收完成。** 本机已核验固定版本 Faro → Alloy → Loki 的日志字段。Cloud 托管浏览器入口需再核对实际流标签/格式，browser_selector 不得凭空猜测。无数据不等于0次失败。按同环境、版本、入口、网络/平台层比较，成功P50/P95与终态样本量一起看；低样本只观察，不自动排名或作人员考核。默认24h/5min，避免高频长窗查询。\n\n开始/终态按窗口计数，**不是逐请求闭环或全访问覆盖**（无身份关联，窗口边界和丢报可影响结果）。先观察24–48h基线，再审核预算；后台、离页和主动停止单列。\n\n首字是正文或已开启思考进入匹配消息的React commit，不是像素/阅读证明。完整回复另算；首字到达不保证最终成功。聊天入场见页面看板/chat/:id，角色点击反馈不能冒充数据可用。前端不发模型ID，模型/平台下钻见后端。"
+        "content": "**待 TEST Cloud 接入验证；不是线上验收完成。** 本机已核验固定版本 Faro → Alloy → Loki 的日志字段。Cloud 托管浏览器入口需再核对实际流标签/格式，browser_selector 不得凭空猜测。无数据不等于0次失败。按同环境、版本、入口、网络/平台层比较，成功P50/P95与终态样本量一起看；低样本只观察，不自动排名或作人员考核。默认24h/5min，避免高频长窗查询。\n\n开始/终态按窗口计数，**不是逐请求闭环或全访问覆盖**（无身份关联，窗口边界和丢报可影响结果）。先观察24–48h基线，再审核预算；后台、离页和主动停止单列。\n\n首字是正文或已开启思考进入匹配消息的React commit，不是像素/阅读证明。完整回复另算；首字到达不保证最终成功。聊天入场见页面看板/chat/:id，角色点击反馈不能冒充数据可用。所选型号使用公开目录的有限标识，不含用户/会话/请求身份；平台与上游等待见后端。\n\n**业务首字专项**：默认6秒预算；按用户所选型号统计。无字时间截断率=timed_out/前台已知首字结果，目标1%；成功分布只含截止前交付（正文或已开启思考），不包含整条回复耗时。离页/后台/停止与缺报不当成功。开始、终态是已接收信号的窗口计数，不是精确缺报率；需同时看采集健康。服务端启动兜底、选中兜底与客户端交付是三个不同事实。新专项只读Loki/Metrics，不读Supabase。"
       },
       "fieldConfig": {
         "defaults": {},
         "overrides": []
       }
+    },
+    {
+      "id": 101,
+      "title": "每型号｜总截止仍无首字比例",
+      "type": "timeseries",
+      "description": "仅当前客户端预算、前台已知首字终态；离页/后台/主动停止不入分母，缺报不能算成功。目标1%。",
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "grafanacloud-logs"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "noValue": "—",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0.01
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": ["lastNotNull"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "((sum by (event_data_requested_model) (count_over_time(${browser_selector:raw} |= \"st_roleplay_terminal\" | logfmt | kind=\"event\" | event_name=\"st_roleplay_terminal\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_stage=\"first_token\" | event_data_requested_model=~\"$requested_model\" | event_data_deadline_ms=\"$deadline_ms\" | event_data_outcome=\"timed_out\" [$__auto]))) or on (event_data_requested_model) (0 * (sum by (event_data_requested_model) (count_over_time(${browser_selector:raw} |= \"st_roleplay_terminal\" | logfmt | kind=\"event\" | event_name=\"st_roleplay_terminal\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_stage=\"first_token\" | event_data_requested_model=~\"$requested_model\" | event_data_deadline_ms=\"$deadline_ms\" | event_data_outcome=~\"observed|timed_out|upstream_error|server_timeout|fallback_timeout|primary_timeout|not_observed\" [$__auto]))))) / (sum by (event_data_requested_model) (count_over_time(${browser_selector:raw} |= \"st_roleplay_terminal\" | logfmt | kind=\"event\" | event_name=\"st_roleplay_terminal\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_stage=\"first_token\" | event_data_requested_model=~\"$requested_model\" | event_data_deadline_ms=\"$deadline_ms\" | event_data_outcome=~\"observed|timed_out|upstream_error|server_timeout|fallback_timeout|primary_timeout|not_observed\" [$__auto])))",
+          "legendFormat": "{{event_data_requested_model}}",
+          "queryType": "range",
+          "instant": false,
+          "range": true,
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          }
+        }
+      ]
+    },
+    {
+      "id": 102,
+      "title": "每型号｜点击到首token P50 / P95",
+      "type": "timeseries",
+      "description": "只含截止前交付成功；思考首字与正文等效。失败/缺报不是0毫秒样本，不用供应商latency或完整回复耗时替代。",
+      "gridPos": {
+        "x": 12,
+        "y": 5,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "grafanacloud-logs"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "noValue": "—"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": ["lastNotNull"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "quantile_over_time(0.5, ${browser_selector:raw} |= \"st_roleplay_first_token\" | logfmt | kind=\"measurement\" | type=\"st_roleplay_first_token\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_requested_model=~\"$requested_model\" | context_deadline_ms=\"$deadline_ms\" | context_outcome=\"observed\" | duration_ms < $deadline_ms | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_requested_model)",
+          "legendFormat": "{{context_requested_model}} P50",
+          "queryType": "range",
+          "instant": false,
+          "range": true,
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "quantile_over_time(0.95, ${browser_selector:raw} |= \"st_roleplay_first_token\" | logfmt | kind=\"measurement\" | type=\"st_roleplay_first_token\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_requested_model=~\"$requested_model\" | context_deadline_ms=\"$deadline_ms\" | context_outcome=\"observed\" | duration_ms < $deadline_ms | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_requested_model)",
+          "legendFormat": "{{context_requested_model}} P95",
+          "queryType": "range",
+          "instant": false,
+          "range": true,
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          }
+        }
+      ]
+    },
+    {
+      "id": 103,
+      "title": "点击到首token｜成功耗时分布",
+      "type": "bargauge",
+      "description": "当前筛选型号合并；选择单型号看其分布。6秒预算下6秒后不是成功。分布必须与无字截断和结果构成同时看。",
+      "gridPos": {
+        "x": 0,
+        "y": 12,
+        "w": 24,
+        "h": 6
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "grafanacloud-logs"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "noValue": "—"
+        },
+        "overrides": []
+      },
+      "options": {
+        "displayMode": "basic",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "((sum (count_over_time(${browser_selector:raw} |= \"st_roleplay_first_token\" | logfmt | kind=\"measurement\" | type=\"st_roleplay_first_token\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_requested_model=~\"$requested_model\" | context_deadline_ms=\"$deadline_ms\" | context_outcome=\"observed\" | duration_ms < $deadline_ms | duration_ms >= 0 | duration_ms < 1000 [$__range]))) or vector(0)) / (sum (count_over_time(${browser_selector:raw} |= \"st_roleplay_first_token\" | logfmt | kind=\"measurement\" | type=\"st_roleplay_first_token\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_requested_model=~\"$requested_model\" | context_deadline_ms=\"$deadline_ms\" | context_outcome=\"observed\" | duration_ms < $deadline_ms [$__range])))",
+          "legendFormat": "0–1秒",
+          "queryType": "instant",
+          "instant": true,
+          "range": false,
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "((sum (count_over_time(${browser_selector:raw} |= \"st_roleplay_first_token\" | logfmt | kind=\"measurement\" | type=\"st_roleplay_first_token\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_requested_model=~\"$requested_model\" | context_deadline_ms=\"$deadline_ms\" | context_outcome=\"observed\" | duration_ms < $deadline_ms | duration_ms >= 1000 | duration_ms < 2000 [$__range]))) or vector(0)) / (sum (count_over_time(${browser_selector:raw} |= \"st_roleplay_first_token\" | logfmt | kind=\"measurement\" | type=\"st_roleplay_first_token\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_requested_model=~\"$requested_model\" | context_deadline_ms=\"$deadline_ms\" | context_outcome=\"observed\" | duration_ms < $deadline_ms [$__range])))",
+          "legendFormat": "1–2秒",
+          "queryType": "instant",
+          "instant": true,
+          "range": false,
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          }
+        },
+        {
+          "refId": "C",
+          "expr": "((sum (count_over_time(${browser_selector:raw} |= \"st_roleplay_first_token\" | logfmt | kind=\"measurement\" | type=\"st_roleplay_first_token\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_requested_model=~\"$requested_model\" | context_deadline_ms=\"$deadline_ms\" | context_outcome=\"observed\" | duration_ms < $deadline_ms | duration_ms >= 2000 | duration_ms < 3000 [$__range]))) or vector(0)) / (sum (count_over_time(${browser_selector:raw} |= \"st_roleplay_first_token\" | logfmt | kind=\"measurement\" | type=\"st_roleplay_first_token\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_requested_model=~\"$requested_model\" | context_deadline_ms=\"$deadline_ms\" | context_outcome=\"observed\" | duration_ms < $deadline_ms [$__range])))",
+          "legendFormat": "2–3秒",
+          "queryType": "instant",
+          "instant": true,
+          "range": false,
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          }
+        },
+        {
+          "refId": "D",
+          "expr": "((sum (count_over_time(${browser_selector:raw} |= \"st_roleplay_first_token\" | logfmt | kind=\"measurement\" | type=\"st_roleplay_first_token\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_requested_model=~\"$requested_model\" | context_deadline_ms=\"$deadline_ms\" | context_outcome=\"observed\" | duration_ms < $deadline_ms | duration_ms >= 3000 | duration_ms < 4000 [$__range]))) or vector(0)) / (sum (count_over_time(${browser_selector:raw} |= \"st_roleplay_first_token\" | logfmt | kind=\"measurement\" | type=\"st_roleplay_first_token\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_requested_model=~\"$requested_model\" | context_deadline_ms=\"$deadline_ms\" | context_outcome=\"observed\" | duration_ms < $deadline_ms [$__range])))",
+          "legendFormat": "3–4秒",
+          "queryType": "instant",
+          "instant": true,
+          "range": false,
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          }
+        },
+        {
+          "refId": "E",
+          "expr": "((sum (count_over_time(${browser_selector:raw} |= \"st_roleplay_first_token\" | logfmt | kind=\"measurement\" | type=\"st_roleplay_first_token\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_requested_model=~\"$requested_model\" | context_deadline_ms=\"$deadline_ms\" | context_outcome=\"observed\" | duration_ms < $deadline_ms | duration_ms >= 4000 | duration_ms < 6000 [$__range]))) or vector(0)) / (sum (count_over_time(${browser_selector:raw} |= \"st_roleplay_first_token\" | logfmt | kind=\"measurement\" | type=\"st_roleplay_first_token\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_requested_model=~\"$requested_model\" | context_deadline_ms=\"$deadline_ms\" | context_outcome=\"observed\" | duration_ms < $deadline_ms [$__range])))",
+          "legendFormat": "4–6秒",
+          "queryType": "instant",
+          "instant": true,
+          "range": false,
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          }
+        },
+        {
+          "refId": "F",
+          "expr": "((sum (count_over_time(${browser_selector:raw} |= \"st_roleplay_first_token\" | logfmt | kind=\"measurement\" | type=\"st_roleplay_first_token\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_requested_model=~\"$requested_model\" | context_deadline_ms=\"$deadline_ms\" | context_outcome=\"observed\" | duration_ms < $deadline_ms | duration_ms >= 6000 | duration_ms < 110000 [$__range]))) or vector(0)) / (sum (count_over_time(${browser_selector:raw} |= \"st_roleplay_first_token\" | logfmt | kind=\"measurement\" | type=\"st_roleplay_first_token\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_requested_model=~\"$requested_model\" | context_deadline_ms=\"$deadline_ms\" | context_outcome=\"observed\" | duration_ms < $deadline_ms [$__range])))",
+          "legendFormat": "6秒至截止",
+          "queryType": "instant",
+          "instant": true,
+          "range": false,
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          }
+        }
+      ]
+    },
+    {
+      "id": 104,
+      "title": "每型号｜首字结果样本与退出构成",
+      "type": "table",
+      "description": "接收端已知终态计数。后台、离页、主动停止单列，不以其改善前台超时率；缺报不在本表中变成成功。",
+      "gridPos": {
+        "x": 0,
+        "y": 18,
+        "w": 24,
+        "h": 6
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "grafanacloud-logs"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "—"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": ["lastNotNull"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (event_data_requested_model,event_data_outcome) (count_over_time(${browser_selector:raw} |= \"st_roleplay_terminal\" | logfmt | kind=\"event\" | event_name=\"st_roleplay_terminal\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_stage=\"first_token\" | event_data_requested_model=~\"$requested_model\" | event_data_deadline_ms=\"$deadline_ms\" [$__range]))",
+          "legendFormat": "{{event_data_requested_model}} / {{event_data_outcome}}",
+          "queryType": "instant",
+          "instant": true,
+          "range": false,
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          }
+        }
+      ],
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {
+            "mode": "columns"
+          }
+        }
+      ]
+    },
+    {
+      "id": 105,
+      "title": "每型号｜实际启动兜底比例（服务端）",
+      "type": "timeseries",
+      "description": "真实兜底POST派发/已受理业务请求；首发之后回赢仍算触发。不是兜底意图数或供应商失败率。 Cloud实际指标名须在TEST摄取后核验；计数器increase为窗口估计，空数据不等于0失败。",
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 12,
+        "h": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "noValue": "—"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": ["lastNotNull"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "((sum by (requested_model) (increase(st_chat_fallback_dispatches_total{environment=\"$environment\",release=~\"$release\",requested_model=~\"$requested_model\"}[$__range]))) or on (requested_model) (0 * (sum by (requested_model) (increase(st_chat_requests_total{environment=\"$environment\",release=~\"$release\",requested_model=~\"$requested_model\"}[$__range]))))) / (sum by (requested_model) (increase(st_chat_requests_total{environment=\"$environment\",release=~\"$release\",requested_model=~\"$requested_model\"}[$__range])))",
+          "legendFormat": "{{requested_model}}",
+          "queryType": "range",
+          "instant": false,
+          "range": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          }
+        }
+      ]
+    },
+    {
+      "id": 106,
+      "title": "每型号｜首字选中兜底比例（服务端）",
+      "type": "timeseries",
+      "description": "服务端首字赢家中的兜底占比，不宣称客户端已收到。与客户端超时和首字分布一起判断。 Cloud实际指标名须在TEST摄取后核验；计数器increase为窗口估计，空数据不等于0失败。",
+      "gridPos": {
+        "x": 12,
+        "y": 24,
+        "w": 12,
+        "h": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "noValue": "—"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": ["lastNotNull"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "((sum by (requested_model) (increase(st_chat_first_token_selections_total{environment=\"$environment\",release=~\"$release\",requested_model=~\"$requested_model\",winner=\"fallback\"}[$__range]))) or on (requested_model) (0 * (sum by (requested_model) (increase(st_chat_first_token_selections_total{environment=\"$environment\",release=~\"$release\",requested_model=~\"$requested_model\"}[$__range]))))) / (sum by (requested_model) (increase(st_chat_first_token_selections_total{environment=\"$environment\",release=~\"$release\",requested_model=~\"$requested_model\"}[$__range])))",
+          "legendFormat": "{{requested_model}}",
+          "queryType": "range",
+          "instant": false,
+          "range": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          }
+        }
+      ]
     },
     {
       "id": 2,
@@ -115,7 +526,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 5,
+        "y": 35,
         "w": 12,
         "h": 4
       },
@@ -163,7 +574,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 9,
+        "y": 39,
         "w": 24,
         "h": 8
       },
@@ -220,7 +631,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 17,
+        "y": 47,
         "w": 12,
         "h": 8
       },
@@ -281,7 +692,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 17,
+        "y": 47,
         "w": 12,
         "h": 4
       },
@@ -329,7 +740,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 25,
+        "y": 55,
         "w": 24,
         "h": 8
       },
@@ -386,7 +797,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 33,
+        "y": 63,
         "w": 12,
         "h": 8
       },
@@ -447,7 +858,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 33,
+        "y": 63,
         "w": 12,
         "h": 8
       },
@@ -508,7 +919,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 41,
+        "y": 71,
         "w": 12,
         "h": 8
       },
@@ -569,7 +980,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 49,
+        "y": 79,
         "w": 24,
         "h": 8
       },
@@ -626,7 +1037,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 57,
+        "y": 87,
         "w": 12,
         "h": 8
       },
@@ -687,7 +1098,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 65,
+        "y": 95,
         "w": 24,
         "h": 8
       },

@@ -19,6 +19,8 @@ export class FirstTokenObservation {
   private backgrounded = document.visibilityState !== 'visible';
   private reason: ReportFirstTokenRequest['reason'] = null;
   private reported = false;
+  private engineeringOutcome: 'rejected' | undefined;
+  private triggerMs: number | undefined;
   private finishedMs: number | null = null;
   private visibility = () => {
     if (document.visibilityState !== 'visible') {
@@ -34,7 +36,8 @@ export class FirstTokenObservation {
     private readonly report: (body: ReportFirstTokenRequest) => void,
     private readonly onTimeout: () => void,
     readonly thinkingEnabled = true,
-    private readonly action: 'send' | 'regenerate' = 'send'
+    private readonly action: 'send' | 'regenerate' = 'send',
+    private requestedModel = 'unknown'
   ) {
     try {
       recordEngineeringEvent('roleplay.started', this.attributes('waiting'));
@@ -47,10 +50,24 @@ export class FirstTokenObservation {
     if (this.backgrounded) this.unavailable('page_left');
   }
 
-  identify(assistantMessageId: string, revision: number, deadlineMs?: number): void {
+  identify(
+    assistantMessageId: string,
+    revision: number,
+    deadlineMs?: number,
+    requestedModelId?: string,
+    triggerMs?: number
+  ): void {
     // One request owns one server revision; late or duplicate start events cannot retarget it.
     if (this.identity.assistantMessageId !== null) return;
     this.identity = { ...this.identity, assistantMessageId, revision };
+    if (typeof requestedModelId === 'string') this.requestedModel = requestedModelId;
+    if (
+      typeof triggerMs === 'number' &&
+      Number.isInteger(triggerMs) &&
+      triggerMs > 0 &&
+      triggerMs <= 110000
+    )
+      this.triggerMs = triggerMs;
     // A cached catalog can predate an operator change. Keep the original click clock.
     if (!this.outcome && Number.isFinite(deadlineMs) && deadlineMs! > 0 && deadlineMs! <= 110000) {
       this.deadlineMs = deadlineMs!;
@@ -121,9 +138,10 @@ export class FirstTokenObservation {
     this.finish();
     this.onTimeout();
   }
-  unavailable(reason: ReportFirstTokenRequest['reason']): void {
+  unavailable(reason: ReportFirstTokenRequest['reason'], engineeringOutcome?: 'rejected'): void {
     if (!this.outcome) {
       this.outcome = 'not_observed';
+      this.engineeringOutcome = engineeringOutcome;
       if (reason === 'page_left') this.backgrounded = true;
       this.reason = reason;
       this.finish();
@@ -137,7 +155,7 @@ export class FirstTokenObservation {
     // Mirror the same immutable terminal outcome, including pre-identity failures.
     // Business receipt recovery remains independent and identity is never exported.
     try {
-      const outcome =
+      let outcome =
         this.outcome === 'observed'
           ? 'observed'
           : this.outcome === 'timed_out'
@@ -145,6 +163,7 @@ export class FirstTokenObservation {
             : this.reason === 'page_left' && document.visibilityState !== 'visible'
               ? 'background'
               : (this.reason ?? 'not_observed');
+      if (this.engineeringOutcome) outcome = this.engineeringOutcome;
       const attributes = this.attributes(outcome);
       recordEngineeringMeasurement('roleplay.first_token', this.finishedMs, attributes);
       recordEngineeringEvent('roleplay.terminal', attributes);
@@ -173,6 +192,9 @@ export class FirstTokenObservation {
       stage: 'first_token',
       action: this.action,
       outcome,
+      requested_model: this.requestedModel,
+      deadline_ms: this.deadlineMs,
+      trigger_ms: this.triggerMs,
       source_measurement_version: 'client_committed_v4',
     };
   }

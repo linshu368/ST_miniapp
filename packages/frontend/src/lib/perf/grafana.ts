@@ -200,6 +200,19 @@ const HEALTH_FIELDS = new Set([
   'source_queued',
   'source_transport_failures',
 ]);
+const MODEL_VALUES = new Set<string>();
+function requestedModel(value: unknown): string {
+  if (
+    typeof value !== 'string' ||
+    !/^[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$/.test(value) ||
+    /[a-f0-9]{8}-[a-f0-9-]{27,}/i.test(value)
+  )
+    return 'unknown';
+  if (MODEL_VALUES.has(value)) return value;
+  if (MODEL_VALUES.size >= 64) return 'other';
+  MODEL_VALUES.add(value);
+  return value;
+}
 const MAX_QUEUE = 64;
 const MAX_PAYLOAD_BYTES = 2_048;
 const LOAD_TIMEOUT_MS = 3_000;
@@ -241,7 +254,16 @@ function safeAttributes(attributes: Attributes = {}): Record<string, string> {
   };
   for (const [key, value] of Object.entries(attributes).slice(0, 32)) {
     if (value === null || value === undefined) continue;
-    if (key === 'route') result.route = engineeringRoute(String(value));
+    if (key === 'requested_model') result.requested_model = requestedModel(value);
+    else if (key === 'deadline_ms' || key === 'trigger_ms') {
+      const ms =
+        typeof value === 'number'
+          ? value
+          : typeof value === 'string' && /^\d{1,6}$/.test(value)
+            ? Number(value)
+            : NaN;
+      if (Number.isInteger(ms) && ms > 0 && ms <= 110_000) result[key] = String(ms);
+    } else if (key === 'route') result.route = engineeringRoute(String(value));
     else if (HEALTH_FIELDS.has(key)) {
       const number =
         typeof value === 'number'
@@ -263,10 +285,15 @@ function metricName(name: string): string {
 const METRIC_NAMES = new Set([...MEASUREMENTS].map(metricName));
 const EVENT_NAMES = new Set([...EVENTS].map(metricName));
 
-/** 最后一层重建 payload/meta；SDK 自动 meta、trace、session、URL 和原始字段不能穿透。 */
-function beforeSend(config: Configuration, item: TransportItem): TransportItem | null {
+/** 最后一层重建 payload/meta；只留 app 与公开 SDK 协议信息，身份/URL 等自动 meta 不能穿透。 */
+function beforeSend(
+  config: Configuration,
+  sdkVersion: string,
+  item: TransportItem
+): TransportItem | null {
   const meta = {
     app: { name: 'st-miniapp', environment: config.environment, version: config.release },
+    sdk: { name: '@grafana/faro-web-sdk', version: sdkVersion },
   };
   const payload = item.payload;
   if (
@@ -373,18 +400,52 @@ export function createEngineeringExporter(
         .then(loadSdk)
         .then((module) => {
           if (settled) return;
+          // Cloud intake 要求此协议头；仅本 exporter 内存期复用，不恢复 SDK session 或写入身份字段。
+          const transportSessionId = module.genShortID(32);
           const transport = new module.FetchTransport({
             url: config.url,
             bufferSize: 20,
             concurrency: 1,
             requestTimeoutMs: 3_000,
             retry: { maxAttempts: 1 },
-            requestOptions: { credentials: 'omit', referrerPolicy: 'no-referrer' },
+            requestOptions: {
+              credentials: 'omit',
+              referrerPolicy: 'no-referrer',
+              headers: { 'X-Faro-Session-Id': transportSessionId },
+            },
           });
-          // SDK 公开的错误回调只保留失败批次数，绝不复制错误正文、URL 或 SDK console 日志。
-          // 这不是逐条送达确认；源端 accepted 与实际 Cloud 接收必须分别看。
-          transport.logError = () => {
-            health.source_transport_failures += 1;
+          // 2.13 默认 send 强加 Idempotency-Key，当前托管 intake 的 CORS 不接受该头。
+          // 只扩展公开 send/队列/格式接口：复用有界队列，单次发送且不改全局 fetch 或 SDK 私有实现。
+          transport.send = async (items) => {
+            try {
+              await transport.promiseBuffer.add(async () => {
+                const body = JSON.stringify(module.getTransportBody(items));
+                const controller = new AbortController();
+                // 排队不占网络预算；每个真正出队的 batch 各有三秒上限。
+                const requestTimeout = setTimeout(() => controller.abort(), 3_000);
+                try {
+                  const response = await fetch(config.url, {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'X-Faro-Session-Id': transportSessionId,
+                    },
+                    body,
+                    credentials: 'omit',
+                    referrerPolicy: 'no-referrer',
+                    signal: controller.signal,
+                  });
+                  // 不读取或记录 collector 正文；尽早释放不需要的响应流。
+                  void response.body?.cancel().catch(() => {});
+                  if (!response.ok) throw new Error('Telemetry intake rejected batch');
+                } finally {
+                  clearTimeout(requestTimeout);
+                }
+              });
+            } catch {
+              // 失败批次不是逐条送达确认；只计数，不复制错误正文、URL 或 SDK 日志。
+              health.source_transport_failures += 1;
+            }
           };
           const options: BrowserConfig = {
             app: { name: 'st-miniapp', environment: config.environment, version: config.release },
@@ -398,7 +459,7 @@ export function createEngineeringExporter(
             dedupe: false,
             batching: { enabled: true, itemLimit: 20, sendTimeout: 1_000 },
             transports: [transport],
-            beforeSend: (item) => beforeSend(config, item),
+            beforeSend: (item) => beforeSend(config, module.VERSION, item),
           };
           sdk = module.initializeFaro(options);
           settled = true;

@@ -654,7 +654,8 @@ export function useConversationTurn({
           setStreamError(FIRST_TOKEN_RETRY_MESSAGE);
         },
         thinkingEnabled,
-        input.mode
+        input.mode,
+        selectedModelId ?? 'unknown'
       );
       observationRef.current = observation;
       const request = Symbol('turn');
@@ -753,7 +754,9 @@ export function useConversationTurn({
             observation.identify(
               event.assistant_message_id,
               event.revision,
-              event.first_token_deadline_ms
+              event.first_token_deadline_ms,
+              event.requested_model_id,
+              event.fallback_trigger_ms
             );
             assistantRevision = event.revision;
             turnMeta.turnIndex = event.turn_index;
@@ -873,7 +876,14 @@ export function useConversationTurn({
           !error.recoverable &&
           !observation.hasReceivedToken
         ) {
-          observation.unavailable('upstream_error');
+          // Known pre-admission rejections are separate from accepted service results.
+          observation.unavailable(
+            'upstream_error',
+            [400, 401, 402, 403, 404, 409, 422, 429].includes(error.status) &&
+              !pendingRef.current?.assistantMessageId
+              ? 'rejected'
+              : undefined
+          );
         }
         await handleTurnFailure(error, input, isCurrent, !aborted && observation.hasReceivedToken);
         // Keep rolling-deploy compatibility with an old backend that may still hard-timeout.

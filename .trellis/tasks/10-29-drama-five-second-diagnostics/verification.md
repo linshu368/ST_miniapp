@@ -20,3 +20,9 @@
 本轮未新增或执行数据库migration；无新服务/凭证/配置变量。未git add/commit/push、未创建PR、未部署、未修改线上看板。需要发布Backend并将原工程短剧看板新增两面板/变量合入当前线上JSON（保留线上其他改动）。发布后用自然慢样本验证Cloud能查到终态与network，不要求手工复现/抓包。
 
 202只表示接收；OTLP队列关闭/过载/断网、强退仍可能缺报。iOS详细首字节不可读时保持limited，本次不增加媒体代理/探测或绕过平台限制。Loki保留期按实际Cloud设置，未假设SQL的7/14天适用于它。历史Supabase记录/导入器保留；新路由不再写库。回退旧Backend前关闭旧持久化flag需要独立配置授权。
+
+## PR #539 冲突修复复验（2026-10-29）
+
+合入 origin/dev 37ad8663，保留上游聊天首字观测 observeChatFirstToken 与本 PR 短剧诊断 observeDramaStartupDiagnostic 及双方既有测试；冲突仅限 engineering-observability.ts 与同名测试文件。没有调整上游业务逻辑，主目录未提交修改保留。
+
+本轮通过：Backend 全量107文件/1038 tests，Shared全量17文件/186 tests，Frontend观测相关3文件/56 tests；pnpm -r typecheck、pnpm -r --if-present build、pnpm lint:imports、冲突文件Prettier、git diff --check。短剧看板JSON及面板/变量ID唯一性通过。Frontend既有img告警与Admin包体积告警仍在。未执行迁移、部署或修改线上看板；CI结果另行查看PR。

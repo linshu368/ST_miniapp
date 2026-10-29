@@ -94,6 +94,39 @@ try {
     domain: 'st.engineering',
     attributes: { ...context, outcome: i < 8 ? 'ready' : 'error' },
   }));
+  const firstTokens = [
+    { model: 'synthetic-model-a', outcome: 'observed', ms: 1000 },
+    { model: 'synthetic-model-a', outcome: 'observed', ms: 5999 },
+    { model: 'synthetic-model-a', outcome: 'timed_out', ms: 6000 },
+    { model: 'synthetic-model-a', outcome: 'page_left', ms: 770 },
+    { model: 'synthetic-model-a', outcome: 'rejected', ms: 100 },
+    { model: 'synthetic-model-b', outcome: 'observed', ms: 2000 },
+  ];
+  for (const sample of firstTokens) {
+    const attrs = {
+      schema_version: '1',
+      measurement_version: 'engineering_v1',
+      source_measurement_version: 'client_committed_v4',
+      route: '/chat/:id',
+      stage: 'first_token',
+      action: 'send',
+      requested_model: sample.model,
+      deadline_ms: '6000',
+      outcome: sample.outcome,
+    };
+    measurements.push({
+      type: 'st_roleplay_first_token',
+      timestamp,
+      values: { duration_ms: sample.ms },
+      context: attrs,
+    });
+    events.push({
+      name: 'st_roleplay_terminal',
+      timestamp,
+      domain: 'st.engineering',
+      attributes: attrs,
+    });
+  }
   const response = await fetch(`http://127.0.0.1:${faroPort}/collect`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -144,12 +177,30 @@ try {
       for (const target of panel.targets ?? []) {
         const expression = target.expr
           .replaceAll('${browser_selector:raw}', '{app="st-miniapp"}')
+          .replaceAll('$requested_model', '.*')
+          .replaceAll('$deadline_ms', '6000')
           .replaceAll('$environment', 'test')
           .replaceAll('$release', '.*')
           .replaceAll('$measurement_version', 'engineering_v1')
           .replaceAll('$__range', '10m')
           .replaceAll('$__auto', '10m');
+        if (target.datasource?.type === 'prometheus') continue;
         const result = await query(expression);
+        if (panel.id === 101) {
+          const byModel = Object.fromEntries(
+            result.map((r) => [r.metric.event_data_requested_model, Number(r.value[1])])
+          );
+          assert.equal(
+            byModel['synthetic-model-a'],
+            1 / 3,
+            'Departure must not dilute cutoff rate'
+          );
+          assert.equal(byModel['synthetic-model-b'], 0);
+        }
+        if (panel.id === 102 && target.refId === 'B') {
+          const a = result.find((r) => r.metric.context_requested_model === 'synthetic-model-a');
+          assert.ok(Number(a?.value[1]) < 6000, 'Timeout must not enter successful P95');
+        }
         if (panel.title.startsWith('已知页面终态成功率')) {
           assert.equal(Number(result[0]?.value?.[1]), 0.8);
         }

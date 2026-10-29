@@ -450,3 +450,43 @@ export function observeDramaStartupDiagnostic(report: DramaTimingReport): void {
     JSON.stringify({ event: 'drama.startup_diagnostic', ...parsed.data })
   );
 }
+
+/** Once-per-business-milestone projection; never reads the DB or waits for export. */
+export function observeChatFirstToken(input: {
+  requestedModel: string;
+  stage: 'accepted' | 'fallback_dispatched' | 'selected' | 'timeout';
+  winner?: 'primary' | 'fallback';
+  fallbackDispatched?: boolean;
+  elapsedMs?: number;
+  deadlineMs?: number;
+  triggerMs?: number;
+}) {
+  if (!active) return;
+  const attrs: MetricAttributes = {
+    requested_model: boundedLabel('requested_model', input.requestedModel, 64),
+  };
+  if (input.stage === 'selected' && input.winner) {
+    attrs.winner = input.winner;
+    if (input.fallbackDispatched !== undefined) attrs.fallback_started = input.fallbackDispatched;
+  }
+  const metrics = {
+    accepted: 'st_chat_requests',
+    fallback_dispatched: 'st_chat_fallback_dispatches',
+    selected: 'st_chat_first_token_selections',
+    timeout: 'st_chat_first_token_timeouts',
+  } as const;
+  active.count(metrics[input.stage], attrs);
+  if (input.stage === 'selected' && input.elapsedMs !== undefined)
+    active.duration('st_chat_server_first_token', input.elapsedMs, attrs);
+  const detail: MetricAttributes = { ...attrs, stage: input.stage };
+  // Numeric policy values stay in log fields, never a new dimension of time series.
+  for (const [key, value] of [
+    ['elapsed_ms', input.elapsedMs],
+    ['deadline_ms', input.deadlineMs],
+    ['trigger_ms', input.triggerMs],
+  ] as const) {
+    if (value !== undefined && Number.isFinite(value) && value >= 0 && value <= 110_000)
+      detail[key] = Math.round(value);
+  }
+  active.event('chat.first_token', detail);
+}

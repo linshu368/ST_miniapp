@@ -2,7 +2,7 @@
 
 ## 当前交付状态
 
-2026-10-29：代码、默认关闭的独立遥测出口、固定版本采集器配置和四张看板源已完成本地实施。**没有发布、启用 TEST/生产、创建收费服务或把新看板导入线上。** 本机合成验证与真实 Cloud 摄取是两道不同门禁；不能用无数据空图宣布迁移成功。
+2026-10-29：经用户明确授权，生产前后端、私网采集器和四张工程看板已上线。Cloud 已实收页面/API、角色首字/完整回复/渲染，以及生成与短剧服务端分段。独立 SDK 测试与生产数据按 environment/release 分开；首帧/播放成功、真实恢复和卡顿恢复仍须各自有生产样本，不能用合成样本或空图宣布全部验收。
 
 经营看板继续读取已有 Supabase 轻量汇总；原首字回执、赢家身份、恢复和计费事实继续原样持久化。本次没有新增监控表、索引、cron、逐事件数据库查询/写入，原短剧分析上传的历史约定由2026-10-29五秒长尾任务修订：接收端仅将达到5秒的终态/network详情经既有后端OTLP写Loki，不再触发Supabase分析写入；历史表和SQL看板保留，发布后单独核验自然样本送达。
 
@@ -15,7 +15,7 @@
 | `st-engineering-drama.json`    | 目录、启动、首帧、阶段、播放中断与恢复                    | Cloud Loki    |
 | `st-engineering-backend.json`  | HTTP/生成/上游尝试/短剧服务端/Prisma/runtime/出口健康下钻 | Cloud Metrics |
 
-前三项是工程体验产出，第四项是定位原因的证据。保留既有经营、首字 v4 和短剧看板，不覆盖其他 TextBot 项目。源 JSON 默认绑定当前 `grafanacloud-logs` / `grafanacloud-prom`，标题和标签均标“待接入”。
+前三项是工程体验产出，第四项是定位原因的证据。保留既有经营、首字 v4 和短剧看板，不覆盖其他 TextBot 项目。源 JSON 默认绑定当前 `grafanacloud-logs` / `grafanacloud-prom`，保留待接入模板；线上接入状态按实际 Cloud 样本独立更新，不因导入模板而视为验收。
 
 ## 三类核心测量
 
@@ -38,6 +38,10 @@
 | 短剧     | `drama.rebuffer`          | 已成功启动后前台非暂停/seek 的 waiting → playing/中断      | 恢复筛 `playing`；网络 stalled 本身不算画面卡顿         |
 
 `/chat/:id` 的入场体验使用页面指标；select_character 反馈不是角色正文 ready。首页 `/` 的通用 ready 是推荐目录或实际仍可用的播放器状态，视频体验另看 startup。短剧详情 `/dramas/:id` 的 ready 复用首帧且 playing 的同一证据，不另造播放器状态机。
+
+播放器测量必须有明确的 `home/detail` 页面归属，只在内存持有，不上报用户或页面身份。首页播放器可能先于根路由 effect 创建，根 `route('/')` 不能提前把它判为 left；详情与首页即使同一部剧也不得复用同一观察。真正离开所属页面才终止，跨页面归属替换记 left，同归属显式换剧/换集保留 switched。旧终态不重启、旧组件迟到更新不抢占新观察；媒体 src、自动/手动播放与恢复业务不因此重建。
+
+生产真机已暴露旧逻辑只认详情路径的问题：用户实际播放但 startup 被过早记 left。该修复前样本不得用作首页播放成功率或等待耗时的基线；修复后的成功需重新核验 first_frame+playing，而非只看 started 到达。
 
 后端各项严格定义、单位、标签和限额见 [采集器说明](../../ops/observability/README.md)。`phase=first_token` 的赢家不是完整生成成功；竞败方不是供应商故障。过滤、长度截断、系统超时、主动停止分别统计。上游平台只确认 OpenRouter/Venice，不猜内部供应商；整轮无明确 finishReason 时不从单路失败推断原因。
 
@@ -67,12 +71,16 @@
 
 Faro 2.13.0 只发自定义 measurement/event：固定 `st_` 名称、`duration_ms` 毫秒、`measurement_version=engineering_v1`、独立 source_measurement_version。无默认 fetch/error/console/tracing/replay、session/user/URL meta，Sentry 保持原追踪 owner。
 
+Cloud 托管 intake 的协议要求与本机 Alloy 不完全相同：请求必须带 `X-Faro-Session-Id`，body 必须保留公开的 `meta.sdk.name/version`。出口在 SDK 初始化时调用 `genShortID(32)` 生成一个仅本 exporter 内存生命周期复用的随机协议标识，只放请求头；不写 cookie、localStorage/sessionStorage、body、measurement/event 属性或指标/日志索引标签，不与业务身份关联。`meta.sdk` 只包含固定包名与 SDK 公开导出的实际 `VERSION`；beforeSend 仍重建白名单 body，不恢复 SDK session/user/page/browser/trace meta，也不启用自动仪器或 Replay。SDK import 可能做 Web Storage 可用性探测，但不会将该协议标识或 session 持久化。关闭采集或 SDK 加载超时时不生成标识。修正协议不代表真实浏览器 Cloud 摄取已经验收，仍须独立验证。
+
+Faro 2.13 默认 `FetchTransport.send` 强制添加 `Idempotency-Key`，当前托管入口的浏览器 CORS 预检不允许该头；Node 合成 POST 得到 202 不能证明浏览器可发送。工程出口保留该版本构造的 `bufferSize=20/concurrency=1` 有界队列，只覆盖公开 `send(items)`，通过公开 `promiseBuffer.add` 与 `getTransportBody(items)` 发送。每个出队 batch 单次 fetch，仅含 `Content-Type` 和随机协议标识头，omit credentials/no-referrer；每次实际发送独立 AbortController 三秒超时并 finally 清理 timer，不重试。格式、排队拒绝、非 2xx、网络和超时失败各计一次失败批次，不读响应正文、不抛到业务；不访问 SDK private 字段、不 patch 全局 fetch、不引入代理或另一套队列。容量和超时回归使用真实 SDK 的公开接口验证，浏览器验收仍须检查真实 OPTIONS/POST 和 Cloud 回查。
+
 固定 Alloy v1.21.0 本机实测的 logfmt 契约：
 
 - measurement：`kind=measurement type=st_page_ready duration_ms=... context_route=... context_outcome=...`。
 - event：`kind=event event_name=st_page_terminal event_data_route=... event_data_outcome=...`。**事件是 event*data*，不是 context* 或 event* 前缀。**
 - app：`app_name/app_version/app_environment` 位于日志字段。当前 Alloy 不自动把 kind/app 建成索引标签；本地测试显式配置固定 `app` 标签。
-- Cloud 托管接收端必须用一条 TEST 合成样本再核验格式与流标签；看板 browser_selector 是待确认配置，不把本机 Alloy 输出假定为账号已启用的托管格式。`local-test/config.alloy` 只供本机验算，禁止拿它公开部署。
+- 本账号 Cloud 托管接收端已用隔离 SDK 样本及真实生产浏览器核验：索引流选择器是 `{service_name="st-miniapp"}`，不能使用本机固定 `app` 索引标签。正式接入其他账号仍须重新核验，不把本机 Alloy 输出假定为通用托管格式。`local-test/config.alloy` 只供本机验算，禁止拿它公开部署。
 
 运行 `node ops/observability/local-test/faro-loki.mjs`：使用本机两个临时容器与10条虚构测量，验算总数、8成功/2错误、成功P95=1000ms，并执行前三张看板全部 LogQL。测试结束只清理本次容器及网络，不访问业务API、数据库、真实模型或Cloud。固定采集器的生产配置单独使用 `alloy validate` 验证。
 
@@ -96,3 +104,21 @@ Faro 2.13.0 只发自定义 measurement/event：固定 `st_` 名称、`duration_
 回滚：后端关闭 ENGINEERING_TELEMETRY_ENABLED 并重启；前端关闭 NEXT_PUBLIC_GRAFANA_ENABLED 后重新构建发布。Collector关闭只影响新遥测；原Sentry/业务事实/经营SQL均保留，不需要数据库回滚，不启用旧重cron。
 
 日常维护只维护现有 owner、统一出口白名单和这组版本化看板。新页面/交互按实际价值**非常建议**补 ready/测量，不为每个普通按钮建一套监控。没有当前决策价值的细碎指标本期不加。
+
+## 兜底与业务首字专项接入（2026-10-29，TEST候选）
+
+本节为专项候选源码；新架子已另行部署，本批埋点尚未发布，未切换或停用旧SQL看板。复用同一Faro与OTel/Alloy出口，不增加数据库I/O、配置查询、遥测路由、表、cron或采集服务。现有交付、恢复、赢家和一次计费事实继续保留；纯监控展示迁往Loki/Metrics，不能直接删掉计费资格所依赖的首份结果。
+
+客户端FirstTokenObservation同一终态镜像增加公开目录的requested_model（所选型号，最多64种）与客户端本轮deadline_ms、trigger_ms。SSE start可选requested_model_id使用既有解析出的公开型号ID校正过期客户端选择，不新增读取；旧服务兼容客户端发送时快照，首帧前无法确认的情况不冒充服务端冻结事实。deadline/trigger是日志标量，不创建无限Prometheus标签；SSE修正旧缓存仍按原点击时钟，原6秒补报修复已一起适配。正文/已开启思考的首token进入React提交消息界面才是成功；供应商或服务端已有首字不代替客户端交付。关闭遥测、401、队列溢出或发送失败不得阻塞业务回执。
+
+角色扮演看板增加专项行：按所选型号的总截止无字率（timed_out/已知前台首字结果，目标1%）、成功P50/P95、成功首字分布、结果样本与离页/后台/停止构成。默认6000ms，可独立选择历史10000ms；成功分布严格在对应预算内。仅原日志字段计数/聚合，不查询Supabase；没有数据不填成功或0毫秒。未知型号单列unknown/other，不把用户/会话/请求ID做标签。型号为公开目录稳定ID，动态新增不需改监控代码。
+
+服务端额外四个计数器：st_chat_requests（创建本轮身份后一次受理）、st_chat_fallback_dispatches（真实兜底POST派发）、st_chat_first_token_selections（唯一首字赢家，winner与fallback_started）、st_chat_first_token_timeouts（既有总截止锁存一次）。全部按requested_model聚合，单位与\_total翻译须由实际TEST验证。st_chat_server_first_token仅供服务端排障，从路由时钟到首字选中，绝不画成用户总耗时。chat.first_token日志保留安全阶段、elapsed_ms、deadline_ms和trigger_ms标量，无正文、推理、个人身份或凭证。
+
+触发率=实际兜底派发/受理；兜底首字选中比例=选中fallback/全部选中。后者仅表示服务端选择，不能冒称客户端最终收到的替代率；客户端主图仍独立裁决。原attempt指标/日志继续辅助定位错误、headers、首字和竞败，不把race_lost算供应商故障，不相加并行等待或相减独立P95。计数器increase是窗口估计，低样本需同时看客户端已收到终态样本。
+
+现有SDK/Collector健康继续独立显示。开始/终态的窗口差额不是精确缺报，也不能据缺报证明用户未收到；两份信号同时丢失仍可能不可见。监控数据只用于观测，不用它做钱包扣费或补扣。当前不接自动调参或损失函数，也不把整条回复耗时混入首字专项。
+
+本地复用固定Faro→Alloy→Loki合成验证：型号A两次成功（1000/5999ms）、一次6000ms截断、一次离页、一次明确受理拒绝、一次未受理拒绝；型号B一次2000ms成功。验证A截断率1/3（离页/未受理拒绝不稀释）、B为0、成功P95小于6000、所有Loki面板语法和分布。服务端真实OTLP合成接收端验证字段安全、秒单位和独立请求/派发/赢家计数；真实模型与生产数据不参与。
+
+下一步沿原框架TEST接入门禁：真实Cloud字段/指标名、按型号出图与采集丢弃核对后再生产启用；确认替代有效再退役对应纯监控SQL，旧业务事实与经营看板不删、不重启旧全量cron。候选源码通过不等于线上已经切源。
