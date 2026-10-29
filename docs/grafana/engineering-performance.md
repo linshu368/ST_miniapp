@@ -105,6 +105,18 @@ Faro 2.13 默认 `FetchTransport.send` 强制添加 `Idempotency-Key`，当前�
 
 ## 配置、启用与回滚
 
+### CDN A/B 对照候选（2026-10-29，本地实现，未发布）
+
+`st-engineering-drama` 的新增 CDN 区使用原 Faro/Loki，全量投影只补 `cdn_experiment/group/provider/reason`；原始桶与实际节点分开，不恢复旧 SQL 写入。`cdn_experiment` 严格字符集、最长64、每模块最多8个值，溢出为other；不发送实验用户去重码或任何个体ID。
+
+启动final同一 `st_drama_terminal` 增加 `cdn_budget=within_5s|over_5s|not_started|unmeasured|background`。主指标=within_5s/(within_5s+over_5s+not_started)，只包含已归桶、已收到终态；默认排除retry，失败/离页/切换未开播算未达标，后台与证据缺失单列。5000ms达标，5000ms以上超标；使用原始单次 `elapsedMs`，不是首页文档入口 `entryElapsedMs`，也不包括重试累计间隔。成功必须有first_frame+playing，不能以API返回代替。
+
+新增筛选 `cdn_experiment` 只作用CDN区，`cdn_entry` 只作用该区启动指标；原有 `startup_entry` 不作用CDN区。目录、首张画面与既有整体面板保持原义；质量窗口只用自身已有的环境、release、平台、网络、页面和实验维度，不能假装应用启动缓存/帧方式筛选。新增未知归属表只能说明同时间/版本的新投影未知总体，不知道它属于哪个实验，不能据此计算本实验缺报率。历史没有新字段不回填。
+
+成功耗时分布按各桶成功样本归一化，不拿20/80的绝对量比较。质量占比继续同批合法成对窗口加权，单窗总时长必须在(0,60000]，切源尾窗保留原delivery快照；原Bunny桶关闭后实际Supabase不能改写分组。样本数/窗口数不是人数，不作为20/80用户分流或显著性证据；用户级分析继续既有服务端完整日志比较器。
+
+本地固定虚构样本通过后，仍需TEST真实Faro字段回查、iOS/Android流程与生产发布独立留证。当前仓库JSON可能落后于云端首张画面区域；发布时重读最新UID，只增量追加200–208号面板及两个CDN变量，将新区域y坐标移到最新现有区域之后，禁止整张覆盖、删除其他面板或伪造旧数据。代码上线前图表没有新分组数据属于预期，不能当0错误/100%达标。
+
 前端构建时公开配置：
 
 | 名称                                | 约束                                         |

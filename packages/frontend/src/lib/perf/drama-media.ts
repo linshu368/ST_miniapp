@@ -3,6 +3,7 @@ import type { DramaMediaEvent, DramaMediaState } from '@miniapp/shared';
 import { observeDramaLongTasks, observeDramaResources } from './drama-resources';
 import { getMetricDimensions } from './env-tags';
 import {
+  dramaCdnAttributes,
   isEngineeringTelemetryEnabled,
   recordEngineeringEvent,
   recordEngineeringMeasurement,
@@ -71,7 +72,11 @@ export function observeDramaMedia(
   let callbackId: number | undefined;
   let useFrameCallback = typeof video.requestVideoFrameCallback === 'function';
   let rebufferAt: number | undefined;
+  // This observer belongs to one src. Its final flush must retain the old delivery
+  // even when a later playback attempt has already received another provider.
+  const cdnAttributes = dramaCdnAttributes(timing.delivery);
   const rebufferAttributes = {
+    ...cdnAttributes,
     route: timing.owner === 'home' ? '/' : '/dramas/:id',
     report_kind: 'playback',
     stage: 'rebuffer',
@@ -133,6 +138,7 @@ export function observeDramaMedia(
       // Keep both deltas in one record: independently dropped numerator and
       // denominator signals would manufacture a misleading buffering ratio.
       recordEngineeringEvent('drama.playback_window', {
+        ...cdnAttributes,
         route: timing.owner === 'home' ? '/' : '/dramas/:id',
         report_kind: 'playback',
         stage: 'playback',

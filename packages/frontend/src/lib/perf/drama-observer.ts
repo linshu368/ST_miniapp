@@ -6,6 +6,7 @@ import { createLogger } from '@/lib/logger';
 import { createRequestId } from './request-timing';
 import { DramaTimingTracker, type DramaTimingReport } from './drama-timing';
 import {
+  dramaCdnAttributes,
   isEngineeringTelemetryEnabled,
   recordEngineeringEvent,
   recordEngineeringMeasurement,
@@ -99,6 +100,12 @@ function mirrorEngineeringTiming(report: DramaTimingReport): void {
   if (report.type === 'seek') return;
   try {
     const attributes = {
+      ...(report.type === 'playback' ? dramaCdnAttributes(report.delivery) : {}),
+      // Budget and outcome travel together; an independently dropped measurement
+      // cannot manufacture a faster rate. All final projections use the attempt clock.
+      ...(report.type === 'playback' && report.phase === 'final'
+        ? { cdn_budget: startupBudget(report) }
+        : {}),
       route: report.route ?? (report.type === 'list' ? '/dramas' : '/dramas/:id'),
       list_start_kind: report.type === 'list' ? report.list?.startKind : undefined,
       report_kind: report.type,
@@ -159,6 +166,19 @@ function mirrorEngineeringTiming(report: DramaTimingReport): void {
   } catch {
     // Keep the old logging/upload path working even if the mirror is unavailable.
   }
+}
+
+function startupBudget(report: DramaTimingReport): string {
+  if (report.outcome === 'background') return 'background';
+  if (report.outcome !== 'playing') return 'not_started';
+  if (
+    !Number.isFinite(report.elapsedMs) ||
+    report.elapsedMs < 0 ||
+    !Number.isFinite(report.marks.first_frame) ||
+    !Number.isFinite(report.marks.playing)
+  )
+    return 'unmeasured';
+  return report.elapsedMs <= 5_000 ? 'within_5s' : 'over_5s';
 }
 
 function reportTiming(report: DramaTimingReport): void {
