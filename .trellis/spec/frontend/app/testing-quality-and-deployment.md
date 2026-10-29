@@ -44,7 +44,7 @@ shared contract 改动追加 `pnpm --filter @miniapp/shared test` 和所有消�
 
 ## MiniApp 启动框架与 P95
 
-- `Providers` 在 Telegram 初始化前输出 `EntryShell`：角色入口 `/characters` 复用 `LobbyShellSkeleton`，短剧列表复用 `DramaListHeader`/`DramaGridSkeleton`，导航复用无请求的 `BottomNavShell`；其他入口提供通用加载提示，深层路由沿用导航隐藏规则。初始化前不挂业务 reader，不读取身份或 storage。短剧数据/封面仍异步加载。
+- `Providers` 在 Telegram 初始化前输出 `EntryShell`：角色入口 `/characters` 复用 `LobbyShellSkeleton`，短剧列表复用 `DramaListHeader`/`DramaGridSkeleton`，导航复用无请求的 `BottomNavShell`；首页保留页面容器和主导航，不显示“加载中”文字，其他入口提供通用加载提示，深层路由沿用导航隐藏规则。初始化前不挂业务 reader，不读取身份或 storage。短剧数据/封面仍异步加载。
 - 初始化完成后，`startup-timing.ts` 检查框架并等待两次 `requestAnimationFrame`，给浏览器一次绘制机会，然后经 SDK `miniApp.ready()` 通知 Telegram 展示。不能用 `init()`、接口返回或封面 onLoad 替代该通知；普通浏览器/旧客户端安全降级，遥测失败不能影响 ready。
 - `startup.shell_ready.duration`（distribution，ms）：本次文档导航到初始化后框架提交并获得绘制机会的耗时，包含 HTML/JS 下载和 hydration。`measurement=post_render_frame` 表示它是框架可展示时间的保守近似，可能晚于静态 HTML 的实际首绘；不是 FCP、完整内容就绪，也不是原生遮罩实际消失时刻。
 - `startup.telegram_ready.duration`（distribution，ms）：同一起点到成功发送 `ready()`；`unavailable`/`failed` 不生成这条指标。shell 指标的 `telegram_ready=sent|unavailable|failed` 可区分真机与降级。
