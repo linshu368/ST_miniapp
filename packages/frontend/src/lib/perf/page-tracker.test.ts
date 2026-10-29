@@ -1,6 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { distribution, count, captureMessage, withScope } = vi.hoisted(() => ({
+const {
+  distribution,
+  count,
+  captureMessage,
+  withScope,
+  telegramReady,
+  telegramReadyAvailable,
+  isTelegram,
+} = vi.hoisted(() => ({
+  telegramReady: vi.fn(),
+  telegramReadyAvailable: vi.fn(() => true),
+  isTelegram: vi.fn(() => true),
   distribution: vi.fn(),
   count: vi.fn(),
   captureMessage: vi.fn(),
@@ -20,9 +31,14 @@ vi.mock('@sentry/nextjs', () => ({
   captureMessage,
   withScope,
 }));
-vi.mock('@telegram-apps/sdk-react', () => ({ retrieveLaunchParams: () => ({}) }));
+vi.mock('@telegram-apps/sdk-react', () => ({
+  retrieveLaunchParams: () => ({}),
+  isTMA: isTelegram,
+  miniApp: { ready: Object.assign(telegramReady, { isAvailable: telegramReadyAvailable }) },
+}));
 
 import { notifySettled } from './inflight';
+import { observeStartupShell, resetStartupTimingForTest } from './startup-timing';
 import {
   beginPage,
   ENTRY_WINDOW_MS,
@@ -280,5 +296,165 @@ describe('route templates', () => {
 
     expect(reported.size).toBeGreaterThan(0);
     expect([...reported].filter((route) => !WATCHED_PAGES.has(route))).toEqual([]);
+  });
+});
+
+describe('document startup timing', () => {
+  let frames: Map<number, FrameRequestCallback>;
+  let frameId: number;
+  let startupDocument: EventTarget & { hidden: boolean; querySelector: ReturnType<typeof vi.fn> };
+  let startupWindow: EventTarget;
+  let cleanup: (() => void) | undefined;
+
+  const paint = () => {
+    vi.advanceTimersByTime(16);
+    const callbacks = [...frames.values()];
+    frames.clear();
+    callbacks.forEach((callback) => callback(performance.now()));
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+    vi.clearAllMocks();
+    telegramReady.mockReset();
+    distribution.mockReset();
+    telegramReadyAvailable.mockReturnValue(true);
+    isTelegram.mockReturnValue(true);
+    resetStartupTimingForTest();
+    frames = new Map();
+    frameId = 0;
+    startupDocument = Object.assign(new EventTarget(), {
+      hidden: false,
+      querySelector: vi.fn(() => ({ getBoundingClientRect: () => ({ height: 800 }) })),
+    });
+    startupWindow = Object.assign(new EventTarget(), {
+      requestAnimationFrame: (callback: FrameRequestCallback) => {
+        frames.set(++frameId, callback);
+        return frameId;
+      },
+      cancelAnimationFrame: (id: number) => frames.delete(id),
+    });
+    vi.stubGlobal('document', startupDocument);
+    vi.stubGlobal('window', startupWindow);
+  });
+
+  afterEach(() => {
+    cleanup?.();
+    cleanup = undefined;
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    vi.stubGlobal('document', fakeDocument);
+  });
+
+  it('includes document loading before hydration and notifies Telegram after a paint opportunity', () => {
+    vi.advanceTimersByTime(2500);
+    cleanup = observeStartupShell('/dramas');
+    paint();
+    expect(telegramReady).not.toHaveBeenCalled();
+    paint();
+    expect(telegramReady).toHaveBeenCalledOnce();
+    expect(distribution).toHaveBeenCalledWith(
+      'startup.shell_ready.duration',
+      2532,
+      expect.objectContaining({ attributes: expect.objectContaining({ route: '/dramas' }) })
+    );
+    expect(distribution).toHaveBeenCalledWith(
+      'startup.telegram_ready.duration',
+      2532,
+      expect.objectContaining({ unit: 'millisecond' })
+    );
+    observeStartupShell('/profile');
+    paint();
+    paint();
+    expect(telegramReady).toHaveBeenCalledOnce();
+    expect(distribution).toHaveBeenCalledTimes(2);
+  });
+
+  it('survives StrictMode cleanup without reporting a false departure or duplicate sample', () => {
+    observeStartupShell('/')();
+    paint();
+    expect(telegramReady).not.toHaveBeenCalled();
+    expect(count).not.toHaveBeenCalled();
+    cleanup = observeStartupShell('/');
+    paint();
+    paint();
+    expect(telegramReady).toHaveBeenCalledOnce();
+    expect(distribution).toHaveBeenCalledTimes(2);
+  });
+
+  it('excludes background time from startup P95 but still releases the native placeholder on return', () => {
+    cleanup = observeStartupShell('/');
+    startupDocument.hidden = true;
+    startupDocument.dispatchEvent(new Event('visibilitychange'));
+    vi.advanceTimersByTime(60_000);
+    startupDocument.hidden = false;
+    paint();
+    paint();
+    expect(telegramReady).toHaveBeenCalledOnce();
+    expect(distribution).not.toHaveBeenCalled();
+    expect(count).toHaveBeenCalledWith(
+      'startup.outcome',
+      1,
+      expect.objectContaining({ attributes: expect.objectContaining({ outcome: 'background' }) })
+    );
+  });
+
+  it('records departure without treating an incomplete startup as fast or successful', () => {
+    cleanup = observeStartupShell('/dramas');
+    startupWindow.dispatchEvent(new Event('pagehide'));
+    paint();
+    paint();
+    expect(telegramReady).not.toHaveBeenCalled();
+    expect(distribution).not.toHaveBeenCalled();
+    expect(count).toHaveBeenCalledWith(
+      'startup.outcome',
+      1,
+      expect.objectContaining({ attributes: expect.objectContaining({ outcome: 'left' }) })
+    );
+  });
+
+  it('does not invent a successful native-ready duration in an ordinary browser', () => {
+    isTelegram.mockReturnValue(false);
+    cleanup = observeStartupShell('/');
+    paint();
+    paint();
+    expect(telegramReady).not.toHaveBeenCalled();
+    expect(distribution).toHaveBeenCalledTimes(1);
+    expect(distribution).toHaveBeenCalledWith(
+      'startup.shell_ready.duration',
+      32,
+      expect.objectContaining({
+        attributes: expect.objectContaining({ telegram_ready: 'unavailable' }),
+      })
+    );
+  });
+
+  it('keeps the shell measurement when the native bridge fails and never exports route IDs', () => {
+    telegramReady.mockImplementation(() => {
+      throw new Error('bridge failed');
+    });
+    cleanup = observeStartupShell('/dramas/private-short-id?tgWebAppData=sensitive');
+    paint();
+    paint();
+    expect(distribution).toHaveBeenCalledTimes(1);
+    expect(distribution).toHaveBeenCalledWith(
+      'startup.shell_ready.duration',
+      32,
+      expect.objectContaining({
+        attributes: expect.objectContaining({ route: '/dramas/:id', telegram_ready: 'failed' }),
+      })
+    );
+    expect(JSON.stringify(distribution.mock.calls)).not.toContain('sensitive');
+    expect(JSON.stringify(distribution.mock.calls)).not.toContain('private-short-id');
+  });
+
+  it('releases Telegram even when Sentry throws', () => {
+    distribution.mockImplementation(() => {
+      throw new Error('telemetry failed');
+    });
+    cleanup = observeStartupShell('/');
+    paint();
+    expect(paint).not.toThrow();
+    expect(telegramReady).toHaveBeenCalledOnce();
   });
 });

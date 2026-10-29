@@ -9,7 +9,7 @@ import { INVITE_START_PARAM_PREFIX } from '@miniapp/shared';
 
 import { FavoriteFeedbackNotice } from '@/components/characters/favorite-feedback-notice';
 
-import { LobbyShellSkeleton } from '@/components/characters/lobby-shell-skeleton';
+import { EntryShell } from '@/components/nav/entry-shell';
 import { afterFirstScreen } from '@/lib/after-first-screen';
 import {
   afterEntryBackground,
@@ -27,6 +27,7 @@ import {
   detachPaymentReturnObserver,
 } from '@/lib/payment/return-observer';
 import { PagePerfTracker } from '@/lib/perf/PagePerfTracker';
+import { observeStartupShell } from '@/lib/perf/startup-timing';
 import { loadSessionReplay, setTelegramUser } from '@/lib/sentry/client';
 import { initReplayTelemetry, ReplayLifecycleOwner } from '@/lib/telemetry';
 import { getRawInitData } from '@/lib/telegram/auth';
@@ -38,8 +39,8 @@ import { useUserProfileStore } from '@/stores/user-profile-store';
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => getQueryClient());
   const [telegramReady, setTelegramReady] = useState(false);
-  // 只有大厅有对应骨架；其他路由就绪前仍然留空，避免闪一下不相干的布局。
   const pathname = usePathname();
+  const [entryPathname] = useState(pathname);
   const [showQueryDevtools, setShowQueryDevtools] = useState(false);
   const hydrateUserProfile = useUserProfileStore((s) => s.hydrate);
 
@@ -78,6 +79,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
     };
   }, [telegramReady]);
 
+  useEffect(() => {
+    if (telegramReady) return observeStartupShell(entryPathname);
+  }, [telegramReady, entryPathname]);
+
   return (
     <QueryClientProvider client={queryClient}>
       {telegramReady ? <PaymentReturnRedirect /> : null}
@@ -86,13 +91,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
       {telegramReady ? <UserSettingsHydrator /> : null}
       {telegramReady ? <ReplayLifecycleOwner /> : null}
       {telegramReady ? <PagePerfTracker /> : null}
-      {telegramReady ? (
-        children
-      ) : pathname === '/characters' ? (
-        <LobbyShellSkeleton />
-      ) : pathname === '/' ? (
-        <div aria-label="首页加载中" className="fixed inset-0 bg-black" />
-      ) : null}
+      <div data-startup-shell className="min-h-screen">
+        {telegramReady ? children : <EntryShell pathname={pathname} />}
+      </div>
       {telegramReady ? <FavoriteFeedbackNotice /> : null}
       {showQueryDevtools ? <ReactQueryDevtools initialIsOpen={false} /> : null}
     </QueryClientProvider>
