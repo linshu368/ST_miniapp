@@ -200,6 +200,7 @@ export async function runConversationTurn(
     sink.open();
     sink.send({
       type: 'start',
+      first_token_deadline_ms: policy.deadlineMs,
       turn_index: turn.turnIndex,
       user_message_id: mode.kind === 'send' ? `${turn.historyId}:user` : null,
       assistant_message_id: turn.historyId,

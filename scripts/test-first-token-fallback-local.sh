@@ -150,6 +150,8 @@ echo 'PASS: explicit stop original quote/entitlement once; system timeout and le
 "${task_psql[@]}" -f "$task_root/packages/shared/migrations/20261027_recoverable_chat_delivery.sql" >/dev/null
 "${task_psql[@]}" -f "$task_root/packages/shared/migrations/20261028_client_committed_first_token.sql" >/dev/null
 "${task_psql[@]}" -f "$task_root/packages/shared/migrations/20261028_client_committed_first_token.sql" >/dev/null
+"${task_psql[@]}" -f "$task_root/packages/shared/migrations/20261029_first_token_receipt_recovery.sql" >/dev/null
+"${task_psql[@]}" -f "$task_root/packages/shared/migrations/20261029_first_token_receipt_recovery.sql" >/dev/null
 "${task_psql[@]}" -f "$task_root/packages/shared/migrations/tests/recoverable_chat_delivery.sql" >/dev/null
 echo 'PASS: recoverable/v4 commit delivery, immutable receipt, cutoff/quota, departure and original user-stop price'
 
