@@ -1,5 +1,17 @@
 # 本地实施验证与交接
 
+## 2026-10-29 设备/网络与短剧播放质量增补（发布前）
+
+- 用户批准精简补充及持续独立分支/生产范围；分支codex/grafana-playback-quality，最终基线main05077174。由9bb6安全快进时，上游10文件与本轮修改无交集，binary diff前后相同，保留全部已发布首字修复。无后端/共享/数据库变更。
+- 统一出口入队快照tg_platform/net_type，Sentry关闭仍可读取；质量事件成对数值、入队和发送前两次校验。三张前端板增加两项筛选；短剧只新增播放总时长、卡顿加权占比、窗口数三卡。服务端两图明确不受客户端筛选影响。
+- 前端全量63文件602测试、typecheck、lint与imports通过，最终production build通过；lint保留8条既有img warning。构建通过不等于部署或真实样本实收。
+- 真实本地Faro→固定Alloy→Loki执行64条看板LogQL通过；完整/缺字段/非法数字、历史无维度All、具体设备/网络及无样本不补0均断言。质量固定样本总播放34s/卡顿7s，占比7/41；iOS为28s/2s，占比1/15，不是平均单窗百分比。
+- Cloud64条语法/执行无错；独立固定协议合成4事件在environment=test、release=quality-contract-20261029得到202，Cloud三卡回查34s、7/41、4窗口，iOS筛选1/15。合成数据不属于真实生产用户，也不证明浏览器CORS或真实播放行为。
+- 现有@drama固定手机验收首跑40/41通过；“短暂试看保留历史”用例在继续看入口超时，未改任何业务/测试文件即独立复跑1/1通过。保留首跑不稳定事实，不把首跑写成全绿。既有播放、换集/换剧、暂停/倍速、恢复、窄屏等其他40项通过。
+- 独立全范围review发现迟到RVFC可能恢复known waiting，已修并补两条回归；复核无剩余P0/P1/P2。窗口总龄/总时长上限、暂停/seek/后台、缺失边界的未知尾段、重复dispose、旧src迟到和手动恢复自动播放失败均有回归。
+- task validate通过。module-updates仅定点更新基础设施/短剧两entry；module_knowledge check的payload验证已过，但全仓baseline因既有drama-experience目标缺“当前状态”章节失败。本轮不扩修其他模块、不apply/archive，不将该仓库文档检查写成通过。
+- 用户已暂停人工播放复测，本轮不再次要求。发布后仅被动核对匿名聚合；缺新版本真实窗口时保持“已上线、真实样本待积累”，不以TEST合成或空图代替。
+
 日期：2026-10-29。范围：页面体验、角色扮演、短剧三个主线，API/服务下钻。代码分支 `codex/grafana-performance-observability`。无 git add/commit/push，无生产/TEST部署、数据库写入或 Grafana 写入。
 
 ## 已完成证据

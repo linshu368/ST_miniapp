@@ -1,6 +1,6 @@
 {
   "uid": "st-engineering-roleplay",
-  "title": "工程｜02 角色扮演交互（待接入）",
+  "title": "工程｜02 角色扮演交互",
   "schemaVersion": 39,
   "version": 1,
   "editable": true,
@@ -96,6 +96,96 @@
             "selected": false
           }
         ]
+      },
+      {
+        "name": "tg_platform",
+        "label": "设备/客户端平台",
+        "type": "custom",
+        "query": "全部 : .*,iOS : ios,Android : android|android_x,桌面Telegram : macos|tdesktop|unigram,Telegram Web : web|weba|webk,未知或历史未分层 : unknown|other|^$",
+        "current": {
+          "text": "全部",
+          "value": ".*"
+        },
+        "options": [
+          {
+            "text": "全部",
+            "value": ".*",
+            "selected": true
+          },
+          {
+            "text": "iOS",
+            "value": "ios",
+            "selected": false
+          },
+          {
+            "text": "Android",
+            "value": "android|android_x",
+            "selected": false
+          },
+          {
+            "text": "桌面Telegram",
+            "value": "macos|tdesktop|unigram",
+            "selected": false
+          },
+          {
+            "text": "Telegram Web",
+            "value": "web|weba|webk",
+            "selected": false
+          },
+          {
+            "text": "未知或历史未分层",
+            "value": "unknown|other|^$",
+            "selected": false
+          }
+        ],
+        "multi": false,
+        "includeAll": false,
+        "allowCustomValue": false
+      },
+      {
+        "name": "net_type",
+        "label": "网络有效等级",
+        "type": "custom",
+        "query": "全部 : .*,4g速度级 : 4g,3g速度级 : 3g,2g或更慢 : 2g|slow-2g,窗口起止变化 : mixed,未知或历史未分层 : unknown|other|^$",
+        "current": {
+          "text": "全部",
+          "value": ".*"
+        },
+        "options": [
+          {
+            "text": "全部",
+            "value": ".*",
+            "selected": true
+          },
+          {
+            "text": "4g速度级",
+            "value": "4g",
+            "selected": false
+          },
+          {
+            "text": "3g速度级",
+            "value": "3g",
+            "selected": false
+          },
+          {
+            "text": "2g或更慢",
+            "value": "2g|slow-2g",
+            "selected": false
+          },
+          {
+            "text": "窗口起止变化",
+            "value": "mixed",
+            "selected": false
+          },
+          {
+            "text": "未知或历史未分层",
+            "value": "unknown|other|^$",
+            "selected": false
+          }
+        ],
+        "multi": false,
+        "includeAll": false,
+        "allowCustomValue": false
       }
     ]
   },
@@ -129,7 +219,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**待 TEST Cloud 接入验证；不是线上验收完成。** 本机已核验固定版本 Faro → Alloy → Loki 的日志字段。Cloud 托管浏览器入口需再核对实际流标签/格式，browser_selector 不得凭空猜测。无数据不等于0次失败。按同环境、版本、入口、网络/平台层比较，成功P50/P95与终态样本量一起看；低样本只观察，不自动排名或作人员考核。默认24h/5min，避免高频长窗查询。\n\n开始/终态按窗口计数，**不是逐请求闭环或全访问覆盖**（无身份关联，窗口边界和丢报可影响结果）。先观察24–48h基线，再审核预算；后台、离页和主动停止单列。\n\n首字是正文或已开启思考进入匹配消息的React commit，不是像素/阅读证明。完整回复另算；首字到达不保证最终成功。聊天入场见页面看板/chat/:id，角色点击反馈不能冒充数据可用。所选型号使用公开目录的有限标识，不含用户/会话/请求身份；平台与上游等待见后端。\n\n**业务首字专项**：默认6秒预算；按用户所选型号统计。无字时间截断率=timed_out/前台已知首字结果，目标1%；成功分布只含截止前交付（正文或已开启思考），不包含整条回复耗时。离页/后台/停止与缺报不当成功。开始、终态是已接收信号的窗口计数，不是精确缺报率；需同时看采集健康。服务端启动兜底、选中兜底与客户端交付是三个不同事实。新专项只读Loki/Metrics，不读Supabase。"
+        "content": "**待 TEST Cloud 接入验证；不是线上验收完成。** 本机已核验固定版本 Faro → Alloy → Loki 的日志字段。Cloud 托管浏览器入口需再核对实际流标签/格式，browser_selector 不得凭空猜测。无数据不等于0次失败。按同环境、版本、入口、网络/平台层比较，成功P50/P95与终态样本量一起看；低样本只观察，不自动排名或作人员考核。默认24h/5min，避免高频长窗查询。\n\n开始/终态按窗口计数，**不是逐请求闭环或全访问覆盖**（无身份关联，窗口边界和丢报可影响结果）。先观察24–48h基线，再审核预算；后台、离页和主动停止单列。\n\n首字是正文或已开启思考进入匹配消息的React commit，不是像素/阅读证明。完整回复另算；首字到达不保证最终成功。聊天入场见页面看板/chat/:id，角色点击反馈不能冒充数据可用。所选型号使用公开目录的有限标识，不含用户/会话/请求身份；平台与上游等待见后端。\n\n**业务首字专项**：默认6秒预算；按用户所选型号统计。无字时间截断率=timed_out/前台已知首字结果，目标1%；成功分布只含截止前交付（正文或已开启思考），不包含整条回复耗时。离页/后台/停止与缺报不当成功。开始、终态是已接收信号的窗口计数，不是精确缺报率；需同时看采集健康。服务端启动兜底、选中兜底与客户端交付是三个不同事实。新专项只读Loki/Metrics，不读Supabase。\n\n**分层比较：** 设备/客户端按Telegram平台归类，不采集具体机型；网络是浏览器估算的有效速度等级，不是Wi-Fi/蜂窝类型。iOS等不支持时为unknown，不能视为弱网。默认全部保留历史缺标签；具体筛选只看对应样本。普通测量取入队时网络；播放窗口取起点，起止不同标mixed，不证明整窗稳定。"
       },
       "fieldConfig": {
         "defaults": {},
@@ -185,7 +275,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "((sum by (event_data_requested_model) (count_over_time(${browser_selector:raw} |= \"st_roleplay_terminal\" | logfmt | kind=\"event\" | event_name=\"st_roleplay_terminal\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_stage=\"first_token\" | event_data_requested_model=~\"$requested_model\" | event_data_deadline_ms=\"$deadline_ms\" | event_data_outcome=\"timed_out\" [$__auto]))) or on (event_data_requested_model) (0 * (sum by (event_data_requested_model) (count_over_time(${browser_selector:raw} |= \"st_roleplay_terminal\" | logfmt | kind=\"event\" | event_name=\"st_roleplay_terminal\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_stage=\"first_token\" | event_data_requested_model=~\"$requested_model\" | event_data_deadline_ms=\"$deadline_ms\" | event_data_outcome=~\"observed|timed_out|upstream_error|server_timeout|fallback_timeout|primary_timeout|not_observed\" [$__auto]))))) / (sum by (event_data_requested_model) (count_over_time(${browser_selector:raw} |= \"st_roleplay_terminal\" | logfmt | kind=\"event\" | event_name=\"st_roleplay_terminal\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_stage=\"first_token\" | event_data_requested_model=~\"$requested_model\" | event_data_deadline_ms=\"$deadline_ms\" | event_data_outcome=~\"observed|timed_out|upstream_error|server_timeout|fallback_timeout|primary_timeout|not_observed\" [$__auto])))",
+          "expr": "((sum by (event_data_requested_model) (count_over_time(${browser_selector:raw} |= \"st_roleplay_terminal\" | logfmt | event_data_tg_platform=~\"$tg_platform\" | event_data_net_type=~\"$net_type\" | kind=\"event\" | event_name=\"st_roleplay_terminal\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_stage=\"first_token\" | event_data_requested_model=~\"$requested_model\" | event_data_deadline_ms=\"$deadline_ms\" | event_data_outcome=\"timed_out\" [$__auto]))) or on (event_data_requested_model) (0 * (sum by (event_data_requested_model) (count_over_time(${browser_selector:raw} |= \"st_roleplay_terminal\" | logfmt | event_data_tg_platform=~\"$tg_platform\" | event_data_net_type=~\"$net_type\" | kind=\"event\" | event_name=\"st_roleplay_terminal\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_stage=\"first_token\" | event_data_requested_model=~\"$requested_model\" | event_data_deadline_ms=\"$deadline_ms\" | event_data_outcome=~\"observed|timed_out|upstream_error|server_timeout|fallback_timeout|primary_timeout|not_observed\" [$__auto]))))) / (sum by (event_data_requested_model) (count_over_time(${browser_selector:raw} |= \"st_roleplay_terminal\" | logfmt | event_data_tg_platform=~\"$tg_platform\" | event_data_net_type=~\"$net_type\" | kind=\"event\" | event_name=\"st_roleplay_terminal\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_stage=\"first_token\" | event_data_requested_model=~\"$requested_model\" | event_data_deadline_ms=\"$deadline_ms\" | event_data_outcome=~\"observed|timed_out|upstream_error|server_timeout|fallback_timeout|primary_timeout|not_observed\" [$__auto])))",
           "legendFormat": "{{event_data_requested_model}}",
           "queryType": "range",
           "instant": false,
@@ -233,7 +323,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "quantile_over_time(0.5, ${browser_selector:raw} |= \"st_roleplay_first_token\" | logfmt | kind=\"measurement\" | type=\"st_roleplay_first_token\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_requested_model=~\"$requested_model\" | context_deadline_ms=\"$deadline_ms\" | context_outcome=\"observed\" | duration_ms < $deadline_ms | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_requested_model)",
+          "expr": "quantile_over_time(0.5, ${browser_selector:raw} |= \"st_roleplay_first_token\" | logfmt | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | kind=\"measurement\" | type=\"st_roleplay_first_token\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_requested_model=~\"$requested_model\" | context_deadline_ms=\"$deadline_ms\" | context_outcome=\"observed\" | duration_ms < $deadline_ms | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_requested_model)",
           "legendFormat": "{{context_requested_model}} P50",
           "queryType": "range",
           "instant": false,
@@ -245,7 +335,7 @@
         },
         {
           "refId": "B",
-          "expr": "quantile_over_time(0.95, ${browser_selector:raw} |= \"st_roleplay_first_token\" | logfmt | kind=\"measurement\" | type=\"st_roleplay_first_token\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_requested_model=~\"$requested_model\" | context_deadline_ms=\"$deadline_ms\" | context_outcome=\"observed\" | duration_ms < $deadline_ms | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_requested_model)",
+          "expr": "quantile_over_time(0.95, ${browser_selector:raw} |= \"st_roleplay_first_token\" | logfmt | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | kind=\"measurement\" | type=\"st_roleplay_first_token\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_requested_model=~\"$requested_model\" | context_deadline_ms=\"$deadline_ms\" | context_outcome=\"observed\" | duration_ms < $deadline_ms | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_requested_model)",
           "legendFormat": "{{context_requested_model}} P95",
           "queryType": "range",
           "instant": false,
@@ -291,7 +381,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "((sum (count_over_time(${browser_selector:raw} |= \"st_roleplay_first_token\" | logfmt | kind=\"measurement\" | type=\"st_roleplay_first_token\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_requested_model=~\"$requested_model\" | context_deadline_ms=\"$deadline_ms\" | context_outcome=\"observed\" | duration_ms < $deadline_ms | duration_ms >= 0 | duration_ms < 1000 [$__range]))) or vector(0)) / (sum (count_over_time(${browser_selector:raw} |= \"st_roleplay_first_token\" | logfmt | kind=\"measurement\" | type=\"st_roleplay_first_token\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_requested_model=~\"$requested_model\" | context_deadline_ms=\"$deadline_ms\" | context_outcome=\"observed\" | duration_ms < $deadline_ms [$__range])))",
+          "expr": "((sum (count_over_time(${browser_selector:raw} |= \"st_roleplay_first_token\" | logfmt | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | kind=\"measurement\" | type=\"st_roleplay_first_token\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_requested_model=~\"$requested_model\" | context_deadline_ms=\"$deadline_ms\" | context_outcome=\"observed\" | duration_ms < $deadline_ms | duration_ms >= 0 | duration_ms < 1000 [$__range]))) or vector(0)) / (sum (count_over_time(${browser_selector:raw} |= \"st_roleplay_first_token\" | logfmt | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | kind=\"measurement\" | type=\"st_roleplay_first_token\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_requested_model=~\"$requested_model\" | context_deadline_ms=\"$deadline_ms\" | context_outcome=\"observed\" | duration_ms < $deadline_ms [$__range])))",
           "legendFormat": "0–1秒",
           "queryType": "instant",
           "instant": true,
@@ -303,7 +393,7 @@
         },
         {
           "refId": "B",
-          "expr": "((sum (count_over_time(${browser_selector:raw} |= \"st_roleplay_first_token\" | logfmt | kind=\"measurement\" | type=\"st_roleplay_first_token\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_requested_model=~\"$requested_model\" | context_deadline_ms=\"$deadline_ms\" | context_outcome=\"observed\" | duration_ms < $deadline_ms | duration_ms >= 1000 | duration_ms < 2000 [$__range]))) or vector(0)) / (sum (count_over_time(${browser_selector:raw} |= \"st_roleplay_first_token\" | logfmt | kind=\"measurement\" | type=\"st_roleplay_first_token\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_requested_model=~\"$requested_model\" | context_deadline_ms=\"$deadline_ms\" | context_outcome=\"observed\" | duration_ms < $deadline_ms [$__range])))",
+          "expr": "((sum (count_over_time(${browser_selector:raw} |= \"st_roleplay_first_token\" | logfmt | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | kind=\"measurement\" | type=\"st_roleplay_first_token\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_requested_model=~\"$requested_model\" | context_deadline_ms=\"$deadline_ms\" | context_outcome=\"observed\" | duration_ms < $deadline_ms | duration_ms >= 1000 | duration_ms < 2000 [$__range]))) or vector(0)) / (sum (count_over_time(${browser_selector:raw} |= \"st_roleplay_first_token\" | logfmt | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | kind=\"measurement\" | type=\"st_roleplay_first_token\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_requested_model=~\"$requested_model\" | context_deadline_ms=\"$deadline_ms\" | context_outcome=\"observed\" | duration_ms < $deadline_ms [$__range])))",
           "legendFormat": "1–2秒",
           "queryType": "instant",
           "instant": true,
@@ -315,7 +405,7 @@
         },
         {
           "refId": "C",
-          "expr": "((sum (count_over_time(${browser_selector:raw} |= \"st_roleplay_first_token\" | logfmt | kind=\"measurement\" | type=\"st_roleplay_first_token\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_requested_model=~\"$requested_model\" | context_deadline_ms=\"$deadline_ms\" | context_outcome=\"observed\" | duration_ms < $deadline_ms | duration_ms >= 2000 | duration_ms < 3000 [$__range]))) or vector(0)) / (sum (count_over_time(${browser_selector:raw} |= \"st_roleplay_first_token\" | logfmt | kind=\"measurement\" | type=\"st_roleplay_first_token\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_requested_model=~\"$requested_model\" | context_deadline_ms=\"$deadline_ms\" | context_outcome=\"observed\" | duration_ms < $deadline_ms [$__range])))",
+          "expr": "((sum (count_over_time(${browser_selector:raw} |= \"st_roleplay_first_token\" | logfmt | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | kind=\"measurement\" | type=\"st_roleplay_first_token\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_requested_model=~\"$requested_model\" | context_deadline_ms=\"$deadline_ms\" | context_outcome=\"observed\" | duration_ms < $deadline_ms | duration_ms >= 2000 | duration_ms < 3000 [$__range]))) or vector(0)) / (sum (count_over_time(${browser_selector:raw} |= \"st_roleplay_first_token\" | logfmt | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | kind=\"measurement\" | type=\"st_roleplay_first_token\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_requested_model=~\"$requested_model\" | context_deadline_ms=\"$deadline_ms\" | context_outcome=\"observed\" | duration_ms < $deadline_ms [$__range])))",
           "legendFormat": "2–3秒",
           "queryType": "instant",
           "instant": true,
@@ -327,7 +417,7 @@
         },
         {
           "refId": "D",
-          "expr": "((sum (count_over_time(${browser_selector:raw} |= \"st_roleplay_first_token\" | logfmt | kind=\"measurement\" | type=\"st_roleplay_first_token\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_requested_model=~\"$requested_model\" | context_deadline_ms=\"$deadline_ms\" | context_outcome=\"observed\" | duration_ms < $deadline_ms | duration_ms >= 3000 | duration_ms < 4000 [$__range]))) or vector(0)) / (sum (count_over_time(${browser_selector:raw} |= \"st_roleplay_first_token\" | logfmt | kind=\"measurement\" | type=\"st_roleplay_first_token\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_requested_model=~\"$requested_model\" | context_deadline_ms=\"$deadline_ms\" | context_outcome=\"observed\" | duration_ms < $deadline_ms [$__range])))",
+          "expr": "((sum (count_over_time(${browser_selector:raw} |= \"st_roleplay_first_token\" | logfmt | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | kind=\"measurement\" | type=\"st_roleplay_first_token\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_requested_model=~\"$requested_model\" | context_deadline_ms=\"$deadline_ms\" | context_outcome=\"observed\" | duration_ms < $deadline_ms | duration_ms >= 3000 | duration_ms < 4000 [$__range]))) or vector(0)) / (sum (count_over_time(${browser_selector:raw} |= \"st_roleplay_first_token\" | logfmt | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | kind=\"measurement\" | type=\"st_roleplay_first_token\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_requested_model=~\"$requested_model\" | context_deadline_ms=\"$deadline_ms\" | context_outcome=\"observed\" | duration_ms < $deadline_ms [$__range])))",
           "legendFormat": "3–4秒",
           "queryType": "instant",
           "instant": true,
@@ -339,7 +429,7 @@
         },
         {
           "refId": "E",
-          "expr": "((sum (count_over_time(${browser_selector:raw} |= \"st_roleplay_first_token\" | logfmt | kind=\"measurement\" | type=\"st_roleplay_first_token\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_requested_model=~\"$requested_model\" | context_deadline_ms=\"$deadline_ms\" | context_outcome=\"observed\" | duration_ms < $deadline_ms | duration_ms >= 4000 | duration_ms < 6000 [$__range]))) or vector(0)) / (sum (count_over_time(${browser_selector:raw} |= \"st_roleplay_first_token\" | logfmt | kind=\"measurement\" | type=\"st_roleplay_first_token\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_requested_model=~\"$requested_model\" | context_deadline_ms=\"$deadline_ms\" | context_outcome=\"observed\" | duration_ms < $deadline_ms [$__range])))",
+          "expr": "((sum (count_over_time(${browser_selector:raw} |= \"st_roleplay_first_token\" | logfmt | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | kind=\"measurement\" | type=\"st_roleplay_first_token\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_requested_model=~\"$requested_model\" | context_deadline_ms=\"$deadline_ms\" | context_outcome=\"observed\" | duration_ms < $deadline_ms | duration_ms >= 4000 | duration_ms < 6000 [$__range]))) or vector(0)) / (sum (count_over_time(${browser_selector:raw} |= \"st_roleplay_first_token\" | logfmt | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | kind=\"measurement\" | type=\"st_roleplay_first_token\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_requested_model=~\"$requested_model\" | context_deadline_ms=\"$deadline_ms\" | context_outcome=\"observed\" | duration_ms < $deadline_ms [$__range])))",
           "legendFormat": "4–6秒",
           "queryType": "instant",
           "instant": true,
@@ -351,7 +441,7 @@
         },
         {
           "refId": "F",
-          "expr": "((sum (count_over_time(${browser_selector:raw} |= \"st_roleplay_first_token\" | logfmt | kind=\"measurement\" | type=\"st_roleplay_first_token\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_requested_model=~\"$requested_model\" | context_deadline_ms=\"$deadline_ms\" | context_outcome=\"observed\" | duration_ms < $deadline_ms | duration_ms >= 6000 | duration_ms < 110000 [$__range]))) or vector(0)) / (sum (count_over_time(${browser_selector:raw} |= \"st_roleplay_first_token\" | logfmt | kind=\"measurement\" | type=\"st_roleplay_first_token\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_requested_model=~\"$requested_model\" | context_deadline_ms=\"$deadline_ms\" | context_outcome=\"observed\" | duration_ms < $deadline_ms [$__range])))",
+          "expr": "((sum (count_over_time(${browser_selector:raw} |= \"st_roleplay_first_token\" | logfmt | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | kind=\"measurement\" | type=\"st_roleplay_first_token\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_requested_model=~\"$requested_model\" | context_deadline_ms=\"$deadline_ms\" | context_outcome=\"observed\" | duration_ms < $deadline_ms | duration_ms >= 6000 | duration_ms < 110000 [$__range]))) or vector(0)) / (sum (count_over_time(${browser_selector:raw} |= \"st_roleplay_first_token\" | logfmt | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | kind=\"measurement\" | type=\"st_roleplay_first_token\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_requested_model=~\"$requested_model\" | context_deadline_ms=\"$deadline_ms\" | context_outcome=\"observed\" | duration_ms < $deadline_ms [$__range])))",
           "legendFormat": "6秒至截止",
           "queryType": "instant",
           "instant": true,
@@ -399,7 +489,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (event_data_requested_model,event_data_outcome) (count_over_time(${browser_selector:raw} |= \"st_roleplay_terminal\" | logfmt | kind=\"event\" | event_name=\"st_roleplay_terminal\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_stage=\"first_token\" | event_data_requested_model=~\"$requested_model\" | event_data_deadline_ms=\"$deadline_ms\" [$__range]))",
+          "expr": "sum by (event_data_requested_model,event_data_outcome) (count_over_time(${browser_selector:raw} |= \"st_roleplay_terminal\" | logfmt | event_data_tg_platform=~\"$tg_platform\" | event_data_net_type=~\"$net_type\" | kind=\"event\" | event_name=\"st_roleplay_terminal\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_stage=\"first_token\" | event_data_requested_model=~\"$requested_model\" | event_data_deadline_ms=\"$deadline_ms\" [$__range]))",
           "legendFormat": "{{event_data_requested_model}} / {{event_data_outcome}}",
           "queryType": "instant",
           "instant": true,
@@ -423,7 +513,7 @@
       "id": 105,
       "title": "每型号｜实际启动兜底比例（服务端）",
       "type": "timeseries",
-      "description": "真实兜底POST派发/已受理业务请求；首发之后回赢仍算触发。不是兜底意图数或供应商失败率。 Cloud实际指标名须在TEST摄取后核验；计数器increase为窗口估计，空数据不等于0失败。",
+      "description": "服务端全量：不受设备/网络筛选影响。真实兜底POST派发/已受理业务请求；首发之后回赢仍算触发。不是兜底意图数或供应商失败率。 Cloud实际指标名须在TEST摄取后核验；计数器increase为窗口估计，空数据不等于0失败。",
       "gridPos": {
         "x": 0,
         "y": 24,
@@ -471,7 +561,7 @@
       "id": 106,
       "title": "每型号｜首字选中兜底比例（服务端）",
       "type": "timeseries",
-      "description": "服务端首字赢家中的兜底占比，不宣称客户端已收到。与客户端超时和首字分布一起判断。 Cloud实际指标名须在TEST摄取后核验；计数器increase为窗口估计，空数据不等于0失败。",
+      "description": "服务端全量：不受设备/网络筛选影响。服务端首字赢家中的兜底占比，不宣称客户端已收到。与客户端超时和首字分布一起判断。 Cloud实际指标名须在TEST摄取后核验；计数器increase为窗口估计，空数据不等于0失败。",
       "gridPos": {
         "x": 12,
         "y": 24,
@@ -556,7 +646,7 @@
             "type": "loki",
             "uid": "grafanacloud-logs"
           },
-          "expr": "(sum (count_over_time(${browser_selector:raw} |= \"st_roleplay_terminal\" | logfmt | kind=\"event\" | event_name=\"st_roleplay_terminal\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_stage=\"first_token\" | event_data_outcome=\"observed\" [$__range])) or vector(0)) / sum (count_over_time(${browser_selector:raw} |= \"st_roleplay_terminal\" | logfmt | kind=\"event\" | event_name=\"st_roleplay_terminal\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_stage=\"first_token\" | event_data_outcome=~\"observed|timed_out|upstream_error|server_timeout|fallback_timeout|primary_timeout\" [$__range]))",
+          "expr": "(sum (count_over_time(${browser_selector:raw} |= \"st_roleplay_terminal\" | logfmt | event_data_tg_platform=~\"$tg_platform\" | event_data_net_type=~\"$net_type\" | kind=\"event\" | event_name=\"st_roleplay_terminal\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_stage=\"first_token\" | event_data_outcome=\"observed\" [$__range])) or vector(0)) / sum (count_over_time(${browser_selector:raw} |= \"st_roleplay_terminal\" | logfmt | event_data_tg_platform=~\"$tg_platform\" | event_data_net_type=~\"$net_type\" | kind=\"event\" | event_name=\"st_roleplay_terminal\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_stage=\"first_token\" | event_data_outcome=~\"observed|timed_out|upstream_error|server_timeout|fallback_timeout|primary_timeout\" [$__range]))",
           "legendFormat": "",
           "editorMode": "code",
           "queryType": "instant"
@@ -605,7 +695,7 @@
             "type": "loki",
             "uid": "grafanacloud-logs"
           },
-          "expr": "sum by (event_data_action,event_data_outcome) (count_over_time(${browser_selector:raw} |= \"st_roleplay_terminal\" | logfmt | kind=\"event\" | event_name=\"st_roleplay_terminal\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_stage=\"first_token\" [$__range]))",
+          "expr": "sum by (event_data_action,event_data_outcome) (count_over_time(${browser_selector:raw} |= \"st_roleplay_terminal\" | logfmt | event_data_tg_platform=~\"$tg_platform\" | event_data_net_type=~\"$net_type\" | kind=\"event\" | event_name=\"st_roleplay_terminal\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_stage=\"first_token\" [$__range]))",
           "legendFormat": "",
           "editorMode": "code",
           "queryType": "instant"
@@ -663,7 +753,7 @@
             "type": "loki",
             "uid": "grafanacloud-logs"
           },
-          "expr": "quantile_over_time(0.5, ${browser_selector:raw} |= \"st_roleplay_first_token\" | logfmt | kind=\"measurement\" | type=\"st_roleplay_first_token\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_outcome=\"observed\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_action)",
+          "expr": "quantile_over_time(0.5, ${browser_selector:raw} |= \"st_roleplay_first_token\" | logfmt | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | kind=\"measurement\" | type=\"st_roleplay_first_token\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_outcome=\"observed\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_action)",
           "legendFormat": "P50 {{context_action}}",
           "editorMode": "code",
           "queryType": "range"
@@ -674,7 +764,7 @@
             "type": "loki",
             "uid": "grafanacloud-logs"
           },
-          "expr": "quantile_over_time(0.95, ${browser_selector:raw} |= \"st_roleplay_first_token\" | logfmt | kind=\"measurement\" | type=\"st_roleplay_first_token\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_outcome=\"observed\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_action)",
+          "expr": "quantile_over_time(0.95, ${browser_selector:raw} |= \"st_roleplay_first_token\" | logfmt | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | kind=\"measurement\" | type=\"st_roleplay_first_token\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_outcome=\"observed\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_action)",
           "legendFormat": "P95 {{context_action}}",
           "editorMode": "code",
           "queryType": "range"
@@ -722,7 +812,7 @@
             "type": "loki",
             "uid": "grafanacloud-logs"
           },
-          "expr": "(sum (count_over_time(${browser_selector:raw} |= \"st_roleplay_terminal\" | logfmt | kind=\"event\" | event_name=\"st_roleplay_terminal\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_stage=\"full_reply\" | event_data_outcome=\"complete\" [$__range])) or vector(0)) / sum (count_over_time(${browser_selector:raw} |= \"st_roleplay_terminal\" | logfmt | kind=\"event\" | event_name=\"st_roleplay_terminal\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_stage=\"full_reply\" | event_data_outcome=~\"complete|failed|interrupted|rejected|timed_out\" [$__range]))",
+          "expr": "(sum (count_over_time(${browser_selector:raw} |= \"st_roleplay_terminal\" | logfmt | event_data_tg_platform=~\"$tg_platform\" | event_data_net_type=~\"$net_type\" | kind=\"event\" | event_name=\"st_roleplay_terminal\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_stage=\"full_reply\" | event_data_outcome=\"complete\" [$__range])) or vector(0)) / sum (count_over_time(${browser_selector:raw} |= \"st_roleplay_terminal\" | logfmt | event_data_tg_platform=~\"$tg_platform\" | event_data_net_type=~\"$net_type\" | kind=\"event\" | event_name=\"st_roleplay_terminal\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_stage=\"full_reply\" | event_data_outcome=~\"complete|failed|interrupted|rejected|timed_out\" [$__range]))",
           "legendFormat": "",
           "editorMode": "code",
           "queryType": "instant"
@@ -771,7 +861,7 @@
             "type": "loki",
             "uid": "grafanacloud-logs"
           },
-          "expr": "sum by (event_data_action,event_data_outcome) (count_over_time(${browser_selector:raw} |= \"st_roleplay_terminal\" | logfmt | kind=\"event\" | event_name=\"st_roleplay_terminal\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_stage=\"full_reply\" [$__range]))",
+          "expr": "sum by (event_data_action,event_data_outcome) (count_over_time(${browser_selector:raw} |= \"st_roleplay_terminal\" | logfmt | event_data_tg_platform=~\"$tg_platform\" | event_data_net_type=~\"$net_type\" | kind=\"event\" | event_name=\"st_roleplay_terminal\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_stage=\"full_reply\" [$__range]))",
           "legendFormat": "",
           "editorMode": "code",
           "queryType": "instant"
@@ -829,7 +919,7 @@
             "type": "loki",
             "uid": "grafanacloud-logs"
           },
-          "expr": "quantile_over_time(0.5, ${browser_selector:raw} |= \"st_roleplay_full_reply\" | logfmt | kind=\"measurement\" | type=\"st_roleplay_full_reply\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_outcome=\"complete\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_action)",
+          "expr": "quantile_over_time(0.5, ${browser_selector:raw} |= \"st_roleplay_full_reply\" | logfmt | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | kind=\"measurement\" | type=\"st_roleplay_full_reply\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_outcome=\"complete\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_action)",
           "legendFormat": "P50 {{context_action}}",
           "editorMode": "code",
           "queryType": "range"
@@ -840,7 +930,7 @@
             "type": "loki",
             "uid": "grafanacloud-logs"
           },
-          "expr": "quantile_over_time(0.95, ${browser_selector:raw} |= \"st_roleplay_full_reply\" | logfmt | kind=\"measurement\" | type=\"st_roleplay_full_reply\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_outcome=\"complete\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_action)",
+          "expr": "quantile_over_time(0.95, ${browser_selector:raw} |= \"st_roleplay_full_reply\" | logfmt | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | kind=\"measurement\" | type=\"st_roleplay_full_reply\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_outcome=\"complete\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_action)",
           "legendFormat": "P95 {{context_action}}",
           "editorMode": "code",
           "queryType": "range"
@@ -890,7 +980,7 @@
             "type": "loki",
             "uid": "grafanacloud-logs"
           },
-          "expr": "quantile_over_time(0.5, ${browser_selector:raw} |= \"st_roleplay_render\" | logfmt | kind=\"measurement\" | type=\"st_roleplay_render\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_outcome=\"observed\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_action)",
+          "expr": "quantile_over_time(0.5, ${browser_selector:raw} |= \"st_roleplay_render\" | logfmt | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | kind=\"measurement\" | type=\"st_roleplay_render\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_outcome=\"observed\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_action)",
           "legendFormat": "P50 {{context_action}}",
           "editorMode": "code",
           "queryType": "range"
@@ -901,7 +991,7 @@
             "type": "loki",
             "uid": "grafanacloud-logs"
           },
-          "expr": "quantile_over_time(0.95, ${browser_selector:raw} |= \"st_roleplay_render\" | logfmt | kind=\"measurement\" | type=\"st_roleplay_render\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_outcome=\"observed\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_action)",
+          "expr": "quantile_over_time(0.95, ${browser_selector:raw} |= \"st_roleplay_render\" | logfmt | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | kind=\"measurement\" | type=\"st_roleplay_render\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_outcome=\"observed\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_action)",
           "legendFormat": "P95 {{context_action}}",
           "editorMode": "code",
           "queryType": "range"
@@ -951,7 +1041,7 @@
             "type": "loki",
             "uid": "grafanacloud-logs"
           },
-          "expr": "quantile_over_time(0.5, ${browser_selector:raw} |= \"st_roleplay_recovery\" | logfmt | kind=\"measurement\" | type=\"st_roleplay_recovery\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_outcome=\"complete\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_action)",
+          "expr": "quantile_over_time(0.5, ${browser_selector:raw} |= \"st_roleplay_recovery\" | logfmt | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | kind=\"measurement\" | type=\"st_roleplay_recovery\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_outcome=\"complete\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_action)",
           "legendFormat": "P50 {{context_action}}",
           "editorMode": "code",
           "queryType": "range"
@@ -962,7 +1052,7 @@
             "type": "loki",
             "uid": "grafanacloud-logs"
           },
-          "expr": "quantile_over_time(0.95, ${browser_selector:raw} |= \"st_roleplay_recovery\" | logfmt | kind=\"measurement\" | type=\"st_roleplay_recovery\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_outcome=\"complete\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_action)",
+          "expr": "quantile_over_time(0.95, ${browser_selector:raw} |= \"st_roleplay_recovery\" | logfmt | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | kind=\"measurement\" | type=\"st_roleplay_recovery\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_outcome=\"complete\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_action)",
           "legendFormat": "P95 {{context_action}}",
           "editorMode": "code",
           "queryType": "range"
@@ -1011,7 +1101,7 @@
             "type": "loki",
             "uid": "grafanacloud-logs"
           },
-          "expr": "sum by (event_data_outcome) (count_over_time(${browser_selector:raw} |= \"st_roleplay_terminal\" | logfmt | kind=\"event\" | event_name=\"st_roleplay_terminal\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_stage=\"recovery\" [$__range]))",
+          "expr": "sum by (event_data_outcome) (count_over_time(${browser_selector:raw} |= \"st_roleplay_terminal\" | logfmt | event_data_tg_platform=~\"$tg_platform\" | event_data_net_type=~\"$net_type\" | kind=\"event\" | event_name=\"st_roleplay_terminal\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_stage=\"recovery\" [$__range]))",
           "legendFormat": "",
           "editorMode": "code",
           "queryType": "instant"
@@ -1069,7 +1159,7 @@
             "type": "loki",
             "uid": "grafanacloud-logs"
           },
-          "expr": "quantile_over_time(0.5, ${browser_selector:raw} |= \"st_roleplay_action\" | logfmt | kind=\"measurement\" | type=\"st_roleplay_action\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_outcome=\"feedback\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_action)",
+          "expr": "quantile_over_time(0.5, ${browser_selector:raw} |= \"st_roleplay_action\" | logfmt | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | kind=\"measurement\" | type=\"st_roleplay_action\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_outcome=\"feedback\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_action)",
           "legendFormat": "P50 {{context_action}}",
           "editorMode": "code",
           "queryType": "range"
@@ -1080,7 +1170,7 @@
             "type": "loki",
             "uid": "grafanacloud-logs"
           },
-          "expr": "quantile_over_time(0.95, ${browser_selector:raw} |= \"st_roleplay_action\" | logfmt | kind=\"measurement\" | type=\"st_roleplay_action\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_outcome=\"feedback\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_action)",
+          "expr": "quantile_over_time(0.95, ${browser_selector:raw} |= \"st_roleplay_action\" | logfmt | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | kind=\"measurement\" | type=\"st_roleplay_action\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_outcome=\"feedback\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_action)",
           "legendFormat": "P95 {{context_action}}",
           "editorMode": "code",
           "queryType": "range"
@@ -1129,7 +1219,7 @@
             "type": "loki",
             "uid": "grafanacloud-logs"
           },
-          "expr": "sum by (event_data_stage) (count_over_time(${browser_selector:raw} |= \"st_roleplay_started\" | logfmt | kind=\"event\" | event_name=\"st_roleplay_started\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" [$__range]))",
+          "expr": "sum by (event_data_stage) (count_over_time(${browser_selector:raw} |= \"st_roleplay_started\" | logfmt | event_data_tg_platform=~\"$tg_platform\" | event_data_net_type=~\"$net_type\" | kind=\"event\" | event_name=\"st_roleplay_started\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" [$__range]))",
           "legendFormat": "开始 {{event_data_stage}}",
           "editorMode": "code",
           "queryType": "instant"
@@ -1140,7 +1230,7 @@
             "type": "loki",
             "uid": "grafanacloud-logs"
           },
-          "expr": "sum by (event_data_stage) (count_over_time(${browser_selector:raw} |= \"st_roleplay_terminal\" | logfmt | kind=\"event\" | event_name=\"st_roleplay_terminal\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" [$__range]))",
+          "expr": "sum by (event_data_stage) (count_over_time(${browser_selector:raw} |= \"st_roleplay_terminal\" | logfmt | event_data_tg_platform=~\"$tg_platform\" | event_data_net_type=~\"$net_type\" | kind=\"event\" | event_name=\"st_roleplay_terminal\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" [$__range]))",
           "legendFormat": "终态 {{event_data_stage}}",
           "editorMode": "code",
           "queryType": "instant"

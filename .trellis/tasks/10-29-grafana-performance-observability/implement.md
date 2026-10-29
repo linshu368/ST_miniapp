@@ -1,5 +1,14 @@
 # Implementation plan
 
+## 2026-10-29 已批准增补执行
+
+1. 现场fetch并保留最新dev/main及PR537首页修复，独立分支codex/grafana-playback-quality；保留未跟踪test-rollout，不纳入提交。
+2. env-tags/grafana统一入队快照，补有限质量事件字段；扩展既有grafana测试，覆盖Sentry关闭、非法标签、排队后变网、成对数值验证/隐私。
+3. drama-media只读累计/低频增量，扩展既有测试：18秒play+2秒wait=10%，暂停/seek/后台排除、跨心跳、重复清理、换src迟到、手动恢复autoplay_blocked、导出失败隔离。无需新测试文件。
+4. 三张现有看板的measurement/event分别正确筛选；保留首字新增面板，后端PromQL标不适用。播放质量显示总时长、占比和有效窗数。扩展现有本机Faro→Loki固定虚构样本契约，不请求真实业务/付费模型。
+5. 独立全范围review；frontend测试/typecheck/lint/build、格式/边界检查，本地实际LogQL及Cloud语法/合成往返核验。用户暂缓真机复测，实测边界保留。同步工程runbook/spec/module facts。
+6. 最终文件、diff摘要/哈希与结果呈现后，按用户持续授权正常提交/推送独立分支并走正常PR；固定SHA发布前再核对最新生产，避免覆盖并行改动。不执行迁移/不改后端/不绕过人审分支保护；Cloud面板与代码版本分别记录状态。
+
 状态：用户2026-10-29已批准按三条体验主线实施；可start并改产品代码/本地验证。不得自动发布生产或创建未确认费用的服务。
 
 ## Gate 0 — review
