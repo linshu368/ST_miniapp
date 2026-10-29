@@ -4,6 +4,8 @@ import { readFile } from 'node:fs/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 import {
   CreateCharacterCommentSchema,
+  ForkConversationRequestSchema,
+  SetMessageLikeRequestSchema,
   ReportCharacterCommentSchema,
   SetCharacterLikeSchema,
   type CharacterComment,
@@ -25,6 +27,7 @@ import {
   SelectModelRequestSchema,
   SubmitImagePlazaAttemptRequestSchema,
   type ChatMessage,
+  type ChatSession,
   type ConversationStreamEvent,
   type ImagePlazaAttempt,
   type GetDramasData,
@@ -87,10 +90,17 @@ export function createPreviewServer(apiPort: number, appPort: number) {
   }
   const characterSocialFor = (id: string): CharacterSocial => {
     const index = data.characters.findIndex((item) => item.id === id);
+    const replyLikes = [...messageLikes].filter((key) =>
+      data.sessions.some(
+        (session) => session.character_id === id && key.startsWith(`${session.id}:`)
+      )
+    ).length;
     return {
       liked: characterLikes.has(id),
       like_count:
-        (index === 17 ? 0 : 128 + Math.max(index, 0) * 7) + Number(characterLikes.has(id)),
+        (index === 17 ? 0 : 128 + Math.max(index, 0) * 7) +
+        Number(characterLikes.has(id)) +
+        replyLikes,
       favorite_count:
         (index === 17 ? 0 : 86 + Math.max(index, 0) * 3) + Number(favoriteIds.has(id)),
       comment_count: characterCommentsFor(id).length,
@@ -133,12 +143,69 @@ export function createPreviewServer(apiPort: number, appPort: number) {
   const streams = new Set<ServerResponse>();
   const requests: { method: string; path: string; thinking_enabled?: boolean }[] = [];
   const unhandled: string[] = [];
+  const branchRequests = new Map<
+    string,
+    { sourceSessionId: string; messageId: string; sessionId: string }
+  >();
+  let branchFailureDelivered = false;
+  const messageLikes = new Set<string>();
+  let messageLikeFailureDelivered = false;
+
+  function currentConversationMessages(sessionId: string): ChatMessage[] {
+    const candidates = data.messages.filter((message) => message.session_id === sessionId);
+    const assistants = new Map<number, ChatMessage>();
+    const users = new Map<number, ChatMessage>();
+    for (const message of candidates) {
+      const target = message.role === 'assistant' ? assistants : users;
+      if (
+        !target.has(message.turn_index) ||
+        target.get(message.turn_index)!.revision < message.revision
+      )
+        target.set(message.turn_index, message);
+    }
+    return [...assistants.values()]
+      .sort((a, b) => a.turn_index - b.turn_index)
+      .flatMap((message) => {
+        const user = users.get(message.turn_index);
+        const reply = {
+          ...message,
+          ...(message.turn_index > 0
+            ? { liked: messageLikes.has(`${sessionId}:${message.id}`) }
+            : {}),
+        };
+        return user ? [{ ...user, revision: message.revision }, reply] : [reply];
+      });
+  }
+
+  function conversationPage(session: ChatSession, beforeTurn?: number) {
+    const all = currentConversationMessages(session.id).filter(
+      (message) => beforeTurn === undefined || message.turn_index < beforeTurn
+    );
+    const turns = [
+      ...new Set(
+        all.filter((message) => message.turn_index > 0).map((message) => message.turn_index)
+      ),
+    ];
+    const keep = new Set(turns.slice(-25));
+    const hasMore = turns.length > 25;
+    return {
+      session,
+      messages: all.filter(
+        (message) => keep.has(message.turn_index) || (!hasMore && message.turn_index === 0)
+      ),
+      has_more: hasMore,
+    };
+  }
 
   function reset(next: Scenario) {
     epoch += 1;
     for (const stream of streams) stream.end();
     streams.clear();
     data = makeData(api);
+    branchRequests.clear();
+    branchFailureDelivered = false;
+    messageLikes.clear();
+    messageLikeFailureDelivered = false;
     scenario = next;
     claimed = next === 'checked';
     favoriteIds = new Set(next === 'character-social' ? [IDS.character] : []);
@@ -224,6 +291,36 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         main_credits: 0,
         bonus_credits: 0,
       });
+    if (next === 'chat-branch' || next === 'chat-branch-error') {
+      const count = next === 'chat-branch' ? 200 : 20;
+      const userTemplate = data.messages[1]!;
+      const assistantTemplate = data.messages[2]!;
+      data.messages = [
+        data.messages[0]!,
+        ...Array.from({ length: count }, (_, index) => {
+          const turn = index + 1;
+          const suffix = String(turn).padStart(12, '0');
+          return [
+            {
+              ...userTemplate,
+              id: `51000000-0000-4000-8000-${suffix}`,
+              turn_index: turn,
+              content: `第 ${turn} 轮：我们继续走到这里。`,
+            },
+            {
+              ...assistantTemplate,
+              id: `52000000-0000-4000-8000-${suffix}`,
+              turn_index: turn,
+              content: `「这是第 ${turn} 轮的故事。」旅人停在路口，等你决定接下来怎么走。`,
+            },
+          ];
+        }).flat(),
+      ];
+      Object.assign(data.sessions[0]!, {
+        message_count: count * 2,
+        last_message_preview: `第 ${count} 轮的故事。`,
+      });
+    }
   }
 
   function creditBonus(amount: number) {
@@ -829,12 +926,19 @@ export function createPreviewServer(apiPort: number, appPort: number) {
           return;
         }
         if (method === 'GET') {
-          const sessions = data.sessions.filter(
-            (item) =>
-              item.message_count > 0 &&
-              (!url.searchParams.get('character_id') ||
-                item.character_id === url.searchParams.get('character_id'))
-          );
+          const sessions = data.sessions
+            .filter(
+              (item) =>
+                item.message_count > 0 &&
+                (!url.searchParams.get('character_id') ||
+                  item.character_id === url.searchParams.get('character_id'))
+            )
+            .sort(
+              (a, b) =>
+                (b.pinned_at ?? '').localeCompare(a.pinned_at ?? '') ||
+                (b.last_message_at ?? '').localeCompare(a.last_message_at ?? '') ||
+                b.created_at.localeCompare(a.created_at)
+            );
           ok(res, { sessions, total: sessions.length });
           return;
         }
@@ -855,8 +959,51 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         ok(res, { images: [] });
         return;
       }
+      const messageLikeMatch = path.match(
+        /^\/api\/v1\/conversations\/([^/]+)\/messages\/([^/]+)\/like$/
+      );
+      if (messageLikeMatch && method === 'PUT') {
+        const [, sessionId, messageId] = messageLikeMatch;
+        const parsed = SetMessageLikeRequestSchema.safeParse(body);
+        if (!parsed.success) {
+          fail(res, 400, 'BAD_REQUEST', '点赞参数无效');
+          return;
+        }
+        if (!data.sessions.some((session) => session.id === sessionId)) {
+          fail(res, 404, 'session_not_found', '对话不存在');
+          return;
+        }
+        const message = currentConversationMessages(sessionId!).find(
+          (item) => item.id === messageId && item.role === 'assistant'
+        );
+        if (
+          !message ||
+          message.turn_index < 1 ||
+          message.status !== 'complete' ||
+          !message.content.trim()
+        ) {
+          fail(res, 409, 'reply_like_not_allowed', '这条回复暂时无法点赞');
+          return;
+        }
+        const requestEpoch = epoch;
+        await delay(200);
+        if (requestEpoch !== epoch) {
+          fail(res, 409, 'scenario_changed', '预览场景已切换');
+          return;
+        }
+        if (scenario === 'chat-like-error' && !messageLikeFailureDelivered) {
+          messageLikeFailureDelivered = true;
+          fail(res, 503, 'INTERNAL_ERROR', '点赞暂时没能保存');
+          return;
+        }
+        const key = `${sessionId}:${messageId}`;
+        if (parsed.data.liked) messageLikes.add(key);
+        else messageLikes.delete(key);
+        ok(res, { session_id: sessionId, message_id: messageId, liked: parsed.data.liked });
+        return;
+      }
       const conversationMatch = path.match(
-        /^\/api\/v1\/conversations\/([^/]+)(?:\/(messages|regenerate|cancel|first-token))?$/
+        /^\/api\/v1\/conversations\/([^/]+)(?:\/(messages|regenerate|cancel|first-token|branch))?$/
       );
       if (conversationMatch) {
         const [, id, action] = conversationMatch;
@@ -866,11 +1013,88 @@ export function createPreviewServer(apiPort: number, appPort: number) {
           return;
         }
         if (!action && method === 'GET') {
-          ok(res, {
-            session,
-            messages: data.messages.filter((item) => item.session_id === id),
-            has_more: false,
+          const before = url.searchParams.get('before_turn_index');
+          ok(res, conversationPage(session, before ? Number(before) : undefined));
+          return;
+        }
+        if (action === 'branch' && method === 'POST') {
+          const parsed = ForkConversationRequestSchema.safeParse(body);
+          if (!parsed.success) {
+            fail(res, 400, 'BAD_REQUEST', '分支参数无效');
+            return;
+          }
+          const { message_id: messageId, request_id: requestId } = parsed.data;
+          const previous = branchRequests.get(requestId);
+          if (previous) {
+            if (previous.sourceSessionId !== id || previous.messageId !== messageId) {
+              fail(res, 409, 'branch_request_conflict', '请重新选择分支起点');
+              return;
+            }
+            ok(
+              res,
+              conversationPage(data.sessions.find((item) => item.id === previous.sessionId)!)
+            );
+            return;
+          }
+          const source = currentConversationMessages(session.id);
+          const anchor = source.find(
+            (message) => message.id === messageId && message.role === 'assistant'
+          );
+          if (
+            !anchor ||
+            anchor.turn_index < 1 ||
+            anchor.status !== 'complete' ||
+            !anchor.content.trim()
+          ) {
+            fail(res, 409, 'branch_not_allowed', '请从已完成的回复开启分支');
+            return;
+          }
+          const selected = source.filter(
+            (message) => message.turn_index > 0 && message.turn_index <= anchor.turn_index
+          );
+          const keepTurns = [...new Set(selected.map((message) => message.turn_index))].slice(-50);
+          const now = stamp();
+          const branch: ChatSession = {
+            ...session,
+            id: randomUUID(),
+            title: `分支 · ${(session.title ?? '新的对话').replace(/^分支 · /, '')}`,
+            branch: {
+              source_session_id: session.id,
+              source_turn_index: anchor.turn_index,
+              inherited_turns: keepTurns.length,
+            },
+            message_count: keepTurns.length * 2,
+            pinned_at: null,
+            last_message_at: now,
+            last_message_preview: anchor.content,
+            created_at: now,
+            updated_at: now,
+          };
+          data.sessions.push(branch);
+          const opening = source.find((message) => message.turn_index === 0);
+          if (opening)
+            data.messages.push({ ...opening, id: `opening:${branch.id}`, session_id: branch.id });
+          data.messages.push(
+            ...selected
+              .filter((message) => keepTurns.includes(message.turn_index))
+              .map((message) => ({
+                ...message,
+                inherited: true,
+                session_id: branch.id,
+                turn_index: keepTurns.indexOf(message.turn_index) + 1,
+              }))
+          );
+          branchRequests.set(requestId, {
+            sourceSessionId: session.id,
+            messageId,
+            sessionId: branch.id,
           });
+          if (scenario === 'chat-branch-error' && !branchFailureDelivered) {
+            branchFailureDelivered = true;
+            fail(res, 503, 'INTERNAL_ERROR', '分支暂时没能打开，请重试');
+            return;
+          }
+          ok(res, conversationPage(branch));
           return;
         }
         if (action === 'first-token' && method === 'POST') {
@@ -983,7 +1207,7 @@ export function createPreviewServer(apiPort: number, appPort: number) {
               message.status = 'complete';
               message.finish_reason = 'stop';
             }
-            session.message_count += 2;
+            if (action === 'messages') session.message_count += 2;
             session.last_message_preview = message.content;
             write({
               type: 'done',

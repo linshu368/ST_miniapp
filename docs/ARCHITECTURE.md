@@ -24,6 +24,8 @@
 
 ## 1. 架构铁律（违反即拦截）
 
+⏳ **2026-10-29 回复点赞（本地增量，未发布）**：`experience.chat_message_likes(session_id,message_id)` 保存会话主人对固定实际回复版本的点赞，分支不复制，重生成以新history ID独立反馈。`set_chat_message_like` 按归属/完成态验证并与开轮共用会话锁；显式布尔目标可幂等重试，写入不触发聊天统计或计费。角色社交查询通过 `experience.get_character_reply_like_counts` 批量读取角色回复总赞，加上原角色卡直接赞，返回大厅统一累计数量。`session_chat_history` 只末尾追加 `liked`，消息列表选择，模型上下文不选择；不额外为每条消息查询。受限RPC拥有写权，service只可读取新表，浏览器无直接数据库权限。迁移需先分支后点赞，恢复时可忽略个人点赞投影并保留数据。
+
 离线数据运维补充：2026-10-19 的 Civitai seed TEST 导出最初复用 `experience.import_image_plaza_seed_work` 初始化目标作品；M1 后该 RPC 位于 `media_plaza`。该流程不迁移测试用户/点赞/账务，图片实体必须独立迁移。2026-10-20 新增离线 Storage 工具，固定 TEST → 本地 SHA-256 暂存 → production 仅新增上传/回读校验，有限并发且不覆盖冲突对象。该工具不改变运行时边界，不自动执行生产 SQL；实际完成状态以任务/report 为准。操作方法见 [seed 迁移说明](../ops/image-plaza-seed-migration.md)。
 
 1. **对外数据形状先定义在 `packages/shared/`**，再写 handler。backend 不得在包内私定对外类型。
@@ -226,6 +228,8 @@ v1 是旧 bot `SimplePromptEngine` 的忠实移植，最终形状：
 ```
 
 - **上下文长度管理已落地（077）**：双水位线泄洪，窗口在 [A, B] 轮之间增长，超过高水位 B（`max_context_turns`，默认 75）一次性收缩到低水位 A（`retain_context_turns`，默认 50）。窗口起点持久化在 `chat_sessions.context_window_start_turn`，由开轮 RPC 在会话行锁内更新（`apply_context_window_flood`）；**不删** `chat_history`，只决定本轮 prompt 带哪些轮。引擎不二次裁剪，`truncatedTurns` 回填真实观测值。双水位（而非滑动窗口）是为了给 Anthropic prompt cache 制造稳定前缀；设计原稿：`git show b4491cd^:docs/context-window-and-prompt-cache.md`。
+
+- **历史分支（2026-10-29，本地已实现，远端待迁移/发布）**：`POST /api/v1/conversations/:id/branch` 以完成回复为锚点，服务端读取低水位 A，继承截至该轮的最多 A 轮并重新编号。`experience.chat_branch_turns` 固定引用实际 history ID，分支再分支同样展开为实际 ID；来源后续生成、重生成或软删除不改动已继承上下文。消息与上下文读取 `session_chat_history`，本分支新 revision 覆盖继承轮；计费、生成和分析继续读取原事实表，不把继承记录计作新生成。用户范围的事务 advisory lock、唯一请求键与单事务负责幂等/限速，来源会话仍验证所属用户。之后沿原 A/B 窗口，记忆仅随轮次正文保留，不增加抽取服务。继承媒体不复制，不带原请求关联 ID；新回复正常支持媒体。发布顺序：迁移 → Backend → Frontend；已有分支不能退回完全旧 Backend，隐藏入口后保留读取能力并 forward-fix。验收与边界见 `.trellis/tasks/10-29-conversation-branches/`。
 - **不消费预设**：ST 酒馆格式的 `platform_presets` 已随 088 整体删除（数据留档在库外）。自建预设格式是待办（M4，见 §10）。
 - **不注入 `first_mes`**：开场白由编排层放进 history，引擎再注入会每轮重复一条。
 - **不做酒馆语义适配**：宏、世界书、正则、卡内嵌资源一律不支持，表现质量由 system prompt 与组装逻辑承担。

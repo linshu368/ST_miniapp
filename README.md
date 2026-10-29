@@ -89,6 +89,10 @@ pnpm dev:admin
 
 移动端页面预览使用 `pnpm preview:ui`，场景入口 `http://127.0.0.1:3121`。固定浏览器验收用 `pnpm test:ui --grep @profile`（或 `@roleplay` / `@chat` / `@image`）按组运行。首次安装、手机尺寸、报告及新增场景方法见 [移动端验收说明](packages/ui-tests/README.md)。该环境使用虚构数据，正式发布仍遵循既有质量检查。
 
+历史对话分支目前仅本地实现：预览选择「历史对话分支」或「分支失败恢复」，运行 `pnpm test:ui --grep @chat-branch` 复用手机验收。分支成为现有列表中的独立会话，原对话不变；初始继承最多低水位 A 轮，后续沿原 A/B 上下文窗口。数据库使用 `experience.chat_branch_turns` 固定引用，不复制生成或计费事实。远端尚未迁移/发布；部署前先验证并执行 `20261029_conversation_branches.sql`，再发布 Backend → Frontend；出现问题可隐藏入口，但已有分支必须保留可读取继承历史的 Backend，不能直接退回完全旧版。隔离数据库验证：`bash scripts/test-conversation-branches-migration.sh`。
+
+回复点赞同样仅在本地：每条完整角色回复提供48px触区的小图标，可点亮/取消，按会话与真实回复版本保存；分支和重生成各自独立。大厅角色总赞累加角色卡直接点赞与所有回复点赞，同一用户赞不同回复分别计数，取消减回。`20261029_chat_message_likes.sql` 必须在上述分支迁移之后执行，再部署 Backend → Frontend。列表沿原查询读取个人点赞，不复制正文、不增加生成/消费计数。本地浏览器复用 `pnpm test:ui --grep @chat-like`；数据库验收仍用同一隔离脚本。
+
 ```bash
 pnpm typecheck
 pnpm lint
