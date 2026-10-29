@@ -54,3 +54,7 @@ Shared tests 与所有消费者 typecheck。
 ## 关联模块
 
 `backend.business.character-lobby`、`frontend.business.character-lobby`。
+
+## 角色互动契约（2026-10-29，本地待发布）
+
+新增 `src/api/character-social.ts` 并从shared导出：CharacterSocial、CharacterComment、批量/单项social响应、游标评论响应与创建评论/设置点赞/举报schemas。公开评论只含匿名author、is_mine、正文和时间，不公开用户ID。点赞采用目标布尔状态；评论由客户端提交UUID与1–500字纯文本；举报reason为inappropriate/spam/other。原角色与收藏契约不改动。

@@ -1,331 +1,422 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { ChevronDown, Quote, Sparkles, X } from 'lucide-react';
-
-import type { CharacterSummary } from '@miniapp/shared';
-
+import { useEffect, useId, useRef, useState } from 'react';
+import { ChevronDown, Loader2, Quote, Sparkles, X } from 'lucide-react';
+import type { CharacterSummary, ChatSession } from '@miniapp/shared';
 import { useCharacterQuery } from '@/lib/api/characters';
 import { useConversationsQuery } from '@/lib/api/conversations';
-import type { ChatSession } from '@miniapp/shared';
+import { useCharacterSocialQuery } from '@/lib/api/character-social';
 import { characterRoomGradient } from '@/lib/utils/character-hue';
-
+import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
+import { cn } from '@/lib/utils';
 import { lobbyImageUrl } from './character-card';
-import { FavoriteButton } from './favorite-button';
-import { FeaturedFrame } from './featured-frame';
+import { CharacterSocialBar, socialCount } from './character-social-bar';
+import { CharacterComments } from './character-comments';
 
-// ─── 手势常量 ────────────────────────────────────────────────
-const DISMISS_THRESHOLD_Y = 90; // 下滑超过该值即关闭
-
-// ─── Props ───────────────────────────────────────────────────
+export type CharacterDetailTab = 'intro' | 'comments';
 interface CharacterDetailSheetProps {
   characterId: string | null;
-  /** 大厅列表里已有的摘要：除开场白外弹层要展示的字段都在里面，用来即时打开。 */
   summary?: CharacterSummary;
+  initialTab?: CharacterDetailTab;
+  inConversation?: boolean;
   onClose: () => void;
   onEnter: (characterId: string, sessionId?: string) => void;
   entering?: boolean;
 }
 
-// ─── 主组件 ──────────────────────────────────────────────────
-export function CharacterDetailSheet({
+export function CharacterDetailSheet(props: CharacterDetailSheetProps) {
+  const lastTarget = useRef<{ id: string; summary?: CharacterSummary } | null>(null);
+  if (props.characterId) lastTarget.current = { id: props.characterId, summary: props.summary };
+  const target = lastTarget.current;
+  return (
+    <Sheet
+      open={Boolean(props.characterId)}
+      onOpenChange={(open) => {
+        if (!open) props.onClose();
+      }}
+    >
+      {target ? (
+        <CharacterDetailContent
+          key={target.id}
+          {...props}
+          characterId={target.id}
+          summary={target.summary}
+          open={Boolean(props.characterId)}
+        />
+      ) : null}
+    </Sheet>
+  );
+}
+
+function CharacterDetailContent({
   characterId,
   summary,
+  open,
+  initialTab = 'intro',
+  inConversation = false,
   onClose,
   onEnter,
   entering = false,
-}: CharacterDetailSheetProps) {
-  const { data } = useCharacterQuery(characterId ?? undefined);
-  // 详情接口（跨区代理 + 冷启动，生产 p95 十几秒）只补开场白；摘要先行，弹层不等网络。
-  const detail = data?.character;
-  const character = detail ?? summary;
-  const isLoading = !character;
-  const history = useConversationsQuery(characterId ?? undefined, Boolean(characterId));
+}: Omit<CharacterDetailSheetProps, 'characterId'> & { characterId: string; open: boolean }) {
+  const detailQuery = useCharacterQuery(characterId, { enabled: open });
+  const character = detailQuery.data?.character ?? summary;
+  const history = useConversationsQuery(characterId, open && !inConversation);
+  const social = useCharacterSocialQuery(characterId, open);
   const lastSession = history.data?.sessions
     .filter((session) => session.message_count > 0)
     .reduce<
       ChatSession | undefined
     >((latest, item) => (!latest || Date.parse(item.last_message_at ?? item.created_at) > Date.parse(latest.last_message_at ?? latest.created_at) ? item : latest), undefined);
-
-  // ── 动画状态 ──────────────────────────────────────────────
-  const [mounted, setMounted] = useState(false);
-  const [visible, setVisible] = useState(false);
+  const [tab, setTab] = useState<CharacterDetailTab>(initialTab);
   const [greetingOpen, setGreetingOpen] = useState(false);
-
-  useEffect(() => {
-    if (characterId) {
-      setMounted(true);
-      setGreetingOpen(false);
-      const raf = requestAnimationFrame(() => setVisible(true));
-      return () => cancelAnimationFrame(raf);
-    }
-    setVisible(false);
-    const t = setTimeout(() => setMounted(false), 320);
-    return () => clearTimeout(t);
-  }, [characterId]);
-
-  // ── 拖拽关闭 ──────────────────────────────────────────────
+  const [viewport, setViewport] = useState<{ height: number; bottom: number } | null>(null);
   const [dragY, setDragY] = useState(0);
-  const [isDragging, setIsDragging] = useState(false);
-  const touchStart = useRef({ x: 0, y: 0 });
-  const scrollRef = useRef<HTMLDivElement>(null);
-
-  const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    touchStart.current = { x: e.touches[0]!.clientX, y: e.touches[0]!.clientY };
-    setIsDragging(true);
-  }, []);
-
-  const handleTouchMove = useCallback((e: React.TouchEvent) => {
-    const dy = e.touches[0]!.clientY - touchStart.current.y;
-    const dx = e.touches[0]!.clientX - touchStart.current.x;
-    const scrollTop = scrollRef.current?.scrollTop ?? 0;
-    if (dy > 0 && Math.abs(dy) >= Math.abs(dx) && scrollTop === 0) {
-      setDragY(dy);
+  const touch = useRef<{ x: number; y: number } | null>(null);
+  const closeButton = useRef<HTMLButtonElement>(null);
+  const introScroll = useRef<HTMLDivElement>(null);
+  const tabsId = useId();
+  useEffect(() => {
+    if (open) {
+      setTab(initialTab);
+      setDragY(0);
     }
-  }, []);
+  }, [open, initialTab]);
+  useEffect(() => {
+    if (!open) return;
+    const viewport = window.visualViewport;
+    const update = () =>
+      setViewport({
+        height: Math.max(180, (viewport?.height ?? window.innerHeight) - 12),
+        bottom: Math.max(
+          0,
+          window.innerHeight - (viewport?.height ?? window.innerHeight) - (viewport?.offsetTop ?? 0)
+        ),
+      });
+    update();
+    viewport?.addEventListener('resize', update);
+    viewport?.addEventListener('scroll', update);
+    window.addEventListener('resize', update);
+    return () => {
+      viewport?.removeEventListener('resize', update);
+      viewport?.removeEventListener('scroll', update);
+      window.removeEventListener('resize', update);
+    };
+  }, [open]);
+  const chatLabel = inConversation
+    ? '回到对话'
+    : entering
+      ? '正在进入…'
+      : history.isPending
+        ? '读取对话中…'
+        : history.isError
+          ? '重新加载'
+          : lastSession
+            ? '继续对话'
+            : '开始对话';
+  const chatDisabled = !character || entering || (!inConversation && history.isPending);
+  const enter = () => {
+    if (inConversation) {
+      onClose();
+      return;
+    }
+    if (history.isError) {
+      void history.refetch();
+      return;
+    }
+    if (character && history.isSuccess) onEnter(character.id, lastSession?.id);
+  };
+  const selectTab = (next: CharacterDetailTab) => {
+    setTab(next);
+    // 选项切换只改同一层的内容；不改变底下列表或聊天的位置。
+    closeButton.current?.focus({ preventScroll: true });
+  };
 
-  const handleTouchEnd = useCallback(
-    (e: React.TouchEvent) => {
-      const dy = e.changedTouches[0]!.clientY - touchStart.current.y;
-      setIsDragging(false);
-      const scrollTop = scrollRef.current?.scrollTop ?? 0;
-      if (dy > DISMISS_THRESHOLD_Y && scrollTop === 0) {
-        setDragY(0);
-        onClose();
-      } else {
-        setDragY(0);
-      }
-    },
-    [onClose]
-  );
-
-  if (!mounted || typeof document === 'undefined') return null;
-
-  const gradient = characterRoomGradient(character?.id ?? 'fallback');
-  const hasAvatar = !!character?.avatar_url;
-  const description = character?.description?.trim() ?? '';
-  const greeting = detail?.greeting?.trim() ?? '';
-
-  return createPortal(
-    <div className="fixed inset-0 z-50" role="dialog" aria-modal="true">
-      {/* 背景遮罩：模糊 + 压暗，点击关闭 */}
+  return (
+    <SheetContent
+      side="bottom"
+      className="mx-auto flex h-[86dvh] max-w-lg flex-col overflow-hidden rounded-t-[26px] border-border bg-popover p-0 shadow-[0_-12px_48px_rgba(0,0,0,0.32)] motion-reduce:animate-none"
+      overlayClassName="bg-black/55 backdrop-blur-[2px]"
+      style={{
+        maxHeight: viewport?.height,
+        bottom: viewport?.bottom,
+        translate: dragY ? `0 ${dragY}px` : undefined,
+      }}
+      onOpenAutoFocus={(event) => {
+        event.preventDefault();
+        closeButton.current?.focus();
+      }}
+    >
       <div
-        // 不再用 backdrop-blur：模糊整页（含正在流动的金框）每帧重算，是打开弹层卡顿的主因之一。
-        className="absolute inset-0 bg-black/70 transition-opacity duration-300"
-        style={{ opacity: visible ? 1 : 0 }}
-        onClick={onClose}
-        aria-hidden="true"
-      />
-
-      {/* 预览卡：占屏 75dvh 的沉浸式弹窗。
-          外层只管定位、位移与手势，视觉全在内层，这样金框能整片套在面板外沿上。 */}
-      <div
-        className="absolute inset-x-0 bottom-0 mx-auto w-[calc(100vw-1.5rem)] max-w-[430px]"
-        style={{
-          height: '75dvh',
-          transform: visible ? `translateY(${dragY}px)` : 'translateY(100%)',
-          transition: isDragging ? 'none' : 'transform 0.36s cubic-bezier(0.32, 0.72, 0, 1)',
-          touchAction: 'none',
+        className="shrink-0 touch-none select-none"
+        aria-label="下拉关闭角色详情"
+        onTouchStart={(event) => {
+          if (
+            event.touches.length !== 1 ||
+            (event.target instanceof Element && event.target.closest('button, a'))
+          ) {
+            touch.current = null;
+            return;
+          }
+          touch.current = { x: event.touches[0]!.clientX, y: event.touches[0]!.clientY };
         }}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
+        onTouchMove={(event) => {
+          if (!touch.current || event.touches.length !== 1) {
+            touch.current = null;
+            setDragY(0);
+            return;
+          }
+          const dy = event.touches[0]!.clientY - touch.current.y;
+          const dx = event.touches[0]!.clientX - touch.current.x;
+          if (dy > 8 && dy > Math.abs(dx) * 1.4) setDragY(Math.min(130, dy * 0.65));
+        }}
+        onTouchEnd={() => {
+          if (dragY > 52) onClose();
+          touch.current = null;
+          setDragY(0);
+        }}
+        onTouchCancel={() => {
+          touch.current = null;
+          setDragY(0);
+        }}
       >
-        {/* 面板下沿贴着屏幕边缘，pb-0 只描上沿与两侧，免得屏底多出一条 2px 金线 */}
-        <FeaturedFrame
-          featured={!!character?.is_featured}
-          className="featured-character-frame--live h-full rounded-t-[32px] pb-0"
-        >
-          <div className="flex h-full flex-col overflow-hidden rounded-t-[30px] border border-border bg-popover/95 shadow-[0_-20px_80px_rgba(0,0,0,0.55)]">
-            {/* 拖拽把手 */}
-            <div className="flex shrink-0 justify-center pb-1 pt-2.5">
-              <div className="h-1 w-10 rounded-full bg-muted-foreground/40" />
-            </div>
-
-            {/* 可滚动主体 */}
-            <div ref={scrollRef} className="flex-1 overflow-y-auto" style={{ touchAction: 'auto' }}>
-              {/* Hero 图 */}
-              <div className="relative aspect-[3/4] max-h-[42dvh] w-full overflow-hidden">
-                {isLoading ? (
-                  <div className="h-full w-full animate-pulse bg-secondary" />
-                ) : hasAvatar ? (
-                  <>
-                    {/* 底层是大厅已缓存的缩略图，立即可见；高清原图加载完成后覆盖在上面。 */}
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={lobbyImageUrl(character!.avatar_url)}
-                      alt=""
-                      aria-hidden="true"
-                      decoding="async"
-                      className="absolute inset-0 h-full w-full object-cover object-top"
-                    />
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={character!.avatar_url}
-                      alt={character!.name}
-                      decoding="async"
-                      className="absolute inset-0 h-full w-full object-cover object-top"
-                    />
-                  </>
-                ) : (
-                  <div className="h-full w-full" style={{ background: gradient }} />
-                )}
-
-                {/* 底部渐变压暗，承接名字/标签 */}
-                <div className="absolute inset-x-0 bottom-0 h-3/4 bg-gradient-to-t from-popover via-popover/70 to-transparent" />
-
-                {/* 关闭按钮 */}
-                <button
-                  type="button"
-                  onClick={onClose}
-                  aria-label="关闭"
-                  className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full bg-black/40 text-white/90 backdrop-blur-md transition-colors hover:bg-black/60 active:scale-95"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-
-                {!isLoading && character && (
-                  <div className="absolute inset-x-0 bottom-0 px-5 pb-4">
-                    <h2 className="text-[26px] font-semibold leading-tight text-white drop-shadow-[0_2px_12px_rgba(0,0,0,0.5)]">
-                      {character.name}
-                    </h2>
-                    {character.author_name && (
-                      <p className="mt-1 text-[12px] text-white/55">by {character.author_name}</p>
-                    )}
-                    {character.personality_tags.length > 0 && (
-                      <div className="mt-2.5 flex flex-wrap gap-1.5">
-                        {character.personality_tags.slice(0, 6).map((tag) => (
-                          <span
-                            key={tag}
-                            className="rounded-full bg-white/12 px-2.5 py-[3px] text-[11px] font-medium text-white/90 ring-1 ring-inset ring-white/15 backdrop-blur-[2px]"
-                          >
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* 正文 */}
-              {isLoading ? (
-                <div className="flex flex-col gap-3 px-5 pt-5">
-                  {[...Array(4)].map((_, i) => (
-                    <div key={i} className="h-3 animate-pulse rounded bg-secondary" />
-                  ))}
-                </div>
-              ) : character ? (
-                <div
-                  className="flex flex-col gap-5 px-5 pt-4"
-                  style={{ paddingBottom: 'calc(6rem + env(safe-area-inset-bottom))' }}
-                >
-                  {/* 角色简介 */}
-                  <section>
-                    <p className="mb-2 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                      <Sparkles className="h-3 w-3" />
-                      角色简介
-                    </p>
-                    {description ? (
-                      <p className="whitespace-pre-wrap text-[14px] leading-relaxed text-foreground/90">
-                        {description}
-                      </p>
-                    ) : (
-                      <p className="text-[13px] leading-relaxed text-muted-foreground">
-                        这个角色还没有公开简介，进入后直接开始探索 TA 的世界。
-                      </p>
-                    )}
-                  </section>
-
-                  {/* 开场白：默认折叠 */}
-                  {greeting && (
-                    <section>
-                      <button
-                        type="button"
-                        onClick={() => setGreetingOpen((v) => !v)}
-                        className="flex w-full items-center justify-between text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground"
-                      >
-                        <span className="flex items-center gap-1.5">
-                          <Quote className="h-3 w-3" />
-                          开场白
-                        </span>
-                        <ChevronDown
-                          className={`h-4 w-4 transition-transform duration-300 ${
-                            greetingOpen ? 'rotate-180' : ''
-                          }`}
-                        />
-                      </button>
-                      {greetingOpen && (
-                        <blockquote className="mt-2.5 rounded-2xl border border-border border-l-2 border-l-primary/60 bg-card px-4 py-3">
-                          <p className="whitespace-pre-wrap text-[13px] italic leading-relaxed text-foreground/80">
-                            {greeting}
-                          </p>
-                        </blockquote>
-                      )}
-                    </section>
-                  )}
-                </div>
-              ) : null}
-            </div>
-
-            {/* 固定底部：先看看别的 / 进入角色 */}
-            <div
-              className="shrink-0 border-t border-border bg-popover/95 px-5 py-3 backdrop-blur-md"
-              style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.75rem)' }}
+        <div
+          className="mx-auto mb-2 mt-2.5 h-1 w-9 rounded-full bg-muted-foreground/25"
+          aria-hidden
+        />
+        <header className="flex min-h-14 items-center gap-3 px-4 pb-2">
+          <div
+            className="size-11 shrink-0 overflow-hidden rounded-xl border border-border"
+            style={{ background: characterRoomGradient(characterId) }}
+          >
+            {character?.avatar_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={lobbyImageUrl(character.avatar_url)}
+                alt=""
+                className="h-full w-full object-cover object-top"
+              />
+            ) : null}
+          </div>
+          <div className="min-w-0 flex-1">
+            <SheetTitle className="truncate text-[17px] font-semibold tracking-tight">
+              {character?.name ?? '角色详情'}
+            </SheetTitle>
+            <SheetDescription className="mt-0.5 text-[10px] text-muted-foreground/65">
+              {tab === 'comments' ? '角色评论 · 分享你的体验' : '了解这个角色，开启你的故事'}
+            </SheetDescription>
+          </div>
+          {tab === 'comments' && !inConversation ? (
+            <button
+              type="button"
+              onClick={enter}
+              disabled={chatDisabled}
+              className="min-h-11 shrink-0 px-1.5 text-xs font-medium text-primary disabled:opacity-45"
             >
-              {history.isError ? (
-                <p role="alert" className="mb-2 text-xs text-destructive">
-                  对话记录未加载，重试后再继续。
+              {lastSession ? '继续聊' : '去聊天'}
+            </button>
+          ) : null}
+          <button
+            ref={closeButton}
+            type="button"
+            onClick={onClose}
+            aria-label="关闭角色详情"
+            className="-mr-1 flex size-11 shrink-0 items-center justify-center rounded-full text-muted-foreground active:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          >
+            <X className="size-5" strokeWidth={1.6} />
+          </button>
+        </header>
+      </div>
+      <div className="shrink-0 px-4">
+        <CharacterSocialBar
+          characterId={characterId}
+          name={character?.name ?? '角色'}
+          onComments={() => selectTab('comments')}
+        />
+        {social.isError ? (
+          <button
+            type="button"
+            onClick={() => void social.refetch()}
+            className="min-h-11 w-full text-xs text-muted-foreground"
+          >
+            互动信息暂不可用，点击重试
+          </button>
+        ) : null}
+      </div>
+      <div
+        role="tablist"
+        aria-label="角色详情栏目"
+        className="flex shrink-0 gap-6 border-b border-border/60 px-5"
+      >
+        {(['intro', 'comments'] as const).map((value) => (
+          <button
+            key={value}
+            type="button"
+            role="tab"
+            aria-label={value === 'intro' ? '介绍' : '评论'}
+            id={`${tabsId}-${value}`}
+            aria-controls={`${tabsId}-${value}-panel`}
+            aria-selected={tab === value}
+            onClick={() => setTab(value)}
+            className={cn(
+              'relative min-h-11 px-1 text-[13px] transition-colors',
+              tab === value
+                ? 'font-semibold text-foreground after:absolute after:inset-x-1 after:bottom-0 after:h-0.5 after:rounded-full after:bg-primary'
+                : 'text-muted-foreground'
+            )}
+          >
+            {value === 'intro' ? (
+              '介绍'
+            ) : (
+              <>
+                评论
+                <span className="ml-1.5 text-[10px] font-normal text-muted-foreground">
+                  {socialCount(social.data?.comment_count, '')}
+                </span>
+              </>
+            )}
+          </button>
+        ))}
+      </div>
+      <div
+        role="tabpanel"
+        id={`${tabsId}-intro-panel`}
+        aria-labelledby={`${tabsId}-intro`}
+        hidden={tab !== 'intro'}
+        className={cn('min-h-0 flex-1 flex-col', tab === 'intro' && 'flex')}
+      >
+        <div
+          ref={introScroll}
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5 pt-4"
+        >
+          {character ? (
+            <>
+              <div
+                className="relative mb-4 h-[min(27dvh,14rem)] overflow-hidden rounded-2xl border border-border/50"
+                style={{ background: characterRoomGradient(characterId) }}
+              >
+                {character.avatar_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={character.avatar_url}
+                    alt={character.name}
+                    className="h-full w-full object-cover object-top"
+                  />
+                ) : null}
+                <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/70 to-transparent" />
+                {character.personality_tags.length ? (
+                  <div className="absolute inset-x-3 bottom-3 flex flex-wrap gap-1.5">
+                    {character.personality_tags.slice(0, 6).map((tag) => (
+                      <span
+                        key={tag}
+                        className="rounded-full bg-black/25 px-2 py-1 text-[10px] text-white/90 ring-1 ring-inset ring-white/15"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+              <section>
+                <h3 className="mb-2 text-[11px] font-medium text-muted-foreground">角色简介</h3>
+                <p className="whitespace-pre-wrap break-words text-[13px] leading-6 text-foreground/85">
+                  {character.description?.trim() ||
+                    '这个角色还没有公开简介，进入后直接开始探索 TA 的世界。'}
+                </p>
+              </section>
+              {detailQuery.data?.character.greeting?.trim() ? (
+                <section className="mt-4 border-t border-border/50 pt-1">
+                  <button
+                    type="button"
+                    aria-expanded={greetingOpen}
+                    onClick={() => setGreetingOpen((value) => !value)}
+                    className="flex min-h-11 w-full items-center justify-between text-xs text-muted-foreground"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Quote className="size-3.5" />
+                      开场白
+                    </span>
+                    <ChevronDown
+                      className={cn('size-4 transition-transform', greetingOpen && 'rotate-180')}
+                    />
+                  </button>
+                  {greetingOpen ? (
+                    <blockquote className="rounded-xl border-l-2 border-primary/35 bg-background/40 px-3 py-2 text-[13px] leading-6 text-foreground/75">
+                      {detailQuery.data.character.greeting}
+                    </blockquote>
+                  ) : null}
+                </section>
+              ) : null}
+              {character.author_name ? (
+                <p className="mt-4 text-[10px] text-muted-foreground/50">
+                  创作者 · {character.author_name}
                 </p>
               ) : null}
-              <div className="flex items-center gap-3">
-                <FavoriteButton characterId={character?.id} variant="sheet" />
-                <button
-                  type="button"
-                  onClick={() => (lastSession && character ? onEnter(character.id) : onClose())}
-                  disabled={entering || history.isPending}
-                  className="h-12 shrink-0 rounded-2xl border border-border bg-card px-5 text-[14px] font-medium text-muted-foreground transition-colors hover:bg-secondary active:scale-[0.98]"
-                >
-                  {lastSession ? '新对话' : '先看看别的'}
-                </button>
-                <button
-                  type="button"
-                  disabled={!character || entering || history.isPending}
-                  onClick={() => {
-                    if (history.isError) {
-                      void history.refetch();
-                      return;
-                    }
-                    if (character && history.isSuccess) onEnter(character.id, lastSession?.id);
-                  }}
-                  className="relative flex h-12 flex-1 items-center justify-center gap-1.5 overflow-hidden rounded-2xl bg-gradient-to-r from-primary to-rose text-[15px] font-semibold text-primary-foreground shadow-lg shadow-[0_10px_30px_hsl(var(--glow)/0.3)] transition-all active:scale-[0.98] disabled:opacity-70"
-                >
-                  <Sparkles className={`h-4 w-4 ${entering ? 'animate-spin' : ''}`} />
-                  {entering
-                    ? '正在进入…'
-                    : history.isPending
-                      ? '读取对话中…'
-                      : history.isError
-                        ? '重新加载'
-                        : lastSession
-                          ? '继续对话'
-                          : '开始对话'}
-                  {entering && (
-                    <span className="absolute inset-x-3 bottom-1 h-1 overflow-hidden rounded-full bg-black/20">
-                      <span
-                        className="block h-full w-2/5 rounded-full bg-primary-foreground/85 shadow-[0_0_8px_hsl(var(--primary-foreground)/0.7)]"
-                        style={{ animation: 'character-entry-progress 1.35s ease-in-out infinite' }}
-                      />
-                    </span>
-                  )}
-                </button>
-              </div>
+            </>
+          ) : detailQuery.isError ? (
+            <div className="py-8 text-center">
+              <p className="text-sm text-muted-foreground">角色信息暂时没加载出来</p>
+              <button
+                type="button"
+                onClick={() => void detailQuery.refetch()}
+                className="min-h-11 px-4 text-sm text-primary"
+              >
+                重新加载角色
+              </button>
             </div>
+          ) : (
+            <div
+              role="status"
+              className="flex min-h-40 items-center justify-center gap-2 text-xs text-muted-foreground"
+            >
+              <Loader2 className="size-4 animate-spin" />
+              正在读取角色
+            </div>
+          )}
+        </div>
+        <footer className="shrink-0 border-t border-border/60 bg-popover px-5 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3">
+          {!inConversation && history.isError ? (
+            <p role="alert" className="mb-2 text-xs text-[#d9a3ad]">
+              对话记录未加载，重试后再继续。
+            </p>
+          ) : null}
+          <div className="flex gap-3">
+            {!inConversation && lastSession ? (
+              <button
+                type="button"
+                onClick={() => {
+                  if (character) onEnter(character.id);
+                }}
+                disabled={entering}
+                className="h-12 shrink-0 rounded-2xl border border-border px-5 text-[13px] text-muted-foreground disabled:opacity-45"
+              >
+                新对话
+              </button>
+            ) : null}
+            <button
+              type="button"
+              disabled={chatDisabled}
+              onClick={enter}
+              className="flex h-12 min-w-0 flex-1 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-primary to-rose px-4 text-[14px] font-semibold text-primary-foreground transition-opacity active:opacity-85 disabled:opacity-55"
+            >
+              {entering ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Sparkles className="size-4" />
+              )}{' '}
+              {chatLabel}
+            </button>
           </div>
-        </FeaturedFrame>
+        </footer>
       </div>
-    </div>,
-    document.body
+      <div
+        role="tabpanel"
+        id={`${tabsId}-comments-panel`}
+        aria-labelledby={`${tabsId}-comments`}
+        hidden={tab !== 'comments'}
+        className={cn('min-h-0 flex-1 flex-col', tab === 'comments' && 'flex')}
+      >
+        <CharacterComments characterId={characterId} active={open && tab === 'comments'} />
+      </div>
+    </SheetContent>
   );
 }
