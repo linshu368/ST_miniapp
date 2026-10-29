@@ -14,11 +14,43 @@ const databaseConfig = createDatabaseConfig({
   ],
 });
 
+function engineeringTelemetryEndpoint(): string {
+  if (process.env.ENGINEERING_TELEMETRY_ENABLED !== 'true') return '';
+  try {
+    const endpoint = new URL(process.env.ENGINEERING_OTLP_ENDPOINT || '');
+    // HTTP 仅用于同环境私网 Collector；Cloud 凭证只配置在 Collector，不交给 API。
+    const privateHttp =
+      endpoint.protocol === 'http:' &&
+      (endpoint.hostname.endsWith('.railway.internal') ||
+        ['localhost', '127.0.0.1', '[::1]', 'alloy'].includes(endpoint.hostname));
+    if (
+      (endpoint.protocol !== 'https:' && !privateHttp) ||
+      endpoint.username ||
+      endpoint.password ||
+      endpoint.search ||
+      endpoint.hash ||
+      endpoint.pathname !== '/'
+    )
+      throw new Error();
+    return endpoint.origin;
+  } catch {
+    throw new Error(
+      'ENGINEERING_OTLP_ENDPOINT 必须是私网 Alloy HTTP 或 HTTPS 根地址，不得包含凭证、路径或查询参数'
+    );
+  }
+}
+
 export const config = {
   port: parseInt(process.env.PORT || '3001', 10),
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000',
   adminPlatformUrl: process.env.ADMIN_PLATFORM_URL || 'https://st-admin-platform.vercel.app',
   nodeEnv,
+  engineeringTelemetry: {
+    enabled: process.env.ENGINEERING_TELEMETRY_ENABLED === 'true',
+    endpoint: engineeringTelemetryEndpoint(),
+    environment: databaseConfig.target,
+    version: process.env.SENTRY_RELEASE || process.env.RAILWAY_GIT_COMMIT_SHA || 'unknown',
+  },
   telegramBotToken: process.env.TELEGRAM_BOT_TOKEN || '',
   telegramWebhookSecret: process.env.TELEGRAM_WEBHOOK_SECRET || '',
   botInternalSecret: process.env.BOT_INTERNAL_SECRET || '',

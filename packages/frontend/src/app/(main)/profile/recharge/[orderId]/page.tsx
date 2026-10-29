@@ -64,7 +64,12 @@ export default function PaymentPendingPage() {
     : '/profile/recharge';
   const queryClient = useQueryClient();
   const { data, isLoading, isError } = usePaymentOrderQuery(orderId);
-  usePageReady('/profile/recharge/:id', data !== undefined);
+  usePageReady(
+    '/profile/recharge/:id',
+    Boolean(orderId) && data?.order !== undefined && !isError,
+    false,
+    isError
+  );
   const { data: plansData } = usePaymentPlansQuery();
   const { mutate: confirmCheckout } = useCheckoutConfirmationMutation();
   const order = data?.order;

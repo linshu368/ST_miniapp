@@ -1,3 +1,4 @@
+import { observeChatFirstToken } from '../../lib/engineering-observability.js';
 import { beginActiveDelivery, appendActiveDelivery, endActiveDelivery } from './active-delivery.js';
 /**
  * backend / features / conversations / generate.ts
@@ -190,6 +191,12 @@ export async function runConversationTurn(
     ...(input.firstTokenDeadlineMs ? { deadlineMs: input.firstTokenDeadlineMs } : {}),
   };
   model.firstTokenPolicy = policy;
+  observeChatFirstToken({
+    requestedModel: model.modelId,
+    stage: 'accepted',
+    deadlineMs: policy.deadlineMs,
+    triggerMs: policy.timeoutMs,
+  });
   const observations = generationObservations();
   const primaryAttemptId = randomUUID();
   const clientRequestId = input.requestId ?? randomUUID();
@@ -201,6 +208,8 @@ export async function runConversationTurn(
     sink.send({
       type: 'start',
       first_token_deadline_ms: policy.deadlineMs,
+      requested_model_id: model.modelId,
+      fallback_trigger_ms: policy.timeoutMs,
       turn_index: turn.turnIndex,
       user_message_id: mode.kind === 'send' ? `${turn.historyId}:user` : null,
       assistant_message_id: turn.historyId,
@@ -229,7 +238,6 @@ export async function runConversationTurn(
     measurementMethod: input.firstTokenMeasurement,
   };
   let observationBegun = false;
-  let emitted = false;
   let readyMs: number | null = null;
   let checkpoint: Promise<void> | undefined;
   let firstTokenDeadlineElapsed = false;
@@ -240,6 +248,13 @@ export async function runConversationTurn(
       '首 token 观测未写入'
     );
   const recordFirstTokenTimeout = (): void => {
+    // Engineering telemetry must not depend on the receipt write being available.
+    if (!firstTokenDeadlineElapsed)
+      observeChatFirstToken({
+        requestedModel: model.modelId,
+        stage: 'timeout',
+        deadlineMs: policy.deadlineMs,
+      });
     firstTokenDeadlineElapsed = true;
     if (!observationBegun || firstTokenTimeoutRecorded) return;
     firstTokenTimeoutRecorded = true;
@@ -379,15 +394,8 @@ export async function runConversationTurn(
           .checkpoint(turn.historyId, turn.revision, readyMs, type, text)
           .catch(observationError);
       }
-      const written = sink.send({ type, text });
-      if (!emitted && text.trim() && written !== false) {
-        emitted = true;
-        void observations
-          .markServer(turn.historyId, {
-            first_token_emitted_ms: performance.now() - requestStartedAt,
-          })
-          .catch(observationError);
-      }
+      // Timing belongs to Grafana; delivery preview above is the required recovery fact.
+      sink.send({ type, text });
     };
 
     const result = await execute(

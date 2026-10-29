@@ -59,7 +59,7 @@ export default function ProfilePage() {
   const queryClient = useQueryClient();
   const telegramUserId = useMemo(readTelegramUserId, []);
   const wallet = useWalletBalanceQuery();
-  usePageReady('/profile', wallet.data !== undefined);
+  usePageReady('/profile', wallet.data !== undefined, false, wallet.isError);
   const credits = wallet.data?.total_credits ?? wallet.data?.credits;
   const bonusCredits = wallet.data?.bonus_credits;
   // BottomNav 同屏常驻并负责轮询，这里只订阅缓存，避免同一端点两个 interval 各打一份。

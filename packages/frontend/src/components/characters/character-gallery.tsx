@@ -139,8 +139,14 @@ export function CharacterGallery() {
     if (data !== undefined || isError || isFetched) markCriticalSettled();
   }, [data, isError, isFetched]);
   // 大厅有本地缓存秒开：content 记用户看到列表的时刻，fresh 记最新列表到达的时刻，两者分开才看得出后端慢。
-  const lobbyFresh = useFreshAfterFetch(isFetching, data !== undefined);
-  usePageReady('/characters', data !== undefined, lobbyFresh);
+  const lobbyFresh = useFreshAfterFetch(isFetching, data !== undefined, isError);
+  usePageReady(
+    '/characters',
+    data !== undefined && !isError,
+    lobbyFresh,
+    isError,
+    data !== undefined && (isFetching || isRestoring) ? 'cache' : lobbyFresh ? 'fetch' : 'unknown'
+  );
   const [query, setQuery] = useState(restoreSnapshot?.query ?? savedDiscovery.query);
   const [favoritesOnly, setFavoritesOnly] = useState(
     restoreSnapshot?.favoritesOnly ?? savedDiscovery.favoritesOnly

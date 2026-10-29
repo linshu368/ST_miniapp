@@ -7,6 +7,7 @@
 import { monitorEventLoopDelay } from 'node:perf_hooks';
 import * as Sentry from '@sentry/node';
 import type { FastifyInstance } from 'fastify';
+import { observeHttp, observeDb, observeRuntime } from './engineering-observability.js';
 
 /** 初值，跑出基线后再调。 */
 const SLOW_REQUEST_MS = 3_000;
@@ -48,15 +49,15 @@ function countInstrumentError(stage: string): void {
 
 export function registerRequestPerf(app: FastifyInstance): void {
   app.addHook('onResponse', async (request, reply) => {
+    // 复用同一次测量，Grafana 与 Sentry 故障隔离，不新增请求 hook。
+    const route = request.routeOptions?.url ?? 'unmatched';
+    if (route === '/health') return;
+    const method = request.method;
+    const durationMs = reply.elapsedTime;
+    const kind = classifyRequest(method, route);
+    observeHttp({ route, method, durationMs, kind, statusClass: statusClass(reply.statusCode) });
     try {
       // 未匹配路由（404 扫描流量）没有模板，归一成同一个值，避免指标维度爆炸。
-      const route = request.routeOptions?.url ?? 'unmatched';
-      if (route === '/health') return;
-
-      const method = request.method;
-      const durationMs = reply.elapsedTime;
-      const kind = classifyRequest(method, route);
-
       Sentry.metrics.distribution('http.server.duration', durationMs, {
         unit: 'millisecond',
         attributes: { route, method, status_class: statusClass(reply.statusCode), kind },
@@ -84,15 +85,19 @@ export function startRuntimeMetrics(): () => void {
   histogram.enable();
 
   const timer = setInterval(() => {
+    const loopDelayMs = histogram.percentile(99) / 1e6;
+    const rss = process.memoryUsage().rss;
+    observeRuntime(loopDelayMs, rss);
     try {
       // histogram 单位是纳秒。
-      Sentry.metrics.gauge('runtime.event_loop_delay_p99', histogram.percentile(99) / 1e6, {
+      Sentry.metrics.gauge('runtime.event_loop_delay_p99', loopDelayMs, {
         unit: 'millisecond',
       });
-      Sentry.metrics.gauge('runtime.rss', process.memoryUsage().rss, { unit: 'byte' });
-      histogram.reset();
+      Sentry.metrics.gauge('runtime.rss', rss, { unit: 'byte' });
     } catch {
       countInstrumentError('runtime');
+    } finally {
+      histogram.reset();
     }
   }, RUNTIME_SAMPLE_INTERVAL_MS);
   timer.unref();
@@ -121,8 +126,10 @@ export async function measureDbOperation<T>(
     outcome = (err as { code?: string } | null)?.code === 'P2024' ? 'pool_timeout' : 'error';
     throw err;
   } finally {
+    const durationMs = performance.now() - startedAt;
+    observeDb({ model, operation, outcome, durationMs });
     try {
-      Sentry.metrics.distribution('db.client.operation.duration', performance.now() - startedAt, {
+      Sentry.metrics.distribution('db.client.operation.duration', durationMs, {
         unit: 'millisecond',
         attributes: { model, operation, outcome },
       });

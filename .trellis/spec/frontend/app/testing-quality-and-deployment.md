@@ -36,6 +36,8 @@ shared contract 改动追加 `pnpm --filter @miniapp/shared test` 和所有消�
 - 列表图片声明尺寸并延迟加载；避免 render 中 O(n²)，音频用 map；稳定 key/memo 只在测量后使用。
 - 大组件按功能拆分但不创建无意义 wrappers；重依赖/Devtools/replay 延迟或仅相应环境加载。
 - Sentry 事件必须经 sanitize；禁止 initData、token、支付信息、聊天正文、完整 API body。`global-error` 提供 reset，但不暴露内部错误。
+- Grafana 工程出口仅允许白名单 measurement/event 与 app/公开 SDK 版本 meta。托管 intake 要求的随机 `X-Faro-Session-Id` 仅在 exporter 内存期复用、只入请求头，不持久化、不进入 body/事件属性/聚合标签、不绑定业务用户；不得因此恢复 SDK session/user/page/browser/trace meta 或自动 instrumentation/Replay。SDK 的 Web Storage 可用性探测不等于允许持久化该标识。
+- Faro 2.13 默认传输的 `Idempotency-Key` 与当前托管入口 CORS 不兼容；工程出口仅扩展公开 `send/promiseBuffer/getTransportBody`，复用 20 批/并发 1 的原队列，出队后单次 fetch 三秒超时，不重试、不读取响应正文、不改全局 fetch 或 SDK 私有字段。Node 202 不替代浏览器 OPTIONS/POST 和 Cloud 实收验收。
 - Session Replay 画面的聊天正文例外见 `api-dataflow-and-state.md`：PostHog 与现有 Sentry Replay 允许显示用户输入和模型回复；该例外不适用于 Sentry 事件、日志或自定义事件属性。Sentry Replay 现有 `maskAllText: false` 不改；采样策略见 `.trellis/tasks/10-21-sentry-ux-monitoring/design.md` §4（2026-10-21 起：普通 trace 与 Replay 会话降采样，慢请求/卡顿/报错事件全量上报并带 Replay，不再是 100% 采样）。当前 PostHog 为 Free 套餐，Session Replay 最长保留 **30 天**；不得按 60 天描述或验收。
 - Markdown 始终 sanitize；外链/图片 URL 使用允许协议；不得用 `dangerouslySetInnerHTML` 绕过现有安全层。
 - 回复后处理至少覆盖 artifact 好坏隔离、旧 `NULL`/缺失版本原文退化、流式不挂载 renderer、终态 choice 可用和同步防双击。真实 Worker 安全/DOM 行为由 `@miniapp/reply-renderer` 测试承担；Telegram WebView 真机仍是发布门禁。
@@ -56,6 +58,8 @@ v2 的实现/口径与验收见 [短剧看板操作说明](../../../../docs/graf
 `lib/perf/drama-timing.ts` 管理列表/每次播放的单调时钟节点、查询和 HTTP 尝试；`drama-media.ts` 绑定本次 src 的事件/帧回调，`drama-observer.ts` 先用 createLogger 打印，再经 `lib/api/telemetry.ts` 的鉴权 POST 将报告集中写入 Railway；短剧专用 Sentry 上报已移除。上传 keepalive、background 优先级、总预算 5 秒且不重试，不参与播放结果；失败保留本地日志，不做离线补传。根 `PagePerfTracker` 管理入口与离开/后台监听。用户浏览时间独立于启动等待，预取与路由并行，不允许阶段简单相加。
 
 `apiClient.onAttempt` 仅为可选的本地观测回调，包含排队、响应头与 body 解析，不能传入 fetch 或改变重试/超时。短剧 query 禁用 structural sharing，以保留结果对象与本次计时 WeakMap 的对应；不改变 query key、过期时间、请求去重或视频 URL 切换策略。播放器持有本次观察对象，旧组件更新不能重建/抢占导航目标的记录。成功必须同时有首帧与 playing；兼容降级明确标记，不能使用 canplay 代替。
+
+首页 embedded 与详情播放器的测量归属必须明确区分（home/detail），只在内存持有。子播放器 effect 可先于根 route effect：route('/') 应保留首页活跃观察，真正离开其 owner 路径才记 left；首页↔详情即便同剧也不能复用，同归属显式换剧/换集保留 switched。重复 ensure 不重启已终态，旧组件不能抢回新观察。既有 drama-timing 测试须覆盖这种 effect 顺序及跨归属/离页/后台；不为测量重建 src/播放业务 effect。
 
 每次等待 10 秒生成一次快照；失败、离开、后台等都生成终态，后台不计成慢播放。遥测异常不得影响请求/视频，地址/签名/对象路径不得进日志；上传契约按字段白名单和明细数量限制，禁止任意对象作为日志输入。关键回归及查询、发布、真机验收见 [排查说明](../../../../docs/drama-playback-timing.md)。
 

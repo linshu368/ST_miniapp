@@ -182,56 +182,21 @@ PYRETENTION
 "${task_psql[@]}" -f "$task_root/packages/shared/migrations/tests/llm_archived_charge_result.sql" >/dev/null
 echo 'PASS: real detail retention, permanent dedup replay, pending gate and unknown conflict rollback'
 
-# Execute the exported dashboard queries after replacing Grafana macros with fixed local fixtures.
-python3 - "$task_root/docs/grafana/chat-first-token.json" <<'PYSQL' | "${task_psql[@]}" >/dev/null
-import json,sys
-dashboard=json.load(open(sys.argv[1]))
-def resolved(sql,selection,v2=False):
- sql=sql.replace("$__timeGroupAlias(request_received_at,'5m')", "date_trunc('hour',request_received_at) AS time")
- sql=sql.replace('$__timeFilter(request_received_at)', "request_received_at >= '2026-10-22 00:00:00+08' AND request_received_at < '2026-10-23 00:00:00+08'")
- sql=sql.replace('$__timeFrom()', "'2026-10-22 00:00:00+08'::timestamptz").replace('$__timeTo()', "'2026-10-23 00:00:00+08'::timestamptz")
- sql=sql.replace('${model:sqlstring}',selection).replace('${measurement:sqlstring}',"'visible_dom_after_frame_v2'" if v2 else "'visible_dom_after_frame_v1'")
- return sql.replace('2026-10-23','2026-10-27').replace('2026-10-22','2026-10-26') if v2 else sql
-print('SET ROLE grafana_cloud;')
-for variable in dashboard['templating']['list']:
- if variable['type']=='query': print(resolved(variable['query'],"'selected'")+';')
-for panel in dashboard['panels']:
- for target in panel.get('targets',[]):
-  for selection in ["'selected'","'selected','preparation-fail'","'__all__'"]:
-   print(resolved(target['rawSql'],selection)+';')
-   print(resolved(target['rawSql'],selection,True)+';')
-   print(resolved(target['rawSql'].replace('${measurement:sqlstring}',"'visible_dom_after_frame_v3'"),selection,True)+';')
-   print(resolved(target['rawSql'].replace('${measurement:sqlstring}',"'client_committed_v4'"),selection,True)+';')
-summary=next(p for p in dashboard['panels'] if p['id']==2)['targets'][0]['rawSql']
-cohorts=next(p for p in dashboard['panels'] if p['id']==7)['targets'][0]['rawSql']
-print('DO $$ DECLARE r jsonb; BEGIN')
-print('SELECT to_jsonb(q) INTO r FROM ('+resolved(summary,"'selected'")+') q WHERE q."首发等待"=4;')
-print('''IF (r->>'请求量')::int<>149 OR (r->>'前台已交付样本')::int<>148
- OR (r->>'客户端首字交付 P90')::numeric IS DISTINCT FROM 5.2
- OR (r->>'兜底触发率')::numeric IS DISTINCT FROM 100
- OR abs((r->>'前台已知结果超时率')::numeric - 100.0/149)>0.00001
- OR (r->>'回报覆盖率')::numeric IS DISTINCT FROM 100
- THEN RAISE EXCEPTION 'Dashboard business metrics or seconds conversion changed'; END IF;''')
-print('IF NOT COALESCE((SELECT bool_and("总等待上限"=6) FROM ('+resolved(cohorts,"'selected'")+') q),false) THEN RAISE EXCEPTION \'Dashboard loses frozen global limit\'; END IF;')
-print('SELECT to_jsonb(q) INTO r FROM ('+resolved(summary,"'v2-model'",True)+') q;')
-print("IF (r->>'请求量')::int<>5 OR (r->>'前台首字等待超时率')::numeric IS DISTINCT FROM 50 OR (r->>'首字交付失败率')::numeric IS DISTINCT FROM 75 OR (r->>'其他错误无字样本')::int<>1 OR (r->>'缺报请求')::int<>1 THEN RAISE EXCEPTION 'Dashboard conflates time cutoffs, upstream errors or missing reports'; END IF;")
-histogram=next(p for p in dashboard['panels'] if p['id']==8)['targets'][0]['rawSql']
-print('SELECT to_jsonb(q) INTO r FROM ('+resolved(histogram,"'v2-model'",True)+') q WHERE q."点击到首token"=\'6–8秒\';')
-print("IF (r->>'成功交付样本占比')::numeric IS DISTINCT FROM 100 THEN RAISE EXCEPTION 'Visible token distribution used failure waits or server latency'; END IF;")
-v3summary=resolved(summary.replace('${measurement:sqlstring}',"'visible_dom_after_frame_v3'"),"'recoverable-model'",True)
-print('SELECT to_jsonb(q) INTO r FROM ('+v3summary+') q;')
-print("IF (r->>'前台首字等待超时率')::numeric IS DISTINCT FROM 50 THEN RAISE EXCEPTION 'Recovery hid previous foreground waiting failure'; END IF;")
-v4summary=resolved(summary.replace('${measurement:sqlstring}',"'client_committed_v4'"),"'client-v4-model'",True)
-print('SELECT to_jsonb(q) INTO r FROM ('+v4summary+') q;')
-print("IF (r->>'请求量')::int<>9 OR (r->>'前台首字等待超时率')::numeric IS DISTINCT FROM 60 OR (r->>'客户端首字交付 P95')::numeric IS DISTINCT FROM 3.2 OR (r->>'缺报请求')::int<>1 OR (r->>'离页或后台请求')::int<>2 OR (r->>'手动停止请求')::int<>1 THEN RAISE EXCEPTION 'Dashboard v4 mixed legacy, departure, missing reports or late recovery'; END IF;")
-v4histogram=resolved(histogram.replace('${measurement:sqlstring}',"'client_committed_v4'"),"'client-v4-model'",True)
-print('SELECT to_jsonb(q) INTO r FROM ('+v4histogram+') q WHERE q."点击到首token"=\'3–4秒\';')
-print("IF (r->>'成功交付样本占比')::numeric IS DISTINCT FROM 100 THEN RAISE EXCEPTION 'Dashboard v4 distribution includes late delivery'; END IF;")
-print('IF EXISTS(SELECT 1 FROM ('+v4histogram+') q WHERE q."点击到首token"=\'10秒及以上\') THEN RAISE EXCEPTION \'Dashboard v4 presents late deliveries as success\'; END IF;')
-print('END $$;')
-print('RESET ROLE;')
-PYSQL
-echo 'PASS: first-token SQL identity, delivery CAS, frozen quote, reporting ACL, and 149/150 windows'
+# Pure monitoring no longer reads Supabase. Guard the retired entry and new sources.
+python3 - "$task_root" <<'PYDASHBOARD'
+import json,pathlib,sys
+root=pathlib.Path(sys.argv[1]);old=json.loads((root/'docs/grafana/chat-first-token.json').read_text())
+assert not old.get('refresh') and not old.get('__inputs')
+assert not old['templating']['list']
+assert all(not p.get('targets') for p in old['panels']), 'Retired board still queries Supabase'
+new=json.loads((root/'docs/grafana/st-engineering-roleplay.json').read_text())
+assert {101,102,103,104,105,106}.issubset({p['id'] for p in new['panels']})
+for p in new['panels']:
+ for t in p.get('targets',[]):
+  assert 'rawSql' not in t and t['datasource']['type'] in ('loki','prometheus')
+print('PASS: retired first-token board has no SQL/refresh; replacement reads only Loki/Metrics')
+PYDASHBOARD
+echo 'PASS: first-token SQL business identity, delivery CAS, frozen quote, reporting ACL and immutable receipt'
 
 # Run the existing real wallet/free-quota migration suite in another disposable DB.
 mkdir "$task_dir/bin"

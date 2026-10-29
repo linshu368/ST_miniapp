@@ -91,7 +91,7 @@ function RechargePageContent() {
   useTelegramBackButton(goBack);
 
   const { data, isLoading, isError, refetch } = usePaymentPlansQuery();
-  usePageReady('/profile/recharge', data !== undefined);
+  usePageReady('/profile/recharge', data !== undefined && !isError, false, isError);
   const vipStatus = useVipStatusQuery();
   const wallet = useWalletBalanceQuery();
   const createOrder = useCreatePaymentOrderMutation();

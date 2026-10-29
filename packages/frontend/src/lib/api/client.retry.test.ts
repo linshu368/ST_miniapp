@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+const engineering = vi.hoisted(() => ({ measurement: vi.fn(), event: vi.fn() }));
+vi.mock('@/lib/perf/grafana', () => ({
+  isEngineeringTelemetryEnabled: () => true,
+  recordEngineeringMeasurement: engineering.measurement,
+  recordEngineeringEvent: engineering.event,
+}));
+
 vi.mock('@/lib/telegram/auth', () => ({
   getRawInitData: () => null,
   INIT_DATA_HEADER: 'X-Telegram-Init-Data',
@@ -211,6 +218,8 @@ describe('apiClient GET transport retry', () => {
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
     __resetRequestConcurrencyForTests(3);
+    engineering.measurement.mockClear();
+    engineering.event.mockClear();
   });
   afterEach(() => {
     __resetRequestConcurrencyForTests(3);
@@ -306,6 +315,16 @@ describe('apiClient GET transport retry', () => {
       outcome: 'ok',
       status: 200,
     });
+    expect(engineering.measurement).toHaveBeenCalledWith(
+      'api.total',
+      3000,
+      expect.objectContaining({ attempts: 1, outcome: 'ok' })
+    );
+    expect(engineering.measurement).toHaveBeenCalledWith(
+      'api.body',
+      1500,
+      expect.objectContaining({ attempt: 1 })
+    );
   });
 
   it('retains each transport retry request ID and keeps backoff outside attempt duration', async () => {
@@ -334,6 +353,12 @@ describe('apiClient GET transport retry', () => {
     expect(attempts).toHaveLength(2);
     expect(attempts[0]).toMatchObject({ queuedAt: 0, endedAt: 20_000, outcome: 'timeout' });
     expect(attempts[1]).toMatchObject({ queuedAt: 20_200, outcome: 'ok' });
+    expect(engineering.measurement).toHaveBeenCalledWith(
+      'api.total',
+      20_200,
+      expect.objectContaining({ attempts: 2, outcome: 'ok' })
+    );
+    expect(engineering.event).toHaveBeenCalledTimes(1);
     expect(attempts[0]?.requestId).not.toBe(attempts[1]?.requestId);
     expect((fetchMock.mock.calls[1]?.[1] as RequestInit).headers).toBeInstanceOf(Headers);
     expect(

@@ -50,13 +50,20 @@ export default function InviteCenterPage() {
 
   const [tab, setTab] = useState<InviteTab>('invite');
   const entryStatus = useInviteEntryStatusQuery();
-  usePageReady('/profile/invite', entryStatus.data !== undefined);
   // 入口开关关闭时不触发 center-view 副作用（不生成邀请码、不标记首次进入）。
   const centerEnabled = entryStatus.data?.entry_enabled === true;
   const center = useInviteCenterQuery(centerEnabled);
   const stats = useInviteStatsQuery(centerEnabled && tab === 'stats');
 
   const entryDisabled = entryStatus.isSuccess && !centerEnabled;
+  const visiblePanel = tab === 'invite' ? center : stats;
+  usePageReady(
+    '/profile/invite',
+    entryDisabled ||
+      (visiblePanel.data !== undefined && !visiblePanel.isLoading && !visiblePanel.isError),
+    false,
+    entryStatus.isError || visiblePanel.isError
+  );
 
   useEffect(() => {
     // 只延续已有 chat/paywall context，无活跃 replay 时不新开 recording。

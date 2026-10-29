@@ -27,8 +27,13 @@ export default function NotificationDetailPage() {
   const goBack = useCallback(() => router.push('/profile/messages'), [router]);
   useTelegramBackButton(goBack);
   const detail = useNotificationDetailQuery(id);
-  // 通知不存在也算「页面给出了结论」，不该继续计为卡住。
-  usePageReady('/profile/messages/:id', detail.data !== undefined || detail.isError);
+  // 明确失败会关闭等待，但不混入业务内容成功就绪的耗时分布。
+  usePageReady(
+    '/profile/messages/:id',
+    detail.data?.notification !== undefined && !detail.isError,
+    false,
+    detail.isError
+  );
   const vip = useVipStatusQuery();
   const notification = detail.data?.notification;
   const showRenew = notification ? supportsVipRenewal(notification) : false;

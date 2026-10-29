@@ -10,6 +10,7 @@ import { useDramaListQuery, usePrefetchDramaPlayback } from '@/lib/api/drama';
 import { selectDramas } from '@/lib/drama-catalog';
 import { markCriticalSettled } from '@/lib/entry-phase';
 import { dramaTiming, coverLoadMs } from '@/lib/perf/drama-observer';
+import { useFreshAfterFetch, usePageReady } from '@/lib/perf/page-ready';
 import { cn } from '@/lib/utils';
 import {
   useDramaLibraryStore,
@@ -44,8 +45,16 @@ function saveLibraryPosition(filter: 'saved' | 'recent', position: DramaLibraryP
 
 export default function DramasPage() {
   const router = useRouter();
-  const { data, isLoading, isError, refetch } = useDramaListQuery();
+  const { data, isLoading, isError, isFetching, refetch } = useDramaListQuery();
   const hydrated = useHydrateDramaLibrary();
+  const fresh = useFreshAfterFetch(isFetching, data !== undefined, isError);
+  usePageReady(
+    '/dramas',
+    hydrated && data !== undefined && !isError,
+    fresh,
+    isError,
+    data !== undefined && isFetching ? 'cache' : fresh ? 'fetch' : 'unknown'
+  );
   const browse = useDramaLibraryStore((state) => state.browse);
   const setBrowse = useDramaLibraryStore((state) => state.setBrowse);
   const history = useDramaLibraryStore((state) => state.history);

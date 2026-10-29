@@ -1,4 +1,5 @@
 import type { ReportFirstTokenRequest } from '@miniapp/shared';
+import { recordEngineeringEvent, recordEngineeringMeasurement } from './grafana';
 
 export interface FirstTokenIdentity {
   requestId: string;
@@ -14,9 +15,12 @@ export class FirstTokenObservation {
   private visibleMs: number | null = null;
   private dispatchedMs: number | null = null;
   private receivedMs: number | null = null;
+  private receivedFromStream = false;
   private backgrounded = document.visibilityState !== 'visible';
   private reason: ReportFirstTokenRequest['reason'] = null;
   private reported = false;
+  private engineeringOutcome: 'rejected' | undefined;
+  private triggerMs: number | undefined;
   private finishedMs: number | null = null;
   private visibility = () => {
     if (document.visibilityState !== 'visible') {
@@ -31,18 +35,39 @@ export class FirstTokenObservation {
     public deadlineMs: number,
     private readonly report: (body: ReportFirstTokenRequest) => void,
     private readonly onTimeout: () => void,
-    readonly thinkingEnabled = true
+    readonly thinkingEnabled = true,
+    private readonly action: 'send' | 'regenerate' = 'send',
+    private requestedModel = 'unknown'
   ) {
+    try {
+      recordEngineeringEvent('roleplay.started', this.attributes('waiting'));
+    } catch {
+      // The engineering mirror never owns delivery or its business receipt.
+    }
     this.timer = setTimeout(() => this.expire(), deadlineMs);
     document.addEventListener('visibilitychange', this.visibility);
     if (typeof window !== 'undefined') window.addEventListener('pagehide', this.pagehide);
     if (this.backgrounded) this.unavailable('page_left');
   }
 
-  identify(assistantMessageId: string, revision: number, deadlineMs?: number): void {
+  identify(
+    assistantMessageId: string,
+    revision: number,
+    deadlineMs?: number,
+    requestedModelId?: string,
+    triggerMs?: number
+  ): void {
     // One request owns one server revision; late or duplicate start events cannot retarget it.
     if (this.identity.assistantMessageId !== null) return;
     this.identity = { ...this.identity, assistantMessageId, revision };
+    if (typeof requestedModelId === 'string') this.requestedModel = requestedModelId;
+    if (
+      typeof triggerMs === 'number' &&
+      Number.isInteger(triggerMs) &&
+      triggerMs > 0 &&
+      triggerMs <= 110000
+    )
+      this.triggerMs = triggerMs;
     // A cached catalog can predate an operator change. Keep the original click clock.
     if (!this.outcome && Number.isFinite(deadlineMs) && deadlineMs! > 0 && deadlineMs! <= 110000) {
       this.deadlineMs = deadlineMs!;
@@ -57,8 +82,9 @@ export class FirstTokenObservation {
     if (this.outcome) return;
     this.dispatchedMs ??= performance.now() - this.startedAt;
   }
-  received(): void {
+  received(source: 'stream' | 'commit' = 'stream'): void {
     if (this.outcome) return;
+    if (this.receivedMs === null) this.receivedFromStream = source === 'stream';
     this.receivedMs ??= performance.now() - this.startedAt;
   }
   get hasReceivedToken(): boolean {
@@ -112,9 +138,10 @@ export class FirstTokenObservation {
     this.finish();
     this.onTimeout();
   }
-  unavailable(reason: ReportFirstTokenRequest['reason']): void {
+  unavailable(reason: ReportFirstTokenRequest['reason'], engineeringOutcome?: 'rejected'): void {
     if (!this.outcome) {
       this.outcome = 'not_observed';
+      this.engineeringOutcome = engineeringOutcome;
       if (reason === 'page_left') this.backgrounded = true;
       this.reason = reason;
       this.finish();
@@ -125,7 +152,51 @@ export class FirstTokenObservation {
     clearTimeout(this.timer);
     document.removeEventListener('visibilitychange', this.visibility);
     if (typeof window !== 'undefined') window.removeEventListener('pagehide', this.pagehide);
+    // Mirror the same immutable terminal outcome, including pre-identity failures.
+    // Business receipt recovery remains independent and identity is never exported.
+    try {
+      let outcome =
+        this.outcome === 'observed'
+          ? 'observed'
+          : this.outcome === 'timed_out'
+            ? 'timed_out'
+            : this.reason === 'page_left' && document.visibilityState !== 'visible'
+              ? 'background'
+              : (this.reason ?? 'not_observed');
+      if (this.engineeringOutcome) outcome = this.engineeringOutcome;
+      const attributes = this.attributes(outcome);
+      recordEngineeringMeasurement('roleplay.first_token', this.finishedMs, attributes);
+      recordEngineeringEvent('roleplay.terminal', attributes);
+      // A recovered DB snapshot has no known network-reception timestamp. Do not
+      // turn the commit-time fallback in the legacy receipt into a fake 0ms render.
+      if (
+        this.outcome === 'observed' &&
+        this.receivedFromStream &&
+        this.visibleMs !== null &&
+        this.receivedMs !== null &&
+        this.visibleMs >= this.receivedMs
+      ) {
+        recordEngineeringMeasurement('roleplay.render', this.visibleMs - this.receivedMs, {
+          ...attributes,
+          stage: 'render',
+        });
+      }
+    } catch {
+      // A disabled/unavailable exporter cannot suppress the original v4 receipt.
+    }
     this.flush();
+  }
+  private attributes(outcome: string) {
+    return {
+      route: '/chat/:id',
+      stage: 'first_token',
+      action: this.action,
+      outcome,
+      requested_model: this.requestedModel,
+      deadline_ms: this.deadlineMs,
+      trigger_ms: this.triggerMs,
+      source_measurement_version: 'client_committed_v4',
+    };
   }
   private flush(): void {
     if (!this.outcome || this.reported) return;

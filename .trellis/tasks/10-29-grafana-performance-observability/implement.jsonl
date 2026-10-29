@@ -1,0 +1,12 @@
+{"file":".trellis/spec/frontend/app/index.md","reason":"前端边界与必要专题入口"}
+{"file":".trellis/spec/frontend/app/testing-quality-and-deployment.md","reason":"性能、Sentry、移动端与发布验证"}
+{"file":".trellis/spec/frontend/app/api-dataflow-and-state.md","reason":"复用统一API、SSE、React Query与敏感边界"}
+{"file":".trellis/spec/backend/app/index.md","reason":"后端统一生成/配置/日志边界"}
+{"file":".trellis/spec/backend/app/data-reliability-and-security.md","reason":"秘密、故障隔离、首字计费恢复不可回归"}
+{"file":".trellis/spec/backend/app/testing-scripts-and-deployment.md","reason":"验证与Railway发布门禁"}
+{"file":".trellis/spec/shared/contracts/index.md","reason":"若涉及跨应用DTO必须先shared定义"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"采集端到接收端消费者链路"}
+{"file":".trellis/tasks/10-29-grafana-performance-observability/research/frontend-readiness.md","reason":"现有页面/请求/首字计时owner与缺口"}
+{"file":".trellis/tasks/10-29-grafana-performance-observability/research/backend-readiness.md","reason":"HTTP/Prisma/runtime/generation复用及业务状态保护"}
+{"file":".trellis/tasks/10-29-grafana-performance-observability/research/ops-readiness.md","reason":"当前生产部署、Cloud接入状态与秘密/容量缺口"}
+{"file":".trellis/tasks/10-29-grafana-performance-observability/research/official-integration.md","reason":"官方Faro/OTLP/Sentry兼容与传输边界"}
