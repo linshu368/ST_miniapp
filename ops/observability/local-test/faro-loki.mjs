@@ -86,13 +86,21 @@ try {
     type: 'st_page_ready',
     timestamp,
     values: { duration_ms: i < 8 ? 1000 : 5000 },
-    context: { ...context, outcome: i < 8 ? 'ready' : 'error' },
+    context: {
+      ...context,
+      outcome: i < 8 ? 'ready' : 'error',
+      ...(i < 9 ? { tg_platform: i < 5 ? 'ios' : 'android', net_type: i < 5 ? '4g' : '3g' } : {}),
+    },
   }));
   const events = Array.from({ length: 10 }, (_, i) => ({
     name: 'st_page_terminal',
     timestamp,
     domain: 'st.engineering',
-    attributes: { ...context, outcome: i < 8 ? 'ready' : 'error' },
+    attributes: {
+      ...context,
+      outcome: i < 8 ? 'ready' : 'error',
+      ...(i < 9 ? { tg_platform: i < 5 ? 'ios' : 'android', net_type: i < 5 ? '4g' : '3g' } : {}),
+    },
   }));
   const firstTokens = [
     { model: 'synthetic-model-a', outcome: 'observed', ms: 1000 },
@@ -125,6 +133,29 @@ try {
       timestamp,
       domain: 'st.engineering',
       attributes: attrs,
+    });
+  }
+  const quality = [
+    { playing_ms: '18000', rebuffer_ms: '2000', tg_platform: 'ios', net_type: '4g' },
+    { playing_ms: '10000', rebuffer_ms: '0', tg_platform: 'ios', net_type: '4g' },
+    { playing_ms: '5000', rebuffer_ms: '5000', tg_platform: 'android', net_type: '3g' },
+    { playing_ms: '1000', rebuffer_ms: '0' }, // Old/missing dimensions must survive All.
+    { playing_ms: '999' }, // Incomplete pair must not enter either side of the ratio.
+    { playing_ms: '999', rebuffer_ms: 'invalid' },
+  ];
+  for (const sample of quality) {
+    events.push({
+      name: 'st_drama_playback_window',
+      timestamp,
+      domain: 'st.engineering',
+      attributes: {
+        schema_version: '1',
+        measurement_version: 'engineering_v1',
+        source_measurement_version: 'drama_playback_v1',
+        stage: 'playback',
+        route: '/',
+        ...sample,
+      },
     });
   }
   const response = await fetch(`http://127.0.0.1:${faroPort}/collect`, {
@@ -182,6 +213,14 @@ try {
           .replaceAll('$environment', 'test')
           .replaceAll('$release', '.*')
           .replaceAll('$measurement_version', 'engineering_v1')
+          .replaceAll('$tg_platform', '.*')
+          .replaceAll('$net_type', '.*')
+          .replaceAll('$startup_definition', 'drama_v3')
+          .replaceAll('$drama_route', '.*')
+          .replaceAll('$startup_entry', '.*')
+          .replaceAll('$startup_cache', '.*')
+          .replaceAll('$startup_frame', '.*')
+          .replaceAll('$catalog_start', '.*')
           .replaceAll('$__range', '10m')
           .replaceAll('$__auto', '10m');
         if (target.datasource?.type === 'prometheus') continue;
@@ -203,6 +242,33 @@ try {
         }
         if (panel.title.startsWith('已知页面终态成功率')) {
           assert.equal(Number(result[0]?.value?.[1]), 0.8);
+          for (const [platform, net, expected] of [
+            ['ios', '4g', 1],
+            ['android', '3g', 0.75],
+          ]) {
+            const filtered = expression
+              .replaceAll('event_data_tg_platform=~".*"', `event_data_tg_platform=~"${platform}"`)
+              .replaceAll('event_data_net_type=~".*"', `event_data_net_type=~"${net}"`);
+            assert.equal(Number((await query(filtered))[0]?.value[1]), expected);
+          }
+        }
+        if (uid === 'st-engineering-drama' && [20, 21, 22].includes(panel.id)) {
+          const expected = { 20: 34, 21: 7 / 41, 22: 4 }[panel.id];
+          assert.equal(Number(result[0]?.value[1]), expected, 'Use the same complete pairs');
+          const ios = expression
+            .replaceAll('event_data_tg_platform=~".*"', 'event_data_tg_platform=~"ios"')
+            .replaceAll('event_data_net_type=~".*"', 'event_data_net_type=~"4g"');
+          const iosExpected = { 20: 28, 21: 1 / 15, 22: 2 }[panel.id];
+          assert.equal(
+            Number((await query(ios))[0]?.value[1]),
+            iosExpected,
+            'Time weighted, not mean of ratios'
+          );
+          const noSamples = expression.replaceAll(
+            'event_data_tg_platform=~".*"',
+            'event_data_tg_platform=~"no-samples"'
+          );
+          assert.equal((await query(noSamples)).length, 0, 'Missing data must not become zero');
         }
         queriesChecked++;
       }

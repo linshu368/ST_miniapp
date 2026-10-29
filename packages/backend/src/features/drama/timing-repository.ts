@@ -12,6 +12,8 @@ export class DramaTimingRepository {
     context: { environment: string; release: string },
     importedAt?: string
   ): Promise<'stored' | 'duplicate' | 'conflict'> {
+    if (report.purpose === 'diagnostic')
+      throw new Error('drama_diagnostic_is_not_an_analytics_fact');
     if (this.active >= 2) throw new DramaTimingBusyError('drama_timing_busy');
     this.active += 1;
     try {

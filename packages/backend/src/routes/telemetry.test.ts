@@ -175,6 +175,21 @@ describe('POST /api/telemetry/drama-timing', () => {
     vi.restoreAllMocks();
   });
 
+  it('rejects retired experiment uploads without recording them', async () => {
+    const app = await buildApp();
+    try {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/telemetry/drama-timing',
+        payload: { type: 'cdn_experiment', id: 'retired' },
+      });
+      expect(response.statusCode).toBe(400);
+      expect(timingLogs.info).not.toHaveBeenCalled();
+      expect(persistence.rpc).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
   it('rejects missing authentication before accepting frontend logs', async () => {
     vi.stubEnv('DEV_AUTH_BYPASS', '');
     const app = await buildApp();
@@ -225,6 +240,60 @@ describe('POST /api/telemetry/drama-timing', () => {
     }
   });
 
+  it('never persists unified diagnostics even while legacy persistence remains enabled', async () => {
+    vi.stubEnv('DRAMA_TIMING_PERSIST_ENABLED', 'true');
+    const app = await buildApp();
+    try {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/telemetry/drama-timing',
+        payload: { ...report, purpose: 'diagnostic', definition: 'drama_v3', route: '/' },
+      });
+      expect(response.statusCode).toBe(202);
+      expect(timingLogs.info).toHaveBeenCalledWith(
+        expect.objectContaining({ purpose: 'diagnostic', route: '/' }),
+        'drama frontend timing'
+      );
+      expect(persistence.rpc).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
+  it('still forwards diagnostics to Cloud when Pino logging fails', async () => {
+    const app = await buildApp();
+    timingLogs.info.mockImplementationOnce(() => {
+      throw new Error('sink failed');
+    });
+    try {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/telemetry/drama-timing',
+        payload: { ...report, purpose: 'diagnostic' },
+      });
+      expect(response.statusCode).toBe(202);
+      expect(cloud.diagnostic).toHaveBeenCalledWith(
+        DramaTimingReportSchema.parse({ ...report, purpose: 'diagnostic' })
+      );
+      expect(persistence.rpc).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
+  it('blocks sampled diagnostics from historical import and direct repository writes', async () => {
+    const diagnostic = DramaTimingReportSchema.parse({ ...report, purpose: 'diagnostic' });
+    expect(
+      railwayDramaReport({
+        event: 'drama.frontend_timing',
+        type: 'playback',
+        purpose: 'diagnostic',
+      })
+    ).toBeUndefined();
+    const { DramaTimingRepository } = await import('../features/drama/timing-repository.js');
+    await expect(
+      new DramaTimingRepository().persist(diagnostic, { environment: 'test', release: 'test' })
+    ).rejects.toThrow('drama_diagnostic_is_not_an_analytics_fact');
+    expect(persistence.rpc).not.toHaveBeenCalled();
+  });
   it('forwards validated diagnostics to Cloud without DB writes even with the legacy flag enabled', async () => {
     vi.stubEnv('DRAMA_TIMING_PERSIST_ENABLED', 'true');
     const app = await buildApp();

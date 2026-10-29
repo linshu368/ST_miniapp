@@ -2,6 +2,7 @@
 
 import type { BrowserConfig, Faro, TransportItem } from '@grafana/faro-web-sdk';
 
+import { getMetricDimensions } from './env-tags';
 import { engineeringRoute } from './route-template';
 
 type Attributes = Readonly<Record<string, string | number | boolean | null | undefined>>;
@@ -32,6 +33,7 @@ const MEASUREMENTS = new Set([
   'drama.first_frame',
   'drama.stage',
   'drama.rebuffer',
+  'drama.diagnostic',
   'api.queue',
   'api.headers',
   'api.body',
@@ -47,6 +49,8 @@ const EVENTS = new Set([
   'drama.started',
   'drama.terminal',
   'drama.stall',
+  'drama.diagnostic',
+  'drama.playback_window',
   'api.terminal',
   'telemetry.health',
 ]);
@@ -104,6 +108,7 @@ const ENUMS: Readonly<Record<string, readonly string[]>> = {
     'recovery',
     'feedback',
     'rebuffer',
+    'playback',
     'catalog',
     'startup',
     'address_wait',
@@ -112,6 +117,16 @@ const ENUMS: Readonly<Record<string, readonly string[]>> = {
     'metadata_to_frame',
     'source_to_frame',
     'source_to_playing',
+    'entry_to_source',
+    'metadata_to_data',
+    'data_to_frame',
+    'frame_to_startup',
+    'diagnostic',
+    'network_ttfb_first',
+    'network_ttfb_max',
+    'network_connect_max',
+    'frame_processing',
+    'longtask_metadata_frame',
     'queue',
     'headers',
     'body',
@@ -126,6 +141,18 @@ const ENUMS: Readonly<Record<string, readonly string[]>> = {
     'image_generate',
     'voice_generate',
   ],
+  list_start_kind: [
+    'navigation_click',
+    'route_commit',
+    'query_start',
+    'document_navigation',
+    'retry',
+  ],
+  network_status: ['unsupported', 'no_entry', 'limited', 'available', 'unknown'],
+  network_closed: ['deadline', 'terminal_tail', 'released', 'pending'],
+  longtask_support: ['supported', 'unsupported', 'unknown'],
+  detail_truncated: ['true', 'false'],
+  event_order: ['anomaly', 'ordered_or_missing'],
   playback_mode: ['cover', 'switch', 'episode', 'retry', 'direct'],
   report_kind: ['list', 'playback', 'start', 'slow', 'final', 'network'],
   first_frame_method: ['video_frame_callback', 'playing_and_timeupdate'],
@@ -138,7 +165,9 @@ const ENUMS: Readonly<Record<string, readonly string[]>> = {
     'action_foreground_v1',
     'drama_v1',
     'drama_v2',
+    'drama_v3',
     'drama_rebuffer_v1',
+    'drama_playback_v1',
     'api_attempt_v1',
     'api_logical_v1',
   ],
@@ -146,7 +175,7 @@ const ENUMS: Readonly<Record<string, readonly string[]>> = {
   navigation_type: ['document', 'spa', 'mount'],
   visibility: ['foreground', 'background', 'mixed'],
   cold_start: ['true', 'false'],
-  net_type: ['slow-2g', '2g', '3g', '4g', 'unknown'],
+  net_type: ['slow-2g', '2g', '3g', '4g', 'unknown', 'mixed'],
   net_rtt_bucket: ['lt100', '100-300', '300-1000', 'gte1000', 'unknown'],
   tg_platform: [
     'android',
@@ -247,7 +276,30 @@ export function isEngineeringTelemetryEnabled(): boolean {
   return configuration() !== null && typeof window !== 'undefined';
 }
 
-function safeAttributes(attributes: Attributes = {}): Record<string, string> {
+/** Both durations must survive together so transport loss cannot split the ratio's denominator. */
+function playbackWindowDurations(attributes: Attributes = {}): Record<string, string> | null {
+  if (!attributes || typeof attributes !== 'object') return null;
+  const values = [attributes.playing_ms, attributes.rebuffer_ms].map((value) =>
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string' && /^\d{1,5}$/.test(value)
+        ? Number(value)
+        : NaN
+  );
+  const [playing, rebuffer] = values as [number, number];
+  if (
+    !values.every((value) => Number.isSafeInteger(value) && value >= 0 && value <= 60_000) ||
+    playing + rebuffer <= 0 ||
+    playing + rebuffer > 60_000
+  )
+    return null;
+  return { playing_ms: String(playing), rebuffer_ms: String(rebuffer) };
+}
+
+function safeAttributes(
+  attributes: Attributes = {},
+  playbackWindow = false
+): Record<string, string> {
   const result: Record<string, string> = {
     schema_version: '1',
     measurement_version: ENGINEERING_MEASUREMENT_VERSION,
@@ -276,6 +328,7 @@ function safeAttributes(attributes: Attributes = {}): Record<string, string> {
     } else if (ENUMS[key])
       result[key] = ENUMS[key].includes(String(value)) ? String(value) : 'other';
   }
+  if (playbackWindow) Object.assign(result, playbackWindowDurations(attributes));
   return result;
 }
 
@@ -322,6 +375,8 @@ function beforeSend(
     };
   }
   if (item.type === 'event' && 'name' in payload && EVENT_NAMES.has(payload.name)) {
+    const playbackWindow = payload.name === 'st_drama_playback_window';
+    if (playbackWindow && !playbackWindowDurations(payload.attributes)) return null;
     return {
       type: item.type,
       meta,
@@ -329,7 +384,7 @@ function beforeSend(
         name: payload.name,
         timestamp: payload.timestamp,
         domain: 'st.engineering',
-        attributes: safeAttributes(payload.attributes),
+        attributes: safeAttributes(payload.attributes, playbackWindow),
       },
     };
   }
@@ -375,7 +430,12 @@ export function createEngineeringExporter(
     send({
       kind: 'event',
       name: 'telemetry.health',
-      attributes: safeAttributes({ ...health, source_queued: queue.length, state: 'ready' }),
+      attributes: safeAttributes({
+        ...getMetricDimensions(),
+        ...health,
+        source_queued: queue.length,
+        state: 'ready',
+      }),
       timestamp: Date.now(),
     });
   }
@@ -489,7 +549,8 @@ export function createEngineeringExporter(
           (typeof durationMs !== 'number' ||
             !Number.isFinite(durationMs) ||
             durationMs < 0 ||
-            durationMs > MAX_DURATION_MS))
+            durationMs > MAX_DURATION_MS)) ||
+        (name === 'drama.playback_window' && !playbackWindowDurations(attributes))
       ) {
         health.source_invalid += 1;
         return;
@@ -502,7 +563,12 @@ export function createEngineeringExporter(
         kind,
         name,
         durationMs,
-        attributes: safeAttributes(attributes),
+        // Snapshot before SDK loading/queueing. Explicit owner snapshots (e.g. playback windows)
+        // take precedence; beforeSend only sanitizes and never rereads a later network state.
+        attributes: safeAttributes(
+          { ...getMetricDimensions(), ...attributes },
+          name === 'drama.playback_window'
+        ),
         timestamp: Date.now(),
       };
       if (JSON.stringify(signal).length > MAX_PAYLOAD_BYTES) {

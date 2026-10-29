@@ -10,6 +10,28 @@
 
 import { getDomainDb } from '../lib/supabase.js';
 import { config } from './config.js';
+export interface DramaPlaybackCdnConfig {
+  tokenKey: string;
+}
+
+/** Only the named Preview may switch providers; other deployments keep Supabase. */
+export function getDramaPlaybackCdnConfig(): DramaPlaybackCdnConfig | null {
+  if (
+    process.env.DRAMA_CDN_ENABLED !== 'true' ||
+    process.env.RAILWAY_ENVIRONMENT_NAME !== 'pr-525' ||
+    config.database.target !== 'test'
+  )
+    return null;
+  const tokenKey = process.env.DRAMA_CDN_TOKEN_KEY;
+  if (
+    !tokenKey ||
+    process.env.DEV_AUTH_BYPASS === '1' ||
+    process.env.MOCK_AUTH === '1' ||
+    config.supabase.url !== 'https://zoqelpfhurwehlvypryl.supabase.co'
+  )
+    throw new Error('drama_cdn_config_invalid');
+  return { tokenKey };
+}
 
 /** Deployment opt-in: a compatible backend may ship before the manual analytics migration. */
 export function getDramaTimingPersistenceConfig() {

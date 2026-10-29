@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { DramaSignedUrlCache, type DramaSigningObservation } from './signed-url.js';
+import {
+  DramaSignedUrlCache,
+  buildBunnyPlayback,
+  type DramaSigningObservation,
+} from './signed-url.js';
 
 // 这几条都是「写错了也不报错、只会悄悄退化」的逻辑：
 // Token 没复用 → CDN 永远 MISS；single-flight 失效 → 并发打爆 Storage；
@@ -131,5 +135,97 @@ describe('DramaSignedUrlCache', () => {
     expect(hit.cache).toBe('hit');
     expect(Object.keys(result).sort()).toEqual(['expires_at', 'play_url', 'playable']);
     expect(JSON.stringify([miss, waiting, hit])).not.toContain('private');
+  });
+});
+
+const CDN_NOW = Date.parse('2026-10-28T13:00:00Z');
+function sourceFor(path: string, exp = CDN_NOW / 1000 + 3600) {
+  const payload = Buffer.from(JSON.stringify({ url: `drama-videos/${path}`, exp })).toString(
+    'base64url'
+  );
+  return `https://zoqelpfhurwehlvypryl.supabase.co/storage/v1/object/sign/drama-videos/${path}?token=unit.${payload}.signature`;
+}
+
+describe('Preview Bunny playback', () => {
+  it('binds each video and its source capability into a finite CDN URL', () => {
+    const first = buildBunnyPlayback(PATH, sourceFor(PATH), 'fictional-cdn-key', CDN_NOW);
+    const second = buildBunnyPlayback(OTHER, sourceFor(OTHER), 'fictional-cdn-key', CDN_NOW);
+    const url = new URL(first.url);
+    expect(url.origin).toBe('https://stminiappvid20261028.b-cdn.net');
+    expect(url.pathname).toBe(`/preview-test/${PATH}`);
+    expect(url.searchParams.get('origin_token')).toBe(
+      new URL(sourceFor(PATH)).searchParams.get('token')
+    );
+    expect(url.searchParams.get('expires')).toBe(String(CDN_NOW / 1000 + 3540));
+    expect(first.expiresAtMs).toBe(CDN_NOW + 3540000);
+    expect(second.url).not.toBe(first.url);
+    expect(new URL(second.url).searchParams.get('token')).not.toBe(url.searchParams.get('token'));
+    expect(first.url).not.toContain('fictional-cdn-key');
+    // Cross-language HMAC fixture, calculated independently with Python hashlib.
+    expect(url.searchParams.get('token')).toBe('HS256-4lPOqfzuosIRnsowfwE2dh9pkk7ZPSBgCLVw5tlasI0');
+  });
+
+  it('refuses other origins, mismatched objects, duplicate query and unsafe paths', () => {
+    for (const source of [
+      sourceFor(PATH).replace('zoqelpfhurwehlvypryl', 'wbtsfzozlmurljvglhpn'),
+      sourceFor(OTHER),
+      sourceFor(PATH) + '&token=another',
+      sourceFor(PATH) + '&download=1',
+      sourceFor(PATH).replace('token=unit.', 'token=malformed'),
+    ])
+      expect(() => buildBunnyPlayback(PATH, source, 'unit-key', CDN_NOW)).toThrow();
+    for (const path of [
+      '../original',
+      'videos/../original',
+      'videos/%2e%2e/original',
+      'videos//original',
+      'videos/a?x',
+    ])
+      expect(() => buildBunnyPlayback(path, sourceFor(path), 'unit-key', CDN_NOW)).toThrow();
+    expect(() =>
+      buildBunnyPlayback(PATH, sourceFor(PATH, CDN_NOW / 1000 + 120), 'unit-key', CDN_NOW)
+    ).toThrow('drama_cdn_source_expired');
+    expect(() => buildBunnyPlayback(PATH, sourceFor(PATH), '', CDN_NOW)).toThrow();
+  });
+
+  it('reuses the complete Bunny URL, renews safely and separates provider credentials', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(CDN_NOW);
+    let key = 'unit-key';
+    const sign = vi.fn(async (path: string) => sourceFor(path, Date.now() / 1000 + 3600));
+    const cache = new DramaSignedUrlCache(sign, () => ({ tokenKey: key }));
+    const [first, concurrent] = await Promise.all([cache.getPlayUrl(PATH), cache.getPlayUrl(PATH)]);
+    expect(sign).toHaveBeenCalledTimes(1);
+    expect(concurrent).toEqual(first);
+    expect(new URL(first.play_url!).hostname).toBe('stminiappvid20261028.b-cdn.net');
+    vi.setSystemTime(CDN_NOW + 1799000);
+    expect(await cache.getPlayUrl(PATH)).toEqual(first);
+    key = 'rotated-unit-key';
+    expect((await cache.getPlayUrl(PATH)).play_url).not.toBe(first.play_url);
+    vi.setSystemTime(CDN_NOW + 3600000);
+    expect((await cache.getPlayUrl(PATH)).expires_at).not.toBe(first.expires_at);
+  });
+
+  it('fails closed for invalid config/source without logging capabilities or falling back', async () => {
+    const warn = vi.fn();
+    const sign = vi.fn(async () => sourceFor(PATH));
+    const broken = new DramaSignedUrlCache(sign, () => {
+      throw new Error('private config');
+    });
+    expect((await broken.getPlayUrl(PATH, { warn })).playable).toBe(false);
+    expect(sign).not.toHaveBeenCalled();
+    const wrongOrigin = new DramaSignedUrlCache(
+      async () => sourceFor(OTHER),
+      () => ({ tokenKey: 'private-key' })
+    );
+    expect((await wrongOrigin.getPlayUrl(PATH, { warn })).playable).toBe(false);
+    const thrown = new DramaSignedUrlCache(async () => {
+      throw new Error('https://secret.invalid/?token=private');
+    });
+    expect((await thrown.getPlayUrl(PATH, { warn })).playable).toBe(false);
+    const output = JSON.stringify(warn.mock.calls);
+    expect(output).not.toContain('private');
+    expect(output).not.toContain('token=');
+    expect(output).not.toContain('11111111');
   });
 });

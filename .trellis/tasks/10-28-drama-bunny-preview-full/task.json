@@ -1,0 +1,35 @@
+{
+  "id": "drama-bunny-preview-full",
+  "name": "drama-bunny-preview-full",
+  "title": "pr-525 普通短剧全量使用 Bunny",
+  "description": "仅pr-525普通短剧全量Bunny，移除独立实验；保留Telegram鉴权与TEST边界",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-28",
+  "completedAt": null,
+  "branch": "codex/drama-bunny-preview",
+  "base_branch": "dev",
+  "worktree_path": "/Users/qj/.codex/worktrees/drama-bunny-preview/ST_miniAPP",
+  "commit": null,
+  "pr_url": "https://github.com/linshu368/ST_miniapp/pull/525",
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "backend.infrastructure.runtime-data-security",
+        "frontend.business.drama-experience"
+      ]
+    }
+  }
+}

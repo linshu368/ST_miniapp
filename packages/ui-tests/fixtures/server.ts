@@ -386,6 +386,10 @@ export function createPreviewServer(apiPort: number, appPort: number) {
       requests.push(request);
       if (requests.length > 500) requests.shift();
       reconcileImages();
+      if (path === '/api/telemetry/drama-timing' && method === 'POST') {
+        ok(res, { accepted: true });
+        return;
+      }
       if (method === 'POST' && /^\/api\/telemetry\/(page|action|drama|request)/.test(path)) {
         ok(res, { recorded: true });
         return;

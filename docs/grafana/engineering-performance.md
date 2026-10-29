@@ -17,25 +17,34 @@
 
 前三项是工程体验产出，第四项是定位原因的证据。保留既有经营、首字 v4 和短剧看板，不覆盖其他 TextBot 项目。源 JSON 默认绑定当前 `grafanacloud-logs` / `grafanacloud-prom`，保留待接入模板；线上接入状态按实际 Cloud 样本独立更新，不因导入模板而视为验收。
 
+## 短剧统一定义v3（本地代码，尚未发布）
+
+新短剧指标使用独立source_measurement_version=drama_v3；全局engineering_v1与兼容报告version=2不变。复用原tracker，shared的dramaTimingStages作为唯一新阶段计算入口；保留原粗阶段，增加entry_to_source/metadata_to_data/data_to_frame/frame_to_startup，缺失/逆序省略而非填0。首页/详情和目录起点在原观察绑定，后台outcome也在owner内生成，避免出口各自猜测。
+
+工程看板是日常唯一统计入口，旧SQL看板保留历史及切换对照。v3筛选默认隔离旧定义；入口/地址来源/首帧/目录起点只过滤具有相应属性的面板，播放质量窗口保持其原版本与分母。诊断final快照和network尾报告按phase分开，不相加当播放数。能力/有效N与条件分位一起看，完整有界单次诊断留Pino，不发送身份/媒体URL到Faro。
+
+NEXT_PUBLIC_DRAMA_TIMING_MODE默认legacy。只有替代验证通过后显式启用unified，才移除专用start和快速成功全量诊断上传；保留100%≥5秒/非成功和5%不足5秒成功Pino细节，符合条件的final/network经Backend OTLP写Loki，purpose=diagnostic在路由/repository/导入器均禁止分析写入。全量工程统计不采样。Backend先兼容，再Frontend默认双轨，再TEST/Cloud/真实流程，最后独立批准生产切换；不开生产、不删旧对象。统一release由构建SHA决定。详见[统一定义与门禁](../drama-playback-timing.md)。
+
 ## 三类核心测量
 
-| 类别     | 指标                      | 起点 → 终点                                                | 成功筛选 / 不可混用的情况                               |
-| -------- | ------------------------- | ---------------------------------------------------------- | ------------------------------------------------------- |
-| 页面     | `page.ready`              | 当前 pathname 挂载 → 当前可见核心内容可用                  | `ready`；错误页不算成功，仍显示可用旧缓存的页面可以成功 |
-| 页面     | `page.launch`             | document 单调时钟起点 → 可用                               | 与 mount 不混算；JS 完全未启动无法被采集                |
-| 页面     | `page.navigation`         | 捕获到的 Link/返回/可用导航 hook → 可用                    | 未捕获程序式跳转标 mount，不冒充点击耗时                |
-| 页面     | `page.fresh`              | 页面挂载 → 已观察请求在途后成功结束                        | 与旧缓存秒开分开；刷新错误不算 fresh                    |
-| 页面     | `api.total`               | 调用统一客户端 → 返回解析结果或最终失败                    | 含排队、重试退避、headers、body；成功为 `ok`            |
-| 页面     | `api.queue/headers/body`  | 同一 attempt 的实际阶段                                    | 与 logical total 区分；排队取消不伪造服务端时间         |
-| 角色扮演 | `roleplay.first_token`    | 接受 send/regenerate → 匹配正文或已开启思考的 React commit | `observed`；不是像素显示或实际阅读                      |
-| 角色扮演 | `roleplay.full_reply`     | 接受动作 → 匹配完整终态消息的 React commit                 | `complete`；失败/中断/拒绝/超时/停止/后台/离页单列      |
-| 角色扮演 | `roleplay.render`         | 已知真实首 delta receipt → 该 commit                       | 恢复快照没有 receipt 不补 0；不是后处理 renderer 全完成 |
-| 角色扮演 | `roleplay.recovery`       | 可恢复断流 → 同 request 的终态 commit/已知中断             | 完整恢复筛 `complete`；streaming 快照不算恢复完成       |
-| 角色扮演 | `roleplay.action`         | 原关键动作开始 → 既有反馈点                                | `feedback`，后台时间排除；不能冒充完整生成或页面 ready  |
-| 短剧     | `drama.catalog`           | 原目录入口 → 目录 ready/失败/离开                          | 成功 `ready`；目录失败与视频失败不同                    |
-| 短剧     | `drama.startup`           | cover/switch/episode/retry/direct 入口 → 首帧且 playing    | 成功 `playing`；地址返回、canplay 都不够                |
-| 短剧     | `drama.first_frame/stage` | 原首帧/实际阶段计时                                        | 成功启动筛 `playing`；并行或重叠阶段禁止相加            |
-| 短剧     | `drama.rebuffer`          | 已成功启动后前台非暂停/seek 的 waiting → playing/中断      | 恢复筛 `playing`；网络 stalled 本身不算画面卡顿         |
+| 类别     | 指标                      | 起点 → 终点                                                | 成功筛选 / 不可混用的情况                                     |
+| -------- | ------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------- |
+| 页面     | `page.ready`              | 当前 pathname 挂载 → 当前可见核心内容可用                  | `ready`；错误页不算成功，仍显示可用旧缓存的页面可以成功       |
+| 页面     | `page.launch`             | document 单调时钟起点 → 可用                               | 与 mount 不混算；JS 完全未启动无法被采集                      |
+| 页面     | `page.navigation`         | 捕获到的 Link/返回/可用导航 hook → 可用                    | 未捕获程序式跳转标 mount，不冒充点击耗时                      |
+| 页面     | `page.fresh`              | 页面挂载 → 已观察请求在途后成功结束                        | 与旧缓存秒开分开；刷新错误不算 fresh                          |
+| 页面     | `api.total`               | 调用统一客户端 → 返回解析结果或最终失败                    | 含排队、重试退避、headers、body；成功为 `ok`                  |
+| 页面     | `api.queue/headers/body`  | 同一 attempt 的实际阶段                                    | 与 logical total 区分；排队取消不伪造服务端时间               |
+| 角色扮演 | `roleplay.first_token`    | 接受 send/regenerate → 匹配正文或已开启思考的 React commit | `observed`；不是像素显示或实际阅读                            |
+| 角色扮演 | `roleplay.full_reply`     | 接受动作 → 匹配完整终态消息的 React commit                 | `complete`；失败/中断/拒绝/超时/停止/后台/离页单列            |
+| 角色扮演 | `roleplay.render`         | 已知真实首 delta receipt → 该 commit                       | 恢复快照没有 receipt 不补 0；不是后处理 renderer 全完成       |
+| 角色扮演 | `roleplay.recovery`       | 可恢复断流 → 同 request 的终态 commit/已知中断             | 完整恢复筛 `complete`；streaming 快照不算恢复完成             |
+| 角色扮演 | `roleplay.action`         | 原关键动作开始 → 既有反馈点                                | `feedback`，后台时间排除；不能冒充完整生成或页面 ready        |
+| 短剧     | `drama.catalog`           | 原目录入口 → 目录 ready/失败/离开                          | 成功 `ready`；目录失败与视频失败不同                          |
+| 短剧     | `drama.startup`           | cover/switch/episode/retry/direct 入口 → 首帧且 playing    | 成功 `playing`；地址返回、canplay 都不够                      |
+| 短剧     | `drama.first_frame/stage` | 原首帧/实际阶段计时                                        | 成功启动筛 `playing`；并行或重叠阶段禁止相加                  |
+| 短剧     | `drama.rebuffer`          | 已成功启动后前台非暂停/seek 的 waiting → playing/中断      | 恢复筛 `playing`；网络 stalled 本身不算画面卡顿               |
+| 短剧     | `drama.playback_window`   | 已确认真实播放后的前台增量窗口                             | 同条 `playing_ms/rebuffer_ms`；不含初始等待、暂停、seek、后台 |
 
 `/chat/:id` 的入场体验使用页面指标；select_character 反馈不是角色正文 ready。首页 `/` 的通用 ready 是推荐目录或实际仍可用的播放器状态，视频体验另看 startup。短剧详情 `/dramas/:id` 的 ready 复用首帧且 playing 的同一证据，不另造播放器状态机。
 
@@ -59,13 +68,21 @@
 1. 每次选页面、角色扮演、短剧各自的痛点，不只按单个最慢 P95 排名。先看服务失败/超时变化与样本构成，再看受影响范围、P50/P95、超参考预算的事件与可定位原因。
 2. 对比同环境、release、测量版本、页面/入口、缓存来源、前后台、平台/网络的可比窗口。低样本仅观察；不要用删除慢入口、减少覆盖、缩短内容或排除失败来优化报表。
 
-   当前网络/Telegram平台维度主要来自通用页面测量，角色扮演/短剧镜像没有完整带入所有设备维度；前三张默认看板也尚未提供网络/平台筛选器。TEST阶段若发现不同WebView占比明显变化，不得直接据全量前后P95归因工程优化，需先补齐该主线分层与对应筛选，再验收。
+   三张前端看板统一提供「设备/客户端平台」「网络有效等级」两个筛选。前者是Telegram声明的iOS/Android/桌面/Web，不是具体硬件性能；后者是浏览器effectiveType，4g不是蜂窝介质，iOS等缺支持保持unknown，不能视为弱网。默认全部保留旧缺维度样本；选具体层时只比较有对应标签的数据。普通测量在工程出口入队时快照，不在发送时重读；不是整次调用始终处于该网络的保证。角色看板中的服务端型号/兜底PromQL不受客户端筛选影响，面板已明确标识，不可与分层后的浏览器量直接配比。
 
 3. 首先积累24–48小时基线，再由产品与工程确认具体预算。现有页面4秒 watchdog 是初始排查线，不是通用最终SLO；角色首字策略截止时间也不是所有场景的统一体验预算。本期不新增自动告警，避免与现有 Sentry 重复。
 4. 工程交付附：前后版本/窗口、样本量、成功/失败/退出构成、成功P50/P95、覆盖变化和同负载资源开销。只给平均数或只给成功P95不算完成验证。
 5. 下钻先看 API/生成阶段，再到 [Sentry 错误与已有追踪](https://de.sentry.io/organizations/wangqiao/issues/) 按同 release/时间窗核对。新遥测不发送个体ID，因此不承诺逐请求一键关联或端到端精确配对。
 
 已接收 started/terminal 的窗口计数**不是严格 cohort 闭环率**：窗口前开始、窗口内终态，或反过来，都可改变比值；两条一起丢失时更看不到。这里故意不把终态/起点比包装成“全访问覆盖率”。成功率以已知终态为分母，离页、后台、主动停止单列，没数据不填0。
+
+### 播放质量的最小口径
+
+短剧新增三张数字卡：已观测前台实际播放总时长、卡顿时长占比、有效窗口数。复用每src的媒体观察器，仅遥测已启用且实际播放/等待时每30秒提交增量；暂停、seek、后台、结束、错误、换源和卸载清尾并停止计时。每窗成对携带非负整数 `playing_ms/rebuffer_ms`，合计不超过60秒且大于0；重复flush不重复计时。超过60秒的事件循环空洞/超长窗口不补成播放。低频窗口是启动诊断「不逐帧/不轮询」之外明确批准的质量心跳，不调用业务API。
+
+实际播放用单调walltime，不用媒体进度差，快进/倍速不制造观看时长。需要真实playing及首帧或自然推进确认；不依赖不可改写的startup终态，因此自动播放首次被拦、后来手动成功可以计入播放，但不篡改早先启动失败。首次加载不算播放中卡顿，stalled也不算；实际播放后的前台waiting计卡顿，退出前尚未恢复的等待同样保留。暂停/seek/后台后必须重新出现播放证据；迟到timeupdate不能结束waiting。
+
+**卡顿时长占比 = Σrebuffer_ms / Σ(playing_ms + rebuffer_ms)**，按同一批完整合法窗口加权，不平均单窗百分比；分母为0保持无数据。Loki分子、分母与窗口数使用相同合法性/版本/分层筛选，校验后keep有限标签，避免将另一项数值或时间戳留成高基数中间series。窗口维度取起点；起止网络不同标mixed，这不保证发现了中途所有切网。窗口数不是人数/会话数，成对投递也不证明全量送达。历史版本不回填，只有新版本样本可用于新基线。
 
 ## 数据格式与本地验算
 
