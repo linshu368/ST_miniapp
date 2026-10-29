@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/backend/app/data-reliability-and-security.md", "reason": "生产分流、统一遥测保留与失败恢复"}
+{"file": ".trellis/spec/frontend/app/testing-quality-and-deployment.md", "reason": "播放器生命周期和固定验收"}
+{"file": ".trellis/spec/shared/contracts/api-contracts.md", "reason": "跨应用契约与兼容"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "生产到消费者验证"}
+{"file": ".trellis/tasks/10-29-drama-cdn-rollout/production-preflight.md", "reason": "生产只读状态与发布门禁"}

@@ -15,6 +15,8 @@ Bunny URL 使用 /preview-test/<object_path>，包含对象级短期 origin_toke
 
 ## 当前配置与复核步骤
 
+以下是历史 TEST Preview 的全量接入步骤。生产 20% 稳定分流使用 [独立操作说明](../drama-cdn-rollout.md)；清理历史实验变量时不能通配删除新对照所用的 DRAMA_CDN_EXPERIMENT_ID／DRAMA_CDN_EXPERIMENT_KEY。
+
 1. Railway gallant-insight / pr-525 / stminiapp：设置 DRAMA*CDN_ENABLED=true，并将该服务已有专用Zone签名key安全迁至 DRAMA_CDN_TOKEN_KEY。移除该服务的五个 DRAMA_CDN_EXPERIMENT*\* 废弃变量；秘密不放命令参数/输出，值只经受保护本机输入或stdin。其他服务和环境不写。
 2. Bunny Zone 6882359：新增规则 Preview TEST drama origin，Request URL 匹配 https://stminiappvid20261028.b-cdn.net/preview-test/*；Origin Override 固定为：
    https://zoqelpfhurwehlvypryl.supabase.co/storage/v1/object/sign/drama-videos/%{Path.1-2}/%{Url.Filename}?token=%{Query.origin_token}
