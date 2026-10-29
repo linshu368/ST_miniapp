@@ -12,25 +12,69 @@ import { getDomainDb } from '../lib/supabase.js';
 import { config } from './config.js';
 export interface DramaPlaybackCdnConfig {
   tokenKey: string;
+  sourceOrigin: string;
+  cdnOrigin: string;
+  pathPrefix: '/preview-test' | '/production';
 }
 
-/** Only the named Preview may switch providers; other deployments keep Supabase. */
+export function getDramaExperimentConfig() {
+  const id = process.env.DRAMA_CDN_EXPERIMENT_ID;
+  const key = process.env.DRAMA_CDN_EXPERIMENT_KEY;
+  if (!id && !key) return null;
+  if (!id || !/^[a-zA-Z0-9_-]{1,64}$/.test(id) || !key || key.length < 32) {
+    // Emergency shutdown must still restore Supabase even if the experiment configuration broke.
+    if (process.env.DRAMA_CDN_ENABLED !== 'true') return null;
+    throw new Error('drama_experiment_config_invalid');
+  }
+  return {
+    id,
+    key,
+    environment: config.database.target,
+    enabled: process.env.DRAMA_CDN_ENABLED === 'true',
+  };
+}
+
+/** Production requires its own explicit origin configuration; TEST remains isolated. */
 export function getDramaPlaybackCdnConfig(): DramaPlaybackCdnConfig | null {
-  if (
-    process.env.DRAMA_CDN_ENABLED !== 'true' ||
-    process.env.RAILWAY_ENVIRONMENT_NAME !== 'pr-525' ||
-    config.database.target !== 'test'
-  )
-    return null;
+  if (process.env.DRAMA_CDN_ENABLED !== 'true') return null;
+  const production = config.database.target === 'production';
+  const name = process.env.RAILWAY_ENVIRONMENT_NAME;
+  if (production ? name !== 'production' : name !== 'pr-525') return null;
+  const expected = production
+    ? 'https://wbtsfzozlmurljvglhpn.supabase.co'
+    : 'https://zoqelpfhurwehlvypryl.supabase.co';
   const tokenKey = process.env.DRAMA_CDN_TOKEN_KEY;
+  const candidate =
+    process.env.DRAMA_CDN_BASE_URL || (production ? '' : 'https://stminiappvid20261028.b-cdn.net');
+  let origin: URL;
+  try {
+    origin = new URL(candidate);
+  } catch {
+    throw new Error('drama_cdn_config_invalid');
+  }
   if (
     !tokenKey ||
+    (production && (tokenKey.length < 32 || !getDramaExperimentConfig())) ||
     process.env.DEV_AUTH_BYPASS === '1' ||
     process.env.MOCK_AUTH === '1' ||
-    config.supabase.url !== 'https://zoqelpfhurwehlvypryl.supabase.co'
+    config.supabase.url !== expected ||
+    origin.protocol !== 'https:' ||
+    origin.username ||
+    origin.password ||
+    origin.pathname !== '/' ||
+    origin.search ||
+    origin.hash ||
+    !origin.hostname.endsWith('.b-cdn.net') ||
+    origin.port ||
+    (production && origin.hostname === 'stminiappvid20261028.b-cdn.net')
   )
     throw new Error('drama_cdn_config_invalid');
-  return { tokenKey };
+  return {
+    tokenKey,
+    sourceOrigin: expected,
+    cdnOrigin: origin.origin,
+    pathPrefix: production ? '/production' : '/preview-test',
+  };
 }
 
 /** Deployment opt-in: a compatible backend may ship before the manual analytics migration. */

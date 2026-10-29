@@ -588,6 +588,12 @@ export function createPreviewServer(apiPort: number, appPort: number) {
             playable: true,
             play_url: `${api}/assets/drama-preview.mp4?episode=${video.id}`,
             expires_at: new Date(Date.now() + 3_600_000).toISOString(),
+            delivery: {
+              experimentId: 'fixture-cdn',
+              group: 'bunny',
+              provider: 'supabase',
+              reason: 'disabled',
+            },
           },
         } satisfies GetDramaPlaybackData);
         return;

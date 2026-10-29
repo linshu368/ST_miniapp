@@ -160,6 +160,69 @@ describe('drama centralized logging', () => {
     );
   });
 
+  it('retains every fast experiment result in either arm while unified diagnostics are sampled', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+    vi.stubEnv('NEXT_PUBLIC_DRAMA_TIMING_MODE', 'unified');
+    mocks.enabled.mockReturnValue(true);
+    mocks.id.mockReturnValue('z');
+    for (const group of ['bunny', 'supabase'] as const) {
+      const flow = dramaTiming.beginPlayback('a', 'switch');
+      dramaTiming.playbackState(
+        flow,
+        {
+          video_id: 'video',
+          playable: true,
+          play_url: 'https://example.invalid/media',
+          expires_at: null,
+          delivery: { experimentId: 'unit-ab', group, provider: group, reason: 'assigned' },
+        },
+        false,
+        false
+      );
+      flow.mark('first_frame');
+      flow.mark('playing');
+      flow.finish('playing');
+      flow.networkTiming({ status: 'no_entry', entries: [], truncated: false }, true);
+    }
+    await Promise.resolve();
+    expect(mocks.upload.mock.calls.map(([report]) => report.phase)).toEqual([
+      'final',
+      'network',
+      'final',
+      'network',
+    ]);
+    expect(mocks.upload.mock.calls.every(([report]) => report.purpose === 'diagnostic')).toBe(true);
+  });
+
+  it('uploads seek outcomes without counting them as engineering startup samples', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+    vi.stubEnv('NEXT_PUBLIC_DRAMA_TIMING_MODE', 'unified');
+    mocks.enabled.mockReturnValue(true);
+    mocks.id.mockReturnValue('z');
+    const video = Object.assign(new EventTarget(), {
+      currentSrc: 'media',
+      src: 'media',
+      buffered: { length: 0 },
+      readyState: 2,
+      currentTime: 40,
+      seeking: false,
+      paused: true,
+    }) as unknown as HTMLVideoElement;
+    dramaTiming.beginSeek(video, 'media', 40, false, 'a', 'video');
+    await vi.advanceTimersByTimeAsync(100);
+    video.dispatchEvent(new Event('seeked'));
+    expect(mocks.upload).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'seek',
+        phase: 'final',
+        outcome: 'unverified',
+        elapsedMs: 100,
+      })
+    );
+    expect(mocks.measurement).not.toHaveBeenCalled();
+    expect(mocks.event).not.toHaveBeenCalled();
+  });
+
   it('keeps all slow diagnostics and sampled-success network tails while excluding start uploads', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
     vi.stubEnv('NEXT_PUBLIC_DRAMA_TIMING_MODE', 'unified');
