@@ -16,13 +16,18 @@ export default function SpendingPage() {
   useTelegramBackButton(goBack);
 
   const query = useWalletSpendingQuery();
-  usePageReady('/profile/spending', query.data !== undefined);
   const items = useMemo(
     () =>
       [...(query.data?.items ?? [])].sort(
         (left, right) => Date.parse(right.created_at) - Date.parse(left.created_at)
       ),
     [query.data?.items]
+  );
+  usePageReady(
+    '/profile/spending',
+    query.data !== undefined && (!query.isError || items.length > 0),
+    false,
+    query.isError
   );
 
   return (

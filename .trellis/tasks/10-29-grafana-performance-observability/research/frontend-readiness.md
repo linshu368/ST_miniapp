@@ -1,0 +1,61 @@
+# Frontend performance telemetry readiness
+
+Date: 2026-10-29. Read-only source audit of local checkout; no claim that all code/configuration is deployed. Planning only; no product code, runtime configuration, database, or dashboard changes.
+
+## 1. Main conclusion
+
+Reuse the existing frontend performance measurement owners. Do not introduce a second page lifecycle, second HTTP wrapper, or second session replay SDK. The missing piece is an explicitly versioned, bounded telemetry export path to Grafana, plus a few measurement-definition/coverage corrections. Existing Sentry warning events/traces remain useful for debugging and should not be removed merely because Grafana becomes the engineering scorecard.
+
+## 2. Verified reuse map
+
+| Owner                         | Source                                                                                                             | Current facts                                                                                                                                                                                                                              |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Root observer                 | `packages/frontend/src/lib/perf/PagePerfTracker.tsx`; `src/app/providers.tsx:74`                                   | One root component observes pathname changes; installs resource failure reporting and drama timing. It mounts only after Telegram initialization completes.                                                                                |
+| Page-ready lifecycle          | `src/lib/perf/page-tracker.ts`; `src/lib/perf/page-ready.ts`                                                       | Existing `beginPage` / `markPageReady` / `usePageReady`; content-ready and fresh-network-data are distinct; background time is excluded; watched pages have a 4-second stall event. Metrics currently emit to Sentry.                      |
+| User actions                  | `src/lib/perf/action-tracker.ts`                                                                                   | Limited named actions, 2.5-second initial stall budget, feedback/discard; background time is excluded; actions can complete across routes.                                                                                                 |
+| HTTP timing                   | `src/lib/perf/request-timing.ts`; `src/lib/api/client.ts`                                                          | `timedFetch` measures dispatch to response headers, 20-second ordinary-request timeout, classified outcomes. Shared client supplies request IDs, finite GET retries, and queue priorities.                                                 |
+| Optional detailed HTTP timing | `src/lib/api/client.ts:88`                                                                                         | `ApiAttemptTiming` already exposes queued/dispatched/headers/ended timestamps, status and outcome. Currently allocated only when callers supply `onAttempt`; must reuse/extend its ownership rather than instrument duplicate fetch paths. |
+| Low-cardinality dimensions    | `src/lib/perf/env-tags.ts`; `route-template.ts`                                                                    | Coarse network and Telegram platform; dynamic route normalization strips query/fragment and recognizes UUID/numeric/long tokens.                                                                                                           |
+| Chat delivery                 | `src/lib/perf/first-token-observation.ts`; `src/hooks/use-conversation-turn.ts`; `src/lib/api/conversations.ts:81` | v4 measurement uses submit-to-React-message-commit monotonic timing and immutable first terminal outcome. A dedicated bounded `/first-token` receipt is business-significant, not disposable monitoring.                                   |
+| Drama timing                  | `src/lib/perf/drama-observer.ts`; `drama-timing.ts`; `drama-media.ts`; `drama-resources.ts`                        | Existing document-navigation/click/playback timing, media first-frame and resource evidence. Reports go via authenticated shared telemetry API; upload failure does not change playback results.                                           |
+| Sentry                        | `src/instrumentation-client.ts`; `src/lib/sentry/*`                                                                | Browser traces sample at 20%, replay sessions at 5%, replay-on-error at 100%; manual metric distributions plus warning events; sanitization hooks; cross-origin backend trace propagation configured.                                      |
+| PostHog                       | `src/lib/telemetry/adapter.ts:207-215`                                                                             | Autocapture/pageview/performance disabled; controlled product events and replay. Not an existing general page-performance source.                                                                                                          |
+
+All `src/` paths above are relative to `packages/frontend/` unless qualified.
+
+## 3. Measurement gaps that matter for engineering acceptance
+
+1. **Page-ready is not cold launch.** `PagePerfTracker` begins at pathname effect, after Telegram initialization. The `cold_start` flag means the first tracked page in this JS lifetime, not document navigation, cache miss, or true cold launch. Keep this historical definition/version; add distinct navigation-click/document-navigation-to-ready observations rather than silently reinterpreting old values.
+2. **Ready is not LCP or actual reading.** `usePageReady` runs React effects after the page declares business data available. It does not establish browser paint, viewport visibility, interactivity, or that the user has read it. Cached content and fresh-network-data must remain separate. Web Vitals are supplementary browser signals, not substitutes for business-ready.
+3. **Current distributions only contain successful completions.** `endPage` unsubscribes/clears timers without a terminal outcome report. Discarded actions are not measured. Export entry/terminal counters (ready, error, abandoned, backgrounded/unknown as defined) alongside successful duration histograms; otherwise a page can look faster by failing more often. Keep error UI ready distinct: message detail currently calls ready on `detail.isError` too.
+4. **Route coverage is not complete.** The watched-page set includes 18 route templates covering roleplay/chat/create/VIP/profile, but `/dramas` and `/dramas/:id` are not in it. Drama has specialized timing owners instead. Add an explicit coverage inventory, reuse drama measurements for its user-visible success condition, and do not count generic catalog-ready as video-ready. Validate navigation between two IDs of the same template with cached ready data (effect dependencies must not miss the new visit).
+5. **HTTP metric is currently header latency only.** `api.request.duration` ends at response headers; queue time, retry/backoff, body download/JSON parse are excluded. Do not label it full API elapsed. Add separately named attempt phase metrics and logical-call total duration using shared-client boundaries; keep retries and one user call distinct. Full request timeout changes are separate behavioral work, not implied by telemetry migration.
+6. **Short dynamic IDs can escape generic normalization.** UUID/numeric/long-token heuristics do not cover every future route. Use a finite route-template allowlist with an `other` fallback for exported labels; never raw path or query.
+7. **Existing chat metrics cannot be mirrored blindly.** `reportChatLatency` currently includes `character_id` in Sentry metric attributes. Do not export it as a Metrics label or Loki index label. `chat.full_reply.duration` currently uses `Date.now` while first-token v4 is monotonic; declare separately before any clock/definition change.
+
+## 4. Minimal low-maintenance design
+
+- One shared lightweight frontend metric/event sink, called by the current measurement owners. It owns a finite metric/attribute allowlist, event-size/queue limits, batching, build release/environment, and no-op behavior. Do not introduce another business state machine.
+- Select a browser intake compatible with the chosen Grafana/Alloy deployment after checking current hosting. Browser bundles must contain no Grafana write credentials. A public/Faro intake needs origin controls, limits and a minimal payload; a backend relay needs a strict shared schema, finite body size/rate limits, no database persistence, and must not reuse the instrumented `apiClient` in a way that recursively reports telemetry requests.
+- Do not enable another session replay or broad automatic fetch instrumentation beside Sentry. Existing custom page/action/HTTP timings supply the product-specific signals. If a browser SDK is selected for transport/Web Vitals, keep replay disabled and only enable missing instruments.
+- No new Supabase page-performance/attempt telemetry table. Existing first-token receipts/checkpoints remain in business storage because the current billing/delivery policy consumes them. Drama telemetry persistence is separately feature-flagged and can be shadow-exported, validated, then disabled; do not delete historical facts or its active producer first.
+- Use explicit metric-definition versions when changing start/end conditions. Product code owns readiness; the export/config layer owns transport. Later pages need one readiness declaration and one finite route entry, not bespoke exporters or dashboards.
+
+## 5. Engineering scorecard acceptance shape
+
+For each route/service, show volume, known-outcome coverage, ready/error/timeout/abandonment fractions, P50/P95 of the clearly named duration, budget exceedance count/rate, current build, and a drilldown link to matching errors/traces. Page and API tables are separate; one endpoint can be shared by multiple pages.
+
+Start with `/`, `/dramas`, `/dramas/:id`, `/characters`, `/chats`, `/chat/:id`, `/create*`, `/profile`, recharge and VIP, then the remaining declared routes. A route with no measurements must display `not instrumented`/`no data`, never 0 ms.
+
+Targets must be route-specific and baseline-calibrated. Compare identical environment, measurement version, route, foreground/cache mode and device/network buckets across releases; do not accept a P95 improvement with worse success/coverage, less output, or a changed cohort. Minimum sample thresholds should mark uncertainty, not hide failing low-volume routes. Rank work by slow affected requests/user wait burden as well as P95, not P95 alone.
+
+## 6. Required validation (planning; not run)
+
+- Existing `page-tracker`, `request-timing`, `action-tracker`, `first-token-observation`, `drama-*`, API retry/stream tests.
+- Frontend typecheck/lint/build; shared contract tests plus all consumers if intake DTO changes.
+- Extend existing `packages/ui-tests` fixtures/groups rather than a new parallel mock harness: cold navigation vs SPA click; cached vs fresh; slow headers vs slow body; queue/retry; error page; leave/background; rapid navigation to another dynamic ID; unmount/revisit; unknown route; telemetry endpoint unavailable/429/oversized response; queue saturation and no recursive uploads.
+- Real Telegram/WebView validation remains needed for visibility/background, browser performance capability and non-blocking uploads; local mocks cannot prove real platform delivery or billing.
+
+## 7. Remaining deployment facts to verify
+
+The source demonstrates instrumentation exists, not that all frontend/backend releases are live or all Sentry/Grafana credentials/intakes are configured. No live account, personal data or secrets were read in this audit. The main task must confirm current environment/release and telemetry receiver availability before selecting transport or changing dashboards.

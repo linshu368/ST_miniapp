@@ -336,3 +336,43 @@ DO $$ DECLARE reader text; BEGIN
  PERFORM vip_t4_test.assert(has_column_privilege('service_role','experience.chat_generation_attempts','discarded_response','SELECT'),
    'server cannot read its diagnostic snapshot');
 END $$;
+
+-- Request-only recovery keeps ownership and the original first terminal result.
+DO $$ DECLARE k uuid; other uuid; payload jsonb; before_row jsonb; after_row jsonb; result jsonb; BEGIN
+ k:='00000000-0000-4000-8000-0000000003a1'; PERFORM recoverable_test.start_v4(k);
+ UPDATE experience.chat_generation_requests SET first_token_deadline_ms=6000,primary_timeout_ms=2000 WHERE chat_history_id=k;
+ payload:=jsonb_build_object('request_id',k,'assistant_message_id',NULL,'revision',NULL,
+  'measurement_method','client_committed_v4','outcome','not_observed','reason','page_left',
+  'backgrounded',true,'first_token_visible_ms',NULL,'first_token_received_ms',NULL,'wait_finished_ms',770);
+ PERFORM vip_t4_test.assert(NOT experience.report_chat_first_token('00000000-0000-4000-8000-0000000000e2','00000000-0000-0000-0000-000000000090',payload),'request-only report crossed users');
+ PERFORM vip_t4_test.assert(NOT experience.report_chat_first_token('00000000-0000-4000-8000-0000000000e1','00000000-0000-0000-0000-000000000091',payload),'request-only report crossed sessions');
+ PERFORM vip_t4_test.assert(NOT experience.report_chat_first_token('00000000-0000-4000-8000-0000000000e1','00000000-0000-0000-0000-000000000090',payload||'{"outcome":"observed"}'),'request-only report invented a delivery');
+ PERFORM vip_t4_test.assert(NOT experience.report_chat_first_token('00000000-0000-4000-8000-0000000000e1','00000000-0000-0000-0000-000000000090',payload||'{"revision":0}'),'partial identity was accepted');
+ PERFORM vip_t4_test.assert(experience.report_chat_first_token('00000000-0000-4000-8000-0000000000e1','00000000-0000-0000-0000-000000000090',payload),'early departure could not resolve its indexed request');
+ SELECT to_jsonb(r)||jsonb_build_object('ctid',r.ctid::text) INTO before_row FROM experience.chat_generation_requests r WHERE chat_history_id=k;
+ PERFORM experience.report_chat_first_token('00000000-0000-4000-8000-0000000000e1','00000000-0000-0000-0000-000000000090',payload);
+ PERFORM recoverable_test.report_v4(k,'observed',NULL,2000,false,3000);
+ SELECT to_jsonb(r)||jsonb_build_object('ctid',r.ctid::text) INTO after_row FROM experience.chat_generation_requests r WHERE chat_history_id=k;
+ PERFORM vip_t4_test.assert(before_row=after_row,'recovery performed another UPDATE or changed the terminal outcome');
+ PERFORM recoverable_test.complete(k); PERFORM visible_billing_test.charge(k); PERFORM visible_billing_test.charge(k);
+ PERFORM vip_t4_test.assert((SELECT count(*)=1 FROM billing.wallet_ledger WHERE debit_key=k::text),'departure recovery charged twice');
+
+ k:='00000000-0000-4000-8000-0000000003a2';PERFORM recoverable_test.start_v4(k);PERFORM recoverable_test.complete(k);
+ UPDATE experience.chat_generation_requests SET first_token_deadline_ms=6000,primary_timeout_ms=2000 WHERE chat_history_id=k;
+ PERFORM recoverable_test.report_v4(k,'observed',NULL,5900,false,5999);
+ PERFORM vip_t4_test.assert(billing.chat_delivery_billing_gate(k)='visible','5999ms delivery was not eligible');
+ k:='00000000-0000-4000-8000-0000000003a3';PERFORM recoverable_test.start_v4(k);PERFORM recoverable_test.complete(k);
+ UPDATE experience.chat_generation_requests SET first_token_deadline_ms=6000,primary_timeout_ms=2000 WHERE chat_history_id=k;
+ PERFORM recoverable_test.report_v4(k,'observed',NULL,5900,false,6000);
+ PERFORM vip_t4_test.assert(billing.chat_delivery_billing_gate(k)='waived','6000ms cutoff was charged');
+ PERFORM visible_billing_test.charge(k);PERFORM visible_billing_test.charge(k);
+ PERFORM vip_t4_test.assert(NOT EXISTS(SELECT 1 FROM billing.wallet_ledger WHERE debit_key=k::text),'six-second timeout debited a wallet');
+
+ k:='00000000-0000-4000-8000-0000000003a4';other:='00000000-0000-4000-8000-0000000003a5';
+ PERFORM recoverable_test.start_v4(k);PERFORM recoverable_test.start_v4(other);
+ UPDATE experience.chat_generation_requests SET client_request_id=k WHERE chat_history_id=other;
+ payload:=payload||jsonb_build_object('request_id',k);
+ PERFORM vip_t4_test.assert(NOT experience.report_chat_first_token('00000000-0000-4000-8000-0000000000e1','00000000-0000-0000-0000-000000000090',payload),'ambiguous replay was guessed');
+ PERFORM vip_t4_test.assert((SELECT count(*)=2 FROM experience.chat_generation_requests WHERE chat_history_id IN(k,other) AND client_outcome='missing'),'ambiguous lookup changed either round');
+ PERFORM vip_t4_test.assert(NOT experience.report_chat_first_token('00000000-0000-4000-8000-0000000000e1','00000000-0000-0000-0000-000000000090',payload||'{"request_id":"00000000-0000-4000-8000-0000000003ff"}'),'unknown request was accepted');
+END $$;

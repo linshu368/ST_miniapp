@@ -90,6 +90,7 @@ export function DramaPlayer({
   onRetryQueue,
   onNavigate,
 }: DramaPlayerProps) {
+  const playbackOwner = embedded ? 'home' : 'detail';
   const router = useRouter();
   const detailQuery = useDramaDetailQuery(id);
   const drama = detailQuery.data;
@@ -431,13 +432,14 @@ export function DramaPlayer({
     // 当前组件只推进自己持有的记录；导航后旧组件/旧请求的迟到更新不能抢回新记录。
     if (
       !timingRef.current ||
+      timingRef.current.flow.owner !== playbackOwner ||
       timingRef.current.videoId !== activeVideoId ||
       timingRef.current.retryVersion !== retryVersion
     ) {
       timingRef.current = {
         videoId: activeVideoId,
         retryVersion,
-        flow: dramaTiming.ensurePlayback(id, activeVideoId ?? undefined),
+        flow: dramaTiming.ensurePlayback(id, activeVideoId ?? undefined, playbackOwner),
       };
     }
     dramaTiming.playbackState(
@@ -446,7 +448,15 @@ export function DramaPlayer({
       playbackQuery.isFetching,
       playbackQuery.isError
     );
-  }, [id, activeVideoId, playback, playbackQuery.isFetching, playbackQuery.isError, retryVersion]);
+  }, [
+    id,
+    activeVideoId,
+    playback,
+    playbackQuery.isFetching,
+    playbackQuery.isError,
+    retryVersion,
+    playbackOwner,
+  ]);
 
   useEffect(() => {
     if (!videoEl || !playback?.playable || !playback.play_url || retryState !== 'idle') return;
@@ -602,7 +612,9 @@ export function DramaPlayer({
     const timer = window.setTimeout(
       () => {
         if (!embedded && nextPlayableId) {
-          dramaTiming.beginPlayback(id, 'episode', nextPlayableId).mark('player_ready');
+          dramaTiming
+            .beginPlayback(id, 'episode', nextPlayableId, undefined, 'detail')
+            .mark('player_ready');
           resumePending.current = false;
           setActiveVideoId(nextPlayableId);
           setFinished(false);
@@ -666,7 +678,13 @@ export function DramaPlayer({
       resumePending.current = !progress.completed;
       resumeExactPosition.current = !progress.completed;
     }
-    const timing = dramaTiming.beginPlayback(id, 'retry', activeVideoId ?? undefined);
+    const timing = dramaTiming.beginPlayback(
+      id,
+      'retry',
+      activeVideoId ?? undefined,
+      undefined,
+      playbackOwner
+    );
     timing.mark('player_ready');
     timing.mediaEvent('user_retry');
     setRetryState('loading');
@@ -704,7 +722,9 @@ export function DramaPlayer({
       retryAttempt.current += 1;
       setRetryState('idle');
       videoEl?.pause();
-      dramaTiming.beginPlayback(id, 'episode', videoId).mark('player_ready');
+      dramaTiming
+        .beginPlayback(id, 'episode', videoId, undefined, playbackOwner)
+        .mark('player_ready');
       setActiveVideoId(videoId);
       setFailed(false);
       setBuffering(true);

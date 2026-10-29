@@ -12,6 +12,7 @@ import { DramaRepository } from '../features/drama/repository.js';
 import { isPlayable, toDramaDetail, toDramaSummary } from '../features/drama/assemble.js';
 import { DramaSignedUrlCache, type DramaSigningObservation } from '../features/drama/signed-url.js';
 import { buildCoverUrl } from '../features/drama/cover-url.js';
+import { observeDramaRequest } from '../lib/engineering-observability.js';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -66,6 +67,13 @@ export default async function dramaRoutes(app: FastifyInstance) {
       outcome,
       sign_cache: timing.sign.cache ?? 'unused',
     };
+    observeDramaRequest({
+      route: attributes.route,
+      outcome,
+      signCache: attributes.sign_cache,
+      stages: timing.stages,
+      durationMs: reply.elapsedTime,
+    });
     try {
       requestLogger(request.log, 'drama').biz.info(
         {

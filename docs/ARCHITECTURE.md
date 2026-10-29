@@ -564,7 +564,7 @@ packages/backend/src/
 
 **体验监控**（Sentry org `wangqiao` / project `st-miniapp`，前后端共用，靠 `service` 标签区分）：p95/p99 来自 Sentry Metrics（全量，不受 trace 采样影响），"卡了"以 warning 事件表达并自带 Replay。前端 `src/lib/perf/` 记录请求耗时与超时（`apiClient` 默认 20 秒超时，图片/语音生成等长耗时接口例外）、页面可用耗时与 4 秒卡住（大厅/聊天列表/会话页/充值）、三个核心按钮 2.5 秒无反馈、资源加载失败；后端 `lib/perf-metrics.ts` 记录每路由耗时（对话/语音/图片生成单独 `kind=generation`）、Prisma 操作耗时（连接池超时标 `pool_timeout`）、事件循环延迟。采样：trace 0.2、Replay 会话 0.05、Replay 报错 1.0。指标清单、看板与排查流程见 `.trellis/tasks/10-21-sentry-ux-monitoring/dashboard-and-runbook.md`。阈值均为初值，待基线校准。
 
-短剧列表与播放另记录用户等待、API 排队/响应头/body、媒体元数据/首帧和 Backend 查询/签名阶段。浏览器通过鉴权 `POST /api/telemetry/drama-timing` 将有界报告交给 Pino；v2 增加被动媒体请求/帧处理/长任务证据、开始与至多一次网络补充。默认日志模式；对应环境执行 `20261027_drama_playback_observability.sql` 并显式开启 `DRAMA_TIMING_PERSIST_ENABLED` 后，遥测独立请求经 service_role 原子合并至 miniapp_analytics，播放API不依赖分析表。独立 Grafana `st-drama-playback` 只读分布/覆盖/单次详情，不修改经营看板；摘要全量14天、慢/失败及5%快样本明细7天，有界清理job初始关闭。没有新采集服务，URL只用于内存关联，缺失不补零，能力受TAO/WebView限制。源码/模板不代表远端已执行。口径与发布恢复见 [短剧播放耗时排查](drama-playback-timing.md) 和 [看板操作说明](grafana/drama-playback-runbook.md)。
+短剧列表与播放通过鉴权 `POST /api/telemetry/drama-timing` 接收有界客户端报告并保留Pino日志。达到5000ms的播放终态以及同一次观察的迟到network报告，以受控JSON正文经现有工程OTLP队列→Alloy→Grafana Cloud Loki，事件名 `drama.startup_diagnostic`；strict shared白名单、32KiB报告上限、256项既有队列与2秒出口预算不变。观察/视频/会话ID仅放日志正文，不进入指标或stream标签。无需Frontend变更或五秒快照；原十秒slow仍兼容但不写此Loki详情流。路由不再构造分析DB队列、不调用原观察RPC，旧 `DRAMA_TIMING_PERSIST_ENABLED` 即使为true也不驱动此接口写库；历史表/导入器/旧SQL看板保留，不删除历史。新看板详情追加到 `st-engineering-drama`，final与network不能重复计作两次启动。能力受TAO/WebView限制，limited/no_entry/unsupported不是0毫秒；出口关闭、过载或页面强退仍可能丢失，202只证明接口接收。源码不代表已上线，见[计时说明](drama-playback-timing.md)和[看板操作说明](grafana/drama-playback-runbook.md)。
 
 **本地页面验收**：`packages/ui-tests` 以虚构公开DTO提供HTTP/SSE场景，浏览器运行真实Frontend。手动与自动验收使用独立端口、状态和Next缓存，不依赖数据库、模型或支付；见 [移动端验收说明](../packages/ui-tests/README.md)。
 
@@ -748,3 +748,15 @@ send/regenerate 携带可选 `first_token_measurement`；后端通过既有 begi
 只消费赢家的replay与原charge_id结算，原报价/权益、超时免扣、主动停止和离页恢复规则不变。败方立即取消，不为排查drain；只把已接收的正文/公开思考有界片段和race_lost原因并入原attempt一次异步终态写，不发给用户、不进上下文、不另计费。正常attempt最多派发/终态两次observe；删除旧首发额外元数据补读，无新cron/轮询。diagnostic保存不阻塞首字，赢家身份仍须持久化才能结算。
 
 新迁移`20261028_first_token_race.sql`扩展现有attempt诊断列并解除禁止首发回赢的守卫，保留数据库单赢家CAS/PT409；Grafana仅获原指标列权限，不能读诊断正文。先本地与TEST验证、合dev，再生产迁移和应用/Admin/看板。回退应用保留诊断列与原账务，不扩权限，不改历史数据。
+
+## 六秒预算与有限补报（2026-10-29）
+
+生产运营目录版本97已由用户发布：总首字上限6000ms、启用型号启动兜底阈值2000ms；停用型号保留原值。本次代码发布不覆盖该配置。Shared全局缺省改为6秒，新增型号仍默认4秒；正式配置与每轮冻结值优先。首发继续参与竞争，先出有效正文或已开启公开思考首字即锁定赢家并立即停止另一方。只有首字受截止约束，完整回复不受6秒限制。此前10秒样本保留原冻结预算，分析时分窗。
+
+SSE start携带当轮冻结总预算。客户端若持有旧目录缓存，按原点击时间修正剩余等待，不从收到start重新计时，也不改写已产生的首份终态。离页/后台仍是独立结果，后台生成与返回恢复保持原行为。
+
+首份结果沿用原回报API，浏览器按Telegram用户暂存未确认的标量回执，不保存正文、凭证或授权信息；最多20条、24小时过期。保留即时最多3次尝试，耗尽后最多再补1次；每次包括排队和body最多3秒。成功即删除；启动、联网、返回前台触发串行补发，每次最多4条、30秒冷却，无定时轮询或服务端扫描。进程被强杀且尚未产生终态仍可能缺报，不能补成成功。
+
+早于SSE身份的非成功v4终态可用原request_id上报。既有RPC按现有client_request_id索引最多读取2条，校验用户与会话且唯一时才定位；歧义不猜，成功结果仍必须有消息编号与revision。首份终态后的重放不UPDATE。迁移20261029_first_token_receipt_recovery.sql仅替换既有函数；不增加表、索引、cron、逐token写入或历史回填，不改变超时免扣、主动停止及正常回复一次计费。
+
+发布顺序：本地PG/测试→TEST迁移与应用验收→先合dev→生产迁移→Backend/Frontend/Admin→Grafana说明；配置只读核对版本97。回退应用保留兼容RPC，必要时前向修复，不删除账务。

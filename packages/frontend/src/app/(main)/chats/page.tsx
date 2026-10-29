@@ -41,8 +41,8 @@ type LobbySummaryLookup =
 
 function ConversationHistoryList() {
   const { data, isLoading, isError, refetch } = useConversationsQuery(undefined);
-  usePageReady('/chats', data !== undefined);
   const sessions = data?.sessions ?? [];
+  usePageReady('/chats', data !== undefined && (!isError || sessions.length > 0), false, isError);
   // 历史行只要头像和名字。原来每行各拉一次详情，20 行就是 20 个请求（Sentry ST-MINIAPP-1Y）。
   // 先查大厅摘要（通常已在 localStorage），只有查不到的卡（下架、或大厅读失败）才回退到详情。
   // 不重拉：这里只借头像，大厅自己进页面时会对齐数据库。

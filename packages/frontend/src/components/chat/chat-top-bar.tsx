@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { ChevronDown, ChevronLeft, PanelLeft } from 'lucide-react';
+import { ChevronDown, ChevronLeft, PanelLeft, MessageCircle } from 'lucide-react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 
 import { FavoriteButton } from '@/components/characters/favorite-button';
@@ -16,6 +16,9 @@ interface ChatTopBarProps {
   backLabel?: '返回发现' | '返回对话';
   characterId: string;
   title: string;
+  characterName?: string;
+  onOpenCharacter: () => void;
+  onOpenComments: () => void;
   onOpenSessions: () => void;
   returnTo: string;
   generating: boolean;
@@ -31,6 +34,9 @@ export function ChatTopBar({
   backLabel = '返回发现',
   characterId,
   title,
+  characterName,
+  onOpenCharacter,
+  onOpenComments,
   onOpenSessions,
   returnTo,
   generating,
@@ -71,9 +77,15 @@ export function ChatTopBar({
           </div>
 
           <div className="flex min-w-0 flex-col items-center">
-            <span className="max-w-full truncate text-center text-[16px] font-semibold tracking-tight text-foreground">
-              {title}
-            </span>
+            <button
+              type="button"
+              onClick={onOpenCharacter}
+              aria-label={`查看 ${characterName ?? title} 的详情`}
+              className="flex min-h-8 max-w-full items-center justify-center gap-1 rounded-lg px-1 text-center text-[15px] font-semibold tracking-tight text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            >
+              <span className="truncate">{title}</span>
+              <ChevronDown className="size-3 shrink-0 text-muted-foreground/60" aria-hidden />
+            </button>
             <DialogPrimitive.Trigger asChild>
               <button
                 type="button"
@@ -98,6 +110,13 @@ export function ChatTopBar({
 
           <div className="flex shrink-0 items-center pr-1">
             <FavoriteButton characterId={characterId} variant="header" />
+            <IconButton
+              label={`查看 ${characterName ?? title} 的评论`}
+              onClick={onOpenComments}
+              muted
+            >
+              <MessageCircle className="size-5" strokeWidth={1.7} aria-hidden />
+            </IconButton>
           </div>
         </div>
 
@@ -151,7 +170,7 @@ function IconButton({
       onClick={onClick}
       aria-label={label}
       className={cn(
-        'flex size-10 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-muted active:scale-95',
+        'flex size-11 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-muted active:scale-95',
         muted ? 'text-muted-foreground hover:text-foreground' : 'text-foreground'
       )}
     >

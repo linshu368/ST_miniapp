@@ -11,7 +11,7 @@ import {
 
 /** Delay after primary dispatch before starting the fallback; primary remains eligible. */
 export const DEFAULT_FIRST_TOKEN_TIMEOUT_MS = 4_000;
-export const DEFAULT_FIRST_TOKEN_DEADLINE_MS = 10_000;
+export const DEFAULT_FIRST_TOKEN_DEADLINE_MS = 6_000;
 /** Legacy name: reserve before the shared deadline for launching fallback, not its lifetime. */
 export const DEFAULT_FALLBACK_TOKEN_TIMEOUT_MS = 2_000;
 export const DEFAULT_FIRST_TOKEN_TIMEOUT_RATE_TARGET = 0.01;

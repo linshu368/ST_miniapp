@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Heart, Search, X } from 'lucide-react';
+import { Star, Search, X } from 'lucide-react';
 
 import { DEFAULT_LOBBY_SORT, type LobbySort } from '@miniapp/shared';
 
@@ -18,6 +18,7 @@ import {
 import { markCriticalSettled, useEntryEnrichReady } from '@/lib/entry-phase';
 import { chatEntryPath } from '@/lib/chat-entry';
 import { useFavoriteIdsQuery } from '@/lib/api/favorites';
+import { useCharacterSocialsQuery } from '@/lib/api/character-social';
 import { useConversationsQuery } from '@/lib/api/conversations';
 import {
   readRoleplayDiscovery,
@@ -35,7 +36,7 @@ import {
 } from '@/lib/lobby-return';
 
 import { CharacterCard, lobbyImageUrl } from './character-card';
-import { CharacterDetailSheet } from './character-detail-sheet';
+import { CharacterDetailSheet, type CharacterDetailTab } from './character-detail-sheet';
 import { RoleplayHeader } from '@/components/roleplay/roleplay-header';
 import { RecentConversationCard } from '@/components/roleplay/recent-conversation-card';
 
@@ -139,8 +140,14 @@ export function CharacterGallery() {
     if (data !== undefined || isError || isFetched) markCriticalSettled();
   }, [data, isError, isFetched]);
   // 大厅有本地缓存秒开：content 记用户看到列表的时刻，fresh 记最新列表到达的时刻，两者分开才看得出后端慢。
-  const lobbyFresh = useFreshAfterFetch(isFetching, data !== undefined);
-  usePageReady('/characters', data !== undefined, lobbyFresh);
+  const lobbyFresh = useFreshAfterFetch(isFetching, data !== undefined, isError);
+  usePageReady(
+    '/characters',
+    data !== undefined && !isError,
+    lobbyFresh,
+    isError,
+    data !== undefined && (isFetching || isRestoring) ? 'cache' : lobbyFresh ? 'fetch' : 'unknown'
+  );
   const [query, setQuery] = useState(restoreSnapshot?.query ?? savedDiscovery.query);
   const [favoritesOnly, setFavoritesOnly] = useState(
     restoreSnapshot?.favoritesOnly ?? savedDiscovery.favoritesOnly
@@ -150,6 +157,7 @@ export function CharacterGallery() {
     rememberRoleplayDiscovery({ sort, query, favoritesOnly });
   }, [sort, query, favoritesOnly]);
   const [previewId, setPreviewId] = useState<string | null>(null);
+  const [previewTab, setPreviewTab] = useState<CharacterDetailTab>('intro');
   const [enteringId, setEnteringId] = useState<string | null>(null);
   const enteringRef = useRef(false);
   const restoredAnchorIdRef = useRef<string | null>(null);
@@ -184,7 +192,20 @@ export function CharacterGallery() {
   // 引用必须稳定，CharacterCard 的 memo 才有意义：打开弹层不再重渲染整页卡片。
   const handleSelectCharacter = useCallback(
     (id: string) => {
-      if (!enteringId) setPreviewId(id);
+      if (!enteringId) {
+        setPreviewTab('intro');
+        setPreviewId(id);
+      }
+    },
+    [enteringId]
+  );
+
+  const handleCharacterComments = useCallback(
+    (id: string) => {
+      if (!enteringId) {
+        setPreviewTab('comments');
+        setPreviewId(id);
+      }
     },
     [enteringId]
   );
@@ -292,6 +313,11 @@ export function CharacterGallery() {
   const visibleCharacters = useMemo(
     () => (renderAll ? filtered : filtered.slice(0, effectiveLimit)),
     [filtered, renderAll, effectiveLimit]
+  );
+
+  useCharacterSocialsQuery(
+    visibleCharacters.map((character) => character.id),
+    enrichReady
   );
 
   // 按滚动位置补齐，而不是在空闲帧定时补：定时补会在路由 transition 渲染让出主线程的间隙里
@@ -523,7 +549,7 @@ export function CharacterGallery() {
             : 'border-transparent text-muted-foreground hover:bg-card hover:text-foreground'
         )}
       >
-        <Heart className="size-3.5" aria-hidden />
+        <Star className="size-3.5" aria-hidden />
         已收藏
       </button>
     </div>
@@ -531,10 +557,8 @@ export function CharacterGallery() {
 
   const listHeader = (
     <>
-      <RoleplayHeader active="discover">
-        {searchBar}
-        {sortTabs}
-      </RoleplayHeader>
+      <RoleplayHeader active="discover">{searchBar}</RoleplayHeader>
+      {sortTabs}
       <RecentConversationCard />
     </>
   );
@@ -545,7 +569,7 @@ export function CharacterGallery() {
         {listHeader}
         <div
           className={cn(
-            'mx-auto grid w-full max-w-screen-xl grid-cols-[repeat(auto-fit,minmax(9.5rem,1fr))] gap-3 px-4 py-6 sm:px-6 lg:px-8',
+            'mx-auto grid w-full max-w-screen-xl grid-cols-2 gap-2.5 px-3 py-6 sm:px-6 lg:px-8',
             hiddenWhileRestoring
           )}
           aria-label="加载中"
@@ -630,7 +654,7 @@ export function CharacterGallery() {
       ) : (
         <div
           className={cn(
-            'mx-auto grid w-full max-w-screen-xl grid-cols-[repeat(auto-fit,minmax(9.5rem,1fr))] gap-3 px-4 pb-10 pt-2 sm:grid-cols-[repeat(auto-fit,minmax(10.5rem,1fr))] sm:gap-4 sm:px-6 lg:grid-cols-[repeat(auto-fit,minmax(12rem,1fr))] lg:px-8',
+            'mx-auto grid w-full max-w-screen-xl grid-cols-2 gap-2.5 px-3 pb-10 pt-2 sm:grid-cols-[repeat(auto-fit,minmax(10.5rem,1fr))] sm:gap-4 sm:px-6 lg:grid-cols-[repeat(auto-fit,minmax(12rem,1fr))] lg:px-8',
             hiddenWhileRestoring
           )}
         >
@@ -642,6 +666,7 @@ export function CharacterGallery() {
               priority={index < FIRST_SCREEN_IMAGE_COUNT}
               onImageSettled={handleImageSettled}
               onSelect={handleSelectCharacter}
+              onComments={handleCharacterComments}
             />
           ))}
         </div>
@@ -653,6 +678,7 @@ export function CharacterGallery() {
 
       <CharacterDetailSheet
         characterId={previewId}
+        initialTab={previewTab}
         summary={previewSummary}
         entering={enteringId !== null}
         onClose={() => {

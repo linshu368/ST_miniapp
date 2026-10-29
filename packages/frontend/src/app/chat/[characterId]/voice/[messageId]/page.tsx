@@ -59,7 +59,9 @@ export default function CustomVoicePage() {
   const voiceConfig = useVoiceConfigQuery();
   usePageReady(
     '/chat/:id/voice/:id',
-    sessionVoice.data !== undefined && voiceConfig.data !== undefined
+    sessionVoice.data !== undefined && voiceConfig.data !== undefined,
+    false,
+    sessionVoice.isError || voiceConfig.isError
   );
   const priceLabel = formatMediaBillingPreview(
     voiceConfig.data?.next_billing,

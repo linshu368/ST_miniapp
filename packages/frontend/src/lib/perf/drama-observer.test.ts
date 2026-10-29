@@ -6,11 +6,23 @@ const mocks = vi.hoisted(() => ({
   info: vi.fn(),
   warn: vi.fn(),
   api: vi.fn(),
+  measurement: vi.fn(),
+  event: vi.fn(),
+  pageReady: vi.fn(),
+  pageFailed: vi.fn(),
 }));
 vi.mock('@/lib/api/telemetry', () => ({ uploadDramaTiming: mocks.upload }));
 vi.mock('@/lib/api/client', () => ({ apiClient: mocks.api }));
 vi.mock('@/lib/logger', () => ({ createLogger: () => ({ info: mocks.info, warn: mocks.warn }) }));
 vi.mock('./request-timing', () => ({ createRequestId: () => 'observation' }));
+vi.mock('./grafana', () => ({
+  recordEngineeringMeasurement: mocks.measurement,
+  recordEngineeringEvent: mocks.event,
+}));
+vi.mock('./page-tracker', () => ({
+  markPageReady: mocks.pageReady,
+  markPageFailed: mocks.pageFailed,
+}));
 import { dramaTiming, installDramaTiming } from './drama-observer';
 
 afterEach(() => {
@@ -23,6 +35,81 @@ afterEach(() => {
 });
 
 describe('drama centralized logging', () => {
+  it('adds catalog start/final engineering signals without an additional legacy start upload', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+    dramaTiming.beginList('navigation_click');
+    expect(mocks.event).toHaveBeenCalledWith(
+      'drama.started',
+      expect.objectContaining({ stage: 'catalog', report_kind: 'list' })
+    );
+    expect(mocks.upload).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(750);
+    dramaTiming.listReady({});
+    expect(mocks.measurement).toHaveBeenCalledExactlyOnceWith(
+      'drama.catalog',
+      750,
+      expect.objectContaining({ outcome: 'ready' })
+    );
+    expect(mocks.upload).toHaveBeenCalledOnce();
+  });
+
+  it('projects first frame and independent stages once; supplements cannot duplicate startup', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+    const flow = dramaTiming.beginPlayback('private-drama', 'switch');
+    flow.mark('player_ready');
+    flow.addressReady();
+    await vi.advanceTimersByTimeAsync(20);
+    flow.mark('source_set');
+    await vi.advanceTimersByTimeAsync(100);
+    flow.mark('metadata');
+    await vi.advanceTimersByTimeAsync(300);
+    flow.mark('first_frame');
+    flow.frameMethod = 'video_frame_callback';
+    await vi.advanceTimersByTimeAsync(50);
+    flow.mark('playing');
+    flow.finish('playing');
+    await Promise.resolve();
+    expect(mocks.measurement).toHaveBeenCalledWith(
+      'drama.startup',
+      470,
+      expect.objectContaining({ outcome: 'playing', source_measurement_version: 'drama_v2' })
+    );
+    expect(mocks.measurement).toHaveBeenCalledWith(
+      'drama.first_frame',
+      420,
+      expect.objectContaining({ first_frame_method: 'video_frame_callback' })
+    );
+    expect(mocks.measurement).toHaveBeenCalledWith(
+      'drama.stage',
+      300,
+      expect.objectContaining({ stage: 'metadata_to_frame' })
+    );
+    expect(mocks.pageReady).toHaveBeenCalledExactlyOnceWith(
+      '/dramas/:id',
+      'content',
+      '/dramas/private-drama'
+    );
+    const count = mocks.measurement.mock.calls.length;
+    flow.networkTiming({ status: 'no_entry', entries: [], truncated: false }, true);
+    expect(mocks.measurement).toHaveBeenCalledTimes(count);
+    expect(JSON.stringify([mocks.measurement.mock.calls, mocks.event.mock.calls])).not.toContain(
+      'private-drama'
+    );
+  });
+
+  it('preserves logging/upload on mirror failure and keeps playback error distinct from page ready', async () => {
+    mocks.measurement.mockImplementationOnce(() => {
+      throw new Error('collector failed');
+    });
+    dramaTiming.beginPlayback('a', 'direct').finish('error');
+    await Promise.resolve();
+    expect(mocks.upload).toHaveBeenCalledWith(
+      expect.objectContaining({ phase: 'final', outcome: 'error' })
+    );
+    expect(mocks.pageReady).not.toHaveBeenCalled();
+    expect(mocks.pageFailed).toHaveBeenCalledWith('/dramas/:id', '/dramas/a');
+  });
+
   it('uploads slow and final snapshots with request details and no media credentials', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
     const flow = dramaTiming.beginPlayback('drama-id', 'cover');

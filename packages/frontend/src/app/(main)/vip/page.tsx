@@ -73,7 +73,15 @@ function VipPageContent() {
   const { impact, notification, whisper } = useHaptic();
   const plansQuery = usePaymentPlansQuery();
   const vipQuery = useVipStatusQuery();
-  usePageReady('/vip', plansQuery.data !== undefined && vipQuery.data !== undefined);
+  usePageReady(
+    '/vip',
+    plansQuery.data !== undefined &&
+      vipQuery.data !== undefined &&
+      !plansQuery.isError &&
+      !vipQuery.isError,
+    false,
+    plansQuery.isError || vipQuery.isError
+  );
   const createOrder = useCreatePaymentOrderMutation();
   const { mutate: confirmCheckout } = useCheckoutConfirmationMutation();
   const [paymentType, setPaymentType] = useState<PaymentType>('alipay');

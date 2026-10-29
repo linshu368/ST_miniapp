@@ -9,9 +9,11 @@ import {
 } from '@miniapp/shared';
 export type { DramaTimingReport } from '@miniapp/shared';
 import type { ApiAttemptTiming } from '@/lib/api/client';
+import { recordEngineeringEvent } from './grafana';
 
 export type DramaQueryKind = 'list' | 'queue' | 'detail' | 'playback';
 export type DramaEntry = 'cover' | 'switch' | 'episode' | 'retry' | 'direct';
+export type DramaPlaybackOwner = 'home' | 'detail';
 export type DramaOutcome =
   | 'playing'
   | 'error'
@@ -90,7 +92,8 @@ export class DramaPlaybackTiming {
     private readonly emit: (report: DramaTimingReport) => void,
     private readonly list?: ListTiming,
     private readonly cover?: DramaTimingReport['cover'],
-    private readonly context?: DramaTimingReport['context']
+    private readonly context?: DramaTimingReport['context'],
+    readonly owner: DramaPlaybackOwner = 'detail'
   ) {
     this.timer = setTimeout(() => this.report('slow'), SLOW_MS);
     if (context) this.report('start');
@@ -340,6 +343,19 @@ export class DramaTimingTracker {
   beginList(startKind: ListTiming['startKind'], startedAt = this.now()): void {
     this.endList();
     this.list = { id: this.newId(), startedAt, startKind, queries: [] };
+    try {
+      // A start denominator for the engineering mirror only; no extra legacy
+      // timing upload / database write is introduced for a catalog visit.
+      recordEngineeringEvent('drama.started', {
+        route: '/dramas',
+        report_kind: 'list',
+        stage: 'catalog',
+        outcome: 'waiting',
+        source_measurement_version: 'drama_v1',
+      });
+    } catch {
+      // Catalog navigation cannot depend on the observability transport.
+    }
     this.listTimer = setTimeout(
       () => this.reportList('slow', 'waiting'),
       Math.max(0, SLOW_MS - (this.now() - startedAt))
@@ -348,9 +364,15 @@ export class DramaTimingTracker {
 
   route(pathname: string, documentStart?: number): void {
     const match = /^\/dramas\/([^/]+)\/?$/.exec(pathname);
-    if (this.playback && (!match || match[1] !== this.playback.dramaId)) {
-      this.playback.finish('left');
-      this.playback = undefined;
+    if (this.playback) {
+      // The embedded home player may mount before this root route effect. Its
+      // owner is '/', not a missing detail route; same-drama owners stay distinct.
+      const remainsOnOwnerRoute =
+        this.playback.owner === 'home' ? pathname === '/' : match?.[1] === this.playback.dramaId;
+      if (!remainsOnOwnerRoute) {
+        this.playback.finish('left');
+        this.playback = undefined;
+      }
     }
     if (pathname === '/dramas') {
       if (!this.onListRoute && (!this.list || this.list.ended))
@@ -431,9 +453,10 @@ export class DramaTimingTracker {
     dramaId: string,
     entry: DramaEntry,
     videoId?: string,
-    cover?: DramaTimingReport['cover']
+    cover?: DramaTimingReport['cover'],
+    owner: DramaPlaybackOwner = 'detail'
   ): DramaPlaybackTiming {
-    this.playback?.finish('switched');
+    this.playback?.finish(this.playback.owner === owner ? 'switched' : 'left');
     const playback = new DramaPlaybackTiming(
       this.newId(),
       dramaId,
@@ -445,18 +468,26 @@ export class DramaTimingTracker {
       this.emit,
       entry === 'cover' ? this.list : undefined,
       cover,
-      this.context
+      this.context,
+      owner
     );
     this.playback = playback;
     for (const query of this.pending) if (this.matches(query, playback)) playback.addQuery(query);
     return playback;
   }
 
-  ensurePlayback(dramaId: string, videoId?: string): DramaPlaybackTiming {
+  ensurePlayback(
+    dramaId: string,
+    videoId?: string,
+    owner: DramaPlaybackOwner = 'detail'
+  ): DramaPlaybackTiming {
     const active = this.playback;
-    return active && active.dramaId === dramaId && active.requestedVideoId === videoId
+    return active &&
+      active.owner === owner &&
+      active.dramaId === dramaId &&
+      active.requestedVideoId === videoId
       ? active
-      : this.beginPlayback(dramaId, 'direct', videoId);
+      : this.beginPlayback(dramaId, 'direct', videoId, undefined, owner);
   }
 
   playbackState(
