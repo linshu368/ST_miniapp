@@ -465,3 +465,27 @@ test('@roleplay @character-social 打开评论不打断正在生成的角色回�
     )
   ).toHaveLength(1);
 });
+
+test.describe('初始 HTML 框架', () => {
+  test.use({ javaScriptEnabled: false });
+
+  for (const path of ['/', '/characters', '/dramas']) {
+    test(`@startup @layout ${path} 无 JS 时仍有框架和主导航`, async ({ page, preview }) => {
+      await page.goto(path);
+      await expect(page.locator('[data-startup-shell]')).toBeVisible();
+      await expect(page.getByRole('navigation', { name: '主导航' })).toBeVisible();
+      await expect(page.getByRole('link', { name: 'AI短剧', exact: true })).toBeVisible();
+      if (path === '/') {
+        await expect(page.getByText('加载中', { exact: true })).toHaveCount(0);
+      }
+      if (path === '/dramas') {
+        await expect(page.getByRole('navigation', { name: '短剧栏目' })).toBeVisible();
+        await expect(page.getByRole('button', { name: '搜索短剧' })).toBeVisible();
+        await expect(page.getByLabel('短剧加载中', { exact: true })).toBeVisible();
+      }
+      expect((await preview.state()).requests).toEqual([]);
+      await expectMobileLayout(page);
+      await preview.screenshot(`初始框架${path === '/' ? '大厅' : '短剧'}`);
+    });
+  }
+});

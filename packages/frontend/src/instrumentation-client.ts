@@ -3,7 +3,7 @@ import * as Sentry from '@sentry/nextjs';
 import { initEnvTags } from '@/lib/perf/env-tags';
 import { initializeEngineeringTelemetry } from '@/lib/perf/grafana';
 import { initializePageExperience, markPageNavigationStart } from '@/lib/perf/page-tracker';
-import { sanitizeTelemetry } from '@/lib/sentry/sanitize';
+import { sanitizeStartupMetric, sanitizeTelemetry } from '@/lib/sentry/sanitize';
 
 const SENTRY_ENVIRONMENTS = new Set(['production', 'development']);
 
@@ -89,6 +89,7 @@ if (isSentryEnabled) {
     beforeSend: (event) => sanitizeTelemetry(event),
     beforeSendTransaction: (event) => sanitizeTelemetry(event),
     beforeBreadcrumb: (breadcrumb) => sanitizeTelemetry(breadcrumb),
+    beforeSendMetric: sanitizeStartupMetric,
   });
   Sentry.addEventProcessor((event) =>
     event.type === 'replay_event' ? sanitizeTelemetry(event) : event

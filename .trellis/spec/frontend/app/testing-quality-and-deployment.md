@@ -42,6 +42,17 @@ shared contract 改动追加 `pnpm --filter @miniapp/shared test` 和所有消�
 - Markdown 始终 sanitize；外链/图片 URL 使用允许协议；不得用 `dangerouslySetInnerHTML` 绕过现有安全层。
 - 回复后处理至少覆盖 artifact 好坏隔离、旧 `NULL`/缺失版本原文退化、流式不挂载 renderer、终态 choice 可用和同步防双击。真实 Worker 安全/DOM 行为由 `@miniapp/reply-renderer` 测试承担；Telegram WebView 真机仍是发布门禁。
 
+## MiniApp 启动框架与 P95
+
+- `Providers` 在 Telegram 初始化前输出 `EntryShell`：角色入口 `/characters` 复用 `LobbyShellSkeleton`，短剧列表复用 `DramaListHeader`/`DramaGridSkeleton`，导航复用无请求的 `BottomNavShell`；首页保留页面容器和主导航，不显示“加载中”文字，其他入口提供通用加载提示，深层路由沿用导航隐藏规则。初始化前不挂业务 reader，不读取身份或 storage。短剧数据/封面仍异步加载。
+- 初始化完成后，`startup-timing.ts` 检查框架并等待两次 `requestAnimationFrame`，给浏览器一次绘制机会，然后经 SDK `miniApp.ready()` 通知 Telegram 展示。不能用 `init()`、接口返回或封面 onLoad 替代该通知；普通浏览器/旧客户端安全降级，遥测失败不能影响 ready。
+- `startup.shell_ready.duration`（distribution，ms）：本次文档导航到初始化后框架提交并获得绘制机会的耗时，包含 HTML/JS 下载和 hydration。`measurement=post_render_frame` 表示它是框架可展示时间的保守近似，可能晚于静态 HTML 的实际首绘；不是 FCP、完整内容就绪，也不是原生遮罩实际消失时刻。
+- `startup.telegram_ready.duration`（distribution，ms）：同一起点到成功发送 `ready()`；`unavailable`/`failed` 不生成这条指标。shell 指标的 `telegram_ready=sent|unavailable|failed` 可区分真机与降级。
+- 两指标每份文档最多一次，SPA 切页和 BFCache 恢复不重记；StrictMode 清理不会伪造离开。`startup.outcome`（count）记录 `shell_ready|background|left|missing_shell`；观察期间切后台/提前离开的样本不进入耗时分布，恢复前台后仍通知 Telegram 展示。未执行到埋点的 JS 下载失败/初始化失败及用户点击入口到 WebView 导航前的等待不可观测，不能声称覆盖全部打开次数。
+- 指标只带入口路由模板、`tg_platform`、`net_type`、`measurement` 和 ready 状态，不含用户 ID、完整路径、query、initData。未知路由归 `/other`。`beforeSendMetric` 只对 `startup.*` 使用属性白名单，移除 SDK 自动附加的用户身份/Replay ID，保留 `sentry.release`、`sentry.environment` 和 SDK 版本；其他指标沿用既有处理。无需新服务或新环境变量。
+- P95：在 Sentry Metrics 选择 `startup.shell_ready.duration`，聚合 `p95`，过滤 `sentry.environment=production`、`telegram_ready=sent`；按 `route` 分组并显示 `count`。通过 `sentry.release` 比较版本，按 `tg_platform` 分开 Android/iOS；`startup.telegram_ready.duration` 同口径另画。`startup.outcome` 同时显示各结果计数，不能将失败填成 0ms，也不能平均各分组 P95。历史 `page.ready.duration` 起点不同，不能用于此指标的旧版对照或回补。
+- 本地回归：`pnpm test:ui --grep @startup` 在关闭 JS 的移动浏览器中验证首页/角色/短剧 HTML 的框架、主导航、无业务请求和无横向溢出；`page-tracker.test.ts` 覆盖导航零点、单次上报、StrictMode、后台/离开、桥接/遥测失败。Telegram 原生遮罩与线上指标接收仍需发布后的真机验证。
+
 ## Vercel 部署
 
 短剧 CDN 对照使用正常播放器，独立实验页面／接口已移除。固定 `@drama` 验收补充关闭后重新取址及首播完成后的快进诊断；TEST／生产／真实 Telegram 性能分别验收，见 [操作说明](../../../../ops/drama-cdn-rollout.md)。

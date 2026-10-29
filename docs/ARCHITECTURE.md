@@ -468,6 +468,8 @@ frontend 自有 Route Handler：`GET /api/lobby-characters`（白名单 sort 参
 
 ## 7. 工程约定
 
+MiniApp 启动展示与业务数据分离：根 `Providers` 在 Telegram 初始化前输出无请求的 `EntryShell`，角色/短剧列表复用现有骨架、短剧栏目及五项导航；初始化后在绘制机会后发送 SDK `miniApp.ready()`。`lib/perf/startup-timing.ts` 复用 Sentry distribution 上报从文档导航起算的框架可展示/ready 通知耗时，与原 `page.ready.duration` 分开；P95、后台/离开和原生遮罩观测边界见 [前端性能规范](../.trellis/spec/frontend/app/testing-quality-and-deployment.md#miniapp-启动框架与-p95)。
+
 ### 7.1 前端
 
 - Next.js 14 App Router，`src/app/` 下 `(main)` 分组在本地短剧新版中承载五入口（角色 `/characters` 与 `/chats` / AI短剧 `/dramas` / 中央播放首页 `/` / 生成 `/create` / 我的 `/profile`）；公共贴底导航共享高度、安全区和隐藏规则，会话页是 **`/chat/[characterId]?session=...`**（不在分组内，无底部导航），另有自定义语音台词页 `/chat/[characterId]/voice/[messageId]`。

@@ -8,6 +8,7 @@ import type { DramaSummary } from '@miniapp/shared';
 
 import { useDramaListQuery, usePrefetchDramaPlayback } from '@/lib/api/drama';
 import { selectDramas } from '@/lib/drama-catalog';
+import { DramaListHeader, DramaGridSkeleton } from '@/components/drama/drama-list-shell';
 import { markCriticalSettled } from '@/lib/entry-phase';
 import { dramaTiming, coverLoadMs } from '@/lib/perf/drama-observer';
 import { useFreshAfterFetch, usePageReady } from '@/lib/perf/page-ready';
@@ -19,10 +20,6 @@ import {
   type DramaLibraryPosition,
 } from '@/stores/drama-library-store';
 
-const TABS = [
-  { value: 'theater', label: '剧场' },
-  { value: 'library', label: '追剧' },
-] as const;
 const CATEGORIES = ['全部', '悬疑', '恋爱', '古风', '科幻', '喜剧', '治愈', '脑洞'];
 
 function readLibraryPosition(element: HTMLDivElement, preferredId?: string): DramaLibraryPosition {
@@ -202,57 +199,10 @@ export default function DramasPage() {
             : 'relative h-full'
         )}
       >
-        <header
-          className={cn(
-            'relative bg-[#121113] px-5',
-            browse.tab === 'library' && 'pt-[env(safe-area-inset-top)]'
-          )}
-        >
-          <div className="flex h-[60px] items-center justify-between">
-            <nav aria-label="短剧栏目" className="flex h-full items-center gap-7">
-              {TABS.map((tab) => (
-                <button
-                  key={tab.value}
-                  type="button"
-                  aria-current={browse.tab === tab.value ? 'page' : undefined}
-                  onClick={() => switchTab(tab.value)}
-                  className={cn(
-                    'relative flex h-full min-w-11 items-center justify-center text-[18px] transition-colors',
-                    browse.tab === tab.value
-                      ? 'font-bold text-[#eee7e2]'
-                      : 'font-medium text-[#eee7e2]/50'
-                  )}
-                >
-                  {tab.label}
-                  {browse.tab === tab.value ? (
-                    <span
-                      aria-hidden
-                      className="absolute bottom-1.5 h-0.5 w-4 rounded-full bg-white"
-                    />
-                  ) : null}
-                </button>
-              ))}
-            </nav>
-            <button
-              type="button"
-              aria-label="搜索短剧"
-              onClick={openSearch}
-              className="-mr-2 flex h-11 w-11 items-center justify-center rounded-full active:bg-white/10"
-            >
-              <Search className="h-[22px] w-[22px]" />
-            </button>
-          </div>
-        </header>
+        <DramaListHeader tab={browse.tab} onTabChange={switchTab} onSearch={openSearch} />
 
         {isLoading || !hydrated ? (
-          <div className="space-y-5 px-4 pt-5" aria-label="短剧加载中">
-            <div className="h-11 animate-pulse rounded-xl bg-white/5" />
-            <div className="grid grid-cols-2 gap-3">
-              {Array.from({ length: 6 }, (_, i) => (
-                <div key={i} className="aspect-[3/4] animate-pulse rounded-lg bg-white/5" />
-              ))}
-            </div>
-          </div>
+          <DramaGridSkeleton />
         ) : isError ? (
           <EmptyState
             title="短剧暂时没加载出来"
