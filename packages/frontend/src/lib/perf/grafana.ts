@@ -19,6 +19,7 @@ type Configuration = { url: string; environment: 'test' | 'production'; release:
 export const ENGINEERING_MEASUREMENT_VERSION = 'engineering_v1';
 const MEASUREMENTS = new Set([
   'page.ready',
+  'page.critical_visual',
   'page.fresh',
   'page.navigation',
   'page.launch',
@@ -41,6 +42,7 @@ const MEASUREMENTS = new Set([
 ]);
 const EVENTS = new Set([
   'page.started',
+  'page.critical_visual_terminal',
   'page.terminal',
   'page.stall',
   'roleplay.started',
@@ -79,6 +81,8 @@ const ENUMS: Readonly<Record<string, readonly string[]>> = {
     'stalled',
     'waiting',
     'playing',
+    'loaded',
+    'absent',
     'error',
     'unplayable',
     'autoplay_blocked',
@@ -99,6 +103,7 @@ const ENUMS: Readonly<Record<string, readonly string[]>> = {
   ],
   stage: [
     'ready',
+    'critical_visual',
     'fresh',
     'launch',
     'navigation',
@@ -160,6 +165,7 @@ const ENUMS: Readonly<Record<string, readonly string[]>> = {
     'page_mount_v1',
     'page_navigation_v1',
     'page_launch_v1',
+    'critical_visual_v1',
     'client_committed_v4',
     'client_committed_reply_v1',
     'action_foreground_v1',

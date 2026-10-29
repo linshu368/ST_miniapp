@@ -1,0 +1,8 @@
+{"file":".trellis/spec/frontend/app/testing-quality-and-deployment.md","reason":"核对 Sentry、构建、测试和人工验收"}
+{"file":".trellis/spec/backend/app/data-reliability-and-security.md","reason":"核对超时、重试、日志和外部调用可靠性"}
+{"file":".trellis/spec/shared/contracts/testing-and-change-management.md","reason":"确认未改契约；若改变则补消费者验证"}
+{"file":"packages/ui-tests/README.md","reason":"核对可复用本地 UI 验收流程"}
+{"file":".trellis/tasks/10-29-optimize-entry-pages-p95-2s/prd.md","reason":"逐项核对目标、非目标和验收门禁"}
+{"file":".trellis/tasks/10-29-optimize-entry-pages-p95-2s/design.md","reason":"核对复用、可靠性、最小充分和恢复"}
+{"file":".trellis/tasks/10-29-optimize-entry-pages-p95-2s/implement.md","reason":"核对分批命令、生产观察和停止条件"}
+{"file":".trellis/tasks/10-29-optimize-entry-pages-p95-2s/research/baseline.md","reason":"按 release、cohort 和窗口核对优化结果"}
