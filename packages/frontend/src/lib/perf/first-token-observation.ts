@@ -26,10 +26,11 @@ export class FirstTokenObservation {
       this.unavailable('page_left');
     }
   };
+  private pagehide = () => this.unavailable('page_left');
 
   constructor(
     public identity: FirstTokenIdentity,
-    readonly deadlineMs: number,
+    public deadlineMs: number,
     private readonly report: (body: ReportFirstTokenRequest) => void,
     private readonly onTimeout: () => void,
     readonly thinkingEnabled = true,
@@ -42,13 +43,22 @@ export class FirstTokenObservation {
     }
     this.timer = setTimeout(() => this.expire(), deadlineMs);
     document.addEventListener('visibilitychange', this.visibility);
+    if (typeof window !== 'undefined') window.addEventListener('pagehide', this.pagehide);
     if (this.backgrounded) this.unavailable('page_left');
   }
 
-  identify(assistantMessageId: string, revision: number): void {
+  identify(assistantMessageId: string, revision: number, deadlineMs?: number): void {
     // One request owns one server revision; late or duplicate start events cannot retarget it.
     if (this.identity.assistantMessageId !== null) return;
     this.identity = { ...this.identity, assistantMessageId, revision };
+    // A cached catalog can predate an operator change. Keep the original click clock.
+    if (!this.outcome && Number.isFinite(deadlineMs) && deadlineMs! > 0 && deadlineMs! <= 110000) {
+      this.deadlineMs = deadlineMs!;
+      clearTimeout(this.timer);
+      const remaining = this.deadlineMs - (performance.now() - this.startedAt);
+      if (remaining <= 0) this.expire();
+      else this.timer = setTimeout(() => this.expire(), remaining);
+    }
     this.flush();
   }
   dispatched(): void {
@@ -123,8 +133,9 @@ export class FirstTokenObservation {
     this.finishedMs ??= performance.now() - this.startedAt;
     clearTimeout(this.timer);
     document.removeEventListener('visibilitychange', this.visibility);
-    // Unlike the durable receipt, this mirror does not wait for an assistant ID.
-    // Otherwise rejected/pre-start/time-out attempts disappear from the denominator.
+    if (typeof window !== 'undefined') window.removeEventListener('pagehide', this.pagehide);
+    // Mirror the same immutable terminal outcome, including pre-identity failures.
+    // Business receipt recovery remains independent and identity is never exported.
     try {
       const outcome =
         this.outcome === 'observed'
@@ -166,12 +177,12 @@ export class FirstTokenObservation {
     };
   }
   private flush(): void {
-    if (!this.outcome || !this.identity.assistantMessageId || this.reported) return;
+    if (!this.outcome || this.reported) return;
     this.reported = true;
     this.report({
       request_id: this.identity.requestId,
       assistant_message_id: this.identity.assistantMessageId,
-      revision: this.identity.revision,
+      revision: this.identity.assistantMessageId === null ? null : this.identity.revision,
       measurement_method: 'client_committed_v4',
       wait_finished_ms: this.finishedMs,
       outcome: this.outcome,

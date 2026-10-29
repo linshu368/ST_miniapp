@@ -57,10 +57,10 @@ otelcol.processor.batch "cloud" {
 }
 
 otelcol.auth.basic "cloud" {
-  client_auth {
-    username = sys.env("GRAFANA_CLOUD_OTLP_USERNAME")
-    password = sys.env("GRAFANA_CLOUD_OTLP_TOKEN")
-  }
+  // 固定 v1.21.0 的 client_auth-only 配置可通过 validate，但实际启动报
+  // no credential source provided；使用该版本仍支持的顶层凭证兼容入口。
+  username = sys.env("GRAFANA_CLOUD_OTLP_USERNAME")
+  password = sys.env("GRAFANA_CLOUD_OTLP_TOKEN")
 }
 
 otelcol.exporter.otlphttp "cloud" {

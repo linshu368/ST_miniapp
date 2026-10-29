@@ -539,4 +539,43 @@ describe('first-token delivery contract versions', () => {
       }).success
     ).toBe(false);
   });
+  it('accepts request-only unavailable v4 results, but never anonymous delivery success or partial identities', () => {
+    const unknown = {
+      ...delivery,
+      assistant_message_id: null,
+      revision: null,
+      measurement_method: 'client_committed_v4',
+      outcome: 'not_observed',
+      first_token_visible_ms: null,
+      first_token_received_ms: null,
+      reason: 'page_left',
+      backgrounded: true,
+    };
+    expect(ReportFirstTokenRequestSchema.safeParse(unknown).success).toBe(true);
+    expect(
+      ReportFirstTokenRequestSchema.safeParse({
+        ...unknown,
+        outcome: 'timed_out',
+        reason: 'not_visible',
+        backgrounded: false,
+      }).success
+    ).toBe(true);
+    expect(
+      ReportFirstTokenRequestSchema.safeParse({
+        ...delivery,
+        measurement_method: 'client_committed_v4',
+        assistant_message_id: null,
+        revision: null,
+      }).success
+    ).toBe(false);
+    expect(ReportFirstTokenRequestSchema.safeParse({ ...unknown, revision: 0 }).success).toBe(
+      false
+    );
+    expect(
+      ReportFirstTokenRequestSchema.safeParse({
+        ...unknown,
+        measurement_method: 'visible_dom_after_frame_v3',
+      }).success
+    ).toBe(false);
+  });
 });

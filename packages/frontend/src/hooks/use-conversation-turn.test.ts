@@ -90,7 +90,7 @@ vi.mock('@/lib/perf/grafana', () => ({
 
 beforeEach(() => {
   vi.useFakeTimers();
-  vi.stubGlobal('window', { setTimeout, clearTimeout });
+  vi.stubGlobal('window', Object.assign(new EventTarget(), { setTimeout, clearTimeout }));
   vi.stubGlobal('document', Object.assign(new EventTarget(), { visibilityState: 'visible' }));
   runtime.slots = [];
   runtime.index = 0;
@@ -257,7 +257,8 @@ describe('findPendingTurnMessage', () => {
 function RenderTurn(
   sessionId = 's1',
   persistedMessages: ChatMessage[] = [],
-  thinkingEnabled = true
+  thinkingEnabled = true,
+  firstTokenDeadlineMs = 10000
 ) {
   runtime.index = 0;
   const result = useConversationTurn({
@@ -266,6 +267,7 @@ function RenderTurn(
     selectedModelId: 'm1',
     selectedModelUsesFreeQuota: false,
     thinkingEnabled,
+    firstTokenDeadlineMs,
     persistedMessages,
     returnTo: '/chat/c1',
     onSessionGone: vi.fn(),
@@ -315,6 +317,40 @@ describe('useConversationTurn asynchronous ownership', () => {
     expect(runtime.cancel).not.toHaveBeenCalled();
     expect(after.streaming?.text).toBe('');
     expect(after.thinkingByMessage['s1:a1:0']).toBe('思');
+    finish();
+    await run;
+  });
+
+  it('uses the frozen six-second SSE budget from the original click despite a cached ten-second catalog', async () => {
+    let options!: Parameters<
+      typeof import('@/lib/api/conversation-stream').streamConversationTurn
+    >[0];
+    let finish!: () => void;
+    runtime.stream.mockImplementation((value) => {
+      options = value;
+      return new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+    });
+    const run = RenderTurn('s1', [], true, 10000).runTurn({ mode: 'send', content: 'hello' });
+    await vi.advanceTimersByTimeAsync(2000);
+    options.onStart({
+      type: 'start',
+      assistant_message_id: 'a1',
+      user_message_id: 'u1',
+      turn_index: 1,
+      revision: 0,
+      first_token_deadline_ms: 6000,
+    });
+    await vi.advanceTimersByTimeAsync(3999);
+    expect(runtime.reportFirstToken).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(runtime.reportFirstToken).toHaveBeenCalledExactlyOnceWith(
+      's1',
+      expect.objectContaining({ outcome: 'timed_out', wait_finished_ms: 6000 })
+    );
+    expect(RenderTurn('s1').streamError).toBe('这次回应稍慢，再试一次吧');
+    expect(runtime.cancel).not.toHaveBeenCalled();
     finish();
     await run;
   });
@@ -428,7 +464,7 @@ describe('useConversationTurn asynchronous ownership', () => {
     });
     const run = RenderTurn().runTurn({ mode: 'regenerate' });
     await vi.advanceTimersByTimeAsync(10100);
-    expect(runtime.reportFirstToken).not.toHaveBeenCalled();
+    expect(runtime.reportFirstToken).toHaveBeenCalledOnce();
     expect(runtime.engineeringMeasurement).toHaveBeenCalledWith(
       'roleplay.first_token',
       expect.any(Number),
@@ -468,7 +504,7 @@ describe('useConversationTurn asynchronous ownership', () => {
     expect(runtime.reportFirstToken).toHaveBeenCalledWith(
       's1',
       expect.objectContaining({
-        revision: 1,
+        revision: null,
         outcome: 'timed_out',
         wait_finished_ms: 10000,
       })

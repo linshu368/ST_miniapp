@@ -750,7 +750,11 @@ export function useConversationTurn({
               requestId,
             };
             assistantMessageId = event.assistant_message_id;
-            observation.identify(event.assistant_message_id, event.revision);
+            observation.identify(
+              event.assistant_message_id,
+              event.revision,
+              event.first_token_deadline_ms
+            );
             assistantRevision = event.revision;
             turnMeta.turnIndex = event.turn_index;
             turnMeta.revision = toTelemetryRevision(event.revision);
