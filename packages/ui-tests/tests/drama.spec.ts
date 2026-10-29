@@ -114,7 +114,7 @@ async function expectReachable(page: Page, name: string) {
   ).toBeTruthy();
 }
 
-test('@drama @layout 剧场固定筛选，进入选集后返回原筛选', async ({ page, preview }) => {
+test('@drama @layout 剧场只固定搜索，进入选集后返回原筛选', async ({ page, preview }) => {
   await preview.scenario('dramas');
   await page.goto('/dramas');
   await tabs(page).getByRole('button', { name: '剧场', exact: true }).click();
@@ -128,7 +128,9 @@ test('@drama @layout 剧场固定筛选，进入选集后返回原筛选', async
   await preview.screenshot('短剧双列剧场');
   await page.getByRole('link', { name: '观看 时光旅人', exact: true }).scrollIntoViewIfNeeded();
   await expect(search).toBeInViewport();
-  await expect(tabs(page)).toBeInViewport();
+  await expect(tabs(page)).not.toBeInViewport();
+  await expect(categories).not.toBeInViewport();
+  await preview.screenshot('短剧下滑只保留搜索', { fullPage: false });
   await page.getByRole('button', { name: '悬疑', exact: true }).click();
   await search.fill('雾城');
   await expect(page.getByRole('link', { name: '观看 雾城来信', exact: true })).toBeVisible();
