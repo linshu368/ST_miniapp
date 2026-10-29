@@ -67,6 +67,10 @@
 
 Faro 2.13.0 只发自定义 measurement/event：固定 `st_` 名称、`duration_ms` 毫秒、`measurement_version=engineering_v1`、独立 source_measurement_version。无默认 fetch/error/console/tracing/replay、session/user/URL meta，Sentry 保持原追踪 owner。
 
+Cloud 托管 intake 的协议要求与本机 Alloy 不完全相同：请求必须带 `X-Faro-Session-Id`，body 必须保留公开的 `meta.sdk.name/version`。出口在 SDK 初始化时调用 `genShortID(32)` 生成一个仅本 exporter 内存生命周期复用的随机协议标识，只放请求头；不写 cookie、localStorage/sessionStorage、body、measurement/event 属性或指标/日志索引标签，不与业务身份关联。`meta.sdk` 只包含固定包名与 SDK 公开导出的实际 `VERSION`；beforeSend 仍重建白名单 body，不恢复 SDK session/user/page/browser/trace meta，也不启用自动仪器或 Replay。SDK import 可能做 Web Storage 可用性探测，但不会将该协议标识或 session 持久化。关闭采集或 SDK 加载超时时不生成标识。修正协议不代表真实浏览器 Cloud 摄取已经验收，仍须独立验证。
+
+Faro 2.13 默认 `FetchTransport.send` 强制添加 `Idempotency-Key`，当前托管入口的浏览器 CORS 预检不允许该头；Node 合成 POST 得到 202 不能证明浏览器可发送。工程出口保留该版本构造的 `bufferSize=20/concurrency=1` 有界队列，只覆盖公开 `send(items)`，通过公开 `promiseBuffer.add` 与 `getTransportBody(items)` 发送。每个出队 batch 单次 fetch，仅含 `Content-Type` 和随机协议标识头，omit credentials/no-referrer；每次实际发送独立 AbortController 三秒超时并 finally 清理 timer，不重试。格式、排队拒绝、非 2xx、网络和超时失败各计一次失败批次，不读响应正文、不抛到业务；不访问 SDK private 字段、不 patch 全局 fetch、不引入代理或另一套队列。容量和超时回归使用真实 SDK 的公开接口验证，浏览器验收仍须检查真实 OPTIONS/POST 和 Cloud 回查。
+
 固定 Alloy v1.21.0 本机实测的 logfmt 契约：
 
 - measurement：`kind=measurement type=st_page_ready duration_ms=... context_route=... context_outcome=...`。

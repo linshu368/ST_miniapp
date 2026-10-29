@@ -59,10 +59,10 @@
         "name": "browser_selector",
         "label": "浏览器流选择器（接入时核验）",
         "type": "textbox",
-        "query": "{app=\"st-miniapp\"}",
+        "query": "{service_name=\"st-miniapp\"}",
         "current": {
-          "text": "{app=\"st-miniapp\"}",
-          "value": "{app=\"st-miniapp\"}"
+          "text": "{service_name=\"st-miniapp\"}",
+          "value": "{service_name=\"st-miniapp\"}"
         }
       },
       {
