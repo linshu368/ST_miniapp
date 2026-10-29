@@ -25,7 +25,7 @@ import { EpisodeSheet } from './episode-sheet';
 import { DramaTags } from './drama-tags';
 import { DramaProgress } from './drama-progress';
 import { useDramaSwipe } from './use-drama-swipe';
-import { useDramaCommentsPanel } from './comment-sheet';
+import { useDramaCommentsPanel } from './drama-comments-context';
 import {
   useDramaDetailQuery,
   useDramaPlaybackQuery,

@@ -4,7 +4,7 @@ import { BottomNav, isBottomNavHidden } from '@/components/nav/bottom-nav';
 import { usePathname } from 'next/navigation';
 import { useEffect } from 'react';
 import { suspendTelegramVerticalSwipes } from '@/lib/telegram';
-import { DramaCommentsProvider } from '@/components/drama/comment-sheet';
+import { DramaCommentsProvider } from '@/components/drama/drama-comments-context';
 import { useDramaLibraryStore } from '@/stores/drama-library-store';
 import { useRouteQueryIsolation } from '@/lib/api/route-query-isolation';
 

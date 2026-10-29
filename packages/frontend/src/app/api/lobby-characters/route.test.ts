@@ -3,6 +3,7 @@ import { GET, dynamic, revalidate } from './route';
 
 describe('lobby characters route', () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
@@ -20,7 +21,7 @@ describe('lobby characters route', () => {
     expect(revalidate).toBe(0);
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining('/api/characters'),
-      expect.objectContaining({ cache: 'no-store' })
+      expect.objectContaining({ cache: 'no-store', signal: expect.any(AbortSignal) })
     );
     expect(response.headers.get('Cache-Control')).toBe('no-store, no-cache, must-revalidate');
   });
@@ -46,5 +47,27 @@ describe('lobby characters route', () => {
       expect.stringContaining('sort=recommended'),
       expect.anything()
     );
+  });
+
+  it('aborts the upstream request when the incoming request is cancelled', async () => {
+    const fetchMock = vi.fn((_url: string, init: RequestInit) => {
+      return new Promise<Response>((_resolve, reject) => {
+        init.signal?.addEventListener('abort', () => {
+          reject(new DOMException('Aborted', 'AbortError'));
+        });
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const controller = new AbortController();
+    const pending = GET(
+      new Request('http://localhost/api/lobby-characters', { signal: controller.signal })
+    );
+    const rejected = expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    await Promise.resolve();
+    controller.abort();
+
+    await rejected;
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

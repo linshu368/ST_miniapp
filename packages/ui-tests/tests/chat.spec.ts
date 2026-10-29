@@ -100,6 +100,10 @@ test('@chat 关闭思考后发送 false，正常展示正文', async ({ page, pr
 
 test('@chat @layout 多行输入与回复偏好可操作，多个风格独立开关', async ({ page, preview }) => {
   await page.goto(chatPath);
+  await page.getByRole('button', { name: '工具箱', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '工具箱', exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('heading', { name: '工具箱', exact: true })).toHaveCount(0);
   await page
     .getByRole('textbox', { name: '输入消息' })
     .fill(Array(8).fill('这是一行较长的移动端输入内容。').join('\n'));

@@ -1,7 +1,9 @@
 import { createServer, type ServerResponse } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
+import { fileURLToPath } from 'node:url';
 import {
   CreateCharacterCommentSchema,
   ReportCharacterCommentSchema,
@@ -1131,7 +1133,7 @@ export function createPreviewServer(apiPort: number, appPort: number) {
   return { server, reset };
 }
 
-if (process.argv[1]?.endsWith('/fixtures/server.ts')) {
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const apiPort = Number(process.env.ST_UI_API_PORT ?? 3121);
   const appPort = Number(process.env.ST_UI_APP_PORT ?? 3120);
   const { server } = createPreviewServer(apiPort, appPort);
