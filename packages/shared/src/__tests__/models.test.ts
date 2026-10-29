@@ -73,12 +73,12 @@ describe('ModelCatalogSchema', () => {
   it('defaults legacy models and validates manual first-token budgets', () => {
     const parsed = ModelCatalogSchema.parse(validCatalog);
     expect(parsed.fallback_model_id).toBe('deepseek/deepseek-v4.1-flash-1017');
-    expect(parsed.first_token_deadline_ms).toBe(10000);
+    expect(parsed.first_token_deadline_ms).toBe(6000);
     expect(parsed.fallback_timeout_ms).toBe(2000);
     expect(parsed.first_token_timeout_rate_target).toBe(0.01);
     expect(parsed.tiers[0]?.models[0]?.first_token_timeout_ms).toBe(4000);
     const publicCatalog = toPublicModelCatalog(parsed);
-    expect(publicCatalog.first_token_deadline_ms).toBe(10000);
+    expect(publicCatalog.first_token_deadline_ms).toBe(6000);
     expect(publicCatalog).not.toHaveProperty('fallback_model_id');
     expect(publicCatalog).not.toHaveProperty('fallback_timeout_ms');
     expect(publicCatalog).not.toHaveProperty('first_token_timeout_rate_target');
@@ -99,7 +99,11 @@ describe('ModelCatalogSchema', () => {
         ModelCatalogSchema.safeParse({ ...validCatalog, fallback_timeout_ms: value }).success
       ).toBe(false);
     }
-    const overlapping = ModelCatalogSchema.parse({ ...validCatalog, fallback_timeout_ms: 7000 });
+    const overlapping = ModelCatalogSchema.parse({
+      ...validCatalog,
+      first_token_deadline_ms: 10000,
+      fallback_timeout_ms: 7000,
+    });
     expect(overlapping.tiers[0]?.models[0]?.first_token_timeout_ms).toBe(4000);
     expect(overlapping.fallback_timeout_ms).toBe(7000);
     // Launch thresholds can overlap; the schema must not sum them as sequential lifetimes.

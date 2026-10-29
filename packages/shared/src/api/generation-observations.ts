@@ -6,8 +6,8 @@ const DurationMs = z.number().finite().nonnegative().max(86_400_000);
 export const ReportFirstTokenRequestSchema = z
   .object({
     request_id: z.string().uuid(),
-    assistant_message_id: z.string().uuid(),
-    revision: z.number().int().nonnegative(),
+    assistant_message_id: z.string().uuid().nullable(),
+    revision: z.number().int().nonnegative().nullable(),
     measurement_method: z.enum([
       'visible_dom_after_frame_v1',
       'visible_dom_after_frame_v2',
@@ -36,6 +36,17 @@ export const ReportFirstTokenRequestSchema = z
   })
   .strict()
   .superRefine((value, ctx) => {
+    if (
+      (value.assistant_message_id === null) !== (value.revision === null) ||
+      (value.assistant_message_id === null &&
+        (value.measurement_method !== 'client_committed_v4' || value.outcome === 'observed'))
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['assistant_message_id'],
+        message: 'Only unavailable v4 results may resolve a missing identity by request ID',
+      });
+    }
     if ((value.outcome === 'observed') !== (value.first_token_visible_ms !== null)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,

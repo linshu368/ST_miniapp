@@ -1,0 +1,38 @@
+{
+  "id": "six-second-first-token-receipts",
+  "name": "six-second-first-token-receipts",
+  "title": "六秒首字预算与轻量回报补齐",
+  "description": "DS2秒触发、6秒总首字预算、用户隔离有界本地补报及无消息编号indexed回执",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "frontend,backend,shared,database,admin",
+  "package": "frontend",
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-29",
+  "completedAt": null,
+  "branch": "fix/six-second-first-token-receipts",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "frontend.business.conversation-ui",
+        "backend.business.conversation-generation",
+        "database.business.conversation-storage",
+        "shared.business.conversation-contracts",
+        "admin.business.operations"
+      ]
+    }
+  }
+}

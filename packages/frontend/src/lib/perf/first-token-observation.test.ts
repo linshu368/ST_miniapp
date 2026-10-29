@@ -14,6 +14,68 @@ afterEach(() => {
 });
 
 describe('client-committed first token observation', () => {
+  it('uses the server-frozen six-second budget on the original clock despite a cached ten-second catalog', async () => {
+    const report = vi.fn(),
+      timeout = vi.fn();
+    const obs = new FirstTokenObservation(
+      { ...identity, assistantMessageId: null },
+      10000,
+      report,
+      timeout
+    );
+    await vi.advanceTimersByTimeAsync(2000);
+    obs.identify('a', 0, 6000);
+    await vi.advanceTimersByTimeAsync(3999);
+    expect(report).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(timeout).toHaveBeenCalledOnce();
+    expect(report).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'timed_out', wait_finished_ms: 6000 })
+    );
+  });
+  it('immediately expires a late identity without giving it another six seconds', async () => {
+    const report = vi.fn(),
+      timeout = vi.fn();
+    const obs = new FirstTokenObservation(
+      { ...identity, assistantMessageId: null },
+      10000,
+      report,
+      timeout
+    );
+    await vi.advanceTimersByTimeAsync(7000);
+    obs.identify('a', 0, 6000);
+    expect(timeout).toHaveBeenCalledOnce();
+    expect(report).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outcome: 'timed_out',
+        wait_finished_ms: 7000,
+        assistant_message_id: 'a',
+      })
+    );
+  });
+  it('records early departure by request ID before an identity exists', async () => {
+    const report = vi.fn();
+    const obs = new FirstTokenObservation(
+      { ...identity, assistantMessageId: null },
+      6000,
+      report,
+      vi.fn()
+    );
+    await vi.advanceTimersByTimeAsync(770);
+    obs.unavailable('page_left');
+    expect(report).toHaveBeenCalledWith(
+      expect.objectContaining({
+        assistant_message_id: null,
+        revision: null,
+        outcome: 'not_observed',
+        reason: 'page_left',
+        backgrounded: true,
+        wait_finished_ms: 770,
+      })
+    );
+    obs.identify('a', 0, 6000);
+    expect(report).toHaveBeenCalledOnce();
+  });
   it('uses submit-to-commit timing, independently of token reception and stream completion', async () => {
     const report = vi.fn(),
       timeout = vi.fn();
@@ -95,7 +157,7 @@ describe('client-committed first token observation', () => {
       first_token_received_ms: null,
     });
   });
-  it('defers reporting until the exact revision is discovered after a pre-start timeout', async () => {
+  it('reports a pre-start timeout by request ID without waiting for an SSE identity', async () => {
     const report = vi.fn();
     const obs = new FirstTokenObservation(
       { ...identity, assistantMessageId: null },
@@ -104,14 +166,14 @@ describe('client-committed first token observation', () => {
       vi.fn()
     );
     await vi.advanceTimersByTimeAsync(6000);
-    expect(report).not.toHaveBeenCalled();
+    expect(report).toHaveBeenCalledOnce();
     await vi.advanceTimersByTimeAsync(2000);
     obs.identify('discovered', 2);
     obs.identify('discovered', 2);
     expect(report).toHaveBeenCalledOnce();
     expect(report.mock.calls[0]?.[0]).toMatchObject({
-      assistant_message_id: 'discovered',
-      revision: 2,
+      assistant_message_id: null,
+      revision: null,
       outcome: 'timed_out',
       wait_finished_ms: 6000,
     });
