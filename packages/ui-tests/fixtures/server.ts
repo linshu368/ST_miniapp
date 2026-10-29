@@ -15,9 +15,13 @@ import {
   PatchUserSettingsRequestSchema,
   SelectModelRequestSchema,
   SubmitImagePlazaAttemptRequestSchema,
+  SubmitVideoPlazaAttemptRequestSchema,
+  VideoPlazaQuoteRequestSchema,
   type ChatMessage,
   type ConversationStreamEvent,
   type ImagePlazaAttempt,
+  type VideoPlazaAttempt,
+  type VideoPlazaQuoteRequest,
   type GetDramasData,
   type GetDramaByIdData,
   type GetDramaPlaybackData,
@@ -82,6 +86,11 @@ export function createPreviewServer(apiPort: number, appPort: number) {
   >();
   const imageKeys = new Map<string, ImagePlazaAttempt>();
   const quotes = new Map<string, { credits: number; expiresAt: number }>();
+  const videoQuotes = new Map<
+    string,
+    { credits: number; expiresAt: number; params: VideoPlazaQuoteRequest }
+  >();
+  const videoAttempts = new Map<string, VideoPlazaAttempt>();
   const streams = new Set<ServerResponse>();
   const requests: { method: string; path: string; thinking_enabled?: boolean }[] = [];
   const unhandled: string[] = [];
@@ -100,6 +109,8 @@ export function createPreviewServer(apiPort: number, appPort: number) {
     commentFailureDelivered = false;
     imageKeys.clear();
     quotes.clear();
+    videoQuotes.clear();
+    videoAttempts.clear();
     requests.length = 0;
     unhandled.length = 0;
     if (next === 'recharge' || next === 'recharge-unavailable') {
@@ -853,9 +864,19 @@ export function createPreviewServer(apiPort: number, appPort: number) {
           return;
         }
         if (method === 'POST') {
+          const sourceId =
+            typeof body === 'object' && body !== null && 'source_work_id' in body
+              ? body.source_work_id
+              : undefined;
+          const source =
+            typeof sourceId === 'string'
+              ? data.works.find((item) => item.id === sourceId)
+              : undefined;
           const studio = ImagePlazaConversationSchema.parse({
             ...makeData(api).studios[0],
             id: randomUUID(),
+            title: source ? `同款 · ${source.title}` : '新建影像创作',
+            snapshot: source?.snapshot ?? null,
           });
           data.studios.push(studio);
           ok(res, { conversation: studio });
@@ -875,8 +896,47 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         });
         return;
       }
+      if (path === '/api/image-plaza/video-quotes' && method === 'POST') {
+        const quote = VideoPlazaQuoteRequestSchema.parse(body);
+        const credits =
+          quote.duration_s === 10 ? 80 : quote.resolution.toLowerCase() === '1080p' ? 60 : 40;
+        const quoteId = randomUUID();
+        videoQuotes.set(quoteId, {
+          credits,
+          expiresAt: Date.now() + 60_000,
+          params: quote,
+        });
+        ok(res, {
+          ...quote,
+          quote_id: quoteId,
+          credits,
+          expires_at: new Date(Date.now() + 60_000).toISOString(),
+        });
+        return;
+      }
+      const videoAttemptMatch = path.match(/^\/api\/image-plaza\/video-attempts\/([^/]+)$/);
+      if (videoAttemptMatch && method === 'GET') {
+        const attempt = videoAttempts.get(videoAttemptMatch[1]!);
+        if (attempt) ok(res, { attempt });
+        else fail(res, 404, 'video_attempt_not_found', '视频任务不存在');
+        return;
+      }
+      if (
+        /^\/api\/image-plaza\/image-artifacts\/[^/]+\/video-reference$/.test(path) &&
+        method === 'POST'
+      ) {
+        ok(res, {
+          artifact: {
+            id: randomUUID(),
+            image_url: `${api}/assets/scene.svg`,
+            width: 768,
+            height: 1024,
+          },
+        });
+        return;
+      }
       const studioMatch = path.match(
-        /^\/api\/image-plaza\/conversations\/([^/]+)(?:\/(attempts))?$/
+        /^\/api\/image-plaza\/conversations\/([^/]+)(?:\/(attempts|video-attempts))?$/
       );
       if (studioMatch) {
         const studio = data.studios.find((item) => item.id === studioMatch[1]);
@@ -945,6 +1005,62 @@ export function createPreviewServer(apiPort: number, appPort: number) {
             attempt,
           });
           imageKeys.set(input.idempotency_key, attempt);
+          ok(res, { attempt });
+          return;
+        }
+        if (method === 'POST' && studioMatch[2] === 'video-attempts') {
+          const input = SubmitVideoPlazaAttemptRequestSchema.parse(body);
+          const quote = videoQuotes.get(input.quote_id);
+          if (!quote || quote.expiresAt < Date.now()) {
+            fail(res, 409, 'quote_expired', '请重新报价');
+            return;
+          }
+          const attempt: VideoPlazaAttempt = {
+            id: randomUUID(),
+            conversation_id: studio.id,
+            status: 'ready',
+            error_code: null,
+            quote_credits: quote.credits,
+            params: {
+              ...quote.params,
+              reference_artifact_id: input.reference_artifact_id ?? null,
+            },
+            artifact: {
+              id: randomUUID(),
+              video_url: `${api}/assets/drama-preview.mp4`,
+              poster_url: `${api}/assets/scene.svg?tone=1`,
+              width: 1280,
+              height: 720,
+              duration_ms: quote.params.duration_s * 1000,
+            },
+            created_at: stamp(),
+            updated_at: stamp(),
+          };
+          studio.messages.push(
+            {
+              id: randomUUID(),
+              role: 'user',
+              content: input.prompt,
+              media_type: 'video',
+              attempt: null,
+              video_attempt: null,
+              created_at: stamp(),
+            },
+            {
+              id: randomUUID(),
+              role: 'assistant',
+              content: '生成完成',
+              media_type: 'video',
+              attempt: null,
+              video_attempt: attempt,
+              created_at: stamp(),
+            }
+          );
+          studio.snapshot = { prompt: input.prompt, ...attempt.params };
+          videoAttempts.set(attempt.id, attempt);
+          data.wallet.main_credits -= quote.credits;
+          data.wallet.credits -= quote.credits;
+          data.wallet.total_credits -= quote.credits;
           ok(res, { attempt });
           return;
         }

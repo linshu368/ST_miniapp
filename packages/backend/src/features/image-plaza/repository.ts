@@ -447,6 +447,43 @@ export class ImagePlazaRepository {
     };
   }
 
+  async createVideoReferenceFromImageArtifact(
+    artifactId: string,
+    userId: string
+  ): Promise<ImagePlazaArtifact> {
+    const { data, error } = await this.plaza.rpc(
+      'get_or_create_video_reference_from_image_artifact',
+      {
+        p_user_id: userId,
+        p_artifact_id: artifactId,
+      }
+    );
+    if (error) {
+      if (error.code === 'P0002' || error.code === '42501') {
+        throw new Error('image_plaza_artifact_not_found');
+      }
+      throw new Error(`image plaza video reference create failed: ${error.message}`);
+    }
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      throw new Error('image_plaza_video_reference_result_invalid');
+    }
+    const result = data as Record<string, unknown>;
+    if (
+      typeof result.id !== 'string' ||
+      typeof result.storage_path !== 'string' ||
+      typeof result.width !== 'number' ||
+      typeof result.height !== 'number'
+    ) {
+      throw new Error('image_plaza_video_reference_result_invalid');
+    }
+    return {
+      id: result.id,
+      image_url: await signPlazaImagePath(result.storage_path),
+      width: result.width,
+      height: result.height,
+    };
+  }
+
   async createConversation(userId: string, sourceWorkId?: string): Promise<ImagePlazaConversation> {
     let title = '新建影像创作';
     let snapshot: ImagePlazaSnapshot | VideoPlazaSnapshot | null = null;

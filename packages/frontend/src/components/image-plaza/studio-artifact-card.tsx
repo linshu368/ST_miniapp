@@ -1,6 +1,6 @@
 'use client';
 
-import { Copy, Download, LoaderCircle, RefreshCcw, Share2 } from 'lucide-react';
+import { Copy, Download, LoaderCircle, RefreshCcw, Share2, Video } from 'lucide-react';
 import { useRef, useState } from 'react';
 import type { ImagePlazaArtifact } from '@miniapp/shared';
 import { requestTelegramFileDownload } from '@/lib/telegram/hooks';
@@ -14,6 +14,9 @@ interface StudioArtifactCardProps {
   regenerateDisabled: boolean;
   onRefresh: (prompt: string) => void;
   onShare: (artifact: ImagePlazaArtifact) => void;
+  onUseAsVideoReference: (artifact: ImagePlazaArtifact) => void;
+  creatingVideoReference: boolean;
+  videoReferenceDisabled: boolean;
   onNotice: (message: string) => void;
   onLoad?: () => void;
 }
@@ -98,6 +101,19 @@ export function StudioArtifactCard(props: StudioArtifactCardProps) {
           <RefreshCcw className="size-4" aria-hidden />
         )}
         {props.regenerating ? '正在提交…' : '按当前设置再生成'}
+      </button>
+      <button
+        type="button"
+        disabled={props.videoReferenceDisabled}
+        onClick={() => props.onUseAsVideoReference(props.artifact)}
+        className="mt-2 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-primary/40 bg-primary/5 px-3 text-xs font-semibold text-primary disabled:opacity-50"
+      >
+        {props.creatingVideoReference ? (
+          <LoaderCircle className="size-4 animate-spin" aria-hidden />
+        ) : (
+          <Video className="size-4" aria-hidden />
+        )}
+        {props.creatingVideoReference ? '正在设置…' : '用这张图生成视频'}
       </button>
       <div className="mt-2 grid grid-cols-3 gap-2">
         <ArtifactButton label="复制提示词" onClick={() => void copyPrompt()}>

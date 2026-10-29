@@ -176,4 +176,4 @@ pnpm --filter @miniapp/backend video-plaza:reconcile                        # dr
 - Admin 与 Frontend production build 通过；
 - migration filename、legacy reference 与 import lint 通过；
 - Docker CLI 不可用，后端镜像构建未执行；
-- 图片 M1 与 PostgREST 暴露已由用户确认在 TEST、Production 完成；视频 M2/M3 的远程状态继续以执行记录为准；本轮 D25 的 M4 与应用修正尚未实现或执行。Venice canary、Sentry p95 与剩余 seed 转存仍受外部门禁约束。
+- 图片 M1 与 PostgREST 暴露已由用户确认在 TEST、Production 完成；视频 M2/M3 的远程状态继续以执行记录为准；本轮 D25 的 M4 与应用修正已于 2026-10-29 完成本地实现和自动化验证，但 M4 尚未连接或执行任何远程环境。Venice canary、Telegram 真机、Sentry p95 与剩余 seed 转存仍受外部门禁约束。

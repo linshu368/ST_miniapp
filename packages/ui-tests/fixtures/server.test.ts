@@ -7,7 +7,7 @@ import {
   PublicReplyStyleOptionSchema,
   VipStatusSchema,
   UserSettingsSchema,
-  ImagePlazaWorkSchema,
+  PlazaWorkSchema,
 } from '@miniapp/shared';
 
 let api: string;
@@ -39,7 +39,7 @@ test('fixture uses public shared contracts', () => {
   const data = makeData('http://127.0.0.1:3121');
   VipStatusSchema.parse(data.vip);
   UserSettingsSchema.parse(data.settings);
-  for (const work of data.works) ImagePlazaWorkSchema.parse(work);
+  for (const work of data.works) PlazaWorkSchema.parse(work);
   for (const style of data.generation.reply_style_options)
     PublicReplyStyleOptionSchema.parse(style);
 });

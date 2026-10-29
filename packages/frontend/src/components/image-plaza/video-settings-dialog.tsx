@@ -82,7 +82,7 @@ export function VideoSettingsDialog(props: {
           />
           {props.model.aspect_ratios.length ? (
             <Choices
-              label="画幅"
+              label="画面比例"
               values={props.model.aspect_ratios}
               value={props.aspectRatio ?? props.model.aspect_ratios[0]!}
               onChange={props.onAspectRatioChange}
@@ -90,7 +90,7 @@ export function VideoSettingsDialog(props: {
           ) : null}
           <section className="flex items-center justify-between px-4 py-4">
             <div>
-              <p className="text-sm font-bold">声音</p>
+              <p className="text-sm font-bold">生成声音</p>
               {!props.model.audio_configurable ? (
                 <p className="text-xs text-muted-foreground">
                   固定{props.model.default_audio ? '有声' : '无声'}

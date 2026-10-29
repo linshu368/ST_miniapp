@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CreateVideoReferenceFromImageArtifactDataSchema,
   GetImagePlazaConfigDataSchema,
   ImagePlazaFeedQuerySchema,
   ImagePlazaTagConfigSchema,
@@ -150,6 +151,19 @@ describe('video plaza public requests', () => {
 });
 
 describe('image plaza compatibility extensions', () => {
+  it('exposes the mapped image artifact through the existing reference shape', () => {
+    expect(
+      CreateVideoReferenceFromImageArtifactDataSchema.parse({
+        artifact: {
+          id: '11111111-1111-4111-8111-111111111111',
+          image_url: 'https://example.com/reference.webp',
+          width: 1024,
+          height: 1536,
+        },
+      }).artifact
+    ).toMatchObject({ width: 1024, height: 1536 });
+  });
+
   it('keeps legacy feed queries and accepts normalized media/tag filters', () => {
     expect(ImagePlazaFeedQuerySchema.parse({})).toEqual({});
     expect(

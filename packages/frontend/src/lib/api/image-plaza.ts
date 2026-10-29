@@ -15,6 +15,7 @@ import {
 import type {
   CreateImagePlazaConversationData,
   CreateImagePlazaConversationRequest,
+  CreateVideoReferenceFromImageArtifactData,
   GetImagePlazaConfigData,
   GetImagePlazaConversationData,
   GetImagePlazaConversationsData,
@@ -395,6 +396,17 @@ export function useUploadImagePlazaReferenceMutation() {
         body: JSON.stringify(body),
         signal: AbortSignal.timeout(60_000),
       }),
+  });
+}
+
+export function useCreateVideoReferenceFromImageArtifactMutation() {
+  return useMutation({
+    retry: false,
+    mutationFn: (artifactId: string) =>
+      apiClient<CreateVideoReferenceFromImageArtifactData>(
+        `/api/image-plaza/image-artifacts/${artifactId}/video-reference`,
+        { method: 'POST', signal: AbortSignal.timeout(15_000) }
+      ),
   });
 }
 

@@ -17,6 +17,7 @@ import {
   fail,
   ok,
   type CreateImagePlazaConversationData,
+  type CreateVideoReferenceFromImageArtifactData,
   type GetImagePlazaConfigData,
   type GetImagePlazaConversationData,
   type GetImagePlazaConversationsData,
@@ -492,6 +493,30 @@ export default async function imagePlazaRoutes(app: FastifyInstance) {
           mimeType: body.data.mime_type,
         });
         return reply.send(ok<UploadImagePlazaReferenceData>({ artifact }));
+      } catch (err) {
+        return routeError(request, reply, err);
+      }
+    }
+  );
+
+  // @frontend-ready: true
+  app.post(
+    '/api/image-plaza/image-artifacts/:artifactId/video-reference',
+    { preHandler: [requireTelegramAuth] },
+    async (request, reply) => {
+      const context = await userContext(request, reply);
+      if (!context) return;
+      const { artifactId } = request.params as { artifactId: string };
+      if (!UUID_PATTERN.test(artifactId)) {
+        return reply.status(400).send(fail('BAD_REQUEST', '图片产物 ID 无效'));
+      }
+      try {
+        await requireEnabled();
+        const artifact = await repository.createVideoReferenceFromImageArtifact(
+          artifactId,
+          context.id
+        );
+        return reply.send(ok<CreateVideoReferenceFromImageArtifactData>({ artifact }));
       } catch (err) {
         return routeError(request, reply, err);
       }

@@ -498,3 +498,10 @@ export const UploadImagePlazaReferenceDataSchema = z.object({
   artifact: ImagePlazaArtifactSchema,
 });
 export type UploadImagePlazaReferenceData = z.infer<typeof UploadImagePlazaReferenceDataSchema>;
+
+export const CreateVideoReferenceFromImageArtifactDataSchema = z.object({
+  artifact: ImagePlazaArtifactSchema,
+});
+export type CreateVideoReferenceFromImageArtifactData = z.infer<
+  typeof CreateVideoReferenceFromImageArtifactDataSchema
+>;

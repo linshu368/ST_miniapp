@@ -39,7 +39,7 @@ export function StudioVideoCard(props: {
       <div className="grid grid-cols-5 gap-1 p-2 text-[11px]">
         {[
           { label: '编辑', icon: Copy, run: props.onEdit },
-          { label: '重生成', icon: RefreshCw, run: props.onRegenerate },
+          { label: '重新生成', icon: RefreshCw, run: props.onRegenerate },
           {
             label: '复制',
             icon: Copy,

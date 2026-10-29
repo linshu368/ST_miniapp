@@ -33,6 +33,7 @@ import {
   fileToImagePlazaPayload,
   validateImagePlazaReference,
   useCreateImagePlazaConversationMutation,
+  useCreateVideoReferenceFromImageArtifactMutation,
   useImagePlazaConfigQuery,
   useImagePlazaConversationQuery,
   useImagePlazaQuoteMutation,
@@ -98,6 +99,7 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
   const quote = useImagePlazaQuoteMutation();
   const submit = useSubmitImagePlazaAttemptMutation(conversationId);
   const upload = useUploadImagePlazaReferenceMutation();
+  const createVideoReference = useCreateVideoReferenceFromImageArtifactMutation();
   const share = useShareImagePlazaMutation();
   const videoQuote = useVideoPlazaQuoteMutation();
   const submitVideo = useSubmitVideoPlazaAttemptMutation(conversationId);
@@ -112,6 +114,7 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
   const localUrl = useRef<string | null>(null);
   const referenceFile = useRef<File | null>(null);
   const sending = useRef(false);
+  const videoReferenceMapping = useRef(false);
   // 从点击生成到图片真正解码展示出来的耗时；只算最新这一次生成，图片 onLoad 消费后清掉。
   const genStartedAt = useRef<number | null>(null);
   const genReported = useRef(false);
@@ -172,6 +175,7 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
   const [videoAspectRatio, setVideoAspectRatio] = useState<string | null>(null);
   const [videoAudio, setVideoAudio] = useState(true);
   const [submittingSource, setSubmittingSource] = useState<string | null>(null);
+  const [videoReferenceSourceId, setVideoReferenceSourceId] = useState<string | null>(null);
   const returnToGallery = useCallback(() => router.push('/create', { scroll: false }), [router]);
   useTelegramBackButton(returnToGallery);
 
@@ -186,6 +190,9 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
     [config.data?.video_models]
   );
   const videoModel = videoModels.find((item) => item.id === videoModelId) ?? videoModels[0];
+  const activeImageReferenceId = model?.supports_i2i ? referenceArtifactId : null;
+  const activeVideoReferenceId =
+    videoModel && videoModel.image_input !== 'none' ? referenceArtifactId : null;
   useEffect(() => {
     if (initialized || !data || models.length === 0) return;
     const snapshot = data.snapshot;
@@ -255,7 +262,7 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
 
   useEffect(() => {
     if (!initialized || !model) return;
-    const actualMode = referenceArtifactId ? mode : 't2i';
+    const actualMode = activeImageReferenceId ? mode : 't2i';
     quote.mutate({
       model_id: model.id,
       aspect_ratio: aspectRatio,
@@ -264,7 +271,7 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
     });
     // The mutation result itself is intentionally excluded so a quote response never requests another quote.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialized, model?.id, aspectRatio, resolution, mode, referenceArtifactId]);
+  }, [initialized, model?.id, aspectRatio, resolution, mode, activeImageReferenceId]);
 
   const selectModel = (next: ImagePlazaModel) => {
     // A response started with another model must not silently restore its reference.
@@ -307,7 +314,7 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
   };
 
   const videoInputMode = (target = videoModel): 't2v' | 'i2v' | 'r2v' => {
-    if (!referenceArtifactId || target?.image_input === 'none') return 't2v';
+    if (!activeVideoReferenceId || target?.image_input === 'none') return 't2v';
     return target?.image_input === 'optional_first_frame' ? 'i2v' : 'r2v';
   };
 
@@ -339,19 +346,18 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
 
   const selectVideoModel = (next: VideoPlazaModel) => {
     if (referenceArtifactId && next.image_input === 'none') {
-      clearReference();
-      showNotice('该模型不支持参考图，已移除图片');
+      showNotice('该模型不支持参考图，图片将保留但本次不会使用');
     }
     resetVideoSettings(next);
   };
 
   const generateVideo = async (nextPrompt = videoPrompt, source = 'video-composer') => {
     if (!videoModel || !videoQuoteRequest || !nextPrompt.trim() || sending.current) return;
-    if (videoModel.image_input === 'required_reference' && !referenceArtifactId) {
+    if (videoModel.image_input === 'required_reference' && !activeVideoReferenceId) {
       showNotice('当前模型必须添加参考图');
       return;
     }
-    if (localPreview && referenceStatus !== 'ready') return;
+    if (activeVideoReferenceId && localPreview && referenceStatus !== 'ready') return;
     sending.current = true;
     setSubmittingSource(source);
     const action = startAction('video_generate');
@@ -366,7 +372,7 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
         prompt: nextPrompt.trim(),
         quote_id: quoted.quote_id,
         idempotency_key: crypto.randomUUID(),
-        reference_artifact_id: referenceArtifactId,
+        reference_artifact_id: activeVideoReferenceId,
       });
       if (source === 'video-composer') clearVideoIfUnchanged(nextPrompt);
       followLatestRef.current = true;
@@ -405,7 +411,7 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
     genStartedAt.current = performance.now();
     genReported.current = false;
     try {
-      const actualMode: ImagePlazaMode = referenceArtifactId ? mode : 't2i';
+      const actualMode: ImagePlazaMode = activeImageReferenceId ? mode : 't2i';
       const freshQuote = await quote.mutateAsync({
         model_id: model.id,
         aspect_ratio: aspectRatio as never,
@@ -419,7 +425,7 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
         resolution,
         reasoning,
         auto_optimize: autoOptimize,
-        reference_artifact_id: referenceArtifactId,
+        reference_artifact_id: activeImageReferenceId,
         mode: actualMode,
         quote_id: freshQuote.quote_id,
         idempotency_key: crypto.randomUUID(),
@@ -523,6 +529,36 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
       if (token !== uploadToken.current) return;
       setReferenceStatus('error');
       showNotice(error instanceof Error ? error.message : '上传失败');
+    }
+  };
+
+  const handleImageAsVideoReference = async (artifact: ImagePlazaArtifact) => {
+    if (videoReferenceMapping.current) return;
+    const target =
+      (videoModel?.image_input !== 'none' ? videoModel : undefined) ??
+      videoModels.find((item) => item.id === 'wan-3-0-pro' && item.image_input !== 'none') ??
+      videoModels.find((item) => item.image_input !== 'none');
+    if (!target) {
+      showNotice('当前没有可使用参考图的视频模型');
+      return;
+    }
+    videoReferenceMapping.current = true;
+    setVideoReferenceSourceId(artifact.id);
+    try {
+      const created = await createVideoReference.mutateAsync(artifact.id);
+      clearReference();
+      setReference(created.artifact);
+      setReferenceArtifactId(created.artifact.id);
+      setReferenceStatus('ready');
+      if (model?.supports_i2i) setMode('i2i');
+      if (target.id !== videoModel?.id) resetVideoSettings(target);
+      setMediaMode('video');
+      showNotice('已将图片设为视频参考图');
+    } catch (error) {
+      showNotice(error instanceof Error ? error.message : '设置视频参考图失败');
+    } finally {
+      videoReferenceMapping.current = false;
+      setVideoReferenceSourceId(null);
     }
   };
 
@@ -722,6 +758,7 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
                       );
                       setMediaMode('video');
                       setVideoPrompt(value);
+                      clearReference();
                       if (target) {
                         setVideoModelId(target.id);
                         setVideoDuration(attempt.params.duration_s);
@@ -751,6 +788,11 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
                         submittingSource !== null || quote.isPending || submit.isPending
                       }
                       onShare={requestShare}
+                      onUseAsVideoReference={(artifact) =>
+                        void handleImageAsVideoReference(artifact)
+                      }
+                      creatingVideoReferenceId={videoReferenceSourceId}
+                      videoReferencePending={createVideoReference.isPending}
                       onNotice={showNotice}
                       sharingArtifactId={share.isPending && shareArtifact ? shareArtifact.id : null}
                       onArtifactVisible={
@@ -826,9 +868,11 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
                         : referenceStatus === 'error'
                           ? '上传失败，请重试或移除'
                           : mediaMode === 'video'
-                            ? videoModel?.image_input === 'optional_first_frame'
-                              ? '已添加首帧图'
-                              : '已添加参考图'
+                            ? videoModel?.image_input === 'none'
+                              ? '参考图已保留，当前模型不使用'
+                              : videoModel?.image_input === 'optional_first_frame'
+                                ? '已添加首帧图'
+                                : '已添加参考图'
                             : '已添加参考图'}
                   </p>
                   {referenceStatus === 'error' ? (
@@ -1010,8 +1054,14 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
                 (mediaMode === 'video' ? videoQuote.isPending : quote.isPending) ||
                 (mediaMode === 'video' &&
                   videoModel?.image_input === 'required_reference' &&
-                  !referenceArtifactId) ||
-                Boolean(localPreview && referenceStatus !== 'ready')
+                  !activeVideoReferenceId) ||
+                Boolean(
+                  localPreview &&
+                  referenceStatus !== 'ready' &&
+                  (mediaMode === 'image'
+                    ? Boolean(activeImageReferenceId)
+                    : Boolean(activeVideoReferenceId))
+                )
               }
               aria-label="发送生成"
               aria-describedby="image-generation-quote"
@@ -1226,6 +1276,9 @@ function AttemptCard(props: {
   >;
   onRefresh: (prompt: string) => void;
   onShare: (artifact: ImagePlazaArtifact) => void;
+  onUseAsVideoReference: (artifact: ImagePlazaArtifact) => void;
+  creatingVideoReferenceId: string | null;
+  videoReferencePending: boolean;
   onNotice: (message: string) => void;
   sharingArtifactId: string | null;
   rewardBadge: string | null;
@@ -1283,6 +1336,9 @@ function AttemptCard(props: {
           regenerateDisabled={props.regenerateDisabled}
           onRefresh={props.onRefresh}
           onShare={props.onShare}
+          onUseAsVideoReference={props.onUseAsVideoReference}
+          creatingVideoReference={props.creatingVideoReferenceId === artifact.id}
+          videoReferenceDisabled={props.videoReferencePending}
           onNotice={props.onNotice}
           onLoad={index === 0 ? props.onArtifactVisible : undefined}
         />

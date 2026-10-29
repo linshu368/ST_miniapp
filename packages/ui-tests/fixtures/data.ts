@@ -6,6 +6,7 @@ import {
   GetImagePlazaConfigDataSchema,
   GetModelCatalogDataSchema,
   ImagePlazaWorkSchema,
+  PlazaVideoWorkSchema,
   toPublicWordCountTiers,
   UserGenerationConfigSchema,
   UserSettingsSchema,
@@ -25,6 +26,7 @@ export const IDS = {
   character: '10000000-0000-4000-8000-000000000001',
   session: '20000000-0000-4000-8000-000000000001',
   work: '30000000-0000-4000-8000-000000000001',
+  videoWork: '30000000-0000-4000-8000-000000000002',
   studio: '40000000-0000-4000-8000-000000000001',
 } as const;
 export const stamp = () => new Date().toISOString();
@@ -354,6 +356,39 @@ export function makeData(api: string) {
   };
   const imageConfig = GetImagePlazaConfigDataSchema.parse({
     enabled: true,
+    default_video_model_id: 'wan-3-0-pro',
+    video_models: [
+      {
+        id: 'wan-3-0-pro',
+        name: 'Wan 3.0 Pro',
+        description: '本地预览图生视频模型',
+        image_input: 'optional_first_frame',
+        durations: [5, 10],
+        resolutions: ['720p', '1080p'],
+        aspect_ratios: ['16:9', '9:16', '1:1'],
+        audio_configurable: true,
+        default_audio: true,
+        default_duration: 5,
+        default_resolution: '720p',
+        default_aspect_ratio: '16:9',
+        image_constraints: { min_short_side: 240 },
+      },
+      {
+        id: 'preview-text-video',
+        name: '纯文本视频',
+        description: '不接收参考图，用于验证保留状态',
+        image_input: 'none',
+        durations: [5, 10],
+        resolutions: ['720p', '1080p'],
+        aspect_ratios: ['16:9', '9:16', '1:1'],
+        audio_configurable: true,
+        default_audio: false,
+        default_duration: 5,
+        default_resolution: '720p',
+        default_aspect_ratio: '16:9',
+        image_constraints: {},
+      },
+    ],
     models: [
       {
         id: 'preview-image',
@@ -477,6 +512,34 @@ export function makeData(api: string) {
       style: 'None',
     },
   });
+  const videoWork = PlazaVideoWorkSchema.parse({
+    id: IDS.videoWork,
+    media_type: 'video',
+    title: '林间微风短片',
+    poster_url: `${api}/assets/scene.svg?tone=1`,
+    duration_ms: 5000,
+    description: '树叶随风轻轻摇动。',
+    model_id: 'wan-3-0-pro',
+    model_name: 'Wan 3.0 Pro',
+    width: 1280,
+    height: 720,
+    tags: ['风景'],
+    like_count: 8,
+    liked: false,
+    published_at: now,
+    attempt_id: '41000000-0000-4000-8000-000000000001',
+    video_url: `${api}/assets/drama-preview.mp4`,
+    snapshot: {
+      prompt: 'A gentle breeze moves through a quiet forest',
+      model_id: 'wan-3-0-pro',
+      input_mode: 't2v',
+      duration_s: 5,
+      resolution: '720p',
+      aspect_ratio: '16:9',
+      audio: true,
+      reference_artifact_id: null,
+    },
+  });
   const studio: ImagePlazaConversation = {
     id: IDS.studio,
     title: '山谷灵感',
@@ -497,7 +560,7 @@ export function makeData(api: string) {
     models,
     plans,
     imageConfig,
-    works: [work],
+    works: [work, videoWork],
     studios: [studio],
   };
 }
