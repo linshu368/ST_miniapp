@@ -1,6 +1,6 @@
 # 回复点赞数据库验收
 
-2026-10-29，仅本地 PostgreSQL 17 隔离容器与合成数据。没有远端访问、生产迁移、真实聊天读取、模型调用或扣费。
+2026-10-29，本地验收使用 PostgreSQL 17 隔离容器与合成数据，没有生产迁移、真实聊天读取、模型调用或扣费。发布阶段的生产只读结构预检单独记录在文末。
 
 ## 实现与归属
 
@@ -51,3 +51,15 @@ PASS: conversation branches and reply likes PG17 (context, revision, independenc
 大厅角色总赞=原角色卡直接赞+该角色所有手动回复赞。每条记录累计；同回复重复true不增加，false减回，分支不自动复制；不同会话/分支手动赞及旧revision反馈保留累计。既有get_character_socials通过experience.get_character_reply_like_counts批量accessor读取，仅角色ID/数量跨域，不返回聊天或用户身份。原liked直接卡片开关、收藏和评论计数保持原语义。
 
 原PG harness新增实际character_social迁移，验证直接赞、多回复累计、重复、取消、分支不加数/手动加数、重生成前后累计、批量不串角色与accessor权限。最终复验退出0，包含原全部用例和新增角色聚合用例。正式前置增加已部署的character_social迁移；没有修改该历史文件。
+
+## 生产迁移前只读预检
+
+2026-10-29 10:59–11:01 UTC（北京时间18:59–19:01），Supabase MCP `execute_sql`，生产项目 `wbtsfzozlmurljvglhpn`。仅查询 pg_catalog 的函数定义/权限、表和视图列；没有读取业务行或执行远端写入。本轮未重跑本地 PG。
+
+- 两个 `start_chat_history_*_with_current_postprocess` 签名与迁移一致；`OR NOT v_previous_exact` 各恰好1处，已修复锚点各0处，满足唯一替换门禁。
+- 两个 wrapper 和基础开轮/重生成均为 postgres owner、SECURITY DEFINER、search_path=pg_catalog；ACL 仅 postgres/service_role EXECUTE，anon/authenticated 无权。`get_character_socials(uuid[],uuid)` 同样符合该权限边界。
+- 基础开轮、重生成、会话统计触发器、角色 social 四个现行函数体，去除空白/注释并对应既有 schema 拆分后，与仓库既有基线均匹配，未发现会被本次替换覆盖的上游漂移。
+- session 当前字段及 current/raw history 所需19个投影字段全部存在、类型相符，包括 postprocess_version、rich_reply_metadata、first_token_preview、llm_charge_id。新增 branch 元数据、引用/点赞表、session_chat_history 和新 RPC 尚不存在，属于首次执行。
+- 现行统计 trigger function 留有 PUBLIC EXECUTE，本次迁移会按既定实现收紧；该函数只能以 trigger 调用，不改变业务调用入口。生产 current_chat_history 目前无 security_invoker reloption，chat_history RLS 未启用且有存量授权；本次不修改这两个原对象，新 view/表按审查后的独立权限创建。这是存量结构差异，不是新增权限扩张。
+
+结论：生产结构与本次迁移前置兼容，未发现代码/shape 阻塞。该结果不替代 TEST 标准工作流；测试项目当前访问情况和实际迁移由发布负责人独立记录。未宣称生产迁移已完成。
