@@ -1,5 +1,14 @@
 # 短剧播放耗时排查
 
+## 五秒长尾常态采集（2026-10-29，本地实现，待发布）
+
+- 继续从每次原启动入口采集，不新增五秒定时快照。真实成功、失败、离开或后台的 `phase=final` 达到5000ms时，完整有界报告经后端已有OTLP出口写Cloud Loki，事件名 `drama.startup_diagnostic`；迟到 `phase=network` 复用同一观察ID补媒体证据，不生成第二次启动。
+- 成功仍要求首帧且playing；elapsed保持实际值，不在五秒中断播放。原十秒slow报告仍兼容Pino，但不会另存这条Loki诊断流。
+- 每条报告沿用strict shared白名单与32KiB上限，保留media/queries/marks/diagnostics；观察/视频/会话ID仅在JSON正文。iOS字段不可读仍标limited，不输出URL、token、路径、身份或任意正文。
+- 路由停止Supabase分析写入，即使旧DRAMA_TIMING_PERSIST_ENABLED=true；原表/导入器/SQL看板保留历史，不重写、不删除。下文数据库落表/7天详情/14天摘要只描述历史SQL路径，不适用于新的Loki流；Loki保留期按实际Cloud配置，未在本轮修改。
+- ENGINEERING_TELEMETRY_ENABLED与现有OTLP私网端点是新出口的前提；复用256条日志队列、2秒预算和既有drop/failure健康指标。202仅接口接收，关闭/限流/断网/强退仍可能缺报，无离线补传。
+- 事后入口为现有st-engineering-drama新增的两个详情面板；原浏览器流选择器不影响它们，版本筛选读取报告里的客户端release。发布与查询见runbook。
+
 短剧耗时直接记录到日志：浏览器使用现有 `createLogger`，前端报告经鉴权发送到 `POST /api/telemetry/drama-timing`，Backend 用现有 Pino 写入 Railway。短剧专用 Sentry Logs、Metrics 和 warning 事件已移除；其他业务和通用 HTTP/异常监控保持原有行为。
 
 计时不改变播放超时、重试、预取、签名有效期、媒体加载或自动播放策略。默认保持日志模式；新增 v2 诊断与可选 Grafana 落表实现，需先执行对应环境的 `20261027_drama_playback_observability.sql`，再设置 `DRAMA_TIMING_PERSIST_ENABLED=true` 并重新部署 Backend。源文件存在不代表远端已经迁移或启用。发布、历史导入与真机验收见 [短剧看板操作说明](grafana/drama-playback-runbook.md)。

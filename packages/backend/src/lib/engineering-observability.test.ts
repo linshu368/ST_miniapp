@@ -1,7 +1,9 @@
 import { createServer, type Server } from 'node:http';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { DramaTimingReportSchema, type DramaTimingReport } from '@miniapp/shared';
 import {
   engineeringRoute,
+  observeDramaStartupDiagnostic,
   observeGenerationAttempt,
   observeGenerationDispatch,
   observeGenerationTerminal,
@@ -10,6 +12,17 @@ import {
 } from './engineering-observability.js';
 
 type Received = { path: string; body: Record<string, unknown> };
+type LogsPayload = {
+  resourceLogs: Array<{
+    scopeLogs: Array<{
+      logRecords: Array<{
+        body: { stringValue: string };
+        eventName: string;
+        attributes: Array<{ key: string }>;
+      }>;
+    }>;
+  }>;
+};
 type MetricsPayload = {
   resourceMetrics: Array<{
     scopeMetrics: Array<{
@@ -53,9 +66,130 @@ async function receiver(logStatus = 200) {
 const options = { enabled: true, environment: 'test', version: 'safe-test-release' };
 
 describe('engineering telemetry boundary', () => {
+  it('retains five-second terminal details and late network evidence as JSON log bodies', async () => {
+    const sink = await receiver();
+    stop = startEngineeringTelemetry({ ...options, endpoint: sink.endpoint });
+    const report = DramaTimingReportSchema.parse({
+      type: 'playback',
+      phase: 'final',
+      version: 2,
+      context: {
+        release: 'client-release',
+        sessionId: 'safe-session',
+        platform: 'ios',
+        browser: 'webkit',
+      },
+      id: 'slow-observation',
+      entry: 'episode',
+      videoId: 'safe-video',
+      outcome: 'playing',
+      elapsedMs: 6_000,
+      marks: {
+        source_set: 100,
+        metadata: 5_800,
+        loadeddata: 5_900,
+        first_frame: 6_000,
+        playing: 6_000,
+      },
+      stages: { source_to_metadata: 5_700 },
+      queries: [
+        {
+          kind: 'playback',
+          startMs: 0,
+          durationMs: 400,
+          outcome: 'ok',
+          attempts: [
+            {
+              requestId: 'api-request-id',
+              startMs: 0,
+              queueMs: 1,
+              headersMs: 398,
+              bodyMs: 1,
+              totalMs: 400,
+              status: 200,
+              outcome: 'ok',
+            },
+          ],
+        },
+      ],
+      media: {
+        events: [{ name: 'loadedmetadata', atMs: 5_800 }],
+        eventsTruncated: false,
+        snapshot: {
+          readyState: 3,
+          networkState: 2,
+          paused: false,
+          muted: true,
+          seeking: false,
+          currentTimeMs: 0,
+          bufferedAheadMs: 1_000,
+          visibility: 'visible',
+        },
+      },
+      diagnostics: {
+        network: {
+          status: 'limited',
+          entries: [
+            { startMs: 100, fetchStartMs: 100, responseEndMs: 5_800, visibility: 'limited' },
+          ],
+          truncated: false,
+        },
+      },
+    });
+    observeDramaStartupDiagnostic({ ...report, elapsedMs: 4_999 });
+    observeDramaStartupDiagnostic({ ...report, phase: 'slow', outcome: 'waiting' });
+    observeDramaStartupDiagnostic({ ...report, type: 'list' });
+    observeDramaStartupDiagnostic({ ...report, elapsedMs: 5_000 });
+    observeDramaStartupDiagnostic(report);
+    observeDramaStartupDiagnostic({ ...report, phase: 'network' });
+    for (const outcome of ['error', 'left', 'background'] as const)
+      observeDramaStartupDiagnostic({ ...report, outcome, elapsedMs: 16_007 });
+    observeDramaStartupDiagnostic({ ...report, token: 'PRIVATE_TOKEN' } as DramaTimingReport);
+    observeDramaStartupDiagnostic({
+      ...report,
+      diagnostics: { network: { ...report.diagnostics!.network!, url: 'PRIVATE_URL' } },
+    } as DramaTimingReport);
+    await stop();
+    const records = sink.received
+      .filter((r) => r.path === '/v1/logs')
+      .flatMap((r) =>
+        (r.body as unknown as LogsPayload).resourceLogs.flatMap((resource) =>
+          resource.scopeLogs.flatMap((scope) => scope.logRecords)
+        )
+      );
+    expect(records).toHaveLength(6);
+    const bodies = records.map((r) => JSON.parse(r.body.stringValue) as Record<string, unknown>);
+    expect(bodies.map((b) => b.elapsedMs)).toEqual([5_000, 6_000, 6_000, 16_007, 16_007, 16_007]);
+    expect(bodies[1]).toMatchObject({
+      event: 'drama.startup_diagnostic',
+      ...report,
+    });
+    expect(bodies[2]).toMatchObject({ phase: 'network', id: 'slow-observation' });
+    expect(JSON.stringify(records)).not.toContain('PRIVATE_');
+    expect(
+      records.every((r) =>
+        r.attributes.every(
+          (a) => !['id', 'videoId', 'sessionId', 'queries', 'diagnostics'].includes(a.key)
+        )
+      )
+    ).toBe(true);
+  });
+
   it('does not connect when disabled and rejects raw URL/identifier route labels', async () => {
     const sink = await receiver();
     stop = startEngineeringTelemetry({ ...options, enabled: false, endpoint: sink.endpoint });
+    observeDramaStartupDiagnostic(
+      DramaTimingReportSchema.parse({
+        type: 'playback',
+        phase: 'final',
+        id: 'disabled-slow',
+        outcome: 'error',
+        elapsedMs: 16_007,
+        marks: {},
+        stages: {},
+        queries: [],
+      })
+    );
     observeGenerationTerminal({
       provider: 'openrouter',
       model: 'safe-model',

@@ -64,6 +64,16 @@
           "text": "{app=\"st-miniapp\"}",
           "value": "{app=\"st-miniapp\"}"
         }
+      },
+      {
+        "name": "diagnostic_observation",
+        "label": "慢启动 observation_id",
+        "type": "textbox",
+        "query": "",
+        "current": {
+          "text": "",
+          "value": ""
+        }
       }
     ]
   },
@@ -627,6 +637,80 @@
           }
         }
       ]
+    },
+    {
+      "id": 11,
+      "type": "logs",
+      "title": "达到5秒的启动详情（逐次实际等待）",
+      "description": "Backend写入Loki的完整受控诊断；包含失败、离开和后台终态，不能全部算成功。展开JSON查看marks/media/queries/diagnostics；limited表示详细媒体计时不可读，不补0。版本筛选采用客户端release；原浏览器流选择器/measurement_version不适用于本面板。",
+      "datasource": {
+        "type": "loki",
+        "uid": "grafanacloud-logs"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 57,
+        "w": 24,
+        "h": 10
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          },
+          "expr": "{service_name=\"st-miniapp-backend\", deployment_environment_name=\"${environment}\"} |= `\"event\":\"drama.startup_diagnostic\"` | json diagnostic_phase=\"phase\", wait_ms=\"elapsedMs\", observation=\"id\", client_release=\"context.release\", device_platform=\"context.platform\", playback_entry=\"entry\" | __error__=\"\" | client_release=~\"${release:raw}\" | diagnostic_phase=\"final\" | wait_ms >= 5000",
+          "queryType": "range"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": true,
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none"
+      }
+    },
+    {
+      "id": 12,
+      "type": "logs",
+      "title": "单次慢启动：终态与迟到媒体证据",
+      "description": "填写上方observation_id，按phase区分final与network；network是同一次启动的补充，不计为第二次成功。详情送达和Loki保留期受现有出口/Cloud限制，缺失不表示播放正常。",
+      "datasource": {
+        "type": "loki",
+        "uid": "grafanacloud-logs"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 67,
+        "w": 24,
+        "h": 10
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          },
+          "expr": "{service_name=\"st-miniapp-backend\", deployment_environment_name=\"${environment}\"} |= `\"event\":\"drama.startup_diagnostic\"` | json diagnostic_phase=\"phase\", wait_ms=\"elapsedMs\", observation=\"id\", client_release=\"context.release\", device_platform=\"context.platform\", playback_entry=\"entry\" | __error__=\"\" | client_release=~\"${release:raw}\" | observation=${diagnostic_observation:doublequote}",
+          "queryType": "range"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": true,
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none"
+      }
     }
   ]
 }
