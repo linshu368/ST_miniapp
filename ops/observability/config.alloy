@@ -30,13 +30,13 @@ otelcol.processor.transform "allowlist" {
   metric_statements {
     context = "datapoint"
     statements = [
-      `keep_keys(attributes, ["environment", "release", "route", "method", "status_class", "kind", "model", "operation", "outcome", "platform", "role", "phase", "dispatched", "stage", "sign_cache", "reason", "otel.metric.overflow", "exporter", "receiver", "processor", "data_type", "job", "instance"])`,
+      `keep_keys(attributes, ["environment", "release", "route", "method", "status_class", "kind", "model", "operation", "outcome", "platform", "role", "phase", "dispatched", "stage", "sign_cache", "reason", "otel.metric.overflow", "exporter", "receiver", "processor", "data_type", "job", "instance", "requested_model", "winner", "fallback_started"])`,
     ]
   }
   log_statements {
     context = "log"
     statements = [
-      `keep_keys(attributes, ["environment", "release", "route", "outcome", "kind", "model", "platform", "role", "phase", "dispatched", "duration_ms", "total_ms", "auth_ms", "db_read_ms", "assemble_ms", "sign_ms", "sign_cache"])`,
+      `keep_keys(attributes, ["environment", "release", "route", "outcome", "kind", "model", "platform", "role", "phase", "dispatched", "duration_ms", "total_ms", "auth_ms", "db_read_ms", "assemble_ms", "sign_ms", "sign_cache", "requested_model", "winner", "fallback_started", "stage", "elapsed_ms", "deadline_ms", "trigger_ms"])`,
       `keep_keys(resource.attributes, ["service.name", "service.namespace", "service.version", "deployment.environment.name"])`,
     ]
   }
