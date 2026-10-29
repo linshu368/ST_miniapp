@@ -7,6 +7,10 @@ const CLIENT_ID = '00000000-0000-4000-8000-0000000000c1';
 const cs = vi.hoisted(() => ({
   callCsService: vi.fn(),
 }));
+const logs = vi.hoisted(() => ({
+  info: vi.fn(),
+  error: vi.fn(),
+}));
 
 vi.mock('../lib/cs-service.js', () => ({
   CS_SERVICE_IMAGE_TIMEOUT_MS: 20_000,
@@ -15,6 +19,13 @@ vi.mock('../lib/cs-service.js', () => ({
 
 vi.mock('../lib/user.js', () => ({
   getOrCreateDbUser: vi.fn(async () => ({ id: ME })),
+}));
+
+vi.mock('../lib/logger.js', () => ({
+  requestLogger: () => ({
+    biz: { info: logs.info },
+    sys: { error: logs.error },
+  }),
 }));
 
 async function buildApp() {
@@ -29,6 +40,8 @@ describe('support routes → cs service proxy', () => {
   beforeEach(() => {
     vi.stubEnv('DEV_AUTH_BYPASS', '1');
     cs.callCsService.mockReset();
+    logs.info.mockReset();
+    logs.error.mockReset();
   });
 
   it('按用户转发，状态码和信封原样透传', async () => {
@@ -81,6 +94,17 @@ describe('support routes → cs service proxy', () => {
         },
         undefined
       );
+      expect(logs.info).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: 'support.proxy.completed',
+          operation: 'messages.send',
+          status: 201,
+          identityMs: expect.any(Number),
+          upstreamMs: expect.any(Number),
+          totalMs: expect.any(Number),
+        }),
+        '客服代理请求完成'
+      );
     } finally {
       await app.close();
     }
@@ -129,6 +153,30 @@ describe('support routes → cs service proxy', () => {
       });
       expect(response.statusCode).toBe(400);
       expect(cs.callCsService).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('上游失败保留原始错误对象并只记录安全的耗时上下文', async () => {
+    const upstreamError = new Error('cs unavailable');
+    cs.callCsService.mockRejectedValue(upstreamError);
+    const app = await buildApp();
+    try {
+      const response = await app.inject({ method: 'GET', url: '/api/support/unread' });
+      expect(response.statusCode).toBe(500);
+      expect(logs.error).toHaveBeenCalledWith(
+        expect.objectContaining({
+          err: upstreamError,
+          event: 'support.proxy.failed',
+          operation: 'unread',
+          identityMs: expect.any(Number),
+          totalMs: expect.any(Number),
+        }),
+        '客服代理请求失败'
+      );
+      expect(logs.error.mock.calls[0]?.[0]).not.toHaveProperty('path');
+      expect(logs.error.mock.calls[0]?.[0]).not.toHaveProperty('userId');
     } finally {
       await app.close();
     }

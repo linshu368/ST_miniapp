@@ -21,7 +21,8 @@ export const supportKeys = {
 export function useSupportConversationQuery() {
   return useQuery({
     queryKey: supportKeys.conversation,
-    queryFn: () => apiClient<GetSupportConversationData>('/api/support/conversation'),
+    queryFn: ({ signal }) =>
+      apiClient<GetSupportConversationData>('/api/support/conversation', { signal }),
     refetchInterval: 5_000,
     refetchIntervalInBackground: false,
   });
@@ -37,11 +38,16 @@ export function useSupportUnreadQuery({
 }: { poll?: boolean; enabled?: boolean } = {}) {
   const query = useQuery({
     queryKey: supportKeys.unread,
-    queryFn: () =>
-      apiClient<SupportUnreadData>('/api/support/unread', { queuePriority: 'background' }),
+    queryFn: ({ signal }) =>
+      apiClient<SupportUnreadData>('/api/support/unread', {
+        queuePriority: 'background',
+        signal,
+      }),
     enabled,
     staleTime: 30_000,
-    refetchOnMount: 'always',
+    // 20s 轮询已经负责活跃页面的新鲜度；重复 observer 挂载时尊重 30s 缓存，
+    // 避免 BottomNav 与 Profile 在相邻 commit 中重复打客服代理。
+    refetchOnMount: true,
     refetchInterval: poll ? SUPPORT_UNREAD_POLL_MS : false,
   });
   useRefetchOnForeground(query.refetch, poll && enabled);

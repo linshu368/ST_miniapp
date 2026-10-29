@@ -30,7 +30,7 @@
 
 ## 可观测性与发布
 
-短剧v2遥测的分析持久化由 `platform/runtime-config.ts` 集中读取 `DRAMA_TIMING_PERSIST_ENABLED`（默认false，部署时生效），环境使用数据库target=test|production，不能把development直接写成分析环境。仅遥测路由调用 `features/drama/timing-repository.ts` 的2秒/最多2并发RPC；202只确认accepted，异步合并结果由drama.timing_persisted/failed/dropped日志独立确认；原Pino日志保留，不加入播放接口。分析域权限、单migration、保留期和独立Grafana步骤见 [操作说明](../../../../docs/grafana/drama-playback-runbook.md)。
+历史 v2 路径说明（当前接收接口已停止分析写入，旧 flag 不能恢复）：短剧v2遥测的分析持久化由 `platform/runtime-config.ts` 集中读取 `DRAMA_TIMING_PERSIST_ENABLED`（默认false，部署时生效），环境使用数据库target=test|production，不能把development直接写成分析环境。仅遥测路由调用 `features/drama/timing-repository.ts` 的2秒/最多2并发RPC；202只确认accepted，异步合并结果由drama.timing_persisted/failed/dropped日志独立确认；原Pino日志保留，不加入播放接口。分析域权限、单migration、保留期和独立Grafana步骤见 [操作说明](../../../../docs/grafana/drama-playback-runbook.md)。
 
 - 使用现有 pino、`requestLogger`；原始异常写 `{ err }`。Sentry 先脱敏再附 context。
 - 关键流程记录阶段、耗时、状态/计数、安全幂等摘要、provider/request id；job 记录扫描/推进/失败数，禁止逐行高频 info。
@@ -333,6 +333,40 @@ recoverable_delivery仅新Backend显式启用；旧请求/终结账单不回填�
 只消费赢家的replay与原charge_id结算，原报价/权益、超时免扣、主动停止和离页恢复规则不变。败方立即取消，不为排查drain；只把已接收的正文/公开思考有界片段和race_lost原因并入原attempt一次异步终态写，不发给用户、不进上下文、不另计费。正常attempt最多派发/终态两次observe；删除旧首发额外元数据补读，无新cron/轮询。diagnostic保存不阻塞首字，赢家身份仍须持久化才能结算。
 
 新迁移`20261028_first_token_race.sql`扩展现有attempt诊断列并解除禁止首发回赢的守卫，保留数据库单赢家CAS/PT409；Grafana仅获原指标列权限，不能读诊断正文。先本地与TEST验证、合dev，再生产迁移和应用/Admin/看板。回退应用保留诊断列与原账务，不扩权限，不改历史数据。
+
+## Scenario: 短剧生产 CDN 对照
+
+### 1. Scope / Trigger
+
+普通 `/api/dramas/:id/play` 在已鉴权、剧／集归属通过后选择路径。默认关闭；生产专用源／CDN／签名配置，TEST 仍隔离。部署与实况见 [操作说明](../../../../ops/drama-cdn-rollout.md)。
+
+### 2. Signatures
+
+runtime-config 统一读取 DRAMA_CDN_ENABLED、DRAMA_CDN_BASE_URL、DRAMA_CDN_TOKEN_KEY、DRAMA_CDN_EXPERIMENT_ID、DRAMA_CDN_EXPERIMENT_KEY。delivery helper 纯 HMAC 稳定分桶，20% Bunny／80% Supabase；不同 HMAC 域推导实验用户去重码，仅在鉴权遥测接收端附到日志。
+
+### 3. Contracts
+
+shared DramaPlayback.delivery 包含实验版本、原 group、实际 provider 和 reason。timing 可选 recovery／入口总等待／seek，旧字段缺失保持 unknown；客户端不能发送身份去重键。接收接口沿用上游不写分析库；seek 只走原 Pino，不进入 startup 工程分母，不新增 DB 对象。实验核验 legacy 完整 start／结果，不能拿采样 Pino 或仅慢日志 Loki 作为总体。签名缓存按实际 provider、源、目录、签名配置与对象隔离，同 key single-flight；失败不伪造成功或自动换组。
+
+### 4. Validation & Error Matrix
+
+鉴权／归属失败不签名；生产源错配、凭据非法、路径／签名篡改失败闭合。关闭保留实验 ID／key，全部实例生效后新播放重新取 Supabase 地址，不能用旧缓存绕过。遥测故障不阻塞播放。
+
+### 5. Good/Base/Bad Cases
+
+Good：原 Bunny 分组关闭后实际 provider=Supabase，原失败仍在。Base：旧客户端无实验字段保持 unknown。Bad：把重试后短成功覆盖原失败，按会话数算独立用户，或用超时截断代替真实等待。
+
+### 6. Tests Required
+
+稳定分桶／多实例／关闭、环境错配、源／CDN token绑定、缓存隔离、接收端身份与白名单、seek不入startup RPC、重复／冲突／缺报比较；生产 Range／小段字节／热缓存负例和 iOS／Android 真机单独验收。
+
+### 7. Wrong vs Correct
+
+Wrong：全局开关直接把全部请求送 Bunny，客户端复用关闭前的预取 URL。Correct：鉴权后决定本请求路径、缓存隔离；两组每个新播放意图都确认当前路径。5秒只生成观测，保留真实结果。
+
+Wrong：把旧单样本规则解除白名单后称为全量Bunny。Correct：固定TEST桶动态回源，不同真实对象均通过206/Range与字节核验，旧实验路径继续关闭。
+
+Bunny动态Origin实测：`Path.1-`在保留文件名时也保留原query，不可在其后再拼`?token=`。标准归档键`videos/<video_id>/original`应使用`%{Path.1-2}/%{Url.Filename}?token=%{Query.origin_token}`，避免CDN查询混入源JWT；新路径层级需重新核验。
 
 ## 短剧统一测量v3（本地实现，待发布）
 

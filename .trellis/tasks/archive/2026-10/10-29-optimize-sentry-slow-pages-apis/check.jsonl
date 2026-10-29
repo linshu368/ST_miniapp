@@ -1,0 +1,6 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/frontend/app/testing-quality-and-deployment.md", "reason": "Frontend build and UI verification"}
+{"file": "packages/ui-tests/README.md", "reason": "Reusable roleplay/chat/drama/profile acceptance flows"}
+{"file": ".trellis/tasks/10-29-optimize-sentry-slow-pages-apis/research/current-bottlenecks.md", "reason": "Acceptance baselines and non-goals"}
+{"file": ".trellis/spec/backend/app/testing-scripts-and-deployment.md", "reason": "Backend tests and deployment gates"}
+{"file": ".trellis/spec/shared/contracts/testing-and-change-management.md", "reason": "Cross-package consumer verification"}

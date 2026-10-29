@@ -1,0 +1,47 @@
+{
+  "id": "optimize-sentry-slow-pages-apis",
+  "name": "optimize-sentry-slow-pages-apis",
+  "title": "Optimize Sentry slow pages and APIs",
+  "description": "基于 2026-10-29 Sentry 报告，定向收口页面请求取消、重复加载、可选 UI 拆包与 support unread 阶段归因；保持现有首字竞速、计费和数据库语义不变。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": "frontend,backend",
+  "package": "frontend,backend",
+  "priority": "P1",
+  "creator": "cline",
+  "assignee": "cline",
+  "createdAt": "2026-10-29",
+  "completedAt": "2026-10-29",
+  "branch": "fix_request_speed",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "packages/frontend/src/lib/api/client.ts",
+    "packages/frontend/src/lib/api/query-client.ts",
+    "packages/frontend/src/lib/api/characters.ts",
+    "packages/frontend/src/lib/api/conversations.ts",
+    "packages/frontend/src/lib/api/support.ts",
+    "packages/frontend/src/components/characters/character-gallery.tsx",
+    "packages/frontend/src/components/roleplay/recent-conversation-card.tsx",
+    "packages/frontend/src/app/chat/[characterId]/page.tsx",
+    "packages/frontend/src/components/drama/comment-sheet.tsx",
+    "packages/backend/src/routes/support.ts"
+  ],
+  "notes": "用户要求执行完成并验证后自动归档；不自动 commit 或 push。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "frontend.infrastructure.client-ui-foundation",
+        "frontend.business.engagement-support",
+        "backend.business.engagement-support"
+      ]
+    }
+  }
+}

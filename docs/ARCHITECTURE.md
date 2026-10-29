@@ -26,6 +26,8 @@
 
 ⏳ **2026-10-29 回复点赞（本地增量，未发布）**：`experience.chat_message_likes(session_id,message_id)` 保存会话主人对固定实际回复版本的点赞，分支不复制，重生成以新history ID独立反馈。`set_chat_message_like` 按归属/完成态验证并与开轮共用会话锁；显式布尔目标可幂等重试，写入不触发聊天统计或计费。角色社交查询通过 `experience.get_character_reply_like_counts` 批量读取角色回复总赞，加上原角色卡直接赞，返回大厅统一累计数量。`session_chat_history` 只末尾追加 `liked`，消息列表选择，模型上下文不选择；不额外为每条消息查询。受限RPC拥有写权，service只可读取新表，浏览器无直接数据库权限。迁移需先分支后点赞，恢复时可忽略个人点赞投影并保留数据。
 
+短剧 CDN 对照复用正常 `/api/dramas/:id/play`：Telegram 鉴权与归属校验后，根据固定实验 HMAC 分配约 20% Bunny、80% Supabase；实验内去重键只在服务器日志中生成。生产／TEST 的源、目录、CDN 签名与缓存隔离；CDN 只获对象级短期源能力，不获项目密钥。两组同一播放器与策略，每次新播放／重试都确认当前路径，关闭后不能消费旧 Bunny 预取地址。起播、未缓冲快进和恢复链经 shared 白名单传到现有 Pino；超过 5 秒继续记录真实结果。接收接口保持不写分析库，seek 不混入 startup 工程统计，不新增表／迁移／实验平台。独立实验页面/API已移除。实现与发布步骤见 [生产对照操作说明](../ops/drama-cdn-rollout.md)；代码不代表生产已启用或每次 5 秒目标已达成。
+
 离线数据运维补充：2026-10-19 的 Civitai seed TEST 导出最初复用 `experience.import_image_plaza_seed_work` 初始化目标作品；M1 后该 RPC 位于 `media_plaza`。该流程不迁移测试用户/点赞/账务，图片实体必须独立迁移。2026-10-20 新增离线 Storage 工具，固定 TEST → 本地 SHA-256 暂存 → production 仅新增上传/回读校验，有限并发且不覆盖冲突对象。该工具不改变运行时边界，不自动执行生产 SQL；实际完成状态以任务/report 为准。操作方法见 [seed 迁移说明](../ops/image-plaza-seed-migration.md)。
 
 1. **对外数据形状先定义在 `packages/shared/`**，再写 handler。backend 不得在包内私定对外类型。
@@ -756,6 +758,14 @@ send/regenerate 携带可选 `first_token_measurement`；后端通过既有 begi
 只消费赢家的replay与原charge_id结算，原报价/权益、超时免扣、主动停止和离页恢复规则不变。败方立即取消，不为排查drain；只把已接收的正文/公开思考有界片段和race_lost原因并入原attempt一次异步终态写，不发给用户、不进上下文、不另计费。正常attempt最多派发/终态两次observe；删除旧首发额外元数据补读，无新cron/轮询。diagnostic保存不阻塞首字，赢家身份仍须持久化才能结算。
 
 新迁移`20261028_first_token_race.sql`扩展现有attempt诊断列并解除禁止首发回赢的守卫，保留数据库单赢家CAS/PT409；Grafana仅获原指标列权限，不能读诊断正文。先本地与TEST验证、合dev，再生产迁移和应用/Admin/看板。回退应用保留诊断列与原账务，不扩权限，不改历史数据。
+
+## pr-525 Preview 短剧 Bunny 分发（历史 TEST 验收）
+
+PR #525 合入 dev 时的 TEST 适配：只有 Railway 环境名 pr-525、数据库 target=test 且 DRAMA_CDN_ENABLED=true 时，正常 /api/dramas/:id/play 返回 Bunny 地址；DRAMA_CDN_TOKEN_KEY 仅存 Backend。移除独立 /drama-cdn-experiment 页面与专用接口、用户/样本白名单。正常 Telegram 鉴权、剧/集归属和私有桶保持；该版本其他环境仍走 Supabase。pr-525 已完成配置切流与真实媒体功能预检：不同 TEST 对象的起始/中段 Range、源字节比对及热缓存鉴权负例通过；正常 API 向无实验白名单的测试身份返回 Bunny。Telegram 手机实际手感仍待验收，不宣称提速。操作与恢复见 ops/drama-bunny-preview/README.md。
+
+Backend 复用 DramaSignedUrlCache 的有界缓存和 single-flight，先申请 TEST 对象级短期源签名，再按完整对象路径与 origin_token 生成 Bunny HMAC-SHA256 token。用户 URL 到期早于源签名至少60秒；缓存不得改写原到期时间。Bunny 规则只将 /preview-test/\* 映射到固定 TEST host 的 drama-videos 私有桶。无数据库迁移、媒体代理、转码或存储复制；启用配置错误返回不可播，不静默直连掩盖切流失败。
+
+Bunny动态Origin实测：`Path.1-`在保留文件名时也保留原query，不可在其后再拼`?token=`。标准归档键`videos/<video_id>/original`应使用`%{Path.1-2}/%{Url.Filename}?token=%{Query.origin_token}`，避免CDN查询混入源JWT；新路径层级需重新核验。
 
 ## 六秒预算与有限补报（2026-10-29）
 

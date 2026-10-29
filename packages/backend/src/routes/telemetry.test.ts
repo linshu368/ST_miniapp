@@ -2,6 +2,7 @@ import Fastify from 'fastify';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DramaTimingReportSchema } from '@miniapp/shared';
 import { railwayDramaReport } from '../scripts/import-drama-timing.js';
+import { compareDramaCdn } from '../scripts/compare-drama-cdn.js';
 
 const wallets = {
   hasCompletedPayment: vi.fn(async () => false),
@@ -135,6 +136,147 @@ describe('POST /api/telemetry/drama-timing', () => {
       },
     ],
   };
+  it('compares each observation once while deduplicating users and preserving retries and missing finals', () => {
+    const row = (id: string, phase: string, elapsed: number, extra = {}) => ({
+      time: '2026-10-29T00:01:00Z',
+      event: 'drama.frontend_timing',
+      type: 'playback',
+      phase,
+      version: 2,
+      observation_id: id,
+      outcome: phase === 'final' ? 'playing' : 'waiting',
+      elapsed_ms: elapsed,
+      marks: {},
+      queries: [],
+      environment: 'production',
+      server_release: 'server-one',
+      experiment_id: 'unit-ab',
+      assigned_group: 'bunny',
+      experiment_user: 'a'.repeat(64),
+      context: {
+        release: 'app-one',
+        platform: 'ios',
+        browser: 'webkit',
+        sessionId: 'unit-session',
+      },
+      delivery: { experimentId: 'unit-ab', group: 'bunny', provider: 'bunny', reason: 'assigned' },
+      ...extra,
+    });
+    const final = row('slow', 'final', 8100);
+    const result = compareDramaCdn(
+      [
+        row('slow', 'start', 0),
+        row('slow', 'slow', 5001),
+        final,
+        final,
+        row('retry', 'final', 100, {
+          recovery: { rootId: 'slow', parentId: 'slow', cumulativeMs: 8300 },
+        }),
+        row('missing', 'slow', 12000),
+        row('exact', 'final', 5000),
+      ],
+      {
+        environment: 'production',
+        experimentId: 'unit-ab',
+        from: Date.parse('2026-10-29T00:00:00Z'),
+        to: Date.parse('2026-10-29T12:00:00Z'),
+      }
+    );
+    expect(result.observations).toBe(4);
+    expect(result.distinctUsers).toBe(1);
+    expect(result.duplicates).toBe(1);
+    expect(result.groups[0]).toMatchObject({
+      attempts: 4,
+      distinctUsers: 1,
+      affectedUsers: 1,
+      overFiveSeconds: 3,
+      missingFinal: 1,
+    });
+    expect(result.overLimit.find((item) => item.id === 'retry')).toMatchObject({
+      elapsedMs: 100,
+      cumulativeMs: 8300,
+    });
+    expect(result.overLimit.find((item) => item.id === 'missing')?.finalKnown).toBe(false);
+  });
+  it('does not resolve conflicting finals to the fastest success or treat an unverified frame as success', () => {
+    const base = {
+      time: '2026-10-29T00:01:00Z',
+      event: 'drama.frontend_timing',
+      type: 'playback',
+      phase: 'final',
+      observation_id: 'conflicting',
+      outcome: 'playing',
+      elapsed_ms: 100,
+      marks: {},
+      queries: [],
+      environment: 'production',
+      server_release: 'unit-server',
+      experiment_id: 'unit-ab',
+      assigned_group: 'bunny',
+      experiment_user: 'a'.repeat(64),
+      context: { release: 'unit-app', platform: 'ios', browser: 'webkit', sessionId: 'unit' },
+      delivery: { experimentId: 'unit-ab', group: 'bunny', provider: 'bunny', reason: 'assigned' },
+    };
+    const result = compareDramaCdn(
+      [
+        base,
+        { ...base, outcome: 'error', elapsed_ms: 9000 },
+        { ...base, observation_id: 'unverified' },
+      ],
+      {
+        environment: 'production',
+        experimentId: 'unit-ab',
+        from: Date.parse('2026-10-29T00:00:00Z'),
+        to: Date.parse('2026-10-29T12:00:00Z'),
+      }
+    );
+    expect(result.groups.find((group) => group.provider === 'unknown')).toMatchObject({
+      conflicts: 1,
+      successes: 0,
+    });
+    expect(result.groups.find((group) => group.provider === 'bunny')).toMatchObject({
+      unverified: 1,
+      successes: 0,
+    });
+    expect(result.overLimit[0]).toMatchObject({
+      outcome: 'conflict',
+      finalKnown: false,
+      observedWaitMs: 9000,
+    });
+  });
+  it('derives experiment identity server-side and keeps seek out of startup persistence', async () => {
+    vi.stubEnv('DRAMA_CDN_EXPERIMENT_ID', 'unit-ab');
+    vi.stubEnv('DRAMA_CDN_EXPERIMENT_KEY', 'fictional-group-key-for-local-testing-only');
+    vi.stubEnv('DRAMA_TIMING_PERSIST_ENABLED', 'true');
+    const app = await buildApp();
+    try {
+      const result = await app.inject({
+        method: 'POST',
+        url: '/api/telemetry/drama-timing',
+        payload: {
+          ...report,
+          type: 'seek',
+          frameMethod: 'video_frame_callback',
+          seek: { targetMs: 40000, buffered: 'no', wasPlaying: true, frameMs: 1234 },
+        },
+      });
+      expect(result.statusCode).toBe(202);
+      expect(timingLogs.info.mock.calls[0]?.[0]).toMatchObject({
+        experiment_id: 'unit-ab',
+        experiment_user: expect.stringMatching(/^[a-f0-9]{64}$/),
+      });
+      expect(persistence.rpc).not.toHaveBeenCalled();
+      expect(JSON.stringify(timingLogs.info.mock.calls)).not.toContain('99999');
+      const forged = await app.inject({
+        method: 'POST',
+        url: '/api/telemetry/drama-timing',
+        payload: { ...report, experiment_user: 'forged' },
+      });
+      expect(forged.statusCode).toBe(400);
+    } finally {
+      await app.close();
+    }
+  });
   it('imports a sanitized Railway envelope and refuses invalid playback fields', () => {
     const parsed = railwayDramaReport({
       timestamp: '2026-10-27T10:00:00Z',
@@ -175,6 +317,21 @@ describe('POST /api/telemetry/drama-timing', () => {
     vi.restoreAllMocks();
   });
 
+  it('rejects retired experiment uploads without recording them', async () => {
+    const app = await buildApp();
+    try {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/telemetry/drama-timing',
+        payload: { type: 'cdn_experiment', id: 'retired' },
+      });
+      expect(response.statusCode).toBe(400);
+      expect(timingLogs.info).not.toHaveBeenCalled();
+      expect(persistence.rpc).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
   it('rejects missing authentication before accepting frontend logs', async () => {
     vi.stubEnv('DEV_AUTH_BYPASS', '');
     const app = await buildApp();

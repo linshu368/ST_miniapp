@@ -16,6 +16,17 @@ test('@roleplay @layout 浏览角色时栏目固定，进聊天后可返回', as
   await expect
     .poll(() => card.locator('img').evaluate((node) => (node as HTMLImageElement).naturalWidth))
     .toBeGreaterThan(0);
+  const initialRequests = (await preview.state()).requests;
+  expect(
+    initialRequests.filter(
+      (request) => request.method === 'GET' && request.path === '/api/v1/conversations'
+    )
+  ).toHaveLength(1);
+  expect(
+    initialRequests.filter(
+      (request) => request.method === 'GET' && request.path === `/api/characters/${IDS.character}`
+    )
+  ).toHaveLength(0);
   const discover = page.getByRole('link', { name: '发现', exact: true });
   await page.evaluate(() => window.scrollTo(0, 700));
   await expect(discover).toBeInViewport();

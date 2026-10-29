@@ -95,6 +95,8 @@ function diagnosticSample(report: DramaTimingReport): boolean {
 
 /** Project the existing timing owner; never copy IDs, query details or media URLs. */
 function mirrorEngineeringTiming(report: DramaTimingReport): void {
+  // Seek has its own observation lifecycle and cannot enter startup denominators.
+  if (report.type === 'seek') return;
   try {
     const attributes = {
       route: report.route ?? (report.type === 'list' ? '/dramas' : '/dramas/:id'),
@@ -168,7 +170,8 @@ function reportTiming(report: DramaTimingReport): void {
   // Faro configuration cannot silently remove the existing diagnostic path.
   const unified =
     process.env.NEXT_PUBLIC_DRAMA_TIMING_MODE === 'unified' && isEngineeringTelemetryEnabled();
-  if (unified && !diagnosticSample(report)) return;
+  // Experiment results need every outcome, including fast successes in either arm.
+  if (unified && !report.delivery && report.type !== 'seek' && !diagnosticSample(report)) return;
   const uploadReport: DramaTimingReport = unified ? { ...report, purpose: 'diagnostic' } : report;
   const upload = () => {
     void uploadDramaTiming(uploadReport).catch(() => {
@@ -207,13 +210,15 @@ function browserContext(): NonNullable<DramaTimingReport['context']> {
   return {
     release: /^[a-zA-Z0-9_.-]{1,128}$/.test(rawRelease) ? rawRelease : 'unknown',
     sessionId: createRequestId(),
-    platform: /iPad|iPhone|iPod/.test(ua)
-      ? 'ios'
-      : /Android/.test(ua)
-        ? 'android'
-        : ua
-          ? 'desktop'
-          : 'unknown',
+    platform:
+      /iPad|iPhone|iPod/.test(ua) ||
+      (/Macintosh/.test(ua) && typeof navigator !== 'undefined' && navigator.maxTouchPoints > 1)
+        ? 'ios'
+        : /Android/.test(ua)
+          ? 'android'
+          : ua
+            ? 'desktop'
+            : 'unknown',
     browser,
     browserMajor: version && Number(version) <= 1000 ? Number(version) : undefined,
   };

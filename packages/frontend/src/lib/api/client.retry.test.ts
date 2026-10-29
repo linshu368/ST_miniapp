@@ -215,6 +215,15 @@ describe('first-token report compatibility and bounded retries', () => {
 });
 
 describe('apiClient GET transport retry', () => {
+  it('retains the first GET failure when a single-attempt experiment opts out', async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(
+      apiClient('/api/transport-retry-fixture', { transportRetry: false })
+    ).rejects.toThrow('Failed to fetch');
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchMock.mock.calls[0]?.[1]).not.toHaveProperty('transportRetry');
+  });
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
     __resetRequestConcurrencyForTests(3);
@@ -413,5 +422,21 @@ describe('apiClient GET transport retry', () => {
     expect(fetch).not.toHaveBeenCalled();
     release();
     await blocker;
+  });
+
+  it('cancels transport retry backoff without dispatching another request', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    const fetchMock = vi.fn().mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    vi.stubGlobal('fetch', fetchMock);
+    const controller = new AbortController();
+
+    const pending = apiClient('/api/dramas', { signal: controller.signal });
+    await Promise.resolve();
+    await Promise.resolve();
+    controller.abort();
+
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

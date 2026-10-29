@@ -1,0 +1,14 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/frontend/app/index.md", "reason": "Frontend package rules"}
+{"file": ".trellis/spec/frontend/app/api-dataflow-and-state.md", "reason": "React Query, request and cancellation rules"}
+{"file": ".trellis/spec/frontend/app/modules/business/conversation-ui.md", "reason": "Chat ownership and invariants"}
+{"file": ".trellis/spec/frontend/app/modules/business/character-lobby.md", "reason": "Lobby ownership and reuse"}
+{"file": ".trellis/spec/frontend/app/modules/business/drama-experience.md", "reason": "Homepage playback critical path"}
+{"file": ".trellis/spec/frontend/app/modules/business/engagement-support.md", "reason": "Support frontend ownership"}
+{"file": ".trellis/spec/frontend/app/modules/infrastructure/client-ui-foundation.md", "reason": "Shared API client rules"}
+{"file": ".trellis/spec/backend/app/index.md", "reason": "Backend route and logging rules"}
+{"file": ".trellis/spec/backend/app/data-reliability-and-security.md", "reason": "Timeout, retry, logging and reliability rules"}
+{"file": ".trellis/spec/backend/app/modules/business/engagement-support.md", "reason": "Support proxy ownership"}
+{"file": ".trellis/spec/backend/app/modules/infrastructure/runtime-data-security.md", "reason": "Identity cache and runtime observability"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Cross-layer verification"}
+{"file": ".trellis/tasks/10-29-optimize-sentry-slow-pages-apis/research/current-bottlenecks.md", "reason": "Fixed evidence and reuse research"}

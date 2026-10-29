@@ -9,7 +9,9 @@ export function makeQueryClient(): QueryClient {
         staleTime: 30_000,
         gcTime: 5 * 60_000,
         refetchOnWindowFocus: false,
-        retry: 1,
+        // 传输层 GET 已在 apiClient 内做最多一次有限重试；这里再重试会把一次
+        // 页面查询放大成最多四次请求，并让离页后的旧 query 继续占用连接。
+        retry: false,
       },
       mutations: {
         retry: 0,
