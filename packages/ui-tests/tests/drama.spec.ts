@@ -690,10 +690,12 @@ test('@drama 播放失败可重试，列表失败和空状态有出口', async (
   await request.post('http://127.0.0.1:3131/__preview/reset', { data: { scenario: 'dramas' } });
   await page.getByRole('button', { name: '重新播放', exact: true }).click();
   await pauseReadyVideo(page);
+  await page.evaluate(() => localStorage.removeItem('miniapp:drama-catalog:v1'));
   await preview.scenario('drama-list-error');
   await page.goto('/dramas');
   await expect(page.getByText('短剧暂时没加载出来')).toBeVisible({ timeout: 25000 });
   await expect(page.getByRole('button', { name: '重新加载', exact: true })).toBeVisible();
+  await page.evaluate(() => localStorage.removeItem('miniapp:drama-catalog:v1'));
   await preview.scenario('empty');
   await page.goto('/dramas');
   await expect(page.getByRole('heading', { name: '好戏，即将开场' })).toBeVisible();
@@ -891,7 +893,8 @@ test('@drama 推荐目录后台失败不打断当前画面，刷新后也保留�
     }
   );
   // 只推进查询新鲜度，保留真实计时器与媒体；网络恢复触发后台刷新。
-  await page.clock.setFixedTime(new Date(Date.now() + 31_000));
+  // 目录缓存 15 分钟内无需重复请求；跨过 stale window 才应在前台恢复时校准。
+  await page.clock.setFixedTime(new Date(Date.now() + 16 * 60_000));
   await context.setOffline(true);
   await context.setOffline(false);
   const retry = page.getByRole('button', { name: '刷新短剧推荐', exact: true });

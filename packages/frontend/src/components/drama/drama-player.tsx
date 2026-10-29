@@ -39,6 +39,8 @@ import { observeDramaMedia } from '@/lib/perf/drama-media';
 import type { DramaPlaybackTiming } from '@/lib/perf/drama-timing';
 import type { DramaSummary } from '@miniapp/shared';
 import { cn } from '@/lib/utils';
+import { supabasePublicImageUrl } from '@/lib/supabase-image';
+import { markPageCriticalVisual } from '@/lib/perf/page-tracker';
 import {
   useDramaLibraryStore,
   type DramaProgress as DramaProgressRecord,
@@ -909,7 +911,11 @@ export function DramaPlayer({
                 <>
                   {cover ? (
                     <img
-                      src={cover}
+                      src={supabasePublicImageUrl(cover, {
+                        width: 360,
+                        height: 480,
+                        quality: 68,
+                      })}
                       alt=""
                       loading="lazy"
                       decoding="async"
@@ -947,7 +953,15 @@ export function DramaPlayer({
             playsInline
             muted={muted}
             preload="auto"
-            poster={info?.cover_url ?? undefined}
+            poster={
+              info?.cover_url
+                ? supabasePublicImageUrl(info.cover_url, {
+                    width: 720,
+                    height: 960,
+                    quality: 72,
+                  })
+                : undefined
+            }
             aria-label={info ? `${info.title}，第 ${episodeNumber} 集` : '短剧播放器'}
             onPlaying={() => {
               if (document.visibilityState === 'hidden') {
@@ -957,6 +971,9 @@ export function DramaPlayer({
               pausedAtEnd.current = false;
               setPaused(false);
               setBuffering(false);
+            }}
+            onLoadedData={() => {
+              if (embedded) markPageCriticalVisual('/', 'loaded');
             }}
             onPause={(event) => {
               setPaused(true);
@@ -990,6 +1007,7 @@ export function DramaPlayer({
               }
             }}
             onError={() => {
+              if (embedded) markPageCriticalVisual('/', 'error');
               if (videoEl?.getAttribute('src')) {
                 videoEl.pause();
                 setFailed(true);

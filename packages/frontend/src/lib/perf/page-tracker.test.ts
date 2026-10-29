@@ -26,6 +26,7 @@ import { notifySettled } from './inflight';
 import {
   beginPage,
   ENTRY_WINDOW_MS,
+  markPageCriticalVisual,
   markPageReady,
   markPageFailed,
   markPageNavigationStart,
@@ -182,6 +183,31 @@ describe('page tracker', () => {
       'page.fresh',
       700,
       expect.objectContaining({ cache: 'fetch' })
+    );
+  });
+
+  it('records critical visual once with navigation duration and terminal outcome', () => {
+    beginPage('/characters');
+    vi.advanceTimersByTime(850);
+    markPageCriticalVisual('/characters', 'loaded', undefined, 'cache');
+    markPageCriticalVisual('/characters', 'error', undefined, 'cache');
+
+    expect(engineering.measurement).toHaveBeenCalledWith(
+      'page.critical_visual',
+      850,
+      expect.objectContaining({
+        route: '/characters',
+        stage: 'critical_visual',
+        outcome: 'loaded',
+        cache: 'cache',
+      })
+    );
+    expect(
+      engineering.measurement.mock.calls.filter(([name]) => name === 'page.critical_visual')
+    ).toHaveLength(1);
+    expect(engineering.event).toHaveBeenCalledWith(
+      'page.critical_visual_terminal',
+      expect.objectContaining({ outcome: 'loaded' })
     );
   });
 

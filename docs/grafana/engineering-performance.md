@@ -27,26 +27,29 @@ NEXT_PUBLIC_DRAMA_TIMING_MODE默认legacy。只有替代验证通过后显式启
 
 ## 三类核心测量
 
-| 类别     | 指标                      | 起点 → 终点                                                | 成功筛选 / 不可混用的情况                                     |
-| -------- | ------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------- |
-| 页面     | `page.ready`              | 当前 pathname 挂载 → 当前可见核心内容可用                  | `ready`；错误页不算成功，仍显示可用旧缓存的页面可以成功       |
-| 页面     | `page.launch`             | document 单调时钟起点 → 可用                               | 与 mount 不混算；JS 完全未启动无法被采集                      |
-| 页面     | `page.navigation`         | 捕获到的 Link/返回/可用导航 hook → 可用                    | 未捕获程序式跳转标 mount，不冒充点击耗时                      |
-| 页面     | `page.fresh`              | 页面挂载 → 已观察请求在途后成功结束                        | 与旧缓存秒开分开；刷新错误不算 fresh                          |
-| 页面     | `api.total`               | 调用统一客户端 → 返回解析结果或最终失败                    | 含排队、重试退避、headers、body；成功为 `ok`                  |
-| 页面     | `api.queue/headers/body`  | 同一 attempt 的实际阶段                                    | 与 logical total 区分；排队取消不伪造服务端时间               |
-| 角色扮演 | `roleplay.first_token`    | 接受 send/regenerate → 匹配正文或已开启思考的 React commit | `observed`；不是像素显示或实际阅读                            |
-| 角色扮演 | `roleplay.full_reply`     | 接受动作 → 匹配完整终态消息的 React commit                 | `complete`；失败/中断/拒绝/超时/停止/后台/离页单列            |
-| 角色扮演 | `roleplay.render`         | 已知真实首 delta receipt → 该 commit                       | 恢复快照没有 receipt 不补 0；不是后处理 renderer 全完成       |
-| 角色扮演 | `roleplay.recovery`       | 可恢复断流 → 同 request 的终态 commit/已知中断             | 完整恢复筛 `complete`；streaming 快照不算恢复完成             |
-| 角色扮演 | `roleplay.action`         | 原关键动作开始 → 既有反馈点                                | `feedback`，后台时间排除；不能冒充完整生成或页面 ready        |
-| 短剧     | `drama.catalog`           | 原目录入口 → 目录 ready/失败/离开                          | 成功 `ready`；目录失败与视频失败不同                          |
-| 短剧     | `drama.startup`           | cover/switch/episode/retry/direct 入口 → 首帧且 playing    | 成功 `playing`；地址返回、canplay 都不够                      |
-| 短剧     | `drama.first_frame/stage` | 原首帧/实际阶段计时                                        | 成功启动筛 `playing`；并行或重叠阶段禁止相加                  |
-| 短剧     | `drama.rebuffer`          | 已成功启动后前台非暂停/seek 的 waiting → playing/中断      | 恢复筛 `playing`；网络 stalled 本身不算画面卡顿               |
-| 短剧     | `drama.playback_window`   | 已确认真实播放后的前台增量窗口                             | 同条 `playing_ms/rebuffer_ms`；不含初始等待、暂停、seek、后台 |
+| 类别     | 指标                      | 起点 → 终点                                                | 成功筛选 / 不可混用的情况                                       |
+| -------- | ------------------------- | ---------------------------------------------------------- | --------------------------------------------------------------- |
+| 页面     | `page.ready`              | 当前 pathname 挂载 → 当前可见核心内容可用                  | `ready`；错误页不算成功，仍显示可用旧缓存的页面可以成功         |
+| 页面     | `page.critical_visual`    | document/导航起点 → 首个关键头像、封面或首页视频帧收敛     | 成功 p95 只筛 `loaded`；`error/absent/timeout` 必须用终态表核对 |
+| 页面     | `page.launch`             | document 单调时钟起点 → 可用                               | 与 mount 不混算；JS 完全未启动无法被采集                        |
+| 页面     | `page.navigation`         | 捕获到的 Link/返回/可用导航 hook → 可用                    | 未捕获程序式跳转标 mount，不冒充点击耗时                        |
+| 页面     | `page.fresh`              | 页面挂载 → 已观察请求在途后成功结束                        | 与旧缓存秒开分开；刷新错误不算 fresh                            |
+| 页面     | `api.total`               | 调用统一客户端 → 返回解析结果或最终失败                    | 含排队、重试退避、headers、body；成功为 `ok`                    |
+| 页面     | `api.queue/headers/body`  | 同一 attempt 的实际阶段                                    | 与 logical total 区分；排队取消不伪造服务端时间                 |
+| 角色扮演 | `roleplay.first_token`    | 接受 send/regenerate → 匹配正文或已开启思考的 React commit | `observed`；不是像素显示或实际阅读                              |
+| 角色扮演 | `roleplay.full_reply`     | 接受动作 → 匹配完整终态消息的 React commit                 | `complete`；失败/中断/拒绝/超时/停止/后台/离页单列              |
+| 角色扮演 | `roleplay.render`         | 已知真实首 delta receipt → 该 commit                       | 恢复快照没有 receipt 不补 0；不是后处理 renderer 全完成         |
+| 角色扮演 | `roleplay.recovery`       | 可恢复断流 → 同 request 的终态 commit/已知中断             | 完整恢复筛 `complete`；streaming 快照不算恢复完成               |
+| 角色扮演 | `roleplay.action`         | 原关键动作开始 → 既有反馈点                                | `feedback`，后台时间排除；不能冒充完整生成或页面 ready          |
+| 短剧     | `drama.catalog`           | 原目录入口 → 目录 ready/失败/离开                          | 成功 `ready`；目录失败与视频失败不同                            |
+| 短剧     | `drama.startup`           | cover/switch/episode/retry/direct 入口 → 首帧且 playing    | 成功 `playing`；地址返回、canplay 都不够                        |
+| 短剧     | `drama.first_frame/stage` | 原首帧/实际阶段计时                                        | 成功启动筛 `playing`；并行或重叠阶段禁止相加                    |
+| 短剧     | `drama.rebuffer`          | 已成功启动后前台非暂停/seek 的 waiting → playing/中断      | 恢复筛 `playing`；网络 stalled 本身不算画面卡顿                 |
+| 短剧     | `drama.playback_window`   | 已确认真实播放后的前台增量窗口                             | 同条 `playing_ms/rebuffer_ms`；不含初始等待、暂停、seek、后台   |
 
 `/chat/:id` 的入场体验使用页面指标；select_character 反馈不是角色正文 ready。首页 `/` 的通用 ready 是推荐目录或实际仍可用的播放器状态，视频体验另看 startup。短剧详情 `/dramas/:id` 的 ready 复用首帧且 playing 的同一证据，不另造播放器状态机。
+
+三处高频入口的打开验收以 `page.critical_visual` 为主：`/` 为首页视频首帧，`/characters` 为第一张可见头像，`/dramas` 为首行两张封面全部收敛。看板同时展示 route/navigation_type/cache 分层 P50/P95 和 `page.critical_visual_terminal` 全部终态分母；每个主 cohort 至少 100 个终态样本，P95 ≤ 2000ms，错误或提前离开率不能因过滤失败样本而被隐藏。仓库 JSON 更新不代表 Cloud 看板已导入，仍需按 release 在 TEST/production 分阶段验证。
 
 播放器测量必须有明确的 `home/detail` 页面归属，只在内存持有，不上报用户或页面身份。首页播放器可能先于根路由 effect 创建，根 `route('/')` 不能提前把它判为 left；详情与首页即使同一部剧也不得复用同一观察。真正离开所属页面才终止，跨页面归属替换记 left，同归属显式换剧/换集保留 switched。旧终态不重启、旧组件迟到更新不抢占新观察；媒体 src、自动/手动播放与恢复业务不因此重建。
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Bookmark, Check, ChevronRight, Clapperboard, Clock3, Play, Search, X } from 'lucide-react';
@@ -11,6 +11,8 @@ import { selectDramas } from '@/lib/drama-catalog';
 import { markCriticalSettled } from '@/lib/entry-phase';
 import { dramaTiming, coverLoadMs } from '@/lib/perf/drama-observer';
 import { useFreshAfterFetch, usePageReady } from '@/lib/perf/page-ready';
+import { markPageCriticalVisual } from '@/lib/perf/page-tracker';
+import { supabasePublicImageSrcSet, supabasePublicImageUrl } from '@/lib/supabase-image';
 import { cn } from '@/lib/utils';
 import {
   useDramaLibraryStore,
@@ -74,6 +76,37 @@ export default function DramasPage() {
     searching ? '全部' : browse.category,
     browse.sort
   );
+  const criticalPosterIds = visibleDramas.slice(0, 2).map((drama) => drama.id);
+  const criticalPosterKey = criticalPosterIds.join(':');
+  const criticalPosters = useRef<{
+    key: string;
+    outcomes: Map<string, 'loaded' | 'error' | 'absent'>;
+  }>({ key: '', outcomes: new Map() });
+  if (criticalPosters.current.key !== criticalPosterKey) {
+    criticalPosters.current = { key: criticalPosterKey, outcomes: new Map() };
+  }
+  const handleCriticalPosterSettled = useCallback(
+    (id: string, outcome: 'loaded' | 'error' | 'absent') => {
+      if (!criticalPosterIds.includes(id)) return;
+      const state = criticalPosters.current;
+      if (state.key !== criticalPosterKey || state.outcomes.has(id)) return;
+      state.outcomes.set(id, outcome);
+      if (state.outcomes.size !== criticalPosterIds.length) return;
+      const outcomes = [...state.outcomes.values()];
+      markPageCriticalVisual(
+        '/dramas',
+        outcomes.includes('error') ? 'error' : outcomes.includes('loaded') ? 'loaded' : 'absent',
+        undefined,
+        data !== undefined && isFetching ? 'cache' : 'fetch'
+      );
+    },
+    [criticalPosterIds, criticalPosterKey, data, isFetching]
+  );
+  useEffect(() => {
+    if (data !== undefined && !isError && criticalPosterIds.length === 0) {
+      markPageCriticalVisual('/dramas', 'absent', undefined, isFetching ? 'cache' : 'fetch');
+    }
+  }, [criticalPosterIds.length, data, isError, isFetching]);
   const recent = dramas
     .filter((drama) => history[drama.id])
     .sort((a, b) => (history[b.id]?.updatedAt ?? 0) - (history[a.id]?.updatedAt ?? 0));
@@ -375,6 +408,7 @@ export default function DramasPage() {
                       progress={history[drama.id]}
                       onOpen={rememberScroll}
                       priority={index < 2}
+                      onPosterSettled={index < 2 ? handleCriticalPosterSettled : undefined}
                     />
                   ))}
                 </div>
@@ -522,12 +556,32 @@ function Poster({
   drama,
   className,
   priority = false,
+  onSettled,
 }: {
   drama: DramaSummary;
   className?: string;
   priority?: boolean;
+  onSettled?: (outcome: 'loaded' | 'error' | 'absent') => void;
 }) {
   const [failed, setFailed] = useState(false);
+  const settled = useRef(false);
+  const settle = useCallback(
+    (outcome: 'loaded' | 'error' | 'absent') => {
+      if (settled.current) return;
+      settled.current = true;
+      onSettled?.(outcome);
+    },
+    [onSettled]
+  );
+  useEffect(() => {
+    if (!drama.cover_url) settle('absent');
+  }, [drama.cover_url, settle]);
+  const cover = drama.cover_url
+    ? supabasePublicImageUrl(drama.cover_url, { width: 360, height: 480, quality: 68 })
+    : undefined;
+  const coverSrcSet = drama.cover_url
+    ? supabasePublicImageSrcSet(drama.cover_url, [240, 360, 480], { width: 3, height: 4 })
+    : undefined;
   return (
     <div className={cn('relative overflow-hidden bg-[#2a272a]', className)}>
       <Clapperboard
@@ -536,13 +590,22 @@ function Poster({
       />
       {drama.cover_url && !failed ? (
         <img
-          src={drama.cover_url}
+          ref={(node) => {
+            if (node?.complete && node.naturalWidth > 0) settle('loaded');
+          }}
+          src={cover}
+          srcSet={coverSrcSet}
+          sizes="(max-width: 640px) 50vw, 240px"
           alt=""
           loading={priority ? 'eager' : 'lazy'}
           decoding="async"
           fetchPriority={priority ? 'high' : 'low'}
           className="absolute inset-0 h-full w-full object-cover"
-          onError={() => setFailed(true)}
+          onLoad={() => settle('loaded')}
+          onError={() => {
+            setFailed(true);
+            settle('error');
+          }}
         />
       ) : null}
     </div>
@@ -555,12 +618,14 @@ function DramaCard({
   progress,
   onOpen,
   priority,
+  onPosterSettled,
 }: {
   drama: DramaSummary;
   queue: DramaSummary[];
   progress?: DramaProgress;
   onOpen: () => void;
   priority: boolean;
+  onPosterSettled?: (id: string, outcome: 'loaded' | 'error' | 'absent') => void;
 }) {
   return (
     <DramaLink
@@ -570,7 +635,12 @@ function DramaCard({
       className="min-w-0 overflow-hidden rounded-xl bg-[#1f1d20] pb-3 [content-visibility:auto] [contain-intrinsic-size:0_320px] active:opacity-70"
     >
       <div className="relative">
-        <Poster drama={drama} priority={priority} className="aspect-[3/4] w-full" />
+        <Poster
+          drama={drama}
+          priority={priority}
+          onSettled={onPosterSettled ? (outcome) => onPosterSettled(drama.id, outcome) : undefined}
+          className="aspect-[3/4] w-full"
+        />
         <div className="absolute inset-x-0 bottom-0 rounded-b-lg bg-gradient-to-t from-black/75 to-transparent px-2 pb-2 pt-6 text-[10px] text-[#eee7e2]/90">
           {progress
             ? progress.completed
