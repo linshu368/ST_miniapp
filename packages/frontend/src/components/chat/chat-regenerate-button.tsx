@@ -20,16 +20,18 @@ export function ChatRegenerateButton({
   return (
     <button
       type="button"
+      aria-label={label}
+      title={label}
+      aria-busy={pending}
       onClick={onRegenerate}
       disabled={disabled || pending}
-      className="flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:opacity-45"
+      className="inline-flex size-11 shrink-0 items-center justify-center rounded-full text-muted-foreground/70 transition-colors hover:bg-secondary hover:text-foreground active:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"
     >
       {pending ? (
-        <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+        <Loader2 className="size-4 animate-spin" aria-hidden />
       ) : (
-        <RefreshCw className="h-3.5 w-3.5" aria-hidden />
+        <RefreshCw className="size-4" aria-hidden />
       )}
-      {label}
     </button>
   );
 }

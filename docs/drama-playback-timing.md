@@ -40,6 +40,12 @@ Backend须先兼容definition/route/purpose及新增stages，再发布Frontend�
 
 播放中卡顿恢复与成对前台播放/卡顿窗口沿用现有观察器。卡顿占比使用同条窗口加权Σ卡顿/(Σ播放+Σ卡顿)，排除初始等待、暂停、seek与后台；只是已观测窗口，不代表完整会话或人数。
 
+## CDN 对照增量
+
+生产 20%／80% 稳定分组、服务端用户去重、关闭取址和比较命令见 [操作说明](../ops/drama-cdn-rollout.md)。新报告可含 delivery、recovery、entryElapsedMs 和 seek；兼容 Backend 先发布。新播放意图使用独立的地址查询，旧地址不作为播放结果，后台只预取详情。接收接口继续不写分析库；seek 不混入既有 startup 工程分母，首轮以完整 Pino 日志为来源。实验窗口必须核对 legacy 全量 start／结果上报，不能使用 unified 采样明细或仅慢启动 Loki 作为总分母。当前源码不代表生产已部署。
+
+首播结束后独立观测进度提交至目标帧，type=seek；buffered=no 才是未缓冲样本，seeked不是成功。不支持帧验证的暂停 seek 记 unverified。5 秒是观测阈值，不改变播放超时；恢复子尝试保留原失败及累计时间，详情见上述说明。
+
 ## 起止与口径
 
 - 列表：站内点击短剧入口起计；直接打开 `/dramas` 从文档导航的 `performance.now() = 0` 起计；其他情况下从查询开始或页面提交起计。按 `list_start_kind` 区分。从 `/` 自动分流到短剧时，不能假定已覆盖完整文档导航。
@@ -48,9 +54,9 @@ Backend须先兼容definition/route/purpose及新增stages，再发布Frontend�
 - 换剧：有效手势/按钮经防抖并确定目标后、路由切换前起计，`entry=switch`。换集/自动续集为 `episode`，不包含三秒倒计时；重播为 `retry`。缺少入口记录的播放页为 `direct`，只从播放器初始化观察开始计。
 - 成功：同时有当前资源的 `playing` 和首帧。优先 `requestVideoFrameCallback`；旧 WebView 降级为 `playing` 后 `currentTime > 0` 的 `timeupdate`，并记录 `frame_method`。`canplay/loadedmetadata/play()` Promise 成功不能单独判为成功。
 - 自动播放被拒绝是终态 `autoplay_blocked`，之后手动恢复不覆盖该次自动播放结果。
-- 等待十秒发一次 `phase=slow` 快照并继续等待；成功、错误、不可播、切换、离开或后台产生一次 `phase=final`。十秒是观测阈值，不中断播放。后台结束本次观测，恢复不补算后台时长。
+- 等待五秒发一次 `phase=slow` 快照并继续等待；成功、错误、不可播、切换、离开或后台产生一次 `phase=final`。五秒是观测阈值，不中断播放。后台结束本次观测，恢复不补算后台时长。
 
-前端使用同页单调时钟，后端独立计时，用原请求 ID 关联，禁止前后端时间戳相减。首帧且playing后结束启动观测；后续卡顿恢复/质量窗口由同一媒体观察器独立投影，不续算启动耗时。
+前端使用同页单调时钟，后端独立计时，用原请求 ID 关联，禁止前后端时间戳相减。首帧且playing后结束启动观测；后续卡顿恢复/质量窗口由同一媒体观察器独立投影，不续算启动耗时。进度提交另以独立 seek 观察。
 
 ## Railway 查询一条链路
 
@@ -70,13 +76,13 @@ Backend须先兼容definition/route/purpose及新增stages，再发布Frontend�
 
 - `marks.play_called/play_resolved/play_rejected/loadeddata/canplay`：与既有 metadata、playing、first_frame 一样，都是从本次播放入口起算的首次偏移毫秒。`loadeddata` 是当前位置画面数据可用，`canplay` 不代表已开始播放，更不代表首帧已显示。Promise 结果若在启动终态之后才到，不补报或改写终态。
 - `media.events[]`：按发生顺序记录 `name/atMs/state`；包含 play 调用/结果、loadedmetadata/loadeddata/canplay/play/playing/first_frame、waiting/stalled/suspend/pause、user_play/user_pause/user_retry，以及 visibility_hidden/pagehide。`trigger=automatic|user` 区分原自动调用与用户调用；拒绝只保留 `error=not_allowed|aborted|not_supported|other`，不记录异常消息。
-- `media.snapshot`：十秒慢快照和终态生成时的即时状态，不是上一事件的旧状态。包括 `readyState`（0 无信息、1 元数据、2 当前数据、3 后续数据、4 浏览器判断数据充足）、`networkState`（0 未初始化、1 空闲、2 加载中、3 无可用资源）、paused/muted/seeking、currentTimeMs、bufferedAheadMs 和 visibility。媒体已释放/切源或属性不可读时状态可能缺失，不能当成零。
+- `media.snapshot`：五秒慢快照和终态生成时的即时状态，不是上一事件的旧状态。包括 `readyState`（0 无信息、1 元数据、2 当前数据、3 后续数据、4 浏览器判断数据充足）、`networkState`（0 未初始化、1 空闲、2 加载中、3 无可用资源）、paused/muted/seeking、currentTimeMs、bufferedAheadMs 和 visibility。媒体已释放/切源或属性不可读时状态可能缺失，不能当成零。
 - `bufferedAheadMs` 只算覆盖当前播放位置的连续已缓冲时长；不跨缓冲空洞，也不是下载字节数或下载速度。可读且没有覆盖区间时为 0，读取失败或非有限边界时缺失。
 - 每次观察最多保留前 32 条媒体事件；`eventsTruncated=true` 表示后续事件被截断，不能按缺少事件推断它没有发生。首次关键 marks 与实时 snapshot 继续采集。慢报告固定当时数组和状态，终态后不继续累加事件。
 
 排查顺序：metadata → loadeddata 的长等待说明当前画面数据尚未就绪；loadeddata/canplay → playing 的长等待需要结合缓冲、paused、用户操作和 play 拒绝判断。waiting/stalled/suspend 都是浏览器状态信号，尤其 suspend 可能是浏览器主动停止预加载，不能单独判为网络故障。缓冲充足但首帧迟到仍不足以直接证明解码慢。
 
-后台沿用原有 `outcome=background` 并结束观察，可从生命周期事件与 visibility 辨识；恢复不重新累计本次启动。用户手动 play 的结果只补诊断，保持原有 UI/终态处理；自动播放拒绝后的手动恢复不覆盖已结束的 autoplay_blocked。启动明细在终态后冻结；播放中卡顿恢复与质量窗口继续走工程出口。
+后台沿用原有 `outcome=background` 并结束观察，可从生命周期事件与 visibility 辨识；恢复不重新累计本次启动。用户手动 play 的结果只补诊断，保持原有 UI/终态处理；自动播放拒绝后的手动恢复不覆盖已结束的 autoplay_blocked。启动明细在终态后冻结；播放中卡顿恢复与质量窗口继续走工程出口。进度提交另以独立 seek 观察。
 
 旧版报告没有媒体 Resource Timing/首字节。v2 被动读取当前源的可见资源条目，并明确区分 unsupported/no_entry/limited/available；跨域、WebView、在途请求等限制仍可能导致缺失。条目不提供原始 Range 区间/CDN 命中，不能自动证明某个两字节请求的原因；这些仍需真实网络或供应商证据。禁止把签名缓存或 API body 耗时当作媒体传输指标。
 
@@ -113,8 +119,8 @@ Backend须先兼容definition/route/purpose及新增stages，再发布Frontend�
 1. Telegram 打开列表，停留后点击封面等到播放；在 Railway 查到列表/播放报告，确认浏览时间与播放等待分开。
 2. 连续换剧、换集和重播；各次 `observation_id` 独立，旧观察不污染新资源，`request_ids` 可关联 Backend。
 3. 重进同剧，区分 cache/inflight/fetch；分别限速 API 和媒体，验证地址阶段与媒体阶段可区分。
-4. 十秒慢快照和最终结果属于同一观察；自动播放限制记录 `autoplay_blocked`。
+4. 五秒慢快照和最终结果属于同一观察；自动播放限制记录 `autoplay_blocked`。
 5. 离开/后台/失败时核对终态；阻断接收接口，浏览器有上传失败诊断，播放不受影响，不把缺报算成成功。
-6. 限速媒体，核对 loadeddata/canplay/play 结果和十秒 snapshot 的即时缓冲；启动时暂停/恢复、重试、换源及后台，核对用户事件与源代际隔离。检查上报 HTTP 202，若 400 先查 Backend 是否已部署扩展 media 契约。
+6. 限速媒体，核对 loadeddata/canplay/play 结果和五秒 snapshot 的即时缓冲；启动时暂停/恢复、重试、换源及后台，核对用户事件与源代际隔离。检查上报 HTTP 202，若 400 先查 Backend 是否已部署扩展 media 契约。
 
 本地测试通过不等于已完成 Telegram/线上送达验收。

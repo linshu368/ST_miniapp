@@ -3,6 +3,7 @@ import { DramaTimingTracker, type DramaTimingReport } from './drama-timing';
 import { observeDramaMedia } from './drama-media';
 import { DRAMA_TIMING_MAX_MEDIA_EVENTS, DramaTimingReportSchema } from '@miniapp/shared';
 import { mediaResourceFields, observeDramaResources } from './drama-resources';
+import { observeDramaSeek } from './drama-seek';
 
 const engineering = vi.hoisted(() => ({
   measurement: vi.fn(),
@@ -375,6 +376,82 @@ afterEach(() => {
 });
 
 describe('video startup observation', () => {
+  it('keeps an unbuffered seek waiting after seeked and rejects old frames before the target frame', async () => {
+    const media = video as unknown as HTMLVideoElement;
+    let callback: VideoFrameRequestCallback | undefined;
+    media.requestVideoFrameCallback = (listener) => {
+      callback = listener;
+      return 1;
+    };
+    const stop = observeDramaSeek(media, 'media-a', 40, true, {
+      id: 'seek-id',
+      dramaId: 'a',
+      now: () => performance.now(),
+      emit: (report) => reports.push(report),
+    });
+    video.currentTime = 40;
+    await vi.advanceTimersByTimeAsync(300);
+    video.dispatchEvent(new Event('seeked'));
+    expect(reports).toHaveLength(0);
+    const frame = (mediaTime: number): VideoFrameCallbackMetadata => ({
+      mediaTime,
+      expectedDisplayTime: 0,
+      presentationTime: 0,
+      presentedFrames: 1,
+      processingDuration: 0,
+      width: 320,
+      height: 240,
+    });
+    callback?.(performance.now(), frame(0));
+    expect(reports).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(6000);
+    expect(reports.at(-1)).toMatchObject({
+      phase: 'slow',
+      outcome: 'waiting',
+      seek: { buffered: 'no' },
+    });
+    callback?.(performance.now(), frame(40));
+    expect(reports.at(-1)).toMatchObject({
+      phase: 'final',
+      outcome: 'playing',
+      elapsedMs: 6300,
+      seek: { seekedMs: 300, frameMs: 6300 },
+    });
+    const count = reports.length;
+    stop();
+    callback?.(performance.now(), frame(40));
+    expect(reports).toHaveLength(count);
+    expect(DramaTimingReportSchema.safeParse(reports.at(-1)).success).toBe(true);
+  });
+  it('keeps invalid TimeRanges unknown and tolerates native frame cancellation failure', () => {
+    video.buffered.start = () => NaN;
+    video.cancelVideoFrameCallback.mockImplementation(() => {
+      throw new Error('native cleanup');
+    });
+    const stop = observeDramaSeek(video as unknown as HTMLVideoElement, 'media-a', 40, true, {
+      id: 'seek-id',
+      dramaId: 'a',
+      now: () => performance.now(),
+      emit: (report) => reports.push(report),
+    });
+    expect(() => stop('left')).not.toThrow();
+    expect(reports.at(-1)).toMatchObject({ outcome: 'left', seek: { buffered: 'unknown' } });
+  });
+  it('records a paused seek without frame support as unverified and keeps aborted seeks terminal', async () => {
+    video.requestVideoFrameCallback = undefined;
+    const stop = observeDramaSeek(video as unknown as HTMLVideoElement, 'media-a', 40, false, {
+      id: 'seek-id',
+      dramaId: 'a',
+      now: () => performance.now(),
+      emit: (report) => reports.push(report),
+    });
+    await vi.advanceTimersByTimeAsync(600);
+    video.dispatchEvent(new Event('seeked'));
+    expect(reports.at(-1)).toMatchObject({ outcome: 'unverified', elapsedMs: 600 });
+    stop('left');
+    video.dispatchEvent(new Event('error'));
+    expect(reports).toHaveLength(1);
+  });
   it('does not call a network-only stalled event a user-visible playback interruption', async () => {
     vi.stubGlobal('document', Object.assign(new EventTarget(), { visibilityState: 'visible' }));
     const observer = bind();

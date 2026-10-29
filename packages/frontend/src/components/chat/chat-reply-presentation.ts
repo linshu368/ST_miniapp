@@ -20,3 +20,13 @@ export function getChatReplyPresentation(message: ChatMessage): ChatReplyPresent
   if (message.status === 'complete' && !legacyIncomplete) return 'complete';
   return 'incomplete';
 }
+
+/** 只用稳定消息作为分支锚点，开场白和未完成的回复不提供入口。 */
+export function canBranchFromMessage(message: ChatMessage): boolean {
+  return message.turn_index > 0 && getChatReplyPresentation(message) === 'complete';
+}
+
+/** 反馈针对已完成的角色回复，包括当前分支内的继承回复。 */
+export function canLikeMessage(message: ChatMessage): boolean {
+  return message.turn_index > 0 && getChatReplyPresentation(message) === 'complete';
+}

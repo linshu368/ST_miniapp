@@ -10,6 +10,7 @@ interface DramaProgressProps {
   sourceKey: string;
   onScrubbingChange: (scrubbing: boolean) => void;
   onCommit: (seconds: number, wasPlaying: boolean) => void;
+  onBeforeCommit?: (seconds: number, wasPlaying: boolean) => void;
 }
 
 interface ScrubSession {
@@ -66,6 +67,7 @@ export function DramaProgress(props: DramaProgressProps) {
       latest.current.sourceKey === current.sourceKey &&
       (current.video.currentSrc || current.video.src) === current.source;
     if (commit && sameMedia) {
+      latest.current.onBeforeCommit?.(current.value, current.wasPlaying);
       current.video.currentTime = current.value;
       latest.current.onCommit(current.value, current.wasPlaying);
     }
@@ -150,6 +152,7 @@ export function DramaProgress(props: DramaProgressProps) {
   const commitKeyboard = (seconds: number) => {
     if (!video || disabled || session.current) return;
     const value = Math.max(0, Math.min(validDuration, seconds));
+    latest.current.onBeforeCommit?.(value, !video.paused);
     video.currentTime = value;
     latest.current.onCommit(value, !video.paused);
   };

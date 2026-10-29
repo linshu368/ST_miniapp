@@ -24,6 +24,62 @@ afterEach(() => {
 });
 
 describe('drama timeline', () => {
+  it('retains the original failed attempt and cumulative wait after user retry', async () => {
+    const original = tracker.beginPlayback('a', 'cover');
+    await advance(6000);
+    original.finish('error');
+    const failed = structuredClone(last());
+    await advance(1000);
+    const retry = tracker.beginPlayback('a', 'retry');
+    await advance(100);
+    retry.finish('playing');
+    expect(last()).toMatchObject({
+      elapsedMs: 100,
+      recovery: { rootId: original.id, parentId: original.id, cumulativeMs: 7100 },
+    });
+    expect(failed).toMatchObject({ outcome: 'error', elapsedMs: 6000, overFiveSeconds: true });
+    expect(reports.find((report) => report.id === original.id && report.phase === 'final')).toEqual(
+      failed
+    );
+  });
+  it.each([4999, 5000, 5000.01, 30000])(
+    'keeps the exact boundary and real elapsed at %s ms',
+    (elapsed) => {
+      let time = 0;
+      const own = new DramaTimingTracker(
+        () => time,
+        () => 'boundary',
+        (report) => reports.push(report)
+      );
+      const flow = own.beginPlayback('a', 'direct');
+      time = elapsed;
+      flow.finish('playing');
+      expect(last().elapsedMs).toBe(elapsed);
+      expect(last().overFiveSeconds).toBe(elapsed > 5000);
+    }
+  );
+  it.each(['playing', 'background', 'left'] as const)(
+    'does not count a completed/exited visit as recovery waiting: %s',
+    async (outcome) => {
+      const original = tracker.beginPlayback('a', 'direct');
+      await advance(100);
+      original.finish(outcome);
+      await advance(30000);
+      const retry = tracker.beginPlayback('a', 'retry');
+      await advance(100);
+      retry.finish('playing');
+      expect(last().recovery).toEqual({ rootId: retry.id, cumulativeMs: 100 });
+      expect(last().recovery?.rootId).not.toBe(original.id);
+    }
+  );
+  it('includes initial MiniApp navigation in automatic homepage first-frame waiting', async () => {
+    tracker.beginList('document_navigation', 0);
+    await advance(4000);
+    const flow = tracker.beginPlayback('a', 'direct');
+    await advance(2000);
+    flow.finish('playing');
+    expect(last()).toMatchObject({ elapsedMs: 2000, entryElapsedMs: 6000, overFiveSeconds: true });
+  });
   it('keeps browsing separate from startup and does not sum overlapping prefetch/navigation', async () => {
     tracker.beginList('navigation_click');
     await advance(200);
@@ -196,7 +252,7 @@ describe('drama timeline', () => {
     expect(snapshot).toMatchObject({
       phase: 'slow',
       outcome: 'waiting',
-      queries: [{ attempts: [{ queueMs: 200, headersMs: 300, bodyMs: 9500, outcome: 'pending' }] }],
+      queries: [{ attempts: [{ queueMs: 200, headersMs: 300, bodyMs: 4501, outcome: 'pending' }] }],
     });
     await advance(55_000);
     resolve({});

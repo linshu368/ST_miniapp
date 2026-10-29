@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { ArrowDown, Loader2 } from 'lucide-react';
 import type { ChatMessage } from '@miniapp/shared';
 import type { ReplyChoicePayload } from '@miniapp/reply-renderer';
@@ -64,18 +64,47 @@ export function ChatMessageList({
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
+  const earlierAnchorRef = useRef<{ firstId: string; height: number; top: number } | null>(null);
   const [showLatestJump, setShowLatestJump] = useState(false);
   const [hasUnseenReply, setHasUnseenReply] = useState(false);
 
   const handleScroll = useCallback(() => {
     const node = scrollRef.current;
     if (!node) return;
+    if (earlierAnchorRef.current) earlierAnchorRef.current.top = node.scrollTop;
     const distanceToBottom = node.scrollHeight - node.scrollTop - node.clientHeight;
     const atBottom = distanceToBottom <= STICK_TO_BOTTOM_THRESHOLD_PX;
     stickToBottomRef.current = atBottom;
     setShowLatestJump(!atBottom);
     if (atBottom) setHasUnseenReply(false);
   }, []);
+
+  const loadEarlier = () => {
+    const node = scrollRef.current;
+    const first = messages[0];
+    if (!node || !first || loadingEarlier) return;
+    earlierAnchorRef.current = {
+      firstId: first.id,
+      height: node.scrollHeight,
+      top: node.scrollTop,
+    };
+    stickToBottomRef.current = false;
+    onLoadEarlier();
+  };
+
+  // 前插历史后保留原来读到的那句话；不能因消息变长而跳到底部或跳到页首。
+  useLayoutEffect(() => {
+    const node = scrollRef.current;
+    const anchor = earlierAnchorRef.current;
+    if (!node || !anchor) return;
+    if (messages[0]?.id !== anchor.firstId) {
+      node.scrollTop = anchor.top + node.scrollHeight - anchor.height;
+      earlierAnchorRef.current = null;
+      handleScroll();
+    } else if (!loadingEarlier) {
+      earlierAnchorRef.current = null;
+    }
+  }, [messages, loadingEarlier, handleScroll]);
 
   const last = messages.at(-1);
   const thinkingLength = last ? (thinkingByMessage?.[messageThinkingKey(last)]?.length ?? 0) : 0;
@@ -103,6 +132,7 @@ export function ChatMessageList({
   const returnToLatest = () => {
     const node = scrollRef.current;
     if (!node) return;
+    earlierAnchorRef.current = null;
     stickToBottomRef.current = true;
     setShowLatestJump(false);
     setHasUnseenReply(false);
@@ -141,7 +171,7 @@ export function ChatMessageList({
             <div className="flex justify-center pb-2 pt-1">
               <button
                 type="button"
-                onClick={onLoadEarlier}
+                onClick={loadEarlier}
                 disabled={loadingEarlier}
                 className="flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-[11px] text-muted-foreground transition-colors hover:bg-secondary disabled:opacity-50"
               >

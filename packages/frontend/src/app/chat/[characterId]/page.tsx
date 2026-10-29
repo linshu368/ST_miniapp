@@ -8,14 +8,24 @@ import {
   FIRST_TOKEN_RETRY_MESSAGE,
   TEXT_POSTPROCESS_LIMITS,
   type ChatMessage,
+  type SetMessageLikeData,
 } from '@miniapp/shared';
 import type { ReplyChoicePayload } from '@miniapp/reply-renderer';
 
 import { CONVERSATION_RECOVERING_MESSAGE } from '@/lib/api/conversation-stream';
 import { ChatComposer, MAX_USER_INPUT_LENGTH } from '@/components/chat/chat-composer';
 import { ChatMessageList } from '@/components/chat/chat-message-list';
-import { getChatReplyPresentation } from '@/components/chat/chat-reply-presentation';
+import {
+  ChatMessageLikeButton,
+  type MessageLikeFeedback,
+} from '@/components/chat/chat-message-like-button';
+import {
+  canBranchFromMessage,
+  canLikeMessage,
+  getChatReplyPresentation,
+} from '@/components/chat/chat-reply-presentation';
 import { ChatRegenerateButton } from '@/components/chat/chat-regenerate-button';
+import { ChatBranchButton } from '@/components/chat/chat-branch-button';
 import { ChatToolsSheet } from '@/components/chat/chat-tools-sheet';
 import { ChatTopBar } from '@/components/chat/chat-top-bar';
 import { lobbyImageUrl } from '@/components/characters/character-card';
@@ -24,9 +34,14 @@ import { ChatSplash } from '@/components/chat/chat-splash';
 import { useChatReplayBinding, useChatSession } from '@/hooks/use-chat-session';
 import { useMemoryDraft } from '@/hooks/use-memory-draft';
 import { useConversationTurn } from '@/hooks/use-conversation-turn';
+import { useConversationBranch } from '@/hooks/use-conversation-branch';
 import { useCharacterQuery } from '@/lib/api/characters';
 import { useTextPostprocessVersions } from '@/lib/api/text-postprocess';
-import { fetchConversationPage, resolveSessionTitle } from '@/lib/api/conversations';
+import {
+  applyMessageLike,
+  fetchConversationPage,
+  resolveSessionTitle,
+} from '@/lib/api/conversations';
 import {
   toImageMap,
   useCreateImageDescriptionMutation,
@@ -109,12 +124,17 @@ export default function SelfHostedChatPage() {
   const { characterId } = useParams<{ characterId: string }>();
   const router = useRouter();
 
-  const [earlier, setEarlier] = useState<ChatMessage[]>([]);
+  const [earlier, setEarlier] = useState<{ sessionId: string | null; messages: ChatMessage[] }>({
+    sessionId: null,
+    messages: [],
+  });
+  const earlierRequestRef = useRef<object | null>(null);
   const [loadingEarlier, setLoadingEarlier] = useState(false);
   const [hasMoreEarlier, setHasMoreEarlier] = useState(false);
   const [sessionsOpen, setSessionsOpen] = useState(false);
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
   const [characterPanel, setCharacterPanel] = useState<CharacterDetailTab | null>(null);
+  const [likeFeedback, setLikeFeedback] = useState<MessageLikeFeedback | null>(null);
   const [characterPanelLoaded, setCharacterPanelLoaded] = useState(false);
   const choiceLockRef = useRef<ChoiceLockState>(emptyChoiceLock());
   const [choiceLock, setChoiceLock] = useState<ChoiceLockState>(emptyChoiceLock());
@@ -176,8 +196,11 @@ export default function SelfHostedChatPage() {
   });
 
   const persisted = useMemo(
-    () => [...earlier, ...(session.conversationQuery.data?.messages ?? [])],
-    [earlier, session.conversationQuery.data?.messages]
+    () => [
+      ...(earlier.sessionId === activeSessionId ? earlier.messages : []),
+      ...(session.conversationQuery.data?.messages ?? []),
+    ],
+    [activeSessionId, earlier, session.conversationQuery.data?.messages]
   );
 
   const draftRecoveryRef = useRef<{
@@ -185,8 +208,36 @@ export default function SelfHostedChatPage() {
     fromSessionId: string | null;
     text: string;
   } | null>(null);
+  const branch = useConversationBranch({
+    sessionId: activeSessionId,
+    scope: `${userScope}:${characterId}`,
+    enabled: session.ready,
+    onCreated: (nextSessionId) => {
+      draftRecoveryRef.current = null;
+      session.selectSession(nextSessionId);
+    },
+  });
+  const { leaveView: leaveBranchView } = branch;
   const latestDraftRef = useRef({ sessionId: activeSessionId, text: draft });
   latestDraftRef.current = { sessionId: activeSessionId, text: draft };
+  const handleLikeConfirmed = useCallback((data: SetMessageLikeData) => {
+    // 旧页不在详情 query 内；只同步这一次点赞对应的会话与固定消息版本。
+    setEarlier((current) =>
+      current.sessionId === data.session_id
+        ? { ...current, messages: applyMessageLike(current.messages, data) }
+        : current
+    );
+  }, []);
+  const handleLikeFeedback = useCallback((feedback: MessageLikeFeedback) => {
+    if (latestDraftRef.current.sessionId !== feedback.sessionId) return;
+    setLikeFeedback((current) =>
+      feedback.text
+        ? feedback
+        : current?.sessionId === feedback.sessionId && current.messageId === feedback.messageId
+          ? null
+          : current
+    );
+  }, []);
   const abandonSessionWithDraft = useCallback(() => {
     const current = latestDraftRef.current;
     draftRecoveryRef.current = {
@@ -217,8 +268,9 @@ export default function SelfHostedChatPage() {
       setCharacterPanel(null);
       return;
     }
+    leaveBranchView();
     router.push(session.backHref, { scroll: false });
-  }, [router, session.backHref, characterPanel]);
+  }, [router, session.backHref, characterPanel, leaveBranchView]);
   useTelegramBackButton(goBack);
 
   useEffect(() => {
@@ -290,7 +342,13 @@ export default function SelfHostedChatPage() {
   const userAvatarUrl = userSettingsQuery.data?.settings.avatar_url ?? null;
 
   useEffect(() => {
-    setEarlier([]);
+    earlierRequestRef.current = null;
+    setEarlier({ sessionId: activeSessionId, messages: [] });
+    setLoadingEarlier(false);
+    setLikeFeedback(null);
+    return () => {
+      earlierRequestRef.current = null;
+    };
   }, [activeSessionId]);
 
   useEffect(() => {
@@ -318,12 +376,12 @@ export default function SelfHostedChatPage() {
           latestDraftRef.current.sessionId === activeSessionId ? latestDraftRef.current.text : '',
       };
     }
-    setEarlier([]);
+    setEarlier({ sessionId: activeSessionId, messages: [] });
   }, [session.detailErrorCode, activeSessionId, characterId]);
 
   useEffect(() => {
     setHasMoreEarlier(session.conversationQuery.data?.has_more ?? false);
-  }, [session.conversationQuery.data?.has_more]);
+  }, [activeSessionId, session.conversationQuery.data?.has_more]);
 
   const voiceByMessage = useMemo(
     () => toVoiceMap(sessionVoiceQuery.data),
@@ -345,7 +403,9 @@ export default function SelfHostedChatPage() {
    */
   const canGenerateVoice = useCallback(
     (message: ChatMessage): boolean =>
-      getChatReplyPresentation(message) === 'complete' && message.turn_index > 0,
+      !message.inherited &&
+      getChatReplyPresentation(message) === 'complete' &&
+      message.turn_index > 0,
     []
   );
   const canGenerateImage = useCallback(
@@ -380,11 +440,11 @@ export default function SelfHostedChatPage() {
   const choiceLimit = Math.min(MAX_USER_INPUT_LENGTH, TEXT_POSTPROCESS_LIMITS.maxOptionUnits);
   const choiceGates = useMemo(
     () => ({
-      generating,
+      generating: generating || branch.creating,
       serverBusy,
       sessionReady: session.ready,
     }),
-    [generating, serverBusy, session.ready]
+    [generating, branch.creating, serverBusy, session.ready]
   );
 
   const commitChoiceLock = useCallback((next: ChoiceLockState) => {
@@ -418,6 +478,7 @@ export default function SelfHostedChatPage() {
 
   const handleChoice = useCallback(
     (message: ChatMessage, choice: ReplyChoicePayload) => {
+      if (branch.creating) return;
       const adopted = tryAdoptChoice(choiceLockRef.current, {
         message,
         messages,
@@ -437,10 +498,18 @@ export default function SelfHostedChatPage() {
         setChoiceLock(next);
       });
     },
-    [choiceGates, choiceLimit, messages, runTurn, session.conversationQuery.dataUpdatedAt]
+    [
+      branch.creating,
+      choiceGates,
+      choiceLimit,
+      messages,
+      runTurn,
+      session.conversationQuery.dataUpdatedAt,
+    ]
   );
 
   const handleSend = () => {
+    if (branch.creating) return;
     const content = draft.trim();
     if (!content) return;
     setDraft('');
@@ -449,16 +518,29 @@ export default function SelfHostedChatPage() {
 
   const handleLoadEarlier = async () => {
     const oldest = persisted[0];
-    if (!activeSessionId || !oldest || loadingEarlier) return;
+    if (!activeSessionId || !oldest || earlierRequestRef.current) return;
+    const sourceSessionId = activeSessionId;
+    const request = {};
+    earlierRequestRef.current = request;
     setLoadingEarlier(true);
     try {
-      const page = await fetchConversationPage(activeSessionId, oldest.turn_index);
-      setEarlier((current) => [...page.messages, ...current]);
+      const page = await fetchConversationPage(sourceSessionId, oldest.turn_index);
+      if (earlierRequestRef.current !== request) return;
+      setEarlier((current) => ({
+        sessionId: sourceSessionId,
+        messages: [
+          ...page.messages,
+          ...(current.sessionId === sourceSessionId ? current.messages : []),
+        ],
+      }));
       setHasMoreEarlier(page.has_more);
     } catch {
-      setStreamError('更早的消息没能加载出来');
+      if (earlierRequestRef.current === request) setStreamError('更早的消息没能加载出来');
     } finally {
-      setLoadingEarlier(false);
+      if (earlierRequestRef.current === request) {
+        earlierRequestRef.current = null;
+        setLoadingEarlier(false);
+      }
     }
   };
 
@@ -533,92 +615,131 @@ export default function SelfHostedChatPage() {
           const showVoice = canGenerateVoice(message);
           const messageImage = imageByMessage.get(message.id);
           // 最新完整回复可首次出图；已经有图片记录的历史回复也保留重试/重新生成入口。
-          const canCreateImage = canGenerateImage(message) || Boolean(messageImage);
+          const canCreateImage =
+            !message.inherited && (canGenerateImage(message) || Boolean(messageImage));
           const showRegenerate = canRegenerate && message.id === lastMessage?.id;
-          if (!showVoice && !canCreateImage && !showRegenerate) return null;
+          const showBranch = canBranchFromMessage(message);
+          const showLike = canLikeMessage(message);
+          if (!showVoice && !canCreateImage && !showRegenerate && !showBranch && !showLike)
+            return null;
 
           return (
-            <ChatMessageImageFooter
-              image={
-                canCreateImage
-                  ? {
-                      image: messageImage,
-                      canGenerate: canCreateImage,
-                      config: imageConfigQuery.data,
-                      billingRefreshing: imageConfigQuery.isFetching || createImage.isPending,
-                      billingError: imageConfigQuery.isError,
-                      describe: async () => {
-                        const result = await describeImage.mutateAsync({
+            <div>
+              <ChatMessageImageFooter
+                image={
+                  canCreateImage
+                    ? {
+                        image: messageImage,
+                        canGenerate: canCreateImage,
+                        config: imageConfigQuery.data,
+                        billingRefreshing: imageConfigQuery.isFetching || createImage.isPending,
+                        billingError: imageConfigQuery.isError,
+                        describe: async () => {
+                          const result = await describeImage.mutateAsync({
+                            messageId: message.id,
+                          });
+                          return { draftId: result.draft_id, prompt: result.prompt_cn };
+                        },
+                        create: async (body) => {
+                          await createImage.mutateAsync({ messageId: message.id, body });
+                        },
+                        onRecharge: () =>
+                          redirectToRecharge(router, {
+                            returnTo,
+                            requiredCredits: imageConfigQuery.data?.billing.credits_per_generation,
+                            triggerSource: 'chat_image',
+                          }),
+                        telemetry: {
+                          characterId,
+                          conversationSessionId: activeSessionId ?? '',
+                          selectedModelId,
                           messageId: message.id,
-                        });
-                        return { draftId: result.draft_id, prompt: result.prompt_cn };
-                      },
-                      create: async (body) => {
-                        await createImage.mutateAsync({ messageId: message.id, body });
-                      },
-                      onRecharge: () =>
-                        redirectToRecharge(router, {
-                          returnTo,
                           requiredCredits: imageConfigQuery.data?.billing.credits_per_generation,
-                          triggerSource: 'chat_image',
-                        }),
-                      telemetry: {
-                        characterId,
-                        conversationSessionId: activeSessionId ?? '',
-                        selectedModelId,
-                        messageId: message.id,
-                        requiredCredits: imageConfigQuery.data?.billing.credits_per_generation,
-                      },
+                        },
+                      }
+                    : null
+                }
+              >
+                {(imageAction) => (
+                  <ChatMessageVoiceFooter
+                    charCount={message.content.length}
+                    likeAction={
+                      showLike ? (
+                        <ChatMessageLikeButton
+                          message={message}
+                          onConfirmed={handleLikeConfirmed}
+                          onFeedback={handleLikeFeedback}
+                        />
+                      ) : null
                     }
-                  : null
-              }
-            >
-              {(imageAction) => (
-                <ChatMessageVoiceFooter
-                  charCount={message.content.length}
-                  imageAction={imageAction}
-                  voice={
-                    showVoice
-                      ? {
-                          voice: voiceByMessage.get(message.id),
-                          playbackRate,
-                          submitting:
-                            generateVoice.isPending &&
-                            generateVoice.variables?.messageId === message.id,
-                          onGenerate: () => handleGenerateVoice(message.id),
-                          customHref: activeSessionId
-                            ? customVoicePath(characterId, message.id, {
-                                sessionId: activeSessionId,
-                                returnTo,
-                              })
-                            : null,
-                          freeTrialLimit:
-                            voiceConfigQuery.data?.next_billing.free_trial_limit ?? null,
-                          hints: {
-                            overLimit: voiceConfigQuery.data?.hints?.over_limit ?? '',
-                            draftFailed: voiceConfigQuery.data?.hints?.draft_failed ?? '',
-                            ttsFailed: voiceConfigQuery.data?.hints?.tts_failed ?? '',
-                          },
-                        }
-                      : null
-                  }
-                  regenerate={
-                    showRegenerate ? (
-                      <ChatRegenerateButton
-                        onRegenerate={() => void runTurn({ mode: 'regenerate' })}
-                        pending={false}
-                        disabled={generating}
-                        label={
-                          getChatReplyPresentation(message) === 'complete'
-                            ? '换一个回复'
-                            : '重新生成'
-                        }
-                      />
-                    ) : null
-                  }
-                />
-              )}
-            </ChatMessageImageFooter>
+                    imageAction={imageAction}
+                    branchAction={
+                      showBranch ? (
+                        <ChatBranchButton
+                          turnIndex={message.turn_index}
+                          pending={branch.pendingMessageId === message.id}
+                          disabled={generating || serverBusy || branch.creating || !session.ready}
+                          onBranch={() => {
+                            if (!generating && !serverBusy) void branch.fork(message);
+                          }}
+                        />
+                      ) : null
+                    }
+                    voice={
+                      showVoice
+                        ? {
+                            voice: voiceByMessage.get(message.id),
+                            playbackRate,
+                            submitting:
+                              generateVoice.isPending &&
+                              generateVoice.variables?.messageId === message.id,
+                            onGenerate: () => handleGenerateVoice(message.id),
+                            customHref: activeSessionId
+                              ? customVoicePath(characterId, message.id, {
+                                  sessionId: activeSessionId,
+                                  returnTo,
+                                })
+                              : null,
+                            freeTrialLimit:
+                              voiceConfigQuery.data?.next_billing.free_trial_limit ?? null,
+                            hints: {
+                              overLimit: voiceConfigQuery.data?.hints?.over_limit ?? '',
+                              draftFailed: voiceConfigQuery.data?.hints?.draft_failed ?? '',
+                              ttsFailed: voiceConfigQuery.data?.hints?.tts_failed ?? '',
+                            },
+                          }
+                        : null
+                    }
+                    regenerate={
+                      showRegenerate ? (
+                        <ChatRegenerateButton
+                          onRegenerate={() => void runTurn({ mode: 'regenerate' })}
+                          pending={false}
+                          disabled={generating || branch.creating}
+                          label={
+                            getChatReplyPresentation(message) === 'complete'
+                              ? '换一个回复'
+                              : '重新生成'
+                          }
+                        />
+                      ) : null
+                    }
+                  />
+                )}
+              </ChatMessageImageFooter>
+              {likeFeedback?.sessionId === activeSessionId &&
+              likeFeedback.messageId === message.id &&
+              likeFeedback.text ? (
+                <p role="status" className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                  {likeFeedback.text}
+                </p>
+              ) : null}
+              {branch.error?.messageId === message.id ? (
+                <p role="alert" className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                  {branch.error.text}
+                </p>
+              ) : null}
+            </div>
           );
         }}
       />
@@ -643,7 +764,7 @@ export default function SelfHostedChatPage() {
             <button
               type="button"
               onClick={() => void runTurn({ mode: 'regenerate' })}
-              disabled={generating || serverBusy}
+              disabled={generating || serverBusy || branch.creating}
               className="shrink-0 text-[12px] underline decoration-current/30 underline-offset-4 hover:text-foreground disabled:opacity-50"
             >
               再试一次
@@ -668,7 +789,7 @@ export default function SelfHostedChatPage() {
         onStop={() => void abort()}
         cancelling={cancelling}
         generating={generating}
-        disabled={!session.ready || serverBusy}
+        disabled={!session.ready || serverBusy || branch.creating}
         detailsDefaultOpen={detailsDefaultOpen}
         onDetailsDefaultOpenChange={handleDetailsDefaultOpenChange}
         thinkingEnabled={thinkingEnabled}
@@ -676,6 +797,7 @@ export default function SelfHostedChatPage() {
         leftSlot={
           <ChatToolsSheet
             onCreateConversation={() => {
+              leaveBranchView();
               draftRecoveryRef.current = null;
               session.openNewConversation();
             }}
@@ -703,6 +825,7 @@ export default function SelfHostedChatPage() {
           characterName={characterQuery.data?.character.name}
           activeSessionId={activeSessionId}
           onSelect={(nextSessionId) => {
+            leaveBranchView();
             draftRecoveryRef.current = null;
             session.selectSession(nextSessionId);
           }}

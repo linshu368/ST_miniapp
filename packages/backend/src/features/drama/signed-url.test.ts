@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { dramaExperimentUser } from './delivery.js';
 import {
   DramaSignedUrlCache,
   buildBunnyPlayback,
@@ -147,6 +148,56 @@ function sourceFor(path: string, exp = CDN_NOW / 1000 + 3600) {
 }
 
 describe('Preview Bunny playback', () => {
+  it('keeps user assignment stable across instances and shutdown with domain-separated identity', () => {
+    const experiment = {
+      id: 'unit-ab',
+      key: 'fictional-group-key-for-local-testing-only',
+      environment: 'production' as const,
+      enabled: true,
+    };
+    const users = Array.from({ length: 1000 }, (_, id) => dramaExperimentUser(id, experiment));
+    expect(users.filter((user) => user.assigned_group === 'bunny').length).toBeGreaterThan(150);
+    expect(users.filter((user) => user.assigned_group === 'bunny').length).toBeLessThan(250);
+    expect(new Set(users.map((user) => user.experiment_user)).size).toBe(1000);
+    expect(dramaExperimentUser(42, { ...experiment, enabled: false })).toEqual(users[42]);
+    expect(dramaExperimentUser(42, { ...experiment })).toEqual(users[42]);
+    expect(dramaExperimentUser(42, { ...experiment, environment: 'test' })).not.toEqual(users[42]);
+    expect(JSON.stringify(users[42])).not.toContain(experiment.key);
+  });
+  it('accepts production source/prefix and refuses TEST source for that configuration', () => {
+    const production = {
+      sourceOrigin: 'https://wbtsfzozlmurljvglhpn.supabase.co',
+      cdnOrigin: 'https://fictional-production.b-cdn.net',
+      pathPrefix: '/production' as const,
+    };
+    const source = sourceFor(PATH).replace('zoqelpfhurwehlvypryl', 'wbtsfzozlmurljvglhpn');
+    expect(
+      new URL(buildBunnyPlayback(PATH, source, 'unit-key', CDN_NOW, production).url).pathname
+    ).toBe(`/production/${PATH}`);
+    expect(() =>
+      buildBunnyPlayback(PATH, sourceFor(PATH), 'unit-key', CDN_NOW, production)
+    ).toThrow();
+  });
+  it('does not reuse a cached Bunny capability for an explicitly selected Supabase request', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(CDN_NOW);
+    const cdn = {
+      tokenKey: 'fictional-key',
+      sourceOrigin: 'https://zoqelpfhurwehlvypryl.supabase.co',
+      cdnOrigin: 'https://fictional.b-cdn.net',
+      pathPrefix: '/preview-test' as const,
+    };
+    const sign = vi.fn(async () => sourceFor(PATH));
+    const cache = new DramaSignedUrlCache(sign, () => cdn);
+    const bunny = await cache.getPlayUrl(PATH, undefined, undefined, cdn);
+    const original = await cache.getPlayUrl(PATH, undefined, undefined, null);
+    expect(new URL(bunny.play_url!).hostname).toBe('fictional.b-cdn.net');
+    expect(original.play_url).toBe(sourceFor(PATH));
+    expect((await cache.getPlayUrl(PATH, undefined, undefined, null)).play_url).toBe(
+      original.play_url
+    );
+    expect(sign).toHaveBeenCalledTimes(2);
+  });
   it('binds each video and its source capability into a finite CDN URL', () => {
     const first = buildBunnyPlayback(PATH, sourceFor(PATH), 'fictional-cdn-key', CDN_NOW);
     const second = buildBunnyPlayback(OTHER, sourceFor(OTHER), 'fictional-cdn-key', CDN_NOW);
@@ -193,7 +244,12 @@ describe('Preview Bunny playback', () => {
     vi.setSystemTime(CDN_NOW);
     let key = 'unit-key';
     const sign = vi.fn(async (path: string) => sourceFor(path, Date.now() / 1000 + 3600));
-    const cache = new DramaSignedUrlCache(sign, () => ({ tokenKey: key }));
+    const cache = new DramaSignedUrlCache(sign, () => ({
+      tokenKey: key,
+      sourceOrigin: 'https://zoqelpfhurwehlvypryl.supabase.co',
+      cdnOrigin: 'https://stminiappvid20261028.b-cdn.net',
+      pathPrefix: '/preview-test',
+    }));
     const [first, concurrent] = await Promise.all([cache.getPlayUrl(PATH), cache.getPlayUrl(PATH)]);
     expect(sign).toHaveBeenCalledTimes(1);
     expect(concurrent).toEqual(first);
@@ -216,7 +272,12 @@ describe('Preview Bunny playback', () => {
     expect(sign).not.toHaveBeenCalled();
     const wrongOrigin = new DramaSignedUrlCache(
       async () => sourceFor(OTHER),
-      () => ({ tokenKey: 'private-key' })
+      () => ({
+        tokenKey: 'private-key',
+        sourceOrigin: 'https://zoqelpfhurwehlvypryl.supabase.co',
+        cdnOrigin: 'https://stminiappvid20261028.b-cdn.net',
+        pathPrefix: '/preview-test',
+      })
     );
     expect((await wrongOrigin.getPlayUrl(PATH, { warn })).playable).toBe(false);
     const thrown = new DramaSignedUrlCache(async () => {

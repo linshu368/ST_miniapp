@@ -1,6 +1,51 @@
 import { describe, expect, it } from 'vitest';
 
-import { sanitizeTelemetry } from './sanitize';
+import { sanitizeStartupMetric, sanitizeTelemetry } from './sanitize';
+
+describe('startup metric attributes', () => {
+  it('removes SDK identity, replay and unexpected attributes while retaining P95 dimensions', () => {
+    const metric = {
+      name: 'startup.shell_ready.duration',
+      value: 1200,
+      type: 'distribution',
+      attributes: {
+        route: '/dramas',
+        tg_platform: 'android',
+        net_type: '4g',
+        measurement: 'post_render_frame',
+        telegram_ready: 'sent',
+        'sentry.release': 'test-release',
+        'sentry.environment': 'production',
+        'user.id': 'private-user',
+        'user.email': 'private-email',
+        'sentry.replay_id': 'private-replay',
+        initData: 'sensitive',
+      },
+    };
+    const result = sanitizeStartupMetric(metric);
+    expect(result.attributes).toEqual({
+      route: '/dramas',
+      tg_platform: 'android',
+      net_type: '4g',
+      measurement: 'post_render_frame',
+      telegram_ready: 'sent',
+      'sentry.release': 'test-release',
+      'sentry.environment': 'production',
+    });
+    expect(result.value).toBe(1200);
+    expect(metric.attributes['user.id']).toBe('private-user');
+    expect(sanitizeStartupMetric({ name: 'startup.outcome', value: 1 })).toEqual({
+      name: 'startup.outcome',
+      value: 1,
+      attributes: {},
+    });
+  });
+
+  it('preserves the existing handling of other metrics', () => {
+    const metric = { name: 'page.ready.duration', value: 100, attributes: { route: '/' } };
+    expect(sanitizeStartupMetric(metric)).toBe(metric);
+  });
+});
 
 describe('sanitizeTelemetry', () => {
   it('redacts sensitive keys case-insensitively at every depth', () => {

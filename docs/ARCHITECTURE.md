@@ -24,7 +24,9 @@
 
 ## 1. 架构铁律（违反即拦截）
 
-PR #525 已移除独立 Bunny 实验页面、manifest/play 接口和实验上报；普通播放分发边界见本文「pr-525 Preview 短剧 Bunny 分发」，操作与恢复见 [说明](../ops/drama-bunny-preview/README.md)。
+⏳ **2026-10-29 回复点赞（本地增量，未发布）**：`experience.chat_message_likes(session_id,message_id)` 保存会话主人对固定实际回复版本的点赞，分支不复制，重生成以新history ID独立反馈。`set_chat_message_like` 按归属/完成态验证并与开轮共用会话锁；显式布尔目标可幂等重试，写入不触发聊天统计或计费。角色社交查询通过 `experience.get_character_reply_like_counts` 批量读取角色回复总赞，加上原角色卡直接赞，返回大厅统一累计数量。`session_chat_history` 只末尾追加 `liked`，消息列表选择，模型上下文不选择；不额外为每条消息查询。受限RPC拥有写权，service只可读取新表，浏览器无直接数据库权限。迁移需先分支后点赞，恢复时可忽略个人点赞投影并保留数据。
+
+短剧 CDN 对照复用正常 `/api/dramas/:id/play`：Telegram 鉴权与归属校验后，根据固定实验 HMAC 分配约 20% Bunny、80% Supabase；实验内去重键只在服务器日志中生成。生产／TEST 的源、目录、CDN 签名与缓存隔离；CDN 只获对象级短期源能力，不获项目密钥。两组同一播放器与策略，每次新播放／重试都确认当前路径，关闭后不能消费旧 Bunny 预取地址。起播、未缓冲快进和恢复链经 shared 白名单传到现有 Pino；超过 5 秒继续记录真实结果。接收接口保持不写分析库，seek 不混入 startup 工程统计，不新增表／迁移／实验平台。独立实验页面/API已移除。实现与发布步骤见 [生产对照操作说明](../ops/drama-cdn-rollout.md)；代码不代表生产已启用或每次 5 秒目标已达成。
 
 离线数据运维补充：2026-10-19 的 Civitai seed TEST 导出最初复用 `experience.import_image_plaza_seed_work` 初始化目标作品；M1 后该 RPC 位于 `media_plaza`。该流程不迁移测试用户/点赞/账务，图片实体必须独立迁移。2026-10-20 新增离线 Storage 工具，固定 TEST → 本地 SHA-256 暂存 → production 仅新增上传/回读校验，有限并发且不覆盖冲突对象。该工具不改变运行时边界，不自动执行生产 SQL；实际完成状态以任务/report 为准。操作方法见 [seed 迁移说明](../ops/image-plaza-seed-migration.md)。
 
@@ -228,6 +230,8 @@ v1 是旧 bot `SimplePromptEngine` 的忠实移植，最终形状：
 ```
 
 - **上下文长度管理已落地（077）**：双水位线泄洪，窗口在 [A, B] 轮之间增长，超过高水位 B（`max_context_turns`，默认 75）一次性收缩到低水位 A（`retain_context_turns`，默认 50）。窗口起点持久化在 `chat_sessions.context_window_start_turn`，由开轮 RPC 在会话行锁内更新（`apply_context_window_flood`）；**不删** `chat_history`，只决定本轮 prompt 带哪些轮。引擎不二次裁剪，`truncatedTurns` 回填真实观测值。双水位（而非滑动窗口）是为了给 Anthropic prompt cache 制造稳定前缀；设计原稿：`git show b4491cd^:docs/context-window-and-prompt-cache.md`。
+
+- **历史分支（2026-10-29，本地已实现，远端待迁移/发布）**：`POST /api/v1/conversations/:id/branch` 以完成回复为锚点，服务端读取低水位 A，继承截至该轮的最多 A 轮并重新编号。`experience.chat_branch_turns` 固定引用实际 history ID，分支再分支同样展开为实际 ID；来源后续生成、重生成或软删除不改动已继承上下文。消息与上下文读取 `session_chat_history`，本分支新 revision 覆盖继承轮；计费、生成和分析继续读取原事实表，不把继承记录计作新生成。用户范围的事务 advisory lock、唯一请求键与单事务负责幂等/限速，来源会话仍验证所属用户。之后沿原 A/B 窗口，记忆仅随轮次正文保留，不增加抽取服务。继承媒体不复制，不带原请求关联 ID；新回复正常支持媒体。发布顺序：迁移 → Backend → Frontend；已有分支不能退回完全旧 Backend，隐藏入口后保留读取能力并 forward-fix。验收与边界见 `.trellis/tasks/10-29-conversation-branches/`。
 - **不消费预设**：ST 酒馆格式的 `platform_presets` 已随 088 整体删除（数据留档在库外）。自建预设格式是待办（M4，见 §10）。
 - **不注入 `first_mes`**：开场白由编排层放进 history，引擎再注入会每轮重复一条。
 - **不做酒馆语义适配**：宏、世界书、正则、卡内嵌资源一律不支持，表现质量由 system prompt 与组装逻辑承担。
@@ -463,6 +467,8 @@ frontend 自有 Route Handler：`GET /api/lobby-characters`（白名单 sort 参
 ---
 
 ## 7. 工程约定
+
+MiniApp 启动展示与业务数据分离：根 `Providers` 在 Telegram 初始化前输出无请求的 `EntryShell`，角色/短剧列表复用现有骨架、短剧栏目及五项导航；初始化后在绘制机会后发送 SDK `miniApp.ready()`。`lib/perf/startup-timing.ts` 复用 Sentry distribution 上报从文档导航起算的框架可展示/ready 通知耗时，与原 `page.ready.duration` 分开；P95、后台/离开和原生遮罩观测边界见 [前端性能规范](../.trellis/spec/frontend/app/testing-quality-and-deployment.md#miniapp-启动框架与-p95)。
 
 ### 7.1 前端
 
@@ -755,9 +761,9 @@ send/regenerate 携带可选 `first_token_measurement`；后端通过既有 begi
 
 新迁移`20261028_first_token_race.sql`扩展现有attempt诊断列并解除禁止首发回赢的守卫，保留数据库单赢家CAS/PT409；Grafana仅获原指标列权限，不能读诊断正文。先本地与TEST验证、合dev，再生产迁移和应用/Admin/看板。回退应用保留诊断列与原账务，不扩权限，不改历史数据。
 
-## pr-525 Preview 短剧 Bunny 分发（已启用）
+## pr-525 Preview 短剧 Bunny 分发（历史 TEST 验收）
 
-本分支已实现 pr-525 普通短剧播放的 Bunny 适配：只有 Railway 环境名 pr-525、数据库 target=test 且 DRAMA_CDN_ENABLED=true 时，正常 /api/dramas/:id/play 返回 Bunny 地址；DRAMA_CDN_TOKEN_KEY 仅存 Backend。移除独立 /drama-cdn-experiment 页面与专用接口、用户/样本白名单。正常 Telegram 鉴权、剧/集归属和私有桶保持；其他环境仍走 Supabase。pr-525 已完成配置切流与真实媒体功能预检：不同 TEST 对象的起始/中段 Range、源字节比对及热缓存鉴权负例通过；正常 API 向无实验白名单的测试身份返回 Bunny。Telegram 手机实际手感仍待验收，不宣称提速。操作与恢复见 ops/drama-bunny-preview/README.md。
+PR #525 合入 dev 时的 TEST 适配：只有 Railway 环境名 pr-525、数据库 target=test 且 DRAMA_CDN_ENABLED=true 时，正常 /api/dramas/:id/play 返回 Bunny 地址；DRAMA_CDN_TOKEN_KEY 仅存 Backend。移除独立 /drama-cdn-experiment 页面与专用接口、用户/样本白名单。正常 Telegram 鉴权、剧/集归属和私有桶保持；该版本其他环境仍走 Supabase。pr-525 已完成配置切流与真实媒体功能预检：不同 TEST 对象的起始/中段 Range、源字节比对及热缓存鉴权负例通过；正常 API 向无实验白名单的测试身份返回 Bunny。Telegram 手机实际手感仍待验收，不宣称提速。操作与恢复见 ops/drama-bunny-preview/README.md。
 
 Backend 复用 DramaSignedUrlCache 的有界缓存和 single-flight，先申请 TEST 对象级短期源签名，再按完整对象路径与 origin_token 生成 Bunny HMAC-SHA256 token。用户 URL 到期早于源签名至少60秒；缓存不得改写原到期时间。Bunny 规则只将 /preview-test/\* 映射到固定 TEST host 的 drama-videos 私有桶。无数据库迁移、媒体代理、转码或存储复制；启用配置错误返回不可播，不静默直连掩盖切流失败。
 

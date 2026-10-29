@@ -8,7 +8,7 @@
 import type { ChatMessage, ChatSession } from '@miniapp/shared';
 import { getDomainDb } from '../../lib/supabase.js';
 import { clampLimit, toOpeningMessage } from './ConversationHistoryRepository.js';
-import { ConversationRepositoryError } from './conversation-errors.js';
+import { ConversationRepositoryError, throwConversationRpcError } from './conversation-errors.js';
 
 const MAX_TITLE_LENGTH = 60;
 const DEFAULT_SESSION_TITLE = '新的对话';
@@ -31,6 +31,11 @@ export interface ChatSessionRow {
   deleted_at: string | null;
   created_at: string;
   updated_at: string;
+  branch_source_session_id?: string | null;
+  branch_source_turn_index?: number | null;
+  branch_source_message_id?: string | null;
+  branch_inherited_turns?: number;
+  branch_request_id?: string | null;
 }
 
 export interface ListSessionsOptions {
@@ -51,6 +56,41 @@ export class ChatSessionRepository {
    * 写路径不降级：置顶写失败只影响新功能本身，而且能让「迁移没跑」暴露出来。
    */
   private pinnedColumnMissing = false;
+
+  /** A branch reuses frozen history references; it must never create generation or billing rows. */
+  async forkSession(input: {
+    userId: string;
+    sourceSessionId: string;
+    messageId: string;
+    requestId: string;
+    retainTurns: number;
+  }): Promise<ChatSessionRow> {
+    if (!Number.isInteger(input.retainTurns) || input.retainTurns < 1 || input.retainTurns > 1000) {
+      throw new Error('分支上下文配置不可用');
+    }
+    const { data, error } = await this.db
+      .rpc('fork_chat_session', {
+        p_user_id: input.userId,
+        p_source_session_id: input.sourceSessionId,
+        p_message_id: input.messageId,
+        p_request_id: input.requestId,
+        p_retain_turns: input.retainTurns,
+      })
+      .abortSignal(AbortSignal.timeout(5_000));
+    if (error) throwConversationRpcError(error, '创建对话分支失败');
+    const row = data as ChatSessionRow | null;
+    if (
+      !row?.id ||
+      row.user_id !== input.userId ||
+      !row.character_id ||
+      row.branch_request_id !== input.requestId ||
+      !Number.isInteger(row.branch_inherited_turns) ||
+      (row.branch_inherited_turns ?? 0) < 1
+    ) {
+      throw new Error('创建对话分支结果字段不完整');
+    }
+    return row;
+  }
 
   /**
    * 建会话不写 chat_history：只有用户主动发起的对话才进入历史表。
@@ -277,6 +317,15 @@ export function toChatSession(row: ChatSessionRow): ChatSession {
     pinned_at: row.pinned_at ?? null,
     created_at: row.created_at,
     updated_at: row.updated_at,
+    ...(row.branch_source_turn_index != null && (row.branch_inherited_turns ?? 0) > 0
+      ? {
+          branch: {
+            source_session_id: row.branch_source_session_id ?? null,
+            source_turn_index: row.branch_source_turn_index,
+            inherited_turns: row.branch_inherited_turns!,
+          },
+        }
+      : {}),
   };
 }
 
