@@ -1,5 +1,7 @@
 # 短剧播放耗时排查
 
+短剧只有一个计时 owner：`lib/perf/drama-timing.ts`，媒体证据由 `drama-media.ts/drama-resources.ts` 提供。日常统计入口为 [工程短剧看板](https://ea3213527545.grafana.net/d/st-engineering-drama)，服务端分段在 [工程服务看板](https://ea3213527545.grafana.net/d/st-engineering-backend)。Faro/Loki 负责全量性能分布与结果；Pino 负责有界单次诊断；旧数据库看板保留历史与切换前对照。
+
 ## 五秒长尾常态采集（2026-10-29，本地实现，待发布）
 
 - 继续从每次原启动入口采集，不新增五秒定时快照。真实成功、失败、离开或后台的 `phase=final` 达到5000ms时，完整有界报告经后端已有OTLP出口写Cloud Loki，事件名 `drama.startup_diagnostic`；迟到 `phase=network` 复用同一观察ID补媒体证据，不生成第二次启动。
@@ -9,9 +11,34 @@
 - ENGINEERING_TELEMETRY_ENABLED与现有OTLP私网端点是新出口的前提；复用256条日志队列、2秒预算和既有drop/failure健康指标。202仅接口接收，关闭/限流/断网/强退仍可能缺报，无离线补传。
 - 事后入口为现有st-engineering-drama新增的两个详情面板；原浏览器流选择器不影响它们，版本筛选读取报告里的客户端release。发布与查询见runbook。
 
-短剧耗时直接记录到日志：浏览器使用现有 `createLogger`，前端报告经鉴权发送到 `POST /api/telemetry/drama-timing`，Backend 用现有 Pino 写入 Railway。短剧专用 Sentry Logs、Metrics 和 warning 事件已移除；其他业务和通用 HTTP/异常监控保持原有行为。
+本次统一定义代码为 `drama_v3`，尚未发布/启用；报告结构仍为兼容的 `version=2`。这两个版本号含义不同，不用报告结构版本替代测量定义。新代码不新增数据库对象、依赖或监控 cron，不改媒体 src、播放/预取/重试/签名策略。
 
-计时不改变播放超时、重试、预取、签名有效期、媒体加载或自动播放策略。默认保持日志模式；新增 v2 诊断与可选 Grafana 落表实现，需先执行对应环境的 `20261027_drama_playback_observability.sql`，再设置 `DRAMA_TIMING_PERSIST_ENABLED=true` 并重新部署 Backend。源文件存在不代表远端已经迁移或启用。发布、历史导入与真机验收见 [短剧看板操作说明](grafana/drama-playback-runbook.md)。
+## 唯一计算定义与粒度
+
+`packages/shared/src/api/drama-timing.ts` 的 `dramaTimingStages(marks)` 是新报告、Faro投影和服务端诊断的阶段计算入口；不在看板另算同一阶段。旧字段保留，补齐 `entry_to_source`、`metadata_to_data`、`data_to_frame`、`frame_to_startup`。前端 measurement 统一毫秒，后端 OTel histogram 为秒。
+
+缺失节点不发该阶段，逆序不截成0；合法零耗时仍保留。`frame_to_startup=max(first_frame,playing)-first_frame`，两节点都存在才算。原 `elapsedMs` 总耗时仍为入口到原终态时刻。并行/重叠阶段不得相加，也不得相减两个P95。旧SQL看板只用于legacy对照和历史，迁移文件不改写。
+
+首页 `/`、目录 `/dramas`、详情 `/dramas/:id` 在观察创建时绑定，迟到报告不根据当前地址猜路由。目录通过 `list_start_kind` 区分 document_navigation、navigation_click、route_commit、query_start、retry；播放通过入口、地址cache/fetch/inflight与首帧方式分层。后台终态在tracker中产生，日志与Faro使用同一个outcome。
+
+## 上报模式与切换门禁
+
+- 构建变量 `NEXT_PUBLIC_DRAMA_TIMING_MODE` 缺省/非unified为legacy：原报告仍全量上传旧接口，接收端不再触发数据库写入，便于对照上传行为。
+- 显式unified且Faro公开配置有效时：全量started/terminal、耗时和诊断能力摘要走原Faro；旧接口不再上传start。慢观察（≥5秒）、所有非成功终态的有界细节保留100%，不足5秒的成功按observation ID确定性保留5%；slow/final/network沿同一观察决策，不建立额外持久状态。
+- 采样后的报告标 `purpose=diagnostic`，写Pino，符合五秒播放final/network条件的报告另经Backend OTLP写Loki；接收端不再建立分析队列。repository和历史导入器再次阻止这类诊断写库，避免把采样明细误算全量。
+- Faro关闭/配置非法时回到legacy；Faro网络失败不改变播放，不自动重发或回写数据库。日志上传仍是5秒总预算、background、keepalive、不重试；无离线补传或完整送达保证。
+- `accepted:true`与202只代表接口接受，不能当作Cloud实收或数据库落盘；Pino抛错后仍调用独立Cloud出口。Pino正常返回也不证明平台永久保存。
+- 所有浏览器遥测release在构建时统一采用实际Vercel SHA，非Vercel构建使用明确Grafana release/Sentry release；旧DRAMA release随同赋值。不得手动把旧版本标成新版本。
+
+Backend须先兼容definition/route/purpose及新增stages，再发布Frontend，默认仍legacy。TEST/Cloud与真实媒体流程核对后才独立批准unified；接收端已停止分析写入，DRAMA_TIMING_PERSIST_ENABLED不再控制此接口。旧表、SQL视图、历史看板和清理job不在本次删除范围，不能未经保留期核对就关闭清理造成积压。回滚先把Frontend构建模式改回legacy，Backend保持兼容；数据库无需恢复。
+
+## 工程看板与诊断分母
+
+工程看板增加v3定义、页面、启动入口/缓存/首帧方式、目录起点筛选；启动筛选只作用于启动面板，不假装过滤缺少这些维度的播放质量窗口。日常成功率只用已知playing/error/unplayable/autoplay_blocked终态；switched/left/background单列，started/terminal窗口计数不是逐次配对覆盖率。Pino采样明细不得用于全量成功率。
+
+新 `drama.diagnostic` event展示网络可见能力、长任务支持、截断及事件逆序；同名measurement展示first/max TTFB、max connect、首帧处理和metadata→frame主线程重叠。final快照与network尾报告分别展示，不能合成两次启动；各阶段有效N与其P50/P95一起看，缺失不填0。Faro不接收observation/request/video ID、URL或逐条媒体数组；完整有界网络区间、marks、事件、请求链仍在Pino排障。
+
+播放中卡顿恢复与成对前台播放/卡顿窗口沿用现有观察器。卡顿占比使用同条窗口加权Σ卡顿/(Σ播放+Σ卡顿)，排除初始等待、暂停、seek与后台；只是已观测窗口，不代表完整会话或人数。
 
 ## 起止与口径
 
@@ -23,7 +50,7 @@
 - 自动播放被拒绝是终态 `autoplay_blocked`，之后手动恢复不覆盖该次自动播放结果。
 - 等待十秒发一次 `phase=slow` 快照并继续等待；成功、错误、不可播、切换、离开或后台产生一次 `phase=final`。十秒是观测阈值，不中断播放。后台结束本次观测，恢复不补算后台时长。
 
-前端使用同页单调时钟，后端独立计时，用原请求 ID 关联，禁止前后端时间戳相减。首帧成功后结束启动观测，目前不统计播放中卡顿次数或时长。
+前端使用同页单调时钟，后端独立计时，用原请求 ID 关联，禁止前后端时间戳相减。首帧且playing后结束启动观测；后续卡顿恢复/质量窗口由同一媒体观察器独立投影，不续算启动耗时。
 
 ## Railway 查询一条链路
 
@@ -49,7 +76,7 @@
 
 排查顺序：metadata → loadeddata 的长等待说明当前画面数据尚未就绪；loadeddata/canplay → playing 的长等待需要结合缓冲、paused、用户操作和 play 拒绝判断。waiting/stalled/suspend 都是浏览器状态信号，尤其 suspend 可能是浏览器主动停止预加载，不能单独判为网络故障。缓冲充足但首帧迟到仍不足以直接证明解码慢。
 
-后台沿用原有 `outcome=background` 并结束观察，可从生命周期事件与 visibility 辨识；恢复不重新累计本次启动。用户手动 play 的结果只补诊断，保持原有 UI/终态处理；自动播放拒绝后的手动恢复不覆盖已结束的 autoplay_blocked。首帧成功后不采集播放中操作或卡顿。
+后台沿用原有 `outcome=background` 并结束观察，可从生命周期事件与 visibility 辨识；恢复不重新累计本次启动。用户手动 play 的结果只补诊断，保持原有 UI/终态处理；自动播放拒绝后的手动恢复不覆盖已结束的 autoplay_blocked。启动明细在终态后冻结；播放中卡顿恢复与质量窗口继续走工程出口。
 
 旧版报告没有媒体 Resource Timing/首字节。v2 被动读取当前源的可见资源条目，并明确区分 unsupported/no_entry/limited/available；跨域、WebView、在途请求等限制仍可能导致缺失。条目不提供原始 Range 区间/CDN 命中，不能自动证明某个两字节请求的原因；这些仍需真实网络或供应商证据。禁止把签名缓存或 API body 耗时当作媒体传输指标。
 
@@ -62,7 +89,7 @@
 - 首帧等待为 `first_frame` 偏移；启动完成为 `max(first_frame,playing)`，两者均到才成功。分析视图细分源→元数据、元数据→loadeddata、loadeddata→frame、frame→启动完成。缺失/逆序为 NULL，不能截为0。导航/预取并行，阶段P95不能相加。
 - `miniapp_analytics.drama_playback_observations` 每环境/观察一行，数据库RPC原子合并乱序与重复；首个final不可被start/slow/冲突final改写。summary全量；慢/失败诊断全量、快速成功明细确定性5%。可见网络摘要和帧/长任务摘要也全量保存，避免明细采样影响分布。
 - 摘要14天、详细数据7天；受限清理job初始关闭，验证容量后启用。仅service_role写，Grafana NOLOGIN reader只读，anon/authenticated无权限。无业务外键，播放API不读写此表。
-- 持久化开启时写入成功后返回 `accepted:true,persisted:true`；DB短超时2秒、单进程最多2个在途写、过载429/故障503。默认日志模式保留旧 `accepted:true`。环境开关启动时读取，关闭后需重新部署；遥测请求独立于播放请求。
+- 上述数据库对象与保留期描述历史SQL路径；当前接收接口不再调用这些写入，固定返回202/`{ accepted: true }`。旧持久化flag不能恢复此接口写库；历史数据和离线导入器保留。
 - Grafana 独立 UID `st-drama-playback`，只新增短剧看板，不修改经营/首token看板。默认24小时、5分钟刷新、最多读14天，复用现有只读数据源与连接上限。分位数附有效N，退出/后台/无终态单列，不把缺报算成功；旧日志标legacy且不能补回新字段。
 
 ## 上报可靠性与容量
@@ -70,9 +97,9 @@
 - 浏览器先写同口径日志，再异步发送；失败记录 `drama.timing_upload_failed`，不改变播放结果。复用 API client 的 Telegram 鉴权，POST 不重试，低优先级并发槽与 `keepalive`；总预算五秒，包括排队和响应体。
 - `keepalive` 尽力支持离开/后台时发送，不保证强制关闭、离线或鉴权过期时送达。无本地持久化、离线补传或远程送达保证；缺报不能推断成功。浏览器日志不自动进入 Vercel 日志。
 - 接收端只允许共享 schema 中的有限枚举、数值、关联 ID 和计时结构，未知字段拒绝；不接收媒体地址、签名、对象路径、请求/响应正文或原始错误。
-- 单次 body 上限 32 KiB，最多十二次查询、每次四次 HTTP 尝试，明细截断显式标记。鉴权用户每进程每分钟最多 120 次上报，全进程每分钟最多 1000 次；用户限流表最多 2000 项。超限返回 429，无数据库写入和新依赖。这是进程诊断容量保护，多副本配额独立。
+- 单次 body 上限 32 KiB，最多十二次查询、每次四次 HTTP 尝试，明细截断显式标记。鉴权用户每进程每分钟最多 120 次上报，全进程每分钟最多 1000 次；用户限流表最多 2000 项。超限返回 429。接收端所有模式都不写库，不增加依赖。这是进程诊断容量保护，多副本配额独立。
 - 媒体诊断复用上述大小/频率约束，media/state/event 全部 strict 白名单；旧报告不带 media 仍接受。旧 Backend 会拒绝新增字段，因此扩展 validator 的 Backend 必须先于新 Frontend 部署；不影响旧客户端视频播放。
-- 成功调用日志输出后返回 `{ accepted: true }`；输出抛错返回 503，不伪造接收成功。该确认不等于 Railway 日志永久落盘。
+- 接口校验接收返回202/`{ accepted: true }`；Pino抛错仍调用独立Cloud出口，无分析存储队列。该确认不等于 Railway 日志永久落盘。
 - `source=frontend` 属于客户端自报，不作为计费、权限或安全事实；进程日志时间是接收时间。
 
 ## 验证与发布
@@ -88,6 +115,6 @@
 3. 重进同剧，区分 cache/inflight/fetch；分别限速 API 和媒体，验证地址阶段与媒体阶段可区分。
 4. 十秒慢快照和最终结果属于同一观察；自动播放限制记录 `autoplay_blocked`。
 5. 离开/后台/失败时核对终态；阻断接收接口，浏览器有上传失败诊断，播放不受影响，不把缺报算成成功。
-6. 限速媒体，核对 loadeddata/canplay/play 结果和十秒 snapshot 的即时缓冲；启动时暂停/恢复、重试、换源及后台，核对用户事件与源代际隔离。检查上报 HTTP 200，若 400 先查 Backend 是否已部署扩展 media 契约。
+6. 限速媒体，核对 loadeddata/canplay/play 结果和十秒 snapshot 的即时缓冲；启动时暂停/恢复、重试、换源及后台，核对用户事件与源代际隔离。检查上报 HTTP 202，若 400 先查 Backend 是否已部署扩展 media 契约。
 
 本地测试通过不等于已完成 Telegram/线上送达验收。

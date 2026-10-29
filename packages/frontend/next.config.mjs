@@ -5,6 +5,14 @@ import { resolvePublicApiUrl } from './resolve-public-api-url.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const sentryRelease = process.env.SENTRY_RELEASE || process.env.VERCEL_GIT_COMMIT_SHA;
+// All browser observability describes this build, including the legacy diagnostic report.
+const telemetryRelease =
+  process.env.VERCEL_GIT_COMMIT_SHA ||
+  process.env.NEXT_PUBLIC_GRAFANA_RELEASE ||
+  sentryRelease ||
+  '';
+process.env.NEXT_PUBLIC_GRAFANA_RELEASE = telemetryRelease;
+process.env.NEXT_PUBLIC_DRAMA_RELEASE = telemetryRelease || 'unknown';
 const hasSentryUploadConfig = Boolean(
   process.env.SENTRY_ORG && process.env.SENTRY_PROJECT && process.env.SENTRY_AUTH_TOKEN
 );
@@ -24,7 +32,8 @@ const nextConfig = {
     : {}),
   env: {
     NEXT_PUBLIC_API_URL: publicApiUrl,
-    NEXT_PUBLIC_DRAMA_RELEASE: process.env.VERCEL_GIT_COMMIT_SHA || sentryRelease || 'unknown',
+    NEXT_PUBLIC_DRAMA_RELEASE: telemetryRelease || 'unknown',
+    NEXT_PUBLIC_GRAFANA_RELEASE: telemetryRelease,
   },
   // M4 容器化：产出 .next/standalone 自包含运行时（含 server.js + 最小 node_modules）。
   output: 'standalone',

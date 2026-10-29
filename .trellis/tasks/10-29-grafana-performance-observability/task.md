@@ -1,5 +1,12 @@
 # Task Breakdown
 
+## 2026-10-29 用户批准增补
+
+- Q1 Done：统一客户端平台/网络快照与白名单、既有测试回归通过。
+- Q2 Done：短剧成对播放/卡顿时长增量与生命周期回归通过。
+- Q3 Done：三板已补两项筛选与三张质量卡，64条LogQL及TEST合成实收核验通过。
+- Q4 Release pending：全范围review、602测试、类型/lint/build完成，文档已更新，待正常独立分支推送与固定SHA生产发布；不得将用户暂缓真机复测当作已实测。生产实际交付另记test-rollout。
+
 状态：in_progress。本地实施与基础验证已完成；TEST/Cloud、真实设备、资源开销对照和生产切换仍未完成。Done仅表示该阶段明确列出的内容已验证，不代表已部署。
 
 | ID  | Status  | Deliverable / scope                                        | Depends on            | Verification                                                                       |
