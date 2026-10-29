@@ -85,19 +85,24 @@ export async function reportConversationFirstToken(
   // Identity can arrive while the dispatch intent is still committing. Bounded, idempotent retries.
   for (const delay of [0, 300, 1000]) {
     if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+    // Older Telegram WebViews lack AbortSignal.timeout. Keep queue/body time bounded too.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 3000);
     try {
       const result = await apiClient<ReportFirstTokenData>(
         `/api/v1/conversations/${encodeURIComponent(sessionId)}/first-token`,
         {
           method: 'POST',
           body: JSON.stringify(body),
-          signal: AbortSignal.timeout(3000),
+          signal: controller.signal,
           keepalive: true,
         }
       );
       if (result.recorded) return;
     } catch {
       /* A missing client-delivery report must not interrupt the conversation. */
+    } finally {
+      clearTimeout(timer);
     }
   }
 }
