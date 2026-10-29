@@ -44,6 +44,8 @@ shared contract 改动追加 `pnpm --filter @miniapp/shared test` 和所有消�
 
 ## Vercel 部署
 
+短剧 CDN 对照使用正常播放器，独立实验页面／接口已移除。固定 `@drama` 验收补充关闭后重新取址及首播完成后的快进诊断；TEST／生产／真实 Telegram 性能分别验收，见 [操作说明](../../../../ops/drama-cdn-rollout.md)。
+
 PR #525 已移除独立 `/drama-cdn-experiment` 页面及实验取址/上报。复用 `packages/ui-tests` 的 `@drama` 场景验证普通播放、切集、重试及旧入口 404；模拟验收不能替代 Telegram 真机性能，操作与恢复见 [说明](../../../../ops/drama-bunny-preview/README.md)。
 
 - Frontend 部署 Vercel，配置见根/包部署文件和 `next.config.mjs`；`NEXT_PUBLIC_*` 都是公开值，secret 不得使用此前缀。
@@ -61,11 +63,11 @@ v2 的实现/口径与验收见 [短剧看板操作说明](../../../../docs/graf
 
 `lib/perf/drama-timing.ts` 管理列表/每次播放的单调时钟节点、查询和 HTTP 尝试；`drama-media.ts` 绑定本次 src 的事件/帧回调，`drama-observer.ts` 先用 createLogger 打印，再经 `lib/api/telemetry.ts` 的鉴权 POST 将报告集中写入 Railway；短剧专用 Sentry 上报已移除。上传 keepalive、background 优先级、总预算 5 秒且不重试，不参与播放结果；失败保留本地日志，不做离线补传。根 `PagePerfTracker` 管理入口与离开/后台监听。用户浏览时间独立于启动等待，预取与路由并行，不允许阶段简单相加。
 
-`apiClient.onAttempt` 仅为可选的本地观测回调，包含排队、响应头与 body 解析，不能传入 fetch 或改变重试/超时。短剧 query 禁用 structural sharing，以保留结果对象与本次计时 WeakMap 的对应；不改变 query key、过期时间、请求去重或视频 URL 切换策略。播放器持有本次观察对象，旧组件更新不能重建/抢占导航目标的记录。成功必须同时有首帧与 playing；兼容降级明确标记，不能使用 canplay 代替。
+`apiClient.onAttempt` 仅为可选的本地观测回调，包含排队、响应头与 body 解析，不能传入 fetch 或改变重试/超时。短剧 query 禁用 structural sharing，以保留结果对象与本次计时 WeakMap 的对应；实际播放 query key 包含本次 intent，旧地址／预取不能绕过关闭；两组统一确认路径，签名缓存仍在后端。播放器持有本次观察对象，旧组件更新不能重建/抢占导航目标的记录。成功必须同时有首帧与 playing；兼容降级明确标记，不能使用 canplay 代替。
 
 首页 embedded 与详情播放器的测量归属必须明确区分（home/detail），只在内存持有。子播放器 effect 可先于根 route effect：route('/') 应保留首页活跃观察，真正离开其 owner 路径才记 left；首页↔详情即便同剧也不能复用，同归属显式换剧/换集保留 switched。重复 ensure 不重启已终态，旧组件不能抢回新观察。既有 drama-timing 测试须覆盖这种 effect 顺序及跨归属/离页/后台；不为测量重建 src/播放业务 effect。
 
-每次等待 10 秒生成一次快照；失败、离开、后台等都生成终态，后台不计成慢播放。遥测异常不得影响请求/视频，地址/签名/对象路径不得进日志；上传契约按字段白名单和明细数量限制，禁止任意对象作为日志输入。关键回归及查询、发布、真机验收见 [排查说明](../../../../docs/drama-playback-timing.md)。
+每次等待超过 5 秒生成一次快照；失败、离开、后台等都生成终态，后台不计成慢播放。遥测异常不得影响请求/视频，地址/签名/对象路径不得进日志；上传契约按字段白名单和明细数量限制，禁止任意对象作为日志输入。关键回归及查询、发布、真机验收见 [排查说明](../../../../docs/drama-playback-timing.md)。
 
 媒体启动诊断在原报告的可选 `media` 中记录最多 32 条有界事件，以及慢/终态时即时 `snapshot`。`play_called/play_resolved/play_rejected/loadeddata/canplay` 首次 marks 独立于事件截断；原 `playing + first_frame` 成功条件和手动/自动 play 的业务结果保持不变。不得逐帧记录 progress/timeupdate 或周期轮询。状态只含有限数值、布尔与枚举；bufferedAheadMs 只算覆盖当前位置的连续缓冲，读取失败为缺失，不得把远端缓冲、suspend 或零/缺失数据直接解释为网络根因。reader 在终态/媒体释放时解除，旧监听/Promise 不得写新流，慢快照不可被后续事件改写。通过既有 drama-media/observer/timing 测试验证，Backend 接受新契约后再发 Frontend。
 
@@ -80,3 +82,9 @@ v2 的实现/口径与验收见 [短剧看板操作说明](../../../../docs/graf
 7. **Wrong vs Correct**：Wrong为在SQL/前端另写新阶段计算并默认关闭旧链路；Correct为复用唯一helper，v3筛选隔离历史，Backend兼容→Frontend默认双轨→TEST/Cloud/真实流程验证→独立批准unified；接收端已按五秒长尾方案停止分析写入。旧表/视图/历史看板/保留期job本轮不删除。
 
 字段、诊断粒度、分母和切换恢复统一见 `docs/drama-playback-timing.md`。
+
+旧固定样本独立实验入口／自动 AB 序列已移除。普通 `@drama` fixture 覆盖关闭重取址和独立快进帧报告；不代表真实分发性能。
+
+## 生产 CDN 对照与统一测量兼容
+
+实验两组保留相同播放器、v3阶段helper、home/detail归属与Faro投影；seek仅走原Pino，不投startup工程分母。开流前确认NEXT_PUBLIC_DRAMA_TIMING_MODE=legacy及实际构建，以保留完整start/终态；unified下有delivery的结果与seek仍全量上传，非实验采样保持。5秒只拍快照，不终止播放；重试保留原失败与累计等待。发布与验收矩阵见ops/drama-cdn-rollout.md。

@@ -68,7 +68,12 @@ export function buildBunnyPlayback(
   objectPath: string,
   sourceUrl: string,
   tokenKey: string,
-  now = Date.now()
+  now = Date.now(),
+  delivery: Pick<DramaPlaybackCdnConfig, 'sourceOrigin' | 'cdnOrigin' | 'pathPrefix'> = {
+    sourceOrigin: TEST_ORIGIN,
+    cdnOrigin: BUNNY_ORIGIN,
+    pathPrefix: '/preview-test',
+  }
 ): { url: string; expiresAtMs: number } {
   const segments = objectPath.split('/');
   if (
@@ -82,7 +87,7 @@ export function buildBunnyPlayback(
   const source = new URL(sourceUrl);
   const originToken = source.searchParams.get('token');
   if (
-    source.origin !== TEST_ORIGIN ||
+    source.origin !== delivery.sourceOrigin ||
     source.username ||
     source.password ||
     source.hash ||
@@ -111,12 +116,12 @@ export function buildBunnyPlayback(
   );
   if (expires * 1000 - now <= SAFETY_MARGIN_SECONDS * 1000)
     throw new Error('drama_cdn_source_expired');
-  const path = `/preview-test/${objectPath}`;
+  const path = `${delivery.pathPrefix}/${objectPath}`;
   // Bunny signs decoded query values in key order, excluding its own token and expires.
   const token = createHmac('sha256', tokenKey)
     .update(path + String(expires) + `origin_token=${originToken}`)
     .digest('base64url');
-  const url = new URL(path, BUNNY_ORIGIN);
+  const url = new URL(path, delivery.cdnOrigin);
   url.searchParams.set('token', `HS256-${token}`);
   url.searchParams.set('origin_token', originToken);
   url.searchParams.set('expires', String(expires));
@@ -163,17 +168,20 @@ export class DramaSignedUrlCache {
   async getPlayUrl(
     objectPath: string,
     log?: SanitizedLogger,
-    observation?: DramaSigningObservation
+    observation?: DramaSigningObservation,
+    selectedCdn?: DramaPlaybackCdnConfig | null
   ): Promise<SignedPlayback> {
     let cdn: DramaPlaybackCdnConfig | null;
     try {
-      cdn = this.cdnConfig();
+      cdn = selectedCdn === undefined ? this.cdnConfig() : selectedCdn;
     } catch {
       log?.warn({ reason: 'drama_cdn_config_invalid' }, 'drama signed url failed');
       return FAILED;
     }
     // Credential changes must not reuse a URL signed by the prior configuration.
-    const provider = cdn ? createHash('sha256').update(cdn.tokenKey).digest('hex') : 'supabase';
+    const provider = cdn
+      ? createHash('sha256').update(JSON.stringify(cdn)).digest('hex')
+      : 'supabase';
     const key = `${CACHE_SCOPE}:${provider}:${objectPath}`;
     const now = Date.now();
 
@@ -215,7 +223,7 @@ export class DramaSignedUrlCache {
       // createSignedUrl 不回传到期时间，按签发时刻推算；偏保守即可
       const issuedAt = Date.now();
       const { url, expiresAtMs } = cdn
-        ? buildBunnyPlayback(objectPath, sourceUrl, cdn.tokenKey, issuedAt)
+        ? buildBunnyPlayback(objectPath, sourceUrl, cdn.tokenKey, issuedAt, cdn)
         : { url: sourceUrl, expiresAtMs: issuedAt + SIGN_TTL_SECONDS * 1000 };
       const reusableUntilMs = Math.min(
         issuedAt + CACHE_MAX_SECONDS * 1000,

@@ -117,6 +117,10 @@ pnpm test:ui:fixtures            # 模拟服务本身的协议与隔离检查
 
 首字 v4 回归复用 `@chat`：滚动到旧消息时首字仍交付、滚回不二报；`chat-partial-error` 模拟文字与错误同批返回，验证已到文字保留与首字成功、刷新恢复。该场景仍完全使用虚构数据，真实超时免扣由SQL/TEST接口专项验证。
 
+## 短剧 CDN 对照
+
+复用 `@drama`：本地 fixture 返回有限 delivery 上下文，覆盖关闭后重新进入必须等待新地址、旧 Bunny 地址不抢播，以及首播结束后进度提交的独立目标帧报告。片尾只预取详情，实际取址由本轮播放意图确认。这里使用本地媒体和受控缓冲 fixture，不能证明真实 Bunny／Supabase 性能或生产已开流。
+
 ## 角色互动
 
 角色点赞、收藏数量和公开评论继续复用 `roleplay.spec.ts`，定向运行 `pnpm test:ui --grep @character-social`。`character-social` 提供首个角色已收藏、独立点赞数量和23条虚构评论；`character-interaction-error` 提供首次点赞/收藏写入失败，以及评论写入成功但响应丢失的场景。所有数据均为本地虚构数据，不连接真实评论或用户资料。

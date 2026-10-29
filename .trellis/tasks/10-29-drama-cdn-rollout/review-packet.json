@@ -1,0 +1,277 @@
+{
+  "status": "final local content prepared; explicit human approval required before staging",
+  "branch": "codex/drama-cdn-rollout",
+  "base_branch": "dev",
+  "base_head": "46159929949e9637859ceed70a2403cdece51fcb",
+  "production_main": "b9d2441841267bcb2b3f21cc584184997ed17ba2",
+  "proposed_commit": "feat: add stable drama CDN rollout and real waiting diagnostics",
+  "content_digest_sha256": "830ece89187b781201827d0b2b885931d9684bdf4ffb9a238a9b34f717fd7187",
+  "digest_definition": "SHA256 of sorted path + NUL + file SHA256 + newline; packet itself excluded",
+  "local_review_diff": "/Users/qj/.codex/worktrees/drama-cdn-rollout/ST_miniAPP/output/drama-cdn-rollout-review.patch",
+  "local_review_diff_sha256": "41607bccdad10631c08fa12131eae03ab068f4968b2c3bfc68c460f529c9af6a",
+  "validation": {
+    "shared": 189,
+    "backend": 1073,
+    "backend_skipped": 18,
+    "frontend": 627,
+    "ui_final_full": 44,
+    "typecheck": "passed all packages; UI package repeated after test precondition change",
+    "build": "Frontend/Admin passed",
+    "lint_and_guards": "passed; pre-existing warnings only",
+    "module_payload": "3 updates passed against latest dev",
+    "module_baseline": "existing drama-experience lacks current-status heading; not repaired",
+    "production": "configuration + one private source object, 2 x 1024 byte ranges only; CDN/device/rollout pending"
+  },
+  "approval_requested_operations": [
+    "stage exactly commit_paths after matching all hashes",
+    "commit proposed complete change unit",
+    "push codex/drama-cdn-rollout",
+    "create a new PR targeting dev"
+  ],
+  "not_authorized_by_this_packet": [
+    "merge dev or main",
+    "production deployment or configuration/CDN writes",
+    "enable 20% Bunny or start the 12-hour experiment"
+  ],
+  "protected_existing_work": [
+    "original Bunny worktree remains unchanged",
+    "ops/drama-bunny-preview/evidence.json original dirty content",
+    "ops/drama-bunny-preview/experiment-closed.png original untracked content",
+    "primary main worktree dirty/untracked content"
+  ],
+  "files": [
+    {
+      "path": ".trellis/spec/backend/app/data-reliability-and-security.md",
+      "sha256": "29052a2d7bad577138162c5f3b6b5fba52ed4e240cce8068527f8946e85c6afd"
+    },
+    {
+      "path": ".trellis/spec/frontend/app/testing-quality-and-deployment.md",
+      "sha256": "0ad15fc5f16e67270465e07b5a6392b1396d670011237394587e6731b7641620"
+    },
+    {
+      "path": ".trellis/tasks/10-29-drama-cdn-rollout/check.jsonl",
+      "sha256": "2cf07ac421ef0e5118f18b2296a11e600eb43891afd7c388fcc664b937882daf"
+    },
+    {
+      "path": ".trellis/tasks/10-29-drama-cdn-rollout/design.md",
+      "sha256": "f377f232b8fb7ae0f49b52994410cb8349bb4eb67fe7edefe0df687434b3b19c"
+    },
+    {
+      "path": ".trellis/tasks/10-29-drama-cdn-rollout/implement.jsonl",
+      "sha256": "2cf07ac421ef0e5118f18b2296a11e600eb43891afd7c388fcc664b937882daf"
+    },
+    {
+      "path": ".trellis/tasks/10-29-drama-cdn-rollout/implement.md",
+      "sha256": "66b875f8619627cb8f6b5a526caf58b6b46cfe194c6def70473bdb80eebdd2a3"
+    },
+    {
+      "path": ".trellis/tasks/10-29-drama-cdn-rollout/module-updates.json",
+      "sha256": "a4677e6f51844f37c9025594a5c47b14e4284f1ffea677c08ff9660a85304ec4"
+    },
+    {
+      "path": ".trellis/tasks/10-29-drama-cdn-rollout/prd.md",
+      "sha256": "d43746f7d4cdbf240dd31bfc9330eb79e401db968369009d33cf05fe09d766b1"
+    },
+    {
+      "path": ".trellis/tasks/10-29-drama-cdn-rollout/production-preflight.md",
+      "sha256": "65c49d66fa384a0233db10296ab49dca93db4d74783b6bc6af4d69b719e2a02f"
+    },
+    {
+      "path": ".trellis/tasks/10-29-drama-cdn-rollout/research/current-state.md",
+      "sha256": "932696d9a7cc8042fc928c4fca6d850ab2f47e69f957beeed986b8fdac733e5c"
+    },
+    {
+      "path": ".trellis/tasks/10-29-drama-cdn-rollout/review.md",
+      "sha256": "549963113fa6a45c7cd7ae35cd4e0b1bd283d43eba3ea61f7d966ba904f069b8"
+    },
+    {
+      "path": ".trellis/tasks/10-29-drama-cdn-rollout/task.json",
+      "sha256": "71ada7748109ae7aa8554466a75dd9731a4eb3bbeae207c5bd3bc71dbf87ecce"
+    },
+    {
+      "path": ".trellis/tasks/10-29-drama-cdn-rollout/task.md",
+      "sha256": "e33db74dbc8bb8fd222705cc5ec742b227ec704f44943eb6215f49d80358ea60"
+    },
+    {
+      "path": ".trellis/tasks/10-29-drama-cdn-rollout/verification.md",
+      "sha256": "b3d0e38c7da33cb7fbf3fd2d8d6ad1fb2ff66c385a53b66b5ab54374dedb26e9"
+    },
+    {
+      "path": "README.md",
+      "sha256": "8163cb60959a8b6cea928cbfe9a97397cb097ae58acac80d702972fc0f62be63"
+    },
+    {
+      "path": "docs/ARCHITECTURE.md",
+      "sha256": "2665e44913254c3913829cc79fa6eebf84c8e9a4238277c9ed18a83844e375e2"
+    },
+    {
+      "path": "docs/drama-playback-timing.md",
+      "sha256": "ac3a5e22ae99965104e1ccd9a18287a1933297e99fac7e9cda00d2a597538061"
+    },
+    {
+      "path": "ops/drama-bunny-preview/README.md",
+      "sha256": "87a195b63055849e0d76923742fabd66ad856d2ea7f3b3745e647e5a0616fdaf"
+    },
+    {
+      "path": "ops/drama-cdn-rollout.md",
+      "sha256": "148dcbb235895d5fdd790cb53c228eec570744daebef9b901ab2e0316f52ef69"
+    },
+    {
+      "path": "packages/backend/.env.example",
+      "sha256": "2eefdd349dbc232d46f25130eccfaff896bd8a3b5c07b91f2cc17f3ea6736b2e"
+    },
+    {
+      "path": "packages/backend/src/features/drama/delivery.ts",
+      "sha256": "89e15675bd79d9c8c2be9d2e8e45cc17b98d9061caec941b81d9c0bd75cb6e6d"
+    },
+    {
+      "path": "packages/backend/src/features/drama/signed-url.test.ts",
+      "sha256": "84272e4c6a7587f0ff29ba42d9c5b89e4f3a91203f619a83ce3968caa3762da4"
+    },
+    {
+      "path": "packages/backend/src/features/drama/signed-url.ts",
+      "sha256": "763ed3ed93dffe2dd1012619f95c7924b0103f34cd55be6967983f90fe02d2dc"
+    },
+    {
+      "path": "packages/backend/src/platform/runtime-config.test.ts",
+      "sha256": "9f2c41f82c3219460f49f77793831c371e87847a4af084a6b53c0cc2a67d0332"
+    },
+    {
+      "path": "packages/backend/src/platform/runtime-config.ts",
+      "sha256": "0070f09bf4dd6b2b8c5b2b95e99cf1d1eeac15ed473c75981ed64ed2f9d9f6f7"
+    },
+    {
+      "path": "packages/backend/src/routes/drama-timing.test.ts",
+      "sha256": "7ac4b1d0d4079ea8f0b87d6d96206a4ae72d01d1c7650d9020aaf9062f72f88a"
+    },
+    {
+      "path": "packages/backend/src/routes/drama.ts",
+      "sha256": "b3b5be26fb63858eb04956627c9d70f2a6463b92cb0f967dffcd988fc53326b6"
+    },
+    {
+      "path": "packages/backend/src/routes/telemetry.test.ts",
+      "sha256": "b338e98790371ce017d8d7c836eef0e9ffd0cb96e2af588195d7b0243695cc20"
+    },
+    {
+      "path": "packages/backend/src/routes/telemetry.ts",
+      "sha256": "094ae19a83d75d65b65fbca7a8b448527a62ee1880c3da7023e30203cba287ce"
+    },
+    {
+      "path": "packages/backend/src/scripts/compare-drama-cdn.ts",
+      "sha256": "04f5638126dc2c4c2642b0302cdd5badca04350a2c930d223d00b30a7ced6875"
+    },
+    {
+      "path": "packages/backend/src/scripts/import-drama-timing.ts",
+      "sha256": "8f68227197742f0379831b3488ff8ca7f95dcb3a68dce1c1b4df852d464d3896"
+    },
+    {
+      "path": "packages/frontend/src/components/drama/drama-player.tsx",
+      "sha256": "92eb2f662179f44c057d4197217bd57d3a2282aa6edc7379901e3294dbae65d3"
+    },
+    {
+      "path": "packages/frontend/src/components/drama/drama-progress.tsx",
+      "sha256": "865c7b1bd193b6882681d60704e696a1ee1a1adddd77602ccc067fe74141c57f"
+    },
+    {
+      "path": "packages/frontend/src/lib/api/drama.ts",
+      "sha256": "39051f5423f62c2ce8380fb79ad75ca17e981a35ca5901c50d8b4737ecce6829"
+    },
+    {
+      "path": "packages/frontend/src/lib/perf/drama-media.test.ts",
+      "sha256": "1aeaa54991f4d69f3d69fedbc25e9ab849aea75d90fb7854e709bcc66e9aa584"
+    },
+    {
+      "path": "packages/frontend/src/lib/perf/drama-observer.test.ts",
+      "sha256": "080564a92ce4afff2f0196c0c7471addeb1bd7c08dbf3184a79385cc47125ece"
+    },
+    {
+      "path": "packages/frontend/src/lib/perf/drama-observer.ts",
+      "sha256": "f0dc8a23d0173f7f8b9974de28d501800b0d4b7eaeadaf8cc4e6265c1d58159e"
+    },
+    {
+      "path": "packages/frontend/src/lib/perf/drama-seek.ts",
+      "sha256": "e9397bd14b591684ba2a1bed4aa37142623c1a281d7d972799b294d1ad3f4418"
+    },
+    {
+      "path": "packages/frontend/src/lib/perf/drama-timing.test.ts",
+      "sha256": "dfb1b4b2124694d958450597c9c8df8361b9be3e07aa5cbc882ad3bb9165ec0b"
+    },
+    {
+      "path": "packages/frontend/src/lib/perf/drama-timing.ts",
+      "sha256": "122d2b6f7e6f67437436c375593b1537d6a38e1f22216b5f525cdf41642c1508"
+    },
+    {
+      "path": "packages/shared/src/__tests__/telemetry-contract.test.ts",
+      "sha256": "9871e1fcfc54cad55b6c46358317ef05bbe0bfe4572dc98455b4ae6794b48bdf"
+    },
+    {
+      "path": "packages/shared/src/api/drama-timing.ts",
+      "sha256": "5924bf5c87eb45ab7718ad609f8982465dcc5eef13f7cd77768c9c520266e330"
+    },
+    {
+      "path": "packages/shared/src/api/drama.ts",
+      "sha256": "fd6764d13dd094035c059c678d32ba5f8ea35001d30a506a40c7a37de3c4de1c"
+    },
+    {
+      "path": "packages/ui-tests/README.md",
+      "sha256": "f79d152961e6ee0cd6fc2aa0126c7791910ee83c72a936343346f50d2a2e9b79"
+    },
+    {
+      "path": "packages/ui-tests/fixtures/server.ts",
+      "sha256": "5b52bd4d08caf33661b0a287109a5a911d1cd35b732ebd7dcfb53f484f6dc981"
+    },
+    {
+      "path": "packages/ui-tests/tests/drama.spec.ts",
+      "sha256": "d0d528aa70e09bab034693f02c498b7bb9a607a599796dfc8782cd7105fab5fe"
+    }
+  ],
+  "commit_paths": [
+    ".trellis/spec/backend/app/data-reliability-and-security.md",
+    ".trellis/spec/frontend/app/testing-quality-and-deployment.md",
+    ".trellis/tasks/10-29-drama-cdn-rollout/check.jsonl",
+    ".trellis/tasks/10-29-drama-cdn-rollout/design.md",
+    ".trellis/tasks/10-29-drama-cdn-rollout/implement.jsonl",
+    ".trellis/tasks/10-29-drama-cdn-rollout/implement.md",
+    ".trellis/tasks/10-29-drama-cdn-rollout/module-updates.json",
+    ".trellis/tasks/10-29-drama-cdn-rollout/prd.md",
+    ".trellis/tasks/10-29-drama-cdn-rollout/production-preflight.md",
+    ".trellis/tasks/10-29-drama-cdn-rollout/research/current-state.md",
+    ".trellis/tasks/10-29-drama-cdn-rollout/review.md",
+    ".trellis/tasks/10-29-drama-cdn-rollout/task.json",
+    ".trellis/tasks/10-29-drama-cdn-rollout/task.md",
+    ".trellis/tasks/10-29-drama-cdn-rollout/verification.md",
+    "README.md",
+    "docs/ARCHITECTURE.md",
+    "docs/drama-playback-timing.md",
+    "ops/drama-bunny-preview/README.md",
+    "ops/drama-cdn-rollout.md",
+    "packages/backend/.env.example",
+    "packages/backend/src/features/drama/delivery.ts",
+    "packages/backend/src/features/drama/signed-url.test.ts",
+    "packages/backend/src/features/drama/signed-url.ts",
+    "packages/backend/src/platform/runtime-config.test.ts",
+    "packages/backend/src/platform/runtime-config.ts",
+    "packages/backend/src/routes/drama-timing.test.ts",
+    "packages/backend/src/routes/drama.ts",
+    "packages/backend/src/routes/telemetry.test.ts",
+    "packages/backend/src/routes/telemetry.ts",
+    "packages/backend/src/scripts/compare-drama-cdn.ts",
+    "packages/backend/src/scripts/import-drama-timing.ts",
+    "packages/frontend/src/components/drama/drama-player.tsx",
+    "packages/frontend/src/components/drama/drama-progress.tsx",
+    "packages/frontend/src/lib/api/drama.ts",
+    "packages/frontend/src/lib/perf/drama-media.test.ts",
+    "packages/frontend/src/lib/perf/drama-observer.test.ts",
+    "packages/frontend/src/lib/perf/drama-observer.ts",
+    "packages/frontend/src/lib/perf/drama-seek.ts",
+    "packages/frontend/src/lib/perf/drama-timing.test.ts",
+    "packages/frontend/src/lib/perf/drama-timing.ts",
+    "packages/shared/src/__tests__/telemetry-contract.test.ts",
+    "packages/shared/src/api/drama-timing.ts",
+    "packages/shared/src/api/drama.ts",
+    "packages/ui-tests/README.md",
+    "packages/ui-tests/fixtures/server.ts",
+    "packages/ui-tests/tests/drama.spec.ts",
+    ".trellis/tasks/10-29-drama-cdn-rollout/review-packet.json"
+  ]
+}

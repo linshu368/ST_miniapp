@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { DramaDeliverySchema } from './drama';
 
 export const DRAMA_TIMING_BODY_LIMIT = 32 * 1024;
 export const DRAMA_TIMING_UPLOAD_TIMEOUT_MS = 5_000;
@@ -120,7 +121,24 @@ const MediaEventSchema = z
 
 export const DramaTimingReportSchema = z
   .object({
-    type: z.enum(['list', 'playback']),
+    type: z.enum(['list', 'playback', 'seek']),
+    delivery: DramaDeliverySchema.optional(),
+    recovery: z
+      .object({ rootId: Id, parentId: Id.optional(), cumulativeMs: Duration })
+      .strict()
+      .optional(),
+    entryElapsedMs: Duration.optional(),
+    overFiveSeconds: z.boolean().optional(),
+    seek: z
+      .object({
+        targetMs: Duration,
+        buffered: z.enum(['yes', 'no', 'unknown']),
+        wasPlaying: z.boolean(),
+        seekedMs: Duration.optional(),
+        frameMs: Duration.optional(),
+      })
+      .strict()
+      .optional(),
     phase: z.enum(['start', 'slow', 'final', 'network']),
     version: z.literal(2).optional(),
     definition: z.literal(DRAMA_TIMING_DEFINITION).optional(),
@@ -152,6 +170,7 @@ export const DramaTimingReportSchema = z
       'background',
       'ready',
       'waiting',
+      'unverified',
     ]),
     elapsedMs: Duration,
     marks: z
@@ -261,7 +280,7 @@ export const DramaTimingReportSchema = z
   .superRefine((report, ctx) => {
     if (
       (report.phase === 'start' || report.phase === 'network') &&
-      (report.version !== 2 || report.type !== 'playback')
+      (report.version !== 2 || (report.type !== 'playback' && report.type !== 'seek'))
     ) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Phase requires v2 playback' });
     }
@@ -270,6 +289,22 @@ export const DramaTimingReportSchema = z
     }
     if (report.phase === 'start' && report.outcome !== 'waiting') {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Start must be waiting' });
+    }
+    if ((report.type === 'seek') !== Boolean(report.seek)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Seek details require seek type' });
+    }
+    if (
+      report.type === 'seek' &&
+      report.outcome === 'playing' &&
+      (!report.frameMethod || report.seek?.frameMs === undefined)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Successful seek requires a target frame',
+      });
+    }
+    if (report.phase === 'network' && report.type === 'seek') {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'No network tail for seek' });
     }
   });
 
@@ -338,6 +373,11 @@ export function dramaTimingLogFields(report: DramaTimingReport) {
     purpose: report.purpose,
     context: report.context,
     diagnostics: report.diagnostics,
+    delivery: report.delivery,
+    recovery: report.recovery,
+    entry_elapsed_ms: report.entryElapsedMs,
+    over_five_seconds: report.overFiveSeconds,
+    seek: report.seek,
     entry: report.entry,
     outcome: report.outcome,
     elapsed_ms: report.elapsedMs,

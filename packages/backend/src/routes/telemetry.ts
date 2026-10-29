@@ -19,10 +19,13 @@ import { requireTelegramAuth } from '../middleware/auth.js';
 import { getOrCreateDbUserRecord } from '../lib/user.js';
 import { requestLogger } from '../lib/logger.js';
 import { MiniappWalletRepository } from '../infrastructure/repositories/MiniappWalletRepository.js';
+import { getDramaTimingPersistenceConfig } from '../platform/runtime-config.js';
+import { dramaExperimentLogUser } from '../features/drama/delivery.js';
 import { observeDramaStartupDiagnostic } from '../lib/engineering-observability.js';
 
 export default async function telemetryRoutes(app: FastifyInstance) {
   const wallets = new MiniappWalletRepository();
+  const timingConfig = getDramaTimingPersistenceConfig();
   // 仅保护本进程的诊断日志容量，不作为业务限流或跨副本一致性机制。
   const uploadWindows = new Map<number, { startedAt: number; count: number }>();
   let totalWindow = { startedAt: performance.now(), count: 0 };
@@ -66,7 +69,13 @@ export default async function telemetryRoutes(app: FastifyInstance) {
       if (!parsed.success)
         return reply.status(400).send(fail('BAD_REQUEST', 'Invalid timing report'));
       const log = requestLogger(request.log, 'drama');
-      const fields = { ...dramaTimingLogFields(parsed.data), upload_request_id: request.id };
+      const fields = {
+        ...dramaTimingLogFields(parsed.data),
+        upload_request_id: request.id,
+        environment: timingConfig.environment,
+        server_release: timingConfig.release,
+        ...dramaExperimentLogUser(userId),
+      };
       try {
         if (parsed.data.phase === 'slow') log.biz.warn(fields, 'drama frontend timing');
         else log.biz.info(fields, 'drama frontend timing');
