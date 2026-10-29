@@ -79,7 +79,6 @@ export default function CreatePage() {
   const feed = useImagePlazaFeedQuery(debouncedSearch, stableTags, sort, media);
   const availableTags = useMemo(() => tags.filter((item) => item.id !== 'all'), [tags]);
   const tagCounts = useImagePlazaTagCountsQuery(debouncedSearch, media, availableTags.length > 0);
-  usePageReady('/create', feed.data !== undefined);
   useEffect(() => {
     if (feed.data !== undefined || feed.isError || feed.isFetched) markCriticalSettled();
   }, [feed.data, feed.isError, feed.isFetched]);
@@ -163,6 +162,12 @@ export default function CreatePage() {
       return true;
     });
   }, [feed.data]);
+  usePageReady(
+    '/create',
+    feed.data !== undefined && (!feed.isError || items.length > 0),
+    false,
+    feed.isError
+  );
   // 行优先分列：1 2 / 3 4，避免 CSS columns 的竖向填充（1 3 / 2 4）
   const feedColumns = useMemo(() => splitIntoColumns(items, 2), [items]);
 

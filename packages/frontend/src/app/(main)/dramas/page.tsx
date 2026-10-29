@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Bookmark, Check, ChevronRight, Clapperboard, Clock3, Play, Search, X } from 'lucide-react';
@@ -8,8 +8,12 @@ import type { DramaSummary } from '@miniapp/shared';
 
 import { useDramaListQuery, usePrefetchDramaPlayback } from '@/lib/api/drama';
 import { selectDramas } from '@/lib/drama-catalog';
+import { DramaListHeader, DramaGridSkeleton } from '@/components/drama/drama-list-shell';
 import { markCriticalSettled } from '@/lib/entry-phase';
 import { dramaTiming, coverLoadMs } from '@/lib/perf/drama-observer';
+import { useFreshAfterFetch, usePageReady } from '@/lib/perf/page-ready';
+import { markPageCriticalVisual } from '@/lib/perf/page-tracker';
+import { supabasePublicImageSrcSet, supabasePublicImageUrl } from '@/lib/supabase-image';
 import { cn } from '@/lib/utils';
 import {
   useDramaLibraryStore,
@@ -18,10 +22,6 @@ import {
   type DramaLibraryPosition,
 } from '@/stores/drama-library-store';
 
-const TABS = [
-  { value: 'theater', label: '剧场' },
-  { value: 'library', label: '追剧' },
-] as const;
 const CATEGORIES = ['全部', '悬疑', '恋爱', '古风', '科幻', '喜剧', '治愈', '脑洞'];
 
 function readLibraryPosition(element: HTMLDivElement, preferredId?: string): DramaLibraryPosition {
@@ -44,8 +44,16 @@ function saveLibraryPosition(filter: 'saved' | 'recent', position: DramaLibraryP
 
 export default function DramasPage() {
   const router = useRouter();
-  const { data, isLoading, isError, refetch } = useDramaListQuery();
+  const { data, isLoading, isError, isFetching, refetch } = useDramaListQuery();
   const hydrated = useHydrateDramaLibrary();
+  const fresh = useFreshAfterFetch(isFetching, data !== undefined, isError);
+  usePageReady(
+    '/dramas',
+    hydrated && data !== undefined && !isError,
+    fresh,
+    isError,
+    data !== undefined && isFetching ? 'cache' : fresh ? 'fetch' : 'unknown'
+  );
   const browse = useDramaLibraryStore((state) => state.browse);
   const setBrowse = useDramaLibraryStore((state) => state.setBrowse);
   const history = useDramaLibraryStore((state) => state.history);
@@ -65,6 +73,37 @@ export default function DramasPage() {
     searching ? '全部' : browse.category,
     browse.sort
   );
+  const criticalPosterIds = visibleDramas.slice(0, 2).map((drama) => drama.id);
+  const criticalPosterKey = criticalPosterIds.join(':');
+  const criticalPosters = useRef<{
+    key: string;
+    outcomes: Map<string, 'loaded' | 'error' | 'absent'>;
+  }>({ key: '', outcomes: new Map() });
+  if (criticalPosters.current.key !== criticalPosterKey) {
+    criticalPosters.current = { key: criticalPosterKey, outcomes: new Map() };
+  }
+  const handleCriticalPosterSettled = useCallback(
+    (id: string, outcome: 'loaded' | 'error' | 'absent') => {
+      if (!criticalPosterIds.includes(id)) return;
+      const state = criticalPosters.current;
+      if (state.key !== criticalPosterKey || state.outcomes.has(id)) return;
+      state.outcomes.set(id, outcome);
+      if (state.outcomes.size !== criticalPosterIds.length) return;
+      const outcomes = [...state.outcomes.values()];
+      markPageCriticalVisual(
+        '/dramas',
+        outcomes.includes('error') ? 'error' : outcomes.includes('loaded') ? 'loaded' : 'absent',
+        undefined,
+        data !== undefined && isFetching ? 'cache' : 'fetch'
+      );
+    },
+    [criticalPosterIds, criticalPosterKey, data, isFetching]
+  );
+  useEffect(() => {
+    if (data !== undefined && !isError && criticalPosterIds.length === 0) {
+      markPageCriticalVisual('/dramas', 'absent', undefined, isFetching ? 'cache' : 'fetch');
+    }
+  }, [criticalPosterIds.length, data, isError, isFetching]);
   const recent = dramas
     .filter((drama) => history[drama.id])
     .sort((a, b) => (history[b.id]?.updatedAt ?? 0) - (history[a.id]?.updatedAt ?? 0));
@@ -183,53 +222,20 @@ export default function DramasPage() {
       className="fixed inset-0 z-30 overflow-hidden bg-[#121113] text-[#eee7e2]"
       aria-label="短剧"
     >
-      <div className="relative mx-auto h-full max-w-lg">
-        <header className={cn('relative z-20 px-5 pt-[env(safe-area-inset-top)]', 'bg-[#121113]')}>
-          <div className="flex h-[60px] items-center justify-between">
-            <nav aria-label="短剧栏目" className="flex h-full items-center gap-7">
-              {TABS.map((tab) => (
-                <button
-                  key={tab.value}
-                  type="button"
-                  aria-current={browse.tab === tab.value ? 'page' : undefined}
-                  onClick={() => switchTab(tab.value)}
-                  className={cn(
-                    'relative flex h-full min-w-11 items-center justify-center text-[18px] transition-colors',
-                    browse.tab === tab.value
-                      ? 'font-bold text-[#eee7e2]'
-                      : 'font-medium text-[#eee7e2]/50'
-                  )}
-                >
-                  {tab.label}
-                  {browse.tab === tab.value ? (
-                    <span
-                      aria-hidden
-                      className="absolute bottom-1.5 h-0.5 w-4 rounded-full bg-white"
-                    />
-                  ) : null}
-                </button>
-              ))}
-            </nav>
-            <button
-              type="button"
-              aria-label="搜索短剧"
-              onClick={openSearch}
-              className="-mr-2 flex h-11 w-11 items-center justify-center rounded-full active:bg-white/10"
-            >
-              <Search className="h-[22px] w-[22px]" />
-            </button>
-          </div>
-        </header>
+      <div
+        ref={browse.tab === 'theater' ? scrollRef : undefined}
+        aria-label={browse.tab === 'theater' ? '短剧列表' : undefined}
+        className={cn(
+          'mx-auto max-w-lg',
+          browse.tab === 'theater'
+            ? 'absolute inset-x-0 bottom-[var(--app-nav-space)] top-[env(safe-area-inset-top)] overflow-y-auto overscroll-contain [scrollbar-width:none]'
+            : 'relative h-full'
+        )}
+      >
+        <DramaListHeader tab={browse.tab} onTabChange={switchTab} onSearch={openSearch} />
 
         {isLoading || !hydrated ? (
-          <div className="space-y-5 px-4 pt-5" aria-label="短剧加载中">
-            <div className="h-11 animate-pulse rounded-xl bg-white/5" />
-            <div className="grid grid-cols-2 gap-3">
-              {Array.from({ length: 6 }, (_, i) => (
-                <div key={i} className="aspect-[3/4] animate-pulse rounded-lg bg-white/5" />
-              ))}
-            </div>
-          </div>
+          <DramaGridSkeleton />
         ) : isError ? (
           <EmptyState
             title="短剧暂时没加载出来"
@@ -245,11 +251,11 @@ export default function DramasPage() {
             onAction={retry}
           />
         ) : browse.tab === 'theater' ? (
-          <div className="absolute inset-x-0 bottom-[var(--app-nav-space)] top-[calc(60px+env(safe-area-inset-top))] flex flex-col">
-            <div className="shrink-0 bg-[#121113] px-4 pb-2">
+          <>
+            <div className="sticky top-0 z-20 bg-[#121113] px-4 py-2">
               <div
                 role="search"
-                className="relative mt-2 flex h-11 items-center rounded-xl bg-white/[0.065]"
+                className="relative flex h-11 items-center rounded-xl bg-white/[0.065]"
               >
                 <Search aria-hidden className="ml-3 h-[18px] w-[18px] shrink-0 text-[#eee7e2]/40" />
                 <input
@@ -273,6 +279,8 @@ export default function DramasPage() {
                   </button>
                 ) : null}
               </div>
+            </div>
+            <div className="px-4 pb-6">
               {searching ? (
                 <div className="mt-2 flex min-h-11 items-center justify-between text-xs">
                   <span className="text-[#eee7e2]/45">全部短剧中搜索</span>
@@ -307,11 +315,6 @@ export default function DramasPage() {
                   ))}
                 </div>
               )}
-            </div>
-            <div
-              ref={scrollRef}
-              className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-6 [scrollbar-width:none]"
-            >
               {latest && history[latest.id] && !searching && browse.category === '全部' ? (
                 <ContinueWatching
                   drama={latest}
@@ -355,6 +358,7 @@ export default function DramasPage() {
                       progress={history[drama.id]}
                       onOpen={rememberScroll}
                       priority={index < 2}
+                      onPosterSettled={index < 2 ? handleCriticalPosterSettled : undefined}
                     />
                   ))}
                 </div>
@@ -372,7 +376,7 @@ export default function DramasPage() {
                 </p>
               ) : null}
             </div>
-          </div>
+          </>
         ) : (
           <div className="absolute inset-x-0 bottom-[var(--app-nav-space)] top-[calc(60px+env(safe-area-inset-top))] flex flex-col px-4">
             <div className="flex shrink-0 items-center gap-2 pb-4 pt-3">
@@ -502,12 +506,32 @@ function Poster({
   drama,
   className,
   priority = false,
+  onSettled,
 }: {
   drama: DramaSummary;
   className?: string;
   priority?: boolean;
+  onSettled?: (outcome: 'loaded' | 'error' | 'absent') => void;
 }) {
   const [failed, setFailed] = useState(false);
+  const settled = useRef(false);
+  const settle = useCallback(
+    (outcome: 'loaded' | 'error' | 'absent') => {
+      if (settled.current) return;
+      settled.current = true;
+      onSettled?.(outcome);
+    },
+    [onSettled]
+  );
+  useEffect(() => {
+    if (!drama.cover_url) settle('absent');
+  }, [drama.cover_url, settle]);
+  const cover = drama.cover_url
+    ? supabasePublicImageUrl(drama.cover_url, { width: 360, height: 480, quality: 68 })
+    : undefined;
+  const coverSrcSet = drama.cover_url
+    ? supabasePublicImageSrcSet(drama.cover_url, [240, 360, 480], { width: 3, height: 4 })
+    : undefined;
   return (
     <div className={cn('relative overflow-hidden bg-[#2a272a]', className)}>
       <Clapperboard
@@ -516,13 +540,22 @@ function Poster({
       />
       {drama.cover_url && !failed ? (
         <img
-          src={drama.cover_url}
+          ref={(node) => {
+            if (node?.complete && node.naturalWidth > 0) settle('loaded');
+          }}
+          src={cover}
+          srcSet={coverSrcSet}
+          sizes="(max-width: 640px) 50vw, 240px"
           alt=""
           loading={priority ? 'eager' : 'lazy'}
           decoding="async"
           fetchPriority={priority ? 'high' : 'low'}
           className="absolute inset-0 h-full w-full object-cover"
-          onError={() => setFailed(true)}
+          onLoad={() => settle('loaded')}
+          onError={() => {
+            setFailed(true);
+            settle('error');
+          }}
         />
       ) : null}
     </div>
@@ -535,12 +568,14 @@ function DramaCard({
   progress,
   onOpen,
   priority,
+  onPosterSettled,
 }: {
   drama: DramaSummary;
   queue: DramaSummary[];
   progress?: DramaProgress;
   onOpen: () => void;
   priority: boolean;
+  onPosterSettled?: (id: string, outcome: 'loaded' | 'error' | 'absent') => void;
 }) {
   return (
     <DramaLink
@@ -550,7 +585,12 @@ function DramaCard({
       className="min-w-0 overflow-hidden rounded-xl bg-[#1f1d20] pb-3 [content-visibility:auto] [contain-intrinsic-size:0_320px] active:opacity-70"
     >
       <div className="relative">
-        <Poster drama={drama} priority={priority} className="aspect-[3/4] w-full" />
+        <Poster
+          drama={drama}
+          priority={priority}
+          onSettled={onPosterSettled ? (outcome) => onPosterSettled(drama.id, outcome) : undefined}
+          className="aspect-[3/4] w-full"
+        />
         <div className="absolute inset-x-0 bottom-0 rounded-b-lg bg-gradient-to-t from-black/75 to-transparent px-2 pb-2 pt-6 text-[10px] text-[#eee7e2]/90">
           {progress
             ? progress.completed
@@ -564,11 +604,6 @@ function DramaCard({
       <h2 className="mx-2.5 mt-2.5 line-clamp-2 text-[14px] font-medium leading-[21px]">
         {drama.title}
       </h2>
-      {drama.description ? (
-        <p className="mx-2.5 mt-1.5 line-clamp-1 text-[11px] leading-5 text-[#eee7e2]/40">
-          {drama.description}
-        </p>
-      ) : null}
     </DramaLink>
   );
 }

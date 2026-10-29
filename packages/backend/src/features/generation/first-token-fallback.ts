@@ -6,6 +6,14 @@ import {
 } from '@miniapp/shared';
 import type { AttemptObservation } from '../../infrastructure/repositories/GenerationObservationRepository.js';
 import { createLeadingThinkingSplitter, readExposedReasoning } from './upstream.js';
+import {
+  observeChatFirstToken,
+  observeGenerationAttempt,
+  observeGenerationDispatch,
+  type AttemptOutcome,
+} from '../../lib/engineering-observability.js';
+
+type PreTokenRejection = Extract<AttemptOutcome, 'filtered' | 'length'>;
 
 export interface TransportModel {
   provider: LlmModelProvider;
@@ -53,6 +61,9 @@ const DIAGNOSTIC_TEXT_LIMIT = 2048;
 
 export async function forwardWithFirstTokenFallback(input: {
   primary: TransportModel;
+  /** Stable selected catalog ID, only for non-authoritative telemetry. */
+  requestedModelId?: string;
+  totalBudgetMs?: number;
   /** Only reasoning enabled for browser display can win delivery. */
   thinkingEnabled?: boolean;
   deferPersistence?: boolean;
@@ -114,7 +125,11 @@ export async function forwardWithFirstTokenFallback(input: {
       })
       .catch(input.onObservationError);
   };
-  const recordTerminal = (attempt: Attempt, reason: AttemptObservation['end_reason']) => {
+  const recordTerminal = (
+    attempt: Attempt,
+    reason: NonNullable<AttemptObservation['end_reason']>,
+    telemetryOutcome?: PreTokenRejection
+  ) => {
     if (attempt.recorded) return;
     attempt.recorded = true;
     attempt.observation.end_reason = reason;
@@ -128,6 +143,20 @@ export async function forwardWithFirstTokenFallback(input: {
         truncated: attempt.truncated,
       };
     }
+    // 仅投影无正文的诊断；业务 observe/checkpoint/交付身份写入继续原样执行。
+    observeGenerationAttempt({
+      provider: attempt.model.provider,
+      model: attempt.model.providerModelId,
+      role: attempt.observation.role,
+      outcome:
+        attempt.controller.signal.reason instanceof LostFirstTokenRace
+          ? 'race_lost'
+          : (telemetryOutcome ?? reason),
+      dispatched: Boolean(attempt.observation.dispatched_at),
+      durationMs: attempt.observation.observed_until_ms,
+      headersMs: attempt.observation.headers_ms,
+      firstTokenMs: attempt.observation.first_token_ms,
+    });
     record(attempt);
   };
   const abortAttempt = (attempt: Attempt | undefined, reason: unknown) => {
@@ -200,6 +229,15 @@ export async function forwardWithFirstTokenFallback(input: {
     clearFirstTokenTimers();
     recordTerminal(attempt, 'first_token_observed');
     abortAttempt(attempt === primary ? fallback : primary, new LostFirstTokenRace());
+    observeChatFirstToken({
+      requestedModel: input.requestedModelId ?? 'unknown',
+      stage: 'selected',
+      deadlineMs: input.totalBudgetMs,
+      triggerMs: input.timeoutMs,
+      winner: attempt.observation.role,
+      fallbackDispatched: Boolean(fallback?.observation.dispatched_at),
+      elapsedMs: performance.now() - input.requestStartedAt,
+    });
     try {
       input.onReady?.();
       resolveSelected({ attempt, result });
@@ -224,6 +262,20 @@ export async function forwardWithFirstTokenFallback(input: {
       attempt.startedAt = performance.now();
       observation.dispatched_at = new Date().toISOString();
       observation.dispatch_offset_ms = attempt.startedAt - input.requestStartedAt;
+      observeGenerationDispatch({
+        provider: model.provider,
+        model: model.providerModelId,
+        role: observation.role,
+        dispatchOffsetMs: observation.dispatch_offset_ms,
+      });
+      if (observation.role === 'fallback')
+        observeChatFirstToken({
+          requestedModel: input.requestedModelId ?? 'unknown',
+          stage: 'fallback_dispatched',
+          elapsedMs: observation.dispatch_offset_ms,
+          deadlineMs: input.totalBudgetMs,
+          triggerMs: input.timeoutMs,
+        });
       record(attempt);
       if (observation.role === 'primary' && differentModels) {
         const wait = Math.min(
@@ -262,6 +314,8 @@ export async function forwardWithFirstTokenFallback(input: {
     let hasVisibleToken = false;
     let terminal = false;
     let terminalReason: 'upstream_error' | 'stream_interrupted' = 'stream_interrupted';
+    // 只修正工程镜像分类；既有业务 end_reason/重试/结算返回保持不变。
+    let telemetryOutcome: PreTokenRejection | undefined;
     let eventType = '';
     const splitter = createLeadingThinkingSplitter({
       onContent: (text) => {
@@ -337,9 +391,14 @@ export async function forwardWithFirstTokenFallback(input: {
           if (typeof delta.refusal === 'string' && delta.refusal.trim()) {
             terminal = true;
             terminalReason = 'upstream_error';
+            telemetryOutcome = 'filtered';
           }
         }
-        if (typeof choice?.finish_reason === 'string' && choice.finish_reason) terminal = true;
+        if (typeof choice?.finish_reason === 'string' && choice.finish_reason) {
+          terminal = true;
+          if (choice.finish_reason === 'content_filter') telemetryOutcome = 'filtered';
+          else if (choice.finish_reason === 'length') telemetryOutcome ??= 'length';
+        }
         if (terminal) break;
       }
       if (item.done || terminal) splitter.finish();
@@ -387,7 +446,7 @@ export async function forwardWithFirstTokenFallback(input: {
       claim(attempt, result);
       return result;
     }
-    recordTerminal(attempt, terminalReason);
+    recordTerminal(attempt, terminalReason, telemetryOutcome);
     stop();
     const headers = new Headers(response.headers);
     headers.delete('x-generation-id');

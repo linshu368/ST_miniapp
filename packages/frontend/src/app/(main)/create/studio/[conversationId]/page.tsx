@@ -77,7 +77,6 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
   const config = useImagePlazaConfigQuery();
   const conversation = useImagePlazaConversationQuery(conversationId);
   const data = conversation.data?.conversation;
-  usePageReady('/create/studio/:id', conversation.data !== undefined);
   useEffect(() => {
     if (
       conversation.data !== undefined ||
@@ -193,6 +192,14 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
   const activeImageReferenceId = model?.supports_i2i ? referenceArtifactId : null;
   const activeVideoReferenceId =
     videoModel && videoModel.image_input !== 'none' ? referenceArtifactId : null;
+  usePageReady(
+    '/create/studio/:id',
+    Boolean(config.data?.enabled && data && model) && !config.isLoading && !conversation.isLoading,
+    false,
+    (!config.data && config.isError) ||
+      (!data && conversation.isError) ||
+      (config.data !== undefined && (!config.data.enabled || !model))
+  );
   useEffect(() => {
     if (initialized || !data || models.length === 0) return;
     const snapshot = data.snapshot;

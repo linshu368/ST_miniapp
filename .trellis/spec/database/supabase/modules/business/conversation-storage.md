@@ -5,8 +5,8 @@ scope: database
 category: business
 status: active
 owners: [database]
-last_verified_task: .trellis/tasks/10-28-first-token-race/
-last_verified_at: 2026-10-28
+last_verified_task: .trellis/tasks/10-29-chat-reply-likes/
+last_verified_at: 2026-10-29
 ---
 
 # 会话与语音存储
@@ -21,13 +21,16 @@ last_verified_at: 2026-10-28
 
 ## 涉及文件
 
-| 路径                                                                                  | 职责                                |
-| ------------------------------------------------------------------------------------- | ----------------------------------- |
-| `packages/shared/migrations/069_miniapp_chat_sessions.sql`                            | 会话基线                            |
-| `packages/shared/migrations/077_context_window.sql`                                   | 上下文水位                          |
-| `packages/shared/migrations/080_chat_message_voice.sql`                               | 语音元数据                          |
-| `packages/shared/migrations/20260914_chat_message_images.sql`                         | 图片 attempt、租约与 Storage bucket |
-| `packages/shared/migrations/20260930_bind_current_text_postprocess_on_turn_start.sql` | 开轮原子绑定当前正式展示版本        |
+| 路径                                                                                  | 职责                                             |
+| ------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| `packages/shared/migrations/069_miniapp_chat_sessions.sql`                            | 会话基线                                         |
+| `packages/shared/migrations/077_context_window.sql`                                   | 上下文水位                                       |
+| `packages/shared/migrations/080_chat_message_voice.sql`                               | 语音元数据                                       |
+| `packages/shared/migrations/20260914_chat_message_images.sql`                         | 图片 attempt、租约与 Storage bucket              |
+| `packages/shared/migrations/20260930_bind_current_text_postprocess_on_turn_start.sql` | 开轮原子绑定当前正式展示版本                     |
+| `packages/shared/migrations/20261029_conversation_branches.sql`                       | 固定历史引用、独立分支会话、继承上下文与开轮适配 |
+| `packages/shared/migrations/20261029_chat_message_likes.sql`                          | 按会话与固定回复版本隔离的个人点赞               |
+| `scripts/test-conversation-branches-migration.sh`                                     | PostgreSQL 17 隔离分支验收入口                   |
 
 ## 关键实现链路
 
@@ -67,8 +70,8 @@ last_verified_at: 2026-10-28
 
 - 2026-10-13：任务 `10-10-image-plaza-v2` 增加初始作品来源模型和 2000 字约束前向迁移。
 
-last_verified_task: .trellis/tasks/10-28-first-token-race/
-last_verified_at: 2026-10-28
+last_verified_task: .trellis/tasks/10-29-chat-reply-likes/
+last_verified_at: 2026-10-29
 
 - 2026-10-20：任务 `Remove confirmed repository noise`（`.trellis/tasks/archive/2026-10/10-20-remove-confirmed-repository-noise/`）删除重复的历史变更记录；commit：`63eee1e847f678f4b2c434f872425a40fc7f891a`。
 
@@ -121,3 +124,27 @@ send/regenerate 携带可选 `first_token_measurement`；后端通过既有 begi
 只消费赢家的replay与原charge_id结算，原报价/权益、超时免扣、主动停止和离页恢复规则不变。败方立即取消，不为排查drain；只把已接收的正文/公开思考有界片段和race_lost原因并入原attempt一次异步终态写，不发给用户、不进上下文、不另计费。正常attempt最多派发/终态两次observe；删除旧首发额外元数据补读，无新cron/轮询。diagnostic保存不阻塞首字，赢家身份仍须持久化才能结算。
 
 新迁移`20261028_first_token_race.sql`扩展现有attempt诊断列并解除禁止首发回赢的守卫，保留数据库单赢家CAS/PT409；Grafana仅获原指标列权限，不能读诊断正文。先本地与TEST验证、合dev，再生产迁移和应用/Admin/看板。回退应用保留诊断列与原账务，不扩权限，不改历史数据。
+
+## 历史轮次分支（2026-10-29，本地实现）
+
+`experience.chat_branch_turns` 保存新会话的局部轮次到原始 `chat_history.id` 的固定引用，冻结分支时实际看到的 revision。`chat_sessions` 增加 `branch_source_session_id`、`branch_source_turn_index`、`branch_source_message_id`、`branch_inherited_turns`、`branch_request_id`。新分支属于独立会话，来源信息仅供身份与溯源，不要求返回来源入口。
+
+service-only `experience.fork_chat_session(uuid,uuid,uuid,uuid,integer)` 验证来源归属、当前 success 且非空回复，截至所选轮取最近 min(A, 可用轮数)，映射为 1..N。幂等键按用户唯一，事务 advisory lock 使用 `conversation-branch:` 用户命名空间，避免跨域读用户表；创建频率为每用户每分钟 10 次，A 硬保护 1..1000。源会话行锁与既有开轮/重生成串行化。只增加会话与引用，不复制 prompt、生成、计费或单独记忆事实。
+
+`session_chat_history` 是 invoker 只读投影：本会话当前生成优先，固定继承引用补齐，暴露 `is_inherited`。仅用于展示和上下文，媒体写入仍查本会话真实 `current_chat_history`。原分析与计费入口不改。继承引用直接指向真实 ID，不递归查询父分支；源软删除、后续重生成不改写既有分支。源历史 FK 使用 deferred NO ACTION 阻止误删，完整账户删除可完成级联。
+
+基础开轮从 `max(本地轮次,N)+1` 开始，基础重生成可在继承最后轮创建真实新 revision，继续复用原 A/B 高低水位。会话展示计数包含继承轮次，真实生成统计不包含继承映射。两个 current-postprocess wrapper 仅将缺诊断表达式改为 `NOT COALESCE(v_previous_exact,false)`；缺行 NULL 回 full，保留原版本绑定与其他逻辑。迁移检查唯一替换锚点及函数 OID/owner/ACL/config 不变。
+
+验收入口覆盖 200→20、200→60/A50、嵌套、窗口推进、普通开轮/重生成、来源独立、权限、四连接并发幂等、异常整笔回滚及账户级联。详细边界见任务 `database-verification.md`。本地隔离验证不代表 TEST/生产已执行。上线顺序为 TEST 验证、生产迁移、Backend、Frontend；分支存在后可隐藏新增入口，但须保留可读取继承前缀的 Backend/RPC 与数据，不能用完全旧 Backend 或删表当作完整恢复方案。
+
+## 单条回复点赞（2026-10-29，本地实现）
+
+`experience.chat_message_likes(session_id,message_id,created_at)` 保存会话主人对固定回复版本的个人反馈；按核心互动状态归属 experience，与角色卡直接点赞分开保存；大厅角色总数通过只读聚合累计两种事实。复合主键保证每会话每版本只有一条；message_id 指真实 history ID，两个同域 FK 删除级联，并有 message_id 索引。RLS 开启，显式撤销默认权限，service_role 仅可 SELECT；唯一权威写入口为 `set_chat_message_like(uuid,uuid,uuid,boolean)`。
+
+RPC 锁定本人未删除会话，验证当前可见、success 且非空回复（含固定继承），以显式 true/false 插入或删除，天然幂等。锁等待 3 秒、声明语句预算 5 秒，SECURITY DEFINER 固定 pg_catalog，禁止 PUBLIC/anon/authenticated 执行。外人/已删除会话返回 P0002；不可见/未完成/失效 revision 返回 P0423。没有用户表跨域读取，没有模型、钱包或会话排序更新。
+
+`session_chat_history` 仅末尾追加 liked，两个 leg 按 session+history ID 读取反馈；只在消息展示投影选择，原上下文查询不选。重新生成的新 history ID 不继承旧点赞，旧版本反馈保留；分支创建不复制反馈，即使固定 history ID 相同，session 不同仍独立。新迁移必须在 conversation_branches 之后执行，不能在 liked 已追加后重跑旧 view 定义。
+
+复用原 `test-conversation-branches-migration.sh` 与 `tests/conversation_branches.sql`，覆盖点亮/取消/重复、权限、普通与继承重生成、分支/嵌套独立、软删阻写、级联、四连接同目标写，以及 EXPLAIN 证明上下文投影不访问点赞表。原分支验收全部保留。测试只使用隔离 PG17 合成数据；迁移未在 TEST/生产执行。应用回退可忽略 liked，保留表/权限/反馈；不必为回退删除用户反馈。
+
+回复点赞计数补充：experience.get_character_reply_like_counts(uuid[])批量返回最多40个角色的所有手动回复赞，miniapp_features.get_character_socials通过该accessor与直接卡片赞相加，保留liked为直接卡片开关。旧版本/独立分支手动赞均计入，取消减回；不复制计数或新增跨域写入。PG用例覆盖多回复累计、幂等、双取消、分支不自动加数、显式分支赞、旧/新revision及批量角色隔离。

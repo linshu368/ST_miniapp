@@ -1,6 +1,10 @@
+import { observeDramaSeek } from './drama-seek';
 import {
   DRAMA_TIMING_MAX_MEDIA_EVENTS,
+  DRAMA_TIMING_DEFINITION,
+  dramaTimingStages,
   type DramaPlayback,
+  type DramaDelivery,
   type DramaTimingReport,
   type DramaMediaEvent,
   type DramaMediaState,
@@ -9,9 +13,11 @@ import {
 } from '@miniapp/shared';
 export type { DramaTimingReport } from '@miniapp/shared';
 import type { ApiAttemptTiming } from '@/lib/api/client';
+import { recordEngineeringEvent } from './grafana';
 
 export type DramaQueryKind = 'list' | 'queue' | 'detail' | 'playback';
 export type DramaEntry = 'cover' | 'switch' | 'episode' | 'retry' | 'direct';
+export type DramaPlaybackOwner = 'home' | 'detail';
 export type DramaOutcome =
   | 'playing'
   | 'error'
@@ -47,6 +53,7 @@ export interface DramaQueryTiming {
 }
 
 interface ListTiming {
+  route: '/' | '/dramas';
   id: string;
   startedAt: number;
   startKind: 'navigation_click' | 'route_commit' | 'query_start' | 'document_navigation' | 'retry';
@@ -56,7 +63,7 @@ interface ListTiming {
   queries: DramaQueryTiming[];
 }
 
-const SLOW_MS = 10_000;
+const SLOW_MS = 5_000;
 const MAX_QUERY_RUNS = 12;
 const rounded = (ms: number) => Math.round(Math.max(0, ms) * 10) / 10;
 
@@ -68,6 +75,7 @@ export class DramaPlaybackTiming {
   addressSource?: DramaTimingReport['addressSource'];
   frameMethod?: DramaTimingReport['frameMethod'];
   resolvedVideoId?: string;
+  delivery?: DramaDelivery;
   private timer: ReturnType<typeof setTimeout>;
   private endAt?: number;
   private queriesTruncated = false;
@@ -90,10 +98,23 @@ export class DramaPlaybackTiming {
     private readonly emit: (report: DramaTimingReport) => void,
     private readonly list?: ListTiming,
     private readonly cover?: DramaTimingReport['cover'],
-    private readonly context?: DramaTimingReport['context']
+    private readonly context?: DramaTimingReport['context'],
+    readonly owner: DramaPlaybackOwner = 'detail',
+    readonly lineage?: { rootId: string; startedAt: number; parentId: string },
+    readonly entryStartedAt?: number
   ) {
-    this.timer = setTimeout(() => this.report('slow'), SLOW_MS);
+    this.timer = setTimeout(
+      () => this.report('slow'),
+      Math.max(0, SLOW_MS - (this.now() - (this.entryStartedAt ?? this.startedAt))) + 1
+    );
     if (context) this.report('start');
+  }
+
+  get rootId(): string {
+    return this.lineage?.rootId ?? this.id;
+  }
+  get rootStartedAt(): number {
+    return this.lineage?.startedAt ?? this.startedAt;
   }
 
   offset(at = this.now()): number {
@@ -214,18 +235,7 @@ export class DramaPlaybackTiming {
     const marks = Object.fromEntries(
       Object.entries(this.marks).map(([key, at]) => [key, rounded(at - this.startedAt)])
     );
-    const stages: Record<string, number> = {};
-    const between = (key: string, start: number | undefined, finish: number | undefined) => {
-      if (start !== undefined && finish !== undefined) stages[key] = rounded(finish - start);
-    };
-    between('navigation', this.startedAt, this.marks.player_ready);
-    between('address_wait', this.startedAt, this.marks.address_ready);
-    // 地址预取与路由并行：前两项是重叠区间，禁止相加当作总耗时。
-    between('address_to_source', this.marks.address_ready, this.marks.source_set);
-    between('source_to_metadata', this.marks.source_set, this.marks.metadata);
-    between('metadata_to_frame', this.marks.metadata, this.marks.first_frame);
-    between('source_to_frame', this.marks.source_set, this.marks.first_frame);
-    between('source_to_playing', this.marks.source_set, this.marks.playing);
+    const stages = dramaTimingStages(marks);
     const list = this.list;
     try {
       const longTasks = this.readLongTasks?.();
@@ -236,6 +246,16 @@ export class DramaPlaybackTiming {
     this.emit({
       type: 'playback',
       phase,
+      definition: DRAMA_TIMING_DEFINITION,
+      route: this.owner === 'home' ? '/' : '/dramas/:id',
+      delivery: this.delivery,
+      recovery: {
+        rootId: this.rootId,
+        parentId: this.lineage?.parentId,
+        cumulativeMs: end - this.rootStartedAt,
+      },
+      entryElapsedMs: this.entryStartedAt === undefined ? undefined : end - this.entryStartedAt,
+      overFiveSeconds: end - (this.entryStartedAt ?? this.startedAt) > 5000,
       ...(this.context ? { version: 2 as const, context: this.context } : {}),
       diagnostics: phase === 'start' ? undefined : { ...this.diagnostics },
       id: this.id,
@@ -243,7 +263,7 @@ export class DramaPlaybackTiming {
       dramaId: this.dramaId,
       videoId: this.resolvedVideoId ?? this.requestedVideoId,
       outcome: this.outcome ?? 'waiting',
-      elapsedMs: rounded(end - this.startedAt),
+      elapsedMs: Math.max(0, end - this.startedAt),
       marks,
       stages,
       addressSource: this.addressSource,
@@ -318,7 +338,9 @@ export class DramaTimingTracker {
   private readonly pending = new Set<DramaQueryTiming>();
   private readonly dataQueries = new WeakMap<object, DramaQueryTiming>();
   private listTimer?: ReturnType<typeof setTimeout>;
-  private onListRoute = false;
+  private onListRoute: ListTiming['route'] | undefined;
+  private entryStartedAt?: number;
+  private stopSeek?: (outcome: 'switched' | 'left' | 'background') => void;
   // WebView 时钟精度可能较低，同一刻度内的缓存/在途判定用事件顺序，不能比较时间戳猜测。
   private sequence = 0;
 
@@ -337,9 +359,29 @@ export class DramaTimingTracker {
     }
   };
 
-  beginList(startKind: ListTiming['startKind'], startedAt = this.now()): void {
+  beginList(
+    startKind: ListTiming['startKind'],
+    startedAt = this.now(),
+    route: ListTiming['route'] = '/dramas'
+  ): void {
     this.endList();
-    this.list = { id: this.newId(), startedAt, startKind, queries: [] };
+    if (startKind === 'document_navigation' || startKind === 'navigation_click')
+      this.entryStartedAt = startedAt;
+    this.list = { id: this.newId(), startedAt, startKind, route, queries: [] };
+    try {
+      // A start denominator for the engineering mirror only; no extra legacy
+      // timing upload / database write is introduced for a catalog visit.
+      recordEngineeringEvent('drama.started', {
+        route,
+        list_start_kind: startKind,
+        report_kind: 'list',
+        stage: 'catalog',
+        outcome: 'waiting',
+        source_measurement_version: DRAMA_TIMING_DEFINITION,
+      });
+    } catch {
+      // Catalog navigation cannot depend on the observability transport.
+    }
     this.listTimer = setTimeout(
       () => this.reportList('slow', 'waiting'),
       Math.max(0, SLOW_MS - (this.now() - startedAt))
@@ -348,26 +390,38 @@ export class DramaTimingTracker {
 
   route(pathname: string, documentStart?: number): void {
     const match = /^\/dramas\/([^/]+)\/?$/.exec(pathname);
-    if (this.playback && (!match || match[1] !== this.playback.dramaId)) {
-      this.playback.finish('left');
-      this.playback = undefined;
+    if (this.playback) {
+      // The embedded home player may mount before this root route effect. Its
+      // owner is '/', not a missing detail route; same-drama owners stay distinct.
+      const remainsOnOwnerRoute =
+        this.playback.owner === 'home' ? pathname === '/' : match?.[1] === this.playback.dramaId;
+      if (!remainsOnOwnerRoute) {
+        this.playback.finish('left');
+        this.stopSeek?.('left');
+        this.playback = undefined;
+      }
     }
-    if (pathname === '/dramas') {
-      if (!this.onListRoute && (!this.list || this.list.ended))
+    if (pathname === '/' || pathname === '/dramas') {
+      if (
+        this.onListRoute !== pathname &&
+        (!this.list || this.list.ended || this.list.route !== pathname)
+      )
         this.beginList(
           documentStart === undefined ? 'route_commit' : 'document_navigation',
-          documentStart
+          documentStart,
+          pathname
         );
-      this.onListRoute = true;
+      this.onListRoute = pathname;
     } else {
-      this.onListRoute = false;
+      this.onListRoute = undefined;
       this.endList();
       if (!match) this.list = undefined;
     }
   }
 
-  listReady(data: object): void {
-    if (!this.list || this.list.ended) this.beginList('route_commit');
+  listReady(data: object, route: ListTiming['route'] = '/dramas'): void {
+    if (!this.list || this.list.ended || this.list.route !== route)
+      this.beginList('route_commit', undefined, route);
     const list = this.list!;
     if (list.readyAt !== undefined) return;
     const query = this.dataQueries.get(data);
@@ -390,6 +444,8 @@ export class DramaTimingTracker {
     this.emit({
       type: 'list',
       phase,
+      definition: DRAMA_TIMING_DEFINITION,
+      route: list.route,
       id: list.id,
       outcome,
       elapsedMs: rounded(end - list.startedAt),
@@ -419,10 +475,10 @@ export class DramaTimingTracker {
     this.list.ended = true;
   }
 
-  private endList(): void {
+  private endList(outcome: 'left' | 'background' = 'left'): void {
     clearTimeout(this.listTimer);
     if (this.list && !this.list.ended) {
-      if (this.list.readyAt === undefined) this.reportList('final', 'left');
+      if (this.list.readyAt === undefined) this.reportList('final', outcome);
       this.list.ended = true;
     }
   }
@@ -431,9 +487,19 @@ export class DramaTimingTracker {
     dramaId: string,
     entry: DramaEntry,
     videoId?: string,
-    cover?: DramaTimingReport['cover']
+    cover?: DramaTimingReport['cover'],
+    owner: DramaPlaybackOwner = 'detail'
   ): DramaPlaybackTiming {
-    this.playback?.finish('switched');
+    const previous = this.playback;
+    const retry =
+      entry === 'retry' &&
+      previous?.dramaId === dramaId &&
+      previous.owner === owner &&
+      previous.requestedVideoId === videoId &&
+      // Completed playback and background time are not startup waiting.
+      (!previous.outcome || ['error', 'unplayable', 'autoplay_blocked'].includes(previous.outcome));
+    previous?.finish(previous.owner === owner ? 'switched' : 'left');
+    this.stopSeek?.('switched');
     const playback = new DramaPlaybackTiming(
       this.newId(),
       dramaId,
@@ -445,18 +511,31 @@ export class DramaTimingTracker {
       this.emit,
       entry === 'cover' ? this.list : undefined,
       cover,
-      this.context
+      this.context,
+      owner,
+      retry
+        ? { rootId: previous.rootId, startedAt: previous.rootStartedAt, parentId: previous.id }
+        : undefined,
+      retry ? previous.entryStartedAt : entry === 'direct' ? this.entryStartedAt : undefined
     );
+    this.entryStartedAt = undefined;
     this.playback = playback;
     for (const query of this.pending) if (this.matches(query, playback)) playback.addQuery(query);
     return playback;
   }
 
-  ensurePlayback(dramaId: string, videoId?: string): DramaPlaybackTiming {
+  ensurePlayback(
+    dramaId: string,
+    videoId?: string,
+    owner: DramaPlaybackOwner = 'detail'
+  ): DramaPlaybackTiming {
     const active = this.playback;
-    return active && active.dramaId === dramaId && active.requestedVideoId === videoId
+    return active &&
+      active.owner === owner &&
+      active.dramaId === dramaId &&
+      active.requestedVideoId === videoId
       ? active
-      : this.beginPlayback(dramaId, 'direct', videoId);
+      : this.beginPlayback(dramaId, 'direct', videoId, undefined, owner);
   }
 
   playbackState(
@@ -466,6 +545,7 @@ export class DramaTimingTracker {
     isError: boolean
   ): void {
     timing.mark('player_ready');
+    if (data && !timing.outcome) timing.delivery = data.delivery;
     if (data?.video_id && !timing.outcome) timing.resolvedVideoId = data.video_id;
     if (data?.playable && data.play_url) timing.addressReady(this.dataQuery(data));
     // refetch 时会保留旧的不可播结果，必须等本轮查询结束后才能判定失败。
@@ -474,10 +554,34 @@ export class DramaTimingTracker {
   }
 
   background(reason: 'visibility_hidden' | 'pagehide' = 'visibility_hidden'): void {
+    this.stopSeek?.('background');
     this.playback?.mediaEvent(reason);
     this.playback?.finish('background');
-    this.endList();
+    this.endList('background');
     this.list = undefined;
+  }
+
+  beginSeek(
+    video: HTMLVideoElement,
+    source: string,
+    target: number,
+    wasPlaying: boolean,
+    dramaId: string,
+    videoId: string | undefined,
+    delivery?: DramaDelivery
+  ) {
+    this.stopSeek?.('switched');
+    const stop = observeDramaSeek(video, source, target, wasPlaying, {
+      id: this.newId(),
+      dramaId,
+      videoId,
+      delivery,
+      context: this.context,
+      now: this.now,
+      emit: this.emit,
+    });
+    this.stopSeek = stop;
+    return stop;
   }
 
   private matches(query: DramaQueryTiming, playback: DramaPlaybackTiming): boolean {
@@ -493,7 +597,8 @@ export class DramaTimingTracker {
     kind: DramaQueryKind,
     dramaId: string | undefined,
     videoId: string | undefined,
-    run: (onAttempt: (attempt: ApiAttemptTiming) => void) => Promise<T>
+    run: (onAttempt: (attempt: ApiAttemptTiming) => void) => Promise<T>,
+    listRoute: ListTiming['route'] = '/dramas'
   ): Promise<T> {
     const query: DramaQueryTiming = {
       kind,
@@ -505,7 +610,8 @@ export class DramaTimingTracker {
     };
     this.pending.add(query);
     if (kind === 'list') {
-      if (!this.list || this.list.ended) this.beginList('query_start', query.startedAt);
+      if (!this.list || this.list.ended || this.list.route !== listRoute)
+        this.beginList('query_start', query.startedAt, listRoute);
       this.addListQuery(query);
     }
     if (this.playback && this.matches(query, this.playback)) this.playback.addQuery(query);

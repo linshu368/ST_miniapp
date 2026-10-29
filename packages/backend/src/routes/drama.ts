@@ -12,6 +12,9 @@ import { DramaRepository } from '../features/drama/repository.js';
 import { isPlayable, toDramaDetail, toDramaSummary } from '../features/drama/assemble.js';
 import { DramaSignedUrlCache, type DramaSigningObservation } from '../features/drama/signed-url.js';
 import { buildCoverUrl } from '../features/drama/cover-url.js';
+import { selectDramaDelivery } from '../features/drama/delivery.js';
+import type { DramaDelivery } from '@miniapp/shared';
+import { observeDramaRequest } from '../lib/engineering-observability.js';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -25,6 +28,7 @@ export default async function dramaRoutes(app: FastifyInstance) {
     sign: DramaSigningObservation;
     errorStage?: Stage;
     playable?: boolean;
+    delivery?: DramaDelivery;
     activeStage?: { stage: Stage; startedAt: number };
   };
   const timings = new WeakMap<FastifyRequest, RequestTiming>();
@@ -66,6 +70,13 @@ export default async function dramaRoutes(app: FastifyInstance) {
       outcome,
       sign_cache: timing.sign.cache ?? 'unused',
     };
+    observeDramaRequest({
+      route: attributes.route,
+      outcome,
+      signCache: attributes.sign_cache,
+      stages: timing.stages,
+      durationMs: reply.elapsedTime,
+    });
     try {
       requestLogger(request.log, 'drama').biz.info(
         {
@@ -80,6 +91,7 @@ export default async function dramaRoutes(app: FastifyInstance) {
           assemble_ms: timing.stages.assemble,
           sign_ms: timing.stages.sign,
           error_stage: timing.errorStage,
+          delivery: timing.delivery,
         },
         'drama request timing'
       );
@@ -145,10 +157,16 @@ export default async function dramaRoutes(app: FastifyInstance) {
 
     // 签名 URL 是临时凭证，禁止中间代理存储；不影响 backend 内部内存缓存
     reply.header('Cache-Control', 'private, no-store');
+    const selection = selectDramaDelivery(request.user!.id);
+    timings.get(request)!.delivery = selection.delivery;
 
     // 未就绪的不签名，直接回不可播，让前端显示「暂无可用集数」
     if (!selected || !isPlayable(selected)) {
       timings.get(request)!.playable = false;
+      const unavailable = selection.delivery
+        ? { ...selection.delivery, provider: 'unknown' as const, reason: 'unavailable' as const }
+        : undefined;
+      timings.get(request)!.delivery = unavailable;
       return reply.send(
         ok<GetDramaPlaybackData>({
           playback: {
@@ -156,6 +174,7 @@ export default async function dramaRoutes(app: FastifyInstance) {
             playable: false,
             play_url: null,
             expires_at: null,
+            delivery: unavailable,
           },
         })
       );
@@ -163,11 +182,18 @@ export default async function dramaRoutes(app: FastifyInstance) {
 
     const timing = timings.get(request)!;
     const signed = await measure(request, 'sign', () =>
-      signedUrls.getPlayUrl(selected.object_path!, request.log, timing.sign)
+      signedUrls.getPlayUrl(selected.object_path!, request.log, timing.sign, selection.cdn)
     );
     timing.playable = signed.playable;
     if (!signed.playable) timing.errorStage = 'sign';
 
-    return reply.send(ok<GetDramaPlaybackData>({ playback: { video_id: selected.id, ...signed } }));
+    const delivery =
+      selection.delivery && !signed.playable
+        ? { ...selection.delivery, provider: 'unknown' as const, reason: 'unavailable' as const }
+        : selection.delivery;
+    timing.delivery = delivery;
+    return reply.send(
+      ok<GetDramaPlaybackData>({ playback: { video_id: selected.id, ...signed, delivery } })
+    );
   });
 }

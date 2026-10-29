@@ -1,7 +1,8 @@
 'use client';
 
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
+import { createRequestId } from '@/lib/perf/request-timing';
 import type {
   DramaDetail,
   DramaPlayback,
@@ -18,6 +19,87 @@ import type {
 
 import { apiClient } from './client';
 import { dramaTiming } from '@/lib/perf/drama-observer';
+
+const DRAMA_CATALOG_CACHE_KEY = 'miniapp:drama-catalog:v1';
+const DRAMA_CATALOG_STALE_MS = 15 * 60_000;
+const DRAMA_CATALOG_MAX_AGE_MS = 24 * 60 * 60_000;
+const DRAMA_CATALOG_MAX_ITEMS = 300;
+
+interface PersistedDramaCatalog {
+  savedAt: number;
+  data: DramaSummary[];
+}
+
+let persistedCatalog: PersistedDramaCatalog | null | undefined;
+let catalogPersistScheduled = false;
+let pendingCatalog: DramaSummary[] | undefined;
+
+function isDramaSummary(value: unknown): value is DramaSummary {
+  if (!value || typeof value !== 'object') return false;
+  const item = value as Partial<DramaSummary>;
+  return (
+    typeof item.id === 'string' &&
+    typeof item.title === 'string' &&
+    (typeof item.cover_url === 'string' || item.cover_url === null) &&
+    Array.isArray(item.tags) &&
+    item.tags.every((tag) => typeof tag === 'string') &&
+    typeof item.description === 'string' &&
+    typeof item.episode_count === 'number' &&
+    Number.isFinite(item.episode_count) &&
+    (typeof item.duration_seconds === 'number' || item.duration_seconds === null)
+  );
+}
+
+function readPersistedDramaCatalog(): PersistedDramaCatalog | undefined {
+  if (persistedCatalog !== undefined) return persistedCatalog ?? undefined;
+  persistedCatalog = null;
+  if (typeof window === 'undefined') return undefined;
+  try {
+    const raw = window.localStorage.getItem(DRAMA_CATALOG_CACHE_KEY);
+    if (!raw) return undefined;
+    const cached = JSON.parse(raw) as Partial<PersistedDramaCatalog>;
+    if (
+      typeof cached.savedAt !== 'number' ||
+      Date.now() - cached.savedAt > DRAMA_CATALOG_MAX_AGE_MS ||
+      !Array.isArray(cached.data) ||
+      cached.data.length > DRAMA_CATALOG_MAX_ITEMS ||
+      !cached.data.every(isDramaSummary)
+    ) {
+      window.localStorage.removeItem(DRAMA_CATALOG_CACHE_KEY);
+      return undefined;
+    }
+    persistedCatalog = { savedAt: cached.savedAt, data: cached.data };
+    return persistedCatalog;
+  } catch {
+    return undefined;
+  }
+}
+
+function flushPersistedDramaCatalog(): void {
+  catalogPersistScheduled = false;
+  const data = pendingCatalog;
+  pendingCatalog = undefined;
+  if (!data) return;
+  const snapshot = { savedAt: Date.now(), data: data.slice(0, DRAMA_CATALOG_MAX_ITEMS) };
+  persistedCatalog = snapshot;
+  try {
+    window.localStorage.setItem(DRAMA_CATALOG_CACHE_KEY, JSON.stringify(snapshot));
+  } catch {
+    // Storage unavailable/quota exceeded: React Query's in-memory cache still works.
+  }
+}
+
+function persistDramaCatalog(data: DramaSummary[]): void {
+  if (typeof window === 'undefined') return;
+  pendingCatalog = data;
+  if (catalogPersistScheduled) return;
+  catalogPersistScheduled = true;
+  if (typeof window.requestIdleCallback === 'function') {
+    window.requestIdleCallback(flushPersistedDramaCatalog, { timeout: 3000 });
+  } else {
+    window.setTimeout(flushPersistedDramaCatalog, 500);
+  }
+}
 
 export const dramaKeys = {
   all: ['dramas'] as const,
@@ -126,17 +208,25 @@ export function useDramaCommentMutations(id: string) {
 
 async function fetchDramas(
   kind: 'list' | 'queue' = 'list',
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  route: '/' | '/dramas' = '/dramas'
 ): Promise<DramaSummary[]> {
-  return dramaTiming.query(kind, undefined, undefined, async (onAttempt) => {
-    const data = await apiClient<GetDramasData>('/api/dramas', {
-      onAttempt,
-      signal,
-      timeoutMs: 5000,
-      queuePriority: kind === 'list' ? 'critical' : 'background',
-    });
-    return data.dramas;
-  });
+  return dramaTiming.query(
+    kind,
+    undefined,
+    undefined,
+    async (onAttempt) => {
+      const data = await apiClient<GetDramasData>('/api/dramas', {
+        onAttempt,
+        signal,
+        timeoutMs: 5000,
+        queuePriority: kind === 'list' ? 'critical' : 'background',
+      });
+      persistDramaCatalog(data.dramas);
+      return data.dramas;
+    },
+    route
+  );
 }
 
 async function fetchDramaDetail(id: string, signal?: AbortSignal): Promise<DramaDetail> {
@@ -160,17 +250,26 @@ async function fetchDramaPlayback(
   return dramaTiming.query('playback', id, videoId, async (onAttempt) => {
     const data = await apiClient<GetDramaPlaybackData>(
       `/api/dramas/${encodeURIComponent(id)}/play${suffix}`,
-      { onAttempt, signal, timeoutMs: 5000, queuePriority: 'critical' }
+      {
+        onAttempt,
+        signal,
+        timeoutMs: 5000,
+        queuePriority: 'critical',
+      }
     );
     return data.playback;
   });
 }
 
 // 保留结果对象身份，防止 structural sharing 把本次请求映射到旧对象的计时元数据。
-export function useDramaListQuery() {
+export function useDramaListQuery(route: '/' | '/dramas' = '/dramas') {
   return useQuery({
     queryKey: dramaKeys.list(),
-    queryFn: ({ signal }) => fetchDramas('list', signal),
+    queryFn: ({ signal }) => fetchDramas('list', signal, route),
+    initialData: () => readPersistedDramaCatalog()?.data,
+    initialDataUpdatedAt: () => readPersistedDramaCatalog()?.savedAt,
+    staleTime: DRAMA_CATALOG_STALE_MS,
+    gcTime: DRAMA_CATALOG_MAX_AGE_MS,
     structuralSharing: false,
     retry: false,
   });
@@ -198,31 +297,24 @@ export function useDramaDetailQuery(id: string) {
   });
 }
 
-/**
- * 不传 videoId 时后端按固定顺序返回第一条可播视频，所以首次播放不必等详情；
- * 换集时传目标 video id。签名链接有效期 1 小时，用全局默认 staleTime（30s）
- * 已明显短于 TTL，重新进入详情页即可拿到新链接，不需要单独调大/调小。
- */
+/** Each playback intent confirms the current provider; a prefetched old CDN URL cannot bypass shutdown. */
 export function useDramaPlaybackQuery(id: string, videoId?: string) {
+  const intent = useMemo(() => `${id}:${videoId ?? ''}:${createRequestId()}`, [id, videoId]);
   return useQuery({
-    queryKey: dramaKeys.playback(id, videoId),
+    queryKey: [...dramaKeys.playback(id, videoId), 'intent', intent],
     queryFn: ({ signal }) => fetchDramaPlayback(id, videoId, signal),
     structuralSharing: false,
     enabled: Boolean(id),
+    gcTime: 0,
     retry: false,
   });
 }
 
-/** 临近片尾预取下一条，不改变用户从剧场进入时的筛选队列。 */
+/** 临近片尾只预取详情；视频地址在实际播放时确认当前路径。 */
 export function usePreloadDramaPlayback() {
   const client = useQueryClient();
   return useCallback(
-    (id: string, videoId?: string) => {
-      void client.prefetchQuery({
-        queryKey: dramaKeys.playback(id, videoId),
-        queryFn: ({ signal }) => fetchDramaPlayback(id, videoId, signal),
-        retry: false,
-      });
+    (id: string, _videoId?: string) => {
       void client.prefetchQuery({
         queryKey: dramaKeys.detail(id),
         queryFn: ({ signal }) => fetchDramaDetail(id, signal),
@@ -233,18 +325,12 @@ export function usePreloadDramaPlayback() {
   );
 }
 
-/** 点击卡片时顺手预取首集播放地址，省掉路由跳转后再发请求的一小段延迟。 */
+/** 点击卡片固定筛选队列，取址由实际播放意图负责。 */
 export function usePrefetchDramaPlayback() {
   const queryClient = useQueryClient();
-  return (id: string, browseQueue?: DramaSummary[], videoId?: string) => {
+  return (id: string, browseQueue?: DramaSummary[], _videoId?: string) => {
     // 点击时固定当前筛选/排序后的队列，保证进入播放后的上下滑仍沿用所见顺序。
     const list = browseQueue ?? queryClient.getQueryData<DramaSummary[]>(dramaKeys.list());
     if (list) queryClient.setQueryData(dramaKeys.browseQueue(), list);
-    void queryClient.prefetchQuery({
-      queryKey: dramaKeys.playback(id, videoId),
-      queryFn: ({ signal }) => fetchDramaPlayback(id, videoId, signal),
-      structuralSharing: false,
-      retry: false,
-    });
   };
 }

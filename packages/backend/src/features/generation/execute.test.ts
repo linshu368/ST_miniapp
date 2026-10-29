@@ -29,6 +29,20 @@ const quotaState = vi.hoisted(() => ({
   finalize: vi.fn(),
   reserveFailure: false,
 }));
+const telemetry = vi.hoisted(() => ({
+  chat: vi.fn(),
+  dispatch: vi.fn(),
+  attempt: vi.fn(),
+  prepare: vi.fn(),
+  terminal: vi.fn(),
+}));
+vi.mock('../../lib/engineering-observability.js', () => ({
+  observeChatFirstToken: telemetry.chat,
+  observeGenerationDispatch: telemetry.dispatch,
+  observeGenerationAttempt: telemetry.attempt,
+  observeGenerationPrepare: telemetry.prepare,
+  observeGenerationTerminal: telemetry.terminal,
+}));
 
 vi.mock('./quota.js', () => ({
   reserveCharacterFreeQuota: async () => {
@@ -172,6 +186,7 @@ function requestBodyOf(fetchMock: ReturnType<typeof stubUpstream>): Record<strin
 }
 
 beforeEach(() => {
+  Object.values(telemetry).forEach((fn) => fn.mockClear());
   quotaState.granted = false;
   quotaState.reserveFailure = false;
   quotaState.finalize.mockReset().mockImplementation(async (success: boolean) => ({
@@ -240,6 +255,11 @@ describe('execute（流式）', () => {
       exchange_rate: 1,
     });
     expect(entry.charge_id).toBe(result.chargeId);
+    expect(telemetry.dispatch).toHaveBeenCalledOnce();
+    expect(telemetry.attempt).toHaveBeenCalledOnce();
+    expect(telemetry.terminal).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ outcome: 'success', stream: true })
+    );
   });
 
   it('正文和 [DONE] 完整但 finish_reason 暂缺时按成功落库并等待异步结算', async () => {
@@ -295,6 +315,12 @@ describe('execute（流式）', () => {
       assistant_reply: '敏感回复片段',
       finish_reason: 'content_filter',
     });
+    expect(telemetry.terminal).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ outcome: 'filtered', stream: true })
+    );
+    expect(telemetry.attempt).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ outcome: 'filtered', phase: 'generation' })
+    );
   });
 
   it('自然结束但没有正文按 empty 收口且不扣费', async () => {
@@ -347,6 +373,12 @@ describe('execute（流式）', () => {
       content: '还没说完',
       finishReason: 'length',
     });
+    expect(telemetry.terminal).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ outcome: 'length', stream: true })
+    );
+    expect(telemetry.attempt).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ outcome: 'length', phase: 'generation' })
+    );
   });
 
   it('客户端不消费也照样跑完落库（断线不终止上游）', async () => {
@@ -854,6 +886,12 @@ describe('cancellation, deadlines and billing arbitration', () => {
       generation_id: null,
     });
     expect(quote).toHaveBeenCalledOnce();
+    expect(telemetry.terminal).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ outcome: 'user_cancelled', stream: true })
+    );
+    expect(telemetry.attempt).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ outcome: 'user_cancelled', phase: 'generation' })
+    );
   });
 
   it('a system deadline while awaiting headers stays a free failure', async () => {
@@ -875,6 +913,12 @@ describe('cancellation, deadlines and billing arbitration', () => {
     );
     expect(result.status).toBe('upstream_error');
     expect(savedHistory()).toHaveLength(0);
+    expect(telemetry.terminal).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ outcome: 'timeout', stream: true })
+    );
+    expect(telemetry.attempt).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ outcome: 'timeout', phase: 'generation' })
+    );
   });
 
   it('cancel winner suppresses success even after all upstream tokens and DONE arrive', async () => {

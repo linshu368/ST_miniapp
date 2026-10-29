@@ -9,6 +9,7 @@
 export * from './api/envelope';
 export * from './api/characters';
 export * from './api/favorites';
+export * from './api/character-social';
 export * from './api/health';
 export * from './api/payment';
 export * from './api/alerting';

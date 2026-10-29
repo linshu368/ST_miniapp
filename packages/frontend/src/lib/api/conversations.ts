@@ -2,17 +2,21 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
-  ReportFirstTokenRequest,
-  ReportFirstTokenData,
   CancelConversationTurnData,
   CancelConversationTurnRequest,
+  ChatMessage,
   CreateConversationData,
   DeleteConversationData,
+  ForkConversationData,
+  ForkConversationRequest,
   GetConversationData,
   ListConversationsData,
+  SetMessageLikeData,
+  SetMessageLikeRequest,
   UpdateConversationData,
 } from '@miniapp/shared';
 import { apiClient } from './client';
+import { characterSocialKeys, refreshCharacterSocial } from './character-social';
 
 export const conversationKeys = {
   all: ['conversations'] as const,
@@ -31,11 +35,13 @@ export function useConversationsQuery(characterId: string | undefined, enabled =
   return useQuery<ListConversationsData>({
     queryKey: conversationKeys.list(characterId),
     enabled,
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const search = new URLSearchParams();
       if (characterId) search.set('character_id', characterId);
       const query = search.toString();
-      return apiClient<ListConversationsData>(`/api/v1/conversations${query ? `?${query}` : ''}`);
+      return apiClient<ListConversationsData>(`/api/v1/conversations${query ? `?${query}` : ''}`, {
+        signal,
+      });
     },
     // 大厅「聊过」标记可稍旧；拉长鲜活期减少与列表/进聊争槽。
     staleTime: 60_000,
@@ -53,9 +59,9 @@ export function useConversationQuery(sessionId: string | undefined) {
   return useQuery<GetConversationData>({
     queryKey: conversationKeys.detail(sessionId ?? ''),
     enabled: Boolean(sessionId),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       if (!sessionId) throw new Error('session id is required');
-      return fetchConversationDetail(sessionId);
+      return fetchConversationDetail(sessionId, 10_000, signal);
     },
     staleTime: 0,
     // 库里还有一条没收口的 assistant 消息时轮询到它收口为止。
@@ -68,39 +74,19 @@ export function useConversationQuery(sessionId: string | undefined) {
 /** 有限等待，供详情 query 与取消前精确定位当前 revision 复用。 */
 export function fetchConversationDetail(
   sessionId: string,
-  timeoutMs = 10_000
+  timeoutMs = 10_000,
+  signal?: AbortSignal
 ): Promise<GetConversationData> {
   // 用 timeoutMs 而不是 AbortSignal.timeout：超时走 RequestTimeoutError，
   // apiClient 才能对 GET 做最多 1 次传输层重试（调用方 abort 仍不重试）。
   return apiClient<GetConversationData>(`/api/v1/conversations/${encodeURIComponent(sessionId)}`, {
     timeoutMs,
     queuePriority: 'critical',
+    signal,
   });
 }
 
-export async function reportConversationFirstToken(
-  sessionId: string,
-  body: ReportFirstTokenRequest
-): Promise<void> {
-  // Identity can arrive while the dispatch intent is still committing. Bounded, idempotent retries.
-  for (const delay of [0, 300, 1000]) {
-    if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
-    try {
-      const result = await apiClient<ReportFirstTokenData>(
-        `/api/v1/conversations/${encodeURIComponent(sessionId)}/first-token`,
-        {
-          method: 'POST',
-          body: JSON.stringify(body),
-          signal: AbortSignal.timeout(3000),
-          keepalive: true,
-        }
-      );
-      if (result.recorded) return;
-    } catch {
-      /* A missing client-delivery report must not interrupt the conversation. */
-    }
-  }
-}
+export { reportConversationFirstToken } from './first-token-reports';
 
 export function useCancelConversationTurnMutation() {
   const queryClient = useQueryClient();
@@ -171,6 +157,82 @@ export function useCreateConversationMutation() {
         has_more: false,
       });
       void queryClient.invalidateQueries({ queryKey: conversationKeys.lists });
+    },
+  });
+}
+
+/** 分支是一个独立会话；只更新新详情与会话列表，不改写来源缓存。 */
+export function useForkConversationMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    retry: false,
+    mutationFn: ({ sessionId, ...body }: ForkConversationRequest & { sessionId: string }) =>
+      apiClient<ForkConversationData>(
+        `/api/v1/conversations/${encodeURIComponent(sessionId)}/branch`,
+        {
+          method: 'POST',
+          body: JSON.stringify(body),
+          timeoutMs: 15_000,
+          queuePriority: 'critical',
+        }
+      ),
+    onSuccess: (data) => {
+      queryClient.setQueryData(conversationKeys.detail(data.session.id), data);
+      void queryClient.invalidateQueries({ queryKey: conversationKeys.lists });
+    },
+  });
+}
+
+/** 点赞属于会话内某个固定版本，不能只按轮次或来源消息复用。 */
+export function applyMessageLike(messages: ChatMessage[], data: SetMessageLikeData): ChatMessage[] {
+  return messages.map((message) =>
+    message.session_id === data.session_id && message.id === data.message_id
+      ? { ...message, liked: data.liked }
+      : message
+  );
+}
+
+export function useSetMessageLikeMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    retry: false,
+    mutationFn: ({
+      sessionId,
+      messageId,
+      liked,
+    }: SetMessageLikeRequest & { sessionId: string; messageId: string }) =>
+      apiClient<SetMessageLikeData>(
+        `/api/v1/conversations/${encodeURIComponent(sessionId)}/messages/${encodeURIComponent(messageId)}/like`,
+        { method: 'PUT', body: JSON.stringify({ liked }), timeoutMs: 10_000 }
+      ),
+    onSuccess: async (data) => {
+      // 停止写入前发出的详情请求，避免旧 liked 值晚到后覆盖刚确认的反馈。
+      await queryClient.cancelQueries({
+        queryKey: conversationKeys.detail(data.session_id),
+        exact: true,
+      });
+      queryClient.setQueryData<GetConversationData>(
+        conversationKeys.detail(data.session_id),
+        (current) =>
+          current ? { ...current, messages: applyMessageLike(current.messages, data) } : current
+      );
+      const characterId = queryClient.getQueryData<GetConversationData>(
+        conversationKeys.detail(data.session_id)
+      )?.session.character_id;
+      if (characterId) {
+        // 已保存的点赞不因次要计数刷新失败而回滚；下次进入大厅仍可重新读取。
+        void refreshCharacterSocial(queryClient, characterId).catch(() =>
+          queryClient.invalidateQueries({
+            queryKey: characterSocialKeys.viewer(),
+            predicate: (query) =>
+              (query.queryKey[2] === 'social' || query.queryKey[2] === 'batch') &&
+              query.queryKey.slice(3).includes(characterId),
+            refetchType: 'none',
+          })
+        );
+      }
     },
   });
 }

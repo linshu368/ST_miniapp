@@ -1,14 +1,22 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { selectDramaDelivery, dramaExperimentUser } from '../features/drama/delivery.js';
 
 const mocks = vi.hoisted(() => ({
   getDomainDb: vi.fn(),
+  config: {
+    database: { target: 'test' as 'test' | 'production' },
+    supabase: { url: 'https://zoqelpfhurwehlvypryl.supabase.co' },
+  },
 }));
+
+vi.mock('./config.js', () => ({ config: mocks.config }));
 
 vi.mock('../lib/supabase.js', () => ({
   getDomainDb: mocks.getDomainDb,
 }));
 
 import {
+  getDramaPlaybackCdnConfig,
   clearRuntimeConfigInflightReads,
   fetchRuntimeConfigEntries,
   fetchRuntimeConfigEntry,
@@ -166,5 +174,112 @@ describe('runtime config in-flight reads', () => {
     ]);
 
     expect(readEntries).toHaveBeenCalledTimes(4);
+  });
+});
+
+describe('drama CDN deployment boundary', () => {
+  const originalTarget = mocks.config.database.target;
+  const originalUrl = mocks.config.supabase.url;
+  beforeEach(() => {
+    vi.stubEnv('DRAMA_CDN_ENABLED', 'true');
+    vi.stubEnv('DRAMA_CDN_TOKEN_KEY', 'fictional-key');
+    vi.stubEnv('RAILWAY_ENVIRONMENT_NAME', 'pr-525');
+    vi.stubEnv('DEV_AUTH_BYPASS', '0');
+    vi.stubEnv('MOCK_AUTH', '0');
+    mocks.config.database.target = 'test';
+    mocks.config.supabase.url = 'https://zoqelpfhurwehlvypryl.supabase.co';
+  });
+  afterEach(() => {
+    mocks.config.database.target = originalTarget;
+    mocks.config.supabase.url = originalUrl;
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+  it('enables ordinary playback for pr-525 TEST without account or sample selectors', () => {
+    expect(getDramaPlaybackCdnConfig()).toMatchObject({
+      tokenKey: 'fictional-key',
+      pathPrefix: '/preview-test',
+      sourceOrigin: mocks.config.supabase.url,
+    });
+  });
+  it('selects only the fixed Bunny cohort and restores its original route when disabled', () => {
+    vi.stubEnv('DRAMA_CDN_EXPERIMENT_ID', 'unit-cohort');
+    vi.stubEnv('DRAMA_CDN_EXPERIMENT_KEY', 'fictional-group-key-for-local-testing-only');
+    const experiment = {
+      id: 'unit-cohort',
+      key: 'fictional-group-key-for-local-testing-only',
+      environment: 'test' as const,
+      enabled: true,
+    };
+    const ids = Array.from({ length: 100 }, (_, id) => id);
+    const bunny = ids.find((id) => dramaExperimentUser(id, experiment).assigned_group === 'bunny')!;
+    const control = ids.find(
+      (id) => dramaExperimentUser(id, experiment).assigned_group === 'supabase'
+    )!;
+    expect(selectDramaDelivery(bunny)).toMatchObject({
+      delivery: { group: 'bunny', provider: 'bunny', reason: 'assigned' },
+      cdn: { pathPrefix: '/preview-test' },
+    });
+    expect(selectDramaDelivery(control)).toMatchObject({
+      delivery: { group: 'supabase', provider: 'supabase' },
+      cdn: null,
+    });
+    vi.stubEnv('DRAMA_CDN_ENABLED', 'false');
+    expect(selectDramaDelivery(bunny)).toMatchObject({
+      delivery: { group: 'bunny', provider: 'supabase', reason: 'disabled' },
+      cdn: null,
+    });
+  });
+  it.each(['production', 'development', 'pr-526', ''])(
+    'keeps Supabase for environment %s',
+    (name) => {
+      vi.stubEnv('RAILWAY_ENVIRONMENT_NAME', name);
+      expect(getDramaPlaybackCdnConfig()).toBeNull();
+    }
+  );
+  it('keeps production data and disabled previews off Bunny', () => {
+    mocks.config.database.target = 'production';
+    expect(getDramaPlaybackCdnConfig()).toBeNull();
+    mocks.config.database.target = 'test';
+    vi.stubEnv('DRAMA_CDN_ENABLED', 'false');
+    expect(getDramaPlaybackCdnConfig()).toBeNull();
+  });
+  it('restores the original path when disabled even if experiment credentials are invalid', () => {
+    vi.stubEnv('DRAMA_CDN_EXPERIMENT_ID', 'unit-cohort');
+    vi.stubEnv('DRAMA_CDN_EXPERIMENT_KEY', '');
+    expect(() => selectDramaDelivery(42)).toThrow('drama_experiment_config_invalid');
+    vi.stubEnv('DRAMA_CDN_ENABLED', 'false');
+    expect(selectDramaDelivery(42)).toEqual({ cdn: null, delivery: undefined });
+  });
+  it('requires explicit production configuration and closes without discarding the cohort key', () => {
+    mocks.config.database.target = 'production';
+    mocks.config.supabase.url = 'https://wbtsfzozlmurljvglhpn.supabase.co';
+    vi.stubEnv('RAILWAY_ENVIRONMENT_NAME', 'production');
+    vi.stubEnv('DRAMA_CDN_TOKEN_KEY', 'fictional-signing-key-for-local-testing-only');
+    vi.stubEnv('DRAMA_CDN_EXPERIMENT_ID', 'unit-experiment');
+    vi.stubEnv('DRAMA_CDN_EXPERIMENT_KEY', 'fictional-group-key-for-local-testing-only');
+    expect(() => getDramaPlaybackCdnConfig()).toThrow();
+    vi.stubEnv('DRAMA_CDN_BASE_URL', 'https://fictional-production.b-cdn.net');
+    expect(getDramaPlaybackCdnConfig()).toMatchObject({
+      pathPrefix: '/production',
+      sourceOrigin: mocks.config.supabase.url,
+    });
+    mocks.config.supabase.url = originalUrl;
+    expect(() => getDramaPlaybackCdnConfig()).toThrow();
+    vi.stubEnv('DRAMA_CDN_ENABLED', 'false');
+    expect(getDramaPlaybackCdnConfig()).toBeNull();
+  });
+  it('refuses invalid credentials, source or authentication bypass', () => {
+    vi.stubEnv('DRAMA_CDN_TOKEN_KEY', '');
+    expect(() => getDramaPlaybackCdnConfig()).toThrow('drama_cdn_config_invalid');
+    vi.stubEnv('DRAMA_CDN_TOKEN_KEY', 'fictional-key');
+    vi.stubEnv('DEV_AUTH_BYPASS', '1');
+    expect(() => getDramaPlaybackCdnConfig()).toThrow('drama_cdn_config_invalid');
+    vi.stubEnv('DEV_AUTH_BYPASS', '0');
+    vi.stubEnv('MOCK_AUTH', '1');
+    expect(() => getDramaPlaybackCdnConfig()).toThrow('drama_cdn_config_invalid');
+    vi.stubEnv('MOCK_AUTH', '0');
+    mocks.config.supabase.url = 'https://another.supabase.co';
+    expect(() => getDramaPlaybackCdnConfig()).toThrow('drama_cdn_config_invalid');
   });
 });

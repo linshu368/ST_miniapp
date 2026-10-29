@@ -22,6 +22,10 @@ export const MAX_CONVERSATION_REASONING_LENGTH = 65_536;
 
 export interface ChatMessage {
   id: string;
+  /** Frozen text inherited from a branch point; never a new generation or charge. */
+  inherited?: boolean;
+  /** Owner feedback on this reply version within this conversation; absent means not liked. */
+  liked?: boolean;
   /** Optional caller correlation UUID; identifies a pending request before SSE start. */
   request_id?: string;
   session_id: string;
@@ -48,6 +52,12 @@ export interface ChatMessage {
 
 export interface ChatSession {
   id: string;
+  /** Present only for a conversation started from an existing reply. */
+  branch?: {
+    source_session_id: string | null;
+    source_turn_index: number;
+    inherited_turns: number;
+  };
   character_id: string;
   /** 会话显示名。创建时默认写入绑定角色的 name；用户重命名后为实值；清空则恢复为当前角色名 */
   title: string | null;
@@ -110,6 +120,10 @@ export type ConversationErrorCode =
   | 'insufficient_balance'
   /** 只允许对最后一轮重生成，且该轮必须含 user 消息（本轮决策 5） */
   | 'regenerate_not_allowed'
+  | 'branch_not_allowed'
+  | 'branch_request_conflict'
+  | 'branch_rate_limited'
+  | 'reply_like_not_allowed'
   | 'upstream_error';
 
 // ==== POST /api/v1/conversations ====
@@ -157,6 +171,29 @@ export interface GetConversationData {
   /** 按 turn_index 升序，同轮内 user 在前 assistant 在后 */
   messages: ChatMessage[];
   has_more: boolean;
+}
+
+// ==== POST /api/v1/conversations/:id/branch ====
+
+export const ForkConversationRequestSchema = z
+  .object({
+    message_id: z.string().uuid(),
+    /** Reuse this UUID after an uncertain response; a fresh click starts a new branch. */
+    request_id: z.string().uuid(),
+  })
+  .strict();
+
+export type ForkConversationRequest = z.infer<typeof ForkConversationRequestSchema>;
+export type ForkConversationData = GetConversationData;
+
+// ==== PUT /api/v1/conversations/:id/messages/:messageId/like ====
+
+export const SetMessageLikeRequestSchema = z.object({ liked: z.boolean() }).strict();
+export type SetMessageLikeRequest = z.infer<typeof SetMessageLikeRequestSchema>;
+export interface SetMessageLikeData {
+  session_id: string;
+  message_id: string;
+  liked: boolean;
 }
 
 // ==== PATCH /api/v1/conversations/:id ====
@@ -217,7 +254,13 @@ export interface RegenerateRequest {
  * user_message_id 在重生成时为 null（该轮的 user 消息早已存在）。
  */
 export interface ConversationStreamStartEvent {
+  /** Frozen public catalog ID; avoids attributing delivery to a stale client selection. */
+  requested_model_id?: string;
+  /** Configured delay after primary dispatch, not the actual trigger offset or fallback lifetime. */
+  fallback_trigger_ms?: number;
   type: 'start';
+  /** Frozen total budget measured from the original user submission, never from this event. */
+  first_token_deadline_ms?: number;
   turn_index: number;
   user_message_id: string | null;
   assistant_message_id: string;

@@ -59,6 +59,17 @@ export const scenarios = {
     description: '可查看套餐、禁止下单',
     path: '/profile/recharge',
   },
+
+  'character-social': {
+    label: '角色互动',
+    description: '点赞、已有收藏、公开评论、分页与跨页面状态同步',
+    path: '/characters',
+  },
+  'character-interaction-error': {
+    label: '角色互动失败',
+    description: '点赞和收藏失败恢复、评论丢响应后的草稿与幂等重试',
+    path: '/characters',
+  },
   dramas: {
     label: '短剧体验',
     description: '沉浸刷剧、收藏、点赞、评论、选集和本设备续看',
@@ -91,6 +102,21 @@ export const scenarios = {
   'chat-slow': {
     label: '慢速思考',
     description: '先显示思考，正文开始后自动折叠',
+    path: `/chat/${IDS.character}?session=${IDS.session}&from=discover`,
+  },
+  'chat-branch': {
+    label: '历史对话分支',
+    description: '200轮虚构对话，从早期或近期回复开启独立分支',
+    path: `/chat/${IDS.character}?session=${IDS.session}&from=discover`,
+  },
+  'chat-branch-error': {
+    label: '分支失败恢复',
+    description: '创建已完成但响应丢失，同请求重试不重复创建',
+    path: `/chat/${IDS.character}?session=${IDS.session}&from=discover`,
+  },
+  'chat-like-error': {
+    label: '回复点赞失败',
+    description: '即时点亮、保存失败恢复与再次点赞，不打断输入',
     path: `/chat/${IDS.character}?session=${IDS.session}&from=discover`,
   },
   'chat-error': {

@@ -94,12 +94,56 @@ export function BottomNav() {
     return () => window.clearTimeout(timer);
   }, [pendingHref]);
 
-  if (isBottomNavHidden(pathname, dramaControlsVisible)) {
-    return null;
-  }
+  return (
+    <BottomNavShell
+      pathname={pathname}
+      controlsVisible={dramaControlsVisible}
+      highlighted={pendingHref ?? pathname}
+      roleplayHref={currentRoleplayPath ?? roleplayHref}
+      hasUnread={hasUnread}
+      onIntent={(href) => router.prefetch(href)}
+      onNavigate={(event, targetHref, href, current) => {
+        if (currentRoleplayPath) rememberRoleplayScroll(currentRoleplayPath);
+        if (href === '/characters') {
+          rememberRoleplayView(targetHref === '/chats' ? '/chats' : '/characters');
+          if (currentRoleplayPath) {
+            event.preventDefault();
+            if (currentRoleplayPath === '/characters') clearLobbyReturnSnapshot();
+            window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+            rememberRoleplayScroll(currentRoleplayPath);
+          }
+        }
+        if (!current) setPendingHref(targetHref);
+      }}
+    />
+  );
+}
 
-  const highlighted = pendingHref ?? pathname;
-
+/** 启动时只复用导航展示，不读取身份、storage 或挂业务 query。 */
+export function BottomNavShell({
+  pathname,
+  controlsVisible = true,
+  highlighted = pathname,
+  roleplayHref = '/characters',
+  hasUnread = false,
+  onIntent,
+  onNavigate,
+}: {
+  pathname: string;
+  controlsVisible?: boolean;
+  highlighted?: string | null;
+  roleplayHref?: '/characters' | '/chats';
+  hasUnread?: boolean;
+  onIntent?: (href: string) => void;
+  onNavigate?: (
+    event: React.MouseEvent<HTMLAnchorElement>,
+    targetHref: string,
+    href: string,
+    current: boolean
+  ) => void;
+}) {
+  if (isBottomNavHidden(pathname, controlsVisible)) return null;
+  const currentRoleplayPath = pathname === '/characters' || pathname === '/chats' ? pathname : null;
   return (
     <div
       className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center bg-[#19171a]"
@@ -128,32 +172,20 @@ export function BottomNav() {
           const isHeavyRoute = HEAVY_ROUTE_HREFS.has(href);
           const prefetchOnIntent = () => {
             if (!current && (!isHeavyRoute || canPrefetchHeavyRoute())) {
-              router.prefetch(targetHref);
+              onIntent?.(targetHref);
             }
           };
           return (
             <Link
               key={href}
               href={targetHref}
-              prefetch={isHeavyRoute ? false : undefined}
+              prefetch={!onNavigate || isHeavyRoute ? false : undefined}
               scroll={href === '/characters' ? false : undefined}
               // 不在大厅空闲预取其它 tab；真正指向该 tab 时再拉 RSC/路由。
               onMouseEnter={prefetchOnIntent}
               onFocus={prefetchOnIntent}
               onTouchStart={prefetchOnIntent}
-              onClick={(event) => {
-                if (currentRoleplayPath) rememberRoleplayScroll(currentRoleplayPath);
-                if (href === '/characters') {
-                  rememberRoleplayView(targetHref === '/chats' ? '/chats' : '/characters');
-                  if (currentRoleplayPath) {
-                    event.preventDefault();
-                    if (currentRoleplayPath === '/characters') clearLobbyReturnSnapshot();
-                    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
-                    rememberRoleplayScroll(currentRoleplayPath);
-                  }
-                }
-                if (!current) setPendingHref(targetHref);
-              }}
+              onClick={(event) => onNavigate?.(event, targetHref, href, current)}
               aria-current={current ? 'page' : undefined}
               aria-label={label}
               className={cn(

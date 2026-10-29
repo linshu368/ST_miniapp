@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
@@ -17,7 +17,11 @@ function stop(code = 0) {
   for (const child of children) {
     if (child.pid && child.exitCode === null) {
       try {
-        process.kill(-child.pid, 'SIGTERM');
+        if (process.platform === 'win32') {
+          spawnSync('taskkill.exe', ['/pid', String(child.pid), '/t', '/f'], { stdio: 'ignore' });
+        } else {
+          process.kill(-child.pid, 'SIGTERM');
+        }
       } catch {
         child.kill('SIGTERM');
       }
@@ -27,7 +31,7 @@ function stop(code = 0) {
     for (const child of children) {
       if (child.pid && child.exitCode === null) {
         try {
-          process.kill(-child.pid, 'SIGKILL');
+          if (process.platform !== 'win32') process.kill(-child.pid, 'SIGKILL');
         } catch {
           /* Already stopped. */
         }
@@ -78,21 +82,13 @@ try {
     VERCEL_GIT_PULL_REQUEST_ID: '',
   };
   function start(args, cwd) {
-    const windows = process.platform === 'win32';
-    // Reuse the pnpm CLI that launched this script. On Windows, spawning `pnpm`
-    // directly fails with ENOENT while wrapping it in cmd.exe corrupts quoting.
-    const pnpmCli = process.env.npm_execpath;
-    const command = pnpmCli
-      ? process.execPath
-      : windows
-        ? (process.env.ComSpec ?? 'cmd.exe')
-        : 'pnpm';
-    const commandArgs = pnpmCli
-      ? [pnpmCli, ...args]
-      : windows
-        ? ['/d', '/s', '/c', 'pnpm', ...args]
-        : args;
-    const child = spawn(command, commandArgs, { cwd, env, stdio: 'inherit', detached: true });
+    const child = spawn('pnpm', args, {
+      cwd,
+      env,
+      stdio: 'inherit',
+      detached: true,
+      shell: process.platform === 'win32',
+    });
     children.push(child);
     child.on('error', (error) => {
       console.error(error.message);

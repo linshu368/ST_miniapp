@@ -1,8 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
-import { Heart, Search, X } from 'lucide-react';
+import { Star, Search, X } from 'lucide-react';
 
 import { DEFAULT_LOBBY_SORT, type LobbySort } from '@miniapp/shared';
 
@@ -18,6 +19,7 @@ import {
 import { markCriticalSettled, useEntryEnrichReady } from '@/lib/entry-phase';
 import { chatEntryPath } from '@/lib/chat-entry';
 import { useFavoriteIdsQuery } from '@/lib/api/favorites';
+import { useCharacterSocialsQuery } from '@/lib/api/character-social';
 import { useConversationsQuery } from '@/lib/api/conversations';
 import {
   readRoleplayDiscovery,
@@ -27,6 +29,7 @@ import {
 } from '@/lib/roleplay-navigation';
 import { discardPendingAction, startPendingAction } from '@/lib/perf/action-tracker';
 import { useFreshAfterFetch, usePageReady } from '@/lib/perf/page-ready';
+import { markPageCriticalVisual } from '@/lib/perf/page-tracker';
 import {
   clearLobbyReturnSnapshot,
   readLobbyReturnSnapshot,
@@ -34,10 +37,18 @@ import {
   type LobbyReturnSnapshot,
 } from '@/lib/lobby-return';
 
-import { CharacterCard, lobbyImageUrl } from './character-card';
-import { CharacterDetailSheet } from './character-detail-sheet';
+import { CharacterCard } from './character-card';
+import type { CharacterDetailTab } from './character-detail-sheet';
 import { RoleplayHeader } from '@/components/roleplay/roleplay-header';
 import { RecentConversationCard } from '@/components/roleplay/recent-conversation-card';
+
+const CharacterDetailSheet = dynamic(
+  () =>
+    import('./character-detail-sheet').then((module) => ({
+      default: module.CharacterDetailSheet,
+    })),
+  { ssr: false }
+);
 
 // 移动端两列首屏实际可见约 4–6 张；高优先级给多了会和 LCP 图抢带宽。
 const FIRST_SCREEN_IMAGE_COUNT = 6;
@@ -126,21 +137,61 @@ export function CharacterGallery() {
       ),
     [history.data?.sessions]
   );
+  // 只在当前接口返回的有效会话中选择，不把服务端分页范围解释成全局最近。
+  const recentConversation = useMemo(
+    () =>
+      history.data?.sessions
+        .filter(
+          (item) =>
+            item.message_count > 0 && Number.isFinite(Date.parse(item.last_message_at ?? ''))
+        )
+        .sort(
+          (left, right) =>
+            Date.parse(right.last_message_at ?? '') - Date.parse(left.last_message_at ?? '')
+        )[0],
+    [history.data?.sessions]
+  );
   const [restoreSnapshot] = useState<LobbyReturnSnapshot | null>(() => readLobbyReturnSnapshot());
   const [isRestoring, setIsRestoring] = useState(() => restoreSnapshot !== null);
   const [sort, setSort] = useState<LobbySort>(
     restoreSnapshot?.sort ?? savedDiscovery.sort ?? DEFAULT_LOBBY_SORT
   );
-  const { data, isLoading, isError, isFetching, isFetched } = useCharactersQuery(sort, {
-    skipMountRefetch: isRestoring,
-  });
+  const [criticalVisualSettled, setCriticalVisualSettled] = useState(false);
+  const { data, isLoading, isError, isFetching, isFetched, isFetchedAfterMount, refetch } =
+    useCharactersQuery(sort);
   // 有可展示数据（含本地缓存）或列表已失败/完成首轮，即放行 enrich，别让旁路永远等。
   useEffect(() => {
     if (data !== undefined || isError || isFetched) markCriticalSettled();
   }, [data, isError, isFetched]);
+  useEffect(() => {
+    if (
+      criticalVisualSettled &&
+      data !== undefined &&
+      !isRestoring &&
+      !isFetching &&
+      !isFetchedAfterMount
+    ) {
+      void refetch();
+    }
+  }, [criticalVisualSettled, data, isFetchedAfterMount, isFetching, isRestoring, refetch]);
+  useEffect(() => {
+    setCriticalVisualSettled(false);
+  }, [sort]);
+  useEffect(() => {
+    if (data === undefined || isFetchedAfterMount || criticalVisualSettled) return;
+    // 图片始终不结算时也要校准目录；只把后台请求移出最拥挤的首屏窗口。
+    const timer = window.setTimeout(() => setCriticalVisualSettled(true), 1500);
+    return () => window.clearTimeout(timer);
+  }, [criticalVisualSettled, data, isFetchedAfterMount]);
   // 大厅有本地缓存秒开：content 记用户看到列表的时刻，fresh 记最新列表到达的时刻，两者分开才看得出后端慢。
-  const lobbyFresh = useFreshAfterFetch(isFetching, data !== undefined);
-  usePageReady('/characters', data !== undefined, lobbyFresh);
+  const lobbyFresh = useFreshAfterFetch(isFetching, data !== undefined, isError);
+  usePageReady(
+    '/characters',
+    data !== undefined && !isError,
+    lobbyFresh,
+    isError,
+    data !== undefined && (isFetching || isRestoring) ? 'cache' : lobbyFresh ? 'fetch' : 'unknown'
+  );
   const [query, setQuery] = useState(restoreSnapshot?.query ?? savedDiscovery.query);
   const [favoritesOnly, setFavoritesOnly] = useState(
     restoreSnapshot?.favoritesOnly ?? savedDiscovery.favoritesOnly
@@ -150,6 +201,8 @@ export function CharacterGallery() {
     rememberRoleplayDiscovery({ sort, query, favoritesOnly });
   }, [sort, query, favoritesOnly]);
   const [previewId, setPreviewId] = useState<string | null>(null);
+  const [previewTab, setPreviewTab] = useState<CharacterDetailTab>('intro');
+  const [detailLoaded, setDetailLoaded] = useState(false);
   const [enteringId, setEnteringId] = useState<string | null>(null);
   const enteringRef = useRef(false);
   const restoredAnchorIdRef = useRef<string | null>(null);
@@ -184,7 +237,22 @@ export function CharacterGallery() {
   // 引用必须稳定，CharacterCard 的 memo 才有意义：打开弹层不再重渲染整页卡片。
   const handleSelectCharacter = useCallback(
     (id: string) => {
-      if (!enteringId) setPreviewId(id);
+      if (!enteringId) {
+        setDetailLoaded(true);
+        setPreviewTab('intro');
+        setPreviewId(id);
+      }
+    },
+    [enteringId]
+  );
+
+  const handleCharacterComments = useCallback(
+    (id: string) => {
+      if (!enteringId) {
+        setDetailLoaded(true);
+        setPreviewTab('comments');
+        setPreviewId(id);
+      }
     },
     [enteringId]
   );
@@ -196,9 +264,12 @@ export function CharacterGallery() {
     root.classList.add('featured-paused');
     return () => root.classList.remove('featured-paused');
   }, [previewId]);
-  const firstScreenCharacters = useMemo(
-    () => characters.slice(0, FIRST_SCREEN_IMAGE_COUNT),
-    [characters]
+  const recentCharacter = useMemo(
+    () =>
+      recentConversation
+        ? characters.find((character) => character.id === recentConversation.character_id)
+        : undefined,
+    [characters, recentConversation]
   );
 
   useEffect(() => {
@@ -207,41 +278,6 @@ export function CharacterGallery() {
     // 避免弱网等待期间旧快照被其他入口误复用。
     clearLobbyReturnSnapshot();
   }, [restoreSnapshot]);
-
-  useEffect(() => {
-    if (firstScreenCharacters.length === 0) return;
-
-    const preloadLinks: HTMLLinkElement[] = [];
-    const connectedOrigins = new Set<string>();
-    for (const character of firstScreenCharacters) {
-      if (!character.avatar_url) continue;
-      const href = lobbyImageUrl(character.avatar_url);
-      try {
-        const origin = new URL(href).origin;
-        if (!connectedOrigins.has(origin)) {
-          connectedOrigins.add(origin);
-          const preconnect = document.createElement('link');
-          preconnect.rel = 'preconnect';
-          preconnect.href = origin;
-          preconnect.crossOrigin = 'anonymous';
-          document.head.append(preconnect);
-          preloadLinks.push(preconnect);
-        }
-      } catch {
-        // 相对 URL 无需额外 preconnect。
-      }
-
-      const preload = document.createElement('link');
-      preload.rel = 'preload';
-      preload.as = 'image';
-      preload.href = href;
-      preload.fetchPriority = 'high';
-      document.head.append(preload);
-      preloadLinks.push(preload);
-    }
-
-    return () => preloadLinks.forEach((link) => link.remove());
-  }, [firstScreenCharacters]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -292,6 +328,12 @@ export function CharacterGallery() {
   const visibleCharacters = useMemo(
     () => (renderAll ? filtered : filtered.slice(0, effectiveLimit)),
     [filtered, renderAll, effectiveLimit]
+  );
+  const criticalCharacterId = visibleCharacters[0]?.id;
+
+  useCharacterSocialsQuery(
+    visibleCharacters.map((character) => character.id),
+    enrichReady
   );
 
   // 按滚动位置补齐，而不是在空闲帧定时补：定时补会在路由 transition 渲染让出主线程的间隙里
@@ -397,7 +439,16 @@ export function CharacterGallery() {
   );
 
   const handleImageSettled = useCallback(
-    (characterId: string) => {
+    (characterId: string, outcome: 'loaded' | 'error') => {
+      if (characterId === criticalCharacterId) {
+        setCriticalVisualSettled(true);
+        markPageCriticalVisual(
+          '/characters',
+          outcome,
+          undefined,
+          data !== undefined && (isFetching || isRestoring) ? 'cache' : 'fetch'
+        );
+      }
       if (
         restoreCalibrationUsedRef.current ||
         restoredAnchorIdRef.current !== characterId ||
@@ -417,8 +468,22 @@ export function CharacterGallery() {
         });
       });
     },
-    [restoreSnapshot]
+    [criticalCharacterId, data, isFetching, isRestoring, restoreSnapshot]
   );
+
+  useEffect(() => {
+    const first = visibleCharacters[0];
+    if (data === undefined || isError) return;
+    if (!first || !first.avatar_url) {
+      setCriticalVisualSettled(true);
+      markPageCriticalVisual(
+        '/characters',
+        'absent',
+        undefined,
+        isFetching || isRestoring ? 'cache' : 'fetch'
+      );
+    }
+  }, [data, isError, isFetching, isRestoring, visibleCharacters]);
 
   const hiddenWhileRestoring = isRestoring ? 'invisible' : undefined;
 
@@ -523,7 +588,7 @@ export function CharacterGallery() {
             : 'border-transparent text-muted-foreground hover:bg-card hover:text-foreground'
         )}
       >
-        <Heart className="size-3.5" aria-hidden />
+        <Star className="size-3.5" aria-hidden />
         已收藏
       </button>
     </div>
@@ -531,11 +596,17 @@ export function CharacterGallery() {
 
   const listHeader = (
     <>
-      <RoleplayHeader active="discover">
-        {searchBar}
-        {sortTabs}
-      </RoleplayHeader>
-      <RecentConversationCard />
+      <RoleplayHeader active="discover">{searchBar}</RoleplayHeader>
+      {sortTabs}
+      <RecentConversationCard
+        enabled={enrichReady}
+        recent={recentConversation}
+        character={recentCharacter}
+        loading={history.isLoading}
+        error={history.isError}
+        fetching={history.isFetching}
+        onRetry={() => void history.refetch()}
+      />
     </>
   );
 
@@ -545,7 +616,7 @@ export function CharacterGallery() {
         {listHeader}
         <div
           className={cn(
-            'mx-auto grid w-full max-w-screen-xl grid-cols-[repeat(auto-fit,minmax(9.5rem,1fr))] gap-3 px-4 py-6 sm:px-6 lg:px-8',
+            'mx-auto grid w-full max-w-screen-xl grid-cols-2 gap-2.5 px-3 py-6 sm:px-6 lg:px-8',
             hiddenWhileRestoring
           )}
           aria-label="加载中"
@@ -630,7 +701,7 @@ export function CharacterGallery() {
       ) : (
         <div
           className={cn(
-            'mx-auto grid w-full max-w-screen-xl grid-cols-[repeat(auto-fit,minmax(9.5rem,1fr))] gap-3 px-4 pb-10 pt-2 sm:grid-cols-[repeat(auto-fit,minmax(10.5rem,1fr))] sm:gap-4 sm:px-6 lg:grid-cols-[repeat(auto-fit,minmax(12rem,1fr))] lg:px-8',
+            'mx-auto grid w-full max-w-screen-xl grid-cols-2 gap-2.5 px-3 pb-10 pt-2 sm:grid-cols-[repeat(auto-fit,minmax(10.5rem,1fr))] sm:gap-4 sm:px-6 lg:grid-cols-[repeat(auto-fit,minmax(12rem,1fr))] lg:px-8',
             hiddenWhileRestoring
           )}
         >
@@ -642,6 +713,7 @@ export function CharacterGallery() {
               priority={index < FIRST_SCREEN_IMAGE_COUNT}
               onImageSettled={handleImageSettled}
               onSelect={handleSelectCharacter}
+              onComments={handleCharacterComments}
             />
           ))}
         </div>
@@ -651,36 +723,39 @@ export function CharacterGallery() {
         <div ref={loadMoreRef} aria-hidden="true" className="h-px w-full" />
       ) : null}
 
-      <CharacterDetailSheet
-        characterId={previewId}
-        summary={previewSummary}
-        entering={enteringId !== null}
-        onClose={() => {
-          if (enteringId) {
-            enteringRef.current = false;
-            setEnteringId(null);
+      {detailLoaded ? (
+        <CharacterDetailSheet
+          characterId={previewId}
+          initialTab={previewTab}
+          summary={previewSummary}
+          entering={enteringId !== null}
+          onClose={() => {
+            if (enteringId) {
+              enteringRef.current = false;
+              setEnteringId(null);
+              setPreviewId(null);
+              clearLobbyReturnSnapshot();
+              // 用户主动取消进入，不是卡住；不清掉的话 2.5 秒后看门狗会补发一条假的 action_stall。
+              discardPendingAction('select_character');
+              // 当前本来就在大厅，直接 replace('/characters') 可能被 Next.js 当成同路由而忽略。
+              // 唯一查询参数会启动一笔新的 SPA 导航，并让 App Router 放弃在途角色导航，
+              // 同时保留 query cache 与 Telegram SDK。
+              router.replace(`/characters?entry_cancelled=${Date.now()}`);
+              return;
+            }
             setPreviewId(null);
-            clearLobbyReturnSnapshot();
-            // 用户主动取消进入，不是卡住；不清掉的话 2.5 秒后看门狗会补发一条假的 action_stall。
-            discardPendingAction('select_character');
-            // 当前本来就在大厅，直接 replace('/characters') 可能被 Next.js 当成同路由而忽略。
-            // 唯一查询参数会启动一笔新的 SPA 导航，并让 App Router 放弃在途角色导航，
-            // 同时保留 query cache 与 Telegram SDK。
-            router.replace(`/characters?entry_cancelled=${Date.now()}`);
-            return;
-          }
-          setPreviewId(null);
-        }}
-        onEnter={(id, sessionId) => {
-          if (enteringRef.current) return;
-          enteringRef.current = true;
-          captureReturnSnapshot(id);
-          setEnteringId(id);
-          startPendingAction('select_character');
-          rememberRoleplayScroll('/characters');
-          router.push(chatEntryPath(id, { sessionId, source: 'discover' }));
-        }}
-      />
+          }}
+          onEnter={(id, sessionId) => {
+            if (enteringRef.current) return;
+            enteringRef.current = true;
+            captureReturnSnapshot(id);
+            setEnteringId(id);
+            startPendingAction('select_character');
+            rememberRoleplayScroll('/characters');
+            router.push(chatEntryPath(id, { sessionId, source: 'discover' }));
+          }}
+        />
+      ) : null}
     </>
   );
 }

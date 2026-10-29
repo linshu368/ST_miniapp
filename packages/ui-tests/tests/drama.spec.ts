@@ -9,6 +9,12 @@ const longDrama = '60000000-0000-4000-8000-000000000012';
 const tabs = (page: Page) => page.getByRole('navigation', { name: '短剧栏目' });
 const mainNav = (page: Page) => page.getByRole('navigation', { name: '主导航' });
 
+test('@drama 移除独立 CDN 实验入口', async ({ page, preview }) => {
+  await preview.scenario('dramas');
+  const response = await page.goto('/drama-cdn-experiment');
+  expect(response?.status()).toBe(404);
+});
+
 async function pauseReadyVideo(page: Page) {
   const video = page.locator('video');
   await expect(video).toHaveCount(1);
@@ -114,7 +120,7 @@ async function expectReachable(page: Page, name: string) {
   ).toBeTruthy();
 }
 
-test('@drama @layout 剧场固定筛选，进入选集后返回原筛选', async ({ page, preview }) => {
+test('@drama @layout 剧场只固定搜索，进入选集后返回原筛选', async ({ page, preview }) => {
   await preview.scenario('dramas');
   await page.goto('/dramas');
   await tabs(page).getByRole('button', { name: '剧场', exact: true }).click();
@@ -128,7 +134,9 @@ test('@drama @layout 剧场固定筛选，进入选集后返回原筛选', async
   await preview.screenshot('短剧双列剧场');
   await page.getByRole('link', { name: '观看 时光旅人', exact: true }).scrollIntoViewIfNeeded();
   await expect(search).toBeInViewport();
-  await expect(tabs(page)).toBeInViewport();
+  await expect(tabs(page)).not.toBeInViewport();
+  await expect(categories).not.toBeInViewport();
+  await preview.screenshot('短剧下滑只保留搜索', { fullPage: false });
   await page.getByRole('button', { name: '悬疑', exact: true }).click();
   await search.fill('雾城');
   await expect(page.getByRole('link', { name: '观看 雾城来信', exact: true })).toBeVisible();
@@ -216,6 +224,10 @@ test('@drama 追剧整行都能继续看，收藏按钮只改变收藏', async (
 
 test('@drama 短暂试看保留历史，但不抢走已在追的继续看', async ({ page }) => {
   await page.goto(`/dramas/${firstDrama}`);
+  // Establish existing viewing history; a first decoded frame can still be at zero.
+  await expect
+    .poll(() => page.locator('video').evaluate((node: HTMLVideoElement) => node.currentTime))
+    .toBeGreaterThan(0);
   await pauseReadyVideo(page);
   await page.getByRole('button', { name: /^选集，第/ }).click();
   await page.getByRole('dialog').getByRole('button', { name: '第 3 集', exact: true }).click();
@@ -682,10 +694,12 @@ test('@drama 播放失败可重试，列表失败和空状态有出口', async (
   await request.post('http://127.0.0.1:3131/__preview/reset', { data: { scenario: 'dramas' } });
   await page.getByRole('button', { name: '重新播放', exact: true }).click();
   await pauseReadyVideo(page);
+  await page.evaluate(() => localStorage.removeItem('miniapp:drama-catalog:v1'));
   await preview.scenario('drama-list-error');
   await page.goto('/dramas');
   await expect(page.getByText('短剧暂时没加载出来')).toBeVisible({ timeout: 25000 });
   await expect(page.getByRole('button', { name: '重新加载', exact: true })).toBeVisible();
+  await page.evaluate(() => localStorage.removeItem('miniapp:drama-catalog:v1'));
   await preview.scenario('empty');
   await page.goto('/dramas');
   await expect(page.getByRole('heading', { name: '好戏，即将开场' })).toBeVisible();
@@ -883,7 +897,8 @@ test('@drama 推荐目录后台失败不打断当前画面，刷新后也保留�
     }
   );
   // 只推进查询新鲜度，保留真实计时器与媒体；网络恢复触发后台刷新。
-  await page.clock.setFixedTime(new Date(Date.now() + 31_000));
+  // 目录缓存 15 分钟内无需重复请求；跨过 stale window 才应在前台恢复时校准。
+  await page.clock.setFixedTime(new Date(Date.now() + 16 * 60_000));
   await context.setOffline(true);
   await context.setOffline(false);
   const retry = page.getByRole('button', { name: '刷新短剧推荐', exact: true });
@@ -1174,18 +1189,20 @@ test('@drama 首页评论期间一条播完换下一部，草稿归属不变且�
   await expect(page.getByText(/已经看到最后一部|上滑，发现|这一部，看到这里/)).toHaveCount(0);
 });
 
-test('@drama 片尾预取但不抢播，选集时等待，最后一部安静结束', async ({ page, preview }) => {
+test('@drama 片尾仅预取详情不抢播，选集时等待，最后一部安静结束', async ({ page, preview }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto(`/dramas/${firstDrama}`);
   const video = await pauseReadyVideo(page);
-  const prefetched = page.waitForRequest((request) =>
-    request.url().includes('video_id=70000000-0000-4000-8000-000000000002')
-  );
+  const before = (await preview.state()).requests.filter((item) =>
+    item.path.includes('/play')
+  ).length;
   await video.evaluate((node: HTMLVideoElement) => {
     node.currentTime = node.duration - 2;
   });
-  await prefetched;
   await expect(video).toHaveAttribute('aria-label', '雾城来信，第 1 集');
+  expect(
+    (await preview.state()).requests.filter((item) => item.path.includes('/play')).length
+  ).toBe(before);
   await page.getByRole('button', { name: '查看全部选集' }).click();
   await video.evaluate(async (node: HTMLVideoElement) => {
     node.currentTime = node.duration - 0.1;
@@ -1382,4 +1399,74 @@ test('@drama 详情控件由用户收放，不在准备选集时自动消失', a
   await page.locator('[data-player-toggle-controls]').click({ position: { x: 80, y: 220 } });
   await expect(page.getByRole('link', { name: '返回短剧', exact: true })).toHaveCount(0);
   await expect.poll(() => video.evaluate((node: HTMLVideoElement) => node.paused)).toBe(false);
+});
+
+test('@drama 关闭分流后重新进入必须等待原路径确认，旧地址不能抢播', async ({ page, preview }) => {
+  await preview.scenario('dramas');
+  let closed = false;
+  let confirmations = 0;
+  const gate = deferred();
+  await page.route(
+    (url) => url.pathname === `/api/dramas/${firstDrama}/play`,
+    async (route) => {
+      const response = await route.fetch();
+      const body = (await response.json()) as { data: GetDramaPlaybackData };
+      confirmations++;
+      body.data.playback.delivery = {
+        experimentId: 'fixture-cdn',
+        group: 'bunny',
+        provider: closed ? 'supabase' : 'bunny',
+        reason: closed ? 'disabled' : 'assigned',
+      };
+      body.data.playback.play_url += `&delivery=${closed ? 'original' : 'bunny'}`;
+      if (closed) await gate.promise;
+      await route.fulfill({ response, json: body });
+    }
+  );
+  try {
+    await page.goto(`/dramas/${firstDrama}`);
+    const initial = await pauseReadyVideo(page);
+    await expect(initial).toHaveAttribute('src', /delivery=bunny/);
+    await page.getByRole('link', { name: '返回短剧', exact: true }).click();
+    const previous = confirmations;
+    closed = true;
+    await page.getByRole('link', { name: '观看 雾城来信', exact: true }).click();
+    await expect.poll(() => confirmations).toBeGreaterThan(previous);
+    await expect(page.locator('video')).not.toHaveAttribute('src');
+    gate.resolve();
+    const recovered = await pauseReadyVideo(page);
+    await expect(recovered).toHaveAttribute('src', /delivery=original/);
+  } finally {
+    gate.resolve();
+  }
+});
+
+test('@drama 进度提交单独记录目标帧和实际路径，首播完成后仍采集', async ({ page, preview }) => {
+  await preview.scenario('dramas');
+  const seekReports: Record<string, unknown>[] = [];
+  page.on('request', (request) => {
+    if (!request.url().includes('/api/telemetry/drama-timing') || request.method() !== 'POST')
+      return;
+    const body = request.postDataJSON() as Record<string, unknown>;
+    if (body.type === 'seek') seekReports.push(body);
+  });
+  await page.goto(`/dramas/${firstDrama}`);
+  const video = await pauseReadyVideo(page);
+  // The local asset is tiny; a controlled empty TimeRanges fixture exercises unbuffered classification.
+  await video.evaluate((node: HTMLVideoElement) => {
+    Object.defineProperty(node, 'buffered', {
+      configurable: true,
+      get: () => ({ length: 0, start: () => 0, end: () => 0 }),
+    });
+  });
+  await page.getByRole('slider', { name: '播放进度' }).press('ArrowRight');
+  await expect.poll(() => seekReports.some((report) => report.phase === 'final')).toBe(true);
+  const final = seekReports.find((report) => report.phase === 'final')!;
+  expect(final.delivery).toMatchObject({
+    group: 'bunny',
+    provider: 'supabase',
+    reason: 'disabled',
+  });
+  expect(final.seek).toMatchObject({ buffered: 'no', wasPlaying: false });
+  expect(['playing', 'unverified']).toContain(final.outcome);
 });

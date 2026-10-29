@@ -19,8 +19,19 @@ function decoded(value: unknown): unknown {
 }
 
 export function railwayDramaReport(
-  value: unknown
-): { report: DramaTimingReport; receivedAt: string } | undefined {
+  value: unknown,
+  includeSeek = false
+):
+  | {
+      report: DramaTimingReport;
+      receivedAt: string;
+      environment?: string;
+      serverRelease?: string;
+      experimentId?: string;
+      experimentUser?: string;
+      assignedGroup?: 'bunny' | 'supabase';
+    }
+  | undefined {
   const outer = object(value);
   if (!outer) return;
   let fields: Record<string, unknown> = { ...outer, ...object(decoded(outer.message)) };
@@ -33,7 +44,13 @@ export function railwayDramaReport(
     for (const [key, value] of Object.entries(object(outer.attributes)!))
       fields[key] = decoded(value);
   }
-  if (fields.event !== 'drama.frontend_timing' || fields.type !== 'playback') return;
+  if (
+    fields.event !== 'drama.frontend_timing' ||
+    (fields.type !== 'playback' && !(includeSeek && fields.type === 'seek'))
+  )
+    return;
+  // Historical imports keep rejecting unified diagnostics; the comparison is read-only.
+  if (fields.purpose === 'diagnostic' && !includeSeek) return;
   const stages = Object.fromEntries(
     [
       'navigation',
@@ -43,6 +60,10 @@ export function railwayDramaReport(
       'metadata_to_frame',
       'source_to_frame',
       'source_to_playing',
+      'entry_to_source',
+      'metadata_to_data',
+      'data_to_frame',
+      'frame_to_startup',
     ].flatMap((name) => (fields[`${name}_ms`] === undefined ? [] : [[name, fields[`${name}_ms`]]]))
   );
   // Rebuild an allowlist report, never pass the log envelope or arbitrary attributes to storage.
@@ -51,8 +72,16 @@ export function railwayDramaReport(
     phase: fields.phase,
     id: fields.observation_id,
     version: fields.version,
+    definition: fields.definition,
+    purpose: fields.purpose,
+    route: fields.route,
     context: decoded(fields.context),
     diagnostics: decoded(fields.diagnostics),
+    delivery: decoded(fields.delivery),
+    recovery: decoded(fields.recovery),
+    entryElapsedMs: fields.entry_elapsed_ms,
+    overFiveSeconds: fields.over_five_seconds,
+    seek: decoded(fields.seek),
     entry: fields.entry,
     dramaId: fields.drama_id,
     videoId: fields.video_id,
@@ -71,7 +100,21 @@ export function railwayDramaReport(
     throw new Error('missing_log_timestamp');
   const date = new Date(time);
   if (!Number.isFinite(date.valueOf())) throw new Error('invalid_log_timestamp');
-  return { report, receivedAt: date.toISOString() };
+  return {
+    report,
+    receivedAt: date.toISOString(),
+    environment: typeof fields.environment === 'string' ? fields.environment : undefined,
+    serverRelease: typeof fields.server_release === 'string' ? fields.server_release : undefined,
+    experimentId: typeof fields.experiment_id === 'string' ? fields.experiment_id : undefined,
+    experimentUser:
+      typeof fields.experiment_user === 'string' && /^[a-f0-9]{64}$/.test(fields.experiment_user)
+        ? fields.experiment_user
+        : undefined,
+    assignedGroup:
+      fields.assigned_group === 'bunny' || fields.assigned_group === 'supabase'
+        ? fields.assigned_group
+        : undefined,
+  };
 }
 
 async function main() {

@@ -1,8 +1,21 @@
 import { createServer, type ServerResponse } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
+import { fileURLToPath } from 'node:url';
 import {
+  CreateCharacterCommentSchema,
+  ForkConversationRequestSchema,
+  SetMessageLikeRequestSchema,
+  ReportCharacterCommentSchema,
+  SetCharacterLikeSchema,
+  type CharacterComment,
+  type CharacterSocial,
+  type GetCharacterSocialData,
+  type GetCharacterSocialsData,
+  type GetCharacterCommentsData,
+  type CreateCharacterCommentData,
   CreateDramaCommentSchema,
   SetDramaLikeSchema,
   type DramaComment,
@@ -18,6 +31,7 @@ import {
   SubmitVideoPlazaAttemptRequestSchema,
   VideoPlazaQuoteRequestSchema,
   type ChatMessage,
+  type ChatSession,
   type ConversationStreamEvent,
   type ImagePlazaAttempt,
   type VideoPlazaAttempt,
@@ -52,6 +66,52 @@ export function createPreviewServer(apiPort: number, appPort: number) {
   let claimed = false;
   let epoch = 0;
   let favoriteIds = new Set<string>();
+  const characterLikes = new Set<string>();
+  const characterComments = new Map<string, CharacterComment[]>();
+  const removedCharacterComments = new Set<string>();
+  const reportedCharacterComments = new Set<string>();
+  let characterLikeFailureDelivered = false;
+  let characterFavoriteFailureDelivered = false;
+  let characterCommentFailureDelivered = false;
+  function characterCommentsFor(id: string) {
+    if (!characterComments.has(id)) {
+      const index = data.characters.findIndex((item) => item.id === id);
+      const samples = [
+        '这个角色会认真接住你的话，慢慢聊很有意思。',
+        '开场就能接着探索，故事推进挺自然。',
+        '喜欢这种温柔但有自己想法的角色。',
+      ];
+      characterComments.set(
+        id,
+        Array.from({ length: index === 0 ? 23 : index === 17 ? 0 : 3 }, (_, i) => ({
+          id: `90000000-0000-4000-${String(index + 8000)}-${String(i + 1).padStart(12, '0')}`,
+          author: `旅人 ${String(i + 1).padStart(6, '0')}`,
+          is_mine: false,
+          body: i < 3 ? samples[i]! : `这是第 ${i + 1} 位演示玩家的角色体验。`,
+          created_at: new Date(Date.now() - (i + 1) * 3600_000).toISOString(),
+        }))
+      );
+    }
+    return characterComments.get(id)!;
+  }
+  const characterSocialFor = (id: string): CharacterSocial => {
+    const index = data.characters.findIndex((item) => item.id === id);
+    const replyLikes = [...messageLikes].filter((key) =>
+      data.sessions.some(
+        (session) => session.character_id === id && key.startsWith(`${session.id}:`)
+      )
+    ).length;
+    return {
+      liked: characterLikes.has(id),
+      like_count:
+        (index === 17 ? 0 : 128 + Math.max(index, 0) * 7) +
+        Number(characterLikes.has(id)) +
+        replyLikes,
+      favorite_count:
+        (index === 17 ? 0 : 86 + Math.max(index, 0) * 3) + Number(favoriteIds.has(id)),
+      comment_count: characterCommentsFor(id).length,
+    };
+  };
   const dramaLikes = new Set<string>();
   const dramaComments = new Map<string, DramaComment[]>();
   let commentFailureDelivered = false;
@@ -94,15 +154,79 @@ export function createPreviewServer(apiPort: number, appPort: number) {
   const streams = new Set<ServerResponse>();
   const requests: { method: string; path: string; thinking_enabled?: boolean }[] = [];
   const unhandled: string[] = [];
+  const branchRequests = new Map<
+    string,
+    { sourceSessionId: string; messageId: string; sessionId: string }
+  >();
+  let branchFailureDelivered = false;
+  const messageLikes = new Set<string>();
+  let messageLikeFailureDelivered = false;
+
+  function currentConversationMessages(sessionId: string): ChatMessage[] {
+    const candidates = data.messages.filter((message) => message.session_id === sessionId);
+    const assistants = new Map<number, ChatMessage>();
+    const users = new Map<number, ChatMessage>();
+    for (const message of candidates) {
+      const target = message.role === 'assistant' ? assistants : users;
+      if (
+        !target.has(message.turn_index) ||
+        target.get(message.turn_index)!.revision < message.revision
+      )
+        target.set(message.turn_index, message);
+    }
+    return [...assistants.values()]
+      .sort((a, b) => a.turn_index - b.turn_index)
+      .flatMap((message) => {
+        const user = users.get(message.turn_index);
+        const reply = {
+          ...message,
+          ...(message.turn_index > 0
+            ? { liked: messageLikes.has(`${sessionId}:${message.id}`) }
+            : {}),
+        };
+        return user ? [{ ...user, revision: message.revision }, reply] : [reply];
+      });
+  }
+
+  function conversationPage(session: ChatSession, beforeTurn?: number) {
+    const all = currentConversationMessages(session.id).filter(
+      (message) => beforeTurn === undefined || message.turn_index < beforeTurn
+    );
+    const turns = [
+      ...new Set(
+        all.filter((message) => message.turn_index > 0).map((message) => message.turn_index)
+      ),
+    ];
+    const keep = new Set(turns.slice(-25));
+    const hasMore = turns.length > 25;
+    return {
+      session,
+      messages: all.filter(
+        (message) => keep.has(message.turn_index) || (!hasMore && message.turn_index === 0)
+      ),
+      has_more: hasMore,
+    };
+  }
 
   function reset(next: Scenario) {
     epoch += 1;
     for (const stream of streams) stream.end();
     streams.clear();
     data = makeData(api);
+    branchRequests.clear();
+    branchFailureDelivered = false;
+    messageLikes.clear();
+    messageLikeFailureDelivered = false;
     scenario = next;
     claimed = next === 'checked';
-    favoriteIds = new Set();
+    favoriteIds = new Set(next === 'character-social' ? [IDS.character] : []);
+    characterLikes.clear();
+    characterComments.clear();
+    removedCharacterComments.clear();
+    reportedCharacterComments.clear();
+    characterLikeFailureDelivered = false;
+    characterFavoriteFailureDelivered = false;
+    characterCommentFailureDelivered = false;
     pendingImages = new Map();
     dramaLikes.clear();
     dramaComments.clear();
@@ -180,6 +304,36 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         main_credits: 0,
         bonus_credits: 0,
       });
+    if (next === 'chat-branch' || next === 'chat-branch-error') {
+      const count = next === 'chat-branch' ? 200 : 20;
+      const userTemplate = data.messages[1]!;
+      const assistantTemplate = data.messages[2]!;
+      data.messages = [
+        data.messages[0]!,
+        ...Array.from({ length: count }, (_, index) => {
+          const turn = index + 1;
+          const suffix = String(turn).padStart(12, '0');
+          return [
+            {
+              ...userTemplate,
+              id: `51000000-0000-4000-8000-${suffix}`,
+              turn_index: turn,
+              content: `第 ${turn} 轮：我们继续走到这里。`,
+            },
+            {
+              ...assistantTemplate,
+              id: `52000000-0000-4000-8000-${suffix}`,
+              turn_index: turn,
+              content: `「这是第 ${turn} 轮的故事。」旅人停在路口，等你决定接下来怎么走。`,
+            },
+          ];
+        }).flat(),
+      ];
+      Object.assign(data.sessions[0]!, {
+        message_count: count * 2,
+        last_message_preview: `第 ${count} 轮的故事。`,
+      });
+    }
   }
 
   function creditBonus(amount: number) {
@@ -340,6 +494,10 @@ export function createPreviewServer(apiPort: number, appPort: number) {
       requests.push(request);
       if (requests.length > 500) requests.shift();
       reconcileImages();
+      if (path === '/api/telemetry/drama-timing' && method === 'POST') {
+        ok(res, { accepted: true });
+        return;
+      }
       if (method === 'POST' && /^\/api\/telemetry\/(page|action|drama|request)/.test(path)) {
         ok(res, { recorded: true });
         return;
@@ -443,6 +601,12 @@ export function createPreviewServer(apiPort: number, appPort: number) {
             playable: true,
             play_url: `${api}/assets/drama-preview.mp4?episode=${video.id}`,
             expires_at: new Date(Date.now() + 3_600_000).toISOString(),
+            delivery: {
+              experimentId: 'fixture-cdn',
+              group: 'bunny',
+              provider: 'supabase',
+              reason: 'disabled',
+            },
           },
         } satisfies GetDramaPlaybackData);
         return;
@@ -572,6 +736,123 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         ok(res, { notifications: [], next_cursor: null });
         return;
       }
+      if (path === '/api/characters/social' && method === 'GET') {
+        const ids = (url.searchParams.get('ids') ?? '').split(',').filter(Boolean);
+        const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+        if (!ids.length || ids.length > 40 || ids.some((id) => !uuid.test(id))) {
+          fail(res, 400, 'BAD_REQUEST', '角色查询参数无效');
+          return;
+        }
+        ok(res, {
+          socials: [...new Set(ids)]
+            .filter((id) => data.characters.some((item) => item.id === id))
+            .map((character_id) => ({ character_id, ...characterSocialFor(character_id) })),
+        } satisfies GetCharacterSocialsData);
+        return;
+      }
+      const characterInteraction = path.match(
+        /^\/api\/characters\/([^/]+)\/(social|like|comments)(?:\/([^/]+))?(\/report)?$/
+      );
+      if (characterInteraction) {
+        const [, id, action, commentId, reporting] = characterInteraction;
+        if (!id || !data.characters.some((item) => item.id === id)) {
+          fail(res, 404, 'NOT_FOUND', '角色不存在');
+          return;
+        }
+        if (action === 'social' && method === 'GET') {
+          ok(res, { social: characterSocialFor(id) } satisfies GetCharacterSocialData);
+          return;
+        }
+        if (action === 'like' && method === 'PUT') {
+          const input = SetCharacterLikeSchema.safeParse(body);
+          if (!input.success) {
+            fail(res, 400, 'BAD_REQUEST', '点赞参数无效');
+            return;
+          }
+          if (scenario === 'character-interaction-error' && !characterLikeFailureDelivered) {
+            characterLikeFailureDelivered = true;
+            fail(res, 503, 'SERVICE_UNAVAILABLE', '点赞暂时不可用');
+            return;
+          }
+          if (input.data.liked) characterLikes.add(id);
+          else characterLikes.delete(id);
+          ok(res, { social: characterSocialFor(id) } satisfies GetCharacterSocialData);
+          return;
+        }
+        if (action === 'comments') {
+          const comments = characterCommentsFor(id);
+          if (method === 'GET' && !commentId) {
+            const offset = Number(url.searchParams.get('cursor') || 0);
+            if (!Number.isSafeInteger(offset) || offset < 0) {
+              fail(res, 400, 'BAD_REQUEST', '评论分页参数无效');
+              return;
+            }
+            ok(res, {
+              comments: comments.slice(offset, offset + 20),
+              next_cursor: comments.length > offset + 20 ? String(offset + 20) : null,
+            } satisfies GetCharacterCommentsData);
+            return;
+          }
+          if (method === 'POST' && commentId && reporting) {
+            const input = ReportCharacterCommentSchema.safeParse(body);
+            if (!input.success) {
+              fail(res, 400, 'BAD_REQUEST', '举报参数无效');
+              return;
+            }
+            if (!comments.some((comment) => comment.id === commentId)) {
+              fail(res, 404, 'NOT_FOUND', '评论不存在');
+              return;
+            }
+            reportedCharacterComments.add(commentId);
+            ok(res, { reported: true });
+            return;
+          }
+          if (method === 'POST' && !commentId) {
+            const input = CreateCharacterCommentSchema.safeParse(body);
+            if (!input.success) {
+              fail(res, 400, 'BAD_REQUEST', '评论请填写 1–500 个字');
+              return;
+            }
+            const previous = [...characterComments.entries()]
+              .flatMap(([characterId, rows]) => rows.map((comment) => ({ characterId, comment })))
+              .find((item) => item.comment.id === input.data.id);
+            if (
+              removedCharacterComments.has(input.data.id) ||
+              (previous &&
+                (previous.characterId !== id ||
+                  previous.comment.body !== input.data.body ||
+                  !previous.comment.is_mine))
+            ) {
+              fail(res, 409, 'CONFLICT', '这条评论已变更，请重新发表');
+              return;
+            }
+            let comment = previous?.comment;
+            if (!comment) {
+              comment = { ...input.data, author: '旅人 演示', is_mine: true, created_at: stamp() };
+              comments.unshift(comment);
+            }
+            // Keep the committed record; only the response is lost, so UUID retry is observable.
+            if (scenario === 'character-interaction-error' && !characterCommentFailureDelivered) {
+              characterCommentFailureDelivered = true;
+              fail(res, 503, 'SERVICE_UNAVAILABLE', '响应暂不可达');
+              return;
+            }
+            ok(res, { comment } satisfies CreateCharacterCommentData);
+            return;
+          }
+          if (method === 'DELETE' && commentId && !reporting) {
+            const index = comments.findIndex((item) => item.id === commentId && item.is_mine);
+            if (index >= 0) {
+              comments.splice(index, 1);
+              removedCharacterComments.add(commentId);
+            }
+            ok(res, { deleted: true });
+            return;
+          }
+        }
+        fail(res, 405, 'METHOD_NOT_ALLOWED', '方法不支持');
+        return;
+      }
       if (path === '/api/characters/latest-badge' || path === '/api/characters/latest-seen') {
         ok(res, { has_new: false });
         return;
@@ -601,6 +882,11 @@ export function createPreviewServer(apiPort: number, appPort: number) {
       }
       if (path.startsWith('/api/favorites/') && ['PUT', 'DELETE'].includes(method)) {
         const id = path.split('/').pop()!;
+        if (scenario === 'character-interaction-error' && !characterFavoriteFailureDelivered) {
+          characterFavoriteFailureDelivered = true;
+          fail(res, 503, 'SERVICE_UNAVAILABLE', '收藏暂时不可用');
+          return;
+        }
         if (method === 'PUT') favoriteIds.add(id);
         else favoriteIds.delete(id);
         ok(res, { favorite: { character_id: id, favorited: favoriteIds.has(id) } });
@@ -663,12 +949,19 @@ export function createPreviewServer(apiPort: number, appPort: number) {
           return;
         }
         if (method === 'GET') {
-          const sessions = data.sessions.filter(
-            (item) =>
-              item.message_count > 0 &&
-              (!url.searchParams.get('character_id') ||
-                item.character_id === url.searchParams.get('character_id'))
-          );
+          const sessions = data.sessions
+            .filter(
+              (item) =>
+                item.message_count > 0 &&
+                (!url.searchParams.get('character_id') ||
+                  item.character_id === url.searchParams.get('character_id'))
+            )
+            .sort(
+              (a, b) =>
+                (b.pinned_at ?? '').localeCompare(a.pinned_at ?? '') ||
+                (b.last_message_at ?? '').localeCompare(a.last_message_at ?? '') ||
+                b.created_at.localeCompare(a.created_at)
+            );
           ok(res, { sessions, total: sessions.length });
           return;
         }
@@ -689,8 +982,51 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         ok(res, { images: [] });
         return;
       }
+      const messageLikeMatch = path.match(
+        /^\/api\/v1\/conversations\/([^/]+)\/messages\/([^/]+)\/like$/
+      );
+      if (messageLikeMatch && method === 'PUT') {
+        const [, sessionId, messageId] = messageLikeMatch;
+        const parsed = SetMessageLikeRequestSchema.safeParse(body);
+        if (!parsed.success) {
+          fail(res, 400, 'BAD_REQUEST', '点赞参数无效');
+          return;
+        }
+        if (!data.sessions.some((session) => session.id === sessionId)) {
+          fail(res, 404, 'session_not_found', '对话不存在');
+          return;
+        }
+        const message = currentConversationMessages(sessionId!).find(
+          (item) => item.id === messageId && item.role === 'assistant'
+        );
+        if (
+          !message ||
+          message.turn_index < 1 ||
+          message.status !== 'complete' ||
+          !message.content.trim()
+        ) {
+          fail(res, 409, 'reply_like_not_allowed', '这条回复暂时无法点赞');
+          return;
+        }
+        const requestEpoch = epoch;
+        await delay(200);
+        if (requestEpoch !== epoch) {
+          fail(res, 409, 'scenario_changed', '预览场景已切换');
+          return;
+        }
+        if (scenario === 'chat-like-error' && !messageLikeFailureDelivered) {
+          messageLikeFailureDelivered = true;
+          fail(res, 503, 'INTERNAL_ERROR', '点赞暂时没能保存');
+          return;
+        }
+        const key = `${sessionId}:${messageId}`;
+        if (parsed.data.liked) messageLikes.add(key);
+        else messageLikes.delete(key);
+        ok(res, { session_id: sessionId, message_id: messageId, liked: parsed.data.liked });
+        return;
+      }
       const conversationMatch = path.match(
-        /^\/api\/v1\/conversations\/([^/]+)(?:\/(messages|regenerate|cancel|first-token))?$/
+        /^\/api\/v1\/conversations\/([^/]+)(?:\/(messages|regenerate|cancel|first-token|branch))?$/
       );
       if (conversationMatch) {
         const [, id, action] = conversationMatch;
@@ -700,11 +1036,88 @@ export function createPreviewServer(apiPort: number, appPort: number) {
           return;
         }
         if (!action && method === 'GET') {
-          ok(res, {
-            session,
-            messages: data.messages.filter((item) => item.session_id === id),
-            has_more: false,
+          const before = url.searchParams.get('before_turn_index');
+          ok(res, conversationPage(session, before ? Number(before) : undefined));
+          return;
+        }
+        if (action === 'branch' && method === 'POST') {
+          const parsed = ForkConversationRequestSchema.safeParse(body);
+          if (!parsed.success) {
+            fail(res, 400, 'BAD_REQUEST', '分支参数无效');
+            return;
+          }
+          const { message_id: messageId, request_id: requestId } = parsed.data;
+          const previous = branchRequests.get(requestId);
+          if (previous) {
+            if (previous.sourceSessionId !== id || previous.messageId !== messageId) {
+              fail(res, 409, 'branch_request_conflict', '请重新选择分支起点');
+              return;
+            }
+            ok(
+              res,
+              conversationPage(data.sessions.find((item) => item.id === previous.sessionId)!)
+            );
+            return;
+          }
+          const source = currentConversationMessages(session.id);
+          const anchor = source.find(
+            (message) => message.id === messageId && message.role === 'assistant'
+          );
+          if (
+            !anchor ||
+            anchor.turn_index < 1 ||
+            anchor.status !== 'complete' ||
+            !anchor.content.trim()
+          ) {
+            fail(res, 409, 'branch_not_allowed', '请从已完成的回复开启分支');
+            return;
+          }
+          const selected = source.filter(
+            (message) => message.turn_index > 0 && message.turn_index <= anchor.turn_index
+          );
+          const keepTurns = [...new Set(selected.map((message) => message.turn_index))].slice(-50);
+          const now = stamp();
+          const branch: ChatSession = {
+            ...session,
+            id: randomUUID(),
+            title: `分支 · ${(session.title ?? '新的对话').replace(/^分支 · /, '')}`,
+            branch: {
+              source_session_id: session.id,
+              source_turn_index: anchor.turn_index,
+              inherited_turns: keepTurns.length,
+            },
+            message_count: keepTurns.length * 2,
+            pinned_at: null,
+            last_message_at: now,
+            last_message_preview: anchor.content,
+            created_at: now,
+            updated_at: now,
+          };
+          data.sessions.push(branch);
+          const opening = source.find((message) => message.turn_index === 0);
+          if (opening)
+            data.messages.push({ ...opening, id: `opening:${branch.id}`, session_id: branch.id });
+          data.messages.push(
+            ...selected
+              .filter((message) => keepTurns.includes(message.turn_index))
+              .map((message) => ({
+                ...message,
+                inherited: true,
+                session_id: branch.id,
+                turn_index: keepTurns.indexOf(message.turn_index) + 1,
+              }))
+          );
+          branchRequests.set(requestId, {
+            sourceSessionId: session.id,
+            messageId,
+            sessionId: branch.id,
           });
+          if (scenario === 'chat-branch-error' && !branchFailureDelivered) {
+            branchFailureDelivered = true;
+            fail(res, 503, 'INTERNAL_ERROR', '分支暂时没能打开，请重试');
+            return;
+          }
+          ok(res, conversationPage(branch));
           return;
         }
         if (action === 'first-token' && method === 'POST') {
@@ -817,7 +1230,7 @@ export function createPreviewServer(apiPort: number, appPort: number) {
               message.status = 'complete';
               message.finish_reason = 'stop';
             }
-            session.message_count += 2;
+            if (action === 'messages') session.message_count += 2;
             session.last_message_preview = message.content;
             write({
               type: 'done',
@@ -1078,7 +1491,7 @@ export function createPreviewServer(apiPort: number, appPort: number) {
   return { server, reset };
 }
 
-if (process.argv[1]?.replaceAll('\\', '/').endsWith('/fixtures/server.ts')) {
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const apiPort = Number(process.env.ST_UI_API_PORT ?? 3121);
   const appPort = Number(process.env.ST_UI_APP_PORT ?? 3120);
   const { server } = createPreviewServer(apiPort, appPort);

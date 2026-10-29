@@ -138,3 +138,9 @@ send/regenerate 携带可选 `first_token_measurement`；后端通过既有 begi
 只消费赢家的replay与原charge_id结算，原报价/权益、超时免扣、主动停止和离页恢复规则不变。败方立即取消，不为排查drain；只把已接收的正文/公开思考有界片段和race_lost原因并入原attempt一次异步终态写，不发给用户、不进上下文、不另计费。正常attempt最多派发/终态两次observe；删除旧首发额外元数据补读，无新cron/轮询。diagnostic保存不阻塞首字，赢家身份仍须持久化才能结算。
 
 新迁移`20261028_first_token_race.sql`扩展现有attempt诊断列并解除禁止首发回赢的守卫，保留数据库单赢家CAS/PT409；Grafana仅获原指标列权限，不能读诊断正文。先本地与TEST验证、合dev，再生产迁移和应用/Admin/看板。回退应用保留诊断列与原账务，不扩权限，不改历史数据。
+
+# 历史对话分支（2026-10-29，本地实现）
+
+`POST /api/v1/conversations/:id/branch` 使用严格 `ForkConversationRequestSchema`，仅接受选中回复的 `message_id` 与本次创建的 `request_id`（UUID）。客户端不能指定上下文轮数；Backend读取现有A/B配置。返回 `ForkConversationData` 复用详情分页结构。请求结果未知时同key重试，另一次明确创建才更换key。
+
+`ChatSession.branch` 可选返回源会话、源轮次和带入轮数；`ChatMessage.inherited` 可选标记固定继承的文字。旧普通会话无此字段。继承消息不携带原生成的request_id，不产生新生成/消费事实。后续普通发送/重生成及既有SSE契约不变。新增错误码为branch_not_allowed/branch_request_conflict/branch_rate_limited，分别409/409/429。

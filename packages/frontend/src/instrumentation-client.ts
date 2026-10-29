@@ -1,7 +1,9 @@
 import * as Sentry from '@sentry/nextjs';
 
 import { initEnvTags } from '@/lib/perf/env-tags';
-import { sanitizeTelemetry } from '@/lib/sentry/sanitize';
+import { initializeEngineeringTelemetry } from '@/lib/perf/grafana';
+import { initializePageExperience, markPageNavigationStart } from '@/lib/perf/page-tracker';
+import { sanitizeStartupMetric, sanitizeTelemetry } from '@/lib/sentry/sanitize';
 
 const SENTRY_ENVIRONMENTS = new Set(['production', 'development']);
 
@@ -14,6 +16,9 @@ const environment = process.env.NEXT_PUBLIC_SENTRY_ENVIRONMENT?.trim();
 // 所以不依赖会话采样也能回看。
 const TRACES_SAMPLE_RATE = 0.2;
 const REPLAY_SESSION_SAMPLE_RATE = 0.05;
+
+void initializeEngineeringTelemetry();
+initializePageExperience();
 
 // 前端在 Vercel、后端在 Railway，跨域请求默认不带 sentry-trace，前后端 trace 串不起来。
 function resolveTracePropagationTargets(): Array<string | RegExp> {
@@ -39,6 +44,8 @@ function isValidDsn(value: string | undefined): value is string {
 /** PostHog 请求不进 BrowserTracing，避免 /flags、batch 撑开 navigation P95。 */
 function shouldCreateSpanForRequest(url: string): boolean {
   if (/posthog/i.test(url)) return false;
+  const grafanaCollector = process.env.NEXT_PUBLIC_GRAFANA_COLLECTOR_URL?.trim();
+  if (grafanaCollector && url.startsWith(grafanaCollector)) return false;
   const posthogHost = process.env.NEXT_PUBLIC_POSTHOG_HOST?.trim();
   if (posthogHost) {
     try {
@@ -82,6 +89,7 @@ if (isSentryEnabled) {
     beforeSend: (event) => sanitizeTelemetry(event),
     beforeSendTransaction: (event) => sanitizeTelemetry(event),
     beforeBreadcrumb: (breadcrumb) => sanitizeTelemetry(breadcrumb),
+    beforeSendMetric: sanitizeStartupMetric,
   });
   Sentry.addEventProcessor((event) =>
     event.type === 'replay_event' ? sanitizeTelemetry(event) : event
@@ -89,4 +97,7 @@ if (isSentryEnabled) {
   initEnvTags();
 }
 
-export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;
+export const onRouterTransitionStart: typeof Sentry.captureRouterTransitionStart = (...args) => {
+  markPageNavigationStart(args[0]);
+  Sentry.captureRouterTransitionStart(...args);
+};

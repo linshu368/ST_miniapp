@@ -1,0 +1,1 @@
+2026-10-29 规划独立评审通过：experience归属、session/history唯一键、继承/重生成隔离、视图末尾liked探测均无阻断。实现补单列message FK索引、显式撤销默认service写权限及有限session锁等待。迁移按分支→点赞顺序执行，旧分支视图定义不能在liked追加后重跑；隔离harness按顺序验证。用户已授权该功能与48px舒适触区，本地开发，不发布。

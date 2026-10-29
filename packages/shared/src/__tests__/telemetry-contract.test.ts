@@ -14,6 +14,7 @@ import {
   DramaTimingReportSchema,
   DRAMA_TIMING_MAX_MEDIA_EVENTS,
   dramaTimingLogFields,
+  dramaTimingStages,
 } from '../index.js';
 
 const replayContextId = '11111111-1111-4111-8111-111111111111';
@@ -41,6 +42,97 @@ describe('drama timing upload contract', () => {
     stages: {},
     queries: [],
   };
+  it('accepts bounded experiment/seek details and rejects browser-supplied identity or credentials', () => {
+    const delivery = {
+      experimentId: 'unit-ab',
+      group: 'bunny',
+      provider: 'supabase',
+      reason: 'disabled',
+    };
+    const seek = {
+      targetMs: 40000,
+      buffered: 'no',
+      wasPlaying: true,
+      seekedMs: 300,
+      frameMs: 5100,
+    };
+    const valid = {
+      ...report,
+      type: 'seek',
+      delivery,
+      seek,
+      frameMethod: 'video_frame_callback',
+      elapsedMs: 5100,
+      overFiveSeconds: true,
+    };
+    expect(DramaTimingReportSchema.safeParse(valid).success).toBe(true);
+    for (const bad of [
+      { ...valid, experiment_user: 'forged' },
+      { ...valid, delivery: { ...delivery, userId: 'sensitive' } },
+      { ...valid, seek: { ...seek, url: 'signed-secret' } },
+      { ...valid, type: 'playback' },
+      { ...valid, recovery: { rootId: 'root', cumulativeMs: -1 } },
+    ])
+      expect(DramaTimingReportSchema.safeParse(bad).success).toBe(false);
+  });
+  it('derives all stages once and leaves reversed/missing intervals absent', () => {
+    const marks = {
+      player_ready: 100,
+      address_ready: 200,
+      source_set: 300,
+      metadata: 500,
+      loadeddata: 800,
+      first_frame: 1200,
+      playing: 1250,
+    };
+    expect(dramaTimingStages(marks)).toEqual({
+      navigation: 100,
+      address_wait: 200,
+      address_to_source: 100,
+      entry_to_source: 300,
+      source_to_metadata: 200,
+      metadata_to_frame: 700,
+      metadata_to_data: 300,
+      data_to_frame: 400,
+      source_to_frame: 900,
+      source_to_playing: 950,
+      frame_to_startup: 50,
+    });
+    expect(dramaTimingStages({ metadata: 500, loadeddata: 400, first_frame: 600 })).toEqual({
+      metadata_to_frame: 100,
+      data_to_frame: 200,
+    });
+    expect(dramaTimingStages({ source_set: 0, metadata: 0 })).toEqual({
+      entry_to_source: 0,
+      source_to_metadata: 0,
+    });
+    expect(dramaTimingStages({})).toEqual({});
+    expect(dramaTimingStages({ source_set: NaN, metadata: Infinity })).toEqual({});
+  });
+  it('accepts the bounded unified projection and diagnostic purpose without weakening legacy validation', () => {
+    const input = {
+      ...report,
+      definition: 'drama_v3',
+      route: '/',
+      purpose: 'diagnostic',
+      marks: { source_set: 100, metadata: 200 },
+      stages: { source_to_metadata: 999 },
+    };
+    const parsed = DramaTimingReportSchema.parse(input);
+    expect(dramaTimingLogFields(parsed)).toMatchObject({
+      definition: 'drama_v3',
+      route: '/',
+      purpose: 'diagnostic',
+      source_to_metadata_ms: 100,
+    });
+    for (const extra of [
+      { route: '/dramas/private-id' },
+      { purpose: 'anything' },
+      { definition: 'future' },
+      { stages: { url: 'secret' } },
+    ])
+      expect(DramaTimingReportSchema.safeParse({ ...input, ...extra }).success).toBe(false);
+  });
   it('versions start/network phases and rejects resource URLs, overflow and invalid frame values', () => {
     const context = {
       release: 'abc123',
@@ -536,6 +628,45 @@ describe('first-token delivery contract versions', () => {
         ...delivery,
         measurement_method: 'client_committed_v4',
         first_token_received_ms: 1251,
+      }).success
+    ).toBe(false);
+  });
+  it('accepts request-only unavailable v4 results, but never anonymous delivery success or partial identities', () => {
+    const unknown = {
+      ...delivery,
+      assistant_message_id: null,
+      revision: null,
+      measurement_method: 'client_committed_v4',
+      outcome: 'not_observed',
+      first_token_visible_ms: null,
+      first_token_received_ms: null,
+      reason: 'page_left',
+      backgrounded: true,
+    };
+    expect(ReportFirstTokenRequestSchema.safeParse(unknown).success).toBe(true);
+    expect(
+      ReportFirstTokenRequestSchema.safeParse({
+        ...unknown,
+        outcome: 'timed_out',
+        reason: 'not_visible',
+        backgrounded: false,
+      }).success
+    ).toBe(true);
+    expect(
+      ReportFirstTokenRequestSchema.safeParse({
+        ...delivery,
+        measurement_method: 'client_committed_v4',
+        assistant_message_id: null,
+        revision: null,
+      }).success
+    ).toBe(false);
+    expect(ReportFirstTokenRequestSchema.safeParse({ ...unknown, revision: 0 }).success).toBe(
+      false
+    );
+    expect(
+      ReportFirstTokenRequestSchema.safeParse({
+        ...unknown,
+        measurement_method: 'visible_dom_after_frame_v3',
       }).success
     ).toBe(false);
   });

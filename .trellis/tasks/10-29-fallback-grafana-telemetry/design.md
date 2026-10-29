@@ -1,0 +1,15 @@
+# 最小设计与可靠性
+
+基线：用户刚发布的main db6a7201（6秒SSE冻结预算+有界业务回执）与新监控框架已提交a86ee79。在自己的隔离checkout直接以已合入main的最新框架分支73be9210为底（避免重复引入业务提交）；保留双方全部行为，不改其他任务工作区、TEST服务或生产。合并冲突仅适配同一FirstTokenObservation owner，监控出口故障不能妨碍业务回执。
+
+复用Faro白名单、FirstTokenObservation单次finish、selectedModelId快照、first-token-fallback实际dispatch/选赢家回调、现有OTel有限出口和角色扮演JSON。增加有限所选型号维度和本轮冻结deadline字段；参数放日志字段而非无限metric labels。首字终态和成功分布各用相同outcome/version/型号过滤；时间截断单列，其他错误/离页/停止/缺报分别可见，不虚构全访问覆盖。服务端统计仅在真实dispatch/赢家锁定时记录，不能用fallback intent或fallback模型聚合替代各所选型号触发率。指标不等待网络，复用有界SDK队列，禁新表/扫描/逐token写。
+
+新链路沿原TEST优先门禁；这里只提供可合入框架的增量及合成验证，不在采集未验收前改生产数据源或删除原业务首字结果。Supabase仅保留回复恢复/赢家/计费所必需的原事实；去除旧纯统计查询须有新链路样本后再执行，不贸然删除共享业务字段。
+
+风险：低基数型号白名单/封顶、不上传用户或正文；未知型号归unknown；无数据不填0。开始终态计数非精确跨窗cohort，采集丢弃和缺报分开呈现。工程分段只用同一请求时钟，不能减独立P95。无新业务重试、自动调参或告警服务。
+
+## 用户追加：退出旧Supabase纯监控
+
+新链路已有真实Cloud合成样本，追加删除纯监控写入与旧SQL面板。运行时检索确认：first_token_emitted_ms只供旧分析视图使用，generate的独立markServer UPDATE没有计费/恢复消费者，可移除整次写；client_request_dispatched_ms与client_wait_finished_ms只供旧分析，report RPC投影不再传入。first_token_received_ms仍参与旧兼容计费边界，visible/outcome/failed/identity等参与免扣/幂等，必须保留。不中断供应商原始事实、赢家、可恢复内容和一次结算；不新增迁移、不清历史、不DROP字段、无回填或扫描。
+
+旧chat-first-token-manual以跳转说明替换7条SQL查询、删除SQL变量与刷新；不影响其他经营看板/共享数据源/cron，不运行grafana\_%批量变更。先确保新生产样本存在再发布跳转，避免切到空图。现有本地PG/PostgREST harness与生命周期回归验证，直接核对移除监控写入后首字超时、恢复、计费路径未变。此次增量具体清单另审后提交。

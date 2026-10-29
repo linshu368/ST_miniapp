@@ -349,6 +349,7 @@ describe('image plaza settlement cache refresh', () => {
       for (const call of vi.mocked(apiClient).mock.calls) {
         expect(call).toEqual([
           `/api/image-plaza/conversations/${plazaConversationId}?include_video=1`,
+          { signal: expect.any(AbortSignal) },
         ]);
       }
     }
@@ -424,7 +425,8 @@ describe('image plaza settlement cache refresh', () => {
     expect(client.getQueryData(imagePlazaKeys.conversation(plazaConversationId))).toEqual(before);
     expect(invalidate).not.toHaveBeenCalled();
     expect(apiClient).toHaveBeenCalledExactlyOnceWith(
-      `/api/image-plaza/conversations/${plazaConversationId}?include_video=1`
+      `/api/image-plaza/conversations/${plazaConversationId}?include_video=1`,
+      { signal: expect.any(AbortSignal) }
     );
   });
 

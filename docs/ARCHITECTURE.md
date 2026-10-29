@@ -25,7 +25,11 @@
 
 ## 1. 架构铁律（违反即拦截）
 
-离线数据运维补充：2026-10-19 的 Civitai seed TEST 导出复用既有 `experience.import_image_plaza_seed_work` 初始化目标作品，不迁移测试用户/点赞/账务；图片实体必须独立迁移。2026-10-20 新增离线 Storage 工具，固定 TEST → 本地 SHA-256 暂存 → production 仅新增上传/回读校验，有限并发且不覆盖冲突对象。该工具不改变运行时边界，不自动执行生产 SQL；实际完成状态以任务/report 为准。操作方法见 [seed 迁移说明](../ops/image-plaza-seed-migration.md)。
+⏳ **2026-10-29 回复点赞（本地增量，未发布）**：`experience.chat_message_likes(session_id,message_id)` 保存会话主人对固定实际回复版本的点赞，分支不复制，重生成以新history ID独立反馈。`set_chat_message_like` 按归属/完成态验证并与开轮共用会话锁；显式布尔目标可幂等重试，写入不触发聊天统计或计费。角色社交查询通过 `experience.get_character_reply_like_counts` 批量读取角色回复总赞，加上原角色卡直接赞，返回大厅统一累计数量。`session_chat_history` 只末尾追加 `liked`，消息列表选择，模型上下文不选择；不额外为每条消息查询。受限RPC拥有写权，service只可读取新表，浏览器无直接数据库权限。迁移需先分支后点赞，恢复时可忽略个人点赞投影并保留数据。
+
+短剧 CDN 对照复用正常 `/api/dramas/:id/play`：Telegram 鉴权与归属校验后，根据固定实验 HMAC 分配约 20% Bunny、80% Supabase；实验内去重键只在服务器日志中生成。生产／TEST 的源、目录、CDN 签名与缓存隔离；CDN 只获对象级短期源能力，不获项目密钥。两组同一播放器与策略，每次新播放／重试都确认当前路径，关闭后不能消费旧 Bunny 预取地址。起播、未缓冲快进和恢复链经 shared 白名单传到现有 Pino；超过 5 秒继续记录真实结果。接收接口保持不写分析库，seek 不混入 startup 工程统计，不新增表／迁移／实验平台。独立实验页面/API已移除。实现与发布步骤见 [生产对照操作说明](../ops/drama-cdn-rollout.md)；代码不代表生产已启用或每次 5 秒目标已达成。
+
+离线数据运维补充：2026-10-19 的 Civitai seed TEST 导出最初复用 `experience.import_image_plaza_seed_work` 初始化目标作品；M1 后该 RPC 位于 `media_plaza`。该流程不迁移测试用户/点赞/账务，图片实体必须独立迁移。2026-10-20 新增离线 Storage 工具，固定 TEST → 本地 SHA-256 暂存 → production 仅新增上传/回读校验，有限并发且不覆盖冲突对象。该工具不改变运行时边界，不自动执行生产 SQL；实际完成状态以任务/report 为准。操作方法见 [seed 迁移说明](../ops/image-plaza-seed-migration.md)。
 
 1. **对外数据形状先定义在 `packages/shared/`**，再写 handler。backend 不得在包内私定对外类型。
 2. **每条路由注册上方必须有 `@frontend-ready: true|false — 原因`**，半成品要写出带业务含义的原因。
@@ -227,6 +231,8 @@ v1 是旧 bot `SimplePromptEngine` 的忠实移植，最终形状：
 ```
 
 - **上下文长度管理已落地（077）**：双水位线泄洪，窗口在 [A, B] 轮之间增长，超过高水位 B（`max_context_turns`，默认 75）一次性收缩到低水位 A（`retain_context_turns`，默认 50）。窗口起点持久化在 `chat_sessions.context_window_start_turn`，由开轮 RPC 在会话行锁内更新（`apply_context_window_flood`）；**不删** `chat_history`，只决定本轮 prompt 带哪些轮。引擎不二次裁剪，`truncatedTurns` 回填真实观测值。双水位（而非滑动窗口）是为了给 Anthropic prompt cache 制造稳定前缀；设计原稿：`git show b4491cd^:docs/context-window-and-prompt-cache.md`。
+
+- **历史分支（2026-10-29，本地已实现，远端待迁移/发布）**：`POST /api/v1/conversations/:id/branch` 以完成回复为锚点，服务端读取低水位 A，继承截至该轮的最多 A 轮并重新编号。`experience.chat_branch_turns` 固定引用实际 history ID，分支再分支同样展开为实际 ID；来源后续生成、重生成或软删除不改动已继承上下文。消息与上下文读取 `session_chat_history`，本分支新 revision 覆盖继承轮；计费、生成和分析继续读取原事实表，不把继承记录计作新生成。用户范围的事务 advisory lock、唯一请求键与单事务负责幂等/限速，来源会话仍验证所属用户。之后沿原 A/B 窗口，记忆仅随轮次正文保留，不增加抽取服务。继承媒体不复制，不带原请求关联 ID；新回复正常支持媒体。发布顺序：迁移 → Backend → Frontend；已有分支不能退回完全旧 Backend，隐藏入口后保留读取能力并 forward-fix。验收与边界见 `.trellis/tasks/10-29-conversation-branches/`。
 - **不消费预设**：ST 酒馆格式的 `platform_presets` 已随 088 整体删除（数据留档在库外）。自建预设格式是待办（M4，见 §10）。
 - **不注入 `first_mes`**：开场白由编排层放进 history，引擎再注入会每轮重复一条。
 - **不做酒馆语义适配**：宏、世界书、正则、卡内嵌资源一律不支持，表现质量由 system prompt 与组装逻辑承担。
@@ -465,6 +471,8 @@ frontend 自有 Route Handler：`GET /api/lobby-characters`（白名单 sort 参
 
 ## 7. 工程约定
 
+MiniApp 启动展示与业务数据分离：根 `Providers` 在 Telegram 初始化前输出无请求的 `EntryShell`，角色/短剧列表复用现有骨架、短剧栏目及五项导航；初始化后在绘制机会后发送 SDK `miniApp.ready()`。`lib/perf/startup-timing.ts` 复用 Sentry distribution 上报从文档导航起算的框架可展示/ready 通知耗时，与原 `page.ready.duration` 分开；P95、后台/离开和原生遮罩观测边界见 [前端性能规范](../.trellis/spec/frontend/app/testing-quality-and-deployment.md#miniapp-启动框架与-p95)。
+
 ### 7.1 前端
 
 - Next.js 14 App Router，`src/app/` 下 `(main)` 分组在本地短剧新版中承载五入口（角色 `/characters` 与 `/chats` / AI短剧 `/dramas` / 中央播放首页 `/` / 生成 `/create` / 我的 `/profile`）；公共贴底导航共享高度、安全区和隐藏规则，会话页是 **`/chat/[characterId]?session=...`**（不在分组内，无底部导航），另有自定义语音台词页 `/chat/[characterId]/voice/[messageId]`。
@@ -567,7 +575,11 @@ packages/backend/src/
 
 **体验监控**（Sentry org `wangqiao` / project `st-miniapp`，前后端共用，靠 `service` 标签区分）：p95/p99 来自 Sentry Metrics（全量，不受 trace 采样影响），"卡了"以 warning 事件表达并自带 Replay。前端 `src/lib/perf/` 记录请求耗时与超时（`apiClient` 默认 20 秒超时，图片/语音生成等长耗时接口例外）、页面可用耗时与 4 秒卡住（大厅/聊天列表/会话页/充值）、三个核心按钮 2.5 秒无反馈、资源加载失败；后端 `lib/perf-metrics.ts` 记录每路由耗时（对话/语音/图片生成单独 `kind=generation`）、Prisma 操作耗时（连接池超时标 `pool_timeout`）、事件循环延迟。采样：trace 0.2、Replay 会话 0.05、Replay 报错 1.0。指标清单、看板与排查流程见 `.trellis/tasks/10-21-sentry-ux-monitoring/dashboard-and-runbook.md`。阈值均为初值，待基线校准。
 
-短剧列表与播放另记录用户等待、API 排队/响应头/body、媒体元数据/首帧和 Backend 查询/签名阶段。浏览器通过鉴权 `POST /api/telemetry/drama-timing` 将有界报告交给 Pino；v2 增加被动媒体请求/帧处理/长任务证据、开始与至多一次网络补充。默认日志模式；对应环境执行 `20261027_drama_playback_observability.sql` 并显式开启 `DRAMA_TIMING_PERSIST_ENABLED` 后，遥测独立请求经 service_role 原子合并至 miniapp_analytics，播放API不依赖分析表。独立 Grafana `st-drama-playback` 只读分布/覆盖/单次详情，不修改经营看板；摘要全量14天、慢/失败及5%快样本明细7天，有界清理job初始关闭。没有新采集服务，URL只用于内存关联，缺失不补零，能力受TAO/WebView限制。源码/模板不代表远端已执行。口径与发布恢复见 [短剧播放耗时排查](drama-playback-timing.md) 和 [看板操作说明](grafana/drama-playback-runbook.md)。
+短剧性能的唯一计时owner仍为drama-timing/媒体观察器；shared `dramaTimingStages`集中阶段定义，`definition=drama_v3`与兼容报告version=2分开。Faro/Loki提供全量目录/启动/首帧/阶段、结果与有限诊断摘要；OTel复用原Backend auth/db_read/assemble/sign分段；Pino保留有界单次请求/媒体诊断。首页/详情归属与目录起点绑定原观察，构建release统一为实际SHA，身份和签名URL不进Faro标签。
+
+短剧列表与播放通过鉴权 `POST /api/telemetry/drama-timing` 接收有界客户端报告并保留Pino日志。达到5000ms的播放终态以及同一次观察的迟到network报告，以受控JSON正文经现有工程OTLP队列→Alloy→Grafana Cloud Loki，事件名 `drama.startup_diagnostic`；strict shared白名单、32KiB报告上限、256项既有队列与2秒出口预算不变。观察/视频/会话ID仅放日志正文，不进入指标或stream标签。无需Frontend变更或五秒快照；原十秒slow仍兼容但不写此Loki详情流。路由不再构造分析DB队列、不调用原观察RPC，旧 `DRAMA_TIMING_PERSIST_ENABLED` 即使为true也不驱动此接口写库；历史表/导入器/旧SQL看板保留，不删除历史。新看板详情追加到 `st-engineering-drama`，final与network不能重复计作两次启动。能力受TAO/WebView限制，limited/no_entry/unsupported不是0毫秒；出口关闭、过载或页面强退仍可能丢失，202只证明接口接收。源码不代表已上线，见[计时说明](drama-playback-timing.md)和[看板操作说明](grafana/drama-playback-runbook.md)。
+
+构建模式NEXT_PUBLIC_DRAMA_TIMING_MODE默认legacy，保留全量旧POST；此路由在任何模式下都不再写分析库。验证后显式unified且Faro配置有效时，POST保留100%≥5秒/非成功与5%不足5秒成功诊断，不再上传start，全量性能统计不采样。purpose=diagnostic还由repository/import防止历史补录。旧表/SQL视图/历史看板/保留期job保留，无新migration/cron/依赖。Backend兼容→Frontend默认legacy→验证→独立授权unified；回滚Frontend模式legacy仅恢复上传量，不恢复DB写入。详见[短剧统一口径](drama-playback-timing.md)与[切换说明](grafana/drama-playback-runbook.md)。
 
 **本地页面验收**：`packages/ui-tests` 以虚构公开DTO提供HTTP/SSE场景，浏览器运行真实Frontend。手动与自动验收使用独立端口、状态和Next缓存，不依赖数据库、模型或支付；见 [移动端验收说明](../packages/ui-tests/README.md)。
 
@@ -751,3 +763,23 @@ send/regenerate 携带可选 `first_token_measurement`；后端通过既有 begi
 只消费赢家的replay与原charge_id结算，原报价/权益、超时免扣、主动停止和离页恢复规则不变。败方立即取消，不为排查drain；只把已接收的正文/公开思考有界片段和race_lost原因并入原attempt一次异步终态写，不发给用户、不进上下文、不另计费。正常attempt最多派发/终态两次observe；删除旧首发额外元数据补读，无新cron/轮询。diagnostic保存不阻塞首字，赢家身份仍须持久化才能结算。
 
 新迁移`20261028_first_token_race.sql`扩展现有attempt诊断列并解除禁止首发回赢的守卫，保留数据库单赢家CAS/PT409；Grafana仅获原指标列权限，不能读诊断正文。先本地与TEST验证、合dev，再生产迁移和应用/Admin/看板。回退应用保留诊断列与原账务，不扩权限，不改历史数据。
+
+## pr-525 Preview 短剧 Bunny 分发（历史 TEST 验收）
+
+PR #525 合入 dev 时的 TEST 适配：只有 Railway 环境名 pr-525、数据库 target=test 且 DRAMA_CDN_ENABLED=true 时，正常 /api/dramas/:id/play 返回 Bunny 地址；DRAMA_CDN_TOKEN_KEY 仅存 Backend。移除独立 /drama-cdn-experiment 页面与专用接口、用户/样本白名单。正常 Telegram 鉴权、剧/集归属和私有桶保持；该版本其他环境仍走 Supabase。pr-525 已完成配置切流与真实媒体功能预检：不同 TEST 对象的起始/中段 Range、源字节比对及热缓存鉴权负例通过；正常 API 向无实验白名单的测试身份返回 Bunny。Telegram 手机实际手感仍待验收，不宣称提速。操作与恢复见 ops/drama-bunny-preview/README.md。
+
+Backend 复用 DramaSignedUrlCache 的有界缓存和 single-flight，先申请 TEST 对象级短期源签名，再按完整对象路径与 origin_token 生成 Bunny HMAC-SHA256 token。用户 URL 到期早于源签名至少60秒；缓存不得改写原到期时间。Bunny 规则只将 /preview-test/\* 映射到固定 TEST host 的 drama-videos 私有桶。无数据库迁移、媒体代理、转码或存储复制；启用配置错误返回不可播，不静默直连掩盖切流失败。
+
+Bunny动态Origin实测：`Path.1-`在保留文件名时也保留原query，不可在其后再拼`?token=`。标准归档键`videos/<video_id>/original`应使用`%{Path.1-2}/%{Url.Filename}?token=%{Query.origin_token}`，避免CDN查询混入源JWT；新路径层级需重新核验。
+
+## 六秒预算与有限补报（2026-10-29）
+
+生产运营目录版本97已由用户发布：总首字上限6000ms、启用型号启动兜底阈值2000ms；停用型号保留原值。本次代码发布不覆盖该配置。Shared全局缺省改为6秒，新增型号仍默认4秒；正式配置与每轮冻结值优先。首发继续参与竞争，先出有效正文或已开启公开思考首字即锁定赢家并立即停止另一方。只有首字受截止约束，完整回复不受6秒限制。此前10秒样本保留原冻结预算，分析时分窗。
+
+SSE start携带当轮冻结总预算。客户端若持有旧目录缓存，按原点击时间修正剩余等待，不从收到start重新计时，也不改写已产生的首份终态。离页/后台仍是独立结果，后台生成与返回恢复保持原行为。
+
+首份结果沿用原回报API，浏览器按Telegram用户暂存未确认的标量回执，不保存正文、凭证或授权信息；最多20条、24小时过期。保留即时最多3次尝试，耗尽后最多再补1次；每次包括排队和body最多3秒。成功即删除；启动、联网、返回前台触发串行补发，每次最多4条、30秒冷却，无定时轮询或服务端扫描。进程被强杀且尚未产生终态仍可能缺报，不能补成成功。
+
+早于SSE身份的非成功v4终态可用原request_id上报。既有RPC按现有client_request_id索引最多读取2条，校验用户与会话且唯一时才定位；歧义不猜，成功结果仍必须有消息编号与revision。首份终态后的重放不UPDATE。迁移20261029_first_token_receipt_recovery.sql仅替换既有函数；不增加表、索引、cron、逐token写入或历史回填，不改变超时免扣、主动停止及正常回复一次计费。
+
+发布顺序：本地PG/测试→TEST迁移与应用验收→先合dev→生产迁移→Backend/Frontend/Admin→Grafana说明；配置只读核对版本97。回退应用保留兼容RPC，必要时前向修复，不删除账务。

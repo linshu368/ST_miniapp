@@ -13,7 +13,7 @@ import { useFreshAfterFetch, usePageReady } from '@/lib/perf/page-ready';
 import { useDramaLibraryStore, useHydrateDramaLibrary } from '@/stores/drama-library-store';
 
 export function DramaHome() {
-  const query = useDramaListQuery();
+  const query = useDramaListQuery('/');
   const hydrated = useHydrateDramaLibrary();
   const controlsVisible = useDramaLibraryStore((state) => state.playbackControlsVisible);
   const activeId = useDramaLibraryStore((state) => state.browse.activeId);
@@ -36,17 +36,23 @@ export function DramaHome() {
     // 没有视频时也必须能离开，不能把用户留在隐藏导航的错误/空页面。
     if (!hasPlayer) useDramaLibraryStore.getState().setPlaybackControlsVisible(true);
   }, [hasPlayer]);
-  const fresh = useFreshAfterFetch(query.isFetching, query.data !== undefined);
-  usePageReady('/', hydrated && query.data !== undefined, fresh);
+  const fresh = useFreshAfterFetch(query.isFetching, query.data !== undefined, query.isError);
+  usePageReady(
+    '/',
+    hydrated && query.data !== undefined && (!query.isError || hasPlayer),
+    fresh,
+    query.isError,
+    query.data !== undefined && query.isFetching ? 'cache' : fresh ? 'fetch' : 'unknown'
+  );
 
   useEffect(() => {
     if (query.data !== undefined || query.isError) markCriticalSettled();
-    if (query.data) dramaTiming.listReady(query.data);
+    if (query.data) dramaTiming.listReady(query.data, '/');
     else if (query.isError) dramaTiming.listFailed();
   }, [query.data, query.isError]);
 
   const retry = () => {
-    dramaTiming.beginList('retry');
+    dramaTiming.beginList('retry', undefined, '/');
     void query.refetch();
   };
 
@@ -150,7 +156,7 @@ export function DramaHome() {
               onNavigate={(direction) => {
                 const target = queue[index + direction];
                 if (!target) return;
-                dramaTiming.beginPlayback(target.id, 'switch');
+                dramaTiming.beginPlayback(target.id, 'switch', undefined, undefined, 'home');
                 setBrowse({ activeId: target.id });
               }}
             />

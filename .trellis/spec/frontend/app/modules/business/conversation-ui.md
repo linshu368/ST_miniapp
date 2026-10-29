@@ -5,8 +5,8 @@ scope: frontend
 category: business
 status: active
 owners: [frontend]
-last_verified_task: .trellis/tasks/10-28-client-ready-first-token/
-last_verified_at: 2026-10-28
+last_verified_task: .trellis/tasks/10-29-chat-reply-likes/
+last_verified_at: 2026-10-29
 ---
 
 # 用户会话、语音与图片界面
@@ -16,6 +16,14 @@ last_verified_at: 2026-10-28
 负责会话列表、流式聊天、重生成、模型/回复偏好（长度、回复模块、自定义要求）、语音、角色回复图片交互展示，以及图片生成用户侧 PostHog 事件。不拥有 PostHog SDK 初始化、后端图片生成或支付结算。
 
 ## 当前状态
+
+完整角色回复的操作行分成两组：左侧为字数、图片、语音和分支，右侧为重新生成与点赞，点赞位于最右。两组保留留白；左组在窄屏可换行，右组固定靠右，保持重新生成 44px、点赞 48px 触区。未选低对比、选中主题色填充，没有常驻文字、公共人数、确认弹层或成功通知。立即点亮/取消并复用轻触觉反馈；只锁当前按钮，保存失败恢复原状态并在回复下轻提示。详情读取一并返回 liked，不增加逐消息 GET；确认后按 session_id + message_id 更新详情与历史分页，停止旧的详情请求后再更新缓存，避免迟到读取覆盖反馈。点赞属于当前会话内的固定回复版本，分支默认未赞、新重生成版本不继承旧赞。
+
+每个不同回复的有效点赞均累加到所属角色的大厅卡片总点赞，取消对应减回；直接在角色卡上点赞仍独立保留。回复按钮本身不展示总人数。保存回复反馈后仅重新读取对应角色的 social 并填回既有缓存，不重载角色列表；先停止可能覆盖它的旧单角色/批量计数读取。次要计数刷新失败不回滚已保存的回复点赞，相关计数缓存标为过期供返回大厅时重读。
+
+已完成且有正文的角色回复下提供 44px 触区的分支图标，右侧显示“分支到新聊天”。语音、换回复及出图操作只显示同规格小图标，语音采用灰色细线小喇叭与两道声波；保留无障碍名称、悬停说明、加载状态和可聚焦触区。点击后建立独立会话、自动进入并出现在原有对话记录中；原会话及其输入草稿保留。不增加返回原对话按钮或来源横幅。分支创建禁止自动重试，传输结果不确定时同一来源消息的手动重试复用 request_id；请求中锁定重复点击，用户已切换或离开时慢响应不得自动带回。
+
+历史文本按服务端 A/B 轮次规则继承，前端不拼接或持久化副本。继承消息仍可继续分支，最后一条仍可重生成；它们不提供语音/图片生成操作，付费媒体留在原会话，新产生的回复恢复正常媒体操作。加载更早消息保持阅读位置，分页结果按会话和请求身份隔离，不得串入新分支。
 
 `/chats` 现在是角色模块内部的「对话」栏目，全局导航为「角色 / 剧场 / 中央首页 / 影像 / 我的」。发现与对话使用固定顶部栏目；角色收藏迁入发现的已收藏筛选，对话列表保留跨角色历史、置顶、重命名和删除确认，管理操作收进各行菜单并提供请求中/失败反馈。
 
@@ -31,21 +39,23 @@ last_verified_at: 2026-10-28
 
 ## 涉及文件
 
-| 路径                                                           | 职责                                            |
-| -------------------------------------------------------------- | ----------------------------------------------- |
-| `packages/frontend/src/app/chat/[characterId]/page.tsx`        | 会话页、图片 footer 接线、`chat_image` 充值来源 |
-| `packages/frontend/src/app/(main)/chats/page.tsx`              | 模块内对话列表与管理菜单                        |
-| `packages/frontend/src/components/roleplay/`                   | 固定模块栏目与接着聊卡片                        |
-| `packages/frontend/src/lib/chat-entry.ts`                      | 会话入口与语音路径构造                          |
-| `packages/frontend/src/lib/roleplay-navigation.ts`             | 有限来源、最后栏目和位置恢复                    |
-| `packages/frontend/src/components/chat/`                       | 聊天组件                                        |
-| `packages/frontend/src/components/chat/chat-message-image.tsx` | 图片面板、结果卡、预览与图片事件调用            |
-| `packages/frontend/src/lib/image-generation/telemetry.ts`      | 图片生成前端事件 helper 与去重                  |
-| `packages/frontend/src/lib/api/conversation-stream.ts`         | SSE client                                      |
-| `packages/frontend/src/hooks/use-chat-session.ts`              | 会话生命周期                                    |
-| `packages/frontend/src/hooks/use-conversation-turn.ts`         | 发送/重生成编排                                 |
-| `packages/frontend/src/lib/recharge-redirect.ts`               | 充值跳转收口                                    |
-| `packages/frontend/src/lib/api/images.ts`                      | 图片查询与 mutation                             |
+| 路径                                                                 | 职责                                            |
+| -------------------------------------------------------------------- | ----------------------------------------------- |
+| `packages/frontend/src/app/chat/[characterId]/page.tsx`              | 会话页、图片 footer 接线、`chat_image` 充值来源 |
+| `packages/frontend/src/app/(main)/chats/page.tsx`                    | 模块内对话列表与管理菜单                        |
+| `packages/frontend/src/components/roleplay/`                         | 固定模块栏目与接着聊卡片                        |
+| `packages/frontend/src/lib/chat-entry.ts`                            | 会话入口与语音路径构造                          |
+| `packages/frontend/src/lib/roleplay-navigation.ts`                   | 有限来源、最后栏目和位置恢复                    |
+| `packages/frontend/src/components/chat/`                             | 聊天组件                                        |
+| `packages/frontend/src/components/chat/chat-message-image.tsx`       | 图片面板、结果卡、预览与图片事件调用            |
+| `packages/frontend/src/lib/image-generation/telemetry.ts`            | 图片生成前端事件 helper 与去重                  |
+| `packages/frontend/src/lib/api/conversation-stream.ts`               | SSE client                                      |
+| `packages/frontend/src/hooks/use-chat-session.ts`                    | 会话生命周期                                    |
+| `packages/frontend/src/hooks/use-conversation-turn.ts`               | 发送/重生成编排                                 |
+| `packages/frontend/src/hooks/use-conversation-branch.ts`             | 分支创建、重试幂等与离页保护                    |
+| `packages/frontend/src/components/chat/chat-message-like-button.tsx` | 单回复点赞、乐观反馈与按钮请求锁                |
+| `packages/frontend/src/lib/recharge-redirect.ts`                     | 充值跳转收口                                    |
+| `packages/frontend/src/lib/api/images.ts`                            | 图片查询与 mutation                             |
 
 ## 关键实现链路
 
@@ -62,6 +72,10 @@ last_verified_at: 2026-10-28
 ## 验证方式
 
 `pnpm --filter @miniapp/frontend typecheck && pnpm --filter @miniapp/frontend test && pnpm --filter @miniapp/frontend lint && pnpm --filter @miniapp/frontend build`。
+
+复用本地验收 `pnpm test:ui --grep @chat-branch`：200 轮中较早锚点、继承分页、单独续聊、原草稿保留、幂等重试及移动端布局。该验收使用虚构数据，不调用真实供应商或扣费；真实数据库与供应商联调以任务验收记录为准。
+
+点赞复用 `pnpm test:ui --grep @chat-like`，覆盖 48px 点击边缘、保存/取消/刷新、失败回滚、历史轮次、分支与重生成隔离及 320/390px 布局。窄屏操作行可换行，保留媒体 44px、点赞 48px 和“分支到新聊天”完整触区。
 
 ## 已知缺口与待核验项
 

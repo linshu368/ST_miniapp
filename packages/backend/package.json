@@ -31,6 +31,12 @@
   "dependencies": {
     "@fastify/cors": "^10.0.0",
     "@miniapp/shared": "workspace:*",
+    "@opentelemetry/api": "1.9.1",
+    "@opentelemetry/exporter-logs-otlp-http": "0.220.0",
+    "@opentelemetry/exporter-metrics-otlp-http": "0.220.0",
+    "@opentelemetry/resources": "2.10.0",
+    "@opentelemetry/sdk-logs": "0.220.0",
+    "@opentelemetry/sdk-metrics": "2.10.0",
     "@prisma/client": "^6.19.3",
     "@sentry/node": "^10.69.0",
     "@supabase/supabase-js": "^2.107.0",
