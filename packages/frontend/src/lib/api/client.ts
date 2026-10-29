@@ -204,9 +204,25 @@ function retryDelayMs(): number {
   return GET_RETRY_BASE_DELAY_MS + Math.floor(Math.random() * (GET_RETRY_JITTER_MS + 1));
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) {
+    return Promise.reject(
+      signal.reason instanceof Error ? signal.reason : new DOMException('Aborted', 'AbortError')
+    );
+  }
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+      reject(
+        signal?.reason instanceof Error ? signal.reason : new DOMException('Aborted', 'AbortError')
+      );
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
   });
 }
 
@@ -325,12 +341,17 @@ export async function apiClient<T>(path: string, options?: ApiRequestInit): Prom
         }
       } catch (error) {
         attempt += 1;
+        if (signal?.aborted) {
+          throw signal.reason instanceof Error
+            ? signal.reason
+            : new DOMException('Aborted', 'AbortError');
+        }
         if (attempt >= maxAttempts || !isRetryableGetTransportError(error, method, signal)) {
           toTransportApiError(error);
         }
         const delayMs = retryDelayMs();
         log.warn(`GET transport retry after ${delayMs}ms`, { path, attempt });
-        await sleep(delayMs);
+        await sleep(delayMs, signal);
       }
     }
   } finally {

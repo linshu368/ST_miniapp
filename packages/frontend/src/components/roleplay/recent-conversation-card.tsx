@@ -2,29 +2,37 @@
 
 import Link from 'next/link';
 import { ChevronRight, MessageCircle, RefreshCw } from 'lucide-react';
+import type { CharacterSummary, ChatSession } from '@miniapp/shared';
 
 import { lobbyImageUrl } from '@/components/characters/character-card';
-import { useCharacterQuery } from '@/lib/api/characters';
-import { resolveSessionTitle, useConversationsQuery } from '@/lib/api/conversations';
+import { resolveSessionTitle } from '@/lib/api/conversations';
 import { chatEntryPath } from '@/lib/chat-entry';
 import { rememberRoleplayScroll, rememberRoleplayView } from '@/lib/roleplay-navigation';
 
-export function RecentConversationCard() {
-  const query = useConversationsQuery(undefined);
-  // 只在当前接口返回的有效会话中选择，不把服务端分页范围解释成全局最近。
-  const recent = query.data?.sessions
-    .filter(
-      (session) =>
-        session.message_count > 0 && Number.isFinite(Date.parse(session.last_message_at ?? ''))
-    )
-    .sort(
-      (left, right) =>
-        Date.parse(right.last_message_at ?? '') - Date.parse(left.last_message_at ?? '')
-    )[0];
-  const characterQuery = useCharacterQuery(recent?.character_id);
-  const character = characterQuery.data?.character;
+interface RecentConversationCardProps {
+  enabled: boolean;
+  recent: ChatSession | undefined;
+  character: CharacterSummary | undefined;
+  loading: boolean;
+  error: boolean;
+  fetching: boolean;
+  onRetry: () => void;
+}
 
-  if (query.isLoading && !recent) {
+export function RecentConversationCard({
+  enabled,
+  recent,
+  character,
+  loading,
+  error,
+  fetching,
+  onRetry,
+}: RecentConversationCardProps) {
+  // 会话列表与角色摘要都由 Gallery 的唯一订阅下传；这里保持纯展示，避免同页
+  // 再挂 query observer 或为列表里已有角色补打一条详情请求。
+  if (!enabled) return null;
+
+  if (loading && !recent) {
     return (
       <div className="mx-auto w-full max-w-2xl px-4 pb-2" role="status">
         <p className="rounded-2xl border border-border/60 bg-card/50 px-4 py-3 text-xs text-muted-foreground">
@@ -34,14 +42,14 @@ export function RecentConversationCard() {
     );
   }
 
-  if (query.isError && !recent) {
+  if (error && !recent) {
     return (
       <div className="mx-auto flex w-full max-w-2xl items-center justify-between gap-3 px-4 pb-2">
         <p className="text-xs text-muted-foreground">暂时没能读取上次对话</p>
         <button
           type="button"
-          disabled={query.isFetching}
-          onClick={() => void query.refetch()}
+          disabled={fetching}
+          onClick={onRetry}
           className="inline-flex min-h-11 items-center gap-1.5 rounded-full px-3 text-xs text-primary disabled:opacity-50"
         >
           <RefreshCw className="size-3.5" aria-hidden />

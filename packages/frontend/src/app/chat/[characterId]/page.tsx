@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { useParams, useRouter } from 'next/navigation';
 import { AlertCircle, X } from 'lucide-react';
 import {
@@ -14,8 +15,6 @@ import type { ReplyChoicePayload } from '@miniapp/reply-renderer';
 import { CONVERSATION_RECOVERING_MESSAGE } from '@/lib/api/conversation-stream';
 import { ChatComposer, MAX_USER_INPUT_LENGTH } from '@/components/chat/chat-composer';
 import { ChatMessageList } from '@/components/chat/chat-message-list';
-import { ChatMessageImageFooter } from '@/components/chat/chat-message-image';
-import { ChatMessageVoiceFooter } from '@/components/chat/chat-message-voice';
 import {
   ChatMessageLikeButton,
   type MessageLikeFeedback,
@@ -27,14 +26,10 @@ import {
 } from '@/components/chat/chat-reply-presentation';
 import { ChatRegenerateButton } from '@/components/chat/chat-regenerate-button';
 import { ChatBranchButton } from '@/components/chat/chat-branch-button';
-import { ChatSessionDrawer } from '@/components/chat/chat-session-drawer';
 import { ChatToolsSheet } from '@/components/chat/chat-tools-sheet';
 import { ChatTopBar } from '@/components/chat/chat-top-bar';
 import { lobbyImageUrl } from '@/components/characters/character-card';
-import {
-  CharacterDetailSheet,
-  type CharacterDetailTab,
-} from '@/components/characters/character-detail-sheet';
+import type { CharacterDetailTab } from '@/components/characters/character-detail-sheet';
 import { ChatSplash } from '@/components/chat/chat-splash';
 import { useChatReplayBinding, useChatSession } from '@/hooks/use-chat-session';
 import { useMemoryDraft } from '@/hooks/use-memory-draft';
@@ -93,6 +88,38 @@ import {
   type ReplyDetailsDefaultOpen,
 } from '@/components/chat/reply-preference-display';
 
+const CharacterDetailSheet = dynamic(
+  () =>
+    import('@/components/characters/character-detail-sheet').then((module) => ({
+      default: module.CharacterDetailSheet,
+    })),
+  { ssr: false }
+);
+
+const ChatSessionDrawer = dynamic(
+  () =>
+    import('@/components/chat/chat-session-drawer').then((module) => ({
+      default: module.ChatSessionDrawer,
+    })),
+  { ssr: false }
+);
+
+const ChatMessageImageFooter = dynamic(
+  () =>
+    import('@/components/chat/chat-message-image').then((module) => ({
+      default: module.ChatMessageImageFooter,
+    })),
+  { ssr: false }
+);
+
+const ChatMessageVoiceFooter = dynamic(
+  () =>
+    import('@/components/chat/chat-message-voice').then((module) => ({
+      default: module.ChatMessageVoiceFooter,
+    })),
+  { ssr: false }
+);
+
 export default function SelfHostedChatPage() {
   const { characterId } = useParams<{ characterId: string }>();
   const router = useRouter();
@@ -105,8 +132,10 @@ export default function SelfHostedChatPage() {
   const [loadingEarlier, setLoadingEarlier] = useState(false);
   const [hasMoreEarlier, setHasMoreEarlier] = useState(false);
   const [sessionsOpen, setSessionsOpen] = useState(false);
+  const [sessionsLoaded, setSessionsLoaded] = useState(false);
   const [characterPanel, setCharacterPanel] = useState<CharacterDetailTab | null>(null);
   const [likeFeedback, setLikeFeedback] = useState<MessageLikeFeedback | null>(null);
+  const [characterPanelLoaded, setCharacterPanelLoaded] = useState(false);
   const choiceLockRef = useRef<ChoiceLockState>(emptyChoiceLock());
   const [choiceLock, setChoiceLock] = useState<ChoiceLockState>(emptyChoiceLock());
   const [detailsDefaultOpen, setDetailsDefaultOpen] = useState<ReplyDetailsDefaultOpen>(
@@ -530,9 +559,18 @@ export default function SelfHostedChatPage() {
         characterId={characterId}
         title={title}
         characterName={character?.name}
-        onOpenCharacter={() => setCharacterPanel('intro')}
-        onOpenComments={() => setCharacterPanel('comments')}
-        onOpenSessions={() => setSessionsOpen(true)}
+        onOpenCharacter={() => {
+          setCharacterPanelLoaded(true);
+          setCharacterPanel('intro');
+        }}
+        onOpenComments={() => {
+          setCharacterPanelLoaded(true);
+          setCharacterPanel('comments');
+        }}
+        onOpenSessions={() => {
+          setSessionsLoaded(true);
+          setSessionsOpen(true);
+        }}
         returnTo={returnTo}
         generating={generating}
         freeRoundActive={freeRoundActive}
@@ -768,27 +806,31 @@ export default function SelfHostedChatPage() {
         }
       />
 
-      <CharacterDetailSheet
-        characterId={characterPanel ? characterId : null}
-        summary={character}
-        initialTab={characterPanel ?? 'intro'}
-        inConversation
-        onClose={() => setCharacterPanel(null)}
-        onEnter={() => setCharacterPanel(null)}
-      />
+      {characterPanelLoaded ? (
+        <CharacterDetailSheet
+          characterId={characterPanel ? characterId : null}
+          summary={character}
+          initialTab={characterPanel ?? 'intro'}
+          inConversation
+          onClose={() => setCharacterPanel(null)}
+          onEnter={() => setCharacterPanel(null)}
+        />
+      ) : null}
 
-      <ChatSessionDrawer
-        open={sessionsOpen}
-        onOpenChange={setSessionsOpen}
-        characterId={characterId}
-        characterName={characterQuery.data?.character.name}
-        activeSessionId={activeSessionId}
-        onSelect={(nextSessionId) => {
-          leaveBranchView();
-          draftRecoveryRef.current = null;
-          session.selectSession(nextSessionId);
-        }}
-      />
+      {sessionsLoaded ? (
+        <ChatSessionDrawer
+          open={sessionsOpen}
+          onOpenChange={setSessionsOpen}
+          characterId={characterId}
+          characterName={characterQuery.data?.character.name}
+          activeSessionId={activeSessionId}
+          onSelect={(nextSessionId) => {
+            leaveBranchView();
+            draftRecoveryRef.current = null;
+            session.selectSession(nextSessionId);
+          }}
+        />
+      ) : null}
 
       {/* 始终挂着：ChatSplash 自己负责收场动画并在结束后返回 null，条件卸载会把动画切掉 */}
       <ChatSplash
