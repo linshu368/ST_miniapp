@@ -2,15 +2,30 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { DramaTimingReport } from './drama-timing';
 
 const mocks = vi.hoisted(() => ({
+  enabled: vi.fn(() => false),
+  id: vi.fn(() => 'observation'),
   upload: vi.fn(async (_report: DramaTimingReport) => {}),
   info: vi.fn(),
   warn: vi.fn(),
   api: vi.fn(),
+  measurement: vi.fn(),
+  event: vi.fn(),
+  pageReady: vi.fn(),
+  pageFailed: vi.fn(),
 }));
 vi.mock('@/lib/api/telemetry', () => ({ uploadDramaTiming: mocks.upload }));
 vi.mock('@/lib/api/client', () => ({ apiClient: mocks.api }));
 vi.mock('@/lib/logger', () => ({ createLogger: () => ({ info: mocks.info, warn: mocks.warn }) }));
-vi.mock('./request-timing', () => ({ createRequestId: () => 'observation' }));
+vi.mock('./request-timing', () => ({ createRequestId: mocks.id }));
+vi.mock('./grafana', () => ({
+  isEngineeringTelemetryEnabled: mocks.enabled,
+  recordEngineeringMeasurement: mocks.measurement,
+  recordEngineeringEvent: mocks.event,
+}));
+vi.mock('./page-tracker', () => ({
+  markPageReady: mocks.pageReady,
+  markPageFailed: mocks.pageFailed,
+}));
 import { dramaTiming, installDramaTiming } from './drama-observer';
 
 afterEach(() => {
@@ -19,10 +34,219 @@ afterEach(() => {
   vi.clearAllTimers();
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+  mocks.enabled.mockReturnValue(false);
+  mocks.id.mockReturnValue('observation');
   vi.restoreAllMocks();
 });
 
 describe('drama centralized logging', () => {
+  it('adds catalog start/final engineering signals without an additional legacy start upload', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+    dramaTiming.beginList('navigation_click');
+    expect(mocks.event).toHaveBeenCalledWith(
+      'drama.started',
+      expect.objectContaining({ stage: 'catalog', report_kind: 'list' })
+    );
+    expect(mocks.upload).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(750);
+    dramaTiming.listReady({});
+    expect(mocks.measurement).toHaveBeenCalledExactlyOnceWith(
+      'drama.catalog',
+      750,
+      expect.objectContaining({ outcome: 'ready' })
+    );
+    expect(mocks.upload).toHaveBeenCalledOnce();
+  });
+
+  it('projects first frame and independent stages once; supplements cannot duplicate startup', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+    const flow = dramaTiming.beginPlayback('private-drama', 'switch');
+    flow.mark('player_ready');
+    flow.addressReady();
+    await vi.advanceTimersByTimeAsync(20);
+    flow.mark('source_set');
+    await vi.advanceTimersByTimeAsync(100);
+    flow.mark('metadata');
+    await vi.advanceTimersByTimeAsync(300);
+    flow.mark('first_frame');
+    flow.frameMethod = 'video_frame_callback';
+    await vi.advanceTimersByTimeAsync(50);
+    flow.mark('playing');
+    flow.finish('playing');
+    await Promise.resolve();
+    expect(mocks.measurement).toHaveBeenCalledWith(
+      'drama.startup',
+      470,
+      expect.objectContaining({ outcome: 'playing', source_measurement_version: 'drama_v3' })
+    );
+    expect(mocks.measurement).toHaveBeenCalledWith(
+      'drama.first_frame',
+      420,
+      expect.objectContaining({ first_frame_method: 'video_frame_callback' })
+    );
+    expect(mocks.measurement).toHaveBeenCalledWith(
+      'drama.stage',
+      300,
+      expect.objectContaining({ stage: 'metadata_to_frame' })
+    );
+    expect(mocks.pageReady).toHaveBeenCalledExactlyOnceWith(
+      '/dramas/:id',
+      'content',
+      '/dramas/private-drama'
+    );
+    const count = mocks.measurement.mock.calls.length;
+    flow.networkTiming({ status: 'no_entry', entries: [], truncated: false }, true);
+    expect(mocks.measurement).toHaveBeenCalledTimes(count);
+    expect(JSON.stringify([mocks.measurement.mock.calls, mocks.event.mock.calls])).not.toContain(
+      'private-drama'
+    );
+  });
+
+  it('keeps home startup attribution and detailed stages without marking a detail page ready', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+    const flow = dramaTiming.beginPlayback('home-id', 'direct', undefined, undefined, 'home');
+    flow.mark('source_set');
+    await vi.advanceTimersByTimeAsync(100);
+    flow.mark('metadata');
+    await vi.advanceTimersByTimeAsync(200);
+    flow.mark('loadeddata');
+    await vi.advanceTimersByTimeAsync(300);
+    flow.mark('first_frame');
+    flow.mark('playing');
+    flow.finish('playing');
+    await Promise.resolve();
+    expect(mocks.measurement).toHaveBeenCalledWith(
+      'drama.stage',
+      200,
+      expect.objectContaining({ route: '/', stage: 'metadata_to_data' })
+    );
+    expect(mocks.measurement).toHaveBeenCalledWith(
+      'drama.stage',
+      300,
+      expect.objectContaining({ route: '/', stage: 'data_to_frame' })
+    );
+    expect(mocks.pageReady).not.toHaveBeenCalled();
+    expect(mocks.upload).toHaveBeenCalledWith(
+      expect.objectContaining({ route: '/', definition: 'drama_v3' })
+    );
+  });
+
+  it('cuts over only with valid Faro config, sampling details without sampling aggregate terminals', async () => {
+    vi.stubEnv('NEXT_PUBLIC_DRAMA_TIMING_MODE', 'unified');
+    mocks.enabled.mockReturnValue(true);
+    mocks.id.mockReturnValue('z'); // deterministic hash bucket 22, outside quick-success 5%.
+    const flow = dramaTiming.beginPlayback('a', 'direct');
+    flow.mark('first_frame');
+    flow.mark('playing');
+    flow.finish('playing');
+    await Promise.resolve();
+    expect(mocks.upload).not.toHaveBeenCalled();
+    expect(mocks.event).toHaveBeenCalledWith(
+      'drama.terminal',
+      expect.objectContaining({ outcome: 'playing' })
+    );
+    const failed = dramaTiming.beginPlayback('b', 'retry');
+    failed.finish('autoplay_blocked');
+    expect(mocks.upload).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ purpose: 'diagnostic', outcome: 'autoplay_blocked' })
+    );
+    mocks.enabled.mockReturnValue(false);
+    const fallback = dramaTiming.beginPlayback('c', 'direct');
+    fallback.finish('playing');
+    await Promise.resolve();
+    expect(mocks.upload).toHaveBeenLastCalledWith(
+      expect.not.objectContaining({ purpose: 'diagnostic' })
+    );
+  });
+
+  it('keeps all slow diagnostics and sampled-success network tails while excluding start uploads', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+    vi.stubEnv('NEXT_PUBLIC_DRAMA_TIMING_MODE', 'unified');
+    mocks.enabled.mockReturnValue(true);
+    mocks.id.mockReturnValue('z');
+    const slow = dramaTiming.beginPlayback('a', 'direct');
+    await vi.advanceTimersByTimeAsync(10_000);
+    slow.finish('playing');
+    slow.networkTiming(
+      { status: 'no_entry', entries: [], truncated: false, closed: 'terminal_tail' },
+      true
+    );
+    expect(mocks.upload.mock.calls.map(([report]) => report.phase)).toEqual([
+      'slow',
+      'final',
+      'network',
+    ]);
+    expect(mocks.upload.mock.calls.every(([report]) => report.purpose === 'diagnostic')).toBe(true);
+    mocks.upload.mockClear();
+    // Five-second finals must reach Loki even outside the quick-success sample bucket.
+    const tail = dramaTiming.beginPlayback('tail', 'direct');
+    await vi.advanceTimersByTimeAsync(4_999);
+    await Promise.resolve();
+    expect(mocks.upload).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    tail.finish('playing');
+    tail.networkTiming({ status: 'no_entry', entries: [], truncated: false }, true);
+    expect(mocks.upload.mock.calls.map(([report]) => report.phase)).toEqual(['final', 'network']);
+    expect(mocks.upload.mock.calls.every(([report]) => report.elapsedMs === 5_000)).toBe(true);
+    mocks.upload.mockClear();
+    mocks.id.mockReturnValue('d'); // bucket 0, quick-success detail sample.
+    const quick = dramaTiming.beginPlayback('b', 'direct');
+    quick.finish('playing');
+    quick.networkTiming({ status: 'no_entry', entries: [], truncated: false }, true);
+    expect(mocks.upload.mock.calls.map(([report]) => report.phase)).toEqual(['final', 'network']);
+  });
+
+  it('projects final diagnostics and labels network supplements separately from startup', () => {
+    const flow = dramaTiming.beginPlayback('a', 'direct');
+    flow.recordFrame({ callbackAtMs: 10, processingMs: 7 });
+    flow.networkTiming({
+      status: 'available',
+      entries: [
+        {
+          startMs: 5,
+          fetchStartMs: 5,
+          responseEndMs: 80,
+          ttfbMs: 60,
+          connectMs: 4,
+          visibility: 'detailed',
+        },
+      ],
+      truncated: false,
+    });
+    flow.finish('playing');
+    expect(mocks.measurement).toHaveBeenCalledWith(
+      'drama.diagnostic',
+      60,
+      expect.objectContaining({ stage: 'network_ttfb_first', report_kind: 'final' })
+    );
+    expect(mocks.measurement).toHaveBeenCalledWith(
+      'drama.diagnostic',
+      7,
+      expect.objectContaining({ stage: 'frame_processing', report_kind: 'final' })
+    );
+    mocks.measurement.mockClear();
+    flow.networkTiming({ status: 'no_entry', entries: [], truncated: false }, true);
+    expect(mocks.measurement).not.toHaveBeenCalled();
+    expect(mocks.event).toHaveBeenLastCalledWith(
+      'drama.diagnostic',
+      expect.objectContaining({ report_kind: 'network', network_status: 'no_entry' })
+    );
+  });
+
+  it('preserves logging/upload on mirror failure and keeps playback error distinct from page ready', async () => {
+    mocks.measurement.mockImplementationOnce(() => {
+      throw new Error('collector failed');
+    });
+    dramaTiming.beginPlayback('a', 'direct').finish('error');
+    await Promise.resolve();
+    expect(mocks.upload).toHaveBeenCalledWith(
+      expect.objectContaining({ phase: 'final', outcome: 'error' })
+    );
+    expect(mocks.pageReady).not.toHaveBeenCalled();
+    expect(mocks.pageFailed).toHaveBeenCalledWith('/dramas/:id', '/dramas/a');
+  });
+
   it('uploads slow and final snapshots with request details and no media credentials', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
     const flow = dramaTiming.beginPlayback('drama-id', 'cover');
@@ -155,7 +379,7 @@ describe('drama centralized logging', () => {
       expect(begin).not.toHaveBeenCalled();
       location.pathname = '/profile';
       handlers.get('click')?.(click);
-      expect(begin).toHaveBeenCalledWith('navigation_click');
+      expect(begin).toHaveBeenCalledWith('navigation_click', undefined, targetPath);
       cleanup();
     }
   );

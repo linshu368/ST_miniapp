@@ -64,7 +64,6 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
   const config = useImagePlazaConfigQuery();
   const conversation = useImagePlazaConversationQuery(conversationId);
   const data = conversation.data?.conversation;
-  usePageReady('/create/studio/:id', conversation.data !== undefined);
   useEffect(() => {
     if (
       conversation.data !== undefined ||
@@ -145,6 +144,14 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
 
   const models = useMemo(() => config.data?.models ?? [], [config.data?.models]);
   const model = models.find((item) => item.id === modelId) ?? models[0];
+  usePageReady(
+    '/create/studio/:id',
+    Boolean(config.data?.enabled && data && model) && !config.isLoading && !conversation.isLoading,
+    false,
+    (!config.data && config.isError) ||
+      (!data && conversation.isError) ||
+      (config.data !== undefined && (!config.data.enabled || !model))
+  );
   useEffect(() => {
     if (initialized || !data || models.length === 0) return;
     const snapshot = data.snapshot;

@@ -1,0 +1,17 @@
+// LOCAL CONTRACT TEST ONLY. Never deploy this public, unauthenticated receiver.
+logging { level = "warn" }
+
+faro.receiver "contract" {
+  extra_log_labels = { app = "st-miniapp" }
+  server {
+    listen_address = "0.0.0.0"
+    listen_port = 12347
+    max_allowed_payload_size = "64KiB"
+  }
+  sourcemaps { download = false }
+  output { logs = [loki.write.contract.receiver] }
+}
+
+loki.write "contract" {
+  endpoint { url = "http://st-observability-loki:3100/loki/api/v1/push" }
+}

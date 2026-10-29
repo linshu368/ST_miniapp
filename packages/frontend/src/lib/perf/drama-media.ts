@@ -1,6 +1,12 @@
 import type { DramaPlaybackTiming } from './drama-timing';
 import type { DramaMediaEvent, DramaMediaState } from '@miniapp/shared';
 import { observeDramaLongTasks, observeDramaResources } from './drama-resources';
+import { getMetricDimensions } from './env-tags';
+import {
+  isEngineeringTelemetryEnabled,
+  recordEngineeringEvent,
+  recordEngineeringMeasurement,
+} from './grafana';
 
 function mediaState(video: HTMLVideoElement): DramaMediaState {
   const currentTime = video.currentTime;
@@ -64,6 +70,208 @@ export function observeDramaMedia(
   let frame = false;
   let callbackId: number | undefined;
   let useFrameCallback = typeof video.requestVideoFrameCallback === 'function';
+  let rebufferAt: number | undefined;
+  const rebufferAttributes = {
+    route: timing.owner === 'home' ? '/' : '/dramas/:id',
+    report_kind: 'playback',
+    stage: 'rebuffer',
+    playback_mode: timing.entry,
+    source_measurement_version: 'drama_rebuffer_v1',
+  };
+  const visible = () => typeof document !== 'undefined' && document.visibilityState === 'visible';
+  const qualityEnabled = isEngineeringTelemetryEnabled();
+  let qualityState: 'playing' | 'waiting' | undefined;
+  let qualityAt = 0;
+  let qualityWindowAt = 0;
+  let qualityPlayingMs = 0;
+  let qualityRebufferMs = 0;
+  let qualityDimensions: ReturnType<typeof getMetricDimensions> | undefined;
+  let qualityTimer: ReturnType<typeof setTimeout> | undefined;
+  let qualitySawPlaying = false;
+  let qualityFrame = false;
+  let qualityMediaTime = video.currentTime;
+  const qualityEligible = () =>
+    !disposed &&
+    video.currentSrc === source &&
+    visible() &&
+    !video.paused &&
+    !video.seeking &&
+    !video.ended;
+  const readQualityDimensions = (): ReturnType<typeof getMetricDimensions> => {
+    try {
+      return { ...getMetricDimensions() };
+    } catch {
+      return { net_type: 'unknown', tg_platform: 'unknown' };
+    }
+  };
+  const settleQuality = (now: number) => {
+    if (!qualityState) return;
+    const elapsed = now - qualityAt;
+    // A suspended event loop is not proof that video kept playing. Never fill
+    // an unobserved long gap with playback or buffering time.
+    if (elapsed >= 0 && elapsed <= 60_000) {
+      if (qualityState === 'playing') qualityPlayingMs += elapsed;
+      else qualityRebufferMs += elapsed;
+    }
+    qualityAt = now;
+  };
+  const flushQuality = () => {
+    const now = performance.now();
+    settleQuality(now);
+    const playingMs = Math.round(qualityPlayingMs);
+    const rebufferMs = Math.round(qualityRebufferMs);
+    const dimensions = qualityDimensions;
+    const validWindow = now - qualityWindowAt <= 60_000 && playingMs + rebufferMs <= 60_000;
+    qualityPlayingMs = 0;
+    qualityRebufferMs = 0;
+    qualityDimensions = undefined;
+    qualityWindowAt = now;
+    if (qualityState) qualityDimensions = readQualityDimensions();
+    if (!dimensions || !validWindow || playingMs + rebufferMs === 0) return;
+    const endDimensions = readQualityDimensions();
+    try {
+      // Keep both deltas in one record: independently dropped numerator and
+      // denominator signals would manufacture a misleading buffering ratio.
+      recordEngineeringEvent('drama.playback_window', {
+        route: timing.owner === 'home' ? '/' : '/dramas/:id',
+        report_kind: 'playback',
+        stage: 'playback',
+        playback_mode: timing.entry,
+        source_measurement_version: 'drama_playback_v1',
+        ...dimensions,
+        net_type: dimensions.net_type === endDimensions.net_type ? dimensions.net_type : 'mixed',
+        playing_ms: playingMs,
+        rebuffer_ms: rebufferMs,
+      });
+    } catch {
+      // Best-effort telemetry never retries or changes media behavior.
+    }
+  };
+  const armQualityTimer = () => {
+    if (!qualityEnabled || disposed || !qualityState || qualityTimer !== undefined) return;
+    qualityTimer = setTimeout(() => {
+      qualityTimer = undefined;
+      if (!qualityEligible()) {
+        // A missed pause/visibility event leaves an unconfirmed tail. Preserve
+        // earlier settled deltas, but do not backfill that tail as playback.
+        qualityState = undefined;
+        qualitySawPlaying = false;
+      }
+      flushQuality();
+      armQualityTimer();
+    }, 30_000);
+  };
+  const changeQuality = (next: typeof qualityState) => {
+    if (!qualityEnabled || disposed) return;
+    const now = performance.now();
+    settleQuality(now);
+    qualityState = next;
+    qualityAt = now;
+    if (next && !qualityDimensions) {
+      qualityDimensions = readQualityDimensions();
+      qualityWindowAt = now;
+    }
+    if (!next && qualityTimer !== undefined) {
+      clearTimeout(qualityTimer);
+      qualityTimer = undefined;
+    }
+    armQualityTimer();
+  };
+  const stopQuality = () => {
+    if (!qualityEnabled || disposed) return;
+    changeQuality(undefined);
+    qualitySawPlaying = false;
+    flushQuality();
+  };
+  const observeQualityPlaying = () => {
+    if (!qualityEnabled) return;
+    if (!qualityEligible()) {
+      stopQuality();
+      return;
+    }
+    qualitySawPlaying = true;
+    if (qualityFrame) changeQuality('playing');
+  };
+  const confirmQualityFrame = () => {
+    if (!qualityEnabled || disposed || video.currentSrc !== source || video.readyState < 2) return;
+    qualityFrame = true;
+    if (qualitySawPlaying && qualityState !== 'waiting' && qualityEligible())
+      changeQuality('playing');
+  };
+  const observeQualityProgress = () => {
+    if (!qualityEnabled || disposed) return;
+    if (video.currentSrc !== source) {
+      stopQuality();
+      return;
+    }
+    const progressed = Number.isFinite(video.currentTime) && video.currentTime > qualityMediaTime;
+    qualityMediaTime = video.currentTime;
+    // Natural progress also covers a manual retry after startup's immutable
+    // autoplay_blocked outcome, without rewriting that earlier result.
+    if (progressed && qualitySawPlaying && qualityState !== 'waiting' && qualityEligible())
+      confirmQualityFrame();
+  };
+  const finishRebuffer = (
+    outcome:
+      | 'playing'
+      | 'paused'
+      | 'seek'
+      | 'background'
+      | 'error'
+      | 'ended'
+      | 'disposed'
+      | 'switched'
+  ) => {
+    if (rebufferAt === undefined) return;
+    const duration = performance.now() - rebufferAt;
+    rebufferAt = undefined;
+    try {
+      const attributes = { ...rebufferAttributes, outcome };
+      recordEngineeringMeasurement('drama.rebuffer', duration, attributes);
+      recordEngineeringEvent('drama.stall', attributes);
+    } catch {
+      // Optional post-startup diagnostics cannot affect the media element.
+    }
+  };
+  const beginRebuffer = () => {
+    // Waiting during initial load is startup, not rebuffering. Exclude explicit
+    // pause/seek/background. A network stalled event can occur while buffered
+    // video is still playing, so only waiting is evidence of a playback stall.
+    if (
+      disposed ||
+      timing.outcome !== 'playing' ||
+      video.currentSrc !== source ||
+      !visible() ||
+      video.paused ||
+      video.seeking ||
+      rebufferAt !== undefined
+    )
+      return;
+    rebufferAt = performance.now();
+    try {
+      recordEngineeringEvent('drama.stall', { ...rebufferAttributes, outcome: 'waiting' });
+    } catch {
+      // One scalar interval, no polling, buffering, or player state changes.
+    }
+  };
+  const pauseRebuffer = () => {
+    stopQuality();
+    finishRebuffer('paused');
+  };
+  const seekRebuffer = () => {
+    stopQuality();
+    finishRebuffer('seek');
+  };
+  const endRebuffer = () => {
+    stopQuality();
+    finishRebuffer('ended');
+  };
+  const visibilityRebuffer = () => {
+    if (!visible()) {
+      stopQuality();
+      finishRebuffer('background');
+    }
+  };
   // 本观察器只绑定新 src，旧视频的 currentTime 不能作为新视频的推进基线。
   const initialTime = 0;
   const stopResources = observeDramaResources(source, timing);
@@ -82,6 +290,18 @@ export function observeDramaMedia(
     }
   };
   const onPlaying = () => {
+    observeQualityPlaying();
+    finishRebuffer(
+      video.currentSrc !== source
+        ? 'switched'
+        : !visible()
+          ? 'background'
+          : video.seeking
+            ? 'seek'
+            : video.paused
+              ? 'paused'
+              : 'playing'
+    );
     if (!current()) return;
     playing = true;
     timing.mark('playing');
@@ -89,6 +309,7 @@ export function observeDramaMedia(
     complete();
   };
   const onTimeUpdate = () => {
+    observeQualityProgress();
     if (
       useFrameCallback ||
       !playing ||
@@ -104,12 +325,21 @@ export function observeDramaMedia(
     complete();
   };
   const error = () => {
+    stopQuality();
+    finishRebuffer('error');
     if (current()) timing.finish('error');
   };
   video.addEventListener('loadedmetadata', metadata);
   video.addEventListener('playing', onPlaying);
   video.addEventListener('timeupdate', onTimeUpdate);
   video.addEventListener('error', error);
+  video.addEventListener('pause', pauseRebuffer);
+  video.addEventListener('seeking', seekRebuffer);
+  video.addEventListener('ended', endRebuffer);
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', visibilityRebuffer);
+  }
+  if (typeof window !== 'undefined') window.addEventListener('pagehide', stopQuality);
   const diagnosticEvents = [
     'loadeddata',
     'canplay',
@@ -120,6 +350,13 @@ export function observeDramaMedia(
     'pause',
   ] as const;
   const onDiagnosticEvent = (event: Event) => {
+    if (event.type === 'waiting' && qualityEligible()) {
+      if (qualityState) changeQuality('waiting');
+      // A late frame/progress callback cannot prove recovery from a wait that
+      // arrived before the first confirmed quality-playback interval.
+      else qualitySawPlaying = false;
+    }
+    if (event.type === 'waiting') beginRebuffer();
     if (!current()) return;
     const name = diagnosticEvents.find((name) => name === event.type);
     if (!name) return;
@@ -132,6 +369,7 @@ export function observeDramaMedia(
     if (!useFrameCallback) return;
     try {
       callbackId = video.requestVideoFrameCallback((_at, metadata) => {
+        confirmQualityFrame();
         if (disposed || timing.outcome) return;
         // 换 src 后第一条回调仍可能属于上一资源，继续等本次资源的帧。
         if (!current() || video.readyState < 2) {
@@ -197,6 +435,8 @@ export function observeDramaMedia(
       );
     },
     dispose() {
+      stopQuality();
+      finishRebuffer(video.currentSrc === source ? 'disposed' : 'switched');
       stopResources();
       stopLongTasks();
       disposed = true;
@@ -205,6 +445,13 @@ export function observeDramaMedia(
       video.removeEventListener('playing', onPlaying);
       video.removeEventListener('timeupdate', onTimeUpdate);
       video.removeEventListener('error', error);
+      video.removeEventListener('pause', pauseRebuffer);
+      video.removeEventListener('seeking', seekRebuffer);
+      video.removeEventListener('ended', endRebuffer);
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', visibilityRebuffer);
+      }
+      if (typeof window !== 'undefined') window.removeEventListener('pagehide', stopQuality);
       for (const name of diagnosticEvents) video.removeEventListener(name, onDiagnosticEvent);
       if (callbackId !== undefined && typeof video.cancelVideoFrameCallback === 'function')
         video.cancelVideoFrameCallback(callbackId);

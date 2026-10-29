@@ -4,6 +4,21 @@ import { observeDramaMedia } from './drama-media';
 import { DRAMA_TIMING_MAX_MEDIA_EVENTS, DramaTimingReportSchema } from '@miniapp/shared';
 import { mediaResourceFields, observeDramaResources } from './drama-resources';
 
+const engineering = vi.hoisted(() => ({
+  measurement: vi.fn(),
+  event: vi.fn(),
+  enabled: vi.fn(() => false),
+  dimensions: { net_type: '4g', tg_platform: 'ios' },
+}));
+vi.mock('./grafana', () => ({
+  isEngineeringTelemetryEnabled: engineering.enabled,
+  recordEngineeringMeasurement: engineering.measurement,
+  recordEngineeringEvent: engineering.event,
+}));
+vi.mock('./env-tags', () => ({
+  getMetricDimensions: () => ({ ...engineering.dimensions }),
+}));
+
 class Video extends EventTarget {
   currentSrc = 'media-a';
   currentTime = 0;
@@ -12,6 +27,7 @@ class Video extends EventTarget {
   paused = true;
   muted = false;
   seeking = false;
+  ended = false;
   buffered = { length: 1, start: () => 0, end: () => 3 };
   frame?: () => void;
   requestVideoFrameCallback: ((callback: () => void) => number) | undefined = (callback) => {
@@ -27,6 +43,9 @@ const bind = () =>
   observeDramaMedia(video as unknown as HTMLVideoElement, 'media-a', tracker.ensurePlayback('a'));
 
 beforeEach(() => {
+  vi.clearAllMocks();
+  engineering.enabled.mockReturnValue(false);
+  engineering.dimensions = { net_type: '4g', tg_platform: 'ios' };
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
   reports = [];
   video = new Video();
@@ -37,6 +56,318 @@ beforeEach(() => {
   );
   tracker.beginPlayback('a', 'cover').mark('source_set');
 });
+
+describe('foreground playback quality windows', () => {
+  beforeEach(() => {
+    engineering.enabled.mockReturnValue(true);
+    vi.stubGlobal(
+      'document',
+      Object.assign(new EventTarget(), { visibilityState: 'visible', hidden: false })
+    );
+  });
+  const start = () => {
+    const observer = bind();
+    video.paused = false;
+    video.dispatchEvent(new Event('playing'));
+    video.frame?.();
+    return observer;
+  };
+  const windows = () =>
+    engineering.event.mock.calls
+      .filter(([name]) => name === 'drama.playback_window')
+      .map(([, attributes]) => attributes as Record<string, unknown>);
+
+  it('pairs playback and buffering wall time in one weighted window, excluding startup', async () => {
+    const observer = bind();
+    video.paused = false;
+    video.dispatchEvent(new Event('waiting'));
+    await vi.advanceTimersByTimeAsync(5000);
+    video.dispatchEvent(new Event('playing'));
+    video.frame?.();
+    await vi.advanceTimersByTimeAsync(10_000);
+    video.dispatchEvent(new Event('waiting'));
+    await vi.advanceTimersByTimeAsync(2000);
+    video.dispatchEvent(new Event('playing'));
+    await vi.advanceTimersByTimeAsync(8000);
+    observer.dispose();
+    expect(windows()).toEqual([
+      expect.objectContaining({
+        playing_ms: 18_000,
+        rebuffer_ms: 2000,
+        route: '/dramas/:id',
+        stage: 'playback',
+        source_measurement_version: 'drama_playback_v1',
+        net_type: '4g',
+        tg_platform: 'ios',
+      }),
+    ]);
+  });
+
+  it('reports thirty-second deltas and only the remaining tail once', async () => {
+    const observer = start();
+    await vi.advanceTimersByTimeAsync(30_000);
+    await vi.advanceTimersByTimeAsync(5000);
+    observer.dispose();
+    observer.dispose();
+    video.dispatchEvent(new Event('playing'));
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(windows().map(({ playing_ms, rebuffer_ms }) => [playing_ms, rebuffer_ms])).toEqual([
+      [30_000, 0],
+      [5000, 0],
+    ]);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('reports long ongoing buffering in bounded, non-duplicated windows', async () => {
+    const observer = start();
+    await vi.advanceTimersByTimeAsync(1000);
+    video.dispatchEvent(new Event('waiting'));
+    await vi.advanceTimersByTimeAsync(64_000);
+    observer.dispose();
+    expect(windows().map(({ playing_ms, rebuffer_ms }) => [playing_ms, rebuffer_ms])).toEqual([
+      [1000, 29_000],
+      [0, 30_000],
+      [0, 5000],
+    ]);
+  });
+
+  it.each(['pause', 'seeking', 'background'] as const)(
+    'excludes the long %s gap and resumes only with new playback evidence',
+    async (boundary) => {
+      const observer = start();
+      await vi.advanceTimersByTimeAsync(1000);
+      video.dispatchEvent(new Event('waiting'));
+      await vi.advanceTimersByTimeAsync(500);
+      if (boundary === 'background') {
+        Object.assign(document, { visibilityState: 'hidden', hidden: true });
+        document.dispatchEvent(new Event('visibilitychange'));
+      } else {
+        video.paused = boundary === 'pause';
+        video.seeking = boundary === 'seeking';
+        video.dispatchEvent(new Event(boundary));
+      }
+      await vi.advanceTimersByTimeAsync(120_000);
+      Object.assign(document, { visibilityState: 'visible', hidden: false });
+      video.paused = false;
+      video.seeking = false;
+      video.currentTime = 1000;
+      video.dispatchEvent(new Event('timeupdate'));
+      await vi.advanceTimersByTimeAsync(1000);
+      video.dispatchEvent(new Event('playing'));
+      await vi.advanceTimersByTimeAsync(2000);
+      observer.dispose();
+      expect(windows().map(({ playing_ms, rebuffer_ms }) => [playing_ms, rebuffer_ms])).toEqual([
+        [1000, 500],
+        [2000, 0],
+      ]);
+    }
+  );
+
+  it('does not count network-only stalled events as buffering or fast-forwarded media as time', async () => {
+    const observer = start();
+    await vi.advanceTimersByTimeAsync(1000);
+    video.dispatchEvent(new Event('stalled'));
+    video.seeking = true;
+    video.dispatchEvent(new Event('seeking'));
+    video.currentTime = 1000;
+    video.dispatchEvent(new Event('timeupdate'));
+    video.seeking = false;
+    video.dispatchEvent(new Event('playing'));
+    await vi.advanceTimersByTimeAsync(1000);
+    observer.dispose();
+    expect(windows().map(({ playing_ms, rebuffer_ms }) => [playing_ms, rebuffer_ms])).toEqual([
+      [1000, 0],
+      [1000, 0],
+    ]);
+  });
+
+  it('counts manual playback after autoplay refusal without rewriting the startup terminal', async () => {
+    const observer = bind();
+    const error = new Error('blocked');
+    error.name = 'NotAllowedError';
+    observer.rejected(error);
+    expect(tracker.ensurePlayback('a').outcome).toBe('autoplay_blocked');
+    video.paused = false;
+    video.dispatchEvent(new Event('playing'));
+    video.currentTime = 1;
+    video.dispatchEvent(new Event('timeupdate'));
+    await vi.advanceTimersByTimeAsync(2000);
+    observer.dispose();
+    expect(windows()).toEqual([expect.objectContaining({ playing_ms: 2000, rebuffer_ms: 0 })]);
+    expect(reports).toHaveLength(1);
+    expect(reports[0]?.outcome).toBe('autoplay_blocked');
+  });
+
+  it('does not let a late timeupdate turn a known wait into recovered playback', async () => {
+    const observer = start();
+    await vi.advanceTimersByTimeAsync(1000);
+    video.dispatchEvent(new Event('waiting'));
+    video.currentTime = 1;
+    video.dispatchEvent(new Event('timeupdate'));
+    await vi.advanceTimersByTimeAsync(2000);
+    observer.dispose();
+    expect(windows()).toEqual([expect.objectContaining({ playing_ms: 1000, rebuffer_ms: 2000 })]);
+  });
+
+  it('does not let the first delayed frame callback recover an already confirmed wait', async () => {
+    const observer = bind();
+    video.paused = false;
+    video.dispatchEvent(new Event('playing'));
+    video.currentTime = 1;
+    video.dispatchEvent(new Event('timeupdate'));
+    await vi.advanceTimersByTimeAsync(1000);
+    video.dispatchEvent(new Event('waiting'));
+    await vi.advanceTimersByTimeAsync(1000);
+    video.frame?.();
+    await vi.advanceTimersByTimeAsync(2000);
+    observer.dispose();
+    expect(windows()).toEqual([expect.objectContaining({ playing_ms: 1000, rebuffer_ms: 3000 })]);
+  });
+
+  it('requires new playing after an early wait, even if frame and progress arrive later', async () => {
+    const observer = bind();
+    video.paused = false;
+    video.dispatchEvent(new Event('playing'));
+    video.dispatchEvent(new Event('waiting'));
+    await vi.advanceTimersByTimeAsync(1000);
+    video.frame?.();
+    video.currentTime = 1;
+    video.dispatchEvent(new Event('timeupdate'));
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(windows()).toHaveLength(0);
+    video.dispatchEvent(new Event('playing'));
+    await vi.advanceTimersByTimeAsync(2000);
+    observer.dispose();
+    expect(windows()).toEqual([expect.objectContaining({ playing_ms: 2000, rebuffer_ms: 0 })]);
+  });
+
+  it.each(['paused', 'hidden'] as const)(
+    'drops an unconfirmed tail when the heartbeat finds a missed %s transition',
+    async (missingEvent) => {
+      const observer = start();
+      await vi.advanceTimersByTimeAsync(1000);
+      video.dispatchEvent(new Event('waiting'));
+      if (missingEvent === 'paused') video.paused = true;
+      else Object.assign(document, { visibilityState: 'hidden', hidden: true });
+      await vi.advanceTimersByTimeAsync(29_000);
+      observer.dispose();
+      expect(windows()).toEqual([expect.objectContaining({ playing_ms: 1000, rebuffer_ms: 0 })]);
+      expect(vi.getTimerCount()).toBe(0);
+    }
+  );
+
+  it('marks a window mixed when its observed endpoint networks differ', async () => {
+    const observer = start();
+    await vi.advanceTimersByTimeAsync(1000);
+    engineering.dimensions.net_type = '3g';
+    observer.dispose();
+    expect(windows()).toEqual([
+      expect.objectContaining({ playing_ms: 1000, rebuffer_ms: 0, net_type: 'mixed' }),
+    ]);
+  });
+
+  it('uses the existing home owner without sending drama or video identity', async () => {
+    const timing = tracker.beginPlayback('a', 'switch', undefined, undefined, 'home');
+    const observer = observeDramaMedia(video as unknown as HTMLVideoElement, 'media-a', timing);
+    video.paused = false;
+    video.dispatchEvent(new Event('playing'));
+    video.frame?.();
+    await vi.advanceTimersByTimeAsync(1000);
+    observer.dispose();
+    expect(windows()).toEqual([expect.objectContaining({ route: '/', playing_ms: 1000 })]);
+    expect(Object.keys(windows()[0] ?? {})).not.toEqual(
+      expect.arrayContaining(['dramaId', 'videoId', 'sessionId', 'source'])
+    );
+  });
+
+  it('discards an unobserved event-loop gap longer than sixty seconds', () => {
+    const observer = start();
+    vi.spyOn(performance, 'now').mockReturnValue(120_001);
+    observer.dispose();
+    expect(windows()).toHaveLength(0);
+    expect(vi.getTimerCount()).toBe(0);
+    vi.restoreAllMocks();
+  });
+
+  it('also discards an oversized whole window made of individually trusted intervals', () => {
+    const observer = start();
+    const clock = vi.spyOn(performance, 'now');
+    clock.mockReturnValue(40_000);
+    video.dispatchEvent(new Event('waiting'));
+    clock.mockReturnValue(80_000);
+    video.dispatchEvent(new Event('playing'));
+    observer.dispose();
+    expect(windows()).toHaveLength(0);
+    vi.restoreAllMocks();
+  });
+
+  it('flushes once on pagehide without requiring a preceding visibilitychange', async () => {
+    const page = new EventTarget();
+    vi.stubGlobal('window', page);
+    const observer = start();
+    await vi.advanceTimersByTimeAsync(1000);
+    video.dispatchEvent(new Event('waiting'));
+    await vi.advanceTimersByTimeAsync(1000);
+    page.dispatchEvent(new Event('pagehide'));
+    page.dispatchEvent(new Event('pagehide'));
+    await vi.advanceTimersByTimeAsync(60_000);
+    observer.dispose();
+    expect(windows().map(({ playing_ms, rebuffer_ms }) => [playing_ms, rebuffer_ms])).toEqual([
+      [1000, 1000],
+    ]);
+  });
+
+  it.each(['ended', 'error'] as const)(
+    'preserves buffering before %s without counting after it',
+    async (end) => {
+      const observer = start();
+      await vi.advanceTimersByTimeAsync(1000);
+      video.dispatchEvent(new Event('waiting'));
+      await vi.advanceTimersByTimeAsync(1000);
+      video.dispatchEvent(new Event(end));
+      await vi.advanceTimersByTimeAsync(60_000);
+      observer.dispose();
+      expect(windows().map(({ playing_ms, rebuffer_ms }) => [playing_ms, rebuffer_ms])).toEqual([
+        [1000, 1000],
+      ]);
+    }
+  );
+
+  it('does not accept later progress from a replacement source into the old observer', async () => {
+    const observer = start();
+    await vi.advanceTimersByTimeAsync(1000);
+    video.currentSrc = 'media-b';
+    video.currentTime = 10;
+    video.dispatchEvent(new Event('timeupdate'));
+    await vi.advanceTimersByTimeAsync(60_000);
+    video.dispatchEvent(new Event('playing'));
+    observer.dispose();
+    expect(windows().map(({ playing_ms, rebuffer_ms }) => [playing_ms, rebuffer_ms])).toEqual([
+      [1000, 0],
+    ]);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('isolates exporter failure and still releases every quality timer', async () => {
+    const observer = start();
+    await vi.advanceTimersByTimeAsync(1000);
+    engineering.event.mockImplementationOnce(() => {
+      throw new Error('queue unavailable');
+    });
+    expect(() => observer.dispose()).not.toThrow();
+    expect(vi.getTimerCount()).toBe(0);
+    expect(video.paused).toBe(false);
+  });
+
+  it('does not create playback windows or a quality heartbeat while telemetry is disabled', async () => {
+    engineering.enabled.mockReturnValue(false);
+    const observer = start();
+    await vi.advanceTimersByTimeAsync(90_000);
+    observer.dispose();
+    expect(windows()).toHaveLength(0);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});
 afterEach(() => {
   vi.clearAllTimers();
   vi.useRealTimers();
@@ -44,6 +375,115 @@ afterEach(() => {
 });
 
 describe('video startup observation', () => {
+  it('does not call a network-only stalled event a user-visible playback interruption', async () => {
+    vi.stubGlobal('document', Object.assign(new EventTarget(), { visibilityState: 'visible' }));
+    const observer = bind();
+    video.paused = false;
+    video.dispatchEvent(new Event('playing'));
+    video.frame?.();
+    video.readyState = 4;
+    video.dispatchEvent(new Event('stalled'));
+    await vi.advanceTimersByTimeAsync(2000);
+    video.currentTime = 2;
+    video.dispatchEvent(new Event('timeupdate'));
+    observer.dispose();
+    expect(engineering.measurement).not.toHaveBeenCalled();
+    expect(engineering.event).not.toHaveBeenCalled();
+  });
+
+  it('measures one foreground post-startup rebuffer without changing the startup terminal', async () => {
+    const page = Object.assign(new EventTarget(), { visibilityState: 'visible', hidden: false });
+    vi.stubGlobal('document', page);
+    const observer = bind();
+    video.paused = false;
+    video.dispatchEvent(new Event('waiting')); // Initial load is not rebuffering.
+    video.dispatchEvent(new Event('playing'));
+    video.frame?.();
+    expect(engineering.measurement).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1000);
+    video.dispatchEvent(new Event('waiting'));
+    await vi.advanceTimersByTimeAsync(500);
+    video.dispatchEvent(new Event('stalled'));
+    await vi.advanceTimersByTimeAsync(1000);
+    video.dispatchEvent(new Event('playing'));
+    expect(engineering.measurement).toHaveBeenCalledExactlyOnceWith(
+      'drama.rebuffer',
+      1500,
+      expect.objectContaining({ outcome: 'playing', stage: 'rebuffer' })
+    );
+    expect(engineering.event.mock.calls.map(([, attrs]) => attrs.outcome)).toEqual([
+      'waiting',
+      'playing',
+    ]);
+    expect(reports).toHaveLength(1);
+    expect(reports[0]?.outcome).toBe('playing');
+    observer.dispose();
+    video.dispatchEvent(new Event('waiting'));
+    expect(engineering.event).toHaveBeenCalledTimes(2);
+  });
+
+  it('excludes paused, seeking and background waits; background cancels a foreground interval once', async () => {
+    const page = Object.assign(new EventTarget(), { visibilityState: 'visible', hidden: false });
+    vi.stubGlobal('document', page);
+    const observer = bind();
+    video.dispatchEvent(new Event('playing'));
+    video.frame?.();
+    video.dispatchEvent(new Event('waiting')); // paused
+    video.paused = false;
+    video.seeking = true;
+    video.dispatchEvent(new Event('waiting'));
+    video.seeking = false;
+    page.visibilityState = 'hidden';
+    video.dispatchEvent(new Event('waiting'));
+    expect(engineering.event).not.toHaveBeenCalled();
+    page.visibilityState = 'visible';
+    video.dispatchEvent(new Event('waiting'));
+    await vi.advanceTimersByTimeAsync(700);
+    page.visibilityState = 'hidden';
+    page.dispatchEvent(new Event('visibilitychange'));
+    await vi.advanceTimersByTimeAsync(10000);
+    page.visibilityState = 'visible';
+    video.dispatchEvent(new Event('playing'));
+    expect(engineering.measurement).toHaveBeenCalledExactlyOnceWith(
+      'drama.rebuffer',
+      700,
+      expect.objectContaining({ outcome: 'background' })
+    );
+    observer.dispose();
+  });
+
+  it.each(['pause', 'seeking', 'ended', 'error', 'dispose', 'switch'] as const)(
+    'does not classify an interval interrupted by %s as a completed rebuffer',
+    async (end) => {
+      vi.stubGlobal('document', Object.assign(new EventTarget(), { visibilityState: 'visible' }));
+      const observer = bind();
+      video.paused = false;
+      video.dispatchEvent(new Event('playing'));
+      video.frame?.();
+      video.dispatchEvent(new Event('waiting'));
+      await vi.advanceTimersByTimeAsync(200);
+      if (end === 'dispose') observer.dispose();
+      else if (end === 'switch') {
+        video.currentSrc = 'media-b';
+        video.dispatchEvent(new Event('playing'));
+      } else video.dispatchEvent(new Event(end));
+      const outcome = {
+        pause: 'paused',
+        seeking: 'seek',
+        ended: 'ended',
+        error: 'error',
+        dispose: 'disposed',
+        switch: 'switched',
+      }[end];
+      expect(engineering.measurement).toHaveBeenCalledExactlyOnceWith(
+        'drama.rebuffer',
+        200,
+        expect.objectContaining({ outcome })
+      );
+      observer.dispose();
+    }
+  );
+
   it('clips long-task evidence to the startup and metadata-to-frame windows', async () => {
     let callback: ((list: { getEntries(): PerformanceEntry[] }) => void) | undefined;
     vi.stubGlobal(

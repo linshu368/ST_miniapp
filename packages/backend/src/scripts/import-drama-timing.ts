@@ -34,6 +34,9 @@ export function railwayDramaReport(
       fields[key] = decoded(value);
   }
   if (fields.event !== 'drama.frontend_timing' || fields.type !== 'playback') return;
+  // Sampled unified diagnostics are not the full attempt population; importing
+  // them would silently recreate the retired analytics path and biased rates.
+  if (fields.purpose === 'diagnostic') return;
   const stages = Object.fromEntries(
     [
       'navigation',
@@ -43,6 +46,10 @@ export function railwayDramaReport(
       'metadata_to_frame',
       'source_to_frame',
       'source_to_playing',
+      'entry_to_source',
+      'metadata_to_data',
+      'data_to_frame',
+      'frame_to_startup',
     ].flatMap((name) => (fields[`${name}_ms`] === undefined ? [] : [[name, fields[`${name}_ms`]]]))
   );
   // Rebuild an allowlist report, never pass the log envelope or arbitrary attributes to storage.
@@ -51,6 +58,8 @@ export function railwayDramaReport(
     phase: fields.phase,
     id: fields.observation_id,
     version: fields.version,
+    definition: fields.definition,
+    route: fields.route,
     context: decoded(fields.context),
     diagnostics: decoded(fields.diagnostics),
     entry: fields.entry,

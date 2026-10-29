@@ -21,6 +21,8 @@ const runtime = vi.hoisted(() => ({
   effects: [] as (() => void)[],
   layoutEffects: [] as (() => void)[],
   reportFirstToken: vi.fn().mockResolvedValue(undefined),
+  engineeringMeasurement: vi.fn(),
+  engineeringEvent: vi.fn(),
   restore: vi.fn(),
   stream: vi.fn(),
   cancel: vi.fn(),
@@ -81,10 +83,14 @@ vi.mock('@/lib/api/free-quota', () => ({
 vi.mock('@/lib/telemetry', () => ({
   getReplayLifecycle: () => ({ capture: vi.fn(), setStreaming: vi.fn() }),
 }));
+vi.mock('@/lib/perf/grafana', () => ({
+  recordEngineeringMeasurement: runtime.engineeringMeasurement,
+  recordEngineeringEvent: runtime.engineeringEvent,
+}));
 
 beforeEach(() => {
   vi.useFakeTimers();
-  vi.stubGlobal('window', { setTimeout, clearTimeout });
+  vi.stubGlobal('window', Object.assign(new EventTarget(), { setTimeout, clearTimeout }));
   vi.stubGlobal('document', Object.assign(new EventTarget(), { visibilityState: 'visible' }));
   runtime.slots = [];
   runtime.index = 0;
@@ -251,7 +257,8 @@ describe('findPendingTurnMessage', () => {
 function RenderTurn(
   sessionId = 's1',
   persistedMessages: ChatMessage[] = [],
-  thinkingEnabled = true
+  thinkingEnabled = true,
+  firstTokenDeadlineMs = 10000
 ) {
   runtime.index = 0;
   const result = useConversationTurn({
@@ -260,6 +267,7 @@ function RenderTurn(
     selectedModelId: 'm1',
     selectedModelUsesFreeQuota: false,
     thinkingEnabled,
+    firstTokenDeadlineMs,
     persistedMessages,
     returnTo: '/chat/c1',
     onSessionGone: vi.fn(),
@@ -309,6 +317,40 @@ describe('useConversationTurn asynchronous ownership', () => {
     expect(runtime.cancel).not.toHaveBeenCalled();
     expect(after.streaming?.text).toBe('');
     expect(after.thinkingByMessage['s1:a1:0']).toBe('思');
+    finish();
+    await run;
+  });
+
+  it('uses the frozen six-second SSE budget from the original click despite a cached ten-second catalog', async () => {
+    let options!: Parameters<
+      typeof import('@/lib/api/conversation-stream').streamConversationTurn
+    >[0];
+    let finish!: () => void;
+    runtime.stream.mockImplementation((value) => {
+      options = value;
+      return new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+    });
+    const run = RenderTurn('s1', [], true, 10000).runTurn({ mode: 'send', content: 'hello' });
+    await vi.advanceTimersByTimeAsync(2000);
+    options.onStart({
+      type: 'start',
+      assistant_message_id: 'a1',
+      user_message_id: 'u1',
+      turn_index: 1,
+      revision: 0,
+      first_token_deadline_ms: 6000,
+    });
+    await vi.advanceTimersByTimeAsync(3999);
+    expect(runtime.reportFirstToken).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(runtime.reportFirstToken).toHaveBeenCalledExactlyOnceWith(
+      's1',
+      expect.objectContaining({ outcome: 'timed_out', wait_finished_ms: 6000 })
+    );
+    expect(RenderTurn('s1').streamError).toBe('这次回应稍慢，再试一次吧');
+    expect(runtime.cancel).not.toHaveBeenCalled();
     finish();
     await run;
   });
@@ -422,7 +464,12 @@ describe('useConversationTurn asynchronous ownership', () => {
     });
     const run = RenderTurn().runTurn({ mode: 'regenerate' });
     await vi.advanceTimersByTimeAsync(10100);
-    expect(runtime.reportFirstToken).not.toHaveBeenCalled();
+    expect(runtime.reportFirstToken).toHaveBeenCalledOnce();
+    expect(runtime.engineeringMeasurement).toHaveBeenCalledWith(
+      'roleplay.first_token',
+      expect.any(Number),
+      expect.objectContaining({ action: 'regenerate', outcome: 'timed_out' })
+    );
     options.onStart({
       type: 'start',
       assistant_message_id: 'a1',
@@ -447,12 +494,17 @@ describe('useConversationTurn asynchronous ownership', () => {
     expect(RenderTurn('s1', [unrelated]).streamError).toBe('这次回应稍慢，再试一次吧');
     const empty = { ...older, revision: 1, content: '', status: 'failed' as const };
     RenderTurn('s1', [empty]);
+    expect(runtime.engineeringMeasurement).toHaveBeenCalledWith(
+      'roleplay.full_reply',
+      expect.any(Number),
+      expect.objectContaining({ action: 'regenerate', outcome: 'failed' })
+    );
     expect(RenderTurn('s1', [empty]).streamError).toBe('这次回应稍慢，再试一次吧');
     expect(runtime.reportFirstToken).toHaveBeenCalledOnce();
     expect(runtime.reportFirstToken).toHaveBeenCalledWith(
       's1',
       expect.objectContaining({
-        revision: 1,
+        revision: null,
         outcome: 'timed_out',
         wait_finished_ms: 10000,
       })
@@ -1049,6 +1101,15 @@ it('recovers a disconnected accepted reply from the same revision without anothe
   );
   expect(runtime.stream).toHaveBeenCalledOnce();
   expect(runtime.cancel).not.toHaveBeenCalled();
+  expect(
+    runtime.engineeringMeasurement.mock.calls.filter(([name]) => name === 'roleplay.full_reply')
+  ).toHaveLength(0);
+  RenderTurn('s1', [{ ...recovered, status: 'complete' }], true);
+  expect(runtime.engineeringMeasurement).toHaveBeenCalledWith(
+    'roleplay.recovery',
+    expect.any(Number),
+    expect.objectContaining({ action: 'send', stage: 'recovery', outcome: 'complete' })
+  );
 });
 
 describe('terminal SSE batches retain delivered text until persistence catches up', () => {
@@ -1101,6 +1162,9 @@ describe('terminal SSE batches retain delivered text until persistence catches u
       }
       await run;
       expect(runtime.reportFirstToken).not.toHaveBeenCalled();
+      expect(
+        runtime.engineeringMeasurement.mock.calls.filter(([name]) => name === 'roleplay.full_reply')
+      ).toHaveLength(0);
       if (commitMs > 2000) await vi.advanceTimersByTimeAsync(commitMs - 2000);
       const committed = RenderTurn();
       expect(committed.messages.at(-1)).toMatchObject({
@@ -1120,6 +1184,15 @@ describe('terminal SSE batches retain delivered text until persistence catches u
           first_token_received_ms: 2000,
         })
       );
+      expect(runtime.engineeringMeasurement).toHaveBeenCalledWith(
+        'roleplay.full_reply',
+        expect.any(Number),
+        expect.objectContaining({
+          stage: 'full_reply',
+          action: 'send',
+          outcome: end === 'done' ? 'complete' : 'interrupted',
+        })
+      );
       expect(RenderTurn().messages.at(-1)?.id).toBe('a1');
       const durable = message({
         id: 'a1',
@@ -1133,6 +1206,9 @@ describe('terminal SSE batches retain delivered text until persistence catches u
       RenderTurn('s1', [durable]);
       expect(RenderTurn('s1', [durable]).messages).toEqual([durable]);
       expect(runtime.reportFirstToken).toHaveBeenCalledOnce();
+      expect(
+        runtime.engineeringMeasurement.mock.calls.filter(([name]) => name === 'roleplay.full_reply')
+      ).toHaveLength(1);
       expect(runtime.cancel).not.toHaveBeenCalled();
     }
   );

@@ -10,6 +10,7 @@ import {
   timedFetch,
 } from '@/lib/perf/request-timing';
 import { withRequestSlot, type RequestPriority } from '@/lib/api/request-concurrency';
+import { recordApiAttempt, recordApiTotal, shouldObserveApiTiming } from '@/lib/perf/api-timing';
 
 export const API_URL =
   process.env.NEXT_PUBLIC_API_URL || 'https://stminiapp-development.up.railway.app';
@@ -278,49 +279,63 @@ export async function apiClient<T>(path: string, options?: ApiRequestInit): Prom
   const maxAttempts =
     method === 'GET' && options?.transportRetry !== false ? 1 + GET_TRANSPORT_RETRY_MAX : 1;
   const signal = options?.signal ?? undefined;
+  const observe = shouldObserveApiTiming(path);
+  const startedAt = observe ? performance.now() : 0;
+  let lastTiming: ApiAttemptTiming | undefined;
 
   let attempt = 0;
-  for (;;) {
-    try {
-      // 每次尝试单独占槽；退避在槽外，避免重试等待堵死其它 P0。
-      const timing: ApiAttemptTiming | undefined = options?.onAttempt
-        ? { requestId: createRequestId(), queuedAt: performance.now() }
-        : undefined;
-      if (timing) {
-        try {
-          options?.onAttempt?.(timing);
-        } catch {
-          /* 观测不能改变请求语义。 */
-        }
-      }
+  try {
+    for (;;) {
       try {
-        const result = await withRequestSlot(priority, signal, () => {
-          if (timing) timing.dispatchedAt = performance.now();
-          return apiClientOnce<T>(path, options, timing);
-        });
-        if (timing) timing.outcome = 'ok';
-        return result;
+        // 每次尝试单独占槽；退避在槽外，避免重试等待堵死其它 P0。
+        const timing: ApiAttemptTiming | undefined =
+          options?.onAttempt || observe
+            ? { requestId: createRequestId(), queuedAt: performance.now() }
+            : undefined;
+        lastTiming = timing;
+        if (timing) {
+          try {
+            options?.onAttempt?.(timing);
+          } catch {
+            /* 观测不能改变请求语义。 */
+          }
+        }
+        try {
+          const result = await withRequestSlot(priority, signal, () => {
+            if (timing) timing.dispatchedAt = performance.now();
+            return apiClientOnce<T>(path, options, timing);
+          });
+          if (timing) timing.outcome = 'ok';
+          return result;
+        } catch (error) {
+          if (timing)
+            timing.outcome = signal?.aborted
+              ? 'aborted'
+              : error instanceof RequestTimeoutError
+                ? 'timeout'
+                : error instanceof ApiClientError
+                  ? 'http_error'
+                  : 'error';
+          throw error;
+        } finally {
+          if (timing) {
+            timing.endedAt = performance.now();
+            if (observe) recordApiAttempt(path, method, timing, attempt + 1);
+          }
+        }
       } catch (error) {
-        if (timing)
-          timing.outcome = signal?.aborted
-            ? 'aborted'
-            : error instanceof RequestTimeoutError
-              ? 'timeout'
-              : error instanceof ApiClientError
-                ? 'http_error'
-                : 'error';
-        throw error;
-      } finally {
-        if (timing) timing.endedAt = performance.now();
+        attempt += 1;
+        if (attempt >= maxAttempts || !isRetryableGetTransportError(error, method, signal)) {
+          toTransportApiError(error);
+        }
+        const delayMs = retryDelayMs();
+        log.warn(`GET transport retry after ${delayMs}ms`, { path, attempt });
+        await sleep(delayMs);
       }
-    } catch (error) {
-      attempt += 1;
-      if (attempt >= maxAttempts || !isRetryableGetTransportError(error, method, signal)) {
-        toTransportApiError(error);
-      }
-      const delayMs = retryDelayMs();
-      log.warn(`GET transport retry after ${delayMs}ms`, { path, attempt });
-      await sleep(delayMs);
+    }
+  } finally {
+    if (observe && lastTiming) {
+      recordApiTotal(path, method, startedAt, lastTiming, Math.min(attempt + 1, maxAttempts));
     }
   }
 }

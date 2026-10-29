@@ -41,6 +41,7 @@ SSE：`page → streamConversationTurn(AbortSignal, callbacks) → fetch Readabl
 - mutation 防双击；乐观更新必须有 snapshot/rollback，金额、订单、奖励等关键数据优先服务端确认。
 - 页面切换/unmount 中止可取消读取；写入是否中止取决于后端幂等性，不能因浏览器 abort 假设服务端回滚。
 - 网络恢复/前台恢复只刷新需要的 key，限制请求风暴。错误界面给出安全重试；不可重试的 validation/auth 不自动循环。
+- 首字交付回报兼容旧 Telegram WebView：每次用 `AbortController` + 可清理的计时器约束排队、响应头与响应体读取，保持3秒/最多3次的既有预算。不可直接依赖 `AbortSignal.timeout`（Chrome90/92不存在），也不可仅以通用client的响应头超时替代整个回报尝试的期限。成功确认即停止，不新增补报扫描或历史重算。
 - mock 必须按模块显式启用，返回 shared shape，并在 production build 中默认关闭。
 
 ## Telegram 与敏感边界

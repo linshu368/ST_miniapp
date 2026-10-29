@@ -5,6 +5,7 @@ import * as Sentry from '@sentry/nextjs';
 import { createLogger } from '@/lib/logger';
 
 import { getMetricDimensions, getNetworkTags } from './env-tags';
+import { recordEngineeringEvent, recordEngineeringMeasurement } from './grafana';
 
 const log = createLogger('perf');
 
@@ -34,6 +35,37 @@ export interface ActionHandle {
 }
 
 const pending = new Map<TrackedAction, ActionHandle>();
+
+const roleplayActions = new Set<TrackedAction>([
+  'select_character',
+  'send_message',
+  'create_conversation',
+  'image_generate',
+  'voice_generate',
+]);
+
+function mirrorAction(
+  action: ActiveAction,
+  outcome: 'waiting' | 'stalled' | 'feedback' | 'discarded',
+  durationMs?: number
+): void {
+  if (!roleplayActions.has(action.name)) return;
+  try {
+    const attributes = {
+      route: '/chat/:id',
+      action: action.name,
+      stage: 'feedback',
+      outcome,
+      source_measurement_version: 'action_foreground_v1',
+    };
+    recordEngineeringEvent('roleplay.action', attributes);
+    if (durationMs !== undefined) {
+      recordEngineeringMeasurement('roleplay.action', durationMs, attributes);
+    }
+  } catch {
+    // The mirror must not affect the original watchdog or its Sentry evidence.
+  }
+}
 
 function safely(stage: string, fn: () => void): void {
   try {
@@ -104,7 +136,9 @@ function armStallTimer(action: ActiveAction): void {
 }
 
 function raiseStall(action: ActiveAction): void {
+  const firstStall = !action.stalled;
   action.stalled = true;
+  if (firstStall) mirrorAction(action, 'stalled');
   safely('action_stall', () => {
     Sentry.withScope((scope) => {
       scope.setLevel('warning');
@@ -131,6 +165,7 @@ export function startAction(name: TrackedAction): ActionHandle {
     timer: null,
   };
   active.add(action);
+  mirrorAction(action, 'waiting');
   if (!action.hiddenSince) {
     action.timer = setTimeout(() => raiseStall(action), ACTION_STALL_MS);
   }
@@ -142,6 +177,7 @@ export function startAction(name: TrackedAction): ActionHandle {
       if (action.timer) clearTimeout(action.timer);
       active.delete(action);
       if (pending.get(name) === handle) pending.delete(name);
+      mirrorAction(action, 'feedback', elapsed(action, performance.now()));
       safely('action_feedback', () => {
         // 即使已经判定过卡住，迟到的反馈也要记录，用来看实际等了多久；后台时长已排除在外。
         Sentry.metrics.distribution(
@@ -160,6 +196,7 @@ export function startAction(name: TrackedAction): ActionHandle {
       if (action.timer) clearTimeout(action.timer);
       active.delete(action);
       if (pending.get(name) === handle) pending.delete(name);
+      mirrorAction(action, 'discarded');
     },
   };
   return handle;

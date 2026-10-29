@@ -8,6 +8,10 @@ const wallets = {
 };
 const timingLogs = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }));
 const persistence = vi.hoisted(() => ({ rpc: vi.fn() }));
+const cloud = vi.hoisted(() => ({ diagnostic: vi.fn() }));
+vi.mock('../lib/engineering-observability.js', () => ({
+  observeDramaStartupDiagnostic: cloud.diagnostic,
+}));
 vi.mock('../lib/logger.js', () => ({
   requestLogger: () => ({
     biz: { info: timingLogs.info, warn: timingLogs.warn },
@@ -236,7 +240,61 @@ describe('POST /api/telemetry/drama-timing', () => {
     }
   });
 
-  it('acknowledges opt-in analytics before bounded background storage', async () => {
+  it('never persists unified diagnostics even while legacy persistence remains enabled', async () => {
+    vi.stubEnv('DRAMA_TIMING_PERSIST_ENABLED', 'true');
+    const app = await buildApp();
+    try {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/telemetry/drama-timing',
+        payload: { ...report, purpose: 'diagnostic', definition: 'drama_v3', route: '/' },
+      });
+      expect(response.statusCode).toBe(202);
+      expect(timingLogs.info).toHaveBeenCalledWith(
+        expect.objectContaining({ purpose: 'diagnostic', route: '/' }),
+        'drama frontend timing'
+      );
+      expect(persistence.rpc).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
+  it('still forwards diagnostics to Cloud when Pino logging fails', async () => {
+    const app = await buildApp();
+    timingLogs.info.mockImplementationOnce(() => {
+      throw new Error('sink failed');
+    });
+    try {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/telemetry/drama-timing',
+        payload: { ...report, purpose: 'diagnostic' },
+      });
+      expect(response.statusCode).toBe(202);
+      expect(cloud.diagnostic).toHaveBeenCalledWith(
+        DramaTimingReportSchema.parse({ ...report, purpose: 'diagnostic' })
+      );
+      expect(persistence.rpc).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
+  it('blocks sampled diagnostics from historical import and direct repository writes', async () => {
+    const diagnostic = DramaTimingReportSchema.parse({ ...report, purpose: 'diagnostic' });
+    expect(
+      railwayDramaReport({
+        event: 'drama.frontend_timing',
+        type: 'playback',
+        purpose: 'diagnostic',
+      })
+    ).toBeUndefined();
+    const { DramaTimingRepository } = await import('../features/drama/timing-repository.js');
+    await expect(
+      new DramaTimingRepository().persist(diagnostic, { environment: 'test', release: 'test' })
+    ).rejects.toThrow('drama_diagnostic_is_not_an_analytics_fact');
+    expect(persistence.rpc).not.toHaveBeenCalled();
+  });
+  it('forwards validated diagnostics to Cloud without DB writes even with the legacy flag enabled', async () => {
     vi.stubEnv('DRAMA_TIMING_PERSIST_ENABLED', 'true');
     const app = await buildApp();
     try {
@@ -247,22 +305,14 @@ describe('POST /api/telemetry/drama-timing', () => {
       });
       expect(response.statusCode).toBe(202);
       expect(response.json()).toEqual({ success: true, data: { accepted: true } });
-      await vi.waitFor(() =>
-        expect(persistence.rpc).toHaveBeenCalledWith(
-          'record_drama_playback_observation',
-          expect.objectContaining({
-            p_environment: 'test',
-            p_report: report,
-            p_source: 'live',
-          })
-        )
-      );
+      expect(cloud.diagnostic).toHaveBeenCalledWith(DramaTimingReportSchema.parse(report));
+      expect(persistence.rpc).not.toHaveBeenCalled();
     } finally {
       await app.close();
     }
   });
 
-  it('reports storage errors without claiming durability or writing raw payloads to error logs', async () => {
+  it('does not depend on the legacy analytics database being available', async () => {
     vi.stubEnv('DRAMA_TIMING_PERSIST_ENABLED', 'true');
     persistence.rpc.mockReturnValue({
       abortSignal: async () => ({ data: null, error: { code: 'db_unavailable' } }),
@@ -275,12 +325,8 @@ describe('POST /api/telemetry/drama-timing', () => {
         payload: report,
       });
       expect(response.statusCode).toBe(202);
-      await vi.waitFor(() =>
-        expect(timingLogs.error).toHaveBeenCalledWith(
-          expect.objectContaining({ event: 'drama.timing_persist_failed' }),
-          expect.any(String)
-        )
-      );
+      expect(response.json()).toEqual({ success: true, data: { accepted: true } });
+      expect(persistence.rpc).not.toHaveBeenCalled();
     } finally {
       await app.close();
     }
@@ -304,12 +350,8 @@ describe('POST /api/telemetry/drama-timing', () => {
     await expect(Promise.all([a, b])).resolves.toEqual(['stored', 'stored']);
   });
 
-  it('acknowledges and records a drop when the bounded persistence queue is full', async () => {
+  it('accepts a burst without constructing a database persistence queue', async () => {
     vi.stubEnv('DRAMA_TIMING_PERSIST_ENABLED', 'true');
-    const pending: Array<(result: { data: string; error: null }) => void> = [];
-    persistence.rpc.mockReturnValue({
-      abortSignal: () => new Promise((resolve) => pending.push(resolve)),
-    });
     const app = await buildApp();
     try {
       const responses = await Promise.all(
@@ -318,23 +360,10 @@ describe('POST /api/telemetry/drama-timing', () => {
         )
       );
       expect(responses.every((response) => response.statusCode === 202)).toBe(true);
-      expect(timingLogs.warn).toHaveBeenCalledWith(
-        expect.objectContaining({
-          event: 'drama.timing_dropped',
-          reason: 'persistence_queue_full',
-        }),
-        expect.any(String)
-      );
+      expect(cloud.diagnostic).toHaveBeenCalledTimes(35);
+      expect(persistence.rpc).not.toHaveBeenCalled();
     } finally {
-      const closing = app.close();
-      await vi.waitFor(() =>
-        expect(timingLogs.warn).toHaveBeenCalledWith(
-          expect.objectContaining({ event: 'drama.timing_dropped', reason: 'shutdown' }),
-          expect.any(String)
-        )
-      );
-      for (const resolve of pending) resolve({ data: 'stored', error: null });
-      await closing;
+      await app.close();
     }
   });
 

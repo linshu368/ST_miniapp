@@ -3,13 +3,11 @@
 ST_miniapp 是围绕 Telegram MiniApp、AI 角色聊天、钱包/支付、语音、增长运营和客服能力构建的 pnpm monorepo。仓库包含面向用户的 Next.js 前端、Fastify API、内部运营 SPA、共享契约/迁移包，以及由 Frontend 和 Admin 共用的回复渲染包。客服平台已拆到独立仓库 [`linshu368/ST_cs_platform`](https://github.com/linshu368/ST_cs_platform)，本仓库只保留 Bot 消息转发和 `/api/support/*` 代理。
 
 > 深层架构、数据流和路由清单见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)；Railway 生产运维见 [`ops/railway/README.md`](ops/railway/README.md)。本文负责新成员入门、依赖关系、环境、命令和交付约定。
-> 短剧慢播放的分段口径、前端集中上报／Railway 日志查询与真机验收见 [短剧播放耗时排查](docs/drama-playback-timing.md)。
+> 短剧性能日常统一看[工程短剧看板](https://ea3213527545.grafana.net/d/st-engineering-drama)。v3复用原计时器、集中shared阶段计算；默认双轨，验证通过后才显式切换统一模式，保留Pino诊断及旧看板历史。字段、分母、release、切换与回滚见[短剧播放耗时排查](docs/drama-playback-timing.md)。本地代码不代表生产已启用。
 
 本分支已实现 pr-525 普通短剧播放的 Bunny 适配：只有 Railway 环境名 pr-525、数据库 target=test 且 DRAMA_CDN_ENABLED=true 时，正常 /api/dramas/:id/play 返回 Bunny 地址；DRAMA_CDN_TOKEN_KEY 仅存 Backend。移除独立 /drama-cdn-experiment 页面与专用接口、用户/样本白名单。正常 Telegram 鉴权、剧/集归属和私有桶保持；其他环境仍走 Supabase。pr-525 已完成配置切流与真实媒体功能预检：不同 TEST 对象的起始/中段 Range、源字节比对及热缓存鉴权负例通过；正常 API 向无实验白名单的测试身份返回 Bunny。Telegram 手机实际手感仍待验收，不宣称提速。操作与恢复见 ops/drama-bunny-preview/README.md。
 
-> 内部 Bunny 手机单轮实验仅在独立 PR Preview 开放，使用固定生产单对象临时凭证、TEST 后端及内部名单；发布、回退和收尾见 [验收说明](ops/drama-bunny-preview/README.md)。部署成功不代表手机性能通过。
-
-> 短剧启动新增独立 Grafana 模板 `st-drama-playback`：v2 媒体网络/首帧诊断、分析域原子落表及有界历史导入。先执行对应环境的 `20261027_drama_playback_observability.sql`，再显式启用 `DRAMA_TIMING_PERSIST_ENABLED`；默认保留日志模式。代码不代表已部署，步骤和恢复见 [短剧看板操作说明](docs/grafana/drama-playback-runbook.md)。
+> 短剧达到5秒的启动终态与迟到媒体详情复用现有 Backend OTLP 出口写 Grafana Cloud Loki；不新增五秒快照，也不再通过接收接口写 Supabase 分析表。`st-engineering-drama` 增加逐次详情/观察ID查询；旧 `st-drama-playback` 仅保留历史SQL数据。代码与线上状态分开验收，发布步骤见 [短剧看板操作说明](docs/grafana/drama-playback-runbook.md)。
 
 > 图片广场 Admin 保存草稿触发 `config_drafts_config_key_check` 的兼容修复：新增 `20261016_reconcile_image_plaza_managed_config_keys.sql`，保留现有白名单并恢复四个图片广场 key，不改正式配置。尚待 TEST workflow 单文件执行及保存/发布验收；详见迁移目录 README，Production 另行审批。
 
@@ -289,3 +287,15 @@ send/regenerate 携带可选 `first_token_measurement`；后端通过既有 begi
 只消费赢家的replay与原charge_id结算，原报价/权益、超时免扣、主动停止和离页恢复规则不变。败方立即取消，不为排查drain；只把已接收的正文/公开思考有界片段和race_lost原因并入原attempt一次异步终态写，不发给用户、不进上下文、不另计费。正常attempt最多派发/终态两次observe；删除旧首发额外元数据补读，无新cron/轮询。diagnostic保存不阻塞首字，赢家身份仍须持久化才能结算。
 
 新迁移`20261028_first_token_race.sql`扩展现有attempt诊断列并解除禁止首发回赢的守卫，保留数据库单赢家CAS/PT409；Grafana仅获原指标列权限，不能读诊断正文。先本地与TEST验证、合dev，再生产迁移和应用/Admin/看板。回退应用保留诊断列与原账务，不扩权限，不改历史数据。
+
+## 六秒预算与有限补报（2026-10-29）
+
+生产运营目录版本97已由用户发布：总首字上限6000ms、启用型号启动兜底阈值2000ms；停用型号保留原值。本次代码发布不覆盖该配置。Shared全局缺省改为6秒，新增型号仍默认4秒；正式配置与每轮冻结值优先。首发继续参与竞争，先出有效正文或已开启公开思考首字即锁定赢家并立即停止另一方。只有首字受截止约束，完整回复不受6秒限制。此前10秒样本保留原冻结预算，分析时分窗。
+
+SSE start携带当轮冻结总预算。客户端若持有旧目录缓存，按原点击时间修正剩余等待，不从收到start重新计时，也不改写已产生的首份终态。离页/后台仍是独立结果，后台生成与返回恢复保持原行为。
+
+首份结果沿用原回报API，浏览器按Telegram用户暂存未确认的标量回执，不保存正文、凭证或授权信息；最多20条、24小时过期。保留即时最多3次尝试，耗尽后最多再补1次；每次包括排队和body最多3秒。成功即删除；启动、联网、返回前台触发串行补发，每次最多4条、30秒冷却，无定时轮询或服务端扫描。进程被强杀且尚未产生终态仍可能缺报，不能补成成功。
+
+早于SSE身份的非成功v4终态可用原request_id上报。既有RPC按现有client_request_id索引最多读取2条，校验用户与会话且唯一时才定位；歧义不猜，成功结果仍必须有消息编号与revision。首份终态后的重放不UPDATE。迁移20261029_first_token_receipt_recovery.sql仅替换既有函数；不增加表、索引、cron、逐token写入或历史回填，不改变超时免扣、主动停止及正常回复一次计费。
+
+发布顺序：本地PG/测试→TEST迁移与应用验收→先合dev→生产迁移→Backend/Frontend/Admin→Grafana说明；配置只读核对版本97。回退应用保留兼容RPC，必要时前向修复，不删除账务。

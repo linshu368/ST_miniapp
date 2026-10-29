@@ -344,7 +344,10 @@ describe('image plaza settlement cache refresh', () => {
       expect(client.getQueryState(['wallet'])?.isInvalidated).toBe(false);
       expect(apiClient).toHaveBeenCalledTimes(2);
       for (const call of vi.mocked(apiClient).mock.calls) {
-        expect(call).toEqual([`/api/image-plaza/conversations/${plazaConversationId}`]);
+        expect(call).toEqual([
+          `/api/image-plaza/conversations/${plazaConversationId}`,
+          { signal: expect.any(AbortSignal) },
+        ]);
       }
     }
   );
@@ -419,7 +422,8 @@ describe('image plaza settlement cache refresh', () => {
     expect(client.getQueryData(imagePlazaKeys.conversation(plazaConversationId))).toEqual(before);
     expect(invalidate).not.toHaveBeenCalled();
     expect(apiClient).toHaveBeenCalledExactlyOnceWith(
-      `/api/image-plaza/conversations/${plazaConversationId}`
+      `/api/image-plaza/conversations/${plazaConversationId}`,
+      { signal: expect.any(AbortSignal) }
     );
   });
 

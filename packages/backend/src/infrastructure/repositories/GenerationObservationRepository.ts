@@ -145,7 +145,6 @@ export class GenerationObservationRepository {
   async markServer(
     historyId: string,
     patch: {
-      first_token_emitted_ms?: number;
       first_token_timeout?: boolean;
       server_timeout_stage?: 'global' | 'primary' | 'fallback';
       billing_rejected?: boolean;
@@ -189,11 +188,14 @@ export class GenerationObservationRepository {
     sessionId: string,
     input: ReportFirstTokenRequest
   ): Promise<boolean> {
+    // These diagnostic durations now belong to Grafana. Keep reception/delivery
+    // fields because legacy billing compatibility still depends on them.
+    const { request_dispatched_ms: _dispatch, wait_finished_ms: _finished, ...receipt } = input;
     const { data, error } = await this.db
       .rpc('report_chat_first_token', {
         p_user_id: userId,
         p_session_id: sessionId,
-        p_report: input,
+        p_report: receipt,
       })
       .abortSignal(AbortSignal.timeout(3_000));
     if (error) throw new Error('保存用户首 token 显示观测失败', { cause: error });

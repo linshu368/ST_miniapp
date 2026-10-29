@@ -88,7 +88,7 @@ function OrdersPageContent() {
   }, [paymentReturned]);
 
   const query = usePaymentOrdersInfiniteQuery(tabToStatus(tab), 20);
-  usePageReady('/profile/orders', query.data !== undefined);
+  usePageReady('/profile/orders', query.data !== undefined, false, query.isError);
   const items = useMemo(() => (query.data?.pages ?? []).flatMap((p) => p.items), [query.data]);
 
   // 无限滚动触发器

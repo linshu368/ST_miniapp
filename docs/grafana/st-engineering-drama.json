@@ -1,0 +1,1312 @@
+{
+  "uid": "st-engineering-drama",
+  "title": "工程｜03 短剧启动与播放",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "tags": ["ST", "engineering", "draft-pending-cloud-validation"],
+  "timezone": "Asia/Shanghai",
+  "refresh": "5m",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "environment",
+        "label": "环境",
+        "type": "custom",
+        "query": "test,production",
+        "current": {
+          "text": "test",
+          "value": "test"
+        },
+        "options": [
+          {
+            "text": "test",
+            "value": "test",
+            "selected": true
+          },
+          {
+            "text": "production",
+            "value": "production",
+            "selected": false
+          }
+        ]
+      },
+      {
+        "name": "release",
+        "label": "版本（正则）",
+        "type": "textbox",
+        "query": ".*",
+        "current": {
+          "text": ".*",
+          "value": ".*"
+        }
+      },
+      {
+        "name": "measurement_version",
+        "label": "测量版本",
+        "type": "constant",
+        "query": "engineering_v1",
+        "current": {
+          "text": "engineering_v1",
+          "value": "engineering_v1"
+        }
+      },
+      {
+        "name": "browser_selector",
+        "label": "浏览器流选择器（接入时核验）",
+        "type": "textbox",
+        "query": "{service_name=\"st-miniapp\"}",
+        "current": {
+          "text": "{service_name=\"st-miniapp\"}",
+          "value": "{service_name=\"st-miniapp\"}"
+        }
+      },
+      {
+        "name": "tg_platform",
+        "label": "设备/客户端平台",
+        "type": "custom",
+        "query": "全部 : .*,iOS : ios,Android : android|android_x,桌面Telegram : macos|tdesktop|unigram,Telegram Web : web|weba|webk,未知或历史未分层 : unknown|other|^$",
+        "current": {
+          "text": "全部",
+          "value": ".*"
+        },
+        "options": [
+          {
+            "text": "全部",
+            "value": ".*",
+            "selected": true
+          },
+          {
+            "text": "iOS",
+            "value": "ios",
+            "selected": false
+          },
+          {
+            "text": "Android",
+            "value": "android|android_x",
+            "selected": false
+          },
+          {
+            "text": "桌面Telegram",
+            "value": "macos|tdesktop|unigram",
+            "selected": false
+          },
+          {
+            "text": "Telegram Web",
+            "value": "web|weba|webk",
+            "selected": false
+          },
+          {
+            "text": "未知或历史未分层",
+            "value": "unknown|other|^$",
+            "selected": false
+          }
+        ],
+        "multi": false,
+        "includeAll": false,
+        "allowCustomValue": false
+      },
+      {
+        "name": "net_type",
+        "label": "网络有效等级",
+        "type": "custom",
+        "query": "全部 : .*,4g速度级 : 4g,3g速度级 : 3g,2g或更慢 : 2g|slow-2g,窗口起止变化 : mixed,未知或历史未分层 : unknown|other|^$",
+        "current": {
+          "text": "全部",
+          "value": ".*"
+        },
+        "options": [
+          {
+            "text": "全部",
+            "value": ".*",
+            "selected": true
+          },
+          {
+            "text": "4g速度级",
+            "value": "4g",
+            "selected": false
+          },
+          {
+            "text": "3g速度级",
+            "value": "3g",
+            "selected": false
+          },
+          {
+            "text": "2g或更慢",
+            "value": "2g|slow-2g",
+            "selected": false
+          },
+          {
+            "text": "窗口起止变化",
+            "value": "mixed",
+            "selected": false
+          },
+          {
+            "text": "未知或历史未分层",
+            "value": "unknown|other|^$",
+            "selected": false
+          }
+        ],
+        "multi": false,
+        "includeAll": false,
+        "allowCustomValue": false
+      },
+      {
+        "name": "startup_definition",
+        "label": "启动/目录定义（旧版分开）",
+        "type": "custom",
+        "query": "全部 : .*,drama_v3 : drama_v3,drama_v2 : drama_v2,drama_v1 : drama_v1",
+        "current": {
+          "text": "drama_v3",
+          "value": "drama_v3"
+        },
+        "options": [
+          {
+            "text": "全部",
+            "value": ".*",
+            "selected": false
+          },
+          {
+            "text": "drama_v3",
+            "value": "drama_v3",
+            "selected": true
+          },
+          {
+            "text": "drama_v2",
+            "value": "drama_v2",
+            "selected": false
+          },
+          {
+            "text": "drama_v1",
+            "value": "drama_v1",
+            "selected": false
+          }
+        ],
+        "hide": 0,
+        "multi": false,
+        "includeAll": false
+      },
+      {
+        "name": "drama_route",
+        "label": "页面模板（正则）",
+        "type": "textbox",
+        "query": ".*",
+        "current": {
+          "text": ".*",
+          "value": ".*"
+        },
+        "options": [],
+        "hide": 0,
+        "multi": false,
+        "includeAll": false
+      },
+      {
+        "name": "startup_entry",
+        "label": "启动入口",
+        "type": "custom",
+        "query": "全部 : .*,cover : cover,switch : switch,episode : episode,retry : retry,direct : direct",
+        "current": {
+          "text": "全部",
+          "value": ".*"
+        },
+        "options": [
+          {
+            "text": "全部",
+            "value": ".*",
+            "selected": true
+          },
+          {
+            "text": "cover",
+            "value": "cover",
+            "selected": false
+          },
+          {
+            "text": "switch",
+            "value": "switch",
+            "selected": false
+          },
+          {
+            "text": "episode",
+            "value": "episode",
+            "selected": false
+          },
+          {
+            "text": "retry",
+            "value": "retry",
+            "selected": false
+          },
+          {
+            "text": "direct",
+            "value": "direct",
+            "selected": false
+          }
+        ],
+        "hide": 0,
+        "multi": false,
+        "includeAll": false
+      },
+      {
+        "name": "startup_cache",
+        "label": "启动地址来源",
+        "type": "custom",
+        "query": "全部 : .*,fetch : fetch,inflight : inflight,cache : cache,unknown : unknown",
+        "current": {
+          "text": "全部",
+          "value": ".*"
+        },
+        "options": [
+          {
+            "text": "全部",
+            "value": ".*",
+            "selected": true
+          },
+          {
+            "text": "fetch",
+            "value": "fetch",
+            "selected": false
+          },
+          {
+            "text": "inflight",
+            "value": "inflight",
+            "selected": false
+          },
+          {
+            "text": "cache",
+            "value": "cache",
+            "selected": false
+          },
+          {
+            "text": "unknown",
+            "value": "unknown",
+            "selected": false
+          }
+        ],
+        "hide": 0,
+        "multi": false,
+        "includeAll": false
+      },
+      {
+        "name": "startup_frame",
+        "label": "启动首帧方式",
+        "type": "custom",
+        "query": "全部 : .*,video_frame_callback : video_frame_callback,playing_and_timeupdate : playing_and_timeupdate",
+        "current": {
+          "text": "全部",
+          "value": ".*"
+        },
+        "options": [
+          {
+            "text": "全部",
+            "value": ".*",
+            "selected": true
+          },
+          {
+            "text": "video_frame_callback",
+            "value": "video_frame_callback",
+            "selected": false
+          },
+          {
+            "text": "playing_and_timeupdate",
+            "value": "playing_and_timeupdate",
+            "selected": false
+          }
+        ],
+        "hide": 0,
+        "multi": false,
+        "includeAll": false
+      },
+      {
+        "name": "catalog_start",
+        "label": "目录起点",
+        "type": "custom",
+        "query": "全部 : .*,document_navigation : document_navigation,navigation_click : navigation_click,route_commit : route_commit,query_start : query_start,retry : retry",
+        "current": {
+          "text": "全部",
+          "value": ".*"
+        },
+        "options": [
+          {
+            "text": "全部",
+            "value": ".*",
+            "selected": true
+          },
+          {
+            "text": "document_navigation",
+            "value": "document_navigation",
+            "selected": false
+          },
+          {
+            "text": "navigation_click",
+            "value": "navigation_click",
+            "selected": false
+          },
+          {
+            "text": "route_commit",
+            "value": "route_commit",
+            "selected": false
+          },
+          {
+            "text": "query_start",
+            "value": "query_start",
+            "selected": false
+          },
+          {
+            "text": "retry",
+            "value": "retry",
+            "selected": false
+          }
+        ],
+        "hide": 0,
+        "multi": false,
+        "includeAll": false
+      },
+      {
+        "name": "diagnostic_observation",
+        "label": "慢启动 observation_id",
+        "type": "textbox",
+        "query": "",
+        "current": {
+          "text": "",
+          "value": ""
+        }
+      }
+    ]
+  },
+  "links": [
+    {
+      "title": "经营核心（保留SQL）",
+      "url": "/d/st-model-overview",
+      "type": "link"
+    },
+    {
+      "title": "既有首字回执（保留）",
+      "url": "/d/chat-first-token-manual",
+      "type": "link"
+    },
+    {
+      "title": "既有短剧诊断（保留）",
+      "url": "/d/st-drama-playback",
+      "type": "link"
+    }
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "接入状态与使用边界",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 5
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**待 TEST Cloud 接入验证；不是线上验收完成。** 本机已核验固定版本 Faro → Alloy → Loki 的日志字段。Cloud 托管浏览器入口需再核对实际流标签/格式，browser_selector 不得凭空猜测。无数据不等于0次失败。按同环境、版本、入口、网络/平台层比较，成功P50/P95与终态样本量一起看；低样本只观察，不自动排名或作人员考核。默认24h/5min，避免高频长窗查询。\n\n开始/终态按窗口计数，**不是逐请求闭环或全访问覆盖**（无身份关联，窗口边界和丢报可影响结果）。先观察24–48h基线，再审核预算；后台、离页和主动停止单列。\n\n启动成功必须first_frame+playing；canplay/地址返回不算。卡顿只用启动后前台非暂停/seek的waiting→playing；stalled只作网络诊断。新窗口提供实际播放和卡顿时长分母，但不是完整会话或全量送达。各分段有重叠，不可相加。\n\n**分层比较：** 设备/客户端按Telegram平台归类，不采集具体机型；网络是浏览器估算的有效速度等级，不是Wi-Fi/蜂窝类型。iOS等不支持时为unknown，不能视为弱网。默认全部保留历史缺标签；具体筛选只看对应样本。普通测量取入队时网络；播放窗口取起点，起止不同标mixed，不证明整窗稳定。\n\n**统一定义 v3（代码待发布验证）**：新启动/目录默认只看 drama_v3；旧版本必须独立选择，不能拼接成优化前后基线。首页与详情归属绑定原观察；补齐进入→设置源、元数据→画面数据、画面数据→首帧、首帧→启动完成，缺失/逆序不补0。成功、失败、退出分母不变。\n\n新诊断展示final快照与network尾报告，两者不是独立播放，不可合计算观察数；阶段与能力分母各自不同。全量工程统计不采样；统一模式下Pino保留全部慢/失败/退出与5%快成功明细，细节只用于排障。全量旧上传必须在TEST/Cloud与真实流程验证后显式切换；接收端已按五秒长尾方案停止分析写入；源文件不是生产验收证据。\n\n五秒长尾：达到5000ms的播放final/network有界详情经Backend OTLP→Alloy写Loki（下方面板11/12），观察ID仅在JSON正文。final与network不可重复计数；浏览器流/测量定义筛选不作用于此后端详情流。接收端不再写Supabase，202仅接收；模板不代表已发布。unified保留全部≥5秒/非成功细节与5%快速成功明细，Faro统计全量。"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    },
+    {
+      "id": 20,
+      "title": "前台实际播放总时长（已观测）",
+      "type": "stat",
+      "description": "仅已观测前台增量窗口；每30秒或暂停/seek/后台/结束时提交，排除初始加载、暂停、seek和后台。不是人数或完整会话，不能证明全量送达。 使用walltime，不是媒体进度差。 启动定义/入口/地址来源/首帧方式和目录起点筛选不作用于播放质量窗口或卡顿恢复；仅页面/设备/网络等自身已有维度有效。",
+      "datasource": {
+        "type": "loki",
+        "uid": "grafanacloud-logs"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 8,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "—",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "graphMode": "none",
+        "colorMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          },
+          "editorMode": "code",
+          "queryType": "instant",
+          "expr": "sum(sum_over_time(${browser_selector:raw} |= \"st_drama_playback_window\" | logfmt | event_data_route=~\"$drama_route\" | event_data_tg_platform=~\"$tg_platform\" | event_data_net_type=~\"$net_type\" | kind=\"event\" | event_name=\"st_drama_playback_window\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_source_measurement_version=\"drama_playback_v1\" | event_data_playing_ms=~\"[0-9]+\" | event_data_rebuffer_ms=~\"[0-9]+\" | event_data_playing_ms>=0 | event_data_playing_ms<=60000 | event_data_rebuffer_ms>=0 | event_data_rebuffer_ms<=60000 | __error__=\"\" | keep event_data_playing_ms | unwrap event_data_playing_ms | __error__=\"\" [$__range])) / 1000"
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "title": "前台卡顿时长占比（已观测）",
+      "type": "stat",
+      "description": "仅已观测前台增量窗口；每30秒或暂停/seek/后台/结束时提交，排除初始加载、暂停、seek和后台。不是人数或完整会话，不能证明全量送达。 同条窗口加权Σ卡顿/(Σ播放+Σ卡顿)，含退出前未恢复卡顿；不平均单窗比例，分母0无数据。 启动定义/入口/地址来源/首帧方式和目录起点筛选不作用于播放质量窗口或卡顿恢复；仅页面/设备/网络等自身已有维度有效。",
+      "datasource": {
+        "type": "loki",
+        "uid": "grafanacloud-logs"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 5,
+        "w": 8,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "noValue": "—",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "graphMode": "none",
+        "colorMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          },
+          "editorMode": "code",
+          "queryType": "instant",
+          "expr": "sum(sum_over_time(${browser_selector:raw} |= \"st_drama_playback_window\" | logfmt | event_data_route=~\"$drama_route\" | event_data_tg_platform=~\"$tg_platform\" | event_data_net_type=~\"$net_type\" | kind=\"event\" | event_name=\"st_drama_playback_window\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_source_measurement_version=\"drama_playback_v1\" | event_data_playing_ms=~\"[0-9]+\" | event_data_rebuffer_ms=~\"[0-9]+\" | event_data_playing_ms>=0 | event_data_playing_ms<=60000 | event_data_rebuffer_ms>=0 | event_data_rebuffer_ms<=60000 | __error__=\"\" | keep event_data_rebuffer_ms | unwrap event_data_rebuffer_ms | __error__=\"\" [$__range])) / (sum(sum_over_time(${browser_selector:raw} |= \"st_drama_playback_window\" | logfmt | event_data_tg_platform=~\"$tg_platform\" | event_data_net_type=~\"$net_type\" | kind=\"event\" | event_name=\"st_drama_playback_window\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_source_measurement_version=\"drama_playback_v1\" | event_data_playing_ms=~\"[0-9]+\" | event_data_rebuffer_ms=~\"[0-9]+\" | event_data_playing_ms>=0 | event_data_playing_ms<=60000 | event_data_rebuffer_ms>=0 | event_data_rebuffer_ms<=60000 | __error__=\"\" | keep event_data_playing_ms | unwrap event_data_playing_ms | __error__=\"\" [$__range])) + sum(sum_over_time(${browser_selector:raw} |= \"st_drama_playback_window\" | logfmt | event_data_tg_platform=~\"$tg_platform\" | event_data_net_type=~\"$net_type\" | kind=\"event\" | event_name=\"st_drama_playback_window\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_source_measurement_version=\"drama_playback_v1\" | event_data_playing_ms=~\"[0-9]+\" | event_data_rebuffer_ms=~\"[0-9]+\" | event_data_playing_ms>=0 | event_data_playing_ms<=60000 | event_data_rebuffer_ms>=0 | event_data_rebuffer_ms<=60000 | __error__=\"\" | keep event_data_rebuffer_ms | unwrap event_data_rebuffer_ms | __error__=\"\" [$__range])))"
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "title": "有效播放质量窗口数（不是人数）",
+      "type": "stat",
+      "description": "仅已观测前台增量窗口；每30秒或暂停/seek/后台/结束时提交，排除初始加载、暂停、seek和后台。不是人数或完整会话，不能证明全量送达。 同一播放器可贡献多个窗口；无数据不显示0。 启动定义/入口/地址来源/首帧方式和目录起点筛选不作用于播放质量窗口或卡顿恢复；仅页面/设备/网络等自身已有维度有效。",
+      "datasource": {
+        "type": "loki",
+        "uid": "grafanacloud-logs"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 5,
+        "w": 8,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "—",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "graphMode": "none",
+        "colorMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          },
+          "editorMode": "code",
+          "queryType": "instant",
+          "expr": "sum(count_over_time(${browser_selector:raw} |= \"st_drama_playback_window\" | logfmt | event_data_route=~\"$drama_route\" | event_data_tg_platform=~\"$tg_platform\" | event_data_net_type=~\"$net_type\" | kind=\"event\" | event_name=\"st_drama_playback_window\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_source_measurement_version=\"drama_playback_v1\" | event_data_playing_ms=~\"[0-9]+\" | event_data_rebuffer_ms=~\"[0-9]+\" | event_data_playing_ms>=0 | event_data_playing_ms<=60000 | event_data_rebuffer_ms>=0 | event_data_rebuffer_ms<=60000 | __error__=\"\" | keep event_data_route,event_data_tg_platform,event_data_net_type [$__range]))"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "已知启动终态成功率",
+      "type": "stat",
+      "description": "自动播放被拦是启动未达成，不是供应商错误；switched/left/background单列。",
+      "datasource": {
+        "type": "loki",
+        "uid": "grafanacloud-logs"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 9,
+        "w": 12,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "noValue": "—"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "graphMode": "none",
+        "colorMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          },
+          "expr": "(sum (count_over_time(${browser_selector:raw} |= \"st_drama_terminal\" | logfmt | event_data_route=~\"$drama_route\" | event_data_source_measurement_version=~\"$startup_definition\" | event_data_playback_mode=~\"$startup_entry\" | event_data_cache=~\"$startup_cache\" | event_data_first_frame_method=~\"$startup_frame\" | event_data_tg_platform=~\"$tg_platform\" | event_data_net_type=~\"$net_type\" | kind=\"event\" | event_name=\"st_drama_terminal\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_stage=\"startup\" | event_data_outcome=\"playing\" [$__range])) or vector(0)) / sum (count_over_time(${browser_selector:raw} |= \"st_drama_terminal\" | logfmt | event_data_tg_platform=~\"$tg_platform\" | event_data_net_type=~\"$net_type\" | kind=\"event\" | event_name=\"st_drama_terminal\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_stage=\"startup\" | event_data_outcome=~\"playing|error|unplayable|autoplay_blocked\" [$__range]))",
+          "legendFormat": "",
+          "editorMode": "code",
+          "queryType": "instant"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "启动全部终态样本",
+      "type": "table",
+      "description": "",
+      "datasource": {
+        "type": "loki",
+        "uid": "grafanacloud-logs"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 13,
+        "w": 24,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "noValue": "—"
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [
+          {
+            "displayName": "Value",
+            "desc": true
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          },
+          "expr": "sum by (event_data_playback_mode,event_data_outcome) (count_over_time(${browser_selector:raw} |= \"st_drama_terminal\" | logfmt | event_data_route=~\"$drama_route\" | event_data_source_measurement_version=~\"$startup_definition\" | event_data_playback_mode=~\"$startup_entry\" | event_data_cache=~\"$startup_cache\" | event_data_first_frame_method=~\"$startup_frame\" | event_data_tg_platform=~\"$tg_platform\" | event_data_net_type=~\"$net_type\" | kind=\"event\" | event_name=\"st_drama_terminal\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_stage=\"startup\" [$__range]))",
+          "legendFormat": "",
+          "editorMode": "code",
+          "queryType": "instant"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {
+            "mode": "columns"
+          }
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "入口→真正开始播放 P50/P95",
+      "type": "timeseries",
+      "description": "",
+      "datasource": {
+        "type": "loki",
+        "uid": "grafanacloud-logs"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 21,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "noValue": "—"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": ["lastNotNull"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          },
+          "expr": "quantile_over_time(0.5, ${browser_selector:raw} |= \"st_drama_startup\" | logfmt | context_route=~\"$drama_route\" | context_source_measurement_version=~\"$startup_definition\" | context_playback_mode=~\"$startup_entry\" | context_cache=~\"$startup_cache\" | context_first_frame_method=~\"$startup_frame\" | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | kind=\"measurement\" | type=\"st_drama_startup\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_outcome=\"playing\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_playback_mode)",
+          "legendFormat": "P50 {{context_playback_mode}}",
+          "editorMode": "code",
+          "queryType": "range"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          },
+          "expr": "quantile_over_time(0.95, ${browser_selector:raw} |= \"st_drama_startup\" | logfmt | context_route=~\"$drama_route\" | context_source_measurement_version=~\"$startup_definition\" | context_playback_mode=~\"$startup_entry\" | context_cache=~\"$startup_cache\" | context_first_frame_method=~\"$startup_frame\" | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | kind=\"measurement\" | type=\"st_drama_startup\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_outcome=\"playing\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_playback_mode)",
+          "legendFormat": "P95 {{context_playback_mode}}",
+          "editorMode": "code",
+          "queryType": "range"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "入口→首帧 P50/P95（成功启动）",
+      "type": "timeseries",
+      "description": "",
+      "datasource": {
+        "type": "loki",
+        "uid": "grafanacloud-logs"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 21,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "noValue": "—"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": ["lastNotNull"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          },
+          "expr": "quantile_over_time(0.5, ${browser_selector:raw} |= \"st_drama_first_frame\" | logfmt | context_route=~\"$drama_route\" | context_source_measurement_version=~\"$startup_definition\" | context_playback_mode=~\"$startup_entry\" | context_cache=~\"$startup_cache\" | context_first_frame_method=~\"$startup_frame\" | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | kind=\"measurement\" | type=\"st_drama_first_frame\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_outcome=\"playing\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_first_frame_method)",
+          "legendFormat": "P50 {{context_first_frame_method}}",
+          "editorMode": "code",
+          "queryType": "range"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          },
+          "expr": "quantile_over_time(0.95, ${browser_selector:raw} |= \"st_drama_first_frame\" | logfmt | context_route=~\"$drama_route\" | context_source_measurement_version=~\"$startup_definition\" | context_playback_mode=~\"$startup_entry\" | context_cache=~\"$startup_cache\" | context_first_frame_method=~\"$startup_frame\" | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | kind=\"measurement\" | type=\"st_drama_first_frame\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_outcome=\"playing\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_first_frame_method)",
+          "legendFormat": "P95 {{context_first_frame_method}}",
+          "editorMode": "code",
+          "queryType": "range"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "短剧目录可用 P50/P95",
+      "type": "timeseries",
+      "description": "",
+      "datasource": {
+        "type": "loki",
+        "uid": "grafanacloud-logs"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 29,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "noValue": "—"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": ["lastNotNull"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          },
+          "expr": "quantile_over_time(0.5, ${browser_selector:raw} |= \"st_drama_catalog\" | logfmt | context_route=~\"$drama_route\" | context_source_measurement_version=~\"$startup_definition\" | context_list_start_kind=~\"$catalog_start\" | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | kind=\"measurement\" | type=\"st_drama_catalog\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_outcome=\"ready\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_route)",
+          "legendFormat": "P50 {{context_route}}",
+          "editorMode": "code",
+          "queryType": "range"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          },
+          "expr": "quantile_over_time(0.95, ${browser_selector:raw} |= \"st_drama_catalog\" | logfmt | context_route=~\"$drama_route\" | context_source_measurement_version=~\"$startup_definition\" | context_list_start_kind=~\"$catalog_start\" | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | kind=\"measurement\" | type=\"st_drama_catalog\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_outcome=\"ready\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_route)",
+          "legendFormat": "P95 {{context_route}}",
+          "editorMode": "code",
+          "queryType": "range"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "启动阶段 P95（并行/重叠，禁止相加）",
+      "type": "timeseries",
+      "description": "",
+      "datasource": {
+        "type": "loki",
+        "uid": "grafanacloud-logs"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 29,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "noValue": "—"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": ["lastNotNull"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          },
+          "expr": "quantile_over_time(0.95, ${browser_selector:raw} |= \"st_drama_stage\" | logfmt | context_route=~\"$drama_route\" | context_source_measurement_version=~\"$startup_definition\" | context_playback_mode=~\"$startup_entry\" | context_cache=~\"$startup_cache\" | context_first_frame_method=~\"$startup_frame\" | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | kind=\"measurement\" | type=\"st_drama_stage\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_outcome=\"playing\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_stage)",
+          "legendFormat": "",
+          "editorMode": "code",
+          "queryType": "range"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "前台播放中断→恢复播放 P50/P95",
+      "type": "timeseries",
+      "description": " 启动定义/入口/地址来源/首帧方式和目录起点筛选不作用于播放质量窗口或卡顿恢复；仅页面/设备/网络等自身已有维度有效。",
+      "datasource": {
+        "type": "loki",
+        "uid": "grafanacloud-logs"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 37,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "noValue": "—"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": ["lastNotNull"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          },
+          "expr": "quantile_over_time(0.5, ${browser_selector:raw} |= \"st_drama_rebuffer\" | logfmt | context_route=~\"$drama_route\" | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | kind=\"measurement\" | type=\"st_drama_rebuffer\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_outcome=\"playing\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_route)",
+          "legendFormat": "P50 {{context_route}}",
+          "editorMode": "code",
+          "queryType": "range"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          },
+          "expr": "quantile_over_time(0.95, ${browser_selector:raw} |= \"st_drama_rebuffer\" | logfmt | context_route=~\"$drama_route\" | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | kind=\"measurement\" | type=\"st_drama_rebuffer\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_outcome=\"playing\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_route)",
+          "legendFormat": "P95 {{context_route}}",
+          "editorMode": "code",
+          "queryType": "range"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "播放中断的恢复/非恢复样本（非会话比例）",
+      "type": "table",
+      "description": " 启动定义/入口/地址来源/首帧方式和目录起点筛选不作用于播放质量窗口或卡顿恢复；仅页面/设备/网络等自身已有维度有效。",
+      "datasource": {
+        "type": "loki",
+        "uid": "grafanacloud-logs"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 45,
+        "w": 24,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "noValue": "—"
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [
+          {
+            "displayName": "Value",
+            "desc": true
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          },
+          "expr": "sum by (event_data_outcome) (count_over_time(${browser_selector:raw} |= \"st_drama_stall\" | logfmt | event_data_route=~\"$drama_route\" | event_data_tg_platform=~\"$tg_platform\" | event_data_net_type=~\"$net_type\" | kind=\"event\" | event_name=\"st_drama_stall\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_stage=\"rebuffer\" | event_data_outcome!=\"waiting\" [$__range]))",
+          "legendFormat": "",
+          "editorMode": "code",
+          "queryType": "instant"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {
+            "mode": "columns"
+          }
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "目录/启动已接收开始与终态数",
+      "type": "table",
+      "description": "按所选启动定义与页面统计窗口内接收量；启动入口/缓存/首帧/目录起点不作用于本混合覆盖计数。不是逐尝试配对或全访问覆盖率。",
+      "datasource": {
+        "type": "loki",
+        "uid": "grafanacloud-logs"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 53,
+        "w": 24,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "noValue": "—"
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [
+          {
+            "displayName": "Value",
+            "desc": true
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          },
+          "expr": "sum by (event_data_stage) (count_over_time(${browser_selector:raw} |= \"st_drama_started\" | logfmt | event_data_route=~\"$drama_route\" | event_data_source_measurement_version=~\"$startup_definition\" | event_data_tg_platform=~\"$tg_platform\" | event_data_net_type=~\"$net_type\" | kind=\"event\" | event_name=\"st_drama_started\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" [$__range]))",
+          "legendFormat": "开始 {{event_data_stage}}",
+          "editorMode": "code",
+          "queryType": "instant"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          },
+          "expr": "sum by (event_data_stage) (count_over_time(${browser_selector:raw} |= \"st_drama_terminal\" | logfmt | event_data_route=~\"$drama_route\" | event_data_source_measurement_version=~\"$startup_definition\" | event_data_tg_platform=~\"$tg_platform\" | event_data_net_type=~\"$net_type\" | kind=\"event\" | event_name=\"st_drama_terminal\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" [$__range]))",
+          "legendFormat": "终态 {{event_data_stage}}",
+          "editorMode": "code",
+          "queryType": "instant"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {
+            "mode": "columns"
+          }
+        }
+      ]
+    },
+    {
+      "id": 23,
+      "title": "启动诊断能力与缺失（final样本）",
+      "type": "table",
+      "description": "每个启动final一条诊断能力摘要；ordered_or_missing不表示所有节点完整。无数据不补0，能力不足不能解释为网络或解码耗时0。",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 61
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "grafanacloud-logs"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (event_data_network_status,event_data_longtask_support,event_data_detail_truncated,event_data_event_order) (count_over_time(${browser_selector:raw} |= \"st_drama_diagnostic\" | logfmt | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | kind=\"event\" | event_name=\"st_drama_diagnostic\" | event_data_measurement_version=\"$measurement_version\" | event_data_source_measurement_version=~\"$startup_definition\" | event_data_route=~\"$drama_route\" | event_data_tg_platform=~\"$tg_platform\" | event_data_net_type=~\"$net_type\" | event_data_playback_mode=~\"$startup_entry\" | event_data_cache=~\"$startup_cache\" | event_data_first_frame_method=~\"$startup_frame\" | event_data_report_kind=\"final\" [$__range]))",
+          "queryType": "instant",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "id": 24,
+      "title": "启动诊断 P50/P95（final快照，可见子集）",
+      "type": "timeseries",
+      "description": "final和network独立展示，禁止合计或当作两个启动。TTFB包含网络/边缘/源站；帧处理不是元数据后全部解码；主线程重叠不证明根因。成功/失败构成见上方，不把缺失样本补0。",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 69
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "grafanacloud-logs"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "quantile_over_time(0.5, ${browser_selector:raw} |= \"st_drama_diagnostic\" | logfmt | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | kind=\"measurement\" | type=\"st_drama_diagnostic\" | context_measurement_version=\"$measurement_version\" | context_source_measurement_version=~\"$startup_definition\" | context_route=~\"$drama_route\" | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | context_playback_mode=~\"$startup_entry\" | context_cache=~\"$startup_cache\" | context_first_frame_method=~\"$startup_frame\" | context_report_kind=\"final\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_stage)",
+          "legendFormat": "{{context_stage}} P50",
+          "queryType": "range"
+        },
+        {
+          "refId": "B",
+          "expr": "quantile_over_time(0.95, ${browser_selector:raw} |= \"st_drama_diagnostic\" | logfmt | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | kind=\"measurement\" | type=\"st_drama_diagnostic\" | context_measurement_version=\"$measurement_version\" | context_source_measurement_version=~\"$startup_definition\" | context_route=~\"$drama_route\" | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | context_playback_mode=~\"$startup_entry\" | context_cache=~\"$startup_cache\" | context_first_frame_method=~\"$startup_frame\" | context_report_kind=\"final\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_stage)",
+          "legendFormat": "{{context_stage}} P95",
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 25,
+      "title": "迟到网络诊断 P50/P95（尾报告，独立子集）",
+      "type": "timeseries",
+      "description": "final和network独立展示，禁止合计或当作两个启动。TTFB包含网络/边缘/源站；帧处理不是元数据后全部解码；主线程重叠不证明根因。成功/失败构成见上方，不把缺失样本补0。",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 77
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "grafanacloud-logs"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "quantile_over_time(0.5, ${browser_selector:raw} |= \"st_drama_diagnostic\" | logfmt | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | kind=\"measurement\" | type=\"st_drama_diagnostic\" | context_measurement_version=\"$measurement_version\" | context_source_measurement_version=~\"$startup_definition\" | context_route=~\"$drama_route\" | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | context_playback_mode=~\"$startup_entry\" | context_cache=~\"$startup_cache\" | context_first_frame_method=~\"$startup_frame\" | context_report_kind=\"network\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_stage)",
+          "legendFormat": "{{context_stage}} P50",
+          "queryType": "range"
+        },
+        {
+          "refId": "B",
+          "expr": "quantile_over_time(0.95, ${browser_selector:raw} |= \"st_drama_diagnostic\" | logfmt | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | kind=\"measurement\" | type=\"st_drama_diagnostic\" | context_measurement_version=\"$measurement_version\" | context_source_measurement_version=~\"$startup_definition\" | context_route=~\"$drama_route\" | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | context_playback_mode=~\"$startup_entry\" | context_cache=~\"$startup_cache\" | context_first_frame_method=~\"$startup_frame\" | context_report_kind=\"network\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_stage)",
+          "legendFormat": "{{context_stage}} P95",
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 26,
+      "title": "诊断阶段有效样本数（final，各阶段分母独立）",
+      "type": "table",
+      "description": "与诊断P50/P95一起看；网络不可见、帧处理缺失不会产生该阶段measurement，不能用总播放数当其有效N。",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 85
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "grafanacloud-logs"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (context_stage) (count_over_time(${browser_selector:raw} |= \"st_drama_diagnostic\" | logfmt | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | kind=\"measurement\" | type=\"st_drama_diagnostic\" | context_measurement_version=\"$measurement_version\" | context_source_measurement_version=~\"$startup_definition\" | context_route=~\"$drama_route\" | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | context_playback_mode=~\"$startup_entry\" | context_cache=~\"$startup_cache\" | context_first_frame_method=~\"$startup_frame\" | context_report_kind=\"final\" [$__range]))",
+          "queryType": "instant",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "id": 11,
+      "type": "logs",
+      "title": "达到5秒的启动详情（逐次实际等待）",
+      "description": "Backend写入Loki的完整受控诊断；包含失败、离开和后台终态，不能全部算成功。展开JSON查看marks/media/queries/diagnostics；limited表示详细媒体计时不可读，不补0。版本筛选采用客户端release；原浏览器流选择器/measurement_version不适用于本面板。",
+      "datasource": {
+        "type": "loki",
+        "uid": "grafanacloud-logs"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 93,
+        "w": 24,
+        "h": 10
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          },
+          "expr": "{service_name=\"st-miniapp-backend\", deployment_environment_name=\"${environment}\"} |= `\"event\":\"drama.startup_diagnostic\"` | json diagnostic_phase=\"phase\", wait_ms=\"elapsedMs\", observation=\"id\", client_release=\"context.release\", device_platform=\"context.platform\", playback_entry=\"entry\" | __error__=\"\" | client_release=~\"${release:raw}\" | diagnostic_phase=\"final\" | wait_ms >= 5000",
+          "queryType": "range"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": true,
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none"
+      }
+    },
+    {
+      "id": 12,
+      "type": "logs",
+      "title": "单次慢启动：终态与迟到媒体证据",
+      "description": "填写上方observation_id，按phase区分final与network；network是同一次启动的补充，不计为第二次成功。详情送达和Loki保留期受现有出口/Cloud限制，缺失不表示播放正常。",
+      "datasource": {
+        "type": "loki",
+        "uid": "grafanacloud-logs"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 103,
+        "w": 24,
+        "h": 10
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          },
+          "expr": "{service_name=\"st-miniapp-backend\", deployment_environment_name=\"${environment}\"} |= `\"event\":\"drama.startup_diagnostic\"` | json diagnostic_phase=\"phase\", wait_ms=\"elapsedMs\", observation=\"id\", client_release=\"context.release\", device_platform=\"context.platform\", playback_entry=\"entry\" | __error__=\"\" | client_release=~\"${release:raw}\" | observation=${diagnostic_observation:doublequote}",
+          "queryType": "range"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": true,
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none"
+      }
+    }
+  ]
+}

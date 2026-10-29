@@ -21,6 +21,10 @@ import { ChatSessionDrawer } from '@/components/chat/chat-session-drawer';
 import { ChatToolsSheet } from '@/components/chat/chat-tools-sheet';
 import { ChatTopBar } from '@/components/chat/chat-top-bar';
 import { lobbyImageUrl } from '@/components/characters/character-card';
+import {
+  CharacterDetailSheet,
+  type CharacterDetailTab,
+} from '@/components/characters/character-detail-sheet';
 import { ChatSplash } from '@/components/chat/chat-splash';
 import { useChatReplayBinding, useChatSession } from '@/hooks/use-chat-session';
 import { useMemoryDraft } from '@/hooks/use-memory-draft';
@@ -82,6 +86,7 @@ export default function SelfHostedChatPage() {
   const [loadingEarlier, setLoadingEarlier] = useState(false);
   const [hasMoreEarlier, setHasMoreEarlier] = useState(false);
   const [sessionsOpen, setSessionsOpen] = useState(false);
+  const [characterPanel, setCharacterPanel] = useState<CharacterDetailTab | null>(null);
   const choiceLockRef = useRef<ChoiceLockState>(emptyChoiceLock());
   const [choiceLock, setChoiceLock] = useState<ChoiceLockState>(emptyChoiceLock());
   const [detailsDefaultOpen, setDetailsDefaultOpen] = useState<ReplyDetailsDefaultOpen>(
@@ -118,7 +123,7 @@ export default function SelfHostedChatPage() {
     activeSessionId ? `chat:${activeSessionId}` : null
   );
   // 可用 = 会话已建立且历史消息已加载（新会话的创建耗时也算在用户等待里）。
-  usePageReady('/chat/:id', session.ready);
+  usePageReady('/chat/:id', session.ready, false, Boolean(session.entryError));
   // 会话就绪或创建/加载失败都结算 P0，放行模型目录等 enrich。
   useEffect(() => {
     if (session.ready || session.entryError) markCriticalSettled();
@@ -178,10 +183,13 @@ export default function SelfHostedChatPage() {
     }
   }, [activeSessionId, characterId, setDraft, session.createConversation.data?.session.id]);
 
-  const goBack = useCallback(
-    () => router.push(session.backHref, { scroll: false }),
-    [router, session.backHref]
-  );
+  const goBack = useCallback(() => {
+    if (characterPanel) {
+      setCharacterPanel(null);
+      return;
+    }
+    router.push(session.backHref, { scroll: false });
+  }, [router, session.backHref, characterPanel]);
   useTelegramBackButton(goBack);
 
   useEffect(() => {
@@ -439,6 +447,9 @@ export default function SelfHostedChatPage() {
         onBack={goBack}
         characterId={characterId}
         title={title}
+        characterName={character?.name}
+        onOpenCharacter={() => setCharacterPanel('intro')}
+        onOpenComments={() => setCharacterPanel('comments')}
         onOpenSessions={() => setSessionsOpen(true)}
         returnTo={returnTo}
         generating={generating}
@@ -633,6 +644,15 @@ export default function SelfHostedChatPage() {
             creating={session.createConversation.isPending}
           />
         }
+      />
+
+      <CharacterDetailSheet
+        characterId={characterPanel ? characterId : null}
+        summary={character}
+        initialTab={characterPanel ?? 'intro'}
+        inConversation
+        onClose={() => setCharacterPanel(null)}
+        onEnter={() => setCharacterPanel(null)}
       />
 
       <ChatSessionDrawer

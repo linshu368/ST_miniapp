@@ -1,0 +1,41 @@
+{
+  "id": "grafana-performance-observability",
+  "name": "grafana-performance-observability",
+  "title": "Grafana 监控迁移与页面服务性能验收",
+  "description": "已获实施批准，完成页面体验、角色扮演、短剧与服务下钻的默认关闭遥测代码、本地验证及看板源；真实TEST/Cloud和生产切换待独立验收与授权。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "frontend,backend,shared,docs,observability",
+  "package": "backend",
+  "priority": "P1",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-29",
+  "completedAt": null,
+  "branch": "codex/grafana-playback-quality",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "frontend.infrastructure.client-ui-foundation",
+        "frontend.business.conversation-ui",
+        "frontend.business.character-lobby",
+        "frontend.business.engagement-support",
+        "frontend.business.wallet-payment",
+        "frontend.business.drama-experience",
+        "backend.infrastructure.runtime-data-security",
+        "backend.business.conversation-generation"
+      ]
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{"file": ".trellis/tasks/10-29-six-second-first-token-receipts/prd.md", "reason": "User intent and acceptance"}
+{"file": ".trellis/tasks/10-29-six-second-first-token-receipts/design.md", "reason": "Bounded local retries and indexed one-row receipt"}
+{"file": ".trellis/spec/frontend/app/api-dataflow-and-state.md", "reason": "Single API client and old WebView compatibility"}
+{"file": ".trellis/spec/backend/app/data-reliability-and-security.md", "reason": "No hot-path scans, idempotent billing"}
+{"file": ".trellis/spec/shared/contracts/api-contracts.md", "reason": "Backward-compatible consumer contracts"}
+{"file": ".trellis/spec/database/supabase/introspection-and-documentation.md", "reason": "Production read boundaries"}

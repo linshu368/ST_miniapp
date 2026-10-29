@@ -55,6 +55,37 @@ describe('drama timeline', () => {
     });
   });
 
+  it('binds home catalog route and preserves its document origin across root effects', async () => {
+    tracker.beginList('document_navigation', 0, '/');
+    tracker.route('/');
+    await advance(200);
+    tracker.listReady([], '/');
+    expect(last()).toMatchObject({
+      route: '/',
+      definition: 'drama_v3',
+      elapsedMs: 200,
+      list: { startKind: 'document_navigation' },
+    });
+    tracker.route('/dramas');
+    await advance(100);
+    tracker.listReady([]);
+    expect(last()).toMatchObject({ route: '/dramas', elapsedMs: 100 });
+  });
+  it('records catalog background in the owner once, before any transport projection', () => {
+    tracker.beginList('navigation_click');
+    tracker.background();
+    tracker.background();
+    expect(reports).toHaveLength(1);
+    expect(last()).toMatchObject({ type: 'list', phase: 'final', outcome: 'background' });
+  });
+  it('omits reversed stage intervals instead of manufacturing zero duration', async () => {
+    const flow = tracker.beginPlayback('a', 'direct');
+    flow.mark('loadeddata');
+    await advance(100);
+    flow.mark('metadata');
+    flow.finish('playing');
+    expect(last().stages.metadata_to_data).toBeUndefined();
+  });
   it('cached data does not count the original request as a new wait', async () => {
     const data = await tracker.query('playback', 'a', undefined, async () => {
       await advance(900);
@@ -217,6 +248,94 @@ describe('drama timeline', () => {
     expect(tracker.ensurePlayback('a')).toBe(flow);
     expect(reports).toHaveLength(1);
     expect(last().outcome).toBe('error');
+  });
+
+  it('keeps an embedded startup alive when the root route effect runs after the player effect', () => {
+    const flow = tracker.ensurePlayback('a', undefined, 'home');
+    flow.mark('player_ready');
+    tracker.route('/');
+    expect(flow.outcome).toBeUndefined();
+    expect(tracker.ensurePlayback('a', undefined, 'home')).toBe(flow);
+
+    tracker.playbackState(
+      flow,
+      { video_id: 'v', playable: true, play_url: 'not-requested', expires_at: null },
+      false,
+      false
+    );
+    flow.mark('source_set');
+    flow.mark('metadata');
+    flow.mark('first_frame');
+    flow.mark('playing');
+    flow.finish('playing');
+    expect(last()).toMatchObject({
+      outcome: 'playing',
+      marks: { player_ready: 0, source_set: 0, metadata: 0, first_frame: 0, playing: 0 },
+    });
+  });
+
+  it('uses separate home/detail owners for the same drama without reviving either terminal', () => {
+    const home = tracker.ensurePlayback('a', undefined, 'home');
+    tracker.route('/');
+    const detail = tracker.ensurePlayback('a', undefined, 'detail');
+    expect(detail).not.toBe(home);
+    expect(home.outcome).toBe('left');
+    tracker.route('/dramas/a');
+    expect(detail.outcome).toBeUndefined();
+    expect(tracker.ensurePlayback('a', undefined, 'detail')).toBe(detail);
+
+    const returnedHome = tracker.ensurePlayback('a', undefined, 'home');
+    expect(returnedHome).not.toBe(detail);
+    expect(detail.outcome).toBe('left');
+    tracker.route('/');
+    returnedHome.finish('playing');
+    expect(tracker.ensurePlayback('a', undefined, 'home')).toBe(returnedHome);
+    returnedHome.finish('error');
+    expect(last().outcome).toBe('playing');
+    expect(
+      reports.filter((report) => report.type === 'playback').map((report) => report.outcome)
+    ).toEqual(['left', 'left', 'playing']);
+  });
+
+  it('ends a home owner on real navigation away and creates a fresh visit on return', () => {
+    const home = tracker.ensurePlayback('a', undefined, 'home');
+    home.mark('player_ready');
+    tracker.route('/');
+    expect(home.outcome).toBeUndefined();
+    tracker.route('/profile');
+    expect(home.outcome).toBe('left');
+    home.mark('first_frame');
+    home.finish('playing');
+    expect(home.marks.first_frame).toBeUndefined();
+
+    const returned = tracker.ensurePlayback('a', undefined, 'home');
+    expect(returned).not.toBe(home);
+    tracker.route('/');
+    expect(returned.outcome).toBeUndefined();
+    returned.finish('playing');
+    expect(
+      reports.filter((report) => report.type === 'playback').map((report) => report.outcome)
+    ).toEqual(['left', 'playing']);
+  });
+
+  it('keeps explicit same-owner switches distinct from cross-owner exits and stale updates', () => {
+    const first = tracker.beginPlayback('a', 'direct', undefined, undefined, 'home');
+    const next = tracker.beginPlayback('b', 'switch', undefined, undefined, 'home');
+    expect(first.outcome).toBe('switched');
+    tracker.playbackState(first, undefined, false, true);
+    tracker.route('/');
+    expect(tracker.ensurePlayback('b', undefined, 'home')).toBe(next);
+    expect(next.outcome).toBeUndefined();
+
+    const detail = tracker.beginPlayback('b', 'direct');
+    expect(next.outcome).toBe('left');
+    tracker.route('/dramas/b');
+    const switchedDetail = tracker.beginPlayback('c', 'switch');
+    expect(detail.outcome).toBe('switched');
+    tracker.route('/dramas/c');
+    expect(switchedDetail.outcome).toBeUndefined();
+    tracker.route('/dramas/d');
+    expect(switchedDetail.outcome).toBe('left');
   });
 
   it('closes waits on background and distinguishes a new retry', async () => {

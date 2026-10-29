@@ -3,6 +3,15 @@ import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 import {
+  CreateCharacterCommentSchema,
+  ReportCharacterCommentSchema,
+  SetCharacterLikeSchema,
+  type CharacterComment,
+  type CharacterSocial,
+  type GetCharacterSocialData,
+  type GetCharacterSocialsData,
+  type GetCharacterCommentsData,
+  type CreateCharacterCommentData,
   CreateDramaCommentSchema,
   SetDramaLikeSchema,
   type DramaComment,
@@ -48,6 +57,45 @@ export function createPreviewServer(apiPort: number, appPort: number) {
   let claimed = false;
   let epoch = 0;
   let favoriteIds = new Set<string>();
+  const characterLikes = new Set<string>();
+  const characterComments = new Map<string, CharacterComment[]>();
+  const removedCharacterComments = new Set<string>();
+  const reportedCharacterComments = new Set<string>();
+  let characterLikeFailureDelivered = false;
+  let characterFavoriteFailureDelivered = false;
+  let characterCommentFailureDelivered = false;
+  function characterCommentsFor(id: string) {
+    if (!characterComments.has(id)) {
+      const index = data.characters.findIndex((item) => item.id === id);
+      const samples = [
+        '这个角色会认真接住你的话，慢慢聊很有意思。',
+        '开场就能接着探索，故事推进挺自然。',
+        '喜欢这种温柔但有自己想法的角色。',
+      ];
+      characterComments.set(
+        id,
+        Array.from({ length: index === 0 ? 23 : index === 17 ? 0 : 3 }, (_, i) => ({
+          id: `90000000-0000-4000-${String(index + 8000)}-${String(i + 1).padStart(12, '0')}`,
+          author: `旅人 ${String(i + 1).padStart(6, '0')}`,
+          is_mine: false,
+          body: i < 3 ? samples[i]! : `这是第 ${i + 1} 位演示玩家的角色体验。`,
+          created_at: new Date(Date.now() - (i + 1) * 3600_000).toISOString(),
+        }))
+      );
+    }
+    return characterComments.get(id)!;
+  }
+  const characterSocialFor = (id: string): CharacterSocial => {
+    const index = data.characters.findIndex((item) => item.id === id);
+    return {
+      liked: characterLikes.has(id),
+      like_count:
+        (index === 17 ? 0 : 128 + Math.max(index, 0) * 7) + Number(characterLikes.has(id)),
+      favorite_count:
+        (index === 17 ? 0 : 86 + Math.max(index, 0) * 3) + Number(favoriteIds.has(id)),
+      comment_count: characterCommentsFor(id).length,
+    };
+  };
   const dramaLikes = new Set<string>();
   const dramaComments = new Map<string, DramaComment[]>();
   let commentFailureDelivered = false;
@@ -93,7 +141,14 @@ export function createPreviewServer(apiPort: number, appPort: number) {
     data = makeData(api);
     scenario = next;
     claimed = next === 'checked';
-    favoriteIds = new Set();
+    favoriteIds = new Set(next === 'character-social' ? [IDS.character] : []);
+    characterLikes.clear();
+    characterComments.clear();
+    removedCharacterComments.clear();
+    reportedCharacterComments.clear();
+    characterLikeFailureDelivered = false;
+    characterFavoriteFailureDelivered = false;
+    characterCommentFailureDelivered = false;
     pendingImages = new Map();
     dramaLikes.clear();
     dramaComments.clear();
@@ -565,6 +620,123 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         ok(res, { notifications: [], next_cursor: null });
         return;
       }
+      if (path === '/api/characters/social' && method === 'GET') {
+        const ids = (url.searchParams.get('ids') ?? '').split(',').filter(Boolean);
+        const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+        if (!ids.length || ids.length > 40 || ids.some((id) => !uuid.test(id))) {
+          fail(res, 400, 'BAD_REQUEST', '角色查询参数无效');
+          return;
+        }
+        ok(res, {
+          socials: [...new Set(ids)]
+            .filter((id) => data.characters.some((item) => item.id === id))
+            .map((character_id) => ({ character_id, ...characterSocialFor(character_id) })),
+        } satisfies GetCharacterSocialsData);
+        return;
+      }
+      const characterInteraction = path.match(
+        /^\/api\/characters\/([^/]+)\/(social|like|comments)(?:\/([^/]+))?(\/report)?$/
+      );
+      if (characterInteraction) {
+        const [, id, action, commentId, reporting] = characterInteraction;
+        if (!id || !data.characters.some((item) => item.id === id)) {
+          fail(res, 404, 'NOT_FOUND', '角色不存在');
+          return;
+        }
+        if (action === 'social' && method === 'GET') {
+          ok(res, { social: characterSocialFor(id) } satisfies GetCharacterSocialData);
+          return;
+        }
+        if (action === 'like' && method === 'PUT') {
+          const input = SetCharacterLikeSchema.safeParse(body);
+          if (!input.success) {
+            fail(res, 400, 'BAD_REQUEST', '点赞参数无效');
+            return;
+          }
+          if (scenario === 'character-interaction-error' && !characterLikeFailureDelivered) {
+            characterLikeFailureDelivered = true;
+            fail(res, 503, 'SERVICE_UNAVAILABLE', '点赞暂时不可用');
+            return;
+          }
+          if (input.data.liked) characterLikes.add(id);
+          else characterLikes.delete(id);
+          ok(res, { social: characterSocialFor(id) } satisfies GetCharacterSocialData);
+          return;
+        }
+        if (action === 'comments') {
+          const comments = characterCommentsFor(id);
+          if (method === 'GET' && !commentId) {
+            const offset = Number(url.searchParams.get('cursor') || 0);
+            if (!Number.isSafeInteger(offset) || offset < 0) {
+              fail(res, 400, 'BAD_REQUEST', '评论分页参数无效');
+              return;
+            }
+            ok(res, {
+              comments: comments.slice(offset, offset + 20),
+              next_cursor: comments.length > offset + 20 ? String(offset + 20) : null,
+            } satisfies GetCharacterCommentsData);
+            return;
+          }
+          if (method === 'POST' && commentId && reporting) {
+            const input = ReportCharacterCommentSchema.safeParse(body);
+            if (!input.success) {
+              fail(res, 400, 'BAD_REQUEST', '举报参数无效');
+              return;
+            }
+            if (!comments.some((comment) => comment.id === commentId)) {
+              fail(res, 404, 'NOT_FOUND', '评论不存在');
+              return;
+            }
+            reportedCharacterComments.add(commentId);
+            ok(res, { reported: true });
+            return;
+          }
+          if (method === 'POST' && !commentId) {
+            const input = CreateCharacterCommentSchema.safeParse(body);
+            if (!input.success) {
+              fail(res, 400, 'BAD_REQUEST', '评论请填写 1–500 个字');
+              return;
+            }
+            const previous = [...characterComments.entries()]
+              .flatMap(([characterId, rows]) => rows.map((comment) => ({ characterId, comment })))
+              .find((item) => item.comment.id === input.data.id);
+            if (
+              removedCharacterComments.has(input.data.id) ||
+              (previous &&
+                (previous.characterId !== id ||
+                  previous.comment.body !== input.data.body ||
+                  !previous.comment.is_mine))
+            ) {
+              fail(res, 409, 'CONFLICT', '这条评论已变更，请重新发表');
+              return;
+            }
+            let comment = previous?.comment;
+            if (!comment) {
+              comment = { ...input.data, author: '旅人 演示', is_mine: true, created_at: stamp() };
+              comments.unshift(comment);
+            }
+            // Keep the committed record; only the response is lost, so UUID retry is observable.
+            if (scenario === 'character-interaction-error' && !characterCommentFailureDelivered) {
+              characterCommentFailureDelivered = true;
+              fail(res, 503, 'SERVICE_UNAVAILABLE', '响应暂不可达');
+              return;
+            }
+            ok(res, { comment } satisfies CreateCharacterCommentData);
+            return;
+          }
+          if (method === 'DELETE' && commentId && !reporting) {
+            const index = comments.findIndex((item) => item.id === commentId && item.is_mine);
+            if (index >= 0) {
+              comments.splice(index, 1);
+              removedCharacterComments.add(commentId);
+            }
+            ok(res, { deleted: true });
+            return;
+          }
+        }
+        fail(res, 405, 'METHOD_NOT_ALLOWED', '方法不支持');
+        return;
+      }
       if (path === '/api/characters/latest-badge' || path === '/api/characters/latest-seen') {
         ok(res, { has_new: false });
         return;
@@ -594,6 +766,11 @@ export function createPreviewServer(apiPort: number, appPort: number) {
       }
       if (path.startsWith('/api/favorites/') && ['PUT', 'DELETE'].includes(method)) {
         const id = path.split('/').pop()!;
+        if (scenario === 'character-interaction-error' && !characterFavoriteFailureDelivered) {
+          characterFavoriteFailureDelivered = true;
+          fail(res, 503, 'SERVICE_UNAVAILABLE', '收藏暂时不可用');
+          return;
+        }
         if (method === 'PUT') favoriteIds.add(id);
         else favoriteIds.delete(id);
         ok(res, { favorite: { character_id: id, favorited: favoriteIds.has(id) } });

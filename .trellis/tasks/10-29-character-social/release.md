@@ -1,0 +1,11 @@
+# 本轮发布
+
+用户于2026-10-29认可卡片减重后授权上线，按dev集成，再仅发布本批到main。使用最新origin/dev 09135710独立目录，保留原预览工作区；充值已发布代码不重复携带。
+
+本批包括角色点赞/收藏计数/公开评论完整流程，以及此前确认但尚未发布的角色与短剧列表滚动、短剧卡仅名称展示。无其他人的监控或生成逻辑改写。最新dev另有尚未进main的Loki诊断提交，发布分支从main择取本批，避免夹带。
+
+前置生产只读结构预检：wbtsfzozlmurljvglhpn是ST_telegrambot，app_core用户/角色UUID根和miniapp_features既有收藏符合依赖，新3表及5函数不存在。service_role有schema USAGE与BYPASSRLS，anon/auth无schema USAGE。已有idx_character_favorites_character_created覆盖按角色计数，因此移除未发布迁移中的冗余索引创建，完全沿用原收藏表及索引。
+
+迁移通过仓库Database Migration流程精确引用受审查提交，单独执行20261029_character_social.sql并记账，无force_rerun。顺序数据库→dev集成→仅本批main发布；代码回退保留新增互动数据，禁止自动删除生产表。开发与生产连接不是同一证明。
+
+最新dev适配：只解决验收场景/文档尾部的追加冲突，双方内容均保留。独立目录按CI先生成Prisma本地客户端后类型检查；原预览目录未切分支或重置。隔离PG验证通过，包含生产已有收藏索引的保留。后端11项角色接口测试及前端63文件564项测试通过。
