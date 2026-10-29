@@ -175,6 +175,21 @@ describe('POST /api/telemetry/drama-timing', () => {
     vi.restoreAllMocks();
   });
 
+  it('rejects retired experiment uploads without recording them', async () => {
+    const app = await buildApp();
+    try {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/telemetry/drama-timing',
+        payload: { type: 'cdn_experiment', id: 'retired' },
+      });
+      expect(response.statusCode).toBe(400);
+      expect(timingLogs.info).not.toHaveBeenCalled();
+      expect(persistence.rpc).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
   it('rejects missing authentication before accepting frontend logs', async () => {
     vi.stubEnv('DEV_AUTH_BYPASS', '');
     const app = await buildApp();

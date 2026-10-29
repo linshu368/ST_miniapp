@@ -548,6 +548,7 @@ export function DramaPlayer({
     playback?.play_url,
     playback?.playable,
     playback?.video_id,
+    playback?.expires_at,
     retryVersion,
     retryState,
     setPlaybackPreferences,

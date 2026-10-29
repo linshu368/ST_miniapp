@@ -167,7 +167,12 @@ async function fetchDramaPlayback(
   return dramaTiming.query('playback', id, videoId, async (onAttempt) => {
     const data = await apiClient<GetDramaPlaybackData>(
       `/api/dramas/${encodeURIComponent(id)}/play${suffix}`,
-      { onAttempt, signal, timeoutMs: 5000, queuePriority: 'critical' }
+      {
+        onAttempt,
+        signal,
+        timeoutMs: 5000,
+        queuePriority: 'critical',
+      }
     );
     return data.playback;
   });

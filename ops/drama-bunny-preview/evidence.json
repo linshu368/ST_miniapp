@@ -1,0 +1,190 @@
+{
+  "schema_version": 1,
+  "status": "deploying_automatic_phone_flow",
+  "base_commit": "4e1ed2eb",
+  "branch": "codex/drama-bunny-preview",
+  "sample": {
+    "id": "1fc8b3d5-9426-5ce6-b675-d98074da4801",
+    "bytes": 46518538,
+    "environment": "production-single-object-capability"
+  },
+  "preview_database": "test",
+  "test_bot": "ceshi_miniapp_bot",
+  "phone_round": {
+    "status": "awaiting_real_phone",
+    "order": ["A", "B", "B", "A", "A", "B"],
+    "trials": [],
+    "performance_accepted": false
+  },
+  "shutdown": {
+    "bunny_block_rule": "Experiment closed",
+    "initially_closed": true,
+    "final_closed_verified": false,
+    "before_open_valid_token_status": 403,
+    "currently_open": true,
+    "open_method": "temporarily set Experiment closed Request URL to nonmatching /__experiment_closed__; restore * at shutdown"
+  },
+  "validation": {
+    "backend_related": "19 passed",
+    "shared": "186 passed",
+    "frontend_related": "64 original player/timing/seek passed; final client-retry/media/seek 34 passed",
+    "frontend_full": "484 passed; 5 failed in unchanged media-cache.test.ts expecting one argument while unchanged image-plaza query supplies signal/priority options; API client is mocked in this test",
+    "typecheck": "pnpm -r typecheck passed at playback commit",
+    "build": "frontend/admin builds passed after transport opt-out; timing follow-up typecheck and deployed Vercel build passed",
+    "ui_initial_failure": "Playwright executable absent; no page scenario executed; installation in progress",
+    "guards": "import, legacy and migration-name checks passed",
+    "ui": "41 passed @drama Android and narrow; functional regression only",
+    "ci": "Quality Gate fails on same five unchanged media-cache assertions; PR Review failed HTTP 402 before generating review; neither suppressed",
+    "automatic_backend": "20 passed (telemetry + experiment auth/schema/log failures)",
+    "automatic_ui": "3 passed; original 41 player scenarios previously passed",
+    "automatic_typecheck": "pnpm -r typecheck passed",
+    "automatic_build": "frontend/admin build passed"
+  },
+  "playback_commit": "2e118378fbf7293f91d981838429f575f8c7abd1",
+  "preview": {
+    "frontend_url": "https://st-miniapp-frontend-git-codex-96b3a6-3213527545-4308s-projects.vercel.app/drama-cdn-experiment",
+    "frontend_immutable_url": "https://st-miniapp-frontend-cm1aok79k-3213527545-4308s-projects.vercel.app/drama-cdn-experiment",
+    "vercel_deployment": "dpl_FZo9RqTJ7tF5BGKnqGQuB5RBy2YC",
+    "backend_url": "https://stminiapp-pr-525.up.railway.app",
+    "backend_environment": "pr-525",
+    "backend_environment_id": "a2e35d72-1b96-4f30-b13a-2cbee2fd19a6",
+    "backend_deployment": "01152672-91b6-4d7e-9db9-e8ea0d52454a",
+    "bundle_api_and_release_verified": true,
+    "cors_options": 204,
+    "auth_bypasses_disabled": true,
+    "full_production_credentials_present": false,
+    "test_bot_menu": "per-internal-account CDN Preview",
+    "pr": "https://github.com/linshu368/ST_miniapp/pull/525"
+  },
+  "timing": {
+    "source_expires_at_utc": "2026-10-28T14:55:51+00:00",
+    "deadline": "2026-10-28T13:55:50+00:00",
+    "sample": "1fc8b3d5-9426-5ce6-b675-d98074da4801"
+  },
+  "access_checks": [
+    {
+      "check": "missing_auth",
+      "status": 401,
+      "expected": 401
+    },
+    {
+      "check": "other_account",
+      "status": 403,
+      "expected": 403
+    },
+    {
+      "check": "internal_manifest",
+      "status": 200,
+      "expected": 200
+    },
+    {
+      "check": "wrong_sample",
+      "status": 400,
+      "expected": 400
+    },
+    {
+      "check": "wrong_route",
+      "status": 400,
+      "expected": 400
+    },
+    {
+      "check": "fresh_original_media",
+      "status": 206,
+      "content_range": "bytes 0-1023/46518538",
+      "bytes_read": 1024,
+      "sha256": "bc09fb88112c0ab67ebf8789b99fb5445b20c10acb182657eee82568316ee637"
+    }
+  ],
+  "cdn_preflight": [
+    {
+      "check": "valid_start",
+      "curl_exit": 0,
+      "status": 206,
+      "content-type": "video/mp4",
+      "content-range": "bytes 0-1023/46518538",
+      "cdn-cache": "REVALIDATED",
+      "age": "2306",
+      "bytes_read": 1024,
+      "sha256": "bc09fb88112c0ab67ebf8789b99fb5445b20c10acb182657eee82568316ee637"
+    },
+    {
+      "check": "valid_repeat",
+      "curl_exit": 0,
+      "status": 206,
+      "content-type": "video/mp4",
+      "content-range": "bytes 0-1023/46518538",
+      "cdn-cache": "HIT",
+      "age": "2306",
+      "bytes_read": 1024,
+      "sha256": "bc09fb88112c0ab67ebf8789b99fb5445b20c10acb182657eee82568316ee637"
+    },
+    {
+      "check": "missing_token",
+      "curl_exit": 0,
+      "status": 403,
+      "content-type": "text/html",
+      "content-range": "UNKNOWN",
+      "cdn-cache": "UNKNOWN",
+      "age": "UNKNOWN"
+    },
+    {
+      "check": "tampered_token",
+      "curl_exit": 0,
+      "status": 403,
+      "content-type": "text/html",
+      "content-range": "UNKNOWN",
+      "cdn-cache": "UNKNOWN",
+      "age": "UNKNOWN"
+    },
+    {
+      "check": "expired_token",
+      "curl_exit": 0,
+      "status": 403,
+      "content-type": "text/html",
+      "content-range": "UNKNOWN",
+      "cdn-cache": "UNKNOWN",
+      "age": "UNKNOWN"
+    },
+    {
+      "check": "other_path",
+      "curl_exit": 0,
+      "status": 404,
+      "content-type": "application/json",
+      "content-range": "UNKNOWN",
+      "cdn-cache": "MISS",
+      "age": "UNKNOWN"
+    }
+  ],
+  "cdn_preflight_note": "Functional-only 1024-byte start Range probes; B startup cache warmed before formal phone round. Probe cache states are not phone-media cache states.",
+  "integration_failures": [
+    {
+      "stage": "first_vercel_push_before_pr",
+      "observed": "actual client bundle selected stable development backend",
+      "resolution": "new post-PR code commit and deployed bundle verified pr-525 plus exact playback release"
+    },
+    {
+      "stage": "ui_test_first_attempt",
+      "observed": "Playwright executable missing; no page scenarios executed",
+      "resolution": "installed repository-pinned browser; 41 scenarios passed"
+    },
+    {
+      "stage": "cdn_closed_check_python_transport",
+      "observed": "TLS handshake timeout before HTTP response",
+      "resolution": "bounded curl check then received 403 while closed; no media trial or replacement performance sample"
+    },
+    {
+      "stage": "experiment_page_runtime",
+      "observed": "independent route lacked DramaCommentsProvider; API/build checks had not detected this runtime requirement",
+      "resolution": "wrap existing provider and verify actual page automatic success/failure/fallback/upload flows on Android and narrow viewports; 3 passed"
+    }
+  ],
+  "security_note": "Native AX output disclosed the CDN token key once during extraction; re-masked immediately. No actual key/source capability found in 20 changed files; temporary local secret files restricted to owner.",
+  "automatic_flow": {
+    "order": "AB/BA/AB",
+    "muted": true,
+    "between_attempt_ms": 400,
+    "seek_after_startup": "immediate, verify unbuffered first",
+    "upload": "existing authenticated telemetry endpoint after timings and fallback finish",
+    "ui_regression": "3 passed using fictional existing drama fixture; not phone performance"
+  }
+}

@@ -44,6 +44,8 @@ shared contract 改动追加 `pnpm --filter @miniapp/shared test` 和所有消�
 
 ## Vercel 部署
 
+PR #525 已移除独立 `/drama-cdn-experiment` 页面及实验取址/上报。复用 `packages/ui-tests` 的 `@drama` 场景验证普通播放、切集、重试及旧入口 404；模拟验收不能替代 Telegram 真机性能，操作与恢复见 [说明](../../../../ops/drama-bunny-preview/README.md)。
+
 - Frontend 部署 Vercel，配置见根/包部署文件和 `next.config.mjs`；`NEXT_PUBLIC_*` 都是公开值，secret 不得使用此前缀。
 - Next.js 只把**静态成员访问** `process.env.NEXT_PUBLIC_*` 内联进客户端包。经 `const env = process.env` 再读属性时，Preview/生产 bundle 里永远是 `undefined`，PostHog adapter 会走 `missing_config` no-op。`readPostHogBrowserEnv` 必须静态读取 `NEXT_PUBLIC_POSTHOG_KEY/HOST`。
 - Preview 可注入 PostHog 公开变量做真机验收；Production 留空即关闭。打开生产采集是独立运维步骤，不随功能 PR 默认启用，也不改变现有 Sentry Replay。

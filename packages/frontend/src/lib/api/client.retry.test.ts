@@ -215,6 +215,15 @@ describe('first-token report compatibility and bounded retries', () => {
 });
 
 describe('apiClient GET transport retry', () => {
+  it('retains the first GET failure when a single-attempt experiment opts out', async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(
+      apiClient('/api/transport-retry-fixture', { transportRetry: false })
+    ).rejects.toThrow('Failed to fetch');
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchMock.mock.calls[0]?.[1]).not.toHaveProperty('transportRetry');
+  });
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
     __resetRequestConcurrencyForTests(3);

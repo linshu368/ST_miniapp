@@ -9,6 +9,12 @@ const longDrama = '60000000-0000-4000-8000-000000000012';
 const tabs = (page: Page) => page.getByRole('navigation', { name: '短剧栏目' });
 const mainNav = (page: Page) => page.getByRole('navigation', { name: '主导航' });
 
+test('@drama 移除独立 CDN 实验入口', async ({ page, preview }) => {
+  await preview.scenario('dramas');
+  const response = await page.goto('/drama-cdn-experiment');
+  expect(response?.status()).toBe(404);
+});
+
 async function pauseReadyVideo(page: Page) {
   const video = page.locator('video');
   await expect(video).toHaveCount(1);
