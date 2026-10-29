@@ -20,7 +20,7 @@
   },
   "refresh": "5m",
   "editable": true,
-  "description": "客户端自报启动诊断。已知观察不等于全部尝试；缺失不补0，slow/final去重，旧/新版本与降级口径分层。读近14天；遥测失败不影响视频。",
+  "description": "历史双轨短剧诊断。日常性能统计使用 st-engineering-drama；旧SQL/明细在替代验证通过前保留，不能与Faro样本混算。客户端自报启动诊断。已知观察不等于全部尝试；缺失不补0，slow/final去重，旧/新版本与降级口径分层。读近14天；遥测失败不影响视频。",
   "templating": {
     "list": [
       {
@@ -647,5 +647,13 @@
   ],
   "annotations": {
     "list": []
-  }
+  },
+  "links": [
+    {
+      "title": "日常短剧工程监控（统一口径）",
+      "type": "link",
+      "url": "/d/st-engineering-drama",
+      "targetBlank": true
+    }
+  ]
 }

@@ -14,6 +14,7 @@ import {
   DramaTimingReportSchema,
   DRAMA_TIMING_MAX_MEDIA_EVENTS,
   dramaTimingLogFields,
+  dramaTimingStages,
 } from '../index.js';
 
 const replayContextId = '11111111-1111-4111-8111-111111111111';
@@ -41,6 +42,64 @@ describe('drama timing upload contract', () => {
     stages: {},
     queries: [],
   };
+  it('derives all stages once and leaves reversed/missing intervals absent', () => {
+    const marks = {
+      player_ready: 100,
+      address_ready: 200,
+      source_set: 300,
+      metadata: 500,
+      loadeddata: 800,
+      first_frame: 1200,
+      playing: 1250,
+    };
+    expect(dramaTimingStages(marks)).toEqual({
+      navigation: 100,
+      address_wait: 200,
+      address_to_source: 100,
+      entry_to_source: 300,
+      source_to_metadata: 200,
+      metadata_to_frame: 700,
+      metadata_to_data: 300,
+      data_to_frame: 400,
+      source_to_frame: 900,
+      source_to_playing: 950,
+      frame_to_startup: 50,
+    });
+    expect(dramaTimingStages({ metadata: 500, loadeddata: 400, first_frame: 600 })).toEqual({
+      metadata_to_frame: 100,
+      data_to_frame: 200,
+    });
+    expect(dramaTimingStages({ source_set: 0, metadata: 0 })).toEqual({
+      entry_to_source: 0,
+      source_to_metadata: 0,
+    });
+    expect(dramaTimingStages({})).toEqual({});
+    expect(dramaTimingStages({ source_set: NaN, metadata: Infinity })).toEqual({});
+  });
+  it('accepts the bounded unified projection and diagnostic purpose without weakening legacy validation', () => {
+    const input = {
+      ...report,
+      definition: 'drama_v3',
+      route: '/',
+      purpose: 'diagnostic',
+      marks: { source_set: 100, metadata: 200 },
+      stages: { source_to_metadata: 999 },
+    };
+    const parsed = DramaTimingReportSchema.parse(input);
+    expect(dramaTimingLogFields(parsed)).toMatchObject({
+      definition: 'drama_v3',
+      route: '/',
+      purpose: 'diagnostic',
+      source_to_metadata_ms: 100,
+    });
+    for (const extra of [
+      { route: '/dramas/private-id' },
+      { purpose: 'anything' },
+      { definition: 'future' },
+      { stages: { url: 'secret' } },
+    ])
+      expect(DramaTimingReportSchema.safeParse({ ...input, ...extra }).success).toBe(false);
+  });
   it('versions start/network phases and rejects resource URLs, overflow and invalid frame values', () => {
     const context = {
       release: 'abc123',

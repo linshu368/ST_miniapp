@@ -126,17 +126,24 @@ export function useDramaCommentMutations(id: string) {
 
 async function fetchDramas(
   kind: 'list' | 'queue' = 'list',
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  route: '/' | '/dramas' = '/dramas'
 ): Promise<DramaSummary[]> {
-  return dramaTiming.query(kind, undefined, undefined, async (onAttempt) => {
-    const data = await apiClient<GetDramasData>('/api/dramas', {
-      onAttempt,
-      signal,
-      timeoutMs: 5000,
-      queuePriority: kind === 'list' ? 'critical' : 'background',
-    });
-    return data.dramas;
-  });
+  return dramaTiming.query(
+    kind,
+    undefined,
+    undefined,
+    async (onAttempt) => {
+      const data = await apiClient<GetDramasData>('/api/dramas', {
+        onAttempt,
+        signal,
+        timeoutMs: 5000,
+        queuePriority: kind === 'list' ? 'critical' : 'background',
+      });
+      return data.dramas;
+    },
+    route
+  );
 }
 
 async function fetchDramaDetail(id: string, signal?: AbortSignal): Promise<DramaDetail> {
@@ -167,10 +174,10 @@ async function fetchDramaPlayback(
 }
 
 // 保留结果对象身份，防止 structural sharing 把本次请求映射到旧对象的计时元数据。
-export function useDramaListQuery() {
+export function useDramaListQuery(route: '/' | '/dramas' = '/dramas') {
   return useQuery({
     queryKey: dramaKeys.list(),
-    queryFn: ({ signal }) => fetchDramas('list', signal),
+    queryFn: ({ signal }) => fetchDramas('list', signal, route),
     structuralSharing: false,
     retry: false,
   });

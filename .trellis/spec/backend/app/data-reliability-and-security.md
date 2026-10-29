@@ -30,7 +30,7 @@
 
 ## 可观测性与发布
 
-短剧v2遥测的分析持久化由 `platform/runtime-config.ts` 集中读取 `DRAMA_TIMING_PERSIST_ENABLED`（默认false，部署时生效），环境使用数据库target=test|production，不能把development直接写成分析环境。仅遥测路由调用 `features/drama/timing-repository.ts` 的2秒/最多2并发RPC；原子合并成功后才确认persisted，失败503/过载429，原Pino日志保留，不加入播放接口。分析域权限、单migration、保留期和独立Grafana步骤见 [操作说明](../../../../docs/grafana/drama-playback-runbook.md)。
+短剧v2遥测的分析持久化由 `platform/runtime-config.ts` 集中读取 `DRAMA_TIMING_PERSIST_ENABLED`（默认false，部署时生效），环境使用数据库target=test|production，不能把development直接写成分析环境。仅遥测路由调用 `features/drama/timing-repository.ts` 的2秒/最多2并发RPC；202只确认accepted，异步合并结果由drama.timing_persisted/failed/dropped日志独立确认；原Pino日志保留，不加入播放接口。分析域权限、单migration、保留期和独立Grafana步骤见 [操作说明](../../../../docs/grafana/drama-playback-runbook.md)。
 
 - 使用现有 pino、`requestLogger`；原始异常写 `{ err }`。Sentry 先脱敏再附 context。
 - 关键流程记录阶段、耗时、状态/计数、安全幂等摘要、provider/request id；job 记录扫描/推进/失败数，禁止逐行高频 info。
@@ -280,7 +280,7 @@ recoverable_delivery仅新Backend显式启用；旧请求/终结账单不回填�
 
 ## 短剧请求计时
 
-短剧路由在自身 Fastify 封装作用域记录 `drama.request_timing`（现有 requestLogger/Pino，source=backend）。短剧专用 Sentry 指标已移除，按现有 X-Request-Id 关联前端。新增鉴权 `POST /api/telemetry/drama-timing`：shared schema 校验有界客户端报告，写 `drama.frontend_timing`（source=frontend），保留 observation/list/request ID，接收请求 ID 独立为 upload_request_id；不查写数据库。32 KiB body、12 queries/4 attempts、每用户每进程 120 次/分钟及全进程 1000 次/分钟限额，限流表最多 2000 项；503 不确认接收，429 不重试。客户端自报数据不能用作计费/权限事实。onResponse 覆盖成功、鉴权拒绝、参数/不存在、查询错误、无视频和签名失败，保留 auth/db_read/assemble/sign/total 毫秒与签名缓存 hit/miss/inflight。鉴权直接发送响应时 onResponse 可能早于 preHandler finally，需要采集当前阶段已用时间。
+短剧路由在自身 Fastify 封装作用域记录 `drama.request_timing`（现有 requestLogger/Pino，source=backend）。短剧专用 Sentry 指标已移除，按现有 X-Request-Id 关联前端。新增鉴权 `POST /api/telemetry/drama-timing`：shared schema 校验有界客户端报告，写 `drama.frontend_timing`（source=frontend），保留 observation/list/request ID，接收请求 ID 独立为 upload_request_id；legacy可按既有开关异步写分析表，purpose=diagnostic仅日志。32 KiB body、12 queries/4 attempts、每用户每进程 120 次/分钟及全进程 1000 次/分钟限额，限流表最多 2000 项；503 不确认接收，429 不重试。客户端自报数据不能用作计费/权限事实。onResponse 覆盖成功、鉴权拒绝、参数/不存在、查询错误、无视频和签名失败，保留 auth/db_read/assemble/sign/total 毫秒与签名缓存 hit/miss/inflight。鉴权直接发送响应时 onResponse 可能早于 preHandler finally，需要采集当前阶段已用时间。
 
 `db_read` 是 repository 整体等待（含 PostgREST 往返），不是 SQL 独占时间。日志不得包含 object_path、签名 URL 或 Token；前端输入拒绝未知字段和任意正文。观测失败不能改变业务响应。无数据库或部署配置变更；具体口径与验证见 [短剧耗时排查](../../../../docs/drama-playback-timing.md)。
 
@@ -303,3 +303,15 @@ recoverable_delivery仅新Backend显式启用；旧请求/终结账单不回填�
 只消费赢家的replay与原charge_id结算，原报价/权益、超时免扣、主动停止和离页恢复规则不变。败方立即取消，不为排查drain；只把已接收的正文/公开思考有界片段和race_lost原因并入原attempt一次异步终态写，不发给用户、不进上下文、不另计费。正常attempt最多派发/终态两次observe；删除旧首发额外元数据补读，无新cron/轮询。diagnostic保存不阻塞首字，赢家身份仍须持久化才能结算。
 
 新迁移`20261028_first_token_race.sql`扩展现有attempt诊断列并解除禁止首发回赢的守卫，保留数据库单赢家CAS/PT409；Grafana仅获原指标列权限，不能读诊断正文。先本地与TEST验证、合dev，再生产迁移和应用/Admin/看板。回退应用保留诊断列与原账务，不扩权限，不改历史数据。
+
+## 短剧统一测量v3（本地实现，待发布）
+
+1. **Scope / Trigger**：短剧目录、首页/详情启动、阶段和诊断统一；播放控制、签名和后端计时不改。
+2. **Signatures**：shared `dramaTimingStages(marks)` 返回有限stages；报告兼容增加 `definition?: drama_v3`、`route?: /|/dramas|/dramas/:id`、`purpose?: diagnostic` 和四个有限阶段字段。兼容报告version仍2。
+3. **Contracts**：新tracker/日志/Faro共用阶段helper；缺失/逆序不补0，合法0保留。原elapsedMs和first_frame+playing终态不变。目录route/起点随观察绑定，background在owner内生成，不能在出口按当前路径/可见性猜测。构建SHA统一Grafana/DRAMA release。NEXT_PUBLIC_DRAMA_TIMING_MODE默认legacy；显式unified且Faro配置有效时，全量统计走Faro，100%慢/非成功和5%快成功有界明细走Pino，专用start停发，diagnostic永不入分析库。
+4. **Validation & Error Matrix**：旧报告兼容；未知definition/route/purpose和敏感嵌套字段400，超body413，限流429，diagnostic唯一日志出口同步失败503。202仅accepted；接口、repository和历史导入器均防止diagnostic落表。Faro关闭/非法配置保留legacy，遥测故障不得改变播放。
+5. **Good/Base/Bad Cases**：Good：首页启动仍归/，元数据→画面数据→首帧新段有有效N；Base：旧客户端和默认legacy继续原上报；Bad：迟到报告借当前页面归属、逆序填0、把5%日志用作总体成功率、把final与network当两次启动。
+6. **Tests Required**：扩展既有shared telemetry-contract、frontend drama-timing/observer/media/grafana及backend telemetry回归；所有消费者typecheck，相关lint/build。Cloud查询可执行不等于新信号往返或真实Telegram验收；本地@drama现有场景可复用作后续重复验收，不新增临时mock体系。
+7. **Wrong vs Correct**：Wrong为在SQL/前端另写新阶段计算并默认关闭旧链路；Correct为复用唯一helper，v3筛选隔离历史，Backend兼容→Frontend默认双轨→TEST/Cloud/真实流程验证→独立批准unified与旧写入停用。旧表/视图/历史看板/保留期job本轮不删除。
+
+字段、诊断粒度、分母和切换恢复统一见 `docs/drama-playback-timing.md`。

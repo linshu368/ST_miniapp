@@ -1,0 +1,120 @@
+{
+  "scope": "Read-only Cloud Loki queries using TEST selector; no synthetic ingestion, production write, or panel render validation.",
+  "queries": [
+    {
+      "panel": 20,
+      "ref": "A",
+      "error": false
+    },
+    {
+      "panel": 21,
+      "ref": "A",
+      "error": false
+    },
+    {
+      "panel": 22,
+      "ref": "A",
+      "error": false
+    },
+    {
+      "panel": 2,
+      "ref": "A",
+      "error": false
+    },
+    {
+      "panel": 3,
+      "ref": "A",
+      "error": false
+    },
+    {
+      "panel": 4,
+      "ref": "A",
+      "error": false
+    },
+    {
+      "panel": 4,
+      "ref": "B",
+      "error": false
+    },
+    {
+      "panel": 5,
+      "ref": "A",
+      "error": false
+    },
+    {
+      "panel": 5,
+      "ref": "B",
+      "error": false
+    },
+    {
+      "panel": 6,
+      "ref": "A",
+      "error": false
+    },
+    {
+      "panel": 6,
+      "ref": "B",
+      "error": false
+    },
+    {
+      "panel": 7,
+      "ref": "A",
+      "error": false
+    },
+    {
+      "panel": 8,
+      "ref": "A",
+      "error": false
+    },
+    {
+      "panel": 8,
+      "ref": "B",
+      "error": false
+    },
+    {
+      "panel": 9,
+      "ref": "A",
+      "error": false
+    },
+    {
+      "panel": 10,
+      "ref": "A",
+      "error": false
+    },
+    {
+      "panel": 10,
+      "ref": "B",
+      "error": false
+    },
+    {
+      "panel": 23,
+      "ref": "A",
+      "error": false
+    },
+    {
+      "panel": 24,
+      "ref": "A",
+      "error": false
+    },
+    {
+      "panel": 24,
+      "ref": "B",
+      "error": false
+    },
+    {
+      "panel": 25,
+      "ref": "A",
+      "error": false
+    },
+    {
+      "panel": 25,
+      "ref": "B",
+      "error": false
+    },
+    {
+      "panel": 26,
+      "ref": "A",
+      "error": false
+    }
+  ]
+}

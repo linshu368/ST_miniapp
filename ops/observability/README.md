@@ -117,3 +117,9 @@ resource 只含 service.name、service.namespace、service.version、deployment.
 本地复用固定Faro→Alloy→Loki合成验证：型号A两次成功（1000/5999ms）、一次6000ms截断、一次离页、一次明确受理拒绝；型号B一次2000ms成功。验证A截断率1/3（离页/受理拒绝不稀释）、B为0、成功P95小于6000、所有Loki面板语法和分布。服务端真实OTLP合成接收端验证字段安全、秒单位和独立请求/派发/赢家计数；真实模型与生产数据不参与。
 
 下一步沿原框架TEST接入门禁：真实Cloud字段/指标名、按型号出图与采集丢弃核对后再生产启用；确认替代有效再退役对应纯监控SQL，旧业务事实与经营看板不删、不重启旧全量cron。候选源码通过不等于线上已经切源。
+
+## 短剧统一模式的本轮改动（待发布）
+
+不改变OTel采集器或后端分段单位。Frontend的NEXT_PUBLIC_DRAMA_TIMING_MODE默认legacy；unified只有在原Faro公开配置有效时生效。全量工程信号仍复用原出口，详细诊断仍走鉴权Pino接口并受现有大小/超时/限流约束；purpose=diagnostic禁止分析表写入。新Faro字段仅有限definition、route模板、目录起点及诊断能力枚举，不新增ID或URL标签。
+
+本轮不读取/修改远端数据库，不停清理job，不修改生产secret/开关。Backend兼容先行，替代验证与生产切换分开；操作顺序及停止条件见docs/drama-playback-timing.md和docs/grafana/drama-playback-runbook.md。

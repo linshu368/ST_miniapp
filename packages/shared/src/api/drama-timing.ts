@@ -4,6 +4,7 @@ export const DRAMA_TIMING_BODY_LIMIT = 32 * 1024;
 export const DRAMA_TIMING_UPLOAD_TIMEOUT_MS = 5_000;
 export const DRAMA_TIMING_MAX_MEDIA_EVENTS = 32;
 export const DRAMA_TIMING_MAX_RESOURCES = 16;
+export const DRAMA_TIMING_DEFINITION = 'drama_v3';
 
 // 标识只用于串联日志；允许旧 WebView 的 web-* fallback，但不接受 URL 或任意正文。
 const Id = z
@@ -122,6 +123,10 @@ export const DramaTimingReportSchema = z
     type: z.enum(['list', 'playback']),
     phase: z.enum(['start', 'slow', 'final', 'network']),
     version: z.literal(2).optional(),
+    definition: z.literal(DRAMA_TIMING_DEFINITION).optional(),
+    route: z.enum(['/', '/dramas', '/dramas/:id']).optional(),
+    // Unified diagnostics remain logs; they must never re-enter analytics storage.
+    purpose: z.literal('diagnostic').optional(),
     context: z
       .object({
         release: Label,
@@ -173,6 +178,10 @@ export const DramaTimingReportSchema = z
         metadata_to_frame: Duration.optional(),
         source_to_frame: Duration.optional(),
         source_to_playing: Duration.optional(),
+        entry_to_source: Duration.optional(),
+        metadata_to_data: Duration.optional(),
+        data_to_frame: Duration.optional(),
+        frame_to_startup: Duration.optional(),
       })
       .strict(),
     addressSource: z.enum(['fetch', 'inflight', 'cache', 'unknown']).optional(),
@@ -271,6 +280,39 @@ export type DramaNetworkTiming = z.infer<typeof NetworkSchema>;
 export type DramaResourceTiming = z.infer<typeof ResourceSchema>;
 export type DramaStartupDiagnostics = z.infer<typeof DiagnosticsSchema>;
 
+/** One definition for browser reports and server diagnostics. Missing/reversed
+ * intervals stay absent: zero would incorrectly turn unknown timing into fast timing. */
+export function dramaTimingStages(marks: DramaTimingReport['marks']): DramaTimingReport['stages'] {
+  const stages: DramaTimingReport['stages'] = {};
+  const between = (
+    key: keyof DramaTimingReport['stages'],
+    start: number | undefined,
+    end: number | undefined
+  ) => {
+    if (
+      start !== undefined &&
+      end !== undefined &&
+      Number.isFinite(start) &&
+      Number.isFinite(end) &&
+      end >= start
+    )
+      stages[key] = Math.round((end - start) * 10) / 10;
+  };
+  between('navigation', 0, marks.player_ready);
+  between('address_wait', 0, marks.address_ready);
+  between('address_to_source', marks.address_ready, marks.source_set);
+  between('entry_to_source', 0, marks.source_set);
+  between('source_to_metadata', marks.source_set, marks.metadata);
+  between('metadata_to_frame', marks.metadata, marks.first_frame);
+  between('metadata_to_data', marks.metadata, marks.loadeddata);
+  between('data_to_frame', marks.loadeddata, marks.first_frame);
+  between('source_to_frame', marks.source_set, marks.first_frame);
+  between('source_to_playing', marks.source_set, marks.playing);
+  if (marks.first_frame !== undefined && marks.playing !== undefined)
+    between('frame_to_startup', marks.first_frame, Math.max(marks.first_frame, marks.playing));
+  return stages;
+}
+
 export const PostDramaTimingDataSchema = z
   .object({
     accepted: z.literal(true),
@@ -291,6 +333,9 @@ export function dramaTimingLogFields(report: DramaTimingReport) {
     type: report.type,
     phase: report.phase,
     version: report.version,
+    definition: report.definition,
+    route: report.route,
+    purpose: report.purpose,
     context: report.context,
     diagnostics: report.diagnostics,
     entry: report.entry,
@@ -299,7 +344,9 @@ export function dramaTimingLogFields(report: DramaTimingReport) {
     address_source: report.addressSource,
     frame_method: report.frameMethod,
     ...Object.fromEntries(
-      Object.entries(report.stages).map(([key, value]) => [`${key}_ms`, value])
+      Object.entries(report.definition ? dramaTimingStages(report.marks) : report.stages).map(
+        ([key, value]) => [`${key}_ms`, value]
+      )
     ),
     list_ready_ms: report.list?.readyMs,
     browse_ms: report.list?.browseMs,

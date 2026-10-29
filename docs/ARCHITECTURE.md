@@ -564,7 +564,9 @@ packages/backend/src/
 
 **体验监控**（Sentry org `wangqiao` / project `st-miniapp`，前后端共用，靠 `service` 标签区分）：p95/p99 来自 Sentry Metrics（全量，不受 trace 采样影响），"卡了"以 warning 事件表达并自带 Replay。前端 `src/lib/perf/` 记录请求耗时与超时（`apiClient` 默认 20 秒超时，图片/语音生成等长耗时接口例外）、页面可用耗时与 4 秒卡住（大厅/聊天列表/会话页/充值）、三个核心按钮 2.5 秒无反馈、资源加载失败；后端 `lib/perf-metrics.ts` 记录每路由耗时（对话/语音/图片生成单独 `kind=generation`）、Prisma 操作耗时（连接池超时标 `pool_timeout`）、事件循环延迟。采样：trace 0.2、Replay 会话 0.05、Replay 报错 1.0。指标清单、看板与排查流程见 `.trellis/tasks/10-21-sentry-ux-monitoring/dashboard-and-runbook.md`。阈值均为初值，待基线校准。
 
-短剧列表与播放另记录用户等待、API 排队/响应头/body、媒体元数据/首帧和 Backend 查询/签名阶段。浏览器通过鉴权 `POST /api/telemetry/drama-timing` 将有界报告交给 Pino；v2 增加被动媒体请求/帧处理/长任务证据、开始与至多一次网络补充。默认日志模式；对应环境执行 `20261027_drama_playback_observability.sql` 并显式开启 `DRAMA_TIMING_PERSIST_ENABLED` 后，遥测独立请求经 service_role 原子合并至 miniapp_analytics，播放API不依赖分析表。独立 Grafana `st-drama-playback` 只读分布/覆盖/单次详情，不修改经营看板；摘要全量14天、慢/失败及5%快样本明细7天，有界清理job初始关闭。没有新采集服务，URL只用于内存关联，缺失不补零，能力受TAO/WebView限制。源码/模板不代表远端已执行。口径与发布恢复见 [短剧播放耗时排查](drama-playback-timing.md) 和 [看板操作说明](grafana/drama-playback-runbook.md)。
+短剧性能的唯一计时owner仍为drama-timing/媒体观察器；shared `dramaTimingStages`集中阶段定义，`definition=drama_v3`与兼容报告version=2分开。Faro/Loki提供全量目录/启动/首帧/阶段、结果与有限诊断摘要；OTel复用原Backend auth/db_read/assemble/sign分段；Pino保留有界单次请求/媒体诊断。首页/详情归属与目录起点绑定原观察，构建release统一为实际SHA，身份和签名URL不进Faro标签。
+
+构建模式NEXT_PUBLIC_DRAMA_TIMING_MODE默认legacy，旧POST与可选分析写入保持兼容。验证后显式unified且Faro配置有效时，原POST仅承载100%慢/非成功与5%快速成功的Pino诊断，不再上传start；purpose=diagnostic在route/repository/import三层阻止分析写入，全量性能统计不采样。旧客户端仍受DRAMA_TIMING_PERSIST_ENABLED独立控制；新链路Cloud/真实流程验证和生产授权前不关闭。旧表/SQL视图/历史看板/保留期job先保留，无新migration/cron/依赖。发布Backend兼容→Frontend默认双轨→验证→显式切换；回滚Frontend模式legacy，Backend继续兼容。详见[短剧统一口径](drama-playback-timing.md)与[切换说明](grafana/drama-playback-runbook.md)。
 
 **本地页面验收**：`packages/ui-tests` 以虚构公开DTO提供HTTP/SSE场景，浏览器运行真实Frontend。手动与自动验收使用独立端口、状态和Next缓存，不依赖数据库、模型或支付；见 [移动端验收说明](../packages/ui-tests/README.md)。
 

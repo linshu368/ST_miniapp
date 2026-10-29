@@ -2,6 +2,18 @@
 
 这是操作说明，不代表已完成远端迁移、部署或发布。当前实施/验证状态以 Trellis 任务 `10-27-drama-playback-observability/verification.md` 为准。
 
+## 统一链路切换（2026-10-29，本地实现待发布）
+
+日常入口改为 `st-engineering-drama`；此文下方SQL看板/迁移/历史导入说明保留为legacy操作，不能据旧说明再次初始化生产对象。本次不执行任何迁移、发布或线上配置修改。
+
+1. 先Backend兼容 `definition=drama_v3`、有限route、purpose=diagnostic及新stages；再部署Frontend，保留默认legacy，确认两种报告口径可对照。
+2. 确认Faro/Loki真实字段、毫秒、当前release、home/detail、目录起点及新四段；成功必须first_frame+playing。网络final快照与tail分开，未知不填0。
+3. TEST中显式构建unified：确认Faro全量统计仍到达、专用start不再上传、慢/失败有完整有界Pino、快成功仅5%稳定样本；开启旧持久化开关的测试替身也不能写diagnostic报告。真机检查后台/换源/拒绝/手动恢复与上报失败不影响播放。
+4. 生产切换独立授权；检查旧客户端和SQL消费者后才关闭旧持久化开关。不删除表/视图/历史看板，不随意关闭仍处理旧数据的保留期job。旧看板保留为历史和切换前对照，不能混合新工程样本计算总体。
+5. 回滚Frontend构建模式legacy并重新发布，Backend兼容保留；原数据库开关只有另获授权才恢复。禁止把采样diagnostic日志经旧导入脚本写回分析表。
+
+详细字段、采样、隐私与能力边界统一见 [短剧播放耗时排查](../drama-playback-timing.md)。新代码回归/查询通过不等于上述Cloud往返与真实Telegram验收通过。
+
 ## 独立看板
 
 - 文件：`docs/grafana/drama-playback.json`，名称“短剧｜启动耗时与诊断”，UID `st-drama-playback`。
@@ -9,7 +21,7 @@
 - 导入时绑定既有生产只读 PostgreSQL `fg1oltvmm56v4b`；TEST 绑定已核验测试数据源，绝不因变量选择test就把它当作生产库中真实存在的测试数据。
 - 创建前检查UID未被其他看板占用，API创建使用 `overwrite=false`。若UID冲突先核实，不覆盖他人看板。原有数据源连接上限保持不变。
 
-当前线上已创建 [短剧｜启动耗时与诊断](https://ea3213527545.grafana.net/d/st-drama-playback)，version 1，仅展示待接入状态。生产新表/视图尚未迁移，12个业务面板targets与SQL变量暂未启用；结构查询返回“待迁移”，空白不代表零耗时。已有看板与数据源未修改。
+早期接入记录（不代表当前环境状态）：当时已创建 [短剧｜启动耗时与诊断](https://ea3213527545.grafana.net/d/st-drama-playback)，version 1，仅展示待接入状态。该记录当时生产新表/视图尚未迁移，12个业务面板targets与SQL变量暂未启用；结构查询返回“待迁移”，空白不代表零耗时。已有看板与数据源未修改。
 
 正式启用时读回此UID最新版本，将本地JSON的 `${DS_POSTGRES}` 绑定为已核验UID，去除导入专用 `__inputs`；仅更新此独立看板并保留folder/id/version、检查版本冲突。迁移/权限/发布门禁通过后才能启用；逐一执行统计/变量SQL并检查真实渲染。
 
@@ -27,7 +39,7 @@
 
 1. 本地 `bash scripts/test-drama-observability-local.sh`：需本机PG17，非默认安装可指定 `DRAMA_PG_BIN`。使用全新临时cluster，不读取远端连接。验证重复迁移、并发/乱序、权限、保留期及5万条合成样本下的全部面板/变量SQL，每SQL5秒预算；不代表生产性能。
 2. 核对TEST目标shape：miniapp_analytics存在、没有同名异构对象、service_role和Grafana reader属性/已有权限。通过Database Migration工作流逐文件执行 `20261027_drama_playback_observability_forward_fix.sql`，验证table/RPC/view/ACL和目标迁移账本。
-3. 先发布兼容Backend。显式开启TEST的 `DRAMA_TIMING_PERSIST_ENABLED=true` 并重新部署，确认遥测200且 `data.persisted=true`；未迁移时保持false沿用Pino日志。再发布Frontend并确认前端release正确。
+3. 先发布兼容Backend。显式开启TEST的 `DRAMA_TIMING_PERSIST_ENABLED=true` 并重新部署，确认遥测202仅表示accepted，并另查异步 `drama.timing_persisted`；未迁移时保持false沿用Pino日志。再发布Frontend并确认前端release正确。
 4. 在TEST数据源验收新看板每个面板的查询和实际渲染，不能只看SQL成功。默认24h/5m刷新，可手动刷新查刚产生的观察。无浏览器/插件访问时这一步保持未验证。
 5. 独立生产确认后，重复生产shape/权限/容量、单migration→Backend开关→Frontend→新看板。生产不是TEST的同构假设。上线前实测日N/行大小、写时延/拒绝率与查询预算。
 6. `drama_metrics_cleanup_daily` 初始关闭；owner在本环境验证后启用。每天批量最多删除1万过期行、清除1万过期明细，超过该日量需明确调整运行频率/预算，不默认扩大单次扫描。看板/库容量和过期积压需运维观察。
@@ -54,7 +66,7 @@ apply必须另提供操作者核验过的manifest：`environment/from/to/complet
 
 ## 工程师先做的检查
 
-- Railway中确认 `drama.frontend_timing` 的version/context；对应 `drama.timing_persisted`，不能只看HTTP200（开关关闭时200仍只是日志模式）。
+- Railway中确认 `drama.frontend_timing` 的version/context；对应 `drama.timing_persisted`，不能只看HTTP202（只表示接收，不表示异步存储或Cloud送达）。
 - 按observation_id合并start/slow/final/network；网络尾报告不能增加播放样本数。按queries.attempts.requestId查询后端 `drama.request_timing` 的auth/db/sign，upload_request_id不是播放请求ID。
 - 检查网络能力、首帧方式、长任务支持/截断；no_entry/limited不算零TTFB，旧版本不填新字段。
 - 真机对比资源瀑布与被动条目，确认TAO/Range交付能力；TTFB不等于视频payload首字节，不自动知道Range区间/CDN命中。iOS/Android各自记录结论。

@@ -17,6 +17,14 @@
 
 前三项是工程体验产出，第四项是定位原因的证据。保留既有经营、首字 v4 和短剧看板，不覆盖其他 TextBot 项目。源 JSON 默认绑定当前 `grafanacloud-logs` / `grafanacloud-prom`，保留待接入模板；线上接入状态按实际 Cloud 样本独立更新，不因导入模板而视为验收。
 
+## 短剧统一定义v3（本地代码，尚未发布）
+
+新短剧指标使用独立source_measurement_version=drama_v3；全局engineering_v1与兼容报告version=2不变。复用原tracker，shared的dramaTimingStages作为唯一新阶段计算入口；保留原粗阶段，增加entry_to_source/metadata_to_data/data_to_frame/frame_to_startup，缺失/逆序省略而非填0。首页/详情和目录起点在原观察绑定，后台outcome也在owner内生成，避免出口各自猜测。
+
+工程看板是日常唯一统计入口，旧SQL看板保留历史及切换对照。v3筛选默认隔离旧定义；入口/地址来源/首帧/目录起点只过滤具有相应属性的面板，播放质量窗口保持其原版本与分母。诊断final快照和network尾报告按phase分开，不相加当播放数。能力/有效N与条件分位一起看，完整有界单次诊断留Pino，不发送身份/媒体URL到Faro。
+
+NEXT_PUBLIC_DRAMA_TIMING_MODE默认legacy。只有替代验证通过后显式启用unified，才移除专用start和快速成功全量诊断上传；保留100%慢/非成功和5%快成功Pino细节，purpose=diagnostic在路由/repository/导入器均禁止分析写入。全量工程统计不采样。Backend先兼容，再Frontend默认双轨，再TEST/Cloud/真实流程，最后独立批准生产切换；不开生产、不删旧对象。统一release由构建SHA决定。详见[统一定义与门禁](../drama-playback-timing.md)。
+
 ## 三类核心测量
 
 | 类别     | 指标                      | 起点 → 终点                                                | 成功筛选 / 不可混用的情况                                     |

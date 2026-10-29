@@ -1,0 +1,154 @@
+{
+  "baseline": "0ca35182a7dd4630c37fe3e1e89b64142cd34dab",
+  "branch": "codex/drama-telemetry-unification",
+  "files": [
+    {
+      "path": ".trellis/spec/backend/app/data-reliability-and-security.md",
+      "sha256": "d5ee010ee0a60cc35d2f27c957ee0a56a1fbb36b84f44df366f3711c77559ed5"
+    },
+    {
+      "path": ".trellis/spec/frontend/app/testing-quality-and-deployment.md",
+      "sha256": "3530d9c9e4818118aff5a8ed9954114c98abc12ae3e7551e49d8ce88ca14d486"
+    },
+    {
+      "path": ".trellis/spec/shared/contracts/api-contracts.md",
+      "sha256": "c0021a804e1c70ecef2bfa76ad4f10bd7af23f858170f1fa33f8d88618453ee8"
+    },
+    {
+      "path": "README.md",
+      "sha256": "30b6fa2320df3c2092892b975c772b4b3cd882de00d1df1fea9ef5df5d57dd59"
+    },
+    {
+      "path": "docs/ARCHITECTURE.md",
+      "sha256": "3b9ac77b2de074370022e6a0fa7a61af116b8a1c9f7ea48b0ae6772ab82547a2"
+    },
+    {
+      "path": "docs/drama-playback-timing.md",
+      "sha256": "049b00106dd1bda4af62f48ea18c791d8bddc5ecc377aea99803dfa7f80e96ae"
+    },
+    {
+      "path": "docs/grafana/drama-playback-runbook.md",
+      "sha256": "e25f951095ffb29c5d609ed75316c7468046637cf9435a3c18dabbf9b75a9790"
+    },
+    {
+      "path": "docs/grafana/drama-playback.json",
+      "sha256": "84961bd0282729088869c45fbd8104ffdb4bb1afd77ec40764827fb37fbbb9d8"
+    },
+    {
+      "path": "docs/grafana/engineering-performance.md",
+      "sha256": "478de87a63374471f1212ef96196b74387a3cbc5dc75aba8f526aa8bcfdb48f1"
+    },
+    {
+      "path": "docs/grafana/st-engineering-drama.json",
+      "sha256": "1a1b2b8c6f4d0b96979209c6493edcc711af2e4f910a95d7bfb4e2a0097bd97c"
+    },
+    {
+      "path": "ops/observability/README.md",
+      "sha256": "22d5556ef7e165e5348c83e05ad870be84cbe1caa5e5fedcf972a5aa4b11e8a2"
+    },
+    {
+      "path": "ops/observability/local-test/faro-loki.mjs",
+      "sha256": "b06af2ebf30ef2e5affb1e80b9bc8dba0faab3937257d8db6afb91e229debea7"
+    },
+    {
+      "path": "packages/backend/src/features/drama/timing-repository.ts",
+      "sha256": "40454a9c0d3813a03d7d2a61697e2471180f4659357d226df6d983ddece23a4d"
+    },
+    {
+      "path": "packages/backend/src/routes/telemetry.test.ts",
+      "sha256": "95efd1b8c21a1fc0408ea7afb28883a840a677af184015b80d21bcbf6d40c3d7"
+    },
+    {
+      "path": "packages/backend/src/routes/telemetry.ts",
+      "sha256": "60f03021487741ca325d41b2a35fb34f5ea38e27e0dfd8f504b231c2f77b6434"
+    },
+    {
+      "path": "packages/backend/src/scripts/import-drama-timing.ts",
+      "sha256": "0831bf33b5a1142bfec9409ee8bf6434e9c88f1e2fe9755eb7b4b1405aadb17b"
+    },
+    {
+      "path": "packages/frontend/next.config.mjs",
+      "sha256": "e075c5711141c9c7d7f50a11a5328a2d186d974fe65d2ee9cf81685f57ec89b3"
+    },
+    {
+      "path": "packages/frontend/src/components/drama/drama-home.tsx",
+      "sha256": "abdab62092bcb6ba4dccce67fed8b350510a50b0611ea118cfc8c2bfed0116c7"
+    },
+    {
+      "path": "packages/frontend/src/lib/api/drama.ts",
+      "sha256": "627860bfff357c4f66052c925b9cb2e4cc234ba3aa70c04f45ff08bcf7d151c1"
+    },
+    {
+      "path": "packages/frontend/src/lib/perf/drama-observer.test.ts",
+      "sha256": "91215b8bf0207a7ee54b98c433702b143a7fdd8d2eb33e83560a3832ee08b8bc"
+    },
+    {
+      "path": "packages/frontend/src/lib/perf/drama-observer.ts",
+      "sha256": "74cef516e9d7b80a7d8c3038310f300f0d6aafe24548c72bf259c4072c19e1ea"
+    },
+    {
+      "path": "packages/frontend/src/lib/perf/drama-timing.test.ts",
+      "sha256": "c7a9a5887451b51fcc9f6c457d32f45d6e8d95af1d35bb14f0b38523fc3fb1a9"
+    },
+    {
+      "path": "packages/frontend/src/lib/perf/drama-timing.ts",
+      "sha256": "41b1a18e84a86f4e3d54eb95284409a23575fd6fadd84d5693adfb6f891c49c5"
+    },
+    {
+      "path": "packages/frontend/src/lib/perf/grafana.test.ts",
+      "sha256": "a6a071508ece29fdbd4745c85f46b9a85ef61aa436ced984d47195b265d10876"
+    },
+    {
+      "path": "packages/frontend/src/lib/perf/grafana.ts",
+      "sha256": "c1a3b6d9fd407c2396141bc19c095b8ece290bcd02b1eedc64edb65c79d2c754"
+    },
+    {
+      "path": "packages/shared/src/__tests__/telemetry-contract.test.ts",
+      "sha256": "5018c09066fa59d892aea7c6fba82ec02e05cd4879beacc45fa9482d819d26bd"
+    },
+    {
+      "path": "packages/shared/src/api/drama-timing.ts",
+      "sha256": "4c02169a2cc6f0a1ff61d2e1ff355973e671b7851c7603799061450694844437"
+    },
+    {
+      "path": ".trellis/tasks/10-29-drama-telemetry-unification/check.jsonl",
+      "sha256": "b095cffd753b2a3c18e6ceda7435f791737e54603498b08ae0625a4d33ed451c"
+    },
+    {
+      "path": ".trellis/tasks/10-29-drama-telemetry-unification/design.md",
+      "sha256": "9a7a640e5abf34163c84a5bd4e3058a111d905751b58f9627852d6996fb691e0"
+    },
+    {
+      "path": ".trellis/tasks/10-29-drama-telemetry-unification/implement.jsonl",
+      "sha256": "b095cffd753b2a3c18e6ceda7435f791737e54603498b08ae0625a4d33ed451c"
+    },
+    {
+      "path": ".trellis/tasks/10-29-drama-telemetry-unification/implement.md",
+      "sha256": "7a79fae9c92a0952fbe6feb6d9b385b86ced984c451b97227862792f703ee6f7"
+    },
+    {
+      "path": ".trellis/tasks/10-29-drama-telemetry-unification/module-updates.json",
+      "sha256": "b3c064e84938fb1dc47d8afcc697914a8a7d0e9dcee93b94d5cb2a7474b25232"
+    },
+    {
+      "path": ".trellis/tasks/10-29-drama-telemetry-unification/prd.md",
+      "sha256": "025bbeec6c6fe0b565752ba4f76c661fdec13320cc64522508fccbd4580784e9"
+    },
+    {
+      "path": ".trellis/tasks/10-29-drama-telemetry-unification/query-validation.json",
+      "sha256": "16dbd4e1f7d2f9769240e5fb31bb14612a4905ff74ccb4ad5528e9346c5293c1"
+    },
+    {
+      "path": ".trellis/tasks/10-29-drama-telemetry-unification/task.json",
+      "sha256": "f48c72fa63eea1b44ed1c1448015462e7704775657016c275cf779bdff5c30bb"
+    },
+    {
+      "path": ".trellis/tasks/10-29-drama-telemetry-unification/task.md",
+      "sha256": "2b28fa0182bb321231ca69b1c51e54a8cd3f29713074ff277165da0fafc4e664"
+    },
+    {
+      "path": ".trellis/tasks/10-29-drama-telemetry-unification/verification.md",
+      "sha256": "b8724e4cdf6d9ea1cadd01c423fd907b7dcb0c4c4de6f52619afb8d6e1603aaa"
+    }
+  ]
+}

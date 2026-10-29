@@ -75,16 +75,24 @@ export default async function telemetryRoutes(app: FastifyInstance) {
         return reply.status(400).send(fail('BAD_REQUEST', 'Invalid timing report'));
       const log = requestLogger(request.log, 'drama');
       const fields = { ...dramaTimingLogFields(parsed.data), upload_request_id: request.id };
+      let logged = false;
       try {
         if (parsed.data.phase === 'slow') log.biz.warn(fields, 'drama frontend timing');
         else log.biz.info(fields, 'drama frontend timing');
+        logged = true;
       } catch (err) {
         log.sys.error(
           { err, event: 'drama.timing_log_failed', observation_id: parsed.data.id },
           'drama frontend timing log failed'
         );
       }
-      if (timingConfig.enabled && parsed.data.type === 'playback') {
+      if (parsed.data.purpose === 'diagnostic' && !logged)
+        return reply.status(503).send(fail('UNAVAILABLE', 'Timing log unavailable'));
+      if (
+        timingConfig.enabled &&
+        parsed.data.type === 'playback' &&
+        parsed.data.purpose !== 'diagnostic'
+      ) {
         if (!timingProcessor.enqueue(parsed.data, log)) {
           log.sys.warn(
             {

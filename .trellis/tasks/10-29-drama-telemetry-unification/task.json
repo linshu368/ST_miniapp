@@ -1,0 +1,46 @@
+{
+  "id": "drama-telemetry-unification",
+  "name": "drama-telemetry-unification",
+  "title": "统一短剧耗时测量与 Grafana 监控链路",
+  "description": "按用户已批准的六处范围统一短剧测量/出口/诊断/看板；默认保留双轨，生产切换单独验证授权。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "frontend,backend,shared,docs,observability",
+  "package": "frontend",
+  "priority": "P2",
+  "creator": "linshu",
+  "assignee": "linshu",
+  "createdAt": "2026-10-29",
+  "completedAt": null,
+  "branch": "codex/drama-telemetry-unification",
+  "base_branch": "dev",
+  "worktree_path": "/Users/qj/.codex/worktrees/drama-telemetry-unification/ST_miniAPP",
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "prd.md",
+    "design.md",
+    "implement.md",
+    "task.md",
+    "verification.md",
+    "query-validation.json",
+    "module-updates.json",
+    "review-digest.json"
+  ],
+  "notes": "六处代码/源定义已实现，生产切换门禁保留；提交、推送、发布、线上开关和旧对象删除均未执行。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "frontend.infrastructure.client-ui-foundation",
+        "frontend.business.drama-experience",
+        "backend.infrastructure.runtime-data-security"
+      ]
+    },
+    "baseline_commit": "0ca35182a7dd4630c37fe3e1e89b64142cd34dab"
+  }
+}
