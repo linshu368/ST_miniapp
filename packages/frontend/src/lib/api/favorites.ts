@@ -8,6 +8,7 @@ import {
   type QueryClient,
 } from '@tanstack/react-query';
 import type {
+  CharacterSocial,
   GetCharacterFavoriteIdsData,
   GetCharacterFavoritesData,
   SetCharacterFavoriteData,
@@ -15,6 +16,12 @@ import type {
 
 import { useFavoriteFeedbackStore } from '@/stores/favorite-feedback-store';
 import { apiClient } from './client';
+import {
+  cancelCharacterSocialReads,
+  characterSocialKeys,
+  patchCharacterFavoriteCount,
+  scheduleCharacterSocialRefresh,
+} from './character-social';
 
 export const favoriteKeys = {
   all: ['character-favorites'] as const,
@@ -73,6 +80,7 @@ interface FavoriteMutationInput {
 interface FavoriteMutationContext {
   previousIds?: GetCharacterFavoriteIdsData;
   previousList?: GetCharacterFavoritesData;
+  previousCount?: number;
 }
 
 function matchesCharacter(variables: unknown, characterId: string): boolean {
@@ -163,10 +171,22 @@ export function useSetFavoriteMutation() {
       await Promise.all([
         queryClient.cancelQueries({ queryKey: favoriteKeys.ids() }),
         queryClient.cancelQueries({ queryKey: favoriteKeys.list() }),
+        cancelCharacterSocialReads(queryClient),
       ]);
 
       const previousIds = queryClient.getQueryData<GetCharacterFavoriteIdsData>(favoriteKeys.ids());
       const previousList = queryClient.getQueryData<GetCharacterFavoritesData>(favoriteKeys.list());
+      const previousCount = queryClient.getQueryData<CharacterSocial>(
+        characterSocialKeys.social(input.characterId)
+      )?.favorite_count;
+      if (previousCount !== undefined && previousIds) {
+        const wasFavorited = previousIds.character_ids.includes(input.characterId);
+        patchCharacterFavoriteCount(
+          queryClient,
+          input.characterId,
+          previousCount + (wasFavorited === input.favorited ? 0 : input.favorited ? 1 : -1)
+        );
+      }
       queryClient.setQueryData<GetCharacterFavoriteIdsData>(favoriteKeys.ids(), (current) =>
         applyFavoriteId(current, input.characterId, input.favorited)
       );
@@ -179,7 +199,7 @@ export function useSetFavoriteMutation() {
           ),
         });
       }
-      return { previousIds, previousList };
+      return { previousIds, previousList, previousCount };
     },
     onSuccess: (data) => {
       queryClient.setQueryData<GetCharacterFavoriteIdsData>(favoriteKeys.ids(), (current) =>
@@ -188,6 +208,9 @@ export function useSetFavoriteMutation() {
       useFavoriteFeedbackStore.getState().clearForCharacter(data.favorite.character_id);
     },
     onError: (_error, input, context) => {
+      if (context?.previousCount !== undefined) {
+        patchCharacterFavoriteCount(queryClient, input.characterId, context.previousCount);
+      }
       queryClient.setQueryData<GetCharacterFavoriteIdsData>(favoriteKeys.ids(), (current) =>
         current ? rollbackFavoriteIds(current, context?.previousIds, input.characterId) : current
       );
@@ -200,6 +223,7 @@ export function useSetFavoriteMutation() {
     onSettled: () => {
       // Do not await this task: mutation state must leave pending before it runs.
       scheduleFavoriteRefresh(queryClient);
+      scheduleCharacterSocialRefresh(queryClient);
     },
   });
 }

@@ -57,6 +57,17 @@ export const scenarios = {
     description: '可查看套餐、禁止下单',
     path: '/profile/recharge',
   },
+
+  'character-social': {
+    label: '角色互动',
+    description: '点赞、已有收藏、公开评论、分页与跨页面状态同步',
+    path: '/characters',
+  },
+  'character-interaction-error': {
+    label: '角色互动失败',
+    description: '点赞和收藏失败恢复、评论丢响应后的草稿与幂等重试',
+    path: '/characters',
+  },
   dramas: {
     label: '短剧体验',
     description: '沉浸刷剧、收藏、点赞、评论、选集和本设备续看',
