@@ -1,0 +1,10 @@
+{"file":".trellis/spec/frontend/app/index.md","reason":"前端质量和边界复核"}
+{"file":".trellis/spec/frontend/app/testing-quality-and-deployment.md","reason":"模拟验收与Telegram真机证据不得混淆"}
+{"file":".trellis/spec/backend/app/index.md","reason":"后端统一入口与契约约束"}
+{"file":".trellis/spec/backend/app/data-reliability-and-security.md","reason":"关键业务与秘密/超时/重试/日志隔离"}
+{"file":".trellis/spec/shared/contracts/index.md","reason":"若改DTO须核验所有消费者"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"端到端数据、降级与部署一致性"}
+{"file":".trellis/tasks/10-29-grafana-performance-observability/research/frontend-readiness.md","reason":"页面起终点、分母、版本与高基数"}
+{"file":".trellis/tasks/10-29-grafana-performance-observability/research/backend-readiness.md","reason":"流式终态、attempt与账务恢复非回归"}
+{"file":".trellis/tasks/10-29-grafana-performance-observability/research/ops-readiness.md","reason":"实际部署证据、Cloud角色与写入凭证不等同"}
+{"file":".trellis/tasks/10-29-grafana-performance-observability/research/official-integration.md","reason":"接收/采集方式、队列可靠性与低基数约束"}

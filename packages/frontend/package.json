@@ -11,6 +11,7 @@
     "lint": "next lint --dir src"
   },
   "dependencies": {
+    "@grafana/faro-web-sdk": "2.13.0",
     "@miniapp/reply-renderer": "workspace:*",
     "@miniapp/shared": "workspace:*",
     "@radix-ui/react-avatar": "^1.2.0",

@@ -7,7 +7,15 @@ import {
 } from './first-token-fallback.js';
 import type { AttemptObservation } from '../../infrastructure/repositories/GenerationObservationRepository.js';
 
-afterEach(() => vi.useRealTimers());
+const telemetry = vi.hoisted(() => ({ dispatch: vi.fn(), terminal: vi.fn() }));
+vi.mock('../../lib/engineering-observability.js', () => ({
+  observeGenerationDispatch: telemetry.dispatch,
+  observeGenerationAttempt: telemetry.terminal,
+}));
+afterEach(() => {
+  vi.useRealTimers();
+  vi.clearAllMocks();
+});
 const token = (id: string, text: string) =>
   `data:${JSON.stringify({ id, choices: [{ delta: { content: text } }] })}\n\n`;
 
@@ -179,6 +187,19 @@ describe('first-token fallback budget and delivery', () => {
     expect(test.calls[0]?.cancelled).toBe(true);
     expect(test.observations.filter((a) => a.role === 'primary')).toHaveLength(2);
     expect(test.observations.filter((a) => a.role === 'fallback')).toHaveLength(2);
+    expect(telemetry.dispatch).toHaveBeenCalledTimes(2);
+    expect(telemetry.terminal).toHaveBeenCalledTimes(2);
+    expect(telemetry.terminal).toHaveBeenCalledWith(
+      expect.objectContaining({ role: 'primary', outcome: 'race_lost', dispatched: true })
+    );
+    expect(telemetry.terminal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        role: 'fallback',
+        outcome: 'first_token_observed',
+        dispatched: true,
+      })
+    );
+    expect(JSON.stringify(telemetry.terminal.mock.calls)).not.toContain('discarded_response');
   });
   it('fallback may win after its old 2s stage budget while still inside the total budget', async () => {
     const test = setup({ primaryAt: 100, fallbackAt: 30 });
@@ -341,6 +362,7 @@ describe('first-token fallback budget and delivery', () => {
     'event_error_text',
     'refusal',
     'finish_without_delta',
+    'length_without_delta',
     'finish_empty_delta',
   ])('immediately falls back on %s before the first visible token', async (failure) => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
@@ -388,6 +410,7 @@ describe('first-token fallback budget and delivery', () => {
                 event_error_text: 'event: error\ndata: Service unavailable\n\n',
                 refusal: 'data: {"choices":[{"delta":{"refusal":"unavailable"}}]}\n\n',
                 finish_without_delta: 'data: {"choices":[{"finish_reason":"content_filter"}]}\n\n',
+                length_without_delta: 'data: {"choices":[{"finish_reason":"length"}]}\n\n',
                 finish_empty_delta: 'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n',
               };
               c.enqueue(new TextEncoder().encode(frames[failure]));
@@ -416,6 +439,22 @@ describe('first-token fallback budget and delivery', () => {
     if (failure === 'stream_error')
       expect(observations).toContainEqual(expect.objectContaining({ generation_id: 'failed-id' }));
     if (
+      failure === 'refusal' ||
+      failure === 'finish_without_delta' ||
+      failure === 'length_without_delta'
+    ) {
+      expect(telemetry.terminal).toHaveBeenCalledWith(
+        expect.objectContaining({
+          role: 'primary',
+          outcome: failure === 'length_without_delta' ? 'length' : 'filtered',
+          dispatched: true,
+        })
+      );
+      expect(
+        telemetry.terminal.mock.calls.filter(([input]) => input.role === 'primary')
+      ).toHaveLength(1);
+    }
+    if (
       [
         'empty_done',
         'stream_error',
@@ -424,6 +463,7 @@ describe('first-token fallback budget and delivery', () => {
         'event_error_text',
         'refusal',
         'finish_without_delta',
+        'length_without_delta',
         'finish_empty_delta',
       ].includes(failure)
     )

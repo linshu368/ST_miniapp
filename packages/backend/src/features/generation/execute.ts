@@ -47,6 +47,13 @@ import {
   type TransportModel,
 } from './first-token-fallback.js';
 import { GenerationCleanupPendingError } from './types.js';
+import {
+  observeGenerationDispatch,
+  observeGenerationAttempt,
+  observeGenerationPrepare,
+  observeGenerationTerminal,
+  type GenerationOutcome,
+} from '../../lib/engineering-observability.js';
 import type {
   GenerationHooks,
   GenerationLogger,
@@ -124,6 +131,102 @@ export async function execute(
   request: GenerationRequest,
   hooks?: GenerationHooks,
   log: GenerationLogger = createLogger('generation')
+): Promise<GenerationResult> {
+  const observation = {
+    startedAt: performance.now(),
+    prepared: false,
+    directDispatched: false,
+    directDispatchedAt: 0,
+    headersMs: undefined as number | undefined,
+    firstTokenMs: undefined as number | undefined,
+    signalOutcome: undefined as 'timeout' | 'cancelled' | undefined,
+    provider: request.model.provider,
+    model: request.model.providerModelId,
+  };
+  let outcome: GenerationOutcome = 'error';
+  try {
+    const result = await executeGeneration(request, hooks, log, observation);
+    const reason = result.finishReason;
+    outcome =
+      reason === 'user_cancelled'
+        ? 'user_cancelled'
+        : observation.signalOutcome === 'timeout'
+          ? 'timeout'
+          : result.denial === 'vip_required'
+            ? 'vip_required'
+            : reason === 'content_filter' || reason === 'refusal'
+              ? 'filtered'
+              : reason === 'length'
+                ? 'length'
+                : reason === 'timeout' || reason === 'first_token_timeout'
+                  ? 'timeout'
+                  : reason === 'cancelled'
+                    ? 'cancelled'
+                    : (observation.signalOutcome ?? result.status);
+    return result;
+  } catch (err) {
+    if (
+      err instanceof FirstTokenDeadlineError ||
+      request.signal?.reason instanceof FirstTokenDeadlineError ||
+      request.signal?.reason?.name === 'TimeoutError'
+    )
+      outcome = 'timeout';
+    else if (request.signal?.aborted) outcome = 'cancelled';
+    throw err;
+  } finally {
+    if (!observation.prepared)
+      observeGenerationPrepare({
+        ...observation,
+        durationMs: performance.now() - observation.startedAt,
+        outcome: outcome === 'error' ? 'error' : 'rejected',
+      });
+    if (observation.directDispatched)
+      observeGenerationAttempt({
+        ...observation,
+        role: 'primary',
+        phase: 'generation',
+        dispatched: true,
+        outcome:
+          outcome === 'success'
+            ? 'completed'
+            : outcome === 'timeout' ||
+                outcome === 'filtered' ||
+                outcome === 'length' ||
+                outcome === 'user_cancelled'
+              ? outcome
+              : outcome === 'cancelled'
+                ? 'cancelled'
+                : outcome === 'upstream_error'
+                  ? 'upstream_error'
+                  : 'stream_interrupted',
+        durationMs: performance.now() - observation.directDispatchedAt,
+        headersMs: observation.headersMs,
+        firstTokenMs: observation.firstTokenMs,
+      });
+    observeGenerationTerminal({
+      ...observation,
+      stream: request.stream,
+      durationMs: performance.now() - observation.startedAt,
+      outcome,
+    });
+  }
+}
+
+async function executeGeneration(
+  request: GenerationRequest,
+  hooks: GenerationHooks | undefined,
+  log: GenerationLogger,
+  observation: {
+    startedAt: number;
+    prepared: boolean;
+    directDispatched: boolean;
+    directDispatchedAt: number;
+    headersMs?: number;
+    firstTokenMs?: number;
+    signalOutcome?: 'timeout' | 'cancelled';
+    provider: string;
+    model: string;
+  }
 ): Promise<GenerationResult> {
   const signal = request.signal
     ? AbortSignal.any([request.signal, AbortSignal.timeout(GENERATION_TIMEOUT_MS)])
@@ -314,7 +417,27 @@ export async function execute(
         const body = JSON.stringify(buildUpstreamBody(actualRequest, preferences));
         attemptSignal.throwIfAborted();
         onDispatch?.();
-        return forwardToUpstream({
+        if (!observation.prepared) {
+          observation.prepared = true;
+          observeGenerationPrepare({
+            ...observation,
+            durationMs: performance.now() - observation.startedAt,
+            outcome: 'ready',
+          });
+        }
+        // 带首字竞争的真实 attempt 由竞争器计数，其余路径只在实际 POST 前计一次。
+        if (!onDispatch) {
+          observation.directDispatched = true;
+          observation.directDispatchedAt = performance.now();
+          observeGenerationDispatch({
+            provider: model.provider,
+            model: model.providerModelId,
+            role: 'primary',
+            phase: 'generation',
+            dispatchOffsetMs: performance.now() - observation.startedAt,
+          });
+        }
+        const response = await forwardToUpstream({
           url: route.url,
           method: 'POST',
           body,
@@ -322,6 +445,8 @@ export async function execute(
           apiKey: route.apiKey,
           provider: model.provider,
         });
+        if (!onDispatch) observation.headersMs = performance.now() - observation.directDispatchedAt;
+        return response;
       };
       if (request.firstToken && request.model.firstTokenPolicy && request.stream) {
         const elapsed = performance.now() - request.firstToken.requestStartedAt;
@@ -351,11 +476,18 @@ export async function execute(
           provider: delivered.model.provider,
           providerModelId: delivered.model.providerModelId,
         };
+        observation.provider = delivered.model.provider;
+        observation.model = delivered.model.providerModelId;
         deliveryPersisted = delivered.deliveryPersisted;
         upstreamRes = delivered.response;
       } else upstreamRes = await forward(request.model, signal);
     } catch (err) {
       if (signal.aborted) {
+        // Headers 前的系统取消可被既有业务收口吸收；只保留遥测原因，不改返回/结算。
+        observation.signalOutcome =
+          signal.reason instanceof FirstTokenDeadlineError || signal.reason?.name === 'TimeoutError'
+            ? 'timeout'
+            : 'cancelled';
         const settleAbort = settleAbortedBeforeStream;
         settleAbortedBeforeStream = undefined;
         const stopped = await settleAbort();
@@ -509,6 +641,8 @@ export async function execute(
       if (!firstTokenSeen && text.trim()) {
         firstTokenSeen = true;
         firstTokenAt = Date.now();
+        if (observation.directDispatched)
+          observation.firstTokenMs = performance.now() - observation.directDispatchedAt;
         hooks?.onFirstToken?.();
       }
     };

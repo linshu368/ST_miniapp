@@ -118,7 +118,7 @@ export default function SelfHostedChatPage() {
     activeSessionId ? `chat:${activeSessionId}` : null
   );
   // 可用 = 会话已建立且历史消息已加载（新会话的创建耗时也算在用户等待里）。
-  usePageReady('/chat/:id', session.ready);
+  usePageReady('/chat/:id', session.ready, false, Boolean(session.entryError));
   // 会话就绪或创建/加载失败都结算 P0，放行模型目录等 enrich。
   useEffect(() => {
     if (session.ready || session.entryError) markCriticalSettled();

@@ -1,9 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FirstTokenObservation } from './first-token-observation';
 
+const engineering = vi.hoisted(() => ({ measurement: vi.fn(), event: vi.fn() }));
+vi.mock('./grafana', () => ({
+  recordEngineeringMeasurement: engineering.measurement,
+  recordEngineeringEvent: engineering.event,
+}));
+
 const identity = { requestId: 'r', assistantMessageId: 'a', revision: 0 };
 let page: EventTarget & { visibilityState: string };
 beforeEach(() => {
+  vi.clearAllMocks();
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
   page = Object.assign(new EventTarget(), { visibilityState: 'visible' });
   vi.stubGlobal('document', page);
@@ -14,6 +21,53 @@ afterEach(() => {
 });
 
 describe('client-committed first token observation', () => {
+  it('mirrors pre-start timeouts once without waiting for business identity or exporting it', async () => {
+    const report = vi.fn();
+    const obs = new FirstTokenObservation(
+      { requestId: 'private-request', assistantMessageId: null, revision: 0 },
+      6000,
+      report,
+      vi.fn(),
+      true,
+      'regenerate'
+    );
+    await vi.advanceTimersByTimeAsync(6000);
+    expect(report).not.toHaveBeenCalled();
+    expect(engineering.measurement).toHaveBeenCalledExactlyOnceWith(
+      'roleplay.first_token',
+      6000,
+      expect.objectContaining({
+        action: 'regenerate',
+        outcome: 'timed_out',
+        source_measurement_version: 'client_committed_v4',
+      })
+    );
+    expect(engineering.event).toHaveBeenCalledTimes(2);
+    obs.identify('private-assistant', 2);
+    expect(report).toHaveBeenCalledOnce();
+    expect(engineering.event).toHaveBeenCalledTimes(2);
+    expect(JSON.stringify(engineering.event.mock.calls)).not.toContain('private');
+  });
+
+  it('does not invent render latency for a recovered commit without stream reception', () => {
+    const obs = new FirstTokenObservation(identity, 6000, vi.fn(), vi.fn());
+    obs.received('commit');
+    obs.committed(identity, performance.now());
+    expect(engineering.measurement.mock.calls.map(([name]) => name)).toEqual([
+      'roleplay.first_token',
+    ]);
+  });
+
+  it('preserves the original receipt when the engineering mirror throws', () => {
+    const report = vi.fn();
+    const obs = new FirstTokenObservation(identity, 6000, report, vi.fn());
+    engineering.measurement.mockImplementationOnce(() => {
+      throw new Error('collector unavailable');
+    });
+    expect(obs.committed(identity, performance.now())).toBe(true);
+    expect(report).toHaveBeenCalledOnce();
+  });
+
   it('uses submit-to-commit timing, independently of token reception and stream completion', async () => {
     const report = vi.fn(),
       timeout = vi.fn();
@@ -33,6 +87,11 @@ describe('client-committed first token observation', () => {
         request_dispatched_ms: 25,
         revision: 0,
       })
+    );
+    expect(engineering.measurement).toHaveBeenCalledWith(
+      'roleplay.render',
+      1200,
+      expect.objectContaining({ stage: 'render', outcome: 'observed' })
     );
     await vi.advanceTimersByTimeAsync(6000);
     expect(timeout).not.toHaveBeenCalled();

@@ -22,7 +22,12 @@ function ImagePlazaWorkDetail({ workId }: { workId: string }) {
   const returnToGallery = useCallback(() => router.push('/create', { scroll: false }), [router]);
   useTelegramBackButton(returnToGallery);
   const query = useImagePlazaWorkQuery(workId);
-  usePageReady('/create/work/:id', query.data !== undefined);
+  usePageReady(
+    '/create/work/:id',
+    query.data?.work !== undefined && !query.isError,
+    false,
+    query.isError
+  );
   const like = useSetImagePlazaLikeMutation(workId);
   const createConversation = useCreateImagePlazaConversationMutation();
   const [showReference, setShowReference] = useState(false);

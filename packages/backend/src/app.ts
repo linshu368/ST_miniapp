@@ -41,8 +41,10 @@ import {
 } from './lib/lobby-ranking-refresh-job.js';
 import { bindRequestSentryContext } from './lib/sentry.js';
 import { registerRequestPerf, startRuntimeMetrics } from './lib/perf-metrics.js';
+import { startEngineeringTelemetry } from './lib/engineering-observability.js';
 
 export async function buildApp() {
+  const stopEngineeringTelemetry = startEngineeringTelemetry(config.engineeringTelemetry);
   const app = Fastify({
     logger: fastifyLoggerOptions() as unknown as FastifyServerOptions['logger'],
     // 跨边界链路追踪：优先复用入站 X-Request-Id，否则生成。见 docs/日志系统.md §6
@@ -184,6 +186,7 @@ export async function buildApp() {
     stopChatImageGenerationJob();
     stopImagePlazaGenerationJob();
     shutdownTextPostprocessValidation();
+    await stopEngineeringTelemetry();
   });
 
   return app;

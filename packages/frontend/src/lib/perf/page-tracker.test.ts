@@ -8,6 +8,12 @@ const { distribution, count, captureMessage, withScope } = vi.hoisted(() => ({
     cb({ setLevel: vi.fn(), setFingerprint: vi.fn(), setTags: vi.fn(), setContext: vi.fn() })
   ),
 }));
+const engineering = vi.hoisted(() => ({ measurement: vi.fn(), event: vi.fn(), enabled: true }));
+vi.mock('./grafana', () => ({
+  isEngineeringTelemetryEnabled: () => engineering.enabled,
+  recordEngineeringMeasurement: engineering.measurement,
+  recordEngineeringEvent: engineering.event,
+}));
 
 vi.mock('@sentry/nextjs', () => ({
   metrics: { distribution, count },
@@ -21,6 +27,8 @@ import {
   beginPage,
   ENTRY_WINDOW_MS,
   markPageReady,
+  markPageFailed,
+  markPageNavigationStart,
   PAGE_STALL_MS,
   resetPageTrackerForTest,
   routeOf,
@@ -45,6 +53,9 @@ describe('page tracker', () => {
     vi.useFakeTimers();
     distribution.mockClear();
     captureMessage.mockClear();
+    engineering.measurement.mockClear();
+    engineering.event.mockClear();
+    engineering.enabled = true;
     resetPageTrackerForTest();
     setVisibility('visible');
   });
@@ -113,6 +124,120 @@ describe('page tracker', () => {
       1,
       expect.objectContaining({ attributes: { route: '/', cold_start: 'true' } })
     );
+  });
+
+  it('measures each dynamic ID visit and rejects late readiness from the previous ID', () => {
+    beginPage('/dramas/first');
+    markPageReady('/dramas/:id', 'content', '/dramas/first');
+    beginPage('/dramas/second');
+    markPageReady('/dramas/:id', 'content', '/dramas/first');
+    expect(
+      engineering.measurement.mock.calls.filter(([name]) => name === 'page.ready')
+    ).toHaveLength(1);
+    markPageReady('/dramas/:id', 'content', '/dramas/second');
+    expect(
+      engineering.measurement.mock.calls.filter(([name]) => name === 'page.ready')
+    ).toHaveLength(2);
+    expect(engineering.event.mock.calls.filter(([name]) => name === 'page.started')).toHaveLength(
+      2
+    );
+  });
+
+  it('keeps an explicit error out of successful engineering durations', () => {
+    beginPage('/profile/messages/123');
+    markPageFailed('/profile/messages/:id', '/profile/messages/123');
+    markPageReady('/profile/messages/:id');
+    expect(engineering.measurement).not.toHaveBeenCalled();
+    expect(engineering.event).toHaveBeenCalledWith(
+      'page.terminal',
+      expect.objectContaining({ outcome: 'error' })
+    );
+  });
+
+  it('stops the old watchdog for known errors even when the new exporter is disabled', () => {
+    engineering.enabled = false;
+    beginPage('/characters');
+    markPageFailed('/characters');
+    setVisibility('hidden');
+    setVisibility('visible');
+    vi.advanceTimersByTime(PAGE_STALL_MS * 2);
+    expect(captureMessage).not.toHaveBeenCalled();
+    expect(engineering.event).not.toHaveBeenCalled();
+  });
+
+  it('separates cached content readiness from fresh network data', () => {
+    beginPage('/characters');
+    markPageReady('/characters', 'content', undefined, 'cache');
+    expect(engineering.measurement).toHaveBeenCalledWith(
+      'page.ready',
+      expect.any(Number),
+      expect.objectContaining({ cache: 'cache' })
+    );
+    expect(
+      engineering.measurement.mock.calls.filter(([name]) => name === 'page.fresh')
+    ).toHaveLength(0);
+    vi.advanceTimersByTime(700);
+    markPageReady('/characters', 'fresh');
+    expect(engineering.measurement).toHaveBeenCalledWith(
+      'page.fresh',
+      700,
+      expect.objectContaining({ cache: 'fetch' })
+    );
+  });
+
+  it('does not count background-ready as visible success until foreground resumes', () => {
+    beginPage('/characters');
+    setVisibility('hidden');
+    vi.advanceTimersByTime(10_000);
+    markPageReady('/characters');
+    expect(engineering.measurement).not.toHaveBeenCalled();
+    setVisibility('visible');
+    expect(engineering.measurement).toHaveBeenCalledWith(
+      'page.ready',
+      expect.any(Number),
+      expect.objectContaining({ visibility: 'mixed' })
+    );
+    expect(engineering.event.mock.calls.filter(([name]) => name === 'page.terminal')).toHaveLength(
+      1
+    );
+  });
+
+  it('records a single latched stall and an explicit leave terminal', () => {
+    beginPage('/characters');
+    vi.advanceTimersByTime(PAGE_STALL_MS + 100);
+    setVisibility('hidden');
+    setVisibility('visible');
+    vi.advanceTimersByTime(PAGE_STALL_MS + 100);
+    expect(engineering.event.mock.calls.filter(([name]) => name === 'page.stall')).toHaveLength(1);
+    beginPage('/chats');
+    expect(engineering.event).toHaveBeenCalledWith(
+      'page.terminal',
+      expect.objectContaining({ route: '/characters', outcome: 'page_left' })
+    );
+  });
+
+  it('keeps navigation-start and old mount duration as separate clocks', () => {
+    vi.stubGlobal('window', {
+      location: { href: 'https://app.test/', origin: 'https://app.test', pathname: '/' },
+    });
+    beginPage('/');
+    markPageReady('/');
+    markPageNavigationStart('/characters?private=1');
+    vi.advanceTimersByTime(1200);
+    beginPage('/characters');
+    vi.advanceTimersByTime(300);
+    markPageReady('/characters');
+    expect(engineering.measurement).toHaveBeenCalledWith(
+      'page.navigation',
+      1500,
+      expect.objectContaining({ navigation_type: 'spa' })
+    );
+    expect(engineering.measurement).toHaveBeenCalledWith(
+      'page.ready',
+      300,
+      expect.objectContaining({ source_measurement_version: 'page_mount_v1' })
+    );
+    expect(JSON.stringify(engineering.event.mock.calls)).not.toContain('private');
   });
 });
 

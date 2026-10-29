@@ -56,6 +56,7 @@ import {
 } from '@/lib/chat-thinking';
 
 import { FirstTokenObservation } from '@/lib/perf/first-token-observation';
+import { RoleplayReplyTiming } from '@/lib/perf/roleplay-timing';
 
 const REPLY_STALLED_NOTICE_MS = 8_000;
 export const CANCEL_DISCOVERY_DEADLINE_MS = 30_000;
@@ -307,6 +308,7 @@ export function useConversationTurn({
     null
   );
   const observationRef = useRef<FirstTokenObservation | null>(null);
+  const replyTimingRef = useRef<RoleplayReplyTiming | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const pendingRef = useRef<PendingTurn | null>(null);
   const requestRef = useRef<symbol | null>(null);
@@ -327,6 +329,8 @@ export function useConversationTurn({
 
   // 切会话时先清理旧请求，必须早于下方首字 commit 裁决与浏览器绘制。
   useLayoutEffect(() => {
+    replyTimingRef.current?.finish('page_left');
+    replyTimingRef.current = null;
     observationRef.current?.unavailable('page_left');
     observationRef.current = null;
     requestRef.current = null;
@@ -345,6 +349,7 @@ export function useConversationTurn({
   // 离开页面时停掉读流。后端不会因此终止，但本地不该再往一个卸载了的组件里写
   useEffect(
     () => () => {
+      replyTimingRef.current?.finish('page_left');
       observationRef.current?.unavailable('page_left');
       requestRef.current = null;
       cancelRef.current = null;
@@ -383,7 +388,7 @@ export function useConversationTurn({
       (observation.thinkingEnabled && thinkingByMessage[messageThinkingKey(committed)]?.trim())
     );
     if (hasToken) {
-      observation.received();
+      observation.received('commit');
       const at = performance.now();
       if (observation.committed(observation.identity, at)) {
         reportChatLatency('chat.first_token.duration', at - observation.startedAt, {
@@ -395,6 +400,23 @@ export function useConversationTurn({
     } else if (committed.status !== 'streaming') {
       if (committed.finish_reason === 'timeout') observation.deadlineFailed('server_timeout');
       else observation.unavailable('upstream_error');
+    }
+    // Success means the complete matching revision has actually committed to
+    // React, not merely SSE done or a query invalidation resolving. Failed and
+    // interrupted durable messages remain separate terminal samples.
+    const replyTiming = replyTimingRef.current;
+    if (
+      committed.status !== 'streaming' &&
+      replyTiming &&
+      replyTiming.requestId === committed.request_id
+    ) {
+      replyTiming.finish(
+        committed.finish_reason === 'timeout'
+          ? 'timed_out'
+          : committed.status === 'complete' && !hasToken
+            ? 'failed'
+            : committed.status
+      );
     }
   }, [messages, sessionId, thinkingByMessage, characterId]);
 
@@ -616,6 +638,9 @@ export function useConversationTurn({
       if (!sessionId || requestRef.current || cancelRef.current || serverBusy || quotaRefreshing)
         return;
       const requestId = createConversationRequestId();
+      replyTimingRef.current?.finish('superseded');
+      const replyTiming = new RoleplayReplyTiming(requestId, input.mode);
+      replyTimingRef.current = replyTiming;
       observationRef.current?.unavailable('superseded');
       const observation = new FirstTokenObservation(
         { requestId, assistantMessageId: null, revision: 0 },
@@ -628,7 +653,8 @@ export function useConversationTurn({
           // Client delivery telemetry never cancels a server-owned turn.
           setStreamError(FIRST_TOKEN_RETRY_MESSAGE);
         },
-        thinkingEnabled
+        thinkingEnabled,
+        input.mode
       );
       observationRef.current = observation;
       const request = Symbol('turn');
@@ -796,6 +822,28 @@ export function useConversationTurn({
         if (!isCurrent()) return;
         const aborted = error instanceof Error && error.name === 'AbortError';
         if (!aborted) {
+          if (
+            error instanceof ConversationStreamError &&
+            !error.recoverable &&
+            !observation.hasReceivedToken
+          ) {
+            const timedOut = [
+              'first_token_timeout',
+              'fallback_first_token_timeout',
+              'primary_first_token_timeout',
+            ].includes(error.code ?? '');
+            replyTiming.finish(
+              timedOut
+                ? 'timed_out'
+                : error.status >= 400 && error.status < 500 && !assistantMessageId
+                  ? 'rejected'
+                  : 'failed'
+            );
+          } else {
+            replyTiming.recovering();
+          }
+        }
+        if (!aborted) {
           captureTurnLifecycleEvent(sessionId, characterId, turnMeta, {
             type: 'failed',
             failureKind: classifyChatTurnFailure(error),
@@ -861,7 +909,10 @@ export function useConversationTurn({
   const abort = useCallback(
     async (reason?: 'first_token_timeout') => {
       if (!sessionId || cancelRef.current || quotaRefreshing) return;
-      if (!reason) observationRef.current?.unavailable('cancelled');
+      if (!reason) {
+        replyTimingRef.current?.finish('cancelled');
+        observationRef.current?.unavailable('cancelled');
+      }
       const cancellation = Symbol('cancel');
       cancelRef.current = cancellation;
       setCancelling(true);
