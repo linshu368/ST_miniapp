@@ -156,7 +156,7 @@ export function DramaHome() {
               onNavigate={(direction) => {
                 const target = queue[index + direction];
                 if (!target) return;
-                dramaTiming.beginPlayback(target.id, 'switch');
+                dramaTiming.beginPlayback(target.id, 'switch', undefined, undefined, 'home');
                 setBrowse({ activeId: target.id });
               }}
             />

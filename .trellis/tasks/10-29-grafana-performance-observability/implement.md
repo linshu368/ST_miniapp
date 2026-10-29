@@ -66,3 +66,10 @@ pnpm test:ui --grep '@profile|@roleplay|@chat|@image|@drama'
 - 单独审核生产启用/新增服务费用；commit与push分别按仓库门禁审批。
 - shutdown有界；关闭新出口即可止损；原计费恢复链路与轻量经营查询均不受影响。
 - 收尾更新所列模块facts并审阅 `module-updates.json`，不把设计计划写成已部署事实。
+
+## 2026-10-29 生产真机验收补修：播放器测量归属
+
+- 证据：用户明确完成真实聊天和短剧播放。生产 Faro 已有首字 observed/完整回复 complete/render；短剧 startup 两次均在不到一秒被 route 判为 left，仅有 navigation，且用户实际看到播放。唯一 left 写入在 DramaTimingTracker.route，仅接受详情路径；首页 embedded 播放器可先于根路由 effect 创建，提前终态后媒体 marks 被忽略。
+- 复用现有 DramaTimingTracker、DramaPlayer 及已有 drama-timing 测试，不新增计时器/上报入口/依赖。最小补充明确页面归属，首页与详情不能互相继承同一待完成观察；旧组件迟到更新不能抢回新观察。
+- 验收：复现子播放器先创建、根 route('/') 后提交；正确首页仍能记首帧+playing；首页/详情同剧与不同剧切换、离开非播放器页、后台、已终态幂等和旧 flow 不抢占。扩展既有测试，不新增测试框架。运行 frontend 相关与全量测试、typecheck/lint/build；复核 React primitive deps、媒体 src/retry 业务 effect 不重建。
+- 发布：保持当前生产业务树，只修测量与必要调用参数，用户此前明确授权生产发布及独立分支推送继续有效；仍不绕过 PR 人审门禁、不动 main/dev。先完成独立代码审核和固定 source tree，再构建/发布，回查真实 Cloud 数据。没有新真实播放成功样本前仍标部分核验。

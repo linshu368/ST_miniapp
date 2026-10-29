@@ -2,7 +2,7 @@
 
 ## 当前交付状态
 
-2026-10-29：代码、默认关闭的独立遥测出口、固定版本采集器配置和四张看板源已完成本地实施。**没有发布、启用 TEST/生产、创建收费服务或把新看板导入线上。** 本机合成验证与真实 Cloud 摄取是两道不同门禁；不能用无数据空图宣布迁移成功。
+2026-10-29：经用户明确授权，生产前后端、私网采集器和四张工程看板已上线。Cloud 已实收页面/API、角色首字/完整回复/渲染，以及生成与短剧服务端分段。独立 SDK 测试与生产数据按 environment/release 分开；首帧/播放成功、真实恢复和卡顿恢复仍须各自有生产样本，不能用合成样本或空图宣布全部验收。
 
 经营看板继续读取已有 Supabase 轻量汇总；原首字回执、赢家身份、恢复和计费事实继续原样持久化。本次没有新增监控表、索引、cron、逐事件数据库查询/写入，也没有退役旧短剧分析上传。旧链路只在双轨证明确已替代后另行下线。
 
@@ -15,7 +15,7 @@
 | `st-engineering-drama.json`    | 目录、启动、首帧、阶段、播放中断与恢复                    | Cloud Loki    |
 | `st-engineering-backend.json`  | HTTP/生成/上游尝试/短剧服务端/Prisma/runtime/出口健康下钻 | Cloud Metrics |
 
-前三项是工程体验产出，第四项是定位原因的证据。保留既有经营、首字 v4 和短剧看板，不覆盖其他 TextBot 项目。源 JSON 默认绑定当前 `grafanacloud-logs` / `grafanacloud-prom`，标题和标签均标“待接入”。
+前三项是工程体验产出，第四项是定位原因的证据。保留既有经营、首字 v4 和短剧看板，不覆盖其他 TextBot 项目。源 JSON 默认绑定当前 `grafanacloud-logs` / `grafanacloud-prom`，保留待接入模板；线上接入状态按实际 Cloud 样本独立更新，不因导入模板而视为验收。
 
 ## 三类核心测量
 
@@ -38,6 +38,10 @@
 | 短剧     | `drama.rebuffer`          | 已成功启动后前台非暂停/seek 的 waiting → playing/中断      | 恢复筛 `playing`；网络 stalled 本身不算画面卡顿         |
 
 `/chat/:id` 的入场体验使用页面指标；select_character 反馈不是角色正文 ready。首页 `/` 的通用 ready 是推荐目录或实际仍可用的播放器状态，视频体验另看 startup。短剧详情 `/dramas/:id` 的 ready 复用首帧且 playing 的同一证据，不另造播放器状态机。
+
+播放器测量必须有明确的 `home/detail` 页面归属，只在内存持有，不上报用户或页面身份。首页播放器可能先于根路由 effect 创建，根 `route('/')` 不能提前把它判为 left；详情与首页即使同一部剧也不得复用同一观察。真正离开所属页面才终止，跨页面归属替换记 left，同归属显式换剧/换集保留 switched。旧终态不重启、旧组件迟到更新不抢占新观察；媒体 src、自动/手动播放与恢复业务不因此重建。
+
+生产真机已暴露旧逻辑只认详情路径的问题：用户实际播放但 startup 被过早记 left。该修复前样本不得用作首页播放成功率或等待耗时的基线；修复后的成功需重新核验 first_frame+playing，而非只看 started 到达。
 
 后端各项严格定义、单位、标签和限额见 [采集器说明](../../ops/observability/README.md)。`phase=first_token` 的赢家不是完整生成成功；竞败方不是供应商故障。过滤、长度截断、系统超时、主动停止分别统计。上游平台只确认 OpenRouter/Venice，不猜内部供应商；整轮无明确 finishReason 时不从单路失败推断原因。
 
@@ -76,7 +80,7 @@ Faro 2.13 默认 `FetchTransport.send` 强制添加 `Idempotency-Key`，当前�
 - measurement：`kind=measurement type=st_page_ready duration_ms=... context_route=... context_outcome=...`。
 - event：`kind=event event_name=st_page_terminal event_data_route=... event_data_outcome=...`。**事件是 event*data*，不是 context* 或 event* 前缀。**
 - app：`app_name/app_version/app_environment` 位于日志字段。当前 Alloy 不自动把 kind/app 建成索引标签；本地测试显式配置固定 `app` 标签。
-- Cloud 托管接收端必须用一条 TEST 合成样本再核验格式与流标签；看板 browser_selector 是待确认配置，不把本机 Alloy 输出假定为账号已启用的托管格式。`local-test/config.alloy` 只供本机验算，禁止拿它公开部署。
+- 本账号 Cloud 托管接收端已用隔离 SDK 样本及真实生产浏览器核验：索引流选择器是 `{service_name="st-miniapp"}`，不能使用本机固定 `app` 索引标签。正式接入其他账号仍须重新核验，不把本机 Alloy 输出假定为通用托管格式。`local-test/config.alloy` 只供本机验算，禁止拿它公开部署。
 
 运行 `node ops/observability/local-test/faro-loki.mjs`：使用本机两个临时容器与10条虚构测量，验算总数、8成功/2错误、成功P95=1000ms，并执行前三张看板全部 LogQL。测试结束只清理本次容器及网络，不访问业务API、数据库、真实模型或Cloud。固定采集器的生产配置单独使用 `alloy validate` 验证。
 
