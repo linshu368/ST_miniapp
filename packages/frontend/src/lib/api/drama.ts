@@ -20,6 +20,87 @@ import type {
 import { apiClient } from './client';
 import { dramaTiming } from '@/lib/perf/drama-observer';
 
+const DRAMA_CATALOG_CACHE_KEY = 'miniapp:drama-catalog:v1';
+const DRAMA_CATALOG_STALE_MS = 15 * 60_000;
+const DRAMA_CATALOG_MAX_AGE_MS = 24 * 60 * 60_000;
+const DRAMA_CATALOG_MAX_ITEMS = 300;
+
+interface PersistedDramaCatalog {
+  savedAt: number;
+  data: DramaSummary[];
+}
+
+let persistedCatalog: PersistedDramaCatalog | null | undefined;
+let catalogPersistScheduled = false;
+let pendingCatalog: DramaSummary[] | undefined;
+
+function isDramaSummary(value: unknown): value is DramaSummary {
+  if (!value || typeof value !== 'object') return false;
+  const item = value as Partial<DramaSummary>;
+  return (
+    typeof item.id === 'string' &&
+    typeof item.title === 'string' &&
+    (typeof item.cover_url === 'string' || item.cover_url === null) &&
+    Array.isArray(item.tags) &&
+    item.tags.every((tag) => typeof tag === 'string') &&
+    typeof item.description === 'string' &&
+    typeof item.episode_count === 'number' &&
+    Number.isFinite(item.episode_count) &&
+    (typeof item.duration_seconds === 'number' || item.duration_seconds === null)
+  );
+}
+
+function readPersistedDramaCatalog(): PersistedDramaCatalog | undefined {
+  if (persistedCatalog !== undefined) return persistedCatalog ?? undefined;
+  persistedCatalog = null;
+  if (typeof window === 'undefined') return undefined;
+  try {
+    const raw = window.localStorage.getItem(DRAMA_CATALOG_CACHE_KEY);
+    if (!raw) return undefined;
+    const cached = JSON.parse(raw) as Partial<PersistedDramaCatalog>;
+    if (
+      typeof cached.savedAt !== 'number' ||
+      Date.now() - cached.savedAt > DRAMA_CATALOG_MAX_AGE_MS ||
+      !Array.isArray(cached.data) ||
+      cached.data.length > DRAMA_CATALOG_MAX_ITEMS ||
+      !cached.data.every(isDramaSummary)
+    ) {
+      window.localStorage.removeItem(DRAMA_CATALOG_CACHE_KEY);
+      return undefined;
+    }
+    persistedCatalog = { savedAt: cached.savedAt, data: cached.data };
+    return persistedCatalog;
+  } catch {
+    return undefined;
+  }
+}
+
+function flushPersistedDramaCatalog(): void {
+  catalogPersistScheduled = false;
+  const data = pendingCatalog;
+  pendingCatalog = undefined;
+  if (!data) return;
+  const snapshot = { savedAt: Date.now(), data: data.slice(0, DRAMA_CATALOG_MAX_ITEMS) };
+  persistedCatalog = snapshot;
+  try {
+    window.localStorage.setItem(DRAMA_CATALOG_CACHE_KEY, JSON.stringify(snapshot));
+  } catch {
+    // Storage unavailable/quota exceeded: React Query's in-memory cache still works.
+  }
+}
+
+function persistDramaCatalog(data: DramaSummary[]): void {
+  if (typeof window === 'undefined') return;
+  pendingCatalog = data;
+  if (catalogPersistScheduled) return;
+  catalogPersistScheduled = true;
+  if (typeof window.requestIdleCallback === 'function') {
+    window.requestIdleCallback(flushPersistedDramaCatalog, { timeout: 3000 });
+  } else {
+    window.setTimeout(flushPersistedDramaCatalog, 500);
+  }
+}
+
 export const dramaKeys = {
   all: ['dramas'] as const,
   list: () => [...dramaKeys.all, 'list'] as const,
@@ -141,6 +222,7 @@ async function fetchDramas(
         timeoutMs: 5000,
         queuePriority: kind === 'list' ? 'critical' : 'background',
       });
+      persistDramaCatalog(data.dramas);
       return data.dramas;
     },
     route
@@ -184,6 +266,10 @@ export function useDramaListQuery(route: '/' | '/dramas' = '/dramas') {
   return useQuery({
     queryKey: dramaKeys.list(),
     queryFn: ({ signal }) => fetchDramas('list', signal, route),
+    initialData: () => readPersistedDramaCatalog()?.data,
+    initialDataUpdatedAt: () => readPersistedDramaCatalog()?.savedAt,
+    staleTime: DRAMA_CATALOG_STALE_MS,
+    gcTime: DRAMA_CATALOG_MAX_AGE_MS,
     structuralSharing: false,
     retry: false,
   });

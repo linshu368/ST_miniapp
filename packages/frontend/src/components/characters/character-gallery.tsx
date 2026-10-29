@@ -29,6 +29,7 @@ import {
 } from '@/lib/roleplay-navigation';
 import { discardPendingAction, startPendingAction } from '@/lib/perf/action-tracker';
 import { useFreshAfterFetch, usePageReady } from '@/lib/perf/page-ready';
+import { markPageCriticalVisual } from '@/lib/perf/page-tracker';
 import {
   clearLobbyReturnSnapshot,
   readLobbyReturnSnapshot,
@@ -155,13 +156,33 @@ export function CharacterGallery() {
   const [sort, setSort] = useState<LobbySort>(
     restoreSnapshot?.sort ?? savedDiscovery.sort ?? DEFAULT_LOBBY_SORT
   );
-  const { data, isLoading, isError, isFetching, isFetched } = useCharactersQuery(sort, {
-    skipMountRefetch: isRestoring,
-  });
+  const [criticalVisualSettled, setCriticalVisualSettled] = useState(false);
+  const { data, isLoading, isError, isFetching, isFetched, isFetchedAfterMount, refetch } =
+    useCharactersQuery(sort);
   // 有可展示数据（含本地缓存）或列表已失败/完成首轮，即放行 enrich，别让旁路永远等。
   useEffect(() => {
     if (data !== undefined || isError || isFetched) markCriticalSettled();
   }, [data, isError, isFetched]);
+  useEffect(() => {
+    if (
+      criticalVisualSettled &&
+      data !== undefined &&
+      !isRestoring &&
+      !isFetching &&
+      !isFetchedAfterMount
+    ) {
+      void refetch();
+    }
+  }, [criticalVisualSettled, data, isFetchedAfterMount, isFetching, isRestoring, refetch]);
+  useEffect(() => {
+    setCriticalVisualSettled(false);
+  }, [sort]);
+  useEffect(() => {
+    if (data === undefined || isFetchedAfterMount || criticalVisualSettled) return;
+    // 图片始终不结算时也要校准目录；只把后台请求移出最拥挤的首屏窗口。
+    const timer = window.setTimeout(() => setCriticalVisualSettled(true), 1500);
+    return () => window.clearTimeout(timer);
+  }, [criticalVisualSettled, data, isFetchedAfterMount]);
   // 大厅有本地缓存秒开：content 记用户看到列表的时刻，fresh 记最新列表到达的时刻，两者分开才看得出后端慢。
   const lobbyFresh = useFreshAfterFetch(isFetching, data !== undefined, isError);
   usePageReady(
@@ -308,6 +329,7 @@ export function CharacterGallery() {
     () => (renderAll ? filtered : filtered.slice(0, effectiveLimit)),
     [filtered, renderAll, effectiveLimit]
   );
+  const criticalCharacterId = visibleCharacters[0]?.id;
 
   useCharacterSocialsQuery(
     visibleCharacters.map((character) => character.id),
@@ -417,7 +439,16 @@ export function CharacterGallery() {
   );
 
   const handleImageSettled = useCallback(
-    (characterId: string) => {
+    (characterId: string, outcome: 'loaded' | 'error') => {
+      if (characterId === criticalCharacterId) {
+        setCriticalVisualSettled(true);
+        markPageCriticalVisual(
+          '/characters',
+          outcome,
+          undefined,
+          data !== undefined && (isFetching || isRestoring) ? 'cache' : 'fetch'
+        );
+      }
       if (
         restoreCalibrationUsedRef.current ||
         restoredAnchorIdRef.current !== characterId ||
@@ -437,8 +468,22 @@ export function CharacterGallery() {
         });
       });
     },
-    [restoreSnapshot]
+    [criticalCharacterId, data, isFetching, isRestoring, restoreSnapshot]
   );
+
+  useEffect(() => {
+    const first = visibleCharacters[0];
+    if (data === undefined || isError) return;
+    if (!first || !first.avatar_url) {
+      setCriticalVisualSettled(true);
+      markPageCriticalVisual(
+        '/characters',
+        'absent',
+        undefined,
+        isFetching || isRestoring ? 'cache' : 'fetch'
+      );
+    }
+  }, [data, isError, isFetching, isRestoring, visibleCharacters]);
 
   const hiddenWhileRestoring = isRestoring ? 'invisible' : undefined;
 

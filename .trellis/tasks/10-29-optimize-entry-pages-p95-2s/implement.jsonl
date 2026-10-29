@@ -1,0 +1,10 @@
+{"file":".trellis/spec/frontend/app/index.md","reason":"Frontend 不可谈判规则、React Query 与验证入口"}
+{"file":".trellis/spec/frontend/app/modules/business/drama-experience.md","reason":"首页、短剧广场与播放器模块边界"}
+{"file":".trellis/spec/frontend/app/modules/business/character-lobby.md","reason":"角色列表、缓存与卡片模块边界"}
+{"file":".trellis/spec/frontend/app/modules/infrastructure/client-ui-foundation.md","reason":"客户端基础设施与性能测量边界"}
+{"file":".trellis/spec/backend/app/modules/business/character-lobby.md","reason":"角色列表 route/feature 与缓存语义"}
+{"file":".trellis/spec/backend/app/modules/infrastructure/runtime-data-security.md","reason":"运行时配置、外部调用、日志与 secret 规则"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"跨层失败路径与消费者验证"}
+{"file":".trellis/tasks/10-29-optimize-entry-pages-p95-2s/research/baseline.md","reason":"Sentry、Grafana、Railway 和代码固定基线"}
+{"file":".trellis/tasks/10-29-optimize-entry-pages-p95-2s/research/cdn-evidence.md","reason":"Supabase/Bunny CDN 选型、缓存与失效依据"}
+{"file":".trellis/tasks/10-29-optimize-entry-pages-p95-2s/design.md","reason":"阶段、门禁、可靠性、灰度和回滚设计"}

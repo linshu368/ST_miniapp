@@ -35,6 +35,7 @@ interface ActivePage {
   startedAt: number;
   coldStart: boolean;
   ready: boolean;
+  criticalVisualReported: boolean;
   failed: boolean;
   freshReported: boolean;
   /** 页面在后台的累计时长，不计入就绪耗时，避免用户切走造成误报。 */
@@ -378,6 +379,7 @@ export function beginPage(pathname: string): void {
       startedAt: performance.now(),
       coldStart: isFirstPage,
       ready: false,
+      criticalVisualReported: false,
       failed: false,
       freshReported: false,
       hiddenMs: 0,
@@ -450,6 +452,43 @@ export function markPageReady(
         source_measurement_version: 'page_mount_v1',
       });
     }
+  });
+}
+
+export function markPageCriticalVisual(
+  route: string,
+  outcome: 'loaded' | 'error' | 'absent' | 'timeout',
+  pathname?: string,
+  cache: ActivePage['cache'] = 'unknown'
+): void {
+  safely('mark_critical_visual', () => {
+    const page = active;
+    const current = visit;
+    if (
+      !page ||
+      page.criticalVisualReported ||
+      page.route !== route ||
+      (pathname && page.pathname !== pathname) ||
+      !current ||
+      current.pathname !== page.pathname
+    )
+      return;
+
+    page.criticalVisualReported = true;
+    const durationMs = visitElapsed(current);
+    const attributes = {
+      ...visitAttributes(current),
+      stage: 'critical_visual',
+      outcome,
+      cache,
+      source_measurement_version: 'critical_visual_v1',
+    };
+    recordEngineeringMeasurement('page.critical_visual', durationMs, attributes);
+    recordEngineeringEvent('page.critical_visual_terminal', attributes);
+    Sentry.metrics.distribution('page.critical_visual.duration', durationMs, {
+      unit: 'millisecond',
+      attributes: { route, outcome, cache, ...getMetricDimensions() },
+    });
   });
 }
 
