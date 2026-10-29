@@ -217,6 +217,10 @@ export interface RegenerateRequest {
  * user_message_id 在重生成时为 null（该轮的 user 消息早已存在）。
  */
 export interface ConversationStreamStartEvent {
+  /** Frozen public catalog ID; avoids attributing delivery to a stale client selection. */
+  requested_model_id?: string;
+  /** Configured delay after primary dispatch, not the actual trigger offset or fallback lifetime. */
+  fallback_trigger_ms?: number;
   type: 'start';
   /** Frozen total budget measured from the original user submission, never from this event. */
   first_token_deadline_ms?: number;

@@ -1,0 +1,118 @@
+// 只接受同环境私网 OTLP，绝不创建公网域名；Faro 浏览器入口使用 Cloud 托管接收端。
+logging {
+  level  = "warn"
+  format = "json"
+}
+
+otelcol.receiver.otlp "backend" {
+  http {
+    endpoint = "[::]:4318"
+  }
+  output {
+    metrics = [otelcol.processor.memory_limiter.bounded.input]
+    logs    = [otelcol.processor.memory_limiter.bounded.input]
+  }
+}
+
+otelcol.processor.memory_limiter "bounded" {
+  check_interval = "1s"
+  limit          = "128MiB"
+  spike_limit    = "24MiB"
+  output {
+    metrics = [otelcol.processor.transform.allowlist.input]
+    logs    = [otelcol.processor.transform.allowlist.input]
+  }
+}
+
+// 二次白名单防护；不做 Pino stdout 抓取，不接受聊天/签名 URL/用户 ID。
+otelcol.processor.transform "allowlist" {
+  error_mode = "ignore"
+  metric_statements {
+    context = "datapoint"
+    statements = [
+      `keep_keys(attributes, ["environment", "release", "route", "method", "status_class", "kind", "model", "operation", "outcome", "platform", "role", "phase", "dispatched", "stage", "sign_cache", "reason", "otel.metric.overflow", "exporter", "receiver", "processor", "data_type", "job", "instance"])`,
+    ]
+  }
+  log_statements {
+    context = "log"
+    statements = [
+      `keep_keys(attributes, ["environment", "release", "route", "outcome", "kind", "model", "platform", "role", "phase", "dispatched", "duration_ms", "total_ms", "auth_ms", "db_read_ms", "assemble_ms", "sign_ms", "sign_cache"])`,
+      `keep_keys(resource.attributes, ["service.name", "service.namespace", "service.version", "deployment.environment.name"])`,
+    ]
+  }
+  output {
+    metrics = [otelcol.processor.batch.cloud.input]
+    logs    = [otelcol.processor.batch.cloud.input]
+  }
+}
+
+otelcol.processor.batch "cloud" {
+  timeout             = "5s"
+  send_batch_size     = 256
+  send_batch_max_size = 512
+  output {
+    metrics = [otelcol.exporter.otlphttp.cloud.input]
+    logs    = [otelcol.exporter.otlphttp.cloud.input]
+  }
+}
+
+otelcol.auth.basic "cloud" {
+  // 固定 v1.21.0 的 client_auth-only 配置可通过 validate，但实际启动报
+  // no credential source provided；使用该版本仍支持的顶层凭证兼容入口。
+  username = sys.env("GRAFANA_CLOUD_OTLP_USERNAME")
+  password = sys.env("GRAFANA_CLOUD_OTLP_TOKEN")
+}
+
+otelcol.exporter.otlphttp "cloud" {
+  client {
+    // 从该 stack 的 Connections / OpenTelemetry 复制真实地址，不得拼接查询 URL。
+    endpoint = sys.env("GRAFANA_CLOUD_OTLP_ENDPOINT")
+    auth     = otelcol.auth.basic.cloud.handler
+    timeout  = "5s"
+  }
+  sending_queue {
+    enabled           = true
+    num_consumers     = 2
+    queue_size        = 128
+    block_on_overflow = false
+  }
+  retry_on_failure {
+    enabled          = true
+    initial_interval = "1s"
+    max_interval     = "10s"
+    max_elapsed_time = "60s"
+  }
+}
+
+// 自监控也复用 OTLP 写入口；Cloud 失联时仍须从 Alloy 私网 /metrics/日志看本地失败。
+prometheus.exporter.self "collector" {}
+prometheus.scrape "collector" {
+  targets         = prometheus.exporter.self.collector.targets
+  scrape_interval = "30s"
+  forward_to      = [prometheus.relabel.collector.receiver]
+}
+prometheus.relabel "collector" {
+  forward_to = [otelcol.receiver.prometheus.collector.receiver]
+  rule {
+    source_labels = ["__name__"]
+    regex         = "otelcol_(exporter|receiver|processor)_.*|process_resident_memory_bytes|up"
+    action        = "keep"
+  }
+  rule {
+    target_label = "environment"
+    replacement  = sys.env("DEPLOYMENT_ENVIRONMENT")
+  }
+  rule {
+    target_label = "instance"
+    replacement  = "alloy"
+  }
+  rule {
+    target_label = "release"
+    replacement  = "alloy-1.21.0"
+  }
+}
+otelcol.receiver.prometheus "collector" {
+  output {
+    metrics = [otelcol.processor.memory_limiter.bounded.input]
+  }
+}

@@ -1,0 +1,6 @@
+{"file": ".trellis/tasks/10-29-fallback-grafana-telemetry/prd.md", "reason": "User goal and business TTFT"}
+{"file": ".trellis/tasks/10-29-fallback-grafana-telemetry/design.md", "reason": "Reuse existing telemetry without DB I/O"}
+{"file": ".trellis/spec/frontend/app/api-dataflow-and-state.md", "reason": "Single original observation owner"}
+{"file": ".trellis/spec/backend/app/data-reliability-and-security.md", "reason": "Nonblocking safe metrics and business persistence"}
+{"file": "docs/grafana/engineering-performance.md", "reason": "Existing Faro wire and dashboard contracts"}
+{"file": "ops/observability/README.md", "reason": "Existing OTLP queue and bounded dimensions"}

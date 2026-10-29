@@ -36,8 +36,14 @@ export function DramaHome() {
     // 没有视频时也必须能离开，不能把用户留在隐藏导航的错误/空页面。
     if (!hasPlayer) useDramaLibraryStore.getState().setPlaybackControlsVisible(true);
   }, [hasPlayer]);
-  const fresh = useFreshAfterFetch(query.isFetching, query.data !== undefined);
-  usePageReady('/', hydrated && query.data !== undefined, fresh);
+  const fresh = useFreshAfterFetch(query.isFetching, query.data !== undefined, query.isError);
+  usePageReady(
+    '/',
+    hydrated && query.data !== undefined && (!query.isError || hasPlayer),
+    fresh,
+    query.isError,
+    query.data !== undefined && query.isFetching ? 'cache' : fresh ? 'fetch' : 'unknown'
+  );
 
   useEffect(() => {
     if (query.data !== undefined || query.isError) markCriticalSettled();

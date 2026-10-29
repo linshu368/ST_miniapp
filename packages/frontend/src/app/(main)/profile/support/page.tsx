@@ -26,7 +26,7 @@ export default function SupportPage() {
   useTelegramBackButton(goBack);
 
   const query = useSupportConversationQuery();
-  usePageReady('/profile/support', query.data !== undefined);
+  usePageReady('/profile/support', query.data !== undefined, false, query.isError);
   const send = useSendSupportMessageMutation();
   const markRead = useMarkSupportReadMutation();
   const [draft, setDraft] = useState('');

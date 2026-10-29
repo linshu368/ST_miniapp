@@ -1,6 +1,7 @@
 import type { DramaPlaybackTiming } from './drama-timing';
 import type { DramaMediaEvent, DramaMediaState } from '@miniapp/shared';
 import { observeDramaLongTasks, observeDramaResources } from './drama-resources';
+import { recordEngineeringEvent, recordEngineeringMeasurement } from './grafana';
 
 function mediaState(video: HTMLVideoElement): DramaMediaState {
   const currentTime = video.currentTime;
@@ -64,6 +65,64 @@ export function observeDramaMedia(
   let frame = false;
   let callbackId: number | undefined;
   let useFrameCallback = typeof video.requestVideoFrameCallback === 'function';
+  let rebufferAt: number | undefined;
+  const rebufferAttributes = {
+    route: '/dramas/:id',
+    report_kind: 'playback',
+    stage: 'rebuffer',
+    playback_mode: timing.entry,
+    source_measurement_version: 'drama_rebuffer_v1',
+  };
+  const visible = () => typeof document !== 'undefined' && document.visibilityState === 'visible';
+  const finishRebuffer = (
+    outcome:
+      | 'playing'
+      | 'paused'
+      | 'seek'
+      | 'background'
+      | 'error'
+      | 'ended'
+      | 'disposed'
+      | 'switched'
+  ) => {
+    if (rebufferAt === undefined) return;
+    const duration = performance.now() - rebufferAt;
+    rebufferAt = undefined;
+    try {
+      const attributes = { ...rebufferAttributes, outcome };
+      recordEngineeringMeasurement('drama.rebuffer', duration, attributes);
+      recordEngineeringEvent('drama.stall', attributes);
+    } catch {
+      // Optional post-startup diagnostics cannot affect the media element.
+    }
+  };
+  const beginRebuffer = () => {
+    // Waiting during initial load is startup, not rebuffering. Exclude explicit
+    // pause/seek/background. A network stalled event can occur while buffered
+    // video is still playing, so only waiting is evidence of a playback stall.
+    if (
+      disposed ||
+      timing.outcome !== 'playing' ||
+      video.currentSrc !== source ||
+      !visible() ||
+      video.paused ||
+      video.seeking ||
+      rebufferAt !== undefined
+    )
+      return;
+    rebufferAt = performance.now();
+    try {
+      recordEngineeringEvent('drama.stall', { ...rebufferAttributes, outcome: 'waiting' });
+    } catch {
+      // One scalar interval, no polling, buffering, or player state changes.
+    }
+  };
+  const pauseRebuffer = () => finishRebuffer('paused');
+  const seekRebuffer = () => finishRebuffer('seek');
+  const endRebuffer = () => finishRebuffer('ended');
+  const visibilityRebuffer = () => {
+    if (!visible()) finishRebuffer('background');
+  };
   // 本观察器只绑定新 src，旧视频的 currentTime 不能作为新视频的推进基线。
   const initialTime = 0;
   const stopResources = observeDramaResources(source, timing);
@@ -82,6 +141,17 @@ export function observeDramaMedia(
     }
   };
   const onPlaying = () => {
+    finishRebuffer(
+      video.currentSrc !== source
+        ? 'switched'
+        : !visible()
+          ? 'background'
+          : video.seeking
+            ? 'seek'
+            : video.paused
+              ? 'paused'
+              : 'playing'
+    );
     if (!current()) return;
     playing = true;
     timing.mark('playing');
@@ -104,12 +174,19 @@ export function observeDramaMedia(
     complete();
   };
   const error = () => {
+    finishRebuffer('error');
     if (current()) timing.finish('error');
   };
   video.addEventListener('loadedmetadata', metadata);
   video.addEventListener('playing', onPlaying);
   video.addEventListener('timeupdate', onTimeUpdate);
   video.addEventListener('error', error);
+  video.addEventListener('pause', pauseRebuffer);
+  video.addEventListener('seeking', seekRebuffer);
+  video.addEventListener('ended', endRebuffer);
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', visibilityRebuffer);
+  }
   const diagnosticEvents = [
     'loadeddata',
     'canplay',
@@ -120,6 +197,7 @@ export function observeDramaMedia(
     'pause',
   ] as const;
   const onDiagnosticEvent = (event: Event) => {
+    if (event.type === 'waiting') beginRebuffer();
     if (!current()) return;
     const name = diagnosticEvents.find((name) => name === event.type);
     if (!name) return;
@@ -197,6 +275,7 @@ export function observeDramaMedia(
       );
     },
     dispose() {
+      finishRebuffer(video.currentSrc === source ? 'disposed' : 'switched');
       stopResources();
       stopLongTasks();
       disposed = true;
@@ -205,6 +284,12 @@ export function observeDramaMedia(
       video.removeEventListener('playing', onPlaying);
       video.removeEventListener('timeupdate', onTimeUpdate);
       video.removeEventListener('error', error);
+      video.removeEventListener('pause', pauseRebuffer);
+      video.removeEventListener('seeking', seekRebuffer);
+      video.removeEventListener('ended', endRebuffer);
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', visibilityRebuffer);
+      }
       for (const name of diagnosticEvents) video.removeEventListener(name, onDiagnosticEvent);
       if (callbackId !== undefined && typeof video.cancelVideoFrameCallback === 'function')
         video.cancelVideoFrameCallback(callbackId);

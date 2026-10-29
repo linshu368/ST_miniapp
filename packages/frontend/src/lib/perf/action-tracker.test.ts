@@ -8,6 +8,11 @@ const { distribution, count, captureMessage, withScope } = vi.hoisted(() => ({
     cb({ setLevel: vi.fn(), setFingerprint: vi.fn(), setTags: vi.fn(), setContext: vi.fn() })
   ),
 }));
+const engineering = vi.hoisted(() => ({ measurement: vi.fn(), event: vi.fn() }));
+vi.mock('./grafana', () => ({
+  recordEngineeringMeasurement: engineering.measurement,
+  recordEngineeringEvent: engineering.event,
+}));
 
 vi.mock('@sentry/nextjs', () => ({
   metrics: { distribution, count },
@@ -41,6 +46,8 @@ import {
 
 describe('action tracker', () => {
   beforeEach(() => {
+    engineering.measurement.mockClear();
+    engineering.event.mockClear();
     vi.useFakeTimers();
     distribution.mockClear();
     captureMessage.mockClear();
@@ -61,6 +68,15 @@ describe('action tracker', () => {
     expect(distribution.mock.calls[0]?.[2]).toMatchObject({
       attributes: { action: 'send_message', stalled: 'false' },
     });
+    expect(engineering.event.mock.calls.map(([, attrs]) => attrs.outcome)).toEqual([
+      'waiting',
+      'feedback',
+    ]);
+    expect(engineering.measurement).toHaveBeenCalledWith(
+      'roleplay.action',
+      expect.any(Number),
+      expect.objectContaining({ action: 'send_message', stage: 'feedback', outcome: 'feedback' })
+    );
   });
 
   it('raises action_stall once, and still records the late feedback', () => {
@@ -89,6 +105,21 @@ describe('action tracker', () => {
     completePendingAction('select_character');
     vi.advanceTimersByTime(ACTION_STALL_MS * 2);
     expect(captureMessage).not.toHaveBeenCalled();
+    expect(engineering.event.mock.calls.map(([, attrs]) => attrs.outcome)).toEqual([
+      'waiting',
+      'discarded',
+      'waiting',
+      'feedback',
+    ]);
+  });
+
+  it('retains original feedback when the engineering mirror fails', () => {
+    engineering.measurement.mockImplementationOnce(() => {
+      throw new Error('collector unavailable');
+    });
+    const action = startAction('select_character');
+    expect(() => action.feedback()).not.toThrow();
+    expect(distribution).toHaveBeenCalledOnce();
   });
 
   it('feedbackAfterPaint waits for a frame before counting feedback', () => {
@@ -130,6 +161,8 @@ describe('action tracker background handling', () => {
     distribution.mockClear();
     captureMessage.mockClear();
     // 前面的 describe 块在 afterEach 里 unstubAllGlobals，这里必须重新接上 document 桩。
+    engineering.event.mockClear();
+    engineering.measurement.mockClear();
     vi.stubGlobal('document', fakeDocument);
     setVisibility('visible');
   });
@@ -152,6 +185,13 @@ describe('action tracker background handling', () => {
     expect(captureMessage).not.toHaveBeenCalled();
     vi.advanceTimersByTime(2);
     expect(captureMessage).toHaveBeenCalledWith('action_stall');
+
+    setVisibility('hidden');
+    setVisibility('visible');
+    vi.advanceTimersByTime(1);
+    expect(
+      engineering.event.mock.calls.filter(([, attrs]) => attrs.outcome === 'stalled')
+    ).toHaveLength(1);
 
     action.feedback();
   });

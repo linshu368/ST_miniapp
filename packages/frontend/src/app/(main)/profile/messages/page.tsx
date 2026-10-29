@@ -32,7 +32,12 @@ export default function MessageCenterPage() {
   const [scope, setScope] = useState<NotificationScope>('official');
   const [openError, setOpenError] = useState<string | null>(null);
   const query = useNotificationsQuery(scope);
-  usePageReady('/profile/messages', query.data !== undefined);
+  usePageReady(
+    '/profile/messages',
+    query.data !== undefined && !query.isError,
+    false,
+    query.isError
+  );
   const markRead = useMarkNotificationsReadMutation();
   const notifications = query.data?.notifications ?? [];
   const openingId = useRef<string | null>(null);

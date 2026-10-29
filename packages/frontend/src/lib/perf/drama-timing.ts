@@ -9,6 +9,7 @@ import {
 } from '@miniapp/shared';
 export type { DramaTimingReport } from '@miniapp/shared';
 import type { ApiAttemptTiming } from '@/lib/api/client';
+import { recordEngineeringEvent } from './grafana';
 
 export type DramaQueryKind = 'list' | 'queue' | 'detail' | 'playback';
 export type DramaEntry = 'cover' | 'switch' | 'episode' | 'retry' | 'direct';
@@ -340,6 +341,19 @@ export class DramaTimingTracker {
   beginList(startKind: ListTiming['startKind'], startedAt = this.now()): void {
     this.endList();
     this.list = { id: this.newId(), startedAt, startKind, queries: [] };
+    try {
+      // A start denominator for the engineering mirror only; no extra legacy
+      // timing upload / database write is introduced for a catalog visit.
+      recordEngineeringEvent('drama.started', {
+        route: '/dramas',
+        report_kind: 'list',
+        stage: 'catalog',
+        outcome: 'waiting',
+        source_measurement_version: 'drama_v1',
+      });
+    } catch {
+      // Catalog navigation cannot depend on the observability transport.
+    }
     this.listTimer = setTimeout(
       () => this.reportList('slow', 'waiting'),
       Math.max(0, SLOW_MS - (this.now() - startedAt))

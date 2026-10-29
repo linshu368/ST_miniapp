@@ -1,9 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FirstTokenObservation } from './first-token-observation';
 
+const engineering = vi.hoisted(() => ({ measurement: vi.fn(), event: vi.fn() }));
+vi.mock('./grafana', () => ({
+  recordEngineeringMeasurement: engineering.measurement,
+  recordEngineeringEvent: engineering.event,
+}));
+
 const identity = { requestId: 'r', assistantMessageId: 'a', revision: 0 };
 let page: EventTarget & { visibilityState: string };
 beforeEach(() => {
+  vi.clearAllMocks();
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
   page = Object.assign(new EventTarget(), { visibilityState: 'visible' });
   vi.stubGlobal('document', page);
@@ -14,6 +21,131 @@ afterEach(() => {
 });
 
 describe('client-committed first token observation', () => {
+  it('attributes delivery to the frozen server model rather than a stale catalog selection', () => {
+    const obs = new FirstTokenObservation(
+      { ...identity, assistantMessageId: null },
+      6000,
+      vi.fn(),
+      vi.fn(),
+      true,
+      'send',
+      'stale-model'
+    );
+    obs.identify(identity.assistantMessageId, identity.revision, 6000, 'server-model', 2000);
+    obs.committed(identity, performance.now());
+    expect(engineering.event).toHaveBeenCalledWith(
+      'roleplay.terminal',
+      expect.objectContaining({
+        requested_model: 'server-model',
+        deadline_ms: 6000,
+        trigger_ms: 2000,
+      })
+    );
+  });
+
+  it('separates an explicit admission rejection without changing its original business receipt', () => {
+    const report = vi.fn();
+    const obs = new FirstTokenObservation(
+      { ...identity, assistantMessageId: null },
+      6000,
+      report,
+      vi.fn()
+    );
+    obs.unavailable('upstream_error', 'rejected');
+    expect(engineering.event).toHaveBeenCalledWith(
+      'roleplay.terminal',
+      expect.objectContaining({ outcome: 'rejected' })
+    );
+    expect(report).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'not_observed', reason: 'upstream_error' })
+    );
+  });
+
+  it('keeps the selected catalog model and frozen deadline on the single business terminal', async () => {
+    const report = vi.fn();
+    const obs = new FirstTokenObservation(
+      identity,
+      6000,
+      report,
+      vi.fn(),
+      true,
+      'send',
+      'deepseek-v4-flash'
+    );
+    await vi.advanceTimersByTimeAsync(2500);
+    obs.received();
+    await vi.advanceTimersByTimeAsync(200);
+    obs.committed(identity, performance.now());
+    expect(engineering.measurement).toHaveBeenCalledWith(
+      'roleplay.first_token',
+      2700,
+      expect.objectContaining({
+        requested_model: 'deepseek-v4-flash',
+        deadline_ms: 6000,
+        outcome: 'observed',
+      })
+    );
+    obs.committed(identity, performance.now());
+    expect(
+      engineering.event.mock.calls.filter(([name]) => name === 'roleplay.terminal')
+    ).toHaveLength(1);
+    expect(report).toHaveBeenCalledOnce();
+  });
+
+  it('mirrors pre-start timeouts once without waiting for business identity or exporting it', async () => {
+    const report = vi.fn();
+    const obs = new FirstTokenObservation(
+      { requestId: 'private-request', assistantMessageId: null, revision: 0 },
+      6000,
+      report,
+      vi.fn(),
+      true,
+      'regenerate'
+    );
+    await vi.advanceTimersByTimeAsync(6000);
+    expect(report).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        assistant_message_id: null,
+        revision: null,
+        outcome: 'timed_out',
+        wait_finished_ms: 6000,
+      })
+    );
+    expect(engineering.measurement).toHaveBeenCalledExactlyOnceWith(
+      'roleplay.first_token',
+      6000,
+      expect.objectContaining({
+        action: 'regenerate',
+        outcome: 'timed_out',
+        source_measurement_version: 'client_committed_v4',
+      })
+    );
+    expect(engineering.event).toHaveBeenCalledTimes(2);
+    obs.identify('private-assistant', 2);
+    expect(report).toHaveBeenCalledOnce();
+    expect(engineering.event).toHaveBeenCalledTimes(2);
+    expect(JSON.stringify(engineering.event.mock.calls)).not.toContain('private');
+  });
+
+  it('does not invent render latency for a recovered commit without stream reception', () => {
+    const obs = new FirstTokenObservation(identity, 6000, vi.fn(), vi.fn());
+    obs.received('commit');
+    obs.committed(identity, performance.now());
+    expect(engineering.measurement.mock.calls.map(([name]) => name)).toEqual([
+      'roleplay.first_token',
+    ]);
+  });
+
+  it('preserves the original receipt when the engineering mirror throws', () => {
+    const report = vi.fn();
+    const obs = new FirstTokenObservation(identity, 6000, report, vi.fn());
+    engineering.measurement.mockImplementationOnce(() => {
+      throw new Error('collector unavailable');
+    });
+    expect(obs.committed(identity, performance.now())).toBe(true);
+    expect(report).toHaveBeenCalledOnce();
+  });
+
   it('uses the server-frozen six-second budget on the original clock despite a cached ten-second catalog', async () => {
     const report = vi.fn(),
       timeout = vi.fn();
@@ -31,6 +163,11 @@ describe('client-committed first token observation', () => {
     expect(timeout).toHaveBeenCalledOnce();
     expect(report).toHaveBeenCalledWith(
       expect.objectContaining({ outcome: 'timed_out', wait_finished_ms: 6000 })
+    );
+    expect(engineering.measurement).toHaveBeenCalledExactlyOnceWith(
+      'roleplay.first_token',
+      6000,
+      expect.objectContaining({ outcome: 'timed_out' })
     );
   });
   it('immediately expires a late identity without giving it another six seconds', async () => {
@@ -95,6 +232,11 @@ describe('client-committed first token observation', () => {
         request_dispatched_ms: 25,
         revision: 0,
       })
+    );
+    expect(engineering.measurement).toHaveBeenCalledWith(
+      'roleplay.render',
+      1200,
+      expect.objectContaining({ stage: 'render', outcome: 'observed' })
     );
     await vi.advanceTimersByTimeAsync(6000);
     expect(timeout).not.toHaveBeenCalled();

@@ -5,10 +5,93 @@ import { uploadDramaTiming } from '@/lib/api/telemetry';
 import { createLogger } from '@/lib/logger';
 import { createRequestId } from './request-timing';
 import { DramaTimingTracker, type DramaTimingReport } from './drama-timing';
+import { recordEngineeringEvent, recordEngineeringMeasurement } from './grafana';
+import { markPageFailed, markPageReady } from './page-tracker';
 
 const log = createLogger('drama-timing');
 
+const PLAYBACK_STAGES = [
+  'navigation',
+  'address_wait',
+  'address_to_source',
+  'source_to_metadata',
+  'metadata_to_frame',
+  'source_to_frame',
+  'source_to_playing',
+] as const;
+
+/** Project the existing timing owner; never copy IDs, query details or media URLs. */
+function mirrorEngineeringTiming(report: DramaTimingReport): void {
+  try {
+    const attributes = {
+      route: report.type === 'list' ? '/dramas' : '/dramas/:id',
+      report_kind: report.type,
+      stage: report.type === 'list' ? 'catalog' : 'startup',
+      outcome:
+        report.type === 'list' &&
+        report.outcome === 'left' &&
+        typeof document !== 'undefined' &&
+        document.visibilityState === 'hidden'
+          ? 'background'
+          : report.outcome,
+      playback_mode: report.entry,
+      cache: report.addressSource ?? 'unknown',
+      first_frame_method: report.frameMethod,
+      source_measurement_version: report.version === 2 ? 'drama_v2' : 'drama_v1',
+    };
+    if (report.phase === 'start') {
+      recordEngineeringEvent('drama.started', attributes);
+    } else if (report.phase === 'slow') {
+      recordEngineeringEvent('drama.stall', attributes);
+    } else if (report.phase === 'final') {
+      if (report.type === 'playback' && report.dramaId) {
+        // Same media evidence as startup, not merely an available signed URL.
+        // The pathname guard prevents an old video's terminal result from
+        // completing a newly navigated drama page of the same route template.
+        const pathname = `/dramas/${encodeURIComponent(report.dramaId)}`;
+        queueMicrotask(() => {
+          try {
+            if (
+              report.outcome === 'playing' &&
+              report.marks.first_frame !== undefined &&
+              report.marks.playing !== undefined
+            ) {
+              markPageReady('/dramas/:id', 'content', pathname);
+            } else if (['error', 'unplayable', 'autoplay_blocked'].includes(report.outcome)) {
+              markPageFailed('/dramas/:id', pathname);
+            }
+          } catch {
+            // Generic readiness is another optional projection, never playback control.
+          }
+        });
+      }
+      recordEngineeringEvent('drama.terminal', attributes);
+      recordEngineeringMeasurement(
+        report.type === 'list' ? 'drama.catalog' : 'drama.startup',
+        report.elapsedMs,
+        attributes
+      );
+      if (report.type === 'playback') {
+        const firstFrame = report.marks.first_frame;
+        if (firstFrame !== undefined) {
+          recordEngineeringMeasurement('drama.first_frame', firstFrame, attributes);
+        }
+        for (const stage of PLAYBACK_STAGES) {
+          const duration = report.stages[stage];
+          if (duration !== undefined) {
+            recordEngineeringMeasurement('drama.stage', duration, { ...attributes, stage });
+          }
+        }
+      }
+    }
+    // Late network supplements must not duplicate an already final startup sample.
+  } catch {
+    // Keep the old logging/upload path working even if the mirror is unavailable.
+  }
+}
+
 function reportTiming(report: DramaTimingReport): void {
+  mirrorEngineeringTiming(report);
   const fields = dramaTimingLogFields(report);
   if (report.phase === 'slow') log.warn(fields);
   else log.info(fields);
