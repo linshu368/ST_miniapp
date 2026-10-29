@@ -17,6 +17,7 @@ import {
   useEntryBackgroundReady,
 } from '@/lib/entry-phase';
 import { getQueryClient } from '@/lib/api/query-client';
+import { bindFirstTokenReportRecovery } from '@/lib/api/first-token-reports';
 import { recordMiniappEntry } from '@/lib/api/growth';
 import { bindInvite } from '@/lib/api/invite';
 import { useUserSettingsQuery } from '@/lib/api/settings';
@@ -63,6 +64,19 @@ export function Providers({ children }: { children: React.ReactNode }) {
     hydrateUserProfile();
     setTelegramReady(true);
   }, [hydrateUserProfile]);
+
+  useEffect(() => {
+    if (!telegramReady) return;
+    let cancelled = false;
+    let cleanup: (() => void) | undefined;
+    void afterFirstScreen().then(() => {
+      if (!cancelled) cleanup = bindFirstTokenReportRecovery();
+    });
+    return () => {
+      cancelled = true;
+      cleanup?.();
+    };
+  }, [telegramReady]);
 
   return (
     <QueryClientProvider client={queryClient}>

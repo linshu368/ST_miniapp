@@ -34,6 +34,7 @@ import {
 } from './client';
 import { __resetRequestConcurrencyForTests, withRequestSlot } from './request-concurrency';
 import { reportConversationFirstToken } from './conversations';
+import { __resetFirstTokenReportsForTests } from './first-token-reports';
 import type { ReportFirstTokenRequest } from '@miniapp/shared';
 import type { ApiAttemptTiming } from './client';
 
@@ -75,11 +76,13 @@ describe('first-token report compatibility and bounded retries', () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
+    __resetFirstTokenReportsForTests();
     __resetRequestConcurrencyForTests(3);
     // Chrome 90/92 have AbortController but no AbortSignal.timeout static method.
     vi.stubGlobal('AbortSignal', { timeout: undefined });
   });
   afterEach(() => {
+    __resetFirstTokenReportsForTests();
     __resetRequestConcurrencyForTests(3);
     vi.useRealTimers();
     vi.unstubAllGlobals();

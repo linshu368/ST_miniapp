@@ -218,6 +218,8 @@ export interface RegenerateRequest {
  */
 export interface ConversationStreamStartEvent {
   type: 'start';
+  /** Frozen total budget measured from the original user submission, never from this event. */
+  first_token_deadline_ms?: number;
   turn_index: number;
   user_message_id: string | null;
   assistant_message_id: string;
