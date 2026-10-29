@@ -7,8 +7,9 @@ import {
 } from './first-token-fallback.js';
 import type { AttemptObservation } from '../../infrastructure/repositories/GenerationObservationRepository.js';
 
-const telemetry = vi.hoisted(() => ({ dispatch: vi.fn(), terminal: vi.fn() }));
+const telemetry = vi.hoisted(() => ({ dispatch: vi.fn(), terminal: vi.fn(), chat: vi.fn() }));
 vi.mock('../../lib/engineering-observability.js', () => ({
+  observeChatFirstToken: telemetry.chat,
   observeGenerationDispatch: telemetry.dispatch,
   observeGenerationAttempt: telemetry.terminal,
 }));
@@ -168,6 +169,13 @@ describe('first-token fallback budget and delivery', () => {
     await vi.advanceTimersByTimeAsync(45);
     const delivered = await test.result;
     expect(delivered.role).toBe('fallback');
+    expect(
+      telemetry.chat.mock.calls.filter(([v]) => v.stage === 'fallback_dispatched')
+    ).toHaveLength(1);
+    expect(telemetry.chat.mock.calls.filter(([v]) => v.stage === 'selected')).toHaveLength(1);
+    expect(telemetry.chat).toHaveBeenCalledWith(
+      expect.objectContaining({ stage: 'selected', winner: 'fallback', fallbackDispatched: true })
+    );
     expect(delivered.model.providerModelId).toBe(FIRST_TOKEN_FALLBACK_MODEL_ID);
     const reader = delivered.response.body!.getReader();
     const first = new TextDecoder().decode((await reader.read()).value);
@@ -216,6 +224,13 @@ describe('first-token fallback budget and delivery', () => {
     await vi.advanceTimersByTimeAsync(51);
     const delivered = await test.result;
     expect(delivered.role).toBe('primary');
+    expect(telemetry.chat).toHaveBeenCalledWith(
+      expect.objectContaining({ stage: 'fallback_dispatched' })
+    );
+    expect(telemetry.chat).toHaveBeenCalledWith(
+      expect.objectContaining({ stage: 'selected', winner: 'primary', fallbackDispatched: true })
+    );
+    expect(telemetry.chat.mock.calls.filter(([v]) => v.stage === 'selected')).toHaveLength(1);
     expect(delivered.firstTokenAt).toBe(50);
     expect(test.calls[1]?.cancelled).toBe(true);
     expect(test.store.selectDelivery).toHaveBeenCalledExactlyOnceWith(

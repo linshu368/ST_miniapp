@@ -200,6 +200,19 @@ const HEALTH_FIELDS = new Set([
   'source_queued',
   'source_transport_failures',
 ]);
+const MODEL_VALUES = new Set<string>();
+function requestedModel(value: unknown): string {
+  if (
+    typeof value !== 'string' ||
+    !/^[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$/.test(value) ||
+    /[a-f0-9]{8}-[a-f0-9-]{27,}/i.test(value)
+  )
+    return 'unknown';
+  if (MODEL_VALUES.has(value)) return value;
+  if (MODEL_VALUES.size >= 64) return 'other';
+  MODEL_VALUES.add(value);
+  return value;
+}
 const MAX_QUEUE = 64;
 const MAX_PAYLOAD_BYTES = 2_048;
 const LOAD_TIMEOUT_MS = 3_000;
@@ -241,7 +254,16 @@ function safeAttributes(attributes: Attributes = {}): Record<string, string> {
   };
   for (const [key, value] of Object.entries(attributes).slice(0, 32)) {
     if (value === null || value === undefined) continue;
-    if (key === 'route') result.route = engineeringRoute(String(value));
+    if (key === 'requested_model') result.requested_model = requestedModel(value);
+    else if (key === 'deadline_ms' || key === 'trigger_ms') {
+      const ms =
+        typeof value === 'number'
+          ? value
+          : typeof value === 'string' && /^\d{1,6}$/.test(value)
+            ? Number(value)
+            : NaN;
+      if (Number.isInteger(ms) && ms > 0 && ms <= 110_000) result[key] = String(ms);
+    } else if (key === 'route') result.route = engineeringRoute(String(value));
     else if (HEALTH_FIELDS.has(key)) {
       const number =
         typeof value === 'number'

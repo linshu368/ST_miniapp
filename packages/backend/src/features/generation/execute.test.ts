@@ -30,12 +30,14 @@ const quotaState = vi.hoisted(() => ({
   reserveFailure: false,
 }));
 const telemetry = vi.hoisted(() => ({
+  chat: vi.fn(),
   dispatch: vi.fn(),
   attempt: vi.fn(),
   prepare: vi.fn(),
   terminal: vi.fn(),
 }));
 vi.mock('../../lib/engineering-observability.js', () => ({
+  observeChatFirstToken: telemetry.chat,
   observeGenerationDispatch: telemetry.dispatch,
   observeGenerationAttempt: telemetry.attempt,
   observeGenerationPrepare: telemetry.prepare,

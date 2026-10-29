@@ -7,6 +7,7 @@ import {
 import type { AttemptObservation } from '../../infrastructure/repositories/GenerationObservationRepository.js';
 import { createLeadingThinkingSplitter, readExposedReasoning } from './upstream.js';
 import {
+  observeChatFirstToken,
   observeGenerationAttempt,
   observeGenerationDispatch,
   type AttemptOutcome,
@@ -60,6 +61,9 @@ const DIAGNOSTIC_TEXT_LIMIT = 2048;
 
 export async function forwardWithFirstTokenFallback(input: {
   primary: TransportModel;
+  /** Stable selected catalog ID, only for non-authoritative telemetry. */
+  requestedModelId?: string;
+  totalBudgetMs?: number;
   /** Only reasoning enabled for browser display can win delivery. */
   thinkingEnabled?: boolean;
   deferPersistence?: boolean;
@@ -225,6 +229,15 @@ export async function forwardWithFirstTokenFallback(input: {
     clearFirstTokenTimers();
     recordTerminal(attempt, 'first_token_observed');
     abortAttempt(attempt === primary ? fallback : primary, new LostFirstTokenRace());
+    observeChatFirstToken({
+      requestedModel: input.requestedModelId ?? 'unknown',
+      stage: 'selected',
+      deadlineMs: input.totalBudgetMs,
+      triggerMs: input.timeoutMs,
+      winner: attempt.observation.role,
+      fallbackDispatched: Boolean(fallback?.observation.dispatched_at),
+      elapsedMs: performance.now() - input.requestStartedAt,
+    });
     try {
       input.onReady?.();
       resolveSelected({ attempt, result });
@@ -255,6 +268,14 @@ export async function forwardWithFirstTokenFallback(input: {
         role: observation.role,
         dispatchOffsetMs: observation.dispatch_offset_ms,
       });
+      if (observation.role === 'fallback')
+        observeChatFirstToken({
+          requestedModel: input.requestedModelId ?? 'unknown',
+          stage: 'fallback_dispatched',
+          elapsedMs: observation.dispatch_offset_ms,
+          deadlineMs: input.totalBudgetMs,
+          triggerMs: input.timeoutMs,
+        });
       record(attempt);
       if (observation.role === 'primary' && differentModels) {
         const wait = Math.min(
