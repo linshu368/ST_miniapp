@@ -171,7 +171,6 @@ describe.skipIf(!url)('real local PostgREST generation facts', () => {
     });
   });
   it('enforces owner/revision, accepts first report once, and returns consistent analytics', async () => {
-    await repository.markServer(h, { first_token_emitted_ms: 5100 });
     expect(await repository.report(randomUUID(), session, firstReport)).toBe(false);
     expect(await repository.report(owner, session, { ...firstReport, revision: 1 })).toBe(false);
     expect(await repository.report(owner, session, firstReport)).toBe(true);
@@ -205,10 +204,17 @@ describe.skipIf(!url)('real local PostgREST generation facts', () => {
     const view = await metrics
       .schema('miniapp_analytics')
       .from('chat_first_token_facts')
-      .select('chat_history_id')
+      .select(
+        'chat_history_id,first_token_emitted_ms,client_request_dispatched_ms,client_wait_finished_ms'
+      )
       .eq('chat_history_id', h);
     expect(view.error).toBeNull();
     expect(view.data).toHaveLength(1);
+    expect(view.data![0]).toMatchObject({
+      first_token_emitted_ms: null,
+      client_request_dispatched_ms: null,
+      client_wait_finished_ms: null,
+    });
     const content = await metrics
       .schema('experience')
       .from('chat_history')

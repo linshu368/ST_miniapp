@@ -238,7 +238,6 @@ export async function runConversationTurn(
     measurementMethod: input.firstTokenMeasurement,
   };
   let observationBegun = false;
-  let emitted = false;
   let readyMs: number | null = null;
   let checkpoint: Promise<void> | undefined;
   let firstTokenDeadlineElapsed = false;
@@ -395,15 +394,8 @@ export async function runConversationTurn(
           .checkpoint(turn.historyId, turn.revision, readyMs, type, text)
           .catch(observationError);
       }
-      const written = sink.send({ type, text });
-      if (!emitted && text.trim() && written !== false) {
-        emitted = true;
-        void observations
-          .markServer(turn.historyId, {
-            first_token_emitted_ms: performance.now() - requestStartedAt,
-          })
-          .catch(observationError);
-      }
+      // Timing belongs to Grafana; delivery preview above is the required recovery fact.
+      sink.send({ type, text });
     };
 
     const result = await execute(

@@ -91,3 +91,7 @@ SSE start携带当轮冻结总预算。客户端若持有旧目录缓存，按�
 早于SSE身份的非成功v4终态可用原request_id上报。既有RPC按现有client_request_id索引最多读取2条，校验用户与会话且唯一时才定位；歧义不猜，成功结果仍必须有消息编号与revision。首份终态后的重放不UPDATE。迁移20261029_first_token_receipt_recovery.sql仅替换既有函数；不增加表、索引、cron、逐token写入或历史回填，不改变超时免扣、主动停止及正常回复一次计费。
 
 发布顺序：本地PG/测试→TEST迁移与应用验收→先合dev→生产迁移→Backend/Frontend/Admin→Grafana说明；配置只读核对版本97。回退应用保留兼容RPC，必要时前向修复，不删除账务。
+
+## 纯监控退出 Supabase（2026-10-29，待发布）
+
+首字与兜底专项改用Faro/OTel→Grafana，旧chat-first-token-manual入口删除7条SQL、数据库变量和刷新，仅保留新入口指引；不影响其他经营看板或共享数据源。服务端不再为first_token_emitted_ms发独立UPDATE，每轮成功首字少一次数据库写；业务回执不再传request_dispatched_ms/wait_finished_ms纯诊断值。旧列与历史值暂留，未来新值为NULL，不回填或扫历史。first_token_received_ms仍涉及旧兼容计费，outcome/visible/failed/identity/预算/赢家/恢复内容等业务事实保留。供应商返回的原始调用与计费信息仍按既有路径保存。无新迁移、cron或高频查询；新生产链路有样本后才发布旧入口跳转。
