@@ -202,6 +202,61 @@ describe('bounded engineering Faro exporter', () => {
     );
   });
 
+  it('keeps unified drama diagnostics finite and strips observation identity at both boundaries', async () => {
+    const fake = fakeSdk();
+    const exporter = createEngineeringExporter(async () => fake.sdk);
+    exporter.measurement('drama.diagnostic', 120, {
+      route: '/',
+      stage: 'network_ttfb_first',
+      source_measurement_version: 'drama_v3',
+      network_status: 'available',
+      report_kind: 'final',
+      observation_id: 'PRIVATE_ID',
+    });
+    exporter.event('drama.diagnostic', {
+      route: '/',
+      network_status: 'unsupported',
+      event_order: 'anomaly',
+      list_start_kind: 'document_navigation',
+      video_url: 'PRIVATE_URL',
+    });
+    await exporter.initialize();
+    expect(fake.measurement).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'st_drama_diagnostic' }),
+      expect.objectContaining({
+        context: expect.objectContaining({
+          source_measurement_version: 'drama_v3',
+          stage: 'network_ttfb_first',
+        }),
+      })
+    );
+    const config = fake.initialize.mock.calls[0]![0];
+    const sanitized = config.beforeSend!({
+      type: 'event',
+      meta: { user: { id: 'PRIVATE_ID' } },
+      payload: {
+        name: 'st_drama_diagnostic',
+        timestamp: '2026-10-29T00:00:00Z',
+        attributes: {
+          route: '/',
+          source_measurement_version: 'drama_v3',
+          network_status: 'available',
+          list_start_kind: 'document_navigation',
+          observation_id: 'PRIVATE_ID',
+          video_url: 'PRIVATE_URL',
+        },
+      },
+    } as TransportItem);
+    expect(sanitized).toMatchObject({
+      payload: {
+        attributes: { network_status: 'available', list_start_kind: 'document_navigation' },
+      },
+    });
+    expect(
+      JSON.stringify([sanitized, fake.measurement.mock.calls, fake.event.mock.calls])
+    ).not.toContain('PRIVATE_');
+  });
+
   it('adds finite platform/network dimensions to every signal kind without copying browser identity', async () => {
     const fake = fakeSdk();
     const exporter = createEngineeringExporter(async () => fake.sdk);

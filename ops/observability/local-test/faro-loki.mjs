@@ -215,6 +215,12 @@ try {
           .replaceAll('$measurement_version', 'engineering_v1')
           .replaceAll('$tg_platform', '.*')
           .replaceAll('$net_type', '.*')
+          .replaceAll('$startup_definition', 'drama_v3')
+          .replaceAll('$drama_route', '.*')
+          .replaceAll('$startup_entry', '.*')
+          .replaceAll('$startup_cache', '.*')
+          .replaceAll('$startup_frame', '.*')
+          .replaceAll('$catalog_start', '.*')
           .replaceAll('$__range', '10m')
           .replaceAll('$__auto', '10m');
         if (target.datasource?.type === 'prometheus') continue;

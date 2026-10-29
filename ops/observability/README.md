@@ -7,7 +7,7 @@
 - 页面、角色扮演交互、短剧播放：浏览器复用现有测量 owner，通过 Faro 自定义信号直送 Cloud 托管浏览器入口。此容器不接浏览器流量。
 - 服务端：显式 OTel Metrics/Logs → 同环境私网 Alloy → Cloud OTLP；不创建全局 tracer，不重复 Sentry HTTP/Prisma 探针，不启用 Tempo。
 - 原有 Pino 继续写应用日志。只有代码显式投影的无正文事件进入 OTLP；本容器不抓取其他 Railway 容器 stdout。
-- Supabase 保留经营指标、业务状态和所有 generation/attempt/首字回执/检查点/计费恢复；本次未新增表、查询或监控 cron。短剧旧分析副本的关闭必须另审消费者与双轨结果。
+- Supabase 保留经营指标、业务状态和所有 generation/attempt/首字回执/检查点/计费恢复；本次未新增表、查询或监控 cron。短剧旧分析副本经2026-10-29用户明确授权停止新写入，历史表与SQL看板保留。达到5秒的完整受控诊断改走本出口的JSON日志正文，事件名drama.startup_diagnostic；正文由strict shared schema和32KiB报告上限约束，观察ID/数组不进入标签，无需修改本采集器配置。
 
 ## 部署变量（无秘密值）
 
@@ -117,3 +117,9 @@ resource 只含 service.name、service.namespace、service.version、deployment.
 本地复用固定Faro→Alloy→Loki合成验证：型号A两次成功（1000/5999ms）、一次6000ms截断、一次离页、一次明确受理拒绝；型号B一次2000ms成功。验证A截断率1/3（离页/受理拒绝不稀释）、B为0、成功P95小于6000、所有Loki面板语法和分布。服务端真实OTLP合成接收端验证字段安全、秒单位和独立请求/派发/赢家计数；真实模型与生产数据不参与。
 
 下一步沿原框架TEST接入门禁：真实Cloud字段/指标名、按型号出图与采集丢弃核对后再生产启用；确认替代有效再退役对应纯监控SQL，旧业务事实与经营看板不删、不重启旧全量cron。候选源码通过不等于线上已经切源。
+
+## 短剧统一模式的本轮改动（待发布）
+
+不改变OTel采集器或后端分段单位。Frontend的NEXT_PUBLIC_DRAMA_TIMING_MODE默认legacy；unified只有在原Faro公开配置有效时生效。全量工程信号仍复用原出口，详细诊断仍走鉴权Pino接口，≥5秒播放final/network另经Backend OTLP写Loki，仍受现有大小/超时/限流约束；purpose=diagnostic禁止分析表写入。新Faro字段仅有限definition、route模板、目录起点及诊断能力枚举，不新增ID或URL标签。
+
+本轮不读取/修改远端数据库，不停清理job，不修改生产secret/开关。Backend兼容先行，替代验证与生产切换分开；操作顺序及停止条件见docs/drama-playback-timing.md和docs/grafana/drama-playback-runbook.md。

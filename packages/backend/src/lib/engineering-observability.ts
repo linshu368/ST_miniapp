@@ -9,6 +9,11 @@ import {
 } from '@opentelemetry/sdk-logs';
 import { OTLPMetricExporter } from '@opentelemetry/exporter-metrics-otlp-http';
 import { OTLPLogExporter } from '@opentelemetry/exporter-logs-otlp-http';
+import {
+  DRAMA_TIMING_BODY_LIMIT,
+  DramaTimingReportSchema,
+  type DramaTimingReport,
+} from '@miniapp/shared';
 
 export interface EngineeringTelemetryConfig {
   enabled: boolean;
@@ -220,10 +225,10 @@ function createTelemetry(options: EngineeringTelemetryConfig) {
         instrument.record(value, commonAttributes, ROOT_CONTEXT);
       });
     },
-    event(event: string, attrs: MetricAttributes) {
+    event(event: string, attrs: MetricAttributes, body = event) {
       guarded(() =>
         logger.emit({
-          body: event,
+          body,
           eventName: event,
           severityNumber: 9,
           severityText: 'INFO',
@@ -418,6 +423,32 @@ export function observeDramaRequest(input: {
     }
   }
   active.event('drama.request_timing', detail);
+}
+
+/** Log bodies retain bounded diagnostics; IDs/arrays must never become metric or stream labels. */
+export function observeDramaStartupDiagnostic(report: DramaTimingReport): void {
+  if (
+    !active ||
+    report.type !== 'playback' ||
+    report.elapsedMs < 5_000 ||
+    (report.phase !== 'final' && report.phase !== 'network')
+  )
+    return;
+  // Revalidate at the external sink boundary, even when the caller already parsed the request.
+  const parsed = DramaTimingReportSchema.safeParse(report);
+  if (!parsed.success) return;
+  const payload = JSON.stringify(parsed.data);
+  if (Buffer.byteLength(payload, 'utf8') > DRAMA_TIMING_BODY_LIMIT) return;
+  active.event(
+    'drama.startup_diagnostic',
+    {
+      kind: 'drama_startup_diagnostic',
+      phase: parsed.data.phase,
+      outcome: parsed.data.outcome,
+      total_ms: parsed.data.elapsedMs,
+    },
+    JSON.stringify({ event: 'drama.startup_diagnostic', ...parsed.data })
+  );
 }
 
 /** Once-per-business-milestone projection; never reads the DB or waits for export. */

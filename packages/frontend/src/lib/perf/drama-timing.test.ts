@@ -55,6 +55,37 @@ describe('drama timeline', () => {
     });
   });
 
+  it('binds home catalog route and preserves its document origin across root effects', async () => {
+    tracker.beginList('document_navigation', 0, '/');
+    tracker.route('/');
+    await advance(200);
+    tracker.listReady([], '/');
+    expect(last()).toMatchObject({
+      route: '/',
+      definition: 'drama_v3',
+      elapsedMs: 200,
+      list: { startKind: 'document_navigation' },
+    });
+    tracker.route('/dramas');
+    await advance(100);
+    tracker.listReady([]);
+    expect(last()).toMatchObject({ route: '/dramas', elapsedMs: 100 });
+  });
+  it('records catalog background in the owner once, before any transport projection', () => {
+    tracker.beginList('navigation_click');
+    tracker.background();
+    tracker.background();
+    expect(reports).toHaveLength(1);
+    expect(last()).toMatchObject({ type: 'list', phase: 'final', outcome: 'background' });
+  });
+  it('omits reversed stage intervals instead of manufacturing zero duration', async () => {
+    const flow = tracker.beginPlayback('a', 'direct');
+    flow.mark('loadeddata');
+    await advance(100);
+    flow.mark('metadata');
+    flow.finish('playing');
+    expect(last().stages.metadata_to_data).toBeUndefined();
+  });
   it('cached data does not count the original request as a new wait', async () => {
     const data = await tracker.query('playback', 'a', undefined, async () => {
       await advance(900);
@@ -261,7 +292,9 @@ describe('drama timeline', () => {
     expect(tracker.ensurePlayback('a', undefined, 'home')).toBe(returnedHome);
     returnedHome.finish('error');
     expect(last().outcome).toBe('playing');
-    expect(reports.map((report) => report.outcome)).toEqual(['left', 'left', 'playing']);
+    expect(
+      reports.filter((report) => report.type === 'playback').map((report) => report.outcome)
+    ).toEqual(['left', 'left', 'playing']);
   });
 
   it('ends a home owner on real navigation away and creates a fresh visit on return', () => {
@@ -280,7 +313,9 @@ describe('drama timeline', () => {
     tracker.route('/');
     expect(returned.outcome).toBeUndefined();
     returned.finish('playing');
-    expect(reports.map((report) => report.outcome)).toEqual(['left', 'playing']);
+    expect(
+      reports.filter((report) => report.type === 'playback').map((report) => report.outcome)
+    ).toEqual(['left', 'playing']);
   });
 
   it('keeps explicit same-owner switches distinct from cross-owner exits and stale updates', () => {

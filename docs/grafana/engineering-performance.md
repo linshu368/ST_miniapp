@@ -4,7 +4,7 @@
 
 2026-10-29：经用户明确授权，生产前后端、私网采集器和四张工程看板已上线。Cloud 已实收页面/API、角色首字/完整回复/渲染，以及生成与短剧服务端分段。独立 SDK 测试与生产数据按 environment/release 分开；首帧/播放成功、真实恢复和卡顿恢复仍须各自有生产样本，不能用合成样本或空图宣布全部验收。
 
-经营看板继续读取已有 Supabase 轻量汇总；原首字回执、赢家身份、恢复和计费事实继续原样持久化。本次没有新增监控表、索引、cron、逐事件数据库查询/写入，也没有退役旧短剧分析上传。旧链路只在双轨证明确已替代后另行下线。
+经营看板继续读取已有 Supabase 轻量汇总；原首字回执、赢家身份、恢复和计费事实继续原样持久化。本次没有新增监控表、索引、cron、逐事件数据库查询/写入，原短剧分析上传的历史约定由2026-10-29五秒长尾任务修订：接收端仅将达到5秒的终态/network详情经既有后端OTLP写Loki，不再触发Supabase分析写入；历史表和SQL看板保留，发布后单独核验自然样本送达。
 
 四个独立入口：
 
@@ -16,6 +16,14 @@
 | `st-engineering-backend.json`  | HTTP/生成/上游尝试/短剧服务端/Prisma/runtime/出口健康下钻 | Cloud Metrics |
 
 前三项是工程体验产出，第四项是定位原因的证据。保留既有经营、首字 v4 和短剧看板，不覆盖其他 TextBot 项目。源 JSON 默认绑定当前 `grafanacloud-logs` / `grafanacloud-prom`，保留待接入模板；线上接入状态按实际 Cloud 样本独立更新，不因导入模板而视为验收。
+
+## 短剧统一定义v3（本地代码，尚未发布）
+
+新短剧指标使用独立source_measurement_version=drama_v3；全局engineering_v1与兼容报告version=2不变。复用原tracker，shared的dramaTimingStages作为唯一新阶段计算入口；保留原粗阶段，增加entry_to_source/metadata_to_data/data_to_frame/frame_to_startup，缺失/逆序省略而非填0。首页/详情和目录起点在原观察绑定，后台outcome也在owner内生成，避免出口各自猜测。
+
+工程看板是日常唯一统计入口，旧SQL看板保留历史及切换对照。v3筛选默认隔离旧定义；入口/地址来源/首帧/目录起点只过滤具有相应属性的面板，播放质量窗口保持其原版本与分母。诊断final快照和network尾报告按phase分开，不相加当播放数。能力/有效N与条件分位一起看，完整有界单次诊断留Pino，不发送身份/媒体URL到Faro。
+
+NEXT_PUBLIC_DRAMA_TIMING_MODE默认legacy。只有替代验证通过后显式启用unified，才移除专用start和快速成功全量诊断上传；保留100%≥5秒/非成功和5%不足5秒成功Pino细节，符合条件的final/network经Backend OTLP写Loki，purpose=diagnostic在路由/repository/导入器均禁止分析写入。全量工程统计不采样。Backend先兼容，再Frontend默认双轨，再TEST/Cloud/真实流程，最后独立批准生产切换；不开生产、不删旧对象。统一release由构建SHA决定。详见[统一定义与门禁](../drama-playback-timing.md)。
 
 ## 三类核心测量
 
