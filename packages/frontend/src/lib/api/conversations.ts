@@ -29,11 +29,13 @@ export function useConversationsQuery(characterId: string | undefined, enabled =
   return useQuery<ListConversationsData>({
     queryKey: conversationKeys.list(characterId),
     enabled,
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const search = new URLSearchParams();
       if (characterId) search.set('character_id', characterId);
       const query = search.toString();
-      return apiClient<ListConversationsData>(`/api/v1/conversations${query ? `?${query}` : ''}`);
+      return apiClient<ListConversationsData>(`/api/v1/conversations${query ? `?${query}` : ''}`, {
+        signal,
+      });
     },
     // 大厅「聊过」标记可稍旧；拉长鲜活期减少与列表/进聊争槽。
     staleTime: 60_000,
@@ -51,9 +53,9 @@ export function useConversationQuery(sessionId: string | undefined) {
   return useQuery<GetConversationData>({
     queryKey: conversationKeys.detail(sessionId ?? ''),
     enabled: Boolean(sessionId),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       if (!sessionId) throw new Error('session id is required');
-      return fetchConversationDetail(sessionId);
+      return fetchConversationDetail(sessionId, 10_000, signal);
     },
     staleTime: 0,
     // 库里还有一条没收口的 assistant 消息时轮询到它收口为止。
@@ -66,13 +68,15 @@ export function useConversationQuery(sessionId: string | undefined) {
 /** 有限等待，供详情 query 与取消前精确定位当前 revision 复用。 */
 export function fetchConversationDetail(
   sessionId: string,
-  timeoutMs = 10_000
+  timeoutMs = 10_000,
+  signal?: AbortSignal
 ): Promise<GetConversationData> {
   // 用 timeoutMs 而不是 AbortSignal.timeout：超时走 RequestTimeoutError，
   // apiClient 才能对 GET 做最多 1 次传输层重试（调用方 abort 仍不重试）。
   return apiClient<GetConversationData>(`/api/v1/conversations/${encodeURIComponent(sessionId)}`, {
     timeoutMs,
     queuePriority: 'critical',
+    signal,
   });
 }
 

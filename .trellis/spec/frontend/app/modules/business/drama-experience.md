@@ -15,19 +15,50 @@ last_verified_at: 2026-10-27
 
 独立短剧体验；当前工作树本地评审，未发布。用户确认两个一级页面、五导航中间用播放符号，角色与影像内部体验不改。默认 `/` 播放短剧，`/dramas` 双列找剧和追剧，`/dramas/:id` 详情选集。角色发现原样迁移到 `/characters`。
 
-## 当前实现
+## 当前状态
 
 `components/drama/drama-home.tsx` 使用原 DramaPlayer 嵌入；主页上下滑或当前条目播完进入另一部；点击「观看完整短剧」进入专注详情并延续进度，详情上下滑与自动续播都在本剧内，末集停留。最后3秒只预取下一条地址，保留片尾；小幅纵向过渡，减少动态偏好下无动画。没有下一条时停在尾帧，不显示到头文案。剧场浏览列表仅固定搜索栏，栏目、分类、排序与续看入口随内容滚动；卡片封面下仅显示剧名，不展示简介或标签。返回保留条件与滚动。EpisodeSheet黑灰面板、简介/选集切换、30集分组、打开定位当前组；失败保留恢复入口；暂停不强制打断纯净模式，单击可唤回控件。
 
 `lib/api/drama.ts` 继续使用已有列表/详情/play契约，详情与签名并行。点击按本设备进度预取目标集；互动增量通过 social/like/comments API，与播放并行且互不阻塞。媒体每次换集、换剧、离开先保存后暂停并释放src，过时Promise不能恢复播放。浏览器有声自动播放受限时仅降级一次静音，失败保留手动播放。
 
-## 状态与数据
+## 入口与调用者
+
+用户从五入口导航的首页进入 `/` 沉浸播放，从「AI短剧」进入 `/dramas` 剧场，再进入 `/dramas/:id` 详情与选集；评论、追剧和播放手势由同一短剧页面链路调用。
+
+## 涉及文件
+
+| 路径                                                  | 职责                       |
+| ----------------------------------------------------- | -------------------------- |
+| `packages/frontend/src/components/drama/`             | 播放器、评论与选集 UI      |
+| `packages/frontend/src/app/(main)/dramas/`            | 剧场与详情路由             |
+| `packages/frontend/src/lib/api/drama.ts`              | 短剧 query 与互动 mutation |
+| `packages/frontend/src/stores/drama-library-store.ts` | 本设备追剧与观看位置       |
+
+## 关键实现链路
+
+目录 query → 选择剧集 → 详情与签名并行 → 媒体装载/恢复位置 → 播放、手势与互动；换集、换剧和离页先保存并释放旧媒体，过时请求不得抢回播放状态。
+
+## 数据、契约与外部依赖
 
 `stores/drama-library-store.ts` 保存有界的本设备追剧ID和观看位置，不存视频签名、凭证或完整目录。按Telegram用户隔离key，单设备使用，最多200部；每5秒及暂停/退出补存。sessionStorage保存剧场条件和位置，损坏/写满降级内存；失效历史集数回退首集。用户允许必要时短剧专属schema扩展；本设备收藏不做跨设备同步；新增点赞/评论存入 drama_archive 专属互动表。
 
-## 验证与后续
+依赖 shared drama 契约、Backend 短剧 HTTP API、浏览器媒体能力和 Telegram WebView。
+
+## 关键节点与约束
+
+播放地址与当前媒体属于首屏关键路径；评论、简介与选集等可选面板不得阻塞首帧。旧媒体、迟到签名和后台页面不得恢复发声；评论草稿与目标按打开时剧集隔离。
+
+## 验证方式
 
 复用 `packages/ui-tests` 的 `@drama`、dramas/drama-list-error/drama-play-error/drama-interaction-error/empty 场景；默认390×844、窄屏320×568。已有前端类型、测试、lint/build及角色/影像固定验收继续执行。真实媒体、原生Telegram/系统手势与生产接口不以本地模拟结论替代。
+
+## 已知缺口与待核验项
+
+真实媒体、Telegram 原生手势、系统键盘和生产签名服务仍需真机与发布后观测；本地固定 fixture 不能替代生产 P95。
+
+## 关联模块
+
+`frontend.infrastructure.client-ui-foundation`、`backend.infrastructure.runtime-data-security`。
 
 ## 官方剧互动
 

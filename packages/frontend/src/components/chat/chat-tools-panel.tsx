@@ -1,0 +1,142 @@
+'use client';
+
+import { useEffect, useState, type ComponentType } from 'react';
+import { ChevronLeft, ImageIcon, MessagesSquare, Mic } from 'lucide-react';
+
+import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
+import { cn } from '@/lib/utils';
+import { ToolRow } from './chat-tool-row';
+import { ChatVoicePicker, ChatVoiceSettings } from './chat-voice-settings';
+
+type ToolsTab = 'chat' | 'voice' | 'image';
+type ToolsPanel = 'voice' | null;
+
+const PANEL_TITLES: Record<Exclude<ToolsPanel, null>, string> = {
+  voice: '默认声音',
+};
+
+const PANEL_DESCRIPTIONS: Record<Exclude<ToolsPanel, null>, string> = {
+  voice: '选择角色说话的声音',
+};
+
+const TABS: { key: ToolsTab; label: string; icon: ComponentType<{ className?: string }> }[] = [
+  { key: 'chat', label: '对话设置', icon: MessagesSquare },
+  { key: 'voice', label: '语音设置', icon: Mic },
+  { key: 'image', label: '图片设置', icon: ImageIcon },
+];
+
+interface ChatToolsPanelProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onCreateConversation: () => void;
+  creating: boolean;
+}
+
+export function ChatToolsPanel({
+  open,
+  onOpenChange,
+  onCreateConversation,
+  creating,
+}: ChatToolsPanelProps) {
+  const [tab, setTab] = useState<ToolsTab>('chat');
+  const [panel, setPanel] = useState<ToolsPanel>(null);
+
+  useEffect(() => {
+    if (open) return;
+    const timer = window.setTimeout(() => {
+      setPanel(null);
+      setTab('chat');
+    }, 200);
+    return () => window.clearTimeout(timer);
+  }, [open]);
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent
+        side="bottom"
+        className="chat-scroll-area max-h-[82vh] overflow-y-auto rounded-t-3xl border-border bg-background px-4 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] pt-5"
+      >
+        {panel === null ? (
+          <>
+            <SheetTitle className="text-[16px] font-bold text-foreground">工具箱</SheetTitle>
+            <SheetDescription className="mt-0.5 text-[12px] text-muted-foreground">
+              新对话、语音和图片设置
+            </SheetDescription>
+
+            <div className="my-4 flex gap-1 rounded-full bg-muted p-1">
+              {TABS.map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={() => setTab(item.key)}
+                  className={cn(
+                    'flex flex-1 items-center justify-center gap-1.5 rounded-full py-2 text-[13px] font-medium transition-colors',
+                    tab === item.key
+                      ? 'bg-background text-foreground shadow-sm'
+                      : 'text-muted-foreground'
+                  )}
+                >
+                  <item.icon className="size-3.5" aria-hidden />
+                  {item.label}
+                </button>
+              ))}
+            </div>
+
+            {tab === 'chat' ? (
+              <div className="space-y-2">
+                <ToolRow
+                  icon={MessagesSquare}
+                  title="开启新对话"
+                  hint="保留当前这段，另起一段从头开始"
+                  pending={creating}
+                  onClick={() => {
+                    onOpenChange(false);
+                    onCreateConversation();
+                  }}
+                />
+              </div>
+            ) : tab === 'voice' ? (
+              <ChatVoiceSettings onOpenVoicePicker={() => setPanel('voice')} />
+            ) : (
+              <ComingSoon label="图片设置" />
+            )}
+
+            <p className="mt-3 rounded-2xl border border-dashed border-border px-3 py-2.5 text-center text-[12px] text-muted-foreground">
+              模型选择已移至
+              <span className="text-primary">聊天页顶部角色名下方</span>
+              ，点那里即可切换
+            </p>
+          </>
+        ) : (
+          <>
+            <div className="mb-4 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPanel(null)}
+                aria-label="返回工具箱"
+                className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <ChevronLeft className="size-5" aria-hidden />
+              </button>
+              <SheetTitle className="text-[16px] font-bold text-foreground">
+                {PANEL_TITLES[panel]}
+              </SheetTitle>
+            </div>
+            <SheetDescription className="sr-only">{PANEL_DESCRIPTIONS[panel]}</SheetDescription>
+
+            <ChatVoicePicker onPicked={() => setPanel(null)} />
+          </>
+        )}
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+function ComingSoon({ label }: { label: string }) {
+  return (
+    <div className="rounded-2xl border border-dashed border-border bg-card/50 px-4 py-10 text-center">
+      <p className="text-[13px] font-semibold text-foreground">{label}即将开放</p>
+      <p className="mt-1 text-[11px] text-muted-foreground">这一栏还在做，先占个位置</p>
+    </div>
+  );
+}

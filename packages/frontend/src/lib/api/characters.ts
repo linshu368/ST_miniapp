@@ -17,12 +17,12 @@ import { withRequestSlot } from './request-concurrency';
 import { useRefetchOnForeground } from './use-refetch-on-foreground';
 
 // ==== 纯 fetch 函数（私有，不导出给业务）====
-async function fetchCharacters(sort: LobbySort): Promise<GetCharactersData> {
+async function fetchCharacters(sort: LobbySort, signal?: AbortSignal): Promise<GetCharactersData> {
   // 大厅经 Vercel 同源代理，不走 apiClient；仍占 critical 槽，避免与直连 Railway 旁路齐射。
-  return withRequestSlot('critical', undefined, async () => {
+  return withRequestSlot('critical', signal, async () => {
     const response = await timedFetch(
       `/api/lobby-characters?sort=${sort}`,
-      { cache: 'no-store' },
+      { cache: 'no-store', signal },
       { requestId: createRequestId() }
     );
     const json = (await response.json().catch(() => null)) as ApiResponse<GetCharactersData> | null;
@@ -34,8 +34,8 @@ async function fetchCharacters(sort: LobbySort): Promise<GetCharactersData> {
   });
 }
 
-async function fetchCharacterById(id: string): Promise<GetCharacterByIdData> {
-  return apiClient<GetCharacterByIdData>(`/api/characters/${id}`);
+async function fetchCharacterById(id: string, signal?: AbortSignal): Promise<GetCharacterByIdData> {
+  return apiClient<GetCharacterByIdData>(`/api/characters/${id}`, { signal });
 }
 
 // ==== Query Keys ====
@@ -112,7 +112,7 @@ export function useCharactersQuery(
 ) {
   return useQuery<GetCharactersData>({
     queryKey: characterKeys.list(sort),
-    queryFn: () => fetchCharacters(sort),
+    queryFn: ({ signal }) => fetchCharacters(sort, signal),
     initialData: () => readPersistedCharacters(sort),
     // Persisted data keeps the lobby instant, but every mount must reconcile with
     // the database so reordering, delisting, and archival appear immediately.
@@ -129,7 +129,8 @@ export function useCharactersQuery(
 export function useLobbyLatestBadgeQuery({ enabled = true }: { enabled?: boolean } = {}) {
   const query = useQuery<LobbyLatestBadgeData>({
     queryKey: characterKeys.latestBadge(),
-    queryFn: () => apiClient<LobbyLatestBadgeData>('/api/characters/latest-badge'),
+    queryFn: ({ signal }) =>
+      apiClient<LobbyLatestBadgeData>('/api/characters/latest-badge', { signal }),
     enabled,
     // 角标非 P0；拉长鲜活期，减少回前台与列表争槽。
     staleTime: 60_000,
@@ -162,9 +163,9 @@ export function useCharacterQuery(id: string | undefined, options: { enabled?: b
   return useQuery<GetCharacterByIdData>({
     queryKey: id ? characterKeys.detail(id) : characterKeys.all,
     enabled: !!id && options.enabled !== false,
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       if (!id) throw new Error('character id is required');
-      return fetchCharacterById(id);
+      return fetchCharacterById(id, signal);
     },
   });
 }

@@ -610,7 +610,7 @@ export function useConversationTurn({
                 const pending = pendingRef.current;
                 const detail = await queryClient.fetchQuery({
                   queryKey: conversationKeys.detail(sessionId),
-                  queryFn: () => fetchConversationDetail(sessionId),
+                  queryFn: ({ signal }) => fetchConversationDetail(sessionId, 10_000, signal),
                   staleTime: 0,
                   retry: false,
                 });
@@ -962,7 +962,8 @@ export function useConversationTurn({
             detail = await Promise.race([
               queryClient.fetchQuery({
                 queryKey: conversationKeys.detail(sessionId),
-                queryFn: () => fetchConversationDetail(sessionId, Math.min(10_000, remaining)),
+                queryFn: ({ signal }) =>
+                  fetchConversationDetail(sessionId, Math.min(10_000, remaining), signal),
                 staleTime: 0,
                 retry: false,
               }),

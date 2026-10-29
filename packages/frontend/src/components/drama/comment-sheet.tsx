@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useRef, useState, type ReactNode } from 'react';
+import { useRef, useState } from 'react';
 import { Loader2, MessageCircle, Send, X } from 'lucide-react';
 import {
   Sheet,
@@ -17,39 +17,6 @@ import {
 import { ApiClientError } from '@/lib/api/client';
 import { useVisualViewportHeight } from '@/lib/use-visual-viewport-height';
 import { useDramaSheetDismiss } from './use-drama-sheet-dismiss';
-
-const CommentsContext = createContext<{
-  open: boolean;
-  show: (id: string, title: string) => void;
-} | null>(null);
-
-/** 评论归属于打开时的剧；续播跨剧时保留面板、草稿和提交目标。 */
-export function DramaCommentsProvider({ children }: { children: ReactNode }) {
-  const [target, setTarget] = useState<{ id: string; title: string } | null>(null);
-  const [open, setOpen] = useState(false);
-  return (
-    <CommentsContext.Provider
-      value={{
-        open,
-        show: (id, title) => {
-          setTarget({ id, title });
-          setOpen(true);
-        },
-      }}
-    >
-      {children}
-      {target ? (
-        <DramaCommentSheet key={target.id} {...target} open={open} onOpenChange={setOpen} />
-      ) : null}
-    </CommentsContext.Provider>
-  );
-}
-
-export function useDramaCommentsPanel() {
-  const panel = useContext(CommentsContext);
-  if (!panel) throw new Error('DramaCommentsProvider is required');
-  return panel;
-}
 
 interface Props {
   id: string;
