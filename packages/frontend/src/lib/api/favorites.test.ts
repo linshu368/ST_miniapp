@@ -2,6 +2,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
 import type { GetCharacterFavoritesData } from '@miniapp/shared';
 import { useFavoriteFeedbackStore } from '@/stores/favorite-feedback-store';
+import {
+  characterSocialKeys,
+  patchCharacterFavoriteCount,
+  scheduleCharacterSocialRefresh,
+} from './character-social';
 
 import {
   favoriteKeys,
@@ -176,5 +181,59 @@ describe('favorite final cache refresh', () => {
       favoriteKeys.list(),
     ]);
     queryClient.clear();
+  });
+});
+
+describe('character social and favorite concurrency', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('rolls back a favorite count without losing a simultaneous like or new comment', () => {
+    const client = new QueryClient();
+    client.setQueryData(characterSocialKeys.social('role-a'), {
+      liked: true,
+      like_count: 129,
+      favorite_count: 87,
+      comment_count: 24,
+    });
+    patchCharacterFavoriteCount(client, 'role-a', 86);
+    expect(client.getQueryData(characterSocialKeys.social('role-a'))).toEqual({
+      liked: true,
+      like_count: 129,
+      favorite_count: 86,
+      comment_count: 24,
+    });
+    // A missing aggregate remains unknown, not a fabricated zero-count record.
+    patchCharacterFavoriteCount(client, 'role-b', 1);
+    expect(client.getQueryData(characterSocialKeys.social('role-b'))).toBeUndefined();
+    client.clear();
+  });
+
+  it('waits for a pending favorite before refreshing a completed like', async () => {
+    vi.useFakeTimers();
+    const client = new QueryClient();
+    const invalidate = vi.spyOn(client, 'invalidateQueries').mockResolvedValue();
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const request = client
+      .getMutationCache()
+      .build(client, {
+        mutationKey: favoriteKeys.mutations(),
+        mutationFn: () => gate,
+        gcTime: Infinity,
+        onSettled: () => scheduleCharacterSocialRefresh(client),
+      })
+      .execute({ characterId: 'role-a', favorited: true });
+    scheduleCharacterSocialRefresh(client);
+    await vi.runOnlyPendingTimersAsync();
+    expect(invalidate).not.toHaveBeenCalled();
+    release();
+    await request;
+    await vi.runOnlyPendingTimersAsync();
+    expect(invalidate).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ queryKey: characterSocialKeys.all })
+    );
+    client.clear();
   });
 });

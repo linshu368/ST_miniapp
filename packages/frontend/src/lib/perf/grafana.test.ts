@@ -3,6 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createEngineeringExporter } from './grafana';
 
+const environment = vi.hoisted(() => ({ launchParams: vi.fn(), setTag: vi.fn() }));
+vi.mock('@telegram-apps/sdk-react', () => ({ retrieveLaunchParams: environment.launchParams }));
+vi.mock('@sentry/nextjs', () => ({ setTag: environment.setTag }));
+
 function fakeSdk() {
   const measurement = vi.fn();
   const event = vi.fn();
@@ -24,7 +28,10 @@ function fakeSdk() {
 describe('bounded engineering Faro exporter', () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    environment.launchParams.mockReturnValue({ tgWebAppPlatform: 'android' });
+    environment.setTag.mockClear();
     vi.stubGlobal('window', {});
+    vi.stubGlobal('navigator', { connection: { effectiveType: '4g' } });
     vi.stubEnv('NEXT_PUBLIC_GRAFANA_ENABLED', 'true');
     vi.stubEnv('NEXT_PUBLIC_GRAFANA_ENVIRONMENT', 'test');
     vi.stubEnv('NEXT_PUBLIC_GRAFANA_RELEASE', 'test-release-1');
@@ -121,6 +128,7 @@ describe('bounded engineering Faro exporter', () => {
           outcome: 'ready',
           source_measurement_version: 'page_mount_v1',
           net_type: 'other',
+          tg_platform: 'android',
           schema_version: '1',
           measurement_version: 'engineering_v1',
         },
@@ -192,6 +200,213 @@ describe('bounded engineering Faro exporter', () => {
       'st.engineering',
       expect.anything()
     );
+  });
+
+  it('adds finite platform/network dimensions to every signal kind without copying browser identity', async () => {
+    const fake = fakeSdk();
+    const exporter = createEngineeringExporter(async () => fake.sdk);
+    vi.stubGlobal('navigator', {
+      connection: { effectiveType: '3g' },
+      userAgent: 'PRIVATE_BROWSER_IDENTITY',
+      hardwareConcurrency: 12,
+    });
+    for (const name of ['page.ready', 'roleplay.first_token', 'drama.startup', 'api.total']) {
+      exporter.measurement(name, 100);
+    }
+    for (const name of ['page.terminal', 'roleplay.terminal', 'drama.terminal', 'api.terminal']) {
+      exporter.event(name, { outcome: 'error' });
+    }
+    await exporter.initialize();
+    for (const [, options] of fake.measurement.mock.calls)
+      expect(options.context).toMatchObject({ net_type: '3g', tg_platform: 'android' });
+    // Includes the exporter's own health event, not only owner-emitted events.
+    for (const [, attributes] of fake.event.mock.calls)
+      expect(attributes).toMatchObject({ net_type: '3g', tg_platform: 'android' });
+    expect(JSON.stringify([fake.measurement.mock.calls, fake.event.mock.calls])).not.toMatch(
+      /PRIVATE_|userAgent|hardwareConcurrency/
+    );
+  });
+
+  it('freezes dimensions before SDK queueing and preserves an explicit owner window snapshot', async () => {
+    const fake = fakeSdk();
+    let resolveSdk!: (sdk: typeof fake.sdk) => void;
+    const exporter = createEngineeringExporter(
+      () =>
+        new Promise((resolve) => {
+          resolveSdk = resolve;
+        })
+    );
+    exporter.measurement('roleplay.first_token', 100);
+    vi.stubGlobal('navigator', { connection: { effectiveType: '3g' } });
+    exporter.event('roleplay.terminal');
+    exporter.event('drama.playback_window', {
+      playing_ms: 18_000,
+      rebuffer_ms: 2_000,
+      net_type: 'mixed',
+      tg_platform: 'ios',
+      stage: 'playback',
+      report_kind: 'playback',
+      source_measurement_version: 'drama_playback_v1',
+    });
+    await Promise.resolve();
+    resolveSdk(fake.sdk);
+    await exporter.initialize();
+    expect(fake.measurement.mock.calls[0]![1].context.net_type).toBe('4g');
+    expect(
+      fake.event.mock.calls.find(([name]) => name === 'st_roleplay_terminal')![1].net_type
+    ).toBe('3g');
+    const windowAttributes = fake.event.mock.calls.find(
+      ([name]) => name === 'st_drama_playback_window'
+    )![1];
+    expect(windowAttributes).toMatchObject({
+      playing_ms: '18000',
+      rebuffer_ms: '2000',
+      net_type: 'mixed',
+      tg_platform: 'ios',
+      stage: 'playback',
+      report_kind: 'playback',
+      source_measurement_version: 'drama_playback_v1',
+    });
+    const config = fake.initialize.mock.calls[0]![0];
+    const item = {
+      type: 'measurement',
+      meta: {},
+      payload: {
+        type: 'st_roleplay_first_token',
+        timestamp: '',
+        values: { duration_ms: 100 },
+        context: fake.measurement.mock.calls[0]![1].context,
+      },
+    } as TransportItem;
+    expect(config.beforeSend!(item)).toMatchObject({ payload: { context: { net_type: '4g' } } });
+  });
+
+  it('keeps arbitrary dimensions and numeric fields out of ordinary signals', async () => {
+    const fake = fakeSdk();
+    const exporter = createEngineeringExporter(async () => fake.sdk);
+    exporter.event('page.terminal', {
+      tg_platform: 'PRIVATE_DEVICE',
+      net_type: 'PRIVATE_NETWORK',
+      playing_ms: 18_000,
+      rebuffer_ms: 2_000,
+      arbitrary_ms: 123,
+    });
+    await exporter.initialize();
+    const attributes = fake.event.mock.calls.find(([name]) => name === 'st_page_terminal')![1];
+    expect(attributes).toMatchObject({ tg_platform: 'other', net_type: 'other' });
+    expect(attributes).not.toHaveProperty('playing_ms');
+    expect(attributes).not.toHaveProperty('rebuffer_ms');
+    expect(attributes).not.toHaveProperty('arbitrary_ms');
+    expect(JSON.stringify(attributes)).not.toContain('PRIVATE_');
+  });
+
+  it.each([
+    { playing_ms: 1 },
+    { rebuffer_ms: 1 },
+    { playing_ms: 0, rebuffer_ms: 0 },
+    { playing_ms: -1, rebuffer_ms: 1 },
+    { playing_ms: 60_001, rebuffer_ms: 0 },
+    { playing_ms: 30_001, rebuffer_ms: 30_000 },
+    { playing_ms: 1.5, rebuffer_ms: 0 },
+    { playing_ms: true, rebuffer_ms: 1 },
+    { playing_ms: NaN, rebuffer_ms: 1 },
+    { playing_ms: 1, rebuffer_ms: Infinity },
+    { playing_ms: '1.5', rebuffer_ms: '0' },
+    { playing_ms: 'PRIVATE_VALUE', rebuffer_ms: '1' },
+  ])(
+    'rejects the entire invalid playback pair at enqueue and beforeSend: %o',
+    async (attributes) => {
+      const fake = fakeSdk();
+      const exporter = createEngineeringExporter(async () => fake.sdk);
+      exporter.event('drama.playback_window', attributes);
+      await exporter.initialize();
+      expect(exporter.health().source_invalid).toBe(1);
+      expect(fake.event.mock.calls.some(([name]) => name === 'st_drama_playback_window')).toBe(
+        false
+      );
+      const config = fake.initialize.mock.calls[0]![0];
+      expect(
+        config.beforeSend!({
+          type: 'event',
+          meta: {},
+          payload: {
+            name: 'st_drama_playback_window',
+            timestamp: '',
+            attributes,
+          },
+        } as TransportItem)
+      ).toBeNull();
+    }
+  );
+
+  it('retains both bounded playback durations while stripping private fields again before transport', async () => {
+    const fake = fakeSdk();
+    const exporter = createEngineeringExporter(async () => fake.sdk);
+    await exporter.initialize();
+    const config = fake.initialize.mock.calls[0]![0];
+    for (const [playing, rebuffer] of [
+      [60_000, 0],
+      [0, 60_000],
+      [18_000, 2_000],
+    ]) {
+      const item = {
+        type: 'event',
+        meta: { user: { id: 'PRIVATE_USER' } },
+        payload: {
+          name: 'st_drama_playback_window',
+          timestamp: '',
+          attributes: {
+            playing_ms: String(playing),
+            rebuffer_ms: String(rebuffer),
+            user_id: 'PRIVATE_USER',
+            video_url: 'PRIVATE_URL',
+            net_type: 'mixed',
+            tg_platform: 'ios',
+            arbitrary_ms: 33,
+          },
+        },
+      } as TransportItem;
+      const sanitized = config.beforeSend!(item);
+      expect(sanitized).toMatchObject({
+        payload: {
+          attributes: {
+            playing_ms: String(playing),
+            rebuffer_ms: String(rebuffer),
+            net_type: 'mixed',
+            tg_platform: 'ios',
+          },
+        },
+      });
+      expect(JSON.stringify(sanitized)).not.toMatch(/PRIVATE_|user_id|video_url|arbitrary_ms/);
+    }
+  });
+
+  it('reads Telegram dimensions without Sentry initialization and normalizes unsupported network/platform values', async () => {
+    vi.resetModules();
+    environment.launchParams.mockReturnValue({ tgWebAppPlatform: 'ios' });
+    const dimensions = await import('./env-tags');
+    expect(dimensions.getMetricDimensions()).toEqual({ tg_platform: 'ios', net_type: '4g' });
+    expect(environment.setTag).not.toHaveBeenCalled();
+    environment.launchParams.mockReturnValue({ tgWebAppPlatform: 'PRIVATE_PLATFORM' });
+    vi.stubGlobal('navigator', { connection: { effectiveType: 'PRIVATE_NETWORK' } });
+    vi.resetModules();
+    const unknownDimensions = await import('./env-tags');
+    expect(unknownDimensions.getMetricDimensions()).toEqual({
+      tg_platform: 'unknown',
+      net_type: 'unknown',
+    });
+    expect(environment.setTag).not.toHaveBeenCalled();
+    vi.stubGlobal('navigator', {
+      connection: {
+        get effectiveType() {
+          throw new Error('Network information unavailable');
+        },
+      },
+    });
+    expect(unknownDimensions.getNetworkTags()).toEqual({
+      net_type: 'unknown',
+      net_rtt_bucket: 'unknown',
+    });
   });
 
   it('bounds the pre-load queue, gives up after three seconds and ignores a late SDK', async () => {

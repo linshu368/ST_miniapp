@@ -1,6 +1,6 @@
 {
   "uid": "st-engineering-drama",
-  "title": "工程｜03 短剧启动与播放（待接入）",
+  "title": "工程｜03 短剧启动与播放",
   "schemaVersion": 39,
   "version": 1,
   "editable": true,
@@ -64,6 +64,96 @@
           "text": "{service_name=\"st-miniapp\"}",
           "value": "{service_name=\"st-miniapp\"}"
         }
+      },
+      {
+        "name": "tg_platform",
+        "label": "设备/客户端平台",
+        "type": "custom",
+        "query": "全部 : .*,iOS : ios,Android : android|android_x,桌面Telegram : macos|tdesktop|unigram,Telegram Web : web|weba|webk,未知或历史未分层 : unknown|other|^$",
+        "current": {
+          "text": "全部",
+          "value": ".*"
+        },
+        "options": [
+          {
+            "text": "全部",
+            "value": ".*",
+            "selected": true
+          },
+          {
+            "text": "iOS",
+            "value": "ios",
+            "selected": false
+          },
+          {
+            "text": "Android",
+            "value": "android|android_x",
+            "selected": false
+          },
+          {
+            "text": "桌面Telegram",
+            "value": "macos|tdesktop|unigram",
+            "selected": false
+          },
+          {
+            "text": "Telegram Web",
+            "value": "web|weba|webk",
+            "selected": false
+          },
+          {
+            "text": "未知或历史未分层",
+            "value": "unknown|other|^$",
+            "selected": false
+          }
+        ],
+        "multi": false,
+        "includeAll": false,
+        "allowCustomValue": false
+      },
+      {
+        "name": "net_type",
+        "label": "网络有效等级",
+        "type": "custom",
+        "query": "全部 : .*,4g速度级 : 4g,3g速度级 : 3g,2g或更慢 : 2g|slow-2g,窗口起止变化 : mixed,未知或历史未分层 : unknown|other|^$",
+        "current": {
+          "text": "全部",
+          "value": ".*"
+        },
+        "options": [
+          {
+            "text": "全部",
+            "value": ".*",
+            "selected": true
+          },
+          {
+            "text": "4g速度级",
+            "value": "4g",
+            "selected": false
+          },
+          {
+            "text": "3g速度级",
+            "value": "3g",
+            "selected": false
+          },
+          {
+            "text": "2g或更慢",
+            "value": "2g|slow-2g",
+            "selected": false
+          },
+          {
+            "text": "窗口起止变化",
+            "value": "mixed",
+            "selected": false
+          },
+          {
+            "text": "未知或历史未分层",
+            "value": "unknown|other|^$",
+            "selected": false
+          }
+        ],
+        "multi": false,
+        "includeAll": false,
+        "allowCustomValue": false
       }
     ]
   },
@@ -97,12 +187,153 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**待 TEST Cloud 接入验证；不是线上验收完成。** 本机已核验固定版本 Faro → Alloy → Loki 的日志字段。Cloud 托管浏览器入口需再核对实际流标签/格式，browser_selector 不得凭空猜测。无数据不等于0次失败。按同环境、版本、入口、网络/平台层比较，成功P50/P95与终态样本量一起看；低样本只观察，不自动排名或作人员考核。默认24h/5min，避免高频长窗查询。\n\n开始/终态按窗口计数，**不是逐请求闭环或全访问覆盖**（无身份关联，窗口边界和丢报可影响结果）。先观察24–48h基线，再审核预算；后台、离页和主动停止单列。\n\n启动成功必须first_frame+playing；canplay/地址返回不算。卡顿只用启动后前台非暂停/seek的waiting→playing；stalled只作网络诊断。没有播放总时长/会话分母，不叫卡顿率或完整播放质量覆盖。各分段有重叠，不可相加。"
+        "content": "**待 TEST Cloud 接入验证；不是线上验收完成。** 本机已核验固定版本 Faro → Alloy → Loki 的日志字段。Cloud 托管浏览器入口需再核对实际流标签/格式，browser_selector 不得凭空猜测。无数据不等于0次失败。按同环境、版本、入口、网络/平台层比较，成功P50/P95与终态样本量一起看；低样本只观察，不自动排名或作人员考核。默认24h/5min，避免高频长窗查询。\n\n开始/终态按窗口计数，**不是逐请求闭环或全访问覆盖**（无身份关联，窗口边界和丢报可影响结果）。先观察24–48h基线，再审核预算；后台、离页和主动停止单列。\n\n启动成功必须first_frame+playing；canplay/地址返回不算。卡顿只用启动后前台非暂停/seek的waiting→playing；stalled只作网络诊断。新窗口提供实际播放和卡顿时长分母，但不是完整会话或全量送达。各分段有重叠，不可相加。\n\n**分层比较：** 设备/客户端按Telegram平台归类，不采集具体机型；网络是浏览器估算的有效速度等级，不是Wi-Fi/蜂窝类型。iOS等不支持时为unknown，不能视为弱网。默认全部保留历史缺标签；具体筛选只看对应样本。普通测量取入队时网络；播放窗口取起点，起止不同标mixed，不证明整窗稳定。"
       },
       "fieldConfig": {
         "defaults": {},
         "overrides": []
       }
+    },
+    {
+      "id": 20,
+      "title": "前台实际播放总时长（已观测）",
+      "type": "stat",
+      "description": "仅已观测前台增量窗口；每30秒或暂停/seek/后台/结束时提交，排除初始加载、暂停、seek和后台。不是人数或完整会话，不能证明全量送达。 使用walltime，不是媒体进度差。",
+      "datasource": {
+        "type": "loki",
+        "uid": "grafanacloud-logs"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 8,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "—",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "graphMode": "none",
+        "colorMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          },
+          "editorMode": "code",
+          "queryType": "instant",
+          "expr": "sum(sum_over_time(${browser_selector:raw} |= \"st_drama_playback_window\" | logfmt | event_data_tg_platform=~\"$tg_platform\" | event_data_net_type=~\"$net_type\" | kind=\"event\" | event_name=\"st_drama_playback_window\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_source_measurement_version=\"drama_playback_v1\" | event_data_playing_ms=~\"[0-9]+\" | event_data_rebuffer_ms=~\"[0-9]+\" | event_data_playing_ms>=0 | event_data_playing_ms<=60000 | event_data_rebuffer_ms>=0 | event_data_rebuffer_ms<=60000 | __error__=\"\" | keep event_data_playing_ms | unwrap event_data_playing_ms | __error__=\"\" [$__range])) / 1000"
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "title": "前台卡顿时长占比（已观测）",
+      "type": "stat",
+      "description": "仅已观测前台增量窗口；每30秒或暂停/seek/后台/结束时提交，排除初始加载、暂停、seek和后台。不是人数或完整会话，不能证明全量送达。 同条窗口加权Σ卡顿/(Σ播放+Σ卡顿)，含退出前未恢复卡顿；不平均单窗比例，分母0无数据。",
+      "datasource": {
+        "type": "loki",
+        "uid": "grafanacloud-logs"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 5,
+        "w": 8,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "noValue": "—",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "graphMode": "none",
+        "colorMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          },
+          "editorMode": "code",
+          "queryType": "instant",
+          "expr": "sum(sum_over_time(${browser_selector:raw} |= \"st_drama_playback_window\" | logfmt | event_data_tg_platform=~\"$tg_platform\" | event_data_net_type=~\"$net_type\" | kind=\"event\" | event_name=\"st_drama_playback_window\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_source_measurement_version=\"drama_playback_v1\" | event_data_playing_ms=~\"[0-9]+\" | event_data_rebuffer_ms=~\"[0-9]+\" | event_data_playing_ms>=0 | event_data_playing_ms<=60000 | event_data_rebuffer_ms>=0 | event_data_rebuffer_ms<=60000 | __error__=\"\" | keep event_data_rebuffer_ms | unwrap event_data_rebuffer_ms | __error__=\"\" [$__range])) / (sum(sum_over_time(${browser_selector:raw} |= \"st_drama_playback_window\" | logfmt | event_data_tg_platform=~\"$tg_platform\" | event_data_net_type=~\"$net_type\" | kind=\"event\" | event_name=\"st_drama_playback_window\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_source_measurement_version=\"drama_playback_v1\" | event_data_playing_ms=~\"[0-9]+\" | event_data_rebuffer_ms=~\"[0-9]+\" | event_data_playing_ms>=0 | event_data_playing_ms<=60000 | event_data_rebuffer_ms>=0 | event_data_rebuffer_ms<=60000 | __error__=\"\" | keep event_data_playing_ms | unwrap event_data_playing_ms | __error__=\"\" [$__range])) + sum(sum_over_time(${browser_selector:raw} |= \"st_drama_playback_window\" | logfmt | event_data_tg_platform=~\"$tg_platform\" | event_data_net_type=~\"$net_type\" | kind=\"event\" | event_name=\"st_drama_playback_window\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_source_measurement_version=\"drama_playback_v1\" | event_data_playing_ms=~\"[0-9]+\" | event_data_rebuffer_ms=~\"[0-9]+\" | event_data_playing_ms>=0 | event_data_playing_ms<=60000 | event_data_rebuffer_ms>=0 | event_data_rebuffer_ms<=60000 | __error__=\"\" | keep event_data_rebuffer_ms | unwrap event_data_rebuffer_ms | __error__=\"\" [$__range])))"
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "title": "有效播放质量窗口数（不是人数）",
+      "type": "stat",
+      "description": "仅已观测前台增量窗口；每30秒或暂停/seek/后台/结束时提交，排除初始加载、暂停、seek和后台。不是人数或完整会话，不能证明全量送达。 同一播放器可贡献多个窗口；无数据不显示0。",
+      "datasource": {
+        "type": "loki",
+        "uid": "grafanacloud-logs"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 5,
+        "w": 8,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "—",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "graphMode": "none",
+        "colorMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          },
+          "editorMode": "code",
+          "queryType": "instant",
+          "expr": "sum(count_over_time(${browser_selector:raw} |= \"st_drama_playback_window\" | logfmt | event_data_tg_platform=~\"$tg_platform\" | event_data_net_type=~\"$net_type\" | kind=\"event\" | event_name=\"st_drama_playback_window\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_source_measurement_version=\"drama_playback_v1\" | event_data_playing_ms=~\"[0-9]+\" | event_data_rebuffer_ms=~\"[0-9]+\" | event_data_playing_ms>=0 | event_data_playing_ms<=60000 | event_data_rebuffer_ms>=0 | event_data_rebuffer_ms<=60000 | __error__=\"\" | keep event_data_route,event_data_tg_platform,event_data_net_type [$__range]))"
+        }
+      ]
     },
     {
       "id": 2,
@@ -115,7 +346,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 5,
+        "y": 9,
         "w": 12,
         "h": 4
       },
@@ -145,7 +376,7 @@
             "type": "loki",
             "uid": "grafanacloud-logs"
           },
-          "expr": "(sum (count_over_time(${browser_selector:raw} |= \"st_drama_terminal\" | logfmt | kind=\"event\" | event_name=\"st_drama_terminal\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_stage=\"startup\" | event_data_outcome=\"playing\" [$__range])) or vector(0)) / sum (count_over_time(${browser_selector:raw} |= \"st_drama_terminal\" | logfmt | kind=\"event\" | event_name=\"st_drama_terminal\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_stage=\"startup\" | event_data_outcome=~\"playing|error|unplayable|autoplay_blocked\" [$__range]))",
+          "expr": "(sum (count_over_time(${browser_selector:raw} |= \"st_drama_terminal\" | logfmt | event_data_tg_platform=~\"$tg_platform\" | event_data_net_type=~\"$net_type\" | kind=\"event\" | event_name=\"st_drama_terminal\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_stage=\"startup\" | event_data_outcome=\"playing\" [$__range])) or vector(0)) / sum (count_over_time(${browser_selector:raw} |= \"st_drama_terminal\" | logfmt | event_data_tg_platform=~\"$tg_platform\" | event_data_net_type=~\"$net_type\" | kind=\"event\" | event_name=\"st_drama_terminal\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_stage=\"startup\" | event_data_outcome=~\"playing|error|unplayable|autoplay_blocked\" [$__range]))",
           "legendFormat": "",
           "editorMode": "code",
           "queryType": "instant"
@@ -163,7 +394,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 9,
+        "y": 13,
         "w": 24,
         "h": 8
       },
@@ -194,7 +425,7 @@
             "type": "loki",
             "uid": "grafanacloud-logs"
           },
-          "expr": "sum by (event_data_playback_mode,event_data_outcome) (count_over_time(${browser_selector:raw} |= \"st_drama_terminal\" | logfmt | kind=\"event\" | event_name=\"st_drama_terminal\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_stage=\"startup\" [$__range]))",
+          "expr": "sum by (event_data_playback_mode,event_data_outcome) (count_over_time(${browser_selector:raw} |= \"st_drama_terminal\" | logfmt | event_data_tg_platform=~\"$tg_platform\" | event_data_net_type=~\"$net_type\" | kind=\"event\" | event_name=\"st_drama_terminal\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_stage=\"startup\" [$__range]))",
           "legendFormat": "",
           "editorMode": "code",
           "queryType": "instant"
@@ -220,7 +451,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 17,
+        "y": 21,
         "w": 12,
         "h": 8
       },
@@ -252,7 +483,7 @@
             "type": "loki",
             "uid": "grafanacloud-logs"
           },
-          "expr": "quantile_over_time(0.5, ${browser_selector:raw} |= \"st_drama_startup\" | logfmt | kind=\"measurement\" | type=\"st_drama_startup\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_outcome=\"playing\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_playback_mode)",
+          "expr": "quantile_over_time(0.5, ${browser_selector:raw} |= \"st_drama_startup\" | logfmt | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | kind=\"measurement\" | type=\"st_drama_startup\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_outcome=\"playing\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_playback_mode)",
           "legendFormat": "P50 {{context_playback_mode}}",
           "editorMode": "code",
           "queryType": "range"
@@ -263,7 +494,7 @@
             "type": "loki",
             "uid": "grafanacloud-logs"
           },
-          "expr": "quantile_over_time(0.95, ${browser_selector:raw} |= \"st_drama_startup\" | logfmt | kind=\"measurement\" | type=\"st_drama_startup\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_outcome=\"playing\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_playback_mode)",
+          "expr": "quantile_over_time(0.95, ${browser_selector:raw} |= \"st_drama_startup\" | logfmt | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | kind=\"measurement\" | type=\"st_drama_startup\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_outcome=\"playing\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_playback_mode)",
           "legendFormat": "P95 {{context_playback_mode}}",
           "editorMode": "code",
           "queryType": "range"
@@ -281,7 +512,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 17,
+        "y": 21,
         "w": 12,
         "h": 8
       },
@@ -313,7 +544,7 @@
             "type": "loki",
             "uid": "grafanacloud-logs"
           },
-          "expr": "quantile_over_time(0.5, ${browser_selector:raw} |= \"st_drama_first_frame\" | logfmt | kind=\"measurement\" | type=\"st_drama_first_frame\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_outcome=\"playing\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_first_frame_method)",
+          "expr": "quantile_over_time(0.5, ${browser_selector:raw} |= \"st_drama_first_frame\" | logfmt | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | kind=\"measurement\" | type=\"st_drama_first_frame\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_outcome=\"playing\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_first_frame_method)",
           "legendFormat": "P50 {{context_first_frame_method}}",
           "editorMode": "code",
           "queryType": "range"
@@ -324,7 +555,7 @@
             "type": "loki",
             "uid": "grafanacloud-logs"
           },
-          "expr": "quantile_over_time(0.95, ${browser_selector:raw} |= \"st_drama_first_frame\" | logfmt | kind=\"measurement\" | type=\"st_drama_first_frame\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_outcome=\"playing\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_first_frame_method)",
+          "expr": "quantile_over_time(0.95, ${browser_selector:raw} |= \"st_drama_first_frame\" | logfmt | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | kind=\"measurement\" | type=\"st_drama_first_frame\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_outcome=\"playing\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_first_frame_method)",
           "legendFormat": "P95 {{context_first_frame_method}}",
           "editorMode": "code",
           "queryType": "range"
@@ -342,7 +573,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 25,
+        "y": 29,
         "w": 12,
         "h": 8
       },
@@ -374,7 +605,7 @@
             "type": "loki",
             "uid": "grafanacloud-logs"
           },
-          "expr": "quantile_over_time(0.5, ${browser_selector:raw} |= \"st_drama_catalog\" | logfmt | kind=\"measurement\" | type=\"st_drama_catalog\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_outcome=\"ready\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_route)",
+          "expr": "quantile_over_time(0.5, ${browser_selector:raw} |= \"st_drama_catalog\" | logfmt | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | kind=\"measurement\" | type=\"st_drama_catalog\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_outcome=\"ready\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_route)",
           "legendFormat": "P50 {{context_route}}",
           "editorMode": "code",
           "queryType": "range"
@@ -385,7 +616,7 @@
             "type": "loki",
             "uid": "grafanacloud-logs"
           },
-          "expr": "quantile_over_time(0.95, ${browser_selector:raw} |= \"st_drama_catalog\" | logfmt | kind=\"measurement\" | type=\"st_drama_catalog\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_outcome=\"ready\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_route)",
+          "expr": "quantile_over_time(0.95, ${browser_selector:raw} |= \"st_drama_catalog\" | logfmt | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | kind=\"measurement\" | type=\"st_drama_catalog\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_outcome=\"ready\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_route)",
           "legendFormat": "P95 {{context_route}}",
           "editorMode": "code",
           "queryType": "range"
@@ -403,7 +634,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 25,
+        "y": 29,
         "w": 12,
         "h": 8
       },
@@ -435,7 +666,7 @@
             "type": "loki",
             "uid": "grafanacloud-logs"
           },
-          "expr": "quantile_over_time(0.95, ${browser_selector:raw} |= \"st_drama_stage\" | logfmt | kind=\"measurement\" | type=\"st_drama_stage\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_outcome=\"playing\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_stage)",
+          "expr": "quantile_over_time(0.95, ${browser_selector:raw} |= \"st_drama_stage\" | logfmt | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | kind=\"measurement\" | type=\"st_drama_stage\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_outcome=\"playing\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_stage)",
           "legendFormat": "",
           "editorMode": "code",
           "queryType": "range"
@@ -453,7 +684,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 33,
+        "y": 37,
         "w": 12,
         "h": 8
       },
@@ -485,7 +716,7 @@
             "type": "loki",
             "uid": "grafanacloud-logs"
           },
-          "expr": "quantile_over_time(0.5, ${browser_selector:raw} |= \"st_drama_rebuffer\" | logfmt | kind=\"measurement\" | type=\"st_drama_rebuffer\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_outcome=\"playing\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_route)",
+          "expr": "quantile_over_time(0.5, ${browser_selector:raw} |= \"st_drama_rebuffer\" | logfmt | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | kind=\"measurement\" | type=\"st_drama_rebuffer\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_outcome=\"playing\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_route)",
           "legendFormat": "P50 {{context_route}}",
           "editorMode": "code",
           "queryType": "range"
@@ -496,7 +727,7 @@
             "type": "loki",
             "uid": "grafanacloud-logs"
           },
-          "expr": "quantile_over_time(0.95, ${browser_selector:raw} |= \"st_drama_rebuffer\" | logfmt | kind=\"measurement\" | type=\"st_drama_rebuffer\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_outcome=\"playing\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_route)",
+          "expr": "quantile_over_time(0.95, ${browser_selector:raw} |= \"st_drama_rebuffer\" | logfmt | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | kind=\"measurement\" | type=\"st_drama_rebuffer\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_outcome=\"playing\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_route)",
           "legendFormat": "P95 {{context_route}}",
           "editorMode": "code",
           "queryType": "range"
@@ -514,7 +745,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 41,
+        "y": 45,
         "w": 24,
         "h": 8
       },
@@ -545,7 +776,7 @@
             "type": "loki",
             "uid": "grafanacloud-logs"
           },
-          "expr": "sum by (event_data_outcome) (count_over_time(${browser_selector:raw} |= \"st_drama_stall\" | logfmt | kind=\"event\" | event_name=\"st_drama_stall\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_stage=\"rebuffer\" | event_data_outcome!=\"waiting\" [$__range]))",
+          "expr": "sum by (event_data_outcome) (count_over_time(${browser_selector:raw} |= \"st_drama_stall\" | logfmt | event_data_tg_platform=~\"$tg_platform\" | event_data_net_type=~\"$net_type\" | kind=\"event\" | event_name=\"st_drama_stall\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_stage=\"rebuffer\" | event_data_outcome!=\"waiting\" [$__range]))",
           "legendFormat": "",
           "editorMode": "code",
           "queryType": "instant"
@@ -571,7 +802,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 49,
+        "y": 53,
         "w": 24,
         "h": 8
       },
@@ -602,7 +833,7 @@
             "type": "loki",
             "uid": "grafanacloud-logs"
           },
-          "expr": "sum by (event_data_stage) (count_over_time(${browser_selector:raw} |= \"st_drama_started\" | logfmt | kind=\"event\" | event_name=\"st_drama_started\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" [$__range]))",
+          "expr": "sum by (event_data_stage) (count_over_time(${browser_selector:raw} |= \"st_drama_started\" | logfmt | event_data_tg_platform=~\"$tg_platform\" | event_data_net_type=~\"$net_type\" | kind=\"event\" | event_name=\"st_drama_started\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" [$__range]))",
           "legendFormat": "开始 {{event_data_stage}}",
           "editorMode": "code",
           "queryType": "instant"
@@ -613,7 +844,7 @@
             "type": "loki",
             "uid": "grafanacloud-logs"
           },
-          "expr": "sum by (event_data_stage) (count_over_time(${browser_selector:raw} |= \"st_drama_terminal\" | logfmt | kind=\"event\" | event_name=\"st_drama_terminal\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" [$__range]))",
+          "expr": "sum by (event_data_stage) (count_over_time(${browser_selector:raw} |= \"st_drama_terminal\" | logfmt | event_data_tg_platform=~\"$tg_platform\" | event_data_net_type=~\"$net_type\" | kind=\"event\" | event_name=\"st_drama_terminal\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" [$__range]))",
           "legendFormat": "终态 {{event_data_stage}}",
           "editorMode": "code",
           "queryType": "instant"
