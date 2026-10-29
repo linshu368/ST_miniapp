@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
-import { AudioLines, Loader2, Pause, Pencil, Play, RefreshCw } from 'lucide-react';
+import { Loader2, Pause, Pencil, Play, RefreshCw, Volume2 } from 'lucide-react';
 import type { MessageVoice } from '@miniapp/shared';
 import { formatMediaAttemptBillingLabel } from '@/components/chat/media-billing-label';
 
@@ -42,7 +42,7 @@ export interface MessageVoiceState {
 /**
  * 角色回复底部的一行。
  *
- * 语音就绪后要换到第二行：语音条最宽 300px，窄屏上和字数、「换一个回复」挤在
+ * 语音就绪后要换到第二行：语音条最宽 300px，窄屏上和字数、回复操作挤在
  * 同一行必然溢出，而 PRD 要求语音条不超过消息内容区域。未就绪时只是个小按钮，
  * 挨着字数放得下，也就不占额外高度。
  */
@@ -51,6 +51,8 @@ export function ChatMessageVoiceFooter({
   imageAction,
   voice,
   regenerate,
+  branchAction,
+  likeAction,
 }: {
   charCount: number;
   /** 图片入口与字数、语音操作共用同一行，避免各自 footer 造成上下错位。 */
@@ -58,13 +60,23 @@ export function ChatMessageVoiceFooter({
   /** null = 这条消息不支持语音（开场白、未写完的回复），此时只显示重生成 */
   voice: MessageVoiceState | null;
   regenerate: ReactNode;
+  branchAction?: ReactNode;
+  likeAction?: ReactNode;
 }) {
   if (!voice) {
-    return imageAction || regenerate ? (
-      <div className="flex flex-wrap items-center gap-x-1 gap-y-1">
-        <span className="text-[11px] text-muted-foreground/70">{charCount} 字</span>
-        {imageAction}
-        {regenerate}
+    return imageAction || regenerate || branchAction || likeAction ? (
+      <div className="flex items-end gap-x-2">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1 gap-y-1">
+          <span className="text-[11px] text-muted-foreground/70">{charCount} 字</span>
+          {imageAction}
+          {branchAction}
+        </div>
+        {regenerate || likeAction ? (
+          <div className="ml-auto flex shrink-0 items-center gap-1">
+            {regenerate}
+            {likeAction}
+          </div>
+        ) : null}
       </div>
     ) : null;
   }
@@ -90,11 +102,19 @@ export function ChatMessageVoiceFooter({
 
   return (
     <div className="space-y-1.5">
-      <div className="flex flex-wrap items-center gap-x-1 gap-y-1">
-        <span className="text-[11px] text-muted-foreground/70">{charCount} 字</span>
-        {imageAction}
-        {audioUrl ? null : <VoiceAction {...voice} />}
-        {regenerate}
+      <div className="flex items-end gap-x-2">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1 gap-y-1">
+          <span className="text-[11px] text-muted-foreground/70">{charCount} 字</span>
+          {imageAction}
+          {audioUrl ? null : <VoiceAction {...voice} />}
+          {branchAction}
+        </div>
+        {regenerate || likeAction ? (
+          <div className="ml-auto flex shrink-0 items-center gap-1">
+            {regenerate}
+            {likeAction}
+          </div>
+        ) : null}
       </div>
       {overLimit ? (
         <p className="text-[11px] leading-snug text-destructive">{overLimit}</p>
@@ -165,25 +185,29 @@ function VoiceAction({ voice, submitting, onGenerate }: MessageVoiceState) {
 
   if (generating) {
     return (
-      <span className="flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] font-medium text-muted-foreground">
-        <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-        生成中
+      <span
+        role="status"
+        title="语音生成中"
+        className="inline-flex size-11 shrink-0 items-center justify-center rounded-full text-muted-foreground/70"
+      >
+        <Loader2 className="size-4 animate-spin" aria-hidden />
+        <span className="sr-only">语音生成中</span>
       </span>
     );
   }
 
   // ready 态由 ChatMessageVoiceFooter 直接渲染语音条，走不到这里
   const isRetry = voice?.status === 'failed';
+  const label = isRetry ? '重试语音' : '生成语音';
   return (
     <button
       type="button"
+      aria-label={label}
+      title={label}
       onClick={onGenerate}
-      className="flex max-w-full flex-col items-start gap-0.5 rounded-2xl px-2 py-1 text-[11px] font-medium text-primary transition-colors hover:bg-secondary hover:text-foreground"
+      className="inline-flex size-11 shrink-0 items-center justify-center rounded-full text-muted-foreground/70 transition-colors hover:bg-secondary hover:text-foreground active:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
-      <span className="flex items-center gap-1.5">
-        <AudioLines className="h-3.5 w-3.5" aria-hidden />
-        {isRetry ? '重试语音' : '生成语音'}
-      </span>
+      <Volume2 className="size-4" strokeWidth={1.7} aria-hidden />
     </button>
   );
 }
