@@ -179,6 +179,17 @@ describe('drama centralized logging', () => {
     ]);
     expect(mocks.upload.mock.calls.every(([report]) => report.purpose === 'diagnostic')).toBe(true);
     mocks.upload.mockClear();
+    // Five-second finals must reach Loki even outside the quick-success sample bucket.
+    const tail = dramaTiming.beginPlayback('tail', 'direct');
+    await vi.advanceTimersByTimeAsync(4_999);
+    await Promise.resolve();
+    expect(mocks.upload).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    tail.finish('playing');
+    tail.networkTiming({ status: 'no_entry', entries: [], truncated: false }, true);
+    expect(mocks.upload.mock.calls.map(([report]) => report.phase)).toEqual(['final', 'network']);
+    expect(mocks.upload.mock.calls.every(([report]) => report.elapsedMs === 5_000)).toBe(true);
+    mocks.upload.mockClear();
     mocks.id.mockReturnValue('d'); // bucket 0, quick-success detail sample.
     const quick = dramaTiming.beginPlayback('b', 'direct');
     quick.finish('playing');

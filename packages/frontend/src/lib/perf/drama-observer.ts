@@ -78,12 +78,13 @@ function mirrorDiagnostics(
 }
 
 /** Stable observation-level sampling keeps slow/final/network decisions aligned.
+ * Preserve every >=5s report for the backend Loki diagnostic stream.
  * Performance aggregates are always emitted; sampling applies only to detailed logs. */
 function diagnosticSample(report: DramaTimingReport): boolean {
   if (report.phase === 'start') return false;
   if (
     report.phase === 'slow' ||
-    report.elapsedMs >= 10_000 ||
+    report.elapsedMs >= 5_000 ||
     !['playing', 'ready'].includes(report.outcome)
   )
     return true;

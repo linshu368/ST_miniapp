@@ -278,9 +278,39 @@ recoverable_delivery仅新Backend显式启用；旧请求/终结账单不回填�
 
 验证：本任务release-review记录自动化、真实PG、TEST流/浏览器和生产版本证据；测试通过不等于线上1%目标已达成。看板v3区分前台等待超时与系统无首字截断，显示分布只用浏览器业务侧实际时长，后台/缺报不填0。
 
+## 短剧慢启动详情（2026-10-29，本地实现）
+
+### 1. 范围与触发
+
+短剧达到五秒的实际终态详情需事后查询；复用OTLP→Alloy→Cloud Loki，不新增快照、服务或Supabase分析写入。
+
+### 2. 签名
+
+`POST /api/telemetry/drama-timing` → `observeDramaStartupDiagnostic(report: DramaTimingReport): void` → `drama.startup_diagnostic` JSON日志正文。
+
+### 3. 契约
+
+仅 `type=playback`、`phase=final|network`、`elapsedMs>=5000`；出口再次strict shared校验，报告32KiB上限。ID/数组仅放正文，既有日志属性120字符限制不能承载完整诊断。沿用ENGINEERING_TELEMETRY_ENABLED/ENGINEERING_OTLP_ENDPOINT、256条队列与2秒出口预算；202仅接收，不保证Cloud落盘。接口不再调用旧Supabase分析队列/RPC，即使旧持久化flag开启；历史对象/导入器保留。
+
+### 4. 验证与错误
+
+缺鉴权401、未知字段400、超body413、接收限流429沿用。SDK关闭/队列满/出口失败不改变202或播放结果，失败由原工程健康指标呈现；缺报不补0。iOS媒体计时受限仍为limited，无首字节/Range头保证。
+
+### 5. 正常与边界案例
+
+6000ms终态完整保存，迟到network同ID补证不算第二次启动；4999ms不进入新详情流，16007ms保持实际值。没有final的network不能算成功；强退未送达仍未知。
+
+### 6. 回归要求
+
+扩展既有OTLP真实HTTP接收测试验证完整media/queries/marks、五秒边界、终态/网络、禁密字段、出口关闭/失败隔离；路由验证旧DB flag为true仍零RPC。保持既有鉴权/限流/容量测试。
+
+### 7. 正误对照
+
+错误：把JSON塞入120字符属性，或接收后仍enqueue分析DB。正确：受控完整JSON写日志body；使用正文观察ID关联，路由不构造DB队列。回退旧应用前先独立审批关闭旧DB flag，避免恢复新写入。
+
 ## 短剧请求计时
 
-短剧路由在自身 Fastify 封装作用域记录 `drama.request_timing`（现有 requestLogger/Pino，source=backend）。短剧专用 Sentry 指标已移除，按现有 X-Request-Id 关联前端。新增鉴权 `POST /api/telemetry/drama-timing`：shared schema 校验有界客户端报告，写 `drama.frontend_timing`（source=frontend），保留 observation/list/request ID，接收请求 ID 独立为 upload_request_id；legacy可按既有开关异步写分析表，purpose=diagnostic仅日志。32 KiB body、12 queries/4 attempts、每用户每进程 120 次/分钟及全进程 1000 次/分钟限额，限流表最多 2000 项；503 不确认接收，429 不重试。客户端自报数据不能用作计费/权限事实。onResponse 覆盖成功、鉴权拒绝、参数/不存在、查询错误、无视频和签名失败，保留 auth/db_read/assemble/sign/total 毫秒与签名缓存 hit/miss/inflight。鉴权直接发送响应时 onResponse 可能早于 preHandler finally，需要采集当前阶段已用时间。
+短剧路由在自身 Fastify 封装作用域记录 `drama.request_timing`（现有 requestLogger/Pino，source=backend）。短剧专用 Sentry 指标已移除，按现有 X-Request-Id 关联前端。新增鉴权 `POST /api/telemetry/drama-timing`：shared schema 校验有界客户端报告，写 `drama.frontend_timing`（source=frontend），保留 observation/list/request ID，接收请求 ID 独立为 upload_request_id；接收端无论legacy/unified或旧持久化flag都不再写分析表；达到5秒的播放final/network另经Backend OTLP写Loki。32 KiB body、12 queries/4 attempts、每用户每进程 120 次/分钟及全进程 1000 次/分钟限额，限流表最多 2000 项；202仅接收、不保证日志落盘，429 不重试。客户端自报数据不能用作计费/权限事实。onResponse 覆盖成功、鉴权拒绝、参数/不存在、查询错误、无视频和签名失败，保留 auth/db_read/assemble/sign/total 毫秒与签名缓存 hit/miss/inflight。鉴权直接发送响应时 onResponse 可能早于 preHandler finally，需要采集当前阶段已用时间。
 
 `db_read` 是 repository 整体等待（含 PostgREST 往返），不是 SQL 独占时间。日志不得包含 object_path、签名 URL 或 Token；前端输入拒绝未知字段和任意正文。观测失败不能改变业务响应。无数据库或部署配置变更；具体口径与验证见 [短剧耗时排查](../../../../docs/drama-playback-timing.md)。
 
@@ -308,10 +338,10 @@ recoverable_delivery仅新Backend显式启用；旧请求/终结账单不回填�
 
 1. **Scope / Trigger**：短剧目录、首页/详情启动、阶段和诊断统一；播放控制、签名和后端计时不改。
 2. **Signatures**：shared `dramaTimingStages(marks)` 返回有限stages；报告兼容增加 `definition?: drama_v3`、`route?: /|/dramas|/dramas/:id`、`purpose?: diagnostic` 和四个有限阶段字段。兼容报告version仍2。
-3. **Contracts**：新tracker/日志/Faro共用阶段helper；缺失/逆序不补0，合法0保留。原elapsedMs和first_frame+playing终态不变。目录route/起点随观察绑定，background在owner内生成，不能在出口按当前路径/可见性猜测。构建SHA统一Grafana/DRAMA release。NEXT_PUBLIC_DRAMA_TIMING_MODE默认legacy；显式unified且Faro配置有效时，全量统计走Faro，100%慢/非成功和5%快成功有界明细走Pino，专用start停发，diagnostic永不入分析库。
-4. **Validation & Error Matrix**：旧报告兼容；未知definition/route/purpose和敏感嵌套字段400，超body413，限流429，diagnostic唯一日志出口同步失败503。202仅accepted；接口、repository和历史导入器均防止diagnostic落表。Faro关闭/非法配置保留legacy，遥测故障不得改变播放。
+3. **Contracts**：新tracker/日志/Faro共用阶段helper；缺失/逆序不补0，合法0保留。原elapsedMs和first_frame+playing终态不变。目录route/起点随观察绑定，background在owner内生成，不能在出口按当前路径/可见性猜测。构建SHA统一Grafana/DRAMA release。NEXT_PUBLIC_DRAMA_TIMING_MODE默认legacy；显式unified且Faro配置有效时，全量统计走Faro，100%≥5秒/非成功和5%不足5秒成功有界明细走Pino，符合条件的final/network另经Backend OTLP写Loki，专用start停发，diagnostic永不入分析库。
+4. **Validation & Error Matrix**：旧报告兼容；未知definition/route/purpose和敏感嵌套字段400，超body413，限流429，Pino失败仍尝试独立Cloud出口。202仅accepted；接口、repository和历史导入器均防止diagnostic落表。Faro关闭/非法配置保留legacy，遥测故障不得改变播放。
 5. **Good/Base/Bad Cases**：Good：首页启动仍归/，元数据→画面数据→首帧新段有有效N；Base：旧客户端和默认legacy继续原上报；Bad：迟到报告借当前页面归属、逆序填0、把5%日志用作总体成功率、把final与network当两次启动。
 6. **Tests Required**：扩展既有shared telemetry-contract、frontend drama-timing/observer/media/grafana及backend telemetry回归；所有消费者typecheck，相关lint/build。Cloud查询可执行不等于新信号往返或真实Telegram验收；本地@drama现有场景可复用作后续重复验收，不新增临时mock体系。
-7. **Wrong vs Correct**：Wrong为在SQL/前端另写新阶段计算并默认关闭旧链路；Correct为复用唯一helper，v3筛选隔离历史，Backend兼容→Frontend默认双轨→TEST/Cloud/真实流程验证→独立批准unified与旧写入停用。旧表/视图/历史看板/保留期job本轮不删除。
+7. **Wrong vs Correct**：Wrong为在SQL/前端另写新阶段计算并默认关闭旧链路；Correct为复用唯一helper，v3筛选隔离历史，Backend兼容→Frontend默认双轨→TEST/Cloud/真实流程验证→独立批准unified；接收端已按五秒长尾方案停止分析写入。旧表/视图/历史看板/保留期job本轮不删除。
 
 字段、诊断粒度、分母和切换恢复统一见 `docs/drama-playback-timing.md`。

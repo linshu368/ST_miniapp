@@ -1,0 +1,32 @@
+{
+  "id": "drama-five-second-diagnostics",
+  "name": "drama-five-second-diagnostics",
+  "title": "短剧五秒慢启动常态采集",
+  "description": "按用户修订：不新增5秒快照、不写Supabase，复用现有Grafana Cloud Loki常态采集慢启动详情。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "observability",
+  "package": "backend",
+  "priority": "P2",
+  "creator": "linshu",
+  "assignee": "linshu",
+  "createdAt": "2026-10-29",
+  "completedAt": null,
+  "branch": "codex/drama-slow-diagnostics-loki",
+  "base_branch": "73be921048407249c896db5332c93426ee1fc996",
+  "worktree_path": "/Users/qj/.codex/worktrees/drama-five-second-diagnostics/ST_miniAPP",
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "用户明确允许基于已上线73be921最小接入；不新增五秒快照、不写Supabase，复用既有OTLP/Loki。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": ["backend.infrastructure.runtime-data-security"]
+    }
+  }
+}

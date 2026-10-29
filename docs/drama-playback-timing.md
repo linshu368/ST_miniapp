@@ -2,6 +2,15 @@
 
 短剧只有一个计时 owner：`lib/perf/drama-timing.ts`，媒体证据由 `drama-media.ts/drama-resources.ts` 提供。日常统计入口为 [工程短剧看板](https://ea3213527545.grafana.net/d/st-engineering-drama)，服务端分段在 [工程服务看板](https://ea3213527545.grafana.net/d/st-engineering-backend)。Faro/Loki 负责全量性能分布与结果；Pino 负责有界单次诊断；旧数据库看板保留历史与切换前对照。
 
+## 五秒长尾常态采集（2026-10-29，本地实现，待发布）
+
+- 继续从每次原启动入口采集，不新增五秒定时快照。真实成功、失败、离开或后台的 `phase=final` 达到5000ms时，完整有界报告经后端已有OTLP出口写Cloud Loki，事件名 `drama.startup_diagnostic`；迟到 `phase=network` 复用同一观察ID补媒体证据，不生成第二次启动。
+- 成功仍要求首帧且playing；elapsed保持实际值，不在五秒中断播放。原十秒slow报告仍兼容Pino，但不会另存这条Loki诊断流。
+- 每条报告沿用strict shared白名单与32KiB上限，保留media/queries/marks/diagnostics；观察/视频/会话ID仅在JSON正文。iOS字段不可读仍标limited，不输出URL、token、路径、身份或任意正文。
+- 路由停止Supabase分析写入，即使旧DRAMA_TIMING_PERSIST_ENABLED=true；原表/导入器/SQL看板保留历史，不重写、不删除。下文数据库落表/7天详情/14天摘要只描述历史SQL路径，不适用于新的Loki流；Loki保留期按实际Cloud配置，未在本轮修改。
+- ENGINEERING_TELEMETRY_ENABLED与现有OTLP私网端点是新出口的前提；复用256条日志队列、2秒预算和既有drop/failure健康指标。202仅接口接收，关闭/限流/断网/强退仍可能缺报，无离线补传。
+- 事后入口为现有st-engineering-drama新增的两个详情面板；原浏览器流选择器不影响它们，版本筛选读取报告里的客户端release。发布与查询见runbook。
+
 本次统一定义代码为 `drama_v3`，尚未发布/启用；报告结构仍为兼容的 `version=2`。这两个版本号含义不同，不用报告结构版本替代测量定义。新代码不新增数据库对象、依赖或监控 cron，不改媒体 src、播放/预取/重试/签名策略。
 
 ## 唯一计算定义与粒度
@@ -14,14 +23,14 @@
 
 ## 上报模式与切换门禁
 
-- 构建变量 `NEXT_PUBLIC_DRAMA_TIMING_MODE` 缺省/非unified为legacy：原报告仍全量上传旧接口，已有数据库开关保持原行为，便于部署前后对照。
-- 显式unified且Faro公开配置有效时：全量started/terminal、耗时和诊断能力摘要走原Faro；旧接口不再上传start。慢观察（≥10秒）、所有非成功终态的有界细节保留100%，快成功按observation ID确定性保留5%；slow/final/network沿同一观察决策，不建立额外持久状态。
-- 采样后的报告标 `purpose=diagnostic`，只写Pino；即使Backend旧持久化开关仍开，也不入分析队列。repository和历史导入器再次阻止这类诊断写库，避免把采样明细误算全量。
+- 构建变量 `NEXT_PUBLIC_DRAMA_TIMING_MODE` 缺省/非unified为legacy：原报告仍全量上传旧接口，接收端不再触发数据库写入，便于对照上传行为。
+- 显式unified且Faro公开配置有效时：全量started/terminal、耗时和诊断能力摘要走原Faro；旧接口不再上传start。慢观察（≥5秒）、所有非成功终态的有界细节保留100%，不足5秒的成功按observation ID确定性保留5%；slow/final/network沿同一观察决策，不建立额外持久状态。
+- 采样后的报告标 `purpose=diagnostic`，写Pino，符合五秒播放final/network条件的报告另经Backend OTLP写Loki；接收端不再建立分析队列。repository和历史导入器再次阻止这类诊断写库，避免把采样明细误算全量。
 - Faro关闭/配置非法时回到legacy；Faro网络失败不改变播放，不自动重发或回写数据库。日志上传仍是5秒总预算、background、keepalive、不重试；无离线补传或完整送达保证。
-- `accepted:true`与202只代表接口接受，不能当作Cloud实收或数据库落盘；diagnostic唯一日志出口同步抛错时503。Pino正常返回也不证明平台永久保存。
+- `accepted:true`与202只代表接口接受，不能当作Cloud实收或数据库落盘；Pino抛错后仍调用独立Cloud出口。Pino正常返回也不证明平台永久保存。
 - 所有浏览器遥测release在构建时统一采用实际Vercel SHA，非Vercel构建使用明确Grafana release/Sentry release；旧DRAMA release随同赋值。不得手动把旧版本标成新版本。
 
-Backend须先兼容definition/route/purpose及新增stages，再发布Frontend，默认仍legacy。TEST/Cloud与真实媒体流程核对后才独立批准unified；随后检查旧客户端/消费者，再关闭DRAMA_TIMING_PERSIST_ENABLED。旧表、SQL视图、历史看板和清理job不在本次删除范围，不能未经保留期核对就关闭清理造成积压。回滚先把Frontend构建模式改回legacy，Backend保持兼容；数据库无需恢复。
+Backend须先兼容definition/route/purpose及新增stages，再发布Frontend，默认仍legacy。TEST/Cloud与真实媒体流程核对后才独立批准unified；接收端已停止分析写入，DRAMA_TIMING_PERSIST_ENABLED不再控制此接口。旧表、SQL视图、历史看板和清理job不在本次删除范围，不能未经保留期核对就关闭清理造成积压。回滚先把Frontend构建模式改回legacy，Backend保持兼容；数据库无需恢复。
 
 ## 工程看板与诊断分母
 
@@ -80,7 +89,7 @@ Backend须先兼容definition/route/purpose及新增stages，再发布Frontend�
 - 首帧等待为 `first_frame` 偏移；启动完成为 `max(first_frame,playing)`，两者均到才成功。分析视图细分源→元数据、元数据→loadeddata、loadeddata→frame、frame→启动完成。缺失/逆序为 NULL，不能截为0。导航/预取并行，阶段P95不能相加。
 - `miniapp_analytics.drama_playback_observations` 每环境/观察一行，数据库RPC原子合并乱序与重复；首个final不可被start/slow/冲突final改写。summary全量；慢/失败诊断全量、快速成功明细确定性5%。可见网络摘要和帧/长任务摘要也全量保存，避免明细采样影响分布。
 - 摘要14天、详细数据7天；受限清理job初始关闭，验证容量后启用。仅service_role写，Grafana NOLOGIN reader只读，anon/authenticated无权限。无业务外键，播放API不读写此表。
-- 持久化开启时写入成功后返回 `accepted:true,persisted:true`；DB短超时2秒、单进程最多2个在途写、过载429/故障503。默认日志模式保留旧 `accepted:true`。环境开关启动时读取，关闭后需重新部署；遥测请求独立于播放请求。
+- 上述数据库对象与保留期描述历史SQL路径；当前接收接口不再调用这些写入，固定返回202/`{ accepted: true }`。旧持久化flag不能恢复此接口写库；历史数据和离线导入器保留。
 - Grafana 独立 UID `st-drama-playback`，只新增短剧看板，不修改经营/首token看板。默认24小时、5分钟刷新、最多读14天，复用现有只读数据源与连接上限。分位数附有效N，退出/后台/无终态单列，不把缺报算成功；旧日志标legacy且不能补回新字段。
 
 ## 上报可靠性与容量
@@ -88,9 +97,9 @@ Backend须先兼容definition/route/purpose及新增stages，再发布Frontend�
 - 浏览器先写同口径日志，再异步发送；失败记录 `drama.timing_upload_failed`，不改变播放结果。复用 API client 的 Telegram 鉴权，POST 不重试，低优先级并发槽与 `keepalive`；总预算五秒，包括排队和响应体。
 - `keepalive` 尽力支持离开/后台时发送，不保证强制关闭、离线或鉴权过期时送达。无本地持久化、离线补传或远程送达保证；缺报不能推断成功。浏览器日志不自动进入 Vercel 日志。
 - 接收端只允许共享 schema 中的有限枚举、数值、关联 ID 和计时结构，未知字段拒绝；不接收媒体地址、签名、对象路径、请求/响应正文或原始错误。
-- 单次 body 上限 32 KiB，最多十二次查询、每次四次 HTTP 尝试，明细截断显式标记。鉴权用户每进程每分钟最多 120 次上报，全进程每分钟最多 1000 次；用户限流表最多 2000 项。超限返回 429。unified诊断不写库；legacy持久化仍由既有开关独立控制，不增加依赖。这是进程诊断容量保护，多副本配额独立。
+- 单次 body 上限 32 KiB，最多十二次查询、每次四次 HTTP 尝试，明细截断显式标记。鉴权用户每进程每分钟最多 120 次上报，全进程每分钟最多 1000 次；用户限流表最多 2000 项。超限返回 429。接收端所有模式都不写库，不增加依赖。这是进程诊断容量保护，多副本配额独立。
 - 媒体诊断复用上述大小/频率约束，media/state/event 全部 strict 白名单；旧报告不带 media 仍接受。旧 Backend 会拒绝新增字段，因此扩展 validator 的 Backend 必须先于新 Frontend 部署；不影响旧客户端视频播放。
-- 接口异步队列接收返回202/`{ accepted: true }`；diagnostic日志输出抛错返回503，legacy的异步存储失败另记日志。该确认不等于 Railway 日志永久落盘。
+- 接口校验接收返回202/`{ accepted: true }`；Pino抛错仍调用独立Cloud出口，无分析存储队列。该确认不等于 Railway 日志永久落盘。
 - `source=frontend` 属于客户端自报，不作为计费、权限或安全事实；进程日志时间是接收时间。
 
 ## 验证与发布

@@ -16,7 +16,7 @@
   "base_branch": "dev",
   "worktree_path": "/Users/qj/.codex/worktrees/drama-telemetry-unification/ST_miniAPP",
   "commit": null,
-  "pr_url": null,
+  "pr_url": "https://github.com/linshu368/ST_miniapp/pull/542",
   "subtasks": [],
   "children": [],
   "parent": null,
@@ -28,9 +28,10 @@
     "verification.md",
     "query-validation.json",
     "module-updates.json",
-    "review-digest.json"
+    "review-digest.json",
+    "conflict-resolution.md"
   ],
-  "notes": "六处代码/源定义已实现，生产切换门禁保留；提交、推送、发布、线上开关和旧对象删除均未执行。",
+  "notes": "六处统一已由用户授权提交推送（b5a61c45）；用户随后授权解决PR542与dev冲突并直接推送。最新合并验证见conflict-resolution.md；PR合并、部署、线上开关和旧对象删除不在本轮范围。",
   "meta": {
     "module_impact": {
       "schema_version": 1,

@@ -1,5 +1,34 @@
 # 短剧启动看板：发布、历史导入与真机验收
 
+## Loki五秒慢启动详情（2026-10-29，本地待发布）
+
+当前增量以已上线73be921为基线，沿用现有OTLP→Alloy→Cloud Loki，不新增服务、凭证或Supabase migration。不修改播放、客户端计时或五秒时行为。
+
+发布：先发布Backend（旧客户端兼容）→确认原ENGINEERING_TELEMETRY_ENABLED与端点仍正常→仅将原 `st-engineering-drama` 新增面板11/12及diagnostic_observation变量合入线上最终JSON（先读回并保留线上其他修改/变量）→核验自然样本。不要将带“待接入”默认变量的整份模板覆盖当前线上配置。无需Frontend部署。原SQL看板会停止收到此路由的新记录，保留历史；不要为了新链路启用旧持久化flag或执行旧迁移。
+
+Grafana Explore选择 `grafanacloud-logs`，先筛终态，再展开JSON。达到5秒包含失败/退出/后台，成功筛outcome=playing；不得用均值或P95替代逐次等待。
+
+```logql
+{service_name="st-miniapp-backend", deployment_environment_name="production"}
+|= `"event":"drama.startup_diagnostic"`
+| json diagnostic_phase="phase", wait_ms="elapsedMs", observation="id", result="outcome", client_release="context.release"
+| __error__="" | diagnostic_phase="final" | wait_ms >= 5000
+```
+
+复制 observation 后查同次全部证据（final/network不能算成两次启动）：
+
+```logql
+{service_name="st-miniapp-backend", deployment_environment_name="production"}
+|= `"event":"drama.startup_diagnostic"`
+| json observation="id" | __error__="" | observation="填写观察ID"
+```
+
+展开 `media.events/media.snapshot/queries/marks/diagnostics.network.entries`，确认实际elapsed、首帧/playing、受限状态、迟到网络与版本。Loki成功查询有记录才证明本功能Cloud送达；202、已有接口日志和合成OTLP测试都不能替代。等待未完成且强退无终态时可能缺失；本轮按用户要求不加定时状态存储。字段受TAO/WebView限制，缺失不补0，日志不等同完整HAR或Range请求头。
+
+回退：应用和新增面板可回到前版本；先独立审批将旧DRAMA_TIMING_PERSIST_ENABLED=false，避免回退恢复Supabase新写入。历史Cloud/SQL记录不删除，无数据库回滚。日志队列/失败由原工程监控健康指标观察。
+
+下文为历史SQL看板上线记录与操作说明，不作为新Loki链路步骤。
+
 这是操作说明，不代表已完成远端迁移、部署或发布。当前实施/验证状态以 Trellis 任务 `10-27-drama-playback-observability/verification.md` 为准。
 
 ## 统一链路切换（2026-10-29，本地实现待发布）
@@ -8,9 +37,9 @@
 
 1. 先Backend兼容 `definition=drama_v3`、有限route、purpose=diagnostic及新stages；再部署Frontend，保留默认legacy，确认两种报告口径可对照。
 2. 确认Faro/Loki真实字段、毫秒、当前release、home/detail、目录起点及新四段；成功必须first_frame+playing。网络final快照与tail分开，未知不填0。
-3. TEST中显式构建unified：确认Faro全量统计仍到达、专用start不再上传、慢/失败有完整有界Pino、快成功仅5%稳定样本；开启旧持久化开关的测试替身也不能写diagnostic报告。真机检查后台/换源/拒绝/手动恢复与上报失败不影响播放。
-4. 生产切换独立授权；检查旧客户端和SQL消费者后才关闭旧持久化开关。不删除表/视图/历史看板，不随意关闭仍处理旧数据的保留期job。旧看板保留为历史和切换前对照，不能混合新工程样本计算总体。
-5. 回滚Frontend构建模式legacy并重新发布，Backend兼容保留；原数据库开关只有另获授权才恢复。禁止把采样diagnostic日志经旧导入脚本写回分析表。
+3. TEST中显式构建unified：确认Faro全量统计仍到达、专用start不再上传、≥5秒/失败有完整有界Pino、符合条件的final/network到Cloud Loki、不足5秒成功仅5%稳定样本；开启旧持久化开关的测试替身也不能写任何分析报告。真机检查后台/换源/拒绝/手动恢复与上报失败不影响播放。
+4. 生产切换独立授权；接收端已停止分析写入，旧持久化开关不再控制此接口。不删除表/视图/历史看板，不随意关闭仍处理旧数据的保留期job。旧看板保留为历史和切换前对照，不能混合新工程样本计算总体。
+5. 回滚Frontend构建模式legacy并重新发布，Backend兼容保留；仅恢复上传量，接收端继续不写分析库。禁止把采样diagnostic日志经旧导入脚本写回分析表。
 
 详细字段、采样、隐私与能力边界统一见 [短剧播放耗时排查](../drama-playback-timing.md)。新代码回归/查询通过不等于上述Cloud往返与真实Telegram验收通过。
 

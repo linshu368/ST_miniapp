@@ -363,6 +363,16 @@
         "hide": 0,
         "multi": false,
         "includeAll": false
+      },
+      {
+        "name": "diagnostic_observation",
+        "label": "慢启动 observation_id",
+        "type": "textbox",
+        "query": "",
+        "current": {
+          "text": "",
+          "value": ""
+        }
       }
     ]
   },
@@ -396,7 +406,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**待 TEST Cloud 接入验证；不是线上验收完成。** 本机已核验固定版本 Faro → Alloy → Loki 的日志字段。Cloud 托管浏览器入口需再核对实际流标签/格式，browser_selector 不得凭空猜测。无数据不等于0次失败。按同环境、版本、入口、网络/平台层比较，成功P50/P95与终态样本量一起看；低样本只观察，不自动排名或作人员考核。默认24h/5min，避免高频长窗查询。\n\n开始/终态按窗口计数，**不是逐请求闭环或全访问覆盖**（无身份关联，窗口边界和丢报可影响结果）。先观察24–48h基线，再审核预算；后台、离页和主动停止单列。\n\n启动成功必须first_frame+playing；canplay/地址返回不算。卡顿只用启动后前台非暂停/seek的waiting→playing；stalled只作网络诊断。新窗口提供实际播放和卡顿时长分母，但不是完整会话或全量送达。各分段有重叠，不可相加。\n\n**分层比较：** 设备/客户端按Telegram平台归类，不采集具体机型；网络是浏览器估算的有效速度等级，不是Wi-Fi/蜂窝类型。iOS等不支持时为unknown，不能视为弱网。默认全部保留历史缺标签；具体筛选只看对应样本。普通测量取入队时网络；播放窗口取起点，起止不同标mixed，不证明整窗稳定。\n\n**统一定义 v3（代码待发布验证）**：新启动/目录默认只看 drama_v3；旧版本必须独立选择，不能拼接成优化前后基线。首页与详情归属绑定原观察；补齐进入→设置源、元数据→画面数据、画面数据→首帧、首帧→启动完成，缺失/逆序不补0。成功、失败、退出分母不变。\n\n新诊断展示final快照与network尾报告，两者不是独立播放，不可合计算观察数；阶段与能力分母各自不同。全量工程统计不采样；统一模式下Pino保留全部慢/失败/退出与5%快成功明细，细节只用于排障。全量旧上传/分析写入必须在TEST/Cloud与真实流程验证后显式切换；源文件不是生产验收证据。"
+        "content": "**待 TEST Cloud 接入验证；不是线上验收完成。** 本机已核验固定版本 Faro → Alloy → Loki 的日志字段。Cloud 托管浏览器入口需再核对实际流标签/格式，browser_selector 不得凭空猜测。无数据不等于0次失败。按同环境、版本、入口、网络/平台层比较，成功P50/P95与终态样本量一起看；低样本只观察，不自动排名或作人员考核。默认24h/5min，避免高频长窗查询。\n\n开始/终态按窗口计数，**不是逐请求闭环或全访问覆盖**（无身份关联，窗口边界和丢报可影响结果）。先观察24–48h基线，再审核预算；后台、离页和主动停止单列。\n\n启动成功必须first_frame+playing；canplay/地址返回不算。卡顿只用启动后前台非暂停/seek的waiting→playing；stalled只作网络诊断。新窗口提供实际播放和卡顿时长分母，但不是完整会话或全量送达。各分段有重叠，不可相加。\n\n**分层比较：** 设备/客户端按Telegram平台归类，不采集具体机型；网络是浏览器估算的有效速度等级，不是Wi-Fi/蜂窝类型。iOS等不支持时为unknown，不能视为弱网。默认全部保留历史缺标签；具体筛选只看对应样本。普通测量取入队时网络；播放窗口取起点，起止不同标mixed，不证明整窗稳定。\n\n**统一定义 v3（代码待发布验证）**：新启动/目录默认只看 drama_v3；旧版本必须独立选择，不能拼接成优化前后基线。首页与详情归属绑定原观察；补齐进入→设置源、元数据→画面数据、画面数据→首帧、首帧→启动完成，缺失/逆序不补0。成功、失败、退出分母不变。\n\n新诊断展示final快照与network尾报告，两者不是独立播放，不可合计算观察数；阶段与能力分母各自不同。全量工程统计不采样；统一模式下Pino保留全部慢/失败/退出与5%快成功明细，细节只用于排障。全量旧上传必须在TEST/Cloud与真实流程验证后显式切换；接收端已按五秒长尾方案停止分析写入；源文件不是生产验收证据。\n\n五秒长尾：达到5000ms的播放final/network有界详情经Backend OTLP→Alloy写Loki（下方面板11/12），观察ID仅在JSON正文。final与network不可重复计数；浏览器流/测量定义筛选不作用于此后端详情流。接收端不再写Supabase，202仅接收；模板不代表已发布。unified保留全部≥5秒/非成功细节与5%快速成功明细，Faro统计全量。"
       },
       "fieldConfig": {
         "defaults": {},
@@ -1222,6 +1232,80 @@
       },
       "options": {
         "showHeader": true
+      }
+    },
+    {
+      "id": 11,
+      "type": "logs",
+      "title": "达到5秒的启动详情（逐次实际等待）",
+      "description": "Backend写入Loki的完整受控诊断；包含失败、离开和后台终态，不能全部算成功。展开JSON查看marks/media/queries/diagnostics；limited表示详细媒体计时不可读，不补0。版本筛选采用客户端release；原浏览器流选择器/measurement_version不适用于本面板。",
+      "datasource": {
+        "type": "loki",
+        "uid": "grafanacloud-logs"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 93,
+        "w": 24,
+        "h": 10
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          },
+          "expr": "{service_name=\"st-miniapp-backend\", deployment_environment_name=\"${environment}\"} |= `\"event\":\"drama.startup_diagnostic\"` | json diagnostic_phase=\"phase\", wait_ms=\"elapsedMs\", observation=\"id\", client_release=\"context.release\", device_platform=\"context.platform\", playback_entry=\"entry\" | __error__=\"\" | client_release=~\"${release:raw}\" | diagnostic_phase=\"final\" | wait_ms >= 5000",
+          "queryType": "range"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": true,
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none"
+      }
+    },
+    {
+      "id": 12,
+      "type": "logs",
+      "title": "单次慢启动：终态与迟到媒体证据",
+      "description": "填写上方observation_id，按phase区分final与network；network是同一次启动的补充，不计为第二次成功。详情送达和Loki保留期受现有出口/Cloud限制，缺失不表示播放正常。",
+      "datasource": {
+        "type": "loki",
+        "uid": "grafanacloud-logs"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 103,
+        "w": 24,
+        "h": 10
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          },
+          "expr": "{service_name=\"st-miniapp-backend\", deployment_environment_name=\"${environment}\"} |= `\"event\":\"drama.startup_diagnostic\"` | json diagnostic_phase=\"phase\", wait_ms=\"elapsedMs\", observation=\"id\", client_release=\"context.release\", device_platform=\"context.platform\", playback_entry=\"entry\" | __error__=\"\" | client_release=~\"${release:raw}\" | observation=${diagnostic_observation:doublequote}",
+          "queryType": "range"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": true,
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none"
       }
     }
   ]

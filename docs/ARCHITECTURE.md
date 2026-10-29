@@ -566,7 +566,9 @@ packages/backend/src/
 
 短剧性能的唯一计时owner仍为drama-timing/媒体观察器；shared `dramaTimingStages`集中阶段定义，`definition=drama_v3`与兼容报告version=2分开。Faro/Loki提供全量目录/启动/首帧/阶段、结果与有限诊断摘要；OTel复用原Backend auth/db_read/assemble/sign分段；Pino保留有界单次请求/媒体诊断。首页/详情归属与目录起点绑定原观察，构建release统一为实际SHA，身份和签名URL不进Faro标签。
 
-构建模式NEXT_PUBLIC_DRAMA_TIMING_MODE默认legacy，旧POST与可选分析写入保持兼容。验证后显式unified且Faro配置有效时，原POST仅承载100%慢/非成功与5%快速成功的Pino诊断，不再上传start；purpose=diagnostic在route/repository/import三层阻止分析写入，全量性能统计不采样。旧客户端仍受DRAMA_TIMING_PERSIST_ENABLED独立控制；新链路Cloud/真实流程验证和生产授权前不关闭。旧表/SQL视图/历史看板/保留期job先保留，无新migration/cron/依赖。发布Backend兼容→Frontend默认双轨→验证→显式切换；回滚Frontend模式legacy，Backend继续兼容。详见[短剧统一口径](drama-playback-timing.md)与[切换说明](grafana/drama-playback-runbook.md)。
+短剧列表与播放通过鉴权 `POST /api/telemetry/drama-timing` 接收有界客户端报告并保留Pino日志。达到5000ms的播放终态以及同一次观察的迟到network报告，以受控JSON正文经现有工程OTLP队列→Alloy→Grafana Cloud Loki，事件名 `drama.startup_diagnostic`；strict shared白名单、32KiB报告上限、256项既有队列与2秒出口预算不变。观察/视频/会话ID仅放日志正文，不进入指标或stream标签。无需Frontend变更或五秒快照；原十秒slow仍兼容但不写此Loki详情流。路由不再构造分析DB队列、不调用原观察RPC，旧 `DRAMA_TIMING_PERSIST_ENABLED` 即使为true也不驱动此接口写库；历史表/导入器/旧SQL看板保留，不删除历史。新看板详情追加到 `st-engineering-drama`，final与network不能重复计作两次启动。能力受TAO/WebView限制，limited/no_entry/unsupported不是0毫秒；出口关闭、过载或页面强退仍可能丢失，202只证明接口接收。源码不代表已上线，见[计时说明](drama-playback-timing.md)和[看板操作说明](grafana/drama-playback-runbook.md)。
+
+构建模式NEXT_PUBLIC_DRAMA_TIMING_MODE默认legacy，保留全量旧POST；此路由在任何模式下都不再写分析库。验证后显式unified且Faro配置有效时，POST保留100%≥5秒/非成功与5%不足5秒成功诊断，不再上传start，全量性能统计不采样。purpose=diagnostic还由repository/import防止历史补录。旧表/SQL视图/历史看板/保留期job保留，无新migration/cron/依赖。Backend兼容→Frontend默认legacy→验证→独立授权unified；回滚Frontend模式legacy仅恢复上传量，不恢复DB写入。详见[短剧统一口径](drama-playback-timing.md)与[切换说明](grafana/drama-playback-runbook.md)。
 
 **本地页面验收**：`packages/ui-tests` 以虚构公开DTO提供HTTP/SSE场景，浏览器运行真实Frontend。手动与自动验收使用独立端口、状态和Next缓存，不依赖数据库、模型或支付；见 [移动端验收说明](../packages/ui-tests/README.md)。
 

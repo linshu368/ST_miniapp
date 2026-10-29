@@ -19,24 +19,16 @@ import { requireTelegramAuth } from '../middleware/auth.js';
 import { getOrCreateDbUserRecord } from '../lib/user.js';
 import { requestLogger } from '../lib/logger.js';
 import { MiniappWalletRepository } from '../infrastructure/repositories/MiniappWalletRepository.js';
-import { DramaTimingRepository } from '../features/drama/timing-repository.js';
-import { DramaTimingProcessor } from '../features/drama/timing-processor.js';
-import { getDramaTimingPersistenceConfig } from '../platform/runtime-config.js';
+import { observeDramaStartupDiagnostic } from '../lib/engineering-observability.js';
 
 export default async function telemetryRoutes(app: FastifyInstance) {
   const wallets = new MiniappWalletRepository();
-  const timingRepository = new DramaTimingRepository();
-  const timingConfig = getDramaTimingPersistenceConfig();
-  const timingProcessor = new DramaTimingProcessor(timingRepository, timingConfig);
-
-  app.addHook('onClose', async () => timingProcessor.close());
-
   // 仅保护本进程的诊断日志容量，不作为业务限流或跨副本一致性机制。
   const uploadWindows = new Map<number, { startedAt: number; count: number }>();
   let totalWindow = { startedAt: performance.now(), count: 0 };
   const windowMs = 60_000;
 
-  // @frontend-ready: true — 保留 Railway 诊断；显式启用后写分析表，不参与视频播放。
+  // @frontend-ready: true — 慢启动详情复用 Cloud Loki 出口；不写 Supabase 分析表。
   app.post(
     '/api/telemetry/drama-timing',
     {
@@ -75,36 +67,16 @@ export default async function telemetryRoutes(app: FastifyInstance) {
         return reply.status(400).send(fail('BAD_REQUEST', 'Invalid timing report'));
       const log = requestLogger(request.log, 'drama');
       const fields = { ...dramaTimingLogFields(parsed.data), upload_request_id: request.id };
-      let logged = false;
       try {
         if (parsed.data.phase === 'slow') log.biz.warn(fields, 'drama frontend timing');
         else log.biz.info(fields, 'drama frontend timing');
-        logged = true;
       } catch (err) {
         log.sys.error(
           { err, event: 'drama.timing_log_failed', observation_id: parsed.data.id },
           'drama frontend timing log failed'
         );
       }
-      if (parsed.data.purpose === 'diagnostic' && !logged)
-        return reply.status(503).send(fail('UNAVAILABLE', 'Timing log unavailable'));
-      if (
-        timingConfig.enabled &&
-        parsed.data.type === 'playback' &&
-        parsed.data.purpose !== 'diagnostic'
-      ) {
-        if (!timingProcessor.enqueue(parsed.data, log)) {
-          log.sys.warn(
-            {
-              event: 'drama.timing_dropped',
-              observation_id: parsed.data.id,
-              reason: 'persistence_queue_full',
-              ...timingProcessor.stats(),
-            },
-            'drama timing dropped by persistence budget'
-          );
-        }
-      }
+      observeDramaStartupDiagnostic(parsed.data);
       return reply.status(202).send(ok<PostDramaTimingData>({ accepted: true }));
     }
   );
