@@ -333,3 +333,5 @@ Good：鉴权与归属后签TEST单对象，CDN签名覆盖源token并早于源�
 ### 7. Wrong vs Correct
 
 Wrong：把旧单样本规则解除白名单后称为全量Bunny。Correct：固定TEST桶动态回源，不同真实对象均通过206/Range与字节核验，旧实验路径继续关闭。
+
+Bunny动态Origin实测：`Path.1-`在保留文件名时也保留原query，不可在其后再拼`?token=`。标准归档键`videos/<video_id>/original`应使用`%{Path.1-2}/%{Url.Filename}?token=%{Query.origin_token}`，避免CDN查询混入源JWT；新路径层级需重新核验。

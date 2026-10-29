@@ -1,0 +1,209 @@
+{
+  "schema_version": 1,
+  "environment": "pr-525",
+  "database_target": "test",
+  "code_commit": "f88053a58406eef601e1e5e2b865df9090e88dff",
+  "backend_enabled_deployment": "4df23b5f-a228-42f7-930d-e052d1c8951f",
+  "frontend_code_deployment": "https://st-miniapp-frontend-h2v2obto8-3213527545-4308s-projects.vercel.app",
+  "frontend_bundle_api_pr525": true,
+  "frontend_bundle_release_prefix": true,
+  "old_page_status": 404,
+  "configuration": {
+    "DRAMA_CDN_ENABLED": true,
+    "dedicated_key_present": true,
+    "retired_experiment_variables_remaining": [],
+    "DEV_AUTH_BYPASS": "0",
+    "MOCK_AUTH": "0"
+  },
+  "normal_api_and_range": {
+    "normal_api": [
+      {
+        "sample": 1,
+        "normal_api_status": 200,
+        "bunny_host": true,
+        "full_url_and_expiry_reused": true,
+        "non_whitelisted_fixture": 99999
+      },
+      {
+        "sample": 1,
+        "missing_auth": 401,
+        "wrong_video": 404
+      },
+      {
+        "sample": 2,
+        "normal_api_status": 200,
+        "bunny_host": true,
+        "full_url_and_expiry_reused": true,
+        "non_whitelisted_fixture": 99998
+      },
+      {
+        "sample": 2,
+        "missing_auth": 401,
+        "wrong_video": 404
+      },
+      {
+        "retired_api": "/api/drama-cdn-experiment/sample",
+        "status": 404
+      },
+      {
+        "retired_api": "/api/drama-cdn-experiment/play",
+        "status": 404
+      },
+      {
+        "small_test_media_bytes": 939483,
+        "first_frame_decode": true,
+        "later_frame_decode": true,
+        "scope": "FFmpeg functional smoke, not Telegram or a performance sample"
+      }
+    ],
+    "media_ranges": [
+      {
+        "label": "normal-source-1",
+        "status": 206,
+        "curl_exit": 0,
+        "range": "0-1023",
+        "bytes_read": 1024,
+        "content-range": "bytes 0-1023/76436151",
+        "content-type": "video/mp4",
+        "content-length": "1024",
+        "age": "263",
+        "server": "cloudflare",
+        "sha256": "faa332cd38361b8d68ae3eb7f42f50bec7afd5a2ecf6f3a389b6a0586f9fc7f0"
+      },
+      {
+        "label": "normal-bunny-1",
+        "status": 206,
+        "curl_exit": 0,
+        "range": "0-1023",
+        "bytes_read": 1024,
+        "content-range": "bytes 0-1023/76436151",
+        "content-type": "video/mp4",
+        "content-length": "1024",
+        "cdn-cache": "HIT",
+        "cdn-cachedat": "10/29/2026 02:56:29",
+        "age": "0",
+        "server": "BunnyCDN-KR1-1192",
+        "sha256": "faa332cd38361b8d68ae3eb7f42f50bec7afd5a2ecf6f3a389b6a0586f9fc7f0"
+      },
+      {
+        "label": "normal-source-1",
+        "status": 206,
+        "curl_exit": 0,
+        "range": "55034028-55035051",
+        "bytes_read": 1024,
+        "content-range": "bytes 55034028-55035051/76436151",
+        "content-type": "video/mp4",
+        "content-length": "1024",
+        "age": "264",
+        "server": "cloudflare",
+        "sha256": "3fceef659769acbc0c090a4838030d1a50558b2acb3e38881b89a58ff5530f98"
+      },
+      {
+        "label": "normal-bunny-1",
+        "status": 206,
+        "curl_exit": 0,
+        "range": "55034028-55035051",
+        "bytes_read": 1024,
+        "content-range": "bytes 55034028-55035051/76436151",
+        "content-type": "video/mp4",
+        "content-length": "1024",
+        "cdn-cache": "HIT",
+        "cdn-cachedat": "10/29/2026 02:57:18",
+        "age": "49",
+        "server": "BunnyCDN-KR1-1192",
+        "sha256": "3fceef659769acbc0c090a4838030d1a50558b2acb3e38881b89a58ff5530f98"
+      },
+      {
+        "label": "normal-source-2",
+        "status": 206,
+        "curl_exit": 0,
+        "range": "0-1023",
+        "bytes_read": 1024,
+        "content-range": "bytes 0-1023/939483",
+        "content-type": "video/mp4",
+        "content-length": "1024",
+        "age": "266",
+        "server": "cloudflare",
+        "sha256": "07a806e8769f0c34f3c0ad1acd679f4b0f2d23806c5698766955bd36d1529b62"
+      },
+      {
+        "label": "normal-bunny-2",
+        "status": 206,
+        "curl_exit": 0,
+        "range": "0-1023",
+        "bytes_read": 1024,
+        "content-range": "bytes 0-1023/939483",
+        "content-type": "video/mp4",
+        "content-length": "1024",
+        "cdn-cache": "HIT",
+        "cdn-cachedat": "10/29/2026 02:56:32",
+        "age": "0",
+        "server": "BunnyCDN-KR1-1192",
+        "sha256": "07a806e8769f0c34f3c0ad1acd679f4b0f2d23806c5698766955bd36d1529b62"
+      },
+      {
+        "label": "normal-source-2",
+        "status": 206,
+        "curl_exit": 0,
+        "range": "676427-677450",
+        "bytes_read": 1024,
+        "content-range": "bytes 676427-677450/939483",
+        "content-type": "video/mp4",
+        "content-length": "1024",
+        "age": "267",
+        "server": "cloudflare",
+        "sha256": "c1d955ac88a594b14409eddb4af64fe57ca374e38c4ff1487e62cc3cb0735c90"
+      },
+      {
+        "label": "normal-bunny-2",
+        "status": 206,
+        "curl_exit": 0,
+        "range": "676427-677450",
+        "bytes_read": 1024,
+        "content-range": "bytes 676427-677450/939483",
+        "content-type": "video/mp4",
+        "content-length": "1024",
+        "cdn-cache": "HIT",
+        "cdn-cachedat": "10/29/2026 02:56:32",
+        "age": "0",
+        "server": "BunnyCDN-KR1-1192",
+        "sha256": "c1d955ac88a594b14409eddb4af64fe57ca374e38c4ff1487e62cc3cb0735c90"
+      }
+    ]
+  },
+  "native_auth_negative_statuses": {
+    "missing_cdn_token": 403,
+    "tampered_cdn_token": 403,
+    "expired_cdn_token": 403,
+    "tampered_source_token": 403,
+    "changed_object": 403,
+    "old_experiment": 403
+  },
+  "negative_transport_note": "403 headers captured; response body intentionally stopped by size cap (curl exit56), no media bytes read.",
+  "decode": {
+    "sample_bytes": 939483,
+    "positions_seconds": [0, 1],
+    "decoded_frames_per_position": 1,
+    "temporary_media_deleted": true,
+    "scope": "FFmpeg functional smoke, not Telegram/performance"
+  },
+  "failed_attempts": [
+    {
+      "stage": "origin_template",
+      "status": 400,
+      "error": "InvalidJWT / Invalid Compact JWS",
+      "fix": "Exclude retained query with directory segments + Url.Filename."
+    },
+    {
+      "stage": "probe_range",
+      "source_status": 416,
+      "cdn_status": 416,
+      "reason": "2MB exceeded 939483-byte file; corrected to 72% of actual size. Not a media fault."
+    },
+    {
+      "stage": "desktop_access",
+      "reason": "Mac locked; resumed after user unlocked and restored existing GitHub SSO."
+    }
+  ],
+  "remaining": "Real Telegram phone playback/seek experience; no speed benefit or Production outcome claimed."
+}

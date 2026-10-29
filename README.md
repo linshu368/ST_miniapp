@@ -5,7 +5,7 @@ ST_miniapp 是围绕 Telegram MiniApp、AI 角色聊天、钱包/支付、语音
 > 深层架构、数据流和路由清单见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)；Railway 生产运维见 [`ops/railway/README.md`](ops/railway/README.md)。本文负责新成员入门、依赖关系、环境、命令和交付约定。
 > 短剧慢播放的分段口径、前端集中上报／Railway 日志查询与真机验收见 [短剧播放耗时排查](docs/drama-playback-timing.md)。
 
-本分支已实现 pr-525 普通短剧播放的 Bunny 适配：只有 Railway 环境名 pr-525、数据库 target=test 且 DRAMA_CDN_ENABLED=true 时，正常 /api/dramas/:id/play 返回 Bunny 地址；DRAMA_CDN_TOKEN_KEY 仅存 Backend。移除独立 /drama-cdn-experiment 页面与专用接口、用户/样本白名单。正常 Telegram 鉴权、剧/集归属和私有桶保持；其他环境仍走 Supabase。云配置/部署和真实媒体验收尚未完成，不能把本地实现视为 Preview 已切流。操作与恢复见 ops/drama-bunny-preview/README.md。
+本分支已实现 pr-525 普通短剧播放的 Bunny 适配：只有 Railway 环境名 pr-525、数据库 target=test 且 DRAMA_CDN_ENABLED=true 时，正常 /api/dramas/:id/play 返回 Bunny 地址；DRAMA_CDN_TOKEN_KEY 仅存 Backend。移除独立 /drama-cdn-experiment 页面与专用接口、用户/样本白名单。正常 Telegram 鉴权、剧/集归属和私有桶保持；其他环境仍走 Supabase。pr-525 已完成配置切流与真实媒体功能预检：不同 TEST 对象的起始/中段 Range、源字节比对及热缓存鉴权负例通过；正常 API 向无实验白名单的测试身份返回 Bunny。Telegram 手机实际手感仍待验收，不宣称提速。操作与恢复见 ops/drama-bunny-preview/README.md。
 
 > 内部 Bunny 手机单轮实验仅在独立 PR Preview 开放，使用固定生产单对象临时凭证、TEST 后端及内部名单；发布、回退和收尾见 [验收说明](ops/drama-bunny-preview/README.md)。部署成功不代表手机性能通过。
 

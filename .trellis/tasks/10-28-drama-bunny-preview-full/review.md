@@ -63,3 +63,7 @@
 本次尚无云写。内容批准不自动等于push，须明确授权二者；不merge dev/main。
 在pr-525保存新TEST动态回源规则、将全路径Block Request改为除/preview-test/\*外均阻断、保持原生token验证。这样Bunny可分发TEST目录中所有经现有鉴权签发的对象，不向CDN提供全库密钥。
 仅Railway pr-525/stminiapp设置DRAMA_CDN_ENABLED与专用DRAMA_CDN_TOKEN_KEY，移除旧五个实验变量；不触及Production和其他服务。先受控真实预检，失败停止/回退，不以SUCCESS宣称成功。
+
+## 后续状态
+
+用户随后明确授权直接提交推送，并确认Bunny TEST访问范围变更；代码与切流部署已完成。此文件保留第一次提交前的审核快照，最新结果以verification.md和acceptance.json为准。
