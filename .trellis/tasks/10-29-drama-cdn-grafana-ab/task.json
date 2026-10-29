@@ -1,0 +1,41 @@
+{
+  "id": "drama-cdn-grafana-ab",
+  "name": "drama-cdn-grafana-ab",
+  "title": "Grafana 短剧 CDN A/B 对照",
+  "description": "扩展工程短剧看板的CDN A/B分组遥测和对照区；保留现有Faro/Loki链路，不恢复旧SQL写入。",
+  "status": "in_progress",
+  "dev_type": "frontend",
+  "scope": "drama-cdn-grafana-ab",
+  "package": "frontend",
+  "priority": "P2",
+  "creator": "linshu",
+  "assignee": "linshu",
+  "createdAt": "2026-10-29",
+  "completedAt": null,
+  "branch": "codex/drama-cdn-grafana-ab",
+  "base_branch": "dev",
+  "worktree_path": "/Users/qj/.codex/worktrees/drama-cdn-grafana-ab/ST_miniAPP",
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "packages/frontend/src/lib/perf/grafana.ts",
+    "packages/frontend/src/lib/perf/drama-observer.ts",
+    "packages/frontend/src/lib/perf/drama-media.ts",
+    "docs/grafana/st-engineering-drama.json",
+    "ops/observability/local-test/faro-loki.mjs"
+  ],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "frontend.business.drama-experience",
+        "frontend.infrastructure.client-ui-foundation"
+      ]
+    }
+  }
+}

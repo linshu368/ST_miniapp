@@ -17,7 +17,8 @@ vi.mock('@/lib/api/telemetry', () => ({ uploadDramaTiming: mocks.upload }));
 vi.mock('@/lib/api/client', () => ({ apiClient: mocks.api }));
 vi.mock('@/lib/logger', () => ({ createLogger: () => ({ info: mocks.info, warn: mocks.warn }) }));
 vi.mock('./request-timing', () => ({ createRequestId: mocks.id }));
-vi.mock('./grafana', () => ({
+vi.mock('./grafana', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./grafana')>()),
   isEngineeringTelemetryEnabled: mocks.enabled,
   recordEngineeringMeasurement: mocks.measurement,
   recordEngineeringEvent: mocks.event,
@@ -41,6 +42,95 @@ afterEach(() => {
 });
 
 describe('drama centralized logging', () => {
+  it.each([
+    [4999.9, 'within_5s'],
+    [5000, 'within_5s'],
+    [5000.1, 'over_5s'],
+  ])('keeps the raw %sms boundary and experiment assignment on one terminal', (ms, budget) => {
+    vi.spyOn(performance, 'now').mockReturnValue(0);
+    const flow = dramaTiming.beginPlayback('a', 'switch');
+    flow.delivery = {
+      experimentId: 'unit-ab',
+      group: 'bunny',
+      provider: 'supabase',
+      reason: 'disabled',
+    };
+    vi.mocked(performance.now).mockReturnValue(ms as number);
+    flow.mark('first_frame');
+    flow.mark('playing');
+    flow.finish('playing');
+    flow.networkTiming({ status: 'no_entry', entries: [], truncated: false }, true);
+    const terminals = mocks.event.mock.calls.filter(([name]) => name === 'drama.terminal');
+    expect(terminals).toHaveLength(1);
+    expect(terminals[0]?.[1]).toMatchObject({
+      outcome: 'playing',
+      cdn_budget: budget,
+      cdn_experiment: 'unit-ab',
+      cdn_group: 'bunny',
+      cdn_provider: 'supabase',
+      cdn_reason: 'disabled',
+    });
+    expect(mocks.measurement).toHaveBeenCalledWith(
+      'drama.startup',
+      ms,
+      expect.objectContaining({ cdn_group: 'bunny', cdn_provider: 'supabase' })
+    );
+    expect(mocks.event.mock.calls.find(([name]) => name === 'drama.started')?.[1]).toMatchObject({
+      cdn_group: 'unknown',
+    });
+  });
+
+  it.each([
+    ['error', 'not_started'],
+    ['unplayable', 'not_started'],
+    ['autoplay_blocked', 'not_started'],
+    ['left', 'not_started'],
+    ['switched', 'not_started'],
+    ['background', 'background'],
+    ['playing', 'unmeasured'],
+  ] as const)(
+    'preserves %s without fabricating either a frame or a control assignment',
+    (outcome, budget) => {
+      const flow = dramaTiming.beginPlayback('a', 'direct');
+      flow.finish(outcome);
+      expect(mocks.event).toHaveBeenCalledWith(
+        'drama.terminal',
+        expect.objectContaining({ outcome, cdn_budget: budget, cdn_group: 'unknown' })
+      );
+    }
+  );
+
+  it('does not replace the failed attempt with its successful retry', () => {
+    const delivery = {
+      experimentId: 'unit-ab',
+      group: 'supabase',
+      provider: 'supabase',
+      reason: 'assigned',
+    } as const;
+    const first = dramaTiming.beginPlayback('a', 'cover');
+    first.delivery = delivery;
+    first.finish('error');
+    const retry = dramaTiming.beginPlayback('a', 'retry');
+    retry.delivery = delivery;
+    retry.mark('first_frame');
+    retry.mark('playing');
+    retry.finish('playing');
+    expect(
+      mocks.event.mock.calls.filter(([name]) => name === 'drama.terminal').map(([, attrs]) => attrs)
+    ).toEqual([
+      expect.objectContaining({
+        playback_mode: 'cover',
+        outcome: 'error',
+        cdn_budget: 'not_started',
+      }),
+      expect.objectContaining({
+        playback_mode: 'retry',
+        outcome: 'playing',
+        cdn_budget: 'within_5s',
+      }),
+    ]);
+  });
+
   it('adds catalog start/final engineering signals without an additional legacy start upload', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
     dramaTiming.beginList('navigation_click');
