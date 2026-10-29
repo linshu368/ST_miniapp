@@ -7,7 +7,7 @@
 - 页面、角色扮演交互、短剧播放：浏览器复用现有测量 owner，通过 Faro 自定义信号直送 Cloud 托管浏览器入口。此容器不接浏览器流量。
 - 服务端：显式 OTel Metrics/Logs → 同环境私网 Alloy → Cloud OTLP；不创建全局 tracer，不重复 Sentry HTTP/Prisma 探针，不启用 Tempo。
 - 原有 Pino 继续写应用日志。只有代码显式投影的无正文事件进入 OTLP；本容器不抓取其他 Railway 容器 stdout。
-- Supabase 保留经营指标、业务状态和所有 generation/attempt/首字回执/检查点/计费恢复；本次未新增表、查询或监控 cron。短剧旧分析副本的关闭必须另审消费者与双轨结果。
+- Supabase 保留经营指标、业务状态和所有 generation/attempt/首字回执/检查点/计费恢复；本次未新增表、查询或监控 cron。短剧旧分析副本经2026-10-29用户明确授权停止新写入，历史表与SQL看板保留。达到5秒的完整受控诊断改走本出口的JSON日志正文，事件名drama.startup_diagnostic；正文由strict shared schema和32KiB报告上限约束，观察ID/数组不进入标签，无需修改本采集器配置。
 
 ## 部署变量（无秘密值）
 

@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/app/index.md", "reason": "Backend结构与验收"}
+{"file": ".trellis/spec/backend/app/data-reliability-and-security.md", "reason": "诊断安全、失败隔离与日志出口"}
+{"file": "docs/grafana/drama-playback-runbook.md", "reason": "Loki查询、发布与恢复"}
+{"file": ".trellis/tasks/10-29-drama-five-second-diagnostics/design.md", "reason": "用户批准的最小设计与边界"}

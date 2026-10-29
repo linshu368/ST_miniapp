@@ -1,5 +1,34 @@
 # 短剧启动看板：发布、历史导入与真机验收
 
+## Loki五秒慢启动详情（2026-10-29，本地待发布）
+
+当前增量以已上线73be921为基线，沿用现有OTLP→Alloy→Cloud Loki，不新增服务、凭证或Supabase migration。不修改播放、客户端计时或五秒时行为。
+
+发布：先发布Backend（旧客户端兼容）→确认原ENGINEERING_TELEMETRY_ENABLED与端点仍正常→仅将原 `st-engineering-drama` 新增面板11/12及diagnostic_observation变量合入线上最终JSON（先读回并保留线上其他修改/变量）→核验自然样本。不要将带“待接入”默认变量的整份模板覆盖当前线上配置。无需Frontend部署。原SQL看板会停止收到此路由的新记录，保留历史；不要为了新链路启用旧持久化flag或执行旧迁移。
+
+Grafana Explore选择 `grafanacloud-logs`，先筛终态，再展开JSON。达到5秒包含失败/退出/后台，成功筛outcome=playing；不得用均值或P95替代逐次等待。
+
+```logql
+{service_name="st-miniapp-backend", deployment_environment_name="production"}
+|= `"event":"drama.startup_diagnostic"`
+| json diagnostic_phase="phase", wait_ms="elapsedMs", observation="id", result="outcome", client_release="context.release"
+| __error__="" | diagnostic_phase="final" | wait_ms >= 5000
+```
+
+复制 observation 后查同次全部证据（final/network不能算成两次启动）：
+
+```logql
+{service_name="st-miniapp-backend", deployment_environment_name="production"}
+|= `"event":"drama.startup_diagnostic"`
+| json observation="id" | __error__="" | observation="填写观察ID"
+```
+
+展开 `media.events/media.snapshot/queries/marks/diagnostics.network.entries`，确认实际elapsed、首帧/playing、受限状态、迟到网络与版本。Loki成功查询有记录才证明本功能Cloud送达；202、已有接口日志和合成OTLP测试都不能替代。等待未完成且强退无终态时可能缺失；本轮按用户要求不加定时状态存储。字段受TAO/WebView限制，缺失不补0，日志不等同完整HAR或Range请求头。
+
+回退：应用和新增面板可回到前版本；先独立审批将旧DRAMA_TIMING_PERSIST_ENABLED=false，避免回退恢复Supabase新写入。历史Cloud/SQL记录不删除，无数据库回滚。日志队列/失败由原工程监控健康指标观察。
+
+下文为历史SQL看板上线记录与操作说明，不作为新Loki链路步骤。
+
 这是操作说明，不代表已完成远端迁移、部署或发布。当前实施/验证状态以 Trellis 任务 `10-27-drama-playback-observability/verification.md` 为准。
 
 ## 独立看板

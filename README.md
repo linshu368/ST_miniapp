@@ -5,7 +5,7 @@ ST_miniapp 是围绕 Telegram MiniApp、AI 角色聊天、钱包/支付、语音
 > 深层架构、数据流和路由清单见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)；Railway 生产运维见 [`ops/railway/README.md`](ops/railway/README.md)。本文负责新成员入门、依赖关系、环境、命令和交付约定。
 > 短剧慢播放的分段口径、前端集中上报／Railway 日志查询与真机验收见 [短剧播放耗时排查](docs/drama-playback-timing.md)。
 
-> 短剧启动新增独立 Grafana 模板 `st-drama-playback`：v2 媒体网络/首帧诊断、分析域原子落表及有界历史导入。先执行对应环境的 `20261027_drama_playback_observability.sql`，再显式启用 `DRAMA_TIMING_PERSIST_ENABLED`；默认保留日志模式。代码不代表已部署，步骤和恢复见 [短剧看板操作说明](docs/grafana/drama-playback-runbook.md)。
+> 短剧达到5秒的启动终态与迟到媒体详情复用现有 Backend OTLP 出口写 Grafana Cloud Loki；不新增五秒快照，也不再通过接收接口写 Supabase 分析表。`st-engineering-drama` 增加逐次详情/观察ID查询；旧 `st-drama-playback` 仅保留历史SQL数据。代码与线上状态分开验收，发布步骤见 [短剧看板操作说明](docs/grafana/drama-playback-runbook.md)。
 
 > 图片广场 Admin 保存草稿触发 `config_drafts_config_key_check` 的兼容修复：新增 `20261016_reconcile_image_plaza_managed_config_keys.sql`，保留现有白名单并恢复四个图片广场 key，不改正式配置。尚待 TEST workflow 单文件执行及保存/发布验收；详见迁移目录 README，Production 另行审批。
 

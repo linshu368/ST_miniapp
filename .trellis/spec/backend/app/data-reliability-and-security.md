@@ -278,6 +278,36 @@ recoverable_delivery仅新Backend显式启用；旧请求/终结账单不回填�
 
 验证：本任务release-review记录自动化、真实PG、TEST流/浏览器和生产版本证据；测试通过不等于线上1%目标已达成。看板v3区分前台等待超时与系统无首字截断，显示分布只用浏览器业务侧实际时长，后台/缺报不填0。
 
+## 短剧慢启动详情（2026-10-29，本地实现）
+
+### 1. 范围与触发
+
+短剧达到五秒的实际终态详情需事后查询；复用OTLP→Alloy→Cloud Loki，不新增快照、服务或Supabase分析写入。
+
+### 2. 签名
+
+`POST /api/telemetry/drama-timing` → `observeDramaStartupDiagnostic(report: DramaTimingReport): void` → `drama.startup_diagnostic` JSON日志正文。
+
+### 3. 契约
+
+仅 `type=playback`、`phase=final|network`、`elapsedMs>=5000`；出口再次strict shared校验，报告32KiB上限。ID/数组仅放正文，既有日志属性120字符限制不能承载完整诊断。沿用ENGINEERING_TELEMETRY_ENABLED/ENGINEERING_OTLP_ENDPOINT、256条队列与2秒出口预算；202仅接收，不保证Cloud落盘。接口不再调用旧Supabase分析队列/RPC，即使旧持久化flag开启；历史对象/导入器保留。
+
+### 4. 验证与错误
+
+缺鉴权401、未知字段400、超body413、接收限流429沿用。SDK关闭/队列满/出口失败不改变202或播放结果，失败由原工程健康指标呈现；缺报不补0。iOS媒体计时受限仍为limited，无首字节/Range头保证。
+
+### 5. 正常与边界案例
+
+6000ms终态完整保存，迟到network同ID补证不算第二次启动；4999ms不进入新详情流，16007ms保持实际值。没有final的network不能算成功；强退未送达仍未知。
+
+### 6. 回归要求
+
+扩展既有OTLP真实HTTP接收测试验证完整media/queries/marks、五秒边界、终态/网络、禁密字段、出口关闭/失败隔离；路由验证旧DB flag为true仍零RPC。保持既有鉴权/限流/容量测试。
+
+### 7. 正误对照
+
+错误：把JSON塞入120字符属性，或接收后仍enqueue分析DB。正确：受控完整JSON写日志body；使用正文观察ID关联，路由不构造DB队列。回退旧应用前先独立审批关闭旧DB flag，避免恢复新写入。
+
 ## 短剧请求计时
 
 短剧路由在自身 Fastify 封装作用域记录 `drama.request_timing`（现有 requestLogger/Pino，source=backend）。短剧专用 Sentry 指标已移除，按现有 X-Request-Id 关联前端。新增鉴权 `POST /api/telemetry/drama-timing`：shared schema 校验有界客户端报告，写 `drama.frontend_timing`（source=frontend），保留 observation/list/request ID，接收请求 ID 独立为 upload_request_id；不查写数据库。32 KiB body、12 queries/4 attempts、每用户每进程 120 次/分钟及全进程 1000 次/分钟限额，限流表最多 2000 项；503 不确认接收，429 不重试。客户端自报数据不能用作计费/权限事实。onResponse 覆盖成功、鉴权拒绝、参数/不存在、查询错误、无视频和签名失败，保留 auth/db_read/assemble/sign/total 毫秒与签名缓存 hit/miss/inflight。鉴权直接发送响应时 onResponse 可能早于 preHandler finally，需要采集当前阶段已用时间。
