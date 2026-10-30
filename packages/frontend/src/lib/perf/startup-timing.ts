@@ -6,6 +6,7 @@ import { notifyTelegramReady } from '@/lib/telegram/init';
 import { getMetricDimensions } from './env-tags';
 import { routeOf, WATCHED_PAGES } from './page-tracker';
 import { collectStartupDetails, resetStartupPhasesForTest } from './startup-phases';
+import type {} from './early-startup';
 
 let completed = false;
 let outcomeRecorded = false;
@@ -21,7 +22,26 @@ export function observeStartupShell(pathname: string): () => void {
     WATCHED_PAGES.has(template) || template === '/dramas' || template === '/dramas/:id'
       ? template
       : '/other';
-  const attributes = { route, ...getMetricDimensions(), measurement: 'post_render_frame' };
+  const early = window.__miniappStartup;
+  // Only a successful early native notification may shorten the Telegram clock.
+  // A failed/unsupported early bridge keeps the original SDK fallback measurement.
+  const htmlShellAt =
+    early?.status === 'sent' &&
+    typeof early.shellAt === 'number' &&
+    Number.isFinite(early.shellAt) &&
+    early.shellAt >= 0 &&
+    typeof early.readyAt === 'number' &&
+    Number.isFinite(early.readyAt) &&
+    early.readyAt >= early.shellAt &&
+    early.readyAt <= committedAt
+      ? early.shellAt
+      : undefined;
+  const htmlReadyAt = htmlShellAt !== undefined ? early?.readyAt : undefined;
+  const attributes = {
+    route,
+    ...getMetricDimensions(),
+    measurement: htmlShellAt !== undefined ? 'html_post_render_frame' : 'post_render_frame',
+  };
   let firstFrame = 0;
   let secondFrame = 0;
 
@@ -42,7 +62,7 @@ export function observeStartupShell(pathname: string): () => void {
     );
   };
   const onHidden = () => {
-    if (document.hidden) outcome('background');
+    if (document.hidden && htmlShellAt === undefined) outcome('background');
   };
   const cleanup = () => {
     window.cancelAnimationFrame(firstFrame);
@@ -58,6 +78,7 @@ export function observeStartupShell(pathname: string): () => void {
 
   document.addEventListener('visibilitychange', onHidden);
   window.addEventListener('pagehide', onPageHide);
+  if (early?.outcome && early.outcome !== 'shell_ready') outcome(early.outcome);
   onHidden();
   // 两个 RAF 之间给浏览器一次绘制机会；这是可展示时间的保守近似，不冒充原生遮罩消失时刻。
   firstFrame = window.requestAnimationFrame(() => {
@@ -70,12 +91,21 @@ export function observeStartupShell(pathname: string): () => void {
         return;
       }
       onHidden();
-      const shellMs = performance.now();
+      const shellMs = htmlShellAt ?? performance.now();
       // readiness 与采集资格分离：后台样本不进 P95，恢复后仍必须撤下 Telegram 启动占位。
       const status = notifyTelegramReady();
-      const readyMs = performance.now();
+      const readyMs = htmlReadyAt ?? performance.now();
       if (!outcomeRecorded) {
         outcome('shell_ready');
+        safely(() =>
+          Sentry.metrics.count('startup.budget', 1, {
+            attributes: {
+              ...attributes,
+              telegram_ready: status,
+              budget: shellMs > 4000 ? 'over_4s' : 'within_4s',
+            },
+          })
+        );
         safely(() =>
           Sentry.metrics.distribution('startup.shell_ready.duration', shellMs, {
             unit: 'millisecond',
@@ -94,13 +124,20 @@ export function observeStartupShell(pathname: string): () => void {
         safely(() =>
           setTimeout(() => {
             safely(() => {
-              const { stages, details } = collectStartupDetails(committedAt, shellMs, readyMs);
-              const startupBucket = shellMs >= 5000 ? 'slow' : 'normal';
+              // Providers can legitimately finish after HTML readiness. Those diagnostics
+              // remain useful, but are no longer an additive decomposition of shell time.
+              const { stages, details } = collectStartupDetails(
+                committedAt,
+                shellMs,
+                readyMs,
+                performance.now()
+              );
+              const startupBucket = shellMs > 4000 ? 'slow' : 'normal';
               const tags = {
                 ...attributes,
                 telegram_ready: status,
                 startup_bucket: startupBucket,
-                definition: 'startup_phases_v1',
+                definition: 'startup_phases_v2',
               };
               for (const [stage, duration] of Object.entries(stages)) {
                 safely(() =>

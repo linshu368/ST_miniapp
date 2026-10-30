@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "source": "Sentry Application Metrics UI, read-only verified in signed-in Chrome",
+  "organization": "wangqiao",
+  "project": "st-miniapp",
+  "project_id": "4511818663788624",
+  "environment": "production",
+  "release": "94c2b66d2c9870c5801cef8931bc6b85d00c12c2",
+  "window_utc": {
+    "start": "2026-10-29T09:26:18Z",
+    "end": "2026-10-30T09:26:18Z"
+  },
+  "window_Asia_Shanghai": {
+    "start": "2026-10-29 17:26:18 +08:00",
+    "end": "2026-10-30 17:26:18 +08:00"
+  },
+  "metric": "startup.shell_ready.duration",
+  "unit": "millisecond",
+  "filters": {
+    "telegram_ready": "sent"
+  },
+  "target": {
+    "p95_lte_ms": 4000,
+    "over_budget_operator": ">",
+    "over_budget_ms": 4000
+  },
+  "display_precision": "Quantiles are Sentry UI values rounded to two decimal places in seconds, not raw per-sample values",
+  "overall": {
+    "count": 28,
+    "p50_s": 1.19,
+    "p95_s": 6.79,
+    "max_s": 10.51,
+    "over_4s_count": 4,
+    "over_4s_fraction": 0.14285714285714285
+  },
+  "groups": [
+    {
+      "route": "/",
+      "tg_platform": "android",
+      "net_type": "4g",
+      "count": 19,
+      "p50_s": 1.21,
+      "p95_s": 8.65,
+      "max_s": 10.51,
+      "over_4s_count": 4
+    },
+    {
+      "route": "/",
+      "tg_platform": "ios",
+      "net_type": "unknown",
+      "count": 7,
+      "p50_s": 1.15,
+      "p95_s": 2.54,
+      "max_s": 2.54,
+      "over_4s_count": 0
+    },
+    {
+      "route": "/",
+      "tg_platform": "unknown",
+      "net_type": "4g",
+      "count": 2,
+      "p50_s": 1.8,
+      "p95_s": 1.8,
+      "max_s": 1.8,
+      "over_4s_count": 0
+    }
+  ],
+  "query_urls": {
+    "overall": "https://wangqiao.sentry.io/explore/metrics/?project=4511818663788624&environment=production&start=2026-10-29T09%3A26%3A18&end=2026-10-30T09%3A26%3A18&metric=%7B%22metric%22%3A%7B%22name%22%3A%22startup.shell_ready.duration%22%2C%22type%22%3A%22distribution%22%2C%22unit%22%3A%22millisecond%22%7D%2C%22query%22%3A%22release%3A94c2b66d2c9870c5801cef8931bc6b85d00c12c2+telegram_ready%3Asent%22%2C%22aggregateFields%22%3A%5B%7B%22yAxes%22%3A%5B%22count%28value%2Cstartup.shell_ready.duration%2Cdistribution%2Cmillisecond%29%22%2C%22p50%28value%2Cstartup.shell_ready.duration%2Cdistribution%2Cmillisecond%29%22%2C%22p95%28value%2Cstartup.shell_ready.duration%2Cdistribution%2Cmillisecond%29%22%2C%22max%28value%2Cstartup.shell_ready.duration%2Cdistribution%2Cmillisecond%29%22%5D%7D%5D%2C%22aggregateSortBys%22%3A%5B%7B%22field%22%3A%22p95%28value%2Cstartup.shell_ready.duration%2Cdistribution%2Cmillisecond%29%22%2C%22kind%22%3A%22desc%22%7D%5D%2C%22mode%22%3A%22aggregate%22%7D",
+    "over_4s": "https://wangqiao.sentry.io/explore/metrics/?project=4511818663788624&environment=production&start=2026-10-29T09%3A26%3A18&end=2026-10-30T09%3A26%3A18&metric=%7B%22metric%22%3A%7B%22name%22%3A%22startup.shell_ready.duration%22%2C%22type%22%3A%22distribution%22%2C%22unit%22%3A%22millisecond%22%7D%2C%22query%22%3A%22release%3A94c2b66d2c9870c5801cef8931bc6b85d00c12c2+telegram_ready%3Asent+value%3A%3E4000%22%2C%22aggregateFields%22%3A%5B%7B%22yAxes%22%3A%5B%22count%28value%2Cstartup.shell_ready.duration%2Cdistribution%2Cmillisecond%29%22%2C%22p50%28value%2Cstartup.shell_ready.duration%2Cdistribution%2Cmillisecond%29%22%2C%22p95%28value%2Cstartup.shell_ready.duration%2Cdistribution%2Cmillisecond%29%22%2C%22max%28value%2Cstartup.shell_ready.duration%2Cdistribution%2Cmillisecond%29%22%5D%7D%5D%2C%22aggregateSortBys%22%3A%5B%7B%22field%22%3A%22p95%28value%2Cstartup.shell_ready.duration%2Cdistribution%2Cmillisecond%29%22%2C%22kind%22%3A%22desc%22%7D%5D%2C%22mode%22%3A%22aggregate%22%7D",
+    "groups": "https://wangqiao.sentry.io/explore/metrics/?project=4511818663788624&environment=production&start=2026-10-29T09%3A26%3A18&end=2026-10-30T09%3A26%3A18&metric=%7B%22metric%22%3A%7B%22name%22%3A%22startup.shell_ready.duration%22%2C%22type%22%3A%22distribution%22%2C%22unit%22%3A%22millisecond%22%7D%2C%22query%22%3A%22release%3A94c2b66d2c9870c5801cef8931bc6b85d00c12c2+telegram_ready%3Asent%22%2C%22aggregateFields%22%3A%5B%7B%22groupBy%22%3A%22route%22%7D%2C%7B%22groupBy%22%3A%22tg_platform%22%7D%2C%7B%22groupBy%22%3A%22net_type%22%7D%2C%7B%22yAxes%22%3A%5B%22count%28value%2Cstartup.shell_ready.duration%2Cdistribution%2Cmillisecond%29%22%2C%22p50%28value%2Cstartup.shell_ready.duration%2Cdistribution%2Cmillisecond%29%22%2C%22p95%28value%2Cstartup.shell_ready.duration%2Cdistribution%2Cmillisecond%29%22%2C%22max%28value%2Cstartup.shell_ready.duration%2Cdistribution%2Cmillisecond%29%22%5D%7D%5D%2C%22aggregateSortBys%22%3A%5B%7B%22field%22%3A%22p95%28value%2Cstartup.shell_ready.duration%2Cdistribution%2Cmillisecond%29%22%2C%22kind%22%3A%22desc%22%7D%5D%2C%22mode%22%3A%22aggregate%22%7D",
+    "over_4s_groups": "https://wangqiao.sentry.io/explore/metrics/?project=4511818663788624&environment=production&start=2026-10-29T09%3A26%3A18&end=2026-10-30T09%3A26%3A18&metric=%7B%22metric%22%3A%7B%22name%22%3A%22startup.shell_ready.duration%22%2C%22type%22%3A%22distribution%22%2C%22unit%22%3A%22millisecond%22%7D%2C%22query%22%3A%22release%3A94c2b66d2c9870c5801cef8931bc6b85d00c12c2+telegram_ready%3Asent+value%3A%3E4000%22%2C%22aggregateFields%22%3A%5B%7B%22groupBy%22%3A%22route%22%7D%2C%7B%22groupBy%22%3A%22tg_platform%22%7D%2C%7B%22groupBy%22%3A%22net_type%22%7D%2C%7B%22yAxes%22%3A%5B%22count%28value%2Cstartup.shell_ready.duration%2Cdistribution%2Cmillisecond%29%22%2C%22p50%28value%2Cstartup.shell_ready.duration%2Cdistribution%2Cmillisecond%29%22%2C%22p95%28value%2Cstartup.shell_ready.duration%2Cdistribution%2Cmillisecond%29%22%2C%22max%28value%2Cstartup.shell_ready.duration%2Cdistribution%2Cmillisecond%29%22%5D%7D%5D%2C%22aggregateSortBys%22%3A%5B%7B%22field%22%3A%22p95%28value%2Cstartup.shell_ready.duration%2Cdistribution%2Cmillisecond%29%22%2C%22kind%22%3A%22desc%22%7D%5D%2C%22mode%22%3A%22aggregate%22%7D"
+  },
+  "limitations": [
+    "Valid foreground shell-ready samples with telegram_ready=sent; not all launch attempts or a success-rate denominator.",
+    "21 samples / P50 1.15s / P95 7.91s was the earlier user-reported snapshot, not this fixed-window baseline.",
+    "Read-only collection; no metrics, dashboard, configuration, deployment or production writes.",
+    "Platform subgroup quantiles must not be averaged.",
+    "Late metric ingestion can change a later re-query of the same window. This file freezes the observed result."
+  ],
+  "collected_at_utc": "2026-10-30T09:47:33+00:00"
+}

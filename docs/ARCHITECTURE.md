@@ -783,3 +783,7 @@ SSE start携带当轮冻结总预算。客户端若持有旧目录缓存，按�
 早于SSE身份的非成功v4终态可用原request_id上报。既有RPC按现有client_request_id索引最多读取2条，校验用户与会话且唯一时才定位；歧义不猜，成功结果仍必须有消息编号与revision。首份终态后的重放不UPDATE。迁移20261029_first_token_receipt_recovery.sql仅替换既有函数；不增加表、索引、cron、逐token写入或历史回填，不改变超时免扣、主动停止及正常回复一次计费。
 
 发布顺序：本地PG/测试→TEST迁移与应用验收→先合dev→生产迁移→Backend/Frontend/Admin→Grafana说明；配置只读核对版本97。回退应用保留兼容RPC，必要时前向修复，不删除账务。
+
+### MiniApp 轻量开屏与启动监控（2026-10-30，本地待发布）
+
+RootLayout随HTML交付独立框架绘制确认与原生ready脚本，Providers继续原业务初始化并补报真实早期时间戳；SDK负责未支持路径的兜底与通知去重。BrowserTracing首屏后安装，错误捕获和Metrics仍在启动期生效。本轮不改业务分包/预热或CDN；P95≤4秒与>4秒比例的生产基线、v2指标边界及回退见[开屏优化说明](miniapp-startup-performance.md)。

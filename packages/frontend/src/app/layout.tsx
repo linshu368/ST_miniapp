@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { Providers } from './providers';
+import { EARLY_STARTUP_SCRIPT } from '@/lib/perf/early-startup';
 
 export const metadata: Metadata = {
   title: 'MiniApp',
@@ -30,6 +31,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className="min-h-screen bg-background text-foreground antialiased">
         <Providers>{children}</Providers>
+        <script id="miniapp-startup" dangerouslySetInnerHTML={{ __html: EARLY_STARTUP_SCRIPT }} />
       </body>
     </html>
   );
