@@ -5,6 +5,7 @@ import { discardPendingAction, startPendingAction } from '@/lib/perf/action-trac
 import { usePageReady } from '@/lib/perf/page-ready';
 import { useRouter } from 'next/navigation';
 import {
+  ChevronLeft,
   Copy,
   Heart,
   ImageIcon,
@@ -239,12 +240,18 @@ export default function CreatePage() {
         data-image-plaza-header
         className="sticky top-0 z-30 border-b border-border/60 bg-background/90 px-3 pb-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] backdrop-blur-xl"
       >
-        <div className="flex items-center justify-between gap-2 min-[360px]:gap-3">
-          <div>
-            <p className="text-[10px] font-bold uppercase leading-3 tracking-[0.22em] text-primary/70">
-              Discover
-            </p>
-            <h1 className="whitespace-nowrap text-[18px] font-black leading-7 tracking-tight min-[360px]:text-xl">
+        <div className="flex items-center justify-between gap-1 min-[360px]:gap-3">
+          <div className="flex min-w-0 shrink-0 items-center gap-1 min-[360px]:gap-2">
+            <Link
+              href="/creation"
+              onClick={() => saveReturn()}
+              aria-label="返回创作"
+              title="返回创作"
+              className="grid size-11 shrink-0 place-items-center rounded-full border border-white/[0.07] bg-white/[0.035] text-foreground/85 transition-colors active:bg-white/[0.09] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            >
+              <ChevronLeft className="size-[22px]" strokeWidth={1.8} aria-hidden />
+            </Link>
+            <h1 className="whitespace-nowrap text-base font-semibold leading-7 tracking-tight min-[360px]:text-xl">
               影像广场
             </h1>
           </div>

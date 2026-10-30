@@ -32,6 +32,7 @@ import { createLogger } from '../../lib/logger.js';
 import { settleGeneration, type GenerationSettlementEntry } from './settle.js';
 import { reserveCharacterFreeQuota, type FreeQuotaReservation } from './quota.js';
 import { checkWalletBalance, resolveBillingPlan, type BillingPlan } from './precheck.js';
+import { getCharacterCreatorOwner } from './creator-billing.js';
 import {
   createSseTap,
   forwardToUpstream,
@@ -241,19 +242,21 @@ async function executeGeneration(
         : []),
     ]),
   ];
-  const [pricing, selectedBilling, vipStrategy, routingPreferences] = await withAbort(
-    Promise.all([
-      getPricingConfig(),
-      request.model.billingContext ??
-        getModelBillingContext({
-          provider: request.model.provider,
-          providerModelId: request.model.providerModelId,
-        }),
-      readVipStrategy(),
-      getProviderPreferencesForModels(routingModelIds),
-    ]),
-    signal
-  );
+  const [pricing, selectedBilling, vipStrategy, routingPreferences, creatorUserId] =
+    await withAbort(
+      Promise.all([
+        getPricingConfig(),
+        request.model.billingContext ??
+          getModelBillingContext({
+            provider: request.model.provider,
+            providerModelId: request.model.providerModelId,
+          }),
+        readVipStrategy(),
+        getProviderPreferencesForModels(routingModelIds),
+        getCharacterCreatorOwner(request.characterId),
+      ]),
+      signal
+    );
 
   let billing = selectedBilling;
   let deliveryPersisted = Promise.resolve();
@@ -301,6 +304,15 @@ async function executeGeneration(
       entitlement: request.model.entitlement,
       discountRate: vipStrategy.discountRate,
       discountConfigVersion: vipStrategy.discountVersion,
+      ...(creatorUserId && request.characterId
+        ? {
+            creator: {
+              characterId: request.characterId,
+              creatorUserId,
+              payerUserId: request.userId,
+            },
+          }
+        : {}),
       log,
     });
 

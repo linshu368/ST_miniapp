@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
   start: vi.fn(),
   regenerate: vi.fn(),
   context: vi.fn(),
+  card: vi.fn(),
+  buildPrompt: vi.fn(),
   prompt: vi.fn(),
   finalize: vi.fn(),
   find: vi.fn(),
@@ -52,9 +54,7 @@ vi.mock('../../infrastructure/repositories/OpenRouterChatHistoryRepository.js', 
 }));
 vi.mock('../../infrastructure/repositories/CharacterCardRepository.js', () => ({
   CharacterCardRepository: class {
-    async requireCard() {
-      return { name: 'role', first_mes: 'hello' };
-    }
+    requireCard = mocks.card;
   },
 }));
 vi.mock('../../infrastructure/repositories/MiniappUserSettingsRepository.js', () => ({
@@ -66,7 +66,7 @@ vi.mock('../../infrastructure/repositories/MiniappUserSettingsRepository.js', ()
 }));
 vi.mock('../engine/index.js', () => ({
   fetchPlatformInstructions: async () => ({ degraded: false, instructions: {} }),
-  buildPrompt: () => ({ messages: [], sampling: {} }),
+  buildPrompt: mocks.buildPrompt,
 }));
 vi.mock('../generation/index.js', () => ({
   execute: mocks.execute,
@@ -102,6 +102,8 @@ function input(mode: { kind: 'send'; content: string } | { kind: 'regenerate' })
 }
 beforeEach(() => {
   Object.values(mocks).forEach((mock) => mock.mockReset());
+  mocks.card.mockResolvedValue({ name: 'role', first_mes: 'hello' });
+  mocks.buildPrompt.mockReturnValue({ messages: [], sampling: {} });
   mocks.checkpoint.mockResolvedValue(undefined);
   mocks.pendingRequest.mockResolvedValue(undefined);
   mocks.recover.mockResolvedValue(undefined);
@@ -134,6 +136,37 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe('turn lifecycle recovery', () => {
+  it('reads the session-bound card only after the real turn starts and uses its opening for an empty chat', async () => {
+    mocks.start.mockImplementation(async () => {
+      expect(mocks.card).not.toHaveBeenCalled();
+      return { historyId: 'reply', turnIndex: 1, revision: 0, userContent: 'first' };
+    });
+    mocks.card.mockResolvedValue({
+      name: 'updated card',
+      first_mes: 'new bound opening',
+      system_prompt: 'bound prompt',
+    });
+    mocks.context.mockResolvedValue({ messages: [], openingMessage: null, truncatedTurns: 0 });
+    await runConversationTurn(input({ kind: 'send', content: 'first' }));
+    expect(mocks.card).toHaveBeenCalledExactlyOnceWith('character', 'user', 'session');
+    expect(mocks.buildPrompt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        history: [{ role: 'assistant', content: 'new bound opening' }],
+        character: expect.objectContaining({ system_prompt: 'bound prompt' }),
+      })
+    );
+  });
+
+  it('cleans up regeneration without dispatch if its bound version is unavailable', async () => {
+    mocks.card.mockRejectedValue(new Error('bound version unavailable'));
+    await expect(runConversationTurn(input({ kind: 'regenerate' }))).rejects.toThrow(
+      'bound version unavailable'
+    );
+    expect(mocks.regenerate).toHaveBeenCalledOnce();
+    expect(mocks.finalize).toHaveBeenCalledOnce();
+    expect(mocks.execute).not.toHaveBeenCalled();
+  });
+
   it.each([undefined, 'client_committed_v4'] as const)(
     'persists the %s cohort during the existing initial observation write',
     async (firstTokenMeasurement) => {

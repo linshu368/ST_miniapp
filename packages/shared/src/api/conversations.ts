@@ -51,6 +51,8 @@ export interface ChatMessage {
 }
 
 export interface ChatSession {
+  /** Creator card version fixed at first real user turn; empty/official chats may be null. */
+  character_version_id?: string | null;
   id: string;
   /** Present only for a conversation started from an existing reply. */
   branch?: {

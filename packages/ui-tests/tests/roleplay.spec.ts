@@ -60,7 +60,7 @@ test('@navigation @layout 五入口跨模块保持统一，末项与操作条不
   // 保留每项断言原超时，只给串行冷编译留足总预算。
   test.setTimeout(120_000);
   const nav = page.getByRole('navigation', { name: '主导航', exact: true });
-  const labels = ['角色', 'AI短剧', '首页', '生成', '我的'];
+  const labels = ['角色', '创作', '首页', 'AI短剧', '我的'];
   let baseline:
     | { background: string; radius: string; shadow: string; widths: number[] }
     | undefined;
@@ -174,9 +174,12 @@ test('@navigation @layout 五入口跨模块保持统一，末项与操作条不
   await page.goBack();
   await expect(page).toHaveURL(/\/dramas$/);
   await checkNav('AI短剧');
-  await nav.getByRole('link', { name: '生成', exact: true }).click();
+  await nav.getByRole('link', { name: '创作', exact: true }).click();
+  await expect(page).toHaveURL(/\/creation$/);
+  await checkNav('创作');
+  await page.getByRole('link', { name: /图片与视频/ }).click();
   await expect(page).toHaveURL(/\/create$/);
-  await checkNav('生成');
+  await checkNav('创作');
   await expect(
     page.getByRole('button', { name: '用同款：薄雾中的山谷', exact: true })
   ).toBeVisible();
@@ -185,7 +188,7 @@ test('@navigation @layout 五入口跨模块保持统一，末项与操作条不
   await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
   await aboveNav(lastWork);
   await page.goto(`/create/work/${IDS.work}`);
-  await checkNav('生成');
+  await checkNav('创作');
   const workActions = page.getByRole('group', { name: '作品操作', exact: true });
   await aboveNav(workActions);
   await aboveNav(workActions.getByRole('button', { name: '用同款', exact: true }));
@@ -293,7 +296,8 @@ test('@roleplay @character-social @layout 点赞收藏独立，列表详情和�
   await page.getByRole('button', { name: '返回发现', exact: true }).click();
   await expect(like()).toHaveAttribute('aria-pressed', 'true');
   await expect(favorite()).toHaveAttribute('aria-pressed', 'true');
-  await page.getByRole('tab', { name: '已收藏', exact: true }).click();
+  await expect(page.getByRole('tab', { name: '已收藏', exact: true })).toHaveCount(0);
+  await page.goto('/creation?tab=favorites');
   await expect(page.locator('[data-lobby-character-id]')).toHaveCount(1);
   await expect(card).toBeVisible();
   await expectMobileLayout(page);

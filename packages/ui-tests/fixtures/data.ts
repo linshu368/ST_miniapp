@@ -31,6 +31,21 @@ export const stamp = () => new Date().toISOString();
 export const later = () => new Date(Date.now() + 31 * 86_400_000).toISOString();
 
 export const scenarios = {
+  creation: {
+    label: '创作与我的空间',
+    description: '创作编辑、封面回流、草稿、发布、私密切换与角色试聊',
+    path: '/creation',
+  },
+  'creator-polish-partial': {
+    label: '角色润色中断',
+    description: '保留部分内容，可采用、编辑、撤回',
+    path: '/creation/characters/new',
+  },
+  'creator-save-error': {
+    label: '角色发布失败',
+    description: '草稿保留并可重试，不重复创建',
+    path: '/creation/characters/new',
+  },
   standard: {
     label: '普通用户',
     description: '签到、会员引导、角色和影像完整路径',

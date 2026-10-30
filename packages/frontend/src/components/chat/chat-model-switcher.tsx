@@ -41,11 +41,13 @@ import {
  * 「切到付费模型前先查余额」的闸门，绕过去就等于把闸门拆了。
  */
 export function ChatModelSwitcher({
+  characterId,
   returnTo,
   onSwitched,
   generating = false,
   freeRoundActive = false,
 }: {
+  characterId?: string;
   returnTo: string;
   /** 切换成功后通知外层收起面板 */
   onSwitched?: () => void;
@@ -54,11 +56,14 @@ export function ChatModelSwitcher({
 }) {
   const router = useRouter();
   const enrichReady = useEntryEnrichReady();
-  const { data, isLoading, isFetching } = useModelCatalogQuery({ enabled: enrichReady });
+  const { data, isLoading, isFetching } = useModelCatalogQuery({
+    enabled: enrichReady,
+    characterId,
+  });
   // 充值套餐/VIP 只为切换引擎面板服务，跟会话 P0 错开。
   const paymentPlans = usePaymentPlansQuery({ enabled: enrichReady });
   const vipStatus = useVipStatusQuery({ enabled: enrichReady });
-  const selectModel = useSelectModelMutation();
+  const selectModel = useSelectModelMutation(characterId);
   const [error, setError] = useState<string | null>(null);
   const [walletAction, setWalletAction] = useState<'recharge' | null>(null);
   const [lockedTierKey, setLockedTierKey] = useState<string | null>(null);
@@ -176,9 +181,11 @@ export function ChatModelSwitcher({
           {isFetching ? (
             <span className="shrink-0 text-[10px] text-muted-foreground">同步中</span>
           ) : null}
-          {!isFetching && data.vip_status?.active && discountLabel ? (
+          {!isFetching &&
+          (data.vip_status?.active || selectedTier?.discount_source === 'creator') &&
+          discountLabel ? (
             <span className="shrink-0 rounded-full border border-success/40 bg-success/10 px-2.5 py-1 text-[10px] font-bold text-success">
-              VIP · {discountLabel}
+              {selectedTier?.discount_source === 'creator' ? '自用' : 'VIP'} · {discountLabel}
             </span>
           ) : null}
         </div>
@@ -301,7 +308,7 @@ function TierSection({
   onToggle: () => void;
   onSelect: (modelId: string) => void;
 }) {
-  const vipNote = vipActive ? formatTierVipNote(tier) : null;
+  const vipNote = vipActive || tier.discount_source === 'creator' ? formatTierVipNote(tier) : null;
 
   return (
     <section className="overflow-hidden rounded-2xl border border-border bg-card">
