@@ -80,7 +80,9 @@ async function postCheckoutConfirmation(input: {
 }
 
 async function fetchWalletBalance(): Promise<GetWalletBalanceData> {
-  return apiClient<GetWalletBalanceData>('/api/wallet/balance');
+  // Profile 的可用态只依赖余额；使用并发调度器为导航保留的 critical 槽，
+  // 避免签到、VIP、社区等同屏普通读取先占满非关键槽后让主内容排队。
+  return apiClient<GetWalletBalanceData>('/api/wallet/balance', { queuePriority: 'critical' });
 }
 
 async function fetchWalletSpending(): Promise<GetWalletSpendingData> {

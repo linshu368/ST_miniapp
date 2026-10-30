@@ -503,7 +503,9 @@ export async function runConversationTurn(
     sink.close();
 
     if (persisted.status === 'success') {
-      await persistRichReplyDiagnosis({
+      // 回复终态、计费和 done 均已确认；该诊断只影响下一轮采用精简还是完整规则。
+      // 不再让一次额外 snapshot 读取和 metadata 写入延长已关闭的 SSE handler。
+      void persistRichReplyDiagnosis({
         historyId: turn.historyId,
         postprocessVersion: turn.postprocessVersion,
         slotModes: turn.slotModes,
