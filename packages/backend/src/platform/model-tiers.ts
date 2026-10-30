@@ -158,9 +158,12 @@ export interface ModelBillingContext {
 }
 
 export async function getModelBillingContext(
-  modelRef: string | { provider: LlmModelProvider; providerModelId: string }
+  modelRef: string | { provider: LlmModelProvider; providerModelId: string },
+  catalogSnapshot?: Awaited<ReturnType<typeof fetchModelCatalogSnapshot>>
 ): Promise<ModelBillingContext> {
-  const snapshot = await fetchModelCatalogSnapshot();
+  // A conversation freezes one catalog; re-reading its version adds an RTT and
+  // could price the accepted model from a later operator publication.
+  const snapshot = catalogSnapshot ?? (await fetchModelCatalogSnapshot());
   const provider = typeof modelRef === 'string' ? 'openrouter' : modelRef.provider;
   const providerModelId = typeof modelRef === 'string' ? modelRef : modelRef.providerModelId;
   const catalogTier =

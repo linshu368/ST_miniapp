@@ -231,15 +231,26 @@ async function executeGeneration(
   const signal = request.signal
     ? AbortSignal.any([request.signal, AbortSignal.timeout(GENERATION_TIMEOUT_MS)])
     : AbortSignal.timeout(GENERATION_TIMEOUT_MS);
-  const chargeId = randomUUID();
-  const [pricing, selectedBilling, vipStrategy] = await withAbort(
+  const chargeId = request.plannedChargeId ?? randomUUID();
+  // Both transport choices use one published routing snapshot, read alongside pricing.
+  const routingModelIds = [
+    ...new Set([
+      ...(request.model.provider === 'openrouter' ? [request.model.providerModelId] : []),
+      ...(request.firstToken && request.model.firstTokenPolicy?.fallbackModelId
+        ? [request.model.firstTokenPolicy.fallbackModelId]
+        : []),
+    ]),
+  ];
+  const [pricing, selectedBilling, vipStrategy, routingPreferences] = await withAbort(
     Promise.all([
       getPricingConfig(),
-      getModelBillingContext({
-        provider: request.model.provider,
-        providerModelId: request.model.providerModelId,
-      }),
+      request.model.billingContext ??
+        getModelBillingContext({
+          provider: request.model.provider,
+          providerModelId: request.model.providerModelId,
+        }),
       readVipStrategy(),
+      getProviderPreferencesForModels(routingModelIds),
     ]),
     signal
   );
@@ -331,18 +342,6 @@ async function executeGeneration(
       createHistoryWriter({ request, billing, plan, log })(outcome);
 
     // 模块内部已把读取 / 解析失败降级为「无规则」，这里拿到 null 就当没配置。
-    const routingModelIds = [
-      ...new Set([
-        ...(billing.provider === 'openrouter' ? [billing.providerModelId] : []),
-        ...(request.firstToken && request.model.firstTokenPolicy?.fallbackModelId
-          ? [request.model.firstTokenPolicy.fallbackModelId]
-          : []),
-      ]),
-    ];
-    const routingPreferences = await withAbort(
-      getProviderPreferencesForModels(routingModelIds),
-      signal
-    );
     const preferencesFor = (modelId: string) =>
       routingPreferences[routingModelIds.indexOf(modelId)] ?? null;
     const upstream = resolveProviderUpstream(billing.provider);
