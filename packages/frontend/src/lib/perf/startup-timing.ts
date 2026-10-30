@@ -5,6 +5,7 @@ import * as Sentry from '@sentry/nextjs';
 import { notifyTelegramReady } from '@/lib/telegram/init';
 import { getMetricDimensions } from './env-tags';
 import { routeOf, WATCHED_PAGES } from './page-tracker';
+import { collectStartupDetails, resetStartupPhasesForTest } from './startup-phases';
 
 let completed = false;
 let outcomeRecorded = false;
@@ -12,6 +13,7 @@ let outcomeRecorded = false;
 /** 独立于 SPA 页面计时；performance.now() 的零点是本次文档导航，包含下载与 hydration。 */
 export function observeStartupShell(pathname: string): () => void {
   if (typeof window === 'undefined' || completed) return () => {};
+  const committedAt = performance.now();
 
   // 未识别入口统一归类，禁止把短 ID、query 或 Telegram 启动参数变成指标维度。
   const template = pathname.startsWith('/dramas/') ? '/dramas/:id' : routeOf(pathname);
@@ -88,6 +90,41 @@ export function observeStartupShell(pathname: string): () => void {
             })
           );
         }
+        // 不把资源枚举、分段指标或慢样本组装放在 ready 之前，也不等待上报成功。
+        safely(() =>
+          setTimeout(() => {
+            safely(() => {
+              const { stages, details } = collectStartupDetails(committedAt, shellMs, readyMs);
+              const startupBucket = shellMs >= 5000 ? 'slow' : 'normal';
+              const tags = {
+                ...attributes,
+                telegram_ready: status,
+                startup_bucket: startupBucket,
+                definition: 'startup_phases_v1',
+              };
+              for (const [stage, duration] of Object.entries(stages)) {
+                safely(() =>
+                  Sentry.metrics.distribution('startup.stage.duration', duration, {
+                    unit: 'millisecond',
+                    attributes: { ...tags, stage },
+                  })
+                );
+              }
+              if (startupBucket === 'slow') {
+                // 单条事件携带同一次启动的完整数值，不能拿各阶段 P95 相加推断慢因。
+                safely(() =>
+                  Sentry.captureEvent({
+                    message: 'miniapp_startup_slow',
+                    level: 'info',
+                    fingerprint: ['miniapp_startup_slow'],
+                    tags,
+                    contexts: { startup: details },
+                  })
+                );
+              }
+            });
+          }, 0)
+        );
       }
       completed = true;
       cleanup();
@@ -101,4 +138,5 @@ export function observeStartupShell(pathname: string): () => void {
 export function resetStartupTimingForTest(): void {
   completed = false;
   outcomeRecorded = false;
+  resetStartupPhasesForTest();
 }
