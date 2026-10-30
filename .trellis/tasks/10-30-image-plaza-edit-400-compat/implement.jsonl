@@ -1,0 +1,6 @@
+{"file":".trellis/spec/backend/app/index.md","reason":"Backend 开发门禁与最低验证要求"}
+{"file":".trellis/spec/backend/app/data-reliability-and-security.md","reason":"外部调用、日志脱敏、失败语义和 Sentry 约束"}
+{"file":".trellis/spec/backend/app/testing-scripts-and-deployment.md","reason":"Backend 测试与发布验证规则"}
+{"file":".trellis/spec/backend/app/modules/business/conversation-generation.md","reason":"Image Plaza 单次 Venice 调用、失败未知和不扣费语义"}
+{"file":".trellis/spec/backend/app/modules/infrastructure/runtime-data-security.md","reason":"Image Plaza runtime/日志/worker 当前事实"}
+{"file":".trellis/tasks/10-30-image-plaza-edit-400-compat/research/root-cause.md","reason":"Railway、Sentry、源码与 Venice 契约根因证据"}
