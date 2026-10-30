@@ -312,6 +312,7 @@ export function useConversationTurn({
   const abortRef = useRef<AbortController | null>(null);
   const pendingRef = useRef<PendingTurn | null>(null);
   const requestRef = useRef<symbol | null>(null);
+  const recoveryProbeRef = useRef<string | null>(null);
   const cancelRef = useRef<symbol | null>(null);
   const sessionRef = useRef(sessionId);
   sessionRef.current = sessionId;
@@ -364,6 +365,41 @@ export function useConversationTurn({
   );
 
   useEffect(() => {
+    const pending = pendingRef.current;
+    const terminal =
+      pending?.sessionId === sessionId
+        ? findPendingTurnMessage(persistedMessages, pending)
+        : undefined;
+    if (
+      requestRef.current &&
+      !cancelRef.current &&
+      streaming &&
+      !streaming.status &&
+      streaming.requestId === pending?.requestId &&
+      terminal &&
+      terminal.request_id === pending?.requestId &&
+      terminal.revision === pending?.revision &&
+      terminal.status !== 'streaming'
+    ) {
+      // The durable terminal owns this exact request even if SSE never sends EOF.
+      // Revoke local ownership before abort so old callbacks cannot touch the next turn.
+      const controller = abortRef.current;
+      requestRef.current = null;
+      pendingRef.current = null;
+      abortRef.current = null;
+      setQuotaRefreshing(false);
+      const status = terminal.status;
+      setStreaming((current) => {
+        if (!current || current.requestId !== terminal.request_id) return current;
+        return current.text.length > terminal.content.length
+          ? { ...current, status }
+          : dropCurrentStreamingTurn(current);
+      });
+      setStreamError((current) => (current === CONVERSATION_RECOVERING_MESSAGE ? null : current));
+      controller?.abort();
+      safelyRunTelemetry(() => getReplayLifecycle().setStreaming(false));
+      return;
+    }
     setStreaming((current) => prunePersistedStreamingTurns(current, persistedMessages, sessionId));
   }, [persistedMessages, sessionId, streaming]);
 
@@ -437,9 +473,34 @@ export function useConversationTurn({
     setReplyStalled(false);
     if (!replyProgressKey) return;
 
-    const timer = window.setTimeout(() => setReplyStalled(true), REPLY_STALLED_NOTICE_MS);
+    const timer = window.setTimeout(() => {
+      setReplyStalled(true);
+      const pending = pendingRef.current;
+      if (
+        !requestRef.current ||
+        cancelRef.current ||
+        !pending ||
+        pending.unaccepted ||
+        pending.sessionId !== sessionRef.current ||
+        serverBusy ||
+        document.visibilityState !== 'visible' ||
+        recoveryProbeRef.current === pending.requestId
+      )
+        return;
+      // A silent connection may never reject. Probe once through the shared query;
+      // existing streaming-detail polling takes over, without another retry loop.
+      recoveryProbeRef.current = pending.requestId;
+      void queryClient
+        .fetchQuery({
+          queryKey: conversationKeys.detail(pending.sessionId),
+          queryFn: ({ signal }) => fetchConversationDetail(pending.sessionId, 5_000, signal),
+          staleTime: 0,
+          retry: false,
+        })
+        .catch(() => undefined);
+    }, REPLY_STALLED_NOTICE_MS);
     return () => window.clearTimeout(timer);
-  }, [replyProgressKey]);
+  }, [replyProgressKey, serverBusy, queryClient]);
 
   const canRegenerate =
     !generating && !serverBusy && lastMessage?.role === 'assistant' && lastMessage.turn_index > 0;
