@@ -18,6 +18,7 @@ import {
   canonicalVipPlanTerms,
   createWalletAmountSplit,
   createWalletBalanceSplit,
+  getNextDailyCheckinAt,
   isConsistentWalletBalance,
   isFeatureFreeTrialExhausted,
   isVipActiveAt,
@@ -29,6 +30,23 @@ import {
   roundHalfUpToInteger,
   summarizeFeatureFreeTrialQuota,
 } from '../index.js';
+
+describe('daily check-in calendar boundary', () => {
+  it.each([
+    ['2026-10-30T15:59:59.999Z', '2026-10-30T16:00:00.000Z'],
+    ['2026-10-30T16:00:00.000Z', '2026-10-31T16:00:00.000Z'],
+    ['2026-10-30T23:00:00+08:00', '2026-10-30T16:00:00.000Z'],
+    ['2026-10-31T15:59:00.000Z', '2026-10-31T16:00:00.000Z'],
+    ['2026-12-31T15:59:59.999Z', '2026-12-31T16:00:00.000Z'],
+    ['2026-12-31T16:00:00.000Z', '2027-01-01T16:00:00.000Z'],
+  ])('resets at the next Beijing midnight after %s', (claimedAt, expected) => {
+    expect(getNextDailyCheckinAt(claimedAt)).toBe(expected);
+  });
+
+  it('rejects invalid timestamps instead of unlocking a claim', () => {
+    expect(() => getNextDailyCheckinAt('invalid')).toThrow('invalid checkin timestamp');
+  });
+});
 import type {
   GetPaymentPlansData,
   NotificationItem,

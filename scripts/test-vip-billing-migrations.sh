@@ -6,6 +6,21 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
+# Reuse this suite on machines without host PostgreSQL; the container cannot reach remote DBs.
+if ! command -v createdb >/dev/null || ! command -v psql >/dev/null; then
+  task_container="st-vip-billing-${RANDOM}-$$"
+  trap 'docker rm -f "$task_container" >/dev/null 2>&1 || true' EXIT
+  docker run -d --rm --name "$task_container" --network none \
+    -v "$ROOT:/workspace:ro" -e POSTGRES_HOST_AUTH_METHOD=trust postgres:17 >/dev/null
+  for task_attempt in $(seq 1 30); do
+    if [[ "$(docker logs "$task_container" 2>&1)" == *'PostgreSQL init process complete'* ]] && \
+      docker exec "$task_container" pg_isready -U postgres >/dev/null 2>&1; then break; fi
+    sleep 1
+  done
+  docker exec -u postgres "$task_container" bash /workspace/scripts/test-vip-billing-migrations.sh
+  exit
+fi
+
 DB_NAME="st_vip_t2_billing_test"
 export DATABASE_URL="postgresql:///${DB_NAME}"
 
@@ -438,4 +453,25 @@ psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 \
   -f "$ROOT/packages/shared/migrations/tests/vip_checkin_tiered_t3b_scenarios.sql" \
   >/dev/null
 
-echo "All T2, T3, T4, T3A, T6, T5 and T3B VIP billing local checks passed."
+echo "apply and replay calendar-day check-in migration"
+for task_attempt in 1 2; do
+  psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 \
+    -f "$ROOT/packages/shared/migrations/20261030_checkin_calendar_day.sql" >/dev/null
+done
+psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 \
+  -c "SELECT vip_t3b_test.run_calendar();" >/dev/null
+
+echo "run concurrent calendar-day check-in"
+psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 \
+  -c "INSERT INTO app_core.users(id) VALUES ('00000000-0000-4000-8000-000000000068');" >/dev/null
+for task_attempt in 1 2; do
+  (
+    psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 \
+      -c "SELECT miniapp_features.claim_daily_checkin('00000000-0000-4000-8000-000000000068');" >/dev/null 2>&1 || true
+  ) &
+done
+wait
+task_result="$(psql --no-psqlrc -d "$DATABASE_URL" -At -c "SELECT (SELECT count(*) FROM miniapp_features.daily_checkins WHERE user_id='00000000-0000-4000-8000-000000000068') || ':' || (SELECT count(*) FROM billing.wallet_ledger WHERE user_id='00000000-0000-4000-8000-000000000068' AND entry_type='checkin_bonus') || ':' || bonus_credits FROM billing.user_wallets WHERE user_id='00000000-0000-4000-8000-000000000068';")"
+[[ "$task_result" == '1:1:60.0' || "$task_result" == '1:1:60' ]] || fail "calendar concurrency result=$task_result"
+
+echo "All VIP billing and calendar-day check-in local checks passed."
