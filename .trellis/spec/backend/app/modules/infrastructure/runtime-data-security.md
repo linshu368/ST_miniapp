@@ -5,8 +5,8 @@ scope: backend
 category: infrastructure
 status: active
 owners: [backend]
-last_verified_task: .trellis/tasks/10-16-creation-plaza-video-planning/
-last_verified_at: 2026-10-27
+last_verified_task: .trellis/tasks/10-30-image-plaza-edit-400-compat/
+last_verified_at: 2026-10-30
 ---
 
 # 运行时、鉴权与数据访问基建
@@ -62,6 +62,8 @@ PostHog capture 用 Node 原生 fetch、短超时、无重试；支付按 `order
 
 图片广场目录、价格、标签、分享提示与开关从统一 runtime-config 入口读取并 fail closed；Venice 凭据只在服务端环境读取。原图和参考图存私有 bucket，HTTP 只返回短期签名 URL；worker 使用数据库租约恢复，日志只记允许字段与结果摘要。`image_plaza_tags_feature_enabled` 仅门控分享自动打标，不门控 feed 标签目录返回。
 
+图片广场 worker 在失败落库尝试后，除 Railway Pino 原始异常外还通过现有 `sendBackendSentryLog` 写一条脱敏摘要；只包含 attempt、provider model、模式、内部错误码和结果是否未知，不包含 prompt、参考图、provider 正文或 URL。Sentry 未配置或发送异常不得改变 attempt 失败终态或中断同一 tick 的后续任务。
+
 视频目录来自独立 managed key，只有 `VIDEO_PLAZA_WORKER_ENABLED=true`、Venice key 存在且启动时 ffmpeg/ffprobe 探测成功才对前端公开。视频与 poster 均在私有 `media-plaza-video` bucket；公开作品使用 24 小时稳定签名并进入同一有界 LRU，未公开产物使用短签。列表禁止返回/预签 MP4，日志不得记录下载 URL、提示词或参考图签名。
 
 图片广场的 8 张表、3 个图片 RPC 与 PostgREST schema 暴露已在 TEST、Production 完成切换。图片 repository、视频 repository 和 seed 工具统一通过 `getDomainDb('media_plaza')` 直接访问，不探测或回退 `experience` / `miniapp_features` 旧路径；后续视频 M2/M3 以该已完成的物理迁移为前置条件。
@@ -70,7 +72,8 @@ PostHog capture 用 Node 原生 fetch、短超时、无重试；支付按 `order
 
 ## 变更记录
 
-- 2026-10-27：任务 `10-16-creation-plaza-video-planning` 合并已完成的图片 M1：TEST、Production 统一直连 `media_plaza`，删除双读/旧 schema 回退口径；视频 M2/M3 仍需按环境单独执行和验收。
+- 2026-10-30：任务 `10-30-image-plaza-edit-400-compat` 为图片广场 worker 失败补充脱敏 Sentry Log，并保持遥测故障隔离。
+- 2026-10-27：任务 `10-27-media-plaza-schema-move` 将图片广场数据库访问统一切换到 `media_plaza`，不保留旧 schema 回退。
 - 2026-10-27：任务 `10-27-sentry-performance-optimization` 增加不可变用户身份 bounded cache/single-flight，并为非严格 runtime-config 读取增加无 TTL 的在途合并。
 
 - 2026-10-15：任务 `10-15-image-plaza-tag-prompt-filter` 明确 `image_plaza_tags_feature_enabled` 只控制分享自动打标。
