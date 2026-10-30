@@ -37,6 +37,13 @@ ALTER TABLE app_core.characters ADD COLUMN name text NOT NULL DEFAULT '',ADD COL
  ADD COLUMN mes_example text NOT NULL DEFAULT '',ADD COLUMN post_history_instructions text NOT NULL DEFAULT '',
  ADD COLUMN creator_notes text NOT NULL DEFAULT '',ADD COLUMN tags jsonb NOT NULL DEFAULT '[]',ADD COLUMN sort_order integer DEFAULT 0,
  ADD COLUMN last_listed_at timestamptz,ADD COLUMN updated_at timestamptz DEFAULT now(),ADD COLUMN created_at timestamptz DEFAULT now();
+-- Match the live character row's text/JSON columns and historical dropped attribute slots.
+-- The runtime reader must project its fields without serializing unrelated card imports.
+ALTER TABLE app_core.characters ADD COLUMN legacy_fixture_column text,
+ ADD COLUMN raw_card jsonb,ADD COLUMN character_book jsonb,
+ ADD COLUMN extensions jsonb NOT NULL DEFAULT '{}',ADD COLUMN alternate_greetings jsonb NOT NULL DEFAULT '[]',
+ ADD COLUMN character_persona_and_style text;
+ALTER TABLE app_core.characters DROP COLUMN legacy_fixture_column;
 ALTER TABLE miniapp_features.character_favorites ADD COLUMN created_at timestamptz DEFAULT now();
 CREATE SCHEMA storage;
 CREATE TABLE storage.buckets(id text PRIMARY KEY,name text,public boolean,file_size_limit integer,allowed_mime_types text[]);
@@ -65,7 +72,8 @@ for task_migration in \
   20261029_chat_message_likes.sql \
   20261030_creator_cover_assets.sql \
   20261030_creator_characters.sql \
-  20261030_creator_character_versions.sql; do
+  20261030_creator_character_versions.sql \
+  20261030_creator_runtime_projection_fix.sql; do
   "${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/$task_migration" >/dev/null
 done
 "${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/tests/creator_characters.sql"
