@@ -138,3 +138,7 @@ pnpm test:ui:fixtures            # 模拟服务本身的协议与隔离检查
 复用普通聊天与「历史对话分支」，新增「回复点赞失败」状态。`pnpm test:ui --grep @chat-like` 验证390/320布局、48px按钮边缘可点、点亮/取消与刷新持久化、失败恢复/草稿保留、历史轮次、分支和重新生成不继承旧赞。全部基于本地虚构数据；SQL权限/固定版本/幂等继续复用 `bash scripts/test-conversation-branches-migration.sh`，没有另建临时脚本或真实扣费。
 
 `pnpm test:ui --grep @startup` 关闭 JavaScript，验证首页、角色、短剧列表的初始 HTML 框架和五项导航，无业务 API 请求；不替代 Telegram 原生启动遮罩与 Sentry 生产指标接收验收。
+
+## 签到零点更新
+
+`pnpm test:ui --grep @profile` 复用签到到账、VIP引导、失败重试、已领保护和320px布局；`--grep @checkin-midnight` 用浏览器虚拟时钟验证停留跨零点后重新读取服务端资格。fixture返回稳定的实际领取时间及下一北京时间午夜，GET不会不断延长下次领取时间。真实发奖/并发另跑既有 `bash scripts/test-vip-billing-migrations.sh`，不使用线上账户试领。

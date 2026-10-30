@@ -178,3 +178,9 @@ npx prisma generate
 ## 短剧生产 cron 权限 forward-fix
 
 原 `20261027_drama_playback_observability.sql` 的production事务在直接UPDATE cron.job时被Supabase托管权限拒绝并回滚，源文件/失败认领不改写。新安装或恢复改为单独执行自包含 `20261027_drama_playback_observability_forward_fix.sql`，只将cron关闭动作替换为官方cron.alter_job；本功能对象/权限/数据策略不变。执行前确认对象回滚、目标函数存在且迁移角色可执行；job保持inactive。
+
+## 签到自然日更新（2026-10-30，本地验证，远端未执行）
+
+`20261030_checkin_calendar_day.sql` 仅替换 `miniapp_features.claim_daily_checkin(uuid)` 的时间表达式，保留当前奖励配置、owner/ACL、事务和唯一入账出口。按北京时间每天00:00恢复资格，旧记录按日期自然兼容，无回填。CRLF规范化；旧锚点不是恰好一处则全事务拒绝，完整重放无操作；锁5s/语句30s。
+
+TEST先经Database Migration workflow逐文件执行、验证，再经授权生产迁移 → Backend → Frontend。隔离回归：`bash scripts/test-vip-billing-migrations.sh`。恢复用受审阅forward-fix同步RPC/Backend回滚动24h，已领余额/流水保留。不可重跑旧分档迁移，以免覆盖运营已发布数额。

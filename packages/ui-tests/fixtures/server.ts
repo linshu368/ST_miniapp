@@ -10,6 +10,7 @@ import {
   SetMessageLikeRequestSchema,
   ReportCharacterCommentSchema,
   SetCharacterLikeSchema,
+  getNextDailyCheckinAt,
   type CharacterComment,
   type CharacterSocial,
   type GetCharacterSocialData,
@@ -50,7 +51,6 @@ import {
 } from './data.js';
 
 const HOST = '127.0.0.1';
-const tomorrow = () => new Date(Date.now() + 86_400_000).toISOString();
 export const PREVIEW_PROTOCOL = 'st-miniapp-ui-v1';
 
 /** One state per local environment; the runner is deliberately serial. No production proxy. */
@@ -59,7 +59,9 @@ export function createPreviewServer(apiPort: number, appPort: number) {
   const app = `http://${HOST}:${appPort}`;
   let data = makeData(api);
   let scenario: Scenario = 'standard';
-  let claimed = false;
+  let claimedAt: string | null = null;
+  const canClaimCheckin = () =>
+    !claimedAt || Date.now() >= Date.parse(getNextDailyCheckinAt(claimedAt));
   let epoch = 0;
   let favoriteIds = new Set<string>();
   const characterLikes = new Set<string>();
@@ -209,7 +211,7 @@ export function createPreviewServer(apiPort: number, appPort: number) {
     messageLikes.clear();
     messageLikeFailureDelivered = false;
     scenario = next;
-    claimed = next === 'checked';
+    claimedAt = next === 'checked' ? stamp() : null;
     favoriteIds = new Set(next === 'character-social' ? [IDS.character] : []);
     characterLikes.clear();
     characterComments.clear();
@@ -398,7 +400,13 @@ export function createPreviewServer(apiPort: number, appPort: number) {
       }
       if (path === '/__preview/state' && method === 'GET') {
         reconcileImages();
-        json(res, 200, { scenario, claimed, wallet: data.wallet, requests, unhandled });
+        json(res, 200, {
+          scenario,
+          claimed: !canClaimCheckin(),
+          wallet: data.wallet,
+          requests,
+          unhandled,
+        });
         return;
       }
       if (path === '/__preview/reset' && method === 'POST') {
@@ -617,9 +625,9 @@ export function createPreviewServer(apiPort: number, appPort: number) {
       if (path === '/api/wallet/checkin' && method === 'GET') {
         ok(res, {
           checkin: {
-            can_claim: !claimed,
-            last_claimed_at: claimed ? stamp() : null,
-            next_claim_at: claimed ? tomorrow() : null,
+            can_claim: canClaimCheckin(),
+            last_claimed_at: claimedAt,
+            next_claim_at: claimedAt ? getNextDailyCheckinAt(claimedAt) : null,
             reward_credits: data.vip.active ? 150 : 30,
             base_reward_credits: 30,
             vip_reward_credits: 150,
@@ -632,18 +640,18 @@ export function createPreviewServer(apiPort: number, appPort: number) {
           fail(res, 503, 'preview_unavailable', '签到暂时未成功，请重试');
           return;
         }
-        if (claimed) {
+        if (!canClaimCheckin()) {
           fail(res, 409, 'already_claimed', '今日已签到');
           return;
         }
-        claimed = true;
+        claimedAt = stamp();
         const reward = data.vip.active ? 150 : 30;
         creditBonus(reward);
         ok(res, {
           wallet: data.wallet,
           checkin: {
-            claimed_at: stamp(),
-            next_claim_at: tomorrow(),
+            claimed_at: claimedAt,
+            next_claim_at: getNextDailyCheckinAt(claimedAt),
             reward_credits: reward,
             base_reward_credits: 30,
             vip_reward_credits: 150,
