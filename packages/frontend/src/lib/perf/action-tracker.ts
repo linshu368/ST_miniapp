@@ -24,6 +24,7 @@ export type TrackedAction =
   | 'daily_checkin'
   | 'support_send_message'
   | 'image_generate'
+  | 'video_generate'
   | 'voice_generate'
   | 'create_conversation';
 

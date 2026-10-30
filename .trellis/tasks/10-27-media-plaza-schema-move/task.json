@@ -21,7 +21,7 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "",
+  "notes": "2026-10-27 user confirmed M1 and PostgREST media_plaza exposure completed in both TEST and Production. Preserve the applied migration, do not rerun or roll it back, and use forward-fix for any discovered drift. Application merge/deployment remains separate.",
   "meta": {
     "module_impact": {
       "schema_version": 1,

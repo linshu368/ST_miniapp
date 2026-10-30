@@ -54,7 +54,11 @@ Shared 只定义浏览器可见 DTO、错误码、容量上限和 runtime valida
 
 图片广场提示词长度统一为最多 2000 字，快照、生成提交和前端输入共享同一常量。Civitai Image ID、源 URL 与源热度属于内部导入元数据，不进入公开 feed/detail DTO；对外热度仍使用站内 `like_count`。
 
+图片广场标签配置为最多 80 项的统一图片/视频目录；每项包含稳定 tag id、label、分组 ID/名称/顺序和 chip/grid 布局。旧配置缺少分组时默认归入「风格」组；公开 DTO 暂时保留统一为 image+video 的 `media_types` 兼容字段，供旧 Frontend 混部读取，新 consumer 不得据此拆分目录。
+
 ## 变更记录
+
+- 2026-10-28：任务 `10-16-creation-plaza-video-planning` 增加标签分组契约与旧配置/旧客户端兼容默认值。
 
 - 2026-10-13：任务 `10-10-image-plaza-v2` 将提示词上限统一为 2000 字，并明确种子来源字段不公开。
 

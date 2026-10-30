@@ -1,4 +1,11 @@
 import { z } from 'zod';
+import {
+  PlazaVideoFeedItemSchema,
+  PlazaVideoWorkSchema,
+  VideoPlazaAttemptSchema,
+  VideoPlazaModelSchema,
+  VideoPlazaSnapshotSchema,
+} from './video-plaza.js';
 
 export const IMAGE_PLAZA_PROMPT_MAX_CHARS = 2_000;
 export const IMAGE_PLAZA_PAGE_SIZE = 20;
@@ -8,8 +15,22 @@ export type ImagePlazaFeedSort = z.infer<typeof ImagePlazaFeedSortSchema>;
 export const ImagePlazaFeedQuerySchema = z.object({
   // Omitted sort preserves the legacy cursor/order during producer-first rollout.
   sort: ImagePlazaFeedSortSchema.optional(),
+  media: z.enum(['all', 'image', 'video']).optional(),
   search: z.string().trim().max(80).optional(),
   tag: z.string().trim().min(1).max(40).optional(),
+  tags: z
+    .string()
+    .trim()
+    .min(1)
+    .max(3_280)
+    .refine(
+      (value) => {
+        const tags = value.split(',').map((tag) => tag.trim());
+        return tags.length <= 80 && tags.every((tag) => tag.length > 0 && tag.length <= 40);
+      },
+      { message: 'tags 最多包含 80 个非空标签，每个标签最多 40 字符' }
+    )
+    .optional(),
   cursor: z.string().min(1).max(2048).optional(),
 });
 export type ImagePlazaFeedQuery = z.infer<typeof ImagePlazaFeedQuerySchema>;
@@ -174,18 +195,31 @@ export const ImagePlazaShareTipConfigSchema = z
   });
 export type ImagePlazaShareTipConfig = z.infer<typeof ImagePlazaShareTipConfigSchema>;
 
+export const IMAGE_PLAZA_DEFAULT_TAG_GROUP_ID = 'style';
+export const IMAGE_PLAZA_DEFAULT_TAG_GROUP_LABEL = '风格';
+export const ImagePlazaTagGroupLayoutSchema = z.enum(['chips', 'grid']);
+export type ImagePlazaTagGroupLayout = z.infer<typeof ImagePlazaTagGroupLayoutSchema>;
+
+const ImagePlazaTagConfigItemSchema = z.object({
+  id: z.string().trim().min(1).max(40),
+  label: z.string().trim().min(1).max(40),
+  enabled: z.boolean(),
+  sort_order: z.number().int().nonnegative(),
+  group_id: z.string().trim().min(1).max(40).default(IMAGE_PLAZA_DEFAULT_TAG_GROUP_ID),
+  group_label: z.string().trim().min(1).max(40).default(IMAGE_PLAZA_DEFAULT_TAG_GROUP_LABEL),
+  group_sort_order: z.number().int().nonnegative().default(0),
+  group_layout: ImagePlazaTagGroupLayoutSchema.default('chips'),
+});
+
 export const ImagePlazaTagConfigSchema = z
-  .array(
-    z.object({
-      id: z.string().trim().min(1).max(40),
-      label: z.string().trim().min(1).max(40),
-      enabled: z.boolean(),
-      sort_order: z.number().int().nonnegative(),
-    })
-  )
+  .array(ImagePlazaTagConfigItemSchema)
   .max(80)
   .superRefine((tags, ctx) => {
     const ids = new Set<string>();
+    const groups = new Map<
+      string,
+      { label: string; sortOrder: number; layout: ImagePlazaTagGroupLayout }
+    >();
     for (const [index, tag] of tags.entries()) {
       if (tag.id === 'all') {
         ctx.addIssue({
@@ -194,10 +228,38 @@ export const ImagePlazaTagConfigSchema = z
           message: 'all 为系统保留 ID',
         });
       }
+      if (tag.group_id === 'all') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [index, 'group_id'],
+          message: 'all 为系统保留分组 ID',
+        });
+      }
       if (ids.has(tag.id)) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: [index, 'id'], message: '标签 ID 重复' });
       }
       ids.add(tag.id);
+
+      const previous = groups.get(tag.group_id);
+      const current = {
+        label: tag.group_label,
+        sortOrder: tag.group_sort_order,
+        layout: tag.group_layout,
+      };
+      if (
+        previous &&
+        (previous.label !== current.label ||
+          previous.sortOrder !== current.sortOrder ||
+          previous.layout !== current.layout)
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [index, 'group_id'],
+          message: `同一分组 ID 的名称、顺序和布局必须一致：${tag.group_id}`,
+        });
+      } else {
+        groups.set(tag.group_id, current);
+      }
     }
   });
 export type ImagePlazaTagConfig = z.infer<typeof ImagePlazaTagConfigSchema>;
@@ -223,6 +285,7 @@ export type ImagePlazaSnapshot = z.infer<typeof ImagePlazaSnapshotSchema>;
 
 export const ImagePlazaWorkSchema = z.object({
   id: z.string().uuid(),
+  media_type: z.literal('image').default('image'),
   title: z.string(),
   image_url: z.string().url(),
   reference_image_url: z.string().url().nullable(),
@@ -238,21 +301,50 @@ export const ImagePlazaWorkSchema = z.object({
 });
 export type ImagePlazaWork = z.infer<typeof ImagePlazaWorkSchema>;
 
-const PublicImagePlazaTagSchema = z.object({ id: z.string(), label: z.string() });
+export const ImagePlazaFeedImageItemSchema = ImagePlazaWorkSchema.omit({
+  reference_image_url: true,
+  snapshot: true,
+});
+export type ImagePlazaFeedImageItem = z.infer<typeof ImagePlazaFeedImageItemSchema>;
+
+export const PlazaFeedItemSchema = z.discriminatedUnion('media_type', [
+  ImagePlazaFeedImageItemSchema,
+  PlazaVideoFeedItemSchema,
+]);
+export type PlazaFeedItem = z.infer<typeof PlazaFeedItemSchema>;
+
+const PublicImagePlazaTagSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  group_id: z.string().default(IMAGE_PLAZA_DEFAULT_TAG_GROUP_ID),
+  group_label: z.string().default(IMAGE_PLAZA_DEFAULT_TAG_GROUP_LABEL),
+  group_sort_order: z.number().int().nonnegative().default(0),
+  group_layout: ImagePlazaTagGroupLayoutSchema.default('chips'),
+  // 混部兼容旧 Frontend；新客户端使用统一目录，不按媒体裁剪标签。
+  media_types: z.array(z.enum(['image', 'video'])).default(['image', 'video']),
+});
 
 export const GetImagePlazaFeedDataSchema = z.object({
-  items: z.array(ImagePlazaWorkSchema),
+  items: z.array(PlazaFeedItemSchema),
   next_cursor: z.string().nullable(),
   tags: z.array(PublicImagePlazaTagSchema),
 });
 export type GetImagePlazaFeedData = z.infer<typeof GetImagePlazaFeedDataSchema>;
 
-export const GetImagePlazaWorkDataSchema = z.object({ work: ImagePlazaWorkSchema });
+export const PlazaWorkSchema = z.discriminatedUnion('media_type', [
+  ImagePlazaWorkSchema,
+  PlazaVideoWorkSchema,
+]);
+export type PlazaWork = z.infer<typeof PlazaWorkSchema>;
+
+export const GetImagePlazaWorkDataSchema = z.object({ work: PlazaWorkSchema });
 export type GetImagePlazaWorkData = z.infer<typeof GetImagePlazaWorkDataSchema>;
 
 export const GetImagePlazaConfigDataSchema = z.object({
   enabled: z.boolean(),
   models: z.array(ImagePlazaModelSchema),
+  video_models: z.array(VideoPlazaModelSchema).default([]),
+  default_video_model_id: z.string().trim().min(1).max(80).nullable().default(null),
   tags: z.array(PublicImagePlazaTagSchema),
   share_tip: ImagePlazaShareTipConfigSchema,
   share_rebate_rate: z.number().min(0).max(1),
@@ -309,7 +401,9 @@ export const ImagePlazaMessageSchema = z.object({
   id: z.string().uuid(),
   role: z.enum(['user', 'assistant']),
   content: z.string(),
+  media_type: z.enum(['image', 'video']).default('image'),
   attempt: ImagePlazaAttemptSchema.nullable(),
+  video_attempt: VideoPlazaAttemptSchema.nullable().default(null),
   created_at: z.string().datetime(),
 });
 export type ImagePlazaMessage = z.infer<typeof ImagePlazaMessageSchema>;
@@ -317,7 +411,7 @@ export type ImagePlazaMessage = z.infer<typeof ImagePlazaMessageSchema>;
 export const ImagePlazaConversationSchema = z.object({
   id: z.string().uuid(),
   title: z.string(),
-  snapshot: ImagePlazaSnapshotSchema.nullable(),
+  snapshot: z.union([ImagePlazaSnapshotSchema, VideoPlazaSnapshotSchema]).nullable(),
   messages: z.array(ImagePlazaMessageSchema),
   created_at: z.string().datetime(),
   updated_at: z.string().datetime(),
@@ -404,3 +498,10 @@ export const UploadImagePlazaReferenceDataSchema = z.object({
   artifact: ImagePlazaArtifactSchema,
 });
 export type UploadImagePlazaReferenceData = z.infer<typeof UploadImagePlazaReferenceDataSchema>;
+
+export const CreateVideoReferenceFromImageArtifactDataSchema = z.object({
+  artifact: ImagePlazaArtifactSchema,
+});
+export type CreateVideoReferenceFromImageArtifactData = z.infer<
+  typeof CreateVideoReferenceFromImageArtifactDataSchema
+>;

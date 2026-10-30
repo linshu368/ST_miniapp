@@ -21,9 +21,12 @@ import {
   DEFAULT_RECHARGE_PAGE_CONFIG,
   DEFAULT_WORD_COUNT_TIERS_CONFIG,
   FreeQuotaExhaustedDialogConfigSchema,
+  IMAGE_PLAZA_DEFAULT_TAG_GROUP_ID,
+  IMAGE_PLAZA_DEFAULT_TAG_GROUP_LABEL,
   ImagePlazaModelCatalogSchema,
   ImagePlazaShareTipConfigSchema,
   ImagePlazaTagConfigSchema,
+  VideoPlazaModelCatalogSchema,
   LlmPricingConfigSchema,
   MAX_FEATURE_FREE_TRIAL_LIMIT,
   ModelCatalogSchema,
@@ -48,6 +51,7 @@ import {
   EditableReplyStyleOptionsConfigSchema,
   EditableImagePlazaTagConfigSchema,
   ImageTextModelConfigSchema,
+  normalizeVideoPlazaCatalogOptions,
   type InviteCenterConfig,
   type InviteRewardRulesConfig,
   type ImageTextModelConfig,
@@ -60,6 +64,7 @@ import {
   ImagePlazaModelCatalogEditor,
   ImagePlazaShareTipEditor,
   ImagePlazaTagsEditor,
+  VideoPlazaModelCatalogEditor,
 } from './ImagePlazaConfigEditors';
 import { LobbyPinnedCharactersEditor } from './LobbyPinnedCharactersEditor';
 import { LobbyRankingParamsEditor } from './LobbyRankingParamsEditor';
@@ -293,6 +298,21 @@ export function ConfigValueEditor(props: {
     );
   }
 
+  if (props.configKey === 'image_plaza_video_model_catalog') {
+    const parsed = VideoPlazaModelCatalogSchema.safeParse(props.value);
+    const fallback = VideoPlazaModelCatalogSchema.parse(
+      configMetadata.image_plaza_video_model_catalog.defaultValue
+    );
+    const value = normalizeVideoPlazaCatalogOptions(parsed.success ? parsed.data : fallback);
+    return (
+      <VideoPlazaModelCatalogEditor
+        value={value}
+        disabled={props.disabled}
+        onChange={props.onChange}
+      />
+    );
+  }
+
   if (props.configKey === 'image_plaza_share_tip') {
     const parsed = ImagePlazaShareTipConfigSchema.safeParse(props.value);
     const fallback = ImagePlazaShareTipConfigSchema.parse(
@@ -332,12 +352,17 @@ export function ConfigValueEditor(props: {
   if (props.configKey === 'image_plaza_tags') {
     const parsed = EditableImagePlazaTagConfigSchema.safeParse(props.value);
     const fallback = ImagePlazaTagConfigSchema.parse(configMetadata.image_plaza_tags.defaultValue);
+    const value = parsed.success
+      ? parsed.data.map((tag) => ({
+          ...tag,
+          group_id: tag.group_id ?? IMAGE_PLAZA_DEFAULT_TAG_GROUP_ID,
+          group_label: tag.group_label ?? IMAGE_PLAZA_DEFAULT_TAG_GROUP_LABEL,
+          group_sort_order: tag.group_sort_order ?? 0,
+          group_layout: tag.group_layout ?? ('chips' as const),
+        }))
+      : fallback;
     return (
-      <ImagePlazaTagsEditor
-        value={parsed.success ? parsed.data : fallback}
-        disabled={props.disabled}
-        onChange={props.onChange}
-      />
+      <ImagePlazaTagsEditor value={value} disabled={props.disabled} onChange={props.onChange} />
     );
   }
 

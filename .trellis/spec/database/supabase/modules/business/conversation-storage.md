@@ -58,6 +58,12 @@ last_verified_at: 2026-10-29
 
 `20261013_image_plaza_seed_catalog.sql` 将提示词约束前向扩至 2000 字，并为 artifact/work 增加互斥的 `generated`/`civitai_seed` 来源不变量。种子作品可无用户和 attempt，只能由 service-role 导入 RPC 原子创建；Civitai ID 唯一，源 URL/源热度仅内部保存，站内点赞从 0 独立累计。`20261013_image_plaza_seed_large_assets.sql` 仅将经审核 seed 所需的 artifact/bucket/RPC 容量扩至 50 MiB，普通用户图片仍由 Backend 限制为 20 MiB；三份 migration 已在 test 验证。
 
+## 影像广场视频与目标域（2026-10-27，本地实现，远程未执行）
+
+`20261027_media_plaza_schema_move.sql` 计划把八张广场表和相关函数迁到独立 `media_plaza` 域；Backend 的 `plazaDb()` 在启动时探测新域，迁移前继续使用旧域。`20261027_media_plaza_video.sql` 增加视频 quote/attempt/artifact、租约 worker RPC、预扣/退款及共用首次分享奖励；视频资源上限 200 MiB，账务继续归 `billing`。M1 有仅限尚无视频对象时使用的配对回滚；M2/M3 产生视频写入后只允许停入口并 forward-fix。
+
+视频 seed 以两份 xlsx 哈希、翻译逐行一致性和 5,097→5,082 基线为门禁；先对所有源 URL 做并发 10 的 HEAD 体积报告，人工确认报告 SHA 与 bucket 配额后才允许 test 小批 apply。迁移和脚本存在不代表数据库或 Storage 已被修改。
+
 ## 变更记录
 
 - 2026-10-19：增加离线 TEST seed 导出与目标初始化模板，复用既有 RPC，不增加永久对象；仅导出 active seed 内容与图片元数据，目标重新分配 UUID，排除用户行为。真实数据不入 Git，Storage 实体复制和生产执行独立审批。见 `ops/image-plaza-seed-migration.md`；未进行生产导入。

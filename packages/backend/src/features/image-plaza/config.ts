@@ -2,9 +2,11 @@ import {
   ImagePlazaModelCatalogSchema,
   ImagePlazaShareTipConfigSchema,
   ImagePlazaTagConfigSchema,
+  VideoPlazaModelCatalogSchema,
   type ImagePlazaModelCatalog,
   type ImagePlazaShareTipConfig,
   type ImagePlazaTagConfig,
+  type VideoPlazaModelCatalog,
 } from '@miniapp/shared';
 import { fetchRuntimeConfigEntries } from '../../platform/runtime-config.js';
 
@@ -15,6 +17,7 @@ const CONFIG_KEYS = [
   'image_plaza_tags',
   'image_plaza_share_rebate_rate',
   'image_plaza_tags_feature_enabled',
+  'image_plaza_video_model_catalog',
 ] as const;
 
 export interface ImagePlazaRuntimeConfig {
@@ -26,6 +29,8 @@ export interface ImagePlazaRuntimeConfig {
   shareTip: ImagePlazaShareTipConfig;
   tags: ImagePlazaTagConfig;
   rebateRate: number;
+  videoCatalog: VideoPlazaModelCatalog | null;
+  videoCatalogVersion: number;
 }
 
 const CONFIG_CACHE_TTL_MS = 5_000;
@@ -65,6 +70,10 @@ async function loadImagePlazaRuntimeConfig(): Promise<ImagePlazaRuntimeConfig> {
   );
   const tags = ImagePlazaTagConfigSchema.safeParse(entries.get('image_plaza_tags')?.value);
   const rebateValue = entries.get('image_plaza_share_rebate_rate')?.value;
+  const videoCatalogEntry = entries.get('image_plaza_video_model_catalog');
+  const videoCatalog = videoCatalogEntry
+    ? VideoPlazaModelCatalogSchema.safeParse(videoCatalogEntry.value)
+    : null;
   const rebateRate =
     typeof rebateValue === 'number' &&
     Number.isFinite(rebateValue) &&
@@ -84,19 +93,49 @@ async function loadImagePlazaRuntimeConfig(): Promise<ImagePlazaRuntimeConfig> {
     shareTip: shareTip.data,
     tags: tags.data,
     rebateRate,
+    videoCatalog: videoCatalog?.success ? videoCatalog.data : null,
+    videoCatalogVersion: videoCatalogEntry?.version ?? 0,
   };
 }
 
 /** Feed/bootstrap 对外标签：始终返回「全部」+ 启用且排序的目录，与自动打标开关无关。 */
-export function publicImagePlazaFeedTags(
-  runtime: Pick<ImagePlazaRuntimeConfig, 'tags'>
-): Array<{ id: string; label: string }> {
-  const all = { id: 'all', label: '全部' };
+export function publicImagePlazaFeedTags(runtime: Pick<ImagePlazaRuntimeConfig, 'tags'>): Array<{
+  id: string;
+  label: string;
+  group_id: string;
+  group_label: string;
+  group_sort_order: number;
+  group_layout: 'chips' | 'grid';
+  media_types: Array<'image' | 'video'>;
+}> {
+  const all = {
+    id: 'all',
+    label: '全部',
+    group_id: 'style',
+    group_label: '风格',
+    group_sort_order: 0,
+    group_layout: 'chips' as const,
+    media_types: ['image', 'video'] as const,
+  };
   return [
-    all,
+    { ...all, media_types: [...all.media_types] },
     ...runtime.tags
       .filter((tag) => tag.enabled)
-      .sort((a, b) => a.sort_order - b.sort_order)
-      .map(({ id, label }) => ({ id, label })),
+      .sort(
+        (a, b) =>
+          a.group_sort_order - b.group_sort_order ||
+          a.sort_order - b.sort_order ||
+          a.id.localeCompare(b.id)
+      )
+      .map(({ id, label, group_id, group_label, group_sort_order, group_layout }) => ({
+        id,
+        label,
+        group_id,
+        group_label,
+        group_sort_order,
+        group_layout,
+        // 旧客户端仍读取该字段；统一目录下所有标签都适用于图片和视频。
+        media_types: ['image', 'video'] as Array<'image' | 'video'>,
+      })),
   ];
 }

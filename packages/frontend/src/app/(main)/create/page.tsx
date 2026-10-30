@@ -9,6 +9,7 @@ import {
   Heart,
   ImageIcon,
   LoaderCircle,
+  Play,
   RefreshCw,
   Search,
   Sparkles,
@@ -19,12 +20,15 @@ import { useQueryClient } from '@tanstack/react-query';
 import {
   IMAGE_PLAZA_FEED_STALE_TIME_MS,
   imagePlazaKeys,
+  prefetchImagePlazaConfig,
   useCreateImagePlazaConversationMutation,
   useImagePlazaFeedQuery,
+  useImagePlazaTagCountsQuery,
   useSetImagePlazaLikeMutation,
 } from '@/lib/api/image-plaza';
-import type { GetImagePlazaFeedData, ImagePlazaWork, ImagePlazaFeedSort } from '@miniapp/shared';
+import type { GetImagePlazaFeedData, ImagePlazaFeedSort, PlazaFeedItem } from '@miniapp/shared';
 import { ImagePlazaHistorySheet } from '@/components/image-plaza/image-plaza-history-sheet';
+import { StyleFilterSheet } from '@/components/image-plaza/style-filter-sheet';
 import { markCriticalSettled } from '@/lib/entry-phase';
 import {
   clearImagePlazaReturn,
@@ -53,11 +57,28 @@ export default function CreatePage() {
   const [returnSnapshot] = useState(() => readImagePlazaReturn());
   const restoring = useRef(returnSnapshot !== null);
   const [search, setSearch] = useState(returnSnapshot?.search ?? '');
-  const [tag, setTag] = useState(returnSnapshot?.tag ?? 'all');
-  const [tags, setTags] = useState<GetImagePlazaFeedData['tags']>([{ id: 'all', label: '全部' }]);
+  const [selectedTags, setSelectedTags] = useState<string[]>(
+    returnSnapshot?.tags ??
+      (returnSnapshot?.tag && returnSnapshot.tag !== 'all' ? [returnSnapshot.tag] : [])
+  );
+  const [media, setMedia] = useState<'all' | 'image' | 'video'>(returnSnapshot?.media ?? 'all');
+  const [tags, setTags] = useState<GetImagePlazaFeedData['tags']>([
+    {
+      id: 'all',
+      label: '全部',
+      group_id: 'style',
+      group_label: '风格',
+      group_sort_order: 0,
+      group_layout: 'chips',
+      media_types: ['image', 'video'],
+    },
+  ]);
   const [sort, setSort] = useState<ImagePlazaFeedSort>(returnSnapshot?.sort ?? 'recommended');
   const [debouncedSearch, setDebouncedSearch] = useState(returnSnapshot?.search ?? '');
-  const feed = useImagePlazaFeedQuery(debouncedSearch, tag, sort);
+  const stableTags = useMemo(() => [...selectedTags].sort(), [selectedTags]);
+  const feed = useImagePlazaFeedQuery(debouncedSearch, stableTags, sort, media);
+  const availableTags = useMemo(() => tags.filter((item) => item.id !== 'all'), [tags]);
+  const tagCounts = useImagePlazaTagCountsQuery(debouncedSearch, media, availableTags.length > 0);
   useEffect(() => {
     if (feed.data !== undefined || feed.isError || feed.isFetched) markCriticalSettled();
   }, [feed.data, feed.isError, feed.isFetched]);
@@ -99,8 +120,8 @@ export default function CreatePage() {
     // 筛选请求期间只保留标签栏，避免卸载后闪烁、丢失横向滚动位置；不复用旧作品或游标。
     if (!feedTags) return;
     setTags(feedTags);
-    if (tag !== 'all' && !feedTags.some((item) => item.id === tag)) setTag('all');
-  }, [tag, feedTags]);
+    setSelectedTags((current) => current.filter((id) => feedTags.some((item) => item.id === id)));
+  }, [feedTags]);
 
   useEffect(() => {
     const node = sentinel.current;
@@ -166,10 +187,12 @@ export default function CreatePage() {
     restoring.current = false;
   }, [returnSnapshot, feed.data, feed.dataUpdatedAt, feed.isFetching, feed.paginationInvalidated]);
 
-  const saveReturn = (workId?: string) => saveImagePlazaReturn({ search, tag, sort }, workId);
+  const saveReturn = (workId?: string) =>
+    saveImagePlazaReturn({ search, tags: stableTags, media, sort }, workId);
 
   const startStudio = (sourceWorkId?: string) => {
     saveReturn(sourceWorkId);
+    void prefetchImagePlazaConfig(queryClient);
     setPendingSourceWorkId(sourceWorkId ?? 'new');
     startPendingAction('create_conversation');
     createConversation.mutate(sourceWorkId ? { source_work_id: sourceWorkId } : {}, {
@@ -188,7 +211,7 @@ export default function CreatePage() {
     setIsPullRefreshing(true);
     try {
       await queryClient.resetQueries({
-        queryKey: imagePlazaKeys.feed(debouncedSearch, tag, sort),
+        queryKey: imagePlazaKeys.feed(debouncedSearch, stableTags, sort, media),
         exact: true,
       });
     } finally {
@@ -257,9 +280,28 @@ export default function CreatePage() {
               ) : (
                 <Sparkles className="size-4" />
               )}
-              生成图片
+              去创作
             </button>
           </div>
+        </div>
+        <div
+          className="mt-2 grid grid-cols-3 rounded-xl bg-card p-1 ring-1 ring-border"
+          role="group"
+          aria-label="媒体类型"
+        >
+          {(['all', 'image', 'video'] as const).map((value) => (
+            <button
+              key={value}
+              type="button"
+              aria-pressed={media === value}
+              onClick={() => {
+                setMedia(value);
+              }}
+              className={`min-h-9 rounded-lg text-xs font-bold ${media === value ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}`}
+            >
+              {value === 'all' ? '全部' : value === 'image' ? '图片' : '视频'}
+            </button>
+          ))}
         </div>
         <label className="mt-2 flex h-10 items-center gap-2 rounded-xl border border-border bg-card px-3 text-muted-foreground">
           <Search className="size-4" aria-hidden />
@@ -274,21 +316,48 @@ export default function CreatePage() {
         <div className="mt-1 space-y-1">
           {tags.some((item) => item.id !== 'all') ? (
             <div
-              className="flex min-w-0 items-center gap-2 overflow-x-auto py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              className="flex min-w-0 items-center gap-2 py-1"
               role="group"
               aria-label="作品标签"
             >
-              {tags.map((item) => (
+              <div
+                data-image-plaza-tags-scroll
+                className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              >
                 <button
-                  key={item.id}
                   type="button"
-                  aria-pressed={tag === item.id}
-                  onClick={() => setTag(item.id)}
-                  className={`relative shrink-0 whitespace-nowrap rounded-full border px-4 py-1.5 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary ${tag === item.id ? 'border-primary/30 bg-primary/10 text-primary' : 'border-transparent text-muted-foreground hover:bg-card hover:text-foreground'}`}
+                  aria-pressed={selectedTags.length === 0}
+                  onClick={() => setSelectedTags([])}
+                  className={`shrink-0 whitespace-nowrap rounded-xl border px-3 py-2 text-[13px] font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary ${selectedTags.length === 0 ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border bg-card text-muted-foreground'}`}
                 >
-                  {item.label}
+                  不限
                 </button>
-              ))}
+                {availableTags.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    aria-pressed={selectedTags.includes(item.id)}
+                    onClick={() =>
+                      setSelectedTags((current) =>
+                        current.length === 1 && current[0] === item.id ? [] : [item.id]
+                      )
+                    }
+                    className={`relative shrink-0 whitespace-nowrap rounded-xl border px-3 py-2 text-[13px] font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary ${selectedTags.includes(item.id) ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border bg-card text-muted-foreground hover:text-foreground'}`}
+                  >
+                    {item.label}{' '}
+                    <span className="text-xs font-normal opacity-70">
+                      {tagCounts.isError ? '—' : (tagCounts.data?.counts[item.id] ?? '…')}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <StyleFilterSheet
+                tags={availableTags}
+                selected={selectedTags}
+                counts={tagCounts.data?.counts}
+                countsFailed={tagCounts.isError}
+                onChange={setSelectedTags}
+              />
             </div>
           ) : null}
           <div className="flex items-center gap-2" role="group" aria-label="作品排序">
@@ -332,12 +401,19 @@ export default function CreatePage() {
         ) : items.length === 0 ? (
           <EmptyState
             icon={<WandSparkles />}
-            title={search || tag !== 'all' ? '没有找到对应作品' : '还没有公开作品'}
-            action={search || tag !== 'all' ? '查看全部' : '生成第一张'}
+            title={
+              search || selectedTags.length || media !== 'all'
+                ? '没有找到对应作品'
+                : '还没有公开作品'
+            }
+            action={
+              search || selectedTags.length || media !== 'all' ? '查看全部' : '生成第一个作品'
+            }
             onAction={() => {
-              if (search || tag !== 'all') {
+              if (search || selectedTags.length || media !== 'all') {
                 setSearch('');
-                setTag('all');
+                setSelectedTags([]);
+                setMedia('all');
               } else startStudio();
             }}
           />
@@ -392,7 +468,7 @@ export default function CreatePage() {
 }
 
 function PlazaCard(props: {
-  work: ImagePlazaWork;
+  work: PlazaFeedItem;
   priority: boolean;
   useSamePending: boolean;
   interactionDisabled: boolean;
@@ -403,6 +479,8 @@ function PlazaCard(props: {
   const like = useSetImagePlazaLikeMutation(props.work.id);
   const imageRef = useRef<HTMLImageElement | null>(null);
   const [imageLoaded, setImageLoaded] = useState(false);
+  const previewUrl =
+    props.work.media_type === 'video' ? props.work.poster_url : props.work.image_url;
   const aspectRatio =
     props.work.width > 0 && props.work.height > 0
       ? `${props.work.width} / ${props.work.height}`
@@ -412,7 +490,7 @@ function PlazaCard(props: {
     setImageLoaded(false);
     const node = imageRef.current;
     if (node?.complete && node.naturalWidth > 0) setImageLoaded(true);
-  }, [props.work.image_url]);
+  }, [previewUrl]);
 
   return (
     <article
@@ -441,20 +519,32 @@ function PlazaCard(props: {
           {!imageLoaded ? (
             <div aria-hidden className="absolute inset-0 animate-pulse bg-muted" />
           ) : null}
-          <img
-            ref={imageRef}
-            src={props.work.image_url}
-            alt={props.work.title}
-            width={props.work.width}
-            height={props.work.height}
-            loading={props.priority ? 'eager' : 'lazy'}
-            fetchPriority={props.priority ? 'high' : 'low'}
-            decoding="async"
-            onLoad={() => setImageLoaded(true)}
-            className={`absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-[1.02] ${
-              imageLoaded ? 'opacity-100' : 'opacity-0'
-            }`}
-          />
+          {previewUrl ? (
+            <img
+              ref={imageRef}
+              src={previewUrl}
+              alt={props.work.title}
+              width={props.work.width}
+              height={props.work.height}
+              loading={props.priority ? 'eager' : 'lazy'}
+              fetchPriority={props.priority ? 'high' : 'low'}
+              decoding="async"
+              onLoad={() => setImageLoaded(true)}
+              className={`absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-[1.02] ${
+                imageLoaded ? 'opacity-100' : 'opacity-0'
+              }`}
+            />
+          ) : (
+            <div className="absolute inset-0 grid place-items-center bg-muted text-muted-foreground">
+              <Play className="size-8" aria-hidden />
+            </div>
+          )}
+          {props.work.media_type === 'video' ? (
+            <span className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-full bg-black/65 px-2 py-1 text-[10px] font-bold text-white">
+              <Play className="size-3 fill-current" aria-hidden />
+              {Math.ceil(props.work.duration_ms / 1000)}s
+            </span>
+          ) : null}
         </div>
       </Link>
       <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 bg-gradient-to-t from-black/90 via-black/35 to-transparent p-2 pt-16 text-white sm:p-3 sm:pt-16">

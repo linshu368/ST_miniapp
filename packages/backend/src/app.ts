@@ -37,6 +37,11 @@ import {
   stopImagePlazaGenerationJob,
 } from './features/image-plaza/job.js';
 import {
+  startVideoPlazaGenerationJob,
+  stopVideoPlazaGenerationJob,
+} from './features/image-plaza/video-job.js';
+import { initializeVideoMedia } from './features/image-plaza/video-media.js';
+import {
   startLobbyRankingRefreshJob,
   stopLobbyRankingRefreshJob,
 } from './lib/lobby-ranking-refresh-job.js';
@@ -178,6 +183,8 @@ export async function buildApp() {
 
   startChatImageGenerationJob(app.log);
   startImagePlazaGenerationJob(app.log);
+  await initializeVideoMedia(app.log);
+  startVideoPlazaGenerationJob(app.log);
 
   const stopRuntimeMetrics = startRuntimeMetrics();
 
@@ -187,6 +194,7 @@ export async function buildApp() {
     stopLobbyRankingRefreshJob();
     stopChatImageGenerationJob();
     stopImagePlazaGenerationJob();
+    stopVideoPlazaGenerationJob();
     shutdownTextPostprocessValidation();
     await stopEngineeringTelemetry();
   });

@@ -10,9 +10,36 @@ import {
 } from './tagging.js';
 
 const tags: ImagePlazaTagConfig = [
-  { id: 'portrait', label: '肖像', enabled: true, sort_order: 0 },
-  { id: 'landscape', label: '风景', enabled: true, sort_order: 1 },
-  { id: 'disabled', label: '禁用', enabled: false, sort_order: 2 },
+  {
+    id: 'portrait',
+    label: '肖像',
+    enabled: true,
+    sort_order: 0,
+    group_id: 'style',
+    group_label: '风格',
+    group_sort_order: 0,
+    group_layout: 'chips',
+  },
+  {
+    id: 'landscape',
+    label: '风景',
+    enabled: true,
+    sort_order: 1,
+    group_id: 'style',
+    group_label: '风格',
+    group_sort_order: 0,
+    group_layout: 'chips',
+  },
+  {
+    id: 'disabled',
+    label: '禁用',
+    enabled: false,
+    sort_order: 2,
+    group_id: 'style',
+    group_label: '风格',
+    group_sort_order: 0,
+    group_layout: 'chips',
+  },
 ];
 const log = pino({ enabled: false });
 const originalImagePlaza = { ...config.imagePlaza };
@@ -47,6 +74,10 @@ describe('image plaza tagging', () => {
       label: `标签${i}`,
       enabled: true,
       sort_order: i,
+      group_id: 'style',
+      group_label: '风格',
+      group_sort_order: 0,
+      group_layout: 'chips' as const,
     }));
     expect(
       sanitizeImagePlazaTags(

@@ -116,7 +116,22 @@ pnpm --filter @miniapp/reply-renderer typecheck
 
 # 图片广场初始数据（默认只读 dry-run）
 pnpm --filter @miniapp/backend image-plaza:seed -- --input <xlsx>
+
+# 视频种子先做 HEAD 体积估算并锁定报告；旧 seed 命令始终只读，不再支持 --apply
+pnpm --filter @miniapp/backend video-plaza:estimate-size -- --input <原表xlsx> --report video-seed-size-report.json
+pnpm --filter @miniapp/backend video-plaza:seed -- --input <原表xlsx> --translations <翻译包video.xlsx> --report <报告> --confirm-size <报告SHA256>
+
+# TEST 固定 10 条：先四路下载/两路 FFmpeg 产出本地 manifest，再单独预检/上传私有 Storage
+pnpm --filter @miniapp/backend video-plaza:seed-assets -- --target test --phase process --canary 10 --concurrency 4 --ffmpeg-concurrency 2 --input <原表xlsx> --translations <翻译包video.xlsx> --report <报告> --confirm-size <报告SHA256> --output <本地输出目录>
+pnpm --filter @miniapp/backend video-plaza:seed-upload -- --target test --phase upload --manifest <processed-manifest.json> --confirm-project-ref <TEST_REF>
+# 人工核对上一步身份/桶/对象数后才增加 --apply；上传器不写业务表
+
+# 上传后复用同一签名 URL 验证首段/中段 Range；SQL 仅在对象全部 verified 且目录已审核后生成
+pnpm --filter @miniapp/backend video-plaza:seed-validate-playback -- --target test --manifest <processed-manifest.json> --confirm-project-ref <TEST_REF>
+pnpm --filter @miniapp/backend video-plaza:seed-sql -- --target test --processed-manifest <processed-manifest.json> --upload-state <upload-state.json> --catalog <审核后的模型目录.json> --output packages/shared/migrations/<YYYYMMDD>_media_plaza_video_seed_test_10.sql --confirm-project-ref <TEST_REF>
 ```
+
+TEST 视频种子 SQL 只能通过 GitHub Actions `Database Migration` 选择 `environment=test` 单文件执行。工作流会向该次 `psql` 会话注入 TEST project ref 与 Storage 已核验标记；执行脚本会拒绝把 `_seed_test_` 文件用于 production，也会拒绝缺少这些确认值的直接执行。
 
 ## 5. 环境变量
 
@@ -124,17 +139,17 @@ pnpm --filter @miniapp/backend image-plaza:seed -- --input <xlsx>
 
 ### Backend 主要变量组
 
-| 类别          | 变量                                                                                                                                                                    | 说明                                                                                                            |
-| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| Runtime/CORS  | `NODE_ENV`, `PORT`, `FRONTEND_URL`, `ADMIN_PLATFORM_URL`                                                                                                                | 服务环境、端口和允许来源                                                                                        |
-| 数据库选择    | `DATABASE_ENV`, `TEST_*`, `PROD_*`, `DATABASE_URL`, `DIRECT_URL`, `SUPABASE_*`                                                                                          | 测试/生产项目、连接与 service role；`ALLOW_PROD_DATABASE` 仅紧急人工操作                                        |
-| Telegram      | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `BOT_INTERNAL_SECRET`, `TELEGRAM_COMMUNITY_BOT_TOKEN`                                                                  | Bot、webhook 和内部调用鉴权                                                                                     |
-| CS 服务       | `CS_SERVICE_URL`, `CS_SERVICE_SECRET`                                                                                                                                   | 独立客服服务（ST_cs_platform）地址和共享密钥；Bot 转发与 `/api/support/*` 代理使用，`CS_SERVICE_ENABLED` 已废弃 |
-| LLM           | `LLM_UPSTREAM_URL`, `LLM_API_KEY`, `OPENAI_API_KEY`, `LLM_DEFAULT_MODEL`                                                                                                | 生成上游与默认模型                                                                                              |
-| Voice         | `DEEPSEEK_*`, `MINIMAX_*`                                                                                                                                               | 语音文案与 TTS；关键 key 缺失时语音不可用                                                                       |
-| Payment       | `PAYMENT_ENABLED`, `PAYMENT_BASE_URL`, `PAYMENT_MERCHANT_ID`, `PAYMENT_MERCHANT_PRIVATE_KEY`, `PAYMENT_PLATFORM_PUBLIC_KEY`, `PAYMENT_NOTIFY_URL`, `PAYMENT_RETURN_URL` | 支付开关、商户和签名/回调                                                                                       |
-| Telemetry     | `SENTRY_*`, `LOG_LEVEL`, `LOG_PRETTY`                                                                                                                                   | Sentry 和日志                                                                                                   |
-| Feature/asset | `DEFAULT_USER_AVATAR_URL`, `CHARACTER_STORAGE_BUCKET`, `CHAT_HISTORY_SYNC_ENABLED`, `LOBBY_RANKING_REFRESH_ENABLED`                                                     | 资源和运行开关                                                                                                  |
+| 类别          | 变量                                                                                                                                                                                              | 说明                                                                                                            |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Runtime/CORS  | `NODE_ENV`, `PORT`, `FRONTEND_URL`, `ADMIN_PLATFORM_URL`                                                                                                                                          | 服务环境、端口和允许来源                                                                                        |
+| 数据库选择    | `DATABASE_ENV`, `TEST_*`, `PROD_*`, `DATABASE_URL`, `DIRECT_URL`, `SUPABASE_*`                                                                                                                    | 测试/生产项目、连接与 service role；`ALLOW_PROD_DATABASE` 仅紧急人工操作                                        |
+| Telegram      | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `BOT_INTERNAL_SECRET`, `TELEGRAM_COMMUNITY_BOT_TOKEN`                                                                                            | Bot、webhook 和内部调用鉴权                                                                                     |
+| CS 服务       | `CS_SERVICE_URL`, `CS_SERVICE_SECRET`                                                                                                                                                             | 独立客服服务（ST_cs_platform）地址和共享密钥；Bot 转发与 `/api/support/*` 代理使用，`CS_SERVICE_ENABLED` 已废弃 |
+| LLM           | `LLM_UPSTREAM_URL`, `LLM_API_KEY`, `OPENAI_API_KEY`, `LLM_DEFAULT_MODEL`                                                                                                                          | 生成上游与默认模型                                                                                              |
+| Voice         | `DEEPSEEK_*`, `MINIMAX_*`                                                                                                                                                                         | 语音文案与 TTS；关键 key 缺失时语音不可用                                                                       |
+| Payment       | `PAYMENT_ENABLED`, `PAYMENT_BASE_URL`, `PAYMENT_MERCHANT_ID`, `PAYMENT_MERCHANT_PRIVATE_KEY`, `PAYMENT_PLATFORM_PUBLIC_KEY`, `PAYMENT_NOTIFY_URL`, `PAYMENT_RETURN_URL`                           | 支付开关、商户和签名/回调                                                                                       |
+| Telemetry     | `SENTRY_*`, `LOG_LEVEL`, `LOG_PRETTY`                                                                                                                                                             | Sentry 和日志                                                                                                   |
+| Feature/asset | `DEFAULT_USER_AVATAR_URL`, `CHARACTER_STORAGE_BUCKET`, `CHAT_HISTORY_SYNC_ENABLED`, `LOBBY_RANKING_REFRESH_ENABLED`, `VIDEO_PLAZA_WORKER_ENABLED`, `VIDEO_PLAZA_*`, `FFMPEG_PATH`, `FFPROBE_PATH` | 资源和运行开关；视频 worker 默认关闭，本地需 ffmpeg/ffprobe 在 PATH 或显式配置路径                              |
 
 开发 bypass（如 `MOCK_AUTH`、`DEV_AUTH_BYPASS`）禁止在 production 启用。
 
@@ -186,7 +201,7 @@ OpenRouter 调用事实由 `experience.openrouter_chat_history` 保存，消费 
 
 图片广场必须依次手动验证并执行 `20261012_image_plaza_v2.sql`、`20261013_image_plaza_seed_catalog.sql`、`20261013_image_plaza_seed_large_assets.sql` 后才能运行初始数据 apply。`image-plaza:seed` 默认只做工作簿 dry-run；真实写入还要求审核 manifest、明确 `--target test|production`、`--limit 1..500`、原图存储确认，Production 另需显式确认。普通图片保持 20 MiB，已审核 seed 原图允许至 50 MiB；来源权利/内容/元数据审核、test canary 或容量门禁未完成时不得导入。test 导入结果见任务 `10-10-image-plaza-v2`。
 
-`20261027_media_plaza_schema_move.sql` 将现有图片广场 8 张表和 3 个 RPC 物理迁入 `media_plaza`，不保留 `experience` / `miniapp_features` 兼容入口；Backend 同步直接访问新域。发布必须暂停图片广场流量，先单文件执行 M1 创建新 schema，再执行对应环境的 `postgrest-expose-media-plaza-*.sql`，随后立即部署匹配 Backend。不得在 schema 存在前提前加入 PostgREST 暴露列表。M1 回滚时继续停流，先把 `pgrst.db_schemas` 恢复为执行前值并 reload PostgREST，再执行配套 rollback、部署旧 Backend；新增视频对象后禁止使用该回滚。
+图片广场 M1（`20261027_media_plaza_schema_move.sql`）及 PostgREST 暴露已由用户确认在 TEST、Production 完成：8 张图片表和 3 个图片 RPC 已位于 `media_plaza`，Backend 只直连新域，不保留旧 schema 双读。视频广场后续只需按 `20261027_media_plaza_video.sql` → `20261027_media_plaza_video_config.sql` 逐文件先在 TEST 执行并验证，禁止重跑 M1；Production 视频迁移仍需单独审批。视频 seed 必须先对全部 5,097 个 URL 运行 HEAD 估算并人工核对报告与 bucket 配额，apply 还需 `--confirm-size <报告SHA-256>`、明确 `--target`、显式 `--limit 1..500`；B-SEED-1 未关闭前不得实际转存。
 
 图片广场 TEST seed 迁移另见 [离线 SQL 导出与 Storage 迁移方法](ops/image-plaza-seed-migration.md)：不随部署执行；2026-10-20 已授权独立 Storage 本地暂存/并发上传/回读校验阶段，进度以任务和受限 report 为准，尚未执行生产 SQL。新增数据文件不得入 Git；已发现三个历史导出被跟踪，恢复 ignore 不代表清除了历史。
 

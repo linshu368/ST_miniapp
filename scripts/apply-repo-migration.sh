@@ -19,6 +19,8 @@ LEDGER_FILE="20260910_schema_migrations_ledger.sql"
 FORBIDDEN_PROD_FILE="104_rollback_voice_billing.sql"
 
 ENVIRONMENT="${ENVIRONMENT:-}"
+SEED_PROJECT_REF="${SEED_PROJECT_REF:-}"
+SEED_STORAGE_VERIFIED="${SEED_STORAGE_VERIFIED:-}"
 FORCE_RERUN="${FORCE_RERUN:-false}"
 ABANDON_CLAIM="${ABANDON_CLAIM:-false}"
 CLAIM_ABANDON_REASON="${CLAIM_ABANDON_REASON:-}"
@@ -38,6 +40,20 @@ die() {
 MIGRATION_NAME="$(basename "$MIGRATION_FILE")"
 if [[ ! "$MIGRATION_NAME" =~ ^[A-Za-z0-9._-]+$ ]]; then
   die "MIGRATION_USAGE: unexpected characters in filename: $MIGRATION_NAME"
+fi
+
+if [[ "$MIGRATION_NAME" == *_media_plaza_video_seed_test_* ]]; then
+  [[ "$ENVIRONMENT" == "test" ]] \
+    || die "MIGRATION_ENVIRONMENT_MISMATCH: TEST video seed migration requires ENVIRONMENT=test"
+  [[ "${GITHUB_ACTIONS:-}" == "true" ]] \
+    || die "MIGRATION_SEED_APPROVAL_MISSING: TEST video seed must run in GitHub Actions"
+  [[ "$SEED_PROJECT_REF" =~ ^[a-z0-9]{20}$ ]] \
+    || die "MIGRATION_SEED_APPROVAL_MISSING: SEED_PROJECT_REF is required for TEST video seed"
+  [[ "$SEED_STORAGE_VERIFIED" == "yes" ]] \
+    || die "MIGRATION_SEED_APPROVAL_MISSING: SEED_STORAGE_VERIFIED=yes is required for TEST video seed"
+fi
+if [[ "$MIGRATION_NAME" == *_media_plaza_video_seed_production_* && "$ENVIRONMENT" != "production" ]]; then
+  die "MIGRATION_ENVIRONMENT_MISMATCH: production video seed migration requires ENVIRONMENT=production"
 fi
 
 if [[ "$ENVIRONMENT" == "production" && "$MIGRATION_NAME" == "$FORBIDDEN_PROD_FILE" ]]; then
@@ -209,6 +225,15 @@ record_ledger_with_retry() {
 
 apply_sql() {
   # 迁移文件自己带 BEGIN/COMMIT。这里不再包一层，避免套娃事务把文件里的 COMMIT 提交掉外层。
+  if [[ "$MIGRATION_NAME" == *_media_plaza_video_seed_test_* ]]; then
+    # Supavisor does not preserve custom GUCs supplied as startup parameters. Open the
+    # transaction first so transaction pooling pins one backend, then set the approvals
+    # in that same psql session before the migration performs its independent checks.
+    psql --no-psqlrc -d "$DB_URL" --set ON_ERROR_STOP=1 \
+      --command "BEGIN; SELECT set_config('app.seed_target', 'test', true), set_config('app.seed_project_ref', '${SEED_PROJECT_REF}', true), set_config('app.seed_storage_verified', 'yes', true);" \
+      --file "$MIGRATION_FILE"
+    return
+  fi
   psql_cmd --file "$MIGRATION_FILE"
 }
 
