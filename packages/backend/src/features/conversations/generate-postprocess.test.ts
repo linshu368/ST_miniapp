@@ -56,8 +56,12 @@ vi.mock('../../infrastructure/repositories/CharacterCardRepository.js', () => ({
 
 vi.mock('../../infrastructure/repositories/MiniappUserSettingsRepository.js', () => ({
   MiniappUserSettingsRepository: class {
-    getGenerationConfig = mocks.getGenerationConfig;
-    getDisplayName = mocks.getDisplayName;
+    async getGenerationContext() {
+      return {
+        config: await mocks.getGenerationConfig(),
+        displayName: await mocks.getDisplayName(),
+      };
+    }
   },
 }));
 

@@ -70,11 +70,17 @@ export async function resolveAuthoritativeModel(
 /**
  * 对话链路的模型解析入口：在权威模型之上补齐计费所需的档位与免费属性。
  */
-export async function resolveModelForUser(userId: string): Promise<ResolvedModel> {
+export async function resolveModelForUser(
+  userId: string,
+  preparation?: {
+    selectedModelId: string | null | Promise<string | null>;
+    catalogSnapshot?: Awaited<ReturnType<typeof fetchModelCatalogSnapshot>>;
+  }
+): Promise<ResolvedModel> {
   const log = createLogger('generation');
   const [persistedModelId, snapshot, entitlement] = await Promise.all([
-    userSettings().getSelectedModelId(userId),
-    fetchModelCatalogSnapshot(),
+    preparation ? preparation.selectedModelId : userSettings().getSelectedModelId(userId),
+    preparation?.catalogSnapshot ?? fetchModelCatalogSnapshot(),
     vipStatus().getStatus(userId, log),
   ]);
   const selection = resolveTextModelSelection({
@@ -109,10 +115,10 @@ export async function resolveModelForUser(userId: string): Promise<ResolvedModel
     }
   }
 
-  const billing = await getModelBillingContext({
-    provider: selection.provider,
-    providerModelId: selection.providerModelId,
-  });
+  const billing = await getModelBillingContext(
+    { provider: selection.provider, providerModelId: selection.providerModelId },
+    snapshot
+  );
   return {
     modelId: billing.modelId ?? selection.modelId,
     provider: billing.provider,
@@ -120,6 +126,7 @@ export async function resolveModelForUser(userId: string): Promise<ResolvedModel
     openRouterModelId: selection.openRouterModelId,
     tier: billing.modelTier,
     isFree: billing.isFree,
+    billingContext: billing,
     firstTokenPolicy: {
       fallbackModelId: snapshot.catalog.fallback_model_id ?? FIRST_TOKEN_FALLBACK_MODEL_ID,
       timeoutMs:
