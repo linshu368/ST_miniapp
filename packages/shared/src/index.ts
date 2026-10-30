@@ -63,3 +63,7 @@ export * from './user-placeholder';
 export * from './rich-reply-protocol';
 export * from './telemetry/sanitize';
 export * from './api/reply-style-options';
+
+export * from './api/creator-characters';
+
+export * from './api/creator-tools.js';

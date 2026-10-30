@@ -530,7 +530,7 @@ export default async function imageRoutes(app: FastifyInstance) {
       ok: true,
       session,
       turn,
-      character: await characters.requireCard(session.character_id),
+      character: await characters.requireCard(session.character_id, session.user_id, session.id),
     };
   }
 }

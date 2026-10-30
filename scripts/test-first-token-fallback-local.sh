@@ -186,6 +186,25 @@ PYRETENTION
 "${task_psql[@]}" -f "$task_root/packages/shared/migrations/tests/llm_archived_charge_result.sql" >/dev/null
 echo 'PASS: real detail retention, permanent dedup replay, pending gate and unknown conflict rollback'
 
+# Creator ownership is the only core dependency used by billing. Full CRUD/access
+# and version migrations have their own core suite; do not copy their runtime here.
+"${task_psql[@]}" -c 'CREATE TABLE app_core.character_creations(character_id uuid PRIMARY KEY REFERENCES app_core.characters(id),owner_user_id uuid NOT NULL REFERENCES app_core.users(id));' >/dev/null
+"${task_psql[@]}" -f "$task_root/packages/shared/migrations/20261030_character_creator_rewards.sql" >/dev/null
+"${task_psql[@]}" -f "$task_root/packages/shared/migrations/20261030_character_creator_rewards.sql" >/dev/null
+"${task_psql[@]}" -f "$task_root/packages/shared/migrations/tests/character_creator_rewards.sql" >/dev/null
+# Both directions acquire the two wallets in the same order, including retries.
+"${task_psql[@]}" -c "SELECT creator_reward_test.charge('90000000-0000-4000-8000-000000000110','90000000-0000-4000-8000-000000000001','90000000-0000-4000-8000-000000000002',10);" >/dev/null &
+task_creator_first_pid=$!
+"${task_psql[@]}" -c "SELECT creator_reward_test.charge('90000000-0000-4000-8000-000000000111','90000000-0000-4000-8000-000000000002','90000000-0000-4000-8000-000000000001',10);" >/dev/null &
+task_creator_second_pid=$!
+"${task_psql[@]}" -c "SELECT creator_reward_test.charge('90000000-0000-4000-8000-000000000110','90000000-0000-4000-8000-000000000001','90000000-0000-4000-8000-000000000002',10);" >/dev/null &
+task_creator_retry_pid=$!
+wait "$task_creator_first_pid"
+wait "$task_creator_second_pid"
+wait "$task_creator_retry_pid"
+"${task_psql[@]}" -c "SELECT creator_reward_test.assert((SELECT count(*)=2 FROM billing.character_creator_rewards WHERE charge_key IN ('90000000-0000-4000-8000-000000000110','90000000-0000-4000-8000-000000000111')),'concurrent duplicate or missing reward');" >/dev/null
+echo 'PASS: creator actual-debit 40 percent, zero/self exclusion, frozen replay, refund debt, offset and concurrent dedup'
+
 # Pure monitoring no longer reads Supabase. Guard the retired entry and new sources.
 python3 - "$task_root" <<'PYDASHBOARD'
 import json,pathlib,sys

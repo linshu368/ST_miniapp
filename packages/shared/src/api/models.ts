@@ -246,6 +246,7 @@ export const PublicModelCatalogTierSchema = z.object({
   locked: z.boolean().optional(),
   original_credits: z.number().finite().nonnegative().optional(),
   discount_rate: z.number().finite().nonnegative().nullable().optional(),
+  discount_source: z.enum(['vip', 'creator']).nullable().optional(),
   discounted_exact: z.number().finite().nonnegative().nullable().optional(),
   payable_credits: z.number().int().nonnegative().optional(),
   wallet_policy: WalletDebitPolicySchema.optional(),
@@ -269,6 +270,11 @@ export const GetModelCatalogDataSchema = z.object({
 
 export const SelectModelRequestSchema = z.object({
   model_id: z.string().trim().min(1),
+  character_id: z.string().uuid().optional(),
+});
+
+export const GetModelCatalogQuerySchema = z.object({
+  character_id: z.string().uuid().optional(),
 });
 
 export const SelectModelDataSchema = z.object({
@@ -523,7 +529,10 @@ export interface TextModelUsageQuote {
   payable_credits: number;
   wallet_policy: WalletDebitPolicy;
   requires_vip: boolean;
+  discount_source?: 'vip' | 'creator' | null;
 }
+
+export const CHARACTER_CREATOR_SELF_DISCOUNT_RATE = 0.8;
 
 export type QuoteTextModelUsageResult = WalletContractResult<
   TextModelUsageQuote,
@@ -545,7 +554,7 @@ export function roundHalfUpToInteger(value: number): number {
 }
 
 /**
- * 文本计价纯函数：免费轮优先返回 0；VIP 按调用方传入的运行时原价 × 折扣率再取整。
+ * 免费轮优先；自用与 VIP 取更优折扣，不叠加，也不改变 VIP 模型资格。
  * 省略折扣率时使用 0.95。不读取 runtime config，也不把 test 目录价写死。
  */
 export function quoteTextModelUsage(input: {
@@ -554,6 +563,7 @@ export function quoteTextModelUsage(input: {
   is_free_round: boolean;
   tier: ModelCatalogTierKey;
   discount_rate?: number;
+  creator_self?: boolean;
 }): QuoteTextModelUsageResult {
   const tierParsed = ModelCatalogTierKeySchema.safeParse(input.tier);
   if (!tierParsed.success) {
@@ -604,7 +614,7 @@ export function quoteTextModelUsage(input: {
     };
   }
 
-  if (!input.is_vip) {
+  if (!input.is_vip && !input.creator_self) {
     return {
       ok: true,
       value: {
@@ -619,13 +629,25 @@ export function quoteTextModelUsage(input: {
     };
   }
 
-  const discountedExact = originalCredits * discountRate;
+  const vipRate = input.is_vip ? discountRate : 1;
+  const effectiveRate = input.creator_self
+    ? Math.min(vipRate, CHARACTER_CREATOR_SELF_DISCOUNT_RATE)
+    : vipRate;
+  const discountedExact = originalCredits * effectiveRate;
   return {
     ok: true,
     value: {
       original_credits: originalCredits,
       discount_applied: true,
-      discount_rate: discountRate,
+      discount_rate: effectiveRate,
+      ...(input.creator_self
+        ? {
+            discount_source:
+              vipRate < CHARACTER_CREATOR_SELF_DISCOUNT_RATE
+                ? ('vip' as const)
+                : ('creator' as const),
+          }
+        : {}),
       discounted_exact: discountedExact,
       payable_credits: roundHalfUpToInteger(discountedExact),
       wallet_policy: rules.wallet_policy,

@@ -47,6 +47,65 @@ describe('daily check-in calendar boundary', () => {
     expect(() => getNextDailyCheckinAt('invalid')).toThrow('invalid checkin timestamp');
   });
 });
+
+describe('creator self text pricing', () => {
+  it.each([
+    [false, 0.95, 80, 'creator'],
+    [true, 0.95, 80, 'creator'],
+    [true, 0.8, 80, 'creator'],
+    [true, 0.65, 65, 'vip'],
+  ] as const)(
+    'takes the better rate without stacking (VIP=%s, rate=%s)',
+    (isVip, rate, expected, source) => {
+      const result = quoteTextModelUsage({
+        original_credits: 100,
+        is_vip: isVip,
+        is_free_round: false,
+        tier: 'premium',
+        discount_rate: rate,
+        creator_self: true,
+      });
+      expect(result).toMatchObject({
+        ok: true,
+        value: {
+          payable_credits: expected,
+          discount_source: source,
+          requires_vip: true,
+          wallet_policy: 'main_only',
+        },
+      });
+    }
+  );
+  it('free remains zero and an exhausted small price uses the same rounding', () => {
+    expect(
+      quoteTextModelUsage({
+        original_credits: 15,
+        is_vip: false,
+        is_free_round: false,
+        tier: 'light',
+        creator_self: true,
+      })
+    ).toMatchObject({ ok: true, value: { payable_credits: 12 } });
+    expect(
+      quoteTextModelUsage({
+        original_credits: 1,
+        is_vip: false,
+        is_free_round: false,
+        tier: 'light',
+        creator_self: true,
+      })
+    ).toMatchObject({ ok: true, value: { payable_credits: 1 } });
+    expect(
+      quoteTextModelUsage({
+        original_credits: 15,
+        is_vip: true,
+        is_free_round: true,
+        tier: 'light',
+        creator_self: true,
+      })
+    ).toMatchObject({ ok: true, value: { payable_credits: 0 } });
+  });
+});
 import type {
   GetPaymentPlansData,
   NotificationItem,

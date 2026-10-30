@@ -1,4 +1,9 @@
 import { FastifyInstance, type FastifyBaseLogger } from 'fastify';
+import { discoverableCharacterWhere, canUseCharacter } from '../features/creator/access.js';
+import { resolveCreatorCoverUrl } from '../features/creator/covers.js';
+import { CharacterDraftSchema } from '@miniapp/shared';
+import { getDomainDb } from '../lib/supabase.js';
+import { CreatorCharacterIdSchema } from '@miniapp/shared';
 import { prisma } from '../lib/db.js';
 import { config } from '../platform/config.js';
 import { LOBBY_FEATURED_POSITION_COUNT, ok, fail, parseLobbySort } from '@miniapp/shared';
@@ -17,7 +22,7 @@ import { loadLobbyFeaturedIdSet } from '../features/lobby/featured-snapshot.js';
 import { hasNewLobbyCharacters } from '../lib/lobby-latest-badge.js';
 import { MiniappUserSettingsRepository } from '../infrastructure/repositories/MiniappUserSettingsRepository.js';
 import { getOrCreateDbUser } from '../lib/user.js';
-import { requireTelegramAuth } from '../middleware/auth.js';
+import { optionalTelegramAuth, requireTelegramAuth } from '../middleware/auth.js';
 
 const CHARACTER_STORAGE_BUCKET = process.env.CHARACTER_STORAGE_BUCKET || 'character-assets';
 
@@ -33,6 +38,16 @@ export function resolveCharacterAvatarUrl(
   return `${config.supabase.url}/storage/v1/object/public/${CHARACTER_STORAGE_BUCKET}/${storagePath}`;
 }
 
+/** Only call after discoverability or viewer access has been established. */
+export async function resolveCharacterDisplayAvatarUrl(
+  characterId: string,
+  avatarUrl: string | null | undefined
+): Promise<string> {
+  if (avatarUrl?.startsWith('creator-cover:'))
+    return (await resolveCreatorCoverUrl(avatarUrl.slice('creator-cover:'.length))) ?? '';
+  return resolveCharacterAvatarUrl(characterId, avatarUrl);
+}
+
 export default async function characterRoutes(app: FastifyInstance) {
   const userSettings = new MiniappUserSettingsRepository();
 
@@ -40,7 +55,7 @@ export default async function characterRoutes(app: FastifyInstance) {
   async function findLatestListedAt(log: FastifyBaseLogger): Promise<Date | null> {
     try {
       const listed = await prisma.character.findFirst({
-        where: { enabled: true, archived_at: null, last_listed_at: { not: null } },
+        where: { ...discoverableCharacterWhere, last_listed_at: { not: null } },
         orderBy: { last_listed_at: 'desc' },
         select: { last_listed_at: true },
       });
@@ -57,7 +72,7 @@ export default async function characterRoutes(app: FastifyInstance) {
     const sort = parseLobbySort((request.query as { sort?: unknown } | undefined)?.sort);
 
     const characters = await prisma.character.findMany({
-      where: { enabled: true, archived_at: null },
+      where: discoverableCharacterWhere,
       // 「最新」只看最后上架时间；「推荐」先取运营顺序，再在内存里做动态排序。
       orderBy:
         sort === 'latest'
@@ -101,16 +116,18 @@ export default async function characterRoutes(app: FastifyInstance) {
       });
     }
 
-    const charactersSummary: CharacterSummary[] = ordered.map((c: (typeof characters)[number]) => ({
-      id: c.id,
-      name: c.name,
-      description: c.description,
-      avatar_url: resolveCharacterAvatarUrl(c.id, c.avatar_url),
-      personality_tags: Array.isArray(c.tags) ? (c.tags as string[]) : [],
-      author_name: c.creator,
-      // 「最新」页不保留运营固定位，也不残留热门金框。
-      is_featured: featuredIds.has(c.id),
-    }));
+    const charactersSummary: CharacterSummary[] = await Promise.all(
+      ordered.map(async (c: (typeof characters)[number]) => ({
+        id: c.id,
+        name: c.name,
+        description: c.description,
+        avatar_url: await resolveCharacterDisplayAvatarUrl(c.id, c.avatar_url),
+        personality_tags: Array.isArray(c.tags) ? (c.tags as string[]) : [],
+        author_name: c.creator,
+        // 「最新」页不保留运营固定位，也不残留热门金框。
+        is_featured: featuredIds.has(c.id),
+      }))
+    );
 
     // 推荐页的冷启动卡每次请求重排，缓存会把随机结果钉死；「最新」页是确定顺序，保留 60 秒。
     reply.header(
@@ -158,45 +175,108 @@ export default async function characterRoutes(app: FastifyInstance) {
   );
 
   // @frontend-ready: true
-  app.get('/api/characters/:id', async (request, reply) => {
-    const { id } = request.params as { id: string };
+  app.get(
+    '/api/characters/:id',
+    {
+      preHandler: [optionalTelegramAuth],
+    },
+    async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const viewerId = request.user ? (await getOrCreateDbUser(request.user)).id : null;
+      reply.header('Cache-Control', 'private, no-store');
+      if (!(await canUseCharacter(viewerId, id)))
+        return reply.status(404).send(fail('NOT_FOUND', 'Character not found'));
+      const sessionId = (request.query as { session_id?: string }).session_id;
+      if (sessionId !== undefined) {
+        if (!viewerId) return reply.code(401).send(fail('UNAUTHORIZED', '请重新打开小程序'));
+        if (!CreatorCharacterIdSchema.safeParse(sessionId).success)
+          return reply.code(400).send(fail('BAD_REQUEST', '会话无效'));
+        const { data: snapshot, error } = await getDomainDb('app_core')
+          .rpc('read_session_character_version', {
+            p_character_id: id,
+            p_user_id: viewerId,
+            p_session_id: sessionId,
+            p_presentation: true,
+          })
+          .abortSignal(AbortSignal.timeout(5_000));
+        if (error?.code === 'P0404') return reply.code(404).send(fail('NOT_FOUND', '会话不可用'));
+        if (error) throw error;
+        if (snapshot) {
+          const frozen = snapshot as {
+            name: string;
+            description: string;
+            avatar_url: string;
+            tags: string[];
+            creator: string;
+            first_mes: string;
+            creator_notes: string;
+          };
+          return reply.send(
+            ok<GetCharacterByIdData>({
+              character: {
+                id,
+                name: frozen.name,
+                description: frozen.description,
+                avatar_url: await resolveCharacterDisplayAvatarUrl(id, frozen.avatar_url),
+                personality_tags: frozen.tags,
+                author_name: frozen.creator,
+                is_featured: false,
+                greeting: frozen.first_mes,
+                creator_notes: frozen.creator_notes,
+              },
+            })
+          );
+        }
+      }
 
-    // 金框判定必须与大厅同源，走共享快照（2s + single-flight）。原来每个请求都现拉一遍
-    // 全量在架 id，与 findFirst 并行各占一条 Prisma 连接，池紧张时把等待放大一倍。
-    // select 只取契约字段，不拖 raw_card 等大 JSON。
-    const [character, featuredIds] = await Promise.all([
-      prisma.character.findFirst({
-        where: { id, enabled: true, archived_at: null },
-        select: {
-          id: true,
-          name: true,
-          description: true,
-          avatar_url: true,
-          tags: true,
-          creator: true,
-          first_mes: true,
-          creator_notes: true,
-        },
-      }),
-      loadLobbyFeaturedIdSet(request.log),
-    ]);
+      // 金框判定必须与大厅同源，走共享快照（2s + single-flight）。原来每个请求都现拉一遍
+      // 全量在架 id，与 findFirst 并行各占一条 Prisma 连接，池紧张时把等待放大一倍。
+      // select 只取契约字段，不拖 raw_card 等大 JSON。
+      const [character, featuredIds] = await Promise.all([
+        prisma.character.findFirst({
+          where: { id, enabled: true, archived_at: null },
+          select: {
+            id: true,
+            name: true,
+            description: true,
+            avatar_url: true,
+            tags: true,
+            creator: true,
+            first_mes: true,
+            creator_notes: true,
+          },
+        }),
+        loadLobbyFeaturedIdSet(request.log),
+      ]);
 
-    if (!character) {
-      return reply.status(404).send(fail('NOT_FOUND', 'Character not found'));
+      if (!character) {
+        return reply.status(404).send(fail('NOT_FOUND', 'Character not found'));
+      }
+
+      // Draft fields are fetched only for their real author, never returned to another viewer.
+      const owned = viewerId
+        ? await prisma.characterCreation.findFirst({
+            where: { character_id: id, owner_user_id: viewerId },
+            select: { draft: true, cover_asset_id: true },
+          })
+        : null;
+      const draft = owned ? CharacterDraftSchema.parse(owned.draft) : null;
+      const characterDetail: CharacterDetail = {
+        id: character.id,
+        name: draft?.name ?? character.name,
+        description: draft?.description ?? character.description,
+        avatar_url: owned
+          ? ((owned.cover_asset_id ? await resolveCreatorCoverUrl(owned.cover_asset_id) : '') ?? '')
+          : await resolveCharacterDisplayAvatarUrl(character.id, character.avatar_url),
+        personality_tags:
+          draft?.tags ?? (Array.isArray(character.tags) ? (character.tags as string[]) : []),
+        author_name: character.creator,
+        is_featured: featuredIds.has(character.id),
+        greeting: draft?.opening ?? character.first_mes,
+        creator_notes: character.creator_notes,
+      };
+
+      return reply.send(ok<GetCharacterByIdData>({ character: characterDetail }));
     }
-
-    const characterDetail: CharacterDetail = {
-      id: character.id,
-      name: character.name,
-      description: character.description,
-      avatar_url: resolveCharacterAvatarUrl(character.id, character.avatar_url),
-      personality_tags: Array.isArray(character.tags) ? (character.tags as string[]) : [],
-      author_name: character.creator,
-      is_featured: featuredIds.has(character.id),
-      greeting: character.first_mes,
-      creator_notes: character.creator_notes,
-    };
-
-    return reply.send(ok<GetCharacterByIdData>({ character: characterDetail }));
-  });
+  );
 }

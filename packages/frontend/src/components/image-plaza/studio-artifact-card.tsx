@@ -1,6 +1,6 @@
 'use client';
 
-import { Copy, Download, LoaderCircle, RefreshCcw, Share2 } from 'lucide-react';
+import { Check, Copy, Download, LoaderCircle, RefreshCcw, Share2 } from 'lucide-react';
 import { useRef, useState } from 'react';
 import type { ImagePlazaArtifact } from '@miniapp/shared';
 import { requestTelegramFileDownload } from '@/lib/telegram/hooks';
@@ -16,6 +16,8 @@ interface StudioArtifactCardProps {
   onShare: (artifact: ImagePlazaArtifact) => void;
   onNotice: (message: string) => void;
   onLoad?: () => void;
+  onUseAsCover?: (artifact: ImagePlazaArtifact) => void;
+  selectingCover?: boolean;
 }
 
 export function StudioArtifactCard(props: StudioArtifactCardProps) {
@@ -86,6 +88,21 @@ export function StudioArtifactCard(props: StudioArtifactCardProps) {
           </div>
         ) : null}
       </div>
+      {props.onUseAsCover ? (
+        <button
+          type="button"
+          disabled={props.selectingCover}
+          onClick={() => props.onUseAsCover?.(props.artifact)}
+          className="mt-3 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-60"
+        >
+          {props.selectingCover ? (
+            <LoaderCircle className="size-4 animate-spin" />
+          ) : (
+            <Check className="size-4" />
+          )}
+          {props.selectingCover ? '正在保存封面…' : '用作角色封面'}
+        </button>
+      ) : null}
       <button
         type="button"
         disabled={props.regenerateDisabled}

@@ -23,26 +23,29 @@ export interface CharacterCardRow {
   character_persona_and_style: string | null;
 }
 
-const CARD_COLUMNS =
-  'id, name, description, personality, scenario, first_mes, mes_example, system_prompt, post_history_instructions, character_persona_and_style';
-
 export class CharacterCardRepository {
   private readonly db = getDomainDb('app_core');
 
-  /**
-   * 不过滤 enabled / archived_at：会话一旦建立，角色卡后续下架也要能把已有会话聊完，
-   * 拦在建会话入口（大厅列表本身就只出可见的卡）比拦在每一轮生成上合理。
-   */
-  async requireCard(characterId: string): Promise<CharacterCardRow> {
+  /** Official historical sessions keep their prior behavior. Creator cards enforce access,
+   * and only their author receives the draft projection when trying an unpublished edit. */
+  async requireCard(
+    characterId: string,
+    userId: string,
+    sessionId: string
+  ): Promise<CharacterCardRow> {
     const { data, error } = await this.db
-      .from('characters')
-      .select(CARD_COLUMNS)
-      .eq('id', characterId)
-      .maybeSingle();
-
-    if (error) throw new Error(`查询角色卡失败：${error.message}`);
-    if (!data) {
-      throw new ConversationRepositoryError('character_not_found', `角色卡不存在：${characterId}`);
+      .rpc('read_session_character_runtime', {
+        p_character_id: characterId,
+        p_user_id: userId,
+        p_session_id: sessionId,
+        p_opening_only: false,
+      })
+      .abortSignal(AbortSignal.timeout(5_000));
+    if (error || !data) {
+      if (error?.code === 'P0404' || (!error && !data)) {
+        throw new ConversationRepositoryError('character_not_found', '角色已不可用');
+      }
+      throw new Error('查询角色卡失败');
     }
     return data as CharacterCardRow;
   }

@@ -121,6 +121,16 @@ pnpm --filter @miniapp/reply-renderer typecheck
 pnpm --filter @miniapp/backend image-plaza:seed -- --input <xlsx>
 ```
 
+### 角色创作与空间（2026-10-30，本地集成，未发布）
+
+底部入口顺序为「角色 / 创作 / 中央播放首页 / AI短剧 / 我的」。`/creation` 承接角色创作、收藏和本人作品；`/creation/characters/new` 与 `/:id/edit` 使用真实创作 API。旧 `/create` 图片视频广场及工作室继续保留，通过创作页进入。上传封面、从本人生成作品选封面、文档导入、本地草稿、全屏编辑、AI润色与采用撤回都在同一流程内；预设不提供AI润色。预设区提供四套可多选的固定模板，仅展示名称、适用场景与效果，正文作为服务端静态文本保存；同时支持自写和导入。当前不新增运营配置页面。
+
+作者修改的是卡片：未开聊可以使用更新内容，首次实际发言在开轮事务内绑定卡级不可变版本，已开聊与分支继续沿用该版本。公开更新审核前不替换已批准内容；转为私密后停止大厅展示，曾收藏或使用过的人保留使用资格。运营端的「创作者审核」负责批准/驳回。
+
+他人使用作者卡的真实扣费按40%奖励至作者专项星尘，免费/失败不发；自用8折与VIP取更优惠者、不叠加、不发自身奖励。资金与退款回收均在原计费事务中，界面模拟不代替账务验证。
+
+固定移动端验收：`pnpm test:ui --grep @creator`，场景含创建发布、失败重试、封面生成回流、润色截断采用和撤回。卡级权限/上下文验证：`bash scripts/test-creator-characters-local.sh`；计费验证复用 `bash scripts/test-first-token-fallback-local.sh`。隔离本地数据库通过不代表TEST或生产已迁移。迁移及部署顺序见 [迁移目录说明](packages/shared/migrations/README.md)。AI润色复用主项目OpenRouter配置与明确模型，不读取独立Lab密钥；真实供应商和生产存储需部署前验证。
+
 ## 5. 环境变量
 
 不要提交真实 `.env`。浏览器端 `NEXT_PUBLIC_*` 与 `VITE_*` 会进入 bundle，不能存放 secret。完整变量以各包 `.env.example`、源码读取点和部署平台为准。

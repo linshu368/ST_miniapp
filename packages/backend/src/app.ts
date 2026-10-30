@@ -6,6 +6,7 @@ import { fastifyLoggerOptions } from './lib/logger.js';
 import { ok } from '@miniapp/shared';
 import type { HealthData } from '@miniapp/shared';
 import characterRoutes from './routes/characters.js';
+import creatorCharacterRoutes from './routes/creator-characters.js';
 import favoriteRoutes from './routes/favorites.js';
 import characterSocialRoutes from './routes/character-social.js';
 import paymentRoutes from './routes/payment.js';
@@ -27,6 +28,7 @@ import telemetryRoutes from './routes/telemetry.js';
 import alertRoutes from './routes/alerts.js';
 import textPostprocessRoutes from './routes/text-postprocess.js';
 import imagePlazaRoutes from './routes/image-plaza.js';
+import creatorToolsRoutes from './routes/creator-tools.js';
 import dramaRoutes from './routes/drama.js';
 import dramaInteractionRoutes from './routes/drama-interactions.js';
 import { shutdownTextPostprocessValidation } from './features/text-postprocess/validate-pool.js';
@@ -125,6 +127,7 @@ export async function buildApp() {
   });
 
   await app.register(characterRoutes);
+  await app.register(creatorCharacterRoutes);
   await app.register(favoriteRoutes);
   await app.register(characterSocialRoutes);
   await app.register(paymentRoutes);
@@ -146,6 +149,7 @@ export async function buildApp() {
   await app.register(alertRoutes);
   await app.register(textPostprocessRoutes);
   await app.register(imagePlazaRoutes);
+  await app.register(creatorToolsRoutes);
   await app.register(dramaRoutes);
   await app.register(dramaInteractionRoutes);
 
