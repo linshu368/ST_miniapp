@@ -4,6 +4,7 @@ const {
   distribution,
   count,
   captureMessage,
+  captureEvent,
   withScope,
   telegramReady,
   telegramReadyAvailable,
@@ -15,6 +16,7 @@ const {
   distribution: vi.fn(),
   count: vi.fn(),
   captureMessage: vi.fn(),
+  captureEvent: vi.fn(),
   withScope: vi.fn((cb: (scope: unknown) => void) =>
     cb({ setLevel: vi.fn(), setFingerprint: vi.fn(), setTags: vi.fn(), setContext: vi.fn() })
   ),
@@ -29,6 +31,7 @@ vi.mock('./grafana', () => ({
 vi.mock('@sentry/nextjs', () => ({
   metrics: { distribution, count },
   captureMessage,
+  captureEvent,
   withScope,
 }));
 vi.mock('@telegram-apps/sdk-react', () => ({
@@ -39,6 +42,7 @@ vi.mock('@telegram-apps/sdk-react', () => ({
 
 import { notifySettled } from './inflight';
 import { observeStartupShell, resetStartupTimingForTest } from './startup-timing';
+import { collectStartupDetails, markStartupPhase } from './startup-phases';
 import {
   beginPage,
   ENTRY_WINDOW_MS,
@@ -354,6 +358,7 @@ describe('document startup timing', () => {
       querySelector: vi.fn(() => ({ getBoundingClientRect: () => ({ height: 800 }) })),
     });
     startupWindow = Object.assign(new EventTarget(), {
+      location: { origin: 'https://app.example.test' },
       requestAnimationFrame: (callback: FrameRequestCallback) => {
         frames.set(++frameId, callback);
         return frameId;
@@ -393,7 +398,9 @@ describe('document startup timing', () => {
     paint();
     paint();
     expect(telegramReady).toHaveBeenCalledOnce();
-    expect(distribution).toHaveBeenCalledTimes(2);
+    expect(
+      distribution.mock.calls.filter(([name]) => name !== 'startup.stage.duration')
+    ).toHaveLength(2);
   });
 
   it('survives StrictMode cleanup without reporting a false departure or duplicate sample', () => {
@@ -482,5 +489,154 @@ describe('document startup timing', () => {
     paint();
     expect(paint).not.toThrow();
     expect(telegramReady).toHaveBeenCalledOnce();
+  });
+
+  it('partitions one startup while keeping overlapping resource timings separate', () => {
+    vi.advanceTimersByTime(1500);
+    markStartupPhase('providers_loaded');
+    vi.advanceTimersByTime(500);
+    markStartupPhase('first_render');
+    vi.advanceTimersByTime(200);
+    markStartupPhase('init_start');
+    vi.advanceTimersByTime(10);
+    markStartupPhase('telegram_initialized');
+    vi.advanceTimersByTime(50);
+    markStartupPhase('bootstrap_finished');
+    markStartupPhase('providers_loaded'); // StrictMode / rerender 不能覆盖首次时间。
+    const entries = vi.spyOn(performance, 'getEntriesByType').mockImplementation((type) => {
+      if (type === 'navigation') {
+        const nav = {
+          name: 'navigation',
+          entryType: 'navigation',
+          startTime: 0,
+          duration: 1200,
+          toJSON: () => ({}),
+          responseStart: 800,
+          responseEnd: 1200,
+        };
+        return [nav];
+      }
+      return [
+        {
+          name: '/_next/static/a.js?token=private',
+          startTime: 1000,
+          responseEnd: 1400,
+          transferSize: 400,
+          decodedBodySize: 800,
+        },
+        {
+          name: '/_next/static/b.js',
+          startTime: 1100,
+          responseEnd: 1450,
+          transferSize: 0,
+          decodedBodySize: 500,
+        },
+        {
+          name: 'https://third.example.test/_next/static/private.js',
+          startTime: 0,
+          responseEnd: 1499,
+        },
+        { name: '/_next/static/after.js', startTime: 1500, responseEnd: 2000 },
+      ].map((entry) => ({
+        ...entry,
+        entryType: 'resource',
+        duration: entry.responseEnd - entry.startTime,
+        toJSON: () => ({}),
+      }));
+    });
+    const result = collectStartupDetails(2300, 2332, 2333);
+    expect(result.stages).toMatchObject({
+      before_providers: 1500,
+      module_to_render: 500,
+      render_to_init: 200,
+      telegram_init: 10,
+      bootstrap: 50,
+      react_commit: 40,
+      paint_wait: 32,
+      ready_call: 1,
+      document_ttfb: 800,
+      document_download: 400,
+      next_script_fetch_union: 450,
+      last_script_to_providers: 50,
+    });
+    const chain = [
+      'before_providers',
+      'module_to_render',
+      'render_to_init',
+      'telegram_init',
+      'bootstrap',
+      'react_commit',
+      'paint_wait',
+      'ready_call',
+    ];
+    expect(
+      Object.entries(result.stages)
+        .filter(([stage]) => chain.includes(stage))
+        .reduce((sum, [, value]) => sum + value, 0)
+    ).toBe(2333);
+    expect(result.details).toMatchObject({
+      script_count: 2,
+      script_transfer_bytes: 400,
+      script_zero_transfer_count: 1,
+    });
+    expect(JSON.stringify(result)).not.toContain('private');
+    entries.mockRestore();
+  });
+
+  it('omits unavailable or inverted timing rather than treating it as zero', () => {
+    vi.advanceTimersByTime(100);
+    markStartupPhase('providers_loaded');
+    const entries = vi.spyOn(performance, 'getEntriesByType').mockImplementation(() => {
+      throw new Error('unsupported');
+    });
+    const result = collectStartupDetails(10, 5, 150);
+    expect(result.stages).toEqual({ before_providers: 100, ready_call: 145 });
+    expect(result.details).not.toHaveProperty('document_ttfb');
+    expect(result.details).not.toHaveProperty('script_count');
+    entries.mockRestore();
+  });
+
+  it('sends one slow-start snapshot after ready and does not block ready on resource collection', () => {
+    vi.advanceTimersByTime(6000);
+    markStartupPhase('providers_loaded');
+    cleanup = observeStartupShell('/');
+    paint();
+    paint();
+    expect(telegramReady).toHaveBeenCalledOnce();
+    expect(captureEvent).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(captureEvent).toHaveBeenCalledOnce();
+    expect(captureEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: 'miniapp_startup_slow',
+        contexts: {
+          startup: expect.objectContaining({ before_providers: 6000, shell_ready: 6032 }),
+        },
+        tags: expect.objectContaining({ startup_bucket: 'slow', telegram_ready: 'sent' }),
+      })
+    );
+    observeStartupShell('/');
+    paint();
+    paint();
+    expect(captureEvent).toHaveBeenCalledOnce();
+  });
+
+  it('does not diagnose background time as slow startup and does not report fast starts as slow', () => {
+    cleanup = observeStartupShell('/');
+    paint();
+    paint();
+    vi.advanceTimersByTime(1);
+    expect(captureEvent).not.toHaveBeenCalled();
+    cleanup();
+    resetStartupTimingForTest();
+    cleanup = observeStartupShell('/');
+    startupDocument.hidden = true;
+    startupDocument.dispatchEvent(new Event('visibilitychange'));
+    vi.advanceTimersByTime(6000);
+    startupDocument.hidden = false;
+    paint();
+    paint();
+    vi.advanceTimersByTime(1);
+    expect(captureEvent).not.toHaveBeenCalled();
   });
 });

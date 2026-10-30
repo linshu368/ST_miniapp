@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { sanitizeStartupMetric, sanitizeTelemetry } from './sanitize';
+import { sanitizeStartupDiagnostic, sanitizeStartupMetric, sanitizeTelemetry } from './sanitize';
 
 describe('startup metric attributes', () => {
   it('removes SDK identity, replay and unexpected attributes while retaining P95 dimensions', () => {
@@ -44,6 +44,62 @@ describe('startup metric attributes', () => {
   it('preserves the existing handling of other metrics', () => {
     const metric = { name: 'page.ready.duration', value: 100, attributes: { route: '/' } };
     expect(sanitizeStartupMetric(metric)).toBe(metric);
+  });
+
+  it('only permits finite stage names and removes arbitrary resource or user dimensions', () => {
+    const attributes = {
+      stage: 'telegram_init',
+      startup_bucket: 'slow',
+      definition: 'startup_phases_v1',
+      url: 'private-url',
+      'user.id': 'private-id',
+    };
+    expect(
+      sanitizeStartupMetric({ name: 'startup.stage.duration', attributes }).attributes
+    ).toEqual({ stage: 'telegram_init', startup_bucket: 'slow', definition: 'startup_phases_v1' });
+    expect(
+      sanitizeStartupMetric({
+        name: 'startup.stage.duration',
+        attributes: { stage: 'private-user' },
+      }).attributes
+    ).toEqual({});
+  });
+
+  it('strips SDK identity and contexts from slow diagnostics while preserving numeric evidence', () => {
+    const event = {
+      type: undefined,
+      event_id: 'event',
+      message: 'miniapp_startup_slow',
+      release: 'release',
+      environment: 'production',
+      user: { id: 'private-user', ip_address: 'private-ip' },
+      request: { url: 'private-url' },
+      breadcrumbs: [{ message: 'private-message' }],
+      extra: { body: 'private-body' },
+      contexts: {
+        trace: { trace_id: 'private-trace', span_id: 'private-span' },
+        replay: { replay_id: 'private-replay' },
+        startup: {
+          before_providers: 5500,
+          ready_call: 1,
+          script_count: 8,
+          arbitrary: 'private-value',
+          bootstrap: NaN,
+          paint_wait: -1,
+        },
+      },
+      tags: { route: '/', tg_platform: 'android', startup_bucket: 'slow', user_id: 'private-id' },
+    };
+    const result = sanitizeStartupDiagnostic(event);
+    expect(result.contexts).toEqual({
+      startup: { before_providers: 5500, ready_call: 1, script_count: 8 },
+    });
+    expect(result.tags).toEqual({ route: '/', tg_platform: 'android', startup_bucket: 'slow' });
+    expect(result.release).toBe('release');
+    expect(JSON.stringify(result)).not.toContain('private');
+    expect(event.user.id).toBe('private-user');
+    const ordinary = { type: undefined, message: 'ordinary', user: { id: 'existing-user' } };
+    expect(sanitizeStartupDiagnostic(ordinary)).toBe(ordinary);
   });
 });
 

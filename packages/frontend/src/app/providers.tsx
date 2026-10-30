@@ -28,6 +28,7 @@ import {
 } from '@/lib/payment/return-observer';
 import { PagePerfTracker } from '@/lib/perf/PagePerfTracker';
 import { observeStartupShell } from '@/lib/perf/startup-timing';
+import { markStartupPhase } from '@/lib/perf/startup-phases';
 import { loadSessionReplay, setTelegramUser } from '@/lib/sentry/client';
 import { initReplayTelemetry, ReplayLifecycleOwner } from '@/lib/telemetry';
 import { getRawInitData } from '@/lib/telegram/auth';
@@ -36,7 +37,10 @@ import { stripSensitiveTelegramLaunchParamsFromLocation } from '@/lib/telegram/l
 import { parseTelegramUser } from '@/lib/telegram/user';
 import { useUserProfileStore } from '@/stores/user-profile-store';
 
+markStartupPhase('providers_loaded');
+
 export function Providers({ children }: { children: React.ReactNode }) {
+  markStartupPhase('first_render');
   const [queryClient] = useState(() => getQueryClient());
   const [telegramReady, setTelegramReady] = useState(false);
   const pathname = usePathname();
@@ -50,7 +54,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
       process.env.NODE_ENV === 'development' &&
         new URLSearchParams(window.location.search).get('devtools') === '1'
     );
+    markStartupPhase('init_start');
     initTelegramSdk();
+    markStartupPhase('telegram_initialized');
     const telegramUser = parseTelegramUser(getRawInitData());
     setTelegramUser(telegramUser.id);
     stripSensitiveTelegramLaunchParamsFromLocation();
@@ -63,6 +69,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
     // initTelegramSdk 是同步副作用,initData 在它跑完后立即可读;
     // hydrate 把 telegram first_name + localStorage 覆盖合成 displayName
     hydrateUserProfile();
+    markStartupPhase('bootstrap_finished');
     setTelegramReady(true);
   }, [hydrateUserProfile]);
 
