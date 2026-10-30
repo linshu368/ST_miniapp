@@ -16,6 +16,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
+import dynamic from 'next/dynamic';
 import { useParams, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -31,6 +32,7 @@ import {
 } from '@miniapp/shared';
 import {
   fileToImagePlazaPayload,
+  isVideoPlazaAttemptTerminal,
   validateImagePlazaReference,
   useCreateImagePlazaConversationMutation,
   useCreateVideoReferenceFromImageArtifactMutation,
@@ -46,10 +48,7 @@ import {
   useVideoPlazaQuoteMutation,
 } from '@/lib/api/image-plaza';
 import { StudioArtifactCard } from '@/components/image-plaza/studio-artifact-card';
-import { StudioSettingsDialog } from '@/components/image-plaza/studio-settings-dialog';
 import { StudioVideoCard } from '@/components/image-plaza/studio-video-card';
-import { VideoModelSheet } from '@/components/image-plaza/video-model-sheet';
-import { VideoSettingsDialog } from '@/components/image-plaza/video-settings-dialog';
 import { ImagePlazaHistorySheet } from '@/components/image-plaza/image-plaza-history-sheet';
 import { useMemoryDraft } from '@/hooks/use-memory-draft';
 import { useTelegramBackButton } from '@/lib/telegram';
@@ -65,6 +64,20 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet';
 
+const StudioSettingsDialog = dynamic(() =>
+  import('@/components/image-plaza/studio-settings-dialog').then(
+    (module) => module.StudioSettingsDialog
+  )
+);
+const VideoModelSheet = dynamic(() =>
+  import('@/components/image-plaza/video-model-sheet').then((module) => module.VideoModelSheet)
+);
+const VideoSettingsDialog = dynamic(() =>
+  import('@/components/image-plaza/video-settings-dialog').then(
+    (module) => module.VideoSettingsDialog
+  )
+);
+
 export default function ImagePlazaStudioPage() {
   const params = useParams<{ conversationId: string }>();
   // App Router may reuse the page when switching conversations; local uploads/settings must not survive.
@@ -77,6 +90,15 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
   const config = useImagePlazaConfigQuery();
   const conversation = useImagePlazaConversationQuery(conversationId);
   const data = conversation.data?.conversation;
+  const promptByMessageId = useMemo(() => {
+    const prompts = new Map<string, string>();
+    let latestPrompt = '';
+    for (const message of data?.messages ?? []) {
+      if (message.role === 'user') latestPrompt = message.content;
+      else prompts.set(message.id, latestPrompt);
+    }
+    return prompts;
+  }, [data?.messages]);
   useEffect(() => {
     if (
       conversation.data !== undefined ||
@@ -659,17 +681,17 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
       style={{ height: viewportHeight ?? '100dvh' }}
       className="mx-auto flex w-full max-w-3xl flex-col overflow-hidden bg-background text-foreground"
     >
-      <header className="sticky top-0 z-30 flex shrink-0 items-center justify-between border-b border-border/60 bg-background/90 px-3 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] backdrop-blur-xl">
-        <div className="flex min-w-0 items-center gap-2">
+      <header className="sticky top-0 z-30 flex shrink-0 items-center justify-between gap-2 border-b border-border/60 bg-background/90 px-3 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] backdrop-blur-xl">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
           <button
             type="button"
             onClick={returnToGallery}
             aria-label="返回影像广场"
-            className="grid size-10 place-items-center rounded-full bg-card ring-1 ring-border"
+            className="grid size-10 shrink-0 place-items-center rounded-full bg-card ring-1 ring-border"
           >
-            <ArrowLeft className="size-5" />
+            <ArrowLeft className="size-5" aria-hidden />
           </button>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <h1 className="truncate text-sm font-black">{data.title}</h1>
             <p className="truncate text-[11px] text-muted-foreground">
               {mediaMode === 'video' && videoModel
@@ -678,7 +700,7 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           <button
             type="button"
             disabled={createConversation.isPending}
@@ -752,12 +774,7 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
                 ) : message.video_attempt ? (
                   <VideoAttemptCard
                     initialAttempt={message.video_attempt}
-                    prompt={
-                      data.messages
-                        .slice(0, messageIndex)
-                        .reverse()
-                        .find((item) => item.role === 'user')?.content ?? ''
-                    }
+                    prompt={promptByMessageId.get(message.id) ?? ''}
                     sharing={shareVideo.isPending}
                     onEdit={(attempt, value) => {
                       const target = videoModels.find(
@@ -782,12 +799,7 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
                 ) : message.attempt ? (
                   <div className="space-y-5">
                     <AttemptCard
-                      prompt={
-                        data.messages
-                          .slice(0, messageIndex)
-                          .reverse()
-                          .find((item) => item.role === 'user')?.content ?? ''
-                      }
+                      prompt={promptByMessageId.get(message.id) ?? ''}
                       attempt={message.attempt}
                       onRefresh={(value) => void generate(value, message.id)}
                       regenerating={submittingSource === message.id}
@@ -1045,10 +1057,10 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
                 type="button"
                 onClick={() => setVideoModelOpen(true)}
                 aria-label={`选择视频模型，当前为 ${videoModel.name}`}
-                className="flex min-h-11 min-w-11 max-w-56 flex-1 items-center justify-center gap-1 rounded-full bg-background/45 px-2 text-xs font-medium"
+                className="flex min-h-11 min-w-11 max-w-56 flex-1 items-center justify-center gap-1 rounded-full bg-background/45 px-2 text-xs font-medium transition-colors hover:bg-background/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
-                <span className="truncate">{videoModel.name}</span>
-                <ChevronDown className="size-3" />
+                <span className="min-w-0 truncate">{videoModel.name}</span>
+                <ChevronDown className="size-3 shrink-0" aria-hidden />
               </button>
             ) : null}
             <button
@@ -1101,44 +1113,46 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
         </div>
       </div>
 
-      <StudioSettingsDialog
-        open={settingsOpen}
-        onOpenChange={setSettingsOpen}
-        model={model}
-        aspectRatio={aspectRatio}
-        onAspectRatioChange={setAspectRatio}
-        resolution={resolution}
-        onResolutionChange={setResolution}
-        reasoning={reasoning}
-        onReasoningChange={setReasoning}
-        autoOptimize={autoOptimize}
-        onAutoOptimizeChange={setAutoOptimize}
-        onReset={resetSettings}
-      />
-      {videoModel ? (
-        <>
-          <VideoModelSheet
-            open={videoModelOpen}
-            onOpenChange={setVideoModelOpen}
-            models={videoModels}
-            selectedId={videoModel.id}
-            onSelect={selectVideoModel}
-          />
-          <VideoSettingsDialog
-            open={videoSettingsOpen}
-            onOpenChange={setVideoSettingsOpen}
-            model={videoModel}
-            duration={videoDuration}
-            resolution={videoResolution}
-            aspectRatio={videoAspectRatio}
-            audio={videoAudio}
-            onDurationChange={setVideoDuration}
-            onResolutionChange={setVideoResolution}
-            onAspectRatioChange={setVideoAspectRatio}
-            onAudioChange={setVideoAudio}
-            onReset={() => resetVideoSettings(videoModel)}
-          />
-        </>
+      {settingsOpen ? (
+        <StudioSettingsDialog
+          open
+          onOpenChange={setSettingsOpen}
+          model={model}
+          aspectRatio={aspectRatio}
+          onAspectRatioChange={setAspectRatio}
+          resolution={resolution}
+          onResolutionChange={setResolution}
+          reasoning={reasoning}
+          onReasoningChange={setReasoning}
+          autoOptimize={autoOptimize}
+          onAutoOptimizeChange={setAutoOptimize}
+          onReset={resetSettings}
+        />
+      ) : null}
+      {videoModel && videoModelOpen ? (
+        <VideoModelSheet
+          open
+          onOpenChange={setVideoModelOpen}
+          models={videoModels}
+          selectedId={videoModel.id}
+          onSelect={selectVideoModel}
+        />
+      ) : null}
+      {videoModel && videoSettingsOpen ? (
+        <VideoSettingsDialog
+          open
+          onOpenChange={setVideoSettingsOpen}
+          model={videoModel}
+          duration={videoDuration}
+          resolution={videoResolution}
+          aspectRatio={videoAspectRatio}
+          audio={videoAudio}
+          onDurationChange={setVideoDuration}
+          onResolutionChange={setVideoResolution}
+          onAspectRatioChange={setVideoAspectRatio}
+          onAudioChange={setVideoAudio}
+          onReset={() => resetVideoSettings(videoModel)}
+        />
       ) : null}
 
       {shareTipOpen && shareArtifact ? (
@@ -1217,9 +1231,7 @@ function VideoAttemptCard(props: {
   const query = useVideoPlazaAttemptQuery(props.initialAttempt.id);
   const attempt = query.data?.attempt ?? props.initialAttempt;
   const reported = useRef<string | null>(null);
-  const terminal = ['ready', 'failed', 'moderation_rejected', 'expired', 'failed_unknown'].includes(
-    attempt.status
-  );
+  const terminal = isVideoPlazaAttemptTerminal(attempt.status);
   useEffect(() => {
     if (!terminal || reported.current === attempt.status) return;
     reported.current = attempt.status;

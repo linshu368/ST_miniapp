@@ -45,6 +45,10 @@ describe('video upstream', () => {
     expect(body).toMatchObject({
       model: 'wan-video',
       prompt: 'move',
+      duration: '5s',
+      resolution: '1080p',
+      aspect_ratio: '16:9',
+      audio: true,
       image_url: 'https://cdn.example.test/ref.png',
     });
     expect(body).not.toHaveProperty('safe_mode');

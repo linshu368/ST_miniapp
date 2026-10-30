@@ -26,7 +26,7 @@ export async function queueVideo(input: {
   const payload: Record<string, unknown> = {
     model: input.providerModelId,
     prompt: input.prompt,
-    duration: input.duration,
+    duration: `${input.duration}s`,
     resolution: input.resolution,
     audio: input.audio,
   };

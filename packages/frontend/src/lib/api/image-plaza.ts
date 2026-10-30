@@ -73,6 +73,20 @@ export const imagePlazaKeys = {
   attempt: (id: string) => [...imagePlazaKeys.all, 'attempt', id] as const,
 };
 
+const VIDEO_PLAZA_TERMINAL_STATUSES = new Set<GetVideoPlazaAttemptData['attempt']['status']>([
+  'ready',
+  'failed',
+  'moderation_rejected',
+  'expired',
+  'failed_unknown',
+]);
+
+export function isVideoPlazaAttemptTerminal(
+  status: GetVideoPlazaAttemptData['attempt']['status'] | undefined
+): boolean {
+  return status !== undefined && VIDEO_PLAZA_TERMINAL_STATUSES.has(status);
+}
+
 export function useVideoPlazaQuoteMutation() {
   return useMutation({
     mutationFn: (body: VideoPlazaQuoteRequest) =>
@@ -112,11 +126,12 @@ export function useVideoPlazaAttemptQuery(attemptId: string) {
         signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
       }),
     enabled: Boolean(attemptId),
+    staleTime: (query) =>
+      isVideoPlazaAttemptTerminal(query.state.data?.attempt.status) ? Infinity : 0,
     refetchInterval: (query) => {
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return false;
       const status = query.state.data?.attempt.status;
-      return status &&
-        !['ready', 'failed', 'moderation_rejected', 'expired', 'failed_unknown'].includes(status)
+      return status && !isVideoPlazaAttemptTerminal(status)
         ? Math.min(15_000, Math.round(3_000 * 1.5 ** Math.min(query.state.dataUpdateCount, 5)))
         : false;
     },
@@ -124,22 +139,22 @@ export function useVideoPlazaAttemptQuery(attemptId: string) {
   const { refetch } = query;
   useEffect(() => {
     const status = query.data?.attempt.status;
-    if (
-      !status ||
-      !['ready', 'failed', 'moderation_rejected', 'expired', 'failed_unknown'].includes(status) ||
-      terminalSeen.current === status
-    )
-      return;
+    if (!status || !isVideoPlazaAttemptTerminal(status) || terminalSeen.current === status) return;
     terminalSeen.current = status;
     void client.invalidateQueries({ queryKey: paymentKeys.wallet() });
   }, [client, query.data?.attempt.status]);
   useEffect(() => {
     const resume = () => {
-      if (document.visibilityState === 'visible' && attemptId) void refetch();
+      if (
+        document.visibilityState === 'visible' &&
+        attemptId &&
+        !isVideoPlazaAttemptTerminal(query.data?.attempt.status)
+      )
+        void refetch();
     };
     document.addEventListener('visibilitychange', resume);
     return () => document.removeEventListener('visibilitychange', resume);
-  }, [attemptId, refetch]);
+  }, [attemptId, query.data?.attempt.status, refetch]);
   return query;
 }
 
@@ -343,6 +358,16 @@ export function useImagePlazaConversationQuery(id: string) {
         )
       ) {
         void client.invalidateQueries({ queryKey: paymentKeys.wallet() });
+      }
+      for (const { video_attempt: attempt } of next.conversation.messages) {
+        if (!attempt) continue;
+        client.setQueryData<GetVideoPlazaAttemptData>(
+          imagePlazaKeys.videoAttempt(attempt.id),
+          (current) =>
+            !current || Date.parse(attempt.updated_at) >= Date.parse(current.attempt.updated_at)
+              ? { attempt }
+              : current
+        );
       }
       return next;
     },
