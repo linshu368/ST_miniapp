@@ -14,6 +14,7 @@ const STARTUP_METRIC_ATTRIBUTES = new Set([
   'stage',
   'startup_bucket',
   'definition',
+  'budget',
   'sentry.release',
   'sentry.environment',
   'sentry.sdk.name',

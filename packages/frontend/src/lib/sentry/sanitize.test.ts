@@ -1,4 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+const sentryTracing = vi.hoisted(() => ({
+  getClient: vi.fn(),
+  addIntegration: vi.fn(),
+  browserTracingIntegration: vi.fn(),
+}));
+vi.mock('@sentry/nextjs', () => sentryTracing);
+
+import { installDeferredTracing } from './tracing';
 
 import { sanitizeStartupDiagnostic, sanitizeStartupMetric, sanitizeTelemetry } from './sanitize';
 
@@ -201,5 +210,34 @@ describe('sanitizeTelemetry', () => {
       const output: unknown[] = sanitizeTelemetry(wide, { maxNodes: 10 });
       expect(output.filter((item) => item === '[Truncated]').length).toBeGreaterThan(0);
     });
+  });
+});
+
+describe('deferred tracing', () => {
+  afterEach(() => {
+    vi.resetAllMocks();
+  });
+
+  it('does nothing when the startup error/metrics client is disabled', () => {
+    sentryTracing.getClient.mockReturnValue(undefined);
+    installDeferredTracing();
+    expect(sentryTracing.addIntegration).not.toHaveBeenCalled();
+  });
+
+  it('adds tracing to the existing client once and preserves request filters', () => {
+    const getIntegrationByName = vi.fn();
+    const integration = { name: 'BrowserTracing' };
+    sentryTracing.getClient.mockReturnValue({ getIntegrationByName });
+    sentryTracing.browserTracingIntegration.mockReturnValue(integration);
+    sentryTracing.addIntegration.mockImplementation(() =>
+      getIntegrationByName.mockReturnValue(integration)
+    );
+    installDeferredTracing();
+    installDeferredTracing();
+    expect(sentryTracing.addIntegration).toHaveBeenCalledExactlyOnceWith(integration);
+    const filter =
+      sentryTracing.browserTracingIntegration.mock.calls[0]![0].shouldCreateSpanForRequest;
+    expect(filter('https://app.posthog.com/flags')).toBe(false);
+    expect(filter('https://api.example.test/api/dramas')).toBe(true);
   });
 });
