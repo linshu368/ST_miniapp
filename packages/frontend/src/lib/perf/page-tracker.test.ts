@@ -1,3 +1,5 @@
+import { runInNewContext } from 'node:vm';
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
@@ -39,6 +41,8 @@ vi.mock('@telegram-apps/sdk-react', () => ({
   isTMA: isTelegram,
   miniApp: { ready: Object.assign(telegramReady, { isAvailable: telegramReadyAvailable }) },
 }));
+
+import { EARLY_STARTUP_SCRIPT } from './early-startup';
 
 import { notifySettled } from './inflight';
 import { observeStartupShell, resetStartupTimingForTest } from './startup-timing';
@@ -403,6 +407,81 @@ describe('document startup timing', () => {
     ).toHaveLength(2);
   });
 
+  it('uses HTML paint time even when Providers finishes much later and never sends ready twice', () => {
+    const early = {
+      startedAt: 100,
+      shellAt: 500,
+      readyAt: 501,
+      status: 'sent' as const,
+      outcome: 'shell_ready' as const,
+    };
+    Object.assign(startupWindow, { __miniappStartup: early });
+    vi.advanceTimersByTime(10_000);
+    markStartupPhase('providers_loaded');
+    cleanup = observeStartupShell('/');
+    paint();
+    paint();
+    expect(telegramReady).not.toHaveBeenCalled();
+    expect(distribution).toHaveBeenCalledWith(
+      'startup.shell_ready.duration',
+      500,
+      expect.objectContaining({
+        attributes: expect.objectContaining({ measurement: 'html_post_render_frame' }),
+      })
+    );
+    expect(distribution).toHaveBeenCalledWith(
+      'startup.telegram_ready.duration',
+      501,
+      expect.anything()
+    );
+    vi.runOnlyPendingTimers();
+    expect(distribution).toHaveBeenCalledWith(
+      'startup.stage.duration',
+      10_000,
+      expect.objectContaining({
+        attributes: expect.objectContaining({
+          stage: 'before_providers',
+          definition: 'startup_phases_v2',
+        }),
+      })
+    );
+  });
+
+  it('keeps the original clock when early bridge delivery fails and the SDK later succeeds', () => {
+    Object.assign(startupWindow, {
+      __miniappStartup: { startedAt: 100, shellAt: 500, status: 'failed', outcome: 'shell_ready' },
+    });
+    vi.advanceTimersByTime(5000);
+    cleanup = observeStartupShell('/');
+    paint();
+    paint();
+    expect(telegramReady).toHaveBeenCalledOnce();
+    expect(distribution).toHaveBeenCalledWith(
+      'startup.shell_ready.duration',
+      5032,
+      expect.objectContaining({
+        attributes: expect.objectContaining({ measurement: 'post_render_frame' }),
+      })
+    );
+  });
+
+  it.each([
+    [3968, 'within_4s'],
+    [3969, 'over_4s'],
+  ])('uses the 4-second budget boundary at %i ms before frames', (start, budget) => {
+    vi.advanceTimersByTime(start);
+    cleanup = observeStartupShell('/');
+    paint();
+    paint();
+    expect(count).toHaveBeenCalledWith(
+      'startup.budget',
+      1,
+      expect.objectContaining({ attributes: expect.objectContaining({ budget }) })
+    );
+    vi.runOnlyPendingTimers();
+    expect(captureEvent).toHaveBeenCalledTimes(budget === 'over_4s' ? 1 : 0);
+  });
+
   it('survives StrictMode cleanup without reporting a false departure or duplicate sample', () => {
     observeStartupShell('/')();
     paint();
@@ -638,5 +717,134 @@ describe('document startup timing', () => {
     paint();
     vi.advanceTimersByTime(1);
     expect(captureEvent).not.toHaveBeenCalled();
+  });
+});
+
+describe('standalone HTML startup script', () => {
+  function boot({ platform = 'android', css = true, bridgeFails = false } = {}) {
+    let now = 100;
+    let sequence = 0;
+    const frames = new Map<number, FrameRequestCallback>();
+    const visibleNode = { getBoundingClientRect: () => ({ width: 390, height: 800 }) };
+    const doc = Object.assign(new EventTarget(), {
+      hidden: false,
+      documentElement: {},
+      querySelector: vi.fn<() => typeof visibleNode | null>(() => visibleNode),
+    });
+    const postEvent = vi.fn(() => {
+      if (bridgeFails) throw new Error('unavailable');
+    });
+    const notify = vi.fn();
+    const win = Object.assign(new EventTarget(), {
+      location: {
+        pathname: '/',
+        search: '',
+        hash: platform ? `#tgWebAppVersion=9.6&tgWebAppPlatform=${platform}` : '',
+      },
+      requestAnimationFrame: (cb: FrameRequestCallback) => {
+        frames.set(++sequence, cb);
+        return sequence;
+      },
+      cancelAnimationFrame: (id: number) => frames.delete(id),
+      TelegramWebviewProxy: platform === 'android' ? { postEvent } : undefined,
+      external: platform === 'ios' ? { notify } : undefined,
+      __miniappStartup: undefined as Window['__miniappStartup'],
+    });
+    const context = {
+      window: win,
+      document: doc,
+      performance: { now: () => now },
+      URLSearchParams,
+      getComputedStyle: () => ({
+        display: 'block',
+        visibility: 'visible',
+        opacity: '1',
+        getPropertyValue: () => (css ? '4.125rem' : ''),
+      }),
+    };
+    runInNewContext(EARLY_STARTUP_SCRIPT, context);
+    const paint = () => {
+      now += 16;
+      const callbacks = [...frames.values()];
+      frames.clear();
+      callbacks.forEach((cb) => cb(now));
+    };
+    return { win, doc, postEvent, notify, paint, context, frames };
+  }
+
+  it.each(['android', 'ios'])(
+    'notifies the %s native bridge without Next, React, Sentry, or SDK modules',
+    (platform) => {
+      const b = boot({ platform });
+      b.paint();
+      expect(b.win.__miniappStartup?.shellAt).toBeUndefined();
+      b.paint();
+      expect(b.win.__miniappStartup).toEqual({
+        startedAt: 100,
+        shellAt: 132,
+        readyAt: 132,
+        status: 'sent',
+        outcome: 'shell_ready',
+      });
+      if (platform === 'android') expect(b.postEvent).toHaveBeenCalledWith('web_app_ready', '{}');
+      else expect(b.notify).toHaveBeenCalledWith('{"eventType":"web_app_ready"}');
+      runInNewContext(EARLY_STARTUP_SCRIPT, b.context);
+      b.paint();
+      expect(b.postEvent.mock.calls.length + b.notify.mock.calls.length).toBe(1);
+    }
+  );
+
+  it('stops probing when the SDK fallback has already notified ready', () => {
+    const b = boot();
+    if (b.win.__miniappStartup) b.win.__miniappStartup.status = 'sent';
+    b.paint();
+    b.paint();
+    expect(b.frames.size).toBe(0);
+    expect(b.postEvent).not.toHaveBeenCalled();
+    expect(b.win.__miniappStartup?.shellAt).toBeUndefined();
+  });
+
+  it('requires loaded CSS and the real content/navigation instead of an empty outer wrapper', () => {
+    const b = boot({ css: false });
+    b.paint();
+    b.paint();
+    expect(b.postEvent).not.toHaveBeenCalled();
+    b.doc.querySelector.mockReturnValue(null);
+    b.paint();
+    expect(b.win.__miniappStartup?.shellAt).toBeUndefined();
+    const styled = boot();
+    styled.doc.querySelector.mockReturnValue(null);
+    styled.paint();
+    styled.paint();
+    expect(styled.postEvent).not.toHaveBeenCalled();
+  });
+
+  it('records hidden/left outcomes before Providers loads and never notifies a departed page', () => {
+    const b = boot();
+    b.doc.hidden = true;
+    b.doc.dispatchEvent(new Event('visibilitychange'));
+    b.doc.hidden = false;
+    b.paint();
+    b.paint();
+    expect(b.win.__miniappStartup?.outcome).toBe('background');
+    expect(b.postEvent).toHaveBeenCalledOnce();
+    const left = boot();
+    left.win.dispatchEvent(new Event('pagehide'));
+    left.paint();
+    left.paint();
+    expect(left.win.__miniappStartup?.outcome).toBe('left');
+    expect(left.postEvent).not.toHaveBeenCalled();
+  });
+
+  it('leaves unsupported web clients and failed native calls to the SDK fallback', () => {
+    const web = boot({ platform: 'web' });
+    web.paint();
+    web.paint();
+    expect(web.win.__miniappStartup?.status).toBe('unavailable');
+    const failed = boot({ bridgeFails: true });
+    failed.paint();
+    failed.paint();
+    expect(failed.win.__miniappStartup?.status).toBe('failed');
+    expect(failed.win.__miniappStartup?.readyAt).toBeUndefined();
   });
 });

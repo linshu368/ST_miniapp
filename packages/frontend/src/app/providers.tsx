@@ -29,7 +29,7 @@ import {
 import { PagePerfTracker } from '@/lib/perf/PagePerfTracker';
 import { observeStartupShell } from '@/lib/perf/startup-timing';
 import { markStartupPhase } from '@/lib/perf/startup-phases';
-import { loadSessionReplay, setTelegramUser } from '@/lib/sentry/client';
+import { loadDeferredTracing, loadSessionReplay, setTelegramUser } from '@/lib/sentry/client';
 import { initReplayTelemetry, ReplayLifecycleOwner } from '@/lib/telemetry';
 import { getRawInitData } from '@/lib/telegram/auth';
 import { initTelegramSdk } from '@/lib/telegram/init';
@@ -62,7 +62,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
     stripSensitiveTelegramLaunchParamsFromLocation();
     // 两套录屏 SDK 都是动态 chunk + 持续 DOM 采集，冷启动时会和首屏图片、列表请求抢带宽与主线程；
     // 等首屏结束（有 4s 硬上限）再加载。采样率不变，只是首屏几秒不在录。
-    void afterFirstScreen().then(() => loadSessionReplay());
+    void afterFirstScreen().then(() => {
+      void loadDeferredTracing();
+      void loadSessionReplay();
+    });
     void initReplayTelemetry(telegramUser.id, afterFirstScreen);
     // 入场分波兜底：无大厅/聊天 mark 时最迟 8s 仍放行 enrich/background。
     ensureEntryPhaseWatching();

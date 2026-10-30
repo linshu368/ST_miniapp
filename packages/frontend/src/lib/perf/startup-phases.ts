@@ -51,11 +51,16 @@ export function markStartupPhase(phase: StartupPhase): void {
   }
 }
 
-export function collectStartupDetails(committedAt: number, shellAt: number, readyAt: number) {
+export function collectStartupDetails(
+  committedAt: number,
+  shellAt: number,
+  readyAt: number,
+  observedAt = readyAt
+) {
   const details: Partial<Record<(typeof STARTUP_DETAIL_FIELDS)[number], number>> = {};
   const stages: Partial<Record<StartupStage, number>> = {};
   const valid = (v: number | undefined): v is number =>
-    v !== undefined && Number.isFinite(v) && v >= 0 && v <= readyAt;
+    v !== undefined && Number.isFinite(v) && v >= 0 && v <= observedAt;
   const duration = (stage: StartupStage, start: number | undefined, end: number | undefined) => {
     if (!valid(start) || !valid(end) || end < start) return;
     stages[stage] = end - start;

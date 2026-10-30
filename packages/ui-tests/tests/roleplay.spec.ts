@@ -500,3 +500,68 @@ test.describe('初始 HTML 框架', () => {
     });
   }
 });
+
+test('@startup 原生 ready 不等待 Next 启动 JS，恢复下载后仍能进入业务', async ({
+  page,
+  preview,
+}) => {
+  let release: () => void = () => {};
+  const scriptsAllowed = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.addInitScript(() => {
+    const native = window as Window & {
+      __readyNotifications?: number;
+      TelegramWebviewProxy?: { postEvent: (event: string) => void };
+    };
+    native.__readyNotifications = 0;
+    native.TelegramWebviewProxy = {
+      postEvent: (event) => {
+        if (event === 'web_app_ready')
+          native.__readyNotifications = (native.__readyNotifications ?? 0) + 1;
+      },
+    };
+  });
+  await page.route('**/_next/**/*.js*', async (route) => {
+    await scriptsAllowed;
+    await route.continue();
+  });
+  try {
+    await page.goto('/#tgWebAppVersion=9.6&tgWebAppPlatform=android', { waitUntil: 'commit' });
+    await expect(page.getByRole('heading', { name: '推荐', exact: true })).toBeVisible();
+    await expect(page.getByRole('navigation', { name: '主导航' })).toBeVisible();
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            (window as Window & { __miniappStartup?: { status?: string } }).__miniappStartup?.status
+        )
+      )
+      .toBe('sent');
+    expect((await preview.state()).requests).toEqual([]);
+    expect(
+      await page.evaluate(
+        () => (window as Window & { __readyNotifications?: number }).__readyNotifications
+      )
+    ).toBe(1);
+    await preview.screenshot('启动JS阻塞时框架已展示');
+    await page.getByRole('link', { name: 'AI短剧', exact: true }).click();
+    await expect(page).toHaveURL(/3130\/#tgWebAppVersion=9\.6&tgWebAppPlatform=android$/);
+  } finally {
+    release();
+  }
+  // Normal browser API fixtures do not provide Telegram's full native SDK. Remove
+  // launch metadata after the isolated bridge assertion, then exercise normal content.
+  await page.evaluate(() => history.replaceState(history.state, '', '/'));
+  await expect
+    .poll(async () => (await preview.state()).requests.some((r) => r.path === '/api/dramas'))
+    .toBe(true);
+  expect(
+    await page.evaluate(
+      () => (window as Window & { __readyNotifications?: number }).__readyNotifications
+    )
+  ).toBe(1);
+  await page.getByRole('link', { name: 'AI短剧', exact: true }).click();
+  await expect(page).toHaveURL(/3130\/dramas$/);
+  await expect(page.getByRole('button', { name: '搜索短剧', exact: true })).toBeVisible();
+});
