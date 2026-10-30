@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import { feedbackAfterPaint, startAction } from '@/lib/perf/action-tracker';
 import { usePageReady } from '@/lib/perf/page-ready';
 import { useRouter } from 'next/navigation';
@@ -42,7 +43,6 @@ import { useInviteEntryStatusQuery } from '@/lib/api/invite';
 import { notificationKeys, useNotificationUnreadCountQuery } from '@/lib/api/notifications';
 import { useSupportUnreadQuery } from '@/lib/api/support';
 import { useCommunityEntryQuery } from '@/lib/api/community';
-import { CommunitySheet } from '@/components/profile/community-sheet';
 import {
   usePatchUserSettingsMutation,
   useSetUserAvatarMutation,
@@ -53,6 +53,11 @@ import { getRawInitData } from '@/lib/telegram/auth';
 import { formatNumber } from '@/lib/utils/payment';
 import { checkinRewardLines } from '@/lib/vip/presentation';
 import { useUserProfileStore } from '@/stores/user-profile-store';
+
+const CommunitySheet = dynamic(
+  () => import('@/components/profile/community-sheet').then((module) => module.CommunitySheet),
+  { ssr: false }
+);
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -97,6 +102,7 @@ export default function ProfilePage() {
   const [avatarError, setAvatarError] = useState<string | null>(null);
   const [avatarMenuOpen, setAvatarMenuOpen] = useState(false);
   const [communityOpen, setCommunityOpen] = useState(false);
+  const [communitySheetMounted, setCommunitySheetMounted] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const openingVip = useRef(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
@@ -590,7 +596,10 @@ export default function ProfilePage() {
                 ) : null}
                 {communityEntry.data?.enabled && communityEntry.data.claim_status !== 'rewarded' ? (
                   <ProfileRow
-                    onClick={() => setCommunityOpen(true)}
+                    onClick={() => {
+                      setCommunitySheetMounted(true);
+                      setCommunityOpen(true);
+                    }}
                     Icon={Send}
                     title="官方社群"
                     subtitle="加入社群，和大家交流玩法"
@@ -609,7 +618,7 @@ export default function ProfilePage() {
           ) : null}
         </div>
       </section>
-      {communityEntry.data ? (
+      {communitySheetMounted && communityEntry.data ? (
         <CommunitySheet
           open={communityOpen}
           onOpenChange={setCommunityOpen}

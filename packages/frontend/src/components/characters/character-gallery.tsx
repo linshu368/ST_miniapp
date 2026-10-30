@@ -49,8 +49,9 @@ const CharacterDetailSheet = dynamic(
   { ssr: false }
 );
 
-// 移动端两列首屏实际可见约 4–6 张；高优先级给多了会和 LCP 图抢带宽。
-const FIRST_SCREEN_IMAGE_COUNT = 6;
+// Telegram 移动端的固定头部与「接着聊」之后，首帧通常只露出第一行两张卡。
+// 只让这两张抢高优先级，避免六张头像平分弱网带宽、反而拖慢首张关键视觉。
+const FIRST_SCREEN_IMAGE_COUNT = 2;
 
 const LOBBY_TABS: ReadonlyArray<{ value: LobbySort; label: string }> = [
   { value: 'recommended', label: '推荐' },

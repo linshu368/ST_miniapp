@@ -193,9 +193,9 @@ export function BottomNavShell({
             <Link
               key={href}
               href={targetHref}
-              prefetch={!onNavigate || isHeavyRoute ? false : undefined}
+              prefetch={false}
               scroll={href === '/characters' ? false : undefined}
-              // 不在大厅空闲预取其它 tab；真正指向该 tab 时再拉 RSC/路由。
+              // 底栏常驻；关闭视口自动预取，只在明确 hover/focus/touch 意图时拉目标路由。
               onMouseEnter={prefetchOnIntent}
               onFocus={prefetchOnIntent}
               onTouchStart={prefetchOnIntent}

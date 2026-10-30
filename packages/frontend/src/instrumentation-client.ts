@@ -45,26 +45,6 @@ function isValidDsn(value: string | undefined): value is string {
   }
 }
 
-/** PostHog 请求不进 BrowserTracing，避免 /flags、batch 撑开 navigation P95。 */
-function shouldCreateSpanForRequest(url: string): boolean {
-  if (/posthog/i.test(url)) return false;
-  const grafanaCollector = process.env.NEXT_PUBLIC_GRAFANA_COLLECTOR_URL?.trim();
-  if (grafanaCollector && url.startsWith(grafanaCollector)) return false;
-  const posthogHost = process.env.NEXT_PUBLIC_POSTHOG_HOST?.trim();
-  if (posthogHost) {
-    try {
-      const requestOrigin = new URL(
-        url,
-        typeof window !== 'undefined' ? window.location.href : undefined
-      ).origin;
-      if (requestOrigin === new URL(posthogHost).origin) return false;
-    } catch {
-      // ignore
-    }
-  }
-  return true;
-}
-
 export const isSentryEnabled = isValidDsn(dsn) && SENTRY_ENVIRONMENTS.has(environment ?? '');
 
 if (isSentryEnabled) {
@@ -77,12 +57,7 @@ if (isSentryEnabled) {
       const withoutDefaultTracing = integrations.filter(
         (integration) => integration.name !== 'BrowserTracing'
       );
-      return [
-        ...withoutDefaultTracing,
-        Sentry.browserTracingIntegration({
-          shouldCreateSpanForRequest,
-        }),
-      ];
+      return withoutDefaultTracing;
     },
     replaysSessionSampleRate: REPLAY_SESSION_SAMPLE_RATE,
     replaysOnErrorSampleRate: 1.0,

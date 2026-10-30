@@ -21,6 +21,7 @@ import {
   IMAGE_PLAZA_FEED_STALE_TIME_MS,
   imagePlazaKeys,
   useCreateImagePlazaConversationMutation,
+  useImagePlazaConfigQuery,
   useImagePlazaFeedQuery,
   useSetImagePlazaLikeMutation,
 } from '@/lib/api/image-plaza';
@@ -59,6 +60,9 @@ export default function CreatePage() {
   const [sort, setSort] = useState<ImagePlazaFeedSort>(returnSnapshot?.sort ?? 'recommended');
   const [debouncedSearch, setDebouncedSearch] = useState(returnSnapshot?.search ?? '');
   const feed = useImagePlazaFeedQuery(debouncedSearch, tag, sort);
+  // Feed 首包结算后再预热工作室共用的模型配置。创建响应本身已写入 conversation
+  // cache，因此用户点击进入时两份 P0 数据都能直接复用；失败仍由 Studio 原错误态承接。
+  useImagePlazaConfigQuery({ enabled: feed.data !== undefined || feed.isError });
   useEffect(() => {
     if (feed.data !== undefined || feed.isError || feed.isFetched) markCriticalSettled();
   }, [feed.data, feed.isError, feed.isFetched]);
