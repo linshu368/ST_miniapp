@@ -1,0 +1,36 @@
+{
+  "id": "drama-cdn-rollout",
+  "name": "drama-cdn-rollout",
+  "title": "短剧生产 Bunny 20% 稳定分流与真实等待对照",
+  "description": "生产 20% Bunny／80% Supabase 稳定分流、真实起播／未缓冲快进去重诊断、关闭重取址；不含生产启用",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "drama",
+  "package": "backend",
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-29",
+  "completedAt": null,
+  "branch": "codex/drama-cdn-rollout",
+  "base_branch": "dev",
+  "worktree_path": "/Users/qj/.codex/worktrees/drama-cdn-rollout/ST_miniAPP",
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "已适配dev 46159929。Shared189、Backend1073、Frontend627、最终固定UI44、类型/构建/适用lint通过；模块载荷通过，既有模块标题基线缺口保留。生产仅只读配置/源Range，账号只有旧TEST Zone。待最终内容审核后提交推送及新PR；未stage/commit/push/main合并或开流。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "backend.infrastructure.runtime-data-security",
+        "frontend.business.drama-experience",
+        "frontend.infrastructure.client-ui-foundation"
+      ]
+    }
+  }
+}

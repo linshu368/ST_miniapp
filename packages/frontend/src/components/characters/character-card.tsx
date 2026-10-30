@@ -1,11 +1,12 @@
 'use client';
 
-import { memo, useState } from 'react';
+import { memo, useCallback, useRef, useState } from 'react';
 import type { CharacterSummary } from '@miniapp/shared';
 import { Flame } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 import { characterRoomGradient } from '@/lib/utils/character-hue';
+import { supabasePublicImageUrl } from '@/lib/supabase-image';
 
 import { CharacterSocialBar } from './character-social-bar';
 import { FeaturedFrame } from './featured-frame';
@@ -17,23 +18,11 @@ interface CharacterCardProps {
   disabled?: boolean;
   priority?: boolean;
   experienced?: boolean;
-  onImageSettled?: (id: string) => void;
+  onImageSettled?: (id: string, outcome: 'loaded' | 'error') => void;
 }
 
 export function lobbyImageUrl(source: string): string {
-  try {
-    const url = new URL(source);
-    const marker = '/storage/v1/object/public/';
-    if (!url.pathname.includes(marker)) return source;
-    url.pathname = url.pathname.replace(marker, '/storage/v1/render/image/public/');
-    url.searchParams.set('width', '360');
-    url.searchParams.set('height', '480');
-    url.searchParams.set('resize', 'cover');
-    url.searchParams.set('quality', '68');
-    return url.toString();
-  } catch {
-    return source;
-  }
+  return supabasePublicImageUrl(source, { width: 360, height: 480, quality: 68 });
 }
 
 // memo：打开详情弹层只改 previewId，不该连带重渲染整页卡片（调用方保证 onSelect 引用稳定）。
@@ -50,6 +39,15 @@ export const CharacterCard = memo(function CharacterCard({
   const hasAvatar = !!character.avatar_url;
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageFailed, setImageFailed] = useState(false);
+  const imageSettled = useRef(false);
+  const settleImage = useCallback(
+    (outcome: 'loaded' | 'error') => {
+      if (imageSettled.current) return;
+      imageSettled.current = true;
+      onImageSettled?.(character.id, outcome);
+    },
+    [character.id, onImageSettled]
+  );
 
   const cardButton = (
     <button
@@ -92,7 +90,10 @@ export const CharacterCard = memo(function CharacterCard({
             // 从会话/详情返回时卡片重挂，图片多半已在内存缓存里：commit 阶段发现已解码完成就直接
             // 显示，避免“渐变占位 → 300ms 淡入”再闪一次（此处 setState 会在首次绘制前同步重渲染）。
             ref={(node) => {
-              if (node && node.complete && node.naturalWidth > 0) setImageLoaded(true);
+              if (node && node.complete && node.naturalWidth > 0) {
+                setImageLoaded(true);
+                settleImage('loaded');
+              }
             }}
             src={lobbyImageUrl(character.avatar_url)}
             alt={character.name}
@@ -103,11 +104,11 @@ export const CharacterCard = memo(function CharacterCard({
             decoding="async"
             onLoad={() => {
               setImageLoaded(true);
-              onImageSettled?.(character.id);
+              settleImage('loaded');
             }}
             onError={() => {
               setImageFailed(true);
-              onImageSettled?.(character.id);
+              settleImage('error');
             }}
             className={`absolute inset-0 h-full w-full object-cover object-top transition-opacity duration-300 ${
               imageLoaded ? 'opacity-100' : 'opacity-0'

@@ -78,8 +78,24 @@ export interface DramaDetail extends DramaSummary {
   videos: VideoItem[];
 }
 
+export const DramaDeliverySchema = z
+  .object({
+    experimentId: z
+      .string()
+      .min(1)
+      .max(64)
+      .regex(/^[a-zA-Z0-9_-]+$/),
+    group: z.enum(['supabase', 'bunny']),
+    provider: z.enum(['supabase', 'bunny', 'unknown']),
+    reason: z.enum(['assigned', 'disabled', 'unavailable']),
+  })
+  .strict();
+export type DramaDelivery = z.infer<typeof DramaDeliverySchema>;
+
 /** 播放地址。唯一包含临时签名 URL 的对外结构 */
 export interface DramaPlayback {
+  /** 旧 Backend 可缺失，不能推断为对照组。 */
+  delivery?: DramaDelivery;
   /** 本次选中的视频；整部剧都不可播时为 null，没有视频可指 */
   video_id: string | null;
   /** 本次是否拿到可用播放地址；签名失败或超时为 false，不影响元数据 */

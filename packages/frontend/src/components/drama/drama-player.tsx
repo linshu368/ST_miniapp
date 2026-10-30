@@ -39,6 +39,8 @@ import { observeDramaMedia } from '@/lib/perf/drama-media';
 import type { DramaPlaybackTiming } from '@/lib/perf/drama-timing';
 import type { DramaSummary } from '@miniapp/shared';
 import { cn } from '@/lib/utils';
+import { supabasePublicImageUrl } from '@/lib/supabase-image';
+import { markPageCriticalVisual } from '@/lib/perf/page-tracker';
 import {
   useDramaLibraryStore,
   type DramaProgress as DramaProgressRecord,
@@ -167,6 +169,7 @@ export function DramaPlayer({
     flow: DramaPlaybackTiming;
   } | null>(null);
   const mediaTimingRef = useRef<ReturnType<typeof observeDramaMedia> | null>(null);
+  const seekTimingRef = useRef<ReturnType<typeof dramaTiming.beginSeek> | null>(null);
   const [time, setTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [episodesOpen, setEpisodesOpen] = useState(false);
@@ -526,6 +529,8 @@ export function DramaPlayer({
     void start();
     return () => {
       cancelled = true;
+      seekTimingRef.current?.('switched');
+      seekTimingRef.current = null;
       if (playback.video_id && Number.isFinite(videoEl.currentTime) && videoEl.readyState >= 1) {
         sourceCheckpoint.current = {
           videoId: playback.video_id,
@@ -692,6 +697,13 @@ export function DramaPlayer({
     // 等新地址就绪再装载一次，避免先重放旧地址、随后又从头加载新地址。
     const result = await playbackQuery.refetch();
     if (attempt !== retryAttempt.current) return;
+    // A failed refetch retains old Query data. It must not masquerade as a new successful address.
+    dramaTiming.playbackState(
+      timing,
+      result.isError ? undefined : result.data,
+      false,
+      result.isError
+    );
     if (result.isError || !result.data?.playable || !result.data.play_url) {
       setRetryState('error');
       return;
@@ -909,7 +921,11 @@ export function DramaPlayer({
                 <>
                   {cover ? (
                     <img
-                      src={cover}
+                      src={supabasePublicImageUrl(cover, {
+                        width: 360,
+                        height: 480,
+                        quality: 68,
+                      })}
                       alt=""
                       loading="lazy"
                       decoding="async"
@@ -947,7 +963,15 @@ export function DramaPlayer({
             playsInline
             muted={muted}
             preload="auto"
-            poster={info?.cover_url ?? undefined}
+            poster={
+              info?.cover_url
+                ? supabasePublicImageUrl(info.cover_url, {
+                    width: 720,
+                    height: 960,
+                    quality: 72,
+                  })
+                : undefined
+            }
             aria-label={info ? `${info.title}，第 ${episodeNumber} 集` : '短剧播放器'}
             onPlaying={() => {
               if (document.visibilityState === 'hidden') {
@@ -957,6 +981,9 @@ export function DramaPlayer({
               pausedAtEnd.current = false;
               setPaused(false);
               setBuffering(false);
+            }}
+            onLoadedData={() => {
+              if (embedded) markPageCriticalVisual('/', 'loaded');
             }}
             onPause={(event) => {
               setPaused(true);
@@ -990,6 +1017,7 @@ export function DramaPlayer({
               }
             }}
             onError={() => {
+              if (embedded) markPageCriticalVisual('/', 'error');
               if (videoEl?.getAttribute('src')) {
                 videoEl.pause();
                 setFailed(true);
@@ -1313,6 +1341,18 @@ export function DramaPlayer({
                       time={time}
                       duration={duration}
                       sourceKey={currentVideoId ?? ''}
+                      onBeforeCommit={(seconds, wasPlaying) => {
+                        if (!videoEl || !playback?.play_url) return;
+                        seekTimingRef.current = dramaTiming.beginSeek(
+                          videoEl,
+                          playback.play_url,
+                          seconds,
+                          wasPlaying,
+                          id,
+                          currentVideoId ?? undefined,
+                          playback.delivery
+                        );
+                      }}
                       onScrubbingChange={setScrubbing}
                       onCommit={(seconds, wasPlaying) => {
                         pausedAtEnd.current = !wasPlaying && seconds >= duration - 0.05;

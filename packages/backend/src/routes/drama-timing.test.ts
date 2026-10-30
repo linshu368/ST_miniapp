@@ -16,6 +16,7 @@ const ID = '11111111-1111-4111-8111-111111111111';
 const VIDEO = '22222222-2222-4222-8222-222222222222';
 vi.mock('../middleware/auth.js', () => ({
   requireTelegramAuth: async (_request: FastifyRequest, reply: FastifyReply) => {
+    _request.user = { id: 99999, first_name: 'Fixture' };
     mocks.now += 3;
     if (mocks.denied) return reply.status(401).send({ error: 'unauthorized' });
   },

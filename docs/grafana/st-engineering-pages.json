@@ -897,6 +897,138 @@
           "editorMode": "code",
           "queryType": "range"
         }
+      ],
+      "title": "浏览器单生命周期遥测健康"
+    },
+    {
+      "id": 14,
+      "title": "关键视觉可见 P50/P95（合格线 2s）",
+      "type": "timeseries",
+      "description": "只统计 loaded 成功耗时；必须与下方全部终态样本一起判断，不能排除失败后单独宣称达标。按 route/navigation_type/cache 分层。",
+      "datasource": {
+        "type": "loki",
+        "uid": "grafanacloud-logs"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 57,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "noValue": "—",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 2000
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": ["lastNotNull"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          },
+          "expr": "quantile_over_time(0.5, ${browser_selector:raw} |= \"st_page_critical_visual\" | logfmt | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | kind=\"measurement\" | type=\"st_page_critical_visual\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_stage=\"critical_visual\" | context_outcome=\"loaded\" | context_visibility=\"foreground\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_route,context_navigation_type,context_cache)",
+          "legendFormat": "P50 {{context_route}} {{context_navigation_type}} {{context_cache}}",
+          "editorMode": "code",
+          "queryType": "range"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          },
+          "expr": "quantile_over_time(0.95, ${browser_selector:raw} |= \"st_page_critical_visual\" | logfmt | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | kind=\"measurement\" | type=\"st_page_critical_visual\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_stage=\"critical_visual\" | context_outcome=\"loaded\" | context_visibility=\"foreground\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_route,context_navigation_type,context_cache)",
+          "legendFormat": "P95 {{context_route}} {{context_navigation_type}} {{context_cache}}",
+          "editorMode": "code",
+          "queryType": "range"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "title": "关键视觉全部终态样本（合格分母）",
+      "type": "table",
+      "description": "loaded/error/absent/timeout 全部计入；每个主 cohort 至少 100 个终态样本，错误或提前离开上升 0.5 个百分点即不合格。",
+      "datasource": {
+        "type": "loki",
+        "uid": "grafanacloud-logs"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 65,
+        "w": 24,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "noValue": "—"
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [
+          {
+            "displayName": "Value",
+            "desc": true
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          },
+          "expr": "sum by (event_data_route,event_data_outcome,event_data_navigation_type,event_data_cache) (count_over_time(${browser_selector:raw} |= \"st_page_critical_visual_terminal\" | logfmt | event_data_tg_platform=~\"$tg_platform\" | event_data_net_type=~\"$net_type\" | kind=\"event\" | event_name=\"st_page_critical_visual_terminal\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" [$__range]))",
+          "legendFormat": "",
+          "editorMode": "code",
+          "queryType": "instant"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {
+            "mode": "columns"
+          }
+        }
       ]
     }
   ]

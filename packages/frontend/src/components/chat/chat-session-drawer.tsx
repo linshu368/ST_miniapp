@@ -1,6 +1,15 @@
 'use client';
 
-import { Loader2, MessageSquare, Pencil, Pin, PinOff, RefreshCw, Trash2 } from 'lucide-react';
+import {
+  GitBranch,
+  Loader2,
+  MessageSquare,
+  Pencil,
+  Pin,
+  PinOff,
+  RefreshCw,
+  Trash2,
+} from 'lucide-react';
 import type { ChatSession } from '@miniapp/shared';
 
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
@@ -144,6 +153,12 @@ function SessionRow({
             <span className="flex min-w-0 items-center gap-1">
               {session.pinned_at ? (
                 <Pin className="size-3 shrink-0 fill-current text-primary" aria-label="已置顶" />
+              ) : null}
+              {session.branch ? (
+                <GitBranch
+                  className="size-3 shrink-0 text-muted-foreground"
+                  aria-label="分支对话"
+                />
               ) : null}
               <span className="truncate text-sm font-medium text-foreground">
                 {resolveSessionTitle(session.title, characterName)}

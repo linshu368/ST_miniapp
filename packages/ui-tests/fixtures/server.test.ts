@@ -4,6 +4,7 @@ import { createServer } from 'node:net';
 import { createPreviewServer } from './server.js';
 import { IDS, makeData } from './data.js';
 import {
+  type GetConversationData,
   PublicReplyStyleOptionSchema,
   VipStatusSchema,
   UserSettingsSchema,
@@ -22,6 +23,67 @@ before(async () => {
   ({ server } = createPreviewServer(port, port + 1));
   await new Promise<void>((done) => server.listen(port, '127.0.0.1', done));
   api = `http://127.0.0.1:${port}`;
+});
+
+test('reply likes aggregate into character totals and remain idempotent and independent in branches', async () => {
+  await post('/__preview/reset', { scenario: 'standard' });
+  const beforeSocial = await (await fetch(api + `/api/characters/${IDS.character}/social`)).json();
+  const messageId = '50000000-0000-4000-8000-000000000003';
+  const path = `/api/v1/conversations/${IDS.session}/messages/${messageId}/like`;
+  const setLike = (liked: boolean) =>
+    fetch(api + path, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ liked }),
+    });
+  assert.equal((await setLike(true)).status, 200);
+  assert.equal((await setLike(true)).status, 200);
+  const likedSocial = await (await fetch(api + `/api/characters/${IDS.character}/social`)).json();
+  assert.equal(likedSocial.data.social.like_count, beforeSocial.data.social.like_count + 1);
+  assert.equal(likedSocial.data.social.liked, false);
+  const detail = (await (await fetch(api + `/api/v1/conversations/${IDS.session}`)).json())
+    .data as GetConversationData;
+  assert.equal(detail.messages.find((m) => m.id === messageId)?.liked, true);
+  const branch = (
+    await (
+      await post(`/api/v1/conversations/${IDS.session}/branch`, {
+        message_id: messageId,
+        request_id: '53000000-0000-4000-8000-000000000003',
+      })
+    ).json()
+  ).data as GetConversationData;
+  assert.equal(branch.messages.find((m) => m.id === messageId)?.liked, false);
+  assert.equal((await setLike(false)).status, 200);
+  const final = (await (await fetch(api + `/api/v1/conversations/${IDS.session}`)).json())
+    .data as GetConversationData;
+  assert.equal(final.messages.find((m) => m.id === messageId)?.liked, false);
+  const invalid = await fetch(api + path, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ liked: true, user_id: 'forbidden' }),
+  });
+  assert.equal(invalid.status, 400);
+  const state = await (await fetch(api + '/__preview/state')).json();
+  assert.equal(state.wallet.credits, 3600);
+  assert.deepEqual(
+    await (await fetch(api + `/api/characters/${IDS.character}/social`)).json(),
+    beforeSocial
+  );
+  await post('/__preview/reset', { scenario: 'chat-branch' });
+  for (const turn of [199, 200]) {
+    const result = await fetch(
+      api +
+        `/api/v1/conversations/${IDS.session}/messages/52000000-0000-4000-8000-${String(turn).padStart(12, '0')}/like`,
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ liked: true }),
+      }
+    );
+    assert.equal(result.status, 200);
+  }
+  const multiple = await (await fetch(api + `/api/characters/${IDS.character}/social`)).json();
+  assert.equal(multiple.data.social.like_count, beforeSocial.data.social.like_count + 2);
 });
 after(async () => {
   server.closeAllConnections();
@@ -86,4 +148,59 @@ test('SSE reasoning respects the switch and preserves shared event framing', asy
     assert.equal(frames.at(-1).type, 'done');
     assert.ok(frames.some((frame) => frame.type === 'delta'));
   }
+});
+
+test('branch fixture retains at most 50 earlier turns and replays an uncertain creation', async () => {
+  await post('/__preview/reset', { scenario: 'chat-branch' });
+  const branch = await post(`/api/v1/conversations/${IDS.session}/branch`, {
+    message_id: '52000000-0000-4000-8000-000000000060',
+    request_id: '53000000-0000-4000-8000-000000000001',
+  });
+  assert.equal(branch.status, 200);
+  const result = (await branch.json()).data;
+  assert.equal(result.session.branch.inherited_turns, 50);
+  assert.equal(result.session.branch.source_turn_index, 60);
+  assert.equal(result.has_more, true);
+  const firstPage = (
+    await (
+      await fetch(api + `/api/v1/conversations/${result.session.id}?before_turn_index=26`)
+    ).json()
+  ).data;
+  assert.equal(firstPage.has_more, false);
+  assert.match(
+    firstPage.messages.find(
+      (message: { role: string; turn_index: number }) =>
+        message.role === 'assistant' && message.turn_index === 1
+    ).content,
+    /第 11 轮/
+  );
+  assert.ok(result.messages.every((message: { inherited: boolean }) => message.inherited));
+  assert.equal((await (await fetch(api + '/api/v1/conversations')).json()).data.sessions.length, 2);
+
+  await post('/__preview/reset', { scenario: 'chat-branch-error' });
+  const input = {
+    message_id: '52000000-0000-4000-8000-000000000020',
+    request_id: '53000000-0000-4000-8000-000000000002',
+  };
+  assert.equal((await post(`/api/v1/conversations/${IDS.session}/branch`, input)).status, 503);
+  const recovered = (
+    await (await post(`/api/v1/conversations/${IDS.session}/branch`, input)).json()
+  ).data;
+  assert.equal(recovered.session.branch.inherited_turns, 20);
+  assert.equal(recovered.has_more, false);
+  const sessions = (await (await fetch(api + '/api/v1/conversations')).json()).data.sessions;
+  assert.equal(sessions.length, 2);
+  assert.equal(
+    sessions.find((session: { id: string }) => session.id === IDS.session).message_count,
+    40
+  );
+  assert.equal(
+    (
+      await post(`/api/v1/conversations/${IDS.session}/branch`, {
+        ...input,
+        message_id: '52000000-0000-4000-8000-000000000019',
+      })
+    ).status,
+    409
+  );
 });

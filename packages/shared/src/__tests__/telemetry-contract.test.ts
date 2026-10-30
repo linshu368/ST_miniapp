@@ -42,6 +42,39 @@ describe('drama timing upload contract', () => {
     stages: {},
     queries: [],
   };
+  it('accepts bounded experiment/seek details and rejects browser-supplied identity or credentials', () => {
+    const delivery = {
+      experimentId: 'unit-ab',
+      group: 'bunny',
+      provider: 'supabase',
+      reason: 'disabled',
+    };
+    const seek = {
+      targetMs: 40000,
+      buffered: 'no',
+      wasPlaying: true,
+      seekedMs: 300,
+      frameMs: 5100,
+    };
+    const valid = {
+      ...report,
+      type: 'seek',
+      delivery,
+      seek,
+      frameMethod: 'video_frame_callback',
+      elapsedMs: 5100,
+      overFiveSeconds: true,
+    };
+    expect(DramaTimingReportSchema.safeParse(valid).success).toBe(true);
+    for (const bad of [
+      { ...valid, experiment_user: 'forged' },
+      { ...valid, delivery: { ...delivery, userId: 'sensitive' } },
+      { ...valid, seek: { ...seek, url: 'signed-secret' } },
+      { ...valid, type: 'playback' },
+      { ...valid, recovery: { rootId: 'root', cumulativeMs: -1 } },
+    ])
+      expect(DramaTimingReportSchema.safeParse(bad).success).toBe(false);
+  });
   it('derives all stages once and leaves reversed/missing intervals absent', () => {
     const marks = {
       player_ready: 100,

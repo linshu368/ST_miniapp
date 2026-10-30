@@ -91,20 +91,38 @@ export function patchCharacterFavoriteCount(client: QueryClient, id: string, val
   );
 }
 
+async function fetchCharacterSocial(client: QueryClient, id: string, signal?: AbortSignal) {
+  const { social } = await apiClient<GetCharacterSocialData>(
+    `/api/characters/${encodeURIComponent(id)}/social`,
+    { signal, timeoutMs: 8000, queuePriority: 'normal' }
+  );
+  return hasSocialWrite(client, id)
+    ? (client.getQueryData<CharacterSocial>(characterSocialKeys.social(id)) ?? social)
+    : social;
+}
+
+/** 回复点赞仅刷新所属角色计数；卡片是禁用自动读取的观察者，需主动填回同一个缓存。 */
+export async function refreshCharacterSocial(client: QueryClient, id: string) {
+  await client.cancelQueries({
+    queryKey: characterSocialKeys.viewer(),
+    predicate: (query) =>
+      (query.queryKey[2] === 'social' || query.queryKey[2] === 'batch') &&
+      query.queryKey.slice(3).includes(id),
+  });
+  await client.fetchQuery({
+    queryKey: characterSocialKeys.social(id),
+    queryFn: ({ signal }) => fetchCharacterSocial(client, id, signal),
+    staleTime: 0,
+    retry: false,
+  });
+}
+
 export function useCharacterSocialQuery(id: string, enabled = true) {
   const client = useQueryClient();
   const key = characterSocialKeys.social(id);
   return useQuery({
     queryKey: key,
-    queryFn: async ({ signal }) => {
-      const { social } = await apiClient<GetCharacterSocialData>(
-        `/api/characters/${encodeURIComponent(id)}/social`,
-        { signal, timeoutMs: 8000, queuePriority: 'normal' }
-      );
-      return hasSocialWrite(client, id)
-        ? (client.getQueryData<CharacterSocial>(key) ?? social)
-        : social;
-    },
+    queryFn: ({ signal }) => fetchCharacterSocial(client, id, signal),
     enabled: enabled && Boolean(id),
     staleTime: 30_000,
     retry: false,

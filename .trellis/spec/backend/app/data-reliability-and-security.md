@@ -30,7 +30,7 @@
 
 ## 可观测性与发布
 
-短剧v2遥测的分析持久化由 `platform/runtime-config.ts` 集中读取 `DRAMA_TIMING_PERSIST_ENABLED`（默认false，部署时生效），环境使用数据库target=test|production，不能把development直接写成分析环境。仅遥测路由调用 `features/drama/timing-repository.ts` 的2秒/最多2并发RPC；202只确认accepted，异步合并结果由drama.timing_persisted/failed/dropped日志独立确认；原Pino日志保留，不加入播放接口。分析域权限、单migration、保留期和独立Grafana步骤见 [操作说明](../../../../docs/grafana/drama-playback-runbook.md)。
+历史 v2 路径说明（当前接收接口已停止分析写入，旧 flag 不能恢复）：短剧v2遥测的分析持久化由 `platform/runtime-config.ts` 集中读取 `DRAMA_TIMING_PERSIST_ENABLED`（默认false，部署时生效），环境使用数据库target=test|production，不能把development直接写成分析环境。仅遥测路由调用 `features/drama/timing-repository.ts` 的2秒/最多2并发RPC；202只确认accepted，异步合并结果由drama.timing_persisted/failed/dropped日志独立确认；原Pino日志保留，不加入播放接口。分析域权限、单migration、保留期和独立Grafana步骤见 [操作说明](../../../../docs/grafana/drama-playback-runbook.md)。
 
 - 使用现有 pino、`requestLogger`；原始异常写 `{ err }`。Sentry 先脱敏再附 context。
 - 关键流程记录阶段、耗时、状态/计数、安全幂等摘要、provider/request id；job 记录扫描/推进/失败数，禁止逐行高频 info。
@@ -334,33 +334,35 @@ recoverable_delivery仅新Backend显式启用；旧请求/终结账单不回填�
 
 新迁移`20261028_first_token_race.sql`扩展现有attempt诊断列并解除禁止首发回赢的守卫，保留数据库单赢家CAS/PT409；Grafana仅获原指标列权限，不能读诊断正文。先本地与TEST验证、合dev，再生产迁移和应用/Admin/看板。回退应用保留诊断列与原账务，不扩权限，不改历史数据。
 
-## Scenario: pr-525 Preview 普通短剧 Bunny 分发
+## Scenario: 短剧生产 CDN 对照
 
 ### 1. Scope / Trigger
 
-仅 PR #525 Preview 的普通短剧播放；不能扩展到 production/development，不能沿用单样本实验入口。
+普通 `/api/dramas/:id/play` 在已鉴权、剧／集归属通过后选择路径。默认关闭；生产专用源／CDN／签名配置，TEST 仍隔离。部署与实况见 [操作说明](../../../../ops/drama-cdn-rollout.md)。
 
 ### 2. Signatures
 
-getDramaPlaybackCdnConfig(): DramaPlaybackCdnConfig | null；buildBunnyPlayback(objectPath, sourceUrl, tokenKey, now) 返回 url/expiresAtMs；GET /api/dramas/:id/play 响应不变。
+runtime-config 统一读取 DRAMA_CDN_ENABLED、DRAMA_CDN_BASE_URL、DRAMA_CDN_TOKEN_KEY、DRAMA_CDN_EXPERIMENT_ID、DRAMA_CDN_EXPERIMENT_KEY。delivery helper 纯 HMAC 稳定分桶，20% Bunny／80% Supabase；不同 HMAC 域推导实验用户去重码，仅在鉴权遥测接收端附到日志。
 
 ### 3. Contracts
 
-DRAMA_CDN_ENABLED=true + RAILWAY_ENVIRONMENT_NAME=pr-525 + database.target=test 才启用；TEST host固定 zoqelpfhurwehlvypryl.supabase.co，CDN host固定 stminiappvid20261028.b-cdn.net。密钥仅 Backend，不使用 NEXT_PUBLIC，不接收任意 origin。CDN签名必须绑定完整对象路径和源 origin_token，不能忽略用户可修改的查询参数。
+shared DramaPlayback.delivery 包含实验版本、原 group、实际 provider 和 reason。timing 可选 recovery／入口总等待／seek，旧字段缺失保持 unknown；客户端不能发送身份去重键。接收接口沿用上游不写分析库；seek 只走原 Pino，不进入 startup 工程分母，不新增 DB 对象。实验核验 legacy 完整 start／结果，不能拿采样 Pino 或仅慢日志 Loki 作为总体。签名缓存按实际 provider、源、目录、签名配置与对象隔离，同 key single-flight；失败不伪造成功或自动换组。
 
 ### 4. Validation & Error Matrix
 
-非目标环境/未启用→原Supabase；已启用但key缺失、源host错误或鉴权旁路→不可播；签发失败/超时/源期限不足→不可播；未鉴权/跨剧video仍由原路由拒绝。配置错误不能静默直连；日志只记允许的错误码。
+鉴权／归属失败不签名；生产源错配、凭据非法、路径／签名篡改失败闭合。关闭保留实验 ID／key，全部实例生效后新播放重新取 Supabase 地址，不能用旧缓存绕过。遥测故障不阻塞播放。
 
 ### 5. Good/Base/Bad Cases
 
-Good：鉴权与归属后签TEST单对象，CDN签名覆盖源token并早于源到期。Base：关闭Preview配置走原路径。Bad：CDN拿到全库service-role，或只换域名却未配置私有回源。
+Good：原 Bunny 分组关闭后实际 provider=Supabase，原失败仍在。Base：旧客户端无实验字段保持 unknown。Bad：把重试后短成功覆盖原失败，按会话数算独立用户，或用超时截断代替真实等待。
 
 ### 6. Tests Required
 
-扩展既有signed-url/runtime-config/drama-timing回归，覆盖两对象隔离、完整URL复用、轮换配置、TTL、源token绑定与PR/TEST门禁。复用@drama验证普通页面和旧实验404；部署后仍须真实Range和Telegram验收。
+稳定分桶／多实例／关闭、环境错配、源／CDN token绑定、缓存隔离、接收端身份与白名单、seek不入startup RPC、重复／冲突／缺报比较；生产 Range／小段字节／热缓存负例和 iOS／Android 真机单独验收。
 
 ### 7. Wrong vs Correct
+
+Wrong：全局开关直接把全部请求送 Bunny，客户端复用关闭前的预取 URL。Correct：鉴权后决定本请求路径、缓存隔离；两组每个新播放意图都确认当前路径。5秒只生成观测，保留真实结果。
 
 Wrong：把旧单样本规则解除白名单后称为全量Bunny。Correct：固定TEST桶动态回源，不同真实对象均通过206/Range与字节核验，旧实验路径继续关闭。
 

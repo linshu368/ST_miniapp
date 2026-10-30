@@ -164,3 +164,21 @@ send/regenerate 携带可选 `first_token_measurement`；后端通过既有 begi
 只消费赢家的replay与原charge_id结算，原报价/权益、超时免扣、主动停止和离页恢复规则不变。败方立即取消，不为排查drain；只把已接收的正文/公开思考有界片段和race_lost原因并入原attempt一次异步终态写，不发给用户、不进上下文、不另计费。正常attempt最多派发/终态两次observe；删除旧首发额外元数据补读，无新cron/轮询。diagnostic保存不阻塞首字，赢家身份仍须持久化才能结算。
 
 新迁移`20261028_first_token_race.sql`扩展现有attempt诊断列并解除禁止首发回赢的守卫，保留数据库单赢家CAS/PT409；Grafana仅获原指标列权限，不能读诊断正文。先本地与TEST验证、合dev，再生产迁移和应用/Admin/看板。回退应用保留诊断列与原账务，不扩权限，不改历史数据。
+
+## 从历史回复开启分支（2026-10-29，本地实现）
+
+`POST /api/v1/conversations/:id/branch` 接受严格 UUID `{message_id, request_id}`，身份来自认证，不接收客户端用户 ID 或上下文轮数。后端读取现有 `fetchContextWindowLimits().retainTurns`（A），调用 `experience.fork_chat_session`，原子验证本人会话、当前可见的已完成回复及请求幂等性。分支截至所选回复保留 `min(A, 可用轮数)`，轮次归一化为 1…N；后续新轮继续使用原 A/B 窗口规则。没有独立记忆抽取：各轮正文中的记忆随该轮继承，所选回复之后的内容不得进入分支。
+
+分支通过 `experience.chat_branch_turns` 固定引用真实 `chat_history` 行，不复制生成、计费或统计记录；再次分支直接展开固定引用。新 `session_chat_history` 只用于消息分页和入模上下文，显式投影业务列；本会话新 revision 覆盖同轮继承引用。`current_chat_history` 仍是实际生成与媒体写入的来源，`findCurrentTurnById` 不改用叠加视图。
+
+响应沿用 `GetConversationData`，初始最多最近 25 轮，更多内容由原分页读取；普通开场白和后处理版本语义保持。`ChatSession.branch` 提供来源轮次和继承数量，`ChatMessage.inherited` 标记继承消息，继承消息不暴露来源请求 ID，也不开放来源消息的生图/语音写入。创建不调用模型、不扣费、不消耗免费额度；历史正文及原请求内容不进入分支事件日志。
+
+RPC 与列表读取设 5 秒请求预算；UUID 校验失败返回 400，源不存在或非本人统一 404，不可分支/请求冲突返回 409，创建频率限制返回 429。返回使用 `Cache-Control: no-store`。同一请求 ID 重试恢复已创建的分支，即使首次响应丢失或来源随后被软删；前端只手动重试，不自动创建循环。
+
+验证扩展既有上下文、后处理与错误码测试，并补充分支路由边界和本地 SQL 回归；本节不表示已发布。发布必须先执行新增 migration，再发布 Backend/Frontend；回退应用时保留新增对象和用户分支数据。
+
+## 回复点赞（2026-10-29，本地实现）
+
+`PUT /api/v1/conversations/:id/messages/:messageId/like` 接受严格 `{liked:boolean}`，认证用户由后端传入 `experience.set_chat_message_like`。RPC 以会话归属及当前可见回复版本为边界，包含分支继承回复；显式目标值使重复提交幂等。不存在或非本人会话统一 404，失效或未完成回复返回 `reply_like_not_allowed`（409）。响应只含 `session_id/message_id/liked`，设置 `no-store`，仓库调用有 5 秒预算，日志不包含正文或 prompt。
+
+反馈存储于 `experience.chat_message_likes`，按会话和实际 history ID 隔离。消息列表从既有叠加视图一次读取 `liked`，只投影到 assistant 消息；上下文查询不选该字段，不影响模型输入、会话排序、角色卡热度或钱包。重生成新版本不继承旧赞，创建分支不复制来源会话的赞。迁移顺序为分支迁移 → 点赞迁移 → Backend → Frontend；新增点赞迁移执行后不得再重跑会删去其末列的旧分支视图定义。应用回退可忽略新增字段，保留反馈事实。

@@ -21,6 +21,10 @@ const SQLSTATE_TO_CODE: Record<string, ConversationErrorCode> = {
   P0002: 'session_not_found',
   '55006': 'session_busy',
   '55000': 'regenerate_not_allowed',
+  P0422: 'branch_not_allowed',
+  P0409: 'branch_request_conflict',
+  P0429: 'branch_rate_limited',
+  P0423: 'reply_like_not_allowed',
 };
 
 export interface PostgrestLikeError {

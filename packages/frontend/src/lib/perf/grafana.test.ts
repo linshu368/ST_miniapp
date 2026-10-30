@@ -115,6 +115,18 @@ describe('bounded engineering Faro exporter', () => {
       measurement_version: 'unsafe',
     });
     exporter.event('page.terminal', { route: '/raw-user-path', outcome: 'ready' });
+    exporter.measurement('page.critical_visual', 456, {
+      route: '/characters',
+      stage: 'critical_visual',
+      outcome: 'loaded',
+      cache: 'cache',
+      source_measurement_version: 'critical_visual_v1',
+    });
+    exporter.event('page.critical_visual_terminal', {
+      route: '/characters',
+      stage: 'critical_visual',
+      outcome: 'loaded',
+    });
     await Promise.all([exporter.initialize(), exporter.initialize()]);
     expect(loader).toHaveBeenCalledTimes(1);
     expect(fake.initialize).toHaveBeenCalledTimes(1);
@@ -133,6 +145,24 @@ describe('bounded engineering Faro exporter', () => {
           measurement_version: 'engineering_v1',
         },
       })
+    );
+    expect(fake.measurement).toHaveBeenCalledWith(
+      { type: 'st_page_critical_visual', values: { duration_ms: 456 } },
+      expect.objectContaining({
+        context: expect.objectContaining({
+          route: '/characters',
+          stage: 'critical_visual',
+          outcome: 'loaded',
+          cache: 'cache',
+          source_measurement_version: 'critical_visual_v1',
+        }),
+      })
+    );
+    expect(fake.event).toHaveBeenCalledWith(
+      'st_page_critical_visual_terminal',
+      expect.objectContaining({ stage: 'critical_visual', outcome: 'loaded' }),
+      'st.engineering',
+      expect.anything()
     );
     const config = fake.initialize.mock.calls[0]![0];
     expect(config).toMatchObject({
