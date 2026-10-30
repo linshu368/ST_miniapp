@@ -15,8 +15,19 @@ export const viewport: Viewport = {
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  let apiOrigin: string | undefined;
+  try {
+    // next.config resolves this public URL for production, preview and local builds.
+    const apiUrl = new URL(process.env.NEXT_PUBLIC_API_URL ?? '');
+    if (apiUrl.protocol === 'https:' || apiUrl.protocol === 'http:') apiOrigin = apiUrl.origin;
+  } catch {
+    // A relative API URL already uses this page's connection; it needs no hint.
+  }
   return (
     <html lang="zh" className="dark">
+      <head>
+        {apiOrigin ? <link rel="preconnect" href={apiOrigin} crossOrigin="anonymous" /> : null}
+      </head>
       <body className="min-h-screen bg-background text-foreground antialiased">
         <Providers>{children}</Providers>
       </body>

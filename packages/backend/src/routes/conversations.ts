@@ -658,6 +658,7 @@ export default async function conversationRoutes(app: FastifyInstance) {
         receivedAt,
         receivedMonotonicAt,
         firstTokenDeadlineMs,
+        catalogSnapshot: catalog,
         requestId: input.requestId,
         thinkingEnabled: input.thinkingEnabled,
         firstTokenMeasurement: input.firstTokenMeasurement,

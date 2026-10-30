@@ -12,8 +12,8 @@
   "assignee": "codex",
   "createdAt": "2026-10-29",
   "completedAt": null,
-  "branch": "codex/fallback-grafana-telemetry",
-  "base_branch": "codex/grafana-performance-observability",
+  "branch": "codex/chat-dispatch-latency",
+  "base_branch": "dev",
   "worktree_path": null,
   "commit": null,
   "pr_url": null,
@@ -21,17 +21,17 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "",
+  "notes": "2026-10-30用户选择优化调用前准备及次要连接改动，保持现行兜底/6秒；沿已批准任务追加，具体提交清单仍待审核。",
   "meta": {
     "module_impact": {
       "schema_version": 1,
       "mode": "changes",
       "modules": [
-        "frontend.business.conversation-ui",
         "backend.business.conversation-generation",
-        "frontend.infrastructure.client-ui-foundation",
         "backend.infrastructure.runtime-data-security",
-        "shared.business.conversation-contracts"
+        "database.business.conversation-storage",
+        "frontend.infrastructure.client-ui-foundation",
+        "frontend.business.conversation-ui"
       ]
     }
   }
