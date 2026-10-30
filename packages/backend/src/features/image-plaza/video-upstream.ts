@@ -1,11 +1,19 @@
 import { config } from '../../platform/config.js';
 import { veniceFetch } from '../../platform/venice-http.js';
 
+export interface VideoPlazaProviderErrorSummary {
+  status: number;
+  type: string | null;
+  message: string | null;
+  fields: string[];
+}
+
 export class VideoPlazaUpstreamError extends Error {
   constructor(
     readonly code: string,
     readonly disposition: 'refund' | 'unknown' | 'retry',
-    options?: ErrorOptions
+    options?: ErrorOptions,
+    readonly upstream?: VideoPlazaProviderErrorSummary
   ) {
     super(code, options);
     this.name = 'VideoPlazaUpstreamError';
@@ -28,9 +36,13 @@ export async function queueVideo(input: {
     prompt: input.prompt,
     duration: `${input.duration}s`,
     resolution: input.resolution,
-    audio: input.audio,
   };
-  if (input.aspectRatio) payload.aspect_ratio = input.aspectRatio;
+  // Venice defaults audio to true. Fixed-audio models reject this field even when its value is true;
+  // only the configurable opt-out needs to cross the provider boundary.
+  if (!input.audio) payload.audio = false;
+  // I2V providers derive output shape from the first frame. Some Venice I2V models reject the
+  // otherwise valid product-level aspect ratio, so only modes that advertise ratio control send it.
+  if (input.aspectRatio && input.inputMode !== 'i2v') payload.aspect_ratio = input.aspectRatio;
   if (input.inputMode === 'i2v' && input.referenceUrl) payload.image_url = input.referenceUrl;
   if (input.inputMode === 'r2v' && input.referenceUrl)
     payload.reference_image_urls = [input.referenceUrl];
@@ -49,17 +61,20 @@ export async function queueVideo(input: {
   } catch (cause) {
     throw new VideoPlazaUpstreamError('video_provider_submit_unknown', 'unknown', { cause });
   }
-  if (!response.ok) throw classify(response.status, 'queue');
+  if (!response.ok)
+    throw await classifyResponse(response, 'queue', [input.prompt, input.referenceUrl]);
   const parsed = parseQueueResponse(await response.json().catch(() => null));
   if (!parsed) throw new VideoPlazaUpstreamError('video_provider_submit_unknown', 'unknown');
   return { queueId: parsed.queueId, downloadUrl: parsed.downloadUrl };
 }
 
-export async function retrieveVideo(input: {
-  providerModelId: string;
-  queueId: string;
-}): Promise<
-  { kind: 'processing' } | { kind: 'completed'; bytes: Buffer | null; downloadUrl: string | null }
+export async function retrieveVideo(input: { providerModelId: string; queueId: string }): Promise<
+  | {
+      kind: 'processing';
+      averageExecutionTimeMs: number | null;
+      executionDurationMs: number | null;
+    }
+  | { kind: 'completed'; bytes: Buffer | null; downloadUrl: string | null }
 > {
   requireProvider();
   let response: Response;
@@ -80,15 +95,33 @@ export async function retrieveVideo(input: {
   } catch (cause) {
     throw new VideoPlazaUpstreamError('video_provider_poll_retry', 'retry', { cause });
   }
-  if (!response.ok) throw classify(response.status, 'retrieve');
+  if (!response.ok) throw await classifyResponse(response, 'retrieve');
   if ((response.headers.get('content-type') ?? '').toLowerCase().includes('video/mp4')) {
     return { kind: 'completed', bytes: await boundedBytes(response), downloadUrl: null };
   }
   const parsed = parseRetrieveResponse(await response.json().catch(() => null));
   if (!parsed) throw new VideoPlazaUpstreamError('video_provider_poll_retry', 'retry');
   return parsed.status === 'PROCESSING'
-    ? { kind: 'processing' }
+    ? {
+        kind: 'processing',
+        averageExecutionTimeMs: parsed.averageExecutionTimeMs,
+        executionDurationMs: parsed.executionDurationMs,
+      }
     : { kind: 'completed', bytes: null, downloadUrl: parsed.downloadUrl };
+}
+
+export function recommendedVideoPollDelayMs(input: {
+  pollCount: number;
+  averageExecutionTimeMs: number | null;
+  executionDurationMs: number | null;
+}): number {
+  const average = input.averageExecutionTimeMs;
+  const elapsed = input.executionDurationMs;
+  if (average !== null && elapsed !== null && average > 0 && elapsed >= 0) {
+    const remaining = Math.max(0, average - elapsed);
+    return Math.min(10_000, Math.max(5_000, Math.round(remaining / 4)));
+  }
+  return Math.min(10_000, Math.round(5_000 * 1.35 ** Math.min(Math.max(input.pollCount, 0), 4)));
 }
 
 export async function downloadVideo(url: string): Promise<Buffer> {
@@ -139,18 +172,113 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function classify(status: number, phase: 'queue' | 'retrieve'): VideoPlazaUpstreamError {
-  if (status === 422) return new VideoPlazaUpstreamError('video_moderation_rejected', 'refund');
+async function classifyResponse(
+  response: Response,
+  phase: 'queue' | 'retrieve',
+  sensitiveValues: Array<string | null> = []
+): Promise<VideoPlazaUpstreamError> {
+  const body = await response.json().catch(() => null);
+  return classify(
+    response.status,
+    phase,
+    summarizeProviderError(response.status, body, sensitiveValues)
+  );
+}
+
+function classify(
+  status: number,
+  phase: 'queue' | 'retrieve',
+  upstream?: VideoPlazaProviderErrorSummary
+): VideoPlazaUpstreamError {
+  if (status === 422)
+    return new VideoPlazaUpstreamError('video_moderation_rejected', 'refund', undefined, upstream);
   if (phase === 'retrieve' && status === 404)
-    return new VideoPlazaUpstreamError('video_provider_media_expired', 'refund');
+    return new VideoPlazaUpstreamError(
+      'video_provider_media_expired',
+      'refund',
+      undefined,
+      upstream
+    );
   if ([400, 402, 409, 413].includes(status))
-    return new VideoPlazaUpstreamError(`video_provider_http_${status}`, 'refund');
+    return new VideoPlazaUpstreamError(
+      `video_provider_http_${status}`,
+      'refund',
+      undefined,
+      upstream
+    );
   if ([429, 500, 503].includes(status))
-    return new VideoPlazaUpstreamError(`video_provider_http_${status}`, 'retry');
+    return new VideoPlazaUpstreamError(
+      `video_provider_http_${status}`,
+      'retry',
+      undefined,
+      upstream
+    );
   return new VideoPlazaUpstreamError(
     `video_provider_http_${status}`,
-    phase === 'queue' ? 'unknown' : 'retry'
+    phase === 'queue' ? 'unknown' : 'retry',
+    undefined,
+    upstream
   );
+}
+
+function summarizeProviderError(
+  status: number,
+  value: unknown,
+  sensitiveValues: Array<string | null>
+): VideoPlazaProviderErrorSummary {
+  const row = value && typeof value === 'object' ? (value as Record<string, unknown>) : null;
+  const error = row?.error;
+  const errorRow = error && typeof error === 'object' ? (error as Record<string, unknown>) : null;
+  const type = safeProviderType(errorRow?.type ?? errorRow?.code ?? row?.type ?? row?.code);
+  const rawMessage =
+    typeof error === 'string'
+      ? error
+      : (errorRow?.message ?? row?.message ?? (typeof value === 'string' ? value : null));
+  return {
+    status,
+    type,
+    message: safeProviderMessage(rawMessage, sensitiveValues),
+    fields: collectValidationFields(row?.details ?? errorRow?.details),
+  };
+}
+
+function safeProviderType(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().slice(0, 80);
+  return /^[a-zA-Z0-9_.:-]+$/.test(normalized) ? normalized : null;
+}
+
+function safeProviderMessage(value: unknown, sensitiveValues: Array<string | null>): string | null {
+  if (typeof value !== 'string') return null;
+  let sanitized = value;
+  for (const sensitive of sensitiveValues) {
+    if (sensitive) sanitized = sanitized.replaceAll(sensitive, '[redacted]');
+  }
+  sanitized = sanitized
+    .replace(/data:[^\s"']+/gi, '[data-url]')
+    .replace(/https?:\/\/[^\s"'<>]+/gi, '[url]')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 240);
+  return sanitized || null;
+}
+
+function collectValidationFields(value: unknown): string[] {
+  if (!value || typeof value !== 'object') return [];
+  const fields = new Set<string>();
+  const visit = (current: unknown, path: string[], depth: number): void => {
+    if (!current || typeof current !== 'object' || depth > 5 || fields.size >= 12) return;
+    for (const [key, child] of Object.entries(current)) {
+      if (key === '_errors') {
+        if (Array.isArray(child) && child.length > 0 && path.length > 0)
+          fields.add(path.join('.').slice(0, 120));
+        continue;
+      }
+      visit(child, [...path, key], depth + 1);
+    }
+  };
+  visit(value, [], 0);
+  return [...fields];
 }
 
 async function boundedBytes(response: Response): Promise<Buffer> {
@@ -187,15 +315,28 @@ function parseQueueResponse(
 function parseRetrieveResponse(value: unknown): {
   status: 'PROCESSING' | 'COMPLETED';
   downloadUrl: string | null;
+  averageExecutionTimeMs: number | null;
+  executionDurationMs: number | null;
 } | null {
   if (!value || typeof value !== 'object') return null;
-  const row = value as { status?: unknown; download_url?: unknown };
+  const row = value as {
+    status?: unknown;
+    download_url?: unknown;
+    average_execution_time?: unknown;
+    execution_duration?: unknown;
+  };
   if (row.status !== 'PROCESSING' && row.status !== 'COMPLETED') return null;
   if (row.download_url !== undefined && !isHttpsUrl(row.download_url)) return null;
   return {
     status: row.status,
     downloadUrl: typeof row.download_url === 'string' ? row.download_url : null,
+    averageExecutionTimeMs: nonNegativeNumber(row.average_execution_time),
+    executionDurationMs: nonNegativeNumber(row.execution_duration),
   };
+}
+
+function nonNegativeNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 }
 
 function isHttpsUrl(value: unknown): value is string {

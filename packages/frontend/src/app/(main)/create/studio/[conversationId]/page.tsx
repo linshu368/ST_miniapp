@@ -27,12 +27,14 @@ import {
   type ImagePlazaMode,
   type ImagePlazaModel,
   type VideoPlazaAttempt,
+  type VideoPlazaInputMode,
   type VideoPlazaModel,
   type VideoPlazaQuoteData,
 } from '@miniapp/shared';
 import {
   fileToImagePlazaPayload,
   isVideoPlazaAttemptTerminal,
+  videoPlazaQuoteRequestFromAttempt,
   validateImagePlazaReference,
   useCreateImagePlazaConversationMutation,
   useCreateVideoReferenceFromImageArtifactMutation,
@@ -380,28 +382,50 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
     resetVideoSettings(next);
   };
 
-  const generateVideo = async (nextPrompt = videoPrompt, source = 'video-composer') => {
-    if (!videoModel || !videoQuoteRequest || !nextPrompt.trim() || sending.current) return;
-    if (videoModel.image_input === 'required_reference' && !activeVideoReferenceId) {
+  const generateVideo = async (
+    nextPrompt = videoPrompt,
+    source = 'video-composer',
+    retryAttempt: VideoPlazaAttempt | null = null
+  ) => {
+    const targetModel = retryAttempt
+      ? videoModels.find((item) => item.id === retryAttempt.params.model_id)
+      : videoModel;
+    const quoteRequest = retryAttempt
+      ? videoPlazaQuoteRequestFromAttempt(retryAttempt)
+      : videoQuoteRequest;
+    const targetReferenceId = retryAttempt
+      ? retryAttempt.params.reference_artifact_id
+      : activeVideoReferenceId;
+    if (!targetModel || !quoteRequest || !nextPrompt.trim() || sending.current) {
+      if (retryAttempt && !targetModel) showNotice('原视频模型已下架，请先编辑并选择其他模型');
+      return;
+    }
+    if (!supportsVideoInputMode(targetModel, quoteRequest.input_mode)) {
+      showNotice('原视频模型的生成方式已变更，请先编辑后再生成');
+      return;
+    }
+    if (quoteRequest.input_mode !== 't2v' && !targetReferenceId) {
       showNotice('当前模型必须添加参考图');
       return;
     }
-    if (activeVideoReferenceId && localPreview && referenceStatus !== 'ready') return;
+    if (!retryAttempt && activeVideoReferenceId && localPreview && referenceStatus !== 'ready')
+      return;
     sending.current = true;
     setSubmittingSource(source);
     const action = startAction('video_generate');
     try {
+      const quoteKey = JSON.stringify(quoteRequest);
       const cached = videoQuoteCache.current;
       const quoted =
-        cached?.key === videoQuoteKey && Date.parse(cached.value.expires_at) > Date.now() + 5_000
+        cached?.key === quoteKey && Date.parse(cached.value.expires_at) > Date.now() + 5_000
           ? cached.value
-          : await videoQuote.mutateAsync(videoQuoteRequest);
-      videoQuoteCache.current = { key: videoQuoteKey, value: quoted };
+          : await videoQuote.mutateAsync(quoteRequest);
+      videoQuoteCache.current = { key: quoteKey, value: quoted };
       await submitVideo.mutateAsync({
         prompt: nextPrompt.trim(),
         quote_id: quoted.quote_id,
         idempotency_key: crypto.randomUUID(),
-        reference_artifact_id: activeVideoReferenceId,
+        reference_artifact_id: targetReferenceId,
       });
       if (source === 'video-composer') clearVideoIfUnchanged(nextPrompt);
       followLatestRef.current = true;
@@ -792,7 +816,9 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
                       }
                       setReferenceArtifactId(attempt.params.reference_artifact_id);
                     }}
-                    onRegenerate={(value) => void generateVideo(value, message.id)}
+                    onRegenerate={(attempt, value) =>
+                      void generateVideo(value, message.id, attempt)
+                    }
                     onShare={(artifactId, prompt) => void confirmVideoShare(artifactId, prompt)}
                     onNotice={showNotice}
                   />
@@ -1219,12 +1245,21 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
   );
 }
 
+function supportsVideoInputMode(model: VideoPlazaModel, mode: VideoPlazaInputMode): boolean {
+  if (mode === 't2v') return model.image_input !== 'required_reference';
+  if (mode === 'i2v')
+    return (
+      model.image_input === 'optional_first_frame' || model.image_input === 'required_reference'
+    );
+  return model.image_input === 'optional_reference' || model.image_input === 'required_reference';
+}
+
 function VideoAttemptCard(props: {
   initialAttempt: VideoPlazaAttempt;
   prompt: string;
   sharing: boolean;
   onEdit: (attempt: VideoPlazaAttempt, prompt: string) => void;
-  onRegenerate: (prompt: string) => void;
+  onRegenerate: (attempt: VideoPlazaAttempt, prompt: string) => void;
   onShare: (artifactId: string, prompt: string) => void;
   onNotice: (message: string) => void;
 }) {
@@ -1265,10 +1300,10 @@ function VideoAttemptCard(props: {
         ) : null}
         <button
           type="button"
-          onClick={() => props.onRegenerate(props.prompt)}
+          onClick={() => props.onRegenerate(attempt, props.prompt)}
           className="mt-3 rounded-full bg-primary px-4 py-2 text-xs font-bold text-primary-foreground"
         >
-          按当前设置再生成
+          按原参数再生成
         </button>
       </div>
     );
@@ -1279,7 +1314,7 @@ function VideoAttemptCard(props: {
       prompt={props.prompt}
       sharing={props.sharing}
       onEdit={() => props.onEdit(attempt, props.prompt)}
-      onRegenerate={() => props.onRegenerate(props.prompt)}
+      onRegenerate={() => props.onRegenerate(attempt, props.prompt)}
       onShare={() => props.onShare(attempt.artifact!.id, props.prompt)}
       onNotice={props.onNotice}
     />

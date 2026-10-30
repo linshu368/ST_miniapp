@@ -519,6 +519,8 @@ function createDefaultVideoCatalog() {
           audio_configurable: true,
           default_audio: true,
           min_short_side: 300,
+          min_ratio: 0.4,
+          max_ratio: 2.5,
           seed_aliases: ['Seedance 2.0 R2V Enhanced'],
         },
         5

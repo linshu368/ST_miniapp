@@ -42,6 +42,7 @@ import {
 } from '../features/image-plaza/config.js';
 import { ImagePlazaRepository } from '../features/image-plaza/repository.js';
 import { VideoPlazaRepository } from '../features/image-plaza/video-repository.js';
+import { wakeVideoPlazaGenerationJob } from '../features/image-plaza/video-job.js';
 import { classifyImagePlazaTags, waitForImagePlazaTags } from '../features/image-plaza/tagging.js';
 import { requireTelegramAuth } from '../middleware/auth.js';
 import { getOrCreateDbUser } from '../lib/user.js';
@@ -368,12 +369,13 @@ export default async function imagePlazaRoutes(app: FastifyInstance) {
         requireVideoGenerationProvider();
         if (!runtime.videoCatalog)
           return reply.status(503).send(fail('VIDEO_PLAZA_UNAVAILABLE', '视频创作暂不可用'));
-        const attempt = await videos().createAttempt({
+        const result = await videos().createAttempt({
           userId: context.id,
           conversationId,
           body: body.data,
         });
-        return reply.status(202).send(ok<SubmitVideoPlazaAttemptData>({ attempt }));
+        wakeVideoPlazaGenerationJob();
+        return reply.status(202).send(ok<SubmitVideoPlazaAttemptData>(result));
       } catch (err) {
         return routeError(request, reply, err);
       }

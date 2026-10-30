@@ -39,6 +39,7 @@ import type {
   ShareVideoPlazaWorkRequest,
   SubmitVideoPlazaAttemptData,
   SubmitVideoPlazaAttemptRequest,
+  VideoPlazaAttempt,
   VideoPlazaQuoteData,
   VideoPlazaQuoteRequest,
 } from '@miniapp/shared';
@@ -87,6 +88,97 @@ export function isVideoPlazaAttemptTerminal(
   return status !== undefined && VIDEO_PLAZA_TERMINAL_STATUSES.has(status);
 }
 
+export function videoPlazaQuoteRequestFromAttempt(
+  attempt: VideoPlazaAttempt
+): VideoPlazaQuoteRequest {
+  const { model_id, input_mode, duration_s, resolution, aspect_ratio, audio } = attempt.params;
+  return { model_id, input_mode, duration_s, resolution, aspect_ratio, audio };
+}
+
+export function mergeVideoAttemptIntoConversationCache(
+  client: QueryClient,
+  attempt: VideoPlazaAttempt
+): void {
+  client.setQueryData<GetImagePlazaConversationData>(
+    imagePlazaKeys.conversation(attempt.conversation_id),
+    (current) => {
+      if (!current) return current;
+      let changed = false;
+      const messages = current.conversation.messages.map((message) => {
+        if (message.video_attempt?.id !== attempt.id) return message;
+        if (Date.parse(message.video_attempt.updated_at) > Date.parse(attempt.updated_at))
+          return message;
+        changed = true;
+        return { ...message, video_attempt: attempt };
+      });
+      return changed
+        ? {
+            conversation: {
+              ...current.conversation,
+              messages,
+              updated_at:
+                Date.parse(current.conversation.updated_at) > Date.parse(attempt.updated_at)
+                  ? current.conversation.updated_at
+                  : attempt.updated_at,
+            },
+          }
+        : current;
+    }
+  );
+}
+
+export function cacheSubmittedVideoAttempt(
+  client: QueryClient,
+  conversationId: string,
+  data: SubmitVideoPlazaAttemptData,
+  body: SubmitVideoPlazaAttemptRequest
+): boolean {
+  const refs = data.message_refs;
+  const current = client.getQueryData<GetImagePlazaConversationData>(
+    imagePlazaKeys.conversation(conversationId)
+  );
+  if (!refs || !current) return false;
+  if (
+    current.conversation.messages.some(
+      (message) =>
+        message.video_attempt?.id === data.attempt.id ||
+        message.id === refs.user.id ||
+        message.id === refs.assistant.id
+    )
+  ) {
+    mergeVideoAttemptIntoConversationCache(client, data.attempt);
+    return true;
+  }
+  client.setQueryData<GetImagePlazaConversationData>(imagePlazaKeys.conversation(conversationId), {
+    conversation: {
+      ...current.conversation,
+      messages: [
+        ...current.conversation.messages,
+        {
+          id: refs.user.id,
+          role: 'user',
+          content: body.prompt,
+          media_type: 'video',
+          attempt: null,
+          video_attempt: null,
+          created_at: refs.user.created_at,
+        },
+        {
+          id: refs.assistant.id,
+          role: 'assistant',
+          content: '视频生成排队中',
+          media_type: 'video',
+          attempt: null,
+          video_attempt: data.attempt,
+          created_at: refs.assistant.created_at,
+        },
+      ],
+      updated_at: data.attempt.updated_at,
+    },
+  });
+  return true;
+}
+
 export function useVideoPlazaQuoteMutation() {
   return useMutation({
     mutationFn: (body: VideoPlazaQuoteRequest) =>
@@ -106,11 +198,13 @@ export function useSubmitVideoPlazaAttemptMutation(conversationId: string) {
         `/api/image-plaza/conversations/${conversationId}/video-attempts`,
         { method: 'POST', body: JSON.stringify(body), signal: AbortSignal.timeout(15_000) }
       ),
-    onSuccess: ({ attempt }) => {
+    onSuccess: (data, body) => {
+      const { attempt } = data;
       client.setQueryData<GetVideoPlazaAttemptData>(imagePlazaKeys.videoAttempt(attempt.id), {
         attempt,
       });
-      void client.invalidateQueries({ queryKey: imagePlazaKeys.conversation(conversationId) });
+      if (!cacheSubmittedVideoAttempt(client, conversationId, data, body))
+        void client.invalidateQueries({ queryKey: imagePlazaKeys.conversation(conversationId) });
       void client.invalidateQueries({ queryKey: paymentKeys.wallet() });
     },
   });
@@ -131,12 +225,16 @@ export function useVideoPlazaAttemptQuery(attemptId: string) {
     refetchInterval: (query) => {
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return false;
       const status = query.state.data?.attempt.status;
-      return status && !isVideoPlazaAttemptTerminal(status)
-        ? Math.min(15_000, Math.round(3_000 * 1.5 ** Math.min(query.state.dataUpdateCount, 5)))
-        : false;
+      if (!status || isVideoPlazaAttemptTerminal(status)) return false;
+      if (status === 'storing') return 2_000;
+      if (status === 'pending' || status === 'submitting') return 3_000;
+      return 5_000;
     },
   });
   const { refetch } = query;
+  useEffect(() => {
+    if (query.data?.attempt) mergeVideoAttemptIntoConversationCache(client, query.data.attempt);
+  }, [client, query.data?.attempt]);
   useEffect(() => {
     const status = query.data?.attempt.status;
     if (!status || !isVideoPlazaAttemptTerminal(status) || terminalSeen.current === status) return;

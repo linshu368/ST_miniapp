@@ -7,6 +7,7 @@ import {
   completeVideo,
   downloadVideo,
   queueVideo,
+  recommendedVideoPollDelayMs,
   retrieveVideo,
   VideoPlazaUpstreamError,
 } from './video-upstream.js';
@@ -14,13 +15,22 @@ import { isVideoMediaAvailable, prepareVideo } from './video-media.js';
 
 let timer: NodeJS.Timeout | null = null;
 let running = false;
+let wakeTick: (() => void) | null = null;
+
+export function wakeVideoPlazaGenerationJob(): void {
+  wakeTick?.();
+}
 
 export function startVideoPlazaGenerationJob(log: FastifyBaseLogger): void {
   if (!config.imagePlaza.videoWorkerEnabled || !isVideoMediaAvailable() || timer) return;
   const repository = new VideoPlazaRepository();
   const workerId = `video-${process.pid}-${randomUUID()}`;
-  const tick = async () => {
-    if (running) return;
+  let rerunRequested = false;
+  const tick = async (rerunIfBusy = false): Promise<void> => {
+    if (running) {
+      if (rerunIfBusy) rerunRequested = true;
+      return;
+    }
     running = true;
     try {
       const submitting = await repository.claimSubmitJobs(
@@ -39,8 +49,13 @@ export function startVideoPlazaGenerationJob(log: FastifyBaseLogger): void {
       log.error({ err, event: 'video_plaza.worker_tick_failed' }, 'Video plaza worker tick failed');
     } finally {
       running = false;
+      if (rerunRequested) {
+        rerunRequested = false;
+        void tick();
+      }
     }
   };
+  wakeTick = () => void tick(true);
   void tick();
   timer = setInterval(() => void tick(), Math.max(1_000, config.imagePlaza.videoWorkerIntervalMs));
   timer.unref();
@@ -49,6 +64,7 @@ export function startVideoPlazaGenerationJob(log: FastifyBaseLogger): void {
 export function stopVideoPlazaGenerationJob(): void {
   if (timer) clearInterval(timer);
   timer = null;
+  wakeTick = null;
   running = false;
 }
 
@@ -58,6 +74,7 @@ async function submit(
   workerId: string,
   log: FastifyBaseLogger
 ): Promise<void> {
+  const startedAt = Date.now();
   try {
     const referenceUrl = await repository.getReferenceUrl(attempt.reference_artifact_id);
     const queued = await queueVideo({
@@ -71,10 +88,33 @@ async function submit(
       referenceUrl,
     });
     await repository.markQueued(attempt.id, workerId, queued.queueId, queued.downloadUrl);
-    log.info({ event: 'video_plaza.queued', attemptId: attempt.id }, 'Video queued');
+    log.info(
+      {
+        event: 'video_plaza.queued',
+        attemptId: attempt.id,
+        modelId: attempt.model_id,
+        inputMode: attempt.input_mode,
+        durationS: attempt.duration_s,
+        resolution: attempt.resolution,
+        audio: attempt.audio,
+        providerLatencyMs: Date.now() - startedAt,
+        totalLatencyMs: Math.max(0, Date.now() - Date.parse(attempt.created_at)),
+      },
+      'Video queued'
+    );
   } catch (err) {
     if (err instanceof VideoPlazaUpstreamError && err.disposition === 'retry') {
       await repository.releaseSubmit(attempt.id, workerId, attempt.poll_count + 1);
+      log.warn(
+        {
+          err,
+          event: 'video_plaza.submit_retry_scheduled',
+          attemptId: attempt.id,
+          modelId: attempt.model_id,
+          latencyMs: Date.now() - startedAt,
+        },
+        'Video submit retry scheduled'
+      );
       return;
     }
     const unknown = err instanceof VideoPlazaUpstreamError && err.disposition === 'unknown';
@@ -88,7 +128,18 @@ async function submit(
       refund: !unknown,
     });
     log.error(
-      { err, event: 'video_plaza.submit_failed', attemptId: attempt.id },
+      {
+        err,
+        event: 'video_plaza.submit_failed',
+        attemptId: attempt.id,
+        modelId: attempt.model_id,
+        inputMode: attempt.input_mode,
+        durationS: attempt.duration_s,
+        resolution: attempt.resolution,
+        audio: attempt.audio,
+        latencyMs: Date.now() - startedAt,
+        totalLatencyMs: Math.max(0, Date.now() - Date.parse(attempt.created_at)),
+      },
       'Video submit failed'
     );
   }
@@ -100,6 +151,7 @@ async function poll(
   workerId: string,
   log: FastifyBaseLogger
 ): Promise<void> {
+  const startedAt = Date.now();
   if (!attempt.provider_request_id) {
     await repository.fail(attempt.id, workerId, {
       status: 'failed_unknown',
@@ -117,23 +169,40 @@ async function poll(
       queueId: attempt.provider_request_id,
     });
     if (result.kind === 'processing') {
-      await repository.schedulePoll(attempt.id, workerId, 'processing', attempt.poll_count + 1);
+      const nextPollDelayMs = recommendedVideoPollDelayMs({
+        pollCount: attempt.poll_count,
+        averageExecutionTimeMs: result.averageExecutionTimeMs,
+        executionDurationMs: result.executionDurationMs,
+      });
+      await repository.schedulePoll(
+        attempt.id,
+        workerId,
+        'processing',
+        attempt.poll_count + 1,
+        nextPollDelayMs
+      );
       return;
     }
     await repository.markStoring(attempt.id, workerId, result.downloadUrl ?? attempt.download_url);
     const bytes =
       result.bytes ?? (await downloadVideo(result.downloadUrl ?? attempt.download_url ?? ''));
     const media = await prepareVideo(bytes);
-    await uploadPlazaVideoAsset({
-      path: storagePath,
-      bytes: media.video,
-      contentType: 'video/mp4',
-    });
-    await uploadPlazaVideoAsset({
-      path: posterPath,
-      bytes: media.poster,
-      contentType: 'image/jpeg',
-    });
+    const uploadResults = await Promise.allSettled([
+      uploadPlazaVideoAsset({
+        path: storagePath,
+        bytes: media.video,
+        contentType: 'video/mp4',
+      }),
+      uploadPlazaVideoAsset({
+        path: posterPath,
+        bytes: media.poster,
+        contentType: 'image/jpeg',
+      }),
+    ]);
+    const failedUpload = uploadResults.find(
+      (result): result is PromiseRejectedResult => result.status === 'rejected'
+    );
+    if (failedUpload) throw failedUpload.reason;
     // RPC 提交结果一旦可能未知，就保留对象交给对账流程，避免删除其实已发布的资源。
     publishing = true;
     await repository.publish({
@@ -154,7 +223,17 @@ async function poll(
         'Video provider cleanup failed'
       )
     );
-    log.info({ event: 'video_plaza.ready', attemptId: attempt.id }, 'Video ready');
+    log.info(
+      {
+        event: 'video_plaza.ready',
+        attemptId: attempt.id,
+        modelId: attempt.model_id,
+        pollCount: attempt.poll_count,
+        finalizationLatencyMs: Date.now() - startedAt,
+        totalLatencyMs: Math.max(0, Date.now() - Date.parse(attempt.created_at)),
+      },
+      'Video ready'
+    );
   } catch (err) {
     if (err instanceof VideoPlazaUpstreamError && err.disposition === 'retry') {
       if (Date.now() - Date.parse(attempt.created_at) < config.imagePlaza.videoPollDeadlineMs) {
@@ -186,7 +265,15 @@ async function poll(
       refund: true,
     });
     log.error(
-      { err, event: 'video_plaza.poll_failed', attemptId: attempt.id },
+      {
+        err,
+        event: 'video_plaza.poll_failed',
+        attemptId: attempt.id,
+        modelId: attempt.model_id,
+        pollCount: attempt.poll_count,
+        latencyMs: Date.now() - startedAt,
+        totalLatencyMs: Math.max(0, Date.now() - Date.parse(attempt.created_at)),
+      },
       'Video processing failed'
     );
   }

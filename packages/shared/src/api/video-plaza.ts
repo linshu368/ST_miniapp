@@ -308,7 +308,23 @@ export const VideoPlazaAttemptSchema = z.object({
 });
 export type VideoPlazaAttempt = z.infer<typeof VideoPlazaAttemptSchema>;
 
-export const SubmitVideoPlazaAttemptDataSchema = z.object({ attempt: VideoPlazaAttemptSchema });
+export const VideoPlazaSubmittedMessageRefsSchema = z.object({
+  user: z.object({
+    id: z.string().uuid(),
+    created_at: z.string().datetime(),
+  }),
+  assistant: z.object({
+    id: z.string().uuid(),
+    created_at: z.string().datetime(),
+  }),
+});
+export type VideoPlazaSubmittedMessageRefs = z.infer<typeof VideoPlazaSubmittedMessageRefsSchema>;
+
+export const SubmitVideoPlazaAttemptDataSchema = z.object({
+  attempt: VideoPlazaAttemptSchema,
+  // Optional keeps a new Frontend compatible with an older Backend during rolling deploys.
+  message_refs: VideoPlazaSubmittedMessageRefsSchema.optional(),
+});
 export type SubmitVideoPlazaAttemptData = z.infer<typeof SubmitVideoPlazaAttemptDataSchema>;
 
 export const VideoPlazaSnapshotSchema = z.object({
