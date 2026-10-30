@@ -12,8 +12,14 @@ DECLARE
  card_id uuid:='10000000-0000-4000-8000-000000000006';
  s_empty uuid:=gen_random_uuid(); s_a uuid:=gen_random_uuid(); s_owner uuid:=gen_random_uuid(); s_rollback uuid:=gen_random_uuid();
  official_id uuid:=gen_random_uuid(); s_official uuid:=gen_random_uuid();
- r jsonb; d jsonb; runtime jsonb; payload jsonb; turn jsonb; branch jsonb; frozen_a uuid; frozen_b uuid; owner_frozen uuid; expected integer;
+ r jsonb; d jsonb; runtime jsonb; payload jsonb; turn jsonb; branch jsonb; large_import jsonb;
+ frozen_a uuid; frozen_b uuid; owner_frozen uuid; expected integer;
 BEGIN
+ ASSERT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='app_core.characters'::regclass AND attisdropped),
+   'fixture must retain historical dropped column slots';
+ SELECT jsonb_build_object('fixture','synthetic-only','entries',jsonb_agg(jsonb_build_object('id',n,'content',repeat(md5(n::text),64))))
+ INTO large_import FROM generate_series(1,128) n;
+ ASSERT octet_length(large_import::text)>250000,'fixture must exercise large imported JSON';
  INSERT INTO app_core.users(id) VALUES(owner_id),(viewer_id),(outsider_id);
  INSERT INTO admin.admin_users VALUES(admin_id,'fixture@example.invalid','operator',true,false);
  INSERT INTO app_core.character_cover_assets VALUES(cover_id,owner_id,'fixture/cover.png','image/png',100,100,100,now());
@@ -22,6 +28,9 @@ BEGIN
  runtime:=jsonb_build_object('name','角色A','description','简介A','first_mes','开场A','system_prompt','prompt A');
  payload:=jsonb_build_object('draft',d,'runtime',runtime,'cover_asset_id',cover_id);
  r:=app_core.mutate_creator_character(owner_id,card_id,'create',NULL,payload);
+ UPDATE app_core.characters SET character_persona_and_style='creator fixture persona',raw_card=large_import,
+   character_book=large_import,extensions='{"fixture":{"enabled":true}}',alternate_greetings='["备选开场"]'
+ WHERE id=card_id;
  ASSERT (r->>'revision')::integer=1;
  ASSERT app_core.mutate_creator_character(owner_id,card_id,'create',NULL,payload)=r,'create replay changed draft';
  BEGIN
@@ -45,6 +54,10 @@ BEGIN
  ASSERT app_core.can_discover_character(card_id);
  PERFORM app_core.grant_creator_character_access(viewer_id,card_id);
  PERFORM miniapp_features.set_character_favorite(viewer_id,card_id,true);
+ ASSERT app_core.read_character_runtime(card_id,viewer_id)->>'character_persona_and_style'='creator fixture persona',
+   'creator runtime lost the direct persona field';
+ ASSERT app_core.read_character_runtime(card_id,viewer_id,true)=jsonb_build_object('name','角色A','first_mes','开场A'),
+   'creator opening-only projection changed';
  INSERT INTO experience.chat_sessions(id,user_id,character_id) VALUES(s_empty,viewer_id,card_id),(s_a,viewer_id,card_id),(s_owner,owner_id,card_id),(s_rollback,viewer_id,card_id);
  ASSERT (SELECT character_version_id IS NULL FROM experience.chat_sessions WHERE id=s_empty),'empty session froze prematurely';
  turn:=experience.start_chat_history_turn_with_current_postprocess(s_a,'第一句话','fixture');
@@ -52,6 +65,10 @@ BEGIN
  SELECT character_version_id INTO frozen_a FROM experience.chat_sessions WHERE id=s_a;
  ASSERT frozen_a IS NOT NULL;
  ASSERT app_core.read_session_character_runtime(card_id,viewer_id,s_a)->>'system_prompt'='prompt A';
+ ASSERT app_core.read_session_character_runtime(card_id,viewer_id,s_a)->>'character_persona_and_style'='creator fixture persona',
+   'first-turn version binding lost persona';
+ ASSERT NOT (app_core.read_session_character_runtime(card_id,viewer_id,s_a) ? 'raw_card'),
+   'unrelated imported JSON leaked into the frozen runtime';
  -- Transaction failure rolls back the version binding with the turn insert.
  BEGIN
   PERFORM experience.start_chat_history_turn_with_current_postprocess(s_rollback,'will rollback','fixture');
@@ -127,11 +144,22 @@ BEGIN
  ASSERT NOT has_table_privilege('authenticated','app_core.character_creations','SELECT');
  ASSERT NOT has_function_privilege('authenticated','app_core.mutate_creator_character(uuid,uuid,text,integer,jsonb)','EXECUTE');
  -- Legacy official cards do not get snapshots and existing sessions continue after unlisting.
- INSERT INTO app_core.characters(id,name,system_prompt) VALUES(official_id,'官方卡','official A');
+ INSERT INTO app_core.characters(id,name,first_mes,system_prompt,character_persona_and_style,raw_card,character_book,extensions,alternate_greetings)
+ VALUES(official_id,'官方卡','官方开场','official A','official fixture persona',large_import,large_import,'{"fixture":true}','["备选开场"]');
+ ASSERT app_core.read_character_runtime(official_id,viewer_id,true)=jsonb_build_object('name','官方卡','first_mes','官方开场'),
+   'official card opening failed with imported JSON and dropped columns';
+ ASSERT app_core.read_character_runtime(official_id,viewer_id)->>'character_persona_and_style'='official fixture persona',
+   'official runtime lost persona';
  INSERT INTO experience.chat_sessions(id,user_id,character_id) VALUES(s_official,viewer_id,official_id);
+ ASSERT app_core.read_session_character_runtime(official_id,viewer_id,s_official,true)=jsonb_build_object('name','官方卡','first_mes','官方开场'),
+   'legacy unversioned session opening failed';
  turn:=experience.start_chat_history_turn_with_current_postprocess(s_official,'官方第一句','fixture');
  ASSERT (SELECT character_version_id IS NULL FROM experience.chat_sessions WHERE id=s_official);
  UPDATE app_core.characters SET enabled=false,system_prompt='official B' WHERE id=official_id;
  ASSERT app_core.read_session_character_runtime(official_id,viewer_id,s_official)->>'system_prompt'='official B';
+ ASSERT app_core.read_session_character_runtime(official_id,viewer_id,s_official,true)->>'first_mes'='官方开场';
+ UPDATE app_core.characters SET character_persona_and_style=NULL WHERE id=official_id;
+ ASSERT app_core.read_character_runtime(official_id,viewer_id)->'character_persona_and_style'='null'::jsonb,
+   'nullable persona changed its JSON contract';
 END $test$;
 SELECT 'creator permissions and immutable card versions passed' AS result;
