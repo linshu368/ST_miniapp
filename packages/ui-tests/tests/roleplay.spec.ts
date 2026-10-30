@@ -56,7 +56,9 @@ test('@navigation @layout 五入口跨模块保持统一，末项与操作条不
   page,
   preview,
 }) => {
-  test.setTimeout(90_000);
+  // 该综合场景会在独立 Next dev 进程中首次编译多个动态路由和社群 Sheet；
+  // 保留每项断言原超时，只给串行冷编译留足总预算。
+  test.setTimeout(120_000);
   const nav = page.getByRole('navigation', { name: '主导航', exact: true });
   const labels = ['角色', 'AI短剧', '首页', '生成', '我的'];
   let baseline:
@@ -193,7 +195,16 @@ test('@navigation @layout 五入口跨模块保持统一，末项与操作条不
   await checkNav('我的');
   await expect(page.getByRole('link', { name: '联系客服', exact: true })).toBeVisible();
   await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-  await aboveNav(page.getByRole('button', { name: /官方社群/ }));
+  const communityEntry = page.getByRole('button', { name: /官方社群/ });
+  await aboveNav(communityEntry);
+  await communityEntry.click();
+  const communitySheet = page.getByRole('dialog');
+  await expect(communitySheet).toBeVisible();
+  await expect(
+    communitySheet.getByRole('heading', { name: '官方社群', exact: true })
+  ).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(communitySheet).toHaveCount(0);
 
   const secondary = [
     { path: studioPath, ready: () => page.getByPlaceholder('描述你想生成的画面…') },

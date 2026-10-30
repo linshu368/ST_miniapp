@@ -1,0 +1,38 @@
+{
+  "id": "optimize-1030-performance-tail",
+  "name": "optimize-1030-performance-tail",
+  "title": "30日性能长尾分析优化",
+  "description": "在已完成的 10 月 30 日首轮优化基础上，减少 Telegram Android 冷启动和主导航期间无意下载的共享调试代码、非目标路由与按需面板代码。",
+  "status": "completed",
+  "dev_type": "performance",
+  "scope": "frontend",
+  "package": "frontend",
+  "priority": "P1",
+  "creator": "cline",
+  "assignee": "cline",
+  "createdAt": "2026-10-30",
+  "completedAt": "2026-10-30",
+  "branch": "fix_request_speed",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    ".trellis/tasks/archive/2026-10/10-30-analyze-1030-performance-regression/analysis.md",
+    ".trellis/tasks/archive/2026-10/10-30-sentry-1030-performance-optimization/verification.md",
+    "packages/frontend/src/app/providers.tsx",
+    "packages/frontend/src/components/nav/bottom-nav.tsx",
+    "packages/frontend/src/app/(main)/profile/page.tsx"
+  ],
+  "notes": "上一轮已完成页面请求优先级、图片、工作室预热、短剧拆包和聊天准备优化；本任务只处理仍存在的共享初始代码与隐式路由预取。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "no_module_change",
+      "reason": "仅调整现有调试工具、主导航预取和既有 Profile 按需面板的加载时机，不改变模块职责、公开契约、数据源或业务状态。"
+    }
+  }
+}
