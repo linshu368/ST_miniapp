@@ -7,6 +7,7 @@ import {
   DEFAULT_CHECKIN_NEW_USER_CREDITS,
   DEFAULT_CHECKIN_VETERAN_CREDITS,
   DEFAULT_VIP_CHECKIN_BONUS_CONFIG,
+  getNextDailyCheckinAt,
   parseCheckinTierCredits,
   type GetWalletBalanceData,
   type VipCheckinBonusConfig,
@@ -678,9 +679,7 @@ export class MiniappWalletRepository {
     }
 
     const lastClaimedAt = (data as { claimed_at?: string } | null)?.claimed_at ?? null;
-    const nextClaimAt = lastClaimedAt
-      ? new Date(new Date(lastClaimedAt).getTime() + 24 * 60 * 60 * 1000).toISOString()
-      : null;
+    const nextClaimAt = lastClaimedAt ? getNextDailyCheckinAt(lastClaimedAt) : null;
 
     return {
       can_claim: !nextClaimAt || now.getTime() >= new Date(nextClaimAt).getTime(),

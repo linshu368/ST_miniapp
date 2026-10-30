@@ -155,6 +155,8 @@ Admin Vercel Preview 在构建期固定 API 映射：普通 branch Preview 与 `
 
 ## 6. Supabase 与数据库迁移
 
+签到零点更新（2026-10-30，本地已验证，未发布）：`20261030_checkin_calendar_day.sql` 将领取资格改为北京时间每天 00:00 恢复；旧记录无需回填，VIP/新用户/老用户金额沿用配置，不清空已领余额。先 TEST/生产逐环境迁移，再发布 Backend/Frontend。个人中心跨零点回读服务端资格；回归复用 `bash scripts/test-vip-billing-migrations.sh`（无本机 PostgreSQL 时使用隔离 Docker PG17）及 `pnpm test:ui --grep @profile`。
+
 短剧目录复用 `/api/dramas` 的完整标题、标签、简介，在前端做搜索／分类交集和排序。剧级文字逐字段采用 `dramas → 同剧 ai_results → 空值`；“最新”采用可播视频最早的 `created_at`，推荐保留接口顺序。`20261026_drama_video_created_at.sql` 仅计划用于 TEST：为已核验的 577 条存量按来源／消息升序补录展示时间，新增视频由独立上传端在首次上传成功时写入（本仓库不改该脚本）。先迁移验收，再发布 Backend／Frontend；当前远端执行状态和验证限制见[任务记录](.trellis/tasks/10-26-drama-mvp-search-latest/verification.md)，字段及恢复约定见[短剧目录契约](.trellis/spec/database/supabase/drama-catalog.md)。
 
 本地待评审短剧新版以 `/` 沉浸首页、`/dramas` 双列剧场为两个入口，角色发现位于 `/characters`。公共底栏统一为「角色 / AI短剧 / 中央播放首页 / 生成 / 我的」五入口，共享高度、安全区与隐藏规则，角色和影像内部交互保持独立。所有短剧由官方发布，不提供博主关注。收藏/续看仍保存在本设备；点赞与评论通过鉴权互动 API。新表和 RPC 仅在 `drama_archive`，发布须先执行 `20261027_drama_interactions.sql`；当前未执行线上迁移/发布。隔离验证：`bash scripts/test-drama-interactions-migration.sh`（需本机 Docker 与 postgres:17）；固定手机验收：`pnpm test:ui --grep @drama`。详见[本轮验收记录](.trellis/tasks/10-27-drama-mobile-ux/verification.md)。
