@@ -629,8 +629,10 @@ export default async function conversationRoutes(app: FastifyInstance) {
     let preparationSignal = AbortSignal.timeout(DEFAULT_FIRST_TOKEN_DEADLINE_MS);
 
     try {
-      const catalog = await withConversationPreparationDeadline(
-        fetchModelCatalogSnapshot(),
+      // 模型目录与 Telegram→内部用户映射相互独立；身份创建由 tg_id 唯一约束保证幂等。
+      // 同时启动可去掉冷缓存下的一段串行往返，仍共同受默认首字准备预算约束。
+      const [catalog, dbUser] = await withConversationPreparationDeadline(
+        Promise.all([fetchModelCatalogSnapshot(), getOrCreateDbUser(tgUser)]),
         preparationSignal
       );
       const firstTokenDeadlineMs =
@@ -640,10 +642,6 @@ export default async function conversationRoutes(app: FastifyInstance) {
       );
       // Bound read-only preparation by the configured first-token budget.
       // Race each preparation await, never a block containing generation or quota writes.
-      const dbUser = await withConversationPreparationDeadline(
-        getOrCreateDbUser(tgUser),
-        preparationSignal
-      );
       preparationSignal.throwIfAborted();
       const session = await withConversationPreparationDeadline(
         sessions.requireSession(sessionId, dbUser.id),
