@@ -5,8 +5,8 @@ scope: backend
 category: business
 status: active
 owners: [backend]
-last_verified_task: .trellis/tasks/10-28-first-token-race/
-last_verified_at: 2026-10-28
+last_verified_task: .trellis/tasks/10-30-image-plaza-edit-400-compat/
+last_verified_at: 2026-10-30
 ---
 
 # 会话与生成
@@ -68,12 +68,15 @@ OpenRouter mapper、计费读取和回捞仓储统一使用专表的厂商原名
 
 `features/image-plaza` 是图片创作广场的独立任务域，不复用聊天 `features/image` attempt。链路为报价快照 → 幂等受理 → worker 租约 → Venice 单次写调用（明确超时、不自动重试）→ 私有 Storage → 原子结算；上游结果不确定时进入 `failed_unknown` 且不扣费。
 
+Venice 单图编辑按报价快照的 `sizingMode` 组装尺寸字段：所有编辑请求保留 `aspect_ratio`，仅 `resolution` 模式且档位为 `1K`/`2K` 时发送 `resolution`；`aspect_ratio`/`pixels` 模式的内部 `fixed` 占位不得改写为上游 `1K`。明确非 2xx 仍单次失败且不进入图片结算。
+
 审核后的 Civitai 初始数据通过独立离线导入器进入公开作品，不伪造用户、会话或生成 attempt。导入保留最多 2000 字原始提示词与模型映射，超限行隔离且不截断；apply 必须同时提供逐条审核清单、明确 test/production 目标、原图存储确认和有限批次，生产还需额外确认。
 
 Feed/config 始终返回启用标签目录；点击业务标签按标签中文 label 在 `snapshot.prompt_zh` 字面包含筛选，「全部」不限制标签。`image_plaza_tags_feature_enabled` 只控制分享时空 tags 的自动打标。
 
 ## 变更记录
 
+- 2026-10-30：任务 `10-30-image-plaza-edit-400-compat` 修复固定尺寸 Venice 编辑请求的 `resolution` 兼容，并保持 resolution 模型原有档位语义。
 - 2026-10-15：任务 `10-15-image-plaza-tag-prompt-filter` 解耦标签展示与自动打标，feed 标签筛选改为 `prompt_zh` 中文包含匹配。
 - 2026-10-13：任务 `10-10-image-plaza-v2` 增加经审核初始作品的离线导入路径与 apply 门禁。
 

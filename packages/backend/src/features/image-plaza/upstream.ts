@@ -113,7 +113,9 @@ export async function generateImagePlazaImage(
   if (isEdit && input.reference) {
     body.image = input.reference.bytes.toString('base64');
     body.aspect_ratio = input.aspectRatio;
-    body.resolution = input.resolution === 'fixed' ? '1K' : input.resolution;
+    if (input.sizingMode === 'resolution' && input.resolution !== 'fixed') {
+      body.resolution = input.resolution;
+    }
     body.output_format = 'webp';
   } else {
     body.variants = 1;

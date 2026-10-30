@@ -1,0 +1,5 @@
+{"file":".trellis/spec/backend/app/index.md","reason":"检查 Backend 质量门禁"}
+{"file":".trellis/spec/backend/app/data-reliability-and-security.md","reason":"检查外部调用可靠性与日志脱敏"}
+{"file":".trellis/spec/backend/app/testing-scripts-and-deployment.md","reason":"检查验证命令与发布风险"}
+{"file":".trellis/spec/backend/app/modules/business/conversation-generation.md","reason":"检查 Image Plaza 失败和结算语义未回归"}
+{"file":".trellis/tasks/10-30-image-plaza-edit-400-compat/research/root-cause.md","reason":"核对实现是否解决已证实的请求差异"}
