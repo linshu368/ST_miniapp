@@ -3,6 +3,8 @@
 ST_miniapp 是围绕 Telegram MiniApp、AI 角色聊天、钱包/支付、语音、增长运营和客服能力构建的 pnpm monorepo。仓库包含面向用户的 Next.js 前端、Fastify API、内部运营 SPA、共享契约/迁移包，以及由 Frontend 和 Admin 共用的回复渲染包。客服平台已拆到独立仓库 [`linshu368/ST_cs_platform`](https://github.com/linshu368/ST_cs_platform)，本仓库只保留 Bot 消息转发和 `/api/support/*` 代理。
 
 > 深层架构、数据流和路由清单见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)；Railway 生产运维见 [`ops/railway/README.md`](ops/railway/README.md)。本文负责新成员入门、依赖关系、环境、命令和交付约定。
+
+> 对话调用前准备减负候选：本轮设置/目录快照复用，身份与报价保存5次请求合为2次；须先验证并执行`20261030_chat_generation_dispatch_prepare.sql`，再发布应用。保持现行兜底等待与6秒首字预算，计费/取消/恢复仍依赖同步业务事实；步骤见[首字运行说明](docs/first-token-fallback.md)。尚未发布，不能用本地验证替代生产耗时结果。
 > MiniApp 入口先输出静态框架，初始化后通知 Telegram 展示；独立启动指标 `startup.shell_ready.duration` / `startup.telegram_ready.duration` 的口径、P95 查询与验证边界见 [前端性能规范](.trellis/spec/frontend/app/testing-quality-and-deployment.md#miniapp-启动框架与-p95)。本地实现不代表已经发布或收到生产样本。
 > 短剧性能日常统一看[工程短剧看板](https://ea3213527545.grafana.net/d/st-engineering-drama)。v3复用原计时器、集中shared阶段计算；默认双轨，验证通过后才显式切换统一模式，保留Pino诊断及旧看板历史。字段、分母、release、切换与回滚见[短剧播放耗时排查](docs/drama-playback-timing.md)。本地代码不代表生产已启用。
 
@@ -152,6 +154,8 @@ anon key 是浏览器公开配置，但仍应按环境隔离；service-role 绝�
 Admin Vercel Preview 在构建期固定 API 映射：普通 branch Preview 与 `dev -> main` 发布 PR 必须配置 HTTPS 的 `VITE_ADMIN_TEST_API_URL`；目标分支为 `dev` 的功能 PR 固定使用 `https://stminiapp-pr-<PR号>.up.railway.app`。构建会拒绝缺失或非 HTTPS 的稳定 TEST 映射；PR Railway workflow 同时验证后端健康和 Admin 代理的 Vercel CORS 预检。
 
 ## 6. Supabase 与数据库迁移
+
+签到零点更新（2026-10-30，本地已验证，未发布）：`20261030_checkin_calendar_day.sql` 将领取资格改为北京时间每天 00:00 恢复；旧记录无需回填，VIP/新用户/老用户金额沿用配置，不清空已领余额。先 TEST/生产逐环境迁移，再发布 Backend/Frontend。个人中心跨零点回读服务端资格；回归复用 `bash scripts/test-vip-billing-migrations.sh`（无本机 PostgreSQL 时使用隔离 Docker PG17）及 `pnpm test:ui --grep @profile`。
 
 短剧目录复用 `/api/dramas` 的完整标题、标签、简介，在前端做搜索／分类交集和排序。剧级文字逐字段采用 `dramas → 同剧 ai_results → 空值`；“最新”采用可播视频最早的 `created_at`，推荐保留接口顺序。`20261026_drama_video_created_at.sql` 仅计划用于 TEST：为已核验的 577 条存量按来源／消息升序补录展示时间，新增视频由独立上传端在首次上传成功时写入（本仓库不改该脚本）。先迁移验收，再发布 Backend／Frontend；当前远端执行状态和验证限制见[任务记录](.trellis/tasks/10-26-drama-mvp-search-latest/verification.md)，字段及恢复约定见[短剧目录契约](.trellis/spec/database/supabase/drama-catalog.md)。
 

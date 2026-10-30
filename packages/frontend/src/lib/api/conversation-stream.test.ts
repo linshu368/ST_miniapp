@@ -165,6 +165,97 @@ describe('streamConversationTurn — 正常流', () => {
     });
     expect(new Headers(init.headers).get('X-Init-Data')).toBe('stub-init-data');
   });
+
+  it.each(['delta', 'reasoning'] as const)(
+    'submits the first meaningful %s before an animation frame, then batches later tokens',
+    async (type) => {
+      const frames: FrameRequestCallback[] = [];
+      vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+        frames.push(callback);
+        return frames.length;
+      });
+      let controller!: ReadableStreamDefaultController<Uint8Array>;
+      fetchMock.mockResolvedValue(
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(value) {
+              controller = value;
+            },
+          })
+        )
+      );
+      const text: string[] = [];
+      const received = vi.fn();
+      const running = streamConversationTurn({
+        sessionId: 's1',
+        onStart: () => {},
+        onDelta: (value) => text.push(value),
+        onReasoning: (value) => text.push(value),
+        onDone: () => {},
+        onFirstDeltaReceived: received,
+      });
+      controller.enqueue(encoder.encode(frame(START) + frame({ type, text: '  ' })));
+      await vi.waitFor(() => expect(frames).toHaveLength(1));
+      expect(text).toEqual([]);
+      expect(received).not.toHaveBeenCalled();
+
+      controller.enqueue(encoder.encode(frame({ type, text: '首' }) + frame({ type, text: '后' })));
+      await vi.waitFor(() => expect(received).toHaveBeenCalledTimes(2));
+      expect(text).toEqual(['  首']);
+      for (const callback of frames.splice(0)) callback(0);
+      expect(text).toEqual(['  首', '后']);
+      controller.enqueue(encoder.encode(frame(DONE)));
+      controller.close();
+      await running;
+    }
+  );
+
+  it.each([true, false])(
+    'shares the first-token flush between enabled reasoning and answer (thinking=%s)',
+    async (thinkingEnabled) => {
+      const frames: FrameRequestCallback[] = [];
+      vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+        frames.push(callback);
+        return frames.length;
+      });
+      let controller!: ReadableStreamDefaultController<Uint8Array>;
+      fetchMock.mockResolvedValue(
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(value) {
+              controller = value;
+            },
+          })
+        )
+      );
+      const calls: string[] = [];
+      const running = streamConversationTurn({
+        sessionId: 's1',
+        thinkingEnabled,
+        onStart: () => {},
+        onReasoning: (text) => calls.push(`think:${text}`),
+        onDelta: (text) => calls.push(`answer:${text}`),
+        onDone: () => {},
+      });
+      controller.enqueue(
+        encoder.encode(
+          frame(START) +
+            frame({ type: 'reasoning', text: '思' }) +
+            frame({ type: 'delta', text: '答' }) +
+            frame({ type: 'delta', text: '案' })
+        )
+      );
+      await vi.waitFor(() => expect(frames).toHaveLength(1));
+      expect(calls).toEqual(thinkingEnabled ? ['think:思'] : ['answer:答']);
+      frames.shift()!(0);
+      expect(calls).toEqual(
+        thinkingEnabled ? ['think:思', 'answer:答案'] : ['answer:答', 'answer:案']
+      );
+      controller.enqueue(encoder.encode(frame(DONE)));
+      controller.close();
+      await running;
+    }
+  );
 });
 
 describe('streamConversationTurn — 流未开始的失败', () => {
@@ -449,7 +540,16 @@ describe('thinking stream', () => {
       onDelta: (text) => calls.push(`answer:${text}`),
       onDone: () => calls.push('done'),
     });
-    expect(calls).toEqual(['think:先理解语境', 'answer:你好', 'done']);
+    expect(
+      calls
+        .filter((value) => value.startsWith('think:'))
+        .map((value) => value.slice(6))
+        .join('')
+    ).toBe('先理解语境');
+    expect(calls.slice(calls.findIndex((value) => value.startsWith('answer:')))).toEqual([
+      'answer:你好',
+      'done',
+    ]);
   });
 
   it.each(['error', 'eof'])(

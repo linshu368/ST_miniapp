@@ -45,6 +45,7 @@ import {
 } from '../../infrastructure/repositories/CharacterCardRepository.js';
 import { MiniappUserSettingsRepository } from '../../infrastructure/repositories/MiniappUserSettingsRepository.js';
 import type { RequestLogger } from '../../lib/logger.js';
+import type { fetchModelCatalogSnapshot } from '../../platform/model-tiers.js';
 import { fetchContextWindowLimits } from './context-window.js';
 import { buildEngineHistory } from './history.js';
 import type { ConversationStreamSink } from './sse.js';
@@ -74,6 +75,7 @@ export interface RunConversationTurnInput {
   receivedAt?: number;
   receivedMonotonicAt?: number;
   firstTokenDeadlineMs?: number;
+  catalogSnapshot?: Awaited<ReturnType<typeof fetchModelCatalogSnapshot>>;
   /** Caller correlation, persisted for safe pre-start cancellation matching. */
   requestId?: string;
   thinkingEnabled?: boolean;
@@ -140,20 +142,26 @@ export async function runConversationTurn(
   const preparationSignal = AbortSignal.timeout(Math.ceil(preparationRemainingMs));
 
   // ── 取数 ──────────────────────────────────────────────────────────────────
-  // 六个读之间互不依赖，串行发会把一轮生成的启动时延叠成六个 RTT。
+  // 独立读取立即并行启动；用户偏好与模型选择复用同一份设置和规则快照。
   // 都放在写入之前：这里抛异常时会话还没被动过，不会留下没有回复的孤儿 user 行。
-  const [model, card, userConfig, displayName, instructions, windowLimits] =
+  const instructionsPromise = fetchPlatformInstructions();
+  const generationContextPromise = userSettings().getGenerationContext(userId, instructionsPromise);
+  const modelPromise = resolveModelForUser(userId, {
+    selectedModelId: generationContextPromise.then(({ config }) => config.selected_model_id),
+    catalogSnapshot: input.catalogSnapshot,
+  });
+  const [model, card, generationContext, instructions, windowLimits] =
     await withConversationPreparationDeadline(
       Promise.all([
-        resolveModelForUser(userId),
+        modelPromise,
         characters().requireCard(session.character_id),
-        userSettings().getGenerationConfig(userId),
-        userSettings().getDisplayName(userId),
-        fetchPlatformInstructions(),
+        generationContextPromise,
+        instructionsPromise,
         fetchContextWindowLimits(),
       ]),
       preparationSignal
     );
+  const { config: userConfig, displayName } = generationContext;
 
   if (instructions.degraded) {
     log.sys.error(
@@ -199,6 +207,7 @@ export async function runConversationTurn(
   });
   const observations = generationObservations();
   const primaryAttemptId = randomUUID();
+  const chargeId = randomUUID();
   const clientRequestId = input.requestId ?? randomUUID();
   let startEmitted = false;
   const emitStart = (): void => {
@@ -220,6 +229,7 @@ export async function runConversationTurn(
   };
   const observationInput = {
     historyId: turn.historyId,
+    chargeId,
     requestId: clientRequestId,
     primaryAttemptId,
     requestedModelId: model.modelId,
@@ -300,13 +310,11 @@ export async function runConversationTurn(
 
   try {
     // ── 组 prompt ─────────────────────────────────────────────────────────────
-    // Context reads do not depend on this new turn's identity writes. Keep the
-    // writes ordered (pending identity must never overwrite the final prompt).
+    // Context reads can overlap the one atomic admission write. Join both before
+    // cleanup so a late admission cannot race a failed context's terminal state.
     const [registration, contextRead] = await Promise.allSettled([
       (async () => {
-        if (input.requestId)
-          await historyRecords().setPendingRequestId(turn.historyId, input.requestId);
-        await observations.begin(observationInput);
+        await observations.begin({ ...observationInput, history: [] });
         observationBegun = true;
         if (firstTokenDeadlineElapsed) recordFirstTokenTimeout();
       })(),
@@ -335,19 +343,9 @@ export async function runConversationTurn(
       instructions: instructions.instructions,
     });
 
-    // Persist the audit/context snapshot while generation performs independent
-    // pricing/entitlement checks. The dispatch hook still requires durability.
-    const promptPersisted = historyRecords().setPromptHistory(
-      turn.historyId,
-      prompt.messages,
-      input.requestId
-    );
-    // Attach a rejection handler now; the hook/result below awaits the original
-    // promise, so a slow precheck cannot cause an unhandled rejection.
-    void promptPersisted.catch(() => {});
-
     // ── 生成 ──────────────────────────────────────────────────────────────────
     const request: GenerationRequest = {
+      plannedChargeId: chargeId,
       userId,
       characterId: session.character_id,
       model,
@@ -403,15 +401,13 @@ export async function runConversationTurn(
       {
         onBeforeDispatch: async (snapshot) => {
           controller.signal.throwIfAborted();
-          await promptPersisted;
-          await observations.begin({ ...observationInput, snapshot });
+          await observations.begin({ ...observationInput, snapshot, history: prompt.messages });
           controller.signal.throwIfAborted();
           emitStart();
         },
-        onBeforeReserve: async (chargeId) => {
+        onBeforeReserve: async (reservedChargeId) => {
           controller.signal.throwIfAborted();
-          await historyRecords().registerChargeId(turn.historyId, chargeId);
-          controller.signal.throwIfAborted();
+          if (reservedChargeId !== chargeId) throw new Error('生成计费身份发生变化');
         },
         onBeforeSettle: async (observed, releaseReservation) => {
           await checkpoint;
@@ -448,7 +444,6 @@ export async function runConversationTurn(
       },
       log
     );
-    await promptPersisted;
 
     if (result.status === 'insufficient_balance' || result.denial === 'vip_required')
       await observations

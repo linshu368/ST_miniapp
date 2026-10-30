@@ -458,7 +458,10 @@ export default function ProfilePage() {
               )}
             </span>
             <div className="min-w-0 flex-1">
-              <h2 className="text-[13px] font-medium text-[#eee7e5]">每日签到</h2>
+              <div className="flex flex-wrap items-baseline gap-x-2">
+                <h2 className="text-[13px] font-medium text-[#eee7e5]">每日签到</h2>
+                <span className="text-[10px] text-[#8d838d]">每天 00:00 更新</span>
+              </div>
               <p
                 className="mt-0.5 text-[11px] leading-5 text-[#aaa0a9]"
                 role={!checkin ? 'status' : undefined}

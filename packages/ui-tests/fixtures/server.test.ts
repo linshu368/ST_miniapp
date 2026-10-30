@@ -4,12 +4,24 @@ import { createServer } from 'node:net';
 import { createPreviewServer } from './server.js';
 import { IDS, makeData } from './data.js';
 import {
+  getNextDailyCheckinAt,
   type GetConversationData,
   PublicReplyStyleOptionSchema,
   VipStatusSchema,
   UserSettingsSchema,
   ImagePlazaWorkSchema,
 } from '@miniapp/shared';
+
+test('check-in fixture returns a stable next Beijing midnight and rejects duplicate claims', async () => {
+  await post('/__preview/reset', { scenario: 'standard' });
+  const claim = (await (await post('/api/wallet/checkin', {})).json()).data.checkin;
+  assert.equal(claim.next_claim_at, getNextDailyCheckinAt(claim.claimed_at));
+  const state = (await (await fetch(api + '/api/wallet/checkin')).json()).data.checkin;
+  assert.equal(state.last_claimed_at, claim.claimed_at);
+  assert.equal(state.next_claim_at, claim.next_claim_at);
+  assert.equal(state.can_claim, false);
+  assert.equal((await post('/api/wallet/checkin', {})).status, 409);
+});
 
 let api: string;
 let server: ReturnType<typeof createPreviewServer>['server'];
