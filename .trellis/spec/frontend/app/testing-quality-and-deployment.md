@@ -98,4 +98,12 @@ v2 的实现/口径与验收见 [短剧看板操作说明](../../../../docs/graf
 
 ## 生产 CDN 对照与统一测量兼容
 
+1. **Scope / Trigger**：工程看板CDN对照候选（本地，未发布）沿用既有响应delivery与Faro链路，不改变播放、分流或SQL停写行为。
+2. **Signatures**：Frontend局部 `dramaCdnAttributes(delivery?: DramaDelivery): Record<string,string>` 快照原始桶与实际节点；原启动final投影原子携带cdn_budget，不新增HTTP合同。
+3. **Contracts**：统一出口仅增加有限 `cdn_experiment/group/provider/reason/budget`；实验ID最多8种、64字符，非法/疑似个体ID归unknown，溢出other，禁止去重码、URL和身份进入Faro。只有首帧+playing且原始单次elapsedMs<=5000为within_5s，超出为over_5s，未开播/缺证据/后台分别not_started/unmeasured/background；成功分位仅用within/over的有效measurement。主率=within/(within+over+not_started)，默认排除retry，不以首页文档/重试累计时间替代。
+4. **Validation / Error Matrix**：无delivery保持unknown，start不事后补组；未知新投影和无标签历史分开，不声称实验精确缺报或人数。每src媒体观察器快照delivery，迟到清尾保持原身份；质量窗口同批成对时长加权，总和(0,60000]，不平均比例。cdn_experiment只作用新增CDN区，cdn_entry只作用其启动面板，其他启动/目录/首张画面筛选不能假装作用质量窗口。遥测故障仍不影响播放。
+5. **Good / Base / Bad Cases**：Good为原Bunny桶关闭后实际Supabase仍保留原组；Base为旧客户端/缺delivery继续正常播放且不推断分组；Bad为把后台/缺证据当达标、重试覆盖首次失败或将seek/network重复计数。
+6. **Tests Required**：既有grafana/observer/media回归覆盖阈值精度、unknown、disabled回退、重试隔离、敏感字段与基数、旧源尾窗；既有Faro→Alloy→Loki脚本执行实际查询并验证分母、空桶、全失败真实0和加权比例。日志面板走range端点，所有Grafana变量含doublequote先明确替换；不得以空查询语法通过代替合成数值断言。
+7. **Wrong vs Correct**：Wrong为整张覆盖Cloud或把本地通过当生产实收；Correct为源码JSON与Cloud布局分别核对，发布仅追加候选面板/变量并重算y，保留云端其他新增区；真实Cloud新字段和Telegram性能独立验收。
+
 实验两组保留相同播放器、v3阶段helper、home/detail归属与Faro投影；seek仅走原Pino，不投startup工程分母。开流前确认NEXT_PUBLIC_DRAMA_TIMING_MODE=legacy及实际构建，以保留完整start/终态；unified下有delivery的结果与seek仍全量上传，非实验采样保持。5秒只拍快照，不终止播放；重试保留原失败与累计等待。发布与验收矩阵见ops/drama-cdn-rollout.md。
