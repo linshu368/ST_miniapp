@@ -28,6 +28,7 @@ import { OpenRouterChatHistoryRepository } from '../../infrastructure/repositori
 import { MiniappWalletRepository } from '../../infrastructure/repositories/MiniappWalletRepository.js';
 import { applyLlmCharge } from './apply-charge.js';
 import { frozenLlmChargeMetadata } from './text-billing.js';
+import { readCreatorRewardSnapshot } from './creator-billing.js';
 import {
   buildGenerationMetadata,
   fetchGenerationData,
@@ -835,6 +836,9 @@ function buildFixedTierChargeCommand(input: {
         vip_valid_until: snapshot?.vip_valid_until,
         model_tier: snapshot?.model_tier,
         vip_discount_config_version: snapshot?.vip_discount_config_version,
+        creator_reward:
+          snapshot?.creator_reward ??
+          readCreatorRewardSnapshot(originalCharge?.metadata?.creator_reward),
       }),
       source: 'chat_history_sync',
     },
@@ -916,6 +920,8 @@ function readFrozenPriceFields(
   | 'vip_active'
   | 'vip_valid_until'
   | 'model_tier'
+  | 'vip_discount_config_version'
+  | 'creator_reward'
 > {
   const originalCredits = readOptionalNumber(row.original_credits);
   const payableCredits = readOptionalNumber(row.payable_credits);
@@ -938,6 +944,13 @@ function readFrozenPriceFields(
       ? { vip_valid_until: row.vip_valid_until }
       : {}),
     ...(typeof row.model_tier === 'string' ? { model_tier: row.model_tier } : {}),
+    ...(row.vip_discount_config_version === null ||
+    typeof row.vip_discount_config_version === 'number'
+      ? { vip_discount_config_version: row.vip_discount_config_version }
+      : {}),
+    ...(row.creator_reward === undefined
+      ? {}
+      : { creator_reward: readCreatorRewardSnapshot(row.creator_reward) }),
   };
 }
 

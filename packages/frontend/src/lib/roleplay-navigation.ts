@@ -1,7 +1,7 @@
 import type { LobbySort } from '@miniapp/shared';
 
 export type RoleplayView = '/characters' | '/chats';
-export type RoleplaySource = 'discover' | 'conversations';
+export type RoleplaySource = 'discover' | 'conversations' | 'space' | 'created';
 
 const VIEW_KEY = 'miniapp:roleplay-view:v1';
 const DISCOVERY_KEY = 'miniapp:roleplay-discovery:v1';
@@ -24,11 +24,16 @@ function write(key: string, value: string): void {
 }
 
 export function resolveRoleplaySource(value: string | null | undefined): RoleplaySource {
-  return value === 'conversations' ? 'conversations' : 'discover';
+  return value === 'conversations' || value === 'space' || value === 'created' ? value : 'discover';
 }
 
-export function roleplayReturnPath(source: string | null | undefined): RoleplayView {
-  return resolveRoleplaySource(source) === 'conversations' ? '/chats' : '/characters';
+export function roleplayReturnPath(
+  source: string | null | undefined
+): RoleplayView | '/creation?tab=favorites' | '/creation?tab=created' {
+  const origin = resolveRoleplaySource(source);
+  if (origin === 'created') return '/creation?tab=created';
+  if (origin === 'space') return '/creation?tab=favorites';
+  return origin === 'conversations' ? '/chats' : '/characters';
 }
 
 export function readRoleplayView(): RoleplayView {

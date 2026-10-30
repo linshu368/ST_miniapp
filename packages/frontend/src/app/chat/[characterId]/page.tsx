@@ -177,7 +177,7 @@ export default function SelfHostedChatPage() {
   useEffect(() => {
     if (session.ready || session.entryError) markCriticalSettled();
   }, [session.ready, session.entryError]);
-  const modelCatalogQuery = useModelCatalogQuery({ enabled: enrichReady });
+  const modelCatalogQuery = useModelCatalogQuery({ enabled: enrichReady, characterId });
   const selectedModelId = modelCatalogQuery.data?.selected_model_id ?? null;
   const selectedModelUsesFreeQuota = useMemo(() => {
     const catalog = modelCatalogQuery.data?.catalog;
@@ -291,7 +291,7 @@ export default function SelfHostedChatPage() {
     [activeSessionId, characterId, setDraft]
   );
 
-  const characterQuery = useCharacterQuery(characterId);
+  const characterQuery = useCharacterQuery(characterId, { sessionId: activeSessionId });
   const character = characterQuery.data?.character;
 
   const {
@@ -554,7 +554,15 @@ export default function SelfHostedChatPage() {
       style={{ height: viewportHeight ? `${viewportHeight}px` : '100dvh' }}
     >
       <ChatTopBar
-        backLabel={session.backHref === '/chats' ? '返回对话' : '返回发现'}
+        backLabel={
+          session.backHref === '/chats'
+            ? '返回对话'
+            : session.backHref === '/creation?tab=created'
+              ? '返回我的创作'
+              : session.backHref === '/creation?tab=favorites'
+                ? '返回收藏'
+                : '返回发现'
+        }
         onBack={goBack}
         characterId={characterId}
         title={title}
@@ -834,6 +842,7 @@ export default function SelfHostedChatPage() {
 
       {/* 始终挂着：ChatSplash 自己负责收场动画并在结束后返回 null，条件卸载会把动画切掉 */}
       <ChatSplash
+        sessionId={activeSessionId}
         backHref={session.backHref}
         characterId={characterId}
         ready={session.ready}

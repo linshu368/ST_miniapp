@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/backend/app/index.md", "reason": "backend entry"}
+{"file": ".trellis/spec/backend/app/data-reliability-and-security.md", "reason": "permissions/transactions"}
+{"file": ".trellis/spec/frontend/app/index.md", "reason": "frontend entry"}
+{"file": ".trellis/spec/admin/app/index.md", "reason": "admin review"}
+{"file": ".trellis/spec/shared/contracts/index.md", "reason": "HTTP contracts first"}
+{"file": ".trellis/spec/database/supabase/schema-and-object-conventions.md", "reason": "domain ownership"}
+{"file": "packages/ui-tests/README.md", "reason": "reusable preview"}
+{"file": ".trellis/tasks/10-30-creator-real-integration/design.md", "reason": "reviewed integration plan"}

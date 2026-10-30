@@ -22,6 +22,10 @@
 
 ⏳ **2026-10-16 图片广场配置兼容修复（MIGRATION，未部署）**：`20261016_reconcile_image_plaza_managed_config_keys.sql` 将 Admin managed-key 入口包装为“当前白名单 OR 四个图片广场 key”，两表 CHECK 保留原表达式并接入修复后的入口。避免平台规则槽位静态名单覆盖图片广场 key；保留现有 validator、专用后处理边界、RLS 和业务行。TEST 保存/发布及 Production 均需独立门禁。
 
+⏳ **2026-10-30 用户角色创作（本地集成，未发布）**：`app_core.character_creations` 保存作者草稿、可见性和审核revision，`character_access_grants` 固定历史收藏/使用资格，`character_cover_assets` 保存私有持久封面身份。作者更新只改变卡片；`app_core.character_versions` 持有不可变内容，`experience.chat_sessions.character_version_id` 在第一条真实用户轮次写入事务内绑定，空会话不固定，分支继承。生成、换回复、角色附图和已聊详情读取相同版本，官方卡原行为保持。公开待审修改不会覆盖已批准runtime。本人创作、封面和润色通过独立鉴权API；展示DTO不包含私有system prompt。润色复用generation既有provider transport，独立于用户收费聊天，不写聊天历史；预设与背景由shared固定Markdown组合。
+
+创作者收益复用真实文本扣费RPC：不可变计费快照携带作者和卡ID，`billing.character_creator_rewards` 以永久charge key去重，40%实扣经现有专项奖励入口到账，退款在同一事务回收；已花奖励记内部待抵扣，下次收益冲抵，不能阻止用户退款。作者自用8折与现有VIP折扣取更优惠者，不叠加。`/creation` 前端及运营审核页使用shared契约；只有本地隔离验证，不表示任何线上环境已经开放。
+
 ## 1. 架构铁律（违反即拦截）
 
 ⏳ **2026-10-29 回复点赞（本地增量，未发布）**：`experience.chat_message_likes(session_id,message_id)` 保存会话主人对固定实际回复版本的点赞，分支不复制，重生成以新history ID独立反馈。`set_chat_message_like` 按归属/完成态验证并与开轮共用会话锁；显式布尔目标可幂等重试，写入不触发聊天统计或计费。角色社交查询通过 `experience.get_character_reply_like_counts` 批量读取角色回复总赞，加上原角色卡直接赞，返回大厅统一累计数量。`session_chat_history` 只末尾追加 `liked`，消息列表选择，模型上下文不选择；不额外为每条消息查询。受限RPC拥有写权，service只可读取新表，浏览器无直接数据库权限。迁移需先分支后点赞，恢复时可忽略个人点赞投影并保留数据。

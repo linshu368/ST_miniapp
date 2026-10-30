@@ -259,7 +259,11 @@ export default async function conversationRoutes(app: FastifyInstance) {
           }),
           settings.getDisplayName(dbUser.id),
         ]);
-        const openingMessage = await sessions.getCharacterFirstMes(branched.character_id);
+        const openingMessage = await sessions.getCharacterFirstMes(
+          branched.character_id,
+          dbUser.id,
+          branched.id
+        );
         const page = await history.listMessages(branched.id, openingMessage);
         log.biz.info(
           {
@@ -410,7 +414,7 @@ export default async function conversationRoutes(app: FastifyInstance) {
         const recoverStarted = performance.now();
         const [, openingMessage] = await Promise.all([
           history.recoverStaleStreaming(sessionId),
-          sessions.getCharacterFirstMes(session.character_id),
+          sessions.getCharacterFirstMes(session.character_id, dbUser.id, session.id),
         ]);
         const recoverAndOpeningMs = performance.now() - recoverStarted;
         const listStarted = performance.now();

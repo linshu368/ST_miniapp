@@ -58,6 +58,7 @@ model miniapp_user_settings {
 }
 
 model Character {
+  creation                  CharacterCreation?
   id                        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name                      String
   description               String    @default("")
@@ -227,4 +228,28 @@ model llm_usage_charge_dedup {
 
   @@index([user_id, processed_at(sort: Desc)], map: "idx_llm_usage_charge_dedup_user_processed")
   @@schema("billing")
+}
+
+/// Creator source is private. Read through owner-scoped APIs; only RPCs write it.
+model CharacterCreation {
+  character_id String @id @db.Uuid
+  owner_user_id String @db.Uuid
+  draft Json
+  draft_runtime Json
+  cover_asset_id String? @db.Uuid
+  state String @default("draft")
+  visibility String @default("private")
+  review_status String @default("not_submitted")
+  review_message String?
+  revision Int @default(1)
+  submitted_revision Int?
+  published_revision Int?
+  approved_revision Int?
+  submission Json?
+  last_mutation Json?
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+  character Character @relation(fields: [character_id], references: [id], onDelete: Cascade)
+  @@map("character_creations")
+  @@schema("app_core")
 }

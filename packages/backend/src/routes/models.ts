@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import {
   fail,
+  GetModelCatalogQuerySchema,
   LlmModelProviderSchema,
   ok,
   resolveEnabledCatalogModel,
@@ -22,6 +23,8 @@ import { requestLogger } from '../lib/logger.js';
 import { MiniappUserSettingsRepository } from '../infrastructure/repositories/MiniappUserSettingsRepository.js';
 import { MiniappWalletRepository } from '../infrastructure/repositories/MiniappWalletRepository.js';
 import { VipStatusService } from '../features/vip/vip-status.js';
+import { getCharacterCreatorOwner } from '../features/generation/creator-billing.js';
+import { canUseCharacter } from '../features/creator/access.js';
 import {
   coverageForTextWallet,
   presentTextModelCatalog,
@@ -71,15 +74,24 @@ export default async function modelsRoutes(app: FastifyInstance) {
     async (request, reply) => {
       if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
 
+      const query = GetModelCatalogQuerySchema.safeParse(request.query);
+      if (!query.success)
+        return reply.status(400).send(fail('INVALID_CHARACTER', '请选择有效角色'));
       const log = requestLogger(request.log, 'models');
       const dbUser = await getOrCreateDbUser(request.user);
-      const [snapshot, userSettings, entitlement, pricing, strategy] = await Promise.all([
-        fetchModelCatalogSnapshot(),
-        settings.getOrCreate(dbUser.id, request.user),
-        vip.getStatus(dbUser.id, log),
-        getPricingConfig(),
-        readVipStrategy(),
-      ]);
+      const characterId = query.data.character_id;
+      if (characterId && !(await canUseCharacter(dbUser.id, characterId))) {
+        return reply.status(404).send(fail('CHARACTER_NOT_FOUND', '角色不可用'));
+      }
+      const [snapshot, userSettings, entitlement, pricing, strategy, creatorUserId] =
+        await Promise.all([
+          fetchModelCatalogSnapshot(),
+          settings.getOrCreate(dbUser.id, request.user),
+          vip.getStatus(dbUser.id, log),
+          getPricingConfig(),
+          readVipStrategy(),
+          getCharacterCreatorOwner(characterId ?? null),
+        ]);
       const selection = resolveTextModelSelection({
         catalog: snapshot.catalog,
         persistedModelId: userSettings.selected_model_id,
@@ -122,6 +134,7 @@ export default async function modelsRoutes(app: FastifyInstance) {
             pricing: pricing.fixedDeduction,
             vip: entitlement,
             discountRate: strategy.discountRate,
+            creatorSelf: creatorUserId === dbUser.id,
           }),
           selected_model_id: selectedModel.id,
           selected_openrouter_model_id: selectedModel.openrouter_model_id,
@@ -156,6 +169,10 @@ export default async function modelsRoutes(app: FastifyInstance) {
           fetchModelCatalogSnapshot(),
           getOrCreateDbUser(request.user),
         ]);
+        const characterId = parsed.data.character_id;
+        if (characterId && !(await canUseCharacter(dbUser.id, characterId))) {
+          return reply.status(404).send(fail('CHARACTER_NOT_FOUND', '角色不可用'));
+        }
         const selectedModel = resolveEnabledCatalogModel(snapshot.catalog, parsed.data.model_id);
         const selectedTier =
           snapshot.catalog.tiers.find((tier) =>
@@ -182,10 +199,11 @@ export default async function modelsRoutes(app: FastifyInstance) {
 
         const quotedTier = selectedTier ?? 'standard';
         if (!selectedModel.is_free) {
-          const [wallet, pricing, strategy] = await Promise.all([
+          const [wallet, pricing, strategy, creatorUserId] = await Promise.all([
             wallets.getOrCreate(dbUser.id),
             getPricingConfig(),
             readVipStrategy(),
+            getCharacterCreatorOwner(characterId ?? null),
           ]);
           const quote = quoteAcceptedTextUsage({
             originalCredits: pricing.fixedDeduction[quotedTier],
@@ -195,6 +213,7 @@ export default async function modelsRoutes(app: FastifyInstance) {
             vipValidUntil: entitlement.valid_until,
             discountRate: strategy.discountRate,
             discountConfigVersion: strategy.discountVersion,
+            creatorSelf: creatorUserId === dbUser.id,
           });
           const coverage = coverageForTextWallet({
             policy: quote.wallet_policy,

@@ -5,6 +5,16 @@ import { resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import {
+  CreateCreatorCharacterSchema,
+  SaveCreatorCharacterSchema,
+  PublishCreatorCharacterSchema,
+  CreatorCoverRequestSchema,
+  CreatorPolishRequestSchema,
+  CREATOR_PRESET_IDS,
+  emptyCharacterDraft,
+  creatorPublishMissingFields,
+  type CreatorCharacter,
+  type CreatorCoverAsset,
   CreateCharacterCommentSchema,
   ForkConversationRequestSchema,
   SetMessageLikeRequestSchema,
@@ -59,6 +69,10 @@ export function createPreviewServer(apiPort: number, appPort: number) {
   const app = `http://${HOST}:${appPort}`;
   let data = makeData(api);
   let scenario: Scenario = 'standard';
+  const creatorOwner = '70000000-0000-4000-8000-000000000001';
+  const creatorCards = new Map<string, CreatorCharacter>();
+  const creatorCovers = new Map<string, CreatorCoverAsset>();
+  let creatorFailureDelivered = false;
   let claimedAt: string | null = null;
   const canClaimCheckin = () =>
     !claimedAt || Date.now() >= Date.parse(getNextDailyCheckinAt(claimedAt));
@@ -206,13 +220,22 @@ export function createPreviewServer(apiPort: number, appPort: number) {
     for (const stream of streams) stream.end();
     streams.clear();
     data = makeData(api);
+    creatorCards.clear();
+    creatorCovers.clear();
+    creatorFailureDelivered = false;
     branchRequests.clear();
     branchFailureDelivered = false;
     messageLikes.clear();
     messageLikeFailureDelivered = false;
     scenario = next;
     claimedAt = next === 'checked' ? stamp() : null;
-    favoriteIds = new Set(next === 'character-social' ? [IDS.character] : []);
+    favoriteIds = new Set(
+      next === 'creation'
+        ? data.characters.slice(0, 4).map((item) => item.id)
+        : next === 'character-social'
+          ? [IDS.character]
+          : []
+    );
     characterLikes.clear();
     characterComments.clear();
     removedCharacterComments.clear();
@@ -388,7 +411,7 @@ export function createPreviewServer(apiPort: number, appPort: number) {
       let raw = '';
       for await (const chunk of req) {
         raw += chunk.toString();
-        if (raw.length > 65_536) {
+        if (raw.length > (path.startsWith('/api/creator/') ? 29_000_000 : 65_536)) {
           fail(res, 413, 'body_too_large', '预览请求过大');
           return;
         }
@@ -850,6 +873,178 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         fail(res, 405, 'METHOD_NOT_ALLOWED', '方法不支持');
         return;
       }
+      if (path === '/api/creator/characters' && method === 'GET') {
+        ok(res, {
+          owner_user_id: creatorOwner,
+          characters: [...creatorCards.values()].map(({ draft: _draft, ...card }) => card),
+        });
+        return;
+      }
+      if (path === '/api/creator/characters' && method === 'POST') {
+        const input = CreateCreatorCharacterSchema.parse(body);
+        const draft = input.draft ?? emptyCharacterDraft();
+        if (!creatorCards.has(input.id))
+          creatorCards.set(input.id, {
+            id: input.id,
+            owner_user_id: creatorOwner,
+            name: draft.name,
+            description: draft.description,
+            tags: draft.tags,
+            draft,
+            cover_asset_id: input.cover_asset_id ?? null,
+            cover_url: input.cover_asset_id
+              ? (creatorCovers.get(input.cover_asset_id)?.image_url ?? null)
+              : null,
+            state: 'draft',
+            visibility: 'private',
+            review_status: 'not_submitted',
+            review_message: null,
+            revision: 1,
+            submitted_revision: null,
+            published_revision: null,
+            approved_revision: null,
+            created_at: stamp(),
+            updated_at: stamp(),
+          });
+        ok(res, { character: creatorCards.get(input.id) });
+        return;
+      }
+      const creatorMatch = path.match(
+        /^\/api\/creator\/characters\/([^/]+)(?:\/(publish|visibility))?$/
+      );
+      if (creatorMatch) {
+        const card = creatorCards.get(creatorMatch[1]!);
+        if (!card) {
+          fail(res, 404, 'NOT_FOUND', '角色不存在');
+          return;
+        }
+        const action = creatorMatch[2];
+        if (method === 'GET' && !action) {
+          ok(res, { character: card });
+          return;
+        }
+        if (method === 'PATCH' && !action) {
+          const input = SaveCreatorCharacterSchema.parse(body);
+          if (input.expected_revision !== card.revision) {
+            fail(res, 409, 'CONFLICT', '角色已在其他页面修改，请重新打开编辑器');
+            return;
+          }
+          Object.assign(card, {
+            draft: input.draft,
+            name: input.draft.name,
+            description: input.draft.description,
+            tags: input.draft.tags,
+            cover_asset_id: input.cover_asset_id,
+            cover_url: input.cover_asset_id
+              ? (creatorCovers.get(input.cover_asset_id)?.image_url ?? null)
+              : null,
+            revision: card.revision + 1,
+            updated_at: stamp(),
+          });
+          ok(res, { character: card });
+          return;
+        }
+        if (
+          (method === 'POST' && action === 'publish') ||
+          (method === 'PUT' && action === 'visibility')
+        ) {
+          const input = PublishCreatorCharacterSchema.parse(body);
+          if (scenario === 'creator-save-error' && !creatorFailureDelivered) {
+            creatorFailureDelivered = true;
+            fail(res, 503, 'UNAVAILABLE', '暂时未能发布，草稿已保留');
+            return;
+          }
+          if (input.expected_revision !== card.revision) {
+            fail(res, 409, 'CONFLICT', '版本已变化，请重试');
+            return;
+          }
+          const missing = creatorPublishMissingFields(card.draft, card.cover_asset_id);
+          if (missing.length) {
+            fail(res, 400, 'INCOMPLETE', `请完成：${missing.join('、')}`);
+            return;
+          }
+          Object.assign(card, {
+            state: 'ready',
+            visibility: input.visibility,
+            review_status: input.visibility === 'public' ? 'pending' : 'not_submitted',
+            submitted_revision: input.visibility === 'public' ? card.revision + 1 : null,
+            approved_revision: input.visibility === 'private' ? null : card.approved_revision,
+            published_revision:
+              input.visibility === 'private' || card.published_revision === null
+                ? card.revision + 1
+                : card.published_revision,
+            revision: card.revision + 1,
+          });
+          const character = {
+            id: card.id,
+            name: card.name,
+            description: card.description,
+            avatar_url: card.cover_url ?? '',
+            personality_tags: card.tags,
+            greeting: card.draft.opening,
+            author_name: '你的创作',
+            creator_notes: '',
+            is_featured: false,
+          };
+          const existing = data.characters.findIndex((item) => item.id === card.id);
+          if (existing < 0) data.characters.push(character);
+          else data.characters[existing] = character;
+          ok(res, { character: card });
+          return;
+        }
+      }
+      if (path === '/api/creator/covers' && method === 'POST') {
+        const input = CreatorCoverRequestSchema.parse(body);
+        if (!creatorCovers.has(input.id))
+          creatorCovers.set(input.id, {
+            id: input.id,
+            image_url: `${api}/assets/scene.svg?tone=1`,
+            width: 768,
+            height: 1024,
+          });
+        ok(res, { asset: creatorCovers.get(input.id) });
+        return;
+      }
+      if (path.startsWith('/api/creator/covers/') && method === 'GET') {
+        const asset = creatorCovers.get(path.split('/').pop()!);
+        if (asset) ok(res, { asset });
+        else fail(res, 404, 'NOT_FOUND', '封面不存在');
+        return;
+      }
+      if (path.startsWith('/api/creator/presets/') && method === 'GET') {
+        const id = path.slice('/api/creator/presets/'.length);
+        const index = CREATOR_PRESET_IDS.findIndex((presetId) => presetId === id);
+        if (index < 0) {
+          fail(res, 404, 'NOT_FOUND', '找不到这套预设');
+          return;
+        }
+        // Static author-provided assets, not user data or a production backend request.
+        const content = await readFile(
+          new URL(
+            `../../backend/src/features/creator/presets/collection_${index + 1}.txt`,
+            import.meta.url
+          ),
+          'utf8'
+        );
+        ok(res, { preset: { id, content } });
+        return;
+      }
+      if (path === '/api/creator/polish' && method === 'POST') {
+        const input = CreatorPolishRequestSchema.parse(body);
+        res.writeHead(200, { 'Content-Type': 'application/x-ndjson; charset=utf-8' });
+        const draftText =
+          input.target === 'opening'
+            ? '书店即将打烊，门上的铜铃却在此刻轻响。林舟从书页间抬起眼，认出你时微微一顿。\n\n「我以为你已经忘了这个地方。」他合上书，把靠窗的椅子轻轻拉开。杯里的茶还温着，而他似乎有一句话等了很久。'
+            : '## 角色与生活\n\n林舟经营一间旧书店。他记得常客偏爱的书，也记得那些没有说出口的告别。\n\n## 个性与矛盾\n\n他习惯用玩笑掩饰认真，越是在乎的人，越不肯把心意说得直白。平时做决定很果断，遇到重逢却会先整理桌角，再试探着问一句近况。\n\n## 与你的关系\n\n你们曾在这间书店相遇。多年之后，他保留的那本书仍夹着你写的纸条，但你的回应和选择始终由你决定。';
+        for (let i = 0; i < draftText.length; i += 16) {
+          res.write(`${JSON.stringify({ type: 'delta', text: draftText.slice(i, i + 16) })}\n`);
+          await delay(12);
+        }
+        res.end(
+          `${JSON.stringify(scenario === 'creator-polish-partial' ? { type: 'error', message: '这次润色未完整完成，可以采用已有内容后继续编辑。' } : { type: 'done' })}\n`
+        );
+        return;
+      }
       if (path === '/api/characters/latest-badge' || path === '/api/characters/latest-seen') {
         ok(res, { has_new: false });
         return;
@@ -858,8 +1053,8 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         ok(res, {
           characters:
             url.searchParams.get('sort') === 'latest'
-              ? [...data.characters].reverse()
-              : data.characters,
+              ? [...data.characters].filter((card) => !creatorCards.has(card.id)).reverse()
+              : data.characters.filter((card) => !creatorCards.has(card.id)),
         });
         return;
       }
