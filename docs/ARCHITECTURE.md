@@ -123,6 +123,8 @@
 | ⑤    | Telegram → backend            | Bot `/start` 归因；其余私聊消息（文字 / 图片）转发给独立客服服务（`CS_SERVICE_URL`）               |
 | ⑥    | backend → MiniMax / DeepSeek  | 语音链路：DeepSeek 写台词稿，MiniMax 合成音频落 Storage                                            |
 
+主 Bot 群消息在 `/start` 和私聊处理之前分流，仅显式开启 `CS_GROUP_MONITOR_FORWARD_ENABLED=true` 且命中 `CS_GROUP_MONITOR_CHAT_IDS` 的群可发往 `/internal/telegram/group-message`。新消息与编辑均只等待 CS 持久化，不创建私聊、不调用模型、不向群回复；CS 持久化失败返回 503 供 Telegram 重投。关闭或未配置群时确认并忽略消息，之后不能从 Bot API 补拉任意群历史。批量判断读取客服保存的消息缓冲。匿名 `sender_chat` 不映射为可私聊用户。Community Bot 的入群奖励 webhook 保持独立。
+
 ---
 
 ## 3. 包清单
@@ -665,6 +667,7 @@ packages/backend/src/
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_WEBHOOK_SECRET` / `BOT_INTERNAL_SECRET`           | InitData 验签、webhook 与 Bot 内部端点鉴权                           |
 | `TELEGRAM_COMMUNITY_BOT_TOKEN`                                                     | 官方社群 Bot：成员校验 `getChatMember` 与 community-webhook 密钥派生 |
 | `CS_SERVICE_URL` / `CS_SERVICE_SECRET`                                             | 独立客服服务地址和共享密钥（Bot 转发与 `/api/support/*` 代理）       |
+| `CS_GROUP_MONITOR_FORWARD_ENABLED` / `CS_GROUP_MONITOR_CHAT_IDS`                   | 主 Bot 群收件转发，默认关闭；逗号分隔群 ID 白名单，空值不采集        |
 | `ADMIN_PLATFORM_URL`                                                               | 运营后台 CORS                                                        |
 | `FRONTEND_URL`                                                                     | CORS 与支付回跳                                                      |
 | `PAYMENT_*`                                                                        | 子千易 V2 RSA 商户配置、支付开关、异步回调与同步回跳地址             |
