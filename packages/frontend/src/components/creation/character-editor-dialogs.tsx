@@ -142,7 +142,10 @@ export function CharacterPolishDialog({
           </details>
         )}
         <div className="flex shrink-0 items-center justify-between gap-2">
-          <p className="flex min-h-11 items-center gap-2 text-[11px] text-muted-foreground" role="status">
+          <p
+            className="flex min-h-11 items-center gap-2 text-[11px] text-muted-foreground"
+            role="status"
+          >
             {loading ? (
               <>
                 <span className="size-1.5 rounded-full bg-primary motion-safe:animate-pulse" />

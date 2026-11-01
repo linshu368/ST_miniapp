@@ -1,0 +1,61 @@
+{
+  "id": "creation-plaza-video-planning",
+  "name": "creation-plaza-video-planning",
+  "title": "图片广场扩展视频创作 + media_plaza schema（执行中）",
+  "description": "在图片 M1 已于 TEST、Production 完成且后端直连 media_plaza 的基础上，为广场/工作室增加视频能力（筛选、全部风格多选、视频卡/详情、边下边播、图片/视频切换、6 个 Venice 视频模型、编辑/重生成/分享/下载、首帧封面、图片结果转视频与参考图保留），并实施视频 M2/M3、图片 artifact→reference 的 M4、预扣+失败/拒审退款、异步 queue/retrieve/complete 与 xlsx 5097 条种子导入；性能：列表加载与创作页生成对齐现有图片广场请求路径并压低 Sentry p95（feed/受理/首屏）。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "cross-layer",
+  "package": "backend",
+  "priority": "P2",
+  "creator": "cline",
+  "assignee": "cline",
+  "createdAt": "2026-10-16",
+  "completedAt": null,
+  "branch": "feat_video_park",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "packages/shared/src/api/image-plaza.ts",
+    "packages/shared/migrations/20261012_image_plaza_v2.sql",
+    "packages/backend/src/features/image-plaza/job.ts",
+    "packages/backend/src/features/image-plaza/upstream.ts",
+    "packages/backend/src/features/image-plaza/repository.ts",
+    "packages/backend/src/features/image-plaza/storage.ts",
+    "packages/backend/src/routes/image-plaza.ts",
+    "packages/backend/src/lib/supabase.ts",
+    "packages/admin/src/components/ImagePlazaConfigEditors.tsx",
+    "packages/frontend/src/app/(main)/create/page.tsx",
+    "packages/frontend/src/app/(main)/create/studio/[conversationId]/page.tsx",
+    "packages/frontend/src/app/(main)/create/work/[workId]/page.tsx",
+    "packages/frontend/src/components/image-plaza/studio-artifact-card.tsx",
+    "packages/frontend/src/components/image-plaza/studio-video-card.tsx",
+    "packages/frontend/src/components/image-plaza/video-model-sheet.tsx",
+    "packages/frontend/src/components/image-plaza/video-settings-dialog.tsx",
+    "ops/docker/Dockerfile.backend"
+  ],
+  "notes": "2026-10-24 已确认 D1–D14：schema=media_plaza，视频预扣+退款，Seedance 2.0 R2V 映射，关闭视频自动优化，安装 ffmpeg，翻译包补 prompt_zh，先 test，导入前 HEAD 估算体积并人工确认，视频提示词不设上限。2026-10-26 R8：列表硬约束=游标分页(filter含media/tags)+列表无MP4(只签poster)+资源走storage签名LRU(视频桶共用,公开24h)；创作预取/报价复用/轮询退避；Sentry feed前端p95≤800ms、后端≤500ms、studio ready≤1.5s、generate受理≤2.5s、图片退化≤10%。D15：边下边播用 <video src=URL>+Range+faststart；禁止 fetch ReadableStream→blob 主路径；可选同域 /stream Range 代理。2026-10-27 用户确认图片 M1 与 PostgREST 暴露已在 TEST、Production 完成，代码统一直连 media_plaza，禁止重跑/回滚 M1。2026-10-28 D25：补齐 composer 顶部图片/视频切换、图片/视频同款默认类型、Admin 视频模型/Wan 默认、视频设置与报价联动；不支持图片的视频模型保留但停用已有 reference；图片 ready 结果通过新增 M4 幂等映射为 reference 后转视频。剩余阻塞：B-SEED-1（授权/实际配额，流程已由 D13 固定）。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "frontend.business.conversation-ui",
+        "frontend.infrastructure.client-ui-foundation",
+        "backend.business.conversation-generation",
+        "backend.business.wallet-payment",
+        "backend.infrastructure.runtime-data-security",
+        "admin.business.operations",
+        "shared.business.conversation-contracts",
+        "database.business.conversation-storage",
+        "database.business.billing-payment",
+        "database.infrastructure.schema-security"
+      ]
+    }
+  }
+}

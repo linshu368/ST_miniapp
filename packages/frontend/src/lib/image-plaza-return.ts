@@ -6,7 +6,9 @@ const SNAPSHOT_TTL_MS = 2 * 60 * 60_000;
 
 export interface ImagePlazaBrowseState {
   search: string;
-  tag: string;
+  tag?: string;
+  tags?: string[];
+  media?: 'all' | 'image' | 'video';
   sort: ImagePlazaFeedSort;
 }
 
@@ -39,6 +41,8 @@ export function saveImagePlazaReturn(state: ImagePlazaBrowseState, preferredWork
   snapshot = {
     search: state.search.slice(0, 500),
     tag: state.tag,
+    tags: state.tags ? [...state.tags] : undefined,
+    media: state.media,
     sort: state.sort,
     createdAt: Date.now(),
     anchorId: anchor?.card.dataset.imageWorkId ?? null,
@@ -59,7 +63,11 @@ export function readImagePlazaReturn(): ImagePlazaReturnSnapshot | null {
     snapshot = null;
     return null;
   }
-  return { ...snapshot, nearbyCards: snapshot.nearbyCards.map((card) => ({ ...card })) };
+  return {
+    ...snapshot,
+    tags: snapshot.tags ? [...snapshot.tags] : undefined,
+    nearbyCards: snapshot.nearbyCards.map((card) => ({ ...card })),
+  };
 }
 
 export function clearImagePlazaReturn(): void {

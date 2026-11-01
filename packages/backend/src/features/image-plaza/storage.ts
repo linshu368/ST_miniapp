@@ -2,6 +2,7 @@ import { Buffer } from 'node:buffer';
 import { getSupabaseClient } from '../../lib/supabase.js';
 
 const BUCKET = 'image-plaza';
+const VIDEO_BUCKET = 'media-plaza-video';
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 const MAX_SEED_IMAGE_BYTES = 50 * 1024 * 1024;
 
@@ -141,7 +142,7 @@ export async function uploadSeedPlazaImage(input: {
  * 只要它自身在 TTL 内稳定，CDN 就能命中。进程内存上限按条目数硬性截断，避免
  * 无界增长。
  */
-const SIGNED_URL_CACHE_MAX_ENTRIES = 2000;
+const SIGNED_URL_CACHE_MAX_ENTRIES = 10_000;
 const signedUrlCache = new Map<string, { url: string; expiresAt: number }>();
 const SIGNED_URL_INFLIGHT_MAX_ENTRIES = 256;
 const signedUrlInflight = new Map<string, Promise<string>>();
@@ -150,14 +151,15 @@ const signedUrlInflight = new Map<string, Promise<string>>();
 const SIGNED_URL_REFRESH_MARGIN_MS = 5 * 60 * 1000;
 
 function signedUrlCacheKey(
+  bucket: string,
   path: string,
   expiresInSeconds: number,
   transform?: { width: number; quality: number }
 ): string {
   // transform 会改变产物内容，必须进缓存键，否则缩略图和原图会互相覆盖。
   return transform
-    ? `${path}|${expiresInSeconds}|${transform.width}x${transform.quality}`
-    : `${path}|${expiresInSeconds}|`;
+    ? `${bucket}|${path}|${expiresInSeconds}|${transform.width}x${transform.quality}`
+    : `${bucket}|${path}|${expiresInSeconds}|`;
 }
 
 /** 缓存表按插入顺序淘汰最旧条目：Map 迭代顺序即插入顺序。 */
@@ -190,7 +192,7 @@ export async function signPlazaImagePath(
   transform?: { width: number; quality: number }
 ): Promise<string> {
   assertPlazaPath(path);
-  const cacheKey = signedUrlCacheKey(path, expiresInSeconds, transform);
+  const cacheKey = signedUrlCacheKey(BUCKET, path, expiresInSeconds, transform);
   const cached = readSignedUrlCache(cacheKey);
   if (cached) return cached;
   const inflight = signedUrlInflight.get(cacheKey);
@@ -242,6 +244,85 @@ export async function signSharedWorkImagePath(
   transform?: { width: number; quality: number }
 ): Promise<string> {
   return signPlazaImagePath(path, SHARED_WORK_IMAGE_URL_TTL_SECONDS, transform);
+}
+
+export async function uploadPlazaVideoAsset(input: {
+  path: string;
+  bytes: Buffer;
+  contentType: 'video/mp4' | 'image/jpeg' | 'image/webp';
+}): Promise<void> {
+  assertVideoPath(input.path);
+  const maxBytes = input.contentType === 'video/mp4' ? 200 * 1024 * 1024 : 20 * 1024 * 1024;
+  if (input.bytes.byteLength < 1 || input.bytes.byteLength > maxBytes) {
+    throw new Error('video_plaza_asset_size_invalid');
+  }
+  if (input.contentType === 'video/mp4') {
+    if (input.bytes.length < 12 || input.bytes.toString('ascii', 4, 8) !== 'ftyp')
+      throw new Error('video_plaza_mp4_invalid');
+  } else {
+    validatePlazaImage(input.bytes, input.contentType);
+  }
+  const { error } = await getSupabaseClient()
+    .storage.from(VIDEO_BUCKET)
+    .upload(input.path, input.bytes, {
+      contentType: input.contentType,
+      cacheControl: '31536000',
+      upsert: false,
+    });
+  if (error) throw new Error(`video_plaza_storage_upload_failed:${error.message}`);
+}
+
+export async function deletePlazaVideoAssets(paths: string[]): Promise<void> {
+  for (const path of paths) assertVideoPath(path);
+  if (!paths.length) return;
+  const { error } = await getSupabaseClient().storage.from(VIDEO_BUCKET).remove(paths);
+  if (error) throw new Error(`video_plaza_storage_delete_failed:${error.message}`);
+}
+
+/** Public video works share the same bounded stable-URL cache as images. */
+export async function signSharedVideoPath(path: string): Promise<string> {
+  return signVideoPath(path, SHARED_WORK_IMAGE_URL_TTL_SECONDS);
+}
+
+export async function signPrivateVideoPath(path: string): Promise<string> {
+  return signVideoPath(path, PRIVATE_IMAGE_URL_TTL_SECONDS);
+}
+
+async function signVideoPath(path: string, expiresInSeconds: number): Promise<string> {
+  assertVideoPath(path);
+  const cacheKey = signedUrlCacheKey(VIDEO_BUCKET, path, expiresInSeconds);
+  const cached = readSignedUrlCache(cacheKey);
+  if (cached) return cached;
+  const inflight = signedUrlInflight.get(cacheKey);
+  if (inflight) return inflight;
+  const operation = (async () => {
+    const { data, error } = await withTimeout(
+      getSupabaseClient().storage.from(VIDEO_BUCKET).createSignedUrl(path, expiresInSeconds),
+      10_000,
+      'video_plaza_storage_sign_timeout'
+    );
+    if (error || !data?.signedUrl) throw new Error('video_plaza_storage_sign_failed');
+    writeSignedUrlCache(cacheKey, data.signedUrl, expiresInSeconds);
+    return data.signedUrl;
+  })();
+  if (signedUrlInflight.size >= SIGNED_URL_INFLIGHT_MAX_ENTRIES) return operation;
+
+  let tracked: Promise<string>;
+  tracked = operation.finally(() => {
+    if (signedUrlInflight.get(cacheKey) === tracked) signedUrlInflight.delete(cacheKey);
+  });
+  signedUrlInflight.set(cacheKey, tracked);
+  return tracked;
+}
+
+function assertVideoPath(path: string): void {
+  if (
+    !/^media-plaza-video\/(?:attempts\/[0-9a-f-]+|imports\/civitai\/[a-z0-9._/-]+)\/(?:video[.]mp4|poster[.](?:jpg|webp))$/i.test(
+      path
+    )
+  ) {
+    throw new Error('video_plaza_storage_path_rejected');
+  }
 }
 
 export async function downloadPlazaImage(path: string): Promise<Buffer> {

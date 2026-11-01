@@ -105,7 +105,9 @@ export function CreationHub() {
           </span>
           <span className="min-w-0 flex-1">
             <strong className="block text-[13px] font-medium text-foreground">图片与视频</strong>
-            <span className="mt-0.5 block text-[11px] text-muted-foreground">AI 生成与作品广场</span>
+            <span className="mt-0.5 block text-[11px] text-muted-foreground">
+              AI 生成与作品广场
+            </span>
           </span>
           <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
         </Link>
@@ -187,7 +189,11 @@ export function CreationHub() {
               </div>
             ) : (
               <div className="flex min-h-[280px] flex-col items-center justify-center text-center">
-                <Star className="mb-4 size-8 text-muted-foreground" strokeWidth={1.35} aria-hidden />
+                <Star
+                  className="mb-4 size-8 text-muted-foreground"
+                  strokeWidth={1.35}
+                  aria-hidden
+                />
                 <h3 className="text-sm font-medium text-foreground">喜欢的角色，收藏在这里</h3>
                 <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
                   找到喜欢的角色，下次就能直接回来。

@@ -10,9 +10,9 @@
 
 ## Tasks
 
-| ID | Status | Task | Files / Scope | Depends On | Verification |
-| -- | ------ | ---- | ------------- | ---------- | ------------ |
-| T1 | Todo | TBD | TBD | - | TBD |
+| ID  | Status | Task | Files / Scope | Depends On | Verification |
+| --- | ------ | ---- | ------------- | ---------- | ------------ |
+| T1  | Todo   | TBD  | TBD           | -          | TBD          |
 
 ## Execution Log
 

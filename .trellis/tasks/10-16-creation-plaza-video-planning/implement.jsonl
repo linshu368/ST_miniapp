@@ -1,0 +1,24 @@
+{"file": ".trellis/tasks/10-16-creation-plaza-video-planning/prd.md", "reason": "需求、决策 D1-D7、验收与阻塞项"}
+{"file": ".trellis/tasks/10-16-creation-plaza-video-planning/design.md", "reason": "schema ADR、迁移、状态机、契约、前端/Admin/seed/监控设计"}
+{"file": ".trellis/tasks/10-16-creation-plaza-video-planning/research/venice-video-evidence.md", "reason": "Venice 视频接口语义与六模型 provider id/约束"}
+{"file": ".trellis/tasks/10-16-creation-plaza-video-planning/research/seed-and-prototype-evidence.md", "reason": "xlsx 列结构/计数、原型信息结构、代码现状"}
+{"file": ".trellis/spec/database/supabase/schema-and-object-conventions.md", "reason": "新 schema 归属/ADR 与新表 8 问"}
+{"file": ".trellis/spec/database/supabase/migrations-and-rollbacks.md", "reason": "单文件执行、前后 shape、回滚"}
+{"file": ".trellis/spec/database/supabase/security-rls-and-grants.md", "reason": "新 schema/RPC 的 grant 与 RLS"}
+{"file": ".trellis/spec/database/supabase/modules/business/billing-payment.md", "reason": "预扣/退款流水与 entry_type"}
+{"file": ".trellis/spec/backend/app/backend-rules.md", "reason": "路由 @frontend-ready、runtime-config、pino 规范"}
+{"file": ".trellis/spec/backend/app/data-reliability-and-security.md", "reason": "超时/重试/幂等/SSRF"}
+{"file": ".trellis/spec/backend/app/modules/business/wallet-payment.md", "reason": "钱包扣费与返利"}
+{"file": ".trellis/spec/shared/contracts/api-contracts.md", "reason": "契约先行与兼容扩展"}
+{"file": ".trellis/spec/frontend/app/api-dataflow-and-state.md", "reason": "React Query hooks、轮询与缓存"}
+{"file": ".trellis/spec/frontend/app/pages-components-and-ui.md", "reason": "沿用现有组件与视觉"}
+{"file": ".trellis/spec/admin/app/ui-state-and-validation.md", "reason": "Admin 配置编辑与校验"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "跨 DB/后端/前端/Admin 改动顺序"}
+{"file": ".trellis/tasks/archive/2026-10/10-21-sentry-ux-monitoring/design.md", "reason": "Sentry 事件/指标/action-tracker 规范"}
+{"file": ".trellis/tasks/archive/2026-10/10-21-sentry-ux-monitoring/dashboard-and-runbook.md", "reason": "R8.C：现有 api/page/action 指标与 p95 看板拆分"}
+{"file": ".trellis/tasks/archive/2026-10/10-19-image-plaza-performance-plan/prd.md", "reason": "图片广场性能回归：点赞反馈与路径退化≤10% 先例"}
+{"file": "packages/frontend/src/lib/api/image-plaza.ts", "reason": "现状 feed stale/prefetch/轮询 2s，实施时接线与退避"}
+{"file": "packages/backend/src/features/image-plaza/repository.ts", "reason": "现状 listSortedWorks/hydrateWorks/720 缩略图，列表 DTO 与 poster 签名扩展点"}
+{"file": ".trellis/tasks/archive/2026-10/10-20-image-plaza-seed-production/design.md", "reason": "seed 导入流程与门禁先例"}
+{"file": ".trellis/tasks/10-16-creation-plaza-video-planning/research/tag-filter-groups-20261028.md", "reason": "Reviewed tag grouping and filtering design"}
+{"file": ".trellis/tasks/10-16-creation-plaza-video-planning/research/creation-studio-video-ux-gap-20261028.md", "reason": "创作页图片/视频切换、reference 保留、来源默认类型、视频操作与图片转视频的源码缺口和最小方案"}

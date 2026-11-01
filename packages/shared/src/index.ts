@@ -27,6 +27,7 @@ export * from './api/generation-observations';
 export * from './api/voice';
 export * from './api/images';
 export * from './api/image-plaza';
+export * from './api/video-plaza';
 export * from './api/growth';
 export * from './api/invite';
 export * from './api/community';

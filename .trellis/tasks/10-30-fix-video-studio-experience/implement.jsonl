@@ -1,0 +1,7 @@
+{"file":".trellis/spec/frontend/app/pages-components-and-ui.md","reason":"工作室移动端 UI、Sheet、loading/error 与键盘/安全区规范"}
+{"file":".trellis/spec/frontend/app/api-dataflow-and-state.md","reason":"React Query 服务器状态与 cache 复用规范"}
+{"file":".trellis/spec/frontend/app/testing-quality-and-deployment.md","reason":"性能、构建与移动端验收规范"}
+{"file":".trellis/spec/frontend/app/modules/business/conversation-ui.md","reason":"影像工作室当前模块事实"}
+{"file":".trellis/spec/backend/app/data-reliability-and-security.md","reason":"外部调用超时、重试、日志与错误处理"}
+{"file":".trellis/spec/backend/app/modules/business/conversation-generation.md","reason":"视频 worker、计费与 provider 调用链当前事实"}
+{"file":".trellis/spec/shared/contracts/modules/business/conversation-contracts.md","reason":"视频模型与 attempt 契约边界"}

@@ -10,4 +10,5 @@
 预期命令：pnpm --filter @miniapp/shared test; pnpm -r typecheck; pnpm --filter @miniapp/backend test; pnpm --filter @miniapp/frontend test; pnpm --filter @miniapp/admin build; pnpm --filter @miniapp/frontend build; pnpm test:ui --grep @creator（扩展现有suite）。具体实际执行与结果记入task.md。
 
 ## 创作连续性增量
+
 Editor agent负责候选类型/恢复、草稿新字段/基准指纹和Dialog回调；Core agent负责空间草稿状态和approved DTO；root负责主编辑器接线、恢复副本/封面复用/缺项定位/提交差异、fixture与固定验收。共享文件按职责串行写，不回退彼此更改。完成后移动端独立验收。

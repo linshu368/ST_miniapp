@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   update: vi.fn(),
   user: vi.fn(),
   list: vi.fn(),
+  videoReference: vi.fn(),
 }));
 vi.mock('../features/image-plaza/config.js', () => ({
   getImagePlazaFeedRuntimeConfig: mocks.runtime,
@@ -30,6 +31,7 @@ vi.mock('../features/image-plaza/repository.js', () => ({
     getWork = mocks.work;
     updateWorkTagsIfEmpty = mocks.update;
     listWorks = mocks.list;
+    createVideoReferenceFromImageArtifact = mocks.videoReference;
   },
 }));
 vi.mock('../middleware/auth.js', () => ({ requireTelegramAuth: vi.fn(async () => {}) }));
@@ -47,6 +49,12 @@ beforeEach(async () => {
   vi.resetAllMocks();
   mocks.user.mockResolvedValue({ id: 'owner' });
   mocks.list.mockResolvedValue({ works: [], nextCursor: null });
+  mocks.videoReference.mockResolvedValue({
+    id: '22222222-2222-4222-8222-222222222222',
+    image_url: 'https://example.com/reference.webp',
+    width: 1024,
+    height: 1536,
+  });
   storedTags = [];
   mocks.runtime.mockResolvedValue({
     enabled: true,
@@ -65,7 +73,11 @@ beforeEach(async () => {
     storedTags = input.tags;
     return { workId: 'work', alreadyShared: false, rewardCredits: 10 };
   });
-  mocks.work.mockImplementation(async () => ({ id: 'work', tags: [...storedTags] }));
+  mocks.work.mockImplementation(async () => ({
+    id: 'work',
+    media_type: 'image',
+    tags: [...storedTags],
+  }));
   mocks.update.mockResolvedValue(true);
   app = Fastify();
   app.addHook('preHandler', async (request) => {
@@ -105,7 +117,7 @@ describe('image plaza feed contract', () => {
       userId: 'owner',
       sort: 'recommended',
       search: 'cat',
-      tagLabel: '肖像',
+      tagLabels: ['肖像'],
       limit: 20,
     });
     expect((await app.inject('/api/image-plaza/feed')).statusCode).toBe(200);
@@ -118,6 +130,43 @@ describe('image plaza feed contract', () => {
     const result = await app.inject('/api/image-plaza/feed?sort=latest&cursor=old');
     expect(result.statusCode).toBe(400);
     expect(result.json().error.code).toBe('IMAGE_PLAZA_INVALID_CURSOR');
+  });
+});
+
+describe('image artifact video reference', () => {
+  it('maps a ready image artifact through the authenticated repository boundary', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/image-plaza/image-artifacts/${artifactId}/video-reference`,
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(mocks.videoReference).toHaveBeenCalledWith(artifactId, 'owner');
+    expect(response.json().data.artifact).toMatchObject({
+      id: '22222222-2222-4222-8222-222222222222',
+      width: 1024,
+      height: 1536,
+    });
+  });
+
+  it('rejects malformed and inaccessible artifact ids without exposing details', async () => {
+    expect(
+      (
+        await app.inject({
+          method: 'POST',
+          url: '/api/image-plaza/image-artifacts/not-a-uuid/video-reference',
+        })
+      ).statusCode
+    ).toBe(400);
+    expect(mocks.videoReference).not.toHaveBeenCalled();
+
+    mocks.videoReference.mockRejectedValueOnce(new Error('image_plaza_artifact_not_found'));
+    const missing = await app.inject({
+      method: 'POST',
+      url: `/api/image-plaza/image-artifacts/${artifactId}/video-reference`,
+    });
+    expect(missing.statusCode).toBe(404);
+    expect(missing.json().error.code).toBe('NOT_FOUND');
   });
 });
 

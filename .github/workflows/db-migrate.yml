@@ -127,6 +127,8 @@ jobs:
           CLAIM_ABANDON_REASON: ${{ inputs.claim_abandon_reason }}
           APPLIED_BY: ${{ github.actor }}
           ENVIRONMENT: ${{ inputs.environment }}
+          SEED_PROJECT_REF: ${{ steps.target.outputs.project_ref }}
+          SEED_STORAGE_VERIFIED: 'yes'
         run: |
           set -euo pipefail
 
@@ -152,6 +154,8 @@ jobs:
             CLAIM_ABANDON_REASON="$CLAIM_ABANDON_REASON" \
             APPLIED_BY="$APPLIED_BY" \
             ENVIRONMENT="$ENVIRONMENT" \
+            SEED_PROJECT_REF="$SEED_PROJECT_REF" \
+            SEED_STORAGE_VERIFIED="$SEED_STORAGE_VERIFIED" \
             bash scripts/apply-repo-migration.sh
 
       - name: Cleanup database URL

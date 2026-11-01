@@ -20,6 +20,8 @@ import type {
   ImagePlazaShareTipConfig,
   ImagePlazaTagConfig,
   ProviderImagePlazaModel,
+  ProviderVideoPlazaModel,
+  VideoPlazaModelCatalog,
 } from '@miniapp/shared';
 import { ImagePlazaTagConfigSchema } from '@miniapp/shared';
 import {
@@ -29,6 +31,10 @@ import {
   recalculateImagePlazaCatalog,
   type ImagePlazaPricingFactors,
 } from '../lib/imagePlazaPricing';
+import {
+  getDefaultVideoPlazaModelOptions,
+  normalizeVideoPlazaCatalogOptions,
+} from '../lib/configSchemas';
 
 const RATIOS: ImagePlazaAspectRatio[] = [
   '1:1',
@@ -326,6 +332,180 @@ export function ImagePlazaModelCatalogEditor(props: {
   );
 }
 
+export function VideoPlazaModelCatalogEditor(props: {
+  value: VideoPlazaModelCatalog;
+  disabled?: boolean;
+  onChange: (value: VideoPlazaModelCatalog) => void;
+}) {
+  const patchModel = (index: number, patch: Partial<ProviderVideoPlazaModel>) => {
+    const models = structuredClone(props.value.models);
+    models[index] = { ...models[index], ...patch };
+    props.onChange({ ...props.value, models });
+  };
+  const patchModelOptions = (index: number, patch: Partial<ProviderVideoPlazaModel>) => {
+    const models = structuredClone(props.value.models);
+    models[index] = { ...models[index], ...patch };
+    props.onChange(normalizeVideoPlazaCatalogOptions({ ...props.value, models }));
+  };
+  return (
+    <Space direction="vertical" size="middle" className="editor-stack">
+      <Alert
+        type="warning"
+        showIcon
+        message="占位价格禁止直接发布"
+        description="时长固定为 5/10 秒，画幅固定为 16:9、9:16、1:1，清晰度按各模型能力限制为 720P/1080P；发布前仍须根据 Venice /video/quote 核价并补全真实星尘价格。"
+      />
+      <div>
+        <Typography.Text strong>默认模型</Typography.Text>
+        <Select
+          className="field-full"
+          value={props.value.default_model_id}
+          disabled={props.disabled}
+          options={props.value.models
+            .filter((item) => item.enabled)
+            .map((item) => ({ value: item.id, label: item.name }))}
+          onChange={(default_model_id) => props.onChange({ ...props.value, default_model_id })}
+        />
+      </div>
+      {props.value.models.map((model, index) => (
+        <Card
+          key={model.id}
+          size="small"
+          title={`${index + 1}. ${model.name}`}
+          extra={
+            <Switch
+              checked={model.enabled}
+              disabled={props.disabled}
+              checkedChildren="上架"
+              unCheckedChildren="下架"
+              onChange={(enabled) => patchModel(index, { enabled })}
+            />
+          }
+        >
+          <Row gutter={[12, 12]}>
+            <Col xs={24} md={8}>
+              <Typography.Text>业务 ID</Typography.Text>
+              <Input value={model.id} disabled />
+            </Col>
+            <Col xs={24} md={8}>
+              <Typography.Text>名称</Typography.Text>
+              <Input
+                value={model.name}
+                disabled={props.disabled}
+                onChange={(event) => patchModel(index, { name: event.target.value })}
+              />
+            </Col>
+            <Col xs={24} md={8}>
+              <Typography.Text>附图模式</Typography.Text>
+              <Select
+                className="field-full"
+                value={model.image_input}
+                disabled={props.disabled}
+                options={[
+                  'none',
+                  'optional_first_frame',
+                  'optional_reference',
+                  'required_reference',
+                ].map((value) => ({ value, label: value }))}
+                onChange={(image_input) => patchModel(index, { image_input })}
+              />
+            </Col>
+            {(['t2v', 'i2v', 'r2v'] as const).map((mode) => (
+              <Col key={mode} xs={24} md={8}>
+                <Typography.Text>{mode} Provider ID</Typography.Text>
+                <Input
+                  value={model.provider_ids[mode] ?? ''}
+                  disabled={props.disabled}
+                  onChange={(event) =>
+                    patchModel(index, {
+                      provider_ids: {
+                        ...model.provider_ids,
+                        [mode]: event.target.value.trim() || undefined,
+                      },
+                    })
+                  }
+                />
+              </Col>
+            ))}
+            <Col span={24}>
+              <Typography.Text>说明</Typography.Text>
+              <Input
+                value={model.description}
+                disabled={props.disabled}
+                maxLength={240}
+                onChange={(event) => patchModel(index, { description: event.target.value })}
+              />
+            </Col>
+            <Col xs={24} md={8}>
+              <Typography.Text>时长（秒）</Typography.Text>
+              <Select
+                mode="multiple"
+                className="field-full"
+                value={model.durations.map(String)}
+                disabled={props.disabled}
+                options={(
+                  getDefaultVideoPlazaModelOptions(model.id)?.durations ?? model.durations
+                ).map((value) => ({
+                  value: String(value),
+                  label: `${value} 秒`,
+                }))}
+                onChange={(values) => patchModelOptions(index, { durations: values.map(Number) })}
+              />
+            </Col>
+            <Col xs={24} md={8}>
+              <Typography.Text>清晰度</Typography.Text>
+              <Select
+                mode="multiple"
+                className="field-full"
+                value={model.resolutions}
+                disabled={props.disabled}
+                options={(
+                  getDefaultVideoPlazaModelOptions(model.id)?.resolutions ?? model.resolutions
+                ).map((value) => ({ value, label: value.toUpperCase() }))}
+                onChange={(resolutions) => patchModelOptions(index, { resolutions })}
+              />
+            </Col>
+            <Col xs={24} md={8}>
+              <Typography.Text>画幅</Typography.Text>
+              <Select
+                mode="multiple"
+                className="field-full"
+                value={model.aspect_ratios}
+                disabled={props.disabled}
+                options={(
+                  getDefaultVideoPlazaModelOptions(model.id)?.aspect_ratios ?? model.aspect_ratios
+                ).map((value) => ({ value, label: value }))}
+                onChange={(aspect_ratios) => patchModelOptions(index, { aspect_ratios })}
+              />
+            </Col>
+            <Col span={24}>
+              <Typography.Text strong>价格矩阵（星尘）</Typography.Text>
+              <div className="mt-2 grid gap-2 md:grid-cols-2">
+                {Object.entries(model.price_matrix).map(([key, credits]) => (
+                  <InputNumber
+                    key={key}
+                    addonBefore={key}
+                    min={1}
+                    max={1_000_000}
+                    precision={1}
+                    value={credits}
+                    disabled={props.disabled}
+                    onChange={(value) =>
+                      patchModel(index, {
+                        price_matrix: { ...model.price_matrix, [key]: value ?? 1 },
+                      })
+                    }
+                  />
+                ))}
+              </div>
+            </Col>
+          </Row>
+        </Card>
+      ))}
+    </Space>
+  );
+}
+
 function PricingRow(props: {
   label: string;
   credits: number;
@@ -487,13 +667,40 @@ export function ImagePlazaTagsEditor(props: {
     next[index] = { ...next[index], ...patch };
     props.onChange(next);
   };
+  const updateGroup = (
+    index: number,
+    patch: Pick<
+      Partial<ImagePlazaTagConfig[number]>,
+      'group_label' | 'group_sort_order' | 'group_layout'
+    >
+  ) => {
+    const groupId = props.value[index]?.group_id;
+    props.onChange(
+      props.value.map((tag) => (tag.group_id === groupId ? { ...tag, ...patch } : tag))
+    );
+  };
+  const moveToGroup = (index: number, groupId: string) => {
+    const existing = props.value.find(
+      (tag, itemIndex) => itemIndex !== index && tag.group_id === groupId
+    );
+    update(index, {
+      group_id: groupId,
+      ...(existing
+        ? {
+            group_label: existing.group_label,
+            group_sort_order: existing.group_sort_order,
+            group_layout: existing.group_layout,
+          }
+        : {}),
+    });
+  };
   return (
     <Space direction="vertical" size="middle" className="editor-stack">
       <Alert
         showIcon
         type="info"
-        message="“全部”是系统固定标签"
-        description="删除运营标签只影响后续筛选入口，不会删除作品或改写历史作品标签。"
+        message="图片与视频共用同一标签目录"
+        description="“全部”是系统固定项；筛选按标签名称模糊匹配 prompt_zh。相同分组 ID 会共享分组名称、顺序和布局。"
       />
       {!validation.success && (
         <Alert
@@ -519,7 +726,7 @@ export function ImagePlazaTagsEditor(props: {
       {props.value.map((tag, index) => (
         <Card key={rowKeys[index]} size="small">
           <Row gutter={[12, 12]} align="middle">
-            <Col xs={24} md={7}>
+            <Col xs={24} md={6}>
               <Input
                 addonBefore="ID"
                 aria-label={`标签 ${index + 1} ID`}
@@ -528,7 +735,7 @@ export function ImagePlazaTagsEditor(props: {
                 onChange={(event) => update(index, { id: event.target.value })}
               />
             </Col>
-            <Col xs={24} md={7}>
+            <Col xs={24} md={6}>
               <Input
                 addonBefore="名称"
                 aria-label={`标签 ${index + 1} 名称`}
@@ -546,6 +753,7 @@ export function ImagePlazaTagsEditor(props: {
             </Col>
             <Col xs={8} md={3}>
               <InputNumber
+                addonBefore="标签顺序"
                 min={0}
                 precision={0}
                 value={tag.sort_order}
@@ -553,7 +761,7 @@ export function ImagePlazaTagsEditor(props: {
                 onChange={(sort_order) => update(index, { sort_order: sort_order ?? 0 })}
               />
             </Col>
-            <Col xs={8} md={4}>
+            <Col xs={8} md={6}>
               <Button
                 danger
                 block
@@ -566,6 +774,50 @@ export function ImagePlazaTagsEditor(props: {
                 删除
               </Button>
             </Col>
+            <Col xs={24} md={6}>
+              <Input
+                addonBefore="分组 ID"
+                aria-label={`标签 ${index + 1} 分组 ID`}
+                value={tag.group_id}
+                disabled={props.disabled}
+                onChange={(event) => moveToGroup(index, event.target.value)}
+              />
+            </Col>
+            <Col xs={24} md={6}>
+              <Input
+                addonBefore="分组名称"
+                aria-label={`标签 ${index + 1} 分组名称`}
+                value={tag.group_label}
+                disabled={props.disabled}
+                onChange={(event) => updateGroup(index, { group_label: event.target.value })}
+              />
+            </Col>
+            <Col xs={12} md={6}>
+              <InputNumber
+                addonBefore="分组顺序"
+                className="field-full"
+                min={0}
+                precision={0}
+                value={tag.group_sort_order}
+                disabled={props.disabled}
+                onChange={(group_sort_order) =>
+                  updateGroup(index, { group_sort_order: group_sort_order ?? 0 })
+                }
+              />
+            </Col>
+            <Col xs={12} md={6}>
+              <Select
+                aria-label={`标签 ${index + 1} 分组布局`}
+                className="field-full"
+                value={tag.group_layout}
+                disabled={props.disabled}
+                options={[
+                  { value: 'chips', label: '标签流式布局' },
+                  { value: 'grid', label: '卡片网格布局' },
+                ]}
+                onChange={(group_layout) => updateGroup(index, { group_layout })}
+              />
+            </Col>
           </Row>
         </Card>
       ))}
@@ -573,6 +825,7 @@ export function ImagePlazaTagsEditor(props: {
         block
         disabled={props.disabled}
         onClick={() => {
+          const previous = props.value.at(-1);
           setRowKeys((current) => [...current, crypto.randomUUID()]);
           props.onChange([
             ...props.value,
@@ -581,6 +834,10 @@ export function ImagePlazaTagsEditor(props: {
               label: '新标签',
               enabled: true,
               sort_order: props.value.length,
+              group_id: previous?.group_id ?? 'style',
+              group_label: previous?.group_label ?? '风格',
+              group_sort_order: previous?.group_sort_order ?? 0,
+              group_layout: previous?.group_layout ?? 'chips',
             },
           ]);
         }}

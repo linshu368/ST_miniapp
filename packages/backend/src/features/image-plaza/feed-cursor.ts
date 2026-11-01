@@ -8,9 +8,13 @@ import {
 } from '@miniapp/shared';
 export type FeedCursor = ImagePlazaFeedCursor;
 
-export function feedFilter(search?: string, tagLabel?: string): string {
+export function feedFilter(
+  search?: string,
+  tagLabels: string[] = [],
+  media: 'all' | 'image' | 'video' = 'all'
+): string {
   return createHash('sha256')
-    .update(JSON.stringify([search?.trim() ?? '', tagLabel?.trim() ?? '']))
+    .update(JSON.stringify([search?.trim() ?? '', [...tagLabels].sort(), media]))
     .digest('hex');
 }
 

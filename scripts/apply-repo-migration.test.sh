@@ -65,6 +65,18 @@ run_apply 1 env ENVIRONMENT=production MIGRATION_FILE="$ROOT/packages/shared/mig
 grep -q 'MIGRATION_PROD_104_FORBIDDEN' "$err" || fail "104 guard did not fire"
 pass "production rejects 104"
 
+# Seed migrations are environment-bound before any database connection is made.
+SEED_TEST_FIXTURE="$(mktemp "${TMPDIR:-/tmp}/20261028_media_plaza_video_seed_test_10.XXXXXX.sql")"
+SEED_PROD_FIXTURE="$(mktemp "${TMPDIR:-/tmp}/20261028_media_plaza_video_seed_production_01.XXXXXX.sql")"
+run_apply 1 env ENVIRONMENT=production MIGRATION_FILE="$SEED_TEST_FIXTURE" DATABASE_URL="$DATABASE_URL" "${APPLY[@]}"
+grep -q 'MIGRATION_ENVIRONMENT_MISMATCH' "$err" || fail "TEST seed environment guard did not fire"
+run_apply 1 env ENVIRONMENT=test MIGRATION_FILE="$SEED_TEST_FIXTURE" DATABASE_URL="$DATABASE_URL" "${APPLY[@]}"
+grep -q 'MIGRATION_SEED_APPROVAL_MISSING' "$err" || fail "direct TEST seed guard did not fire"
+run_apply 1 env ENVIRONMENT=test MIGRATION_FILE="$SEED_PROD_FIXTURE" DATABASE_URL="$DATABASE_URL" "${APPLY[@]}"
+grep -q 'MIGRATION_ENVIRONMENT_MISMATCH' "$err" || fail "production seed environment guard did not fire"
+rm -f "$SEED_TEST_FIXTURE" "$SEED_PROD_FIXTURE"
+pass "video seed migrations are environment-bound"
+
 # 2. 账本表不存在时拒绝其它文件，不再静默放行。
 run_apply 1 env MIGRATION_FILE="$ROOT/packages/shared/migrations/20260914_repo_migration_ledger_events.sql" DATABASE_URL="$DATABASE_URL" "${APPLY[@]}"
 grep -q 'MIGRATION_LEDGER_MISSING' "$err" || fail "missing ledger did not fail"

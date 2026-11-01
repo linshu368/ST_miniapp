@@ -4,23 +4,23 @@
 
 工作区根目录：`G:/JobLib/ST_miniapp`。以下证据为源码或 MIGRATION，不是生产实况。
 
-| 已检索位置 | 当前事实 / 复用决策 |
-| --- | --- |
-| `G:/JobLib/ST_miniapp/packages/backend/src/features/image-plaza/repository.ts` | `listWorks` 按 like_count、published_at、id 降序，先筛选再分页；扩展现有 repository，不新建 feed 服务。保留 prompt/prompt_zh 搜索和 prompt_zh 标签匹配及字面转义。 |
-| `G:/JobLib/ST_miniapp/packages/shared/migrations/20261014_image_plaza_feed_like_order.sql` | 当前点赞排序 migration 来源；不改写历史。 |
-| `G:/JobLib/ST_miniapp/packages/shared/migrations/20261013_image_plaza_seed_catalog.sql` | seed 有 source_heat，generated 的 source_heat 为空；保留数据语义，不回填虚构热度。 |
-| `G:/JobLib/ST_miniapp/packages/frontend/src/lib/api/image-plaza.ts` | feed key 当前只有 search/tag；详情已有 feed placeholder；创建会话已有 cache 写入；点赞成功仅 invalidate。扩展这些 hooks，不重复造缓存。 |
-| `G:/JobLib/ST_miniapp/packages/frontend/src/app/(main)/create/page.tsx` | 复用现有标签、搜索、瀑布流及无限查询，在标签下增加排序控件。 |
-| `G:/JobLib/ST_miniapp/packages/frontend/src/components/chat/chat-message-list.tsx` | 有 120px 底部阈值、用户滚动检测、直接 scrollTop 和 ResizeObserver；复用策略而非整组件，避免耦合聊天 DTO。 |
-| `G:/JobLib/ST_miniapp/packages/frontend/src/components/chat/message-list.tsx` | 已纳入聊天组件检索；不引入第二套聊天渲染。`chats/page.tsx` 是会话列表，不是滚动算法来源。 |
-| `G:/JobLib/ST_miniapp/packages/frontend/src/app/(main)/create/studio/[conversationId]/page.tsx` | messages 更新时反复 smooth scroll；上传完成才设置 reference；只修改此处交互，不改轮询传输。 |
-| `G:/JobLib/ST_miniapp/packages/frontend/src/components/image-plaza/studio-artifact-card.tsx` | 复用产物展示，必要时补图片尺寸占位；不重做卡片。 |
-| `G:/JobLib/ST_miniapp/packages/frontend/src/lib/use-visual-viewport-height.ts` | 复用视口适配，不另建 Telegram 键盘高度来源。 |
-| `G:/JobLib/ST_miniapp/packages/frontend/src/app/(main)/create/work/[workId]/page.tsx` | 心形 aria-label 是点赞；“用同款”已有 pending，需补失败反馈；详情当前直接切换 img src。 |
-| `G:/JobLib/ST_miniapp/packages/frontend/src/lib/api/favorites.ts` | 独立角色收藏路径，不与作品点赞合并。 |
-| `G:/JobLib/ST_miniapp/packages/frontend/src/lib/api/client.ts`、`G:/JobLib/ST_miniapp/packages/frontend/src/lib/api/query-client.ts`、`G:/JobLib/ST_miniapp/packages/frontend/src/lib/api/media-cache.ts` | 沿用统一 client、Query 生命周期及媒体缓存约束；不把签名 URL 持久化成永久地址，不盲目扩大缓存。 |
-| `G:/JobLib/ST_miniapp/packages/backend/src/features/image-plaza/storage.ts`、`G:/JobLib/ST_miniapp/packages/backend/src/routes/image-plaza.ts` | feed 签名缩略图、详情签名原图；复用签名与鉴权，先拆分 API/签名/传输/解码耗时。 |
-| `G:/JobLib/ST_miniapp/packages/shared/src/api/image-plaza.ts` | 扩展现有 Zod 契约，保持已有响应结构；不将 DB 行类型传给浏览器。 |
+| 已检索位置                                                                                                                                                                                                | 当前事实 / 复用决策                                                                                                                                                |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `G:/JobLib/ST_miniapp/packages/backend/src/features/image-plaza/repository.ts`                                                                                                                            | `listWorks` 按 like_count、published_at、id 降序，先筛选再分页；扩展现有 repository，不新建 feed 服务。保留 prompt/prompt_zh 搜索和 prompt_zh 标签匹配及字面转义。 |
+| `G:/JobLib/ST_miniapp/packages/shared/migrations/20261014_image_plaza_feed_like_order.sql`                                                                                                                | 当前点赞排序 migration 来源；不改写历史。                                                                                                                          |
+| `G:/JobLib/ST_miniapp/packages/shared/migrations/20261013_image_plaza_seed_catalog.sql`                                                                                                                   | seed 有 source_heat，generated 的 source_heat 为空；保留数据语义，不回填虚构热度。                                                                                 |
+| `G:/JobLib/ST_miniapp/packages/frontend/src/lib/api/image-plaza.ts`                                                                                                                                       | feed key 当前只有 search/tag；详情已有 feed placeholder；创建会话已有 cache 写入；点赞成功仅 invalidate。扩展这些 hooks，不重复造缓存。                            |
+| `G:/JobLib/ST_miniapp/packages/frontend/src/app/(main)/create/page.tsx`                                                                                                                                   | 复用现有标签、搜索、瀑布流及无限查询，在标签下增加排序控件。                                                                                                       |
+| `G:/JobLib/ST_miniapp/packages/frontend/src/components/chat/chat-message-list.tsx`                                                                                                                        | 有 120px 底部阈值、用户滚动检测、直接 scrollTop 和 ResizeObserver；复用策略而非整组件，避免耦合聊天 DTO。                                                          |
+| `G:/JobLib/ST_miniapp/packages/frontend/src/components/chat/message-list.tsx`                                                                                                                             | 已纳入聊天组件检索；不引入第二套聊天渲染。`chats/page.tsx` 是会话列表，不是滚动算法来源。                                                                          |
+| `G:/JobLib/ST_miniapp/packages/frontend/src/app/(main)/create/studio/[conversationId]/page.tsx`                                                                                                           | messages 更新时反复 smooth scroll；上传完成才设置 reference；只修改此处交互，不改轮询传输。                                                                        |
+| `G:/JobLib/ST_miniapp/packages/frontend/src/components/image-plaza/studio-artifact-card.tsx`                                                                                                              | 复用产物展示，必要时补图片尺寸占位；不重做卡片。                                                                                                                   |
+| `G:/JobLib/ST_miniapp/packages/frontend/src/lib/use-visual-viewport-height.ts`                                                                                                                            | 复用视口适配，不另建 Telegram 键盘高度来源。                                                                                                                       |
+| `G:/JobLib/ST_miniapp/packages/frontend/src/app/(main)/create/work/[workId]/page.tsx`                                                                                                                     | 心形 aria-label 是点赞；“用同款”已有 pending，需补失败反馈；详情当前直接切换 img src。                                                                             |
+| `G:/JobLib/ST_miniapp/packages/frontend/src/lib/api/favorites.ts`                                                                                                                                         | 独立角色收藏路径，不与作品点赞合并。                                                                                                                               |
+| `G:/JobLib/ST_miniapp/packages/frontend/src/lib/api/client.ts`、`G:/JobLib/ST_miniapp/packages/frontend/src/lib/api/query-client.ts`、`G:/JobLib/ST_miniapp/packages/frontend/src/lib/api/media-cache.ts` | 沿用统一 client、Query 生命周期及媒体缓存约束；不把签名 URL 持久化成永久地址，不盲目扩大缓存。                                                                     |
+| `G:/JobLib/ST_miniapp/packages/backend/src/features/image-plaza/storage.ts`、`G:/JobLib/ST_miniapp/packages/backend/src/routes/image-plaza.ts`                                                            | feed 签名缩略图、详情签名原图；复用签名与鉴权，先拆分 API/签名/传输/解码耗时。                                                                                     |
+| `G:/JobLib/ST_miniapp/packages/shared/src/api/image-plaza.ts`                                                                                                                                             | 扩展现有 Zod 契约，保持已有响应结构；不将 DB 行类型传给浏览器。                                                                                                    |
 
 现有数据库点赞、分享、创建会话与 seed import 的 RPC/repository 链路不替换；推荐查询为新增只读能力，不能复用计费/发奖 RPC 来排序。当前任务不修改全局 Supabase client；其初始化未显式配置全局 fetch deadline，不能据此断言所有调用都无超时，实施时逐路径核对。
 
@@ -129,15 +129,15 @@ Supabase 官方资料（2026-10-19 查阅）说明 signed token 影响 CDN 缓�
 
 ## 8. 可靠性、最小方案与发布恢复
 
-| 风险 | 约束 |
-| --- | --- |
-| 超时/重试 | 新排名读建议客户端总预算 10s、DB statement 3s（待基线确认）；图片保持可取消/失败 UI。读最多一次退避重试且不叠加 Query/client 多层重试；写默认零自动重试。确认 SDK 请求可真正中止，不用 Promise.race 冒充取消。 |
-| 幂等/并发/事务 | 排名一次只读语句获得请求内一致性；点赞复用既有写事务，不改账务；创建/上传结果未知不得盲重试；客户端 request token 防晚到覆盖。 |
-| 降级 | 读失败显示可重试错误，保留已展示图像；不能无提示把推荐改成最新。不得让遥测失败影响业务。 |
-| 补偿 | 乐观点赞字段级回滚；预览清理本地资源；无新增账务写入，因此无账务补偿。 |
-| 限流/容量 | 复用鉴权与既有限流、分页上限、上传大小限制；控制并发签名、避免全量原图预取与多层自动重试。无新队列/后台任务。 |
-| 安全 | RPC grants、未下架过滤、个性化 liked 隔离、上传所有权检查不变；无敏感日志/导出。 |
-| 可观测性 | 分段耗时、错误率、DB 排序成本、重复请求数、主线程长任务；基线和回归使用同条件，不把感受替代数据。 |
+| 风险           | 约束                                                                                                                                                                                                           |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 超时/重试      | 新排名读建议客户端总预算 10s、DB statement 3s（待基线确认）；图片保持可取消/失败 UI。读最多一次退避重试且不叠加 Query/client 多层重试；写默认零自动重试。确认 SDK 请求可真正中止，不用 Promise.race 冒充取消。 |
+| 幂等/并发/事务 | 排名一次只读语句获得请求内一致性；点赞复用既有写事务，不改账务；创建/上传结果未知不得盲重试；客户端 request token 防晚到覆盖。                                                                                 |
+| 降级           | 读失败显示可重试错误，保留已展示图像；不能无提示把推荐改成最新。不得让遥测失败影响业务。                                                                                                                       |
+| 补偿           | 乐观点赞字段级回滚；预览清理本地资源；无新增账务写入，因此无账务补偿。                                                                                                                                         |
+| 限流/容量      | 复用鉴权与既有限流、分页上限、上传大小限制；控制并发签名、避免全量原图预取与多层自动重试。无新队列/后台任务。                                                                                                  |
+| 安全           | RPC grants、未下架过滤、个性化 liked 隔离、上传所有权检查不变；无敏感日志/导出。                                                                                                                               |
+| 可观测性       | 分段耗时、错误率、DB 排序成本、重复请求数、主线程长任务；基线和回归使用同条件，不把感受替代数据。                                                                                                              |
 
 发布顺序：纯前端预览/滚动可独立验收；排序为 TEST 加列/一次初始化/索引→兼容 backend→frontend→真机→production 独立批准。先内部 Preview 小范围验证，不引入新的灰度平台；若需开关只能走既有 runtime-config 入口并另审契约。
 

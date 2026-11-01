@@ -26,6 +26,7 @@
 - Local validation passed: backend typecheck, 980 backend tests, migration lint,
   legacy scan, direct ESLint invocation, Trellis context validation, and
   `git diff --check`.
-- No local PostgreSQL validation was possible because this workstation has no
-  running Docker daemon or `psql`. Executing M1, its assertions, the exposure
-  script, and smoke tests in Supabase TEST remains a release gate.
+- 2026-10-27 user confirmation: M1 and the PostgREST exposure script have been
+  completed in both Supabase TEST and Production. Do not rerun or roll back M1;
+  any later shape drift must be handled with a forward-fix. Application merge
+  and deployment remain separate release steps.

@@ -979,7 +979,10 @@ function CharacterEditor({
       })}
       <section className="mt-6 border-t border-border/70 pt-6">
         <fieldset>
-          <legend id="creator-tags" className="mb-3 scroll-mt-5 text-sm font-medium text-foreground">
+          <legend
+            id="creator-tags"
+            className="mb-3 scroll-mt-5 text-sm font-medium text-foreground"
+          >
             标签{requiredMark}
             <span className="ml-2 text-[11px] font-normal tabular-nums text-muted-foreground">
               {draft.tags.length} / 10
@@ -1062,7 +1065,11 @@ function CharacterEditor({
       </section>
       <section className="mt-8 border-t border-border/70 pt-5">
         {showRequired && missingFields.length > 0 && (
-          <div id="creator-missing" role="alert" className="mb-3 text-xs leading-7 text-destructive">
+          <div
+            id="creator-missing"
+            role="alert"
+            className="mb-3 text-xs leading-7 text-destructive"
+          >
             <span>请补全必填项：</span>
             <div className="flex flex-wrap gap-x-3">
               {missingFields.map((field) => (

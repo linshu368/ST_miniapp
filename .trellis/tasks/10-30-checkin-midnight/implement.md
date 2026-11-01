@@ -1,4 +1,5 @@
 # 执行与验证
+
 1. shared wallet工具及既有contracts测试：UTC16:00、23:59:59.999、月底/年末、运行时区无关。
 2. 后端状态使用helper；新migration只替换当前RPC时间逻辑。
 3. 个人中心提示、payment hook单次到期刷新，扩展已有fixture及@profile场景。
