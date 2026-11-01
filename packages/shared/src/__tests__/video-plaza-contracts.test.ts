@@ -8,6 +8,7 @@ import {
 import {
   ProviderVideoPlazaModelSchema,
   selectSupportedVideoPlazaOptions,
+  SubmitVideoPlazaAttemptDataSchema,
   SubmitVideoPlazaAttemptRequestSchema,
   VideoPlazaModelCatalogSchema,
   VideoPlazaModelSchema,
@@ -147,6 +148,44 @@ describe('video plaza public requests', () => {
         auto_optimize: true,
       }).success
     ).toBe(false);
+  });
+
+  it('keeps submit message refs additive for rolling deploy compatibility', () => {
+    const attempt = {
+      id: '11111111-1111-4111-8111-111111111111',
+      conversation_id: '22222222-2222-4222-8222-222222222222',
+      status: 'submitting',
+      error_code: null,
+      quote_credits: 10,
+      params: {
+        model_id: 'minimax-h3-max',
+        input_mode: 't2v',
+        duration_s: 10,
+        resolution: '1080P',
+        aspect_ratio: '16:9',
+        audio: true,
+        reference_artifact_id: null,
+      },
+      artifact: null,
+      created_at: '2026-10-30T07:23:36.454Z',
+      updated_at: '2026-10-30T07:23:36.900Z',
+    };
+    expect(SubmitVideoPlazaAttemptDataSchema.parse({ attempt }).message_refs).toBeUndefined();
+    expect(
+      SubmitVideoPlazaAttemptDataSchema.parse({
+        attempt,
+        message_refs: {
+          user: {
+            id: '33333333-3333-4333-8333-333333333333',
+            created_at: '2026-10-30T07:23:36.500Z',
+          },
+          assistant: {
+            id: '44444444-4444-4444-8444-444444444444',
+            created_at: '2026-10-30T07:23:36.510Z',
+          },
+        },
+      }).message_refs?.assistant.id
+    ).toBe('44444444-4444-4444-8444-444444444444');
   });
 });
 

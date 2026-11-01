@@ -1,0 +1,32 @@
+{
+  "id": "fix-video-studio-experience",
+  "name": "fix-video-studio-experience",
+  "title": "修复视频生成并优化工作室体验",
+  "description": "修复 PR-566 视频提交 400，优化影像工作室加载速度、模型选择弹窗间距和长标题顶部布局",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "cross-layer",
+  "package": "frontend",
+  "priority": "P1",
+  "creator": "cline",
+  "assignee": "cline",
+  "createdAt": "2026-10-30",
+  "completedAt": null,
+  "branch": "feat_video_park",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "no_module_change",
+      "reason": "本次仅修正 Venice 适配器 wire format，并在既有 React Query/UI 边界内优化缓存与布局；模块职责、公开契约、存储、计费及恢复语义均未改变。"
+    }
+  }
+}

@@ -7,7 +7,7 @@
 - SRC：已读源码（含 2026-10-26 对照的 feed / studio / sentry 路径）
 - MIG：migration 文本；图片 M1 与 PostgREST 暴露的 TEST、Production 实况由用户于 2026-10-27 确认；视频 M2/M3 仍不得据本地文件推断为已执行；D25 的 M4 仅为本轮设计，尚未创建或执行
 - DOC：Venice 公开文档（见 `research/venice-video-evidence.md`）
-- 待验证：实施期需核实
+- 待验证：实施期需核实；
 
 ## 1. 现状与复用调研
 

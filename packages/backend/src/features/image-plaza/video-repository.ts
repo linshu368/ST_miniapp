@@ -1,5 +1,6 @@
 import {
   type ProviderVideoPlazaModel,
+  type SubmitVideoPlazaAttemptData,
   type SubmitVideoPlazaAttemptRequest,
   type VideoPlazaAttempt,
   type VideoPlazaInputMode,
@@ -104,9 +105,9 @@ export class VideoPlazaRepository {
     userId: string;
     conversationId: string;
     body: SubmitVideoPlazaAttemptRequest;
-  }): Promise<VideoPlazaAttempt> {
+  }): Promise<SubmitVideoPlazaAttemptData> {
     const existing = await this.findByIdempotency(input.userId, input.body);
-    if (existing) return existing;
+    if (existing) return { attempt: existing };
 
     const [{ data: conversation }, { data: quote }] = await Promise.all([
       this.plaza
@@ -142,7 +143,7 @@ export class VideoPlazaRepository {
         content: input.body.prompt,
         media_type: 'image',
       })
-      .select('id')
+      .select('id,created_at')
       .single();
     if (userError || !userMessage) throw new Error('video_plaza_message_create_failed');
     const { data: assistantMessage, error: assistantError } = await this.plaza
@@ -153,7 +154,7 @@ export class VideoPlazaRepository {
         content: '视频生成排队中',
         media_type: 'image',
       })
-      .select('id')
+      .select('id,created_at')
       .single();
     if (assistantError || !assistantMessage) {
       await this.plaza.from('image_plaza_messages').delete().eq('id', userMessage.id);
@@ -188,7 +189,7 @@ export class VideoPlazaRepository {
         .from('image_plaza_messages')
         .delete()
         .in('id', [userMessage.id, assistantMessage.id]);
-      if (replay) return replay;
+      if (replay) return { attempt: replay };
       throw new Error(`video_plaza_attempt_create_failed:${error?.message ?? ''}`);
     }
 
@@ -206,23 +207,32 @@ export class VideoPlazaRepository {
     if (reserve.data?.status === 'too_many_active') throw new Error('video_plaza_too_many_active');
     const attempt = await this.getAttempt(String(data.id), input.userId);
     if (!attempt) throw new Error('video_plaza_attempt_not_found');
-    return attempt;
+    return {
+      attempt,
+      message_refs: {
+        user: { id: String(userMessage.id), created_at: String(userMessage.created_at) },
+        assistant: {
+          id: String(assistantMessage.id),
+          created_at: String(assistantMessage.created_at),
+        },
+      },
+    };
   }
 
   async getAttempt(attemptId: string, userId: string): Promise<VideoPlazaAttempt | null> {
-    const { data, error } = await this.plaza
-      .from('video_attempts')
-      .select('*')
-      .eq('id', attemptId)
-      .eq('user_id', userId)
-      .maybeSingle();
+    const [attemptResult, artifactResult] = await Promise.all([
+      this.plaza
+        .from('video_attempts')
+        .select('*')
+        .eq('id', attemptId)
+        .eq('user_id', userId)
+        .maybeSingle(),
+      this.plaza.from('video_artifacts').select('*').eq('attempt_id', attemptId).maybeSingle(),
+    ]);
+    const { data, error } = attemptResult;
     if (error) throw new Error(`video_plaza_attempt_read_failed:${error.message}`);
     if (!data) return null;
-    const { data: artifact, error: artifactError } = await this.plaza
-      .from('video_artifacts')
-      .select('*')
-      .eq('attempt_id', attemptId)
-      .maybeSingle();
+    const { data: artifact, error: artifactError } = artifactResult;
     if (artifactError) throw new Error(`video_plaza_artifact_read_failed:${artifactError.message}`);
     return this.mapAttempt(data as VideoAttemptRow, artifact as VideoArtifactRow | null);
   }
@@ -309,9 +319,13 @@ export class VideoPlazaRepository {
     attemptId: string,
     workerId: string,
     status: 'queued' | 'processing',
-    pollCount: number
+    pollCount: number,
+    recommendedDelayMs?: number
   ): Promise<void> {
-    const delay = Math.min(60_000, 5_000 * 2 ** Math.min(pollCount, 4));
+    const delay =
+      recommendedDelayMs === undefined
+        ? Math.min(60_000, 5_000 * 2 ** Math.min(pollCount, 4))
+        : Math.min(60_000, Math.max(5_000, Math.round(recommendedDelayMs)));
     const { error } = await this.plaza
       .from('video_attempts')
       .update({

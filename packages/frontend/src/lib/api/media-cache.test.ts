@@ -13,15 +13,22 @@ import type {
   SubmitImagePlazaAttemptRequest,
   ShareImagePlazaWorkData,
   ShareImagePlazaWorkRequest,
+  SubmitVideoPlazaAttemptData,
+  SubmitVideoPlazaAttemptRequest,
+  VideoPlazaAttempt,
 } from '@miniapp/shared';
 import { apiClient } from './client';
 import { useSessionVoiceQuery, useGenerateVoiceMutation, voiceKeys } from './voice';
 import { useSessionImagesQuery, useCreateMessageImageMutation, imageKeys } from './images';
 import {
+  cacheSubmittedVideoAttempt,
   imagePlazaKeys,
+  mergeVideoAttemptIntoConversationCache,
+  videoPlazaQuoteRequestFromAttempt,
   useImagePlazaConversationQuery,
   useImagePlazaQuoteMutation,
   useSubmitImagePlazaAttemptMutation,
+  useSubmitVideoPlazaAttemptMutation,
   useShareImagePlazaMutation,
 } from './image-plaza';
 
@@ -263,6 +270,68 @@ function shareData(reward: number): ShareImagePlazaWorkData {
   };
 }
 
+function plazaVideoAttempt(
+  status: VideoPlazaAttempt['status'],
+  updatedAt = '2026-10-30T07:23:36.900Z'
+): VideoPlazaAttempt {
+  return {
+    id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    conversation_id: plazaConversationId,
+    status,
+    error_code: null,
+    quote_credits: 50,
+    params: {
+      model_id: 'minimax-h3-max',
+      input_mode: 't2v',
+      duration_s: 10,
+      resolution: '1080P',
+      aspect_ratio: '16:9',
+      audio: true,
+      reference_artifact_id: null,
+    },
+    artifact:
+      status === 'ready'
+        ? {
+            id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+            video_url: 'https://videos.example.test/generated.mp4',
+            poster_url: 'https://videos.example.test/generated.jpg',
+            width: 1920,
+            height: 1080,
+            duration_ms: 10_000,
+          }
+        : null,
+    created_at: '2026-10-30T07:23:36.454Z',
+    updated_at: updatedAt,
+  };
+}
+
+const videoSubmitBody: SubmitVideoPlazaAttemptRequest = {
+  prompt: 'A paper boat crossing a quiet lake',
+  quote_id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+  idempotency_key: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+  reference_artifact_id: null,
+};
+
+function videoSubmitData(withMessageRefs: boolean): SubmitVideoPlazaAttemptData {
+  return {
+    attempt: plazaVideoAttempt('submitting'),
+    ...(withMessageRefs
+      ? {
+          message_refs: {
+            user: {
+              id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+              created_at: '2026-10-30T07:23:36.500Z',
+            },
+            assistant: {
+              id: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+              created_at: '2026-10-30T07:23:36.510Z',
+            },
+          },
+        }
+      : {}),
+  };
+}
+
 describe('image plaza settlement cache refresh', () => {
   it('uses real quote and submit paths and quoted fields without refreshing the wallet at acceptance', async () => {
     const quoted: ImagePlazaQuoteData = {
@@ -329,6 +398,93 @@ describe('image plaza settlement cache refresh', () => {
       client.getQueryState(imagePlazaKeys.conversation(plazaConversationId))?.isInvalidated
     ).toBe(true);
     expect(client.getQueryState(['wallet'])?.isInvalidated).toBe(false);
+  });
+
+  it('shows an accepted video attempt immediately and deduplicates a repeated response', async () => {
+    const response = videoSubmitData(true);
+    client.setQueryData(imagePlazaKeys.conversation(plazaConversationId), plazaData());
+    vi.mocked(apiClient).mockResolvedValueOnce(response);
+    useSubmitVideoPlazaAttemptMutation(plazaConversationId);
+    const options = hooks.mutation.mock.lastCall![0] as MutationOptions<
+      SubmitVideoPlazaAttemptData,
+      Error,
+      SubmitVideoPlazaAttemptRequest
+    >;
+    await client.getMutationCache().build(client, options).execute(videoSubmitBody);
+
+    const cached = client.getQueryData<GetImagePlazaConversationData>(
+      imagePlazaKeys.conversation(plazaConversationId)
+    );
+    expect(cached?.conversation.messages).toHaveLength(2);
+    expect(cached?.conversation.messages.map((message) => message.media_type)).toEqual([
+      'video',
+      'video',
+    ]);
+    expect(cached?.conversation.messages[1]?.video_attempt?.status).toBe('submitting');
+    expect(
+      client.getQueryState(imagePlazaKeys.conversation(plazaConversationId))?.isInvalidated
+    ).toBe(false);
+
+    expect(cacheSubmittedVideoAttempt(client, plazaConversationId, response, videoSubmitBody)).toBe(
+      true
+    );
+    expect(
+      client.getQueryData<GetImagePlazaConversationData>(
+        imagePlazaKeys.conversation(plazaConversationId)
+      )?.conversation.messages
+    ).toHaveLength(2);
+  });
+
+  it('falls back to refreshing the conversation when an older backend omits message refs', async () => {
+    client.setQueryData(imagePlazaKeys.conversation(plazaConversationId), plazaData());
+    vi.mocked(apiClient).mockResolvedValueOnce(videoSubmitData(false));
+    useSubmitVideoPlazaAttemptMutation(plazaConversationId);
+    const options = hooks.mutation.mock.lastCall![0] as MutationOptions<
+      SubmitVideoPlazaAttemptData,
+      Error,
+      SubmitVideoPlazaAttemptRequest
+    >;
+    const invalidate = vi.spyOn(client, 'invalidateQueries');
+    await client.getMutationCache().build(client, options).execute(videoSubmitBody);
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: imagePlazaKeys.conversation(plazaConversationId),
+    });
+  });
+
+  it('merges video status into the conversation without regressing newer cache data', () => {
+    const response = videoSubmitData(true);
+    client.setQueryData(imagePlazaKeys.conversation(plazaConversationId), plazaData());
+    cacheSubmittedVideoAttempt(client, plazaConversationId, response, videoSubmitBody);
+    mergeVideoAttemptIntoConversationCache(
+      client,
+      plazaVideoAttempt('ready', '2026-10-30T07:26:20.000Z')
+    );
+    mergeVideoAttemptIntoConversationCache(
+      client,
+      plazaVideoAttempt('processing', '2026-10-30T07:25:00.000Z')
+    );
+    expect(
+      client.getQueryData<GetImagePlazaConversationData>(
+        imagePlazaKeys.conversation(plazaConversationId)
+      )?.conversation.messages[1]?.video_attempt?.status
+    ).toBe('ready');
+  });
+
+  it('rebuilds a regeneration quote from the original video attempt snapshot', () => {
+    const original = plazaVideoAttempt('ready');
+    original.params = {
+      ...original.params,
+      input_mode: 'r2v',
+      reference_artifact_id: '99999999-9999-4999-8999-999999999999',
+    };
+    expect(videoPlazaQuoteRequestFromAttempt(original)).toEqual({
+      model_id: 'minimax-h3-max',
+      input_mode: 'r2v',
+      duration_s: 10,
+      resolution: '1080P',
+      aspect_ratio: '16:9',
+      audio: true,
+    });
   });
 
   it.each(['pending', 'generating', 'failed', 'failed_unknown'] as const)(
