@@ -13,7 +13,7 @@ import { ChatModelSwitcher } from './chat-model-switcher';
 
 interface ChatTopBarProps {
   onBack: () => void;
-  backLabel?: '返回发现' | '返回对话';
+  backLabel?: '返回发现' | '返回对话' | '返回收藏' | '返回我的创作';
   characterId: string;
   title: string;
   characterName?: string;
@@ -45,7 +45,7 @@ export function ChatTopBar({
   const [modelOpen, setModelOpen] = useState(false);
   // 与聊天页同波：P0 会话优先；有 last-good 占位时可先展示标签。
   const enrichReady = useEntryEnrichReady();
-  const catalog = useModelCatalogQuery({ enabled: enrichReady || modelOpen });
+  const catalog = useModelCatalogQuery({ enabled: enrichReady || modelOpen, characterId });
   const selectedId = catalog.data?.selected_model_id ?? catalog.data?.catalog.default_model_id;
   const selectedTier = catalog.data?.catalog.tiers.find((tier) =>
     tier.models.some((model) => model.id === selectedId)
@@ -69,7 +69,7 @@ export function ChatTopBar({
               className="flex min-h-10 shrink-0 items-center gap-0.5 rounded-full px-1.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:scale-95"
             >
               <ChevronLeft className="size-4" strokeWidth={2.2} aria-hidden />
-              <span>{backLabel === '返回发现' ? '发现' : '对话'}</span>
+              <span>{backLabel.replace('返回', '')}</span>
             </button>
             <IconButton label="对话记录" onClick={onOpenSessions} muted>
               <PanelLeft className="size-[19px]" strokeWidth={2} aria-hidden />
@@ -141,6 +141,7 @@ export function ChatTopBar({
           </DialogPrimitive.Description>
           <div className="mt-4">
             <ChatModelSwitcher
+              characterId={characterId}
               returnTo={returnTo}
               generating={generating}
               freeRoundActive={freeRoundActive}

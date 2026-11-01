@@ -171,11 +171,12 @@ export function useShareVideoPlazaMutation() {
 
 export const IMAGE_PLAZA_FEED_STALE_TIME_MS = 60_000;
 
-export function useImagePlazaConfigQuery() {
+export function useImagePlazaConfigQuery({ enabled = true }: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: imagePlazaKeys.config(),
     queryFn: ({ signal }) =>
       apiClient<GetImagePlazaConfigData>('/api/image-plaza/config', { signal }),
+    enabled,
     staleTime: 60_000,
     retry: false,
   });

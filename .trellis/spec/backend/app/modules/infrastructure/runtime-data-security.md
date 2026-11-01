@@ -5,8 +5,8 @@ scope: backend
 category: infrastructure
 status: active
 owners: [backend]
-last_verified_task: .trellis/tasks/10-16-creation-plaza-video-planning/
-last_verified_at: 2026-10-27
+last_verified_task: .trellis/tasks/10-30-image-plaza-edit-400-compat/
+last_verified_at: 2026-10-30
 ---
 
 # 运行时、鉴权与数据访问基建
@@ -66,11 +66,17 @@ PostHog capture 用 Node 原生 fetch、短超时、无重试；支付按 `order
 
 图片广场的 8 张表、3 个图片 RPC 与 PostgREST schema 暴露已在 TEST、Production 完成切换。图片 repository、视频 repository 和 seed 工具统一通过 `getDomainDb('media_plaza')` 直接访问，不探测或回退 `experience` / `miniapp_features` 旧路径；后续视频 M2/M3 以该已完成的物理迁移为前置条件。
 
+图片广场 worker 在失败落库尝试后，除 Railway Pino 原始异常外还通过现有 `sendBackendSentryLog` 写一条脱敏摘要；只包含 attempt、provider model、模式、内部错误码和结果是否未知，不包含 prompt、参考图、provider 正文或 URL。Sentry 未配置或发送异常不得改变 attempt 失败终态或中断同一 tick 的后续任务。
+
+图片广场 repository、seed 导入/翻译和导出脚本统一直接访问 `media_plaza`；不探测或回退 `experience` / `miniapp_features`。因此 M1 与 Backend 必须在暂停图片广场流量的窗口内协调割接，回滚数据库时同步回退 Backend。
+
 初始数据导入器只接受 `image.civitai.com` HTTPS 源 URL，重定向逐跳限制在 `image.civitai.com`、`blobs-b2.civitai.com` 精确白名单，并设置 30 秒超时、最多 3 次安全重试、种子原图 50 MiB 流式上限、内容类型/魔数/尺寸校验；普通用户图片仍保持 20 MiB。需要代理时显式使用 HTTPS ProxyAgent，TLS 校验被关闭时拒绝执行。日志不记录提示词或源 URL；apply 需显式目标、有限批次与审核清单，Storage 路径按 Civitai Image ID 确定且禁止覆盖。
 
 ## 变更记录
 
 - 2026-10-27：任务 `10-16-creation-plaza-video-planning` 合并已完成的图片 M1：TEST、Production 统一直连 `media_plaza`，删除双读/旧 schema 回退口径；视频 M2/M3 仍需按环境单独执行和验收。
+- 2026-10-30：任务 `10-30-image-plaza-edit-400-compat` 为图片广场 worker 失败补充脱敏 Sentry Log，并保持遥测故障隔离。
+- 2026-10-27：任务 `10-27-media-plaza-schema-move` 将图片广场数据库访问统一切换到 `media_plaza`，不保留旧 schema 回退。
 - 2026-10-27：任务 `10-27-sentry-performance-optimization` 增加不可变用户身份 bounded cache/single-flight，并为非严格 runtime-config 读取增加无 TTL 的在途合并。
 
 - 2026-10-15：任务 `10-15-image-plaza-tag-prompt-filter` 明确 `image_plaza_tags_feature_enabled` 只控制分享自动打标。

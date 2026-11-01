@@ -6,6 +6,7 @@
 // - 非 Telegram 环境会抛错，这里吞掉错误保证开发期可在普通浏览器跑
 // - 真机测试必须在 Telegram 客户端内完成
 import { init, isTMA, miniApp } from '@telegram-apps/sdk-react';
+import type {} from '@/lib/perf/early-startup';
 
 let inited = false;
 
@@ -29,11 +30,16 @@ export function initTelegramSdk(): void {
 
 /** init() 只建立 SDK 通信；框架提交渲染后还需显式撤下 Telegram 原生启动占位。 */
 export function notifyTelegramReady(): 'sent' | 'unavailable' | 'failed' {
+  if (typeof window !== 'undefined' && window.__miniappStartup?.status === 'sent') return 'sent';
   try {
     if (typeof window === 'undefined' || !isTMA() || !miniApp.ready.isAvailable()) {
       return 'unavailable';
     }
     miniApp.ready();
+    if (window.__miniappStartup) {
+      window.__miniappStartup.status = 'sent';
+      window.__miniappStartup.readyAt = performance.now();
+    }
     return 'sent';
   } catch {
     // 旧客户端/桥接异常不能阻塞普通页面，也不能伪造 ready 已发送的指标。

@@ -92,6 +92,16 @@ SSE start携带当轮冻结总预算。客户端若持有旧目录缓存，按�
 
 发布顺序：本地PG/测试→TEST迁移与应用验收→先合dev→生产迁移→Backend/Frontend/Admin→Grafana说明；配置只读核对版本97。回退应用保留兼容RPC，必要时前向修复，不删除账务。
 
-## 纯监控退出 Supabase（2026-10-29，待发布）
+## 纯监控退出 Supabase（2026-10-29，已发布）
 
 首字与兜底专项改用Faro/OTel→Grafana，旧chat-first-token-manual入口删除7条SQL、数据库变量和刷新，仅保留新入口指引；不影响其他经营看板或共享数据源。服务端不再为first_token_emitted_ms发独立UPDATE，每轮成功首字少一次数据库写；业务回执不再传request_dispatched_ms/wait_finished_ms纯诊断值。旧列与历史值暂留，未来新值为NULL，不回填或扫历史。first_token_received_ms仍涉及旧兼容计费，outcome/visible/failed/identity/预算/赢家/恢复内容等业务事实保留。供应商返回的原始调用与计费信息仍按既有路径保存。无新迁移、cron或高频查询；新生产链路有样本后才发布旧入口跳转。
+
+## 调用前准备减负（2026-10-30，候选，未发布）
+
+本轮不调整运营目录的启动兜底阈值或6秒总预算，也不增加供应商调用。优先缩短本服务准备阶段：同一轮模型选择、生成偏好和生效昵称3次settings读取合为1次；路由已读的模型目录供解析、报价和execute复用，平台规则复用同一promise，不增加跨请求陈旧缓存。VIP校验与设置/规则读取保持并行，不能因复用快照新增串行等待；provider路由准备与报价配置读取并行。
+
+扩展既有`experience.begin_chat_generation_observation(uuid,jsonb)`的可选`charge_id/history`输入。初次admission一起保存request标记、唯一charge和request/primary attempt；最终freeze一起保存完整prompt和原价快照，5次持久化往返合为2次，chat_history的4次UPDATE合为2次。初次charge必须在免费额度预留前持久化，初次request必须支持SSE start前的超时回执定位；最终freeze成功后才可调用供应商。取消、失败和超时仍沿原CAS/额度释放/一次计费处理，不能把关键身份异步化或忽略保存错误。
+
+前端仅在现有公开API origin添加预连接提示，首个有效正文或已开启思考片段立即送入既有更新回调，后续仍按帧合批。预连接不发送业务请求；不新增重试、轮询、第二条生成连接、数据库监控写入或新成功口径。收到token仍不等于已提交到用户消息界面。
+
+发布须先单文件执行`20261030_chat_generation_dispatch_prepare.sql`（本地PG→TEST→生产），再发布backend/frontend；旧应用不传新可选字段，兼容RPC可保留以支持回退。新backend不可先于迁移发布。只更换既有函数体，无表/索引/授权/历史回填/扫描/cron变更。核对本轮实际准备时间与用户6秒无字比例；模拟延迟和直方图估算不能承诺生产达到1.5%。

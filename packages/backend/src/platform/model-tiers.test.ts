@@ -1,8 +1,24 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_CATALOG, shouldReuseCatalogCache } from './model-tiers.js';
+import { DEFAULT_CATALOG, getModelBillingContext, shouldReuseCatalogCache } from './model-tiers.js';
 import { ModelCatalogSchema } from '@miniapp/shared';
 
 describe('model catalog runtime helpers', () => {
+  it('prices an accepted model from its supplied catalog without a runtime_config roundtrip', async () => {
+    const snapshot = { catalog: DEFAULT_CATALOG, version: 123 };
+    const model = snapshot.catalog.tiers[0]!.models[0]!;
+    const billing = await getModelBillingContext(
+      { provider: model.provider, providerModelId: model.provider_model_id },
+      snapshot
+    );
+    expect(billing).toMatchObject({
+      catalogVersion: 123,
+      modelId: model.id,
+      modelDisplayName: model.display_name,
+      providerModelId: model.provider_model_id,
+      isFree: model.is_free,
+    });
+  });
+
   it('invalidates the cache whenever runtime_config.version changes', () => {
     expect(shouldReuseCatalogCache(4, 4)).toBe(true);
     expect(shouldReuseCatalogCache(4, 5)).toBe(false);

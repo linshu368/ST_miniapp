@@ -5,3 +5,11 @@
 3. 后端补请求型号维度及逻辑首字竞争终态，真实兜底dispatch与赢家分别记录；复用竞争测试与OTel合成接收端验证零额外DB调用、一次结算不变、竞败分类。
 4. 扩展角色扮演看板首字专用行与文档；本地Faro→Alloy→Loki既有harness验算查询/分母/秒数、所选型号、样本、时间截断。
 5. 相关全量测试、跨workspace类型检查、构建/静态检查、任务模块载荷；增量交接至新框架，生产启用及退旧SQL等架子TEST验收完成，不覆盖另一个任务的部署。
+
+## 2026-10-30 执行追加
+
+1. 从最新origin/dev83d6d40c建立本任务后续分支codex/chat-dispatch-latency；保留上游已发布的页面/监控改版。用户本轮接受第一优先优化及第三优先检查、明确拒绝提前兜底，作为本追加规划的范围审核依据。
+2. 后端读取快照/模型目录冻结与原子前置持久化分工实施；前端preconnect/首片直传独立实施；互不改对方文件，无真实供应商调用和远端数据库测试。
+3. 在既有单测补设置一读、配置冻结、慢/失败admission不reserve、context失败join、freeze失败释放、原charge幂等、旧RPC输入兼容及新字段冲突；PG harness覆盖early receipt、quota、stop、并发、赢家、免扣。首片前端用不触发rAF的用例验证，绝不改成功标准。
+4. 执行受影响测试、backend/frontend全套、shared及workspace typecheck、lint/imports/legacy/migration检查、frontend构建；以有延迟的确定性本地依赖场景对比前置调用数与关键路径，不把模拟收益当生产承诺。
+5. 独立检查迁移/计费/取消竞争和代码范围；补操作说明、模块载荷。呈现最终具体文件清单、差异摘要与验证结果取得提交审核；未审核前不git add/commit/push，不执行生产迁移或发布。

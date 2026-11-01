@@ -236,6 +236,27 @@ describe('frozen quote', () => {
 });
 
 describe('presentTextModelCatalog', () => {
+  it('uses the same creator quote as admission, without unlocking VIP models', () => {
+    const catalog = presentTextModelCatalog({
+      catalog: CATALOG,
+      pricing: PRICING,
+      vip: { active: false, valid_until: null, remaining_days: 0 },
+      creatorSelf: true,
+    });
+    for (const tier of catalog.tiers) {
+      const quote = quoteAcceptedTextUsage({
+        originalCredits: PRICING[tier.key],
+        tier: tier.key,
+        isVip: false,
+        isFreeRound: false,
+        vipValidUntil: null,
+        creatorSelf: true,
+      });
+      expect(tier.payable_credits).toBe(quote.payable_credits);
+      expect(tier.discount_source).toBe('creator');
+      expect(tier.locked).toBe(tier.key !== 'light');
+    }
+  });
   it('用运行时原价和当前 VIP 填充档位，不把非 VIP 标成已折扣', () => {
     const catalog = presentTextModelCatalog({
       catalog: CATALOG,

@@ -168,6 +168,117 @@ try {
     }),
   });
   assert.equal(response.status, 202, `Faro receiver: ${response.status} ${await response.text()}`);
+  const cdnEvents = [];
+  const cdnMeasurements = [];
+  const cdnAttributes = (group, extra = {}) => ({
+    schema_version: '1',
+    measurement_version: 'engineering_v1',
+    source_measurement_version: 'drama_v3',
+    route: '/dramas/:id',
+    stage: 'startup',
+    report_kind: 'playback',
+    playback_mode: 'cover',
+    cache: 'fetch',
+    first_frame_method: 'video_frame_callback',
+    tg_platform: 'ios',
+    net_type: '4g',
+    cdn_experiment: 'synthetic-ab',
+    cdn_group: group,
+    cdn_provider: group,
+    cdn_reason: 'assigned',
+    ...extra,
+  });
+  const startupSamples = [
+    ['bunny', 'playing', 1000, 'within_5s'],
+    ['bunny', 'playing', 5000, 'within_5s'],
+    ['bunny', 'playing', 5000.1, 'over_5s'],
+    ['bunny', 'error', 100, 'not_started'],
+    ['bunny', 'left', 200, 'not_started'],
+    ['bunny', 'background', 100, 'background'],
+    ['bunny', 'playing', undefined, 'unmeasured'],
+    ['bunny', 'playing', 2000, 'within_5s', { cdn_provider: 'supabase', cdn_reason: 'disabled' }],
+    ['bunny', 'playing', 10, 'within_5s', { playback_mode: 'retry' }],
+    ['supabase', 'playing', 1000, 'within_5s'],
+    ['supabase', 'playing', 10000, 'over_5s'],
+    ['supabase', 'unplayable', 100, 'not_started'],
+    [
+      'unknown',
+      'error',
+      100,
+      'not_started',
+      { cdn_experiment: 'unknown', cdn_provider: 'unknown' },
+    ],
+    ['bunny', 'error', 100, 'not_started', { cdn_experiment: 'synthetic-failed' }],
+  ];
+  for (const [group, outcome, ms, budget, extra] of startupSamples) {
+    const attributes = cdnAttributes(group, { ...extra, outcome, cdn_budget: budget });
+    cdnEvents.push({ name: 'st_drama_terminal', timestamp, domain: 'st.engineering', attributes });
+    if (outcome === 'playing' && ms !== undefined) {
+      cdnMeasurements.push({
+        type: 'st_drama_startup',
+        timestamp,
+        values: { duration_ms: ms },
+        context: attributes,
+      });
+    }
+  }
+  // A legacy terminal in the same release has no projection marker, not a guessed control/unknown.
+  cdnEvents.push({
+    name: 'st_drama_terminal',
+    timestamp,
+    domain: 'st.engineering',
+    attributes: {
+      ...cdnAttributes('unknown'),
+      cdn_experiment: '',
+      cdn_group: '',
+      outcome: 'error',
+    },
+  });
+  // A network tail is evidence for an existing startup, never a second terminal.
+  cdnEvents.push({
+    name: 'st_drama_diagnostic',
+    timestamp,
+    domain: 'st.engineering',
+    attributes: {
+      ...cdnAttributes('bunny'),
+      report_kind: 'network',
+      outcome: 'playing',
+    },
+  });
+  for (const [group, playing, stalled, extra] of [
+    ['bunny', 18000, 2000],
+    ['bunny', 10000, 0],
+    ['bunny', 1000, 0, { cdn_provider: 'supabase', cdn_reason: 'disabled' }],
+    ['supabase', 5000, 5000],
+    ['unknown', 1000, 0, { cdn_experiment: 'unknown' }],
+    ['bunny', 60000, 60000], // Invalid combined window cannot inflate either side.
+    ['bunny', 0, 0],
+    ['bunny', 999, 'invalid'],
+    ['bunny', 999, undefined],
+  ]) {
+    cdnEvents.push({
+      name: 'st_drama_playback_window',
+      timestamp,
+      domain: 'st.engineering',
+      attributes: {
+        ...cdnAttributes(group, extra),
+        source_measurement_version: 'drama_playback_v1',
+        stage: 'playback',
+        playing_ms: String(playing),
+        ...(stalled === undefined ? {} : { rebuffer_ms: String(stalled) }),
+      },
+    });
+  }
+  const cdnResponse = await fetch(`http://127.0.0.1:${faroPort}/collect`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      meta: { app: { name: 'st-miniapp', version: 'cdn-contract', environment: 'test' } },
+      measurements: cdnMeasurements,
+      events: cdnEvents,
+    }),
+  });
+  assert.equal(cdnResponse.status, 202);
   await sleep(1500);
   const inspectUrl = new URL('/loki/api/v1/query_range', lokiUrl);
   inspectUrl.searchParams.set('query', '{app="st-miniapp"}');
@@ -175,10 +286,14 @@ try {
   const inspect = await (await fetch(inspectUrl)).json();
   console.log('Synthetic wire sample:', JSON.stringify(inspect.data?.result));
 
-  async function query(expression) {
-    const url = new URL('/loki/api/v1/query', lokiUrl);
+  async function query(expression, logs = false) {
+    const url = new URL(logs ? '/loki/api/v1/query_range' : '/loki/api/v1/query', lokiUrl);
     url.searchParams.set('query', expression);
-    const result = await (await fetch(url)).json();
+    if (logs) url.searchParams.set('limit', '5');
+    const response = await fetch(url);
+    const body = await response.text();
+    assert.ok(response.ok, `Loki ${response.status}: ${body}`);
+    const result = JSON.parse(body);
     assert.equal(result.status, 'success', JSON.stringify(result));
     return result.data.result;
   }
@@ -208,10 +323,19 @@ try {
       for (const target of panel.targets ?? []) {
         const expression = target.expr
           .replaceAll('${browser_selector:raw}', '{app="st-miniapp"}')
+          .replaceAll('${environment}', 'test')
+          .replaceAll('${release:raw}', 'local-contract')
+          .replaceAll('${diagnostic_observation:raw}', 'synthetic-no-observation')
+          .replaceAll('${diagnostic_observation:doublequote}', '"synthetic-no-observation"')
           .replaceAll('$requested_model', '.*')
           .replaceAll('$deadline_ms', '6000')
           .replaceAll('$environment', 'test')
-          .replaceAll('$release', '.*')
+          .replaceAll(
+            '$release',
+            uid === 'st-engineering-drama' && panel.id >= 200 ? 'cdn-contract' : 'local-contract'
+          )
+          .replaceAll('$cdn_experiment', 'synthetic-ab')
+          .replaceAll('$cdn_entry', 'cover|switch|episode|direct')
           .replaceAll('$measurement_version', 'engineering_v1')
           .replaceAll('$tg_platform', '.*')
           .replaceAll('$net_type', '.*')
@@ -224,7 +348,86 @@ try {
           .replaceAll('$__range', '10m')
           .replaceAll('$__auto', '10m');
         if (target.datasource?.type === 'prometheus') continue;
-        const result = await query(expression);
+        assert.doesNotMatch(
+          expression,
+          /\$\{|\$[a-zA-Z_]/,
+          'All saved query variables must be resolved'
+        );
+        const result = await query(expression, panel.type === 'logs');
+        if (uid === 'st-engineering-drama' && panel.id >= 200) {
+          const byGroup = Object.fromEntries(
+            result.map((r) => [r.metric.cdn_group, Number(r.value[1])])
+          );
+          if (panel.id === 202 && target.refId === 'A') {
+            assert.equal(
+              result.reduce((sum, r) => sum + Number(r.value[1]), 0),
+              11
+            );
+          }
+          if (panel.id === 202 && target.refId === 'B') {
+            assert.equal(
+              result.length,
+              1,
+              'Only explicit new unknown projection; no legacy inference'
+            );
+            assert.equal(Number(result[0].value[1]), 1);
+          }
+          if (panel.id === 203 && target.refId === 'A') {
+            assert.equal(byGroup.bunny, 0.5);
+            assert.equal(byGroup.supabase, 1 / 3);
+            const failedOnly = await query(
+              expression.replaceAll('synthetic-ab', 'synthetic-failed')
+            );
+            assert.equal(
+              Number(failedOnly[0]?.value[1]),
+              0,
+              'An observed all-failure arm has a real zero rate'
+            );
+          }
+          if (panel.id === 203 && target.refId === 'B')
+            assert.deepEqual(byGroup, { bunny: 6, supabase: 3 });
+          if (panel.id === 204) {
+            assert.ok(Math.abs(byGroup.bunny - (target.refId === 'A' ? 3500 : 5000.085)) < 0.0001);
+            assert.equal(byGroup.supabase, target.refId === 'A' ? 5500 : 9550);
+          }
+          if (panel.id === 205) assert.deepEqual(byGroup, { bunny: 4, supabase: 2 });
+          if (panel.id === 206) {
+            for (const group of ['bunny', 'supabase']) {
+              assert.equal(
+                result
+                  .filter((r) => r.metric.cdn_group === group)
+                  .reduce((sum, r) => sum + Number(r.value[1]), 0),
+                1
+              );
+            }
+          }
+          if (panel.id === 207) {
+            assert.deepEqual(
+              byGroup,
+              target.refId === 'A' ? { bunny: 2 / 31, supabase: 0.5 } : { bunny: 3, supabase: 1 }
+            );
+          }
+          if (panel.id === 208) {
+            assert.equal(
+              Number(
+                result.find((r) => r.metric.cdn_group === 'bunny' && r.metric.reason === 'disabled')
+                  ?.value[1]
+              ),
+              1
+            );
+          }
+          const noSamples = expression
+            .replaceAll('synthetic-ab', 'absent-experiment')
+            .replaceAll(
+              'event_data_cdn_experiment="unknown"',
+              'event_data_cdn_experiment="absent-experiment"'
+            );
+          assert.equal(
+            (await query(noSamples)).length,
+            0,
+            'Empty cohorts must not become a zero or success'
+          );
+        }
         if (panel.id === 101) {
           const byModel = Object.fromEntries(
             result.map((r) => [r.metric.event_data_requested_model, Number(r.value[1])])

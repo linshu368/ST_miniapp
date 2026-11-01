@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { FastifyBaseLogger } from 'fastify';
+import { sendBackendSentryLog } from '../../lib/sentry.js';
 import { config } from '../../platform/config.js';
 import { ImagePlazaRepository, ImagePlazaSettlementError } from './repository.js';
 import { generateImagePlazaImage, ImagePlazaUpstreamError } from './upstream.js';
@@ -67,6 +68,24 @@ export function startImagePlazaGenerationJob(log: FastifyBaseLogger): void {
             { err, event: 'image_plaza.generation.failed', attemptId: attempt.id },
             'Image plaza generation failed'
           );
+          try {
+            sendBackendSentryLog('error', 'image_plaza.generation.failed', {
+              attemptId: attempt.id,
+              providerModelId:
+                attempt.mode === 't2i'
+                  ? attempt.providerModelId
+                  : (attempt.editProviderModelId ?? attempt.providerModelId),
+              mode: attempt.mode,
+              errorCode: failure?.code ?? 'image_plaza_generation_failed',
+              outcomeUnknown: failure?.outcomeUnknown ?? false,
+            });
+          } catch (sentryErr) {
+            // Telemetry is non-critical and must not interrupt later jobs in the same worker tick.
+            log.error(
+              { err: sentryErr, event: 'image_plaza.sentry_log.failed', attemptId: attempt.id },
+              'Image plaza Sentry log failed'
+            );
+          }
         }
       }
     } catch (err) {

@@ -11,7 +11,8 @@ const engineering = vi.hoisted(() => ({
   enabled: vi.fn(() => false),
   dimensions: { net_type: '4g', tg_platform: 'ios' },
 }));
-vi.mock('./grafana', () => ({
+vi.mock('./grafana', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./grafana')>()),
   isEngineeringTelemetryEnabled: engineering.enabled,
   recordEngineeringMeasurement: engineering.measurement,
   recordEngineeringEvent: engineering.event,
@@ -77,6 +78,55 @@ describe('foreground playback quality windows', () => {
     engineering.event.mock.calls
       .filter(([name]) => name === 'drama.playback_window')
       .map(([, attributes]) => attributes as Record<string, unknown>);
+
+  it('keeps the source assignment through buffering and a late disposal flush', async () => {
+    const flow = tracker.ensurePlayback('a');
+    flow.delivery = {
+      experimentId: 'unit-ab',
+      group: 'bunny',
+      provider: 'supabase',
+      reason: 'disabled',
+    };
+    const observer = start();
+    await vi.advanceTimersByTimeAsync(1000);
+    video.dispatchEvent(new Event('waiting'));
+    await vi.advanceTimersByTimeAsync(500);
+    // A later response cannot relabel the window owned by the previous media src.
+    flow.delivery = {
+      experimentId: 'next-ab',
+      group: 'supabase',
+      provider: 'supabase',
+      reason: 'assigned',
+    };
+    observer.dispose();
+    expect(windows()).toEqual([
+      expect.objectContaining({
+        playing_ms: 1000,
+        rebuffer_ms: 500,
+        cdn_experiment: 'unit-ab',
+        cdn_group: 'bunny',
+        cdn_provider: 'supabase',
+        cdn_reason: 'disabled',
+      }),
+    ]);
+    expect(engineering.event).toHaveBeenCalledWith(
+      'drama.stall',
+      expect.objectContaining({ cdn_group: 'bunny', cdn_provider: 'supabase' })
+    );
+  });
+
+  it('leaves windows without a delivery explicitly unknown', async () => {
+    const observer = start();
+    await vi.advanceTimersByTimeAsync(1000);
+    observer.dispose();
+    expect(windows()).toEqual([
+      expect.objectContaining({
+        cdn_experiment: 'unknown',
+        cdn_group: 'unknown',
+        cdn_provider: 'unknown',
+      }),
+    ]);
+  });
 
   it('pairs playback and buffering wall time in one weighted window, excluding startup', async () => {
     const observer = bind();

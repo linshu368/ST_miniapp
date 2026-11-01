@@ -19,6 +19,7 @@ import {
   type VipEntitlementSummary,
   type WalletDebitPolicy,
 } from '@miniapp/shared';
+import type { CreatorRewardSnapshot } from '../../infrastructure/repositories/ConversationHistoryRepository.js';
 
 export interface TextEntitlement {
   active: boolean;
@@ -35,6 +36,7 @@ export interface AcceptedTextQuote {
   vip_active: boolean;
   vip_valid_until: string | null;
   model_tier: ModelCatalogTierKey;
+  discount_source?: 'vip' | 'creator' | null;
 }
 
 export type TextWalletDenial = 'MAIN_CREDITS_INSUFFICIENT' | 'TOTAL_CREDITS_INSUFFICIENT';
@@ -57,12 +59,14 @@ export function quoteAcceptedTextUsage(input: {
   /** 省略时使用 0.95。受理方传入已发布折扣，调用后不得再读取新配置重算。 */
   discountRate?: number;
   discountConfigVersion?: number | null;
+  creatorSelf?: boolean;
 }): AcceptedTextQuote & { discount_config_version: number | null } {
   const quoted = quoteTextModelUsage({
     original_credits: input.originalCredits,
     is_vip: input.isVip,
     is_free_round: input.isFreeRound,
     tier: input.tier,
+    creator_self: input.creatorSelf,
     ...(input.discountRate === undefined ? {} : { discount_rate: input.discountRate }),
   });
   if (!quoted.ok) {
@@ -78,6 +82,9 @@ export function quoteAcceptedTextUsage(input: {
     vip_active: input.isVip,
     vip_valid_until: input.vipValidUntil,
     model_tier: input.tier,
+    ...(quoted.value.discount_source === undefined
+      ? {}
+      : { discount_source: quoted.value.discount_source }),
     discount_config_version: input.discountConfigVersion ?? null,
   };
 }
@@ -173,6 +180,7 @@ export function presentTextModelCatalog(input: {
   pricing: FixedDeductionConfig;
   vip: VipEntitlementSummary;
   discountRate?: number;
+  creatorSelf?: boolean;
 }): PublicModelCatalog {
   const catalog = toPublicModelCatalog(input.catalog);
   return {
@@ -185,6 +193,7 @@ export function presentTextModelCatalog(input: {
         isVip: input.vip.active,
         isFreeRound: false,
         vipValidUntil: input.vip.valid_until,
+        creatorSelf: input.creatorSelf,
         ...(input.discountRate === undefined ? {} : { discountRate: input.discountRate }),
       });
       return {
@@ -193,6 +202,7 @@ export function presentTextModelCatalog(input: {
         locked: quote.requires_vip && !input.vip.active,
         original_credits: quote.original_credits,
         discount_rate: quote.discount_rate,
+        ...(quote.discount_source === undefined ? {} : { discount_source: quote.discount_source }),
         discounted_exact: quote.discounted_exact,
         payable_credits: quote.payable_credits,
         wallet_policy: quote.wallet_policy,
@@ -215,6 +225,7 @@ export function frozenLlmChargeMetadata(snapshot: {
   vip_valid_until?: string | null;
   model_tier?: string | null;
   vip_discount_config_version?: number | null;
+  creator_reward?: CreatorRewardSnapshot;
 }): Record<string, unknown> {
   const metadata: Record<string, unknown> = {
     billing_mode: 'fixed_tier',
@@ -235,6 +246,7 @@ export function frozenLlmChargeMetadata(snapshot: {
   if (snapshot.vip_discount_config_version !== undefined) {
     metadata.vip_discount_config_version = snapshot.vip_discount_config_version;
   }
+  if (snapshot.creator_reward !== undefined) metadata.creator_reward = snapshot.creator_reward;
   return metadata;
 }
 

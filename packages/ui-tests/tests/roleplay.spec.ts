@@ -56,9 +56,11 @@ test('@navigation @layout 五入口跨模块保持统一，末项与操作条不
   page,
   preview,
 }) => {
-  test.setTimeout(90_000);
+  // 该综合场景会在独立 Next dev 进程中首次编译多个动态路由和社群 Sheet；
+  // 保留每项断言原超时，只给串行冷编译留足总预算。
+  test.setTimeout(120_000);
   const nav = page.getByRole('navigation', { name: '主导航', exact: true });
-  const labels = ['角色', 'AI短剧', '首页', '生成', '我的'];
+  const labels = ['角色', '创作', '首页', 'AI短剧', '我的'];
   let baseline:
     | { background: string; radius: string; shadow: string; widths: number[] }
     | undefined;
@@ -172,9 +174,12 @@ test('@navigation @layout 五入口跨模块保持统一，末项与操作条不
   await page.goBack();
   await expect(page).toHaveURL(/\/dramas$/);
   await checkNav('AI短剧');
-  await nav.getByRole('link', { name: '生成', exact: true }).click();
+  await nav.getByRole('link', { name: '创作', exact: true }).click();
+  await expect(page).toHaveURL(/\/creation$/);
+  await checkNav('创作');
+  await page.getByRole('link', { name: /图片与视频/ }).click();
   await expect(page).toHaveURL(/\/create$/);
-  await checkNav('生成');
+  await checkNav('创作');
   await expect(
     page.getByRole('button', { name: '用同款：薄雾中的山谷', exact: true })
   ).toBeVisible();
@@ -183,7 +188,7 @@ test('@navigation @layout 五入口跨模块保持统一，末项与操作条不
   await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
   await aboveNav(lastWork);
   await page.goto(`/create/work/${IDS.work}`);
-  await checkNav('生成');
+  await checkNav('创作');
   const workActions = page.getByRole('group', { name: '作品操作', exact: true });
   await aboveNav(workActions);
   await aboveNav(workActions.getByRole('button', { name: '用同款', exact: true }));
@@ -193,7 +198,16 @@ test('@navigation @layout 五入口跨模块保持统一，末项与操作条不
   await checkNav('我的');
   await expect(page.getByRole('link', { name: '联系客服', exact: true })).toBeVisible();
   await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-  await aboveNav(page.getByRole('button', { name: /官方社群/ }));
+  const communityEntry = page.getByRole('button', { name: /官方社群/ });
+  await aboveNav(communityEntry);
+  await communityEntry.click();
+  const communitySheet = page.getByRole('dialog');
+  await expect(communitySheet).toBeVisible();
+  await expect(
+    communitySheet.getByRole('heading', { name: '官方社群', exact: true })
+  ).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(communitySheet).toHaveCount(0);
 
   const secondary = [
     { path: studioPath, ready: () => page.getByPlaceholder('描述你想生成的画面…') },
@@ -282,7 +296,8 @@ test('@roleplay @character-social @layout 点赞收藏独立，列表详情和�
   await page.getByRole('button', { name: '返回发现', exact: true }).click();
   await expect(like()).toHaveAttribute('aria-pressed', 'true');
   await expect(favorite()).toHaveAttribute('aria-pressed', 'true');
-  await page.getByRole('tab', { name: '已收藏', exact: true }).click();
+  await expect(page.getByRole('tab', { name: '已收藏', exact: true })).toHaveCount(0);
+  await page.goto('/creation?tab=favorites');
   await expect(page.locator('[data-lobby-character-id]')).toHaveCount(1);
   await expect(card).toBeVisible();
   await expectMobileLayout(page);
@@ -488,4 +503,69 @@ test.describe('初始 HTML 框架', () => {
       await preview.screenshot(`初始框架${path === '/' ? '大厅' : '短剧'}`);
     });
   }
+});
+
+test('@startup 原生 ready 不等待 Next 启动 JS，恢复下载后仍能进入业务', async ({
+  page,
+  preview,
+}) => {
+  let release: () => void = () => {};
+  const scriptsAllowed = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.addInitScript(() => {
+    const native = window as Window & {
+      __readyNotifications?: number;
+      TelegramWebviewProxy?: { postEvent: (event: string) => void };
+    };
+    native.__readyNotifications = 0;
+    native.TelegramWebviewProxy = {
+      postEvent: (event) => {
+        if (event === 'web_app_ready')
+          native.__readyNotifications = (native.__readyNotifications ?? 0) + 1;
+      },
+    };
+  });
+  await page.route('**/_next/**/*.js*', async (route) => {
+    await scriptsAllowed;
+    await route.continue();
+  });
+  try {
+    await page.goto('/#tgWebAppVersion=9.6&tgWebAppPlatform=android', { waitUntil: 'commit' });
+    await expect(page.getByRole('heading', { name: '推荐', exact: true })).toBeVisible();
+    await expect(page.getByRole('navigation', { name: '主导航' })).toBeVisible();
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            (window as Window & { __miniappStartup?: { status?: string } }).__miniappStartup?.status
+        )
+      )
+      .toBe('sent');
+    expect((await preview.state()).requests).toEqual([]);
+    expect(
+      await page.evaluate(
+        () => (window as Window & { __readyNotifications?: number }).__readyNotifications
+      )
+    ).toBe(1);
+    await preview.screenshot('启动JS阻塞时框架已展示');
+    await page.getByRole('link', { name: 'AI短剧', exact: true }).click();
+    await expect(page).toHaveURL(/3130\/#tgWebAppVersion=9\.6&tgWebAppPlatform=android$/);
+  } finally {
+    release();
+  }
+  // Normal browser API fixtures do not provide Telegram's full native SDK. Remove
+  // launch metadata after the isolated bridge assertion, then exercise normal content.
+  await page.evaluate(() => history.replaceState(history.state, '', '/'));
+  await expect
+    .poll(async () => (await preview.state()).requests.some((r) => r.path === '/api/dramas'))
+    .toBe(true);
+  expect(
+    await page.evaluate(
+      () => (window as Window & { __readyNotifications?: number }).__readyNotifications
+    )
+  ).toBe(1);
+  await page.getByRole('link', { name: 'AI短剧', exact: true }).click();
+  await expect(page).toHaveURL(/3130\/dramas$/);
+  await expect(page.getByRole('button', { name: '搜索短剧', exact: true })).toBeVisible();
 });

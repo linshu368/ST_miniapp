@@ -23,6 +23,10 @@
 
 ⏳ **2026-10-16 图片广场配置兼容修复（MIGRATION，未部署）**：`20261016_reconcile_image_plaza_managed_config_keys.sql` 将 Admin managed-key 入口包装为“当前白名单 OR 四个图片广场 key”，两表 CHECK 保留原表达式并接入修复后的入口。避免平台规则槽位静态名单覆盖图片广场 key；保留现有 validator、专用后处理边界、RLS 和业务行。TEST 保存/发布及 Production 均需独立门禁。
 
+⏳ **2026-10-30 用户角色创作（本地集成，未发布）**：`app_core.character_creations` 保存作者草稿、可见性和审核revision，`character_access_grants` 固定历史收藏/使用资格，`character_cover_assets` 保存私有持久封面身份。作者更新只改变卡片；`app_core.character_versions` 持有不可变内容，`experience.chat_sessions.character_version_id` 在第一条真实用户轮次写入事务内绑定，空会话不固定，分支继承。生成、换回复、角色附图和已聊详情读取相同版本，官方卡原行为保持。公开待审修改不会覆盖已批准runtime。本人创作、封面和润色通过独立鉴权API；展示DTO不包含私有system prompt。润色复用generation既有provider transport，独立于用户收费聊天，不写聊天历史；预设与背景由shared固定Markdown组合。
+
+创作者收益复用真实文本扣费RPC：不可变计费快照携带作者和卡ID，`billing.character_creator_rewards` 以永久charge key去重，40%实扣经现有专项奖励入口到账，退款在同一事务回收；已花奖励记内部待抵扣，下次收益冲抵，不能阻止用户退款。作者自用8折与现有VIP折扣取更优惠者，不叠加。`/creation` 前端及运营审核页使用shared契约；只有本地隔离验证，不表示任何线上环境已经开放。
+
 ## 1. 架构铁律（违反即拦截）
 
 ⏳ **2026-10-29 回复点赞（本地增量，未发布）**：`experience.chat_message_likes(session_id,message_id)` 保存会话主人对固定实际回复版本的点赞，分支不复制，重生成以新history ID独立反馈。`set_chat_message_like` 按归属/完成态验证并与开轮共用会话锁；显式布尔目标可幂等重试，写入不触发聊天统计或计费。角色社交查询通过 `experience.get_character_reply_like_counts` 批量读取角色回复总赞，加上原角色卡直接赞，返回大厅统一累计数量。`session_chat_history` 只末尾追加 `liked`，消息列表选择，模型上下文不选择；不额外为每条消息查询。受限RPC拥有写权，service只可读取新表，浏览器无直接数据库权限。迁移需先分支后点赞，恢复时可忽略个人点赞投影并保留数据。
@@ -39,6 +43,7 @@
 6. **生成与计费只有一个出口**：任何要调聊天 LLM 的路径都必须走 `backend/src/features/generation/`（**含实扣**：`settle.ts` 与 `sync-job.ts` 两条结算路径也都在这个模块里）。禁止在别处另起一套"转发 + 扣费 + 落库"，否则计费口径必然漂移。刻意例外包括语音写稿（`features/voice/`）：不同供应商、非流式、抽取任务、按次计费，理由写在 `voice-draft.ts` 与 `voice/billing.ts` 头注释里。 图片广场作品提示词翻译和标签分类也是独立的非流式辅助任务：统一位于 `generation/image-plaza-prompt-translate.ts` 与 `generation/image-plaza-tagging.ts`，不生成聊天回复、不读写聊天历史，也不进入用户聊天计费。legacy guard 仅按文件豁免这两个适配器及既有打标端点测试，不放开目录。
    同类纪律还有三条，一并由 CI 的 legacy guard 拦（见 §7.5）：`experience.chat_history` 只由 `ConversationHistoryRepository` 读写；支付到账只由 `PaymentSettlement.settlePaidOrder` 入账；OpenRouter 用量统计只由 `generation/openrouter-metadata.ts` 读取。
    **现行应用的星尘发放（注册 / 签到 / 运营赠送 / 邀请 / 社群）只发生在数据库 `SECURITY DEFINER` RPC 内**，且对应发奖 RPC 的「钱包 upsert + `bonus_credits` 加值 + `wallet_ledger` 记账」都收口在唯一入口 **`billing.grant_bonus_credits`**（`20260911_billing_grant_bonus_credits.sql`）；业务判定（配置、去重、上限、通知、审计）留在各 RPC。应用层只调 RPC、不做手动余额加减。CI 由 legacy guard `wallet-bonus-grant` 拦新迁移里再出现 `bonus_credits = bonus_credits + …`（见 §7.5）。充值入账（动 `main_credits` 与支付字段）是另一条已收口的路径，不走这个入口。发奖 RPC 的挂点：邀请「聊天轮数」在 `generation/settle.ts` 结算成功后触发，「首次付费」在 `PaymentSettlement.settlePaidOrder` 入账后触发（`lib/invite-rewards.ts`），社群入群在 `routes/community.ts`（webhook 自动 + 既有成员手动校验）。
+   签到自然日更新（本地实现，远端未执行）：`20261030_checkin_calendar_day.sql` 仅调整既有签到 RPC 的时间条件和 `next_claim_at`，按 Asia/Shanghai 每天 00:00 恢复，取得账户/会员锁后采集当前时间；奖励分档、发放事务和权限保持。Backend GET 使用 shared `getNextDailyCheckinAt`，Frontend 到期回读一次并复用前台恢复刷新。无新增表、cron、余额重置或旧事实回填。
 7. **`runtime_config` 只有一个读取入口**：`backend/src/platform/runtime-config.ts`（表在 `app_core.runtime_config`）。模型目录、定价、平台规则模板都从这里取，不允许并行实现第二套读法。
 8. **数据库当前按九个归属域划分**，`media_plaza` M1 已在 TEST、Production 完成；新表必须声明归属域（迁移文件头部注释 `-- domain: xxx`）。**跨域访问只准走 RPC / repository / API**，不得直接 SELECT/JOIN 另一个域的表。允许的惯例：指向根实体（`users` / `characters`）的 FK；`miniapp_analytics` 只读其他域，任何域不得反向读它。存量豁免（收口前不再新增同类）：
    - `users.total_round` / `miniapp_user_settings.total_round` 由 experience 链路回写；
@@ -122,6 +127,8 @@
 ---
 
 ## 3. 包清单
+
+调用前准备减负候选（2026-10-30）：conversation owner复用单轮用户设置、平台规则和目录快照，execute使用同一冻结计费上下文，VIP与配置读取并行。既有experience.begin_chat_generation_observation扩展可选charge_id/history，初次原子持久化身份、最终原子冻结prompt/报价，原5次往返变2次；不新增表/任务/扫描。兼容migration先于backend发布，尚未生产验收。关键身份不能改为后台保存，超时免扣、停止、额度释放及一次结算边界保持原语义，详见docs/first-token-fallback.md。
 
 ### 3.1 契约层
 
@@ -471,7 +478,7 @@ frontend 自有 Route Handler：`GET /api/lobby-characters`（白名单 sort 参
 
 ## 7. 工程约定
 
-MiniApp 启动展示与业务数据分离：根 `Providers` 在 Telegram 初始化前输出无请求的 `EntryShell`，角色/短剧列表复用现有骨架、短剧栏目及五项导航；初始化后在绘制机会后发送 SDK `miniApp.ready()`。`lib/perf/startup-timing.ts` 复用 Sentry distribution 上报从文档导航起算的框架可展示/ready 通知耗时，与原 `page.ready.duration` 分开；P95、后台/离开和原生遮罩观测边界见 [前端性能规范](../.trellis/spec/frontend/app/testing-quality-and-deployment.md#miniapp-启动框架与-p95)。
+MiniApp 启动展示与业务数据分离：根 `Providers` 在 Telegram 初始化前输出无请求的 `EntryShell`，角色/短剧列表复用现有骨架、短剧栏目及五项导航；初始化后在绘制机会后发送 SDK `miniApp.ready()`。`lib/perf/startup-timing.ts` 复用 Sentry distribution 上报从文档导航起算的框架可展示/ready 通知耗时，与原 `page.ready.duration` 分开；本地增量 `startup-phases.ts` 记录首次模块/render/SDK/bootstrap 节点，ready 后补充导航、受限资源摘要及分段分布，≥5s 附一条身份隔离的慢启动数值事件，尚待发布验证。P95、后台/离开和原生遮罩观测边界见 [前端性能规范](../.trellis/spec/frontend/app/testing-quality-and-deployment.md#miniapp-启动框架与-p95)。
 
 ### 7.1 前端
 
@@ -783,3 +790,7 @@ SSE start携带当轮冻结总预算。客户端若持有旧目录缓存，按�
 早于SSE身份的非成功v4终态可用原request_id上报。既有RPC按现有client_request_id索引最多读取2条，校验用户与会话且唯一时才定位；歧义不猜，成功结果仍必须有消息编号与revision。首份终态后的重放不UPDATE。迁移20261029_first_token_receipt_recovery.sql仅替换既有函数；不增加表、索引、cron、逐token写入或历史回填，不改变超时免扣、主动停止及正常回复一次计费。
 
 发布顺序：本地PG/测试→TEST迁移与应用验收→先合dev→生产迁移→Backend/Frontend/Admin→Grafana说明；配置只读核对版本97。回退应用保留兼容RPC，必要时前向修复，不删除账务。
+
+### MiniApp 轻量开屏与启动监控（2026-10-30，本地待发布）
+
+RootLayout随HTML交付独立框架绘制确认与原生ready脚本，Providers继续原业务初始化并补报真实早期时间戳；SDK负责未支持路径的兜底与通知去重。BrowserTracing首屏后安装，错误捕获和Metrics仍在启动期生效。本轮不改业务分包/预热或CDN；P95≤4秒与>4秒比例的生产基线、v2指标边界及回退见[开屏优化说明](miniapp-startup-performance.md)。

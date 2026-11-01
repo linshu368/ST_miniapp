@@ -3,7 +3,10 @@
 ST_miniapp 是围绕 Telegram MiniApp、AI 角色聊天、钱包/支付、语音、增长运营和客服能力构建的 pnpm monorepo。仓库包含面向用户的 Next.js 前端、Fastify API、内部运营 SPA、共享契约/迁移包，以及由 Frontend 和 Admin 共用的回复渲染包。客服平台已拆到独立仓库 [`linshu368/ST_cs_platform`](https://github.com/linshu368/ST_cs_platform)，本仓库只保留 Bot 消息转发和 `/api/support/*` 代理。
 
 > 深层架构、数据流和路由清单见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)；Railway 生产运维见 [`ops/railway/README.md`](ops/railway/README.md)。本文负责新成员入门、依赖关系、环境、命令和交付约定。
+
+> 对话调用前准备减负候选：本轮设置/目录快照复用，身份与报价保存5次请求合为2次；须先验证并执行`20261030_chat_generation_dispatch_prepare.sql`，再发布应用。保持现行兜底等待与6秒首字预算，计费/取消/恢复仍依赖同步业务事实；步骤见[首字运行说明](docs/first-token-fallback.md)。尚未发布，不能用本地验证替代生产耗时结果。
 > MiniApp 入口先输出静态框架，初始化后通知 Telegram 展示；独立启动指标 `startup.shell_ready.duration` / `startup.telegram_ready.duration` 的口径、P95 查询与验证边界见 [前端性能规范](.trellis/spec/frontend/app/testing-quality-and-deployment.md#miniapp-启动框架与-p95)。本地实现不代表已经发布或收到生产样本。
+> ready 前分段诊断本地增量复用 Sentry：`startup.stage.duration` 配合 ≥5 秒的单次 `miniapp_startup_slow` 数值快照区分启动阶段；节点只记录时间戳，资源摘要收集与新增上报在 ready 后执行。尚待发布和真机实收验证，口径见上述规范。
 > 短剧性能日常统一看[工程短剧看板](https://ea3213527545.grafana.net/d/st-engineering-drama)。v3复用原计时器、集中shared阶段计算；默认双轨，验证通过后才显式切换统一模式，保留Pino诊断及旧看板历史。字段、分母、release、切换与回滚见[短剧播放耗时排查](docs/drama-playback-timing.md)。本地代码不代表生产已启用。
 
 本分支新增短剧生产 CDN 对照能力：鉴权用户按实验固定分组，约 20% Bunny／80% Supabase；相同视频与播放器，起播和未缓冲快进保留真实逐次耗时、失败及重试累计等待。关闭后新播放重新确认 Supabase 地址。无新数据库表或实验平台。生产专用回源／签名／开关、发布和 12 小时首次比较见 [操作说明](ops/drama-cdn-rollout.md)。当前仅为本地实现，生产尚未启用；既有 pr-525 TEST Preview 功能验收不代表生产或性能达标。
@@ -11,6 +14,8 @@ ST_miniapp 是围绕 Telegram MiniApp、AI 角色聊天、钱包/支付、语音
 > 短剧达到5秒的启动终态与迟到媒体详情复用现有 Backend OTLP 出口写 Grafana Cloud Loki；不新增五秒快照，也不再通过接收接口写 Supabase 分析表。`st-engineering-drama` 增加逐次详情/观察ID查询；旧 `st-drama-playback` 仅保留历史SQL数据。代码与线上状态分开验收，发布步骤见 [短剧看板操作说明](docs/grafana/drama-playback-runbook.md)。
 
 > 图片广场 Admin 保存草稿触发 `config_drafts_config_key_check` 的兼容修复：新增 `20261016_reconcile_image_plaza_managed_config_keys.sql`，保留现有白名单并恢复四个图片广场 key，不改正式配置。尚待 TEST workflow 单文件执行及保存/发布验收；详见迁移目录 README，Production 另行审批。
+
+开屏优化（本地，待发布）：[实现边界、4秒验收与冻结基线](docs/miniapp-startup-performance.md)。
 
 ## 0. 运行环境
 
@@ -131,6 +136,16 @@ pnpm --filter @miniapp/backend video-plaza:seed-sql -- --target test --processed
 
 TEST 视频种子 SQL 只能通过 GitHub Actions `Database Migration` 选择 `environment=test` 单文件执行。工作流会向该次 `psql` 会话注入 TEST project ref 与 Storage 已核验标记；执行脚本会拒绝把 `_seed_test_` 文件用于 production，也会拒绝缺少这些确认值的直接执行。
 
+### 角色创作与空间（2026-10-30，本地集成，未发布）
+
+底部入口顺序为「角色 / 创作 / 中央播放首页 / AI短剧 / 我的」。`/creation` 承接角色创作、收藏和本人作品；`/creation/characters/new` 与 `/:id/edit` 使用真实创作 API。旧 `/create` 图片视频广场及工作室继续保留，通过创作页进入。上传封面、从本人生成作品选封面、文档导入、本地草稿、全屏编辑、AI润色与采用撤回都在同一流程内；预设不提供AI润色。预设区提供四套可多选的固定模板，仅展示名称、适用场景与效果，正文作为服务端静态文本保存；同时支持自写和导入。当前不新增运营配置页面。
+
+作者修改的是卡片：未开聊可以使用更新内容，首次实际发言在开轮事务内绑定卡级不可变版本，已开聊与分支继续沿用该版本。公开更新审核前不替换已批准内容；转为私密后停止大厅展示，曾收藏或使用过的人保留使用资格。运营端的「创作者审核」负责批准/驳回。
+
+他人使用作者卡的真实扣费按40%奖励至作者专项星尘，免费/失败不发；自用8折与VIP取更优惠者、不叠加、不发自身奖励。资金与退款回收均在原计费事务中，界面模拟不代替账务验证。
+
+固定移动端验收：`pnpm test:ui --grep @creator`，场景含创建发布、失败重试、封面生成回流、润色截断采用和撤回。卡级权限/上下文验证：`bash scripts/test-creator-characters-local.sh`；计费验证复用 `bash scripts/test-first-token-fallback-local.sh`。隔离本地数据库通过不代表TEST或生产已迁移。迁移及部署顺序见 [迁移目录说明](packages/shared/migrations/README.md)。AI润色复用主项目OpenRouter配置与明确模型，不读取独立Lab密钥；真实供应商和生产存储需部署前验证。
+
 ## 5. 环境变量
 
 不要提交真实 `.env`。浏览器端 `NEXT_PUBLIC_*` 与 `VITE_*` 会进入 bundle，不能存放 secret。完整变量以各包 `.env.example`、源码读取点和部署平台为准。
@@ -167,6 +182,8 @@ anon key 是浏览器公开配置，但仍应按环境隔离；service-role 绝�
 Admin Vercel Preview 在构建期固定 API 映射：普通 branch Preview 与 `dev -> main` 发布 PR 必须配置 HTTPS 的 `VITE_ADMIN_TEST_API_URL`；目标分支为 `dev` 的功能 PR 固定使用 `https://stminiapp-pr-<PR号>.up.railway.app`。构建会拒绝缺失或非 HTTPS 的稳定 TEST 映射；PR Railway workflow 同时验证后端健康和 Admin 代理的 Vercel CORS 预检。
 
 ## 6. Supabase 与数据库迁移
+
+签到零点更新（2026-10-30，本地已验证，未发布）：`20261030_checkin_calendar_day.sql` 将领取资格改为北京时间每天 00:00 恢复；旧记录无需回填，VIP/新用户/老用户金额沿用配置，不清空已领余额。先 TEST/生产逐环境迁移，再发布 Backend/Frontend。个人中心跨零点回读服务端资格；回归复用 `bash scripts/test-vip-billing-migrations.sh`（无本机 PostgreSQL 时使用隔离 Docker PG17）及 `pnpm test:ui --grep @profile`。
 
 短剧目录复用 `/api/dramas` 的完整标题、标签、简介，在前端做搜索／分类交集和排序。剧级文字逐字段采用 `dramas → 同剧 ai_results → 空值`；“最新”采用可播视频最早的 `created_at`，推荐保留接口顺序。`20261026_drama_video_created_at.sql` 仅计划用于 TEST：为已核验的 577 条存量按来源／消息升序补录展示时间，新增视频由独立上传端在首次上传成功时写入（本仓库不改该脚本）。先迁移验收，再发布 Backend／Frontend；当前远端执行状态和验证限制见[任务记录](.trellis/tasks/10-26-drama-mvp-search-latest/verification.md)，字段及恢复约定见[短剧目录契约](.trellis/spec/database/supabase/drama-catalog.md)。
 

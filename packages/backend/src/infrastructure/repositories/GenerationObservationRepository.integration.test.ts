@@ -263,4 +263,141 @@ describe.skipIf(!url)('real local PostgREST generation facts', () => {
       .single();
     expect(unchanged.data?.delivery_attempt_id).toBe(fallbackId);
   });
+  it('atomically persists one planned charge and marker, then freezes prompt and quote without identity rewrites', async () => {
+    const optimized = {
+      ...begin,
+      historyId: randomUUID(),
+      requestId: randomUUID(),
+      primaryAttemptId: randomUUID(),
+      chargeId: randomUUID(),
+      history: [],
+      measurementMethod: 'client_committed_v4' as const,
+      recoverableDelivery: true,
+    };
+    const created = await db.from('chat_history').insert({
+      id: optimized.historyId,
+      user_id: owner,
+      session_id: session,
+      model: 'selected-source',
+      revision: 0,
+    });
+    expect(created.error).toBeNull();
+    await repository.begin(optimized);
+    const initial = await db
+      .from('chat_history')
+      .select('history,llm_charge_id,llm_billing_snapshot')
+      .eq('id', optimized.historyId)
+      .single();
+    expect(initial.data).toMatchObject({
+      history: [{ role: 'system', content: '', request_id: optimized.requestId }],
+      llm_charge_id: optimized.chargeId,
+      llm_billing_snapshot: null,
+    });
+    expect(
+      await repository
+        .report(owner, session, {
+          request_id: optimized.requestId,
+          assistant_message_id: null,
+          revision: null,
+          measurement_method: 'client_committed_v4',
+          outcome: 'timed_out',
+          first_token_visible_ms: null,
+          first_token_received_ms: null,
+          request_dispatched_ms: 0,
+          backgrounded: false,
+          reason: 'not_visible',
+        })
+        .catch((err: unknown) => {
+          throw err instanceof Error && err.cause ? err.cause : err;
+        })
+    ).toBe(true);
+    const prompt = [
+      { role: 'system', content: 'bounded fixture instructions' },
+      { role: 'user', content: 'bounded fixture input' },
+    ];
+    const frozen = {
+      ...optimized,
+      history: prompt,
+      snapshot: { ...quote, charge_id: optimized.chargeId },
+    };
+    await repository.begin(frozen);
+    await repository.begin(frozen);
+    await repository.begin(optimized);
+    const final = await db
+      .from('chat_history')
+      .select('history,llm_charge_id,llm_billing_snapshot')
+      .eq('id', optimized.historyId)
+      .single();
+    expect(final.data).toMatchObject({
+      history: [{ ...prompt[0], request_id: optimized.requestId }, prompt[1]],
+      llm_charge_id: optimized.chargeId,
+      llm_billing_snapshot: frozen.snapshot,
+    });
+    expect(prompt[0]).not.toHaveProperty('request_id');
+    const requests = await db
+      .from('chat_generation_requests')
+      .select('chat_history_id')
+      .eq('chat_history_id', optimized.historyId);
+    const attempts = await db
+      .from('chat_generation_attempts')
+      .select('id')
+      .eq('chat_history_id', optimized.historyId);
+    expect(requests.data).toHaveLength(1);
+    expect(attempts.data).toHaveLength(1);
+    await expect(repository.begin({ ...frozen, chargeId: randomUUID() })).rejects.toThrow(
+      '保存生成请求与首发意图失败'
+    );
+    const stopped = await db
+      .from('chat_history')
+      .update({ llm_finish_reason: 'user_cancelled' })
+      .eq('id', optimized.historyId);
+    expect(stopped.error).toBeNull();
+    await expect(repository.begin(frozen)).rejects.toThrow('保存生成请求与首发意图失败');
+    const unchanged = await db
+      .from('chat_history')
+      .select('llm_charge_id,llm_finish_reason')
+      .eq('id', optimized.historyId)
+      .single();
+    expect(unchanged.data).toEqual({
+      llm_charge_id: optimized.chargeId,
+      llm_finish_reason: 'user_cancelled',
+    });
+  });
+
+  it('rejects malformed prompt markers before any admission identity can be committed', async () => {
+    const target = randomUUID(),
+      request = randomUUID();
+    expect(
+      (
+        await db.from('chat_history').insert({
+          id: target,
+          user_id: owner,
+          session_id: session,
+          model: 'selected-source',
+          revision: 0,
+        })
+      ).error
+    ).toBeNull();
+    for (const history of [
+      [],
+      [{ role: 'tool', content: 'bad', request_id: request }],
+      [{ role: 'system', content: '', request_id: randomUUID() }],
+    ]) {
+      const result = await db.rpc('begin_chat_generation_observation', {
+        p_history_id: target,
+        p_input: { request_id: request, charge_id: randomUUID(), history },
+      });
+      expect(result.error?.code).toBe('22023');
+    }
+    const row = await db.from('chat_history').select('llm_charge_id').eq('id', target).single();
+    expect(row.data?.llm_charge_id).toBeNull();
+    expect(
+      (
+        await db
+          .from('chat_generation_requests')
+          .select('chat_history_id')
+          .eq('chat_history_id', target)
+      ).data
+    ).toEqual([]);
+  });
 });

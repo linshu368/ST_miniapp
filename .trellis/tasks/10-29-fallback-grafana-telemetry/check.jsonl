@@ -4,3 +4,5 @@
 {"file": ".trellis/spec/backend/app/data-reliability-and-security.md", "reason": "Nonblocking safe metrics and business persistence"}
 {"file": "docs/grafana/engineering-performance.md", "reason": "Existing Faro wire and dashboard contracts"}
 {"file": "ops/observability/README.md", "reason": "Existing OTLP queue and bounded dimensions"}
+{"file": "docs/first-token-fallback.md", "reason": "2026-10-30 preparation reduction and rollout invariants"}
+{"file": "packages/shared/migrations/20261030_chat_generation_dispatch_prepare.sql", "reason": "Atomic admission compatibility and stop/quote guards"}

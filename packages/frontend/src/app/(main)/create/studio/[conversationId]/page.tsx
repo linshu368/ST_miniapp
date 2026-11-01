@@ -16,11 +16,12 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   IMAGE_PLAZA_PROMPT_MAX_CHARS,
   selectSupportedVideoPlazaOptions,
+  parseCreatorCoverReturn,
   type ImagePlazaArtifact,
   type ImagePlazaAspectRatio,
   type ImagePlazaMode,
@@ -46,6 +47,7 @@ import {
   useVideoPlazaQuoteMutation,
 } from '@/lib/api/image-plaza';
 import { StudioArtifactCard } from '@/components/image-plaza/studio-artifact-card';
+import { useCreateCreatorCoverMutation } from '@/lib/api/creator-characters';
 import { StudioSettingsDialog } from '@/components/image-plaza/studio-settings-dialog';
 import { StudioVideoCard } from '@/components/image-plaza/studio-video-card';
 import { VideoModelSheet } from '@/components/image-plaza/video-model-sheet';
@@ -73,6 +75,18 @@ export default function ImagePlazaStudioPage() {
 
 function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
   const router = useRouter();
+  const search = useSearchParams();
+  const creatorReturn = parseCreatorCoverReturn(search.get('creator_return'));
+  const cover = useCreateCreatorCoverMutation();
+  const coverRequests = useRef<Record<string, string>>({});
+  const coverBusy = useRef(false);
+  const coverRouteVersion = useRef(0);
+  useEffect(() => {
+    coverRouteVersion.current += 1;
+    return () => {
+      coverRouteVersion.current += 1;
+    };
+  }, [creatorReturn, conversationId]);
   const viewportHeight = useVisualViewportHeight();
   const config = useImagePlazaConfigQuery();
   const conversation = useImagePlazaConversationQuery(conversationId);
@@ -175,7 +189,30 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
   const [videoAudio, setVideoAudio] = useState(true);
   const [submittingSource, setSubmittingSource] = useState<string | null>(null);
   const [videoReferenceSourceId, setVideoReferenceSourceId] = useState<string | null>(null);
-  const returnToGallery = useCallback(() => router.push('/create', { scroll: false }), [router]);
+  const returnToGallery = useCallback(
+    () => router.push(creatorReturn ?? '/create', { scroll: false }),
+    [router, creatorReturn]
+  );
+  const selectAsCover = async (artifact: ImagePlazaArtifact) => {
+    if (!creatorReturn || coverBusy.current) return;
+    const routeVersion = coverRouteVersion.current;
+    coverBusy.current = true;
+    try {
+      const id =
+        coverRequests.current[artifact.id] ??
+        (coverRequests.current[artifact.id] = crypto.randomUUID());
+      const result = await cover.mutateAsync({ id, source: 'artifact', artifact_id: artifact.id });
+      if (coverRouteVersion.current !== routeVersion) return;
+      const next = new URL(creatorReturn, window.location.origin);
+      next.searchParams.set('cover_asset_id', result.asset.id);
+      router.push(next.pathname + next.search);
+    } catch (error) {
+      if (coverRouteVersion.current === routeVersion)
+        setNotice(error instanceof Error ? error.message : '暂时未能使用这张封面，请重试');
+    } finally {
+      coverBusy.current = false;
+    }
+  };
   useTelegramBackButton(returnToGallery);
 
   const models = useMemo(() => config.data?.models ?? [], [config.data?.models]);
@@ -664,8 +701,8 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
           <button
             type="button"
             onClick={returnToGallery}
-            aria-label="返回影像广场"
-            className="grid size-10 place-items-center rounded-full bg-card ring-1 ring-border"
+            aria-label={creatorReturn ? '返回角色编辑' : '返回影像广场'}
+            className="grid size-11 place-items-center rounded-full bg-card ring-1 ring-border"
           >
             <ArrowLeft className="size-5" />
           </button>
@@ -687,7 +724,9 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
                 {},
                 {
                   onSuccess: ({ conversation: created }) =>
-                    router.push(`/create/studio/${created.id}`),
+                    router.push(
+                      `/create/studio/${created.id}${creatorReturn ? `?creator_return=${encodeURIComponent(creatorReturn)}` : ''}`
+                    ),
                 }
               )
             }
@@ -697,7 +736,7 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
             <Plus className="size-4" aria-hidden />
             新建
           </button>
-          <ImagePlazaHistorySheet activeId={conversationId} compact />
+          <ImagePlazaHistorySheet activeId={conversationId} compact creatorReturn={creatorReturn} />
         </div>
       </header>
 
@@ -737,7 +776,9 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
               <div className="mx-auto grid size-16 place-items-center rounded-[1.5rem] bg-primary/10 text-primary">
                 <ImagePlus className="size-7" />
               </div>
-              <h2 className="mt-5 text-xl font-black">把灵感变成图片</h2>
+              <h2 className="mt-5 text-xl font-black">
+                {creatorReturn ? '为角色创作封面' : '把灵感变成图片'}
+              </h2>
               <p className="mt-2 text-sm leading-6 text-muted-foreground">
                 描述画面、选择模型，也可以添加一张参考图。
               </p>
@@ -794,6 +835,10 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
                       regenerateDisabled={
                         submittingSource !== null || quote.isPending || submit.isPending
                       }
+                      onUseAsCover={
+                        creatorReturn ? (artifact) => void selectAsCover(artifact) : undefined
+                      }
+                      selectingCover={cover.isPending}
                       onShare={requestShare}
                       onUseAsVideoReference={(artifact) =>
                         void handleImageAsVideoReference(artifact)
@@ -1292,6 +1337,8 @@ function AttemptCard(props: {
   regenerating: boolean;
   regenerateDisabled: boolean;
   onArtifactVisible?: () => void;
+  onUseAsCover?: (artifact: ImagePlazaArtifact) => void;
+  selectingCover?: boolean;
 }) {
   const attempt = props.attempt;
   if (attempt.status === 'pending' || attempt.status === 'generating')
@@ -1342,6 +1389,8 @@ function AttemptCard(props: {
           regenerating={props.regenerating}
           regenerateDisabled={props.regenerateDisabled}
           onRefresh={props.onRefresh}
+          onUseAsCover={props.onUseAsCover}
+          selectingCover={props.selectingCover}
           onShare={props.onShare}
           onUseAsVideoReference={props.onUseAsVideoReference}
           creatingVideoReference={props.creatingVideoReferenceId === artifact.id}

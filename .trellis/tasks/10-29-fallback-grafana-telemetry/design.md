@@ -13,3 +13,17 @@
 新链路已有真实Cloud合成样本，追加删除纯监控写入与旧SQL面板。运行时检索确认：first_token_emitted_ms只供旧分析视图使用，generate的独立markServer UPDATE没有计费/恢复消费者，可移除整次写；client_request_dispatched_ms与client_wait_finished_ms只供旧分析，report RPC投影不再传入。first_token_received_ms仍参与旧兼容计费边界，visible/outcome/failed/identity等参与免扣/幂等，必须保留。不中断供应商原始事实、赢家、可恢复内容和一次结算；不新增迁移、不清历史、不DROP字段、无回填或扫描。
 
 旧chat-first-token-manual以跳转说明替换7条SQL查询、删除SQL变量与刷新；不影响其他经营看板/共享数据源/cron，不运行grafana\_%批量变更。先确保新生产样本存在再发布跳转，避免切到空图。现有本地PG/PostgREST harness与生命周期回归验证，直接核对移除监控写入后首字超时、恢复、计费路径未变。此次增量具体清单另审后提交。
+
+## 2026-10-30 准备链路最小优化设计（用户已选择的第一、第三优先）
+
+复用调研：现有runConversationTurn/execute、MiniappUserSettingsRepository、resolveModelForUser/getModelBillingContext、begin_chat_generation_observation、withStoredRequestId、额度/取消与本地PG harness。实查短请求帽和CORS600秒预检缓存已存在，聊天POST直接fetch并不经过应用短请求队列；不再发明并行owner或重复修它们。
+
+每轮设置快照一次返回用户偏好/所选型号/生效昵称，平台规则与路由目录只在本轮复用，非全局TTL缓存；getModelBillingContext允许显式传目录，ResolvedModel携带冻结计费上下文，execute缺省调用兼容。provider路由只读准备与原计费读取并行，业务预检顺序仍为持久化charge→额度预留→报价/余额→上游。
+
+experience拥有既有begin_chat_generation_observation(uuid,jsonb)扩展，不新建对象：初次RPC按history主键锁定活动revision，原子保存request标记、提前生成的唯一charge、request/primary attempt；最终RPC原子保存完整prompt/request标记和冻结billing snapshot。旧调用者不传可选字段保持原行为；同一request/charge可安全重放，冲突或取消后拒绝，不允许晚写覆盖终态。上下文失败时join已发出的初次写再清理；不把关键身份改成fire-and-forget。prompt仅用于业务恢复/审计，不能进入遥测。
+
+可靠性：不重试生成POST、不增加模型尝试；关键写仅现有5秒边界且原6秒总时钟不续期，数据库锁只按PK覆盖必要语句，不持锁调用外网。初次身份失败不reserve、不dispatch；最终freeze失败不dispatch且释放预留；manual stop/timeout沿既有CAS、额度释放与单次计费。队列/容量沿既有有界实现，无新cron、轮询和监控SQL。监控继续现有SDK出口，与持久化成功独立。
+
+演进：单兼容migration本地验证→TEST→生产，migration先于新backend；旧backend能继续使用扩展RPC。回滚应用无需删新字段或业务事实，SQL前向修复；不改运营目录。前端API preconnect无HTTP/DB请求；共享首有效token标记跨正文/启用思考，首片立即传既有回调，后续保留帧合批，React提交与6秒截止仍决定成功。
+
+拒绝项：不删initial admission/charge写、不用全局缓存钱包/权限、不绕余额/额度、不延长6秒、不提前2秒兜底、不加代理/WebSocket/第二条恢复请求。可承诺的是请求数量与依赖路径减少；实际耗时和1.5%结果需上线真实样本验证，直方图插值不冒充精确原始分位数。

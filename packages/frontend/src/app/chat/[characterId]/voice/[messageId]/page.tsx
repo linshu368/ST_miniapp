@@ -38,7 +38,7 @@ export default function CustomVoicePage() {
   const characterId = params.characterId;
   const messageId = params.messageId;
   const sessionId = searchParams.get('session');
-  const modelCatalogQuery = useModelCatalogQuery();
+  const modelCatalogQuery = useModelCatalogQuery({ characterId });
   useChatReplayBinding({
     characterId,
     conversationSessionId: sessionId,

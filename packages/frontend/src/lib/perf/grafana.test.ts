@@ -99,6 +99,80 @@ describe('bounded engineering Faro exporter', () => {
     expect(JSON.stringify(fake.measurement.mock.calls)).not.toMatch(/PRIVATE_|request_id|user_id/);
   });
 
+  it('allows bounded CDN fields while removing identities and unsafe experiment values twice', async () => {
+    const fake = fakeSdk();
+    const exporter = createEngineeringExporter(async () => fake.sdk);
+    await exporter.initialize();
+    exporter.event('drama.terminal', {
+      cdn_experiment: 'unit-ab',
+      cdn_group: 'bunny',
+      cdn_provider: 'supabase',
+      cdn_reason: 'disabled',
+      cdn_budget: 'within_5s',
+      experiment_user: 'PRIVATE_USER',
+      observation_id: 'PRIVATE_OBSERVATION',
+    });
+    expect(fake.event.mock.calls.at(-1)?.[1]).toMatchObject({
+      cdn_experiment: 'unit-ab',
+      cdn_group: 'bunny',
+      cdn_provider: 'supabase',
+      cdn_reason: 'disabled',
+      cdn_budget: 'within_5s',
+    });
+    const beforeSend = fake.initialize.mock.calls[0]![0].beforeSend!;
+    for (const experiment of [
+      'https://private/?token=secret',
+      'a'.repeat(64),
+      '11111111-1111-4111-8111-111111111111',
+    ]) {
+      const result = beforeSend({
+        type: 'event',
+        meta: {},
+        payload: {
+          name: 'st_drama_terminal',
+          timestamp: new Date().toISOString(),
+          attributes: {
+            cdn_experiment: experiment,
+            cdn_group: 'forged',
+            experiment_user: 'PRIVATE_USER',
+          },
+        },
+      } as TransportItem);
+      expect(result).toMatchObject({
+        payload: { attributes: { cdn_experiment: 'unknown', cdn_group: 'other' } },
+      });
+      expect(JSON.stringify(result)).not.toMatch(/PRIVATE|token|https:/);
+    }
+    expect(JSON.stringify(fake.event.mock.calls)).not.toMatch(
+      /PRIVATE|experiment_user|observation_id/
+    );
+  });
+
+  it('bounds the number of CDN experiment IDs and keeps overflow stable at the second boundary', async () => {
+    vi.resetModules();
+    const { createEngineeringExporter: isolatedExporter } = await import('./grafana');
+    const fake = fakeSdk();
+    const exporter = isolatedExporter(async () => fake.sdk);
+    await exporter.initialize();
+    for (let i = 0; i < 10; i++)
+      exporter.event('drama.terminal', { cdn_experiment: `test-experiment-${i}` });
+    expect(fake.event.mock.calls.slice(-10).map(([, attrs]) => attrs.cdn_experiment)).toEqual([
+      ...Array.from({ length: 8 }, (_, i) => `test-experiment-${i}`),
+      'other',
+      'other',
+    ]);
+    const result = fake.initialize.mock.calls[0]![0].beforeSend!({
+      type: 'event',
+      meta: {},
+      payload: {
+        name: 'st_drama_terminal',
+        timestamp: '',
+        attributes: { cdn_experiment: 'other' },
+      },
+    } as TransportItem);
+    expect(result).toMatchObject({ payload: { attributes: { cdn_experiment: 'other' } } });
+  });
+
   it('initializes once, transports only approved custom signals and strips unsafe fields twice', async () => {
     const fake = fakeSdk();
     const loader = vi.fn(async () => fake.sdk);

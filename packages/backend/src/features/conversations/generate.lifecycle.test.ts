@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
   start: vi.fn(),
   regenerate: vi.fn(),
   context: vi.fn(),
+  card: vi.fn(),
+  buildPrompt: vi.fn(),
   prompt: vi.fn(),
   finalize: vi.fn(),
   find: vi.fn(),
@@ -52,24 +54,19 @@ vi.mock('../../infrastructure/repositories/OpenRouterChatHistoryRepository.js', 
 }));
 vi.mock('../../infrastructure/repositories/CharacterCardRepository.js', () => ({
   CharacterCardRepository: class {
-    async requireCard() {
-      return { name: 'role', first_mes: 'hello' };
-    }
+    requireCard = mocks.card;
   },
 }));
 vi.mock('../../infrastructure/repositories/MiniappUserSettingsRepository.js', () => ({
   MiniappUserSettingsRepository: class {
-    async getGenerationConfig() {
-      return {};
-    }
-    async getDisplayName() {
-      return 'user';
+    async getGenerationContext() {
+      return { config: { selected_model_id: null }, displayName: 'user' };
     }
   },
 }));
 vi.mock('../engine/index.js', () => ({
   fetchPlatformInstructions: async () => ({ degraded: false, instructions: {} }),
-  buildPrompt: () => ({ messages: [], sampling: {} }),
+  buildPrompt: mocks.buildPrompt,
 }));
 vi.mock('../generation/index.js', () => ({
   execute: mocks.execute,
@@ -105,6 +102,8 @@ function input(mode: { kind: 'send'; content: string } | { kind: 'regenerate' })
 }
 beforeEach(() => {
   Object.values(mocks).forEach((mock) => mock.mockReset());
+  mocks.card.mockResolvedValue({ name: 'role', first_mes: 'hello' });
+  mocks.buildPrompt.mockReturnValue({ messages: [], sampling: {} });
   mocks.checkpoint.mockResolvedValue(undefined);
   mocks.pendingRequest.mockResolvedValue(undefined);
   mocks.recover.mockResolvedValue(undefined);
@@ -137,6 +136,37 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe('turn lifecycle recovery', () => {
+  it('reads the session-bound card only after the real turn starts and uses its opening for an empty chat', async () => {
+    mocks.start.mockImplementation(async () => {
+      expect(mocks.card).not.toHaveBeenCalled();
+      return { historyId: 'reply', turnIndex: 1, revision: 0, userContent: 'first' };
+    });
+    mocks.card.mockResolvedValue({
+      name: 'updated card',
+      first_mes: 'new bound opening',
+      system_prompt: 'bound prompt',
+    });
+    mocks.context.mockResolvedValue({ messages: [], openingMessage: null, truncatedTurns: 0 });
+    await runConversationTurn(input({ kind: 'send', content: 'first' }));
+    expect(mocks.card).toHaveBeenCalledExactlyOnceWith('character', 'user', 'session');
+    expect(mocks.buildPrompt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        history: [{ role: 'assistant', content: 'new bound opening' }],
+        character: expect.objectContaining({ system_prompt: 'bound prompt' }),
+      })
+    );
+  });
+
+  it('cleans up regeneration without dispatch if its bound version is unavailable', async () => {
+    mocks.card.mockRejectedValue(new Error('bound version unavailable'));
+    await expect(runConversationTurn(input({ kind: 'regenerate' }))).rejects.toThrow(
+      'bound version unavailable'
+    );
+    expect(mocks.regenerate).toHaveBeenCalledOnce();
+    expect(mocks.finalize).toHaveBeenCalledOnce();
+    expect(mocks.execute).not.toHaveBeenCalled();
+  });
+
   it.each([undefined, 'client_committed_v4'] as const)(
     'persists the %s cohort during the existing initial observation write',
     async (firstTokenMeasurement) => {
@@ -169,15 +199,13 @@ describe('turn lifecycle recovery', () => {
     const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
     let snapshotSaved = false;
     let dispatched = false;
-    mocks.pendingRequest.mockImplementation(() => pause(300));
-    mocks.begin.mockImplementation(() => pause(300));
+    mocks.begin.mockImplementation(async (value) => {
+      await pause(300);
+      if (value.snapshot) snapshotSaved = true;
+    });
     mocks.context.mockImplementation(async () => {
       await pause(600);
       return { messages: [], openingMessage: 'hello', truncatedTurns: 0 };
-    });
-    mocks.prompt.mockImplementation(async () => {
-      await pause(500);
-      snapshotSaved = true;
     });
     mocks.execute.mockImplementation(async (_request, hooks) => {
       // Independent pricing/entitlement reads can start while the prompt is saved.
@@ -204,13 +232,78 @@ describe('turn lifecycle recovery', () => {
     await pending;
     expect(dispatched).toBe(true);
     expect(mocks.begin).toHaveBeenCalledTimes(2);
-    // Serial preparation required 2500ms with these same dependency delays.
+    expect(mocks.pendingRequest).not.toHaveBeenCalled();
+    expect(mocks.prompt).not.toHaveBeenCalled();
+    expect(mocks.begin.mock.calls[0]?.[0]).toMatchObject({
+      history: [],
+      chargeId: expect.any(String),
+    });
+    expect(mocks.begin.mock.calls[1]?.[0]).toMatchObject({
+      history: [],
+      snapshot: { charge_id: 'charge' },
+    });
+    // Only the two durable admission stages remain; obsolete prompt/identity writes are gone.
     expect(performance.now()).toBeLessThan(1500);
+  });
+
+  it('shares the durable charge key with execute and rejects a different reserve identity', async () => {
+    let key: string | undefined;
+    mocks.begin.mockImplementation(async (value) => {
+      key ??= value.chargeId;
+      expect(value.chargeId).toBe(key);
+    });
+    mocks.execute.mockImplementation(async (request, hooks) => {
+      expect(request.plannedChargeId).toBe(key);
+      await hooks.onBeforeReserve(request.plannedChargeId);
+      await expect(hooks.onBeforeReserve('another-charge')).rejects.toThrow('生成计费身份发生变化');
+      await hooks.onBeforeDispatch({ charge_id: request.plannedChargeId });
+      return {
+        status: 'upstream_error',
+        content: '',
+        finishReason: null,
+        generationId: null,
+        chargeId: null,
+      };
+    });
+    await runConversationTurn(input({ kind: 'send', content: 'original' }));
+    expect(mocks.begin).toHaveBeenCalledTimes(2);
+    expect(mocks.pendingRequest).not.toHaveBeenCalled();
+    expect(mocks.prompt).not.toHaveBeenCalled();
+  });
+
+  it('dispatch preparation uses only two durable admission calls instead of five sequential writes', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+    mocks.begin.mockImplementation(() => new Promise((resolve) => setTimeout(resolve, 200)));
+    let dispatchedAt = 0;
+    mocks.execute.mockImplementation(async (request, hooks) => {
+      await hooks.onBeforeReserve(request.plannedChargeId);
+      await hooks.onBeforeDispatch({ charge_id: request.plannedChargeId });
+      dispatchedAt = performance.now();
+      return {
+        status: 'upstream_error',
+        content: '',
+        finishReason: null,
+        generationId: null,
+        chargeId: null,
+      };
+    });
+    const operation = runConversationTurn({
+      ...input({ kind: 'send', content: 'original' }),
+      requestId: '11111111-2222-4333-8444-555555555555',
+    });
+    await vi.advanceTimersByTimeAsync(401);
+    await operation;
+    expect(dispatchedAt).toBe(400);
+    expect(mocks.begin).toHaveBeenCalledTimes(2);
+    expect(mocks.prompt).not.toHaveBeenCalled();
+    expect(mocks.pendingRequest).not.toHaveBeenCalled();
   });
 
   it('failed snapshot prevents dispatch even when pricing has already completed', async () => {
     let dispatched = false;
-    mocks.prompt.mockRejectedValue(new Error('snapshot unavailable'));
+    mocks.begin.mockImplementation(async (value) => {
+      if (value.snapshot) throw new Error('snapshot unavailable');
+    });
     mocks.execute.mockImplementation(async (_request, hooks) => {
       await hooks.onBeforeDispatch({ charge_id: 'charge' });
       dispatched = true;
@@ -391,7 +484,7 @@ describe('turn lifecycle recovery', () => {
     }
   );
 
-  it.each(['context', 'prompt', 'execute'] as const)(
+  it.each(['context', 'execute'] as const)(
     'post-start %s failure closes the persisted streaming row',
     async (stage) => {
       mocks[stage].mockRejectedValue(new Error(`${stage} failed`));
@@ -473,7 +566,7 @@ describe('turn lifecycle recovery', () => {
   it('persists request correlation before prompt reads and passes it only to snapshot storage', async () => {
     const requestId = '11111111-2222-4333-8444-555555555555';
     const order: string[] = [];
-    mocks.pendingRequest.mockImplementation(async () => {
+    mocks.begin.mockImplementation(async () => {
       order.push('request identity');
     });
     mocks.context.mockImplementation(async () => {
@@ -482,8 +575,16 @@ describe('turn lifecycle recovery', () => {
     });
     await runConversationTurn({ ...input({ kind: 'send', content: 'original' }), requestId });
     expect(order).toEqual(['request identity', 'prompt context']);
-    expect(mocks.pendingRequest).toHaveBeenCalledWith('reply', requestId);
-    expect(mocks.prompt).toHaveBeenCalledWith('reply', [], requestId);
+    expect(mocks.begin).toHaveBeenCalledWith(
+      expect.objectContaining({
+        historyId: 'reply',
+        requestId,
+        history: [],
+        chargeId: expect.any(String),
+      })
+    );
+    expect(mocks.pendingRequest).not.toHaveBeenCalled();
+    expect(mocks.prompt).not.toHaveBeenCalled();
     expect(mocks.execute.mock.calls[0]?.[0].messages).toEqual([]);
     expect(mocks.execute.mock.calls[0]?.[0]).not.toHaveProperty('request_id');
   });
@@ -512,7 +613,7 @@ describe('turn lifecycle recovery', () => {
   });
 
   it('failed pending-identity storage terminally closes the new turn without generating', async () => {
-    mocks.pendingRequest.mockRejectedValue(new Error('request identity DB failed'));
+    mocks.begin.mockRejectedValue(new Error('request identity DB failed'));
     await expect(
       runConversationTurn({
         ...input({ kind: 'send', content: 'original' }),

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { GetModelCatalogData } from '@miniapp/shared';
-import { applySelectedModelToCatalog } from './models';
+import { applySelectedModelToCatalog, modelCatalogKeys } from './models';
 import { MODEL_CATALOG_STALE_TIME_MS, shouldRefreshModelCatalog } from './model-cache-policy';
 
 const catalog: GetModelCatalogData = {
@@ -38,6 +38,16 @@ const catalog: GetModelCatalogData = {
 };
 
 describe('model catalog refresh policy', () => {
+  it('keeps creator/self prices separate by user and character', () => {
+    expect(modelCatalogKeys.context(1, 'own-card')).not.toEqual(
+      modelCatalogKeys.context(1, 'another-card')
+    );
+    expect(modelCatalogKeys.context(1, 'own-card')).not.toEqual(
+      modelCatalogKeys.context(2, 'own-card')
+    );
+    expect(modelCatalogKeys.context(1)).not.toEqual(modelCatalogKeys.context(1, 'own-card'));
+    expect(modelCatalogKeys.context(1, 'own-card').slice(0, 1)).toEqual(modelCatalogKeys.detail);
+  });
   it('refreshes missing and older-than-five-minute data only', () => {
     const now = 1_000_000;
     expect(shouldRefreshModelCatalog(0, now)).toBe(true);

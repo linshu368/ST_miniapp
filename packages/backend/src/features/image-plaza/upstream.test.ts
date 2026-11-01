@@ -158,6 +158,39 @@ describe('generateImagePlazaImage', () => {
     expect(result.bytes).toEqual(Buffer.from(bytes));
   });
 
+  it('omits the resolution placeholder for aspect-ratio edit models', async () => {
+    const bytes = Buffer.alloc(5 * 1024, 5);
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(bytes, {
+        status: 200,
+        headers: { 'content-type': 'image/webp', 'x-request-id': 'lite-edit-request' },
+      })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await generateImagePlazaImage({
+      providerModelId: 'seedream-v5-lite-edit',
+      prompt: 'edit portrait',
+      aspectRatio: '1:1',
+      resolution: 'fixed',
+      sizingMode: 'aspect_ratio',
+      mode: 'i2i',
+      reference: { bytes: Buffer.from([9, 8, 7]), mimeType: 'image/png' },
+    });
+
+    const [, init] = fetchMock.mock.calls[0] ?? [];
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    expect(body).toEqual({
+      model: 'seedream-v5-lite-edit',
+      prompt: 'edit portrait',
+      safe_mode: false,
+      image: Buffer.from([9, 8, 7]).toString('base64'),
+      aspect_ratio: '1:1',
+      output_format: 'webp',
+    });
+    expect(body).not.toHaveProperty('resolution');
+  });
+
   it('rejects content-violation headers before settlement', async () => {
     vi.stubGlobal(
       'fetch',
@@ -237,10 +270,8 @@ describe('generateImagePlazaImage', () => {
   });
 
   it('keeps explicit provider rejections retry-safe', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 429 }))
-    );
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 429 }));
+    vi.stubGlobal('fetch', fetchMock);
 
     await expect(
       generateImagePlazaImage({
@@ -255,5 +286,6 @@ describe('generateImagePlazaImage', () => {
       code: 'image_plaza_provider_http_429',
       outcomeUnknown: false,
     });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

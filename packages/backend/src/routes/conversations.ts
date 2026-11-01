@@ -259,7 +259,11 @@ export default async function conversationRoutes(app: FastifyInstance) {
           }),
           settings.getDisplayName(dbUser.id),
         ]);
-        const openingMessage = await sessions.getCharacterFirstMes(branched.character_id);
+        const openingMessage = await sessions.getCharacterFirstMes(
+          branched.character_id,
+          dbUser.id,
+          branched.id
+        );
         const page = await history.listMessages(branched.id, openingMessage);
         log.biz.info(
           {
@@ -410,7 +414,7 @@ export default async function conversationRoutes(app: FastifyInstance) {
         const recoverStarted = performance.now();
         const [, openingMessage] = await Promise.all([
           history.recoverStaleStreaming(sessionId),
-          sessions.getCharacterFirstMes(session.character_id),
+          sessions.getCharacterFirstMes(session.character_id, dbUser.id, session.id),
         ]);
         const recoverAndOpeningMs = performance.now() - recoverStarted;
         const listStarted = performance.now();
@@ -629,8 +633,10 @@ export default async function conversationRoutes(app: FastifyInstance) {
     let preparationSignal = AbortSignal.timeout(DEFAULT_FIRST_TOKEN_DEADLINE_MS);
 
     try {
-      const catalog = await withConversationPreparationDeadline(
-        fetchModelCatalogSnapshot(),
+      // 模型目录与 Telegram→内部用户映射相互独立；身份创建由 tg_id 唯一约束保证幂等。
+      // 同时启动可去掉冷缓存下的一段串行往返，仍共同受默认首字准备预算约束。
+      const [catalog, dbUser] = await withConversationPreparationDeadline(
+        Promise.all([fetchModelCatalogSnapshot(), getOrCreateDbUser(tgUser)]),
         preparationSignal
       );
       const firstTokenDeadlineMs =
@@ -640,10 +646,6 @@ export default async function conversationRoutes(app: FastifyInstance) {
       );
       // Bound read-only preparation by the configured first-token budget.
       // Race each preparation await, never a block containing generation or quota writes.
-      const dbUser = await withConversationPreparationDeadline(
-        getOrCreateDbUser(tgUser),
-        preparationSignal
-      );
       preparationSignal.throwIfAborted();
       const session = await withConversationPreparationDeadline(
         sessions.requireSession(sessionId, dbUser.id),
@@ -658,6 +660,7 @@ export default async function conversationRoutes(app: FastifyInstance) {
         receivedAt,
         receivedMonotonicAt,
         firstTokenDeadlineMs,
+        catalogSnapshot: catalog,
         requestId: input.requestId,
         thinkingEnabled: input.thinkingEnabled,
         firstTokenMeasurement: input.firstTokenMeasurement,

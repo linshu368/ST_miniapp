@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   upload: vi.fn<(...args: unknown[]) => Promise<StoredPlazaImage>>(),
   remove: vi.fn<(path: string) => Promise<void>>(),
   venice: vi.fn<typeof fetch>(),
+  sentry: vi.fn<(...args: unknown[]) => void>(),
   updates: [] as Record<string, unknown>[],
   filters: [] as unknown[][],
   status: 'generating',
@@ -73,6 +74,7 @@ vi.mock('./storage.js', () => ({
   signPlazaImagePath: vi.fn(),
 }));
 vi.mock('../../platform/venice-http.js', () => ({ veniceFetch: mocks.venice }));
+vi.mock('../../lib/sentry.js', () => ({ sendBackendSentryLog: mocks.sentry }));
 
 const attempt: ImagePlazaWorkerAttempt = {
   id: '11111111-1111-4111-8111-111111111111',
@@ -263,6 +265,7 @@ describe('image plaza worker orchestration', () => {
     });
     expect(mocks.rpc).toHaveBeenCalledTimes(1);
     expect(markFailed).not.toHaveBeenCalled();
+    expect(mocks.sentry).not.toHaveBeenCalled();
     expect(log.info).toHaveBeenCalledTimes(1);
   });
   it.each([
@@ -291,9 +294,44 @@ describe('image plaza worker orchestration', () => {
       expect(mocks.status).toBe(unknown ? 'failed_unknown' : 'failed');
       expect(mocks.upload).not.toHaveBeenCalled();
       expect(mocks.rpc).not.toHaveBeenCalled();
+      expect(mocks.sentry).toHaveBeenCalledExactlyOnceWith(
+        'error',
+        'image_plaza.generation.failed',
+        {
+          attemptId: attempt.id,
+          providerModelId: attempt.providerModelId,
+          mode: attempt.mode,
+          errorCode: code,
+          outcomeUnknown: unknown,
+        }
+      );
       expect(log.info).not.toHaveBeenCalled();
     }
   );
+  it('persists the failure when Sentry logging throws synchronously', async () => {
+    mocks.venice.mockResolvedValue(new Response('', { status: 400 }));
+    mocks.sentry.mockImplementation(() => {
+      throw new Error('virtual Sentry failure');
+    });
+
+    await runWorker();
+
+    expect(markFailed).toHaveBeenCalledExactlyOnceWith(
+      attempt.id,
+      'image_plaza_provider_http_400',
+      false
+    );
+    expect(mocks.status).toBe('failed');
+    expect(mocks.sentry).toHaveBeenCalledTimes(1);
+    expect(log.error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'image_plaza.sentry_log.failed',
+        attemptId: attempt.id,
+        err: expect.any(Error),
+      }),
+      'Image plaza Sentry log failed'
+    );
+  });
   it('does not settle or charge when Venice marks a content violation', async () => {
     mocks.venice.mockResolvedValue(
       new Response(JSON.stringify({ id: 'viol', images: [bytes.toString('base64')] }), {

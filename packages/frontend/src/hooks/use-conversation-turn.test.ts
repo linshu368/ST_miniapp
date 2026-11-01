@@ -98,6 +98,7 @@ beforeEach(() => {
   runtime.layoutEffects = [];
   vi.clearAllMocks();
   runtime.client.invalidateQueries.mockResolvedValue(undefined);
+  runtime.client.fetchQuery.mockReset().mockResolvedValue({ messages: [] });
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -279,7 +280,271 @@ function RenderTurn(
   return result;
 }
 
+function holdStreams() {
+  const streams: {
+    options: Parameters<typeof import('@/lib/api/conversation-stream').streamConversationTurn>[0];
+    finish: () => void;
+  }[] = [];
+  runtime.stream.mockImplementation(
+    (options) =>
+      new Promise<void>((finish) => {
+        streams.push({ options, finish });
+      })
+  );
+  return streams;
+}
+
 describe('useConversationTurn asynchronous ownership', () => {
+  it('preserves partial text and ignores old callbacks after restoring regeneration', async () => {
+    const streams = holdStreams();
+    const oldRun = RenderTurn().runTurn({ mode: 'send', content: 'hello' });
+    const old = streams[0]!;
+    old.options.onStart({
+      type: 'start',
+      assistant_message_id: 'a1',
+      user_message_id: 'u1',
+      turn_index: 1,
+      revision: 0,
+    });
+    old.options.onDelta('已收到的部分回复');
+    const persisted = [
+      message({
+        id: 'a1',
+        session_id: 's1',
+        request_id: old.options.requestId,
+        turn_index: 1,
+        revision: 0,
+        status: 'interrupted',
+        content: '',
+        finish_reason: 'timeout',
+      }),
+    ];
+    RenderTurn('s1', persisted);
+    const recovered = RenderTurn('s1', persisted);
+    expect(recovered.messages.at(-1)?.content).toBe('已收到的部分回复');
+    expect(recovered.canRegenerate).toBe(true);
+    const nextRun = recovered.runTurn({ mode: 'regenerate' });
+    old.options.onDelta('迟到的旧文本');
+    old.options.onDone({
+      type: 'done',
+      assistant_message_id: 'a1',
+      status: 'complete',
+      finish_reason: 'stop',
+    });
+    old.finish();
+    await oldRun;
+    const current = RenderTurn('s1', persisted);
+    expect(current.generating).toBe(true);
+    expect(current.streaming?.text).toBe('');
+    expect(runtime.stream).toHaveBeenCalledTimes(2);
+    expect(runtime.cancel).not.toHaveBeenCalled();
+    streams[1]!.finish();
+    await nextRun;
+  });
+
+  it.each(['other-request', 'other-revision', 'streaming'] as const)(
+    'does not unlock a hanging request for a %s server snapshot',
+    async (kind) => {
+      const streams = holdStreams();
+      const run = RenderTurn().runTurn({ mode: 'send', content: 'hello' });
+      const { options, finish } = streams[0]!;
+      options.onStart({
+        type: 'start',
+        assistant_message_id: 'a1',
+        user_message_id: 'u1',
+        turn_index: 1,
+        revision: 0,
+      });
+      const persisted = [
+        message({
+          id: 'a1',
+          session_id: 's1',
+          request_id: kind === 'other-request' ? 'other' : options.requestId,
+          turn_index: 1,
+          revision: kind === 'other-revision' ? 1 : 0,
+          status: kind === 'streaming' ? 'streaming' : 'complete',
+        }),
+      ];
+      RenderTurn('s1', persisted);
+      expect(RenderTurn('s1', persisted).generating).toBe(true);
+      expect(options.signal?.aborted).toBe(false);
+      finish();
+      await run;
+    }
+  );
+
+  it('recovers the matching terminal before SSE start without cancelling the server', async () => {
+    const streams = holdStreams();
+    const run = RenderTurn().runTurn({ mode: 'send', content: 'hello' });
+    const { options, finish } = streams[0]!;
+    const persisted = [
+      message({
+        id: 'a1',
+        session_id: 's1',
+        request_id: options.requestId,
+        turn_index: 1,
+        revision: 0,
+      }),
+    ];
+    RenderTurn('s1', persisted);
+    expect(RenderTurn('s1', persisted).canRegenerate).toBe(true);
+    expect(options.signal?.aborted).toBe(true);
+    expect(runtime.cancel).not.toHaveBeenCalled();
+    finish();
+    await run;
+  });
+
+  it('probes a silent foreground stream only once, including after a failed probe and more stalls', async () => {
+    const streams = holdStreams();
+    runtime.client.fetchQuery.mockRejectedValue(new Error('offline'));
+    const run = RenderTurn().runTurn({ mode: 'send', content: 'hello' });
+    const { options, finish } = streams[0]!;
+    options.onStart({
+      type: 'start',
+      assistant_message_id: 'a1',
+      user_message_id: 'u1',
+      turn_index: 1,
+      revision: 0,
+    });
+    RenderTurn();
+    await vi.advanceTimersByTimeAsync(7_999);
+    expect(runtime.client.fetchQuery).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(runtime.client.fetchQuery).toHaveBeenCalledOnce();
+    expect(runtime.client.fetchQuery).toHaveBeenCalledWith(
+      expect.objectContaining({ queryKey: ['conversations', 'detail', 's1'], retry: false })
+    );
+    options.onDelta('partial');
+    RenderTurn();
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(runtime.client.fetchQuery).toHaveBeenCalledOnce();
+    expect(runtime.stream).toHaveBeenCalledOnce();
+    expect(runtime.cancel).not.toHaveBeenCalled();
+    finish();
+    await run;
+  });
+
+  it.each(['background', 'already-polling'] as const)(
+    'does not add a recovery query when %s',
+    async (kind) => {
+      const streams = holdStreams();
+      const run = RenderTurn().runTurn({ mode: 'send', content: 'hello' });
+      const { options, finish } = streams[0]!;
+      options.onStart({
+        type: 'start',
+        assistant_message_id: 'a1',
+        user_message_id: 'u1',
+        turn_index: 1,
+        revision: 0,
+      });
+      const persisted =
+        kind === 'already-polling'
+          ? [
+              message({
+                id: 'a1',
+                session_id: 's1',
+                request_id: options.requestId,
+                turn_index: 1,
+                revision: 0,
+                status: 'streaming',
+              }),
+            ]
+          : [];
+      if (kind === 'background')
+        Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+      RenderTurn('s1', persisted);
+      await vi.advanceTimersByTimeAsync(8_000);
+      expect(runtime.client.fetchQuery).not.toHaveBeenCalled();
+      expect(runtime.stream).toHaveBeenCalledOnce();
+      finish();
+      await run;
+    }
+  );
+
+  it('does not run a stall probe or unlock while manual cancellation owns the turn', async () => {
+    const streams = holdStreams();
+    let confirm!: (result: unknown) => void;
+    runtime.cancel.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          confirm = resolve;
+        })
+    );
+    const run = RenderTurn().runTurn({ mode: 'send', content: 'hello' });
+    const { options, finish } = streams[0]!;
+    options.onStart({
+      type: 'start',
+      assistant_message_id: 'a1',
+      user_message_id: 'u1',
+      turn_index: 1,
+      revision: 0,
+    });
+    const cancel = RenderTurn().abort();
+    const persisted = [
+      message({
+        id: 'a1',
+        session_id: 's1',
+        request_id: options.requestId,
+        turn_index: 1,
+        revision: 0,
+        status: 'interrupted',
+        finish_reason: 'user_cancelled',
+      }),
+    ];
+    RenderTurn('s1', persisted);
+    await vi.advanceTimersByTimeAsync(8_000);
+    expect(runtime.client.fetchQuery).not.toHaveBeenCalled();
+    expect(options.signal?.aborted).toBe(false);
+    expect(RenderTurn('s1', persisted).cancelling).toBe(true);
+    confirm({ message: persisted[0] });
+    await cancel;
+    finish();
+    await run;
+  });
+
+  it.each(['complete', 'interrupted', 'failed'] as const)(
+    'releases a hanging local stream when the exact server revision is %s',
+    async (status) => {
+      let options!: Parameters<
+        typeof import('@/lib/api/conversation-stream').streamConversationTurn
+      >[0];
+      let finish!: () => void;
+      runtime.stream.mockImplementation((value) => {
+        options = value;
+        return new Promise<void>((resolve) => {
+          finish = resolve;
+        });
+      });
+      const run = RenderTurn().runTurn({ mode: 'send', content: 'hello' });
+      options.onStart({
+        type: 'start',
+        assistant_message_id: 'a1',
+        user_message_id: 'u1',
+        turn_index: 1,
+        revision: 0,
+      });
+      const persisted = [
+        message({
+          id: 'a1',
+          session_id: 's1',
+          request_id: options.requestId,
+          turn_index: 1,
+          revision: 0,
+          status,
+          finish_reason: status === 'complete' ? 'stop' : 'timeout',
+        }),
+      ];
+      RenderTurn('s1', persisted);
+      const recovered = RenderTurn('s1', persisted);
+      expect(recovered.generating).toBe(false);
+      expect(recovered.canRegenerate).toBe(true);
+      expect(options.signal?.aborted).toBe(true);
+      expect(runtime.cancel).not.toHaveBeenCalled();
+      finish();
+      await run;
+    }
+  );
+
   it('the first committed thinking character satisfies the same deadline as an answer character', async () => {
     let options!: Parameters<
       typeof import('@/lib/api/conversation-stream').streamConversationTurn

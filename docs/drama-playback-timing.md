@@ -42,6 +42,8 @@ Backend须先兼容definition/route/purpose及新增stages，再发布Frontend�
 
 ## CDN 对照增量
 
+Grafana按桶对照候选见 `docs/grafana/engineering-performance.md` 的 CDN A/B 节：复用 `st-engineering-drama` 的原Faro链路，新增受控 `cdn_*` 属性与独立对照区，不重启SQL写入。5秒主图使用单次播放触发至首帧且playing的 `elapsedMs`，不把 `entryElapsedMs` 或 `recovery.cumulativeMs` 混进同一分布。无delivery的失败/早退保持unknown，start与final不是配对覆盖率，窗口数不冒充用户数。当前为本地候选，真实Cloud/Telegram与发布仍需新证据。
+
 生产 20%／80% 稳定分组、服务端用户去重、关闭取址和比较命令见 [操作说明](../ops/drama-cdn-rollout.md)。新报告可含 delivery、recovery、entryElapsedMs 和 seek；兼容 Backend 先发布。新播放意图使用独立的地址查询，旧地址不作为播放结果，后台只预取详情。接收接口继续不写分析库；seek 不混入既有 startup 工程分母，首轮以完整 Pino 日志为来源。实验窗口必须核对 legacy 全量 start／结果上报，不能使用 unified 采样明细或仅慢启动 Loki 作为总分母。当前源码不代表生产已部署。
 
 首播结束后独立观测进度提交至目标帧，type=seek；buffered=no 才是未缓冲样本，seeked不是成功。不支持帧验证的暂停 seek 记 unverified。5 秒是观测阈值，不改变播放超时；恢复子尝试保留原失败及累计时间，详情见上述说明。

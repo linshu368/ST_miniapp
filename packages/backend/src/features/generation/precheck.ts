@@ -9,6 +9,8 @@
  */
 
 import type { WalletDebitPolicy } from '@miniapp/shared';
+import type { CreatorRewardSnapshot } from '../../infrastructure/repositories/ConversationHistoryRepository.js';
+import { creatorRewardSnapshot } from './creator-billing.js';
 import { resolveFixedDeduction, type FixedDeductionDecision } from '../billing/usage-pricing.js';
 import type { FixedDeductionCategory } from '../billing/usage-pricing.js';
 import type { LlmPricingConfig, ModelBillingContext } from '../../platform/model-tiers.js';
@@ -51,6 +53,7 @@ export interface BillingSnapshot {
   vip_valid_until: string | null;
   model_tier: string;
   vip_discount_config_version: number | null;
+  creator_reward?: CreatorRewardSnapshot;
 }
 
 export interface BillingPlan {
@@ -72,6 +75,7 @@ export function resolveBillingPlan(input: {
   entitlement: TextEntitlement;
   discountRate?: number;
   discountConfigVersion?: number | null;
+  creator?: { characterId: string; creatorUserId: string; payerUserId: string };
   log: GenerationLogger;
 }): BillingPlan {
   const { chargeId, billing, isFreeRound, pricing, entitlement, log } = input;
@@ -106,6 +110,8 @@ export function resolveBillingPlan(input: {
     isVip: entitlement.active,
     isFreeRound: fixedDeduction.category === 'free_quota',
     vipValidUntil: entitlement.validUntil,
+    creatorSelf:
+      input.creator !== undefined && input.creator.creatorUserId === input.creator.payerUserId,
     ...(input.discountRate === undefined ? {} : { discountRate: input.discountRate }),
     discountConfigVersion: input.discountConfigVersion ?? null,
   });
@@ -133,6 +139,14 @@ export function resolveBillingPlan(input: {
       vip_valid_until: quote.vip_valid_until,
       model_tier: quote.model_tier,
       vip_discount_config_version: quote.discount_config_version,
+      ...(input.creator
+        ? {
+            creator_reward: creatorRewardSnapshot(
+              input.creator.characterId,
+              input.creator.creatorUserId
+            ),
+          }
+        : {}),
     },
   };
 }

@@ -429,9 +429,21 @@ export interface GetCharacterFreeQuotaData {
 }
 
 // ==== GET /api/wallet/checkin ====
+/** 签到按北京时间自然日更新，与设备/服务进程的本地时区无关。 */
+export function getNextDailyCheckinAt(claimedAt: string): string {
+  const dayMs = 86_400_000;
+  const chinaOffsetMs = 8 * 60 * 60 * 1000;
+  const claimedMs = Date.parse(claimedAt);
+  if (!Number.isFinite(claimedMs)) throw new Error('invalid checkin timestamp');
+  return new Date(
+    (Math.floor((claimedMs + chinaOffsetMs) / dayMs) + 1) * dayMs - chinaOffsetMs
+  ).toISOString();
+}
+
 export interface DailyCheckinStatus {
   can_claim: boolean;
   last_claimed_at: string | null;
+  /** 上次签到所属北京时间日期的下一天 00:00；从未签到时为 null。 */
   next_claim_at: string | null;
   reward_credits: number;
   base_reward_credits?: number;

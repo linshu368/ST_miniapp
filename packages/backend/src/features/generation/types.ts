@@ -5,6 +5,7 @@
 // 而定档扣费额又由该结果决定，余额预检再吃这个额度。
 
 import type { LlmModelProvider } from '@miniapp/shared';
+import type { ModelBillingContext } from '../../platform/model-tiers.js';
 import type { FirstTokenAttemptStore } from './first-token-fallback.js';
 import type { LlmBillingSnapshot } from '../../infrastructure/repositories/ConversationHistoryRepository.js';
 import type { SseTapResult } from './upstream.js';
@@ -33,6 +34,8 @@ export interface ResolvedModel {
   tier: 'light' | 'standard' | 'premium' | null;
   isFree: boolean;
   entitlement: ResolvedTextEntitlement;
+  /** Same catalog snapshot as authoritative selection; avoids re-reading during admission. */
+  billingContext?: ModelBillingContext;
   firstTokenPolicy?: {
     fallbackModelId?: string;
     timeoutMs: number;
@@ -49,6 +52,8 @@ export interface GenerationMessage {
 }
 
 export interface GenerationRequest {
+  /** Conversation admission already persists this key before any quota reservation. */
+  plannedChargeId?: string;
   userId: string;
   characterId: string | null;
   model: ResolvedModel;

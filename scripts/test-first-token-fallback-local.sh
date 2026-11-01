@@ -92,8 +92,6 @@ for task_n in {1..120}; do
   if curl --silent --fail "http://127.0.0.1:$task_rest_port/" >/dev/null; then break; fi
   sleep 0.25
 done
-FIRST_TOKEN_TEST_REST_URL="http://127.0.0.1:$task_rest_port" DOTENV_CONFIG_PATH=/dev/null \
-  pnpm --dir "$task_root" --filter @miniapp/backend exec vitest run src/infrastructure/repositories/GenerationObservationRepository.integration.test.ts
 
 # Extend this disposable observation DB with real wallet/quota primitives.
 # The earlier bootstrap deliberately has skeletal billing tables; no remote DB is used.
@@ -154,6 +152,12 @@ echo 'PASS: explicit stop original quote/entitlement once; system timeout and le
 "${task_psql[@]}" -f "$task_root/packages/shared/migrations/20261029_first_token_receipt_recovery.sql" >/dev/null
 "${task_psql[@]}" -f "$task_root/packages/shared/migrations/tests/recoverable_chat_delivery.sql" >/dev/null
 echo 'PASS: recoverable/v4 commit delivery, immutable receipt, cutoff/quota, departure and original user-stop price'
+"${task_psql[@]}" -f "$task_root/packages/shared/migrations/20261030_chat_generation_dispatch_prepare.sql" >/dev/null
+"${task_psql[@]}" -f "$task_root/packages/shared/migrations/20261030_chat_generation_dispatch_prepare.sql" >/dev/null
+# Standalone PostgREST's fixture role needs the same narrow quota lookup used by a cutoff receipt.
+"${task_psql[@]}" -c 'GRANT USAGE ON SCHEMA billing TO service_role; GRANT SELECT ON billing.character_free_chat_quota_decisions TO service_role;' >/dev/null
+FIRST_TOKEN_TEST_REST_URL="http://127.0.0.1:$task_rest_port" DOTENV_CONFIG_PATH=/dev/null \
+  pnpm --dir "$task_root" --filter @miniapp/backend exec vitest run src/infrastructure/repositories/GenerationObservationRepository.integration.test.ts
 
 # Competing database transactions must still bind exactly one provider identity.
 "${task_psql[@]}" -c "SELECT recoverable_test.race_claim('00000000-0000-4000-8000-0000000002d2','primary',true);" >"$task_dir/race-primary.log" &
@@ -181,6 +185,25 @@ PYRETENTION
 "${task_psql[@]}" -f "$task_root/packages/shared/migrations/20261028_llm_archived_charge_result.sql" >/dev/null
 "${task_psql[@]}" -f "$task_root/packages/shared/migrations/tests/llm_archived_charge_result.sql" >/dev/null
 echo 'PASS: real detail retention, permanent dedup replay, pending gate and unknown conflict rollback'
+
+# Creator ownership is the only core dependency used by billing. Full CRUD/access
+# and version migrations have their own core suite; do not copy their runtime here.
+"${task_psql[@]}" -c 'CREATE TABLE app_core.character_creations(character_id uuid PRIMARY KEY REFERENCES app_core.characters(id),owner_user_id uuid NOT NULL REFERENCES app_core.users(id));' >/dev/null
+"${task_psql[@]}" -f "$task_root/packages/shared/migrations/20261030_character_creator_rewards.sql" >/dev/null
+"${task_psql[@]}" -f "$task_root/packages/shared/migrations/20261030_character_creator_rewards.sql" >/dev/null
+"${task_psql[@]}" -f "$task_root/packages/shared/migrations/tests/character_creator_rewards.sql" >/dev/null
+# Both directions acquire the two wallets in the same order, including retries.
+"${task_psql[@]}" -c "SELECT creator_reward_test.charge('90000000-0000-4000-8000-000000000110','90000000-0000-4000-8000-000000000001','90000000-0000-4000-8000-000000000002',10);" >/dev/null &
+task_creator_first_pid=$!
+"${task_psql[@]}" -c "SELECT creator_reward_test.charge('90000000-0000-4000-8000-000000000111','90000000-0000-4000-8000-000000000002','90000000-0000-4000-8000-000000000001',10);" >/dev/null &
+task_creator_second_pid=$!
+"${task_psql[@]}" -c "SELECT creator_reward_test.charge('90000000-0000-4000-8000-000000000110','90000000-0000-4000-8000-000000000001','90000000-0000-4000-8000-000000000002',10);" >/dev/null &
+task_creator_retry_pid=$!
+wait "$task_creator_first_pid"
+wait "$task_creator_second_pid"
+wait "$task_creator_retry_pid"
+"${task_psql[@]}" -c "SELECT creator_reward_test.assert((SELECT count(*)=2 FROM billing.character_creator_rewards WHERE charge_key IN ('90000000-0000-4000-8000-000000000110','90000000-0000-4000-8000-000000000111')),'concurrent duplicate or missing reward');" >/dev/null
+echo 'PASS: creator actual-debit 40 percent, zero/self exclusion, frozen replay, refund debt, offset and concurrent dedup'
 
 # Pure monitoring no longer reads Supabase. Guard the retired entry and new sources.
 python3 - "$task_root" <<'PYDASHBOARD'

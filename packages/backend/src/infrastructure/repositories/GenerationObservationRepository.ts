@@ -1,6 +1,7 @@
 import type { LlmModelProvider, ReportFirstTokenRequest } from '@miniapp/shared';
 import { getDomainDb, type DomainDb } from '../../lib/supabase.js';
-import type { LlmBillingSnapshot } from './ConversationHistoryRepository.js';
+import { withStoredRequestId, type LlmBillingSnapshot } from './ConversationHistoryRepository.js';
+import type { GenerationMessage } from '../../features/generation/types.js';
 
 export type AttemptRole = 'primary' | 'fallback';
 export interface AttemptObservation {
@@ -58,6 +59,9 @@ export class GenerationObservationRepository {
     catalogVersion: number;
     mode: 'send' | 'regenerate';
     snapshot?: LlmBillingSnapshot;
+    /** Atomically persists admission identity or the final immutable prompt with its quote. */
+    chargeId?: string;
+    history?: GenerationMessage[];
     recoverableDelivery?: boolean;
     measurementMethod?: 'client_committed_v4';
   }): Promise<void> {
@@ -79,6 +83,11 @@ export class GenerationObservationRepository {
           catalog_version: input.catalogVersion,
           mode: input.mode,
           snapshot: input.snapshot,
+          charge_id: input.chargeId,
+          history:
+            input.history === undefined
+              ? undefined
+              : withStoredRequestId(input.history, input.requestId),
           recoverable_delivery: input.recoverableDelivery ?? false,
           measurement_method: input.measurementMethod,
         },

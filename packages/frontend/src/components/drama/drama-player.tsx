@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -21,7 +22,6 @@ import {
   VolumeX,
 } from 'lucide-react';
 
-import { EpisodeSheet } from './episode-sheet';
 import { DramaTags } from './drama-tags';
 import { DramaProgress } from './drama-progress';
 import { useDramaSwipe } from './use-drama-swipe';
@@ -45,6 +45,11 @@ import {
   useDramaLibraryStore,
   type DramaProgress as DramaProgressRecord,
 } from '@/stores/drama-library-store';
+
+const EpisodeSheet = dynamic(
+  () => import('./episode-sheet').then((module) => ({ default: module.EpisodeSheet })),
+  { ssr: false }
+);
 
 interface DramaPlayerProps {
   id: string;
@@ -173,7 +178,13 @@ export function DramaPlayer({
   const [time, setTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [episodesOpen, setEpisodesOpen] = useState(false);
+  const [episodeSheetLoaded, setEpisodeSheetLoaded] = useState(false);
   const [episodeTab, setEpisodeTab] = useState<'episodes' | 'intro'>('episodes');
+  const openEpisodeSheet = useCallback((tab: 'episodes' | 'intro') => {
+    setEpisodeSheetLoaded(true);
+    setEpisodeTab(tab);
+    setEpisodesOpen(true);
+  }, []);
   const controlsVisible = useDramaLibraryStore((state) => state.playbackControlsVisible);
   const setControlsVisible = useDramaLibraryStore((state) => state.setPlaybackControlsVisible);
   const [scrubbing, setScrubbing] = useState(false);
@@ -1065,10 +1076,7 @@ export function DramaPlayer({
               <button
                 type="button"
                 aria-label="查看全部选集"
-                onClick={() => {
-                  setEpisodeTab('episodes');
-                  setEpisodesOpen(true);
-                }}
+                onClick={() => openEpisodeSheet('episodes')}
                 disabled={!drama?.videos.length}
                 className="flex h-11 w-11 items-center justify-center disabled:opacity-30"
               >
@@ -1257,10 +1265,7 @@ export function DramaPlayer({
                       type="button"
                       aria-label="查看完整简介"
                       data-player-swipe-surface
-                      onClick={() => {
-                        setEpisodeTab('intro');
-                        setEpisodesOpen(true);
-                      }}
+                      onClick={() => openEpisodeSheet('intro')}
                       className="block w-full pb-3 pr-12 text-left"
                     >
                       <h1 className="flex items-center gap-1 text-[20px] font-semibold leading-7">
@@ -1298,22 +1303,40 @@ export function DramaPlayer({
                             <ChevronRight className="ml-auto h-4 w-4 text-[#eee7e2]/60" />
                           </Link>
                         ) : null}
-                        <EpisodeSheet
-                          showTrigger={!embedded}
-                          title={drama.title}
-                          description={drama.description}
-                          tags={drama.tags}
-                          coverUrl={drama.cover_url}
-                          saved={saved}
-                          onToggleSaved={saveDrama}
-                          tab={episodeTab}
-                          onTabChange={setEpisodeTab}
-                          videos={drama.videos}
-                          currentVideoId={currentVideoId}
-                          open={episodesOpen}
-                          onOpenChange={setEpisodesOpen}
-                          onSelect={selectEpisode}
-                        />
+                        {!embedded ? (
+                          <button
+                            type="button"
+                            onClick={() => openEpisodeSheet('episodes')}
+                            aria-label={`选集，第 ${Math.max(1, currentIndex + 1)} 集 / 共 ${drama.videos.length} 集`}
+                            className="flex min-h-11 w-full items-center gap-2 rounded-lg bg-white/[0.08] px-3 text-[13px] text-[#eee7e2] active:bg-white/15"
+                          >
+                            <ListVideo className="h-4 w-4" aria-hidden />
+                            <span className="font-medium">选集</span>
+                            <span className="text-[#eee7e2]/55">· 全 {drama.videos.length} 集</span>
+                            <ChevronRight
+                              className="ml-auto h-4 w-4 text-[#eee7e2]/60"
+                              aria-hidden
+                            />
+                          </button>
+                        ) : null}
+                        {episodeSheetLoaded ? (
+                          <EpisodeSheet
+                            showTrigger={false}
+                            title={drama.title}
+                            description={drama.description}
+                            tags={drama.tags}
+                            coverUrl={drama.cover_url}
+                            saved={saved}
+                            onToggleSaved={saveDrama}
+                            tab={episodeTab}
+                            onTabChange={setEpisodeTab}
+                            videos={drama.videos}
+                            currentVideoId={currentVideoId}
+                            open={episodesOpen}
+                            onOpenChange={setEpisodesOpen}
+                            onSelect={selectEpisode}
+                          />
+                        ) : null}
                       </>
                     ) : null}
                   </>
