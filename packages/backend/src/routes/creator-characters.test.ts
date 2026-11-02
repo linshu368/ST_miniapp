@@ -319,3 +319,33 @@ describe('Admin review policy dry run', () => {
     expect(mocks.clearLobby).not.toHaveBeenCalled();
   });
 });
+
+describe('retired manual creator review endpoints', () => {
+  it.each([
+    { method: 'GET' as const, path: '/api/admin/creator-characters?status=pending' },
+    { method: 'GET' as const, path: '/api/admin/creator-characters/' + cardId },
+    {
+      method: 'POST' as const,
+      path: '/api/admin/creator-characters/' + cardId + '/review',
+    },
+  ])(
+    'returns 404 for $method $path without any review or user side effects',
+    async ({ method, path }) => {
+      const response = await app.inject({
+        method,
+        url: path,
+        headers: { authorization: 'Bearer test-only-admin-session' },
+        ...(method === 'POST' ? { payload: { submitted_revision: 2, decision: 'approve' } } : {}),
+      });
+      expect(response.statusCode).toBe(404);
+      expect(mocks.admin).not.toHaveBeenCalled();
+      expect(mocks.user).not.toHaveBeenCalled();
+      expect(mocks.get).not.toHaveBeenCalled();
+      expect(mocks.material).not.toHaveBeenCalled();
+      expect(mocks.mutate).not.toHaveBeenCalled();
+      expect(mocks.review).not.toHaveBeenCalled();
+      expect(mocks.testReview).not.toHaveBeenCalled();
+      expect(mocks.clearLobby).not.toHaveBeenCalled();
+    }
+  );
+});

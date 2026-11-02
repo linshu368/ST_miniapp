@@ -30,3 +30,14 @@
 - 本地HEAD快进至c66ba9ae，当前origin/main=51d5b2af，两者产品树相同，保留同事已上线首字优化；本次仅提交明确列出的审核功能改动。
 
 - 最终Frontend生产build、全仓imports/legacy/migrations静态门禁及diff检查通过。legacy扫描曾把审核测试mock URL当成新模型出口；已将mock改为通用fixture地址并复跑同文件，生产调用仍只走既有upstream。独立最终跨层审查通过，无阻塞。
+
+## 已完成上线与存量处置
+
+前序AI审核已由#587进入dev、#590进入main62997bc0；两库两份迁移与三端实际SHA/健康核验通过。之后按用户明确授权，通过原受限运营RPC把14张历史pending直接批准，审计14条，不调用AI；原2张禁用/1张归档状态保持，6张私密不改。上述是已完成历史操作，本轮入口清理不再改业务数据。
+
+## 人工入口清理验收（本地，待提交）
+
+- Admin旧人工菜单/view/component/client删除，AI配置入口提到一级；AI编辑/试审/保存/发布/历史/回滚及完整预设说明不变。三个既有Admin测试文件40/40，typecheck/build/Prettier通过。
+- Backend旧人工列表/详情/决定三HTTP入口、repository人工方法、shared人工专属契约删除。既有route文件补3项404无副作用回归。4相关Backend文件51/51，shared creator契约22/22，backend/shared typecheck与lint通过。
+- 全workspace typecheck、Frontend生产build、imports/legacy/migration静态guard、diff检查通过。最终独立跨层只读审查通过，无阻塞。
+- 无数据库迁移、业务数据或AI规则修改；未真实提交角色或重复调用付费模型。历史SQL及本地隔离fixture是兼容记录，未改写/删除。当前没有已登录Admin浏览器会话，菜单层级已源码核对和导航单测，尚未做登录后的浏览器点击。

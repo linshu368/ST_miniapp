@@ -35,7 +35,6 @@ import {
 import { LoginPage } from './components/LoginPage';
 import { ConfigValueEditor } from './components/ConfigValueEditor';
 import { findDuplicateOpenRouterAssignments } from './components/ModelCatalogEditor';
-import { CreatorCharacterReviewsView } from './components/CreatorCharacterReviewsView';
 import { CharacterCardsView } from './components/CharacterCardsView';
 import { AnnouncementsView } from './components/AnnouncementsView';
 import { InviteProgramView } from './components/InviteProgramView';
@@ -1189,7 +1188,6 @@ function AdminWorkspace(props: {
                   children: [
                     { key: 'platform_instructions', label: '主体与模块规则' },
                     { key: 'reply_style_options', label: '回复风格' },
-                    { key: configMenuKey(CREATOR_REVIEW_PROMPT_KEY), label: '角色卡审核' },
                   ],
                 },
                 { key: 'vip_strategy', label: 'VIP策略' },
@@ -1197,7 +1195,7 @@ function AdminWorkspace(props: {
               ],
             },
             { key: 'characters', label: '角色卡' },
-            { key: 'creator_characters', label: '创作者审核' },
+            { key: configMenuKey(CREATOR_REVIEW_PROMPT_KEY), label: '角色卡审核' },
             { key: 'announcements', label: '公告管理' },
             { key: 'releases', label: '发布历史' },
           ]}
@@ -1265,13 +1263,6 @@ function AdminWorkspace(props: {
               error={charactersError}
               canWrite={canWrite}
               onRefresh={reloadCharacters}
-            />
-          ) : view === 'creator_characters' ? (
-            <CreatorCharacterReviewsView
-              key={props.environment}
-              client={props.client}
-              environment={props.environment}
-              canWrite={canWrite}
             />
           ) : view === 'announcements' ? (
             <AnnouncementsView
