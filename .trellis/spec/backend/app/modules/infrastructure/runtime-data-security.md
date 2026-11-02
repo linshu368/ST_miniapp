@@ -72,6 +72,7 @@ PostHog capture 用 Node 原生 fetch、短超时、无重试；支付按 `order
 
 ## 变更记录
 
+- 2026-10-27：任务 `10-16-creation-plaza-video-planning` 合并已完成的图片 M1：TEST、Production 统一直连 `media_plaza`，删除双读/旧 schema 回退口径；视频 M2/M3 仍需按环境单独执行和验收。
 - 2026-10-30：任务 `10-30-image-plaza-edit-400-compat` 为图片广场 worker 失败补充脱敏 Sentry Log，并保持遥测故障隔离。
 - 2026-10-27：任务 `10-27-media-plaza-schema-move` 将图片广场数据库访问统一切换到 `media_plaza`，不保留旧 schema 回退。
 - 2026-10-27：任务 `10-27-sentry-performance-optimization` 增加不可变用户身份 bounded cache/single-flight，并为非严格 runtime-config 读取增加无 TTL 的在途合并。

@@ -21,8 +21,8 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   IMAGE_PLAZA_PROMPT_MAX_CHARS,
-  parseCreatorCoverReturn,
   selectSupportedVideoPlazaOptions,
+  parseCreatorCoverReturn,
   type ImagePlazaArtifact,
   type ImagePlazaAspectRatio,
   type ImagePlazaMode,

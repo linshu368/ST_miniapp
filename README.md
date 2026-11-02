@@ -136,7 +136,7 @@ pnpm --filter @miniapp/backend video-plaza:seed-sql -- --target test --processed
 
 TEST 视频种子 SQL 只能通过 GitHub Actions `Database Migration` 选择 `environment=test` 单文件执行。工作流会向该次 `psql` 会话注入 TEST project ref 与 Storage 已核验标记；执行脚本会拒绝把 `_seed_test_` 文件用于 production，也会拒绝缺少这些确认值的直接执行。
 
-### 角色创作与空间（2026-10-30）
+### 角色创作与空间（2026-10-30，本地集成，未发布）
 
 底部入口顺序为「角色 / 创作 / 中央播放首页 / AI短剧 / 我的」。`/creation` 承接角色创作、收藏和本人作品；`/creation/characters/new` 与 `/:id/edit` 使用真实创作 API。旧 `/create` 图片视频广场及工作室继续保留，通过创作页进入。上传封面、从本人生成作品选封面、文档导入、本地草稿、全屏编辑、AI润色与采用撤回都在同一流程内；预设不提供AI润色。预设区提供四套可多选的固定模板，仅展示名称、适用场景与效果，正文作为服务端静态文本保存；同时支持自写和导入。当前不新增运营配置页面。
 
