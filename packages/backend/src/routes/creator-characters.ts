@@ -4,10 +4,8 @@ import {
   SaveCreatorCharacterSchema,
   PublishCreatorCharacterSchema,
   SetCreatorVisibilitySchema,
-  ReviewCreatorCharacterSchema,
   creatorPublishMissingFields,
   CreatorCharacterIdSchema,
-  CreatorReviewStatusSchema,
   CreatorReviewTestRequestSchema,
   type CreatorReviewTestData,
   CREATOR_REVIEW_REJECTED_CODE,
@@ -18,7 +16,6 @@ import {
 } from '@miniapp/shared';
 import { requireTelegramAuth } from '../middleware/auth.js';
 import { getOrCreateDbUser } from '../lib/user.js';
-import { config } from '../platform/config.js';
 import { AdminSessionError, requireAdminActor } from '../features/admin-access/session.js';
 import { CreatorCharacterRepository } from '../features/creator/repository.js';
 import { clearLobbyFeaturedSnapshot } from '../features/lobby/featured-snapshot.js';
@@ -229,43 +226,6 @@ export default async function creatorCharacterRoutes(app: FastifyInstance) {
         'creator review policy tested'
       );
       return reply.send(ok<CreatorReviewTestData>({ result }));
-    })
-  );
-  // @frontend-ready: true — Admin read and write auth remain tied to the selected environment
-  app.get(
-    '/api/admin/creator-characters',
-    handle('review-list', async (request, reply) => {
-      await requireAdminActor(request.headers.authorization, 'read');
-      const status = CreatorReviewStatusSchema.parse(
-        (request.query as { status?: string }).status ?? 'pending'
-      );
-      return reply.send(ok({ characters: await repo.reviews(status) }));
-    })
-  );
-  // @frontend-ready: true
-  app.get(
-    '/api/admin/creator-characters/:id',
-    handle('review-read', async (request, reply) => {
-      await requireAdminActor(request.headers.authorization, 'read');
-      return reply.send(ok({ character: await repo.get(characterId(request)) }));
-    })
-  );
-  // @frontend-ready: true — RPC additionally verifies operator/environment and exact submission revision
-  app.post(
-    '/api/admin/creator-characters/:id/review',
-    handle('review', async (request, reply) => {
-      const actor = await requireAdminActor(request.headers.authorization, 'write');
-      const body = ReviewCreatorCharacterSchema.parse(request.body);
-      const character = await repo.review({
-        adminId: actor.userId,
-        id: characterId(request),
-        submittedRevision: body.submitted_revision,
-        decision: body.decision,
-        reason: body.reason,
-        environment: config.database.target === 'production' ? 'production' : 'test',
-      });
-      clearLobbyFeaturedSnapshot();
-      return reply.send(ok({ character }));
     })
   );
 }
