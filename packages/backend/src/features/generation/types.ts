@@ -4,8 +4,9 @@
 // → 上游转发与 SSE tap → 终态结算（实扣与落库）。顺序不能换：预留结果决定本轮是否免费，
 // 而定档扣费额又由该结果决定，余额预检再吃这个额度。
 
-import type { LlmModelProvider } from '@miniapp/shared';
-import type { ModelBillingContext } from '../../platform/model-tiers.js';
+import type { LlmModelProvider, OpenRouterProviderPreferences } from '@miniapp/shared';
+import type { LlmPricingConfig, ModelBillingContext } from '../../platform/model-tiers.js';
+import type { VipStrategy } from '../../platform/vip-strategy.js';
 import type { FirstTokenAttemptStore } from './first-token-fallback.js';
 import type { LlmBillingSnapshot } from '../../infrastructure/repositories/ConversationHistoryRepository.js';
 import type { SseTapResult } from './upstream.js';
@@ -51,7 +52,23 @@ export interface GenerationMessage {
   content: string;
 }
 
+export interface GenerationPreparation {
+  modelId: string;
+  provider: LlmModelProvider;
+  providerModelId: string;
+  characterId: string | null;
+  pricing: LlmPricingConfig;
+  selectedBilling: ModelBillingContext;
+  vipStrategy: Pick<VipStrategy, 'discountRate' | 'discountVersion'>;
+  routingModelIds: string[];
+  routingPreferences: Array<OpenRouterProviderPreferences | null>;
+  creatorUserId: string | null;
+  quotaLimit?: number;
+}
+
 export interface GenerationRequest {
+  /** Pure reads can overlap admission; this promise never reserves quota or dispatches. */
+  preparation?: Promise<GenerationPreparation>;
   /** Conversation admission already persists this key before any quota reservation. */
   plannedChargeId?: string;
   userId: string;

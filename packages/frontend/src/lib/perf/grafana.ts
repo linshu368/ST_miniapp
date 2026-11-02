@@ -166,6 +166,7 @@ const ENUMS: Readonly<Record<string, readonly string[]>> = {
   playback_mode: ['cover', 'switch', 'episode', 'retry', 'direct'],
   report_kind: ['list', 'playback', 'start', 'slow', 'final', 'network'],
   first_frame_method: ['video_frame_callback', 'playing_and_timeupdate'],
+  first_token_stage: ['awaiting_start', 'awaiting_token', 'awaiting_commit', 'committed'],
   source_measurement_version: [
     'page_mount_v1',
     'page_navigation_v1',

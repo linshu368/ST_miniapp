@@ -81,14 +81,15 @@ describe('runtime config in-flight reads', () => {
   });
 
   it('collapses concurrent non-strict reads for the same key', async () => {
-    const pending = deferred<{ data: ReturnType<typeof row>; error: null }>();
-    const { readEntry } = installRuntimeConfigDb({ readEntry: () => pending.promise });
+    const pending = deferred<{ data: Array<ReturnType<typeof row>>; error: null }>();
+    const { readEntries } = installRuntimeConfigDb({ readEntries: () => pending.promise });
 
     const first = fetchRuntimeConfigEntry('same-key');
     const second = fetchRuntimeConfigEntry('same-key');
-    expect(readEntry).toHaveBeenCalledOnce();
+    await Promise.resolve();
+    expect(readEntries).toHaveBeenCalledOnce();
 
-    pending.resolve({ data: row('same-key'), error: null });
+    pending.resolve({ data: [row('same-key')], error: null });
     await expect(Promise.all([first, second])).resolves.toEqual([
       { value: { key: 'same-key' }, textValue: null, version: 1 },
       { value: { key: 'same-key' }, textValue: null, version: 1 },
@@ -111,11 +112,11 @@ describe('runtime config in-flight reads', () => {
   });
 
   it('clears a failed single-key read so the next request can recover', async () => {
-    const { readEntry } = installRuntimeConfigDb({
-      readEntry: vi
+    const { readEntries } = installRuntimeConfigDb({
+      readEntries: vi
         .fn()
         .mockResolvedValueOnce({ data: null, error: { message: 'temporary failure' } })
-        .mockResolvedValueOnce({ data: row('recover'), error: null }),
+        .mockResolvedValueOnce({ data: [row('recover')], error: null }),
     });
 
     await expect(fetchRuntimeConfigEntry('recover')).resolves.toBeNull();
@@ -124,7 +125,7 @@ describe('runtime config in-flight reads', () => {
       textValue: null,
       version: 1,
     });
-    expect(readEntry).toHaveBeenCalledTimes(2);
+    expect(readEntries).toHaveBeenCalledTimes(2);
   });
 
   it('normalizes an identical key set and returns independent maps', async () => {
@@ -133,6 +134,7 @@ describe('runtime config in-flight reads', () => {
 
     const first = fetchRuntimeConfigEntries(['beta', 'alpha', 'alpha']);
     const second = fetchRuntimeConfigEntries(['alpha', 'beta']);
+    await Promise.resolve();
     expect(readEntries).toHaveBeenCalledOnce();
     expect(readEntries).toHaveBeenCalledWith(['alpha', 'beta']);
 
@@ -163,7 +165,7 @@ describe('runtime config in-flight reads', () => {
     expect(readEntries).toHaveBeenCalledTimes(2);
   });
 
-  it('does not merge different key sets or caller-cancellable batches', async () => {
+  it('merges different non-strict key sets while keeping caller cancellation isolated', async () => {
     const { readEntries } = installRuntimeConfigDb({});
 
     await Promise.all([
@@ -173,8 +175,23 @@ describe('runtime config in-flight reads', () => {
       fetchRuntimeConfigEntries(['alpha'], new AbortController().signal),
     ]);
 
-    expect(readEntries).toHaveBeenCalledTimes(4);
+    expect(readEntries).toHaveBeenCalledTimes(3);
+    expect(readEntries).toHaveBeenCalledWith(['alpha', 'beta']);
   });
+});
+
+it('merges single and batch configuration reads without exposing unrelated keys or caching later results', async () => {
+  clearRuntimeConfigInflightReads();
+  const { readEntries } = installRuntimeConfigDb({});
+  const [single, multiple] = await Promise.all([
+    fetchRuntimeConfigEntry('pricing'),
+    fetchRuntimeConfigEntries(['instructions', 'window']),
+  ]);
+  expect(readEntries).toHaveBeenCalledExactlyOnceWith(['instructions', 'pricing', 'window']);
+  expect(single).toMatchObject({ value: { key: 'pricing' } });
+  expect([...multiple.keys()].sort()).toEqual(['instructions', 'window']);
+  await fetchRuntimeConfigEntry('pricing');
+  expect(readEntries).toHaveBeenCalledTimes(2);
 });
 
 describe('drama CDN deployment boundary', () => {

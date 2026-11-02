@@ -32,6 +32,7 @@ import { buildPrompt, fetchPlatformInstructions, type EngineCharacter } from '..
 import type { InstructionSlotModes } from '../engine/types.js';
 import {
   execute,
+  prepareGeneration,
   resolveModelForUser,
   type GenerationRequest,
   type GenerationStatus,
@@ -150,6 +151,14 @@ export async function runConversationTurn(
     selectedModelId: generationContextPromise.then(({ config }) => config.selected_model_id),
     catalogSnapshot: input.catalogSnapshot,
   });
+  // Read-only generation settings must not sit behind opening the turn and
+  // reading its context. The same promise is consumed once by execute.
+  const executionPreparation = prepareGeneration({
+    model: modelPromise,
+    characterId: session.character_id,
+    useFallback: true,
+  });
+  void executionPreparation.catch(() => undefined);
   const [model, generationContext, instructions, windowLimits] =
     await withConversationPreparationDeadline(
       Promise.all([
@@ -157,6 +166,9 @@ export async function runConversationTurn(
         generationContextPromise,
         instructionsPromise,
         fetchContextWindowLimits(),
+        // Ownership is already established. Recover stale writes concurrently
+        // with independent reads, but always finish recovery before startTurn.
+        historyRecords().recoverStaleStreaming(session.id),
       ]),
       preparationSignal
     );
@@ -172,8 +184,6 @@ export async function runConversationTurn(
   // ── 落库：一轮一个 chat_history revision ─────────────────────────────────
   // 两个 RPC 都在会话行锁内做「生成中判定 + 陈旧流清理」，session_busy 与
   // regenerate_not_allowed 由它们以 SQLSTATE 抛出，仓库层已翻成业务错误码。
-  preparationSignal.throwIfAborted();
-  await historyRecords().recoverStaleStreaming(session.id);
   preparationSignal.throwIfAborted();
   const turn = await startTurn(session.id, mode, model.openRouterModelId, windowLimits);
   log.biz.info(
@@ -349,6 +359,7 @@ export async function runConversationTurn(
     // ── 生成 ──────────────────────────────────────────────────────────────────
     const request: GenerationRequest = {
       plannedChargeId: chargeId,
+      preparation: executionPreparation,
       userId,
       characterId: session.character_id,
       model,
