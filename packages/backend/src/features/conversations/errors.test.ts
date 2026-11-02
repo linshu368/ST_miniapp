@@ -25,6 +25,8 @@ describe('conversationErrorStatus', () => {
     branch_request_conflict: 409,
     branch_rate_limited: 429,
     reply_like_not_allowed: 409,
+    message_change_not_allowed: 409,
+    message_change_conflict: 409,
     upstream_error: 502,
     first_token_timeout: 504,
     fallback_first_token_timeout: 504,

@@ -18,6 +18,8 @@ import {
   CreateCharacterCommentSchema,
   ForkConversationRequestSchema,
   SetMessageLikeRequestSchema,
+  ChangeChatMessageRequestSchema,
+  splitEditableReply,
   ReportCharacterCommentSchema,
   SetCharacterLikeSchema,
   getNextDailyCheckinAt,
@@ -41,6 +43,9 @@ import {
   SubmitImagePlazaAttemptRequestSchema,
   type ChatMessage,
   type ChatSession,
+  type UpdateConversationRequest,
+  type UpdateConversationData,
+  type DeleteConversationData,
   type ConversationStreamEvent,
   type ImagePlazaAttempt,
   type GetDramasData,
@@ -50,9 +55,11 @@ import {
 } from '@miniapp/shared';
 import {
   IDS,
+  EDIT_REPLY_PANELS,
   isScenario,
   later,
   makeData,
+  makeChatSessionSamples,
   scenarios,
   stamp,
   voiceConfig,
@@ -168,6 +175,7 @@ export function createPreviewServer(apiPort: number, appPort: number) {
   let branchFailureDelivered = false;
   const messageLikes = new Set<string>();
   let messageLikeFailureDelivered = false;
+  let messageEditFailureDelivered = false;
 
   function currentConversationMessages(sessionId: string): ChatMessage[] {
     const candidates = data.messages.filter((message) => message.session_id === sessionId);
@@ -227,6 +235,7 @@ export function createPreviewServer(apiPort: number, appPort: number) {
     branchFailureDelivered = false;
     messageLikes.clear();
     messageLikeFailureDelivered = false;
+    messageEditFailureDelivered = false;
     scenario = next;
     claimedAt = next === 'checked' ? stamp() : null;
     favoriteIds = new Set(
@@ -318,8 +327,25 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         main_credits: 0,
         bonus_credits: 0,
       });
-    if (next === 'chat-branch' || next === 'chat-branch-error') {
-      const count = next === 'chat-branch' ? 200 : 20;
+    if (next === 'chat-sessions') {
+      const messages = data.messages;
+      data.sessions = makeChatSessionSamples(data.sessions[0]!);
+      data.messages = data.sessions.flatMap((session, index) =>
+        messages.map((message, messageIndex) => ({
+          ...message,
+          id: `55000000-0000-4000-8000-${String(index * 10 + messageIndex + 1).padStart(12, '0')}`,
+          session_id: session.id,
+          created_at: session.created_at,
+        }))
+      );
+    }
+    if (
+      next === 'chat-branch' ||
+      next === 'chat-branch-error' ||
+      next === 'chat-edit' ||
+      next === 'chat-edit-error'
+    ) {
+      const count = next === 'chat-branch' ? 200 : next.startsWith('chat-edit') ? 12 : 20;
       const userTemplate = data.messages[1]!;
       const assistantTemplate = data.messages[2]!;
       data.messages = [
@@ -338,7 +364,10 @@ export function createPreviewServer(apiPort: number, appPort: number) {
               ...assistantTemplate,
               id: `52000000-0000-4000-8000-${suffix}`,
               turn_index: turn,
-              content: `「这是第 ${turn} 轮的故事。」旅人停在路口，等你决定接下来怎么走。`,
+              content:
+                `「这是第 ${turn} 轮的故事。」旅人停在路口，等你决定接下来怎么走。` +
+                (next.startsWith('chat-edit') && turn >= 11 ? EDIT_REPLY_PANELS : ''),
+              postprocess_version: next.startsWith('chat-edit') && turn >= 11 ? 1 : undefined,
             },
           ];
         }).flat(),
@@ -1158,6 +1187,27 @@ export function createPreviewServer(apiPort: number, appPort: number) {
           return;
         }
       }
+      if (path === '/api/v1/text-postprocess/versions' && method === 'POST') {
+        const versions = (body as { versions?: number[] }).versions ?? [];
+        ok(res, {
+          found: versions.includes(1)
+            ? [
+                {
+                  version: 1,
+                  published_at: stamp(),
+                  artifact: {
+                    schema_version: 1,
+                    policy_version: 1,
+                    rich_reply_protocol: { version: 1, enabled: true },
+                    rules: [],
+                  },
+                },
+              ]
+            : [],
+          unavailable_versions: versions.filter((version) => version !== 1),
+        });
+        return;
+      }
       if (path === '/api/v1/voice/config' && method === 'GET') {
         ok(res, voiceConfig);
         return;
@@ -1172,6 +1222,68 @@ export function createPreviewServer(apiPort: number, appPort: number) {
       }
       if (/^\/api\/v1\/conversations\/[^/]+\/images$/.test(path) && method === 'GET') {
         ok(res, { images: [] });
+        return;
+      }
+      const messageChangeMatch = path.match(
+        /^\/api\/v1\/conversations\/([^/]+)\/messages\/([^/]+)$/
+      );
+      if (messageChangeMatch && method === 'PATCH') {
+        const [, sessionId, messageId] = messageChangeMatch;
+        const parsed = ChangeChatMessageRequestSchema.safeParse(body);
+        if (!parsed.success) {
+          fail(res, 400, 'BAD_REQUEST', '消息修改内容无效');
+          return;
+        }
+        const current = currentConversationMessages(sessionId!);
+        const message = current.find(
+          (item) =>
+            item.role === parsed.data.role &&
+            (item.id === messageId ||
+              item.id === `${messageId}:user` ||
+              (item.role === 'user' &&
+                current.some(
+                  (reply) => reply.id === messageId && reply.turn_index === item.turn_index
+                )))
+        );
+        const latest = Math.max(0, ...current.map((item) => item.turn_index));
+        if (!message || message.turn_index < Math.max(1, latest - 9)) {
+          fail(res, 409, 'message_change_not_allowed', '只能修改最近10轮消息');
+          return;
+        }
+        if (current.some((item) => item.status === 'streaming')) {
+          fail(res, 409, 'session_busy', '请等待回复完成');
+          return;
+        }
+        if ((message.edit_version ?? 0) !== parsed.data.expected_version || message.deleted) {
+          fail(res, 409, 'message_change_conflict', '这条消息已修改');
+          return;
+        }
+        if (scenario === 'chat-edit-error' && !messageEditFailureDelivered) {
+          messageEditFailureDelivered = true;
+          fail(res, 503, 'INTERNAL_ERROR', '保存失败，内容已保留，请重试');
+          return;
+        }
+        const saved = data.messages.find(
+          (item) =>
+            item.session_id === sessionId &&
+            item.id === message.id &&
+            item.revision === message.revision
+        )!;
+        saved.content =
+          parsed.data.action === 'edit'
+            ? parsed.data.content +
+              (saved.role === 'assistant' ? splitEditableReply(saved.content).protectedTail : '')
+            : '';
+        saved.deleted = parsed.data.action === 'delete';
+        saved.edit_version = (saved.edit_version ?? 0) + 1;
+        ok(res, {
+          session_id: sessionId,
+          message_id: messageId,
+          role: saved.role,
+          content: saved.content,
+          deleted: saved.deleted,
+          edit_version: saved.edit_version,
+        });
         return;
       }
       const messageLikeMatch = path.match(
@@ -1225,6 +1337,34 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         const session = data.sessions.find((item) => item.id === id);
         if (!session) {
           fail(res, 404, 'session_not_found', '对话不存在');
+          return;
+        }
+        if (!action && method === 'PATCH') {
+          const patch = body as UpdateConversationRequest;
+          if (
+            !patch ||
+            typeof patch !== 'object' ||
+            ('title' in patch && patch.title !== null && typeof patch.title !== 'string') ||
+            (patch.pinned !== undefined && typeof patch.pinned !== 'boolean') ||
+            (!('title' in patch) && patch.pinned === undefined)
+          ) {
+            fail(res, 400, 'BAD_REQUEST', '会话参数无效');
+            return;
+          }
+          if ('title' in patch) {
+            session.title =
+              patch.title?.trim().slice(0, 60) ||
+              data.characters.find((character) => character.id === session.character_id)?.name ||
+              '新的对话';
+          }
+          if (patch.pinned !== undefined) session.pinned_at = patch.pinned ? stamp() : null;
+          session.updated_at = stamp();
+          ok(res, { session } satisfies UpdateConversationData);
+          return;
+        }
+        if (!action && method === 'DELETE') {
+          data.sessions = data.sessions.filter((item) => item.id !== id);
+          ok(res, { id: session.id } satisfies DeleteConversationData);
           return;
         }
         if (!action && method === 'GET') {

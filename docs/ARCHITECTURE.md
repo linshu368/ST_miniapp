@@ -791,3 +791,7 @@ SSE start携带当轮冻结总预算。客户端若持有旧目录缓存，按�
 ### MiniApp 轻量开屏与启动监控（2026-10-30，本地待发布）
 
 RootLayout随HTML交付独立框架绘制确认与原生ready脚本，Providers继续原业务初始化并补报真实早期时间戳；SDK负责未支持路径的兜底与通知去重。BrowserTracing首屏后安装，错误捕获和Metrics仍在启动期生效。本轮不改业务分包/预热或CDN；P95≤4秒与>4秒比例的生产基线、v2指标边界及回退见[开屏优化说明](miniapp-startup-performance.md)。
+
+### 本地候选：最近十轮消息修订
+
+角色聊天显示与入模统一读取 experience.session_chat_history，其会话级覆盖来自 experience.chat_message_overrides。PATCH /api/v1/conversations/:id/messages/:messageId 用服务端身份和 expected_version 校验，只允许最新逻辑轮号向前十轮的单条编辑/删除；开场白、流式生成中、过期版本拒绝。原 chat_history 继续作为生成与计费事实，分支在创建时复制覆盖快照，删除用无正文占位保留轮号。未执行远端迁移/发布，固定验收入口见 ui-tests README。

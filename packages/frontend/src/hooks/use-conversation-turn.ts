@@ -503,7 +503,14 @@ export function useConversationTurn({
   }, [replyProgressKey, serverBusy, queryClient]);
 
   const canRegenerate =
-    !generating && !serverBusy && lastMessage?.role === 'assistant' && lastMessage.turn_index > 0;
+    !generating &&
+    !serverBusy &&
+    lastMessage?.role === 'assistant' &&
+    lastMessage.turn_index > 0 &&
+    !messages.some(
+      (message) =>
+        message.turn_index === lastMessage.turn_index && message.role === 'user' && message.deleted
+    );
 
   const restoreDraft = useCallback(
     (input: { mode: 'send' | 'regenerate'; content?: string }) => {

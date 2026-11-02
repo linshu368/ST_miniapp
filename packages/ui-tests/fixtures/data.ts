@@ -117,6 +117,21 @@ export const scenarios = {
     description: '先显示思考，正文开始后自动折叠',
     path: `/chat/${IDS.character}?session=${IDS.session}&from=discover`,
   },
+  'chat-sessions': {
+    label: '同角色多段对话',
+    description: '日期区分、长名称、分支来源、当前对话和收纳管理',
+    path: `/chat/${IDS.character}?session=${IDS.session}&from=discover`,
+  },
+  'chat-edit': {
+    label: '消息编辑与删除',
+    description: '12轮对话，最近10轮可局部修改，其他分支保留',
+    path: `/chat/${IDS.character}?session=${IDS.session}&from=discover`,
+  },
+  'chat-edit-error': {
+    label: '消息保存失败',
+    description: '首次失败保留草稿，再次保存成功',
+    path: `/chat/${IDS.character}?session=${IDS.session}&from=discover`,
+  },
   'chat-branch': {
     label: '历史对话分支',
     description: '200轮虚构对话，从早期或近期回复开启独立分支',
@@ -161,6 +176,59 @@ export const scenarios = {
 export type Scenario = keyof typeof scenarios;
 export function isScenario(value: unknown): value is Scenario {
   return typeof value === 'string' && Object.hasOwn(scenarios, value);
+}
+
+export const CHAT_SESSION_IDS = {
+  earlier: '20000000-0000-4000-8000-000000000002',
+  named: '20000000-0000-4000-8000-000000000003',
+  branch: '20000000-0000-4000-8000-000000000004',
+  namedBranch: '20000000-0000-4000-8000-000000000005',
+} as const;
+export const LONG_SESSION_TITLE = '雨夜重逢后一起寻找山谷尽头的那封信';
+
+/** 固定创建时间使默认标题可复验；内容只用于本机虚构场景。 */
+export function makeChatSessionSamples(base: ChatSession): ChatSession[] {
+  const samples = [
+    { id: IDS.session, title: '林间旅人', day: 2, preview: '沿着小径，一起出发吧。' },
+    { id: CHAT_SESSION_IDS.earlier, title: '林间旅人', day: 1, preview: '我们约好明天再来。' },
+    {
+      id: CHAT_SESSION_IDS.named,
+      title: LONG_SESSION_TITLE,
+      day: 3,
+      preview: '信封上留着熟悉的字迹。',
+    },
+    {
+      id: CHAT_SESSION_IDS.branch,
+      title: '分支 · 林间旅人',
+      day: 4,
+      preview: '这次选择另一条路。',
+    },
+    {
+      id: CHAT_SESSION_IDS.namedBranch,
+      title: '分支 · 雨夜的约定',
+      day: 5,
+      preview: '雨停以前，我们还会再见。',
+    },
+  ];
+  return samples.map((sample) => {
+    const createdAt = new Date(Date.UTC(2026, 10, sample.day, 14, 18)).toISOString();
+    return {
+      ...base,
+      id: sample.id,
+      title: sample.title,
+      created_at: createdAt,
+      updated_at: createdAt,
+      last_message_at: createdAt,
+      last_message_preview: sample.preview,
+      pinned_at:
+        sample.id === CHAT_SESSION_IDS.named
+          ? new Date(Date.now() - 86_400_000).toISOString()
+          : null,
+      ...(sample.id === CHAT_SESSION_IDS.branch || sample.id === CHAT_SESSION_IDS.namedBranch
+        ? { branch: { source_session_id: IDS.session, source_turn_index: 20, inherited_turns: 20 } }
+        : {}),
+    };
+  });
 }
 
 export function makeData(api: string) {
@@ -521,3 +589,6 @@ export const chatImageConfig: GetImageConfigData = {
     failed_unknown: '结果未知',
   },
 };
+
+export const EDIT_REPLY_PANELS =
+  '\n\n[choices][choice]继续往前走[/choice][choice]问问路上的故事[/choice][choice]停下来休息[/choice][/choices]\n[status]<details><summary>当前状态</summary>\n\n```markdown\n地点：林间小路\n心情：平静\n```\n</details>[/status]\n[memory]<details><summary>故事记忆</summary>\n\n```markdown\n一起走到了路口。\n```\n</details>[/memory]';

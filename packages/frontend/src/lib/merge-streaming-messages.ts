@@ -65,7 +65,9 @@ export function hasPersistedStreamReplacement(
       message.role === 'assistant' &&
       message.session_id === sessionId &&
       message.id === streaming.assistantMessageId &&
-      (message.revision > streaming.revision ||
+      ((message.edit_version ?? 0) > 0 ||
+        message.deleted ||
+        message.revision > streaming.revision ||
         (message.revision === streaming.revision &&
           message.request_id === streaming.requestId &&
           message.status !== 'streaming' &&

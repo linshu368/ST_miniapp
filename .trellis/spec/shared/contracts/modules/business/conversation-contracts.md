@@ -5,8 +5,8 @@ scope: shared
 category: business
 status: active
 owners: [shared]
-last_verified_task: .trellis/tasks/10-28-first-token-race/
-last_verified_at: 2026-10-28
+last_verified_task: .trellis/tasks/11-02-chat-message-edit-delete/
+last_verified_at: 2026-11-02
 ---
 
 # 会话与语音共享契约
@@ -14,6 +14,8 @@ last_verified_at: 2026-10-28
 ## 职责与边界
 
 ## 当前状态
+
+本地候选（尚未发布）：ChatMessage 增加可选deleted/edit_version；空内容墓碑保持轮号但不呈现。ChangeChatMessageRequestSchema定义edit/delete、role、expected_version，assistant.content只接受正文。splitEditableReply按既有选项/状态/记忆及details边界分离正文，附加内容原字节保留；用户文字仍可完整编辑。新增409错误message_change_not_allowed/message_change_conflict。
 
 取消契约 CancelConversationTurnRequest {assistant_message_id:string} 与 CancelConversationTurnData {message:ChatMessage}；新 POST /api/v1/conversations/:id/cancel 采用既有 envelope，返回实际终态，待确认以错误表示。原 SSE 字段和消息状态兼容保留，producer-first 发布。
 

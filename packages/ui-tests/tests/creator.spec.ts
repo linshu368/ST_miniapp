@@ -1,3 +1,4 @@
+import { previewApiUrl } from './fixtures';
 import { test, expect, expectMobileLayout } from './fixtures.js';
 import type { Page } from '@playwright/test';
 
@@ -261,11 +262,9 @@ test('@creator @creator-continuity 载入最新版本前保留修改备份', asy
   await page.getByRole('textbox', { name: '名称' }).fill('我的重要未提交修改');
   await page.getByRole('textbox', { name: '描述', exact: true }).click();
   await expect(page.getByText('草稿已保存到本地', { exact: true })).toBeVisible();
-  const detail = await (
-    await request.get(`http://127.0.0.1:3131/api/creator/characters/${id}`)
-  ).json();
+  const detail = await (await request.get(`${previewApiUrl}/api/creator/characters/${id}`)).json();
   const card = detail.data.character;
-  const updated = await request.patch(`http://127.0.0.1:3131/api/creator/characters/${id}`, {
+  const updated = await request.patch(`${previewApiUrl}/api/creator/characters/${id}`, {
     data: {
       expected_revision: card.revision,
       draft: { ...card.draft, name: '已更新的最新角色' },
