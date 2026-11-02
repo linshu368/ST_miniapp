@@ -469,6 +469,8 @@ frontend 自有 Route Handler：`GET /api/lobby-characters`（白名单 sort 参
 
 **鉴权机制**：用户侧统一 `requireTelegramAuth`（`middleware/auth.ts`，读 `X-Init-Data` 做 HMAC-SHA256 校验；非生产可用 `MOCK_AUTH=1` / `DEV_AUTH_BYPASS=1` 旁路）。admin 用 Supabase 会话，客服服务调用靠共享密钥 `X-CS-Internal-Secret`（主后端 → 客服服务，见 `lib/cs-service.ts`），Bot 用 `X-Bot-Internal-Secret` 与 Telegram webhook secret。
 
+大厅评分资格校准（本地候选）：仍由 `lobby-ranking-refresh-job` 的独立连接离线聚合、短事务覆盖 `miniapp_features.character_ranking_scores`，不进入大厅请求路径。以每个用户首次向某卡发起聊天的历史时间为准，要求全平台首次有效聊天满24小时、至少10个有效逻辑轮次完成在先；成功且输入/回复非空才算资历，同轮重生成只算一次。完成时间优先使用不早于记录创建的结算时刻，旧记录缺失时退回创建时间，不能证明旧记录秒级真实完成先后。D30/R48原参数、合格用户的发起轮次统计和观察期保持；活动卡无合格用户仍输出零样本，不能沿用旧成熟资格。无schema/公开契约改动，发布后下次成功重算才生效，本地改动不等于线上已更新。
+
 **进程内定时任务**（`app.ts` 启动，不走 HTTP）：`features/generation/sync-job.ts`（OpenRouter 计费回捞）、`features/image/job.ts`（角色回复图片 DB 租约 worker，可由 `IMAGE_WORKER_ENABLED` 关闭）、`features/image-plaza/job.ts`（图片广场 Venice worker，可由 `IMAGE_PLAZA_WORKER_ENABLED` 关闭）、`lib/lobby-ranking-refresh-job.ts`（大厅排序重算）。支付对账与过期是独立 Railway 服务（见 §8）。
 
 ---
@@ -803,6 +805,16 @@ RootLayout随HTML交付独立框架绘制确认与原生ready脚本，Providers�
 调用前将兜底路由配置提前，与其他配置同批；付费轮余额只读预检与上下文准备重叠，冻结报价和结果本轮复用。免费额度仍先预留再决定是否查余额；缺钱包按0余额拒绝，不为预检初始化钱包。鉴权、开轮、报价/prompt持久化仍在dispatch前；6秒、两路竞争、单次交付/计费不变。
 
 现有OTLP/Grafana增加调用前五段墙钟和出站五段指标。只用内存时间戳、既有attempt终态日志及慢准备摘要，不新增监控表、SQL、扫描或任务。调用前各段仅覆盖完成门禁的请求；出站未到达的阶段保持缺失。分位数不能相加，发完请求至响应头也不能称为纯模型耗时。业务主图继续看点击到首token及总截止无字率。
+
+### 角色推荐批次（2026-11-02，本地待发布）
+
+公开角色目录继续共享缓存；鉴权POST `/api/characters/recommendation` 只提供个人顺序ID和批次时间，支持open/resume/refresh/undo；曝光POST同路径`/exposures`合并最多40张。private no-store、每用户短事务锁、request_id/CAS、当前/上一批恢复，前端按用户隔离query/storage与返回位置。24h只在新浏览判定，浏览中不定时重排；搜索/最新沿用原用途。
+
+`miniapp_features.user_lobby_recommendations`保存当前/上一批完整顺序与3批头部摘要；`user_character_exposures`保存每用户卡最近实际曝光及3批幂等环。均RLS开启、仅后端权限，跨schema FK到app_core根用户/角色，删除级联。曝光需50%连续1秒，遮挡/hidden/搜索/最新/恢复中不计，前端合并、失败不阻塞。
+
+原character_ranking_scores增加qualified-v1与可信分/样本/时间。每日job只以资历过滤后达到样本门槛的新证据写可信记录，不回填旧分。当前成熟低分优先；缺近期样本保留过去可信分，超过90天只给探索机会。抽选底线40、头档70是初版值；可轮换头档不足可用其他可靠卡补位。相邻前12目标最多2张重复，质量/库存不足时有标记地放宽，不保证没有库存时硬兑现。金框仍由列表/详情/收藏共用的全局资格出口决定，不按个人前排位置产生。
+
+运营复用`lobby_ranking_params.rotation`（默认直接全量、24h、重复2、探索2）与`lobby_pinned_characters.fixed_character_id`最多1固定；原8个ID对轮换用户是加权候选，旧策略保留兼容。迁移先于Backend；直接全量生效，新质量证据未就绪时沿用可靠的旧排序。运营不展示启用/灰度开关，保留新表和证据，不DROP。实际生产状态以发布记录为准。固定SQL/算法/HTTP验收`pnpm test:lobby-ranking`，UI `@lobby-rotation`沿用本地环境，未连接真实业务数据。
 
 ### 创作者数据（2026-11-02，本地待发布）
 

@@ -20,6 +20,7 @@ export * from './api/instruction-slot-rules';
 export * from './api/word-count-tiers';
 export * from './api/lobby-ranking-params';
 export * from './api/lobby-pinned-characters';
+export * from './api/lobby-recommendation';
 export * from './api/wallet';
 export * from './api/feature-free-trials';
 export * from './api/conversations';

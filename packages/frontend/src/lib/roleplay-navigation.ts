@@ -1,4 +1,5 @@
 import type { LobbySort } from '@miniapp/shared';
+import { lobbyViewerScope } from './lobby-recommendation-state';
 
 export type RoleplayView = '/characters' | '/chats';
 export type RoleplaySource = 'discover' | 'conversations' | 'space' | 'created';
@@ -9,7 +10,9 @@ const SCROLL_PREFIX = 'miniapp:roleplay-scroll:v1:';
 
 function read(key: string): string | null {
   try {
-    return typeof window === 'undefined' ? null : window.sessionStorage.getItem(key);
+    return typeof window === 'undefined'
+      ? null
+      : window.sessionStorage.getItem(`${key}:${lobbyViewerScope()}`);
   } catch {
     return null;
   }
@@ -17,7 +20,8 @@ function read(key: string): string | null {
 
 function write(key: string, value: string): void {
   try {
-    if (typeof window !== 'undefined') window.sessionStorage.setItem(key, value);
+    if (typeof window !== 'undefined')
+      window.sessionStorage.setItem(`${key}:${lobbyViewerScope()}`, value);
   } catch {
     // A blocked storage API must not block navigation.
   }

@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "updates": [
+    {
+      "operation": "update",
+      "module_id": "backend.business.character-lobby",
+      "target": ".trellis/spec/backend/app/modules/business/character-lobby.md",
+      "expected_sha256": "2e029a845e2a31a05c6336bbc38a32535c0b49ff30376366bc1b6c624d3ceea0",
+      "content": "---\nmodule_id: backend.business.character-lobby\ntitle: 角色卡、大厅与收藏\nscope: backend\ncategory: business\nstatus: active\nowners: [backend]\nlast_verified_task: .trellis/tasks/11-02-lobby-score-qualified-users/\nlast_verified_at: 2026-11-02\n---\n\n# 角色卡、大厅与收藏\n\n## 职责与边界\n\n提供角色列表/详情、最新红点、收藏、运营置顶和推荐排序，不负责聊天执行。\n\n## 当前状态\n\n公开角色发现、用户收藏、排序参数和每日排序分重算已落地。\n\n## 入口与调用者\n\nFrontend 大厅及 Admin 排序配置调用 characters/favorites/lobby API。\n\n## 涉及文件\n\n| 路径                                        | 职责     |\n| ------------------------------------------- | -------- |\n| `packages/backend/src/routes/characters.ts` | 角色 API |\n| `packages/backend/src/routes/favorites.ts`  | 收藏 API |\n| `packages/backend/src/features/lobby/`      | 大厅排序 |\n\n## 关键实现链路\n\n请求参数 → 公开/用户鉴权 → 排序与置顶配置 → repository → DTO。\n\n## 数据、契约与外部依赖\n\n依赖 app_core.characters、miniapp_features 收藏/排序表和 shared 角色契约。\n\n## 关键节点与约束\n\n测试卡与发布状态必须过滤；大厅定时重算不依赖 analytics 运行时视图。\n\n## 验证方式\n\nBackend lobby/route tests 与 Frontend 大厅人工回归。\n\n## 已知缺口与待核验项\n\n排序参数调整需观察推荐质量与任务容量。\n\n## 关联模块\n\n`frontend.business.character-lobby`、`shared.business.character-lobby-contracts`。\n\n## 角色互动（2026-10-29，本地待发布）\n\n`routes/character-social.ts` + `features/character-social/repository.ts` 提供 Telegram鉴权的 social批量/单项查询、PUT like、评论分页/发表/删除/举报。批量40项，评论每页20条。匿名公开DTO不返回用户ID；日志不记录评论正文。写入采用miniapp_features中的服务端函数、受限search_path与RLS，原character_favorites为收藏数量唯一来源。\n\n迁移 `packages/shared/migrations/20261029_character_social.sql` 新建 character_likes、character_comments、character_comment_reports。UUID幂等、删除墓碑、作者权限、举报唯一性、并发限流已纳入 `scripts/test-character-social-migration.sh` 隔离Postgres验收。举报存储不等于自动审核，运营处理UI不在本轮范围。未执行线上迁移。\n\n## 角色质量评分的平台资历（2026-11-02，本地候选）\n\n`ranking-stats.ts` 在每日离线评分聚合中先筛选用户与角色配对资格：用户第一次向某卡发起聊天（包括失败尝试）时，首次有效聊天已满24小时且第10个有效逻辑轮次完成时间严格在先。资格只由全历史事前行为决定，不能用当前资历或本卡后续长聊追溯纳入新人首体验；注册时间不参与判断。\n\n有效资历要求success且输入/回复非空白；同session+turn的重生成只算一次，缺session或turn的历史按id。时间取最早成功revision的不早于created_at的结算时刻，旧记录缺结算时间时近似使用created_at。分支继承引用不新增资历；消息显示编辑/删除不改变原生成事实。\n\n一次参数化SQL复用窄字段全历史CTE，D30/R48仅聚合合格配对。既有窗口/权重/封顶/20人门槛和合格用户发起轮次（含失败占位）口径不变，R48有界回溯仅影响原新客观察，不裁剪平台资格历史。窗口有活动但无合格样本的卡输出n=0与null指标并覆盖旧分，按现有冷启动处理；不以缺样本判差卡。\n\n复用专用连接、查询超时、advisory lock、原子落表及失败保留旧快照；job记录合格配对、零样本卡和回访观察数，无用户正文/身份日志。无schema迁移或公开API变更，未来发布后下一次成功刷新才生效。固定验收`pnpm test:lobby-ranking`执行现有单测和一次性本机PG17真实SQL；`ST_LOBBY_SCORE_BENCHMARK=1`增加40万虚构记录EXPLAIN。未运行生产重算，线上发布仍需授权与刷新结果核验。\n",
+      "evidence": [".trellis/tasks/11-02-lobby-score-qualified-users/validation.md"],
+      "reason": "角色质量评分排除平台新人首体验，24h与10有效轮次按首触前冻结"
+    }
+  ]
+}

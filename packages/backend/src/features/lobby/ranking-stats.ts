@@ -2,10 +2,10 @@
  * backend / features / lobby / ranking-stats.ts
  *
  * v3 排序分的库侧出入口：
- *   写：每日 job 调 computeRawCardStats() 跑两条聚合，算完分再 persistRankingScores() 落表
+ *   写：每日 job 调 computeRawCardStats() 聚合合格样本，算完分再 persistRankingScores() 落表
  *   读：大厅请求调 loadCharacterRankingScores() 只读汇总表，每卡一行
  *
- * 聚合本身是 80 天窗口的全表级扫描（还要 LAG 切会话），挂在读路径上撑不住，
+ * 聚合要回看全历史确定用户资历，再在 80 天窗口内统计深度和回访，挂在读路径上撑不住，
  * 所以读写彻底分开——这也是 v2 的「每次请求查聚合视图」换掉的原因。
  */
 
@@ -20,6 +20,10 @@ const RANKING_CACHE_TTL_MS = 60_000;
 export interface CardScore {
   score: number;
   sampleSize: number;
+  qualityVersion?: string;
+  trustedScore?: number;
+  trustedSampleSize?: number;
+  trustedAt?: number;
 }
 
 /**
@@ -36,19 +40,15 @@ export interface RankingSnapshot {
 }
 
 /**
- * 写路径要能跑在事务客户端上：刷新 job 用事务级 advisory lock 防多副本重复跑，
- * 而这种锁只在持锁的那条连接上有效，聚合与落表必须走同一个客户端。
+ * 聚合走刷新 job 持有 session advisory lock 的专用连接，落表走该连接上的短事务。
+ * 两种客户端共用同一组查询方法，不引入第二条统计或持久化路径。
  */
 export type RankingDbClient = Pick<typeof prisma, '$queryRaw' | '$executeRaw'>;
 
-interface DepthRow {
+interface RawStatsRow {
   character_id: string;
   n_c: bigint | number;
   d30_raw: number | null;
-}
-
-interface ReturnRow {
-  character_id: string;
   k_c: bigint | number;
   returned_c: bigint | number;
 }
@@ -58,6 +58,10 @@ interface ScoreRow {
   n_c: number;
   score: string | number;
   min_users: number | null;
+  quality_version: string | null;
+  trusted_score: string | number | null;
+  trusted_sample_size: number | null;
+  trusted_at: Date | string | null;
 }
 
 let cache: { at: number; value: RankingSnapshot } | null = null;
@@ -89,7 +93,8 @@ export async function loadCharacterRankingScores(): Promise<RankingSnapshot | nu
 async function loadCharacterRankingScoresFresh(): Promise<RankingSnapshot | null> {
   try {
     const rows = await prisma.$queryRaw<ScoreRow[]>`
-      SELECT character_id, n_c, score, min_users
+      SELECT character_id, n_c, score, min_users, quality_version,
+             trusted_score, trusted_sample_size, trusted_at
       FROM miniapp_features.character_ranking_scores
     `;
 
@@ -100,6 +105,10 @@ async function loadCharacterRankingScoresFresh(): Promise<RankingSnapshot | null
       scores.set(row.character_id, {
         score: Number(row.score),
         sampleSize: Number(row.n_c),
+        qualityVersion: row.quality_version ?? undefined,
+        trustedScore: row.trusted_score == null ? undefined : Number(row.trusted_score),
+        trustedSampleSize: row.trusted_sample_size ?? undefined,
+        trustedAt: row.trusted_at == null ? undefined : new Date(row.trusted_at).getTime(),
       });
     }
 
@@ -122,103 +131,106 @@ async function loadCharacterRankingScoresFresh(): Promise<RankingSnapshot | null
 }
 
 /**
- * 跑两条聚合，产出每卡原始量。
+ * 在同一 SQL 快照里确定历史资格、D30 和 R48，避免资格重复扫描和统计时点漂移。
  *
- * 拆成两条而不是一条大查询：D30 只看窗口内的行，R48 要回溯全历史定新客，
- * 两者的扫描范围与分组键都不同，合并只会让计划器两头不讨好。
+ * 资格冻结在用户对这张卡的全历史首次发起时：此前首次有效聊天已满 24 小时，
+ * 且第 10 个有效逻辑轮次已经完成。后来在这张卡成长，不会反向进入它的质量样本。
+ * 有效轮次只用于判断资历；合格用户的深度仍沿用原发起轮次口径，包含失败占位。
+ * R48 继续按窗口内发起时间切会话，只纳入首次会话结束已满观察期的该卡新客。
  */
 export async function computeRawCardStats(
   db: RankingDbClient,
   params: LobbyRankingParams = DEFAULT_LOBBY_RANKING_PARAMS
 ): Promise<RawCardStats[]> {
-  // 事务客户端上的查询必须串行：交互式事务同一时刻只处理一条语句
-  const perRevisionRows = await hasConversationTurnColumns(db);
-  const depthRows = perRevisionRows
-    ? await queryDepthByTurn(db, params)
-    : await queryDepthByRow(db, params);
-  const returnRows = await queryReturnRate(db, params);
-
-  const returnByCard = new Map<string, ReturnRow>();
-  for (const row of returnRows) returnByCard.set(row.character_id, row);
-
-  const stats: RawCardStats[] = depthRows.map((row) => {
-    const ret = returnByCard.get(row.character_id);
-    const returnSampleSize = ret ? Number(ret.k_c) : 0;
-    const returned = ret ? Number(ret.returned_c) : 0;
-
-    return {
-      characterId: row.character_id,
-      sampleSize: Number(row.n_c),
-      d30Raw: row.d30_raw === null ? null : Number(row.d30_raw),
-      returnSampleSize,
-      // 分母为 0 时留 null：「没有样本」与「回访率为 0」在收缩时是两种待遇
-      r48Raw: returnSampleSize > 0 ? returned / returnSampleSize : null,
-    };
-  });
-
-  // 只有新客、窗口内却没有任何对话的卡进不了 depthRows，但那不可能——
-  // 新客判定本身就来自 chat_history，所以 returnRows 一定是 depthRows 的子集。
-  return stats;
-}
-
-/**
- * chat_history 是否已经有 session_id / turn_index（migration 069 与 072）。
- *
- * 这两列决定 turns 怎么数，而生产库在 M6 切换前不会有它们，
- * 无条件引用会让每日 job 每轮直接报错。探测一次比让 job 崩掉便宜。
- * 069~073 在所有环境执行完之后，这个分支连同 queryDepthByRow 一起删掉。
- */
-async function hasConversationTurnColumns(db: RankingDbClient): Promise<boolean> {
-  const rows = await db.$queryRaw<Array<{ present: boolean }>>`
-    SELECT COUNT(*) = 2 AS present
-    FROM information_schema.columns
-    WHERE table_schema = 'experience'
-      AND table_name = 'chat_history'
-      AND column_name IN ('session_id', 'turn_index')
-  `;
-  return rows[0]?.present === true;
-}
-
-/**
- * D30 与样本量：turns 取窗口内的行数。
- *
- * 按行数数而不是按累计轮次列：累计值是全历史口径，一个三年前聊过 200 轮的用户
- * 会让任何时间窗都失去意义。（该列已由 092 删除。）
- *
- * 072 之前 chat_history 一行就是一轮，行数即轮数。
- */
-function queryDepthByRow(db: RankingDbClient, params: LobbyRankingParams): Promise<DepthRow[]> {
-  return db.$queryRaw<DepthRow[]>`
-    WITH windowed AS (
-      SELECT character_id, user_id, COUNT(*)::int AS turns
+  const lookbackDays = params.first_touch_lookback_days;
+  const rows = await db.$queryRaw<RawStatsRow[]>`
+    WITH bounds AS (
+      SELECT
+        now() AS now_at,
+        now() - (${params.window_days}::int * interval '1 day') AS start_at
+    ),
+    history AS MATERIALIZED (
+      -- 全历史只扫描一次，正文只在库内判断非空，不进入后续物化结果或应用。
+      SELECT
+        id,
+        character_id,
+        user_id,
+        session_id,
+        turn_index,
+        created_at,
+        CASE
+          WHEN status = 'success'
+            AND user_input ~ '[^[:space:]]'
+            AND assistant_reply ~ '[^[:space:]]'
+          -- 旧行没有独立完成时间时只能以创建时间近似；有结算时刻则不能提前计资历。
+          THEN GREATEST(created_at, COALESCE(llm_billing_settled_at, created_at))
+        END AS effective_at
       FROM experience.chat_history
-      WHERE character_id IS NOT NULL
-        AND created_at >= now() - (${params.window_days}::int * interval '1 day')
-      GROUP BY character_id, user_id
-    )
-    SELECT
-      character_id,
-      COUNT(*)::bigint AS n_c,
-      AVG(LEAST(turns, ${params.turn_cap}::int))::double precision
-        / ${params.turn_cap}::int AS d30_raw
-    FROM windowed
-    GROUP BY character_id
-  `;
-}
-
-/**
- * 072 之后的 D30：自研链路一行是一个 revision，重生成会在同一轮里多出若干行。
- *
- * 直接数行会把「同一句话重生成五次」算成五轮深度，正好奖励了用户不满意的卡。
- * 所以自研行按 (session_id, turn_index) 去重，ST 行仍是一行一轮。
- * 402 / 上游失败预建的行留在计数里——用户确实发起了这一轮，与既有视图口径一致。
- *
- * R48 不受影响：多出来的 revision 只是同一会话内多几个时间点，
- * 30 分钟切分与首末时间都不变。
- */
-function queryDepthByTurn(db: RankingDbClient, params: LobbyRankingParams): Promise<DepthRow[]> {
-  return db.$queryRaw<DepthRow[]>`
-    WITH windowed AS (
+    ),
+    effective_turns AS (
+      -- 重生成不增加资历；缺 session/turn 的 ST 历史按物理行保留。
+      -- 成功 revision 的完成时间才有效，不能借同轮较早的失败时间回溯资格。
+      SELECT user_id, MIN(effective_at) AS effective_at
+      FROM history
+      WHERE effective_at IS NOT NULL
+      GROUP BY user_id, session_id, turn_index,
+        CASE WHEN session_id IS NULL OR turn_index IS NULL THEN id END
+    ),
+    ordered_effective_turns AS (
+      SELECT
+        user_id,
+        effective_at,
+        ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY effective_at) AS effective_turn_no
+      FROM effective_turns
+    ),
+    experience_milestones AS (
+      SELECT
+        user_id,
+        MIN(effective_at) AS first_effective_at,
+        MAX(effective_at) FILTER (WHERE effective_turn_no = 10) AS tenth_effective_at
+      FROM ordered_effective_turns
+      WHERE effective_turn_no <= 10
+      GROUP BY user_id
+    ),
+    card_first_touch AS (
+      SELECT
+        h.character_id,
+        h.user_id,
+        MIN(h.created_at) AS first_at,
+        MIN(h.created_at) FILTER (
+          WHERE ${lookbackDays}::int IS NULL
+            OR h.created_at >= b.start_at - (${lookbackDays}::int * interval '1 day')
+        ) AS observed_first_at
+      FROM history h
+      CROSS JOIN bounds b
+      WHERE h.character_id IS NOT NULL
+      GROUP BY h.character_id, h.user_id
+    ),
+    qualified_pairs AS (
+      SELECT ft.character_id, ft.user_id, ft.observed_first_at
+      FROM card_first_touch ft
+      JOIN experience_milestones m ON m.user_id = ft.user_id
+      -- 首触含失败尝试；24h 可恰好满足，但同刻完成第 10 轮不算事前完成。
+      WHERE ft.first_at >= m.first_effective_at + interval '24 hours'
+        AND ft.first_at > m.tenth_effective_at
+    ),
+    active_cards AS (
+      -- 保留原始活动卡作为结果全集：全被资格过滤的卡也必须写 n=0，覆盖旧污染分。
+      SELECT DISTINCT h.character_id
+      FROM history h
+      CROSS JOIN bounds b
+      WHERE h.character_id IS NOT NULL AND h.created_at >= b.start_at
+    ),
+    qualified_window AS MATERIALIZED (
+      SELECT h.id, h.character_id, h.user_id, h.session_id, h.turn_index, h.created_at,
+        q.observed_first_at
+      FROM history h
+      JOIN qualified_pairs q ON q.character_id = h.character_id AND q.user_id = h.user_id
+      CROSS JOIN bounds b
+      WHERE h.created_at >= b.start_at
+    ),
+    depth_by_user AS (
+      -- D30 沿用既有发起轮次口径：ST 一行一轮，自研同轮 revision 去重，失败不删。
       SELECT
         character_id,
         user_id,
@@ -226,76 +238,31 @@ function queryDepthByTurn(db: RankingDbClient, params: LobbyRankingParams): Prom
           COUNT(*) FILTER (WHERE session_id IS NULL)
           + COUNT(DISTINCT (session_id, turn_index)) FILTER (WHERE session_id IS NOT NULL)
         )::int AS turns
-      FROM experience.chat_history
-      WHERE character_id IS NOT NULL
-        AND created_at >= now() - (${params.window_days}::int * interval '1 day')
+      FROM qualified_window
       GROUP BY character_id, user_id
-    )
-    SELECT
-      character_id,
-      COUNT(*)::bigint AS n_c,
-      AVG(LEAST(turns, ${params.turn_cap}::int))::double precision
-        / ${params.turn_cap}::int AS d30_raw
-    FROM windowed
-    GROUP BY character_id
-  `;
-}
-
-/**
- * R48：新客首次会话结束后 48 小时内是否回访。
- *
- * 四个口径上的讲究：
- *   - 新客判定默认用「全历史首次交互落在窗口内」（first_touch_lookback_days = null）。
- *     chat_history 从无清理，这个判定是精确的；用窗口内首次会误判——
- *     老用户在窗口内的第一条会被当成新客。
- *     参数填了天数则只回看窗口前那么久，是给「全表扫 first_touch 跑不动」留的成本上界，
- *     代价是首触更早的老用户会被误判成新客混进分母。
- *   - 分母只收首次会话已结束满 return_window_hours 的人。不满观察期的样本还没走完，
- *     提前计入等于把「还没来得及回访」算成「没有回访」。
- *   - 会话切分只在窗口内的消息上做。默认口径下这是恒等的（新客的所有消息本就都在窗口内），
- *     但启用有界回溯后不加这一条，被误判成新客的老用户会拿几年前那次会话当 session 1。
- *   - 只需要前两个会话，session_no > 2 的行在聚合前就丢掉。
- */
-function queryReturnRate(db: RankingDbClient, params: LobbyRankingParams): Promise<ReturnRow[]> {
-  const lookbackDays = params.first_touch_lookback_days;
-
-  return db.$queryRaw<ReturnRow[]>`
-    WITH bounds AS (
+    ),
+    depth_by_card AS (
       SELECT
-        now() AS now_at,
-        now() - (${params.window_days}::int * interval '1 day') AS start_at
-    ),
-    first_touch AS (
-      SELECT character_id, user_id, MIN(created_at) AS first_at
-      FROM experience.chat_history, bounds b
-      WHERE character_id IS NOT NULL
-        -- null = 回看全历史。给了天数就只回看窗口前这么久：此时
-        -- 「回看范围内的最早一条落在窗口内」等价于「窗口前那段里没有记录」，
-        -- 也就是设计文档里那个 NOT EXISTS，但不必全表扫。
-        AND (
-          ${lookbackDays}::int IS NULL
-          OR created_at >= b.start_at - (${lookbackDays}::int * interval '1 day')
-        )
-      GROUP BY character_id, user_id
-    ),
-    newcomers AS (
-      SELECT ft.character_id, ft.user_id
-      FROM first_touch ft, bounds b
-      WHERE ft.first_at >= b.start_at
+        character_id,
+        COUNT(*)::bigint AS n_c,
+        AVG(LEAST(turns, ${params.turn_cap}::int))::double precision
+          / ${params.turn_cap}::int AS d30_raw
+      FROM depth_by_user
+      GROUP BY character_id
     ),
     gapped AS (
       SELECT
+        h.id,
         h.character_id,
         h.user_id,
         h.created_at,
         LAG(h.created_at) OVER (
-          PARTITION BY h.character_id, h.user_id ORDER BY h.created_at
+          PARTITION BY h.character_id, h.user_id ORDER BY h.created_at, h.id
         ) AS prev_at
-      FROM experience.chat_history h
-      JOIN newcomers n ON n.character_id = h.character_id AND n.user_id = h.user_id
+      FROM qualified_window h
       CROSS JOIN bounds b
-      WHERE h.character_id IS NOT NULL
-        AND h.created_at >= b.start_at
+      -- 有界回溯只影响原 R48 新客观察，绝不截短平台资历或该卡真实首触。
+      WHERE h.observed_first_at >= b.start_at
     ),
     sessionized AS (
       SELECT
@@ -310,7 +277,7 @@ function queryReturnRate(db: RankingDbClient, params: LobbyRankingParams): Promi
             THEN 1 ELSE 0
           END
         ) OVER (
-          PARTITION BY character_id, user_id ORDER BY created_at
+          PARTITION BY character_id, user_id ORDER BY created_at, id
           ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
         ) AS session_no
       FROM gapped
@@ -334,23 +301,47 @@ function queryReturnRate(db: RankingDbClient, params: LobbyRankingParams): Promi
         MAX(session_start) FILTER (WHERE session_no = 2) AS start_second
       FROM first_two
       GROUP BY character_id, user_id
+    ),
+    returns_by_card AS (
+      SELECT
+        p.character_id,
+        COUNT(*) FILTER (
+          WHERE p.end_first
+                <= b.now_at - (${params.return_window_hours}::int * interval '1 hour')
+        )::bigint AS k_c,
+        COUNT(*) FILTER (
+          WHERE p.end_first
+                <= b.now_at - (${params.return_window_hours}::int * interval '1 hour')
+            AND p.start_second IS NOT NULL
+            AND p.start_second
+                <= p.end_first + (${params.return_window_hours}::int * interval '1 hour')
+        )::bigint AS returned_c
+      FROM pivoted p
+      CROSS JOIN bounds b
+      GROUP BY p.character_id
     )
     SELECT
-      p.character_id,
-      COUNT(*) FILTER (
-        WHERE p.end_first
-              <= b.now_at - (${params.return_window_hours}::int * interval '1 hour')
-      )::bigint AS k_c,
-      COUNT(*) FILTER (
-        WHERE p.end_first
-              <= b.now_at - (${params.return_window_hours}::int * interval '1 hour')
-          AND p.start_second IS NOT NULL
-          AND p.start_second
-              <= p.end_first + (${params.return_window_hours}::int * interval '1 hour')
-      )::bigint AS returned_c
-    FROM pivoted p, bounds b
-    GROUP BY p.character_id
+      c.character_id,
+      COALESCE(d.n_c, 0)::bigint AS n_c,
+      d.d30_raw,
+      COALESCE(r.k_c, 0)::bigint AS k_c,
+      COALESCE(r.returned_c, 0)::bigint AS returned_c
+    FROM active_cards c
+    LEFT JOIN depth_by_card d ON d.character_id = c.character_id
+    LEFT JOIN returns_by_card r ON r.character_id = c.character_id
   `;
+
+  return rows.map((row) => {
+    const returnSampleSize = Number(row.k_c);
+    return {
+      characterId: row.character_id,
+      sampleSize: Number(row.n_c),
+      d30Raw: row.d30_raw === null ? null : Number(row.d30_raw),
+      returnSampleSize,
+      // 分母为 0 时留 null：「没有样本」与「回访率为 0」在收缩时是两种待遇。
+      r48Raw: returnSampleSize > 0 ? Number(row.returned_c) / returnSampleSize : null,
+    };
+  });
 }
 
 /**
@@ -383,11 +374,15 @@ export async function persistRankingScores(
   await db.$executeRaw`
     INSERT INTO miniapp_features.character_ranking_scores (
       character_id, n_c, d30_raw, d30_shrunk, k_c, r48_raw, score,
-      window_days, min_users, computed_at
+      window_days, min_users, computed_at, quality_version,
+      trusted_score, trusted_sample_size, trusted_at
     )
     SELECT
       t.character_id, t.n_c, t.d30_raw, t.d30_shrunk, t.k_c, t.r48_raw, t.score,
-      ${params.window_days}::int, ${params.min_users}::int, now()
+      ${params.window_days}::int, ${params.min_users}::int, now(), 'qualified-v1',
+      CASE WHEN t.n_c >= ${params.min_users}::int THEN t.score END,
+      CASE WHEN t.n_c >= ${params.min_users}::int THEN t.n_c END,
+      CASE WHEN t.n_c >= ${params.min_users}::int THEN now() END
     FROM jsonb_to_recordset(${payload}::jsonb) AS t(
       character_id uuid,
       n_c          integer,
@@ -408,14 +403,34 @@ export async function persistRankingScores(
       score       = EXCLUDED.score,
       window_days = EXCLUDED.window_days,
       min_users   = EXCLUDED.min_users,
-      computed_at = EXCLUDED.computed_at
+      computed_at = EXCLUDED.computed_at,
+      quality_version = EXCLUDED.quality_version,
+      trusted_score = COALESCE(EXCLUDED.trusted_score,
+        miniapp_features.character_ranking_scores.trusted_score),
+      trusted_sample_size = COALESCE(EXCLUDED.trusted_sample_size,
+        miniapp_features.character_ranking_scores.trusted_sample_size),
+      trusted_at = COALESCE(EXCLUDED.trusted_at,
+        miniapp_features.character_ranking_scores.trusted_at)
   `;
 
   await db.$executeRaw`
     DELETE FROM miniapp_features.character_ranking_scores AS target
-    WHERE NOT EXISTS (
+    WHERE target.trusted_at IS NULL AND NOT EXISTS (
       SELECT 1
       FROM jsonb_to_recordset(${payload}::jsonb) AS t(character_id uuid)
+      WHERE t.character_id = target.character_id
+    )
+  `;
+
+  // No recent traffic is not new evidence of poor quality. Keep the last qualified observation,
+  // while clearing the current sample so dormant cards cannot pretend to have fresh evidence.
+  await db.$executeRaw`
+    UPDATE miniapp_features.character_ranking_scores AS target SET
+      n_c = 0, d30_raw = NULL, k_c = 0, r48_raw = NULL,
+      quality_version = 'qualified-v1', computed_at = now(),
+      window_days = ${params.window_days}::int, min_users = ${params.min_users}::int
+    WHERE target.trusted_at IS NOT NULL AND NOT EXISTS (
+      SELECT 1 FROM jsonb_to_recordset(${payload}::jsonb) AS t(character_id uuid)
       WHERE t.character_id = target.character_id
     )
   `;

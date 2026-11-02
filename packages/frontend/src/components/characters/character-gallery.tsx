@@ -4,7 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Search, Sparkles, X } from 'lucide-react';
+import { ArrowRight, RefreshCw, Search, Sparkles, Undo2, X } from 'lucide-react';
 
 import { DEFAULT_LOBBY_SORT, type LobbySort } from '@miniapp/shared';
 
@@ -17,6 +17,8 @@ import {
   useLobbyLatestBadgeQuery,
   useMarkLobbyLatestSeenMutation,
 } from '@/lib/api/characters';
+import { useLobbyRecommendation } from '@/lib/api/lobby-recommendations';
+import { lobbyViewerScope, projectLobbyOrder } from '@/lib/lobby-recommendation-state';
 import { markCriticalSettled, useEntryEnrichReady } from '@/lib/entry-phase';
 import { chatEntryPath } from '@/lib/chat-entry';
 import { useCharacterSocialsQuery } from '@/lib/api/character-social';
@@ -39,6 +41,7 @@ import {
 } from '@/lib/lobby-return';
 
 import { CharacterCard } from './character-card';
+import { useLobbyExposures } from './use-lobby-exposures';
 import type { CharacterDetailTab } from './character-detail-sheet';
 import { RoleplayHeader } from '@/components/roleplay/roleplay-header';
 import { RecentConversationCard } from '@/components/roleplay/recent-conversation-card';
@@ -151,6 +154,11 @@ export function CharacterGallery() {
   const [sort, setSort] = useState<LobbySort>(
     restoreSnapshot?.sort ?? savedDiscovery.sort ?? DEFAULT_LOBBY_SORT
   );
+  const [query, setQuery] = useState(restoreSnapshot?.query ?? savedDiscovery.query);
+  const recommendation = useLobbyRecommendation({
+    enabled: sort === 'recommended',
+    restoreBatchId: restoreSnapshot?.recommendationBatchId,
+  });
   const [criticalVisualSettled, setCriticalVisualSettled] = useState(false);
   const { data, isLoading, isError, isFetching, isFetched, isFetchedAfterMount, refetch } =
     useCharactersQuery(sort);
@@ -182,12 +190,11 @@ export function CharacterGallery() {
   const lobbyFresh = useFreshAfterFetch(isFetching, data !== undefined, isError);
   usePageReady(
     '/characters',
-    data !== undefined && !isError,
+    data !== undefined && !isError && recommendation.ready,
     lobbyFresh,
     isError,
     data !== undefined && (isFetching || isRestoring) ? 'cache' : lobbyFresh ? 'fetch' : 'unknown'
   );
-  const [query, setQuery] = useState(restoreSnapshot?.query ?? savedDiscovery.query);
   const generalScrollRestored = useRef(false);
   useEffect(() => {
     rememberRoleplayDiscovery({ sort, query, favoritesOnly: false });
@@ -199,6 +206,24 @@ export function CharacterGallery() {
   const enteringRef = useRef(false);
   const restoredAnchorIdRef = useRef<string | null>(null);
   const restoreCalibrationUsedRef = useRef(false);
+  const mountedRef = useRef(true);
+  const changingBatchRef = useRef(false);
+  const [manualBatchChanged, setManualBatchChanged] = useState(false);
+  const [batchNotice, setBatchNotice] = useState<{
+    message: string;
+    undoId?: string;
+    retry?: 'refresh' | 'undo';
+  } | null>(null);
+  const noticeTimer = useRef<ReturnType<typeof setTimeout>>();
+  const previousView = useRef<{ batchId: string; scrollY: number; renderLimit: number }>();
+  const batchScroll = useRef<number | null>(null);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      clearTimeout(noticeTimer.current);
+    };
+  }, []);
 
   const latestBadge = useLobbyLatestBadgeQuery({ enabled: enrichReady });
   const { mutate: markLatestSeen } = useMarkLobbyLatestSeenMutation();
@@ -218,7 +243,27 @@ export function CharacterGallery() {
     if (previewId) router.prefetch(chatEntryPath(previewId));
   }, [previewId, router]);
 
-  const characters = useMemo(() => data?.characters ?? [], [data?.characters]);
+  const characters = useMemo(() => {
+    const catalogue = data?.characters ?? [];
+    if (sort !== 'recommended' || query.trim()) return catalogue;
+    const orderedIds =
+      restoreSnapshot?.recommendationBatchId && !recommendation.settled
+        ? restoreSnapshot.loadedCharacterIds
+        : recommendation.data?.enabled
+          ? recommendation.data.character_ids
+          : !manualBatchChanged && restoreSnapshot?.sort === 'recommended'
+            ? restoreSnapshot.loadedCharacterIds
+            : undefined;
+    return projectLobbyOrder(catalogue, orderedIds);
+  }, [
+    data?.characters,
+    manualBatchChanged,
+    query,
+    recommendation.data,
+    recommendation.settled,
+    restoreSnapshot,
+    sort,
+  ]);
 
   // 弹层用列表里已有的摘要即时打开，详情接口只补开场白。
   const previewSummary = useMemo(
@@ -282,17 +327,17 @@ export function CharacterGallery() {
   }, [characters, query]);
 
   useLayoutEffect(() => {
-    if (generalScrollRestored.current || restoreSnapshot || !data) return;
+    if (generalScrollRestored.current || restoreSnapshot || !data || !recommendation.ready) return;
     generalScrollRestored.current = true;
     restoreRoleplayScroll('/characters');
-  }, [data, restoreSnapshot]);
+  }, [data, recommendation.ready, restoreSnapshot]);
 
   const [renderLimit, setRenderLimit] = useState(listBudget.initialRenderCount);
   // 从详情返回靠锚点卡片还原滚动位置：锚点及其之前的卡必须已挂载，之后只需再多挂约一屏。
   // 不能整表一次挂全：整页在 invisible 状态下同步挂几十上百张卡，返回时就是“闪一下再卡一下”。
   // 该值只依赖挂载时持有的快照，恢复结束后不会回落，避免已显示的卡被卸载。
   const restoreFloor = useMemo(() => {
-    if (!restoreSnapshot) return 0;
+    if (!restoreSnapshot || manualBatchChanged) return 0;
     const candidateIds = [
       restoreSnapshot.anchorCharacterId,
       ...restoreSnapshot.neighborCharacterIds,
@@ -303,7 +348,7 @@ export function CharacterGallery() {
     }
     // 锚点和邻居都不在当前列表里（数据已变）：走 scrollY 兜底，需要足够高度，只能全量。
     return filtered.length > 0 ? Number.POSITIVE_INFINITY : 0;
-  }, [filtered, restoreSnapshot]);
+  }, [filtered, manualBatchChanged, restoreSnapshot]);
   const effectiveLimit = Math.max(renderLimit, restoreFloor);
   // 搜索时结果通常很少且用户在等结果，直接全量，不让命中的卡被分批延迟。
   const renderAll = query.trim() !== '';
@@ -312,6 +357,88 @@ export function CharacterGallery() {
     [filtered, renderAll, effectiveLimit]
   );
   const criticalCharacterId = visibleCharacters[0]?.id;
+
+  useLobbyExposures({
+    enabled:
+      sort === 'recommended' &&
+      !query.trim() &&
+      recommendation.ready &&
+      recommendation.settled &&
+      recommendation.data?.enabled === true &&
+      !isRestoring &&
+      !previewId &&
+      !enteringId,
+    scope: recommendation.scope,
+    batchId: recommendation.data?.batch_id,
+    characterIds: visibleCharacters.map((character) => character.id),
+  });
+
+  useLayoutEffect(() => {
+    if (batchScroll.current === null) return;
+    window.scrollTo({ top: batchScroll.current, behavior: 'auto' });
+    batchScroll.current = null;
+  }, [recommendation.data?.batch_id]);
+
+  const changeBatch = async (action: 'refresh' | 'undo' = 'refresh', undoId?: string) => {
+    if (recommendation.pending || changingBatchRef.current) return;
+    changingBatchRef.current = true;
+    const scopeAtStart = recommendation.scope;
+    clearTimeout(noticeTimer.current);
+    const before = recommendation.data;
+    const view = {
+      batchId: before?.batch_id ?? '',
+      scrollY: window.scrollY,
+      renderLimit: effectiveLimit,
+    };
+    const result =
+      action === 'undo' && undoId
+        ? await recommendation.undo(undoId)
+        : await recommendation.refresh();
+    changingBatchRef.current = false;
+    if (!mountedRef.current || lobbyViewerScope() !== scopeAtStart) return;
+    if (!result) {
+      setBatchNotice({
+        message: action === 'undo' ? '暂时没能撤回，再试一下' : '没换成功，原来的还在',
+        retry: action,
+        undoId,
+      });
+      return;
+    }
+    // A successful response can contain the current batch when the undo window
+    // expired or another window moved on. Only the requested ID proves restoration.
+    if (action === 'undo' && (!result.enabled || result.batch_id !== undoId)) {
+      previousView.current = undefined;
+      batchScroll.current = null;
+      setBatchNotice({ message: '推荐已更新，暂时不能撤回' });
+      noticeTimer.current = setTimeout(() => setBatchNotice(null), 8000);
+      return;
+    }
+    clearLobbyReturnSnapshot();
+    setManualBatchChanged(true);
+    restoreCalibrationUsedRef.current = true;
+    if (action === 'undo') {
+      const previous = previousView.current;
+      batchScroll.current = previous?.scrollY ?? 0;
+      setRenderLimit(previous?.renderLimit ?? listBudget.initialRenderCount);
+      previousView.current = undefined;
+      setBatchNotice({ message: '已回到上一批' });
+    } else {
+      previousView.current = view;
+      batchScroll.current = 0;
+      setRenderLimit(listBudget.initialRenderCount);
+      setBatchNotice({
+        message: result.batch_id !== before?.batch_id ? '换一批，看看新的相遇' : '推荐已更新',
+        undoId: result.previous_batch_id ?? undefined,
+      });
+    }
+    // The response may already have committed before the event continuation runs.
+    window.requestAnimationFrame(() => {
+      if (!mountedRef.current || batchScroll.current === null) return;
+      window.scrollTo({ top: batchScroll.current, behavior: 'auto' });
+      batchScroll.current = null;
+    });
+    noticeTimer.current = setTimeout(() => setBatchNotice(null), 8000);
+  };
 
   useCharacterSocialsQuery(
     visibleCharacters.map((character) => character.id),
@@ -383,17 +510,17 @@ export function CharacterGallery() {
   );
 
   useLayoutEffect(() => {
-    if (!isRestoring || isLoading) return;
+    if (!isRestoring || isLoading || !recommendation.ready) return;
     restoreFromSnapshot(false);
-  }, [isLoading, isRestoring, restoreFromSnapshot]);
+  }, [isLoading, isRestoring, recommendation.ready, restoreFromSnapshot]);
 
   useEffect(() => {
-    if (!isRestoring) return;
+    if (!isRestoring || !recommendation.ready) return;
     const timer = window.setTimeout(() => {
       restoreFromSnapshot(true);
     }, RESTORE_DEADLINE_MS);
     return () => window.clearTimeout(timer);
-  }, [isRestoring, restoreFromSnapshot]);
+  }, [isRestoring, recommendation.ready, restoreFromSnapshot]);
 
   const cancelRestore = useCallback(() => {
     if (!isRestoring) return;
@@ -416,9 +543,10 @@ export function CharacterGallery() {
         anchorViewportTop: rect?.top ?? 0,
         scrollY: window.scrollY,
         viewportWidth: window.innerWidth,
+        recommendationBatchId: sort === 'recommended' ? recommendation.data?.batch_id : null,
       });
     },
-    [filtered, query, sort]
+    [filtered, query, recommendation.data?.batch_id, sort]
   );
 
   const handleImageSettled = useCallback(
@@ -555,13 +683,26 @@ export function CharacterGallery() {
           );
         })}
       </div>
-      <Link
-        href="/wishes?from=characters"
-        className="ml-auto inline-flex min-h-11 shrink-0 items-center gap-1 rounded-full px-2 text-xs text-primary/90 active:bg-primary/10"
-      >
-        <Sparkles className="size-3.5" strokeWidth={1.7} aria-hidden />
-        许个愿
-      </Link>
+      {sort === 'recommended' && !query.trim() && recommendation.data?.enabled ? (
+        <button
+          type="button"
+          aria-label="换一批推荐角色"
+          aria-busy={recommendation.pending}
+          disabled={recommendation.pending || !recommendation.ready}
+          onClick={() => void changeBatch()}
+          className="ml-auto inline-flex min-h-11 shrink-0 items-center justify-center gap-1.5 rounded-full px-2.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-card hover:text-foreground active:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+        >
+          <RefreshCw
+            className={cn(
+              'size-3.5',
+              recommendation.pending && 'animate-spin motion-reduce:animate-none'
+            )}
+            strokeWidth={1.7}
+            aria-hidden
+          />
+          换一批
+        </button>
+      ) : null}
     </div>
   );
 
@@ -578,10 +719,38 @@ export function CharacterGallery() {
         fetching={history.isFetching}
         onRetry={() => void history.refetch()}
       />
+      {batchNotice && sort === 'recommended' ? (
+        <div
+          role="status"
+          className="fixed inset-x-4 bottom-[calc(var(--app-nav-space)+0.75rem)] z-40 mx-auto flex max-w-sm items-center justify-between gap-3 rounded-2xl border border-white/10 bg-[#242125]/95 px-4 py-1.5 text-[12px] text-foreground shadow-lg backdrop-blur-xl"
+        >
+          <span>{batchNotice.message}</span>
+          {batchNotice.retry ? (
+            <button
+              type="button"
+              disabled={recommendation.pending}
+              onClick={() => void changeBatch(batchNotice.retry, batchNotice.undoId)}
+              className="min-h-11 shrink-0 rounded-lg px-2 font-medium text-primary disabled:opacity-50"
+            >
+              重试
+            </button>
+          ) : batchNotice.undoId ? (
+            <button
+              type="button"
+              disabled={recommendation.pending}
+              onClick={() => void changeBatch('undo', batchNotice.undoId)}
+              className="inline-flex min-h-11 shrink-0 items-center gap-1 rounded-lg px-2 font-medium text-primary disabled:opacity-50"
+            >
+              <Undo2 className="size-3.5" aria-hidden />
+              撤回
+            </button>
+          ) : null}
+        </div>
+      ) : null}
     </>
   );
 
-  if (isLoading) {
+  if (isLoading || (sort === 'recommended' && !query.trim() && !recommendation.ready)) {
     return (
       <>
         {listHeader}
@@ -603,7 +772,7 @@ export function CharacterGallery() {
     );
   }
 
-  if (isError) {
+  if (isError && !data) {
     return (
       <>
         {listHeader}
@@ -683,6 +852,18 @@ export function CharacterGallery() {
       {/* 渲染哨兵放在网格外：恢复滚动期间网格带 invisible，哨兵不受影响。 */}
       {hasMoreToRender ? (
         <div ref={loadMoreRef} aria-hidden="true" className="h-px w-full" />
+      ) : null}
+      {!hasMoreToRender && !query.trim() && filtered.length > 0 ? (
+        <div className="mx-auto -mt-2 flex w-full max-w-screen-xl items-center justify-center gap-1.5 px-4 pb-8 text-[12px]">
+          <p className="text-muted-foreground/70">还没找到想聊的角色？</p>
+          <Link
+            href="/wishes?from=characters"
+            className="inline-flex min-h-11 min-w-20 items-center justify-center gap-1.5 rounded-full px-2 font-medium text-primary/85 transition-colors hover:text-primary active:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            许个愿
+            <ArrowRight className="size-3.5" strokeWidth={1.6} aria-hidden />
+          </Link>
+        </div>
       ) : null}
 
       {detailLoaded ? (

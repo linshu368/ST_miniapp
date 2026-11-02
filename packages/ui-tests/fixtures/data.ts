@@ -40,6 +40,21 @@ export const WISH_IDS = {
 } as const;
 
 export const scenarios = {
+  'lobby-rotation': {
+    label: '推荐优质轮换',
+    description: '36张虚构角色，24小时轮换、换一批、撤回与试聊返回',
+    path: '/characters',
+  },
+  'lobby-rotation-error': {
+    label: '换批失败恢复',
+    description: '首次手动换批失败，保留原列表并可重试',
+    path: '/characters',
+  },
+  'lobby-rotation-lost-response': {
+    label: '换批丢响应',
+    description: '批次已经更换但响应失败，同请求重试不多换一次',
+    path: '/characters',
+  },
   wishes: {
     label: '角色心愿墙',
     description: '匿名公开许愿、我的心愿、支持、用作品回应与站内通知（虚构数据）',
@@ -281,7 +296,7 @@ export function makeChatSessionSamples(base: ChatSession): ChatSession[] {
   });
 }
 
-export function makeData(api: string) {
+export function makeData(api: string, characterCount = 18) {
   const now = stamp();
   const dramas: DramaDetail[] = (
     [
@@ -340,7 +355,7 @@ export function makeData(api: string) {
       })
     ),
   }));
-  const characters: CharacterDetail[] = Array.from({ length: 18 }, (_, index) => ({
+  const characters: CharacterDetail[] = Array.from({ length: characterCount }, (_, index) => ({
     id:
       index === 0
         ? IDS.character

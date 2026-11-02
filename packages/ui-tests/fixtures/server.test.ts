@@ -219,6 +219,54 @@ test('branch fixture retains at most 50 earlier turns and replays an uncertain c
   );
 });
 
+test('lobby fixture preserves 24h batches, lost-response idempotency and exposure ownership', async () => {
+  await post('/__preview/reset', { scenario: 'lobby-rotation-lost-response' });
+  const firstId = '74000000-0000-4000-8000-000000000001';
+  const nextId = '74000000-0000-4000-8000-000000000002';
+  const endpoint = '/api/characters/recommendation';
+  const first = (await (await post(endpoint, { action: 'open', request_id: firstId })).json()).data;
+  assert.equal(first.character_ids.length, 36);
+  assert.equal(Date.parse(first.expires_at) - Date.parse(first.generated_at), 86400_000);
+  const refresh = { action: 'refresh', request_id: nextId, expected_batch_id: firstId };
+  assert.equal((await post(endpoint, refresh)).status, 503);
+  const retry = (await (await post(endpoint, refresh)).json()).data;
+  assert.equal(retry.batch_id, nextId);
+  assert.equal(new Set(retry.character_ids).size, 36);
+  assert.equal(retry.head_ids.filter((id: string) => first.head_ids.includes(id)).length, 0);
+  assert.equal((await (await fetch(api + '/__preview/state')).json()).lobby.batches_created, 2);
+  const exposure = { batch_id: nextId, character_ids: [retry.character_ids[0]] };
+  assert.equal((await (await post(endpoint + '/exposures', exposure)).json()).data.accepted, 1);
+  assert.equal((await (await post(endpoint + '/exposures', exposure)).json()).data.accepted, 0);
+  assert.equal(
+    (
+      await (
+        await post(endpoint + '/exposures', {
+          ...exposure,
+          batch_id: '74000000-0000-4000-8000-000000000099',
+        })
+      ).json()
+    ).data.accepted,
+    0
+  );
+  await post('/__preview/lobby', { advance_hours: 25 });
+  const resumed = (
+    await (
+      await post(endpoint, {
+        action: 'resume',
+        request_id: '74000000-0000-4000-8000-000000000003',
+        expected_batch_id: firstId,
+      })
+    ).json()
+  ).data;
+  assert.equal(resumed.batch_id, firstId);
+  const renewed = (
+    await (
+      await post(endpoint, { action: 'open', request_id: '74000000-0000-4000-8000-000000000004' })
+    ).json()
+  ).data;
+  assert.notEqual(renewed.batch_id, nextId);
+});
+
 test('wish fixtures expose anonymous public wishes, scope mine by author and keep support/response retries idempotent', async () => {
   await post('/__preview/reset', { scenario: 'wishes' });
   const wall = CharacterWishListDataSchema.parse(

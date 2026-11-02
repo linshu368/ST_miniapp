@@ -5,6 +5,9 @@ import { resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import {
+  LobbyRecommendationRequestSchema,
+  LobbyRecommendationExposuresSchema,
+  type LobbyRecommendationData,
   CharacterWishQuerySchema,
   CreateCharacterWishSchema,
   SupportCharacterWishSchema,
@@ -91,6 +94,29 @@ export function createPreviewServer(apiPort: number, appPort: number) {
   const app = `http://${HOST}:${appPort}`;
   let data = makeData(api);
   let scenario: Scenario = 'standard';
+  let lobbyCurrent: LobbyRecommendationData | null = null;
+  let lobbyPrevious: LobbyRecommendationData | null = null;
+  let lobbyBatchCount = 0;
+  let lobbyClockOffset = 0;
+  let lobbyFailureDelivered = false;
+  const lobbyActions: { action: string; request_id: string; expected_batch_id?: string | null }[] =
+    [];
+  const lobbyExposures = new Map<
+    string,
+    { batch_id: string; character_id: string; seen_at: string }
+  >();
+  const lobbyNow = () => Date.now() + lobbyClockOffset;
+  const lobbyEnabled = () => scenario.startsWith('lobby-rotation');
+  const lobbyDisabled: LobbyRecommendationData = {
+    enabled: false,
+    degraded: false,
+    batch_id: null,
+    generated_at: null,
+    expires_at: null,
+    character_ids: [],
+    head_ids: [],
+    previous_batch_id: null,
+  };
   const creatorOwner = '70000000-0000-4000-8000-000000000001';
   const creatorCards = new Map<string, CreatorCharacter>();
   const creatorCovers = new Map<string, CreatorCoverAsset>();
@@ -299,7 +325,14 @@ export function createPreviewServer(apiPort: number, appPort: number) {
     epoch += 1;
     for (const stream of streams) stream.end();
     streams.clear();
-    data = makeData(api);
+    data = makeData(api, next.startsWith('lobby-rotation') ? 36 : 18);
+    lobbyCurrent = null;
+    lobbyPrevious = null;
+    lobbyBatchCount = 0;
+    lobbyClockOffset = 0;
+    lobbyFailureDelivered = false;
+    lobbyActions.length = 0;
+    lobbyExposures.clear();
     creatorCards.clear();
     creatorCovers.clear();
     wishes.clear();
@@ -620,6 +653,13 @@ export function createPreviewServer(apiPort: number, appPort: number) {
           wallet: data.wallet,
           requests,
           unhandled,
+          lobby: {
+            current: lobbyCurrent,
+            previous: lobbyPrevious,
+            batches_created: lobbyBatchCount,
+            actions: lobbyActions,
+            exposures: [...lobbyExposures.values()],
+          },
         });
         return;
       }
@@ -634,6 +674,18 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         }
         reset(requested);
         json(res, 200, { scenario });
+        return;
+      }
+      if (path === '/__preview/lobby' && method === 'POST') {
+        // Local fixture controls only; no environment, account or remote data access.
+        const control = body as { advance_hours?: number; remove_character_id?: string };
+        if (typeof control.advance_hours === 'number' && Number.isFinite(control.advance_hours))
+          lobbyClockOffset += Math.max(0, Math.min(2400, control.advance_hours)) * 3600_000;
+        if (control.remove_character_id)
+          data.characters = data.characters.filter(
+            (card) => card.id !== control.remove_character_id
+          );
+        ok(res, { now: new Date(lobbyNow()).toISOString() });
         return;
       }
       if (path === '/' && method === 'GET') {
@@ -1408,6 +1460,119 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         res.end(
           `${JSON.stringify(scenario === 'creator-polish-partial' ? { type: 'error', message: '这次润色未完整完成，可以采用已有内容后继续编辑。' } : { type: 'done' })}\n`
         );
+        return;
+      }
+      if (path === '/api/characters/recommendation' && method === 'POST') {
+        const input = LobbyRecommendationRequestSchema.parse(body);
+        lobbyActions.push({
+          action: input.action,
+          request_id: input.request_id,
+          expected_batch_id: input.expected_batch_id,
+        });
+        if (!lobbyEnabled()) {
+          ok(res, lobbyDisabled);
+          return;
+        }
+        if (
+          input.action === 'refresh' &&
+          scenario === 'lobby-rotation-error' &&
+          !lobbyFailureDelivered
+        ) {
+          lobbyFailureDelivered = true;
+          fail(res, 503, 'SERVICE_UNAVAILABLE', '这次没换成功，请再试一下');
+          return;
+        }
+        const available = new Set(data.characters.map((card) => card.id));
+        const respond = (batch: LobbyRecommendationData) =>
+          ok(res, {
+            ...batch,
+            character_ids: batch.character_ids.filter((id) => available.has(id)),
+            head_ids: batch.character_ids.filter((id) => available.has(id)).slice(0, 12),
+          });
+        if (
+          input.action === 'resume' &&
+          lobbyPrevious &&
+          input.expected_batch_id === lobbyPrevious.batch_id
+        ) {
+          respond(lobbyPrevious);
+          return;
+        }
+        if (
+          input.action === 'undo' &&
+          lobbyCurrent &&
+          lobbyPrevious &&
+          input.expected_batch_id === lobbyCurrent.batch_id &&
+          input.restore_batch_id === lobbyPrevious.batch_id &&
+          lobbyNow() - Date.parse(lobbyCurrent.generated_at!) <= 30_000
+        ) {
+          const restored = lobbyPrevious;
+          lobbyPrevious = lobbyCurrent;
+          lobbyCurrent = { ...restored, previous_batch_id: null };
+          respond(lobbyCurrent);
+          return;
+        }
+        const canRefresh =
+          input.action === 'refresh' && input.expected_batch_id === lobbyCurrent?.batch_id;
+        const expired =
+          input.action === 'open' &&
+          lobbyCurrent?.expires_at &&
+          Date.parse(lobbyCurrent.expires_at) <= lobbyNow();
+        if (
+          !lobbyCurrent ||
+          (lobbyCurrent.batch_id !== input.request_id && (canRefresh || expired))
+        ) {
+          const ids = data.characters.map((card) => card.id);
+          // Deliberately deterministic UI fixture; production weighted selection has separate real tests.
+          const offset = (lobbyBatchCount * 12) % Math.max(ids.length, 1);
+          const ordered = [...ids.slice(offset), ...ids.slice(0, offset)];
+          lobbyPrevious = lobbyCurrent;
+          lobbyCurrent = {
+            enabled: true,
+            degraded: false,
+            batch_id: input.request_id,
+            generated_at: new Date(lobbyNow()).toISOString(),
+            expires_at: new Date(lobbyNow() + 86400_000).toISOString(),
+            character_ids: ordered,
+            head_ids: ordered.slice(0, 12),
+            previous_batch_id: lobbyPrevious?.batch_id ?? null,
+          };
+          lobbyBatchCount += 1;
+          if (
+            input.action === 'refresh' &&
+            scenario === 'lobby-rotation-lost-response' &&
+            !lobbyFailureDelivered
+          ) {
+            lobbyFailureDelivered = true;
+            fail(res, 503, 'SERVICE_UNAVAILABLE', '批次响应暂时中断，请重试');
+            return;
+          }
+        }
+        respond(lobbyCurrent);
+        return;
+      }
+      if (path === '/api/characters/recommendation/exposures' && method === 'POST') {
+        const input = LobbyRecommendationExposuresSchema.parse(body);
+        const batch = [lobbyCurrent, lobbyPrevious].find(
+          (entry) => entry?.batch_id === input.batch_id
+        );
+        let accepted = 0;
+        if (batch)
+          for (const id of input.character_ids) {
+            const key = `${input.batch_id}:${id}`;
+            if (
+              batch.character_ids.includes(id) &&
+              data.characters.some((card) => card.id === id) &&
+              !lobbyExposures.has(key)
+            ) {
+              lobbyExposures.set(key, {
+                batch_id: input.batch_id,
+                character_id: id,
+                seen_at: new Date(lobbyNow()).toISOString(),
+              });
+              accepted += 1;
+            }
+          }
+        ok(res, { accepted });
         return;
       }
       if (path === '/api/characters/latest-badge' || path === '/api/characters/latest-seen') {

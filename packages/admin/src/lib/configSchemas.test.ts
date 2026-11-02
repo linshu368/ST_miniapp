@@ -3,7 +3,10 @@ import {
   CREATOR_REVIEW_PROMPT_KEY,
   CreatorReviewPromptSchema,
   DEFAULT_CREATOR_REVIEW_PROMPT,
+  DEFAULT_LOBBY_RANKING_PARAMS,
+  DEFAULT_LOBBY_ROTATION_CONFIG,
 } from '@miniapp/shared';
+import { resolveLobbyRankingEditorValue } from '../components/LobbyRankingParamsEditor';
 import {
   configMetadata,
   configSchemas,
@@ -15,6 +18,59 @@ import {
   EditableImagePlazaTagConfigSchema,
   EditableModelCatalogSchema,
 } from './configSchemas';
+
+describe('lobby rotation config editing', () => {
+  it('opens legacy ranking settings with full rotation and a 24 hour interval', () => {
+    const value = resolveLobbyRankingEditorValue(DEFAULT_LOBBY_RANKING_PARAMS);
+    expect(value.rotation).toEqual(DEFAULT_LOBBY_ROTATION_CONFIG);
+    expect(value.rotation).toMatchObject({
+      enabled: true,
+      interval_hours: 24,
+      rollout_percent: 100,
+    });
+    expect(configSchemas.lobby_ranking_params.safeParse(value).success).toBe(true);
+  });
+
+  it('preserves saved parameters while normalizing retired rollout controls', () => {
+    const rotation = {
+      enabled: false,
+      interval_hours: 48,
+      max_repeat: 1,
+      exploration_count: 0,
+      rollout_percent: 25,
+    };
+    const value = resolveLobbyRankingEditorValue({
+      ...DEFAULT_LOBBY_RANKING_PARAMS,
+      rotation,
+      min_users: 30,
+      first_touch_lookback_days: null,
+    });
+    const expectedRotation = { ...rotation, enabled: true, rollout_percent: 100 };
+    expect(value.rotation).toEqual(expectedRotation);
+    expect(value.min_users).toBe(30);
+    expect(value.first_touch_lookback_days).toBeNull();
+    expect(configSchemas.lobby_ranking_params.parse(value)).toMatchObject({
+      rotation: expectedRotation,
+    });
+  });
+
+  it('retains the legacy candidate list and independent fixed choice through save validation', () => {
+    const characterIds = Array.from(
+      { length: 8 },
+      (_, index) => `10000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`
+    );
+    expect(configSchemas.lobby_pinned_characters.parse({ character_ids: characterIds })).toEqual({
+      character_ids: characterIds,
+    });
+    expect(
+      configSchemas.lobby_pinned_characters.parse({
+        character_ids: characterIds,
+        fixed_character_id: characterIds[5],
+      })
+    ).toMatchObject({ character_ids: characterIds, fixed_character_id: characterIds[5] });
+    expect(configMetadata.lobby_pinned_characters.label).toBe('推荐主推候选');
+  });
+});
 
 describe('editable image plaza tags', () => {
   it('preserves blank text, whitespace and duplicate IDs while strict save validation rejects them', () => {

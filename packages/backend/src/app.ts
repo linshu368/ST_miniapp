@@ -6,6 +6,7 @@ import { fastifyLoggerOptions } from './lib/logger.js';
 import { ok } from '@miniapp/shared';
 import type { HealthData } from '@miniapp/shared';
 import characterRoutes from './routes/characters.js';
+import lobbyRecommendationRoutes from './routes/lobby-recommendation.js';
 import creatorCharacterRoutes from './routes/creator-characters.js';
 import characterWishRoutes from './routes/character-wishes.js';
 import creatorAnalyticsRoutes from './routes/creator-analytics.js';
@@ -129,6 +130,7 @@ export async function buildApp() {
   });
 
   await app.register(characterRoutes);
+  await app.register(lobbyRecommendationRoutes);
   await app.register(creatorCharacterRoutes);
   await app.register(characterWishRoutes);
   await app.register(creatorAnalyticsRoutes);

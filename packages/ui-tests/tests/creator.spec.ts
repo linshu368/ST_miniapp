@@ -581,7 +581,15 @@ test('@creator @wishes @layout 心愿墙说明匿名公开、支持想玩与本�
 }) => {
   await preview.scenario('wishes');
   await page.goto('/characters');
-  await page.getByRole('link', { name: '许个愿', exact: true }).first().click();
+  const wishEntry = page.getByRole('link', { name: '许个愿', exact: true });
+  // The wish invitation belongs after browsing the complete list, not next to sorting.
+  await expect
+    .poll(async () => {
+      await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+      return wishEntry.count();
+    })
+    .toBe(1);
+  await wishEntry.click();
   await expect(page.getByRole('heading', { name: '心愿墙', exact: true })).toBeVisible();
   await expect(
     page.getByText('所有心愿均匿名公开，不展示昵称和头像。', { exact: true })
