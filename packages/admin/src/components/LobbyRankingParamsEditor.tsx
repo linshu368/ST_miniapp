@@ -1,4 +1,4 @@
-import { Alert, Card, Col, InputNumber, Row, Select, Space, Switch, Typography } from 'antd';
+import { Alert, Card, Col, InputNumber, Row, Select, Space, Typography } from 'antd';
 import {
   DEFAULT_LOBBY_RANKING_PARAMS,
   DEFAULT_LOBBY_ROTATION_CONFIG,
@@ -21,7 +21,7 @@ interface NumberField {
 type NumberFieldKey = Exclude<keyof LobbyRankingParams, 'first_touch_lookback_days' | 'rotation'>;
 
 const ROTATION_FIELDS: Array<{
-  key: Exclude<keyof LobbyRotationConfig, 'enabled'>;
+  key: 'interval_hours' | 'max_repeat' | 'exploration_count';
   label: string;
   hint: string;
   min: number;
@@ -47,13 +47,6 @@ const ROTATION_FIELDS: Array<{
     hint: '前 12 张中给合格新卡或样本不足卡的机会，最多 2 张；没有合适候选则补优质卡。',
     min: 0,
     max: 2,
-  },
-  {
-    key: 'rollout_percent',
-    label: '启用用户比例（%）',
-    hint: '默认先开放 10%。用户分组保持稳定，其余用户沿用原排序；设为 100% 后全量启用。',
-    min: 0,
-    max: 100,
   },
 ];
 
@@ -215,23 +208,13 @@ export function LobbyRankingParamsEditor(props: {
   return (
     <Space direction="vertical" size="middle" className="editor-stack">
       <Card size="small" title="前几屏优质轮换">
-        <Space align="center" size="middle" style={{ marginBottom: 12 }}>
-          <Switch
-            id="lobby-rotation-enabled"
-            aria-label="启用前几屏优质轮换"
-            checked={rotation.enabled}
-            disabled={props.disabled}
-            onChange={(enabled) => patchRotation({ enabled })}
-          />
-          <label htmlFor="lobby-rotation-enabled">启用优质轮换</label>
-        </Space>
         <Typography.Paragraph type="secondary">
-          在前 12 张中轮换优质角色，让用户少见重复、多发现好卡。保存并发布后按启用比例生效，
-          不需要等待评分重算；关闭后恢复原推荐策略。
+          推荐页会为每位用户轮换前 12 张优质角色，让用户少见重复、多发现好卡。
+          下方参数保存并发布后生效，不需要等待评分重算。
         </Typography.Paragraph>
         <Row gutter={[16, 16]}>
           {ROTATION_FIELDS.map((field) => (
-            <Col xs={24} md={12} key={field.key}>
+            <Col xs={24} md={12} lg={8} key={field.key}>
               <label htmlFor={`lobby-rotation-${field.key}`}>{field.label}</label>
               <InputNumber
                 id={`lobby-rotation-${field.key}`}

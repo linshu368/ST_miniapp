@@ -76,8 +76,10 @@ vi.mock('@/lib/api/conversation-stream', async (importOriginal) => ({
 vi.mock('@/lib/api/conversations', () => ({
   conversationKeys: { detail: (id: string) => ['conversations', 'detail', id] },
   fetchConversationDetail: runtime.fetchDetail,
-  reportConversationFirstToken: runtime.reportFirstToken,
   useCancelConversationTurnMutation: () => ({ mutateAsync: runtime.cancel }),
+}));
+vi.mock('@/lib/api/first-token-reports', () => ({
+  reportConversationFirstToken: runtime.reportFirstToken,
 }));
 vi.mock('@/lib/api/free-quota', () => ({
   freeQuotaKeys: { detail: (id: string) => ['quota', id] },

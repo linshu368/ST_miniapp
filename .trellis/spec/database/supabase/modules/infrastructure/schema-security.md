@@ -77,4 +77,4 @@ last_verified_at: 2026-11-02
 
 ## 前几屏优质轮换（2026-11-02，本地未发布）
 
-20261102_lobby_quality_rotation.sql新增miniapp_features用户批次/曝光摘要，RLS+后端CRUD，用户/角色FK到app_core并级联删除；评分表增加qualified-v1与可信证据三列，不回填旧分。增量validator保留owner/有效ACL/grant option及罕见CHECK OID/convalidated，首次安装包装避免重放抹去后续校验。先迁移后Backend和合格评分刷新再灰度开启，停用保留数据。仅本机PG17验证，未远端执行。
+20261102_lobby_quality_rotation.sql新增miniapp_features用户批次/曝光摘要，RLS+后端CRUD，用户/角色FK到app_core并级联删除；评分表增加qualified-v1与可信证据三列，不回填旧分。增量validator保留owner/有效ACL/grant option及罕见CHECK OID/convalidated，首次安装包装避免重放抹去后续校验。先迁移后Backend与合格评分刷新；应用发布后全量生效，兼容旧配置字段，不修改已执行迁移。故障回退保留数据；远端执行及部署状态以本任务发布记录为准。

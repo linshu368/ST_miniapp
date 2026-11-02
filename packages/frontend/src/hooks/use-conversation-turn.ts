@@ -24,8 +24,8 @@ import {
 } from '@/lib/api/conversation-stream';
 import { ApiClientError } from '@/lib/api/client';
 import { connectionVerifiedAgeMs } from '@/lib/api/connection-warmth';
+import { reportConversationFirstToken } from '@/lib/api/first-token-reports';
 import {
-  reportConversationFirstToken,
   conversationKeys,
   fetchConversationDetail,
   useCancelConversationTurnMutation,

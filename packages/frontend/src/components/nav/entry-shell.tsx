@@ -1,6 +1,6 @@
 import { LobbyShellSkeleton } from '@/components/characters/lobby-shell-skeleton';
 import { DramaListShell } from '@/components/drama/drama-list-shell';
-import { BottomNavShell } from './bottom-nav';
+import { BottomNavShell } from './bottom-nav-shell';
 import { DramaHomeFrame, DramaHomeLoading } from '@/components/drama/drama-home-frame';
 
 /** 只画启动框架；业务组件仍等待 Telegram 初始化，避免提前读取身份或发起请求。 */

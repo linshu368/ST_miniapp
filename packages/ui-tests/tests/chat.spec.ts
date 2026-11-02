@@ -22,6 +22,7 @@ test('@chat @chat-like @layout 回复点赞有48px触区，轻点立即反馈并
   await expect(characterLike).toContainText('128');
   await card.getByRole('button', { name: '查看 林间旅人 的详情', exact: true }).click();
   await page.getByRole('dialog').getByRole('button', { name: '继续对话', exact: true }).click();
+  await page.waitForURL(/\/chat\//);
   const like = page.getByTitle('赞第 1 轮回复', { exact: true });
   await like.scrollIntoViewIfNeeded();
   const box = await like.boundingBox();
@@ -41,6 +42,7 @@ test('@chat @chat-like @layout 回复点赞有48px触区，轻点立即反馈并
   await expect(characterLike).toHaveAttribute('aria-pressed', 'false');
   await card.getByRole('button', { name: '查看 林间旅人 的详情', exact: true }).click();
   await page.getByRole('dialog').getByRole('button', { name: '继续对话', exact: true }).click();
+  await page.waitForURL(/\/chat\//);
   await page.reload();
   await expect(like).toHaveAttribute('aria-pressed', 'true');
   const removed = likeResponse(page);

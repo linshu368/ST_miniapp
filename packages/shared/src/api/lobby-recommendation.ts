@@ -2,21 +2,28 @@ import { z } from 'zod';
 
 export const LOBBY_ROTATION_HEAD_SIZE = 12;
 
-/** Missing config stays off until the qualified score refresh and migration are ready. */
+/** Rotation applies to everyone. Legacy gate fields remain compatible with stored configs. */
 export const LobbyRotationConfigSchema = z.object({
-  enabled: z.boolean(),
+  /** @deprecated Accepted for storage compatibility only; cannot disable rotation. */
+  enabled: z.boolean().transform((): boolean => true),
   interval_hours: z.number().int().min(1).max(168),
   max_repeat: z.number().int().min(0).max(12),
   exploration_count: z.number().int().min(0).max(2),
-  rollout_percent: z.number().int().min(0).max(100),
+  /** @deprecated Accepted for storage compatibility only; everyone receives rotation. */
+  rollout_percent: z
+    .number()
+    .int()
+    .min(0)
+    .max(100)
+    .transform((): number => 100),
 });
 export type LobbyRotationConfig = z.infer<typeof LobbyRotationConfigSchema>;
 export const DEFAULT_LOBBY_ROTATION_CONFIG: LobbyRotationConfig = {
-  enabled: false,
+  enabled: true,
   interval_hours: 24,
   max_repeat: 2,
   exploration_count: 2,
-  rollout_percent: 10,
+  rollout_percent: 100,
 };
 
 export const LobbyRecommendationRequestSchema = z

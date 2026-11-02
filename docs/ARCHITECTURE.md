@@ -477,7 +477,7 @@ frontend 自有 Route Handler：`GET /api/lobby-characters`（白名单 sort 参
 
 ## 7. 工程约定
 
-MiniApp 启动展示与业务数据分离：根 `Providers` 在 Telegram 初始化前输出无请求的 `EntryShell`，角色/短剧列表复用现有骨架、短剧栏目及五项导航；初始化后在绘制机会后发送 SDK `miniApp.ready()`。`lib/perf/startup-timing.ts` 复用 Sentry distribution 上报从文档导航起算的框架可展示/ready 通知耗时，与原 `page.ready.duration` 分开；本地增量 `startup-phases.ts` 记录首次模块/render/SDK/bootstrap 节点，ready 后补充导航、受限资源摘要及分段分布，≥5s 附一条身份隔离的慢启动数值事件，尚待发布验证。P95、后台/离开和原生遮罩观测边界见 [前端性能规范](../.trellis/spec/frontend/app/testing-quality-and-deployment.md#miniapp-启动框架与-p95)。
+MiniApp 启动展示与业务数据分离：根 `Providers` 初始化前输出无请求的 `EntryShell`，角色/短剧列表复用骨架、短剧栏目及五项导航。RootLayout 在 HTML 中独立确认框架绘制机会并发送原生 ready，SDK 保留未支持路径的兜底与去重；`startup-timing.ts` 复用 Sentry distribution 按文档导航起点上报框架/ready 耗时，与 `page.ready.duration` 分开。`startup-phases.ts` 保留模块/render/SDK/bootstrap 节点并在 ready 后补报摘要；v2 阶段不承诺相加为框架耗时，详情与阈值见 [前端性能规范](../.trellis/spec/frontend/app/testing-quality-and-deployment.md#miniapp-启动框架与-p95)。第一、二点已上线（用户确认），第三点分包/展示拆分仅本地；具体边界见本文件末尾开屏章节。
 
 ### 7.1 前端
 
@@ -790,9 +790,9 @@ SSE start携带当轮冻结总预算。客户端若持有旧目录缓存，按�
 
 发布顺序：本地PG/测试→TEST迁移与应用验收→先合dev→生产迁移→Backend/Frontend/Admin→Grafana说明；配置只读核对版本97。回退应用保留兼容RPC，必要时前向修复，不删除账务。
 
-### MiniApp 轻量开屏与启动监控（2026-10-30，本地待发布）
+### MiniApp 轻量开屏与启动分包（2026-10-30）
 
-RootLayout随HTML交付独立框架绘制确认与原生ready脚本，Providers继续原业务初始化并补报真实早期时间戳；SDK负责未支持路径的兜底与通知去重。BrowserTracing首屏后安装，错误捕获和Metrics仍在启动期生效。本轮不改业务分包/预热或CDN；P95≤4秒与>4秒比例的生产基线、v2指标边界及回退见[开屏优化说明](miniapp-startup-performance.md)。
+RootLayout随HTML交付独立框架绘制确认与原生ready脚本，Providers继续原业务初始化并补报真实早期时间戳；SDK负责未支持路径的兜底与通知去重。BrowserTracing首屏后安装，错误捕获和Metrics仍在启动期生效。本次第三点仅拆分非首屏模块与纯展示导航；`EntryShell`引用不挂query/store的`bottom-nav-shell.tsx`，归因网络逻辑在原background阶段动态加载，历史首字回执恢复在原afterFirstScreen门禁后动态导入，聊天直接同步导入回执实现。startParam及邀请pending在清理URL前捕获，支付/身份/Replay核心和当前页面请求不增加等待。保留生产现有移动端策略与底栏串行预热，不新增第二套预热或首帧状态。保留旧基线与第一二点后基线，第三点发布后分别直接比较，不相加。基线来源、版本差异与P95≤4秒验证边界见[开屏优化说明](miniapp-startup-performance.md)。
 
 ### 本地候选：最近十轮消息修订
 
@@ -814,7 +814,7 @@ RootLayout随HTML交付独立框架绘制确认与原生ready脚本，Providers�
 
 原character_ranking_scores增加qualified-v1与可信分/样本/时间。每日job只以资历过滤后达到样本门槛的新证据写可信记录，不回填旧分。当前成熟低分优先；缺近期样本保留过去可信分，超过90天只给探索机会。抽选底线40、头档70是初版值；可轮换头档不足可用其他可靠卡补位。相邻前12目标最多2张重复，质量/库存不足时有标记地放宽，不保证没有库存时硬兑现。金框仍由列表/详情/收藏共用的全局资格出口决定，不按个人前排位置产生。
 
-运营复用`lobby_ranking_params.rotation`（默认关闭、24h、重复2、探索2、灰度10%）与`lobby_pinned_characters.fixed_character_id`最多1固定；原8个ID对轮换用户是加权候选，旧策略保留兼容。迁移先于Backend，新质量job成功后再开启；停用开关回旧策略，保留新表和证据，不DROP。实际生产状态以发布记录为准。固定SQL/算法/HTTP验收`pnpm test:lobby-ranking`，UI `@lobby-rotation`沿用本地环境，未连接真实业务数据。
+运营复用`lobby_ranking_params.rotation`（默认直接全量、24h、重复2、探索2）与`lobby_pinned_characters.fixed_character_id`最多1固定；原8个ID对轮换用户是加权候选，旧策略保留兼容。迁移先于Backend；直接全量生效，新质量证据未就绪时沿用可靠的旧排序。运营不展示启用/灰度开关，保留新表和证据，不DROP。实际生产状态以发布记录为准。固定SQL/算法/HTTP验收`pnpm test:lobby-ranking`，UI `@lobby-rotation`沿用本地环境，未连接真实业务数据。
 
 ### 创作者数据（2026-11-02，本地待发布）
 
@@ -823,3 +823,11 @@ Frontend `/creation/data` → `lib/api/creator-analytics.ts`（用户隔离React
 权威源：app_core.character_creations确定本人归属；experience.chat_history按(session_id,turn_index)合并成功revision，先取最早成功时间再筛窗口，排除作者及branch_inherited_turns范围；分支引用与会话message_count不参与。按同卡玩家>=10轮和>=2自然日衡量深聊/回访，跨卡总人数按人去重。billing.character_creator_rewards将credited_amount按created_at计正、reversal_recovered_amount按reversed_at计负，不把毛奖励/抵扣当到账，不按当前visibility过滤。公开反馈沿用稳定匿名作者；不向浏览器返回玩家ID、私人对话或原始draft。
 
 参数化SQL限本人范围，事务只读、单查询6秒/事务8秒、服务端503明确失败；封面URL在事务外复用签名resolver，失败降级占位。无新DB对象/物化统计/后台任务，不写账务。先Backend后Frontend，回退仅撤入口与只读接口。现有隔离creator验收新增真实Prisma SQL PREPARE/EXECUTE验证；普通backend tests不触远端DB。页面fixture仅在ui-tests中，不进入生产组件。
+
+### 角色心愿墙（本地候选）
+
+`/wishes` 与 `/wishes/:id` → 身份隔离的 `lib/api/character-wishes.ts` → Telegram认证 `/api/character-wishes` → `miniapp_features` 三张功能表及限定 service_role 的读写 RPC。仅支持匿名公开，提交前告知全站可见；API与数据库拒绝private，公开输出不包含许愿者身份。支持使用显式布尔、唯一(wish,user)，人数包含许愿者本人。分页上限20；列表入口不提前读取心愿列表。
+
+角色回应只接受本人已有公开有效版本，展示已发布快照。回应关系和现有 `notifications`（kind=`character_wish_response`）在一个事务内写入，business_key去重；公开卡变私密/下架时不再在墙上展示。没有修改角色发布/AI审核函数或奖励结算。发布请求可带独立 `wish_id`，关联失败仍返回已发布角色及 `wish_response.status=not_linked`，前端单独重试回应。来源保留在本地草稿流程元信息，不进入角色设定；封面生成往返保持同一草稿。
+
+迁移先测试后生产，先于服务和页面部署。撤回隐藏心愿，不删除关联角色。回滚先隐藏入口和路由，保留业务表数据；恢复旧通知约束前需先处理新类型通知。验证复用隔离 PostgreSQL 脚本和 UI `@wishes`，不等同真实Telegram键盘或线上P95。

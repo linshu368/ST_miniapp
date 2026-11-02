@@ -1,3 +1,4 @@
+import { VipExpiryNotificationMetadataSchema } from '@miniapp/shared';
 import type {
   NotificationItem,
   PaymentOrder,
@@ -108,7 +109,9 @@ export function vipExpiryMembershipDetail(
     return currentExpiry ? `今日到期（${currentExpiry.date} ${currentExpiry.time}）` : fallback;
   }
 
-  const observedValidUntil = item.metadata?.observed_valid_until;
+  const parsedMetadata = VipExpiryNotificationMetadataSchema.safeParse(item.metadata);
+  const metadata = parsedMetadata.success ? parsedMetadata.data : null;
+  const observedValidUntil = metadata?.observed_valid_until;
   if (!status.active || !status.valid_until || !observedValidUntil) return fallback;
   const currentAt = new Date(status.valid_until);
   const observedAt = new Date(observedValidUntil);
@@ -122,10 +125,10 @@ export function vipExpiryMembershipDetail(
 
   const expiry = formatShanghaiExpiry(observedAt);
   if (!expiry) return fallback;
-  if (item.metadata?.reminder_window === 'expiring_soon') {
+  if (metadata?.reminder_window === 'expiring_soon') {
     return `3 天（至 ${expiry.date} 到期）`;
   }
-  if (item.metadata?.reminder_window === 'expires_today') {
+  if (metadata?.reminder_window === 'expires_today') {
     return `今日到期（${expiry.date} ${expiry.time}）`;
   }
   return fallback;
@@ -137,7 +140,8 @@ export function vipExpiryDisplayWindow(
   now: Date = new Date()
 ): 'expiring_soon' | 'expires_today' | null {
   if (status?.active && isVipExpiringToday(status, now)) return 'expires_today';
-  return item.metadata?.reminder_window ?? null;
+  const parsed = VipExpiryNotificationMetadataSchema.safeParse(item.metadata);
+  return parsed.success ? parsed.data.reminder_window : null;
 }
 
 function isVipExpiringToday(
