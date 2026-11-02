@@ -134,6 +134,8 @@ function row(overrides: Partial<FixtureRow> = {}): FixtureRow {
     llm_billing_snapshot: null,
     llm_billing_settled_at: null,
     session_id: 'session',
+    // The effective session view explicitly marks locally generated turns.
+    is_inherited: false,
     turn_index: 1,
     revision: 1,
     ...overrides,

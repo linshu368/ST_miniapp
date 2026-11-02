@@ -1,9 +1,11 @@
 'use client';
 
+import { useState } from 'react';
 import {
   GitBranch,
   Loader2,
   MessageSquare,
+  MoreHorizontal,
   Pencil,
   Pin,
   PinOff,
@@ -14,9 +16,8 @@ import type { ChatSession } from '@miniapp/shared';
 
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
-import { resolveSessionTitle, useConversationsQuery } from '@/lib/api/conversations';
+import { useConversationsQuery } from '@/lib/api/conversations';
 import {
-  SessionActionButton,
   SessionDeleteConfirm,
   SessionRenameField,
   useSessionRowActions,
@@ -46,9 +47,16 @@ export function ChatSessionDrawer({
   // 抽屉关着时不查：会话列表只在用户主动翻的时候才需要新鲜
   const query = useConversationsQuery(characterId, open);
   const sessions = query.data?.sessions ?? [];
+  const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <Sheet
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) setExpandedSessionId(null);
+        onOpenChange(next);
+      }}
+    >
       <SheetContent
         side="left"
         className="w-[86vw] max-w-[340px] border-border/70 bg-background p-0"
@@ -56,12 +64,12 @@ export function ChatSessionDrawer({
         <div className="flex h-full flex-col">
           <div className="border-b border-border/60 px-5 pb-4 pt-[calc(env(safe-area-inset-top)+1rem)]">
             <SheetTitle className="text-base font-semibold text-foreground">对话记录</SheetTitle>
-            <SheetDescription className="mt-0.5 text-xs text-muted-foreground">
-              与这个角色的历史对话
+            <SheetDescription className="mt-1.5 truncate pr-8 text-xs text-muted-foreground">
+              {characterName?.trim() || '与这个角色的历史对话'}
             </SheetDescription>
           </div>
 
-          <div className="flex-1 space-y-1 overflow-y-auto p-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)]">
+          <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto p-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)]">
             {query.isError ? (
               <div className="mx-1 mb-2 rounded-2xl border border-destructive/25 bg-destructive/5 px-3 py-3">
                 <p className="text-xs text-muted-foreground" role="alert">
@@ -100,7 +108,10 @@ export function ChatSessionDrawer({
                 session={session}
                 characterName={characterName}
                 active={session.id === activeSessionId}
+                expanded={expandedSessionId === session.id}
+                onExpandedChange={(next) => setExpandedSessionId(next ? session.id : null)}
                 onOpen={() => {
+                  setExpandedSessionId(null);
                   onSelect(session.id);
                   onOpenChange(false);
                 }}
@@ -113,90 +124,182 @@ export function ChatSessionDrawer({
   );
 }
 
-/**
- * 行的几何按原版 ST 链路的侧边栏（components/tavern/chat-sidebar.tsx）取值：
- * rounded-2xl、px-3 py-3、选中态 border-primary/20 + bg-primary/10、
- * 主文案 text-sm font-medium、副文案 mt-1 text-xs muted。
- *
- * 操作按钮没跟着还原成原版的 12px 图标 + p-1 方形热区：原版只有重命名和删除
- * 两个（且重命名走的是 window.prompt、删除没有二次确认），这里是三个按钮外加
- * 行内改名输入框和删除确认条，20px 的热区在手机上点不准。
- *
- * 标题展示绑定角色名前 7 字：这里所有会话都是同一个角色，用户没重命名时
- * 各行标题会相同，靠时间和预览区分；重命名后才是用户自己的名字。
- */
+/** 默认会话名仅在此处用创建时间区分，不能改写用户名称或改变其他列表的展示。 */
 function SessionRow({
   session,
   characterName,
   active,
+  expanded,
+  onExpandedChange,
   onOpen,
 }: {
   session: ChatSession;
   characterName?: string | null;
   active: boolean;
+  expanded: boolean;
+  onExpandedChange: (expanded: boolean) => void;
   onOpen: () => void;
 }) {
   const actions = useSessionRowActions(session);
+  const defaultTitle = hasDefaultTitle(session, characterName);
+  const title = defaultTitle ? formatCreatedTitle(session.created_at) : session.title!.trim();
+  const toolsOpen = expanded && !actions.confirmingDelete;
+  const menuButtonClass =
+    'flex min-h-11 min-w-0 items-center justify-center gap-1.5 rounded-xl text-xs text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:opacity-50 [&_svg]:size-3.5 [&_svg]:shrink-0';
 
   return (
     <div
+      data-testid={`session-row-${session.id}`}
       className={cn(
         'rounded-2xl border px-3 py-3 transition-colors',
-        active ? 'border-primary/20 bg-primary/10' : 'border-transparent hover:bg-muted'
+        active ? 'border-primary/20 bg-primary/[0.07]' : 'border-transparent hover:bg-muted/60'
       )}
     >
       {actions.editing ? (
-        <SessionRenameField actions={actions} density="compact" />
-      ) : (
-        <div className="flex items-center gap-1">
-          <button type="button" onClick={onOpen} className="min-w-0 flex-1 text-left">
-            <span className="flex min-w-0 items-center gap-1">
-              {session.pinned_at ? (
-                <Pin className="size-3 shrink-0 fill-current text-primary" aria-label="已置顶" />
-              ) : null}
-              {session.branch ? (
-                <GitBranch
-                  className="size-3 shrink-0 text-muted-foreground"
-                  aria-label="分支对话"
-                />
-              ) : null}
-              <span className="truncate text-sm font-medium text-foreground">
-                {resolveSessionTitle(session.title, characterName)}
-              </span>
-            </span>
-            <span className="mt-1 block truncate text-xs text-muted-foreground">
-              {session.last_message_preview || '继续这段对话'}
-            </span>
-            <span className="mt-1 block text-[10px] text-muted-foreground/75">
-              {formatSessionMeta(session)}
-            </span>
-          </button>
-          <SessionActionButton
-            label={session.pinned_at ? '取消置顶' : '置顶'}
-            onClick={actions.togglePin}
+        <div className="[&_button]:size-11 [&_input]:min-h-11 [&_input]:text-base">
+          <SessionRenameField
+            actions={actions}
             density="compact"
-          >
-            {session.pinned_at ? <PinOff aria-hidden /> : <Pin aria-hidden />}
-          </SessionActionButton>
-          <SessionActionButton label="重命名" onClick={actions.startRename} density="compact">
-            <Pencil aria-hidden />
-          </SessionActionButton>
-          <SessionActionButton label="删除" onClick={actions.toggleDeleteConfirm} density="compact">
-            <Trash2 aria-hidden />
-          </SessionActionButton>
+            placeholder="给这段对话起个名字"
+          />
         </div>
+      ) : (
+        <>
+          <div className="flex items-start gap-1">
+            <button
+              type="button"
+              onClick={onOpen}
+              aria-label={`打开对话：${title}`}
+              aria-current={active ? 'true' : undefined}
+              className="min-h-11 min-w-0 flex-1 rounded-lg py-1 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            >
+              <span className="flex min-w-0 items-start gap-1.5">
+                {session.pinned_at ? (
+                  <Pin
+                    className="mt-1 size-3 shrink-0 fill-current text-primary/80"
+                    aria-label="已置顶"
+                  />
+                ) : null}
+                <span className="line-clamp-2 break-words text-sm font-medium leading-5 text-foreground">
+                  {title}
+                </span>
+              </span>
+              <span className="mt-1.5 block truncate text-xs leading-5 text-muted-foreground">
+                {session.last_message_preview || '继续这段对话'}
+              </span>
+              <span className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] leading-4 text-muted-foreground/75">
+                {active ? <span className="font-medium text-primary/90">当前</span> : null}
+                {session.branch ? (
+                  <span className="inline-flex items-center gap-1">
+                    <GitBranch className="size-3" aria-hidden />
+                    从第{session.branch.source_turn_index}轮分出
+                  </span>
+                ) : null}
+                <span>{formatSessionMeta(session)}</span>
+              </span>
+            </button>
+            <button
+              type="button"
+              aria-label="更多操作"
+              aria-expanded={toolsOpen}
+              aria-controls={`session-tools-${session.id}`}
+              disabled={actions.pending}
+              onClick={() => {
+                actions.cancelDelete();
+                onExpandedChange(!toolsOpen);
+              }}
+              className={cn(
+                '-mr-1 flex size-11 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:opacity-50',
+                toolsOpen && 'bg-secondary text-foreground'
+              )}
+            >
+              <MoreHorizontal className="size-[18px]" aria-hidden />
+            </button>
+          </div>
+          {toolsOpen ? (
+            <div
+              id={`session-tools-${session.id}`}
+              className="mt-2 grid grid-cols-3 gap-0.5 border-t border-border/50 pt-2"
+            >
+              <button
+                type="button"
+                disabled={actions.pending}
+                className={menuButtonClass}
+                onClick={() => {
+                  actions.startRename();
+                  if (defaultTitle) actions.setDraft('');
+                  onExpandedChange(false);
+                }}
+              >
+                <Pencil aria-hidden />
+                重命名
+              </button>
+              <button
+                type="button"
+                disabled={actions.pending}
+                className={menuButtonClass}
+                onClick={() => {
+                  actions.togglePin();
+                  onExpandedChange(false);
+                }}
+              >
+                {session.pinned_at ? <PinOff aria-hidden /> : <Pin aria-hidden />}
+                {session.pinned_at ? '取消置顶' : '置顶'}
+              </button>
+              <button
+                type="button"
+                disabled={actions.pending}
+                className={menuButtonClass}
+                onClick={() => {
+                  actions.toggleDeleteConfirm();
+                  onExpandedChange(false);
+                }}
+              >
+                <Trash2 aria-hidden />
+                删除
+              </button>
+            </div>
+          ) : null}
+        </>
       )}
-
       {actions.error ? (
         <p role="alert" className="mt-2 text-xs text-destructive">
           {actions.error}
         </p>
       ) : null}
       {actions.confirmingDelete ? (
-        <SessionDeleteConfirm actions={actions} density="compact" />
+        <SessionDeleteConfirm actions={actions} density="compact" className="[&_button]:min-h-11" />
       ) : null}
     </div>
   );
+}
+
+function hasDefaultTitle(session: ChatSession, characterName?: string | null): boolean {
+  const title = session.title?.trim();
+  const name = characterName?.trim();
+  if (!title || (name && title === name)) return true;
+  // 分支可能继承用户自定义名称，不能仅凭“分支”前缀把所有名称替换掉。
+  if (!session.branch) return false;
+  return (
+    title === '分支 · 新的对话' ||
+    Boolean(name && title === `分支 · ${Array.from(name).slice(0, 55).join('')}`)
+  );
+}
+
+function formatCreatedTitle(createdAt: string): string {
+  const date = new Date(createdAt);
+  if (Number.isNaN(date.getTime())) return '未命名对话';
+  const day = date.toLocaleDateString('zh-CN', {
+    ...(date.getFullYear() !== new Date().getFullYear() ? { year: 'numeric' as const } : {}),
+    month: 'long',
+    day: 'numeric',
+  });
+  const time = date.toLocaleTimeString('zh-CN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+  return `${day} · ${time}`;
 }
 
 function formatSessionMeta(session: ChatSession): string {
@@ -216,5 +319,5 @@ function formatSessionMeta(session: ChatSession): string {
     ? at.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
     : at.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' });
 
-  return `${stamp} · ${count}`;
+  return `最近 ${stamp} · ${count}`;
 }

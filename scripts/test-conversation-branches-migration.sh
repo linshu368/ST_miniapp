@@ -81,6 +81,19 @@ done
 "${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/20261029_chat_message_likes.sql" >/dev/null
 "${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/20261029_chat_message_likes.sql" >/dev/null
 "${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/tests/conversation_branches.sql"
+"${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/20261102_chat_message_overrides.sql" >/dev/null
+"${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/20261102_chat_message_overrides.sql" >/dev/null
+"${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/tests/chat_message_overrides.sql"
+
+# Four competing edits must have exactly one winner, without losing its text.
+task_pids=()
+for task_attempt in 1 2 3 4; do
+  (if "${task_psql[@]}" -Atqc "SELECT experience.change_chat_message('10000000-0000-4000-8000-000000000004','20000000-0000-4000-8000-000000000004',(SELECT id FROM experience.chat_history WHERE session_id='20000000-0000-4000-8000-000000000004' AND turn_index=4),'assistant','edit',0,'writer-$task_attempt');" > "$task_temp/edit-$task_attempt" 2> "$task_temp/edit-error-$task_attempt"; then touch "$task_temp/edit-ok-$task_attempt"; else rg -q 'message changed since editor opened' "$task_temp/edit-error-$task_attempt"; fi) &
+  task_pids+=("$!")
+done
+for task_pid in "${task_pids[@]}"; do wait "$task_pid"; done
+test "$(find "$task_temp" -name 'edit-ok-*' | wc -l | tr -d ' ')" = 1
+
 # Four independent connections replay the same request after its first result could be lost.
 task_pids=()
 for task_attempt in 1 2 3 4; do

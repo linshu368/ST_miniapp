@@ -1,8 +1,10 @@
+import { previewApiUrl } from './fixtures';
 import { test, expect, chatPath, sendChat, expectMobileLayout } from './fixtures.js';
 import type { ReportFirstTokenRequest } from '@miniapp/shared';
 import type { ForkConversationData, ListConversationsData } from '@miniapp/shared';
 import type { Page } from '@playwright/test';
 import { IDS } from './fixtures.js';
+import { CHAT_SESSION_IDS, LONG_SESSION_TITLE } from '../fixtures/data.js';
 
 function likeResponse(page: Page) {
   return page.waitForResponse(
@@ -99,14 +101,14 @@ test('@chat @chat-like 历史回复可点赞，分支与重新生成各自独立
   await page.reload();
   await expect(inheritedLike).toHaveAttribute('aria-pressed', 'false');
   const original = await request.get(
-    `http://127.0.0.1:3131/api/v1/conversations/${IDS.session}?before_turn_index=21`
+    `${previewApiUrl}/api/v1/conversations/${IDS.session}?before_turn_index=21`
   );
   const detail = (await original.json()).data as import('@miniapp/shared').GetConversationData;
   expect(detail.messages.find((m) => m.id === branch.messages.at(-1)?.id)?.liked).toBe(true);
 });
 
 async function loadBranchTurn(page: Page, turn: number) {
-  const button = page.getByTitle(`从第 ${turn} 轮开启分支`, { exact: true });
+  const button = page.getByRole('button', { name: `第${turn}轮角色回复操作`, exact: true });
   for (let count = 0; count < 9; count += 1) {
     if (await button.count()) return button;
     const loaded = page.waitForResponse(
@@ -126,6 +128,7 @@ async function openBranch(page: Page, turn: number): Promise<ForkConversationDat
     (item) => item.url().endsWith('/branch') && item.request().method() === 'POST'
   );
   await button.click();
+  await page.getByRole('button', { name: /分支到新聊天/ }).click();
   const result = await response;
   expect(result.ok()).toBeTruthy();
   const body = (await result.json()) as { data: ForkConversationData };
@@ -140,7 +143,9 @@ test('@chat @chat-branch @layout 200轮回到第20轮分支，原对话和草稿
 }) => {
   await preview.scenario('chat-branch');
   await page.goto(chatPath);
-  await expect(page.getByTitle('从第 200 轮开启分支', { exact: true })).toBeAttached();
+  await expect(
+    page.getByRole('button', { name: '第200轮角色回复操作', exact: true })
+  ).toBeAttached();
   await page.getByRole('textbox', { name: '输入消息' }).fill('留在原对话的想法');
   const button = await loadBranchTurn(page, 20);
   await button.scrollIntoViewIfNeeded();
@@ -169,18 +174,31 @@ test('@chat @chat-branch @layout 200轮回到第20轮分支，原对话和草稿
   await expect(
     page.getByText('「那就出发吧。」旅人轻轻合上地图，把下一步的选择留给你。', { exact: true })
   ).toBeVisible();
-  await expect(page.getByTitle('从第 21 轮开启分支', { exact: true })).toBeAttached();
+  await expect(
+    page.getByRole('button', { name: '第21轮角色回复操作', exact: true })
+  ).toBeAttached();
   await page.reload();
-  await expect(page.getByTitle('从第 21 轮开启分支', { exact: true })).toBeAttached();
+  await expect(
+    page.getByRole('button', { name: '第21轮角色回复操作', exact: true })
+  ).toBeAttached();
   await page.getByRole('button', { name: '对话记录', exact: true }).click();
   const drawer = page.getByRole('dialog', { name: '对话记录' });
-  await expect(drawer.getByText(/^分支 · /)).toBeVisible();
+  await expect(
+    drawer
+      .getByTestId(`session-row-${result.session.id}`)
+      .getByText('从第20轮分出', { exact: true })
+  ).toBeVisible();
   await preview.screenshot('原对话与新分支并列');
-  await drawer.getByRole('button', { name: /^林间旅人/ }).click();
+  await drawer
+    .getByTestId(`session-row-${IDS.session}`)
+    .getByRole('button', { name: /^打开对话/ })
+    .click();
   await expect(page).toHaveURL(new RegExp(`session=${IDS.session}`));
   // Reload deliberately starts a new in-memory draft lifetime; verify the source conversation itself survived.
-  await expect(page.getByTitle('从第 200 轮开启分支', { exact: true })).toBeAttached();
-  const listed = await request.get('http://127.0.0.1:3131/api/v1/conversations');
+  await expect(
+    page.getByRole('button', { name: '第200轮角色回复操作', exact: true })
+  ).toBeAttached();
+  const listed = await request.get(`${previewApiUrl}/api/v1/conversations`);
   const sessions = ((await listed.json()) as { data: ListConversationsData }).data.sessions;
   expect(sessions).toHaveLength(2);
   expect(sessions.find((item) => item.id === IDS.session)?.message_count).toBe(400);
@@ -193,7 +211,9 @@ test('@chat @chat-branch 最新轮分支仅继承50轮，分支再分支与重�
 }) => {
   await preview.scenario('chat-branch');
   await page.goto(chatPath);
-  await expect(page.getByTitle('从第 200 轮开启分支', { exact: true })).toBeAttached();
+  await expect(
+    page.getByRole('button', { name: '第200轮角色回复操作', exact: true })
+  ).toBeAttached();
   const branch = await openBranch(page, 200);
   expect(branch.session.branch?.inherited_turns).toBe(50);
   expect(branch.session.message_count).toBe(100);
@@ -212,7 +232,7 @@ test('@chat @chat-branch 最新轮分支仅继承50轮，分支再分支与重�
   await expect(
     page.getByText('「那就出发吧。」旅人轻轻合上地图，把下一步的选择留给你。', { exact: true })
   ).toBeVisible();
-  const original = await request.get(`http://127.0.0.1:3131/api/v1/conversations/${IDS.session}`);
+  const original = await request.get(`${previewApiUrl}/api/v1/conversations/${IDS.session}`);
   const unchanged = ((await original.json()) as { data: ForkConversationData }).data;
   expect(unchanged.messages.at(-1)?.content).toContain('第 200 轮的故事');
   expect(unchanged.session.message_count).toBe(400);
@@ -230,26 +250,30 @@ test('@chat @chat-branch @layout 分支丢响应重试不重复建对话，失�
       keys.push((request.postDataJSON() as { request_id: string }).request_id);
   });
   await page.goto(chatPath);
-  await expect(page.getByTitle('从第 20 轮开启分支', { exact: true })).toBeAttached();
+  await expect(
+    page.getByRole('button', { name: '第20轮角色回复操作', exact: true })
+  ).toBeAttached();
   await page.getByRole('textbox', { name: '输入消息' }).fill('这段还没发出去');
   const failed = page.waitForResponse(
     (response) => response.url().endsWith('/branch') && response.status() === 503
   );
-  await page.getByTitle('从第 20 轮开启分支', { exact: true }).click();
+  await page.getByRole('button', { name: '第20轮角色回复操作', exact: true }).click();
+  await page.getByRole('button', { name: /分支到新聊天/ }).click();
   await failed;
   await expect(page.getByRole('textbox', { name: '输入消息' })).toHaveValue('这段还没发出去');
   await expect(page).toHaveURL(new RegExp(`session=${IDS.session}`));
-  await expect(page.getByTitle('从第 20 轮开启分支', { exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: '第20轮角色回复操作', exact: true })).toBeEnabled();
   await preview.screenshot('分支失败保留对话和输入');
   await openBranch(page, 20);
   expect(keys).toHaveLength(2);
   expect(keys[0]).toBe(keys[1]);
-  const listed = await request.get('http://127.0.0.1:3131/api/v1/conversations');
+  const listed = await request.get(`${previewApiUrl}/api/v1/conversations`);
   expect(((await listed.json()) as { data: ListConversationsData }).data.sessions).toHaveLength(2);
   await page.getByRole('button', { name: '对话记录', exact: true }).click();
   await page
     .getByRole('dialog', { name: '对话记录' })
-    .getByRole('button', { name: /^林间旅人/ })
+    .getByTestId(`session-row-${IDS.session}`)
+    .getByRole('button', { name: /^打开对话/ })
     .click();
   await expect(page.getByRole('textbox', { name: '输入消息' })).toHaveValue('这段还没发出去');
   await expectMobileLayout(page);
@@ -384,4 +408,195 @@ test('@chat 余额不足显示补充入口，不产生回复', async ({ page, pr
   await sendChat(page);
   await expect(page.getByText(/星尘.*不足/).first()).toBeVisible();
   expect((await preview.state()).wallet.credits).toBe(0);
+});
+
+test('@chat @chat-edit @layout 最近十轮就地编辑、取消及删除单条，保留后续和输入草稿', async ({
+  page,
+  preview,
+  request,
+}) => {
+  await preview.scenario('chat-edit');
+  await page.goto(chatPath);
+  await expect(page.getByRole('button', { name: '第12轮角色回复操作', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '第2轮我的消息操作', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '第3轮角色回复操作', exact: true })).toHaveCount(1);
+  await page.getByRole('textbox', { name: '输入消息' }).fill('我还没发送的内容');
+  const editButton = page.getByRole('button', { name: '编辑第11轮角色正文', exact: true });
+  await editButton.scrollIntoViewIfNeeded();
+  const editBox = await editButton.boundingBox();
+  expect(editBox?.width).toBeGreaterThanOrEqual(44);
+  expect(editBox?.height).toBeGreaterThanOrEqual(44);
+  await editButton.click();
+  const editor = page.getByRole('textbox', { name: '编辑角色回复' });
+  await expect(editor).not.toHaveValue(/\[status\]|\[memory\]|\[choice\]|<details>/);
+  await expect(editor).toBeFocused();
+  await editor.fill('「换个方向聊。」\n旅人把地图递给你，等待你的选择。');
+  const originalViewport = page.viewportSize()!;
+  await page.setViewportSize({ width: originalViewport.width, height: 340 });
+  await expect(page.getByRole('button', { name: '保存', exact: true })).toBeInViewport();
+  await expectMobileLayout(page);
+  await page.setViewportSize(originalViewport);
+
+  await preview.screenshot('角色回复就地编辑');
+  await expectMobileLayout(page);
+  await page.getByRole('button', { name: '保存', exact: true }).click();
+  await expect(editor).toHaveCount(0);
+  await expect(page.getByText('第 12 轮', { exact: false }).first()).toHaveCount(1);
+  await expect(page.getByRole('textbox', { name: '输入消息' })).toHaveValue('我还没发送的内容');
+  await page.getByRole('button', { name: '第11轮我的消息操作', exact: true }).click();
+  await page.getByRole('button', { name: '编辑消息', exact: true }).click();
+  await page.getByRole('textbox', { name: '编辑我的消息' }).fill('不保存这个修改');
+  await page.getByRole('button', { name: '取消', exact: true }).click();
+  await expect(page.getByText('第 11 轮：我们继续走到这里。', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '第10轮我的消息操作', exact: true }).click();
+  await page.getByRole('button', { name: '编辑消息', exact: true }).click();
+  await page.getByRole('textbox', { name: '编辑我的消息' }).fill('我的修改也保存在这一条。');
+  await page.getByRole('button', { name: '保存', exact: true }).click();
+  await expect(page.getByText('我的修改也保存在这一条。', { exact: true })).toBeVisible();
+
+  await page.getByRole('button', { name: '第11轮我的消息操作', exact: true }).click();
+  await page.getByRole('button', { name: '删除这条', exact: true }).click();
+  await expect(page.getByTestId('message-delete-confirm')).toContainText('确认吗？');
+  await page
+    .getByTestId('message-delete-confirm')
+    .getByRole('button', { name: '取消', exact: true })
+    .click();
+  await expect(page.getByTestId('message-delete-confirm')).toHaveCount(0);
+  await page.getByRole('button', { name: '删除这条', exact: true }).click();
+  await preview.screenshot('轻量删除确认');
+  await page.getByRole('button', { name: '确认删除', exact: true }).click();
+  await expect(page.getByText('第 11 轮：我们继续走到这里。', { exact: true })).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByText('第 11 轮：我们继续走到这里。', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('「换个方向聊。」', { exact: false }).first()).toHaveCount(1);
+  await expect(page.getByRole('button', { name: '第12轮角色回复操作', exact: true })).toHaveCount(
+    1
+  );
+  const stored = (
+    await (await request.get(`${previewApiUrl}/api/v1/conversations/${IDS.session}`)).json()
+  ).data as import('@miniapp/shared').GetConversationData;
+  const edited = stored.messages.find(
+    (message: { turn_index: number; role: string }) =>
+      message.turn_index === 11 && message.role === 'assistant'
+  );
+  expect(edited?.content).toContain('[memory]');
+  expect(edited?.content).toContain('地点：林间小路');
+  expect((await preview.state()).wallet.credits).toBe(3600);
+});
+
+test('@chat @chat-edit @layout 保存失败保留编辑输入，可再次保存', async ({ page, preview }) => {
+  await preview.scenario('chat-edit-error');
+  await page.goto(chatPath);
+  await page.getByRole('button', { name: '编辑第12轮角色正文', exact: true }).click();
+  const editor = page.getByRole('textbox', { name: '编辑角色回复' });
+  await expect(editor).not.toHaveValue(/\[status\]|\[memory\]|\[choice\]|<details>/);
+  await editor.fill('保留这段修改，不要丢失。');
+  await page.getByRole('button', { name: '保存', exact: true }).click();
+  await expect(page.getByTestId('message-inline-editor').getByRole('alert')).toContainText(
+    '保存失败'
+  );
+  await expect(editor).toHaveValue('保留这段修改，不要丢失。');
+  await page.getByRole('button', { name: '保存', exact: true }).click();
+  await expect(editor).toHaveCount(0);
+  await expect(page.getByText('保留这段修改，不要丢失。', { exact: true })).toBeVisible();
+  await expectMobileLayout(page);
+});
+
+test('@chat @chat-sessions @layout 同角色多段对话可区分，收纳管理不打断聊天', async ({
+  page,
+  preview,
+  request,
+}) => {
+  await preview.scenario('chat-sessions');
+  const listSessions = async () => {
+    const response = await request.get(`${previewApiUrl}/api/v1/conversations`);
+    expect(response.ok()).toBeTruthy();
+    return ((await response.json()) as { data: ListConversationsData }).data.sessions;
+  };
+  const initial = await listSessions();
+  await page.goto(chatPath);
+  await page.getByRole('button', { name: '对话记录', exact: true }).click();
+  const drawer = page.getByRole('dialog', { name: '对话记录' });
+  const row = (id: string) => drawer.getByTestId(`session-row-${id}`);
+  const current = row(IDS.session);
+  const earlier = row(CHAT_SESSION_IDS.earlier);
+  const named = row(CHAT_SESSION_IDS.named);
+  const defaultBranch = row(CHAT_SESSION_IDS.branch);
+  await expect(current.getByText('当前', { exact: true })).toBeVisible();
+  await expect(drawer.getByText('当前', { exact: true })).toHaveCount(1);
+  const currentTitle = await current
+    .getByRole('button', { name: /^打开对话/ })
+    .getAttribute('aria-label');
+  const earlierTitle = await earlier
+    .getByRole('button', { name: /^打开对话/ })
+    .getAttribute('aria-label');
+  expect(currentTitle).toContain('11月2日');
+  expect(earlierTitle).toContain('11月1日');
+  expect(currentTitle).not.toBe(earlierTitle);
+  await expect(
+    named.getByRole('button', { name: `打开对话：${LONG_SESSION_TITLE}`, exact: true })
+  ).toBeAttached();
+  await expect(
+    row(CHAT_SESSION_IDS.namedBranch).getByRole('button', {
+      name: '打开对话：分支 · 雨夜的约定',
+      exact: true,
+    })
+  ).toBeAttached();
+  await expect(defaultBranch.getByText('从第20轮分出', { exact: true })).toBeAttached();
+  expect((await listSessions()).map(({ id, title }) => ({ id, title }))).toEqual(
+    initial.map(({ id, title }) => ({ id, title }))
+  );
+  expect((await preview.state()).requests.filter(({ method }) => method === 'PATCH')).toHaveLength(
+    0
+  );
+  await expectMobileLayout(page);
+  await expect.poll(async () => Math.round((await drawer.boundingBox())?.x ?? -1)).toBe(0);
+  await preview.screenshot('同角色多段对话与分支来源');
+
+  await named.getByRole('button', { name: '更多操作', exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`session=${IDS.session}`));
+  await expect(named.getByRole('button', { name: '取消置顶', exact: true })).toBeVisible();
+  await named.getByRole('button', { name: '重命名', exact: true }).click();
+  await named.getByRole('textbox', { name: '对话名称', exact: true }).fill('不保存的名字');
+  await named.getByRole('button', { name: '取消', exact: true }).click();
+  await expect(
+    named.getByRole('button', { name: `打开对话：${LONG_SESSION_TITLE}`, exact: true })
+  ).toBeVisible();
+  expect((await listSessions()).find(({ id }) => id === CHAT_SESSION_IDS.named)?.title).toBe(
+    LONG_SESSION_TITLE
+  );
+  await named.getByRole('button', { name: '更多操作', exact: true }).click();
+  await named.getByRole('button', { name: '重命名', exact: true }).click();
+  const renamed = '雨停之后，沿着熟悉的小路再出发';
+  await named.getByRole('textbox', { name: '对话名称', exact: true }).fill(renamed);
+  await named.getByRole('button', { name: '保存', exact: true }).click();
+  await expect(
+    named.getByRole('button', { name: `打开对话：${renamed}`, exact: true })
+  ).toBeVisible();
+  expect((await listSessions()).find(({ id }) => id === CHAT_SESSION_IDS.named)?.title).toBe(
+    renamed
+  );
+
+  await earlier.getByRole('button', { name: '更多操作', exact: true }).click();
+  await earlier.getByRole('button', { name: '置顶', exact: true }).click();
+  await expect.poll(async () => (await listSessions())[0]?.id).toBe(CHAT_SESSION_IDS.earlier);
+  await earlier.getByRole('button', { name: '更多操作', exact: true }).click();
+  await expect(earlier.getByRole('button', { name: '取消置顶', exact: true })).toBeVisible();
+  await earlier.getByRole('button', { name: '删除', exact: true }).click();
+  await expect(earlier.getByText('删除这段对话？', { exact: true })).toBeVisible();
+  await earlier.getByRole('button', { name: '取消', exact: true }).click();
+  expect((await listSessions()).some(({ id }) => id === CHAT_SESSION_IDS.earlier)).toBeTruthy();
+  expect((await preview.state()).requests.filter(({ method }) => method === 'DELETE')).toHaveLength(
+    0
+  );
+  await expect(page).toHaveURL(new RegExp(`session=${IDS.session}`));
+  await earlier.getByRole('button', { name: /^打开对话/ }).click();
+  await expect(page).toHaveURL(new RegExp(`session=${CHAT_SESSION_IDS.earlier}`));
+  await expect(drawer).not.toBeVisible();
+  await page.getByRole('button', { name: '对话记录', exact: true }).click();
+  await expect(earlier.getByText('当前', { exact: true })).toBeVisible();
+  await expect(current.getByText('当前', { exact: true })).toHaveCount(0);
+  await expectMobileLayout(page);
+  await expect.poll(async () => Math.round((await drawer.boundingBox())?.x ?? -1)).toBe(0);
+  await preview.screenshot('重命名置顶与切换后的对话记录');
 });
