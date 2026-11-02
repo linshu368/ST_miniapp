@@ -1,6 +1,7 @@
 'use client';
 
 import type { BrowserConfig, Faro, TransportItem } from '@grafana/faro-web-sdk';
+import type { DramaDelivery } from '@miniapp/shared';
 
 import { getMetricDimensions } from './env-tags';
 import { engineeringRoute } from './route-template';
@@ -57,6 +58,10 @@ const EVENTS = new Set([
   'telemetry.health',
 ]);
 const ENUMS: Readonly<Record<string, readonly string[]>> = {
+  cdn_group: ['bunny', 'supabase', 'unknown'],
+  cdn_provider: ['bunny', 'supabase', 'unknown'],
+  cdn_reason: ['assigned', 'disabled', 'unavailable', 'unknown'],
+  cdn_budget: ['within_5s', 'over_5s', 'not_started', 'unmeasured', 'background'],
   outcome: [
     'started',
     'ready',
@@ -161,6 +166,7 @@ const ENUMS: Readonly<Record<string, readonly string[]>> = {
   playback_mode: ['cover', 'switch', 'episode', 'retry', 'direct'],
   report_kind: ['list', 'playback', 'start', 'slow', 'final', 'network'],
   first_frame_method: ['video_frame_callback', 'playing_and_timeupdate'],
+  first_token_stage: ['awaiting_start', 'awaiting_token', 'awaiting_commit', 'committed'],
   source_measurement_version: [
     'page_mount_v1',
     'page_navigation_v1',
@@ -236,6 +242,33 @@ const HEALTH_FIELDS = new Set([
   'source_transport_failures',
 ]);
 const MODEL_VALUES = new Set<string>();
+const CDN_EXPERIMENTS = new Set<string>();
+
+/** Snapshot the response-owned assignment; a missing delivery is never the control arm. */
+export function dramaCdnAttributes(delivery?: DramaDelivery): Record<string, string> {
+  return {
+    cdn_experiment: delivery?.experimentId ?? 'unknown',
+    cdn_group: delivery?.group ?? 'unknown',
+    cdn_provider: delivery?.provider ?? 'unknown',
+    cdn_reason: delivery?.reason ?? 'unknown',
+  };
+}
+
+function cdnExperiment(value: unknown): string {
+  if (value === 'unknown' || value === 'other') return value;
+  if (
+    typeof value !== 'string' ||
+    !/^[a-zA-Z0-9_-]{1,64}$/.test(value) ||
+    /[a-f0-9]{8}-[a-f0-9-]{27,}/i.test(value) ||
+    /^[a-f0-9]{16,}$/i.test(value)
+  )
+    return 'unknown';
+  if (CDN_EXPERIMENTS.has(value)) return value;
+  if (CDN_EXPERIMENTS.size >= 8) return 'other';
+  CDN_EXPERIMENTS.add(value);
+  return value;
+}
+
 function requestedModel(value: unknown): string {
   if (
     typeof value !== 'string' ||
@@ -312,7 +345,8 @@ function safeAttributes(
   };
   for (const [key, value] of Object.entries(attributes).slice(0, 32)) {
     if (value === null || value === undefined) continue;
-    if (key === 'requested_model') result.requested_model = requestedModel(value);
+    if (key === 'cdn_experiment') result.cdn_experiment = cdnExperiment(value);
+    else if (key === 'requested_model') result.requested_model = requestedModel(value);
     else if (key === 'deadline_ms' || key === 'trigger_ms') {
       const ms =
         typeof value === 'number'

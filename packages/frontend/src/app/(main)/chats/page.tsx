@@ -89,10 +89,16 @@ function ConversationHistoryRow({
   session: ChatSession;
   lookup: LobbySummaryLookup;
 }) {
-  const summary = lookup.status === 'ready' ? lookup.byId.get(session.character_id) : undefined;
+  const summary =
+    lookup.status === 'ready' && !session.character_version_id
+      ? lookup.byId.get(session.character_id)
+      : undefined;
   // 大厅摘要还在读时先不发详情，否则冷启动又退化成 N 个请求。
   const needsDetail = lookup.status !== 'pending' && !summary;
-  const { data } = useCharacterQuery(session.character_id, { enabled: needsDetail });
+  const { data } = useCharacterQuery(session.character_id, {
+    enabled: needsDetail,
+    sessionId: session.id,
+  });
   const character = summary ?? data?.character;
   const actions = useSessionRowActions(session);
   const menuRef = useRef<HTMLDetailsElement>(null);

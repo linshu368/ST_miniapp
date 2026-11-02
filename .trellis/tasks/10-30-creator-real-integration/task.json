@@ -1,0 +1,43 @@
+{
+  "id": "creator-real-integration",
+  "name": "creator-real-integration",
+  "title": "角色创作真实接入与创作者权益",
+  "description": "已确认布局后接入编辑器、发布审核、私密历史权限和创作者权益，先本地完整验收",
+  "status": "in_progress",
+  "dev_type": "fullstack",
+  "scope": "creator",
+  "package": "backend",
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-30",
+  "completedAt": null,
+  "branch": "codex/creator-space-integration",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "2026-10-30 用户授权通过 dev → main 发布完整创作功能。发布检查进行中，仅发布本任务范围。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "frontend.business.character-lobby",
+        "frontend.business.conversation-ui",
+        "backend.business.character-lobby",
+        "backend.business.conversation-generation",
+        "backend.business.wallet-payment",
+        "admin.business.operations",
+        "shared.business.character-lobby-contracts",
+        "shared.business.wallet-payment-contracts",
+        "database.business.billing-payment",
+        "database.infrastructure.schema-security"
+      ]
+    }
+  }
+}

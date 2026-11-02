@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { ArrowDown, Loader2 } from 'lucide-react';
-import type { ChatMessage } from '@miniapp/shared';
+import { CHAT_MESSAGE_EDIT_ROUNDS, type ChatMessage } from '@miniapp/shared';
 import type { ReplyChoicePayload } from '@miniapp/reply-renderer';
 
 import type { AssistantBodyPlan } from '@/lib/text-postprocess/reply-plan';
@@ -31,7 +31,8 @@ interface ChatMessageListProps {
   /** 刚好用完免费额度的那一轮回复下方展示轻提示 */
   quotaExhaustedNotice?: { messageId: string; text: string };
   /** 挂在指定消息下方的操作区 */
-  renderFooter?: (message: ChatMessage) => ReactNode;
+  renderFooter?: (message: ChatMessage, tools: ReactNode, editAction: ReactNode) => ReactNode;
+  branchFor?: (message: ChatMessage) => { pending: boolean; onBranch: () => void } | undefined;
   streamingMessageId?: string | null;
   displayName?: string;
   replyPlanFor?: (message: ChatMessage) => AssistantBodyPlan;
@@ -39,6 +40,9 @@ interface ChatMessageListProps {
   onChoice?: (message: ChatMessage, choice: ReplyChoicePayload) => void;
   detailsDefaultOpen?: Readonly<Record<string, boolean>>;
   thinkingByMessage?: MessageThinkingMap;
+  editDisabled?: boolean;
+  viewportHeight?: number | null;
+  onEditingChange?: (editing: boolean) => void;
 }
 
 export function ChatMessageList({
@@ -53,6 +57,7 @@ export function ChatMessageList({
   replyStalled,
   quotaExhaustedNotice,
   renderFooter,
+  branchFor,
   streamingMessageId,
   displayName,
   replyPlanFor,
@@ -60,7 +65,22 @@ export function ChatMessageList({
   onChoice,
   detailsDefaultOpen,
   thinkingByMessage,
+  editDisabled = false,
+  viewportHeight,
+  onEditingChange,
 }: ChatMessageListProps) {
+  const editingRef = useRef(false);
+  const [editing, setEditing] = useState(false);
+  const handleEditingChange = useCallback(
+    (editing: boolean) => {
+      editingRef.current = editing;
+      setEditing(editing);
+      if (editing) stickToBottomRef.current = false;
+      onEditingChange?.(editing);
+    },
+    [onEditingChange]
+  );
+  const latestTurn = Math.max(0, ...messages.map((message) => message.turn_index));
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
@@ -74,7 +94,7 @@ export function ChatMessageList({
     if (earlierAnchorRef.current) earlierAnchorRef.current.top = node.scrollTop;
     const distanceToBottom = node.scrollHeight - node.scrollTop - node.clientHeight;
     const atBottom = distanceToBottom <= STICK_TO_BOTTOM_THRESHOLD_PX;
-    stickToBottomRef.current = atBottom;
+    stickToBottomRef.current = atBottom && !editingRef.current;
     setShowLatestJump(!atBottom);
     if (atBottom) setHasUnseenReply(false);
   }, []);
@@ -181,33 +201,49 @@ export function ChatMessageList({
             </div>
           ) : null}
 
-          {messages.map((message) => (
-            <ChatMessageBubble
-              key={`${message.id}:${message.revision}`}
-              message={message}
-              characterName={characterName}
-              characterAvatarUrl={characterAvatarUrl}
-              userAvatarUrl={userAvatarUrl}
-              streaming={message.id === streamingMessageId || message.status === 'streaming'}
-              stalled={replyStalled && message.id === last?.id && message.status === 'streaming'}
-              quotaExhaustedNotice={
-                quotaExhaustedNotice?.messageId === message.id
-                  ? quotaExhaustedNotice.text
-                  : undefined
-              }
-              footer={renderFooter?.(message)}
-              replyPlan={message.role === 'assistant' ? replyPlanFor?.(message) : undefined}
-              displayName={displayName}
-              choiceDisabled={choiceDisabledFor?.(message) !== false}
-              onChoice={
-                onChoice && message.role === 'assistant'
-                  ? (choice) => onChoice(message, choice)
-                  : undefined
-              }
-              detailsDefaultOpen={detailsDefaultOpen}
-              thinkingText={thinkingByMessage?.[messageThinkingKey(message)]}
-            />
-          ))}
+          {messages
+            .filter((message) => !message.deleted)
+            .map((message) => (
+              <ChatMessageBubble
+                key={`${message.id}:${message.revision}`}
+                message={message}
+                editable={
+                  message.turn_index > 0 &&
+                  message.turn_index > latestTurn - CHAT_MESSAGE_EDIT_ROUNDS &&
+                  message.status !== 'streaming'
+                }
+                editDisabled={editDisabled}
+                editMenuDisabled={editing}
+                viewportHeight={viewportHeight}
+                onEditingChange={handleEditingChange}
+                characterName={characterName}
+                characterAvatarUrl={characterAvatarUrl}
+                userAvatarUrl={userAvatarUrl}
+                streaming={message.id === streamingMessageId || message.status === 'streaming'}
+                stalled={replyStalled && message.id === last?.id && message.status === 'streaming'}
+                quotaExhaustedNotice={
+                  quotaExhaustedNotice?.messageId === message.id
+                    ? quotaExhaustedNotice.text
+                    : undefined
+                }
+                renderFooter={
+                  renderFooter
+                    ? (tools, editAction) => renderFooter(message, tools, editAction)
+                    : undefined
+                }
+                branch={branchFor?.(message)}
+                replyPlan={message.role === 'assistant' ? replyPlanFor?.(message) : undefined}
+                displayName={displayName}
+                choiceDisabled={choiceDisabledFor?.(message) !== false}
+                onChoice={
+                  onChoice && message.role === 'assistant'
+                    ? (choice) => onChoice(message, choice)
+                    : undefined
+                }
+                detailsDefaultOpen={detailsDefaultOpen}
+                thinkingText={thinkingByMessage?.[messageThinkingKey(message)]}
+              />
+            ))}
 
           {awaitingFirstToken ? (
             <ChatTypingBubble
@@ -218,7 +254,7 @@ export function ChatMessageList({
           ) : null}
         </div>
       </div>
-      {showLatestJump ? (
+      {showLatestJump && !editing ? (
         <button
           type="button"
           onClick={returnToLatest}

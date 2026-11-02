@@ -32,6 +32,11 @@ import { createLogger } from '../../lib/logger.js';
 import { settleGeneration, type GenerationSettlementEntry } from './settle.js';
 import { reserveCharacterFreeQuota, type FreeQuotaReservation } from './quota.js';
 import { checkWalletBalance, resolveBillingPlan, type BillingPlan } from './precheck.js';
+import { getCharacterCreatorOwner } from './creator-billing.js';
+import {
+  getCharacterFreeChatQuotaLimit,
+  isQuotaTrackableCharacterId,
+} from '../billing/free-quota.js';
 import {
   createSseTap,
   forwardToUpstream,
@@ -56,6 +61,8 @@ import {
 } from '../../lib/engineering-observability.js';
 import type {
   GenerationHooks,
+  GenerationPreparation,
+  ResolvedModel,
   GenerationLogger,
   GenerationRequest,
   GenerationResult,
@@ -74,6 +81,70 @@ type HistoryOutcome = Pick<
 >;
 
 type SaveHistory = (outcome: HistoryOutcome) => void;
+
+/** Starts only independent reads. Admission/quote/quota writes remain in execute. */
+export function prepareGeneration(input: {
+  model: ResolvedModel | Promise<ResolvedModel>;
+  characterId: string | null;
+  useFallback: boolean;
+}): Promise<GenerationPreparation> {
+  // These reads do not depend on the selected model or on prompt construction.
+  // Start them now, rather than introducing another wave after those awaits.
+  const independent = Promise.all([
+    getPricingConfig(),
+    readVipStrategy(),
+    getCharacterCreatorOwner(input.characterId),
+  ]);
+  const transport = Promise.resolve(input.model).then(async (model) => {
+    const routingModelIds = [
+      ...new Set([
+        ...(model.provider === 'openrouter' ? [model.providerModelId] : []),
+        ...(input.useFallback && model.firstTokenPolicy?.fallbackModelId
+          ? [model.firstTokenPolicy.fallbackModelId]
+          : []),
+      ]),
+    ];
+    const billing = Promise.resolve(
+      model.billingContext ??
+        getModelBillingContext({
+          provider: model.provider,
+          providerModelId: model.providerModelId,
+        })
+    );
+    const [selectedBilling, routingPreferences, quotaLimit] = await Promise.all([
+      billing,
+      getProviderPreferencesForModels(routingModelIds),
+      billing.then((value) =>
+        value.isFree && isQuotaTrackableCharacterId(input.characterId)
+          ? getCharacterFreeChatQuotaLimit()
+          : undefined
+      ),
+    ]);
+    return { model, selectedBilling, routingModelIds, routingPreferences, quotaLimit };
+  });
+  const work = Promise.all([independent, transport]).then(
+    ([
+      [pricing, vipStrategy, creatorUserId],
+      { model, selectedBilling, routingModelIds, routingPreferences, quotaLimit },
+    ]) => ({
+      modelId: model.modelId,
+      provider: model.provider,
+      providerModelId: model.providerModelId,
+      characterId: input.characterId,
+      pricing,
+      selectedBilling,
+      vipStrategy,
+      routingModelIds,
+      routingPreferences,
+      creatorUserId,
+      quotaLimit,
+    })
+  );
+  // Admission can fail before execute reaches its await. Observe rejection now,
+  // while keeping the original rejected promise for the eventual consumer.
+  void work.catch(() => undefined);
+  return work;
+}
 
 /** 与会话 streaming 陈旧回收口径一致，避免一轮生成无限占住会话。 */
 export const GENERATION_TIMEOUT_MS = 120_000;
@@ -231,18 +302,32 @@ async function executeGeneration(
   const signal = request.signal
     ? AbortSignal.any([request.signal, AbortSignal.timeout(GENERATION_TIMEOUT_MS)])
     : AbortSignal.timeout(GENERATION_TIMEOUT_MS);
-  const chargeId = randomUUID();
-  const [pricing, selectedBilling, vipStrategy] = await withAbort(
-    Promise.all([
-      getPricingConfig(),
-      getModelBillingContext({
-        provider: request.model.provider,
-        providerModelId: request.model.providerModelId,
+  const chargeId = request.plannedChargeId ?? randomUUID();
+  const prepared = await withAbort(
+    request.preparation ??
+      prepareGeneration({
+        model: request.model,
+        characterId: request.characterId,
+        useFallback: Boolean(request.firstToken),
       }),
-      readVipStrategy(),
-    ]),
     signal
   );
+  if (
+    prepared.modelId !== request.model.modelId ||
+    prepared.provider !== request.model.provider ||
+    prepared.providerModelId !== request.model.providerModelId ||
+    prepared.characterId !== request.characterId
+  ) {
+    throw new Error('Generation preparation identity differs');
+  }
+  const {
+    pricing,
+    selectedBilling,
+    vipStrategy,
+    routingPreferences,
+    routingModelIds,
+    creatorUserId,
+  } = prepared;
 
   let billing = selectedBilling;
   let deliveryPersisted = Promise.resolve();
@@ -270,6 +355,7 @@ async function executeGeneration(
     billing,
     log,
     signal,
+    quotaLimit: prepared.quotaLimit,
   });
   let released: Promise<void> | undefined;
   const releaseReservation = (): Promise<void> =>
@@ -290,6 +376,15 @@ async function executeGeneration(
       entitlement: request.model.entitlement,
       discountRate: vipStrategy.discountRate,
       discountConfigVersion: vipStrategy.discountVersion,
+      ...(creatorUserId && request.characterId
+        ? {
+            creator: {
+              characterId: request.characterId,
+              creatorUserId,
+              payerUserId: request.userId,
+            },
+          }
+        : {}),
       log,
     });
 
@@ -331,18 +426,6 @@ async function executeGeneration(
       createHistoryWriter({ request, billing, plan, log })(outcome);
 
     // 模块内部已把读取 / 解析失败降级为「无规则」，这里拿到 null 就当没配置。
-    const routingModelIds = [
-      ...new Set([
-        ...(billing.provider === 'openrouter' ? [billing.providerModelId] : []),
-        ...(request.firstToken && request.model.firstTokenPolicy?.fallbackModelId
-          ? [request.model.firstTokenPolicy.fallbackModelId]
-          : []),
-      ]),
-    ];
-    const routingPreferences = await withAbort(
-      getProviderPreferencesForModels(routingModelIds),
-      signal
-    );
     const preferencesFor = (modelId: string) =>
       routingPreferences[routingModelIds.indexOf(modelId)] ?? null;
     const upstream = resolveProviderUpstream(billing.provider);

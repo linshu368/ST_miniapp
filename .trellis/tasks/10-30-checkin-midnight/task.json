@@ -1,0 +1,37 @@
+{
+  "id": "checkin-midnight",
+  "name": "checkin-midnight",
+  "title": "每日签到北京时间零点重置",
+  "description": "每日签到从滚动24小时改为北京时间每天00:00恢复",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-30",
+  "completedAt": null,
+  "branch": "codex/checkin-midnight",
+  "base_branch": "dev",
+  "worktree_path": "/Users/qianpeijia/PycharmProjects/pythonProject/ST_miniapp/worktrees/checkin-midnight",
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "frontend.business.wallet-payment",
+        "backend.business.wallet-payment",
+        "database.business.billing-payment",
+        "shared.business.wallet-payment-contracts"
+      ]
+    }
+  }
+}

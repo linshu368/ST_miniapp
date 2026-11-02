@@ -1,6 +1,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { QueryClient } from '@tanstack/react-query';
 import type {
   GetNotificationDetailData,
   GetNotificationsData,
@@ -23,17 +24,27 @@ export const notificationKeys = {
 // 公告随时可能被运营下架，缓存久了会留在页面上，所以这两个查询都保持短鲜活期。
 const NOTIFICATION_POLL_MS = 20_000;
 
-export function useNotificationsQuery(scope: NotificationScope) {
-  const query = useQuery({
+function notificationListQueryOptions(scope: NotificationScope) {
+  return {
     queryKey: notificationKeys.list(scope),
-    queryFn: () =>
-      apiClient<GetNotificationsData>(`/api/notifications?scope=${encodeURIComponent(scope)}`),
+    queryFn: ({ signal }: { signal: AbortSignal }) =>
+      apiClient<GetNotificationsData>(`/api/notifications?scope=${encodeURIComponent(scope)}`, {
+        signal,
+      }),
     staleTime: 0,
-    refetchOnMount: 'always',
+    refetchOnMount: 'always' as const,
     refetchInterval: NOTIFICATION_POLL_MS,
-  });
+  };
+}
+
+export function useNotificationsQuery(scope: NotificationScope) {
+  const query = useQuery(notificationListQueryOptions(scope));
   useRefetchOnForeground(query.refetch);
   return query;
+}
+
+export function prefetchNotifications(client: QueryClient, scope: NotificationScope) {
+  return client.prefetchQuery(notificationListQueryOptions(scope));
 }
 
 /**
@@ -47,9 +58,10 @@ export function useNotificationUnreadCountQuery({
 }: { poll?: boolean; enabled?: boolean } = {}) {
   const query = useQuery({
     queryKey: notificationKeys.unread,
-    queryFn: () =>
+    queryFn: ({ signal }) =>
       apiClient<NotificationUnreadCountData>('/api/notifications/unread-count', {
         queuePriority: 'background',
+        signal,
       }),
     enabled,
     staleTime: 30_000,
@@ -64,9 +76,11 @@ export function useNotificationDetailQuery(id: string | undefined) {
   return useQuery({
     queryKey: id ? notificationKeys.detail(id) : ['notifications', 'detail'],
     enabled: Boolean(id),
-    queryFn: () => {
+    queryFn: ({ signal }) => {
       if (!id) throw new Error('notification id is required');
-      return apiClient<GetNotificationDetailData>(`/api/notifications/${encodeURIComponent(id)}`);
+      return apiClient<GetNotificationDetailData>(`/api/notifications/${encodeURIComponent(id)}`, {
+        signal,
+      });
     },
     staleTime: 0,
     retry: false,

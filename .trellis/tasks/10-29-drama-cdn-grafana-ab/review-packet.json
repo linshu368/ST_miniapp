@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "status": "local_implementation_verified_not_published",
+  "branch": "codex/drama-cdn-grafana-ab",
+  "base_sha": "18f21ba6517e810ff577ae89ce5230935dc0ab16",
+  "checks": {
+    "frontend_tests": 663,
+    "frontend_test_files": 63,
+    "typecheck": "passed_after_build_serially",
+    "lint": "passed_8_existing_img_warnings",
+    "build": "passed",
+    "local_faro_alloy_loki_queries": 83,
+    "cloud_empty_syntax_queries": 11,
+    "original_source_panels_unchanged": 19,
+    "live_original_panels_to_preserve": 24
+  },
+  "authorization": "implementation only; no stage/commit/push/deployment/cloud dashboard write performed",
+  "files": [
+    {
+      "path": ".trellis/spec/frontend/app/testing-quality-and-deployment.md",
+      "sha256": "2c856068eddffafa89747ed3437c2048148e70696a6704413285a0a0501f4e21"
+    },
+    {
+      "path": ".trellis/tasks/10-29-drama-cdn-grafana-ab/check.jsonl",
+      "sha256": "04e971677d5881f7fb43b7a0a06c4bce940170019d77622e4b99ef862133fd5d"
+    },
+    {
+      "path": ".trellis/tasks/10-29-drama-cdn-grafana-ab/dashboard-operations.json",
+      "sha256": "2afb96b588906ef508d31e6cba3814b4100b61f36a04a094a73bcfd3f8c1b5b0"
+    },
+    {
+      "path": ".trellis/tasks/10-29-drama-cdn-grafana-ab/design.md",
+      "sha256": "df520e56558ef0f5c3977551dbf63088108eed4a835636766162e9242c2f7407"
+    },
+    {
+      "path": ".trellis/tasks/10-29-drama-cdn-grafana-ab/implement.jsonl",
+      "sha256": "04e971677d5881f7fb43b7a0a06c4bce940170019d77622e4b99ef862133fd5d"
+    },
+    {
+      "path": ".trellis/tasks/10-29-drama-cdn-grafana-ab/implement.md",
+      "sha256": "8f60302dfdc9561ea9a4e32308a943389f518b99ff705886a31889f63f44d001"
+    },
+    {
+      "path": ".trellis/tasks/10-29-drama-cdn-grafana-ab/module-updates.json",
+      "sha256": "d17c6d7aba8c47bba17591bc59f2cbcdd66928e8b94cacecd99cdf7ea5599832"
+    },
+    {
+      "path": ".trellis/tasks/10-29-drama-cdn-grafana-ab/prd.md",
+      "sha256": "03343ffc882a2c293b7673374362a41737d833680cca842587f1f04f30760ce6"
+    },
+    {
+      "path": ".trellis/tasks/10-29-drama-cdn-grafana-ab/research.md",
+      "sha256": "1c88df779cecff3e8cff799ebb7f71bce686dc70cde6e52532d42f83c75c242b"
+    },
+    {
+      "path": ".trellis/tasks/10-29-drama-cdn-grafana-ab/review.md",
+      "sha256": "b9a95b04d54290476f2e5275d98f2bff7d97c80456789344b6684563fa0c4741"
+    },
+    {
+      "path": ".trellis/tasks/10-29-drama-cdn-grafana-ab/task.json",
+      "sha256": "0ea9cffd08c7501566dae2cc434d3fe4a413ab3d641ef0d25e64d510393fa5d7"
+    },
+    {
+      "path": ".trellis/tasks/10-29-drama-cdn-grafana-ab/task.md",
+      "sha256": "89b4db0ce477afbd51b44d072a03a174153e944e782863b7c80390afc1d02445"
+    },
+    {
+      "path": ".trellis/tasks/10-29-drama-cdn-grafana-ab/validation.md",
+      "sha256": "a423e992c3ffc670b1bd6b1227006d413f537c05f7e60ed670bb89f33d541424"
+    },
+    {
+      "path": "docs/drama-playback-timing.md",
+      "sha256": "5aaef2015f2f8bd695fe0e870ad934f3be3dac3e1548f6d7b16c563f1552ff85"
+    },
+    {
+      "path": "docs/grafana/engineering-performance.md",
+      "sha256": "cfae9e15a918978bb4693e7eb25633146cd4df37bfde9e98b440b761f4dad26f"
+    },
+    {
+      "path": "docs/grafana/st-engineering-drama.json",
+      "sha256": "56289d5e72a87b0a0c261597ad9083e3f630d8812fc6fcaa34e3ffd30e309de6"
+    },
+    {
+      "path": "ops/observability/local-test/faro-loki.mjs",
+      "sha256": "0d85f63d210b409d6b143642c5952a4fa2be19440c8b908dc341e177a9f597b1"
+    },
+    {
+      "path": "packages/frontend/src/lib/perf/drama-media.test.ts",
+      "sha256": "64e30c086fbe1204546ad60683fe2723f190e6f329173408745fece3fef7163e"
+    },
+    {
+      "path": "packages/frontend/src/lib/perf/drama-media.ts",
+      "sha256": "06ce7e52fdaff1ea8e5556898d2ecd68c6b54e4b7fa099a829b9075cc31d34e1"
+    },
+    {
+      "path": "packages/frontend/src/lib/perf/drama-observer.test.ts",
+      "sha256": "31a2e28ce705007ff0f80c153893555cee44e34f968fc24b75b540e4b692e19b"
+    },
+    {
+      "path": "packages/frontend/src/lib/perf/drama-observer.ts",
+      "sha256": "6a76f70395366ea367c5f08a97656bf9c470cad5fa26d2245d1b8d8c2add1b35"
+    },
+    {
+      "path": "packages/frontend/src/lib/perf/grafana.test.ts",
+      "sha256": "156ad4c6f84c4077f14982c33900cf363758efb496a856f21e35eed1a4cc93a2"
+    },
+    {
+      "path": "packages/frontend/src/lib/perf/grafana.ts",
+      "sha256": "e1d3bb28f1ddac5f7875dc72413da217b4496beaa44d9e2317a9458f46b1a7c0"
+    }
+  ],
+  "packet_note": "This manifest does not hash itself; any listed file change invalidates review."
+}

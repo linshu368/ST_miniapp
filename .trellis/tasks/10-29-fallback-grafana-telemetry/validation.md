@@ -29,3 +29,16 @@
 - Backend1037测试与全workspace类型检查通过；真实本机PG17/PostgREST5项集成通过，确认纯监控列新值为NULL；恢复/竞胜/超时免扣/主动停止/并发一次扣费、VIP/钱包/额度/迁移账本完整harness通过。相关imports/legacy检查与diff通过。
 - 真实浏览器SDK→TEST专用Cloud入口已回查到2成功、1截止、1离页、1受理拒绝及型号/6000预算/2000阈值；实际新面板Cloud计算截断1/3、成功P95=5749.05ms，不把离页/拒绝稀释进分母。服务端SDK→同版本采集器→Cloud计数3受理/2兜底派发/2赢家/1截止，按型号及赢家标签可查。合成样本只标test，未写Supabase。
 - 新白名单已另行审核提交并合dev（PR535），生产采集器9c85f036部署SUCCESS；本批业务埋点/减写与旧SQL入口退出仍待最终生产发布。
+
+# 2026-10-30 调用前准备减负候选验证
+
+基线origin/dev83d6d40c，独立候选分支codex/chat-dispatch-latency；此前监控发布与本次代码验证分开。未提交、未部署、未访问远端数据库，未调整目录和兜底预算。
+
+- Backend全量：1126通过，20项环境依赖用例跳过（110文件通过/2文件跳过）；跳过不冒充生产验证。日志/private/tmp/st-dispatch-backend-all.log。
+- Frontend全量：656通过/64文件；Shared：189通过/17文件。
+- 全workspace类型检查通过；Frontend生产构建通过；全仓imports、legacy与migration命名检查通过。
+- 本地真实PG17/PostgREST完整harness通过：7项repository实库测试、新旧RPC兼容、request/charge冲突、初次重放、early receipt、停止、超时免扣、额度释放、并发赢家/单扣与账本协议。/private/tmp/st-dispatch-agent-pg.log。
+- 新增确定性慢依赖回归：同一组身份/快照保存200ms/次，新路径2次共400ms，且无独立marker/prompt/charge请求。仅说明这组持久化关键路径，不代表整条聊天只有2次DB访问或生产收益百分比。
+- 独立安全检查无阻断项；发现VIP查询被新增串行等待后已修正，并由resolver回归锁定并行性。
+- 移动端@chat18项通过，覆盖Android/iPhone/窄屏的发送、分支、丢响应幂等、思考与输入偏好。日志/private/tmp/st-dispatch-chat-ui.log。
+- TEST→生产迁移及真实用户1.5%验收仍待批准发布后执行。前端lint仅有存量图片标签警告，无新增错误；本轮未测真实供应商或生产聊天。

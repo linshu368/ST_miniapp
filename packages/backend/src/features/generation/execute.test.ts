@@ -29,6 +29,11 @@ const quotaState = vi.hoisted(() => ({
   finalize: vi.fn(),
   reserveFailure: false,
 }));
+const preparation = vi.hoisted(() => ({ readBilling: vi.fn(), readRouting: vi.fn() }));
+vi.mock('./creator-billing.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./creator-billing.js')>()),
+  getCharacterCreatorOwner: vi.fn(async () => null),
+}));
 const telemetry = vi.hoisted(() => ({
   chat: vi.fn(),
   dispatch: vi.fn(),
@@ -60,11 +65,11 @@ vi.mock('./quota.js', () => ({
 
 vi.mock('../../platform/model-tiers.js', () => ({
   getPricingConfig: async () => pricing,
-  getModelBillingContext: async () => billingContext,
+  getModelBillingContext: preparation.readBilling,
 }));
 
 vi.mock('../../platform/provider-routing.js', () => ({
-  getProviderPreferencesForModels: async (ids: string[]) => ids.map(() => providerPreferences),
+  getProviderPreferencesForModels: preparation.readRouting,
 }));
 
 vi.mock('../../platform/vip-strategy.js', () => ({
@@ -108,10 +113,15 @@ vi.mock('../../infrastructure/repositories/MiniappWalletRepository.js', () => ({
   },
 }));
 
+vi.mock('../billing/free-quota.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../billing/free-quota.js')>()),
+  getCharacterFreeChatQuotaLimit: vi.fn(async () => 50),
+}));
+
 vi.mock('./settle.js', () => ({ settleGeneration: vi.fn() }));
 
 const { settleGeneration } = await import('./settle.js');
-const { execute } = await import('./execute.js');
+const { execute, prepareGeneration } = await import('./execute.js');
 
 const savedHistory = () => vi.mocked(settleGeneration).mock.calls.map((call) => call[0]);
 
@@ -187,6 +197,10 @@ function requestBodyOf(fetchMock: ReturnType<typeof stubUpstream>): Record<strin
 
 beforeEach(() => {
   Object.values(telemetry).forEach((fn) => fn.mockClear());
+  preparation.readBilling.mockReset().mockImplementation(async () => billingContext);
+  preparation.readRouting
+    .mockReset()
+    .mockImplementation(async (ids: string[]) => ids.map(() => providerPreferences));
   quotaState.granted = false;
   quotaState.reserveFailure = false;
   quotaState.finalize.mockReset().mockImplementation(async (success: boolean) => ({
@@ -1019,6 +1033,65 @@ describe('cancellation, deadlines and billing arbitration', () => {
 });
 
 describe('pre-dispatch recovery persistence', () => {
+  it('reuses the selected catalog snapshot and the already-durable charge key', async () => {
+    const selected = request();
+    const frozen = { ...defaultBillingContext, modelId: 'frozen-model', catalogVersion: 99 };
+    selected.model.billingContext = frozen;
+    selected.plannedChargeId = '11111111-1111-4111-8111-111111111111';
+    const reserve = vi.fn(async () => {
+      expect(preparation.readRouting).toHaveBeenCalledOnce();
+    });
+    const beforeDispatch = vi.fn(async (snapshot) => {
+      expect(snapshot).toMatchObject({
+        charge_id: selected.plannedChargeId,
+        model_id: frozen.modelId,
+        catalog_version: frozen.catalogVersion,
+      });
+    });
+    stubUpstream(sseResponse([DELTA('reply'), 'data: [DONE]\n\n']));
+    await execute(
+      selected,
+      { onBeforeReserve: reserve, onBeforeDispatch: beforeDispatch },
+      fakeLogger()
+    );
+    expect(preparation.readBilling).not.toHaveBeenCalled();
+    expect(reserve).toHaveBeenCalledWith(selected.plannedChargeId);
+    expect(beforeDispatch).toHaveBeenCalledOnce();
+  });
+
+  it('a stop after initial charge admission cannot dispatch and releases any just-created reservation before rejection', async () => {
+    quotaState.granted = true;
+    const order: string[] = [];
+    let stopped = false;
+    quotaState.finalize.mockImplementation(async () => {
+      order.push('quota released');
+      return { status: 'released' };
+    });
+    const upstream = stubUpstream(sseResponse([DELTA('must not dispatch')]));
+    await expect(
+      execute(
+        request({ plannedChargeId: '11111111-1111-4111-8111-111111111111' }),
+        {
+          onBeforeReserve: async () => {
+            stopped = true;
+            order.push('persisted stop');
+          },
+          onBeforeDispatch: async () => {
+            expect(stopped).toBe(true);
+            const failure = new Error('Generation is no longer active or charge identity differs');
+            Object.assign(failure, { code: 'PT409' });
+            throw failure;
+          },
+        },
+        fakeLogger()
+      )
+    ).rejects.toThrow('Generation is no longer active');
+    order.push('worker rejected');
+    expect(upstream).not.toHaveBeenCalled();
+    expect(order).toEqual(['persisted stop', 'quota released', 'worker rejected']);
+    expect(savedHistory()).toHaveLength(0);
+  });
+
   it('stops before upstream and releases quota when recovery facts cannot persist', async () => {
     quotaState.granted = true;
     quotaState.finalize.mockResolvedValue({ status: 'released' });
@@ -1382,4 +1455,34 @@ describe('competing attempts share one delivery and settlement', () => {
       else expect(quotaState.finalize).not.toHaveBeenCalled();
     }
   );
+});
+
+describe('early read preparation remains one frozen dispatch context', () => {
+  it('reuses already-started reads without repeating provider/config queries', async () => {
+    const fetchMock = stubUpstream(() => sseResponse([DELTA('ok'), 'data: [DONE]\n\n']));
+    const input = request();
+    input.preparation = prepareGeneration({
+      model: input.model,
+      characterId: input.characterId,
+      useFallback: false,
+    });
+    await input.preparation;
+    expect(preparation.readRouting).toHaveBeenCalledOnce();
+    await execute(input);
+    expect(preparation.readRouting).toHaveBeenCalledOnce();
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it('rejects a preparation for another character before any upstream request', async () => {
+    const fetchMock = stubUpstream(() => sseResponse([]));
+    const input = request();
+    input.preparation = prepareGeneration({
+      model: input.model,
+      characterId: 'other-character',
+      useFallback: false,
+    });
+    await expect(execute(input)).rejects.toThrow('Generation preparation identity differs');
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(savedHistory()).toHaveLength(0);
+  });
 });

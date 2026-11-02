@@ -28,14 +28,23 @@ export interface ConversationStreamSink {
   close(): void;
 }
 
+export interface ReplyStreamSinkOptions {
+  /** 首个确实写入下游的非空正文/思考片段；监控回调不得影响流。 */
+  onFirstVisibleToken?: () => void;
+}
+
 export function encodeStreamEvent(event: ConversationStreamEvent): string {
   return `data: ${JSON.stringify(event)}\n\n`;
 }
 
-export function createReplyStreamSink(reply: FastifyReply): ConversationStreamSink {
+export function createReplyStreamSink(
+  reply: FastifyReply,
+  options: ReplyStreamSinkOptions = {}
+): ConversationStreamSink {
   let opened = false;
   let closed = false;
   let clientGone = false;
+  let firstVisibleTokenReported = false;
 
   // 'close' 在正常收尾时也会触发，此时 closed 已为 true，不会误判成客户端断开。
   reply.raw.on('close', () => {
@@ -86,7 +95,6 @@ export function createReplyStreamSink(reply: FastifyReply): ConversationStreamSi
       if (!opened || !writable()) return false;
       try {
         reply.raw.write(encodeStreamEvent(event));
-        return true;
       } catch (err) {
         clientGone = true;
         reply.log?.warn(
@@ -95,6 +103,23 @@ export function createReplyStreamSink(reply: FastifyReply): ConversationStreamSi
         );
         return false;
       }
+      if (
+        !firstVisibleTokenReported &&
+        (event.type === 'delta' || event.type === 'reasoning') &&
+        event.text.trim().length > 0
+      ) {
+        firstVisibleTokenReported = true;
+        try {
+          options.onFirstVisibleToken?.();
+        } catch (err) {
+          // 观测回调与 socket 写入隔离，绝不能把成功交付改成生成失败。
+          reply.log?.warn(
+            { err, event: 'conversation.stream.first_token_observer_failed' },
+            '首字观测失败，继续推流'
+          );
+        }
+      }
+      return true;
     },
     close() {
       if (!opened || closed) return;

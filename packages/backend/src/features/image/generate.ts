@@ -82,7 +82,11 @@ export async function runImageGeneration(input: {
       selectedModelId: turn.llm_billing_snapshot?.model_id ?? null,
     };
 
-    const character = await characters.requireCard(session.character_id);
+    const character = await characters.requireCard(
+      session.character_id,
+      session.user_id,
+      session.id
+    );
     const visualAnchor = requireVisualAnchor(character);
     if (!attempt.prompt_cn) {
       const latencyMs = Date.now() - startedAt;

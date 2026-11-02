@@ -25,6 +25,7 @@ import {
   PatchGenerationConfigRequestSchema,
   ForkConversationRequestSchema,
   SetMessageLikeRequestSchema,
+  ChangeChatMessageRequestSchema,
 } from '@miniapp/shared';
 import type {
   CancelConversationTurnRequest,
@@ -49,6 +50,7 @@ import type {
 import { requireTelegramAuth, type TelegramUser } from '../middleware/auth.js';
 import { getOrCreateDbUser } from '../lib/user.js';
 import { requestLogger, type RequestLogger } from '../lib/logger.js';
+import { startSseResponseMetric } from '../lib/perf-metrics.js';
 import {
   ChatSessionRepository,
   toChatSession,
@@ -259,7 +261,11 @@ export default async function conversationRoutes(app: FastifyInstance) {
           }),
           settings.getDisplayName(dbUser.id),
         ]);
-        const openingMessage = await sessions.getCharacterFirstMes(branched.character_id);
+        const openingMessage = await sessions.getCharacterFirstMes(
+          branched.character_id,
+          dbUser.id,
+          branched.id
+        );
         const page = await history.listMessages(branched.id, openingMessage);
         log.biz.info(
           {
@@ -293,6 +299,54 @@ export default async function conversationRoutes(app: FastifyInstance) {
           '开启对话分支失败'
         );
         return reply.status(500).send(fail('INTERNAL_ERROR', '分支暂未打开，请重试'));
+      }
+    }
+  );
+
+  // @frontend-ready: true
+  app.patch(
+    '/api/v1/conversations/:id/messages/:messageId',
+    { preHandler: [requireTelegramAuth] },
+    async (request, reply) => {
+      if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
+      const { id: sessionId, messageId } = request.params as { id: string; messageId: string };
+      const parsed = ChangeChatMessageRequestSchema.safeParse(request.body);
+      if (!UUID_PATTERN.test(sessionId) || !UUID_PATTERN.test(messageId) || !parsed.success)
+        return reply.status(400).send(fail('BAD_REQUEST', '消息修改内容无效'));
+      const dbUser = await getOrCreateDbUser(request.user);
+      const startedAt = Date.now();
+      try {
+        const data = await history.changeMessage({
+          userId: dbUser.id,
+          sessionId,
+          messageId,
+          body: parsed.data,
+        });
+        request.log.info(
+          {
+            event: 'conversation.message.changed',
+            sessionId,
+            messageId,
+            role: parsed.data.role,
+            action: parsed.data.action,
+            elapsedMs: Date.now() - startedAt,
+          },
+          '消息已修改'
+        );
+        return reply.send(ok(data));
+      } catch (err) {
+        if (sendConversationError(reply, err)) return;
+        // Raw database errors may contain user text in constraint details.
+        request.log.error(
+          {
+            event: 'conversation.message.change_failed',
+            sessionId,
+            messageId,
+            elapsedMs: Date.now() - startedAt,
+          },
+          '消息修改失败'
+        );
+        return reply.status(500).send(fail('INTERNAL_ERROR', '保存失败，内容已保留，请重试'));
       }
     }
   );
@@ -410,7 +464,7 @@ export default async function conversationRoutes(app: FastifyInstance) {
         const recoverStarted = performance.now();
         const [, openingMessage] = await Promise.all([
           history.recoverStaleStreaming(sessionId),
-          sessions.getCharacterFirstMes(session.character_id),
+          sessions.getCharacterFirstMes(session.character_id, dbUser.id, session.id),
         ]);
         const recoverAndOpeningMs = performance.now() - recoverStarted;
         const listStarted = performance.now();
@@ -622,15 +676,28 @@ export default async function conversationRoutes(app: FastifyInstance) {
   }): Promise<undefined> {
     const { reply, sessionId, mode, tgUser, baseLog } = input;
     const log = requestLogger(baseLog, 'conversations');
-    // 必须在任何可能耗时的 await 之前建好：客户端断开的监听要尽早挂上
-    const sink = createReplyStreamSink(reply);
     const receivedAt = Date.now();
     const receivedMonotonicAt = performance.now();
+    // 与 Fastify onResponse 的起点对齐，包含鉴权和参数校验，而不是从进入业务编排才起算。
+    const requestStartedMonotonicAt = receivedMonotonicAt - reply.elapsedTime;
+    const responseMetric = startSseResponseMetric(
+      reply,
+      mode.kind === 'send'
+        ? '/api/v1/conversations/:id/messages'
+        : '/api/v1/conversations/:id/regenerate',
+      requestStartedMonotonicAt
+    );
+    // 必须在任何可能耗时的 await 之前建好：客户端断开的监听要尽早挂上
+    const sink = createReplyStreamSink(reply, {
+      onFirstVisibleToken: responseMetric.firstVisibleToken,
+    });
     let preparationSignal = AbortSignal.timeout(DEFAULT_FIRST_TOKEN_DEADLINE_MS);
 
     try {
-      const catalog = await withConversationPreparationDeadline(
-        fetchModelCatalogSnapshot(),
+      // 模型目录与 Telegram→内部用户映射相互独立；身份创建由 tg_id 唯一约束保证幂等。
+      // 同时启动可去掉冷缓存下的一段串行往返，仍共同受默认首字准备预算约束。
+      const [catalog, dbUser] = await withConversationPreparationDeadline(
+        Promise.all([fetchModelCatalogSnapshot(), getOrCreateDbUser(tgUser)]),
         preparationSignal
       );
       const firstTokenDeadlineMs =
@@ -640,10 +707,6 @@ export default async function conversationRoutes(app: FastifyInstance) {
       );
       // Bound read-only preparation by the configured first-token budget.
       // Race each preparation await, never a block containing generation or quota writes.
-      const dbUser = await withConversationPreparationDeadline(
-        getOrCreateDbUser(tgUser),
-        preparationSignal
-      );
       preparationSignal.throwIfAborted();
       const session = await withConversationPreparationDeadline(
         sessions.requireSession(sessionId, dbUser.id),
@@ -658,6 +721,7 @@ export default async function conversationRoutes(app: FastifyInstance) {
         receivedAt,
         receivedMonotonicAt,
         firstTokenDeadlineMs,
+        catalogSnapshot: catalog,
         requestId: input.requestId,
         thinkingEnabled: input.thinkingEnabled,
         firstTokenMeasurement: input.firstTokenMeasurement,
@@ -667,6 +731,8 @@ export default async function conversationRoutes(app: FastifyInstance) {
     } catch (error) {
       failTurn(reply, sink, error, log);
       return undefined;
+    } finally {
+      responseMetric.finish(reply.statusCode);
     }
   }
 

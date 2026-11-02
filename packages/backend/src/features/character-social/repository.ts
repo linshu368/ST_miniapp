@@ -6,6 +6,7 @@ import type {
   GetCharacterSocialsData,
   ReportCharacterComment,
 } from '@miniapp/shared';
+import { canUseCharacter } from '../creator/access.js';
 import { getDomainDb } from '../../lib/supabase.js';
 
 const TIMEOUT_MS = 5000;
@@ -60,17 +61,8 @@ export class CharacterSocialRepository {
     return getDomainDb('miniapp_features');
   }
 
-  async exists(id: string) {
-    const result = await getDomainDb('app_core')
-      .from('characters')
-      .select('id')
-      .eq('id', id)
-      .eq('enabled', true)
-      .is('archived_at', null)
-      .abortSignal(AbortSignal.timeout(TIMEOUT_MS))
-      .maybeSingle();
-    if (result.error) throw result.error;
-    return Boolean(result.data);
+  async exists(id: string, userId: string) {
+    return canUseCharacter(userId, id);
   }
 
   async socials(ids: string[], userId: string): Promise<GetCharacterSocialsData['socials']> {

@@ -1,0 +1,586 @@
+{
+  "uid": "st-engineering-drama",
+  "operations": [
+    {
+      "op": "add",
+      "path": "$.templating.list/-",
+      "value": {
+        "name": "cdn_experiment",
+        "label": "CDN实验ID（仅CDN区）",
+        "type": "textbox",
+        "query": "drama-bunny-prod-20261029-v1",
+        "current": {
+          "text": "drama-bunny-prod-20261029-v1",
+          "value": "drama-bunny-prod-20261029-v1"
+        }
+      }
+    },
+    {
+      "op": "add",
+      "path": "$.templating.list/-",
+      "value": {
+        "name": "cdn_entry",
+        "label": "CDN起播入口（仅CDN启动区）",
+        "type": "custom",
+        "query": "首次尝试（排除重试） : cover|switch|episode|direct,全部 : .*,cover : cover,switch : switch,episode : episode,direct : direct,retry : retry",
+        "current": {
+          "text": "首次尝试（排除重试）",
+          "value": "cover|switch|episode|direct"
+        },
+        "options": [
+          {
+            "text": "首次尝试（排除重试）",
+            "value": "cover|switch|episode|direct",
+            "selected": true
+          },
+          {
+            "text": "全部",
+            "value": ".*",
+            "selected": false
+          },
+          {
+            "text": "cover",
+            "value": "cover",
+            "selected": false
+          },
+          {
+            "text": "switch",
+            "value": "switch",
+            "selected": false
+          },
+          {
+            "text": "episode",
+            "value": "episode",
+            "selected": false
+          },
+          {
+            "text": "direct",
+            "value": "direct",
+            "selected": false
+          },
+          {
+            "text": "retry",
+            "value": "retry",
+            "selected": false
+          }
+        ]
+      }
+    },
+    {
+      "op": "add",
+      "path": "$.panels/-",
+      "value": {
+        "id": 200,
+        "title": "CDN A/B 对照（已观测样本）",
+        "type": "row",
+        "collapsed": false,
+        "gridPos": {
+          "x": 0,
+          "y": 146,
+          "w": 24,
+          "h": 1
+        },
+        "panels": []
+      }
+    },
+    {
+      "op": "add",
+      "path": "$.panels/-",
+      "value": {
+        "id": 201,
+        "title": "CDN对照口径与边界",
+        "type": "text",
+        "gridPos": {
+          "x": 0,
+          "y": 147,
+          "w": 24,
+          "h": 6
+        },
+        "options": {
+          "mode": "markdown",
+          "content": "按原始用户分桶比较 Bunny / Supabase；实际节点与关闭回退见下方归属表。仅新投影已收到、已归桶的样本，历史无标签不补分组。5秒指单次播放触发→首帧且playing（≤5000ms），不是打开MiniApp→视频，也不含重试间隔。失败/退出/换剧未开播为未达标，后台/缺证据单列；它们不等同CDN故障。默认排除重试，重试成功不覆盖原失败。\n\n仅CDN区。环境/版本/平台/网络/页面沿用顶部筛选；CDN起播入口仅作用启动指标，旧启动入口和目录/首张画面筛选不作用本区。未知归属表是同窗口/版本的新投影总体，无法证明属于所选实验。开始/终态不是逐次配对；次数与质量窗口不是人数，不能据此核验20/80或显著性。质量窗口按原始桶加权，排除初始等待/暂停/seek/后台。无数据不补0，先核验样本构成和遥测健康。"
+        }
+      }
+    },
+    {
+      "op": "add",
+      "path": "$.panels/-",
+      "value": {
+        "id": 202,
+        "title": "CDN｜终态构成与未知归属（次数）",
+        "type": "table",
+        "description": "仅CDN区。环境/版本/平台/网络/页面沿用顶部筛选；CDN起播入口仅作用启动指标，旧启动入口和目录/首张画面筛选不作用本区。仅已知终态；unmeasured/后台单列；未知不能据此计算本实验缺报率。",
+        "datasource": {
+          "type": "loki",
+          "uid": "grafanacloud-logs"
+        },
+        "gridPos": {
+          "x": 0,
+          "y": 153,
+          "w": 24,
+          "h": 8
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "noValue": "—",
+            "color": {
+              "mode": "palette-classic"
+            }
+          },
+          "overrides": []
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "datasource": {
+              "type": "loki",
+              "uid": "grafanacloud-logs"
+            },
+            "editorMode": "code",
+            "queryType": "instant",
+            "expr": "sum by (cdn_group,outcome,budget) (count_over_time(${browser_selector:raw} |= \"st_drama_terminal\" | logfmt | kind=\"event\" | event_name=\"st_drama_terminal\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_source_measurement_version=\"drama_v3\" | event_data_route=~\"$drama_route\" | event_data_tg_platform=~\"$tg_platform\" | event_data_net_type=~\"$net_type\" | event_data_report_kind=\"playback\" | event_data_stage=\"startup\" | event_data_source_measurement_version=~\"$startup_definition\" | event_data_playback_mode=~\"$cdn_entry\" | event_data_cache=~\"$startup_cache\" | event_data_first_frame_method=~\"$startup_frame\" | event_data_cdn_budget=~\"within_5s|over_5s|not_started|unmeasured|background\" | event_data_cdn_experiment=\"$cdn_experiment\" | event_data_cdn_group=~\"bunny|supabase\" | label_format cdn_group=\"{{.event_data_cdn_group}}\", outcome=\"{{.event_data_outcome}}\", budget=\"{{.event_data_cdn_budget}}\" | __error__=\"\" | keep cdn_group,outcome,budget [$__range]))"
+          },
+          {
+            "refId": "B",
+            "datasource": {
+              "type": "loki",
+              "uid": "grafanacloud-logs"
+            },
+            "editorMode": "code",
+            "queryType": "instant",
+            "expr": "sum by (cdn_group,outcome,budget) (count_over_time(${browser_selector:raw} |= \"st_drama_terminal\" | logfmt | kind=\"event\" | event_name=\"st_drama_terminal\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_source_measurement_version=\"drama_v3\" | event_data_route=~\"$drama_route\" | event_data_tg_platform=~\"$tg_platform\" | event_data_net_type=~\"$net_type\" | event_data_report_kind=\"playback\" | event_data_stage=\"startup\" | event_data_source_measurement_version=~\"$startup_definition\" | event_data_playback_mode=~\"$cdn_entry\" | event_data_cache=~\"$startup_cache\" | event_data_first_frame_method=~\"$startup_frame\" | event_data_cdn_experiment=\"unknown\" | event_data_cdn_group=\"unknown\" | event_data_cdn_budget!=\"\" | label_format cdn_group=\"unknown（同窗口新投影，未归属实验）\", outcome=\"{{.event_data_outcome}}\", budget=\"{{.event_data_cdn_budget}}\" | __error__=\"\" | keep cdn_group,outcome,budget [$__range]))"
+          }
+        ],
+        "options": {
+          "showHeader": true
+        },
+        "transformations": [
+          {
+            "id": "labelsToFields",
+            "options": {}
+          },
+          {
+            "id": "organize",
+            "options": {
+              "excludeByName": {
+                "Time": true
+              },
+              "renameByName": {
+                "cdn_group": "原始桶",
+                "outcome": "结果",
+                "budget": "5秒分类",
+                "band": "成功耗时区间",
+                "provider": "实际节点",
+                "reason": "选择原因",
+                "Value": "次数"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "op": "add",
+      "path": "$.panels/-",
+      "value": {
+        "id": 203,
+        "title": "CDN｜5秒内成功开播率与有效分母",
+        "type": "stat",
+        "description": "仅CDN区。环境/版本/平台/网络/页面沿用顶部筛选；CDN起播入口仅作用启动指标，旧启动入口和目录/首张画面筛选不作用本区。达标数/(达标+超5秒成功+前台未开播)，左滑/离页属于本次未达标，后台和缺证据排除并单列；同条终态原子分类。分母0无数据。",
+        "datasource": {
+          "type": "loki",
+          "uid": "grafanacloud-logs"
+        },
+        "gridPos": {
+          "x": 0,
+          "y": 161,
+          "w": 12,
+          "h": 5
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "noValue": "—",
+            "color": {
+              "mode": "palette-classic"
+            }
+          },
+          "overrides": [
+            {
+              "matcher": {
+                "id": "byFrameRefID",
+                "options": "A"
+              },
+              "properties": [
+                {
+                  "id": "unit",
+                  "value": "percentunit"
+                }
+              ]
+            }
+          ]
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "datasource": {
+              "type": "loki",
+              "uid": "grafanacloud-logs"
+            },
+            "editorMode": "code",
+            "queryType": "instant",
+            "expr": "((sum by (cdn_group) (count_over_time(${browser_selector:raw} |= \"st_drama_terminal\" | logfmt | kind=\"event\" | event_name=\"st_drama_terminal\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_source_measurement_version=\"drama_v3\" | event_data_route=~\"$drama_route\" | event_data_tg_platform=~\"$tg_platform\" | event_data_net_type=~\"$net_type\" | event_data_report_kind=\"playback\" | event_data_stage=\"startup\" | event_data_source_measurement_version=~\"$startup_definition\" | event_data_playback_mode=~\"$cdn_entry\" | event_data_cache=~\"$startup_cache\" | event_data_first_frame_method=~\"$startup_frame\" | event_data_cdn_experiment=\"$cdn_experiment\" | event_data_cdn_group=~\"bunny|supabase\" | label_format cdn_group=\"{{.event_data_cdn_group}}\" | event_data_cdn_budget=\"within_5s\" | __error__=\"\" | keep cdn_group [$__range]))) or on (cdn_group) (0 * (sum by (cdn_group) (count_over_time(${browser_selector:raw} |= \"st_drama_terminal\" | logfmt | kind=\"event\" | event_name=\"st_drama_terminal\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_source_measurement_version=\"drama_v3\" | event_data_route=~\"$drama_route\" | event_data_tg_platform=~\"$tg_platform\" | event_data_net_type=~\"$net_type\" | event_data_report_kind=\"playback\" | event_data_stage=\"startup\" | event_data_source_measurement_version=~\"$startup_definition\" | event_data_playback_mode=~\"$cdn_entry\" | event_data_cache=~\"$startup_cache\" | event_data_first_frame_method=~\"$startup_frame\" | event_data_cdn_experiment=\"$cdn_experiment\" | event_data_cdn_group=~\"bunny|supabase\" | label_format cdn_group=\"{{.event_data_cdn_group}}\" | event_data_cdn_budget=~\"within_5s|over_5s|not_started\" | __error__=\"\" | keep cdn_group [$__range]))))) / (sum by (cdn_group) (count_over_time(${browser_selector:raw} |= \"st_drama_terminal\" | logfmt | kind=\"event\" | event_name=\"st_drama_terminal\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_source_measurement_version=\"drama_v3\" | event_data_route=~\"$drama_route\" | event_data_tg_platform=~\"$tg_platform\" | event_data_net_type=~\"$net_type\" | event_data_report_kind=\"playback\" | event_data_stage=\"startup\" | event_data_source_measurement_version=~\"$startup_definition\" | event_data_playback_mode=~\"$cdn_entry\" | event_data_cache=~\"$startup_cache\" | event_data_first_frame_method=~\"$startup_frame\" | event_data_cdn_experiment=\"$cdn_experiment\" | event_data_cdn_group=~\"bunny|supabase\" | label_format cdn_group=\"{{.event_data_cdn_group}}\" | event_data_cdn_budget=~\"within_5s|over_5s|not_started\" | __error__=\"\" | keep cdn_group [$__range])))",
+            "legendFormat": "{{cdn_group}} · 达标率"
+          },
+          {
+            "refId": "B",
+            "datasource": {
+              "type": "loki",
+              "uid": "grafanacloud-logs"
+            },
+            "editorMode": "code",
+            "queryType": "instant",
+            "expr": "sum by (cdn_group) (count_over_time(${browser_selector:raw} |= \"st_drama_terminal\" | logfmt | kind=\"event\" | event_name=\"st_drama_terminal\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_source_measurement_version=\"drama_v3\" | event_data_route=~\"$drama_route\" | event_data_tg_platform=~\"$tg_platform\" | event_data_net_type=~\"$net_type\" | event_data_report_kind=\"playback\" | event_data_stage=\"startup\" | event_data_source_measurement_version=~\"$startup_definition\" | event_data_playback_mode=~\"$cdn_entry\" | event_data_cache=~\"$startup_cache\" | event_data_first_frame_method=~\"$startup_frame\" | event_data_cdn_experiment=\"$cdn_experiment\" | event_data_cdn_group=~\"bunny|supabase\" | label_format cdn_group=\"{{.event_data_cdn_group}}\" | event_data_cdn_budget=~\"within_5s|over_5s|not_started\" | __error__=\"\" | keep cdn_group [$__range]))",
+            "legendFormat": "{{cdn_group}} · 分母N"
+          }
+        ],
+        "options": {
+          "reduceOptions": {
+            "calcs": ["lastNotNull"],
+            "fields": "",
+            "values": false
+          },
+          "graphMode": "none",
+          "colorMode": "none"
+        }
+      }
+    },
+    {
+      "op": "add",
+      "path": "$.panels/-",
+      "value": {
+        "id": 204,
+        "title": "CDN｜成功启动 P50/P95（单次尝试）",
+        "type": "timeseries",
+        "description": "仅CDN区。环境/版本/平台/网络/页面沿用顶部筛选；CDN起播入口仅作用启动指标，旧启动入口和目录/首张画面筛选不作用本区。只看已归桶成功样本，同时看有效N与失败构成；各桶/时段P95不可相加或平均。",
+        "datasource": {
+          "type": "loki",
+          "uid": "grafanacloud-logs"
+        },
+        "gridPos": {
+          "x": 0,
+          "y": 166,
+          "w": 16,
+          "h": 8
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "ms",
+            "noValue": "—",
+            "color": {
+              "mode": "palette-classic"
+            }
+          },
+          "overrides": []
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "datasource": {
+              "type": "loki",
+              "uid": "grafanacloud-logs"
+            },
+            "editorMode": "code",
+            "queryType": "range",
+            "expr": "quantile_over_time(0.5, ${browser_selector:raw} |= \"st_drama_startup\" | logfmt | kind=\"measurement\" | type=\"st_drama_startup\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_source_measurement_version=\"drama_v3\" | context_route=~\"$drama_route\" | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | context_report_kind=\"playback\" | context_stage=\"startup\" | context_outcome=\"playing\" | context_cdn_budget=~\"within_5s|over_5s\" | context_source_measurement_version=~\"$startup_definition\" | context_playback_mode=~\"$cdn_entry\" | context_cache=~\"$startup_cache\" | context_first_frame_method=~\"$startup_frame\" | context_cdn_experiment=\"$cdn_experiment\" | context_cdn_group=~\"bunny|supabase\" | label_format cdn_group=\"{{.context_cdn_group}}\" | duration_ms>=0 | duration_ms<=86400000 | __error__=\"\" | keep cdn_group,duration_ms | unwrap duration_ms | __error__=\"\" [$__auto]) by (cdn_group)",
+            "legendFormat": "{{cdn_group}} P50"
+          },
+          {
+            "refId": "B",
+            "datasource": {
+              "type": "loki",
+              "uid": "grafanacloud-logs"
+            },
+            "editorMode": "code",
+            "queryType": "range",
+            "expr": "quantile_over_time(0.95, ${browser_selector:raw} |= \"st_drama_startup\" | logfmt | kind=\"measurement\" | type=\"st_drama_startup\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_source_measurement_version=\"drama_v3\" | context_route=~\"$drama_route\" | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | context_report_kind=\"playback\" | context_stage=\"startup\" | context_outcome=\"playing\" | context_cdn_budget=~\"within_5s|over_5s\" | context_source_measurement_version=~\"$startup_definition\" | context_playback_mode=~\"$cdn_entry\" | context_cache=~\"$startup_cache\" | context_first_frame_method=~\"$startup_frame\" | context_cdn_experiment=\"$cdn_experiment\" | context_cdn_group=~\"bunny|supabase\" | label_format cdn_group=\"{{.context_cdn_group}}\" | duration_ms>=0 | duration_ms<=86400000 | __error__=\"\" | keep cdn_group,duration_ms | unwrap duration_ms | __error__=\"\" [$__auto]) by (cdn_group)",
+            "legendFormat": "{{cdn_group}} P95"
+          }
+        ],
+        "options": {
+          "legend": {
+            "displayMode": "list",
+            "placement": "bottom"
+          }
+        }
+      }
+    },
+    {
+      "op": "add",
+      "path": "$.panels/-",
+      "value": {
+        "id": 205,
+        "title": "CDN｜成功启动有效样本 N",
+        "type": "stat",
+        "description": "仅CDN区。环境/版本/平台/网络/页面沿用顶部筛选；CDN起播入口仅作用启动指标，旧启动入口和目录/首张画面筛选不作用本区。与成功分位采用相同成功measurement和合法耗时筛选；整个所选窗口N，不是人数或每趋势点N。",
+        "datasource": {
+          "type": "loki",
+          "uid": "grafanacloud-logs"
+        },
+        "gridPos": {
+          "x": 16,
+          "y": 166,
+          "w": 8,
+          "h": 8
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "noValue": "—",
+            "color": {
+              "mode": "palette-classic"
+            }
+          },
+          "overrides": []
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "datasource": {
+              "type": "loki",
+              "uid": "grafanacloud-logs"
+            },
+            "editorMode": "code",
+            "queryType": "instant",
+            "expr": "sum by (cdn_group) (count_over_time(${browser_selector:raw} |= \"st_drama_startup\" | logfmt | kind=\"measurement\" | type=\"st_drama_startup\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_source_measurement_version=\"drama_v3\" | context_route=~\"$drama_route\" | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | context_report_kind=\"playback\" | context_stage=\"startup\" | context_outcome=\"playing\" | context_cdn_budget=~\"within_5s|over_5s\" | context_source_measurement_version=~\"$startup_definition\" | context_playback_mode=~\"$cdn_entry\" | context_cache=~\"$startup_cache\" | context_first_frame_method=~\"$startup_frame\" | context_cdn_experiment=\"$cdn_experiment\" | context_cdn_group=~\"bunny|supabase\" | label_format cdn_group=\"{{.context_cdn_group}}\" | duration_ms>=0 | duration_ms<=86400000 | __error__=\"\" | keep cdn_group [$__range]))",
+            "legendFormat": "{{cdn_group}} · 成功N"
+          }
+        ],
+        "options": {
+          "reduceOptions": {
+            "calcs": ["lastNotNull"],
+            "fields": "",
+            "values": false
+          },
+          "graphMode": "none",
+          "colorMode": "none"
+        }
+      }
+    },
+    {
+      "op": "add",
+      "path": "$.panels/-",
+      "value": {
+        "id": 207,
+        "title": "CDN｜前台卡顿占比与质量窗口 N",
+        "type": "stat",
+        "description": "仅已观测前台完整合法成对窗口。Σstall/Σ(play+stall)，含退出前未恢复等待；不是窗口比例平均值。仅环境/版本/平台/网络/页面和实验筛选有效，起播入口/缓存/首帧筛选不作用。",
+        "datasource": {
+          "type": "loki",
+          "uid": "grafanacloud-logs"
+        },
+        "gridPos": {
+          "x": 12,
+          "y": 161,
+          "w": 12,
+          "h": 5
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "noValue": "—",
+            "color": {
+              "mode": "palette-classic"
+            }
+          },
+          "overrides": [
+            {
+              "matcher": {
+                "id": "byFrameRefID",
+                "options": "A"
+              },
+              "properties": [
+                {
+                  "id": "unit",
+                  "value": "percentunit"
+                }
+              ]
+            }
+          ]
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "datasource": {
+              "type": "loki",
+              "uid": "grafanacloud-logs"
+            },
+            "editorMode": "code",
+            "queryType": "instant",
+            "expr": "(sum by (cdn_group) (sum_over_time(${browser_selector:raw} |= \"st_drama_playback_window\" | logfmt | kind=\"event\" | event_name=\"st_drama_playback_window\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_source_measurement_version=\"drama_playback_v1\" | event_data_route=~\"$drama_route\" | event_data_tg_platform=~\"$tg_platform\" | event_data_net_type=~\"$net_type\" | event_data_cdn_experiment=\"$cdn_experiment\" | event_data_cdn_group=~\"bunny|supabase\" | label_format cdn_group=\"{{.event_data_cdn_group}}\" | event_data_playing_ms=~\"[0-9]+\" | event_data_rebuffer_ms=~\"[0-9]+\" | event_data_playing_ms>=0 | event_data_playing_ms<=60000 | event_data_rebuffer_ms>=0 | event_data_rebuffer_ms<=60000 | label_format window_ms=\"{{ add .event_data_playing_ms .event_data_rebuffer_ms }}\" | window_ms>0 | window_ms<=60000 | __error__=\"\" | keep cdn_group,event_data_rebuffer_ms | unwrap event_data_rebuffer_ms | __error__=\"\" [$__range]))) / ((sum by (cdn_group) (sum_over_time(${browser_selector:raw} |= \"st_drama_playback_window\" | logfmt | kind=\"event\" | event_name=\"st_drama_playback_window\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_source_measurement_version=\"drama_playback_v1\" | event_data_route=~\"$drama_route\" | event_data_tg_platform=~\"$tg_platform\" | event_data_net_type=~\"$net_type\" | event_data_cdn_experiment=\"$cdn_experiment\" | event_data_cdn_group=~\"bunny|supabase\" | label_format cdn_group=\"{{.event_data_cdn_group}}\" | event_data_playing_ms=~\"[0-9]+\" | event_data_rebuffer_ms=~\"[0-9]+\" | event_data_playing_ms>=0 | event_data_playing_ms<=60000 | event_data_rebuffer_ms>=0 | event_data_rebuffer_ms<=60000 | label_format window_ms=\"{{ add .event_data_playing_ms .event_data_rebuffer_ms }}\" | window_ms>0 | window_ms<=60000 | __error__=\"\" | keep cdn_group,event_data_playing_ms | unwrap event_data_playing_ms | __error__=\"\" [$__range]))) + (sum by (cdn_group) (sum_over_time(${browser_selector:raw} |= \"st_drama_playback_window\" | logfmt | kind=\"event\" | event_name=\"st_drama_playback_window\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_source_measurement_version=\"drama_playback_v1\" | event_data_route=~\"$drama_route\" | event_data_tg_platform=~\"$tg_platform\" | event_data_net_type=~\"$net_type\" | event_data_cdn_experiment=\"$cdn_experiment\" | event_data_cdn_group=~\"bunny|supabase\" | label_format cdn_group=\"{{.event_data_cdn_group}}\" | event_data_playing_ms=~\"[0-9]+\" | event_data_rebuffer_ms=~\"[0-9]+\" | event_data_playing_ms>=0 | event_data_playing_ms<=60000 | event_data_rebuffer_ms>=0 | event_data_rebuffer_ms<=60000 | label_format window_ms=\"{{ add .event_data_playing_ms .event_data_rebuffer_ms }}\" | window_ms>0 | window_ms<=60000 | __error__=\"\" | keep cdn_group,event_data_rebuffer_ms | unwrap event_data_rebuffer_ms | __error__=\"\" [$__range]))))",
+            "legendFormat": "{{cdn_group}} · 卡顿占比"
+          },
+          {
+            "refId": "B",
+            "datasource": {
+              "type": "loki",
+              "uid": "grafanacloud-logs"
+            },
+            "editorMode": "code",
+            "queryType": "instant",
+            "expr": "sum by (cdn_group) (count_over_time(${browser_selector:raw} |= \"st_drama_playback_window\" | logfmt | kind=\"event\" | event_name=\"st_drama_playback_window\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_source_measurement_version=\"drama_playback_v1\" | event_data_route=~\"$drama_route\" | event_data_tg_platform=~\"$tg_platform\" | event_data_net_type=~\"$net_type\" | event_data_cdn_experiment=\"$cdn_experiment\" | event_data_cdn_group=~\"bunny|supabase\" | label_format cdn_group=\"{{.event_data_cdn_group}}\" | event_data_playing_ms=~\"[0-9]+\" | event_data_rebuffer_ms=~\"[0-9]+\" | event_data_playing_ms>=0 | event_data_playing_ms<=60000 | event_data_rebuffer_ms>=0 | event_data_rebuffer_ms<=60000 | label_format window_ms=\"{{ add .event_data_playing_ms .event_data_rebuffer_ms }}\" | window_ms>0 | window_ms<=60000 | __error__=\"\" | keep cdn_group [$__range]))",
+            "legendFormat": "{{cdn_group}} · 窗口N"
+          }
+        ],
+        "options": {
+          "reduceOptions": {
+            "calcs": ["lastNotNull"],
+            "fields": "",
+            "values": false
+          },
+          "graphMode": "none",
+          "colorMode": "none"
+        }
+      }
+    },
+    {
+      "op": "add",
+      "path": "$.panels/-",
+      "value": {
+        "id": 208,
+        "title": "CDN｜原始桶 → 实际节点／选择原因",
+        "type": "table",
+        "description": "仅CDN区。环境/版本/平台/网络/页面沿用顶部筛选；CDN起播入口仅作用启动指标，旧启动入口和目录/首张画面筛选不作用本区。原Bunny桶实际Supabase仍保留Bunny分组，不将关闭回退算成Bunny节点表现。次数不是人数。",
+        "datasource": {
+          "type": "loki",
+          "uid": "grafanacloud-logs"
+        },
+        "gridPos": {
+          "x": 12,
+          "y": 174,
+          "w": 12,
+          "h": 9
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "noValue": "—",
+            "color": {
+              "mode": "palette-classic"
+            }
+          },
+          "overrides": []
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "datasource": {
+              "type": "loki",
+              "uid": "grafanacloud-logs"
+            },
+            "editorMode": "code",
+            "queryType": "instant",
+            "expr": "sum by (cdn_group,provider,reason) (count_over_time(${browser_selector:raw} |= \"st_drama_terminal\" | logfmt | kind=\"event\" | event_name=\"st_drama_terminal\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_source_measurement_version=\"drama_v3\" | event_data_route=~\"$drama_route\" | event_data_tg_platform=~\"$tg_platform\" | event_data_net_type=~\"$net_type\" | event_data_report_kind=\"playback\" | event_data_stage=\"startup\" | event_data_source_measurement_version=~\"$startup_definition\" | event_data_playback_mode=~\"$cdn_entry\" | event_data_cache=~\"$startup_cache\" | event_data_first_frame_method=~\"$startup_frame\" | event_data_cdn_experiment=\"$cdn_experiment\" | event_data_cdn_group=~\"bunny|supabase\" | label_format cdn_group=\"{{.event_data_cdn_group}}\" | event_data_cdn_budget!=\"\" | label_format provider=\"{{.event_data_cdn_provider}}\", reason=\"{{.event_data_cdn_reason}}\" | __error__=\"\" | keep cdn_group,provider,reason [$__range]))"
+          }
+        ],
+        "options": {
+          "showHeader": true
+        },
+        "transformations": [
+          {
+            "id": "labelsToFields",
+            "options": {}
+          },
+          {
+            "id": "organize",
+            "options": {
+              "excludeByName": {
+                "Time": true
+              },
+              "renameByName": {
+                "cdn_group": "原始桶",
+                "outcome": "结果",
+                "budget": "5秒分类",
+                "band": "成功耗时区间",
+                "provider": "实际节点",
+                "reason": "选择原因",
+                "Value": "次数"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "op": "add",
+      "path": "$.panels/-",
+      "value": {
+        "id": 206,
+        "title": "CDN｜成功启动耗时分布（各桶占比）",
+        "type": "table",
+        "description": "仅CDN区。环境/版本/平台/网络/页面沿用顶部筛选；CDN起播入口仅作用启动指标，旧启动入口和目录/首张画面筛选不作用本区。各桶成功样本内归一化，空区间不补样本；失败不填0，不当作全体成功率。",
+        "datasource": {
+          "type": "loki",
+          "uid": "grafanacloud-logs"
+        },
+        "gridPos": {
+          "x": 0,
+          "y": 174,
+          "w": 12,
+          "h": 9
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percentunit",
+            "noValue": "—",
+            "color": {
+              "mode": "palette-classic"
+            }
+          },
+          "overrides": []
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "datasource": {
+              "type": "loki",
+              "uid": "grafanacloud-logs"
+            },
+            "editorMode": "code",
+            "queryType": "instant",
+            "expr": "label_replace((sum by (cdn_group) (count_over_time(${browser_selector:raw} |= \"st_drama_startup\" | logfmt | kind=\"measurement\" | type=\"st_drama_startup\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_source_measurement_version=\"drama_v3\" | context_route=~\"$drama_route\" | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | context_report_kind=\"playback\" | context_stage=\"startup\" | context_outcome=\"playing\" | context_cdn_budget=~\"within_5s|over_5s\" | context_source_measurement_version=~\"$startup_definition\" | context_playback_mode=~\"$cdn_entry\" | context_cache=~\"$startup_cache\" | context_first_frame_method=~\"$startup_frame\" | context_cdn_experiment=\"$cdn_experiment\" | context_cdn_group=~\"bunny|supabase\" | label_format cdn_group=\"{{.context_cdn_group}}\" | duration_ms>=0 | duration_ms<=86400000 | duration_ms>=0 | duration_ms<1000 | __error__=\"\" | keep cdn_group [$__range]))) / (sum by (cdn_group) (count_over_time(${browser_selector:raw} |= \"st_drama_startup\" | logfmt | kind=\"measurement\" | type=\"st_drama_startup\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_source_measurement_version=\"drama_v3\" | context_route=~\"$drama_route\" | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | context_report_kind=\"playback\" | context_stage=\"startup\" | context_outcome=\"playing\" | context_cdn_budget=~\"within_5s|over_5s\" | context_source_measurement_version=~\"$startup_definition\" | context_playback_mode=~\"$cdn_entry\" | context_cache=~\"$startup_cache\" | context_first_frame_method=~\"$startup_frame\" | context_cdn_experiment=\"$cdn_experiment\" | context_cdn_group=~\"bunny|supabase\" | label_format cdn_group=\"{{.context_cdn_group}}\" | duration_ms>=0 | duration_ms<=86400000 | __error__=\"\" | keep cdn_group [$__range]))), \"band\", \"0–1秒\", \"cdn_group\", \".*\") or label_replace((sum by (cdn_group) (count_over_time(${browser_selector:raw} |= \"st_drama_startup\" | logfmt | kind=\"measurement\" | type=\"st_drama_startup\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_source_measurement_version=\"drama_v3\" | context_route=~\"$drama_route\" | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | context_report_kind=\"playback\" | context_stage=\"startup\" | context_outcome=\"playing\" | context_cdn_budget=~\"within_5s|over_5s\" | context_source_measurement_version=~\"$startup_definition\" | context_playback_mode=~\"$cdn_entry\" | context_cache=~\"$startup_cache\" | context_first_frame_method=~\"$startup_frame\" | context_cdn_experiment=\"$cdn_experiment\" | context_cdn_group=~\"bunny|supabase\" | label_format cdn_group=\"{{.context_cdn_group}}\" | duration_ms>=0 | duration_ms<=86400000 | duration_ms>=1000 | duration_ms<2000 | __error__=\"\" | keep cdn_group [$__range]))) / (sum by (cdn_group) (count_over_time(${browser_selector:raw} |= \"st_drama_startup\" | logfmt | kind=\"measurement\" | type=\"st_drama_startup\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_source_measurement_version=\"drama_v3\" | context_route=~\"$drama_route\" | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | context_report_kind=\"playback\" | context_stage=\"startup\" | context_outcome=\"playing\" | context_cdn_budget=~\"within_5s|over_5s\" | context_source_measurement_version=~\"$startup_definition\" | context_playback_mode=~\"$cdn_entry\" | context_cache=~\"$startup_cache\" | context_first_frame_method=~\"$startup_frame\" | context_cdn_experiment=\"$cdn_experiment\" | context_cdn_group=~\"bunny|supabase\" | label_format cdn_group=\"{{.context_cdn_group}}\" | duration_ms>=0 | duration_ms<=86400000 | __error__=\"\" | keep cdn_group [$__range]))), \"band\", \"1–2秒\", \"cdn_group\", \".*\") or label_replace((sum by (cdn_group) (count_over_time(${browser_selector:raw} |= \"st_drama_startup\" | logfmt | kind=\"measurement\" | type=\"st_drama_startup\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_source_measurement_version=\"drama_v3\" | context_route=~\"$drama_route\" | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | context_report_kind=\"playback\" | context_stage=\"startup\" | context_outcome=\"playing\" | context_cdn_budget=~\"within_5s|over_5s\" | context_source_measurement_version=~\"$startup_definition\" | context_playback_mode=~\"$cdn_entry\" | context_cache=~\"$startup_cache\" | context_first_frame_method=~\"$startup_frame\" | context_cdn_experiment=\"$cdn_experiment\" | context_cdn_group=~\"bunny|supabase\" | label_format cdn_group=\"{{.context_cdn_group}}\" | duration_ms>=0 | duration_ms<=86400000 | duration_ms>=2000 | duration_ms<=5000 | __error__=\"\" | keep cdn_group [$__range]))) / (sum by (cdn_group) (count_over_time(${browser_selector:raw} |= \"st_drama_startup\" | logfmt | kind=\"measurement\" | type=\"st_drama_startup\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_source_measurement_version=\"drama_v3\" | context_route=~\"$drama_route\" | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | context_report_kind=\"playback\" | context_stage=\"startup\" | context_outcome=\"playing\" | context_cdn_budget=~\"within_5s|over_5s\" | context_source_measurement_version=~\"$startup_definition\" | context_playback_mode=~\"$cdn_entry\" | context_cache=~\"$startup_cache\" | context_first_frame_method=~\"$startup_frame\" | context_cdn_experiment=\"$cdn_experiment\" | context_cdn_group=~\"bunny|supabase\" | label_format cdn_group=\"{{.context_cdn_group}}\" | duration_ms>=0 | duration_ms<=86400000 | __error__=\"\" | keep cdn_group [$__range]))), \"band\", \"2–5秒（含5秒）\", \"cdn_group\", \".*\") or label_replace((sum by (cdn_group) (count_over_time(${browser_selector:raw} |= \"st_drama_startup\" | logfmt | kind=\"measurement\" | type=\"st_drama_startup\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_source_measurement_version=\"drama_v3\" | context_route=~\"$drama_route\" | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | context_report_kind=\"playback\" | context_stage=\"startup\" | context_outcome=\"playing\" | context_cdn_budget=~\"within_5s|over_5s\" | context_source_measurement_version=~\"$startup_definition\" | context_playback_mode=~\"$cdn_entry\" | context_cache=~\"$startup_cache\" | context_first_frame_method=~\"$startup_frame\" | context_cdn_experiment=\"$cdn_experiment\" | context_cdn_group=~\"bunny|supabase\" | label_format cdn_group=\"{{.context_cdn_group}}\" | duration_ms>=0 | duration_ms<=86400000 | duration_ms>5000 | duration_ms<=10000 | __error__=\"\" | keep cdn_group [$__range]))) / (sum by (cdn_group) (count_over_time(${browser_selector:raw} |= \"st_drama_startup\" | logfmt | kind=\"measurement\" | type=\"st_drama_startup\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_source_measurement_version=\"drama_v3\" | context_route=~\"$drama_route\" | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | context_report_kind=\"playback\" | context_stage=\"startup\" | context_outcome=\"playing\" | context_cdn_budget=~\"within_5s|over_5s\" | context_source_measurement_version=~\"$startup_definition\" | context_playback_mode=~\"$cdn_entry\" | context_cache=~\"$startup_cache\" | context_first_frame_method=~\"$startup_frame\" | context_cdn_experiment=\"$cdn_experiment\" | context_cdn_group=~\"bunny|supabase\" | label_format cdn_group=\"{{.context_cdn_group}}\" | duration_ms>=0 | duration_ms<=86400000 | __error__=\"\" | keep cdn_group [$__range]))), \"band\", \"5–10秒（不含5秒）\", \"cdn_group\", \".*\") or label_replace((sum by (cdn_group) (count_over_time(${browser_selector:raw} |= \"st_drama_startup\" | logfmt | kind=\"measurement\" | type=\"st_drama_startup\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_source_measurement_version=\"drama_v3\" | context_route=~\"$drama_route\" | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | context_report_kind=\"playback\" | context_stage=\"startup\" | context_outcome=\"playing\" | context_cdn_budget=~\"within_5s|over_5s\" | context_source_measurement_version=~\"$startup_definition\" | context_playback_mode=~\"$cdn_entry\" | context_cache=~\"$startup_cache\" | context_first_frame_method=~\"$startup_frame\" | context_cdn_experiment=\"$cdn_experiment\" | context_cdn_group=~\"bunny|supabase\" | label_format cdn_group=\"{{.context_cdn_group}}\" | duration_ms>=0 | duration_ms<=86400000 | duration_ms>10000 | __error__=\"\" | keep cdn_group [$__range]))) / (sum by (cdn_group) (count_over_time(${browser_selector:raw} |= \"st_drama_startup\" | logfmt | kind=\"measurement\" | type=\"st_drama_startup\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_source_measurement_version=\"drama_v3\" | context_route=~\"$drama_route\" | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | context_report_kind=\"playback\" | context_stage=\"startup\" | context_outcome=\"playing\" | context_cdn_budget=~\"within_5s|over_5s\" | context_source_measurement_version=~\"$startup_definition\" | context_playback_mode=~\"$cdn_entry\" | context_cache=~\"$startup_cache\" | context_first_frame_method=~\"$startup_frame\" | context_cdn_experiment=\"$cdn_experiment\" | context_cdn_group=~\"bunny|supabase\" | label_format cdn_group=\"{{.context_cdn_group}}\" | duration_ms>=0 | duration_ms<=86400000 | __error__=\"\" | keep cdn_group [$__range]))), \"band\", \"10秒以上\", \"cdn_group\", \".*\")",
+            "legendFormat": "{{cdn_group}} · {{band}}"
+          }
+        ],
+        "options": {
+          "showHeader": true
+        },
+        "transformations": [
+          {
+            "id": "labelsToFields",
+            "options": {}
+          },
+          {
+            "id": "organize",
+            "options": {
+              "excludeByName": {
+                "Time": true
+              },
+              "renameByName": {
+                "cdn_group": "原始桶",
+                "outcome": "结果",
+                "budget": "5秒分类",
+                "band": "成功耗时区间",
+                "provider": "实际节点",
+                "reason": "选择原因",
+                "Value": "占比"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "message": "Add observed CDN A/B comparison; preserve all existing panels"
+}

@@ -140,3 +140,37 @@ describe('quota reservation cancellation boundary', () => {
     expect(quotaMocks.reserve).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('prepared quota configuration', () => {
+  it('uses the same-turn limit with exactly one reserve and no additional config read', async () => {
+    await reserveCharacterFreeQuota({
+      chargeId: 'charge',
+      userId: 'user',
+      characterId: CHARACTER_ID,
+      billing: { isFree: true },
+      log: fakeLogger(),
+      quotaLimit: 17,
+    });
+    expect(quotaMocks.limit).not.toHaveBeenCalled();
+    expect(quotaMocks.reserve).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ quotaLimit: 17 })
+    );
+  });
+
+  it('does not reserve after the request expired even when a prepared limit is ready', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      reserveCharacterFreeQuota({
+        chargeId: 'charge',
+        userId: 'user',
+        characterId: CHARACTER_ID,
+        billing: { isFree: true },
+        log: fakeLogger(),
+        quotaLimit: 17,
+        signal: controller.signal,
+      })
+    ).rejects.toThrow();
+    expect(quotaMocks.reserve).not.toHaveBeenCalled();
+  });
+});

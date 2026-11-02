@@ -7,6 +7,7 @@
  * @Copyright (c) 2026 by git config user.name, All Rights Reserved.
  */
 import { describe, expect, it } from 'vitest';
+import { CREATOR_REVIEW_PROMPT_KEY } from '@miniapp/shared';
 import {
   configMenuKey,
   IMAGE_GENERATION_CONFIG_KEYS,
@@ -129,5 +130,19 @@ describe('reply style options navigation', () => {
       'memory_rules',
       'system_instructions',
     ]);
+  });
+});
+
+describe('creator review prompt navigation', () => {
+  it('does not resolve the retired human review view', () => {
+    expect(resolveAdminMenuSelection('creator_characters')).toEqual({ view: 'configs' });
+  });
+  it('keeps the top-level AI prompt editor routed without a roleplay tab or duplicate menu', () => {
+    expect(resolveAdminMenuSelection(configMenuKey(CREATOR_REVIEW_PROMPT_KEY))).toEqual({
+      view: 'configs',
+      configKey: CREATOR_REVIEW_PROMPT_KEY,
+    });
+    expect(sidebarManagedConfigKeys).not.toContain(CREATOR_REVIEW_PROMPT_KEY);
+    expect(PLATFORM_INSTRUCTION_CONFIG_KEYS).not.toContain(CREATOR_REVIEW_PROMPT_KEY);
   });
 });

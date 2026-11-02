@@ -1,0 +1,40 @@
+{
+  "id": "optimize-mobile-platform-page-loads",
+  "name": "optimize-mobile-platform-page-loads",
+  "title": "优化 Android 与 iOS 首页角色短剧加载性能",
+  "description": "依据 10 月 26 日至 11 月 1 日周性能报告，分别优化 Android/iOS 首页、/characters 与 /dramas 页面，目标分平台 P95 稳定低于 3 秒。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": "frontend",
+  "package": "frontend",
+  "priority": "P0",
+  "creator": "cline",
+  "assignee": "cline",
+  "createdAt": "2026-11-02",
+  "completedAt": "2026-11-02",
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "packages/frontend/src/lib/perf/env-tags.ts",
+    "packages/frontend/src/lib/mobile-performance.ts",
+    "packages/frontend/src/components/nav/bottom-nav.tsx",
+    "packages/frontend/src/components/characters/character-gallery.tsx",
+    "packages/frontend/src/components/characters/character-card.tsx",
+    "packages/frontend/src/app/(main)/dramas/page.tsx",
+    "packages/frontend/src/components/drama/drama-player.tsx"
+  ],
+  "notes": "用户要求实现和本地验证完成后自动归档；不自动 commit 或 push。production P95 需发布后按平台复核。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "no_module_change",
+      "reason": "本任务只调整现有列表分批挂载、图片优先级、首页海报和路由预取的有界资源调度参数；未改变模块职责、入口、契约、状态源或关键业务链路，且 production 效果尚待发布验证，不写成当前模块事实。"
+    }
+  }
+}

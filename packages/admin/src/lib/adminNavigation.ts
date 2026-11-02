@@ -1,5 +1,9 @@
 import { managedConfigKeys, type ManagedConfigKey } from './configSchemas';
-import { VIP_STRATEGY_CONFIG_KEYS, type VipStrategyConfigKey } from '@miniapp/shared';
+import {
+  CREATOR_REVIEW_PROMPT_KEY,
+  VIP_STRATEGY_CONFIG_KEYS,
+  type VipStrategyConfigKey,
+} from '@miniapp/shared';
 
 export type AdminViewKey =
   | 'configs'
@@ -101,6 +105,7 @@ export const sidebarManagedConfigKeys: readonly ManagedConfigKey[] = managedConf
     !isImagePlazaConfigKey(key) &&
     !isPlatformInstructionConfigKey(key) &&
     key !== 'reply_style_options' &&
+    key !== CREATOR_REVIEW_PROMPT_KEY &&
     !isVipStrategyConfigKey(key) &&
     key !== LEGACY_MEDIA_FREE_TRIAL_LIMIT_KEY
 );

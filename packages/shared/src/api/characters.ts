@@ -59,3 +59,8 @@ export interface GetCharacterByIdData {
 export interface LobbyLatestBadgeData {
   has_new: boolean;
 }
+
+/** Existing conversations render their bound creator version; lobby/detail without a session show current content. */
+export interface GetCharacterByIdQuery {
+  session_id?: string;
+}

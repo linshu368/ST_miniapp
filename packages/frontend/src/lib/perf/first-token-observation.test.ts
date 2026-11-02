@@ -411,3 +411,32 @@ describe('client-committed first token observation', () => {
     expect(report.mock.calls[0]?.[0].outcome).toBe('observed');
   });
 });
+
+it.each(['awaiting_start', 'awaiting_token', 'awaiting_commit'] as const)(
+  'exports timeout stage %s once without changing the cutoff or business receipt',
+  async (stage) => {
+    const report = vi.fn();
+    const timeout = vi.fn();
+    const obs = new FirstTokenObservation(
+      { ...identity, assistantMessageId: null },
+      6000,
+      report,
+      timeout
+    );
+    if (stage !== 'awaiting_start') obs.identify(identity.assistantMessageId, identity.revision);
+    if (stage === 'awaiting_commit') obs.received();
+    await vi.advanceTimersByTimeAsync(6000);
+    expect(timeout).toHaveBeenCalledOnce();
+    expect(engineering.event).toHaveBeenCalledWith(
+      'roleplay.terminal',
+      expect.objectContaining({
+        outcome: 'timed_out',
+        first_token_stage: stage,
+        deadline_ms: 6000,
+      })
+    );
+    expect(report).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ outcome: 'timed_out' })
+    );
+  }
+);

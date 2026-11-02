@@ -18,7 +18,7 @@
   "commit": null,
   "pr_url": null,
   "subtasks": [],
-  "children": ["10-29-optimize-entry-pages-p95-2s"],
+  "children": ["10-29-optimize-entry-pages-p95-2s", "10-30-sentry-1030-performance-optimization"],
   "parent": null,
   "relatedFiles": [],
   "notes": "",

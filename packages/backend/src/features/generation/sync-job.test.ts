@@ -292,6 +292,28 @@ describe('reconcileCharge (fixed_tier pending → applyLlmCharge)', () => {
     expect(finalizePending).not.toHaveBeenCalled();
   });
 
+  it.each(['openrouter', 'venice'] as const)(
+    'replays the frozen creator identity through %s recovery',
+    async (provider) => {
+      const creator = {
+        character_id: '90000000-0000-4000-8000-000000000010',
+        creator_user_id: '90000000-0000-4000-8000-000000000002',
+        rate: 0.4 as const,
+        wallet: 'bonus' as const,
+        policy_version: 1 as const,
+      };
+      findLlmUsageCharge.mockResolvedValue(null);
+      await reconcileCharge(
+        syncInput({
+          finishReason: 'stop',
+          assistantReply: '完整回复',
+          snapshot: billingSnapshot({ provider, creator_reward: creator }),
+        })
+      );
+      expect(lastCharge().metadata).toMatchObject({ creator_reward: creator, provider });
+    }
+  );
+
   it('does not charge while finish_reason is still null', async () => {
     await reconcileCharge(syncInput({ finishReason: null }));
     expect(chargeLlmUsage).not.toHaveBeenCalled();

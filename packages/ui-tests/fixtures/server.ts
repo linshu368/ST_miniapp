@@ -5,11 +5,27 @@ import { resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import {
+  CreateCreatorCharacterSchema,
+  SaveCreatorCharacterSchema,
+  PublishCreatorCharacterSchema,
+  CreatorCoverRequestSchema,
+  CreatorPolishRequestSchema,
+  CreatorAiReviewResultSchema,
+  CREATOR_REVIEW_REJECTED_CODE,
+  CREATOR_REVIEW_UNAVAILABLE_CODE,
+  CREATOR_PRESET_IDS,
+  emptyCharacterDraft,
+  creatorPublishMissingFields,
+  type CreatorCharacter,
+  type CreatorCoverAsset,
   CreateCharacterCommentSchema,
   ForkConversationRequestSchema,
   SetMessageLikeRequestSchema,
+  ChangeChatMessageRequestSchema,
+  splitEditableReply,
   ReportCharacterCommentSchema,
   SetCharacterLikeSchema,
+  getNextDailyCheckinAt,
   type CharacterComment,
   type CharacterSocial,
   type GetCharacterSocialData,
@@ -32,6 +48,9 @@ import {
   VideoPlazaQuoteRequestSchema,
   type ChatMessage,
   type ChatSession,
+  type UpdateConversationRequest,
+  type UpdateConversationData,
+  type DeleteConversationData,
   type ConversationStreamEvent,
   type ImagePlazaAttempt,
   type VideoPlazaAttempt,
@@ -43,9 +62,11 @@ import {
 } from '@miniapp/shared';
 import {
   IDS,
+  EDIT_REPLY_PANELS,
   isScenario,
   later,
   makeData,
+  makeChatSessionSamples,
   scenarios,
   stamp,
   voiceConfig,
@@ -54,7 +75,6 @@ import {
 } from './data.js';
 
 const HOST = '127.0.0.1';
-const tomorrow = () => new Date(Date.now() + 86_400_000).toISOString();
 export const PREVIEW_PROTOCOL = 'st-miniapp-ui-v1';
 
 /** One state per local environment; the runner is deliberately serial. No production proxy. */
@@ -63,7 +83,14 @@ export function createPreviewServer(apiPort: number, appPort: number) {
   const app = `http://${HOST}:${appPort}`;
   let data = makeData(api);
   let scenario: Scenario = 'standard';
-  let claimed = false;
+  const creatorOwner = '70000000-0000-4000-8000-000000000001';
+  const creatorCards = new Map<string, CreatorCharacter>();
+  const creatorCovers = new Map<string, CreatorCoverAsset>();
+  let creatorFailureDelivered = false;
+  let creatorReviewFailureDelivered = false;
+  let claimedAt: string | null = null;
+  const canClaimCheckin = () =>
+    !claimedAt || Date.now() >= Date.parse(getNextDailyCheckinAt(claimedAt));
   let epoch = 0;
   let favoriteIds = new Set<string>();
   const characterLikes = new Set<string>();
@@ -161,6 +188,7 @@ export function createPreviewServer(apiPort: number, appPort: number) {
   let branchFailureDelivered = false;
   const messageLikes = new Set<string>();
   let messageLikeFailureDelivered = false;
+  let messageEditFailureDelivered = false;
 
   function currentConversationMessages(sessionId: string): ChatMessage[] {
     const candidates = data.messages.filter((message) => message.session_id === sessionId);
@@ -213,13 +241,24 @@ export function createPreviewServer(apiPort: number, appPort: number) {
     for (const stream of streams) stream.end();
     streams.clear();
     data = makeData(api);
+    creatorCards.clear();
+    creatorCovers.clear();
+    creatorFailureDelivered = false;
+    creatorReviewFailureDelivered = false;
     branchRequests.clear();
     branchFailureDelivered = false;
     messageLikes.clear();
     messageLikeFailureDelivered = false;
+    messageEditFailureDelivered = false;
     scenario = next;
-    claimed = next === 'checked';
-    favoriteIds = new Set(next === 'character-social' ? [IDS.character] : []);
+    claimedAt = next === 'checked' ? stamp() : null;
+    favoriteIds = new Set(
+      next === 'creation'
+        ? data.characters.slice(0, 4).map((item) => item.id)
+        : next === 'character-social'
+          ? [IDS.character]
+          : []
+    );
     characterLikes.clear();
     characterComments.clear();
     removedCharacterComments.clear();
@@ -304,8 +343,25 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         main_credits: 0,
         bonus_credits: 0,
       });
-    if (next === 'chat-branch' || next === 'chat-branch-error') {
-      const count = next === 'chat-branch' ? 200 : 20;
+    if (next === 'chat-sessions') {
+      const messages = data.messages;
+      data.sessions = makeChatSessionSamples(data.sessions[0]!);
+      data.messages = data.sessions.flatMap((session, index) =>
+        messages.map((message, messageIndex) => ({
+          ...message,
+          id: `55000000-0000-4000-8000-${String(index * 10 + messageIndex + 1).padStart(12, '0')}`,
+          session_id: session.id,
+          created_at: session.created_at,
+        }))
+      );
+    }
+    if (
+      next === 'chat-branch' ||
+      next === 'chat-branch-error' ||
+      next === 'chat-edit' ||
+      next === 'chat-edit-error'
+    ) {
+      const count = next === 'chat-branch' ? 200 : next.startsWith('chat-edit') ? 12 : 20;
       const userTemplate = data.messages[1]!;
       const assistantTemplate = data.messages[2]!;
       data.messages = [
@@ -324,7 +380,10 @@ export function createPreviewServer(apiPort: number, appPort: number) {
               ...assistantTemplate,
               id: `52000000-0000-4000-8000-${suffix}`,
               turn_index: turn,
-              content: `「这是第 ${turn} 轮的故事。」旅人停在路口，等你决定接下来怎么走。`,
+              content:
+                `「这是第 ${turn} 轮的故事。」旅人停在路口，等你决定接下来怎么走。` +
+                (next.startsWith('chat-edit') && turn >= 11 ? EDIT_REPLY_PANELS : ''),
+              postprocess_version: next.startsWith('chat-edit') && turn >= 11 ? 1 : undefined,
             },
           ];
         }).flat(),
@@ -397,7 +456,7 @@ export function createPreviewServer(apiPort: number, appPort: number) {
       let raw = '';
       for await (const chunk of req) {
         raw += chunk.toString();
-        if (raw.length > 65_536) {
+        if (raw.length > (path.startsWith('/api/creator/') ? 29_000_000 : 65_536)) {
           fail(res, 413, 'body_too_large', '预览请求过大');
           return;
         }
@@ -409,7 +468,13 @@ export function createPreviewServer(apiPort: number, appPort: number) {
       }
       if (path === '/__preview/state' && method === 'GET') {
         reconcileImages();
-        json(res, 200, { scenario, claimed, wallet: data.wallet, requests, unhandled });
+        json(res, 200, {
+          scenario,
+          claimed: !canClaimCheckin(),
+          wallet: data.wallet,
+          requests,
+          unhandled,
+        });
         return;
       }
       if (path === '/__preview/reset' && method === 'POST') {
@@ -628,9 +693,9 @@ export function createPreviewServer(apiPort: number, appPort: number) {
       if (path === '/api/wallet/checkin' && method === 'GET') {
         ok(res, {
           checkin: {
-            can_claim: !claimed,
-            last_claimed_at: claimed ? stamp() : null,
-            next_claim_at: claimed ? tomorrow() : null,
+            can_claim: canClaimCheckin(),
+            last_claimed_at: claimedAt,
+            next_claim_at: claimedAt ? getNextDailyCheckinAt(claimedAt) : null,
             reward_credits: data.vip.active ? 150 : 30,
             base_reward_credits: 30,
             vip_reward_credits: 150,
@@ -643,18 +708,18 @@ export function createPreviewServer(apiPort: number, appPort: number) {
           fail(res, 503, 'preview_unavailable', '签到暂时未成功，请重试');
           return;
         }
-        if (claimed) {
+        if (!canClaimCheckin()) {
           fail(res, 409, 'already_claimed', '今日已签到');
           return;
         }
-        claimed = true;
+        claimedAt = stamp();
         const reward = data.vip.active ? 150 : 30;
         creditBonus(reward);
         ok(res, {
           wallet: data.wallet,
           checkin: {
-            claimed_at: stamp(),
-            next_claim_at: tomorrow(),
+            claimed_at: claimedAt,
+            next_claim_at: getNextDailyCheckinAt(claimedAt),
             reward_credits: reward,
             base_reward_credits: 30,
             vip_reward_credits: 150,
@@ -853,16 +918,228 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         fail(res, 405, 'METHOD_NOT_ALLOWED', '方法不支持');
         return;
       }
+      if (path === '/api/creator/characters' && method === 'GET') {
+        ok(res, {
+          owner_user_id: creatorOwner,
+          characters: [...creatorCards.values()].map(({ draft: _draft, ...card }) => card),
+        });
+        return;
+      }
+      if (path === '/api/creator/characters' && method === 'POST') {
+        const input = CreateCreatorCharacterSchema.parse(body);
+        const draft = input.draft ?? emptyCharacterDraft();
+        if (!creatorCards.has(input.id))
+          creatorCards.set(input.id, {
+            id: input.id,
+            owner_user_id: creatorOwner,
+            name: draft.name,
+            description: draft.description,
+            tags: draft.tags,
+            draft,
+            cover_asset_id: input.cover_asset_id ?? null,
+            cover_url: input.cover_asset_id
+              ? (creatorCovers.get(input.cover_asset_id)?.image_url ?? null)
+              : null,
+            state: 'draft',
+            visibility: 'private',
+            review_status: 'not_submitted',
+            review_message: null,
+            revision: 1,
+            submitted_revision: null,
+            published_revision: null,
+            approved_revision: null,
+            created_at: stamp(),
+            updated_at: stamp(),
+          });
+        ok(res, { character: creatorCards.get(input.id) });
+        return;
+      }
+      const creatorMatch = path.match(
+        /^\/api\/creator\/characters\/([^/]+)(?:\/(publish|visibility))?$/
+      );
+      if (creatorMatch) {
+        const card = creatorCards.get(creatorMatch[1]!);
+        if (!card) {
+          fail(res, 404, 'NOT_FOUND', '角色不存在');
+          return;
+        }
+        const action = creatorMatch[2];
+        if (method === 'GET' && !action) {
+          ok(res, { character: card });
+          return;
+        }
+        if (method === 'PATCH' && !action) {
+          const input = SaveCreatorCharacterSchema.parse(body);
+          if (input.expected_revision !== card.revision) {
+            fail(res, 409, 'CONFLICT', '角色已在其他页面修改，请重新打开编辑器');
+            return;
+          }
+          Object.assign(card, {
+            draft: input.draft,
+            name: input.draft.name,
+            description: input.draft.description,
+            tags: input.draft.tags,
+            cover_asset_id: input.cover_asset_id,
+            cover_url: input.cover_asset_id
+              ? (creatorCovers.get(input.cover_asset_id)?.image_url ?? null)
+              : null,
+            review_status: 'not_submitted',
+            review_message: null,
+            submitted_revision: null,
+            revision: card.revision + 1,
+            updated_at: stamp(),
+          });
+          ok(res, { character: card });
+          return;
+        }
+        if (
+          (method === 'POST' && action === 'publish') ||
+          (method === 'PUT' && action === 'visibility')
+        ) {
+          const input = PublishCreatorCharacterSchema.parse(body);
+          if (scenario === 'creator-save-error' && !creatorFailureDelivered) {
+            creatorFailureDelivered = true;
+            fail(res, 503, 'UNAVAILABLE', '暂时未能发布，草稿已保留');
+            return;
+          }
+          if (input.expected_revision !== card.revision) {
+            fail(res, 409, 'CONFLICT', '版本已变化，请重试');
+            return;
+          }
+          const missing = creatorPublishMissingFields(card.draft, card.cover_asset_id);
+          if (missing.length) {
+            fail(res, 400, 'INCOMPLETE', `请完成：${missing.join('、')}`);
+            return;
+          }
+          if (input.visibility === 'public') {
+            const requestEpoch = epoch;
+            await delay(350);
+            if (requestEpoch !== epoch) {
+              fail(res, 409, 'scenario_changed', '预览场景已切换');
+              return;
+            }
+            if (input.expected_revision !== card.revision) {
+              fail(res, 409, 'CONFLICT', '角色已在审核期间修改，请重新提交');
+              return;
+            }
+            const simulatedResult: unknown =
+              scenario === 'creator-review-rejected' &&
+              (!creatorReviewFailureDelivered || card.approved_revision !== null)
+                ? { approved: false, reason: '描述中包含站外转账引导，请删除相关内容后重试。' }
+                : scenario === 'creator-review-unavailable' && !creatorReviewFailureDelivered
+                  ? { approved: 'true', reason: '模型回包格式错误' }
+                  : { approved: true, reason: '角色资料完整，可以公开。' };
+            creatorReviewFailureDelivered = true;
+            const review = CreatorAiReviewResultSchema.safeParse(simulatedResult);
+            if (!review.success) {
+              fail(
+                res,
+                503,
+                CREATOR_REVIEW_UNAVAILABLE_CODE,
+                '审核暂时不可用，请稍后重试。原稿已保留。'
+              );
+              return;
+            }
+            if (!review.data.approved) {
+              fail(res, 422, CREATOR_REVIEW_REJECTED_CODE, review.data.reason);
+              return;
+            }
+          }
+          Object.assign(card, {
+            state: 'ready',
+            visibility: input.visibility,
+            review_status: input.visibility === 'public' ? 'approved' : 'not_submitted',
+            submitted_revision: input.visibility === 'public' ? card.revision + 1 : null,
+            approved_revision: input.visibility === 'public' ? card.revision + 1 : null,
+            published_revision: card.revision + 1,
+            revision: card.revision + 1,
+          });
+          const character = {
+            id: card.id,
+            name: card.name,
+            description: card.description,
+            avatar_url: card.cover_url ?? '',
+            personality_tags: card.tags,
+            greeting: card.draft.opening,
+            author_name: '你的创作',
+            creator_notes: '',
+            is_featured: false,
+          };
+          const existing = data.characters.findIndex((item) => item.id === card.id);
+          if (existing < 0) data.characters.push(character);
+          else data.characters[existing] = character;
+          ok(res, { character: card });
+          return;
+        }
+      }
+      if (path === '/api/creator/covers' && method === 'POST') {
+        const input = CreatorCoverRequestSchema.parse(body);
+        if (!creatorCovers.has(input.id))
+          creatorCovers.set(input.id, {
+            id: input.id,
+            image_url: `${api}/assets/scene.svg?tone=1`,
+            width: 768,
+            height: 1024,
+          });
+        ok(res, { asset: creatorCovers.get(input.id) });
+        return;
+      }
+      if (path.startsWith('/api/creator/covers/') && method === 'GET') {
+        const asset = creatorCovers.get(path.split('/').pop()!);
+        if (asset) ok(res, { asset });
+        else fail(res, 404, 'NOT_FOUND', '封面不存在');
+        return;
+      }
+      if (path.startsWith('/api/creator/presets/') && method === 'GET') {
+        const id = path.slice('/api/creator/presets/'.length);
+        const index = CREATOR_PRESET_IDS.findIndex((presetId) => presetId === id);
+        if (index < 0) {
+          fail(res, 404, 'NOT_FOUND', '找不到这套预设');
+          return;
+        }
+        // Static author-provided assets, not user data or a production backend request.
+        const content = await readFile(
+          new URL(
+            `../../backend/src/features/creator/presets/collection_${index + 1}.txt`,
+            import.meta.url
+          ),
+          'utf8'
+        );
+        ok(res, { preset: { id, content } });
+        return;
+      }
+      if (path === '/api/creator/polish' && method === 'POST') {
+        const input = CreatorPolishRequestSchema.parse(body);
+        res.writeHead(200, { 'Content-Type': 'application/x-ndjson; charset=utf-8' });
+        const draftText =
+          input.target === 'opening'
+            ? '书店即将打烊，门上的铜铃却在此刻轻响。林舟从书页间抬起眼，认出你时微微一顿。\n\n「我以为你已经忘了这个地方。」他合上书，把靠窗的椅子轻轻拉开。杯里的茶还温着，而他似乎有一句话等了很久。'
+            : '## 角色与生活\n\n林舟经营一间旧书店。他记得常客偏爱的书，也记得那些没有说出口的告别。\n\n## 个性与矛盾\n\n他习惯用玩笑掩饰认真，越是在乎的人，越不肯把心意说得直白。平时做决定很果断，遇到重逢却会先整理桌角，再试探着问一句近况。\n\n## 与你的关系\n\n你们曾在这间书店相遇。多年之后，他保留的那本书仍夹着你写的纸条，但你的回应和选择始终由你决定。';
+        for (let i = 0; i < draftText.length; i += 16) {
+          res.write(`${JSON.stringify({ type: 'delta', text: draftText.slice(i, i + 16) })}\n`);
+          await delay(12);
+        }
+        res.end(
+          `${JSON.stringify(scenario === 'creator-polish-partial' ? { type: 'error', message: '这次润色未完整完成，可以采用已有内容后继续编辑。' } : { type: 'done' })}\n`
+        );
+        return;
+      }
       if (path === '/api/characters/latest-badge' || path === '/api/characters/latest-seen') {
         ok(res, { has_new: false });
         return;
       }
       if (path === '/api/characters' && method === 'GET') {
+        const characters = data.characters.filter((card) => {
+          const creation = creatorCards.get(card.id);
+          return (
+            !creation ||
+            (creation.state === 'ready' &&
+              creation.visibility === 'public' &&
+              creation.approved_revision !== null)
+          );
+        });
         ok(res, {
-          characters:
-            url.searchParams.get('sort') === 'latest'
-              ? [...data.characters].reverse()
-              : data.characters,
+          characters: url.searchParams.get('sort') === 'latest' ? characters.reverse() : characters,
         });
         return;
       }
@@ -966,6 +1243,27 @@ export function createPreviewServer(apiPort: number, appPort: number) {
           return;
         }
       }
+      if (path === '/api/v1/text-postprocess/versions' && method === 'POST') {
+        const versions = (body as { versions?: number[] }).versions ?? [];
+        ok(res, {
+          found: versions.includes(1)
+            ? [
+                {
+                  version: 1,
+                  published_at: stamp(),
+                  artifact: {
+                    schema_version: 1,
+                    policy_version: 1,
+                    rich_reply_protocol: { version: 1, enabled: true },
+                    rules: [],
+                  },
+                },
+              ]
+            : [],
+          unavailable_versions: versions.filter((version) => version !== 1),
+        });
+        return;
+      }
       if (path === '/api/v1/voice/config' && method === 'GET') {
         ok(res, voiceConfig);
         return;
@@ -980,6 +1278,68 @@ export function createPreviewServer(apiPort: number, appPort: number) {
       }
       if (/^\/api\/v1\/conversations\/[^/]+\/images$/.test(path) && method === 'GET') {
         ok(res, { images: [] });
+        return;
+      }
+      const messageChangeMatch = path.match(
+        /^\/api\/v1\/conversations\/([^/]+)\/messages\/([^/]+)$/
+      );
+      if (messageChangeMatch && method === 'PATCH') {
+        const [, sessionId, messageId] = messageChangeMatch;
+        const parsed = ChangeChatMessageRequestSchema.safeParse(body);
+        if (!parsed.success) {
+          fail(res, 400, 'BAD_REQUEST', '消息修改内容无效');
+          return;
+        }
+        const current = currentConversationMessages(sessionId!);
+        const message = current.find(
+          (item) =>
+            item.role === parsed.data.role &&
+            (item.id === messageId ||
+              item.id === `${messageId}:user` ||
+              (item.role === 'user' &&
+                current.some(
+                  (reply) => reply.id === messageId && reply.turn_index === item.turn_index
+                )))
+        );
+        const latest = Math.max(0, ...current.map((item) => item.turn_index));
+        if (!message || message.turn_index < Math.max(1, latest - 9)) {
+          fail(res, 409, 'message_change_not_allowed', '只能修改最近10轮消息');
+          return;
+        }
+        if (current.some((item) => item.status === 'streaming')) {
+          fail(res, 409, 'session_busy', '请等待回复完成');
+          return;
+        }
+        if ((message.edit_version ?? 0) !== parsed.data.expected_version || message.deleted) {
+          fail(res, 409, 'message_change_conflict', '这条消息已修改');
+          return;
+        }
+        if (scenario === 'chat-edit-error' && !messageEditFailureDelivered) {
+          messageEditFailureDelivered = true;
+          fail(res, 503, 'INTERNAL_ERROR', '保存失败，内容已保留，请重试');
+          return;
+        }
+        const saved = data.messages.find(
+          (item) =>
+            item.session_id === sessionId &&
+            item.id === message.id &&
+            item.revision === message.revision
+        )!;
+        saved.content =
+          parsed.data.action === 'edit'
+            ? parsed.data.content +
+              (saved.role === 'assistant' ? splitEditableReply(saved.content).protectedTail : '')
+            : '';
+        saved.deleted = parsed.data.action === 'delete';
+        saved.edit_version = (saved.edit_version ?? 0) + 1;
+        ok(res, {
+          session_id: sessionId,
+          message_id: messageId,
+          role: saved.role,
+          content: saved.content,
+          deleted: saved.deleted,
+          edit_version: saved.edit_version,
+        });
         return;
       }
       const messageLikeMatch = path.match(
@@ -1033,6 +1393,34 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         const session = data.sessions.find((item) => item.id === id);
         if (!session) {
           fail(res, 404, 'session_not_found', '对话不存在');
+          return;
+        }
+        if (!action && method === 'PATCH') {
+          const patch = body as UpdateConversationRequest;
+          if (
+            !patch ||
+            typeof patch !== 'object' ||
+            ('title' in patch && patch.title !== null && typeof patch.title !== 'string') ||
+            (patch.pinned !== undefined && typeof patch.pinned !== 'boolean') ||
+            (!('title' in patch) && patch.pinned === undefined)
+          ) {
+            fail(res, 400, 'BAD_REQUEST', '会话参数无效');
+            return;
+          }
+          if ('title' in patch) {
+            session.title =
+              patch.title?.trim().slice(0, 60) ||
+              data.characters.find((character) => character.id === session.character_id)?.name ||
+              '新的对话';
+          }
+          if (patch.pinned !== undefined) session.pinned_at = patch.pinned ? stamp() : null;
+          session.updated_at = stamp();
+          ok(res, { session } satisfies UpdateConversationData);
+          return;
+        }
+        if (!action && method === 'DELETE') {
+          data.sessions = data.sessions.filter((item) => item.id !== id);
+          ok(res, { id: session.id } satisfies DeleteConversationData);
           return;
         }
         if (!action && method === 'GET') {

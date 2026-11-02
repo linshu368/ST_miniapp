@@ -13,6 +13,18 @@ type LogAttribute = string | number | boolean | null | undefined;
 export type SentryLogAttributes = Record<string, LogAttribute>;
 
 let replayLoadPromise: Promise<void> | undefined;
+let tracingLoadPromise: Promise<void> | undefined;
+
+/** Called at the existing first-screen boundary, so other deferred work keeps its clock. */
+export function loadDeferredTracing(): Promise<void> {
+  if (!Sentry.getClient()) return Promise.resolve();
+  tracingLoadPromise ??= import('./tracing')
+    .then(({ installDeferredTracing }) => installDeferredTracing())
+    .catch((err: unknown) => {
+      Sentry.captureException(err);
+    });
+  return tracingLoadPromise;
+}
 
 export function sendSentryLog(
   level: LogLevel,

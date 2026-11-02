@@ -1,0 +1,32 @@
+{
+  "id": "weekly-report-platform-comparison",
+  "name": "weekly-report-platform-comparison",
+  "title": "补充周报 Android 与 iOS 性能对比",
+  "description": "在 10 月 26 日至 11 月 1 日 production 性能周报中补充 Android/iOS 页面、首次加载和 Grafana 体验指标对比。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": "docs",
+  "package": "reporting",
+  "priority": "P2",
+  "creator": "cline",
+  "assignee": "cline",
+  "createdAt": "2026-11-02",
+  "completedAt": "2026-11-02",
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "no_module_change",
+      "reason": "本任务仅补充外部性能周报的平台分析，不改变产品代码、模块职责、契约、数据模型或依赖。"
+    }
+  }
+}

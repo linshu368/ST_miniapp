@@ -1,0 +1,19 @@
+# 实施
+
+1. 固定shared结果协议和示例prompt，复用现有API。
+2. Backend复用provider transport+strict配置读取，公开发布/切换前审核，严格解析与错误分流，CAS仅发布被审版本。
+3. 平台规则新增prompt正文页，输出协议只读说明，沿现有草稿/发布/回滚。
+4. 用户端通过静默返回我的创作，拒绝内联原因，原稿不清；本地fixture模拟通过/拒绝/格式异常。
+5. 修改尚未远端执行的发布迁移，取消旧14pending无条件回填，增加prompt配置迁移。扩展既有隔离SQL和固定UI，不另搭验收环境。
+6. 复核固定字段、权限/幂等/CAS、旧会话不变；相关tests/typecheck/build和本地预览。不上线、不提交、不推送、无真实模型付费调试。
+
+## 2026-11-02 用户追加确认
+
+用户确认补齐运营平台试审入口并在测试通过后上线。复用原角色卡审核页、Admin鉴权及environment API client，当前未发布prompt可对粘贴的测试材料试跑，返回严格approved/reason。试审不写配置、角色、会话或钱包。后台调用与正式审核共用transport和硬编码协议，仅正文通过受鉴权的本次试审参数覆盖；正式发布仍读取运营已发布规则。补充契约/鉴权/无副作用验证，再按feature→dev→main隔离发布本批改动。生产迁移须先在TEST逐份验证，本批不无条件放行历史待审卡。
+
+## 追加实施
+
+1. Admin一级角色卡审核菜单，删除旧人工视图/client/导航标识，复用现有AI编辑器。
+2. Backend移除三条旧人工Admin路由与对应repository方法；Shared只删除无人使用的人工专属DTO。
+3. 复用已有导航/schema/API/Backend路由与审核测试，锁定旧路由404且AI路径不变；all-consumer typecheck、Admin/Frontend build、lint guards。
+4. 只更新相关文档和module payload；完成最终diff审阅包后再提交，不自动带上其他dev功能。

@@ -74,7 +74,7 @@ beforeAll(async () => {
     const path=require('node:path');
     const esbuild=require(require.resolve('esbuild',{paths:[path.join(process.cwd(),'../reply-renderer')]}));
     const react=require.resolve('react'); const runtime=require.resolve('react/jsx-runtime');
-    esbuild.buildSync({entryPoints:['src/components/chat/chat-message-bubble.tsx'],outfile:${JSON.stringify(outfile)},bundle:true,format:'cjs',platform:'browser',jsx:'automatic',define:{'import.meta.url':JSON.stringify('file:///local-artifact-bubble.mjs')},external:[react,runtime],alias:{react,'react/jsx-runtime':runtime},logLevel:'silent'});
+    esbuild.buildSync({entryPoints:['src/components/chat/chat-message-bubble.tsx'],outfile:${JSON.stringify(outfile)},bundle:true,format:'cjs',platform:'browser',jsx:'automatic',define:{'import.meta.url':JSON.stringify('file:///local-artifact-bubble.mjs')},external:[react,runtime,'@/lib/api/conversations'],alias:{react,'react/jsx-runtime':runtime},logLevel:'silent'});
     esbuild.buildSync({entryPoints:['../reply-renderer/src/postprocess.worker.ts'],outfile:${JSON.stringify(workerBundlePath)},bundle:true,format:'esm',platform:'browser',banner:{js:"import {parentPort} from 'node:worker_threads'; globalThis.self=globalThis; globalThis.postMessage=(data)=>parentPort.postMessage(data); parentPort.on('message',(data)=>globalThis.onmessage?.({data}));"},logLevel:'silent'});
   `,
     ],
@@ -82,7 +82,14 @@ beforeAll(async () => {
   );
   const bundleModule = { exports: {} as { ChatMessageBubble: typeof ChatMessageBubble } };
   new Function('require', 'module', 'exports', readFileSync(outfile, 'utf8'))(
-    createRequire(import.meta.url),
+    (name: string) =>
+      name === '@/lib/api/conversations'
+        ? {
+            useChangeChatMessageMutation: () => {
+              throw new Error('read-only renderer must not mount editing');
+            },
+          }
+        : createRequire(import.meta.url)(name),
     bundleModule,
     bundleModule.exports
   );

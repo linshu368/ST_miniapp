@@ -21,6 +21,8 @@
 - `prd.md` 只写需求、约束与验收标准。
 - `design.md` 负责技术设计与规则落点说明。
 - `implement.md` 负责按顺序描述实施计划、验证方式与风险控制。
+- 功能开发、问题修改和方案设计必须在规划阶段完成 `task.json.meta.mobile_performance`：按真实影响范围分别评估 Android、iOS 页面加载 P95 和普通接口 P95，并记录基线、目标、来源、观测窗口与发布后验证。聊天 SSE 必须区分首字和完整推流口径，不得用自动 `http.server` 完整连接时长代替首字 P95。
+- 无可见样本必须写明“无可见样本”并用 `null` 表达，不得推测或补零；确实不涉及移动端页面或接口性能时使用 `not_applicable` 并给出具体理由。新任务声明未完成时由 `task.py start` 阻断。
 - 汇总项目约束时保留来源引用，避免规则脱离原始文档。
 - 当根 `AGENTS.md`、Backend/Frontend package spec 或 agent 工作流更新时，必须同步评估以下 Trellis 文档是否需要更新：
   `.trellis/spec/backend/app/index.md`、
@@ -43,4 +45,5 @@
 - 调整 spec、agent 或流程结构后，运行 `python ./.trellis/scripts/get_context.py --mode packages`。
 - 检查 Markdown 是否为中文且结构清晰可读。
 - 检查根 `AGENTS.md`、package spec 与 Trellis 承接文档之间是否存在漂移或矛盾。
+- 检查新任务的 Android/iOS 页面加载 P95、接口 P95 和验证窗口是否与影响范围一致，且没有把无样本写成 0 或把 SSE 完整连接时长当作首字响应。
 - 提交前检查不存在自动提交/推送路径，并确认人工审核记录对应当前最终 diff；归档使用 `--no-commit`。

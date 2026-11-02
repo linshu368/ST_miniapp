@@ -14,6 +14,7 @@ import type {
   ConversationStreamEvent,
   ConversationStreamStartEvent,
 } from '@miniapp/shared';
+import { flushSync } from 'react-dom';
 import { getRawInitData, INIT_DATA_HEADER } from '@/lib/telegram/auth';
 import { createLogger } from '@/lib/logger';
 import { API_URL } from './client';
@@ -113,7 +114,7 @@ async function toStreamError(response: Response): Promise<ConversationStreamErro
 
 /**
  * 增量攒批：上游逐 token 吐字时，直接每片 setState 会把重渲染次数拉到 token 量级。
- * 合并到一帧一次，重渲染上限就变成刷新率。
+ * 首个有效 token 立即提交，其余合并到一帧一次，避免把后续重渲染次数拉到 token 量级。
  */
 function createDeltaBatcher(onDelta: (text: string) => void) {
   const schedule: (callback: () => void) => void =
@@ -137,9 +138,13 @@ function createDeltaBatcher(onDelta: (text: string) => void) {
   };
 
   return {
-    push(text: string): void {
+    push(text: string, immediate = false): void {
       if (!text) return;
       pending += text;
+      if (immediate) {
+        flush();
+        return;
+      }
       if (scheduled) return;
       scheduled = true;
       schedule(flush);
@@ -224,6 +229,21 @@ async function readConversationStream(options: StreamTurnOptions): Promise<void>
 
   let buffer = '';
   let finished = false;
+  let firstTokenFlushed = false;
+
+  const pushText = (batch: ReturnType<typeof createDeltaBatcher>, text: string): void => {
+    const meaningful = text.trim().length > 0;
+    if (meaningful) options.onFirstDeltaReceived?.();
+    // Do not spend an animation frame on the first usable token. React commit
+    // still decides success; only subsequent text uses the existing batching.
+    const immediate = meaningful && !firstTokenFlushed;
+    if (immediate) {
+      firstTokenFlushed = true;
+      // React 18 also batches promise callbacks. Commit the one first token
+      // before decoding more buffered frames; later tokens still batch by frame.
+      flushSync(() => batch.push(text, true));
+    } else batch.push(text);
+  };
 
   const handle = (event: ConversationStreamEvent): void => {
     switch (event.type) {
@@ -234,15 +254,13 @@ async function readConversationStream(options: StreamTurnOptions): Promise<void>
         // Thinking and answer characters share the first-token contract; flush thinking first.
         reasoningBatcher.flush();
         if (typeof event.text === 'string') {
-          if (event.text.trim()) options.onFirstDeltaReceived?.();
-          batcher.push(event.text);
+          pushText(batcher, event.text);
         }
         return;
       case 'reasoning':
         batcher.flush();
         if (options.thinkingEnabled !== false && typeof event.text === 'string') {
-          if (event.text.trim()) options.onFirstDeltaReceived?.();
-          reasoningBatcher.push(event.text);
+          pushText(reasoningBatcher, event.text);
         }
         return;
       case 'done':

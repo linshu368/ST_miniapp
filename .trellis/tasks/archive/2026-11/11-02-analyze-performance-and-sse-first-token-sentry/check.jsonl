@@ -1,0 +1,4 @@
+{"file":".trellis/spec/backend/app/index.md","reason":"后端质量检查总入口"}
+{"file":".trellis/spec/backend/app/testing-scripts-and-deployment.md","reason":"测试、typecheck 与部署验证要求"}
+{"file":".trellis/spec/backend/app/data-reliability-and-security.md","reason":"确认监控故障不影响业务且不泄露敏感数据"}
+{"file":".trellis/tasks/11-02-analyze-performance-and-sse-first-token-sentry/design.md","reason":"核对首字与完整流双口径、失败路径和回滚设计"}

@@ -21,6 +21,7 @@
  */
 
 import type { FastifyBaseLogger } from 'fastify';
+import { discoverableCharacterWhere } from '../creator/access.js';
 import { prisma } from '../../lib/db.js';
 import { resolveLobbyFeaturedIds } from './featured.js';
 import { resolveLobbyPinnedCharacters } from './pinned-characters.js';
@@ -54,7 +55,7 @@ async function refresh(log: FastifyBaseLogger): Promise<ReadonlySet<string>> {
     // 串行占池：金框刷新已有 single-flight，再并行会在那一瞬间占 2 条 Prisma 连接。
     // 排序分读有自己的缓存 + single-flight；固定位走 PostgREST，不与 Prisma 抢同池。
     const operatorOrdered = await prisma.character.findMany({
-      where: { enabled: true, archived_at: null },
+      where: discoverableCharacterWhere,
       orderBy: [{ sort_order: 'asc' }, { created_at: 'desc' }],
       select: { id: true },
     });

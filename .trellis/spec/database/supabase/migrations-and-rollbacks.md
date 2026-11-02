@@ -89,3 +89,33 @@ Wrong：DROP 后回滚旧 Backend，或声称会立即回收磁盘。Correct：�
 ## Supabase 托管 cron 权限
 
 即使迁移角色可SELECT cron.job，也不能据此推断能直接UPDATE/DELETE。管理任务使用官方cron.schedule/cron.alter_job/cron.unschedule；关闭新job应在同一事务调用cron.alter_job(job_id := v_id, active := false)。本地缺少pg_cron时必须模拟托管表拒绝直接写、入口函数可执行的权限边界，不能把跳过cron分支的验证当成已覆盖。
+
+## 签到自然日契约（2026-10-30）
+
+### Scope / Trigger
+
+每日签到从滚动24小时改为Asia/Shanghai自然日；本地实现不表示远端已执行。
+
+### Signatures
+
+`miniapp_features.claim_daily_checkin(uuid) → jsonb`，GET/POST `/api/wallet/checkin` DTO不增删字段；新迁移 `20261030_checkin_calendar_day.sql`。
+
+### Contracts
+
+每账户同一北京时间日期最多领取一次；next_claim_at为领取日期的次日00:00（UTC16:00）。VIP及注册年龄档金额继续按原配置；余额不清零。取得账户/会员锁后采集当前时间；发奖事实、钱包及流水同事务。Backend状态和fixture共用shared getNextDailyCheckinAt。
+
+### Validation & Error Matrix
+
+同日或未来日期已有领取→原P0001拒绝且零写入；昨日23:59:59已领→今天允许，哪怕不足24h。迁移缺对象/安全shape或旧锚点不唯一→拒绝；完整重放→无操作。CRLF规范化，5s锁/30s语句预算；owner/ACL保留。只读采集需区分TEST和Production。
+
+### Good / Base / Bad Cases
+
+Good：23:50领，次日00:00恢复；Base：从未签到立即可领；Bad：重复并发发奖、按手机本地时区判日、将next_claim_at不断顺延24h。
+
+### Tests Required
+
+既有VIP SQL harness/scenarios覆盖昨天/今天零点、VIP金额、同日/并发单流水、migration重放；shared测试精确午夜和年末；@profile/@checkin-midnight覆盖手机布局及到期回读。真实迁移经workflow先TEST后生产，逐环境记录。
+
+### Wrong vs Correct
+
+Wrong：只改前端可点或重跑旧分档迁移。Correct：同步DB资格/Backend状态/页面回读，保留运营数额。恢复用forward-fix同步RPC与Backend，保留已领奖励事实。

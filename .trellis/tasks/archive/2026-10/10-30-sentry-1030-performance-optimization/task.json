@@ -1,0 +1,41 @@
+{
+  "id": "sentry-1030-performance-optimization",
+  "name": "sentry-1030-performance-optimization",
+  "title": "10月30日性能回归分析与优化",
+  "description": "依据 2026-10-30 性能日报，优化角色、个人中心、短剧、影像工作室与聊天流的可证实关键路径，避免重复 10-29 已完成的入口缓存和图片改造。",
+  "status": "completed",
+  "dev_type": "performance",
+  "scope": "frontend,backend",
+  "package": "frontend,backend",
+  "priority": "P0",
+  "creator": "cline",
+  "assignee": "cline",
+  "createdAt": "2026-10-30",
+  "completedAt": "2026-10-30",
+  "branch": "fix_request_speed",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "10-28-sentry-cross-layer-performance-optimization",
+  "relatedFiles": [
+    "D:/JobExe/ST/sentry/2026-10/2026-10-30  3点前.md",
+    "packages/frontend/src/components/characters/character-gallery.tsx",
+    "packages/frontend/src/lib/api/payment.ts",
+    "packages/frontend/src/lib/api/image-plaza.ts",
+    "packages/frontend/src/app/(main)/create/page.tsx",
+    "packages/frontend/src/components/drama/drama-player.tsx",
+    "packages/backend/src/routes/conversations.ts",
+    "packages/backend/src/features/conversations/generate.ts"
+  ],
+  "notes": "当前分支无合并冲突；10-29 入口缓存/图片优化及 10-30 聊天派发准备优化均作为现状复用，不重复实施。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "no_module_change",
+      "reason": "本轮只调整现有 query 优先级、资源加载时机和内部准备/建议性诊断调度；模块职责、公开契约、业务流程、数据库与接入规则均不变，实施事实与验证结果保存在任务文档。"
+    }
+  }
+}

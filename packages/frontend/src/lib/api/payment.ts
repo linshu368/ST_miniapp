@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect } from 'react';
 import {
   useInfiniteQuery,
   useMutation,
@@ -79,7 +80,9 @@ async function postCheckoutConfirmation(input: {
 }
 
 async function fetchWalletBalance(): Promise<GetWalletBalanceData> {
-  return apiClient<GetWalletBalanceData>('/api/wallet/balance');
+  // Profile 的可用态只依赖余额；使用并发调度器为导航保留的 critical 槽，
+  // 避免签到、VIP、社区等同屏普通读取先占满非关键槽后让主内容排队。
+  return apiClient<GetWalletBalanceData>('/api/wallet/balance', { queuePriority: 'critical' });
 }
 
 async function fetchWalletSpending(): Promise<GetWalletSpendingData> {
@@ -183,7 +186,21 @@ export function useDailyCheckinQuery() {
     queryFn: fetchDailyCheckin,
     staleTime: 30_000,
   });
-  useRefetchOnForeground(query.refetch);
+  const { refetch } = query;
+  useRefetchOnForeground(refetch);
+  const canClaim = query.data?.checkin.can_claim;
+  const nextClaimAt = query.data?.checkin.next_claim_at;
+  useEffect(() => {
+    if (canClaim !== false || !nextClaimAt) return;
+    const waitMs = Date.parse(nextClaimAt) - Date.now();
+    if (!Number.isFinite(waitMs)) return;
+    // 跨零点只回读一次服务端资格；不在客户端发奖或增加常驻轮询。
+    const timer = window.setTimeout(
+      () => void refetch({ cancelRefetch: false }),
+      Math.max(0, waitMs) + 100
+    );
+    return () => window.clearTimeout(timer);
+  }, [canClaim, nextClaimAt, refetch]);
   return query;
 }
 

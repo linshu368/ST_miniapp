@@ -6,7 +6,7 @@
  */
 import { monitorEventLoopDelay } from 'node:perf_hooks';
 import * as Sentry from '@sentry/node';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply } from 'fastify';
 import { observeHttp, observeDb, observeRuntime } from './engineering-observability.js';
 
 /** 初值，跑出基线后再调。 */
@@ -25,6 +25,8 @@ const GENERATION_ROUTES = new Set([
   'POST /api/v1/conversations/:sessionId/messages/:messageId/voice',
   'POST /api/image-plaza/conversations/:conversationId/attempts',
 ]);
+
+const sentryFirstTokenReplies = new WeakSet<FastifyReply>();
 
 export type RequestKind = 'standard' | 'generation';
 
@@ -47,6 +49,67 @@ function countInstrumentError(stage: string): void {
   }
 }
 
+function recordSentryDuration(
+  metric: 'http.server.duration' | 'sse.stream.duration',
+  input: {
+    route: string;
+    method: string;
+    status: number;
+    durationMs: number;
+    responseMilestone?: 'first_visible_token' | 'terminal_without_visible_token';
+  }
+): void {
+  try {
+    Sentry.metrics.distribution(metric, input.durationMs, {
+      unit: 'millisecond',
+      attributes: {
+        route: input.route,
+        method: input.method,
+        status_class: statusClass(input.status),
+        kind: classifyRequest(input.method, input.route),
+        ...(input.responseMilestone ? { response_milestone: input.responseMilestone } : {}),
+      },
+    });
+  } catch {
+    countInstrumentError(
+      metric === 'sse.stream.duration' ? 'sse_stream_duration' : 'http_server_duration'
+    );
+  }
+}
+
+/**
+ * Sentry 的通用 onResponse 会等 SSE 完整结束；聊天接口的“响应”改以首个成功写出的
+ * 可见 token 为准。终态兜底确保上游拒绝、超时和断连请求不会从样本中消失。
+ */
+export function startSseResponseMetric(
+  reply: FastifyReply,
+  route: string,
+  startedAt = performance.now()
+): { firstVisibleToken(): void; finish(status: number): void } {
+  sentryFirstTokenReplies.add(reply);
+  let recorded = false;
+
+  const record = (
+    responseMilestone: 'first_visible_token' | 'terminal_without_visible_token',
+    status: number
+  ): void => {
+    if (recorded) return;
+    recorded = true;
+    recordSentryDuration('http.server.duration', {
+      route,
+      method: 'POST',
+      status,
+      durationMs: performance.now() - startedAt,
+      responseMilestone,
+    });
+  };
+
+  return {
+    firstVisibleToken: () => record('first_visible_token', 200),
+    finish: (status) => record('terminal_without_visible_token', status),
+  };
+}
+
 export function registerRequestPerf(app: FastifyInstance): void {
   app.addHook('onResponse', async (request, reply) => {
     // 复用同一次测量，Grafana 与 Sentry 故障隔离，不新增请求 hook。
@@ -57,11 +120,11 @@ export function registerRequestPerf(app: FastifyInstance): void {
     const kind = classifyRequest(method, route);
     observeHttp({ route, method, durationMs, kind, statusClass: statusClass(reply.statusCode) });
     try {
-      // 未匹配路由（404 扫描流量）没有模板，归一成同一个值，避免指标维度爆炸。
-      Sentry.metrics.distribution('http.server.duration', durationMs, {
-        unit: 'millisecond',
-        attributes: { route, method, status_class: statusClass(reply.statusCode), kind },
-      });
+      // 聊天 SSE 的接口响应已在首字处记账，这里只保留完整流耗时供生成长尾诊断。
+      recordSentryDuration(
+        sentryFirstTokenReplies.has(reply) ? 'sse.stream.duration' : 'http.server.duration',
+        { route, method, status: reply.statusCode, durationMs }
+      );
 
       // 与 Railway 日志对照用：只写允许的字段，不含 body/header/token。
       if (kind === 'standard' && durationMs >= SLOW_REQUEST_MS) {
@@ -71,7 +134,8 @@ export function registerRequestPerf(app: FastifyInstance): void {
         );
       }
     } catch {
-      countInstrumentError('http_server_duration');
+      // recordSentryDuration 已隔离 SDK 错误；保留边界，防止后续日志逻辑影响响应。
+      countInstrumentError('request_perf_hook');
     }
   });
 }

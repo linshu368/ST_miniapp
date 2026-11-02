@@ -15,6 +15,7 @@ import {
   Typography,
 } from 'antd';
 import {
+  CREATOR_REVIEW_PROMPT_KEY,
   DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG,
   DEFAULT_PAYMENT_CHANNELS_CONFIG,
   DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG,
@@ -40,6 +41,8 @@ import {
   type ProviderModelDirectory,
   type WordCountTiersConfig,
   type InstructionSlotRules,
+  type CreatorReviewTestRequest,
+  type CreatorReviewTestData,
   type AdminImageTextModelTestRequest,
   type AdminImageTextModelTestResponse,
 } from '@miniapp/shared';
@@ -74,6 +77,7 @@ import { PaymentPromptDialogConfigEditor } from './PaymentPromptDialogConfigEdit
 import { ProviderRoutingConfigEditor } from './ProviderRoutingConfigEditor';
 import { RechargePageConfigEditor } from './RechargePageConfigEditor';
 import { SystemInstructionsEditor } from './SystemInstructionsEditor';
+import { CreatorReviewPromptEditor } from './CreatorReviewPromptEditor';
 import { PlatformInstructionSlotRulesEditor } from './PlatformInstructionSlotRulesEditor';
 import { WordCountTiersEditor } from './WordCountTiersEditor';
 
@@ -263,6 +267,10 @@ export function ConfigValueEditor(props: {
   charactersLoading: boolean;
   charactersError: string | null;
   onUploadInvitePoster: (file: File) => Promise<string>;
+  onTestCreatorReview: (
+    input: CreatorReviewTestRequest,
+    signal?: AbortSignal
+  ) => Promise<CreatorReviewTestData>;
   onTestImageTextModel: (
     value: AdminImageTextModelTestRequest
   ) => Promise<AdminImageTextModelTestResponse>;
@@ -476,6 +484,17 @@ export function ConfigValueEditor(props: {
         value={editable.data}
         disabled={props.disabled}
         onChange={props.onChange}
+      />
+    );
+  }
+
+  if (props.configKey === CREATOR_REVIEW_PROMPT_KEY) {
+    return (
+      <CreatorReviewPromptEditor
+        value={typeof props.value === 'string' ? props.value : ''}
+        disabled={props.disabled}
+        onChange={props.onChange}
+        onTest={props.onTestCreatorReview}
       />
     );
   }

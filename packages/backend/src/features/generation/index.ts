@@ -8,6 +8,7 @@
 
 export type {
   GenerationHooks,
+  GenerationPreparation,
   GenerationLogger,
   GenerationMessage,
   GenerationRequest,
@@ -54,6 +55,6 @@ export {
   type UpstreamMessage,
 } from './prompt-caching.js';
 
-export { execute, generationService } from './execute.js';
+export { execute, prepareGeneration, generationService } from './execute.js';
 export { settleGeneration, type GenerationSettlementEntry } from './settle.js';
 export { startChatHistorySyncJob, stopChatHistorySyncJob } from './sync-job.js';

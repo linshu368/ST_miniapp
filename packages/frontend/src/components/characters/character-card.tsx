@@ -16,6 +16,7 @@ interface CharacterCardProps {
   onSelect: (id: string) => void;
   onComments: (id: string) => void;
   disabled?: boolean;
+  eager?: boolean;
   priority?: boolean;
   experienced?: boolean;
   onImageSettled?: (id: string, outcome: 'loaded' | 'error') => void;
@@ -31,6 +32,7 @@ export const CharacterCard = memo(function CharacterCard({
   onSelect,
   onComments,
   disabled,
+  eager = false,
   priority = false,
   experienced = false,
   onImageSettled,
@@ -99,7 +101,7 @@ export const CharacterCard = memo(function CharacterCard({
             alt={character.name}
             width={360}
             height={480}
-            loading={priority ? 'eager' : 'lazy'}
+            loading={priority || eager ? 'eager' : 'lazy'}
             fetchPriority={priority ? 'high' : 'auto'}
             decoding="async"
             onLoad={() => {
@@ -162,7 +164,10 @@ export const CharacterCard = memo(function CharacterCard({
   );
 
   return (
-    <div className="h-full" data-lobby-character-id={character.id}>
+    <div
+      className="h-full [content-visibility:auto] [contain-intrinsic-size:0_320px]"
+      data-lobby-character-id={character.id}
+    >
       <FeaturedFrame featured={character.is_featured} className="h-full rounded-[18px]">
         {card}
       </FeaturedFrame>

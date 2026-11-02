@@ -291,7 +291,7 @@ function CharacterDetailContent({
           {character ? (
             <>
               <div
-                className="relative mb-4 h-[min(27dvh,14rem)] overflow-hidden rounded-2xl border border-border/50"
+                className="relative mb-4 h-[min(44dvh,24rem)] overflow-hidden rounded-2xl border border-border/50"
                 style={{ background: characterRoomGradient(characterId) }}
               >
                 {character.avatar_url ? (
@@ -299,23 +299,22 @@ function CharacterDetailContent({
                   <img
                     src={character.avatar_url}
                     alt={character.name}
-                    className="h-full w-full object-cover object-top"
+                    className="h-full w-full object-contain object-center"
                   />
                 ) : null}
-                <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/70 to-transparent" />
-                {character.personality_tags.length ? (
-                  <div className="absolute inset-x-3 bottom-3 flex flex-wrap gap-1.5">
-                    {character.personality_tags.slice(0, 6).map((tag) => (
-                      <span
-                        key={tag}
-                        className="rounded-full bg-black/25 px-2 py-1 text-[10px] text-white/90 ring-1 ring-inset ring-white/15"
-                      >
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                ) : null}
               </div>
+              {character.personality_tags.length ? (
+                <div className="mb-4 -mt-1 flex flex-wrap gap-1.5">
+                  {character.personality_tags.slice(0, 6).map((tag) => (
+                    <span
+                      key={tag}
+                      className="rounded-full bg-secondary px-2 py-1 text-[10px] text-muted-foreground ring-1 ring-inset ring-border/60"
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
               <section>
                 <h3 className="mb-2 text-[11px] font-medium text-muted-foreground">角色简介</h3>
                 <p className="whitespace-pre-wrap break-words text-[13px] leading-6 text-foreground/85">

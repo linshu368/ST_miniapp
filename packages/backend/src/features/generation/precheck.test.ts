@@ -47,6 +47,45 @@ const FREE_MODEL: ModelBillingContext = {
 const INACTIVE = { active: false, validUntil: null };
 
 describe('resolveBillingPlan', () => {
+  it('freezes creator identity and an independent self discount without granting VIP access', () => {
+    const creator = {
+      characterId: '60000000-0000-4000-8000-000000000001',
+      creatorUserId: '60000000-0000-4000-8000-000000000002',
+      payerUserId: '60000000-0000-4000-8000-000000000002',
+    };
+    const plan = resolveBillingPlan({
+      chargeId: 'creator-charge',
+      billing: PAID_MODEL,
+      isFreeRound: false,
+      pricing: PRICING,
+      entitlement: INACTIVE,
+      creator,
+      log: fakeLogger(),
+    });
+    expect(plan.snapshot).toMatchObject({
+      payable_credits: 40,
+      vip_active: false,
+      requires_vip: true,
+      creator_reward: {
+        character_id: creator.characterId,
+        creator_user_id: creator.creatorUserId,
+        rate: 0.4,
+        wallet: 'bonus',
+        policy_version: 1,
+      },
+    });
+    const other = resolveBillingPlan({
+      chargeId: 'other-charge',
+      billing: PAID_MODEL,
+      isFreeRound: false,
+      pricing: PRICING,
+      entitlement: INACTIVE,
+      creator: { ...creator, payerUserId: '60000000-0000-4000-8000-000000000003' },
+      log: fakeLogger(),
+    });
+    expect(other.snapshot.payable_credits).toBe(50);
+    expect(other.snapshot.creator_reward).toEqual(plan.snapshot.creator_reward);
+  });
   it('计费快照的字段与 chat_history 落库口径逐项对齐', () => {
     const plan = resolveBillingPlan({
       chargeId: 'charge-1',

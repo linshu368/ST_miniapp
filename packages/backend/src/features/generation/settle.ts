@@ -26,6 +26,7 @@ import { getDomainDb } from '../../lib/supabase.js';
 import {
   ConversationHistoryRepository,
   type LlmBillingSnapshot,
+  type CreatorRewardSnapshot,
 } from '../../infrastructure/repositories/ConversationHistoryRepository.js';
 import type { LlmModelProvider } from '@miniapp/shared';
 import {
@@ -76,6 +77,7 @@ export interface GenerationSettlementEntry {
   vip_valid_until?: string | null;
   model_tier?: string | null;
   vip_discount_config_version?: number | null;
+  creator_reward?: CreatorRewardSnapshot;
   user_input: string;
   assistant_reply: string | null;
   history: unknown[];
@@ -506,5 +508,6 @@ function billingSnapshotFromEntry(entry: GenerationSettlementEntry): LlmBillingS
     vip_valid_until: entry.vip_valid_until,
     model_tier: entry.model_tier,
     vip_discount_config_version: entry.vip_discount_config_version,
+    ...(entry.creator_reward ? { creator_reward: entry.creator_reward } : {}),
   };
 }

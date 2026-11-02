@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/frontend/app/index.md", "reason": "聊天与抽屉移动端交互"}
+{"file": ".trellis/spec/backend/app/index.md", "reason": "消息修改路由与仓储"}
+{"file": ".trellis/spec/shared/contracts/index.md", "reason": "消息修改契约"}
+{"file": ".trellis/spec/database/supabase/index.md", "reason": "覆盖记录与迁移发布"}

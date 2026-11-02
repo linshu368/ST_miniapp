@@ -9,6 +9,7 @@ import type { AssistantBodyPlan } from '@/lib/text-postprocess/reply-plan';
 import { CHAT_MARKDOWN_CLASS, ChatMarkdown } from './chat-markdown';
 import { getChatReplyPresentation } from './chat-reply-presentation';
 import { ChatThinking } from './chat-thinking';
+import { ChatMessageEditing } from './chat-message-editing';
 
 /**
  * 字号/行高/头像尺寸等取值照搬原版聊天页注入 ST iframe 的那套样式
@@ -64,6 +65,8 @@ interface ChatMessageBubbleProps {
   quotaExhaustedNotice?: string;
   /** 挂在正文下方的操作区，目前只有重生成按钮 */
   footer?: ReactNode;
+  renderFooter?: (tools: ReactNode, editAction: ReactNode) => ReactNode;
+  branch?: { pending: boolean; onBranch: () => void };
   /** 有校验过的 artifact 才走 ReplyRenderer。否则保持原来的 Markdown。 */
   replyPlan?: AssistantBodyPlan;
   displayName?: string;
@@ -71,9 +74,52 @@ interface ChatMessageBubbleProps {
   onChoice?: (choice: ReplyChoicePayload) => void;
   detailsDefaultOpen?: Readonly<Record<string, boolean>>;
   thinkingText?: string;
+  editable?: boolean;
+  editDisabled?: boolean;
+  editMenuDisabled?: boolean;
+  viewportHeight?: number | null;
+  onEditingChange?: (editing: boolean) => void;
+  editActions?: ReactNode;
+  inlineEditor?: ReactNode;
 }
 
-export function ChatMessageBubble({
+export function ChatMessageBubble(props: ChatMessageBubbleProps) {
+  if (!props.editable && !props.branch) return <ChatMessageContent {...props} />;
+  return (
+    <ChatMessageEditing
+      message={props.message}
+      enabled={Boolean(props.editable)}
+      disabled={Boolean(props.editDisabled)}
+      menuDisabled={props.editMenuDisabled}
+      viewportHeight={props.viewportHeight}
+      branch={props.branch}
+      onEditingChange={props.onEditingChange}
+    >
+      {({ actions, editAction, editor }) => (
+        <ChatMessageContent
+          {...props}
+          editActions={
+            <>
+              {editAction}
+              {actions}
+            </>
+          }
+          inlineEditor={editor}
+          footer={
+            props.renderFooter?.(actions, editAction) ?? (
+              <>
+                {editAction}
+                {actions}
+              </>
+            )
+          }
+        />
+      )}
+    </ChatMessageEditing>
+  );
+}
+
+function ChatMessageContent({
   message,
   characterName,
   characterAvatarUrl,
@@ -88,14 +134,23 @@ export function ChatMessageBubble({
   onChoice,
   detailsDefaultOpen,
   thinkingText,
+  editActions,
+  inlineEditor,
 }: ChatMessageBubbleProps) {
   if (message.role === 'user') {
     return (
       <div className="flex flex-col items-end gap-1 px-6 pb-2.5 pt-1.5 min-[521px]:px-10">
-        <Avatar url={userAvatarUrl} alt="" className={HEADER_AVATAR_CLASS} />
-        <div className="w-fit max-w-full whitespace-pre-wrap rounded-[20px_20px_6px_20px] border border-primary/[0.18] bg-bubble-user px-3.5 py-[11px] text-foreground min-[521px]:max-w-[30rem]">
-          <span className={BODY_TEXT_CLASS}>{message.content}</span>
+        <div className="flex items-center gap-1">
+          <Avatar url={userAvatarUrl} alt="" className={HEADER_AVATAR_CLASS} />
         </div>
+        {inlineEditor ?? (
+          <div className="w-fit max-w-full whitespace-pre-wrap rounded-[20px_20px_6px_20px] border border-primary/[0.18] bg-bubble-user px-3.5 py-[11px] text-foreground min-[521px]:max-w-[30rem]">
+            <span className={BODY_TEXT_CLASS}>{message.content}</span>
+          </div>
+        )}
+        {!inlineEditor && editActions ? (
+          <div className="flex justify-end">{editActions}</div>
+        ) : null}
       </div>
     );
   }
@@ -118,17 +173,18 @@ export function ChatMessageBubble({
             />
           ) : null}
           <div className={cn('text-foreground', BODY_TEXT_CLASS)}>
-            {message.content ? (
-              <AssistantReplyBody
-                message={message}
-                plan={replyPlan ?? { kind: 'original' }}
-                streaming={Boolean(streaming)}
-                displayName={displayName}
-                choiceDisabled={choiceDisabled !== false}
-                onChoice={onChoice}
-                detailsDefaultOpen={detailsDefaultOpen}
-              />
-            ) : null}
+            {inlineEditor ??
+              (message.content ? (
+                <AssistantReplyBody
+                  message={message}
+                  plan={replyPlan ?? { kind: 'original' }}
+                  streaming={Boolean(streaming)}
+                  displayName={displayName}
+                  choiceDisabled={choiceDisabled !== false}
+                  onChoice={onChoice}
+                  detailsDefaultOpen={detailsDefaultOpen}
+                />
+              ) : null)}
             {streaming && message.content.trim() ? (
               <span
                 className="ml-0.5 inline-block h-[1.05em] w-[2px] translate-y-[0.15em] animate-pulse bg-primary align-middle"
@@ -143,7 +199,7 @@ export function ChatMessageBubble({
             ) : null}
             {quotaExhaustedNotice ? <ReplyNotice>{quotaExhaustedNotice}</ReplyNotice> : null}
           </div>
-          {footer ? <div className="pt-1.5">{footer}</div> : null}
+          {!inlineEditor && footer ? <div className="pt-1.5">{footer}</div> : null}
         </div>
         {!message.content && streaming && !thinkingText ? (
           <p className="mt-1 text-[12px] text-muted-foreground" role="status">

@@ -291,3 +291,21 @@ it('accepting a regenerated revision also prunes retained older text instead of 
   expect(pruned).toBeNull();
   expect(mergeStreamingMessages(persisted, pruned, 's1')).toBe(persisted);
 });
+
+it('saved shorter edits and deletion supersede retained streaming text', () => {
+  const stream = streaming({
+    assistantMessageId: 'a1',
+    userMessage: null,
+    turnIndex: 1,
+    revision: 0,
+    status: 'complete',
+    text: '原来很长的一段回复',
+  });
+  for (const change of [
+    { content: '短句', edit_version: 1 },
+    { content: '', edit_version: 1, deleted: true },
+  ]) {
+    const saved = [user, message({ ...assistant, ...change })];
+    expect(mergeStreamingMessages(saved, stream, 's1')).toEqual(saved);
+  }
+});

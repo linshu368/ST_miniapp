@@ -7,6 +7,7 @@ import {
   type FreeQuotaExhaustedDialogConfig,
 } from '@miniapp/shared';
 import { getDomainDb } from '../../lib/supabase.js';
+import { fetchRuntimeConfigEntry } from '../../platform/runtime-config.js';
 
 /** 配置缺失时的兜底值；实际额度请读 getCharacterFreeChatQuotaLimit()。 */
 export const CHARACTER_FREE_CHAT_QUOTA_LIMIT = DEFAULT_CHARACTER_FREE_CHAT_QUOTA_LIMIT;
@@ -29,19 +30,10 @@ export function parseFreeQuotaExhaustedDialogConfig(
 }
 
 export async function getCharacterFreeChatQuotaLimit(): Promise<number> {
-  const { data, error } = await getDomainDb('app_core')
-    .from('runtime_config')
-    .select('value')
-    .eq('key', CHARACTER_FREE_CHAT_QUOTA_LIMIT_CONFIG_KEY)
-    .maybeSingle();
-
-  if (error) {
-    console.warn(
-      `[free-quota] 读取角色卡免费轮次上限失败，使用默认 ${DEFAULT_CHARACTER_FREE_CHAT_QUOTA_LIMIT}：${error.message}`
-    );
-    return DEFAULT_CHARACTER_FREE_CHAT_QUOTA_LIMIT;
-  }
-  return parseCharacterFreeChatQuotaLimit(data?.value);
+  // Reuse the bounded runtime-config reader; never leave this critical read on
+  // the global 30s fallback, or re-read it after the turn's preparation finished.
+  const entry = await fetchRuntimeConfigEntry(CHARACTER_FREE_CHAT_QUOTA_LIMIT_CONFIG_KEY);
+  return parseCharacterFreeChatQuotaLimit(entry?.value);
 }
 
 export async function getFreeQuotaExhaustedDialogConfig(): Promise<FreeQuotaExhaustedDialogConfig> {

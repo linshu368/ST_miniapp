@@ -1,0 +1,37 @@
+{
+  "id": "chat-message-edit-delete",
+  "name": "chat-message-edit-delete",
+  "title": "最近十轮消息编辑与单条删除",
+  "description": "",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-02",
+  "completedAt": null,
+  "branch": "codex/chat-message-edit-delete",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "用户已验收整批聊天编辑/删除/工具布局及会话抽屉，2026-11-02明确授权上线。基于main51d5b2af独立发布；不包含其他dev改动。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "backend.business.conversation-generation",
+        "database.business.conversation-storage",
+        "frontend.business.conversation-ui",
+        "shared.business.conversation-contracts"
+      ]
+    }
+  }
+}

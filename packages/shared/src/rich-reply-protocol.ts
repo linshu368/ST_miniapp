@@ -37,3 +37,20 @@ export const RICH_REPLY_SYSTEM_INSTRUCTIONS = [
   '用户个人偏好为：',
   '{{USER_CUSTOM_INSTRUCTIONS}}',
 ].join('\n');
+
+/** Only the prose before auxiliary panels is editable. Keep the protected tail byte-for-byte. */
+export function splitEditableReply(content: string): { body: string; protectedTail: string } {
+  const marker =
+    /\[\s*\/?\s*(?:choices?|status|memory)\s*\]|<\/?(?:choices?|status|memory|details)\b[^>]*>/i.exec(
+      content
+    );
+  if (!marker) return { body: content, protectedTail: '' };
+  let boundary = marker.index;
+  // A fenced module belongs to the panel, not to the user's prose.
+  const fence = /(?:^|\r?\n)[ \t]*(?:`{3,}|~{3,})[^\r\n]*\r?\n[ \t]*$/.exec(
+    content.slice(0, boundary)
+  );
+  if (fence) boundary = fence.index;
+  while (boundary > 0 && /\s/.test(content[boundary - 1]!)) boundary -= 1;
+  return { body: content.slice(0, boundary), protectedTail: content.slice(boundary) };
+}

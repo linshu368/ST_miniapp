@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/database/supabase/index.md", "reason": "Database boundaries"}
+{"file": ".trellis/spec/database/supabase/migrations-and-rollbacks.md", "reason": "Local-only now; future TEST before production"}
+{"file": ".trellis/spec/backend/app/index.md", "reason": "Trusted review and existing transport"}
+{"file": ".trellis/spec/admin/app/index.md", "reason": "Managed prompt body"}
+{"file": ".trellis/spec/shared/contracts/index.md", "reason": "Fixed result shape"}
+{"file": ".trellis/spec/frontend/app/index.md", "reason": "User feedback and silence on success"}
+{"file": "packages/ui-tests/README.md", "reason": "Reuse creator-review scenarios"}
+{"file": ".trellis/tasks/11-02-creator-direct-publication/design.md", "reason": "Current AI-review design, supersedes direct publication"}

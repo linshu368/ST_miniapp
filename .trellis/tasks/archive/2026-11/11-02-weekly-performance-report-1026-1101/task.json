@@ -1,0 +1,32 @@
+{
+  "id": "weekly-performance-report-1026-1101",
+  "name": "weekly-performance-report-1026-1101",
+  "title": "汇总 10 月 26 日至 11 月 1 日 production 性能周报",
+  "description": "按 7 个重叠整窗汇总 production Sentry 与 Grafana 性能，生成 2026-10-26 至 2026-11-01 周报。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": "docs",
+  "package": "reporting",
+  "priority": "P2",
+  "creator": "cline",
+  "assignee": "cline",
+  "createdAt": "2026-11-02",
+  "completedAt": "2026-11-02",
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "no_module_change",
+      "reason": "本任务只新增外部性能周报与任务审计记录，不改变仓库模块职责、契约、运行时代码、数据模型或依赖。"
+    }
+  }
+}

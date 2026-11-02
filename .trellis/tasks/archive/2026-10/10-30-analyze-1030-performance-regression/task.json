@@ -1,0 +1,32 @@
+{
+  "id": "analyze-1030-performance-regression",
+  "name": "analyze-1030-performance-regression",
+  "title": "30日性能下降部署链路分析",
+  "description": "对齐 24–30 日性能日报、GitHub 提交与 Railway 实际部署和运行指标，解释 30 日性能下降原因。",
+  "status": "completed",
+  "dev_type": "investigation",
+  "scope": "observability,deployment,git",
+  "package": "backend",
+  "priority": "P2",
+  "creator": "cline",
+  "assignee": "cline",
+  "createdAt": "2026-10-30",
+  "completedAt": "2026-10-30",
+  "branch": "fix_request_speed",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "no_module_change",
+      "reason": "只读分析日报、提交、部署、运行指标和日志，不修改模块职责、契约、数据库或运行配置。"
+    }
+  }
+}

@@ -32,6 +32,7 @@ import { buildPrompt, fetchPlatformInstructions, type EngineCharacter } from '..
 import type { InstructionSlotModes } from '../engine/types.js';
 import {
   execute,
+  prepareGeneration,
   resolveModelForUser,
   type GenerationRequest,
   type GenerationStatus,
@@ -45,6 +46,7 @@ import {
 } from '../../infrastructure/repositories/CharacterCardRepository.js';
 import { MiniappUserSettingsRepository } from '../../infrastructure/repositories/MiniappUserSettingsRepository.js';
 import type { RequestLogger } from '../../lib/logger.js';
+import type { fetchModelCatalogSnapshot } from '../../platform/model-tiers.js';
 import { fetchContextWindowLimits } from './context-window.js';
 import { buildEngineHistory } from './history.js';
 import type { ConversationStreamSink } from './sse.js';
@@ -74,6 +76,7 @@ export interface RunConversationTurnInput {
   receivedAt?: number;
   receivedMonotonicAt?: number;
   firstTokenDeadlineMs?: number;
+  catalogSnapshot?: Awaited<ReturnType<typeof fetchModelCatalogSnapshot>>;
   /** Caller correlation, persisted for safe pre-start cancellation matching. */
   requestId?: string;
   thinkingEnabled?: boolean;
@@ -140,20 +143,36 @@ export async function runConversationTurn(
   const preparationSignal = AbortSignal.timeout(Math.ceil(preparationRemainingMs));
 
   // ── 取数 ──────────────────────────────────────────────────────────────────
-  // 六个读之间互不依赖，串行发会把一轮生成的启动时延叠成六个 RTT。
+  // 独立读取立即并行启动；用户偏好与模型选择复用同一份设置和规则快照。
   // 都放在写入之前：这里抛异常时会话还没被动过，不会留下没有回复的孤儿 user 行。
-  const [model, card, userConfig, displayName, instructions, windowLimits] =
+  const instructionsPromise = fetchPlatformInstructions();
+  const generationContextPromise = userSettings().getGenerationContext(userId, instructionsPromise);
+  const modelPromise = resolveModelForUser(userId, {
+    selectedModelId: generationContextPromise.then(({ config }) => config.selected_model_id),
+    catalogSnapshot: input.catalogSnapshot,
+  });
+  // Read-only generation settings must not sit behind opening the turn and
+  // reading its context. The same promise is consumed once by execute.
+  const executionPreparation = prepareGeneration({
+    model: modelPromise,
+    characterId: session.character_id,
+    useFallback: true,
+  });
+  void executionPreparation.catch(() => undefined);
+  const [model, generationContext, instructions, windowLimits] =
     await withConversationPreparationDeadline(
       Promise.all([
-        resolveModelForUser(userId),
-        characters().requireCard(session.character_id),
-        userSettings().getGenerationConfig(userId),
-        userSettings().getDisplayName(userId),
-        fetchPlatformInstructions(),
+        modelPromise,
+        generationContextPromise,
+        instructionsPromise,
         fetchContextWindowLimits(),
+        // Ownership is already established. Recover stale writes concurrently
+        // with independent reads, but always finish recovery before startTurn.
+        historyRecords().recoverStaleStreaming(session.id),
       ]),
       preparationSignal
     );
+  const { config: userConfig, displayName } = generationContext;
 
   if (instructions.degraded) {
     log.sys.error(
@@ -165,8 +184,6 @@ export async function runConversationTurn(
   // ── 落库：一轮一个 chat_history revision ─────────────────────────────────
   // 两个 RPC 都在会话行锁内做「生成中判定 + 陈旧流清理」，session_busy 与
   // regenerate_not_allowed 由它们以 SQLSTATE 抛出，仓库层已翻成业务错误码。
-  preparationSignal.throwIfAborted();
-  await historyRecords().recoverStaleStreaming(session.id);
   preparationSignal.throwIfAborted();
   const turn = await startTurn(session.id, mode, model.openRouterModelId, windowLimits);
   log.biz.info(
@@ -199,6 +216,7 @@ export async function runConversationTurn(
   });
   const observations = generationObservations();
   const primaryAttemptId = randomUUID();
+  const chargeId = randomUUID();
   const clientRequestId = input.requestId ?? randomUUID();
   let startEmitted = false;
   const emitStart = (): void => {
@@ -220,6 +238,7 @@ export async function runConversationTurn(
   };
   const observationInput = {
     historyId: turn.historyId,
+    chargeId,
     requestId: clientRequestId,
     primaryAttemptId,
     requestedModelId: model.modelId,
@@ -300,13 +319,11 @@ export async function runConversationTurn(
 
   try {
     // ── 组 prompt ─────────────────────────────────────────────────────────────
-    // Context reads do not depend on this new turn's identity writes. Keep the
-    // writes ordered (pending identity must never overwrite the final prompt).
-    const [registration, contextRead] = await Promise.allSettled([
+    // Context reads can overlap the one atomic admission write. Join both before
+    // cleanup so a late admission cannot race a failed context's terminal state.
+    const [registration, contextRead, cardRead] = await Promise.allSettled([
       (async () => {
-        if (input.requestId)
-          await historyRecords().setPendingRequestId(turn.historyId, input.requestId);
-        await observations.begin(observationInput);
+        await observations.begin({ ...observationInput, history: [] });
         observationBegun = true;
         if (firstTokenDeadlineElapsed) recordFirstTokenTimeout();
       })(),
@@ -315,11 +332,15 @@ export async function runConversationTurn(
         turn.turnIndex,
         turn.contextWindowStartTurn
       ),
+      // startTurn has atomically bound the creator card version; never prefetch latest draft.
+      characters().requireCard(session.character_id, userId, session.id),
     ]);
     // Finish registration before failure cleanup too. A fast context rejection
     // must not race a late identity write or omit the failed request's facts.
     if (registration.status === 'rejected') throw registration.reason;
     if (contextRead.status === 'rejected') throw contextRead.reason;
+    if (cardRead.status === 'rejected') throw cardRead.reason;
+    const card = cardRead.value;
     const context = contextRead.value;
     controller.signal.throwIfAborted();
     const history = buildEngineHistory(context.messages, context.openingMessage ?? card.first_mes);
@@ -335,19 +356,10 @@ export async function runConversationTurn(
       instructions: instructions.instructions,
     });
 
-    // Persist the audit/context snapshot while generation performs independent
-    // pricing/entitlement checks. The dispatch hook still requires durability.
-    const promptPersisted = historyRecords().setPromptHistory(
-      turn.historyId,
-      prompt.messages,
-      input.requestId
-    );
-    // Attach a rejection handler now; the hook/result below awaits the original
-    // promise, so a slow precheck cannot cause an unhandled rejection.
-    void promptPersisted.catch(() => {});
-
     // ── 生成 ──────────────────────────────────────────────────────────────────
     const request: GenerationRequest = {
+      plannedChargeId: chargeId,
+      preparation: executionPreparation,
       userId,
       characterId: session.character_id,
       model,
@@ -403,15 +415,13 @@ export async function runConversationTurn(
       {
         onBeforeDispatch: async (snapshot) => {
           controller.signal.throwIfAborted();
-          await promptPersisted;
-          await observations.begin({ ...observationInput, snapshot });
+          await observations.begin({ ...observationInput, snapshot, history: prompt.messages });
           controller.signal.throwIfAborted();
           emitStart();
         },
-        onBeforeReserve: async (chargeId) => {
+        onBeforeReserve: async (reservedChargeId) => {
           controller.signal.throwIfAborted();
-          await historyRecords().registerChargeId(turn.historyId, chargeId);
-          controller.signal.throwIfAborted();
+          if (reservedChargeId !== chargeId) throw new Error('生成计费身份发生变化');
         },
         onBeforeSettle: async (observed, releaseReservation) => {
           await checkpoint;
@@ -448,7 +458,6 @@ export async function runConversationTurn(
       },
       log
     );
-    await promptPersisted;
 
     if (result.status === 'insufficient_balance' || result.denial === 'vip_required')
       await observations
@@ -508,7 +517,9 @@ export async function runConversationTurn(
     sink.close();
 
     if (persisted.status === 'success') {
-      await persistRichReplyDiagnosis({
+      // 回复终态、计费和 done 均已确认；该诊断只影响下一轮采用精简还是完整规则。
+      // 不再让一次额外 snapshot 读取和 metadata 写入延长已关闭的 SSE handler。
+      void persistRichReplyDiagnosis({
         historyId: turn.historyId,
         postprocessVersion: turn.postprocessVersion,
         slotModes: turn.slotModes,

@@ -30,6 +30,7 @@ function repository(handler: (name: string, args: Record<string, unknown>) => Rp
   };
   return {
     calls,
+    db,
     tableReads: () => tableReads,
     history: new ConversationHistoryRepository(db as unknown as DomainDb),
   };
@@ -229,6 +230,37 @@ describe('postprocess history mapping', () => {
     postprocess_version: 4,
   };
 
+  it('deletion tombstones retain round identity but never return removed text', () => {
+    const [user, assistant] = toChatMessages({
+      ...row,
+      user_input: '',
+      assistant_reply: null,
+      user_deleted: true,
+      assistant_deleted: true,
+      user_edit_version: 1,
+      assistant_edit_version: 2,
+      first_token_preview: { kind: 'delta', text: 'old preview' },
+    });
+    expect(user).toMatchObject({
+      content: '',
+      deleted: true,
+      edit_version: 1,
+      turn_index: row.turn_index,
+    });
+    expect(assistant).toMatchObject({
+      content: '',
+      deleted: true,
+      edit_version: 2,
+      turn_index: row.turn_index,
+    });
+    expect(
+      assembleConversationContext({
+        windowStartTurn: 1,
+        windowRows: [{ ...row, user_input: '', assistant_reply: null }],
+      }).messages
+    ).toEqual([]);
+  });
+
   it('keeps the raw reply as content and puts the stored version only on the assistant message', () => {
     const [user, assistant] = toChatMessages(row);
     expect(user?.content).toBe('raw-user');
@@ -333,7 +365,51 @@ describe('branch-aware history reads', () => {
   it('does not make inherited ids writable through the existing media lookup', async () => {
     const { calls, history } = reader();
     await history.findCurrentTurnById('branch', 'history');
-    expect(calls).toContainEqual({ method: 'from', args: ['current_chat_history'] });
+    expect(calls).toContainEqual({ method: 'from', args: ['session_chat_history'] });
+    expect(calls).toContainEqual({ method: 'eq', args: ['is_inherited', false] });
     expect(calls).toContainEqual({ method: 'eq', args: ['session_id', 'branch'] });
+  });
+});
+
+describe('body-only message editing', () => {
+  it('attaches server-held panels and retains the expected-version guard', async () => {
+    const tail = '\n\n[status]原有状态[/status][memory]原有记忆[/memory]';
+    const calls: Array<{ name: string; args: unknown[] }> = [];
+    const query = {
+      select: (...args: unknown[]) => record('select', args),
+      eq: (...args: unknown[]) => record('eq', args),
+      abortSignal: (...args: unknown[]) => record('abortSignal', args),
+      maybeSingle: async () => ({ data: { assistant_reply: '原正文' + tail }, error: null }),
+    };
+    function record(name: string, args: unknown[]) {
+      calls.push({ name, args });
+      return query;
+    }
+    const { db: rpcDb, calls: rpcCalls } = repository((_name, args) => ({
+      data: {
+        session_id: 'session',
+        message_id: 'reply',
+        role: 'assistant',
+        content: args.p_content,
+        deleted: false,
+        edit_version: 2,
+      },
+      error: null,
+    }));
+    const db = {
+      from: (table: string) => record('from', [table]),
+      rpc: rpcDb.rpc,
+    };
+    const history = new ConversationHistoryRepository(db as unknown as DomainDb);
+    const result = await history.changeMessage({
+      userId: 'owner',
+      sessionId: 'session',
+      messageId: 'reply',
+      body: { action: 'edit', role: 'assistant', expected_version: 1, content: '新正文' },
+    });
+    expect(result.content).toBe('新正文' + tail);
+    expect(calls).toContainEqual({ name: 'eq', args: ['user_id', 'owner'] });
+    expect(calls).toContainEqual({ name: 'eq', args: ['session_id', 'session'] });
+    expect(rpcCalls[0]?.args).toMatchObject({ p_content: '新正文' + tail, p_expected_version: 1 });
   });
 });

@@ -64,7 +64,12 @@ beforeEach(() => {
     },
   }));
   database.from.mockReturnValue({
-    select: () => ({ eq: () => ({ maybeSingle: database.read }) }),
+    select: () => ({
+      eq: () => ({
+        maybeSingle: database.read,
+        abortSignal: () => ({ maybeSingle: database.read }),
+      }),
+    }),
     update: database.update,
   });
   database.rpc.mockImplementation(
@@ -80,6 +85,44 @@ beforeEach(() => {
 });
 
 describe('reply-style user preference persistence boundary', () => {
+  it('freezes model, prompt preferences and persona in one read for the whole turn', async () => {
+    stored.selected_model_id = 'operator-model';
+    stored.display_name = '本轮昵称';
+    stored.pref_word_count = 'retired-tier';
+    stored.pref_show_options = false;
+    const result = await repository.getGenerationContext('test-user');
+    expect(database.from).toHaveBeenCalledExactlyOnceWith('miniapp_user_settings');
+    expect(database.read).toHaveBeenCalledOnce();
+    expect(result).toMatchObject({
+      displayName: '本轮昵称',
+      config: {
+        selected_model_id: 'operator-model',
+        pref_word_count: '300-500',
+        pref_show_options: false,
+        pref_custom_instructions: 'existing preference',
+      },
+    });
+  });
+
+  it('uses existing defaults and persona fallback when the single settings read has no row', async () => {
+    database.read.mockResolvedValueOnce({ data: null, error: null });
+    expect(await repository.getGenerationContext('test-user')).toMatchObject({
+      displayName: '你',
+      config: { selected_model_id: null, pref_word_count: '300-500', pref_show_memory: true },
+    });
+    stored.display_name = null;
+    stored.tg_first_name = 'Telegram name';
+    expect((await repository.getGenerationContext('test-user')).displayName).toBe('Telegram name');
+  });
+
+  it('fails closed without adding a second read if preparation cannot read settings', async () => {
+    database.read.mockResolvedValueOnce({ data: null, error: { message: 'unavailable' } });
+    await expect(repository.getGenerationContext('test-user')).rejects.toThrow(
+      '查询用户生成配置失败'
+    );
+    expect(database.read).toHaveBeenCalledOnce();
+  });
+
   it('defaults old/missing settings to an empty map without changing custom instructions', async () => {
     database.read.mockResolvedValueOnce({ data: null, error: null });
     expect(await repository.getGenerationConfig('test-user')).toMatchObject({

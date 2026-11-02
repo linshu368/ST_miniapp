@@ -107,6 +107,45 @@ describe('createReplyStreamSink', () => {
     expect(hijack).toHaveBeenCalledTimes(1);
   });
 
+  it('首个成功写出的非空正文或思考片段只通知一次', () => {
+    const onFirstVisibleToken = vi.fn();
+    const { reply } = fakeReply();
+    const sink = createReplyStreamSink(reply, { onFirstVisibleToken });
+    sink.open();
+
+    sink.send({
+      type: 'start',
+      first_token_deadline_ms: 6000,
+      requested_model_id: 'model',
+      fallback_trigger_ms: 3000,
+      turn_index: 1,
+      user_message_id: null,
+      assistant_message_id: 'message',
+      revision: 1,
+      thinking_enabled: true,
+      postprocess_version: 1,
+    });
+    sink.send({ type: 'delta', text: '   ' });
+    sink.send({ type: 'reasoning', text: '先思考' });
+    sink.send({ type: 'delta', text: '再回答' });
+
+    expect(onFirstVisibleToken).toHaveBeenCalledTimes(1);
+  });
+
+  it('socket 写失败不把未交付字符算作首字', () => {
+    const onFirstVisibleToken = vi.fn();
+    const { reply, raw } = fakeReply();
+    const sink = createReplyStreamSink(reply, { onFirstVisibleToken });
+    sink.open();
+    vi.spyOn(raw, 'write').mockImplementation(() => {
+      throw new Error('socket closed');
+    });
+
+    sink.send({ type: 'delta', text: '没有交付' });
+
+    expect(onFirstVisibleToken).not.toHaveBeenCalled();
+  });
+
   it('客户端断开后静默丢弃写入，且不再 end 一次', () => {
     const { reply, raw } = fakeReply();
     const sink = createReplyStreamSink(reply);

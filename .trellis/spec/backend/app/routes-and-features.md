@@ -54,3 +54,33 @@ MiniApp 读路径按最多 20 个去重版本批量读取不可变快照。每�
 - 成功/失败使用 shared envelope 或约定 SSE；domain error 映射稳定 HTTP code，未知错误记录 `{ err }` 后返回无敏感细节 5xx。
 - 404/409/402/422 在写响应前确定；外部 429/5xx 仅在幂等且总时限允许时重试。
 - route 日志包含允许的请求摘要、结果摘要、耗时和链路标识；禁止消息正文、token、支付密钥、完整 initData、大响应。
+
+## Scenario: 首 token 预算内的读取依赖（2026-11-02 候选）
+
+### 1. Scope / Trigger
+
+6秒无字超时必须检查整个调用前依赖图，不能只计算合并了几次写入。配置与报价只读准备不应串在开轮、上下文和prompt保存之后。
+
+### 2. Signatures
+
+`prepareGeneration({model: ResolvedModel | Promise<ResolvedModel>, characterId, useFallback}) -> Promise<GenerationPreparation>`；`GenerationRequest.preparation`可选，缺省消费者沿用同一prepare实现。
+
+### 3. Contracts
+
+只提前定价/VIP策略/路由/创作者身份/额度上限读取，绑定本轮模型和角色并在execute核验；不提前预留、扣款或发供应商请求。stale recovery可与独立读取并行，但开轮必须等恢复完成。初始charge身份、额度决策、余额预检、最终prompt/报价冻结仍先于dispatch。非strict且无caller signal的配置读取在同一microtask合为一个按key过滤的查询，5秒上限、无结果缓存；各消费者只取得其请求的key。strict和caller-owned取消路径独立。无新环境变量、表、任务或监控SQL。
+
+### 4. Validation & Error Matrix
+
+准备身份不匹配→预留/供应商前拒绝；早期只读Promise失败→保留拒绝供execute消费且立即挂rejection handler；配置失败沿各消费者原降级；过期配置/预留边界不得产生晚到预留；最终身份/报价失败仍释放额度。整轮6秒不因任何Promise或重试续期。
+
+### 5. Good / Base / Bad
+
+Good：读准备与上下文重叠、同一结果只消费一次。Base：旧直接execute调用自行准备。Bad：先等开轮/上下文，再启动相同配置；通过多发数据库请求或提前两个模型冒充提速。
+
+### 6. Tests Required
+
+模拟慢配置/上下文验证实际首字在6秒前交付；相同条件串行依赖会超过6秒。验证调用前身份与报价、免费/付费、停止/超时免扣、两路竞争单次结算；配置批读去重、key隔离、strict与取消隔离、后续读取保持新鲜。模拟耗时不能当生产1.5%达标证据。
+
+### 7. Wrong vs Correct
+
+Wrong：`await context; await config; dispatch()`。Correct：提前创建纯读准备Promise，等待既有关键写和门禁后复用其结果，再dispatch；关键身份和计费写入不能fire-and-forget。

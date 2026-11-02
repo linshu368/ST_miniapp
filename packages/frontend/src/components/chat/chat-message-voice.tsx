@@ -51,7 +51,8 @@ export function ChatMessageVoiceFooter({
   imageAction,
   voice,
   regenerate,
-  branchAction,
+  toolsAction,
+  editAction,
   likeAction,
 }: {
   charCount: number;
@@ -60,19 +61,21 @@ export function ChatMessageVoiceFooter({
   /** null = 这条消息不支持语音（开场白、未写完的回复），此时只显示重生成 */
   voice: MessageVoiceState | null;
   regenerate: ReactNode;
-  branchAction?: ReactNode;
+  toolsAction?: ReactNode;
+  editAction?: ReactNode;
   likeAction?: ReactNode;
 }) {
   if (!voice) {
-    return imageAction || regenerate || branchAction || likeAction ? (
+    return imageAction || regenerate || toolsAction || editAction || likeAction ? (
       <div className="flex items-end gap-x-2">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1 gap-y-1">
           <span className="text-[11px] text-muted-foreground/70">{charCount} 字</span>
           {imageAction}
-          {branchAction}
+          {toolsAction}
         </div>
-        {regenerate || likeAction ? (
+        {editAction || regenerate || likeAction ? (
           <div className="ml-auto flex shrink-0 items-center gap-1">
+            {editAction}
             {regenerate}
             {likeAction}
           </div>
@@ -107,10 +110,11 @@ export function ChatMessageVoiceFooter({
           <span className="text-[11px] text-muted-foreground/70">{charCount} 字</span>
           {imageAction}
           {audioUrl ? null : <VoiceAction {...voice} />}
-          {branchAction}
+          {toolsAction}
         </div>
-        {regenerate || likeAction ? (
+        {editAction || regenerate || likeAction ? (
           <div className="ml-auto flex shrink-0 items-center gap-1">
+            {editAction}
             {regenerate}
             {likeAction}
           </div>

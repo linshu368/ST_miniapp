@@ -1,5 +1,27 @@
 # SQL 迁移文件
 
+## 2026-11-02 角色卡AI审核（本地验证，未执行远端）
+
+用户暂停原直接公开发布，未执行的 `20261102_creator_direct_publication.sql` 已被本次审核方案替代，不应继续引用旧release-review或旧无条件放行方案。
+
+1. `20261102_creator_review_prompt_config.sql`：仅增加运营审核正文text key，包装当前managed-key/validator并保留旧名单/ACL/两表CHECK与历史特殊key；正文1–12000 UTF16字长，默认规则ON CONFLICT不覆盖运营内容。输出结构不由配置控制。
+2. `20261102_creator_ai_review.sql`：复用原mutate函数，只有服务端严格解析的approved/reason结果才能直接发布当前CAS版本；旧backend无review仍pending。排除server review措辞对客户端幂等身份的影响，不改权限/锁/会话快照；不批量通过原14张待审、不恢复禁用/归档。
+
+未来部署顺序为两份迁移依次本地与TEST验证→Production→Backend/Admin→Frontend。本轮只本地开发，未触发远端workflow。验证复用 `bash scripts/test-creator-characters-local.sh`、`bash scripts/test-reply-style-options-local.sh`、`pnpm test:ui --grep @creator-review`。发布审核格式/超时失败不放行且不伪装成内容拒绝；恢复旧应用时保留pending兼容，不改已公开卡和历史聊天。
+
+## 2026-10-30 用户角色创作（本地验收，远端未执行）
+
+每个文件分别执行并记录账本，顺序固定：
+
+1. `20261030_creator_cover_assets.sql`：持久封面身份与私有Storage bucket。
+2. `20261030_creator_characters.sql`：作者草稿/审核、历史访问资格、owner CRUD；依赖既有角色社交/分支与用户根表。
+3. `20261030_creator_character_versions.sql`：卡级不可变版本、真实开轮绑定与分支继承；空会话不锁版。
+4. `20261030_character_creator_rewards.sql`：在当前归档/用户主动停止计费函数上追加实际扣费奖励、永久去重与退款回收；结构不符合预期会中止而不是覆盖旧函数。
+
+先在TEST应用并检查ACL/RLS、公开审核、私密历史访问、既有聊天不变、真实存储上传及供应商调用，再安排生产。应用发布顺序为迁移 → Backend/Admin → Frontend。不能只发布前端。隔离PG17验证分别复用`bash scripts/test-creator-characters-local.sh`和`bash scripts/test-first-token-fallback-local.sh`，不连接真实账户或余额。
+
+停止/恢复：首先隐藏创作入口、停止新审核/新卡发布，保留已用卡、不可变版本、历史访问资格、封面及奖励账本。已部署后不得直接删除session版本列或退回不认识版本的聊天后端，也不得删除奖励待抵扣余额；修复优先forward-fix，任何钱包恢复以既有账本核对，不手工改余额。覆盖资产使用不可变对象，失败上传只清理本次未被引用对象，不能清掉正在使用的封面。
+
 本目录是仓库里**唯一**的 schema 变更源。现行规则以 [`docs/ARCHITECTURE.md`](../../../docs/ARCHITECTURE.md) 铁律 9 与 §7.4 为准，不要再引用已删除的 `DECISIONS.md` / `Schema划分设计.md`。
 
 当前事实：
@@ -178,3 +200,14 @@ npx prisma generate
 ## 短剧生产 cron 权限 forward-fix
 
 原 `20261027_drama_playback_observability.sql` 的production事务在直接UPDATE cron.job时被Supabase托管权限拒绝并回滚，源文件/失败认领不改写。新安装或恢复改为单独执行自包含 `20261027_drama_playback_observability_forward_fix.sql`，只将cron关闭动作替换为官方cron.alter_job；本功能对象/权限/数据策略不变。执行前确认对象回滚、目标函数存在且迁移角色可执行；job保持inactive。
+
+## 签到自然日更新（2026-10-30，本地验证，远端未执行）
+
+`20261030_checkin_calendar_day.sql` 仅替换 `miniapp_features.claim_daily_checkin(uuid)` 的时间表达式，保留当前奖励配置、owner/ACL、事务和唯一入账出口。按北京时间每天00:00恢复资格，旧记录按日期自然兼容，无回填。CRLF规范化；旧锚点不是恰好一处则全事务拒绝，完整重放无操作；锁5s/语句30s。
+
+TEST先经Database Migration workflow逐文件执行、验证，再经授权生产迁移 → Backend → Frontend。隔离回归：`bash scripts/test-vip-billing-migrations.sh`。恢复用受审阅forward-fix同步RPC/Backend回滚动24h，已领余额/流水保留。不可重跑旧分档迁移，以免覆盖运营已发布数额。
+
+### 20261102_chat_message_overrides.sql（本地候选，未远端执行）
+
+experience 域增加会话局部消息覆盖，`change_chat_message` 仅允许所属会话最近十轮，用户/角色消息独立编辑或软删除，版本比较与会话锁防覆盖；不会新增生成/扣费事实。修改 `session_chat_history` 作为显示/入模的一致投影，新分支冻结覆盖，旧分支保持独立。删除不重排轮号，已删除用户输入不能重生成。已有窗口 A/B 不变。
+先运行既有隔离 PG17 分支脚本验证权限、幂等、并发、分支、删除、计费事实不变；后续按单文件 TEST -> production migration -> Backend -> Frontend 发布。停用入口可止写，但不得回滚成旧投影导致已删除内容重新显示；保留覆盖表并 forward-fix。线上迁移与真实供应商缓存命中尚未验证。

@@ -3,6 +3,7 @@ import { test, expect, expectMobileLayout } from './fixtures.js';
 
 test('@profile @layout 未开通会员：签到到账、两处引导及 VIP 跳转', async ({ page, preview }) => {
   await page.goto('/profile');
+  await expect(page.getByText('每天 00:00 更新', { exact: true })).toBeVisible();
   const upgrade = page.getByRole('button', { name: '开通 VIP，立即恢复每天签到 150 星尘' });
   await expect(upgrade).toHaveCount(1);
   await expectProfileLayout(page);
@@ -16,6 +17,35 @@ test('@profile @layout 未开通会员：签到到账、两处引导及 VIP 跳�
   await upgrade.last().click();
   await expect(page).toHaveURL(/\/vip/);
   await expect(page.getByText('150星尘/天', { exact: true })).toBeVisible();
+});
+
+test('@profile @checkin-midnight 停留跨零点后刷新签到资格', async ({ page }) => {
+  const nextClaim = Date.now() + 60_000;
+  let reads = 0;
+  await page.clock.install({ time: Date.now() });
+  await page.route('**/api/wallet/checkin', async (route) => {
+    reads += 1;
+    const response = await route.fetch();
+    const body = await response.json();
+    await route.fulfill({
+      response,
+      json: {
+        ...body,
+        data: {
+          checkin: {
+            ...body.data.checkin,
+            can_claim: reads > 1,
+            next_claim_at: new Date(nextClaim).toISOString(),
+          },
+        },
+      },
+    });
+  });
+  await page.goto('/profile');
+  await expect(page.getByRole('button', { name: '每日签到', exact: true })).toBeDisabled();
+  await page.clock.fastForward(61_000);
+  await expect(page.getByRole('button', { name: '每日签到', exact: true })).toBeEnabled();
+  expect(reads).toBe(2);
 });
 
 test('@profile @layout 已开通会员：每日150、会员身份与充值入口', async ({ page, preview }) => {

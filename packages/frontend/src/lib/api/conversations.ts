@@ -5,6 +5,8 @@ import type {
   CancelConversationTurnData,
   CancelConversationTurnRequest,
   ChatMessage,
+  ChangeChatMessageData,
+  ChangeChatMessageRequest,
   CreateConversationData,
   DeleteConversationData,
   ForkConversationData,
@@ -15,7 +17,7 @@ import type {
   SetMessageLikeRequest,
   UpdateConversationData,
 } from '@miniapp/shared';
-import { apiClient } from './client';
+import { apiClient, ApiClientError } from './client';
 import { characterSocialKeys, refreshCharacterSocial } from './character-social';
 
 export const conversationKeys = {
@@ -277,7 +279,7 @@ export function useDeleteConversationMutation() {
   });
 }
 
-/** 顶栏、会话抽屉、历史列表统一只展示这么多字 */
+/** 顶栏和跨角色历史列表的紧凑标题长度；角色内抽屉单独布局完整名称。 */
 export const SESSION_TITLE_DISPLAY_LENGTH = 7;
 const DEFAULT_DISPLAY_TITLE = '新的对话';
 
@@ -293,4 +295,59 @@ export function resolveSessionTitle(
   const chars = Array.from(source);
   if (chars.length <= SESSION_TITLE_DISPLAY_LENGTH) return source;
   return chars.slice(0, SESSION_TITLE_DISPLAY_LENGTH).join('');
+}
+
+/** Targeted update preserves loaded history and scroll position; no eager detail refetch. */
+export function useChangeChatMessageMutation() {
+  const client = useQueryClient();
+  return useMutation({
+    retry: false,
+    mutationFn: async ({
+      message,
+      body,
+    }: {
+      message: ChatMessage;
+      body: ChangeChatMessageRequest;
+    }) => {
+      const historyId = message.role === 'user' ? message.id.replace(/:user$/, '') : message.id;
+      await client.cancelQueries({ queryKey: conversationKeys.detail(message.session_id) });
+      return apiClient<ChangeChatMessageData>(
+        `/api/v1/conversations/${encodeURIComponent(message.session_id)}/messages/${encodeURIComponent(historyId)}`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify(body),
+          timeoutMs: 10_000,
+        }
+      );
+    },
+    onError: (error, { message }) => {
+      if (
+        error instanceof ApiClientError &&
+        (error.code === 'message_change_conflict' || error.code === 'message_change_not_allowed')
+      )
+        void client.invalidateQueries({ queryKey: conversationKeys.detail(message.session_id) });
+    },
+    onSuccess: (data, { message }) => {
+      client.setQueryData<GetConversationData>(
+        conversationKeys.detail(data.session_id),
+        (current) =>
+          current
+            ? {
+                ...current,
+                messages: current.messages.map((item) =>
+                  item.id === message.id
+                    ? {
+                        ...item,
+                        content: data.content,
+                        deleted: data.deleted,
+                        edit_version: data.edit_version,
+                      }
+                    : item
+                ),
+              }
+            : current
+      );
+      void client.invalidateQueries({ queryKey: conversationKeys.lists });
+    },
+  });
 }

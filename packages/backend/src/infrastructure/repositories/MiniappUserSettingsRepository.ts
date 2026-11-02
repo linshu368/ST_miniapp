@@ -22,6 +22,7 @@ import type { TelegramUser } from '../../middleware/auth.js';
 import {
   fetchPlatformInstructions,
   toPublicWordCountTiersFromEngine,
+  type PlatformInstructionsSnapshot,
 } from '../../features/engine/platform-instructions.js';
 
 export interface MiniappUserSettingsRow {
@@ -229,13 +230,26 @@ export class MiniappUserSettingsRepository {
    * 若存档 id 已从启用档位中下线，同样回落，避免 UI 出现无选中态。
    */
   async getGenerationConfig(userId: string): Promise<UserGenerationConfig> {
-    const { data, error } = await this.db
-      .from('miniapp_user_settings')
-      .select(
-        'selected_model_id, pref_word_count, pref_show_options, pref_show_status, pref_show_memory, pref_reply_styles, pref_custom_instructions'
-      )
-      .eq('user_id', userId)
-      .maybeSingle();
+    return (await this.getGenerationContext(userId)).config;
+  }
+
+  /** One request-local read keeps model, prompt preferences and persona consistent. */
+  async getGenerationContext(
+    userId: string,
+    instructionPromise?: Promise<PlatformInstructionsSnapshot>
+  ): Promise<{ config: UserGenerationConfig; displayName: string }> {
+    const [result, instructions] = await Promise.all([
+      this.db
+        .from('miniapp_user_settings')
+        .select(
+          'selected_model_id, pref_word_count, pref_show_options, pref_show_status, pref_show_memory, pref_reply_styles, pref_custom_instructions, display_name, tg_first_name, tg_username'
+        )
+        .eq('user_id', userId)
+        .abortSignal(AbortSignal.timeout(5_000))
+        .maybeSingle(),
+      instructionPromise ?? fetchPlatformInstructions(),
+    ]);
+    const { data, error } = result;
 
     if (error) throw new Error(`查询用户生成配置失败：${error.message}`);
 
@@ -248,18 +262,19 @@ export class MiniappUserSettingsRepository {
       | 'pref_show_memory'
       | 'pref_reply_styles'
       | 'pref_custom_instructions'
+      | 'display_name'
+      | 'tg_first_name'
+      | 'tg_username'
     > | null;
 
-    const publicTiers = toPublicWordCountTiersFromEngine(
-      (await fetchPlatformInstructions()).instructions.wordCountTiers
-    );
+    const publicTiers = toPublicWordCountTiersFromEngine(instructions.instructions.wordCountTiers);
     const stored = row?.pref_word_count ?? null;
     const pref_word_count =
       stored !== null && publicTiers.tiers.some((tier) => tier.id === stored)
         ? stored
         : publicTiers.default_tier_id;
 
-    return {
+    const config: UserGenerationConfig = {
       selected_model_id: row?.selected_model_id ?? null,
       pref_word_count,
       pref_show_options: row?.pref_show_options ?? true,
@@ -268,6 +283,7 @@ export class MiniappUserSettingsRepository {
       pref_reply_styles: normalizeReplyStylePreferences(row?.pref_reply_styles),
       pref_custom_instructions: row?.pref_custom_instructions ?? null,
     };
+    return { config, displayName: resolveEffectiveDisplayName(row) };
   }
 
   /**

@@ -56,13 +56,18 @@ vi.mock('../../infrastructure/repositories/CharacterCardRepository.js', () => ({
 
 vi.mock('../../infrastructure/repositories/MiniappUserSettingsRepository.js', () => ({
   MiniappUserSettingsRepository: class {
-    getGenerationConfig = mocks.getGenerationConfig;
-    getDisplayName = mocks.getDisplayName;
+    async getGenerationContext() {
+      return {
+        config: await mocks.getGenerationConfig(),
+        displayName: await mocks.getDisplayName(),
+      };
+    }
   },
 }));
 
 vi.mock('../generation/index.js', () => ({
   execute: mocks.execute,
+  prepareGeneration: async () => ({}),
   resolveModelForUser: mocks.resolveModel,
 }));
 
@@ -226,9 +231,11 @@ describe('runConversationTurn postprocess binding', () => {
       expect.objectContaining({ content: 'model-raw-reply' })
     );
     expect(JSON.stringify(mocks.setPromptHistory.mock.calls)).not.toContain('SECRET_TEMPLATE');
-    expect(mocks.saveRichReplyMetadata).toHaveBeenCalledWith(
-      'history',
-      expect.objectContaining({ rich_reply_mode: 'full', rich_reply_result: 'failed' })
+    await vi.waitFor(() =>
+      expect(mocks.saveRichReplyMetadata).toHaveBeenCalledWith(
+        'history',
+        expect.objectContaining({ rich_reply_mode: 'full', rich_reply_result: 'failed' })
+      )
     );
   });
 

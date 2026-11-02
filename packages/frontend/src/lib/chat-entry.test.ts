@@ -21,6 +21,15 @@ describe('roleplay entry origins', () => {
     expect(url.searchParams.get('session')).toBe('story ?&');
     expect(roleplayReturnPath(url.searchParams.get('from'))).toBe('/chats');
   });
+  it('returns a space favorite to the same space without changing its session', () => {
+    const url = new URL(
+      chatEntryPath('role', { sessionId: 'existing-story', source: 'space' }),
+      'https://example.test'
+    );
+    expect(url.searchParams.get('session')).toBe('existing-story');
+    expect(resolveRoleplaySource(url.searchParams.get('from'))).toBe('space');
+    expect(roleplayReturnPath(url.searchParams.get('from'))).toBe('/creation?tab=favorites');
+  });
   it('keeps explicit new stories separate from an existing story', () => {
     expect(chatEntryPath('role', { source: 'discover' })).toBe('/chat/role?from=discover');
   });
