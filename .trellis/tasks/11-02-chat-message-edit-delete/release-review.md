@@ -72,3 +72,11 @@
 | `packages/ui-tests/tests/preview.spec.ts`                                                   | `edc8ffa3b75365eba62737cd299b4bdbeb26064c12015bce1970a258536fa993` |
 | `packages/ui-tests/tests/roleplay.spec.ts`                                                  | `ba64d6a27bdda7a1b174fb8331adad1c3e132e4135fdd71d5fdb094bc4c4ea1e` |
 | `scripts/test-conversation-branches-migration.sh`                                           | `9a04fb746d13f4b8e34f9fbd824ea2a9f9e3c182711feb9938bc73baf2ba7123` |
+
+## CI全量回归适配
+
+远端全量检查发现取消测试fixture缺少真实session_chat_history已有的is_inherited=false，使mock过滤结果为空。仅补齐该标记，产品代码、取消/收费逻辑和原断言均不改变；独立审查确认后，全量Backend1160项通过。追加提交仅含本段审阅记录和以下测试文件。
+
+- `packages/backend/src/infrastructure/repositories/ConversationHistoryRepository.cancel.test.ts` SHA-256: `f299a0e33e534ca57a2d86d832ebf89688c6fcdf5f8e92177d238a5c2f311379`
+
+TEST迁移工作流41392740903已成功，25列投影/函数保护/权限与迁移checksum回读一致，PR588环境health正常；生产尚未升级。
