@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   finalize: vi.fn(),
   find: vi.fn(),
   execute: vi.fn(),
+  prepare: vi.fn(),
   ensureGenerationId: vi.fn(),
   ensurePlaceholder: vi.fn(),
   saveSnapshot: vi.fn(),
@@ -70,6 +71,7 @@ vi.mock('../engine/index.js', () => ({
 }));
 vi.mock('../generation/index.js', () => ({
   execute: mocks.execute,
+  prepareGeneration: mocks.prepare,
   resolveModelForUser: async () => ({
     modelId: 'model',
     provider: 'openrouter',
@@ -102,6 +104,7 @@ function input(mode: { kind: 'send'; content: string } | { kind: 'regenerate' })
 }
 beforeEach(() => {
   Object.values(mocks).forEach((mock) => mock.mockReset());
+  mocks.prepare.mockResolvedValue({});
   mocks.card.mockResolvedValue({ name: 'role', first_mes: 'hello' });
   mocks.buildPrompt.mockReturnValue({ messages: [], sampling: {} });
   mocks.checkpoint.mockResolvedValue(undefined);
@@ -136,6 +139,51 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe('turn lifecycle recovery', () => {
+  it('delivers before the real 6s guard when serial read waves would have exhausted it', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+    const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+    mocks.start.mockImplementation(async () => {
+      await pause(500);
+      return { historyId: 'reply', turnIndex: 1, revision: 0, userContent: 'synthetic' };
+    });
+    mocks.context.mockImplementation(async () => {
+      await pause(1500);
+      return { messages: [], openingMessage: 'hello', truncatedTurns: 0 };
+    });
+    mocks.begin.mockImplementation(async () => pause(300));
+    mocks.prepare.mockImplementation(async () => {
+      await pause(2000);
+      return {};
+    });
+    let deliveredAt: number | undefined;
+    const started = performance.now();
+    mocks.execute.mockImplementation(async (request, hooks) => {
+      // Without early preparation this read starts after context, yielding 6.3s.
+      await (request.preparation ?? pause(2000));
+      await hooks.onBeforeDispatch({ charge_id: 'synthetic-charge' });
+      await pause(2000);
+      hooks.onDelta('synthetic first token');
+      deliveredAt = performance.now() - started;
+      return {
+        status: 'stream_interrupted',
+        content: 'synthetic first token',
+        finishReason: null,
+        generationId: null,
+        chargeId: null,
+      };
+    });
+    const turn = input({ kind: 'send', content: 'synthetic' });
+    const running = runConversationTurn({ ...turn, firstTokenDeadlineMs: 6000 });
+    await vi.advanceTimersByTimeAsync(4299);
+    expect(deliveredAt).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(2);
+    await running;
+    expect(deliveredAt).toBe(4300);
+    expect(turn.sink.send).toHaveBeenCalledWith({ type: 'delta', text: 'synthetic first token' });
+    expect(mocks.begin).toHaveBeenCalledTimes(2);
+    expect(mocks.prepare).toHaveBeenCalledOnce();
+  });
+
   it('reads the session-bound card only after the real turn starts and uses its opening for an empty chat', async () => {
     mocks.start.mockImplementation(async () => {
       expect(mocks.card).not.toHaveBeenCalled();
@@ -199,6 +247,10 @@ describe('turn lifecycle recovery', () => {
     const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
     let snapshotSaved = false;
     let dispatched = false;
+    mocks.prepare.mockImplementation(async () => {
+      await pause(500);
+      return {};
+    });
     mocks.begin.mockImplementation(async (value) => {
       await pause(300);
       if (value.snapshot) snapshotSaved = true;
@@ -208,9 +260,9 @@ describe('turn lifecycle recovery', () => {
       return { messages: [], openingMessage: 'hello', truncatedTurns: 0 };
     });
     mocks.execute.mockImplementation(async (_request, hooks) => {
-      // Independent pricing/entitlement reads can start while the prompt is saved.
+      // Config reads already ran during context loading; execute must not issue them again.
       expect(snapshotSaved).toBe(false);
-      await pause(500);
+      await _request.preparation;
       await hooks.onBeforeDispatch({ charge_id: 'charge' });
       expect(snapshotSaved).toBe(true);
       dispatched = true;
@@ -226,11 +278,12 @@ describe('turn lifecycle recovery', () => {
       ...input({ kind: 'send', content: 'original' }),
       requestId: 'request',
     });
-    await vi.advanceTimersByTimeAsync(1399);
+    await vi.advanceTimersByTimeAsync(899);
     expect(dispatched).toBe(false);
     await vi.advanceTimersByTimeAsync(2);
     await pending;
     expect(dispatched).toBe(true);
+    expect(mocks.prepare).toHaveBeenCalledOnce();
     expect(mocks.begin).toHaveBeenCalledTimes(2);
     expect(mocks.pendingRequest).not.toHaveBeenCalled();
     expect(mocks.prompt).not.toHaveBeenCalled();

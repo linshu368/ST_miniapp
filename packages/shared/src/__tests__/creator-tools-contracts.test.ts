@@ -94,3 +94,96 @@ describe('creator preset contract and fixed assembly', () => {
       expect(result.indexOf(ordered[index]!)).toBeGreaterThan(result.indexOf(ordered[index - 1]!));
   });
 });
+
+import {
+  CreatorAiReviewResultSchema,
+  CreatorReviewTestRequestSchema,
+  CreatorReviewTestDataSchema,
+  CreatorReviewPromptSchema,
+  DEFAULT_CREATOR_REVIEW_PROMPT,
+  CREATOR_REVIEW_OUTPUT_JSON_SCHEMA,
+  PublishCreatorCharacterSchema,
+} from '../api/creator-characters.js';
+
+describe('creator AI review fixed contract', () => {
+  it('accepts exactly the two stable result fields and keeps the prompt editable', () => {
+    expect(
+      CreatorAiReviewResultSchema.parse({ approved: false, reason: '请补充可以互动的角色背景。' })
+    ).toEqual({ approved: false, reason: '请补充可以互动的角色背景。' });
+    expect(CreatorAiReviewResultSchema.parse({ approved: true, reason: '符合要求' }).approved).toBe(
+      true
+    );
+    expect(CreatorReviewPromptSchema.parse(DEFAULT_CREATOR_REVIEW_PROMPT)).toBe(
+      DEFAULT_CREATOR_REVIEW_PROMPT
+    );
+    expect(CreatorReviewPromptSchema.parse('运营自行定义审核准则')).toBe('运营自行定义审核准则');
+    expect(CREATOR_REVIEW_OUTPUT_JSON_SCHEMA.required).toEqual(['approved', 'reason']);
+    expect(CREATOR_REVIEW_OUTPUT_JSON_SCHEMA.additionalProperties).toBe(false);
+    expect(Object.keys(CREATOR_REVIEW_OUTPUT_JSON_SCHEMA.properties)).toEqual([
+      'approved',
+      'reason',
+    ]);
+  });
+  it.each([
+    {},
+    { approved: true },
+    { reason: '缺字段' },
+    { approved: '是', reason: '类型错误' },
+    { approved: false, reason: '' },
+    { approved: false, reason: '   ' },
+    { approved: true, reason: '通过', extra: '不允许额外字段' },
+  ])('rejects malformed model output %j', (value) => {
+    expect(CreatorAiReviewResultSchema.safeParse(value).success).toBe(false);
+  });
+  it('does not let the browser supply its own approval result', () => {
+    expect(
+      PublishCreatorCharacterSchema.safeParse({
+        expected_revision: 1,
+        visibility: 'public',
+        review: { approved: true, reason: '伪造审核' },
+      }).success
+    ).toBe(false);
+  });
+});
+
+describe('creator review Admin dry-run contract', () => {
+  const input = {
+    prompt: '编辑中的规则',
+    material: { name: '', description: '', opening: '', tags: [], systemPrompt: '测试资料' },
+  };
+  it('supports a single text sample while requiring nonempty test material and policy', () => {
+    expect(CreatorReviewTestRequestSchema.parse(input)).toEqual(input);
+    expect(CreatorReviewTestRequestSchema.safeParse({ ...input, prompt: '' }).success).toBe(false);
+    expect(
+      CreatorReviewTestRequestSchema.safeParse({
+        ...input,
+        material: { ...input.material, systemPrompt: '  ' },
+      }).success
+    ).toBe(false);
+    expect(
+      CreatorReviewTestRequestSchema.safeParse({
+        ...input,
+        result: { approved: true, reason: 'fake' },
+      }).success
+    ).toBe(false);
+  });
+
+  it('keeps the returned dry-run result strictly within the same public review result protocol', () => {
+    expect(
+      CreatorReviewTestDataSchema.parse({ result: { approved: false, reason: '样本未通过' } })
+    ).toEqual({
+      result: { approved: false, reason: '样本未通过' },
+    });
+    expect(
+      CreatorReviewTestDataSchema.safeParse({
+        result: { approved: true, reason: '通过', score: 100 },
+      }).success
+    ).toBe(false);
+    expect(
+      CreatorReviewTestDataSchema.safeParse({
+        result: { approved: true, reason: '通过' },
+        raw: 'provider body',
+      }).success
+    ).toBe(false);
+  });
+});
