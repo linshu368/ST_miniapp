@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import {
+  CreatorAnalyticsQuerySchema,
   CreateCreatorCharacterSchema,
   SaveCreatorCharacterSchema,
   PublishCreatorCharacterSchema,
@@ -70,6 +71,8 @@ import {
   type Scenario,
 } from './data.js';
 
+import { makeCreatorAnalytics } from './creator-analytics.js';
+
 const HOST = '127.0.0.1';
 export const PREVIEW_PROTOCOL = 'st-miniapp-ui-v1';
 
@@ -82,6 +85,7 @@ export function createPreviewServer(apiPort: number, appPort: number) {
   const creatorOwner = '70000000-0000-4000-8000-000000000001';
   const creatorCards = new Map<string, CreatorCharacter>();
   const creatorCovers = new Map<string, CreatorCoverAsset>();
+  let creatorAnalyticsFailureDelivered = false;
   let creatorFailureDelivered = false;
   let creatorReviewFailureDelivered = false;
   let claimedAt: string | null = null;
@@ -234,6 +238,7 @@ export function createPreviewServer(apiPort: number, appPort: number) {
     data = makeData(api);
     creatorCards.clear();
     creatorCovers.clear();
+    creatorAnalyticsFailureDelivered = false;
     creatorFailureDelivered = false;
     creatorReviewFailureDelivered = false;
     branchRequests.clear();
@@ -905,6 +910,14 @@ export function createPreviewServer(apiPort: number, appPort: number) {
           }
         }
         fail(res, 405, 'METHOD_NOT_ALLOWED', '方法不支持');
+        return;
+      }
+      if (path === '/api/creator/analytics' && method === 'GET') {
+        const input = CreatorAnalyticsQuerySchema.parse(Object.fromEntries(url.searchParams));
+        if (scenario === 'creator-data-error' && !creatorAnalyticsFailureDelivered) {
+          creatorAnalyticsFailureDelivered = true;
+          fail(res, 503, 'preview_unavailable', '暂时没能读取创作数据');
+        } else ok(res, makeCreatorAnalytics(input, api, scenario === 'creator-data-empty'));
         return;
       }
       if (path === '/api/creator/characters' && method === 'GET') {

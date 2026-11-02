@@ -187,3 +187,58 @@ describe('creator review Admin dry-run contract', () => {
     ).toBe(false);
   });
 });
+
+import {
+  CreatorAnalyticsDataSchema,
+  CreatorAnalyticsQuerySchema,
+} from '../api/creator-analytics.js';
+describe('creator analytics boundary', () => {
+  it('accepts negative actual adjustments and strips private fields from comments', () => {
+    const parsed = CreatorAnalyticsDataSchema.parse({
+      section: 'feedback',
+      as_of: '2026-11-02T00:00:00Z',
+      page: 1,
+      page_size: 4,
+      total: 1,
+      items: [
+        {
+          id,
+          character_id: id,
+          name: '角色',
+          author: '同好 12345678',
+          body: '公开反馈',
+          created_at: '2026-11-01T00:00:00Z',
+          user_id: 'private-identity',
+          initData: 'private-auth',
+        },
+      ],
+    });
+    expect(JSON.stringify(parsed)).not.toContain('private-');
+    const reward = CreatorAnalyticsDataSchema.parse({
+      section: 'rewards',
+      as_of: '2026-11-02T00:00:00Z',
+      page: 1,
+      page_size: 4,
+      total: 1,
+      items: [
+        {
+          id: 'reversal',
+          character_id: id,
+          name: '角色',
+          amount: -1.5,
+          kind: 'reversal',
+          occurred_at: '2026-11-01T00:00:00Z',
+          payer_user_id: 'private-payer',
+        },
+      ],
+    });
+    expect(JSON.stringify(reward)).not.toContain('private-');
+  });
+  it('rejects fake success, unbounded pages and client-supplied owners', () => {
+    expect(
+      CreatorAnalyticsDataSchema.safeParse({ section: 'overview', summary: { earned: 0 } }).success
+    ).toBe(false);
+    expect(CreatorAnalyticsQuerySchema.safeParse({ owner_user_id: id }).success).toBe(false);
+    expect(CreatorAnalyticsQuerySchema.safeParse({ page_size: 100 }).success).toBe(false);
+  });
+});

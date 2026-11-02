@@ -60,3 +60,7 @@ Backend lobby/route tests 与 Frontend 大厅人工回归。
 `routes/character-social.ts` + `features/character-social/repository.ts` 提供 Telegram鉴权的 social批量/单项查询、PUT like、评论分页/发表/删除/举报。批量40项，评论每页20条。匿名公开DTO不返回用户ID；日志不记录评论正文。写入采用miniapp_features中的服务端函数、受限search_path与RLS，原character_favorites为收藏数量唯一来源。
 
 迁移 `packages/shared/migrations/20261029_character_social.sql` 新建 character_likes、character_comments、character_comment_reports。UUID幂等、删除墓碑、作者权限、举报唯一性、并发限流已纳入 `scripts/test-character-social-migration.sh` 隔离Postgres验收。举报存储不等于自动审核，运营处理UI不在本轮范围。未执行线上迁移。
+
+## 本人创作统计（2026-11-02，本地待发布）
+
+GET /api/creator/analytics 复用Telegram鉴权，owner只来自服务器，section选择总览/作品/奖励/反馈/选卡分页。features/creator/analytics-query.ts 参数化只读SQL，analytics-repository.ts负责只读事务、6s语句超时、签名封面与匿名评论映射。按本人拥有卡读取成功原history，排除自用/继承轮并合并revision，先取首次成功再筛日期；跨卡玩家去重，同卡深聊/回访。奖励按真实到账和实际追回各自事件时间统计，不重算40%、不改账本。私密/下架不擦掉历史统计，单卡越权404，故障503。无migration。真实SQL回归纳入原creator PG17脚本，接口权限/参数另有route回归。

@@ -803,3 +803,11 @@ RootLayout随HTML交付独立框架绘制确认与原生ready脚本，Providers�
 调用前将兜底路由配置提前，与其他配置同批；付费轮余额只读预检与上下文准备重叠，冻结报价和结果本轮复用。免费额度仍先预留再决定是否查余额；缺钱包按0余额拒绝，不为预检初始化钱包。鉴权、开轮、报价/prompt持久化仍在dispatch前；6秒、两路竞争、单次交付/计费不变。
 
 现有OTLP/Grafana增加调用前五段墙钟和出站五段指标。只用内存时间戳、既有attempt终态日志及慢准备摘要，不新增监控表、SQL、扫描或任务。调用前各段仅覆盖完成门禁的请求；出站未到达的阶段保持缺失。分位数不能相加，发完请求至响应头也不能称为纯模型耗时。业务主图继续看点击到首token及总截止无字率。
+
+### 创作者数据（2026-11-02，本地待发布）
+
+Frontend `/creation/data` → `lib/api/creator-analytics.ts`（用户隔离React Query）→ Telegram鉴权 `/api/creator/analytics` → creator analytics repository。一个只读接口按 section 返回 overview / works / rewards / feedback / characters，严格shared schema及服务端分页。首页每类3条，列表默认4条，选卡8条；page_size上限20。北京时间自然日、as_of分页截止时间、同一角色与周期过滤贯穿总览和明细。当前获赞/收藏独立于期间；评论按期间读取。
+
+权威源：app_core.character_creations确定本人归属；experience.chat_history按(session_id,turn_index)合并成功revision，先取最早成功时间再筛窗口，排除作者及branch_inherited_turns范围；分支引用与会话message_count不参与。按同卡玩家>=10轮和>=2自然日衡量深聊/回访，跨卡总人数按人去重。billing.character_creator_rewards将credited_amount按created_at计正、reversal_recovered_amount按reversed_at计负，不把毛奖励/抵扣当到账，不按当前visibility过滤。公开反馈沿用稳定匿名作者；不向浏览器返回玩家ID、私人对话或原始draft。
+
+参数化SQL限本人范围，事务只读、单查询6秒/事务8秒、服务端503明确失败；封面URL在事务外复用签名resolver，失败降级占位。无新DB对象/物化统计/后台任务，不写账务。先Backend后Frontend，回退仅撤入口与只读接口。现有隔离creator验收新增真实Prisma SQL PREPARE/EXECUTE验证；普通backend tests不触远端DB。页面fixture仅在ui-tests中，不进入生产组件。

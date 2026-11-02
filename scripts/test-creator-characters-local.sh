@@ -183,3 +183,6 @@ SQL
 } | "${task_psql[@]}" >/dev/null
 "${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/tests/creator_characters.sql"
 printf 'PASS: creator core PG17 (AI review gate, untouched legacy queue, disabled/archive preservation, CAS/access, real turn freeze, branches, immutable ACL). Database: %s\n' "$task_database"
+
+CREATOR_ANALYTICS_TEST_CONTAINER="$task_container" CREATOR_ANALYTICS_TEST_DB="$task_database" \
+  pnpm --dir "$task_root/packages/backend" exec vitest run src/features/creator/analytics.integration.test.ts

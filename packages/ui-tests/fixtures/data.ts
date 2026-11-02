@@ -31,6 +31,21 @@ export const stamp = () => new Date().toISOString();
 export const later = () => new Date(Date.now() + 31 * 86_400_000).toISOString();
 
 export const scenarios = {
+  'creator-data': {
+    label: '创作数据',
+    description: '多角色总览、单卡表现、奖励明细与玩家反馈（本地示例）',
+    path: '/creation/data',
+  },
+  'creator-data-empty': {
+    label: '创作数据为空',
+    description: '暂无作品与奖励，可返回创作',
+    path: '/creation/data?state=empty',
+  },
+  'creator-data-error': {
+    label: '创作数据读取失败',
+    description: '重试后恢复，不把失败显示为零',
+    path: '/creation/data?state=error',
+  },
   creation: {
     label: '创作与我的空间',
     description: '创作编辑、封面回流、草稿、发布、私密切换与角色试聊',

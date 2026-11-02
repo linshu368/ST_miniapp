@@ -12,6 +12,131 @@ const cover = {
 };
 const background =
   '定义角色的外观、个性和背景。你也可以添加自定义提示、故事、规则或者上传剧本小说。这些细节将指导角色的行为和回应';
+
+test('@creator @creator-data @layout 创作数据支持多角色总览、单卡与时间筛选，明细反馈随之切换', async ({
+  page,
+  preview,
+}) => {
+  await preview.scenario('creator-data');
+  await page.goto('/creation?tab=created');
+  await page.getByRole('link', { name: '创作数据', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '创作数据', exact: true })).toBeVisible();
+  await expect(page.getByRole('navigation', { name: '主导航', exact: true })).toHaveCount(0);
+  await expect(page.getByLabel('获得星尘', { exact: true })).toHaveText('4,286');
+  await expect(page.getByLabel('使用人数', { exact: true })).toHaveText('130人');
+  await expectMobileLayout(page);
+  await preview.screenshot('创作数据总览', { fullPage: true });
+  const homeWorks = page.getByRole('region', { name: '作品表现' });
+  await expect(homeWorks.getByRole('button', { name: /^查看.+的数据$/ })).toHaveCount(3);
+  await expect(page.getByRole('navigation', { name: '列表分页' })).toHaveCount(0);
+  await page.getByRole('button', { name: '查看全部作品' }).click();
+  const sheet = page.getByRole('dialog');
+  await expect(sheet.getByRole('button', { name: /^查看.+的数据$/ })).toHaveCount(4);
+  await expect(sheet.getByRole('button', { name: '上一页' })).toBeDisabled();
+  await sheet.getByRole('button', { name: '下一页' }).click();
+  await expect(sheet.getByRole('button', { name: /^查看.+的数据$/ })).toHaveCount(1);
+  await expect(sheet.getByRole('button', { name: '下一页' })).toBeDisabled();
+  await expectMobileLayout(page);
+  await preview.screenshot('全部作品分页', { fullPage: false });
+  await sheet.getByRole('button', { name: '关闭面板' }).click();
+  await page.getByRole('button', { name: '查看全部作品' }).click();
+  await expect(sheet.getByRole('navigation', { name: '列表分页' })).toContainText('2 / 2');
+  await sheet.getByRole('button', { name: '查看月亮停在窗前的数据' }).click();
+  await expect(page.getByLabel('使用人数', { exact: true })).toHaveText('0人');
+  await page.getByRole('button', { name: '查看总览' }).click();
+  await page.getByRole('button', { name: '查看全部作品' }).click();
+  await expect(sheet.getByRole('navigation', { name: '列表分页' })).toContainText('2 / 2');
+
+  await sheet.getByRole('button', { name: '关闭面板' }).click();
+  for (const title of ['查看全部奖励', '查看全部反馈']) {
+    await page.getByRole('button', { name: title }).click();
+    await expect(sheet.getByRole('navigation', { name: '列表分页' })).toContainText('1 /');
+    await sheet.getByRole('button', { name: '下一页' }).click();
+    await expect(sheet.getByRole('navigation', { name: '列表分页' })).toContainText('2 /');
+    await sheet.getByRole('button', { name: '关闭面板' }).click();
+  }
+
+  await page.getByRole('button', { name: '查看雨夜来信的数据', exact: true }).click();
+  await expect(page.getByLabel('获得星尘', { exact: true })).toHaveText('986');
+  await expect(page.getByLabel('使用人数', { exact: true })).toHaveText('24人');
+  await expect(page.getByText('私密', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '近7天', exact: true }).click();
+  await expect(page.getByLabel('获得星尘', { exact: true })).toHaveText('270');
+  await page.getByRole('button', { name: '奖励明细', exact: true }).click();
+  await expect(page.getByRole('dialog')).toContainText('雨夜来信 · 近7天');
+  await expect(page.getByRole('dialog')).toContainText('+96');
+  await expect(page.getByRole('dialog')).not.toContainText('旧书店的林舟');
+  await preview.screenshot('单卡奖励明细', { fullPage: false });
+  await page.getByRole('dialog').getByRole('button', { name: '关闭面板', exact: true }).click();
+  await page.getByRole('button', { name: '选择角色', exact: true }).click();
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: '长街未眠 公开', exact: true })
+    .click();
+  await expect(page.getByLabel('获得星尘', { exact: true })).toHaveText('0');
+  await expect(page.getByLabel('使用人数', { exact: true })).toHaveText('18人');
+  await expect(page.getByText(/自用不计|排除作者|已有玩家开始聊天|私密.*奖励照常/)).toHaveCount(0);
+  await preview.screenshot('单卡创作数据', { fullPage: true });
+  await page.getByRole('button', { name: '查看总览', exact: true }).click();
+  await page.getByRole('button', { name: '作品排序', exact: true }).click();
+  await expect(
+    page.getByRole('dialog').getByRole('button', { name: '使用人数', exact: true })
+  ).toHaveAttribute('aria-pressed', 'true');
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: '最近创作', exact: true })
+    .click({ trial: true });
+  await preview.screenshot('作品排序面板', { fullPage: false });
+  await page.getByRole('dialog').getByRole('button', { name: '最近创作', exact: true }).click();
+  const works = page.getByRole('region', { name: '作品表现' });
+  await expect(works.getByRole('button', { name: /^查看.+的数据$/ }).first()).toHaveAccessibleName(
+    '查看月亮停在窗前的数据'
+  );
+  await page.getByRole('button', { name: '作品排序', exact: true }).scrollIntoViewIfNeeded();
+  const beforeSortY = await page.evaluate(() => window.scrollY);
+  const beforeSortEarned = await page.getByLabel('获得星尘', { exact: true }).innerText();
+  let releaseSort!: () => void;
+  const sortGate = new Promise<void>((resolve) => {
+    releaseSort = resolve;
+  });
+  await page.route('**/api/creator/analytics?**', async (route) => {
+    if (new URL(route.request().url()).searchParams.get('sort') === 'earned') await sortGate;
+    await route.continue();
+  });
+  await page.getByRole('button', { name: '作品排序', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: '获得星尘', exact: true }).click();
+  await expect(page.getByLabel('正在排序', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('获得星尘', { exact: true })).toHaveText(beforeSortEarned);
+  await expect(page.getByText('正在读取创作数据…', { exact: true })).toHaveCount(0);
+  expect(Math.abs((await page.evaluate(() => window.scrollY)) - beforeSortY)).toBeLessThan(4);
+  releaseSort();
+  await expect(page.getByLabel('正在排序', { exact: true })).toHaveCount(0);
+  await expect(works.getByRole('button', { name: /^查看.+的数据$/ }).nth(1)).toHaveAccessibleName(
+    '查看深海来客的数据'
+  );
+  await page.unroute('**/api/creator/analytics?**');
+  await page.getByRole('link', { name: '返回我的创作', exact: true }).click();
+  await expect(page).toHaveURL(/\/creation\?tab=created$/);
+});
+
+test('@creator @creator-data @layout 创作数据空态与读取失败可恢复，不展示虚构成功', async ({
+  page,
+  preview,
+}) => {
+  await preview.scenario('creator-data-empty');
+  await page.goto('/creation/data?state=empty');
+  await expect(page.getByLabel('获得星尘', { exact: true })).toHaveText('0');
+  await expect(page.getByRole('link', { name: '创作角色', exact: true })).toBeVisible();
+  await expectMobileLayout(page);
+  await preview.screenshot('创作数据空态', { fullPage: false });
+  await preview.scenario('creator-data-error');
+  await page.goto('/creation/data?state=error');
+  await expect(page.locator('main').getByRole('alert')).toContainText('暂时没能读取创作数据');
+  await expect(page.getByLabel('获得星尘', { exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: '重新加载', exact: true }).click();
+  await expect(page.getByLabel('获得星尘', { exact: true })).toHaveText('4,286');
+  await expectMobileLayout(page);
+});
 async function fillCharacter(page: Page) {
   await page.getByRole('textbox', { name: '名称' }).fill('旧书店的林舟');
   await page

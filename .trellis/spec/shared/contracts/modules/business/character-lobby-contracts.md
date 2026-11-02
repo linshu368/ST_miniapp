@@ -58,3 +58,7 @@ Shared tests 与所有消费者 typecheck。
 ## 角色互动契约（2026-10-29，本地待发布）
 
 新增 `src/api/character-social.ts` 并从shared导出：CharacterSocial、CharacterComment、批量/单项social响应、游标评论响应与创建评论/设置点赞/举报schemas。公开评论只含匿名author、is_mine、正文和时间，不公开用户ID。点赞采用目标布尔状态；评论由客户端提交UUID与1–500字纯文本；举报reason为inappropriate/spam/other。原角色与收藏契约不改动。
+
+## 创作数据契约（2026-11-02）
+
+api/creator-analytics.ts 定义严格query与按section区分的runtime响应。all/7d/30d，page>=1、page_size<=20、可选单卡/as_of；不接受owner字段。金额允许负调整，人数/次数非负整数。总览每类最多3条，其余每页最多20；只含卡摘要/统计/匿名公开反馈，无内部资产ID、用户ID或私聊正文。Backend/Frontend/ui-tests共用，同版本先部署producer。

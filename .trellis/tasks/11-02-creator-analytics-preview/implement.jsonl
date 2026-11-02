@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/backend/app/index.md", "reason": "API与数据访问约束"}
+{"file": ".trellis/spec/backend/app/data-reliability-and-security.md", "reason": "作者隔离与查询可靠性"}
+{"file": ".trellis/spec/frontend/app/index.md", "reason": "移动端UI与数据流"}
+{"file": ".trellis/spec/shared/contracts/index.md", "reason": "运行时契约"}
+{"file": ".trellis/tasks/11-02-creator-analytics-preview/design.md", "reason": "已确认统计口径"}
