@@ -134,7 +134,10 @@ describe('reply style options navigation', () => {
 });
 
 describe('creator review prompt navigation', () => {
-  it('opens the standalone platform-rule editor without adding a roleplay tab or duplicate menu', () => {
+  it('does not resolve the retired human review view', () => {
+    expect(resolveAdminMenuSelection('creator_characters')).toEqual({ view: 'configs' });
+  });
+  it('keeps the top-level AI prompt editor routed without a roleplay tab or duplicate menu', () => {
     expect(resolveAdminMenuSelection(configMenuKey(CREATOR_REVIEW_PROMPT_KEY))).toEqual({
       view: 'configs',
       configKey: CREATOR_REVIEW_PROMPT_KEY,

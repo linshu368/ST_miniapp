@@ -1,7 +1,7 @@
 {
   "id": "creator-direct-publication",
   "name": "creator-direct-publication",
-  "title": "角色卡AI审核：可运营prompt与固定结果协议",
+  "title": "角色卡AI审核：运营入口整理与人工审核退场",
   "description": "",
   "status": "in_progress",
   "dev_type": null,
@@ -12,7 +12,7 @@
   "assignee": "codex",
   "createdAt": "2026-11-02",
   "completedAt": null,
-  "branch": "codex/creator-direct-publication",
+  "branch": "codex/creator-ai-review-admin-cleanup",
   "base_branch": "dev",
   "worktree_path": null,
   "commit": null,
@@ -21,7 +21,7 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "本地审核/运营试审功能全部完成；本地HEAD c66ba9ae，保留同事已上线首字优化。相关测试、PG17隔离验证、两端build、workspace typecheck、真实模型通过/拒绝均通过。最终review包准备完毕，等待按仓库workflow要求确认最终内容后提交并经dev发布；当前未提交/推送/远端迁移/上线。",
+  "notes": "人工入口清理与一级AI审核菜单已在本地完成；Backend相关51/51、shared22/22、Admin40/40、workspace typecheck、两端build、staticguards及独立审查全过。仅本批代码，未提交/推送/部署。base dev0fa94270，main f56be7d9产品树一致；发布前重新核对，不含新DB迁移或数据操作。",
   "meta": {
     "module_impact": {
       "schema_version": 1,
