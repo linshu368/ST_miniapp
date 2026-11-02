@@ -13,3 +13,11 @@
 3. 在既有单测补设置一读、配置冻结、慢/失败admission不reserve、context失败join、freeze失败释放、原charge幂等、旧RPC输入兼容及新字段冲突；PG harness覆盖early receipt、quota、stop、并发、赢家、免扣。首片前端用不触发rAF的用例验证，绝不改成功标准。
 4. 执行受影响测试、backend/frontend全套、shared及workspace typecheck、lint/imports/legacy/migration检查、frontend构建；以有延迟的确定性本地依赖场景对比前置调用数与关键路径，不把模拟收益当生产承诺。
 5. 独立检查迁移/计费/取消竞争和代码范围；补操作说明、模块载荷。呈现最终具体文件清单、差异摘要与验证结果取得提交审核；未审核前不git add/commit/push，不执行生产迁移或发布。
+
+## 2026-11-02 专项执行
+
+1. 复用当前已in_progress任务，在最新origin/dev的本对话干净工作区分支codex/chat-timeout-delivery实现；不动其他窗口。
+2. 提前纯读准备/合并额度配置等待，核对prepared模型/角色身份，恢复与独立读取并行。回归锁定：没有关键写提前、失败不dispatch、慢配置有界、旧调用兼容、请求数不增加、失败预留可释放。
+3. 同步交付首token，保留真正commit时钟，锁定思考/正文共用首片、6秒边界和后续合批；有限超时阶段只走Grafana。
+4. backend/frontend/shared测试、typecheck、frontend lint/build、既有chat UI矩阵；按需本地真实SSE测试，在可控延迟下对比调用前时间。测试与延迟场景使用合成消息，不读真实聊天正文。
+5. 完整差异/清单/验证后再按仓库审核要求提交。未做生产请求级证实的因果和1.5%不作完成声明。

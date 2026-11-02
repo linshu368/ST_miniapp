@@ -67,6 +67,7 @@ vi.mock('../../infrastructure/repositories/MiniappUserSettingsRepository.js', ()
 
 vi.mock('../generation/index.js', () => ({
   execute: mocks.execute,
+  prepareGeneration: async () => ({}),
   resolveModelForUser: mocks.resolveModel,
 }));
 

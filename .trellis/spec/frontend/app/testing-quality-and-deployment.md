@@ -127,3 +127,11 @@ v2 的实现/口径与验收见 [短剧看板操作说明](../../../../docs/graf
 7. **Wrong vs Correct**：Wrong为整张覆盖Cloud或把本地通过当生产实收；Correct为源码JSON与Cloud布局分别核对，发布仅追加候选面板/变量并重算y，保留云端其他新增区；真实Cloud新字段和Telegram性能独立验收。
 
 实验两组保留相同播放器、v3阶段helper、home/detail归属与Faro投影；seek仅走原Pino，不投startup工程分母。开流前确认NEXT_PUBLIC_DRAMA_TIMING_MODE=legacy及实际构建，以保留完整start/终态；unified下有delivery的结果与seek仍全量上传，非实验采样保持。5秒只拍快照，不终止播放；重试保留原失败与累计等待。发布与验收矩阵见ops/drama-cdn-rollout.md。
+
+## 首 token 同步提交与超时阶段（2026-11-02 候选）
+
+SSE第一个有效正文或已启用思考token在`flushSync`中执行既有增量回调，使React18不把它继续合并进后续缓存帧；只执行一次，后续仍按帧攒批。不把`onFirstDeltaReceived`当交付成功，成功仍由匹配request/revision的layout commit决定；6秒后commit仍为超时，后台/离页/停止保持独立结果。
+
+复用每轮一次Faro终态的有限`first_token_stage`：`awaiting_start`表示客户端尚无start身份，`awaiting_token`表示有start但无有效token，`awaiting_commit`表示已接收而未提交，`committed`表示实际提交成功。它只说明客户端阶段，不能直接推断供应商或网络根因；历史缺字段保持未知，不能填0。字段通过现有白名单，无身份/正文/额外请求/Supabase写入。
+
+回归：思考/正文共享首片标记、首片同步与后续合批、6秒边界/迟到不可改成功、脱敏导出，以及既有`@chat`的同批文字后报错、滚动到历史和单次回报。真实服务端到客户端差异仍须上线后观察；成功者分位数下降不能替代无字超时比例。
