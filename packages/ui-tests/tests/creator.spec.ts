@@ -582,13 +582,13 @@ test('@creator @wishes @layout 心愿墙说明匿名公开、支持想玩与本�
   await preview.scenario('wishes');
   await page.goto('/characters');
   const wishEntry = page.getByRole('link', { name: '许个愿', exact: true });
-  // The wish invitation belongs after browsing the complete list, not next to sorting.
-  await expect
-    .poll(async () => {
-      await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-      return wishEntry.count();
-    })
-    .toBe(1);
+  await expect(wishEntry).toBeInViewport();
+  await expect(wishEntry).toHaveAttribute('href', '/wishes?from=characters');
+  const search = page.getByRole('textbox', { name: '搜索角色', exact: true });
+  await search.fill('不存在的心愿角色');
+  await expect(page.getByRole('link', { name: '许个愿，让创作者看见', exact: true })).toBeVisible();
+  await expect(wishEntry).toBeInViewport();
+  await page.getByRole('button', { name: '清空搜索', exact: true }).click();
   await wishEntry.click();
   await expect(page.getByRole('heading', { name: '心愿墙', exact: true })).toBeVisible();
   await expect(

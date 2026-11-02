@@ -4,7 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowRight, RefreshCw, Search, Sparkles, Undo2, X } from 'lucide-react';
+import { RefreshCw, Search, Sparkles, Undo2, X } from 'lucide-react';
 
 import { DEFAULT_LOBBY_SORT, type LobbySort } from '@miniapp/shared';
 
@@ -602,11 +602,11 @@ export function CharacterGallery() {
   const searchBar = (
     <div
       className={cn(
-        'mx-auto w-full max-w-screen-xl px-4 pb-2 pt-2 sm:px-6 lg:px-8',
+        'mx-auto flex w-full max-w-screen-xl items-center gap-2 px-4 pb-2 pt-2 sm:px-6 lg:px-8',
         hiddenWhileRestoring
       )}
     >
-      <div className="relative">
+      <div className="relative min-w-0 flex-1">
         <Search
           className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
           aria-hidden="true"
@@ -618,8 +618,11 @@ export function CharacterGallery() {
             cancelRestore();
             setQuery(e.target.value);
           }}
-          placeholder="搜索角色、标签或作者"
-          className="h-10 rounded-full pl-10 pr-10 border-border bg-card text-foreground placeholder:text-muted-foreground/70 focus-visible:ring-ring/50 focus-visible:bg-secondary transition-all"
+          placeholder="角色、标签或作者"
+          className={cn(
+            'h-10 rounded-full border-border bg-card pl-10 pr-3 text-foreground placeholder:text-muted-foreground/70 focus-visible:ring-ring/50 focus-visible:bg-secondary transition-all',
+            query && 'pr-10'
+          )}
           aria-label="搜索角色"
         />
         {query && (
@@ -637,6 +640,15 @@ export function CharacterGallery() {
           </Button>
         )}
       </div>
+      <Link
+        href="/wishes?from=characters"
+        className="group inline-flex min-h-11 shrink-0 items-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <span className="inline-flex h-10 items-center gap-1.5 rounded-full border border-primary/15 bg-primary/5 px-2.5 text-[12px] font-medium text-foreground/80 transition-colors group-hover:bg-primary/10 group-hover:text-foreground group-active:bg-primary/15">
+          <Sparkles className="size-3.5 text-primary/80" strokeWidth={1.6} aria-hidden />
+          许个愿
+        </span>
+      </Link>
     </div>
   );
 
@@ -853,19 +865,6 @@ export function CharacterGallery() {
       {hasMoreToRender ? (
         <div ref={loadMoreRef} aria-hidden="true" className="h-px w-full" />
       ) : null}
-      {!hasMoreToRender && !query.trim() && filtered.length > 0 ? (
-        <div className="mx-auto -mt-2 flex w-full max-w-screen-xl items-center justify-center gap-1.5 px-4 pb-8 text-[12px]">
-          <p className="text-muted-foreground/70">还没找到想聊的角色？</p>
-          <Link
-            href="/wishes?from=characters"
-            className="inline-flex min-h-11 min-w-20 items-center justify-center gap-1.5 rounded-full px-2 font-medium text-primary/85 transition-colors hover:text-primary active:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            许个愿
-            <ArrowRight className="size-3.5" strokeWidth={1.6} aria-hidden />
-          </Link>
-        </div>
-      ) : null}
-
       {detailLoaded ? (
         <CharacterDetailSheet
           characterId={previewId}
