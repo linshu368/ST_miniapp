@@ -1,0 +1,4 @@
+{"file":".trellis/spec/backend/app/index.md","reason":"后端开发入口、质量门禁与必读规范"}
+{"file":".trellis/spec/backend/app/routes-and-features.md","reason":"Fastify 路由、feature 边界与 SSE 约束"}
+{"file":".trellis/spec/backend/app/data-reliability-and-security.md","reason":"外部调用、日志、超时和故障隔离要求"}
+{"file":".trellis/tasks/11-02-analyze-performance-and-sse-first-token-sentry/research/performance-regression.md","reason":"两日报告、提交历史与指标口径证据"}
