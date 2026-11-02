@@ -216,4 +216,4 @@ experience 域增加会话局部消息覆盖，`change_chat_message` 仅允许�
 
 新增miniapp_features个人推荐批次和角色曝光摘要，RLS开启、撤销浏览器访问、service_role受控CRUD；角色评分扩展qualified-v1可信历史，绝不回填旧评分。增量包装运营validator、保留owner/ACL/grant option/既有校验，重复执行不覆盖后续包装。无现有业务行重写或正式配置变更。
 
-顺序：先隔离PG17验证（`pnpm test:lobby-ranking`），未来通过既有workflow先TEST单文件，再独立批准Production；应用发布后确认qualified-v1评分刷新成功，最后运营启用rotation灰度。缺迁移不得发布新job。出现失败停用rotation、回退消费者，保留表/可信历史，不自动DROP或清理用户状态。20s语句/3s锁预算，远端运行前另核前置shape和表锁预算；本地通过不等于远端已执行。
+顺序：先隔离PG17验证（`pnpm test:lobby-ranking`），未来通过既有workflow先TEST单文件，再独立批准Production；应用发布后直接全量轮换，核验qualified-v1评分刷新；新证据未就绪时沿用旧排序。缺迁移不得发布新job。出现失败回退推荐消费者，保留表/可信历史，不自动DROP或清理用户状态。20s语句/3s锁预算，远端运行前另核前置shape和表锁预算；本地通过不等于远端已执行。

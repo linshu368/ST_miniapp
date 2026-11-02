@@ -84,4 +84,4 @@ Admin 在现有配置草稿、发布、回滚链路中增加图片广场模型�
 
 ## 前几屏优质轮换（2026-11-02，本地未发布）
 
-现有LobbyRankingParamsEditor顶部增加前几屏轮换：总开关、24h、重复2、探索最多2、灰度比例10%。原评分参数仍控制离线质量计算；resolveLobbyRankingEditorValue兼容嵌套rotation。LobbyPinnedCharactersEditor将原8项说明为轮换加权候选、独立最多1固定主推，未参与轮换保持原排序；沿用草稿/发布/回滚，未操作正式配置。
+现有LobbyRankingParamsEditor顶部提供前几屏轮换参数：默认24h、重复2、探索最多2。轮换发布后全量生效，运营端无启用开关或灰度比例控件；旧enabled/rollout仅为存量配置兼容，不控制实际生效。原评分参数仍控制离线质量计算；resolveLobbyRankingEditorValue兼容嵌套rotation。LobbyPinnedCharactersEditor将原8项作为加权候选、独立最多1固定主推；沿用参数草稿/发布/回滚，无需运营另行激活推荐。

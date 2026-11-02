@@ -45,7 +45,10 @@ export async function loadLobbyRotationConfig(
     const entry = await fetchRuntimeConfigEntry('lobby_ranking_params');
     const parsed = LobbyRankingParamsSchema.safeParse(entry?.value);
     if (!parsed.success && entry) {
-      log.warn({ kind: 'sys', event: 'lobby_rotation.config_invalid' }, '轮换配置无效，保持旧推荐');
+      log.warn(
+        { kind: 'sys', event: 'lobby_rotation.config_invalid' },
+        '轮换配置无效，使用默认轮换参数'
+      );
     }
     const value = parsed.success
       ? (parsed.data.rotation ?? DEFAULT_LOBBY_ROTATION_CONFIG)
@@ -83,31 +86,12 @@ async function loadCandidates(): Promise<RecommendationCandidate[]> {
   return catalogInflight;
 }
 
-export function isLobbyRotationEnabled(config: LobbyRotationConfig, userId: string): boolean {
-  return (
-    config.enabled &&
-    recommendationHash('lobby-rotation-v1:' + userId) % 100 < config.rollout_percent
-  );
-}
-
-const disabled: LobbyRecommendationData = {
-  enabled: false,
-  degraded: false,
-  batch_id: null,
-  generated_at: null,
-  expires_at: null,
-  character_ids: [],
-  head_ids: [],
-  previous_batch_id: null,
-};
-
 export async function getLobbyRecommendation(
   userId: string,
   request: LobbyRecommendationRequest,
   log: FastifyBaseLogger
 ): Promise<LobbyRecommendationData> {
   const config = await loadLobbyRotationConfig(log);
-  if (!isLobbyRotationEnabled(config, userId)) return disabled;
   const [candidates, snapshot, pinned] = await Promise.all([
     loadCandidates(),
     loadCharacterRankingScores(),
@@ -179,10 +163,8 @@ export async function getLobbyRecommendation(
 export async function reportLobbyRecommendationExposures(
   userId: string,
   input: LobbyRecommendationExposures,
-  log: FastifyBaseLogger
+  _log: FastifyBaseLogger
 ): Promise<number> {
-  const config = await loadLobbyRotationConfig(log);
-  if (!isLobbyRotationEnabled(config, userId)) return 0;
   const candidates = await loadCandidates();
   return recordRecommendationExposures(
     prisma,

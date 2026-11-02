@@ -40,7 +40,7 @@ import {
   toApiClientError,
 } from './client';
 import { __resetRequestConcurrencyForTests, withRequestSlot } from './request-concurrency';
-import { reportConversationFirstToken } from './conversations';
+import { reportConversationFirstToken } from './first-token-reports';
 import { __resetFirstTokenReportsForTests } from './first-token-reports';
 import type { ReportFirstTokenRequest } from '@miniapp/shared';
 import type { ApiAttemptTiming } from './client';

@@ -208,13 +208,34 @@ describe('rotation consumer contracts', () => {
   it('keeps old managed ranking configurations valid and defaults automatic rotation to 24h', () => {
     expect(LobbyRankingParamsSchema.safeParse(DEFAULT_LOBBY_RANKING_PARAMS).success).toBe(true);
     expect(DEFAULT_LOBBY_ROTATION_CONFIG.interval_hours).toBe(24);
-    expect(DEFAULT_LOBBY_ROTATION_CONFIG.enabled).toBe(false);
+    expect(DEFAULT_LOBBY_ROTATION_CONFIG.enabled).toBe(true);
+    expect(DEFAULT_LOBBY_ROTATION_CONFIG.rollout_percent).toBe(100);
     expect(
       LobbyRotationConfigSchema.safeParse({
         ...DEFAULT_LOBBY_ROTATION_CONFIG,
         exploration_count: 3,
       }).success
     ).toBe(false);
+  });
+  it('accepts legacy gate fields without limiting rotation or changing ranking parameters', () => {
+    const parsed = LobbyRankingParamsSchema.parse({
+      ...DEFAULT_LOBBY_RANKING_PARAMS,
+      rotation: {
+        ...DEFAULT_LOBBY_ROTATION_CONFIG,
+        enabled: false,
+        rollout_percent: 10,
+        interval_hours: 24,
+        max_repeat: 1,
+        exploration_count: 1,
+      },
+    });
+    expect(parsed.rotation).toEqual({
+      enabled: true,
+      rollout_percent: 100,
+      interval_hours: 24,
+      max_repeat: 1,
+      exploration_count: 1,
+    });
   });
   it('rejects caller-selected identity, invalid request IDs, and unbounded exposure arrays', () => {
     const id = input().candidates[0]!.id;

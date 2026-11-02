@@ -4,7 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { RefreshCw, Search, Sparkles, Undo2, X } from 'lucide-react';
+import { ArrowRight, RefreshCw, Search, Sparkles, Undo2, X } from 'lucide-react';
 
 import { DEFAULT_LOBBY_SORT, type LobbySort } from '@miniapp/shared';
 
@@ -703,16 +703,6 @@ export function CharacterGallery() {
           换一批
         </button>
       ) : null}
-      <Link
-        href="/wishes?from=characters"
-        className={cn(
-          'inline-flex min-h-11 shrink-0 items-center gap-1 rounded-full px-2 text-xs text-primary/90 active:bg-primary/10',
-          !(sort === 'recommended' && !query.trim() && recommendation.data?.enabled) && 'ml-auto'
-        )}
-      >
-        <Sparkles className="size-3.5" strokeWidth={1.7} aria-hidden />
-        许个愿
-      </Link>
     </div>
   );
 
@@ -862,6 +852,18 @@ export function CharacterGallery() {
       {/* 渲染哨兵放在网格外：恢复滚动期间网格带 invisible，哨兵不受影响。 */}
       {hasMoreToRender ? (
         <div ref={loadMoreRef} aria-hidden="true" className="h-px w-full" />
+      ) : null}
+      {!hasMoreToRender && !query.trim() && filtered.length > 0 ? (
+        <div className="mx-auto -mt-2 flex w-full max-w-screen-xl items-center justify-center gap-1.5 px-4 pb-8 text-[12px]">
+          <p className="text-muted-foreground/70">还没找到想聊的角色？</p>
+          <Link
+            href="/wishes?from=characters"
+            className="inline-flex min-h-11 min-w-20 items-center justify-center gap-1.5 rounded-full px-2 font-medium text-primary/85 transition-colors hover:text-primary active:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            许个愿
+            <ArrowRight className="size-3.5" strokeWidth={1.6} aria-hidden />
+          </Link>
+        </div>
       ) : null}
 
       {detailLoaded ? (
