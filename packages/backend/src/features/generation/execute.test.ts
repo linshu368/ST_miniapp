@@ -113,10 +113,15 @@ vi.mock('../../infrastructure/repositories/MiniappWalletRepository.js', () => ({
   },
 }));
 
+vi.mock('../billing/free-quota.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../billing/free-quota.js')>()),
+  getCharacterFreeChatQuotaLimit: vi.fn(async () => 50),
+}));
+
 vi.mock('./settle.js', () => ({ settleGeneration: vi.fn() }));
 
 const { settleGeneration } = await import('./settle.js');
-const { execute } = await import('./execute.js');
+const { execute, prepareGeneration } = await import('./execute.js');
 
 const savedHistory = () => vi.mocked(settleGeneration).mock.calls.map((call) => call[0]);
 
@@ -1450,4 +1455,34 @@ describe('competing attempts share one delivery and settlement', () => {
       else expect(quotaState.finalize).not.toHaveBeenCalled();
     }
   );
+});
+
+describe('early read preparation remains one frozen dispatch context', () => {
+  it('reuses already-started reads without repeating provider/config queries', async () => {
+    const fetchMock = stubUpstream(() => sseResponse([DELTA('ok'), 'data: [DONE]\n\n']));
+    const input = request();
+    input.preparation = prepareGeneration({
+      model: input.model,
+      characterId: input.characterId,
+      useFallback: false,
+    });
+    await input.preparation;
+    expect(preparation.readRouting).toHaveBeenCalledOnce();
+    await execute(input);
+    expect(preparation.readRouting).toHaveBeenCalledOnce();
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it('rejects a preparation for another character before any upstream request', async () => {
+    const fetchMock = stubUpstream(() => sseResponse([]));
+    const input = request();
+    input.preparation = prepareGeneration({
+      model: input.model,
+      characterId: 'other-character',
+      useFallback: false,
+    });
+    await expect(execute(input)).rejects.toThrow('Generation preparation identity differs');
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(savedHistory()).toHaveLength(0);
+  });
 });
