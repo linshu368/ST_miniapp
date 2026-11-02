@@ -107,6 +107,19 @@ def cmd_start(args: argparse.Namespace) -> int:
         print(colored(f"Error: module impact declaration invalid: {exc}", Colors.RED))
         return 1
 
+    # 新任务必须在任何活动指针或状态写入前完成 Android/iOS 性能评估。
+    # 旧任务没有该字段时保持兼容，避免流程升级阻断在途工作。
+    try:
+        from mobile_performance_gate import (
+            MobilePerformanceGateError,
+            validate_mobile_performance,
+        )
+
+        validate_mobile_performance(task_data)
+    except (MobilePerformanceGateError, OSError, ValueError, json.JSONDecodeError) as exc:
+        print(colored(f"Error: mobile performance declaration invalid: {exc}", Colors.RED))
+        return 1
+
     if not resolve_context_key():
         # Degraded mode: no session identity available.
         # Hook didn't inject TRELLIS_CONTEXT_ID (common on Windows + Claude Code,
