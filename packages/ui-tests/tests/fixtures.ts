@@ -3,7 +3,10 @@ import { IDS, type Scenario } from '../fixtures/data.js';
 import { PREVIEW_PROTOCOL } from '../fixtures/server.js';
 
 export { expect, IDS };
-const api = 'http://127.0.0.1:3131';
+const appPort = Number(process.env.ST_UI_TEST_APP_PORT ?? '3130');
+export const previewAppUrl = `http://127.0.0.1:${appPort}`;
+export const previewApiUrl = `http://127.0.0.1:${appPort + 1}`;
+const api = previewApiUrl;
 type PreviewState = {
   scenario: Scenario;
   claimed: boolean;
@@ -41,7 +44,10 @@ export const test = base.extend<{ preview: Preview }>({
           await route.continue();
           return;
         }
-        if (url.hostname === '127.0.0.1' && ['3130', '3131'].includes(url.port)) {
+        if (
+          url.hostname === '127.0.0.1' &&
+          [String(appPort), String(appPort + 1)].includes(url.port)
+        ) {
           await route.continue();
           return;
         }

@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { splitEditableReply } from '../rich-reply-protocol';
+import { ChangeChatMessageRequestSchema } from '../api/conversations';
 
 import type { ChatMessage, ConversationStreamStartEvent } from '../api/conversations';
 import {
@@ -1039,5 +1041,41 @@ describe('Admin-configured rich reply recovery', () => {
         rich_reply_protocol: { version: 3, enabled: true },
       }).success
     ).toBe(false);
+  });
+});
+
+describe('body-only chat editing', () => {
+  it.each([
+    '[choices][choice]继续[/choice][/choices]\n[status]状态[/status][memory]记忆[/memory]',
+    '[choice]继续[/choice]',
+    '[STATUS]状态[/STATUS]',
+    '<details><summary>近况</summary>原始内容</details>',
+    '```markdown\n[memory]未闭合但需要保留',
+  ])('keeps auxiliary content byte-for-byte: %s', (tail) => {
+    const input = '「这是正文。」\n\n' + tail;
+    expect(splitEditableReply(input)).toEqual({
+      body: '「这是正文。」',
+      protectedTail: '\n\n' + tail,
+    });
+    expect(
+      ChangeChatMessageRequestSchema.safeParse({
+        action: 'edit',
+        role: 'assistant',
+        expected_version: 0,
+        content: input,
+      }).success
+    ).toBe(false);
+  });
+  it('keeps prose formatting and does not restrict user message syntax', () => {
+    const body = '**旁白**\n「对话。」';
+    expect(splitEditableReply(body)).toEqual({ body, protectedTail: '' });
+    expect(
+      ChangeChatMessageRequestSchema.safeParse({
+        action: 'edit',
+        role: 'user',
+        expected_version: 0,
+        content: '[memory]我自己的话',
+      }).success
+    ).toBe(true);
   });
 });

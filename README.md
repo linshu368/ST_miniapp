@@ -323,3 +323,5 @@ SSE start携带当轮冻结总预算。客户端若持有旧目录缓存，按�
 早于SSE身份的非成功v4终态可用原request_id上报。既有RPC按现有client_request_id索引最多读取2条，校验用户与会话且唯一时才定位；歧义不猜，成功结果仍必须有消息编号与revision。首份终态后的重放不UPDATE。迁移20261029_first_token_receipt_recovery.sql仅替换既有函数；不增加表、索引、cron、逐token写入或历史回填，不改变超时免扣、主动停止及正常回复一次计费。
 
 发布顺序：本地PG/测试→TEST迁移与应用验收→先合dev→生产迁移→Backend/Frontend/Admin→Grafana说明；配置只读核对版本97。回退应用保留兼容RPC，必要时前向修复，不删除账务。
+
+最近十轮消息编辑/单条删除：`pnpm preview:ui` 选择「消息编辑与删除」，固定验收 `pnpm test:ui --grep @chat-edit`。原会话和分支互不影响，双方消息可改，只删选中单条。部署前先按迁移README验证并执行 `20261102_chat_message_overrides.sql`。

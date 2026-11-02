@@ -4,6 +4,7 @@
 
 import type { PreferredWordCount } from './settings';
 import { z } from 'zod';
+import { splitEditableReply } from '../rich-reply-protocol';
 import {
   ReplyStylePreferencesSchema,
   type ReplyStylePreferences,
@@ -22,6 +23,9 @@ export const MAX_CONVERSATION_REASONING_LENGTH = 65_536;
 
 export interface ChatMessage {
   id: string;
+  /** Local presentation changes never rewrite generation/billing facts. */
+  edit_version?: number;
+  deleted?: boolean;
   /** Frozen text inherited from a branch point; never a new generation or charge. */
   inherited?: boolean;
   /** Owner feedback on this reply version within this conversation; absent means not liked. */
@@ -126,6 +130,8 @@ export type ConversationErrorCode =
   | 'branch_request_conflict'
   | 'branch_rate_limited'
   | 'reply_like_not_allowed'
+  | 'message_change_not_allowed'
+  | 'message_change_conflict'
   | 'upstream_error';
 
 // ==== POST /api/v1/conversations ====
@@ -365,4 +371,48 @@ export interface CancelConversationTurnRequest {
 /** Returns the authoritative state; a reply completed before cancellation stays complete. */
 export interface CancelConversationTurnData {
   message: ChatMessage;
+}
+
+/** Only the newest ten logical rounds; deleting messages never renumbers rounds. */
+export const CHAT_MESSAGE_EDIT_ROUNDS = 10;
+export const ChangeChatMessageRequestSchema = z
+  .discriminatedUnion('action', [
+    z
+      .object({
+        action: z.literal('edit'),
+        role: z.enum(['user', 'assistant']),
+        expected_version: z.number().int().nonnegative(),
+        /** Assistant edits contain prose only; the server preserves its auxiliary panels. */
+        content: z.string().min(1).max(65_536),
+      })
+      .strict(),
+    z
+      .object({
+        action: z.literal('delete'),
+        role: z.enum(['user', 'assistant']),
+        expected_version: z.number().int().nonnegative(),
+      })
+      .strict(),
+  ])
+  .superRefine((value, ctx) => {
+    if (
+      value.action === 'edit' &&
+      (!value.content.trim() || (value.role === 'user' && value.content.length > 8000))
+    )
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: '消息为空或超过长度限制' });
+    if (
+      value.action === 'edit' &&
+      value.role === 'assistant' &&
+      splitEditableReply(value.content).protectedTail
+    )
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: '角色回复只能编辑正文' });
+  });
+export type ChangeChatMessageRequest = z.infer<typeof ChangeChatMessageRequestSchema>;
+export interface ChangeChatMessageData {
+  session_id: string;
+  message_id: string;
+  role: ChatMessageRole;
+  content: string;
+  deleted: boolean;
+  edit_version: number;
 }

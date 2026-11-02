@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   displayName: vi.fn(),
   runTurn: vi.fn(),
   setLike: vi.fn(),
+  changeMessage: vi.fn(),
 }));
 
 vi.mock('../middleware/auth.js', () => ({
@@ -43,6 +44,7 @@ vi.mock('../infrastructure/repositories/ConversationHistoryRepository.js', () =>
   ConversationHistoryRepository: class {
     listMessages = mocks.list;
     setMessageLike = mocks.setLike;
+    changeMessage = mocks.changeMessage;
   },
   toChatMessages: () => [],
 }));
@@ -383,6 +385,76 @@ describe('conversation branch boundary', () => {
       });
       expect(mocks.fork.mock.calls).toHaveLength(2);
       expect(mocks.fork.mock.calls[0]).toEqual(mocks.fork.mock.calls[1]);
+    } finally {
+      await app.close();
+    }
+  });
+});
+
+describe('single message edits and deletes', () => {
+  const url = `/api/v1/conversations/${SOURCE}/messages/${MESSAGE}`;
+  it('authenticates, validates roles and rejects invalid input before writing', async () => {
+    const app = await buildApp();
+    try {
+      expect(
+        (
+          await app.inject({
+            method: 'PATCH',
+            url,
+            headers: { 'x-test-auth': 'missing' },
+            payload: { action: 'delete', role: 'user', expected_version: 0 },
+          })
+        ).statusCode
+      ).toBe(401);
+      for (const payload of [
+        { action: 'edit', role: 'assistant', expected_version: 0, content: '   ' },
+        { action: 'edit', role: 'user', expected_version: 0, content: 'x'.repeat(8001) },
+        { action: 'delete', role: 'system', expected_version: 0 },
+        { action: 'delete', role: 'user', expected_version: 0, user_id: USER },
+      ])
+        expect((await app.inject({ method: 'PATCH', url, payload })).statusCode).toBe(400);
+      expect(mocks.changeMessage).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
+  it('binds the owner and passes optimistic version without generating or charging', async () => {
+    const app = await buildApp();
+    try {
+      const body = {
+        action: 'edit',
+        role: 'assistant',
+        content: '修改后的普通文本',
+        expected_version: 2,
+      };
+      mocks.changeMessage.mockResolvedValue({
+        session_id: SOURCE,
+        message_id: MESSAGE,
+        role: 'assistant',
+        content: body.content,
+        deleted: false,
+        edit_version: 3,
+      });
+      const response = await app.inject({ method: 'PATCH', url, payload: body });
+      expect(response.statusCode).toBe(200);
+      expect(mocks.changeMessage).toHaveBeenCalledWith({
+        userId: USER,
+        sessionId: SOURCE,
+        messageId: MESSAGE,
+        body,
+      });
+      for (const code of [
+        'message_change_not_allowed',
+        'message_change_conflict',
+        'session_busy',
+      ] as const) {
+        mocks.changeMessage.mockRejectedValueOnce(
+          new ConversationRepositoryError(code, 'private detail')
+        );
+        const denied = await app.inject({ method: 'PATCH', url, payload: body });
+        expect(denied.statusCode).toBe(409);
+        expect(denied.body).not.toContain('private detail');
+      }
     } finally {
       await app.close();
     }

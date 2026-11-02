@@ -5,8 +5,8 @@ scope: database
 category: business
 status: active
 owners: [database]
-last_verified_task: .trellis/tasks/10-29-chat-reply-likes/
-last_verified_at: 2026-10-29
+last_verified_task: .trellis/tasks/11-02-chat-message-edit-delete/
+last_verified_at: 2026-11-02
 ---
 
 # 会话与语音存储
@@ -14,6 +14,8 @@ last_verified_at: 2026-10-29
 ## 职责与边界
 
 ## 当前状态
+
+本地候选（尚未执行远端迁移）：20261102_chat_message_overrides.sql 新增experience.chat_message_overrides，按会话/历史ID/role覆盖显示和上下文；原生成/扣费行不可变。RPC与生成共用会话锁，限制最近十个逻辑轮次且删除不移动窗口。旧分支保持原值，新分支创建事务冻结覆盖。user删除后不能以该输入重生成。仅隔离PG17验证通过，远端迁移与真实联调尚未执行。
 
 新发送与重生成使用 `experience.start_chat_history_*_with_current_postprocess`：在开轮事务内读取 `app_core.runtime_config` 当前正式指针、校验不可变 artifact 快照，再复用既有显式版本 wrapper 写入非空 `chat_history.postprocess_version`。旧 wrapper 的 `NULL=不绑定` 保留兼容，旧行不回填。
 
