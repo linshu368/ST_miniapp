@@ -194,6 +194,7 @@ export interface ListCreatorCharactersData {
 }
 export interface GetCreatorCharacterData {
   character: CreatorCharacter;
+  wish_response?: { wish_id: string; status: 'linked' | 'not_linked' };
 }
 export const CreateCreatorCharacterSchema = z
   .object({
@@ -210,13 +211,15 @@ export const SaveCreatorCharacterSchema = z
     cover_asset_id: z.string().uuid().nullable(),
   })
   .strict();
-export const PublishCreatorCharacterSchema = z
+export const SetCreatorVisibilitySchema = z
   .object({
     expected_revision: z.number().int().positive(),
     visibility: CreatorVisibilitySchema,
   })
   .strict();
-export const SetCreatorVisibilitySchema = PublishCreatorCharacterSchema;
+export const PublishCreatorCharacterSchema = SetCreatorVisibilitySchema.extend({
+  wish_id: z.string().uuid().optional(),
+});
 export type CreateCreatorCharacterRequest = z.infer<typeof CreateCreatorCharacterSchema>;
 export type SaveCreatorCharacterRequest = z.infer<typeof SaveCreatorCharacterSchema>;
 export type PublishCreatorCharacterRequest = z.infer<typeof PublishCreatorCharacterSchema>;

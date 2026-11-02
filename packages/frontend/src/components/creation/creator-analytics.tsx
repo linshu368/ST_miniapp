@@ -555,6 +555,19 @@ export function CreatorAnalytics({ preview = false }: { preview?: boolean }) {
             )}
           </section>
 
+          <Link
+            href="/wishes?from=creator-data"
+            className="mt-5 flex min-h-16 items-center justify-between gap-3 rounded-2xl border border-primary/15 bg-primary/[0.05] px-4 py-3 active:bg-primary/10"
+          >
+            <span>
+              <span className="block text-sm font-medium text-foreground">看看玩家想玩什么</span>
+              <span className="mt-1 block text-xs text-muted-foreground">
+                去心愿墙找下一个创作灵感
+              </span>
+            </span>
+            <ChevronRight className="size-4 shrink-0 text-primary" aria-hidden />
+          </Link>
+
           <section
             aria-labelledby="creator-rewards"
             className="mt-7 border-t border-border/60 pt-5"

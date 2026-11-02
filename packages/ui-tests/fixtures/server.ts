@@ -5,10 +5,18 @@ import { resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import {
+  CharacterWishQuerySchema,
+  CreateCharacterWishSchema,
+  SupportCharacterWishSchema,
+  RespondCharacterWishSchema,
+  type CharacterWish,
+  type CharacterWishCard,
+  type NotificationItem,
   CreatorAnalyticsQuerySchema,
   CreateCreatorCharacterSchema,
   SaveCreatorCharacterSchema,
   PublishCreatorCharacterSchema,
+  SetCreatorVisibilitySchema,
   CreatorCoverRequestSchema,
   CreatorPolishRequestSchema,
   CreatorAiReviewResultSchema,
@@ -59,6 +67,7 @@ import {
 } from '@miniapp/shared';
 import {
   IDS,
+  WISH_IDS,
   EDIT_REPLY_PANELS,
   isScenario,
   later,
@@ -85,6 +94,61 @@ export function createPreviewServer(apiPort: number, appPort: number) {
   const creatorOwner = '70000000-0000-4000-8000-000000000001';
   const creatorCards = new Map<string, CreatorCharacter>();
   const creatorCovers = new Map<string, CreatorCoverAsset>();
+  const wishes = new Map<string, CharacterWish>();
+  const wishCards = new Map<string, Set<string>>();
+  const withdrawnWishes = new Set<string>();
+  const wishNotifications = new Map<string, NotificationItem>();
+  let wishFailureDelivered = false;
+  let wishLinkFailureDelivered = false;
+  function visibleWishCards(wishId: string): CharacterWishCard[] {
+    return [...(wishCards.get(wishId) ?? [])].flatMap((id) => {
+      const owned = creatorCards.get(id);
+      if (
+        owned &&
+        (owned.state !== 'ready' ||
+          owned.visibility !== 'public' ||
+          owned.approved_revision === null)
+      )
+        return [];
+      const card = data.characters.find((item) => item.id === id);
+      return card
+        ? [
+            {
+              id,
+              name: card.name,
+              description: card.description,
+              cover_url: card.avatar_url || null,
+            },
+          ]
+        : [];
+    });
+  }
+  function wishView(wish: CharacterWish): CharacterWish {
+    return { ...wish, response_count: visibleWishCards(wish.id).length };
+  }
+  function linkWishCard(wishId: string, characterId: string): boolean {
+    const wish = wishes.get(wishId);
+    const card = creatorCards.get(characterId);
+    if (
+      !wish ||
+      withdrawnWishes.has(wishId) ||
+      wish.visibility !== 'public' ||
+      !card ||
+      card.state !== 'ready' ||
+      card.visibility !== 'public' ||
+      card.approved_revision === null
+    )
+      return false;
+    if (scenario === 'wishes-response-error' && !wishLinkFailureDelivered) {
+      wishLinkFailureDelivered = true;
+      return false;
+    }
+    const cards = wishCards.get(wishId) ?? new Set<string>();
+    cards.add(characterId);
+    wishCards.set(wishId, cards);
+    // The logged-in creator is excluded from recipients; another creator's earlier response is seeded below.
+    return true;
+  }
   let creatorAnalyticsFailureDelivered = false;
   let creatorFailureDelivered = false;
   let creatorReviewFailureDelivered = false;
@@ -238,6 +302,94 @@ export function createPreviewServer(apiPort: number, appPort: number) {
     data = makeData(api);
     creatorCards.clear();
     creatorCovers.clear();
+    wishes.clear();
+    wishCards.clear();
+    withdrawnWishes.clear();
+    wishNotifications.clear();
+    wishFailureDelivered = false;
+    wishLinkFailureDelivered = false;
+    const samples = [
+      {
+        id: WISH_IDS.adventure,
+        body: '想玩一个有自己生活的深海探险家。表面上总是开玩笑，遇到危险却会认真保护同伴，故事从一封没有署名的海图开始。',
+        visibility: 'public',
+        is_mine: false,
+        wanted_count: 18,
+      },
+      {
+        id: WISH_IDS.detective,
+        body: '希望有一张双人破案的角色卡。对方很敏锐，但不要直接给我答案，留一点线索让我自己发现。',
+        visibility: 'public',
+        is_mine: false,
+        wanted_count: 27,
+      },
+      {
+        id: WISH_IDS.minePublic,
+        body: '想开一间深夜书店，每位来客都有一段没说出口的故事。可以慢慢聊天，不需要每一轮都出大事件。',
+        visibility: 'public',
+        is_mine: true,
+        wanted_count: 7,
+      },
+      {
+        id: WISH_IDS.mineGarden,
+        body: '想和一位经营山间小旅馆的朋友，一起把荒废的花园重新种好。',
+        visibility: 'public',
+        is_mine: true,
+        wanted_count: 1,
+      },
+    ] as const;
+    for (const [index, sample] of samples.entries())
+      wishes.set(sample.id, {
+        ...sample,
+        supported: false,
+        response_count: 0,
+        created_at: new Date(Date.now() - index * 3600_000).toISOString(),
+      });
+    wishCards.set(WISH_IDS.minePublic, new Set([data.characters[1]!.id]));
+    if (next.startsWith('wishes')) {
+      const sample = data.characters[0]!;
+      creatorCards.set(WISH_IDS.ownCard, {
+        id: WISH_IDS.ownCard,
+        owner_user_id: creatorOwner,
+        name: '深海来客',
+        description: '一张神秘海图，一位不肯解释的旅人。',
+        cover_asset_id: 'a4000000-0000-4000-8000-000000000001',
+        cover_url: sample.avatar_url,
+        tags: ['奇幻'],
+        draft: {
+          ...emptyCharacterDraft(),
+          name: '深海来客',
+          description: '一张神秘海图，一位不肯解释的旅人。',
+          opening: '「准备好出发了吗？」',
+          background: '一位经验丰富的深海探险者，乐观而谨慎。',
+          tags: ['奇幻'],
+        },
+        state: 'ready',
+        visibility: 'public',
+        review_status: 'approved',
+        review_message: null,
+        revision: 1,
+        submitted_revision: 1,
+        published_revision: 1,
+        approved_revision: 1,
+        created_at: stamp(),
+        updated_at: stamp(),
+      });
+      data.characters.push({ ...sample, id: WISH_IDS.ownCard, name: '深海来客' });
+      wishNotifications.set(WISH_IDS.notification, {
+        id: WISH_IDS.notification,
+        scope: 'personal',
+        category: 'interaction',
+        title: '你期待的角色有回应了',
+        body: '有人为你期待的深夜书店故事创作了角色，去看看吧。',
+        published_at: stamp(),
+        created_at: stamp(),
+        is_read: false,
+        kind: 'character_wish_response',
+        action_path: `/wishes/${WISH_IDS.minePublic}`,
+        metadata: { wish_id: WISH_IDS.minePublic, character_id: data.characters[1]!.id },
+      });
+    }
     creatorAnalyticsFailureDelivered = false;
     creatorFailureDelivered = false;
     creatorReviewFailureDelivered = false;
@@ -776,7 +928,8 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         return;
       }
       if (path === '/api/notifications/unread-count' && method === 'GET') {
-        ok(res, { official: 0, personal: 0, total: 0 });
+        const unread = [...wishNotifications.values()].filter((item) => !item.is_read).length;
+        ok(res, { official: 0, personal: unread, total: unread });
         return;
       }
       if (path === '/api/support/unread' && method === 'GET') {
@@ -792,7 +945,124 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         return;
       }
       if (path === '/api/notifications' && method === 'GET') {
-        ok(res, { notifications: [], next_cursor: null });
+        ok(res, {
+          notifications:
+            url.searchParams.get('scope') === 'official' ? [] : [...wishNotifications.values()],
+          next_cursor: null,
+        });
+        return;
+      }
+      if (path === '/api/notifications/read' && method === 'POST') {
+        const ids =
+          typeof body === 'object' && body !== null && 'ids' in body && Array.isArray(body.ids)
+            ? body.ids
+            : [];
+        let marked = 0;
+        for (const id of ids) {
+          const notification = typeof id === 'string' ? wishNotifications.get(id) : undefined;
+          if (notification && !notification.is_read) {
+            notification.is_read = true;
+            marked++;
+          }
+        }
+        ok(res, { marked });
+        return;
+      }
+      if (path.startsWith('/api/notifications/') && method === 'GET') {
+        const notification = wishNotifications.get(path.split('/').pop()!);
+        if (notification) ok(res, { notification });
+        else fail(res, 404, 'NOT_FOUND', '消息不存在');
+        return;
+      }
+      if (path === '/api/character-wishes' && method === 'GET') {
+        const query = CharacterWishQuerySchema.parse(Object.fromEntries(url.searchParams));
+        const items = [...wishes.values()]
+          .filter(
+            (item) =>
+              !withdrawnWishes.has(item.id) &&
+              (query.scope === 'mine' ? item.is_mine : item.visibility === 'public')
+          )
+          .map(wishView)
+          .sort(
+            (a, b) =>
+              (query.sort === 'popular' ? b.wanted_count - a.wanted_count : 0) ||
+              b.created_at.localeCompare(a.created_at) ||
+              b.id.localeCompare(a.id)
+          );
+        ok(res, {
+          items: items.slice((query.page - 1) * query.page_size, query.page * query.page_size),
+          page: query.page,
+          page_size: query.page_size,
+          total: items.length,
+        });
+        return;
+      }
+      if (path === '/api/character-wishes' && method === 'POST') {
+        const input = CreateCharacterWishSchema.parse(body);
+        if (scenario === 'wishes-error' && !wishFailureDelivered) {
+          wishFailureDelivered = true;
+          fail(res, 503, 'UNAVAILABLE', '这次没能提交，请重试。你写的内容还在。');
+          return;
+        }
+        if (!wishes.has(input.id))
+          wishes.set(input.id, {
+            ...input,
+            created_at: stamp(),
+            is_mine: true,
+            supported: false,
+            wanted_count: 1,
+            response_count: 0,
+          });
+        const existing = wishes.get(input.id)!;
+        if (!existing.is_mine) {
+          fail(res, 409, 'CONFLICT', '请重新提交心愿');
+          return;
+        }
+        ok(res, { wish: wishView(existing) });
+        return;
+      }
+      const wishMatch = path.match(/^\/api\/character-wishes\/([^/]+)(?:\/(support|responses))?$/);
+      if (wishMatch) {
+        const [, id, action] = wishMatch;
+        const wish = wishes.get(id!);
+        if (!wish || withdrawnWishes.has(id!)) {
+          fail(res, 404, 'NOT_FOUND', '这个心愿已撤回或暂时不可查看');
+          return;
+        }
+        if (method === 'GET' && !action) {
+          ok(res, { wish: wishView(wish), cards: visibleWishCards(id!) });
+          return;
+        }
+        if (method === 'DELETE' && !action) {
+          if (!wish.is_mine) {
+            fail(res, 403, 'FORBIDDEN', '只能撤回自己的心愿');
+            return;
+          }
+          withdrawnWishes.add(id!);
+          ok(res, { withdrawn: true });
+          return;
+        }
+        if (method === 'PUT' && action === 'support') {
+          const input = SupportCharacterWishSchema.parse(body);
+          if (wish.visibility !== 'public' || wish.is_mine) {
+            fail(res, 403, 'FORBIDDEN', '无法支持这个心愿');
+            return;
+          }
+          wish.wanted_count += Number(input.supported) - Number(wish.supported);
+          wish.supported = input.supported;
+          ok(res, { wish: wishView(wish) });
+          return;
+        }
+        if (method === 'POST' && action === 'responses') {
+          const input = RespondCharacterWishSchema.parse(body);
+          if (!linkWishCard(id!, input.character_id)) {
+            fail(res, 409, 'UNAVAILABLE', '请选择你已公开的角色');
+            return;
+          }
+          ok(res, { linked: true });
+          return;
+        }
+        fail(res, 405, 'METHOD_NOT_ALLOWED', '方法不支持');
         return;
       }
       if (path === '/api/characters/social' && method === 'GET') {
@@ -998,7 +1268,9 @@ export function createPreviewServer(apiPort: number, appPort: number) {
           (method === 'POST' && action === 'publish') ||
           (method === 'PUT' && action === 'visibility')
         ) {
-          const input = PublishCreatorCharacterSchema.parse(body);
+          const input = (
+            action === 'publish' ? PublishCreatorCharacterSchema : SetCreatorVisibilitySchema
+          ).parse(body);
           if (scenario === 'creator-save-error' && !creatorFailureDelivered) {
             creatorFailureDelivered = true;
             fail(res, 503, 'UNAVAILABLE', '暂时未能发布，草稿已保留');
@@ -1070,7 +1342,19 @@ export function createPreviewServer(apiPort: number, appPort: number) {
           const existing = data.characters.findIndex((item) => item.id === card.id);
           if (existing < 0) data.characters.push(character);
           else data.characters[existing] = character;
-          ok(res, { character: card });
+          const wishId =
+            action === 'publish' &&
+            typeof body === 'object' &&
+            body !== null &&
+            'wish_id' in body &&
+            typeof body.wish_id === 'string'
+              ? body.wish_id
+              : null;
+          const wishResponse =
+            wishId && input.visibility === 'public'
+              ? { wish_id: wishId, status: linkWishCard(wishId, card.id) ? 'linked' : 'not_linked' }
+              : undefined;
+          ok(res, { character: card, ...(wishResponse ? { wish_response: wishResponse } : {}) });
           return;
         }
       }

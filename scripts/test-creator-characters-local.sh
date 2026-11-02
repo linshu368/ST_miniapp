@@ -184,5 +184,23 @@ SQL
 "${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/tests/creator_characters.sql"
 printf 'PASS: creator core PG17 (AI review gate, untouched legacy queue, disabled/archive preservation, CAS/access, real turn freeze, branches, immutable ACL). Database: %s\n' "$task_database"
 
+# Reuse the existing message-center fixture and actual VIP shape constraints for wishes.
+python3 - "$task_root" <<'PY' | "${task_psql[@]}" >/dev/null
+import sys
+from pathlib import Path
+root=Path(sys.argv[1])/'packages/shared/migrations'
+base=(root/'fixtures/vip_billing_t2_harness.sql').read_text()
+a=base.index('CREATE TABLE IF NOT EXISTS miniapp_features.notifications (')
+b=base.index('\nALTER TABLE billing.user_wallets',a)
+print(base[a:b])
+vip=(root/'20260924_vip_billing_schema_pg_cron_compat.sql').read_text()
+a=vip.index('-- ── 7. 通知去重键')
+b=vip.index('-- ── 8.',a)
+print(vip[a:b])
+PY
+"${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/20261102_character_wishes.sql" >/dev/null
+"${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/tests/character_wishes.sql"
+printf 'PASS: character wishes PG17 (anonymous public-only writes, owner ACL, unique support, response ownership, atomic notifications and retry deduplication).\n'
+
 CREATOR_ANALYTICS_TEST_CONTAINER="$task_container" CREATOR_ANALYTICS_TEST_DB="$task_database" \
   pnpm --dir "$task_root/packages/backend" exec vitest run src/features/creator/analytics.integration.test.ts

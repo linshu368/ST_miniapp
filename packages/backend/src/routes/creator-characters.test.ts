@@ -16,12 +16,18 @@ const mocks = vi.hoisted(() => ({
   admin: vi.fn(),
   user: vi.fn(),
   clearLobby: vi.fn(),
+  linkWish: vi.fn(),
 }));
 vi.mock('../features/creator/repository.js', () => ({
   CreatorCharacterRepository: class {
     get = mocks.get;
     getReviewMaterial = mocks.material;
     mutate = mocks.mutate;
+  },
+}));
+vi.mock('../features/character-wishes/repository.js', () => ({
+  CharacterWishRepository: class {
+    linkResponse = mocks.linkWish;
   },
 }));
 vi.mock('../features/generation/creator-review.js', () => ({
@@ -348,4 +354,36 @@ describe('retired manual creator review endpoints', () => {
       expect(mocks.clearLobby).not.toHaveBeenCalled();
     }
   );
+});
+
+describe('publication followed by wish response', () => {
+  const wishId = '10000000-0000-4000-8000-000000000004';
+  it('links only the successfully published public card and authenticated owner', async () => {
+    mocks.linkWish.mockResolvedValue({ linked: true });
+    const result = await publish('publish', 'public', { wish_id: wishId });
+    expect(result.statusCode).toBe(200);
+    expect(result.json().data.wish_response).toEqual({ wish_id: wishId, status: 'linked' });
+    expect(mocks.linkWish).toHaveBeenCalledWith({ userId: ownerId, wishId, characterId: cardId });
+  });
+  it('keeps a completed publication successful when the source wish has been withdrawn', async () => {
+    mocks.linkWish.mockRejectedValue(Object.assign(new Error('withdrawn'), { code: 'P0404' }));
+    const result = await publish('publish', 'public', { wish_id: wishId });
+    expect(result.statusCode).toBe(200);
+    expect(result.json().data).toMatchObject({
+      character: { id: cardId },
+      wish_response: { wish_id: wishId, status: 'not_linked' },
+    });
+  });
+  it('does not link a private card or bypass AI rejection', async () => {
+    mocks.mutate.mockResolvedValue(card());
+    expect((await publish('publish', 'private', { wish_id: wishId })).statusCode).toBe(200);
+    expect(mocks.linkWish).not.toHaveBeenCalled();
+    mocks.review.mockResolvedValue({ approved: false, reason: '需要修改' });
+    expect((await publish('publish', 'public', { wish_id: wishId })).statusCode).toBe(422);
+    expect(mocks.linkWish).not.toHaveBeenCalled();
+  });
+  it('does not accept wish metadata on the independent visibility endpoint', async () => {
+    expect((await publish('visibility', 'public', { wish_id: wishId })).statusCode).toBe(400);
+    expect(mocks.linkWish).not.toHaveBeenCalled();
+  });
 });

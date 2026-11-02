@@ -62,3 +62,7 @@ Shared tests 与所有消费者 typecheck。
 ## 创作数据契约（2026-11-02）
 
 api/creator-analytics.ts 定义严格query与按section区分的runtime响应。all/7d/30d，page>=1、page_size<=20、可选单卡/as_of；不接受owner字段。金额允许负调整，人数/次数非负整数。总览每类最多3条，其余每页最多20；只含卡摘要/统计/匿名公开反馈，无内部资产ID、用户ID或私聊正文。Backend/Frontend/ui-tests共用，同版本先部署producer。
+
+### 心愿契约（本地候选）
+
+api/character-wishes.ts 定义输入长度、固定public可见性、分页、匿名DTO及明确 supported 布尔 mutation。PublishCreatorCharacterSchema 接受可选 wish_id，SetCreatorVisibilitySchema 保持独立不接受此字段。GetCreatorCharacterData 可携带 wish_response linked/not_linked；客户端不得把not_linked当角色发布失败。通知新增character_wish_response及{wish_id,character_id} metadata，VIP consumer须缩窄旧metadata类型；跳转根据校验UUID构造内部 /wishes/:id，不信任任意action_path。
