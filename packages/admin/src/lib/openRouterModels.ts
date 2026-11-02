@@ -1,5 +1,7 @@
 import {
   FIRST_TOKEN_FALLBACK_MODEL_ID,
+  resolveFallbackProviders,
+  type LlmProviderRoutingConfig,
   LLM_MODEL_PROVIDER_LABELS,
   LLM_PROVIDER_CAPABILITIES,
   LlmModelProviderSchema,
@@ -68,11 +70,31 @@ export async function fetchOpenRouterModels(
   );
 }
 
-export function getCatalogProviderIssues(
+export function getFallbackProviderIssues(
   catalog: ModelCatalog,
-  directories: ProviderDirectoryMap
+  routing?: LlmProviderRoutingConfig
 ): string[] {
   const issues: string[] = [];
+  const fallbackId = catalog.fallback_model_id ?? FIRST_TOKEN_FALLBACK_MODEL_ID;
+  const preferred = resolveFallbackProviders(catalog);
+  if (!preferred) issues.push('兜底模型：请为所选型号配置两个不同的优先供应商');
+  const blocked =
+    routing?.rules.find(
+      (rule) => rule.openrouter_model_id.toLowerCase() === fallbackId.toLowerCase()
+    )?.blocked_providers ?? [];
+  if (
+    preferred?.some((slug) => blocked.some((block) => block.toLowerCase() === slug.toLowerCase()))
+  )
+    issues.push('兜底模型：优先供应商不能同时在该型号的屏蔽名单中');
+  return issues;
+}
+
+export function getCatalogProviderIssues(
+  catalog: ModelCatalog,
+  directories: ProviderDirectoryMap,
+  routing?: LlmProviderRoutingConfig
+): string[] {
+  const issues = getFallbackProviderIssues(catalog, routing);
   const fallbackId = catalog.fallback_model_id ?? FIRST_TOKEN_FALLBACK_MODEL_ID;
   const fallback = directories.openrouter?.models.find((model) => model.id === fallbackId);
   if (!directories.openrouter) issues.push('兜底模型：请先同步 OpenRouter 模型目录');

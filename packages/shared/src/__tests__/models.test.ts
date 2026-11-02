@@ -6,6 +6,7 @@ import {
   resolveEnabledCatalogModel,
   resolveRuntimeCatalogModel,
   toPublicModelCatalog,
+  resolveFallbackProviders,
 } from '../api/models.js';
 
 describe('LlmPricingConfigSchema', () => {
@@ -70,6 +71,39 @@ const validCatalog = {
 };
 
 describe('ModelCatalogSchema', () => {
+  it('keeps fallback provider pairs bound to their model and rejects duplicates', () => {
+    const parsed = ModelCatalogSchema.parse({
+      ...validCatalog,
+      fallback_provider_routes: [
+        { model_id: 'vendor/fast', preferred_providers: ['provider-a', 'provider-b'] },
+      ],
+    });
+    expect(resolveFallbackProviders(parsed)).toEqual(['together', 'crusoe']);
+    expect(resolveFallbackProviders({ ...parsed, fallback_model_id: 'vendor/fast' })).toEqual([
+      'provider-a',
+      'provider-b',
+    ]);
+    expect(
+      resolveFallbackProviders({ ...parsed, fallback_model_id: 'vendor/new' })
+    ).toBeUndefined();
+    expect(
+      ModelCatalogSchema.safeParse({
+        ...validCatalog,
+        fallback_provider_routes: [
+          { model_id: 'vendor/fast', preferred_providers: ['Together', 'together'] },
+        ],
+      }).success
+    ).toBe(false);
+    expect(
+      ModelCatalogSchema.safeParse({
+        ...validCatalog,
+        fallback_provider_routes: [
+          { model_id: 'vendor/fast', preferred_providers: ['a', 'b'] },
+          { model_id: 'VENDOR/FAST', preferred_providers: ['c', 'd'] },
+        ],
+      }).success
+    ).toBe(false);
+  });
   it('defaults legacy models and validates manual first-token budgets', () => {
     const parsed = ModelCatalogSchema.parse(validCatalog);
     expect(parsed.fallback_model_id).toBe('deepseek/deepseek-v4.1-flash-1017');

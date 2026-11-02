@@ -18,6 +18,11 @@ export function getModelCatalogChangeSummary(before: unknown, after: unknown): s
   const beforeModels = modelMap(previous.data);
   const afterModels = modelMap(next.data);
   const changes: string[] = [];
+  if (
+    JSON.stringify(previous.data.fallback_provider_routes) !==
+    JSON.stringify(next.data.fallback_provider_routes)
+  )
+    changes.push('兜底型号的优先供应商已调整（固定首字延迟优先）');
   if (previous.data.fallback_timeout_ms !== next.data.fallback_timeout_ms)
     changes.push(`兜底预留时间改为 ${next.data.fallback_timeout_ms / 1000} 秒`);
   if (previous.data.fallback_model_id !== next.data.fallback_model_id)

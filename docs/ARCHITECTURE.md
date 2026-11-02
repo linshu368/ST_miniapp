@@ -795,3 +795,11 @@ RootLayout随HTML交付独立框架绘制确认与原生ready脚本，Providers�
 ### 本地候选：最近十轮消息修订
 
 角色聊天显示与入模统一读取 experience.session_chat_history，其会话级覆盖来自 experience.chat_message_overrides。PATCH /api/v1/conversations/:id/messages/:messageId 用服务端身份和 expected_version 校验，只允许最新逻辑轮号向前十轮的单条编辑/删除；开场白、流式生成中、过期版本拒绝。原 chat_history 继续作为生成与计费事实，分支在创建时复制覆盖快照，删除用无正文占位保留轮号。未执行远端迁移/发布，固定验收入口见 ui-tests README。
+
+## 兜底供应商与调用前等待（2026-11-02，本地候选）
+
+复用模型目录字段 `fallback_provider_routes: [{model_id, preferred_providers: [first, second]}]`，每个兜底型号独立绑定两个供应商。旧1017缺省Together/Crusoe；其他型号发布必须补齐。仅兜底attempt发送 `order + sort: latency + allow_fallbacks: true`，首发沿原策略，模型屏蔽规则保留。先完成 `20261102_fallback_provider_priority.sql` 的TEST验证，再发布兼容Backend与Admin；迁移只扩展既有配置写入校验，不新增运行时I/O。运营继续保存草稿后发布。
+
+调用前将兜底路由配置提前，与其他配置同批；付费轮余额只读预检与上下文准备重叠，冻结报价和结果本轮复用。免费额度仍先预留再决定是否查余额；缺钱包按0余额拒绝，不为预检初始化钱包。鉴权、开轮、报价/prompt持久化仍在dispatch前；6秒、两路竞争、单次交付/计费不变。
+
+现有OTLP/Grafana增加调用前五段墙钟和出站五段指标。只用内存时间戳、既有attempt终态日志及慢准备摘要，不新增监控表、SQL、扫描或任务。调用前各段仅覆盖完成门禁的请求；出站未到达的阶段保持缺失。分位数不能相加，发完请求至响应头也不能称为纯模型耗时。业务主图继续看点击到首token及总截止无字率。
