@@ -74,3 +74,7 @@ Backend lobby/route tests 与 Frontend 大厅人工回归。
 ## 前几屏优质轮换（2026-11-02，本地未发布）
 
 鉴权recommendation批次与exposures独立于公开目录；24h open、显式resume、refresh CAS及30秒undo窗口。miniapp_features两表保存当前/上一批/最近3批头及曝光摘要。纯算法可靠40/头档70、实际曝光2–7天恢复/14天回流、90天可信证据；qualified-v1只由新资历job写，低样本保留旧可信，成熟新低分优先。可靠候选不足明确降级旧排序。固定命令pnpm test:lobby-ranking覆盖真实PG17权限、幂等、并发、时间与迁移重放。
+
+## 本人创作统计（2026-11-02，本地待发布）
+
+GET /api/creator/analytics 复用Telegram鉴权，owner只来自服务器，section选择总览/作品/奖励/反馈/选卡分页。features/creator/analytics-query.ts 参数化只读SQL，analytics-repository.ts负责只读事务、6s语句超时、签名封面与匿名评论映射。按本人拥有卡读取成功原history，排除自用/继承轮并合并revision，先取首次成功再筛日期；跨卡玩家去重，同卡深聊/回访。奖励按真实到账和实际追回各自事件时间统计，不重算40%、不改账本。私密/下架不擦掉历史统计，单卡越权404，故障503。无migration。真实SQL回归纳入原creator PG17脚本，接口权限/参数另有route回归。
