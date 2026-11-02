@@ -3,6 +3,7 @@ import {
   DEFAULT_LLM_PROVIDER_ROUTING_CONFIG,
   LlmProviderRoutingConfigSchema,
   resolveProviderPreferences,
+  fallbackProviderPreferences,
 } from '../api/provider-routing.js';
 
 const validConfig = {
@@ -23,6 +24,23 @@ const validConfig = {
 };
 
 describe('LlmProviderRoutingConfigSchema', () => {
+  it('uses the fallback pair and latency priority while preserving model block rules', () => {
+    expect(
+      fallbackProviderPreferences({ order: ['slow'], ignore: ['blocked'] }, ['fast-a', 'fast-b'])
+    ).toEqual({
+      order: ['fast-a', 'fast-b'],
+      ignore: ['blocked'],
+      allow_fallbacks: true,
+      sort: 'latency',
+    });
+    expect(fallbackProviderPreferences({ ignore: ['FAST-A'] }, ['fast-a', 'fast-b']).order).toEqual(
+      ['fast-b']
+    );
+    expect(fallbackProviderPreferences(null, undefined)).toEqual({
+      allow_fallbacks: true,
+      sort: 'latency',
+    });
+  });
   it('accepts per-model block and prefer rules', () => {
     const parsed = LlmProviderRoutingConfigSchema.parse(validConfig);
     expect(parsed.rules).toHaveLength(2);

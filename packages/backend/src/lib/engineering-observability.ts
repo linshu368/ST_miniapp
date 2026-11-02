@@ -1,5 +1,6 @@
 /** 非权威工程遥测；不注册全局 tracer，不替代生成/交付/计费数据库事实。 */
 import { ROOT_CONTEXT, type Attributes } from '@opentelemetry/api';
+import type { UpstreamTiming } from '../features/generation/upstream-timing.js';
 import { resourceFromAttributes } from '@opentelemetry/resources';
 import { MeterProvider, PeriodicExportingMetricReader } from '@opentelemetry/sdk-metrics';
 import {
@@ -335,6 +336,7 @@ export function observeGenerationAttempt(input: {
   durationMs?: number;
   headersMs?: number;
   firstTokenMs?: number;
+  timing?: UpstreamTiming;
   dispatched: boolean;
   phase?: 'first_token' | 'generation';
 }) {
@@ -353,9 +355,43 @@ export function observeGenerationAttempt(input: {
     active.duration('st_generation_headers', input.headersMs, attrs);
   if (input.firstTokenMs !== undefined)
     active.duration('st_generation_first_token', input.firstTokenMs, attrs);
+  const t = input.timing;
+  const difference = (end?: number, start?: number) =>
+    end !== undefined && start !== undefined && end >= start ? end - start : undefined;
+  const stages = {
+    request_create: t?.requestCreatedMs,
+    connection_wait: difference(t?.sendHeadersMs, t?.requestCreatedMs),
+    request_send: difference(t?.bodySentMs, t?.sendHeadersMs),
+    response_wait: difference(t?.responseHeadersMs, t?.bodySentMs),
+    response_to_token: difference(input.firstTokenMs, t?.responseHeadersMs),
+  };
+  const details: Record<string, number | string> = {};
+  if (t && input.dispatched) {
+    details.network_stage =
+      t.responseHeadersMs !== undefined
+        ? 'headers_received'
+        : t.bodySentMs !== undefined
+          ? 'awaiting_headers'
+          : t.sendHeadersMs !== undefined
+            ? 'sending_body'
+            : t.requestCreatedMs !== undefined
+              ? 'awaiting_connection'
+              : 'unobserved';
+    for (const [stage, duration] of Object.entries(stages)) {
+      if (duration === undefined) continue;
+      // One fixed stage label, no request IDs or vendor names as metric dimensions.
+      active.duration('st_generation_network_stage', duration, {
+        ...identity(input),
+        role: input.role,
+        stage,
+      });
+      details[`${stage}_ms`] = Math.round(duration);
+    }
+  }
   active.event('generation.attempt_terminal', {
     ...attrs,
     ...(input.durationMs === undefined ? {} : { duration_ms: Math.round(input.durationMs) }),
+    ...details,
   });
 }
 
@@ -370,6 +406,36 @@ export function observeGenerationPrepare(input: {
     ...identity(input),
     outcome: input.outcome,
   });
+}
+
+/** Non-overlapping wall-clock gates from route entry to dispatch, not a sum of parallel reads. */
+export function observeGenerationPreparationStages(input: {
+  provider: string;
+  model: string;
+  stages: Partial<
+    Record<'route_setup' | 'settings' | 'turn_open' | 'context' | 'dispatch_gate', number>
+  >;
+}) {
+  if (!active) return;
+  const attrs = identity(input);
+  const detail: MetricAttributes = { ...attrs };
+  let total = 0;
+  for (const stage of [
+    'route_setup',
+    'settings',
+    'turn_open',
+    'context',
+    'dispatch_gate',
+  ] as const) {
+    const duration = input.stages[stage];
+    if (duration === undefined || !Number.isFinite(duration) || duration < 0) continue;
+    active.duration('st_generation_pre_dispatch_stage', duration, { ...attrs, stage });
+    detail[`${stage}_ms`] = Math.round(duration);
+    total += duration;
+  }
+  // Aggregates cover all turns; only slow preparation adds a diagnostic event.
+  if (total >= 1_000)
+    active.event('generation.pre_dispatch', { ...detail, total_ms: Math.round(total) });
 }
 
 export type GenerationOutcome =

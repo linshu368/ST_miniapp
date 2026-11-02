@@ -17,6 +17,7 @@ import {
   DEFAULT_FIRST_TOKEN_TIMEOUT_RATE_TARGET,
   FIRST_TOKEN_FALLBACK_MODEL_ID,
   resolveEffectiveSelectedModelId,
+  resolveFallbackProviders,
   resolveEnabledCatalogModel,
   type LlmModelProvider,
 } from '@miniapp/shared';
@@ -129,6 +130,7 @@ export async function resolveModelForUser(
     billingContext: billing,
     firstTokenPolicy: {
       fallbackModelId: snapshot.catalog.fallback_model_id ?? FIRST_TOKEN_FALLBACK_MODEL_ID,
+      fallbackProviders: resolveFallbackProviders(snapshot.catalog),
       timeoutMs:
         resolveEnabledCatalogModel(snapshot.catalog, selection.modelId).first_token_timeout_ms ??
         DEFAULT_FIRST_TOKEN_TIMEOUT_MS,

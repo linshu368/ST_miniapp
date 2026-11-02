@@ -267,11 +267,13 @@ export class MiniappWalletRepository {
    * @param userId 用户 ID
    * @returns MiniApp 钱包
    */
-  private async findByUserId(userId: string): Promise<MiniappWalletRow | null> {
+  /** Read-only precheck: an absent wallet is zero balance, not a reason to insert a row. */
+  async findByUserId(userId: string): Promise<MiniappWalletRow | null> {
     const { data, error } = await this.db
       .from('user_wallets')
       .select('*')
       .eq('user_id', userId)
+      .abortSignal(AbortSignal.timeout(5_000))
       .maybeSingle();
 
     if (error) throw new Error(`查询 MiniApp 钱包失败：${error.message}`);

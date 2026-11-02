@@ -179,6 +179,9 @@ describe('fallback managed configuration', () => {
       configMetadata.llm_model_catalog.defaultValue
     );
     catalog.fallback_model_id = 'vendor/operator-flash';
+    catalog.fallback_provider_routes = [
+      { model_id: 'vendor/operator-flash', preferred_providers: ['fast-one', 'fast-two'] },
+    ];
     catalog.first_token_deadline_ms = 8000;
     catalog.fallback_timeout_ms = 2500;
     catalog.first_token_timeout_rate_target = 0.02;

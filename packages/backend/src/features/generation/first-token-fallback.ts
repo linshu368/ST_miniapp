@@ -5,6 +5,7 @@ import {
   type LlmModelProvider,
 } from '@miniapp/shared';
 import type { AttemptObservation } from '../../infrastructure/repositories/GenerationObservationRepository.js';
+import type { UpstreamTiming } from './upstream-timing.js';
 import { createLeadingThinkingSplitter, readExposedReasoning } from './upstream.js';
 import {
   observeChatFirstToken,
@@ -48,6 +49,7 @@ interface Attempt {
   signal: AbortSignal;
   prepared: Promise<void>;
   startedAt: number;
+  timing: UpstreamTiming;
   finished: boolean;
   recorded: boolean;
   writes: Promise<void>;
@@ -79,7 +81,12 @@ export async function forwardWithFirstTokenFallback(input: {
   requestStartedAt: number;
   signal: AbortSignal;
   store: FirstTokenAttemptStore;
-  forward(model: TransportModel, signal: AbortSignal, onDispatch: () => void): Promise<Response>;
+  forward(
+    model: TransportModel,
+    signal: AbortSignal,
+    onDispatch: () => void,
+    attempt: { role: 'primary' | 'fallback'; timing: UpstreamTiming }
+  ): Promise<Response>;
   onObservationError(error: unknown): void;
 }): Promise<{
   response: Response;
@@ -156,6 +163,7 @@ export async function forwardWithFirstTokenFallback(input: {
       durationMs: attempt.observation.observed_until_ms,
       headersMs: attempt.observation.headers_ms,
       firstTokenMs: attempt.observation.first_token_ms,
+      timing: attempt.timing,
     });
     record(attempt);
   };
@@ -200,6 +208,7 @@ export async function forwardWithFirstTokenFallback(input: {
       signal: AbortSignal.any([input.signal, controller.signal]),
       prepared: Promise.resolve(),
       startedAt: performance.now(),
+      timing: { startedAt: performance.now() },
       finished: false,
       recorded: false,
       writes: Promise.resolve(),
@@ -260,6 +269,7 @@ export async function forwardWithFirstTokenFallback(input: {
       assertBudget();
       signal.throwIfAborted();
       attempt.startedAt = performance.now();
+      attempt.timing.startedAt = attempt.startedAt;
       observation.dispatched_at = new Date().toISOString();
       observation.dispatch_offset_ms = attempt.startedAt - input.requestStartedAt;
       observeGenerationDispatch({
@@ -286,7 +296,10 @@ export async function forwardWithFirstTokenFallback(input: {
       }
     };
     signal.throwIfAborted();
-    const response = await input.forward(model, signal, onDispatch);
+    const response = await input.forward(model, signal, onDispatch, {
+      role: observation.role,
+      timing: attempt.timing,
+    });
     responseBody = response.body;
     // Some transports resolve headers after cancellation; never leave that late body open.
     if (signal.aborted) {

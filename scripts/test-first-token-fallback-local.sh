@@ -221,6 +221,35 @@ print('PASS: retired first-token board has no SQL/refresh; replacement reads onl
 PYDASHBOARD
 echo 'PASS: first-token SQL business identity, delivery CAS, frozen quote, reporting ACL and immutable receipt'
 
+# The provider validator only changes config-write validation, preserving the existing function ACL.
+"${task_psql[@]}" -c "CREATE TABLE admin.fallback_validator_test_shape AS SELECT oid,proowner,proacl FROM pg_proc WHERE oid='admin.validate_model_catalog_first_token(jsonb)'::regprocedure" >/dev/null
+"${task_psql[@]}" -f "$task_root/packages/shared/migrations/20261102_fallback_provider_priority.sql" >/dev/null
+"${task_psql[@]}" -f "$task_root/packages/shared/migrations/20261102_fallback_provider_priority.sql" >/dev/null
+"${task_psql[@]}" >/dev/null <<'SQL'
+DO $$ DECLARE invalid jsonb; BEGIN
+  IF NOT EXISTS (SELECT 1 FROM admin.fallback_validator_test_shape s JOIN pg_proc p USING(oid)
+    WHERE s.proowner=p.proowner AND s.proacl IS NOT DISTINCT FROM p.proacl) THEN RAISE EXCEPTION 'validator identity/ACL changed'; END IF;
+  PERFORM admin.validate_model_catalog_first_token('{"fallback_model_id":"deepseek/deepseek-v4.1-flash-1017"}');
+  PERFORM admin.validate_model_catalog_first_token('{"fallback_model_id":"vendor/new","fallback_provider_routes":[{"model_id":"vendor/new","preferred_providers":["fast-a","fast-b"]}]}');
+  FOREACH invalid IN ARRAY ARRAY[
+    '{"fallback_model_id":"vendor/new"}'::jsonb,
+    '{"fallback_provider_routes":null}',
+    '{"fallback_provider_routes":[{"model_id":"vendor/new","preferred_providers":["a"]}]}',
+    '{"fallback_provider_routes":[{"model_id":"vendor/new","preferred_providers":["a","A"]}]}',
+    '{"fallback_provider_routes":[{"model_id":"vendor/new","preferred_providers":["a",null]}]}',
+    '{"fallback_provider_routes":[{"model_id":"vendor/new","preferred_providers":["a","b"]},{"model_id":"vendor/new","preferred_providers":["c","d"]}]}',
+    '{"first_token_deadline_ms":2000,"fallback_timeout_ms":2000}'
+  ] LOOP
+    BEGIN
+      PERFORM admin.validate_model_catalog_first_token(invalid);
+      RAISE EXCEPTION 'invalid fallback provider configuration accepted';
+    EXCEPTION WHEN invalid_parameter_value THEN NULL; END;
+  END LOOP;
+END $$;
+DROP TABLE admin.fallback_validator_test_shape;
+SQL
+echo 'PASS: model-specific provider pairs, legacy 1017, budget validation and validator identity/ACL preserved'
+
 # Run the existing real wallet/free-quota migration suite in another disposable DB.
 mkdir "$task_dir/bin"
 for task_command in psql createdb dropdb; do

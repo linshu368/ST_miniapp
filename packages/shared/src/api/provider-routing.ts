@@ -114,6 +114,21 @@ export interface OpenRouterProviderPreferences {
   order?: string[];
   ignore?: string[];
   allow_fallbacks?: boolean;
+  sort?: 'latency';
+}
+
+/** Fallback policy overrides only preference, never a model-specific block rule. */
+export function fallbackProviderPreferences(
+  preferences: OpenRouterProviderPreferences | null,
+  preferred: readonly [string, string] | undefined
+): OpenRouterProviderPreferences {
+  const blocked = new Set(preferences?.ignore?.map((slug) => slug.toLowerCase()) ?? []);
+  return {
+    ...preferences,
+    ...(preferred ? { order: preferred.filter((slug) => !blocked.has(slug.toLowerCase())) } : {}),
+    sort: 'latency',
+    allow_fallbacks: true,
+  };
 }
 
 /**
