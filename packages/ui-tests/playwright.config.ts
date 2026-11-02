@@ -1,5 +1,7 @@
 import { defineConfig } from '@playwright/test';
 
+const appUrl = `http://127.0.0.1:${Number(process.env.ST_UI_TEST_APP_PORT ?? '3130')}`;
+
 export default defineConfig({
   testDir: './tests',
   fullyParallel: false,
@@ -10,7 +12,7 @@ export default defineConfig({
   outputDir: '../../output/playwright/results',
   reporter: [['list'], ['html', { outputFolder: '../../output/playwright/report', open: 'never' }]],
   use: {
-    baseURL: 'http://127.0.0.1:3130',
+    baseURL: appUrl,
     browserName: 'chromium',
     isMobile: true,
     hasTouch: true,
@@ -29,7 +31,7 @@ export default defineConfig({
   webServer: {
     command: 'node preview.mjs --test',
     // Wait until Next and its local API proxy both answer, not just the fixture process.
-    url: 'http://127.0.0.1:3130/api/lobby-characters',
+    url: `${appUrl}/api/lobby-characters`,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
     stdout: 'pipe',

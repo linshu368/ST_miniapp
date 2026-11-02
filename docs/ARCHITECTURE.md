@@ -22,7 +22,7 @@
 
 ⏳ **2026-10-16 图片广场配置兼容修复（MIGRATION，未部署）**：`20261016_reconcile_image_plaza_managed_config_keys.sql` 将 Admin managed-key 入口包装为“当前白名单 OR 四个图片广场 key”，两表 CHECK 保留原表达式并接入修复后的入口。避免平台规则槽位静态名单覆盖图片广场 key；保留现有 validator、专用后处理边界、RLS 和业务行。TEST 保存/发布及 Production 均需独立门禁。
 
-**2026-10-30 用户角色创作与11-02 AI审核**：`app_core.character_creations` 保存作者草稿、可见性和审核revision，`character_access_grants` 固定历史收藏/使用资格，`character_cover_assets` 保存私有持久封面身份。作者更新只改变卡片；`app_core.character_versions` 持有不可变内容，`experience.chat_sessions.character_version_id` 在第一条真实用户轮次写入事务内绑定，空会话不固定，分支继承。生成、换回复、角色附图和已聊详情读取相同版本，官方卡原行为保持。保存草稿不会覆盖已发布runtime。11-02 AI审核通过服务端已存draft_runtime后，以固定approved/reason结果及expected_revision提交CAS发布；拒绝/格式异常均不替换卡级已发布内容。旧pending不批量通过。审核正文由managed text key creator_character_review_prompt维护，JSON schema、严格解析、权限和结果字段由代码固定；固定验收使用模拟结果；Admin独立试审API复用相同模型和硬编码协议，可使用未发布正文且不改配置或卡。当前仅审核文字资料。本人创作、封面和润色通过独立鉴权API；展示DTO不包含私有system prompt。润色复用generation既有provider transport，独立于用户收费聊天，不写聊天历史；预设与背景由shared固定Markdown组合。
+**2026-10-30 用户角色创作与11-02 AI审核**：`app_core.character_creations` 保存作者草稿、可见性和审核revision，`character_access_grants` 固定历史收藏/使用资格，`character_cover_assets` 保存私有持久封面身份。作者更新只改变卡片；`app_core.character_versions` 持有不可变内容，`experience.chat_sessions.character_version_id` 在第一条真实用户轮次写入事务内绑定，空会话不固定，分支继承。生成、换回复、角色附图和已聊详情读取相同版本，官方卡原行为保持。保存草稿不会覆盖已发布runtime。11-02 AI审核通过服务端已存draft_runtime后，以固定approved/reason结果及expected_revision提交CAS发布；拒绝/格式异常均不替换卡级已发布内容。历史待审已由项目所有者另行授权直接通过，新提交继续AI审核。审核正文由managed text key creator_character_review_prompt维护，JSON schema、严格解析、权限和结果字段由代码固定；固定验收使用模拟结果；Admin一级「角色卡审核」维护规则，独立试审API复用相同模型和硬编码协议，可使用未发布正文且不改配置或卡；旧人工待审页面、列表/详情/人工决定HTTP入口已退场，不再由运营逐卡审批。当前仅审核文字资料。本人创作、封面和润色通过独立鉴权API；展示DTO不包含私有system prompt。润色复用generation既有provider transport，独立于用户收费聊天，不写聊天历史；预设与背景由shared固定Markdown组合。
 
 创作者收益复用真实文本扣费RPC：不可变计费快照携带作者和卡ID，`billing.character_creator_rewards` 以永久charge key去重，40%实扣经现有专项奖励入口到账，退款在同一事务回收；已花奖励记内部待抵扣，下次收益冲抵，不能阻止用户退款。作者自用8折与现有VIP折扣取更优惠者，不叠加。`/creation` 前端及运营审核页使用shared契约；角色创作已于10-30上线；本次AI审核的两份迁移与应用发布顺序见migrations/README；本地隔离验证不替代真实供应商验证，实际执行证据见对应任务。
 
@@ -791,3 +791,7 @@ SSE start携带当轮冻结总预算。客户端若持有旧目录缓存，按�
 ### MiniApp 轻量开屏与启动监控（2026-10-30，本地待发布）
 
 RootLayout随HTML交付独立框架绘制确认与原生ready脚本，Providers继续原业务初始化并补报真实早期时间戳；SDK负责未支持路径的兜底与通知去重。BrowserTracing首屏后安装，错误捕获和Metrics仍在启动期生效。本轮不改业务分包/预热或CDN；P95≤4秒与>4秒比例的生产基线、v2指标边界及回退见[开屏优化说明](miniapp-startup-performance.md)。
+
+### 本地候选：最近十轮消息修订
+
+角色聊天显示与入模统一读取 experience.session_chat_history，其会话级覆盖来自 experience.chat_message_overrides。PATCH /api/v1/conversations/:id/messages/:messageId 用服务端身份和 expected_version 校验，只允许最新逻辑轮号向前十轮的单条编辑/删除；开场白、流式生成中、过期版本拒绝。原 chat_history 继续作为生成与计费事实，分支在创建时复制覆盖快照，删除用无正文占位保留轮号。未执行远端迁移/发布，固定验收入口见 ui-tests README。

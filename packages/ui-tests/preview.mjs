@@ -5,7 +5,9 @@ import { resolve } from 'node:path';
 
 // Stable ports let MCP, manual preview and the saved tests share documented entry points.
 const testMode = process.argv.includes('--test');
-const appPort = testMode ? 3130 : Number(process.env.ST_UI_APP_PORT ?? '3120');
+const appPort = testMode
+  ? Number(process.env.ST_UI_TEST_APP_PORT ?? '3130')
+  : Number(process.env.ST_UI_APP_PORT ?? '3120');
 const apiPort = appPort + 1;
 const root = fileURLToPath(new URL('../..', import.meta.url));
 const children = [];

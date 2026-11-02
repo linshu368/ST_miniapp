@@ -25,7 +25,6 @@ import {
   getChatReplyPresentation,
 } from '@/components/chat/chat-reply-presentation';
 import { ChatRegenerateButton } from '@/components/chat/chat-regenerate-button';
-import { ChatBranchButton } from '@/components/chat/chat-branch-button';
 import { ChatToolsSheet } from '@/components/chat/chat-tools-sheet';
 import { ChatTopBar } from '@/components/chat/chat-top-bar';
 import { lobbyImageUrl } from '@/components/characters/character-card';
@@ -291,6 +290,7 @@ export default function SelfHostedChatPage() {
     [activeSessionId, characterId, setDraft]
   );
 
+  const [editingMessage, setEditingMessage] = useState(false);
   const characterQuery = useCharacterQuery(characterId, { sessionId: activeSessionId });
   const character = characterQuery.data?.character;
 
@@ -440,11 +440,11 @@ export default function SelfHostedChatPage() {
   const choiceLimit = Math.min(MAX_USER_INPUT_LENGTH, TEXT_POSTPROCESS_LIMITS.maxOptionUnits);
   const choiceGates = useMemo(
     () => ({
-      generating: generating || branch.creating,
+      generating: generating || branch.creating || editingMessage,
       serverBusy,
       sessionReady: session.ready,
     }),
-    [generating, branch.creating, serverBusy, session.ready]
+    [generating, branch.creating, editingMessage, serverBusy, session.ready]
   );
 
   const commitChoiceLock = useCallback((next: ChoiceLockState) => {
@@ -587,6 +587,9 @@ export default function SelfHostedChatPage() {
       <ChatMessageList
         key={activeSessionId ?? 'pending'}
         messages={messages}
+        editDisabled={generating || serverBusy || branch.creating || !session.ready}
+        onEditingChange={setEditingMessage}
+        viewportHeight={viewportHeight}
         characterName={character?.name ?? ''}
         characterAvatarUrl={characterAvatarUrl}
         userAvatarUrl={userAvatarUrl}
@@ -619,7 +622,17 @@ export default function SelfHostedChatPage() {
         onChoice={handleChoice}
         detailsDefaultOpen={detailsDefaultOpen}
         thinkingByMessage={thinkingByMessage}
-        renderFooter={(message) => {
+        branchFor={(message) =>
+          canBranchFromMessage(message)
+            ? {
+                pending: branch.pendingMessageId === message.id,
+                onBranch: () => {
+                  if (!generating && !serverBusy && !editingMessage) void branch.fork(message);
+                },
+              }
+            : undefined
+        }
+        renderFooter={(message, tools, editAction) => {
           const showVoice = canGenerateVoice(message);
           const messageImage = imageByMessage.get(message.id);
           // 最新完整回复可首次出图；已经有图片记录的历史回复也保留重试/重新生成入口。
@@ -681,18 +694,8 @@ export default function SelfHostedChatPage() {
                       ) : null
                     }
                     imageAction={imageAction}
-                    branchAction={
-                      showBranch ? (
-                        <ChatBranchButton
-                          turnIndex={message.turn_index}
-                          pending={branch.pendingMessageId === message.id}
-                          disabled={generating || serverBusy || branch.creating || !session.ready}
-                          onBranch={() => {
-                            if (!generating && !serverBusy) void branch.fork(message);
-                          }}
-                        />
-                      ) : null
-                    }
+                    toolsAction={tools}
+                    editAction={editAction}
                     voice={
                       showVoice
                         ? {
@@ -723,7 +726,7 @@ export default function SelfHostedChatPage() {
                         <ChatRegenerateButton
                           onRegenerate={() => void runTurn({ mode: 'regenerate' })}
                           pending={false}
-                          disabled={generating || branch.creating}
+                          disabled={generating || branch.creating || editingMessage}
                           label={
                             getChatReplyPresentation(message) === 'complete'
                               ? '换一个回复'
@@ -789,30 +792,32 @@ export default function SelfHostedChatPage() {
         </div>
       ) : null}
 
-      <ChatComposer
-        viewportHeight={viewportHeight}
-        value={draft}
-        onChange={setDraft}
-        onSend={handleSend}
-        onStop={() => void abort()}
-        cancelling={cancelling}
-        generating={generating}
-        disabled={!session.ready || serverBusy || branch.creating}
-        detailsDefaultOpen={detailsDefaultOpen}
-        onDetailsDefaultOpenChange={handleDetailsDefaultOpenChange}
-        thinkingEnabled={thinkingEnabled}
-        onThinkingEnabledChange={changeThinkingEnabled}
-        leftSlot={
-          <ChatToolsSheet
-            onCreateConversation={() => {
-              leaveBranchView();
-              draftRecoveryRef.current = null;
-              session.openNewConversation();
-            }}
-            creating={session.createConversation.isPending}
-          />
-        }
-      />
+      {!editingMessage ? (
+        <ChatComposer
+          viewportHeight={viewportHeight}
+          value={draft}
+          onChange={setDraft}
+          onSend={handleSend}
+          onStop={() => void abort()}
+          cancelling={cancelling}
+          generating={generating}
+          disabled={!session.ready || serverBusy || branch.creating || editingMessage}
+          detailsDefaultOpen={detailsDefaultOpen}
+          onDetailsDefaultOpenChange={handleDetailsDefaultOpenChange}
+          thinkingEnabled={thinkingEnabled}
+          onThinkingEnabledChange={changeThinkingEnabled}
+          leftSlot={
+            <ChatToolsSheet
+              onCreateConversation={() => {
+                leaveBranchView();
+                draftRecoveryRef.current = null;
+                session.openNewConversation();
+              }}
+              creating={session.createConversation.isPending}
+            />
+          }
+        />
+      ) : null}
 
       {characterPanelLoaded ? (
         <CharacterDetailSheet

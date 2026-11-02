@@ -120,9 +120,11 @@ export function SessionActionButton({
 export function SessionRenameField({
   actions,
   density = 'comfortable',
+  placeholder = '留空则恢复为角色名',
 }: {
   actions: SessionRowActions;
   density?: Density;
+  placeholder?: string;
 }) {
   return (
     <div className="flex items-center gap-2">
@@ -131,11 +133,11 @@ export function SessionRenameField({
         value={actions.draft}
         onChange={(event) => actions.setDraft(event.target.value)}
         onKeyDown={(event) => {
-          if (event.key === 'Enter') actions.commitRename();
+          if (event.key === 'Enter' && !event.nativeEvent.isComposing) actions.commitRename();
           if (event.key === 'Escape') actions.cancelRename();
         }}
         maxLength={60}
-        placeholder="留空则恢复为角色名"
+        placeholder={placeholder}
         aria-label="对话名称"
         autoFocus
         className={cn(

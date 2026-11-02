@@ -25,6 +25,7 @@ import {
   PatchGenerationConfigRequestSchema,
   ForkConversationRequestSchema,
   SetMessageLikeRequestSchema,
+  ChangeChatMessageRequestSchema,
 } from '@miniapp/shared';
 import type {
   CancelConversationTurnRequest,
@@ -298,6 +299,54 @@ export default async function conversationRoutes(app: FastifyInstance) {
           '开启对话分支失败'
         );
         return reply.status(500).send(fail('INTERNAL_ERROR', '分支暂未打开，请重试'));
+      }
+    }
+  );
+
+  // @frontend-ready: true
+  app.patch(
+    '/api/v1/conversations/:id/messages/:messageId',
+    { preHandler: [requireTelegramAuth] },
+    async (request, reply) => {
+      if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
+      const { id: sessionId, messageId } = request.params as { id: string; messageId: string };
+      const parsed = ChangeChatMessageRequestSchema.safeParse(request.body);
+      if (!UUID_PATTERN.test(sessionId) || !UUID_PATTERN.test(messageId) || !parsed.success)
+        return reply.status(400).send(fail('BAD_REQUEST', '消息修改内容无效'));
+      const dbUser = await getOrCreateDbUser(request.user);
+      const startedAt = Date.now();
+      try {
+        const data = await history.changeMessage({
+          userId: dbUser.id,
+          sessionId,
+          messageId,
+          body: parsed.data,
+        });
+        request.log.info(
+          {
+            event: 'conversation.message.changed',
+            sessionId,
+            messageId,
+            role: parsed.data.role,
+            action: parsed.data.action,
+            elapsedMs: Date.now() - startedAt,
+          },
+          '消息已修改'
+        );
+        return reply.send(ok(data));
+      } catch (err) {
+        if (sendConversationError(reply, err)) return;
+        // Raw database errors may contain user text in constraint details.
+        request.log.error(
+          {
+            event: 'conversation.message.change_failed',
+            sessionId,
+            messageId,
+            elapsedMs: Date.now() - startedAt,
+          },
+          '消息修改失败'
+        );
+        return reply.status(500).send(fail('INTERNAL_ERROR', '保存失败，内容已保留，请重试'));
       }
     }
   );

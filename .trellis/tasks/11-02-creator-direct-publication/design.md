@@ -25,3 +25,11 @@ JSON Schema required approved/reason + additionalProperties=false，回包再str
 ## 2026-11-02 用户追加确认
 
 用户确认补齐运营平台试审入口并在测试通过后上线。复用原角色卡审核页、Admin鉴权及environment API client，当前未发布prompt可对粘贴的测试材料试跑，返回严格approved/reason。试审不写配置、角色、会话或钱包。后台调用与正式审核共用transport和硬编码协议，仅正文通过受鉴权的本次试审参数覆盖；正式发布仍读取运营已发布规则。补充契约/鉴权/无副作用验证，再按feature→dev→main隔离发布本批改动。生产迁移须先在TEST逐份验证，本批不无条件放行历史待审卡。
+
+## 追加最小方案：移除人工管理入口
+
+复用当前configMenuKey(CREATOR_REVIEW_PROMPT_KEY)与ConfigValueEditor，将菜单项提到顶层。删除无人再使用的CreatorCharacterReviewsView及creatorCharactersApi，移除旧view联合值。删除Backend人工list/read/decision三条Admin路由和repository对应reviews/review方法，以及仅供这些入口消费的shared list/review请求契约；保留用户端状态DTO、用户发布/可见性、AI试审和硬编码输出协议。
+
+这是已有人工流程退场，不新增状态源/队列/API或DB对象。数据库历史迁移和owner/service_role私有函数保留兼容与审计，不物理DROP，不继续暴露HTTP人工决定入口。兼容顺序优先Admin再Backend，旧浏览器操作失效后刷新即可；不自动批准任何新角色。沿现有测试加旧端点404检查，保留AI鉴权/试审和发布通过/拒绝/故障回归。
+
+本次base为最新dev=0fa94270；最新main=f56be7d9，与base产品树一致（git diff为空）。当前生产后端最后核验为7300d237；后续发布必须再次核对分支和实际部署版本，只包含本清理diff，不按分支名推断归属。

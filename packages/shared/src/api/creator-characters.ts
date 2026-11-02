@@ -195,9 +195,6 @@ export interface ListCreatorCharactersData {
 export interface GetCreatorCharacterData {
   character: CreatorCharacter;
 }
-export interface ListCreatorReviewsData {
-  characters: CreatorCharacterSummary[];
-}
 export const CreateCreatorCharacterSchema = z
   .object({
     id: z.string().uuid(),
@@ -220,22 +217,10 @@ export const PublishCreatorCharacterSchema = z
   })
   .strict();
 export const SetCreatorVisibilitySchema = PublishCreatorCharacterSchema;
-export const ReviewCreatorCharacterSchema = z
-  .object({
-    submitted_revision: z.number().int().positive(),
-    decision: z.enum(['approve', 'reject']),
-    reason: z.string().trim().max(1000).optional(),
-  })
-  .strict()
-  .refine((value) => value.decision !== 'reject' || Boolean(value.reason), {
-    message: '请说明未通过的原因',
-    path: ['reason'],
-  });
 export type CreateCreatorCharacterRequest = z.infer<typeof CreateCreatorCharacterSchema>;
 export type SaveCreatorCharacterRequest = z.infer<typeof SaveCreatorCharacterSchema>;
 export type PublishCreatorCharacterRequest = z.infer<typeof PublishCreatorCharacterSchema>;
 export type SetCreatorVisibilityRequest = z.infer<typeof SetCreatorVisibilitySchema>;
-export type ReviewCreatorCharacterRequest = z.infer<typeof ReviewCreatorCharacterSchema>;
 
 export function emptyCharacterDraft(): CharacterDraft {
   return {

@@ -1,3 +1,4 @@
+import { previewAppUrl } from './fixtures';
 import type { Locator } from '@playwright/test';
 import {
   test,
@@ -43,7 +44,7 @@ test('@roleplay @layout 浏览角色时栏目固定，进聊天后可返回', as
   await expect(page).toHaveURL(/\/chat\//, { timeout: 60_000 });
   await expect(page.getByRole('textbox', { name: '输入消息' })).toBeVisible();
   await page.getByRole('button', { name: /返回发现/ }).click();
-  await expect(page).toHaveURL(/3130\/characters$/);
+  await expect(page).toHaveURL(`${previewAppUrl}/characters`);
   await expectMobileLayout(page);
   await preview.screenshot('角色浏览与返回');
 });
@@ -180,7 +181,7 @@ test('@navigation @layout 五入口跨模块保持统一，末项与操作条不
   await lastDrama.scrollIntoViewIfNeeded();
   await aboveNav(lastDrama);
   await nav.getByRole('link', { name: '首页', exact: true }).click();
-  await expect(page).toHaveURL('http://127.0.0.1:3130/');
+  await expect(page).toHaveURL(`${previewAppUrl}/`);
   await expect(page.locator('video')).toHaveCount(1);
   await page.locator('video').evaluate((node: HTMLVideoElement) => node.pause());
   await checkNav('首页');
@@ -572,7 +573,7 @@ test('@startup 原生 ready 不等待 Next 启动 JS，恢复下载后仍能进�
     ).toBe(1);
     await preview.screenshot('启动JS阻塞时框架已展示');
     await page.getByRole('link', { name: 'AI短剧', exact: true }).click();
-    await expect(page).toHaveURL(/3130\/#tgWebAppVersion=9\.6&tgWebAppPlatform=android$/);
+    await expect(page).toHaveURL(`${previewAppUrl}/#tgWebAppVersion=9.6&tgWebAppPlatform=android`);
   } finally {
     release();
   }
@@ -588,6 +589,6 @@ test('@startup 原生 ready 不等待 Next 启动 JS，恢复下载后仍能进�
     )
   ).toBe(1);
   await page.getByRole('link', { name: 'AI短剧', exact: true }).click();
-  await expect(page).toHaveURL(/3130\/dramas$/);
+  await expect(page).toHaveURL(`${previewAppUrl}/dramas`);
   await expect(page.getByRole('button', { name: '搜索短剧', exact: true })).toBeVisible();
 });

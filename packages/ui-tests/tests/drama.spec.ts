@@ -1,3 +1,4 @@
+import { previewAppUrl, previewApiUrl } from './fixtures';
 import type { Locator, Page } from '@playwright/test';
 import type { GetDramaPlaybackData } from '@miniapp/shared';
 import { test, expect, expectMobileLayout } from './fixtures.js';
@@ -306,7 +307,7 @@ test('@drama @layout 首页中间入口可刷剧和追剧，换栏目释放旧�
   await page.getByRole('button', { name: '取消收藏 雾城来信', exact: true }).click();
   await expect(page.getByRole('heading', { name: '喜欢的故事，留在这里' })).toBeVisible();
   await navigation.getByRole('link', { name: '首页', exact: true }).click();
-  await expect(page).toHaveURL('http://127.0.0.1:3130/');
+  await expect(page).toHaveURL(`${previewAppUrl}/`);
   await expect(page.locator('video')).toHaveCount(1);
   await expectMobileLayout(page);
 });
@@ -370,7 +371,7 @@ test('@drama @layout 首页观看完整短剧进入专注详情，返回仍接�
     node.currentTime = 1;
   });
   await page.getByRole('link', { name: '返回首页', exact: true }).click();
-  await expect(page).toHaveURL('http://127.0.0.1:3130/');
+  await expect(page).toHaveURL(`${previewAppUrl}/`);
   await expect(page.locator('video')).toHaveAttribute('aria-label', '长安月未央，第 3 集');
   const resumed = await pauseReadyVideo(page);
   await expect
@@ -383,7 +384,7 @@ test('@drama @layout 首页观看完整短剧进入专注详情，返回仍接�
   await page.getByRole('dialog').getByRole('button', { name: '第 5 集', exact: true }).click();
   await expect(page.locator('video')).toHaveAttribute('aria-label', '长安月未央，第 5 集');
   await pauseReadyVideo(page);
-  await expect(page).toHaveURL(`http://127.0.0.1:3130/dramas/${secondDrama}?from=feed`);
+  await expect(page).toHaveURL(`${previewAppUrl}/dramas/${secondDrama}?from=feed`);
   await swipe(page.locator('[data-player-toggle-controls]'), [160, 450], [160, 220]);
   await expect(page.locator('video')).toHaveAttribute('aria-label', '长安月未央，第 6 集');
   const nextEpisode = await pauseReadyVideo(page);
@@ -706,7 +707,7 @@ test('@drama 播放失败可重试，列表失败和空状态有出口', async (
   await page.goto('/');
   await expect(page.getByText('播放暂时中断了')).toBeVisible({ timeout: 25000 });
   await expect(page.getByRole('button', { name: '下一部短剧' })).toBeEnabled();
-  await request.post('http://127.0.0.1:3131/__preview/reset', { data: { scenario: 'dramas' } });
+  await request.post(`${previewApiUrl}/__preview/reset`, { data: { scenario: 'dramas' } });
   await page.getByRole('button', { name: '重新播放', exact: true }).click();
   await pauseReadyVideo(page);
   await page.evaluate(() => localStorage.removeItem('miniapp:drama-catalog:v1'));
@@ -1167,7 +1168,7 @@ test('@drama 首页评论期间一条播完换下一部，草稿归属不变且�
     node.currentTime = node.duration - 0.2;
     await node.play();
   });
-  await expect(page).toHaveURL('http://127.0.0.1:3130/');
+  await expect(page).toHaveURL(`${previewAppUrl}/`);
   await expect(page.locator('video')).toHaveAttribute('aria-label', '星期五的告白，第 1 集');
   await expect(page.getByRole('dialog')).toBeVisible();
   await expect(page.getByText('《雾城来信》的评论')).toBeVisible();
