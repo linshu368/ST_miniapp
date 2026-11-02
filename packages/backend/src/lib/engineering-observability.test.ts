@@ -8,6 +8,7 @@ import {
   observeGenerationAttempt,
   observeGenerationDispatch,
   observeGenerationTerminal,
+  observeGenerationPreparationStages,
   observeHttp,
   startEngineeringTelemetry,
 } from './engineering-observability.js';
@@ -234,6 +235,23 @@ describe('engineering telemetry boundary', () => {
       generation_id: 'PRIVATE_GENERATION_ID',
     };
     observeGenerationAttempt(unsafe);
+    observeGenerationAttempt({
+      ...unsafe,
+      headersMs: 90,
+      firstTokenMs: 100,
+      timing: {
+        startedAt: 1,
+        requestCreatedMs: 1,
+        sendHeadersMs: 10,
+        bodySentMs: 20,
+        responseHeadersMs: 90,
+      },
+    });
+    observeGenerationPreparationStages({
+      provider: 'openrouter',
+      model: 'safe-model',
+      stages: { route_setup: 100, settings: 200, turn_open: 200, context: 500, dispatch_gate: 200 },
+    });
     observeChatFirstToken({
       requestedModel: 'selected-catalog-model',
       stage: 'accepted',
@@ -264,6 +282,10 @@ describe('engineering telemetry boundary', () => {
     const wire = JSON.stringify(sink.received);
     expect(wire).not.toMatch(/PRIVATE_|untrusted-provider/);
     expect(wire).toContain('generation.attempt_terminal');
+    expect(wire).toContain('st_generation_network_stage');
+    expect(wire).toContain('response_wait_ms');
+    expect(wire).toContain('generation.pre_dispatch');
+    expect(wire).toContain('st_generation_pre_dispatch_stage');
     expect(wire).toContain('first_token_observed');
     expect(wire).toContain('filtered');
     expect(wire).toContain('st-miniapp-backend');
