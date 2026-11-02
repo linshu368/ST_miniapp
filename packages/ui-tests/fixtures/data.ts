@@ -46,6 +46,17 @@ export const scenarios = {
     description: '草稿保留并可重试，不重复创建',
     path: '/creation/characters/new',
   },
+  'creator-review-rejected': {
+    label: '角色公开审核未通过',
+    description: '显示具体原因、保留原稿；修改后可重试，已公开卡更新被拒绝时保留旧版',
+    path: '/creation/characters/new',
+  },
+  'creator-review-unavailable': {
+    label: '角色审核暂不可用',
+    description: '模拟模型回包格式错误，不放行，原稿保留并可重试',
+    path: '/creation/characters/new',
+  },
+
   standard: {
     label: '普通用户',
     description: '签到、会员引导、角色和影像完整路径',

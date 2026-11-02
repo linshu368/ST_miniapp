@@ -1,4 +1,7 @@
 import {
+  CREATOR_REVIEW_PROMPT_KEY,
+  CreatorReviewPromptSchema,
+  DEFAULT_CREATOR_REVIEW_PROMPT,
   FIRST_TOKEN_FALLBACK_MODEL_ID,
   DEFAULT_FIRST_TOKEN_DEADLINE_MS,
   DEFAULT_FALLBACK_TOKEN_TIMEOUT_MS,
@@ -60,6 +63,7 @@ export const managedConfigKeys = [
   'llm_provider_routing_config',
   'system_fallback_character_id',
   'system_instructions',
+  CREATOR_REVIEW_PROMPT_KEY,
   'choice_rules',
   'status_rules',
   'memory_rules',
@@ -97,6 +101,7 @@ export type ManagedConfigKey = (typeof managedConfigKeys)[number];
 
 /** 存 runtime_config.text_value 的 managed key；草稿 value 为 null */
 export const TEXT_MANAGED_CONFIG_KEYS = [
+  CREATOR_REVIEW_PROMPT_KEY,
   'system_instructions',
   'image_description_system_prompt',
 ] as const;
@@ -317,6 +322,7 @@ export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   llm_provider_routing_config: LlmProviderRoutingConfigSchema,
   system_fallback_character_id: z.string().uuid(),
   system_instructions: SystemInstructionsSchema,
+  [CREATOR_REVIEW_PROMPT_KEY]: CreatorReviewPromptSchema,
   choice_rules: InstructionSlotRulesSchema,
   status_rules: InstructionSlotRulesSchema,
   memory_rules: InstructionSlotRulesSchema,
@@ -465,6 +471,12 @@ export const configMetadata: Record<
     description:
       '自研引擎每轮注入的平台规则（markdown）。须含三个规则槽位、{{WORD_COUNT}} / {{USER_CUSTOM_INSTRUCTIONS}}；编辑与回滚均发布为新快照。',
     defaultValue: DEFAULT_SYSTEM_INSTRUCTIONS,
+  },
+  [CREATOR_REVIEW_PROMPT_KEY]: {
+    label: '角色卡审核',
+    description:
+      '维护公开角色卡的审核标准正文。公开和公开更新使用已发布版本，未发布草稿不影响当前审核。输出结构由系统固定。',
+    defaultValue: DEFAULT_CREATOR_REVIEW_PROMPT,
   },
   choice_rules: {
     label: '选项规则',

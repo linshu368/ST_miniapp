@@ -1,11 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CREATOR_REVIEW_PROMPT_KEY,
+  CreatorReviewPromptSchema,
+  DEFAULT_CREATOR_REVIEW_PROMPT,
+} from '@miniapp/shared';
+import {
   configMetadata,
   configSchemas,
   LlmPricingConfigSchema,
   managedConfigKeys,
   EditableReplyStyleOptionsConfigSchema,
   isTextManagedConfig,
+  resolveManagedWorkingValue,
   EditableImagePlazaTagConfigSchema,
   EditableModelCatalogSchema,
 } from './configSchemas';
@@ -221,5 +227,43 @@ describe('reply style options configuration', () => {
         ],
       }).success
     ).toBe(false);
+  });
+});
+
+describe('creator character review prompt registration', () => {
+  it('uses an independent text-only policy body with the shared schema and default', () => {
+    const key = CREATOR_REVIEW_PROMPT_KEY;
+    expect(managedConfigKeys).toContain(key);
+    expect(isTextManagedConfig(key)).toBe(true);
+    expect(configMetadata[key].label).toBe('角色卡审核');
+    expect(configSchemas[key]).toBe(CreatorReviewPromptSchema);
+    expect(configMetadata[key].defaultValue).toBe(DEFAULT_CREATOR_REVIEW_PROMPT);
+    expect(configSchemas[key].parse('  只审核角色是否完整可玩。  ')).toBe(
+      '只审核角色是否完整可玩。'
+    );
+    expect(configSchemas[key].safeParse('   ').success).toBe(false);
+    expect(configSchemas[key].safeParse('x'.repeat(12001)).success).toBe(false);
+    expect(configSchemas[key].safeParse({ approved: true, reason: '通过' }).success).toBe(false);
+  });
+
+  it('loads the draft text before published text and falls back to the example policy', () => {
+    const key = CREATOR_REVIEW_PROMPT_KEY;
+    expect(
+      resolveManagedWorkingValue({
+        key,
+        draft: { value: { ignored: true }, text_value: '未发布规则正文' },
+        config: { value: null, text_value: '已发布规则正文' },
+      })
+    ).toBe('未发布规则正文');
+    expect(
+      resolveManagedWorkingValue({
+        key,
+        draft: null,
+        config: { value: null, text_value: '已发布规则正文' },
+      })
+    ).toBe('已发布规则正文');
+    expect(resolveManagedWorkingValue({ key, draft: null, config: null })).toBe(
+      DEFAULT_CREATOR_REVIEW_PROMPT
+    );
   });
 });

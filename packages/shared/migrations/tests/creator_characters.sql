@@ -43,14 +43,35 @@ BEGIN
   PERFORM app_core.grant_creator_character_access(viewer_id,card_id);
   RAISE EXCEPTION 'private guessed ID accepted';
  EXCEPTION WHEN SQLSTATE 'P0404' THEN NULL; END;
- r:=app_core.mutate_creator_character(owner_id,card_id,'publish',1,'{"visibility":"public"}');
- ASSERT NOT app_core.can_discover_character(card_id),'pending leaked to lobby';
+ -- Only a valid trusted backend result may bypass the old pending path.
+ FOR payload IN SELECT value FROM jsonb_array_elements('[null,{"approved":false,"reason":"未通过"},{"approved":"true","reason":"错误类型"},{"approved":true},{"approved":true,"reason":""},{"approved":true,"reason":"ok","extra":1}]'::jsonb) LOOP
+  BEGIN
+   PERFORM app_core.mutate_creator_character(owner_id,card_id,'publish',1,jsonb_build_object('visibility','public','review',payload));
+   RAISE EXCEPTION 'invalid AI review published a card';
+  EXCEPTION WHEN SQLSTATE '22023' THEN NULL; END;
+  ASSERT (SELECT revision=1 AND approved_revision IS NULL FROM app_core.character_creations WHERE character_id=card_id);
+ END LOOP;
+ BEGIN
+  r:=app_core.mutate_creator_character(owner_id,card_id,'publish',1,'{"visibility":"public"}');
+  ASSERT r->>'review_status'='pending' AND NOT app_core.can_discover_character(card_id),
+    'old backend without AI approval was automatically published';
+  RAISE EXCEPTION 'rollback compatibility probe' USING ERRCODE='P0999';
+ EXCEPTION WHEN SQLSTATE 'P0999' THEN NULL; END;
+ r:=app_core.mutate_creator_character(owner_id,card_id,'publish',1,'{"visibility":"public","review":{"approved":true,"reason":"符合公开要求"}}');
+ ASSERT app_core.can_discover_character(card_id),'public card was not published immediately';
+ ASSERT r->>'review_status'='approved' AND (r->>'approved_revision')::integer=(r->>'revision')::integer,
+   'AI-reviewed publication did not approve the published revision';
+ ASSERT app_core.mutate_creator_character(owner_id,card_id,'publish',1,'{"visibility":"public","review":{"approved":true,"reason":"模型重试措辞不同"}}')=r,
+   'public publication retry was not idempotent';
  expected:=(r->>'submitted_revision')::integer;
  BEGIN
   PERFORM app_core.review_creator_character(admin_id,card_id,expected,'approve',NULL,'production');
   RAISE EXCEPTION 'environment authorization leaked';
  EXCEPTION WHEN insufficient_privilege THEN NULL; END;
- r:=app_core.review_creator_character(admin_id,card_id,expected,'approve',NULL,'test');
+ BEGIN
+  PERFORM app_core.review_creator_character(admin_id,card_id,expected,'approve',NULL,'test');
+  RAISE EXCEPTION 'already approved publication accepted a stale manual review';
+ EXCEPTION WHEN SQLSTATE 'P0409' THEN NULL; END;
  ASSERT app_core.can_discover_character(card_id);
  PERFORM app_core.grant_creator_character_access(viewer_id,card_id);
  PERFORM miniapp_features.set_character_favorite(viewer_id,card_id,true);
@@ -92,13 +113,14 @@ BEGIN
   PERFORM app_core.mutate_creator_character(owner_id,card_id,'save',expected,payload||'{"cover_asset_id":null}'::jsonb);
   RAISE EXCEPTION 'stale save accepted';
  EXCEPTION WHEN SQLSTATE 'P0409' THEN NULL; END;
- r:=app_core.mutate_creator_character(owner_id,card_id,'publish',(r->>'revision')::integer,'{"visibility":"public"}');
+ ASSERT app_core.read_character_runtime(card_id,viewer_id)->>'system_prompt'='prompt A','saving a draft changed the published runtime';
+ r:=app_core.mutate_creator_character(owner_id,card_id,'publish',(r->>'revision')::integer,'{"visibility":"public","review":{"approved":true,"reason":"符合公开要求"}}');
  expected:=(r->>'submitted_revision')::integer;
- ASSERT app_core.can_discover_character(card_id),'old approved runtime disappeared during review';
- ASSERT app_core.read_character_runtime(card_id,viewer_id)->>'system_prompt'='prompt A','pending draft leaked';
+ ASSERT app_core.can_discover_character(card_id),'updated public card disappeared';
+ ASSERT r->>'review_status'='approved' AND (r->>'approved_revision')::integer=(r->>'revision')::integer;
+ ASSERT app_core.read_character_runtime(card_id,viewer_id)->>'system_prompt'='prompt B','published update was not immediately visible';
  ASSERT app_core.read_character_runtime(card_id,owner_id)->>'system_prompt'='prompt B';
  ASSERT app_core.read_session_character_runtime(card_id,owner_id,s_owner)->>'system_prompt'='prompt A','owner existing trial changed';
- r:=app_core.review_creator_character(admin_id,card_id,expected,'approve',NULL,'test');
  ASSERT app_core.read_character_runtime(card_id,viewer_id)->>'system_prompt'='prompt B';
  ASSERT app_core.read_session_character_runtime(card_id,viewer_id,s_a)->>'system_prompt'='prompt A','existing chat was updated';
  ASSERT app_core.read_session_character_runtime(card_id,viewer_id,s_empty,true)->>'first_mes'='开场B','empty chat opening failed to update';
@@ -127,15 +149,27 @@ BEGIN
  ASSERT (SELECT count(*) FROM miniapp_features.get_character_socials(ARRAY[card_id],outsider_id))=0;
  ASSERT (SELECT count(*) FROM miniapp_features.get_character_socials(ARRAY[card_id],viewer_id))=1;
  ASSERT app_core.read_session_character_runtime(card_id,viewer_id,s_a)->>'system_prompt'='prompt A';
- -- A new edit invalidates the pending review, while existing immutable versions remain readable.
- r:=app_core.mutate_creator_character(owner_id,card_id,'publish',(r->>'revision')::integer,'{"visibility":"public"}');
+ -- Reopening a private card immediately publishes it; old manual approvals remain stale.
+ r:=app_core.mutate_creator_character(owner_id,card_id,'publish',(r->>'revision')::integer,'{"visibility":"public","review":{"approved":true,"reason":"符合公开要求"}}');
  expected:=(r->>'submitted_revision')::integer;
- ASSERT NOT app_core.can_discover_character(card_id),'reopening private card bypassed review';
+ ASSERT app_core.can_discover_character(card_id),'reopening private card did not publish immediately';
+ ASSERT app_core.can_use_character(outsider_id,card_id),'new viewers cannot use a reopened public card';
+ ASSERT app_core.read_session_character_runtime(card_id,viewer_id,s_a)->>'system_prompt'='prompt A',
+   'reopening a private card changed an existing conversation';
  r:=app_core.mutate_creator_character(owner_id,card_id,'save',(r->>'revision')::integer,payload);
  BEGIN
   PERFORM app_core.review_creator_character(admin_id,card_id,expected,'approve',NULL,'test');
   RAISE EXCEPTION 'old approval released new draft';
  EXCEPTION WHEN SQLSTATE 'P0409' THEN NULL; END;
+ -- A new publication must not undo independent operator disable/archive decisions.
+ PERFORM app_core.mutate_creator_character('30000000-0000-4000-8000-000000000101',
+   '30000000-0000-4000-8000-000000000002','publish',2,'{"visibility":"public","review":{"approved":true,"reason":"符合公开要求"}}');
+ ASSERT (SELECT NOT enabled AND archived_at IS NULL FROM app_core.characters
+   WHERE id='30000000-0000-4000-8000-000000000002'),'AI-reviewed publication re-enabled an operator-disabled card';
+ PERFORM app_core.mutate_creator_character('30000000-0000-4000-8000-000000000101',
+   '30000000-0000-4000-8000-000000000003','publish',2,'{"visibility":"public","review":{"approved":true,"reason":"符合公开要求"}}');
+ ASSERT (SELECT archived_at IS NOT NULL FROM app_core.characters
+   WHERE id='30000000-0000-4000-8000-000000000003'),'AI-reviewed publication restored an archived card';
  BEGIN
   UPDATE app_core.character_versions SET runtime='{}' WHERE id=frozen_a;
   RAISE EXCEPTION 'version mutable';
@@ -162,4 +196,4 @@ BEGIN
  ASSERT app_core.read_character_runtime(official_id,viewer_id)->'character_persona_and_style'='null'::jsonb,
    'nullable persona changed its JSON contract';
 END $test$;
-SELECT 'creator permissions and immutable card versions passed' AS result;
+SELECT 'creator AI-reviewed publication, permissions and immutable card versions passed' AS result;
