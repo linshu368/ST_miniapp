@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 
 // Stable ports let MCP, manual preview and the saved tests share documented entry points.
 const testMode = process.argv.includes('--test');
-const appPort = testMode ? 3130 : 3120;
+const appPort = testMode ? 3130 : Number(process.env.ST_UI_APP_PORT ?? '3120');
 const apiPort = appPort + 1;
 const root = fileURLToPath(new URL('../..', import.meta.url));
 const children = [];
@@ -60,6 +60,9 @@ async function requireFreePort(port) {
 }
 
 try {
+  if (!Number.isInteger(appPort) || appPort < 1 || appPort > 65534) {
+    throw new Error('ST_UI_APP_PORT 必须是 1–65534 的整数，API 使用相邻的下一端口。');
+  }
   await requireFreePort(appPort);
   await requireFreePort(apiPort);
   const env = {

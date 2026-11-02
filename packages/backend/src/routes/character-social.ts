@@ -65,7 +65,7 @@ export default async function characterSocialRoutes(app: FastifyInstance) {
     }
     const userId = await viewer(request, reply);
     if (!userId) return null;
-    if (!(await repo.exists(params.id))) {
+    if (!(await repo.exists(params.id, userId))) {
       reply.code(404).send(fail('NOT_FOUND', '角色已不可用'));
       return null;
     }

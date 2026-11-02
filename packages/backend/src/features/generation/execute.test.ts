@@ -30,6 +30,10 @@ const quotaState = vi.hoisted(() => ({
   reserveFailure: false,
 }));
 const preparation = vi.hoisted(() => ({ readBilling: vi.fn(), readRouting: vi.fn() }));
+vi.mock('./creator-billing.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./creator-billing.js')>()),
+  getCharacterCreatorOwner: vi.fn(async () => null),
+}));
 const telemetry = vi.hoisted(() => ({
   chat: vi.fn(),
   dispatch: vi.fn(),

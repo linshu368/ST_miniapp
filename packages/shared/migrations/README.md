@@ -1,5 +1,18 @@
 # SQL 迁移文件
 
+## 2026-10-30 用户角色创作（本地验收，远端未执行）
+
+每个文件分别执行并记录账本，顺序固定：
+
+1. `20261030_creator_cover_assets.sql`：持久封面身份与私有Storage bucket。
+2. `20261030_creator_characters.sql`：作者草稿/审核、历史访问资格、owner CRUD；依赖既有角色社交/分支与用户根表。
+3. `20261030_creator_character_versions.sql`：卡级不可变版本、真实开轮绑定与分支继承；空会话不锁版。
+4. `20261030_character_creator_rewards.sql`：在当前归档/用户主动停止计费函数上追加实际扣费奖励、永久去重与退款回收；结构不符合预期会中止而不是覆盖旧函数。
+
+先在TEST应用并检查ACL/RLS、公开审核、私密历史访问、既有聊天不变、真实存储上传及供应商调用，再安排生产。应用发布顺序为迁移 → Backend/Admin → Frontend。不能只发布前端。隔离PG17验证分别复用`bash scripts/test-creator-characters-local.sh`和`bash scripts/test-first-token-fallback-local.sh`，不连接真实账户或余额。
+
+停止/恢复：首先隐藏创作入口、停止新审核/新卡发布，保留已用卡、不可变版本、历史访问资格、封面及奖励账本。已部署后不得直接删除session版本列或退回不认识版本的聊天后端，也不得删除奖励待抵扣余额；修复优先forward-fix，任何钱包恢复以既有账本核对，不手工改余额。覆盖资产使用不可变对象，失败上传只清理本次未被引用对象，不能清掉正在使用的封面。
+
 本目录是仓库里**唯一**的 schema 变更源。现行规则以 [`docs/ARCHITECTURE.md`](../../../docs/ARCHITECTURE.md) 铁律 9 与 §7.4 为准，不要再引用已删除的 `DECISIONS.md` / `Schema划分设计.md`。
 
 当前事实：

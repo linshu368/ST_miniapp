@@ -44,6 +44,8 @@ shared contract 改动追加 `pnpm --filter @miniapp/shared test` 和所有消�
 
 ## MiniApp 启动框架与 P95
 
+以下为既有SDK兜底与历史v1口径；本地HTML轻量路径和v2的4秒预算见后文「轻量HTML开屏与4秒预算」。
+
 - `Providers` 在 Telegram 初始化前输出 `EntryShell`：角色入口 `/characters` 复用 `LobbyShellSkeleton`，短剧列表复用 `DramaListHeader`/`DramaGridSkeleton`，导航复用无请求的 `BottomNavShell`；首页保留页面容器和主导航，不显示“加载中”文字，其他入口提供通用加载提示，深层路由沿用导航隐藏规则。初始化前不挂业务 reader，不读取身份或 storage。短剧数据/封面仍异步加载。
 - 初始化完成后，`startup-timing.ts` 检查框架并等待两次 `requestAnimationFrame`，给浏览器一次绘制机会，然后经 SDK `miniApp.ready()` 通知 Telegram 展示。不能用 `init()`、接口返回或封面 onLoad 替代该通知；普通浏览器/旧客户端安全降级，遥测失败不能影响 ready。
 - `startup.shell_ready.duration`（distribution，ms）：本次文档导航到初始化后框架提交并获得绘制机会的耗时，包含 HTML/JS 下载和 hydration。`measurement=post_render_frame` 表示它是框架可展示时间的保守近似，可能晚于静态 HTML 的实际首绘；不是 FCP、完整内容就绪，也不是原生遮罩实际消失时刻。
@@ -52,6 +54,24 @@ shared contract 改动追加 `pnpm --filter @miniapp/shared test` 和所有消�
 - 指标只带入口路由模板、`tg_platform`、`net_type`、`measurement` 和 ready 状态，不含用户 ID、完整路径、query、initData。未知路由归 `/other`。`beforeSendMetric` 只对 `startup.*` 使用属性白名单，移除 SDK 自动附加的用户身份/Replay ID，保留 `sentry.release`、`sentry.environment` 和 SDK 版本；其他指标沿用既有处理。无需新服务或新环境变量。
 - P95：在 Sentry Metrics 选择 `startup.shell_ready.duration`，聚合 `p95`，过滤 `sentry.environment=production`、`telegram_ready=sent`；按 `route` 分组并显示 `count`。通过 `sentry.release` 比较版本，按 `tg_platform` 分开 Android/iOS；`startup.telegram_ready.duration` 同口径另画。`startup.outcome` 同时显示各结果计数，不能将失败填成 0ms，也不能平均各分组 P95。历史 `page.ready.duration` 起点不同，不能用于此指标的旧版对照或回补。
 - 本地回归：`pnpm test:ui --grep @startup` 在关闭 JS 的移动浏览器中验证首页/角色/短剧 HTML 的框架、主导航、无业务请求和无横向溢出；`page-tracker.test.ts` 覆盖导航零点、单次上报、StrictMode、后台/离开、桥接/遥测失败。Telegram 原生遮罩与线上指标接收仍需发布后的真机验证。
+
+### ready 前分段诊断（本地增量，待发布）
+
+- 复用 `startup-timing.ts`、Sentry Metrics 和现有 `beforeSend`；新增轻量 `startup-phases.ts` 只记录首次单调时钟时间戳。Providers 模块执行后、首次 render、SDK 初始化前后、用户资料/启动副作用结束打点；StrictMode 和 rerender 不覆盖首次时间。无新网络出口、环境变量、数据库或依赖。
+- `startup.stage.duration`（distribution，ms）带有限 `stage`、`startup_bucket=normal|slow`、`definition=startup_phases_v1`，保留入口模板、平台、网络与 ready 状态。连续阶段为 `before_providers → module_to_render → render_to_init → telegram_init → bootstrap → react_commit → paint_wait → ready_call`。`before_providers` 包含 HTML/JS 加载、依赖模块执行与 Next 启动；`render_to_init` 包含 React 调度到初始化前的等待；`bootstrap` 包含身份解析、遥测延后注册与 profile hydrate；`react_commit` 是启动副作用结束到就绪 effect 的等待，**不是纯 hydration CPU 时间**。只有同一次完整、顺序合法的八段可相加；缺失、非有限、逆序数据不补 0。
+- 额外解释性阶段 `document_ttfb` 从文档导航零点到 HTML 首字节（包含连接/请求/服务端等待），`document_download` 为 HTML 接收时长；`next_script_fetch_union` 为 Providers 模块就绪前已完成的同源 `/_next/static/*.js` 资源加载区间并集，`last_script_to_providers` 是最后这类响应结束到模块就绪的间隔。HTML 流式返回与脚本并行加载可重叠，这四项**不能叠加到连续八段**，也不证明脚本均在关键路径。最多检查资源缓冲的前 128 条并显式带 `resources_truncated`；摘要只有时间、数量、传输字节。`script_zero_transfer_count` 不是缓存命中率，0 字节可能来自缓存或其他浏览器交付方式；资源缺失也不能证明没有下载。
+- 原有两项总耗时与 ready 调用顺序不变；分段计算和上报通过 ready 后的单次异步任务执行，不等待收集或上报，失败安全降级。原有后台/提前离开样本排除规则不变。新数据最多每份文档一次；ready 前离开、JS 未执行或计时 API 缺失仍有观测盲区，不能冒充覆盖全部打开次数。
+- 成功进入耗时分布且框架耗时 ≥5000ms 时，额外记录一条 `miniapp_startup_slow` info 事件，`contexts.startup` 同时包含该次所有已知阶段和导航/资源摘要，统一 fingerprint；不依赖 transaction 采样。`beforeSend` 对这类事件使用字段白名单，删除 SDK 合并的 user、request、breadcrumbs、extra、trace、Replay 和其他上下文；其他事件处理不变。不采集资源 URL、用户身份、initData 或正文。分段指标全量；慢事件只覆盖 ≥5s，不扩大已有 trace/Replay 会话采样率。
+- 查询：在 Sentry Metrics 选 `startup.stage.duration`，过滤 `environment:production`、目标 `release`、`telegram_ready:sent`、`definition:startup_phases_v1`，按 `stage` 分组显示 count/p50/p95，可加 `startup_bucket:slow`。UI 搜索字段是 `environment`/`release`（SDK 内部属性仍为 `sentry.environment`/`sentry.release`）。在事件中搜索 `miniapp_startup_slow` 查看同次 `contexts.startup`；**不能把各阶段 P95 相加，也不能用跨版本总体与旧版少量样本声称优化幅度**。总耗时不变而 before_providers 高时，结合 TTFB、资源并集和末资源间隔继续区分网络与客户端启动；只据摘要不宣称精确 JS 执行或原生遮罩消失时间。
+- 复用 `page-tracker.test.ts` / `sanitize.test.ts` 覆盖并行资源、合法零值、缺失/逆序、StrictMode、单次/慢阈值、异步上报、后台排除和 SDK 附加字段过滤。上线后仍需用 Telegram 真机验证 ready、阶段指标与慢事件实际接收；本地通过不代表生产已启用。回退本次前端提交即可停止新增指标/事件，保留原启动总耗时。
+
+## 轻量HTML开屏与4秒预算（2026-10-30，本地待发布）
+
+RootLayout的自包含inline启动脚本直接运行于HTML解析阶段，不走Next script队列；要求CSS token、内容框架和主导航实际可见并获得绘制机会。仅`/`、`/characters`、`/dramas`启用早期路径，其他入口保持原完成条件；首页框架复用DramaHomeFrame；不读取身份/storage，不发业务请求、不改变React DOM；业务接管前阻止静态框架链接整页跳转，保护尚未缓存的启动上下文。Android/iOS原生ready沿用SDK对应的native transport；普通浏览器/iframe/桥接失败或无框架的深链交给SDK兜底，已发送回执去重。CSS/框架未就绪的探测前台最多15秒，后台/离页样本不进耗时分布。
+
+主指标起点与单位不变，HTML路径`measurement=html_post_render_frame`，补报取实际时间戳；`startup.budget`只在有效样本记录`within_4s|over_4s`。目标P95≤4000ms，辅助率严格>4000ms，恰好4000ms达标。v2阶段`definition=startup_phases_v2`的slow为>4000ms，历史v1的≥5000ms语义不改；HTML就绪可能早于Providers，阶段不再是主耗时的连续分解，逆序段省略。不得拿资源并集或分组P95相加。
+
+Sentry错误捕获、Metrics、脱敏与日志保持，BrowserTracing在首屏load/idle或现有4秒兜底后动态安装，采样不变；这会减少早期trace细节，且Next SDK可能仍把Tracing编入公共chunk。现有业务资源/请求/预取策略保持。复用既有Vitest及`@startup`验证JS阻塞时先ready、后业务与通知去重；真机/线上另验。冻结基线、查询和发布比较见[开屏优化说明](../../../../docs/miniapp-startup-performance.md)。
 
 ## Vercel 部署
 

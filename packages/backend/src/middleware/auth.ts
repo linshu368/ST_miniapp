@@ -125,3 +125,13 @@ export async function requireTelegramAuth(request: FastifyRequest, reply: Fastif
     });
   }
 }
+
+/** Public character details may be anonymous; private/session details reuse normal Telegram identity. */
+export async function optionalTelegramAuth(request: FastifyRequest, reply: FastifyReply) {
+  if (
+    request.headers['x-init-data'] ||
+    (process.env.NODE_ENV !== 'production' && process.env.DEV_AUTH_BYPASS === '1')
+  ) {
+    await requireTelegramAuth(request, reply);
+  }
+}

@@ -84,6 +84,14 @@ export interface ConversationHistoryRow {
   rich_reply_metadata?: unknown;
 }
 
+export interface CreatorRewardSnapshot {
+  character_id: string;
+  creator_user_id: string;
+  rate: 0.4;
+  wallet: 'bonus';
+  policy_version: 1;
+}
+
 /** 请求时定价快照。回捞按此重建 charge，不重新定价。 */
 export interface LlmBillingSnapshot {
   charge_id: string;
@@ -108,6 +116,7 @@ export interface LlmBillingSnapshot {
   vip_valid_until?: string | null;
   model_tier?: string | null;
   vip_discount_config_version?: number | null;
+  creator_reward?: CreatorRewardSnapshot;
 }
 
 export interface ChatHistorySyncRow {

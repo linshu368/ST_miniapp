@@ -28,7 +28,8 @@ import {
 } from '@/lib/payment/return-observer';
 import { PagePerfTracker } from '@/lib/perf/PagePerfTracker';
 import { observeStartupShell } from '@/lib/perf/startup-timing';
-import { loadSessionReplay, setTelegramUser } from '@/lib/sentry/client';
+import { markStartupPhase } from '@/lib/perf/startup-phases';
+import { loadDeferredTracing, loadSessionReplay, setTelegramUser } from '@/lib/sentry/client';
 import { initReplayTelemetry, ReplayLifecycleOwner } from '@/lib/telemetry';
 import { getRawInitData } from '@/lib/telegram/auth';
 import { initTelegramSdk } from '@/lib/telegram/init';
@@ -36,7 +37,10 @@ import { stripSensitiveTelegramLaunchParamsFromLocation } from '@/lib/telegram/l
 import { parseTelegramUser } from '@/lib/telegram/user';
 import { useUserProfileStore } from '@/stores/user-profile-store';
 
+markStartupPhase('providers_loaded');
+
 export function Providers({ children }: { children: React.ReactNode }) {
+  markStartupPhase('first_render');
   const [queryClient] = useState(() => getQueryClient());
   const [telegramReady, setTelegramReady] = useState(false);
   const pathname = usePathname();
@@ -50,19 +54,25 @@ export function Providers({ children }: { children: React.ReactNode }) {
       process.env.NODE_ENV === 'development' &&
         new URLSearchParams(window.location.search).get('devtools') === '1'
     );
+    markStartupPhase('init_start');
     initTelegramSdk();
+    markStartupPhase('telegram_initialized');
     const telegramUser = parseTelegramUser(getRawInitData());
     setTelegramUser(telegramUser.id);
     stripSensitiveTelegramLaunchParamsFromLocation();
     // 两套录屏 SDK 都是动态 chunk + 持续 DOM 采集，冷启动时会和首屏图片、列表请求抢带宽与主线程；
     // 等首屏结束（有 4s 硬上限）再加载。采样率不变，只是首屏几秒不在录。
-    void afterFirstScreen().then(() => loadSessionReplay());
+    void afterFirstScreen().then(() => {
+      void loadDeferredTracing();
+      void loadSessionReplay();
+    });
     void initReplayTelemetry(telegramUser.id, afterFirstScreen);
     // 入场分波兜底：无大厅/聊天 mark 时最迟 8s 仍放行 enrich/background。
     ensureEntryPhaseWatching();
     // initTelegramSdk 是同步副作用,initData 在它跑完后立即可读;
     // hydrate 把 telegram first_name + localStorage 覆盖合成 displayName
     hydrateUserProfile();
+    markStartupPhase('bootstrap_finished');
     setTelegramReady(true);
   }, [hydrateUserProfile]);
 

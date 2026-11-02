@@ -11,6 +11,8 @@ import type {
 } from '@miniapp/shared';
 
 import { createRequestId, timedFetch } from '@/lib/perf/request-timing';
+import { getRawInitData } from '@/lib/telegram/auth';
+import { parseTelegramUser } from '@/lib/telegram/user';
 
 import { apiClient } from './client';
 import { withRequestSlot } from './request-concurrency';
@@ -34,8 +36,13 @@ async function fetchCharacters(sort: LobbySort, signal?: AbortSignal): Promise<G
   });
 }
 
-async function fetchCharacterById(id: string, signal?: AbortSignal): Promise<GetCharacterByIdData> {
-  return apiClient<GetCharacterByIdData>(`/api/characters/${id}`, { signal });
+async function fetchCharacterById(
+  id: string,
+  signal?: AbortSignal,
+  sessionId?: string | null
+): Promise<GetCharacterByIdData> {
+  const query = sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : '';
+  return apiClient<GetCharacterByIdData>(`/api/characters/${id}${query}`, { signal });
 }
 
 // ==== Query Keys ====
@@ -43,7 +50,14 @@ export const characterKeys = {
   all: ['characters'] as const,
   lists: () => [...characterKeys.all, 'list'] as const,
   list: (sort: LobbySort) => [...characterKeys.all, 'list', sort] as const,
-  detail: (id: string) => [...characterKeys.all, 'detail', id] as const,
+  detail: (id: string, sessionId?: string | null) =>
+    [
+      ...characterKeys.all,
+      'detail',
+      id,
+      String(parseTelegramUser(getRawInitData()).id ?? 'local-browser'),
+      sessionId ?? null,
+    ] as const,
   latestBadge: () => [...characterKeys.all, 'latest-badge'] as const,
 };
 
@@ -157,13 +171,16 @@ export function useMarkLobbyLatestSeenMutation() {
 /**
  * `enabled: false` 供只在兜底时才需要详情的调用方使用（如 /chats 历史行先用大厅摘要）。
  */
-export function useCharacterQuery(id: string | undefined, options: { enabled?: boolean } = {}) {
+export function useCharacterQuery(
+  id: string | undefined,
+  options: { enabled?: boolean; sessionId?: string | null } = {}
+) {
   return useQuery<GetCharacterByIdData>({
-    queryKey: id ? characterKeys.detail(id) : characterKeys.all,
+    queryKey: id ? characterKeys.detail(id, options.sessionId) : characterKeys.all,
     enabled: !!id && options.enabled !== false,
     queryFn: async ({ signal }) => {
       if (!id) throw new Error('character id is required');
-      return fetchCharacterById(id, signal);
+      return fetchCharacterById(id, signal, options.sessionId);
     },
   });
 }

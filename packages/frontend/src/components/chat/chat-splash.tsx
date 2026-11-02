@@ -66,20 +66,22 @@ function buildStars(id: string, count: number): Star[] {
 export function ChatSplash({
   backHref = '/characters',
   characterId,
+  sessionId,
   ready,
   error,
   onRetry,
   onVisible,
 }: {
-  backHref?: '/characters' | '/chats';
+  backHref?: '/characters' | '/chats' | '/creation?tab=favorites' | '/creation?tab=created';
   characterId: string;
+  sessionId?: string | null;
   ready: boolean;
   error?: string | null;
   onRetry?: () => void;
   onVisible?: () => void;
 }) {
   const router = useRouter();
-  const { data } = useCharacterQuery(characterId);
+  const { data } = useCharacterQuery(characterId, { sessionId });
   const character = data?.character;
   const avatarUrl = character?.avatar_url || '';
 

@@ -2,6 +2,7 @@
 
 import { useEffect, type ReactNode } from 'react';
 import Link from 'next/link';
+import { PenLine } from 'lucide-react';
 
 import { rememberRoleplayScroll, rememberRoleplayView } from '@/lib/roleplay-navigation';
 import { cn } from '@/lib/utils';
@@ -56,6 +57,16 @@ export function RoleplayHeader({
             ) : null}
           </Link>
         ))}
+        <Link
+          href="/creation/characters/new"
+          aria-label="创作角色卡"
+          className="group ml-auto inline-flex min-h-11 shrink-0 items-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e4d5b6] focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        >
+          <span className="inline-flex h-9 items-center gap-1.5 rounded-full border border-[#f3e6c9]/35 bg-[linear-gradient(110deg,#e3d5b8,#cdbb95)] px-3 text-[13px] font-semibold text-[#382f20] shadow-[0_3px_12px_rgba(190,164,108,0.14)] transition-colors group-active:bg-[#c3af86] group-active:bg-none">
+            <PenLine className="size-3.5" strokeWidth={1.8} aria-hidden />
+            创作角色
+          </span>
+        </Link>
       </nav>
       {children}
     </header>

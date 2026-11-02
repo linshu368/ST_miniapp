@@ -21,7 +21,7 @@ import { requireTelegramAuth } from '../middleware/auth.js';
 import { getOrCreateDbUser } from '../lib/user.js';
 import { prisma } from '../lib/db.js';
 import { requestLogger } from '../lib/logger.js';
-import { resolveCharacterAvatarUrl } from './characters.js';
+import { resolveCharacterDisplayAvatarUrl } from './characters.js';
 import { loadLobbyFeaturedIdSet } from '../features/lobby/featured-snapshot.js';
 import { MiniappCharacterFavoriteRepository } from '../infrastructure/repositories/MiniappCharacterFavoriteRepository.js';
 
@@ -84,21 +84,24 @@ export default async function favoriteRoutes(app: FastifyInstance) {
       const byId = new Map(rows.map((character) => [character.id, character]));
 
       // 保留 RPC 的收藏时间倒序；RPC 已过滤下架卡，这里的 flatMap 只兜底极窄的竞态窗口。
-      const characters: CharacterSummary[] = favoriteRows.flatMap((favorite) => {
-        const character = byId.get(favorite.character_id);
-        if (!character) return [];
-        return [
-          {
+      const characterResults = await Promise.all(
+        favoriteRows.map(async (favorite): Promise<CharacterSummary | null> => {
+          const character = byId.get(favorite.character_id);
+          if (!character) return null;
+          return {
             id: character.id,
             name: character.name,
             description: character.description,
-            avatar_url: resolveCharacterAvatarUrl(character.id, character.avatar_url),
+            avatar_url: await resolveCharacterDisplayAvatarUrl(character.id, character.avatar_url),
             personality_tags: Array.isArray(character.tags) ? (character.tags as string[]) : [],
             author_name: character.creator,
             is_featured: featuredIds.has(character.id),
-          },
-        ];
-      });
+          };
+        })
+      );
+      const characters = characterResults.filter(
+        (character): character is CharacterSummary => character !== null
+      );
 
       return reply.send(ok<GetCharacterFavoritesData>({ characters }));
     } catch (err) {

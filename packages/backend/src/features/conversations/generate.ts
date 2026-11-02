@@ -150,11 +150,10 @@ export async function runConversationTurn(
     selectedModelId: generationContextPromise.then(({ config }) => config.selected_model_id),
     catalogSnapshot: input.catalogSnapshot,
   });
-  const [model, card, generationContext, instructions, windowLimits] =
+  const [model, generationContext, instructions, windowLimits] =
     await withConversationPreparationDeadline(
       Promise.all([
         modelPromise,
-        characters().requireCard(session.character_id),
         generationContextPromise,
         instructionsPromise,
         fetchContextWindowLimits(),
@@ -312,7 +311,7 @@ export async function runConversationTurn(
     // ── 组 prompt ─────────────────────────────────────────────────────────────
     // Context reads can overlap the one atomic admission write. Join both before
     // cleanup so a late admission cannot race a failed context's terminal state.
-    const [registration, contextRead] = await Promise.allSettled([
+    const [registration, contextRead, cardRead] = await Promise.allSettled([
       (async () => {
         await observations.begin({ ...observationInput, history: [] });
         observationBegun = true;
@@ -323,11 +322,15 @@ export async function runConversationTurn(
         turn.turnIndex,
         turn.contextWindowStartTurn
       ),
+      // startTurn has atomically bound the creator card version; never prefetch latest draft.
+      characters().requireCard(session.character_id, userId, session.id),
     ]);
     // Finish registration before failure cleanup too. A fast context rejection
     // must not race a late identity write or omit the failed request's facts.
     if (registration.status === 'rejected') throw registration.reason;
     if (contextRead.status === 'rejected') throw contextRead.reason;
+    if (cardRead.status === 'rejected') throw cardRead.reason;
+    const card = cardRead.value;
     const context = contextRead.value;
     controller.signal.throwIfAborted();
     const history = buildEngineHistory(context.messages, context.openingMessage ?? card.first_mes);

@@ -6,6 +6,7 @@
 // 所有读写都带 user_id 过滤：ownership 校验落在仓库层，M3b 不需要先查一次再判归属。
 
 import type { ChatMessage, ChatSession } from '@miniapp/shared';
+import { grantCreatorCharacterAccess } from '../../features/creator/access.js';
 import { getDomainDb } from '../../lib/supabase.js';
 import { clampLimit, toOpeningMessage } from './ConversationHistoryRepository.js';
 import { ConversationRepositoryError, throwConversationRpcError } from './conversation-errors.js';
@@ -22,6 +23,7 @@ export interface ChatSessionRow {
   id: string;
   user_id: string;
   character_id: string;
+  character_version_id?: string | null;
   title: string | null;
   last_message_at: string | null;
   last_message_preview: string | null;
@@ -105,7 +107,8 @@ export class ChatSessionRepository {
     userId: string,
     characterId: string
   ): Promise<{ session: ChatSessionRow; messages: ChatMessage[] }> {
-    const character = await this.getCharacter(characterId);
+    await grantCreatorCharacterAccess(userId, characterId);
+    const character = await this.getCharacter(characterId, userId);
     const session =
       (await this.findEmptySession(userId, characterId)) ??
       (await this.insertSession(userId, characterId, character.name));
@@ -242,7 +245,10 @@ export class ChatSessionRepository {
       const normalized = normalizeTitle(patch.title ?? null);
       const session = await this.requireSession(sessionId, userId);
       changes.title =
-        normalized ?? titleFromCharacterName((await this.getCharacter(session.character_id)).name);
+        normalized ??
+        titleFromCharacterName(
+          (await this.getCharacter(session.character_id, session.user_id, session.id)).name
+        );
     }
     if (patch.pinned !== undefined) {
       changes.pinned_at = patch.pinned ? new Date().toISOString() : null;
@@ -282,26 +288,31 @@ export class ChatSessionRepository {
     }
   }
 
-  async getCharacterFirstMes(characterId: string): Promise<string> {
-    return (await this.getCharacter(characterId)).firstMes;
+  async getCharacterFirstMes(
+    characterId: string,
+    userId: string,
+    sessionId?: string
+  ): Promise<string> {
+    return (await this.getCharacter(characterId, userId, sessionId)).firstMes;
   }
 
-  private async getCharacter(characterId: string): Promise<{ name: string; firstMes: string }> {
+  private async getCharacter(
+    characterId: string,
+    userId: string,
+    sessionId?: string
+  ): Promise<{ name: string; firstMes: string }> {
     const { data, error } = await this.appCoreDb
-      .from('characters')
-      .select('id, name, first_mes')
-      .eq('id', characterId)
-      .maybeSingle();
-
-    if (error) throw new Error(`查询角色卡失败：${error.message}`);
-    if (!data) {
-      throw new ConversationRepositoryError('character_not_found', `角色卡不存在：${characterId}`);
-    }
+      .rpc(sessionId ? 'read_session_character_runtime' : 'read_character_runtime', {
+        p_character_id: characterId,
+        p_user_id: userId,
+        p_opening_only: true,
+        ...(sessionId ? { p_session_id: sessionId } : {}),
+      })
+      .abortSignal(AbortSignal.timeout(5_000));
+    if (error) throw error;
+    if (!data) throw new ConversationRepositoryError('character_not_found', '角色已不可用');
     const row = data as { name: string | null; first_mes: string | null };
-    return {
-      name: (row.name ?? '').trim(),
-      firstMes: (row.first_mes ?? '').trim(),
-    };
+    return { name: (row.name ?? '').trim(), firstMes: (row.first_mes ?? '').trim() };
   }
 }
 
@@ -309,6 +320,7 @@ export function toChatSession(row: ChatSessionRow): ChatSession {
   return {
     id: row.id,
     character_id: row.character_id,
+    character_version_id: row.character_version_id ?? null,
     title: row.title,
     last_message_at: row.last_message_at,
     last_message_preview: row.last_message_preview,

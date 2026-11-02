@@ -6,6 +6,7 @@ ST_miniapp 是围绕 Telegram MiniApp、AI 角色聊天、钱包/支付、语音
 
 > 对话调用前准备减负候选：本轮设置/目录快照复用，身份与报价保存5次请求合为2次；须先验证并执行`20261030_chat_generation_dispatch_prepare.sql`，再发布应用。保持现行兜底等待与6秒首字预算，计费/取消/恢复仍依赖同步业务事实；步骤见[首字运行说明](docs/first-token-fallback.md)。尚未发布，不能用本地验证替代生产耗时结果。
 > MiniApp 入口先输出静态框架，初始化后通知 Telegram 展示；独立启动指标 `startup.shell_ready.duration` / `startup.telegram_ready.duration` 的口径、P95 查询与验证边界见 [前端性能规范](.trellis/spec/frontend/app/testing-quality-and-deployment.md#miniapp-启动框架与-p95)。本地实现不代表已经发布或收到生产样本。
+> ready 前分段诊断本地增量复用 Sentry：`startup.stage.duration` 配合 ≥5 秒的单次 `miniapp_startup_slow` 数值快照区分启动阶段；节点只记录时间戳，资源摘要收集与新增上报在 ready 后执行。尚待发布和真机实收验证，口径见上述规范。
 > 短剧性能日常统一看[工程短剧看板](https://ea3213527545.grafana.net/d/st-engineering-drama)。v3复用原计时器、集中shared阶段计算；默认双轨，验证通过后才显式切换统一模式，保留Pino诊断及旧看板历史。字段、分母、release、切换与回滚见[短剧播放耗时排查](docs/drama-playback-timing.md)。本地代码不代表生产已启用。
 
 本分支新增短剧生产 CDN 对照能力：鉴权用户按实验固定分组，约 20% Bunny／80% Supabase；相同视频与播放器，起播和未缓冲快进保留真实逐次耗时、失败及重试累计等待。关闭后新播放重新确认 Supabase 地址。无新数据库表或实验平台。生产专用回源／签名／开关、发布和 12 小时首次比较见 [操作说明](ops/drama-cdn-rollout.md)。当前仅为本地实现，生产尚未启用；既有 pr-525 TEST Preview 功能验收不代表生产或性能达标。
@@ -13,6 +14,8 @@ ST_miniapp 是围绕 Telegram MiniApp、AI 角色聊天、钱包/支付、语音
 > 短剧达到5秒的启动终态与迟到媒体详情复用现有 Backend OTLP 出口写 Grafana Cloud Loki；不新增五秒快照，也不再通过接收接口写 Supabase 分析表。`st-engineering-drama` 增加逐次详情/观察ID查询；旧 `st-drama-playback` 仅保留历史SQL数据。代码与线上状态分开验收，发布步骤见 [短剧看板操作说明](docs/grafana/drama-playback-runbook.md)。
 
 > 图片广场 Admin 保存草稿触发 `config_drafts_config_key_check` 的兼容修复：新增 `20261016_reconcile_image_plaza_managed_config_keys.sql`，保留现有白名单并恢复四个图片广场 key，不改正式配置。尚待 TEST workflow 单文件执行及保存/发布验收；详见迁移目录 README，Production 另行审批。
+
+开屏优化（本地，待发布）：[实现边界、4秒验收与冻结基线](docs/miniapp-startup-performance.md)。
 
 ## 0. 运行环境
 
@@ -117,6 +120,16 @@ pnpm --filter @miniapp/reply-renderer typecheck
 # 图片广场初始数据（默认只读 dry-run）
 pnpm --filter @miniapp/backend image-plaza:seed -- --input <xlsx>
 ```
+
+### 角色创作与空间（2026-10-30，本地集成，未发布）
+
+底部入口顺序为「角色 / 创作 / 中央播放首页 / AI短剧 / 我的」。`/creation` 承接角色创作、收藏和本人作品；`/creation/characters/new` 与 `/:id/edit` 使用真实创作 API。旧 `/create` 图片视频广场及工作室继续保留，通过创作页进入。上传封面、从本人生成作品选封面、文档导入、本地草稿、全屏编辑、AI润色与采用撤回都在同一流程内；预设不提供AI润色。预设区提供四套可多选的固定模板，仅展示名称、适用场景与效果，正文作为服务端静态文本保存；同时支持自写和导入。当前不新增运营配置页面。
+
+作者修改的是卡片：未开聊可以使用更新内容，首次实际发言在开轮事务内绑定卡级不可变版本，已开聊与分支继续沿用该版本。公开更新审核前不替换已批准内容；转为私密后停止大厅展示，曾收藏或使用过的人保留使用资格。运营端的「创作者审核」负责批准/驳回。
+
+他人使用作者卡的真实扣费按40%奖励至作者专项星尘，免费/失败不发；自用8折与VIP取更优惠者、不叠加、不发自身奖励。资金与退款回收均在原计费事务中，界面模拟不代替账务验证。
+
+固定移动端验收：`pnpm test:ui --grep @creator`，场景含创建发布、失败重试、封面生成回流、润色截断采用和撤回。卡级权限/上下文验证：`bash scripts/test-creator-characters-local.sh`；计费验证复用 `bash scripts/test-first-token-fallback-local.sh`。隔离本地数据库通过不代表TEST或生产已迁移。迁移及部署顺序见 [迁移目录说明](packages/shared/migrations/README.md)。AI润色复用主项目OpenRouter配置与明确模型，不读取独立Lab密钥；真实供应商和生产存储需部署前验证。
 
 ## 5. 环境变量
 

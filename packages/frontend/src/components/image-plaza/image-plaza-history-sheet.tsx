@@ -18,12 +18,14 @@ interface ImagePlazaHistorySheetProps {
   activeId?: string;
   beforeNavigate?: () => void;
   compact?: boolean;
+  creatorReturn?: string | null;
 }
 
 export function ImagePlazaHistorySheet({
   activeId,
   beforeNavigate,
   compact = false,
+  creatorReturn,
 }: ImagePlazaHistorySheetProps) {
   const [open, setOpen] = useState(false);
   const router = useRouter();
@@ -66,7 +68,10 @@ export function ImagePlazaHistorySheet({
             onSelect={(id) => {
               beforeNavigate?.();
               setOpen(false);
-              if (id !== activeId) router.push(`/create/studio/${id}`);
+              if (id !== activeId)
+                router.push(
+                  `/create/studio/${id}${creatorReturn ? `?creator_return=${encodeURIComponent(creatorReturn)}` : ''}`
+                );
             }}
           />
         ) : null}

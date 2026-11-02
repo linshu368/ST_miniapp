@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { Clapperboard, MessagesSquare, Play, Sparkles, User } from 'lucide-react';
+import { Clapperboard, MessagesSquare, PenLine, Play, User } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 import { useDramaLibraryStore } from '@/stores/drama-library-store';
@@ -18,13 +18,22 @@ import {
 
 const NAV_ITEMS = [
   { href: '/characters', label: '角色', Icon: MessagesSquare },
-  { href: '/dramas', label: 'AI短剧', Icon: Clapperboard },
+  { href: '/creation', label: '创作', Icon: PenLine },
   { href: '/', label: '首页', Icon: Play },
-  { href: '/create', label: '生成', Icon: Sparkles },
+  { href: '/dramas', label: 'AI短剧', Icon: Clapperboard },
   { href: '/profile', label: '我的', Icon: User },
 ] as const;
 
-const HEAVY_ROUTE_HREFS = new Set<string>(['/', '/dramas', '/create']);
+const HEAVY_ROUTE_HREFS = new Set<string>(['/', '/dramas', '/creation']);
+
+function isCreationRoute(pathname: string | null | undefined): boolean {
+  return Boolean(
+    pathname &&
+    ['/creation', '/create'].some(
+      (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
+    )
+  );
+}
 
 type NavigatorWithConnection = Navigator & {
   connection?: { saveData?: boolean; effectiveType?: string };
@@ -47,6 +56,7 @@ const HIDDEN_PREFIXES = [
   '/profile/messages',
   '/profile/support',
   '/create/studio',
+  '/creation/characters',
   '/vip',
 ];
 
@@ -162,13 +172,17 @@ export function BottomNavShell({
               ? highlighted === '/characters' || highlighted === '/chats'
               : href === '/'
                 ? highlighted === '/'
-                : highlighted?.startsWith(href);
+                : href === '/creation'
+                  ? isCreationRoute(highlighted)
+                  : highlighted?.startsWith(href);
           const current =
             href === '/characters'
               ? Boolean(currentRoleplayPath)
               : href === '/'
                 ? pathname === '/'
-                : pathname?.startsWith(href);
+                : href === '/creation'
+                  ? isCreationRoute(pathname)
+                  : pathname?.startsWith(href);
           const isHeavyRoute = HEAVY_ROUTE_HREFS.has(href);
           const prefetchOnIntent = () => {
             if (!current && (!isHeavyRoute || canPrefetchHeavyRoute())) {

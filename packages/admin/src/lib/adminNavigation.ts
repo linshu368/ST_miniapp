@@ -13,6 +13,7 @@ export type AdminViewKey =
   | 'vip_strategy'
   | 'text_postprocess'
   | 'characters'
+  | 'creator_characters'
   | 'announcements'
   | 'releases';
 
@@ -143,6 +144,7 @@ export function resolveAdminMenuSelection(key: string): {
     key === 'vip_strategy' ||
     key === 'text_postprocess' ||
     key === 'characters' ||
+    key === 'creator_characters' ||
     key === 'announcements' ||
     key === 'releases'
   ) {
