@@ -1,5 +1,11 @@
-import { Alert, Card, Col, InputNumber, Row, Select, Space, Typography } from 'antd';
-import { DEFAULT_LOBBY_RANKING_PARAMS, type LobbyRankingParams } from '@miniapp/shared';
+import { Alert, Card, Col, InputNumber, Row, Select, Space, Switch, Typography } from 'antd';
+import {
+  DEFAULT_LOBBY_RANKING_PARAMS,
+  DEFAULT_LOBBY_ROTATION_CONFIG,
+  LobbyRotationConfigSchema,
+  type LobbyRankingParams,
+  type LobbyRotationConfig,
+} from '@miniapp/shared';
 
 /** 数字项的展示元数据。step 用来让分位点、权重这类小数不必手打小数点 */
 interface NumberField {
@@ -12,7 +18,44 @@ interface NumberField {
   precision?: number;
 }
 
-type NumberFieldKey = Exclude<keyof LobbyRankingParams, 'first_touch_lookback_days'>;
+type NumberFieldKey = Exclude<keyof LobbyRankingParams, 'first_touch_lookback_days' | 'rotation'>;
+
+const ROTATION_FIELDS: Array<{
+  key: Exclude<keyof LobbyRotationConfig, 'enabled'>;
+  label: string;
+  hint: string;
+  min: number;
+  max: number;
+}> = [
+  {
+    key: 'interval_hours',
+    label: '自动换批间隔（小时）',
+    hint: '默认 24 小时。到期后再次开始浏览才换批，不打断当前浏览；试聊返回仍恢复原位置。',
+    min: 1,
+    max: 168,
+  },
+  {
+    key: 'max_repeat',
+    label: '相邻两批最多重复（张）',
+    hint: '默认 2 张，包含固定主推。优质候选不足时允许多重复，优先保证卡片质量。',
+    min: 0,
+    max: 12,
+  },
+  {
+    key: 'exploration_count',
+    label: '探索位（张）',
+    hint: '前 12 张中给合格新卡或样本不足卡的机会，最多 2 张；没有合适候选则补优质卡。',
+    min: 0,
+    max: 2,
+  },
+  {
+    key: 'rollout_percent',
+    label: '启用用户比例（%）',
+    hint: '默认先开放 10%。用户分组保持稳定，其余用户沿用原排序；设为 100% 后全量启用。',
+    min: 0,
+    max: 100,
+  },
+];
 
 const SAMPLING_FIELDS: NumberField[] = [
   {
@@ -102,14 +145,22 @@ const NORMALIZATION_FIELDS: NumberField[] = [
 /** 权重和必须为 1，所以 R48 由 D30 推出，不单独给输入框 */
 const WEIGHT_STEP = 0.05;
 
-function asParams(value: unknown): LobbyRankingParams {
+export function resolveLobbyRankingEditorValue(value: unknown): LobbyRankingParams {
+  const merged: LobbyRankingParams = {
+    ...structuredClone(DEFAULT_LOBBY_RANKING_PARAMS),
+    rotation: { ...DEFAULT_LOBBY_ROTATION_CONFIG },
+  };
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return structuredClone(DEFAULT_LOBBY_RANKING_PARAMS);
+    return merged;
   }
   const record = value as Partial<LobbyRankingParams>;
-  const merged = { ...structuredClone(DEFAULT_LOBBY_RANKING_PARAMS) };
   for (const key of Object.keys(merged) as Array<keyof LobbyRankingParams>) {
     const incoming = record[key];
+    if (key === 'rotation') {
+      const parsed = LobbyRotationConfigSchema.safeParse(incoming);
+      if (parsed.success) merged.rotation = parsed.data;
+      continue;
+    }
     if (key === 'first_touch_lookback_days') {
       // null 是这一项的有效取值（不限回溯），不能被 ?? 吞掉
       if (incoming === null || typeof incoming === 'number') {
@@ -131,9 +182,12 @@ export function LobbyRankingParamsEditor(props: {
   disabled?: boolean;
   onChange: (value: LobbyRankingParams) => void;
 }) {
-  const params = asParams(props.value);
+  const params = resolveLobbyRankingEditorValue(props.value);
+  const rotation = params.rotation ?? DEFAULT_LOBBY_ROTATION_CONFIG;
 
   const patch = (next: Partial<LobbyRankingParams>) => props.onChange({ ...params, ...next });
+  const patchRotation = (next: Partial<LobbyRotationConfig>) =>
+    patch({ rotation: { ...rotation, ...next } });
 
   const renderNumbers = (fields: readonly NumberField[]) => (
     <Row gutter={[12, 12]}>
@@ -160,11 +214,50 @@ export function LobbyRankingParamsEditor(props: {
 
   return (
     <Space direction="vertical" size="middle" className="editor-stack">
+      <Card size="small" title="前几屏优质轮换">
+        <Space align="center" size="middle" style={{ marginBottom: 12 }}>
+          <Switch
+            id="lobby-rotation-enabled"
+            aria-label="启用前几屏优质轮换"
+            checked={rotation.enabled}
+            disabled={props.disabled}
+            onChange={(enabled) => patchRotation({ enabled })}
+          />
+          <label htmlFor="lobby-rotation-enabled">启用优质轮换</label>
+        </Space>
+        <Typography.Paragraph type="secondary">
+          在前 12 张中轮换优质角色，让用户少见重复、多发现好卡。保存并发布后按启用比例生效，
+          不需要等待评分重算；关闭后恢复原推荐策略。
+        </Typography.Paragraph>
+        <Row gutter={[16, 16]}>
+          {ROTATION_FIELDS.map((field) => (
+            <Col xs={24} md={12} key={field.key}>
+              <label htmlFor={`lobby-rotation-${field.key}`}>{field.label}</label>
+              <InputNumber
+                id={`lobby-rotation-${field.key}`}
+                className="field-full"
+                min={field.min}
+                max={field.max}
+                precision={0}
+                value={rotation[field.key]}
+                disabled={props.disabled}
+                onChange={(number) =>
+                  patchRotation({
+                    [field.key]: number ?? DEFAULT_LOBBY_ROTATION_CONFIG[field.key],
+                  })
+                }
+              />
+              <Typography.Text type="secondary">{field.hint}</Typography.Text>
+            </Col>
+          ))}
+        </Row>
+      </Card>
+
       <Alert
         type="info"
         showIcon
-        message="改动在下一次排序刷新后生效（每 24 小时一轮，服务重启后 30 秒也会跑一轮）"
-        description="推荐页的分数是离线算好落表的，不是每次请求现算。所以这里发布完不会立刻看到列表变化；同理，主池门槛也跟着分数一起落表，不会出现「分数按旧门槛算、分池按新门槛分」的中间态。"
+        message="以下质量评分参数，在下一次评分刷新后生效"
+        description="评分每 24 小时计算一次，服务重启后 30 秒也会计算。它决定角色的质量档次，与上方每位用户的换批间隔分别生效；主池门槛和分数保持同一版本。"
       />
 
       <Card size="small" title="统计口径">

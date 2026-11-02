@@ -5,8 +5,8 @@ scope: frontend
 category: business
 status: active
 owners: [frontend]
-last_verified_task: .trellis/tasks/10-23-experience-continuity/
-last_verified_at: 2026-10-23
+last_verified_task: .trellis/tasks/11-02-lobby-quality-rotation/
+last_verified_at: 2026-11-02
 ---
 
 # 角色模块发现与收藏
@@ -84,3 +84,7 @@ last_verified_at: 2026-10-23
 评论草稿按用户和角色仅保存在短期内存；提交UUID允许丢响应后重试，不复制私人聊天。评论纯文本、分页、作者删除、举报确认。面板可视视口适配，固定底部输入。复用 `@character-social` 手机验收，覆盖独立互动、同步、分页发删举报、失败与草稿、生成中的对话不中断。后端迁移在隔离数据库通过后仍需发布时执行，当前未修改线上。
 
 卡片辅助信息减重：列表标签最多前两项、一行展示，完整标签留在详情；compact互动栏计数为0时只显示图标，有数量时配低对比数字，保留原ARIA名称与44px触区。
+
+## 前几屏优质轮换（2026-11-02，本地未发布）
+
+推荐行44px换一批、8秒撤回，失败保旧且UUID重试；私有批次query/storage及发现筛选/返回snapshot按用户隔离。新文档或离开页面30分钟后open，24h由后端判定，聊天显式resume；同文档一直停在页面不定时洗牌。只按server ID投影，缺头部资料先校准公共目录再应用新批，失败保旧。曝光50%连续1秒，排除遮挡/后台/搜索/最新/恢复，600ms合并。撤回只有返回目标批才显示成功。packages/ui-tests @lobby-rotation为固定验收入口。

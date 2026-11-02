@@ -535,15 +535,15 @@ export const configMetadata: Record<
     defaultValue: DEFAULT_WORD_COUNT_TIERS_CONFIG,
   },
   lobby_ranking_params: {
-    label: '推荐页排序参数',
+    label: '推荐轮换与质量评分',
     description:
-      '首页「推荐」v3 打分口径：统计窗口、轮次上限、会话切分与回访窗口、D30/R48 权重、样本门槛与归一化分位。改动在下一次排序刷新（每 24 小时）后生效。',
+      '设置前 12 张优质轮换、24 小时换批间隔和启用范围；保留原质量评分口径。轮换配置发布后生效，质量参数在下一次每日评分刷新后生效。',
     defaultValue: DEFAULT_LOBBY_RANKING_PARAMS,
   },
   lobby_pinned_characters: {
-    label: '推荐页固定前八',
+    label: '推荐主推候选',
     description:
-      '首页「推荐」页最前面的固定位，最多 8 张、按此处顺序展示，同时拿到金框。第九张起仍按排序分。留空表示不固定，完全交给排序分。发布后约 1 分钟内生效。',
+      '轮换用户使用优质主推候选，可另设最多 1 张固定主推。未参与轮换的用户沿用原名单排序；金框不随个人轮换位置变化。',
     defaultValue: DEFAULT_LOBBY_PINNED_CHARACTERS,
   },
   miniapp_invite_reward_rules: {

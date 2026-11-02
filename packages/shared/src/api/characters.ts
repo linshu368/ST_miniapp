@@ -9,7 +9,7 @@ export interface CharacterSummary {
   personality_tags: string[];
   /** 创作者展示名 */
   author_name: string;
-  /** 是否属于大厅固定前八角色 */
+  /** 全局精选资格；与个人轮换后的展示位置无关，列表和详情使用相同口径。 */
   is_featured: boolean;
 }
 
@@ -23,7 +23,7 @@ export interface CharacterDetail extends CharacterSummary {
 
 /**
  * 首页角色列表排序页签。
- * recommended：运营固定前八 + 第九张起按聊天转化率，新卡冷启动随机插入中段。
+ * recommended：公共质量目录；启用个人轮换的客户端另按鉴权批次投影顺序。
  * latest：仅按角色最后上架时间倒序，不保留运营固定位。
  */
 export type LobbySort = 'recommended' | 'latest';

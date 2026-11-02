@@ -1,16 +1,19 @@
 'use client';
 
 import type { LobbySort } from '@miniapp/shared';
+import { lobbyViewerScope } from './lobby-recommendation-state';
 
-const SNAPSHOT_VERSION = 1;
-const SNAPSHOT_KEY = 'miniapp:lobby-return:v1';
-const SNAPSHOT_TTL_MS = 2 * 60 * 60_000;
+const SNAPSHOT_VERSION = 2;
+const SNAPSHOT_KEY = 'miniapp:lobby-return:v2:';
+// A long conversation still returns to the same discovery; a new document is a new browse.
+const SNAPSHOT_TTL_MS = 30 * 24 * 60 * 60_000;
 
 let documentToken: string | null = null;
 let memorySnapshot: LobbyReturnSnapshot | null = null;
 
 export interface LobbyReturnSnapshot {
-  version: 1;
+  version: 2;
+  viewerScope: string;
   documentToken: string;
   createdAt: number;
   favoritesOnly?: boolean;
@@ -22,6 +25,7 @@ export interface LobbyReturnSnapshot {
   anchorViewportTop: number;
   scrollY: number;
   viewportWidth: number;
+  recommendationBatchId?: string | null;
 }
 
 export interface LobbyReturnSnapshotInput {
@@ -34,6 +38,7 @@ export interface LobbyReturnSnapshotInput {
   anchorViewportTop: number;
   scrollY: number;
   viewportWidth: number;
+  recommendationBatchId?: string | null;
 }
 
 function getDocumentToken(): string | null {
@@ -67,6 +72,7 @@ function validateSnapshot(value: unknown): LobbyReturnSnapshot | null {
 
   if (
     candidate.version !== SNAPSHOT_VERSION ||
+    candidate.viewerScope !== lobbyViewerScope() ||
     !token ||
     candidate.documentToken !== token ||
     !createdAt ||
@@ -85,6 +91,7 @@ function validateSnapshot(value: unknown): LobbyReturnSnapshot | null {
 
   return {
     version: SNAPSHOT_VERSION,
+    viewerScope: lobbyViewerScope(),
     documentToken: token,
     createdAt,
     favoritesOnly: candidate.favoritesOnly === true,
@@ -96,13 +103,15 @@ function validateSnapshot(value: unknown): LobbyReturnSnapshot | null {
     anchorViewportTop,
     scrollY,
     viewportWidth,
+    recommendationBatchId:
+      typeof candidate.recommendationBatchId === 'string' ? candidate.recommendationBatchId : null,
   };
 }
 
 function readStoredSnapshot(): LobbyReturnSnapshot | null {
   if (typeof window === 'undefined') return null;
   try {
-    const raw = window.sessionStorage.getItem(SNAPSHOT_KEY);
+    const raw = window.sessionStorage.getItem(SNAPSHOT_KEY + lobbyViewerScope());
     if (!raw) return null;
     const parsed = JSON.parse(raw) as unknown;
     const snapshot = validateSnapshot(parsed);
@@ -127,6 +136,7 @@ export function saveLobbyReturnSnapshot(input: LobbyReturnSnapshotInput): void {
 
   const snapshot: LobbyReturnSnapshot = {
     version: SNAPSHOT_VERSION,
+    viewerScope: lobbyViewerScope(),
     documentToken: token,
     createdAt: Date.now(),
     ...input,
@@ -134,7 +144,7 @@ export function saveLobbyReturnSnapshot(input: LobbyReturnSnapshotInput): void {
   memorySnapshot = snapshot;
 
   try {
-    window.sessionStorage.setItem(SNAPSHOT_KEY, JSON.stringify(snapshot));
+    window.sessionStorage.setItem(SNAPSHOT_KEY + snapshot.viewerScope, JSON.stringify(snapshot));
   } catch {
     // sessionStorage can fail in private modes or quota pressure; memory keeps
     // the current SPA document return path working without blocking navigation.
@@ -145,7 +155,7 @@ export function clearLobbyReturnSnapshot(): void {
   memorySnapshot = null;
   if (typeof window === 'undefined') return;
   try {
-    window.sessionStorage.removeItem(SNAPSHOT_KEY);
+    window.sessionStorage.removeItem(SNAPSHOT_KEY + lobbyViewerScope());
   } catch {
     // Storage cleanup is best-effort only.
   }

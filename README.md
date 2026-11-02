@@ -2,6 +2,10 @@
 
 ST_miniapp 是围绕 Telegram MiniApp、AI 角色聊天、钱包/支付、语音、增长运营和客服能力构建的 pnpm monorepo。仓库包含面向用户的 Next.js 前端、Fastify API、内部运营 SPA、共享契约/迁移包，以及由 Frontend 和 Admin 共用的回复渲染包。客服平台已拆到独立仓库 [`linshu368/ST_cs_platform`](https://github.com/linshu368/ST_cs_platform)，本仓库只保留 Bot 消息转发和 `/api/support/*` 代理。
 
+> 角色质量评分本地候选：仅纳入首次向该卡发起聊天前，平台首次有效聊天已满24小时且至少完成10个有效逻辑轮次的用户。资格按历史时点判断，不追溯纳入新人首体验；无合格样本的卡按样本不足处理。复验 `pnpm test:lobby-ranking`（隔离本机PG17），本次未发布、未触发生产重算。
+
+> 角色推荐轮换（本地，未发布）：前12张按可信质量分层抽选，默认24小时、手动换批/撤回、曝光衰减与聊天返回保序。复用排序配置的 `rotation` 和主推候选的 `fixed_character_id`；旧配置默认关闭。先执行 `20261102_lobby_quality_rotation.sql`、确认新人校准后的评分刷新成功，再按稳定用户分组灰度开启。复验 `pnpm test:lobby-ranking` 与 `pnpm test:ui --grep @lobby-rotation`；开发预览可选“推荐优质轮换”。
+
 > 深层架构、数据流和路由清单见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)；Railway 生产运维见 [`ops/railway/README.md`](ops/railway/README.md)。本文负责新成员入门、依赖关系、环境、命令和交付约定。
 
 > 对话调用前准备减负候选：本轮设置/目录快照复用，身份与报价保存5次请求合为2次；须先验证并执行`20261030_chat_generation_dispatch_prepare.sql`，再发布应用。保持现行兜底等待与6秒首字预算，计费/取消/恢复仍依赖同步业务事实；步骤见[首字运行说明](docs/first-token-fallback.md)。尚未发布，不能用本地验证替代生产耗时结果。
