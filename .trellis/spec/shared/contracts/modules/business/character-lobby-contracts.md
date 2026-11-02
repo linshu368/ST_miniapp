@@ -62,3 +62,7 @@ Shared tests 与所有消费者 typecheck。
 ## 前几屏优质轮换（2026-11-02，本地未发布）
 
 新增api/lobby-recommendation.ts：24h默认、rotation可选配置、严格open/resume/refresh/undo请求与平铺批次ID/时间/全顺序/头12响应，曝光最多40卡。不传用户ID或数据库行。lobby_ranking_params.rotation缺省保持关闭；lobby_pinned_characters增加可空fixed_character_id保留原8候选兼容。is_featured为全局精选资格，与个人位置解耦。
+
+## 创作数据契约（2026-11-02）
+
+api/creator-analytics.ts 定义严格query与按section区分的runtime响应。all/7d/30d，page>=1、page_size<=20、可选单卡/as_of；不接受owner字段。金额允许负调整，人数/次数非负整数。总览每类最多3条，其余每页最多20；只含卡摘要/统计/匿名公开反馈，无内部资产ID、用户ID或私聊正文。Backend/Frontend/ui-tests共用，同版本先部署producer。

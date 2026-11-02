@@ -815,3 +815,11 @@ RootLayout随HTML交付独立框架绘制确认与原生ready脚本，Providers�
 原character_ranking_scores增加qualified-v1与可信分/样本/时间。每日job只以资历过滤后达到样本门槛的新证据写可信记录，不回填旧分。当前成熟低分优先；缺近期样本保留过去可信分，超过90天只给探索机会。抽选底线40、头档70是初版值；可轮换头档不足可用其他可靠卡补位。相邻前12目标最多2张重复，质量/库存不足时有标记地放宽，不保证没有库存时硬兑现。金框仍由列表/详情/收藏共用的全局资格出口决定，不按个人前排位置产生。
 
 运营复用`lobby_ranking_params.rotation`（默认关闭、24h、重复2、探索2、灰度10%）与`lobby_pinned_characters.fixed_character_id`最多1固定；原8个ID对轮换用户是加权候选，旧策略保留兼容。迁移先于Backend，新质量job成功后再开启；停用开关回旧策略，保留新表和证据，不DROP。实际生产状态以发布记录为准。固定SQL/算法/HTTP验收`pnpm test:lobby-ranking`，UI `@lobby-rotation`沿用本地环境，未连接真实业务数据。
+
+### 创作者数据（2026-11-02，本地待发布）
+
+Frontend `/creation/data` → `lib/api/creator-analytics.ts`（用户隔离React Query）→ Telegram鉴权 `/api/creator/analytics` → creator analytics repository。一个只读接口按 section 返回 overview / works / rewards / feedback / characters，严格shared schema及服务端分页。首页每类3条，列表默认4条，选卡8条；page_size上限20。北京时间自然日、as_of分页截止时间、同一角色与周期过滤贯穿总览和明细。当前获赞/收藏独立于期间；评论按期间读取。
+
+权威源：app_core.character_creations确定本人归属；experience.chat_history按(session_id,turn_index)合并成功revision，先取最早成功时间再筛窗口，排除作者及branch_inherited_turns范围；分支引用与会话message_count不参与。按同卡玩家>=10轮和>=2自然日衡量深聊/回访，跨卡总人数按人去重。billing.character_creator_rewards将credited_amount按created_at计正、reversal_recovered_amount按reversed_at计负，不把毛奖励/抵扣当到账，不按当前visibility过滤。公开反馈沿用稳定匿名作者；不向浏览器返回玩家ID、私人对话或原始draft。
+
+参数化SQL限本人范围，事务只读、单查询6秒/事务8秒、服务端503明确失败；封面URL在事务外复用签名resolver，失败降级占位。无新DB对象/物化统计/后台任务，不写账务。先Backend后Frontend，回退仅撤入口与只读接口。现有隔离creator验收新增真实Prisma SQL PREPARE/EXECUTE验证；普通backend tests不触远端DB。页面fixture仅在ui-tests中，不进入生产组件。
