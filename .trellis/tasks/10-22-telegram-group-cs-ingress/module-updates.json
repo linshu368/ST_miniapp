@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "updates": [
+    {
+      "operation": "update",
+      "module_id": "backend.business.engagement-support",
+      "target": ".trellis/spec/backend/app/modules/business/engagement-support.md",
+      "expected_sha256": "e6a9ef6484bd97fc4dc6d5985711419eb9be6f57891dcaceb5c972e63d282fc0",
+      "content": "---\nmodule_id: backend.business.engagement-support\ntitle: 社区、消息与客服\nscope: backend\ncategory: business\nstatus: active\nowners: [backend]\nlast_verified_task: .trellis/tasks/10-22-telegram-group-cs-ingress/\nlast_verified_at: 2026-10-22\n---\n\n# 社区、消息与客服\n\n## 职责与边界\n\n负责邀请/社区奖励、站内通知和用户客服会话。\n\n## 当前状态\n\n主要互动 API 已实现。邀请和官方社群等发奖 RPC 保留各自业务判定，但钱包加值与流水最终统一调用 `billing.grant_bonus_credits`。\n\n## 入口与调用者\n\nFrontend profile、通知与客服页面调用对应 `/api/*`。\n\n## 涉及文件\n\n| 路径                                           | 职责     |\n| ---------------------------------------------- | -------- |\n| `packages/backend/src/routes/community.ts`     | 社区奖励 |\n| `packages/backend/src/routes/notifications.ts` | 消息中心 |\n| `packages/backend/src/routes/support.ts`       | 用户客服 |\n\n## 关键实现链路\n\n用户鉴权 → 业务校验/幂等 → repository/RPC → 通知或客服响应。\n\n## 数据、契约与外部依赖\n\n依赖 miniapp_features、cs_platform、billing 和 shared 互动契约。\n\n## 关键节点与约束\n\n奖励不可由前端去重充当真相；应用层不得手动增加 `bonus_credits`；客服内容不得进入普通遥测。\n\n## 验证方式\n\n对应 route/repository tests 与 Frontend 人工回归。\n\n## 已知缺口与待核验项\n\n跨 Telegram 官方社区成员状态依赖外部 API 可用性。\n\n## 关联模块\n\n`frontend.business.engagement-support`、`backend.business.wallet-payment`、`database.business.billing-payment`。\n\n## 变更记录\n\n- 2026-10-20：任务 `Remove confirmed repository noise`（`.trellis/tasks/archive/2026-10/10-20-remove-confirmed-repository-noise/`）移除已退场许愿池的模块事实并保留其余互动能力边界；commit：`63eee1e847f678f4b2c434f872425a40fc7f891a`。\n\n## 2026-10-22 群监控收件转发\n\n主 Bot 在现有 webhook 先分流群消息与编辑，开关和群白名单双重保护默认关闭。群只转发独立 CS 持久化端点，不创建私聊/调用模型/群回复；收件失败 503，匿名 sender_chat 不使用兼容假用户。Community Bot 奖励链路不变。\n\n未配置群、未发布；真实 Telegram 与 CS TEST 收件仍需集成验收。\n",
+      "evidence": [
+        "packages/backend/src/routes/bot.ts",
+        "packages/backend/src/lib/cs-service.ts",
+        "packages/backend/src/platform/config.ts"
+      ]
+    },
+    {
+      "operation": "update",
+      "module_id": "shared.business.engagement-support-contracts",
+      "target": ".trellis/spec/shared/contracts/modules/business/engagement-support-contracts.md",
+      "expected_sha256": "2f318e781ec508a5c2ca199a0048043362237d7d6d49100a29d682aa3b5d2ebc",
+      "content": "---\nmodule_id: shared.business.engagement-support-contracts\ntitle: 互动、通知与客服契约\nscope: shared\ncategory: business\nstatus: active\nowners: [shared]\nlast_verified_task: .trellis/tasks/10-22-telegram-group-cs-ingress/\nlast_verified_at: 2026-10-22\n---\n\n# 互动、通知与客服契约\n\n## 职责与边界\n\n定义社区/邀请、通知、用户客服及 CS 运营接口形状。\n\n## 当前状态\n\nFrontend、Backend、Admin 与 CS Platform 按各自接口消费。\n\n## 入口与调用者\n\n由 shared 根出口导出到应用包。\n\n## 涉及文件\n\n| 路径                                       | 职责     |\n| ------------------------------------------ | -------- |\n| `packages/shared/src/api/community.ts`     | 社区 DTO |\n| `packages/shared/src/api/notifications.ts` | 通知 DTO |\n| `packages/shared/src/api/support.ts`       | 客服 DTO |\n\n## 关键实现链路\n\n契约 → Backend route → 用户端/运营端 query helper。\n\n## 数据、契约与外部依赖\n\n不得包含 token、消息数据库行或内部审计实现。\n\n## 关键节点与约束\n\n分页、消息状态和部分失败语义需在 producer/consumer 一致。\n\n## 验证方式\n\nShared tests 与四个消费者 typecheck。\n\n## 已知缺口与待核验项\n\n跨 Telegram 能力的供应商响应不进入公开契约。\n\n## 关联模块\n\n`backend.business.engagement-support`、`frontend.business.engagement-support`。\n\n## 变更记录\n\n- 2026-10-20：任务 `Remove confirmed repository noise`（`.trellis/tasks/archive/2026-10/10-20-remove-confirmed-repository-noise/`）移除已退场许愿池的模块事实并保留其余互动能力边界；commit：`63eee1e847f678f4b2c434f872425a40fc7f891a`。\n\n## 2026-10-22 群监控收件转发\n\nsupport.ts 新增 TelegramGroupMessageInput，供主 Bot 与独立 CS 群收件 HTTP 边界使用。保留群/消息身份、可空私聊用户、代发群、正文、时间、图片、回复与编辑时间。只收件，不声明用户私聊许可或触发 SOP。\n\n未配置群、未发布；真实 Telegram 与 CS TEST 收件仍需集成验收。\n",
+      "evidence": ["packages/shared/src/api/support.ts"]
+    }
+  ]
+}

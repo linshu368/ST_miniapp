@@ -1,0 +1,44 @@
+{
+  "id": "telegram-group-cs-ingress",
+  "name": "telegram-group-cs-ingress",
+  "title": "Forward configured Telegram group messages to CS",
+  "description": "Forward configured main Bot group messages to standalone CS, isolated from direct support",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-22",
+  "completedAt": null,
+  "branch": "feature/telegram-group-cs-ingress",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "packages/shared/src/api/support.ts",
+    "packages/backend/src/platform/config.ts",
+    "packages/backend/src/lib/cs-service.ts",
+    "packages/backend/src/routes/bot.ts",
+    "packages/backend/src/routes/bot-cs-forward.test.ts",
+    "packages/backend/src/lib/cs-service.test.ts",
+    "README.md",
+    "docs/ARCHITECTURE.md"
+  ],
+  "notes": "Root and independent reviewer approved planning before start. Implementation and tests complete; final review/publication pending. No credentials, DB or deployment changes.",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "backend.business.engagement-support",
+        "shared.business.engagement-support-contracts"
+      ]
+    }
+  }
+}

@@ -67,3 +67,23 @@ export interface GetCsSupportMessagesData {
 export interface SendCsSupportMessageRequest {
   body: string;
 }
+
+/** 主 Bot → 独立客服群收件；只收件，不创建私聊或触发 SOP。 */
+export interface TelegramGroupMessageInput {
+  bot_source?: 'main';
+  chat_id: string;
+  chat_title?: string;
+  message_id: string;
+  /** sender_chat 代发时不能使用 Telegram 兼容字段 from 中的假用户。 */
+  telegram_user_id: string | null;
+  sender_name: string;
+  is_bot: boolean;
+  text: string;
+  sent_at: string;
+  reply_to_message_id?: string | null;
+  photo_file_id?: string | null;
+  edited?: boolean;
+  edited_at?: string | null;
+  sender_chat_id?: string | null;
+  message_thread_id?: string | null;
+}

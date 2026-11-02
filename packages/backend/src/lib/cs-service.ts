@@ -1,4 +1,5 @@
 import { config } from '../platform/config.js';
+import type { TelegramGroupMessageInput } from '@miniapp/shared';
 
 /** 客服服务在 Vercel 上，正常几百毫秒；超时宁可快速失败也不拖住 Telegram webhook */
 const CS_SERVICE_TIMEOUT_MS = 5_000;
@@ -60,5 +61,25 @@ export async function forwardBotMessageToCs(input: {
   );
   if (status >= 400) {
     throw new Error(`cs service rejected bot message: HTTP ${status} ${JSON.stringify(payload)}`);
+  }
+}
+
+/** 群入口只等待持久化收据；图片下载和模型批处理不占 Telegram webhook 时限。 */
+export async function forwardGroupMessageToCs(input: TelegramGroupMessageInput): Promise<void> {
+  const { status, payload } = await callCsService(
+    'POST',
+    '/internal/telegram/group-message',
+    input
+  );
+  if (
+    status < 200 ||
+    status >= 300 ||
+    typeof payload !== 'object' ||
+    payload === null ||
+    !('success' in payload) ||
+    payload.success !== true
+  ) {
+    // 上游错误可能包含原消息，禁止把响应正文放进日志或 Sentry。
+    throw new Error(`cs service did not persist group message: HTTP ${status}`);
   }
 }
