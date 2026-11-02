@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { LobbyRotationConfigSchema } from './lobby-recommendation';
 
 /**
  * 首页「推荐」v3 打分参数。
@@ -16,6 +17,8 @@ const WEIGHT_SUM_TOLERANCE = 1e-6;
 
 export const LobbyRankingParamsSchema = z
   .object({
+    /** Personal rotation is independent from the daily global quality calculation. */
+    rotation: LobbyRotationConfigSchema.optional(),
     /**
      * 统计窗口天数。太长会让老卡吃三个月前的老本，太短则方差大、排名天天抖。
      * 上界 365：再长就等于没有窗口，且 chat_history 全表扫描的成本会失控。
@@ -137,6 +140,7 @@ export const DEFAULT_LOBBY_RANKING_PARAMS: LobbyRankingParams = {
  * 真正的契约校验留到发布时由 LobbyRankingParamsSchema 与库侧函数各做一次。
  */
 export const EditableLobbyRankingParamsSchema = z.object({
+  rotation: LobbyRotationConfigSchema.optional(),
   window_days: z.number(),
   turn_cap: z.number(),
   session_gap_minutes: z.number(),

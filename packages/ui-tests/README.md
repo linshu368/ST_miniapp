@@ -170,3 +170,15 @@ pnpm test:ui:fixtures            # 模拟服务本身的协议与隔离检查
 ## 同角色多段对话
 
 场景 `chat-sessions` 复用 `chat.spec.ts`，定向运行 `pnpm test:ui --grep @chat-sessions`。包含两个同名默认会话、长自定义名、默认分支、继承自定义名的分支，以及置顶和当前状态。390/320尺寸验证创建日期区分且不回写标题、自定义名称完整保留、来源轮次、更多菜单不跳转、重命名取消/保存、置顶、删除取消及切换当前会话，并保留两张截图。PATCH/DELETE 仅操作本机虚构会话；此场景不更改生产接口、排序或分支逻辑。
+
+## 角色评分口径（本地候选）
+
+`pnpm test:lobby-ranking` 复用现有Vitest评分/排序/参数测试，并在自动创建且自动删除的本机PG17容器中执行真实统计SQL。需要Docker；不读取项目env、不连接远端数据库、不使用真实用户。覆盖首次接触前满24小时且10个有效轮次、边界、失败/空白/重生成去重、历史资格不追溯、跨窗口与R48观察期、零合格样本覆盖旧分。容量复验用 `ST_LOBBY_SCORE_BENCHMARK=1 pnpm test:lobby-ranking`，自动生成40万虚构轮次并报告EXPLAIN耗时。
+
+这里改变离线评分，不改变页面；`@roleplay`仍负责大厅交互，浏览器mock不能证明评分SQL正确。新增推荐轮换时应继续扩展现有大厅场景，本次尚未实现轮换。
+
+## 前几屏优质轮换
+
+`pnpm test:ui --grep @lobby-rotation`复用角色大厅，包含24小时边界、试聊返回不换批、手动换批/撤回、失败保留/丢响应同UUID、实际曝光、账号缓存隔离、下架保序与320/390布局。场景入口提供 `lobby-rotation`、`lobby-rotation-error`、`lobby-rotation-lost-response`；36张虚构卡，无生产连接。时间控制只在本机fixture中存在，模拟POST `/__preview/lobby`推进服务端时钟；生产API不提供该控制。
+
+UI fixture轮换用确定顺序方便验证，不代表生产随机算法；`pnpm test:lobby-ranking`另跑真实生产算法/HTTP契约和一次性PG17，验证质量分档、曝光恢复、22候选相邻去重、旧证据、权限/迁移重放、CAS与独立连接并发。两种验收互补，之后功能调整直接复用这两个命令。

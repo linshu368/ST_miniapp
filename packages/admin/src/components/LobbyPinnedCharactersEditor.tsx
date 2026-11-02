@@ -1,4 +1,4 @@
-import { Alert, Button, Empty, Select, Space, Tag, Typography } from 'antd';
+import { Alert, Button, Card, Empty, Select, Space, Tag, Typography } from 'antd';
 import {
   DEFAULT_LOBBY_PINNED_CHARACTERS,
   LOBBY_MAX_PINNED_CHARACTERS,
@@ -7,10 +7,8 @@ import {
 import type { CharacterCard } from '../lib/adminApi';
 
 /**
- * 首页「推荐」页固定前八的编辑器。
- *
- * 一张一行、可上下换位、可删可换，而不是一个多选框：固定位是有顺序的，
- * 「谁在第一个」是运营真正在决定的事，多选框表达不了这个。
+ * 复用原运营名单：轮换用户按候选加权，未启用轮换的用户保留旧顺序。
+ * 单独的固定主推不借用名单首项，避免旧八张配置在升级后意外成为强推。
  */
 export function LobbyPinnedCharactersEditor(props: {
   value: unknown;
@@ -24,15 +22,17 @@ export function LobbyPinnedCharactersEditor(props: {
   const ids = parsed.success
     ? parsed.data.character_ids
     : DEFAULT_LOBBY_PINNED_CHARACTERS.character_ids;
+  const fixedId = parsed.success ? (parsed.data.fixed_character_id ?? null) : null;
 
   const byId = new Map(props.characters.map((character) => [character.id, character]));
 
-  // 只有在架卡能进固定位：配了下架卡，读路径会跳过它，运营却以为占住了位置
+  // 下架卡不会进入推荐，编辑器保留它供运营辨认和替换。
   const selectable = props.characters
     .filter((character) => character.enabled && !character.archived_at)
     .sort((a, b) => a.sort_order - b.sort_order);
 
-  const emit = (next: string[]) => props.onChange({ character_ids: next });
+  const emit = (next: string[]) =>
+    props.onChange({ character_ids: next, fixed_character_id: fixedId });
 
   const move = (index: number, delta: number) => {
     const target = index + delta;
@@ -46,7 +46,7 @@ export function LobbyPinnedCharactersEditor(props: {
     emit(next);
   };
 
-  const stale = ids.filter((id) => {
+  const stale = [...new Set([...ids, ...(fixedId ? [fixedId] : [])])].filter((id) => {
     const character = byId.get(id);
     return (
       props.characters.length > 0 && (!character || !character.enabled || character.archived_at)
@@ -56,7 +56,7 @@ export function LobbyPinnedCharactersEditor(props: {
   return (
     <Space direction="vertical" size="middle" className="editor-stack">
       {!parsed.success ? (
-        <Alert type="warning" showIcon message="固定位配置结构无效，已载入空列表（即不固定）。" />
+        <Alert type="warning" showIcon message="主推配置结构无效，已载入空名单。保存前请核对。" />
       ) : null}
 
       {props.charactersError ? (
@@ -67,17 +67,43 @@ export function LobbyPinnedCharactersEditor(props: {
         <Alert
           type="warning"
           showIcon
-          message={`有 ${stale.length} 张卡已下架或归档，首页会跳过它们，固定位实际会少这么多个。建议换掉。`}
+          message={`有 ${stale.length} 张卡已下架或归档，推荐时会跳过。请替换或移出名单。`}
         />
       ) : null}
 
-      <Typography.Text type="secondary">
-        按顺序占据推荐页最前面的位置，最多 {LOBBY_MAX_PINNED_CHARACTERS} 张，同时拿到金框。 第{' '}
-        {LOBBY_MAX_PINNED_CHARACTERS + 1} 张起仍按排序分。全部删掉表示不固定。
-      </Typography.Text>
+      <Alert
+        type="info"
+        showIcon
+        message="主推增加被选中的机会，日常无需固定位置"
+        description={`开启优质轮换后，下方最多 ${LOBBY_MAX_PINNED_CHARACTERS} 张卡作为加权候选，仍需满足推荐质量要求。未参与轮换的用户沿用旧规则，按名单顺序固定在前。金框不由个人列表中的位置决定。`}
+      />
+
+      <Card size="small" title="固定主推 · 最多 1 张">
+        <Typography.Paragraph type="secondary">
+          仅在确有强推需求时选择。对参与轮换的用户，符合质量要求的这张卡保留在前排，
+          并计入相邻批次的重复额度；留空即可让推荐自然轮换。
+        </Typography.Paragraph>
+        <Select
+          aria-label="固定主推角色"
+          showSearch
+          allowClear
+          className="field-full"
+          placeholder="不设置固定主推"
+          value={fixedId ?? undefined}
+          disabled={props.disabled}
+          loading={props.charactersLoading}
+          optionFilterProp="label"
+          options={selectable.map((item) => ({ value: item.id, label: item.name }))}
+          onChange={(nextId: string | undefined) =>
+            props.onChange({ character_ids: ids, fixed_character_id: nextId ?? null })
+          }
+        />
+      </Card>
+
+      <Typography.Text strong>优先推荐候选</Typography.Text>
 
       {ids.length === 0 ? (
-        <Empty description="当前不固定，推荐页完全按排序分" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+        <Empty description="暂无主推候选，按质量自然推荐" image={Empty.PRESENTED_IMAGE_SIMPLE} />
       ) : (
         <Space direction="vertical" size="small" className="editor-stack">
           {ids.map((id, index) => {
@@ -88,12 +114,13 @@ export function LobbyPinnedCharactersEditor(props: {
               : false;
 
             return (
-              <Space key={`${id}-${index}`} wrap align="center">
-                <Tag color="gold">第 {index + 1} 位</Tag>
+              <Space key={id} wrap align="center">
+                <Tag>候选 {index + 1}</Tag>
                 <Select
+                  aria-label={`主推候选 ${index + 1}`}
                   showSearch
                   className="field-full"
-                  style={{ minWidth: 260 }}
+                  style={{ width: 230, maxWidth: '100%' }}
                   value={id}
                   disabled={props.disabled}
                   loading={props.charactersLoading}
@@ -101,7 +128,7 @@ export function LobbyPinnedCharactersEditor(props: {
                   options={selectable.map((item) => ({
                     value: item.id,
                     label: item.name,
-                    // 已经占了别的位置的卡不能再选，避免同一张卡占两格
+                    // 候选名单保持唯一，不能靠重复添加提高权重。
                     disabled: item.id !== id && ids.includes(item.id),
                   }))}
                   onChange={(nextId: string) => {
@@ -151,7 +178,7 @@ export function LobbyPinnedCharactersEditor(props: {
       >
         {ids.length >= LOBBY_MAX_PINNED_CHARACTERS
           ? `已满 ${LOBBY_MAX_PINNED_CHARACTERS} 张`
-          : '添加固定位'}
+          : '添加主推候选'}
       </Button>
     </Space>
   );

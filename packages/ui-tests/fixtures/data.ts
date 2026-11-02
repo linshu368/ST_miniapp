@@ -31,6 +31,21 @@ export const stamp = () => new Date().toISOString();
 export const later = () => new Date(Date.now() + 31 * 86_400_000).toISOString();
 
 export const scenarios = {
+  'lobby-rotation': {
+    label: '推荐优质轮换',
+    description: '36张虚构角色，24小时轮换、换一批、撤回与试聊返回',
+    path: '/characters',
+  },
+  'lobby-rotation-error': {
+    label: '换批失败恢复',
+    description: '首次手动换批失败，保留原列表并可重试',
+    path: '/characters',
+  },
+  'lobby-rotation-lost-response': {
+    label: '换批丢响应',
+    description: '批次已经更换但响应失败，同请求重试不多换一次',
+    path: '/characters',
+  },
   creation: {
     label: '创作与我的空间',
     description: '创作编辑、封面回流、草稿、发布、私密切换与角色试聊',
@@ -242,7 +257,7 @@ export function makeChatSessionSamples(base: ChatSession): ChatSession[] {
   });
 }
 
-export function makeData(api: string) {
+export function makeData(api: string, characterCount = 18) {
   const now = stamp();
   const dramas: DramaDetail[] = (
     [
@@ -301,7 +316,7 @@ export function makeData(api: string) {
       })
     ),
   }));
-  const characters: CharacterDetail[] = Array.from({ length: 18 }, (_, index) => ({
+  const characters: CharacterDetail[] = Array.from({ length: characterCount }, (_, index) => ({
     id:
       index === 0
         ? IDS.character

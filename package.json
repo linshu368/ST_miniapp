@@ -27,7 +27,8 @@
     "supabase:db:query": "supabase db query",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "prepare": "husky"
+    "prepare": "husky",
+    "test:lobby-ranking": "pnpm --filter @miniapp/backend test:lobby-ranking"
   },
   "engines": {
     "node": ">=22",

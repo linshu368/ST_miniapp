@@ -5,8 +5,8 @@ scope: backend
 category: business
 status: active
 owners: [backend]
-last_verified_task: .trellis/tasks/09-08-feature-module-spec-sync/
-last_verified_at: 2026-09-08
+last_verified_task: .trellis/tasks/11-02-lobby-quality-rotation/
+last_verified_at: 2026-11-02
 ---
 
 # 角色卡、大厅与收藏
@@ -60,3 +60,17 @@ Backend lobby/route tests 与 Frontend 大厅人工回归。
 `routes/character-social.ts` + `features/character-social/repository.ts` 提供 Telegram鉴权的 social批量/单项查询、PUT like、评论分页/发表/删除/举报。批量40项，评论每页20条。匿名公开DTO不返回用户ID；日志不记录评论正文。写入采用miniapp_features中的服务端函数、受限search_path与RLS，原character_favorites为收藏数量唯一来源。
 
 迁移 `packages/shared/migrations/20261029_character_social.sql` 新建 character_likes、character_comments、character_comment_reports。UUID幂等、删除墓碑、作者权限、举报唯一性、并发限流已纳入 `scripts/test-character-social-migration.sh` 隔离Postgres验收。举报存储不等于自动审核，运营处理UI不在本轮范围。未执行线上迁移。
+
+## 角色质量评分的平台资历（2026-11-02，本地候选）
+
+`ranking-stats.ts` 在每日离线评分聚合中先筛选用户与角色配对资格：用户第一次向某卡发起聊天（包括失败尝试）时，首次有效聊天已满24小时且第10个有效逻辑轮次完成时间严格在先。资格只由全历史事前行为决定，不能用当前资历或本卡后续长聊追溯纳入新人首体验；注册时间不参与判断。
+
+有效资历要求success且输入/回复非空白；同session+turn的重生成只算一次，缺session或turn的历史按id。时间取最早成功revision的不早于created_at的结算时刻，旧记录缺结算时间时近似使用created_at。分支继承引用不新增资历；消息显示编辑/删除不改变原生成事实。
+
+一次参数化SQL复用窄字段全历史CTE，D30/R48仅聚合合格配对。既有窗口/权重/封顶/20人门槛和合格用户发起轮次（含失败占位）口径不变，R48有界回溯仅影响原新客观察，不裁剪平台资格历史。窗口有活动但无合格样本的卡输出n=0与null指标并覆盖旧分，按现有冷启动处理；不以缺样本判差卡。
+
+复用专用连接、查询超时、advisory lock、原子落表及失败保留旧快照；job记录合格配对、零样本卡和回访观察数，无用户正文/身份日志。无schema迁移或公开API变更，未来发布后下一次成功刷新才生效。固定验收`pnpm test:lobby-ranking`执行现有单测和一次性本机PG17真实SQL；`ST_LOBBY_SCORE_BENCHMARK=1`增加40万虚构记录EXPLAIN。未运行生产重算，线上发布仍需授权与刷新结果核验。
+
+## 前几屏优质轮换（2026-11-02，本地未发布）
+
+鉴权recommendation批次与exposures独立于公开目录；24h open、显式resume、refresh CAS及30秒undo窗口。miniapp_features两表保存当前/上一批/最近3批头及曝光摘要。纯算法可靠40/头档70、实际曝光2–7天恢复/14天回流、90天可信证据；qualified-v1只由新资历job写，低样本保留旧可信，成熟新低分优先。可靠候选不足明确降级旧排序。固定命令pnpm test:lobby-ranking覆盖真实PG17权限、幂等、并发、时间与迁移重放。

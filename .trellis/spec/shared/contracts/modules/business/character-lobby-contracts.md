@@ -5,8 +5,8 @@ scope: shared
 category: business
 status: active
 owners: [shared]
-last_verified_task: .trellis/tasks/09-08-feature-module-spec-sync/
-last_verified_at: 2026-09-08
+last_verified_task: .trellis/tasks/11-02-lobby-quality-rotation/
+last_verified_at: 2026-11-02
 ---
 
 # 角色、大厅与收藏契约
@@ -58,3 +58,7 @@ Shared tests 与所有消费者 typecheck。
 ## 角色互动契约（2026-10-29，本地待发布）
 
 新增 `src/api/character-social.ts` 并从shared导出：CharacterSocial、CharacterComment、批量/单项social响应、游标评论响应与创建评论/设置点赞/举报schemas。公开评论只含匿名author、is_mine、正文和时间，不公开用户ID。点赞采用目标布尔状态；评论由客户端提交UUID与1–500字纯文本；举报reason为inappropriate/spam/other。原角色与收藏契约不改动。
+
+## 前几屏优质轮换（2026-11-02，本地未发布）
+
+新增api/lobby-recommendation.ts：24h默认、rotation可选配置、严格open/resume/refresh/undo请求与平铺批次ID/时间/全顺序/头12响应，曝光最多40卡。不传用户ID或数据库行。lobby_ranking_params.rotation缺省保持关闭；lobby_pinned_characters增加可空fixed_character_id保留原8候选兼容。is_featured为全局精选资格，与个人位置解耦。

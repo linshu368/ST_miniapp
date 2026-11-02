@@ -1,0 +1,37 @@
+{
+  "id": "lobby-score-qualified-users",
+  "name": "lobby-score-qualified-users",
+  "title": "角色评分排除平台新人首体验",
+  "description": "本地校准角色质量评分，排除首次接触前未满24小时且10个有效轮次的平台新人",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "lobby",
+  "package": "backend",
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-02",
+  "completedAt": null,
+  "branch": "codex/lobby-score-qualified-users",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "用户已确认本地效果并授权发布；已适配最新main 7a9ddf27，先dev验收再仅本功能发布main。等待远端CI和发布执行。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": ["backend.business.character-lobby"]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "本子任务仅修改每日离线 lobby-ranking-refresh-job 的历史资格统计 SQL 和评分样本口径；不新增或修改移动端页面、HTTP 接口或打开大厅时的数据查询链路，不把聊天历史扫描放进请求。Android/iOS 页面加载 P95 及接口 P95 对本子任务不直接适用；不填零或推测数值。共用本次发布的推荐轮换页面/API 性能声明由 11-02-lobby-quality-rotation 覆盖。离线性能通过现有专用连接、advisory lock、statement timeout、真实 PG17 集成与合成记录 EXPLAIN 验证；发布后核对 job 耗时、成功状态、合格样本及数据库负载，不能把离线用例耗时当页面 P95。"
+    }
+  }
+}

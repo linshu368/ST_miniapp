@@ -211,3 +211,9 @@ TEST先经Database Migration workflow逐文件执行、验证，再经授权生�
 
 experience 域增加会话局部消息覆盖，`change_chat_message` 仅允许所属会话最近十轮，用户/角色消息独立编辑或软删除，版本比较与会话锁防覆盖；不会新增生成/扣费事实。修改 `session_chat_history` 作为显示/入模的一致投影，新分支冻结覆盖，旧分支保持独立。删除不重排轮号，已删除用户输入不能重生成。已有窗口 A/B 不变。
 先运行既有隔离 PG17 分支脚本验证权限、幂等、并发、分支、删除、计费事实不变；后续按单文件 TEST -> production migration -> Backend -> Frontend 发布。停用入口可止写，但不得回滚成旧投影导致已删除内容重新显示；保留覆盖表并 forward-fix。线上迁移与真实供应商缓存命中尚未验证。
+
+### 20261102_lobby_quality_rotation.sql（本地候选，未远端执行）
+
+新增miniapp_features个人推荐批次和角色曝光摘要，RLS开启、撤销浏览器访问、service_role受控CRUD；角色评分扩展qualified-v1可信历史，绝不回填旧评分。增量包装运营validator、保留owner/ACL/grant option/既有校验，重复执行不覆盖后续包装。无现有业务行重写或正式配置变更。
+
+顺序：先隔离PG17验证（`pnpm test:lobby-ranking`），未来通过既有workflow先TEST单文件，再独立批准Production；应用发布后确认qualified-v1评分刷新成功，最后运营启用rotation灰度。缺迁移不得发布新job。出现失败停用rotation、回退消费者，保留表/可信历史，不自动DROP或清理用户状态。20s语句/3s锁预算，远端运行前另核前置shape和表锁预算；本地通过不等于远端已执行。
