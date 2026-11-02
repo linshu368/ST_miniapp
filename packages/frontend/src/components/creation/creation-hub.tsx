@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { ArrowUpRight, ChevronRight, ImagePlus, Star, UserRoundPen } from 'lucide-react';
 
 import { CharacterCard } from '@/components/characters/character-card';
@@ -14,11 +15,15 @@ import { CreatedCharacters } from './created-characters';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { useFavoritesQuery } from '@/lib/api/favorites';
 import { useCharacterSocialsQuery } from '@/lib/api/character-social';
+import { prefetchImagePlazaFeed } from '@/lib/api/image-plaza';
+import { afterEntryBackground } from '@/lib/entry-phase';
+import { canPrefetchInBackground } from '@/lib/background-prefetch';
 import { chatEntryPath } from '@/lib/chat-entry';
 import { cn } from '@/lib/utils';
 
 export function CreationHub() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const searchParams = useSearchParams();
   const tab = searchParams.get('tab') === 'created' ? 'created' : 'favorites';
   const [benefitsOpen, setBenefitsOpen] = useState(false);
@@ -31,6 +36,36 @@ export function CreationHub() {
   );
   const openCharacter = useCallback((id: string) => setPreview({ id, tab: 'intro' }), []);
   const openComments = useCallback((id: string) => setPreview({ id, tab: 'comments' }), []);
+  const warmImagePlaza = useCallback(() => {
+    if (!canPrefetchInBackground()) return;
+    router.prefetch('/create');
+    void prefetchImagePlazaFeed(queryClient);
+  }, [queryClient, router]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let timer: number | undefined;
+    let idleHandle: number | undefined;
+    void afterEntryBackground().then(() => {
+      if (cancelled || !canPrefetchInBackground()) return;
+      const run = () => {
+        idleHandle = undefined;
+        if (!cancelled && canPrefetchInBackground()) void prefetchImagePlazaFeed(queryClient);
+      };
+      if (typeof window.requestIdleCallback === 'function') {
+        idleHandle = window.requestIdleCallback(run, { timeout: 1500 });
+      } else {
+        timer = window.setTimeout(run, 300);
+      }
+    });
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+      if (idleHandle !== undefined && typeof window.cancelIdleCallback === 'function') {
+        window.cancelIdleCallback(idleHandle);
+      }
+    };
+  }, [queryClient]);
 
   return (
     <main className="mx-auto min-h-[70svh] w-full max-w-lg px-4 pb-7 pt-[calc(1.25rem+env(safe-area-inset-top))] sm:px-5">
@@ -98,6 +133,9 @@ export function CreationHub() {
         <Link
           href="/create"
           prefetch={false}
+          onPointerEnter={warmImagePlaza}
+          onFocus={warmImagePlaza}
+          onTouchStart={warmImagePlaza}
           className="flex min-h-[66px] items-center gap-3 rounded-2xl border border-border/60 bg-card px-4 py-3 transition-colors active:bg-white/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-secondary">

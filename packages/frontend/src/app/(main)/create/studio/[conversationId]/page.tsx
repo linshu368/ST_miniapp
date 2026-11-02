@@ -57,6 +57,7 @@ import { ImagePlazaHistorySheet } from '@/components/image-plaza/image-plaza-his
 import { useMemoryDraft } from '@/hooks/use-memory-draft';
 import { useTelegramBackButton } from '@/lib/telegram';
 import { usePageReady } from '@/lib/perf/page-ready';
+import { markPageCriticalVisual } from '@/lib/perf/page-tracker';
 import { useVisualViewportHeight } from '@/lib/use-visual-viewport-height';
 import { sendSentryLog } from '@/lib/sentry/client';
 import {
@@ -106,6 +107,29 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
   const config = useImagePlazaConfigQuery();
   const conversation = useImagePlazaConversationQuery(conversationId);
   const data = conversation.data?.conversation;
+  const criticalMediaMessageId = useMemo(() => {
+    const message = data?.messages[data.messages.length - 1];
+    if (message?.video_attempt?.status === 'ready' && message.video_attempt.artifact)
+      return message.id;
+    if (message?.attempt?.status === 'ready' && message.attempt.artifacts.length > 0)
+      return message.id;
+    return null;
+  }, [data?.messages]);
+  const reportStudioCriticalVisual = useCallback(
+    (outcome: 'loaded' | 'error' | 'absent') => {
+      markPageCriticalVisual(
+        '/create/studio/:id',
+        outcome,
+        undefined,
+        conversation.data !== undefined && conversation.isFetching ? 'cache' : 'fetch'
+      );
+    },
+    [conversation.data, conversation.isFetching]
+  );
+  useEffect(() => {
+    if (data === undefined || criticalMediaMessageId !== null) return;
+    reportStudioCriticalVisual('absent');
+  }, [criticalMediaMessageId, data, reportStudioCriticalVisual]);
   const promptByMessageId = useMemo(() => {
     const prompts = new Map<string, string>();
     let latestPrompt = '';
@@ -862,6 +886,9 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
                     }
                     onShare={(artifactId, prompt) => void confirmVideoShare(artifactId, prompt)}
                     onNotice={showNotice}
+                    onCriticalVisual={
+                      message.id === criticalMediaMessageId ? reportStudioCriticalVisual : undefined
+                    }
                   />
                 ) : message.attempt ? (
                   <div className="space-y-5">
@@ -888,6 +915,11 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
                       onArtifactVisible={
                         messageIndex === data.messages.length - 1
                           ? reportArtifactVisible
+                          : undefined
+                      }
+                      onCriticalVisual={
+                        message.id === criticalMediaMessageId
+                          ? reportStudioCriticalVisual
                           : undefined
                       }
                       rewardBadge={
@@ -1307,6 +1339,7 @@ function VideoAttemptCard(props: {
   onRegenerate: (attempt: VideoPlazaAttempt, prompt: string) => void;
   onShare: (artifactId: string, prompt: string) => void;
   onNotice: (message: string) => void;
+  onCriticalVisual?: (outcome: 'loaded' | 'error' | 'absent') => void;
 }) {
   const query = useVideoPlazaAttemptQuery(props.initialAttempt.id);
   const attempt = query.data?.attempt ?? props.initialAttempt;
@@ -1354,6 +1387,7 @@ function VideoAttemptCard(props: {
     );
   return (
     <StudioVideoCard
+      key={attempt.artifact.id}
       artifact={attempt.artifact}
       status={attempt.status}
       prompt={props.prompt}
@@ -1362,6 +1396,8 @@ function VideoAttemptCard(props: {
       onRegenerate={() => props.onRegenerate(attempt, props.prompt)}
       onShare={() => props.onShare(attempt.artifact!.id, props.prompt)}
       onNotice={props.onNotice}
+      onSettled={props.onCriticalVisual}
+      priority={props.onCriticalVisual !== undefined}
     />
   );
 }
@@ -1384,6 +1420,7 @@ function AttemptCard(props: {
   regenerating: boolean;
   regenerateDisabled: boolean;
   onArtifactVisible?: () => void;
+  onCriticalVisual?: (outcome: 'loaded' | 'error') => void;
   onUseAsCover?: (artifact: ImagePlazaArtifact) => void;
   selectingCover?: boolean;
 }) {
@@ -1444,6 +1481,11 @@ function AttemptCard(props: {
           videoReferenceDisabled={props.videoReferencePending}
           onNotice={props.onNotice}
           onLoad={index === 0 ? props.onArtifactVisible : undefined}
+          onSettled={index === 0 ? props.onCriticalVisual : undefined}
+          priority={
+            index === 0 &&
+            (props.onArtifactVisible !== undefined || props.onCriticalVisual !== undefined)
+          }
         />
       ))}
     </div>

@@ -19,15 +19,23 @@ describe('mobile performance policy', () => {
     expect(ios.routePriority.slice(0, 2)).toEqual(['home', 'dramas']);
     expect(android.characters.initialRenderCount).toBeLessThanOrEqual(6);
     expect(ios.dramas.initialRenderCount).toBeLessThanOrEqual(6);
+    expect(android.imagePlaza.list.initialRenderCount).toBeLessThanOrEqual(6);
+    expect(ios.imagePlaza.list.initialRenderCount).toBeLessThanOrEqual(6);
+    expect(android.imagePlaza.videoActivationRootMargin).not.toBe(
+      ios.imagePlaza.videoActivationRootMargin
+    );
   });
 
   it.each(['android', 'android_x', 'ios', 'unknown'])('keeps %s work bounded', (platform) => {
     const policy = getMobilePerformancePolicy(platform);
-    for (const budget of [policy.characters, policy.dramas]) {
+    for (const budget of [policy.characters, policy.dramas, policy.imagePlaza.list]) {
       expect(budget.initialRenderCount).toBeGreaterThan(0);
       expect(budget.renderBatchSize).toBeGreaterThan(0);
       expect(budget.eagerImageCount).toBeGreaterThanOrEqual(budget.highPriorityImageCount);
       expect(budget.highPriorityImageCount).toBe(1);
     }
+    expect(policy.imagePlaza.feedImageWidths).toEqual([240, 360, 480]);
+    expect(policy.imagePlaza.studioImageWidths).toEqual([320, 480, 720]);
+    expect(policy.imagePlaza.videoActivationRootMargin).toMatch(/^\d+px$/);
   });
 });

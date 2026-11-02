@@ -16,7 +16,7 @@ import {
   Sparkles,
   WandSparkles,
 } from 'lucide-react';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   IMAGE_PLAZA_FEED_STALE_TIME_MS,
@@ -32,6 +32,9 @@ import type { GetImagePlazaFeedData, ImagePlazaFeedSort, PlazaFeedItem } from '@
 import { ImagePlazaHistorySheet } from '@/components/image-plaza/image-plaza-history-sheet';
 import { StyleFilterSheet } from '@/components/image-plaza/style-filter-sheet';
 import { markCriticalSettled } from '@/lib/entry-phase';
+import { useMobilePerformancePolicy } from '@/lib/mobile-performance';
+import { markPageCriticalVisual } from '@/lib/perf/page-tracker';
+import { supabasePublicImageSrcSet, supabasePublicImageUrl } from '@/lib/supabase-image';
 import {
   clearImagePlazaReturn,
   readImagePlazaReturn,
@@ -56,6 +59,8 @@ function canPrefetchWorkRoute(): boolean {
 export default function CreatePage() {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const performancePolicy = useMobilePerformancePolicy();
+  const listBudget = performancePolicy.imagePlaza.list;
   const [returnSnapshot] = useState(() => readImagePlazaReturn());
   const restoring = useRef(returnSnapshot !== null);
   const [search, setSearch] = useState(returnSnapshot?.search ?? '');
@@ -79,14 +84,49 @@ export default function CreatePage() {
   const [debouncedSearch, setDebouncedSearch] = useState(returnSnapshot?.search ?? '');
   const stableTags = useMemo(() => [...selectedTags].sort(), [selectedTags]);
   const feed = useImagePlazaFeedQuery(debouncedSearch, stableTags, sort, media);
-  const availableTags = useMemo(() => tags.filter((item) => item.id !== 'all'), [tags]);
-  const tagCounts = useImagePlazaTagCountsQuery(debouncedSearch, media, availableTags.length > 0);
-  // Feed 首包结算后再预热工作室共用的模型配置。创建响应本身已写入 conversation
-  // cache，因此用户点击进入时两份 P0 数据都能直接复用；失败仍由 Studio 原错误态承接。
-  useImagePlazaConfigQuery({ enabled: feed.data !== undefined || feed.isError });
+  const items = useMemo(() => {
+    const seen = new Set<string>();
+    return (feed.data?.pages.flatMap((page) => page.items) ?? []).filter((item) => {
+      if (seen.has(item.id)) return false;
+      seen.add(item.id);
+      return true;
+    });
+  }, [feed.data]);
+  const [renderLimit, setRenderLimit] = useState(() =>
+    returnSnapshot ? Number.POSITIVE_INFINITY : listBudget.initialRenderCount
+  );
+  const feedViewKey = useMemo(
+    () => JSON.stringify([debouncedSearch, stableTags, sort, media]),
+    [debouncedSearch, stableTags, sort, media]
+  );
+  const previousFeedViewKey = useRef(feedViewKey);
   useEffect(() => {
-    if (feed.data !== undefined || feed.isError || feed.isFetched) markCriticalSettled();
-  }, [feed.data, feed.isError, feed.isFetched]);
+    if (previousFeedViewKey.current === feedViewKey) return;
+    previousFeedViewKey.current = feedViewKey;
+    setRenderLimit(listBudget.initialRenderCount);
+  }, [feedViewKey, listBudget.initialRenderCount]);
+  const renderedItems = useMemo(() => items.slice(0, renderLimit), [items, renderLimit]);
+  const hasMoreToRender = renderedItems.length < items.length;
+  const [criticalVisualSettled, setCriticalVisualSettled] = useState(false);
+  const availableTags = useMemo(() => tags.filter((item) => item.id !== 'all'), [tags]);
+  const tagCounts = useImagePlazaTagCountsQuery(
+    debouncedSearch,
+    media,
+    availableTags.length > 0 && criticalVisualSettled
+  );
+  // 首批媒体结算后再预热工作室共用的模型配置。创建响应本身已写入 conversation
+  // cache，因此用户点击进入时两份 P0 数据都能直接复用；失败仍由 Studio 原错误态承接。
+  useImagePlazaConfigQuery({ enabled: criticalVisualSettled || feed.isError });
+  useEffect(() => {
+    if (criticalVisualSettled || feed.isError) markCriticalSettled();
+  }, [criticalVisualSettled, feed.isError]);
+  useEffect(() => {
+    if (criticalVisualSettled || feed.data === undefined || feed.isError) return;
+    // 媒体解码异常不能永久饿死标签计数和配置预热；旁路只放行后台工作，
+    // critical visual 指标仍必须由真实 load/error/absent 结算。
+    const timer = window.setTimeout(() => setCriticalVisualSettled(true), 1500);
+    return () => window.clearTimeout(timer);
+  }, [criticalVisualSettled, feed.data, feed.isError]);
   const { fetchNextPage, hasNextPage, isFetchingNextPage } = feed;
   const createConversation = useCreateImagePlazaConversationMutation();
   const sentinel = useRef<HTMLDivElement | null>(null);
@@ -131,42 +171,47 @@ export default function CreatePage() {
   useEffect(() => {
     const node = sentinel.current;
     if (!node) return;
+    if (typeof IntersectionObserver === 'undefined') {
+      // 极老 WebView 保留完整列表能力；只是不再自动预取下一页。
+      setRenderLimit(Number.POSITIVE_INFINITY);
+      return;
+    }
     const observer = new IntersectionObserver(
       (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return;
+        // 先把已经拿到的数据渐进画出来，再请求下一页；否则短首屏会让 sentinel
+        // 常驻视口并连续拉取多页，重新制造网络和解码突发。
+        if (hasMoreToRender) {
+          setRenderLimit((limit) => limit + listBudget.renderBatchSize);
+          return;
+        }
         if (
-          entries[0]?.isIntersecting &&
           hasNextPage &&
           !isFetchingNextPage &&
           !feed.paginationInvalidated &&
           !feed.isPlaceholderData &&
           !feed.isError &&
           !feed.isFetching
-        ) {
+        )
           void fetchNextPage();
-        }
       },
-      { rootMargin: '240px' }
+      { rootMargin: listBudget.renderMoreRootMargin }
     );
     observer.observe(node);
     return () => observer.disconnect();
   }, [
     fetchNextPage,
+    hasMoreToRender,
     hasNextPage,
     isFetchingNextPage,
+    listBudget.renderBatchSize,
+    listBudget.renderMoreRootMargin,
     feed.paginationInvalidated,
     feed.isPlaceholderData,
     feed.isError,
     feed.isFetching,
   ]);
 
-  const items = useMemo(() => {
-    const seen = new Set<string>();
-    return (feed.data?.pages.flatMap((page) => page.items) ?? []).filter((item) => {
-      if (seen.has(item.id)) return false;
-      seen.add(item.id);
-      return true;
-    });
-  }, [feed.data]);
   usePageReady(
     '/create',
     feed.data !== undefined && (!feed.isError || items.length > 0),
@@ -174,7 +219,47 @@ export default function CreatePage() {
     feed.isError
   );
   // 行优先分列：1 2 / 3 4，避免 CSS columns 的竖向填充（1 3 / 2 4）
-  const feedColumns = useMemo(() => splitIntoColumns(items, 2), [items]);
+  const feedColumns = useMemo(() => splitIntoColumns(renderedItems, 2), [renderedItems]);
+  const criticalPreviewIds = useMemo(
+    () => renderedItems.slice(0, 2).map((item) => item.id),
+    [renderedItems]
+  );
+  const criticalPreviewKey = criticalPreviewIds.join(':');
+  const criticalPreviews = useRef<{
+    key: string;
+    outcomes: Map<string, 'loaded' | 'error' | 'absent'>;
+  }>({ key: '', outcomes: new Map() });
+  if (criticalPreviews.current.key !== criticalPreviewKey) {
+    criticalPreviews.current = { key: criticalPreviewKey, outcomes: new Map() };
+  }
+  const handleCriticalPreviewSettled = useCallback(
+    (id: string, outcome: 'loaded' | 'error' | 'absent') => {
+      if (!criticalPreviewIds.includes(id)) return;
+      const state = criticalPreviews.current;
+      if (state.key !== criticalPreviewKey || state.outcomes.has(id)) return;
+      state.outcomes.set(id, outcome);
+      if (state.outcomes.size !== criticalPreviewIds.length) return;
+      const outcomes = [...state.outcomes.values()];
+      setCriticalVisualSettled(true);
+      markPageCriticalVisual(
+        '/create',
+        outcomes.includes('error') ? 'error' : outcomes.includes('loaded') ? 'loaded' : 'absent',
+        undefined,
+        feed.data !== undefined && feed.isFetching ? 'cache' : 'fetch'
+      );
+    },
+    [criticalPreviewIds, criticalPreviewKey, feed.data, feed.isFetching]
+  );
+  useEffect(() => {
+    if (feed.data === undefined || feed.isError || criticalPreviewIds.length > 0) return;
+    setCriticalVisualSettled(true);
+    markPageCriticalVisual('/create', 'absent', undefined, feed.isFetching ? 'cache' : 'fetch');
+  }, [criticalPreviewIds.length, feed.data, feed.isError, feed.isFetching]);
+  useEffect(() => {
+    if (!feed.isError || items.length > 0) return;
+    setCriticalVisualSettled(true);
+    markPageCriticalVisual('/create', 'error', undefined, 'fetch');
+  }, [feed.isError, items.length]);
 
   useLayoutEffect(() => {
     if (
@@ -440,9 +525,13 @@ export default function CreatePage() {
                   <PlazaCard
                     key={work.id}
                     work={work}
-                    priority={columnIndex + rowIndex * 2 < 2}
+                    eager={columnIndex + rowIndex * 2 < listBudget.eagerImageCount}
+                    priority={columnIndex + rowIndex * 2 < listBudget.highPriorityImageCount}
+                    imageWidths={performancePolicy.imagePlaza.feedImageWidths}
+                    imageQuality={performancePolicy.imagePlaza.feedImageQuality}
                     useSamePending={pendingSourceWorkId === work.id}
                     interactionDisabled={createConversation.isPending}
+                    onPreviewSettled={handleCriticalPreviewSettled}
                     onPrefetch={() => {
                       if (canPrefetchWorkRoute()) router.prefetch(`/create/work/${work.id}`);
                     }}
@@ -464,6 +553,8 @@ export default function CreatePage() {
             </button>
           ) : feed.isFetchingNextPage ? (
             <LoaderCircle className="size-5 animate-spin" />
+          ) : hasMoreToRender ? (
+            '继续下滑加载更多'
           ) : !feed.hasNextPage && items.length > 0 && !feed.isPlaceholderData ? (
             '已经到底啦'
           ) : null}
@@ -480,28 +571,84 @@ export default function CreatePage() {
 
 function PlazaCard(props: {
   work: PlazaFeedItem;
+  eager: boolean;
   priority: boolean;
+  imageWidths: readonly number[];
+  imageQuality: number;
   useSamePending: boolean;
   interactionDisabled: boolean;
+  onPreviewSettled: (id: string, outcome: 'loaded' | 'error' | 'absent') => void;
   onPrefetch: () => void;
   onOpen: () => void;
   onUseSame: () => void;
 }) {
   const like = useSetImagePlazaLikeMutation(props.work.id);
   const imageRef = useRef<HTMLImageElement | null>(null);
-  const [imageLoaded, setImageLoaded] = useState(false);
   const previewUrl =
     props.work.media_type === 'video' ? props.work.poster_url : props.work.image_url;
   const aspectRatio =
     props.work.width > 0 && props.work.height > 0
       ? `${props.work.width} / ${props.work.height}`
       : '2 / 3';
+  const previewRatio = {
+    width: props.work.width > 0 ? props.work.width : 2,
+    height: props.work.height > 0 ? props.work.height : 3,
+  };
+  const maxWidth = props.imageWidths[props.imageWidths.length - 1] ?? 480;
+  const transformedPreviewUrl = previewUrl
+    ? supabasePublicImageUrl(previewUrl, {
+        width: maxWidth,
+        height: Math.round((maxWidth * previewRatio.height) / previewRatio.width),
+        quality: props.imageQuality,
+      })
+    : null;
+  const transformedPreviewSrcSet = previewUrl
+    ? supabasePublicImageSrcSet(previewUrl, props.imageWidths, previewRatio, {
+        quality: props.imageQuality,
+      })
+    : undefined;
+  const [useOriginalPreview, setUseOriginalPreview] = useState(false);
+  const [imageState, setImageState] = useState<'loading' | 'loaded' | 'error'>('loading');
+  const previewSettled = useRef(false);
+  const displayPreviewUrl = useOriginalPreview ? previewUrl : transformedPreviewUrl;
+
+  const settlePreview = (outcome: 'loaded' | 'error' | 'absent') => {
+    if (previewSettled.current) return;
+    previewSettled.current = true;
+    props.onPreviewSettled(props.work.id, outcome);
+  };
 
   useEffect(() => {
-    setImageLoaded(false);
+    setUseOriginalPreview(false);
+    setImageState('loading');
+    previewSettled.current = false;
+    if (!previewUrl) {
+      settlePreview('absent');
+      return;
+    }
     const node = imageRef.current;
-    if (node?.complete && node.naturalWidth > 0) setImageLoaded(true);
+    if (node?.complete && node.naturalWidth > 0) {
+      setImageState('loaded');
+      settlePreview('loaded');
+    }
+    // onPreviewSettled is deliberately not a dependency: the work URL owns this lifecycle.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [previewUrl]);
+
+  const handlePreviewError = () => {
+    if (
+      previewUrl &&
+      !useOriginalPreview &&
+      transformedPreviewUrl &&
+      transformedPreviewUrl !== previewUrl
+    ) {
+      setUseOriginalPreview(true);
+      setImageState('loading');
+      return;
+    }
+    setImageState('error');
+    settlePreview('error');
+  };
 
   return (
     <article
@@ -527,27 +674,37 @@ function PlazaCard(props: {
         className="block"
       >
         <div className="relative w-full overflow-hidden bg-muted/50" style={{ aspectRatio }}>
-          {!imageLoaded ? (
+          {imageState === 'loading' ? (
             <div aria-hidden className="absolute inset-0 animate-pulse bg-muted" />
           ) : null}
-          {previewUrl ? (
+          {displayPreviewUrl && imageState !== 'error' ? (
             <img
               ref={imageRef}
-              src={previewUrl}
+              src={displayPreviewUrl}
+              srcSet={useOriginalPreview ? undefined : transformedPreviewSrcSet}
+              sizes="(max-width: 768px) calc(50vw - 18px), 300px"
               alt={props.work.title}
               width={props.work.width}
               height={props.work.height}
-              loading={props.priority ? 'eager' : 'lazy'}
-              fetchPriority={props.priority ? 'high' : 'low'}
+              loading={props.eager ? 'eager' : 'lazy'}
+              fetchPriority={props.priority ? 'high' : 'auto'}
               decoding="async"
-              onLoad={() => setImageLoaded(true)}
+              onLoad={() => {
+                setImageState('loaded');
+                settlePreview('loaded');
+              }}
+              onError={handlePreviewError}
               className={`absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-[1.02] ${
-                imageLoaded ? 'opacity-100' : 'opacity-0'
+                imageState === 'loaded' ? 'opacity-100' : 'opacity-0'
               }`}
             />
           ) : (
             <div className="absolute inset-0 grid place-items-center bg-muted text-muted-foreground">
-              <Play className="size-8" aria-hidden />
+              {props.work.media_type === 'video' ? (
+                <Play className="size-8" aria-hidden />
+              ) : (
+                <ImageIcon className="size-8" aria-hidden />
+              )}
             </div>
           )}
           {props.work.media_type === 'video' ? (

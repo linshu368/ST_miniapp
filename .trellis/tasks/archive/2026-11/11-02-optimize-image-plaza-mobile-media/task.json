@@ -1,0 +1,69 @@
+{
+  "id": "optimize-image-plaza-mobile-media",
+  "name": "optimize-image-plaza-mobile-media",
+  "title": "优化 Android 与 iOS 图片广场媒体加载性能",
+  "description": "在保持图片广场生成、分享、下载、播放和历史记录完整性的前提下，优化 Android/iOS /create 与 /create/studio/:conversationId 的列表渲染、图片解码、视频按需挂载和关键视觉观测，目标双端页面 P95 稳定低于 3 秒。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": "frontend",
+  "package": "frontend",
+  "priority": "P0",
+  "creator": "cline",
+  "assignee": "cline",
+  "createdAt": "2026-11-02",
+  "completedAt": "2026-11-02",
+  "branch": "feat_video_park",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "packages/frontend/src/lib/mobile-performance.ts",
+    "packages/frontend/src/lib/mobile-performance.test.ts",
+    "packages/frontend/src/app/(main)/create/page.tsx",
+    "packages/frontend/src/app/(main)/create/studio/[conversationId]/page.tsx",
+    "packages/frontend/src/components/image-plaza/studio-artifact-card.tsx",
+    "packages/frontend/src/components/image-plaza/studio-video-card.tsx",
+    "packages/frontend/src/components/creation/creation-hub.tsx"
+  ],
+  "notes": "本地实现和既有验收完成后自动归档；不自动 commit/push。production P95、Android/iOS Telegram 真机、Save-Data/2G 需发布后验证。",
+  "meta": {
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": ["/creation", "/create", "/create/studio/:conversationId"],
+      "apis": [
+        "GET /api/image-plaza/feed",
+        "GET /api/image-plaza/feed/tag-counts",
+        "GET /api/image-plaza/config",
+        "GET /api/image-plaza/conversations/:id?include_video=1",
+        "GET /api/image-plaza/video-attempts/:id"
+      ],
+      "android": {
+        "page_p95_baseline_ms": 4960,
+        "page_p95_target_ms": 3000
+      },
+      "ios": {
+        "page_p95_baseline_ms": 2140,
+        "page_p95_target_ms": 3000
+      },
+      "api": {
+        "p95_baseline_ms": 3219,
+        "p95_target_ms": 2000
+      },
+      "measurement": {
+        "source": "production Sentry 整窗；Grafana 图片广场双端细分无可见样本",
+        "window": "2026-10-26 至 2026-11-01"
+      },
+      "notes": "Android Studio 4.96s/130 明显超标；iOS 可见最慢页面 /creation 2.14s，Studio 1.84s 仅 25 个低样本；/create 和其余接口细分无可见样本，不补零。Feed 3.219s 为周峰值，最近 0.418s 仅 5 样本。发布后按 tg_platform、release、每平台每页面 >=100 样本且连续两个完整窗口验证；page.ready、critical visual、视频 metadata/首帧和完整生成分开。"
+    },
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "no_module_change",
+      "reason": "仅调整现有图片广场的前端渐进挂载、图片尺寸、视频按需绑定和关键视觉观测；不改变模块职责、路由、共享契约、状态源或业务链路，且 production P95 效果待发布验证。"
+    }
+  }
+}
