@@ -54,6 +54,8 @@ export async function reserveCharacterFreeQuota(input: {
   billing: Pick<ModelBillingContext, 'isFree'>;
   log: GenerationLogger;
   signal?: AbortSignal;
+  /** Frozen by this turn's read preparation, never a cached user balance/quota decision. */
+  quotaLimit?: number;
 }): Promise<FreeQuotaReservation> {
   const { chargeId, userId, billing, log } = input;
 
@@ -80,7 +82,12 @@ export async function reserveCharacterFreeQuota(input: {
     const configSignal = input.signal
       ? AbortSignal.any([input.signal, AbortSignal.timeout(5_000)])
       : AbortSignal.timeout(5_000);
-    const quotaLimit = await withConfigDeadline(getCharacterFreeChatQuotaLimit(), configSignal);
+    const quotaLimit =
+      input.quotaLimit ??
+      (await withConfigDeadline(getCharacterFreeChatQuotaLimit(), configSignal));
+    if (!Number.isSafeInteger(quotaLimit) || quotaLimit < 0) {
+      throw new Error('Invalid prepared character quota limit');
+    }
     // A late read must not create a reservation after cancellation/stale recovery
     // has already unlocked the conversation. Never race the reservation write.
     configSignal.throwIfAborted();

@@ -12,7 +12,7 @@
   "assignee": "codex",
   "createdAt": "2026-10-29",
   "completedAt": null,
-  "branch": "codex/chat-dispatch-latency",
+  "branch": "codex/chat-timeout-delivery",
   "base_branch": "dev",
   "worktree_path": null,
   "commit": null,
@@ -21,7 +21,7 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "2026-10-30用户选择优化调用前准备及次要连接改动，保持现行兜底/6秒；沿已批准任务追加，具体提交清单仍待审核。",
+  "notes": "2026-11-02用户要求彻底修复超时，保持6秒/轻量DB/单次交付计费；沿已授权in_progress任务继续，具体提交清单待审。",
   "meta": {
     "module_impact": {
       "schema_version": 1,

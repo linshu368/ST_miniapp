@@ -171,9 +171,11 @@ export async function fetchRuntimeConfigEntry(
   const running = entryInflight.get(key);
   if (running) return running;
 
-  const promise = fetchRuntimeConfigEntryDirect(key).finally(() => {
-    if (entryInflight.get(key) === promise) entryInflight.delete(key);
-  });
+  const promise = fetchRuntimeConfigReadBatch([key])
+    .then((entries) => entries.get(key) ?? null)
+    .finally(() => {
+      if (entryInflight.get(key) === promise) entryInflight.delete(key);
+    });
   entryInflight.set(key, promise);
   return promise;
 }
@@ -214,14 +216,44 @@ export async function fetchRuntimeConfigEntries(
   const running = entriesInflight.get(signature);
   if (running) return new Map(await running);
 
-  const promise = fetchRuntimeConfigEntriesDirect(
-    normalizedKeys,
-    AbortSignal.timeout(HOT_READ_TIMEOUT_MS)
-  ).finally(() => {
+  const promise = fetchRuntimeConfigReadBatch(normalizedKeys).finally(() => {
     if (entriesInflight.get(signature) === promise) entriesInflight.delete(signature);
   });
   entriesInflight.set(signature, promise);
   return new Map(await promise);
+}
+
+type RuntimeConfigReadBatch = {
+  keys: Set<string>;
+  promise: Promise<Map<string, RuntimeConfigEntry>>;
+};
+let pendingReadBatch: RuntimeConfigReadBatch | null = null;
+
+/** Coalesce independent config readers from the same microtask into one PK query.
+ * No result TTL, timer, polling or cross-request mutable-user cache is introduced.
+ * Strict reads and caller-owned cancellation always retain their direct path. */
+async function fetchRuntimeConfigReadBatch(
+  keys: readonly string[]
+): Promise<Map<string, RuntimeConfigEntry>> {
+  if (!pendingReadBatch) {
+    const batchKeys = new Set<string>();
+    const batch: RuntimeConfigReadBatch = {
+      keys: batchKeys,
+      promise: Promise.resolve().then(() => {
+        if (pendingReadBatch === batch) pendingReadBatch = null;
+        return fetchRuntimeConfigEntriesDirect(
+          [...batchKeys].sort(),
+          AbortSignal.timeout(HOT_READ_TIMEOUT_MS)
+        );
+      }),
+    };
+    pendingReadBatch = batch;
+  }
+  const batch = pendingReadBatch;
+  for (const key of keys) batch.keys.add(key);
+  const entries = await batch.promise;
+  // A caller sees only its requested keys, even if another reader shared the query.
+  return new Map(keys.filter((key) => entries.has(key)).map((key) => [key, entries.get(key)!]));
 }
 
 async function fetchRuntimeConfigEntriesDirect(
@@ -252,4 +284,5 @@ async function fetchRuntimeConfigEntriesDirect(
 export function clearRuntimeConfigInflightReads(): void {
   entryInflight.clear();
   entriesInflight.clear();
+  pendingReadBatch = null;
 }

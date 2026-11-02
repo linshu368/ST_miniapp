@@ -14,6 +14,7 @@ import type {
   ConversationStreamEvent,
   ConversationStreamStartEvent,
 } from '@miniapp/shared';
+import { flushSync } from 'react-dom';
 import { getRawInitData, INIT_DATA_HEADER } from '@/lib/telegram/auth';
 import { createLogger } from '@/lib/logger';
 import { API_URL } from './client';
@@ -236,8 +237,12 @@ async function readConversationStream(options: StreamTurnOptions): Promise<void>
     // Do not spend an animation frame on the first usable token. React commit
     // still decides success; only subsequent text uses the existing batching.
     const immediate = meaningful && !firstTokenFlushed;
-    if (immediate) firstTokenFlushed = true;
-    batch.push(text, immediate);
+    if (immediate) {
+      firstTokenFlushed = true;
+      // React 18 also batches promise callbacks. Commit the one first token
+      // before decoding more buffered frames; later tokens still batch by frame.
+      flushSync(() => batch.push(text, true));
+    } else batch.push(text);
   };
 
   const handle = (event: ConversationStreamEvent): void => {

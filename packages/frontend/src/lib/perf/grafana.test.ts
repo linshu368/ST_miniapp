@@ -76,6 +76,7 @@ describe('bounded engineering Faro exporter', () => {
       requested_model: 'deepseek-v4-flash',
       deadline_ms: 6000,
       outcome: 'observed',
+      first_token_stage: 'committed',
       request_id: 'PRIVATE_REQUEST',
       user_id: 'PRIVATE_USER',
     });
@@ -85,6 +86,7 @@ describe('bounded engineering Faro exporter', () => {
         context: expect.objectContaining({
           requested_model: 'deepseek-v4-flash',
           deadline_ms: '6000',
+          first_token_stage: 'committed',
         }),
       })
     );

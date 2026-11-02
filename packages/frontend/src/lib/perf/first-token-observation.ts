@@ -196,6 +196,14 @@ export class FirstTokenObservation {
       deadline_ms: this.deadlineMs,
       trigger_ms: this.triggerMs,
       source_measurement_version: 'client_committed_v4',
+      first_token_stage:
+        this.outcome === 'observed'
+          ? 'committed'
+          : this.receivedMs !== null
+            ? 'awaiting_commit'
+            : this.identity.assistantMessageId !== null
+              ? 'awaiting_token'
+              : 'awaiting_start',
     };
   }
   private flush(): void {
