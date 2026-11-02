@@ -13,16 +13,23 @@
 // 第 3 段的实现见 features/generation/settle.ts 与 features/generation/sync-job.ts。
 // 用量元数据补齐 ≠ 结算完成：llm_billing_settled_at 有值才算扣费行、额度收口、金额回写都齐。
 
-import { readPostprocessVersion, type ChatMessage, type ChatMessageStatus } from '@miniapp/shared';
+import {
+  splitEditableReply,
+  readPostprocessVersion,
+  type ChatMessage,
+  type ChatMessageStatus,
+} from '@miniapp/shared';
 import type {
   LlmModelProvider,
   CancelConversationTurnRequest,
   SetMessageLikeData,
+  ChangeChatMessageData,
+  ChangeChatMessageRequest,
 } from '@miniapp/shared';
 import type { GenerationMessage, GenerationStatus } from '../../features/generation/types.js';
 import { MiniappCharacterFreeQuotaRepository } from './MiniappCharacterFreeQuotaRepository.js';
 import { getDomainDb, type DomainDb } from '../../lib/supabase.js';
-import { throwConversationRpcError } from './conversation-errors.js';
+import { ConversationRepositoryError, throwConversationRpcError } from './conversation-errors.js';
 import type { InstructionSlotModes } from '../../features/engine/types.js';
 
 export const STREAMING_STALE_SECONDS = 120;
@@ -40,7 +47,7 @@ const CURRENT_TURN_HEAD_COLUMNS = CURRENT_TURN_COLUMNS.replace(
   ',history_head:history->0,history_next:history->1,'
 );
 const SESSION_TURN_HEAD_COLUMNS = `${CURRENT_TURN_HEAD_COLUMNS},is_inherited`;
-const MESSAGE_DISPLAY_COLUMNS = `${SESSION_TURN_HEAD_COLUMNS},liked`;
+const MESSAGE_DISPLAY_COLUMNS = `${SESSION_TURN_HEAD_COLUMNS},liked,user_deleted,assistant_deleted,user_edit_version,assistant_edit_version`;
 
 type HeadProjectedRow = Omit<ConversationHistoryRow, 'history'> & {
   history?: unknown[];
@@ -58,6 +65,10 @@ function restoreHistoryHead(row: HeadProjectedRow): ConversationHistoryRow {
 }
 
 export interface ConversationHistoryRow {
+  user_deleted?: boolean;
+  assistant_deleted?: boolean;
+  user_edit_version?: number;
+  assistant_edit_version?: number;
   is_inherited?: boolean;
   liked?: boolean;
   first_token_preview?: { kind: 'delta' | 'reasoning'; text: string } | null;
@@ -156,6 +167,57 @@ export interface ConversationContext {
 
 export class ConversationHistoryRepository {
   constructor(private readonly db: DomainDb = getDomainDb('experience')) {}
+
+  async changeMessage(input: {
+    userId: string;
+    sessionId: string;
+    messageId: string;
+    body: ChangeChatMessageRequest;
+  }): Promise<ChangeChatMessageData> {
+    let content = input.body.action === 'edit' ? input.body.content : null;
+    if (input.body.action === 'edit' && input.body.role === 'assistant') {
+      const { data: current, error: readError } = await this.db
+        .from('session_chat_history')
+        .select('assistant_reply')
+        .eq('session_id', input.sessionId)
+        .eq('user_id', input.userId)
+        .eq('id', input.messageId)
+        .abortSignal(AbortSignal.timeout(5_000))
+        .maybeSingle();
+      if (readError) throw new Error('读取原回复失败，请重试');
+      if (!current)
+        throw new ConversationRepositoryError('message_change_not_allowed', '这条消息暂时无法修改');
+      // The RPC rechecks the same version under its session lock, so a concurrent
+      // edit/delete can never make us attach panels from a different revision.
+      const tail = splitEditableReply(current.assistant_reply ?? '').protectedTail;
+      content = input.body.content + tail;
+      if (content.length > 65_536)
+        throw new ConversationRepositoryError('message_change_not_allowed', '正文过长，请适当缩短');
+    }
+    const { data, error } = await this.db
+      .rpc('change_chat_message', {
+        p_user_id: input.userId,
+        p_session_id: input.sessionId,
+        p_message_id: input.messageId,
+        p_role: input.body.role,
+        p_action: input.body.action,
+        p_expected_version: input.body.expected_version,
+        p_content: content,
+      })
+      .abortSignal(AbortSignal.timeout(5_000));
+    if (error) throwConversationRpcError(error, '修改消息失败');
+    const result = data as ChangeChatMessageData | null;
+    if (
+      result?.session_id !== input.sessionId ||
+      result.message_id !== input.messageId ||
+      result.role !== input.body.role ||
+      typeof result.content !== 'string' ||
+      typeof result.deleted !== 'boolean' ||
+      !Number.isInteger(result.edit_version)
+    )
+      throw new Error('修改消息结果字段不完整');
+    return result;
+  }
 
   /** Explicit target state makes retries safe; the RPC owns session/revision authorization. */
   async setMessageLike(input: {
@@ -669,8 +731,9 @@ export class ConversationHistoryRepository {
     historyId: string
   ): Promise<ConversationHistoryRow | null> {
     const { data, error } = await this.db
-      .from('current_chat_history')
-      .select(CURRENT_TURN_HEAD_COLUMNS)
+      .from('session_chat_history')
+      .select(MESSAGE_DISPLAY_COLUMNS)
+      .eq('is_inherited', false)
       .eq('id', historyId)
       .eq('session_id', sessionId)
       .abortSignal(AbortSignal.timeout(5_000))
@@ -793,7 +856,8 @@ export function assembleConversationContext(input: {
   return {
     openingMessage: extractOpeningMessage(openingSource),
     messages: input.windowRows.flatMap((row) => {
-      const messages: ConversationContext['messages'] = [{ role: 'user', content: row.user_input }];
+      const messages: ConversationContext['messages'] = [];
+      if (row.user_input.trim()) messages.push({ role: 'user', content: row.user_input });
       if (row.assistant_reply?.trim()) {
         messages.push({ role: 'assistant', content: row.assistant_reply });
       }
@@ -829,12 +893,14 @@ export function toChatMessages(row: ConversationHistoryRow): ChatMessage[] {
   return [
     {
       id: `${row.id}:user`,
+      ...(row.user_edit_version ? { edit_version: row.user_edit_version } : {}),
+      ...(row.user_deleted ? { deleted: true } : {}),
       ...(row.is_inherited ? { inherited: true } : {}),
       session_id: row.session_id,
       turn_index: row.turn_index,
       role: 'user',
       revision: row.revision,
-      content: row.user_input,
+      content: row.user_deleted ? '' : row.user_input,
       status: 'complete',
       error_code: null,
       finish_reason: null,
@@ -844,6 +910,8 @@ export function toChatMessages(row: ConversationHistoryRow): ChatMessage[] {
     },
     {
       id: row.id,
+      ...(row.assistant_edit_version ? { edit_version: row.assistant_edit_version } : {}),
+      ...(row.assistant_deleted ? { deleted: true } : {}),
       ...(row.is_inherited ? { inherited: true } : {}),
       ...(typeof row.liked === 'boolean' ? { liked: row.liked } : {}),
       ...(!row.is_inherited && extractRequestId(row.history)
@@ -853,9 +921,10 @@ export function toChatMessages(row: ConversationHistoryRow): ChatMessage[] {
       turn_index: row.turn_index,
       role: 'assistant',
       revision: row.revision,
-      content:
-        row.assistant_reply ??
-        (row.first_token_preview?.kind === 'delta' ? row.first_token_preview.text : ''),
+      content: row.assistant_deleted
+        ? ''
+        : (row.assistant_reply ??
+          (row.first_token_preview?.kind === 'delta' ? row.first_token_preview.text : '')),
       ...(row.status === 'streaming' && row.first_token_preview?.kind === 'reasoning'
         ? { reasoning: row.first_token_preview.text }
         : {}),
