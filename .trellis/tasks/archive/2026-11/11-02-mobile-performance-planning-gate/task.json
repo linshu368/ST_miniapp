@@ -1,0 +1,37 @@
+{
+  "id": "mobile-performance-planning-gate",
+  "name": "mobile-performance-planning-gate",
+  "title": "增加 Android iOS 性能 P95 规划门禁",
+  "description": "为后续功能开发、问题修改和方案设计增加 Android/iOS 页面加载与接口 P95 的强制规划声明和 task.py start 校验。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": "trellis",
+  "package": null,
+  "priority": "P1",
+  "creator": "cline",
+  "assignee": "cline",
+  "createdAt": "2026-11-02",
+  "completedAt": "2026-11-02",
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "no_module_change",
+      "reason": "本任务只调整 Trellis 流程、任务模板与校验脚本，不改变产品模块实现事实。"
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "本任务只调整离线 Trellis 规划与校验工具，不改变生产移动端页面加载或接口响应。"
+    }
+  }
+}

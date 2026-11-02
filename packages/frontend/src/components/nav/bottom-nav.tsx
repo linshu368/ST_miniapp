@@ -12,6 +12,7 @@ import { useSupportUnreadQuery } from '@/lib/api/support';
 import { clearLobbyReturnSnapshot } from '@/lib/lobby-return';
 import { canPrefetchInBackground } from '@/lib/background-prefetch';
 import { afterEntryBackground } from '@/lib/entry-phase';
+import { useMobilePerformancePolicy, type MobilePerformancePolicy } from '@/lib/mobile-performance';
 import {
   readRoleplayView,
   rememberRoleplayScroll,
@@ -44,14 +45,28 @@ function canPrefetchHeavyRoute(): boolean {
 
 function backgroundPrefetchTargets(
   pathname: string | null,
-  roleplayHref: '/characters' | '/chats'
+  roleplayHref: '/characters' | '/chats',
+  routePriority: MobilePerformancePolicy['routePriority']
 ): string[] {
-  if (pathname === '/characters' || pathname === '/chats') return ['/creation', '/'];
-  if (isCreationRoute(pathname)) return [roleplayHref, '/'];
-  if (pathname === '/') return [roleplayHref, '/dramas'];
-  if (pathname?.startsWith('/dramas')) return ['/', '/profile'];
-  if (pathname?.startsWith('/profile')) return ['/dramas', '/'];
-  return [];
+  let candidates: string[] = [];
+  if (pathname === '/characters' || pathname === '/chats')
+    candidates = ['/creation', '/', '/dramas'];
+  else if (isCreationRoute(pathname)) candidates = [roleplayHref, '/', '/dramas'];
+  else if (pathname === '/') candidates = [roleplayHref, '/dramas'];
+  else if (pathname?.startsWith('/dramas')) candidates = ['/', '/profile', roleplayHref];
+  else if (pathname?.startsWith('/profile')) candidates = ['/dramas', '/', roleplayHref];
+
+  const kind = (href: string): MobilePerformancePolicy['routePriority'][number] => {
+    if (href === '/characters' || href === '/chats') return 'characters';
+    if (href === '/') return 'home';
+    if (href === '/dramas') return 'dramas';
+    return 'other';
+  };
+  return candidates
+    .map((href, index) => ({ href, index, rank: routePriority.indexOf(kind(href)) }))
+    .sort((left, right) => left.rank - right.rank || left.index - right.index)
+    .slice(0, 2)
+    .map(({ href }) => href);
 }
 
 // 深层页面（支付流程、沉浸式输入页、消息与客服会话）隐藏底部导航，让主内容拿满可视高度
@@ -75,6 +90,7 @@ export function isBottomNavHidden(pathname: string | null, controlsVisible = tru
 
 export function BottomNav() {
   const pathname = usePathname();
+  const performancePolicy = useMobilePerformancePolicy();
   const dramaControlsVisible = useDramaLibraryStore((state) => state.playbackControlsVisible);
   const router = useRouter();
   const currentRoleplayPath = pathname === '/characters' || pathname === '/chats' ? pathname : null;
@@ -90,7 +106,11 @@ export function BottomNav() {
   }, [currentRoleplayPath]);
 
   useEffect(() => {
-    const targets = backgroundPrefetchTargets(pathname, roleplayHref);
+    const targets = backgroundPrefetchTargets(
+      pathname,
+      roleplayHref,
+      performancePolicy.routePriority
+    );
     if (targets.length === 0) return;
 
     let cancelled = false;
@@ -125,7 +145,7 @@ export function BottomNav() {
         window.cancelIdleCallback(idleHandle);
       }
     };
-  }, [pathname, roleplayHref, router]);
+  }, [pathname, performancePolicy, roleplayHref, router]);
 
   // 未读属于「我的」：只在 profile 拉取/轮询。大厅、影像、聊天都不提前打，缓存仍可画红点。
   const onProfileTab = Boolean(pathname?.startsWith('/profile'));

@@ -41,6 +41,7 @@ import type { DramaSummary } from '@miniapp/shared';
 import { cn } from '@/lib/utils';
 import { supabasePublicImageUrl } from '@/lib/supabase-image';
 import { markPageCriticalVisual } from '@/lib/perf/page-tracker';
+import { useMobilePerformancePolicy } from '@/lib/mobile-performance';
 import {
   useDramaLibraryStore,
   type DramaProgress as DramaProgressRecord,
@@ -98,6 +99,7 @@ export function DramaPlayer({
   onNavigate,
 }: DramaPlayerProps) {
   const playbackOwner = embedded ? 'home' : 'detail';
+  const performancePolicy = useMobilePerformancePolicy();
   const router = useRouter();
   const detailQuery = useDramaDetailQuery(id);
   const drama = detailQuery.data;
@@ -164,6 +166,7 @@ export function DramaPlayer({
   const [paused, setPaused] = useState(true);
   const muted = useDramaLibraryStore((state) => state.muted);
   const [buffering, setBuffering] = useState(true);
+  const [mediaVisualReady, setMediaVisualReady] = useState(false);
   const [failed, setFailed] = useState(false);
   const [retryVersion, setRetryVersion] = useState(0);
   const [retryState, setRetryState] = useState<'idle' | 'loading' | 'error'>('idle');
@@ -476,6 +479,7 @@ export function DramaPlayer({
     if (!videoEl || !playback?.playable || !playback.play_url || retryState !== 'idle') return;
     let cancelled = false;
     cancelPictureTap();
+    if (embedded) setMediaVisualReady(false);
     setFailed(false);
     setPlaybackHint(null);
     pausedAtEnd.current = false;
@@ -570,6 +574,7 @@ export function DramaPlayer({
     setPlaybackPreferences,
     cancelPictureTap,
     setControlsVisible,
+    embedded,
   ]);
 
   useEffect(() => {
@@ -811,6 +816,14 @@ export function DramaPlayer({
   const info = drama ?? summary;
   const episodeNumber = Math.max(1, currentIndex + 1);
   const overlayVisible = controlsVisible || Boolean(playbackError);
+  const homePosterUrl =
+    embedded && info?.cover_url
+      ? supabasePublicImageUrl(info.cover_url, performancePolicy.homePoster)
+      : undefined;
+
+  useEffect(() => {
+    if (embedded && info && !info.cover_url) markPageCriticalVisual('/', 'absent');
+  }, [embedded, info]);
 
   useEffect(() => {
     const frame = stage.current;
@@ -973,15 +986,17 @@ export function DramaPlayer({
             )}
             playsInline
             muted={muted}
-            preload="auto"
+            preload={embedded ? performancePolicy.homePoster.videoPreload : 'auto'}
             poster={
-              info?.cover_url
-                ? supabasePublicImageUrl(info.cover_url, {
-                    width: 720,
-                    height: 960,
-                    quality: 72,
-                  })
-                : undefined
+              embedded
+                ? homePosterUrl
+                : info?.cover_url
+                  ? supabasePublicImageUrl(info.cover_url, {
+                      width: 720,
+                      height: 960,
+                      quality: 72,
+                    })
+                  : undefined
             }
             aria-label={info ? `${info.title}，第 ${episodeNumber} 集` : '短剧播放器'}
             onPlaying={() => {
@@ -994,7 +1009,10 @@ export function DramaPlayer({
               setBuffering(false);
             }}
             onLoadedData={() => {
-              if (embedded) markPageCriticalVisual('/', 'loaded');
+              if (embedded) {
+                setMediaVisualReady(true);
+                markPageCriticalVisual('/', 'loaded');
+              }
             }}
             onPause={(event) => {
               setPaused(true);
@@ -1040,6 +1058,26 @@ export function DramaPlayer({
               setFinished(!pausedAtEnd.current);
             }}
           />
+          {homePosterUrl ? (
+            // The poster is an explicit visual layer so Android/iOS can paint useful content
+            // before the signed media reaches loadeddata; the video remains the playback owner.
+            <img
+              src={homePosterUrl}
+              alt=""
+              aria-hidden
+              width={performancePolicy.homePoster.width}
+              height={performancePolicy.homePoster.height}
+              loading="eager"
+              decoding="async"
+              fetchPriority="high"
+              onLoad={() => markPageCriticalVisual('/', 'loaded')}
+              onError={() => markPageCriticalVisual('/', 'error')}
+              className={cn(
+                'pointer-events-none absolute inset-0 h-full w-full object-cover transition-opacity duration-150 motion-reduce:transition-none',
+                mediaVisualReady ? 'opacity-0' : 'opacity-100'
+              )}
+            />
+          ) : null}
           <button
             type="button"
             tabIndex={-1}
