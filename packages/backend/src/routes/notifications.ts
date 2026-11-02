@@ -3,12 +3,13 @@ import {
   fail,
   ok,
   VipExpiryNotificationMetadataSchema,
+  CharacterWishNotificationMetadataSchema,
+  NotificationKindSchema,
   type GetNotificationDetailData,
   type GetNotificationsData,
   type MarkNotificationsReadData,
   type MarkNotificationsReadRequest,
   type NotificationItem,
-  type NotificationKind,
   type NotificationScope,
   type NotificationUnreadCountData,
 } from '@miniapp/shared';
@@ -239,8 +240,13 @@ async function listVisibleIds(
 }
 
 function mapNotification(row: NotificationRow, isRead: boolean): NotificationItem {
-  const metadata = VipExpiryNotificationMetadataSchema.safeParse(row.metadata);
-  const kind: NotificationKind | null = row.kind === 'vip_expiry' ? 'vip_expiry' : null;
+  const parsedKind = NotificationKindSchema.safeParse(row.kind);
+  const kind = parsedKind.success ? parsedKind.data : null;
+  const metadata = (
+    kind === 'character_wish_response'
+      ? CharacterWishNotificationMetadataSchema
+      : VipExpiryNotificationMetadataSchema
+  ).safeParse(row.metadata);
   return {
     id: row.id,
     scope: row.scope,

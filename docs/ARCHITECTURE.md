@@ -811,3 +811,11 @@ Frontend `/creation/data` → `lib/api/creator-analytics.ts`（用户隔离React
 权威源：app_core.character_creations确定本人归属；experience.chat_history按(session_id,turn_index)合并成功revision，先取最早成功时间再筛窗口，排除作者及branch_inherited_turns范围；分支引用与会话message_count不参与。按同卡玩家>=10轮和>=2自然日衡量深聊/回访，跨卡总人数按人去重。billing.character_creator_rewards将credited_amount按created_at计正、reversal_recovered_amount按reversed_at计负，不把毛奖励/抵扣当到账，不按当前visibility过滤。公开反馈沿用稳定匿名作者；不向浏览器返回玩家ID、私人对话或原始draft。
 
 参数化SQL限本人范围，事务只读、单查询6秒/事务8秒、服务端503明确失败；封面URL在事务外复用签名resolver，失败降级占位。无新DB对象/物化统计/后台任务，不写账务。先Backend后Frontend，回退仅撤入口与只读接口。现有隔离creator验收新增真实Prisma SQL PREPARE/EXECUTE验证；普通backend tests不触远端DB。页面fixture仅在ui-tests中，不进入生产组件。
+
+### 角色心愿墙（本地候选）
+
+`/wishes` 与 `/wishes/:id` → 身份隔离的 `lib/api/character-wishes.ts` → Telegram认证 `/api/character-wishes` → `miniapp_features` 三张功能表及限定 service_role 的读写 RPC。仅支持匿名公开，提交前告知全站可见；API与数据库拒绝private，公开输出不包含许愿者身份。支持使用显式布尔、唯一(wish,user)，人数包含许愿者本人。分页上限20；列表入口不提前读取心愿列表。
+
+角色回应只接受本人已有公开有效版本，展示已发布快照。回应关系和现有 `notifications`（kind=`character_wish_response`）在一个事务内写入，business_key去重；公开卡变私密/下架时不再在墙上展示。没有修改角色发布/AI审核函数或奖励结算。发布请求可带独立 `wish_id`，关联失败仍返回已发布角色及 `wish_response.status=not_linked`，前端单独重试回应。来源保留在本地草稿流程元信息，不进入角色设定；封面生成往返保持同一草稿。
+
+迁移先测试后生产，先于服务和页面部署。撤回隐藏心愿，不删除关联角色。回滚先隐藏入口和路由，保留业务表数据；恢复旧通知约束前需先处理新类型通知。验证复用隔离 PostgreSQL 脚本和 UI `@wishes`，不等同真实Telegram键盘或线上P95。

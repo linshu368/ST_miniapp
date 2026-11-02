@@ -69,3 +69,5 @@ export * from './api/creator-characters';
 export * from './api/creator-tools.js';
 
 export * from './api/creator-analytics.js';
+
+export * from './api/character-wishes.js';
