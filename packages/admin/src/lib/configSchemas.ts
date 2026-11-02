@@ -537,13 +537,13 @@ export const configMetadata: Record<
   lobby_ranking_params: {
     label: '推荐轮换与质量评分',
     description:
-      '设置前 12 张优质轮换、24 小时换批间隔和启用范围；保留原质量评分口径。轮换配置发布后生效，质量参数在下一次每日评分刷新后生效。',
+      '推荐页为全体用户轮换前 12 张优质角色，可设置换批间隔、重复上限和探索数量。轮换参数发布后生效，质量参数在下一次每日评分刷新后生效。',
     defaultValue: DEFAULT_LOBBY_RANKING_PARAMS,
   },
   lobby_pinned_characters: {
     label: '推荐主推候选',
     description:
-      '轮换用户使用优质主推候选，可另设最多 1 张固定主推。未参与轮换的用户沿用原名单排序；金框不随个人轮换位置变化。',
+      '优质主推候选增加被选中的机会，可另设最多 1 张固定主推。金框不随个人轮换位置变化。',
     defaultValue: DEFAULT_LOBBY_PINNED_CHARACTERS,
   },
   miniapp_invite_reward_rules: {

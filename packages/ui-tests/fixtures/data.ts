@@ -30,6 +30,15 @@ export const IDS = {
 export const stamp = () => new Date().toISOString();
 export const later = () => new Date(Date.now() + 31 * 86_400_000).toISOString();
 
+export const WISH_IDS = {
+  adventure: 'a1000000-0000-4000-8000-000000000001',
+  detective: 'a1000000-0000-4000-8000-000000000002',
+  minePublic: 'a1000000-0000-4000-8000-000000000003',
+  mineGarden: 'a1000000-0000-4000-8000-000000000004',
+  notification: 'a2000000-0000-4000-8000-000000000001',
+  ownCard: 'a3000000-0000-4000-8000-000000000001',
+} as const;
+
 export const scenarios = {
   'lobby-rotation': {
     label: '推荐优质轮换',
@@ -45,6 +54,36 @@ export const scenarios = {
     label: '换批丢响应',
     description: '批次已经更换但响应失败，同请求重试不多换一次',
     path: '/characters',
+  },
+  wishes: {
+    label: '角色心愿墙',
+    description: '匿名公开许愿、我的心愿、支持、用作品回应与站内通知（虚构数据）',
+    path: '/wishes',
+  },
+  'wishes-response-error': {
+    label: '作品回应失败恢复',
+    description: '角色已公开，心愿关联首次失败，可单独重新回应',
+    path: '/wishes',
+  },
+  'wishes-error': {
+    label: '心愿提交失败',
+    description: '首次提交失败保留输入，再次提交成功；同 UUID 重试不重复',
+    path: '/wishes',
+  },
+  'creator-data': {
+    label: '创作数据',
+    description: '多角色总览、单卡表现、奖励明细与玩家反馈（本地示例）',
+    path: '/creation/data',
+  },
+  'creator-data-empty': {
+    label: '创作数据为空',
+    description: '暂无作品与奖励，可返回创作',
+    path: '/creation/data?state=empty',
+  },
+  'creator-data-error': {
+    label: '创作数据读取失败',
+    description: '重试后恢复，不把失败显示为零',
+    path: '/creation/data?state=error',
   },
   creation: {
     label: '创作与我的空间',

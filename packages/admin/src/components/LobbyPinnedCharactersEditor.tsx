@@ -7,7 +7,7 @@ import {
 import type { CharacterCard } from '../lib/adminApi';
 
 /**
- * 复用原运营名单：轮换用户按候选加权，未启用轮换的用户保留旧顺序。
+ * 复用原运营名单作为全量推荐的加权候选。
  * 单独的固定主推不借用名单首项，避免旧八张配置在升级后意外成为强推。
  */
 export function LobbyPinnedCharactersEditor(props: {
@@ -75,12 +75,12 @@ export function LobbyPinnedCharactersEditor(props: {
         type="info"
         showIcon
         message="主推增加被选中的机会，日常无需固定位置"
-        description={`开启优质轮换后，下方最多 ${LOBBY_MAX_PINNED_CHARACTERS} 张卡作为加权候选，仍需满足推荐质量要求。未参与轮换的用户沿用旧规则，按名单顺序固定在前。金框不由个人列表中的位置决定。`}
+        description={`下方最多 ${LOBBY_MAX_PINNED_CHARACTERS} 张卡作为加权候选，仍需满足推荐质量要求，不会按名单顺序固定在前。金框不由个人列表中的位置决定。`}
       />
 
       <Card size="small" title="固定主推 · 最多 1 张">
         <Typography.Paragraph type="secondary">
-          仅在确有强推需求时选择。对参与轮换的用户，符合质量要求的这张卡保留在前排，
+          仅在确有强推需求时选择。符合质量要求的这张卡保留在前排，
           并计入相邻批次的重复额度；留空即可让推荐自然轮换。
         </Typography.Paragraph>
         <Select

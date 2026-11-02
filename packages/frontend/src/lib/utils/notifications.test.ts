@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { SupportMessage } from '@miniapp/shared';
-import { formatMessageTime, pendingOutbox } from './notifications';
+import { formatMessageTime, pendingOutbox, characterWishNotificationPath } from './notifications';
 
 const NOW = new Date(2026, 6, 28, 20, 0, 0);
 
@@ -52,5 +52,27 @@ describe('pendingOutbox', () => {
     const pending = [{ clientMsgId: 'c1', body: '你好', status: 'sending' as const }];
     const confirmed = [supportMessage({ sender: 'agent', client_msg_id: null })];
     expect(pendingOutbox(pending, confirmed)).toHaveLength(1);
+  });
+});
+
+describe('wish notification destination', () => {
+  const metadata = {
+    wish_id: '10000000-0000-4000-8000-000000000001',
+    character_id: '10000000-0000-4000-8000-000000000002',
+  };
+  it('opens only a valid internal wish from matching notification metadata', () => {
+    expect(characterWishNotificationPath({ kind: 'character_wish_response', metadata })).toBe(
+      `/wishes/${metadata.wish_id}`
+    );
+    expect(characterWishNotificationPath({ kind: 'vip_expiry', metadata })).toBeNull();
+    expect(
+      characterWishNotificationPath({
+        kind: 'character_wish_response',
+        metadata: { ...metadata, wish_id: '//external.invalid' },
+      })
+    ).toBeNull();
+    expect(
+      characterWishNotificationPath({ kind: 'character_wish_response', metadata: null })
+    ).toBeNull();
   });
 });

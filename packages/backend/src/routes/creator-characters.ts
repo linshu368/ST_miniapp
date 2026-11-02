@@ -11,12 +11,14 @@ import {
   CREATOR_REVIEW_REJECTED_CODE,
   CREATOR_REVIEW_UNAVAILABLE_CODE,
   type CreatorVisibility,
+  type GetCreatorCharacterData,
   fail,
   ok,
 } from '@miniapp/shared';
 import { requireTelegramAuth } from '../middleware/auth.js';
 import { getOrCreateDbUser } from '../lib/user.js';
 import { AdminSessionError, requireAdminActor } from '../features/admin-access/session.js';
+import { CharacterWishRepository } from '../features/character-wishes/repository.js';
 import { CreatorCharacterRepository } from '../features/creator/repository.js';
 import { clearLobbyFeaturedSnapshot } from '../features/lobby/featured-snapshot.js';
 import {
@@ -185,15 +187,39 @@ export default async function creatorCharacterRoutes(app: FastifyInstance) {
     ownerOptions,
     handle('publish', async (request, reply) => {
       const body = PublishCreatorCharacterSchema.parse(request.body);
+      const ownerId = await viewer(request);
       const character = await publishCharacter(request, {
-        ownerId: await viewer(request),
+        ownerId,
         id: characterId(request),
         action: 'publish',
         expectedRevision: body.expected_revision,
         visibility: body.visibility,
       });
       clearLobbyFeaturedSnapshot();
-      return reply.send(ok({ character }));
+      const data: GetCreatorCharacterData = { character };
+      if (body.wish_id && character.visibility === 'public') {
+        // Publication is already durable; a withdrawn wish must not turn it into a failed publish.
+        try {
+          await new CharacterWishRepository().linkResponse({
+            userId: ownerId,
+            wishId: body.wish_id,
+            characterId: character.id,
+          });
+          data.wish_response = { wish_id: body.wish_id, status: 'linked' };
+        } catch (error) {
+          const code = error && typeof error === 'object' && 'code' in error ? error.code : null;
+          request.log.warn(
+            {
+              err: Object.assign(new Error('Wish association failed after publication'), { code }),
+              character_id: character.id,
+              wish_id: body.wish_id,
+            },
+            'creator wish association'
+          );
+          data.wish_response = { wish_id: body.wish_id, status: 'not_linked' };
+        }
+      }
+      return reply.send(ok(data));
     })
   );
   // @frontend-ready: true — unlisting preserves card identity, existing favorites and use grants

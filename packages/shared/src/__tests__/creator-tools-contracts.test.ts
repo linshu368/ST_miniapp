@@ -187,3 +187,119 @@ describe('creator review Admin dry-run contract', () => {
     ).toBe(false);
   });
 });
+
+import {
+  CreatorAnalyticsDataSchema,
+  CreatorAnalyticsQuerySchema,
+} from '../api/creator-analytics.js';
+describe('creator analytics boundary', () => {
+  it('accepts negative actual adjustments and strips private fields from comments', () => {
+    const parsed = CreatorAnalyticsDataSchema.parse({
+      section: 'feedback',
+      as_of: '2026-11-02T00:00:00Z',
+      page: 1,
+      page_size: 4,
+      total: 1,
+      items: [
+        {
+          id,
+          character_id: id,
+          name: '角色',
+          author: '同好 12345678',
+          body: '公开反馈',
+          created_at: '2026-11-01T00:00:00Z',
+          user_id: 'private-identity',
+          initData: 'private-auth',
+        },
+      ],
+    });
+    expect(JSON.stringify(parsed)).not.toContain('private-');
+    const reward = CreatorAnalyticsDataSchema.parse({
+      section: 'rewards',
+      as_of: '2026-11-02T00:00:00Z',
+      page: 1,
+      page_size: 4,
+      total: 1,
+      items: [
+        {
+          id: 'reversal',
+          character_id: id,
+          name: '角色',
+          amount: -1.5,
+          kind: 'reversal',
+          occurred_at: '2026-11-01T00:00:00Z',
+          payer_user_id: 'private-payer',
+        },
+      ],
+    });
+    expect(JSON.stringify(reward)).not.toContain('private-');
+  });
+  it('rejects fake success, unbounded pages and client-supplied owners', () => {
+    expect(
+      CreatorAnalyticsDataSchema.safeParse({ section: 'overview', summary: { earned: 0 } }).success
+    ).toBe(false);
+    expect(CreatorAnalyticsQuerySchema.safeParse({ owner_user_id: id }).success).toBe(false);
+    expect(CreatorAnalyticsQuerySchema.safeParse({ page_size: 100 }).success).toBe(false);
+  });
+});
+
+import {
+  CreateCharacterWishSchema,
+  CharacterWishQuerySchema,
+  CharacterWishSchema,
+} from '../api/character-wishes.js';
+import { SetCreatorVisibilitySchema } from '../api/creator-characters.js';
+describe('character wish HTTP boundaries', () => {
+  it('rejects identity injection, excessive bodies and invalid pagination', () => {
+    expect(
+      CreateCharacterWishSchema.safeParse({
+        id,
+        body: '我想玩一个古城探案故事',
+        visibility: 'public',
+        user_id: id,
+      }).success
+    ).toBe(false);
+    expect(
+      CreateCharacterWishSchema.safeParse({ id, body: '字'.repeat(501), visibility: 'public' })
+        .success
+    ).toBe(false);
+    expect(
+      CreateCharacterWishSchema.safeParse({ id, body: '  ', visibility: 'public' }).success
+    ).toBe(false);
+    expect(
+      CreateCharacterWishSchema.safeParse({
+        id,
+        body: '我想玩一个古城探案故事',
+        visibility: 'private',
+      }).success
+    ).toBe(false);
+    expect(CharacterWishQuerySchema.safeParse({ page_size: 1000 }).success).toBe(false);
+  });
+  it.each([false, true])(
+    'strips author identity from consumer DTO (mine=%s) and limits source metadata to publish',
+    (isMine) => {
+      const result = CharacterWishSchema.parse({
+        id,
+        body: '故事',
+        visibility: 'public',
+        created_at: 'now',
+        is_mine: isMine,
+        supported: false,
+        wanted_count: 1,
+        response_count: 0,
+        user_id: id,
+        owner_user_id: id,
+        author: 'name',
+      });
+      expect(result).not.toHaveProperty('user_id');
+      expect(result).not.toHaveProperty('owner_user_id');
+      expect(result).not.toHaveProperty('author');
+      expect(CharacterWishSchema.safeParse({ ...result, visibility: 'private' }).success).toBe(
+        false
+      );
+      const input = { expected_revision: 1, visibility: 'public', wish_id: id };
+      expect(PublishCreatorCharacterSchema.safeParse(input).success).toBe(true);
+      expect(SetCreatorVisibilitySchema.safeParse(input).success).toBe(false);
+    }
+  );
+});

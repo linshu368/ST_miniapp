@@ -504,6 +504,29 @@ test('@roleplay @character-social 打开评论不打断正在生成的角色回�
   ).toHaveLength(1);
 });
 
+test('@startup 后台归因模块下载失败仍可浏览与跳页，邀请参数已保存', async ({ page, preview }) => {
+  let deferredRequests = 0;
+  await page.route(/\/_next\/.*deferred-entry-effects.*\.js/, async (route) => {
+    deferredRequests += 1;
+    await route.abort('failed');
+  });
+  await page.goto('/characters?startapp=inv_Abcd1234');
+  await expect(
+    page.getByRole('button', { name: '查看 林间旅人 的详情', exact: true })
+  ).toBeVisible();
+  expect(await page.evaluate(() => sessionStorage.getItem('invite_bind_pending'))).toBe('Abcd1234');
+  await expect.poll(() => deferredRequests).toBeGreaterThan(0);
+  await page
+    .getByRole('navigation', { name: '主导航' })
+    .getByRole('link', { name: 'AI短剧', exact: true })
+    .click();
+  await expect(page).toHaveURL(/\/dramas$/);
+  await expect(page.getByRole('button', { name: '搜索短剧', exact: true })).toBeVisible();
+  expect((await preview.state()).requests.some((request) => request.path === '/api/dramas')).toBe(
+    true
+  );
+});
+
 test.describe('初始 HTML 框架', () => {
   test.use({ javaScriptEnabled: false });
 
@@ -602,6 +625,8 @@ test('@roleplay @lobby-rotation @layout 换批保留质量分层入口，撤回�
   await page.goto('/characters');
   const rotate = page.getByRole('button', { name: '换一批推荐角色', exact: true });
   await expect(rotate).toBeVisible();
+  const wishEntry = page.getByRole('link', { name: '许个愿', exact: true });
+  await expect(wishEntry).toHaveCount(0);
   const box = await rotate.boundingBox();
   expect(box!.height).toBeGreaterThanOrEqual(40);
   const before = (await preview.state()).lobby.current!;
@@ -628,7 +653,21 @@ test('@roleplay @lobby-rotation @layout 换批保留质量分层入口，撤回�
     )
     .toBe(before.character_ids[0]);
   expect((await preview.state()).lobby.batches_created).toBe(2);
+  await expect
+    .poll(async () => {
+      await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+      return wishEntry.count();
+    })
+    .toBe(1);
+  await expect(page.locator('[data-lobby-character-id]')).toHaveCount(before.character_ids.length);
+  await wishEntry.scrollIntoViewIfNeeded();
+  const wishBox = await wishEntry.boundingBox();
+  const navBox = await page.getByRole('navigation', { name: '主导航', exact: true }).boundingBox();
+  expect(wishBox!.height).toBeGreaterThanOrEqual(44);
+  expect(wishBox!.y + wishBox!.height).toBeLessThanOrEqual(navBox!.y);
   await expectMobileLayout(page);
+  await expect(page.getByRole('status').filter({ hasText: '已回到上一批' })).not.toBeVisible();
+  await preview.screenshot('列表末尾轻量心愿入口', { fullPage: false });
 });
 
 test('@roleplay @lobby-rotation 超过24小时试聊返回仍保原批，新打开才轮换', async ({

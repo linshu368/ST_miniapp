@@ -61,4 +61,12 @@ Shared tests 与所有消费者 typecheck。
 
 ## 前几屏优质轮换（2026-11-02，本地未发布）
 
-新增api/lobby-recommendation.ts：24h默认、rotation可选配置、严格open/resume/refresh/undo请求与平铺批次ID/时间/全顺序/头12响应，曝光最多40卡。不传用户ID或数据库行。lobby_ranking_params.rotation缺省保持关闭；lobby_pinned_characters增加可空fixed_character_id保留原8候选兼容。is_featured为全局精选资格，与个人位置解耦。
+新增api/lobby-recommendation.ts：24h默认、rotation可选配置、严格open/resume/refresh/undo请求与平铺批次ID/时间/全顺序/头12响应，曝光最多40卡。不传用户ID或数据库行。lobby_ranking_params.rotation缺省使用24小时全量轮换，旧enabled/rollout字段仅兼容历史配置、不再控制启用；lobby_pinned_characters增加可空fixed_character_id保留原8候选兼容。is_featured为全局精选资格，与个人位置解耦。
+
+## 创作数据契约（2026-11-02）
+
+api/creator-analytics.ts 定义严格query与按section区分的runtime响应。all/7d/30d，page>=1、page_size<=20、可选单卡/as_of；不接受owner字段。金额允许负调整，人数/次数非负整数。总览每类最多3条，其余每页最多20；只含卡摘要/统计/匿名公开反馈，无内部资产ID、用户ID或私聊正文。Backend/Frontend/ui-tests共用，同版本先部署producer。
+
+### 心愿契约（本地候选）
+
+api/character-wishes.ts 定义输入长度、固定public可见性、分页、匿名DTO及明确 supported 布尔 mutation。PublishCreatorCharacterSchema 接受可选 wish_id，SetCreatorVisibilitySchema 保持独立不接受此字段。GetCreatorCharacterData 可携带 wish_response linked/not_linked；客户端不得把not_linked当角色发布失败。通知新增character_wish_response及{wish_id,character_id} metadata，VIP consumer须缩窄旧metadata类型；跳转根据校验UUID构造内部 /wishes/:id，不信任任意action_path。

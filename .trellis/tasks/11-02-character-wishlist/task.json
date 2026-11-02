@@ -1,0 +1,59 @@
+{
+  "id": "character-wishlist",
+  "name": "character-wishlist",
+  "title": "角色心愿墙轻量闭环",
+  "description": "用户已验收本地心愿墙并于2026-11-02授权测试通过后经dev发布；仅本批心愿闭环",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "character-wishlist",
+  "package": "frontend",
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-02",
+  "completedAt": null,
+  "branch": "codex/character-wishlist",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "frontend.business.character-lobby",
+        "backend.business.character-lobby",
+        "shared.business.character-lobby-contracts"
+      ]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": ["/characters", "/creation/data", "/wishes", "/wishes/[id]"],
+      "apis": ["/api/character-wishes", "/api/character-wishes/:id"],
+      "android": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 2500
+      },
+      "ios": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 2500
+      },
+      "api": {
+        "p95_baseline_ms": null,
+        "p95_target_ms": 1500
+      },
+      "measurement": {
+        "source": "新增心愿页面无线上样本；后端请求耗时日志与后续真实WebView到内容可见时间",
+        "window": "后续正式发布24小时分Android/iOS采样，本轮本地预览不报告线上P95"
+      },
+      "notes": "新增只读页面无可见线上样本，三项基线均null。移动模拟验证布局/交互，不代表Android/iOS性能。后端复用现有请求日志，页面新增加载过程不阻塞其他入口。先核验生产版本和错误，再分别采样平台P95。"
+    }
+  }
+}

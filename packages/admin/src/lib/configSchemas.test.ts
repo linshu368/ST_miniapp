@@ -20,16 +20,20 @@ import {
 } from './configSchemas';
 
 describe('lobby rotation config editing', () => {
-  it('opens legacy ranking settings with rotation disabled and a 24 hour interval', () => {
+  it('opens legacy ranking settings with full rotation and a 24 hour interval', () => {
     const value = resolveLobbyRankingEditorValue(DEFAULT_LOBBY_RANKING_PARAMS);
     expect(value.rotation).toEqual(DEFAULT_LOBBY_ROTATION_CONFIG);
-    expect(value.rotation).toMatchObject({ enabled: false, interval_hours: 24 });
+    expect(value.rotation).toMatchObject({
+      enabled: true,
+      interval_hours: 24,
+      rollout_percent: 100,
+    });
     expect(configSchemas.lobby_ranking_params.safeParse(value).success).toBe(true);
   });
 
-  it('preserves a saved rotation policy when editing the scoring settings', () => {
+  it('preserves saved parameters while normalizing retired rollout controls', () => {
     const rotation = {
-      enabled: true,
+      enabled: false,
       interval_hours: 48,
       max_repeat: 1,
       exploration_count: 0,
@@ -41,10 +45,13 @@ describe('lobby rotation config editing', () => {
       min_users: 30,
       first_touch_lookback_days: null,
     });
-    expect(value.rotation).toEqual(rotation);
+    const expectedRotation = { ...rotation, enabled: true, rollout_percent: 100 };
+    expect(value.rotation).toEqual(expectedRotation);
     expect(value.min_users).toBe(30);
     expect(value.first_touch_lookback_days).toBeNull();
-    expect(configSchemas.lobby_ranking_params.parse(value)).toMatchObject({ rotation });
+    expect(configSchemas.lobby_ranking_params.parse(value)).toMatchObject({
+      rotation: expectedRotation,
+    });
   });
 
   it('retains the legacy candidate list and independent fixed choice through save validation', () => {
