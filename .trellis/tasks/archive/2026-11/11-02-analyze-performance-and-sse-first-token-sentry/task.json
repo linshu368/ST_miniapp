@@ -1,0 +1,32 @@
+{
+  "id": "analyze-performance-and-sse-first-token-sentry",
+  "name": "analyze-performance-and-sse-first-token-sentry",
+  "title": "分析两日性能回归并调整 SSE 首字 Sentry 口径",
+  "description": "结合10月31日和11月1日报、提交历史定位性能退化，设计并实现SSE首字即结束Sentry响应耗时，保留完整生成独立观测。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P2",
+  "creator": "cline",
+  "assignee": "cline",
+  "createdAt": "2026-11-02",
+  "completedAt": "2026-11-02",
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "no_module_change",
+      "reason": "仅调整后端内部 Sentry SSE 性能指标的计时里程碑与诊断拆分，不改变模块职责、外部契约、业务状态或数据模型；具体口径由本任务设计和验证记录承载。"
+    }
+  }
+}

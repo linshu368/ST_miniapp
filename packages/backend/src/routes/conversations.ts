@@ -49,6 +49,7 @@ import type {
 import { requireTelegramAuth, type TelegramUser } from '../middleware/auth.js';
 import { getOrCreateDbUser } from '../lib/user.js';
 import { requestLogger, type RequestLogger } from '../lib/logger.js';
+import { startSseResponseMetric } from '../lib/perf-metrics.js';
 import {
   ChatSessionRepository,
   toChatSession,
@@ -626,10 +627,21 @@ export default async function conversationRoutes(app: FastifyInstance) {
   }): Promise<undefined> {
     const { reply, sessionId, mode, tgUser, baseLog } = input;
     const log = requestLogger(baseLog, 'conversations');
-    // 必须在任何可能耗时的 await 之前建好：客户端断开的监听要尽早挂上
-    const sink = createReplyStreamSink(reply);
     const receivedAt = Date.now();
     const receivedMonotonicAt = performance.now();
+    // 与 Fastify onResponse 的起点对齐，包含鉴权和参数校验，而不是从进入业务编排才起算。
+    const requestStartedMonotonicAt = receivedMonotonicAt - reply.elapsedTime;
+    const responseMetric = startSseResponseMetric(
+      reply,
+      mode.kind === 'send'
+        ? '/api/v1/conversations/:id/messages'
+        : '/api/v1/conversations/:id/regenerate',
+      requestStartedMonotonicAt
+    );
+    // 必须在任何可能耗时的 await 之前建好：客户端断开的监听要尽早挂上
+    const sink = createReplyStreamSink(reply, {
+      onFirstVisibleToken: responseMetric.firstVisibleToken,
+    });
     let preparationSignal = AbortSignal.timeout(DEFAULT_FIRST_TOKEN_DEADLINE_MS);
 
     try {
@@ -670,6 +682,8 @@ export default async function conversationRoutes(app: FastifyInstance) {
     } catch (error) {
       failTurn(reply, sink, error, log);
       return undefined;
+    } finally {
+      responseMetric.finish(reply.statusCode);
     }
   }
 
