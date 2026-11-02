@@ -74,6 +74,7 @@ test('@creator @layout 私密发布、本人试聊、编辑与可见性切换连
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await page.getByRole('link', { name: '编辑', exact: true }).click();
   await expect(page.getByRole('textbox', { name: '名称' })).toHaveValue('旧书店的林舟');
+  await expect(page.getByRole('navigation', { name: '主导航', exact: true })).toHaveCount(0);
   await preview.screenshot('角色编辑与发布闭环');
 });
 

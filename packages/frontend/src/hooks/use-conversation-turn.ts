@@ -22,8 +22,8 @@ import {
   streamConversationTurn,
 } from '@/lib/api/conversation-stream';
 import { ApiClientError } from '@/lib/api/client';
+import { reportConversationFirstToken } from '@/lib/api/first-token-reports';
 import {
-  reportConversationFirstToken,
   conversationKeys,
   fetchConversationDetail,
   useCancelConversationTurnMutation,
