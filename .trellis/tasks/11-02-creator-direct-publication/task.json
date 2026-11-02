@@ -1,0 +1,38 @@
+{
+  "id": "creator-direct-publication",
+  "name": "creator-direct-publication",
+  "title": "角色卡AI审核：可运营prompt与固定结果协议",
+  "description": "",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P1",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-02",
+  "completedAt": null,
+  "branch": "codex/creator-direct-publication",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "本地审核/运营试审功能全部完成；本地HEAD c66ba9ae，保留同事已上线首字优化。相关测试、PG17隔离验证、两端build、workspace typecheck、真实模型通过/拒绝均通过。最终review包准备完毕，等待按仓库workflow要求确认最终内容后提交并经dev发布；当前未提交/推送/远端迁移/上线。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "backend.business.character-lobby",
+        "frontend.business.character-lobby",
+        "admin.business.operations",
+        "database.infrastructure.schema-security",
+        "shared.business.character-lobby-contracts"
+      ]
+    }
+  }
+}

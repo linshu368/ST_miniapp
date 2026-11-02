@@ -8,6 +8,11 @@ import {
   creatorPublishMissingFields,
   CreatorCharacterIdSchema,
   CreatorReviewStatusSchema,
+  CreatorReviewTestRequestSchema,
+  type CreatorReviewTestData,
+  CREATOR_REVIEW_REJECTED_CODE,
+  CREATOR_REVIEW_UNAVAILABLE_CODE,
+  type CreatorVisibility,
   fail,
   ok,
 } from '@miniapp/shared';
@@ -17,6 +22,10 @@ import { config } from '../platform/config.js';
 import { AdminSessionError, requireAdminActor } from '../features/admin-access/session.js';
 import { CreatorCharacterRepository } from '../features/creator/repository.js';
 import { clearLobbyFeaturedSnapshot } from '../features/lobby/featured-snapshot.js';
+import {
+  reviewCreatorCharacter,
+  testCreatorCharacterReview,
+} from '../features/generation/creator-review.js';
 
 const idSchema = CreatorCharacterIdSchema;
 export default async function creatorCharacterRoutes(app: FastifyInstance) {
@@ -39,6 +48,21 @@ export default async function creatorCharacterRoutes(app: FastifyInstance) {
             .code(err.statusCode)
             .send(fail(err.statusCode === 401 ? 'UNAUTHORIZED' : 'FORBIDDEN', err.message));
         const code = err && typeof err === 'object' && 'code' in err ? err.code : null;
+        if (code === CREATOR_REVIEW_REJECTED_CODE && err instanceof Error)
+          return reply.code(422).send(fail(CREATOR_REVIEW_REJECTED_CODE, err.message));
+        if (code === CREATOR_REVIEW_UNAVAILABLE_CODE) {
+          request.log.warn(
+            { err: Object.assign(new Error('Creator review unavailable'), { code }), action },
+            'creator review unavailable'
+          );
+          return reply
+            .code(503)
+            .send(
+              fail(CREATOR_REVIEW_UNAVAILABLE_CODE, '暂时无法完成审核，请稍后重试。原稿已保留。')
+            );
+        }
+        if (code === 'MISSING_FIELDS' && err instanceof Error)
+          return reply.code(400).send(fail('MISSING_FIELDS', err.message));
         if (code === 'P0404') return reply.code(404).send(fail('NOT_FOUND', '角色或封面已不可用'));
         if (code === 'P0409')
           return reply.code(409).send(fail('CONFLICT', '这份角色已更新，请重新加载后再操作'));
@@ -68,6 +92,45 @@ export default async function creatorCharacterRoutes(app: FastifyInstance) {
   };
   const characterId = (request: FastifyRequest) =>
     idSchema.parse((request.params as { id: string }).id);
+
+  const publishCharacter = async (
+    request: FastifyRequest,
+    input: {
+      ownerId: string;
+      id: string;
+      action: 'publish' | 'visibility';
+      expectedRevision: number;
+      visibility: CreatorVisibility;
+    }
+  ) => {
+    const current = await repo.get(input.id, input.ownerId);
+    // Let SQL replay the exact last request or reject it as stale before spending another model call.
+    if (current.revision !== input.expectedRevision) return repo.mutate(input);
+    if (input.action === 'publish' || input.visibility === 'public') {
+      const missing = creatorPublishMissingFields(current.draft, current.cover_asset_id);
+      if (missing.length)
+        throw Object.assign(new Error('请先完成：' + missing.join('、')), {
+          code: 'MISSING_FIELDS',
+        });
+    }
+    if (input.visibility === 'private') return repo.mutate(input);
+    const material = await repo.getReviewMaterial(input.id, input.ownerId, input.expectedRevision);
+    const started = performance.now();
+    const review = await reviewCreatorCharacter(material);
+    request.log.info(
+      {
+        event: 'creator.review.finished',
+        characterId: input.id,
+        approved: review.approved,
+        duration_ms: performance.now() - started,
+      },
+      'creator public review'
+    );
+    if (!review.approved)
+      throw Object.assign(new Error(review.reason), { code: CREATOR_REVIEW_REJECTED_CODE });
+    // The RPC rechecks revision under its existing locks; no external call holds a database lock.
+    return repo.mutate({ ...input, review });
+  };
 
   // @frontend-ready: true — caller identity also scopes an empty local draft list
   app.get(
@@ -125,15 +188,9 @@ export default async function creatorCharacterRoutes(app: FastifyInstance) {
     ownerOptions,
     handle('publish', async (request, reply) => {
       const body = PublishCreatorCharacterSchema.parse(request.body);
-      const ownerId = await viewer(request);
-      const id = characterId(request);
-      const current = await repo.get(id, ownerId);
-      const missing = creatorPublishMissingFields(current.draft, current.cover_asset_id);
-      if (missing.length)
-        return reply.code(400).send(fail('MISSING_FIELDS', `请先完成：${missing.join('、')}`));
-      const character = await repo.mutate({
-        ownerId,
-        id,
+      const character = await publishCharacter(request, {
+        ownerId: await viewer(request),
+        id: characterId(request),
         action: 'publish',
         expectedRevision: body.expected_revision,
         visibility: body.visibility,
@@ -148,7 +205,7 @@ export default async function creatorCharacterRoutes(app: FastifyInstance) {
     ownerOptions,
     handle('visibility', async (request, reply) => {
       const body = SetCreatorVisibilitySchema.parse(request.body);
-      const character = await repo.mutate({
+      const character = await publishCharacter(request, {
         ownerId: await viewer(request),
         id: characterId(request),
         action: 'visibility',
@@ -157,6 +214,21 @@ export default async function creatorCharacterRoutes(app: FastifyInstance) {
       });
       clearLobbyFeaturedSnapshot();
       return reply.send(ok({ character }));
+    })
+  );
+  // @frontend-ready: true — Admin dry run; never saves policy or alters a real character.
+  app.post(
+    '/api/admin/creator-characters/review-test',
+    { bodyLimit: 2 * 1024 * 1024 },
+    handle('review-test', async (request, reply) => {
+      await requireAdminActor(request.headers.authorization, 'write');
+      const input = CreatorReviewTestRequestSchema.parse(request.body);
+      const result = await testCreatorCharacterReview(input);
+      request.log.info(
+        { event: 'creator.review.tested', approved: result.approved },
+        'creator review policy tested'
+      );
+      return reply.send(ok<CreatorReviewTestData>({ result }));
     })
   );
   // @frontend-ready: true — Admin read and write auth remain tied to the selected environment

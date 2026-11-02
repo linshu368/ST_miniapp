@@ -124,7 +124,7 @@ export function CreatorCharacterReviewsView(props: {
     >
       {error && <Alert showIcon type="error" message={error} style={{ marginBottom: 16 }} />}
       <Typography.Paragraph type="secondary">
-        审核通过后进入大厅。角色修改后需重新提交；审核期间，已有公开版本继续使用。
+        公开申请由 AI 审核，此处保留公开状态与历史人工审核管理。公开版本在更新未通过时继续使用。
       </Typography.Paragraph>
       <Table<CreatorCharacterSummary>
         rowKey="id"
