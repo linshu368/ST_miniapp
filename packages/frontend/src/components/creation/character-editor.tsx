@@ -4,18 +4,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ArrowLeft, Check, Expand, ImagePlus, LoaderCircle, Sparkles, Upload } from 'lucide-react';
+import { ArrowLeft, Expand, ImagePlus, LoaderCircle, Sparkles, Upload } from 'lucide-react';
 import {
   CharacterDraftSchema,
   CreatorPolishRequestSchema,
+  CREATOR_REVIEW_REJECTED_CODE,
   creatorPublishMissingFields,
   type CharacterDraft,
   type CreatorCharacter,
 } from '@miniapp/shared';
 import { cn } from '@/lib/utils';
 import { useTelegramBackButton } from '@/lib/telegram/hooks';
-import { chatEntryPath } from '@/lib/chat-entry';
-import { useCreateConversationMutation } from '@/lib/api/conversations';
 import {
   fileToImagePlazaPayload,
   useCreateImagePlazaConversationMutation,
@@ -198,7 +197,6 @@ function CharacterEditor({
   const publish = usePublishCreatorCharacterMutation();
   const setVisibility = useSetCreatorVisibilityMutation();
   const polishMutation = useCreatorPolishMutation();
-  const createChat = useCreateConversationMutation();
   const [editing, setEditing] = useState<TextField | null>(null);
   const [fullCover, setFullCover] = useState(false);
   const [showRequired, setShowRequired] = useState(false);
@@ -207,7 +205,6 @@ function CharacterEditor({
   const [recoveryOpen, setRecoveryOpen] = useState(false);
   const [recoveryDraftId, setRecoveryDraftId] = useState<string | null>(null);
   const backupId = useRef<string | null>(null);
-  const [published, setPublished] = useState<CreatorCharacter | null>(null);
   const [importNotice, setImportNotice] = useState({ background: '', preset: '' });
   const [session, setSession] = useState<CharacterPolishSession | null>(null);
   const sessionRef = useRef<CharacterPolishSession | null>(null);
@@ -223,6 +220,7 @@ function CharacterEditor({
   const adoptedCover = useRef<string | null>(null);
   const missingFields = creatorPublishMissingFields(draft, coverAssetId);
   const busy = working || upload.isPending || createStudio.isPending;
+  const reviewing = visibility === 'public' && (publish.isPending || setVisibility.isPending);
   const sameContent = Boolean(
     character &&
     JSON.stringify(character.draft) === JSON.stringify(draft) &&
@@ -238,8 +236,8 @@ function CharacterEditor({
     visibility === 'private'
       ? '保存到我的空间'
       : character?.approved_revision
-        ? '提交更新审核'
-        : '提交审核';
+        ? '发布更新'
+        : '公开角色';
   const requiredMark = (
     <span className="ml-1 text-destructive" aria-hidden>
       *
@@ -501,17 +499,14 @@ function CharacterEditor({
     busyRef.current = true;
     setWorking(true);
     try {
-      let result: CreatorCharacter;
       if (sameContent && character?.state === 'ready' && character.visibility !== visibility) {
-        result = (
-          await setVisibility.mutateAsync({
-            id: character.id,
-            body: {
-              expected_revision: local.value.serverRevision ?? character.revision,
-              visibility,
-            },
-          })
-        ).character;
+        await setVisibility.mutateAsync({
+          id: character.id,
+          body: {
+            expected_revision: local.value.serverRevision ?? character.revision,
+            visibility,
+          },
+        });
       } else {
         const saved =
           local.value.serverRevision !== null
@@ -543,19 +538,19 @@ function CharacterEditor({
               ).character;
         local.update((value) => ({ ...value, serverRevision: current.revision }));
         await local.flush();
-        result = (
-          await publish.mutateAsync({
-            id: current.id,
-            body: { expected_revision: current.revision, visibility },
-          })
-        ).character;
+        await publish.mutateAsync({
+          id: current.id,
+          body: { expected_revision: current.revision, visibility },
+        });
       }
       await local.clear();
-      setPublished(result);
+      router.replace('/creation?tab=created');
     } catch (error) {
       if (error instanceof ApiClientError && error.status === 409) {
         local.setConflict(true);
         setNotice('这张角色卡已有更新，请载入最新版本后继续。当前内容已保留在本地。');
+      } else if (error instanceof ApiClientError && error.code === CREATOR_REVIEW_REJECTED_CODE) {
+        setNotice(`未通过审核：${error.message}`);
       } else
         setNotice(error instanceof Error ? error.message : '保存未完成，请重试。你的内容已保留。');
     } finally {
@@ -564,66 +559,10 @@ function CharacterEditor({
     }
   }
 
-  async function startChat() {
-    if (!published || createChat.isPending) return;
-    setNotice('');
-    try {
-      const data = await createChat.mutateAsync(published.id);
-      router.push(chatEntryPath(published.id, { sessionId: data.session.id, source: 'created' }));
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : '聊天暂时未打开，请重试。');
-    }
-  }
-
   if (!local.ready)
     return (
       <main className="mx-auto max-w-lg px-6 py-10 text-sm text-muted-foreground" role="status">
         正在恢复草稿…
-      </main>
-    );
-  if (published)
-    return (
-      <main className="mx-auto flex min-h-[75svh] w-full max-w-lg flex-col items-center justify-center px-6 py-10 text-center">
-        {published.cover_url && (
-          <Image
-            className="mb-6 aspect-[3/4] w-40 rounded-2xl object-cover"
-            src={published.cover_url}
-            alt={published.name}
-            width={160}
-            height={214}
-            unoptimized
-          />
-        )}
-        <span className="mb-4 grid size-11 place-items-center rounded-full bg-success/15 text-success">
-          <Check className="size-5" />
-        </span>
-        <h1 className="text-xl font-medium text-foreground">{published.name}</h1>
-        <p className="mt-3 text-sm leading-7 text-muted-foreground">
-          {published.visibility === 'public'
-            ? published.approved_revision
-              ? '新版已提交审核，大厅仍展示原版。你可以先和新版角色聊聊。'
-              : '已提交审核，通过后会出现在大厅。现在就可以和 TA 聊聊。'
-            : '已放入自己的空间，现在就可以和 TA 聊聊。'}
-        </p>
-        <button
-          type="button"
-          disabled={createChat.isPending}
-          onClick={() => void startChat()}
-          className="mt-8 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary text-sm font-semibold text-primary-foreground disabled:opacity-50"
-        >
-          {createChat.isPending && <LoaderCircle className="size-4 animate-spin" />}开始聊天
-        </button>
-        <Link
-          className="mt-3 flex min-h-12 items-center justify-center text-sm text-foreground/80"
-          href="/creation?tab=created"
-        >
-          返回我的创作
-        </Link>
-        {notice && (
-          <p role="alert" className="mt-3 text-xs leading-7 text-destructive">
-            {notice}
-          </p>
-        )}
       </main>
     );
 
@@ -979,7 +918,10 @@ function CharacterEditor({
       })}
       <section className="mt-6 border-t border-border/70 pt-6">
         <fieldset>
-          <legend id="creator-tags" className="mb-3 scroll-mt-5 text-sm font-medium text-foreground">
+          <legend
+            id="creator-tags"
+            className="mb-3 scroll-mt-5 text-sm font-medium text-foreground"
+          >
             标签{requiredMark}
             <span className="ml-2 text-[11px] font-normal tabular-nums text-muted-foreground">
               {draft.tags.length} / 10
@@ -1048,7 +990,7 @@ function CharacterEditor({
                   />
                 </span>
                 <span className="mt-2 block px-1 text-[11px] leading-6 text-muted-foreground">
-                  {value === 'public' ? '审核后进入大厅' : '进入自己的空间，只有自己能看到'}
+                  {value === 'public' ? '审核通过后进入大厅' : '进入自己的空间，只有自己能看到'}
                 </span>
               </label>
             ))}
@@ -1062,7 +1004,11 @@ function CharacterEditor({
       </section>
       <section className="mt-8 border-t border-border/70 pt-5">
         {showRequired && missingFields.length > 0 && (
-          <div id="creator-missing" role="alert" className="mb-3 text-xs leading-7 text-destructive">
+          <div
+            id="creator-missing"
+            role="alert"
+            className="mb-3 text-xs leading-7 text-destructive"
+          >
             <span>请补全必填项：</span>
             <div className="flex flex-wrap gap-x-3">
               {missingFields.map((field) => (
@@ -1090,7 +1036,7 @@ function CharacterEditor({
           className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-primary/30 bg-primary text-sm font-semibold text-primary-foreground disabled:opacity-40"
         >
           {busy && <LoaderCircle className="size-4 animate-spin" />}
-          {busy ? '正在保存…' : unchanged ? '没有新修改' : submitLabel}
+          {reviewing ? '正在审核…' : busy ? '正在保存…' : unchanged ? '没有新修改' : submitLabel}
         </button>
       </section>
       {recoveryOpen && (

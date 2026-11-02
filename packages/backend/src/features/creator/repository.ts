@@ -1,5 +1,7 @@
 import {
   CharacterDraftSchema,
+  CREATOR_REVIEW_UNAVAILABLE_CODE,
+  type CreatorAiReviewResult,
   composeCharacterSystemPrompt,
   emptyCharacterDraft,
   type CharacterDraft,
@@ -9,6 +11,7 @@ import {
   type CreatorVisibility,
 } from '@miniapp/shared';
 import { getDomainDb } from '../../lib/supabase.js';
+import type { CreatorReviewMaterial } from '../generation/creator-review.js';
 import { resolveCreatorCoverUrl } from './covers.js';
 import { resolveCreatorPresets } from './preset-catalog.js';
 
@@ -103,6 +106,48 @@ export class CreatorCharacterRepository {
     if (!data) throw Object.assign(new Error('角色不存在'), { code: 'P0404' });
     return detail(data as CreationRow);
   }
+  /** Keep audit material server-only and pinned to the exact draft revision being published. */
+  async getReviewMaterial(
+    id: string,
+    ownerId: string,
+    expectedRevision: number
+  ): Promise<CreatorReviewMaterial> {
+    const { data, error } = await this.db
+      .from('character_creations')
+      .select('revision,draft,draft_runtime')
+      .eq('character_id', id)
+      .eq('owner_user_id', ownerId)
+      .abortSignal(AbortSignal.timeout(TIMEOUT_MS))
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) throw Object.assign(new Error('角色不存在'), { code: 'P0404' });
+    const row = data as { revision: number; draft: unknown; draft_runtime: unknown };
+    if (row.revision !== expectedRevision)
+      throw Object.assign(new Error('角色版本已变化'), { code: 'P0409' });
+    const runtime = row.draft_runtime;
+    const draft = CharacterDraftSchema.safeParse(row.draft);
+    if (!draft.success || !runtime || typeof runtime !== 'object' || Array.isArray(runtime))
+      throw Object.assign(new Error('Saved review material unavailable'), {
+        code: CREATOR_REVIEW_UNAVAILABLE_CODE,
+      });
+    const fields = runtime as Record<string, unknown>;
+    if (
+      typeof fields.name !== 'string' ||
+      typeof fields.description !== 'string' ||
+      typeof fields.first_mes !== 'string' ||
+      typeof fields.system_prompt !== 'string'
+    )
+      throw Object.assign(new Error('Saved review material unavailable'), {
+        code: CREATOR_REVIEW_UNAVAILABLE_CODE,
+      });
+    return {
+      name: fields.name,
+      description: fields.description,
+      opening: fields.first_mes,
+      tags: draft.data.tags,
+      systemPrompt: fields.system_prompt,
+    };
+  }
   async mutate(input: {
     ownerId: string;
     id: string;
@@ -111,6 +156,8 @@ export class CreatorCharacterRepository {
     draft?: CharacterDraft;
     coverAssetId?: string | null;
     visibility?: CreatorVisibility;
+    /** Server-produced only; public request schemas reject any client review fields. */
+    review?: CreatorAiReviewResult;
   }): Promise<CreatorCharacter> {
     const draft = input.draft ?? emptyCharacterDraft();
     const payload =
@@ -120,7 +167,7 @@ export class CreatorCharacterRepository {
             runtime: await creatorRuntime(draft),
             cover_asset_id: input.coverAssetId ?? null,
           }
-        : { visibility: input.visibility };
+        : { visibility: input.visibility, ...(input.review ? { review: input.review } : {}) };
     const { data, error } = await this.db
       .rpc('mutate_creator_character', {
         p_user_id: input.ownerId,

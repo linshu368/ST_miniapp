@@ -24,6 +24,7 @@ import {
 import { Refine } from '@refinedev/core';
 import { dataProvider } from '@refinedev/supabase';
 import {
+  CREATOR_REVIEW_PROMPT_KEY,
   ModelCatalogSchema,
   PaymentPlansRuntimeConfigSchema,
   type LlmModelProvider,
@@ -51,6 +52,7 @@ import {
   rollbackRelease,
   saveDraft,
   testImageTextModelConfig,
+  testCreatorCharacterReview,
   uploadInvitePoster,
   type AdminUser,
   type CharacterCard,
@@ -1004,6 +1006,9 @@ function AdminWorkspace(props: {
         charactersLoading={charactersLoading}
         charactersError={charactersError}
         onUploadInvitePoster={(file) => uploadInvitePoster(props.client, props.environment, file)}
+        onTestCreatorReview={(input, signal) =>
+          testCreatorCharacterReview(props.client, props.environment, input, signal)
+        }
         onTestImageTextModel={(value) =>
           testImageTextModelConfig(props.client, props.environment, value)
         }
@@ -1184,6 +1189,7 @@ function AdminWorkspace(props: {
                   children: [
                     { key: 'platform_instructions', label: '主体与模块规则' },
                     { key: 'reply_style_options', label: '回复风格' },
+                    { key: configMenuKey(CREATOR_REVIEW_PROMPT_KEY), label: '角色卡审核' },
                   ],
                 },
                 { key: 'vip_strategy', label: 'VIP策略' },

@@ -30,7 +30,7 @@ export function createdCharacterStatusLabel(
   if (card.review_status === 'rejected')
     return card.approved_revision != null ? '更新未通过' : '审核未通过';
   if (card.visibility === 'private') return '私密';
-  return card.approved_revision != null ? '已公开' : '未提交审核';
+  return card.approved_revision != null ? '已公开' : '未公开';
 }
 
 export function findCreatedCharacterDraft(
@@ -309,6 +309,7 @@ export function CreatedCharacters() {
             className="mt-6 min-h-12 w-full rounded-xl bg-primary text-sm font-semibold text-primary-foreground disabled:opacity-60"
             onClick={async () => {
               if (!changing) return;
+              setError('');
               try {
                 await visibility.mutateAsync({
                   id: changing.id,
@@ -324,10 +325,12 @@ export function CreatedCharacters() {
             }}
           >
             {visibility.isPending
-              ? '正在保存…'
+              ? changing?.visibility === 'private'
+                ? '正在审核…'
+                : '正在保存…'
               : changing?.visibility === 'public'
                 ? '确认设为私密'
-                : '提交审核'}
+                : '确认公开'}
           </button>
         </SheetContent>
       </Sheet>

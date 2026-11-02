@@ -1,4 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import {
+  CreatorReviewTestRequestSchema,
+  CreatorReviewTestDataSchema,
+  type CreatorReviewTestRequest,
+  type CreatorReviewTestData,
+} from '@miniapp/shared';
 import type {
   AdminImageTextModelTestRequest,
   AdminImageTextModelTestResponse,
@@ -6,6 +12,7 @@ import type {
 } from '@miniapp/shared';
 import type { AdminEnvironment } from './environment';
 import { getAdminApiUrl } from './environment';
+import { readAdminAccessToken } from './textPostprocessApi';
 import type { ManagedConfigKey } from './configSchemas';
 
 export interface AdminUser {
@@ -333,6 +340,45 @@ export async function testImageTextModelConfig(
     throw new Error(readApiErrorMessage(body) ?? '模型调用测试失败');
   }
   return body.data;
+}
+
+/** Test the current editor policy without publishing configuration or changing a role card. */
+export async function testCreatorCharacterReview(
+  client: SupabaseClient,
+  environment: AdminEnvironment,
+  input: CreatorReviewTestRequest,
+  callerSignal?: AbortSignal
+): Promise<CreatorReviewTestData> {
+  const payload = CreatorReviewTestRequestSchema.parse(input);
+  const token = await readAdminAccessToken(client);
+  if (!token) throw new Error('登录状态已失效，请重新登录当前环境');
+  const timeout = AbortSignal.timeout(75_000);
+  const signal = callerSignal ? AbortSignal.any([callerSignal, timeout]) : timeout;
+  let response: Response;
+  try {
+    response = await fetch(
+      `${getAdminApiUrl(environment)}/api/admin/creator-characters/review-test`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal,
+      }
+    );
+  } catch (err) {
+    if (callerSignal?.aborted) throw err;
+    throw new Error(
+      signal.aborted ? '测试等待超时，请重试。' : '暂时无法连接审核服务，请稍后重试。'
+    );
+  }
+  if (response.status === 401) throw new Error('登录状态已失效，请重新登录当前环境');
+  if (response.status === 403) throw new Error('没有当前环境的审核测试权限');
+  const body = await readApiResponse<unknown>(response);
+  if (!response.ok || !body?.success)
+    throw new Error(readApiErrorMessage(body) ?? '审核测试未完成，请稍后重试。');
+  const data = CreatorReviewTestDataSchema.safeParse(body.data);
+  if (!data.success) throw new Error('审核返回的结构校验失败，请检查配置后重试。');
+  return data.data;
 }
 
 async function readApiResponse<T>(response: Response): Promise<ApiResponse<T> | null> {
