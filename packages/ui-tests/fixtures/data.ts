@@ -158,6 +158,11 @@ export const scenarios = {
     description: '先显示思考，正文开始后自动折叠',
     path: `/chat/${IDS.character}?session=${IDS.session}&from=discover`,
   },
+  'chat-late-first-token': {
+    label: '首字迟到',
+    description: '客户端计时到点只提示网络慢，回复到达后提示消失，不误报重试',
+    path: `/chat/${IDS.character}?session=${IDS.session}&from=discover`,
+  },
   'chat-sessions': {
     label: '同角色多段对话',
     description: '日期区分、长名称、分支来源、当前对话和收纳管理',

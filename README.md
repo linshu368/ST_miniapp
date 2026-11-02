@@ -330,6 +330,10 @@ SSE start携带当轮冻结总预算。客户端若持有旧目录缓存，按�
 
 最近十轮消息编辑/单条删除：`pnpm preview:ui` 选择「消息编辑与删除」，固定验收 `pnpm test:ui --grep @chat-edit`。原会话和分支互不影响，双方消息可改，只删选中单条。部署前先按迁移README验证并执行 `20261102_chat_message_overrides.sql`。
 
+## 服务端交付计费与耗时归因（2026-11-02，本地候选）
+
+6 秒不再一刀切：只有已建立连接上的传输算用户网络，建连、预检、调用前、上游等待都算我方，证据不全也算我方。服务端按时出字且完整交付即正常结算，服务端真超时才免扣；客户端计时只是观测，到点显示“网络有点慢”，不再误报重试。聊天页用不查库的 `/health` 保持连接，上限每 25 秒一次。兜底模型被选为首发时，第二路用相反供应商顺序。发布先应用、后 TEST 与生产迁移 `20261102_first_token_server_delivery_billing.sql`。细则见 [首字兜底说明](docs/first-token-fallback.md)。
+
 ## 兜底供应商与调用前等待（2026-11-02，本地候选）
 
 复用模型目录字段 `fallback_provider_routes: [{model_id, preferred_providers: [first, second]}]`，每个兜底型号独立绑定两个供应商。旧1017缺省Together/Crusoe；其他型号发布必须补齐。仅兜底attempt发送 `order + sort: latency + allow_fallbacks: true`，首发沿原策略，模型屏蔽规则保留。先完成 `20261102_fallback_provider_priority.sql` 的TEST验证，再发布兼容Backend与Admin；迁移只扩展既有配置写入校验，不新增运行时I/O。运营继续保存草稿后发布。

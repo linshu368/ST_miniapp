@@ -100,9 +100,6 @@ export async function forwardWithFirstTokenFallback(input: {
   const fallbackModelId = input.fallbackModelId ?? FIRST_TOKEN_FALLBACK_MODEL_ID;
   const reserveMs = input.fallbackTimeoutMs ?? DEFAULT_FALLBACK_TOKEN_TIMEOUT_MS;
   const deadlineAt = performance.now() + input.remainingFirstTokenMs;
-  const differentModels = !(
-    input.primary.provider === 'openrouter' && input.primary.providerModelId === fallbackModelId
-  );
   let thresholdTimer: ReturnType<typeof setTimeout> | undefined;
   let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
   let settled = false;
@@ -287,7 +284,9 @@ export async function forwardWithFirstTokenFallback(input: {
           triggerMs: input.timeoutMs,
         });
       record(attempt);
-      if (observation.role === 'primary' && differentModels) {
+      // The fallback model selected as primary still races: execute routes the
+      // second attempt to the other provider, so it is never left without a backup.
+      if (observation.role === 'primary') {
         const wait = Math.min(
           input.timeoutMs,
           Math.max(0, deadlineAt - attempt.startedAt - reserveMs)
@@ -530,7 +529,7 @@ export async function forwardWithFirstTokenFallback(input: {
     }
   }
 
-  const skipPrimary = differentModels && deadlineAt - performance.now() <= reserveMs;
+  const skipPrimary = deadlineAt - performance.now() <= reserveMs;
   if (skipPrimary) {
     const skipped = createAttempt(input.primary, 'primary', input.primaryAttemptId);
     recordTerminal(skipped, 'budget_skipped');

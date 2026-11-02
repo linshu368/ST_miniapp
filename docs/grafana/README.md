@@ -35,7 +35,7 @@ TEST与生产依次通过Database Migration workflow执行单文件。迁移只�
 
 发布前置：`20261027_recoverable_chat_delivery.sql` 后执行 `20261028_client_committed_first_token.sql`，然后 Backend、Frontend、看板。新迁移只替换既有函数、复用既有字段与权限；无历史回填、新表、索引、cron、连接或客户端轮询。5分钟刷新、现有只读连接限制保持不变。数据库保留 first_token_visible_ms 字段名兼容旧版，其含义由 measurement_method 决定。
 
-本地验证复用 `bash scripts/test-first-token-fallback-local.sh`：PG17 实跑重复迁移、一次终态/回执无UPDATE、早收晚提交免扣并释放预留、离页与主动停止计费、历史隔离、缺报统计及全部导出看板SQL。仓库修改不代表远端已发布；回退应用/旧版本筛选即可，保留已写v4事实，数据库问题使用forward-fix。
+本地验证复用 `bash scripts/test-first-token-fallback-local.sh`：PG17 实跑重复迁移、一次终态/回执无UPDATE、早收晚提交免扣并释放预留（2026-11-02 起由服务端交付计费取代，见 first-token-fallback.md）、离页与主动停止计费、历史隔离、缺报统计及全部导出看板SQL。仓库修改不代表远端已发布；回退应用/旧版本筛选即可，保留已写v4事实，数据库问题使用forward-fix。
 
 ## 首发与兜底竞争策略（2026-10-28）
 

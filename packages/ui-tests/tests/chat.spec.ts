@@ -342,6 +342,22 @@ test('@chat 首字交付不等待滚回最新消息，单轮只回报一次', as
   await preview.screenshot('滚动位置不改变首字交付');
 });
 
+test('@chat 首字迟到只提示网络慢，回复到达后提示消失且不误报重试', async ({ page, preview }) => {
+  await preview.scenario('chat-late-first-token');
+  await page.goto(chatPath);
+  await page.getByRole('button', { name: '关闭深度思考', exact: true }).click();
+  await sendChat(page, '这条回复会晚一点到');
+  const slowNotice = page.getByText('网络有点慢，正在接收回复', { exact: true });
+  await expect(slowNotice).toBeVisible();
+  await expect(page.getByText('这次回应稍慢，再试一次吧', { exact: true })).toHaveCount(0);
+  await preview.screenshot('首字迟到时的网络提示');
+  await expect(
+    page.getByText('「那就出发吧。」旅人轻轻合上地图，把下一步的选择留给你。', { exact: true })
+  ).toBeAttached();
+  await expect(slowNotice).toHaveCount(0);
+  await expect(page.getByText('这次回应稍慢，再试一次吧', { exact: true })).toHaveCount(0);
+});
+
 test('@chat @layout 深度思考默认开启，正文出现后自动折叠', async ({ page, preview }) => {
   await preview.scenario('chat-slow');
   await page.goto(chatPath);
