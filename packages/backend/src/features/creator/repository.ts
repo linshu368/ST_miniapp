@@ -180,36 +180,4 @@ export class CreatorCharacterRepository {
     if (error) throw error;
     return detail(data as CreationRow);
   }
-  async reviews(status: CreatorReviewStatus): Promise<CreatorCharacterSummary[]> {
-    const { data, error } = await this.db
-      .from('character_creations')
-      .select(SUMMARY_COLUMNS)
-      .eq('review_status', status)
-      .order('updated_at', { ascending: true })
-      .limit(100)
-      .abortSignal(AbortSignal.timeout(TIMEOUT_MS));
-    if (error) throw error;
-    return Promise.all(((data ?? []) as unknown as SummaryRow[]).map(summary));
-  }
-  async review(input: {
-    adminId: string;
-    id: string;
-    submittedRevision: number;
-    decision: 'approve' | 'reject';
-    reason?: string;
-    environment: 'test' | 'production';
-  }): Promise<CreatorCharacter> {
-    const { data, error } = await this.db
-      .rpc('review_creator_character', {
-        p_admin_user_id: input.adminId,
-        p_character_id: input.id,
-        p_submitted_revision: input.submittedRevision,
-        p_decision: input.decision,
-        p_reason: input.reason ?? null,
-        p_environment: input.environment,
-      })
-      .abortSignal(AbortSignal.timeout(TIMEOUT_MS));
-    if (error) throw error;
-    return detail(data as CreationRow);
-  }
 }
