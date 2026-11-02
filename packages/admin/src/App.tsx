@@ -26,6 +26,7 @@ import { dataProvider } from '@refinedev/supabase';
 import {
   CREATOR_REVIEW_PROMPT_KEY,
   ModelCatalogSchema,
+  LlmProviderRoutingConfigSchema,
   PaymentPlansRuntimeConfigSchema,
   type LlmModelProvider,
   type ModelCatalog,
@@ -72,7 +73,11 @@ import {
   isEnvironmentConfigured,
   type AdminEnvironment,
 } from './lib/environment';
-import { fetchModelProviderDirectory, getCatalogProviderIssues } from './lib/openRouterModels';
+import {
+  fetchModelProviderDirectory,
+  getCatalogProviderIssues,
+  getFallbackProviderIssues,
+} from './lib/openRouterModels';
 import { getModelCatalogChangeSummary } from './lib/modelCatalogDiff';
 import { TextPostprocessView } from './components/TextPostprocessView';
 import {
@@ -683,14 +688,28 @@ function AdminWorkspace(props: {
 
   const validateModelProviderConfig = useCallback(
     (key: ManagedConfigKey, value: unknown): void => {
-      if (key !== 'llm_model_catalog') return;
-      const catalog = ModelCatalogSchema.parse(value) as ModelCatalog;
-      const issues = getCatalogProviderIssues(catalog, providerDirectories);
+      if (key !== 'llm_model_catalog' && key !== 'llm_provider_routing_config') return;
+      const catalog = ModelCatalogSchema.parse(
+        key === 'llm_model_catalog'
+          ? value
+          : configs.find((config) => config.key === 'llm_model_catalog')?.value
+      ) as ModelCatalog;
+      const routing = LlmProviderRoutingConfigSchema.parse(
+        key === 'llm_provider_routing_config'
+          ? value
+          : (configs.find((config) => config.key === 'llm_provider_routing_config')?.value ?? {
+              rules: [],
+            })
+      );
+      const issues =
+        key === 'llm_model_catalog'
+          ? getCatalogProviderIssues(catalog, providerDirectories, routing)
+          : getFallbackProviderIssues(catalog, routing);
       if (issues.length > 0) {
         throw new Error(`模型配置未通过平台目录校验：${issues.join('；')}`);
       }
     },
-    [providerDirectories]
+    [providerDirectories, configs]
   );
 
   useEffect(() => {

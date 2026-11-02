@@ -4,6 +4,7 @@ import {
   Card,
   Col,
   InputNumber,
+  Input,
   Row,
   Select,
   Space,
@@ -18,6 +19,7 @@ import {
   DEFAULT_FIRST_TOKEN_TIMEOUT_RATE_TARGET,
   FIRST_TOKEN_FALLBACK_MODEL_ID,
   ModelCatalogSchema,
+  resolveFallbackProviders,
   type ModelCatalog,
   type ModelCatalogModel,
   type ProviderModelDirectory,
@@ -33,6 +35,20 @@ export function FallbackConfigEditor(props: {
   onRefresh: () => void;
 }) {
   const fallbackId = props.value.fallback_model_id ?? FIRST_TOKEN_FALLBACK_MODEL_ID;
+  const providers = resolveFallbackProviders(props.value) ?? ['', ''];
+  const updateProvider = (index: 0 | 1, slug: string) => {
+    const preferred_providers: [string, string] = [...providers];
+    preferred_providers[index] = slug;
+    props.onChange({
+      ...props.value,
+      fallback_provider_routes: [
+        ...(props.value.fallback_provider_routes ?? []).filter(
+          (route) => route.model_id.toLowerCase() !== fallbackId.toLowerCase()
+        ),
+        { model_id: fallbackId, preferred_providers },
+      ],
+    });
+  };
   const deadline = props.value.first_token_deadline_ms ?? DEFAULT_FIRST_TOKEN_DEADLINE_MS;
   const models = props.value.tiers.flatMap((tier) => tier.models);
   const options = (props.directory?.models ?? []).map((model) => ({
@@ -52,6 +68,7 @@ export function FallbackConfigEditor(props: {
           issue.path.some((part) =>
             [
               'fallback_model_id',
+              'fallback_provider_routes',
               'fallback_timeout_ms',
               'first_token_timeout_ms',
               'first_token_deadline_ms',
@@ -88,6 +105,30 @@ export function FallbackConfigEditor(props: {
           <Typography.Text type="secondary">
             使用现有 OpenRouter key。首发或兜底获胜，都按用户所选型号的价格与权益，只结算一次。
           </Typography.Text>
+          <Row gutter={[16, 12]}>
+            {([0, 1] as const).map((index) => (
+              <Col xs={24} md={12} key={index}>
+                <Typography.Paragraph>优先供应商 {index + 1}</Typography.Paragraph>
+                <Input
+                  aria-label={`兜底优先供应商 ${index + 1}`}
+                  value={providers[index]}
+                  disabled={props.disabled}
+                  placeholder="OpenRouter 供应商标识"
+                  onChange={(event) => updateProvider(index, event.target.value)}
+                />
+              </Col>
+            ))}
+          </Row>
+          <Typography.Text type="secondary">
+            两个供应商只绑定当前兜底型号。按上方顺序优先尝试，其余供应商按首字延迟优先补位；无法服务时允许转其他供应商。切换型号后需要单独配置。
+          </Typography.Text>
+          {!resolveFallbackProviders(props.value) ? (
+            <Alert
+              type="warning"
+              showIcon
+              message="请为当前兜底型号填写两个不同的优先供应商后保存。"
+            />
+          ) : null}
           {props.error ? <Alert type="error" showIcon message={props.error} /> : null}
           {!props.directory && !props.loading ? (
             <Alert type="info" showIcon message="请刷新目录后选择兜底型号。" />

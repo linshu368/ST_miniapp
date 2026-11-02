@@ -5,7 +5,7 @@ scope: backend
 category: business
 status: active
 owners: [backend]
-last_verified_task: .trellis/tasks/11-02-chat-message-edit-delete/
+last_verified_task: .trellis/tasks/11-02-fallback-provider-priority/
 last_verified_at: 2026-11-02
 ---
 
@@ -184,3 +184,33 @@ RPC 与列表读取设 5 秒请求预算；UUID 校验失败返回 400，源不�
 `PUT /api/v1/conversations/:id/messages/:messageId/like` 接受严格 `{liked:boolean}`，认证用户由后端传入 `experience.set_chat_message_like`。RPC 以会话归属及当前可见回复版本为边界，包含分支继承回复；显式目标值使重复提交幂等。不存在或非本人会话统一 404，失效或未完成回复返回 `reply_like_not_allowed`（409）。响应只含 `session_id/message_id/liked`，设置 `no-store`，仓库调用有 5 秒预算，日志不包含正文或 prompt。
 
 反馈存储于 `experience.chat_message_likes`，按会话和实际 history ID 隔离。消息列表从既有叠加视图一次读取 `liked`，只投影到 assistant 消息；上下文查询不选该字段，不影响模型输入、会话排序、角色卡热度或钱包。重生成新版本不继承旧赞，创建分支不复制来源会话的赞。迁移顺序为分支迁移 → 点赞迁移 → Backend → Frontend；新增点赞迁移执行后不得再重跑会删去其末列的旧分支视图定义。应用回退可忽略新增字段，保留反馈事实。
+
+## 调用前准备与兜底路由契约（2026-11-02，本地候选）
+
+### 1. Scope / Trigger
+
+压缩业务自身调用前串行等待，区分派发、连接可写、发送完成、响应头与有效token。线上发布和效果须另验，不从供应商latency推定用户体验。
+
+### 2. Signatures
+
+`prepareGeneration({model, characterId, useFallback, payer?: {userId, chargeId, log, signal}})`返回原配置快照及可选paidAdmission（原始报价、一次余额预检Promise）。`fallback_provider_routes`属于既有ModelCatalog；`firstTokenPolicy.fallbackProviders`冻结本轮两供应商。`upstream-timing.ts`仅内部内存诊断，未增加HTTP/SSE公共字段。
+
+### 3. Contracts
+
+useFallback时路由配置提前同批读取；直接Venice消费者仍不读OpenRouter配置。付费预检不预留/扣款/创建钱包，execute核对user/charge/model/character并复用；免费轮仍由预留决定。报价/prompt持久化先于调用，不能fire-and-forget。默认1017的旧配置兼容Together/Crusoe；新型号保存端要求两个独立slug。配置写入纯校验迁移保留函数OID/ACL及既有预算判断，无用户请求DB负担。新监控只经已有OTLP，不新增DB操作。
+
+### 4. Validation & Error Matrix
+
+重复/缺失/非法供应商→拒绝保存；更换型号不沿用旧名单。发布UI拒绝与现有屏蔽规则冲突；运行时屏蔽仍优先。身份不符/余额不足/余额读取失败→不发上游。提前只读Promise拒绝已挂handler，最终由execute按原逻辑处理。系统超时免扣；主动stop与原政策一致。诊断异常不能影响fetch；取消/竞败未收到的阶段保持缺失。
+
+### 5. Good / Base / Bad Cases
+
+Good：一次钱包读与上下文重叠、路由同批、冻结原报价。Base：非对话execute仍在既有门禁读取。Bad：为了首字提前扣费、免费轮多查钱包、改6秒截止、每token写库或相加并行阶段P95。
+
+### 6. Tests Required
+
+既有execute/upstream/first-token测试覆盖两赢家、免费/付费、真实请求体优先对、报错接管、共同截止、身份错配、余额不足和复用；真实本地HTTP隔离并发和abort阶段。既有SQL harness重放新迁移、非法配对拒绝和OID/ACL不变，并回归交付/扣费。Alloy真实往返验证白名单。全消费者typecheck、Admin/Frontend build、@chat与Admin改型号/重复项回归。模拟200ms收益不作为线上改善证据。
+
+### 7. Wrong vs Correct
+
+Wrong：`await context; await wallet; dispatch`，或把派发至首字减供应商latency称为确定网络耗时。Correct：付费轮提前只读预检并复用，再等待既有持久化门禁；用同一请求已知阶段定位剩余时间，业务结果由客户端数据裁决。

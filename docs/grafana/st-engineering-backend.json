@@ -767,6 +767,136 @@
           "format": "time_series"
         }
       ]
+    },
+    {
+      "id": 15,
+      "title": "调用前各阶段 P50 / P95（同一请求时钟）",
+      "type": "timeseries",
+      "description": "route_setup=路由入口至对话编排；settings=设置/模型/恢复等待；turn_open=原子开轮；context=上下文/角色/初始登记及组prompt；dispatch_gate=余额等剩余门禁及报价持久化。仅完成调用前门禁的请求。并行读归入所在墙钟阶段；各阶段P95不能相加，也不是用户点击到首字。",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 85,
+        "w": 12,
+        "h": 9
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "noValue": "—"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": ["lastNotNull"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "expr": "histogram_quantile(0.5, sum by (le, stage, model) (rate(st_generation_pre_dispatch_stage_seconds_bucket{environment=\"$environment\",release=~\"$release\"}[$__rate_interval])))",
+          "legendFormat": "P50 {{model}} / {{stage}}",
+          "editorMode": "code",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, stage, model) (rate(st_generation_pre_dispatch_stage_seconds_bucket{environment=\"$environment\",release=~\"$release\"}[$__rate_interval])))",
+          "legendFormat": "P95 {{model}} / {{stage}}",
+          "editorMode": "code",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "title": "上游出站分段 P50 / P95（首发/兜底分开）",
+      "type": "timeseries",
+      "description": "request_create=dispatch至HTTP请求创建；connection_wait=创建至连接可写（合并排队/DNS/TCP/TLS，非纯连接）；request_send=写请求头至请求体发送完；response_wait=发完至收到响应头（含网络/平台路由/排队/模型，不能冒充模型latency）；response_to_token=响应头至有效正文或公开思考。未到达的阶段不填0，不把成功条件下分位数用于估算超时率。",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 85,
+        "w": 12,
+        "h": 9
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "noValue": "—"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": ["lastNotNull"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "expr": "histogram_quantile(0.5, sum by (le, stage, model, role) (rate(st_generation_network_stage_seconds_bucket{environment=\"$environment\",release=~\"$release\"}[$__rate_interval])))",
+          "legendFormat": "P50 {{model}} / {{role}} / {{stage}}",
+          "editorMode": "code",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, stage, model, role) (rate(st_generation_network_stage_seconds_bucket{environment=\"$environment\",release=~\"$release\"}[$__rate_interval])))",
+          "legendFormat": "P95 {{model}} / {{role}} / {{stage}}",
+          "editorMode": "code",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        }
+      ]
     }
   ]
 }

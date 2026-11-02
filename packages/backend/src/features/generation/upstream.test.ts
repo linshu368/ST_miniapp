@@ -1,7 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import { Readable } from 'node:stream';
+import { createServer } from 'node:http';
 import { pipeline } from 'node:stream/promises';
-import { createSseTap, resolveUpstreamUrl, type SseTapResult } from './upstream.js';
+import {
+  createSseTap,
+  resolveUpstreamUrl,
+  forwardToUpstream,
+  type SseTapResult,
+} from './upstream.js';
+import type { UpstreamTiming } from './upstream-timing.js';
 import { MAX_CONVERSATION_REASONING_LENGTH } from '@miniapp/shared';
 
 /** 把若干 chunk 灌进 tap，返回透传出去的字节与终态。 */
@@ -41,6 +48,73 @@ const DELTA = (content: string) => sseChunk({ choices: [{ delta: { content } }] 
 const DELTA_A = sseChunk({ id: 'gen-1', choices: [{ delta: { content: '你好' } }] });
 const DELTA_B = sseChunk({ id: 'gen-1', choices: [{ delta: { content: '，世界' } }] });
 const FINISH = sseChunk({ id: 'gen-1', choices: [{ delta: {}, finish_reason: 'stop' }] });
+
+describe('real fetch network timing', () => {
+  it('isolates concurrent attempts and keeps the aborted response timestamp missing', async () => {
+    const server = createServer(async (req, res) => {
+      for await (const _chunk of req) {
+        /* Drain the actual upload before delaying headers. */
+      }
+      if (req.url === '/abort') return;
+      setTimeout(() => {
+        res.writeHead(200);
+        res.end('ok');
+      }, 60);
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('No local test listener');
+    const timing: UpstreamTiming = { startedAt: performance.now() };
+    const aborted: UpstreamTiming = { startedAt: performance.now() };
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 100);
+    try {
+      const url = `http://127.0.0.1:${address.port}`;
+      const [success, failed] = await Promise.allSettled([
+        forwardToUpstream({
+          url: `${url}/ok`,
+          method: 'POST',
+          body: 'test'.repeat(100),
+          apiKey: 'fixture-only',
+          timing,
+        }),
+        forwardToUpstream({
+          url: `${url}/abort`,
+          method: 'POST',
+          body: 'test',
+          apiKey: 'fixture-only',
+          timing: aborted,
+          signal: controller.signal,
+        }),
+      ]);
+      expect(success.status).toBe('fulfilled');
+      if (success.status === 'fulfilled') await success.value.text();
+      expect(failed.status).toBe('rejected');
+      expect(timing.requestCreatedMs).toBeGreaterThanOrEqual(0);
+      expect(timing.sendHeadersMs).toBeGreaterThanOrEqual(timing.requestCreatedMs!);
+      expect(timing.bodySentMs).toBeGreaterThanOrEqual(timing.sendHeadersMs!);
+      expect(timing.responseHeadersMs! - timing.bodySentMs!).toBeGreaterThanOrEqual(40);
+      expect(aborted.bodySentMs).toBeGreaterThanOrEqual(0);
+      expect(aborted.responseHeadersMs).toBeUndefined();
+      const frozen = Object.freeze({ startedAt: performance.now() });
+      const unaffected = await forwardToUpstream({
+        url: `${url}/ok`,
+        method: 'POST',
+        body: 'fixture',
+        apiKey: 'fixture-only',
+        timing: frozen,
+      });
+      expect(await unaffected.text()).toBe('ok');
+      expect(Object.keys(timing).sort()).toEqual(
+        ['startedAt', 'requestCreatedMs', 'sendHeadersMs', 'bodySentMs', 'responseHeadersMs'].sort()
+      );
+    } finally {
+      clearTimeout(timer);
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+});
 
 describe('createSseTap', () => {
   it('原样透传每个字节，不改写响应体', async () => {
