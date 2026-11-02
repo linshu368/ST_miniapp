@@ -10,6 +10,9 @@ import {
 } from './fixtures.js';
 
 test('@roleplay @layout 浏览角色时栏目固定，进聊天后可返回', async ({ page, preview }) => {
+  // 自动验收会启动独立 Next dev；390 项目首次进入动态 chat 路由包含冷编译，
+  // 这里验证功能链路，不把开发编译时间当作 production 导航预算。
+  test.setTimeout(90_000);
   await page.goto('/characters');
   await expect(page.getByText('林间旅人', { exact: true }).first()).toBeVisible();
   const card = page.getByRole('button', { name: '查看 林间旅人 的详情', exact: true });
@@ -37,7 +40,7 @@ test('@roleplay @layout 浏览角色时栏目固定，进聊天后可返回', as
   await page.getByRole('button', { name: '查看 林间旅人 的详情', exact: true }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
   await page.getByRole('button', { name: /继续对话|开始对话|开始聊天|接着聊/ }).click();
-  await expect(page).toHaveURL(/\/chat\//);
+  await expect(page).toHaveURL(/\/chat\//, { timeout: 60_000 });
   await expect(page.getByRole('textbox', { name: '输入消息' })).toBeVisible();
   await page.getByRole('button', { name: /返回发现/ }).click();
   await expect(page).toHaveURL(/3130\/characters$/);
@@ -58,7 +61,7 @@ test('@navigation @layout 五入口跨模块保持统一，末项与操作条不
 }) => {
   // 该综合场景会在独立 Next dev 进程中首次编译多个动态路由和社群 Sheet；
   // 保留每项断言原超时，只给串行冷编译留足总预算。
-  test.setTimeout(120_000);
+  test.setTimeout(180_000);
   const nav = page.getByRole('navigation', { name: '主导航', exact: true });
   const labels = ['角色', '创作', '首页', 'AI短剧', '我的'];
   let baseline:
@@ -132,6 +135,24 @@ test('@navigation @layout 五入口跨模块保持统一，末项与操作条不
       '末项应能实际点到，不被固定导航拦住'
     ).toBe(true);
   };
+  const revealWindowListTail = async (target: Locator) => {
+    await expect
+      .poll(async () => {
+        await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+        return target.count();
+      })
+      .toBe(1);
+  };
+  const revealScrollableListTail = async (scroller: Locator, target: Locator) => {
+    await expect
+      .poll(async () => {
+        await scroller.evaluate((node) => {
+          node.scrollTop = node.scrollHeight;
+        });
+        return target.count();
+      })
+      .toBe(1);
+  };
 
   await page.goto('/characters');
   await expect(
@@ -140,21 +161,22 @@ test('@navigation @layout 五入口跨模块保持统一，末项与操作条不
   await checkNav('角色');
   await preview.screenshot('统一五入口角色页', { fullPage: false });
   const lastCharacter = page.getByRole('button', { name: '查看 故事旅人 18 的详情', exact: true });
-  // 首屏只挂12张，触底会再挂最后6张；等实际末项出现后继续滚到它。
-  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-  await expect(lastCharacter).toBeAttached();
-  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  // 列表按平台分批挂载；持续滚动哨兵，模拟用户浏览到末项，而不是假定末项已在 DOM。
+  await revealWindowListTail(lastCharacter);
+  await lastCharacter.scrollIntoViewIfNeeded();
   await aboveNav(lastCharacter);
-  await page
+  const conversationTab = page
     .getByRole('navigation', { name: '角色栏目' })
-    .getByRole('link', { name: '对话', exact: true })
-    .click();
+    .getByRole('link', { name: '对话', exact: true });
+  await conversationTab.scrollIntoViewIfNeeded();
+  await conversationTab.click();
   await expect(page).toHaveURL(/\/chats$/);
   await checkNav('角色');
   await nav.getByRole('link', { name: 'AI短剧', exact: true }).click();
   await expect(page).toHaveURL(/\/dramas$/);
   await checkNav('AI短剧');
   const lastDrama = page.getByRole('link', { name: '观看 时光旅人', exact: true });
+  await revealScrollableListTail(page.getByLabel('短剧列表', { exact: true }), lastDrama);
   await lastDrama.scrollIntoViewIfNeeded();
   await aboveNav(lastDrama);
   await nav.getByRole('link', { name: '首页', exact: true }).click();

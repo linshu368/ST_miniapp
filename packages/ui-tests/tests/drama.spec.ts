@@ -120,6 +120,21 @@ async function expectReachable(page: Page, name: string) {
   ).toBeTruthy();
 }
 
+async function revealDramaCard(page: Page, name: string) {
+  const target = page.getByRole('link', { name, exact: true });
+  const scroller = page.getByLabel('短剧列表', { exact: true });
+  await expect
+    .poll(async () => {
+      await scroller.evaluate((node) => {
+        node.scrollTop = node.scrollHeight;
+      });
+      return target.count();
+    })
+    .toBe(1);
+  await target.scrollIntoViewIfNeeded();
+  return target;
+}
+
 test('@drama @layout 剧场只固定搜索，进入选集后返回原筛选', async ({ page, preview }) => {
   await preview.scenario('dramas');
   await page.goto('/dramas');
@@ -132,7 +147,7 @@ test('@drama @layout 剧场只固定搜索，进入选集后返回原筛选', as
   await expect(categories.getByRole('button', { name: '悬疑', exact: true })).toBeVisible();
   await expectMobileLayout(page);
   await preview.screenshot('短剧双列剧场');
-  await page.getByRole('link', { name: '观看 时光旅人', exact: true }).scrollIntoViewIfNeeded();
+  await revealDramaCard(page, '观看 时光旅人');
   await expect(search).toBeInViewport();
   await expect(tabs(page)).not.toBeInViewport();
   await expect(categories).not.toBeInViewport();
