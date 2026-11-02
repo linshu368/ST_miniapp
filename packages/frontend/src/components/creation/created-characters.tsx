@@ -279,6 +279,12 @@ export function CreatedCharacters() {
                 <Plus className="size-4" />
                 创作角色卡
               </Link>
+              <Link
+                href="/wishes?from=creation"
+                className="mt-2 inline-flex min-h-11 items-center text-xs text-muted-foreground active:text-primary"
+              >
+                还没想好题材？去心愿墙看看
+              </Link>
             </div>
           )}
         </>

@@ -169,3 +169,23 @@ describe('creator polish candidates and local editing baseline', () => {
     ).toBe('unchanged');
   });
 });
+
+describe('wish source through local draft recovery and cover return', () => {
+  it('keeps source metadata outside the character prompt and restores it without the query string', () => {
+    const scope = { ownerId: 'owner-a', draftId: 'draft-a' };
+    const sourceWishId = '10000000-0000-4000-8000-000000000004';
+    const stored = {
+      ...initialCharacterEditorDraft(),
+      version: 1,
+      key: characterDraftKey(scope),
+      ...scope,
+      sourceWishId,
+    };
+    const restored = parseStoredCharacterDraft(stored, scope);
+    expect(restored?.sourceWishId).toBe(sourceWishId);
+    expect(restored?.draft).not.toHaveProperty('sourceWishId');
+    expect(
+      parseStoredCharacterDraft({ ...stored, sourceWishId: '../private' }, scope)?.sourceWishId
+    ).toBeNull();
+  });
+});

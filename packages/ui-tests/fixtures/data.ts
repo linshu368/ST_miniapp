@@ -30,7 +30,31 @@ export const IDS = {
 export const stamp = () => new Date().toISOString();
 export const later = () => new Date(Date.now() + 31 * 86_400_000).toISOString();
 
+export const WISH_IDS = {
+  adventure: 'a1000000-0000-4000-8000-000000000001',
+  detective: 'a1000000-0000-4000-8000-000000000002',
+  minePublic: 'a1000000-0000-4000-8000-000000000003',
+  mineGarden: 'a1000000-0000-4000-8000-000000000004',
+  notification: 'a2000000-0000-4000-8000-000000000001',
+  ownCard: 'a3000000-0000-4000-8000-000000000001',
+} as const;
+
 export const scenarios = {
+  wishes: {
+    label: '角色心愿墙',
+    description: '匿名公开许愿、我的心愿、支持、用作品回应与站内通知（虚构数据）',
+    path: '/wishes',
+  },
+  'wishes-response-error': {
+    label: '作品回应失败恢复',
+    description: '角色已公开，心愿关联首次失败，可单独重新回应',
+    path: '/wishes',
+  },
+  'wishes-error': {
+    label: '心愿提交失败',
+    description: '首次提交失败保留输入，再次提交成功；同 UUID 重试不重复',
+    path: '/wishes',
+  },
   'lobby-rotation': {
     label: '推荐优质轮换',
     description: '36张虚构角色，24小时轮换、换一批、撤回与试聊返回',
