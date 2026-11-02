@@ -21,11 +21,16 @@ import {
   getPricingConfig,
   type ModelBillingContext,
 } from '../../platform/model-tiers.js';
-import { getProviderPreferencesForModels } from '../../platform/provider-routing.js';
+import {
+  getProviderPreferencesForModels,
+  getProviderRoutingConfig,
+} from '../../platform/provider-routing.js';
 import { readVipStrategy } from '../../platform/vip-strategy.js';
 import {
   LLM_PROVIDER_CAPABILITIES,
   MAX_CONVERSATION_REASONING_LENGTH,
+  fallbackProviderPreferences,
+  resolveFallbackProviders,
   type OpenRouterProviderPreferences,
 } from '@miniapp/shared';
 import { createLogger } from '../../lib/logger.js';
@@ -52,6 +57,7 @@ import {
   type TransportModel,
 } from './first-token-fallback.js';
 import { GenerationCleanupPendingError } from './types.js';
+import type { UpstreamTiming } from './upstream-timing.js';
 import {
   observeGenerationDispatch,
   observeGenerationAttempt,
@@ -87,9 +93,13 @@ export function prepareGeneration(input: {
   model: ResolvedModel | Promise<ResolvedModel>;
   characterId: string | null;
   useFallback: boolean;
+  payer?: { userId: string; chargeId: string; log: GenerationLogger; signal: AbortSignal };
 }): Promise<GenerationPreparation> {
   // These reads do not depend on the selected model or on prompt construction.
   // Start them now, rather than introducing another wave after those awaits.
+  // Conversation fallback always uses OpenRouter. Other consumers retain lazy
+  // routing reads, so a direct Venice request does not gain a needless DB query.
+  const routingConfig = input.useFallback ? getProviderRoutingConfig() : undefined;
   const independent = Promise.all([
     getPricingConfig(),
     readVipStrategy(),
@@ -113,7 +123,7 @@ export function prepareGeneration(input: {
     );
     const [selectedBilling, routingPreferences, quotaLimit] = await Promise.all([
       billing,
-      getProviderPreferencesForModels(routingModelIds),
+      getProviderPreferencesForModels(routingModelIds, routingConfig),
       billing.then((value) =>
         value.isFree && isQuotaTrackableCharacterId(input.characterId)
           ? getCharacterFreeChatQuotaLimit()
@@ -126,19 +136,60 @@ export function prepareGeneration(input: {
     ([
       [pricing, vipStrategy, creatorUserId],
       { model, selectedBilling, routingModelIds, routingPreferences, quotaLimit },
-    ]) => ({
-      modelId: model.modelId,
-      provider: model.provider,
-      providerModelId: model.providerModelId,
-      characterId: input.characterId,
-      pricing,
-      selectedBilling,
-      vipStrategy,
-      routingModelIds,
-      routingPreferences,
-      creatorUserId,
-      quotaLimit,
-    })
+    ]): GenerationPreparation => {
+      let paidAdmission: GenerationPreparation['paidAdmission'];
+      // Never speculate on free quota. Paid admission uses the same frozen quote
+      // and exactly one read; no reservation, wallet initialization or debit here.
+      if (input.payer && !selectedBilling.isFree) {
+        input.payer.signal.throwIfAborted();
+        const { userId, chargeId, log } = input.payer;
+        const plan = resolveBillingPlan({
+          chargeId,
+          billing: selectedBilling,
+          isFreeRound: false,
+          pricing,
+          entitlement: model.entitlement,
+          discountRate: vipStrategy.discountRate,
+          discountConfigVersion: vipStrategy.discountVersion,
+          ...(creatorUserId && input.characterId
+            ? {
+                creator: {
+                  characterId: input.characterId,
+                  creatorUserId,
+                  payerUserId: userId,
+                },
+              }
+            : {}),
+          log,
+        });
+        const balance =
+          plan.snapshot.requires_vip && !plan.snapshot.vip_active
+            ? Promise.resolve({ ok: true } as const)
+            : checkWalletBalance({
+                userId,
+                requiredAmount: plan.fixedDeduction.amount,
+                walletPolicy: plan.snapshot.wallet_policy,
+                openRouterModelId: selectedBilling.openRouterModelId,
+                log,
+              });
+        void balance.catch(() => undefined);
+        paidAdmission = { userId, plan, balance };
+      }
+      return {
+        modelId: model.modelId,
+        provider: model.provider,
+        providerModelId: model.providerModelId,
+        characterId: input.characterId,
+        pricing,
+        selectedBilling,
+        vipStrategy,
+        routingModelIds,
+        routingPreferences,
+        creatorUserId,
+        quotaLimit,
+        paidAdmission,
+      };
+    }
   );
   // Admission can fail before execute reaches its await. Observe rejection now,
   // while keeping the original rejected promise for the eventual consumer.
@@ -316,7 +367,11 @@ async function executeGeneration(
     prepared.modelId !== request.model.modelId ||
     prepared.provider !== request.model.provider ||
     prepared.providerModelId !== request.model.providerModelId ||
-    prepared.characterId !== request.characterId
+    prepared.characterId !== request.characterId ||
+    (prepared.paidAdmission &&
+      (prepared.paidAdmission.userId !== request.userId ||
+        prepared.paidAdmission.plan.chargeId !== chargeId ||
+        prepared.selectedBilling.isFree))
   ) {
     throw new Error('Generation preparation identity differs');
   }
@@ -368,25 +423,27 @@ async function executeGeneration(
   let settleAbortedBeforeStream: (() => Promise<GenerationResult | null>) | undefined;
   try {
     signal.throwIfAborted();
-    const plan = resolveBillingPlan({
-      chargeId,
-      billing,
-      isFreeRound: reservation.isFreeRound,
-      pricing,
-      entitlement: request.model.entitlement,
-      discountRate: vipStrategy.discountRate,
-      discountConfigVersion: vipStrategy.discountVersion,
-      ...(creatorUserId && request.characterId
-        ? {
-            creator: {
-              characterId: request.characterId,
-              creatorUserId,
-              payerUserId: request.userId,
-            },
-          }
-        : {}),
-      log,
-    });
+    const plan =
+      prepared.paidAdmission?.plan ??
+      resolveBillingPlan({
+        chargeId,
+        billing,
+        isFreeRound: reservation.isFreeRound,
+        pricing,
+        entitlement: request.model.entitlement,
+        discountRate: vipStrategy.discountRate,
+        discountConfigVersion: vipStrategy.discountVersion,
+        ...(creatorUserId && request.characterId
+          ? {
+              creator: {
+                characterId: request.characterId,
+                creatorUserId,
+                payerUserId: request.userId,
+              },
+            }
+          : {}),
+        log,
+      });
 
     if (plan) {
       if (plan.snapshot.requires_vip && !plan.snapshot.vip_active) {
@@ -394,13 +451,14 @@ async function executeGeneration(
         return finish(failed({ denial: 'vip_required' }));
       }
       const precheck = await withAbort(
-        checkWalletBalance({
-          userId: request.userId,
-          requiredAmount: plan.fixedDeduction.amount,
-          walletPolicy: plan.snapshot.wallet_policy,
-          openRouterModelId: billing.openRouterModelId,
-          log,
-        }),
+        prepared.paidAdmission?.balance ??
+          checkWalletBalance({
+            userId: request.userId,
+            requiredAmount: plan.fixedDeduction.amount,
+            walletPolicy: plan.snapshot.wallet_policy,
+            openRouterModelId: billing.openRouterModelId,
+            log,
+          }),
         signal
       );
       if (!precheck.ok) {
@@ -487,12 +545,22 @@ async function executeGeneration(
       const forward = async (
         model: TransportModel,
         attemptSignal: AbortSignal,
-        onDispatch?: () => void
+        onDispatch?: () => void,
+        attempt?: { role: 'primary' | 'fallback'; timing: UpstreamTiming }
       ): Promise<Response> => {
         const route = resolveProviderUpstream(model.provider);
         if (!route.apiKey) throw new Error(`Missing key for ${model.provider}`);
-        const preferences =
+        let preferences =
           model.provider === 'openrouter' ? preferencesFor(model.providerModelId) : null;
+        if (attempt?.role === 'fallback') {
+          preferences = fallbackProviderPreferences(
+            preferences,
+            request.model.firstTokenPolicy?.fallbackProviders ??
+              resolveFallbackProviders({
+                fallback_model_id: model.providerModelId,
+              })
+          );
+        }
         const actualRequest = {
           ...request,
           model: { ...request.model, ...model, openRouterModelId: model.providerModelId },
@@ -527,6 +595,7 @@ async function executeGeneration(
           signal: attemptSignal,
           apiKey: route.apiKey,
           provider: model.provider,
+          timing: attempt?.timing,
         });
         if (!onDispatch) observation.headersMs = performance.now() - observation.directDispatchedAt;
         return response;

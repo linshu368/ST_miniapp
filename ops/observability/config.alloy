@@ -36,7 +36,7 @@ otelcol.processor.transform "allowlist" {
   log_statements {
     context = "log"
     statements = [
-      `keep_keys(attributes, ["environment", "release", "route", "outcome", "kind", "model", "platform", "role", "phase", "dispatched", "duration_ms", "total_ms", "auth_ms", "db_read_ms", "assemble_ms", "sign_ms", "sign_cache", "requested_model", "winner", "fallback_started", "stage", "elapsed_ms", "deadline_ms", "trigger_ms"])`,
+      `keep_keys(attributes, ["environment", "release", "route", "outcome", "kind", "model", "platform", "role", "phase", "dispatched", "duration_ms", "total_ms", "auth_ms", "db_read_ms", "assemble_ms", "sign_ms", "sign_cache", "requested_model", "winner", "fallback_started", "stage", "elapsed_ms", "deadline_ms", "trigger_ms", "network_stage", "request_create_ms", "connection_wait_ms", "request_send_ms", "response_wait_ms", "response_to_token_ms", "route_setup_ms", "settings_ms", "turn_open_ms", "context_ms", "dispatch_gate_ms"])`,
       `keep_keys(resource.attributes, ["service.name", "service.namespace", "service.version", "deployment.environment.name"])`,
     ]
   }

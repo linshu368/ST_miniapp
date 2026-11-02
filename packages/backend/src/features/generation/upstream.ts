@@ -20,6 +20,7 @@ import {
 } from '@miniapp/shared';
 import { getLlmProviderRuntimeConfig } from '../../platform/runtime-config.js';
 import { veniceFetch } from '../../platform/venice-http.js';
+import { withUpstreamTiming, type UpstreamTiming } from './upstream-timing.js';
 
 const LLM_UPSTREAM_URL = getLlmProviderRuntimeConfig('openrouter').baseUrl;
 
@@ -55,6 +56,7 @@ export async function forwardToUpstream(input: {
   signal?: AbortSignal;
   apiKey?: string;
   provider?: LlmModelProvider;
+  timing?: UpstreamTiming;
 }): Promise<Response> {
   const provider = input.provider ?? 'openrouter';
   const forwardHeaders: Record<string, string> = {
@@ -68,22 +70,26 @@ export async function forwardToUpstream(input: {
 
   // Venice 本地可走 VENICE_HTTPS_PROXY；OpenRouter 等其它上游保持直连。
   if (provider === 'venice') {
-    return await veniceFetch(input.url, {
+    return await withUpstreamTiming(input.timing, () =>
+      veniceFetch(input.url, {
+        method: input.method,
+        headers: forwardHeaders,
+        body: input.body,
+        signal: input.signal,
+        duplex: 'half',
+      })
+    );
+  }
+  return await withUpstreamTiming(input.timing, () =>
+    fetch(input.url, {
       method: input.method,
       headers: forwardHeaders,
       body: input.body,
       signal: input.signal,
+      // @ts-expect-error Node 18+ fetch supports duplex
       duplex: 'half',
-    });
-  }
-  return await fetch(input.url, {
-    method: input.method,
-    headers: forwardHeaders,
-    body: input.body,
-    signal: input.signal,
-    // @ts-expect-error Node 18+ fetch supports duplex
-    duplex: 'half',
-  });
+    })
+  );
 }
 
 export interface SseTapResult {

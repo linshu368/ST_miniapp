@@ -164,6 +164,14 @@ const EditableModelCatalogTierSchema = z.object({
 });
 
 export const EditableModelCatalogSchema = z.object({
+  fallback_provider_routes: z
+    .array(
+      z.object({
+        model_id: z.string(),
+        preferred_providers: z.tuple([z.string(), z.string()]),
+      })
+    )
+    .optional(),
   fallback_model_id: z.string().default(FIRST_TOKEN_FALLBACK_MODEL_ID),
   first_token_deadline_ms: z.number().default(DEFAULT_FIRST_TOKEN_DEADLINE_MS),
   fallback_timeout_ms: z.number().default(DEFAULT_FALLBACK_TOKEN_TIMEOUT_MS),
