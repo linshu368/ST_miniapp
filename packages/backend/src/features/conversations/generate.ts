@@ -235,6 +235,7 @@ export async function runConversationTurn(
       first_token_deadline_ms: policy.deadlineMs,
       requested_model_id: model.modelId,
       fallback_trigger_ms: policy.timeoutMs,
+      server_elapsed_ms: Math.round(performance.now() - requestStartedAt),
       turn_index: turn.turnIndex,
       user_message_id: mode.kind === 'send' ? `${turn.historyId}:user` : null,
       assistant_message_id: turn.historyId,

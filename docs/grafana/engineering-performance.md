@@ -154,3 +154,7 @@ Faro 2.13 默认 `FetchTransport.send` 强制添加 `Idempotency-Key`，当前�
 本地复用固定Faro→Alloy→Loki合成验证：型号A两次成功（1000/5999ms）、一次6000ms截断、一次离页、一次明确受理拒绝、一次未受理拒绝；型号B一次2000ms成功。验证A截断率1/3（离页/未受理拒绝不稀释）、B为0、成功P95小于6000、所有Loki面板语法和分布。服务端真实OTLP合成接收端验证字段安全、秒单位和独立请求/派发/赢家计数；真实模型与生产数据不参与。
 
 下一步沿原框架TEST接入门禁：真实Cloud字段/指标名、按型号出图与采集丢弃核对后再生产启用；确认替代有效再退役对应纯监控SQL，旧业务事实与经营看板不删、不重启旧全量cron。候选源码通过不等于线上已经切源。
+
+## 聊天网络归因（2026-11-02，候选）
+
+`roleplay.network` 按 `stage` 上报 `network_overhead`（点击到收到 start 减服务端已用时间）、`network_setup`（DNS、连接、TLS、排队、预检）、`network_path`（已建立连接上的传输），附 `protocol`、`conn_reused`、`delay_attribution`。`roleplay.delay` 每轮一条，是“我方责任超时率”的分子分母来源；`roleplay.first_token_late` 记录超时后的真实首字时长。只有 start 与 Resource Timing 同时存在才能把传输判给用户，否则计入我方。规则见 [首字兜底说明](../first-token-fallback.md)。

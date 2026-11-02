@@ -645,6 +645,11 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         json(res, 200, { protocol: PREVIEW_PROTOCOL, root: process.cwd(), app, api });
         return;
       }
+      // Connection keep-warm target, matching the real database-free health route.
+      if (path === '/health' && method === 'GET') {
+        ok(res, { status: 'ok', timestamp: new Date().toISOString() });
+        return;
+      }
       if (path === '/__preview/state' && method === 'GET') {
         reconcileImages();
         json(res, 200, {
@@ -2032,11 +2037,15 @@ export function createPreviewServer(apiPort: number, appPort: number) {
             user_message_id: userId,
             assistant_message_id: message.id,
             thinking_enabled: parsed.thinking_enabled !== false,
+            // A short frozen budget reaches the browser deadline without a slow test.
+            ...(scenario === 'chat-late-first-token' ? { first_token_deadline_ms: 1_000 } : {}),
           });
           await delay(150);
           if (parsed.thinking_enabled !== false)
             write({ type: 'reasoning', text: '沿着当前故事线，准备一个自然的回应。' });
-          await delay(scenario === 'chat-slow' ? 2200 : 700);
+          await delay(
+            scenario === 'chat-slow' ? 2200 : scenario === 'chat-late-first-token' ? 2500 : 700
+          );
           if (
             currentEpoch !== epoch ||
             res.destroyed ||
