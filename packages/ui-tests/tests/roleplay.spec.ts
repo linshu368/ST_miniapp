@@ -626,9 +626,22 @@ test('@roleplay @lobby-rotation @layout 换批保留质量分层入口，撤回�
   const rotate = page.getByRole('button', { name: '换一批推荐角色', exact: true });
   await expect(rotate).toBeVisible();
   const wishEntry = page.getByRole('link', { name: '许个愿', exact: true });
-  await expect(wishEntry).toHaveCount(0);
+  const search = page.getByRole('textbox', { name: '搜索角色', exact: true });
+  await expect(wishEntry).toBeInViewport();
+  await expect(search).toBeInViewport();
   const box = await rotate.boundingBox();
   expect(box!.height).toBeGreaterThanOrEqual(40);
+  const wishBox = await wishEntry.boundingBox();
+  const searchBox = await search.boundingBox();
+  expect(wishBox!.height).toBeGreaterThanOrEqual(44);
+  expect(wishBox!.width).toBeGreaterThanOrEqual(44);
+  expect(wishBox!.x).toBeGreaterThanOrEqual(searchBox!.x + searchBox!.width);
+  expect(
+    Math.abs(wishBox!.y + wishBox!.height / 2 - searchBox!.y - searchBox!.height / 2)
+  ).toBeLessThanOrEqual(2);
+  expect(wishBox!.y + wishBox!.height).toBeLessThanOrEqual(box!.y);
+  await expectMobileLayout(page);
+  await preview.screenshot('搜索旁心愿入口与独立换批行', { fullPage: false });
   const before = (await preview.state()).lobby.current!;
   await expect
     .poll(() =>
@@ -653,21 +666,14 @@ test('@roleplay @lobby-rotation @layout 换批保留质量分层入口，撤回�
     )
     .toBe(before.character_ids[0]);
   expect((await preview.state()).lobby.batches_created).toBe(2);
-  await expect
-    .poll(async () => {
-      await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-      return wishEntry.count();
-    })
-    .toBe(1);
-  await expect(page.locator('[data-lobby-character-id]')).toHaveCount(before.character_ids.length);
-  await wishEntry.scrollIntoViewIfNeeded();
-  const wishBox = await wishEntry.boundingBox();
-  const navBox = await page.getByRole('navigation', { name: '主导航', exact: true }).boundingBox();
-  expect(wishBox!.height).toBeGreaterThanOrEqual(44);
-  expect(wishBox!.y + wishBox!.height).toBeLessThanOrEqual(navBox!.y);
+  await page.evaluate(() => window.scrollTo(0, 700));
+  await expect(wishEntry).toBeInViewport();
+  await expect(search).toBeInViewport();
+  await expect(rotate).not.toBeInViewport();
+  await expect(wishEntry).toHaveCount(1);
   await expectMobileLayout(page);
   await expect(page.getByRole('status').filter({ hasText: '已回到上一批' })).not.toBeVisible();
-  await preview.screenshot('列表末尾轻量心愿入口', { fullPage: false });
+  await preview.screenshot('下滑后搜索与心愿入口保持可见', { fullPage: false });
 });
 
 test('@roleplay @lobby-rotation 超过24小时试聊返回仍保原批，新打开才轮换', async ({
