@@ -2,8 +2,10 @@ import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:net';
 import { createPreviewServer } from './server.js';
-import { IDS, makeData } from './data.js';
+import { IDS, WISH_IDS, makeData } from './data.js';
 import {
+  CharacterWishListDataSchema,
+  CharacterWishDetailDataSchema,
   getNextDailyCheckinAt,
   type GetConversationData,
   PublicReplyStyleOptionSchema,
@@ -263,4 +265,83 @@ test('lobby fixture preserves 24h batches, lost-response idempotency and exposur
     ).json()
   ).data;
   assert.notEqual(renewed.batch_id, nextId);
+});
+
+test('wish fixtures expose anonymous public wishes, scope mine by author and keep support/response retries idempotent', async () => {
+  await post('/__preview/reset', { scenario: 'wishes' });
+  const wall = CharacterWishListDataSchema.parse(
+    (await (await fetch(api + '/api/character-wishes')).json()).data
+  );
+  assert.equal(wall.items.length, 4);
+  assert.ok(wall.items.every((wish) => wish.visibility === 'public'));
+  assert.ok(wall.items.every((wish) => !('user_id' in wish)));
+  const mine = CharacterWishListDataSchema.parse(
+    (await (await fetch(api + '/api/character-wishes?scope=mine')).json()).data
+  );
+  assert.equal(mine.items.length, 2);
+  assert.ok(mine.items.every((wish) => wish.is_mine));
+  assert.ok(mine.items.some((wish) => wish.id === WISH_IDS.mineGarden));
+  const support = () =>
+    fetch(api + `/api/character-wishes/${WISH_IDS.adventure}/support`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ supported: true }),
+    });
+  assert.equal((await support()).status, 200);
+  assert.equal((await support()).status, 200);
+  const detail = CharacterWishDetailDataSchema.parse(
+    (await (await fetch(api + `/api/character-wishes/${WISH_IDS.adventure}`)).json()).data
+  );
+  assert.equal(detail.wish.wanted_count, 19);
+  assert.equal(detail.wish.supported, true);
+  const respond = () =>
+    post(`/api/character-wishes/${WISH_IDS.adventure}/responses`, {
+      character_id: WISH_IDS.ownCard,
+    });
+  assert.equal((await respond()).status, 200);
+  assert.equal((await respond()).status, 200);
+  const responded = CharacterWishDetailDataSchema.parse(
+    (await (await fetch(api + `/api/character-wishes/${WISH_IDS.adventure}`)).json()).data
+  );
+  assert.equal(responded.cards.length, 1);
+  assert.equal(responded.wish.response_count, 1);
+  await fetch(api + `/api/creator/characters/${WISH_IDS.ownCard}/visibility`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ expected_revision: 1, visibility: 'private' }),
+  });
+  const hidden = CharacterWishDetailDataSchema.parse(
+    (await (await fetch(api + `/api/character-wishes/${WISH_IDS.adventure}`)).json()).data
+  );
+  assert.equal(hidden.cards.length, 0);
+  const notifications = (await (await fetch(api + '/api/notifications?scope=personal')).json()).data
+    .notifications;
+  assert.equal(notifications.length, 1, 'own responses do not notify the creator');
+  assert.equal(notifications[0].action_path, `/wishes/${WISH_IDS.minePublic}`);
+});
+
+test('wish creation fixture rejects private requests, recovers without duplicates and validates the 500 character limit', async () => {
+  await post('/__preview/reset', { scenario: 'wishes-error' });
+  const input = {
+    id: 'a1000000-0000-4000-8000-000000000006',
+    body: '想和探险家一起找出海图的秘密。',
+    visibility: 'public',
+  };
+  assert.equal(
+    (await post('/api/character-wishes', { ...input, visibility: 'private' })).status,
+    400
+  );
+  assert.equal((await post('/api/character-wishes', input)).status, 503);
+  assert.equal((await post('/api/character-wishes', input)).status, 200);
+  assert.equal((await post('/api/character-wishes', input)).status, 200);
+  const mine = CharacterWishListDataSchema.parse(
+    (await (await fetch(api + '/api/character-wishes?scope=mine')).json()).data
+  );
+  assert.equal(mine.items.filter((wish) => wish.id === input.id).length, 1);
+  assert.equal(
+    (await post('/api/character-wishes', { ...input, body: '想'.repeat(501) })).status,
+    400
+  );
+  await fetch(api + `/api/character-wishes/${input.id}`, { method: 'DELETE' });
+  assert.equal((await fetch(api + `/api/character-wishes/${input.id}`)).status, 404);
 });

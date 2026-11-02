@@ -339,3 +339,5 @@ SSE start携带当轮冻结总预算。客户端若持有旧目录缓存，按�
 现有OTLP/Grafana增加调用前五段墙钟和出站五段指标。只用内存时间戳、既有attempt终态日志及慢准备摘要，不新增监控表、SQL、扫描或任务。调用前各段仅覆盖完成门禁的请求；出站未到达的阶段保持缺失。分位数不能相加，发完请求至响应头也不能称为纯模型耗时。业务主图继续看点击到首token及总截止无字率。
 
 创作者数据页 `/creation/data` 从「创作 → 我的创作」进入，通过本人鉴权的 `/api/creator/analytics` 读取真实使用、专项星尘到账/退款调整和公开评论。首页各3条摘要，全部列表按页读取；原奖励结算不变，无新增数据库迁移。`bash scripts/test-creator-characters-local.sh` 复用隔离PG17验证统计SQL；`ST_UI_TEST_APP_PORT=3190 pnpm test:ui --grep @creator-data` 验证移动交互。此批为本地待发布。
+
+角色心愿墙（本地候选）：大厅「许个愿」与创作数据「看看玩家想玩什么」共用 `/wishes`，仅支持匿名公开心愿、独立想玩人数和角色回应；心愿来源不进入角色 system prompt。用户作品回应后复用消息中心通知。固定预览使用 `wishes` / `wishes-error` 场景，`pnpm test:ui --grep @wishes` 验收手机交互。新迁移 `20261102_character_wishes.sql` 已在隔离数据库验证；发布按测试迁移→生产迁移→后端→前端顺序，实际部署状态见任务发布记录。

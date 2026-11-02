@@ -5,7 +5,10 @@ import { VIP_EXPIRY_NOTIFICATION_KIND, VipReminderWindowSchema } from './vip.js'
 export type NotificationScope = 'official' | 'personal';
 export type NotificationCategory = 'announcement' | 'activity' | 'system' | 'interaction';
 
-export const NotificationKindSchema = z.literal(VIP_EXPIRY_NOTIFICATION_KIND);
+export const NotificationKindSchema = z.enum([
+  VIP_EXPIRY_NOTIFICATION_KIND,
+  'character_wish_response',
+]);
 export type NotificationKind = z.infer<typeof NotificationKindSchema>;
 
 export const VipExpiryNotificationMetadataSchema = z.object({
@@ -13,6 +16,14 @@ export const VipExpiryNotificationMetadataSchema = z.object({
   observed_valid_until: z.string().min(1),
 });
 export type VipExpiryNotificationMetadata = z.infer<typeof VipExpiryNotificationMetadataSchema>;
+
+export const CharacterWishNotificationMetadataSchema = z.object({
+  wish_id: z.string().uuid(),
+  character_id: z.string().uuid(),
+});
+export type CharacterWishNotificationMetadata = z.infer<
+  typeof CharacterWishNotificationMetadataSchema
+>;
 
 export const VIP_EXPIRY_REMINDER_ACTION_PATH = '/vip' as const;
 
@@ -46,7 +57,7 @@ export interface NotificationItem {
   is_read: boolean;
   kind?: NotificationKind | null;
   action_path?: string | null;
-  metadata?: VipExpiryNotificationMetadata | null;
+  metadata?: VipExpiryNotificationMetadata | CharacterWishNotificationMetadata | null;
 }
 
 export interface GetNotificationsData {

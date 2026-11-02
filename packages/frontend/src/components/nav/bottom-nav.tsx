@@ -77,6 +77,7 @@ const HIDDEN_PREFIXES = [
   '/create/studio',
   '/creation/characters',
   '/creation/data',
+  '/wishes',
   '/vip',
 ];
 

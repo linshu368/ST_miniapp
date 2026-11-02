@@ -29,6 +29,7 @@ import {
   usePublishCreatorCharacterMutation,
   useSetCreatorVisibilityMutation,
 } from '@/lib/api/creator-characters';
+import { useCharacterWishQuery } from '@/lib/api/character-wishes';
 import { ApiClientError } from '@/lib/api/client';
 import {
   initialCharacterEditorDraft,
@@ -116,9 +117,12 @@ export function CharacterEditorPage({ characterId }: { characterId?: string }) {
   const list = useCreatorCharactersQuery();
   const detail = useCreatorCharacterQuery(characterId);
   useEffect(() => {
-    if (!characterId && !draftId)
-      router.replace(`/creation/characters/new?draft=${crypto.randomUUID()}`, { scroll: false });
-  }, [characterId, draftId, router]);
+    if (!characterId && !draftId) {
+      const params = new URLSearchParams(search.toString());
+      params.set('draft', crypto.randomUUID());
+      router.replace(`/creation/characters/new?${params.toString()}`, { scroll: false });
+    }
+  }, [characterId, draftId, router, search]);
   const retry = () => {
     void list.refetch();
     if (characterId) void detail.refetch();
@@ -183,6 +187,14 @@ function CharacterEditor({
   const local = useCharacterEditorDraft({ ownerId, draftId, characterId: character?.id }, initial);
   const { ready: localReady, update: updateLocal, flush: flushLocal } = local;
   const { draft, visibility, coverAssetId } = local.value;
+  const wishParam = search.get('wish');
+  const sourceWishId =
+    local.value.sourceWishId ?? (wishParam && UUID.test(wishParam) ? wishParam : undefined);
+  const sourceWish = useCharacterWishQuery(sourceWishId ?? undefined);
+  useEffect(() => {
+    if (localReady && sourceWishId && !local.value.sourceWishId)
+      updateLocal((current) => ({ ...current, sourceWishId }));
+  }, [localReady, sourceWishId, local.value.sourceWishId, updateLocal]);
   const editorPath = character
     ? `/creation/characters/${character.id}/edit`
     : `/creation/characters/new?draft=${draftId}`;
@@ -272,8 +284,8 @@ function CharacterEditor({
       setNotice('本地草稿还没保存成功，请稍后再返回。当前内容仍在这里。');
       return;
     }
-    router.push('/creation?tab=created');
-  }, [flushLocal, router]);
+    router.push(sourceWishId ? `/wishes/${sourceWishId}` : '/creation?tab=created');
+  }, [flushLocal, router, sourceWishId]);
   useTelegramBackButton(goBack);
   const change = (
     key: keyof Pick<CharacterDraft, 'name' | 'description' | 'opening' | 'background' | 'preset'>,
@@ -499,6 +511,7 @@ function CharacterEditor({
     busyRef.current = true;
     setWorking(true);
     try {
+      let publishedDestination = '/creation?tab=created';
       if (sameContent && character?.state === 'ready' && character.visibility !== visibility) {
         await setVisibility.mutateAsync({
           id: character.id,
@@ -538,13 +551,21 @@ function CharacterEditor({
               ).character;
         local.update((value) => ({ ...value, serverRevision: current.revision }));
         await local.flush();
-        await publish.mutateAsync({
+        const published = await publish.mutateAsync({
           id: current.id,
-          body: { expected_revision: current.revision, visibility },
+          body: {
+            expected_revision: current.revision,
+            visibility,
+            ...(sourceWishId ? { wish_id: sourceWishId } : {}),
+          },
         });
+        if (published.wish_response) {
+          const response = published.wish_response;
+          publishedDestination = `/wishes/${response.wish_id}${response.status === 'not_linked' ? `?respond=${current.id}` : ''}`;
+        }
       }
       await local.clear();
-      router.replace('/creation?tab=created');
+      router.replace(publishedDestination);
     } catch (error) {
       if (error instanceof ApiClientError && error.status === 409) {
         local.setConflict(true);
@@ -599,6 +620,31 @@ function CharacterEditor({
                 : '草稿自动保存在本地'}
         </span>
       </header>
+      {sourceWishId && (
+        <aside className="mt-4 rounded-xl border border-primary/15 bg-primary/[0.04] px-3.5 py-3">
+          <div className="flex items-center justify-between gap-3 text-xs">
+            <span className="font-medium text-primary">来自心愿墙的灵感</span>
+            <Link
+              href={`/wishes/${sourceWishId}`}
+              className="flex min-h-11 items-center text-muted-foreground"
+            >
+              查看心愿
+            </Link>
+          </div>
+          {sourceWish.data ? (
+            <p className="line-clamp-3 whitespace-pre-wrap break-words text-sm leading-6 text-foreground/85">
+              {sourceWish.data.wish.body}
+            </p>
+          ) : sourceWish.isError ? (
+            <p className="text-xs leading-6 text-muted-foreground">
+              暂时无法查看原心愿，你可以继续创作。
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground">正在读取心愿…</p>
+          )}
+          <p className="mt-2 text-[11px] text-muted-foreground">公开发布后，作品会回应这个心愿。</p>
+        </aside>
+      )}
       {local.conflict && (
         <div
           className="mt-4 rounded-xl border border-warn/30 p-3 text-xs leading-6 text-warn"

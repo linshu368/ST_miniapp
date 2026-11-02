@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { RefreshCw, Search, Undo2, X } from 'lucide-react';
+import { RefreshCw, Search, Sparkles, Undo2, X } from 'lucide-react';
 
 import { DEFAULT_LOBBY_SORT, type LobbySort } from '@miniapp/shared';
 
@@ -642,46 +643,46 @@ export function CharacterGallery() {
   // 切换只改列表顺序，搜索词与卡片上的既有能力都保持不变。
   const sortTabs = (
     <div
-      role="tablist"
-      aria-label="角色排序"
       className={cn(
         'mx-auto flex w-full max-w-screen-xl items-center gap-2 px-4 pb-1 pt-1.5 sm:px-6 lg:px-8',
         hiddenWhileRestoring
       )}
     >
-      {LOBBY_TABS.map((tab) => {
-        const active = sort === tab.value;
-        return (
-          <button
-            key={tab.value}
-            type="button"
-            role="tab"
-            aria-selected={active}
-            onClick={() => {
-              if (sort !== tab.value) cancelRestore();
-              setSort(tab.value);
-            }}
-            className={cn(
-              'relative rounded-full border px-4 py-1.5 text-[13px] transition-all',
-              active
-                ? 'border-primary/30 bg-primary/10 text-primary'
-                : 'border-transparent text-muted-foreground hover:bg-card hover:text-foreground'
-            )}
-          >
-            {tab.label}
-            {/* 气泡浮在按钮右上角外侧，不压文字；pointer-events-none 保证点击区域完整。 */}
-            {tab.value === 'latest' && showLatestBadge ? (
-              <span
-                role="status"
-                aria-label="有新角色卡"
-                className="pointer-events-none absolute -right-1 -top-1.5 rounded-full border border-success/50 bg-success/15 px-1.5 text-[9px] font-bold leading-[14px] tracking-wide text-success"
-              >
-                New
-              </span>
-            ) : null}
-          </button>
-        );
-      })}
+      <div role="tablist" aria-label="角色排序" className="flex items-center gap-2">
+        {LOBBY_TABS.map((tab) => {
+          const active = sort === tab.value;
+          return (
+            <button
+              key={tab.value}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => {
+                if (sort !== tab.value) cancelRestore();
+                setSort(tab.value);
+              }}
+              className={cn(
+                'relative rounded-full border px-4 py-1.5 text-[13px] transition-all',
+                active
+                  ? 'border-primary/30 bg-primary/10 text-primary'
+                  : 'border-transparent text-muted-foreground hover:bg-card hover:text-foreground'
+              )}
+            >
+              {tab.label}
+              {/* 气泡浮在按钮右上角外侧，不压文字；pointer-events-none 保证点击区域完整。 */}
+              {tab.value === 'latest' && showLatestBadge ? (
+                <span
+                  role="status"
+                  aria-label="有新角色卡"
+                  className="pointer-events-none absolute -right-1 -top-1.5 rounded-full border border-success/50 bg-success/15 px-1.5 text-[9px] font-bold leading-[14px] tracking-wide text-success"
+                >
+                  New
+                </span>
+              ) : null}
+            </button>
+          );
+        })}
+      </div>
       {sort === 'recommended' && !query.trim() && recommendation.data?.enabled ? (
         <button
           type="button"
@@ -702,6 +703,16 @@ export function CharacterGallery() {
           换一批
         </button>
       ) : null}
+      <Link
+        href="/wishes?from=characters"
+        className={cn(
+          'inline-flex min-h-11 shrink-0 items-center gap-1 rounded-full px-2 text-xs text-primary/90 active:bg-primary/10',
+          !(sort === 'recommended' && !query.trim() && recommendation.data?.enabled) && 'ml-auto'
+        )}
+      >
+        <Sparkles className="size-3.5" strokeWidth={1.7} aria-hidden />
+        许个愿
+      </Link>
     </div>
   );
 
@@ -817,8 +828,15 @@ export function CharacterGallery() {
             {`没有匹配「${query}」的角色`}
           </p>
           <p className="text-center text-[11px] text-muted-foreground/80">
-            换个名字或标签试试，也可以看看推荐角色。
+            换个名字或标签试试，也可以告诉创作者你想玩什么。
           </p>
+          <Link
+            href="/wishes?from=characters&compose=1"
+            className="mt-2 inline-flex min-h-11 items-center gap-1.5 rounded-full border border-primary/20 bg-primary/10 px-5 text-sm text-primary"
+          >
+            <Sparkles className="size-4" aria-hidden />
+            许个愿，让创作者看见
+          </Link>
         </div>
       ) : (
         <div
