@@ -35,6 +35,7 @@ const HIDDEN_PREFIXES = [
   '/profile/support',
   '/create/studio',
   '/creation/characters',
+  '/creation/data',
   '/vip',
 ];
 

@@ -67,3 +67,5 @@ export * from './api/reply-style-options';
 export * from './api/creator-characters';
 
 export * from './api/creator-tools.js';
+
+export * from './api/creator-analytics.js';

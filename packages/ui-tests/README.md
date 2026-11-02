@@ -170,3 +170,13 @@ pnpm test:ui:fixtures            # 模拟服务本身的协议与隔离检查
 ## 同角色多段对话
 
 场景 `chat-sessions` 复用 `chat.spec.ts`，定向运行 `pnpm test:ui --grep @chat-sessions`。包含两个同名默认会话、长自定义名、默认分支、继承自定义名的分支，以及置顶和当前状态。390/320尺寸验证创建日期区分且不回写标题、自定义名称完整保留、来源轮次、更多菜单不跳转、重命名取消/保存、置顶、删除取消及切换当前会话，并保留两张截图。PATCH/DELETE 仅操作本机虚构会话；此场景不更改生产接口、排序或分支逻辑。
+
+## 创作数据验收
+
+`ST_UI_APP_PORT=3180 pnpm preview:ui`，从 `/creation?tab=created` 点击「创作数据」或直接打开 `/creation/data`。`creator-data`、`creator-data-empty`、`creator-data-error` 三种场景固定；执行 `ST_UI_TEST_APP_PORT=3190 pnpm test:ui --grep @creator-data` 复用390/320移动验收，若端口占用请选择另一对空闲端口，不结束其他窗口服务。
+
+生产组件消费真实鉴权API，预览通过同一shared契约从fixture server读取合成数据（`fixtures/creator-analytics.ts`）；示例只在预览显示标记。覆盖：首页3条/无翻页，全部作品/奖励/反馈服务端分页，首尾禁用，返回列表保留页码，多角色/周期/排序、0收入、空态、503重试、不泄漏后台规则说明。仅在展示接口断网失败时重试，不把失败当0。
+
+统计SQL通过既有 `bash scripts/test-creator-characters-local.sh` 验证：无网络PG17、实际迁移、实际参数化查询；覆盖作者隔离、自用、私密卡、重复生成/分支继承、首次成功日期、北京跨日、多卡用户去重、真实到账/退款/抵扣、删除评论和分页。可用 `CREATOR_TEST_CONTAINER=已有隔离容器` 复用，不依赖Supabase或生产密钥。
+
+本地验收不等于已连接或核验生产创作者数据；本轮不改扣费和奖励发放。
