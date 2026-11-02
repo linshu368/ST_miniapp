@@ -15,6 +15,7 @@ import { useFreshAfterFetch, usePageReady } from '@/lib/perf/page-ready';
 import { markPageCriticalVisual } from '@/lib/perf/page-tracker';
 import { supabasePublicImageSrcSet, supabasePublicImageUrl } from '@/lib/supabase-image';
 import { cn } from '@/lib/utils';
+import { useMobilePerformancePolicy } from '@/lib/mobile-performance';
 import {
   useDramaLibraryStore,
   useHydrateDramaLibrary,
@@ -23,9 +24,6 @@ import {
 } from '@/stores/drama-library-store';
 
 const CATEGORIES = ['全部', '悬疑', '恋爱', '古风', '科幻', '喜剧', '治愈', '脑洞'];
-const INITIAL_RENDER_COUNT = 12;
-const RENDER_BATCH_SIZE = 10;
-const RENDER_MORE_ROOT_MARGIN = '400px';
 const APPROXIMATE_CARD_ROW_HEIGHT = 300;
 const RESTORE_TAIL_COUNT = 12;
 
@@ -49,6 +47,8 @@ function saveLibraryPosition(filter: 'saved' | 'recent', position: DramaLibraryP
 
 export default function DramasPage() {
   const router = useRouter();
+  const performancePolicy = useMobilePerformancePolicy();
+  const listBudget = performancePolicy.dramas;
   const { data, isLoading, isError, isFetching, refetch } = useDramaListQuery();
   const hydrated = useHydrateDramaLibrary();
   const fresh = useFreshAfterFetch(isFetching, data !== undefined, isError);
@@ -78,7 +78,7 @@ export default function DramasPage() {
     searching ? '全部' : browse.category,
     browse.sort
   );
-  const [renderLimit, setRenderLimit] = useState(INITIAL_RENDER_COUNT);
+  const [renderLimit, setRenderLimit] = useState(listBudget.initialRenderCount);
   // Detail return restores scrollTop immediately, so mount the target rows plus one-screen tail.
   const restoreFloor =
     searching || browse.scroll <= 0
@@ -208,7 +208,7 @@ export default function DramasPage() {
     if (browse.tab === 'theater') searchRef.current?.focus();
   };
   const filter = (patch: Partial<typeof browse>) => {
-    setRenderLimit(INITIAL_RENDER_COUNT);
+    setRenderLimit(listBudget.initialRenderCount);
     setBrowse({ ...patch, scroll: 0 });
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
   };
@@ -216,7 +216,7 @@ export default function DramasPage() {
     const enteringSearch = !searching && Boolean(keyword.trim());
     const leavingSearch = searching && !keyword.trim();
     const scroll = leavingSearch ? (browse.searchReturnScroll ?? 0) : 0;
-    setRenderLimit(INITIAL_RENDER_COUNT);
+    setRenderLimit(listBudget.initialRenderCount);
     if (leavingSearch) restoreSearchScroll.current = scroll;
     setBrowse({
       keyword,
@@ -233,7 +233,7 @@ export default function DramasPage() {
   useEffect(() => {
     const node = loadMoreRef.current;
     if (!hasMoreToRender || !node) return;
-    const grow = () => setRenderLimit((limit) => limit + RENDER_BATCH_SIZE);
+    const grow = () => setRenderLimit((limit) => limit + listBudget.renderBatchSize);
     if (typeof IntersectionObserver === 'undefined') {
       setRenderLimit(Number.POSITIVE_INFINITY);
       return;
@@ -242,11 +242,11 @@ export default function DramasPage() {
       (entries) => {
         if (entries.some((entry) => entry.isIntersecting)) grow();
       },
-      { rootMargin: RENDER_MORE_ROOT_MARGIN }
+      { rootMargin: listBudget.renderMoreRootMargin }
     );
     observer.observe(node);
     return () => observer.disconnect();
-  }, [hasMoreToRender, effectiveRenderLimit]);
+  }, [hasMoreToRender, effectiveRenderLimit, listBudget]);
   const retry = () => {
     dramaTiming.beginList('retry');
     void refetch();
@@ -392,7 +392,8 @@ export default function DramasPage() {
                       queue={visibleDramas}
                       progress={history[drama.id]}
                       onOpen={rememberScroll}
-                      priority={index < 2}
+                      eager={index < listBudget.eagerImageCount}
+                      priority={index < listBudget.highPriorityImageCount}
                       onPosterSettled={index < 2 ? handleCriticalPosterSettled : undefined}
                     />
                   ))}
@@ -541,11 +542,13 @@ function DramaLink({
 function Poster({
   drama,
   className,
+  eager = false,
   priority = false,
   onSettled,
 }: {
   drama: DramaSummary;
   className?: string;
+  eager?: boolean;
   priority?: boolean;
   onSettled?: (outcome: 'loaded' | 'error' | 'absent') => void;
 }) {
@@ -583,9 +586,9 @@ function Poster({
           srcSet={coverSrcSet}
           sizes="(max-width: 640px) 50vw, 240px"
           alt=""
-          loading={priority ? 'eager' : 'lazy'}
+          loading={priority || eager ? 'eager' : 'lazy'}
           decoding="async"
-          fetchPriority={priority ? 'high' : 'low'}
+          fetchPriority={priority ? 'high' : eager ? 'auto' : 'low'}
           className="absolute inset-0 h-full w-full object-cover"
           onLoad={() => settle('loaded')}
           onError={() => {
@@ -603,6 +606,7 @@ function DramaCard({
   queue,
   progress,
   onOpen,
+  eager,
   priority,
   onPosterSettled,
 }: {
@@ -610,6 +614,7 @@ function DramaCard({
   queue: DramaSummary[];
   progress?: DramaProgress;
   onOpen: () => void;
+  eager: boolean;
   priority: boolean;
   onPosterSettled?: (id: string, outcome: 'loaded' | 'error' | 'absent') => void;
 }) {
@@ -623,6 +628,7 @@ function DramaCard({
       <div className="relative">
         <Poster
           drama={drama}
+          eager={eager}
           priority={priority}
           onSettled={onPosterSettled ? (outcome) => onPosterSettled(drama.id, outcome) : undefined}
           className="aspect-[3/4] w-full"

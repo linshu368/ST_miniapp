@@ -28,7 +28,7 @@ function normalizePlatform(value: unknown): string {
   return typeof value === 'string' && TELEGRAM_PLATFORMS.has(value) ? value : 'unknown';
 }
 
-function telegramPlatform(): string {
+export function getTelegramPlatform(): string {
   if (!platformRead) {
     platformRead = true;
     try {
@@ -73,7 +73,7 @@ export function getNetworkTags(): { net_type: string; net_rtt_bucket: string } {
 
 /** 指标 attributes：只含低基数维度。 */
 export function getMetricDimensions(): { net_type: string; tg_platform: string } {
-  return { net_type: getNetworkTags().net_type, tg_platform: telegramPlatform() };
+  return { net_type: getNetworkTags().net_type, tg_platform: getTelegramPlatform() };
 }
 
 /** 只需在启动时调用一次；失败不影响业务（非 Telegram 环境本来就取不到）。 */

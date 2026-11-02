@@ -29,6 +29,7 @@ import {
 import { discardPendingAction, startPendingAction } from '@/lib/perf/action-tracker';
 import { useFreshAfterFetch, usePageReady } from '@/lib/perf/page-ready';
 import { markPageCriticalVisual } from '@/lib/perf/page-tracker';
+import { useMobilePerformancePolicy } from '@/lib/mobile-performance';
 import {
   clearLobbyReturnSnapshot,
   readLobbyReturnSnapshot,
@@ -49,10 +50,6 @@ const CharacterDetailSheet = dynamic(
   { ssr: false }
 );
 
-// Telegram 移动端的固定头部与「接着聊」之后，首帧通常只露出第一行两张卡。
-// 只让这两张抢高优先级，避免六张头像平分弱网带宽、反而拖慢首张关键视觉。
-const FIRST_SCREEN_IMAGE_COUNT = 2;
-
 const LOBBY_TABS: ReadonlyArray<{ value: LobbySort; label: string }> = [
   { value: 'recommended', label: '推荐' },
   { value: 'latest', label: '最新' },
@@ -60,10 +57,6 @@ const LOBBY_TABS: ReadonlyArray<{ value: LobbySort; label: string }> = [
 
 // 首帧只挂这么多张卡，其余滚动到接近底部时再分批补齐：每张卡带图片、收藏订阅和金框，
 // 一次挂几十张会让底部 tab 切回大厅时主线程被占满、转场掉帧。
-const INITIAL_RENDER_COUNT = 10;
-const RENDER_BATCH_SIZE = 10;
-// 哨兵提前多远触发下一批；留足一屏以上，用户正常滚动时不会看到空白。
-const RENDER_MORE_ROOT_MARGIN = '400px';
 // 返回大厅时锚点之后额外挂的卡数：两列约 4 行再留余量，其余随滚动补齐。
 const RESTORE_TAIL_COUNT = 12;
 
@@ -122,6 +115,8 @@ function neighborIds(ids: string[], anchorId: string): string[] {
 
 export function CharacterGallery() {
   const router = useRouter();
+  const performancePolicy = useMobilePerformancePolicy();
+  const listBudget = performancePolicy.characters;
   const [savedDiscovery] = useState(readRoleplayDiscovery);
   // P0=列表；enrich=收藏/会话史/角标。列表有缓存或首包结算后 markCriticalSettled。
   const enrichReady = useEntryEnrichReady();
@@ -291,7 +286,7 @@ export function CharacterGallery() {
     restoreRoleplayScroll('/characters');
   }, [data, restoreSnapshot]);
 
-  const [renderLimit, setRenderLimit] = useState(INITIAL_RENDER_COUNT);
+  const [renderLimit, setRenderLimit] = useState(listBudget.initialRenderCount);
   // 从详情返回靠锚点卡片还原滚动位置：锚点及其之前的卡必须已挂载，之后只需再多挂约一屏。
   // 不能整表一次挂全：整页在 invisible 状态下同步挂几十上百张卡，返回时就是“闪一下再卡一下”。
   // 该值只依赖挂载时持有的快照，恢复结束后不会回落，避免已显示的卡被卸载。
@@ -331,7 +326,8 @@ export function CharacterGallery() {
   useEffect(() => {
     const node = loadMoreRef.current;
     if (!hasMoreToRender || !node) return;
-    const grow = () => setRenderLimit((limit) => Math.max(limit, restoreFloor) + RENDER_BATCH_SIZE);
+    const grow = () =>
+      setRenderLimit((limit) => Math.max(limit, restoreFloor) + listBudget.renderBatchSize);
     if (typeof IntersectionObserver === 'undefined') {
       // 极老的 WebView 没有观察器：退回一次性全量，保证列表完整。
       setRenderLimit(Number.POSITIVE_INFINITY);
@@ -341,11 +337,11 @@ export function CharacterGallery() {
       (entries) => {
         if (entries.some((entry) => entry.isIntersecting)) grow();
       },
-      { rootMargin: RENDER_MORE_ROOT_MARGIN }
+      { rootMargin: listBudget.renderMoreRootMargin }
     );
     observer.observe(node);
     return () => observer.disconnect();
-  }, [hasMoreToRender, effectiveLimit, restoreFloor]);
+  }, [hasMoreToRender, effectiveLimit, listBudget, restoreFloor]);
 
   const finishRestore = useCallback(() => {
     clearLobbyReturnSnapshot();
@@ -660,7 +656,8 @@ export function CharacterGallery() {
               key={c.id}
               character={c}
               experienced={experiencedIds.has(c.id)}
-              priority={index < FIRST_SCREEN_IMAGE_COUNT}
+              eager={index < listBudget.eagerImageCount}
+              priority={index < listBudget.highPriorityImageCount}
               onImageSettled={handleImageSettled}
               onSelect={handleSelectCharacter}
               onComments={handleCharacterComments}
