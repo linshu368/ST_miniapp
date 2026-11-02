@@ -27,6 +27,7 @@ import {
 } from '../../platform/provider-routing.js';
 import { readVipStrategy } from '../../platform/vip-strategy.js';
 import {
+  FIRST_TOKEN_FALLBACK_MODEL_ID,
   LLM_PROVIDER_CAPABILITIES,
   MAX_CONVERSATION_REASONING_LENGTH,
   fallbackProviderPreferences,
@@ -552,13 +553,24 @@ async function executeGeneration(
         if (!route.apiKey) throw new Error(`Missing key for ${model.provider}`);
         let preferences =
           model.provider === 'openrouter' ? preferencesFor(model.providerModelId) : null;
-        if (attempt?.role === 'fallback') {
+        // With the fallback model selected as primary there is no other model to race,
+        // so the two attempts differ by provider: primary in order, second reversed.
+        const racesSameModel =
+          attempt !== undefined &&
+          request.model.provider === 'openrouter' &&
+          request.model.providerModelId ===
+            (request.model.firstTokenPolicy?.fallbackModelId ?? FIRST_TOKEN_FALLBACK_MODEL_ID);
+        if (attempt?.role === 'fallback' || racesSameModel) {
+          const providers =
+            request.model.firstTokenPolicy?.fallbackProviders ??
+            resolveFallbackProviders({
+              fallback_model_id: model.providerModelId,
+            });
           preferences = fallbackProviderPreferences(
             preferences,
-            request.model.firstTokenPolicy?.fallbackProviders ??
-              resolveFallbackProviders({
-                fallback_model_id: model.providerModelId,
-              })
+            racesSameModel && attempt?.role === 'fallback' && providers
+              ? [providers[1], providers[0]]
+              : providers
           );
         }
         const actualRequest = {

@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ChatMessage } from '@miniapp/shared';
 
-import { ConversationStreamError } from '@/lib/api/conversation-stream';
+import {
+  ConversationStreamError,
+  CONVERSATION_SLOW_NETWORK_MESSAGE,
+} from '@/lib/api/conversation-stream';
 
 import {
   CANCEL_DISCOVERY_DEADLINE_MS,
@@ -588,6 +591,46 @@ describe('useConversationTurn asynchronous ownership', () => {
     await run;
   });
 
+  it('offers a retry only when the server itself declares the first-token timeout', async () => {
+    let options!: Parameters<
+      typeof import('@/lib/api/conversation-stream').streamConversationTurn
+    >[0];
+    let rejectStream!: (error: unknown) => void;
+    runtime.stream.mockImplementation((value) => {
+      options = value;
+      return new Promise<void>((_resolve, reject) => {
+        rejectStream = reject;
+      });
+    });
+    const run = RenderTurn('s1', [], true, 6000).runTurn({ mode: 'send', content: 'hello' });
+    await vi.advanceTimersByTimeAsync(6000);
+    expect(RenderTurn('s1').streamError).toBe(CONVERSATION_SLOW_NETWORK_MESSAGE);
+
+    rejectStream(new ConversationStreamError('超时', 200, 'first_token_timeout'));
+    await run;
+
+    expect(RenderTurn('s1').streamError).toBe('这次回应稍慢，再试一次吧');
+    expect(options.requestId).toBeTruthy();
+  });
+
+  it('clears the slow-network notice when the turn ends without a server failure', async () => {
+    let finish!: () => void;
+    runtime.stream.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        })
+    );
+    const run = RenderTurn('s1', [], true, 6000).runTurn({ mode: 'send', content: 'hello' });
+    await vi.advanceTimersByTimeAsync(6000);
+    expect(RenderTurn('s1').streamError).toBe(CONVERSATION_SLOW_NETWORK_MESSAGE);
+
+    finish();
+    await run;
+
+    expect(RenderTurn('s1').streamError).toBeNull();
+  });
+
   it('uses the frozen six-second SSE budget from the original click despite a cached ten-second catalog', async () => {
     let options!: Parameters<
       typeof import('@/lib/api/conversation-stream').streamConversationTurn
@@ -616,7 +659,7 @@ describe('useConversationTurn asynchronous ownership', () => {
       's1',
       expect.objectContaining({ outcome: 'timed_out', wait_finished_ms: 6000 })
     );
-    expect(RenderTurn('s1').streamError).toBe('这次回应稍慢，再试一次吧');
+    expect(RenderTurn('s1').streamError).toBe(CONVERSATION_SLOW_NETWORK_MESSAGE);
     expect(runtime.cancel).not.toHaveBeenCalled();
     finish();
     await run;
@@ -666,7 +709,7 @@ describe('useConversationTurn asynchronous ownership', () => {
           first_token_visible_ms: null,
         })
       );
-      expect(waiting.streamError).toBe('这次回应稍慢，再试一次吧');
+      expect(waiting.streamError).toBe(CONVERSATION_SLOW_NETWORK_MESSAGE);
       expect(runtime.cancel).not.toHaveBeenCalled();
       options.onFirstDeltaReceived?.();
       options.onDelta('迟到但可交付');
@@ -745,7 +788,7 @@ describe('useConversationTurn asynchronous ownership', () => {
       revision: 1,
     });
     options.onDelta('  ');
-    expect(RenderTurn().streamError).toBe('这次回应稍慢，再试一次吧');
+    expect(RenderTurn().streamError).toBe(CONVERSATION_SLOW_NETWORK_MESSAGE);
     const older = message({
       id: 'a1',
       session_id: 's1',
@@ -755,10 +798,10 @@ describe('useConversationTurn asynchronous ownership', () => {
       content: '旧版本正文',
     });
     RenderTurn('s1', [older]);
-    expect(RenderTurn('s1', [older]).streamError).toBe('这次回应稍慢，再试一次吧');
+    expect(RenderTurn('s1', [older]).streamError).toBe(CONVERSATION_SLOW_NETWORK_MESSAGE);
     const unrelated = { ...older, revision: 1, request_id: 'other-request' };
     RenderTurn('s1', [unrelated]);
-    expect(RenderTurn('s1', [unrelated]).streamError).toBe('这次回应稍慢，再试一次吧');
+    expect(RenderTurn('s1', [unrelated]).streamError).toBe(CONVERSATION_SLOW_NETWORK_MESSAGE);
     const empty = { ...older, revision: 1, content: '', status: 'failed' as const };
     RenderTurn('s1', [empty]);
     expect(runtime.engineeringMeasurement).toHaveBeenCalledWith(
@@ -766,6 +809,7 @@ describe('useConversationTurn asynchronous ownership', () => {
       expect.any(Number),
       expect.objectContaining({ action: 'regenerate', outcome: 'failed' })
     );
+    // The durable failure is the server's verdict, so the soft notice becomes a retry.
     expect(RenderTurn('s1', [empty]).streamError).toBe('这次回应稍慢，再试一次吧');
     expect(runtime.reportFirstToken).toHaveBeenCalledOnce();
     expect(runtime.reportFirstToken).toHaveBeenCalledWith(

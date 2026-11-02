@@ -1354,6 +1354,64 @@ it.each([false, true])(
 );
 
 describe('competing attempts share one delivery and settlement', () => {
+  it('races the fallback model selected as primary on the reversed provider order', async () => {
+    const providers: unknown[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: RequestInit) => {
+        providers.push(JSON.parse(String(init.body)).provider);
+        const second = providers.length === 2;
+        const signal = init.signal!;
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              signal.addEventListener('abort', () => controller.error(signal.reason), {
+                once: true,
+              });
+              if (!second) return;
+              controller.enqueue(
+                new TextEncoder().encode(
+                  `data: ${JSON.stringify({ id: 'second-id', choices: [{ delta: { content: 'reply' }, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n`
+                )
+              );
+              controller.close();
+            },
+          })
+        );
+      })
+    );
+    const req = request({ thinkingEnabled: false });
+    req.model.provider = 'openrouter';
+    req.model.providerModelId = 'vendor/operator-flash';
+    req.model.firstTokenPolicy = {
+      fallbackModelId: 'vendor/operator-flash',
+      fallbackProviders: ['fast-one', 'fast-two'],
+      timeoutMs: 20,
+      fallbackTimeoutMs: 25,
+      deadlineMs: 400,
+      timeoutRateTarget: 0.01,
+      catalogVersion: 12,
+    };
+    req.firstToken = {
+      primaryAttemptId: 'primary-same-model-attempt',
+      requestStartedAt: performance.now(),
+      deferPersistence: true,
+      store: {
+        prepareFallback: vi.fn(async () => {}),
+        observe: vi.fn(async () => {}),
+        selectDelivery: vi.fn(async () => {}),
+      },
+    };
+
+    const result = await execute(req);
+
+    expect(result.status).toBe('success');
+    expect(providers).toEqual([
+      { order: ['fast-one', 'fast-two'], sort: 'latency', allow_fallbacks: true },
+      { order: ['fast-two', 'fast-one'], sort: 'latency', allow_fallbacks: true },
+    ]);
+  });
+
   it.each(
     [false, true].flatMap((free) =>
       (['openrouter', 'venice'] as const).flatMap((provider) =>

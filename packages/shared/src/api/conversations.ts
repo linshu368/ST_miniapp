@@ -266,6 +266,8 @@ export interface ConversationStreamStartEvent {
   requested_model_id?: string;
   /** Configured delay after primary dispatch, not the actual trigger offset or fallback lifetime. */
   fallback_trigger_ms?: number;
+  /** Server time spent before this event; the client subtracts it to isolate network time. */
+  server_elapsed_ms?: number;
   type: 'start';
   /** Frozen total budget measured from the original user submission, never from this event. */
   first_token_deadline_ms?: number;
