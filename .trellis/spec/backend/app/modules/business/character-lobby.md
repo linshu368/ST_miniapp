@@ -73,7 +73,7 @@ Backend lobby/route tests 与 Frontend 大厅人工回归。
 
 ## 前几屏优质轮换（2026-11-02，本地未发布）
 
-鉴权recommendation批次与exposures独立于公开目录；24h open、显式resume、refresh CAS及30秒undo窗口。miniapp_features两表保存当前/上一批/最近3批头及曝光摘要。纯算法可靠40/头档70、实际曝光2–7天恢复/14天回流、90天可信证据；qualified-v1只由新资历job写，低样本保留旧可信，成熟新低分优先。可靠候选不足明确降级旧排序。固定命令pnpm test:lobby-ranking覆盖真实PG17权限、幂等、并发、时间与迁移重放。
+鉴权recommendation批次与exposures独立于公开目录；发布后对全体用户生效，不读取旧enabled/rollout作为启用条件。24h open、显式resume、refresh CAS及30秒undo窗口。miniapp_features两表保存当前/上一批/最近3批头及曝光摘要。纯算法可靠40/头档70、实际曝光2–7天恢复/14天回流、90天可信证据；qualified-v1只由新资历job写，低样本保留旧可信，成熟新低分优先。可靠候选不足明确降级旧排序。固定命令pnpm test:lobby-ranking覆盖真实PG17权限、幂等、并发、时间与迁移重放。
 
 ## 本人创作统计（2026-11-02，本地待发布）
 
