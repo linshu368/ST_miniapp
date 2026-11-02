@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { FirstTokenObservation } from './first-token-observation';
+import { attributeFirstTokenDelay, FirstTokenObservation } from './first-token-observation';
 
 const engineering = vi.hoisted(() => ({ measurement: vi.fn(), event: vi.fn() }));
 vi.mock('./grafana', () => ({
@@ -440,3 +440,140 @@ it.each(['awaiting_start', 'awaiting_token', 'awaiting_commit'] as const)(
     );
   }
 );
+
+describe('first-token delay attribution', () => {
+  it.each([
+    ['in time', { waitMs: 5999, deadlineMs: 6000, pathMs: null }, 'on_time'],
+    ['excused by transit alone', { waitMs: 7000, deadlineMs: 6000, pathMs: 1500 }, 'user_network'],
+    ['still late without transit', { waitMs: 8000, deadlineMs: 6000, pathMs: 1000 }, 'ours'],
+    ['exactly at the budget', { waitMs: 7000, deadlineMs: 6000, pathMs: 1000 }, 'ours'],
+    ['no timing evidence', { waitMs: 7000, deadlineMs: 6000, pathMs: null }, 'ours'],
+    ['first token never arrived', { waitMs: null, deadlineMs: 6000, pathMs: 3000 }, 'ours'],
+  ] as const)('%s', (_name, input, expected) => {
+    expect(attributeFirstTokenDelay(input)).toBe(expected);
+  });
+});
+
+describe('first-token network report', () => {
+  const entry = (values: Partial<PerformanceResourceTiming>) => ({
+    startTime: 10,
+    requestStart: 10,
+    connectStart: 10,
+    connectEnd: 10,
+    nextHopProtocol: 'h2',
+    ...values,
+  });
+  const observe = () =>
+    new FirstTokenObservation(identity, 6000, vi.fn(), vi.fn(), true, 'send', 'model');
+  const stages = () =>
+    Object.fromEntries(
+      engineering.measurement.mock.calls
+        .filter(([name]) => name === 'roleplay.network')
+        .map(([, value, attributes]) => [attributes.stage, value])
+    );
+  const delay = () => engineering.event.mock.calls.find(([name]) => name === 'roleplay.delay')?.[1];
+
+  it('splits connection setup from transit and excuses only the transit', () => {
+    vi.spyOn(performance, 'getEntriesByName').mockReturnValue([
+      entry({ startTime: 0, requestStart: 800, connectStart: 100, connectEnd: 800 }),
+    ] as unknown as PerformanceEntryList);
+    const obs = observe();
+    obs.dispatched('https://api/turn');
+    vi.advanceTimersByTime(3000);
+    // 3000ms after the click, of which the server used 500: 2500ms was network.
+    obs.started(500);
+    vi.advanceTimersByTime(4000);
+    obs.committed(identity, performance.now());
+    obs.reportNetwork();
+
+    expect(stages()).toEqual({ network_overhead: 2500, network_setup: 800, network_path: 1700 });
+    expect(delay()).toEqual(
+      expect.objectContaining({
+        delay_attribution: 'user_network',
+        conn_reused: 'false',
+        protocol: 'h2',
+      })
+    );
+    expect(engineering.measurement).toHaveBeenCalledWith(
+      'roleplay.first_token_late',
+      7000,
+      expect.objectContaining({ outcome: 'timed_out' })
+    );
+  });
+
+  it('does not excuse transit on a reused connection that was never proven alive', () => {
+    vi.spyOn(performance, 'getEntriesByName').mockReturnValue([
+      entry({ startTime: 0, requestStart: 5 }),
+    ] as unknown as PerformanceEntryList);
+    const obs = observe();
+    obs.dispatched('https://api/turn', 120_000);
+    vi.advanceTimersByTime(3000);
+    obs.started(500);
+    vi.advanceTimersByTime(4000);
+    obs.committed(identity, performance.now());
+    obs.reportNetwork();
+
+    expect(delay()).toEqual(
+      expect.objectContaining({
+        delay_attribution: 'ours',
+        conn_reused: 'true',
+        conn_proven: 'false',
+      })
+    );
+  });
+
+  it('excuses transit on a reused connection proven alive moments before', () => {
+    vi.spyOn(performance, 'getEntriesByName').mockReturnValue([
+      entry({ startTime: 0, requestStart: 5 }),
+    ] as unknown as PerformanceEntryList);
+    const obs = observe();
+    obs.dispatched('https://api/turn', 20_000);
+    vi.advanceTimersByTime(3000);
+    obs.started(500);
+    vi.advanceTimersByTime(4000);
+    obs.committed(identity, performance.now());
+    obs.reportNetwork();
+
+    expect(delay()).toEqual(
+      expect.objectContaining({ delay_attribution: 'user_network', conn_proven: 'true' })
+    );
+  });
+
+  it('counts a server timeout that beat the browser clock as ours', () => {
+    vi.spyOn(performance, 'getEntriesByName').mockReturnValue([]);
+    const obs = observe();
+    vi.advanceTimersByTime(5000);
+    obs.deadlineFailed('server_timeout');
+    obs.reportNetwork();
+
+    expect(delay()).toEqual(expect.objectContaining({ delay_attribution: 'ours' }));
+  });
+
+  it('counts the delay as ours when the browser exposes no timing', () => {
+    vi.spyOn(performance, 'getEntriesByName').mockReturnValue([]);
+    const obs = observe();
+    obs.dispatched('https://api/turn');
+    obs.started(100);
+    vi.advanceTimersByTime(7000);
+    obs.committed(identity, performance.now());
+    obs.reportNetwork();
+
+    expect(delay()).toEqual(
+      expect.objectContaining({ delay_attribution: 'ours', conn_reused: 'unknown' })
+    );
+  });
+
+  it('reports once and skips turns with no known client result', () => {
+    vi.spyOn(performance, 'getEntriesByName').mockReturnValue([]);
+    const obs = observe();
+    obs.unavailable('page_left');
+    obs.reportNetwork();
+    expect(delay()).toBeUndefined();
+
+    const done = observe();
+    done.committed(identity, performance.now());
+    done.reportNetwork();
+    done.reportNetwork();
+    expect(engineering.event.mock.calls.filter(([n]) => n === 'roleplay.delay')).toHaveLength(1);
+  });
+});

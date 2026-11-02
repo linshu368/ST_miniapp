@@ -18,10 +18,12 @@ import { useQueryClient } from '@tanstack/react-query';
 import {
   ConversationStreamError,
   CONVERSATION_RECOVERING_MESSAGE,
+  CONVERSATION_SLOW_NETWORK_MESSAGE,
   createConversationRequestId,
   streamConversationTurn,
 } from '@/lib/api/conversation-stream';
 import { ApiClientError } from '@/lib/api/client';
+import { connectionVerifiedAgeMs } from '@/lib/api/connection-warmth';
 import { reportConversationFirstToken } from '@/lib/api/first-token-reports';
 import {
   conversationKeys,
@@ -59,6 +61,7 @@ import { FirstTokenObservation } from '@/lib/perf/first-token-observation';
 import { RoleplayReplyTiming } from '@/lib/perf/roleplay-timing';
 
 const REPLY_STALLED_NOTICE_MS = 8_000;
+const NETWORK_REPORT_DELAY_MS = 1_000;
 export const CANCEL_DISCOVERY_DEADLINE_MS = 30_000;
 const FREE_QUOTA_REFRESH_DELAYS_MS = [0, 300, 900] as const;
 const log = createLogger('conversation-turn');
@@ -395,7 +398,12 @@ export function useConversationTurn({
           ? { ...current, status }
           : dropCurrentStreamingTurn(current);
       });
-      setStreamError((current) => (current === CONVERSATION_RECOVERING_MESSAGE ? null : current));
+      setStreamError((current) => {
+        if (current === CONVERSATION_RECOVERING_MESSAGE) return null;
+        if (current !== CONVERSATION_SLOW_NETWORK_MESSAGE) return current;
+        // The durable terminal is the server's verdict on a turn that looked merely slow.
+        return status === 'complete' ? null : FIRST_TOKEN_RETRY_MESSAGE;
+      });
       controller?.abort();
       safelyRunTelemetry(() => getReplayLifecycle().setStreaming(false));
       return;
@@ -718,8 +726,9 @@ export function useConversationTurn({
         },
         () => {
           if (observationRef.current !== observation) return;
-          // Client delivery telemetry never cancels a server-owned turn.
-          setStreamError(FIRST_TOKEN_RETRY_MESSAGE);
+          // This clock includes the user's own network. The server owns the verdict:
+          // only its failure offers a retry, so a reply on its way is never called failed.
+          setStreamError(CONVERSATION_SLOW_NETWORK_MESSAGE);
         },
         thinkingEnabled,
         input.mode,
@@ -805,7 +814,7 @@ export function useConversationTurn({
           thinkingEnabled,
           content: input.content,
           signal: controller.signal,
-          onDispatched: () => observation.dispatched(),
+          onDispatched: (url) => observation.dispatched(url, connectionVerifiedAgeMs()),
           onFirstDeltaReceived: () => {
             if (isCurrent()) observation.received();
           },
@@ -819,6 +828,7 @@ export function useConversationTurn({
               requestId,
             };
             assistantMessageId = event.assistant_message_id;
+            observation.started(event.server_elapsed_ms);
             observation.identify(
               event.assistant_message_id,
               event.revision,
@@ -966,7 +976,18 @@ export function useConversationTurn({
         )
           setStreamError(FIRST_TOKEN_RETRY_MESSAGE);
       } finally {
+        // Resource timing appears only after the response has fully ended.
+        window.setTimeout(() => observation.reportNetwork(), NETWORK_REPORT_DELAY_MS);
         if (!isCurrent()) return;
+        const serverFailed =
+          settledStatus && settledStatus !== 'complete' && !observation.hasReceivedToken;
+        setStreamError((current) =>
+          current === CONVERSATION_SLOW_NETWORK_MESSAGE
+            ? serverFailed
+              ? FIRST_TOKEN_RETRY_MESSAGE
+              : null
+            : current
+        );
         requestRef.current = null;
         setQuotaRefreshing(false);
         safelyRunTelemetry(() => getReplayLifecycle().setStreaming(false));

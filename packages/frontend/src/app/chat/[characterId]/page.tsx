@@ -12,7 +12,10 @@ import {
 } from '@miniapp/shared';
 import type { ReplyChoicePayload } from '@miniapp/reply-renderer';
 
-import { CONVERSATION_RECOVERING_MESSAGE } from '@/lib/api/conversation-stream';
+import {
+  CONVERSATION_RECOVERING_MESSAGE,
+  CONVERSATION_SLOW_NETWORK_MESSAGE,
+} from '@/lib/api/conversation-stream';
 import { ChatComposer, MAX_USER_INPUT_LENGTH } from '@/components/chat/chat-composer';
 import { ChatMessageList } from '@/components/chat/chat-message-list';
 import {
@@ -32,6 +35,7 @@ import type { CharacterDetailTab } from '@/components/characters/character-detai
 import { ChatSplash } from '@/components/chat/chat-splash';
 import { useChatReplayBinding, useChatSession } from '@/hooks/use-chat-session';
 import { useMemoryDraft } from '@/hooks/use-memory-draft';
+import { useApiConnectionWarmth } from '@/hooks/use-api-connection-warmth';
 import { useConversationTurn } from '@/hooks/use-conversation-turn';
 import { useConversationBranch } from '@/hooks/use-conversation-branch';
 import { useCharacterQuery } from '@/lib/api/characters';
@@ -118,6 +122,14 @@ const ChatMessageVoiceFooter = dynamic(
     })),
   { ssr: false }
 );
+
+function isSoftStreamNotice(message: string): boolean {
+  return (
+    message === FIRST_TOKEN_RETRY_MESSAGE ||
+    message === CONVERSATION_RECOVERING_MESSAGE ||
+    message === CONVERSATION_SLOW_NETWORK_MESSAGE
+  );
+}
 
 export default function SelfHostedChatPage() {
   const { characterId } = useParams<{ characterId: string }>();
@@ -293,6 +305,8 @@ export default function SelfHostedChatPage() {
   const [editingMessage, setEditingMessage] = useState(false);
   const characterQuery = useCharacterQuery(characterId, { sessionId: activeSessionId });
   const character = characterQuery.data?.character;
+
+  useApiConnectionWarmth();
 
   const {
     abort,
@@ -760,14 +774,12 @@ export default function SelfHostedChatPage() {
           role="status"
           aria-live="polite"
           className={
-            streamError === FIRST_TOKEN_RETRY_MESSAGE ||
-            streamError === CONVERSATION_RECOVERING_MESSAGE
+            isSoftStreamNotice(streamError)
               ? 'mx-4 mb-2 flex items-center gap-2 px-3 py-2 text-muted-foreground'
               : 'mx-4 mb-2 flex items-center gap-2 rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-destructive'
           }
         >
-          {streamError !== FIRST_TOKEN_RETRY_MESSAGE &&
-          streamError !== CONVERSATION_RECOVERING_MESSAGE ? (
+          {!isSoftStreamNotice(streamError) ? (
             <AlertCircle className="h-4 w-4 shrink-0" aria-hidden />
           ) : null}
           <span className="min-w-0 flex-1 text-[12px]">{streamError}</span>
