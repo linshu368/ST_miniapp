@@ -26,6 +26,7 @@ import {
 import { getRawInitData, INIT_DATA_HEADER } from '@/lib/telegram/auth';
 import { parseTelegramUser } from '@/lib/telegram/user';
 import { API_URL, apiClient, toApiClientError } from './client';
+import { favoriteKeys } from './favorites';
 
 function creatorClientIdentity(): string {
   return String(parseTelegramUser(getRawInitData()).id ?? 'local-browser');
@@ -124,12 +125,14 @@ export function usePublishCreatorCharacterMutation() {
         {
           method: 'POST',
           body: JSON.stringify(PublishCreatorCharacterSchema.parse(body)),
-          timeoutMs: 30_000,
+          timeoutMs: 75_000,
         }
       ),
     onSuccess: (data) => {
       client.setQueryData(creatorCharacterKeys.detail(data.character.id, identity), data);
       void client.invalidateQueries({ queryKey: creatorCharacterKeys.list(identity) });
+      void client.invalidateQueries({ queryKey: ['characters'] });
+      void client.invalidateQueries({ queryKey: favoriteKeys.all });
     },
   });
 }
@@ -145,14 +148,14 @@ export function useSetCreatorVisibilityMutation() {
         {
           method: 'PUT',
           body: JSON.stringify(SetCreatorVisibilitySchema.parse(body)),
-          timeoutMs: 30_000,
+          timeoutMs: 75_000,
         }
       ),
     onSuccess: (data) => {
       client.setQueryData(creatorCharacterKeys.detail(data.character.id, identity), data);
       void client.invalidateQueries({ queryKey: creatorCharacterKeys.list(identity) });
       void client.invalidateQueries({ queryKey: ['characters'] });
-      void client.invalidateQueries({ queryKey: ['favorites'] });
+      void client.invalidateQueries({ queryKey: favoriteKeys.all });
     },
   });
 }

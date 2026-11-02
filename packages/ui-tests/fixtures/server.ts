@@ -10,6 +10,9 @@ import {
   PublishCreatorCharacterSchema,
   CreatorCoverRequestSchema,
   CreatorPolishRequestSchema,
+  CreatorAiReviewResultSchema,
+  CREATOR_REVIEW_REJECTED_CODE,
+  CREATOR_REVIEW_UNAVAILABLE_CODE,
   CREATOR_PRESET_IDS,
   emptyCharacterDraft,
   creatorPublishMissingFields,
@@ -80,6 +83,7 @@ export function createPreviewServer(apiPort: number, appPort: number) {
   const creatorCards = new Map<string, CreatorCharacter>();
   const creatorCovers = new Map<string, CreatorCoverAsset>();
   let creatorFailureDelivered = false;
+  let creatorReviewFailureDelivered = false;
   let claimedAt: string | null = null;
   const canClaimCheckin = () =>
     !claimedAt || Date.now() >= Date.parse(getNextDailyCheckinAt(claimedAt));
@@ -231,6 +235,7 @@ export function createPreviewServer(apiPort: number, appPort: number) {
     creatorCards.clear();
     creatorCovers.clear();
     creatorFailureDelivered = false;
+    creatorReviewFailureDelivered = false;
     branchRequests.clear();
     branchFailureDelivered = false;
     messageLikes.clear();
@@ -967,6 +972,9 @@ export function createPreviewServer(apiPort: number, appPort: number) {
             cover_url: input.cover_asset_id
               ? (creatorCovers.get(input.cover_asset_id)?.image_url ?? null)
               : null,
+            review_status: 'not_submitted',
+            review_message: null,
+            submitted_revision: null,
             revision: card.revision + 1,
             updated_at: stamp(),
           });
@@ -992,16 +1000,47 @@ export function createPreviewServer(apiPort: number, appPort: number) {
             fail(res, 400, 'INCOMPLETE', `请完成：${missing.join('、')}`);
             return;
           }
+          if (input.visibility === 'public') {
+            const requestEpoch = epoch;
+            await delay(350);
+            if (requestEpoch !== epoch) {
+              fail(res, 409, 'scenario_changed', '预览场景已切换');
+              return;
+            }
+            if (input.expected_revision !== card.revision) {
+              fail(res, 409, 'CONFLICT', '角色已在审核期间修改，请重新提交');
+              return;
+            }
+            const simulatedResult: unknown =
+              scenario === 'creator-review-rejected' &&
+              (!creatorReviewFailureDelivered || card.approved_revision !== null)
+                ? { approved: false, reason: '描述中包含站外转账引导，请删除相关内容后重试。' }
+                : scenario === 'creator-review-unavailable' && !creatorReviewFailureDelivered
+                  ? { approved: 'true', reason: '模型回包格式错误' }
+                  : { approved: true, reason: '角色资料完整，可以公开。' };
+            creatorReviewFailureDelivered = true;
+            const review = CreatorAiReviewResultSchema.safeParse(simulatedResult);
+            if (!review.success) {
+              fail(
+                res,
+                503,
+                CREATOR_REVIEW_UNAVAILABLE_CODE,
+                '审核暂时不可用，请稍后重试。原稿已保留。'
+              );
+              return;
+            }
+            if (!review.data.approved) {
+              fail(res, 422, CREATOR_REVIEW_REJECTED_CODE, review.data.reason);
+              return;
+            }
+          }
           Object.assign(card, {
             state: 'ready',
             visibility: input.visibility,
-            review_status: input.visibility === 'public' ? 'pending' : 'not_submitted',
+            review_status: input.visibility === 'public' ? 'approved' : 'not_submitted',
             submitted_revision: input.visibility === 'public' ? card.revision + 1 : null,
-            approved_revision: input.visibility === 'private' ? null : card.approved_revision,
-            published_revision:
-              input.visibility === 'private' || card.published_revision === null
-                ? card.revision + 1
-                : card.published_revision,
+            approved_revision: input.visibility === 'public' ? card.revision + 1 : null,
+            published_revision: card.revision + 1,
             revision: card.revision + 1,
           });
           const character = {
@@ -1079,11 +1118,17 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         return;
       }
       if (path === '/api/characters' && method === 'GET') {
+        const characters = data.characters.filter((card) => {
+          const creation = creatorCards.get(card.id);
+          return (
+            !creation ||
+            (creation.state === 'ready' &&
+              creation.visibility === 'public' &&
+              creation.approved_revision !== null)
+          );
+        });
         ok(res, {
-          characters:
-            url.searchParams.get('sort') === 'latest'
-              ? [...data.characters].filter((card) => !creatorCards.has(card.id)).reverse()
-              : data.characters.filter((card) => !creatorCards.has(card.id)),
+          characters: url.searchParams.get('sort') === 'latest' ? characters.reverse() : characters,
         });
         return;
       }

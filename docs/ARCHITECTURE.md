@@ -22,9 +22,9 @@
 
 ⏳ **2026-10-16 图片广场配置兼容修复（MIGRATION，未部署）**：`20261016_reconcile_image_plaza_managed_config_keys.sql` 将 Admin managed-key 入口包装为“当前白名单 OR 四个图片广场 key”，两表 CHECK 保留原表达式并接入修复后的入口。避免平台规则槽位静态名单覆盖图片广场 key；保留现有 validator、专用后处理边界、RLS 和业务行。TEST 保存/发布及 Production 均需独立门禁。
 
-⏳ **2026-10-30 用户角色创作（本地集成，未发布）**：`app_core.character_creations` 保存作者草稿、可见性和审核revision，`character_access_grants` 固定历史收藏/使用资格，`character_cover_assets` 保存私有持久封面身份。作者更新只改变卡片；`app_core.character_versions` 持有不可变内容，`experience.chat_sessions.character_version_id` 在第一条真实用户轮次写入事务内绑定，空会话不固定，分支继承。生成、换回复、角色附图和已聊详情读取相同版本，官方卡原行为保持。公开待审修改不会覆盖已批准runtime。本人创作、封面和润色通过独立鉴权API；展示DTO不包含私有system prompt。润色复用generation既有provider transport，独立于用户收费聊天，不写聊天历史；预设与背景由shared固定Markdown组合。
+**2026-10-30 用户角色创作与11-02 AI审核**：`app_core.character_creations` 保存作者草稿、可见性和审核revision，`character_access_grants` 固定历史收藏/使用资格，`character_cover_assets` 保存私有持久封面身份。作者更新只改变卡片；`app_core.character_versions` 持有不可变内容，`experience.chat_sessions.character_version_id` 在第一条真实用户轮次写入事务内绑定，空会话不固定，分支继承。生成、换回复、角色附图和已聊详情读取相同版本，官方卡原行为保持。保存草稿不会覆盖已发布runtime。11-02 AI审核通过服务端已存draft_runtime后，以固定approved/reason结果及expected_revision提交CAS发布；拒绝/格式异常均不替换卡级已发布内容。旧pending不批量通过。审核正文由managed text key creator_character_review_prompt维护，JSON schema、严格解析、权限和结果字段由代码固定；固定验收使用模拟结果；Admin独立试审API复用相同模型和硬编码协议，可使用未发布正文且不改配置或卡。当前仅审核文字资料。本人创作、封面和润色通过独立鉴权API；展示DTO不包含私有system prompt。润色复用generation既有provider transport，独立于用户收费聊天，不写聊天历史；预设与背景由shared固定Markdown组合。
 
-创作者收益复用真实文本扣费RPC：不可变计费快照携带作者和卡ID，`billing.character_creator_rewards` 以永久charge key去重，40%实扣经现有专项奖励入口到账，退款在同一事务回收；已花奖励记内部待抵扣，下次收益冲抵，不能阻止用户退款。作者自用8折与现有VIP折扣取更优惠者，不叠加。`/creation` 前端及运营审核页使用shared契约；只有本地隔离验证，不表示任何线上环境已经开放。
+创作者收益复用真实文本扣费RPC：不可变计费快照携带作者和卡ID，`billing.character_creator_rewards` 以永久charge key去重，40%实扣经现有专项奖励入口到账，退款在同一事务回收；已花奖励记内部待抵扣，下次收益冲抵，不能阻止用户退款。作者自用8折与现有VIP折扣取更优惠者，不叠加。`/creation` 前端及运营审核页使用shared契约；角色创作已于10-30上线；本次AI审核的两份迁移与应用发布顺序见migrations/README；本地隔离验证不替代真实供应商验证，实际执行证据见对应任务。
 
 ## 1. 架构铁律（违反即拦截）
 

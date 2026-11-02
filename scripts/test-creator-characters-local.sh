@@ -76,5 +76,110 @@ for task_migration in \
   20261030_creator_runtime_projection_fix.sql; do
   "${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/$task_migration" >/dev/null
 done
+# Build old queued submissions through the old RPC before applying the forward migration.
+"${task_psql[@]}" >/dev/null <<'SQL'
+DO $legacy$
+DECLARE
+ owner_id uuid:='30000000-0000-4000-8000-000000000101';
+ cover_id uuid:='30000000-0000-4000-8000-000000000102';
+ admin_id uuid:='30000000-0000-4000-8000-000000000103';
+ viewer_id uuid:='30000000-0000-4000-8000-000000000104';
+ session_id uuid:='30000000-0000-4000-8000-000000000105';
+ card_id uuid; r jsonb; d jsonb; runtime jsonb; payload jsonb; turn jsonb; n integer;
+BEGIN
+ INSERT INTO app_core.users(id) VALUES(owner_id),(viewer_id);
+ INSERT INTO admin.admin_users VALUES(admin_id,'legacy-fixture@example.invalid','operator',true,false);
+ INSERT INTO app_core.character_cover_assets VALUES(cover_id,owner_id,'fixture/legacy.png','image/png',100,100,100,now());
+ d:='{"name":"旧版A","description":"旧版简介","opening":"旧开场","background":"旧背景","preset":"预设","tags":["日常"],"backgroundFiles":[],"presetFiles":[]}'::jsonb;
+ runtime:='{"name":"旧版A","description":"旧版简介","first_mes":"旧开场","system_prompt":"legacy A"}'::jsonb;
+ payload:=jsonb_build_object('draft',d,'runtime',runtime,'cover_asset_id',cover_id);
+ FOR n IN 1..10 LOOP
+  card_id:=('30000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid;
+  r:=app_core.mutate_creator_character(owner_id,card_id,'create',NULL,payload);
+  IF n=6 THEN CONTINUE; END IF;
+  r:=app_core.mutate_creator_character(owner_id,card_id,'publish',1,'{"visibility":"public"}');
+  ASSERT r->>'review_status'='pending','legacy fixture did not exercise old publication behavior';
+  IF n=1 THEN
+   r:=app_core.review_creator_character(admin_id,card_id,(r->>'submitted_revision')::integer,'approve',NULL,'test');
+   PERFORM app_core.grant_creator_character_access(viewer_id,card_id);
+   INSERT INTO experience.chat_sessions(id,user_id,character_id) VALUES(session_id,viewer_id,card_id);
+   turn:=experience.start_chat_history_turn_with_current_postprocess(session_id,'旧版已开聊','fixture');
+   UPDATE experience.chat_history SET status='success',assistant_reply='旧版回复' WHERE id=(turn->>'history_id')::uuid;
+   r:=app_core.mutate_creator_character(owner_id,card_id,'save',(r->>'revision')::integer,
+     jsonb_build_object('draft',d||'{"name":"提交B","opening":"提交开场B"}'::jsonb,
+       'runtime',runtime||'{"name":"提交B","first_mes":"提交开场B","system_prompt":"submitted B"}'::jsonb,'cover_asset_id',cover_id));
+   r:=app_core.mutate_creator_character(owner_id,card_id,'publish',(r->>'revision')::integer,'{"visibility":"public"}');
+   -- The submission is authoritative even if a different draft somehow exists alongside it.
+   UPDATE app_core.character_creations SET draft_runtime=draft_runtime||'{"system_prompt":"unsubmitted C"}'::jsonb WHERE character_id=card_id;
+  ELSIF n=2 THEN
+   UPDATE app_core.characters SET enabled=false WHERE id=card_id;
+  ELSIF n=3 THEN
+   UPDATE app_core.characters SET archived_at=now() WHERE id=card_id;
+  ELSIF n=4 THEN
+   UPDATE app_core.character_creations SET revision=revision+1 WHERE character_id=card_id;
+  ELSIF n=5 THEN
+   UPDATE app_core.character_creations SET submission=submission-'runtime' WHERE character_id=card_id;
+  ELSIF n=7 THEN
+   PERFORM app_core.review_creator_character(admin_id,card_id,(r->>'submitted_revision')::integer,'reject','fixture rejection','test');
+  ELSIF n=8 THEN
+   UPDATE app_core.character_creations SET submission=jsonb_set(submission,'{cover_asset_id}','"invalid-cover-id"') WHERE character_id=card_id;
+  ELSIF n=9 THEN
+   UPDATE app_core.character_creations SET submission=jsonb_set(submission,'{runtime}',(submission->'runtime')-'description') WHERE character_id=card_id;
+  ELSIF n=10 THEN
+   UPDATE app_core.character_creations SET submission=jsonb_set(submission,'{runtime}',(submission->'runtime')-'system_prompt') WHERE character_id=card_id;
+  END IF;
+ END LOOP;
+END $legacy$;
+SQL
+{
+cat <<'SQL'
+CREATE TEMP TABLE creator_review_state_before AS SELECT
+ (SELECT jsonb_agg(to_jsonb(c) ORDER BY c.character_id) FROM app_core.character_creations c) AS creations,
+ (SELECT jsonb_agg(to_jsonb(c) ORDER BY c.id) FROM app_core.characters c) AS characters,
+ (SELECT jsonb_agg(to_jsonb(v) ORDER BY v.id) FROM app_core.character_versions v) AS versions,
+ (SELECT jsonb_agg(to_jsonb(s) ORDER BY s.id) FROM experience.chat_sessions s) AS sessions,
+ (SELECT count(*) FROM admin.audit_logs) AS audit_count;
+SQL
+cat "$task_root/packages/shared/migrations/20261102_creator_ai_review.sql"
+cat <<'SQL'
+DO $verify$
+BEGIN
+ ASSERT (SELECT creations IS NOT DISTINCT FROM (SELECT jsonb_agg(to_jsonb(c) ORDER BY c.character_id) FROM app_core.character_creations c)
+   AND characters IS NOT DISTINCT FROM (SELECT jsonb_agg(to_jsonb(c) ORDER BY c.id) FROM app_core.characters c)
+   AND versions IS NOT DISTINCT FROM (SELECT jsonb_agg(to_jsonb(v) ORDER BY v.id) FROM app_core.character_versions v)
+   AND sessions IS NOT DISTINCT FROM (SELECT jsonb_agg(to_jsonb(s) ORDER BY s.id) FROM experience.chat_sessions s)
+   AND audit_count=(SELECT count(*) FROM admin.audit_logs)
+   FROM creator_review_state_before),'AI review migration changed existing pending/cards/chats';
+ ASSERT (SELECT review_status='pending' AND revision=5 AND approved_revision=2 FROM app_core.character_creations
+   WHERE character_id='30000000-0000-4000-8000-000000000001'),'legacy pending update was automatically approved';
+ ASSERT app_core.read_session_character_runtime('30000000-0000-4000-8000-000000000001',
+   '30000000-0000-4000-8000-000000000104','30000000-0000-4000-8000-000000000105')->>'system_prompt'='legacy A',
+   'legacy conversation snapshot changed';
+END $verify$;
+CREATE TEMP TABLE creator_review_function_before AS SELECT pg_get_functiondef(
+ 'app_core.mutate_creator_character(uuid,uuid,text,integer,jsonb)'::regprocedure) AS definition;
+SQL
+cat "$task_root/packages/shared/migrations/20261102_creator_ai_review.sql"
+cat <<'SQL'
+DO $verify$
+BEGIN
+ ASSERT (SELECT creations IS NOT DISTINCT FROM (SELECT jsonb_agg(to_jsonb(c) ORDER BY c.character_id) FROM app_core.character_creations c)
+   AND characters IS NOT DISTINCT FROM (SELECT jsonb_agg(to_jsonb(c) ORDER BY c.id) FROM app_core.characters c)
+   AND versions IS NOT DISTINCT FROM (SELECT jsonb_agg(to_jsonb(v) ORDER BY v.id) FROM app_core.character_versions v)
+   AND sessions IS NOT DISTINCT FROM (SELECT jsonb_agg(to_jsonb(s) ORDER BY s.id) FROM experience.chat_sessions s)
+   AND audit_count=(SELECT count(*) FROM admin.audit_logs)
+   FROM creator_review_state_before),'AI review migration changed existing pending/cards/chats';
+ ASSERT (SELECT review_status='pending' AND revision=5 AND approved_revision=2 FROM app_core.character_creations
+   WHERE character_id='30000000-0000-4000-8000-000000000001'),'legacy pending update was automatically approved';
+ ASSERT app_core.read_session_character_runtime('30000000-0000-4000-8000-000000000001',
+   '30000000-0000-4000-8000-000000000104','30000000-0000-4000-8000-000000000105')->>'system_prompt'='legacy A',
+   'legacy conversation snapshot changed';
+END $verify$;
+DO $$ BEGIN
+ ASSERT (SELECT definition=pg_get_functiondef('app_core.mutate_creator_character(uuid,uuid,text,integer,jsonb)'::regprocedure)
+   FROM creator_review_function_before),'AI review migration replay changed function';
+END $$;
+SQL
+} | "${task_psql[@]}" >/dev/null
 "${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/tests/creator_characters.sql"
-printf 'PASS: creator core PG17 (owner/review CAS/access, real turn freeze, draft/public versions, rollback, branches, immutable ACL). Database: %s\n' "$task_database"
+printf 'PASS: creator core PG17 (AI review gate, untouched legacy queue, disabled/archive preservation, CAS/access, real turn freeze, branches, immutable ACL). Database: %s\n' "$task_database"

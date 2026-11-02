@@ -1,5 +1,14 @@
 # SQL 迁移文件
 
+## 2026-11-02 角色卡AI审核（本地验证，未执行远端）
+
+用户暂停原直接公开发布，未执行的 `20261102_creator_direct_publication.sql` 已被本次审核方案替代，不应继续引用旧release-review或旧无条件放行方案。
+
+1. `20261102_creator_review_prompt_config.sql`：仅增加运营审核正文text key，包装当前managed-key/validator并保留旧名单/ACL/两表CHECK与历史特殊key；正文1–12000 UTF16字长，默认规则ON CONFLICT不覆盖运营内容。输出结构不由配置控制。
+2. `20261102_creator_ai_review.sql`：复用原mutate函数，只有服务端严格解析的approved/reason结果才能直接发布当前CAS版本；旧backend无review仍pending。排除server review措辞对客户端幂等身份的影响，不改权限/锁/会话快照；不批量通过原14张待审、不恢复禁用/归档。
+
+未来部署顺序为两份迁移依次本地与TEST验证→Production→Backend/Admin→Frontend。本轮只本地开发，未触发远端workflow。验证复用 `bash scripts/test-creator-characters-local.sh`、`bash scripts/test-reply-style-options-local.sh`、`pnpm test:ui --grep @creator-review`。发布审核格式/超时失败不放行且不伪装成内容拒绝；恢复旧应用时保留pending兼容，不改已公开卡和历史聊天。
+
 ## 2026-10-30 用户角色创作（本地验收，远端未执行）
 
 每个文件分别执行并记录账本，顺序固定：

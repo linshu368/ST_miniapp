@@ -40,15 +40,32 @@ test('@creator @layout 私密发布、本人试聊、编辑与可见性切换连
   await fillCharacter(page);
   await expectMobileLayout(page);
   await page.getByRole('button', { name: '保存到我的空间', exact: true }).click();
-  await page.getByRole('button', { name: '开始聊天', exact: true }).click();
+  await expect(page).toHaveURL(/\/creation\?tab=created$/);
+  await page.getByRole('link', { name: '与旧书店的林舟聊天', exact: true }).click();
   await expect(page.getByRole('textbox', { name: '输入消息' })).toBeVisible();
   await page.getByRole('button', { name: '返回我的创作', exact: true }).click();
   await expect(page).toHaveURL(/\/creation\?tab=created$/);
   await expect(page.getByRole('link', { name: '与旧书店的林舟聊天' })).toBeVisible();
   await page.getByRole('button', { name: '修改旧书店的林舟的可见性' }).click();
-  await page.getByRole('button', { name: '提交审核', exact: true }).click();
+  await page.getByRole('button', { name: '确认公开', exact: true }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
-  await expect(page.getByText('待审核 · 可先玩', { exact: true })).toBeVisible();
+  await expect(page.getByText('已公开', { exact: true })).toBeVisible();
+  await page
+    .getByRole('navigation', { name: '主导航', exact: true })
+    .getByRole('link', { name: '角色', exact: true })
+    .click();
+  await page.getByRole('textbox', { name: '搜索角色', exact: true }).fill('旧书店的林舟');
+  await expect(
+    page.getByRole('button', { name: '查看 旧书店的林舟 的详情', exact: true })
+  ).toBeVisible();
+  await page
+    .getByRole('navigation', { name: '主导航', exact: true })
+    .getByRole('link', { name: '创作', exact: true })
+    .click();
+  await page
+    .getByRole('navigation', { name: '空间分类', exact: true })
+    .getByRole('link', { name: '我的创作', exact: true })
+    .click();
   await page.getByRole('button', { name: '修改旧书店的林舟的可见性' }).click();
   await expect(
     page.getByText('将不再展示在大厅，已收藏或使用过的用户仍可继续使用。')
@@ -58,6 +75,151 @@ test('@creator @layout 私密发布、本人试聊、编辑与可见性切换连
   await page.getByRole('link', { name: '编辑', exact: true }).click();
   await expect(page.getByRole('textbox', { name: '名称' })).toHaveValue('旧书店的林舟');
   await preview.screenshot('角色编辑与发布闭环');
+});
+
+test('@creator @creator-review 新建公开和发布更新审核通过后静默返回，缓存大厅展示最新角色', async ({
+  page,
+  preview,
+}) => {
+  await preview.scenario('creation');
+  await page.goto('/characters');
+  await expect(
+    page.getByRole('button', { name: '查看 林间旅人 的详情', exact: true })
+  ).toBeVisible();
+  await page
+    .getByRole('navigation', { name: '主导航', exact: true })
+    .getByRole('link', { name: '创作', exact: true })
+    .click();
+  await page.getByRole('button', { name: '开始创作角色', exact: true }).click();
+  await fillCharacter(page);
+  await page.getByText('公开', { exact: true }).click();
+  await page.getByRole('button', { name: '公开角色', exact: true }).click();
+  await expect(page).toHaveURL(/\/creation\?tab=created$/);
+  await expect(page.locator('main [role="alert"]')).toHaveCount(0);
+  await page
+    .getByRole('navigation', { name: '主导航', exact: true })
+    .getByRole('link', { name: '角色', exact: true })
+    .click();
+  await page.getByRole('textbox', { name: '搜索角色', exact: true }).fill('旧书店的林舟');
+  await expect(
+    page.getByRole('button', { name: '查看 旧书店的林舟 的详情', exact: true })
+  ).toBeVisible();
+  await page
+    .getByRole('navigation', { name: '主导航', exact: true })
+    .getByRole('link', { name: '创作', exact: true })
+    .click();
+  await page
+    .getByRole('navigation', { name: '空间分类', exact: true })
+    .getByRole('link', { name: '我的创作', exact: true })
+    .click();
+  await page.getByRole('link', { name: '编辑', exact: true }).click();
+  await page.getByRole('textbox', { name: '名称' }).fill('重逢后的林舟');
+  await page.getByRole('button', { name: '发布更新', exact: true }).click();
+  await expect(page).toHaveURL(/\/creation\?tab=created$/);
+  await expect(page.locator('main [role="alert"]')).toHaveCount(0);
+  await page
+    .getByRole('navigation', { name: '主导航', exact: true })
+    .getByRole('link', { name: '角色', exact: true })
+    .click();
+  await page.getByRole('textbox', { name: '搜索角色', exact: true }).fill('重逢后的林舟');
+  await expect(
+    page.getByRole('button', { name: '查看 重逢后的林舟 的详情', exact: true })
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: '查看 旧书店的林舟 的详情', exact: true })
+  ).toHaveCount(0);
+});
+
+test('@creator @creator-review 审核拒绝显示原因并保留原稿，修改重试后静默返回', async ({
+  page,
+  preview,
+}) => {
+  await preview.scenario('creator-review-rejected');
+  await page.goto('/creation/characters/new');
+  await fillCharacter(page);
+  await page.getByText('公开', { exact: true }).click();
+  await page.getByRole('button', { name: '公开角色', exact: true }).click();
+  await expect(page.getByRole('button', { name: '正在审核…', exact: true })).toBeDisabled();
+  await expect(page.getByRole('alert').filter({ hasText: '未通过审核' })).toContainText(
+    '未通过审核：描述中包含站外转账引导，请删除相关内容后重试。'
+  );
+  await expect(page).toHaveURL(/\/creation\/characters\/new/);
+  await expect(page.getByRole('textbox', { name: '名称' })).toHaveValue('旧书店的林舟');
+  await expect(page.getByRole('textbox', { name: '背景', exact: true })).toHaveValue(
+    '林舟，32岁，书店店主。随和但敏锐，习惯用玩笑隐藏心事。'
+  );
+  await page
+    .getByRole('textbox', { name: '描述', exact: true })
+    .fill('已修改的描述。一起续写旧书店里的重逢。');
+  await page.getByRole('button', { name: '公开角色', exact: true }).click();
+  await expect(page).toHaveURL(/\/creation\?tab=created$/);
+  await expect(page.getByText('已公开', { exact: true })).toBeVisible();
+  expect(
+    (await preview.state()).requests.filter(
+      (request) => request.method === 'POST' && request.path === '/api/creator/characters'
+    )
+  ).toHaveLength(1);
+  await page.getByRole('link', { name: '编辑', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: '描述', exact: true })).toHaveValue(
+    '已修改的描述。一起续写旧书店里的重逢。'
+  );
+  await page.getByRole('textbox', { name: '名称' }).fill('未通过的新版本林舟');
+  await page.getByRole('button', { name: '发布更新', exact: true }).click();
+  await expect(page.getByRole('alert').filter({ hasText: '未通过审核' })).toContainText(
+    '描述中包含站外转账引导'
+  );
+  await expect(page.getByRole('textbox', { name: '名称' })).toHaveValue('未通过的新版本林舟');
+  await page.getByRole('button', { name: '编辑角色', exact: true }).click();
+  await page
+    .getByRole('navigation', { name: '主导航', exact: true })
+    .getByRole('link', { name: '角色', exact: true })
+    .click();
+  await page.getByRole('textbox', { name: '搜索角色', exact: true }).fill('林舟');
+  await expect(
+    page.getByRole('button', { name: '查看 旧书店的林舟 的详情', exact: true })
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: '查看 未通过的新版本林舟 的详情', exact: true })
+  ).toHaveCount(0);
+});
+
+test('@creator @creator-review 审核格式异常不放行，原稿保留且用户可重试', async ({
+  page,
+  preview,
+}) => {
+  await preview.scenario('creator-review-unavailable');
+  await page.goto('/creation/characters/new');
+  await fillCharacter(page);
+  await page.getByText('公开', { exact: true }).click();
+  await page.getByRole('button', { name: '公开角色', exact: true }).click();
+  await expect(page.getByRole('alert').filter({ hasText: '审核暂时不可用' })).toContainText(
+    '原稿已保留'
+  );
+  await expect(page.getByRole('alert').filter({ hasText: '审核暂时不可用' })).not.toContainText(
+    '未通过审核'
+  );
+  await expect(page.getByRole('textbox', { name: '名称' })).toHaveValue('旧书店的林舟');
+  await page.getByRole('button', { name: '公开角色', exact: true }).click();
+  await expect(page).toHaveURL(/\/creation\?tab=created$/);
+  await expect(page.getByText('已公开', { exact: true })).toBeVisible();
+});
+
+test('@creator @creator-review 私密转公开未通过时保留弹层和原因，重试通过才关闭', async ({
+  page,
+  preview,
+}) => {
+  await preview.scenario('creator-review-rejected');
+  await page.goto('/creation/characters/new');
+  await fillCharacter(page);
+  await page.getByRole('button', { name: '保存到我的空间', exact: true }).click();
+  await expect(page).toHaveURL(/\/creation\?tab=created$/);
+  await page.getByRole('button', { name: '修改旧书店的林舟的可见性' }).click();
+  await page.getByRole('button', { name: '确认公开', exact: true }).click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await expect(page.getByRole('dialog').getByRole('alert')).toContainText('描述中包含站外转账引导');
+  await page.getByRole('button', { name: '确认公开', exact: true }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByText('已公开', { exact: true })).toBeVisible();
 });
 
 test('@creator 封面工作室生成并回流保留原稿', async ({ page, preview }) => {
@@ -99,7 +261,8 @@ test('@creator 发布失败保留原稿，重试不重复创建', async ({ page,
   await expect(page.getByText('暂时未能发布，草稿已保留', { exact: true })).toBeVisible();
   await expect(page.getByRole('textbox', { name: '名称' })).toHaveValue('旧书店的林舟');
   await page.getByRole('button', { name: '保存到我的空间', exact: true }).click();
-  await expect(page.getByRole('button', { name: '开始聊天', exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/\/creation\?tab=created$/);
+  await expect(page.getByRole('link', { name: /^与.+聊天$/ })).toBeVisible();
   expect(
     (await preview.state()).requests.filter(
       (request) => request.method === 'POST' && request.path === '/api/creator/characters'
@@ -174,7 +337,8 @@ test('@creator @creator-presets @layout 预设只展示简短说明，多选与�
   expect(payload.draft.selectedPresetIds).toEqual(['world-causality', 'player-boundaries']);
   expect(payload.draft.preset).toBe('角色说话简洁，使用中文直角引号。');
   expect(JSON.stringify(payload)).not.toContain('你将扮演本世界的核心叙事引擎');
-  await expect(page.getByRole('button', { name: '开始聊天', exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/\/creation\?tab=created$/);
+  await expect(page.getByRole('link', { name: /^与.+聊天$/ })).toBeVisible();
 });
 
 test('@creator @creator-continuity @layout 润色收起和刷新保留候选，明确放弃才删除', async ({
@@ -214,7 +378,7 @@ test('@creator @creator-continuity 已有卡未提交修改可找回，发布失
   await page.goto('/creation/characters/new');
   await fillCharacter(page);
   await page.getByRole('button', { name: '保存到我的空间', exact: true }).click();
-  await page.getByRole('link', { name: '返回我的创作', exact: true }).click();
+  await expect(page).toHaveURL(/\/creation\?tab=created$/);
   await page.getByRole('link', { name: '编辑', exact: true }).click();
   await expect(page.getByRole('button', { name: '没有新修改', exact: true })).toBeDisabled();
   await page.getByRole('textbox', { name: '名称' }).fill('林舟的未提交修改');
@@ -243,7 +407,8 @@ test('@creator @creator-continuity 已有卡未提交修改可找回，发布失
   await page.reload();
   await expect(page.getByRole('button', { name: '保存到我的空间', exact: true })).toBeEnabled();
   await page.getByRole('button', { name: '保存到我的空间', exact: true }).click();
-  await expect(page.getByRole('button', { name: '开始聊天', exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/\/creation\?tab=created$/);
+  await expect(page.getByRole('link', { name: /^与.+聊天$/ })).toBeVisible();
 });
 
 test('@creator @creator-continuity 载入最新版本前保留修改备份', async ({
@@ -255,7 +420,7 @@ test('@creator @creator-continuity 载入最新版本前保留修改备份', asy
   await page.goto('/creation/characters/new');
   await fillCharacter(page);
   await page.getByRole('button', { name: '保存到我的空间', exact: true }).click();
-  await page.getByRole('link', { name: '返回我的创作', exact: true }).click();
+  await expect(page).toHaveURL(/\/creation\?tab=created$/);
   await page.getByRole('link', { name: '编辑', exact: true }).click();
   await expect(page).toHaveURL(/\/creation\/characters\/[^/]+\/edit$/);
   const id = new URL(page.url()).pathname.split('/')[3];
