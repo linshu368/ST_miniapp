@@ -40,8 +40,14 @@ import {
 } from '@/lib/api/payment';
 import { useMarkVipEntryViewedMutation, useVipStatusQuery } from '@/lib/api/vip';
 import { useInviteEntryStatusQuery } from '@/lib/api/invite';
-import { notificationKeys, useNotificationUnreadCountQuery } from '@/lib/api/notifications';
+import {
+  notificationKeys,
+  prefetchNotifications,
+  useNotificationUnreadCountQuery,
+} from '@/lib/api/notifications';
 import { useSupportUnreadQuery } from '@/lib/api/support';
+import { afterEntryBackground } from '@/lib/entry-phase';
+import { canPrefetchInBackground } from '@/lib/background-prefetch';
 import { useCommunityEntryQuery } from '@/lib/api/community';
 import {
   usePatchUserSettingsMutation,
@@ -70,6 +76,21 @@ export default function ProfilePage() {
   // BottomNav 同屏常驻并负责轮询，这里只订阅缓存，避免同一端点两个 interval 各打一份。
   const unread = useNotificationUnreadCountQuery({ poll: false });
   const supportUnread = useSupportUnreadQuery({ poll: false });
+  useEffect(() => {
+    const official = unread.data?.official ?? 0;
+    const personal = unread.data?.personal ?? 0;
+    if (official === 0 && personal === 0) return;
+    let active = true;
+    void afterEntryBackground().then(() => {
+      if (!active || !canPrefetchInBackground()) return;
+      router.prefetch('/profile/messages');
+      if (official > 0) void prefetchNotifications(queryClient, 'official');
+      if (personal > 0) void prefetchNotifications(queryClient, 'personal');
+    });
+    return () => {
+      active = false;
+    };
+  }, [queryClient, router, unread.data?.official, unread.data?.personal]);
   const displayName = useUserProfileStore((s) => s.displayName);
   const photoUrl = useUserProfileStore((s) => s.photoUrl);
   const setDisplayName = useUserProfileStore((s) => s.setDisplayName);

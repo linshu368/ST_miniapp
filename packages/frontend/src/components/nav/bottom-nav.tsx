@@ -10,6 +10,8 @@ import { useDramaLibraryStore } from '@/stores/drama-library-store';
 import { useNotificationUnreadCountQuery } from '@/lib/api/notifications';
 import { useSupportUnreadQuery } from '@/lib/api/support';
 import { clearLobbyReturnSnapshot } from '@/lib/lobby-return';
+import { canPrefetchInBackground } from '@/lib/background-prefetch';
+import { afterEntryBackground } from '@/lib/entry-phase';
 import {
   readRoleplayView,
   rememberRoleplayScroll,
@@ -25,6 +27,7 @@ const NAV_ITEMS = [
 ] as const;
 
 const HEAVY_ROUTE_HREFS = new Set<string>(['/', '/dramas', '/creation']);
+const BACKGROUND_PREFETCH_GAP_MS = 800;
 
 function isCreationRoute(pathname: string | null | undefined): boolean {
   return Boolean(
@@ -35,19 +38,20 @@ function isCreationRoute(pathname: string | null | undefined): boolean {
   );
 }
 
-type NavigatorWithConnection = Navigator & {
-  connection?: { saveData?: boolean; effectiveType?: string };
-};
-
 function canPrefetchHeavyRoute(): boolean {
-  if (typeof document === 'undefined' || document.visibilityState !== 'visible') return false;
-  const connection = (navigator as NavigatorWithConnection).connection;
-  return (
-    navigator.onLine !== false &&
-    connection?.saveData !== true &&
-    connection?.effectiveType !== 'slow-2g' &&
-    connection?.effectiveType !== '2g'
-  );
+  return canPrefetchInBackground();
+}
+
+function backgroundPrefetchTargets(
+  pathname: string | null,
+  roleplayHref: '/characters' | '/chats'
+): string[] {
+  if (pathname === '/characters' || pathname === '/chats') return ['/creation', '/'];
+  if (isCreationRoute(pathname)) return [roleplayHref, '/'];
+  if (pathname === '/') return [roleplayHref, '/dramas'];
+  if (pathname?.startsWith('/dramas')) return ['/', '/profile'];
+  if (pathname?.startsWith('/profile')) return ['/dramas', '/'];
+  return [];
 }
 
 // 深层页面（支付流程、沉浸式输入页、消息与客服会话）隐藏底部导航，让主内容拿满可视高度
@@ -84,6 +88,44 @@ export function BottomNav() {
     }
     setRoleplayHref(readRoleplayView());
   }, [currentRoleplayPath]);
+
+  useEffect(() => {
+    const targets = backgroundPrefetchTargets(pathname, roleplayHref);
+    if (targets.length === 0) return;
+
+    let cancelled = false;
+    let timer: number | undefined;
+    let idleHandle: number | undefined;
+    let nextIndex = 0;
+    const scheduleNext = () => {
+      if (cancelled || nextIndex >= targets.length || !canPrefetchInBackground()) return;
+      const run = () => {
+        idleHandle = undefined;
+        if (cancelled || !canPrefetchInBackground()) return;
+        router.prefetch(targets[nextIndex]!);
+        nextIndex += 1;
+        if (nextIndex < targets.length) {
+          timer = window.setTimeout(scheduleNext, BACKGROUND_PREFETCH_GAP_MS);
+        }
+      };
+      if (typeof window.requestIdleCallback === 'function') {
+        idleHandle = window.requestIdleCallback(run, { timeout: 1500 });
+      } else {
+        timer = window.setTimeout(run, 250);
+      }
+    };
+
+    // Touch intent gives almost no lead time. Warm only adjacent destinations after P0 work,
+    // and serialize them so route chunks do not recreate the original cold-start burst.
+    void afterEntryBackground().then(scheduleNext);
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+      if (idleHandle !== undefined && typeof window.cancelIdleCallback === 'function') {
+        window.cancelIdleCallback(idleHandle);
+      }
+    };
+  }, [pathname, roleplayHref, router]);
 
   // 未读属于「我的」：只在 profile 拉取/轮询。大厅、影像、聊天都不提前打，缓存仍可画红点。
   const onProfileTab = Boolean(pathname?.startsWith('/profile'));

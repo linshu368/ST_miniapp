@@ -23,6 +23,11 @@ import {
 } from '@/stores/drama-library-store';
 
 const CATEGORIES = ['全部', '悬疑', '恋爱', '古风', '科幻', '喜剧', '治愈', '脑洞'];
+const INITIAL_RENDER_COUNT = 12;
+const RENDER_BATCH_SIZE = 10;
+const RENDER_MORE_ROOT_MARGIN = '400px';
+const APPROXIMATE_CARD_ROW_HEIGHT = 300;
+const RESTORE_TAIL_COUNT = 12;
 
 function readLibraryPosition(element: HTMLDivElement, preferredId?: string): DramaLibraryPosition {
   const bounds = element.getBoundingClientRect();
@@ -73,7 +78,17 @@ export default function DramasPage() {
     searching ? '全部' : browse.category,
     browse.sort
   );
-  const criticalPosterIds = visibleDramas.slice(0, 2).map((drama) => drama.id);
+  const [renderLimit, setRenderLimit] = useState(INITIAL_RENDER_COUNT);
+  // Detail return restores scrollTop immediately, so mount the target rows plus one-screen tail.
+  const restoreFloor =
+    searching || browse.scroll <= 0
+      ? 0
+      : Math.ceil(Math.max(0, browse.scroll) / APPROXIMATE_CARD_ROW_HEIGHT) * 2 +
+        RESTORE_TAIL_COUNT;
+  const effectiveRenderLimit = Math.max(renderLimit, restoreFloor);
+  const renderedDramas = visibleDramas.slice(0, effectiveRenderLimit);
+  const hasMoreToRender = renderedDramas.length < visibleDramas.length;
+  const criticalPosterIds = renderedDramas.slice(0, 2).map((drama) => drama.id);
   const criticalPosterKey = criticalPosterIds.join(':');
   const criticalPosters = useRef<{
     key: string;
@@ -193,6 +208,7 @@ export default function DramasPage() {
     if (browse.tab === 'theater') searchRef.current?.focus();
   };
   const filter = (patch: Partial<typeof browse>) => {
+    setRenderLimit(INITIAL_RENDER_COUNT);
     setBrowse({ ...patch, scroll: 0 });
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
   };
@@ -200,6 +216,7 @@ export default function DramasPage() {
     const enteringSearch = !searching && Boolean(keyword.trim());
     const leavingSearch = searching && !keyword.trim();
     const scroll = leavingSearch ? (browse.searchReturnScroll ?? 0) : 0;
+    setRenderLimit(INITIAL_RENDER_COUNT);
     if (leavingSearch) restoreSearchScroll.current = scroll;
     setBrowse({
       keyword,
@@ -212,6 +229,24 @@ export default function DramasPage() {
     });
     if (scrollRef.current) scrollRef.current.scrollTop = scroll;
   };
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const node = loadMoreRef.current;
+    if (!hasMoreToRender || !node) return;
+    const grow = () => setRenderLimit((limit) => limit + RENDER_BATCH_SIZE);
+    if (typeof IntersectionObserver === 'undefined') {
+      setRenderLimit(Number.POSITIVE_INFINITY);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) grow();
+      },
+      { rootMargin: RENDER_MORE_ROOT_MARGIN }
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [hasMoreToRender, effectiveRenderLimit]);
   const retry = () => {
     dramaTiming.beginList('retry');
     void refetch();
@@ -350,7 +385,7 @@ export default function DramasPage() {
               </div>
               {visibleDramas.length ? (
                 <div className="grid grid-cols-2 gap-3">
-                  {visibleDramas.map((drama, index) => (
+                  {renderedDramas.map((drama, index) => (
                     <DramaCard
                       key={drama.id}
                       drama={drama}
@@ -370,7 +405,8 @@ export default function DramasPage() {
                   onAction={() => (searching ? updateKeyword('') : filter({ category: '全部' }))}
                 />
               )}
-              {visibleDramas.length ? (
+              {hasMoreToRender ? <div ref={loadMoreRef} aria-hidden className="h-px" /> : null}
+              {visibleDramas.length && !hasMoreToRender ? (
                 <p className="pb-2 pt-8 text-center text-[11px] text-[#eee7e2]/30">
                   找个故事，慢慢入戏
                 </p>
