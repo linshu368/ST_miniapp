@@ -504,6 +504,29 @@ test('@roleplay @character-social 打开评论不打断正在生成的角色回�
   ).toHaveLength(1);
 });
 
+test('@startup 后台归因模块下载失败仍可浏览与跳页，邀请参数已保存', async ({ page, preview }) => {
+  let deferredRequests = 0;
+  await page.route(/\/_next\/.*deferred-entry-effects.*\.js/, async (route) => {
+    deferredRequests += 1;
+    await route.abort('failed');
+  });
+  await page.goto('/characters?startapp=inv_Abcd1234');
+  await expect(
+    page.getByRole('button', { name: '查看 林间旅人 的详情', exact: true })
+  ).toBeVisible();
+  expect(await page.evaluate(() => sessionStorage.getItem('invite_bind_pending'))).toBe('Abcd1234');
+  await expect.poll(() => deferredRequests).toBeGreaterThan(0);
+  await page
+    .getByRole('navigation', { name: '主导航' })
+    .getByRole('link', { name: 'AI短剧', exact: true })
+    .click();
+  await expect(page).toHaveURL(/\/dramas$/);
+  await expect(page.getByRole('button', { name: '搜索短剧', exact: true })).toBeVisible();
+  expect((await preview.state()).requests.some((request) => request.path === '/api/dramas')).toBe(
+    true
+  );
+});
+
 test.describe('初始 HTML 框架', () => {
   test.use({ javaScriptEnabled: false });
 

@@ -88,8 +88,6 @@ export function fetchConversationDetail(
   });
 }
 
-export { reportConversationFirstToken } from './first-token-reports';
-
 export function useCancelConversationTurnMutation() {
   const queryClient = useQueryClient();
   return useMutation({
