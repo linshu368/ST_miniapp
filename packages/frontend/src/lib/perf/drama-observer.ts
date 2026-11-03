@@ -94,10 +94,100 @@ function diagnosticSample(report: DramaTimingReport): boolean {
   return hash % 100 < 5;
 }
 
+/** Seek has independent denominators; late network evidence never repeats a resume sample. */
+function mirrorSeekTiming(report: DramaTimingReport): void {
+  const seek = report.seek;
+  if (!seek?.definition || !['final', 'network'].includes(report.phase)) return;
+  const network = report.diagnostics?.network;
+  const budget =
+    !seek.wasPlaying || report.outcome === 'background'
+      ? 'excluded'
+      : report.outcome === 'unverified'
+        ? 'unverified'
+        : report.outcome !== 'playing'
+          ? 'not_resumed'
+          : report.elapsedMs <= 3000
+            ? 'within_3s'
+            : 'over_3s';
+  const attrs = {
+    ...dramaCdnAttributes(report.delivery),
+    route: report.route,
+    source_measurement_version: seek.definition,
+    report_kind: report.phase,
+    outcome: report.outcome,
+    seek_buffered: seek.buffered,
+    seek_direction: seek.direction ?? 'unknown',
+    resume_expected: String(seek.wasPlaying),
+    seek_budget: budget,
+    first_frame_method: report.frameMethod,
+    network_status: network?.status ?? 'unknown',
+    network_closed: network?.closed ?? 'pending',
+    network_match: network?.entries.length ? 'same_source_overlap' : 'none',
+    detail_truncated: String(Boolean(seek.samplesTruncated || network?.truncated)),
+    seek_sampling: seek.samplingCapped ? 'capped' : 'bounded',
+    seeked_status: seek.seekedMs !== undefined ? 'available' : 'missing',
+    buffer_observed_status: seek.firstBufferedMs !== undefined ? 'available' : 'missing',
+    frame_processing_status:
+      report.diagnostics?.frame?.processingMs !== undefined
+        ? 'available'
+        : report.frameMethod === 'playing_and_timeupdate'
+          ? 'unsupported'
+          : 'missing',
+  };
+  if (report.phase === 'final') {
+    recordEngineeringEvent('drama.seek_terminal', attrs);
+    recordEngineeringMeasurement('drama.seek', report.elapsedMs, { ...attrs, stage: 'total' });
+  }
+  recordEngineeringEvent('drama.seek_diagnostic', attrs);
+  const durations: Record<string, number | undefined> = {};
+  const interval = (name: string, start: number | undefined, end: number | undefined) => {
+    if (
+      start !== undefined &&
+      end !== undefined &&
+      Number.isFinite(start) &&
+      Number.isFinite(end) &&
+      end >= start
+    )
+      durations[name] = end - start;
+  };
+  if (report.phase === 'final') {
+    interval('seek_position_set', 0, seek.positionSetMs);
+    interval('seek_event', 0, seek.seekingMs);
+    interval('seek_before_seeked', 0, seek.seekedMs);
+    if (report.outcome === 'playing')
+      interval('seek_after_seeked', seek.seekedMs, report.elapsedMs);
+    interval('seek_buffer_observed', 0, seek.firstBufferedMs);
+    interval('seek_buffer_to_seeked', seek.firstBufferedMs, seek.seekedMs);
+    durations.frame_processing = report.diagnostics?.frame?.processingMs;
+  }
+  const entries = network?.entries ?? [];
+  const max = (values: (number | undefined)[]) => {
+    const valid = values.filter(
+      (value): value is number => value !== undefined && Number.isFinite(value)
+    );
+    return valid.length ? Math.max(...valid) : undefined;
+  };
+  durations.network_ttfb_first = [...entries]
+    .sort((a, b) => a.startMs - b.startMs)
+    .find((entry) => entry.ttfbMs !== undefined)?.ttfbMs;
+  durations.network_ttfb_max = max(entries.map((entry) => entry.ttfbMs));
+  durations.seek_response_max = max(entries.map((entry) => entry.responseMs));
+  for (const [stage, duration] of Object.entries(durations))
+    if (duration !== undefined && Number.isFinite(duration) && duration >= 0)
+      recordEngineeringMeasurement('drama.seek_stage', duration, { ...attrs, stage });
+}
+
 /** Project the existing timing owner; never copy IDs, query details or media URLs. */
 function mirrorEngineeringTiming(report: DramaTimingReport): void {
   // Seek has its own observation lifecycle and cannot enter startup denominators.
-  if (report.type === 'seek') return;
+  if (report.type === 'seek') {
+    try {
+      mirrorSeekTiming(report);
+    } catch {
+      /* Optional telemetry cannot control seeking. */
+    }
+    return;
+  }
   try {
     const attributes = {
       ...(report.type === 'playback' ? dramaCdnAttributes(report.delivery) : {}),

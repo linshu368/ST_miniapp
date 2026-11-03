@@ -67,6 +67,115 @@ export function mediaResourceFields(
   };
 }
 
+/** Same-source overlapping requests are candidates, not a mapping from byte ranges to target frames.
+ * Keep negative starts for requests already in flight when the seek was committed. */
+export function observeSeekResources(
+  source: string,
+  startedAt: number,
+  sourceAt: number,
+  onTail: (network: DramaNetworkTiming) => void
+) {
+  const entries: DramaResourceTiming[] = [];
+  const seen = new Set<string>();
+  let supported = supports('resource');
+  let truncated = false;
+  let closed = false;
+  let final = false;
+  let changedAfterFinal = false;
+  let observer: PerformanceObserver | undefined;
+  let tail: ReturnType<typeof setTimeout> | undefined;
+  let endAt: number | undefined;
+  const snapshot = (reason?: DramaNetworkTiming['closed']): DramaNetworkTiming => ({
+    status: !supported
+      ? 'unsupported'
+      : !entries.length
+        ? 'no_entry'
+        : entries.some((entry) => entry.visibility === 'detailed')
+          ? 'available'
+          : 'limited',
+    entries: entries.map((entry) => ({ ...entry })),
+    truncated,
+    closed: reason,
+  });
+  const accept = (resources: PerformanceEntry[]) => {
+    if (closed) return;
+    for (const resource of resources) {
+      const entry = resource as PerformanceResourceTiming;
+      if (
+        entry.entryType !== 'resource' ||
+        entry.name !== source ||
+        entry.startTime < sourceAt ||
+        entry.responseEnd < startedAt ||
+        (endAt !== undefined && entry.startTime > endAt)
+      )
+        continue;
+      const key = `${entry.startTime}/${entry.responseEnd}`;
+      if (seen.has(key)) continue;
+      if (entries.length >= DRAMA_TIMING_MAX_RESOURCES) {
+        if (final && !truncated) changedAfterFinal = true;
+        truncated = true;
+        continue;
+      }
+      const fields = mediaResourceFields(entry, startedAt);
+      if (fields) {
+        seen.add(key);
+        entries.push(fields);
+        if (final) changedAfterFinal = true;
+      }
+    }
+  };
+  const drain = () => {
+    try {
+      if (observer) accept(observer.takeRecords());
+    } catch {
+      /* optional */
+    }
+  };
+  const release = () => {
+    if (closed) return;
+    drain();
+    closed = true;
+    clearTimeout(tail);
+    try {
+      observer?.disconnect();
+    } catch {
+      /* native reader */
+    }
+  };
+  if (supported) {
+    try {
+      observer = new PerformanceObserver((list) => accept(list.getEntries()));
+      observer.observe({ type: 'resource', buffered: true });
+      accept(performance.getEntriesByType('resource'));
+    } catch {
+      supported = false;
+      release();
+    }
+  }
+  return {
+    snapshot: () => {
+      drain();
+      return snapshot();
+    },
+    release,
+    finish: (allowTail: boolean, endedAt: number) => {
+      if (final) return;
+      final = true;
+      endAt = endedAt;
+      drain();
+      if (!allowTail || !supported || closed) {
+        release();
+        return;
+      }
+      // An incomplete media response may produce its timing entry after playback resumes.
+      tail = setTimeout(() => {
+        release();
+        if (changedAfterFinal) onTail(snapshot('terminal_tail'));
+      }, 5_000);
+    },
+  };
+}
+
 /** Passive observation only: no probe requests, fetch interception, or global buffer clearing. */
 export function observeDramaResources(source: string, timing: DramaPlaybackTiming): () => void {
   const entries: DramaResourceTiming[] = [];

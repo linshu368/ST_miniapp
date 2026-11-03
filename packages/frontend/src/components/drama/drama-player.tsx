@@ -1416,6 +1416,7 @@ export function DramaPlayer({
                       }}
                       onScrubbingChange={setScrubbing}
                       onCommit={(seconds, wasPlaying) => {
+                        seekTimingRef.current?.positionSet();
                         pausedAtEnd.current = !wasPlaying && seconds >= duration - 0.05;
                         setTime(seconds);
                         setFinished(false);
