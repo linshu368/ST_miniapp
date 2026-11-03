@@ -195,6 +195,54 @@ describe('runPaymentReconciliation', () => {
     expect(gateway.lookupPayments.mock.calls[1]?.[0]).toHaveLength(50);
   });
 
+  it('probes the provider with an unknown id when there is nothing to reconcile', async () => {
+    const { gateway, events, run } = harness([], () => ({ success: true, items: [] }));
+    const result = await run();
+    await flush();
+
+    expect(gateway.lookupPayments).toHaveBeenCalledOnce();
+    expect(gateway.lookupPayments).toHaveBeenCalledWith(['tx_0000000000000000']);
+    expect(result).toEqual({ checked: 0, settled: 0, closed: 0, lookupFailed: false });
+    expect(events.recordOperationEvent).not.toHaveBeenCalled();
+  });
+
+  it('records a failed probe as a query failure so the provider outage is noticed early', async () => {
+    const { events, run } = harness([], () => ({
+      success: false,
+      errorClass: 'provider_unavailable',
+      errorMessage: 'down',
+    }));
+    const result = await run();
+    await flush();
+
+    expect(result.lookupFailed).toBe(true);
+    expect(events.recordOperationEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event_kind: 'fast_reconcile',
+        outcome: 'failed',
+        error_class: 'provider_unavailable',
+        metadata: expect.objectContaining({ probe: true }),
+      })
+    );
+  });
+
+  it('records a slow but successful lookup for the early-warning rule', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const { events, run } = harness([], () => {
+        vi.advanceTimersByTime(4_000);
+        return { success: true, items: [] };
+      });
+      await run();
+      await flush();
+      expect(events.recordOperationEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ outcome: 'succeeded', error_class: 'slow' })
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('reports a failed lookup so the expiry job can skip closing orders', async () => {
     const { orders, events, run } = harness([order('A')], () => ({
       success: false,
