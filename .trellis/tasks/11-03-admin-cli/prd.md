@@ -94,10 +94,10 @@
 
 ## Android/iOS 性能 P95 门禁
 
-- 受影响页面：首页角色大厅 `/`（推荐顺序与金框来源变化）。
+- 受影响页面：角色大厅 `/characters`（推荐顺序与金框来源变化）。
 - 受影响接口：`POST /api/characters/recommendation`、`GET /api/characters`（金框快照）、`POST /api/image-plaza/share`（打标开关改为常量）。
 - 变化性质：删除一次 60 秒缓存的配置读取与固定位拼接，预期不增加耗时；目标为不退化。
-- 基线：开发阶段从 Grafana（Faro `st_page_ready` route `/` 按 `tg_platform`；后端请求日志按路由）采集近 7 天 P95 回填；无可见样本时记为 null 并说明，不补零。
+- 基线：复用同日实测（11-03-latest-lobby-mobile-p95）：/characters 关键视觉 Android 5907ms（N=75）、iOS 2538ms（N=6，低样本）；GET /api/characters P95 214ms。推荐口径与另两个接口未单独取样，记为无可见样本。详见 task.json。
 - 发布后：同口径观察 7 天，单组有效样本 <100 标为低样本并延长。
 
 ## Out of Scope

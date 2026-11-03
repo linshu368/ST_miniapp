@@ -36,29 +36,29 @@
     "mobile_performance": {
       "schema_version": 1,
       "mode": "required",
-      "pages": ["/"],
+      "pages": ["/characters（推荐列表与金框）"],
       "apis": [
         "POST /api/characters/recommendation",
-        "GET /api/characters",
+        "GET /api/characters?sort=recommended",
         "POST /api/image-plaza/share"
       ],
       "android": {
-        "page_p95_baseline_ms": null,
-        "page_p95_target_ms": 3000
+        "page_p95_baseline_ms": 5907,
+        "page_p95_target_ms": 5907
       },
       "ios": {
-        "page_p95_baseline_ms": null,
-        "page_p95_target_ms": 3000
+        "page_p95_baseline_ms": 2538,
+        "page_p95_target_ms": 2538
       },
       "api": {
-        "p95_baseline_ms": null,
+        "p95_baseline_ms": 214,
         "p95_target_ms": 1500
       },
       "measurement": {
-        "source": "Grafana Loki Faro st_page_ready（route=/，tg_platform=android|ios）；接口取后端 pino 请求日志按路由分别算 P95",
-        "window": "发布前近 7 天为基线；发布后新版本至少 7 天同口径；单组有效样本少于 100 时标为低样本并延长"
+        "source": "复用 11-03-latest-lobby-mobile-p95 同日实测：Grafana Cloud Loki production engineering_v1 st_page_critical_visual，route=/characters、outcome=loaded、foreground，fetch+spa；Android 5906.97ms(N=75)、iOS 2538ms(N=6，低样本)。接口基线为同窗 Sentry production GET /api/characters P95 214.22ms(count=370)。该基线是“最新”排序口径，推荐排序与 POST /api/characters/recommendation、POST /api/image-plaza/share 本次未单独取样，记为无可见样本。",
+        "window": "基线 2026-11-02 18:00 至 2026-11-03 16:00（Asia/Shanghai）；发布后按 release 比较至少两个完整 24h 窗口，Android/iOS 分开，单组有效样本少于 100 只记低样本并延长。"
       },
-      "notes": "后端只删除一次 60 秒缓存的主推配置读取与固定位拼接、打标开关改常量，预期不增加耗时，目标为不退化。基线在开发阶段从 Grafana 采集后回填，未采集前为 null（不是 0）。share 接口含异步打标，P95 只看接口响应。"
+      "notes": "本次后端只删除一次 60 秒缓存的主推配置读取与固定位拼接、打标开关改常量，页面代码不变，目标为不退化：页面目标取基线本身；接口目标沿用推荐轮换任务的 1500ms 起步值。发布后分平台核对页面与三个接口 P95，未达足够样本前不宣称达标。"
     }
   }
 }

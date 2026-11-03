@@ -20,9 +20,10 @@
 
 ```
 packages/admin-client   新：Admin SPA 与 CLI 共用的纯 TS 库（无 React/Vite）
-  ├─ registry/          配置注册表（从 admin 移入）：key、zod schema、中文名/说明/默认值、分组
-  ├─ api/               RPC 与 HTTP 调用（从 admin 移入）：入参 (client, apiBaseUrl)，不读 import.meta.env
-  └─ types              DTO（ManagedConfig、ConfigDraft、ConfigRelease、CharacterCard…）
+  ├─ configSchemas.ts  配置注册表（从 admin 移入）：key、zod schema、中文名/说明/默认值
+  ├─ menu.ts          菜单分组 ADMIN_MENU_GROUPS（网页侧栏与 CLI 共用）
+  ├─ adminApi.ts 等    RPC 与 HTTP 调用（从 admin 移入，保留原文件名）：入参 (client, apiBaseUrl)，不读 import.meta.env
+  └─ types.ts         AdminEnvironment 等类型
 packages/admin          保留 UI、environment.ts（Vite env）、菜单映射；改为从 admin-client 导入
 packages/admin-cli      新：命令行；依赖 admin-client、shared、supabase-js
 ```
