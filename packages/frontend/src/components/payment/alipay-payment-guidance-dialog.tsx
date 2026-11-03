@@ -1,19 +1,17 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogTitle } from '@/components/ui/dialog';
 
 const PAYMENT_STEPS = [
-  '第一步：请关闭VPN',
-  '第二步：点击「打开支付宝APP付款」，跳转后完成付款',
-  '第三步：完成付款后再次开启VPN返回到秘境。',
+  '点击「打开支付宝APP付款」，跳转后完成付款',
+  '付款完成后返回秘境，到账会自动刷新',
 ] as const;
 
 /**
- * 支付宝需要在离开 Mini App 前完成 VPN 切换；保持这套固定提示独立于微信的截图付款配置，
- * 避免渠道文案或后续操作被运行时配置误混用。
+ * 当前支付平台无需关闭 VPN（2026-11-03 用户实测），所以不再有 VPN 步骤和勾选确认。
+ * 这张确认面板仍要保留：建单是异步请求，Telegram 只允许在用户刚点击时打开外部链接，
+ * “打开支付宝APP付款”这一下就是那次点击。保持固定文案，不与微信的运行时配置混用。
  */
 export function AlipayPaymentGuidanceDialog({
   open,
@@ -24,12 +22,6 @@ export function AlipayPaymentGuidanceDialog({
   onOpenChange: (open: boolean) => void;
   onConfirm: () => void;
 }) {
-  const [vpnClosed, setVpnClosed] = useState(false);
-
-  useEffect(() => {
-    if (!open) setVpnClosed(false);
-  }, [open]);
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
@@ -50,20 +42,8 @@ export function AlipayPaymentGuidanceDialog({
             ))}
           </ol>
 
-          <label className="mt-4 flex min-h-14 cursor-pointer items-center justify-between rounded-xl bg-secondary px-4">
-            <span className="text-sm font-bold">我已关闭VPN</span>
-            <input
-              type="checkbox"
-              checked={vpnClosed}
-              onChange={(event) => setVpnClosed(event.target.checked)}
-              aria-label="确认已关闭VPN"
-              className="h-5 w-5 accent-[#1677FF]"
-            />
-          </label>
-
           <DialogFooter className="mt-4 flex-col gap-2 sm:flex-col sm:space-x-0">
             <Button
-              disabled={!vpnClosed}
               onClick={onConfirm}
               className="h-12 w-full rounded-xl border-0 bg-[#1677FF] font-black text-white hover:bg-[#1677FF]/90"
             >
