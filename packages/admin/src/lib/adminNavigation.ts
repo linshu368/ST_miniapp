@@ -1,4 +1,4 @@
-import { managedConfigKeys, type ManagedConfigKey } from './configSchemas';
+import { managedConfigKeys, type ManagedConfigKey } from '@miniapp/admin-client';
 import {
   CREATOR_REVIEW_PROMPT_KEY,
   VIP_STRATEGY_CONFIG_KEYS,

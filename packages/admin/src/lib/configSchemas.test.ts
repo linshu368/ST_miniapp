@@ -17,7 +17,7 @@ import {
   resolveManagedWorkingValue,
   EditableImagePlazaTagConfigSchema,
   EditableModelCatalogSchema,
-} from './configSchemas';
+} from '@miniapp/admin-client';
 
 describe('lobby rotation config editing', () => {
   it('opens legacy ranking settings with full rotation and a 24 hour interval', () => {

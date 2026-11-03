@@ -1,0 +1,64 @@
+{
+  "id": "admin-cli",
+  "name": "admin-cli",
+  "title": "运营平台 CLI 与侧边栏清理",
+  "description": "",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P2",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-03",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "admin.business.operations",
+        "admin.infrastructure.admin-client-auth",
+        "backend.business.character-lobby",
+        "shared.business.character-lobby-contracts"
+      ]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": ["/"],
+      "apis": [
+        "POST /api/characters/recommendation",
+        "GET /api/characters",
+        "POST /api/image-plaza/share"
+      ],
+      "android": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 3000
+      },
+      "ios": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 3000
+      },
+      "api": {
+        "p95_baseline_ms": null,
+        "p95_target_ms": 1500
+      },
+      "measurement": {
+        "source": "Grafana Loki Faro st_page_ready（route=/，tg_platform=android|ios）；接口取后端 pino 请求日志按路由分别算 P95",
+        "window": "发布前近 7 天为基线；发布后新版本至少 7 天同口径；单组有效样本少于 100 时标为低样本并延长"
+      },
+      "notes": "后端只删除一次 60 秒缓存的主推配置读取与固定位拼接、打标开关改常量，预期不增加耗时，目标为不退化。基线在开发阶段从 Grafana 采集后回填，未采集前为 null（不是 0）。share 接口含异步打标，P95 只看接口响应。"
+    }
+  }
+}

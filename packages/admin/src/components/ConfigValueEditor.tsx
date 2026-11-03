@@ -51,8 +51,8 @@ import {
   type InviteRewardRulesConfig,
   type ImageTextModelConfig,
   type ManagedConfigKey,
-} from '../lib/configSchemas';
-import type { CharacterCard } from '../lib/adminApi';
+} from '@miniapp/admin-client';
+import type { CharacterCard } from '@miniapp/admin-client';
 import { InviteCenterConfigEditor } from './InviteCenterConfigEditor';
 import { InviteRewardRulesEditor } from './InviteRewardRulesEditor';
 import {

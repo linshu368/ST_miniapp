@@ -57,20 +57,22 @@ import {
   type ConfigDraft,
   type ConfigRelease,
   type ManagedConfig,
-} from './lib/adminApi';
+} from '@miniapp/admin-client';
 import {
   configMetadata,
   isTextManagedConfig,
   parseManagedConfig,
   resolveManagedWorkingValue,
   type ManagedConfigKey,
-} from './lib/configSchemas';
+} from '@miniapp/admin-client';
 import {
   checkAdminApiReachability,
   getAdminClient,
   isEnvironmentConfigured,
   type AdminEnvironment,
+  getAdminApiUrl,
 } from './lib/environment';
+import { readFileAsBase64 } from './lib/fileBase64';
 import {
   fetchModelProviderDirectory,
   getCatalogProviderIssues,
@@ -1015,12 +1017,18 @@ function AdminWorkspace(props: {
         characters={characters}
         charactersLoading={charactersLoading}
         charactersError={charactersError}
-        onUploadInvitePoster={(file) => uploadInvitePoster(props.client, props.environment, file)}
+        onUploadInvitePoster={async (file) =>
+          uploadInvitePoster(
+            props.client,
+            getAdminApiUrl(props.environment),
+            await readFileAsBase64(file, '海报文件读取失败')
+          )
+        }
         onTestCreatorReview={(input, signal) =>
-          testCreatorCharacterReview(props.client, props.environment, input, signal)
+          testCreatorCharacterReview(props.client, getAdminApiUrl(props.environment), input, signal)
         }
         onTestImageTextModel={(value) =>
-          testImageTextModelConfig(props.client, props.environment, value)
+          testImageTextModelConfig(props.client, getAdminApiUrl(props.environment), value)
         }
       />
       <Divider />

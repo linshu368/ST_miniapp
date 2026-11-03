@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Alert, Button, Card, Form, Input, Typography } from 'antd';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { AdminEnvironment } from '../lib/environment';
-import { setOperatorName } from '../lib/adminApi';
+import { setOperatorName } from '@miniapp/admin-client';
 
 export function LoginPage(props: {
   client: SupabaseClient;

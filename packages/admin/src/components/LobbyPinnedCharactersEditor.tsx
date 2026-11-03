@@ -4,7 +4,7 @@ import {
   LOBBY_MAX_PINNED_CHARACTERS,
   LobbyPinnedCharactersSchema,
 } from '@miniapp/shared';
-import type { CharacterCard } from '../lib/adminApi';
+import type { CharacterCard } from '@miniapp/admin-client';
 
 /**
  * 复用原运营名单作为全量推荐的加权候选。
