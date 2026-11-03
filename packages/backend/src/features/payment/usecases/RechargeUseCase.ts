@@ -4,13 +4,19 @@ import {
   formatAmountCny,
   generateMiniappOrderId,
   ORDER_EXPIRE_MS,
+  PaymentPlansConfigError,
   resolvePaymentProduct,
 } from '../domain/rechargeRules.js';
 import { readVipStrategy } from '../../../platform/vip-strategy.js';
-import { ZqPaymentGateway } from '../../../infrastructure/payment/ZqPaymentGateway.js';
+import {
+  VexutopiaPaymentGateway,
+  type PaymentGateway,
+  type PaymentGatewayErrorClass,
+} from '../../../infrastructure/payment/VexutopiaPaymentGateway.js';
 import {
   MiniappPaymentOrderRepository,
   toPaymentOrder,
+  type MiniappPaymentOrderRow,
 } from '../../../infrastructure/repositories/MiniappPaymentOrderRepository.js';
 import type { CreatePaymentOrderData, PaymentOrder, PaymentType } from '@miniapp/shared';
 import { createLogger } from '../../../lib/logger.js';
@@ -21,12 +27,25 @@ import {
   type PaymentEventRecorder,
 } from './PaymentOperationEvents.js';
 
+/** 支付宝 / 微信通道的单笔范围（¥1–1,000）。超出时供应商会拒单，提前拦下避免留一张必败的本地单。 */
+const CHINA_PAY_MIN_CENTS = 100;
+const CHINA_PAY_MAX_CENTS = 100_000;
+
+type RechargeOrders = Pick<
+  MiniappPaymentOrderRepository,
+  | 'create'
+  | 'markFailed'
+  | 'attachProviderTransaction'
+  | 'expirePendingByIdForUser'
+  | 'findByIdForUser'
+>;
+
 export class RechargeUseCase {
   private readonly events: PaymentEventRecorder | undefined;
 
   constructor(
-    private readonly orders = new MiniappPaymentOrderRepository(),
-    private readonly gateway = new ZqPaymentGateway(),
+    private readonly orders: RechargeOrders = new MiniappPaymentOrderRepository(),
+    private readonly gateway: PaymentGateway = new VexutopiaPaymentGateway(),
     events?: PaymentEventRecorder
   ) {
     this.events = events;
@@ -36,7 +55,6 @@ export class RechargeUseCase {
     userId: string;
     planId: string;
     paymentType: PaymentType;
-    clientIp: string;
     log?: SettlementLogger;
   }): Promise<CreatePaymentOrderData> {
     if (!config.payment.enabled) {
@@ -49,6 +67,11 @@ export class RechargeUseCase {
       plans: strategy.plans,
       findPlan: findPaymentPlan,
     });
+    if (product.amount_cents < CHINA_PAY_MIN_CENTS || product.amount_cents > CHINA_PAY_MAX_CENTS) {
+      throw new PaymentPlansConfigError(
+        `套餐 ${product.product_id} 金额 ${product.amount_cents} 分超出支付宝/微信单笔范围`
+      );
+    }
 
     const now = Date.now();
     const orderId = generateMiniappOrderId(input.userId);
@@ -81,47 +104,42 @@ export class RechargeUseCase {
 
     const gatewayStartedAt = Date.now();
     const result = await this.gateway.createPayment({
+      orderId,
       type: input.paymentType,
-      outTradeNo: orderId,
       amount: formatAmountCny(product.amount_cents),
-      userId: input.userId,
-      // 网关商品名由服务端产品快照决定，避免前端改名影响渠道受理或历史订单语义。
-      productName: product.gateway_product_name,
-      clientIp: input.clientIp,
+      // 收银台商品名由服务端产品快照决定，避免前端改名影响渠道受理或历史订单语义。
+      description: product.gateway_product_name,
     });
 
-    if (!result.success || !result.paymentUrl) {
-      await this.orders.markFailed(orderId);
-      recordPaymentOperationEvent(this.events, log, {
-        event_key: `gateway_create:${row.id}`,
-        order_id: row.id,
-        user_id: row.user_id,
-        event_kind: 'gateway_create',
-        stage: 'gateway',
-        outcome: 'failed',
-        source: 'gateway',
-        trigger: 'create_order',
-        error_class: result.errorClass ?? 'response_invalid',
-        duration_ms: Date.now() - gatewayStartedAt,
-        occurred_at: new Date().toISOString(),
-      });
-      try {
-        void observePaymentOrderFailed(
-          {
-            orderId: row.id,
-            userId: row.user_id,
-            paymentType: row.payment_type,
-            settledBy: row.settled_by,
-          },
-          log
-        );
-      } catch (telemetryError) {
-        log.sys.error(
-          { event: 'payment.telemetry.failed', err: telemetryError, orderId: row.id },
-          '支付终态事件发送失败'
-        );
-      }
+    if (!result.success || !result.paymentUrl || !result.providerTransactionId) {
+      log.sys.warn(
+        {
+          event: 'payment.gateway.create_failed',
+          orderId: row.id,
+          errorClass: result.errorClass,
+          providerCode: result.providerCode,
+          durationMs: Date.now() - gatewayStartedAt,
+        },
+        '支付平台建单失败'
+      );
+      await this.failOrder(row, log, gatewayStartedAt, result.errorClass ?? 'response_invalid');
       throw new Error(result.errorMessage || '创建支付订单失败');
+    }
+
+    // 没有交易号的订单只能等 Webhook，查单兜底全部失效；宁可让用户重下一单，
+    // 也不交出这样的收银台。供应商侧那笔未付款交易 30 分钟后自行过期。
+    let attached = false;
+    try {
+      attached = await this.orders.attachProviderTransaction(orderId, result.providerTransactionId);
+    } catch (error) {
+      log.sys.error(
+        { event: 'payment.provider_ref.persist_failed', orderId, err: error },
+        '记录支付平台单号失败'
+      );
+    }
+    if (!attached) {
+      await this.failOrder(row, log, gatewayStartedAt, 'provider_ref_persist_failed');
+      throw new Error('创建支付订单失败，请稍后重试');
     }
 
     recordPaymentOperationEvent(this.events, log, {
@@ -138,7 +156,7 @@ export class RechargeUseCase {
     });
 
     return {
-      order: toPaymentOrder(row),
+      order: toPaymentOrder({ ...row, provider_transaction_id: result.providerTransactionId }),
       pay_url: result.paymentUrl,
     };
   }
@@ -147,5 +165,43 @@ export class RechargeUseCase {
     await this.orders.expirePendingByIdForUser(orderId, userId);
     const row = await this.orders.findByIdForUser(orderId, userId);
     return row ? toPaymentOrder(row) : null;
+  }
+
+  private async failOrder(
+    row: MiniappPaymentOrderRow,
+    log: SettlementLogger,
+    gatewayStartedAt: number,
+    errorClass: PaymentGatewayErrorClass | 'provider_ref_persist_failed'
+  ): Promise<void> {
+    await this.orders.markFailed(row.id);
+    recordPaymentOperationEvent(this.events, log, {
+      event_key: `gateway_create:${row.id}`,
+      order_id: row.id,
+      user_id: row.user_id,
+      event_kind: 'gateway_create',
+      stage: 'gateway',
+      outcome: 'failed',
+      source: 'gateway',
+      trigger: 'create_order',
+      error_class: errorClass,
+      duration_ms: Date.now() - gatewayStartedAt,
+      occurred_at: new Date().toISOString(),
+    });
+    try {
+      void observePaymentOrderFailed(
+        {
+          orderId: row.id,
+          userId: row.user_id,
+          paymentType: row.payment_type,
+          settledBy: row.settled_by,
+        },
+        log
+      );
+    } catch (telemetryError) {
+      log.sys.error(
+        { event: 'payment.telemetry.failed', err: telemetryError, orderId: row.id },
+        '支付终态事件发送失败'
+      );
+    }
   }
 }

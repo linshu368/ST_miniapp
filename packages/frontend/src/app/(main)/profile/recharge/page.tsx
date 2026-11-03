@@ -40,7 +40,6 @@ import { cn } from '@/lib/utils';
 import { PlanCard } from '@/components/payment/plan-card';
 import { useInviteEntryStatusQuery } from '@/lib/api/invite';
 import {
-  useCheckoutConfirmationMutation,
   useCreatePaymentOrderMutation,
   usePaymentPlansQuery,
   useWalletBalanceQuery,
@@ -57,7 +56,6 @@ import {
   retainPaywallFollowupIfActive,
 } from '@/lib/payment/flow-telemetry';
 import { openCreatedPayment } from '@/lib/payment/open-created-payment';
-import { clearCheckoutConfirmation } from '@/lib/payment/open-storage';
 import {
   formatNumber,
   paymentTypeLabel,
@@ -95,7 +93,6 @@ function RechargePageContent() {
   const vipStatus = useVipStatusQuery();
   const wallet = useWalletBalanceQuery();
   const createOrder = useCreatePaymentOrderMutation();
-  const { mutate: confirmCheckout } = useCheckoutConfirmationMutation();
   const inviteEntry = useInviteEntryStatusQuery();
   const inviteEntryEnabled = inviteEntry.data?.entry_enabled === true;
 
@@ -119,16 +116,6 @@ function RechargePageContent() {
   const [preparedPayment, setPreparedPayment] = useState<CreatePaymentOrderData | null>(null);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const submitLock = useRef(false);
-
-  const reportCheckoutConfirmation = useCallback(
-    ({ orderId, request }: Parameters<typeof confirmCheckout>[0]) => {
-      confirmCheckout(
-        { orderId, request },
-        { onSuccess: () => clearCheckoutConfirmation(orderId, request.request_id) }
-      );
-    },
-    [confirmCheckout]
-  );
 
   const plans = data?.plans ?? [];
   const pageConfig = data?.page_config ?? DEFAULT_RECHARGE_PAGE_CONFIG;
@@ -199,10 +186,9 @@ function RechargePageContent() {
         result,
         returnTo,
         paymentType,
-        reportCheckoutConfirmation,
       });
     },
-    [paymentType, reportCheckoutConfirmation, returnTo, router]
+    [paymentType, returnTo, router]
   );
 
   const handleSubmit = useCallback(async () => {
