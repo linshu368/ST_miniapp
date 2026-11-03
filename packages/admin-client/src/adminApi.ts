@@ -372,35 +372,6 @@ function readApiErrorMessage<T>(body: ApiResponse<T> | null): string | null {
   return body && !body.success ? body.error.message : null;
 }
 
-export async function setCharacterEnabled(
-  client: SupabaseClient,
-  characterId: string,
-  enabled: boolean
-): Promise<void> {
-  const { data, error } = await client.schema('admin').rpc('set_character_enabled', {
-    p_character_id: characterId,
-    p_enabled: enabled,
-  });
-  if (!unwrap(data as boolean | null, error)) throw new Error('角色上下架失败');
-}
-
-export async function reorderCharacters(
-  client: SupabaseClient,
-  characterIds: string[]
-): Promise<void> {
-  const { data, error } = await client.schema('admin').rpc('reorder_characters', {
-    p_character_ids: characterIds,
-  });
-  if (!unwrap(data as boolean | null, error)) throw new Error('角色排序失败');
-}
-
-export async function archiveCharacter(client: SupabaseClient, characterId: string): Promise<void> {
-  const { data, error } = await client.schema('admin').rpc('archive_character', {
-    p_character_id: characterId,
-  });
-  if (!unwrap(data as boolean | null, error)) throw new Error('角色归档失败');
-}
-
 export async function getCharacterLayout(client: SupabaseClient): Promise<CharacterLayoutSnapshot> {
   const { data, error } = await client.schema('admin').rpc('get_character_layout');
   return unwrap(data as CharacterLayoutSnapshot | null, error);

@@ -1,4 +1,15 @@
-import { managedConfigKeys, type ManagedConfigKey } from '@miniapp/admin-client';
+import {
+  IMAGE_GENERATION_CONFIG_KEYS,
+  IMAGE_PLAZA_CONFIG_KEYS,
+  INVITE_PROGRAM_CONFIG_KEYS,
+  managedConfigKeys,
+  PLATFORM_INSTRUCTION_CONFIG_KEYS,
+  type ImageGenerationConfigKey,
+  type ImagePlazaConfigKey,
+  type InviteProgramConfigKey,
+  type ManagedConfigKey,
+  type PlatformInstructionConfigKey,
+} from '@miniapp/admin-client';
 import {
   CREATOR_REVIEW_PROMPT_KEY,
   VIP_STRATEGY_CONFIG_KEYS,
@@ -22,58 +33,23 @@ export type AdminViewKey =
 
 export { VIP_STRATEGY_CONFIG_KEYS, type VipStrategyConfigKey };
 
-/**
- * 裂变邀请的三个 managed config 不在侧栏单独成目录，
- * 统一收进「裂变邀请管理」视图作为 tab（顺序即 tab 顺序，末位固定加「邀请数据」）。
- */
-export const INVITE_PROGRAM_CONFIG_KEYS = [
-  'miniapp_invite_reward_rules',
-  'miniapp_invite_center_config',
-  'miniapp_invite_entry_enabled',
-] as const satisfies readonly ManagedConfigKey[];
+export {
+  IMAGE_GENERATION_CONFIG_KEYS,
+  IMAGE_PLAZA_CONFIG_KEYS,
+  INVITE_PROGRAM_CONFIG_KEYS,
+  PLATFORM_INSTRUCTION_CONFIG_KEYS,
+  type ImageGenerationConfigKey,
+  type ImagePlazaConfigKey,
+  type InviteProgramConfigKey,
+  type PlatformInstructionConfigKey,
+};
 
-export type InviteProgramConfigKey = (typeof INVITE_PROGRAM_CONFIG_KEYS)[number];
+/** 「裂变邀请管理」的 tab：三个配置加末位固定的「邀请数据」。 */
 export type InviteProgramTabKey = InviteProgramConfigKey | 'records';
-
-export const IMAGE_GENERATION_CONFIG_KEYS = [
-  'image_generation_enabled',
-  'image_generation_credits',
-  'image_price_label',
-  'image_text_model_config',
-  'image_prompt_policy',
-  'image_default_art_style',
-  'image_description_system_prompt',
-  'image_width',
-  'image_height',
-  'image_max_prompt_chars',
-  'image_max_output_bytes',
-  'image_prompt_over_limit_hint',
-  'image_description_failed_hint',
-  'image_generation_failed_hint',
-  'image_failed_unknown_hint',
-] as const satisfies readonly ManagedConfigKey[];
-export type ImageGenerationConfigKey = (typeof IMAGE_GENERATION_CONFIG_KEYS)[number];
-
-export const IMAGE_PLAZA_CONFIG_KEYS = [
-  'image_plaza_model_catalog',
-  'image_plaza_share_tip',
-  'image_plaza_tags',
-  // 'image_plaza_tags_feature_enabled',
-] as const satisfies readonly ManagedConfigKey[];
-export type ImagePlazaConfigKey = (typeof IMAGE_PLAZA_CONFIG_KEYS)[number];
 
 export function isImagePlazaConfigKey(key: ManagedConfigKey): key is ImagePlazaConfigKey {
   return (IMAGE_PLAZA_CONFIG_KEYS as readonly string[]).includes(key);
 }
-
-/** One workspace, four independently versioned managed-config keys. */
-export const PLATFORM_INSTRUCTION_CONFIG_KEYS = [
-  'choice_rules',
-  'status_rules',
-  'memory_rules',
-  'system_instructions',
-] as const satisfies readonly ManagedConfigKey[];
-export type PlatformInstructionConfigKey = (typeof PLATFORM_INSTRUCTION_CONFIG_KEYS)[number];
 
 export function isPlatformInstructionConfigKey(
   key: ManagedConfigKey
