@@ -379,3 +379,5 @@ Bunny动态Origin实测：`Path.1-`在保留文件名时也保留原query，不�
 7. **Wrong vs Correct**：Wrong为在SQL/前端另写新阶段计算并默认关闭旧链路；Correct为复用唯一helper，v3筛选隔离历史，Backend兼容→Frontend默认双轨→TEST/Cloud/真实流程验证→独立批准unified；接收端已按五秒长尾方案停止分析写入。旧表/视图/历史看板/保留期job本轮不删除。
 
 字段、诊断粒度、分母和切换恢复统一见 `docs/drama-playback-timing.md`。
+
+短剧快进诊断复用observeDramaStartupDiagnostic入口：仅新定义drama_seek_resume_v1、elapsedMs>=3000、final/network写drama.seek_diagnostic受控JSON正文，原playback>=5000不变。出口再strict校验且限制32KiB，沿用有界OTLP队列/超时；媒体URL、签名和请求头不进入正文，ID/数组不成为labels。仍不写分析库、不新增接口或配置；network仅补证，不能当第二次快进。Backend兼容先发，Frontend后发；现有真实本机OTLP接收测试覆盖3000边界、受限字段和重复投影隔离。

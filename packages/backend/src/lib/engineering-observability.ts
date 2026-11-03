@@ -495,8 +495,8 @@ export function observeDramaRequest(input: {
 export function observeDramaStartupDiagnostic(report: DramaTimingReport): void {
   if (
     !active ||
-    report.type !== 'playback' ||
-    report.elapsedMs < 5_000 ||
+    (report.type !== 'playback' && !(report.type === 'seek' && report.seek?.definition)) ||
+    report.elapsedMs < (report.type === 'seek' ? 3_000 : 5_000) ||
     (report.phase !== 'final' && report.phase !== 'network')
   )
     return;
@@ -505,15 +505,16 @@ export function observeDramaStartupDiagnostic(report: DramaTimingReport): void {
   if (!parsed.success) return;
   const payload = JSON.stringify(parsed.data);
   if (Buffer.byteLength(payload, 'utf8') > DRAMA_TIMING_BODY_LIMIT) return;
+  const event = report.type === 'seek' ? 'drama.seek_diagnostic' : 'drama.startup_diagnostic';
   active.event(
-    'drama.startup_diagnostic',
+    event,
     {
-      kind: 'drama_startup_diagnostic',
+      kind: report.type === 'seek' ? 'drama_seek_diagnostic' : 'drama_startup_diagnostic',
       phase: parsed.data.phase,
       outcome: parsed.data.outcome,
       total_ms: parsed.data.elapsedMs,
     },
-    JSON.stringify({ event: 'drama.startup_diagnostic', ...parsed.data })
+    JSON.stringify({ event, ...parsed.data })
   );
 }
 
