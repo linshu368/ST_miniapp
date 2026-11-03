@@ -62,3 +62,7 @@ WebView 回跳和第三方页面兼容需真机验证。
 ## 变更记录
 
 - 2026-10-20：任务 `Remove confirmed repository noise`（`.trellis/tasks/archive/2026-10/10-20-remove-confirmed-repository-noise/`）删除无法恢复的乱码变更记录；commit：`63eee1e847f678f4b2c434f872425a40fc7f891a`。
+
+## 支付供应商替换为 Vexutopia（2026-11-03）
+
+前端只打开 https 收银台（`isAllowedPaymentOpenUrl` 不再接受 http 与 `weixin://`，`openPaymentUrl` 删除 scheme 分支）。充值页、VIP 页、订单结果页删除收银台确认上报与回填；“继续付款”所需的收银台地址缓存不变。

@@ -4,8 +4,6 @@ import {
   adoptPayUrlQueryIntoStorage,
   clearPaymentOpen,
   clearPaymentOpenIfTerminal,
-  clearCheckoutConfirmation,
-  createCheckoutConfirmation,
   hasPaymentOpenUrl,
   isAllowedPaymentOpenUrl,
   PAYMENT_OPEN_TTL_MS,
@@ -13,7 +11,6 @@ import {
   persistPaymentOpen,
   readPaymentOpenMeta,
   readPaymentOpenUrl,
-  takePendingCheckoutConfirmation,
 } from './open-storage';
 import { setReplaySessionStorageForTests } from './session-storage';
 
@@ -76,6 +73,10 @@ describe('payment open storage', () => {
 
   it('rejects invalid URLs and missing storage without throwing', () => {
     expect(isAllowedPaymentOpenUrl('javascript:alert(1)')).toBe(false);
+    // 只认 https 托管收银台：明文 http 和 App scheme 都不再打开。
+    expect(isAllowedPaymentOpenUrl('http://pay.example/checkout')).toBe(false);
+    expect(isAllowedPaymentOpenUrl('weixin://dl/business/?ticket=test')).toBe(false);
+    expect(isAllowedPaymentOpenUrl('https://checkout.vexutopia.com/pay?session=tx_1')).toBe(true);
     expect(
       persistPaymentOpen({
         orderId: 'TG_1',
@@ -143,31 +144,6 @@ describe('payment open storage', () => {
     const nextUrl = replaceState.mock.calls[0]?.[2] as string;
     expect(nextUrl).not.toContain('pay_url');
     expect(nextUrl).toContain('payment_started=1');
-    vi.unstubAllGlobals();
-  });
-
-  it('keeps a checkout intent stable across bounded backfill attempts', () => {
-    vi.stubGlobal('crypto', { randomUUID: () => '11111111-1111-4111-8111-111111111111' });
-    const confirmation = createCheckoutConfirmation('initial_open', 1_000);
-    expect(confirmation).toEqual({
-      request_id: '11111111-1111-4111-8111-111111111111',
-      occurred_at: '1970-01-01T00:00:01.000Z',
-      action: 'initial_open',
-    });
-    persistPaymentOpen({
-      orderId: 'TG_1',
-      payUrl: 'https://pay.example/checkout',
-      returnTo: null,
-      replayContextId: null,
-      checkoutConfirmation: confirmation,
-      now: 1_000,
-    });
-
-    expect(takePendingCheckoutConfirmation('TG_1', 1_000)).toEqual(confirmation);
-    expect(takePendingCheckoutConfirmation('TG_1', 1_000)).toEqual(confirmation);
-    expect(takePendingCheckoutConfirmation('TG_1', 1_000)).toBeNull();
-    clearCheckoutConfirmation('TG_1', confirmation!.request_id, 1_000);
-    expect(takePendingCheckoutConfirmation('TG_1', 1_000)).toBeNull();
     vi.unstubAllGlobals();
   });
 });
