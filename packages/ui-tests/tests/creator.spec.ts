@@ -161,7 +161,15 @@ test('@creator @layout 私密发布、本人试聊、编辑与可见性切换连
   await page.getByRole('button', { name: '保存到我的空间', exact: true }).click();
   await expect(page.getByText(/请补全必填项/).first()).toBeVisible();
   await expect(page.getByRole('button', { name: '上传', exact: true })).toBeFocused();
-  await page.getByRole('button', { name: '名称', exact: true }).click();
+  const coverSection = page.getByRole('region', { name: '角色形象' });
+  await expect(coverSection.getByText('还差 6 项必填')).toBeInViewport();
+  await page.getByLabel('上传角色封面').setInputFiles({ ...cover, buffer: Buffer.alloc(0) });
+  await expect(coverSection.getByRole('alert')).toHaveText('图片不能为空');
+  await expect(coverSection.getByRole('alert')).toBeInViewport();
+  await page.getByLabel('上传角色封面').setInputFiles(cover);
+  await expect(coverSection.getByRole('alert')).toHaveCount(0);
+  await expect(coverSection.getByText('还差 5 项必填')).toBeVisible();
+  await coverSection.getByRole('button', { name: '去补名称' }).click();
   await expect(page.getByRole('textbox', { name: '名称' })).toBeFocused();
   await fillCharacter(page);
   await expectMobileLayout(page);
@@ -353,6 +361,8 @@ test('@creator 封面工作室生成并回流保留原稿', async ({ page, previ
   await preview.scenario('creation');
   await page.goto('/creation/characters/new');
   await page.getByRole('textbox', { name: '名称' }).fill('封面回流草稿');
+  const description = '旧书店的店主，卷发、黑框眼镜。';
+  await page.getByRole('textbox', { name: '描述', exact: true }).fill(description);
   const customPreset = page.getByPlaceholder('破甲话术。对有些模型来说必不可少。');
   await customPreset.fill('保持角色的语言习惯和世界观。');
   const preset = page.getByRole('checkbox', { name: '活的世界与真实因果', exact: true });
@@ -360,7 +370,19 @@ test('@creator 封面工作室生成并回流保留原稿', async ({ page, previ
   await page.getByRole('button', { name: '生成', exact: true }).click();
   await expect(page).toHaveURL(/\/create\/studio\/.*creator_return=/);
   const studioUrl = page.url();
-  await page.getByPlaceholder('描述你想生成的画面…').fill('夜晚的旧书店，32岁店主，柔和灯光。');
+  const composer = page.getByPlaceholder('描述你想生成的画面…');
+  await expect(composer).toBeEditable();
+  await composer.fill('');
+  await page.getByRole('button', { name: '带入角色描述', exact: true }).click();
+  await expect(composer).toHaveValue(description);
+  await composer.fill('夜晚，柔和灯光。');
+  await page.getByRole('button', { name: '追加角色描述', exact: true }).click();
+  await expect(composer).toHaveValue('夜晚，柔和灯光。\n\n' + description);
+  expect(
+    (await preview.state()).requests.filter(
+      (request) => request.path.endsWith('/attempts') && request.method === 'POST'
+    )
+  ).toHaveLength(0);
   await page.getByRole('button', { name: '发送生成', exact: true }).click();
   await page.getByRole('button', { name: '用作角色封面', exact: true }).first().click();
   await expect(page.getByRole('textbox', { name: '名称' })).toHaveValue('封面回流草稿');
@@ -414,6 +436,48 @@ test('@creator 润色截断仍可采用，刷新后可恢复上一版', async ({
   await expect(opening).toHaveValue(proposed);
   await page.getByRole('button', { name: '恢复上一版', exact: true }).click();
   await expect(opening).toHaveValue('「好久不见。」他轻轻合上书。');
+});
+
+test('@creator @layout 主动停止润色后可编辑采用已有文字，首字前停止保留原稿', async ({
+  page,
+  preview,
+}) => {
+  await preview.scenario('creator-polish-stop');
+  await page.goto('/creation/characters/new');
+  const opening = page.getByRole('textbox', { name: '开场白', exact: true });
+  const original = '「门没锁，进来吧。」';
+  await opening.fill(original);
+  const start = page.getByRole('button', { name: 'AI 润色开场白', exact: true });
+  const stop = page.getByRole('button', { name: '停止生成', exact: true });
+  const result = page.getByRole('textbox', { name: '润色结果' });
+  await start.click();
+  await expect(result).toHaveValue(/书店/);
+  const partial = await result.inputValue();
+  await stop.click();
+  await expect(result).toHaveValue(partial);
+  await expect(result).toBeEditable();
+  await page.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click();
+  await expect(opening).toHaveValue(original);
+  await start.click();
+  await expect(result).toHaveValue(partial);
+  await result.fill(partial + '他抬起头。');
+  await page.getByRole('button', { name: '采用这一版', exact: true }).click();
+  await expect(opening).toHaveValue(partial + '他抬起头。');
+  await page.getByRole('button', { name: '恢复上一版', exact: true }).click();
+  await expect(opening).toHaveValue(original);
+
+  const background = page.getByRole('textbox', { name: '背景', exact: true });
+  await background.fill('她经营一家旧书店。');
+  const backgroundPolish = page.getByRole('button', { name: 'AI 润色背景', exact: true });
+  const pending = page.waitForResponse(
+    (r) => new URL(r.url()).pathname === '/api/creator/polish' && r.request().method() === 'POST'
+  );
+  await backgroundPolish.click();
+  await pending;
+  await stop.click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(background).toHaveValue('她经营一家旧书店。');
+  await expect(backgroundPolish).toHaveText('AI 润色');
 });
 
 test('@creator @creator-presets @layout 预设只展示简短说明，多选与自己补充一起保存', async ({
