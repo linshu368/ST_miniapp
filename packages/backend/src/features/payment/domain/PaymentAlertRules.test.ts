@@ -13,6 +13,7 @@ import {
   P1_WEBHOOK_REJECTED_RULE_ID,
   type PaymentOperation,
   P1_PROVIDER_DEGRADED_RULE_ID,
+  P1_PROVIDER_PAY_FAILURE_RATE_RULE_ID,
 } from './PaymentAlertRules.js';
 
 const NOW = new Date('2026-11-03T08:00:00.000Z');
@@ -70,7 +71,7 @@ describe('payment alert rules v3', () => {
         order_id: 'MA_00000000-0000-0000-0000-000000000001_1793689726000_0001',
       }),
       op(2, { event_kind: 'webhook', outcome: 'failed', error_class: 'refund', order_id: 'MA_1' }),
-      ...[4, 3, 2].map((m) =>
+      ...Array.from({ length: 14 }, () => 4).map((m) =>
         op(m, { event_kind: 'fast_reconcile', outcome: 'failed', error_class: 'timeout' })
       ),
       ...[4, 3, 2].map((m) =>
@@ -79,8 +80,16 @@ describe('payment alert rules v3', () => {
       ...[4, 3, 2].map((m) =>
         op(m, { event_kind: 'fast_reconcile', outcome: 'succeeded', error_class: 'slow' })
       ),
+      ...['PF1', 'PF2', 'PF3'].map((id) =>
+        op(6, {
+          event_kind: 'fast_reconcile',
+          outcome: 'unpaid',
+          error_class: 'provider_failed',
+          order_id: id,
+        })
+      ),
     ]).evaluations;
-    expect(firingAll.every((e) => e.state === 'firing')).toBe(true);
+    expect(firingAll.filter((e) => e.state !== 'firing').map((e) => e.rule_id)).toEqual([]);
     for (const evaluation of [...firingAll, ...evaluate([]).evaluations]) {
       expect(() => createSafeAlertCard(evaluation, 'firing', 'key')).not.toThrow();
     }
@@ -288,6 +297,61 @@ describe('payment alert rules v3', () => {
     });
   });
 
+  describe('provider pay failure rate (early warning)', () => {
+    const failed = (minutesAgo: number, id: string) =>
+      op(minutesAgo, {
+        event_kind: 'fast_reconcile',
+        outcome: 'unpaid',
+        error_class: 'provider_failed',
+        order_id: id,
+        trigger: 'fast_reconcile',
+      });
+    const paid = (minutesAgo: number, id: string) =>
+      op(minutesAgo, { event_kind: 'settlement', outcome: 'succeeded', order_id: id });
+
+    it('fires when most terminal payments in 30 minutes failed', () => {
+      const { state, get } = evaluate([
+        failed(25, 'A'),
+        failed(20, 'B'),
+        failed(10, 'C'),
+        paid(8, 'D'),
+      ]);
+      expect(state(P1_PROVIDER_PAY_FAILURE_RATE_RULE_ID)).toBe('firing');
+      expect(get(P1_PROVIDER_PAY_FAILURE_RATE_RULE_ID).summary).toContain('75%');
+    });
+
+    it('stays quiet when failures are a minority or too few', () => {
+      expect(
+        evaluate([failed(5, 'A'), failed(4, 'B'), paid(3, 'C'), paid(2, 'D'), paid(1, 'E')]).state(
+          P1_PROVIDER_PAY_FAILURE_RATE_RULE_ID
+        )
+      ).toBe('healthy');
+      expect(
+        evaluate([failed(5, 'A'), failed(4, 'B')]).state(P1_PROVIDER_PAY_FAILURE_RATE_RULE_ID)
+      ).toBe('healthy');
+    });
+
+    it('counts each order once and ignores expired or cancelled orders', () => {
+      const dup = [failed(5, 'A'), failed(4, 'A'), failed(3, 'A')];
+      const abandoned = ['provider_expired', 'provider_cancelled'].flatMap((cls) =>
+        ['X', 'Y', 'Z'].map((id) =>
+          op(3, { event_kind: 'fast_reconcile', outcome: 'unpaid', error_class: cls, order_id: id })
+        )
+      );
+      expect(evaluate([...dup, ...abandoned]).state(P1_PROVIDER_PAY_FAILURE_RATE_RULE_ID)).toBe(
+        'healthy'
+      );
+    });
+
+    it('ignores failures older than 30 minutes', () => {
+      expect(
+        evaluate([failed(40, 'A'), failed(35, 'B'), failed(31, 'C')]).state(
+          P1_PROVIDER_PAY_FAILURE_RATE_RULE_ID
+        )
+      ).toBe('healthy');
+    });
+  });
+
   it('notifies Feishu for payment blocking, unfulfilled payments, refunds, and provider early warnings', () => {
     expect([...FEISHU_NOTIFY_RULE_IDS].sort()).toEqual(
       [
@@ -296,6 +360,7 @@ describe('payment alert rules v3', () => {
         P1_REFUND_RULE_ID,
         P1_PROVIDER_QUERY_FAILING_RULE_ID,
         P1_PROVIDER_DEGRADED_RULE_ID,
+        P1_PROVIDER_PAY_FAILURE_RATE_RULE_ID,
       ].sort()
     );
   });

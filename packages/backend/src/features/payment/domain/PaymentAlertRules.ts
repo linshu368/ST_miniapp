@@ -32,6 +32,14 @@ export const P1_WEBHOOK_REJECTED_RULE_ID = 'p1-webhook-rejected';
 /** 预警：平台变慢或开始间歇失败，还没到用户连续建单失败的程度。 */
 export const P1_PROVIDER_DEGRADED_RULE_ID = 'p1-provider-degraded';
 
+/** 预警：收银台能打开，但平台判定的付款失败占比异常高（渠道问题的信号）。 */
+export const P1_PROVIDER_PAY_FAILURE_RATE_RULE_ID = 'p1-provider-pay-failure-rate';
+const PAY_FAILURE_WINDOW_MS = 30 * 60_000;
+const PAY_FAILURE_MIN_COUNT = 3;
+const PAY_FAILURE_MIN_RATIO = 0.6;
+/** 平台明确判定付款没成的状态。cancelled 多半是用户主动关闭，expired 是放弃，都不算渠道故障。 */
+const PAY_FAILED_CLASSES = new Set(['provider_failed']);
+
 /** 单次建单/查单超过这个耗时就算“慢”（建单目标 P95 ≤ 3 秒）。 */
 export const SLOW_CALL_MS = 3_000;
 /** 对账循环把成功但偏慢的查单记成这个分类，供预警规则统计。 */
@@ -47,6 +55,7 @@ export const FEISHU_NOTIFY_RULE_IDS = new Set([
   P1_REFUND_RULE_ID,
   P1_PROVIDER_QUERY_FAILING_RULE_ID,
   P1_PROVIDER_DEGRADED_RULE_ID,
+  P1_PROVIDER_PAY_FAILURE_RATE_RULE_ID,
 ]);
 
 /** 平台说已付款、本地却没入账的错误分类（不论来自 Webhook 还是对账）。 */
@@ -162,6 +171,23 @@ export function evaluatePaymentAlertRules(
       : '',
   ].filter(Boolean);
 
+  // 付款失败占比：分子是平台判 failed 的不同订单，分母是“成功入账 + 平台判 failed”的不同订单。
+  const payWindow = within(PAY_FAILURE_WINDOW_MS, () => true);
+  const failedPayOrders = distinctOrders(
+    payWindow.filter(
+      (op) =>
+        op.outcome === 'unpaid' &&
+        QUERY_EVENT_KINDS.has(op.event_kind) &&
+        PAY_FAILED_CLASSES.has(op.error_class ?? '')
+    )
+  );
+  const paidOrders = distinctOrders(
+    payWindow.filter((op) => op.event_kind === 'settlement' && op.outcome === 'succeeded')
+  );
+  const payFailureRatio = ratio(failedPayOrders, failedPayOrders + paidOrders);
+  const payFailureHigh =
+    failedPayOrders >= PAY_FAILURE_MIN_COUNT && payFailureRatio >= PAY_FAILURE_MIN_RATIO;
+
   const rules: Rule[] = [
     {
       id: P0_PROVIDER_CREATE_FAILING_RULE_ID,
@@ -238,6 +264,22 @@ export function evaluatePaymentAlertRules(
         '先看 Vexutopia 控制台和状态页；趋势继续恶化会升级为建单连续失败。必要时在后台临时关闭受影响的渠道。',
     },
     {
+      id: P1_PROVIDER_PAY_FAILURE_RATE_RULE_ID,
+      severity: 'P1',
+      windowMs: PAY_FAILURE_WINDOW_MS,
+      firing: payFailureHigh,
+      metrics: [
+        ['failed_payments', failedPayOrders, 'count'],
+        ['paid_payments', paidOrders, 'count'],
+        ['failure_ratio', payFailureRatio, 'ratio'],
+      ],
+      location: { kind: 'dependency', component: 'provider_payment_channel' },
+      title: 'P1 支付失败占比异常偏高（预警）',
+      summary: `最近 30 分钟平台判定付款失败 ${failedPayOrders} 笔，成功入账 ${paidOrders} 笔，失败占比 ${Math.round(payFailureRatio * 100)}%。收银台能打开但用户付不成，疑似渠道问题`,
+      recommendedAction:
+        '用支付宝和微信各试付一笔确认是哪个渠道；在 Vexutopia 控制台查失败原因（failure_reason）；确认渠道故障后可在后台临时关闭该渠道。',
+    },
+    {
       id: P1_WEBHOOK_REJECTED_RULE_ID,
       severity: 'P1',
       windowMs: 10 * 60_000,
@@ -282,6 +324,10 @@ function unresolvedPaidAnomalies(
     seen.add(key);
     return true;
   });
+}
+
+function distinctOrders(operations: PaymentOperation[]): number {
+  return new Set(operations.map((op) => op.order_id).filter(Boolean)).size;
 }
 
 function describeClasses(operations: PaymentOperation[]): string {
