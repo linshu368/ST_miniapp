@@ -27,10 +27,8 @@ import {
   CREATOR_REVIEW_PROMPT_KEY,
   ModelCatalogSchema,
   LlmProviderRoutingConfigSchema,
-  PaymentPlansRuntimeConfigSchema,
   type LlmModelProvider,
   type ModelCatalog,
-  type PaymentPlan,
   type ProviderModelDirectory,
 } from '@miniapp/shared';
 import { LoginPage } from './components/LoginPage';
@@ -653,11 +651,6 @@ function AdminWorkspace(props: {
     (props.environment === 'production'
       ? props.admin.can_access_prod
       : props.admin.can_access_test);
-  const paymentPlans = useMemo<PaymentPlan[]>(() => {
-    const runtimeValue = configs.find((config) => config.key === 'miniapp_payment_plans')?.value;
-    const parsed = PaymentPlansRuntimeConfigSchema.safeParse(runtimeValue);
-    return parsed.success ? parsed.data.plans : [];
-  }, [configs]);
   const publishedModelIds = useMemo(() => {
     const runtimeValue = configs.find((config) => config.key === 'llm_model_catalog')?.value;
     const snapshots = [
@@ -1019,7 +1012,6 @@ function AdminWorkspace(props: {
         syncLoading={providerLoading}
         syncError={providerErrors}
         onRefreshProvider={(provider) => void reloadProviderDirectory(provider, true)}
-        paymentPlans={paymentPlans}
         characters={characters}
         charactersLoading={charactersLoading}
         charactersError={charactersError}

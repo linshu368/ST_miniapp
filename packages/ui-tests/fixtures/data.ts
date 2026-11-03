@@ -1,7 +1,5 @@
 import {
   DEFAULT_PAYMENT_CHANNELS_CONFIG,
-  DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG,
-  DEFAULT_RECHARGE_PAGE_CONFIG,
   DEFAULT_WORD_COUNT_TIERS_CONFIG,
   GetImagePlazaConfigDataSchema,
   GetModelCatalogDataSchema,
@@ -527,8 +525,6 @@ export function makeData(api: string, characterCount = 18) {
         available: true,
       },
     ],
-    page_config: DEFAULT_RECHARGE_PAGE_CONFIG,
-    payment_prompt_dialog_config: DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG,
     insufficient_credits_notice: '星尘不足，补充后继续体验。',
   };
   const imageConfig = GetImagePlazaConfigDataSchema.parse({
