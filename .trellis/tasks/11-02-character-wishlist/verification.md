@@ -48,9 +48,3 @@
 ## 最终口径变更：仅匿名公开
 
 用户在上线前取消私密心愿。前述私密读隔离仅是旧版本验证记录；最终版本只支持public，提交前提示所有人可见且不展示昵称头像。API和DB双重拒绝private，仍保留本人撤回和我的心愿。27项shared定向、60项backend、fresh PG17和5项analytics通过。最终迁移SHA256：e65e46e73b71d969830b5003fb14e1b069657f9ca7359228495cdd90fe065b8e。
-
-## 正式分支适配
-
-以main 35d5632e为底，摘取fbc9f403心愿变更：保留导航shell拆分、大厅原启动/渲染预算，不携带dev推荐轮换；fixture同样保留main实现。匿名公开版12项手机、10项fixture和全包typecheck通过，前端生产构建通过。测试库迁移工作流41431668961成功，实况核对3表RLS、public-only约束、anon/auth无读写/RPC权限、service_role仅经受限RPC写入。正式库迁移工作流41431882087成功，迁移校验值与测试库一致，生产3表RLS、公有约束、RPC/表权限只读互证一致。安全advisor仅提示预期的RLS无直接读取policy（本功能必须经后端鉴权RPC），无新可访问授权问题。
-
-Production分支fixture为main原7项+心愿2项，共9项通过；不带入dev额外推荐轮换测试。曾在冲突文件仍被编辑时发起typecheck产生语法错误，文件适配完成后已单独验证ui-tests类型通过，最终全包验证重新执行。

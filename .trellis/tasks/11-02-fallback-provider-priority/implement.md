@@ -24,8 +24,8 @@ pnpm test:ui --grep @chat
 
 本文件不是生产已修复声明。观察上线后的真实业务数据，供应商latency只做分段诊断。
 
-
 ## 本地完成证据（2026-11-02 16:36 北京时间）
+
 - Shared 231项、Admin 135项、Backend全量1218项通过；全部消费者typecheck通过。
 - Admin/Frontend build通过；改动文件ESLint、迁移命名与diff检查通过。
 - 本地PG17完整首字/竞争/扣费/免费额度/重放/并发回归通过，新供应商迁移执行两次且OID/ACL保留；未执行远端迁移。

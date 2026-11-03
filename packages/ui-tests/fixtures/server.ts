@@ -5,9 +5,6 @@ import { resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import {
-  LobbyRecommendationRequestSchema,
-  LobbyRecommendationExposuresSchema,
-  type LobbyRecommendationData,
   CharacterWishQuerySchema,
   CreateCharacterWishSchema,
   SupportCharacterWishSchema,
@@ -15,6 +12,9 @@ import {
   type CharacterWish,
   type CharacterWishCard,
   type NotificationItem,
+  LobbyRecommendationRequestSchema,
+  LobbyRecommendationExposuresSchema,
+  type LobbyRecommendationData,
   CreatorAnalyticsQuerySchema,
   CreateCreatorCharacterSchema,
   SaveCreatorCharacterSchema,

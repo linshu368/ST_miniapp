@@ -5,8 +5,8 @@ scope: frontend
 category: business
 status: active
 owners: [frontend]
-last_verified_task: .trellis/tasks/11-02-lobby-quality-rotation/
-last_verified_at: 2026-11-02
+last_verified_task: .trellis/tasks/archive/2026-11/11-03-latest-lobby-mobile-p95/
+last_verified_at: 2026-11-03
 ---
 
 # 角色模块发现与收藏
@@ -21,7 +21,7 @@ last_verified_at: 2026-11-02
 
 发现、详情和会话数据继续使用既有 Backend API。详情按角色读取有效会话，有记录时主操作继续已有对话，并单列新对话；无记录时开始对话；历史读取失败显示重试，不能推断成无记录后默认创建。接着聊只从现有接口返回的有效历史中按活动时间选择，不保证全局最后一段。
 
-从角色卡进入聊天前记录同文档短生命周期返回快照，返回发现时恢复排序、搜索、收藏筛选、角色 ID 顺序摘要、锚点卡和滚动位置；快照读入组件 state 后立即清理共享存储，后续只使用本次挂载副本。模块间切换另保存栏目、发现条件和滚动标量，不保存服务端角色或收藏 DTO。
+首次且没有已保存发现条件时默认展示「最新」；用户主动选择的推荐/最新仍在当前浏览器会话内保留。从角色卡进入聊天前记录同文档短生命周期返回快照，返回发现时恢复排序、搜索、收藏筛选、角色 ID 顺序摘要、锚点卡和滚动位置；快照读入组件 state 后立即清理共享存储，后续只使用本次挂载副本。模块间切换另保存栏目、发现条件和滚动标量，不保存服务端角色或收藏 DTO。
 
 ## 入口与调用者
 
@@ -61,6 +61,8 @@ last_verified_at: 2026-11-02
 
 本轮为本地界面预览；示例服务只在 `/tmp`，不能代替真实 Backend、Telegram WebView 或生产数据验收。真实数据排序观感需上线环境观察。大厅当前仍非分页接口；返回快照保存已加载 ID 摘要以便后续 infinite query 分支复用，但本模块未新增后端分页。
 
+Android/iOS 角色列表首批均限制为4张卡；Android 首图高优先级且平台识别后仅首图 eager，iOS 保留前2图 eager。水合兜底同样只挂4张，避免移动端缓存命中时先挂6张。已有缓存时优先等待首图结算，异常兜底刷新分别延后至 Android 3秒、iOS 2.5秒，避免后台校准请求竞争前2秒关键窗口；图片正常结算后仍立即允许刷新。生产关键视觉 P95 的2秒目标必须按发布 release、Android/iOS、cache/fetch 和 mount/spa 分组复验，低于100个有效终态只标低样本，不得以本地 fixture 宣称达标。
+
 ## 关联模块
 
 `backend.business.character-lobby`、`shared.business.character-lobby-contracts`。
@@ -68,6 +70,7 @@ last_verified_at: 2026-11-02
 ## 变更记录
 
 - 2026-10-23：任务 `10-23-roleplay-module-navigation` 将发现、对话和收藏归入角色模块，补齐显式续聊/新建及有限来源返回；本地预览与真实环境验收边界分别记录。
+- 2026-11-03：任务 `大厅默认最新与移动端 P95 优化`（`.trellis/tasks/archive/2026-11/11-03-latest-lobby-mobile-p95/`）角色大厅新会话默认最新，并收紧 Android/iOS 首屏卡片与缓存重校准预算；commit：未记录。
 
 ## 连续试卡体验（2026-10-23）
 

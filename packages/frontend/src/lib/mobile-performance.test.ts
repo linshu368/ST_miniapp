@@ -17,7 +17,19 @@ describe('mobile performance policy', () => {
 
     expect(android.routePriority.slice(0, 2)).toEqual(['characters', 'home']);
     expect(ios.routePriority.slice(0, 2)).toEqual(['home', 'dramas']);
-    expect(android.characters.initialRenderCount).toBeLessThanOrEqual(6);
+    expect(android.characters).toMatchObject({
+      initialRenderCount: 4,
+      renderBatchSize: 4,
+      eagerImageCount: 1,
+      highPriorityImageCount: 1,
+    });
+    expect(ios.characters).toMatchObject({
+      initialRenderCount: 4,
+      renderBatchSize: 6,
+      eagerImageCount: 2,
+      highPriorityImageCount: 1,
+    });
+    expect(getMobilePerformancePolicy('unknown').characters.initialRenderCount).toBe(4);
     expect(ios.dramas.initialRenderCount).toBeLessThanOrEqual(6);
   });
 

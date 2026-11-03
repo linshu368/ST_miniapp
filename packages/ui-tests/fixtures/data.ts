@@ -40,21 +40,6 @@ export const WISH_IDS = {
 } as const;
 
 export const scenarios = {
-  'lobby-rotation': {
-    label: '推荐优质轮换',
-    description: '36张虚构角色，24小时轮换、换一批、撤回与试聊返回',
-    path: '/characters',
-  },
-  'lobby-rotation-error': {
-    label: '换批失败恢复',
-    description: '首次手动换批失败，保留原列表并可重试',
-    path: '/characters',
-  },
-  'lobby-rotation-lost-response': {
-    label: '换批丢响应',
-    description: '批次已经更换但响应失败，同请求重试不多换一次',
-    path: '/characters',
-  },
   wishes: {
     label: '角色心愿墙',
     description: '匿名公开许愿、我的心愿、支持、用作品回应与站内通知（虚构数据）',
@@ -69,6 +54,21 @@ export const scenarios = {
     label: '心愿提交失败',
     description: '首次提交失败保留输入，再次提交成功；同 UUID 重试不重复',
     path: '/wishes',
+  },
+  'lobby-rotation': {
+    label: '推荐优质轮换',
+    description: '36张虚构角色，24小时轮换、换一批、撤回与试聊返回',
+    path: '/characters',
+  },
+  'lobby-rotation-error': {
+    label: '换批失败恢复',
+    description: '首次手动换批失败，保留原列表并可重试',
+    path: '/characters',
+  },
+  'lobby-rotation-lost-response': {
+    label: '换批丢响应',
+    description: '批次已经更换但响应失败，同请求重试不多换一次',
+    path: '/characters',
   },
   'creator-data': {
     label: '创作数据',
