@@ -71,12 +71,7 @@ const COMMON_API_VARIABLES = [
   'OPENAI_API_KEY',
   'OPENAI_API_BASE_URL',
   'OPENAI_MODEL',
-  'PAYMENT_BASE_URL',
   'PAYMENT_ENABLED',
-  'PAYMENT_MERCHANT_ID',
-  'PAYMENT_MERCHANT_PRIVATE_KEY',
-  'PAYMENT_NOTIFY_URL',
-  'PAYMENT_PLATFORM_PUBLIC_KEY',
   'PAYMENT_RETURN_URL',
   'PROD_SUPABASE_PROJECT_REF',
   'POSTHOG_API_KEY',
@@ -95,6 +90,9 @@ const COMMON_API_VARIABLES = [
   // preserved when applying IaC for the monitor service.
   'VENICE_API_BASE_URL',
   'VENICE_API_KEY',
+  'VEXUTOPIA_API_KEY',
+  'VEXUTOPIA_BASE_URL',
+  'VEXUTOPIA_WEBHOOK_SECRET',
   'Z_MODEL',
 ] as const;
 const DEVELOPMENT_API_VARIABLES = [
@@ -113,9 +111,6 @@ const PRODUCTION_API_VARIABLES = [
   'LLM_DEFAULT_MODEL',
   'LLM_UPSTREAM_URL',
   'MINIAPP_SHORT_NAME',
-  'PAYMENT_GATEWAY',
-  'PAYMENT_MERCHANT_KEY',
-  'PAYMENT_V2_BASE_URL',
   'PORT',
   'PROD_DATABASE_URL',
   'PROD_DIRECT_URL',
@@ -176,12 +171,10 @@ export default defineRailway((ctx) => {
           TEST_SUPABASE_PROJECT_REF: stminiapp.env.TEST_SUPABASE_PROJECT_REF,
         }),
     PAYMENT_ENABLED: stminiapp.env.PAYMENT_ENABLED,
-    PAYMENT_BASE_URL: stminiapp.env.PAYMENT_BASE_URL,
-    PAYMENT_MERCHANT_ID: stminiapp.env.PAYMENT_MERCHANT_ID,
-    PAYMENT_MERCHANT_PRIVATE_KEY: stminiapp.env.PAYMENT_MERCHANT_PRIVATE_KEY,
-    PAYMENT_PLATFORM_PUBLIC_KEY: stminiapp.env.PAYMENT_PLATFORM_PUBLIC_KEY,
-    PAYMENT_NOTIFY_URL: stminiapp.env.PAYMENT_NOTIFY_URL,
     PAYMENT_RETURN_URL: stminiapp.env.PAYMENT_RETURN_URL,
+    // 对账 worker / 过期 cron 要批量查单，必须拿到同一把 API Key；Webhook secret 只有 API 服务需要。
+    VEXUTOPIA_API_KEY: stminiapp.env.VEXUTOPIA_API_KEY,
+    VEXUTOPIA_BASE_URL: stminiapp.env.VEXUTOPIA_BASE_URL,
   };
 
   const paymentReconcileWorker = service('stminiapp-payment-reconcile-cron', {

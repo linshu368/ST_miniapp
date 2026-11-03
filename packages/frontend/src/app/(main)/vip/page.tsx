@@ -27,14 +27,9 @@ import { VipBenefitArt } from '@/components/vip/vip-benefit-art';
 import { Button } from '@/components/ui/button';
 import { AlipayIcon, WeChatPayIcon } from '@/components/icons';
 import { formatNumber, formatYuanShort, safePaymentReturnTo } from '@/lib/utils/payment';
-import {
-  useCheckoutConfirmationMutation,
-  useCreatePaymentOrderMutation,
-  usePaymentPlansQuery,
-} from '@/lib/api/payment';
+import { useCreatePaymentOrderMutation, usePaymentPlansQuery } from '@/lib/api/payment';
 import { useVipStatusQuery } from '@/lib/api/vip';
 import { openCreatedPayment } from '@/lib/payment/open-created-payment';
-import { clearCheckoutConfirmation } from '@/lib/payment/open-storage';
 import {
   capturePaymentMethodSelected,
   capturePaymentOrderCreated,
@@ -83,23 +78,12 @@ function VipPageContent() {
     plansQuery.isError || vipQuery.isError
   );
   const createOrder = useCreatePaymentOrderMutation();
-  const { mutate: confirmCheckout } = useCheckoutConfirmationMutation();
   const [paymentType, setPaymentType] = useState<PaymentType>('alipay');
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [alipayPromptOpen, setAlipayPromptOpen] = useState(false);
   const [wechatPromptOpen, setWechatPromptOpen] = useState(false);
   const [preparedPayment, setPreparedPayment] = useState<CreatePaymentOrderData | null>(null);
   const submitLock = useRef(false);
-
-  const reportCheckoutConfirmation = useCallback(
-    ({ orderId, request }: Parameters<typeof confirmCheckout>[0]) => {
-      confirmCheckout(
-        { orderId, request },
-        { onSuccess: () => clearCheckoutConfirmation(orderId, request.request_id) }
-      );
-    },
-    [confirmCheckout]
-  );
 
   // 商品展示与下单都只接受发布中的月卡，不能在月卡缺失时落回旧周卡。
   const monthlyPlan = plansQuery.data?.vip_plans?.find((plan) => plan.id === 'month');
@@ -143,10 +127,9 @@ function VipPageContent() {
         result,
         returnTo,
         paymentType,
-        reportCheckoutConfirmation,
       });
     },
-    [paymentType, reportCheckoutConfirmation, returnTo, router]
+    [paymentType, returnTo, router]
   );
 
   const handleSubmit = async () => {

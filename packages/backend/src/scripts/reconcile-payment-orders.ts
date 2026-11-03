@@ -2,18 +2,18 @@ import '../platform/config.js';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 import {
-  runFastPaymentReconciliation,
-  runFastPaymentReconciliationLoop,
-} from '../features/payment/usecases/FastPaymentReconciliation.js';
+  runPaymentReconciliation,
+  runPaymentReconciliationLoop,
+} from '../features/payment/usecases/PaymentReconciliation.js';
 import { MiniappPaymentOrderRepository } from '../infrastructure/repositories/MiniappPaymentOrderRepository.js';
-import { ZqPaymentGateway } from '../infrastructure/payment/ZqPaymentGateway.js';
+import { VexutopiaPaymentGateway } from '../infrastructure/payment/VexutopiaPaymentGateway.js';
 import { createLogger } from '../lib/logger.js';
 import { closeSupabaseClient } from '../lib/supabase.js';
 import { config } from '../platform/config.js';
 
 const log = createLogger('payment');
 const orders = new MiniappPaymentOrderRepository();
-const gateway = new ZqPaymentGateway();
+const gateway = new VexutopiaPaymentGateway();
 const shutdown = new AbortController();
 let exitCode = 0;
 
@@ -24,18 +24,19 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const) {
 }
 
 log.sys.info(
-  { event: 'payment.fast_cron.started', paymentEnabled: config.payment.enabled },
-  '支付订单快速对账 worker 启动'
+  { event: 'payment.reconcile_worker.started', paymentEnabled: config.payment.enabled },
+  '支付订单对账 worker 启动'
 );
 
 try {
-  await runFastPaymentReconciliationLoop({
+  await runPaymentReconciliationLoop({
     runPass: () =>
-      runFastPaymentReconciliation({
+      runPaymentReconciliation({
         orders,
         gateway,
         log,
         paymentEnabled: config.payment.enabled,
+        trigger: 'fast_reconcile',
         events: orders,
       }),
     sleep: async (milliseconds, signal) => {
@@ -49,33 +50,39 @@ try {
     signal: shutdown.signal,
     onPass: (result) => {
       if (!config.payment.enabled) {
-        console.log('Fast payment reconciliation skipped: PAYMENT_ENABLED is not true');
+        console.log('Payment reconciliation skipped: PAYMENT_ENABLED is not true');
         return;
       }
       console.log(
-        `Fast payment reconciliation: checked=${result.checked} claimed=${result.claimed} ` +
-          `settled=${result.settled} unpaid=${result.unpaid} failed=${result.failed}`
+        `Payment reconciliation: checked=${result.checked} settled=${result.settled} ` +
+          `closed=${result.closed} lookupFailed=${result.lookupFailed}`
       );
     },
     onError: (error) => {
       const message = error instanceof Error ? error.message : String(error);
-      log.sys.error({ event: 'payment.fast_cron.failed', err: error }, '支付订单快速对账本轮失败');
-      console.error(`Fast payment reconciliation failed: ${message}`);
+      log.sys.error(
+        { event: 'payment.reconcile_worker.failed', err: error },
+        '支付订单对账本轮失败'
+      );
+      console.error(`Payment reconciliation failed: ${message}`);
     },
   });
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);
-  log.sys.error({ event: 'payment.fast_cron.failed', err: error }, '支付订单快速对账 worker 退出');
-  console.error(`Fast payment reconciliation worker failed: ${message}`);
+  log.sys.error(
+    { event: 'payment.reconcile_worker.failed', err: error },
+    '支付订单对账 worker 退出'
+  );
+  console.error(`Payment reconciliation worker failed: ${message}`);
   exitCode = 1;
 } finally {
-  log.sys.info({ event: 'payment.fast_cron.stopped' }, '支付订单快速对账 worker 停止');
+  log.sys.info({ event: 'payment.reconcile_worker.stopped' }, '支付订单对账 worker 停止');
   try {
     await closeSupabaseClient();
   } catch (error) {
     log.sys.error(
-      { event: 'payment.fast_cron.cleanup_failed', err: error },
-      '支付订单快速对账资源清理失败'
+      { event: 'payment.reconcile_worker.cleanup_failed', err: error },
+      '支付订单对账资源清理失败'
     );
     exitCode = 1;
   }

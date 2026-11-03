@@ -58,3 +58,7 @@ Shared tests 与 Backend/Frontend typecheck。
 ## 变更记录
 
 - 2026-10-20：任务 `Remove confirmed repository noise`（`.trellis/tasks/archive/2026-10/10-20-remove-confirmed-repository-noise/`）删除无法恢复的乱码变更记录；commit：`63eee1e847f678f4b2c434f872425a40fc7f891a`。
+
+## 支付供应商替换为 Vexutopia（2026-11-03）
+
+删除 `POST /api/payment/orders/:id/checkout-confirmations` 的 `CheckoutConfirmation*` / `PostCheckoutConfirmation*` schema 与类型。`CreatePaymentOrderData.pay_url` 现在固定是 https 托管收银台地址；其余订单契约不变，`settled_by` 联合值保留 `return` 以兼容历史订单。

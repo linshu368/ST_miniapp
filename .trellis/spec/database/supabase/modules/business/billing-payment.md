@@ -97,3 +97,7 @@ send/regenerate 携带可选 `first_token_measurement`；后端通过既有 begi
 系统超时免费、免费预留释放；主动停止沿原报价/权益一次结算。计费继续用一次交付结果和服务端持久化终态保障正确性，不依赖滚动/阅读。已结算记录只补调用元数据，不重进计费；归档明细依永久去重返回显式 archived 终态，不重扣、不伪造账单；failed 进入已有有界退避。缺报沿用原预算+15秒保守收口，不增加新计费任务。
 
 迁移为 `20261028_client_committed_first_token.sql`、`20261028_llm_archived_charge_result.sql`，均仅替换既有函数，保留 ACL 和历史数据。先 TEST 验证、合 dev，再生产迁移 → Backend → Frontend/看板。发布证据见任务 release-review；1%是否达成须由上线后的 v4 样本判断。
+
+## 支付供应商替换为 Vexutopia（2026-11-03）
+
+无迁移。`payment_orders.provider_transaction_id` 改为建单成功即写入 Vexutopia `tx_…`（`complete_payment_order` 的 `COALESCE` 写法兼容）。`next_reconcile_at`/`reconcile_attempts`/`reconcile_locked_until` 与 `checkout_*` 列、`record_checkout_confirmation` RPC 不再被调用，按约定保留不删。`payment_operation_events` 写入改为按 `event_key` 冲突忽略，便于对账把同一异常只记一次。

@@ -188,13 +188,6 @@ export function openTelegramCommunity(url: string): boolean {
 export function openPaymentUrl(url: string): void {
   if (typeof window === 'undefined') return;
 
-  // openLink 只保证支持 HTTP(S)。当前通道固定 method=jump，网关只接受 http(s) 收银台
-  // 地址，所以这条分支是休眠的；厂商若改回 scheme，需要一并取回 /pay/launch.html 中转页，
-  // 直接 location.assign 在 WebView 里只会得到 ERR_UNKNOWN_URL_SCHEME。
-  if (/^weixin:\/\//i.test(url)) {
-    window.location.assign(url);
-    return;
-  }
-
+  // 支付平台只返回 https 托管收银台，交给 Telegram openLink 在外部浏览器打开。
   openExternalUrl(url);
 }

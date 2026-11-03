@@ -78,3 +78,7 @@ send/regenerate 携带可选 `first_token_measurement`；后端通过既有 begi
 系统超时免费、免费预留释放；主动停止沿原报价/权益一次结算。计费继续用一次交付结果和服务端持久化终态保障正确性，不依赖滚动/阅读。已结算记录只补调用元数据，不重进计费；归档明细依永久去重返回显式 archived 终态，不重扣、不伪造账单；failed 进入已有有界退避。缺报沿用原预算+15秒保守收口，不增加新计费任务。
 
 迁移为 `20261028_client_committed_first_token.sql`、`20261028_llm_archived_charge_result.sql`，均仅替换既有函数，保留 ACL 和历史数据。先 TEST 验证、合 dev，再生产迁移 → Backend → Frontend/看板。发布证据见任务 release-review；1%是否达成须由上线后的 v4 样本判断。
+
+## 支付供应商替换为 Vexutopia（2026-11-03）
+
+子千易整体删除（网关、表单回调、诊断脚本、配置）。`infrastructure/payment/VexutopiaPaymentGateway.ts` 负责建单（`Idempotency-Key = order-<本地订单号>`，仅超时/网络/限流/上游 503 重试一次）、单笔查单、批量 lookup 与 Webhook HMAC 验签。建单成功后先写 `provider_transaction_id`，写不进去就标 failed、不交出收银台。入账来源：`webhook`（验签 + `mijing_env` 本环境过滤）、`query`（轮询/回跳单笔查单）、`cron`（`PaymentReconciliation` 每 30 秒 / 5 分钟批量查最近 2 小时未履约订单，平台终态未付则本地提前置 expired）。回跳只导航。`payment.refunded` 只记事件和告警，不自动扣回。收银台确认上报整体删除；告警规则 v3 只读操作事件中的平台直接信号。任务：`.trellis/tasks/11-03-vexutopia-payment/`。
