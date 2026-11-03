@@ -93,6 +93,11 @@ export const scenarios = {
     description: '保留部分内容，可采用、编辑、撤回',
     path: '/creation/characters/new',
   },
+  'creator-polish-stop': {
+    label: '主动停止角色润色',
+    description: '开场白停在第一段，背景停在首字前，可手动停止生成',
+    path: '/creation/characters/new',
+  },
   'creator-save-error': {
     label: '角色发布失败',
     description: '草稿保留并可重试，不重复创建',

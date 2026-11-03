@@ -41,6 +41,7 @@ import { CreatorDocumentImport, CreatorDocumentAttachments } from './character-e
 import { CharacterPresetChoices } from './character-editor-presets';
 import {
   CharacterEditorModal,
+  dismissTopCharacterEditorModal,
   CharacterFullscreenEditor,
   CharacterPolishDialog,
   type CharacterPolishSession,
@@ -211,7 +212,9 @@ function CharacterEditor({
   const polishMutation = useCreatorPolishMutation();
   const [editing, setEditing] = useState<TextField | null>(null);
   const [fullCover, setFullCover] = useState(false);
-  const [showRequired, setShowRequired] = useState(false);
+  const [correctionField, setCorrectionField] = useState('');
+  const showRequired = Boolean(correctionField);
+  const [coverError, setCoverError] = useState('');
   const [notice, setNotice] = useState('');
   const [working, setWorking] = useState(false);
   const [recoveryOpen, setRecoveryOpen] = useState(false);
@@ -279,7 +282,7 @@ function CharacterEditor({
   }, [cover.data, returningId, localReady, updateLocal, router, editorPath]);
 
   const goBack = useCallback(async () => {
-    if (busyRef.current) return;
+    if (dismissTopCharacterEditorModal() || busyRef.current) return;
     if (!(await flushLocal())) {
       setNotice('本地草稿还没保存成功，请稍后再返回。当前内容仍在这里。');
       return;
@@ -296,7 +299,7 @@ function CharacterEditor({
     if (busyRef.current) return;
     busyRef.current = true;
     setWorking(true);
-    setNotice('');
+    setCoverError('');
     try {
       const payload = await fileToImagePlazaPayload(file);
       const { asset } = await upload.mutateAsync({
@@ -312,7 +315,7 @@ function CharacterEditor({
       }));
     } catch (error) {
       if (mounted.current)
-        setNotice(error instanceof Error ? error.message : '封面上传失败，请重试。');
+        setCoverError(error instanceof Error ? error.message : '封面上传失败，请重试。');
     } finally {
       busyRef.current = false;
       if (mounted.current) setWorking(false);
@@ -323,7 +326,7 @@ function CharacterEditor({
     if (busyRef.current) return;
     busyRef.current = true;
     setWorking(true);
-    setNotice('');
+    setCoverError('');
     try {
       if (!(await local.flush())) throw new Error('本地草稿暂未保存，请稍后再进入图片创作。');
       let studioId = local.value.coverStudioId;
@@ -338,7 +341,7 @@ function CharacterEditor({
       router.push(`/create/studio/${studioId}?creator_return=${encodeURIComponent(editorPath)}`);
     } catch (error) {
       if (mounted.current)
-        setNotice(error instanceof Error ? error.message : '暂时无法进入图片创作，请重试。');
+        setCoverError(error instanceof Error ? error.message : '暂时无法进入图片创作，请重试。');
     } finally {
       busyRef.current = false;
       if (mounted.current) setWorking(false);
@@ -360,8 +363,6 @@ function CharacterEditor({
   function discardPolish() {
     const current = sessionRef.current;
     if (!current) return;
-    active.current?.abort();
-    active.current = null;
     local.update((value) => {
       const candidates = { ...value.polishCandidates };
       delete candidates[current.target];
@@ -370,6 +371,20 @@ function CharacterEditor({
     sessionRef.current = null;
     setSession(null);
     setPolishOpen(false);
+    void local.flush();
+  }
+  function stopPolish() {
+    const current = sessionRef.current;
+    if (current?.state !== 'loading') return;
+    // Detach first so a late stream event cannot overwrite the retained text.
+    const controller = active.current;
+    active.current = null;
+    controller?.abort();
+    if (!current.result.trim()) {
+      discardPolish();
+      return;
+    }
+    keepPolish({ ...current, state: 'stopped' });
     void local.flush();
   }
   async function polish(target: CharacterPolishTarget, retry = false) {
@@ -439,9 +454,11 @@ function CharacterEditor({
       开场白: 'creator-opening',
       背景: 'creator-background',
       标签: 'creator-tags',
+      可见性: 'creator-visibility',
     };
     const element = document.getElementById(ids[label] ?? '');
     if (!element) return;
+    setCorrectionField(label);
     element.scrollIntoView({
       behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
       block: 'center',
@@ -449,8 +466,33 @@ function CharacterEditor({
     const focusTarget =
       element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement
         ? element
-        : element.parentElement?.querySelector<HTMLElement>('button, input');
+        : element.parentElement?.querySelector<HTMLElement>(
+            label === '可见性' ? 'input:checked' : 'button, input'
+          );
     focusTarget?.focus({ preventScroll: true });
+  }
+
+  function correctionHint(label: string) {
+    if (label !== correctionField) return null;
+    const index = missingFields.indexOf(label);
+    const next = missingFields.length ? missingFields[(index + 1) % missingFields.length] : null;
+    return (
+      <div className="flex min-h-8 flex-wrap items-center gap-x-3 text-xs">
+        <span className="text-muted-foreground" role="status">
+          {missingFields.length ? `还差 ${missingFields.length} 项必填` : '必填项已补齐'}
+        </span>
+        {next !== label && (
+          <button
+            type="button"
+            disabled={busy}
+            className="min-h-11 text-primary"
+            onClick={() => focusMissing(next ?? '可见性')}
+          >
+            {next ? `去补${next}` : '确认可见性'}
+          </button>
+        )}
+      </div>
+    );
   }
 
   async function loadLatestKeepingBackup() {
@@ -493,7 +535,6 @@ function CharacterEditor({
 
   async function submit() {
     if (busyRef.current || unchanged) return;
-    setShowRequired(true);
     setNotice('');
     if (missingFields.length) {
       focusMissing(missingFields[0]!);
@@ -750,6 +791,12 @@ function CharacterEditor({
               if (file) void uploadCover(file);
             }}
           />
+          {coverError && (
+            <p role="alert" className="mt-2 text-xs leading-6 text-destructive">
+              {coverError}
+            </p>
+          )}
+          {correctionHint('角色形象')}
           {cover.isError && (
             <button
               type="button"
@@ -781,6 +828,7 @@ function CharacterEditor({
           placeholder="给角色或故事起个名字"
           onChange={(event) => change('name', event.target.value)}
         />
+        {correctionHint('名称')}
       </div>
       {FIELDS.map((field) => {
         const filesKey =
@@ -866,6 +914,7 @@ function CharacterEditor({
                   <Expand className="size-4" />
                 </button>
               </div>
+              {correctionHint(field.label)}
               {filesKey && (
                 <CreatorDocumentAttachments
                   files={files}
@@ -1012,9 +1061,12 @@ function CharacterEditor({
               </label>
             ))}
           </div>
+          {correctionHint('标签')}
         </fieldset>
         <fieldset className="mt-7">
-          <legend className="mb-3 text-sm font-medium text-foreground">可见性{requiredMark}</legend>
+          <legend id="creator-visibility" className="mb-3 text-sm font-medium text-foreground">
+            可见性{requiredMark}
+          </legend>
           <div className="grid grid-cols-2 gap-2.5">
             {(['public', 'private'] as const).map((value) => (
               <label key={value} className="cursor-pointer">
@@ -1151,6 +1203,7 @@ function CharacterEditor({
         <CharacterPolishDialog
           session={session}
           onClose={closePolish}
+          onStop={stopPolish}
           onDiscard={discardPolish}
           onRetry={() => void polish(session.target, true)}
           onEdit={(result) => {
