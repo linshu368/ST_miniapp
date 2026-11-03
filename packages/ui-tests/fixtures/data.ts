@@ -28,6 +28,12 @@ export const IDS = {
 export const stamp = () => new Date().toISOString();
 export const later = () => new Date(Date.now() + 31 * 86_400_000).toISOString();
 
+export const publicCreatorFixture = {
+  id: '71000000-0000-4000-8000-000000000001',
+  nickname: '预览创作者',
+  characterIds: [IDS.character, '10000000-0000-4000-8000-000000000002'],
+};
+
 export const WISH_IDS = {
   adventure: 'a1000000-0000-4000-8000-000000000001',
   detective: 'a1000000-0000-4000-8000-000000000002',
@@ -372,7 +378,7 @@ export function makeData(api: string, characterCount = 18) {
     description: '沿着森林小径，开启一段轻松的冒险。',
     avatar_url: `${api}/assets/scene.svg?tone=${index % 3}`,
     personality_tags: ['冒险', '温暖'],
-    author_name: '预览创作者',
+    author_name: index < 2 ? '' : '平台作品',
     is_featured: index < 4,
     greeting: '「你也在找通往山谷的路吗？」旅人收起地图，微笑着为你留出位置。',
     creator_notes: '本地验收用的虚构角色，不关联线上内容。',
