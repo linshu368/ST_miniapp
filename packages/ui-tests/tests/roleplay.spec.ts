@@ -1,4 +1,5 @@
 import { previewAppUrl, previewApiUrl } from './fixtures';
+import { publicCreatorFixture } from '../fixtures/data.js';
 import type { Locator, Page } from '@playwright/test';
 import {
   test,
@@ -26,6 +27,7 @@ test('@roleplay @layout 浏览角色时栏目固定，进聊天后可返回', as
   await openRecommendedLobby(page);
   await expect(page.getByText('林间旅人', { exact: true }).first()).toBeVisible();
   const card = page.getByRole('button', { name: '查看 林间旅人 的详情', exact: true });
+  await expect(card).not.toContainText('预览创作者');
   await expect
     .poll(() => card.locator('img').evaluate((node) => (node as HTMLImageElement).naturalWidth))
     .toBeGreaterThan(0);
@@ -48,7 +50,14 @@ test('@roleplay @layout 浏览角色时栏目固定，进聊天后可返回', as
   await preview.screenshot('角色下滑保留栏目与搜索', { fullPage: false });
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.getByRole('button', { name: '查看 林间旅人 的详情', exact: true }).click();
-  await expect(page.getByRole('dialog')).toBeVisible();
+  const sheet = page.getByRole('dialog');
+  await expect(sheet).toBeVisible();
+  const author = sheet
+    .locator('header')
+    .getByRole('link', { name: '作者：预览创作者', exact: true });
+  await expect(author).toBeInViewport();
+  await expect(author).toHaveAttribute('href', `/creators/${publicCreatorFixture.id}`);
+  await expect(sheet.getByText(/创作者 ·/)).toHaveCount(0);
   await page.getByRole('button', { name: /继续对话|开始对话|开始聊天|接着聊/ }).click();
   await expect(page).toHaveURL(/\/chat\//, { timeout: 60_000 });
   await expect(page.getByRole('textbox', { name: '输入消息' })).toBeVisible();
@@ -958,4 +967,45 @@ test('@roleplay @lobby-rotation 换批缺新卡资料时保旧，资料失败后
         .map((action) => action.request_id)
     ).size
   ).toBe(1);
+});
+
+test('@roleplay @public-author-space @layout 浏览作者的公开作品、翻页和开聊后返回空间', async ({
+  page,
+  preview,
+}) => {
+  test.setTimeout(120_000);
+  await openRecommendedLobby(page);
+  await page.getByRole('button', { name: '查看 林间旅人 的详情', exact: true }).click();
+  const sheet = page.getByRole('dialog');
+  await sheet.getByRole('link', { name: '作者：预览创作者', exact: true }).click();
+  const spacePath = '/creators/' + publicCreatorFixture.id;
+  await expect(page).toHaveURL(new RegExp(spacePath + '$'));
+  await expect(page.getByRole('heading', { name: '预览创作者' })).toBeVisible();
+  await expect(page.getByRole('navigation', { name: '主导航' })).toHaveCount(0);
+  const first = page.getByRole('button', { name: '查看 林间旅人 的详情', exact: true });
+  await expect(first).toHaveAccessibleDescription('128 个赞，86 次收藏');
+  await expect(first.getByText('128', { exact: true })).toBeVisible();
+  await expect(first.getByText('86', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '查看更多作品' }).click();
+  const second = page.getByRole('button', { name: '查看 故事旅人 2 的详情', exact: true });
+  await expect(second).toHaveAccessibleDescription('135 个赞，89 次收藏');
+  await expect(second.getByText('135', { exact: true })).toBeVisible();
+  await expect(second.getByText('89', { exact: true })).toBeVisible();
+  const requests = (await preview.state()).requests;
+  const worksPath = '/api' + spacePath + '/characters';
+  const listReads = requests.slice(requests.findIndex((r) => r.path === worksPath));
+  expect(listReads.filter((r) => r.path === worksPath)).toHaveLength(2);
+  expect(listReads.filter((r) => r.path.endsWith('/social'))).toHaveLength(0);
+  await second.click();
+  await expect(sheet.getByText('作者：预览创作者', { exact: true })).toBeVisible();
+  await expect(sheet.getByRole('link', { name: '作者：预览创作者', exact: true })).toHaveCount(0);
+  await sheet.getByRole('button', { name: '关闭角色详情' }).click();
+  await expectMobileLayout(page);
+  await page.getByRole('button', { name: '查看 林间旅人 的详情', exact: true }).click();
+  await sheet.getByRole('button', { name: '继续对话', exact: true }).click();
+  await page.getByRole('button', { name: '返回作者空间', exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(spacePath + '$'));
+  await expect(second).toBeVisible();
+  await page.getByRole('button', { name: '返回', exact: true }).click();
+  await expect(page).toHaveURL(/\/characters$/);
 });

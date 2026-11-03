@@ -31,6 +31,8 @@ for role in ['anon','authenticated','service_role']:
 print(sql)
 PY
 "${task_psql[@]}" >/dev/null <<'SQL'
+ALTER TABLE app_core.characters ADD COLUMN IF NOT EXISTS is_test boolean NOT NULL DEFAULT false;
+ALTER TABLE app_core.miniapp_user_settings ADD COLUMN IF NOT EXISTS display_name text, ADD COLUMN IF NOT EXISTS tg_first_name text;
 ALTER TABLE app_core.characters ADD COLUMN name text NOT NULL DEFAULT '',ADD COLUMN description text NOT NULL DEFAULT '',
  ADD COLUMN avatar_url text NOT NULL DEFAULT '',ADD COLUMN creator text NOT NULL DEFAULT '',ADD COLUMN first_mes text NOT NULL DEFAULT '',
  ADD COLUMN system_prompt text NOT NULL DEFAULT '',ADD COLUMN personality text NOT NULL DEFAULT '',ADD COLUMN scenario text NOT NULL DEFAULT '',
@@ -202,5 +204,9 @@ PY
 "${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/tests/character_wishes.sql"
 printf 'PASS: character wishes PG17 (anonymous public-only writes, owner ACL, unique support, response ownership, atomic notifications and retry deduplication).\n'
 
+"${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/20261103_public_creator_space_index.sql" >/dev/null
+
+"${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/20261103_chat_sessions_reply_like_lookup_index.sql" >/dev/null
+
 CREATOR_ANALYTICS_TEST_CONTAINER="$task_container" CREATOR_ANALYTICS_TEST_DB="$task_database" \
-  pnpm --dir "$task_root/packages/backend" exec vitest run src/features/creator/analytics.integration.test.ts
+  pnpm --dir "$task_root/packages/backend" exec vitest run src/features/creator/analytics.integration.test.ts src/features/creator/public-author.integration.test.ts

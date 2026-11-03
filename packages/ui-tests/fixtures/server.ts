@@ -70,6 +70,7 @@ import {
 } from '@miniapp/shared';
 import {
   IDS,
+  publicCreatorFixture,
   WISH_IDS,
   EDIT_REPLY_PANELS,
   isScenario,
@@ -1609,10 +1610,40 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         });
         return;
       }
+      const publicCreatorPath = /^\/api\/creators\/([^/]+)\/characters$/.exec(path);
+      if (publicCreatorPath && method === 'GET') {
+        if (publicCreatorPath[1] !== publicCreatorFixture.id) {
+          fail(res, 404, 'NOT_FOUND', '暂时无法查看该作者空间');
+          return;
+        }
+        const cards = data.characters.filter((card) =>
+          publicCreatorFixture.characterIds.includes(card.id)
+        );
+        // One card per fixture page exercises paging without manufacturing a large catalogue.
+        const page = Number(url.searchParams.get('page') || 1);
+        ok(res, {
+          author_name: publicCreatorFixture.nickname,
+          characters: cards.slice(page - 1, page).map((card) => {
+            const { like_count, favorite_count } = characterSocialFor(card.id);
+            return { ...card, like_count, favorite_count };
+          }),
+          page,
+          has_more: page < cards.length,
+        });
+        return;
+      }
       if (path.startsWith('/api/characters/') && method === 'GET') {
         const character = data.characters.find((item) => item.id === path.split('/').pop());
-        if (character) ok(res, { character });
-        else fail(res, 404, 'character_not_found', '角色不存在');
+        if (character) {
+          const detail = publicCreatorFixture.characterIds.includes(character.id)
+            ? {
+                ...character,
+                author_name: publicCreatorFixture.nickname,
+                public_creator_id: publicCreatorFixture.id,
+              }
+            : character;
+          ok(res, { character: detail });
+        } else fail(res, 404, 'character_not_found', '角色不存在');
         return;
       }
       if (path === '/api/favorites/ids' && method === 'GET') {
