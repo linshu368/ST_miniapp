@@ -1,0 +1,5 @@
+{"file":".trellis/spec/frontend/app/index.md","reason":"Frontend不可谈判规则与质量检查"}
+{"file":".trellis/spec/frontend/app/pages-components-and-ui.md","reason":"大厅组件、图片与状态要求"}
+{"file":".trellis/spec/frontend/app/testing-quality-and-deployment.md","reason":"移动性能、Sentry/Grafana与验证边界"}
+{"file":".trellis/spec/frontend/app/modules/business/character-lobby.md","reason":"角色大厅当前链路、返回恢复与推荐行为"}
+{"file":".trellis/tasks/11-03-latest-lobby-mobile-p95/research/baseline-and-reuse.md","reason":"Android/iOS生产基线与复用决策"}

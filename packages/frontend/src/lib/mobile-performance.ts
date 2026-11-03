@@ -31,10 +31,10 @@ const POLICIES: Record<MobilePlatformGroup, MobilePerformancePolicy> = {
   android: {
     platform: 'android',
     characters: {
-      initialRenderCount: 6,
-      renderBatchSize: 6,
+      initialRenderCount: 4,
+      renderBatchSize: 4,
       renderMoreRootMargin: '200px',
-      eagerImageCount: 2,
+      eagerImageCount: 1,
       highPriorityImageCount: 1,
     },
     dramas: {
@@ -50,8 +50,8 @@ const POLICIES: Record<MobilePlatformGroup, MobilePerformancePolicy> = {
   ios: {
     platform: 'ios',
     characters: {
-      initialRenderCount: 6,
-      renderBatchSize: 8,
+      initialRenderCount: 4,
+      renderBatchSize: 6,
       renderMoreRootMargin: '250px',
       eagerImageCount: 2,
       highPriorityImageCount: 1,
@@ -69,7 +69,9 @@ const POLICIES: Record<MobilePlatformGroup, MobilePerformancePolicy> = {
   other: {
     platform: 'other',
     characters: {
-      initialRenderCount: 6,
+      // Hydration starts on this shared policy before Telegram exposes the platform.
+      // Keep it aligned with mobile so cached lists never mount six cards first.
+      initialRenderCount: 4,
       renderBatchSize: 8,
       renderMoreRootMargin: '300px',
       eagerImageCount: 2,

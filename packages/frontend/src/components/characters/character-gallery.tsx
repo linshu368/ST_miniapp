@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { RefreshCw, Search, Sparkles, Undo2, X } from 'lucide-react';
 
-import { DEFAULT_LOBBY_SORT, type LobbySort } from '@miniapp/shared';
+import type { LobbySort } from '@miniapp/shared';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -66,6 +66,11 @@ const RESTORE_TAIL_COUNT = 12;
 
 const RESTORE_DEADLINE_MS = 1600;
 const NEIGHBOR_WINDOW = 4;
+const CACHE_REVALIDATE_FALLBACK_MS = {
+  android: 3000,
+  ios: 2500,
+  other: 1500,
+} as const;
 
 // 命中打分:数字越大越精确,0 = 不命中
 // 顺序:name 完整匹配 > name 开头 > name 包含 > tag 完整 > tag 包含 > author > description
@@ -121,7 +126,7 @@ export function CharacterGallery() {
   const router = useRouter();
   const performancePolicy = useMobilePerformancePolicy();
   const listBudget = performancePolicy.characters;
-  const [savedDiscovery] = useState(readRoleplayDiscovery);
+  const [savedDiscovery] = useState(() => readRoleplayDiscovery('latest'));
   // P0=列表；enrich=收藏/会话史/角标。列表有缓存或首包结算后 markCriticalSettled。
   const enrichReady = useEntryEnrichReady();
   const history = useConversationsQuery(undefined, enrichReady);
@@ -151,9 +156,7 @@ export function CharacterGallery() {
   );
   const [restoreSnapshot] = useState<LobbyReturnSnapshot | null>(() => readLobbyReturnSnapshot());
   const [isRestoring, setIsRestoring] = useState(() => restoreSnapshot !== null);
-  const [sort, setSort] = useState<LobbySort>(
-    restoreSnapshot?.sort ?? savedDiscovery.sort ?? DEFAULT_LOBBY_SORT
-  );
+  const [sort, setSort] = useState<LobbySort>(restoreSnapshot?.sort ?? savedDiscovery.sort);
   const [query, setQuery] = useState(restoreSnapshot?.query ?? savedDiscovery.query);
   const recommendation = useLobbyRecommendation({
     enabled: sort === 'recommended',
@@ -182,10 +185,13 @@ export function CharacterGallery() {
   }, [sort]);
   useEffect(() => {
     if (data === undefined || isFetchedAfterMount || criticalVisualSettled) return;
-    // 图片始终不结算时也要校准目录；只把后台请求移出最拥挤的首屏窗口。
-    const timer = window.setTimeout(() => setCriticalVisualSettled(true), 1500);
+    // 图片始终不结算时也要校准目录；移动端后台请求避开 2 秒首卡可见窗口。
+    const timer = window.setTimeout(
+      () => setCriticalVisualSettled(true),
+      CACHE_REVALIDATE_FALLBACK_MS[performancePolicy.platform]
+    );
     return () => window.clearTimeout(timer);
-  }, [criticalVisualSettled, data, isFetchedAfterMount]);
+  }, [criticalVisualSettled, data, isFetchedAfterMount, performancePolicy.platform]);
   // 大厅有本地缓存秒开：content 记用户看到列表的时刻，fresh 记最新列表到达的时刻，两者分开才看得出后端慢。
   const lobbyFresh = useFreshAfterFetch(isFetching, data !== undefined, isError);
   usePageReady(
