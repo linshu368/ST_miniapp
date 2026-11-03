@@ -33,6 +33,14 @@ describe('roleplay entry origins', () => {
   it('keeps explicit new stories separate from an existing story', () => {
     expect(chatEntryPath('role', { source: 'discover' })).toBe('/chat/role?from=discover');
   });
+  it('returns chats to the same public author and rejects malformed author routes', () => {
+    const id = '71000000-0000-4000-8000-000000000001';
+    const href = chatEntryPath('role', { sessionId: 'story', source: `creator.${id}` });
+    expect(roleplayReturnPath(new URL(href, 'https://example.test').searchParams.get('from'))).toBe(
+      `/creators/${id}`
+    );
+    expect(roleplayReturnPath('creator.//outside.example')).toBe('/characters');
+  });
   it('returns old and untrusted links to discovery', () => {
     for (const source of [undefined, null, '', 'https://other.test', '/profile', 'CONVERSATIONS']) {
       expect(roleplayReturnPath(source)).toBe('/characters');

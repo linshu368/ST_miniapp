@@ -1,3 +1,5 @@
+import { z } from 'zod';
+
 // 列表页用的精简结构
 export interface CharacterSummary {
   id: string;
@@ -15,6 +17,8 @@ export interface CharacterSummary {
 
 // 详情页 / 对话页用的完整结构
 export interface CharacterDetail extends CharacterSummary {
+  /** Public author space, available only when there are visible creator works. */
+  public_creator_id?: string;
   /** 角色开场第一句话 */
   greeting: string;
   /** 创作者写给读者的补充说明（可为空） */
@@ -63,4 +67,17 @@ export interface LobbyLatestBadgeData {
 /** Existing conversations render their bound creator version; lobby/detail without a session show current content. */
 export interface GetCharacterByIdQuery {
   session_id?: string;
+}
+
+export const PublicCreatorSpaceQuerySchema = z
+  .object({
+    page: z.coerce.number().int().min(1).max(10000).default(1),
+  })
+  .strict();
+
+export interface PublicCreatorSpaceData {
+  author_name: string;
+  characters: (CharacterSummary & { like_count: number; favorite_count: number })[];
+  page: number;
+  has_more: boolean;
 }

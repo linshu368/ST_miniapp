@@ -1,15 +1,14 @@
 'use client';
 
 import { Heart, MessageCircle } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, formatCompactCount } from '@/lib/utils';
 import { useCharacterLikeToggle, useCharacterSocialQuery } from '@/lib/api/character-social';
 import { FavoriteButton } from './favorite-button';
 
 export function socialCount(value: number | undefined, empty: string): string {
   if (value === undefined) return '—';
   if (value === 0) return empty;
-  if (value >= 10_000) return `${(value / 10_000).toFixed(1).replace(/\.0$/, '')}万`;
-  return String(value);
+  return formatCompactCount(value);
 }
 
 interface Props {

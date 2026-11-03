@@ -2,7 +2,7 @@
 
 import { Star } from 'lucide-react';
 
-import { cn } from '@/lib/utils';
+import { cn, formatCompactCount } from '@/lib/utils';
 import { useFavoriteToggle } from '@/lib/api/favorites';
 
 type FavoriteButtonVariant = 'card' | 'sheet' | 'header' | 'social';
@@ -74,13 +74,7 @@ export function FavoriteButton({
       />
       {variant === 'social' && (count !== 0 || showZeroLabel) ? (
         <span className="truncate tabular-nums">
-          {count === undefined
-            ? '—'
-            : count === 0
-              ? '收藏'
-              : count >= 10_000
-                ? `${(count / 10_000).toFixed(1).replace(/\.0$/, '')}万`
-                : count}
+          {count === undefined ? '—' : count === 0 ? '收藏' : formatCompactCount(count)}
         </span>
       ) : null}
     </button>
