@@ -6,6 +6,15 @@ import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import type { CharacterPolishSession } from './character-editor-polish';
 export type { CharacterPolishSession, CharacterPolishTarget } from './character-editor-polish';
 
+/** Editor dialogs share the page's native back handler and close through their own action. */
+export function dismissTopCharacterEditorModal(): boolean {
+  const actions = document.querySelectorAll<HTMLButtonElement>('[data-character-editor-dismiss]');
+  const top = actions[actions.length - 1];
+  if (!top) return false;
+  top.click();
+  return true;
+}
+
 export function CharacterEditorModal({
   title,
   onClose,
@@ -72,6 +81,7 @@ export function CharacterEditorModal({
           <DialogTitle className="min-w-0 break-words text-base font-medium">{title}</DialogTitle>
           <button
             ref={close}
+            data-character-editor-dismiss=""
             type="button"
             className="flex min-h-11 shrink-0 items-center justify-center rounded-xl px-3 text-sm text-primary"
             aria-label={action}
@@ -117,6 +127,7 @@ const LABELS = { opening: '开场白', background: '背景' };
 export function CharacterPolishDialog({
   session,
   onClose,
+  onStop,
   onDiscard,
   onRetry,
   onApply,
@@ -124,6 +135,7 @@ export function CharacterPolishDialog({
 }: {
   session: CharacterPolishSession;
   onClose: () => void;
+  onStop: () => void;
   onDiscard: () => void;
   onRetry: () => void;
   onApply: () => void;
@@ -142,7 +154,10 @@ export function CharacterPolishDialog({
           </details>
         )}
         <div className="flex shrink-0 items-center justify-between gap-2">
-          <p className="flex min-h-11 items-center gap-2 text-[11px] text-muted-foreground" role="status">
+          <p
+            className="flex min-h-11 items-center gap-2 text-[11px] text-muted-foreground"
+            role="status"
+          >
             {loading ? (
               <>
                 <span className="size-1.5 rounded-full bg-primary motion-safe:animate-pulse" />
@@ -150,6 +165,8 @@ export function CharacterPolishDialog({
               </>
             ) : session.state === 'ready' ? (
               '润色完成，你也可以直接修改'
+            ) : session.state === 'stopped' ? (
+              '已停止生成，可以编辑或采用这段内容'
             ) : session.result.trim() ? (
               '已有内容可以编辑或采用'
             ) : (
@@ -166,7 +183,7 @@ export function CharacterPolishDialog({
             </button>
           )}
         </div>
-        {session.result ? (
+        {session.result || session.state === 'stopped' ? (
           <textarea
             aria-label="润色结果"
             value={session.result}
@@ -197,9 +214,9 @@ export function CharacterPolishDialog({
         <button
           type="button"
           className="min-h-12 rounded-xl border border-border text-sm text-foreground/80"
-          onClick={onDiscard}
+          onClick={loading ? onStop : onDiscard}
         >
-          {loading ? '取消润色' : '暂不采用'}
+          {loading ? '停止生成' : '暂不采用'}
         </button>
         <button
           type="button"
