@@ -563,6 +563,76 @@ describe('first-token network report', () => {
     );
   });
 
+  describe('when the page-wide resource buffer is full', () => {
+    let delivered: PerformanceEntry[] = [];
+    class FakeObserver {
+      observe() {}
+      takeRecords() {
+        const records = delivered;
+        delivered = [];
+        return records;
+      }
+      disconnect() {}
+    }
+    beforeEach(() => {
+      delivered = [];
+      vi.stubGlobal('PerformanceObserver', FakeObserver);
+    });
+    afterEach(() => vi.unstubAllGlobals());
+
+    const finishTurn = (url = 'https://api/turn') => {
+      const obs = observe();
+      obs.dispatched(url, 20_000);
+      vi.advanceTimersByTime(3000);
+      obs.started(500);
+      vi.advanceTimersByTime(4000);
+      obs.committed(identity, performance.now());
+      return obs;
+    };
+
+    it('still attributes from the observer and records that the buffer missed it', () => {
+      vi.spyOn(performance, 'getEntriesByName').mockReturnValue([]);
+      const obs = finishTurn();
+      delivered = [
+        { name: 'https://api/other', ...entry({ startTime: 0 }) },
+        { name: 'https://api/turn', ...entry({ startTime: 0, requestStart: 5 }) },
+      ] as unknown as PerformanceEntry[];
+      obs.reportNetwork();
+
+      expect(delay()).toEqual(
+        expect.objectContaining({
+          network_status: 'available',
+          rt_buffer: 'miss',
+          conn_reused: 'true',
+          delay_attribution: 'user_network',
+        })
+      );
+    });
+
+    it('separates a zeroed cross-origin entry from a missing one', () => {
+      vi.spyOn(performance, 'getEntriesByName').mockReturnValue([]);
+      const zeroed = finishTurn();
+      delivered = [
+        { name: 'https://api/turn', ...entry({ startTime: 0, requestStart: 0 }) },
+      ] as unknown as PerformanceEntry[];
+      zeroed.reportNetwork();
+      expect(delay()).toEqual(
+        expect.objectContaining({ network_status: 'limited', delay_attribution: 'ours' })
+      );
+
+      engineering.event.mockClear();
+      const missing = finishTurn();
+      missing.reportNetwork();
+      expect(delay()).toEqual(
+        expect.objectContaining({
+          network_status: 'no_entry',
+          rt_buffer: 'miss',
+          delay_attribution: 'ours',
+        })
+      );
+    });
+  });
+
   it('reports once and skips turns with no known client result', () => {
     vi.spyOn(performance, 'getEntriesByName').mockReturnValue([]);
     const obs = observe();
