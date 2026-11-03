@@ -5,8 +5,8 @@ scope: admin
 category: business
 status: active
 owners: [admin]
-last_verified_task: .trellis/tasks/10-28-first-token-race/
-last_verified_at: 2026-10-28
+last_verified_task: .trellis/tasks/11-02-lobby-quality-rotation/
+last_verified_at: 2026-11-02
 ---
 
 # 配置、内容与增长运营
@@ -81,3 +81,7 @@ Admin 在现有配置草稿、发布、回滚链路中增加图片广场模型�
 ## 2026-10-23 可运营回复风格
 
 平台规则菜单包含“主体与模块规则”和独立“回复风格”。reply_style_options为受控JSON目录，复用草稿/发布/历史/回滚、权限/环境；选项可增删改排序/启停，英文marker/rules运营自填可空，手机预览独立多开。编辑中空行保留，保存严格校验；脏离开确认、保存禁编辑/重复写，未保存不能误发布旧草稿。
+
+## 前几屏优质轮换（2026-11-02，本地未发布）
+
+现有LobbyRankingParamsEditor顶部提供前几屏轮换参数：默认24h、重复2、探索最多2。轮换发布后全量生效，运营端无启用开关或灰度比例控件；旧enabled/rollout仅为存量配置兼容，不控制实际生效。原评分参数仍控制离线质量计算；resolveLobbyRankingEditorValue兼容嵌套rotation。LobbyPinnedCharactersEditor将原8项作为加权候选、独立最多1固定主推；沿用参数草稿/发布/回滚，无需运营另行激活推荐。

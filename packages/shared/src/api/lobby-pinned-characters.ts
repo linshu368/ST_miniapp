@@ -16,6 +16,8 @@ import { LOBBY_FEATURED_POSITION_COUNT } from '../lobby-featured';
 export const LOBBY_MAX_PINNED_CHARACTERS = LOBBY_FEATURED_POSITION_COUNT;
 
 export const LobbyPinnedCharactersSchema = z.object({
+  /** Rotation mode only: at most one explicit fixed card. Existing IDs become weighted candidates. */
+  fixed_character_id: z.string().uuid().nullable().optional(),
   /**
    * 按展示顺序排列的角色卡 id，占据推荐列表最前面的几个位置。
    *

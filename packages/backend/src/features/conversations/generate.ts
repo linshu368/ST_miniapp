@@ -1,4 +1,7 @@
-import { observeChatFirstToken } from '../../lib/engineering-observability.js';
+import {
+  observeChatFirstToken,
+  observeGenerationPreparationStages,
+} from '../../lib/engineering-observability.js';
 import { beginActiveDelivery, appendActiveDelivery, endActiveDelivery } from './active-delivery.js';
 /**
  * backend / features / conversations / generate.ts
@@ -135,6 +138,7 @@ export async function runConversationTurn(
   const turnStartedAt = input.receivedAt ?? Date.now();
   const requestStartedAt =
     input.receivedMonotonicAt ?? performance.now() - (Date.now() - turnStartedAt);
+  const setupFinishedAt = performance.now();
   // Server protection starts at route entry; only the browser can measure submit-to-display.
   const preparationRemainingMs =
     (input.firstTokenDeadlineMs ?? DEFAULT_FIRST_TOKEN_DEADLINE_MS) -
@@ -146,6 +150,7 @@ export async function runConversationTurn(
   // 独立读取立即并行启动；用户偏好与模型选择复用同一份设置和规则快照。
   // 都放在写入之前：这里抛异常时会话还没被动过，不会留下没有回复的孤儿 user 行。
   const instructionsPromise = fetchPlatformInstructions();
+  const chargeId = randomUUID();
   const generationContextPromise = userSettings().getGenerationContext(userId, instructionsPromise);
   const modelPromise = resolveModelForUser(userId, {
     selectedModelId: generationContextPromise.then(({ config }) => config.selected_model_id),
@@ -157,6 +162,7 @@ export async function runConversationTurn(
     model: modelPromise,
     characterId: session.character_id,
     useFallback: true,
+    payer: { userId, chargeId, log, signal: preparationSignal },
   });
   void executionPreparation.catch(() => undefined);
   const [model, generationContext, instructions, windowLimits] =
@@ -173,6 +179,7 @@ export async function runConversationTurn(
       preparationSignal
     );
   const { config: userConfig, displayName } = generationContext;
+  const settingsFinishedAt = performance.now();
 
   if (instructions.degraded) {
     log.sys.error(
@@ -186,6 +193,7 @@ export async function runConversationTurn(
   // regenerate_not_allowed 由它们以 SQLSTATE 抛出，仓库层已翻成业务错误码。
   preparationSignal.throwIfAborted();
   const turn = await startTurn(session.id, mode, model.openRouterModelId, windowLimits);
+  const turnOpenedAt = performance.now();
   log.biz.info(
     {
       event: 'conversation.instruction_slots.resolved',
@@ -216,7 +224,6 @@ export async function runConversationTurn(
   });
   const observations = generationObservations();
   const primaryAttemptId = randomUUID();
-  const chargeId = randomUUID();
   const clientRequestId = input.requestId ?? randomUUID();
   let startEmitted = false;
   const emitStart = (): void => {
@@ -228,6 +235,7 @@ export async function runConversationTurn(
       first_token_deadline_ms: policy.deadlineMs,
       requested_model_id: model.modelId,
       fallback_trigger_ms: policy.timeoutMs,
+      server_elapsed_ms: Math.round(performance.now() - requestStartedAt),
       turn_index: turn.turnIndex,
       user_message_id: mode.kind === 'send' ? `${turn.historyId}:user` : null,
       assistant_message_id: turn.historyId,
@@ -355,6 +363,7 @@ export async function runConversationTurn(
       persona: { displayName },
       instructions: instructions.instructions,
     });
+    const contextFinishedAt = performance.now();
 
     // ── 生成 ──────────────────────────────────────────────────────────────────
     const request: GenerationRequest = {
@@ -417,6 +426,17 @@ export async function runConversationTurn(
           controller.signal.throwIfAborted();
           await observations.begin({ ...observationInput, snapshot, history: prompt.messages });
           controller.signal.throwIfAborted();
+          observeGenerationPreparationStages({
+            provider: model.provider,
+            model: model.providerModelId,
+            stages: {
+              route_setup: setupFinishedAt - requestStartedAt,
+              settings: settingsFinishedAt - setupFinishedAt,
+              turn_open: turnOpenedAt - settingsFinishedAt,
+              context: contextFinishedAt - turnOpenedAt,
+              dispatch_gate: performance.now() - contextFinishedAt,
+            },
+          });
           emitStart();
         },
         onBeforeReserve: async (reservedChargeId) => {

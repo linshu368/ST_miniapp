@@ -139,12 +139,16 @@ export const config = {
   // ── MiniApp 支付 ───────────────────────────────────────────────────────────
   payment: {
     enabled: process.env.PAYMENT_ENABLED === 'true',
-    baseUrl: process.env.PAYMENT_BASE_URL || 'https://zq.716faka.com',
-    merchantId: process.env.PAYMENT_MERCHANT_ID || '',
-    merchantPrivateKey: process.env.PAYMENT_MERCHANT_PRIVATE_KEY || '',
-    platformPublicKey: process.env.PAYMENT_PLATFORM_PUBLIC_KEY || '',
-    notifyUrl: process.env.PAYMENT_NOTIFY_URL || '',
     returnUrl: process.env.PAYMENT_RETURN_URL || '',
+    // 同一 Vexutopia 组织下的注册端点会收到所有环境的事件；建单把本标签写进 metadata，
+    // Webhook 只处理自己环境的订单。Railway 自动注入环境名（含 PR 环境），本地回落到 NODE_ENV。
+    environmentTag: process.env.RAILWAY_ENVIRONMENT_NAME || nodeEnv,
+    vexutopia: {
+      baseUrl: process.env.VEXUTOPIA_BASE_URL || 'https://vexutopia.com/api/v1',
+      apiKey: process.env.VEXUTOPIA_API_KEY || '',
+      // 为空时 Webhook 一律 401（安全默认）；PR 预览环境不配，只靠查单入账。
+      webhookSecret: process.env.VEXUTOPIA_WEBHOOK_SECRET || '',
+    },
   },
 
   // ── PostHog 服务端 capture（支付终态等非关键事件）──────────────────────────

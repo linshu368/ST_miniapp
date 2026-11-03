@@ -5,7 +5,7 @@ scope: backend
 category: business
 status: active
 owners: [backend]
-last_verified_task: .trellis/tasks/11-02-chat-message-edit-delete/
+last_verified_task: .trellis/tasks/11-02-fallback-provider-priority/
 last_verified_at: 2026-11-02
 ---
 
@@ -133,7 +133,7 @@ Wrong：`replyChunks.push(reasoning)`。Correct：思考只进`onReasoningDelta`
 
 回复恢复复用有权限的会话详情与原活动轮询。活动快照最多128轮、125秒，每轮正文256Ki字符/公开思考64Ki字符，按user/session/revision隔离；一次first_token_preview检查点最多2048字符，最终正文仍由chat_history持久化。跨实例/进程重启读取检查点和最终结果，不宣称进程内快照持久。公开思考不写入正文或后续prompt。
 
-recoverable_delivery仅新Backend显式启用；旧请求/终结账单不回填、不追扣。离页/后台已完整保存且可取回的正常回复不免单；真实系统截止/前台无接收超时免费，主动停止原报价原权益一次。缺回报继续pending，预算+15秒仍缺报按保守免单处理，避免服务端完成先扣费而客户端随后报告失败。只有思考无完整正文不自动收费。内部billing gate复用visible返回值表示已满足该轮交付策略，并非声称用户当时正在看。
+recoverable_delivery仅新Backend显式启用；旧请求/终结账单不回填、不追扣。离页/后台已完整保存且可取回的正常回复不免单；真实系统截止免费（2026-11-02 起前台无接收不再影响计费），主动停止原报价原权益一次。缺回报继续pending，预算+15秒仍缺报按保守免单处理，避免服务端完成先扣费而客户端随后报告失败。只有思考无完整正文不自动收费。内部billing gate复用visible返回值表示已满足该轮交付策略，并非声称用户当时正在看。
 
 唯一新增迁移20261027_recoverable_chat_delivery.sql：experience拥有策略/首字检查点，billing资格函数读取事实；analytics只追加无正文的策略/时刻/失败锁存字段。无新cron、逐token数据库写、业务回填或公开权限。先TEST、后生产迁移、后Backend/Frontend。回退保留新增对象和终账，必要时forward-fix。
 
@@ -161,7 +161,7 @@ send/regenerate 携带可选 `first_token_measurement`；后端通过既有 begi
 
 ## 首发与兜底竞争交付（2026-10-28）
 
-首发实际派发后达到型号阈值（默认4秒）启动兜底，首发继续；两路共用原10秒首字截止，任一路先出现有效正文或已开启公开思考即锁定唯一赢家，立即中止败方。`fallback_timeout_ms`字段保留兼容，默认2000仅作为前置过慢时提前启动兜底的预留时间，不再是兜底自身硬截止。同型号不并发重复请求，可等到总截止；首发明确失败只允许一次顺序兜底。历史阶段预算不回填，新旧策略按实际发布时刻分窗；客户端仍用v4，总耗时不相加两路并行等待。
+首发实际派发后达到型号阈值（默认4秒）启动兜底，首发继续；两路共用原10秒首字截止，任一路先出现有效正文或已开启公开思考即锁定唯一赢家，立即中止败方。`fallback_timeout_ms`字段保留兼容，默认2000仅作为前置过慢时提前启动兜底的预留时间，不再是兜底自身硬截止。同型号在阈值后以相反供应商顺序启动第二路；首发明确失败只允许一次顺序兜底。历史阶段预算不回填，新旧策略按实际发布时刻分窗；客户端仍用v4，总耗时不相加两路并行等待。
 
 只消费赢家的replay与原charge_id结算，原报价/权益、超时免扣、主动停止和离页恢复规则不变。败方立即取消，不为排查drain；只把已接收的正文/公开思考有界片段和race_lost原因并入原attempt一次异步终态写，不发给用户、不进上下文、不另计费。正常attempt最多派发/终态两次observe；删除旧首发额外元数据补读，无新cron/轮询。diagnostic保存不阻塞首字，赢家身份仍须持久化才能结算。
 
@@ -184,3 +184,41 @@ RPC 与列表读取设 5 秒请求预算；UUID 校验失败返回 400，源不�
 `PUT /api/v1/conversations/:id/messages/:messageId/like` 接受严格 `{liked:boolean}`，认证用户由后端传入 `experience.set_chat_message_like`。RPC 以会话归属及当前可见回复版本为边界，包含分支继承回复；显式目标值使重复提交幂等。不存在或非本人会话统一 404，失效或未完成回复返回 `reply_like_not_allowed`（409）。响应只含 `session_id/message_id/liked`，设置 `no-store`，仓库调用有 5 秒预算，日志不包含正文或 prompt。
 
 反馈存储于 `experience.chat_message_likes`，按会话和实际 history ID 隔离。消息列表从既有叠加视图一次读取 `liked`，只投影到 assistant 消息；上下文查询不选该字段，不影响模型输入、会话排序、角色卡热度或钱包。重生成新版本不继承旧赞，创建分支不复制来源会话的赞。迁移顺序为分支迁移 → 点赞迁移 → Backend → Frontend；新增点赞迁移执行后不得再重跑会删去其末列的旧分支视图定义。应用回退可忽略新增字段，保留反馈事实。
+
+## 调用前准备与兜底路由契约（2026-11-02，本地候选）
+
+### 1. Scope / Trigger
+
+压缩业务自身调用前串行等待，区分派发、连接可写、发送完成、响应头与有效token。线上发布和效果须另验，不从供应商latency推定用户体验。
+
+### 2. Signatures
+
+`prepareGeneration({model, characterId, useFallback, payer?: {userId, chargeId, log, signal}})`返回原配置快照及可选paidAdmission（原始报价、一次余额预检Promise）。`fallback_provider_routes`属于既有ModelCatalog；`firstTokenPolicy.fallbackProviders`冻结本轮两供应商。`upstream-timing.ts`仅内部内存诊断，未增加HTTP/SSE公共字段。
+
+### 3. Contracts
+
+useFallback时路由配置提前同批读取；直接Venice消费者仍不读OpenRouter配置。付费预检不预留/扣款/创建钱包，execute核对user/charge/model/character并复用；免费轮仍由预留决定。报价/prompt持久化先于调用，不能fire-and-forget。默认1017的旧配置兼容Together/Crusoe；新型号保存端要求两个独立slug。配置写入纯校验迁移保留函数OID/ACL及既有预算判断，无用户请求DB负担。新监控只经已有OTLP，不新增DB操作。
+
+### 4. Validation & Error Matrix
+
+重复/缺失/非法供应商→拒绝保存；更换型号不沿用旧名单。发布UI拒绝与现有屏蔽规则冲突；运行时屏蔽仍优先。身份不符/余额不足/余额读取失败→不发上游。提前只读Promise拒绝已挂handler，最终由execute按原逻辑处理。系统超时免扣；主动stop与原政策一致。诊断异常不能影响fetch；取消/竞败未收到的阶段保持缺失。
+
+### 5. Good / Base / Bad Cases
+
+Good：一次钱包读与上下文重叠、路由同批、冻结原报价。Base：非对话execute仍在既有门禁读取。Bad：为了首字提前扣费、免费轮多查钱包、改6秒截止、每token写库或相加并行阶段P95。
+
+### 6. Tests Required
+
+既有execute/upstream/first-token测试覆盖两赢家、免费/付费、真实请求体优先对、报错接管、共同截止、身份错配、余额不足和复用；真实本地HTTP隔离并发和abort阶段。既有SQL harness重放新迁移、非法配对拒绝和OID/ACL不变，并回归交付/扣费。Alloy真实往返验证白名单。全消费者typecheck、Admin/Frontend build、@chat与Admin改型号/重复项回归。模拟200ms收益不作为线上改善证据。
+
+### 7. Wrong vs Correct
+
+Wrong：`await context; await wallet; dispatch`，或把派发至首字减供应商latency称为确定网络耗时。Correct：付费轮提前只读预检并复用，再等待既有持久化门禁；用同一请求已知阶段定位剩余时间，业务结果由客户端数据裁决。
+
+## 服务端交付计费与责任归因（2026-11-02）
+
+本节取代此前“客户端超时免扣”的规则。计费只看服务端事实：总预算内选出首字且回复完整落库即结算并消耗免费额度；服务端超时或晚于预算才免扣。客户端计时只是观测，`client_delivery_failed` 只表示转述的服务端失败。无回报仍保守免扣。
+
+兜底模型被选为首发时也有第二路：首发用优先供应商顺序，第二路用相反顺序。start 事件的 `server_elapsed_ms` 供客户端分离网络时间。
+
+Wrong：把客户端 6 秒超时当成投递失败而免扣，或把建连耗时算成用户网络。Correct：只有已建立连接上的传输算用户，证据不全算我方，排除量与主指标并列展示。

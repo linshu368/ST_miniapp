@@ -164,6 +164,14 @@ const EditableModelCatalogTierSchema = z.object({
 });
 
 export const EditableModelCatalogSchema = z.object({
+  fallback_provider_routes: z
+    .array(
+      z.object({
+        model_id: z.string(),
+        preferred_providers: z.tuple([z.string(), z.string()]),
+      })
+    )
+    .optional(),
   fallback_model_id: z.string().default(FIRST_TOKEN_FALLBACK_MODEL_ID),
   first_token_deadline_ms: z.number().default(DEFAULT_FIRST_TOKEN_DEADLINE_MS),
   fallback_timeout_ms: z.number().default(DEFAULT_FALLBACK_TOKEN_TIMEOUT_MS),
@@ -527,15 +535,15 @@ export const configMetadata: Record<
     defaultValue: DEFAULT_WORD_COUNT_TIERS_CONFIG,
   },
   lobby_ranking_params: {
-    label: '推荐页排序参数',
+    label: '推荐轮换与质量评分',
     description:
-      '首页「推荐」v3 打分口径：统计窗口、轮次上限、会话切分与回访窗口、D30/R48 权重、样本门槛与归一化分位。改动在下一次排序刷新（每 24 小时）后生效。',
+      '推荐页为全体用户轮换前 12 张优质角色，可设置换批间隔、重复上限和探索数量。轮换参数发布后生效，质量参数在下一次每日评分刷新后生效。',
     defaultValue: DEFAULT_LOBBY_RANKING_PARAMS,
   },
   lobby_pinned_characters: {
-    label: '推荐页固定前八',
+    label: '推荐主推候选',
     description:
-      '首页「推荐」页最前面的固定位，最多 8 张、按此处顺序展示，同时拿到金框。第九张起仍按排序分。留空表示不固定，完全交给排序分。发布后约 1 分钟内生效。',
+      '优质主推候选增加被选中的机会，可另设最多 1 张固定主推。金框不随个人轮换位置变化。',
     defaultValue: DEFAULT_LOBBY_PINNED_CHARACTERS,
   },
   miniapp_invite_reward_rules: {

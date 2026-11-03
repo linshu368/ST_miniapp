@@ -1,5 +1,5 @@
-import { FastifyInstance, FastifyReply } from 'fastify';
-import { ok, fail, PostCheckoutConfirmationRequestSchema } from '@miniapp/shared';
+import { FastifyInstance } from 'fastify';
+import { ok, fail } from '@miniapp/shared';
 import { requestLogger, type RequestLogger } from '../lib/logger.js';
 import type {
   CreatePaymentOrderRequest,
@@ -7,8 +7,6 @@ import type {
   GetPaymentOrdersData,
   GetPaymentOrdersQuery,
   GetPaymentPlansData,
-  PostCheckoutConfirmationData,
-  PaymentOrder,
   PaymentOrderStatus,
   PaymentType,
 } from '@miniapp/shared';
@@ -30,36 +28,24 @@ import {
   toPaymentOrder,
 } from '../infrastructure/repositories/MiniappPaymentOrderRepository.js';
 import {
-  ZqPaymentGateway,
-  type ZqPaymentNotifyData,
-} from '../infrastructure/payment/ZqPaymentGateway.js';
+  METADATA_ENVIRONMENT,
+  METADATA_ORDER_ID,
+  VexutopiaPaymentGateway,
+} from '../infrastructure/payment/VexutopiaPaymentGateway.js';
 import { config } from '../platform/config.js';
-import { insertUserNotification } from '../lib/notifications.js';
 import {
-  CheckoutConfirmationError,
-  CheckoutConfirmationUseCase,
-} from '../features/payment/usecases/CheckoutConfirmation.js';
-import { recordPaymentOperationEvent } from '../features/payment/usecases/PaymentOperationEvents.js';
+  recordPaymentOperationEvent,
+  type PaymentEventRecorder,
+} from '../features/payment/usecases/PaymentOperationEvents.js';
 
 const PAYMENT_STATUSES: PaymentOrderStatus[] = ['pending', 'completed', 'expired', 'failed'];
 const PAYMENT_TYPES: PaymentType[] = ['alipay', 'wxpay'];
+export const VEXUTOPIA_SIGNATURE_HEADER = 'x-vexutopia-signature';
 
 export default async function paymentRoutes(app: FastifyInstance) {
-  // 厂商异步通知可能以表单 POST 送达，Fastify 默认只解析 json / text。
-  if (!app.hasContentTypeParser('application/x-www-form-urlencoded')) {
-    app.addContentTypeParser(
-      'application/x-www-form-urlencoded',
-      { parseAs: 'string' },
-      (_request, body, done) => {
-        done(null, Object.fromEntries(new URLSearchParams(body as string)));
-      }
-    );
-  }
-
   const orders = new MiniappPaymentOrderRepository();
-  const gateway = new ZqPaymentGateway();
+  const gateway = new VexutopiaPaymentGateway();
   const recharge = new RechargeUseCase(orders, gateway, orders);
-  const checkoutConfirmations = new CheckoutConfirmationUseCase(orders);
 
   // @frontend-ready: true
   app.get('/api/payment/plans', async (request, reply) => {
@@ -99,13 +85,13 @@ export default async function paymentRoutes(app: FastifyInstance) {
     }
 
     const log = requestLogger(request.log, 'payment');
+    const startedAt = Date.now();
     try {
       const dbUser = await getOrCreateDbUser(request.user);
       const data = await recharge.createOrder({
         userId: dbUser.id,
         planId: body.plan_id,
         paymentType: body.payment_type,
-        clientIp: request.ip,
         log,
       });
       log.biz.info(
@@ -116,10 +102,9 @@ export default async function paymentRoutes(app: FastifyInstance) {
           planId: body.plan_id,
           productType: data.order.product_type,
           paymentType: body.payment_type,
-          // 记下交给厂商的回调地址和收银台域名：星尘不到账时第一个要排除的就是
-          // 「我们报给厂商的 notify_url 到底是哪个环境」。
-          notifyUrl: config.payment.notifyUrl,
+          providerTransactionId: data.order.provider_transaction_id,
           payUrlHost: describeUrlHost(data.pay_url),
+          durationMs: Date.now() - startedAt,
         },
         '用户创建充值订单'
       );
@@ -127,7 +112,12 @@ export default async function paymentRoutes(app: FastifyInstance) {
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Create payment order failed';
       log.sys.warn(
-        { event: 'recharge.order.create_failed', err: error, planId: body.plan_id },
+        {
+          event: 'recharge.order.create_failed',
+          err: error,
+          planId: body.plan_id,
+          durationMs: Date.now() - startedAt,
+        },
         '创建充值订单失败'
       );
       if (error instanceof PaymentPlansConfigError) {
@@ -138,56 +128,6 @@ export default async function paymentRoutes(app: FastifyInstance) {
       return reply.status(400).send(fail('PAYMENT_CREATE_FAILED', message));
     }
   });
-
-  // @frontend-ready: true
-  app.post(
-    '/api/payment/orders/:id/checkout-confirmations',
-    { preHandler: [requireTelegramAuth] },
-    async (request, reply) => {
-      if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
-
-      const body = PostCheckoutConfirmationRequestSchema.safeParse(request.body);
-      if (!body.success) {
-        return reply.status(400).send(fail('BAD_REQUEST', 'Invalid checkout confirmation request'));
-      }
-
-      const { id } = request.params as { id: string };
-      const log = requestLogger(request.log, 'payment');
-      try {
-        const dbUser = await getOrCreateDbUser(request.user);
-        const data = await checkoutConfirmations.record({
-          orderId: id,
-          userId: dbUser.id,
-          requestId: body.data.request_id,
-          occurredAt: body.data.occurred_at,
-          action: body.data.action,
-        });
-        log.biz.info(
-          {
-            event: 'payment.checkout_confirmation.recorded',
-            orderId: id,
-            action: body.data.action,
-            recorded: data.recorded,
-            confirmationCount: data.checkout_confirm_count,
-          },
-          '收银台确认已记录'
-        );
-        return reply.send(ok<PostCheckoutConfirmationData>(data));
-      } catch (error) {
-        if (error instanceof CheckoutConfirmationError) {
-          const status = error.code === 'NOT_FOUND' ? 404 : 422;
-          return reply.status(status).send(fail(error.code, error.message));
-        }
-        log.sys.error(
-          { event: 'payment.checkout_confirmation.failed', err: error, orderId: id },
-          '记录收银台确认失败'
-        );
-        return reply
-          .status(500)
-          .send(fail('CHECKOUT_CONFIRMATION_FAILED', 'Unable to record checkout'));
-      }
-    }
-  );
 
   // @frontend-ready: true
   app.get(
@@ -204,8 +144,7 @@ export default async function paymentRoutes(app: FastifyInstance) {
         return reply.status(404).send(fail('NOT_FOUND', 'Payment order not found'));
       }
 
-      // 主动查单：厂商的异步通知不保证送达，前端本来就在轮询这个接口，
-      // 在这里补一次查单，到账就不再依赖对方推送。
+      // 前端本来就在轮询这个接口，顺手查一次平台单据，到账不必等 Webhook。
       if (
         config.payment.enabled &&
         (await reconcileWithGateway(
@@ -251,57 +190,38 @@ export default async function paymentRoutes(app: FastifyInstance) {
     );
   });
 
+  // 收银台付款后浏览器跳回这里。URL 参数不签名，只用来导航；入账靠一次服务端查单。
   // @frontend-ready: true
   app.get('/api/payment/return', async (request, reply) => {
     const log = requestLogger(request.log, 'payment');
-    const returnData = normalizeNotifyData(request.query);
-    const verification = verifyNotify(gateway, returnData);
+    const rawOrderId = (request.query as { order_id?: unknown }).order_id;
     const orderId =
-      verification.ok && isSafePaymentOrderId(verification.orderId) ? verification.orderId : null;
+      typeof rawOrderId === 'string' && isSafePaymentOrderId(rawOrderId) ? rawOrderId : null;
 
     recordPaymentOperationEvent(orders, log, {
-      event_key: `return:${verification.ok ? 'verified' : verification.reason}:${orderId ?? Date.now()}`,
+      event_key: `return:${orderId ?? 'unknown'}:${Date.now()}`,
       order_id: orderId,
       user_id: null,
       event_kind: 'return',
       stage: 'callback',
-      outcome: verification.ok ? 'succeeded' : 'failed',
+      outcome: orderId ? 'succeeded' : 'failed',
       source: 'gateway',
       trigger: 'return',
-      error_class: verification.ok ? null : verification.reason,
+      error_class: orderId ? null : 'missing_order_id',
       occurred_at: new Date().toISOString(),
     });
 
-    // 厂商《支付结果通知》把 notify_url 和 return_url 都定义为「支付结果通知」，
-    // 参数与签名完全相同。异步通知不保证送达（实测就有整条没推的订单），所以验签通过的
-    // 同步回跳同样入账；重复入账由 credits_added 幂等兜住。
-    if (orderId && returnData.trade_status === 'TRADE_SUCCESS') {
-      await settlePaidOrder(
-        {
-          orderId,
-          paidAmount: returnData.money,
-          providerTransactionId: returnData.trade_no ?? null,
-        },
-        orders,
-        log,
-        'return',
-        orders
-      ).catch((error: unknown) => {
-        // 回跳的首要职责是把用户送回 MiniApp，入账失败不能卡住导航。
+    if (orderId && config.payment.enabled) {
+      try {
+        const order = await orders.findById(orderId);
+        if (order) await reconcileWithGateway(order, gateway, orders, log, 'query', orders);
+      } catch (error) {
+        // 回跳的首要职责是把用户送回 MiniApp，查单失败不能卡住导航。
         log.sys.error(
-          { event: 'payment.return.settle_failed', orderId, err: error },
-          '同步回跳入账失败'
+          { event: 'payment.return.query_failed', orderId, err: error },
+          '回跳查单失败'
         );
-      });
-    } else if (!verification.ok) {
-      log.sys.warn(
-        {
-          event: 'payment.return.verify_failed',
-          reason: verification.reason,
-          fields: Object.keys(returnData).sort(),
-        },
-        '同步回跳验证失败，仅做导航'
-      );
+      }
     }
 
     const botUsername = await resolveTelegramBotUsername();
@@ -323,139 +243,163 @@ export default async function paymentRoutes(app: FastifyInstance) {
     return reply.redirect(fallbackUrl.toString());
   });
 
-  // @frontend-ready: true
-  app.get('/api/payment/webhook/zqpay', async (request, reply) => {
-    return handleZqPayWebhook(
-      request.query,
-      reply,
-      gateway,
-      orders,
-      requestLogger(request.log, 'payment'),
-      orders
+  // 验签必须拿原始字节，只在这个子作用域里把 JSON 解析成 Buffer，其他路由不受影响。
+  await app.register(async (scope) => {
+    scope.addContentTypeParser('application/json', { parseAs: 'buffer' }, (_request, body, done) =>
+      done(null, body)
     );
-  });
 
-  // @frontend-ready: true
-  app.post('/api/payment/webhook/zqpay', async (request, reply) => {
-    return handleZqPayWebhook(
-      request.body,
-      reply,
-      gateway,
-      orders,
-      requestLogger(request.log, 'payment'),
-      orders
-    );
+    // @frontend-ready: false
+    scope.post('/api/payment/webhook/vexutopia', async (request, reply) => {
+      const signature = request.headers[VEXUTOPIA_SIGNATURE_HEADER];
+      const result = await handleVexutopiaWebhook(
+        Buffer.isBuffer(request.body) ? request.body : Buffer.alloc(0),
+        typeof signature === 'string' ? signature : undefined,
+        { gateway, orders, events: orders, log: requestLogger(request.log, 'payment') }
+      );
+      return reply.status(result.status).type('text/plain').send(result.body);
+    });
   });
 }
 
-type WebhookVerification =
-  | { ok: true; orderId: string }
-  | {
-      ok: false;
-      reason: 'missing_order_id' | 'merchant_mismatch' | 'invalid_signature' | 'stale_timestamp';
-    };
+type WebhookDeps = {
+  gateway: Pick<VexutopiaPaymentGateway, 'verifyWebhook' | 'environment'>;
+  orders: Pick<MiniappPaymentOrderRepository, 'findById' | 'complete' | 'reopenExpired'>;
+  events?: PaymentEventRecorder;
+  log: RequestLogger;
+};
 
-function verifyNotify(
-  gateway: Pick<ZqPaymentGateway, 'isExpectedMerchant' | 'verifyNotifySign'>,
-  notifyData: ZqPaymentNotifyData
-): WebhookVerification {
-  const orderId = notifyData.out_trade_no;
-  if (!orderId) return { ok: false, reason: 'missing_order_id' };
-  if (!gateway.isExpectedMerchant(notifyData.pid)) {
-    return { ok: false, reason: 'merchant_mismatch' };
-  }
-  if (!gateway.verifyNotifySign(notifyData)) {
-    return { ok: false, reason: 'invalid_signature' };
-  }
-  // timestamp 只在厂商真的带了的时候校验：子千易实测会省略这个字段，把它当必填
-  // 会连同合法回调一起判死。防重放由 RSA 验签和 credits_added 幂等承担。
-  if (notifyData.timestamp && !isRecentTimestamp(notifyData.timestamp)) {
-    return { ok: false, reason: 'stale_timestamp' };
-  }
-  return { ok: true, orderId };
-}
-
-export async function handleZqPayWebhook(
-  payload: unknown,
-  reply: FastifyReply,
-  gateway: Pick<ZqPaymentGateway, 'isExpectedMerchant' | 'verifyNotifySign'>,
-  orders: Pick<MiniappPaymentOrderRepository, 'findById' | 'complete' | 'reopenExpired'>,
-  log: RequestLogger,
-  events?: import('../features/payment/usecases/PaymentOperationEvents.js').PaymentEventRecorder
-) {
-  const notifyData = normalizeNotifyData(payload);
-  const verification = verifyNotify(gateway, notifyData);
-
-  if (!verification.ok) {
+/**
+ * 返回码约定：只有“验签不过”（401/400）和“我们自己暂时失败”（500）不回 200。
+ * 订单不存在、金额不符这类重投也修不好的问题回 200 止住重投，靠事件和告警暴露。
+ */
+export async function handleVexutopiaWebhook(
+  rawBody: Buffer,
+  signatureHeader: string | undefined,
+  deps: WebhookDeps
+): Promise<{ status: number; body: string }> {
+  const { log, events } = deps;
+  const verification = deps.gateway.verifyWebhook(rawBody, signatureHeader);
+  const record = (
+    outcome: 'succeeded' | 'failed' | 'skipped',
+    errorClass: string | null,
+    orderId: string | null,
+    paymentId?: string
+  ) =>
     recordPaymentOperationEvent(events, log, {
-      event_key: `webhook:failed:${verification.reason}:${Date.now()}`,
-      order_id: null,
+      event_key: `webhook:${outcome}:${errorClass ?? 'ok'}:${orderId ?? 'none'}:${paymentId ?? 'none'}:${Date.now()}`,
+      order_id: orderId,
       user_id: null,
       event_kind: 'webhook',
       stage: 'callback',
-      outcome: 'failed',
+      outcome,
       source: 'gateway',
       trigger: 'webhook',
-      error_class: verification.reason,
+      error_class: errorClass,
       occurred_at: new Date().toISOString(),
     });
+
+  if (!verification.ok) {
+    record('failed', verification.reason, null);
     log.sys.warn(
-      {
-        event: 'payment.webhook.verify_failed',
-        reason: verification.reason,
-        orderId: notifyData.out_trade_no,
-        pid: notifyData.pid,
-        // 只记字段名不记值：定位「厂商到底发了什么」时不泄露签名和金额。
-        fields: Object.keys(notifyData).sort(),
-      },
-      '子千易支付回调验证失败'
+      { event: 'payment.webhook.verify_failed', reason: verification.reason },
+      'Vexutopia 回调验证失败'
     );
-    return reply.status(400).type('text/plain').send('fail');
+    return verification.reason === 'invalid_body'
+      ? { status: 400, body: 'invalid body' }
+      : { status: 401, body: 'unauthorized' };
   }
 
-  const orderId = verification.orderId;
-  recordPaymentOperationEvent(events, log, {
-    event_key: `webhook:succeeded:${orderId}:${notifyData.trade_no ?? 'none'}`,
-    order_id: orderId,
-    user_id: null,
-    event_kind: 'webhook',
-    stage: 'callback',
-    outcome: 'succeeded',
-    source: 'gateway',
-    trigger: 'webhook',
-    occurred_at: new Date().toISOString(),
-  });
-  log.biz.info({ event: 'payment.webhook.received', orderId }, '收到子千易支付回调');
+  const event = verification.event;
+  const metadata = event.metadata ?? {};
+  const rawOrderId = metadata[METADATA_ORDER_ID];
+  const orderId = rawOrderId && isSafePaymentOrderId(rawOrderId) ? rawOrderId : null;
+  const paymentId = event.payment_id ?? event.id;
 
-  if (notifyData.trade_status !== 'TRADE_SUCCESS') {
-    return reply.type('text/plain').send('success');
+  // 同一组织的注册端点会收到所有环境的事件；别的环境的订单不在本库，直接确认收到。
+  if (metadata[METADATA_ENVIRONMENT] !== deps.gateway.environment) {
+    record('skipped', 'foreign_environment', null);
+    return { status: 200, body: 'ignored' };
   }
 
+  log.biz.info(
+    { event: 'payment.webhook.received', type: event.event, orderId, paymentId },
+    '收到 Vexutopia 支付回调'
+  );
+
+  if (event.event === 'payment.refunded') {
+    // 第一版不自动扣回权益：退款/拒付都要人工判断，告警会通知到人。
+    record('failed', event.type === 'chargeback' ? 'chargeback' : 'refund', orderId, paymentId);
+    log.sys.warn(
+      { event: 'payment.webhook.refunded', orderId, paymentId, type: event.type },
+      '平台发生退款或拒付，需人工处理权益'
+    );
+    return { status: 200, body: 'OK' };
+  }
+  if (event.event !== 'payment.completed') {
+    record(
+      'skipped',
+      `ignored_${event.event.replace(/[^a-z0-9]+/gi, '_').toLowerCase()}`.slice(0, 80),
+      orderId,
+      paymentId
+    );
+    return { status: 200, body: 'OK' };
+  }
+
+  if (!orderId) {
+    record('failed', 'missing_order_id', null, paymentId);
+    return { status: 200, body: 'OK' };
+  }
+
+  const order = await deps.orders.findById(orderId);
+  if (order?.provider_transaction_id && paymentId && order.provider_transaction_id !== paymentId) {
+    recordSettlementAnomaly(events, log, orderId, 'provider_ref_mismatch');
+    log.sys.error(
+      { event: 'payment.webhook.provider_ref_mismatch', orderId, paymentId },
+      '回调交易号与本地订单不一致，拒绝入账'
+    );
+    return { status: 200, body: 'OK' };
+  }
+  if (event.currency !== 'CNY') {
+    recordSettlementAnomaly(events, log, orderId, 'currency_mismatch');
+    log.sys.error(
+      { event: 'payment.webhook.currency_mismatch', orderId, currency: event.currency },
+      '回调币种不是 CNY，拒绝入账'
+    );
+    return { status: 200, body: 'OK' };
+  }
+
+  record('succeeded', null, orderId, paymentId);
   const settlement = await settlePaidOrder(
-    { orderId, paidAmount: notifyData.money, providerTransactionId: notifyData.trade_no ?? null },
-    orders,
+    { orderId, paidAmount: event.amount, providerTransactionId: paymentId ?? null },
+    deps.orders,
     log,
     'webhook',
     events
   );
-
-  switch (settlement) {
-    case 'completed':
-      return reply.type('text/plain').send('success');
-    case 'order_not_found':
-      return reply.status(404).type('text/plain').send('fail');
-    case 'amount_mismatch':
-      return reply.status(400).type('text/plain').send('fail');
-    default:
-      return reply.status(500).type('text/plain').send('fail');
-  }
+  // 只有我们自己的瞬时失败才要求平台重投；其余结果重投也不会变。
+  return settlement === 'failed' ? { status: 500, body: 'retry' } : { status: 200, body: 'OK' };
 }
 
-function normalizeNotifyData(payload: unknown): ZqPaymentNotifyData {
-  if (!payload || typeof payload !== 'object') return {};
-  return Object.fromEntries(
-    Object.entries(payload as Record<string, unknown>).map(([key, value]) => [key, String(value)])
-  );
+/** 平台说已付款、我们却不能入账：写成 settlement 失败事件，让“已付款未履约”告警直接看到。 */
+function recordSettlementAnomaly(
+  events: PaymentEventRecorder | undefined,
+  log: RequestLogger,
+  orderId: string,
+  errorClass: 'provider_ref_mismatch' | 'currency_mismatch'
+) {
+  recordPaymentOperationEvent(events, log, {
+    event_key: `settlement:webhook:failed:${orderId}:${errorClass}:${Date.now()}`,
+    order_id: orderId,
+    user_id: null,
+    event_kind: 'settlement',
+    stage: 'settlement',
+    outcome: 'failed',
+    source: 'backend',
+    trigger: 'settlement',
+    error_class: errorClass,
+    occurred_at: new Date().toISOString(),
+  });
 }
 
 function isPaymentType(value: unknown): value is PaymentType {
@@ -466,12 +410,6 @@ function clampLimit(limit: unknown): number {
   const parsed = typeof limit === 'string' ? Number.parseInt(limit, 10) : Number(limit);
   if (!Number.isFinite(parsed)) return 20;
   return Math.min(Math.max(parsed, 1), 50);
-}
-
-function isRecentTimestamp(value: string | undefined): boolean {
-  if (!value || !/^\d{10}$/.test(value)) return false;
-  const timestampMs = Number(value) * 1000;
-  return Number.isSafeInteger(timestampMs) && Math.abs(Date.now() - timestampMs) <= 10 * 60 * 1000;
 }
 
 function describeUrlHost(value: string): string {

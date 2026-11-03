@@ -7,6 +7,48 @@ export interface FirstTokenIdentity {
   revision: number;
 }
 
+export type FirstTokenDelayAttribution = 'on_time' | 'ours' | 'user_network';
+
+/** A reused socket proven alive this recently cannot be the dead connection we could fix. */
+const CONNECTION_PROOF_MAX_AGE_MS = 60_000;
+/** Reasons that mean the server gave up, whether or not the browser clock had expired. */
+const SERVER_TIMEOUT_REASONS: ReadonlySet<string | null> = new Set([
+  'server_timeout',
+  'fallback_timeout',
+  'primary_timeout',
+]);
+
+/**
+ * Only time spent moving data over an already established connection is the user's own
+ * network. Connection setup can be improved by us, so it stays ours, and so does any wait
+ * we cannot prove: a missing first token or missing timing never moves blame to the user.
+ */
+export function attributeFirstTokenDelay(input: {
+  waitMs: number | null;
+  deadlineMs: number;
+  pathMs: number | null;
+}): FirstTokenDelayAttribution {
+  const { waitMs, deadlineMs, pathMs } = input;
+  if (waitMs !== null && waitMs < deadlineMs) return 'on_time';
+  if (waitMs === null || pathMs === null) return 'ours';
+  return waitMs - pathMs >= deadlineMs ? 'ours' : 'user_network';
+}
+
+function readRequestTiming(url: string | null, startedAt: number) {
+  if (!url || typeof performance.getEntriesByName !== 'function') return null;
+  const entry = performance
+    .getEntriesByName(url, 'resource')
+    .filter((item) => item.startTime >= startedAt - 1)
+    .at(-1) as PerformanceResourceTiming | undefined;
+  // Without Timing-Allow-Origin the browser zeroes these fields; that is no evidence.
+  if (!entry || entry.requestStart <= 0) return null;
+  return {
+    setupMs: Math.max(0, entry.requestStart - entry.startTime),
+    protocol: entry.nextHopProtocol || 'unknown',
+    reused: entry.connectStart === entry.connectEnd,
+  };
+}
+
 /** Submit → React message commit on one monotonic clock. The first terminal result is immutable. */
 export class FirstTokenObservation {
   readonly startedAt = performance.now();
@@ -22,6 +64,12 @@ export class FirstTokenObservation {
   private engineeringOutcome: 'rejected' | undefined;
   private triggerMs: number | undefined;
   private finishedMs: number | null = null;
+  private requestUrl: string | null = null;
+  private connectionProven = false;
+  private startReceivedMs: number | null = null;
+  private serverElapsedMs: number | null = null;
+  private lateVisibleMs: number | null = null;
+  private networkReported = false;
   private visibility = () => {
     if (document.visibilityState !== 'visible') {
       this.backgrounded = true;
@@ -78,9 +126,19 @@ export class FirstTokenObservation {
     }
     this.flush();
   }
-  dispatched(): void {
+  dispatched(url?: string, connectionAgeMs: number | null = null): void {
+    this.requestUrl ??= url ?? null;
+    this.connectionProven =
+      connectionAgeMs !== null && connectionAgeMs < CONNECTION_PROOF_MAX_AGE_MS;
     if (this.outcome) return;
     this.dispatchedMs ??= performance.now() - this.startedAt;
+  }
+  /** Recorded even after the deadline: a late start still separates network from server time. */
+  started(serverElapsedMs?: number): void {
+    if (this.startReceivedMs !== null) return;
+    this.startReceivedMs = performance.now() - this.startedAt;
+    if (typeof serverElapsedMs === 'number' && Number.isFinite(serverElapsedMs))
+      this.serverElapsedMs = serverElapsedMs;
   }
   received(source: 'stream' | 'commit' = 'stream'): void {
     if (this.outcome) return;
@@ -92,21 +150,25 @@ export class FirstTokenObservation {
   }
   committed(identity: FirstTokenIdentity, at: number): boolean {
     if (
-      this.outcome ||
       !identity.assistantMessageId ||
       identity.requestId !== this.identity.requestId ||
       identity.assistantMessageId !== this.identity.assistantMessageId ||
       identity.revision !== this.identity.revision
     )
       return false;
+    const duration = at - this.startedAt;
+    if (this.outcome) {
+      this.noteLateCommit(duration);
+      return false;
+    }
     if (document.visibilityState !== 'visible') {
       this.unavailable('page_left');
       return false;
     }
     // Timers may be delayed by a busy main thread. A late commit must not win that race.
-    const duration = at - this.startedAt;
     if (duration >= this.deadlineMs) {
       this.expire();
+      this.noteLateCommit(duration);
       return false;
     }
     this.outcome = 'observed';
@@ -114,6 +176,64 @@ export class FirstTokenObservation {
     this.finishedMs = duration;
     this.finish();
     return true;
+  }
+  /** The terminal stays timed_out; this keeps how long the user really waited. */
+  private noteLateCommit(duration: number): void {
+    if (this.outcome !== 'timed_out' || this.lateVisibleMs !== null) return;
+    this.lateVisibleMs = duration;
+    try {
+      recordEngineeringMeasurement(
+        'roleplay.first_token_late',
+        duration,
+        this.attributes('timed_out')
+      );
+    } catch {
+      // The engineering mirror never owns delivery or its business receipt.
+    }
+  }
+  /** Resource timing only exists once the response has ended, so this runs after the turn. */
+  reportNetwork(): void {
+    if (this.networkReported) return;
+    this.networkReported = true;
+    const known =
+      this.outcome === 'observed' ||
+      this.outcome === 'timed_out' ||
+      SERVER_TIMEOUT_REASONS.has(this.reason);
+    if (!known || !this.outcome) return;
+    try {
+      const timing = readRequestTiming(this.requestUrl, this.startedAt);
+      const overheadMs =
+        this.startReceivedMs !== null && this.serverElapsedMs !== null
+          ? Math.max(0, this.startReceivedMs - this.serverElapsedMs)
+          : null;
+      const pathMs =
+        overheadMs !== null && timing ? Math.max(0, overheadMs - timing.setupMs) : null;
+      // Transit is only the user's when the connection is known to have worked: a stall on a
+      // silently dead socket looks identical, and that one we can fix.
+      const provenPathMs = timing && (!timing.reused || this.connectionProven) ? pathMs : null;
+      const attributes = {
+        ...this.attributes(this.outcome),
+        protocol: timing?.protocol ?? 'unknown',
+        conn_reused: timing ? String(timing.reused) : 'unknown',
+        conn_proven: String(this.connectionProven),
+        delay_attribution: attributeFirstTokenDelay({
+          waitMs: this.visibleMs ?? this.lateVisibleMs,
+          deadlineMs: this.deadlineMs,
+          pathMs: provenPathMs,
+        }),
+      };
+      const stages = [
+        ['network_overhead', overheadMs],
+        ['network_setup', timing?.setupMs ?? null],
+        ['network_path', pathMs],
+      ] as const;
+      for (const [stage, value] of stages)
+        if (value !== null)
+          recordEngineeringMeasurement('roleplay.network', value, { ...attributes, stage });
+      recordEngineeringEvent('roleplay.delay', attributes);
+    } catch {
+      // Attribution is diagnostic; losing it must never touch the conversation.
+    }
   }
   deadlineFailed(
     reason: 'server_timeout' | 'fallback_timeout' | 'primary_timeout' = 'server_timeout'

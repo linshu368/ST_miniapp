@@ -3,7 +3,14 @@
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useState } from 'react';
-import { ArrowUpRight, ChevronRight, ImagePlus, Star, UserRoundPen } from 'lucide-react';
+import {
+  ArrowUpRight,
+  ChartNoAxesColumnIncreasing,
+  ChevronRight,
+  ImagePlus,
+  Star,
+  UserRoundPen,
+} from 'lucide-react';
 
 import { CharacterCard } from '@/components/characters/character-card';
 import {
@@ -105,7 +112,9 @@ export function CreationHub() {
           </span>
           <span className="min-w-0 flex-1">
             <strong className="block text-[13px] font-medium text-foreground">图片与视频</strong>
-            <span className="mt-0.5 block text-[11px] text-muted-foreground">AI 生成与作品广场</span>
+            <span className="mt-0.5 block text-[11px] text-muted-foreground">
+              AI 生成与作品广场
+            </span>
           </span>
           <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
         </Link>
@@ -187,7 +196,11 @@ export function CreationHub() {
               </div>
             ) : (
               <div className="flex min-h-[280px] flex-col items-center justify-center text-center">
-                <Star className="mb-4 size-8 text-muted-foreground" strokeWidth={1.35} aria-hidden />
+                <Star
+                  className="mb-4 size-8 text-muted-foreground"
+                  strokeWidth={1.35}
+                  aria-hidden
+                />
                 <h3 className="text-sm font-medium text-foreground">喜欢的角色，收藏在这里</h3>
                 <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
                   找到喜欢的角色，下次就能直接回来。
@@ -202,7 +215,21 @@ export function CreationHub() {
             )}
           </div>
         ) : (
-          <CreatedCharacters />
+          <>
+            <div className="mb-3 flex items-center justify-between">
+              <span className="text-xs text-muted-foreground">我的角色作品</span>
+              <Link
+                href="/creation/data"
+                prefetch={false}
+                className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-primary/25 bg-primary/10 px-3 text-[13px] font-medium text-primary transition-colors active:bg-primary/20"
+              >
+                <ChartNoAxesColumnIncreasing className="size-4" strokeWidth={1.6} aria-hidden />
+                创作数据
+                <ArrowUpRight className="size-3.5" aria-hidden />
+              </Link>
+            </div>
+            <CreatedCharacters />
+          </>
         )}
       </section>
 

@@ -130,7 +130,7 @@ PR 临时环境复制 development 后会立即删除该 Cron，避免多个调�
 支付告警另有独立常驻服务 `stminiapp-payment-alert-monitor`：Start Command 为
 `./node_modules/.bin/tsx src/scripts/payment-alert-monitor.ts`，Restart Policy 为 `Always`，
 不设 Cron Schedule、healthcheck、域名或 TCP proxy。它以数据库 advisory lock 防止重叠，
-每分钟运行 P0、每五分钟运行 P1；只读支付订单/操作事件并通过公共 outbox 发布。缺失或非法
+每分钟运行 P0、每五分钟运行 P1；只读支付操作事件（规则 v3 只看平台直接信号）并通过公共 outbox 发布。缺失或非法
 `alerting` runtime config 时通知保持关闭。这里仅描述目标运行面，不授权 Railway apply、部署、
 环境变量或通知开关写入。
 
@@ -141,8 +141,18 @@ PR 临时环境复制 development 后会立即删除该 Cron，避免多个调�
 **Railway cron 最短间隔是 5 分钟**（平台硬限制：GraphQL 会返回
 `Minimum interval between cron executions is 5 minutes`）。因此快速对账不能靠
 `* * * * *`，必须改成常驻 Worker：进程内 `while` 每 30 秒跑一轮
-`runFastPaymentReconciliation`，调度仍走库里的 `next_reconcile_at` / 租约 / 退避。
-过期兜底继续用 `*/5 * * * *`。
+`runPaymentReconciliation`，用 Vexutopia `POST /v1/payments/lookup` 一次批量查最近 2 小时
+未履约订单（`next_reconcile_at` / 租约列已不再使用）。过期兜底继续用 `*/5 * * * *`。
+
+**三个支付服务都需要 `PAYMENT_ENABLED` 与 `VEXUTOPIA_API_KEY`**（IaC 从 `stminiapp` 引用）；
+`VEXUTOPIA_WEBHOOK_SECRET` 只配在 `stminiapp`。每个环境注册自己的 Webhook 端点：
+
+```bash
+pnpm --filter @miniapp/backend payment:webhooks register https://<该环境 backend 域名>/api/payment/webhook/vexutopia
+```
+
+secret 只显示一次，立即写入该环境 `stminiapp` 的 `VEXUTOPIA_WEBHOOK_SECRET` 并重新部署；
+轮换 = `payment:webhooks delete <endpoint_id>`（`list` 可查，实测不是文档写的 `we_` 前缀）后重新注册；secret 实测是 64 位十六进制串，不是文档写的 `whsec_` 前缀。PR 临时环境不注册端点，只靠查单入账。
 
 IaC 可用时，`.railway/railway.ts` 会配置这两个服务。若目标环境尚不能用 IaC 管理，则在
 Railway 控制台手动创建并逐项对齐：
@@ -159,13 +169,12 @@ Railway 控制台手动创建并逐项对齐：
    - Start Command：`./node_modules/.bin/tsx src/scripts/reconcile-payment-orders.ts`
    - **清空 Cron Schedule**（不要填 `* * * * *`，平台会拒绝）
    - Restart Policy：`Always`（或 `On Failure`）
-   - 进程保持 Online，日志约每 30 秒一轮 `Fast payment reconciliation: checked=…`。
+   - 进程保持 Online，日志约每 30 秒一轮 `Payment reconciliation: checked=…`。
      `PAYMENT_ENABLED !== true` 时只 sleep，不查单。SIGTERM/SIGINT 下完本轮再退出。
-   - 新订单默认创建约 60 秒后可领取，因此 webhook / 回跳都失败时，首次查单通常落在
-     创建后 60–90 秒。
+   - 每轮都会查到最近创建的订单，Webhook 缺失时到账延迟约 30 秒。
 4. 过期服务（一次性 Cron）保持不变：Start Command
    `./node_modules/.bin/tsx src/scripts/expire-payment-orders.ts`，Cron Schedule `*/5 * * * *`，
-   Restart Policy `Never`。它只回溯已到期订单，并在查单健康时执行判过期。
+   Restart Policy `Never`。它先跑一轮同样的批量查单补账，批量查单成功后才执行判过期。
 5. 两个服务都关闭 healthcheck，不生成 Railway domain，不配置 TCP proxy。不要给
    Worker 加会打 `/health` 的 HTTP 探活（镜像 Dockerfile 的 HEALTHCHECK 针对 API；
    本服务没有 HTTP 端口，Railway 侧探活必须关掉，否则会把常驻循环判死）。

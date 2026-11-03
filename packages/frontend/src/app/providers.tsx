@@ -1,25 +1,16 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { usePathname, useRouter } from 'next/navigation';
 import { QueryClientProvider } from '@tanstack/react-query';
-import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
-
-import { INVITE_START_PARAM_PREFIX } from '@miniapp/shared';
 
 import { FavoriteFeedbackNotice } from '@/components/characters/favorite-feedback-notice';
 
 import { EntryShell } from '@/components/nav/entry-shell';
 import { afterFirstScreen } from '@/lib/after-first-screen';
-import {
-  afterEntryBackground,
-  ensureEntryPhaseWatching,
-  useEntryBackgroundReady,
-} from '@/lib/entry-phase';
+import { ensureEntryPhaseWatching, useEntryBackgroundReady } from '@/lib/entry-phase';
 import { getQueryClient } from '@/lib/api/query-client';
-import { bindFirstTokenReportRecovery } from '@/lib/api/first-token-reports';
-import { recordMiniappEntry } from '@/lib/api/growth';
-import { bindInvite } from '@/lib/api/invite';
 import { useUserSettingsQuery } from '@/lib/api/settings';
 import { observePaymentReturn } from '@/lib/payment/flow-telemetry';
 import {
@@ -33,9 +24,31 @@ import { loadDeferredTracing, loadSessionReplay, setTelegramUser } from '@/lib/s
 import { initReplayTelemetry, ReplayLifecycleOwner } from '@/lib/telemetry';
 import { getRawInitData } from '@/lib/telegram/auth';
 import { initTelegramSdk } from '@/lib/telegram/init';
-import { stripSensitiveTelegramLaunchParamsFromLocation } from '@/lib/telegram/launch-url';
+import {
+  getTelegramStartParam,
+  rememberInviteStartParam,
+  PAYMENT_RETURN_PREFIX,
+  stripSensitiveTelegramLaunchParamsFromLocation,
+} from '@/lib/telegram/launch-url';
 import { parseTelegramUser } from '@/lib/telegram/user';
 import { useUserProfileStore } from '@/stores/user-profile-store';
+
+const DeferredEntryEffects = dynamic(
+  () =>
+    import('./deferred-entry-effects')
+      .then((module) => module.DeferredEntryEffects)
+      .catch(() => {
+        console.warn('[Startup] Deferred attribution module unavailable');
+        return function DeferredEntryEffectsUnavailable() {
+          return null;
+        };
+      }),
+  { ssr: false }
+);
+const ReactQueryDevtools = dynamic(
+  () => import('@tanstack/react-query-devtools').then((module) => module.ReactQueryDevtools),
+  { ssr: false }
+);
 
 markStartupPhase('providers_loaded');
 
@@ -43,6 +56,8 @@ export function Providers({ children }: { children: React.ReactNode }) {
   markStartupPhase('first_render');
   const [queryClient] = useState(() => getQueryClient());
   const [telegramReady, setTelegramReady] = useState(false);
+  const entryStartParam = useRef('');
+  const backgroundReady = useEntryBackgroundReady();
   const pathname = usePathname();
   const [entryPathname] = useState(pathname);
   const [showQueryDevtools, setShowQueryDevtools] = useState(false);
@@ -57,7 +72,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
     markStartupPhase('init_start');
     initTelegramSdk();
     markStartupPhase('telegram_initialized');
-    const telegramUser = parseTelegramUser(getRawInitData());
+    const rawInitData = getRawInitData();
+    entryStartParam.current = getTelegramStartParam(rawInitData);
+    rememberInviteStartParam(entryStartParam.current);
+    const telegramUser = parseTelegramUser(rawInitData);
     setTelegramUser(telegramUser.id);
     stripSensitiveTelegramLaunchParamsFromLocation();
     // 两套录屏 SDK 都是动态 chunk + 持续 DOM 采集，冷启动时会和首屏图片、列表请求抢带宽与主线程；
@@ -80,9 +98,14 @@ export function Providers({ children }: { children: React.ReactNode }) {
     if (!telegramReady) return;
     let cancelled = false;
     let cleanup: (() => void) | undefined;
-    void afterFirstScreen().then(() => {
-      if (!cancelled) cleanup = bindFirstTokenReportRecovery();
-    });
+    void afterFirstScreen()
+      .then(() => {
+        if (cancelled) return;
+        return import('@/lib/api/first-token-reports').then(({ bindFirstTokenReportRecovery }) => {
+          if (!cancelled) cleanup = bindFirstTokenReportRecovery();
+        });
+      })
+      .catch(() => console.warn('[Startup] Report recovery module unavailable'));
     return () => {
       cancelled = true;
       cleanup?.();
@@ -95,9 +118,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
   return (
     <QueryClientProvider client={queryClient}>
-      {telegramReady ? <PaymentReturnRedirect /> : null}
-      {telegramReady ? <GrowthEntryReporter /> : null}
-      {telegramReady ? <InviteBindReporter /> : null}
+      {telegramReady ? <PaymentReturnRedirect startParam={entryStartParam.current} /> : null}
+      {telegramReady && backgroundReady ? (
+        <DeferredEntryEffects startParam={entryStartParam.current} />
+      ) : null}
       {telegramReady ? <UserSettingsHydrator /> : null}
       {telegramReady ? <ReplayLifecycleOwner /> : null}
       {telegramReady ? <PagePerfTracker /> : null}
@@ -110,14 +134,11 @@ export function Providers({ children }: { children: React.ReactNode }) {
   );
 }
 
-const PAYMENT_RETURN_PREFIX = 'payment_return_';
-
-function PaymentReturnRedirect() {
+function PaymentReturnRedirect({ startParam }: { startParam: string }) {
   const router = useRouter();
 
   useEffect(() => {
     attachPaymentReturnObserver();
-    const startParam = getStartParam();
     if (startParam === 'payment_return') {
       observePaymentReturn({
         source: 'start_param',
@@ -139,154 +160,9 @@ function PaymentReturnRedirect() {
     return () => {
       detachPaymentReturnObserver();
     };
-  }, [router]);
+  }, [router, startParam]);
 
   return null;
-}
-
-function GrowthEntryReporter() {
-  useEffect(() => {
-    let cancelled = false;
-    void afterEntryBackground().then(() => {
-      if (cancelled) return;
-      try {
-        const rawInitData = getRawInitData();
-        console.log('[Growth] Telegram initData status:', { available: Boolean(rawInitData) });
-
-        // 即使没有 rawInitData，也可以尝试从 URL 中获取 startapp 参数 (本地开发环境)
-        const sourceId = getStartParam();
-        console.log('[Growth] Extracted sourceId:', sourceId);
-
-        console.log('[Growth] GrowthEntryReporter sourceId:', sourceId);
-
-        if (
-          !sourceId ||
-          sourceId === 'payment_return' ||
-          sourceId.startsWith(PAYMENT_RETURN_PREFIX) ||
-          // 邀请深链不是渠道码：source_id='invite' 由绑定接口守卫式写入（阶段二计划 E2），
-          // 走 botlinks 渠道逻辑会互相踩踏。
-          sourceId.startsWith(INVITE_START_PARAM_PREFIX)
-        ) {
-          console.log('[Growth] No sourceId found, skipping report');
-          return;
-        }
-
-        const key = `growth_entry_reported:${sourceId}`;
-        try {
-          if (sessionStorage.getItem(key) === '1') {
-            console.log('[Growth] GrowthEntryReporter already reported in this session');
-            return;
-          }
-          sessionStorage.setItem(key, '1');
-        } catch (e) {
-          console.warn('[Growth] sessionStorage access failed:', e);
-        }
-
-        console.log(
-          '[Growth] GrowthEntryReporter calling recordMiniappEntry with sourceId:',
-          sourceId
-        );
-        recordMiniappEntry(sourceId)
-          .then((res) => {
-            console.log('[Growth] GrowthEntryReporter success:', res);
-          })
-          .catch((err) => {
-            console.error('[Growth] GrowthEntryReporter failed:', err);
-            try {
-              sessionStorage.removeItem(key);
-            } catch {
-              // ignore
-            }
-          });
-      } catch (err) {
-        console.error('[Growth] Unhandled error in GrowthEntryReporter:', err);
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  return null;
-}
-
-const INVITE_BIND_PENDING_KEY = 'invite_bind_pending';
-const INVITE_BIND_DONE_KEY = 'invite_bind_done';
-/** 与后端路由的校验一致；大小写在 RPC 内归一。 */
-const INVITE_CODE_RE = /^[A-Za-z0-9]{8}$/;
-
-/**
- * 邀请绑定上报（阶段二计划任务二）。
- * inv_ 参数先落 sessionStorage 再上报，网络失败保留待重试（防首开抖动漏归因）；
- * 任何终态（bound / already_bound / self_invite / not_new_user / invalid_code）都视为完成，
- * 不再重复请求。被邀请人侧无感知（E6），结果仅记录在控制台。
- */
-function InviteBindReporter() {
-  useEffect(() => {
-    let cancelled = false;
-    // 邀请码仍可先落 sessionStorage；真正打后端放到首屏之后，避免和大厅列表抢连接。
-    try {
-      const startParam = getStartParam();
-      if (startParam.startsWith(INVITE_START_PARAM_PREFIX)) {
-        const code = startParam.slice(INVITE_START_PARAM_PREFIX.length);
-        if (INVITE_CODE_RE.test(code)) {
-          sessionStorage.setItem(INVITE_BIND_PENDING_KEY, code);
-        }
-      }
-    } catch (err) {
-      console.error('[Invite] Unhandled error while caching invite code:', err);
-    }
-
-    void afterEntryBackground().then(() => {
-      if (cancelled) return;
-      try {
-        if (sessionStorage.getItem(INVITE_BIND_DONE_KEY) === '1') return;
-
-        const pendingCode = sessionStorage.getItem(INVITE_BIND_PENDING_KEY);
-        if (!pendingCode) return;
-
-        bindInvite(pendingCode)
-          .then((data) => {
-            console.log('[Invite] bind result:', data.status);
-            sessionStorage.setItem(INVITE_BIND_DONE_KEY, '1');
-            sessionStorage.removeItem(INVITE_BIND_PENDING_KEY);
-          })
-          .catch((err) => {
-            // 保留 pending，下次挂载（下次启动）重试。
-            console.error('[Invite] bind failed, will retry on next launch:', err);
-          });
-      } catch (err) {
-        console.error('[Invite] Unhandled error in InviteBindReporter:', err);
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  return null;
-}
-
-function getStartParam(): string {
-  let rawInitData: string | null = null;
-  try {
-    rawInitData = getRawInitData() ?? null;
-  } catch {
-    // 非 Telegram 环境下继续读取 URL 查询参数。
-  }
-  const initDataStartParam = rawInitData
-    ? new URLSearchParams(rawInitData).get('start_param')?.trim()
-    : null;
-  if (initDataStartParam) return initDataStartParam;
-  if (typeof window === 'undefined') return '';
-
-  const urlParams = new URLSearchParams(window.location.search);
-  return (
-    urlParams.get('startapp') ||
-    urlParams.get('start_param') ||
-    urlParams.get('tgWebAppStartParam') ||
-    ''
-  ).trim();
 }
 
 function UserSettingsHydrator() {

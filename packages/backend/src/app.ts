@@ -6,7 +6,10 @@ import { fastifyLoggerOptions } from './lib/logger.js';
 import { ok } from '@miniapp/shared';
 import type { HealthData } from '@miniapp/shared';
 import characterRoutes from './routes/characters.js';
+import lobbyRecommendationRoutes from './routes/lobby-recommendation.js';
 import creatorCharacterRoutes from './routes/creator-characters.js';
+import characterWishRoutes from './routes/character-wishes.js';
+import creatorAnalyticsRoutes from './routes/creator-analytics.js';
 import favoriteRoutes from './routes/favorites.js';
 import characterSocialRoutes from './routes/character-social.js';
 import paymentRoutes from './routes/payment.js';
@@ -103,8 +106,8 @@ export async function buildApp() {
     credentials: true,
     // 前端(Vercel)到后端(Railway)是跨源请求，且带自定义头 X-Init-Data 必触发预检。
     // 不设置时浏览器默认仅缓存 5s，导致几乎每个 API 请求前都多一次 OPTIONS 往返。
-    // 取 600s：Chromium 对 Max-Age 的上限就是 7200s，600s 在改 CORS 配置后仍能较快生效。
-    maxAge: 600,
+    // 取 Chromium 上限 7200s：一轮对话隔十分钟以上再发时不再多一次往返。WebKit 自身上限 600s。
+    maxAge: 7200,
     allowedHeaders: [
       'Content-Type',
       'Authorization',
@@ -127,7 +130,10 @@ export async function buildApp() {
   });
 
   await app.register(characterRoutes);
+  await app.register(lobbyRecommendationRoutes);
   await app.register(creatorCharacterRoutes);
+  await app.register(characterWishRoutes);
+  await app.register(creatorAnalyticsRoutes);
   await app.register(favoriteRoutes);
   await app.register(characterSocialRoutes);
   await app.register(paymentRoutes);

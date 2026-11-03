@@ -123,3 +123,11 @@ resource 只含 service.name、service.namespace、service.version、deployment.
 不改变OTel采集器或后端分段单位。Frontend的NEXT_PUBLIC_DRAMA_TIMING_MODE默认legacy；unified只有在原Faro公开配置有效时生效。全量工程信号仍复用原出口，详细诊断仍走鉴权Pino接口，≥5秒播放final/network另经Backend OTLP写Loki，仍受现有大小/超时/限流约束；purpose=diagnostic禁止分析表写入。新Faro字段仅有限definition、route模板、目录起点及诊断能力枚举，不新增ID或URL标签。
 
 本轮不读取/修改远端数据库，不停清理job，不修改生产secret/开关。Backend兼容先行，替代验证与生产切换分开；操作顺序及停止条件见docs/drama-playback-timing.md和docs/grafana/drama-playback-runbook.md。
+
+### 首字等待分段（2026-11-02，本地候选）
+
+- `st_generation_pre_dispatch_stage`：platform/model/stage；route_setup、settings、turn_open、context、dispatch_gate五段互不重叠的墙钟时间，最后一段包含余额剩余等待与报价/prompt保存。仅完成调用前门禁后记录，拒绝/前置超时不能用缺失推断正常。
+- `st_generation_network_stage`：platform/model/role/stage；request_create、connection_wait、request_send、response_wait、response_to_token。来源为同一Undici请求对象的诊断事件与本attempt单调时钟。connection_wait合并排队/DNS/TCP/TLS，response_wait合并网络/平台/供应商等待，不能分别冒称纯连接或纯模型耗时。只有已完成的段进入分布，超时未到的段不补0。
+- `generation.attempt_terminal`继续每attempt一次，增加network_stage及已完成阶段毫秒数；新的`generation.pre_dispatch`仅准备超过1秒时输出五段及total_ms。不含正文/身份/密钥，无逐token日志或Supabase I/O。
+- 两张诊断图追加在Backend看板；业务首字看板口径不变。按相同型号与release对比整体dispatch_offset和客户端六秒无字率，不能用各段P95相加，也不能用成功条件下P95解释全部失败。
+- 固定Alloy白名单必须与Backend一同发布。真实本地Alloy往返已验证新字段/metric保留、私有属性删除；Cloud查询语法通过，但生产样本和改善必须发布后验证。

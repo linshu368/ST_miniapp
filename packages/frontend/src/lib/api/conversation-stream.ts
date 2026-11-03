@@ -21,6 +21,8 @@ import { API_URL } from './client';
 
 const log = createLogger('conversation-stream');
 export const CONVERSATION_RECOVERING_MESSAGE = '正在接回这条回复，请稍候';
+/** The first-token clock passed but the server has not failed the turn, so it is not an error. */
+export const CONVERSATION_SLOW_NETWORK_MESSAGE = '网络有点慢，正在接收回复';
 
 export interface InsufficientBalanceDetail {
   creditsRequired: number;
@@ -59,7 +61,7 @@ export interface StreamTurnOptions {
   onDelta: (text: string) => void;
   onReasoning?: (text: string) => void;
   onDone: (event: ConversationStreamDoneEvent) => void;
-  onDispatched?: () => void;
+  onDispatched?: (url: string) => void;
   onFirstDeltaReceived?: () => void;
 }
 
@@ -193,8 +195,9 @@ async function readConversationStream(options: StreamTurnOptions): Promise<void>
   const initData = getRawInitData();
   if (initData) headers.set(INIT_DATA_HEADER, initData);
 
-  options.onDispatched?.();
-  const response = await fetch(`${API_URL}${path}`, {
+  const url = `${API_URL}${path}`;
+  options.onDispatched?.(url);
+  const response = await fetch(url, {
     method: 'POST',
     headers,
     body: JSON.stringify({

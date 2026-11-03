@@ -5,8 +5,8 @@ scope: frontend
 category: business
 status: active
 owners: [frontend]
-last_verified_task: .trellis/tasks/10-23-experience-continuity/
-last_verified_at: 2026-10-23
+last_verified_task: .trellis/tasks/11-02-lobby-quality-rotation/
+last_verified_at: 2026-11-02
 ---
 
 # 角色模块发现与收藏
@@ -84,3 +84,15 @@ last_verified_at: 2026-10-23
 评论草稿按用户和角色仅保存在短期内存；提交UUID允许丢响应后重试，不复制私人聊天。评论纯文本、分页、作者删除、举报确认。面板可视视口适配，固定底部输入。复用 `@character-social` 手机验收，覆盖独立互动、同步、分页发删举报、失败与草稿、生成中的对话不中断。后端迁移在隔离数据库通过后仍需发布时执行，当前未修改线上。
 
 卡片辅助信息减重：列表标签最多前两项、一行展示，完整标签留在详情；compact互动栏计数为0时只显示图标，有数量时配低对比数字，保留原ARIA名称与44px触区。
+
+## 前几屏优质轮换（2026-11-02，本地未发布）
+
+全体用户推荐行44px换一批、8秒撤回，无需启用开关或灰度；失败保旧且UUID重试；私有批次query/storage及发现筛选/返回snapshot按用户隔离。新文档或离开页面30分钟后open，24h由后端判定，聊天显式resume；同文档一直停在页面不定时洗牌。只按server ID投影，缺头部资料先校准公共目录再应用新批，失败保旧。曝光50%连续1秒，排除遮挡/后台/搜索/最新/恢复，600ms合并。撤回只有返回目标批才显示成功。packages/ui-tests @lobby-rotation为固定验收入口。
+
+## 创作数据（2026-11-02，本地待发布）
+
+从我的创作中暖金色「创作数据」入口进入 /creation/data，隐藏底栏。五块保持收益/使用、互动深度、作品表现、奖励记录、公开反馈的顺序；首页每类3条，全部面板4条分页，选卡8条，进入单卡再回总览保留来源页。通过lib/api/creator-analytics.ts读取本人真实契约数据，empty/error/loading明确，错误不替换为0。当前获赞/收藏不冒充周期增量；周期无评论文案区别从未有评论。Backend未就绪不回退虚构示例；固定样本仅在ui-tests fixture服务。
+
+### 心愿墙（本地候选）
+
+大厅搜索框右侧提供独立的「许个愿」入口，首屏可见并随搜索栏固定，与下一行的换一批分开；搜索空态保留直接输入入口。创作数据作品表现后与我的创作空态链接同一 /wishes 页面；不要给主导航新增独立槽位。只支持匿名公开，提交前明确所有人可见、不展示昵称头像。心愿来源独立保存在本地草稿元信息 sourceWishId，不得塞进 CharacterDraft 或system prompt。发布成功关联失败仍保留已发布结果，独立重试回应；原心愿不可用时允许返回我的创作。复用 @wishes 固定场景验收，入口不提前请求新API。

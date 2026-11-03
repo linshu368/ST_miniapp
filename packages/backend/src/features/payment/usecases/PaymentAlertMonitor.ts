@@ -6,98 +6,40 @@ import {
   evaluatePaymentAlertRules,
   FEISHU_NOTIFY_RULE_IDS,
   type PaymentAlertSnapshot,
+  type PaymentOperation,
 } from '../domain/PaymentAlertRules.js';
 
-const MAX_ORDERS = 500;
-const MAX_EVENTS = 1_000;
+const MAX_EVENTS = 2_000;
 const QUERY_TIMEOUT_MS = 8_000;
 
-type Row = {
-  id: string;
-  user_id: string;
-  checkout_confirmed_at: string | null;
-  status: 'pending' | 'completed' | 'expired' | 'failed';
-  paid_at: string | null;
-  fulfillment_applied: boolean;
-  settled_by: string | null;
-};
-type EventRow = {
-  event_kind: string;
-  outcome: string;
-  trigger: string;
-  occurred_at: string;
-  error_class: string | null;
-  order_id: string | null;
-  user_id: string | null;
-};
-
-/** Read-only, bounded monitor repository. It does not read gateway payloads. Telegram ID is attached only so the two P0 cards can name the user. */
+/** Read-only, bounded monitor repository. It reads payment operation facts only, never gateway payloads. */
 export class PaymentAlertMonitorRepository {
   private readonly db = getDomainDb('billing');
   async snapshot(now: Date): Promise<PaymentAlertSnapshot> {
     const since = new Date(now.getTime() - 60 * 60_000).toISOString();
-    const orderColumns =
-      'id,user_id,checkout_confirmed_at,status,paid_at,fulfillment_applied,settled_by';
-    const [ordersResult, latestOrdersResult, eventsResult] = await withTimeout(
-      Promise.all([
-        this.db
-          .from('payment_orders')
-          .select(orderColumns)
-          .gte('checkout_confirmed_at', since)
-          .lte('checkout_confirmed_at', now.toISOString())
-          .order('checkout_confirmed_at', { ascending: true })
-          .limit(MAX_ORDERS),
-        // 连续未支付不看时间窗口，只取最近 4 笔已确认订单。
-        this.db
-          .from('payment_orders')
-          .select(orderColumns)
-          .not('checkout_confirmed_at', 'is', null)
-          .lte('checkout_confirmed_at', now.toISOString())
-          .order('checkout_confirmed_at', { ascending: false })
-          .order('id', { ascending: false })
-          .limit(4),
+    // 取最新的 N 条再翻成升序：事件超过上限时丢的是最早的，而不是最新的。
+    const { data, error } = await withTimeout(
+      Promise.resolve(
         this.db
           .from('payment_operation_events')
           .select('event_kind,outcome,trigger,occurred_at,error_class,order_id,user_id')
           .gte('occurred_at', since)
           .lte('occurred_at', now.toISOString())
-          .order('occurred_at', { ascending: true })
-          .limit(MAX_EVENTS),
-      ]),
+          .order('occurred_at', { ascending: false })
+          .limit(MAX_EVENTS)
+      ),
       QUERY_TIMEOUT_MS
     );
-    if (ordersResult.error)
-      throw new Error(`payment alert order scan failed: ${ordersResult.error.message}`);
-    if (latestOrdersResult.error)
-      throw new Error(
-        `payment alert latest order scan failed: ${latestOrdersResult.error.message}`
-      );
-    if (eventsResult.error)
-      throw new Error(`payment alert event scan failed: ${eventsResult.error.message}`);
-    const orders = ((ordersResult.data ?? []) as Row[]).map(toOrderSnapshot);
-    const latestOrders = ((latestOrdersResult.data ?? []) as Row[]).map(toOrderSnapshot);
-    const telegramIds = await withTimeout(
-      lookupTelegramIds([...orders, ...latestOrders].map((order) => order.userId)),
-      QUERY_TIMEOUT_MS
-    );
-    const withTelegramId = (order: PaymentAlertSnapshot['orders'][number]) => ({
-      ...order,
-      telegramId: telegramIds.get(order.userId) ?? null,
-    });
-    return {
-      orders: orders.map(withTelegramId),
-      latestOrders: latestOrders.map(withTelegramId),
-      operations: (eventsResult.data ?? []) as EventRow[],
-      productionWebhookBaseline: false,
-    };
+    if (error) throw new Error(`payment alert event scan failed: ${error.message}`);
+    return { operations: ((data ?? []) as PaymentOperation[]).reverse() };
   }
 }
 
 export class PaymentAlertMonitor {
   private healthyWindows = new Map<string, number>();
   constructor(
-    private readonly repository: PaymentAlertMonitorRepository,
-    private readonly publisher: AlertPublisher,
+    private readonly repository: Pick<PaymentAlertMonitorRepository, 'snapshot'>,
+    private readonly publisher: Pick<AlertPublisher, 'publish'>,
     private readonly log: Pick<Logger, 'biz' | 'sys'>
   ) {}
   async runOnce(now = new Date()): Promise<{ published: number }> {
@@ -127,36 +69,7 @@ export class PaymentAlertMonitor {
     return { published };
   }
 }
-async function lookupTelegramIds(userIds: string[]): Promise<Map<string, string>> {
-  const unique = [...new Set(userIds.filter((id) => id.length > 0))];
-  const telegramIds = new Map<string, string>();
-  if (unique.length === 0) return telegramIds;
-  const db = getDomainDb('app_core');
-  for (let index = 0; index < unique.length; index += 100) {
-    const chunk = unique.slice(index, index + 100);
-    const { data, error } = await db.from('users').select('id,tg_id').in('id', chunk);
-    if (error) throw new Error(`payment alert telegram id lookup failed: ${error.message}`);
-    for (const row of data ?? []) {
-      const id = (row as { id?: unknown }).id;
-      const tgId = (row as { tg_id?: unknown }).tg_id;
-      if (typeof id === 'string' && typeof tgId === 'string' && tgId.length > 0) {
-        telegramIds.set(id, tgId);
-      }
-    }
-  }
-  return telegramIds;
-}
-function toOrderSnapshot(row: Row): PaymentAlertSnapshot['orders'][number] {
-  return {
-    orderId: row.id,
-    userId: row.user_id,
-    checkoutConfirmedAt: row.checkout_confirmed_at,
-    status: row.status,
-    paidAt: row.paid_at,
-    fulfillmentApplied: row.fulfillment_applied,
-    settledBy: row.settled_by,
-  };
-}
+
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   return await Promise.race([
     promise,
@@ -165,6 +78,7 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T
     }),
   ]);
 }
+
 async function retry<T>(work: () => Promise<T>, attempts: number): Promise<T> {
   let last: unknown;
   for (let i = 0; i < attempts; i++) {

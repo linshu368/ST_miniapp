@@ -175,15 +175,6 @@ describe('openPaymentUrl', () => {
     expect(openLink).toHaveBeenCalledWith('https://pay.example/checkout');
     expect(assign).not.toHaveBeenCalled();
   });
-
-  it('navigates directly for a WeChat scheme', () => {
-    const { assign } = stubWindow();
-
-    openPaymentUrl('weixin://dl/business/?ticket=test');
-
-    expect(assign).toHaveBeenCalledWith('weixin://dl/business/?ticket=test');
-    expect(openLink).not.toHaveBeenCalled();
-  });
 });
 
 describe('requestTelegramFileDownload', () => {

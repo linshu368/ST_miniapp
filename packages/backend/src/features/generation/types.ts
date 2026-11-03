@@ -11,6 +11,7 @@ import type { FirstTokenAttemptStore } from './first-token-fallback.js';
 import type { LlmBillingSnapshot } from '../../infrastructure/repositories/ConversationHistoryRepository.js';
 import type { SseTapResult } from './upstream.js';
 import type { RequestLogger } from '../../lib/logger.js';
+import type { BalancePrecheck, BillingPlan } from './precheck.js';
 
 /**
  * 生成出口的日志入口。对话链路传请求内的 requestLogger（带 reqId），
@@ -39,6 +40,7 @@ export interface ResolvedModel {
   billingContext?: ModelBillingContext;
   firstTokenPolicy?: {
     fallbackModelId?: string;
+    fallbackProviders?: [string, string];
     timeoutMs: number;
     fallbackTimeoutMs?: number;
     deadlineMs: number;
@@ -64,6 +66,12 @@ export interface GenerationPreparation {
   routingPreferences: Array<OpenRouterProviderPreferences | null>;
   creatorUserId: string | null;
   quotaLimit?: number;
+  /** Paid models need no quota decision. One request-local read can overlap prompt assembly. */
+  paidAdmission?: {
+    userId: string;
+    plan: BillingPlan;
+    balance: Promise<BalancePrecheck>;
+  };
 }
 
 export interface GenerationRequest {

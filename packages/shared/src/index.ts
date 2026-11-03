@@ -20,6 +20,7 @@ export * from './api/instruction-slot-rules';
 export * from './api/word-count-tiers';
 export * from './api/lobby-ranking-params';
 export * from './api/lobby-pinned-characters';
+export * from './api/lobby-recommendation';
 export * from './api/wallet';
 export * from './api/feature-free-trials';
 export * from './api/conversations';
@@ -67,3 +68,7 @@ export * from './api/reply-style-options';
 export * from './api/creator-characters';
 
 export * from './api/creator-tools.js';
+
+export * from './api/creator-analytics.js';
+
+export * from './api/character-wishes.js';

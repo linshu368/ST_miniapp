@@ -181,3 +181,11 @@ send/regenerate 携带可选 `first_token_measurement`；后端通过既有 begi
 ## 同角色多会话抽屉（2026-11-02，本地候选）
 
 ChatSessionDrawer将空/角色同名/明确默认分支名以created_at显示区分，保留自定义名称，用CSS限制展示行数，不回写title或修改共享七字helper。当前标记、已有preview/最近时间和branch.source_turn_index帮助辨认；每行44px更多入口展开重命名、置顶、删除，复用既有query/mutation及删除确认。SessionRenameField可传展示placeholder且输入法组合Enter不提前保存。无新增接口/数据库/生成调用。chat-sessions场景复用chat.spec验证390/320宽度及原分支流程。
+
+## 首字等待提示与连接保温（2026-11-02）
+
+客户端首字计时到点只显示软提示“网络有点慢，正在接收回复”，不提供重试；服务端错误或持久化失败终态才提示重试，成功后提示消失。计时结果只进遥测，不影响计费。
+
+聊天页用 `useApiConnectionWarmth` 保持到 API 源站的连接：页面可见且 5 分钟内有操作时请求 `/health`，经 `warmApiConnection` 节流到最多每 25 秒一次。它不走 `apiClient`，不带自定义头，失败静默。
+
+Wrong：用客户端时钟宣布失败，或把保温做成无上限轮询。Correct：服务端拥有失败判定，保温随用户活动有界运行。

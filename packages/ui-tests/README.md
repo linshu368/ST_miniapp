@@ -170,3 +170,31 @@ pnpm test:ui:fixtures            # 模拟服务本身的协议与隔离检查
 ## 同角色多段对话
 
 场景 `chat-sessions` 复用 `chat.spec.ts`，定向运行 `pnpm test:ui --grep @chat-sessions`。包含两个同名默认会话、长自定义名、默认分支、继承自定义名的分支，以及置顶和当前状态。390/320尺寸验证创建日期区分且不回写标题、自定义名称完整保留、来源轮次、更多菜单不跳转、重命名取消/保存、置顶、删除取消及切换当前会话，并保留两张截图。PATCH/DELETE 仅操作本机虚构会话；此场景不更改生产接口、排序或分支逻辑。
+
+## 角色评分口径（本地候选）
+
+`pnpm test:lobby-ranking` 复用现有Vitest评分/排序/参数测试，并在自动创建且自动删除的本机PG17容器中执行真实统计SQL。需要Docker；不读取项目env、不连接远端数据库、不使用真实用户。覆盖首次接触前满24小时且10个有效轮次、边界、失败/空白/重生成去重、历史资格不追溯、跨窗口与R48观察期、零合格样本覆盖旧分。容量复验用 `ST_LOBBY_SCORE_BENCHMARK=1 pnpm test:lobby-ranking`，自动生成40万虚构轮次并报告EXPLAIN耗时。
+
+这里改变离线评分，不改变页面；`@roleplay`仍负责大厅交互，浏览器mock不能证明评分SQL正确。推荐轮换继续复用下方的大厅场景。
+
+## 前几屏优质轮换
+
+`pnpm test:ui --grep @lobby-rotation`复用角色大厅，包含24小时边界、试聊返回不换批、手动换批/撤回、失败保留/丢响应同UUID、实际曝光、账号缓存隔离、下架保序与320/390布局。场景入口提供 `lobby-rotation`、`lobby-rotation-error`、`lobby-rotation-lost-response`；36张虚构卡，无生产连接。时间控制只在本机fixture中存在，模拟POST `/__preview/lobby`推进服务端时钟；生产API不提供该控制。
+
+UI fixture轮换用确定顺序方便验证，不代表生产随机算法；`pnpm test:lobby-ranking`另跑真实生产算法/HTTP契约和一次性PG17，验证质量分档、曝光恢复、22候选相邻去重、旧证据、权限/迁移重放、CAS与独立连接并发。两种验收互补，之后功能调整直接复用这两个命令。
+
+## 创作数据验收
+
+`ST_UI_APP_PORT=3180 pnpm preview:ui`，从 `/creation?tab=created` 点击「创作数据」或直接打开 `/creation/data`。`creator-data`、`creator-data-empty`、`creator-data-error` 三种场景固定；执行 `ST_UI_TEST_APP_PORT=3190 pnpm test:ui --grep @creator-data` 复用390/320移动验收，若端口占用请选择另一对空闲端口，不结束其他窗口服务。
+
+生产组件消费真实鉴权API，预览通过同一shared契约从fixture server读取合成数据（`fixtures/creator-analytics.ts`）；示例只在预览显示标记。覆盖：首页3条/无翻页，全部作品/奖励/反馈服务端分页，首尾禁用，返回列表保留页码，多角色/周期/排序、0收入、空态、503重试、不泄漏后台规则说明。仅在展示接口断网失败时重试，不把失败当0。
+
+统计SQL通过既有 `bash scripts/test-creator-characters-local.sh` 验证：无网络PG17、实际迁移、实际参数化查询；覆盖作者隔离、自用、私密卡、重复生成/分支继承、首次成功日期、北京跨日、多卡用户去重、真实到账/退款/抵扣、删除评论和分页。可用 `CREATOR_TEST_CONTAINER=已有隔离容器` 复用，不依赖Supabase或生产密钥。
+
+本地验收不等于已连接或核验生产创作者数据；本轮不改扣费和奖励发放。
+
+## 角色心愿墙（本地候选）
+
+场景 `wishes` / `wishes-error` / `wishes-response-error`，从 `/wishes` 进入；`pnpm test:ui --grep @wishes` 复用既有手机验收。固定内容全部虚构，覆盖提交前所有人可见且不显示昵称头像的明确提示、仅匿名公开、我的心愿筛选、支持/取消、创作数据入口、已有作品回应、通知回到心愿、失败保留原稿、从心愿新建角色的来源恢复，以及已发布但回应失败时只重试关联和窄屏布局。卡片后续改私密时，公共墙隐藏回应入口。
+
+`pnpm test:ui:fixtures` 同时验证 shared 响应、拒绝 private 提交、本人筛选隔离、重复支持/重复回应/创建重试和500字上限。浏览器 fixture 只验证真实前端与模拟HTTP的完整链路；真实数据库权限、事务和通知幂等继续由后端/隔离Postgres验证，不代表远端迁移已执行或真实用户已收到通知。

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ProviderSlugSchema } from './provider-routing.js';
 
 import { VIP_TEXT_DISCOUNT_RATE, VipEntitlementSummarySchema } from './vip.js';
 import { VipTextDiscountRateSchema } from './vip-strategy.js';
@@ -16,6 +17,43 @@ export const DEFAULT_FIRST_TOKEN_DEADLINE_MS = 6_000;
 export const DEFAULT_FALLBACK_TOKEN_TIMEOUT_MS = 2_000;
 export const DEFAULT_FIRST_TOKEN_TIMEOUT_RATE_TARGET = 0.01;
 export const FIRST_TOKEN_FALLBACK_MODEL_ID = 'deepseek/deepseek-v4.1-flash-1017';
+export const FallbackProviderRoutesSchema = z
+  .array(
+    z.object({
+      model_id: z
+        .string()
+        .trim()
+        .min(3)
+        .max(200)
+        .regex(/^[^\s/]+\/[^\s/]+$/),
+      preferred_providers: z
+        .tuple([ProviderSlugSchema, ProviderSlugSchema])
+        .refine(
+          ([first, second]) => first.toLowerCase() !== second.toLowerCase(),
+          '请选择两个不同的优先供应商'
+        ),
+    })
+  )
+  .max(100)
+  .refine(
+    (routes) => new Set(routes.map((route) => route.model_id.toLowerCase())).size === routes.length,
+    '同一兜底型号只能配置一组优先供应商'
+  );
+
+/** Legacy 1017 has an explicit compatibility policy; never reuse it for another model. */
+export function resolveFallbackProviders(
+  catalog: Pick<ModelCatalog, 'fallback_model_id' | 'fallback_provider_routes'>
+): [string, string] | undefined {
+  const modelId = catalog.fallback_model_id ?? FIRST_TOKEN_FALLBACK_MODEL_ID;
+  const route = catalog.fallback_provider_routes?.find(
+    (item) => item.model_id.toLowerCase() === modelId.toLowerCase()
+  );
+  return route
+    ? [...route.preferred_providers]
+    : modelId === FIRST_TOKEN_FALLBACK_MODEL_ID
+      ? ['together', 'crusoe']
+      : undefined;
+}
 export const FIRST_TOKEN_RETRY_MESSAGE = '这次回应稍慢，再试一次吧';
 const FirstTokenDurationSchema = z.number().int().positive().max(110_000);
 
@@ -101,6 +139,7 @@ export const ModelCatalogTierSchema = z.object({
 export const ModelCatalogSchema = z
   .object({
     default_model_id: z.string().trim().min(1),
+    fallback_provider_routes: FallbackProviderRoutesSchema.optional(),
     fallback_model_id: z
       .string()
       .trim()

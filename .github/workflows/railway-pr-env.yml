@@ -64,7 +64,6 @@ jobs:
               --service-config "$RAILWAY_SERVICE" source.branch "$HEAD_REF" \
               --service-config "$RAILWAY_SERVICE" variables.PORT.value "8080" \
               --service-config "$RAILWAY_SERVICE" variables.SENTRY_ENVIRONMENT.value "preview" \
-              --service-config "$RAILWAY_SERVICE" variables.PAYMENT_NOTIFY_URL.value "${BACKEND_URL}/api/payment/webhook/zqpay" \
               --service-config "$RAILWAY_SERVICE" variables.PAYMENT_RETURN_URL.value "${BACKEND_URL}/api/payment/return" \
               --service-config "$RAILWAY_PAYMENT_CRON_SERVICE_ID" deploy.startCommand "$PAYMENT_CRON_START_COMMAND" \
               --json

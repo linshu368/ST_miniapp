@@ -3,8 +3,8 @@
  *
  * 大厅推荐 v3 排序分的每日刷新。
  *
- * 为什么是 job 而不是查询时算：80 天窗口的两条聚合都是全表级扫描，其中 R48 还要
- * 回溯全历史定新客并用 LAG 切会话。挂在读路径上，首页每次刷新都会付这个成本。
+ * 为什么是 job 而不是查询时算：先回溯全历史确定首触前资历，再统计 80 天窗口的
+ * 深度与回访。挂在读路径上，首页每次刷新都会付全历史扫描和会话切分的成本。
  *
  * 为什么走 DIRECT_URL 的独立客户端（2026-10-22）：
  * 聚合要跑几分钟，而 API 的共享池只有 connection_limit=10。滚动发布时每个副本都会在
@@ -14,7 +14,7 @@
  * 为什么用 session advisory lock、而不是整轮包在交互式长事务里（2026-10-26）：
  * 以前 `pg_try_advisory_xact_lock` + `$transaction` 会让 Postgres 在整段聚合期间持有
  * 一个打开的事务快照（常达数分钟）。直连额度虽已隔离，长事务仍加重 vacuum/可见性与
- * 后端压力。改为 `pg_try_advisory_lock`（session 级）后：聚合语句各自短提交，仅落表
+ * 后端压力。改为 `pg_try_advisory_lock`（session 级）后：聚合用一条语句的快照，仅落表
  * 用短事务包住 INSERT+DELETE；`connection_limit=1` 保证锁与查询落在同一条连接上。
  */
 
@@ -39,7 +39,7 @@ const STARTUP_DELAY_MS = 30 * 1000;
 /**
  * 库侧单条语句的上限，必须在专用连接上显式抬高。
  *
- * 平台默认 statement_timeout=120s；两条 80 天聚合在这张表上跑不完 120 秒。
+ * 平台默认 statement_timeout=120s；全历史资历与窗口聚合需要独立的离线耗时预算。
  * 用 session 级 set_config（第三个参数 false），finally 里再 RESET，避免留给下轮连接。
  */
 const STATEMENT_TIMEOUT_MS = 8 * 60 * 1000;
@@ -159,8 +159,8 @@ export async function runLobbyRankingRefresh(log: FastifyBaseLogger): Promise<vo
     const raw = await computeRawCardStats(dedicated, params);
     const scores = computeRankingScores(raw, params);
 
-    // 空结果意味着整个窗口内一条对话都没有。真实环境不可能，
-    // 更像是聚合出了问题——这种时候清表会把整个大厅打回随机顺序，宁可不动。
+    // 只有整窗口完全没有卡片活动才是空结果；有活动但无合格用户的卡会产出 n=0，
+    // 必须照常落表覆盖旧样本。真正空结果继续保留原快照，避免异常清表。
     if (scores.length === 0) {
       log.warn(
         { kind: 'sys', event: 'lobby_ranking.skipped_empty', durationMs: Date.now() - startedAt },
@@ -186,6 +186,10 @@ export async function runLobbyRankingRefresh(log: FastifyBaseLogger): Promise<vo
         event: 'lobby_ranking.completed',
         cardCount: scores.length,
         matureCount: scores.filter((row) => row.sampleSize >= params.min_users).length,
+        zeroSampleCardCount: scores.filter((row) => row.sampleSize === 0).length,
+        // 同一用户可为不同卡贡献样本，这里记录 user-card 对数而非全平台去重人数。
+        qualifiedUserCardCount: scores.reduce((sum, row) => sum + row.sampleSize, 0),
+        returnObservationCount: scores.reduce((sum, row) => sum + row.returnSampleSize, 0),
         durationMs: Date.now() - startedAt,
         windowDays: params.window_days,
         paramsVersion: version,

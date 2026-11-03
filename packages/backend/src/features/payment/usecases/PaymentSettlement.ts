@@ -1,14 +1,13 @@
 /**
  * backend / features / payment / usecases / PaymentSettlement.ts
  *
- * 支付入账的唯一出口。四个入口共用这里：
- *   - 异步通知      routes/payment.ts  POST|GET /api/payment/webhook/zqpay
- *   - 同步回跳      routes/payment.ts  GET /api/payment/return
- *   - 前端轮询查单  routes/payment.ts  GET /api/payment/orders/:id
- *   - 判过期前查单  scripts/expire-payment-orders.ts
+ * 支付入账的唯一出口。所有可信确认都走这里：
+ *   - Webhook        routes/payment.ts  POST /api/payment/webhook/vexutopia（验签）
+ *   - 前端轮询/回跳  routes/payment.ts  GET /api/payment/orders/:id、GET /api/payment/return（主动查单）
+ *   - 对账任务       features/payment/usecases/PaymentReconciliation.ts（批量查单）
  *
- * 厂商的异步通知不保证送达（2026-08-21 实测有整条没推的订单），所以到账不能只挂在
- * 通知上；但多入口就必须共用一条幂等路径，否则会出现重复加星尘。
+ * Webhook 不保证送达，所以到账不能只挂在通知上；但多入口就必须共用一条幂等路径，
+ * 否则会出现重复加星尘。回跳 URL 参数不签名，永远不直接作为入账依据。
  */
 
 import type { PaymentOrderStatus, PaymentSettlementSource } from '@miniapp/shared';
@@ -19,7 +18,10 @@ import type {
   MiniappPaymentOrderRepository,
   MiniappPaymentOrderRow,
 } from '../../../infrastructure/repositories/MiniappPaymentOrderRepository.js';
-import type { ZqPaymentGateway } from '../../../infrastructure/payment/ZqPaymentGateway.js';
+import type {
+  PaymentGateway,
+  PaymentQueryTarget,
+} from '../../../infrastructure/payment/VexutopiaPaymentGateway.js';
 import { paymentSuccessNotice } from '../domain/paymentNotice.js';
 import { observePaymentOrderSettled } from './PaymentOrderTelemetry.js';
 import {
@@ -192,8 +194,8 @@ const lastQueryAt = new Map<string, number>();
  * 返回是否发生了状态变化，调用方据此决定要不要重读订单。
  */
 export async function reconcileWithGateway(
-  order: { id: string; status: PaymentOrderStatus },
-  gateway: Pick<ZqPaymentGateway, 'queryOrder'>,
+  order: PaymentQueryTarget & { status: PaymentOrderStatus },
+  gateway: Pick<PaymentGateway, 'queryOrder'>,
   orders: SettlementOrders,
   log: SettlementLogger,
   source: SettlementSource = 'query',
@@ -202,6 +204,15 @@ export async function reconcileWithGateway(
   const settleable = order.status === 'pending' || order.status === 'expired';
   if (!settleable) {
     recordPaymentOperationEvent(events, log, queryEvent(order, source, 'skipped', null));
+    return false;
+  }
+  // 建单中途失败的订单没有平台单号，查不了；不发请求也不计失败，避免拉高查单失败率。
+  if (!order.provider_transaction_id) {
+    recordPaymentOperationEvent(
+      events,
+      log,
+      queryEvent(order, source, 'skipped', 'missing_provider_ref')
+    );
     return false;
   }
 
@@ -219,10 +230,16 @@ export async function reconcileWithGateway(
   lastQueryAt.set(order.id, now);
 
   const startedAt = Date.now();
-  const result = await gateway.queryOrder(order.id);
+  const result = await gateway.queryOrder(order);
   if (!result.success) {
     log.sys.warn(
-      { event: 'payment.query.failed', orderId: order.id, source, reason: result.errorMessage },
+      {
+        event: 'payment.query.failed',
+        orderId: order.id,
+        source,
+        errorClass: result.errorClass,
+        providerCode: result.providerCode,
+      },
       '主动查单失败'
     );
     recordPaymentOperationEvent(events, log, {
@@ -303,7 +320,7 @@ function settlementEvent(
   };
 }
 
-/** 厂商金额是「元」字符串，本地订单是「分」整数。非法格式返回 NaN，让金额校验必然失败。 */
+/** 平台金额是「元」字符串（可能是 "1" 或 "1.00"），本地订单是「分」整数。非法格式返回 NaN，让金额校验必然失败。 */
 export function parseAmountCents(amount: string | undefined): number {
   if (!amount || !/^\d+(?:\.\d{1,2})?$/.test(amount)) return NaN;
   const [yuan = '0', fraction = ''] = amount.split('.');

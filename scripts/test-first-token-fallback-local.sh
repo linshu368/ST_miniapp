@@ -213,13 +213,50 @@ assert not old.get('refresh') and not old.get('__inputs')
 assert not old['templating']['list']
 assert all(not p.get('targets') for p in old['panels']), 'Retired board still queries Supabase'
 new=json.loads((root/'docs/grafana/st-engineering-roleplay.json').read_text())
-assert {101,102,103,104,105,106}.issubset({p['id'] for p in new['panels']})
+assert {101,102,103,104,105,106,107,108,109}.issubset({p['id'] for p in new['panels']})
 for p in new['panels']:
  for t in p.get('targets',[]):
   assert 'rawSql' not in t and t['datasource']['type'] in ('loki','prometheus')
 print('PASS: retired first-token board has no SQL/refresh; replacement reads only Loki/Metrics')
 PYDASHBOARD
 echo 'PASS: first-token SQL business identity, delivery CAS, frozen quote, reporting ACL and immutable receipt'
+
+# The provider validator only changes config-write validation, preserving the existing function ACL.
+"${task_psql[@]}" -c "CREATE TABLE admin.fallback_validator_test_shape AS SELECT oid,proowner,proacl FROM pg_proc WHERE oid='admin.validate_model_catalog_first_token(jsonb)'::regprocedure" >/dev/null
+"${task_psql[@]}" -f "$task_root/packages/shared/migrations/20261102_fallback_provider_priority.sql" >/dev/null
+"${task_psql[@]}" -f "$task_root/packages/shared/migrations/20261102_fallback_provider_priority.sql" >/dev/null
+"${task_psql[@]}" >/dev/null <<'SQL'
+DO $$ DECLARE invalid jsonb; BEGIN
+  IF NOT EXISTS (SELECT 1 FROM admin.fallback_validator_test_shape s JOIN pg_proc p USING(oid)
+    WHERE s.proowner=p.proowner AND s.proacl IS NOT DISTINCT FROM p.proacl) THEN RAISE EXCEPTION 'validator identity/ACL changed'; END IF;
+  PERFORM admin.validate_model_catalog_first_token('{"fallback_model_id":"deepseek/deepseek-v4.1-flash-1017"}');
+  PERFORM admin.validate_model_catalog_first_token('{"fallback_model_id":"vendor/new","fallback_provider_routes":[{"model_id":"vendor/new","preferred_providers":["fast-a","fast-b"]}]}');
+  FOREACH invalid IN ARRAY ARRAY[
+    '{"fallback_model_id":"vendor/new"}'::jsonb,
+    '{"fallback_provider_routes":null}',
+    '{"fallback_provider_routes":[{"model_id":"vendor/new","preferred_providers":["a"]}]}',
+    '{"fallback_provider_routes":[{"model_id":"vendor/new","preferred_providers":["a","A"]}]}',
+    '{"fallback_provider_routes":[{"model_id":"vendor/new","preferred_providers":["a",null]}]}',
+    '{"fallback_provider_routes":[{"model_id":"vendor/new","preferred_providers":["a","b"]},{"model_id":"vendor/new","preferred_providers":["c","d"]}]}',
+    '{"first_token_deadline_ms":2000,"fallback_timeout_ms":2000}'
+  ] LOOP
+    BEGIN
+      PERFORM admin.validate_model_catalog_first_token(invalid);
+      RAISE EXCEPTION 'invalid fallback provider configuration accepted';
+    EXCEPTION WHEN invalid_parameter_value THEN NULL; END;
+  END LOOP;
+END $$;
+DROP TABLE admin.fallback_validator_test_shape;
+SQL
+echo 'PASS: model-specific provider pairs, legacy 1017, budget validation and validator identity/ACL preserved'
+
+# Delivery billing now follows server facts only. Function identity and ACL must not change.
+"${task_psql[@]}" -c "CREATE TABLE billing.server_delivery_test_shape AS SELECT oid,proowner,proacl FROM pg_proc WHERE oid IN ('billing.chat_delivery_billing_gate(uuid)'::regprocedure,'experience.report_chat_first_token(uuid,uuid,jsonb)'::regprocedure);" >/dev/null
+"${task_psql[@]}" -f "$task_root/packages/shared/migrations/20261102_first_token_server_delivery_billing.sql" >/dev/null
+"${task_psql[@]}" -f "$task_root/packages/shared/migrations/20261102_first_token_server_delivery_billing.sql" >/dev/null
+"${task_psql[@]}" -c "SELECT vip_t4_test.assert((SELECT count(*)=2 FROM billing.server_delivery_test_shape s JOIN pg_proc p USING(oid) WHERE s.proowner=p.proowner AND s.proacl IS NOT DISTINCT FROM p.proacl),'delivery function identity/ACL changed'); DROP TABLE billing.server_delivery_test_shape;" >/dev/null
+"${task_psql[@]}" -f "$task_root/packages/shared/migrations/tests/first_token_server_delivery_billing.sql" >/dev/null
+echo 'PASS: on-time server reply billed once despite browser deadline; server cutoffs, late first token, missing receipt and old failures unchanged'
 
 # Run the existing real wallet/free-quota migration suite in another disposable DB.
 mkdir "$task_dir/bin"

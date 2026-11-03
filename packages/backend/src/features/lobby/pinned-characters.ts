@@ -27,6 +27,8 @@ const CACHE_TTL_MS = 60_000;
 export interface ResolvedLobbyPinnedCharacters {
   /** 按展示顺序排列的固定位 id；空数组表示不固定 */
   characterIds: readonly string[];
+  /** Only personal rotation consumes this explicit single fixed slot. */
+  fixedCharacterId?: string | null;
   /** 运营配置不可用、走了「不固定」兜底 */
   degraded: boolean;
   /** 兜底时为 null */
@@ -90,6 +92,7 @@ async function readPinnedCharacters(
 
   return {
     characterIds: parsed.data.character_ids,
+    fixedCharacterId: parsed.data.fixed_character_id ?? null,
     degraded: false,
     version: entry.version,
   };

@@ -342,7 +342,7 @@ T9 专表 contract：`20261016_openrouter_chat_history_drop_legacy_aliases.sql` 
 
 `20260924_vip_plans_price_1_and_2_yuan.sql` 只改已发布配置和未发布草稿的 `price_cents`。任务日志没有记录该文件在 test 或 Production 的 apply；未执行前，页面价格仍是当时已发布值。T8 不补执行。
 
-支付仍走现有四路，进入 `complete_payment_order`。VIP 订单履约延长会员并按商品快照发放专项星尘；同一订单重复确认只履约一次。购买开关关闭时不能新建 VIP 订单，已履约会员继续有效。
+支付仍走现有入账路径，进入 `complete_payment_order`。VIP 订单履约延长会员并按商品快照发放专项星尘；同一订单重复确认只履约一次。购买开关关闭时不能新建 VIP 订单，已履约会员继续有效。
 
 到期提醒脚本是 `packages/backend/src/scripts/send-vip-expiry-reminders.ts`。`--dry-run` 只计数。`--write` 还要求已发布 `vip_reminders_enabled` 恰好为 true。窗口是 Asia/Shanghai 的到期当天和提前 3 天，同一周期不重复插入。Railway development 的 `stminiapp-vip-reminder-cron` 以 `--write` 运行；production IaC 不声明该 Cron。消息详情是 `GET /api/notifications/:id`；`POST /api/notifications/read` 必须带具体 id，只提交 scope 会 400。历史通知正文不因续费改写。
 
@@ -453,7 +453,7 @@ experience.chat_sessions  1 ─── N  experience.chat_history
 | `models.ts`               | `GET /api/platform/openrouter/models`、`GET /api/v1/models/config`、`POST /api/v1/models/select`（旧 tiers 端点 `/api/platform/models` 已删）                      | 部分公开                         |
 | `settings.ts`             | `GET`/`PATCH /api/users/settings`、`POST /api/users/avatar`                                                                                                        | `X-Init-Data`                    |
 | `wallet.ts`               | `/api/wallet/balance` · `/spending` · `/free-quota/:characterId` · `/checkin`                                                                                      | `X-Init-Data`                    |
-| `payment.ts`              | `/api/payment/plans` · `/orders*` · `/return` · `/webhook/zqpay`                                                                                                   | RSA 回调验签                     |
+| `payment.ts`              | `/api/payment/plans` · `/orders*` · `/return` · `/webhook/vexutopia`                                                                                               | HMAC-SHA256 回调验签             |
 | `vip.ts`                  | `GET /api/vip/status` · `POST /api/vip/entry-viewed`                                                                                                               | `X-Init-Data`                    |
 | `notifications.ts`        | `/api/notifications` · `/unread-count` · `/:id` · `/read`（已读必须带消息 id）                                                                                     | `X-Init-Data`                    |
 | `support.ts`              | `/api/support/conversation` · `/messages` · `/unread` · `/read`                                                                                                    | `X-Init-Data`                    |
@@ -469,13 +469,15 @@ frontend 自有 Route Handler：`GET /api/lobby-characters`（白名单 sort 参
 
 **鉴权机制**：用户侧统一 `requireTelegramAuth`（`middleware/auth.ts`，读 `X-Init-Data` 做 HMAC-SHA256 校验；非生产可用 `MOCK_AUTH=1` / `DEV_AUTH_BYPASS=1` 旁路）。admin 用 Supabase 会话，客服服务调用靠共享密钥 `X-CS-Internal-Secret`（主后端 → 客服服务，见 `lib/cs-service.ts`），Bot 用 `X-Bot-Internal-Secret` 与 Telegram webhook secret。
 
+大厅评分资格校准（本地候选）：仍由 `lobby-ranking-refresh-job` 的独立连接离线聚合、短事务覆盖 `miniapp_features.character_ranking_scores`，不进入大厅请求路径。以每个用户首次向某卡发起聊天的历史时间为准，要求全平台首次有效聊天满24小时、至少10个有效逻辑轮次完成在先；成功且输入/回复非空才算资历，同轮重生成只算一次。完成时间优先使用不早于记录创建的结算时刻，旧记录缺失时退回创建时间，不能证明旧记录秒级真实完成先后。D30/R48原参数、合格用户的发起轮次统计和观察期保持；活动卡无合格用户仍输出零样本，不能沿用旧成熟资格。无schema/公开契约改动，发布后下次成功重算才生效，本地改动不等于线上已更新。
+
 **进程内定时任务**（`app.ts` 启动，不走 HTTP）：`features/generation/sync-job.ts`（OpenRouter 计费回捞）、`features/image/job.ts`（角色回复图片 DB 租约 worker，可由 `IMAGE_WORKER_ENABLED` 关闭）、`features/image-plaza/job.ts`（图片广场 Venice worker，可由 `IMAGE_PLAZA_WORKER_ENABLED` 关闭）、`lib/lobby-ranking-refresh-job.ts`（大厅排序重算）。支付对账与过期是独立 Railway 服务（见 §8）。
 
 ---
 
 ## 7. 工程约定
 
-MiniApp 启动展示与业务数据分离：根 `Providers` 在 Telegram 初始化前输出无请求的 `EntryShell`，角色/短剧列表复用现有骨架、短剧栏目及五项导航；初始化后在绘制机会后发送 SDK `miniApp.ready()`。`lib/perf/startup-timing.ts` 复用 Sentry distribution 上报从文档导航起算的框架可展示/ready 通知耗时，与原 `page.ready.duration` 分开；本地增量 `startup-phases.ts` 记录首次模块/render/SDK/bootstrap 节点，ready 后补充导航、受限资源摘要及分段分布，≥5s 附一条身份隔离的慢启动数值事件，尚待发布验证。P95、后台/离开和原生遮罩观测边界见 [前端性能规范](../.trellis/spec/frontend/app/testing-quality-and-deployment.md#miniapp-启动框架与-p95)。
+MiniApp 启动展示与业务数据分离：根 `Providers` 初始化前输出无请求的 `EntryShell`，角色/短剧列表复用骨架、短剧栏目及五项导航。RootLayout 在 HTML 中独立确认框架绘制机会并发送原生 ready，SDK 保留未支持路径的兜底与去重；`startup-timing.ts` 复用 Sentry distribution 按文档导航起点上报框架/ready 耗时，与 `page.ready.duration` 分开。`startup-phases.ts` 保留模块/render/SDK/bootstrap 节点并在 ready 后补报摘要；v2 阶段不承诺相加为框架耗时，详情与阈值见 [前端性能规范](../.trellis/spec/frontend/app/testing-quality-and-deployment.md#miniapp-启动框架与-p95)。第一、二点已上线（用户确认），第三点分包/展示拆分仅本地；具体边界见本文件末尾开屏章节。
 
 ### 7.1 前端
 
@@ -564,7 +566,7 @@ packages/backend/src/
 | 平台前端     | `packages/frontend`             | Vercel 构建部署，对外域名绑定 Vercel                                                                                                                   | Vercel         |
 | 运营后台     | `packages/admin`                | 独立 Vercel 项目（Vite 静态构建）                                                                                                                      | Vercel         |
 | miniapp 后端 | `ops/docker/Dockerfile.backend` | Railway 服务 **`stminiapp`**（唯一对外 HTTP），容器内 :8080                                                                                            | Railway        |
-| 支付快速对账 | 同上镜像                        | Railway 服务 `stminiapp-payment-reconcile-cron`：常驻 worker，进程内约 30 秒一轮按 `next_reconcile_at` 领单查厂商                                      | Railway        |
+| 支付快速对账 | 同上镜像                        | Railway 服务 `stminiapp-payment-reconcile-cron`：常驻 worker，进程内约 30 秒一轮批量查单（最近 2 小时未履约订单）                                      | Railway        |
 | 支付过期任务 | 同上镜像                        | Railway Cron `stminiapp-payment-cron`：`*/5 * * * *` 跑过期前回溯对账 + 判过期                                                                         | Railway        |
 | VIP 到期提醒 | 同上镜像                        | Railway Cron `stminiapp-vip-reminder-cron`：development / production 均以 `20 * * * *` 执行 `--write`；各环境仍由 `vip_reminders_enabled` 控制真实写入 | Railway        |
 | 数据与存储   | 托管                            | PostgreSQL + Storage；test 与 production 两个项目                                                                                                      | Supabase Cloud |
@@ -575,7 +577,7 @@ packages/backend/src/
 
 **Railway IaC**：`.railway/railway.ts` 声明 `development`（跟 `dev` 分支）与 `production`（跟 `main` 分支）。两个环境都包含上述三个常驻/支付服务与 VIP 提醒 Cron；提醒以 `--write` 运行，但各环境仍受自己的 `vip_reminders_enabled` 开关保护。改动需 `railway config plan/apply`，且渲染 production 必须显式 `RAILWAY_CONFIG_ENV=production`。**`main` 分支自动部署生产**（四个服务的 deployment trigger 均为 `branch=main`）——合并进 `main` 即上线，数据库迁移需在合并前按 §7.4 手动执行。对 `dev` 的 PR 会由 `railway-pr-env.yml` 拉起 `pr-{N}` 临时环境（变量继承 development，指向 test 库）；workflow 会把支付过期 Cron 校准为包内 `tsx` 启动命令，并删除 VIP 提醒 Cron，保证 TEST 只有 development 的单一提醒调度器。
 
-**支付入账的四条路径**（唯一出口 `features/payment/usecases/PaymentSettlement.settlePaidOrder`，幂等靠 `credits_added`，先到者写 `payment_orders.settled_by`）：`webhook`（网关异步回调）→ `return`（同步回跳）→ `query`（订单页轮询时对账）→ `cron`（上述两个 Railway 任务兜底）。四路兜底的由来见历史文档 `git show 7541a54^:docs/payment-missing-credits-remediation.md`（生产曾因 cron 未部署漏账）。
+**支付入账路径**（供应商 Vexutopia，支付宝/微信 CNY；唯一出口 `features/payment/usecases/PaymentSettlement.settlePaidOrder`，幂等靠订单行锁与 `fulfillment_applied`，先到者写 `payment_orders.settled_by`）：`webhook`（`POST /api/payment/webhook/vexutopia`，HMAC 验签，按 metadata `mijing_env` 只处理本环境订单）→ `query`（订单页轮询或回跳时单笔查单）→ `cron`（对账 Worker 每 30 秒、过期 Cron 每 5 分钟用 `POST /v1/payments/lookup` 批量查单）。回跳 URL 不签名，只导航，不作为入账依据；历史订单的 `settled_by='return'` 保留。建单时 Vexutopia 交易号写入 `provider_transaction_id`，没有交易号的订单不会交出收银台。支付告警 v3 只看平台直接信号（建单错误码、平台订单状态、回调验签），见 `features/payment/domain/PaymentAlertRules.ts`。
 
 **体验监控**（Sentry org `wangqiao` / project `st-miniapp`，前后端共用，靠 `service` 标签区分）：p95/p99 来自 Sentry Metrics（全量，不受 trace 采样影响），"卡了"以 warning 事件表达并自带 Replay。前端 `src/lib/perf/` 记录请求耗时与超时（`apiClient` 默认 20 秒超时，图片/语音生成等长耗时接口例外）、页面可用耗时与 4 秒卡住（大厅/聊天列表/会话页/充值）、三个核心按钮 2.5 秒无反馈、资源加载失败；后端 `lib/perf-metrics.ts` 记录每路由耗时（对话/语音/图片生成单独 `kind=generation`）、Prisma 操作耗时（连接池超时标 `pool_timeout`）、事件循环延迟。采样：trace 0.2、Replay 会话 0.05、Replay 报错 1.0。指标清单、看板与排查流程见 `.trellis/tasks/10-21-sentry-ux-monitoring/dashboard-and-runbook.md`。阈值均为初值，待基线校准。
 
@@ -621,7 +623,7 @@ packages/backend/src/
 | 裂变邀请（邀请码 / 绑定 / 三条发奖规则 / 运营台明细与海报）                               | `routes/invite.ts` + `lib/invite-rewards.ts` + 105~109 + admin                                                                               |
 | 官方社群入群奖励（webhook 自动 + 既有成员手动校验）                                       | `routes/community.ts` + `features/community/` + 108 / 109                                                                                    |
 | 大厅推荐排序 v3 + 运营置顶 + 排序参数运营化                                               | 074 / 088 / 093、`features/lobby/`                                                                                                           |
-| 支付四路入账 + 快速对账 + `settled_by` 溯源                                               | `features/payment/` + 100/103 + Railway 双任务服务                                                                                           |
+| 支付入账（Webhook/查单/批量对账）+ `settled_by` 溯源 + 平台信号告警                       | `features/payment/` + 103 + Railway 对账/过期/告警服务                                                                                       |
 | VIP 会员、策略、折扣计费、媒体免费次数与到期提醒（TEST 真机已验收；Production 未开通）    | `routes/vip.ts`、`features/vip/`、`features/payment/`、`features/generation/`、Admin `VipStrategyView`、`20260921`–`20260924` VIP migrations |
 | Schema 划分一阶段（八域物理布局，test + 生产）                                            | 097~099、`getDomainDb`、Prisma 多 schema                                                                                                     |
 | 数据库集成测试                                                                            | `*.integration.test.ts`                                                                                                                      |
@@ -650,31 +652,31 @@ packages/backend/src/
 
 ## 11. 环境变量（backend 主要项）
 
-| 变量                                                                               | 用途                                                                 |
-| ---------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| `DATABASE_ENV` + `PROD_*` / `TEST_*` 变量组                                        | 选择环境并注入下面的标准名；非 prod 连生产库需 `ALLOW_PROD_DATABASE` |
-| `DATABASE_URL` / `DIRECT_URL`                                                      | Prisma 连接                                                          |
-| `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` / `SUPABASE_PROJECT_REF`              | supabase-js 与环境隔离校验                                           |
-| `LLM_UPSTREAM_URL` / `LLM_API_KEY`                                                 | LLM 上游（默认 OpenRouter）与平台真实 key，仅 backend 持有           |
-| `MINIMAX_API_KEY` / `MINIMAX_TTS_URL` / `MINIMAX_TIMEOUT_MS`                       | 语音合成上游                                                         |
-| `DEEPSEEK_API_KEY` / `DEEPSEEK_URL` / `DEEPSEEK_MODEL`                             | 语音台词写稿上游                                                     |
-| `LIAOBOTS_AUTH` / `LIAOBOTS_BASE` / `GROK_MODEL`                                   | 图片 Grok/Liaobots 主上游；鉴权仅 backend secret                     |
-| `REPLICATE_TOKEN` / `REPLICATE_BASE` / `Z_MODEL`                                   | Grok 失败后的 Replicate Z 图片降级通道                               |
-| `IMAGE_GENERATION_TIMEOUT_MS` / `IMAGE_DOWNLOAD_TIMEOUT_MS`                        | 图片 provider 与下载超时                                             |
-| `IMAGE_WORKER_ENABLED` / `IMAGE_WORKER_INTERVAL_MS` / `IMAGE_WORKER_LEASE_SECONDS` | 图片数据库任务 worker 与租约控制                                     |
-| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_WEBHOOK_SECRET` / `BOT_INTERNAL_SECRET`           | InitData 验签、webhook 与 Bot 内部端点鉴权                           |
-| `TELEGRAM_COMMUNITY_BOT_TOKEN`                                                     | 官方社群 Bot：成员校验 `getChatMember` 与 community-webhook 密钥派生 |
-| `CS_SERVICE_URL` / `CS_SERVICE_SECRET`                                             | 独立客服服务地址和共享密钥（Bot 转发与 `/api/support/*` 代理）       |
-| `ADMIN_PLATFORM_URL`                                                               | 运营后台 CORS                                                        |
-| `FRONTEND_URL`                                                                     | CORS 与支付回跳                                                      |
-| `PAYMENT_*`                                                                        | 子千易 V2 RSA 商户配置、支付开关、异步回调与同步回跳地址             |
-| `POSTHOG_API_KEY` / `POSTHOG_HOST` / `POSTHOG_TIMEOUT_MS`                          | 服务端支付终态 capture（缺 key 时 no-op）；不是浏览器公开变量        |
-| `CHARACTER_STORAGE_BUCKET`                                                         | 角色卡资源 bucket（默认 `character-assets`）                         |
-| `DEFAULT_USER_AVATAR_URL`                                                          | 平台默认头像                                                         |
-| `CHAT_HISTORY_SYNC_ENABLED`                                                        | OpenRouter 用量回捞定时任务开关                                      |
-| `LOBBY_RANKING_REFRESH_ENABLED`                                                    | 大厅推荐排序分每日重算开关                                           |
-| `SENTRY_DSN` / `SENTRY_ENVIRONMENT` / `SENTRY_RELEASE`                             | 异常上报（release 缺省回退 `RAILWAY_GIT_COMMIT_SHA`）                |
-| `MOCK_AUTH` / `DEV_AUTH_BYPASS` / `LOG_LEVEL` / `LOG_PRETTY`                       | 本地开发与回归脚本旁路                                               |
+| 变量                                                                               | 用途                                                                    |
+| ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `DATABASE_ENV` + `PROD_*` / `TEST_*` 变量组                                        | 选择环境并注入下面的标准名；非 prod 连生产库需 `ALLOW_PROD_DATABASE`    |
+| `DATABASE_URL` / `DIRECT_URL`                                                      | Prisma 连接                                                             |
+| `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` / `SUPABASE_PROJECT_REF`              | supabase-js 与环境隔离校验                                              |
+| `LLM_UPSTREAM_URL` / `LLM_API_KEY`                                                 | LLM 上游（默认 OpenRouter）与平台真实 key，仅 backend 持有              |
+| `MINIMAX_API_KEY` / `MINIMAX_TTS_URL` / `MINIMAX_TIMEOUT_MS`                       | 语音合成上游                                                            |
+| `DEEPSEEK_API_KEY` / `DEEPSEEK_URL` / `DEEPSEEK_MODEL`                             | 语音台词写稿上游                                                        |
+| `LIAOBOTS_AUTH` / `LIAOBOTS_BASE` / `GROK_MODEL`                                   | 图片 Grok/Liaobots 主上游；鉴权仅 backend secret                        |
+| `REPLICATE_TOKEN` / `REPLICATE_BASE` / `Z_MODEL`                                   | Grok 失败后的 Replicate Z 图片降级通道                                  |
+| `IMAGE_GENERATION_TIMEOUT_MS` / `IMAGE_DOWNLOAD_TIMEOUT_MS`                        | 图片 provider 与下载超时                                                |
+| `IMAGE_WORKER_ENABLED` / `IMAGE_WORKER_INTERVAL_MS` / `IMAGE_WORKER_LEASE_SECONDS` | 图片数据库任务 worker 与租约控制                                        |
+| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_WEBHOOK_SECRET` / `BOT_INTERNAL_SECRET`           | InitData 验签、webhook 与 Bot 内部端点鉴权                              |
+| `TELEGRAM_COMMUNITY_BOT_TOKEN`                                                     | 官方社群 Bot：成员校验 `getChatMember` 与 community-webhook 密钥派生    |
+| `CS_SERVICE_URL` / `CS_SERVICE_SECRET`                                             | 独立客服服务地址和共享密钥（Bot 转发与 `/api/support/*` 代理）          |
+| `ADMIN_PLATFORM_URL`                                                               | 运营后台 CORS                                                           |
+| `FRONTEND_URL`                                                                     | CORS 与支付回跳                                                         |
+| `PAYMENT_ENABLED` / `PAYMENT_RETURN_URL` / `VEXUTOPIA_*`                           | 支付开关、https 回跳地址、Vexutopia API Key / Base URL / Webhook secret |
+| `POSTHOG_API_KEY` / `POSTHOG_HOST` / `POSTHOG_TIMEOUT_MS`                          | 服务端支付终态 capture（缺 key 时 no-op）；不是浏览器公开变量           |
+| `CHARACTER_STORAGE_BUCKET`                                                         | 角色卡资源 bucket（默认 `character-assets`）                            |
+| `DEFAULT_USER_AVATAR_URL`                                                          | 平台默认头像                                                            |
+| `CHAT_HISTORY_SYNC_ENABLED`                                                        | OpenRouter 用量回捞定时任务开关                                         |
+| `LOBBY_RANKING_REFRESH_ENABLED`                                                    | 大厅推荐排序分每日重算开关                                              |
+| `SENTRY_DSN` / `SENTRY_ENVIRONMENT` / `SENTRY_RELEASE`                             | 异常上报（release 缺省回退 `RAILWAY_GIT_COMMIT_SHA`）                   |
+| `MOCK_AUTH` / `DEV_AUTH_BYPASS` / `LOG_LEVEL` / `LOG_PRETTY`                       | 本地开发与回归脚本旁路                                                  |
 
 Vercel 侧关键变量：`NEXT_PUBLIC_API_URL`（用户端 backend 公网域名）。Backend CORS 对应变量由 `packages/backend/src/platform/config.ts` 解析；`ops/env/*.example` 示例文件比实际清单窄，以代码为准。
 
@@ -788,10 +790,44 @@ SSE start携带当轮冻结总预算。客户端若持有旧目录缓存，按�
 
 发布顺序：本地PG/测试→TEST迁移与应用验收→先合dev→生产迁移→Backend/Frontend/Admin→Grafana说明；配置只读核对版本97。回退应用保留兼容RPC，必要时前向修复，不删除账务。
 
-### MiniApp 轻量开屏与启动监控（2026-10-30，本地待发布）
+### MiniApp 轻量开屏与启动分包（2026-10-30）
 
-RootLayout随HTML交付独立框架绘制确认与原生ready脚本，Providers继续原业务初始化并补报真实早期时间戳；SDK负责未支持路径的兜底与通知去重。BrowserTracing首屏后安装，错误捕获和Metrics仍在启动期生效。本轮不改业务分包/预热或CDN；P95≤4秒与>4秒比例的生产基线、v2指标边界及回退见[开屏优化说明](miniapp-startup-performance.md)。
+RootLayout随HTML交付独立框架绘制确认与原生ready脚本，Providers继续原业务初始化并补报真实早期时间戳；SDK负责未支持路径的兜底与通知去重。BrowserTracing首屏后安装，错误捕获和Metrics仍在启动期生效。本次第三点仅拆分非首屏模块与纯展示导航；`EntryShell`引用不挂query/store的`bottom-nav-shell.tsx`，归因网络逻辑在原background阶段动态加载，历史首字回执恢复在原afterFirstScreen门禁后动态导入，聊天直接同步导入回执实现。startParam及邀请pending在清理URL前捕获，支付/身份/Replay核心和当前页面请求不增加等待。保留生产现有移动端策略与底栏串行预热，不新增第二套预热或首帧状态。保留旧基线与第一二点后基线，第三点发布后分别直接比较，不相加。基线来源、版本差异与P95≤4秒验证边界见[开屏优化说明](miniapp-startup-performance.md)。
 
 ### 本地候选：最近十轮消息修订
 
 角色聊天显示与入模统一读取 experience.session_chat_history，其会话级覆盖来自 experience.chat_message_overrides。PATCH /api/v1/conversations/:id/messages/:messageId 用服务端身份和 expected_version 校验，只允许最新逻辑轮号向前十轮的单条编辑/删除；开场白、流式生成中、过期版本拒绝。原 chat_history 继续作为生成与计费事实，分支在创建时复制覆盖快照，删除用无正文占位保留轮号。未执行远端迁移/发布，固定验收入口见 ui-tests README。
+
+## 兜底供应商与调用前等待（2026-11-02，本地候选）
+
+复用模型目录字段 `fallback_provider_routes: [{model_id, preferred_providers: [first, second]}]`，每个兜底型号独立绑定两个供应商。旧1017缺省Together/Crusoe；其他型号发布必须补齐。仅兜底attempt发送 `order + sort: latency + allow_fallbacks: true`，首发沿原策略，模型屏蔽规则保留。先完成 `20261102_fallback_provider_priority.sql` 的TEST验证，再发布兼容Backend与Admin；迁移只扩展既有配置写入校验，不新增运行时I/O。运营继续保存草稿后发布。
+
+调用前将兜底路由配置提前，与其他配置同批；付费轮余额只读预检与上下文准备重叠，冻结报价和结果本轮复用。免费额度仍先预留再决定是否查余额；缺钱包按0余额拒绝，不为预检初始化钱包。鉴权、开轮、报价/prompt持久化仍在dispatch前；6秒、两路竞争、单次交付/计费不变。
+
+现有OTLP/Grafana增加调用前五段墙钟和出站五段指标。只用内存时间戳、既有attempt终态日志及慢准备摘要，不新增监控表、SQL、扫描或任务。调用前各段仅覆盖完成门禁的请求；出站未到达的阶段保持缺失。分位数不能相加，发完请求至响应头也不能称为纯模型耗时。业务主图继续看点击到首token及总截止无字率。
+
+### 角色推荐批次（2026-11-02，本地待发布）
+
+公开角色目录继续共享缓存；鉴权POST `/api/characters/recommendation` 只提供个人顺序ID和批次时间，支持open/resume/refresh/undo；曝光POST同路径`/exposures`合并最多40张。private no-store、每用户短事务锁、request_id/CAS、当前/上一批恢复，前端按用户隔离query/storage与返回位置。24h只在新浏览判定，浏览中不定时重排；搜索/最新沿用原用途。
+
+`miniapp_features.user_lobby_recommendations`保存当前/上一批完整顺序与3批头部摘要；`user_character_exposures`保存每用户卡最近实际曝光及3批幂等环。均RLS开启、仅后端权限，跨schema FK到app_core根用户/角色，删除级联。曝光需50%连续1秒，遮挡/hidden/搜索/最新/恢复中不计，前端合并、失败不阻塞。
+
+原character_ranking_scores增加qualified-v1与可信分/样本/时间。每日job只以资历过滤后达到样本门槛的新证据写可信记录，不回填旧分。当前成熟低分优先；缺近期样本保留过去可信分，超过90天只给探索机会。抽选底线40、头档70是初版值；可轮换头档不足可用其他可靠卡补位。相邻前12目标最多2张重复，质量/库存不足时有标记地放宽，不保证没有库存时硬兑现。金框仍由列表/详情/收藏共用的全局资格出口决定，不按个人前排位置产生。
+
+运营复用`lobby_ranking_params.rotation`（默认直接全量、24h、重复2、探索2）与`lobby_pinned_characters.fixed_character_id`最多1固定；原8个ID对轮换用户是加权候选，旧策略保留兼容。迁移先于Backend；直接全量生效，新质量证据未就绪时沿用可靠的旧排序。运营不展示启用/灰度开关，保留新表和证据，不DROP。实际生产状态以发布记录为准。固定SQL/算法/HTTP验收`pnpm test:lobby-ranking`，UI `@lobby-rotation`沿用本地环境，未连接真实业务数据。
+
+### 创作者数据（2026-11-02，本地待发布）
+
+Frontend `/creation/data` → `lib/api/creator-analytics.ts`（用户隔离React Query）→ Telegram鉴权 `/api/creator/analytics` → creator analytics repository。一个只读接口按 section 返回 overview / works / rewards / feedback / characters，严格shared schema及服务端分页。首页每类3条，列表默认4条，选卡8条；page_size上限20。北京时间自然日、as_of分页截止时间、同一角色与周期过滤贯穿总览和明细。当前获赞/收藏独立于期间；评论按期间读取。
+
+权威源：app_core.character_creations确定本人归属；experience.chat_history按(session_id,turn_index)合并成功revision，先取最早成功时间再筛窗口，排除作者及branch_inherited_turns范围；分支引用与会话message_count不参与。按同卡玩家>=10轮和>=2自然日衡量深聊/回访，跨卡总人数按人去重。billing.character_creator_rewards将credited_amount按created_at计正、reversal_recovered_amount按reversed_at计负，不把毛奖励/抵扣当到账，不按当前visibility过滤。公开反馈沿用稳定匿名作者；不向浏览器返回玩家ID、私人对话或原始draft。
+
+参数化SQL限本人范围，事务只读、单查询6秒/事务8秒、服务端503明确失败；封面URL在事务外复用签名resolver，失败降级占位。无新DB对象/物化统计/后台任务，不写账务。先Backend后Frontend，回退仅撤入口与只读接口。现有隔离creator验收新增真实Prisma SQL PREPARE/EXECUTE验证；普通backend tests不触远端DB。页面fixture仅在ui-tests中，不进入生产组件。
+
+### 角色心愿墙（本地候选）
+
+`/wishes` 与 `/wishes/:id` → 身份隔离的 `lib/api/character-wishes.ts` → Telegram认证 `/api/character-wishes` → `miniapp_features` 三张功能表及限定 service_role 的读写 RPC。仅支持匿名公开，提交前告知全站可见；API与数据库拒绝private，公开输出不包含许愿者身份。支持使用显式布尔、唯一(wish,user)，人数包含许愿者本人。分页上限20；列表入口不提前读取心愿列表。
+
+角色回应只接受本人已有公开有效版本，展示已发布快照。回应关系和现有 `notifications`（kind=`character_wish_response`）在一个事务内写入，business_key去重；公开卡变私密/下架时不再在墙上展示。没有修改角色发布/AI审核函数或奖励结算。发布请求可带独立 `wish_id`，关联失败仍返回已发布角色及 `wish_response.status=not_linked`，前端单独重试回应。来源保留在本地草稿流程元信息，不进入角色设定；封面生成往返保持同一草稿。
+
+迁移先测试后生产，先于服务和页面部署。撤回隐藏心愿，不删除关联角色。回滚先隐藏入口和路由，保留业务表数据；恢复旧通知约束前需先处理新类型通知。验证复用隔离 PostgreSQL 脚本和 UI `@wishes`，不等同真实Telegram键盘或线上P95。

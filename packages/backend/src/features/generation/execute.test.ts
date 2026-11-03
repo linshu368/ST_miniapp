@@ -1,4 +1,4 @@
-﻿import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { config } from '../../platform/config.js';
 import type { GenerationSettlementEntry } from './settle.js';
 import type { GenerationLogger, GenerationRequest } from './types.js';
@@ -29,7 +29,12 @@ const quotaState = vi.hoisted(() => ({
   finalize: vi.fn(),
   reserveFailure: false,
 }));
-const preparation = vi.hoisted(() => ({ readBilling: vi.fn(), readRouting: vi.fn() }));
+const preparation = vi.hoisted(() => ({
+  readBilling: vi.fn(),
+  readRouting: vi.fn(),
+  readWallet: vi.fn(),
+  readRoutingConfig: vi.fn(async () => ({ rules: [] })),
+}));
 vi.mock('./creator-billing.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./creator-billing.js')>()),
   getCharacterCreatorOwner: vi.fn(async () => null),
@@ -70,6 +75,7 @@ vi.mock('../../platform/model-tiers.js', () => ({
 
 vi.mock('../../platform/provider-routing.js', () => ({
   getProviderPreferencesForModels: preparation.readRouting,
+  getProviderRoutingConfig: preparation.readRoutingConfig,
 }));
 
 vi.mock('../../platform/vip-strategy.js', () => ({
@@ -107,9 +113,7 @@ vi.mock('../../platform/vip-strategy.js', () => ({
 
 vi.mock('../../infrastructure/repositories/MiniappWalletRepository.js', () => ({
   MiniappWalletRepository: class {
-    async getOrCreate() {
-      return { total_credits: walletBalance, main_credits: walletBalance, bonus_credits: 0 };
-    }
+    findByUserId = preparation.readWallet;
   },
 }));
 
@@ -207,6 +211,10 @@ beforeEach(() => {
     status: success ? 'consumed' : 'released',
   }));
   walletBalance = 1000;
+  preparation.readWallet
+    .mockReset()
+    .mockImplementation(async () => ({ main_credits: walletBalance, bonus_credits: 0 }));
+  preparation.readRoutingConfig.mockClear();
   providerPreferences = null;
   billingContext = { ...defaultBillingContext };
   vi.mocked(settleGeneration).mockClear();
@@ -1346,6 +1354,64 @@ it.each([false, true])(
 );
 
 describe('competing attempts share one delivery and settlement', () => {
+  it('races the fallback model selected as primary on the reversed provider order', async () => {
+    const providers: unknown[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: RequestInit) => {
+        providers.push(JSON.parse(String(init.body)).provider);
+        const second = providers.length === 2;
+        const signal = init.signal!;
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              signal.addEventListener('abort', () => controller.error(signal.reason), {
+                once: true,
+              });
+              if (!second) return;
+              controller.enqueue(
+                new TextEncoder().encode(
+                  `data: ${JSON.stringify({ id: 'second-id', choices: [{ delta: { content: 'reply' }, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n`
+                )
+              );
+              controller.close();
+            },
+          })
+        );
+      })
+    );
+    const req = request({ thinkingEnabled: false });
+    req.model.provider = 'openrouter';
+    req.model.providerModelId = 'vendor/operator-flash';
+    req.model.firstTokenPolicy = {
+      fallbackModelId: 'vendor/operator-flash',
+      fallbackProviders: ['fast-one', 'fast-two'],
+      timeoutMs: 20,
+      fallbackTimeoutMs: 25,
+      deadlineMs: 400,
+      timeoutRateTarget: 0.01,
+      catalogVersion: 12,
+    };
+    req.firstToken = {
+      primaryAttemptId: 'primary-same-model-attempt',
+      requestStartedAt: performance.now(),
+      deferPersistence: true,
+      store: {
+        prepareFallback: vi.fn(async () => {}),
+        observe: vi.fn(async () => {}),
+        selectDelivery: vi.fn(async () => {}),
+      },
+    };
+
+    const result = await execute(req);
+
+    expect(result.status).toBe('success');
+    expect(providers).toEqual([
+      { order: ['fast-one', 'fast-two'], sort: 'latency', allow_fallbacks: true },
+      { order: ['fast-two', 'fast-one'], sort: 'latency', allow_fallbacks: true },
+    ]);
+  });
+
   it.each(
     [false, true].flatMap((free) =>
       (['openrouter', 'venice'] as const).flatMap((provider) =>
@@ -1363,6 +1429,14 @@ describe('competing attempts share one delivery and settlement', () => {
         'fetch',
         vi.fn(async (_url: string, init: RequestInit) => {
           const role = attempts.length === 0 ? 'primary' : 'fallback';
+          const sent = JSON.parse(String(init.body));
+          if (role === 'fallback')
+            expect(sent.provider).toEqual({
+              order: ['fast-one', 'fast-two'],
+              sort: 'latency',
+              allow_fallbacks: true,
+            });
+          else expect(sent.provider?.sort).toBeUndefined();
           const signal = init.signal!;
           attempts.push({ role, signal });
           return new Response(
@@ -1404,6 +1478,7 @@ describe('competing attempts share one delivery and settlement', () => {
       const req = request({ thinkingEnabled: false });
       req.model.firstTokenPolicy = {
         fallbackModelId: 'vendor/operator-flash',
+        fallbackProviders: ['fast-one', 'fast-two'],
         timeoutMs: 20,
         fallbackTimeoutMs: 25,
         deadlineMs: 400,
@@ -1458,6 +1533,130 @@ describe('competing attempts share one delivery and settlement', () => {
 });
 
 describe('early read preparation remains one frozen dispatch context', () => {
+  it.each(['user', 'charge'] as const)(
+    'rejects another %s identity before dispatch',
+    async (identity) => {
+      const input = request();
+      input.plannedChargeId = 'bound-charge';
+      input.preparation = prepareGeneration({
+        model: input.model,
+        characterId: input.characterId,
+        useFallback: true,
+        payer: {
+          userId: identity === 'user' ? 'other-user' : input.userId,
+          chargeId: identity === 'charge' ? 'other-charge' : input.plannedChargeId,
+          log: fakeLogger(),
+          signal: new AbortController().signal,
+        },
+      });
+      const fetchMock = stubUpstream(() => sseResponse([]));
+      await expect(execute(input)).rejects.toThrow('Generation preparation identity differs');
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(savedHistory()).toHaveLength(0);
+    }
+  );
+
+  it('does not add an OpenRouter config read to a direct Venice consumer', async () => {
+    const input = request();
+    await prepareGeneration({
+      model: { ...input.model, provider: 'venice' },
+      characterId: null,
+      useFallback: false,
+    });
+    expect(preparation.readRoutingConfig).not.toHaveBeenCalled();
+  });
+  it('starts routing before the model resolves instead of a second config round trip', async () => {
+    const input = request();
+    let resolveModel!: (model: GenerationRequest['model']) => void;
+    const model = new Promise<GenerationRequest['model']>((resolve) => {
+      resolveModel = resolve;
+    });
+    const pending = prepareGeneration({ model, characterId: input.characterId, useFallback: true });
+    expect(preparation.readRoutingConfig).toHaveBeenCalledOnce();
+    expect(preparation.readRouting).not.toHaveBeenCalled();
+    resolveModel(input.model);
+    await pending;
+    expect(preparation.readRouting).toHaveBeenCalledOnce();
+  });
+
+  it('overlaps one paid balance read with prompt work and never rechecks it at dispatch', async () => {
+    vi.useFakeTimers();
+    try {
+      preparation.readWallet.mockImplementation(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        return { main_credits: 1000, bonus_credits: 0 };
+      });
+      const fetchMock = stubUpstream(() => sseResponse([DELTA('ok'), 'data: [DONE]\n\n']));
+      const input = request();
+      input.plannedChargeId = 'paid-preparation';
+      input.preparation = prepareGeneration({
+        model: input.model,
+        characterId: input.characterId,
+        useFallback: false,
+        payer: {
+          userId: input.userId,
+          chargeId: input.plannedChargeId,
+          log: fakeLogger(),
+          signal: new AbortController().signal,
+        },
+      });
+      await input.preparation;
+      expect(preparation.readWallet).toHaveBeenCalledOnce();
+      expect(fetchMock).not.toHaveBeenCalled();
+      // Context preparation takes 300 ms. The old serial path then needed another 200 ms.
+      await vi.advanceTimersByTimeAsync(300);
+      expect((await execute(input)).status).toBe('success');
+      expect(preparation.readWallet).toHaveBeenCalledOnce();
+      expect(fetchMock).toHaveBeenCalledOnce();
+      expect(savedHistory()).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([null, { main_credits: 1, bonus_credits: 0 }])(
+    'denies an absent/empty wallet without creating one: %j',
+    async (wallet) => {
+      preparation.readWallet.mockResolvedValue(wallet);
+      const fetchMock = stubUpstream(() => sseResponse([]));
+      const input = request();
+      input.plannedChargeId = 'insufficient-preparation';
+      input.preparation = prepareGeneration({
+        model: input.model,
+        characterId: input.characterId,
+        useFallback: false,
+        payer: {
+          userId: input.userId,
+          chargeId: input.plannedChargeId,
+          log: fakeLogger(),
+          signal: new AbortController().signal,
+        },
+      });
+      expect((await execute(input)).status).toBe('insufficient_balance');
+      expect(preparation.readWallet).toHaveBeenCalledOnce();
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(savedHistory()).toHaveLength(0);
+    }
+  );
+
+  it('never prechecks a free model before its quota decision', async () => {
+    billingContext.isFree = true;
+    const input = request();
+    const prepared = await prepareGeneration({
+      model: input.model,
+      characterId: input.characterId,
+      useFallback: true,
+      payer: {
+        userId: input.userId,
+        chargeId: 'free-preparation',
+        log: fakeLogger(),
+        signal: new AbortController().signal,
+      },
+    });
+    expect(prepared.paidAdmission).toBeUndefined();
+    expect(preparation.readWallet).not.toHaveBeenCalled();
+  });
+
   it('reuses already-started reads without repeating provider/config queries', async () => {
     const fetchMock = stubUpstream(() => sseResponse([DELTA('ok'), 'data: [DONE]\n\n']));
     const input = request();

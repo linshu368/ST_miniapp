@@ -2,11 +2,15 @@
 
 ST_miniapp 是围绕 Telegram MiniApp、AI 角色聊天、钱包/支付、语音、增长运营和客服能力构建的 pnpm monorepo。仓库包含面向用户的 Next.js 前端、Fastify API、内部运营 SPA、共享契约/迁移包，以及由 Frontend 和 Admin 共用的回复渲染包。客服平台已拆到独立仓库 [`linshu368/ST_cs_platform`](https://github.com/linshu368/ST_cs_platform)，本仓库只保留 Bot 消息转发和 `/api/support/*` 代理。
 
+> 角色质量评分本地候选：仅纳入首次向该卡发起聊天前，平台首次有效聊天已满24小时且至少完成10个有效逻辑轮次的用户。资格按历史时点判断，不追溯纳入新人首体验；无合格样本的卡按样本不足处理。复验 `pnpm test:lobby-ranking`（隔离本机PG17），本次未发布、未触发生产重算。
+
+> 角色推荐轮换（本地，未发布）：前12张按可信质量分层抽选，默认24小时、手动换批/撤回、曝光衰减与聊天返回保序。复用排序配置的 `rotation` 和主推候选的 `fixed_character_id`；上线直接全量生效，无需启用开关或灰度。`20261102_lobby_quality_rotation.sql`须先于后端执行；新评分未就绪时保留旧排序，后续新批次自动采用可信质量。复验 `pnpm test:lobby-ranking` 与 `pnpm test:ui --grep @lobby-rotation`；开发预览可选“推荐优质轮换”。
+
 > 深层架构、数据流和路由清单见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)；Railway 生产运维见 [`ops/railway/README.md`](ops/railway/README.md)。本文负责新成员入门、依赖关系、环境、命令和交付约定。
 
 > 对话调用前准备减负候选：本轮设置/目录快照复用，身份与报价保存5次请求合为2次；须先验证并执行`20261030_chat_generation_dispatch_prepare.sql`，再发布应用。保持现行兜底等待与6秒首字预算，计费/取消/恢复仍依赖同步业务事实；步骤见[首字运行说明](docs/first-token-fallback.md)。尚未发布，不能用本地验证替代生产耗时结果。
-> MiniApp 入口先输出静态框架，初始化后通知 Telegram 展示；独立启动指标 `startup.shell_ready.duration` / `startup.telegram_ready.duration` 的口径、P95 查询与验证边界见 [前端性能规范](.trellis/spec/frontend/app/testing-quality-and-deployment.md#miniapp-启动框架与-p95)。本地实现不代表已经发布或收到生产样本。
-> ready 前分段诊断本地增量复用 Sentry：`startup.stage.duration` 配合 ≥5 秒的单次 `miniapp_startup_slow` 数值快照区分启动阶段；节点只记录时间戳，资源摘要收集与新增上报在 ready 后执行。尚待发布和真机实收验证，口径见上述规范。
+> MiniApp 随 HTML 输出静态框架并独立通知 Telegram 展示，SDK 保留兜底与去重；独立启动指标 `startup.shell_ready.duration` / `startup.telegram_ready.duration` 的口径、P95 查询与验证边界见 [前端性能规范](.trellis/spec/frontend/app/testing-quality-and-deployment.md#miniapp-启动框架与-p95)。上线状态与第三点本地范围见下方开屏优化说明。
+> 启动分段诊断复用 Sentry：`startup.stage.duration` 配合单次 `miniapp_startup_slow` 数值快照区分阶段；节点只记录时间戳，资源摘要收集与新增上报在 ready 后执行。当前 v2 定义与阈值、历史 v1 兼容及真机验证边界见上述规范。
 > 短剧性能日常统一看[工程短剧看板](https://ea3213527545.grafana.net/d/st-engineering-drama)。v3复用原计时器、集中shared阶段计算；默认双轨，验证通过后才显式切换统一模式，保留Pino诊断及旧看板历史。字段、分母、release、切换与回滚见[短剧播放耗时排查](docs/drama-playback-timing.md)。本地代码不代表生产已启用。
 
 本分支新增短剧生产 CDN 对照能力：鉴权用户按实验固定分组，约 20% Bunny／80% Supabase；相同视频与播放器，起播和未缓冲快进保留真实逐次耗时、失败及重试累计等待。关闭后新播放重新确认 Supabase 地址。无新数据库表或实验平台。生产专用回源／签名／开关、发布和 12 小时首次比较见 [操作说明](ops/drama-cdn-rollout.md)。当前仅为本地实现，生产尚未启用；既有 pr-525 TEST Preview 功能验收不代表生产或性能达标。
@@ -15,7 +19,7 @@ ST_miniapp 是围绕 Telegram MiniApp、AI 角色聊天、钱包/支付、语音
 
 > 图片广场 Admin 保存草稿触发 `config_drafts_config_key_check` 的兼容修复：新增 `20261016_reconcile_image_plaza_managed_config_keys.sql`，保留现有白名单并恢复四个图片广场 key，不改正式配置。尚待 TEST workflow 单文件执行及保存/发布验收；详见迁移目录 README，Production 另行审批。
 
-开屏优化（本地，待发布）：[实现边界、4秒验收与冻结基线](docs/miniapp-startup-performance.md)。
+开屏优化：[实现边界、4秒验收与冻结基线](docs/miniapp-startup-performance.md)。轻量 HTML ready 与 Sentry 后置已上线（用户确认），B0旧基线和第一二点后的B1单版本快照均保留；第三点仅交付启动分包与展示拆分，沿用生产预热。代码对齐dev69a722c6（与main7c4eea5d代码树相同），由工程师手动开PR并合并，尚未上线。
 
 ## 0. 运行环境
 
@@ -139,17 +143,17 @@ pnpm --filter @miniapp/backend image-plaza:seed -- --input <xlsx>
 
 ### Backend 主要变量组
 
-| 类别          | 变量                                                                                                                                                                    | 说明                                                                                                            |
-| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| Runtime/CORS  | `NODE_ENV`, `PORT`, `FRONTEND_URL`, `ADMIN_PLATFORM_URL`                                                                                                                | 服务环境、端口和允许来源                                                                                        |
-| 数据库选择    | `DATABASE_ENV`, `TEST_*`, `PROD_*`, `DATABASE_URL`, `DIRECT_URL`, `SUPABASE_*`                                                                                          | 测试/生产项目、连接与 service role；`ALLOW_PROD_DATABASE` 仅紧急人工操作                                        |
-| Telegram      | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `BOT_INTERNAL_SECRET`, `TELEGRAM_COMMUNITY_BOT_TOKEN`                                                                  | Bot、webhook 和内部调用鉴权                                                                                     |
-| CS 服务       | `CS_SERVICE_URL`, `CS_SERVICE_SECRET`                                                                                                                                   | 独立客服服务（ST_cs_platform）地址和共享密钥；Bot 转发与 `/api/support/*` 代理使用，`CS_SERVICE_ENABLED` 已废弃 |
-| LLM           | `LLM_UPSTREAM_URL`, `LLM_API_KEY`, `OPENAI_API_KEY`, `LLM_DEFAULT_MODEL`                                                                                                | 生成上游与默认模型                                                                                              |
-| Voice         | `DEEPSEEK_*`, `MINIMAX_*`                                                                                                                                               | 语音文案与 TTS；关键 key 缺失时语音不可用                                                                       |
-| Payment       | `PAYMENT_ENABLED`, `PAYMENT_BASE_URL`, `PAYMENT_MERCHANT_ID`, `PAYMENT_MERCHANT_PRIVATE_KEY`, `PAYMENT_PLATFORM_PUBLIC_KEY`, `PAYMENT_NOTIFY_URL`, `PAYMENT_RETURN_URL` | 支付开关、商户和签名/回调                                                                                       |
-| Telemetry     | `SENTRY_*`, `LOG_LEVEL`, `LOG_PRETTY`                                                                                                                                   | Sentry 和日志                                                                                                   |
-| Feature/asset | `DEFAULT_USER_AVATAR_URL`, `CHARACTER_STORAGE_BUCKET`, `CHAT_HISTORY_SYNC_ENABLED`, `LOBBY_RANKING_REFRESH_ENABLED`                                                     | 资源和运行开关                                                                                                  |
+| 类别          | 变量                                                                                                                | 说明                                                                                                            |
+| ------------- | ------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Runtime/CORS  | `NODE_ENV`, `PORT`, `FRONTEND_URL`, `ADMIN_PLATFORM_URL`                                                            | 服务环境、端口和允许来源                                                                                        |
+| 数据库选择    | `DATABASE_ENV`, `TEST_*`, `PROD_*`, `DATABASE_URL`, `DIRECT_URL`, `SUPABASE_*`                                      | 测试/生产项目、连接与 service role；`ALLOW_PROD_DATABASE` 仅紧急人工操作                                        |
+| Telegram      | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `BOT_INTERNAL_SECRET`, `TELEGRAM_COMMUNITY_BOT_TOKEN`              | Bot、webhook 和内部调用鉴权                                                                                     |
+| CS 服务       | `CS_SERVICE_URL`, `CS_SERVICE_SECRET`                                                                               | 独立客服服务（ST_cs_platform）地址和共享密钥；Bot 转发与 `/api/support/*` 代理使用，`CS_SERVICE_ENABLED` 已废弃 |
+| LLM           | `LLM_UPSTREAM_URL`, `LLM_API_KEY`, `OPENAI_API_KEY`, `LLM_DEFAULT_MODEL`                                            | 生成上游与默认模型                                                                                              |
+| Voice         | `DEEPSEEK_*`, `MINIMAX_*`                                                                                           | 语音文案与 TTS；关键 key 缺失时语音不可用                                                                       |
+| Payment       | `PAYMENT_ENABLED`, `PAYMENT_RETURN_URL`, `VEXUTOPIA_API_KEY`, `VEXUTOPIA_BASE_URL`, `VEXUTOPIA_WEBHOOK_SECRET`      | 支付开关、https 回跳、Vexutopia 密钥与回调验签（API Key 也要配给对账 Worker / 过期 Cron）                       |
+| Telemetry     | `SENTRY_*`, `LOG_LEVEL`, `LOG_PRETTY`                                                                               | Sentry 和日志                                                                                                   |
+| Feature/asset | `DEFAULT_USER_AVATAR_URL`, `CHARACTER_STORAGE_BUCKET`, `CHAT_HISTORY_SYNC_ENABLED`, `LOBBY_RANKING_REFRESH_ENABLED` | 资源和运行开关                                                                                                  |
 
 开发 bypass（如 `MOCK_AUTH`、`DEV_AUTH_BYPASS`）禁止在 production 启用。
 
@@ -325,3 +329,19 @@ SSE start携带当轮冻结总预算。客户端若持有旧目录缓存，按�
 发布顺序：本地PG/测试→TEST迁移与应用验收→先合dev→生产迁移→Backend/Frontend/Admin→Grafana说明；配置只读核对版本97。回退应用保留兼容RPC，必要时前向修复，不删除账务。
 
 最近十轮消息编辑/单条删除：`pnpm preview:ui` 选择「消息编辑与删除」，固定验收 `pnpm test:ui --grep @chat-edit`。原会话和分支互不影响，双方消息可改，只删选中单条。部署前先按迁移README验证并执行 `20261102_chat_message_overrides.sql`。
+
+## 服务端交付计费与耗时归因（2026-11-02，本地候选）
+
+6 秒不再一刀切：只有已建立连接上的传输算用户网络，建连、预检、调用前、上游等待都算我方，证据不全也算我方。服务端按时出字且完整交付即正常结算，服务端真超时才免扣；客户端计时只是观测，到点显示“网络有点慢”，不再误报重试。聊天页用不查库的 `/health` 保持连接，上限每 25 秒一次。兜底模型被选为首发时，第二路用相反供应商顺序。发布先应用、后 TEST 与生产迁移 `20261102_first_token_server_delivery_billing.sql`。细则见 [首字兜底说明](docs/first-token-fallback.md)。
+
+## 兜底供应商与调用前等待（2026-11-02，本地候选）
+
+复用模型目录字段 `fallback_provider_routes: [{model_id, preferred_providers: [first, second]}]`，每个兜底型号独立绑定两个供应商。旧1017缺省Together/Crusoe；其他型号发布必须补齐。仅兜底attempt发送 `order + sort: latency + allow_fallbacks: true`，首发沿原策略，模型屏蔽规则保留。先完成 `20261102_fallback_provider_priority.sql` 的TEST验证，再发布兼容Backend与Admin；迁移只扩展既有配置写入校验，不新增运行时I/O。运营继续保存草稿后发布。
+
+调用前将兜底路由配置提前，与其他配置同批；付费轮余额只读预检与上下文准备重叠，冻结报价和结果本轮复用。免费额度仍先预留再决定是否查余额；缺钱包按0余额拒绝，不为预检初始化钱包。鉴权、开轮、报价/prompt持久化仍在dispatch前；6秒、两路竞争、单次交付/计费不变。
+
+现有OTLP/Grafana增加调用前五段墙钟和出站五段指标。只用内存时间戳、既有attempt终态日志及慢准备摘要，不新增监控表、SQL、扫描或任务。调用前各段仅覆盖完成门禁的请求；出站未到达的阶段保持缺失。分位数不能相加，发完请求至响应头也不能称为纯模型耗时。业务主图继续看点击到首token及总截止无字率。
+
+创作者数据页 `/creation/data` 从「创作 → 我的创作」进入，通过本人鉴权的 `/api/creator/analytics` 读取真实使用、专项星尘到账/退款调整和公开评论。首页各3条摘要，全部列表按页读取；原奖励结算不变，无新增数据库迁移。`bash scripts/test-creator-characters-local.sh` 复用隔离PG17验证统计SQL；`ST_UI_TEST_APP_PORT=3190 pnpm test:ui --grep @creator-data` 验证移动交互。此批为本地待发布。
+
+角色心愿墙（本地候选）：大厅「许个愿」与创作数据「看看玩家想玩什么」共用 `/wishes`，仅支持匿名公开心愿、独立想玩人数和角色回应；心愿来源不进入角色 system prompt。用户作品回应后复用消息中心通知。固定预览使用 `wishes` / `wishes-error` 场景，`pnpm test:ui --grep @wishes` 验收手机交互。新迁移 `20261102_character_wishes.sql` 已在隔离数据库验证；发布按测试迁移→生产迁移→后端→前端顺序，实际部署状态见任务发布记录。

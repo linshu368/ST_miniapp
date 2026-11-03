@@ -177,12 +177,12 @@ export async function checkWalletBalance(input: {
     return { ok: true };
   }
 
-  const wallet = await wallets().getOrCreate(userId);
+  const wallet = await wallets().findByUserId(userId);
   const coverage = coverageForTextWallet({
     policy: walletPolicy,
     payableCredits: requiredAmount,
-    mainCredits: wallet.main_credits,
-    bonusCredits: wallet.bonus_credits,
+    mainCredits: wallet?.main_credits ?? 0,
+    bonusCredits: wallet?.bonus_credits ?? 0,
   });
   if (!coverage.ok) {
     log.biz.info(
