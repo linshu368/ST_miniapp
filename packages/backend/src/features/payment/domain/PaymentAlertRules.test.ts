@@ -12,6 +12,7 @@ import {
   P1_REFUND_RULE_ID,
   P1_WEBHOOK_REJECTED_RULE_ID,
   type PaymentOperation,
+  P1_PROVIDER_DEGRADED_RULE_ID,
 } from './PaymentAlertRules.js';
 
 const NOW = new Date('2026-11-03T08:00:00.000Z');
@@ -74,6 +75,9 @@ describe('payment alert rules v3', () => {
       ),
       ...[4, 3, 2].map((m) =>
         op(m, { event_kind: 'webhook', outcome: 'failed', error_class: 'signature_invalid' })
+      ),
+      ...[4, 3, 2].map((m) =>
+        op(m, { event_kind: 'fast_reconcile', outcome: 'succeeded', error_class: 'slow' })
       ),
     ]).evaluations;
     expect(firingAll.every((e) => e.state === 'firing')).toBe(true);
@@ -223,9 +227,76 @@ describe('payment alert rules v3', () => {
     );
   });
 
-  it('notifies Feishu only for payment blocking, unfulfilled payments, and refunds', () => {
+  describe('provider degraded (early warning)', () => {
+    const create = (minutesAgo: number, outcome: 'failed' | 'succeeded', durationMs = 800) =>
+      op(minutesAgo, {
+        event_kind: 'gateway_create',
+        outcome,
+        error_class: outcome === 'failed' ? 'timeout' : null,
+        duration_ms: durationMs,
+      });
+    const slowProbe = (minutesAgo: number) =>
+      op(minutesAgo, {
+        event_kind: 'fast_reconcile',
+        outcome: 'succeeded',
+        error_class: 'slow',
+        trigger: 'fast_reconcile',
+        duration_ms: 4200,
+      });
+
+    it('fires on intermittent create failures before three in a row', () => {
+      const { state, get } = evaluate([
+        create(6, 'failed'),
+        create(5, 'succeeded'),
+        create(3, 'failed'),
+        create(1, 'succeeded'),
+      ]);
+      expect(state(P0_PROVIDER_CREATE_FAILING_RULE_ID)).toBe('healthy');
+      expect(state(P1_PROVIDER_DEGRADED_RULE_ID)).toBe('firing');
+      expect(get(P1_PROVIDER_DEGRADED_RULE_ID).summary).toContain('超时×2');
+    });
+
+    it('fires when several calls are slow even though nothing has failed', () => {
+      const { state } = evaluate([
+        create(5, 'succeeded', 3600),
+        create(3, 'succeeded', 5200),
+        slowProbe(2),
+      ]);
+      expect(state(P1_PROVIDER_DEGRADED_RULE_ID)).toBe('firing');
+    });
+
+    it('stays quiet for a single failure or a couple of slow calls', () => {
+      expect(
+        evaluate([create(5, 'failed'), create(4, 'succeeded'), create(3, 'succeeded')]).state(
+          P1_PROVIDER_DEGRADED_RULE_ID
+        )
+      ).toBe('healthy');
+      expect(
+        evaluate([slowProbe(4), create(3, 'succeeded', 3500)]).state(P1_PROVIDER_DEGRADED_RULE_ID)
+      ).toBe('healthy');
+    });
+
+    it('leaves the warning to the P0 rule once creates fail three times in a row', () => {
+      const { state } = evaluate([create(4, 'failed'), create(3, 'failed'), create(2, 'failed')]);
+      expect(state(P0_PROVIDER_CREATE_FAILING_RULE_ID)).toBe('firing');
+      expect(state(P1_PROVIDER_DEGRADED_RULE_ID)).toBe('healthy');
+    });
+
+    it('does not count slow lookups as query failures', () => {
+      const { state } = evaluate([slowProbe(4), slowProbe(3), slowProbe(2)]);
+      expect(state(P1_PROVIDER_QUERY_FAILING_RULE_ID)).toBe('healthy');
+    });
+  });
+
+  it('notifies Feishu for payment blocking, unfulfilled payments, refunds, and provider early warnings', () => {
     expect([...FEISHU_NOTIFY_RULE_IDS].sort()).toEqual(
-      [P0_PAID_NOT_FULFILLED_RULE_ID, P0_PROVIDER_CREATE_FAILING_RULE_ID, P1_REFUND_RULE_ID].sort()
+      [
+        P0_PAID_NOT_FULFILLED_RULE_ID,
+        P0_PROVIDER_CREATE_FAILING_RULE_ID,
+        P1_REFUND_RULE_ID,
+        P1_PROVIDER_QUERY_FAILING_RULE_ID,
+        P1_PROVIDER_DEGRADED_RULE_ID,
+      ].sort()
     );
   });
 });

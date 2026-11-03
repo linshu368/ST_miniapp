@@ -18,6 +18,7 @@ import {
   type PaymentLookupGateway,
   type PaymentLookupItem,
 } from '../../../infrastructure/payment/VexutopiaPaymentGateway.js';
+import { SLOW_CALL_ERROR_CLASS, SLOW_CALL_MS } from '../domain/PaymentAlertRules.js';
 import { settlePaidOrder, type SettlementLogger } from './PaymentSettlement.js';
 import {
   recordPaymentOperationEvent,
@@ -39,6 +40,9 @@ const PROVIDER_UNPAID_TERMINAL = new Set([
   'refunded',
   'partially_refunded',
 ]);
+
+/** 探测用的不存在的交易号，格式合法但永远查不到。 */
+const PROBE_TRANSACTION_ID = 'tx_0000000000000000';
 
 export type ReconcileTrigger = 'fast_reconcile' | 'expiry_reconcile';
 
@@ -80,15 +84,24 @@ export async function runPaymentReconciliation(input: {
   });
   result.checked = candidates.length;
 
-  for (let offset = 0; offset < candidates.length; offset += LOOKUP_BATCH_SIZE) {
-    const batch = candidates.slice(offset, offset + LOOKUP_BATCH_SIZE);
+  // 没有待对账订单时也要探测平台：否则平台挂了、恰好没人在付款，就没人发现，等到用户下单才出错。
+  // 探测用一个不存在的交易号做批量查单：走完整的鉴权 + 查询路径，不产生任何平台侧数据。
+  const batches: Array<string[] | null> = [];
+  for (let offset = 0; offset < candidates.length; offset += LOOKUP_BATCH_SIZE) batches.push(null);
+  if (candidates.length === 0) batches.push([PROBE_TRANSACTION_ID]);
+
+  for (let batchIndex = 0; batchIndex < batches.length; batchIndex += 1) {
+    const probeIds = batches[batchIndex];
+    const offset = batchIndex * LOOKUP_BATCH_SIZE;
+    const batch = probeIds ? [] : candidates.slice(offset, offset + LOOKUP_BATCH_SIZE);
     const byTransaction = new Map(
       batch.flatMap((order) =>
         order.provider_transaction_id ? [[order.provider_transaction_id, order] as const] : []
       )
     );
     const startedAt = Date.now();
-    const lookup = await input.gateway.lookupPayments([...byTransaction.keys()]);
+    const lookup = await input.gateway.lookupPayments(probeIds ?? [...byTransaction.keys()]);
+    const elapsedMs = Date.now() - startedAt;
     if (!lookup.success) {
       result.lookupFailed = true;
       input.log.sys.warn(
@@ -111,11 +124,29 @@ export async function runPaymentReconciliation(input: {
         source: 'cron',
         trigger: input.trigger,
         error_class: lookup.errorClass,
-        duration_ms: Date.now() - startedAt,
+        duration_ms: elapsedMs,
         occurred_at: new Date().toISOString(),
-        metadata: { batch_size: batch.length },
+        metadata: { batch_size: batch.length, probe: probeIds !== null },
       });
       continue;
+    }
+
+    // 成功但偏慢也记下来，预警规则据此发现“平台变慢”；正常的快调用不落库。
+    if (elapsedMs >= SLOW_CALL_MS) {
+      recordPaymentOperationEvent(input.events, input.log, {
+        event_key: `${input.trigger}:slow:${startedAt}:${offset}`,
+        order_id: null,
+        user_id: null,
+        event_kind: input.trigger,
+        stage: 'query',
+        outcome: 'succeeded',
+        source: 'cron',
+        trigger: input.trigger,
+        error_class: SLOW_CALL_ERROR_CLASS,
+        duration_ms: elapsedMs,
+        occurred_at: new Date().toISOString(),
+        metadata: { batch_size: batch.length, probe: probeIds !== null },
+      });
     }
 
     for (const item of lookup.items) {

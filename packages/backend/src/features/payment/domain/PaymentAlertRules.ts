@@ -13,6 +13,8 @@ export type PaymentOperation = {
   trigger: string;
   occurred_at: string;
   error_class: string | null;
+  /** 建单、查单耗时；老事件和不计时的事件为空。 */
+  duration_ms?: number | null;
   order_id: string | null;
   user_id: string | null;
 };
@@ -27,12 +29,24 @@ export const P0_PAID_NOT_FULFILLED_RULE_ID = 'p0-paid-not-fulfilled';
 export const P1_REFUND_RULE_ID = 'p1-refund';
 export const P1_PROVIDER_QUERY_FAILING_RULE_ID = 'p1-provider-query-failing';
 export const P1_WEBHOOK_REJECTED_RULE_ID = 'p1-webhook-rejected';
+/** 预警：平台变慢或开始间歇失败，还没到用户连续建单失败的程度。 */
+export const P1_PROVIDER_DEGRADED_RULE_ID = 'p1-provider-degraded';
 
-/** 会推送飞书的规则：用户付不了钱、付了钱没拿到权益、钱被退回。其余只记事故。 */
+/** 单次建单/查单超过这个耗时就算“慢”（建单目标 P95 ≤ 3 秒）。 */
+export const SLOW_CALL_MS = 3_000;
+/** 对账循环把成功但偏慢的查单记成这个分类，供预警规则统计。 */
+export const SLOW_CALL_ERROR_CLASS = 'slow';
+
+/**
+ * 会推送飞书的规则：用户付不了钱、付了钱没拿到权益、钱被退回，
+ * 以及平台还没让用户出错之前的预警（查单探测失败、平台变慢或间歇失败）。其余只记事故。
+ */
 export const FEISHU_NOTIFY_RULE_IDS = new Set([
   P0_PROVIDER_CREATE_FAILING_RULE_ID,
   P0_PAID_NOT_FULFILLED_RULE_ID,
   P1_REFUND_RULE_ID,
+  P1_PROVIDER_QUERY_FAILING_RULE_ID,
+  P1_PROVIDER_DEGRADED_RULE_ID,
 ]);
 
 /** 平台说已付款、本地却没入账的错误分类（不论来自 Webhook 还是对账）。 */
@@ -113,7 +127,8 @@ export function evaluatePaymentAlertRules(
     (op) =>
       QUERY_EVENT_KINDS.has(op.event_kind) &&
       op.outcome !== 'skipped' &&
-      !LOOKUP_ANOMALY_CLASSES.has(op.error_class ?? '')
+      !LOOKUP_ANOMALY_CLASSES.has(op.error_class ?? '') &&
+      op.error_class !== SLOW_CALL_ERROR_CLASS
   );
   const queryFailures = queries.filter((op) => op.outcome === 'failed');
 
@@ -124,6 +139,28 @@ export function evaluatePaymentAlertRules(
       op.outcome === 'failed' &&
       WEBHOOK_REJECTED_CLASSES.has(op.error_class ?? '')
   );
+
+  // 预警：建单间歇失败（还没连续 3 次）或平台整体变慢。P0 已触发时不重复预警。
+  const createFailureRatio = ratio(createFailures.length, creates.length);
+  const intermittentCreateFailures =
+    !createBlocked && createFailures.length >= 2 && createFailureRatio >= 0.4;
+  const slowCreates = creates.filter(
+    (op) => op.outcome !== 'failed' && (op.duration_ms ?? 0) >= SLOW_CALL_MS
+  );
+  const slowProbes = within(
+    10 * 60_000,
+    (op) => QUERY_EVENT_KINDS.has(op.event_kind) && op.error_class === SLOW_CALL_ERROR_CLASS
+  );
+  const slowCalls = slowCreates.length + slowProbes.length;
+  const degraded = intermittentCreateFailures || slowCalls >= 3;
+  const degradedReasons = [
+    intermittentCreateFailures
+      ? `建单 ${creates.length} 次失败 ${createFailures.length} 次（${describeClasses(createFailures)}）`
+      : '',
+    slowCalls >= 3
+      ? `慢调用 ${slowCalls} 次（建单 ${slowCreates.length}、查单 ${slowProbes.length}，阈值 ${SLOW_CALL_MS / 1000} 秒）`
+      : '',
+  ].filter(Boolean);
 
   const rules: Rule[] = [
     {
@@ -183,6 +220,22 @@ export function evaluatePaymentAlertRules(
       title: 'P1 支付平台查单接口异常',
       summary: `最近 10 分钟查单 ${queries.length} 次，失败 ${queryFailures.length} 次：${describeClasses(queryFailures)}`,
       recommendedAction: '查单失败期间只能靠 Webhook 入账；检查平台状态与 API Key。',
+    },
+    {
+      id: P1_PROVIDER_DEGRADED_RULE_ID,
+      severity: 'P1',
+      windowMs: 10 * 60_000,
+      firing: degraded,
+      metrics: [
+        ['create_failures', createFailures.length, 'count'],
+        ['create_failure_ratio', createFailureRatio, 'ratio'],
+        ['slow_calls', slowCalls, 'count'],
+      ],
+      location: { kind: 'dependency', component: 'provider_health' },
+      title: 'P1 支付平台不稳定（预警）',
+      summary: `用户尚未连续失败，但平台已出现异常：${degradedReasons.join('；')}`,
+      recommendedAction:
+        '先看 Vexutopia 控制台和状态页；趋势继续恶化会升级为建单连续失败。必要时在后台临时关闭受影响的渠道。',
     },
     {
       id: P1_WEBHOOK_REJECTED_RULE_ID,
