@@ -113,10 +113,7 @@ export const accountCommands: CommandSpec[] = [
     async run(_ctx, input) {
       // 密码只能由人输入：AI 或脚本调用时直接拒绝，也就永远拿不到密码。
       if (!isInteractive()) {
-        throw new CliError(
-          'usage',
-          'login 必须由本人在终端交互执行（在 Claude Code 里可输入：! pnpm admin login）'
-        );
+        throw new CliError('usage', 'login 必须由本人在自己的终端交互执行：pnpm admin login');
       }
       const config = loadConfig();
       const previous = readSessionMeta();

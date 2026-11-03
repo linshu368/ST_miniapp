@@ -9,7 +9,7 @@ description: 操作蜜镜 AI 生产运营平台（运营配置、角色卡上下
 
 1. `pnpm -s admin whoami --json`
    - `setup_required`：请用户在终端执行 `pnpm admin setup`。
-   - `auth_required`：请用户执行 `pnpm admin login`（Claude Code 里可输入 `! pnpm admin login`）。不要索要或代填密码。
+   - `auth_required`：请用户在自己的终端（不是对话里的 `!` 命令）执行 `pnpm admin login`。不要索要或代填密码。
 2. 找对象：`config list`（按菜单分组）、`character list --query`、`announcement list`。不确定命令时 `pnpm -s admin help --json`。
 3. 读现值：`config describe <key>`、`config get <key>`、`layout get`、`text-rules get`。
 4. 改动：
