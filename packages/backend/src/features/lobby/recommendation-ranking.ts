@@ -19,14 +19,12 @@ export interface RecentRecommendationHead {
 }
 export interface BuildRecommendationInput {
   candidates: readonly RecommendationCandidate[];
-  /** Existing protected/pinned quality order, used only when the new head cannot be formed. */
+  /** Existing protected quality order, used only when the new head cannot be formed. */
   fallbackOrder?: readonly string[];
   snapshot: RankingSnapshot | null;
   exposures: ReadonlyMap<string, number>;
   recent: readonly RecentRecommendationHead[];
   config: LobbyRotationConfig;
-  promotedIds: readonly string[];
-  fixedId: string | null;
   now: number;
   seed: number;
 }
@@ -131,7 +129,6 @@ export function buildRecommendationOrder(input: BuildRecommendationInput): Recom
   const taken = new Set<string>();
   const last = new Set(recent[0]?.characterIds ?? []);
   const older = new Set(recent.slice(1, 3).flatMap((batch) => batch.characterIds));
-  const promoted = new Set(input.promotedIds);
   let repeated = 0;
   let relaxed = false;
   const weight = (candidate: RecommendationCandidate) => {
@@ -143,8 +140,7 @@ export function buildRecommendationOrder(input: BuildRecommendationInput): Recom
     return (
       ((trusted ? 0.5 + score / 100 : 1) *
         exposureWeight(input.exposures.get(candidate.id), now, trusted) *
-        (older.has(candidate.id) ? 0.55 : 1) *
-        (promoted.has(candidate.id) ? 1.2 : 1)) /
+        (older.has(candidate.id) ? 0.55 : 1)) /
       (1 + tagMatches * 0.45)
     );
   };
@@ -177,8 +173,6 @@ export function buildRecommendationOrder(input: BuildRecommendationInput): Recom
     if (repeated >= config.max_repeat) relaxed = true;
     return draw(remaining);
   };
-  const fixed = reliable.find((c) => c.id === input.fixedId);
-  if (fixed) add(fixed);
   while (selected.length < Math.min(4, reliable.length)) {
     if (!choose(top, reliable)) break;
   }

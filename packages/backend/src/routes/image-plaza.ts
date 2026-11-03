@@ -387,9 +387,9 @@ export default async function imagePlazaRoutes(app: FastifyInstance) {
         const modelName =
           runtime.catalog.models.find((model) => model.id === modelId)?.name ?? modelId;
         const taggingStartedAt = Date.now();
-        // 标签功能关时跳过自动打标；客户端显式传 tags 仍按启用集合校验后写入。
+        // 分享自动打标恒开启（运营开关已撤）：客户端没传标签才调用模型；显式传入的按启用集合校验后写入。
         const pendingTags =
-          body.data.tags.length === 0 && runtime.tagsFeatureEnabled
+          body.data.tags.length === 0
             ? repository
                 .loadSharePrompt(body.data.artifact_id, context.id)
                 .then((prompt) =>

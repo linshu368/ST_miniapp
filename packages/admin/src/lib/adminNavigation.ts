@@ -1,4 +1,6 @@
 import {
+  ADMIN_MENU_GROUPS,
+  configMetadata,
   IMAGE_GENERATION_CONFIG_KEYS,
   IMAGE_PLAZA_CONFIG_KEYS,
   INVITE_PROGRAM_CONFIG_KEYS,
@@ -10,16 +12,11 @@ import {
   type ManagedConfigKey,
   type PlatformInstructionConfigKey,
 } from '@miniapp/admin-client';
-import {
-  CREATOR_REVIEW_PROMPT_KEY,
-  VIP_STRATEGY_CONFIG_KEYS,
-  type VipStrategyConfigKey,
-} from '@miniapp/shared';
+import { VIP_STRATEGY_CONFIG_KEYS, type VipStrategyConfigKey } from '@miniapp/shared';
 
 export type AdminViewKey =
   | 'configs'
   | 'fallback_config'
-  | 'outreach_credit_grant'
   | 'invite_program'
   | 'image_generation_config'
   | 'image_plaza'
@@ -61,9 +58,6 @@ export function isImageGenerationConfigKey(key: ManagedConfigKey): key is ImageG
   return (IMAGE_GENERATION_CONFIG_KEYS as readonly string[]).includes(key);
 }
 
-/** 旧的单一免费次数键。额度改由 VIP 策略的 feature_free_trial_limits 发布，不再给运营入口。 */
-const LEGACY_MEDIA_FREE_TRIAL_LIMIT_KEY = 'media_feature_free_trial_limit';
-
 export function isInviteProgramConfigKey(key: ManagedConfigKey): key is InviteProgramConfigKey {
   return (INVITE_PROGRAM_CONFIG_KEYS as readonly string[]).includes(key);
 }
@@ -71,19 +65,6 @@ export function isInviteProgramConfigKey(key: ManagedConfigKey): key is InvitePr
 export function isVipStrategyConfigKey(key: ManagedConfigKey): key is VipStrategyConfigKey {
   return (VIP_STRATEGY_CONFIG_KEYS as readonly string[]).includes(key);
 }
-
-/** 侧栏「运营配置」子菜单实际展示的 config 目录（invite 三项已收进「裂变邀请管理」）。 */
-export const sidebarManagedConfigKeys: readonly ManagedConfigKey[] = managedConfigKeys.filter(
-  (key) =>
-    !isInviteProgramConfigKey(key) &&
-    !isImageGenerationConfigKey(key) &&
-    !isImagePlazaConfigKey(key) &&
-    !isPlatformInstructionConfigKey(key) &&
-    key !== 'reply_style_options' &&
-    key !== CREATOR_REVIEW_PROMPT_KEY &&
-    !isVipStrategyConfigKey(key) &&
-    key !== LEGACY_MEDIA_FREE_TRIAL_LIMIT_KEY
-);
 
 const CONFIG_PREFIX = 'config:';
 
@@ -116,7 +97,6 @@ export function resolveAdminMenuSelection(key: string): {
     }
   }
   if (
-    key === 'outreach_credit_grant' ||
     key === 'invite_program' ||
     key === 'image_generation_config' ||
     key === 'image_plaza' ||
@@ -130,4 +110,48 @@ export function resolveAdminMenuSelection(key: string): {
     return { view: key };
   }
   return { view: 'configs' };
+}
+
+export interface AdminMenuLeaf {
+  key: string;
+  label: string;
+}
+
+export interface AdminMenuGroupNode extends AdminMenuLeaf {
+  children: AdminMenuLeaf[];
+}
+
+export type AdminMenuNode = AdminMenuLeaf | AdminMenuGroupNode;
+
+function isGroupNode(node: AdminMenuNode): node is AdminMenuGroupNode {
+  return 'children' in node;
+}
+
+const GROUP_PREFIX = 'group:';
+
+/** 侧栏：按 admin-client 的 ADMIN_MENU_GROUPS 分组（与 CLI 的 config list 同一份），末尾是发布历史。 */
+export const ADMIN_MENU: AdminMenuNode[] = [
+  ...ADMIN_MENU_GROUPS.map((group) => ({
+    key: `${GROUP_PREFIX}${group.id}`,
+    label: group.label,
+    children: group.items.map((item) =>
+      item.kind === 'config'
+        ? { key: configMenuKey(item.key), label: item.label ?? configMetadata[item.key].label }
+        : { key: item.view, label: item.label }
+    ),
+  })),
+  { key: 'releases', label: '发布历史' },
+];
+
+/** 当前选中项所在的分组，用于默认展开。 */
+export function menuGroupKeyFor(menuKey: string): string | undefined {
+  return ADMIN_MENU.find(
+    (node) => isGroupNode(node) && node.children.some((child) => child.key === menuKey)
+  )?.key;
+}
+
+export function adminMenuLeafKeys(): string[] {
+  return ADMIN_MENU.flatMap((node) =>
+    isGroupNode(node) ? node.children.map((child) => child.key) : [node.key]
+  );
 }

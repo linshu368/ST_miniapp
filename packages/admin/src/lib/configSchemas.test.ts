@@ -53,23 +53,6 @@ describe('lobby rotation config editing', () => {
       rotation: expectedRotation,
     });
   });
-
-  it('retains the legacy candidate list and independent fixed choice through save validation', () => {
-    const characterIds = Array.from(
-      { length: 8 },
-      (_, index) => `10000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`
-    );
-    expect(configSchemas.lobby_pinned_characters.parse({ character_ids: characterIds })).toEqual({
-      character_ids: characterIds,
-    });
-    expect(
-      configSchemas.lobby_pinned_characters.parse({
-        character_ids: characterIds,
-        fixed_character_id: characterIds[5],
-      })
-    ).toMatchObject({ character_ids: characterIds, fixed_character_id: characterIds[5] });
-    expect(configMetadata.lobby_pinned_characters.label).toBe('推荐主推候选');
-  });
 });
 
 describe('editable image plaza tags', () => {
@@ -130,21 +113,24 @@ describe('VIP media config registration', () => {
   it('does not expose removed advanced image configs', () => {
     expect(managedConfigKeys.some((key) => key.startsWith('image_advanced_'))).toBe(false);
   });
-
-  it('bounds media free-trial limits', () => {
-    const key = 'media_feature_free_trial_limit';
-
-    expect(configSchemas[key].safeParse(1).success).toBe(true);
-    expect(configSchemas[key].safeParse(100).success).toBe(true);
-    expect(configSchemas[key].safeParse(0).success).toBe(false);
-    expect(configSchemas[key].safeParse(101).success).toBe(false);
-  });
 });
 
-describe('retired payment display configs', () => {
+describe('retired configs', () => {
   it('no longer exposes the recharge page and payment prompt dialog configs to operators', () => {
     expect(managedConfigKeys).not.toContain('miniapp_recharge_page_config');
     expect(managedConfigKeys).not.toContain('miniapp_payment_prompt_dialog_config');
+  });
+
+  it('no longer exposes configs the runtime stopped reading', () => {
+    for (const key of [
+      'system_fallback_character_id',
+      'miniapp_daily_checkin_bonus_credits',
+      'media_feature_free_trial_limit',
+      'image_plaza_tags_feature_enabled',
+      'lobby_pinned_characters',
+    ]) {
+      expect(managedConfigKeys).not.toContain(key);
+    }
   });
 });
 

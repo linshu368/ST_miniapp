@@ -24,7 +24,6 @@ import type { FastifyBaseLogger } from 'fastify';
 import { discoverableCharacterWhere } from '../creator/access.js';
 import { prisma } from '../../lib/db.js';
 import { resolveLobbyFeaturedIds } from './featured.js';
-import { resolveLobbyPinnedCharacters } from './pinned-characters.js';
 import { loadCharacterRankingScores } from './ranking-stats.js';
 
 const FEATURED_SNAPSHOT_TTL_MS = 2_000;
@@ -53,19 +52,17 @@ async function refresh(log: FastifyBaseLogger): Promise<ReadonlySet<string>> {
   const startedAt = Date.now();
   try {
     // 串行占池：金框刷新已有 single-flight，再并行会在那一瞬间占 2 条 Prisma 连接。
-    // 排序分读有自己的缓存 + single-flight；固定位走 PostgREST，不与 Prisma 抢同池。
+    // 排序分读有自己的缓存 + single-flight。
     const operatorOrdered = await prisma.character.findMany({
       where: discoverableCharacterWhere,
       orderBy: [{ sort_order: 'asc' }, { created_at: 'desc' }],
       select: { id: true },
     });
     const snapshot = await loadCharacterRankingScores();
-    const pinned = await resolveLobbyPinnedCharacters(log);
 
     const ids = resolveLobbyFeaturedIds({
       operatorOrdered,
       snapshot,
-      pinnedIds: pinned.characterIds,
     });
     // 只记成功结果：失败时的空集一旦记下，会把「没金框」钉住整整一个 TTL。
     lastGood = { at: Date.now(), ids };
