@@ -577,6 +577,8 @@ export class DramaTimingTracker {
       videoId,
       delivery,
       context: this.context,
+      route: this.playback?.owner === 'home' ? '/' : '/dramas/:id',
+      sourceAt: this.playback?.marks.source_set ?? this.playback?.startedAt,
       now: this.now,
       emit: this.emit,
     });

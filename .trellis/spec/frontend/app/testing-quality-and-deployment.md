@@ -135,3 +135,7 @@ SSE第一个有效正文或已启用思考token在`flushSync`中执行既有增�
 复用每轮一次Faro终态的有限`first_token_stage`：`awaiting_start`表示客户端尚无start身份，`awaiting_token`表示有start但无有效token，`awaiting_commit`表示已接收而未提交，`committed`表示实际提交成功。它只说明客户端阶段，不能直接推断供应商或网络根因；历史缺字段保持未知，不能填0。字段通过现有白名单，无身份/正文/额外请求/Supabase写入。
 
 回归：思考/正文共享首片标记、首片同步与后续合批、6秒边界/迟到不可改成功、脱敏导出，以及既有`@chat`的同批文字后报错、滚动到历史和单次回报。真实服务端到客户端差异仍须上线后观察；成功者分位数下降不能替代无字超时比例。
+
+## 无缓冲快进恢复诊断（本地候选）
+
+独立drama_seek_resume_v1，buffered=no/forward/wasPlaying=true才进入恢复目标；真实目标帧和恢复播放都必须具备，暂停单帧不算成功。复用同一seek owner及resource converter，route/source代际在提交时绑定。仅seek允许100ms、最多100次有界状态读取（区别于禁止对启动/常规播放持续轮询），最多32条变化/事件，60秒只终止诊断；切换/后台/终态解除。Resource Timing最多16条，同源时间重叠只标candidate，负start保留，终态后新请求不抢归属，final冻结且最多5秒尾报告。全量统计与明细独立，network不重复终态；三秒预算与结果原子投影，缺证据/不支持/截断不得填0。复用drama-media/observer/grafana与shared/Backend回归，Android/iOS真实样本另行验收；不以本地模拟宣称性能达标。

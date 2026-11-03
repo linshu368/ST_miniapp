@@ -136,6 +136,47 @@ export const DramaTimingReportSchema = z
         wasPlaying: z.boolean(),
         seekedMs: Duration.optional(),
         frameMs: Duration.optional(),
+        definition: z.literal('drama_seek_resume_v1').optional(),
+        fromMs: Duration.optional(),
+        direction: z.enum(['forward', 'backward', 'same', 'unknown']).optional(),
+        positionSetMs: Duration.optional(),
+        seekingMs: Duration.optional(),
+        playingMs: Duration.optional(),
+        firstBufferedMs: Duration.optional(),
+        samplingCapped: z.boolean().optional(),
+        samplesTruncated: z.boolean().optional(),
+        endReason: z.enum(['terminal', 'paused', 'deadline']).optional(),
+        samples: z
+          .array(
+            z
+              .object({
+                atMs: Duration,
+                event: z.enum([
+                  'commit',
+                  'position_set',
+                  'seeking',
+                  'seeked',
+                  'progress',
+                  'waiting',
+                  'canplay',
+                  'playing',
+                  'pause',
+                  'sample',
+                  'frame',
+                  'timeupdate',
+                  'error',
+                ]),
+                readyState: z.number().int().min(0).max(4),
+                paused: z.boolean(),
+                seeking: z.boolean(),
+                currentTimeMs: Duration.optional(),
+                targetBuffered: z.enum(['yes', 'no', 'unknown']),
+                targetBufferedAheadMs: Duration.optional(),
+              })
+              .strict()
+          )
+          .max(32)
+          .optional(),
       })
       .strict()
       .optional(),
@@ -303,8 +344,21 @@ export const DramaTimingReportSchema = z
         message: 'Successful seek requires a target frame',
       });
     }
-    if (report.phase === 'network' && report.type === 'seek') {
+    if (report.phase === 'network' && report.type === 'seek' && !report.seek?.definition) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'No network tail for seek' });
+    }
+    if (
+      report.type === 'seek' &&
+      report.seek?.definition &&
+      report.outcome === 'playing' &&
+      (!report.seek.wasPlaying ||
+        report.seek.seekedMs === undefined ||
+        report.seek.playingMs === undefined)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Seek resume requires seeked, frame and playback evidence',
+      });
     }
   });
 

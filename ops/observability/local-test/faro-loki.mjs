@@ -279,6 +279,106 @@ try {
     }),
   });
   assert.equal(cdnResponse.status, 202);
+  const seekEvents = [],
+    seekMeasurements = [];
+  const seekAttrs = (platform, extra = {}) => ({
+    schema_version: '1',
+    measurement_version: 'engineering_v1',
+    source_measurement_version: 'drama_seek_resume_v1',
+    route: '/dramas/:id',
+    tg_platform: platform,
+    net_type: '4g',
+    report_kind: 'final',
+    seek_buffered: 'no',
+    seek_direction: 'forward',
+    resume_expected: 'true',
+    stage: 'total',
+    ...extra,
+  });
+  for (const [platform, ms, outcome, extra] of [
+    ['ios', 1000, 'playing', {}],
+    ['ios', 3000, 'playing', {}],
+    ['ios', 5000, 'playing', {}],
+    ['ios', 500, 'error', {}],
+    ['ios', 700, 'left', {}],
+    ['ios', 500, 'background', {}],
+    ['ios', 500, 'unverified', {}],
+    ['android', 2000, 'playing', {}],
+    ['android', 1000, 'error', {}],
+    ['ios', 25000, 'playing', { seek_buffered: 'yes' }],
+    ['ios', 30000, 'playing', { seek_direction: 'backward' }],
+  ]) {
+    const budget =
+      outcome === 'background'
+        ? 'excluded'
+        : outcome === 'unverified'
+          ? 'unverified'
+          : outcome !== 'playing'
+            ? 'not_resumed'
+            : ms <= 3000
+              ? 'within_3s'
+              : 'over_3s';
+    const attributes = seekAttrs(platform, { outcome, seek_budget: budget, ...extra });
+    seekEvents.push({
+      name: 'st_drama_seek_terminal',
+      timestamp,
+      domain: 'st.engineering',
+      attributes,
+    });
+    seekMeasurements.push({
+      type: 'st_drama_seek',
+      timestamp,
+      values: { duration_ms: ms },
+      context: attributes,
+    });
+  }
+  for (const [stage, values] of [
+    ['seek_before_seeked', [500, 2000, 4500]],
+    ['seek_after_seeked', [500, 1000, 500]],
+    ['network_ttfb_first', [100, 200, 300]],
+  ]) {
+    for (const ms of values)
+      seekMeasurements.push({
+        type: 'st_drama_seek_stage',
+        timestamp,
+        values: { duration_ms: ms },
+        context: seekAttrs('ios', { stage, outcome: 'playing' }),
+      });
+  }
+  seekMeasurements.push({
+    type: 'st_drama_seek_stage',
+    timestamp,
+    values: { duration_ms: 9000 },
+    context: seekAttrs('ios', {
+      stage: 'network_ttfb_first',
+      outcome: 'playing',
+      report_kind: 'network',
+    }),
+  });
+  seekEvents.push({
+    name: 'st_drama_seek_diagnostic',
+    timestamp,
+    domain: 'st.engineering',
+    attributes: seekAttrs('ios', {
+      seeked_status: 'available',
+      buffer_observed_status: 'missing',
+      network_status: 'limited',
+      network_match: 'same_source_overlap',
+      frame_processing_status: 'missing',
+      seek_sampling: 'capped',
+      detail_truncated: 'false',
+    }),
+  });
+  const seekResponse = await fetch(`http://127.0.0.1:${faroPort}/collect`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      meta: { app: { name: 'st-miniapp', version: 'seek-contract', environment: 'test' } },
+      measurements: seekMeasurements,
+      events: seekEvents,
+    }),
+  });
+  assert.equal(seekResponse.status, 202);
   await sleep(1500);
   const inspectUrl = new URL('/loki/api/v1/query_range', lokiUrl);
   inspectUrl.searchParams.set('query', '{app="st-miniapp"}');
@@ -332,11 +432,18 @@ try {
           .replaceAll('$environment', 'test')
           .replaceAll(
             '$release',
-            uid === 'st-engineering-drama' && panel.id >= 200 ? 'cdn-contract' : 'local-contract'
+            uid === 'st-engineering-drama' && panel.id >= 299
+              ? 'seek-contract'
+              : uid === 'st-engineering-drama' && panel.id >= 200
+                ? 'cdn-contract'
+                : 'local-contract'
           )
           .replaceAll('$cdn_experiment', 'synthetic-ab')
           .replaceAll('$cdn_entry', 'cover|switch|episode|direct')
           .replaceAll('$measurement_version', 'engineering_v1')
+          .replaceAll('${tg_platform:raw}', '.*')
+          .replaceAll('${net_type:raw}', '.*')
+          .replaceAll('${seek_diagnostic_phase:regex}', 'final')
           .replaceAll('$tg_platform', '.*')
           .replaceAll('$net_type', '.*')
           .replaceAll('$startup_definition', 'drama_v3')
@@ -354,7 +461,7 @@ try {
           'All saved query variables must be resolved'
         );
         const result = await query(expression, panel.type === 'logs');
-        if (uid === 'st-engineering-drama' && panel.id >= 200) {
+        if (uid === 'st-engineering-drama' && panel.id >= 200 && panel.id < 299) {
           const byGroup = Object.fromEntries(
             result.map((r) => [r.metric.cdn_group, Number(r.value[1])])
           );
@@ -427,6 +534,47 @@ try {
             0,
             'Empty cohorts must not become a zero or success'
           );
+        }
+        if (uid === 'st-engineering-drama' && panel.id >= 300 && panel.type !== 'logs') {
+          const values = Object.fromEntries(
+            result.map((r) => [
+              r.metric.context_tg_platform ?? r.metric.event_data_tg_platform,
+              Number(r.value[1]),
+            ])
+          );
+          if (panel.id === 300)
+            assert.deepEqual(
+              values,
+              target.refId === 'A' ? { ios: 4800, android: 2000 } : { ios: 3, android: 1 }
+            );
+          if (panel.id === 301)
+            assert.deepEqual(
+              values,
+              target.refId === 'A' ? { ios: 0.4, android: 0.5 } : { ios: 5, android: 2 }
+            );
+          if (panel.id === 303 && target.refId === 'B') {
+            assert.equal(
+              Number(result.find((r) => r.metric.context_stage === 'seek_before_seeked')?.value[1]),
+              4250
+            );
+          }
+          if (panel.id === 306 && target.refId !== 'A')
+            assert.equal(Number(result[0]?.value[1]), target.refId === 'D' ? 100 : 0);
+          if (panel.id === 305) {
+            assert.equal(
+              Number(result[0]?.value[1]),
+              target.refId === 'A' ? 200 : target.refId === 'B' ? 290 : 3
+            );
+            const tail = await query(
+              expression.replaceAll(
+                'context_report_kind=~"final"',
+                'context_report_kind=~"network"'
+              )
+            );
+            assert.equal(Number(tail[0]?.value[1]), target.refId === 'C' ? 1 : 9000);
+          }
+          const empty = await query(expression.replaceAll('seek-contract', 'absent-seek'));
+          assert.equal(empty.length, 0, 'No seek samples must remain absent, not zero or success');
         }
         if (panel.id === 101) {
           const byModel = Object.fromEntries(

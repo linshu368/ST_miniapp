@@ -146,6 +146,25 @@ describe('engineering telemetry boundary', () => {
     observeDramaStartupDiagnostic({ ...report, phase: 'network' });
     for (const outcome of ['error', 'left', 'background'] as const)
       observeDramaStartupDiagnostic({ ...report, outcome, elapsedMs: 16_007 });
+    const seekReport: DramaTimingReport = {
+      ...report,
+      type: 'seek',
+      elapsedMs: 3000,
+      frameMethod: 'video_frame_callback',
+      seek: {
+        definition: 'drama_seek_resume_v1',
+        targetMs: 40000,
+        direction: 'forward',
+        buffered: 'no',
+        wasPlaying: true,
+        seekedMs: 2800,
+        frameMs: 2900,
+        playingMs: 3000,
+      },
+    };
+    observeDramaStartupDiagnostic({ ...seekReport, elapsedMs: 2999 });
+    observeDramaStartupDiagnostic(seekReport);
+    observeDramaStartupDiagnostic({ ...seekReport, phase: 'network' });
     observeDramaStartupDiagnostic({ ...report, token: 'PRIVATE_TOKEN' } as DramaTimingReport);
     observeDramaStartupDiagnostic({
       ...report,
@@ -159,14 +178,20 @@ describe('engineering telemetry boundary', () => {
           resource.scopeLogs.flatMap((scope) => scope.logRecords)
         )
       );
-    expect(records).toHaveLength(6);
+    expect(records).toHaveLength(8);
     const bodies = records.map((r) => JSON.parse(r.body.stringValue) as Record<string, unknown>);
-    expect(bodies.map((b) => b.elapsedMs)).toEqual([5_000, 6_000, 6_000, 16_007, 16_007, 16_007]);
+    expect(bodies.map((b) => b.elapsedMs)).toEqual([
+      5_000, 6_000, 6_000, 16_007, 16_007, 16_007, 3000, 3000,
+    ]);
     expect(bodies[1]).toMatchObject({
       event: 'drama.startup_diagnostic',
       ...report,
     });
     expect(bodies[2]).toMatchObject({ phase: 'network', id: 'slow-observation' });
+    expect(bodies[6]).toMatchObject({
+      event: 'drama.seek_diagnostic',
+      seek: { buffered: 'no', definition: 'drama_seek_resume_v1' },
+    });
     expect(JSON.stringify(records)).not.toContain('PRIVATE_');
     expect(
       records.every((r) =>
