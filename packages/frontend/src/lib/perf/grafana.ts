@@ -176,6 +176,7 @@ const ENUMS: Readonly<Record<string, readonly string[]>> = {
   protocol: ['h2', 'h3', 'http/1.1', 'http/1.0', 'unknown'],
   conn_reused: ['true', 'false', 'unknown'],
   conn_proven: ['true', 'false'],
+  rt_buffer: ['hit', 'miss'],
   delay_attribution: ['on_time', 'ours', 'user_network'],
   source_measurement_version: [
     'page_mount_v1',

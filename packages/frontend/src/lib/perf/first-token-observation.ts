@@ -34,12 +34,22 @@ export function attributeFirstTokenDelay(input: {
   return waitMs - pathMs >= deadlineMs ? 'ours' : 'user_network';
 }
 
-function readRequestTiming(url: string | null, startedAt: number) {
-  if (!url || typeof performance.getEntriesByName !== 'function') return null;
-  const entry = performance
+/** Streams finish long before this; it only bounds an observer whose report never runs. */
+const TIMING_OBSERVER_MAX_MS = 180_000;
+
+function isRequestEntry(entry: PerformanceEntry, url: string, startedAt: number): boolean {
+  return entry.name === url && entry.startTime >= startedAt - 1;
+}
+
+function bufferedRequestEntry(url: string, startedAt: number) {
+  if (typeof performance.getEntriesByName !== 'function') return null;
+  return (performance
     .getEntriesByName(url, 'resource')
     .filter((item) => item.startTime >= startedAt - 1)
-    .at(-1) as PerformanceResourceTiming | undefined;
+    .at(-1) ?? null) as PerformanceResourceTiming | null;
+}
+
+function requestTiming(entry: PerformanceResourceTiming | null) {
   // Without Timing-Allow-Origin the browser zeroes these fields; that is no evidence.
   if (!entry || entry.requestStart <= 0) return null;
   return {
@@ -70,6 +80,9 @@ export class FirstTokenObservation {
   private serverElapsedMs: number | null = null;
   private lateVisibleMs: number | null = null;
   private networkReported = false;
+  private timingEntry: PerformanceResourceTiming | null = null;
+  private timingObserver: PerformanceObserver | null = null;
+  private timingRelease: ReturnType<typeof setTimeout> | undefined;
   private visibility = () => {
     if (document.visibilityState !== 'visible') {
       this.backgrounded = true;
@@ -130,8 +143,42 @@ export class FirstTokenObservation {
     this.requestUrl ??= url ?? null;
     this.connectionProven =
       connectionAgeMs !== null && connectionAgeMs < CONNECTION_PROOF_MAX_AGE_MS;
+    if (this.requestUrl && !this.timingObserver) this.watchRequestTiming(this.requestUrl);
     if (this.outcome) return;
     this.dispatchedMs ??= performance.now() - this.startedAt;
+  }
+  /**
+   * The page-wide resource buffer stops recording after 250 entries, which a long chat session
+   * with avatars and covers fills early. An observer still receives this request's entry.
+   */
+  private watchRequestTiming(url: string): void {
+    if (typeof PerformanceObserver === 'undefined') return;
+    try {
+      const observer = new PerformanceObserver((list) => this.acceptTiming(list.getEntries()));
+      observer.observe({ type: 'resource', buffered: true });
+      this.timingObserver = observer;
+      this.timingRelease = setTimeout(() => this.releaseTimingObserver(), TIMING_OBSERVER_MAX_MS);
+    } catch {
+      // Optional WebView reader; the buffer lookup below still runs.
+    }
+  }
+  private acceptTiming(entries: PerformanceEntryList): void {
+    const url = this.requestUrl;
+    if (!url) return;
+    for (const entry of entries)
+      if (isRequestEntry(entry, url, this.startedAt))
+        this.timingEntry = entry as PerformanceResourceTiming;
+  }
+  private releaseTimingObserver(): void {
+    clearTimeout(this.timingRelease);
+    const observer = this.timingObserver;
+    if (!observer) return;
+    try {
+      this.acceptTiming(observer.takeRecords());
+      observer.disconnect();
+    } catch {
+      // Losing the entry only leaves the attribution unknown.
+    }
   }
   /** Recorded even after the deadline: a late start still separates network from server time. */
   started(serverElapsedMs?: number): void {
@@ -199,9 +246,26 @@ export class FirstTokenObservation {
       this.outcome === 'observed' ||
       this.outcome === 'timed_out' ||
       SERVER_TIMEOUT_REASONS.has(this.reason);
+    this.releaseTimingObserver();
     if (!known || !this.outcome) return;
     try {
-      const timing = readRequestTiming(this.requestUrl, this.startedAt);
+      const buffered = this.requestUrl
+        ? bufferedRequestEntry(this.requestUrl, this.startedAt)
+        : null;
+      const entry = this.timingEntry ?? buffered;
+      const timing = requestTiming(entry);
+      // Says why attribution lacks evidence: a full page buffer (observer only), a missing
+      // Timing-Allow-Origin (limited), or no entry at all for this stream.
+      const networkStatus = !this.requestUrl
+        ? 'unknown'
+        : timing
+          ? 'available'
+          : entry
+            ? 'limited'
+            : typeof PerformanceObserver === 'undefined' &&
+                typeof performance.getEntriesByName !== 'function'
+              ? 'unsupported'
+              : 'no_entry';
       const overheadMs =
         this.startReceivedMs !== null && this.serverElapsedMs !== null
           ? Math.max(0, this.startReceivedMs - this.serverElapsedMs)
@@ -216,6 +280,8 @@ export class FirstTokenObservation {
         protocol: timing?.protocol ?? 'unknown',
         conn_reused: timing ? String(timing.reused) : 'unknown',
         conn_proven: String(this.connectionProven),
+        network_status: networkStatus,
+        rt_buffer: buffered ? 'hit' : 'miss',
         delay_attribution: attributeFirstTokenDelay({
           waitMs: this.visibleMs ?? this.lateVisibleMs,
           deadlineMs: this.deadlineMs,
