@@ -154,32 +154,6 @@ export const RECHARGE_PAGE_DISPLAY = {
   pendingArrivalHint: DEFAULT_PENDING_ARRIVAL_HINT,
 } as const;
 
-/**
- * 仅为尚未刷新的旧客户端保留的响应字段：旧版缺省时会回落到「启用 VPN 提示弹窗」。
- * 新客户端不读取；下一个版本连同后端输出一起删除。
- */
-export interface LegacyPaymentPageFields {
-  page_config: {
-    title: string;
-    description: string;
-    button_text: string;
-    theme_color: string;
-    balance_color: string;
-    selected_plan_color: string;
-    badge_color: string;
-    button_color: string;
-    pending_arrival_hint: string;
-  };
-  payment_prompt_dialog_config: {
-    enabled: false;
-    title: string;
-    description: string;
-    confirm_text: string;
-    footer_note: string;
-    accent_color: string;
-  };
-}
-
 export interface PaymentOrder {
   /** 订单号，沿用老项目 TG_{userId}_{ts}_{rand} 语义 */
   id: string;
@@ -216,7 +190,7 @@ export interface PaymentOrder {
 }
 
 // ==== GET /api/payment/plans ====
-export interface GetPaymentPlansData extends Partial<LegacyPaymentPageFields> {
+export interface GetPaymentPlansData {
   plans: PaymentPlan[];
   /** Channels visible for creating new orders; all historical order types remain displayable. */
   payment_channels?: PaymentChannelsConfig;
