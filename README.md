@@ -56,19 +56,23 @@ ST_miniapp 是围绕 Telegram MiniApp、AI 角色聊天、钱包/支付、语音
 ```text
 packages/frontend    ─┐
 packages/admin       ─┴──> packages/reply-renderer ──> packages/shared
+packages/admin       ───┐
+packages/admin-cli   ───┴──> packages/admin-client ──> packages/shared
 packages/backend     ───────────────────────────────> packages/shared
 
 ```
 
 `pnpm-workspace.yaml` 只包含 `packages/*`。三个应用包可以依赖 `@miniapp/shared`，但彼此不得直接 import；跨应用通信使用 HTTP。Shared 不依赖应用包。
 
-| 目录                      | 包名/形态                                | 主要职责                                                         | 默认开发端口 |
-| ------------------------- | ---------------------------------------- | ---------------------------------------------------------------- | ------------ |
-| `packages/frontend`       | `@miniapp/frontend` / Next.js 14         | Telegram MiniApp 用户界面、聊天、钱包、支付、语音、社区等        | 3000         |
-| `packages/backend`        | `@miniapp/backend` / Fastify 5           | API、鉴权、生成/计费、Supabase/Prisma、支付、Telegram、客服代理  | 3001         |
-| `packages/admin`          | `@miniapp/admin` / Vite React            | 配置、模型、角色卡、公告、裂变和运营赠送                         | 3003         |
-| `packages/shared`         | `@miniapp/shared` / TS 源码包            | API DTO、Zod schema、文本后处理编译/执行纯工具和 SQL migrations  | -            |
-| `packages/reply-renderer` | `@miniapp/reply-renderer` / React 源码包 | Frontend/Admin 共用的安全 Markdown、受限 HTML/CSS 和可信交互渲染 | -            |
+| 目录                      | 包名/形态                                | 主要职责                                                                 | 默认开发端口 |
+| ------------------------- | ---------------------------------------- | ------------------------------------------------------------------------ | ------------ |
+| `packages/frontend`       | `@miniapp/frontend` / Next.js 14         | Telegram MiniApp 用户界面、聊天、钱包、支付、语音、社区等                | 3000         |
+| `packages/backend`        | `@miniapp/backend` / Fastify 5           | API、鉴权、生成/计费、Supabase/Prisma、支付、Telegram、客服代理          | 3001         |
+| `packages/admin`          | `@miniapp/admin` / Vite React            | 运营平台网页：配置、模型、角色卡、公告、裂变                             | 3003         |
+| `packages/admin-client`   | `@miniapp/admin-client` / TS 源码包      | 运营平台网页与 CLI 共用：配置注册表与校验、菜单分组、Admin RPC/HTTP 调用 | -            |
+| `packages/admin-cli`      | `@miniapp/admin-cli` / Node CLI          | 生产运营平台命令行 `pnpm admin`，见 `packages/admin-cli/README.md`       | -            |
+| `packages/shared`         | `@miniapp/shared` / TS 源码包            | API DTO、Zod schema、文本后处理编译/执行纯工具和 SQL migrations          | -            |
+| `packages/reply-renderer` | `@miniapp/reply-renderer` / React 源码包 | Frontend/Admin 共用的安全 Markdown、受限 HTML/CSS 和可信交互渲染         | -            |
 
 Shared 的 `main`/`types` 直接指向 `src/index.ts`，没有独立 build 产物；修改公开出口会直接影响所有消费者。
 
