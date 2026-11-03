@@ -13,6 +13,8 @@ export type PaymentOperation = {
   trigger: string;
   occurred_at: string;
   error_class: string | null;
+  /** 建单、查单耗时；老事件和不计时的事件为空。 */
+  duration_ms?: number | null;
   order_id: string | null;
   user_id: string | null;
 };
@@ -27,13 +29,51 @@ export const P0_PAID_NOT_FULFILLED_RULE_ID = 'p0-paid-not-fulfilled';
 export const P1_REFUND_RULE_ID = 'p1-refund';
 export const P1_PROVIDER_QUERY_FAILING_RULE_ID = 'p1-provider-query-failing';
 export const P1_WEBHOOK_REJECTED_RULE_ID = 'p1-webhook-rejected';
+/** 预警：平台变慢或开始间歇失败，还没到用户连续建单失败的程度。 */
+export const P1_PROVIDER_DEGRADED_RULE_ID = 'p1-provider-degraded';
 
-/** 会推送飞书的规则：用户付不了钱、付了钱没拿到权益、钱被退回。其余只记事故。 */
+/** 预警：收银台能打开，但平台判定的付款失败占比异常高（渠道问题的信号）。 */
+export const P1_PROVIDER_PAY_FAILURE_RATE_RULE_ID = 'p1-provider-pay-failure-rate';
+const PAY_FAILURE_WINDOW_MS = 30 * 60_000;
+const PAY_FAILURE_MIN_COUNT = 3;
+const PAY_FAILURE_MIN_RATIO = 0.6;
+/** 平台明确判定付款没成的状态。cancelled 多半是用户主动关闭，expired 是放弃，都不算渠道故障。 */
+const PAY_FAILED_CLASSES = new Set(['provider_failed']);
+
+/** 单次建单/查单超过这个耗时就算“慢”（建单目标 P95 ≤ 3 秒）。 */
+export const SLOW_CALL_MS = 3_000;
+/** 对账循环把成功但偏慢的查单记成这个分类，供预警规则统计。 */
+export const SLOW_CALL_ERROR_CLASS = 'slow';
+
+/**
+ * 会推送飞书的规则：用户付不了钱、付了钱没拿到权益、钱被退回，
+ * 以及平台还没让用户出错之前的预警（查单探测失败、平台变慢或间歇失败）。其余只记事故。
+ */
 export const FEISHU_NOTIFY_RULE_IDS = new Set([
   P0_PROVIDER_CREATE_FAILING_RULE_ID,
   P0_PAID_NOT_FULFILLED_RULE_ID,
   P1_REFUND_RULE_ID,
+  P1_PROVIDER_QUERY_FAILING_RULE_ID,
+  P1_PROVIDER_DEGRADED_RULE_ID,
+  P1_PROVIDER_PAY_FAILURE_RATE_RULE_ID,
 ]);
+
+/**
+ * 恢复防抖：监控每分钟一轮，规则连续健康这么多轮才算恢复。
+ * 预警类规则的阈值落在滑动窗口边缘，容易在触发/健康间来回跳，所以要等更久；其余规则沿用 2 轮。
+ */
+export const DEFAULT_RECOVERY_PASSES = 2;
+export const EARLY_WARNING_RECOVERY_PASSES = 10;
+const EARLY_WARNING_RULE_IDS = new Set([
+  P1_PROVIDER_QUERY_FAILING_RULE_ID,
+  P1_PROVIDER_DEGRADED_RULE_ID,
+  P1_PROVIDER_PAY_FAILURE_RATE_RULE_ID,
+]);
+export function recoveryPassesFor(ruleId: string): number {
+  return EARLY_WARNING_RULE_IDS.has(ruleId)
+    ? EARLY_WARNING_RECOVERY_PASSES
+    : DEFAULT_RECOVERY_PASSES;
+}
 
 /** 平台说已付款、本地却没入账的错误分类（不论来自 Webhook 还是对账）。 */
 const PAID_ANOMALY_CLASSES = new Set(['currency_mismatch', 'provider_ref_mismatch']);
@@ -113,7 +153,8 @@ export function evaluatePaymentAlertRules(
     (op) =>
       QUERY_EVENT_KINDS.has(op.event_kind) &&
       op.outcome !== 'skipped' &&
-      !LOOKUP_ANOMALY_CLASSES.has(op.error_class ?? '')
+      !LOOKUP_ANOMALY_CLASSES.has(op.error_class ?? '') &&
+      op.error_class !== SLOW_CALL_ERROR_CLASS
   );
   const queryFailures = queries.filter((op) => op.outcome === 'failed');
 
@@ -124,6 +165,45 @@ export function evaluatePaymentAlertRules(
       op.outcome === 'failed' &&
       WEBHOOK_REJECTED_CLASSES.has(op.error_class ?? '')
   );
+
+  // 预警：建单间歇失败（还没连续 3 次）或平台整体变慢。P0 已触发时不重复预警。
+  const createFailureRatio = ratio(createFailures.length, creates.length);
+  const intermittentCreateFailures =
+    !createBlocked && createFailures.length >= 2 && createFailureRatio >= 0.4;
+  const slowCreates = creates.filter(
+    (op) => op.outcome !== 'failed' && (op.duration_ms ?? 0) >= SLOW_CALL_MS
+  );
+  const slowProbes = within(
+    10 * 60_000,
+    (op) => QUERY_EVENT_KINDS.has(op.event_kind) && op.error_class === SLOW_CALL_ERROR_CLASS
+  );
+  const slowCalls = slowCreates.length + slowProbes.length;
+  const degraded = intermittentCreateFailures || slowCalls >= 3;
+  const degradedReasons = [
+    intermittentCreateFailures
+      ? `建单 ${creates.length} 次失败 ${createFailures.length} 次（${describeClasses(createFailures)}）`
+      : '',
+    slowCalls >= 3
+      ? `慢调用 ${slowCalls} 次（建单 ${slowCreates.length}、查单 ${slowProbes.length}，阈值 ${SLOW_CALL_MS / 1000} 秒）`
+      : '',
+  ].filter(Boolean);
+
+  // 付款失败占比：分子是平台判 failed 的不同订单，分母是“成功入账 + 平台判 failed”的不同订单。
+  const payWindow = within(PAY_FAILURE_WINDOW_MS, () => true);
+  const failedPayOrders = distinctOrders(
+    payWindow.filter(
+      (op) =>
+        op.outcome === 'unpaid' &&
+        QUERY_EVENT_KINDS.has(op.event_kind) &&
+        PAY_FAILED_CLASSES.has(op.error_class ?? '')
+    )
+  );
+  const paidOrders = distinctOrders(
+    payWindow.filter((op) => op.event_kind === 'settlement' && op.outcome === 'succeeded')
+  );
+  const payFailureRatio = ratio(failedPayOrders, failedPayOrders + paidOrders);
+  const payFailureHigh =
+    failedPayOrders >= PAY_FAILURE_MIN_COUNT && payFailureRatio >= PAY_FAILURE_MIN_RATIO;
 
   const rules: Rule[] = [
     {
@@ -185,6 +265,38 @@ export function evaluatePaymentAlertRules(
       recommendedAction: '查单失败期间只能靠 Webhook 入账；检查平台状态与 API Key。',
     },
     {
+      id: P1_PROVIDER_DEGRADED_RULE_ID,
+      severity: 'P1',
+      windowMs: 10 * 60_000,
+      firing: degraded,
+      metrics: [
+        ['create_failures', createFailures.length, 'count'],
+        ['create_failure_ratio', createFailureRatio, 'ratio'],
+        ['slow_calls', slowCalls, 'count'],
+      ],
+      location: { kind: 'dependency', component: 'provider_health' },
+      title: 'P1 支付平台不稳定（预警）',
+      summary: `用户尚未连续失败，但平台已出现异常：${degradedReasons.join('；')}`,
+      recommendedAction:
+        '先看 Vexutopia 控制台和状态页；趋势继续恶化会升级为建单连续失败。必要时在后台临时关闭受影响的渠道。',
+    },
+    {
+      id: P1_PROVIDER_PAY_FAILURE_RATE_RULE_ID,
+      severity: 'P1',
+      windowMs: PAY_FAILURE_WINDOW_MS,
+      firing: payFailureHigh,
+      metrics: [
+        ['failed_payments', failedPayOrders, 'count'],
+        ['paid_payments', paidOrders, 'count'],
+        ['failure_ratio', payFailureRatio, 'ratio'],
+      ],
+      location: { kind: 'dependency', component: 'provider_payment_channel' },
+      title: 'P1 支付失败占比异常偏高（预警）',
+      summary: `最近 30 分钟平台判定付款失败 ${failedPayOrders} 笔，成功入账 ${paidOrders} 笔，失败占比 ${Math.round(payFailureRatio * 100)}%。收银台能打开但用户付不成，疑似渠道问题`,
+      recommendedAction:
+        '用支付宝和微信各试付一笔确认是哪个渠道；在 Vexutopia 控制台查失败原因（failure_reason）；确认渠道故障后可在后台临时关闭该渠道。',
+    },
+    {
       id: P1_WEBHOOK_REJECTED_RULE_ID,
       severity: 'P1',
       windowMs: 10 * 60_000,
@@ -229,6 +341,10 @@ function unresolvedPaidAnomalies(
     seen.add(key);
     return true;
   });
+}
+
+function distinctOrders(operations: PaymentOperation[]): number {
+  return new Set(operations.map((op) => op.order_id).filter(Boolean)).size;
 }
 
 function describeClasses(operations: PaymentOperation[]): string {

@@ -5,12 +5,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, ChevronLeft, Clock, Loader2, XCircle } from 'lucide-react';
-import { DEFAULT_RECHARGE_PAGE_CONFIG, type PaymentOrder } from '@miniapp/shared';
+import { RECHARGE_PAGE_DISPLAY, type PaymentOrder } from '@miniapp/shared';
 
 import { Button } from '@/components/ui/button';
 
 import { cn } from '@/lib/utils';
-import { paymentKeys, usePaymentOrderQuery, usePaymentPlansQuery } from '@/lib/api/payment';
+import { paymentKeys, usePaymentOrderQuery } from '@/lib/api/payment';
 import {
   captureExternalPaymentOpenRequested,
   capturePaymentFlowLeftObserved,
@@ -63,13 +63,10 @@ export default function PaymentPendingPage() {
     false,
     isError
   );
-  const { data: plansData } = usePaymentPlansQuery();
   const order = data?.order;
   const orderRef = useRef(order);
   orderRef.current = order;
-  const pendingArrivalHint =
-    plansData?.page_config.pending_arrival_hint ??
-    DEFAULT_RECHARGE_PAGE_CONFIG.pending_arrival_hint;
+  const pendingArrivalHint = RECHARGE_PAGE_DISPLAY.pendingArrivalHint;
 
   // 返回不能用 push：那会把星尘商店压成新的历史条目，商店自己的返回键再 back
   // 回到本页，取消支付时就在两页之间死循环。

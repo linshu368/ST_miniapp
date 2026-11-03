@@ -18,8 +18,6 @@ import {
   CREATOR_REVIEW_PROMPT_KEY,
   DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG,
   DEFAULT_PAYMENT_CHANNELS_CONFIG,
-  DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG,
-  DEFAULT_RECHARGE_PAGE_CONFIG,
   DEFAULT_WORD_COUNT_TIERS_CONFIG,
   FreeQuotaExhaustedDialogConfigSchema,
   ImagePlazaModelCatalogSchema,
@@ -28,8 +26,6 @@ import {
   LlmPricingConfigSchema,
   MAX_FEATURE_FREE_TRIAL_LIMIT,
   ModelCatalogSchema,
-  PaymentPromptDialogConfigSchema,
-  RechargePageConfigSchema,
   type ModelCatalog,
   type LlmModelProvider,
   type OpenRouterModelDirectory,
@@ -68,9 +64,7 @@ import { LobbyPinnedCharactersEditor } from './LobbyPinnedCharactersEditor';
 import { LobbyRankingParamsEditor } from './LobbyRankingParamsEditor';
 import { ModelCatalogEditor } from './ModelCatalogEditor';
 import { FallbackConfigEditor } from './FallbackConfigEditor';
-import { PaymentPromptDialogConfigEditor } from './PaymentPromptDialogConfigEditor';
 import { ProviderRoutingConfigEditor } from './ProviderRoutingConfigEditor';
-import { RechargePageConfigEditor } from './RechargePageConfigEditor';
 import { SystemInstructionsEditor } from './SystemInstructionsEditor';
 import { CreatorReviewPromptEditor } from './CreatorReviewPromptEditor';
 import { PlatformInstructionSlotRulesEditor } from './PlatformInstructionSlotRulesEditor';
@@ -257,7 +251,6 @@ export function ConfigValueEditor(props: {
   syncLoading: Partial<Record<LlmModelProvider, boolean>>;
   syncError: Partial<Record<LlmModelProvider, string | null>>;
   onRefreshProvider: (provider: LlmModelProvider) => void;
-  paymentPlans: PaymentPlan[];
   characters: CharacterCard[];
   charactersLoading: boolean;
   charactersError: string | null;
@@ -819,18 +812,6 @@ export function ConfigValueEditor(props: {
     );
   }
 
-  if (props.configKey === 'miniapp_recharge_page_config') {
-    const parsed = RechargePageConfigSchema.safeParse(props.value);
-    return (
-      <RechargePageConfigEditor
-        value={parsed.success ? parsed.data : DEFAULT_RECHARGE_PAGE_CONFIG}
-        plans={props.paymentPlans}
-        disabled={props.disabled}
-        onChange={props.onChange}
-      />
-    );
-  }
-
   if (props.configKey === 'llm_provider_routing_config') {
     return (
       <ProviderRoutingConfigEditor
@@ -838,17 +819,6 @@ export function ConfigValueEditor(props: {
         disabled={props.disabled}
         onChange={props.onChange}
         openRouterDirectory={openRouterDirectory}
-      />
-    );
-  }
-
-  if (props.configKey === 'miniapp_payment_prompt_dialog_config') {
-    const parsed = PaymentPromptDialogConfigSchema.safeParse(props.value);
-    return (
-      <PaymentPromptDialogConfigEditor
-        value={parsed.success ? parsed.data : DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG}
-        disabled={props.disabled}
-        onChange={props.onChange}
       />
     );
   }

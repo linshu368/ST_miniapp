@@ -3,18 +3,12 @@ import {
   fetchRuntimeConfigEntry,
 } from '../../../platform/runtime-config.js';
 import {
-  DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG,
-  DEFAULT_RECHARGE_PAGE_CONFIG,
   DEFAULT_VIP_PLANS_CONFIG,
   isVipPlanId,
   PaymentPlansRuntimeConfigSchema,
-  PaymentPromptDialogConfigSchema,
-  RechargePageConfigSchema,
   type PaymentPlan,
   type PaymentChannelsConfig,
   type PaymentProductType,
-  type PaymentPromptDialogConfig,
-  type RechargePageConfig,
   type VipPlan,
   type VipPlanId,
   type VipPlansConfig,
@@ -22,8 +16,6 @@ import {
 import { readVipStrategy } from '../../../platform/vip-strategy.js';
 
 export const PAYMENT_PLANS_CONFIG_KEY = 'miniapp_payment_plans';
-export const RECHARGE_PAGE_CONFIG_KEY = 'miniapp_recharge_page_config';
-export const PAYMENT_PROMPT_DIALOG_CONFIG_KEY = 'miniapp_payment_prompt_dialog_config';
 export const INSUFFICIENT_CREDITS_NOTICE_CONFIG_KEY = 'insufficient_credits_notice';
 export const VIP_PURCHASE_ENABLED_CONFIG_KEY = 'vip_purchase_enabled';
 export const ORDER_EXPIRE_MS = 15 * 60 * 1000;
@@ -42,15 +34,11 @@ export class PaymentPlansConfigError extends Error {
 export interface PaymentPageRuntimeConfig {
   plans: PaymentPlan[];
   paymentChannels: PaymentChannelsConfig;
-  pageConfig: RechargePageConfig;
-  paymentPromptDialogConfig: PaymentPromptDialogConfig;
   insufficientCreditsNotice: string;
 }
 
 const PAYMENT_PAGE_CONFIG_KEYS = [
   PAYMENT_PLANS_CONFIG_KEY,
-  RECHARGE_PAGE_CONFIG_KEY,
-  PAYMENT_PROMPT_DIALOG_CONFIG_KEY,
   INSUFFICIENT_CREDITS_NOTICE_CONFIG_KEY,
 ] as const;
 
@@ -61,10 +49,6 @@ export async function getPaymentPageRuntimeConfig(): Promise<PaymentPageRuntimeC
   return {
     plans: payment.plans,
     paymentChannels: payment.payment_channels,
-    pageConfig: parseRechargePageConfig(entries.get(RECHARGE_PAGE_CONFIG_KEY)?.value),
-    paymentPromptDialogConfig: parsePaymentPromptDialogConfig(
-      entries.get(PAYMENT_PROMPT_DIALOG_CONFIG_KEY)?.value
-    ),
     insufficientCreditsNotice: parseInsufficientCreditsNotice(
       entries.get(INSUFFICIENT_CREDITS_NOTICE_CONFIG_KEY)
     ),
@@ -99,26 +83,6 @@ export function parsePaymentPlansRuntimeConfig(value: unknown) {
 export async function findPaymentPlan(planId: string): Promise<PaymentPlan | undefined> {
   const plans = await getPaymentPlans();
   return plans.find((plan) => plan.id === planId);
-}
-
-export async function getRechargePageConfig(): Promise<RechargePageConfig> {
-  const entry = await fetchRuntimeConfigEntry(RECHARGE_PAGE_CONFIG_KEY);
-  return parseRechargePageConfig(entry?.value);
-}
-
-function parseRechargePageConfig(value: unknown): RechargePageConfig {
-  const parsed = RechargePageConfigSchema.safeParse(value);
-  return parsed.success ? parsed.data : DEFAULT_RECHARGE_PAGE_CONFIG;
-}
-
-export function parsePaymentPromptDialogConfig(value: unknown): PaymentPromptDialogConfig {
-  const parsed = PaymentPromptDialogConfigSchema.safeParse(value);
-  return parsed.success ? parsed.data : DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG;
-}
-
-export async function getPaymentPromptDialogConfig(): Promise<PaymentPromptDialogConfig> {
-  const entry = await fetchRuntimeConfigEntry(PAYMENT_PROMPT_DIALOG_CONFIG_KEY);
-  return parsePaymentPromptDialogConfig(entry?.value);
 }
 
 export async function getInsufficientCreditsNotice(): Promise<string> {

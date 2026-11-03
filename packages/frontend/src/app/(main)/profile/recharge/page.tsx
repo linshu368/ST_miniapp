@@ -14,14 +14,12 @@ import {
   Sparkles,
 } from 'lucide-react';
 import {
-  DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG,
-  DEFAULT_RECHARGE_PAGE_CONFIG,
+  RECHARGE_PAGE_DISPLAY,
   type CreatePaymentOrderData,
   type PaymentType,
 } from '@miniapp/shared';
 
 import { AlipayIcon, WeChatPayIcon } from '@/components/icons';
-import { PaymentVpnPromptDialog } from '@/components/payment/payment-vpn-prompt-dialog';
 import { VipEntryCard } from '@/components/vip/vip-entry-card';
 import { Button } from '@/components/ui/button';
 import {
@@ -110,28 +108,10 @@ function RechargePageContent() {
   const [paymentType, setPaymentType] = useState<PaymentType>('alipay');
   const [noticeDismissed, setNoticeDismissed] = useState(false);
   const noticeChoiceRef = useRef<'invite' | 'recharge' | null>(null);
-  const [wechatPromptOpen, setWechatPromptOpen] = useState(false);
-  const [preparedPayment, setPreparedPayment] = useState<CreatePaymentOrderData | null>(null);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const submitLock = useRef(false);
 
   const plans = data?.plans ?? [];
-  const pageConfig = data?.page_config ?? DEFAULT_RECHARGE_PAGE_CONFIG;
-  const paymentPromptConfig =
-    data?.payment_prompt_dialog_config ?? DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG;
-  // 旧的默认荧光配色使用新皮肤；运营明确配置过的颜色仍生效。
-  const selectedPlanColor =
-    pageConfig.selected_plan_color === DEFAULT_RECHARGE_PAGE_CONFIG.selected_plan_color
-      ? '#d0b99a'
-      : pageConfig.selected_plan_color;
-  const badgeColor =
-    pageConfig.badge_color === DEFAULT_RECHARGE_PAGE_CONFIG.badge_color
-      ? '#d0b99a'
-      : pageConfig.badge_color;
-  const buttonColor =
-    pageConfig.button_color === DEFAULT_RECHARGE_PAGE_CONFIG.button_color
-      ? '#ead7bc'
-      : pageConfig.button_color;
   const paymentChannels = data?.payment_channels;
   const paymentTypes = useMemo<PaymentType[]>(() => {
     if (!paymentChannels) return ['alipay'];
@@ -217,12 +197,6 @@ function RechargePageContent() {
         orderId: result.order.id,
         amountCents: result.order.amount_cents,
       });
-      // 支付宝直接跳收银台；付款前提示弹窗只属于微信，运营可在后台开关。
-      if (paymentType === 'wxpay' && paymentPromptConfig.enabled) {
-        setPreparedPayment(result);
-        setWechatPromptOpen(true);
-        return;
-      }
       await launchPayment(result);
     } catch {
       notification('error');
@@ -235,25 +209,11 @@ function RechargePageContent() {
     paymentAvailable,
     createOrder,
     impact,
-    paymentPromptConfig.enabled,
     paymentType,
     launchPayment,
     notification,
     isError,
   ]);
-
-  const handleConfirmPayment = useCallback(() => {
-    if (!preparedPayment) return;
-    const result = preparedPayment;
-    setWechatPromptOpen(false);
-    setPreparedPayment(null);
-    void launchPayment(result);
-  }, [preparedPayment, launchPayment]);
-
-  const handleWechatPromptOpenChange = useCallback((open: boolean) => {
-    setWechatPromptOpen(open);
-    if (!open) setPreparedPayment(null);
-  }, []);
 
   return (
     <main
@@ -352,8 +312,8 @@ function RechargePageContent() {
                   key={plan.id}
                   plan={plan}
                   selected={selectionKey('credits', plan.id) === selectedKey}
-                  selectedColor={selectedPlanColor}
-                  badgeColor={badgeColor}
+                  selectedColor={RECHARGE_PAGE_DISPLAY.selectedPlanColor}
+                  badgeColor={RECHARGE_PAGE_DISPLAY.badgeColor}
                   disabled={createOrder.isPending}
                   onSelect={handleSelectCredits}
                 />
@@ -403,7 +363,7 @@ function RechargePageContent() {
               />
             </summary>
             <p className="pb-4 leading-6">
-              {pageConfig.pending_arrival_hint}
+              {RECHARGE_PAGE_DISPLAY.pendingArrivalHint}
               。可在右上角「订单」查看进度；如遇到问题，可以联系在线客服。
             </p>
           </details>
@@ -513,7 +473,7 @@ function RechargePageContent() {
             style={{
               backgroundColor:
                 selection?.available && paymentAvailable && !isError && !createOrder.isPending
-                  ? buttonColor
+                  ? RECHARGE_PAGE_DISPLAY.buttonColor
                   : undefined,
             }}
           >
@@ -521,18 +481,11 @@ function RechargePageContent() {
               pending: createOrder.isPending,
               selection,
               vipActive: false,
-              creditsButtonText: pageConfig.button_text,
+              creditsButtonText: RECHARGE_PAGE_DISPLAY.buttonText,
             })}
           </Button>
         </div>
       </footer>
-      <PaymentVpnPromptDialog
-        open={wechatPromptOpen}
-        config={paymentPromptConfig}
-        canConfirm={Boolean(preparedPayment)}
-        onOpenChange={handleWechatPromptOpenChange}
-        onConfirm={handleConfirmPayment}
-      />
       <Dialog
         open={showInsufficientCreditsNotice}
         onOpenChange={(open) => {
@@ -549,8 +502,8 @@ function RechargePageContent() {
             <div
               className="mb-2 flex h-12 w-12 items-center justify-center rounded-full"
               style={{
-                color: pageConfig.balance_color,
-                backgroundColor: `${pageConfig.balance_color}26`,
+                color: RECHARGE_PAGE_DISPLAY.balanceColor,
+                backgroundColor: `${RECHARGE_PAGE_DISPLAY.balanceColor}26`,
               }}
             >
               <Sparkles className="h-6 w-6" aria-hidden />
@@ -564,7 +517,7 @@ function RechargePageContent() {
             <DialogClose asChild>
               <Button
                 className="w-full rounded-xl font-bold text-primary-foreground"
-                style={{ backgroundColor: buttonColor }}
+                style={{ backgroundColor: RECHARGE_PAGE_DISPLAY.buttonColor }}
                 onClick={() => {
                   noticeChoiceRef.current = 'recharge';
                   capturePaywallRechargeSelected();

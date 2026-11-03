@@ -15,13 +15,8 @@ import {
   TicketPercent,
   Zap,
 } from 'lucide-react';
-import {
-  DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG,
-  type CreatePaymentOrderData,
-  type PaymentType,
-} from '@miniapp/shared';
+import { type CreatePaymentOrderData, type PaymentType } from '@miniapp/shared';
 
-import { PaymentVpnPromptDialog } from '@/components/payment/payment-vpn-prompt-dialog';
 import { VipBenefitArt } from '@/components/vip/vip-benefit-art';
 import { Button } from '@/components/ui/button';
 import { AlipayIcon, WeChatPayIcon } from '@/components/icons';
@@ -79,14 +74,10 @@ function VipPageContent() {
   const createOrder = useCreatePaymentOrderMutation();
   const [paymentType, setPaymentType] = useState<PaymentType>('alipay');
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
-  const [wechatPromptOpen, setWechatPromptOpen] = useState(false);
-  const [preparedPayment, setPreparedPayment] = useState<CreatePaymentOrderData | null>(null);
   const submitLock = useRef(false);
 
   // 商品展示与下单都只接受发布中的月卡，不能在月卡缺失时落回旧周卡。
   const monthlyPlan = plansQuery.data?.vip_plans?.find((plan) => plan.id === 'month');
-  const promptConfig =
-    plansQuery.data?.payment_prompt_dialog_config ?? DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG;
   const paymentChannels = plansQuery.data?.payment_channels;
   const paymentTypes = useMemo<PaymentType[]>(() => {
     if (!paymentChannels) return ['alipay'];
@@ -161,12 +152,6 @@ function VipPageContent() {
         orderId: result.order.id,
         amountCents: result.order.amount_cents,
       });
-      // 支付宝直接跳收银台；付款前提示弹窗只属于微信，运营可在后台开关。
-      if (paymentType === 'wxpay' && promptConfig.enabled) {
-        setPreparedPayment(result);
-        setWechatPromptOpen(true);
-        return;
-      }
       await openPrepared(result);
     } catch {
       notification('error');
@@ -381,23 +366,6 @@ function VipPageContent() {
           </Button>
         </div>
       </div>
-
-      <PaymentVpnPromptDialog
-        open={wechatPromptOpen}
-        config={promptConfig}
-        canConfirm={Boolean(preparedPayment)}
-        onOpenChange={(open) => {
-          setWechatPromptOpen(open);
-          if (!open) setPreparedPayment(null);
-        }}
-        onConfirm={() => {
-          if (!preparedPayment) return;
-          const result = preparedPayment;
-          setWechatPromptOpen(false);
-          setPreparedPayment(null);
-          void openPrepared(result);
-        }}
-      />
     </main>
   );
 }

@@ -1,7 +1,5 @@
 import {
   DEFAULT_PAYMENT_CHANNELS_CONFIG,
-  DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG,
-  DEFAULT_RECHARGE_PAGE_CONFIG,
   DEFAULT_WORD_COUNT_TIERS_CONFIG,
   GetImagePlazaConfigDataSchema,
   GetModelCatalogDataSchema,
@@ -93,6 +91,11 @@ export const scenarios = {
   'creator-polish-partial': {
     label: '角色润色中断',
     description: '保留部分内容，可采用、编辑、撤回',
+    path: '/creation/characters/new',
+  },
+  'creator-polish-stop': {
+    label: '主动停止角色润色',
+    description: '开场白停在第一段，背景停在首字前，可手动停止生成',
     path: '/creation/characters/new',
   },
   'creator-save-error': {
@@ -527,8 +530,6 @@ export function makeData(api: string, characterCount = 18) {
         available: true,
       },
     ],
-    page_config: DEFAULT_RECHARGE_PAGE_CONFIG,
-    payment_prompt_dialog_config: DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG,
     insufficient_credits_notice: '星尘不足，补充后继续体验。',
   };
   const imageConfig = GetImagePlazaConfigDataSchema.parse({

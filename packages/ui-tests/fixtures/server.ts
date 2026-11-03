@@ -1458,6 +1458,16 @@ export function createPreviewServer(apiPort: number, appPort: number) {
           input.target === 'opening'
             ? '书店即将打烊，门上的铜铃却在此刻轻响。林舟从书页间抬起眼，认出你时微微一顿。\n\n「我以为你已经忘了这个地方。」他合上书，把靠窗的椅子轻轻拉开。杯里的茶还温着，而他似乎有一句话等了很久。'
             : '## 角色与生活\n\n林舟经营一间旧书店。他记得常客偏爱的书，也记得那些没有说出口的告别。\n\n## 个性与矛盾\n\n他习惯用玩笑掩饰认真，越是在乎的人，越不肯把心意说得直白。平时做决定很果断，遇到重逢却会先整理桌角，再试探着问一句近况。\n\n## 与你的关系\n\n你们曾在这间书店相遇。多年之后，他保留的那本书仍夹着你写的纸条，但你的回应和选择始终由你决定。';
+        if (scenario === 'creator-polish-stop') {
+          res.flushHeaders();
+          if (input.target === 'opening') {
+            res.write(JSON.stringify({ type: 'delta', text: draftText.slice(0, 16) }) + '\n');
+          }
+          // Keep the stream open so the user's stop, rather than a timer, ends generation.
+          streams.add(res);
+          res.once('close', () => streams.delete(res));
+          return;
+        }
         for (let i = 0; i < draftText.length; i += 16) {
           res.write(`${JSON.stringify({ type: 'delta', text: draftText.slice(i, i + 16) })}\n`);
           await delay(12);

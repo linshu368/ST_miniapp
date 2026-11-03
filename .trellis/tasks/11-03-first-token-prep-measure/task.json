@@ -1,0 +1,55 @@
+{
+  "id": "first-token-prep-measure",
+  "name": "first-token-prep-measure",
+  "title": "聊天请求连接计时补齐：给 5 秒档网络问题定性",
+  "description": "",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "frontend",
+  "priority": "P1",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-03",
+  "completedAt": null,
+  "branch": "codex/first-token-prep-measure",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": ["frontend.business.conversation-ui"]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": ["/chat/:id"],
+      "apis": ["POST /api/v1/conversations/:id/messages（点击到首字）"],
+      "android": {
+        "page_p95_baseline_ms": 2551,
+        "page_p95_target_ms": 2551
+      },
+      "ios": {
+        "page_p95_baseline_ms": 2077,
+        "page_p95_target_ms": 2077
+      },
+      "api": {
+        "p95_baseline_ms": 3575,
+        "p95_target_ms": 3575
+      },
+      "measurement": {
+        "source": "Grafana Loki Faro：st_page_ready（route=/chat/:id）与 st_roleplay_first_token（outcome=observed），按 tg_platform 分组",
+        "window": "基线 2026-11-02 20:15 至 11-03 18:30（北京时间）；发布后取新版本至少 3 天同口径"
+      },
+      "notes": "只改测量，不改请求、渲染和交付。页面基线 Android 2551ms（n=116）、iOS 2077ms（n=23，样本不足，仅参考）；首字成功 P95 Android 3575ms、iOS 3479ms（iOS n=127 样本不足）。目标是不退化。发布后看 network_status=available 占比是否从约 10% 升到多数，以及 5 秒档请求的 setup/path 分布。"
+    }
+  }
+}
