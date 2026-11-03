@@ -125,6 +125,8 @@
 - 同一 `Idempotency-Key` + 完全相同 body 重放返回 `409 IDEMPOTENCY_KEY_REUSED`（ASCII/中文 body 都一样），不是文档说的返回原结果。幂等键仍能保证一单最多一笔平台交易；首次超时但实际已建单时，重试失败、订单标 failed，用户重新下单。
 - China Pay 收银台 `expires_at` 为创建后 30 分钟（文档写 1 小时）。本地 15 分钟过期 + 2 小时对账窗口足以覆盖晚付。
 - `GET /payments/:id` 与 `POST /payments/lookup` 都原样回显 `mijing_order_id` / `mijing_env`。
+- Webhook 端点 id 形如 `cmw0d…`（不是 `we_…`），secret 为 64 位十六进制串（不是 `whsec_…`）。验签按原样字符串作 HMAC key，生产已用签名的合成事件验证通过。
+- 生产上线后发现：告警卡片安全策略拒绝含 `order` 的指标名，`p0-paid-not-fulfilled` 的 `unresolved_orders` 改为 `unresolved_count`，并补卡片安全策略测试。
 
 ## 3. 可靠性设计
 
