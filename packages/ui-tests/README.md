@@ -198,3 +198,5 @@ UI fixture轮换用确定顺序方便验证，不代表生产随机算法；`pnp
 场景 `wishes` / `wishes-error` / `wishes-response-error`，从 `/wishes` 进入；`pnpm test:ui --grep @wishes` 复用既有手机验收。固定内容全部虚构，覆盖提交前所有人可见且不显示昵称头像的明确提示、仅匿名公开、我的心愿筛选、支持/取消、创作数据入口、已有作品回应、通知回到心愿、失败保留原稿、从心愿新建角色的来源恢复，以及已发布但回应失败时只重试关联和窄屏布局。卡片后续改私密时，公共墙隐藏回应入口。
 
 `pnpm test:ui:fixtures` 同时验证 shared 响应、拒绝 private 提交、本人筛选隔离、重复支持/重复回应/创建重试和500字上限。浏览器 fixture 只验证真实前端与模拟HTTP的完整链路；真实数据库权限、事务和通知幂等继续由后端/隔离Postgres验证，不代表远端迁移已执行或真实用户已收到通知。
+
+作者空间使用 `pnpm test:ui --grep @public-author-space` 检查分页、开聊返回及计数。只浏览两页应有两次作品请求，打开详情前没有逐卡或批量 social 请求。计数正确性与数据库迁移由 `bash scripts/test-creator-characters-local.sh` 在隔离 PostgreSQL 中验证。发布后分别观察作者空间 API 时延与 Android、iOS 页面可见耗时；本地 SQL 计时不代表线上 P95。

@@ -13,7 +13,7 @@ import { ChatModelSwitcher } from './chat-model-switcher';
 
 interface ChatTopBarProps {
   onBack: () => void;
-  backLabel?: '返回发现' | '返回对话' | '返回收藏' | '返回我的创作';
+  backLabel?: '返回发现' | '返回对话' | '返回收藏' | '返回我的创作' | '返回作者空间';
   characterId: string;
   title: string;
   characterName?: string;

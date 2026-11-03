@@ -575,7 +575,9 @@ export default function SelfHostedChatPage() {
               ? '返回我的创作'
               : session.backHref === '/creation?tab=favorites'
                 ? '返回收藏'
-                : '返回发现'
+                : session.backHref.startsWith('/creators/')
+                  ? '返回作者空间'
+                  : '返回发现'
         }
         onBack={goBack}
         characterId={characterId}
