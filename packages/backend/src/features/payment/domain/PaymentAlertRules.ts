@@ -146,7 +146,8 @@ export function evaluatePaymentAlertRules(
       severity: 'P0',
       windowMs: 10 * 60_000,
       firing: unresolvedPaid.length > 0,
-      metrics: [['unresolved_orders', unresolvedPaid.length, 'count']],
+      // 指标名不能含 order/key/token 等词：告警卡片安全策略会整张拒发（safe-card.ts）。
+      metrics: [['unresolved_count', unresolvedPaid.length, 'count']],
       location: { kind: 'application', component: 'local_settlement' },
       title: 'P0 平台已收款但未发放权益',
       summary: unresolvedPaid
