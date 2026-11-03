@@ -98,3 +98,57 @@ Sentry启动时保留错误捕获、Metrics、脱敏和现有日志；BrowserTra
 本轮不创建Trellis任务、PR或执行合并；工程师手动开PR并完成合并。功能分支为`codex/miniapp-startup-split`，建议PR base为dev。合并生产后记录真实release与部署时间，再按上文对B1、B0分别比较；所有CI/Preview/生产结果与本地检查分开记录。
 
 历史本地记录已保留在隔离worktree外的`../evidence-2026-11-02/`：51d5b2a曾通过744项Frontend、212项Shared、38项定向UI，5fffd6c曾通过78项UI，但实现范围与当前交付不同，不冒充当前版本检查。最终构建、逐文件清单、源码不变量和日志另存`../evidence-2026-11-02/delivery/`。
+
+## HTML 首字节等待诊断（2026-11-03）
+
+本次仅扩展既有 `miniapp_startup_slow` 的 `contexts.startup`，不改变开屏定义和起止点、measurement、4秒边界、有效样本过滤、采样及每文档去重。`startup.shell_ready.duration`、`startup.telegram_ready.duration`、`startup.budget`、`startup.stage.duration` 和 `definition=startup_phases_v2` 保持原样。新增字段只进 `details`，不进 `stages`，因此不新增指标调用、事件、出口或主动网络请求。正常启动没有新增明细事件。
+
+复用 `startup-timing.ts` 在 ready 后既有的 `setTimeout` 收集回调；不新增 timer、listener、await、依赖、存储读写或 flush，不改变身份初始化、数据请求、脚本加载和后台预热。收集器新增固定20个数值字段，版本为 `navigation_diagnostics_version=1`；版本存在不保证底层 Timing 字段可用。Timing 缺失/异常只影响诊断，旧指标保持原样。新增字段由 `STARTUP_DETAIL_FIELDS` 进入既有脱敏白名单，不携带 URL/query、initData、请求头、IP 或用户标识。
+
+### 字段与解释
+
+原始字段均为相对本次文档导航零点的毫秒偏移，名称对应如下：
+
+- `document_fetch_start`：fetchStart。
+- `document_dns_start/end`：domainLookupStart/End。
+- `document_connect_start/end`：connectStart/End。
+- `document_tls_start`：secureConnectionStart。
+- `document_request_start`：requestStart。
+- `document_response_start/end`：已有 responseStart/End。
+- `document_redirect_start/end`：redirectStart/End；`document_redirect_count` 是次数，不是耗时。
+- `document_worker_start`：workerStart；0不直接证明没有任何后台线程影响。
+
+新增分段（毫秒）：
+
+```text
+document_pre_fetch          = fetchStart
+document_fetch_to_dns       = domainLookupStart - fetchStart
+document_dns                = domainLookupEnd - domainLookupStart
+document_dns_to_connect     = connectStart - domainLookupEnd
+document_connect            = connectEnd - connectStart
+document_connect_to_request = requestStart - connectEnd
+document_request_wait       = responseStart - requestStart
+document_tls                = connectEnd - secureConnectionStart
+```
+
+前七段在端点完整且全链有序时之和等于既有 `document_ttfb`；缺段或乱序不强行补齐。TLS是connect的子区间，不与七段重复相加；重定向与worker原值仅作辅助，也不另外相加。`document_request_wait` 包含发送、网络往返及响应等待，不是服务端CPU。原始时间点必须有限、非负且不晚于采集时刻；缺失、不合法或逆序段省略。合法0保留，但 `secureConnectionStart=0` 不计算TLS耗时；TLS起点还必须位于连接区间内。
+
+连接复用/缓存、隐私限制会影响字段；重定向字段为0不能证明没有跨域重定向。连接前的大空档只标记位置，不能直接命名为排队、TCP超时或代理问题。Navigation Timing不能完整列出失败连接尝试；详细解释参见 [Navigation Timing](https://www.w3.org/TR/navigation-timing-2/)。各阶段P95不能相加，也不能把诊断采集结束时间当作开屏结束时间。
+
+### Sentry 查看与验收
+
+在生产/TEST各自环境检索 `miniapp_startup_slow`，按真实release、固定时间窗口、`route=/`、`tg_platform=android`、`net_type=4g`、`telegram_ready=sent`筛选，在事件详情JSON的 `contexts.startup` 查看 `document_ttfb` 和新分段。Android与iOS分别看，`4g`是effectiveType质量分类，不等于实际移动网络。慢事件只覆盖既有slow触发样本，不代表全部启动；总样本量与P95仍从原指标查询。新字段没有加入全量分段分布，不能将其描述为新增全量P95报表。
+
+本轮按用户明确要求跳过全部本地验证及commit/push hooks：新增用例仅编写，没有运行测试、typecheck、lint、build、UI或真机验收。历史章节的通过记录不属于本次改动。后续必须确认TEST Sentry实际入库并显示新字段；SDK调用、HTTP成功或远程推送不能替代Cloud实收。目标安卓机新增计算P95≤1ms、诊断字段增量≤2KB，以及关键JS/业务接口发起时序与业务展示无退化均待验收；不能凭ready后异步就宣称零开销或P95已达4秒。
+
+### Android 真机网络日志
+
+使用自己的测试手机和当前稳定版Telegram/WebView，先记录系统、Telegram、实际WebView版本、实际Wi-Fi/移动网络和代理/VPN状态。不要为了抓日志先更换WebView provider、禁用缓存或改网络路径。分别标记Telegram进程冷启动、仅重开MiniApp、页面刷新，避免混组。
+
+1. 手机开启开发者选项/USB调试；Telegram设置页底部长按版本号两次，在Debug Settings启用 **Enable WebView Debug**。USB连接电脑并授权。见 [Telegram官方步骤](https://core.telegram.org/bots/webapps#debug-mode-for-mini-apps)。
+2. 使用 `adb shell am start -a "com.android.webview.SHOW_DEV_UI"` 打开手机WebView DevTools；在Flags启用 `net-log`，停止并重启Telegram使其生效。这是测试设备上的临时诊断设置，不需要修改网站代码或生产服务配置。
+3. 从固定入口打开MiniApp，记录准确时间，仅复现首页启动。复现后关闭Telegram，在WebView DevTools的 **Net Logs** 导出日志。M128起支持该入口，设备若缺少该能力，记录版本并保留HAR，不切换provider冒充同条件样本。见 [Chromium说明](https://chromium.googlesource.com/chromium/src/+/HEAD/android_webview/docs/net-debugging.md)。
+4. 核对首页HTML对应的DNS、代理、连接池等待、TCP/TLS尝试、失败重试与响应时间，解释分段中的大空档。结束后恢复本次开启的net-log设置并重启Telegram。
+5. HAR补充：电脑Chrome打开 `chrome://inspect/#devices`，Inspect对应Telegram页面；Network勾选Preserve log，No throttling，不勾Disable cache。保留首页Document的Timing、协议、状态和 `x-vercel-id` / `x-vercel-cache`；导出 **HAR (sanitized)**，分享前仍检查自定义鉴权头、启动参数和业务正文。默认HAR脱敏不等于项目敏感字段已全部移除，见 [Chrome说明](https://developer.chrome.com/docs/devtools/network/reference/#save-all-network-requests-to-a-har-file)。
+
+首次打开后才连接DevTools可能漏掉最早阶段；刷新HAR必须标为刷新样本。抓首次打开优先在打开前启用WebView NetLog；Chrome自身的 `chrome://net-export` 不能替代Telegram WebView日志。抓日志会引入诊断开销，主要用于定位失败/等待，不能拿调试状态下的少量启动代替自然生产P95。日志在本地受控分析，分享前脱敏，不提交Git。
