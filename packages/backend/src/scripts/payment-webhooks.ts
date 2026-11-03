@@ -3,7 +3,7 @@
  *
  *   pnpm --filter @miniapp/backend payment:webhooks list
  *   pnpm --filter @miniapp/backend payment:webhooks register https://<backend>/api/payment/webhook/vexutopia
- *   pnpm --filter @miniapp/backend payment:webhooks delete we_xxx
+ *   pnpm --filter @miniapp/backend payment:webhooks delete <endpoint_id>
  *
  * 每个环境（production / development）各注册一个端点、各持一个 secret。
  * secret 只在注册时返回一次：这里直接打印到当前终端，不经过 pino、不落盘，
@@ -42,7 +42,7 @@ try {
     await gateway.deleteWebhook(argument);
     console.log(`已删除 ${argument}`);
   } else {
-    console.log('用法：payment:webhooks list | register <https url> | delete <we_id>');
+    console.log('用法：payment:webhooks list | register <https url> | delete <endpoint_id>');
     process.exitCode = 1;
   }
 } catch (error) {

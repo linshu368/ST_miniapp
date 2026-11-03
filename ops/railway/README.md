@@ -152,7 +152,7 @@ pnpm --filter @miniapp/backend payment:webhooks register https://<该环境 back
 ```
 
 secret 只显示一次，立即写入该环境 `stminiapp` 的 `VEXUTOPIA_WEBHOOK_SECRET` 并重新部署；
-轮换 = `payment:webhooks delete <we_id>` 后重新注册。PR 临时环境不注册端点，只靠查单入账。
+轮换 = `payment:webhooks delete <endpoint_id>`（`list` 可查，实测不是文档写的 `we_` 前缀）后重新注册；secret 实测是 64 位十六进制串，不是文档写的 `whsec_` 前缀。PR 临时环境不注册端点，只靠查单入账。
 
 IaC 可用时，`.railway/railway.ts` 会配置这两个服务。若目标环境尚不能用 IaC 管理，则在
 Railway 控制台手动创建并逐项对齐：
