@@ -58,6 +58,23 @@ export const FEISHU_NOTIFY_RULE_IDS = new Set([
   P1_PROVIDER_PAY_FAILURE_RATE_RULE_ID,
 ]);
 
+/**
+ * 恢复防抖：监控每分钟一轮，规则连续健康这么多轮才算恢复。
+ * 预警类规则的阈值落在滑动窗口边缘，容易在触发/健康间来回跳，所以要等更久；其余规则沿用 2 轮。
+ */
+export const DEFAULT_RECOVERY_PASSES = 2;
+export const EARLY_WARNING_RECOVERY_PASSES = 10;
+const EARLY_WARNING_RULE_IDS = new Set([
+  P1_PROVIDER_QUERY_FAILING_RULE_ID,
+  P1_PROVIDER_DEGRADED_RULE_ID,
+  P1_PROVIDER_PAY_FAILURE_RATE_RULE_ID,
+]);
+export function recoveryPassesFor(ruleId: string): number {
+  return EARLY_WARNING_RULE_IDS.has(ruleId)
+    ? EARLY_WARNING_RECOVERY_PASSES
+    : DEFAULT_RECOVERY_PASSES;
+}
+
 /** 平台说已付款、本地却没入账的错误分类（不论来自 Webhook 还是对账）。 */
 const PAID_ANOMALY_CLASSES = new Set(['currency_mismatch', 'provider_ref_mismatch']);
 /** 对账发现的单据异常不是“查单接口坏了”，不计入查单失败率。 */

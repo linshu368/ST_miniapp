@@ -5,6 +5,7 @@ import { AlertPublisher } from '../../alerting/publisher.js';
 import {
   evaluatePaymentAlertRules,
   FEISHU_NOTIFY_RULE_IDS,
+  recoveryPassesFor,
   type PaymentAlertSnapshot,
   type PaymentOperation,
 } from '../domain/PaymentAlertRules.js';
@@ -58,7 +59,7 @@ export class PaymentAlertMonitor {
             : 0;
         this.healthyWindows.set(evaluation.rule_id, count);
         // Do not let one complete window recover an incident; query failures never reach this point.
-        return evaluation.state === 'firing' || count >= 2;
+        return evaluation.state === 'firing' || count >= recoveryPassesFor(evaluation.rule_id);
       });
     let published = 0;
     for (const evaluation of evaluations) {
