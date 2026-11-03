@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { ok, fail } from '@miniapp/shared';
+import { ok, fail, RECHARGE_PAGE_DISPLAY } from '@miniapp/shared';
 import { requestLogger, type RequestLogger } from '../lib/logger.js';
 import type {
   CreatePaymentOrderRequest,
@@ -7,6 +7,7 @@ import type {
   GetPaymentOrdersData,
   GetPaymentOrdersQuery,
   GetPaymentPlansData,
+  LegacyPaymentPageFields,
   PaymentOrderStatus,
   PaymentType,
 } from '@miniapp/shared';
@@ -40,6 +41,32 @@ import {
 
 const PAYMENT_STATUSES: PaymentOrderStatus[] = ['pending', 'completed', 'expired', 'failed'];
 const PAYMENT_TYPES: PaymentType[] = ['alipay', 'wxpay'];
+/**
+ * 尚未刷新的旧客户端仍会读这两个字段；缺省时旧版会弹出过时的 VPN 提示。
+ * 值固定，不再来自运营配置。下一个版本与 shared 的 LegacyPaymentPageFields 一起删除。
+ */
+const LEGACY_PAGE_FIELDS: LegacyPaymentPageFields = {
+  page_config: {
+    title: '星尘商店',
+    description: '为每段相遇点一盏星光',
+    button_text: RECHARGE_PAGE_DISPLAY.buttonText,
+    theme_color: '#ec4899',
+    balance_color: RECHARGE_PAGE_DISPLAY.balanceColor,
+    selected_plan_color: '#f59e0b',
+    badge_color: '#6366f1',
+    button_color: '#ec4899',
+    pending_arrival_hint: RECHARGE_PAGE_DISPLAY.pendingArrivalHint,
+  },
+  payment_prompt_dialog_config: {
+    enabled: false,
+    title: '',
+    description: '',
+    confirm_text: '',
+    footer_note: '',
+    accent_color: '#f59e0b',
+  },
+};
+
 export const VEXUTOPIA_SIGNATURE_HEADER = 'x-vexutopia-signature';
 
 export default async function paymentRoutes(app: FastifyInstance) {
@@ -59,8 +86,7 @@ export default async function paymentRoutes(app: FastifyInstance) {
           plans: pageRuntime.plans,
           payment_channels: pageRuntime.paymentChannels,
           vip_plans: buildVipPlans(strategy.purchaseEnabled, strategy.plans),
-          page_config: pageRuntime.pageConfig,
-          payment_prompt_dialog_config: pageRuntime.paymentPromptDialogConfig,
+          ...LEGACY_PAGE_FIELDS,
           insufficient_credits_notice: pageRuntime.insufficientCreditsNotice,
         })
       );
