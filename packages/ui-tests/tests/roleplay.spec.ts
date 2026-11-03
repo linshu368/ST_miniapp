@@ -1,5 +1,5 @@
 import { previewAppUrl, previewApiUrl } from './fixtures';
-import type { Locator } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import {
   test,
   expect,
@@ -10,11 +10,20 @@ import {
   expectMobileLayout,
 } from './fixtures.js';
 
+async function openRecommendedLobby(page: Page, path = '/characters'): Promise<void> {
+  await page.goto(path, { waitUntil: 'domcontentloaded', timeout: 90_000 });
+  const latest = page.getByRole('tab', { name: '最新', exact: true });
+  await expect(latest).toHaveAttribute('aria-selected', 'true');
+  const recommended = page.getByRole('tab', { name: '推荐', exact: true });
+  await recommended.click();
+  await expect(recommended).toHaveAttribute('aria-selected', 'true');
+}
+
 test('@roleplay @layout 浏览角色时栏目固定，进聊天后可返回', async ({ page, preview }) => {
   // 自动验收会启动独立 Next dev；390 项目首次进入动态 chat 路由包含冷编译，
   // 这里验证功能链路，不把开发编译时间当作 production 导航预算。
-  test.setTimeout(90_000);
-  await page.goto('/characters');
+  test.setTimeout(180_000);
+  await openRecommendedLobby(page);
   await expect(page.getByText('林间旅人', { exact: true }).first()).toBeVisible();
   const card = page.getByRole('button', { name: '查看 林间旅人 的详情', exact: true });
   await expect
@@ -155,7 +164,7 @@ test('@navigation @layout 五入口跨模块保持统一，末项与操作条不
       .toBe(1);
   };
 
-  await page.goto('/characters');
+  await openRecommendedLobby(page);
   await expect(
     page.getByRole('button', { name: '查看 林间旅人 的详情', exact: true })
   ).toBeVisible();
@@ -274,7 +283,7 @@ test('@roleplay @character-social @layout 点赞收藏独立，列表详情和�
   preview,
 }) => {
   await preview.scenario('character-social');
-  await page.goto('/characters');
+  await openRecommendedLobby(page);
   const card = page.locator(`[data-lobby-character-id="${IDS.character}"]`);
   const like = () => card.getByRole('button', { name: /^(取消)?点赞 林间旅人$/ });
   const favorite = () => card.getByRole('button', { name: /^(收藏角色卡|取消收藏)$/ });
@@ -331,7 +340,7 @@ test('@roleplay @character-social @layout 评论直达同层面板，分页发�
   preview,
 }) => {
   await preview.scenario('character-social');
-  await page.goto('/characters');
+  await openRecommendedLobby(page);
   const card = page.locator(`[data-lobby-character-id="${IDS.character}"]`);
   await card.getByRole('button', { name: '查看 林间旅人 的评论', exact: true }).click();
   const detail = page.getByRole('dialog');
@@ -380,7 +389,7 @@ test('@roleplay @character-social @layout 互动失败恢复，关面板后草�
   preview,
 }) => {
   await preview.scenario('character-interaction-error');
-  await page.goto('/characters');
+  await openRecommendedLobby(page);
   const card = page.locator(`[data-lobby-character-id="${IDS.character}"]`);
   const like = card.getByRole('button', { name: '点赞 林间旅人', exact: true });
   await expect(like).toBeEnabled();
@@ -442,7 +451,7 @@ test('@roleplay @character-social @layout 草稿按角色保留，聊天面板�
   page,
   preview,
 }) => {
-  await page.goto('/characters');
+  await openRecommendedLobby(page);
   const first = page.locator(`[data-lobby-character-id="${IDS.character}"]`);
   await first.getByRole('button', { name: '查看 林间旅人 的评论', exact: true }).click();
   const detail = page.getByRole('dialog');
@@ -622,7 +631,7 @@ test('@roleplay @lobby-rotation @layout 换批保留质量分层入口，撤回�
   preview,
 }) => {
   await preview.scenario('lobby-rotation');
-  await page.goto('/characters');
+  await openRecommendedLobby(page);
   const rotate = page.getByRole('button', { name: '换一批推荐角色', exact: true });
   await expect(rotate).toBeVisible();
   const wishEntry = page.getByRole('link', { name: '许个愿', exact: true });
@@ -683,7 +692,7 @@ test('@roleplay @lobby-rotation 超过24小时试聊返回仍保原批，新打�
 }) => {
   test.setTimeout(90_000);
   await preview.scenario('lobby-rotation');
-  await page.goto('/characters');
+  await openRecommendedLobby(page);
   await expect(page.getByRole('button', { name: '换一批推荐角色', exact: true })).toBeVisible();
   const first = (await preview.state()).lobby.current!;
   await page.reload();
@@ -717,7 +726,7 @@ for (const scenario of ['lobby-rotation-error', 'lobby-rotation-lost-response'] 
     preview,
   }) => {
     await preview.scenario(scenario);
-    await page.goto('/characters');
+    await openRecommendedLobby(page);
     const rotate = page.getByRole('button', { name: '换一批推荐角色', exact: true });
     await expect(rotate).toBeVisible();
     const first = (await preview.state()).lobby.current!;
@@ -752,7 +761,7 @@ test('@roleplay @lobby-rotation 只有实际看到的卡产生曝光，搜索和
   preview,
 }) => {
   await preview.scenario('lobby-rotation');
-  await page.goto('/characters');
+  await openRecommendedLobby(page);
   await expect(page.getByRole('button', { name: '换一批推荐角色', exact: true })).toBeVisible();
   await expect.poll(async () => (await preview.state()).lobby.exposures.length).toBeGreaterThan(0);
   const seen = (await preview.state()).lobby;
@@ -777,7 +786,7 @@ test('@roleplay @lobby-rotation 下架只移除对应卡，其他卡和金框资
   request,
 }) => {
   await preview.scenario('lobby-rotation');
-  await page.goto('/characters');
+  await openRecommendedLobby(page);
   await expect(page.getByRole('button', { name: '换一批推荐角色', exact: true })).toBeVisible();
   const first = (await preview.state()).lobby.current!;
   await request.post(`${previewApiUrl}/__preview/lobby`, {
@@ -802,7 +811,7 @@ test('@roleplay @lobby-rotation 更换账号不读取上个账号的个人批次
   await preview.scenario('lobby-rotation');
   const raw = (id: number) =>
     new URLSearchParams({ user: JSON.stringify({ id, first_name: '虚构验收用户' }) }).toString();
-  await page.goto(`/characters?tgWebAppData=${encodeURIComponent(raw(750001))}`);
+  await openRecommendedLobby(page, `/characters?tgWebAppData=${encodeURIComponent(raw(750001))}`);
   await expect(page.getByRole('button', { name: '换一批推荐角色', exact: true })).toBeVisible();
   const first = (await preview.state()).lobby.current!;
   const key = 'miniapp:lobby-recommendation:v1:';
@@ -813,7 +822,7 @@ test('@roleplay @lobby-rotation 更换账号不读取上个账号的个人批次
     .toContain(`${key}750001`);
   // Same device storage survives while the next Telegram identity starts a new document.
   await page.evaluate(() => sessionStorage.clear());
-  await page.goto(`/characters?tgWebAppData=${encodeURIComponent(raw(750002))}`);
+  await openRecommendedLobby(page, `/characters?tgWebAppData=${encodeURIComponent(raw(750002))}`);
   await expect(page.getByRole('button', { name: '换一批推荐角色', exact: true })).toBeVisible();
   const state = (await preview.state()).lobby;
   const lastOpen = state.actions.filter((action) => action.action === 'open').at(-1)!;
@@ -832,7 +841,7 @@ test('@roleplay @lobby-rotation 撤回失效不误报成功，也不恢复旧位
   request,
 }) => {
   await preview.scenario('lobby-rotation');
-  await page.goto('/characters');
+  await openRecommendedLobby(page);
   const rotate = page.getByRole('button', { name: '换一批推荐角色', exact: true });
   await expect(rotate).toBeVisible();
   await rotate.click();
@@ -879,7 +888,7 @@ test('@roleplay @lobby-rotation 新批次资料未到齐时不先画残缺卡片
       body: JSON.stringify({ success: true, data: catalog }),
     });
   });
-  await page.goto('/characters');
+  await openRecommendedLobby(page);
   await expect.poll(async () => (await preview.state()).lobby.batches_created).toBe(1);
   await expect(page.locator('[data-lobby-character-id]')).toHaveCount(0);
   release();
@@ -922,7 +931,7 @@ test('@roleplay @lobby-rotation 换批缺新卡资料时保旧，资料失败后
       }),
     });
   });
-  await page.goto('/characters');
+  await openRecommendedLobby(page);
   const rotate = page.getByRole('button', { name: '换一批推荐角色', exact: true });
   await expect(rotate).toBeVisible();
   phase = 'fail';

@@ -69,8 +69,10 @@ export interface RoleplayDiscoveryState {
   favoritesOnly: boolean;
 }
 
-export function readRoleplayDiscovery(): RoleplayDiscoveryState {
-  const fallback: RoleplayDiscoveryState = { sort: 'recommended', query: '', favoritesOnly: false };
+export function readRoleplayDiscovery(
+  defaultSort: LobbySort = 'recommended'
+): RoleplayDiscoveryState {
+  const fallback: RoleplayDiscoveryState = { sort: defaultSort, query: '', favoritesOnly: false };
   try {
     const raw = read(DISCOVERY_KEY);
     if (!raw) return fallback;
@@ -78,7 +80,7 @@ export function readRoleplayDiscovery(): RoleplayDiscoveryState {
     if (!parsed || typeof parsed !== 'object') return fallback;
     const value = parsed as Partial<Record<keyof RoleplayDiscoveryState, unknown>>;
     return {
-      sort: value.sort === 'latest' ? 'latest' : 'recommended',
+      sort: value.sort === 'latest' || value.sort === 'recommended' ? value.sort : defaultSort,
       query: typeof value.query === 'string' ? value.query.slice(0, 500) : '',
       favoritesOnly: value.favoritesOnly === true,
     };
