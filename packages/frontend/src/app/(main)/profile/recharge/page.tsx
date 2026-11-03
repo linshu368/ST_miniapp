@@ -21,7 +21,6 @@ import {
 } from '@miniapp/shared';
 
 import { AlipayIcon, WeChatPayIcon } from '@/components/icons';
-import { AlipayPaymentGuidanceDialog } from '@/components/payment/alipay-payment-guidance-dialog';
 import { PaymentVpnPromptDialog } from '@/components/payment/payment-vpn-prompt-dialog';
 import { VipEntryCard } from '@/components/vip/vip-entry-card';
 import { Button } from '@/components/ui/button';
@@ -111,7 +110,6 @@ function RechargePageContent() {
   const [paymentType, setPaymentType] = useState<PaymentType>('alipay');
   const [noticeDismissed, setNoticeDismissed] = useState(false);
   const noticeChoiceRef = useRef<'invite' | 'recharge' | null>(null);
-  const [alipayPromptOpen, setAlipayPromptOpen] = useState(false);
   const [wechatPromptOpen, setWechatPromptOpen] = useState(false);
   const [preparedPayment, setPreparedPayment] = useState<CreatePaymentOrderData | null>(null);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
@@ -219,12 +217,8 @@ function RechargePageContent() {
         orderId: result.order.id,
         amountCents: result.order.amount_cents,
       });
-      if (paymentType === 'alipay') {
-        setPreparedPayment(result);
-        setAlipayPromptOpen(true);
-        return;
-      }
-      if (paymentPromptConfig.enabled) {
+      // 支付宝直接跳收银台；付款前提示弹窗只属于微信，运营可在后台开关。
+      if (paymentType === 'wxpay' && paymentPromptConfig.enabled) {
         setPreparedPayment(result);
         setWechatPromptOpen(true);
         return;
@@ -251,16 +245,10 @@ function RechargePageContent() {
   const handleConfirmPayment = useCallback(() => {
     if (!preparedPayment) return;
     const result = preparedPayment;
-    setAlipayPromptOpen(false);
     setWechatPromptOpen(false);
     setPreparedPayment(null);
     void launchPayment(result);
   }, [preparedPayment, launchPayment]);
-
-  const handleAlipayPromptOpenChange = useCallback((open: boolean) => {
-    setAlipayPromptOpen(open);
-    if (!open) setPreparedPayment(null);
-  }, []);
 
   const handleWechatPromptOpenChange = useCallback((open: boolean) => {
     setWechatPromptOpen(open);
@@ -538,11 +526,6 @@ function RechargePageContent() {
           </Button>
         </div>
       </footer>
-      <AlipayPaymentGuidanceDialog
-        open={alipayPromptOpen}
-        onOpenChange={handleAlipayPromptOpenChange}
-        onConfirm={handleConfirmPayment}
-      />
       <PaymentVpnPromptDialog
         open={wechatPromptOpen}
         config={paymentPromptConfig}
