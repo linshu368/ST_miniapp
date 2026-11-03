@@ -9,7 +9,7 @@
 - 2026-11-03 用户已在 Vexutopia 注册、开通支付宝与微信收款并配置提现钱包；独立测试中 ¥1 支付宝、¥1 微信均已到账。该测试未绑定秘境用户、订单或权益，也未配置 Webhook。
 - API：`POST /v1/payments` 建单（`payment_method` = `ALIPAY`/`WXPAY`，`currency` = `CNY`），`GET /v1/payments/:id` 查单，`Idempotency-Key` 24 小时内同 key 同 body 返回原结果。
 - China Pay 单笔 ¥1–1,000；收银链接 1 小时过期；微信不可用时 `WXPAY` 请求会被按支付宝创建。
-- Webhook：`POST /v1/webhooks` 注册端点并一次性返回 `whsec_` secret；签名头 `X-Vexutopia-Signature: t=<秒>,v1=<hex>`，HMAC-SHA256(`{t}.{原始 body}`)，时间差 ≤ 300 秒；同一事件可能重复投递，按支付 id 去重。注册端点接收整个组织的事件。
+- Webhook：`POST /v1/webhooks` 注册端点并一次性返回 secret（文档写 `whsec_` 前缀，实测为 64 位十六进制串）；签名头 `X-Vexutopia-Signature: t=<秒>,v1=<hex>`，HMAC-SHA256(`{t}.{原始 body}`)，时间差 ≤ 300 秒；同一事件可能重复投递，按支付 id 去重。注册端点接收整个组织的事件。
 - 官方状态页不提供支付宝/微信粒度的状态，也没有机器可读接口；渠道健康只能靠我们自己的建单/回调/查单信号判断。
 - 没有退款 API；退款/拒付只以 `payment.refunded` 事件出现。每笔争议另收 50 美元。
 

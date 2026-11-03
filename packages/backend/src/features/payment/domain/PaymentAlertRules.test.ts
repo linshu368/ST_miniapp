@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { AlertEvaluationSchema } from '@miniapp/shared';
 
+import { createSafeAlertCard } from '../../alerting/safe-card.js';
+
 import {
   evaluatePaymentAlertRules,
   FEISHU_NOTIFY_RULE_IDS,
@@ -52,6 +54,31 @@ describe('payment alert rules v3', () => {
       expect(evaluation.fingerprint).toBe(
         `${evaluation.environment}:payment:${evaluation.rule_id}:all`
       );
+    }
+  });
+
+  it('produces cards the delivery safety policy accepts, firing or healthy', () => {
+    const firingAll = evaluate([
+      ...[5, 3, 1].map((m) =>
+        op(m, { event_kind: 'gateway_create', outcome: 'failed', error_class: 'timeout' })
+      ),
+      op(2, {
+        event_kind: 'settlement',
+        outcome: 'failed',
+        error_class: 'settlement_failed',
+        order_id: 'MA_00000000-0000-0000-0000-000000000001_1793689726000_0001',
+      }),
+      op(2, { event_kind: 'webhook', outcome: 'failed', error_class: 'refund', order_id: 'MA_1' }),
+      ...[4, 3, 2].map((m) =>
+        op(m, { event_kind: 'fast_reconcile', outcome: 'failed', error_class: 'timeout' })
+      ),
+      ...[4, 3, 2].map((m) =>
+        op(m, { event_kind: 'webhook', outcome: 'failed', error_class: 'signature_invalid' })
+      ),
+    ]).evaluations;
+    expect(firingAll.every((e) => e.state === 'firing')).toBe(true);
+    for (const evaluation of [...firingAll, ...evaluate([]).evaluations]) {
+      expect(() => createSafeAlertCard(evaluation, 'firing', 'key')).not.toThrow();
     }
   });
 

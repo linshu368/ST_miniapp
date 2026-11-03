@@ -31,3 +31,4 @@
 - 2026-11-03：创建任务与规划文档，用户审核通过并 start。用户确认老供应商整体删除、不做兼容。
 - 2026-11-03：实测 `POST /v1/payments/lookup` 与根交易号状态；用户确认对账与告警一起改为平台直接信号（design 2.7）。
 - 2026-11-03：T1–T9 完成。验证：backend 117 文件 / 1298 测试、frontend 69 / 757、shared 18 / 234 全过；`pnpm typecheck`、`lint`、`lint:imports`、`lint:legacy`、frontend build 通过。用开发 key 实测：建单请求形状、GET 与 lookup 的状态和 metadata 回显、Webhook 端点列表可用；发现幂等重放返回 409、China Pay 收银台 30 分钟过期（已写入 design 2.8）。为验证建了两笔未支付 ¥1 订单（tx_229a1bf154741ac3、tx_70d6d5304826fdbb），30 分钟后自动过期。尚未经过真实付款端到端验收（T10）。
+- 2026-11-03：用户授权直接经 dev 上生产。#618 合入 main（630758f3）、#617 合入 dev（0d34ad9f）；生产四个服务部署成功。生产 Railway 写入 `VEXUTOPIA_API_KEY`（API/对账/过期）与 `VEXUTOPIA_WEBHOOK_SECRET`，注册端点 `cmw0d1r027esns701qccyfziz`。生产验证：/health 200、未签名回调 401、签名的合成他环境事件 200 ignored、/api/payment/plans 200、对账 worker 与过期 cron 批量查单正常。发现告警指标名被卡片安全策略拒绝，热修 `fix/vexutopia-alert-metric`。
