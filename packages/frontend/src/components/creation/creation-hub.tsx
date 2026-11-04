@@ -22,6 +22,7 @@ import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/
 import { useFavoritesQuery } from '@/lib/api/favorites';
 import { useCharacterSocialsQuery } from '@/lib/api/character-social';
 import { chatEntryPath } from '@/lib/chat-entry';
+import { useFreshAfterFetch, usePageReady } from '@/lib/perf/page-ready';
 import { cn } from '@/lib/utils';
 
 export function CreationHub() {
@@ -31,6 +32,13 @@ export function CreationHub() {
   const [benefitsOpen, setBenefitsOpen] = useState(false);
   const [preview, setPreview] = useState<{ id: string; tab: CharacterDetailTab } | null>(null);
   const favorites = useFavoritesQuery();
+  const favoritesFresh = useFreshAfterFetch(
+    favorites.isFetching,
+    favorites.data !== undefined,
+    favorites.isError
+  );
+  // 创作按钮、图片入口和栏目导航已是可交互主内容；下方收藏读取不应绑死整页 ready。
+  usePageReady('/creation', true, favoritesFresh, false);
   const cards = favorites.data?.characters ?? [];
   useCharacterSocialsQuery(
     cards.map((card) => card.id),

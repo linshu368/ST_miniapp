@@ -1,3 +1,11 @@
+/*
+ * @Author: whc 952987912@qq.com
+ * @Date: 2026-11-04 09:34:09
+ * @LastEditors: whc 952987912@qq.com
+ * @LastEditTime: 2026-11-04 09:34:36
+ * @FilePath: \ST_miniapp\packages\frontend\src\lib\mobile-performance.test.ts
+ * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
+ */
 import { describe, expect, it } from 'vitest';
 
 import { getMobilePerformancePolicy, mobilePlatformGroup } from './mobile-performance';
@@ -17,6 +25,8 @@ describe('mobile performance policy', () => {
 
     expect(android.routePriority.slice(0, 2)).toEqual(['characters', 'home']);
     expect(ios.routePriority.slice(0, 2)).toEqual(['home', 'dramas']);
+    expect(android.routeWarmupOrder.slice(0, 2)).toEqual(['/characters', '/profile']);
+    expect(ios.routeWarmupOrder.slice(0, 2)).toEqual(['/profile', '/characters']);
     expect(android.characters).toMatchObject({
       initialRenderCount: 4,
       renderBatchSize: 4,

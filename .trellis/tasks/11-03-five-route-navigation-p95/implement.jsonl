@@ -1,0 +1,8 @@
+{"file":".trellis/spec/frontend/app/index.md","reason":"Frontend 硬性边界与验证要求"}
+{"file":".trellis/spec/frontend/app/api-dataflow-and-state.md","reason":"React Query 所有权、缓存与组件不得直接 fetch"}
+{"file":".trellis/spec/frontend/app/testing-quality-and-deployment.md","reason":"移动性能与发布后验证边界"}
+{"file":".trellis/spec/frontend/app/modules/infrastructure/client-ui-foundation.md","reason":"统一 API、性能埋点与导航基建"}
+{"file":".trellis/spec/frontend/app/modules/business/drama-experience.md","reason":"首页与剧场关键路径约束"}
+{"file":".trellis/spec/frontend/app/modules/business/character-lobby.md","reason":"角色大厅缓存和首屏路径"}
+{"file":".trellis/spec/frontend/app/modules/business/wallet-payment.md","reason":"Profile 钱包读取边界"}
+{"file":".trellis/tasks/11-03-five-route-navigation-p95/research/baseline-and-reuse.md","reason":"真实 Android/iOS 页面和接口基线、复用决策"}

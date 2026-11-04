@@ -5,8 +5,8 @@ scope: frontend
 category: infrastructure
 status: active
 owners: [frontend]
-last_verified_task: .trellis/tasks/archive/2026-10/10-29-optimize-sentry-slow-pages-apis/
-last_verified_at: 2026-10-29
+last_verified_task: .trellis/tasks/11-03-five-route-navigation-p95/
+last_verified_at: 2026-11-04
 ---
 
 # API、Telegram 与 UI 基建
@@ -20,6 +20,8 @@ last_verified_at: 2026-10-29
 API 与 server state 已集中，Tailwind/shadcn 作为 UI 基础。业务侧 PostHog 事件复用 `getReplayLifecycle().capture` 与 shared telemetry schema；缺 PostHog 公开配置、host 非 HTTPS 或 SDK 失败时前端 telemetry no-op。GET 传输失败由统一 API client 最多重试一次，React Query 不再叠加默认重试；queryFn 必须把 React Query 的 `AbortSignal` 传到底层请求，排队、退避与在途阶段的主动取消均不得再发请求。
 
 默认关闭且非首屏必需的重型面板可用动态导入，并在首次打开后保持挂载以保留关闭动画和局部草稿；消息正文、输入框、播放器地址等关键路径不得为追求 bundle 数字而延后。
+
+五个一级路由 `/`、`/dramas`、`/characters`、`/creation`、`/profile` 统一复用真实 Link intent 到 `usePageReady` 的 `page.navigation` 计时。成功样本带有限 `readiness_budget=within_2s|over_2s`；失败、离页和停滞仍由 terminal/stall 事件单独观察，不能只看 ready 幸存样本。BottomNav 在入口关键工作结束后按 Android/iOS 优先级串行预热最多两个 route chunk；只有明确 hover/focus/touch intent 才预取 characters、favorites 或 wallet 主 query，短剧目录不在导航 intent 预取，避免与剧场增量列表挂载竞态。
 
 ## 入口与调用者
 
@@ -71,6 +73,7 @@ Telegram WebView 差异需持续人工回归；打开 Production PostHog 是独�
 - 2026-09-18：任务 `图片生成 PostHog 接入规划`（`.trellis/tasks/archive/2026-09/09-17-image-generation-posthog-plan/`）记录图片业务事件复用现有 replay lifecycle 与 shared schema；commit：`7ab4a18ac4924d9a23d35dfc6f4f75be0401c9fe`。
 - 2026-10-20：任务 `Remove confirmed repository noise`（`.trellis/tasks/archive/2026-10/10-20-remove-confirmed-repository-noise/`）移除已删除的 Mock 与表单脚手架事实并同步当前前端基础设施边界；commit：`63eee1e847f678f4b2c434f872425a40fc7f891a`。
 - 2026-10-29：任务 `Optimize Sentry slow pages and APIs`（`.trellis/tasks/archive/2026-10/10-29-optimize-sentry-slow-pages-apis/`）统一 GET 有限重试与查询取消，并明确可选重型 UI 的按需加载边界；commit：`f73e38a11dcf8556aba669c88dbd401569618cdf`。
+- 2026-11-04：任务 `Optimize five-route mobile navigation readiness`（`.trellis/tasks/11-03-five-route-navigation-p95/`）补齐五路由 ready、2 秒预算维度、平台 route chunk 优先级与低风险 intent 预取；生产是否达标仍需发布后按 route/platform 样本验证。
 
 ## 五入口公共导航适配（2026-10-27，本地）
 

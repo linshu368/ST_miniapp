@@ -23,6 +23,8 @@ last_verified_at: 2026-11-03
 
 首次且没有已保存发现条件时默认展示「最新」；用户主动选择的推荐/最新仍在当前浏览器会话内保留。从角色卡进入聊天前记录同文档短生命周期返回快照，返回发现时恢复排序、搜索、收藏筛选、角色 ID 顺序摘要、锚点卡和滚动位置；快照读入组件 state 后立即清理共享存储，后续只使用本次挂载副本。模块间切换另保存栏目、发现条件和滚动标量，不保存服务端角色或收藏 DTO。
 
+BottomNav 对角色入口只在明确 hover/focus/touch intent 时按当前发现条件预取角色 query，复用同一 query key、超时和在途去重；Android route chunk 优先角色后个人页，iOS 优先个人页后角色。预取失败不阻止导航，页面原 loading/error/retry 仍是降级路径。
+
 ## 入口与调用者
 
 主导航「角色」恢复当前浏览器会话中最后使用的发现/对话栏目；当前已在角色模块时再次点击底栏角色入口会回到当前栏目顶部。发现中的角色卡打开详情，再明确继续或新开对话；进入聊天时携带有限来源 `from=discover`。聊天顶部、Telegram BackButton 与 Splash 退出共同返回来源栏目；系统 history 返回继续使用发现快照恢复现场。
@@ -71,6 +73,7 @@ Android/iOS 角色列表首批均限制为4张卡；Android 首图高优先级�
 
 - 2026-10-23：任务 `10-23-roleplay-module-navigation` 将发现、对话和收藏归入角色模块，补齐显式续聊/新建及有限来源返回；本地预览与真实环境验收边界分别记录。
 - 2026-11-03：任务 `大厅默认最新与移动端 P95 优化`（`.trellis/tasks/archive/2026-11/11-03-latest-lobby-mobile-p95/`）角色大厅新会话默认最新，并收紧 Android/iOS 首屏卡片与缓存重校准预算；commit：未记录。
+- 2026-11-04：任务 `Optimize five-route mobile navigation readiness`（`.trellis/tasks/11-03-five-route-navigation-p95/`）增加角色入口显式 intent query 预取和五路由统一 ready 观测；2 秒目标仍以发布后生产样本为准。
 
 ## 连续试卡体验（2026-10-23）
 

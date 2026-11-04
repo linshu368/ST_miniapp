@@ -2,15 +2,24 @@
 
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 
 import { useDramaLibraryStore } from '@/stores/drama-library-store';
 import { useNotificationUnreadCountQuery } from '@/lib/api/notifications';
 import { useSupportUnreadQuery } from '@/lib/api/support';
+import { prefetchCharactersQuery } from '@/lib/api/characters';
+import { prefetchFavoritesQuery } from '@/lib/api/favorites';
+import { prefetchWalletBalanceQuery } from '@/lib/api/payment';
 import { clearLobbyReturnSnapshot } from '@/lib/lobby-return';
 import { canPrefetchInBackground } from '@/lib/background-prefetch';
 import { afterEntryBackground } from '@/lib/entry-phase';
-import { useMobilePerformancePolicy, type MobilePerformancePolicy } from '@/lib/mobile-performance';
 import {
+  useMobilePerformancePolicy,
+  type MobilePerformancePolicy,
+  type PrimaryNavigationRoute,
+} from '@/lib/mobile-performance';
+import {
+  readRoleplayDiscovery,
   readRoleplayView,
   rememberRoleplayScroll,
   rememberRoleplayView,
@@ -25,32 +34,45 @@ const BACKGROUND_PREFETCH_GAP_MS = 800;
 function backgroundPrefetchTargets(
   pathname: string | null,
   roleplayHref: '/characters' | '/chats',
-  routePriority: MobilePerformancePolicy['routePriority']
+  routeWarmupOrder: MobilePerformancePolicy['routeWarmupOrder']
 ): string[] {
-  let candidates: string[] = [];
-  if (pathname === '/characters' || pathname === '/chats')
-    candidates = ['/creation', '/', '/dramas'];
-  else if (isCreationRoute(pathname)) candidates = [roleplayHref, '/', '/dramas'];
-  else if (pathname === '/') candidates = [roleplayHref, '/dramas'];
-  else if (pathname?.startsWith('/dramas')) candidates = ['/', '/profile', roleplayHref];
-  else if (pathname?.startsWith('/profile')) candidates = ['/dramas', '/', roleplayHref];
-
-  const kind = (href: string): MobilePerformancePolicy['routePriority'][number] => {
-    if (href === '/characters' || href === '/chats') return 'characters';
-    if (href === '/') return 'home';
-    if (href === '/dramas') return 'dramas';
-    return 'other';
-  };
+  const candidates = [roleplayHref, '/creation', '/', '/dramas', '/profile'];
+  const normalized = (href: string): PrimaryNavigationRoute =>
+    href === '/chats' ? '/characters' : (href as PrimaryNavigationRoute);
+  const current =
+    pathname === '/characters' || pathname === '/chats'
+      ? '/characters'
+      : isCreationRoute(pathname)
+        ? '/creation'
+        : pathname === '/'
+          ? '/'
+          : pathname?.startsWith('/dramas')
+            ? '/dramas'
+            : pathname?.startsWith('/profile')
+              ? '/profile'
+              : null;
   return candidates
-    .map((href, index) => ({ href, index, rank: routePriority.indexOf(kind(href)) }))
+    .filter((href) => normalized(href) !== current)
+    .map((href, index) => ({ href, index, rank: routeWarmupOrder.indexOf(normalized(href)) }))
     .sort((left, right) => left.rank - right.rank || left.index - right.index)
     .slice(0, 2)
     .map(({ href }) => href);
 }
 
+function prefetchPrimaryRouteData(queryClient: QueryClient, href: string): void {
+  if (href === '/characters') {
+    void prefetchCharactersQuery(queryClient, readRoleplayDiscovery('latest').sort);
+  } else if (href === '/creation') {
+    void prefetchFavoritesQuery(queryClient);
+  } else if (href === '/profile') {
+    void prefetchWalletBalanceQuery(queryClient);
+  }
+}
+
 export function BottomNav() {
   const pathname = usePathname();
   const performancePolicy = useMobilePerformancePolicy();
+  const queryClient = useQueryClient();
   const dramaControlsVisible = useDramaLibraryStore((state) => state.playbackControlsVisible);
   const router = useRouter();
   const currentRoleplayPath = pathname === '/characters' || pathname === '/chats' ? pathname : null;
@@ -69,7 +91,7 @@ export function BottomNav() {
     const targets = backgroundPrefetchTargets(
       pathname,
       roleplayHref,
-      performancePolicy.routePriority
+      performancePolicy.routeWarmupOrder
     );
     if (targets.length === 0) return;
 
@@ -82,7 +104,8 @@ export function BottomNav() {
       const run = () => {
         idleHandle = undefined;
         if (cancelled || !canPrefetchInBackground()) return;
-        router.prefetch(targets[nextIndex]!);
+        const target = targets[nextIndex]!;
+        router.prefetch(target);
         nextIndex += 1;
         if (nextIndex < targets.length) {
           timer = window.setTimeout(scheduleNext, BACKGROUND_PREFETCH_GAP_MS);
@@ -133,7 +156,10 @@ export function BottomNav() {
       highlighted={pendingHref ?? pathname}
       roleplayHref={currentRoleplayPath ?? roleplayHref}
       hasUnread={hasUnread}
-      onIntent={(href) => router.prefetch(href)}
+      onIntent={(href) => {
+        router.prefetch(href);
+        prefetchPrimaryRouteData(queryClient, href);
+      }}
       onNavigate={(event, targetHref, href, current) => {
         if (currentRoleplayPath) rememberRoleplayScroll(currentRoleplayPath);
         if (href === '/characters') {
