@@ -218,6 +218,42 @@ test('@roleplay @character-cover @layout 角色封面全屏放大、还原并回
   await expect(page).toHaveURL(chatPath);
 });
 
+test('@roleplay @character-cover Telegram原生返回逐层关闭大图和详情', async ({ page }) => {
+  await page.addInitScript(() => {
+    const native = window as Window & { TelegramWebviewProxy?: { postEvent: () => void } };
+    native.TelegramWebviewProxy = { postEvent: () => {} };
+  });
+  await page.goto(
+    chatPath + '#tgWebAppVersion=9.6&tgWebAppPlatform=android&tgWebAppThemeParams=%7B%7D'
+  );
+  const chat = page.getByRole('textbox', { name: '输入消息', exact: true });
+  await expect(chat).toBeVisible();
+  const host = page.url();
+  await page.getByRole('button', { name: '查看 林间旅人 的评论', exact: true }).click();
+  const detail = page.getByRole('dialog', { name: '林间旅人', exact: true });
+  const thumb = detail.getByRole('button', { name: '查看角色头像大图', exact: true });
+  await thumb.click();
+  const viewer = page.getByRole('dialog', { name: '角色封面大图', exact: true });
+  await expect(viewer).toBeVisible();
+  const pressNativeBack = () =>
+    page.evaluate(() => {
+      const native = window as Window & {
+        Telegram?: { WebView?: { receiveEvent: (name: string, data: object) => void } };
+      };
+      if (!native.Telegram?.WebView) throw new Error('Telegram bridge unavailable');
+      native.Telegram.WebView.receiveEvent('back_button_pressed', {});
+    });
+  await pressNativeBack();
+  await expect(viewer).not.toBeVisible();
+  await expect(detail).toBeVisible();
+  await expect(thumb).toBeFocused();
+  await expect(page).toHaveURL(host);
+  await pressNativeBack();
+  await expect(detail).not.toBeVisible();
+  await expect(chat).toBeVisible();
+  await expect(page).toHaveURL(host);
+});
+
 test('@roleplay 空对话列表有清晰入口', async ({ page, preview }) => {
   await preview.scenario('empty');
   await page.goto('/chats');

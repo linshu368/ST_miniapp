@@ -13,6 +13,7 @@ import { characterRoomGradient } from '@/lib/utils/character-hue';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
 import { lobbyImageUrl } from './character-card';
+import { useTelegramBackButton } from '@/lib/telegram/hooks';
 import { CharacterSocialBar, socialCount } from './character-social-bar';
 import { CharacterComments } from './character-comments';
 import { CharacterCoverViewer } from './character-cover-viewer';
@@ -83,6 +84,15 @@ function CharacterDetailContent({
     character?.avatar_url && character.avatar_url !== failedCover
       ? character.avatar_url
       : undefined;
+  useTelegramBackButton(
+    open
+      ? () => {
+          if (viewingCover && coverUrl) setViewingCover(false);
+          else onClose();
+        }
+      : null,
+    'dialog'
+  );
   const coverOpener = useRef<HTMLButtonElement | null>(null);
   const showCover = (button: HTMLButtonElement) => {
     coverOpener.current = button;
