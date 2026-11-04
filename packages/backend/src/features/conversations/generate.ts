@@ -2,7 +2,7 @@ import {
   observeChatFirstToken,
   observeGenerationPreparationStages,
 } from '../../lib/engineering-observability.js';
-import { beginActiveDelivery, appendActiveDelivery, endActiveDelivery } from './active-delivery.js';
+import { appendActiveDelivery } from './active-delivery.js';
 /**
  * backend / features / conversations / generate.ts
  *
@@ -52,6 +52,7 @@ import { MiniappUserSettingsRepository } from '../../infrastructure/repositories
 import type { RequestLogger } from '../../lib/logger.js';
 import type { fetchModelCatalogSnapshot } from '../../platform/model-tiers.js';
 import { fetchContextWindowLimits } from './context-window.js';
+import { createTurnControl } from './turn-control.js';
 import { buildEngineHistory } from './history.js';
 import type { ConversationStreamSink } from './sse.js';
 
@@ -286,66 +287,18 @@ export async function runConversationTurn(
     // Declare the cohort with the existing insert so missing reports remain measurable.
     measurementMethod: input.firstTokenMeasurement,
   };
-  let observationBegun = false;
-  let readyMs: number | null = null;
-  let checkpoint: Promise<void> | undefined;
-  let firstTokenDeadlineElapsed = false;
-  let firstTokenTimeoutRecorded = false;
-  const observationError = (err: unknown) =>
-    log.sys.warn(
-      { err, event: 'conversation.first_token.observation_failed', historyId: turn.historyId },
-      '首 token 观测未写入'
-    );
-  const recordFirstTokenTimeout = (): void => {
-    // Engineering telemetry must not depend on the receipt write being available.
-    if (!firstTokenDeadlineElapsed)
-      observeChatFirstToken({
-        requestedModel: model.modelId,
-        stage: 'timeout',
-        deadlineMs: policy.deadlineMs,
-      });
-    firstTokenDeadlineElapsed = true;
-    if (!observationBegun || firstTokenTimeoutRecorded) return;
-    firstTokenTimeoutRecorded = true;
-    void observations
-      .markServer(turn.historyId, { first_token_timeout: true, server_timeout_stage: 'global' })
-      .catch(observationError);
-  };
-  const controller = new AbortController();
-  const firstTokenTimer = setTimeout(
-    () => {
-      recordFirstTokenTimeout();
-      controller.abort(new FirstTokenDeadlineError());
-    },
-    Math.max(1, policy.deadlineMs - (performance.now() - requestStartedAt))
-  );
-  const timeout = setTimeout(
-    () => controller.abort(),
-    Math.max(1, 110_000 - (Date.now() - turnStartedAt))
-  );
-  let stopped = false;
-  let pollTimer: NodeJS.Timeout | undefined;
-  const pollCancellation = async (): Promise<void> => {
-    try {
-      const row = await historyRecords().requireTurnState(turn.historyId);
-      if (row.llm_finish_reason === 'user_cancelled') clearTimeout(firstTokenTimer);
-      if (row.status !== 'streaming' || row.llm_finish_reason !== null) controller.abort();
-    } catch (err) {
-      log.sys.warn(
-        {
-          event: 'conversation.cancel.poll_failed',
-          err,
-          sessionId: session.id,
-          historyId: turn.historyId,
-        },
-        '检查生成取消状态失败'
-      );
-    }
-    if (!stopped && !controller.signal.aborted)
-      pollTimer = setTimeout(() => void pollCancellation(), 1_000);
-  };
-  pollTimer = setTimeout(() => void pollCancellation(), 1_000);
-  beginActiveDelivery(turn.historyId, userId, session.id, turn.revision);
+  const control = createTurnControl({
+    turn,
+    sessionId: session.id,
+    userId,
+    requestedModelId: model.modelId,
+    deadlineMs: policy.deadlineMs,
+    requestStartedAt,
+    turnStartedAt,
+    history: historyRecords(),
+    observations,
+    log,
+  });
 
   try {
     // ── 组 prompt ─────────────────────────────────────────────────────────────
@@ -354,8 +307,7 @@ export async function runConversationTurn(
     const [registration, contextRead, cardRead] = await Promise.allSettled([
       (async () => {
         await observations.begin({ ...observationInput, history: [] });
-        observationBegun = true;
-        if (firstTokenDeadlineElapsed) recordFirstTokenTimeout();
+        control.markObservationBegun();
       })(),
       historyRecords().getContextBeforeTurn(
         session.id,
@@ -372,7 +324,7 @@ export async function runConversationTurn(
     if (cardRead.status === 'rejected') throw cardRead.reason;
     const card = cardRead.value;
     const context = contextRead.value;
-    controller.signal.throwIfAborted();
+    control.signal.throwIfAborted();
     const history = buildEngineHistory(context.messages, context.openingMessage ?? card.first_mes);
 
     const prompt = buildPrompt({
@@ -405,8 +357,7 @@ export async function runConversationTurn(
         requestStartedAt,
         deferPersistence: true,
         onReady: () => {
-          readyMs ??= performance.now() - requestStartedAt;
-          clearTimeout(firstTokenTimer);
+          control.markReady();
         },
         store: {
           prepareFallback: (attempt, triggeredMs) =>
@@ -418,24 +369,23 @@ export async function runConversationTurn(
         },
       },
       thinkingEnabled,
-      signal: controller.signal,
+      signal: control.signal,
       // Anthropic prompt cache 的 cache_control 断点，配合双水位线泄洪制造稳定前缀
       promptCaching: true,
     };
 
     const emitVisibleDelta = (type: 'delta' | 'reasoning', text: string): void => {
-      if (readyMs === null && performance.now() - requestStartedAt >= policy.deadlineMs) {
-        recordFirstTokenTimeout();
-        controller.abort(new FirstTokenDeadlineError());
+      if (control.readyMs === null && performance.now() - requestStartedAt >= policy.deadlineMs) {
+        control.recordFirstTokenTimeout();
+        control.abort(new FirstTokenDeadlineError());
       }
-      controller.signal.throwIfAborted();
+      control.signal.throwIfAborted();
       appendActiveDelivery(turn.historyId, type, text);
-      if (text.trim() && !checkpoint) {
-        readyMs ??= performance.now() - requestStartedAt;
-        clearTimeout(firstTokenTimer);
-        checkpoint = observations
+      if (text.trim() && !control.checkpoint) {
+        const readyMs = control.markReady();
+        control.checkpoint = observations
           .checkpoint(turn.historyId, turn.revision, readyMs, type, text)
-          .catch(observationError);
+          .catch(control.observationError);
       }
       // Timing belongs to Grafana; delivery preview above is the required recovery fact.
       sink.send({ type, text });
@@ -445,9 +395,9 @@ export async function runConversationTurn(
       request,
       {
         onBeforeDispatch: async (snapshot) => {
-          controller.signal.throwIfAborted();
+          control.signal.throwIfAborted();
           await observations.begin({ ...observationInput, snapshot, history: prompt.messages });
-          controller.signal.throwIfAborted();
+          control.signal.throwIfAborted();
           observeGenerationPreparationStages({
             provider: model.provider,
             model: model.providerModelId,
@@ -462,11 +412,11 @@ export async function runConversationTurn(
           emitStart();
         },
         onBeforeReserve: async (reservedChargeId) => {
-          controller.signal.throwIfAborted();
+          control.signal.throwIfAborted();
           if (reservedChargeId !== chargeId) throw new Error('生成计费身份发生变化');
         },
         onBeforeSettle: async (observed, releaseReservation) => {
-          await checkpoint;
+          await control.checkpoint;
           const success =
             observed.completed &&
             observed.content.trim().length > 0 &&
@@ -478,7 +428,7 @@ export async function runConversationTurn(
             status: success ? 'success' : 'stream_interrupted',
             finishReason: observed.finishReason,
           });
-          if (row.llm_finish_reason === 'user_cancelled') clearTimeout(firstTokenTimer);
+          if (row.llm_finish_reason === 'user_cancelled') control.stopFirstTokenTimer();
           if (row.status === 'streaming') {
             // A cancel marker won the completion CAS; free quota must be released before
             // terminal acknowledgement lets the user regenerate with their original quota.
@@ -504,7 +454,7 @@ export async function runConversationTurn(
     if (result.status === 'insufficient_balance' || result.denial === 'vip_required')
       await observations
         .markServer(turn.historyId, { billing_rejected: true })
-        .catch(observationError);
+        .catch(control.observationError);
     const current = await historyRecords().requireTurnById(turn.historyId);
     const persisted = await historyRecords().finalizeTurn({
       historyId: turn.historyId,
@@ -586,17 +536,17 @@ export async function runConversationTurn(
   } catch (err) {
     if (
       err instanceof FirstTokenDeadlineError ||
-      controller.signal.reason instanceof FirstTokenDeadlineError
+      control.signal.reason instanceof FirstTokenDeadlineError
     ) {
-      controller.abort(err instanceof FirstTokenDeadlineError ? err : controller.signal.reason);
-      if (observationBegun) {
-        const stage = (controller.signal.reason as FirstTokenDeadlineError).stage;
+      control.abort(err instanceof FirstTokenDeadlineError ? err : control.signal.reason);
+      if (control.observationBegun) {
+        const stage = (control.signal.reason as FirstTokenDeadlineError).stage;
         await observations
           .markServer(turn.historyId, {
             first_token_timeout: stage === 'global',
             server_timeout_stage: stage,
           })
-          .catch(observationError);
+          .catch(control.observationError);
       }
     }
     // Prompt/history/precheck failures happen after startTurn and must release the
@@ -618,28 +568,24 @@ export async function runConversationTurn(
       historyId: turn.historyId,
       content: '',
       status:
-        controller.signal.aborted || isExternallyInterrupted(current.llm_finish_reason)
+        control.signal.aborted || isExternallyInterrupted(current.llm_finish_reason)
           ? 'stream_interrupted'
           : 'upstream_error',
       finishReason: isExternallyInterrupted(current.llm_finish_reason)
         ? current.llm_finish_reason
-        : controller.signal.aborted
+        : control.signal.aborted
           ? 'timeout'
           : null,
     });
-    if (controller.signal.reason instanceof FirstTokenDeadlineError) {
+    if (control.signal.reason instanceof FirstTokenDeadlineError) {
       // Bind the failed revision before the error so the browser can report its actual wait.
       // This happens after safe failure/allowance cleanup, never before billing rejection.
       if (!sink.opened) emitStart();
-      throw controller.signal.reason;
+      throw control.signal.reason;
     }
     throw err;
   } finally {
-    endActiveDelivery(turn.historyId);
-    clearTimeout(firstTokenTimer);
-    stopped = true;
-    clearTimeout(timeout);
-    if (pollTimer) clearTimeout(pollTimer);
+    control.dispose();
   }
 }
 
