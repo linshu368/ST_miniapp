@@ -4,6 +4,7 @@ import {
   DEFAULT_LOBBY_ROTATION_CONFIG,
   LobbyRankingParamsSchema,
   LobbyRecommendationExposuresSchema,
+  LobbyRecommendationDataSchema,
   LobbyRecommendationRequestSchema,
   LobbyRotationConfigSchema,
 } from '@miniapp/shared';
@@ -236,6 +237,40 @@ describe('rotation consumer contracts', () => {
       max_repeat: 1,
       exploration_count: 1,
     });
+  });
+  it('accepts legacy batches and rejects a partially loaded or reordered head', () => {
+    const head_ids = [
+      '10000000-0000-4000-8000-000000000001',
+      '10000000-0000-4000-8000-000000000002',
+    ];
+    const batch = {
+      enabled: true,
+      degraded: false,
+      batch_id: null,
+      generated_at: null,
+      expires_at: null,
+      previous_batch_id: null,
+      character_ids: head_ids,
+      head_ids,
+    };
+    const head_cards = head_ids.map((id) => ({
+      id,
+      name: '角色',
+      description: '',
+      avatar_url: '',
+      personality_tags: [],
+      author_name: '',
+      is_featured: false,
+    }));
+    expect(LobbyRecommendationDataSchema.safeParse(batch).success).toBe(true);
+    expect(LobbyRecommendationDataSchema.safeParse({ ...batch, head_cards }).success).toBe(true);
+    expect(
+      LobbyRecommendationDataSchema.safeParse({ ...batch, head_cards: head_cards.slice(1) }).success
+    ).toBe(false);
+    expect(
+      LobbyRecommendationDataSchema.safeParse({ ...batch, head_cards: [...head_cards].reverse() })
+        .success
+    ).toBe(false);
   });
   it('rejects caller-selected identity, invalid request IDs, and unbounded exposure arrays', () => {
     const id = input().candidates[0]!.id;

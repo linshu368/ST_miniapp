@@ -1,6 +1,7 @@
 import {
   DEFAULT_LOBBY_ROTATION_CONFIG,
   LOBBY_FEATURED_POSITION_COUNT,
+  LOBBY_ROTATION_HEAD_SIZE,
   LobbyRankingParamsSchema,
   type LobbyRecommendationData,
   type LobbyRecommendationExposures,
@@ -20,6 +21,7 @@ import {
   type RecommendationCandidate,
 } from './recommendation-ranking.js';
 import {
+  readReusableRecommendation,
   recordRecommendationExposures,
   updateRecommendation,
 } from './recommendation-repository.js';
@@ -65,18 +67,23 @@ async function loadCandidates(): Promise<RecommendationCandidate[]> {
   if (catalogCache && catalogCache.expires > Date.now()) return catalogCache.value;
   if (catalogInflight) return catalogInflight;
   catalogInflight = (async () => {
-    const cards = await prisma.character.findMany({
-      where: { ...discoverableCharacterWhere, is_test: false },
-      orderBy: [{ sort_order: 'asc' }, { created_at: 'desc' }],
-      select: { id: true, name: true, description: true, tags: true },
-      take: 10000,
-    });
+    // Only completeness is used by exploration. Keep every character's description in
+    // Postgres instead of moving the whole catalog of text to the ranking process.
+    const cards = await prisma.$queryRaw<
+      Array<{ id: string; tags: unknown; can_explore: boolean }>
+    >`
+      SELECT c.id, c.tags,
+        (c.name ~ '[^[:space:]]' AND c.description ~ '[^[:space:]]') AS can_explore
+      FROM app_core.characters c
+      WHERE NOT c.is_test AND app_core.can_discover_character(c.id)
+      ORDER BY c.sort_order ASC, c.created_at DESC LIMIT 10000
+    `;
     const value = cards.map((card) => ({
       id: card.id,
       tags: Array.isArray(card.tags)
         ? card.tags.filter((tag): tag is string => typeof tag === 'string')
         : [],
-      canExplore: card.name.trim().length > 0 && card.description.trim().length > 0,
+      canExplore: card.can_explore,
     }));
     catalogCache = { expires: Date.now() + 2000, value };
     return value;
@@ -86,18 +93,12 @@ async function loadCandidates(): Promise<RecommendationCandidate[]> {
   return catalogInflight;
 }
 
-export async function getLobbyRecommendation(
-  userId: string,
-  request: LobbyRecommendationRequest,
-  log: FastifyBaseLogger
-): Promise<LobbyRecommendationData> {
-  const config = await loadLobbyRotationConfig(log);
+async function prepareRanking(log: FastifyBaseLogger, seed?: number) {
   const [candidates, snapshot, pinned] = await Promise.all([
     loadCandidates(),
     loadCharacterRankingScores(),
     resolveLobbyPinnedCharacters(log),
   ]);
-  const seed = recommendationHash(request.request_id);
   const ordered = snapshot
     ? buildRecommendedOrder({
         operatorOrdered: candidates,
@@ -117,7 +118,44 @@ export async function getLobbyRecommendation(
   const fallbackOrder = (
     matureCount >= 4 ? ordered : applyPinnedOnly(candidates, pinned.characterIds)
   ).map((c) => c.id);
+  return { candidates, snapshot, pinned, ordered, fallbackOrder };
+}
+
+export async function getPublicLobbyHeadOrder(log: FastifyBaseLogger): Promise<string[]> {
+  const { fallbackOrder } = await prepareRanking(log);
+  return fallbackOrder;
+}
+
+async function filterVisibleBatch(
+  batch: LobbyRecommendationData
+): Promise<LobbyRecommendationData> {
+  if (!batch.character_ids.length) return batch;
+  const rows = await prisma.character.findMany({
+    where: { ...discoverableCharacterWhere, is_test: false, id: { in: batch.character_ids } },
+    select: { id: true },
+  });
+  const visible = new Set(rows.map((row) => row.id));
+  const ids = batch.character_ids.filter((id) => visible.has(id));
+  return { ...batch, character_ids: ids, head_ids: ids.slice(0, LOBBY_ROTATION_HEAD_SIZE) };
+}
+
+export async function getLobbyRecommendation(
+  userId: string,
+  request: LobbyRecommendationRequest,
+  log: FastifyBaseLogger
+): Promise<LobbyRecommendationData> {
   const now = new Date();
+  const saved = await readReusableRecommendation(prisma, userId, request, now);
+  if (saved) {
+    // A role may have gone private since this order was saved. Revalidate just IDs;
+    // skip config, scoring, candidate text, and the transaction used for new batches.
+    return filterVisibleBatch(saved);
+  }
+  const seed = recommendationHash(request.request_id);
+  const [config, { candidates, snapshot, pinned, ordered, fallbackOrder }] = await Promise.all([
+    loadLobbyRotationConfig(log),
+    prepareRanking(log, seed),
+  ]);
   const generated: Array<{ headCount: number; repeatCount: number; degraded: boolean }> = [];
   const result = await updateRecommendation(prisma, userId, request, {
     now,
@@ -157,7 +195,7 @@ export async function getLobbyRecommendation(
       '推荐新批次已保存'
     );
   }
-  return result;
+  return filterVisibleBatch(result);
 }
 
 export async function reportLobbyRecommendationExposures(

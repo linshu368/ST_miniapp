@@ -9,7 +9,14 @@ import { getDomainDb } from '../lib/supabase.js';
 import { CreatorCharacterIdSchema } from '@miniapp/shared';
 import { prisma } from '../lib/db.js';
 import { config } from '../platform/config.js';
-import { LOBBY_FEATURED_POSITION_COUNT, ok, fail, parseLobbySort } from '@miniapp/shared';
+import {
+  LOBBY_FEATURED_POSITION_COUNT,
+  LOBBY_ROTATION_HEAD_SIZE,
+  ok,
+  fail,
+  parseLobbySort,
+  PublicLobbyHeadIdsSchema,
+} from '@miniapp/shared';
 import type {
   GetCharactersData,
   GetCharacterByIdData,
@@ -17,6 +24,8 @@ import type {
   CharacterDetail,
   LobbyLatestBadgeData,
 } from '@miniapp/shared';
+import { readLobbyHeadRows } from '../features/lobby/recommendation-repository.js';
+import { getPublicLobbyHeadOrder } from '../features/lobby/recommendation.js';
 import { loadCharacterRankingScores } from '../features/lobby/ranking-stats.js';
 import { applyPinnedOnly, buildRecommendedOrder } from '../features/lobby/recommended-ranking.js';
 import { resolveLobbyFeaturedIds } from '../features/lobby/featured.js';
@@ -70,6 +79,29 @@ export async function resolvePublicCharacterAvatarUrls(
         : resolveCharacterAvatarUrl(c.id, c.avatar_url),
     ])
   );
+}
+
+/** Fetch only the first currently visible cards in this saved order. Checking at read
+ * time keeps private/delisted cards out and fills gaps from the same batch's tail. */
+export async function loadLobbyHeadCards(
+  orderedIds: string[],
+  log: FastifyBaseLogger
+): Promise<CharacterSummary[]> {
+  const rows = await readLobbyHeadRows(prisma, orderedIds);
+  if (!rows.length) return [];
+  const avatars = await resolvePublicCharacterAvatarUrls(rows, log);
+  const featured = await loadLobbyFeaturedIdSet(log);
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    avatar_url: avatars.get(row.id) ?? '',
+    personality_tags: Array.isArray(row.tags)
+      ? row.tags.filter((tag): tag is string => typeof tag === 'string')
+      : [],
+    author_name: row.creator,
+    is_featured: featured.has(row.id),
+  }));
 }
 
 /** Detail-only credit: do not fan author-profile lookups out over the lobby list. */
@@ -132,10 +164,26 @@ export default async function characterRoutes(app: FastifyInstance) {
 
   // @frontend-ready: true
   app.get('/api/characters', async (request, reply) => {
-    const sort = parseLobbySort((request.query as { sort?: unknown } | undefined)?.sort);
+    const query = request.query as { sort?: unknown; limit?: unknown; ids?: unknown };
+    const sort = parseLobbySort(query.sort);
+    const headOnly = sort === 'recommended' && query.limit === String(LOBBY_ROTATION_HEAD_SIZE);
+    const requestedIds =
+      query.ids === undefined ? undefined : PublicLobbyHeadIdsSchema.safeParse(query.ids);
+    if (requestedIds && (!requestedIds.success || !headOnly || query.sort !== 'recommended')) {
+      return reply.code(400).send(fail('BAD_REQUEST', '公共推荐首屏请求无效'));
+    }
+    if (headOnly) {
+      const order = requestedIds?.data ?? (await getPublicLobbyHeadOrder(request.log));
+      const cards = await loadLobbyHeadCards(order, request.log);
+      reply.header('Cache-Control', 'no-store');
+      return reply.send(ok<GetCharactersData>({ characters: cards }));
+    }
 
     const characters = await prisma.character.findMany({
-      where: discoverableCharacterWhere,
+      where:
+        sort === 'recommended'
+          ? { ...discoverableCharacterWhere, is_test: false }
+          : discoverableCharacterWhere,
       // 「最新」只看最后上架时间；「推荐」先取运营顺序，再在内存里做动态排序。
       orderBy:
         sort === 'latest'

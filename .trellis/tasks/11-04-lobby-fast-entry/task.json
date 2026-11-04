@@ -1,0 +1,64 @@
+{
+  "id": "lobby-fast-entry",
+  "name": "lobby-fast-entry",
+  "title": "推荐返回、评分去重与首屏12卡提速",
+  "description": "推荐批次直接恢复、同评分口径成功后24小时去重、推荐首屏只加载12张摘要及可复用移动端性能对照。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-04",
+  "completedAt": null,
+  "branch": "codex/lobby-fast-entry",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "本地实现与验收完成。现有手机端回归和独立基线/最终性能对照见validation.md。生产数据库、远端Git与部署未更改。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "backend.business.character-lobby",
+        "frontend.business.character-lobby",
+        "shared.business.character-lobby-contracts",
+        "database.infrastructure.schema-security"
+      ]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": ["/characters（推荐初次进入、换批和试聊返回）"],
+      "apis": [
+        "POST /api/characters/recommendation（可附12张摘要）",
+        "GET /api/lobby-characters?sort=recommended&limit=12（公共头/旧头按ID校准）",
+        "GET /api/lobby-characters?sort=recommended（滚动尾部或搜索按需）"
+      ],
+      "android": {
+        "page_p95_baseline_ms": 2262,
+        "page_p95_target_ms": 1800
+      },
+      "ios": {
+        "page_p95_baseline_ms": 1798,
+        "page_p95_target_ms": 1500
+      },
+      "api": {
+        "p95_baseline_ms": 290,
+        "p95_target_ms": 290
+      },
+      "measurement": {
+        "source": "11/03 Sentry 最近12小时 /characters：安卓100次、iOS31次。Railway最近24小时推荐185次，P95 290ms，目录405次P95 363ms。",
+        "window": "发布前最近两个完整 24 小时窗与发布后两个完整 24 小时窗分别比较；按平台、页面、版本隔离，接口逐路由观察。单组有效样本少于 100 时标为低样本并延长观察，不能据此宣称达标。"
+      },
+      "notes": "是前次调查窗口，小样本，不代表本轮上线结果。以本地固定fixture及同设备网络对照衡量返回和冷首屏；生产发布后按同平台同窗口复核。"
+    }
+  }
+}

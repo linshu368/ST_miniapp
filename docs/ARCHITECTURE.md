@@ -808,11 +808,11 @@ RootLayout随HTML交付独立框架绘制确认与原生ready脚本，Providers�
 
 ### 角色推荐批次（2026-11-02，本地待发布）
 
-公开角色目录继续共享缓存；鉴权POST `/api/characters/recommendation` 只提供个人顺序ID和批次时间，支持open/resume/refresh/undo；曝光POST同路径`/exposures`合并最多40张。private no-store、每用户短事务锁、request_id/CAS、当前/上一批恢复，前端按用户隔离query/storage与返回位置。24h只在新浏览判定，浏览中不定时重排；搜索/最新沿用原用途。
+公开角色目录继续共享缓存；鉴权POST `/api/characters/recommendation` 兼容个人顺序ID和批次时间，新客户端可选取前12张公开角色摘要，支持open/resume/refresh/undo；曝光POST同路径`/exposures`合并最多40张。private no-store、每用户短事务锁、request_id/CAS、当前/上一批恢复，前端按用户隔离query/storage与返回位置。24h只在新浏览判定，浏览中不定时重排；搜索/最新沿用原用途。
 
 `miniapp_features.user_lobby_recommendations`保存当前/上一批完整顺序与3批头部摘要；`user_character_exposures`保存每用户卡最近实际曝光及3批幂等环。均RLS开启、仅后端权限，跨schema FK到app_core根用户/角色，删除级联。曝光需50%连续1秒，遮挡/hidden/搜索/最新/恢复中不计，前端合并、失败不阻塞。
 
-原character_ranking_scores增加qualified-v1与可信分/样本/时间。每日job只以资历过滤后达到样本门槛的新证据写可信记录，不回填旧分。当前成熟低分优先；缺近期样本保留过去可信分，超过90天只给探索机会。抽选底线40、头档70是初版值；可轮换头档不足可用其他可靠卡补位。相邻前12目标最多2张重复，质量/库存不足时有标记地放宽，不保证没有库存时硬兑现。金框仍由列表/详情/收藏共用的全局资格出口决定，不按个人前排位置产生。
+原character_ranking_scores增加qualified-v1与可信分/样本/时间。启动及每小时在专用连接的任务锁内核对成功记录。同一评分口径24小时内跳过历史聚合；评分与完成时间在同一事务提交，失败按下次检查重试。评分job只以资历过滤后达到样本门槛的新证据写可信记录，不回填旧分。当前成熟低分优先；缺近期样本保留过去可信分，超过90天只给探索机会。抽选底线40、头档70是初版值；可轮换头档不足可用其他可靠卡补位。相邻前12目标最多2张重复，质量/库存不足时有标记地放宽，不保证没有库存时硬兑现。金框仍由列表/详情/收藏共用的全局资格出口决定，不按个人前排位置产生。
 
 运营复用`lobby_ranking_params.rotation`（默认直接全量、24h、重复2、探索2）与`lobby_pinned_characters.fixed_character_id`最多1固定；原8个ID对轮换用户是加权候选，旧策略保留兼容。迁移先于Backend；直接全量生效，新质量证据未就绪时沿用可靠的旧排序。运营不展示启用/灰度开关，保留新表和证据，不DROP。实际生产状态以发布记录为准。固定SQL/算法/HTTP验收`pnpm test:lobby-ranking`，UI `@lobby-rotation`沿用本地环境，未连接真实业务数据。
 

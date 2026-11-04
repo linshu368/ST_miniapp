@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   snapshot: vi.fn(),
   user: vi.fn(),
   cover: vi.fn(),
+  publicHead: vi.fn(),
 }));
 vi.mock('../lib/db.js', () => ({
   prisma: {
@@ -24,7 +25,16 @@ vi.mock('../features/creator/access.js', () => ({
   canUseCharacter: mocks.canUse,
   discoverableCharacterWhere: { enabled: true, archived_at: null },
 }));
-vi.mock('../features/creator/covers.js', () => ({ resolveCreatorCoverUrl: mocks.cover }));
+vi.mock('../features/creator/covers.js', () => ({
+  resolveCreatorCoverUrl: mocks.cover,
+  resolvePublicCreatorCoverUrls: async () => new Map(),
+}));
+vi.mock('../features/lobby/pinned-characters.js', () => ({
+  resolveLobbyPinnedCharacters: async () => ({ characterIds: [] }),
+}));
+vi.mock('../features/lobby/recommendation.js', () => ({
+  getPublicLobbyHeadOrder: mocks.publicHead,
+}));
 vi.mock('../lib/supabase.js', () => ({
   getDomainDb: () => ({ rpc: mocks.snapshot }),
 }));
@@ -231,5 +241,59 @@ describe('character detail creator credit', () => {
     expect(response.json().data.characters).toHaveLength(1);
     expect(mocks.author).not.toHaveBeenCalled();
     expect(mocks.ownedDraft).not.toHaveBeenCalled();
+  });
+});
+
+describe('public bounded recommendation fallback', () => {
+  it('revalidates the supplied public IDs in their original order without drawing a new head', async () => {
+    mocks.author.mockResolvedValue([character]);
+    const response = await app.inject({
+      url: `/api/characters?sort=recommended&limit=12&ids=${viewerId},${cardId}`,
+      headers: { 'x-test-anonymous': '1' },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data.characters.map((row: { id: string }) => row.id)).toEqual([cardId]);
+    expect(mocks.author.mock.calls[0]?.slice(1)).toEqual([JSON.stringify([viewerId, cardId]), 12]);
+    expect(mocks.publicHead).not.toHaveBeenCalled();
+    expect(mocks.characters).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    'sort=recommended&limit=12&ids=',
+    'sort=recommended&limit=12&ids=not-a-uuid',
+    `sort=recommended&limit=12&ids=${cardId},${cardId}`,
+    `sort=recommended&limit=12&ids=${Array.from({ length: 13 }, (_, i) => '70000000-0000-4000-8000-' + String(i).padStart(12, '0')).join(',')}`,
+    `sort=recommended&limit=12&ids=${cardId}&ids=${viewerId}`,
+    `sort=latest&limit=12&ids=${cardId}`,
+    `sort=recommended&limit=13&ids=${cardId}`,
+  ])(
+    'rejects malformed or unbounded public head query %s before reading any directory',
+    async (query) => {
+      expect((await app.inject('/api/characters?' + query)).statusCode).toBe(400);
+      expect(mocks.author).not.toHaveBeenCalled();
+      expect(mocks.publicHead).not.toHaveBeenCalled();
+      expect(mocks.characters).not.toHaveBeenCalled();
+    }
+  );
+
+  it('excludes test cards on full recommended tail/search while preserving the latest directory', async () => {
+    expect((await app.inject('/api/characters?sort=recommended')).statusCode).toBe(200);
+    expect(mocks.characters.mock.calls.at(-1)?.[0].where.is_test).toBe(false);
+    expect((await app.inject('/api/characters?sort=latest')).statusCode).toBe(200);
+    expect(mocks.characters.mock.calls.at(-1)?.[0].where).not.toHaveProperty('is_test');
+  });
+  it('uses the head-only path for an unauthenticated caller without loading the full directory', async () => {
+    mocks.publicHead.mockResolvedValue([cardId]);
+    mocks.author.mockResolvedValue([character]);
+    const response = await app.inject({
+      url: '/api/characters?sort=recommended&limit=12',
+      headers: { 'x-test-anonymous': '1' },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data.characters).toEqual([
+      expect.objectContaining({ id: cardId, avatar_url: character.avatar_url }),
+    ]);
+    expect(mocks.characters).not.toHaveBeenCalled();
+    expect(mocks.publicHead).toHaveBeenCalledOnce();
   });
 });

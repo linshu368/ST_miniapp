@@ -3,7 +3,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ChevronDown, ChevronRight, Loader2, Quote, Sparkles, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, Expand, Loader2, Quote, Sparkles, X } from 'lucide-react';
 import type { CharacterSummary, ChatSession } from '@miniapp/shared';
 import { useCharacterQuery } from '@/lib/api/characters';
 import { rememberPublicCreatorOpener } from '@/lib/roleplay-navigation';
@@ -15,6 +15,7 @@ import { cn } from '@/lib/utils';
 import { lobbyImageUrl } from './character-card';
 import { CharacterSocialBar, socialCount } from './character-social-bar';
 import { CharacterComments } from './character-comments';
+import { CharacterCoverViewer } from './character-cover-viewer';
 
 export type CharacterDetailTab = 'intro' | 'comments';
 interface CharacterDetailSheetProps {
@@ -76,6 +77,17 @@ function CharacterDetailContent({
     >((latest, item) => (!latest || Date.parse(item.last_message_at ?? item.created_at) > Date.parse(latest.last_message_at ?? latest.created_at) ? item : latest), undefined);
   const [tab, setTab] = useState<CharacterDetailTab>(initialTab);
   const [greetingOpen, setGreetingOpen] = useState(false);
+  const [viewingCover, setViewingCover] = useState(false);
+  const [failedCover, setFailedCover] = useState<string>();
+  const coverUrl =
+    character?.avatar_url && character.avatar_url !== failedCover
+      ? character.avatar_url
+      : undefined;
+  const coverOpener = useRef<HTMLButtonElement | null>(null);
+  const showCover = (button: HTMLButtonElement) => {
+    coverOpener.current = button;
+    setViewingCover(true);
+  };
   const [viewport, setViewport] = useState<{ height: number; bottom: number } | null>(null);
   const [dragY, setDragY] = useState(0);
   const touch = useRef<{ x: number; y: number } | null>(null);
@@ -86,6 +98,8 @@ function CharacterDetailContent({
     if (open) {
       setTab(initialTab);
       setDragY(0);
+    } else {
+      setViewingCover(false);
     }
   }, [open, initialTab]);
   useEffect(() => {
@@ -195,13 +209,20 @@ function CharacterDetailContent({
             className="size-11 shrink-0 overflow-hidden rounded-xl border border-border"
             style={{ background: characterRoomGradient(characterId) }}
           >
-            {character?.avatar_url ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={lobbyImageUrl(character.avatar_url)}
-                alt=""
-                className="h-full w-full object-cover object-top"
-              />
+            {coverUrl ? (
+              <button
+                type="button"
+                className="block size-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
+                aria-label="查看角色头像大图"
+                onClick={(event) => showCover(event.currentTarget)}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={lobbyImageUrl(coverUrl)}
+                  alt=""
+                  className="size-full object-cover object-top"
+                />
+              </button>
             ) : null}
           </div>
           <div className="min-w-0 flex-1">
@@ -324,19 +345,30 @@ function CharacterDetailContent({
         >
           {character ? (
             <>
-              <div
-                className="relative mb-4 h-[min(44dvh,24rem)] overflow-hidden rounded-2xl border border-border/50"
-                style={{ background: characterRoomGradient(characterId) }}
-              >
-                {character.avatar_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
+              {coverUrl && (
+                <button
+                  type="button"
+                  aria-label="全屏查看角色封面"
+                  onClick={(event) => showCover(event.currentTarget)}
+                  className="relative mb-4 block w-full overflow-hidden rounded-2xl bg-secondary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    src={character.avatar_url}
+                    src={coverUrl}
                     alt={character.name}
-                    className="h-full w-full object-contain object-center"
+                    width={640}
+                    height={800}
+                    className="block h-auto max-h-[min(46dvh,25rem)] w-full object-cover object-[center_25%]"
+                    onError={() => setFailedCover(coverUrl)}
                   />
-                ) : null}
-              </div>
+                  <span
+                    aria-hidden
+                    className="pointer-events-none absolute right-2.5 top-2.5 grid size-8 place-items-center rounded-full bg-black/50 text-white"
+                  >
+                    <Expand className="size-4" strokeWidth={1.7} />
+                  </span>
+                </button>
+              )}
               {character.personality_tags.length ? (
                 <div className="mb-4 -mt-1 flex flex-wrap gap-1.5">
                   {character.personality_tags.slice(0, 6).map((tag) => (
@@ -445,6 +477,14 @@ function CharacterDetailContent({
       >
         <CharacterComments characterId={characterId} active={open && tab === 'comments'} />
       </div>
+      {open && viewingCover && coverUrl && (
+        <CharacterCoverViewer
+          src={coverUrl}
+          name={character?.name ?? '角色'}
+          onClose={() => setViewingCover(false)}
+          returnFocus={() => coverOpener.current?.focus({ preventScroll: true })}
+        />
+      )}
     </SheetContent>
   );
 }
