@@ -102,6 +102,8 @@ export type ApiRequestInit = Omit<RequestInit, 'priority'> & {
   timeoutMs?: number;
   /** A declared single-attempt experiment must retain the first transport failure. */
   transportRetry?: false;
+  /** 只读且可安全重放的非 GET 请求（如 POST /api/dramas/play）沿用 GET 的传输层重试。 */
+  idempotent?: true;
   /** 只在明确需要分段计时时传入；回调异常不会影响请求。对象随本次尝试推进。 */
   onAttempt?: (timing: ApiAttemptTiming) => void;
   /**
@@ -183,9 +185,10 @@ function resolveMethod(options?: ApiRequestInit): string {
 export function isRetryableGetTransportError(
   error: unknown,
   method: string,
-  externalSignal?: AbortSignal
+  externalSignal?: AbortSignal,
+  idempotent = false
 ): boolean {
-  if (method !== 'GET') return false;
+  if (method !== 'GET' && !idempotent) return false;
   if (externalSignal?.aborted) return false;
   if (error instanceof RequestTimeoutError) return true;
   if (error instanceof ApiClientError && error.code === 'client_timeout') return true;
@@ -249,6 +252,7 @@ async function apiClientOnce<T>(
     queuePriority: _queuePriority,
     onAttempt: _onAttempt,
     transportRetry: _transportRetry,
+    idempotent: _idempotent,
     ...fetchOptions
   } = options ?? {};
   const res = await timedFetch(
@@ -292,8 +296,9 @@ async function apiClientOnce<T>(
 export async function apiClient<T>(path: string, options?: ApiRequestInit): Promise<T> {
   const method = resolveMethod(options);
   const priority = resolveRequestPriority(path, method, options?.queuePriority);
+  const idempotent = method === 'GET' || options?.idempotent === true;
   const maxAttempts =
-    method === 'GET' && options?.transportRetry !== false ? 1 + GET_TRANSPORT_RETRY_MAX : 1;
+    idempotent && options?.transportRetry !== false ? 1 + GET_TRANSPORT_RETRY_MAX : 1;
   const signal = options?.signal ?? undefined;
   const observe = shouldObserveApiTiming(path);
   const startedAt = observe ? performance.now() : 0;
@@ -346,11 +351,14 @@ export async function apiClient<T>(path: string, options?: ApiRequestInit): Prom
             ? signal.reason
             : new DOMException('Aborted', 'AbortError');
         }
-        if (attempt >= maxAttempts || !isRetryableGetTransportError(error, method, signal)) {
+        if (
+          attempt >= maxAttempts ||
+          !isRetryableGetTransportError(error, method, signal, idempotent)
+        ) {
           toTransportApiError(error);
         }
         const delayMs = retryDelayMs();
-        log.warn(`GET transport retry after ${delayMs}ms`, { path, attempt });
+        log.warn(`${method} transport retry after ${delayMs}ms`, { path, attempt });
         await sleep(delayMs, signal);
       }
     }

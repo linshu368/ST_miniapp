@@ -17,6 +17,8 @@ export function apiRouteGroup(path: string): string {
   if (/^\/api\/v1\/conversations\/[^/]+$/.test(pathname)) return 'conversation_detail';
   if (pathname.startsWith('/api/v1/conversations/')) return 'conversation_turn';
   if (pathname === '/api/dramas') return 'dramas';
+  // 固定地址的 POST 取址必须在 drama_detail 之前判断，否则 /api/dramas/play 会被当成剧详情。
+  if (pathname === '/api/dramas/play') return 'drama_playback';
   if (/^\/api\/dramas\/[^/]+$/.test(pathname)) return 'drama_detail';
   if (/^\/api\/dramas\/[^/]+\/(?:play|playback)$/.test(pathname)) return 'drama_playback';
   if (pathname.startsWith('/api/dramas/')) return 'drama_social';

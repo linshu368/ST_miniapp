@@ -1,0 +1,3292 @@
+{
+  "experiment_id": "drama-bunny-prod-20261029-v1",
+  "from": "2026-10-29T13:53:42.993Z",
+  "to": "2026-11-04T02:59:06.000Z",
+  "raw_rows": 11530,
+  "eligible_rows": 11530,
+  "unique_log_rows": 11530,
+  "observations": 4449,
+  "query_windows": 38,
+  "calls": 69,
+  "all_telemetry_users": {
+    "bunny": 45,
+    "supabase": 144
+  },
+  "playback_seek_users": {
+    "bunny": 45,
+    "supabase": 144
+  },
+  "by_group_kind": [
+    {
+      "group": "bunny",
+      "kind": "startup",
+      "attempts": 491,
+      "users": 45,
+      "successes": 176,
+      "p95_ms": 8421.974999999627,
+      "failures": 129,
+      "exits": 177,
+      "unverified": 1,
+      "missingStart": 9,
+      "missingFinal": 9,
+      "conflicts": 0,
+      "outcomes": {
+        "autoplay_blocked": 126,
+        "playing": 177,
+        "switched": 66,
+        "left": 101,
+        "background": 10,
+        "waiting": 8,
+        "error": 3
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "startup",
+      "attempts": 1969,
+      "users": 144,
+      "successes": 844,
+      "p95_ms": 7964.324999879292,
+      "failures": 454,
+      "exits": 648,
+      "unverified": 0,
+      "missingStart": 16,
+      "missingFinal": 23,
+      "conflicts": 0,
+      "outcomes": {
+        "left": 260,
+        "playing": 844,
+        "autoplay_blocked": 444,
+        "switched": 353,
+        "waiting": 23,
+        "background": 35,
+        "error": 10
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "seek_no",
+      "attempts": 145,
+      "users": 18,
+      "successes": 89,
+      "p95_ms": 6296.479999971384,
+      "failures": 0,
+      "exits": 56,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "switched": 56,
+        "playing": 89
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "seek_yes",
+      "attempts": 112,
+      "users": 13,
+      "successes": 86,
+      "p95_ms": 861,
+      "failures": 0,
+      "exits": 26,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "switched": 26,
+        "playing": 86
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "seek_no",
+      "attempts": 642,
+      "users": 63,
+      "successes": 441,
+      "p95_ms": 4767,
+      "failures": 0,
+      "exits": 193,
+      "unverified": 4,
+      "missingStart": 0,
+      "missingFinal": 4,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 441,
+        "switched": 188,
+        "background": 5,
+        "waiting": 4,
+        "unverified": 4
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "seek_yes",
+      "attempts": 1082,
+      "users": 44,
+      "successes": 821,
+      "p95_ms": 1443,
+      "failures": 0,
+      "exits": 257,
+      "unverified": 1,
+      "missingStart": 0,
+      "missingFinal": 3,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 821,
+        "switched": 256,
+        "waiting": 3,
+        "background": 1,
+        "unverified": 1
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "startup_retry",
+      "attempts": 6,
+      "users": 5,
+      "successes": 3,
+      "p95_ms": 7822.519999957085,
+      "failures": 2,
+      "exits": 1,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 3,
+        "left": 1,
+        "error": 2
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "startup_retry",
+      "attempts": 2,
+      "users": 1,
+      "successes": 2,
+      "p95_ms": 5669.75,
+      "failures": 0,
+      "exits": 0,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 2
+      }
+    }
+  ],
+  "by_group_kind_provider": [
+    {
+      "group": "bunny",
+      "kind": "startup",
+      "provider": "bunny",
+      "reason": "assigned",
+      "attempts": 429,
+      "users": 45,
+      "successes": 176,
+      "p95_ms": 8421.974999999627,
+      "failures": 126,
+      "exits": 124,
+      "unverified": 1,
+      "missingStart": 2,
+      "missingFinal": 3,
+      "conflicts": 0,
+      "outcomes": {
+        "autoplay_blocked": 126,
+        "playing": 177,
+        "switched": 41,
+        "left": 78,
+        "background": 5,
+        "waiting": 2
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "startup",
+      "provider": "supabase",
+      "reason": "assigned",
+      "attempts": 1700,
+      "users": 141,
+      "successes": 841,
+      "p95_ms": 7710.4000000059605,
+      "failures": 450,
+      "exits": 406,
+      "unverified": 0,
+      "missingStart": 1,
+      "missingFinal": 3,
+      "conflicts": 0,
+      "outcomes": {
+        "left": 199,
+        "playing": 841,
+        "autoplay_blocked": 444,
+        "switched": 178,
+        "background": 29,
+        "error": 6,
+        "waiting": 3
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "seek_no",
+      "provider": "bunny",
+      "reason": "assigned",
+      "attempts": 145,
+      "users": 18,
+      "successes": 89,
+      "p95_ms": 6296.479999971384,
+      "failures": 0,
+      "exits": 56,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "switched": 56,
+        "playing": 89
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "seek_yes",
+      "provider": "bunny",
+      "reason": "assigned",
+      "attempts": 112,
+      "users": 13,
+      "successes": 86,
+      "p95_ms": 861,
+      "failures": 0,
+      "exits": 26,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "switched": 26,
+        "playing": 86
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "startup",
+      "provider": "unknown",
+      "reason": "unknown",
+      "attempts": 62,
+      "users": 20,
+      "successes": 0,
+      "p95_ms": null,
+      "failures": 3,
+      "exits": 53,
+      "unverified": 0,
+      "missingStart": 7,
+      "missingFinal": 6,
+      "conflicts": 0,
+      "outcomes": {
+        "left": 23,
+        "switched": 25,
+        "waiting": 6,
+        "background": 5,
+        "error": 3
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "startup",
+      "provider": "unknown",
+      "reason": "unknown",
+      "attempts": 269,
+      "users": 59,
+      "successes": 3,
+      "p95_ms": 10615.779999999999,
+      "failures": 4,
+      "exits": 242,
+      "unverified": 0,
+      "missingStart": 15,
+      "missingFinal": 20,
+      "conflicts": 0,
+      "outcomes": {
+        "left": 61,
+        "playing": 3,
+        "switched": 175,
+        "waiting": 20,
+        "background": 6,
+        "error": 4
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "seek_no",
+      "provider": "supabase",
+      "reason": "assigned",
+      "attempts": 642,
+      "users": 63,
+      "successes": 441,
+      "p95_ms": 4767,
+      "failures": 0,
+      "exits": 193,
+      "unverified": 4,
+      "missingStart": 0,
+      "missingFinal": 4,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 441,
+        "switched": 188,
+        "background": 5,
+        "waiting": 4,
+        "unverified": 4
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "seek_yes",
+      "provider": "supabase",
+      "reason": "assigned",
+      "attempts": 1082,
+      "users": 44,
+      "successes": 821,
+      "p95_ms": 1443,
+      "failures": 0,
+      "exits": 257,
+      "unverified": 1,
+      "missingStart": 0,
+      "missingFinal": 3,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 821,
+        "switched": 256,
+        "waiting": 3,
+        "background": 1,
+        "unverified": 1
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "startup_retry",
+      "provider": "supabase",
+      "reason": "assigned",
+      "attempts": 6,
+      "users": 5,
+      "successes": 3,
+      "p95_ms": 7822.519999957085,
+      "failures": 2,
+      "exits": 1,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 3,
+        "left": 1,
+        "error": 2
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "startup_retry",
+      "provider": "bunny",
+      "reason": "assigned",
+      "attempts": 2,
+      "users": 1,
+      "successes": 2,
+      "p95_ms": 5669.75,
+      "failures": 0,
+      "exits": 0,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 2
+      }
+    }
+  ],
+  "by_platform": [
+    {
+      "group": "bunny",
+      "kind": "startup",
+      "platform": "android",
+      "attempts": 386,
+      "users": 38,
+      "successes": 120,
+      "p95_ms": 8965.894999999176,
+      "failures": 126,
+      "exits": 132,
+      "unverified": 1,
+      "missingStart": 3,
+      "missingFinal": 8,
+      "conflicts": 0,
+      "outcomes": {
+        "autoplay_blocked": 125,
+        "playing": 121,
+        "switched": 61,
+        "left": 62,
+        "waiting": 7,
+        "background": 9,
+        "error": 1
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "startup",
+      "platform": "desktop",
+      "attempts": 29,
+      "users": 7,
+      "successes": 19,
+      "p95_ms": 11004.009999999995,
+      "failures": 0,
+      "exits": 9,
+      "unverified": 0,
+      "missingStart": 5,
+      "missingFinal": 1,
+      "conflicts": 0,
+      "outcomes": {
+        "left": 7,
+        "playing": 19,
+        "switched": 2,
+        "waiting": 1
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "startup",
+      "platform": "ios",
+      "attempts": 398,
+      "users": 27,
+      "successes": 227,
+      "p95_ms": 6123.7999999999965,
+      "failures": 10,
+      "exits": 154,
+      "unverified": 0,
+      "missingStart": 4,
+      "missingFinal": 7,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 227,
+        "waiting": 7,
+        "switched": 59,
+        "autoplay_blocked": 9,
+        "left": 89,
+        "background": 6,
+        "error": 1
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "seek_no",
+      "platform": "android",
+      "attempts": 136,
+      "users": 14,
+      "successes": 83,
+      "p95_ms": 6583.219999957077,
+      "failures": 0,
+      "exits": 53,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "switched": 53,
+        "playing": 83
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "seek_yes",
+      "platform": "android",
+      "attempts": 74,
+      "users": 9,
+      "successes": 48,
+      "p95_ms": 978.3,
+      "failures": 0,
+      "exits": 26,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "switched": 26,
+        "playing": 48
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "startup",
+      "platform": "android",
+      "attempts": 1542,
+      "users": 114,
+      "successes": 598,
+      "p95_ms": 8757.184999995678,
+      "failures": 444,
+      "exits": 485,
+      "unverified": 0,
+      "missingStart": 7,
+      "missingFinal": 15,
+      "conflicts": 0,
+      "outcomes": {
+        "autoplay_blocked": 435,
+        "left": 164,
+        "playing": 598,
+        "switched": 292,
+        "background": 29,
+        "waiting": 15,
+        "error": 9
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "startup",
+      "platform": "desktop",
+      "attempts": 34,
+      "users": 1,
+      "successes": 19,
+      "p95_ms": 5595.399999997764,
+      "failures": 0,
+      "exits": 15,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 19,
+        "left": 15
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "seek_no",
+      "platform": "android",
+      "attempts": 590,
+      "users": 51,
+      "successes": 408,
+      "p95_ms": 4912.274999999995,
+      "failures": 0,
+      "exits": 177,
+      "unverified": 2,
+      "missingStart": 0,
+      "missingFinal": 3,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 408,
+        "switched": 172,
+        "background": 5,
+        "waiting": 3,
+        "unverified": 2
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "startup",
+      "platform": "ios",
+      "attempts": 71,
+      "users": 7,
+      "successes": 37,
+      "p95_ms": 8136.799999999998,
+      "failures": 3,
+      "exits": 30,
+      "unverified": 0,
+      "missingStart": 6,
+      "missingFinal": 1,
+      "conflicts": 0,
+      "outcomes": {
+        "background": 1,
+        "playing": 37,
+        "left": 24,
+        "switched": 5,
+        "waiting": 1,
+        "autoplay_blocked": 1,
+        "error": 2
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "seek_yes",
+      "platform": "android",
+      "attempts": 773,
+      "users": 27,
+      "successes": 520,
+      "p95_ms": 968.7249999776438,
+      "failures": 0,
+      "exits": 252,
+      "unverified": 1,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 520,
+        "switched": 251,
+        "background": 1,
+        "unverified": 1
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "seek_yes",
+      "platform": "ios",
+      "attempts": 304,
+      "users": 16,
+      "successes": 297,
+      "p95_ms": 1532,
+      "failures": 0,
+      "exits": 5,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 2,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 297,
+        "waiting": 2,
+        "switched": 5
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "seek_no",
+      "platform": "ios",
+      "attempts": 49,
+      "users": 11,
+      "successes": 31,
+      "p95_ms": 3841,
+      "failures": 0,
+      "exits": 15,
+      "unverified": 2,
+      "missingStart": 0,
+      "missingFinal": 1,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 31,
+        "switched": 15,
+        "waiting": 1,
+        "unverified": 2
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "startup_retry",
+      "platform": "android",
+      "attempts": 5,
+      "users": 4,
+      "successes": 2,
+      "p95_ms": 7532.369999954104,
+      "failures": 2,
+      "exits": 1,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 2,
+        "left": 1,
+        "error": 2
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "startup_retry",
+      "platform": "ios",
+      "attempts": 1,
+      "users": 1,
+      "successes": 1,
+      "p95_ms": 7676,
+      "failures": 0,
+      "exits": 0,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 1
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "seek_yes",
+      "platform": "desktop",
+      "attempts": 17,
+      "users": 1,
+      "successes": 17,
+      "p95_ms": 295.0000000029802,
+      "failures": 0,
+      "exits": 0,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 17
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "seek_no",
+      "platform": "ios",
+      "attempts": 8,
+      "users": 3,
+      "successes": 5,
+      "p95_ms": 2468.399999999997,
+      "failures": 0,
+      "exits": 3,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 5,
+        "switched": 3
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "seek_yes",
+      "platform": "ios",
+      "attempts": 21,
+      "users": 3,
+      "successes": 21,
+      "p95_ms": 849,
+      "failures": 0,
+      "exits": 0,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 21
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "startup_retry",
+      "platform": "ios",
+      "attempts": 2,
+      "users": 1,
+      "successes": 2,
+      "p95_ms": 5669.75,
+      "failures": 0,
+      "exits": 0,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 2
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "seek_yes",
+      "platform": "desktop",
+      "attempts": 5,
+      "users": 2,
+      "successes": 4,
+      "p95_ms": 484.49500000000245,
+      "failures": 0,
+      "exits": 0,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 1,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 4,
+        "waiting": 1
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "seek_no",
+      "platform": "desktop",
+      "attempts": 3,
+      "users": 1,
+      "successes": 2,
+      "p95_ms": 3862.504999999994,
+      "failures": 0,
+      "exits": 1,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 2,
+        "switched": 1
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "seek_no",
+      "platform": "desktop",
+      "attempts": 1,
+      "users": 1,
+      "successes": 1,
+      "p95_ms": 459.8999999910593,
+      "failures": 0,
+      "exits": 0,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 1
+      }
+    }
+  ],
+  "by_release": [
+    {
+      "group": "bunny",
+      "kind": "startup",
+      "release": "6e5068f350277d05b1eceaba229f762c09b38ca4",
+      "attempts": 15,
+      "users": 4,
+      "successes": 6,
+      "p95_ms": 2429.2499999701977,
+      "failures": 3,
+      "exits": 6,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "autoplay_blocked": 3,
+        "playing": 6,
+        "switched": 3,
+        "left": 3
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "startup",
+      "release": "6e5068f350277d05b1eceaba229f762c09b38ca4",
+      "attempts": 11,
+      "users": 7,
+      "successes": 3,
+      "p95_ms": 9767.66000008583,
+      "failures": 4,
+      "exits": 4,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "left": 4,
+        "playing": 3,
+        "autoplay_blocked": 4
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "seek_no",
+      "release": "6e5068f350277d05b1eceaba229f762c09b38ca4",
+      "attempts": 10,
+      "users": 1,
+      "successes": 5,
+      "p95_ms": 1991.0999999999997,
+      "failures": 0,
+      "exits": 5,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "switched": 5,
+        "playing": 5
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "seek_yes",
+      "release": "6e5068f350277d05b1eceaba229f762c09b38ca4",
+      "attempts": 14,
+      "users": 1,
+      "successes": 8,
+      "p95_ms": 353.9250000029802,
+      "failures": 0,
+      "exits": 6,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "switched": 6,
+        "playing": 8
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "startup",
+      "release": "98eced454214006460df9e1efb8b4a4b1ae9db51",
+      "attempts": 5,
+      "users": 1,
+      "successes": 3,
+      "p95_ms": 10615.779999999999,
+      "failures": 0,
+      "exits": 2,
+      "unverified": 0,
+      "missingStart": 5,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "left": 1,
+        "playing": 3,
+        "switched": 1
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "seek_no",
+      "release": "6e5068f350277d05b1eceaba229f762c09b38ca4",
+      "attempts": 3,
+      "users": 1,
+      "successes": 1,
+      "p95_ms": 4601.800000190735,
+      "failures": 0,
+      "exits": 2,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 1,
+        "switched": 1,
+        "background": 1
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "startup",
+      "release": "b12b745de1c75781d2c67241b98e20ff96fc4640",
+      "attempts": 4,
+      "users": 2,
+      "successes": 2,
+      "p95_ms": 12365.05,
+      "failures": 1,
+      "exits": 1,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "switched": 1,
+        "playing": 2,
+        "autoplay_blocked": 1
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "startup",
+      "release": "b12b745de1c75781d2c67241b98e20ff96fc4640",
+      "attempts": 1,
+      "users": 1,
+      "successes": 0,
+      "p95_ms": null,
+      "failures": 1,
+      "exits": 0,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "autoplay_blocked": 1
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "startup",
+      "release": "cdda5833a83d76036583b77ec01ba86a327e95e0",
+      "attempts": 13,
+      "users": 2,
+      "successes": 6,
+      "p95_ms": 2127.25,
+      "failures": 1,
+      "exits": 6,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "background": 1,
+        "playing": 6,
+        "left": 2,
+        "switched": 3,
+        "autoplay_blocked": 1
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "startup",
+      "release": "cdda5833a83d76036583b77ec01ba86a327e95e0",
+      "attempts": 23,
+      "users": 9,
+      "successes": 4,
+      "p95_ms": 3734.405000007152,
+      "failures": 5,
+      "exits": 13,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 1,
+      "conflicts": 0,
+      "outcomes": {
+        "waiting": 1,
+        "autoplay_blocked": 5,
+        "switched": 6,
+        "left": 4,
+        "background": 3,
+        "playing": 4
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "seek_no",
+      "release": "cdda5833a83d76036583b77ec01ba86a327e95e0",
+      "attempts": 9,
+      "users": 2,
+      "successes": 9,
+      "p95_ms": 1165.9800000190735,
+      "failures": 0,
+      "exits": 0,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 9
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "seek_yes",
+      "release": "cdda5833a83d76036583b77ec01ba86a327e95e0",
+      "attempts": 3,
+      "users": 1,
+      "successes": 3,
+      "p95_ms": 420.2600001335144,
+      "failures": 0,
+      "exits": 0,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 3
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "startup",
+      "release": "a1600184504d82b1fa181400b70c798676bd5f52",
+      "attempts": 175,
+      "users": 38,
+      "successes": 97,
+      "p95_ms": 6656.079999999692,
+      "failures": 43,
+      "exits": 32,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 3,
+      "conflicts": 0,
+      "outcomes": {
+        "waiting": 3,
+        "autoplay_blocked": 43,
+        "playing": 97,
+        "left": 17,
+        "switched": 13,
+        "background": 2
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "startup",
+      "release": "a1600184504d82b1fa181400b70c798676bd5f52",
+      "attempts": 20,
+      "users": 10,
+      "successes": 6,
+      "p95_ms": 6950.449999999255,
+      "failures": 11,
+      "exits": 2,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 1,
+      "conflicts": 0,
+      "outcomes": {
+        "left": 2,
+        "autoplay_blocked": 11,
+        "waiting": 1,
+        "playing": 6
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "seek_yes",
+      "release": "a1600184504d82b1fa181400b70c798676bd5f52",
+      "attempts": 219,
+      "users": 6,
+      "successes": 152,
+      "p95_ms": 699.2149999673012,
+      "failures": 0,
+      "exits": 67,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "switched": 67,
+        "playing": 152
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "seek_no",
+      "release": "a1600184504d82b1fa181400b70c798676bd5f52",
+      "attempts": 18,
+      "users": 3,
+      "successes": 13,
+      "p95_ms": 807.4799999952317,
+      "failures": 0,
+      "exits": 5,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "switched": 5,
+        "playing": 13
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "seek_yes",
+      "release": "a1600184504d82b1fa181400b70c798676bd5f52",
+      "attempts": 2,
+      "users": 1,
+      "successes": 1,
+      "p95_ms": 1294.1000000089407,
+      "failures": 0,
+      "exits": 1,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "switched": 1,
+        "playing": 1
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "seek_no",
+      "release": "a1600184504d82b1fa181400b70c798676bd5f52",
+      "attempts": 48,
+      "users": 7,
+      "successes": 29,
+      "p95_ms": 3279.060000005361,
+      "failures": 0,
+      "exits": 19,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 29,
+        "switched": 19
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "startup",
+      "release": "734b5433fc36f6f6eba1ebe2d839222139cf7520",
+      "attempts": 4,
+      "users": 3,
+      "successes": 0,
+      "p95_ms": null,
+      "failures": 2,
+      "exits": 2,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "autoplay_blocked": 2,
+        "left": 2
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "startup",
+      "release": "8cbd10fe4ca5d728648a0d2d3150cce70f0704ce",
+      "attempts": 18,
+      "users": 5,
+      "successes": 11,
+      "p95_ms": 9225.099999904633,
+      "failures": 3,
+      "exits": 4,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "left": 3,
+        "playing": 11,
+        "autoplay_blocked": 3,
+        "switched": 1
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "seek_no",
+      "release": "8cbd10fe4ca5d728648a0d2d3150cce70f0704ce",
+      "attempts": 32,
+      "users": 2,
+      "successes": 15,
+      "p95_ms": 1768.949999999999,
+      "failures": 0,
+      "exits": 17,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "switched": 16,
+        "playing": 15,
+        "background": 1
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "seek_yes",
+      "release": "8cbd10fe4ca5d728648a0d2d3150cce70f0704ce",
+      "attempts": 2,
+      "users": 1,
+      "successes": 1,
+      "p95_ms": 48.59999999962747,
+      "failures": 0,
+      "exits": 1,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "switched": 1,
+        "playing": 1
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "startup",
+      "release": "8cbd10fe4ca5d728648a0d2d3150cce70f0704ce",
+      "attempts": 4,
+      "users": 3,
+      "successes": 1,
+      "p95_ms": 3595,
+      "failures": 1,
+      "exits": 2,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "autoplay_blocked": 1,
+        "left": 2,
+        "playing": 1
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "startup",
+      "release": "e06636aacbfcf378934033ace9edd25e0092f684",
+      "attempts": 67,
+      "users": 12,
+      "successes": 30,
+      "p95_ms": 4985.599999999999,
+      "failures": 15,
+      "exits": 22,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "autoplay_blocked": 14,
+        "left": 7,
+        "playing": 30,
+        "error": 1,
+        "switched": 15
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "startup",
+      "release": "e06636aacbfcf378934033ace9edd25e0092f684",
+      "attempts": 15,
+      "users": 5,
+      "successes": 6,
+      "p95_ms": 2470.75,
+      "failures": 6,
+      "exits": 3,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "autoplay_blocked": 6,
+        "playing": 6,
+        "left": 1,
+        "switched": 2
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "seek_no",
+      "release": "e06636aacbfcf378934033ace9edd25e0092f684",
+      "attempts": 12,
+      "users": 2,
+      "successes": 6,
+      "p95_ms": 6317.799999982119,
+      "failures": 0,
+      "exits": 6,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "switched": 6,
+        "playing": 6
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "seek_yes",
+      "release": "e06636aacbfcf378934033ace9edd25e0092f684",
+      "attempts": 11,
+      "users": 2,
+      "successes": 9,
+      "p95_ms": 482.1999999761581,
+      "failures": 0,
+      "exits": 2,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "switched": 2,
+        "playing": 9
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "startup_retry",
+      "release": "e06636aacbfcf378934033ace9edd25e0092f684",
+      "attempts": 1,
+      "users": 1,
+      "successes": 1,
+      "p95_ms": 1710.199999988079,
+      "failures": 0,
+      "exits": 0,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 1
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "seek_yes",
+      "release": "e06636aacbfcf378934033ace9edd25e0092f684",
+      "attempts": 159,
+      "users": 3,
+      "successes": 96,
+      "p95_ms": 783.4500000178814,
+      "failures": 0,
+      "exits": 63,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "switched": 63,
+        "playing": 96
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "seek_no",
+      "release": "e06636aacbfcf378934033ace9edd25e0092f684",
+      "attempts": 24,
+      "users": 3,
+      "successes": 20,
+      "p95_ms": 2124.5300000667576,
+      "failures": 0,
+      "exits": 4,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 20,
+        "switched": 4
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "startup",
+      "release": "94c2b66d2c9870c5801cef8931bc6b85d00c12c2",
+      "attempts": 11,
+      "users": 3,
+      "successes": 0,
+      "p95_ms": null,
+      "failures": 7,
+      "exits": 3,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 1,
+      "conflicts": 0,
+      "outcomes": {
+        "autoplay_blocked": 7,
+        "waiting": 1,
+        "left": 2,
+        "switched": 1
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "startup",
+      "release": "94c2b66d2c9870c5801cef8931bc6b85d00c12c2",
+      "attempts": 105,
+      "users": 15,
+      "successes": 66,
+      "p95_ms": 7396.05000013113,
+      "failures": 15,
+      "exits": 22,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 2,
+      "conflicts": 0,
+      "outcomes": {
+        "autoplay_blocked": 14,
+        "switched": 19,
+        "playing": 66,
+        "left": 2,
+        "waiting": 2,
+        "background": 1,
+        "error": 1
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "seek_no",
+      "release": "94c2b66d2c9870c5801cef8931bc6b85d00c12c2",
+      "attempts": 21,
+      "users": 6,
+      "successes": 16,
+      "p95_ms": 1784.3499999999767,
+      "failures": 0,
+      "exits": 4,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 1,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 16,
+        "switched": 4,
+        "waiting": 1
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "seek_yes",
+      "release": "94c2b66d2c9870c5801cef8931bc6b85d00c12c2",
+      "attempts": 78,
+      "users": 3,
+      "successes": 74,
+      "p95_ms": 1110.5499999999997,
+      "failures": 0,
+      "exits": 2,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 2,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 74,
+        "waiting": 2,
+        "switched": 2
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "startup_retry",
+      "release": "94c2b66d2c9870c5801cef8931bc6b85d00c12c2",
+      "attempts": 1,
+      "users": 1,
+      "successes": 1,
+      "p95_ms": 7676,
+      "failures": 0,
+      "exits": 0,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 1
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "startup",
+      "release": "83def18fb340525b75cb01b8368daf6bfa05ad74",
+      "attempts": 3,
+      "users": 2,
+      "successes": 1,
+      "p95_ms": 1941,
+      "failures": 1,
+      "exits": 0,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 1,
+      "conflicts": 0,
+      "outcomes": {
+        "autoplay_blocked": 1,
+        "playing": 1,
+        "waiting": 1
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "startup",
+      "release": "83def18fb340525b75cb01b8368daf6bfa05ad74",
+      "attempts": 1,
+      "users": 1,
+      "successes": 0,
+      "p95_ms": null,
+      "failures": 1,
+      "exits": 0,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "autoplay_blocked": 1
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "startup",
+      "release": "e7556e83cceb28ed67a37ca29e43e659feda657f",
+      "attempts": 2,
+      "users": 2,
+      "successes": 0,
+      "p95_ms": null,
+      "failures": 2,
+      "exits": 0,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "autoplay_blocked": 2
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "startup",
+      "release": "e7556e83cceb28ed67a37ca29e43e659feda657f",
+      "attempts": 24,
+      "users": 7,
+      "successes": 14,
+      "p95_ms": 9214.75,
+      "failures": 4,
+      "exits": 6,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "autoplay_blocked": 4,
+        "playing": 14,
+        "switched": 3,
+        "left": 3
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "seek_no",
+      "release": "e7556e83cceb28ed67a37ca29e43e659feda657f",
+      "attempts": 13,
+      "users": 3,
+      "successes": 12,
+      "p95_ms": 28287.07000000048,
+      "failures": 0,
+      "exits": 1,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 12,
+        "switched": 1
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "seek_yes",
+      "release": "e7556e83cceb28ed67a37ca29e43e659feda657f",
+      "attempts": 25,
+      "users": 2,
+      "successes": 24,
+      "p95_ms": 1205.9499999999998,
+      "failures": 0,
+      "exits": 1,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 24,
+        "switched": 1
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "startup",
+      "release": "22f04b3510dbb797d7b5ba89d2ad6658f4d67927",
+      "attempts": 122,
+      "users": 16,
+      "successes": 59,
+      "p95_ms": 6024.09999999999,
+      "failures": 32,
+      "exits": 30,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 1,
+      "conflicts": 0,
+      "outcomes": {
+        "autoplay_blocked": 32,
+        "left": 11,
+        "playing": 59,
+        "background": 2,
+        "switched": 17,
+        "waiting": 1
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "startup",
+      "release": "22f04b3510dbb797d7b5ba89d2ad6658f4d67927",
+      "attempts": 12,
+      "users": 3,
+      "successes": 4,
+      "p95_ms": 3034.3249999046325,
+      "failures": 5,
+      "exits": 3,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "autoplay_blocked": 5,
+        "switched": 1,
+        "playing": 4,
+        "left": 1,
+        "background": 1
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "seek_no",
+      "release": "22f04b3510dbb797d7b5ba89d2ad6658f4d67927",
+      "attempts": 28,
+      "users": 1,
+      "successes": 17,
+      "p95_ms": 1839.6800000190724,
+      "failures": 0,
+      "exits": 11,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "switched": 11,
+        "playing": 17
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "seek_yes",
+      "release": "22f04b3510dbb797d7b5ba89d2ad6658f4d67927",
+      "attempts": 10,
+      "users": 1,
+      "successes": 5,
+      "p95_ms": 776.2400000095366,
+      "failures": 0,
+      "exits": 5,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "switched": 5,
+        "playing": 5
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "seek_no",
+      "release": "22f04b3510dbb797d7b5ba89d2ad6658f4d67927",
+      "attempts": 18,
+      "users": 3,
+      "successes": 13,
+      "p95_ms": 5222.799999999997,
+      "failures": 0,
+      "exits": 5,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "switched": 5,
+        "playing": 13
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "seek_yes",
+      "release": "22f04b3510dbb797d7b5ba89d2ad6658f4d67927",
+      "attempts": 98,
+      "users": 3,
+      "successes": 96,
+      "p95_ms": 1669.5,
+      "failures": 0,
+      "exits": 2,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 96,
+        "switched": 2
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "startup",
+      "release": "a697d082ce1b7aff9fa9e34cbab64bd616253db7",
+      "attempts": 2,
+      "users": 1,
+      "successes": 2,
+      "p95_ms": 6619.15,
+      "failures": 0,
+      "exits": 0,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 2
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "seek_no",
+      "release": "a697d082ce1b7aff9fa9e34cbab64bd616253db7",
+      "attempts": 2,
+      "users": 1,
+      "successes": 0,
+      "p95_ms": null,
+      "failures": 0,
+      "exits": 2,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "switched": 2
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "startup",
+      "release": "5fffd6ce1dcd0b23504f0e9699bde93ee0eb23ae",
+      "attempts": 862,
+      "users": 108,
+      "successes": 383,
+      "p95_ms": 7268.909999990463,
+      "failures": 172,
+      "exits": 294,
+      "unverified": 0,
+      "missingStart": 5,
+      "missingFinal": 13,
+      "conflicts": 0,
+      "outcomes": {
+        "autoplay_blocked": 171,
+        "left": 123,
+        "playing": 383,
+        "waiting": 13,
+        "background": 18,
+        "switched": 153,
+        "error": 1
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "seek_yes",
+      "release": "5fffd6ce1dcd0b23504f0e9699bde93ee0eb23ae",
+      "attempts": 403,
+      "users": 22,
+      "successes": 301,
+      "p95_ms": 1060.4000000059605,
+      "failures": 0,
+      "exits": 101,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 1,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 301,
+        "switched": 100,
+        "background": 1,
+        "waiting": 1
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "startup",
+      "release": "5fffd6ce1dcd0b23504f0e9699bde93ee0eb23ae",
+      "attempts": 190,
+      "users": 33,
+      "successes": 64,
+      "p95_ms": 8335.664999985693,
+      "failures": 48,
+      "exits": 75,
+      "unverified": 0,
+      "missingStart": 8,
+      "missingFinal": 3,
+      "conflicts": 0,
+      "outcomes": {
+        "autoplay_blocked": 46,
+        "switched": 25,
+        "left": 47,
+        "playing": 64,
+        "background": 3,
+        "waiting": 3,
+        "error": 2
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "seek_no",
+      "release": "5fffd6ce1dcd0b23504f0e9699bde93ee0eb23ae",
+      "attempts": 307,
+      "users": 31,
+      "successes": 214,
+      "p95_ms": 7101.445000001037,
+      "failures": 0,
+      "exits": 90,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 3,
+      "conflicts": 0,
+      "outcomes": {
+        "switched": 88,
+        "playing": 214,
+        "background": 2,
+        "waiting": 3
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "seek_no",
+      "release": "5fffd6ce1dcd0b23504f0e9699bde93ee0eb23ae",
+      "attempts": 47,
+      "users": 8,
+      "successes": 33,
+      "p95_ms": 7679.999999999993,
+      "failures": 0,
+      "exits": 14,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 33,
+        "switched": 14
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "seek_yes",
+      "release": "5fffd6ce1dcd0b23504f0e9699bde93ee0eb23ae",
+      "attempts": 46,
+      "users": 5,
+      "successes": 39,
+      "p95_ms": 745.4000000000002,
+      "failures": 0,
+      "exits": 7,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 39,
+        "switched": 7
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "startup_retry",
+      "release": "5fffd6ce1dcd0b23504f0e9699bde93ee0eb23ae",
+      "attempts": 2,
+      "users": 2,
+      "successes": 1,
+      "p95_ms": 7838.799999952316,
+      "failures": 0,
+      "exits": 1,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "left": 1,
+        "playing": 1
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "startup_retry",
+      "release": "5fffd6ce1dcd0b23504f0e9699bde93ee0eb23ae",
+      "attempts": 2,
+      "users": 1,
+      "successes": 2,
+      "p95_ms": 5669.75,
+      "failures": 0,
+      "exits": 0,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 2
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "startup",
+      "release": "51d5b2afced02154f0eeb7d5bf2e92235c38f0b3",
+      "attempts": 6,
+      "users": 3,
+      "successes": 1,
+      "p95_ms": 9748.000000000002,
+      "failures": 3,
+      "exits": 2,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "autoplay_blocked": 3,
+        "left": 2,
+        "playing": 1
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "startup",
+      "release": "51d5b2afced02154f0eeb7d5bf2e92235c38f0b3",
+      "attempts": 12,
+      "users": 2,
+      "successes": 7,
+      "p95_ms": 3326.3400000002234,
+      "failures": 2,
+      "exits": 3,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "left": 3,
+        "playing": 7,
+        "autoplay_blocked": 2
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "seek_yes",
+      "release": "51d5b2afced02154f0eeb7d5bf2e92235c38f0b3",
+      "attempts": 9,
+      "users": 1,
+      "successes": 9,
+      "p95_ms": 277.72000000178815,
+      "failures": 0,
+      "exits": 0,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 9
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "seek_no",
+      "release": "51d5b2afced02154f0eeb7d5bf2e92235c38f0b3",
+      "attempts": 1,
+      "users": 1,
+      "successes": 1,
+      "p95_ms": 459.8999999910593,
+      "failures": 0,
+      "exits": 0,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 1
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "seek_yes",
+      "release": "51d5b2afced02154f0eeb7d5bf2e92235c38f0b3",
+      "attempts": 8,
+      "users": 1,
+      "successes": 7,
+      "p95_ms": 642.8,
+      "failures": 0,
+      "exits": 1,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "switched": 1,
+        "playing": 7
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "startup",
+      "release": "62997bc0da83c0458d895c153570d4fecc5883bb",
+      "attempts": 1,
+      "users": 1,
+      "successes": 0,
+      "p95_ms": null,
+      "failures": 0,
+      "exits": 1,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "left": 1
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "startup",
+      "release": "62997bc0da83c0458d895c153570d4fecc5883bb",
+      "attempts": 5,
+      "users": 4,
+      "successes": 1,
+      "p95_ms": 9357.5,
+      "failures": 3,
+      "exits": 1,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 1,
+        "autoplay_blocked": 3,
+        "left": 1
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "startup",
+      "release": "7300d237cc18d10604ecd72af93230191bfa0a9c",
+      "attempts": 1,
+      "users": 1,
+      "successes": 0,
+      "p95_ms": null,
+      "failures": 1,
+      "exits": 0,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "autoplay_blocked": 1
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "startup",
+      "release": "f56be7d9eceae056990f10c6202d9b95bf4e274c",
+      "attempts": 1,
+      "users": 1,
+      "successes": 0,
+      "p95_ms": null,
+      "failures": 1,
+      "exits": 0,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "autoplay_blocked": 1
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "startup",
+      "release": "b54ea341ffee1c77c2df4b6bcfb39757ef9c2a05",
+      "attempts": 31,
+      "users": 9,
+      "successes": 3,
+      "p95_ms": 2503.529999999702,
+      "failures": 15,
+      "exits": 13,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "autoplay_blocked": 10,
+        "switched": 10,
+        "playing": 3,
+        "left": 3,
+        "error": 5
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "seek_yes",
+      "release": "b54ea341ffee1c77c2df4b6bcfb39757ef9c2a05",
+      "attempts": 7,
+      "users": 1,
+      "successes": 6,
+      "p95_ms": 638.4499999582767,
+      "failures": 0,
+      "exits": 1,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 6,
+        "switched": 1
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "seek_no",
+      "release": "b54ea341ffee1c77c2df4b6bcfb39757ef9c2a05",
+      "attempts": 15,
+      "users": 2,
+      "successes": 13,
+      "p95_ms": 1670.2200000286086,
+      "failures": 0,
+      "exits": 2,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 13,
+        "switched": 2
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "startup_retry",
+      "release": "b54ea341ffee1c77c2df4b6bcfb39757ef9c2a05",
+      "attempts": 2,
+      "users": 1,
+      "successes": 0,
+      "p95_ms": null,
+      "failures": 2,
+      "exits": 0,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "error": 2
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "startup",
+      "release": "b54ea341ffee1c77c2df4b6bcfb39757ef9c2a05",
+      "attempts": 1,
+      "users": 1,
+      "successes": 0,
+      "p95_ms": null,
+      "failures": 0,
+      "exits": 1,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "left": 1
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "startup",
+      "release": "7c4eea5de808e599ebe1aefed8670fb6a7bf095c",
+      "attempts": 1,
+      "users": 1,
+      "successes": 0,
+      "p95_ms": null,
+      "failures": 1,
+      "exits": 0,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "autoplay_blocked": 1
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "startup",
+      "release": "7c4eea5de808e599ebe1aefed8670fb6a7bf095c",
+      "attempts": 2,
+      "users": 1,
+      "successes": 1,
+      "p95_ms": 3706.4000000953674,
+      "failures": 1,
+      "exits": 0,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "autoplay_blocked": 1,
+        "playing": 1
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "startup",
+      "release": "7a9ddf272ac391a0bb783c162f766944b64ee45a",
+      "attempts": 29,
+      "users": 1,
+      "successes": 16,
+      "p95_ms": 5794.85000000149,
+      "failures": 1,
+      "exits": 12,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "autoplay_blocked": 1,
+        "playing": 16,
+        "switched": 12
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "seek_no",
+      "release": "7a9ddf272ac391a0bb783c162f766944b64ee45a",
+      "attempts": 4,
+      "users": 1,
+      "successes": 1,
+      "p95_ms": 892.6000000238419,
+      "failures": 0,
+      "exits": 3,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "switched": 3,
+        "playing": 1
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "startup",
+      "release": "7a9ddf272ac391a0bb783c162f766944b64ee45a",
+      "attempts": 2,
+      "users": 2,
+      "successes": 1,
+      "p95_ms": 3000,
+      "failures": 1,
+      "exits": 0,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 1,
+        "autoplay_blocked": 1
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "startup",
+      "release": "05e1982ab8bf0642f3b6fd0ab630e99c83cc9dc6",
+      "attempts": 16,
+      "users": 4,
+      "successes": 9,
+      "p95_ms": 3482.6,
+      "failures": 3,
+      "exits": 4,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "autoplay_blocked": 3,
+        "switched": 2,
+        "playing": 9,
+        "left": 2
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "seek_yes",
+      "release": "05e1982ab8bf0642f3b6fd0ab630e99c83cc9dc6",
+      "attempts": 1,
+      "users": 1,
+      "successes": 1,
+      "p95_ms": 664,
+      "failures": 0,
+      "exits": 0,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 1
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "seek_no",
+      "release": "05e1982ab8bf0642f3b6fd0ab630e99c83cc9dc6",
+      "attempts": 1,
+      "users": 1,
+      "successes": 0,
+      "p95_ms": null,
+      "failures": 0,
+      "exits": 1,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "switched": 1
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "startup",
+      "release": "35d5632e4ed1a9b5496fdb4612898908317458ac",
+      "attempts": 2,
+      "users": 2,
+      "successes": 0,
+      "p95_ms": null,
+      "failures": 2,
+      "exits": 0,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "autoplay_blocked": 2
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "startup",
+      "release": "85780e91e8686967ff31cc41f5f4388ddbaab1a0",
+      "attempts": 5,
+      "users": 3,
+      "successes": 3,
+      "p95_ms": 5022.319999999972,
+      "failures": 2,
+      "exits": 0,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 3,
+        "autoplay_blocked": 2
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "startup",
+      "release": "ae0c405adb7fdb60036ceae2b9c97627f720e74c",
+      "attempts": 1,
+      "users": 1,
+      "successes": 0,
+      "p95_ms": null,
+      "failures": 1,
+      "exits": 0,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "autoplay_blocked": 1
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "startup",
+      "release": "ae0c405adb7fdb60036ceae2b9c97627f720e74c",
+      "attempts": 5,
+      "users": 1,
+      "successes": 1,
+      "p95_ms": 5526.699999928474,
+      "failures": 1,
+      "exits": 3,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "autoplay_blocked": 1,
+        "switched": 1,
+        "left": 1,
+        "playing": 1,
+        "background": 1
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "startup",
+      "release": "50caedca1d893c032b62f99fb941766b7b5aeab1",
+      "attempts": 1,
+      "users": 1,
+      "successes": 0,
+      "p95_ms": null,
+      "failures": 1,
+      "exits": 0,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "autoplay_blocked": 1
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "startup",
+      "release": "5818f918473f87c7237fbb59928eb956e7e96009",
+      "attempts": 242,
+      "users": 53,
+      "successes": 97,
+      "p95_ms": 9560.319999986887,
+      "failures": 62,
+      "exits": 82,
+      "unverified": 0,
+      "missingStart": 3,
+      "missingFinal": 1,
+      "conflicts": 0,
+      "outcomes": {
+        "autoplay_blocked": 61,
+        "left": 32,
+        "playing": 97,
+        "switched": 45,
+        "background": 5,
+        "error": 1,
+        "waiting": 1
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "seek_yes",
+      "release": "ae0c405adb7fdb60036ceae2b9c97627f720e74c",
+      "attempts": 4,
+      "users": 1,
+      "successes": 4,
+      "p95_ms": 115.68999997973441,
+      "failures": 0,
+      "exits": 0,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 4
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "startup",
+      "release": "5818f918473f87c7237fbb59928eb956e7e96009",
+      "attempts": 63,
+      "users": 19,
+      "successes": 25,
+      "p95_ms": 12188.620000016683,
+      "failures": 15,
+      "exits": 20,
+      "unverified": 1,
+      "missingStart": 0,
+      "missingFinal": 3,
+      "conflicts": 0,
+      "outcomes": {
+        "autoplay_blocked": 14,
+        "left": 18,
+        "switched": 1,
+        "playing": 26,
+        "background": 1,
+        "waiting": 2,
+        "error": 1
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "seek_yes",
+      "release": "5818f918473f87c7237fbb59928eb956e7e96009",
+      "attempts": 34,
+      "users": 7,
+      "successes": 23,
+      "p95_ms": 2585.2099999785396,
+      "failures": 0,
+      "exits": 11,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 23,
+        "switched": 11
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "seek_no",
+      "release": "5818f918473f87c7237fbb59928eb956e7e96009",
+      "attempts": 9,
+      "users": 1,
+      "successes": 3,
+      "p95_ms": 7444.910000000149,
+      "failures": 0,
+      "exits": 6,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "switched": 6,
+        "playing": 3
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "seek_yes",
+      "release": "5818f918473f87c7237fbb59928eb956e7e96009",
+      "attempts": 9,
+      "users": 1,
+      "successes": 5,
+      "p95_ms": 697.520000000298,
+      "failures": 0,
+      "exits": 4,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "switched": 4,
+        "playing": 5
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "seek_no",
+      "release": "5818f918473f87c7237fbb59928eb956e7e96009",
+      "attempts": 57,
+      "users": 12,
+      "successes": 35,
+      "p95_ms": 4391.089999985695,
+      "failures": 0,
+      "exits": 22,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "switched": 21,
+        "playing": 35,
+        "background": 1
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "startup",
+      "release": "630758f3f641faa15d2e5866cc3cef22c6eb9fd5",
+      "attempts": 6,
+      "users": 2,
+      "successes": 1,
+      "p95_ms": 2034,
+      "failures": 2,
+      "exits": 3,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "autoplay_blocked": 2,
+        "left": 2,
+        "switched": 1,
+        "playing": 1
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "startup",
+      "release": "691456a1960696df25e3373d12df18e204625b92",
+      "attempts": 6,
+      "users": 4,
+      "successes": 1,
+      "p95_ms": 446.90000000037253,
+      "failures": 4,
+      "exits": 1,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "left": 1,
+        "autoplay_blocked": 4,
+        "playing": 1
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "startup",
+      "release": "691456a1960696df25e3373d12df18e204625b92",
+      "attempts": 1,
+      "users": 1,
+      "successes": 0,
+      "p95_ms": null,
+      "failures": 1,
+      "exits": 0,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "autoplay_blocked": 1
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "startup",
+      "release": "f2cf81a180873053c5aa520ba9b4280e81fdeb78",
+      "attempts": 2,
+      "users": 1,
+      "successes": 0,
+      "p95_ms": null,
+      "failures": 0,
+      "exits": 2,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "left": 2
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "startup",
+      "release": "b4d5bba11da28b2f105a6ff67237a54a0e963db8",
+      "attempts": 9,
+      "users": 5,
+      "successes": 3,
+      "p95_ms": 2701.8,
+      "failures": 2,
+      "exits": 4,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "autoplay_blocked": 2,
+        "playing": 3,
+        "left": 4
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "startup",
+      "release": "b4d5bba11da28b2f105a6ff67237a54a0e963db8",
+      "attempts": 5,
+      "users": 4,
+      "successes": 0,
+      "p95_ms": null,
+      "failures": 4,
+      "exits": 1,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "autoplay_blocked": 4,
+        "left": 1
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "startup",
+      "release": "c008d8a1b7ac2e59ae1e1529ed5e7d0461d59613",
+      "attempts": 1,
+      "users": 1,
+      "successes": 1,
+      "p95_ms": 2146,
+      "failures": 0,
+      "exits": 0,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 1
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "startup",
+      "release": "c47c15342161136ec6b597c806ac53d5abbb42bb",
+      "attempts": 8,
+      "users": 5,
+      "successes": 2,
+      "p95_ms": 3543.85,
+      "failures": 3,
+      "exits": 2,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 1,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 2,
+        "autoplay_blocked": 3,
+        "waiting": 1,
+        "background": 1,
+        "left": 1
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "seek_yes",
+      "release": "c47c15342161136ec6b597c806ac53d5abbb42bb",
+      "attempts": 1,
+      "users": 1,
+      "successes": 1,
+      "p95_ms": 553,
+      "failures": 0,
+      "exits": 0,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 1
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "startup",
+      "release": "c47c15342161136ec6b597c806ac53d5abbb42bb",
+      "attempts": 1,
+      "users": 1,
+      "successes": 0,
+      "p95_ms": null,
+      "failures": 1,
+      "exits": 0,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "autoplay_blocked": 1
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "startup",
+      "release": "e74ab4afacbaff84694a60b3cb30afa9d9229b95",
+      "attempts": 7,
+      "users": 4,
+      "successes": 2,
+      "p95_ms": 3818.655000090599,
+      "failures": 3,
+      "exits": 2,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "autoplay_blocked": 3,
+        "left": 2,
+        "playing": 2
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "seek_no",
+      "release": "e74ab4afacbaff84694a60b3cb30afa9d9229b95",
+      "attempts": 3,
+      "users": 1,
+      "successes": 3,
+      "p95_ms": 1597.7599999427794,
+      "failures": 0,
+      "exits": 0,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 3
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "seek_yes",
+      "release": "e74ab4afacbaff84694a60b3cb30afa9d9229b95",
+      "attempts": 11,
+      "users": 1,
+      "successes": 11,
+      "p95_ms": 963.1999999880791,
+      "failures": 0,
+      "exits": 0,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 11
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "startup",
+      "release": "fef199ed07bb7f6270abbabc47b670ae367cd042",
+      "attempts": 5,
+      "users": 2,
+      "successes": 0,
+      "p95_ms": null,
+      "failures": 1,
+      "exits": 4,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "left": 4,
+        "autoplay_blocked": 1
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "startup",
+      "release": "0009ccd742c810568fd0a873d00881210cf58246",
+      "attempts": 9,
+      "users": 4,
+      "successes": 1,
+      "p95_ms": 2155.2000000029802,
+      "failures": 4,
+      "exits": 3,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 1,
+      "conflicts": 0,
+      "outcomes": {
+        "autoplay_blocked": 4,
+        "waiting": 1,
+        "left": 3,
+        "playing": 1
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "startup",
+      "release": "0009ccd742c810568fd0a873d00881210cf58246",
+      "attempts": 18,
+      "users": 6,
+      "successes": 6,
+      "p95_ms": 3374.75,
+      "failures": 5,
+      "exits": 7,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "autoplay_blocked": 5,
+        "playing": 6,
+        "switched": 3,
+        "left": 4
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "seek_yes",
+      "release": "0009ccd742c810568fd0a873d00881210cf58246",
+      "attempts": 2,
+      "users": 1,
+      "successes": 2,
+      "p95_ms": 710.6,
+      "failures": 0,
+      "exits": 0,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 2
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "seek_no",
+      "release": "0009ccd742c810568fd0a873d00881210cf58246",
+      "attempts": 7,
+      "users": 1,
+      "successes": 2,
+      "p95_ms": 2489.1500000000033,
+      "failures": 0,
+      "exits": 3,
+      "unverified": 2,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "unverified": 2,
+        "switched": 3,
+        "playing": 2
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "seek_no",
+      "release": "0009ccd742c810568fd0a873d00881210cf58246",
+      "attempts": 8,
+      "users": 1,
+      "successes": 4,
+      "p95_ms": 965.0350000075995,
+      "failures": 0,
+      "exits": 4,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "switched": 4,
+        "playing": 4
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "seek_yes",
+      "release": "0009ccd742c810568fd0a873d00881210cf58246",
+      "attempts": 2,
+      "users": 1,
+      "successes": 1,
+      "p95_ms": 996.5,
+      "failures": 0,
+      "exits": 1,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "switched": 1,
+        "playing": 1
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "startup",
+      "release": "c804055bfea04eac7424f4f68c46f5a0c71cd7f7",
+      "attempts": 34,
+      "users": 11,
+      "successes": 10,
+      "p95_ms": 3829.5499999999975,
+      "failures": 11,
+      "exits": 13,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "left": 8,
+        "autoplay_blocked": 11,
+        "playing": 10,
+        "switched": 5
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "startup",
+      "release": "c804055bfea04eac7424f4f68c46f5a0c71cd7f7",
+      "attempts": 169,
+      "users": 41,
+      "successes": 41,
+      "p95_ms": 6767,
+      "failures": 38,
+      "exits": 90,
+      "unverified": 0,
+      "missingStart": 3,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "autoplay_blocked": 37,
+        "switched": 63,
+        "left": 24,
+        "playing": 41,
+        "background": 3,
+        "error": 1
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "seek_yes",
+      "release": "c804055bfea04eac7424f4f68c46f5a0c71cd7f7",
+      "attempts": 31,
+      "users": 8,
+      "successes": 23,
+      "p95_ms": 1696.3499999403948,
+      "failures": 0,
+      "exits": 7,
+      "unverified": 1,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 23,
+        "switched": 7,
+        "unverified": 1
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "seek_no",
+      "release": "c804055bfea04eac7424f4f68c46f5a0c71cd7f7",
+      "attempts": 82,
+      "users": 7,
+      "successes": 59,
+      "p95_ms": 2571.299999952311,
+      "failures": 0,
+      "exits": 21,
+      "unverified": 2,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 59,
+        "switched": 21,
+        "unverified": 2
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "startup",
+      "release": "9e0468b19d8fc1fca7c6930a0fa3b25e0199c588",
+      "attempts": 2,
+      "users": 1,
+      "successes": 0,
+      "p95_ms": null,
+      "failures": 0,
+      "exits": 2,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "left": 2
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "startup",
+      "release": "9e0468b19d8fc1fca7c6930a0fa3b25e0199c588",
+      "attempts": 40,
+      "users": 1,
+      "successes": 19,
+      "p95_ms": 5437.7399999979625,
+      "failures": 4,
+      "exits": 17,
+      "unverified": 0,
+      "missingStart": 1,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "autoplay_blocked": 4,
+        "switched": 12,
+        "playing": 19,
+        "left": 2,
+        "background": 3
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "seek_no",
+      "release": "9e0468b19d8fc1fca7c6930a0fa3b25e0199c588",
+      "attempts": 1,
+      "users": 1,
+      "successes": 1,
+      "p95_ms": 478.4000000022352,
+      "failures": 0,
+      "exits": 0,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 1
+      }
+    },
+    {
+      "group": "supabase",
+      "kind": "startup",
+      "release": "26da44cc74420caf3642c33bcb4b4752eff6132c",
+      "attempts": 1,
+      "users": 1,
+      "successes": 0,
+      "p95_ms": null,
+      "failures": 1,
+      "exits": 0,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "autoplay_blocked": 1
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "seek_no",
+      "release": "c804055bfea04eac7424f4f68c46f5a0c71cd7f7",
+      "attempts": 7,
+      "users": 2,
+      "successes": 5,
+      "p95_ms": 5752.119999980926,
+      "failures": 0,
+      "exits": 2,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "switched": 2,
+        "playing": 5
+      }
+    },
+    {
+      "group": "bunny",
+      "kind": "seek_yes",
+      "release": "c804055bfea04eac7424f4f68c46f5a0c71cd7f7",
+      "attempts": 5,
+      "users": 1,
+      "successes": 5,
+      "p95_ms": 861.8,
+      "failures": 0,
+      "exits": 0,
+      "unverified": 0,
+      "missingStart": 0,
+      "missingFinal": 0,
+      "conflicts": 0,
+      "outcomes": {
+        "playing": 5
+      }
+    }
+  ],
+  "server_releases": [
+    "0009ccd742c810568fd0a873d00881210cf58246",
+    "05e1982ab8bf0642f3b6fd0ab630e99c83cc9dc6",
+    "0cfd5a81a106883dd77627866a0e2fa03ca8e856",
+    "22f04b3510dbb797d7b5ba89d2ad6658f4d67927",
+    "26da44cc74420caf3642c33bcb4b4752eff6132c",
+    "34228e237d0deaca9a5d9e96160a682282a2b941",
+    "35d5632e4ed1a9b5496fdb4612898908317458ac",
+    "50caedca1d893c032b62f99fb941766b7b5aeab1",
+    "51d5b2afced02154f0eeb7d5bf2e92235c38f0b3",
+    "5818f918473f87c7237fbb59928eb956e7e96009",
+    "5a81aa1a8f9ed2a239b3b56fdf9ac747863eef3d",
+    "5fffd6ce1dcd0b23504f0e9699bde93ee0eb23ae",
+    "62997bc0da83c0458d895c153570d4fecc5883bb",
+    "630758f3f641faa15d2e5866cc3cef22c6eb9fd5",
+    "691456a1960696df25e3373d12df18e204625b92",
+    "6e5068f350277d05b1eceaba229f762c09b38ca4",
+    "7300d237cc18d10604ecd72af93230191bfa0a9c",
+    "734b5433fc36f6f6eba1ebe2d839222139cf7520",
+    "7a9ddf272ac391a0bb783c162f766944b64ee45a",
+    "7c4eea5de808e599ebe1aefed8670fb6a7bf095c",
+    "83def18fb340525b75cb01b8368daf6bfa05ad74",
+    "85780e91e8686967ff31cc41f5f4388ddbaab1a0",
+    "8cbd10fe4ca5d728648a0d2d3150cce70f0704ce",
+    "94c2b66d2c9870c5801cef8931bc6b85d00c12c2",
+    "9e0468b19d8fc1fca7c6930a0fa3b25e0199c588",
+    "a1600184504d82b1fa181400b70c798676bd5f52",
+    "a697d082ce1b7aff9fa9e34cbab64bd616253db7",
+    "ae0c405adb7fdb60036ceae2b9c97627f720e74c",
+    "b12b745de1c75781d2c67241b98e20ff96fc4640",
+    "b4d5bba11da28b2f105a6ff67237a54a0e963db8",
+    "b54ea341ffee1c77c2df4b6bcfb39757ef9c2a05",
+    "c008d8a1b7ac2e59ae1e1529ed5e7d0461d59613",
+    "c47c15342161136ec6b597c806ac53d5abbb42bb",
+    "c804055bfea04eac7424f4f68c46f5a0c71cd7f7",
+    "cdda5833a83d76036583b77ec01ba86a327e95e0",
+    "e06636aacbfcf378934033ace9edd25e0092f684",
+    "e74ab4afacbaff84694a60b3cb30afa9d9229b95",
+    "e7556e83cceb28ed67a37ca29e43e659feda657f",
+    "f2cf81a180873053c5aa520ba9b4280e81fdeb78",
+    "f56be7d9eceae056990f10c6202d9b95bf4e274c",
+    "fef199ed07bb7f6270abbabc47b670ae367cd042",
+    "unknown"
+  ],
+  "frontend_releases": [
+    "0009ccd742c810568fd0a873d00881210cf58246",
+    "05e1982ab8bf0642f3b6fd0ab630e99c83cc9dc6",
+    "22f04b3510dbb797d7b5ba89d2ad6658f4d67927",
+    "26da44cc74420caf3642c33bcb4b4752eff6132c",
+    "35d5632e4ed1a9b5496fdb4612898908317458ac",
+    "50caedca1d893c032b62f99fb941766b7b5aeab1",
+    "51d5b2afced02154f0eeb7d5bf2e92235c38f0b3",
+    "5818f918473f87c7237fbb59928eb956e7e96009",
+    "5fffd6ce1dcd0b23504f0e9699bde93ee0eb23ae",
+    "62997bc0da83c0458d895c153570d4fecc5883bb",
+    "630758f3f641faa15d2e5866cc3cef22c6eb9fd5",
+    "691456a1960696df25e3373d12df18e204625b92",
+    "6e5068f350277d05b1eceaba229f762c09b38ca4",
+    "7300d237cc18d10604ecd72af93230191bfa0a9c",
+    "734b5433fc36f6f6eba1ebe2d839222139cf7520",
+    "7a9ddf272ac391a0bb783c162f766944b64ee45a",
+    "7c4eea5de808e599ebe1aefed8670fb6a7bf095c",
+    "83def18fb340525b75cb01b8368daf6bfa05ad74",
+    "85780e91e8686967ff31cc41f5f4388ddbaab1a0",
+    "8cbd10fe4ca5d728648a0d2d3150cce70f0704ce",
+    "94c2b66d2c9870c5801cef8931bc6b85d00c12c2",
+    "98eced454214006460df9e1efb8b4a4b1ae9db51",
+    "9e0468b19d8fc1fca7c6930a0fa3b25e0199c588",
+    "a1600184504d82b1fa181400b70c798676bd5f52",
+    "a697d082ce1b7aff9fa9e34cbab64bd616253db7",
+    "ae0c405adb7fdb60036ceae2b9c97627f720e74c",
+    "b12b745de1c75781d2c67241b98e20ff96fc4640",
+    "b4d5bba11da28b2f105a6ff67237a54a0e963db8",
+    "b54ea341ffee1c77c2df4b6bcfb39757ef9c2a05",
+    "c008d8a1b7ac2e59ae1e1529ed5e7d0461d59613",
+    "c47c15342161136ec6b597c806ac53d5abbb42bb",
+    "c804055bfea04eac7424f4f68c46f5a0c71cd7f7",
+    "cdda5833a83d76036583b77ec01ba86a327e95e0",
+    "e06636aacbfcf378934033ace9edd25e0092f684",
+    "e74ab4afacbaff84694a60b3cb30afa9d9229b95",
+    "e7556e83cceb28ed67a37ca29e43e659feda657f",
+    "f2cf81a180873053c5aa520ba9b4280e81fdeb78",
+    "f56be7d9eceae056990f10c6202d9b95bf4e274c",
+    "fef199ed07bb7f6270abbabc47b670ae367cd042"
+  ],
+  "first": "2026-10-29T13:54:32.799005181Z",
+  "last": "2026-11-04T02:50:10.333541567Z"
+}
