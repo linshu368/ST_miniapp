@@ -47,7 +47,7 @@ function catalog() {
     environment: 'production',
     notes: [
       '只操作生产环境，身份是本人的运营账号；权限与网页运营平台一致。',
-      '登录只能由本人在终端执行：pnpm admin login（AI 不能代为登录）。',
+      '登录：pnpm admin login --email <白名单邮箱> --name <操作人>（免密，邮箱须在后端白名单内）。',
       '写操作（write=true）不带 --yes 时返回 confirmation_required 和差异预览，不会改任何东西。',
       '配置改动流程：config describe → config get → config draft set → config diff → 用户确认 → config publish --yes → config get 复核。',
       'AI 调用请用 pnpm -s admin ... --json（在仓库子目录用 pnpm -s -w admin），stdout 只有一段 JSON；不加 -s 时 pnpm 会往 stdout 打印脚本横幅。',

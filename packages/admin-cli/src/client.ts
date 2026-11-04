@@ -48,7 +48,10 @@ export async function getAuthedClient(): Promise<AuthedClient> {
   if (error) throw classifyError(error);
   const session = data.session;
   if (!session) {
-    throw new CliError('auth_required', '未登录或登录已过期。请本人在终端执行：pnpm admin login');
+    throw new CliError(
+      'auth_required',
+      '未登录或登录已过期。请执行：pnpm admin login --email <运营邮箱>'
+    );
   }
   return { client, config, accessToken: session.access_token, userId: session.user.id };
 }

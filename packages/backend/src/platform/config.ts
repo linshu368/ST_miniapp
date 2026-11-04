@@ -160,6 +160,14 @@ export const config = {
     timeoutMs: parseInt(process.env.POSTHOG_TIMEOUT_MS || '3000', 10),
   },
 
+  // 运营平台 CLI 免密登录白名单（逗号分隔邮箱）。为空时 /api/admin/cli/session 关闭。
+  adminCli: {
+    allowedEmails: (process.env.ADMIN_CLI_ALLOWED_EMAILS || '')
+      .split(',')
+      .map((email) => email.trim().toLowerCase())
+      .filter(Boolean),
+  },
+
   // Webhook 是部署 secret；是否发送、重试和限流属于 runtime_config.alerting，默认关闭。
   alerting: {
     feishuWebhookUrl: process.env.FEISHU_ALERT_WEBHOOK_URL || '',

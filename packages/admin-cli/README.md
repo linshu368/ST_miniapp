@@ -2,7 +2,8 @@
 
 不打开浏览器、不截图，在终端里完成**生产环境**运营平台的主要操作。团队成员和 AI 助手（Claude Code、Codex）都用它。
 
-- 只连生产环境。身份是你本人的运营账号，权限、只读角色、发布记录里的操作人都与网页运营平台完全一致。
+- 只连生产环境。身份是白名单邮箱对应的运营账号，权限、只读角色、发布记录里的操作人都与网页运营平台一致。
+- 登录免密：只填邮箱和操作人姓名。邮箱必须在后端环境变量 `ADMIN_CLI_ALLOWED_EMAILS` 白名单里（未配置时登录接口关闭）。**知道白名单邮箱的人都能登录**，这是 2026-11-04 确认过的取舍；后端对签发次数限流（10 分钟 20 次）并记录 `admin_cli.session.issued` 日志。
 - 走与网页相同的后端代理（`/api/admin/supabase`）和数据库函数，校验规则与网页保存草稿时相同（共用 `@miniapp/admin-client`）。
 - 所有会改动生产的命令都必须确认：交互终端里输入 `yes`，非交互调用必须带 `--yes`。
 
@@ -12,14 +13,16 @@
 
 ```bash
 pnpm install
-pnpm admin setup          # 生产后端地址 + Supabase 公开 anon key（与网页运营平台相同，向负责人要）
-pnpm admin login          # 邮箱、密码、操作人姓名；只能本人在终端输入
-pnpm admin whoami         # 确认账号、角色、生产权限
+pnpm admin setup                                  # 生产后端地址 + Supabase 公开 anon key（与网页运营平台相同，向负责人要）
+pnpm admin login --email <白名单邮箱> --name <姓名>  # 免密；姓名记录在发布历史里，不填沿用账号已有姓名
+pnpm admin whoami                                 # 确认账号、角色、生产权限
 ```
 
 也可以 `pnpm admin setup --from-env-file packages/admin/.env.local`（读 `VITE_ADMIN_PROD_API_URL` 与 `VITE_ADMIN_PROD_SUPABASE_ANON_KEY`）。
 
-本机文件在 `~/.config/mijing-admin/`（可用 `MIJING_ADMIN_HOME` 改位置）：`config.json` 存地址和 anon key，`session.json` 存登录会话，目录 0700、文件 0600，不进仓库。会话过期或在别处退出后，重新 `pnpm admin login`。
+本机文件在 `~/.config/mijing-admin/`（可用 `MIJING_ADMIN_HOME` 改位置）：`config.json` 存地址和 anon key，`session.json` 存登录会话，目录 0700、文件 0600，不进仓库。会话过期后重新 `pnpm admin login --email ...`。
+
+要关闭 CLI 登录或更换允许的邮箱：改 Railway 生产 `stminiapp` 的 `ADMIN_CLI_ALLOWED_EMAILS` 并重新部署（清空即关闭）。
 
 ## 常用流程
 
@@ -76,7 +79,7 @@ pnpm admin text-rules draft --file source.json && pnpm admin text-rules publish
 - 用 `pnpm -s admin ... --json`（在仓库子目录用 `pnpm -s -w admin`）。不加 `-s` 时 pnpm 会往 stdout 打印脚本横幅，JSON 就解析不了。
 - 先 `whoami`，再读后写；写前用 `describe`/`get` 看清现值，用 `validate` 或 `draft set` 的差异确认改动范围。
 - 写命令不带 `--yes` 会返回 `confirmation_required` 和差异预览，不会改任何东西。**把差异给用户看，用户明确同意后**才带 `--yes` 重新执行。
-- 登录只能用户本人做。遇到 `auth_required` / `setup_required`，请用户在终端执行 `pnpm admin login` / `pnpm admin setup`。
+- 遇到 `auth_required` 时可以直接执行 `pnpm -s admin login --email <用户给的白名单邮箱> --json`；`setup_required` 请用户提供后端地址与 anon key 后执行 `setup`。
 
 ## 输出与退出码
 

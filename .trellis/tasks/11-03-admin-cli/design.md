@@ -149,3 +149,7 @@ packages/admin-cli      新：命令行；依赖 admin-client、shared、supabas
 
 - 自动：admin-client 迁移原有 lib 测试；CLI 新增少量单测锁定安全行为（`--yes` 门禁、覆盖草稿护栏、错误码映射、会话文件权限、非 TTY 拒绝登录）；后端更新推荐/金框/打标相关既有测试。
 - 人工（生产）：你本人 `! pnpm admin login` 后，只读命令全部跑一遍；写操作仅在你逐项同意后验证（低风险配置的草稿→发布→回滚各一次）。
+
+## 9. 变更：CLI 免密登录（2026-11-04，用户决策）
+
+用户要求登录只填邮箱和姓名、不要密码，且明确不要机器密钥。实现：后端 `POST /api/admin/cli/session`（`@frontend-ready: false`）仅对 `ADMIN_CLI_ALLOWED_EMAILS` 白名单（生产只配 1 个邮箱）签发该账号的 Supabase 会话：service-role `auth.admin.generateLink(magiclink)` 生成一次性凭据（不发邮件）→ 先用 `loadAdminActor` 确认是当前环境运营账号 → 用一次性 client `verifyOtp` 兑换（避免污染共享 service-role client）。白名单为空返回 404（默认关闭）；进程内滑动窗口限流 10 分钟 20 次；日志只记 `user_id`。风险：任何知道该邮箱与后端地址的人都可签发会话，用户已知悉并接受。回滚：清空 Railway 变量即可关闭。

@@ -89,7 +89,7 @@
 - AI 调用固定用 `pnpm -s admin <命令> --json`（仓库子目录用 `pnpm -s -w admin`），按 `error.code` 与退出码处理结果。
 - 先 `whoami`；改之前用 `config describe` / `config get` 看现值，写入走 `draft set → diff → publish`，发布后再 `get` 复核。
 - 写命令不带 `--yes` 只返回 `confirmation_required` 和差异。**生产写操作必须先把差异给用户看，得到用户在对话里的明确同意后才带 `--yes`**；一次同意只对应这一次改动。
-- 登录和 setup 只能由用户本人在终端执行（`pnpm admin login`）。遇到 `auth_required` / `setup_required` 请用户执行，不得索要或代填密码。
+- 登录免密：`pnpm -s admin login --email <白名单邮箱> --name <操作人> --json`（白名单在后端 `ADMIN_CLI_ALLOWED_EMAILS`）。遇到 `auth_required` 可直接重新登录；`setup_required` 需用户提供后端地址与 anon key。
 - 遇到 `draft_exists`（别人有未发布草稿）、`conflict`（线上已变化）先告诉用户，不要自行加 `--replace-draft` 或重试。
 
 ### 6. 验证与提交
