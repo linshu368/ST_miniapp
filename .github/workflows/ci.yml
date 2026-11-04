@@ -73,6 +73,11 @@ jobs:
       - name: Check migration filenames
         run: pnpm lint:migrations
 
+      # 运行时代码的文件/函数长度预算（棘轮）：新增超标阻断，存量只提示增长。
+      # 上限与基线在 scripts/complexity-budget.mjs / scripts/complexity-baseline.json。
+      - name: Check complexity budget
+        run: pnpm lint:complexity
+
       - name: Test shared package
         run: pnpm --filter @miniapp/shared test
 
