@@ -1,0 +1,55 @@
+{
+  "id": "complexity-p3-chat-chain",
+  "name": "complexity-p3-chat-chain",
+  "title": "降复杂度 P3：拆分后端对话主链路长函数",
+  "description": "",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P2",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-04",
+  "completedAt": null,
+  "branch": "refactor/complexity-p3-chat-chain",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "11-04-complexity-reduction",
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "no_module_change",
+      "reason": "纯结构重构：对话生成与计费的行为、契约、数据和日志字段不变，只把长函数拆成同目录下的阶段函数"
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": ["/chat/:id（发送与重生成）"],
+      "apis": ["POST /api/conversations/:id/messages 与 regenerate（SSE，点击到首字）"],
+      "android": {
+        "page_p95_baseline_ms": 2392,
+        "page_p95_target_ms": 2392
+      },
+      "ios": {
+        "page_p95_baseline_ms": 3362,
+        "page_p95_target_ms": 3362
+      },
+      "api": {
+        "p95_baseline_ms": 5001,
+        "p95_target_ms": 5001
+      },
+      "measurement": {
+        "source": "Grafana Cloud Loki production Faro：页面用 st_page_ready（/chat/:id Android 2392ms N=135、iOS 3362ms N=31 低样本）；接口用 st_roleplay_first_token 点击到首字 quantile_over_time(0.95)，整体 5001ms（N=600），Android 4536ms（N=438）、iOS 5002ms（N=154）。首字受 6 秒截止约束，P95 接近上限。",
+        "window": "基线 2026-11-03 18:00 至 2026-11-04 18:00（Asia/Shanghai）；每个子 PR 上线后按 release 比较至少一个完整 24h 窗口，Android/iOS 分开，同时看工程｜02 的 6 秒无首字率。"
+      },
+      "notes": "纯重构，目标为不退化（取基线本身）。首字 P95 受 6 秒截止截断，需同时看无首字率；iOS 与页面样本偏少只做不退化核对。拆分不改变请求数和 await 顺序，理论上无性能变化。"
+    }
+  }
+}
