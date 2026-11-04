@@ -77,7 +77,7 @@ export function observeDramaMedia(
   const cdnAttributes = dramaCdnAttributes(timing.delivery);
   const rebufferAttributes = {
     ...cdnAttributes,
-    route: timing.owner === 'home' ? '/' : '/dramas/:id',
+    route: timing.owner === 'home' ? '/watch' : '/dramas/:id',
     report_kind: 'playback',
     stage: 'rebuffer',
     playback_mode: timing.entry,
@@ -139,7 +139,7 @@ export function observeDramaMedia(
       // denominator signals would manufacture a misleading buffering ratio.
       recordEngineeringEvent('drama.playback_window', {
         ...cdnAttributes,
-        route: timing.owner === 'home' ? '/' : '/dramas/:id',
+        route: timing.owner === 'home' ? '/watch' : '/dramas/:id',
         report_kind: 'playback',
         stage: 'playback',
         playback_mode: timing.entry,

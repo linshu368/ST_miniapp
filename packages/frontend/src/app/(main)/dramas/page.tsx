@@ -469,7 +469,7 @@ export default function DramasPage() {
                       : '看过的短剧会自动留在这里，随时继续。'
                   }
                   action="去发现好剧"
-                  onAction={() => router.push('/')}
+                  onAction={() => router.push('/watch')}
                 />
               )}
               <p className="px-4 pb-3 pt-7 text-center text-[11px] leading-relaxed text-[#eee7e2]/35">

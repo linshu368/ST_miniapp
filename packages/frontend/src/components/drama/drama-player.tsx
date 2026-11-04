@@ -822,7 +822,7 @@ export function DramaPlayer({
       : undefined;
 
   useEffect(() => {
-    if (embedded && info && !info.cover_url) markPageCriticalVisual('/', 'absent');
+    if (embedded && info && !info.cover_url) markPageCriticalVisual('/watch', 'absent');
   }, [embedded, info]);
 
   useEffect(() => {
@@ -1011,7 +1011,7 @@ export function DramaPlayer({
             onLoadedData={() => {
               if (embedded) {
                 setMediaVisualReady(true);
-                markPageCriticalVisual('/', 'loaded');
+                markPageCriticalVisual('/watch', 'loaded');
               }
             }}
             onPause={(event) => {
@@ -1046,7 +1046,7 @@ export function DramaPlayer({
               }
             }}
             onError={() => {
-              if (embedded) markPageCriticalVisual('/', 'error');
+              if (embedded) markPageCriticalVisual('/watch', 'error');
               if (videoEl?.getAttribute('src')) {
                 videoEl.pause();
                 setFailed(true);
@@ -1070,8 +1070,8 @@ export function DramaPlayer({
               loading="eager"
               decoding="async"
               fetchPriority="high"
-              onLoad={() => markPageCriticalVisual('/', 'loaded')}
-              onError={() => markPageCriticalVisual('/', 'error')}
+              onLoad={() => markPageCriticalVisual('/watch', 'loaded')}
+              onError={() => markPageCriticalVisual('/watch', 'error')}
               className={cn(
                 'pointer-events-none absolute inset-0 h-full w-full object-cover transition-opacity duration-150 motion-reduce:transition-none',
                 mediaVisualReady ? 'opacity-0' : 'opacity-100'
@@ -1097,8 +1097,8 @@ export function DramaPlayer({
           {!embedded && overlayVisible ? (
             <header className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-center justify-between [&_button]:pointer-events-auto [&_a]:pointer-events-auto px-4 pt-[calc(0.5rem+env(safe-area-inset-top))]">
               <Link
-                href={returnToHome ? '/' : '/dramas'}
-                aria-label={returnToHome ? '返回首页' : '返回短剧'}
+                href={returnToHome ? '/watch' : '/dramas'}
+                aria-label={returnToHome ? '返回放映' : '返回短剧'}
                 onClick={() => {
                   if (videoEl) persistProgress.current(videoEl, true);
                   if (returnToHome) useDramaLibraryStore.getState().setBrowse({ activeId: id });

@@ -160,12 +160,12 @@ export const scenarios = {
   dramas: {
     label: '短剧体验',
     description: '沉浸刷剧、收藏、点赞、评论、选集和本设备续看',
-    path: '/',
+    path: '/watch',
   },
   'drama-interaction-error': {
     label: '短剧互动失败',
     description: '点赞失败恢复、评论草稿保留、重试不重复',
-    path: '/',
+    path: '/watch',
   },
   'drama-list-error': {
     label: '短剧列表失败',

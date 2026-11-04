@@ -209,7 +209,7 @@ export function useDramaCommentMutations(id: string) {
 async function fetchDramas(
   kind: 'list' | 'queue' = 'list',
   signal?: AbortSignal,
-  route: '/' | '/dramas' = '/dramas'
+  route: '/watch' | '/dramas' = '/dramas'
 ): Promise<DramaSummary[]> {
   return dramaTiming.query(
     kind,
@@ -262,7 +262,7 @@ async function fetchDramaPlayback(
 }
 
 // 保留结果对象身份，防止 structural sharing 把本次请求映射到旧对象的计时元数据。
-export function useDramaListQuery(route: '/' | '/dramas' = '/dramas') {
+export function useDramaListQuery(route: '/watch' | '/dramas' = '/dramas') {
   return useQuery({
     queryKey: dramaKeys.list(),
     queryFn: ({ signal }) => fetchDramas('list', signal, route),

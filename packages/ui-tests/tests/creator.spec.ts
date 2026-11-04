@@ -186,7 +186,7 @@ test('@creator @layout 私密发布、本人试聊、编辑与可见性切换连
   await expect(page.getByText('已公开', { exact: true })).toBeVisible();
   await page
     .getByRole('navigation', { name: '主导航', exact: true })
-    .getByRole('link', { name: '角色', exact: true })
+    .getByRole('link', { name: '秘境', exact: true })
     .click();
   await page.getByRole('textbox', { name: '搜索角色', exact: true }).fill('旧书店的林舟');
   await expect(
@@ -233,7 +233,7 @@ test('@creator @creator-review 新建公开和发布更新审核通过后静默�
   await expect(page.locator('main [role="alert"]')).toHaveCount(0);
   await page
     .getByRole('navigation', { name: '主导航', exact: true })
-    .getByRole('link', { name: '角色', exact: true })
+    .getByRole('link', { name: '秘境', exact: true })
     .click();
   await page.getByRole('textbox', { name: '搜索角色', exact: true }).fill('旧书店的林舟');
   await expect(
@@ -254,7 +254,7 @@ test('@creator @creator-review 新建公开和发布更新审核通过后静默�
   await expect(page.locator('main [role="alert"]')).toHaveCount(0);
   await page
     .getByRole('navigation', { name: '主导航', exact: true })
-    .getByRole('link', { name: '角色', exact: true })
+    .getByRole('link', { name: '秘境', exact: true })
     .click();
   await page.getByRole('textbox', { name: '搜索角色', exact: true }).fill('重逢后的林舟');
   await expect(
@@ -307,7 +307,7 @@ test('@creator @creator-review 审核拒绝显示原因并保留原稿，修改�
   await page.getByRole('button', { name: '编辑角色', exact: true }).click();
   await page
     .getByRole('navigation', { name: '主导航', exact: true })
-    .getByRole('link', { name: '角色', exact: true })
+    .getByRole('link', { name: '秘境', exact: true })
     .click();
   await page.getByRole('textbox', { name: '搜索角色', exact: true }).fill('林舟');
   await expect(

@@ -331,7 +331,7 @@ describe('foreground playback quality windows', () => {
     video.frame?.();
     await vi.advanceTimersByTimeAsync(1000);
     observer.dispose();
-    expect(windows()).toEqual([expect.objectContaining({ route: '/', playing_ms: 1000 })]);
+    expect(windows()).toEqual([expect.objectContaining({ route: '/watch', playing_ms: 1000 })]);
     expect(Object.keys(windows()[0] ?? {})).not.toEqual(
       expect.arrayContaining(['dramaId', 'videoId', 'sessionId', 'source'])
     );

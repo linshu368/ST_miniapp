@@ -112,12 +112,12 @@ describe('drama timeline', () => {
   });
 
   it('binds home catalog route and preserves its document origin across root effects', async () => {
-    tracker.beginList('document_navigation', 0, '/');
-    tracker.route('/');
+    tracker.beginList('document_navigation', 0, '/watch');
+    tracker.route('/watch');
     await advance(200);
-    tracker.listReady([], '/');
+    tracker.listReady([], '/watch');
     expect(last()).toMatchObject({
-      route: '/',
+      route: '/watch',
       definition: 'drama_v3',
       elapsedMs: 200,
       list: { startKind: 'document_navigation' },
@@ -309,7 +309,7 @@ describe('drama timeline', () => {
   it('keeps an embedded startup alive when the root route effect runs after the player effect', () => {
     const flow = tracker.ensurePlayback('a', undefined, 'home');
     flow.mark('player_ready');
-    tracker.route('/');
+    tracker.route('/watch');
     expect(flow.outcome).toBeUndefined();
     expect(tracker.ensurePlayback('a', undefined, 'home')).toBe(flow);
 
@@ -332,7 +332,7 @@ describe('drama timeline', () => {
 
   it('uses separate home/detail owners for the same drama without reviving either terminal', () => {
     const home = tracker.ensurePlayback('a', undefined, 'home');
-    tracker.route('/');
+    tracker.route('/watch');
     const detail = tracker.ensurePlayback('a', undefined, 'detail');
     expect(detail).not.toBe(home);
     expect(home.outcome).toBe('left');
@@ -343,7 +343,7 @@ describe('drama timeline', () => {
     const returnedHome = tracker.ensurePlayback('a', undefined, 'home');
     expect(returnedHome).not.toBe(detail);
     expect(detail.outcome).toBe('left');
-    tracker.route('/');
+    tracker.route('/watch');
     returnedHome.finish('playing');
     expect(tracker.ensurePlayback('a', undefined, 'home')).toBe(returnedHome);
     returnedHome.finish('error');
@@ -356,7 +356,7 @@ describe('drama timeline', () => {
   it('ends a home owner on real navigation away and creates a fresh visit on return', () => {
     const home = tracker.ensurePlayback('a', undefined, 'home');
     home.mark('player_ready');
-    tracker.route('/');
+    tracker.route('/watch');
     expect(home.outcome).toBeUndefined();
     tracker.route('/profile');
     expect(home.outcome).toBe('left');
@@ -366,7 +366,7 @@ describe('drama timeline', () => {
 
     const returned = tracker.ensurePlayback('a', undefined, 'home');
     expect(returned).not.toBe(home);
-    tracker.route('/');
+    tracker.route('/watch');
     expect(returned.outcome).toBeUndefined();
     returned.finish('playing');
     expect(
@@ -379,7 +379,7 @@ describe('drama timeline', () => {
     const next = tracker.beginPlayback('b', 'switch', undefined, undefined, 'home');
     expect(first.outcome).toBe('switched');
     tracker.playbackState(first, undefined, false, true);
-    tracker.route('/');
+    tracker.route('/watch');
     expect(tracker.ensurePlayback('b', undefined, 'home')).toBe(next);
     expect(next.outcome).toBeUndefined();
 
