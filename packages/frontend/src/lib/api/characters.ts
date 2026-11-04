@@ -1,7 +1,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
-import { DEFAULT_LOBBY_SORT } from '@miniapp/shared';
+import { DEFAULT_LOBBY_SORT, LOBBY_ROTATION_HEAD_SIZE } from '@miniapp/shared';
 import type {
   ApiResponse,
   GetCharactersData,
@@ -19,11 +19,16 @@ import { withRequestSlot } from './request-concurrency';
 import { useRefetchOnForeground } from './use-refetch-on-foreground';
 
 // ==== 纯 fetch 函数（私有，不导出给业务）====
-async function fetchCharacters(sort: LobbySort, signal?: AbortSignal): Promise<GetCharactersData> {
+async function fetchCharacters(
+  sort: LobbySort,
+  signal?: AbortSignal,
+  headOnly = false,
+  ids?: readonly string[]
+): Promise<GetCharactersData> {
   // 大厅经 Vercel 同源代理，不走 apiClient；仍占 critical 槽，避免与直连 Railway 旁路齐射。
   return withRequestSlot('critical', signal, async () => {
     const response = await timedFetch(
-      `/api/lobby-characters?sort=${sort}`,
+      `/api/lobby-characters?sort=${sort}${headOnly ? `&limit=${LOBBY_ROTATION_HEAD_SIZE}` : ''}${ids?.length ? `&ids=${ids.join(',')}` : ''}`,
       { cache: 'no-store', signal },
       { requestId: createRequestId() }
     );
@@ -31,6 +36,11 @@ async function fetchCharacters(sort: LobbySort, signal?: AbortSignal): Promise<G
     if (!response.ok || !json?.success) {
       throw new Error(json && !json.success ? json.error.message : `API error: ${response.status}`);
     }
+    // An older upstream may ignore limit. Never write a partial head into the full-directory cache.
+    if (ids && json.data.characters.some((card) => !ids.includes(card.id)))
+      throw new Error('旧版目录不支持指定角色校准');
+    if (headOnly)
+      return { ...json.data, characters: json.data.characters.slice(0, LOBBY_ROTATION_HEAD_SIZE) };
     persistCharacters(sort, json.data);
     return json.data;
   });
@@ -58,6 +68,8 @@ export const characterKeys = {
       String(parseTelegramUser(getRawInitData()).id ?? 'local-browser'),
       sessionId ?? null,
     ] as const,
+  publicHead: (ids?: readonly string[]) =>
+    [...characterKeys.all, 'public-head', ids ?? 'default'] as const,
   latestBadge: () => [...characterKeys.all, 'latest-badge'] as const,
 };
 
@@ -66,7 +78,9 @@ const CHARACTER_CACHE_KEY_PREFIX = 'miniapp:lobby-characters:v4';
 const CHARACTER_CACHE_MAX_AGE_MS = 24 * 60 * 60_000;
 
 function cacheKey(sort: LobbySort): string {
-  return `${CHARACTER_CACHE_KEY_PREFIX}:${sort}`;
+  return sort === 'recommended'
+    ? 'miniapp:lobby-characters:v5:recommended'
+    : `${CHARACTER_CACHE_KEY_PREFIX}:${sort}`;
 }
 
 function readPersistedCharacters(sort: LobbySort): GetCharactersData | undefined {
@@ -120,11 +134,12 @@ function persistCharacters(sort: LobbySort, data: GetCharactersData): void {
 
 // ==== React Query hooks（业务层唯一入口）====
 
-export function useCharactersQuery(sort: LobbySort = DEFAULT_LOBBY_SORT) {
+export function useCharactersQuery(sort: LobbySort = DEFAULT_LOBBY_SORT, enabled = true) {
   return useQuery<GetCharactersData>({
     queryKey: characterKeys.list(sort),
     queryFn: ({ signal }) => fetchCharacters(sort, signal),
-    initialData: () => readPersistedCharacters(sort),
+    enabled,
+    initialData: () => (enabled ? readPersistedCharacters(sort) : undefined),
     // Persisted data keeps the lobby instant, but every mount must reconcile with
     // the database so reordering, delisting, and archival appear immediately.
     staleTime: 0,
@@ -138,12 +153,39 @@ export function prefetchCharactersQuery(
   queryClient: QueryClient,
   sort: LobbySort = DEFAULT_LOBBY_SORT
 ): Promise<void> {
+  // The recommended tab fetches its personalized 12-card head on entry.
+  if (sort === 'recommended') return Promise.resolve();
   return queryClient.prefetchQuery({
     queryKey: characterKeys.list(sort),
     queryFn: ({ signal }) => fetchCharacters(sort, signal),
     initialData: () => readPersistedCharacters(sort),
     staleTime: 30_000,
     gcTime: CHARACTER_CACHE_MAX_AGE_MS,
+  });
+}
+
+/** An old server can only hydrate a user-requested refresh through its full catalog. */
+export async function readLegacyHeadCards(client: QueryClient, order: string[]) {
+  const catalogue = await client.fetchQuery({
+    queryKey: characterKeys.list('recommended'),
+    queryFn: ({ signal }) => fetchCharacters('recommended', signal),
+    staleTime: 30_000,
+  });
+  const byId = new Map(catalogue.characters.map((card) => [card.id, card]));
+  const character_ids = order.filter((id) => byId.has(id));
+  const head_ids = character_ids.slice(0, LOBBY_ROTATION_HEAD_SIZE);
+  return { character_ids, head_ids, head_cards: head_ids.map((id) => byId.get(id)!) };
+}
+
+export function usePublicLobbyHead(enabled: boolean, ids?: readonly string[], forceFresh = false) {
+  return useQuery({
+    queryKey: characterKeys.publicHead(ids),
+    queryFn: ({ signal }) => fetchCharacters('recommended', signal, true, ids),
+    enabled,
+    staleTime: forceFresh ? 0 : 30_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    retry: false,
   });
 }
 

@@ -20,6 +20,7 @@
 
 import type { FastifyBaseLogger } from 'fastify';
 import { PrismaClient } from '@prisma/client';
+import { QUALIFIED_QUALITY_VERSION } from '../features/lobby/recommendation-ranking.js';
 import { computeRankingScores } from '../features/lobby/ranking-score.js';
 import { resolveLobbyRankingParams } from '../features/lobby/ranking-params.js';
 import {
@@ -28,7 +29,9 @@ import {
   persistRankingScores,
 } from '../features/lobby/ranking-stats.js';
 
-const REFRESH_INTERVAL_MS = 24 * 60 * 60 * 1000;
+// Recheck the shared due time hourly. A restart shortly before expiry must not
+// postpone the next computation by an entire day.
+const FRESHNESS_CHECK_INTERVAL_MS = 60 * 60 * 1000;
 
 /**
  * 启动后先跑一次把汇总表填上。首次部署时表是空的，读路径会一直退回运营顺序，
@@ -95,7 +98,7 @@ export function startLobbyRankingRefreshJob(log: FastifyBaseLogger): void {
 
   timerId = setInterval(() => {
     void runLobbyRankingRefresh(jlog);
-  }, REFRESH_INTERVAL_MS);
+  }, FRESHNESS_CHECK_INTERVAL_MS);
 
   startupTimerId = setTimeout(() => {
     startupTimerId = null;
@@ -135,6 +138,7 @@ export async function runLobbyRankingRefresh(log: FastifyBaseLogger): Promise<vo
   isRunning = true;
   const startedAt = Date.now();
   let lockHeld = false;
+  let timeoutChanged = false;
 
   try {
     // 配置读在锁外：走 Supabase REST，与专用连接无关。
@@ -152,10 +156,31 @@ export async function runLobbyRankingRefresh(log: FastifyBaseLogger): Promise<vo
     }
     lockHeld = true;
 
+    // Rotation only changes presentation. A change to its interval or pinning must
+    // not trigger another full history scan. jsonb equality is independent of key order.
+    const { rotation: _rotation, ...scoreParams } = params;
+    const rules = JSON.stringify({ algorithm: QUALIFIED_QUALITY_VERSION, params: scoreParams });
+    const [state] = await dedicated.$queryRaw<Array<{ fresh: boolean }>>`
+      SELECT EXISTS (
+        SELECT 1 FROM miniapp_features.lobby_ranking_refresh_state
+        WHERE singleton AND completed_at > clock_timestamp() - interval '24 hours'
+          AND scoring_rules->>'algorithm' = ${QUALIFIED_QUALITY_VERSION}::text
+          AND (${degraded}::boolean OR scoring_rules = ${rules}::jsonb)
+      ) AS fresh
+    `;
+    if (state?.fresh) {
+      log.info(
+        { kind: 'sys', event: 'lobby_ranking.skipped_fresh', durationMs: Date.now() - startedAt },
+        '已有24小时内的成功评分'
+      );
+      return;
+    }
+
     await dedicated.$queryRaw`
       SELECT set_config('statement_timeout', ${String(STATEMENT_TIMEOUT_MS)}, false)
     `;
 
+    timeoutChanged = true;
     const raw = await computeRawCardStats(dedicated, params);
     const scores = computeRankingScores(raw, params);
 
@@ -173,6 +198,12 @@ export async function runLobbyRankingRefresh(log: FastifyBaseLogger): Promise<vo
     await dedicated.$transaction(
       async (tx) => {
         await persistRankingScores(tx, scores, params);
+        await tx.$executeRaw`
+          INSERT INTO miniapp_features.lobby_ranking_refresh_state (singleton, scoring_rules, completed_at)
+          VALUES (true, ${rules}::jsonb, clock_timestamp())
+          ON CONFLICT (singleton) DO UPDATE SET scoring_rules = EXCLUDED.scoring_rules,
+            completed_at = EXCLUDED.completed_at
+        `;
       },
       { timeout: PERSIST_TRANSACTION_TIMEOUT_MS, maxWait: PERSIST_MAX_WAIT_MS }
     );
@@ -212,6 +243,8 @@ export async function runLobbyRankingRefresh(log: FastifyBaseLogger): Promise<vo
           '释放排序刷新 advisory lock 失败'
         );
       }
+    }
+    if (timeoutChanged) {
       try {
         await dedicated.$queryRaw`SELECT set_config('statement_timeout', '120000', false)`;
       } catch {

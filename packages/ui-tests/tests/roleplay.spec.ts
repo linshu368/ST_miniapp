@@ -11,6 +11,55 @@ import {
   expectMobileLayout,
 } from './fixtures.js';
 
+async function selectColdRecommendation(page: Page) {
+  await page.addInitScript(() =>
+    sessionStorage.setItem(
+      'miniapp:roleplay-discovery:v1:local-browser',
+      JSON.stringify({ sort: 'recommended', query: '', favoritesOnly: false })
+    )
+  );
+}
+
+async function clickAndReadScreenY(card: Locator) {
+  // Lazy cards can settle between scrollIntoView and input; capture where the user actually pressed.
+  await card.evaluate((el) =>
+    el.addEventListener(
+      'pointerdown',
+      () => el.setAttribute('data-test-pick-y', String(el.getBoundingClientRect().top)),
+      { once: true }
+    )
+  );
+  await card.click();
+  const picked = await card.getAttribute('data-test-pick-y');
+  expect(picked).not.toBeNull();
+  return Number(picked);
+}
+
+async function expectStableScreenY(card: Locator, target: number) {
+  await expect
+    .poll(() =>
+      card.evaluateAll(async (nodes, top) => {
+        const el = nodes[0];
+        const delta = () => {
+          if (
+            !el?.isConnected ||
+            !el.getClientRects().length ||
+            getComputedStyle(el).visibility !== 'visible'
+          )
+            return Infinity;
+          return Math.abs(el.getBoundingClientRect().top - top);
+        };
+        const first = delta();
+        if (!Number.isFinite(first)) return first;
+        await new Promise<void>((r) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => r()))
+        );
+        return Math.max(first, delta());
+      }, target)
+    )
+    .toBeLessThanOrEqual(3);
+}
+
 async function openRecommendedLobby(page: Page, path = '/characters'): Promise<void> {
   await page.goto(path, { waitUntil: 'domcontentloaded', timeout: 90_000 });
   const latest = page.getByRole('tab', { name: '最新', exact: true });
@@ -65,6 +114,146 @@ test('@roleplay @layout 浏览角色时栏目固定，进聊天后可返回', as
   await expect(page).toHaveURL(`${previewAppUrl}/characters`);
   await expectMobileLayout(page);
   await preview.screenshot('角色浏览与返回');
+});
+
+test('@roleplay @character-cover @layout 角色封面全屏放大、还原并回到原详情继续对话', async ({
+  page,
+  preview,
+}) => {
+  await openRecommendedLobby(page);
+  await page.getByRole('button', { name: '查看 林间旅人 的详情', exact: true }).click();
+  const detail = page.getByRole('dialog', { name: '林间旅人', exact: true });
+  await expect(detail).toBeVisible();
+  await expect
+    .poll(() => detail.evaluate((el) => Math.abs(el.getBoundingClientRect().bottom - innerHeight)))
+    .toBeLessThanOrEqual(1);
+  const openCover = detail.getByRole('button', { name: '全屏查看角色封面', exact: true });
+  const thumb = openCover.locator('img');
+  await expect(thumb).toHaveCSS('object-fit', 'cover');
+  await expect
+    .poll(() => thumb.evaluate((el) => (el as HTMLImageElement).naturalWidth))
+    .toBeGreaterThan(0);
+  const sheetWidth = (await detail.boundingBox())!.width;
+  const thumbWidth = (await thumb.boundingBox())!.width;
+  expect(sheetWidth - thumbWidth).toBeLessThanOrEqual(44);
+  await preview.screenshot('详情封面铺满内容宽度', { fullPage: false });
+  await openCover.click();
+
+  const viewer = page.getByRole('dialog', { name: '角色封面大图', exact: true });
+  await expect(viewer).toBeVisible();
+  await expect
+    .poll(() =>
+      viewer.evaluate((el) => {
+        const rect = el.getBoundingClientRect();
+        return Math.max(
+          Math.abs(rect.left),
+          Math.abs(rect.top),
+          Math.abs(innerWidth - rect.right),
+          Math.abs(innerHeight - rect.bottom)
+        );
+      })
+    )
+    .toBeLessThanOrEqual(1);
+  const image = viewer.locator('img');
+  await expect(image).toHaveAttribute('src', previewApiUrl + '/assets/scene.svg?tone=0');
+  await expect(image).toHaveCSS('object-fit', 'contain');
+  await expect
+    .poll(() => image.evaluate((el) => (el as HTMLImageElement).naturalWidth))
+    .toBeGreaterThan(0);
+  const width = () => image.evaluate((el) => el.getBoundingClientRect().width);
+  const originalWidth = await width();
+  await preview.screenshot('角色封面完整大图', { fullPage: false });
+
+  await viewer.getByRole('button', { name: '放大图片', exact: true }).click();
+  const reset = viewer.getByRole('button', { name: '还原图片', exact: true });
+  await expect(reset).toBeVisible();
+  await expect.poll(width).toBeGreaterThan(originalWidth + 1);
+  await reset.click();
+  await expect.poll(async () => Math.abs((await width()) - originalWidth)).toBeLessThanOrEqual(1);
+  const bounds = (await viewer.boundingBox())!;
+  const x = Math.round(bounds.x + bounds.width / 2);
+  const y = Math.round(bounds.y + bounds.height / 2);
+  const cdp = await page.context().newCDPSession(page);
+  const fingers = (radius: number) => [
+    { id: 1, x: x - radius, y },
+    { id: 2, x: x + radius, y },
+  ];
+  try {
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: fingers(30) });
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: fingers(65) });
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await expect.poll(width).toBeGreaterThan(originalWidth * 1.5);
+
+    const left = () => image.evaluate((el) => el.getBoundingClientRect().left);
+    const beforeDrag = await left();
+    await cdp.send('Input.dispatchTouchEvent', {
+      type: 'touchStart',
+      touchPoints: [{ id: 1, x, y }],
+    });
+    await cdp.send('Input.dispatchTouchEvent', {
+      type: 'touchMove',
+      touchPoints: [{ id: 1, x: x + 45, y }],
+    });
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await expect.poll(left).toBeGreaterThan(beforeDrag + 20);
+  } finally {
+    await cdp
+      .send('Input.dispatchTouchEvent', { type: 'touchCancel', touchPoints: [] })
+      .catch(() => {});
+    await cdp.detach();
+  }
+  await page.touchscreen.tap(x, y);
+  await page.touchscreen.tap(x, y);
+  await expect.poll(async () => Math.abs((await width()) - originalWidth)).toBeLessThanOrEqual(1);
+  await page.touchscreen.tap(x, y);
+  await page.touchscreen.tap(x, y);
+  await expect.poll(width).toBeGreaterThan(originalWidth * 1.5);
+  await viewer.getByRole('button', { name: '关闭大图', exact: true }).click();
+  await expect(viewer).not.toBeVisible();
+  await expect(detail).toBeVisible();
+  await expect(openCover).toBeVisible();
+  await preview.screenshot('关闭大图回到同一角色详情', { fullPage: false });
+  await detail.getByRole('button', { name: '继续对话', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: '输入消息', exact: true })).toBeVisible();
+  await expect(page).toHaveURL(chatPath);
+});
+
+test('@roleplay @character-cover Telegram原生返回逐层关闭大图和详情', async ({ page }) => {
+  await page.addInitScript(() => {
+    const native = window as Window & { TelegramWebviewProxy?: { postEvent: () => void } };
+    native.TelegramWebviewProxy = { postEvent: () => {} };
+  });
+  await page.goto(
+    chatPath + '#tgWebAppVersion=9.6&tgWebAppPlatform=android&tgWebAppThemeParams=%7B%7D'
+  );
+  const chat = page.getByRole('textbox', { name: '输入消息', exact: true });
+  await expect(chat).toBeVisible();
+  const host = page.url();
+  await page.getByRole('button', { name: '查看 林间旅人 的评论', exact: true }).click();
+  const detail = page.getByRole('dialog', { name: '林间旅人', exact: true });
+  const thumb = detail.getByRole('button', { name: '查看角色头像大图', exact: true });
+  await thumb.click();
+  const viewer = page.getByRole('dialog', { name: '角色封面大图', exact: true });
+  await expect(viewer).toBeVisible();
+  const pressNativeBack = () =>
+    page.evaluate(() => {
+      const native = window as Window & {
+        Telegram?: { WebView?: { receiveEvent: (name: string, data: object) => void } };
+      };
+      if (!native.Telegram?.WebView) throw new Error('Telegram bridge unavailable');
+      native.Telegram.WebView.receiveEvent('back_button_pressed', {});
+    });
+  await pressNativeBack();
+  await expect(viewer).not.toBeVisible();
+  await expect(detail).toBeVisible();
+  await expect(thumb).toBeFocused();
+  await expect(page).toHaveURL(host);
+  await pressNativeBack();
+  await expect(detail).not.toBeVisible();
+  await expect(chat).toBeVisible();
+  await expect(page).toHaveURL(host);
+  await pressNativeBack();
+  await expect(page).toHaveURL(/\/characters$/);
 });
 
 test('@roleplay 空对话列表有清晰入口', async ({ page, preview }) => {
@@ -700,6 +889,7 @@ test('@roleplay @lobby-rotation 超过24小时试聊返回仍保原批，新打�
   request,
 }) => {
   test.setTimeout(90_000);
+  await page.clock.install();
   await preview.scenario('lobby-rotation');
   await openRecommendedLobby(page);
   await expect(page.getByRole('button', { name: '换一批推荐角色', exact: true })).toBeVisible();
@@ -710,7 +900,9 @@ test('@roleplay @lobby-rotation 超过24小时试聊返回仍保原批，新打�
   await page.getByRole('button', { name: '查看 林间旅人 的详情', exact: true }).click();
   await page.getByRole('button', { name: /继续对话|开始对话|开始聊天|接着聊/ }).click();
   await expect(page.getByRole('textbox', { name: '输入消息' })).toBeVisible();
+  const actionsBeforeReturn = (await preview.state()).lobby.actions.length;
   await request.post(`${previewApiUrl}/__preview/lobby`, { data: { advance_hours: 25 } });
+  await page.clock.setSystemTime(new Date(Date.now() + 25 * 3600_000));
   await page.getByRole('button', { name: /返回发现/ }).click();
   await expect(page.getByRole('button', { name: '换一批推荐角色', exact: true })).toBeVisible();
   await expect
@@ -719,6 +911,11 @@ test('@roleplay @lobby-rotation 超过24小时试聊返回仍保原批，新打�
     )
     .toBe(first.character_ids[0]);
   expect((await preview.state()).lobby.batches_created).toBe(1);
+  expect(
+    (await preview.state()).lobby.actions
+      .slice(actionsBeforeReturn)
+      .every((entry) => entry.action === 'resume')
+  ).toBe(true);
   await page.reload();
   await expect.poll(async () => (await preview.state()).lobby.batches_created).toBe(2);
   const next = (await preview.state()).lobby.current!;
@@ -813,6 +1010,80 @@ test('@roleplay @lobby-rotation 下架只移除对应卡，其他卡和金框资
   expect((await preview.state()).lobby.batches_created).toBe(1);
 });
 
+test('@roleplay @lobby-rotation 深处角色试聊后还原原卡的屏幕位置', async ({ page, preview }) => {
+  await preview.scenario('lobby-rotation');
+  await selectColdRecommendation(page);
+  const completedOpens = new Set<string>();
+  const repeatedSuccessfulOpens: string[] = [];
+  const events: { kind: string; at: number; id: string; phase: string; status?: number }[] = [];
+  let phase = 'cold';
+  const isBatchRequest = (url: string) =>
+    new URL(url).pathname === '/api/characters/recommendation';
+  page.on('request', (r) => {
+    if (!isBatchRequest(r.url()) || r.method() !== 'POST') return;
+    const { request_id, action } = r.postDataJSON();
+    events.push({ kind: action, at: Date.now(), id: request_id, phase });
+    if (action === 'open' && completedOpens.has(request_id))
+      repeatedSuccessfulOpens.push(request_id);
+  });
+  page.on('response', async (r) => {
+    if (!isBatchRequest(r.url()) || r.request().method() !== 'POST') return;
+    const { request_id, action } = r.request().postDataJSON();
+    if (action === 'open' && r.ok() && !(await r.finished())) completedOpens.add(request_id);
+    events.push({ kind: 'response', at: Date.now(), id: request_id, phase, status: r.status() });
+  });
+  await page.goto('/characters');
+  const card = page.getByRole('button', { name: '查看 故事旅人 16 的详情', exact: true });
+  await expect
+    .poll(async () => {
+      if (await card.count()) return true;
+      await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+      return false;
+    })
+    .toBe(true);
+  await card.evaluate((el) => el.scrollIntoView({ block: 'center', behavior: 'instant' }));
+  await expect(card).toBeInViewport();
+  const beforeY = await page.evaluate(() => scrollY);
+  expect(beforeY).toBeGreaterThan(300);
+  const batch = (await preview.state()).lobby;
+  phase = 'entering chat';
+  const top = await clickAndReadScreenY(card);
+  await page.getByRole('button', { name: /继续对话|开始对话|开始聊天|接着聊/ }).click();
+  await expect(page.getByRole('textbox', { name: '输入消息' })).toBeVisible();
+  const saved = await page.evaluate(() => {
+    const s = JSON.parse(sessionStorage.getItem('miniapp:lobby-return:v2:local-browser') ?? 'null');
+    return s && { top: s.anchorViewportTop, y: s.scrollY };
+  });
+  phase = 'return';
+  let returnBatchReads = 0;
+  page.on('request', (r) => {
+    if (r.method() === 'POST' && new URL(r.url()).pathname === '/api/characters/recommendation')
+      returnBatchReads++;
+  });
+  await page.getByRole('button', { name: /返回发现/ }).click();
+  await expect(card).toBeVisible();
+  await test.info().attach('anchor-location.json', {
+    body: JSON.stringify({ pointerDown: top, saved, restored: (await card.boundingBox())?.y }),
+    contentType: 'application/json',
+  });
+  await expectStableScreenY(card, top);
+  const settled = (await card.boundingBox())!.y;
+  await test.info().attach('anchor-settled.json', {
+    body: JSON.stringify({ pointerDown: top, saved, settled, delta: Math.abs(settled - top) }),
+    contentType: 'application/json',
+  });
+  expect(await page.evaluate(() => scrollY)).toBeGreaterThan(300);
+  const restored = (await preview.state()).lobby;
+  expect(restored.current!.batch_id).toBe(batch.current!.batch_id);
+  expect(returnBatchReads).toBe(0);
+  await test.info().attach('batch-requests.json', {
+    body: JSON.stringify(events),
+    contentType: 'application/json',
+  });
+  expect(completedOpens.size).toBeGreaterThan(0);
+  expect(repeatedSuccessfulOpens).toEqual([]);
+});
+
 test('@roleplay @lobby-rotation 更换账号不读取上个账号的个人批次缓存', async ({
   page,
   preview,
@@ -869,103 +1140,196 @@ test('@roleplay @lobby-rotation 撤回失效不误报成功，也不恢复旧位
     .toBe(current.character_ids[0]);
 });
 
-test('@roleplay @lobby-rotation 新批次资料未到齐时不先画残缺卡片再重排', async ({
+test('@roleplay @lobby-rotation 冷推荐只取首12张，继续下滑再读取尾部', async ({
   page,
   preview,
-  request,
 }) => {
   await preview.scenario('lobby-rotation');
-  const catalog = (await (await request.get(`${previewApiUrl}/api/characters`)).json()).data;
-  await page.addInitScript(
-    (cached) => {
-      localStorage.setItem(
-        'miniapp:lobby-characters:v4:recommended',
-        JSON.stringify({ savedAt: Date.now(), data: cached })
-      );
-    },
-    { characters: catalog.characters.slice(4) }
+  await selectColdRecommendation(page);
+  let fullReads = 0;
+  page.on('request', (request) => {
+    const u = new URL(request.url());
+    if (u.pathname === '/api/lobby-characters' && !u.searchParams.has('limit')) fullReads++;
+  });
+  const firstBatch = page.waitForResponse(
+    (r) =>
+      r.request().method() === 'POST' &&
+      new URL(r.url()).pathname === '/api/characters/recommendation'
   );
-  let release!: () => void;
-  const held = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  await page.route('**/api/lobby-characters?sort=recommended', async (route) => {
-    await held;
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ success: true, data: catalog }),
-    });
-  });
-  await openRecommendedLobby(page);
-  await expect.poll(async () => (await preview.state()).lobby.batches_created).toBe(1);
-  await expect(page.locator('[data-lobby-character-id]')).toHaveCount(0);
-  release();
-  await expect(page.getByRole('button', { name: '换一批推荐角色', exact: true })).toBeVisible();
-  await expect
-    .poll(() =>
-      page.locator('[data-lobby-character-id]').first().getAttribute('data-lobby-character-id')
-    )
-    .toBe(catalog.characters[0].id);
+  await page.goto('/characters');
+  const data = (await (await firstBatch).json()).data;
+  expect(data.head_cards.map((card: { id: string }) => card.id)).toEqual(data.head_ids);
+  expect(data.head_cards).toHaveLength(12);
+  await expect(page.locator('[data-lobby-character-id]').first()).toHaveAttribute(
+    'data-lobby-character-id',
+    data.head_ids[0]
+  );
+  expect(fullReads).toBe(0);
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await expect.poll(() => fullReads).toBe(1);
+  await expect(
+    page.getByRole('button', { name: '查看 故事旅人 13 的详情', exact: true })
+  ).toBeVisible();
+  expect((await preview.state()).lobby.batches_created).toBe(1);
 });
 
-test('@roleplay @lobby-rotation 换批缺新卡资料时保旧，资料失败后同请求再试', async ({
+test('@roleplay @lobby-rotation 公共前12先展示后，个人批次迟到不替换当前列表', async ({
   page,
   preview,
   request,
 }) => {
   await preview.scenario('lobby-rotation');
-  const catalog = (await (await request.get(`${previewApiUrl}/api/characters`)).json()).data;
-  let phase: 'initial' | 'fail' | 'ready' = 'initial';
-  await page.route('**/api/lobby-characters?sort=recommended', async (route) => {
-    if (phase === 'fail') {
-      await route.fulfill({
-        status: 503,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          success: false,
-          error: { code: 'UNAVAILABLE', message: 'fixture catalogue unavailable' },
-        }),
-      });
+  await page.clock.install();
+  await selectColdRecommendation(page);
+  const post = (action: string, expected_batch_id?: string) =>
+    request.post(previewApiUrl + '/api/characters/recommendation', {
+      data: { action, request_id: crypto.randomUUID(), expected_batch_id },
+    });
+  const first = (await (await post('open')).json()).data;
+  const other = (await (await post('refresh', first.batch_id)).json()).data;
+  expect(other.head_ids[0]).not.toBe(IDS.character);
+  let changedPublic = false;
+  await page.route('**/api/lobby-characters?sort=recommended&limit=12', async (route) => {
+    if (!changedPublic) {
+      await route.continue();
       return;
     }
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        success: true,
-        data: {
-          characters: phase === 'initial' ? catalog.characters.slice(0, 12) : catalog.characters,
-        },
-      }),
+    const catalogue = (await (await request.get(previewApiUrl + '/api/characters')).json()).data
+      .characters;
+    await route.fulfill({ json: { success: true, data: { characters: catalogue.slice(12, 24) } } });
+  });
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route('**/api/characters/recommendation', async (route) => {
+    await gate;
+    await route.continue();
+  });
+  const reads: string[] = [];
+  page.on('request', (r) => {
+    const u = new URL(r.url());
+    if (u.pathname === '/api/lobby-characters') reads.push(u.search);
+  });
+  await page.goto('/characters');
+  const anchor = page.locator('[data-lobby-character-id]').first();
+  try {
+    await expect(anchor).toHaveAttribute('data-lobby-character-id', IDS.character);
+    expect(reads.length).toBeGreaterThan(0);
+    expect(reads.every((search) => new URLSearchParams(search).get('limit') === '12')).toBe(true);
+  } finally {
+    release();
+  }
+  await expect.poll(async () => (await preview.state()).lobby.actions.length).toBe(3);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          JSON.parse(
+            localStorage.getItem('miniapp:lobby-recommendation:v1:local-browser') ?? 'null'
+          )?.data?.batch_id
+      )
+    )
+    .toBe(other.batch_id);
+  await expect(anchor).toHaveAttribute('data-lobby-character-id', IDS.character);
+  const sixth = page.getByRole('button', { name: '查看 故事旅人 6 的详情', exact: true });
+  await sixth.evaluate((el) => el.scrollIntoView({ block: 'center', behavior: 'instant' }));
+  expect(await page.evaluate(() => scrollY)).toBeGreaterThan(100);
+  const top = await clickAndReadScreenY(sixth);
+  await page.getByRole('button', { name: /继续对话|开始对话|开始聊天|接着聊/ }).click();
+  await expect(page.getByRole('textbox', { name: '输入消息' })).toBeVisible();
+  changedPublic = true;
+  // 同一聊天文档停留超过 QueryClient 的 5 分钟 GC，保留本次浏览的返回意图。
+  await page.clock.fastForward(6 * 60_000);
+  await page.getByRole('button', { name: /返回发现/ }).click();
+  await expect(sixth).toBeVisible();
+  await expectStableScreenY(sixth, top);
+  await expect(anchor).toHaveAttribute('data-lobby-character-id', IDS.character);
+  await page.waitForTimeout(1250); // 超过真实曝光观察窗口，确认公共恢复不会误报给个人批次。
+  expect((await preview.state()).lobby.exposures).toHaveLength(0);
+});
+
+for (const removeCount of [1, 12]) {
+  test(`@roleplay @lobby-rotation 公共返回校准移除${removeCount}张后仍能继续找角色`, async ({
+    page,
+    preview,
+    request,
+  }) => {
+    await preview.scenario('lobby-rotation');
+    await selectColdRecommendation(page);
+    await page.clock.install();
+    await page.route('**/api/characters/recommendation', (route) =>
+      route.fulfill({
+        status: 503,
+        json: { success: false, error: { code: 'UNAVAILABLE', message: '本地模拟暂不可用' } },
+      })
+    );
+    const checks: string[] = [];
+    page.on('request', (r) => {
+      const u = new URL(r.url());
+      if (u.pathname === '/api/lobby-characters' && u.searchParams.has('ids'))
+        checks.push(u.search);
     });
+    await page.goto('/characters');
+    const first = page.getByRole('button', { name: '查看 林间旅人 的详情', exact: true });
+    await expect(first).toBeVisible();
+    const ids = (
+      await (await request.get(previewApiUrl + '/api/characters?sort=recommended&limit=12')).json()
+    ).data.characters.map((card: { id: string }) => card.id);
+    await first.click();
+    await page.getByRole('button', { name: /继续对话|开始对话|开始聊天|接着聊/ }).click();
+    await expect(page.getByRole('textbox', { name: '输入消息' })).toBeVisible();
+    for (const id of ids.slice(0, removeCount)) {
+      await request.post(previewApiUrl + '/__preview/lobby', { data: { remove_character_id: id } });
+    }
+    await page.clock.setSystemTime(new Date(Date.now() + 31 * 60_000));
+    await page.getByRole('button', { name: /返回发现/ }).click();
+    const cards = page.locator('[data-lobby-character-id]');
+    await expect.poll(() => checks.length).toBeGreaterThan(0);
+    await expect(first).toHaveCount(0);
+    if (removeCount === 12) {
+      await expect(cards.first()).toContainText('故事旅人 13');
+    } else {
+      await expect(cards.first()).toContainText('故事旅人 2');
+      await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+      await expect(
+        page.getByRole('button', { name: '查看 故事旅人 13 的详情', exact: true })
+      ).toBeVisible();
+    }
+  });
+}
+
+test('@roleplay @lobby-rotation 换批缺新卡资料时保旧，资料恢复后同请求再试', async ({
+  page,
+  preview,
+}) => {
+  await preview.scenario('lobby-rotation');
+  let damage = false;
+  await page.route('**/api/characters/recommendation', async (route) => {
+    const response = await route.fetch();
+    if (damage && route.request().postDataJSON()?.action === 'refresh') {
+      const dto = await response.json();
+      dto.data.head_cards = dto.data.head_cards.slice(1);
+      await route.fulfill({ response, json: dto });
+    } else {
+      await route.fulfill({ response });
+    }
   });
   await openRecommendedLobby(page);
   const rotate = page.getByRole('button', { name: '换一批推荐角色', exact: true });
-  await expect(rotate).toBeVisible();
-  phase = 'fail';
+  const anchor = page.locator('[data-lobby-character-id]').first();
+  await expect(anchor).toHaveAttribute('data-lobby-character-id', IDS.character);
+  damage = true;
   await rotate.click();
   await expect(page.getByText('没换成功，原来的还在', { exact: true })).toBeVisible();
-  await expect
-    .poll(() =>
-      page.locator('[data-lobby-character-id]').first().getAttribute('data-lobby-character-id')
-    )
-    .toBe(catalog.characters[0].id);
-  phase = 'ready';
+  await expect(anchor).toHaveAttribute('data-lobby-character-id', IDS.character);
+  damage = false;
   await rotate.click();
-  await expect
-    .poll(() =>
-      page.locator('[data-lobby-character-id]').first().getAttribute('data-lobby-character-id')
-    )
-    .toBe(catalog.characters[12].id);
+  await expect(anchor).not.toHaveAttribute('data-lobby-character-id', IDS.character);
   const state = (await preview.state()).lobby;
   expect(state.batches_created).toBe(2);
   expect(
-    new Set(
-      state.actions
-        .filter((action) => action.action === 'refresh')
-        .map((action) => action.request_id)
-    ).size
+    new Set(state.actions.filter((a) => a.action === 'refresh').map((a) => a.request_id)).size
   ).toBe(1);
 });
 
@@ -1008,4 +1372,123 @@ test('@roleplay @public-author-space @layout 浏览作者的公开作品、翻�
   await expect(second).toBeVisible();
   await page.getByRole('button', { name: '返回', exact: true }).click();
   await expect(page).toHaveURL(/\/characters$/);
+});
+
+test('@lobby-perf 冷推荐与试聊返回的可点时刻及传输量', async ({
+  page,
+  preview,
+  request,
+}, testInfo) => {
+  test.skip(process.env.ST_UI_MEASURE_LOBBY !== '1', '显式开启性能测量，首次重复只做预热');
+  test.setTimeout(150_000);
+  await preview.scenario('lobby-rotation');
+  await request.post(previewApiUrl + '/__preview/reset', {
+    data: { scenario: 'lobby-rotation', lobby_card_count: 662 },
+  });
+  await selectColdRecommendation(page);
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Network.enable');
+  await cdp.send('Network.emulateNetworkConditionsByRule', {
+    offline: false,
+    matchedNetworkConditions: [previewAppUrl, previewApiUrl].map((origin) => ({
+      urlPattern: origin + '/api/*',
+      latency: 80,
+      downloadThroughput: 262144,
+      uploadThroughput: 262144,
+    })),
+  });
+  type MeasurementPhase = 'cold' | 'chat' | 'return';
+  let phase: MeasurementPhase = 'cold';
+  const reads = new Map<
+    string,
+    {
+      phase: MeasurementPhase;
+      rank: boolean;
+      url: string;
+      decodedBytes: number;
+      transferredBytes: number;
+    }
+  >();
+  cdp.on('Network.requestWillBeSent', ({ requestId, request }) => {
+    const url = new URL(request.url);
+    if (request.method === 'OPTIONS' || !url.pathname.startsWith('/api/')) return;
+    const rank =
+      url.pathname === '/api/lobby-characters' || url.pathname === '/api/characters/recommendation';
+    reads.set(requestId, {
+      phase,
+      rank,
+      url: url.pathname + url.search,
+      decodedBytes: 0,
+      transferredBytes: 0,
+    });
+  });
+  cdp.on('Network.dataReceived', ({ requestId, dataLength }) => {
+    const entry = reads.get(requestId);
+    if (entry) entry.decodedBytes += dataLength;
+  });
+  cdp.on('Network.loadingFinished', ({ requestId, encodedDataLength }) => {
+    const entry = reads.get(requestId);
+    if (entry) entry.transferredBytes = encodedDataLength;
+  });
+  const waitForCard = () =>
+    page.waitForFunction(
+      () => {
+        const card = document.querySelector<HTMLButtonElement>(
+          '[data-lobby-character-id] button[aria-label^="查看 "]'
+        );
+        if (location.pathname !== '/characters' || !card || card.disabled) return false;
+        const b = card.getBoundingClientRect();
+        return (
+          b.width > 0 &&
+          getComputedStyle(card).visibility === 'visible' &&
+          card.contains(
+            document.elementFromPoint(b.x + b.width / 2, b.y + Math.min(b.height / 2, 80))
+          )
+        );
+      },
+      undefined,
+      { polling: 'raf', timeout: 90000 }
+    );
+  const summarize = (ms: number) => {
+    const all = [...reads.values()].filter((x) => x.phase === phase);
+    const rank = all.filter((x) => x.rank);
+    return {
+      ms,
+      apiRequests: all.length,
+      rankingRequests: rank.length,
+      decodedBytes: rank.reduce((n, x) => n + x.decodedBytes, 0),
+      transferredBytes: rank.reduce((n, x) => n + x.transferredBytes, 0),
+      rankingPaths: rank.map((x) => x.url),
+      otherApiPaths: all.filter((x) => !x.rank).map((x) => x.url.split('?')[0]),
+    };
+  };
+  const start = Date.now();
+  await page.goto('/characters', { waitUntil: 'commit' });
+  await waitForCard();
+  const coldMs = Date.now() - start;
+  const anchor = page.locator('[data-lobby-character-id]').first();
+  const id = await anchor.getAttribute('data-lobby-character-id');
+  expect(id).toBe(IDS.character);
+  // 让可点后已发出的后台读也计入各阶段，首卡耗时单独记录。
+  await page.waitForTimeout(700);
+  const cold = summarize(coldMs);
+  phase = 'chat';
+  await page.getByRole('button', { name: '查看 林间旅人 的详情', exact: true }).click();
+  await page.getByRole('button', { name: /继续对话|开始对话|开始聊天|接着聊/ }).click();
+  await expect(page.getByRole('textbox', { name: '输入消息' })).toBeVisible();
+  const back = page.getByRole('button', { name: /返回发现/ });
+  await back.click({ trial: true });
+  phase = 'return';
+  const returnStart = Date.now();
+  await back.click();
+  await waitForCard();
+  const returnMs = Date.now() - returnStart;
+  await expect(anchor).toHaveAttribute('data-lobby-character-id', id!);
+  await page.waitForTimeout(700);
+  const metrics = { sample: testInfo.repeatEachIndex, cold, return: summarize(returnMs) };
+  await testInfo.attach('lobby-perf.json', {
+    body: JSON.stringify(metrics),
+    contentType: 'application/json',
+  });
+  console.log('lobby-perf', JSON.stringify(metrics));
 });

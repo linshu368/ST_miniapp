@@ -1,6 +1,11 @@
 'use client';
 
-import type { LobbySort } from '@miniapp/shared';
+import {
+  CharacterSummarySchema,
+  LOBBY_ROTATION_HEAD_SIZE,
+  type CharacterSummary,
+  type LobbySort,
+} from '@miniapp/shared';
 import { lobbyViewerScope } from './lobby-recommendation-state';
 
 const SNAPSHOT_VERSION = 2;
@@ -26,6 +31,7 @@ export interface LobbyReturnSnapshot {
   scrollY: number;
   viewportWidth: number;
   recommendationBatchId?: string | null;
+  publicHead?: { cards: CharacterSummary[]; checkedAt: number; hasTail?: boolean };
 }
 
 export interface LobbyReturnSnapshotInput {
@@ -39,6 +45,7 @@ export interface LobbyReturnSnapshotInput {
   scrollY: number;
   viewportWidth: number;
   recommendationBatchId?: string | null;
+  publicHead?: { cards: CharacterSummary[]; checkedAt: number; hasTail?: boolean };
 }
 
 function getDocumentToken(): string | null {
@@ -89,11 +96,23 @@ function validateSnapshot(value: unknown): LobbyReturnSnapshot | null {
     return null;
   }
 
+  // Only the 12 summaries actually displayed in a public fallback are saved for an exact return.
+  const head = candidate.publicHead as
+    | { cards?: unknown; checkedAt?: unknown; hasTail?: unknown }
+    | undefined;
+  const checkedAt = toFiniteNumber(head?.checkedAt);
+  const publicCards =
+    checkedAt &&
+    CharacterSummarySchema.array().max(LOBBY_ROTATION_HEAD_SIZE).safeParse(head?.cards);
   return {
     version: SNAPSHOT_VERSION,
     viewerScope: lobbyViewerScope(),
     documentToken: token,
     createdAt,
+    publicHead:
+      publicCards && publicCards.success && checkedAt
+        ? { cards: publicCards.data, checkedAt, hasTail: head?.hasTail === true }
+        : undefined,
     favoritesOnly: candidate.favoritesOnly === true,
     sort: candidate.sort,
     query: candidate.query,

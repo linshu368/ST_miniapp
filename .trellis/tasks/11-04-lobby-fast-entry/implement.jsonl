@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/frontend/app/index.md", "reason": "大厅热路径、数据库与移动端验收边界"}
+{"file": ".trellis/spec/backend/app/index.md", "reason": "大厅热路径、数据库与移动端验收边界"}
+{"file": ".trellis/spec/shared/contracts/index.md", "reason": "大厅热路径、数据库与移动端验收边界"}
+{"file": ".trellis/spec/database/supabase/index.md", "reason": "大厅热路径、数据库与移动端验收边界"}
+{"file": ".trellis/spec/database/supabase/schema-and-object-conventions.md", "reason": "大厅热路径、数据库与移动端验收边界"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "大厅热路径、数据库与移动端验收边界"}
+{"file": "packages/ui-tests/README.md", "reason": "大厅热路径、数据库与移动端验收边界"}

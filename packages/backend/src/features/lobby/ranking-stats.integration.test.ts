@@ -4,10 +4,14 @@ import { readFileSync } from 'node:fs';
 import { Prisma } from '@prisma/client';
 import { DEFAULT_LOBBY_RANKING_PARAMS, DEFAULT_LOBBY_ROTATION_CONFIG } from '@miniapp/shared';
 import { Client } from 'pg';
+import pino from 'pino';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // This suite owns a disposable local database. Never load app configuration or a remote URL.
 vi.mock('../../lib/db.js', () => ({ prisma: {} }));
+vi.mock('./ranking-params.js', () => ({ resolveLobbyRankingParams: vi.fn() }));
+import { resolveLobbyRankingParams } from './ranking-params.js';
+import { runLobbyRankingRefresh } from '../../lib/lobby-ranking-refresh-job.js';
 import {
   computeRawCardStats,
   persistRankingScores,
@@ -16,6 +20,8 @@ import {
 import { computeRankingScores } from './ranking-score.js';
 import {
   updateRecommendation,
+  readLobbyHeadRows,
+  readReusableRecommendation,
   recordRecommendationExposures,
   type RecommendationDatabase,
   type RecommendationDbClient,
@@ -175,6 +181,15 @@ beforeAll(async () => {
       window_days integer,min_users integer,computed_at timestamptz
     );
   `);
+  const checkpointSql = readFileSync(
+    new URL(
+      '../../../../shared/migrations/20261104_lobby_ranking_refresh_state.sql',
+      import.meta.url
+    ),
+    'utf8'
+  );
+  await client.query(checkpointSql);
+  await client.query(checkpointSql);
   await client.query(migration());
   await client.query(migration()); // Idempotent replay must preserve the delegated validator and empty evidence.
   const existing = (
@@ -211,6 +226,126 @@ afterAll(async () => {
   } catch {
     /* already removed */
   }
+});
+
+describe('评分刷新去重（本地 PG17）', () => {
+  it('只有成功提交才开始24小时窗口，配置、锁竞争和事务失败走正确分支', async () => {
+    const url = `postgresql://postgres@127.0.0.1:${databasePort}/postgres`;
+    const seed = new Client({ connectionString: url });
+    const card = randomUUID();
+    const seenEvents: string[] = [];
+    const log = pino(
+      {},
+      {
+        write(line) {
+          seenEvents.push(JSON.parse(line).event);
+        },
+      }
+    );
+    const run = async (expected: string) => {
+      seenEvents.length = 0;
+      await runLobbyRankingRefresh(log);
+      expect(seenEvents).toEqual([expected]);
+    };
+    await seed.connect();
+    vi.stubEnv('DIRECT_URL', url);
+    const config = { params, version: 1, degraded: false };
+    vi.mocked(resolveLobbyRankingParams).mockResolvedValue(config);
+    try {
+      await seed.query('INSERT INTO app_core.characters VALUES ($1)', [card]);
+      await seed.query(
+        `INSERT INTO experience.chat_history (id,user_id,character_id,created_at,status,user_input)
+        VALUES ($1,$2,$3,now(),'failed','synthetic')`,
+        [randomUUID(), randomUUID(), card]
+      );
+      await seed.query('SELECT pg_advisory_lock(740074)');
+      await run('lobby_ranking.skipped_locked');
+      await seed.query('SELECT pg_advisory_unlock(740074)');
+      await run('lobby_ranking.completed');
+      const computed = async () =>
+        (
+          await seed.query(
+            'SELECT computed_at::text AS at FROM miniapp_features.character_ranking_scores WHERE character_id=$1',
+            [card]
+          )
+        ).rows[0].at;
+      const initial = await computed();
+      // A change only to recommendation presentation must not invalidate global quality.
+      vi.mocked(resolveLobbyRankingParams).mockResolvedValue({
+        ...config,
+        version: 2,
+        params: { ...params, rotation: DEFAULT_LOBBY_ROTATION_CONFIG },
+      });
+      await run('lobby_ranking.skipped_fresh');
+      expect(await computed()).toBe(initial);
+      vi.mocked(resolveLobbyRankingParams).mockResolvedValue({
+        ...config,
+        version: 3,
+        params: { ...params, turn_cap: params.turn_cap + 1 },
+      });
+      // Fail *after* scores are written to make a partial commit detectable.
+      await seed.query(`CREATE FUNCTION miniapp_features.fail_test_checkpoint() RETURNS trigger
+        LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'synthetic checkpoint failure'; END $$;
+        CREATE TRIGGER reject_marker BEFORE INSERT OR UPDATE ON miniapp_features.lobby_ranking_refresh_state
+        FOR EACH ROW EXECUTE FUNCTION miniapp_features.fail_test_checkpoint()`);
+      await run('lobby_ranking.failed');
+      expect(await computed()).toBe(initial);
+      await seed.query(
+        'DROP TRIGGER reject_marker ON miniapp_features.lobby_ranking_refresh_state'
+      );
+      await run('lobby_ranking.completed');
+      expect(await computed()).not.toBe(initial);
+      await run('lobby_ranking.skipped_fresh');
+      await seed.query(
+        "UPDATE miniapp_features.lobby_ranking_refresh_state SET completed_at=now()-interval '24 hours'"
+      );
+      await run('lobby_ranking.completed');
+      if (process.env.ST_LOBBY_SCORE_BENCHMARK === '1') {
+        // Compare an expired checkpoint and an immediate restart on identical data.
+        await seed.query(
+          `INSERT INTO experience.chat_history
+          (id,user_id,character_id,created_at,status,user_input,assistant_reply)
+          SELECT gen_random_uuid(), md5((n % 500)::text)::uuid, $1::uuid,
+            now() - n % 96 * interval '1 hour', 'success', 'synthetic', 'synthetic'
+          FROM generate_series(1,40000) n`,
+          [card]
+        );
+        const samples = [];
+        for (let i = 0; i < 5; i++) {
+          await seed.query(
+            "UPDATE miniapp_features.lobby_ranking_refresh_state SET completed_at=now()-interval '25 hours'"
+          );
+          const start = performance.now();
+          await run('lobby_ranking.completed');
+          const first = performance.now();
+          await run('lobby_ranking.skipped_fresh');
+          samples.push({
+            recomputedMs: Math.round(first - start),
+            reusedMs: Math.round(performance.now() - first),
+          });
+        }
+        process.stdout.write(JSON.stringify({ fixtureTurns: 40001, samples }) + '\n');
+      }
+      const grants = await seed.query(`SELECT relrowsecurity AS rls,
+        has_table_privilege('authenticated',oid,'SELECT') AS authed,
+        has_table_privilege('anon',oid,'SELECT') AS anon FROM pg_class
+        WHERE oid='miniapp_features.lobby_ranking_refresh_state'::regclass`);
+      expect(grants.rows).toEqual([{ rls: true, authed: false, anon: false }]);
+    } finally {
+      vi.unstubAllEnvs();
+      await seed.query(
+        'DROP TRIGGER IF EXISTS reject_marker ON miniapp_features.lobby_ranking_refresh_state'
+      );
+      await seed.query('DELETE FROM miniapp_features.lobby_ranking_refresh_state');
+      await seed.query(
+        'DELETE FROM miniapp_features.character_ranking_scores WHERE character_id=$1',
+        [card]
+      );
+      await seed.query('DELETE FROM experience.chat_history WHERE character_id=$1', [card]);
+      await seed.query('DELETE FROM app_core.characters WHERE id=$1', [card]);
+      await seed.end();
+    }
+  }, 60_000);
 });
 
 describe('角色评分的平台资历门槛（本地 PG17）', () => {
@@ -531,6 +666,66 @@ describe('推荐批次真实PG迁移、权限和并发', () => {
       `SELECT admin.validate_managed_config_value('lobby_ranking_params',$1::jsonb,NULL)`,
       [JSON.stringify({ ...params, rotation: rotationConfig })]
     );
+  });
+
+  it('只读打开复用已存批次，到期才走原事务；试聊返回可恢复上一批', async () => {
+    const user = randomUUID(),
+      other = randomUUID();
+    await client.query('INSERT INTO app_core.users VALUES ($1),($2)', [user, other]);
+    const first = await updateRecommendation(
+      recommendationDb,
+      user,
+      { action: 'open', request_id: randomUUID() },
+      recommendationOptions()
+    );
+    const open = { action: 'open' as const, request_id: randomUUID() };
+    const atExpiry = new Date(now + 24 * hour);
+    expect((await readReusableRecommendation(db, user, open, new Date(now)))?.batch_id).toBe(
+      first.batch_id
+    );
+    expect(await readReusableRecommendation(db, other, open, new Date(now))).toBeNull();
+    expect(await readReusableRecommendation(db, user, open, atExpiry)).toBeNull();
+    await updateRecommendation(recommendationDb, user, open, recommendationOptions(+atExpiry));
+    const resume = {
+      action: 'resume' as const,
+      request_id: randomUUID(),
+      expected_batch_id: first.batch_id,
+    };
+    expect((await readReusableRecommendation(db, user, resume, atExpiry))?.character_ids).toEqual(
+      first.character_ids
+    );
+    expect((await readReusableRecommendation(db, user, resume, atExpiry))?.batch_id).toBe(
+      first.batch_id
+    );
+  });
+
+  it('首屏按批次顺序补满12张；私密、下架、未审核和测试卡连摘要也不传', async () => {
+    const ids = Array.from({ length: 18 }, () => randomUUID());
+    await client.query(`
+      ALTER TABLE app_core.characters ADD COLUMN is_test boolean NOT NULL DEFAULT false,
+        ADD COLUMN enabled boolean NOT NULL DEFAULT true, ADD COLUMN archived_at timestamptz,
+        ADD COLUMN name text NOT NULL DEFAULT '', ADD COLUMN description text NOT NULL DEFAULT '',
+        ADD COLUMN avatar_url text NOT NULL DEFAULT '', ADD COLUMN tags jsonb NOT NULL DEFAULT '[]',
+        ADD COLUMN creator text NOT NULL DEFAULT '';
+      CREATE TABLE app_core.character_creations(character_id uuid PRIMARY KEY, state text, visibility text, approved_revision int);
+    `);
+    const discovery = readFileSync(
+      new URL('../../../../shared/migrations/20261030_creator_characters.sql', import.meta.url),
+      'utf8'
+    ).match(/CREATE FUNCTION app_core\.can_discover_character[\s\S]+?\$\$;/)?.[0];
+    if (!discovery) throw new Error('Missing discovery predicate');
+    await client.query(discovery);
+    await client.query('INSERT INTO app_core.characters(id) SELECT unnest($1::uuid[])', [ids]);
+    await client.query('UPDATE app_core.characters SET is_test=true WHERE id=$1', [ids[0]]);
+    await client.query('UPDATE app_core.characters SET archived_at=now() WHERE id=$1', [ids[1]]);
+    await client.query(
+      `INSERT INTO app_core.character_creations VALUES
+      ($1,'ready','private',1),($2,'ready','public',NULL),($3,'ready','public',1)`,
+      [ids[2], ids[3], ids[4]]
+    );
+    const visible = await readLobbyHeadRows(db, ids);
+    expect(visible.map((row) => row.id)).toEqual(ids.slice(4, 16));
+    expect(await readLobbyHeadRows(db, ids.slice(0, 5))).toHaveLength(1);
   });
 
   it('满24h仅open更新，resume保现场，CAS缺失/旧值和重复请求不额外换批', async () => {

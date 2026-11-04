@@ -5,8 +5,8 @@ scope: backend
 category: business
 status: active
 owners: [backend]
-last_verified_task: .trellis/tasks/11-02-lobby-quality-rotation/
-last_verified_at: 2026-11-02
+last_verified_task: .trellis/tasks/11-04-lobby-fast-entry/
+last_verified_at: 2026-11-04
 ---
 
 # 角色卡、大厅与收藏
@@ -82,3 +82,7 @@ GET /api/creator/analytics 复用Telegram鉴权，owner只来自服务器，sect
 ### 心愿回应（本地候选）
 
 character-wishes routes 使用服务端认证身份，repository 调 miniapp_features 的限定RPC。所有心愿只允许public，契约和DB同时拒绝private；公开结果不含作者身份。关联资格为本人公开且有有效审核版本，展示app_core.characters已发布快照。回应与notifications事务提交并business_key去重。creator publish仅在成功后附加可选关联；关联失败不改写发布成功事实，不重做审核或计费。
+
+## 推荐首屏与评分去重
+
+open/resume复用已保存批次并校验当前可见性；创建、换批及撤回保留锁内复查。首屏可选择附带最多12张卡片摘要。评分任务取得专用锁后检查单行成功标记，仅在缺失、规则变化或距离上次完成已满24小时时重算。

@@ -4,7 +4,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const userId = '20000000-0000-4000-8000-000000000001';
 const batchId = '30000000-0000-4000-8000-000000000001';
 const cardId = '10000000-0000-4000-8000-000000000001';
-const mocks = vi.hoisted(() => ({ denied: false, get: vi.fn(), exposures: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  denied: false,
+  get: vi.fn(),
+  exposures: vi.fn(),
+  headCards: vi.fn(),
+}));
 vi.mock('../middleware/auth.js', () => ({
   requireTelegramAuth: async (request: FastifyRequest, reply: FastifyReply) => {
     if (mocks.denied) return reply.code(401).send({ error: 'unauthorized' });
@@ -16,6 +21,7 @@ vi.mock('../features/lobby/recommendation.js', () => ({
   getLobbyRecommendation: mocks.get,
   reportLobbyRecommendationExposures: mocks.exposures,
 }));
+vi.mock('./characters.js', () => ({ loadLobbyHeadCards: mocks.headCards }));
 import routes from './lobby-recommendation.js';
 
 beforeEach(() => {
@@ -71,6 +77,36 @@ describe('authenticated recommendation ordering', () => {
       expect.any(Object)
     );
   });
+  it('only opt-in requests load summaries and matching head IDs, dropping unavailable rows', async () => {
+    const cards = [
+      {
+        id: cardId,
+        name: 'test',
+        description: '',
+        avatar_url: '',
+        personality_tags: [],
+        author_name: '',
+        is_featured: false,
+      },
+    ];
+    mocks.get.mockImplementation(async () => ({
+      enabled: true,
+      batch_id: batchId,
+      character_ids: [userId, cardId],
+      head_ids: [userId, cardId],
+    }));
+    const old = await post('', { action: 'open', request_id: batchId });
+    expect(old.json().data.head_cards).toBeUndefined();
+    expect(mocks.headCards).not.toHaveBeenCalled();
+    mocks.headCards.mockResolvedValue(cards);
+    const next = await post('', { action: 'open', request_id: batchId, include_head_cards: true });
+    expect(next.json().data).toMatchObject({
+      head_ids: [cardId],
+      character_ids: [cardId],
+      head_cards: cards,
+    });
+  });
+
   it('rejects unknown actions, caller identity, and oversized exposure batches before storage', async () => {
     expect((await post('', { action: 'delete', request_id: batchId })).statusCode).toBe(400);
     expect(
