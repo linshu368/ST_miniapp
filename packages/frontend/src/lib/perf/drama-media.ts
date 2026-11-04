@@ -430,12 +430,13 @@ export function observeDramaMedia(
       timing.mark('play_resolved');
       timing.mediaEvent('play_resolved', { trigger });
     },
-    rejected(error: unknown, trigger: 'automatic' | 'user' = 'automatic') {
+    rejected(error: unknown, trigger: 'automatic' | 'user' = 'automatic', retrying = false) {
       if (disposed || timing.outcome) return;
       timing.mark('play_rejected');
       timing.mediaEvent('play_rejected', { trigger, error: playError(error) });
       // 手动 play 的拒绝原本只更新 UI，观测不能增加新的业务终态。
-      if (trigger === 'user') return;
+      // A scheduled muted retry remains part of this startup intent.
+      if (trigger === 'user' || retrying) return;
       // AbortError 常来自释放旧 src，不能当作网络错误，更不能污染下一次播放。
       if (error instanceof Error && error.name === 'AbortError') return;
       timing.finish(
