@@ -21,7 +21,6 @@ import {
 import type { CreatePaymentOrderData, PaymentOrder, PaymentType } from '@miniapp/shared';
 import { createLogger } from '../../../lib/logger.js';
 import type { SettlementLogger } from './PaymentSettlement.js';
-import { observePaymentOrderFailed } from './PaymentOrderTelemetry.js';
 import {
   recordPaymentOperationEvent,
   type PaymentEventRecorder,
@@ -187,21 +186,5 @@ export class RechargeUseCase {
       duration_ms: Date.now() - gatewayStartedAt,
       occurred_at: new Date().toISOString(),
     });
-    try {
-      void observePaymentOrderFailed(
-        {
-          orderId: row.id,
-          userId: row.user_id,
-          paymentType: row.payment_type,
-          settledBy: row.settled_by,
-        },
-        log
-      );
-    } catch (telemetryError) {
-      log.sys.error(
-        { event: 'payment.telemetry.failed', err: telemetryError, orderId: row.id },
-        '支付终态事件发送失败'
-      );
-    }
   }
 }

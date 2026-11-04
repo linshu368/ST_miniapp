@@ -263,7 +263,6 @@ describe('deferred tracing', () => {
     expect(sentryTracing.addIntegration).toHaveBeenCalledExactlyOnceWith(integration);
     const filter =
       sentryTracing.browserTracingIntegration.mock.calls[0]![0].shouldCreateSpanForRequest;
-    expect(filter('https://app.posthog.com/flags')).toBe(false);
     expect(filter('https://api.example.test/api/dramas')).toBe(true);
   });
 });

@@ -16,21 +16,6 @@ import {
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { Textarea } from '@/components/ui/textarea';
-import {
-  captureImageCustomPromptOpened,
-  captureImageDescriptionFailed,
-  captureImageDescriptionPresented,
-  captureImageDescriptionRequested,
-  captureImageEntrySelected,
-  captureImageGenerationSubmitFailed,
-  captureImageGenerationSubmitted,
-  captureImagePreviewOpened,
-  captureImageSaveCompleted,
-  captureImageSaveFailed,
-  captureImageSaveRequested,
-  useImageStatusTelemetry,
-  type ImageTelemetryContext,
-} from '@/lib/image-generation/telemetry';
 import { requestTelegramFileDownload } from '@/lib/telegram/hooks';
 import { billingFailureAction, MAIN_WALLET_NOTICE } from '@/lib/vip/presentation';
 
@@ -46,7 +31,6 @@ export interface MessageImageUiState {
   describe: () => Promise<{ draftId: string; prompt: string }>;
   create: (request: CreateMessageImageRequest) => Promise<void>;
   onRecharge: () => void;
-  telemetry: ImageTelemetryContext;
 }
 
 export function ChatMessageImageFooter({
@@ -93,9 +77,6 @@ export function ChatMessageImageFooter({
           true
         );
   const maxChars = image?.config?.limits.max_prompt_chars ?? MAX_IMAGE_PROMPT_CHARS;
-  const telemetry = image?.telemetry ?? null;
-
-  useImageStatusTelemetry(telemetry, latest);
 
   const failureHint = useMemo(() => {
     const code = latest?.error_code;
@@ -137,14 +118,6 @@ export function ChatMessageImageFooter({
   if (!image) return children ? children(null) : null;
 
   const openDefaultFlow = async () => {
-    if (telemetry) {
-      captureImageEntrySelected({
-        context: telemetry,
-        entrySource: 'default',
-        latestStatus: latest?.status,
-        hasReadyImage: Boolean(ready),
-      });
-    }
     // config 尚在加载时不能误判为关闭；真正是否受理由后端继续做权威校验。
     if (image.config?.enabled === false) {
       setError('图片生成功能暂未开放');
@@ -158,39 +131,19 @@ export function ChatMessageImageFooter({
     setSheetOpen(true);
     setError('');
     setStage('describing');
-    const startedAt = Date.now();
-    if (telemetry) captureImageDescriptionRequested(telemetry);
     try {
       const description = await image.describe();
       setDraftId(description.draftId);
       setPrompt(description.prompt);
       setSource('generated');
       setStage('confirming');
-      if (telemetry) {
-        captureImageDescriptionPresented({
-          context: telemetry,
-          attemptId: description.draftId,
-          promptChars: description.prompt.length,
-        });
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : '这次没有写出合适的画面描述');
       setStage('failed');
-      if (telemetry) {
-        captureImageDescriptionFailed({ context: telemetry, error: err, startedAt });
-      }
     }
   };
 
   const openRetryFlow = () => {
-    if (telemetry) {
-      captureImageEntrySelected({
-        context: telemetry,
-        entrySource: 'retry',
-        latestStatus: latest?.status,
-        hasReadyImage: Boolean(ready),
-      });
-    }
     generationStartedRef.current = false;
     setDraftId(null);
     setPrompt(latest?.prompt_cn ?? '');
@@ -201,9 +154,6 @@ export function ChatMessageImageFooter({
   };
 
   const openCustomFlow = () => {
-    if (telemetry) {
-      captureImageCustomPromptOpened({ context: telemetry, entrySource: 'custom_edit' });
-    }
     setSource('custom');
     setError('');
     setStage('confirming');
@@ -212,10 +162,8 @@ export function ChatMessageImageFooter({
   const saveImage = async () => {
     if (!ready?.image_url || saveState === 'saving') return;
 
-    if (telemetry) captureImageSaveRequested({ context: telemetry, attempt: ready });
     setSaveState('saving');
     setSaveError('');
-    const startedAt = Date.now();
     try {
       const pathname = new URL(ready.image_url).pathname;
       const extension = pathname.match(/\.(png|jpe?g|webp)$/i)?.[1]?.toLowerCase() ?? 'png';
@@ -226,22 +174,12 @@ export function ChatMessageImageFooter({
       if (!requested) {
         setSaveState('failed');
         setSaveError('当前 Telegram 版本暂不支持文件下载，请升级后重试');
-        if (telemetry) {
-          captureImageSaveFailed({
-            context: telemetry,
-            attempt: ready,
-            startedAt,
-            failureKind: 'business',
-          });
-        }
         return;
       }
       setSaveState('saved');
-      if (telemetry) captureImageSaveCompleted({ context: telemetry, attempt: ready, startedAt });
     } catch {
       setSaveState('failed');
       setSaveError('图片保存未完成，请重试');
-      if (telemetry) captureImageSaveFailed({ context: telemetry, attempt: ready, startedAt });
     }
   };
 
@@ -258,14 +196,6 @@ export function ChatMessageImageFooter({
     setError('');
     generationStartedRef.current = true;
     setStage('creating');
-    const startedAt = Date.now();
-    if (telemetry) {
-      captureImageGenerationSubmitted({
-        context: telemetry,
-        promptSource: source,
-        promptChars: value.length,
-      });
-    }
     try {
       await image.create({
         ...(draftId ? { draft_id: draftId } : {}),
@@ -278,15 +208,6 @@ export function ChatMessageImageFooter({
       generationStartedRef.current = false;
       const candidate = err as { code?: string; status?: number; message?: string };
       const action = billingFailureAction(candidate.code);
-      if (telemetry) {
-        captureImageGenerationSubmitFailed({
-          context: telemetry,
-          promptSource: source,
-          promptChars: value.length,
-          error: err,
-          startedAt,
-        });
-      }
       if (action.type === 'main_wallet') {
         setStage('failed');
         setError(MAIN_WALLET_NOTICE);
@@ -344,7 +265,6 @@ export function ChatMessageImageFooter({
           onClick={() => {
             setSaveState('idle');
             setSaveError('');
-            if (telemetry) captureImagePreviewOpened({ context: telemetry, attempt: ready });
             setViewerOpen(true);
           }}
           className="group relative ml-2 block w-full max-w-[224px] overflow-hidden rounded-xl border border-border bg-card text-left"

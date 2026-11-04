@@ -151,15 +151,6 @@ export const config = {
     },
   },
 
-  // ── PostHog 服务端 capture（支付终态等非关键事件）──────────────────────────
-  // 这是进程环境密钥，走 config.ts；不是 app_core.runtime_config 的运营配置。
-  // 缺 key / 非法 host 时 adapter no-op，不得影响支付结算。
-  posthog: {
-    apiKey: process.env.POSTHOG_API_KEY || '',
-    host: process.env.POSTHOG_HOST || 'https://us.i.posthog.com',
-    timeoutMs: parseInt(process.env.POSTHOG_TIMEOUT_MS || '3000', 10),
-  },
-
   // 运营平台 CLI 免密登录白名单（逗号分隔邮箱）。为空时 /api/admin/cli/session 关闭。
   adminCli: {
     allowedEmails: (process.env.ADMIN_CLI_ALLOWED_EMAILS || '')

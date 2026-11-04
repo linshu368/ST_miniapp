@@ -20,7 +20,6 @@ import { useEntryEnrichReady } from '@/lib/entry-phase';
 import { usePaymentPlansQuery } from '@/lib/api/payment';
 import { useVipStatusQuery } from '@/lib/api/vip';
 import { redirectToRecharge } from '@/lib/recharge-redirect';
-import { getReplayLifecycle } from '@/lib/telemetry';
 import { cn } from '@/lib/utils';
 import { formatYuanShort } from '@/lib/utils/payment';
 import {
@@ -109,11 +108,6 @@ export function ChatModelSwitcher({
     try {
       await selectModel.mutateAsync({ model_id: modelId });
       if (latestSelectRef.current !== modelId) return;
-      try {
-        getReplayLifecycle().updateSessionProperties({ selectedModelId: modelId });
-      } catch {
-        // 属性更新失败不阻断选模型
-      }
       setFeedback(modelSwitchFeedback(generating));
       if (onSwitched) closeTimerRef.current = setTimeout(onSwitched, generating ? 1600 : 250);
     } catch (err) {
@@ -125,7 +119,7 @@ export function ChatModelSwitcher({
         return;
       }
       if (action.type === 'recharge') {
-        void redirectToRecharge(router, { returnTo, triggerSource: 'model_switch' });
+        redirectToRecharge(router, { returnTo });
         return;
       }
       if (action.type === 'main_wallet') {
@@ -200,9 +194,7 @@ export function ChatModelSwitcher({
               size="sm"
               variant="outline"
               className="mt-2"
-              onClick={() =>
-                void redirectToRecharge(router, { returnTo, triggerSource: 'model_switch' })
-              }
+              onClick={() => redirectToRecharge(router, { returnTo })}
             >
               去充值
             </Button>

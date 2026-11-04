@@ -24,10 +24,6 @@ import { formatNumber, formatYuanShort, safePaymentReturnTo } from '@/lib/utils/
 import { useCreatePaymentOrderMutation, usePaymentPlansQuery } from '@/lib/api/payment';
 import { useVipStatusQuery } from '@/lib/api/vip';
 import { openCreatedPayment } from '@/lib/payment/open-created-payment';
-import {
-  capturePaymentMethodSelected,
-  capturePaymentOrderCreated,
-} from '@/lib/payment/flow-telemetry';
 import { useHaptic, useTelegramBackButton } from '@/lib/telegram';
 import { cn } from '@/lib/utils';
 import { feedbackAfterPaint, startAction } from '@/lib/perf/action-tracker';
@@ -110,15 +106,8 @@ function VipPageContent() {
           : `${vipQuery.data?.active ? '续费 VIP 月卡' : '开通 VIP 月卡'} ¥${formatYuanShort(monthlyPlan.price_cents)}`;
 
   const openPrepared = useCallback(
-    async (result: CreatePaymentOrderData) => {
-      await openCreatedPayment({
-        router,
-        result,
-        returnTo,
-        paymentType,
-      });
-    },
-    [paymentType, returnTo, router]
+    (result: CreatePaymentOrderData) => openCreatedPayment({ router, result, returnTo }),
+    [returnTo, router]
   );
 
   const handleSubmit = async () => {
@@ -146,13 +135,7 @@ function VipPageContent() {
       });
       feedbackAfterPaint(submitAction);
       const result = await creating;
-      capturePaymentOrderCreated({
-        planId: selection.id,
-        paymentType,
-        orderId: result.order.id,
-        amountCents: result.order.amount_cents,
-      });
-      await openPrepared(result);
+      openPrepared(result);
     } catch {
       notification('error');
       setCheckoutError('暂时无法创建订单，请稍后重试。');
@@ -331,9 +314,6 @@ function VipPageContent() {
                   onClick={() => {
                     whisper();
                     setPaymentType(type);
-                    if (selection) {
-                      capturePaymentMethodSelected({ planId: selection.id, paymentType: type });
-                    }
                   }}
                   className={cn(
                     'flex min-h-11 items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold transition-colors',

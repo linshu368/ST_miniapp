@@ -42,16 +42,6 @@ import {
   useWalletBalanceQuery,
 } from '@/lib/api/payment';
 import { useVipStatusQuery } from '@/lib/api/vip';
-import {
-  capturePaymentMethodSelected,
-  capturePaymentOrderCreated,
-  capturePaywallDismissed,
-  capturePaywallInviteSelected,
-  capturePaywallRechargeSelected,
-  captureRechargeViewed,
-  resumePaymentReplayFromPending,
-  retainPaywallFollowupIfActive,
-} from '@/lib/payment/flow-telemetry';
 import { openCreatedPayment } from '@/lib/payment/open-created-payment';
 import {
   formatNumber,
@@ -94,20 +84,12 @@ function RechargePageContent() {
   const inviteEntryEnabled = inviteEntry.data?.entry_enabled === true;
 
   const goInviteCenter = useCallback(() => {
-    capturePaywallInviteSelected();
     router.push('/profile/invite');
   }, [router]);
-
-  useEffect(() => {
-    retainPaywallFollowupIfActive();
-    resumePaymentReplayFromPending();
-    captureRechargeViewed();
-  }, []);
 
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [paymentType, setPaymentType] = useState<PaymentType>('alipay');
   const [noticeDismissed, setNoticeDismissed] = useState(false);
-  const noticeChoiceRef = useRef<'invite' | 'recharge' | null>(null);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const submitLock = useRef(false);
 
@@ -144,9 +126,8 @@ function RechargePageContent() {
       whisper();
       setCheckoutError(null);
       setSelectedKey(selectionKey('credits', id));
-      capturePaymentMethodSelected({ planId: id, paymentType });
     },
-    [paymentType, whisper]
+    [whisper]
   );
 
   const openVip = () => {
@@ -158,15 +139,8 @@ function RechargePageContent() {
   };
 
   const launchPayment = useCallback(
-    async (result: CreatePaymentOrderData) => {
-      await openCreatedPayment({
-        router,
-        result,
-        returnTo,
-        paymentType,
-      });
-    },
-    [paymentType, returnTo, router]
+    (result: CreatePaymentOrderData) => openCreatedPayment({ router, result, returnTo }),
+    [returnTo, router]
   );
 
   const handleSubmit = useCallback(async () => {
@@ -191,13 +165,7 @@ function RechargePageContent() {
       });
       feedbackAfterPaint(submitAction);
       const result = await creating;
-      capturePaymentOrderCreated({
-        planId: selection.id,
-        paymentType,
-        orderId: result.order.id,
-        amountCents: result.order.amount_cents,
-      });
-      await launchPayment(result);
+      launchPayment(result);
     } catch {
       notification('error');
       setCheckoutError('暂时无法创建订单，请稍后重试。');
@@ -414,8 +382,6 @@ function RechargePageContent() {
                   onClick={() => {
                     whisper();
                     setPaymentType(t);
-                    if (selection)
-                      capturePaymentMethodSelected({ planId: selection.id, paymentType: t });
                   }}
                   className={cn(
                     'flex min-h-11 items-center justify-center gap-1.5 rounded-xl border px-2.5 text-xs transition-colors disabled:opacity-60',
@@ -491,10 +457,6 @@ function RechargePageContent() {
         onOpenChange={(open) => {
           if (open) return;
           setNoticeDismissed(true);
-          if (noticeChoiceRef.current === 'invite' || noticeChoiceRef.current === 'recharge') {
-            return;
-          }
-          capturePaywallDismissed();
         }}
       >
         <DialogContent className="w-[calc(100%-2rem)] max-w-sm rounded-2xl border-border bg-popover text-popover-foreground">
@@ -518,10 +480,6 @@ function RechargePageContent() {
               <Button
                 className="w-full rounded-xl font-bold text-primary-foreground"
                 style={{ backgroundColor: RECHARGE_PAGE_DISPLAY.buttonColor }}
-                onClick={() => {
-                  noticeChoiceRef.current = 'recharge';
-                  capturePaywallRechargeSelected();
-                }}
               >
                 选择套餐
               </Button>
@@ -532,7 +490,6 @@ function RechargePageContent() {
                 className="w-full rounded-xl border-rose/40 bg-transparent font-bold text-rose hover:bg-rose/10 hover:text-rose"
                 onClick={() => {
                   // PRD：关闭当前提示并直接进入邀请中心
-                  noticeChoiceRef.current = 'invite';
                   setNoticeDismissed(true);
                   goInviteCenter();
                 }}

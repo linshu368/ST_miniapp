@@ -1,11 +1,9 @@
 'use client';
 
-import type { CreatePaymentOrderData, PaymentType } from '@miniapp/shared';
+import type { CreatePaymentOrderData } from '@miniapp/shared';
 
 import { openPaymentUrl } from '@/lib/telegram';
-import { getReplayLifecycle } from '@/lib/telemetry';
 
-import { captureExternalPaymentOpenRequested, markExternalPaymentOpened } from './flow-telemetry';
 import { paymentOrderPagePath, persistPaymentOpen, readPaymentOpenUrl } from './open-storage';
 
 interface PaymentRouter {
@@ -13,34 +11,20 @@ interface PaymentRouter {
 }
 
 /**
- * 充值页和 VIP 页共用这一条外链打开、停录和订单等待跳转。
+ * 充值页和 VIP 页共用这一条外链打开和订单等待跳转。
  * 订单轮询仍在既有订单页，不在这里再做一套。
  */
-export async function openCreatedPayment(input: {
+export function openCreatedPayment(input: {
   router: PaymentRouter;
   result: CreatePaymentOrderData;
   returnTo: string | null;
-  paymentType: PaymentType;
-}): Promise<void> {
+}): void {
   const openFailureKind = persistPaymentOpen({
     orderId: input.result.order.id,
     payUrl: input.result.pay_url,
     returnTo: input.returnTo,
-    replayContextId: getReplayLifecycle().getSnapshot().replayContextId,
   });
-  captureExternalPaymentOpenRequested({
-    orderId: input.result.order.id,
-    paymentType: input.paymentType,
-    openFailureKind,
-  });
-  if (openFailureKind !== 'invalid_url') {
-    await getReplayLifecycle().enterExternalPaymentPending();
-    markExternalPaymentOpened({
-      orderId: input.result.order.id,
-      paymentType: input.paymentType,
-    });
-    openPaymentUrl(input.result.pay_url);
-  }
+  if (openFailureKind !== 'invalid_url') openPaymentUrl(input.result.pay_url);
   input.router.push(
     paymentOrderPagePath(input.result.order.id, {
       paymentStarted: true,
@@ -49,16 +33,10 @@ export async function openCreatedPayment(input: {
   );
 }
 
-/** The order page shares the same pre-open ordering and only differs in the action label. */
-export async function reopenStoredPayment(input: {
-  orderId: string;
-  paymentType: PaymentType;
-}): Promise<boolean> {
+/** 订单页"继续支付"复用已保存的外链。 */
+export function reopenStoredPayment(input: { orderId: string }): boolean {
   const payUrl = readPaymentOpenUrl(input.orderId);
   if (!payUrl) return false;
-  captureExternalPaymentOpenRequested({ orderId: input.orderId, paymentType: input.paymentType });
-  await getReplayLifecycle().enterExternalPaymentPending();
-  markExternalPaymentOpened({ orderId: input.orderId, paymentType: input.paymentType });
   openPaymentUrl(payUrl);
   return true;
 }

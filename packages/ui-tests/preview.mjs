@@ -76,8 +76,6 @@ try {
     NEXT_PUBLIC_API_URL: `http://127.0.0.1:${apiPort}`,
     NEXT_PUBLIC_DEFAULT_USER_AVATAR_URL: `http://127.0.0.1:${apiPort}/assets/scene.svg`,
     NEXT_PUBLIC_SENTRY_DSN: '',
-    NEXT_PUBLIC_POSTHOG_KEY: '',
-    NEXT_PUBLIC_POSTHOG_HOST: '',
     SENTRY_AUTH_TOKEN: '',
     SENTRY_DSN: '',
     NEXT_TELEMETRY_DISABLED: '1',
