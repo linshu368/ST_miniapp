@@ -13,6 +13,8 @@
 - Android 优先降低 `/characters`、`/profile` 的冷导航长尾；iOS 优先降低 `/profile`、`/characters`，同时保持 `/`、`/dramas` 已达标路径不回退。
 - Grafana 提供五路由 Android/iOS P95、2 秒达标率、样本量和失败/卡住终态；低样本和无数据必须可见，不能只展示成功耗时。
 - 不新增依赖，不改变页面业务功能，不用更早的骨架时间替代真实内容时间。
+- `/characters` 的角色目录和首张关键图优先于会话史、社交计数和最新角标；推荐首次读取必须有限等待，失败或超时沿既有公共目录/保存批次降级，不能无限阻塞角色卡可见。
+- `/profile` 进入时先保障真实可交互 shell 与钱包关键读取；设置、签到、VIP、套餐、邀请、社区等读取按首帧后和接近可见区域分级，不能因为延后读取而误开放签到或丢失原错误/重试状态。
 
 ## Acceptance Criteria
 
@@ -23,6 +25,8 @@
 - [ ] 仓库内 Grafana dashboard 可导入且查询只覆盖这五个 route；若当前连接无写权限，明确记录待导入步骤，不能声称线上已更新。
 - [ ] 通过 Frontend typecheck、现有相关测试、lint、build，以及 `@drama`、`@roleplay`、`@profile` 适用 UI 回归。
 - [ ] 发布后按 release 分 Android/iOS 复测：每组至少100个成功终态且同时检查 page.stall/page.terminal；P95 超过2秒或错误/卡住率上升时停止扩大并回滚预热或 forward-fix。
+- [ ] `/characters` 非关键 enrich 不与首张关键图竞争；关键图成功、失败、无图和超时都有终态记录；首次推荐慢请求在有限预算后安全回退。
+- [ ] `/profile` 首次 commit 前不再同时启动全部页面查询；签到、VIP、头像设置、邀请和社区在延后阶段仍保持 loading/error/retry 与交互安全。
 
 ## Android/iOS 性能 P95 门禁
 

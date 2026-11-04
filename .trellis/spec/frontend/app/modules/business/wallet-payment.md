@@ -19,6 +19,8 @@ last_verified_at: 2026-11-04
 
 钱包与支付页面已使用统一 API hooks；结算真相在服务端。`/profile` 的真实头像、编辑和功能入口 shell 可交互后即记录页面 ready，余额继续独立 loading/error/retry，不能用占位符冒充余额，也不能让钱包长尾代表整页均不可见。底栏只在明确 profile intent 时预取余额 query，复用同一缓存和超时，失败不阻止导航。
 
+Profile 首帧只立即读取钱包；消息/客服红点由常驻 BottomNav 拥有网络读取，页面只观察共享缓存。签到、VIP与套餐在首帧绘制后启动，头像设置按打开菜单读取，邀请与社区入口在服务区接近视口时启动；禁用阶段保留 loading/disabled 安全语义，IntersectionObserver 不可用时直接放行，不让入口永久缺失。
+
 ## 入口与调用者
 
 用户从个人中心进入钱包/充值流程。个人中心「星尘充值」点击同步建立独立充值 Replay context，SDK 启动尝试后发送 `recharge_entry_clicked`；不会伪造聊天会话。外部支付前暂停 MiniApp 录制，可信回流后恢复；主动充值启动时清除旧聊天会话属性，防止误归因。
@@ -63,6 +65,7 @@ WebView 回跳和第三方页面兼容需真机验证。
 
 - 2026-10-20：任务 `Remove confirmed repository noise`（`.trellis/tasks/archive/2026-10/10-20-remove-confirmed-repository-noise/`）删除无法恢复的乱码变更记录；commit：`63eee1e847f678f4b2c434f872425a40fc7f891a`。
 - 2026-11-04：任务 `Optimize five-route mobile navigation readiness`（`.trellis/tasks/11-03-five-route-navigation-p95/`）将 profile 页面 ready 与钱包异步结果解耦，并增加显式导航 intent 的余额预取；钱包 API P95 继续单独观测。
+- 2026-11-04：同任务二阶段将 Profile 查询按钱包、首帧后和近视口三级启动，减少移动端首帧请求扇出；未改变服务端结算与各区错误/重试语义。
 
 ## 支付供应商替换为 Vexutopia（2026-11-03）
 

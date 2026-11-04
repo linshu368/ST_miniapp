@@ -10,10 +10,11 @@ import { useRefetchOnForeground } from './use-refetch-on-foreground';
 
 export const communityKeys = { entry: ['community', 'entry'] as const };
 
-export function useCommunityEntryQuery() {
+export function useCommunityEntryQuery({ enabled = true }: { enabled?: boolean } = {}) {
   const query = useQuery({
     queryKey: communityKeys.entry,
     queryFn: () => apiClient<CommunityEntryData>('/api/community/entry'),
+    enabled,
     staleTime: 30_000,
     refetchInterval: (query) =>
       query.state.data?.enabled && query.state.data.claim_status === 'unclaimed' ? 15_000 : false,
@@ -24,7 +25,7 @@ export function useCommunityEntryQuery() {
   const refreshEntry = useCallback(() => {
     if (refreshEnabled) void refetch({ cancelRefetch: false });
   }, [refetch, refreshEnabled]);
-  useRefetchOnForeground(refreshEntry);
+  useRefetchOnForeground(refreshEntry, enabled);
   return query;
 }
 
