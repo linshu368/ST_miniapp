@@ -252,6 +252,8 @@ test('@roleplay @character-cover Telegram原生返回逐层关闭大图和详情
   await expect(detail).not.toBeVisible();
   await expect(chat).toBeVisible();
   await expect(page).toHaveURL(host);
+  await pressNativeBack();
+  await expect(page).toHaveURL(/\/characters$/);
 });
 
 test('@roleplay 空对话列表有清晰入口', async ({ page, preview }) => {
