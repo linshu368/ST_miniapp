@@ -25,13 +25,13 @@ import {
   Tag,
   Typography,
 } from 'antd';
-import type { AdminEnvironment } from '../lib/environment';
+import { getAdminApiUrl, type AdminEnvironment } from '../lib/environment';
 import {
   TextPostprocessClientError,
   createTextPostprocessApi,
   readAdminAccessToken,
   type TextPostprocessApi,
-} from '../lib/textPostprocessApi';
+} from '@miniapp/admin-client';
 import { createPreviewRunner, type PreviewViewState } from '../lib/textPostprocessPreview';
 import {
   PREVIEW_SAMPLES,
@@ -129,7 +129,7 @@ export function TextPostprocessView(props: {
   const api = useMemo(
     () =>
       createTextPostprocessApi({
-        environment: props.environment,
+        baseUrl: getAdminApiUrl(props.environment),
         getAccessToken: () => readAdminAccessToken(props.client),
       }),
     [props.client, props.environment]

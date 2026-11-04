@@ -672,6 +672,171 @@ describe('document startup timing', () => {
     entries.mockRestore();
   });
 
+  const navigationEntry = (overrides: Partial<PerformanceNavigationTiming> = {}) => ({
+    name: 'navigation',
+    entryType: 'navigation',
+    startTime: 0,
+    duration: 5390,
+    toJSON: () => ({}),
+    fetchStart: 10,
+    domainLookupStart: 20,
+    domainLookupEnd: 30,
+    connectStart: 5030,
+    connectEnd: 5260,
+    secureConnectionStart: 5040,
+    requestStart: 5270,
+    responseStart: 5370,
+    responseEnd: 5390,
+    redirectStart: 0,
+    redirectEnd: 0,
+    redirectCount: 0,
+    workerStart: 0,
+    ...overrides,
+  });
+
+  it('explains a long connection gap without adding stage metrics or counting TLS twice', () => {
+    const entries = vi.spyOn(performance, 'getEntriesByType').mockImplementation((type) =>
+      type === 'navigation' ? [navigationEntry()] : []
+    );
+    const result = collectStartupDetails(6000, 6032, 6033);
+    expect(result.details).toMatchObject({
+      navigation_diagnostics_version: 1,
+      document_fetch_start: 10,
+      document_dns_start: 20,
+      document_dns_end: 30,
+      document_connect_start: 5030,
+      document_connect_end: 5260,
+      document_tls_start: 5040,
+      document_request_start: 5270,
+      document_response_start: 5370,
+      document_response_end: 5390,
+      document_pre_fetch: 10,
+      document_fetch_to_dns: 10,
+      document_dns: 10,
+      document_dns_to_connect: 5000,
+      document_connect: 230,
+      document_connect_to_request: 10,
+      document_request_wait: 100,
+      document_tls: 220,
+      document_worker_start: 0,
+      document_redirect_start: 0,
+      document_redirect_end: 0,
+      document_redirect_count: 0,
+    });
+    const chain = [
+      result.details.document_pre_fetch,
+      result.details.document_fetch_to_dns,
+      result.details.document_dns,
+      result.details.document_dns_to_connect,
+      result.details.document_connect,
+      result.details.document_connect_to_request,
+      result.details.document_request_wait,
+    ];
+    expect(chain.reduce<number>((sum, value) => sum + (value ?? 0), 0)).toBe(5370);
+    const baselineStages = result.stages;
+    entries.mockImplementation((type) =>
+      type === 'navigation'
+        ? [navigationEntry({ fetchStart: undefined, domainLookupStart: undefined })]
+        : []
+    );
+    expect(collectStartupDetails(6000, 6032, 6033).stages).toEqual(baselineStages);
+    expect(Object.keys(result.stages).sort()).toEqual([
+      'document_download',
+      'document_ttfb',
+      'paint_wait',
+      'ready_call',
+    ]);
+    expect(JSON.stringify(result.details).length).toBeLessThan(2048);
+    entries.mockRestore();
+  });
+
+  it('preserves zero duration observations while leaving unavailable TLS unclassified', () => {
+    const entries = vi.spyOn(performance, 'getEntriesByType').mockReturnValue([
+      navigationEntry({
+        fetchStart: 5,
+        domainLookupStart: 5,
+        domainLookupEnd: 5,
+        connectStart: 5,
+        connectEnd: 5,
+        secureConnectionStart: 0,
+        requestStart: 5,
+      }),
+    ]);
+    const { details } = collectStartupDetails(6000, 6032, 6033);
+    expect(details).toMatchObject({
+      document_dns: 0,
+      document_dns_to_connect: 0,
+      document_connect: 0,
+      document_connect_to_request: 0,
+      document_tls_start: 0,
+      document_request_wait: 5365,
+    });
+    expect(details).not.toHaveProperty('document_tls');
+    entries.mockRestore();
+  });
+
+  it('omits missing, invalid and inverted navigation intervals without changing TTFB', () => {
+    const entries = vi.spyOn(performance, 'getEntriesByType').mockReturnValue([
+      navigationEntry({
+        fetchStart: undefined,
+        domainLookupStart: 20,
+        domainLookupEnd: 10,
+        connectStart: 5030,
+        connectEnd: 7000,
+        secureConnectionStart: Infinity,
+        requestStart: NaN,
+        redirectStart: -1,
+        redirectEnd: undefined,
+        redirectCount: 1.5,
+        workerStart: undefined,
+      }),
+    ]);
+    const { details, stages } = collectStartupDetails(6000, 6032, 6033);
+    expect(stages.document_ttfb).toBe(5370);
+    expect(stages.document_download).toBe(20);
+    for (const field of [
+      'document_fetch_start',
+      'document_connect_end',
+      'document_tls_start',
+      'document_request_start',
+      'document_redirect_start',
+      'document_redirect_end',
+      'document_redirect_count',
+      'document_worker_start',
+      'document_pre_fetch',
+      'document_fetch_to_dns',
+      'document_dns',
+      'document_connect',
+      'document_connect_to_request',
+      'document_request_wait',
+      'document_tls',
+    ]) {
+      expect(details).not.toHaveProperty(field);
+    }
+    entries.mockReturnValue([navigationEntry({ secureConnectionStart: 5020 })]);
+    expect(collectStartupDetails(6000, 6032, 6033).details).not.toHaveProperty('document_tls');
+    entries.mockReturnValue([navigationEntry({ secureConnectionStart: 5270 })]);
+    expect(collectStartupDetails(6000, 6032, 6033).details).not.toHaveProperty('document_tls');
+    entries.mockReturnValue([]);
+    expect(collectStartupDetails(6000, 6032, 6033).details).not.toHaveProperty('document_pre_fetch');
+    entries.mockRestore();
+  });
+
+  it('keeps existing timing when an additional navigation getter throws', () => {
+    const nav = navigationEntry();
+    Object.defineProperty(nav, 'fetchStart', {
+      get: () => {
+        throw new Error('unsupported getter');
+      },
+    });
+    const entries = vi.spyOn(performance, 'getEntriesByType').mockReturnValue([nav]);
+    const { details, stages } = collectStartupDetails(6000, 6032, 6033);
+    expect(details.navigation_diagnostics_version).toBe(1);
+    expect(stages).toMatchObject({ document_ttfb: 5370, document_download: 20 });
+    expect(details).not.toHaveProperty('document_fetch_start');
+    entries.mockRestore();
+  });
+
   it('omits unavailable or inverted timing rather than treating it as zero', () => {
     vi.advanceTimersByTime(100);
     markStartupPhase('providers_loaded');
@@ -686,6 +851,9 @@ describe('document startup timing', () => {
   });
 
   it('sends one slow-start snapshot after ready and does not block ready on resource collection', () => {
+    const entries = vi.spyOn(performance, 'getEntriesByType').mockImplementation((type) =>
+      type === 'navigation' ? [navigationEntry()] : []
+    );
     vi.advanceTimersByTime(6000);
     markStartupPhase('providers_loaded');
     cleanup = observeStartupShell('/');
@@ -693,13 +861,20 @@ describe('document startup timing', () => {
     paint();
     expect(telegramReady).toHaveBeenCalledOnce();
     expect(captureEvent).not.toHaveBeenCalled();
+    expect(entries).not.toHaveBeenCalled();
     vi.advanceTimersByTime(1);
     expect(captureEvent).toHaveBeenCalledOnce();
     expect(captureEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         message: 'miniapp_startup_slow',
         contexts: {
-          startup: expect.objectContaining({ before_providers: 6000, shell_ready: 6032 }),
+          startup: expect.objectContaining({
+            before_providers: 6000,
+            shell_ready: 6032,
+            navigation_diagnostics_version: 1,
+            document_dns_to_connect: 5000,
+            document_request_wait: 100,
+          }),
         },
         tags: expect.objectContaining({ startup_bucket: 'slow', telegram_ready: 'sent' }),
       })
@@ -708,6 +883,19 @@ describe('document startup timing', () => {
     paint();
     paint();
     expect(captureEvent).toHaveBeenCalledOnce();
+    expect(
+      distribution.mock.calls
+        .filter(([name]) => name === 'startup.stage.duration')
+        .map(([, , options]) => options.attributes.stage)
+        .sort()
+    ).toEqual([
+      'before_providers',
+      'document_download',
+      'document_ttfb',
+      'paint_wait',
+      'ready_call',
+    ]);
+    entries.mockRestore();
   });
 
   it('does not diagnose background time as slow startup and does not report fast starts as slow', () => {

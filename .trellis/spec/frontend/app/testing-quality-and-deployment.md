@@ -139,3 +139,12 @@ SSE第一个有效正文或已启用思考token在`flushSync`中执行既有增�
 ## 无缓冲快进恢复诊断（本地候选）
 
 独立drama_seek_resume_v1，buffered=no/forward/wasPlaying=true才进入恢复目标；真实目标帧和恢复播放都必须具备，暂停单帧不算成功。复用同一seek owner及resource converter，route/source代际在提交时绑定。仅seek允许100ms、最多100次有界状态读取（区别于禁止对启动/常规播放持续轮询），最多32条变化/事件，60秒只终止诊断；切换/后台/终态解除。Resource Timing最多16条，同源时间重叠只标candidate，负start保留，终态后新请求不抢归属，final冻结且最多5秒尾报告。全量统计与明细独立，network不重复终态；三秒预算与结果原子投影，缺证据/不支持/截断不得填0。复用drama-media/observer/grafana与shared/Backend回归，Android/iOS真实样本另行验收；不以本地模拟宣称性能达标。
+
+## HTML 首字节等待诊断 v1
+
+- `collectStartupDetails()` 仅扩展 `details`，通过 `STARTUP_DETAIL_FIELDS` 复用 `sanitizeStartupDiagnostic` 的数值白名单；`navigation_diagnostics_version=1`。新字段只进入既有 `miniapp_startup_slow.contexts.startup`，不添加 `STARTUP_STAGE_NAMES` 或新指标调用，不改变ready、采样、每文档去重和 `startup_phases_v2`。入口、业务请求与预热调度不变。
+- 采集原始 fetch/DNS/connect/TLS/request/redirect/worker 偏移，保留已有response偏移；新增 `document_pre_fetch/fetch_to_dns/dns/dns_to_connect/connect/connect_to_request/request_wait/tls`。前七段只在完整有序时分解 `document_ttfb`；TLS属于connect，禁止重复相加。请求到首字节包含网络等待，不能标为纯服务器处理。
+- 缺失、非有限、负数、晚于观测时间或逆序段不填0；合法0保留。TLS仅在secureConnectionStart>0且位于connect区间内时计算。重定向零值与连接零时长不能证明无重定向/无失败重试；大空档只定位区间，Android WebView NetLog进一步判因。
+- 复用ready后既有回调，不加timer/listener/await/存储/网络/flush；固定20个新增数值字段、增量预算2KB，目标安卓机新增计算P95≤1ms，并核对关键JS/API发起及业务展示无退化。不能仅凭ready后异步推断无业务影响。
+- 既有 `page-tracker.test.ts` 补完整分解、长空档、复用/零值、缺失/乱序/异常、旧stages一致与上报次数/时序；`sanitize.test.ts`覆盖新字段保留及身份/URL剥离。自然生产P95仍看原指标；TEST必须以实际收到事件字段为准。
+- 2026-11-03本轮用户明确要求跳过本地验证、直接提交推送；上述用例仅编写，性能、测试/构建、真机和Sentry实收均未验证。字段清单、查看入口及抓日志步骤见 [`miniapp-startup-performance.md`](../../../../docs/miniapp-startup-performance.md#html-首字节等待诊断2026-11-03)。

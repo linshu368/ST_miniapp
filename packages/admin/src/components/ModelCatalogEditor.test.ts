@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ModelCatalogSchema, type ModelCatalog } from '@miniapp/shared';
-import { EditableModelCatalogSchema } from '../lib/configSchemas';
+import { EditableModelCatalogSchema } from '@miniapp/admin-client';
 import {
   appendDraftModel,
   appendDraftTier,

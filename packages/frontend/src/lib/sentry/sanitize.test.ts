@@ -75,6 +75,30 @@ describe('startup metric attributes', () => {
   });
 
   it('strips SDK identity and contexts from slow diagnostics while preserving numeric evidence', () => {
+    const navigationDetails = {
+      navigation_diagnostics_version: 1,
+      document_fetch_start: 10,
+      document_dns_start: 20,
+      document_dns_end: 30,
+      document_connect_start: 5030,
+      document_connect_end: 5260,
+      document_tls_start: 5040,
+      document_request_start: 5270,
+      document_response_start: 5370,
+      document_response_end: 5390,
+      document_redirect_start: 0,
+      document_redirect_end: 0,
+      document_redirect_count: 0,
+      document_worker_start: 0,
+      document_pre_fetch: 10,
+      document_fetch_to_dns: 10,
+      document_dns: 10,
+      document_dns_to_connect: 5000,
+      document_connect: 230,
+      document_connect_to_request: 10,
+      document_request_wait: 100,
+      document_tls: 220,
+    };
     const event = {
       type: undefined,
       event_id: 'event',
@@ -92,6 +116,8 @@ describe('startup metric attributes', () => {
           before_providers: 5500,
           ready_call: 1,
           script_count: 8,
+          ...navigationDetails,
+          document_url: 'private-url',
           arbitrary: 'private-value',
           bootstrap: NaN,
           paint_wait: -1,
@@ -101,7 +127,7 @@ describe('startup metric attributes', () => {
     };
     const result = sanitizeStartupDiagnostic(event);
     expect(result.contexts).toEqual({
-      startup: { before_providers: 5500, ready_call: 1, script_count: 8 },
+      startup: { before_providers: 5500, ready_call: 1, script_count: 8, ...navigationDetails },
     });
     expect(result.tags).toEqual({ route: '/', tg_platform: 'android', startup_bucket: 'slow' });
     expect(result.release).toBe('release');

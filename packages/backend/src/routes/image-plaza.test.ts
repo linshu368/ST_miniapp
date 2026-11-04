@@ -50,7 +50,6 @@ beforeEach(async () => {
   storedTags = [];
   mocks.runtime.mockResolvedValue({
     enabled: true,
-    tagsFeatureEnabled: true,
     tags: [
       { id: 'portrait', label: '肖像', enabled: true, sort_order: 0 },
       { id: 'disabled', label: '禁用', enabled: false, sort_order: 1 },
@@ -126,25 +125,6 @@ describe('image plaza share auto tags', () => {
     const response = await share(['portrait']);
     expect(response.statusCode).toBe(200);
     expect(response.json().data.work.tags).toEqual(['portrait']);
-    expect(mocks.prompt).not.toHaveBeenCalled();
-    expect(mocks.classify).not.toHaveBeenCalled();
-    expect(mocks.update).not.toHaveBeenCalled();
-  });
-
-  it('skips auto tagging when tags feature is disabled', async () => {
-    mocks.runtime.mockResolvedValueOnce({
-      enabled: true,
-      tagsFeatureEnabled: false,
-      tags: [
-        { id: 'portrait', label: '肖像', enabled: true, sort_order: 0 },
-        { id: 'disabled', label: '禁用', enabled: false, sort_order: 1 },
-      ],
-      catalog: { models: [{ id: 'model', name: 'Model' }] },
-      rebateRate: 0.1,
-    });
-    const response = await share([]);
-    expect(response.statusCode).toBe(200);
-    expect(response.json().data.work.tags).toEqual([]);
     expect(mocks.prompt).not.toHaveBeenCalled();
     expect(mocks.classify).not.toHaveBeenCalled();
     expect(mocks.update).not.toHaveBeenCalled();

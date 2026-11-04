@@ -69,50 +69,8 @@ function partition<T extends { id: string }>(
 }
 
 /**
- * 把配置里的固定位 id 解成实到的卡，并返回剩下的候选池。
- *
- * 按配置顺序取，而不是按运营顺序：运营在平台上排的就是「第一张放谁」。
- * 配了但不在候选池里（下架、归档、删卡）就跳过——宁可少一个固定位，
- * 也不能因为一张失效的 id 让首页缺位或报错。
- */
-function splitPinned<T extends { id: string }>(
-  operatorOrdered: readonly T[],
-  pinnedIds: readonly string[]
-): { pinned: T[]; rest: T[] } {
-  if (pinnedIds.length === 0) return { pinned: [], rest: [...operatorOrdered] };
-
-  const byId = new Map(operatorOrdered.map((item) => [item.id, item]));
-  const pinned: T[] = [];
-  const taken = new Set<string>();
-
-  for (const id of pinnedIds) {
-    const item = byId.get(id);
-    // taken 去重：配置侧已经拦了重复，这里兜住历史脏数据，否则同一张卡会在列表里出现两次
-    if (!item || taken.has(id)) continue;
-    taken.add(id);
-    pinned.push(item);
-  }
-
-  return { pinned, rest: operatorOrdered.filter((item) => !taken.has(item.id)) };
-}
-
-/**
- * 只把固定位提到最前面，其余保持运营顺序。
- * 排序分快照拿不到时用它：运营点的主推位与打分无关，不该被刷新 job 的状态连带拖掉。
- */
-export function applyPinnedOnly<T extends { id: string }>(
-  operatorOrdered: readonly T[],
-  pinnedIds: readonly string[]
-): T[] {
-  const { pinned, rest } = splitPinned(operatorOrdered, pinnedIds);
-  return [...pinned, ...rest];
-}
-
-/**
- * 金框位对应的角色 id。
- *
- * 固定位天然在最前面，所以先全部收进来，剩下的名额再按主池分数补齐。
- * 补齐用主池的前 N 而不是最终列表的前 N 个位置——主池顺序是确定的，
+ * 金框位对应的角色 id：主池（样本达标、按分数排序）的前 N。
+ * 用主池的前 N 而不是最终列表的前 N 个位置——主池顺序是确定的，
  * 这样大厅列表与角色详情页对同一张卡的判断不会打架。
  * buildRecommendedOrder 会保证冷启动卡插不进这段头部，两种口径因此始终一致。
  */
@@ -120,20 +78,11 @@ export function resolveFeaturedIds<T extends { id: string }>(
   operatorOrdered: readonly T[],
   scores: ReadonlyMap<string, CardScore>,
   count: number,
-  minSample: number,
-  pinnedIds: readonly string[] = []
+  minSample: number
 ): Set<string> {
   const limit = Math.max(0, count);
-  const { pinned, rest } = splitPinned(operatorOrdered, pinnedIds);
-  const featured = new Set(pinned.slice(0, limit).map((item) => item.id));
-  if (featured.size >= limit) return featured;
-
-  const { main } = partition(rest, scores, minSample);
-  for (const item of main) {
-    if (featured.size >= limit) break;
-    featured.add(item.id);
-  }
-  return featured;
+  const { main } = partition(operatorOrdered, scores, minSample);
+  return new Set(main.slice(0, limit).map((item) => item.id));
 }
 
 export interface BuildRecommendedOrderInput<T> {
@@ -149,44 +98,32 @@ export interface BuildRecommendedOrderInput<T> {
    * 冷启动卡不得插入的头部长度，即金框区。
    * 主池很短时 30% 会落进前八，让随机卡拿到金框——挡住这种情况，
    * 也让 resolveFeaturedIds 的「主池前 N」与列表的「位置前 N」始终指同一批卡。
-   *
-   * 固定位已经占掉的名额会从这里扣除：固定位本身就挡在头部，不必重复保护。
    */
   protectedPrefix?: number;
-  /**
-   * 运营点选的固定位 id，按展示顺序。占据列表最前面几个位置，不参与分数排序。
-   * 空数组时整个函数的行为与加入固定位之前逐字一致。
-   */
-  pinnedIds?: readonly string[];
   /** 省略则每次调用重新随机；单测传固定值以复现 */
   seed?: number;
 }
 
 /**
  * 排序规则：
- * 0. 运营固定位按配置顺序占据最前面几个位置，不参与后面任何一步；
- * 1. 剩余卡里样本达标（n_c ≥ minSample）的进主池，按 score 降序，同分回落运营顺序；
+ * 1. 样本达标（n_c ≥ minSample）的进主池，按 score 降序，同分回落运营顺序；
  * 2. 样本不足的（含全新卡）随机插入主池长度的 30%–60% 区间，彼此之间完全随机；
  * 3. 冷启动卡数量超过区间宽度时把窗口向后撑开，不挤占头部。
  */
 export function buildRecommendedOrder<T extends { id: string }>(
   input: BuildRecommendedOrderInput<T>
 ): T[] {
-  const { operatorOrdered, scores, minSample, protectedPrefix = 0, pinnedIds = [], seed } = input;
+  const { operatorOrdered, scores, minSample, protectedPrefix = 0, seed } = input;
 
-  const { pinned, rest } = splitPinned(operatorOrdered, pinnedIds);
-  const { main, cold } = partition(rest, scores, minSample);
+  const { main, cold } = partition(operatorOrdered, scores, minSample);
   const rng = createRng(seed ?? Math.floor(Math.random() * 0x1_0000_0000));
   const coldQueue = shuffle(cold, rng);
 
-  if (main.length === 0) return [...pinned, ...coldQueue];
-  if (coldQueue.length === 0) return [...pinned, ...main];
-
-  // 固定位已经挡在头部，金框区剩下的名额才需要继续保护
-  const remainingPrefix = Math.max(0, protectedPrefix - pinned.length);
+  if (main.length === 0) return coldQueue;
+  if (coldQueue.length === 0) return main;
 
   const firstSlot = Math.min(
-    Math.max(remainingPrefix, Math.round(LOBBY_COLD_START_BAND_START * main.length)),
+    Math.max(protectedPrefix, Math.round(LOBBY_COLD_START_BAND_START * main.length)),
     main.length
   );
   const lastSlot = Math.round(LOBBY_COLD_START_BAND_END * main.length);
@@ -219,6 +156,5 @@ export function buildRecommendedOrder<T extends { id: string }>(
     }
   }
 
-  // 槽位是相对「非固定位那一段」算的，所以固定位在这里拼，不参与上面的 position
-  return [...pinned, ...ordered];
+  return ordered;
 }

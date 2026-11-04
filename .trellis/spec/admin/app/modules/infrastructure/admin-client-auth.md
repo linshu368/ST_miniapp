@@ -5,31 +5,46 @@ scope: admin
 category: infrastructure
 status: active
 owners: [admin]
-last_verified_task: .trellis/tasks/10-10-image-plaza-v2/
-last_verified_at: 2026-10-12
+last_verified_task: .trellis/tasks/11-03-admin-cli/
+last_verified_at: 2026-11-03
 ---
 
 # Admin API、鉴权与环境基建
 
 ## 职责与边界
 
+运营平台的登录、环境、Admin RPC / `/api/admin/*` 调用与配置注册表。网页（`packages/admin`）和命令行（`packages/admin-cli`）共用 `packages/admin-client`。
+
 ## 当前状态
+
+- 网页：邮箱密码登录（Supabase Auth，经后端 `/api/admin/supabase` 代理），test/production 两套会话隔离。
+- CLI：只连生产；同一登录方式与代理；会话存 `~/.config/mijing-admin/session.json`（0600），刷新时用目录锁串行，避免并行进程触发 refresh token 轮换冲突；非交互环境拒绝登录。
+- `admin-client` 的调用函数显式接收 `apiBaseUrl` 与 base64 文件内容，不读 Vite 环境变量、不依赖浏览器 API。
 
 ## 入口与调用者
 
+运营人员用网页；团队成员与 AI 助手用 `pnpm admin`（见 `packages/admin-cli/README.md`、根 `AGENTS.md`）。
+
 ## 涉及文件
 
-| 路径                                          | 职责               |
-| --------------------------------------------- | ------------------ |
-| `packages/admin/src/components/LoginPage.tsx` | Admin 登录入口     |
-| `packages/admin/src/lib/adminApi.ts`          | Admin API helper   |
-| `packages/admin/src/lib/adminNavigation.ts`   | Admin 导航公共逻辑 |
+| 路径                                          | 职责                                              |
+| --------------------------------------------- | ------------------------------------------------- |
+| `packages/admin/src/components/LoginPage.tsx` | Admin 登录入口                                    |
+| `packages/admin/src/lib/environment.ts`       | 网页环境与 Supabase client                        |
+| `packages/admin/src/lib/adminNavigation.ts`   | 网页侧栏（由 `ADMIN_MENU_GROUPS` 生成）与菜单路由 |
+| `packages/admin-client/src/adminApi.ts` 等    | 网页与 CLI 共用的 RPC/HTTP 调用                   |
+| `packages/admin-client/src/configSchemas.ts`  | managed config 注册表、校验、中文名与默认值       |
+| `packages/admin-client/src/menu.ts`           | 菜单分组 `ADMIN_MENU_GROUPS`                      |
+| `packages/admin-cli/src/*`                    | CLI：会话存储、确认门禁、命令                     |
 
 ## 关键实现链路
 
 ## 数据、契约与外部依赖
 
 ## 关键节点与约束
+
+- 写操作的唯一授权边界是数据库函数（角色、`can_access_prod`、CAS）；CLI 的 `--yes` 门禁只防误操作，不替代授权。
+- CLI 不使用 service-role，不提供个人访问令牌；密码只由本人在终端输入。
 
 ## 验证方式
 

@@ -10,8 +10,7 @@ import type {
   AdminImageTextModelTestResponse,
   ApiResponse,
 } from '@miniapp/shared';
-import type { AdminEnvironment } from './environment';
-import { getAdminApiUrl } from './environment';
+import type { AdminEnvironment } from './types';
 import { readAdminAccessToken } from './textPostprocessApi';
 import type { ManagedConfigKey } from './configSchemas';
 
@@ -256,27 +255,19 @@ export async function createCharacter(
   return unwrap(data as CharacterCard | null, error);
 }
 
+/** 上传角色头像（PNG 的 base64，不含 data: 前缀），返回头像 URL。 */
 export async function uploadCharacterAvatar(
   client: SupabaseClient,
-  environment: AdminEnvironment,
+  apiBaseUrl: string,
   characterId: string,
-  file: File
+  pngBase64: string
 ): Promise<string> {
   const { data } = await client.auth.getSession();
   const token = data.session?.access_token;
   if (!token) throw new Error('登录状态已失效，请重新登录');
 
-  const pngBase64 = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error('头像文件读取失败'));
-    reader.onload = () => {
-      const value = String(reader.result ?? '');
-      resolve(value.slice(value.indexOf(',') + 1));
-    };
-    reader.readAsDataURL(file);
-  });
   const response = await fetch(
-    `${getAdminApiUrl(environment)}/api/admin/character-assets/${encodeURIComponent(characterId)}`,
+    `${apiRoot(apiBaseUrl)}/api/admin/character-assets/${encodeURIComponent(characterId)}`,
     {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -290,26 +281,17 @@ export async function uploadCharacterAvatar(
   return body.avatarUrl;
 }
 
-/** 上传邀请海报图片（PNG/JPG/WEBP），返回可写进 poster_url 的 public URL。 */
+/** 上传邀请海报（PNG/JPG/WEBP 的 base64，不含 data: 前缀），返回可写进 poster_url 的 public URL。 */
 export async function uploadInvitePoster(
   client: SupabaseClient,
-  environment: AdminEnvironment,
-  file: File
+  apiBaseUrl: string,
+  imageBase64: string
 ): Promise<string> {
   const { data } = await client.auth.getSession();
   const token = data.session?.access_token;
   if (!token) throw new Error('登录状态已失效，请重新登录');
 
-  const imageBase64 = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error('海报文件读取失败'));
-    reader.onload = () => {
-      const value = String(reader.result ?? '');
-      resolve(value.slice(value.indexOf(',') + 1));
-    };
-    reader.readAsDataURL(file);
-  });
-  const response = await fetch(`${getAdminApiUrl(environment)}/api/admin/invite-poster`, {
+  const response = await fetch(`${apiRoot(apiBaseUrl)}/api/admin/invite-poster`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ imageBase64 }),
@@ -323,14 +305,14 @@ export async function uploadInvitePoster(
 
 export async function testImageTextModelConfig(
   client: SupabaseClient,
-  environment: AdminEnvironment,
+  apiBaseUrl: string,
   input: AdminImageTextModelTestRequest
 ): Promise<AdminImageTextModelTestResponse> {
   const { data } = await client.auth.getSession();
   const token = data.session?.access_token;
   if (!token) throw new Error('登录状态已失效，请重新登录');
 
-  const response = await fetch(`${getAdminApiUrl(environment)}/api/admin/image-text-model/test`, {
+  const response = await fetch(`${apiRoot(apiBaseUrl)}/api/admin/image-text-model/test`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
@@ -345,7 +327,7 @@ export async function testImageTextModelConfig(
 /** Test the current editor policy without publishing configuration or changing a role card. */
 export async function testCreatorCharacterReview(
   client: SupabaseClient,
-  environment: AdminEnvironment,
+  apiBaseUrl: string,
   input: CreatorReviewTestRequest,
   callerSignal?: AbortSignal
 ): Promise<CreatorReviewTestData> {
@@ -356,15 +338,12 @@ export async function testCreatorCharacterReview(
   const signal = callerSignal ? AbortSignal.any([callerSignal, timeout]) : timeout;
   let response: Response;
   try {
-    response = await fetch(
-      `${getAdminApiUrl(environment)}/api/admin/creator-characters/review-test`,
-      {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-        signal,
-      }
-    );
+    response = await fetch(`${apiRoot(apiBaseUrl)}/api/admin/creator-characters/review-test`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal,
+    });
   } catch (err) {
     if (callerSignal?.aborted) throw err;
     throw new Error(
@@ -391,35 +370,6 @@ async function readApiResponse<T>(response: Response): Promise<ApiResponse<T> | 
 
 function readApiErrorMessage<T>(body: ApiResponse<T> | null): string | null {
   return body && !body.success ? body.error.message : null;
-}
-
-export async function setCharacterEnabled(
-  client: SupabaseClient,
-  characterId: string,
-  enabled: boolean
-): Promise<void> {
-  const { data, error } = await client.schema('admin').rpc('set_character_enabled', {
-    p_character_id: characterId,
-    p_enabled: enabled,
-  });
-  if (!unwrap(data as boolean | null, error)) throw new Error('角色上下架失败');
-}
-
-export async function reorderCharacters(
-  client: SupabaseClient,
-  characterIds: string[]
-): Promise<void> {
-  const { data, error } = await client.schema('admin').rpc('reorder_characters', {
-    p_character_ids: characterIds,
-  });
-  if (!unwrap(data as boolean | null, error)) throw new Error('角色排序失败');
-}
-
-export async function archiveCharacter(client: SupabaseClient, characterId: string): Promise<void> {
-  const { data, error } = await client.schema('admin').rpc('archive_character', {
-    p_character_id: characterId,
-  });
-  if (!unwrap(data as boolean | null, error)) throw new Error('角色归档失败');
 }
 
 export async function getCharacterLayout(client: SupabaseClient): Promise<CharacterLayoutSnapshot> {
@@ -491,4 +441,10 @@ export async function rollbackCharacterLayoutRelease(
     p_expected_layout_version: expectedLayoutVersion,
   });
   return unwrap(data as number | null, error);
+}
+
+function apiRoot(apiBaseUrl: string): string {
+  const root = apiBaseUrl.replace(/\/+$/, '');
+  if (!root) throw new Error('后端地址未配置');
+  return root;
 }
