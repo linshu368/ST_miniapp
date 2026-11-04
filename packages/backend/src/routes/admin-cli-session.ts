@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import type { FastifyInstance } from 'fastify';
+import WebSocket from 'ws';
 import { AdminCliSessionRequestSchema, fail, ok, type AdminCliSessionData } from '@miniapp/shared';
 import { AdminSessionError, loadAdminActor } from '../features/admin-access/session.js';
 import { getSupabaseClient } from '../lib/supabase.js';
@@ -90,6 +91,8 @@ export default async function adminCliSessionRoutes(app: FastifyInstance) {
       const exchange = createClient(config.supabase.url, config.supabase.serviceRoleKey, {
         auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
         global: { fetch: timeoutFetch },
+        // 生产容器是 Node 20，没有原生 WebSocket；supabase-js 创建 client 时就要求提供 transport。
+        realtime: { transport: WebSocket as never },
       });
       const { data: verified, error: verifyError } = await exchange.auth.verifyOtp({
         token_hash: tokenHash,
