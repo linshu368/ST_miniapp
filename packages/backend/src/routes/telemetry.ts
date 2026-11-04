@@ -14,12 +14,12 @@ import {
 } from '@miniapp/shared';
 import { requireTelegramAuth } from '../middleware/auth.js';
 import { requestLogger } from '../lib/logger.js';
-import { getDramaTimingPersistenceConfig } from '../platform/runtime-config.js';
+import { getDramaTimingLogContext } from '../platform/runtime-config.js';
 import { dramaExperimentLogUser } from '../features/drama/delivery.js';
 import { observeDramaStartupDiagnostic } from '../lib/engineering-observability.js';
 
 export default async function telemetryRoutes(app: FastifyInstance) {
-  const timingConfig = getDramaTimingPersistenceConfig();
+  const timingConfig = getDramaTimingLogContext();
   // 仅保护本进程的诊断日志容量，不作为业务限流或跨副本一致性机制。
   const uploadWindows = new Map<number, { startedAt: number; count: number }>();
   let totalWindow = { startedAt: performance.now(), count: 0 };

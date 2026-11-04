@@ -77,11 +77,10 @@ export function getDramaPlaybackCdnConfig(): DramaPlaybackCdnConfig | null {
   };
 }
 
-/** Deployment opt-in: a compatible backend may ship before the manual analytics migration. */
-export function getDramaTimingPersistenceConfig() {
+/** 短剧计时日志里标注的环境与服务端版本，供 Railway 日志导出后按 release 分窗对比。 */
+export function getDramaTimingLogContext() {
   const candidate = process.env.RAILWAY_GIT_COMMIT_SHA || process.env.SENTRY_RELEASE || 'unknown';
   return {
-    enabled: process.env.DRAMA_TIMING_PERSIST_ENABLED === 'true',
     environment: config.database.target,
     release: /^[a-zA-Z0-9_.-]{1,128}$/.test(candidate) ? candidate : 'unknown',
   };
