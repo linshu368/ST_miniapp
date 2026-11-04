@@ -39,6 +39,7 @@ import {
   resolveModelForUser,
   type GenerationRequest,
   type GenerationStatus,
+  type ResolvedModel,
 } from '../generation/index.js';
 import { ConversationHistoryRepository } from '../../infrastructure/repositories/ConversationHistoryRepository.js';
 import { TextPostprocessRepository } from '../text-postprocess/repository.js';
@@ -128,6 +129,36 @@ export function toEngineCharacter(card: CharacterCardRow): EngineCharacter {
   };
 }
 
+type CatalogFirstTokenPolicy = NonNullable<ResolvedModel['firstTokenPolicy']>;
+type FirstTokenPolicy = CatalogFirstTokenPolicy & {
+  fallbackModelId: string;
+  fallbackTimeoutMs: number;
+};
+
+/** 目录给出的首字策略缺省时补默认值；路由传入的截止时间覆盖目录值。 */
+export function resolveFirstTokenPolicy(
+  catalogPolicy: CatalogFirstTokenPolicy | undefined,
+  deadlineOverrideMs: number | undefined
+): FirstTokenPolicy {
+  return {
+    fallbackModelId: FIRST_TOKEN_FALLBACK_MODEL_ID,
+    timeoutMs: DEFAULT_FIRST_TOKEN_TIMEOUT_MS,
+    fallbackTimeoutMs: DEFAULT_FALLBACK_TOKEN_TIMEOUT_MS,
+    deadlineMs: DEFAULT_FIRST_TOKEN_DEADLINE_MS,
+    timeoutRateTarget: DEFAULT_FIRST_TOKEN_TIMEOUT_RATE_TARGET,
+    catalogVersion: 0,
+    ...catalogPolicy,
+    ...(deadlineOverrideMs ? { deadlineMs: deadlineOverrideMs } : {}),
+  };
+}
+
+/** 取消、用户停止或超时已由别的写入方落到这一轮；收口必须沿用它的原因，不能覆盖成成功或失败。 */
+function isExternallyInterrupted(finishReason: string | null): boolean {
+  return (
+    finishReason === 'cancelled' || finishReason === 'user_cancelled' || finishReason === 'timeout'
+  );
+}
+
 export async function runConversationTurn(
   input: RunConversationTurnInput
 ): Promise<ConversationTurnOutcome> {
@@ -205,16 +236,7 @@ export async function runConversationTurn(
     '已使用持久化的平台规则槽位模式'
   );
 
-  const policy = {
-    fallbackModelId: FIRST_TOKEN_FALLBACK_MODEL_ID,
-    timeoutMs: DEFAULT_FIRST_TOKEN_TIMEOUT_MS,
-    fallbackTimeoutMs: DEFAULT_FALLBACK_TOKEN_TIMEOUT_MS,
-    deadlineMs: DEFAULT_FIRST_TOKEN_DEADLINE_MS,
-    timeoutRateTarget: DEFAULT_FIRST_TOKEN_TIMEOUT_RATE_TARGET,
-    catalogVersion: 0,
-    ...model.firstTokenPolicy,
-    ...(input.firstTokenDeadlineMs ? { deadlineMs: input.firstTokenDeadlineMs } : {}),
-  };
+  const policy = resolveFirstTokenPolicy(model.firstTokenPolicy, input.firstTokenDeadlineMs);
   model.firstTokenPolicy = policy;
   observeChatFirstToken({
     requestedModel: model.modelId,
@@ -487,18 +509,12 @@ export async function runConversationTurn(
     const persisted = await historyRecords().finalizeTurn({
       historyId: turn.historyId,
       content: result.content,
-      status:
-        current.llm_finish_reason === 'cancelled' ||
-        current.llm_finish_reason === 'user_cancelled' ||
-        current.llm_finish_reason === 'timeout'
-          ? 'stream_interrupted'
-          : result.status,
-      finishReason:
-        current.llm_finish_reason === 'cancelled' ||
-        current.llm_finish_reason === 'user_cancelled' ||
-        current.llm_finish_reason === 'timeout'
-          ? current.llm_finish_reason
-          : result.finishReason,
+      status: isExternallyInterrupted(current.llm_finish_reason)
+        ? 'stream_interrupted'
+        : result.status,
+      finishReason: isExternallyInterrupted(current.llm_finish_reason)
+        ? current.llm_finish_reason
+        : result.finishReason,
       upstreamStatus: result.upstreamStatus ?? null,
       chargeId: result.chargeId,
     });
@@ -602,20 +618,14 @@ export async function runConversationTurn(
       historyId: turn.historyId,
       content: '',
       status:
-        controller.signal.aborted ||
-        current.llm_finish_reason === 'cancelled' ||
-        current.llm_finish_reason === 'user_cancelled' ||
-        current.llm_finish_reason === 'timeout'
+        controller.signal.aborted || isExternallyInterrupted(current.llm_finish_reason)
           ? 'stream_interrupted'
           : 'upstream_error',
-      finishReason:
-        current.llm_finish_reason === 'cancelled' ||
-        current.llm_finish_reason === 'user_cancelled' ||
-        current.llm_finish_reason === 'timeout'
-          ? current.llm_finish_reason
-          : controller.signal.aborted
-            ? 'timeout'
-            : null,
+      finishReason: isExternallyInterrupted(current.llm_finish_reason)
+        ? current.llm_finish_reason
+        : controller.signal.aborted
+          ? 'timeout'
+          : null,
     });
     if (controller.signal.reason instanceof FirstTokenDeadlineError) {
       // Bind the failed revision before the error so the browser can report its actual wait.
