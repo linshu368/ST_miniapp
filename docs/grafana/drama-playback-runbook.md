@@ -66,6 +66,8 @@ Grafana Explore选择 `grafanacloud-logs`，先筛终态，再展开JSON。达�
 
 ## 顺序与停止条件
 
+> 历史记录：2026-10-29 起接收端已停止写分析表，2026-11-04 删除写库代码、导入脚本与 `DRAMA_TIMING_PERSIST_ENABLED`。以下仅保留当时的发布顺序供追溯。
+
 1. 本地 `bash scripts/test-drama-observability-local.sh`：需本机PG17，非默认安装可指定 `DRAMA_PG_BIN`。使用全新临时cluster，不读取远端连接。验证重复迁移、并发/乱序、权限、保留期及5万条合成样本下的全部面板/变量SQL，每SQL5秒预算；不代表生产性能。
 2. 核对TEST目标shape：miniapp_analytics存在、没有同名异构对象、service_role和Grafana reader属性/已有权限。通过Database Migration工作流逐文件执行 `20261027_drama_playback_observability_forward_fix.sql`，验证table/RPC/view/ACL和目标迁移账本。
 3. 先发布兼容Backend。显式开启TEST的 `DRAMA_TIMING_PERSIST_ENABLED=true` 并重新部署，确认遥测202仅表示accepted，并另查异步 `drama.timing_persisted`；未迁移时保持false沿用Pino日志。再发布Frontend并确认前端release正确。
@@ -77,21 +79,7 @@ Grafana Explore选择 `grafanacloud-logs`，先筛终态，再展开JSON。达�
 
 ## 历史24小时导入
 
-先通过Railway完整导出明确环境与半开时间区间 `[from,to)` 的NDJSON；检查分页、条数限制和每个分段边界，不把工具最近500条当全天。原始导出只放临时安全目录，禁止提交Git。
-
-先 dry-run（以下时间仅示范，按实际窗口调整）：
-
-```bash
-pnpm --filter @miniapp/backend exec tsx src/scripts/import-drama-timing.ts \
-  --file /private/tmp/drama-export.ndjson --environment test \
-  --from 2026-10-27T00:00:00Z --to 2026-10-28T00:00:00Z
-```
-
-单文件最多64MiB/5万行/24h，超过即拆窗口，不静默截断。支持Pino JSON、JSON message及Railway attributes数组，仅读白名单并校验shared schema；输出计数、hash和完整性状态，不打印业务行或凭证。
-
-apply必须另提供操作者核验过的manifest：`environment/from/to/complete:true/truncated:false/sourceRecordCount/sha256`，源记录数与文件SHA-256必须匹配；任何坏行阻止apply。manifest是操作者对导出完整性的声明，脚本不能证明供应商未丢日志。无manifest只可作部分样本dry-run。
-
-在相应Backend环境下给上述命令加 `--manifest /private/tmp/drama-manifest.json --apply` 才写分析表；production还要求 `--confirm-production` 及本环境发布授权。目标使用现有数据库配置隔离，target不匹配立即停止；一条报告一个短超时写、顺序执行、不重试，重复导入幂等，冲突final不覆盖，输出冲突计数。保留期外报告拒绝，不重放播放接口。导入不能补回旧日志的网络/平台/release字段。
+导入脚本 `import-drama-timing.ts` 已于 2026-11-04 删除：分析表只保留历史，不再补录。AB 分组对比用 `src/scripts/compare-drama-cdn.ts`，它读取同一份 Railway 导出，只解析不写库。
 
 ## 工程师先做的检查
 

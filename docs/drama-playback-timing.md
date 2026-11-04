@@ -7,7 +7,7 @@
 - 继续从每次原启动入口采集，不新增五秒定时快照。真实成功、失败、离开或后台的 `phase=final` 达到5000ms时，完整有界报告经后端已有OTLP出口写Cloud Loki，事件名 `drama.startup_diagnostic`；迟到 `phase=network` 复用同一观察ID补媒体证据，不生成第二次启动。
 - 成功仍要求首帧且playing；elapsed保持实际值，不在五秒中断播放。原十秒slow报告仍兼容Pino，但不会另存这条Loki诊断流。
 - 每条报告沿用strict shared白名单与32KiB上限，保留media/queries/marks/diagnostics；观察/视频/会话ID仅在JSON正文。iOS字段不可读仍标limited，不输出URL、token、路径、身份或任意正文。
-- 路由停止Supabase分析写入，即使旧DRAMA_TIMING_PERSIST_ENABLED=true；原表/导入器/SQL看板保留历史，不重写、不删除。下文数据库落表/7天详情/14天摘要只描述历史SQL路径，不适用于新的Loki流；Loki保留期按实际Cloud配置，未在本轮修改。
+- 路由停止Supabase分析写入，即使旧DRAMA_TIMING_PERSIST_ENABLED=true；原表/SQL看板保留历史，不重写、不删除；写库代码、Railway 导入器与该开关已于 2026-11-04 删除。下文数据库落表/7天详情/14天摘要只描述历史SQL路径，不适用于新的Loki流；Loki保留期按实际Cloud配置，未在本轮修改。
 - ENGINEERING_TELEMETRY_ENABLED与现有OTLP私网端点是新出口的前提；复用256条日志队列、2秒预算和既有drop/failure健康指标。202仅接口接收，关闭/限流/断网/强退仍可能缺报，无离线补传。
 - 事后入口为现有st-engineering-drama新增的两个详情面板；原浏览器流选择器不影响它们，版本筛选读取报告里的客户端release。发布与查询见runbook。
 
@@ -30,7 +30,7 @@
 - `accepted:true`与202只代表接口接受，不能当作Cloud实收或数据库落盘；Pino抛错后仍调用独立Cloud出口。Pino正常返回也不证明平台永久保存。
 - 所有浏览器遥测release在构建时统一采用实际Vercel SHA，非Vercel构建使用明确Grafana release/Sentry release；旧DRAMA release随同赋值。不得手动把旧版本标成新版本。
 
-Backend须先兼容definition/route/purpose及新增stages，再发布Frontend，默认仍legacy。TEST/Cloud与真实媒体流程核对后才独立批准unified；接收端已停止分析写入，DRAMA_TIMING_PERSIST_ENABLED不再控制此接口。旧表、SQL视图、历史看板和清理job不在本次删除范围，不能未经保留期核对就关闭清理造成积压。回滚先把Frontend构建模式改回legacy，Backend保持兼容；数据库无需恢复。
+Backend须先兼容definition/route/purpose及新增stages，再发布Frontend，默认仍legacy。TEST/Cloud与真实媒体流程核对后才独立批准unified；接收端已停止分析写入，DRAMA_TIMING_PERSIST_ENABLED 已删除。旧表、SQL视图、历史看板和清理job不在本次删除范围，不能未经保留期核对就关闭清理造成积压。回滚先把Frontend构建模式改回legacy，Backend保持兼容；数据库无需恢复。
 
 ## 工程看板与诊断分母
 
