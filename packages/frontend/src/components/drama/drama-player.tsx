@@ -525,10 +525,12 @@ export function DramaPlayer({
         await videoEl.play();
         mediaTiming.resolved('automatic');
       } catch (error: unknown) {
-        mediaTiming.rejected(error);
         if (cancelled) return;
+        const retryMuted =
+          error instanceof DOMException && error.name === 'NotAllowedError' && !videoEl.muted;
+        mediaTiming.rejected(error, 'automatic', retryMuted);
         // 浏览器可能禁止有声自动播放，只降级一次；仍失败时保留手动播放入口。
-        if (error instanceof DOMException && error.name === 'NotAllowedError' && !videoEl.muted) {
+        if (retryMuted) {
           videoEl.muted = true;
           setPlaybackPreferences({ muted: true });
           try {
