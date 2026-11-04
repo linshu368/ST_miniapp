@@ -89,6 +89,12 @@ describe('POST /api/admin/cli/session', () => {
       email: 'owner@example.com',
     });
     expect(mocks.verifyOtp).toHaveBeenCalledWith({ token_hash: 'hash', type: 'magiclink' });
+    // 生产 Node 20 没有原生 WebSocket，一次性 client 必须显式带 transport，否则创建即报错。
+    expect(mocks.createClient).toHaveBeenCalledWith(
+      'https://project.supabase.invalid',
+      'service-role',
+      expect.objectContaining({ realtime: { transport: expect.any(Function) } })
+    );
   });
 
   it('不是当前环境运营账号时不兑换会话', async () => {
