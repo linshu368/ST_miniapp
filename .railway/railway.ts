@@ -45,6 +45,7 @@ import { defineRailway, fn, github, preserve, project, service } from 'railway/i
 
 const REPOSITORY = process.env.RAILWAY_GITHUB_REPO ?? 'linshu368/ST_miniapp';
 const COMMON_API_VARIABLES = [
+  'ADMIN_CLI_ALLOWED_EMAILS',
   'ADMIN_PLATFORM_URL',
   'BATCH_LAB_ENABLED',
   'BATCH_LAB_MODEL_KEY',

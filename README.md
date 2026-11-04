@@ -156,6 +156,7 @@ pnpm --filter @miniapp/backend image-plaza:seed -- --input <xlsx>
 | LLM           | `LLM_UPSTREAM_URL`, `LLM_API_KEY`, `OPENAI_API_KEY`, `LLM_DEFAULT_MODEL`                                            | 生成上游与默认模型                                                                                              |
 | Voice         | `DEEPSEEK_*`, `MINIMAX_*`                                                                                           | 语音文案与 TTS；关键 key 缺失时语音不可用                                                                       |
 | Payment       | `PAYMENT_ENABLED`, `PAYMENT_RETURN_URL`, `VEXUTOPIA_API_KEY`, `VEXUTOPIA_BASE_URL`, `VEXUTOPIA_WEBHOOK_SECRET`      | 支付开关、https 回跳、Vexutopia 密钥与回调验签（API Key 也要配给对账 Worker / 过期 Cron）                       |
+| Admin CLI     | `ADMIN_CLI_ALLOWED_EMAILS`                                                                                          | 运营平台 CLI 免密登录白名单（逗号分隔邮箱）；为空时 CLI 登录接口关闭                                            |
 | Telemetry     | `SENTRY_*`, `LOG_LEVEL`, `LOG_PRETTY`                                                                               | Sentry 和日志                                                                                                   |
 | Feature/asset | `DEFAULT_USER_AVATAR_URL`, `CHARACTER_STORAGE_BUCKET`, `CHAT_HISTORY_SYNC_ENABLED`, `LOBBY_RANKING_REFRESH_ENABLED` | 资源和运行开关                                                                                                  |
 

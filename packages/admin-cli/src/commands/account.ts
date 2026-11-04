@@ -1,4 +1,5 @@
 import { getCurrentAdmin, setOperatorName, type AdminUser } from '@miniapp/admin-client';
+import { AdminCliSessionDataSchema, type AdminCliSessionData } from '@miniapp/shared';
 import { CLI_ENVIRONMENT, createAdminSupabaseClient } from '../client';
 import { stringOption, type CommandSpec, type Ctx } from '../command';
 import { CliError, classifyError } from '../errors';
@@ -16,6 +17,7 @@ import {
 } from '../store';
 
 const HEALTH_TIMEOUT_MS = 5_000;
+const LOGIN_TIMEOUT_MS = 15_000;
 
 function parseEnvFile(text: string): Record<string, string> {
   const values: Record<string, string> = {};
@@ -36,6 +38,35 @@ async function checkHealth(apiUrl: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/** 后端按白名单邮箱签发该运营账号的 Supabase 会话（免密）。 */
+async function requestCliSession(apiUrl: string, email: string): Promise<AdminCliSessionData> {
+  let response: Response;
+  try {
+    response = await fetch(`${apiUrl}/api/admin/cli/session`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+      signal: AbortSignal.timeout(LOGIN_TIMEOUT_MS),
+    });
+  } catch {
+    throw new CliError('unavailable', '无法连接生产后端，请稍后重试');
+  }
+  const body = (await response.json().catch(() => null)) as {
+    success?: boolean;
+    data?: unknown;
+    error?: { message?: string };
+  } | null;
+  const message = body?.error?.message ?? `HTTP ${response.status}`;
+  if (response.status === 404)
+    throw new CliError('unavailable', '生产后端尚未开启 CLI 登录（未配置邮箱白名单或版本过旧）');
+  if (response.status === 403) throw new CliError('permission_denied', message);
+  if (response.status === 429) throw new CliError('unavailable', message);
+  if (!response.ok || !body?.success) throw new CliError('unknown', message);
+  const parsed = AdminCliSessionDataSchema.safeParse(body.data);
+  if (!parsed.success) throw new CliError('unknown', '后端返回的会话格式不正确');
+  return parsed.data;
 }
 
 function describeAdmin(admin: AdminUser, extra: Record<string, unknown> = {}) {
@@ -104,47 +135,49 @@ export const accountCommands: CommandSpec[] = [
   },
   {
     name: 'login',
-    summary: '用本人运营账号登录生产（只能由本人在终端交互执行）',
+    summary: '用运营账号邮箱登录生产（免密，邮箱须在后端白名单内）；姓名记录在发布历史里',
     write: false,
     options: {
-      email: { type: 'string', description: '运营账号邮箱（不填则交互输入）' },
-      name: { type: 'string', description: '操作人姓名，记录在发布历史里（不填则交互输入）' },
+      email: { type: 'string', description: '运营账号邮箱（只允许白名单内的邮箱）' },
+      name: { type: 'string', description: '操作人姓名，记录在发布历史里（不填沿用账号已有姓名）' },
     },
+    examples: ['pnpm admin login --email you@example.com --name 张三'],
     async run(_ctx, input) {
-      // 密码只能由人输入：AI 或脚本调用时直接拒绝，也就永远拿不到密码。
-      if (!isInteractive()) {
-        throw new CliError('usage', 'login 必须由本人在自己的终端交互执行：pnpm admin login');
-      }
       const config = loadConfig();
       const previous = readSessionMeta();
-      const email =
-        stringOption(input, 'email') ||
-        (await ask(`邮箱${previous ? `（${previous.email}）` : ''}：`)) ||
-        previous?.email;
-      if (!email) throw new CliError('usage', '需要邮箱');
-      const password = await askHidden('密码（输入不回显）：');
-      const operatorName =
-        stringOption(input, 'name') ||
-        (await ask(`操作人姓名${previous ? `（${previous.operatorName}）` : ''}：`)) ||
-        previous?.operatorName;
-      if (!operatorName) throw new CliError('usage', '需要操作人姓名，它会记录在发布历史里');
+      let email = stringOption(input, 'email') ?? previous?.email;
+      if (!email && isInteractive()) email = await ask('邮箱：');
+      if (!email) throw new CliError('usage', '需要 --email');
+      const operatorName = stringOption(input, 'name')?.trim() || previous?.operatorName;
 
+      const session = await requestCliSession(config.apiUrl, email);
       const client = createAdminSupabaseClient(config);
       clearSession();
-      const signIn = await withSessionLock(() =>
-        client.auth.signInWithPassword({ email, password })
+      const stored = await withSessionLock(() =>
+        client.auth.setSession({
+          access_token: session.access_token,
+          refresh_token: session.refresh_token,
+        })
       );
-      if (signIn.error || !signIn.data.user) {
+      if (stored.error || !stored.data.session) {
         clearSession();
-        throw classifyError(signIn.error ?? new Error('登录失败'));
+        throw classifyError(stored.error ?? new Error('登录失败'));
       }
       try {
-        await setOperatorName(client, operatorName);
-        const admin = await getCurrentAdmin(client, signIn.data.user.id);
+        const admin = operatorName
+          ? await setOperatorName(client, operatorName)
+          : await getCurrentAdmin(client, session.user_id);
         if (!admin.can_access_prod) {
           throw new CliError('permission_denied', '该账号没有生产环境权限，已退出登录');
         }
-        writeSessionMeta({ email, operatorName, loggedInAt: new Date().toISOString() });
+        const name = admin.display_name ?? operatorName;
+        if (!name) {
+          throw new CliError(
+            'usage',
+            '账号还没有操作人姓名，请加 --name 指定（会记录在发布历史里）'
+          );
+        }
+        writeSessionMeta({ email, operatorName: name, loggedInAt: new Date().toISOString() });
         const data = describeAdmin(admin);
         return { data, human: `登录成功\n${humanAdmin(data)}` };
       } catch (error) {

@@ -103,7 +103,7 @@ export function classifyError(error: unknown): CliError {
   const message = error instanceof Error ? error.message : String(error);
   if (matches(message, PERMISSION_PATTERNS)) return new CliError('permission_denied', message);
   if (matches(message, AUTH_PATTERNS)) {
-    return new CliError('auth_required', `${message}。请本人在终端执行：pnpm admin login`);
+    return new CliError('auth_required', `${message}。请执行：pnpm admin login --email <运营邮箱>`);
   }
   if (matches(message, CONFLICT_PATTERNS)) return new CliError('conflict', message);
   if (matches(message, UNAVAILABLE_PATTERNS)) return new CliError('unavailable', message);
