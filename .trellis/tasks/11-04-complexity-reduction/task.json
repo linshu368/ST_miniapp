@@ -18,7 +18,11 @@
   "commit": null,
   "pr_url": null,
   "subtasks": [],
-  "children": ["11-04-complexity-p01-budget-docs", "11-04-complexity-p2-telemetry-cleanup"],
+  "children": [
+    "11-04-complexity-p01-budget-docs",
+    "11-04-complexity-p2-telemetry-cleanup",
+    "11-04-complexity-p3-chat-chain"
+  ],
   "parent": null,
   "relatedFiles": [],
   "notes": "",
