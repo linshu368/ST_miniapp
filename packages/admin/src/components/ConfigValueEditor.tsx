@@ -51,8 +51,8 @@ import {
   type InviteRewardRulesConfig,
   type ImageTextModelConfig,
   type ManagedConfigKey,
-} from '../lib/configSchemas';
-import type { CharacterCard } from '../lib/adminApi';
+} from '@miniapp/admin-client';
+import type { CharacterCard } from '@miniapp/admin-client';
 import { InviteCenterConfigEditor } from './InviteCenterConfigEditor';
 import { InviteRewardRulesEditor } from './InviteRewardRulesEditor';
 import {
@@ -60,7 +60,6 @@ import {
   ImagePlazaShareTipEditor,
   ImagePlazaTagsEditor,
 } from './ImagePlazaConfigEditors';
-import { LobbyPinnedCharactersEditor } from './LobbyPinnedCharactersEditor';
 import { LobbyRankingParamsEditor } from './LobbyRankingParamsEditor';
 import { ModelCatalogEditor } from './ModelCatalogEditor';
 import { FallbackConfigEditor } from './FallbackConfigEditor';
@@ -251,9 +250,6 @@ export function ConfigValueEditor(props: {
   syncLoading: Partial<Record<LlmModelProvider, boolean>>;
   syncError: Partial<Record<LlmModelProvider, string | null>>;
   onRefreshProvider: (provider: LlmModelProvider) => void;
-  characters: CharacterCard[];
-  charactersLoading: boolean;
-  charactersError: string | null;
   onUploadInvitePoster: (file: File) => Promise<string>;
   onTestCreatorReview: (
     input: CreatorReviewTestRequest,
@@ -305,28 +301,6 @@ export function ConfigValueEditor(props: {
         disabled={props.disabled}
         onChange={props.onChange}
       />
-    );
-  }
-
-  if (props.configKey === 'image_plaza_tags_feature_enabled') {
-    const enabled = props.value === true;
-    return (
-      <Space align="center" size="middle">
-        <Switch
-          checked={enabled}
-          disabled={props.disabled}
-          onChange={(next) => props.onChange(next)}
-        />
-        <div>
-          <Typography.Text strong>
-            {enabled ? '分享自动打标已开启' : '分享自动打标已关闭'}
-          </Typography.Text>
-          <br />
-          <Typography.Text type="secondary">
-            仅控制分享时空标签时是否调用模型自动打标；广场仍展示标签，并按提示词中文译文筛选。
-          </Typography.Text>
-        </div>
-      </Space>
     );
   }
 
@@ -408,7 +382,6 @@ export function ConfigValueEditor(props: {
 
   if (
     props.configKey === 'image_generation_credits' ||
-    props.configKey === 'media_feature_free_trial_limit' ||
     props.configKey === 'image_width' ||
     props.configKey === 'image_height' ||
     props.configKey === 'image_max_prompt_chars' ||
@@ -417,21 +390,10 @@ export function ConfigValueEditor(props: {
     const isDimension = props.configKey === 'image_width' || props.configKey === 'image_height';
     const isBytes = props.configKey === 'image_max_output_bytes';
     const isContractLimit = props.configKey === 'image_max_prompt_chars';
-    const isFreeTrialLimit = props.configKey === 'media_feature_free_trial_limit';
     return (
       <InputNumber
         min={isDimension ? 256 : isBytes ? 1048576 : 1}
-        max={
-          isDimension
-            ? 4096
-            : isBytes
-              ? 52428800
-              : isFreeTrialLimit
-                ? MAX_FEATURE_FREE_TRIAL_LIMIT
-                : isContractLimit
-                  ? 1000
-                  : undefined
-        }
+        max={isDimension ? 4096 : isBytes ? 52428800 : isContractLimit ? 1000 : undefined}
         precision={0}
         value={typeof props.value === 'number' ? props.value : undefined}
         disabled={props.disabled || isContractLimit}
@@ -510,19 +472,6 @@ export function ConfigValueEditor(props: {
     );
   }
 
-  if (props.configKey === 'lobby_pinned_characters') {
-    return (
-      <LobbyPinnedCharactersEditor
-        value={props.value}
-        characters={props.characters}
-        charactersLoading={props.charactersLoading}
-        charactersError={props.charactersError}
-        disabled={props.disabled}
-        onChange={props.onChange}
-      />
-    );
-  }
-
   if (props.configKey === 'lobby_ranking_params') {
     return (
       <LobbyRankingParamsEditor
@@ -535,7 +484,6 @@ export function ConfigValueEditor(props: {
 
   if (
     props.configKey === 'miniapp_new_user_signup_bonus_credits' ||
-    props.configKey === 'miniapp_daily_checkin_bonus_credits' ||
     props.configKey === 'miniapp_checkin_new_user_credits' ||
     props.configKey === 'miniapp_checkin_veteran_credits' ||
     props.configKey === 'miniapp_character_free_chat_quota_limit'
@@ -547,17 +495,6 @@ export function ConfigValueEditor(props: {
         value={typeof props.value === 'number' ? props.value : 0}
         disabled={props.disabled}
         onChange={(value) => props.onChange(value ?? 0)}
-      />
-    );
-  }
-
-  if (props.configKey === 'system_fallback_character_id') {
-    return (
-      <Input
-        value={typeof props.value === 'string' ? props.value : ''}
-        placeholder="角色 UUID"
-        disabled={props.disabled}
-        onChange={(event) => props.onChange(event.target.value)}
       />
     );
   }

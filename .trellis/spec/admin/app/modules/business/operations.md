@@ -13,7 +13,7 @@ last_verified_at: 2026-11-02
 
 ## 职责与边界
 
-管理模型/运行配置、角色卡、公告、邀请规则和回访赠送。
+管理模型/运行配置、角色卡、公告和邀请规则；生产操作也可通过 `pnpm admin` CLI 完成。
 
 ## 当前状态
 
@@ -25,13 +25,12 @@ last_verified_at: 2026-11-02
 
 ## 涉及文件
 
-| 路径                                                        | 职责     |
-| ----------------------------------------------------------- | -------- |
-| `packages/admin/src/components/ModelCatalogEditor.tsx`      | 模型配置 |
-| `packages/admin/src/components/CharacterCardsView.tsx`      | 角色卡   |
-| `packages/admin/src/components/AnnouncementsView.tsx`       | 公告     |
-| `packages/admin/src/components/InviteProgramView.tsx`       | 邀请计划 |
-| `packages/admin/src/components/OutreachCreditGrantView.tsx` | 回访赠送 |
+| 路径                                                   | 职责     |
+| ------------------------------------------------------ | -------- |
+| `packages/admin/src/components/ModelCatalogEditor.tsx` | 模型配置 |
+| `packages/admin/src/components/CharacterCardsView.tsx` | 角色卡   |
+| `packages/admin/src/components/AnnouncementsView.tsx`  | 公告     |
+| `packages/admin/src/components/InviteProgramView.tsx`  | 邀请计划 |
 
 ## 关键实现链路
 
@@ -59,7 +58,7 @@ Admin test/typecheck/build 与 test 环境人工 smoke。
 
 ## 图片创作广场 V2（2026-10-12）
 
-Admin 在现有配置草稿、发布、回滚链路中增加图片广场模型目录、首次分享提示与标签管理；模型页包含上架星尘价计算器，但最终发布值仍是服务端权威 credits。配置 schema 同时在 shared 和数据库发布校验器中约束。`image_plaza_tags_feature_enabled` 文案仅描述分享自动打标，不描述广场标签展示。
+Admin 在现有配置草稿、发布、回滚链路中增加图片广场模型目录、首次分享提示与标签管理；模型页包含上架星尘价计算器，但最终发布值仍是服务端权威 credits。配置 schema 同时在 shared 和数据库发布校验器中约束。（2026-11-03 起分享自动打标开关已撤，恒开启。）
 
 ## 兜底配置与竞争交付（2026-10-28）
 
@@ -85,3 +84,10 @@ Admin 在现有配置草稿、发布、回滚链路中增加图片广场模型�
 ## 前几屏优质轮换（2026-11-02，本地未发布）
 
 现有LobbyRankingParamsEditor顶部提供前几屏轮换参数：默认24h、重复2、探索最多2。轮换发布后全量生效，运营端无启用开关或灰度比例控件；旧enabled/rollout仅为存量配置兼容，不控制实际生效。原评分参数仍控制离线质量计算；resolveLobbyRankingEditorValue兼容嵌套rotation。LobbyPinnedCharactersEditor将原8项作为加权候选、独立最多1固定主推；沿用参数草稿/发布/回滚，无需运营另行激活推荐。
+
+## 运营平台 CLI 与菜单归类（2026-11-03）
+
+- 新增 `packages/admin-cli`（`pnpm admin`，只连生产）与 `packages/admin-client`（网页与 CLI 共用的注册表、菜单分组、RPC/HTTP 调用）。CLI 以本人运营账号登录、经同一后端代理调用同一 RPC，写操作必须确认（`--yes`），草稿共用且默认不覆盖他人未发布草稿。
+- 侧栏按 `ADMIN_MENU_GROUPS` 分 7 组：模型与计费、对话与回复、角色与大厅、充值与会员、用户增长、图片，末尾发布历史；CLI `config list` 使用同一分组。
+- 删除入口：系统兜底角色、每日签到奖励（遗留）、媒体免费轮次次数、分享自动打标开关（后端恒开启）、推荐主推候选（后端停用固定位/主推）、回访星尘赠送页面。数据库配置行、校验函数与 `grant_user_credits` 等 RPC 保留未删。
+- 任务：`.trellis/tasks/11-03-admin-cli/`。

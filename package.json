@@ -28,7 +28,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "prepare": "husky",
-    "test:lobby-ranking": "pnpm --filter @miniapp/backend test:lobby-ranking"
+    "test:lobby-ranking": "pnpm --filter @miniapp/backend test:lobby-ranking",
+    "admin": "node packages/admin-cli/bin/mijing-admin.mjs"
   },
   "engines": {
     "node": ">=22",

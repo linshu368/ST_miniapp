@@ -1,14 +1,22 @@
-import { managedConfigKeys, type ManagedConfigKey } from './configSchemas';
 import {
-  CREATOR_REVIEW_PROMPT_KEY,
-  VIP_STRATEGY_CONFIG_KEYS,
-  type VipStrategyConfigKey,
-} from '@miniapp/shared';
+  ADMIN_MENU_GROUPS,
+  configMetadata,
+  IMAGE_GENERATION_CONFIG_KEYS,
+  IMAGE_PLAZA_CONFIG_KEYS,
+  INVITE_PROGRAM_CONFIG_KEYS,
+  managedConfigKeys,
+  PLATFORM_INSTRUCTION_CONFIG_KEYS,
+  type ImageGenerationConfigKey,
+  type ImagePlazaConfigKey,
+  type InviteProgramConfigKey,
+  type ManagedConfigKey,
+  type PlatformInstructionConfigKey,
+} from '@miniapp/admin-client';
+import { VIP_STRATEGY_CONFIG_KEYS, type VipStrategyConfigKey } from '@miniapp/shared';
 
 export type AdminViewKey =
   | 'configs'
   | 'fallback_config'
-  | 'outreach_credit_grant'
   | 'invite_program'
   | 'image_generation_config'
   | 'image_plaza'
@@ -22,58 +30,23 @@ export type AdminViewKey =
 
 export { VIP_STRATEGY_CONFIG_KEYS, type VipStrategyConfigKey };
 
-/**
- * 裂变邀请的三个 managed config 不在侧栏单独成目录，
- * 统一收进「裂变邀请管理」视图作为 tab（顺序即 tab 顺序，末位固定加「邀请数据」）。
- */
-export const INVITE_PROGRAM_CONFIG_KEYS = [
-  'miniapp_invite_reward_rules',
-  'miniapp_invite_center_config',
-  'miniapp_invite_entry_enabled',
-] as const satisfies readonly ManagedConfigKey[];
+export {
+  IMAGE_GENERATION_CONFIG_KEYS,
+  IMAGE_PLAZA_CONFIG_KEYS,
+  INVITE_PROGRAM_CONFIG_KEYS,
+  PLATFORM_INSTRUCTION_CONFIG_KEYS,
+  type ImageGenerationConfigKey,
+  type ImagePlazaConfigKey,
+  type InviteProgramConfigKey,
+  type PlatformInstructionConfigKey,
+};
 
-export type InviteProgramConfigKey = (typeof INVITE_PROGRAM_CONFIG_KEYS)[number];
+/** 「裂变邀请管理」的 tab：三个配置加末位固定的「邀请数据」。 */
 export type InviteProgramTabKey = InviteProgramConfigKey | 'records';
-
-export const IMAGE_GENERATION_CONFIG_KEYS = [
-  'image_generation_enabled',
-  'image_generation_credits',
-  'image_price_label',
-  'image_text_model_config',
-  'image_prompt_policy',
-  'image_default_art_style',
-  'image_description_system_prompt',
-  'image_width',
-  'image_height',
-  'image_max_prompt_chars',
-  'image_max_output_bytes',
-  'image_prompt_over_limit_hint',
-  'image_description_failed_hint',
-  'image_generation_failed_hint',
-  'image_failed_unknown_hint',
-] as const satisfies readonly ManagedConfigKey[];
-export type ImageGenerationConfigKey = (typeof IMAGE_GENERATION_CONFIG_KEYS)[number];
-
-export const IMAGE_PLAZA_CONFIG_KEYS = [
-  'image_plaza_model_catalog',
-  'image_plaza_share_tip',
-  'image_plaza_tags',
-  // 'image_plaza_tags_feature_enabled',
-] as const satisfies readonly ManagedConfigKey[];
-export type ImagePlazaConfigKey = (typeof IMAGE_PLAZA_CONFIG_KEYS)[number];
 
 export function isImagePlazaConfigKey(key: ManagedConfigKey): key is ImagePlazaConfigKey {
   return (IMAGE_PLAZA_CONFIG_KEYS as readonly string[]).includes(key);
 }
-
-/** One workspace, four independently versioned managed-config keys. */
-export const PLATFORM_INSTRUCTION_CONFIG_KEYS = [
-  'choice_rules',
-  'status_rules',
-  'memory_rules',
-  'system_instructions',
-] as const satisfies readonly ManagedConfigKey[];
-export type PlatformInstructionConfigKey = (typeof PLATFORM_INSTRUCTION_CONFIG_KEYS)[number];
 
 export function isPlatformInstructionConfigKey(
   key: ManagedConfigKey
@@ -85,9 +58,6 @@ export function isImageGenerationConfigKey(key: ManagedConfigKey): key is ImageG
   return (IMAGE_GENERATION_CONFIG_KEYS as readonly string[]).includes(key);
 }
 
-/** 旧的单一免费次数键。额度改由 VIP 策略的 feature_free_trial_limits 发布，不再给运营入口。 */
-const LEGACY_MEDIA_FREE_TRIAL_LIMIT_KEY = 'media_feature_free_trial_limit';
-
 export function isInviteProgramConfigKey(key: ManagedConfigKey): key is InviteProgramConfigKey {
   return (INVITE_PROGRAM_CONFIG_KEYS as readonly string[]).includes(key);
 }
@@ -95,19 +65,6 @@ export function isInviteProgramConfigKey(key: ManagedConfigKey): key is InvitePr
 export function isVipStrategyConfigKey(key: ManagedConfigKey): key is VipStrategyConfigKey {
   return (VIP_STRATEGY_CONFIG_KEYS as readonly string[]).includes(key);
 }
-
-/** 侧栏「运营配置」子菜单实际展示的 config 目录（invite 三项已收进「裂变邀请管理」）。 */
-export const sidebarManagedConfigKeys: readonly ManagedConfigKey[] = managedConfigKeys.filter(
-  (key) =>
-    !isInviteProgramConfigKey(key) &&
-    !isImageGenerationConfigKey(key) &&
-    !isImagePlazaConfigKey(key) &&
-    !isPlatformInstructionConfigKey(key) &&
-    key !== 'reply_style_options' &&
-    key !== CREATOR_REVIEW_PROMPT_KEY &&
-    !isVipStrategyConfigKey(key) &&
-    key !== LEGACY_MEDIA_FREE_TRIAL_LIMIT_KEY
-);
 
 const CONFIG_PREFIX = 'config:';
 
@@ -140,7 +97,6 @@ export function resolveAdminMenuSelection(key: string): {
     }
   }
   if (
-    key === 'outreach_credit_grant' ||
     key === 'invite_program' ||
     key === 'image_generation_config' ||
     key === 'image_plaza' ||
@@ -154,4 +110,48 @@ export function resolveAdminMenuSelection(key: string): {
     return { view: key };
   }
   return { view: 'configs' };
+}
+
+export interface AdminMenuLeaf {
+  key: string;
+  label: string;
+}
+
+export interface AdminMenuGroupNode extends AdminMenuLeaf {
+  children: AdminMenuLeaf[];
+}
+
+export type AdminMenuNode = AdminMenuLeaf | AdminMenuGroupNode;
+
+function isGroupNode(node: AdminMenuNode): node is AdminMenuGroupNode {
+  return 'children' in node;
+}
+
+const GROUP_PREFIX = 'group:';
+
+/** 侧栏：按 admin-client 的 ADMIN_MENU_GROUPS 分组（与 CLI 的 config list 同一份），末尾是发布历史。 */
+export const ADMIN_MENU: AdminMenuNode[] = [
+  ...ADMIN_MENU_GROUPS.map((group) => ({
+    key: `${GROUP_PREFIX}${group.id}`,
+    label: group.label,
+    children: group.items.map((item) =>
+      item.kind === 'config'
+        ? { key: configMenuKey(item.key), label: item.label ?? configMetadata[item.key].label }
+        : { key: item.view, label: item.label }
+    ),
+  })),
+  { key: 'releases', label: '发布历史' },
+];
+
+/** 当前选中项所在的分组，用于默认展开。 */
+export function menuGroupKeyFor(menuKey: string): string | undefined {
+  return ADMIN_MENU.find(
+    (node) => isGroupNode(node) && node.children.some((child) => child.key === menuKey)
+  )?.key;
+}
+
+export function adminMenuLeafKeys(): string[] {
+  return ADMIN_MENU.flatMap((node) =>
+    isGroupNode(node) ? node.children.map((child) => child.key) : [node.key]
+  );
 }

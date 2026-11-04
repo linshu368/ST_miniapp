@@ -74,7 +74,7 @@ Venice 单图编辑按报价快照的 `sizingMode` 组装尺寸字段：所有�
 
 审核后的 Civitai 初始数据通过独立离线导入器进入公开作品，不伪造用户、会话或生成 attempt。导入保留最多 2000 字原始提示词与模型映射，超限行隔离且不截断；apply 必须同时提供逐条审核清单、明确 test/production 目标、原图存储确认和有限批次，生产还需额外确认。
 
-Feed/config 始终返回启用标签目录；点击业务标签按标签中文 label 在 `snapshot.prompt_zh` 字面包含筛选，「全部」不限制标签。`image_plaza_tags_feature_enabled` 只控制分享时空 tags 的自动打标。
+Feed/config 始终返回启用标签目录；点击业务标签按标签中文 label 在 `snapshot.prompt_zh` 字面包含筛选，「全部」不限制标签。分享时空 tags 恒自动打标（2026-11-03 起不再读取 `image_plaza_tags_feature_enabled`）。
 
 ## 变更记录
 

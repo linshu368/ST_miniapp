@@ -44,6 +44,9 @@ importers:
       '@dnd-kit/utilities':
         specifier: ^3.2.2
         version: 3.2.2(react@18.3.1)
+      '@miniapp/admin-client':
+        specifier: workspace:*
+        version: link:../admin-client
       '@miniapp/reply-renderer':
         specifier: workspace:*
         version: link:../reply-renderer
@@ -90,6 +93,53 @@ importers:
       vite:
         specifier: ^8.1.0
         version: 8.1.0(@types/node@22.19.17)(esbuild@0.27.7)(jiti@2.6.1)(terser@5.49.0)(tsx@4.21.0)(yaml@2.8.3)
+      vitest:
+        specifier: ^4.1.7
+        version: 4.1.7(@opentelemetry/api@1.9.1)(@types/node@22.19.17)(jsdom@26.1.0)(vite@8.1.0(@types/node@22.19.17)(esbuild@0.27.7)(jiti@2.6.1)(terser@5.49.0)(tsx@4.21.0)(yaml@2.8.3))
+
+  packages/admin-cli:
+    dependencies:
+      '@miniapp/admin-client':
+        specifier: workspace:*
+        version: link:../admin-client
+      '@miniapp/shared':
+        specifier: workspace:*
+        version: link:../shared
+      '@supabase/supabase-js':
+        specifier: ^2.110.6
+        version: 2.110.7
+      tsx:
+        specifier: ^4.19.0
+        version: 4.21.0
+      zod:
+        specifier: ^3.23.0
+        version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.19.17
+      typescript:
+        specifier: ^5.5.0
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.7
+        version: 4.1.7(@opentelemetry/api@1.9.1)(@types/node@22.19.17)(jsdom@26.1.0)(vite@8.1.0(@types/node@22.19.17)(esbuild@0.27.7)(jiti@2.6.1)(terser@5.49.0)(tsx@4.21.0)(yaml@2.8.3))
+
+  packages/admin-client:
+    dependencies:
+      '@miniapp/shared':
+        specifier: workspace:*
+        version: link:../shared
+      '@supabase/supabase-js':
+        specifier: ^2.110.6
+        version: 2.110.7
+      zod:
+        specifier: ^3.23.0
+        version: 3.25.76
+    devDependencies:
+      typescript:
+        specifier: ^5.5.0
+        version: 5.9.3
       vitest:
         specifier: ^4.1.7
         version: 4.1.7(@opentelemetry/api@1.9.1)(@types/node@22.19.17)(jsdom@26.1.0)(vite@8.1.0(@types/node@22.19.17)(esbuild@0.27.7)(jiti@2.6.1)(terser@5.49.0)(tsx@4.21.0)(yaml@2.8.3))
@@ -2297,9 +2347,6 @@ packages:
     resolution: {integrity: sha512-megYmexlYEoR/0qlsr4Snh9wtzAodO7MAri3NMevZrXzNvQRKlvmTcSBoKGLQEPDakgDZMqbMdf9DwoZz6qfoA==}
     engines: {node: '>=22.0.0'}
 
-  '@supabase/phoenix@0.4.2':
-    resolution: {integrity: sha512-YSAGnmDAfuleFCVt3CeurQZAhxRfXWeZIIkwp7NhYzQ1UwW6ePSnzsFAiUm/mbCkfoCf70QQHKW/K6RKh52a4A==}
-
   '@supabase/phoenix@0.4.5':
     resolution: {integrity: sha512-aAn9H9ovVyeApKy11OWOrrOGq8DV68yWeH4ud2lN9fzn4aO8Zb5GLL9m1pUg9nLqIcT+ZDfAcsZe0E/nqdv2lw==}
 
@@ -3317,9 +3364,6 @@ packages:
   es-iterator-helpers@1.3.2:
     resolution: {integrity: sha512-HVLACW1TppGYjJ8H6/jqH/pqOtKRw6wMlrB23xfExmFWxFquAIWCmwoLsOyN96K4a5KbmOf5At9ZUO3GZbetAw==}
     engines: {node: '>= 0.4'}
-
-  es-module-lexer@2.1.0:
-    resolution: {integrity: sha512-n27zTYMjYu1aj4MjCWzSP7G9r75utsaoc8m61weK+W8JMBGGQybd43GstCXZ3WNmSFtGT9wi59qQTW6mhTR5LQ==}
 
   es-module-lexer@2.3.1:
     resolution: {integrity: sha512-shc1dbU90Yl/xq1QrC7QRtfcwURZuVRfPhZbDoldJ1cn1gzDvBaBWlv0eFolj5+0znnPJz5TXLxsN77X/12KTA==}
@@ -7344,8 +7388,6 @@ snapshots:
     dependencies:
       tslib: 2.8.1
 
-  '@supabase/phoenix@0.4.2': {}
-
   '@supabase/phoenix@0.4.5': {}
 
   '@supabase/postgrest-js@2.107.0':
@@ -7358,7 +7400,7 @@ snapshots:
 
   '@supabase/realtime-js@2.107.0':
     dependencies:
-      '@supabase/phoenix': 0.4.2
+      '@supabase/phoenix': 0.4.5
       tslib: 2.8.1
 
   '@supabase/realtime-js@2.110.7':
@@ -7647,7 +7689,7 @@ snapshots:
       debug: 4.4.3
       minimatch: 10.2.5
       semver: 7.7.4
-      tinyglobby: 0.2.16
+      tinyglobby: 0.2.17
       ts-api-utils: 2.5.0(typescript@5.9.3)
       typescript: 5.9.3
     transitivePeerDependencies:
@@ -8543,8 +8585,6 @@ snapshots:
       iterator.prototype: 1.1.5
       math-intrinsics: 1.1.0
 
-  es-module-lexer@2.1.0: {}
-
   es-module-lexer@2.3.1: {}
 
   es-object-atoms@1.1.1:
@@ -8666,7 +8706,7 @@ snapshots:
       get-tsconfig: 4.14.0
       is-bun-module: 2.0.0
       stable-hash: 0.0.5
-      tinyglobby: 0.2.16
+      tinyglobby: 0.2.17
       unrs-resolver: 1.11.1
     optionalDependencies:
       eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.58.2(eslint@8.57.1)(typescript@5.9.3))(eslint@8.57.1)
@@ -10503,7 +10543,7 @@ snapshots:
       lines-and-columns: 1.2.4
       mz: 2.7.0
       pirates: 4.0.7
-      tinyglobby: 0.2.16
+      tinyglobby: 0.2.17
       ts-interface-checker: 0.1.13
 
   supabase@2.109.0:
@@ -10828,7 +10868,7 @@ snapshots:
       '@vitest/snapshot': 4.1.7
       '@vitest/spy': 4.1.7
       '@vitest/utils': 4.1.7
-      es-module-lexer: 2.1.0
+      es-module-lexer: 2.3.1
       expect-type: 1.3.0
       magic-string: 0.30.21
       obug: 2.1.1
@@ -10837,7 +10877,7 @@ snapshots:
       std-env: 4.1.0
       tinybench: 2.9.0
       tinyexec: 1.1.1
-      tinyglobby: 0.2.16
+      tinyglobby: 0.2.17
       tinyrainbow: 3.1.0
       vite: 8.1.0(@types/node@22.19.17)(esbuild@0.25.12)(jiti@2.6.1)(terser@5.49.0)(tsx@4.21.0)(yaml@2.8.3)
       why-is-node-running: 2.3.0
@@ -10857,7 +10897,7 @@ snapshots:
       '@vitest/snapshot': 4.1.7
       '@vitest/spy': 4.1.7
       '@vitest/utils': 4.1.7
-      es-module-lexer: 2.1.0
+      es-module-lexer: 2.3.1
       expect-type: 1.3.0
       magic-string: 0.30.21
       obug: 2.1.1
@@ -10866,7 +10906,7 @@ snapshots:
       std-env: 4.1.0
       tinybench: 2.9.0
       tinyexec: 1.1.1
-      tinyglobby: 0.2.16
+      tinyglobby: 0.2.17
       tinyrainbow: 3.1.0
       vite: 8.1.0(@types/node@22.19.17)(esbuild@0.27.7)(jiti@1.21.7)(terser@5.49.0)(tsx@4.21.0)(yaml@2.8.3)
       why-is-node-running: 2.3.0
@@ -10886,7 +10926,7 @@ snapshots:
       '@vitest/snapshot': 4.1.7
       '@vitest/spy': 4.1.7
       '@vitest/utils': 4.1.7
-      es-module-lexer: 2.1.0
+      es-module-lexer: 2.3.1
       expect-type: 1.3.0
       magic-string: 0.30.21
       obug: 2.1.1
@@ -10895,7 +10935,7 @@ snapshots:
       std-env: 4.1.0
       tinybench: 2.9.0
       tinyexec: 1.1.1
-      tinyglobby: 0.2.16
+      tinyglobby: 0.2.17
       tinyrainbow: 3.1.0
       vite: 8.1.0(@types/node@22.19.17)(esbuild@0.27.7)(jiti@2.6.1)(terser@5.49.0)(tsx@4.21.0)(yaml@2.8.3)
       why-is-node-running: 2.3.0

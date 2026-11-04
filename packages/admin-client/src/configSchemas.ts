@@ -9,7 +9,6 @@ import {
   DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG,
   DEFAULT_FEATURE_FREE_TRIAL_LIMIT,
   DEFAULT_LLM_PROVIDER_ROUTING_CONFIG,
-  DEFAULT_LOBBY_PINNED_CHARACTERS,
   DEFAULT_LOBBY_RANKING_PARAMS,
   DEFAULT_CHECKIN_NEW_USER_CREDITS,
   DEFAULT_CHECKIN_VETERAN_CREDITS,
@@ -27,7 +26,6 @@ import {
   ImagePlazaModelCatalogSchema,
   ImagePlazaShareTipConfigSchema,
   ImagePlazaTagConfigSchema,
-  LobbyPinnedCharactersSchema,
   LobbyRankingParamsSchema,
   MediaFeatureFreeTrialLimitSchema,
   LlmModelProviderSchema,
@@ -46,7 +44,6 @@ import { z } from 'zod';
 
 export const managedConfigKeys = [
   'miniapp_new_user_signup_bonus_credits',
-  'miniapp_daily_checkin_bonus_credits',
   'miniapp_checkin_new_user_credits',
   'miniapp_checkin_veteran_credits',
   'miniapp_character_free_chat_quota_limit',
@@ -55,7 +52,6 @@ export const managedConfigKeys = [
   'llm_model_catalog',
   'llm_pricing_config',
   'llm_provider_routing_config',
-  'system_fallback_character_id',
   'system_instructions',
   CREATOR_REVIEW_PROMPT_KEY,
   'choice_rules',
@@ -64,7 +60,6 @@ export const managedConfigKeys = [
   'reply_style_options',
   'pref_word_count_tiers',
   'lobby_ranking_params',
-  'lobby_pinned_characters',
   'miniapp_invite_reward_rules',
   'miniapp_invite_center_config',
   'miniapp_invite_entry_enabled',
@@ -86,8 +81,6 @@ export const managedConfigKeys = [
   'image_plaza_model_catalog',
   'image_plaza_share_tip',
   'image_plaza_tags',
-  'image_plaza_tags_feature_enabled',
-  'media_feature_free_trial_limit',
   ...VIP_STRATEGY_CONFIG_KEYS,
 ] as const;
 
@@ -311,7 +304,6 @@ export const DEFAULT_SYSTEM_INSTRUCTIONS = [
 
 export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   miniapp_new_user_signup_bonus_credits: nonnegativeInteger,
-  miniapp_daily_checkin_bonus_credits: nonnegativeInteger,
   miniapp_checkin_new_user_credits: CheckinTierCreditsSchema,
   miniapp_checkin_veteran_credits: CheckinTierCreditsSchema,
   miniapp_character_free_chat_quota_limit: positiveInteger,
@@ -320,7 +312,6 @@ export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   llm_model_catalog: ModelCatalogSchema,
   llm_pricing_config: LlmPricingConfigSchema,
   llm_provider_routing_config: LlmProviderRoutingConfigSchema,
-  system_fallback_character_id: z.string().uuid(),
   system_instructions: SystemInstructionsSchema,
   [CREATOR_REVIEW_PROMPT_KEY]: CreatorReviewPromptSchema,
   choice_rules: InstructionSlotRulesSchema,
@@ -329,7 +320,6 @@ export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   reply_style_options: ReplyStyleOptionsConfigSchema,
   pref_word_count_tiers: WordCountTiersConfigSchema,
   lobby_ranking_params: LobbyRankingParamsSchema,
-  lobby_pinned_characters: LobbyPinnedCharactersSchema,
   miniapp_invite_reward_rules: InviteRewardRulesSchema,
   miniapp_invite_center_config: InviteCenterConfigSchema,
   miniapp_invite_entry_enabled: InviteEntryEnabledSchema,
@@ -355,8 +345,6 @@ export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   image_plaza_model_catalog: ImagePlazaModelCatalogSchema,
   image_plaza_share_tip: ImagePlazaShareTipConfigSchema,
   image_plaza_tags: ImagePlazaTagConfigSchema,
-  image_plaza_tags_feature_enabled: z.boolean(),
-  media_feature_free_trial_limit: MediaFeatureFreeTrialLimitSchema,
   vip_purchase_enabled: VipFeatureSwitchSchema,
   vip_reminders_enabled: VipFeatureSwitchSchema,
   vip_plans_config: VipPlansConfigSchema,
@@ -373,12 +361,6 @@ export const configMetadata: Record<
     label: '新用户赠送星尘',
     description: '新用户首次进入时一次性赠送的 bonus 星尘。',
     defaultValue: 398,
-  },
-  miniapp_daily_checkin_bonus_credits: {
-    label: '每日签到奖励（遗留）',
-    description:
-      '遗留全员基础签到星尘。发奖已改为分档配置，此键不再读取；保留可编辑以兼容历史运营。',
-    defaultValue: 0,
   },
   miniapp_checkin_new_user_credits: {
     label: '新用户签到奖励',
@@ -451,11 +433,6 @@ export const configMetadata: Record<
       '按「模型 × 供应商」控制 OpenRouter 路由：屏蔽列表写入 provider.ignore；优先列表写入 provider.order 并允许兜底回落。规则只作用于所填模型，未配置的模型不受影响。',
     defaultValue: DEFAULT_LLM_PROVIDER_ROUTING_CONFIG,
   },
-  system_fallback_character_id: {
-    label: '系统兜底角色',
-    description: '角色不可用时使用的系统兜底角色 UUID。',
-    defaultValue: '',
-  },
   system_instructions: {
     label: '主体模板',
     description:
@@ -521,12 +498,6 @@ export const configMetadata: Record<
     description:
       '推荐页为全体用户轮换前 12 张优质角色，可设置换批间隔、重复上限和探索数量。轮换参数发布后生效，质量参数在下一次每日评分刷新后生效。',
     defaultValue: DEFAULT_LOBBY_RANKING_PARAMS,
-  },
-  lobby_pinned_characters: {
-    label: '推荐主推候选',
-    description:
-      '优质主推候选增加被选中的机会，可另设最多 1 张固定主推。金框不随个人轮换位置变化。',
-    defaultValue: DEFAULT_LOBBY_PINNED_CHARACTERS,
   },
   miniapp_invite_reward_rules: {
     label: '裂变邀请奖励规则',
@@ -717,18 +688,6 @@ export const configMetadata: Record<
       { id: 'anime', label: '动漫', enabled: true, sort_order: 1 },
       { id: 'poster', label: '海报', enabled: true, sort_order: 2 },
     ],
-  },
-  image_plaza_tags_feature_enabled: {
-    label: '分享自动打标开关',
-    description:
-      '仅控制分享时空标签时是否调用模型自动打标；关闭后广场仍展示业务标签并按提示词中文译文筛选。标签目录可继续编辑。',
-    defaultValue: true,
-  },
-  media_feature_free_trial_limit: {
-    label: '媒体免费轮次次数',
-    description:
-      '已停用的旧键，运行时不再读取。语音和初级图片免费次数请在 VIP 策略的 feature_free_trial_limits 中分别配置，范围 0 到 20。',
-    defaultValue: DEFAULT_FEATURE_FREE_TRIAL_LIMIT,
   },
   vip_purchase_enabled: {
     label: 'VIP 购买开关',

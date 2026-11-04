@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { Alert, App as AntApp, Button, Card, Input, Space, Typography } from 'antd';
-import type { InviteCenterConfig } from '../lib/configSchemas';
+import type { InviteCenterConfig } from '@miniapp/admin-client';
 
 const LINK_PLACEHOLDER = '{link}';
 const POSTER_ALLOWED_MIME_TYPES = ['image/png', 'image/jpeg', 'image/webp'];

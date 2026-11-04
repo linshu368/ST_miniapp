@@ -8,7 +8,7 @@ import {
   VipPlansConfigSchema,
   VipTextDiscountRateSchema,
 } from '@miniapp/shared';
-import { configSchemas } from './configSchemas';
+import { configSchemas } from '@miniapp/admin-client';
 import { blankToNull, checkinAbsoluteCredits, vipPriceLabel } from './vipStrategyForm';
 
 describe('VIP strategy form', () => {
