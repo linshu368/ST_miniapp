@@ -30,6 +30,7 @@
 - 不得导入 frontend 或 backend；不得使用数据库行类型作为 UI/API 契约。
 - 环境切换必须同时切换 API base、Supabase client/session 和缓存上下文，不得混用环境数据。
 - 发布、回滚、赠送、删除、上下架等写操作必须防重复提交、展示明确结果并保留可恢复路径。
+- 新增配置、页面或 Admin 接口时同步运营平台 CLI：调用代码与注册表放 `packages/admin-client`，专用页面在 `packages/admin-cli/src/coverage.ts` 登记并补命令（见 `packages/admin-cli/README.md`「维护」）。
 - 新抽象必须基于稳定职责和真实复用场景；禁止为假设需求预建通用框架。
 - 不得以“简洁”为由省略鉴权、校验、错误反馈、审计语义或测试，也不得以“高可用”为由无故引入队列/缓存/重试层。
 
