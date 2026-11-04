@@ -42,6 +42,7 @@ pnpm admin config get miniapp_payment_plans                         # 复核
 ```
 
 - 文本类配置（系统指令、角色卡审核提示词、图片描述 system prompt）`--file` 读纯文本。
+- 以 `-` 开头的值要写成 `--value=-1`（`--value -1` 会被当成另一个参数）。
 - 每个配置只有一份草稿，网页和 CLI 共用。已有与线上不同的草稿时 `draft set` 默认拒绝（`draft_exists`），确认可以覆盖再加 `--replace-draft`。
 - 发布时若线上已被别人改过，数据库会拒绝（`conflict`），重新 `draft set` 即可。
 - 回滚：`pnpm admin config releases <key>` 找到发布 id，`pnpm admin config rollback <release-id>`。
