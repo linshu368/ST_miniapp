@@ -710,12 +710,12 @@ test('@drama 播放失败可重试，列表失败和空状态有出口', async (
   await request.post(`${previewApiUrl}/__preview/reset`, { data: { scenario: 'dramas' } });
   await page.getByRole('button', { name: '重新播放', exact: true }).click();
   await pauseReadyVideo(page);
-  await page.evaluate(() => localStorage.removeItem('miniapp:drama-catalog:v1'));
+  await page.evaluate(() => localStorage.removeItem('miniapp:drama-catalog:stream-v2'));
   await preview.scenario('drama-list-error');
   await page.goto('/dramas');
   await expect(page.getByText('短剧暂时没加载出来')).toBeVisible({ timeout: 25000 });
   await expect(page.getByRole('button', { name: '重新加载', exact: true })).toBeVisible();
-  await page.evaluate(() => localStorage.removeItem('miniapp:drama-catalog:v1'));
+  await page.evaluate(() => localStorage.removeItem('miniapp:drama-catalog:stream-v2'));
   await preview.scenario('empty');
   await page.goto('/dramas');
   await expect(page.getByRole('heading', { name: '好戏，即将开场' })).toBeVisible();

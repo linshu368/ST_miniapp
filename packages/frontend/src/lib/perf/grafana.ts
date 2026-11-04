@@ -74,9 +74,10 @@ const ENUMS: Readonly<Record<string, readonly string[]>> = {
   seeked_status: ['available', 'missing'],
   buffer_observed_status: ['available', 'missing'],
   frame_processing_status: ['available', 'unsupported', 'missing'],
-  cdn_group: ['bunny', 'supabase', 'unknown'],
-  cdn_provider: ['bunny', 'supabase', 'unknown'],
-  cdn_reason: ['assigned', 'disabled', 'unavailable', 'unknown'],
+  cdn_group: ['bunny', 'supabase', 'stream', 'unknown'],
+  cdn_provider: ['bunny', 'supabase', 'stream', 'unknown'],
+  cdn_reason: ['assigned', 'disabled', 'unavailable', 'fallback', 'unknown'],
+  stream_budget: ['within_3s', 'over_3s', 'not_started', 'unmeasured', 'background'],
   cdn_budget: ['within_5s', 'over_5s', 'not_started', 'unmeasured', 'background'],
   outcome: [
     'started',

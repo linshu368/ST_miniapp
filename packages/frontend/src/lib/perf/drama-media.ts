@@ -1,3 +1,4 @@
+import { ownsDramaSource } from '../drama-media-source';
 import type { DramaPlaybackTiming } from './drama-timing';
 import type { DramaMediaEvent, DramaMediaState } from '@miniapp/shared';
 import { observeDramaLongTasks, observeDramaResources } from './drama-resources';
@@ -97,7 +98,7 @@ export function observeDramaMedia(
   let qualityMediaTime = video.currentTime;
   const qualityEligible = () =>
     !disposed &&
-    video.currentSrc === source &&
+    ownsDramaSource(video, source) &&
     visible() &&
     !video.paused &&
     !video.seeking &&
@@ -199,14 +200,15 @@ export function observeDramaMedia(
     if (qualityFrame) changeQuality('playing');
   };
   const confirmQualityFrame = () => {
-    if (!qualityEnabled || disposed || video.currentSrc !== source || video.readyState < 2) return;
+    if (!qualityEnabled || disposed || !ownsDramaSource(video, source) || video.readyState < 2)
+      return;
     qualityFrame = true;
     if (qualitySawPlaying && qualityState !== 'waiting' && qualityEligible())
       changeQuality('playing');
   };
   const observeQualityProgress = () => {
     if (!qualityEnabled || disposed) return;
-    if (video.currentSrc !== source) {
+    if (!ownsDramaSource(video, source)) {
       stopQuality();
       return;
     }
@@ -246,7 +248,7 @@ export function observeDramaMedia(
     if (
       disposed ||
       timing.outcome !== 'playing' ||
-      video.currentSrc !== source ||
+      !ownsDramaSource(video, source) ||
       !visible() ||
       video.paused ||
       video.seeking ||
@@ -282,9 +284,9 @@ export function observeDramaMedia(
   const initialTime = 0;
   const stopResources = observeDramaResources(source, timing);
   const stopLongTasks = observeDramaLongTasks(timing);
-  const current = () => !disposed && !timing.outcome && video.currentSrc === source;
+  const current = () => !disposed && !timing.outcome && ownsDramaSource(video, source);
   const unbindState = timing.bindMediaState(() =>
-    !disposed && video.currentSrc === source ? mediaState(video) : undefined
+    !disposed && ownsDramaSource(video, source) ? mediaState(video) : undefined
   );
   const complete = () => {
     if (playing && frame && current()) timing.finish('playing');
@@ -298,7 +300,7 @@ export function observeDramaMedia(
   const onPlaying = () => {
     observeQualityPlaying();
     finishRebuffer(
-      video.currentSrc !== source
+      !ownsDramaSource(video, source)
         ? 'switched'
         : !visible()
           ? 'background'
@@ -442,7 +444,7 @@ export function observeDramaMedia(
     },
     dispose() {
       stopQuality();
-      finishRebuffer(video.currentSrc === source ? 'disposed' : 'switched');
+      finishRebuffer(ownsDramaSource(video, source) ? 'disposed' : 'switched');
       stopResources();
       stopLongTasks();
       disposed = true;

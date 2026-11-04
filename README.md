@@ -213,3 +213,5 @@ pnpm supabase:link:test
 - [Admin spec](.trellis/spec/admin/app/index.md)
 - [Shared spec](.trellis/spec/shared/contracts/index.md)
 - [Supabase spec](.trellis/spec/database/supabase/index.md)
+
+短剧 Cloudflare Stream A/B 的配置、同序置顶、播放器恢复和验收顺序见 [Stream A/B 接入](docs/drama-stream-ab.md)。

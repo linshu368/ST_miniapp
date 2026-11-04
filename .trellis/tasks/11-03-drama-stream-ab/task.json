@@ -1,0 +1,63 @@
+{
+  "id": "drama-stream-ab",
+  "name": "drama-stream-ab",
+  "title": "Cloudflare Stream 小片库与 Supabase MP4 A/B 规划",
+  "description": "实现30部竖屏短剧同序置顶、Stream私有HLS与Supabase MP4固定用户A/B；本地回归完成，TEST素材与真机验收进行中。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "短剧播放：shared、backend、frontend、既有工程观测",
+  "package": null,
+  "priority": "P2",
+  "creator": "linshu",
+  "assignee": "linshu368",
+  "createdAt": "2026-11-03",
+  "completedAt": null,
+  "branch": "codex/drama-stream-ab",
+  "base_branch": "dev",
+  "worktree_path": "/Users/qj/.codex/worktrees/drama-stream-ab/ST_miniAPP",
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "用户批准实施并补齐TEST目录。v3全竖屏、多档30条素材与本地回归完成；待代码提交/推送、TEST预览与真机。当前基线dev 6ef2b2d3。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "backend.infrastructure.runtime-data-security",
+        "frontend.business.drama-experience",
+        "frontend.infrastructure.client-ui-foundation"
+      ]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": [
+        "/watch（封面起播、换剧、续看）",
+        "/dramas（30部同序置顶）",
+        "/dramas/:id（起播、换集及未缓冲向前快进）"
+      ],
+      "apis": ["GET /api/dramas", "GET /api/dramas/:id/play", "POST /api/telemetry/drama-timing"],
+      "android": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 3000
+      },
+      "ios": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 3000
+      },
+      "api": {
+        "p95_baseline_ms": null,
+        "p95_target_ms": 3000
+      },
+      "measurement": {
+        "source": "历史iOS低规格试验每臂3次，探索性起播P95 5530/4000ms，尚无稳定同片、同期、分平台的页面或接口P95基线。TEST真机与生产全量分组终态将沿用drama_v3及drama_seek_resume_v1。",
+        "window": "TEST先验证功能和埋点。正式生产窗口按用户固定50:50，灰度另窗记录，正式第7天检查覆盖、第14天读数；按平台、入口、片目、版本和原分组分别报告N、独立用户、3秒成功率与P95。证据不足延长或判不确定。"
+      },
+      "notes": "起播与播放中向前拖到未缓冲位置的端到端P95分别以3000ms为目标。页面及API的3000ms是本任务端到端上界预算，不等于接口通过即业务达标。Android/iOS页面和接口基线均无充分可用样本，保留null。恢复计入原分组与累计等待，真实Telegram真机结果尚待TEST预览。"
+    }
+  }
+}

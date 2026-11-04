@@ -5,7 +5,12 @@
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { requestLogger } from '../lib/logger.js';
-import { ok, fail } from '@miniapp/shared';
+import {
+  pinStreamDramas,
+  selectStreamDelivery,
+  signStreamPlayback,
+} from '../features/drama/stream.js';
+import { DramaPlaybackOptionsSchema, ok, fail } from '@miniapp/shared';
 import type { GetDramaByIdData, GetDramaPlaybackData, GetDramasData } from '@miniapp/shared';
 import { requireTelegramAuth } from '../middleware/auth.js';
 import { DramaRepository } from '../features/drama/repository.js';
@@ -113,7 +118,7 @@ export default async function dramaRoutes(app: FastifyInstance) {
         const j = Math.floor(Math.random() * (i + 1));
         [shuffled[i], shuffled[j]] = [shuffled[j]!, shuffled[i]!];
       }
-      return shuffled;
+      return pinStreamDramas(shuffled);
     });
     return reply.send(ok<GetDramasData>({ dramas: shuffled }));
   });
@@ -135,7 +140,9 @@ export default async function dramaRoutes(app: FastifyInstance) {
   // @frontend-ready: true — MVP：封面/时长待归档端补数据，标题/标签/播放已可用
   app.get('/api/dramas/:id/play', { preHandler: [authenticate] }, async (request, reply) => {
     const { id } = request.params as { id: string };
-    const { video_id: videoId } = request.query as { video_id?: string };
+    const parsed = DramaPlaybackOptionsSchema.safeParse(request.query);
+    if (!parsed.success) return reply.status(400).send(fail('BAD_REQUEST', '播放参数无效'));
+    const { video_id: videoId, format, fallback } = parsed.data;
 
     if (!UUID_PATTERN.test(id)) {
       return reply.status(400).send(fail('BAD_REQUEST', '短剧 ID 无效'));
@@ -180,6 +187,45 @@ export default async function dramaRoutes(app: FastifyInstance) {
       );
     }
 
+    const stream =
+      format === 'hls' ? selectStreamDelivery(request.user!.id, id, selected.id) : null;
+    if (stream) {
+      timings.get(request)!.delivery = stream.delivery;
+      if (stream.delivery.group === 'stream' && fallback !== 'mp4') {
+        try {
+          const signed = await measure(request, 'sign', () =>
+            signStreamPlayback(stream.config, stream.video.uid)
+          );
+          timings.get(request)!.playable = true;
+          return reply.send(
+            ok<GetDramaPlaybackData>({
+              playback: { video_id: selected.id, ...signed, delivery: stream.delivery },
+            })
+          );
+        } catch {
+          // No token or signing error text is safe to include in telemetry.
+          stream.delivery = { ...stream.delivery, provider: 'unknown', reason: 'unavailable' };
+          timings.get(request)!.playable = false;
+          return reply.send(
+            ok<GetDramaPlaybackData>({
+              playback: {
+                video_id: selected.id,
+                playable: false,
+                play_url: null,
+                expires_at: null,
+                delivery: stream.delivery,
+              },
+            })
+          );
+        }
+      }
+      selection.cdn = null;
+      selection.delivery = {
+        ...stream.delivery,
+        provider: 'supabase',
+        reason: fallback === 'mp4' ? 'fallback' : 'assigned',
+      };
+    }
     const timing = timings.get(request)!;
     const signed = await measure(request, 'sign', () =>
       signedUrls.getPlayUrl(selected.object_path!, request.log, timing.sign, selection.cdn)

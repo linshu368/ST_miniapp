@@ -194,7 +194,18 @@ function mirrorEngineeringTiming(report: DramaTimingReport): void {
       // Budget and outcome travel together; an independently dropped measurement
       // cannot manufacture a faster rate. All final projections use the attempt clock.
       ...(report.type === 'playback' && report.phase === 'final'
-        ? { cdn_budget: startupBudget(report) }
+        ? {
+            cdn_budget: startupBudget(report),
+            stream_budget:
+              startupBudget(report) === 'within_5s' || startupBudget(report) === 'over_5s'
+                ? Math.max(
+                    report.entryElapsedMs ?? 0,
+                    report.recovery?.cumulativeMs ?? report.elapsedMs
+                  ) <= 3000
+                  ? 'within_3s'
+                  : 'over_3s'
+                : startupBudget(report),
+          }
         : {}),
       route: report.route ?? (report.type === 'list' ? '/dramas' : '/dramas/:id'),
       list_start_kind: report.type === 'list' ? report.list?.startKind : undefined,

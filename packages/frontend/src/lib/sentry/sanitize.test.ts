@@ -266,3 +266,11 @@ describe('deferred tracing', () => {
     expect(filter('https://api.example.test/api/dramas')).toBe(true);
   });
 });
+
+it('redacts Stream playback credentials embedded in media paths', () => {
+  const value = sanitizeTelemetry({
+    url: 'https://customer-unit.cloudflarestream.com/private-playback-value/manifest/video.m3u8',
+  });
+  expect(value.url).not.toContain('private-playback-value');
+  expect(value.url).toContain('/manifest/video.m3u8');
+});

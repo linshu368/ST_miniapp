@@ -29,7 +29,7 @@ export function railwayDramaReport(
       serverRelease?: string;
       experimentId?: string;
       experimentUser?: string;
-      assignedGroup?: 'bunny' | 'supabase';
+      assignedGroup?: 'bunny' | 'supabase' | 'stream';
     }
   | undefined {
   const outer = object(value);
@@ -111,7 +111,9 @@ export function railwayDramaReport(
         ? fields.experiment_user
         : undefined,
     assignedGroup:
-      fields.assigned_group === 'bunny' || fields.assigned_group === 'supabase'
+      fields.assigned_group === 'bunny' ||
+      fields.assigned_group === 'supabase' ||
+      fields.assigned_group === 'stream'
         ? fields.assigned_group
         : undefined,
   };

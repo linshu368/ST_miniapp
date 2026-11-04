@@ -50,7 +50,12 @@ export function isSensitiveTelemetryKey(key: string): boolean {
 }
 
 function sanitizeString(value: string): string {
-  return value.replace(SENSITIVE_QUERY_PARAM, `$1${REDACTED}`);
+  return value
+    .replace(
+      /(https?:\/\/customer-[a-z0-9-]+\.cloudflarestream\.com\/)[^/\s"<>]+/gi,
+      `$1${REDACTED}`
+    )
+    .replace(SENSITIVE_QUERY_PARAM, `$1${REDACTED}`);
 }
 
 function sanitizeValue(
