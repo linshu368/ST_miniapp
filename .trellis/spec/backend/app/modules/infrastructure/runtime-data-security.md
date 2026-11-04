@@ -61,7 +61,7 @@ PostHog capture 用 Node 原生 fetch、短超时、无重试；支付按 `order
 
 ## 图片创作广场 V2（2026-10-12）
 
-图片广场目录、价格、标签、分享提示与开关从统一 runtime-config 入口读取并 fail closed；Venice 凭据只在服务端环境读取。原图和参考图存私有 bucket，HTTP 只返回短期签名 URL；worker 使用数据库租约恢复，日志只记允许字段与结果摘要。`image_plaza_tags_feature_enabled` 仅门控分享自动打标，不门控 feed 标签目录返回。
+图片广场目录、价格、标签、分享提示与开关从统一 runtime-config 入口读取并 fail closed；Venice 凭据只在服务端环境读取。原图和参考图存私有 bucket，HTTP 只返回短期签名 URL；worker 使用数据库租约恢复，日志只记允许字段与结果摘要。分享自动打标自 2026-11-03 起恒开启，不再读取 `image_plaza_tags_feature_enabled`。
 
 图片广场 worker 在失败落库尝试后，除 Railway Pino 原始异常外还通过现有 `sendBackendSentryLog` 写一条脱敏摘要；只包含 attempt、provider model、模式、内部错误码和结果是否未知，不包含 prompt、参考图、provider 正文或 URL。Sentry 未配置或发送异常不得改变 attempt 失败终态或中断同一 tick 的后续任务。
 

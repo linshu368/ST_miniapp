@@ -42,12 +42,12 @@ import {
   type ConfigDraft,
   type ConfigRelease,
   type ManagedConfig,
-} from '../lib/adminApi';
+} from '@miniapp/admin-client';
 import {
   configMetadata,
   parseManagedConfig,
   resolveManagedWorkingValue,
-} from '../lib/configSchemas';
+} from '@miniapp/admin-client';
 import type { AdminEnvironment } from '../lib/environment';
 import {
   blankToNull,

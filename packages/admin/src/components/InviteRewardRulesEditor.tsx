@@ -1,5 +1,5 @@
 import { Card, InputNumber, Space, Switch, Typography } from 'antd';
-import { INVITE_RULE_KEY_LABELS, type InviteRewardRulesConfig } from '../lib/configSchemas';
+import { INVITE_RULE_KEY_LABELS, type InviteRewardRulesConfig } from '@miniapp/admin-client';
 
 interface InviteRewardRulesEditorProps {
   value: InviteRewardRulesConfig;

@@ -3,9 +3,6 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { CreatorReviewTestRequest } from '@miniapp/shared';
 
 const mocks = vi.hoisted(() => ({ token: vi.fn(), fetch: vi.fn() }));
-vi.mock('./environment', () => ({
-  getAdminApiUrl: (environment: string) => `https://${environment}.example.invalid`,
-}));
 vi.mock('./textPostprocessApi', () => ({ readAdminAccessToken: mocks.token }));
 import { testCreatorCharacterReview } from './adminApi';
 
@@ -35,7 +32,9 @@ describe('creator review test API', () => {
     'sends current unpublished policy and text to the authenticated %s test endpoint only',
     async (environment) => {
       mocks.fetch.mockResolvedValue(envelope({ approved: true, reason: '符合公开要求' }));
-      await expect(testCreatorCharacterReview(client, environment, input)).resolves.toEqual({
+      await expect(
+        testCreatorCharacterReview(client, `https://${environment}.example.invalid`, input)
+      ).resolves.toEqual({
         result: { approved: true, reason: '符合公开要求' },
       });
       expect(mocks.token).toHaveBeenCalledWith(client);
@@ -53,16 +52,18 @@ describe('creator review test API', () => {
 
   it('keeps a valid content rejection as a result, separate from transport failure', async () => {
     mocks.fetch.mockResolvedValue(envelope({ approved: false, reason: '请去掉站外转账广告' }));
-    await expect(testCreatorCharacterReview(client, 'test', input)).resolves.toEqual({
+    await expect(
+      testCreatorCharacterReview(client, 'https://test.example.invalid', input)
+    ).resolves.toEqual({
       result: { approved: false, reason: '请去掉站外转账广告' },
     });
   });
 
   it('does not send a request after the current environment session expired', async () => {
     mocks.token.mockResolvedValue(null);
-    await expect(testCreatorCharacterReview(client, 'test', input)).rejects.toThrow(
-      '登录状态已失效'
-    );
+    await expect(
+      testCreatorCharacterReview(client, 'https://test.example.invalid', input)
+    ).rejects.toThrow('登录状态已失效');
     expect(mocks.fetch).not.toHaveBeenCalled();
   });
 
@@ -72,14 +73,16 @@ describe('creator review test API', () => {
     { approved: true, reason: '通过', extra: '不能修改输出结构' },
   ])('does not claim schema validation for a malformed response %j', async (result) => {
     mocks.fetch.mockResolvedValue(envelope(result));
-    await expect(testCreatorCharacterReview(client, 'test', input)).rejects.toThrow('结构校验失败');
+    await expect(
+      testCreatorCharacterReview(client, 'https://test.example.invalid', input)
+    ).rejects.toThrow('结构校验失败');
   });
 
   it('reports missing write permission without treating it as content rejection', async () => {
     mocks.fetch.mockResolvedValue(new Response('{}', { status: 403 }));
-    await expect(testCreatorCharacterReview(client, 'production', input)).rejects.toThrow(
-      '审核测试权限'
-    );
+    await expect(
+      testCreatorCharacterReview(client, 'https://production.example.invalid', input)
+    ).rejects.toThrow('审核测试权限');
   });
 
   it('preserves a retryable service error without retrying the model test', async () => {
@@ -92,9 +95,9 @@ describe('creator review test API', () => {
         { status: 503 }
       )
     );
-    await expect(testCreatorCharacterReview(client, 'test', input)).rejects.toThrow(
-      '暂时无法完成审核'
-    );
+    await expect(
+      testCreatorCharacterReview(client, 'https://test.example.invalid', input)
+    ).rejects.toThrow('暂时无法完成审核');
     expect(mocks.fetch).toHaveBeenCalledTimes(1);
   });
 });

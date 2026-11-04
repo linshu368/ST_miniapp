@@ -5,7 +5,9 @@ export {
   type AdminPreviewApiInput,
 } from './preview-api';
 
-export type AdminEnvironment = 'test' | 'production';
+import type { AdminEnvironment } from '@miniapp/admin-client';
+
+export type { AdminEnvironment };
 
 export function resolveAdminTestApiUrl(configuredApiUrl: string, previewApiUrl: string): string {
   return previewApiUrl || configuredApiUrl;

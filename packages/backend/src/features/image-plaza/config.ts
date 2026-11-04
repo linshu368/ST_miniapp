@@ -14,13 +14,10 @@ const CONFIG_KEYS = [
   'image_plaza_share_tip',
   'image_plaza_tags',
   'image_plaza_share_rebate_rate',
-  'image_plaza_tags_feature_enabled',
 ] as const;
 
 export interface ImagePlazaRuntimeConfig {
   enabled: boolean;
-  /** 仅控制分享自动打标；显式 false 关闭，缺失视为开。不控制 feed 标签展示或筛选。 */
-  tagsFeatureEnabled: boolean;
   catalog: ImagePlazaModelCatalog;
   catalogVersion: number;
   shareTip: ImagePlazaShareTipConfig;
@@ -57,7 +54,6 @@ export async function getImagePlazaFeedRuntimeConfig(): Promise<ImagePlazaRuntim
 async function loadImagePlazaRuntimeConfig(): Promise<ImagePlazaRuntimeConfig> {
   const entries = await fetchRuntimeConfigEntries(CONFIG_KEYS);
   const enabled = entries.get('image_plaza_enabled')?.value === true;
-  const tagsFeatureEnabled = entries.get('image_plaza_tags_feature_enabled')?.value !== false;
   const catalogEntry = entries.get('image_plaza_model_catalog');
   const catalog = ImagePlazaModelCatalogSchema.safeParse(catalogEntry?.value);
   const shareTip = ImagePlazaShareTipConfigSchema.safeParse(
@@ -78,7 +74,6 @@ async function loadImagePlazaRuntimeConfig(): Promise<ImagePlazaRuntimeConfig> {
   }
   return {
     enabled,
-    tagsFeatureEnabled,
     catalog: catalog.data,
     catalogVersion: catalogEntry?.version ?? 0,
     shareTip: shareTip.data,

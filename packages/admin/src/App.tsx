@@ -20,6 +20,7 @@ import {
   Tabs,
   Tag,
   Typography,
+  type MenuProps,
 } from 'antd';
 import { Refine } from '@refinedev/core';
 import { dataProvider } from '@refinedev/supabase';
@@ -37,7 +38,6 @@ import { findDuplicateOpenRouterAssignments } from './components/ModelCatalogEdi
 import { CharacterCardsView } from './components/CharacterCardsView';
 import { AnnouncementsView } from './components/AnnouncementsView';
 import { InviteProgramView } from './components/InviteProgramView';
-import { OutreachCreditGrantView } from './components/OutreachCreditGrantView';
 import { VipStrategyView } from './components/VipStrategyView';
 import {
   discardDraft,
@@ -57,20 +57,22 @@ import {
   type ConfigDraft,
   type ConfigRelease,
   type ManagedConfig,
-} from './lib/adminApi';
+} from '@miniapp/admin-client';
 import {
   configMetadata,
   isTextManagedConfig,
   parseManagedConfig,
   resolveManagedWorkingValue,
   type ManagedConfigKey,
-} from './lib/configSchemas';
+} from '@miniapp/admin-client';
 import {
   checkAdminApiReachability,
   getAdminClient,
   isEnvironmentConfigured,
   type AdminEnvironment,
+  getAdminApiUrl,
 } from './lib/environment';
+import { readFileAsBase64 } from './lib/fileBase64';
 import {
   fetchModelProviderDirectory,
   getCatalogProviderIssues,
@@ -89,7 +91,8 @@ import {
   isImagePlazaConfigKey,
   isPlatformInstructionConfigKey,
   resolveAdminMenuSelection,
-  sidebarManagedConfigKeys,
+  ADMIN_MENU,
+  menuGroupKeyFor,
   type AdminViewKey,
   type InviteProgramTabKey,
   type ImageGenerationConfigKey,
@@ -102,6 +105,17 @@ import {
   resetLocalEdits,
   type WorkbenchStore,
 } from './lib/textPostprocessWorkbench';
+
+// antd 的菜单项是联合类型，逐项构造字面量才能让类型推断落到正确分支。
+const MENU_ITEMS: MenuProps['items'] = ADMIN_MENU.map((node) =>
+  'children' in node
+    ? {
+        key: node.key,
+        label: node.label,
+        children: node.children.map((child) => ({ key: child.key, label: child.label })),
+      }
+    : { key: node.key, label: node.label }
+);
 
 function confirmAction(title: string, content: React.ReactNode, danger = false): Promise<boolean> {
   return new Promise((resolve) => {
@@ -464,6 +478,7 @@ function AdminWorkspace(props: {
   const { message } = AntApp.useApp();
   const [view, setView] = useState<AdminViewKey>('configs');
   const [selectedKey, setSelectedKey] = useState<ManagedConfigKey>('llm_model_catalog');
+  const selectedMenuKey = view === 'configs' ? configMenuKey(selectedKey) : view;
   // 「裂变邀请管理」当前 tab；config tab 激活时须与 selectedKey 同步，编辑器才指向正确的 key
   const [inviteTab, setInviteTab] = useState<InviteProgramTabKey>(INVITE_PROGRAM_CONFIG_KEYS[0]);
   const [imageConfigTab, setImageConfigTab] = useState<ImageGenerationConfigKey>(
@@ -587,12 +602,9 @@ function AdminWorkspace(props: {
     }
   }, [props.client]);
 
-  // 固定位编辑器要按卡名选卡，所以它也需要角色卡清单，不只有角色卡页面需要
   useEffect(() => {
-    if (view === 'characters' || selectedKey === 'lobby_pinned_characters') {
-      void reloadCharacters();
-    }
-  }, [reloadCharacters, selectedKey, view]);
+    if (view === 'characters') void reloadCharacters();
+  }, [reloadCharacters, view]);
 
   const reloadProviderDirectory = useCallback(
     async (provider: LlmModelProvider, forceRefresh = false) => {
@@ -1012,15 +1024,18 @@ function AdminWorkspace(props: {
         syncLoading={providerLoading}
         syncError={providerErrors}
         onRefreshProvider={(provider) => void reloadProviderDirectory(provider, true)}
-        characters={characters}
-        charactersLoading={charactersLoading}
-        charactersError={charactersError}
-        onUploadInvitePoster={(file) => uploadInvitePoster(props.client, props.environment, file)}
+        onUploadInvitePoster={async (file) =>
+          uploadInvitePoster(
+            props.client,
+            getAdminApiUrl(props.environment),
+            await readFileAsBase64(file, '海报文件读取失败')
+          )
+        }
         onTestCreatorReview={(input, signal) =>
-          testCreatorCharacterReview(props.client, props.environment, input, signal)
+          testCreatorCharacterReview(props.client, getAdminApiUrl(props.environment), input, signal)
         }
         onTestImageTextModel={(value) =>
-          testImageTextModelConfig(props.client, props.environment, value)
+          testImageTextModelConfig(props.client, getAdminApiUrl(props.environment), value)
         }
       />
       <Divider />
@@ -1132,8 +1147,8 @@ function AdminWorkspace(props: {
         </div>
         <Menu
           mode="inline"
-          defaultOpenKeys={['configs', 'platform_rules']}
-          selectedKeys={[view === 'configs' ? configMenuKey(selectedKey) : view]}
+          defaultOpenKeys={[menuGroupKeyFor(selectedMenuKey) ?? ADMIN_MENU[0]?.key ?? '']}
+          selectedKeys={[selectedMenuKey]}
           onClick={({ key }) => {
             void (async () => {
               if (saving) return;
@@ -1179,37 +1194,7 @@ function AdminWorkspace(props: {
               setView(selection.view);
             })();
           }}
-          items={[
-            {
-              key: 'configs',
-              label: '运营配置',
-              children: [
-                ...sidebarManagedConfigKeys.map((key) => ({
-                  key: configMenuKey(key),
-                  label: configMetadata[key].label,
-                })),
-                { key: 'fallback_config', label: '兜底配置' },
-                { key: 'outreach_credit_grant', label: '回访星尘赠送' },
-                { key: 'invite_program', label: '裂变邀请管理' },
-                { key: 'image_generation_config', label: '图片生成配置' },
-                { key: 'image_plaza', label: '图片广场' },
-                {
-                  key: 'platform_rules',
-                  label: '平台规则',
-                  children: [
-                    { key: 'platform_instructions', label: '主体与模块规则' },
-                    { key: 'reply_style_options', label: '回复风格' },
-                  ],
-                },
-                { key: 'vip_strategy', label: 'VIP策略' },
-                { key: 'text_postprocess', label: '回复富文本规则' },
-              ],
-            },
-            { key: 'characters', label: '角色卡' },
-            { key: configMenuKey(CREATOR_REVIEW_PROMPT_KEY), label: '角色卡审核' },
-            { key: 'announcements', label: '公告管理' },
-            { key: 'releases', label: '发布历史' },
-          ]}
+          items={MENU_ITEMS}
         />
       </Layout.Sider>
       <Layout>
@@ -1293,12 +1278,6 @@ function AdminWorkspace(props: {
                 setSelectedKey('system_instructions');
                 setView('configs');
               }}
-            />
-          ) : view === 'outreach_credit_grant' ? (
-            <OutreachCreditGrantView
-              client={props.client}
-              environment={props.environment}
-              canWrite={canWrite}
             />
           ) : view === 'invite_program' ? (
             <InviteProgramView

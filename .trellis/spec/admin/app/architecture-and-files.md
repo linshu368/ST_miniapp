@@ -40,11 +40,9 @@
 | `components/CharacterCardsView.tsx`            | 角色卡创建、布局、状态、删除/恢复和版本操作                            |
 | `components/AnnouncementsView.tsx`             | 公告查询、编辑、发布和删除                                             |
 | `components/InviteProgramView.tsx`             | 裂变计划配置与邀请关系查询                                             |
-| `components/OutreachCreditGrantView.tsx`       | 定向回访星尘赠送                                                       |
 | `lib/adminApi.ts`                              | admin 通用 HTTP/Supabase 管理调用                                      |
 | `lib/announcementsApi.ts`                      | 公告 API 边界                                                          |
 | `lib/inviteAdminApi.ts`                        | 裂变管理 API 边界                                                      |
-| `lib/outreachCreditsApi.ts`                    | 赠送 API、输入和响应处理                                               |
 | `lib/environment.ts`                           | 测试/生产环境模型、URL 和切换规则                                      |
 | `lib/adminNavigation.ts`                       | 导航项与 view 纯逻辑                                                   |
 | `lib/textPostprocessApi.ts`                    | 文本后处理 Admin API、超时、结果未知与 request lookup                  |

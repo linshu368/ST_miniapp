@@ -18,9 +18,8 @@ import type {
   LobbyLatestBadgeData,
 } from '@miniapp/shared';
 import { loadCharacterRankingScores } from '../features/lobby/ranking-stats.js';
-import { applyPinnedOnly, buildRecommendedOrder } from '../features/lobby/recommended-ranking.js';
+import { buildRecommendedOrder } from '../features/lobby/recommended-ranking.js';
 import { resolveLobbyFeaturedIds } from '../features/lobby/featured.js';
-import { resolveLobbyPinnedCharacters } from '../features/lobby/pinned-characters.js';
 import { loadLobbyFeaturedIdSet } from '../features/lobby/featured-snapshot.js';
 import { hasNewLobbyCharacters } from '../lib/lobby-latest-badge.js';
 import { MiniappUserSettingsRepository } from '../infrastructure/repositories/MiniappUserSettingsRepository.js';
@@ -155,10 +154,7 @@ export default async function characterRoutes(app: FastifyInstance) {
     let featuredIds = new Set<string>();
 
     if (sort === 'recommended') {
-      const [snapshot, pinned] = await Promise.all([
-        loadCharacterRankingScores(),
-        resolveLobbyPinnedCharacters(request.log),
-      ]);
+      const snapshot = await loadCharacterRankingScores();
       // 排序分不可用（job 还没跑过第一轮，或查询失败）时保持运营顺序。
       // 不能把空结果当成「所有卡样本都是 0」——那会让整个大厅落进冷启动池被随机打乱。
       ordered = snapshot
@@ -167,15 +163,12 @@ export default async function characterRoutes(app: FastifyInstance) {
             scores: snapshot.scores,
             minSample: snapshot.minSample,
             protectedPrefix: LOBBY_FEATURED_POSITION_COUNT,
-            pinnedIds: pinned.characterIds,
           })
-        : // 分数没有也要认固定位：运营点的主推位与打分无关，不该被 job 状态连带拖掉
-          applyPinnedOnly(characters, pinned.characterIds);
+        : characters;
 
       featuredIds = resolveLobbyFeaturedIds({
         operatorOrdered: characters,
         snapshot,
-        pinnedIds: pinned.characterIds,
       });
     }
 
@@ -187,7 +180,7 @@ export default async function characterRoutes(app: FastifyInstance) {
         avatar_url: await resolveCharacterDisplayAvatarUrl(c.id, c.avatar_url),
         personality_tags: Array.isArray(c.tags) ? (c.tags as string[]) : [],
         author_name: c.creator,
-        // 「最新」页不保留运营固定位，也不残留热门金框。
+        // 「最新」页不残留热门金框。
         is_featured: featuredIds.has(c.id),
       }))
     );

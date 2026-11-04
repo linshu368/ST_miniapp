@@ -22,8 +22,6 @@ import {
   type TextPostprocessRequestLookup,
 } from '@miniapp/shared';
 import { z } from 'zod';
-import type { AdminEnvironment } from './environment';
-import { getAdminApiUrl } from './environment';
 
 /** 与设计里的管理端 API 超时一致。写操作超时按结果未知处理，不自动重发。 */
 export const TEXT_POSTPROCESS_API_TIMEOUT_MS = 5_000;
@@ -66,10 +64,9 @@ export class TextPostprocessClientError extends Error {
 }
 
 export interface TextPostprocessTransport {
-  environment: AdminEnvironment;
   getAccessToken: () => Promise<string | null>;
-  /** 测试注入。缺省时使用当前环境的 Admin API 根地址。 */
-  baseUrl?: string;
+  /** 当前环境的 Admin API 根地址。 */
+  baseUrl: string;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
 }
@@ -143,12 +140,8 @@ export async function readAdminAccessToken(client: SupabaseClient): Promise<stri
   return data.session?.access_token ?? null;
 }
 
-export function textPostprocessApiUrl(
-  environment: AdminEnvironment,
-  path: string,
-  baseUrl?: string
-): string {
-  const root = (baseUrl ?? getAdminApiUrl(environment)).replace(/\/+$/, '');
+export function textPostprocessApiUrl(path: string, baseUrl: string): string {
+  const root = baseUrl.replace(/\/+$/, '');
   return `${root}${path}`;
 }
 
@@ -215,19 +208,16 @@ async function request<T>(input: {
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   const fetchImpl = input.transport.fetchImpl ?? fetch;
   try {
-    const response = await fetchImpl(
-      textPostprocessApiUrl(input.transport.environment, input.path, input.transport.baseUrl),
-      {
-        method: input.method,
-        headers: {
-          Accept: 'application/json',
-          Authorization: `Bearer ${token}`,
-          ...(input.body === undefined ? {} : { 'Content-Type': 'application/json' }),
-        },
-        body: input.body === undefined ? undefined : JSON.stringify(input.body),
-        signal: controller.signal,
-      }
-    );
+    const response = await fetchImpl(textPostprocessApiUrl(input.path, input.transport.baseUrl), {
+      method: input.method,
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${token}`,
+        ...(input.body === undefined ? {} : { 'Content-Type': 'application/json' }),
+      },
+      body: input.body === undefined ? undefined : JSON.stringify(input.body),
+      signal: controller.signal,
+    });
     const payload = await readJson(response);
     if (!response.ok || !isSuccess(payload)) {
       throw classifyFailure(input.intent, response.status, payload);

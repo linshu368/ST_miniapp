@@ -55,11 +55,17 @@ export async function requireAdminActor(
     throw new AdminSessionError(401, 'Admin session is invalid');
   }
 
+  return loadAdminActor(user.id, access);
+}
+
+/** 按 auth 用户 id 读运营身份，并校验角色与当前部署环境的访问权限。 */
+export async function loadAdminActor(userId: string, access: AdminAccess): Promise<AdminActor> {
+  const supabase = getSupabaseClient();
   const { data: adminUser, error: adminError } = await supabase
     .schema('admin')
     .from('admin_users')
     .select('role,can_access_test,can_access_prod')
-    .eq('user_id', user.id)
+    .eq('user_id', userId)
     .maybeSingle();
   const role = adminUser?.role;
   if (
@@ -79,7 +85,7 @@ export async function requireAdminActor(
   }
 
   return {
-    userId: user.id,
+    userId,
     role,
     canAccessTest: adminUser.can_access_test === true,
     canAccessProd: adminUser.can_access_prod === true,

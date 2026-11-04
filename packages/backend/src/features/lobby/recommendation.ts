@@ -11,9 +11,8 @@ import type { FastifyBaseLogger } from 'fastify';
 import { prisma } from '../../lib/db.js';
 import { fetchRuntimeConfigEntry } from '../../platform/runtime-config.js';
 import { discoverableCharacterWhere } from '../creator/access.js';
-import { applyPinnedOnly, buildRecommendedOrder } from './recommended-ranking.js';
+import { buildRecommendedOrder } from './recommended-ranking.js';
 import { loadCharacterRankingScores } from './ranking-stats.js';
-import { resolveLobbyPinnedCharacters } from './pinned-characters.js';
 import {
   buildRecommendationOrder,
   recommendationHash,
@@ -92,10 +91,9 @@ export async function getLobbyRecommendation(
   log: FastifyBaseLogger
 ): Promise<LobbyRecommendationData> {
   const config = await loadLobbyRotationConfig(log);
-  const [candidates, snapshot, pinned] = await Promise.all([
+  const [candidates, snapshot] = await Promise.all([
     loadCandidates(),
     loadCharacterRankingScores(),
-    resolveLobbyPinnedCharacters(log),
   ]);
   const seed = recommendationHash(request.request_id);
   const ordered = snapshot
@@ -104,19 +102,16 @@ export async function getLobbyRecommendation(
         scores: snapshot.scores,
         minSample: snapshot.minSample,
         protectedPrefix: LOBBY_FEATURED_POSITION_COUNT,
-        pinnedIds: pinned.characterIds,
         seed,
       })
-    : applyPinnedOnly(candidates, pinned.characterIds);
+    : [...candidates];
   const matureCount = snapshot
     ? candidates.filter((c) => (snapshot.scores.get(c.id)?.sampleSize ?? 0) >= snapshot.minSample)
         .length
     : 0;
   // If there is not even a credible old prefix, use the operator order instead of shuffling an
-  // all-cold directory. Otherwise the previous protected/pinned ranking remains the fallback.
-  const fallbackOrder = (
-    matureCount >= 4 ? ordered : applyPinnedOnly(candidates, pinned.characterIds)
-  ).map((c) => c.id);
+  // all-cold directory. Otherwise the previous protected ranking remains the fallback.
+  const fallbackOrder = (matureCount >= 4 ? ordered : candidates).map((c) => c.id);
   const now = new Date();
   const generated: Array<{ headCount: number; repeatCount: number; degraded: boolean }> = [];
   const result = await updateRecommendation(prisma, userId, request, {
@@ -131,8 +126,6 @@ export async function getLobbyRecommendation(
         exposures,
         recent,
         config,
-        promotedIds: pinned.characterIds,
-        fixedId: pinned.fixedCharacterId ?? null,
         seed,
         now: now.getTime(),
       });
