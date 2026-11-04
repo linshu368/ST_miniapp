@@ -13,12 +13,12 @@ import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 
 import {
-  useCharactersQuery,
+  useCharacterQuery,
   useLobbyLatestBadgeQuery,
   useMarkLobbyLatestSeenMutation,
 } from '@/lib/api/characters';
-import { useLobbyRecommendation } from '@/lib/api/lobby-recommendations';
-import { lobbyViewerScope, projectLobbyOrder } from '@/lib/lobby-recommendation-state';
+import { useLobbyDiscoveryFeed } from '@/lib/api/lobby-recommendations';
+import { lobbyViewerScope } from '@/lib/lobby-recommendation-state';
 import { markCriticalSettled, useEntryEnrichReady } from '@/lib/entry-phase';
 import { chatEntryPath } from '@/lib/chat-entry';
 import { useCharacterSocialsQuery } from '@/lib/api/character-social';
@@ -123,6 +123,10 @@ function neighborIds(ids: string[], anchorId: string): string[] {
 }
 
 export function CharacterGallery() {
+  return <CharacterGalleryView key={lobbyViewerScope()} />;
+}
+
+function CharacterGalleryView() {
   const router = useRouter();
   const performancePolicy = useMobilePerformancePolicy();
   const listBudget = performancePolicy.characters;
@@ -158,31 +162,57 @@ export function CharacterGallery() {
         )[0],
     [history.data?.sessions]
   );
-  const [restoreSnapshot] = useState<LobbyReturnSnapshot | null>(() => readLobbyReturnSnapshot());
+  const [restoreSnapshot, setRestoreSnapshot] = useState<LobbyReturnSnapshot | null>(() =>
+    readLobbyReturnSnapshot()
+  );
   const [isRestoring, setIsRestoring] = useState(() => restoreSnapshot !== null);
   const [sort, setSort] = useState<LobbySort>(restoreSnapshot?.sort ?? savedDiscovery.sort);
   const [query, setQuery] = useState(restoreSnapshot?.query ?? savedDiscovery.query);
-  const recommendation = useLobbyRecommendation({
-    enabled: sort === 'recommended',
-    restoreBatchId: restoreSnapshot?.recommendationBatchId,
+  const [manualBatchChanged, setManualBatchChanged] = useState(false);
+  const [tailRequested, setTailRequested] = useState(false);
+  const {
+    recommendation,
+    resetVisit,
+    data,
+    isLoading,
+    isError,
+    isFetching,
+    isFetchedAfterMount,
+    refetch,
+    usesDirectory,
+    publicView,
+    publicCheckedAt,
+    hasUnloadedTail,
+    tailFailed,
+  } = useLobbyDiscoveryFeed({
+    sort,
+    search: !!query.trim(),
+    restore: restoreSnapshot,
+    manualChange: manualBatchChanged,
+    tailRequested,
   });
-  const { data, isLoading, isError, isFetching, isFetched, isFetchedAfterMount, refetch } =
-    useCharactersQuery(sort);
-  // 有可展示数据（含本地缓存）或列表已失败/完成首轮，即放行 enrich，别让旁路永远等。
   useEffect(() => {
-    if (data !== undefined || isError || isFetched) markCriticalSettled();
-  }, [data, isError, isFetched]);
+    if (data !== undefined || isError) markCriticalSettled();
+  }, [data, isError]);
   useEffect(() => {
     if (
+      usesDirectory &&
       criticalVisualSettled &&
       data !== undefined &&
       !isRestoring &&
       !isFetching &&
       !isFetchedAfterMount
-    ) {
+    )
       void refetch();
-    }
-  }, [criticalVisualSettled, data, isFetchedAfterMount, isFetching, isRestoring, refetch]);
+  }, [
+    usesDirectory,
+    criticalVisualSettled,
+    data,
+    isFetchedAfterMount,
+    isFetching,
+    isRestoring,
+    refetch,
+  ]);
   useEffect(() => {
     setCriticalVisualSettled(false);
   }, [sort]);
@@ -205,7 +235,7 @@ export function CharacterGallery() {
   const lobbyFresh = useFreshAfterFetch(isFetching, data !== undefined, isError);
   usePageReady(
     '/characters',
-    data !== undefined && !isError && recommendation.ready,
+    data !== undefined && !isError && !isLoading,
     lobbyFresh,
     isError,
     data !== undefined && (isFetching || isRestoring) ? 'cache' : lobbyFresh ? 'fetch' : 'unknown'
@@ -220,17 +250,20 @@ export function CharacterGallery() {
   const [enteringId, setEnteringId] = useState<string | null>(null);
   const enteringRef = useRef(false);
   const restoredAnchorIdRef = useRef<string | null>(null);
-  const restoreCalibrationUsedRef = useRef(false);
   const mountedRef = useRef(true);
   const changingBatchRef = useRef(false);
-  const [manualBatchChanged, setManualBatchChanged] = useState(false);
   const [batchNotice, setBatchNotice] = useState<{
     message: string;
     undoId?: string;
     retry?: 'refresh' | 'undo';
   } | null>(null);
   const noticeTimer = useRef<ReturnType<typeof setTimeout>>();
-  const previousView = useRef<{ batchId: string; scrollY: number; renderLimit: number }>();
+  const previousView = useRef<{
+    public: boolean;
+    tail: boolean;
+    scrollY: number;
+    renderLimit: number;
+  }>();
   const batchScroll = useRef<number | null>(null);
   useEffect(() => {
     mountedRef.current = true;
@@ -258,27 +291,7 @@ export function CharacterGallery() {
     if (previewId) router.prefetch(chatEntryPath(previewId));
   }, [previewId, router]);
 
-  const characters = useMemo(() => {
-    const catalogue = data?.characters ?? [];
-    if (sort !== 'recommended' || query.trim()) return catalogue;
-    const orderedIds =
-      restoreSnapshot?.recommendationBatchId && !recommendation.settled
-        ? restoreSnapshot.loadedCharacterIds
-        : recommendation.data?.enabled
-          ? recommendation.data.character_ids
-          : !manualBatchChanged && restoreSnapshot?.sort === 'recommended'
-            ? restoreSnapshot.loadedCharacterIds
-            : undefined;
-    return projectLobbyOrder(catalogue, orderedIds);
-  }, [
-    data?.characters,
-    manualBatchChanged,
-    query,
-    recommendation.data,
-    recommendation.settled,
-    restoreSnapshot,
-    sort,
-  ]);
+  const characters = useMemo(() => data?.characters ?? [], [data?.characters]);
 
   // 弹层用列表里已有的摘要即时打开，详情接口只补开场白。
   const previewSummary = useMemo(
@@ -316,12 +329,17 @@ export function CharacterGallery() {
     root.classList.add('featured-paused');
     return () => root.classList.remove('featured-paused');
   }, [previewId]);
+  const recentDetail = useCharacterQuery(recentConversation?.character_id, {
+    enabled: false,
+    sessionId: recentConversation?.id,
+  });
   const recentCharacter = useMemo(
     () =>
       recentConversation
-        ? characters.find((character) => character.id === recentConversation.character_id)
+        ? (characters.find((c) => c.id === recentConversation.character_id) ??
+          recentDetail.data?.character)
         : undefined,
-    [characters, recentConversation]
+    [characters, recentConversation, recentDetail.data]
   );
 
   useEffect(() => {
@@ -342,10 +360,10 @@ export function CharacterGallery() {
   }, [characters, query]);
 
   useLayoutEffect(() => {
-    if (generalScrollRestored.current || restoreSnapshot || !data || !recommendation.ready) return;
+    if (generalScrollRestored.current || restoreSnapshot || !data || isLoading) return;
     generalScrollRestored.current = true;
     restoreRoleplayScroll('/characters');
-  }, [data, recommendation.ready, restoreSnapshot]);
+  }, [data, isLoading, restoreSnapshot]);
 
   const [renderLimit, setRenderLimit] = useState(listBudget.initialRenderCount);
   // 从详情返回靠锚点卡片还原滚动位置：锚点及其之前的卡必须已挂载，之后只需再多挂约一屏。
@@ -377,6 +395,7 @@ export function CharacterGallery() {
     enabled:
       sort === 'recommended' &&
       !query.trim() &&
+      !publicView &&
       recommendation.ready &&
       recommendation.settled &&
       recommendation.data?.enabled === true &&
@@ -401,10 +420,25 @@ export function CharacterGallery() {
     clearTimeout(noticeTimer.current);
     const before = recommendation.data;
     const view = {
-      batchId: before?.batch_id ?? '',
+      public: !!publicView,
+      tail: tailRequested,
       scrollY: window.scrollY,
       renderLimit: effectiveLimit,
     };
+    if (action === 'undo' && previousView.current?.public && undoId === 'public-view') {
+      const previous = previousView.current;
+      previousView.current = undefined;
+      changingBatchRef.current = false;
+      setManualBatchChanged(false);
+      setTailRequested(previous.tail);
+      setRenderLimit(previous.renderLimit);
+      window.requestAnimationFrame(() =>
+        window.scrollTo({ top: previous.scrollY, behavior: 'auto' })
+      );
+      setBatchNotice({ message: '已回到上一批' });
+      noticeTimer.current = setTimeout(() => setBatchNotice(null), 8000);
+      return;
+    }
     const result =
       action === 'undo' && undoId
         ? await recommendation.undo(undoId)
@@ -430,20 +464,25 @@ export function CharacterGallery() {
     }
     clearLobbyReturnSnapshot();
     setManualBatchChanged(true);
-    restoreCalibrationUsedRef.current = true;
     if (action === 'undo') {
       const previous = previousView.current;
       batchScroll.current = previous?.scrollY ?? 0;
+      setTailRequested(previous?.tail ?? false);
       setRenderLimit(previous?.renderLimit ?? listBudget.initialRenderCount);
       previousView.current = undefined;
       setBatchNotice({ message: '已回到上一批' });
     } else {
       previousView.current = view;
+      setTailRequested(false);
       batchScroll.current = 0;
       setRenderLimit(listBudget.initialRenderCount);
       setBatchNotice({
         message: result.batch_id !== before?.batch_id ? '换一批，看看新的相遇' : '推荐已更新',
-        undoId: result.previous_batch_id ?? undefined,
+        undoId: view.public
+          ? 'public-view'
+          : result.previous_batch_id === before?.batch_id
+            ? (result.previous_batch_id ?? undefined)
+            : undefined,
       });
     }
     // The response may already have committed before the event continuation runs.
@@ -465,16 +504,21 @@ export function CharacterGallery() {
   // 哨兵只在用户接近列表底部时才触发；每批挂完 effectiveLimit 变化会重建观察器，
   // 哨兵仍在范围内就继续补，直到它被推到范围之外。
   const loadMoreRef = useRef<HTMLDivElement>(null);
-  const hasMoreToRender = !renderAll && effectiveLimit < filtered.length;
+  const hasMoreToRender = !renderAll && (effectiveLimit < filtered.length || hasUnloadedTail);
   useEffect(() => {
     const node = loadMoreRef.current;
     if (!hasMoreToRender || !node) return;
-    const grow = () =>
+    const grow = () => {
+      if (hasUnloadedTail && effectiveLimit >= filtered.length) setTailRequested(true);
       setRenderLimit((limit) => Math.max(limit, restoreFloor) + listBudget.renderBatchSize);
+    };
     if (typeof IntersectionObserver === 'undefined') {
-      // 极老的 WebView 没有观察器：退回一次性全量，保证列表完整。
-      setRenderLimit(Number.POSITIVE_INFINITY);
-      return;
+      // Even an older WebView waits for scroll demand before downloading the tail.
+      const onScroll = () => {
+        if (node.getBoundingClientRect().top <= window.innerHeight + 250) grow();
+      };
+      window.addEventListener('scroll', onScroll, { passive: true });
+      return () => window.removeEventListener('scroll', onScroll);
     }
     const observer = new IntersectionObserver(
       (entries) => {
@@ -484,7 +528,7 @@ export function CharacterGallery() {
     );
     observer.observe(node);
     return () => observer.disconnect();
-  }, [hasMoreToRender, effectiveLimit, listBudget, restoreFloor]);
+  }, [hasMoreToRender, hasUnloadedTail, effectiveLimit, filtered.length, listBudget, restoreFloor]);
 
   const finishRestore = useCallback(() => {
     clearLobbyReturnSnapshot();
@@ -501,7 +545,12 @@ export function CharacterGallery() {
       ];
       for (const id of candidateIds) {
         const element = findLobbyCardElement(id);
-        if (!element) continue;
+        // The selected ID may already be in the resolved list before its card is mounted.
+        // Give the real anchor a chance before falling back to a neighbour or a scroll offset.
+        if (!element) {
+          if (!allowScrollFallback && filtered.some((card) => card.id === id)) return false;
+          continue;
+        }
         const rect = element.getBoundingClientRect();
         window.scrollTo({
           top: clampScrollY(window.scrollY + rect.top - restoreSnapshot.anchorViewportTop),
@@ -521,21 +570,68 @@ export function CharacterGallery() {
 
       return false;
     },
-    [filtered.length, finishRestore, isError, restoreSnapshot]
+    [filtered, finishRestore, isError, restoreSnapshot]
   );
 
   useLayoutEffect(() => {
-    if (!isRestoring || isLoading || !recommendation.ready) return;
+    if (!isRestoring || isLoading) return;
     restoreFromSnapshot(false);
-  }, [isLoading, isRestoring, recommendation.ready, restoreFromSnapshot]);
+  }, [isLoading, isRestoring, restoreFromSnapshot]);
 
   useEffect(() => {
-    if (!isRestoring || !recommendation.ready) return;
+    if (!isRestoring || isLoading) return;
     const timer = window.setTimeout(() => {
       restoreFromSnapshot(true);
     }, RESTORE_DEADLINE_MS);
     return () => window.clearTimeout(timer);
-  }, [isRestoring, recommendation.ready, restoreFromSnapshot]);
+  }, [isRestoring, isLoading, restoreFromSnapshot]);
+
+  // The card can move *after* the first correct scroll: offscreen rows replace their
+  // intrinsic estimates, the recent-chat strip mounts, or Next restores the document scroll.
+  // Keep the already visible anchor steady through those layout changes, never through user input.
+  useLayoutEffect(() => {
+    const id = restoredAnchorIdRef.current;
+    if (!restoreSnapshot || isRestoring || manualBatchChanged || !id) return;
+    const anchor = findLobbyCardElement(id);
+    if (!anchor) return;
+    let frame = 0;
+    let stopped = false;
+    const align = () => {
+      frame = 0;
+      if (stopped || !anchor.isConnected) return;
+      const top = clampScrollY(
+        window.scrollY + anchor.getBoundingClientRect().top - restoreSnapshot.anchorViewportTop
+      );
+      if (Math.abs(top - window.scrollY) > 1) window.scrollTo({ top, behavior: 'instant' });
+    };
+    const schedule = () => {
+      if (!stopped && !frame) frame = window.requestAnimationFrame(align);
+    };
+    const observer =
+      typeof ResizeObserver !== 'undefined' ? new ResizeObserver(schedule) : undefined;
+    observer?.observe(document.body);
+    if (anchor.parentElement) observer?.observe(anchor.parentElement);
+    const inputEvents = ['pointerdown', 'touchstart', 'wheel', 'keydown'] as const;
+    const stop = () => {
+      if (stopped) return;
+      stopped = true;
+      observer?.disconnect();
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(deadline);
+      window.removeEventListener('scroll', schedule);
+      document.removeEventListener('load', schedule, true);
+      document.removeEventListener('contentvisibilityautostatechange', schedule, true);
+      for (const type of inputEvents) window.removeEventListener(type, stop, true);
+    };
+    const deadline = window.setTimeout(stop, RESTORE_DEADLINE_MS);
+    for (const type of inputEvents)
+      window.addEventListener(type, stop, { capture: true, passive: true });
+    window.addEventListener('scroll', schedule, { passive: true });
+    document.addEventListener('load', schedule, true);
+    document.addEventListener('contentvisibilityautostatechange', schedule, true);
+    schedule();
+    return stop;
+  }, [isRestoring, restoreSnapshot, manualBatchChanged]);
 
   const cancelRestore = useCallback(() => {
     if (!isRestoring) return;
@@ -558,10 +654,30 @@ export function CharacterGallery() {
         anchorViewportTop: rect?.top ?? 0,
         scrollY: window.scrollY,
         viewportWidth: window.innerWidth,
-        recommendationBatchId: sort === 'recommended' ? recommendation.data?.batch_id : null,
+        publicHead:
+          sort === 'recommended' && !query.trim() && publicView
+            ? {
+                cards: characters.slice(0, 12),
+                checkedAt: publicCheckedAt,
+                hasTail: hasUnloadedTail || characters.length > 12,
+              }
+            : undefined,
+        recommendationBatchId:
+          sort === 'recommended' && !query.trim() && !publicView
+            ? recommendation.data?.batch_id
+            : null,
       });
     },
-    [filtered, query, recommendation.data?.batch_id, sort]
+    [
+      filtered,
+      query,
+      recommendation.data?.batch_id,
+      sort,
+      publicView,
+      publicCheckedAt,
+      characters,
+      hasUnloadedTail,
+    ]
   );
 
   const handleImageSettled = useCallback(
@@ -575,26 +691,8 @@ export function CharacterGallery() {
           data !== undefined && (isFetching || isRestoring) ? 'cache' : 'fetch'
         );
       }
-      if (
-        restoreCalibrationUsedRef.current ||
-        restoredAnchorIdRef.current !== characterId ||
-        !restoreSnapshot
-      ) {
-        return;
-      }
-      restoreCalibrationUsedRef.current = true;
-      window.requestAnimationFrame(() => {
-        const element = findLobbyCardElement(characterId);
-        if (!element) return;
-        const rect = element.getBoundingClientRect();
-        window.scrollTo({
-          top: clampScrollY(window.scrollY + rect.top - restoreSnapshot.anchorViewportTop),
-          left: 0,
-          behavior: 'auto',
-        });
-      });
     },
-    [criticalCharacterId, data, isFetching, isRestoring, restoreSnapshot]
+    [criticalCharacterId, data, isFetching, isRestoring]
   );
 
   useEffect(() => {
@@ -685,8 +783,17 @@ export function CharacterGallery() {
               role="tab"
               aria-selected={active}
               onClick={() => {
-                if (sort !== tab.value) cancelRestore();
-                setSort(tab.value);
+                if (sort !== tab.value) {
+                  cancelRestore();
+                  setRestoreSnapshot(null);
+                  resetVisit();
+                  setTailRequested(false);
+                  setManualBatchChanged(false);
+                  setRenderLimit(listBudget.initialRenderCount);
+                  setBatchNotice(null);
+                  previousView.current = undefined;
+                  setSort(tab.value);
+                }
               }}
               className={cn(
                 'relative rounded-full border px-4 py-1.5 text-[13px] transition-all',
@@ -710,12 +817,12 @@ export function CharacterGallery() {
           );
         })}
       </div>
-      {sort === 'recommended' && !query.trim() && recommendation.data?.enabled ? (
+      {sort === 'recommended' && !query.trim() && (recommendation.data?.enabled || publicView) ? (
         <button
           type="button"
           aria-label="换一批推荐角色"
           aria-busy={recommendation.pending}
-          disabled={recommendation.pending || !recommendation.ready}
+          disabled={recommendation.pending || (!publicView && !recommendation.ready)}
           onClick={() => void changeBatch()}
           className="ml-auto inline-flex min-h-11 shrink-0 items-center justify-center gap-1.5 rounded-full px-2.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-card hover:text-foreground active:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
         >
@@ -777,7 +884,7 @@ export function CharacterGallery() {
     </>
   );
 
-  if (isLoading || (sort === 'recommended' && !query.trim() && !recommendation.ready)) {
+  if (isLoading) {
     return (
       <>
         {listHeader}
@@ -879,6 +986,15 @@ export function CharacterGallery() {
       {/* 渲染哨兵放在网格外：恢复滚动期间网格带 invisible，哨兵不受影响。 */}
       {hasMoreToRender ? (
         <div ref={loadMoreRef} aria-hidden="true" className="h-px w-full" />
+      ) : null}
+      {tailFailed ? (
+        <button
+          type="button"
+          onClick={() => void refetch()}
+          className="mx-auto block min-h-11 px-3 text-sm text-muted-foreground"
+        >
+          更多角色暂时没加载出来，点此重试
+        </button>
       ) : null}
       {detailLoaded ? (
         <CharacterDetailSheet

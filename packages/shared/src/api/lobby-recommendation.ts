@@ -1,6 +1,15 @@
 import { z } from 'zod';
+import { CharacterSummarySchema } from './characters.js';
 
 export const LOBBY_ROTATION_HEAD_SIZE = 12;
+
+/** CSV query on the public 12-card endpoint, for revalidating a previously visible head. */
+export const PublicLobbyHeadIdsSchema = z
+  .string()
+  .max(LOBBY_ROTATION_HEAD_SIZE * 37 - 1)
+  .transform((csv) => csv.split(',').map((id) => id.toLowerCase()))
+  .pipe(z.array(z.string().uuid()).min(1).max(LOBBY_ROTATION_HEAD_SIZE))
+  .refine((ids) => new Set(ids).size === ids.length, 'Duplicate public head IDs');
 
 /** Rotation applies to everyone. Legacy gate fields remain compatible with stored configs. */
 export const LobbyRotationConfigSchema = z.object({
@@ -28,6 +37,7 @@ export const DEFAULT_LOBBY_ROTATION_CONFIG: LobbyRotationConfig = {
 
 export const LobbyRecommendationRequestSchema = z
   .object({
+    include_head_cards: z.literal(true).optional(),
     action: z.enum(['open', 'resume', 'refresh', 'undo']),
     request_id: z.string().uuid(),
     expected_batch_id: z.string().uuid().nullable().optional(),
@@ -37,16 +47,29 @@ export const LobbyRecommendationRequestSchema = z
 export type LobbyRecommendationRequest = z.infer<typeof LobbyRecommendationRequestSchema>;
 
 /** Private ordering only; presentation data still comes from the public character directory. */
-export const LobbyRecommendationDataSchema = z.object({
-  enabled: z.boolean(),
-  degraded: z.boolean(),
-  batch_id: z.string().uuid().nullable(),
-  generated_at: z.string().datetime().nullable(),
-  expires_at: z.string().datetime().nullable(),
-  character_ids: z.array(z.string().uuid()).max(10000),
-  head_ids: z.array(z.string().uuid()).max(LOBBY_ROTATION_HEAD_SIZE),
-  previous_batch_id: z.string().uuid().nullable(),
-});
+export const LobbyRecommendationHeadIdsSchema = z
+  .array(z.string().uuid())
+  .max(LOBBY_ROTATION_HEAD_SIZE);
+export const LobbyRecommendationDataSchema = z
+  .object({
+    enabled: z.boolean(),
+    degraded: z.boolean(),
+    batch_id: z.string().uuid().nullable(),
+    generated_at: z.string().datetime().nullable(),
+    expires_at: z.string().datetime().nullable(),
+    character_ids: z.array(z.string().uuid()).max(10000),
+    head_ids: LobbyRecommendationHeadIdsSchema,
+    head_cards: z.array(CharacterSummarySchema).max(LOBBY_ROTATION_HEAD_SIZE).optional(),
+    previous_batch_id: z.string().uuid().nullable(),
+  })
+  .refine(
+    ({ head_cards, head_ids, character_ids }) =>
+      !head_cards ||
+      (head_cards.length === head_ids.length &&
+        head_cards.length === Math.min(character_ids.length, LOBBY_ROTATION_HEAD_SIZE) &&
+        head_cards.every((card, i) => card.id === head_ids[i] && card.id === character_ids[i])),
+    { path: ['head_cards'], message: 'Head summaries must match the visible batch prefix.' }
+  );
 export type LobbyRecommendationData = z.infer<typeof LobbyRecommendationDataSchema>;
 
 export const LobbyRecommendationExposuresSchema = z

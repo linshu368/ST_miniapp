@@ -42,6 +42,7 @@ pnpm admin config get miniapp_payment_plans                         # 复核
 ```
 
 - 文本类配置（系统指令、角色卡审核提示词、图片描述 system prompt）`--file` 读纯文本。
+- 以 `-` 开头的值要写成 `--value=-1`（`--value -1` 会被当成另一个参数）。
 - 每个配置只有一份草稿，网页和 CLI 共用。已有与线上不同的草稿时 `draft set` 默认拒绝（`draft_exists`），确认可以覆盖再加 `--replace-draft`。
 - 发布时若线上已被别人改过，数据库会拒绝（`conflict`），重新 `draft set` 即可。
 - 回滚：`pnpm admin config releases <key>` 找到发布 id，`pnpm admin config rollback <release-id>`。
@@ -100,6 +101,12 @@ pnpm admin text-rules draft --file source.json && pnpm admin text-rules publish
 
 - 测试环境（只做生产）。
 - 回访星尘赠送、角色卡 PNG 批量导入（`scripts/import-character.ts` 仍用 service-role，与本工具无关）。
+
+## 维护：运营平台加功能时同步 CLI
+
+- **新配置项**：在 `packages/admin-client/src/configSchemas.ts` 注册（key、schema、中文名/说明/默认值），并放进 `src/menu.ts` 的 `ADMIN_MENU_GROUPS`。CLI 的 `config` 命令自动支持，不用改 CLI。
+- **新专用页面 / 新 Admin 接口**：调用代码写在 `admin-client`（网页与 CLI 共用）；在 `src/commands/` 加命令，改生产的命令设 `write: true` 并走 `ctx.confirm`；在 `src/coverage.ts` 登记页面对应的命令；本 README 补一段用法。
+- `coverage.ts` 用类型强制：菜单新增页面却没登记，`pnpm --filter @miniapp/admin-cli typecheck` 会失败。
 
 ## 开发
 

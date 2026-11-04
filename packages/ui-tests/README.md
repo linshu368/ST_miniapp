@@ -183,6 +183,10 @@ pnpm test:ui:fixtures            # 模拟服务本身的协议与隔离检查
 
 UI fixture轮换用确定顺序方便验证，不代表生产随机算法；`pnpm test:lobby-ranking`另跑真实生产算法/HTTP契约和一次性PG17，验证质量分档、曝光恢复、22候选相邻去重、旧证据、权限/迁移重放、CAS与独立连接并发。两种验收互补，之后功能调整直接复用这两个命令。
 
+可选本地性能对照命令 `ST_UI_MEASURE_LOBBY=1 pnpm test:ui --project=android --grep @lobby-perf --repeat-each=6`。相同 662 张虚构角色、390×844 浏览器和已记住推荐标签的空缓存，依次打开推荐、进入首卡聊天并返回。只在两个本地 API 上施加 Chromium 的 80 ms 延迟及 256 KiB/s 上下行带宽。丢弃第 0 次 Next 开发编译预热，比较随后 5 次首卡能通过点击命中检测的中位耗时。不设绝对毫秒门槛。
+
+每次 Playwright 附件 `lobby-perf.json` 记录可点击后再观察 700 ms 内的 API 请求数，推荐批次及目录的解码字节、含响应头的浏览器传输字节。图片、页面脚本不计入这两个接口的字节数。比较不同提交时分别启动独立检出和本地 fixture，使用相同探针、摘要字段与数据量。
+
 ## 创作数据验收
 
 `ST_UI_APP_PORT=3180 pnpm preview:ui`，从 `/creation?tab=created` 点击「创作数据」或直接打开 `/creation/data`。`creator-data`、`creator-data-empty`、`creator-data-error` 三种场景固定；执行 `ST_UI_TEST_APP_PORT=3190 pnpm test:ui --grep @creator-data` 复用390/320移动验收，若端口占用请选择另一对空闲端口，不结束其他窗口服务。

@@ -1,10 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import {
+  LOBBY_ROTATION_HEAD_SIZE,
   LobbyRecommendationExposuresSchema,
   LobbyRecommendationRequestSchema,
   fail,
   ok,
 } from '@miniapp/shared';
+import { loadLobbyHeadCards } from './characters.js';
 import { requireTelegramAuth } from '../middleware/auth.js';
 import { getOrCreateDbUser } from '../lib/user.js';
 import {
@@ -24,6 +26,20 @@ export default async function lobbyRecommendationRoutes(app: FastifyInstance) {
     try {
       const user = await getOrCreateDbUser(request.user);
       const data = await getLobbyRecommendation(user.id, parsed.data, request.log);
+      if (parsed.data.include_head_cards) {
+        const cards = await loadLobbyHeadCards(data.character_ids, request.log);
+        const head = cards.map((card) => card.id);
+        // The live head query can exclude a card whose visibility changed after ranking.
+        // Keep the response's IDs and summaries in lockstep, including that race.
+        const lastId = head.at(-1);
+        const remaining =
+          head.length === LOBBY_ROTATION_HEAD_SIZE && lastId
+            ? data.character_ids.slice(data.character_ids.indexOf(lastId) + 1)
+            : [];
+        data.character_ids = [...head, ...remaining];
+        data.head_ids = head;
+        data.head_cards = cards;
+      }
       request.log.info(
         {
           kind: 'biz',

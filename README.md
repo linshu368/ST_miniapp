@@ -4,7 +4,8 @@ ST_miniapp 是围绕 Telegram MiniApp、AI 角色聊天、钱包/支付、语音
 
 > 角色质量评分本地候选：仅纳入首次向该卡发起聊天前，平台首次有效聊天已满24小时且至少完成10个有效逻辑轮次的用户。资格按历史时点判断，不追溯纳入新人首体验；无合格样本的卡按样本不足处理。复验 `pnpm test:lobby-ranking`（隔离本机PG17），本次未发布、未触发生产重算。
 
-> 角色推荐轮换（本地，未发布）：前12张按可信质量分层抽选，默认24小时、手动换批/撤回、曝光衰减与聊天返回保序。复用排序配置的 `rotation` 和主推候选的 `fixed_character_id`；上线直接全量生效，无需启用开关或灰度。`20261102_lobby_quality_rotation.sql`须先于后端执行；新评分未就绪时保留旧排序，后续新批次自动采用可信质量。复验 `pnpm test:lobby-ranking` 与 `pnpm test:ui --grep @lobby-rotation`；开发预览可选“推荐优质轮换”。
+> 角色推荐轮换：前12张按可信质量分层抽选，默认24小时、手动换批/撤回、曝光衰减与聊天返回保序。复用排序配置的 `rotation`，优质档按质量分层，全量生效。`20261102_lobby_quality_rotation.sql`须先于后端执行；新评分未就绪时保留旧排序，后续新批次自动采用可信质量。复验 `pnpm test:lobby-ranking` 与 `pnpm test:ui --grep @lobby-rotation`；开发预览可选“推荐优质轮换”。
+> 试聊返回直接恢复同批次和卡片位置。冷首屏只传前12张摘要，下滑至尾部或搜索时按需读取完整目录；同口径评分在24小时内复用上次成功结果。需先应用 `20261104_lobby_ranking_refresh_state.sql`，再发布后端。
 
 > 深层架构、数据流和路由清单见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)；Railway 生产运维见 [`ops/railway/README.md`](ops/railway/README.md)。本文负责新成员入门、依赖关系、环境、命令和交付约定。
 
