@@ -18,7 +18,6 @@ import {
   settlePaidOrder,
 } from '../features/payment/usecases/PaymentSettlement.js';
 import { toPaymentOrder } from '../infrastructure/repositories/MiniappPaymentOrderRepository.js';
-import { observePaymentOrderSettled } from '../features/payment/usecases/PaymentOrderTelemetry.js';
 
 const WEBHOOK_SECRET = 'whsec_route_test';
 
@@ -48,11 +47,6 @@ vi.mock('../lib/notifications.js', () => ({
 
 vi.mock('../lib/invite-rewards.js', () => ({
   checkInviteFirstPaidReward: vi.fn(async () => undefined),
-}));
-
-vi.mock('../features/payment/usecases/PaymentOrderTelemetry.js', () => ({
-  observePaymentOrderSettled: vi.fn(),
-  observePaymentOrderFailed: vi.fn(),
 }));
 
 function createLog(): RequestLogger {
@@ -178,15 +172,6 @@ describe('handleVexutopiaWebhook', () => {
 
     expect(orders.complete).toHaveBeenCalledWith('MA-order-1', 'tx_abc123', 'webhook');
     expect(insertUserNotification).toHaveBeenCalledOnce();
-    expect(observePaymentOrderSettled).toHaveBeenCalledWith(
-      {
-        orderId: 'MA-order-1',
-        userId: '00000000-0000-0000-0000-000000000001',
-        paymentType: 'wxpay',
-        settledBy: 'webhook',
-      },
-      expect.anything()
-    );
     expect(result).toEqual({ status: 200, body: 'OK' });
   });
 
@@ -223,32 +208,7 @@ describe('handleVexutopiaWebhook', () => {
 
     const { result } = await deliver(verifiedGateway(), orders);
 
-    expect(observePaymentOrderSettled).not.toHaveBeenCalled();
     expect(result).toEqual({ status: 500, body: 'retry' });
-  });
-
-  it('keeps settlement successful when terminal telemetry throws', async () => {
-    vi.mocked(observePaymentOrderSettled).mockImplementationOnce(() => {
-      throw new Error('posthog down');
-    });
-
-    const { result, orders } = await deliver(verifiedGateway());
-
-    expect(orders.complete).toHaveBeenCalledOnce();
-    expect(result.status).toBe(200);
-  });
-
-  it('does not wait for hanging telemetry before returning completed', async () => {
-    vi.mocked(observePaymentOrderSettled).mockImplementationOnce(
-      () => new Promise(() => undefined)
-    );
-    const result = await settlePaidOrder(
-      { orderId: 'MA-order-1', paidAmount: '6.00', providerTransactionId: 'tx_abc123' },
-      createOrders(),
-      createLog(),
-      'webhook'
-    );
-    expect(result).toBe('completed');
   });
 
   it('reopens an order that expired before the callback arrived, then credits it', async () => {
@@ -356,7 +316,6 @@ describe('handleVexutopiaWebhook', () => {
     const { result, orders } = await deliver(verifiedGateway(createEvent({ amount: '6.01' })));
 
     expect(orders.complete).not.toHaveBeenCalled();
-    expect(observePaymentOrderSettled).not.toHaveBeenCalled();
     expect(result.status).toBe(200);
   });
 });

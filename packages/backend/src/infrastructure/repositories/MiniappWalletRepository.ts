@@ -281,15 +281,6 @@ export class MiniappWalletRepository {
   }
 
   /**
-   * 付费状态读钱包权威位：`first_paid_at` 由支付入账主路径在已完成订单结算时写入。
-   * 只读，不创建钱包行。
-   */
-  async hasCompletedPayment(userId: string): Promise<boolean> {
-    const wallet = await this.findByUserId(userId);
-    return wallet?.first_paid_at != null;
-  }
-
-  /**
    * 预检查主星尘余额
    * @param userId 用户 ID
    * @param requiredAmount 所需星尘
