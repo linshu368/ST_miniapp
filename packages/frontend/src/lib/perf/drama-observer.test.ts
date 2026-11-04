@@ -209,16 +209,16 @@ describe('drama centralized logging', () => {
     expect(mocks.measurement).toHaveBeenCalledWith(
       'drama.stage',
       200,
-      expect.objectContaining({ route: '/', stage: 'metadata_to_data' })
+      expect.objectContaining({ route: '/watch', stage: 'metadata_to_data' })
     );
     expect(mocks.measurement).toHaveBeenCalledWith(
       'drama.stage',
       300,
-      expect.objectContaining({ route: '/', stage: 'data_to_frame' })
+      expect.objectContaining({ route: '/watch', stage: 'data_to_frame' })
     );
     expect(mocks.pageReady).not.toHaveBeenCalled();
     expect(mocks.upload).toHaveBeenCalledWith(
-      expect.objectContaining({ route: '/', definition: 'drama_v3' })
+      expect.objectContaining({ route: '/watch', definition: 'drama_v3' })
     );
   });
 
@@ -592,7 +592,7 @@ describe('drama centralized logging', () => {
     cleanup();
     expect(handlers.size).toBe(0);
   });
-  it.each(['/', '/dramas'])(
+  it.each(['/watch', '/dramas'])(
     'does not start a false wait when clicking the active drama entry %s',
     (targetPath) => {
       vi.useFakeTimers();

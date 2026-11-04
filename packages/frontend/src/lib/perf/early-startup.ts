@@ -18,7 +18,7 @@ function bootstrapStartupShell(): void {
   const pathname = window.location.pathname;
   // Only these routes already have an equivalent, independently verified HTML frame.
   // Other entries keep their existing post-hydration readiness contract.
-  if (pathname !== '/' && pathname !== '/characters' && pathname !== '/dramas') return;
+  if (pathname !== '/watch' && pathname !== '/characters' && pathname !== '/dramas') return;
   const state: EarlyStartup = { startedAt: performance.now() };
   window.__miniappStartup = state;
   const protectLaunchContext = (event: MouseEvent) => {

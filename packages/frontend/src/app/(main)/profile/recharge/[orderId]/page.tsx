@@ -161,7 +161,7 @@ export default function PaymentPendingPage() {
           <CompletedView
             order={order}
             // 支付已完成，本页不该再留在栈里等用户按返回退回来。
-            onHome={() => router.replace(returnTo ?? '/')}
+            onHome={() => router.replace(returnTo ?? '/characters')}
             onOrders={() => router.push('/profile/orders')}
           />
         ) : (

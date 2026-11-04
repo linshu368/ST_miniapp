@@ -212,7 +212,7 @@ function mirrorEngineeringTiming(report: DramaTimingReport): void {
     } else if (report.phase === 'slow') {
       recordEngineeringEvent('drama.stall', attributes);
     } else if (report.phase === 'final') {
-      if (report.type === 'playback' && report.route !== '/' && report.dramaId) {
+      if (report.type === 'playback' && report.route !== '/watch' && report.dramaId) {
         // Same media evidence as startup, not merely an available signed URL.
         // The pathname guard prevents an old video's terminal result from
         // completing a newly navigated drama page of the same route template.
@@ -334,8 +334,8 @@ function browserContext(): NonNullable<DramaTimingReport['context']> {
   };
 }
 // 直接打开列表时包含文档加载与 hydration；站内入口由 click capture 起计。
-if (typeof window !== 'undefined' && ['/', '/dramas'].includes(window.location.pathname)) {
-  dramaTiming.beginList('document_navigation', 0, window.location.pathname as '/' | '/dramas');
+if (typeof window !== 'undefined' && ['/watch', '/dramas'].includes(window.location.pathname)) {
+  dramaTiming.beginList('document_navigation', 0, window.location.pathname as '/watch' | '/dramas');
 }
 
 /** 根页面观察器持有监听，路由尚未挂载时也能记录点击与等待。 */
@@ -353,7 +353,7 @@ export function installDramaTiming(): () => void {
     const link = event.target instanceof Element ? event.target.closest('a') : null;
     const href = link?.getAttribute('href');
     if (
-      (href === '/' || href === '/dramas') &&
+      (href === '/watch' || href === '/dramas') &&
       link?.getAttribute('target') !== '_blank' &&
       window.location.pathname !== href
     )

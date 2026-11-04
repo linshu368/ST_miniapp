@@ -163,7 +163,6 @@
     "packages/frontend/src/components/drama/use-drama-swipe.ts#useDramaSwipe": 184,
     "packages/frontend/src/components/drama/use-drama-swipe.ts#useEffect(callback)": 172,
     "packages/frontend/src/components/image-plaza/studio-artifact-card.tsx#StudioArtifactCard": 141,
-    "packages/frontend/src/components/nav/bottom-nav-shell.tsx#BottomNavShell": 142,
     "packages/frontend/src/components/vip/vip-entry-card.tsx#VipEntryCard": 269,
     "packages/frontend/src/hooks/use-conversation-turn.ts#abort": 173,
     "packages/frontend/src/hooks/use-conversation-turn.ts#runTurn": 254,

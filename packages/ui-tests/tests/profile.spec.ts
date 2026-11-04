@@ -98,7 +98,7 @@ async function expectProfileLayout(page: Page) {
   await expect(wallet.getByText('3,600', { exact: true })).toBeVisible();
   await expect(checkin).toBeEnabled();
   await expect(membership.getByRole('button')).toBeEnabled();
-  await expect(nav.getByRole('link', { name: 'AI短剧', exact: true })).toBeVisible();
+  await expect(nav.getByRole('link', { name: '剧场', exact: true })).toBeVisible();
   await expectMobileLayout(page);
 
   const walletBox = await wallet.boundingBox();

@@ -53,7 +53,7 @@ export interface DramaQueryTiming {
 }
 
 interface ListTiming {
-  route: '/' | '/dramas';
+  route: '/watch' | '/dramas';
   id: string;
   startedAt: number;
   startKind: 'navigation_click' | 'route_commit' | 'query_start' | 'document_navigation' | 'retry';
@@ -247,7 +247,7 @@ export class DramaPlaybackTiming {
       type: 'playback',
       phase,
       definition: DRAMA_TIMING_DEFINITION,
-      route: this.owner === 'home' ? '/' : '/dramas/:id',
+      route: this.owner === 'home' ? '/watch' : '/dramas/:id',
       delivery: this.delivery,
       recovery: {
         rootId: this.rootId,
@@ -392,16 +392,18 @@ export class DramaTimingTracker {
     const match = /^\/dramas\/([^/]+)\/?$/.exec(pathname);
     if (this.playback) {
       // The embedded home player may mount before this root route effect. Its
-      // owner is '/', not a missing detail route; same-drama owners stay distinct.
+      // owner is '/watch', not a missing detail route; same-drama owners stay distinct.
       const remainsOnOwnerRoute =
-        this.playback.owner === 'home' ? pathname === '/' : match?.[1] === this.playback.dramaId;
+        this.playback.owner === 'home'
+          ? pathname === '/watch'
+          : match?.[1] === this.playback.dramaId;
       if (!remainsOnOwnerRoute) {
         this.playback.finish('left');
         this.stopSeek?.('left');
         this.playback = undefined;
       }
     }
-    if (pathname === '/' || pathname === '/dramas') {
+    if (pathname === '/watch' || pathname === '/dramas') {
       if (
         this.onListRoute !== pathname &&
         (!this.list || this.list.ended || this.list.route !== pathname)
@@ -577,7 +579,7 @@ export class DramaTimingTracker {
       videoId,
       delivery,
       context: this.context,
-      route: this.playback?.owner === 'home' ? '/' : '/dramas/:id',
+      route: this.playback?.owner === 'home' ? '/watch' : '/dramas/:id',
       sourceAt: this.playback?.marks.source_set ?? this.playback?.startedAt,
       now: this.now,
       emit: this.emit,
