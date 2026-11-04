@@ -3,7 +3,7 @@
   "name": "complexity-p3-chat-chain",
   "title": "降复杂度 P3：拆分后端对话主链路长函数",
   "description": "",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": "backend",
