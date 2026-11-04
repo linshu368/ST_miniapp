@@ -15,16 +15,19 @@
 
 不变量：充值后返回原页面仍由 URL `returnTo` 驱动；支付打开链接的本地存储（open-storage）保留，仅去掉 `replayContextId` 字段；Sentry、Faro/Grafana 采集不变；聊天、支付、图片生成的业务流程与请求次数不变。
 
-### PR-B：短剧计时与 Grafana 文档
+### PR-B：短剧计时写库残留与 Grafana 文档
 
-- 删除短剧计时 Supabase 写入残留：`features/drama/timing-processor.ts`（无调用方）、`timing-repository.ts`、`scripts/import-drama-timing.ts`、`getDramaTimingPersistenceConfig().enabled`、`scripts/test-drama-observability-local.sh`。数据库表/RPC 不动（旧看板仍读历史，删除需迁移，另议）。
-- 双轨收口：`NEXT_PUBLIC_DRAMA_TIMING_MODE` 固定为统一模式行为，删除旧轨上传全部报告的分支；Cloudflare 小批量 AB 依赖的 Faro 字段（`cdn_*`、`playback_*`）保持不变。
+- 删除短剧计时 Supabase 写入残留：`features/drama/timing-processor.ts`（无调用方）、`timing-repository.ts`、`scripts/import-drama-timing.ts` 的写库主流程、`getDramaTimingPersistenceConfig().enabled`。Railway 日志解析拆到 `scripts/railway-drama-report.ts`，供 `compare-drama-cdn.ts` 继续使用。数据库表/RPC 与 `scripts/test-drama-observability-local.sh`（迁移验证）不动。
 - `docs/grafana/`：删除 4 个 `*-retired.json`，同步线上已改的工程看板/经营核心链接。
-- knip 确认无引用的运行时文件（如 `components/payment/vip-plan-card.tsx`）。
+- 删除无引用的 `components/payment/vip-plan-card.tsx`。knip 报告的其余文件是运维脚本或部署配置入口（Railway IaC、Prisma seed、告警任务、一次性迁移脚本），保留。
+
+### 推迟：短剧计时双轨旧轨（2026-11-04 用户决定）
+
+生产前端仍是 legacy（后端每 6 小时约 63 条 start 报告），CDN AB 对比脚本用这些 Railway 日志算两组分母。Cloudflare 小批量 AB 试验结束后再删：`drama-observer.ts` 的非 unified 分支、`NEXT_PUBLIC_DRAMA_TIMING_MODE`、`compare-drama-cdn.ts` 与 `railway-drama-report.ts`、`ops/drama-cdn-rollout.md` 中的 legacy 锁定步骤。
 
 ## 部署后需人工清理（代码合并并上线后）
 
-- Vercel：`NEXT_PUBLIC_POSTHOG_KEY`、`NEXT_PUBLIC_POSTHOG_HOST`、`NEXT_PUBLIC_DRAMA_TIMING_MODE`。
+- Vercel：`NEXT_PUBLIC_POSTHOG_KEY`、`NEXT_PUBLIC_POSTHOG_HOST`（2026-11-04 已删除）；`NEXT_PUBLIC_DRAMA_TIMING_MODE` 等旧轨删除后再清。
 - Railway：`DRAMA_TIMING_PERSIST_ENABLED`。
 - Grafana：`chat-first-token-manual`（需先去掉工程｜02 指向它的链接）。
 
@@ -33,7 +36,7 @@
 - [ ] 仓库无 `posthog` 引用（锁文件除外随依赖移除自动消失）；`pnpm -r typecheck`、四个包测试、frontend/admin build、lint 全部通过。
 - [ ] `pnpm test:ui --grep @chat`、`@profile` 通过（聊天、充值入口、订单页）。
 - [ ] 上线后 24h：Sentry 错误率与 Faro 页面/接口 P95 无回退；充值成功率（经营核心看板）无异常。
-- [ ] PR-B：短剧工程看板 24h 播放窗口样本数与上线前同量级，AB 分组字段仍完整。
+- [ ] PR-B：短剧工程看板 24h 播放窗口样本数与上线前同量级，AB 分组字段仍完整；后端仍收到 legacy start 报告。
 
 ## Android/iOS 性能 P95 门禁
 
