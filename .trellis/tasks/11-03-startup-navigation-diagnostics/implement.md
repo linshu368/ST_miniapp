@@ -6,6 +6,7 @@
 4. 按用户明确要求，不执行以下本地验证；仅完成编码和提交范围核对，跳过 Git hooks，提交推送功能分支，不部署。
 
 后续可执行验证（本轮未执行）：
+
 ```bash
 pnpm --filter @miniapp/frontend test -- src/lib/perf/page-tracker.test.ts src/lib/sentry/sanitize.test.ts
 pnpm --filter @miniapp/frontend typecheck

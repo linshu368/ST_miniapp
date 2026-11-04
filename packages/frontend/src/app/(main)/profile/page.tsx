@@ -6,7 +6,7 @@ import { feedbackAfterPaint, startAction } from '@/lib/perf/action-tracker';
 import { useFreshAfterFetch, usePageReady } from '@/lib/perf/page-ready';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import {
   ChevronRight,
   ArrowUpRight,
@@ -46,7 +46,7 @@ import {
   useNotificationUnreadCountQuery,
 } from '@/lib/api/notifications';
 import { useSupportUnreadQuery } from '@/lib/api/support';
-import { afterEntryBackground } from '@/lib/entry-phase';
+import { afterEntryBackground, markCriticalSettled } from '@/lib/entry-phase';
 import { canPrefetchInBackground } from '@/lib/background-prefetch';
 import { useCommunityEntryQuery } from '@/lib/api/community';
 import {
@@ -65,10 +65,54 @@ const CommunitySheet = dynamic(
   { ssr: false }
 );
 
+/** 首屏先完成一次真实绘制，再启动会改变多个区域的次级读取。 */
+function useAfterFirstPaint(): boolean {
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    let secondFrame: number | undefined;
+    const firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => setReady(true));
+    });
+    return () => {
+      window.cancelAnimationFrame(firstFrame);
+      if (secondFrame !== undefined) window.cancelAnimationFrame(secondFrame);
+    };
+  }, []);
+  return ready;
+}
+
+/** 服务入口只有接近视口才需要数据；旧 WebView 无观察器时直接放行，不让入口永久缺失。 */
+function useNearViewport(ref: RefObject<Element>, enabled: boolean): boolean {
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    if (!enabled || ready) return;
+    const node = ref.current;
+    if (!node || typeof IntersectionObserver === 'undefined') {
+      setReady(true);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return;
+        setReady(true);
+        observer.disconnect();
+      },
+      { rootMargin: '320px 0px' }
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [enabled, ready, ref]);
+  return ready;
+}
+
 export default function ProfilePage() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const telegramUserId = useMemo(readTelegramUserId, []);
+  const afterFirstPaint = useAfterFirstPaint();
+  const servicesSectionRef = useRef<HTMLElement>(null);
+  const serviceEntriesReady = useNearViewport(servicesSectionRef, afterFirstPaint);
+  const [avatarMenuOpen, setAvatarMenuOpen] = useState(false);
   const wallet = useWalletBalanceQuery();
   const walletFresh = useFreshAfterFetch(
     wallet.isFetching,
@@ -77,11 +121,15 @@ export default function ProfilePage() {
   );
   // 头像、编辑与功能入口已经是真实可交互内容；余额保留独立 loading/error，不阻塞整页。
   usePageReady('/profile', true, walletFresh, false);
+  useEffect(() => {
+    // Profile 没有必须等待的数据型 P0；shell commit 后即可放行应用级后台预热。
+    markCriticalSettled();
+  }, []);
   const credits = wallet.data?.total_credits ?? wallet.data?.credits;
   const bonusCredits = wallet.data?.bonus_credits;
   // BottomNav 同屏常驻并负责轮询，这里只订阅缓存，避免同一端点两个 interval 各打一份。
-  const unread = useNotificationUnreadCountQuery({ poll: false });
-  const supportUnread = useSupportUnreadQuery({ poll: false });
+  const unread = useNotificationUnreadCountQuery({ poll: false, enabled: false });
+  const supportUnread = useSupportUnreadQuery({ poll: false, enabled: false });
   useEffect(() => {
     const official = unread.data?.official ?? 0;
     const personal = unread.data?.personal ?? 0;
@@ -100,13 +148,14 @@ export default function ProfilePage() {
   const displayName = useUserProfileStore((s) => s.displayName);
   const photoUrl = useUserProfileStore((s) => s.photoUrl);
   const setDisplayName = useUserProfileStore((s) => s.setDisplayName);
-  const userSettings = useUserSettingsQuery();
+  // 显示名和头像已有本地 profile store；只有打开头像菜单才需要读取服务端来源设置。
+  const userSettings = useUserSettingsQuery({ enabled: avatarMenuOpen });
   const patchSettings = usePatchUserSettingsMutation();
   const setAvatar = useSetUserAvatarMutation();
-  const checkinQ = useDailyCheckinQuery();
+  const checkinQ = useDailyCheckinQuery({ enabled: afterFirstPaint });
   const checkin = checkinQ.data?.checkin;
   const claimCheckin = useDailyCheckinMutation();
-  const vipStatus = useVipStatusQuery();
+  const vipStatus = useVipStatusQuery({ enabled: afterFirstPaint });
   const vipDailyCredits = vipStatus.data?.benefits?.checkin_vip_credits;
   const checkinUpgradeCredits =
     !vipStatus.isError &&
@@ -116,10 +165,10 @@ export default function ProfilePage() {
     vipDailyCredits > 0
       ? vipDailyCredits
       : null;
-  const paymentPlans = usePaymentPlansQuery();
+  const paymentPlans = usePaymentPlansQuery({ enabled: afterFirstPaint });
   const markVipSeen = useMarkVipEntryViewedMutation();
-  const inviteEntry = useInviteEntryStatusQuery();
-  const communityEntry = useCommunityEntryQuery();
+  const inviteEntry = useInviteEntryStatusQuery({ enabled: serviceEntriesReady });
+  const communityEntry = useCommunityEntryQuery({ enabled: serviceEntriesReady });
   const previousCommunityStatus = useRef(communityEntry.data?.claim_status);
 
   const [isEditing, setIsEditing] = useState(false);
@@ -127,7 +176,6 @@ export default function ProfilePage() {
   const [checkinToast, setCheckinToast] = useState<string[] | null>(null);
   const [vipError, setVipError] = useState<string | null>(null);
   const [avatarError, setAvatarError] = useState<string | null>(null);
-  const [avatarMenuOpen, setAvatarMenuOpen] = useState(false);
   const [communityOpen, setCommunityOpen] = useState(false);
   const [communitySheetMounted, setCommunitySheetMounted] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -565,7 +613,7 @@ export default function ProfilePage() {
           variant="profile"
           status={vipStatus.data}
           monthlyPlan={paymentPlans.data?.vip_plans?.find((plan) => plan.id === 'month')}
-          loading={vipStatus.isLoading || paymentPlans.isLoading}
+          loading={!afterFirstPaint || vipStatus.isLoading || paymentPlans.isLoading}
           disabled={markVipSeen.isPending}
           onOpen={() => void openVip()}
         />
@@ -579,7 +627,7 @@ export default function ProfilePage() {
         ) : null}
       </section>
 
-      <section aria-label="服务与帮助" className="relative mt-6">
+      <section ref={servicesSectionRef} aria-label="服务与帮助" className="relative mt-6">
         <h2 className="mb-2.5 px-1 text-[11px] font-medium tracking-wider text-[#a79da6]">
           服务与帮助
         </h2>

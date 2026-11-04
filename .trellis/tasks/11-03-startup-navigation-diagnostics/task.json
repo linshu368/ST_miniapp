@@ -32,19 +32,12 @@
     "module_impact": {
       "schema_version": 1,
       "mode": "changes",
-      "modules": [
-        "frontend.infrastructure.client-ui-foundation"
-      ]
+      "modules": ["frontend.infrastructure.client-ui-foundation"]
     },
     "mobile_performance": {
       "schema_version": 1,
       "mode": "required",
-      "pages": [
-        "/",
-        "/characters",
-        "/dramas",
-        "其他既有启动观察入口"
-      ],
+      "pages": ["/", "/characters", "/dramas", "其他既有启动观察入口"],
       "apis": [],
       "android": {
         "page_p95_baseline_ms": null,

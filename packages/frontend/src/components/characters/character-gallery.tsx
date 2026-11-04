@@ -133,7 +133,11 @@ function CharacterGalleryView() {
   const [savedDiscovery] = useState(() => readRoleplayDiscovery('latest'));
   // P0=列表；enrich=收藏/会话史/角标。列表有缓存或首包结算后 markCriticalSettled。
   const enrichReady = useEntryEnrichReady();
-  const history = useConversationsQuery(undefined, enrichReady);
+  const [criticalVisualSettled, setCriticalVisualSettled] = useState(false);
+  // entry-phase 是应用启动级状态，SPA 导航后通常已经放行；再加当前路由首图门槛，
+  // 避免会话史、社交计数和角标在角色卡图片之前抢连接与主线程。
+  const routeEnrichReady = enrichReady && criticalVisualSettled;
+  const history = useConversationsQuery(undefined, routeEnrichReady);
   // message_count 不计虚拟开场白；只标记已确认的用户对话，未命中不代表从未聊过。
   const experiencedIds = useMemo(
     () =>
@@ -187,7 +191,6 @@ function CharacterGalleryView() {
     manualChange: manualBatchChanged,
     tailRequested,
   });
-  const [criticalVisualSettled, setCriticalVisualSettled] = useState(false);
   useEffect(() => {
     if (data !== undefined || isError) markCriticalSettled();
   }, [data, isError]);
@@ -214,15 +217,20 @@ function CharacterGalleryView() {
     setCriticalVisualSettled(false);
   }, [sort]);
   useEffect(() => {
-    if (!usesDirectory || data === undefined || isFetchedAfterMount || criticalVisualSettled)
-      return;
-    // 图片始终不结算时也要校准目录；移动端后台请求避开 2 秒首卡可见窗口。
-    const timer = window.setTimeout(
-      () => setCriticalVisualSettled(true),
-      CACHE_REVALIDATE_FALLBACK_MS[performancePolicy.platform]
-    );
+    if (data === undefined || criticalVisualSettled) return;
+    // 图片始终不结算时也要放行非关键数据；缓存目录的后台校准由下面的 effect 决定是否需要。
+    // 移动端兜底继续避开前 2 秒关键窗口，同时把超时纳入视觉终态，避免成功样本偏差。
+    const timer = window.setTimeout(() => {
+      setCriticalVisualSettled(true);
+      markPageCriticalVisual(
+        '/characters',
+        'timeout',
+        undefined,
+        isFetching || isRestoring ? 'cache' : 'fetch'
+      );
+    }, CACHE_REVALIDATE_FALLBACK_MS[performancePolicy.platform]);
     return () => window.clearTimeout(timer);
-  }, [usesDirectory, criticalVisualSettled, data, isFetchedAfterMount, performancePolicy.platform]);
+  }, [criticalVisualSettled, data, isFetching, isRestoring, performancePolicy.platform]);
   // 大厅有本地缓存秒开：content 记用户看到列表的时刻，fresh 记最新列表到达的时刻，两者分开才看得出后端慢。
   const lobbyFresh = useFreshAfterFetch(isFetching, data !== undefined, isError);
   usePageReady(
@@ -265,7 +273,7 @@ function CharacterGalleryView() {
     };
   }, []);
 
-  const latestBadge = useLobbyLatestBadgeQuery({ enabled: enrichReady });
+  const latestBadge = useLobbyLatestBadgeQuery({ enabled: routeEnrichReady });
   const { mutate: markLatestSeen } = useMarkLobbyLatestSeenMutation();
   const markedLatestRef = useRef(false);
   // 点「最新」当场收起，不等标记已看的请求回来；点推荐、搜索、卡片都不影响。
@@ -488,7 +496,7 @@ function CharacterGalleryView() {
 
   useCharacterSocialsQuery(
     visibleCharacters.map((character) => character.id),
-    enrichReady
+    routeEnrichReady
   );
 
   // 按滚动位置补齐，而不是在空闲帧定时补：定时补会在路由 transition 渲染让出主线程的间隙里
@@ -837,7 +845,7 @@ function CharacterGalleryView() {
       <RoleplayHeader active="discover">{searchBar}</RoleplayHeader>
       {sortTabs}
       <RecentConversationCard
-        enabled={enrichReady}
+        enabled={routeEnrichReady}
         recent={recentConversation}
         character={recentCharacter}
         loading={history.isLoading}

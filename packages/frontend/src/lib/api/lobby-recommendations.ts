@@ -40,6 +40,8 @@ export const lobbyRecommendationKeys = {
   viewer: (scope: string) => ['lobby-recommendation', scope] as const,
 };
 
+const MANUAL_RECOMMENDATION_TIMEOUT_MS = 5_000;
+
 function hasHeadDetails(batch: LobbyRecommendationData, catalogue: GetCharactersData | undefined) {
   if (!batch.enabled || batch.head_ids.length === 0) return true;
   const available = new Set(catalogue?.characters.map((character) => character.id));
@@ -48,21 +50,22 @@ function hasHeadDetails(batch: LobbyRecommendationData, catalogue: GetCharacters
 
 async function requestRecommendation(
   body: LobbyRecommendationRequest,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  timeoutMs = MANUAL_RECOMMENDATION_TIMEOUT_MS
 ): Promise<LobbyRecommendationData> {
   const controller = new AbortController();
   const onAbort = () => controller.abort(signal?.reason);
   if (signal?.aborted) onAbort();
   else signal?.addEventListener('abort', onAbort, { once: true });
   // Includes queueing and body decoding, not only receipt of response headers.
-  const timeout = setTimeout(() => controller.abort(new Error('推荐读取超时')), 5000);
+  const timeout = setTimeout(() => controller.abort(new Error('推荐读取超时')), timeoutMs);
   try {
     const fetch = (payload: LobbyRecommendationRequest) =>
       apiClient<unknown>('/api/characters/recommendation', {
         method: 'POST',
         body: JSON.stringify(payload),
         signal: controller.signal,
-        timeoutMs: 5000,
+        timeoutMs,
         queuePriority: 'critical',
       });
     const data = await fetch({ ...body, include_head_cards: true }).catch((error: unknown) => {

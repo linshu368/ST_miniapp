@@ -695,9 +695,9 @@ describe('document startup timing', () => {
   });
 
   it('explains a long connection gap without adding stage metrics or counting TLS twice', () => {
-    const entries = vi.spyOn(performance, 'getEntriesByType').mockImplementation((type) =>
-      type === 'navigation' ? [navigationEntry()] : []
-    );
+    const entries = vi
+      .spyOn(performance, 'getEntriesByType')
+      .mockImplementation((type) => (type === 'navigation' ? [navigationEntry()] : []));
     const result = collectStartupDetails(6000, 6032, 6033);
     expect(result.details).toMatchObject({
       navigation_diagnostics_version: 1,
@@ -818,7 +818,9 @@ describe('document startup timing', () => {
     entries.mockReturnValue([navigationEntry({ secureConnectionStart: 5270 })]);
     expect(collectStartupDetails(6000, 6032, 6033).details).not.toHaveProperty('document_tls');
     entries.mockReturnValue([]);
-    expect(collectStartupDetails(6000, 6032, 6033).details).not.toHaveProperty('document_pre_fetch');
+    expect(collectStartupDetails(6000, 6032, 6033).details).not.toHaveProperty(
+      'document_pre_fetch'
+    );
     entries.mockRestore();
   });
 
@@ -851,9 +853,9 @@ describe('document startup timing', () => {
   });
 
   it('sends one slow-start snapshot after ready and does not block ready on resource collection', () => {
-    const entries = vi.spyOn(performance, 'getEntriesByType').mockImplementation((type) =>
-      type === 'navigation' ? [navigationEntry()] : []
-    );
+    const entries = vi
+      .spyOn(performance, 'getEntriesByType')
+      .mockImplementation((type) => (type === 'navigation' ? [navigationEntry()] : []));
     vi.advanceTimersByTime(6000);
     markStartupPhase('providers_loaded');
     cleanup = observeStartupShell('/');

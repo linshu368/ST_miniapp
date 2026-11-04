@@ -175,7 +175,11 @@ export function collectStartupDetails(
         valid(details.document_connect_start) &&
         details.document_tls_start >= details.document_connect_start
       ) {
-        navigationDuration('document_tls', details.document_tls_start, details.document_connect_end);
+        navigationDuration(
+          'document_tls',
+          details.document_tls_start,
+          details.document_connect_end
+        );
       }
     }
   } catch {
