@@ -1,26 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState, type PointerEvent } from 'react';
+import { useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
+import { useDramaScrub, type DramaScrubProps } from './use-drama-scrub';
 
-interface DramaProgressProps {
-  video: HTMLVideoElement | null;
-  time: number;
-  duration: number;
-  sourceKey: string;
-  onScrubbingChange: (scrubbing: boolean) => void;
-  onCommit: (seconds: number, wasPlaying: boolean) => void;
-  onBeforeCommit?: (seconds: number, wasPlaying: boolean) => void;
-}
-
-interface ScrubSession {
-  pointerId: number;
-  video: HTMLVideoElement;
-  sourceKey: string;
-  source: string;
-  wasPlaying: boolean;
-  value: number;
-}
+type DramaProgressProps = DramaScrubProps;
 
 function formatTime(seconds: number) {
   const whole = Math.max(0, Math.floor(seconds));
@@ -29,128 +13,23 @@ function formatTime(seconds: number) {
 
 /** 宽触区先预览、松手再定位，避免手指拖动持续触发媒体请求或误换剧。 */
 export function DramaProgress(props: DramaProgressProps) {
-  const { video, time, duration, sourceKey } = props;
+  const { video, duration } = props;
   const latest = useRef(props);
   latest.current = props;
   const input = useRef<HTMLInputElement>(null);
-  const session = useRef<ScrubSession | null>(null);
-  const pendingResume = useRef<ScrubSession | null>(null);
   const [keyboardFocus, setKeyboardFocus] = useState(false);
-  const [preview, setPreview] = useState<number | null>(null);
   const validDuration = Number.isFinite(duration) && duration > 0 ? duration : 0;
   const disabled = !video || !validDuration;
-  const visibleTime = Math.min(
+  const scrub = useDramaScrub(props, input, {
+    disabled,
     validDuration,
-    Math.max(0, preview ?? (Number.isFinite(time) ? time : 0))
-  );
+    onStart: () => setKeyboardFocus(false),
+  });
+  const { preview, visibleTime } = scrub;
   const percent = validDuration ? (visibleTime / validDuration) * 100 : 0;
 
-  const cancelResume = useCallback(() => {
-    const pending = pendingResume.current;
-    pendingResume.current = null;
-    if (
-      pending &&
-      latest.current.video === pending.video &&
-      latest.current.sourceKey === pending.sourceKey &&
-      (pending.video.currentSrc || pending.video.src) === pending.source
-    ) {
-      pending.video.pause();
-    }
-  }, []);
-
-  const finish = useCallback((commit: boolean, resume: boolean) => {
-    const current = session.current;
-    if (!current) return;
-    session.current = null;
-    const sameMedia =
-      latest.current.video === current.video &&
-      latest.current.sourceKey === current.sourceKey &&
-      (current.video.currentSrc || current.video.src) === current.source;
-    if (commit && sameMedia) {
-      latest.current.onBeforeCommit?.(current.value, current.wasPlaying);
-      current.video.currentTime = current.value;
-      latest.current.onCommit(current.value, current.wasPlaying);
-    }
-    setPreview(null);
-    latest.current.onScrubbingChange(false);
-    if (input.current?.hasPointerCapture(current.pointerId)) {
-      input.current.releasePointerCapture(current.pointerId);
-    }
-    // 原来暂停的内容仍暂停；换源、离页和卸载都不能被迟到的恢复动作抢播。
-    if (resume && sameMedia && current.wasPlaying && document.visibilityState !== 'hidden') {
-      pendingResume.current = current;
-      void current.video
-        .play()
-        .then(() => {
-          if (pendingResume.current === current) pendingResume.current = null;
-        })
-        .catch(() => {
-          if (pendingResume.current === current) pendingResume.current = null;
-          // 浏览器拒绝播放时保留已定位画面，由原播放器的播放入口继续。
-        });
-    }
-  }, []);
-
-  useEffect(() => {
-    const cancelOnHide = () => {
-      if (document.visibilityState === 'hidden') {
-        cancelResume();
-        finish(false, false);
-      }
-    };
-    const cancelSecondPointer = (event: globalThis.PointerEvent) => {
-      if (session.current && event.pointerId !== session.current.pointerId) finish(false, true);
-    };
-    const cancelOnBlur = () => {
-      cancelResume();
-      finish(false, false);
-    };
-    document.addEventListener('visibilitychange', cancelOnHide);
-    document.addEventListener('pointerdown', cancelSecondPointer, true);
-    window.addEventListener('blur', cancelOnBlur);
-    return () => {
-      cancelResume();
-      finish(false, false);
-      document.removeEventListener('visibilitychange', cancelOnHide);
-      document.removeEventListener('pointerdown', cancelSecondPointer, true);
-      window.removeEventListener('blur', cancelOnBlur);
-    };
-  }, [finish, cancelResume, video, sourceKey]);
-
-  const position = (clientX: number) => {
-    const box = input.current?.getBoundingClientRect();
-    if (!box?.width) return visibleTime;
-    return Math.max(0, Math.min(1, (clientX - box.left) / box.width)) * validDuration;
-  };
-  const start = (event: PointerEvent<HTMLInputElement>) => {
-    if (disabled || !video || !event.isPrimary || event.button !== 0) return;
-    event.preventDefault();
-    event.stopPropagation();
-    setKeyboardFocus(false);
-    pendingResume.current = null;
-    const value = position(event.clientX);
-    session.current = {
-      pointerId: event.pointerId,
-      video,
-      sourceKey,
-      source: video.currentSrc || video.src,
-      wasPlaying: !video.paused && !video.ended,
-      value,
-    };
-    latest.current.onScrubbingChange(true);
-    video.pause();
-    setPreview(value);
-    event.currentTarget.focus({ preventScroll: true });
-    try {
-      event.currentTarget.setPointerCapture(event.pointerId);
-    } catch {
-      // 宿主已取消触点时恢复原状态，不能留下一根无人能松开的进度条。
-      finish(false, true);
-    }
-  };
-
   const commitKeyboard = (seconds: number) => {
-    if (!video || disabled || session.current) return;
+    if (!video || disabled || scrub.isScrubbing()) return;
     const value = Math.max(0, Math.min(validDuration, seconds));
     latest.current.onBeforeCommit?.(value, !video.paused);
     video.currentTime = value;
@@ -178,41 +57,19 @@ export function DramaProgress(props: DramaProgressProps) {
         value={visibleTime}
         disabled={disabled}
         onFocus={(event) =>
-          setKeyboardFocus(!session.current && event.currentTarget.matches(':focus-visible'))
+          setKeyboardFocus(!scrub.isScrubbing() && event.currentTarget.matches(':focus-visible'))
         }
         onBlur={() => setKeyboardFocus(false)}
-        onPointerDown={start}
-        onPointerMove={(event) => {
-          const current = session.current;
-          if (!current || current.pointerId !== event.pointerId) return;
-          event.preventDefault();
-          event.stopPropagation();
-          current.value = position(event.clientX);
-          setPreview(current.value);
-        }}
-        onPointerUp={(event) => {
-          if (session.current?.pointerId !== event.pointerId) return;
-          event.preventDefault();
-          event.stopPropagation();
-          session.current.value = position(event.clientX);
-          finish(true, true);
-        }}
-        onPointerCancel={(event) => {
-          if (session.current?.pointerId === event.pointerId) finish(false, true);
-        }}
-        onLostPointerCapture={(event) => {
-          if (
-            session.current?.pointerId === event.pointerId &&
-            !event.currentTarget.hasPointerCapture(event.pointerId)
-          ) {
-            finish(false, true);
-          }
-        }}
+        {...scrub.handlers}
         onClick={(event) => {
           event.preventDefault();
           event.stopPropagation();
         }}
-        onChange={(event) => commitKeyboard(Number(event.target.value))}
+        onChange={(event) => {
+          // 指针松手已经提交过；这是同一次手势的原生回声，不能再提交一次。
+          if (scrub.isPointerCommitEcho()) return;
+          commitKeyboard(Number(event.target.value));
+        }}
         onKeyDown={(event) => {
           setKeyboardFocus(true);
           const next = {

@@ -5,44 +5,33 @@
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { requestLogger } from '../lib/logger.js';
-import {
-  pinStreamDramas,
-  selectStreamDelivery,
-  signStreamPlayback,
-} from '../features/drama/stream.js';
-import { DramaPlaybackOptionsSchema, ok, fail } from '@miniapp/shared';
-import type { GetDramaByIdData, GetDramaPlaybackData, GetDramasData } from '@miniapp/shared';
+import { pinStreamDramas } from '../features/drama/stream.js';
+import { DramaPlaybackOptionsSchema, DramaPlayRequestSchema, ok, fail } from '@miniapp/shared';
+import type { GetDramaByIdData, GetDramasData } from '@miniapp/shared';
 import { requireTelegramAuth } from '../middleware/auth.js';
 import { DramaRepository } from '../features/drama/repository.js';
-import { isPlayable, toDramaDetail, toDramaSummary } from '../features/drama/assemble.js';
-import { DramaSignedUrlCache, type DramaSigningObservation } from '../features/drama/signed-url.js';
+import { toDramaDetail, toDramaSummary } from '../features/drama/assemble.js';
+import { DramaSignedUrlCache } from '../features/drama/signed-url.js';
 import { buildCoverUrl } from '../features/drama/cover-url.js';
-import { selectDramaDelivery } from '../features/drama/delivery.js';
-import type { DramaDelivery } from '@miniapp/shared';
+import {
+  createDramaPlayHandler,
+  UUID_PATTERN,
+  type DramaRequestTiming,
+  type DramaStage,
+} from './drama-play.js';
 import { observeDramaRequest } from '../lib/engineering-observability.js';
-
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export default async function dramaRoutes(app: FastifyInstance) {
   const repo = new DramaRepository();
   // 进程内缓存，整个 app 共用一份
   const signedUrls = new DramaSignedUrlCache();
-  type Stage = 'auth' | 'db_read' | 'assemble' | 'sign';
-  type RequestTiming = {
-    stages: Partial<Record<Stage, number>>;
-    sign: DramaSigningObservation;
-    errorStage?: Stage;
-    playable?: boolean;
-    delivery?: DramaDelivery;
-    activeStage?: { stage: Stage; startedAt: number };
-  };
-  const timings = new WeakMap<FastifyRequest, RequestTiming>();
+  const timings = new WeakMap<FastifyRequest, DramaRequestTiming>();
   app.addHook('onRequest', async (request) => {
     timings.set(request, { stages: {}, sign: {} });
   });
   const measure = async <T>(
     request: FastifyRequest,
-    stage: Stage,
+    stage: DramaStage,
     run: () => T | Promise<T>
   ): Promise<T> => {
     const startedAt = performance.now();
@@ -137,109 +126,21 @@ export default async function dramaRoutes(app: FastifyInstance) {
     return reply.send(ok<GetDramaByIdData>({ drama: detail }));
   });
 
-  // @frontend-ready: true — MVP：封面/时长待归档端补数据，标题/标签/播放已可用
+  const handlePlay = createDramaPlayHandler({ repo, signedUrls, timings, measure });
+
+  // @frontend-ready: true — 旧客户端使用；新客户端走固定地址的 POST /api/dramas/play
   app.get('/api/dramas/:id/play', { preHandler: [authenticate] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const parsed = DramaPlaybackOptionsSchema.safeParse(request.query);
     if (!parsed.success) return reply.status(400).send(fail('BAD_REQUEST', '播放参数无效'));
-    const { video_id: videoId, format, fallback } = parsed.data;
+    return handlePlay(request, reply, { dramaId: id, options: parsed.data });
+  });
 
-    if (!UUID_PATTERN.test(id)) {
-      return reply.status(400).send(fail('BAD_REQUEST', '短剧 ID 无效'));
-    }
-    if (videoId !== undefined && !UUID_PATTERN.test(videoId)) {
-      return reply.status(400).send(fail('BAD_REQUEST', '视频 ID 无效'));
-    }
-
-    const drama = await measure(request, 'db_read', () => repo.getDramaForPlayback(id));
-    if (!drama) return reply.status(404).send(fail('NOT_FOUND', '短剧不存在'));
-
-    // 指定了就必须属于这部剧；不属于和不存在一律 404，不泄露该视频是否存在
-    const selected = await measure(request, 'assemble', () =>
-      videoId ? drama.videos.find((v) => v.id === videoId) : drama.videos.find(isPlayable)
-    );
-    if (videoId && !selected) {
-      return reply.status(404).send(fail('NOT_FOUND', '视频不存在'));
-    }
-
-    // 签名 URL 是临时凭证，禁止中间代理存储；不影响 backend 内部内存缓存
-    reply.header('Cache-Control', 'private, no-store');
-    const selection = selectDramaDelivery(request.user!.id);
-    timings.get(request)!.delivery = selection.delivery;
-
-    // 未就绪的不签名，直接回不可播，让前端显示「暂无可用集数」
-    if (!selected || !isPlayable(selected)) {
-      timings.get(request)!.playable = false;
-      const unavailable = selection.delivery
-        ? { ...selection.delivery, provider: 'unknown' as const, reason: 'unavailable' as const }
-        : undefined;
-      timings.get(request)!.delivery = unavailable;
-      return reply.send(
-        ok<GetDramaPlaybackData>({
-          playback: {
-            video_id: selected?.id ?? null,
-            playable: false,
-            play_url: null,
-            expires_at: null,
-            delivery: unavailable,
-          },
-        })
-      );
-    }
-
-    const stream =
-      format === 'hls' ? selectStreamDelivery(request.user!.id, id, selected.id) : null;
-    if (stream) {
-      timings.get(request)!.delivery = stream.delivery;
-      if (stream.delivery.group === 'stream' && fallback !== 'mp4') {
-        try {
-          const signed = await measure(request, 'sign', () =>
-            signStreamPlayback(stream.config, stream.video.uid)
-          );
-          timings.get(request)!.playable = true;
-          return reply.send(
-            ok<GetDramaPlaybackData>({
-              playback: { video_id: selected.id, ...signed, delivery: stream.delivery },
-            })
-          );
-        } catch {
-          // No token or signing error text is safe to include in telemetry.
-          stream.delivery = { ...stream.delivery, provider: 'unknown', reason: 'unavailable' };
-          timings.get(request)!.playable = false;
-          return reply.send(
-            ok<GetDramaPlaybackData>({
-              playback: {
-                video_id: selected.id,
-                playable: false,
-                play_url: null,
-                expires_at: null,
-                delivery: stream.delivery,
-              },
-            })
-          );
-        }
-      }
-      selection.cdn = null;
-      selection.delivery = {
-        ...stream.delivery,
-        provider: 'supabase',
-        reason: fallback === 'mp4' ? 'fallback' : 'assigned',
-      };
-    }
-    const timing = timings.get(request)!;
-    const signed = await measure(request, 'sign', () =>
-      signedUrls.getPlayUrl(selected.object_path!, request.log, timing.sign, selection.cdn)
-    );
-    timing.playable = signed.playable;
-    if (!signed.playable) timing.errorStage = 'sign';
-
-    const delivery =
-      selection.delivery && !signed.playable
-        ? { ...selection.delivery, provider: 'unknown' as const, reason: 'unavailable' as const }
-        : selection.delivery;
-    timing.delivery = delivery;
-    return reply.send(
-      ok<GetDramaPlaybackData>({ playback: { video_id: selected.id, ...signed, delivery } })
-    );
+  // @frontend-ready: true — 固定地址使 CORS 预检可缓存；请求体见 DramaPlayRequestSchema
+  app.post('/api/dramas/play', { preHandler: [authenticate] }, async (request, reply) => {
+    const parsed = DramaPlayRequestSchema.safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send(fail('BAD_REQUEST', '播放参数无效'));
+    const { drama_id: dramaId, ...options } = parsed.data;
+    return handlePlay(request, reply, { dramaId, options });
   });
 }

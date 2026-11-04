@@ -46,6 +46,14 @@ Grafana按桶对照候选见 `docs/grafana/engineering-performance.md` 的 CDN A
 
 生产 20%／80% 稳定分组、服务端用户去重、关闭取址和比较命令见 [操作说明](../ops/drama-cdn-rollout.md)。新报告可含 delivery、recovery、entryElapsedMs 和 seek；兼容 Backend 先发布。新播放意图使用独立的地址查询，旧地址不作为播放结果，后台只预取详情。接收接口继续不写分析库；seek 不混入既有 startup 工程分母，首轮以完整 Pino 日志为来源。实验窗口必须核对 legacy 全量 start／结果上报，不能使用 unified 采样明细或仅慢启动 Loki 作为总分母。当前源码不代表生产已部署。
 
+### 取址契约与提前发出（2026-11-04）
+
+- 新客户端用固定地址 `POST /api/dramas/play`，请求体 `{drama_id, video_id?, format?, fallback?}`（`DramaPlayRequestSchema`）。原因：CORS 预检按 URL 缓存（后端 `maxAge` 7200s，WebKit 上限更短），原 `GET /api/dramas/:id/play` 每集一个 URL，几乎每次取址都多一次预检往返；固定地址后会话内只需一次。旧 `GET` 保留给旧客户端，两者共用同一处理函数（`routes/drama-play.ts`），响应、`Cache-Control: private, no-store`、签名缓存与 `drama.request_timing` 一致；后端指标按 `route` 分组，POST 为 `route=/api/dramas/play`，GET 仍为 `/api/dramas/:id/play`。前端遥测的 `apiRouteGroup` 两者都归 `drama_playback`。
+- 点封面、详情页换剧在点击当下（`beginPlayback` 之后）调用 `startDramaPlayIntent` 发出取址，播放器挂载后 `useDramaPlaybackQuery` 按 (dramaId, videoId) 接上：10 秒内有效、只用一次、接不上就新建；回退 MP4 不接。每次播放意图仍重新取址，不恢复意图发生前的预取；该请求不进 React Query 缓存。
+- 计时：请求经 `dramaTiming.query`，晚于 `beginPlayback` 发出，按现有规则 `address_source=fetch`（`inflight` 只出现在请求早于观察创建时），`address_wait_ms` 从入口起算，因此点击后到播放器挂载的那段等待被取址并行吃掉。
+- 选集、播放器内下一集不属于本次提前发出范围，只受益于预检缓存。首页 `direct` 自动播放的会话首次请求仍要预检（已接受）。
+- 发布顺序：先后端（GET 不变、POST 新增），确认 POST 正常再发前端；回滚只需回退前端。
+
 首播结束后独立观测进度提交至目标帧，type=seek；buffered=no 才是未缓冲样本，seeked不是成功。不支持帧验证的暂停 seek 记 unverified。5 秒是观测阈值，不改变播放超时；恢复子尝试保留原失败及累计时间，详情见上述说明。
 
 ## 起止与口径
@@ -130,6 +138,8 @@ Grafana按桶对照候选见 `docs/grafana/engineering-performance.md` 的 CDN A
 ## 无缓冲快进恢复与关联诊断（2026-11-03，本地实现，待发布）
 
 独立测量版本 `drama_seek_resume_v1`，不进入 startup/rebuffer 分母。主指标限定提交时 `buffered=no`、`direction=forward`、`wasPlaying=true`；从接受目标、修改 currentTime 前起计，到目标新帧证据与实际恢复播放同时成立。`seeked`、暂停状态下的单帧和 play Promise 成功均不能单独代表恢复。兼容 WebView 的 timeupdate 降级明确标记；无法验证为 unverified，不补成功零耗时。三秒仅为达标线，不中断媒体。
+
+Android 上原生 range 会在指针松手提交后立刻再触发一次 `onChange`（目标相差约 0.02s），曾使约 31% 的快进被 50ms 内的第二次提交替换并在“3 秒达标率”里记为未达标；`use-drama-scrub` 在指针提交后 500ms 内忽略 `onChange`，键盘走 `onKeyDown` 不受影响。验证看“50ms 内被替换”的比例应接近 0。
 
 原始 seek 报告兼容扩展 definition/fromMs/direction/positionSetMs/seekingMs/playingMs/firstBufferedMs/samples 等可选字段；route 在创建时绑定。100ms 状态读取至多100次、只保留变化及关键事件、最多32条，关键时间点独立于明细截断；十秒后停止轮询并标 samplingCapped，媒体事件仍可补证。观察最长60秒，达到上限仅结束诊断并记 unverified/deadline，不改变视频位置、播放、重试或业务超时。新操作、离页、后台、错误和终态均解除监听/定时器；新操作还释放上一观察的网络尾监听。
 

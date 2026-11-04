@@ -1,0 +1,71 @@
+{
+  "id": "drama-play-post-seek-dedupe",
+  "name": "drama-play-post-seek-dedupe",
+  "title": "短剧取地址固定 POST 与 Android 快进去重",
+  "description": "固定地址 POST /api/dramas/play 使 CORS 预检可缓存；点击当下提前取址；修复 Android 快进松手后重复提交。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "frontend",
+  "priority": "P1",
+  "creator": "linshu",
+  "assignee": "linshu",
+  "createdAt": "2026-11-04",
+  "completedAt": null,
+  "branch": "claude/drama-play-post-and-seek-dedupe",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "后端 backend/shared 无独立 drama 模块规范，模块影响登记在 frontend.business.drama-experience；Stream AB 由他人推进，合入后需 rebase。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": ["frontend.business.drama-experience"]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": ["/dramas（点封面起播）", "/dramas/:id（详情页换剧、选集、向前拖动快进）"],
+      "apis": [
+        "POST /api/dramas/play（新增，固定地址）",
+        "GET /api/dramas/:id/play（保留给旧客户端）"
+      ],
+      "android": {
+        "page_p95_baseline_ms": 8750,
+        "page_p95_target_ms": 3000,
+        "api_p50_baseline_ms": 909,
+        "api_p95_baseline_ms": 2182,
+        "seek_p95_baseline_ms": 5600,
+        "seek_v1_p95_baseline_ms": 2760,
+        "notes": "页面口径=起播 drama_v3 P95（10-29 21:53 之后）；取地址为入口→地址就绪；快进基线为未缓冲全方向 n=523，v1 n=55。总目标 ≤3s 含 Stream 部分，本任务单独验收取地址下降与重复提交。"
+      },
+      "ios": {
+        "page_p95_baseline_ms": 6380,
+        "page_p95_target_ms": 3000,
+        "api_p50_baseline_ms": 600,
+        "api_p95_baseline_ms": 1832,
+        "seek_p95_baseline_ms": 3900,
+        "seek_v1_p95_baseline_ms": null,
+        "notes": "快进基线 n=44；快进 v1 仅 n=5，不足以给出基线，不补零。"
+      },
+      "api": {
+        "p95_baseline_ms": 2270,
+        "p95_target_ms": 1500,
+        "backend_p50_ms": 78,
+        "backend_p95_ms": 272,
+        "notes": "前端看到的 /play 全站 7 天 P50 758ms / P95 2.27s；后端处理仅 78/272ms，约 90% 是客户端到 Railway 的网络开销，本任务靠省预检与提前发出压缩，目标以上线后各入口实测下降为准，不预设数值。 p95_target_ms=1500 为占位目标（门禁要求 >0），待用户确认；依据：省一次预检 + 点击当下发出，预计去掉一次往返。"
+      },
+      "measurement": {
+        "source": "Railway production 日志：前端 @event:drama.frontend_timing（与 Grafana st-engineering-drama 同源）、后端 @event:drama.request_timing；7 天窗 10-28～11-04。",
+        "window": "发布后按各入口（cover/switch/episode）、Android/iOS 分别观察 3–7 天；单组有效样本少于 100 标为低样本并延长观察，不据此宣称达标。看板另看 Android 快进 50ms 内被替换比例与 3 秒达标率。"
+      },
+      "notes": "双端差异：Android 起播 P95 8.75s / 取地址 P95 2182ms，iOS 6.38s / 1832ms，Android 更慢；Android 另有 31% 快进被重复提交替换，iOS 为 0，故快进去重只针对 Android。低样本：iOS 快进 n=44、iOS 快进 v1 仅 n=5（baseline 置 null，不补零不推测），Android 快进 v1 n=55，均需发布后延长观察。null 字段：ios.seek_v1_p95_baseline_ms 无足够样本。验证办法：发布后在 st-engineering-drama 与 Railway 日志按入口(cover/switch/episode)×平台比较取地址 P50/P95、起播 P95、Android 快进 50ms 内被替换比例（目标接近 0）、快进 P95 与 3 秒达标率；TEST 真机日志核对每次拖动仅一条 seek。"
+    }
+  }
+}

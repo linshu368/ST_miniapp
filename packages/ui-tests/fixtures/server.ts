@@ -51,6 +51,7 @@ import {
   type GetDramaSocialData,
   type GetDramaCommentsData,
   type CreateDramaCommentData,
+  DramaPlayRequestSchema,
   ImagePlazaConversationSchema,
   ImagePlazaQuoteRequestSchema,
   PatchGenerationConfigRequestSchema,
@@ -874,22 +875,15 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         fail(res, 405, 'METHOD_NOT_ALLOWED', '方法不支持');
         return;
       }
-      const dramaRoute = path.match(/^\/api\/dramas\/([^/]+)(\/play)?$/);
-      if (dramaRoute && method === 'GET') {
-        const drama = data.dramas.find((item) => item.id === dramaRoute[1]);
-        if (!drama) {
-          fail(res, 404, 'NOT_FOUND', '短剧不存在');
-          return;
-        }
-        if (!dramaRoute[2]) {
-          ok(res, { drama } satisfies GetDramaByIdData);
-          return;
-        }
+      // 播放地址：新客户端 POST 固定地址，旧客户端 GET /:id/play，两者返回同一份响应。
+      const servePlay = (
+        drama: (typeof data.dramas)[number],
+        videoId: string | null | undefined
+      ) => {
         if (scenario === 'drama-play-error') {
           fail(res, 503, 'preview_unavailable', '播放暂不可用');
           return;
         }
-        const videoId = url.searchParams.get('video_id');
         const video = videoId ? drama.videos.find((item) => item.id === videoId) : drama.videos[0];
         if (!video) {
           fail(res, 404, 'NOT_FOUND', '视频不存在');
@@ -909,6 +903,26 @@ export function createPreviewServer(apiPort: number, appPort: number) {
             },
           },
         } satisfies GetDramaPlaybackData);
+      };
+      if (path === '/api/dramas/play' && method === 'POST') {
+        const request = DramaPlayRequestSchema.parse(body);
+        const drama = data.dramas.find((item) => item.id === request.drama_id);
+        if (!drama) fail(res, 404, 'NOT_FOUND', '短剧不存在');
+        else servePlay(drama, request.video_id);
+        return;
+      }
+      const dramaRoute = path.match(/^\/api\/dramas\/([^/]+)(\/play)?$/);
+      if (dramaRoute && method === 'GET') {
+        const drama = data.dramas.find((item) => item.id === dramaRoute[1]);
+        if (!drama) {
+          fail(res, 404, 'NOT_FOUND', '短剧不存在');
+          return;
+        }
+        if (!dramaRoute[2]) {
+          ok(res, { drama } satisfies GetDramaByIdData);
+          return;
+        }
+        servePlay(drama, url.searchParams.get('video_id'));
         return;
       }
       if (path === '/api/users/settings') {

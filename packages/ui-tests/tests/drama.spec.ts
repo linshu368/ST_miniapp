@@ -1,10 +1,20 @@
 import { previewAppUrl, previewApiUrl } from './fixtures';
-import type { Locator, Page } from '@playwright/test';
+import type { Locator, Page, Request } from '@playwright/test';
 import type { GetDramaPlaybackData } from '@miniapp/shared';
 import { test, expect, expectMobileLayout } from './fixtures.js';
 
 const firstDrama = '60000000-0000-4000-8000-000000000001';
 const firstVideo = '70000000-0000-4000-8000-000000000001';
+
+const PLAY_PATH = '/api/dramas/play';
+/** 取址是固定地址的 POST，剧/集在请求体里；传 videoId 时只匹配未指定集或同一集的请求。 */
+function matchesPlay(request: Request, dramaId: string, videoId?: string) {
+  const body = request.postDataJSON() as { drama_id?: string; video_id?: string } | null;
+  return (
+    body?.drama_id === dramaId &&
+    (videoId === undefined || body.video_id === undefined || body.video_id === videoId)
+  );
+}
 const secondDrama = '60000000-0000-4000-8000-000000000002';
 const longDrama = '60000000-0000-4000-8000-000000000012';
 const tabs = (page: Page) => page.getByRole('navigation', { name: '短剧栏目' });
@@ -338,9 +348,7 @@ test('@drama 观看位置在本设备刷新后恢复，集数和秒数保持', a
     await resumed.evaluate((node) => (node as HTMLVideoElement).currentTime)
   ).toBeGreaterThanOrEqual(1.9);
   const state = await preview.state();
-  expect(
-    state.requests.some((item) => item.path.includes(`/api/dramas/${firstDrama}/play`))
-  ).toBeTruthy();
+  expect(state.requests.some((item) => item.path.includes(PLAY_PATH))).toBeTruthy();
 });
 
 test('@drama @layout 视频流观看完整短剧进入专注详情，返回仍接着这部', async ({ page }) => {
@@ -574,6 +582,40 @@ test('@drama @layout 全宽进度先预览后定位，保留原播放状态，�
     .toBeCloseTo(duration * 0.7, 1);
   await expect.poll(() => video.evaluate((node: HTMLVideoElement) => node.paused)).toBe(true);
 
+  // Android 的原生 range 会在指针松手后紧接着再触发一次 onChange（目标相差约 0.02s）。
+  // 合成这个回声：一次手势只能提交一次；超过忽略窗后的键盘操作仍照常提交。
+  await page.evaluate(() => {
+    const writes: number[] = [];
+    Reflect.set(window, '__seekWrites', writes);
+    const descriptor = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'currentTime')!;
+    Object.defineProperty(HTMLMediaElement.prototype, 'currentTime', {
+      ...descriptor,
+      set(this: HTMLMediaElement, value: number) {
+        writes.push(value);
+        descriptor.set!.call(this, value);
+      },
+    });
+  });
+  const seekWrites = () => page.evaluate(() => Reflect.get(window, '__seekWrites') as number[]);
+  await page.mouse.move(box.x + box.width * 0.2, box.y + 10);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.5, box.y + 10, { steps: 3 });
+  await page.mouse.up();
+  await slider.evaluate(
+    (node: HTMLInputElement, value) => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+      setter.call(node, String(value));
+      node.dispatchEvent(new Event('input', { bubbles: true }));
+    },
+    duration * 0.5 + 0.02
+  );
+  await page.waitForTimeout(150);
+  expect(await seekWrites()).toHaveLength(1);
+  await page.waitForTimeout(500);
+  await slider.focus();
+  await slider.press('Home');
+  await expect.poll(async () => (await seekWrites()).length).toBe(2);
+
   await video.evaluate(async (node: HTMLVideoElement) => {
     node.currentTime = 0.25;
     await node.play();
@@ -741,10 +783,9 @@ test('@drama 重试失败仍能再试，新地址只装载一次并接回原秒�
   let failures = 0;
   let successes = 0;
   await page.route(
-    (url) =>
-      url.pathname === `/api/dramas/${firstDrama}/play` &&
-      (!url.searchParams.has('video_id') || url.searchParams.get('video_id') === firstVideo),
+    (url) => url.pathname === PLAY_PATH,
     async (route) => {
+      if (!matchesPlay(route.request(), firstDrama, firstVideo)) return route.fallback();
       if (failing) {
         failures += 1;
         await failGate.promise;
@@ -819,10 +860,9 @@ test('@drama 迟到的重试不能覆盖新集数，也不能在退出后恢复�
     const gate = deferred();
     const delivered = deferred();
     let requested = false;
-    const match = (url: URL) =>
-      url.pathname === `/api/dramas/${firstDrama}/play` &&
-      (!url.searchParams.has('video_id') || url.searchParams.get('video_id') === currentVideo);
+    const match = (url: URL) => url.pathname === PLAY_PATH;
     await page.route(match, async (route) => {
+      if (!matchesPlay(route.request(), firstDrama, currentVideo)) return route.fallback();
       requested = true;
       const response = await route.fetch();
       const body = (await response.json()) as { data: GetDramaPlaybackData };
@@ -904,8 +944,9 @@ test('@drama 推荐目录后台失败不打断当前画面，刷新后也保留�
     }
   );
   await page.route(
-    (url) => url.pathname === `/api/dramas/${firstDrama}/play`,
+    (url) => url.pathname === PLAY_PATH,
     async (route) => {
+      if (!matchesPlay(route.request(), firstDrama)) return route.fallback();
       const response = await route.fetch();
       const body = (await response.json()) as { data: GetDramaPlaybackData };
       body.data.playback.play_url += '&backgroundrenewal=1';
@@ -1423,8 +1464,9 @@ test('@drama 关闭分流后重新进入必须等待原路径确认，旧地址�
   let confirmations = 0;
   const gate = deferred();
   await page.route(
-    (url) => url.pathname === `/api/dramas/${firstDrama}/play`,
+    (url) => url.pathname === PLAY_PATH,
     async (route) => {
+      if (!matchesPlay(route.request(), firstDrama)) return route.fallback();
       const response = await route.fetch();
       const body = (await response.json()) as { data: GetDramaPlaybackData };
       confirmations++;
