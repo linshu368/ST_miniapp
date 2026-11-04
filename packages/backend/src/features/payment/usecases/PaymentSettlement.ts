@@ -23,7 +23,6 @@ import type {
   PaymentQueryTarget,
 } from '../../../infrastructure/payment/VexutopiaPaymentGateway.js';
 import { paymentSuccessNotice } from '../domain/paymentNotice.js';
-import { observePaymentOrderSettled } from './PaymentOrderTelemetry.js';
 import {
   recordPaymentOperationEvent,
   type PaymentEventRecorder,
@@ -111,23 +110,6 @@ export async function settlePaidOrder(
   const started = Date.now();
   try {
     const completed = await orders.complete(order.id, input.providerTransactionId, source);
-    // 终态事件是非关键观测：必须在 complete 成功之后触发，且不得 delay/回滚入账。
-    try {
-      void observePaymentOrderSettled(
-        {
-          orderId: completed.id,
-          userId: order.user_id,
-          paymentType: order.payment_type,
-          settledBy: completed.settled_by,
-        },
-        log
-      );
-    } catch (telemetryError) {
-      log.sys.error(
-        { event: 'payment.telemetry.failed', err: telemetryError, orderId: order.id },
-        '支付终态事件发送失败'
-      );
-    }
     if (order.status !== 'completed') {
       try {
         const notice = paymentSuccessNotice(order);

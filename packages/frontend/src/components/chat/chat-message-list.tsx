@@ -7,8 +7,6 @@ import type { ReplyChoicePayload } from '@miniapp/reply-renderer';
 
 import type { AssistantBodyPlan } from '@/lib/text-postprocess/reply-plan';
 
-import { cn } from '@/lib/utils';
-import { PH_CHAT_REPLAY_VISIBLE_CLASS } from '@/lib/telemetry/masking';
 import { ChatMessageBubble, ChatTypingBubble } from './chat-message-bubble';
 import { messageThinkingKey, type MessageThinkingMap } from '@/lib/chat-thinking';
 
@@ -181,10 +179,7 @@ export function ChatMessageList({
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className={cn(
-          'chat-scroll-area min-h-0 flex-1 overflow-y-auto overscroll-contain pb-2 pt-3',
-          PH_CHAT_REPLAY_VISIBLE_CLASS
-        )}
+        className="chat-scroll-area min-h-0 flex-1 overflow-y-auto overscroll-contain pb-2 pt-3"
       >
         <div ref={contentRef}>
           {hasMore ? (

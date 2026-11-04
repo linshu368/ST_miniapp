@@ -15,7 +15,7 @@ last_verified_at: 2026-10-30
 
 ## 当前状态
 
-Supabase 按域访问，服务日志使用 Pino；模型目录由 `platform/model-tiers.ts` 集中读取 `llm_model_catalog`，损坏时降级到 `DEFAULT_CATALOG`，不再读取旧 tiers key。PostHog capture 使用 `POSTHOG_API_KEY`/`POSTHOG_HOST`/`POSTHOG_TIMEOUT_MS`，缺 key 或非法 host 时 no-op。
+Supabase 按域访问，服务日志使用 Pino；模型目录由 `platform/model-tiers.ts` 集中读取 `llm_model_catalog`，损坏时降级到 `DEFAULT_CATALOG`，不再读取旧 tiers key。
 
 `runtime-config.ts` 的单键读取支持调用方传入取消信号，供 Admin 状态读取等严格查询使用。无调用方 signal 的非严格单键和相同键集批量读取会在进程内合并同时在途的 Promise，但不跨请求缓存配置结果；严格读取和自定义 signal 始终保持独立取消边界。对话的文本后处理版本不再由进程缓存维护，而由数据库开轮事务读取权威指针并绑定。
 
@@ -25,19 +25,16 @@ MiniApp 已鉴权接口通过 `lib/user.ts` 把同一 Telegram 用户的并发 g
 
 ## 涉及文件
 
-| 路径                                                               | 职责                                     |
-| ------------------------------------------------------------------ | ---------------------------------------- |
-| `packages/backend/src/lib/supabase.ts`                             | 按域数据库 client                        |
-| `packages/backend/src/platform/runtime-config.ts`                  | DB 运行配置入口                          |
-| `packages/backend/src/platform/model-tiers.ts`                     | 模型目录读取/缓存                        |
-| `packages/backend/src/middleware/auth.ts`                          | Telegram 鉴权                            |
-| `packages/backend/src/lib/supabase.ts`                             | 按域数据库 client                        |
-| `packages/backend/src/infrastructure/repositories/`                | 数据访问实现                             |
-| `packages/backend/src/infrastructure/telemetry/posthog-capture.ts` | 服务端 PostHog capture、短超时、终态去重 |
+| 路径                                                | 职责              |
+| --------------------------------------------------- | ----------------- |
+| `packages/backend/src/lib/supabase.ts`              | 按域数据库 client |
+| `packages/backend/src/platform/runtime-config.ts`   | DB 运行配置入口   |
+| `packages/backend/src/platform/model-tiers.ts`      | 模型目录读取/缓存 |
+| `packages/backend/src/middleware/auth.ts`           | Telegram 鉴权     |
+| `packages/backend/src/lib/supabase.ts`              | 按域数据库 client |
+| `packages/backend/src/infrastructure/repositories/` | 数据访问实现      |
 
 ## 关键实现链路
-
-PostHog capture 用 Node 原生 fetch、短超时、无重试；支付按 `order_id:status:settled_by` 去重，图片按 `attempt_id:event:terminal_status|charge_status` 去重。
 
 文本后处理版本链路为“current-postprocess RPC 读取 runtime 指针与不可变快照 → 委托显式版本 wrapper → 同事务写入消息版本”。新 RPC 不可用或当前配置非法时不回退旧 RPC；Admin 的独立严格读取超时会取消 PostgREST 请求。
 
@@ -78,7 +75,7 @@ PostHog capture 用 Node 原生 fetch、短超时、无重试；支付按 `order
 - 2026-10-15：任务 `10-15-image-plaza-tag-prompt-filter` 明确 `image_plaza_tags_feature_enabled` 只控制分享自动打标。
 - 2026-10-13：任务 `10-10-image-plaza-v2` 记录种子导入的网络、内容、日志和环境门禁。
 
-提供配置、Telegram/运营鉴权、域数据库 client、repository、日志、后台任务基座，以及非关键服务端 PostHog capture。不拥有具体业务状态机。
+提供配置、Telegram/运营鉴权、域数据库 client、repository、日志、后台任务基座。不拥有具体业务状态机。
 
 - 2026-09-18：任务 `图片生成 PostHog 接入规划`（`.trellis/tasks/archive/2026-09/09-17-image-generation-posthog-plan/`）记录 PostHog capture 泛化为服务端非关键终态事件；commit：`7ab4a18ac4924d9a23d35dfc6f4f75be0401c9fe`。
 - 2026-10-20：任务 `Remove confirmed repository noise`（`.trellis/tasks/archive/2026-10/10-20-remove-confirmed-repository-noise/`）移除已删除的 Upstash 配置缓存事实并同步当前运行时配置边界；commit：`63eee1e847f678f4b2c434f872425a40fc7f891a`。

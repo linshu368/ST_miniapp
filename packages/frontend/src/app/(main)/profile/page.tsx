@@ -54,7 +54,6 @@ import {
   useSetUserAvatarMutation,
   useUserSettingsQuery,
 } from '@/lib/api/settings';
-import { captureRechargeEntryClicked } from '@/lib/payment/flow-telemetry';
 import { getRawInitData } from '@/lib/telegram/auth';
 import { formatNumber } from '@/lib/utils/payment';
 import { checkinRewardLines } from '@/lib/vip/presentation';
@@ -490,7 +489,6 @@ export default function ProfilePage() {
             <Link
               href="/profile/recharge"
               aria-label="前往星尘充值"
-              onClick={() => captureRechargeEntryClicked({ telegramUserId })}
               className="relative inline-flex min-h-11 shrink-0 items-center justify-center gap-1 rounded-full bg-[#eee5e0] px-3.5 text-xs font-semibold text-[#332a2f] transition-colors hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d7b4bf] focus-visible:ring-offset-2 focus-visible:ring-offset-[#252227] motion-reduce:transition-none"
             >
               充值星尘

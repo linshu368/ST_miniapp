@@ -10,7 +10,6 @@ vi.mock('../../../lib/notifications.js', () => ({
 vi.mock('../../../lib/invite-rewards.js', () => ({
   checkInviteFirstPaidReward: vi.fn(async () => undefined),
 }));
-vi.mock('./PaymentOrderTelemetry.js', () => ({ observePaymentOrderSettled: vi.fn() }));
 
 function order(): MiniappPaymentOrderRow {
   return {

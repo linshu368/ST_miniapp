@@ -4,7 +4,6 @@ import { DEFAULT_VIP_PLANS_CONFIG } from '@miniapp/shared';
 import type { MiniappPaymentOrderRow } from '../../../infrastructure/repositories/MiniappPaymentOrderRepository.js';
 import { RechargeUseCase } from './RechargeUseCase.js';
 import { PaymentPlansConfigError } from '../domain/rechargeRules.js';
-import { observePaymentOrderFailed } from './PaymentOrderTelemetry.js';
 import { readVipStrategy, type VipStrategy } from '../../../platform/vip-strategy.js';
 
 vi.mock('../../../platform/config.js', async (importOriginal) => {
@@ -39,11 +38,6 @@ vi.mock('../domain/rechargeRules.js', async (importOriginal) => {
     isVipPurchaseEnabled: vi.fn(async () => false),
   };
 });
-
-vi.mock('./PaymentOrderTelemetry.js', () => ({
-  observePaymentOrderFailed: vi.fn(),
-  observePaymentOrderSettled: vi.fn(),
-}));
 
 vi.mock('../../../platform/vip-strategy.js', () => ({
   readVipStrategy: vi.fn(),
@@ -94,14 +88,13 @@ function createOrder(): MiniappPaymentOrderRow {
   };
 }
 
-describe('RechargeUseCase payment failure telemetry', () => {
+describe('RechargeUseCase gateway failure', () => {
   beforeEach(() => {
-    vi.mocked(observePaymentOrderFailed).mockReset();
     vi.mocked(readVipStrategy).mockReset();
     vi.mocked(readVipStrategy).mockResolvedValue(publishedStrategy());
   });
 
-  it('emits payment_order_failed only after markFailed persists', async () => {
+  it('marks the created order failed when the gateway rejects it', async () => {
     const order = createOrder();
     const orders = {
       create: vi.fn(async (input: { id: string }) => ({ ...order, id: input.id })),
@@ -123,21 +116,9 @@ describe('RechargeUseCase payment failure telemetry', () => {
     const createdId = vi.mocked(orders.create).mock.calls[0]?.[0].id;
     expect(createdId).toEqual(expect.stringMatching(/^MA_/));
     expect(orders.markFailed).toHaveBeenCalledWith(createdId);
-    expect(observePaymentOrderFailed).toHaveBeenCalledWith(
-      {
-        orderId: createdId,
-        userId: order.user_id,
-        paymentType: 'wxpay',
-        settledBy: null,
-      },
-      expect.anything()
-    );
-    expect(vi.mocked(observePaymentOrderFailed).mock.invocationCallOrder[0]).toBeGreaterThan(
-      orders.markFailed.mock.invocationCallOrder[0] ?? 0
-    );
   });
 
-  it('does not emit when markFailed itself fails to persist', async () => {
+  it('surfaces the persistence error when markFailed itself fails', async () => {
     const order = createOrder();
     const persistError = new Error('db down');
     const orders = {
@@ -158,8 +139,6 @@ describe('RechargeUseCase payment failure telemetry', () => {
         paymentType: 'wxpay',
       })
     ).rejects.toThrow('db down');
-
-    expect(observePaymentOrderFailed).not.toHaveBeenCalled();
   });
 });
 

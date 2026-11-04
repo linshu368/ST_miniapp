@@ -7,7 +7,7 @@
 - `tailwind.config.ts`、`app/globals.css`：设计 token、暗色主题、安全区、聊天/语音动画；全局样式只能放真正跨应用规则。
 - `vitest.config.ts`：当前主要为 Node 环境逻辑测试；增加 DOM 组件测试前应最小化补足 jsdom/RTL，不虚构现有基础设施。
 - `instrumentation-client.ts`、`lib/sentry/*`、`app/global-error.tsx`：监控初始化、脱敏、用户关联、replay 和全局恢复。
-- `app/layout.tsx`：根 HTML/viewport/主题并挂载 `Providers`；`providers.tsx`：QueryClient、Telegram 初始化、敏感 launch 参数清理、Sentry 用户、支付回跳、渠道/邀请上报、用户设置与 Zustand hydrate、PostHog adapter（Telegram 就绪后）、replay lifecycle owner、支付回跳、渠道/邀请上报、用户设置与 Zustand hydrate。
+- `app/layout.tsx`：根 HTML/viewport/主题并挂载 `Providers`；`providers.tsx`：QueryClient、Telegram 初始化、敏感 launch 参数清理、Sentry 用户、支付回跳、渠道/邀请上报、用户设置与 Zustand hydrate。
 
 ## App Router 页面
 
@@ -39,7 +39,7 @@
 - `components/profile/`：个人中心复用 UI（当前社区 Sheet）。
 - `lib/roleplay-navigation.ts`：有限角色来源、最后栏目、发现条件与滚动标量；`lib/chat-entry.ts` 统一会话入口，`from=discover|conversations` 在新建/切换会话及语音、充值回流 URL 中保留；顶部、Telegram 返回与 Splash 退出统一回来源栏目。
 - `components/nav/`：BottomNav 及未读提示；`components/ui/`：项目内 shadcn/Radix primitives；`icons.tsx`：支付图标；`examples/` 不作为生产业务入口。
-- `lib/api/`：唯一网络/React Query 层，含文本后处理版本批次读取；`stores/`：跨组件持久客户端状态；`lib/telegram/`：SDK、initData、launch URL、用户；`lib/sentry/`：监控；`lib/utils/`：纯格式化/映射；`hooks/` 与 `use-visual-viewport-height.ts`：浏览器交互 hooks；`lib/telemetry/`：受控 PostHog adapter 与根 Providers 上的 replay lifecycle owner；`lib/payment/`：付费墙 continuation、`pay_url` 短 TTL sessionStorage、外部支付 pending 与回流观察（不得把 `pay_url` 放进 router query）。
+- `lib/api/`：唯一网络/React Query 层，含文本后处理版本批次读取；`stores/`：跨组件持久客户端状态；`lib/telegram/`：SDK、initData、launch URL、用户；`lib/sentry/`：监控；`lib/utils/`：纯格式化/映射；`hooks/` 与 `use-visual-viewport-height.ts`：浏览器交互 hooks；`lib/payment/`：`pay_url` 短 TTL sessionStorage 与外链打开（不得把 `pay_url` 放进 router query）。
 - `@miniapp/reply-renderer`：Frontend/Admin 共用 React 展示边界；只接收 artifact/原文/消息身份/可信回调，不拥有 API、React Query、草稿或发布状态。
 - `__tests__/eslint-import-guard.ts`：依赖边界守卫；测试通常与实现同目录。
 

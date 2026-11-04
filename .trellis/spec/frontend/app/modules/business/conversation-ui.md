@@ -13,7 +13,7 @@ last_verified_at: 2026-11-02
 
 ## 职责与边界
 
-负责会话列表、流式聊天、重生成、模型/回复偏好（长度、回复模块、自定义要求）、语音、角色回复图片交互展示，以及图片生成用户侧 PostHog 事件。不拥有 PostHog SDK 初始化、后端图片生成或支付结算。
+负责会话列表、流式聊天、重生成、模型/回复偏好（长度、回复模块、自定义要求）、语音、角色回复图片交互展示。不拥有后端图片生成或支付结算。
 
 ## 当前状态
 
@@ -69,7 +69,7 @@ last_verified_at: 2026-11-02
 
 ## 关键节点与约束
 
-服务端状态走 React Query；组件不直接 fetch；图片组件只持有局部面板状态，不接收内部英文 prompt，不把中文 prompt、图片 URL、Storage path、provider request id 或完整错误 body 送入 PostHog。
+服务端状态走 React Query；组件不直接 fetch；图片组件只持有局部面板状态，不接收内部英文 prompt，不把中文 prompt、图片 URL、Storage path、provider request id 或完整错误 body 写入日志或上报。
 
 ## 验证方式
 
@@ -83,7 +83,7 @@ last_verified_at: 2026-11-02
 
 角色模块本轮仅做本地界面与交互预览，`/tmp` 示例服务不进入产品提交，也不能作为真实 Backend、计费、Telegram WebView 或生产数据验收证据。新增导航的真实环境联调与原有移动端验收仍需单独执行。
 
-图片 runtime 开关默认关闭；图 1~9、Telegram 长按保存、safe area/软键盘、PostHog Preview 真机事件和真实后端联调仍待 test 环境人工验收。
+图片 runtime 开关默认关闭；图 1~9、Telegram 长按保存、safe area/软键盘、真实后端联调仍待 test 环境人工验收。
 
 ## 关联模块
 
@@ -124,7 +124,7 @@ last_verified_at: 2026-11-02
 
 ### 3. Contracts
 
-默认on，用户级设备存储只存bool，生成中锁定当次值。独立reasoning事件不进入ChatMessage.content/cache；仅当前页面按session/id/revision保留最近12条、每条64Ki字符；切会话清空，离页/刷新不持久化。消息标题为`thinking`；输入区使用Atom原子轨道图标+“深度思考”胶囊，无问号/说明弹窗，aria-pressed和开关操作名称保留。真实思考到达展开，正文开始/终态自动收起一次，手动重新展开后不被正文delta抢状态。纯转义文字/低对比度/160px内部滚动，PostHog/Sentry遮罩，无思考则“正在准备回复”。
+默认on，用户级设备存储只存bool，生成中锁定当次值。独立reasoning事件不进入ChatMessage.content/cache；仅当前页面按session/id/revision保留最近12条、每条64Ki字符；切会话清空，离页/刷新不持久化。消息标题为`thinking`；输入区使用Atom原子轨道图标+“深度思考”胶囊，无问号/说明弹窗，aria-pressed和开关操作名称保留。真实思考到达展开，正文开始/终态自动收起一次，手动重新展开后不被正文delta抢状态。纯转义文字/低对比度/160px内部滚动，Sentry遮罩，无思考则“正在准备回复”。
 
 ### 4. Validation & Error Matrix
 

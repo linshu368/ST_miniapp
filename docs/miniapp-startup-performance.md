@@ -36,7 +36,7 @@ RootLayout在框架HTML之后输出自包含inline脚本。该脚本不依赖Nex
 
 第一、二点保持 Providers 原身份和业务初始化、路由脚本下载、数据请求、缓存与预取策略；第三点的后续本地实现单列如下。不修改HTML/CDN配置。HTML首字节已超过4秒的单次启动仍不能靠轻量ready达标，需另以真实连接、重定向和边缘交付证据处理。
 
-Sentry启动时保留错误捕获、Metrics、脱敏和现有日志；BrowserTracing的setup改为首屏load/idle或既有4秒兜底之后动态安装，采样率仍0.2，Replay仍0.05/error1.0。Next SDK本身仍可能把Tracing实现编入公共chunk，本轮不承诺Sentry压缩字节减少；确定改变的是Tracing初始化时机。代价是早期navigation和请求trace细节可能减少，独立启动指标仍采集。Grafana、PostHog及业务采集策略保持原样。
+Sentry启动时保留错误捕获、Metrics、脱敏和现有日志；BrowserTracing的setup改为首屏load/idle或既有4秒兜底之后动态安装，采样率仍0.2，Replay仍0.05/error1.0。Next SDK本身仍可能把Tracing实现编入公共chunk，本轮不承诺Sentry压缩字节减少；确定改变的是Tracing初始化时机。代价是早期navigation和请求trace细节可能减少，独立启动指标仍采集。Grafana及业务采集策略保持原样。
 
 ## 指标兼容与上线比较
 

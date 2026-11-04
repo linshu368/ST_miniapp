@@ -2,7 +2,7 @@
 
 import { usePageReady } from '@/lib/perf/page-ready';
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import {
   CheckCircle2,
   ChevronLeft,
@@ -19,11 +19,6 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { usePaymentOrdersInfiniteQuery } from '@/lib/api/payment';
-import {
-  capturePaymentOrderStatusObserved,
-  observePaymentReturn,
-  retainPaywallFollowupIfActive,
-} from '@/lib/payment/flow-telemetry';
 import {
   formatNumber,
   formatYuanShort,
@@ -66,26 +61,12 @@ function OrdersPageFallback() {
 
 function OrdersPageContent() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const paymentReturned = searchParams.get('payment') === 'returned';
   const goBack = useCallback(() => router.push('/profile'), [router]);
   useTelegramBackButton(goBack);
 
   const [tab, setTab] = useState<TabKey>('all');
   const [openOrder, setOpenOrder] = useState<PaymentOrder | null>(null);
   const { whisper } = useHaptic();
-
-  useEffect(() => {
-    retainPaywallFollowupIfActive();
-  }, []);
-
-  useEffect(() => {
-    if (!paymentReturned) return;
-    observePaymentReturn({
-      source: 'query_param',
-      route: '/profile/orders',
-    });
-  }, [paymentReturned]);
 
   const query = usePaymentOrdersInfiniteQuery(tabToStatus(tab), 20);
   usePageReady('/profile/orders', query.data !== undefined, false, query.isError);
@@ -167,7 +148,6 @@ function OrdersPageContent() {
               order={order}
               onOpen={() => {
                 whisper();
-                capturePaymentOrderStatusObserved(order);
                 setOpenOrder(order);
               }}
             />

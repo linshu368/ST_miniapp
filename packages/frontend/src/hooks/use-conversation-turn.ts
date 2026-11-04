@@ -9,7 +9,6 @@ import {
   DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG,
   type ChatMessage,
   type ChatMessageStatus,
-  type ChatTurnFailureKind,
   type GetCharacterFreeQuotaData,
   type GetConversationData,
 } from '@miniapp/shared';
@@ -49,7 +48,6 @@ import {
 } from '@/lib/recharge-redirect';
 import { feedbackAfterPaint, startAction } from '@/lib/perf/action-tracker';
 import { getMetricDimensions } from '@/lib/perf/env-tags';
-import { getReplayLifecycle } from '@/lib/telemetry';
 import { MAIN_WALLET_NOTICE } from '@/lib/vip/presentation';
 import {
   appendMessageThinking,
@@ -125,141 +123,6 @@ export function findPendingTurnMessage(
           message.turn_index === pending.turnIndex &&
           message.revision === pending.revision)
   );
-}
-
-type TurnTelemetryMeta = {
-  mode: 'send' | 'regenerate';
-  turnIndex: number;
-  revision: number;
-  selectedModelId: string | null;
-  startedAt: number;
-};
-
-/**
- * 会话域 revision 从 0 起；shared 事件契约要求 revision > 0。
- * T5 不得改契约，因此把 0 投影为 1；> 0 原样上报。
- */
-export function toTelemetryRevision(revision: number): number {
-  return revision < 1 ? 1 : revision;
-}
-
-export function estimateChatTurnTelemetry(input: {
-  mode: 'send' | 'regenerate';
-  messages: ChatMessage[];
-}): { turnIndex: number; revision: number } {
-  const last = input.messages.at(-1);
-  if (input.mode === 'regenerate') {
-    return {
-      turnIndex: last && last.turn_index > 0 ? last.turn_index : 1,
-      revision: toTelemetryRevision((last?.revision ?? 0) + 1),
-    };
-  }
-  return {
-    turnIndex: (last?.turn_index ?? 0) + 1,
-    revision: 1,
-  };
-}
-
-export function classifyChatTurnFailure(error: unknown): ChatTurnFailureKind {
-  if (error instanceof ConversationStreamError) {
-    if (
-      error.code === 'insufficient_balance' ||
-      error.code === 'session_not_found' ||
-      error.code === 'character_not_found' ||
-      error.code === 'session_busy' ||
-      error.code === 'regenerate_not_allowed' ||
-      error.status === 402
-    ) {
-      return 'business';
-    }
-    if (error.status === 408 || error.status === 504) return 'timeout';
-    if (error.code === 'upstream_error') return 'unknown';
-    if (error.status >= 400 && error.status < 500) return 'business';
-    return 'unknown';
-  }
-  if (error instanceof Error && error.name === 'TimeoutError') return 'timeout';
-  return 'network';
-}
-
-function safelyRunTelemetry(run: () => void): void {
-  try {
-    run();
-  } catch {
-    // 分析失败不得影响 SSE / Abort / 用户可见错误
-  }
-}
-
-function turnDurationMs(startedAt: number): number {
-  return Math.max(0, Math.round(Date.now() - startedAt));
-}
-
-function captureTurnLifecycleEvent(
-  sessionId: string,
-  characterId: string,
-  meta: TurnTelemetryMeta,
-  event:
-    | { type: 'started' }
-    | { type: 'stream_opened' }
-    | { type: 'completed' }
-    | { type: 'failed'; failureKind: ChatTurnFailureKind }
-): void {
-  safelyRunTelemetry(() => {
-    const lifecycle = getReplayLifecycle();
-    const base = {
-      character_id: characterId,
-      conversation_session_id: sessionId,
-      selected_model_id: meta.selectedModelId,
-      turn_index: meta.turnIndex,
-      revision: meta.revision,
-    };
-    const isRegen = meta.mode === 'regenerate';
-    switch (event.type) {
-      case 'started':
-        if (isRegen) {
-          lifecycle.capture({ event: 'chat_regeneration_requested', ...base });
-        } else {
-          lifecycle.capture({ event: 'chat_turn_started', ...base });
-        }
-        return;
-      case 'stream_opened':
-        lifecycle.capture({
-          event: 'chat_stream_opened',
-          ...base,
-        });
-        return;
-      case 'completed': {
-        const duration_ms = turnDurationMs(meta.startedAt);
-        if (isRegen) {
-          lifecycle.capture({ event: 'chat_regeneration_completed', ...base, duration_ms });
-        } else {
-          lifecycle.capture({ event: 'chat_turn_completed', ...base, duration_ms });
-        }
-        return;
-      }
-      case 'failed': {
-        const duration_ms = turnDurationMs(meta.startedAt);
-        if (isRegen) {
-          lifecycle.capture({
-            event: 'chat_regeneration_failed',
-            ...base,
-            duration_ms,
-            failure_kind: event.failureKind,
-          });
-        } else {
-          lifecycle.capture({
-            event: 'chat_turn_failed',
-            ...base,
-            duration_ms,
-            failure_kind: event.failureKind,
-          });
-        }
-      }
-    }
-  });
-}
-
-function failureKindFromSettledStatus(_status: ChatMessageStatus): ChatTurnFailureKind {
-  return 'unknown';
 }
 
 /**
@@ -347,7 +210,6 @@ export function useConversationTurn({
     setThinkingState({ sessionId, messages: {} });
     setQuotaRefreshing(false);
     setStreamError(null);
-    safelyRunTelemetry(() => getReplayLifecycle().setStreaming(false));
   }, [sessionId]);
 
   // 离开页面时停掉读流。后端不会因此终止，但本地不该再往一个卸载了的组件里写
@@ -405,7 +267,6 @@ export function useConversationTurn({
         return status === 'complete' ? null : FIRST_TOKEN_RETRY_MESSAGE;
       });
       controller?.abort();
-      safelyRunTelemetry(() => getReplayLifecycle().setStreaming(false));
       return;
     }
     setStreaming((current) => prunePersistedStreamingTurns(current, persistedMessages, sessionId));
@@ -631,7 +492,6 @@ export function useConversationTurn({
         void redirectToRecharge(router, {
           returnTo,
           requiredCredits: requiredCreditsFromError(error),
-          triggerSource: 'chat_sse',
         });
         restoreDraft(input);
         return;
@@ -650,7 +510,6 @@ export function useConversationTurn({
           void redirectToRecharge(router, {
             returnTo,
             requiredCredits: requiredCreditsFromError(error),
-            triggerSource: 'chat_sse',
           });
           restoreDraft(input);
           return;
@@ -749,23 +608,11 @@ export function useConversationTurn({
 
       // 本轮之前的额度。生成结束后要拿它跟新值比，判断额度是不是刚好在这一轮见底
       const quotaBefore = freeQuotaRef.current;
-      const estimated = estimateChatTurnTelemetry({
-        mode: input.mode,
-        messages,
-      });
-      const turnMeta: TurnTelemetryMeta = {
-        mode: input.mode,
-        turnIndex: estimated.turnIndex,
-        revision: estimated.revision,
-        selectedModelId,
-        startedAt: Date.now(),
-      };
+      const turnStartedAt = Date.now();
 
       const controller = new AbortController();
       abortRef.current = controller;
       setStreamError(null);
-      captureTurnLifecycleEvent(sessionId, characterId, turnMeta, { type: 'started' });
-      safelyRunTelemetry(() => getReplayLifecycle().setStreaming(true));
 
       const optimisticUser: ChatMessage | null =
         input.mode === 'send' && input.content !== undefined
@@ -837,11 +684,6 @@ export function useConversationTurn({
               event.fallback_trigger_ms
             );
             assistantRevision = event.revision;
-            turnMeta.turnIndex = event.turn_index;
-            turnMeta.revision = toTelemetryRevision(event.revision);
-            captureTurnLifecycleEvent(sessionId, characterId, turnMeta, {
-              type: 'stream_opened',
-            });
             setStreaming((current) => (current ? applyStreamStart(current, event) : current));
           },
           onDelta: (text) => {
@@ -888,16 +730,8 @@ export function useConversationTurn({
         // A fast invalidation can resolve against a stale snapshot. The final
         // batch stays until the matching durable response actually takes over.
         if (!settledStatus) setStreaming(dropCurrentStreamingTurn);
-        if (settledStatus && settledStatus !== 'complete') {
-          captureTurnLifecycleEvent(sessionId, characterId, turnMeta, {
-            type: 'failed',
-            failureKind: failureKindFromSettledStatus(settledStatus),
-          });
-        } else {
-          captureTurnLifecycleEvent(sessionId, characterId, turnMeta, { type: 'completed' });
-        }
         if (input.mode === 'send') {
-          reportChatLatency('chat.full_reply.duration', Date.now() - turnMeta.startedAt, {
+          reportChatLatency('chat.full_reply.duration', Date.now() - turnStartedAt, {
             character_id: characterId,
             outcome: settledStatus && settledStatus !== 'complete' ? 'failed' : 'ok',
           });
@@ -929,12 +763,8 @@ export function useConversationTurn({
           }
         }
         if (!aborted) {
-          captureTurnLifecycleEvent(sessionId, characterId, turnMeta, {
-            type: 'failed',
-            failureKind: classifyChatTurnFailure(error),
-          });
           if (input.mode === 'send') {
-            reportChatLatency('chat.full_reply.duration', Date.now() - turnMeta.startedAt, {
+            reportChatLatency('chat.full_reply.duration', Date.now() - turnStartedAt, {
               character_id: characterId,
               outcome: 'error',
             });
@@ -990,7 +820,6 @@ export function useConversationTurn({
         );
         requestRef.current = null;
         setQuotaRefreshing(false);
-        safelyRunTelemetry(() => getReplayLifecycle().setStreaming(false));
         if (abortRef.current === controller) abortRef.current = null;
       }
     },
@@ -1171,7 +1000,6 @@ export function useConversationTurn({
         abortRef.current = null;
         setStreaming(dropCurrentStreamingTurn);
         setQuotaRefreshing(false);
-        safelyRunTelemetry(() => getReplayLifecycle().setStreaming(false));
         void queryClient.invalidateQueries({ queryKey: paymentKeys.wallet() });
         void queryClient.invalidateQueries({ queryKey: freeQuotaKeys.detail(characterId) });
       } catch (error) {
