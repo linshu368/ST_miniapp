@@ -31,12 +31,10 @@ import {
   diagnoseRichReplyProtocol,
   type ChatMessageStatus,
 } from '@miniapp/shared';
-import { buildPrompt, fetchPlatformInstructions, type EngineCharacter } from '../engine/index.js';
+import { buildPrompt, type EngineCharacter } from '../engine/index.js';
 import type { InstructionSlotModes } from '../engine/types.js';
 import {
   execute,
-  prepareGeneration,
-  resolveModelForUser,
   type GenerationRequest,
   type GenerationStatus,
   type ResolvedModel,
@@ -51,8 +49,10 @@ import {
 import { MiniappUserSettingsRepository } from '../../infrastructure/repositories/MiniappUserSettingsRepository.js';
 import type { RequestLogger } from '../../lib/logger.js';
 import type { fetchModelCatalogSnapshot } from '../../platform/model-tiers.js';
-import { fetchContextWindowLimits } from './context-window.js';
 import { createTurnControl } from './turn-control.js';
+import { prepareTurnInputs } from './turn-preparation.js';
+
+export { withConversationPreparationDeadline } from './turn-preparation.js';
 import { buildEngineHistory } from './history.js';
 import type { ConversationStreamSink } from './sse.js';
 
@@ -170,55 +170,28 @@ export async function runConversationTurn(
   const turnStartedAt = input.receivedAt ?? Date.now();
   const requestStartedAt =
     input.receivedMonotonicAt ?? performance.now() - (Date.now() - turnStartedAt);
-  const setupFinishedAt = performance.now();
-  // Server protection starts at route entry; only the browser can measure submit-to-display.
-  const preparationRemainingMs =
-    (input.firstTokenDeadlineMs ?? DEFAULT_FIRST_TOKEN_DEADLINE_MS) -
-    (performance.now() - requestStartedAt);
-  if (preparationRemainingMs <= 0) throw new FirstTokenDeadlineError();
-  const preparationSignal = AbortSignal.timeout(Math.ceil(preparationRemainingMs));
-
-  // ── 取数 ──────────────────────────────────────────────────────────────────
-  // 独立读取立即并行启动；用户偏好与模型选择复用同一份设置和规则快照。
-  // 都放在写入之前：这里抛异常时会话还没被动过，不会留下没有回复的孤儿 user 行。
-  const instructionsPromise = fetchPlatformInstructions();
-  const chargeId = randomUUID();
-  const generationContextPromise = userSettings().getGenerationContext(userId, instructionsPromise);
-  const modelPromise = resolveModelForUser(userId, {
-    selectedModelId: generationContextPromise.then(({ config }) => config.selected_model_id),
-    catalogSnapshot: input.catalogSnapshot,
-  });
-  // Read-only generation settings must not sit behind opening the turn and
-  // reading its context. The same promise is consumed once by execute.
-  const executionPreparation = prepareGeneration({
-    model: modelPromise,
+  const {
+    chargeId,
+    model,
+    userConfig,
+    displayName,
+    instructions,
+    windowLimits,
+    executionPreparation,
+    preparationSignal,
+    setupFinishedAt,
+    settingsFinishedAt,
+  } = await prepareTurnInputs({
+    sessionId: session.id,
     characterId: session.character_id,
-    useFallback: true,
-    payer: { userId, chargeId, log, signal: preparationSignal },
+    userId,
+    requestStartedAt,
+    firstTokenDeadlineMs: input.firstTokenDeadlineMs,
+    catalogSnapshot: input.catalogSnapshot,
+    settings: userSettings(),
+    history: historyRecords(),
+    log,
   });
-  void executionPreparation.catch(() => undefined);
-  const [model, generationContext, instructions, windowLimits] =
-    await withConversationPreparationDeadline(
-      Promise.all([
-        modelPromise,
-        generationContextPromise,
-        instructionsPromise,
-        fetchContextWindowLimits(),
-        // Ownership is already established. Recover stale writes concurrently
-        // with independent reads, but always finish recovery before startTurn.
-        historyRecords().recoverStaleStreaming(session.id),
-      ]),
-      preparationSignal
-    );
-  const { config: userConfig, displayName } = generationContext;
-  const settingsFinishedAt = performance.now();
-
-  if (instructions.degraded) {
-    log.sys.error(
-      { event: 'conversation.instructions.degraded', userId, sessionId: session.id },
-      'runtime_config 平台规则已降级到内置兜底，输出质量会明显下降'
-    );
-  }
 
   // ── 落库：一轮一个 chat_history revision ─────────────────────────────────
   // 两个 RPC 都在会话行锁内做「生成中判定 + 陈旧流清理」，session_busy 与
@@ -302,42 +275,19 @@ export async function runConversationTurn(
 
   try {
     // ── 组 prompt ─────────────────────────────────────────────────────────────
-    // Context reads can overlap the one atomic admission write. Join both before
-    // cleanup so a late admission cannot race a failed context's terminal state.
-    const [registration, contextRead, cardRead] = await Promise.allSettled([
-      (async () => {
+    const { prompt, truncatedTurns, contextFinishedAt } = await loadTurnPrompt({
+      registerObservation: async () => {
         await observations.begin({ ...observationInput, history: [] });
         control.markObservationBegun();
-      })(),
-      historyRecords().getContextBeforeTurn(
-        session.id,
-        turn.turnIndex,
-        turn.contextWindowStartTurn
-      ),
-      // startTurn has atomically bound the creator card version; never prefetch latest draft.
-      characters().requireCard(session.character_id, userId, session.id),
-    ]);
-    // Finish registration before failure cleanup too. A fast context rejection
-    // must not race a late identity write or omit the failed request's facts.
-    if (registration.status === 'rejected') throw registration.reason;
-    if (contextRead.status === 'rejected') throw contextRead.reason;
-    if (cardRead.status === 'rejected') throw cardRead.reason;
-    const card = cardRead.value;
-    const context = contextRead.value;
-    control.signal.throwIfAborted();
-    const history = buildEngineHistory(context.messages, context.openingMessage ?? card.first_mes);
-
-    const prompt = buildPrompt({
-      character: toEngineCharacter(card),
-      history,
-      truncatedTurns: context.truncatedTurns,
-      userInput: turn.userInput,
+      },
+      session,
+      userId,
+      turn,
+      signal: control.signal,
       userConfig,
-      slotModes: turn.slotModes,
-      persona: { displayName },
+      displayName,
       instructions: instructions.instructions,
     });
-    const contextFinishedAt = performance.now();
 
     // ── 生成 ──────────────────────────────────────────────────────────────────
     const request: GenerationRequest = {
@@ -525,7 +475,7 @@ export async function runConversationTurn(
         mode: mode.kind,
         status,
         model: model.openRouterModelId,
-        truncatedTurns: context.truncatedTurns,
+        truncatedTurns,
         replyChars: result.content.length,
         clientGone: sink.clientGone,
       },
@@ -587,6 +537,54 @@ export async function runConversationTurn(
   } finally {
     control.dispose();
   }
+}
+
+type PromptInput = Parameters<typeof buildPrompt>[0];
+
+/**
+ * 观测登记、上下文读取和角色卡读取并行，三者都落定后再组 prompt。
+ * 登记必须先于失败收口完成：快速失败的上下文读取不能和迟到的身份写入竞争。
+ */
+async function loadTurnPrompt(input: {
+  registerObservation: () => Promise<void>;
+  session: ChatSessionRow;
+  userId: string;
+  turn: StartedTurn;
+  signal: AbortSignal;
+  userConfig: PromptInput['userConfig'];
+  displayName: string;
+  instructions: PromptInput['instructions'];
+}) {
+  const { session, turn } = input;
+  // Context reads can overlap the one atomic admission write. Join both before
+  // cleanup so a late admission cannot race a failed context's terminal state.
+  const [registration, contextRead, cardRead] = await Promise.allSettled([
+    input.registerObservation(),
+    historyRecords().getContextBeforeTurn(session.id, turn.turnIndex, turn.contextWindowStartTurn),
+    // startTurn has atomically bound the creator card version; never prefetch latest draft.
+    characters().requireCard(session.character_id, input.userId, session.id),
+  ]);
+  // Finish registration before failure cleanup too. A fast context rejection
+  // must not race a late identity write or omit the failed request's facts.
+  if (registration.status === 'rejected') throw registration.reason;
+  if (contextRead.status === 'rejected') throw contextRead.reason;
+  if (cardRead.status === 'rejected') throw cardRead.reason;
+  const card = cardRead.value;
+  const context = contextRead.value;
+  input.signal.throwIfAborted();
+  const history = buildEngineHistory(context.messages, context.openingMessage ?? card.first_mes);
+
+  const prompt = buildPrompt({
+    character: toEngineCharacter(card),
+    history,
+    truncatedTurns: context.truncatedTurns,
+    userInput: turn.userInput,
+    userConfig: input.userConfig,
+    slotModes: turn.slotModes,
+    persona: { displayName: input.displayName },
+    instructions: input.instructions,
+  });
+  return { prompt, truncatedTurns: context.truncatedTurns, contextFinishedAt: performance.now() };
 }
 
 async function persistRichReplyDiagnosis(input: {
@@ -697,17 +695,4 @@ async function startTurn(
     postprocessVersion: started.postprocessVersion,
     slotModes: started.slotModes,
   };
-}
-
-/** Bound read-only preparation even if a dependency fails to honor its own timeout. */
-export function withConversationPreparationDeadline<T>(
-  work: Promise<T>,
-  signal: AbortSignal
-): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const abort = () => reject(signal.reason);
-    signal.addEventListener('abort', abort, { once: true });
-    if (signal.aborted) abort();
-    work.then(resolve, reject).finally(() => signal.removeEventListener('abort', abort));
-  });
 }
