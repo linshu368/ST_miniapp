@@ -1,0 +1,37 @@
+{
+  "id": "complexity-p01-budget-docs",
+  "name": "complexity-p01-budget-docs",
+  "title": "降复杂度 P0+P1：复杂度预算与 AI 文档减噪",
+  "description": "",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P2",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-04",
+  "completedAt": null,
+  "branch": "refactor/complexity-reduction",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "11-04-complexity-reduction",
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "no_module_change",
+      "reason": "只改脚本、CI、README/AGENTS 文档、.ignore 与 Trellis 归档脚本，不改变任何业务模块的行为或契约"
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "不改运行时代码，不影响任何页面加载或接口；CI 新增的复杂度检查只读源码"
+    }
+  }
+}
