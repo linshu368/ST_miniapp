@@ -91,6 +91,7 @@
 - 写命令不带 `--yes` 只返回 `confirmation_required` 和差异。**生产写操作必须先把差异给用户看，得到用户在对话里的明确同意后才带 `--yes`**；一次同意只对应这一次改动。
 - 登录免密：`pnpm -s admin login --email <白名单邮箱> --name <操作人> --json`（白名单在后端 `ADMIN_CLI_ALLOWED_EMAILS`）。遇到 `auth_required` 可直接重新登录；`setup_required` 需用户提供后端地址与 anon key。
 - 遇到 `draft_exists`（别人有未发布草稿）、`conflict`（线上已变化）先告诉用户，不要自行加 `--replace-draft` 或重试。
+- **运营平台加功能时同步 CLI**：新增/修改 managed config 只需按现有方式在 `packages/admin-client`（`configSchemas.ts` 注册表 + `menu.ts` 的 `ADMIN_MENU_GROUPS`）登记，CLI 自动支持；新增专用页面或新的 Admin RPC / `/api/admin/*` 接口时，调用代码放 `admin-client`，在 `packages/admin-cli/src/commands/` 补对应命令（写操作必须走 `ctx.confirm`），在 `packages/admin-cli/src/coverage.ts` 登记，并更新 `packages/admin-cli/README.md`。漏登记会让 admin-cli 的 typecheck/测试失败。
 
 ### 6. 验证与提交
 
