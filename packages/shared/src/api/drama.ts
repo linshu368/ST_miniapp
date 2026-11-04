@@ -85,15 +85,16 @@ export const DramaDeliverySchema = z
       .min(1)
       .max(64)
       .regex(/^[a-zA-Z0-9_-]+$/),
-    group: z.enum(['supabase', 'bunny']),
-    provider: z.enum(['supabase', 'bunny', 'unknown']),
-    reason: z.enum(['assigned', 'disabled', 'unavailable']),
+    group: z.enum(['supabase', 'bunny', 'stream']),
+    provider: z.enum(['supabase', 'bunny', 'stream', 'unknown']),
+    reason: z.enum(['assigned', 'disabled', 'unavailable', 'fallback']),
   })
   .strict();
 export type DramaDelivery = z.infer<typeof DramaDeliverySchema>;
 
 /** 播放地址。唯一包含临时签名 URL 的对外结构 */
 export interface DramaPlayback {
+  format?: 'mp4' | 'hls';
   /** 旧 Backend 可缺失，不能推断为对照组。 */
   delivery?: DramaDelivery;
   /** 本次选中的视频；整部剧都不可播时为 null，没有视频可指 */
@@ -161,3 +162,12 @@ export interface GetDramaCommentsData {
 export interface CreateDramaCommentData {
   comment: DramaComment;
 }
+
+/** HLS capability is explicit so older clients continue to receive MP4. */
+export const DramaPlaybackOptionsSchema = z
+  .object({
+    video_id: z.string().uuid().optional(),
+    format: z.literal('hls').optional(),
+    fallback: z.literal('mp4').optional(),
+  })
+  .strict();

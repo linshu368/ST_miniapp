@@ -1,3 +1,4 @@
+import { selectStreamDelivery, streamExperimentUser } from '../features/drama/stream.js';
 /**
  * backend / routes / telemetry.ts
  *
@@ -62,13 +63,21 @@ export default async function telemetryRoutes(app: FastifyInstance) {
       const parsed = DramaTimingReportSchema.safeParse(request.body);
       if (!parsed.success)
         return reply.status(400).send(fail('BAD_REQUEST', 'Invalid timing report'));
+      const stream =
+        parsed.data.dramaId && parsed.data.videoId && parsed.data.delivery?.experimentId
+          ? selectStreamDelivery(userId, parsed.data.dramaId, parsed.data.videoId, true)
+          : null;
+      const identity =
+        stream && stream.delivery.experimentId === parsed.data.delivery?.experimentId
+          ? streamExperimentUser(userId, stream.config)
+          : dramaExperimentLogUser(userId);
       const log = requestLogger(request.log, 'drama');
       const fields = {
         ...dramaTimingLogFields(parsed.data),
         upload_request_id: request.id,
         environment: timingConfig.environment,
         server_release: timingConfig.release,
-        ...dramaExperimentLogUser(userId),
+        ...identity,
       };
       try {
         if (parsed.data.phase === 'slow') log.biz.warn(fields, 'drama frontend timing');

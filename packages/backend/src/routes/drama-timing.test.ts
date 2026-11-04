@@ -3,6 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DramaSigningObservation } from '../features/drama/signed-url.js';
 
 const mocks = vi.hoisted(() => ({
+  stream: false,
+  streamSignFailed: false,
+  streamGroup: 'stream' as 'stream' | 'supabase',
   now: 0,
   denied: false,
   failDb: false,
@@ -48,6 +51,31 @@ vi.mock('../features/drama/signed-url.js', () => ({
     getPlayUrl = mocks.sign;
   },
 }));
+vi.mock('../features/drama/stream.js', () => ({
+  pinStreamDramas: (dramas: unknown[]) => dramas,
+  selectStreamDelivery: () =>
+    mocks.stream
+      ? {
+          config: {},
+          video: { uid: 'unit' },
+          delivery: {
+            experimentId: 'stream-route-unit',
+            group: mocks.streamGroup,
+            provider: mocks.streamGroup,
+            reason: 'assigned',
+          },
+        }
+      : null,
+  signStreamPlayback: () => {
+    if (mocks.streamSignFailed) throw new Error('unit signing failure');
+    return {
+      playable: true,
+      play_url: 'https://example.invalid/hls',
+      expires_at: null,
+      format: 'hls',
+    };
+  },
+}));
 vi.mock('../features/drama/cover-url.js', () => ({
   buildCoverUrl: () => 'https://example.invalid/cover',
 }));
@@ -57,7 +85,16 @@ import dramaRoutes from './drama.js';
 
 beforeEach(() => {
   vi.clearAllMocks();
-  Object.assign(mocks, { now: 0, denied: false, failDb: false, hasVideos: true, signOk: true });
+  Object.assign(mocks, {
+    stream: false,
+    streamSignFailed: false,
+    streamGroup: 'stream',
+    now: 0,
+    denied: false,
+    failDb: false,
+    hasVideos: true,
+    signOk: true,
+  });
   vi.spyOn(performance, 'now').mockImplementation(() => mocks.now);
   mocks.sign.mockImplementation(
     async (_path: string, _log: unknown, observation: DramaSigningObservation) => {
@@ -157,4 +194,38 @@ describe('drama backend timing', () => {
     expect(response.statusCode).toBe(200);
     expect(response.json().data.playback.playable).toBe(true);
   });
+});
+
+it('keeps old clients on MP4 and serves HLS only to the assigned B client', async () => {
+  mocks.stream = true;
+  const old = await request();
+  expect(old.json().data.playback.format).toBeUndefined();
+  expect(mocks.sign).toHaveBeenCalledOnce();
+  mocks.sign.mockClear();
+  const hls = await request(`/api/dramas/${ID}/play?format=hls`);
+  expect(hls.json().data.playback).toMatchObject({
+    format: 'hls',
+    delivery: { group: 'stream', provider: 'stream' },
+  });
+  expect(mocks.sign).not.toHaveBeenCalled();
+});
+it('records the assigned B arm when recovering through Supabase', async () => {
+  mocks.stream = true;
+  const result = await request(`/api/dramas/${ID}/play?format=hls&fallback=mp4`);
+  expect(result.json().data.playback.delivery).toMatchObject({
+    group: 'stream',
+    provider: 'supabase',
+    reason: 'fallback',
+  });
+  expect(mocks.sign).toHaveBeenCalledOnce();
+});
+it('makes signing failure measurable without logging the signing exception', async () => {
+  mocks.stream = true;
+  mocks.streamSignFailed = true;
+  const result = await request(`/api/dramas/${ID}/play?format=hls`);
+  expect(result.json().data.playback).toMatchObject({
+    playable: false,
+    delivery: { group: 'stream', provider: 'unknown', reason: 'unavailable' },
+  });
+  expect(JSON.stringify(mocks.info.mock.calls)).not.toContain('unit signing failure');
 });

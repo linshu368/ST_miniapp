@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/app/data-reliability-and-security.md", "reason": "已鉴权分流、短时签名、配置和错误边界"}
+{"file": ".trellis/spec/shared/contracts/api-contracts.md", "reason": "共享枚举、输入验证和旧端兼容"}
+{"file": ".trellis/spec/frontend/app/api-dataflow-and-state.md", "reason": "保留同一取址与播放器状态归属"}
+{"file": "docs/drama-playback-timing.md", "reason": "实施基线使用最新 dev 的已核验计时定义"}
