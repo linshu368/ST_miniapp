@@ -7,6 +7,7 @@ import {
   useQuery,
   useQueryClient,
   type InfiniteData,
+  type QueryClient,
 } from '@tanstack/react-query';
 import type {
   CreatePaymentOrderData,
@@ -64,10 +65,13 @@ async function postCreateOrder(body: CreatePaymentOrderRequest): Promise<CreateP
   });
 }
 
-async function fetchWalletBalance(): Promise<GetWalletBalanceData> {
+async function fetchWalletBalance(signal?: AbortSignal): Promise<GetWalletBalanceData> {
   // Profile 的可用态只依赖余额；使用并发调度器为导航保留的 critical 槽，
   // 避免签到、VIP、社区等同屏普通读取先占满非关键槽后让主内容排队。
-  return apiClient<GetWalletBalanceData>('/api/wallet/balance', { queuePriority: 'critical' });
+  return apiClient<GetWalletBalanceData>('/api/wallet/balance', {
+    queuePriority: 'critical',
+    signal,
+  });
 }
 
 async function fetchWalletSpending(): Promise<GetWalletSpendingData> {
@@ -133,7 +137,15 @@ export function usePaymentOrderQuery(orderId: string | undefined) {
 export function useWalletBalanceQuery() {
   return useQuery<GetWalletBalanceData>({
     queryKey: paymentKeys.wallet(),
-    queryFn: fetchWalletBalance,
+    queryFn: ({ signal }) => fetchWalletBalance(signal),
+    staleTime: 15_000,
+  });
+}
+
+export function prefetchWalletBalanceQuery(queryClient: QueryClient): Promise<void> {
+  return queryClient.prefetchQuery({
+    queryKey: paymentKeys.wallet(),
+    queryFn: ({ signal }) => fetchWalletBalance(signal),
     staleTime: 15_000,
   });
 }

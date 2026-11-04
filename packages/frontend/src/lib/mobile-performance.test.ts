@@ -17,6 +17,8 @@ describe('mobile performance policy', () => {
 
     expect(android.routePriority.slice(0, 2)).toEqual(['characters', 'home']);
     expect(ios.routePriority.slice(0, 2)).toEqual(['home', 'dramas']);
+    expect(android.routeWarmupOrder.slice(0, 2)).toEqual(['/characters', '/profile']);
+    expect(ios.routeWarmupOrder.slice(0, 2)).toEqual(['/profile', '/characters']);
     expect(android.characters).toMatchObject({
       initialRenderCount: 4,
       renderBatchSize: 4,

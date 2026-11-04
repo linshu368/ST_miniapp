@@ -196,6 +196,7 @@ const ENUMS: Readonly<Record<string, readonly string[]>> = {
   cache: ['fetch', 'inflight', 'cache', 'unknown'],
   navigation_type: ['document', 'spa', 'mount'],
   visibility: ['foreground', 'background', 'mixed'],
+  readiness_budget: ['within_2s', 'over_2s'],
   cold_start: ['true', 'false'],
   net_type: ['slow-2g', '2g', '3g', '4g', 'unknown', 'mixed'],
   net_rtt_bucket: ['lt100', '100-300', '300-1000', 'gte1000', 'unknown'],
@@ -217,7 +218,9 @@ const ENUMS: Readonly<Record<string, readonly string[]>> = {
   attempts: ['1', '2'],
   api_route: [
     'characters',
+    'lobby_characters',
     'character_detail',
+    'favorites',
     'conversations',
     'conversation_detail',
     'conversation_turn',

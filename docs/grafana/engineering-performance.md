@@ -6,16 +6,19 @@
 
 经营看板继续读取已有 Supabase 轻量汇总；原首字回执、赢家身份、恢复和计费事实继续原样持久化。本次没有新增监控表、索引、cron、逐事件数据库查询/写入，原短剧分析上传的历史约定由2026-10-29五秒长尾任务修订：接收端仅将达到5秒的终态/network详情经既有后端OTLP写Loki，不再触发Supabase分析写入；历史表和SQL看板保留，发布后单独核验自然样本送达。
 
-四个独立入口：
+五个独立入口：
 
-| 源文件 / UID                   | 工程首先看什么                                            | 数据源        |
-| ------------------------------ | --------------------------------------------------------- | ------------- |
-| `st-engineering-pages.json`    | 页面可用、打开/导航、缓存/刷新、API 全程与分段            | Cloud Loki    |
-| `st-engineering-roleplay.json` | 首字、完整回复、恢复、交互反馈                            | Cloud Loki    |
-| `st-engineering-drama.json`    | 目录、启动、首帧、阶段、播放中断与恢复                    | Cloud Loki    |
-| `st-engineering-backend.json`  | HTTP/生成/上游尝试/短剧服务端/Prisma/runtime/出口健康下钻 | Cloud Metrics |
+| 源文件 / UID                          | 工程首先看什么                                              | 数据源        |
+| ------------------------------------- | ----------------------------------------------------------- | ------------- |
+| `st-engineering-pages.json`           | 页面可用、打开/导航、缓存/刷新、API 全程与分段              | Cloud Loki    |
+| `st-engineering-roleplay.json`        | 首字、完整回复、恢复、交互反馈                              | Cloud Loki    |
+| `st-engineering-drama.json`           | 目录、启动、首帧、阶段、播放中断与恢复                      | Cloud Loki    |
+| `st-engineering-backend.json`         | HTTP/生成/上游尝试/短剧服务端/Prisma/runtime/出口健康下钻   | Cloud Metrics |
+| `st-five-route-navigation-ready.json` | 五个一级入口点击到真实内容可见 P95、2秒达标率、样本量和终态 | Cloud Loki    |
 
-前三项是工程体验产出，第四项是定位原因的证据。保留既有经营、首字 v4 和短剧看板，不覆盖其他 TextBot 项目。源 JSON 默认绑定当前 `grafanacloud-logs` / `grafanacloud-prom`，保留待接入模板；线上接入状态按实际 Cloud 样本独立更新，不因导入模板而视为验收。
+页面、角色扮演、短剧和五入口专项是工程体验产出，Backend 看板是定位原因的证据。保留既有经营、首字 v4 和短剧看板，不覆盖其他 TextBot 项目。源 JSON 默认绑定当前 `grafanacloud-logs` / `grafanacloud-prom`，保留待接入模板；线上接入状态按实际 Cloud 样本独立更新，不因导入模板而视为验收。
+
+五入口专项固定覆盖 `/`、`/dramas`、`/characters`、`/creation`、`/profile`。P95 和 2 秒达标率都读取同一条 `page.navigation` 的 `duration_ms`；页面测量另带低基数 `readiness_budget=within_2s|over_2s` 供发布后核对。看板必须同时查看成功样本量、`page.terminal` 和 `page.stall`，单个 route/platform 少于 100 个成功终态只标低样本，无数据不能解释成达标。
 
 ## 短剧统一定义v3（本地代码，尚未发布）
 
@@ -59,7 +62,7 @@ NEXT_PUBLIC_DRAMA_TIMING_MODE默认legacy。只有替代验证通过后显式启
 
 ## 页面与接口覆盖
 
-已登记20个页面模板：`/`、`/characters`、`/chats`、`/chat/:id`、`/chat/:id/voice/:id`、`/create`、`/create/studio/:id`、`/create/work/:id`、`/dramas`、`/dramas/:id`、`/vip`、`/profile`、`/profile/recharge`、`/profile/recharge/:id`、`/profile/orders`、`/profile/spending`、`/profile/messages`、`/profile/messages/:id`、`/profile/invite`、`/profile/support`。
+已登记21个页面模板：`/`、`/characters`、`/chats`、`/chat/:id`、`/chat/:id/voice/:id`、`/create`、`/create/studio/:id`、`/create/work/:id`、`/creation`、`/dramas`、`/dramas/:id`、`/vip`、`/profile`、`/profile/recharge`、`/profile/recharge/:id`、`/profile/orders`、`/profile/spending`、`/profile/messages`、`/profile/messages/:id`、`/profile/invite`、`/profile/support`。
 
 - 路径白名单在 `lib/perf/route-template.ts`；页面通过现有 `usePageReady` 声明真实就绪/失败。未知短路径归 other，不把动态ID当维度。
 - API 客户端自动覆盖24个有限接口组，不输出原路径/query。诊断上传排除，防止采集递归。大厅同源代理等绕过统一客户端的请求不在 `api.total` 承诺内，页面端到端和后端HTTP仍可观测。

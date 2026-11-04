@@ -9,7 +9,10 @@ import type { ApiAttemptTiming } from '@/lib/api/client';
 export function apiRouteGroup(path: string): string {
   const pathname = path.split(/[?#]/, 1)[0] ?? '';
   if (pathname === '/api/characters') return 'characters';
+  if (pathname === '/api/lobby-characters') return 'lobby_characters';
   if (/^\/api\/characters\/[^/]+$/.test(pathname)) return 'character_detail';
+  if (pathname === '/api/favorites' || pathname === '/api/favorites/ids') return 'favorites';
+  if (pathname.startsWith('/api/favorites/')) return 'favorites';
   if (pathname === '/api/v1/conversations') return 'conversations';
   if (/^\/api\/v1\/conversations\/[^/]+$/.test(pathname)) return 'conversation_detail';
   if (pathname.startsWith('/api/v1/conversations/')) return 'conversation_turn';

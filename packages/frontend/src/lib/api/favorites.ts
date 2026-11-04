@@ -34,8 +34,8 @@ async function fetchFavoriteIds(): Promise<GetCharacterFavoriteIdsData> {
   return apiClient<GetCharacterFavoriteIdsData>('/api/favorites/ids', { queuePriority: 'normal' });
 }
 
-async function fetchFavorites(): Promise<GetCharacterFavoritesData> {
-  return apiClient<GetCharacterFavoritesData>('/api/favorites');
+async function fetchFavorites(signal?: AbortSignal): Promise<GetCharacterFavoritesData> {
+  return apiClient<GetCharacterFavoritesData>('/api/favorites', { signal });
 }
 
 async function setFavorite(input: {
@@ -67,7 +67,15 @@ export function useFavoriteIdsQuery({ enabled = true }: { enabled?: boolean } = 
 export function useFavoritesQuery() {
   return useQuery<GetCharacterFavoritesData>({
     queryKey: favoriteKeys.list(),
-    queryFn: fetchFavorites,
+    queryFn: ({ signal }) => fetchFavorites(signal),
+    staleTime: 30_000,
+  });
+}
+
+export function prefetchFavoritesQuery(queryClient: QueryClient): Promise<void> {
+  return queryClient.prefetchQuery({
+    queryKey: favoriteKeys.list(),
+    queryFn: ({ signal }) => fetchFavorites(signal),
     staleTime: 30_000,
   });
 }

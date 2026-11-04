@@ -16,6 +16,7 @@ export const ENGINEERING_PAGE_ROUTES = new Set([
   '/create',
   '/create/studio/:id',
   '/create/work/:id',
+  '/creation',
   '/dramas',
   '/dramas/:id',
   '/vip',

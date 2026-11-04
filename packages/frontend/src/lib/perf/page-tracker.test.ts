@@ -54,6 +54,7 @@ import {
   markPageReady,
   markPageFailed,
   markPageNavigationStart,
+  PAGE_NAVIGATION_BUDGET_MS,
   PAGE_STALL_MS,
   resetPageTrackerForTest,
   routeOf,
@@ -280,12 +281,21 @@ describe('page tracker', () => {
     expect(engineering.measurement).toHaveBeenCalledWith(
       'page.navigation',
       1500,
-      expect.objectContaining({ navigation_type: 'spa' })
+      expect.objectContaining({ navigation_type: 'spa', readiness_budget: 'within_2s' })
     );
     expect(engineering.measurement).toHaveBeenCalledWith(
       'page.ready',
       300,
       expect.objectContaining({ source_measurement_version: 'page_mount_v1' })
+    );
+    markPageNavigationStart('/dramas');
+    vi.advanceTimersByTime(PAGE_NAVIGATION_BUDGET_MS + 1);
+    beginPage('/dramas');
+    markPageReady('/dramas');
+    expect(engineering.measurement).toHaveBeenCalledWith(
+      'page.navigation',
+      PAGE_NAVIGATION_BUDGET_MS + 1,
+      expect.objectContaining({ readiness_budget: 'over_2s' })
     );
     expect(JSON.stringify(engineering.event.mock.calls)).not.toContain('private');
   });

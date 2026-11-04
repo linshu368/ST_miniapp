@@ -1,0 +1,65 @@
+{
+  "id": "five-route-navigation-p95",
+  "name": "five-route-navigation-p95",
+  "title": "Optimize five-route mobile navigation readiness",
+  "description": "统一五个一级路由的点击到真实内容可见指标，按 Android/iOS 优化导航预热和首屏就绪语义，并新增 Grafana 2 秒预算看板",
+  "status": "in_progress",
+  "dev_type": "performance",
+  "scope": "frontend",
+  "package": "frontend",
+  "priority": "P2",
+  "creator": "cline",
+  "assignee": "cline",
+  "createdAt": "2026-11-03",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "本地实现与验证完成。短剧 intent 业务数据预取因五入口回归中与增量列表挂载竞态而撤回，仅保留 route chunk 预热；characters/favorites/wallet 继续使用显式 intent prefetch。Grafana dashboard JSON 与 LogQL 已校验，但当前 Grafana 连接只读，Cloud 实例尚未导入。2 秒为发布目标，需按 release、route、Android/iOS 在每组 N>=100 后验收，不能用本地结果宣称生产达标。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "frontend.infrastructure.client-ui-foundation",
+        "frontend.business.drama-experience",
+        "frontend.business.character-lobby",
+        "frontend.business.wallet-payment"
+      ]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": ["/", "/dramas", "/characters", "/creation", "/profile"],
+      "apis": [
+        "GET /api/dramas",
+        "GET /api/lobby-characters?sort=latest",
+        "GET /api/favorites",
+        "GET /api/wallet/balance"
+      ],
+      "android": {
+        "page_p95_baseline_ms": 4717,
+        "page_p95_target_ms": 2000
+      },
+      "ios": {
+        "page_p95_baseline_ms": 2691,
+        "page_p95_target_ms": 2000
+      },
+      "api": {
+        "p95_baseline_ms": 3858,
+        "p95_target_ms": 2000
+      },
+      "measurement": {
+        "source": "Grafana Cloud Loki production engineering_v1；页面使用 st_page_navigation、outcome=ready、foreground，按 route/tg_platform 分组；接口使用 st_api_total、outcome=ok，按 api_route/tg_platform 分组。",
+        "window": "2026-10-27 18:00 至 2026-11-03 18:00 Asia/Shanghai（7d）；发布后按 release 连续观察至少两个完整24h窗口，每个 route/platform 终态样本少于100时标记低样本并延长窗口。"
+      },
+      "notes": "页面基线取五路由中最慢项：Android /profile 4716.73ms(N=656)，iOS /profile 2690.8ms(N=147)。分路由：/ Android 1069.85(N=111)、iOS 946.9(N=27低样本)；/dramas Android 1382.93(N=268)、iOS 637.15(N=92低样本)；/characters Android 4035.9(N=808)、iOS 2319.65(N=162)；/profile 如上；/creation 当前未登记，无可见样本，不补零。接口聚合基线：dramas Android 3494.03(N=552)、iOS 3857.6(N=137)；wallet Android 3704.15(N=2851)、iOS 2966.4(N=599)；other（包含 lobby-characters/favorites 且有其它请求混入）Android 2768.02(N=3790)、iOS 2166.2(N=669)。2秒是发布目标；本地验证不能宣称生产已达标。"
+    }
+  }
+}

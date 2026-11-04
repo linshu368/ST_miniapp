@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { getTelegramPlatform } from '@/lib/perf/env-tags';
 
 export type MobilePlatformGroup = 'android' | 'ios' | 'other';
+export type PrimaryNavigationRoute = '/' | '/dramas' | '/characters' | '/creation' | '/profile';
 
 interface ListBudget {
   initialRenderCount: number;
@@ -25,6 +26,7 @@ export interface MobilePerformancePolicy {
     videoPreload: 'auto' | 'metadata';
   };
   routePriority: ReadonlyArray<'characters' | 'home' | 'dramas' | 'other'>;
+  routeWarmupOrder: ReadonlyArray<PrimaryNavigationRoute>;
 }
 
 const POLICIES: Record<MobilePlatformGroup, MobilePerformancePolicy> = {
@@ -46,6 +48,7 @@ const POLICIES: Record<MobilePlatformGroup, MobilePerformancePolicy> = {
     },
     homePoster: { width: 480, height: 640, quality: 64, videoPreload: 'metadata' },
     routePriority: ['characters', 'home', 'dramas', 'other'],
+    routeWarmupOrder: ['/characters', '/profile', '/', '/dramas', '/creation'],
   },
   ios: {
     platform: 'ios',
@@ -65,6 +68,7 @@ const POLICIES: Record<MobilePlatformGroup, MobilePerformancePolicy> = {
     },
     homePoster: { width: 480, height: 640, quality: 64, videoPreload: 'metadata' },
     routePriority: ['home', 'dramas', 'characters', 'other'],
+    routeWarmupOrder: ['/profile', '/characters', '/', '/dramas', '/creation'],
   },
   other: {
     platform: 'other',
@@ -86,6 +90,7 @@ const POLICIES: Record<MobilePlatformGroup, MobilePerformancePolicy> = {
     },
     homePoster: { width: 480, height: 640, quality: 64, videoPreload: 'auto' },
     routePriority: ['home', 'characters', 'dramas', 'other'],
+    routeWarmupOrder: ['/', '/characters', '/dramas', '/profile', '/creation'],
   },
 };
 
