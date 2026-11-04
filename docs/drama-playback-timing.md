@@ -126,3 +126,23 @@ Grafana按桶对照候选见 `docs/grafana/engineering-performance.md` 的 CDN A
 6. 限速媒体，核对 loadeddata/canplay/play 结果和五秒 snapshot 的即时缓冲；启动时暂停/恢复、重试、换源及后台，核对用户事件与源代际隔离。检查上报 HTTP 202，若 400 先查 Backend 是否已部署扩展 media 契约。
 
 本地测试通过不等于已完成 Telegram/线上送达验收。
+
+## 无缓冲快进恢复与关联诊断（2026-11-03，本地实现，待发布）
+
+独立测量版本 `drama_seek_resume_v1`，不进入 startup/rebuffer 分母。主指标限定提交时 `buffered=no`、`direction=forward`、`wasPlaying=true`；从接受目标、修改 currentTime 前起计，到目标新帧证据与实际恢复播放同时成立。`seeked`、暂停状态下的单帧和 play Promise 成功均不能单独代表恢复。兼容 WebView 的 timeupdate 降级明确标记；无法验证为 unverified，不补成功零耗时。三秒仅为达标线，不中断媒体。
+
+原始 seek 报告兼容扩展 definition/fromMs/direction/positionSetMs/seekingMs/playingMs/firstBufferedMs/samples 等可选字段；route 在创建时绑定。100ms 状态读取至多100次、只保留变化及关键事件、最多32条，关键时间点独立于明细截断；十秒后停止轮询并标 samplingCapped，媒体事件仍可补证。观察最长60秒，达到上限仅结束诊断并记 unverified/deadline，不改变视频位置、播放、重试或业务超时。新操作、离页、后台、错误和终态均解除监听/定时器；新操作还释放上一观察的网络尾监听。
+
+Resource Timing 复用原 reader/脱敏转换：同源代际与时间重叠仅是候选关联，保留提交前已在途的负 startMs，请求最多16条；已完成旧请求、旧src代际、其他URL及终态后新发起的请求不归入。final 冻结；成功/错误后最多5秒收一次 network 尾报告，沿用同一ID/终态/总耗时，不重复计数。跨域需 Timing-Allow-Origin 才可能有详细计时，CORS不等价；unsupported/no_entry/limited/available 各自保留。无条目不证明无网络，responseEnd不表示目标数据恰好到齐。源URL只在内存匹配，不上报URL、签名或头部。
+
+目标帧仅采集首次有效回调的 processingDuration（毫秒）；它是对应帧处理信号，不是整个seek的解码总耗时。buffer首次可见由事件/采样观察，不是精确数据到达；seeking/seeked包含浏览器调度，网络/定位/解码可重叠。每次先求合法区间，再计算分位，缺失/逆序省略，不相减独立P95或制造“下载+定位+解码”堆叠图。
+
+全量Faro信号：`st_drama_seek`（每次final一个耗时）、`st_drama_seek_terminal`（同条原子seek_budget）、`st_drama_seek_stage`（有限阶段）、`st_drama_seek_diagnostic`（final/network能力）。仅合法有限标签，无身份/URL/数组。预算within_3s/over_3s/not_resumed/excluded/unverified随终态发送；率=within/(within+over+not_resumed)，离开/替代为未达标且非错误，后台/暂停定位/无法验证单列。是已接收终态占比，不承诺全访问闭环率。成功N与分位使用同一measurement；网络final/network阶段分开，不相加两次有效N。
+
+Grafana `st-engineering-drama` 在启动阶段后、播放中断恢复前插入299–307号区域：全窗口P95与成功N、三秒率与分母、总恢复趋势、阶段P50/P95与有效N、全部终态构成、网络候选分位与N、能力/截断/采样上限，以及≥3秒单次明细。沿用环境/版本/页面/平台/网络；起播/目录/CDN专属筛选不作用。快进网络区单独选择final/network。Backend既有OTLP出口接收≥3000ms的新定义seek final/network受控正文，startup原5000ms边界不变，日志不作为统计分母，不写数据库。
+
+发布顺序：先Backend兼容shared validator和日志出口，再Frontend，随后用真实Android/iOS验证缓冲外向前跳转、缓冲内、快退、暂停定位、连续拖动、后台、错误、过期源回调、无帧回调和计时受限。看板可先增量发布但保持无样本，不能把空图/本地通过当生产验收。回滚Frontend/Backend本批应用即可，保留看板为无数据；无迁移、配置开关或离线补传。
+
+本地复用现有 drama-media/observer/grafana、shared telemetry-contract、Backend engineering-observability 测试；固定Faro→Alloy→Loki虚构样本断言无缓冲/前进/恢复分母、三秒边界、全失败真实0、空队列无数据、迟到网络不重复、各平台分位与阶段N。工程验收建议复用 ui-tests 的 @drama 进度提交/连续操作场景；虚构媒体不替代真机性能和跨域头验收。
+
+本次交付状态：Cloud已新增299–307号区域，读回确认原33面板除下移布局外内容不变，新增9项与仓库JSON一致（Cloud会省略阈值中的null）。Backend/Frontend采集代码尚未部署，生产新版本样本仍待发布验收。全包typecheck、Frontend/Admin构建、Shared与相关Backend/Frontend回归通过；@drama共44场景已有通过记录，首次两项失败复核通过。首轮Faro→Alloy→Loki验算105条查询；后续Docker不可用，最新快进19条查询另用相同3.5.0版本的独立本地Loki和同一虚构样本验算，含覆盖率0/100、空样本和迟到阶段隔离。

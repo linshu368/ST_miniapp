@@ -160,4 +160,8 @@ Faro 2.13 默认 `FetchTransport.send` 强制添加 `Idempotency-Key`，当前�
 
 ## 聊天网络归因（2026-11-02，候选）
 
-`roleplay.network` 按 `stage` 上报 `network_overhead`（点击到收到 start 减服务端已用时间）、`network_setup`（DNS、连接、TLS、排队、预检）、`network_path`（已建立连接上的传输），附 `protocol`、`conn_reused`、`delay_attribution`。`roleplay.delay` 每轮一条，是“我方责任超时率”的分子分母来源；`roleplay.first_token_late` 记录超时后的真实首字时长。只有 start 与 Resource Timing 同时存在才能把传输判给用户，否则计入我方。规则见 [首字兜底说明](../first-token-fallback.md)。
+`roleplay.network` 按 `stage` 上报 `network_overhead`（点击到收到 start 减服务端已用时间）、`network_setup`（DNS、连接、TLS、排队、预检）、`network_path`（已建立连接上的传输），附 `protocol`、`conn_reused`、`delay_attribution`。聊天请求的 Resource Timing 由本轮自己的 PerformanceObserver 读取，不依赖可能已写满的整页缓冲区；`network_status` 说明证据是否齐全（`available` 有计时、`limited` 跨域计时被清零、`no_entry` 没有条目、`unsupported` 浏览器不支持），`rt_buffer` 记录整页缓冲区是否也有这条（`miss` 而 `available` 即缓冲区已满）。`roleplay.delay` 每轮一条，是“我方责任超时率”的分子分母来源；`roleplay.first_token_late` 记录超时后的真实首字时长。只有 start 与 Resource Timing 同时存在才能把传输判给用户，否则计入我方。规则见 [首字兜底说明](../first-token-fallback.md)。
+
+## 无缓冲快进恢复（2026-11-03，本地实现，待发布）
+
+短剧工程看板新增299–307号区域，位于启动阶段后、前台播放中断恢复前；独立drama_seek_resume_v1，仅无缓冲向前且需要继续播放进入主图。新增全窗口P95/N、3秒恢复率/分母、趋势、定位前后与缓冲首次观测/帧处理、网络候选与每阶段N、诊断能力/截断、≥3秒受控明细。每次final单计，network仅补诊断；新快进网络阶段变量只作用网络区。起播/目录/CDN专属筛选不作用，默认环境以当前Cloud设置为准，不改旧区查询。完整口径、采样上限、平台限制和Backend→Frontend顺序见[快进说明](../drama-playback-timing.md#无缓冲快进恢复与关联诊断2026-11-03本地实现待发布)。源码JSON和Cloud增量面板独立验收，空图不算生产实收。

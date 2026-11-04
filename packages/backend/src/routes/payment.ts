@@ -59,8 +59,6 @@ export default async function paymentRoutes(app: FastifyInstance) {
           plans: pageRuntime.plans,
           payment_channels: pageRuntime.paymentChannels,
           vip_plans: buildVipPlans(strategy.purchaseEnabled, strategy.plans),
-          page_config: pageRuntime.pageConfig,
-          payment_prompt_dialog_config: pageRuntime.paymentPromptDialogConfig,
           insufficient_credits_notice: pageRuntime.insufficientCreditsNotice,
         })
       );

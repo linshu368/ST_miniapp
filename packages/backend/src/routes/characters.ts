@@ -1,6 +1,9 @@
 import { FastifyInstance, type FastifyBaseLogger } from 'fastify';
 import { discoverableCharacterWhere, canUseCharacter } from '../features/creator/access.js';
-import { resolveCreatorCoverUrl } from '../features/creator/covers.js';
+import {
+  resolveCreatorCoverUrl,
+  resolvePublicCreatorCoverUrls,
+} from '../features/creator/covers.js';
 import { CharacterDraftSchema } from '@miniapp/shared';
 import { getDomainDb } from '../lib/supabase.js';
 import { CreatorCharacterIdSchema } from '@miniapp/shared';
@@ -23,6 +26,8 @@ import { hasNewLobbyCharacters } from '../lib/lobby-latest-badge.js';
 import { MiniappUserSettingsRepository } from '../infrastructure/repositories/MiniappUserSettingsRepository.js';
 import { getOrCreateDbUser } from '../lib/user.js';
 import { optionalTelegramAuth, requireTelegramAuth } from '../middleware/auth.js';
+import { Prisma } from '@prisma/client';
+import { publicAuthorName, publicCreatorIdSql } from '../features/creator/public-author.js';
 
 const CHARACTER_STORAGE_BUCKET = process.env.CHARACTER_STORAGE_BUCKET || 'character-assets';
 
@@ -46,6 +51,64 @@ export async function resolveCharacterDisplayAvatarUrl(
   if (avatarUrl?.startsWith('creator-cover:'))
     return (await resolveCreatorCoverUrl(avatarUrl.slice('creator-cover:'.length))) ?? '';
   return resolveCharacterAvatarUrl(characterId, avatarUrl);
+}
+
+export async function resolvePublicCharacterAvatarUrls(
+  cards: { id: string; avatar_url: string }[],
+  log: FastifyBaseLogger
+): Promise<Map<string, string>> {
+  const prefix = 'creator-cover:';
+  const coverIds = cards
+    .filter((c) => c.avatar_url.startsWith(prefix))
+    .map((c) => c.avatar_url.slice(prefix.length));
+  const signed = await resolvePublicCreatorCoverUrls(coverIds, log);
+  return new Map(
+    cards.map((c) => [
+      c.id,
+      c.avatar_url.startsWith(prefix)
+        ? (signed.get(c.avatar_url.slice(prefix.length)) ?? '')
+        : resolveCharacterAvatarUrl(c.id, c.avatar_url),
+    ])
+  );
+}
+
+/** Detail-only credit: do not fan author-profile lookups out over the lobby list. */
+async function resolveCharacterDetailCredit(
+  characterId: string,
+  originalCreator: string,
+  log: FastifyBaseLogger
+): Promise<Pick<CharacterDetail, 'author_name' | 'public_creator_id'>> {
+  try {
+    const [profile] = await prisma.$queryRaw<
+      Array<{
+        display_name: string | null;
+        tg_first_name: string | null;
+        public_creator_id: string | null;
+      }>
+    >`
+      SELECT settings.display_name, settings.tg_first_name,
+        CASE WHEN EXISTS (
+          SELECT 1 FROM app_core.character_creations work
+          JOIN app_core.characters card ON card.id = work.character_id
+          WHERE work.owner_user_id = creation.owner_user_id AND NOT card.is_test
+            AND app_core.can_discover_character(card.id)
+        ) THEN ${publicCreatorIdSql(Prisma.sql`creation.owner_user_id`)} END AS public_creator_id
+      FROM app_core.character_creations creation
+      LEFT JOIN app_core.miniapp_user_settings settings ON settings.user_id = creation.owner_user_id
+      WHERE creation.character_id = ${characterId}::uuid
+    `;
+    if (profile)
+      return {
+        author_name: publicAuthorName(profile),
+        ...(profile.public_creator_id ? { public_creator_id: profile.public_creator_id } : {}),
+      };
+  } catch (err) {
+    log.warn(
+      { err, event: 'character.author_lookup_failed' },
+      'Character author credit unavailable'
+    );
+  }
+  return { author_name: originalCreator };
 }
 
 export default async function characterRoutes(app: FastifyInstance) {
@@ -211,15 +274,20 @@ export default async function characterRoutes(app: FastifyInstance) {
             first_mes: string;
             creator_notes: string;
           };
+          // The story stays frozen; the author credit follows the creator's current public name.
+          const [avatarUrl, credit] = await Promise.all([
+            resolveCharacterDisplayAvatarUrl(id, frozen.avatar_url),
+            resolveCharacterDetailCredit(id, frozen.creator, request.log),
+          ]);
           return reply.send(
             ok<GetCharacterByIdData>({
               character: {
                 id,
                 name: frozen.name,
                 description: frozen.description,
-                avatar_url: await resolveCharacterDisplayAvatarUrl(id, frozen.avatar_url),
+                avatar_url: avatarUrl,
                 personality_tags: frozen.tags,
-                author_name: frozen.creator,
+                ...credit,
                 is_featured: false,
                 greeting: frozen.first_mes,
                 creator_notes: frozen.creator_notes,
@@ -261,16 +329,22 @@ export default async function characterRoutes(app: FastifyInstance) {
           })
         : null;
       const draft = owned ? CharacterDraftSchema.parse(owned.draft) : null;
+      const [avatarUrl, credit] = await Promise.all([
+        owned
+          ? owned.cover_asset_id
+            ? resolveCreatorCoverUrl(owned.cover_asset_id)
+            : Promise.resolve('')
+          : resolveCharacterDisplayAvatarUrl(character.id, character.avatar_url),
+        resolveCharacterDetailCredit(character.id, character.creator, request.log),
+      ]);
       const characterDetail: CharacterDetail = {
         id: character.id,
         name: draft?.name ?? character.name,
         description: draft?.description ?? character.description,
-        avatar_url: owned
-          ? ((owned.cover_asset_id ? await resolveCreatorCoverUrl(owned.cover_asset_id) : '') ?? '')
-          : await resolveCharacterDisplayAvatarUrl(character.id, character.avatar_url),
+        avatar_url: avatarUrl ?? '',
         personality_tags:
           draft?.tags ?? (Array.isArray(character.tags) ? (character.tags as string[]) : []),
-        author_name: character.creator,
+        ...credit,
         is_featured: featuredIds.has(character.id),
         greeting: draft?.opening ?? character.first_mes,
         creator_notes: character.creator_notes,

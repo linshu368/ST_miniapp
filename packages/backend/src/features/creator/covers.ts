@@ -1,3 +1,4 @@
+import type { FastifyBaseLogger } from 'fastify';
 import { randomUUID } from 'node:crypto';
 import { Buffer } from 'node:buffer';
 import type { CreatorCoverAsset, CreatorCoverRequest } from '@miniapp/shared';
@@ -34,6 +35,53 @@ export async function assertCreatorCoverAssetOwned(assetId: string, userId: stri
   if (!asset || asset.owner_user_id !== userId) throw new Error('creator_cover_not_found');
 }
 
+function cacheSignedCover(assetId: string, url: string) {
+  if (signed.size >= 2000) {
+    const key = signed.keys().next().value;
+    if (key) signed.delete(key);
+  }
+  signed.set(assetId, { url, expires: Date.now() + 3300_000 });
+}
+
+/** Asset IDs must come from the already authorized page of public characters. */
+export async function resolvePublicCreatorCoverUrls(assetIds: string[], log: FastifyBaseLogger) {
+  const urls = new Map<string, string>();
+  const misses: string[] = [];
+  for (const id of new Set(assetIds)) {
+    const hit = signed.get(id);
+    if (hit && hit.expires > Date.now()) urls.set(id, hit.url);
+    else if (/^[a-f\d]{8}-(?:[a-f\d]{4}-){3}[a-f\d]{12}$/i.test(id)) misses.push(id);
+  }
+  if (!misses.length) return urls;
+  try {
+    const assets = await getDomainDb('app_core')
+      .from('character_cover_assets')
+      .select('id,storage_path')
+      .in('id', misses)
+      .abortSignal(AbortSignal.timeout(5000));
+    if (assets.error) throw assets.error;
+    const byPath = new Map<string, string>((assets.data ?? []).map((a) => [a.storage_path, a.id]));
+    if (byPath.size) {
+      const result = await bounded(
+        getSupabaseClient()
+          .storage.from(BUCKET)
+          .createSignedUrls([...byPath.keys()], 3600),
+        10_000
+      );
+      if (result.error) throw result.error;
+      for (const item of result.data ?? []) {
+        const id = item.path && byPath.get(item.path);
+        if (!id || item.error || !item.signedUrl) continue;
+        urls.set(id, item.signedUrl);
+        cacheSignedCover(id, item.signedUrl);
+      }
+    }
+  } catch (err) {
+    log.warn({ err, cover_count: misses.length }, 'Public creator covers unavailable');
+  }
+  return urls;
+}
+
 /** Call only after character access authorization. Storage is private even for draft covers. */
 export async function resolveCreatorCoverUrl(assetId: string): Promise<string | null> {
   const cached = signed.get(assetId);
@@ -45,11 +93,7 @@ export async function resolveCreatorCoverUrl(assetId: string): Promise<string | 
     10_000
   );
   if (error || !data?.signedUrl) throw new Error('creator_cover_sign_failed', { cause: error });
-  if (signed.size >= 2000) {
-    const key = signed.keys().next().value;
-    if (key) signed.delete(key);
-  }
-  signed.set(assetId, { url: data.signedUrl, expires: Date.now() + 3300_000 });
+  cacheSignedCover(assetId, data.signedUrl);
   return data.signedUrl;
 }
 

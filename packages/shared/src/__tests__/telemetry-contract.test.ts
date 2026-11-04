@@ -75,6 +75,47 @@ describe('drama timing upload contract', () => {
     ])
       expect(DramaTimingReportSchema.safeParse(bad).success).toBe(false);
   });
+  it('validates versioned seek resume evidence and bounded diagnostic tails without accepting URLs', () => {
+    const seek = {
+      definition: 'drama_seek_resume_v1',
+      targetMs: 40000,
+      fromMs: 1000,
+      direction: 'forward',
+      buffered: 'no',
+      wasPlaying: true,
+      seekedMs: 1000,
+      frameMs: 1200,
+      playingMs: 1250,
+      samples: [],
+      samplingCapped: false,
+      samplesTruncated: false,
+    };
+    const input = {
+      ...report,
+      type: 'seek',
+      seek,
+      elapsedMs: 1250,
+      frameMethod: 'video_frame_callback',
+      version: 2,
+      context: { release: 'unit', sessionId: 'unit', platform: 'ios', browser: 'webkit' },
+    };
+    expect(DramaTimingReportSchema.safeParse(input).success).toBe(true);
+    expect(DramaTimingReportSchema.safeParse({ ...input, phase: 'network' }).success).toBe(true);
+    for (const bad of [
+      { ...input, seek: { ...seek, playingMs: undefined } },
+      { ...input, seek: { ...seek, wasPlaying: false } },
+      { ...input, seek: { ...seek, direction: 'arbitrary' } },
+      { ...input, seek: { ...seek, samples: Array(33).fill({}) } },
+      { ...input, seek: { ...seek, url: 'PRIVATE_URL' } },
+      {
+        ...input,
+        diagnostics: {
+          network: { status: 'available', entries: [], truncated: false, token: 'PRIVATE_TOKEN' },
+        },
+      },
+    ])
+      expect(DramaTimingReportSchema.safeParse(bad).success).toBe(false);
+  });
   it('derives all stages once and leaves reversed/missing intervals absent', () => {
     const marks = {
       player_ready: 100,

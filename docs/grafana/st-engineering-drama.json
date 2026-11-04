@@ -430,6 +430,32 @@
             "selected": false
           }
         ]
+      },
+      {
+        "name": "seek_diagnostic_phase",
+        "label": "快进网络诊断阶段（仅快进网络区）",
+        "type": "custom",
+        "query": "终态快照 : final, 迟到网络补充 : network",
+        "current": {
+          "text": "终态快照",
+          "value": "final"
+        },
+        "options": [
+          {
+            "text": "终态快照",
+            "value": "final",
+            "selected": true
+          },
+          {
+            "text": "迟到网络补充",
+            "value": "network",
+            "selected": false
+          }
+        ],
+        "hide": 0,
+        "multi": false,
+        "includeAll": false,
+        "allowCustomValue": false
       }
     ]
   },
@@ -950,6 +976,649 @@
       ]
     },
     {
+      "id": 299,
+      "title": "快进恢复与关联诊断（无缓冲、向前、继续播放）",
+      "type": "row",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 37,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "id": 300,
+      "title": "无缓冲快进｜所选窗口 P95 与成功 N",
+      "type": "stat",
+      "gridPos": {
+        "x": 0,
+        "y": 38,
+        "w": 12,
+        "h": 5
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "grafanacloud-logs"
+      },
+      "description": "独立drama_seek_resume_v1；仅目标提交时无缓冲、向前跳转且需恢复播放。沿用环境/版本/页面/设备/网络筛选；起播入口、地址缓存、启动帧方式和CDN区专属筛选不作用。P95仅成功，样本不是人数，无数据不补零。",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "quantile_over_time(0.95, ${browser_selector:raw} |= \"type=st_drama_seek \" | logfmt | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_source_measurement_version=\"drama_seek_resume_v1\" | context_route=~\"$drama_route\" | context_tg_platform=~\"${tg_platform:raw}\" | context_net_type=~\"${net_type:raw}\" | kind=\"measurement\" | type=\"st_drama_seek\" | context_seek_buffered=\"no\" | context_seek_direction=\"forward\" | context_resume_expected=\"true\" | context_outcome=\"playing\" | keep context_tg_platform,duration_ms | unwrap duration_ms | __error__=\"\" [$__range]) by (context_tg_platform)",
+          "legendFormat": "P95 {{context_tg_platform}}",
+          "queryType": "instant",
+          "editorMode": "code",
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (context_tg_platform) (count_over_time(${browser_selector:raw} |= \"type=st_drama_seek \" | logfmt | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_source_measurement_version=\"drama_seek_resume_v1\" | context_route=~\"$drama_route\" | context_tg_platform=~\"${tg_platform:raw}\" | context_net_type=~\"${net_type:raw}\" | kind=\"measurement\" | type=\"st_drama_seek\" | context_seek_buffered=\"no\" | context_seek_direction=\"forward\" | context_resume_expected=\"true\" | context_outcome=\"playing\" | keep context_tg_platform [$__range]))",
+          "legendFormat": "N {{context_tg_platform}}",
+          "queryType": "instant",
+          "editorMode": "code",
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "noValue": "—",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 3000
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^N "
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^N "
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "text",
+                      "value": null
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 301,
+      "title": "无缓冲快进｜3秒内恢复率与有效分母",
+      "type": "stat",
+      "gridPos": {
+        "x": 12,
+        "y": 38,
+        "w": 12,
+        "h": 5
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "grafanacloud-logs"
+      },
+      "description": "独立drama_seek_resume_v1；仅目标提交时无缓冲、向前跳转且需恢复播放。沿用环境/版本/页面/设备/网络筛选；起播入口、地址缓存、启动帧方式和CDN区专属筛选不作用。P95仅成功，样本不是人数，无数据不补零。 率=3秒内成功/(3秒内成功+超3秒成功+前台已知未恢复)；离开/被后续操作替代计未达标但非播放错误；后台、暂停定位、无法验证单列。仅已接收终态，不是所有点击闭环率。",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(sum by (event_data_tg_platform) (count_over_time(${browser_selector:raw} |= \"event_name=st_drama_seek_terminal \" | logfmt | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_source_measurement_version=\"drama_seek_resume_v1\" | event_data_route=~\"$drama_route\" | event_data_tg_platform=~\"${tg_platform:raw}\" | event_data_net_type=~\"${net_type:raw}\" | kind=\"event\" | event_name=\"st_drama_seek_terminal\" | event_data_seek_buffered=\"no\" | event_data_seek_direction=\"forward\" | event_data_resume_expected=\"true\" | event_data_seek_budget=\"within_3s\" | keep event_data_tg_platform [$__range])) or (0 * sum by (event_data_tg_platform) (count_over_time(${browser_selector:raw} |= \"event_name=st_drama_seek_terminal \" | logfmt | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_source_measurement_version=\"drama_seek_resume_v1\" | event_data_route=~\"$drama_route\" | event_data_tg_platform=~\"${tg_platform:raw}\" | event_data_net_type=~\"${net_type:raw}\" | kind=\"event\" | event_name=\"st_drama_seek_terminal\" | event_data_seek_buffered=\"no\" | event_data_seek_direction=\"forward\" | event_data_resume_expected=\"true\" | event_data_seek_budget=~\"within_3s|over_3s|not_resumed\" | keep event_data_tg_platform [$__range])))) / sum by (event_data_tg_platform) (count_over_time(${browser_selector:raw} |= \"event_name=st_drama_seek_terminal \" | logfmt | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_source_measurement_version=\"drama_seek_resume_v1\" | event_data_route=~\"$drama_route\" | event_data_tg_platform=~\"${tg_platform:raw}\" | event_data_net_type=~\"${net_type:raw}\" | kind=\"event\" | event_name=\"st_drama_seek_terminal\" | event_data_seek_buffered=\"no\" | event_data_seek_direction=\"forward\" | event_data_resume_expected=\"true\" | event_data_seek_budget=~\"within_3s|over_3s|not_resumed\" | keep event_data_tg_platform [$__range]))",
+          "legendFormat": "3秒内恢复率 {{event_data_tg_platform}}",
+          "queryType": "instant",
+          "editorMode": "code",
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (event_data_tg_platform) (count_over_time(${browser_selector:raw} |= \"event_name=st_drama_seek_terminal \" | logfmt | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_source_measurement_version=\"drama_seek_resume_v1\" | event_data_route=~\"$drama_route\" | event_data_tg_platform=~\"${tg_platform:raw}\" | event_data_net_type=~\"${net_type:raw}\" | kind=\"event\" | event_name=\"st_drama_seek_terminal\" | event_data_seek_buffered=\"no\" | event_data_seek_direction=\"forward\" | event_data_resume_expected=\"true\" | event_data_seek_budget=~\"within_3s|over_3s|not_resumed\" | keep event_data_tg_platform [$__range]))",
+          "legendFormat": "N {{event_data_tg_platform}}",
+          "queryType": "instant",
+          "editorMode": "code",
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "noValue": "—",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^N "
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 302,
+      "title": "无缓冲快进｜总恢复 P50/P95 趋势",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 43,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "grafanacloud-logs"
+      },
+      "description": "独立drama_seek_resume_v1；仅目标提交时无缓冲、向前跳转且需恢复播放。沿用环境/版本/页面/设备/网络筛选；起播入口、地址缓存、启动帧方式和CDN区专属筛选不作用。P95仅成功，样本不是人数，无数据不补零。 趋势点为局部窗口分位数，所选全窗口值看上方数字卡，禁止平均P95。",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "quantile_over_time(0.5, ${browser_selector:raw} |= \"type=st_drama_seek \" | logfmt | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_source_measurement_version=\"drama_seek_resume_v1\" | context_route=~\"$drama_route\" | context_tg_platform=~\"${tg_platform:raw}\" | context_net_type=~\"${net_type:raw}\" | kind=\"measurement\" | type=\"st_drama_seek\" | context_seek_buffered=\"no\" | context_seek_direction=\"forward\" | context_resume_expected=\"true\" | context_outcome=\"playing\" | keep context_tg_platform,duration_ms | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_tg_platform)",
+          "legendFormat": "P50 {{context_tg_platform}}",
+          "queryType": "range",
+          "editorMode": "code",
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "quantile_over_time(0.95, ${browser_selector:raw} |= \"type=st_drama_seek \" | logfmt | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_source_measurement_version=\"drama_seek_resume_v1\" | context_route=~\"$drama_route\" | context_tg_platform=~\"${tg_platform:raw}\" | context_net_type=~\"${net_type:raw}\" | kind=\"measurement\" | type=\"st_drama_seek\" | context_seek_buffered=\"no\" | context_seek_direction=\"forward\" | context_resume_expected=\"true\" | context_outcome=\"playing\" | keep context_tg_platform,duration_ms | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_tg_platform)",
+          "legendFormat": "P95 {{context_tg_platform}}",
+          "queryType": "range",
+          "editorMode": "code",
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "noValue": "—",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 3000
+              }
+            ]
+          },
+          "custom": {
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": ["lastNotNull"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 303,
+      "title": "快进阶段｜P50/P95 与有效 N",
+      "type": "table",
+      "gridPos": {
+        "x": 12,
+        "y": 43,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "grafanacloud-logs"
+      },
+      "description": "独立drama_seek_resume_v1；仅目标提交时无缓冲、向前跳转且需恢复播放。沿用环境/版本/页面/设备/网络筛选；起播入口、地址缓存、启动帧方式和CDN区专属筛选不作用。P95仅成功，样本不是人数，无数据不补零。 before_seeked=提交→seeked；after_seeked=seeked→恢复播放；buffer_observed是首次采样观察到目标进入缓冲区，非数据到达时刻；frame_processing仅对应目标帧，非全部解码。缺失/逆序省略，每阶段N独立，禁止相加或相减独立P95。 时间数值单位ms；有效N单位为次数。",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "quantile_over_time(0.5, ${browser_selector:raw} |= \"type=st_drama_seek_stage \" | logfmt | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_source_measurement_version=\"drama_seek_resume_v1\" | context_route=~\"$drama_route\" | context_tg_platform=~\"${tg_platform:raw}\" | context_net_type=~\"${net_type:raw}\" | kind=\"measurement\" | type=\"st_drama_seek_stage\" | context_seek_buffered=\"no\" | context_seek_direction=\"forward\" | context_resume_expected=\"true\" | context_report_kind=\"final\" | context_outcome=\"playing\" | context_stage=~\"seek_before_seeked|seek_after_seeked|seek_buffer_observed|seek_buffer_to_seeked|frame_processing\" | keep context_tg_platform,context_stage,duration_ms | unwrap duration_ms | __error__=\"\" [$__range]) by (context_tg_platform,context_stage)",
+          "legendFormat": "P50",
+          "queryType": "instant",
+          "editorMode": "code",
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "quantile_over_time(0.95, ${browser_selector:raw} |= \"type=st_drama_seek_stage \" | logfmt | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_source_measurement_version=\"drama_seek_resume_v1\" | context_route=~\"$drama_route\" | context_tg_platform=~\"${tg_platform:raw}\" | context_net_type=~\"${net_type:raw}\" | kind=\"measurement\" | type=\"st_drama_seek_stage\" | context_seek_buffered=\"no\" | context_seek_direction=\"forward\" | context_resume_expected=\"true\" | context_report_kind=\"final\" | context_outcome=\"playing\" | context_stage=~\"seek_before_seeked|seek_after_seeked|seek_buffer_observed|seek_buffer_to_seeked|frame_processing\" | keep context_tg_platform,context_stage,duration_ms | unwrap duration_ms | __error__=\"\" [$__range]) by (context_tg_platform,context_stage)",
+          "legendFormat": "P95",
+          "queryType": "instant",
+          "editorMode": "code",
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          }
+        },
+        {
+          "refId": "C",
+          "expr": "sum by (context_tg_platform,context_stage) (count_over_time(${browser_selector:raw} |= \"type=st_drama_seek_stage \" | logfmt | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_source_measurement_version=\"drama_seek_resume_v1\" | context_route=~\"$drama_route\" | context_tg_platform=~\"${tg_platform:raw}\" | context_net_type=~\"${net_type:raw}\" | kind=\"measurement\" | type=\"st_drama_seek_stage\" | context_seek_buffered=\"no\" | context_seek_direction=\"forward\" | context_resume_expected=\"true\" | context_report_kind=\"final\" | context_outcome=\"playing\" | context_stage=~\"seek_before_seeked|seek_after_seeked|seek_buffer_observed|seek_buffer_to_seeked|frame_processing\" | keep context_tg_platform,context_stage [$__range]))",
+          "legendFormat": "有效N",
+          "queryType": "instant",
+          "editorMode": "code",
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "—",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": ["lastNotNull"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {
+            "mode": "columns"
+          }
+        }
+      ]
+    },
+    {
+      "id": 304,
+      "title": "快进终态｜结果、方向与缓冲分类",
+      "type": "table",
+      "gridPos": {
+        "x": 0,
+        "y": 51,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "grafanacloud-logs"
+      },
+      "description": "展示所有新定义快进/快退/暂停定位终态，包含不进入主指标的样本；yes/no/unknown是提交时手机播放器目标缓冲，不是CDN缓存。后台、unverified和取消不得填成成功0毫秒。",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (event_data_tg_platform,event_data_seek_buffered,event_data_seek_direction,event_data_resume_expected,event_data_outcome,event_data_seek_budget) (count_over_time(${browser_selector:raw} |= \"event_name=st_drama_seek_terminal \" | logfmt | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_source_measurement_version=\"drama_seek_resume_v1\" | event_data_route=~\"$drama_route\" | event_data_tg_platform=~\"${tg_platform:raw}\" | event_data_net_type=~\"${net_type:raw}\" | kind=\"event\" | event_name=\"st_drama_seek_terminal\" | keep event_data_tg_platform,event_data_seek_buffered,event_data_seek_direction,event_data_resume_expected,event_data_outcome,event_data_seek_budget [$__range]))",
+          "legendFormat": "",
+          "queryType": "instant",
+          "editorMode": "code",
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "—",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": ["lastNotNull"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {
+            "mode": "columns"
+          }
+        }
+      ]
+    },
+    {
+      "id": 305,
+      "title": "快进网络候选｜P50/P95 与有效 N",
+      "type": "table",
+      "gridPos": {
+        "x": 12,
+        "y": 51,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "grafanacloud-logs"
+      },
+      "description": "独立drama_seek_resume_v1；仅目标提交时无缓冲、向前跳转且需恢复播放。沿用环境/版本/页面/设备/网络筛选；起播入口、地址缓存、启动帧方式和CDN区专属筛选不作用。P95仅成功，样本不是人数，无数据不补零。 仅同媒体源且时间重叠的候选请求，不能证明Range对应目标位置。final与network尾报告按phase分开，禁止累加有效N。响应结束可能晚于seeked，不能作为目标数据到齐时刻；TTFB不区分网络/边缘/源站。 时间数值单位ms；有效N单位为次数。",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "quantile_over_time(0.5, ${browser_selector:raw} |= \"type=st_drama_seek_stage \" | logfmt | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_source_measurement_version=\"drama_seek_resume_v1\" | context_route=~\"$drama_route\" | context_tg_platform=~\"${tg_platform:raw}\" | context_net_type=~\"${net_type:raw}\" | kind=\"measurement\" | type=\"st_drama_seek_stage\" | context_seek_buffered=\"no\" | context_seek_direction=\"forward\" | context_resume_expected=\"true\" | context_report_kind=~\"${seek_diagnostic_phase:regex}\" | context_stage=~\"network_ttfb_first|network_ttfb_max|seek_response_max\" | keep context_tg_platform,context_stage,context_report_kind,duration_ms | unwrap duration_ms | __error__=\"\" [$__range]) by (context_tg_platform,context_stage,context_report_kind)",
+          "legendFormat": "P50",
+          "queryType": "instant",
+          "editorMode": "code",
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "quantile_over_time(0.95, ${browser_selector:raw} |= \"type=st_drama_seek_stage \" | logfmt | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_source_measurement_version=\"drama_seek_resume_v1\" | context_route=~\"$drama_route\" | context_tg_platform=~\"${tg_platform:raw}\" | context_net_type=~\"${net_type:raw}\" | kind=\"measurement\" | type=\"st_drama_seek_stage\" | context_seek_buffered=\"no\" | context_seek_direction=\"forward\" | context_resume_expected=\"true\" | context_report_kind=~\"${seek_diagnostic_phase:regex}\" | context_stage=~\"network_ttfb_first|network_ttfb_max|seek_response_max\" | keep context_tg_platform,context_stage,context_report_kind,duration_ms | unwrap duration_ms | __error__=\"\" [$__range]) by (context_tg_platform,context_stage,context_report_kind)",
+          "legendFormat": "P95",
+          "queryType": "instant",
+          "editorMode": "code",
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          }
+        },
+        {
+          "refId": "C",
+          "expr": "sum by (context_tg_platform,context_stage,context_report_kind) (count_over_time(${browser_selector:raw} |= \"type=st_drama_seek_stage \" | logfmt | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | context_source_measurement_version=\"drama_seek_resume_v1\" | context_route=~\"$drama_route\" | context_tg_platform=~\"${tg_platform:raw}\" | context_net_type=~\"${net_type:raw}\" | kind=\"measurement\" | type=\"st_drama_seek_stage\" | context_seek_buffered=\"no\" | context_seek_direction=\"forward\" | context_resume_expected=\"true\" | context_report_kind=~\"${seek_diagnostic_phase:regex}\" | context_stage=~\"network_ttfb_first|network_ttfb_max|seek_response_max\" | keep context_tg_platform,context_stage,context_report_kind [$__range]))",
+          "legendFormat": "有效N",
+          "queryType": "instant",
+          "editorMode": "code",
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "—",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": ["lastNotNull"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {
+            "mode": "columns"
+          }
+        }
+      ]
+    },
+    {
+      "id": 306,
+      "title": "快进诊断｜可见能力、覆盖率与采样上限",
+      "type": "table",
+      "gridPos": {
+        "x": 0,
+        "y": 59,
+        "w": 24,
+        "h": 8
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "grafanacloud-logs"
+      },
+      "description": "独立drama_seek_resume_v1；仅目标提交时无缓冲、向前跳转且需恢复播放。沿用环境/版本/页面/设备/网络筛选；起播入口、地址缓存、启动帧方式和CDN区专属筛选不作用。P95仅成功，样本不是人数，无数据不补零。 每次final一条；网络unsupported/no_entry/limited/available与帧available/missing/unsupported独立统计。无条目不证明无网络请求；受限不能填0；无缓冲首次观测100ms抽样至多100次，保留至多32条状态，达到上限不停止播放。 覆盖率数值单位%；分母为同组已接收final诊断（含失败），分子为同条诊断的相应可用标记，非全访问送达率；缺报不可见。",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (event_data_tg_platform,event_data_network_status,event_data_network_match,event_data_frame_processing_status,event_data_seek_sampling,event_data_detail_truncated) (count_over_time(${browser_selector:raw} |= \"event_name=st_drama_seek_diagnostic \" | logfmt | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_source_measurement_version=\"drama_seek_resume_v1\" | event_data_route=~\"$drama_route\" | event_data_tg_platform=~\"${tg_platform:raw}\" | event_data_net_type=~\"${net_type:raw}\" | kind=\"event\" | event_name=\"st_drama_seek_diagnostic\" | event_data_seek_buffered=\"no\" | event_data_seek_direction=\"forward\" | event_data_resume_expected=\"true\" | event_data_report_kind=\"final\" | keep event_data_tg_platform,event_data_network_status,event_data_network_match,event_data_frame_processing_status,event_data_seek_sampling,event_data_detail_truncated [$__range]))",
+          "legendFormat": "",
+          "queryType": "instant",
+          "editorMode": "code",
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "100 * (sum by (event_data_tg_platform) (count_over_time(${browser_selector:raw} |= \"event_name=st_drama_seek_diagnostic \" | logfmt | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_source_measurement_version=\"drama_seek_resume_v1\" | event_data_route=~\"$drama_route\" | event_data_tg_platform=~\"${tg_platform:raw}\" | event_data_net_type=~\"${net_type:raw}\" | kind=\"event\" | event_name=\"st_drama_seek_diagnostic\" | event_data_seek_buffered=\"no\" | event_data_seek_direction=\"forward\" | event_data_resume_expected=\"true\" | event_data_report_kind=\"final\" | event_data_network_status=\"available\" | keep event_data_tg_platform [$__range])) or (0 * sum by (event_data_tg_platform) (count_over_time(${browser_selector:raw} |= \"event_name=st_drama_seek_diagnostic \" | logfmt | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_source_measurement_version=\"drama_seek_resume_v1\" | event_data_route=~\"$drama_route\" | event_data_tg_platform=~\"${tg_platform:raw}\" | event_data_net_type=~\"${net_type:raw}\" | kind=\"event\" | event_name=\"st_drama_seek_diagnostic\" | event_data_seek_buffered=\"no\" | event_data_seek_direction=\"forward\" | event_data_resume_expected=\"true\" | event_data_report_kind=\"final\" | keep event_data_tg_platform [$__range])))) / sum by (event_data_tg_platform) (count_over_time(${browser_selector:raw} |= \"event_name=st_drama_seek_diagnostic \" | logfmt | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_source_measurement_version=\"drama_seek_resume_v1\" | event_data_route=~\"$drama_route\" | event_data_tg_platform=~\"${tg_platform:raw}\" | event_data_net_type=~\"${net_type:raw}\" | kind=\"event\" | event_name=\"st_drama_seek_diagnostic\" | event_data_seek_buffered=\"no\" | event_data_seek_direction=\"forward\" | event_data_resume_expected=\"true\" | event_data_report_kind=\"final\" | keep event_data_tg_platform [$__range]))",
+          "legendFormat": "网络详细计时可读率 {{event_data_tg_platform}}",
+          "queryType": "instant",
+          "editorMode": "code",
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          }
+        },
+        {
+          "refId": "C",
+          "expr": "100 * (sum by (event_data_tg_platform) (count_over_time(${browser_selector:raw} |= \"event_name=st_drama_seek_diagnostic \" | logfmt | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_source_measurement_version=\"drama_seek_resume_v1\" | event_data_route=~\"$drama_route\" | event_data_tg_platform=~\"${tg_platform:raw}\" | event_data_net_type=~\"${net_type:raw}\" | kind=\"event\" | event_name=\"st_drama_seek_diagnostic\" | event_data_seek_buffered=\"no\" | event_data_seek_direction=\"forward\" | event_data_resume_expected=\"true\" | event_data_report_kind=\"final\" | event_data_frame_processing_status=\"available\" | keep event_data_tg_platform [$__range])) or (0 * sum by (event_data_tg_platform) (count_over_time(${browser_selector:raw} |= \"event_name=st_drama_seek_diagnostic \" | logfmt | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_source_measurement_version=\"drama_seek_resume_v1\" | event_data_route=~\"$drama_route\" | event_data_tg_platform=~\"${tg_platform:raw}\" | event_data_net_type=~\"${net_type:raw}\" | kind=\"event\" | event_name=\"st_drama_seek_diagnostic\" | event_data_seek_buffered=\"no\" | event_data_seek_direction=\"forward\" | event_data_resume_expected=\"true\" | event_data_report_kind=\"final\" | keep event_data_tg_platform [$__range])))) / sum by (event_data_tg_platform) (count_over_time(${browser_selector:raw} |= \"event_name=st_drama_seek_diagnostic \" | logfmt | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_source_measurement_version=\"drama_seek_resume_v1\" | event_data_route=~\"$drama_route\" | event_data_tg_platform=~\"${tg_platform:raw}\" | event_data_net_type=~\"${net_type:raw}\" | kind=\"event\" | event_name=\"st_drama_seek_diagnostic\" | event_data_seek_buffered=\"no\" | event_data_seek_direction=\"forward\" | event_data_resume_expected=\"true\" | event_data_report_kind=\"final\" | keep event_data_tg_platform [$__range]))",
+          "legendFormat": "目标帧处理可读率 {{event_data_tg_platform}}",
+          "queryType": "instant",
+          "editorMode": "code",
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          }
+        },
+        {
+          "refId": "D",
+          "expr": "100 * (sum by (event_data_tg_platform) (count_over_time(${browser_selector:raw} |= \"event_name=st_drama_seek_diagnostic \" | logfmt | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_source_measurement_version=\"drama_seek_resume_v1\" | event_data_route=~\"$drama_route\" | event_data_tg_platform=~\"${tg_platform:raw}\" | event_data_net_type=~\"${net_type:raw}\" | kind=\"event\" | event_name=\"st_drama_seek_diagnostic\" | event_data_seek_buffered=\"no\" | event_data_seek_direction=\"forward\" | event_data_resume_expected=\"true\" | event_data_report_kind=\"final\" | event_data_seeked_status=\"available\" | keep event_data_tg_platform [$__range])) or (0 * sum by (event_data_tg_platform) (count_over_time(${browser_selector:raw} |= \"event_name=st_drama_seek_diagnostic \" | logfmt | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_source_measurement_version=\"drama_seek_resume_v1\" | event_data_route=~\"$drama_route\" | event_data_tg_platform=~\"${tg_platform:raw}\" | event_data_net_type=~\"${net_type:raw}\" | kind=\"event\" | event_name=\"st_drama_seek_diagnostic\" | event_data_seek_buffered=\"no\" | event_data_seek_direction=\"forward\" | event_data_resume_expected=\"true\" | event_data_report_kind=\"final\" | keep event_data_tg_platform [$__range])))) / sum by (event_data_tg_platform) (count_over_time(${browser_selector:raw} |= \"event_name=st_drama_seek_diagnostic \" | logfmt | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_source_measurement_version=\"drama_seek_resume_v1\" | event_data_route=~\"$drama_route\" | event_data_tg_platform=~\"${tg_platform:raw}\" | event_data_net_type=~\"${net_type:raw}\" | kind=\"event\" | event_name=\"st_drama_seek_diagnostic\" | event_data_seek_buffered=\"no\" | event_data_seek_direction=\"forward\" | event_data_resume_expected=\"true\" | event_data_report_kind=\"final\" | keep event_data_tg_platform [$__range]))",
+          "legendFormat": "seeked可见率 {{event_data_tg_platform}}",
+          "queryType": "instant",
+          "editorMode": "code",
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          }
+        },
+        {
+          "refId": "E",
+          "expr": "100 * (sum by (event_data_tg_platform) (count_over_time(${browser_selector:raw} |= \"event_name=st_drama_seek_diagnostic \" | logfmt | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_source_measurement_version=\"drama_seek_resume_v1\" | event_data_route=~\"$drama_route\" | event_data_tg_platform=~\"${tg_platform:raw}\" | event_data_net_type=~\"${net_type:raw}\" | kind=\"event\" | event_name=\"st_drama_seek_diagnostic\" | event_data_seek_buffered=\"no\" | event_data_seek_direction=\"forward\" | event_data_resume_expected=\"true\" | event_data_report_kind=\"final\" | event_data_buffer_observed_status=\"available\" | keep event_data_tg_platform [$__range])) or (0 * sum by (event_data_tg_platform) (count_over_time(${browser_selector:raw} |= \"event_name=st_drama_seek_diagnostic \" | logfmt | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_source_measurement_version=\"drama_seek_resume_v1\" | event_data_route=~\"$drama_route\" | event_data_tg_platform=~\"${tg_platform:raw}\" | event_data_net_type=~\"${net_type:raw}\" | kind=\"event\" | event_name=\"st_drama_seek_diagnostic\" | event_data_seek_buffered=\"no\" | event_data_seek_direction=\"forward\" | event_data_resume_expected=\"true\" | event_data_report_kind=\"final\" | keep event_data_tg_platform [$__range])))) / sum by (event_data_tg_platform) (count_over_time(${browser_selector:raw} |= \"event_name=st_drama_seek_diagnostic \" | logfmt | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_source_measurement_version=\"drama_seek_resume_v1\" | event_data_route=~\"$drama_route\" | event_data_tg_platform=~\"${tg_platform:raw}\" | event_data_net_type=~\"${net_type:raw}\" | kind=\"event\" | event_name=\"st_drama_seek_diagnostic\" | event_data_seek_buffered=\"no\" | event_data_seek_direction=\"forward\" | event_data_resume_expected=\"true\" | event_data_report_kind=\"final\" | keep event_data_tg_platform [$__range]))",
+          "legendFormat": "目标缓冲首次观测覆盖率 {{event_data_tg_platform}}",
+          "queryType": "instant",
+          "editorMode": "code",
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "—",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": ["lastNotNull"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {
+            "mode": "columns"
+          }
+        }
+      ]
+    },
+    {
+      "id": 307,
+      "title": "达到3秒的快进｜单次受控诊断明细",
+      "type": "logs",
+      "gridPos": {
+        "x": 0,
+        "y": 67,
+        "w": 24,
+        "h": 10
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "grafanacloud-logs"
+      },
+      "description": "Backend OTLP受控完整日志正文，含seek状态时间线/网络候选/帧处理；只记录≥3秒的final或network，不能当全部尝试分母。按id关联，network不是第二次快进；原始媒体URL/签名不得上报。平台与网络筛选仅作用上方Faro统计，本明细不承诺相同筛选。",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{service_name=\"st-miniapp-backend\",deployment_environment_name=\"$environment\"} |= \"drama.seek_diagnostic\" | json | event=\"drama.seek_diagnostic\" | context_release=~\"$release\" | route=~\"$drama_route\"",
+          "legendFormat": "",
+          "queryType": "range",
+          "editorMode": "code",
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "—",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": ["lastNotNull"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
       "id": 8,
       "title": "前台播放中断→恢复播放 P50/P95",
       "type": "timeseries",
@@ -960,7 +1629,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 37,
+        "y": 77,
         "w": 12,
         "h": 8
       },
@@ -1021,7 +1690,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 45,
+        "y": 85,
         "w": 24,
         "h": 8
       },
@@ -1078,7 +1747,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 53,
+        "y": 93,
         "w": 24,
         "h": 8
       },
@@ -1144,7 +1813,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 61
+        "y": 101
       },
       "datasource": {
         "type": "loki",
@@ -1177,7 +1846,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 69
+        "y": 109
       },
       "datasource": {
         "type": "loki",
@@ -1222,7 +1891,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 77
+        "y": 117
       },
       "datasource": {
         "type": "loki",
@@ -1267,7 +1936,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 85
+        "y": 125
       },
       "datasource": {
         "type": "loki",
@@ -1302,7 +1971,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 93,
+        "y": 133,
         "w": 24,
         "h": 10
       },
@@ -1339,7 +2008,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 103,
+        "y": 143,
         "w": 24,
         "h": 10
       },
@@ -1372,7 +2041,7 @@
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 113,
+        "y": 153,
         "w": 24,
         "h": 1
       },
@@ -1384,7 +2053,7 @@
       "type": "text",
       "gridPos": {
         "x": 0,
-        "y": 114,
+        "y": 154,
         "w": 24,
         "h": 6
       },
@@ -1404,7 +2073,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 120,
+        "y": 160,
         "w": 24,
         "h": 8
       },
@@ -1478,7 +2147,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 128,
+        "y": 168,
         "w": 12,
         "h": 5
       },
@@ -1550,7 +2219,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 133,
+        "y": 173,
         "w": 16,
         "h": 8
       },
@@ -1606,7 +2275,7 @@
       },
       "gridPos": {
         "x": 16,
-        "y": 133,
+        "y": 173,
         "w": 8,
         "h": 8
       },
@@ -1654,7 +2323,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 128,
+        "y": 168,
         "w": 12,
         "h": 5
       },
@@ -1726,7 +2395,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 141,
+        "y": 181,
         "w": 12,
         "h": 9
       },
@@ -1790,7 +2459,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 141,
+        "y": 181,
         "w": 12,
         "h": 9
       },

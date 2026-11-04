@@ -5,6 +5,7 @@ import { AlertPublisher } from '../../alerting/publisher.js';
 import {
   evaluatePaymentAlertRules,
   FEISHU_NOTIFY_RULE_IDS,
+  recoveryPassesFor,
   type PaymentAlertSnapshot,
   type PaymentOperation,
 } from '../domain/PaymentAlertRules.js';
@@ -22,7 +23,7 @@ export class PaymentAlertMonitorRepository {
       Promise.resolve(
         this.db
           .from('payment_operation_events')
-          .select('event_kind,outcome,trigger,occurred_at,error_class,order_id,user_id')
+          .select('event_kind,outcome,trigger,occurred_at,error_class,duration_ms,order_id,user_id')
           .gte('occurred_at', since)
           .lte('occurred_at', now.toISOString())
           .order('occurred_at', { ascending: false })
@@ -45,7 +46,12 @@ export class PaymentAlertMonitor {
   async runOnce(now = new Date()): Promise<{ published: number }> {
     const snapshot = await retry(() => this.repository.snapshot(now), 2);
     const evaluations = evaluatePaymentAlertRules(snapshot, now)
-      .filter((evaluation) => evaluation.severity === 'P0' || now.getUTCMinutes() % 5 === 0)
+      .filter(
+        (evaluation) =>
+          evaluation.severity === 'P0' ||
+          FEISHU_NOTIFY_RULE_IDS.has(evaluation.rule_id) ||
+          now.getUTCMinutes() % 5 === 0
+      )
       .filter((evaluation) => {
         const count =
           evaluation.state === 'healthy'
@@ -53,7 +59,7 @@ export class PaymentAlertMonitor {
             : 0;
         this.healthyWindows.set(evaluation.rule_id, count);
         // Do not let one complete window recover an incident; query failures never reach this point.
-        return evaluation.state === 'firing' || count >= 2;
+        return evaluation.state === 'firing' || count >= recoveryPassesFor(evaluation.rule_id);
       });
     let published = 0;
     for (const evaluation of evaluations) {

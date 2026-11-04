@@ -831,3 +831,13 @@ Frontend `/creation/data` → `lib/api/creator-analytics.ts`（用户隔离React
 角色回应只接受本人已有公开有效版本，展示已发布快照。回应关系和现有 `notifications`（kind=`character_wish_response`）在一个事务内写入，business_key去重；公开卡变私密/下架时不再在墙上展示。没有修改角色发布/AI审核函数或奖励结算。发布请求可带独立 `wish_id`，关联失败仍返回已发布角色及 `wish_response.status=not_linked`，前端单独重试回应。来源保留在本地草稿流程元信息，不进入角色设定；封面生成往返保持同一草稿。
 
 迁移先测试后生产，先于服务和页面部署。撤回隐藏心愿，不删除关联角色。回滚先隐藏入口和路由，保留业务表数据；恢复旧通知约束前需先处理新类型通知。验证复用隔离 PostgreSQL 脚本和 UI `@wishes`，不等同真实Telegram键盘或线上P95。
+
+### 无缓冲快进观测扩展（本地候选）
+
+复用现有DramaProgress提交→DramaTimingTracker→独立seek observer→Faro/Loki及鉴权诊断上传，不改变播放、鉴权、计费、存储或重试。drama_seek_resume_v1与startup/rebuffer独立，受控shared seek可选字段承载有界状态、阶段与原网络/帧诊断；Backend先兼容后发Frontend。≥3秒seek final/network明细走既有OTLP，仍无数据库写入。阶段/分母/能力和Grafana299–307号面板见docs/drama-playback-timing.md。
+
+### 角色详情署名与公开作者空间
+
+用户卡详情通过既有 character_creations 归属关系读取当前昵称。大厅卡片不显示署名，导入卡沿用卡片自己的作者字段。公开空间 /creators/[id] 按作者的公开别名分页获取当前可发现的用户作品，排除测试卡。空间仅使用已发布版本，私人访问和历史会话资格不扩大公开范围。公开别名与昵称无关，不能用于鉴权。旧作品无需重发或数据回填。
+
+部署前应用 20261103_public_creator_space_index.sql 为按别名查找创建索引，再独立执行 20261103_chat_sessions_reply_like_lookup_index.sql 并验证覆盖索引有效，最后发布后端与前端。每页最多12张，点赞（卡片赞+回复赞）和收藏直接随该页返回；用于判断是否有下一页的第13张不查计数。列表简介最多120字。首次加载的私有作品封面批量读取和签名，后续复用签名缓存。回退应用可保留索引。隔离数据库验证复用 scripts/test-creator-characters-local.sh。

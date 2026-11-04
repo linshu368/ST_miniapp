@@ -309,9 +309,102 @@ describe('drama centralized logging', () => {
         elapsedMs: 100,
       })
     );
-    expect(mocks.measurement).not.toHaveBeenCalled();
-    expect(mocks.event).not.toHaveBeenCalled();
+    expect(mocks.measurement).toHaveBeenCalledWith(
+      'drama.seek',
+      100,
+      expect.objectContaining({ resume_expected: 'false', seek_budget: 'excluded' })
+    );
+    expect(mocks.event).toHaveBeenCalledWith('drama.seek_terminal', expect.any(Object));
+    expect(mocks.measurement.mock.calls.every(([name]) => name.startsWith('drama.seek'))).toBe(
+      true
+    );
   });
+
+  it.each([
+    [2999.9, 'within_3s'],
+    [3000, 'within_3s'],
+    [3000.1, 'over_3s'],
+  ])(
+    'projects one seek terminal at %sms and never counts its late network tail as another resume',
+    async (ms, budget) => {
+      vi.useFakeTimers({
+        toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'performance'],
+      });
+      type Listener = (list: { getEntries(): PerformanceEntry[] }) => void;
+      let listener: Listener | undefined;
+      vi.stubGlobal(
+        'PerformanceObserver',
+        class {
+          static supportedEntryTypes = ['resource'];
+          constructor(cb: Listener) {
+            listener = cb;
+          }
+          observe() {}
+          takeRecords() {
+            return [];
+          }
+          disconnect() {}
+        }
+      );
+      vi.spyOn(performance, 'getEntriesByType').mockReturnValue([]);
+      let frame: VideoFrameRequestCallback | undefined;
+      const video = Object.assign(new EventTarget(), {
+        currentSrc: 'media',
+        src: 'media',
+        currentTime: 0,
+        readyState: 2,
+        seeking: false,
+        paused: false,
+        buffered: { length: 0 },
+        requestVideoFrameCallback: (cb: VideoFrameRequestCallback) => {
+          frame = cb;
+          return 1;
+        },
+        cancelVideoFrameCallback: vi.fn(),
+      }) as unknown as HTMLVideoElement;
+      dramaTiming.beginPlayback('a', 'direct').mark('source_set');
+      const stop = dramaTiming.beginSeek(video, 'media', 40, true, 'a', 'v');
+      video.currentTime = 40;
+      stop.positionSet();
+      await vi.advanceTimersByTimeAsync(ms);
+      video.dispatchEvent(new Event('seeked'));
+      video.dispatchEvent(new Event('playing'));
+      frame?.(performance.now(), {
+        mediaTime: 40,
+        processingDuration: 0.01,
+      } as VideoFrameCallbackMetadata);
+      const finals = mocks.event.mock.calls.filter(([name]) => name === 'drama.seek_terminal');
+      expect(finals).toHaveLength(1);
+      expect(finals[0]![1]).toMatchObject({
+        seek_budget: budget,
+        seek_buffered: 'no',
+        seek_direction: 'forward',
+      });
+      listener?.({
+        getEntries: () => [
+          {
+            name: 'media',
+            entryType: 'resource',
+            startTime: 1,
+            fetchStart: 1,
+            requestStart: 2,
+            responseStart: 5,
+            responseEnd: ms + 100,
+          } as PerformanceResourceTiming,
+        ],
+      });
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(mocks.measurement.mock.calls.filter(([name]) => name === 'drama.seek')).toHaveLength(
+        1
+      );
+      expect(mocks.measurement).toHaveBeenCalledWith(
+        'drama.seek_stage',
+        3,
+        expect.objectContaining({ report_kind: 'network', stage: 'network_ttfb_first' })
+      );
+      stop();
+    }
+  );
 
   it('keeps all slow diagnostics and sampled-success network tails while excluding start uploads', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });

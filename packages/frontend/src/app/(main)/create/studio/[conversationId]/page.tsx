@@ -1,6 +1,7 @@
 'use client';
 
 import * as Sentry from '@sentry/nextjs';
+import { useQuery } from '@tanstack/react-query';
 import { markCriticalSettled } from '@/lib/entry-phase';
 import { feedbackAfterPaint, startAction } from '@/lib/perf/action-tracker';
 import { getMetricDimensions } from '@/lib/perf/env-tags';
@@ -38,7 +39,10 @@ import {
   useUploadImagePlazaReferenceMutation,
 } from '@/lib/api/image-plaza';
 import { StudioArtifactCard } from '@/components/image-plaza/studio-artifact-card';
-import { useCreateCreatorCoverMutation } from '@/lib/api/creator-characters';
+import {
+  useCreateCreatorCoverMutation,
+  useCreatorCharactersQuery,
+} from '@/lib/api/creator-characters';
 import { StudioSettingsDialog } from '@/components/image-plaza/studio-settings-dialog';
 import { ImagePlazaHistorySheet } from '@/components/image-plaza/image-plaza-history-sheet';
 import { useMemoryDraft } from '@/hooks/use-memory-draft';
@@ -58,6 +62,50 @@ export default function ImagePlazaStudioPage() {
   const params = useParams<{ conversationId: string }>();
   // App Router may reuse the page when switching conversations; local uploads/settings must not survive.
   return <ImagePlazaStudio key={params.conversationId} conversationId={params.conversationId} />;
+}
+
+// Only mounted for a validated return route from the character editor.
+function CreatorDescriptionShortcut({
+  returnPath,
+  prompt,
+  onInsert,
+}: {
+  returnPath: string;
+  prompt: string;
+  onInsert: (text: string, clipped: boolean) => void;
+}) {
+  const ownerId = useCreatorCharactersQuery().data?.owner_user_id;
+  const { data: description } = useQuery({
+    queryKey: ['creator-cover-description', ownerId, returnPath],
+    enabled: Boolean(ownerId),
+    gcTime: 0,
+    retry: false,
+    queryFn: async () => {
+      if (!ownerId) return '';
+      const url = new URL(returnPath, window.location.origin);
+      const characterId = url.pathname.endsWith('/edit') ? url.pathname.split('/')[3] : undefined;
+      const draftId = characterId ?? url.searchParams.get('draft');
+      if (!draftId) return '';
+      const { loadCharacterDraft } = await import('@/components/creation/character-editor-draft');
+      const local = await loadCharacterDraft({ ownerId, draftId, characterId });
+      return local?.draft.description.trim() ?? '';
+    },
+  });
+  if (!description || prompt.includes(description)) return null;
+  const prefix = prompt.trim() ? prompt + '\n\n' : '';
+  const remaining = IMAGE_PLAZA_PROMPT_MAX_CHARS - prefix.length;
+  const excerpt = description.slice(0, Math.max(0, remaining)).replace(/[\uD800-\uDBFF]$/u, '');
+  if (!excerpt) return null;
+  return (
+    <button
+      type="button"
+      className="inline-flex min-h-11 items-center gap-1.5 text-xs font-medium text-primary"
+      onClick={() => onInsert(prefix + excerpt, excerpt.length < description.length)}
+    >
+      <Plus size={14} aria-hidden />
+      {prompt.trim() ? '追加角色描述' : '带入角色描述'}
+    </button>
+  );
 }
 
 function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
@@ -110,6 +158,7 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
   const localUrl = useRef<string | null>(null);
   const referenceFile = useRef<File | null>(null);
   const sending = useRef(false);
+  const promptInput = useRef<HTMLTextAreaElement>(null);
   // 从点击生成到图片真正解码展示出来的耗时；只算最新这一次生成，图片 onLoad 消费后清掉。
   const genStartedAt = useRef<number | null>(null);
   const genReported = useRef(false);
@@ -683,7 +732,19 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
               </div>
             ) : null}
 
+            {creatorReturn && (
+              <CreatorDescriptionShortcut
+                returnPath={creatorReturn}
+                prompt={prompt}
+                onInsert={(text, clipped) => {
+                  setPrompt(text);
+                  promptInput.current?.focus({ preventScroll: true });
+                  if (clipped) showNotice('已带入可容纳的角色描述，原稿保持完整。');
+                }}
+              />
+            )}
             <textarea
+              ref={promptInput}
               value={prompt}
               maxLength={IMAGE_PLAZA_PROMPT_MAX_CHARS}
               onChange={(event) =>

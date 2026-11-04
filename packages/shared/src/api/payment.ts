@@ -141,69 +141,18 @@ export const PaymentPlansRuntimeConfigSchema = z
 
 export const DEFAULT_PENDING_ARRIVAL_HINT = '完成付款后积分将自动到账，通常不超过 3 分钟';
 
-export const RechargePageConfigSchema = z.object({
-  title: z.string().trim().min(1).max(30),
-  description: z.string().trim().min(1).max(120),
-  button_text: z.string().trim().min(1).max(20),
-  theme_color: z.string().regex(/^#[0-9a-fA-F]{6}$/),
-  balance_color: z
-    .string()
-    .regex(/^#[0-9a-fA-F]{6}$/)
-    .default('#8b5cf6'),
-  selected_plan_color: z
-    .string()
-    .regex(/^#[0-9a-fA-F]{6}$/)
-    .default('#f59e0b'),
-  badge_color: z
-    .string()
-    .regex(/^#[0-9a-fA-F]{6}$/)
-    .default('#6366f1'),
-  button_color: z
-    .string()
-    .regex(/^#[0-9a-fA-F]{6}$/)
-    .default('#ec4899'),
-  /** 订单等待页提示：付款后积分到账时效。缺省兼容旧配置。 */
-  pending_arrival_hint: z.string().trim().min(1).max(80).default(DEFAULT_PENDING_ARRIVAL_HINT),
-});
-
-export type RechargePageConfig = z.infer<typeof RechargePageConfigSchema>;
-
-export const DEFAULT_RECHARGE_PAGE_CONFIG: RechargePageConfig = {
-  title: '星尘商店',
-  description: '为每段相遇点一盏星光',
-  button_text: '立即支付',
-  theme_color: '#ec4899',
-  balance_color: '#8b5cf6',
-  selected_plan_color: '#f59e0b',
-  badge_color: '#6366f1',
-  button_color: '#ec4899',
-  pending_arrival_hint: DEFAULT_PENDING_ARRIVAL_HINT,
-};
-
-export const PaymentPromptDialogConfigSchema = z.object({
-  enabled: z.boolean(),
-  title: z.string().trim().min(1).max(40),
-  description: z.string().trim().min(1).max(200),
-  confirm_text: z.string().trim().min(1).max(30),
-  footer_note: z
-    .string()
-    .trim()
-    .min(1)
-    .max(100)
-    .default('点击确认后，将继续跳转到外部浏览器完成微信支付。'),
-  accent_color: z.string().regex(/^#[0-9a-fA-F]{6}$/),
-});
-
-export type PaymentPromptDialogConfig = z.infer<typeof PaymentPromptDialogConfigSchema>;
-
-export const DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG: PaymentPromptDialogConfig = {
-  enabled: true,
-  title: '支付前请先关闭 VPN',
-  description: '为避免支付页面无法打开、订单异常或到账延迟，请关闭 VPN 后再继续支付。',
-  confirm_text: '已关闭VPN，去截图保存二维码',
-  footer_note: '点击确认后，将继续跳转到外部浏览器完成微信支付。',
-  accent_color: '#f59e0b',
-};
+/**
+ * 星尘商店展示参数。曾由运营平台配置，现固定在代码里，不再提供运营入口。
+ * 颜色是新皮肤下的实际取值。
+ */
+export const RECHARGE_PAGE_DISPLAY = {
+  buttonText: '立即支付',
+  balanceColor: '#8b5cf6',
+  selectedPlanColor: '#d0b99a',
+  badgeColor: '#d0b99a',
+  buttonColor: '#ead7bc',
+  pendingArrivalHint: DEFAULT_PENDING_ARRIVAL_HINT,
+} as const;
 
 export interface PaymentOrder {
   /** 订单号，沿用老项目 TG_{userId}_{ts}_{rand} 语义 */
@@ -247,8 +196,6 @@ export interface GetPaymentPlansData {
   payment_channels?: PaymentChannelsConfig;
   /** 旧客户端忽略即可；未部署 VIP 商品的 producer 可以省略。 */
   vip_plans?: VipPlan[];
-  page_config: RechargePageConfig;
-  payment_prompt_dialog_config: PaymentPromptDialogConfig;
   /** 因余额不足进入充值页时展示的运营提示语 */
   insufficient_credits_notice: string;
 }

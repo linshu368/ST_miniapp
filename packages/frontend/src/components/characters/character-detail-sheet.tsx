@@ -1,9 +1,12 @@
 'use client';
 
 import { useEffect, useId, useRef, useState } from 'react';
-import { ChevronDown, Loader2, Quote, Sparkles, X } from 'lucide-react';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { ChevronDown, ChevronRight, Loader2, Quote, Sparkles, X } from 'lucide-react';
 import type { CharacterSummary, ChatSession } from '@miniapp/shared';
 import { useCharacterQuery } from '@/lib/api/characters';
+import { rememberPublicCreatorOpener } from '@/lib/roleplay-navigation';
 import { useConversationsQuery } from '@/lib/api/conversations';
 import { useCharacterSocialQuery } from '@/lib/api/character-social';
 import { characterRoomGradient } from '@/lib/utils/character-hue';
@@ -60,6 +63,10 @@ function CharacterDetailContent({
 }: Omit<CharacterDetailSheetProps, 'characterId'> & { characterId: string; open: boolean }) {
   const detailQuery = useCharacterQuery(characterId, { enabled: open });
   const character = detailQuery.data?.character ?? summary;
+  const authorName = detailQuery.data?.character.author_name?.trim();
+  const publicCreatorId = detailQuery.data?.character.public_creator_id;
+  const authorHref = publicCreatorId ? `/creators/${encodeURIComponent(publicCreatorId)}` : null;
+  const pathname = usePathname();
   const history = useConversationsQuery(characterId, open && !inConversation);
   const social = useCharacterSocialQuery(characterId, open);
   const lastSession = history.data?.sessions
@@ -201,8 +208,35 @@ function CharacterDetailContent({
             <SheetTitle className="truncate text-[17px] font-semibold tracking-tight">
               {character?.name ?? '角色详情'}
             </SheetTitle>
-            <SheetDescription className="mt-0.5 text-[10px] text-muted-foreground/65">
-              {tab === 'comments' ? '角色评论 · 分享你的体验' : '了解这个角色，开启你的故事'}
+            <SheetDescription
+              className={
+                authorName
+                  ? 'mt-0.5 text-[13px] leading-5 text-muted-foreground'
+                  : 'mt-0.5 text-[10px] text-muted-foreground/65'
+              }
+            >
+              {authorName ? (
+                authorHref && pathname !== authorHref ? (
+                  <Link
+                    href={authorHref}
+                    prefetch={false}
+                    onClick={() => publicCreatorId && rememberPublicCreatorOpener(publicCreatorId)}
+                    className="relative inline-flex max-w-full items-center gap-0.5 rounded-sm text-primary/90 after:absolute after:inset-x-0 after:-inset-y-3 active:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    title={`作者：${authorName}`}
+                  >
+                    <span className="truncate">作者：{authorName}</span>
+                    <ChevronRight className="size-3.5 shrink-0" aria-hidden />
+                  </Link>
+                ) : (
+                  <span className="block truncate" title={`作者：${authorName}`}>
+                    作者：{authorName}
+                  </span>
+                )
+              ) : tab === 'comments' ? (
+                '角色评论 · 分享你的体验'
+              ) : (
+                '了解这个角色，开启你的故事'
+              )}
             </SheetDescription>
           </div>
           {tab === 'comments' && !inConversation ? (
@@ -344,11 +378,6 @@ function CharacterDetailContent({
                     </blockquote>
                   ) : null}
                 </section>
-              ) : null}
-              {character.author_name ? (
-                <p className="mt-4 text-[10px] text-muted-foreground/50">
-                  创作者 · {character.author_name}
-                </p>
               ) : null}
             </>
           ) : detailQuery.isError ? (
