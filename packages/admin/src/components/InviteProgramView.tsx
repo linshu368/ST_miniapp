@@ -18,7 +18,7 @@ import {
 } from 'antd';
 import type { Dayjs } from 'dayjs';
 import type { AdminEnvironment } from '../lib/environment';
-import { configMetadata, INVITE_RULE_KEY_LABELS } from '../lib/configSchemas';
+import { configMetadata, INVITE_RULE_KEY_LABELS } from '@miniapp/admin-client';
 import { INVITE_PROGRAM_CONFIG_KEYS, type InviteProgramTabKey } from '../lib/adminNavigation';
 import {
   INVITE_RECORDS_PAGE_SIZE,
@@ -26,7 +26,7 @@ import {
   type InviteRecord,
   type InviteRecordFilters,
   type InviteRewardStatusFilter,
-} from '../lib/inviteAdminApi';
+} from '@miniapp/admin-client';
 
 interface InviteProgramViewProps {
   client: SupabaseClient;

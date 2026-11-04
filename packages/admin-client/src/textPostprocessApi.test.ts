@@ -57,7 +57,6 @@ describe('text postprocess admin api', () => {
   it('sends the bearer token to the selected environment and validates the response', async () => {
     const calls: Array<{ url: string; authorization: string | null }> = [];
     const api = createTextPostprocessApi({
-      environment: 'test',
       baseUrl: 'https://test.example/',
       getAccessToken: async () => 'test-token',
       fetchImpl: async (input, init) => {
@@ -93,13 +92,11 @@ describe('text postprocess admin api', () => {
       return jsonResponse(200, { success: true, data: adminState() });
     };
     const testApi = createTextPostprocessApi({
-      environment: 'test',
       baseUrl: 'https://test.example',
       getAccessToken: async () => 'test-token',
       fetchImpl,
     });
     const productionApi = createTextPostprocessApi({
-      environment: 'production',
       baseUrl: 'https://prod.example',
       getAccessToken: async () => 'prod-token',
       fetchImpl,
@@ -114,7 +111,6 @@ describe('text postprocess admin api', () => {
 
   it('rejects a response that does not match the shared schema', async () => {
     const api = createTextPostprocessApi({
-      environment: 'test',
       baseUrl: 'https://test.example',
       getAccessToken: async () => 'test-token',
       fetchImpl: async () => jsonResponse(200, { success: true, data: { extra: true } }),
@@ -124,7 +120,6 @@ describe('text postprocess admin api', () => {
 
   it('classifies validation unavailable separately from field diagnostics', async () => {
     const api = createTextPostprocessApi({
-      environment: 'production',
       baseUrl: 'https://prod.example',
       getAccessToken: async () => 'prod-token',
       fetchImpl: async () =>
@@ -151,7 +146,6 @@ describe('text postprocess admin api', () => {
 
   it('treats an unknown write result as result unknown and does not describe it as a field error', async () => {
     const api = createTextPostprocessApi({
-      environment: 'test',
       baseUrl: 'https://test.example',
       getAccessToken: async () => 'test-token',
       fetchImpl: async () =>
@@ -171,7 +165,6 @@ describe('text postprocess admin api', () => {
 
   it('keeps compile diagnostics on the mutation error', async () => {
     const api = createTextPostprocessApi({
-      environment: 'test',
       baseUrl: 'https://test.example',
       getAccessToken: async () => 'test-token',
       fetchImpl: async () =>
@@ -202,7 +195,6 @@ describe('text postprocess admin api', () => {
   it('does not send a publish body that fails the shared schema', async () => {
     let called = false;
     const api = createTextPostprocessApi({
-      environment: 'test',
       baseUrl: 'https://test.example',
       getAccessToken: async () => 'test-token',
       fetchImpl: async () => {
@@ -218,7 +210,6 @@ describe('text postprocess admin api', () => {
 
   it('turns a dropped write response into result unknown', async () => {
     const api = createTextPostprocessApi({
-      environment: 'test',
       baseUrl: 'https://test.example',
       getAccessToken: async () => 'test-token',
       timeoutMs: 20,
@@ -236,7 +227,6 @@ describe('text postprocess admin api', () => {
 
   it('does not turn a dropped read into a mutation result', async () => {
     const api = createTextPostprocessApi({
-      environment: 'test',
       baseUrl: 'https://test.example',
       getAccessToken: async () => 'test-token',
       fetchImpl: async () => {
@@ -247,11 +237,11 @@ describe('text postprocess admin api', () => {
   });
 
   it('builds the environment API url without mixing origins', () => {
-    expect(
-      textPostprocessApiUrl('test', '/api/admin/text-postprocess', 'https://test.example')
-    ).toBe('https://test.example/api/admin/text-postprocess');
-    expect(
-      textPostprocessApiUrl('production', '/api/admin/text-postprocess', 'https://prod.example/')
-    ).toBe('https://prod.example/api/admin/text-postprocess');
+    expect(textPostprocessApiUrl('/api/admin/text-postprocess', 'https://test.example')).toBe(
+      'https://test.example/api/admin/text-postprocess'
+    );
+    expect(textPostprocessApiUrl('/api/admin/text-postprocess', 'https://prod.example/')).toBe(
+      'https://prod.example/api/admin/text-postprocess'
+    );
   });
 });

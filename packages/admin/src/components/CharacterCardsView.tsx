@@ -35,8 +35,9 @@ import {
   type CharacterLayoutRelease,
   type CharacterLayoutSnapshot,
   type CharacterLayoutValue,
-} from '../lib/adminApi';
-import { getAdminSupabaseUrl, type AdminEnvironment } from '../lib/environment';
+} from '@miniapp/admin-client';
+import { getAdminApiUrl, getAdminSupabaseUrl, type AdminEnvironment } from '../lib/environment';
+import { readFileAsBase64 } from '../lib/fileBase64';
 import {
   charactersForIds,
   describeCharacterLayoutError,
@@ -322,7 +323,12 @@ export function CharacterCardsView(props: CharacterCardsViewProps) {
       });
       if (avatarFile) {
         try {
-          await uploadCharacterAvatar(props.client, props.environment, character.id, avatarFile);
+          await uploadCharacterAvatar(
+            props.client,
+            getAdminApiUrl(props.environment),
+            character.id,
+            await readFileAsBase64(avatarFile, '头像文件读取失败')
+          );
         } catch (uploadError) {
           await Promise.all([props.onRefresh(), reloadLayout()]);
           setCreateOpen(false);

@@ -12,9 +12,8 @@ import type { FastifyBaseLogger } from 'fastify';
 import { prisma } from '../../lib/db.js';
 import { fetchRuntimeConfigEntry } from '../../platform/runtime-config.js';
 import { discoverableCharacterWhere } from '../creator/access.js';
-import { applyPinnedOnly, buildRecommendedOrder } from './recommended-ranking.js';
+import { buildRecommendedOrder } from './recommended-ranking.js';
 import { loadCharacterRankingScores } from './ranking-stats.js';
-import { resolveLobbyPinnedCharacters } from './pinned-characters.js';
 import {
   buildRecommendationOrder,
   recommendationHash,
@@ -93,11 +92,10 @@ async function loadCandidates(): Promise<RecommendationCandidate[]> {
   return catalogInflight;
 }
 
-async function prepareRanking(log: FastifyBaseLogger, seed?: number) {
-  const [candidates, snapshot, pinned] = await Promise.all([
+async function prepareRanking(seed?: number) {
+  const [candidates, snapshot] = await Promise.all([
     loadCandidates(),
     loadCharacterRankingScores(),
-    resolveLobbyPinnedCharacters(log),
   ]);
   const ordered = snapshot
     ? buildRecommendedOrder({
@@ -105,24 +103,21 @@ async function prepareRanking(log: FastifyBaseLogger, seed?: number) {
         scores: snapshot.scores,
         minSample: snapshot.minSample,
         protectedPrefix: LOBBY_FEATURED_POSITION_COUNT,
-        pinnedIds: pinned.characterIds,
         seed,
       })
-    : applyPinnedOnly(candidates, pinned.characterIds);
+    : [...candidates];
   const matureCount = snapshot
     ? candidates.filter((c) => (snapshot.scores.get(c.id)?.sampleSize ?? 0) >= snapshot.minSample)
         .length
     : 0;
   // If there is not even a credible old prefix, use the operator order instead of shuffling an
-  // all-cold directory. Otherwise the previous protected/pinned ranking remains the fallback.
-  const fallbackOrder = (
-    matureCount >= 4 ? ordered : applyPinnedOnly(candidates, pinned.characterIds)
-  ).map((c) => c.id);
-  return { candidates, snapshot, pinned, ordered, fallbackOrder };
+  // all-cold directory. Otherwise the previous protected ranking remains the fallback.
+  const fallbackOrder = (matureCount >= 4 ? ordered : candidates).map((c) => c.id);
+  return { candidates, snapshot, ordered, fallbackOrder };
 }
 
-export async function getPublicLobbyHeadOrder(log: FastifyBaseLogger): Promise<string[]> {
-  const { fallbackOrder } = await prepareRanking(log);
+export async function getPublicLobbyHeadOrder(): Promise<string[]> {
+  const { fallbackOrder } = await prepareRanking();
   return fallbackOrder;
 }
 
@@ -152,9 +147,9 @@ export async function getLobbyRecommendation(
     return filterVisibleBatch(saved);
   }
   const seed = recommendationHash(request.request_id);
-  const [config, { candidates, snapshot, pinned, ordered, fallbackOrder }] = await Promise.all([
+  const [config, { candidates, snapshot, ordered, fallbackOrder }] = await Promise.all([
     loadLobbyRotationConfig(log),
-    prepareRanking(log, seed),
+    prepareRanking(seed),
   ]);
   const generated: Array<{ headCount: number; repeatCount: number; degraded: boolean }> = [];
   const result = await updateRecommendation(prisma, userId, request, {
@@ -169,8 +164,6 @@ export async function getLobbyRecommendation(
         exposures,
         recent,
         config,
-        promotedIds: pinned.characterIds,
-        fixedId: pinned.fixedCharacterId ?? null,
         seed,
         now: now.getTime(),
       });

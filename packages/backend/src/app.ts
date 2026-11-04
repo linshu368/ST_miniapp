@@ -26,6 +26,7 @@ import growthRoutes from './routes/growth.js';
 import inviteRoutes from './routes/invite.js';
 import communityRoutes from './routes/community.js';
 import adminSupabaseProxyRoutes from './routes/admin-supabase-proxy.js';
+import adminCliSessionRoutes from './routes/admin-cli-session.js';
 import notificationRoutes from './routes/notifications.js';
 import supportRoutes from './routes/support.js';
 import telemetryRoutes from './routes/telemetry.js';
@@ -151,6 +152,7 @@ export async function buildApp() {
   await app.register(inviteRoutes);
   await app.register(communityRoutes);
   await app.register(adminSupabaseProxyRoutes);
+  await app.register(adminCliSessionRoutes);
   await app.register(notificationRoutes);
   await app.register(supportRoutes);
   await app.register(telemetryRoutes);

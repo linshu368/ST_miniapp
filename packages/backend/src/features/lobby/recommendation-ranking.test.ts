@@ -44,17 +44,14 @@ function input(count = 30): BuildRecommendationInput {
     config: { ...DEFAULT_LOBBY_ROTATION_CONFIG, enabled: true, rollout_percent: 100 },
     exposures: new Map(),
     recent: [],
-    promotedIds: [],
-    fixedId: null,
     now,
     seed: 15,
   };
 }
 
 describe('personal quality rotation', () => {
-  it('keeps at most two adjacent repeats with 22 qualified candidates and one fixed card', () => {
+  it('keeps at most two adjacent repeats with 22 qualified candidates', () => {
     const base = input(22);
-    base.fixedId = base.candidates[0]!.id;
     for (let seed = 1; seed <= 100; seed++) {
       const first = buildRecommendationOrder({ ...base, seed });
       const next = buildRecommendationOrder({
@@ -65,7 +62,6 @@ describe('personal quality rotation', () => {
       expect(next.headIds).toHaveLength(12);
       expect(next.headIds.filter((id) => first.headIds.includes(id)).length).toBeLessThanOrEqual(2);
       expect(new Set(next.characterIds).size).toBe(22);
-      expect(next.headIds[0]).toBe(base.fixedId);
       expect(next.degraded).toBe(false);
     }
   });
@@ -152,13 +148,15 @@ describe('personal quality rotation', () => {
       trustedScore: 99,
       trustedAt: now - 91 * day,
     });
-    base.fixedId = recentHistory;
     const result = buildRecommendationOrder(base);
-    expect(result.headIds[0]).toBe(recentHistory);
+    // 历史质量仍可信：进的是前 10 个质量位，而不是末尾两个探索位
+    const position = result.headIds.indexOf(recentHistory);
+    expect(position).toBeGreaterThanOrEqual(0);
+    expect(position).toBeLessThan(10);
     expect(result.headIds.indexOf(expired)).toBeGreaterThanOrEqual(10);
   });
 
-  it('never replaces current poor evidence with an old high score or an operator boost', () => {
+  it('never replaces current poor evidence with an old high score', () => {
     const base = input(20);
     const bad = base.candidates[0]!.id;
     base.snapshot!.scores.set(bad, {
@@ -168,8 +166,6 @@ describe('personal quality rotation', () => {
       trustedScore: 95,
       trustedAt: now,
     });
-    base.promotedIds = [bad];
-    base.fixedId = bad;
     expect(buildRecommendationOrder(base).headIds).not.toContain(bad);
   });
 
@@ -182,18 +178,6 @@ describe('personal quality rotation', () => {
     expect(buildRecommendationOrder({ ...base, snapshot: null }).characterIds).toEqual(
       result.characterIds
     );
-  });
-
-  it('marks a zero-repeat setting degraded when the explicit fixed card must repeat', () => {
-    const base = input(30);
-    base.config.max_repeat = 0;
-    base.fixedId = base.candidates[0]!.id;
-    const first = buildRecommendationOrder(base);
-    const next = buildRecommendationOrder({
-      ...base,
-      recent: [{ id: 'previous', characterIds: first.headIds }],
-    });
-    expect(next.degraded).toBe(true);
   });
 
   it('is deterministic for a request ID and uses randomness only within the constraints', () => {

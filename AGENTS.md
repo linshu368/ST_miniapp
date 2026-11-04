@@ -83,7 +83,16 @@
 - migration 一次执行一个文件，记录前后 shape、权限/RLS、关键读写、锁/容量和回滚。
 - Supabase MCP 只允许在确认连接目标后执行只读结构采集；禁止读取业务行或将敏感导出提交 Git。
 
-### 5. 验证与提交
+### 5. 运营平台操作（mijing-admin CLI）
+
+- 操作生产运营平台（运营配置、角色卡与上架布局、公告、邀请、回复富文本规则）一律用仓库内的 CLI，不操作浏览器、不截图。说明见 `packages/admin-cli/README.md`，完整命令目录：`pnpm -s admin help --json`。
+- AI 调用固定用 `pnpm -s admin <命令> --json`（仓库子目录用 `pnpm -s -w admin`），按 `error.code` 与退出码处理结果。
+- 先 `whoami`；改之前用 `config describe` / `config get` 看现值，写入走 `draft set → diff → publish`，发布后再 `get` 复核。
+- 写命令不带 `--yes` 只返回 `confirmation_required` 和差异。**生产写操作必须先把差异给用户看，得到用户在对话里的明确同意后才带 `--yes`**；一次同意只对应这一次改动。
+- 登录免密：`pnpm -s admin login --email <白名单邮箱> --name <操作人> --json`（白名单在后端 `ADMIN_CLI_ALLOWED_EMAILS`）。遇到 `auth_required` 可直接重新登录；`setup_required` 需用户提供后端地址与 anon key。
+- 遇到 `draft_exists`（别人有未发布草稿）、`conflict`（线上已变化）先告诉用户，不要自行加 `--replace-draft` 或重试。
+
+### 6. 验证与提交
 
 - 移动端页面验收优先复用 `packages/ui-tests/README.md`：`pnpm preview:ui` 使用固定虚构场景和热更新；`pnpm test:ui --grep @profile`（或 `@roleplay` / `@chat` / `@image`）按改动范围复跑。不要逐次重建临时 mock 后端或一次性浏览器脚本；新状态扩展已有 fixture。手动3120/3121与自动3130/3131隔离，不覆盖普通构建缓存。模拟页面验收不能替代真实计费/供应商/支付和系统键盘验证。
 
@@ -93,6 +102,8 @@
 - bug 修复以及安全、计费、并发、契约、迁移等高风险改动，应在规划和风险评估中确认是否需要创建回归测试文件；未获确认时不得自动创建，但必须运行既有验证并记录可重复人工验证与剩余风险。
 - commit 遵循仓库近期 Conventional Commit 风格（如 `feat:`、`fix:`、`docs:`、`chore:`），一个提交对应一个完整变更单元。
 - 不自动 amend 或 push；不要把用户已有的无关修改混入提交。
+- 普通改动由 PR 作者负责发布。确认 PR 只包含本次改动，且最新提交的 `Quality Gate` 和适用检查均已通过后，作者自行合并，无需等待另一名工程师批准或代合。
+- 合入生产分支后，作者负责确认该版本已成功部署，并在线上核对本次改动的实际结果。发现异常时，由作者跟进修复或回滚。
 - 拉取/合并 upstream 时把上游代码视为只读；冲突解决保留上游行为，仅适配当前分支改动，除非用户明确授权改变上游逻辑。
 
 在开始实现之前，先阅读 `.trellis/spec/` 中的相关规格，以及它们引用的源文档。

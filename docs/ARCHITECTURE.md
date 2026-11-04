@@ -138,12 +138,14 @@
 
 ### 3.2 应用层
 
-| 包               | 职责                                                                                                                                                                                                     | dev 端口 | 部署                    |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ----------------------- |
-| `frontend`       | Next.js 14 App Router：大厅 / 会话页（自研聊天 UI）/ 充值 / 消息中心；React Query + Zustand；Telegram Mini App SDK                                                                                       | 3000     | Vercel                  |
-| `backend`        | Fastify 5：对话 REST + SSE、prompt 引擎、生成与计费出口、语音生成、平台业务 REST、客服代理 / 归因 / Bot webhook                                                                                          | 3001     | Railway（容器内 :8080） |
-| `admin`          | 运营后台：运营配置（17 个 managed key，含模型目录 / 平台规则 / 大厅置顶与排序参数 / 邀请规则与邀请中心）、角色卡、公告、发布历史、回访星尘赠送、邀请海报上传与邀请明细查询。Vite + React + AntD + Refine | 3003     | Vercel                  |
-| `reply-renderer` | Frontend/Admin 共用的安全回复渲染：Markdown、受限 HTML/CSS、状态折叠与可信 choice；不读 API/数据库、不编译 source。React 源码包                                                                          | —        | 随消费者构建            |
+| 包               | 职责                                                                                                                                                                                             | dev 端口 | 部署                    |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------- | ----------------------- |
+| `frontend`       | Next.js 14 App Router：大厅 / 会话页（自研聊天 UI）/ 充值 / 消息中心；React Query + Zustand；Telegram Mini App SDK                                                                               | 3000     | Vercel                  |
+| `backend`        | Fastify 5：对话 REST + SSE、prompt 引擎、生成与计费出口、语音生成、平台业务 REST、客服代理 / 归因 / Bot webhook                                                                                  | 3001     | Railway（容器内 :8080） |
+| `admin`          | 运营后台网页：按 7 组菜单管理运营配置（模型与计费 / 对话与回复 / 角色与大厅 / 充值与会员 / 用户增长 / 图片）、角色卡与上架布局、公告、邀请海报与邀请明细、发布历史。Vite + React + AntD + Refine | 3003     | Vercel                  |
+| `admin-client`   | 运营后台网页与 CLI 共用的纯 TS 库：managed config 注册表与 zod 校验、菜单分组 `ADMIN_MENU_GROUPS`、Admin RPC / `/api/admin/*` 调用；不含 UI、不读环境变量                                        | —        | 随消费者构建            |
+| `admin-cli`      | 生产运营平台命令行（`pnpm admin`）：本人账号登录，经后端 Supabase 代理调用与网页相同的 RPC；写操作需确认（`--yes`），`--json` 稳定输出供 AI 助手使用                                             | —        | 随仓库分发，本地运行    |
+| `reply-renderer` | Frontend/Admin 共用的安全回复渲染：Markdown、受限 HTML/CSS、状态折叠与可信 choice；不读 API/数据库、不编译 source。React 源码包                                                                  | —        | 随消费者构建            |
 
 ### 3.3 依赖方向（强制）
 
@@ -154,7 +156,9 @@
 应用层：
   frontend     ──► shared
   backend      ──► shared, prisma-client, supabase-js
-  admin        ──► shared
+  admin        ──► shared, admin-client
+  admin-cli    ──► shared, admin-client
+  admin-client ──► shared, supabase-js
   frontend/admin ──► reply-renderer ──► shared
 
 禁止：
@@ -350,7 +354,7 @@ T9 专表 contract：`20261016_openrouter_chat_history_drop_legacy_aliases.sql` 
 
 ### 4.9 图片创作广场（代码完成，实库 migration/canary 待执行）
 
-图片广场与角色回复图片完全独立：共享契约在 `shared/src/api/image-plaza.ts`，Backend 在 `features/image-plaza/` 与 `routes/image-plaza.ts`，Frontend 使用 `/create`、`/create/work/[workId]` 和 `/create/studio/[conversationId]`。报价、异步 Venice 生成、Storage、结算、分享返利、feed/详情/点赞/用同款都走这套独立链路；提示词在 textarea、shared schema、作品快照、attempt/message、数据库和上游调用中统一最多 2,000 字，不静默截断。Feed 始终返回启用标签目录；业务标签按 `snapshot.prompt_zh` 中文 label 字面包含筛选，「全部」不限制；`image_plaza_tags_feature_enabled` 只控制分享自动打标。
+图片广场与角色回复图片完全独立：共享契约在 `shared/src/api/image-plaza.ts`，Backend 在 `features/image-plaza/` 与 `routes/image-plaza.ts`，Frontend 使用 `/create`、`/create/work/[workId]` 和 `/create/studio/[conversationId]`。报价、异步 Venice 生成、Storage、结算、分享返利、feed/详情/点赞/用同款都走这套独立链路；提示词在 textarea、shared schema、作品快照、attempt/message、数据库和上游调用中统一最多 2,000 字，不静默截断。Feed 始终返回启用标签目录；业务标签按 `snapshot.prompt_zh` 中文 label 字面包含筛选，「全部」不限制；分享时客户端未传标签即自动打标（2026-11-03 起恒开启，后端不再读 `image_plaza_tags_feature_enabled`）。
 
 `media_plaza.image_plaza_works` 是公开作品投影，`media_plaza.image_plaza_artifacts` 保存自有 Storage 元数据。`origin=generated` 必须关联真实用户和已结算 attempt；`origin=civitai_seed` 不得伪造用户、会话、attempt 或账务，只在内部保存 Civitai source ID/URL/heat，公开 DTO 仅返回自有签名 URL、模型和作品快照。本地 `like_count` 始终只由 `media_plaza.image_plaza_likes` 重算，不能混入来源热度。分享返利仍只允许 generated artifact，并通过 `billing.grant_bonus_credits` 发放。
 
@@ -814,7 +818,7 @@ RootLayout随HTML交付独立框架绘制确认与原生ready脚本，Providers�
 
 原character_ranking_scores增加qualified-v1与可信分/样本/时间。启动及每小时在专用连接的任务锁内核对成功记录。同一评分口径24小时内跳过历史聚合；评分与完成时间在同一事务提交，失败按下次检查重试。评分job只以资历过滤后达到样本门槛的新证据写可信记录，不回填旧分。当前成熟低分优先；缺近期样本保留过去可信分，超过90天只给探索机会。抽选底线40、头档70是初版值；可轮换头档不足可用其他可靠卡补位。相邻前12目标最多2张重复，质量/库存不足时有标记地放宽，不保证没有库存时硬兑现。金框仍由列表/详情/收藏共用的全局资格出口决定，不按个人前排位置产生。
 
-运营复用`lobby_ranking_params.rotation`（默认直接全量、24h、重复2、探索2）与`lobby_pinned_characters.fixed_character_id`最多1固定；原8个ID对轮换用户是加权候选，旧策略保留兼容。迁移先于Backend；直接全量生效，新质量证据未就绪时沿用可靠的旧排序。运营不展示启用/灰度开关，保留新表和证据，不DROP。实际生产状态以发布记录为准。固定SQL/算法/HTTP验收`pnpm test:lobby-ranking`，UI `@lobby-rotation`沿用本地环境，未连接真实业务数据。
+运营复用`lobby_ranking_params.rotation`（默认直接全量、24h、重复2、探索2）。2026-11-03 起停用运营固定位/主推候选：后端不再读取 `lobby_pinned_characters`，推荐排序、金框与个人轮换均按无固定位逻辑运行（数据库配置行保留未删）。迁移先于Backend；直接全量生效，新质量证据未就绪时沿用可靠的旧排序。运营不展示启用/灰度开关，保留新表和证据，不DROP。实际生产状态以发布记录为准。固定SQL/算法/HTTP验收`pnpm test:lobby-ranking`，UI `@lobby-rotation`沿用本地环境，未连接真实业务数据。
 
 ### 创作者数据（2026-11-02，本地待发布）
 

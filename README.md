@@ -4,8 +4,8 @@ ST_miniapp 是围绕 Telegram MiniApp、AI 角色聊天、钱包/支付、语音
 
 > 角色质量评分本地候选：仅纳入首次向该卡发起聊天前，平台首次有效聊天已满24小时且至少完成10个有效逻辑轮次的用户。资格按历史时点判断，不追溯纳入新人首体验；无合格样本的卡按样本不足处理。复验 `pnpm test:lobby-ranking`（隔离本机PG17），本次未发布、未触发生产重算。
 
-> 角色推荐轮换（本地，未发布）：前12张按可信质量分层抽选，默认24小时、手动换批/撤回、曝光衰减与聊天返回保序。复用排序配置的 `rotation` 和主推候选的 `fixed_character_id`；上线直接全量生效，无需启用开关或灰度。`20261102_lobby_quality_rotation.sql`须先于后端执行；新评分未就绪时保留旧排序，后续新批次自动采用可信质量。复验 `pnpm test:lobby-ranking` 与 `pnpm test:ui --grep @lobby-rotation`；开发预览可选“推荐优质轮换”。
-> 本地提速版本可在试聊后直接恢复同批次。冷首屏只传前12张摘要，下滑至尾部或搜索时按需读取完整目录；同口径评分在24小时内复用上次成功结果。需先应用 `20261104_lobby_ranking_refresh_state.sql`，再发布后端。
+> 角色推荐轮换：前12张按可信质量分层抽选，默认24小时、手动换批/撤回、曝光衰减与聊天返回保序。复用排序配置的 `rotation`，优质档按质量分层，全量生效。`20261102_lobby_quality_rotation.sql`须先于后端执行；新评分未就绪时保留旧排序，后续新批次自动采用可信质量。复验 `pnpm test:lobby-ranking` 与 `pnpm test:ui --grep @lobby-rotation`；开发预览可选“推荐优质轮换”。
+> 试聊返回直接恢复同批次和卡片位置。冷首屏只传前12张摘要，下滑至尾部或搜索时按需读取完整目录；同口径评分在24小时内复用上次成功结果。需先应用 `20261104_lobby_ranking_refresh_state.sql`，再发布后端。
 
 > 深层架构、数据流和路由清单见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)；Railway 生产运维见 [`ops/railway/README.md`](ops/railway/README.md)。本文负责新成员入门、依赖关系、环境、命令和交付约定。
 
@@ -57,19 +57,23 @@ ST_miniapp 是围绕 Telegram MiniApp、AI 角色聊天、钱包/支付、语音
 ```text
 packages/frontend    ─┐
 packages/admin       ─┴──> packages/reply-renderer ──> packages/shared
+packages/admin       ───┐
+packages/admin-cli   ───┴──> packages/admin-client ──> packages/shared
 packages/backend     ───────────────────────────────> packages/shared
 
 ```
 
 `pnpm-workspace.yaml` 只包含 `packages/*`。三个应用包可以依赖 `@miniapp/shared`，但彼此不得直接 import；跨应用通信使用 HTTP。Shared 不依赖应用包。
 
-| 目录                      | 包名/形态                                | 主要职责                                                         | 默认开发端口 |
-| ------------------------- | ---------------------------------------- | ---------------------------------------------------------------- | ------------ |
-| `packages/frontend`       | `@miniapp/frontend` / Next.js 14         | Telegram MiniApp 用户界面、聊天、钱包、支付、语音、社区等        | 3000         |
-| `packages/backend`        | `@miniapp/backend` / Fastify 5           | API、鉴权、生成/计费、Supabase/Prisma、支付、Telegram、客服代理  | 3001         |
-| `packages/admin`          | `@miniapp/admin` / Vite React            | 配置、模型、角色卡、公告、裂变和运营赠送                         | 3003         |
-| `packages/shared`         | `@miniapp/shared` / TS 源码包            | API DTO、Zod schema、文本后处理编译/执行纯工具和 SQL migrations  | -            |
-| `packages/reply-renderer` | `@miniapp/reply-renderer` / React 源码包 | Frontend/Admin 共用的安全 Markdown、受限 HTML/CSS 和可信交互渲染 | -            |
+| 目录                      | 包名/形态                                | 主要职责                                                                 | 默认开发端口 |
+| ------------------------- | ---------------------------------------- | ------------------------------------------------------------------------ | ------------ |
+| `packages/frontend`       | `@miniapp/frontend` / Next.js 14         | Telegram MiniApp 用户界面、聊天、钱包、支付、语音、社区等                | 3000         |
+| `packages/backend`        | `@miniapp/backend` / Fastify 5           | API、鉴权、生成/计费、Supabase/Prisma、支付、Telegram、客服代理          | 3001         |
+| `packages/admin`          | `@miniapp/admin` / Vite React            | 运营平台网页：配置、模型、角色卡、公告、裂变                             | 3003         |
+| `packages/admin-client`   | `@miniapp/admin-client` / TS 源码包      | 运营平台网页与 CLI 共用：配置注册表与校验、菜单分组、Admin RPC/HTTP 调用 | -            |
+| `packages/admin-cli`      | `@miniapp/admin-cli` / Node CLI          | 生产运营平台命令行 `pnpm admin`，见 `packages/admin-cli/README.md`       | -            |
+| `packages/shared`         | `@miniapp/shared` / TS 源码包            | API DTO、Zod schema、文本后处理编译/执行纯工具和 SQL migrations          | -            |
+| `packages/reply-renderer` | `@miniapp/reply-renderer` / React 源码包 | Frontend/Admin 共用的安全 Markdown、受限 HTML/CSS 和可信交互渲染         | -            |
 
 Shared 的 `main`/`types` 直接指向 `src/index.ts`，没有独立 build 产物；修改公开出口会直接影响所有消费者。
 
@@ -153,6 +157,7 @@ pnpm --filter @miniapp/backend image-plaza:seed -- --input <xlsx>
 | LLM           | `LLM_UPSTREAM_URL`, `LLM_API_KEY`, `OPENAI_API_KEY`, `LLM_DEFAULT_MODEL`                                            | 生成上游与默认模型                                                                                              |
 | Voice         | `DEEPSEEK_*`, `MINIMAX_*`                                                                                           | 语音文案与 TTS；关键 key 缺失时语音不可用                                                                       |
 | Payment       | `PAYMENT_ENABLED`, `PAYMENT_RETURN_URL`, `VEXUTOPIA_API_KEY`, `VEXUTOPIA_BASE_URL`, `VEXUTOPIA_WEBHOOK_SECRET`      | 支付开关、https 回跳、Vexutopia 密钥与回调验签（API Key 也要配给对账 Worker / 过期 Cron）                       |
+| Admin CLI     | `ADMIN_CLI_ALLOWED_EMAILS`                                                                                          | 运营平台 CLI 免密登录白名单（逗号分隔邮箱）；为空时 CLI 登录接口关闭                                            |
 | Telemetry     | `SENTRY_*`, `LOG_LEVEL`, `LOG_PRETTY`                                                                               | Sentry 和日志                                                                                                   |
 | Feature/asset | `DEFAULT_USER_AVATAR_URL`, `CHARACTER_STORAGE_BUCKET`, `CHAT_HISTORY_SYNC_ENABLED`, `LOBBY_RANKING_REFRESH_ENABLED` | 资源和运行开关                                                                                                  |
 

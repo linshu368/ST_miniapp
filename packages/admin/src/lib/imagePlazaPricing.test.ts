@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ImagePlazaModelCatalogSchema } from '@miniapp/shared';
-import { configMetadata, parseManagedConfig } from './configSchemas';
+import { configMetadata, parseManagedConfig } from '@miniapp/admin-client';
 import {
   calculateImagePlazaPrice,
   imagePlazaPriceKey,

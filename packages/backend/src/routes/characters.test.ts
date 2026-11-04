@@ -29,9 +29,6 @@ vi.mock('../features/creator/covers.js', () => ({
   resolveCreatorCoverUrl: mocks.cover,
   resolvePublicCreatorCoverUrls: async () => new Map(),
 }));
-vi.mock('../features/lobby/pinned-characters.js', () => ({
-  resolveLobbyPinnedCharacters: async () => ({ characterIds: [] }),
-}));
 vi.mock('../features/lobby/recommendation.js', () => ({
   getPublicLobbyHeadOrder: mocks.publicHead,
 }));

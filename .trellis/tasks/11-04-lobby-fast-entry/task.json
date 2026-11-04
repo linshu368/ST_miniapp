@@ -21,7 +21,7 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "本地实现与验收完成。现有手机端回归和独立基线/最终性能对照见validation.md。生产数据库、远端Git与部署未更改。",
+  "notes": "推荐与封面完成本地验收；生产基线 f6b574ee。行为与耗时见 validation.md，数据库与应用发布状态以 GitHub 工作流和部署为准。",
   "meta": {
     "module_impact": {
       "schema_version": 1,
