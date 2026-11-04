@@ -33,7 +33,7 @@ import { ChatTopBar } from '@/components/chat/chat-top-bar';
 import { lobbyImageUrl } from '@/components/characters/character-card';
 import type { CharacterDetailTab } from '@/components/characters/character-detail-sheet';
 import { ChatSplash } from '@/components/chat/chat-splash';
-import { useChatReplayBinding, useChatSession } from '@/hooks/use-chat-session';
+import { useChatSession } from '@/hooks/use-chat-session';
 import { useMemoryDraft } from '@/hooks/use-memory-draft';
 import { useApiConnectionWarmth } from '@/hooks/use-api-connection-warmth';
 import { useConversationTurn } from '@/hooks/use-conversation-turn';
@@ -198,13 +198,6 @@ export default function SelfHostedChatPage() {
         ?.is_free ?? null
     );
   }, [modelCatalogQuery.data?.catalog, selectedModelId]);
-
-  useChatReplayBinding({
-    characterId,
-    conversationSessionId: activeSessionId,
-    selectedModelId,
-    pageReady: session.ready,
-  });
 
   const persisted = useMemo(
     () => [
@@ -434,7 +427,7 @@ export default function SelfHostedChatPage() {
         {
           onError: (error) => {
             // 异步阶段的失败由记录里的 failed 状态呈现，这里只管受理阶段的
-            if (redirectToRechargeFromError(router, error, returnTo, 'chat_voice')) return;
+            if (redirectToRechargeFromError(router, error, returnTo)) return;
             const code = (error as { code?: string }).code;
             setStreamError(
               code === 'CONFLICT'
@@ -684,15 +677,7 @@ export default function SelfHostedChatPage() {
                           redirectToRecharge(router, {
                             returnTo,
                             requiredCredits: imageConfigQuery.data?.billing.credits_per_generation,
-                            triggerSource: 'chat_image',
                           }),
-                        telemetry: {
-                          characterId,
-                          conversationSessionId: activeSessionId ?? '',
-                          selectedModelId,
-                          messageId: message.id,
-                          requiredCredits: imageConfigQuery.data?.billing.credits_per_generation,
-                        },
                       }
                     : null
                 }

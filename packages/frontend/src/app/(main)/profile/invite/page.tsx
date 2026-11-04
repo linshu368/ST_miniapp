@@ -25,7 +25,6 @@ import {
   useInviteEntryStatusQuery,
   useInviteStatsQuery,
 } from '@/lib/api/invite';
-import { retainPaywallFollowupIfActive } from '@/lib/payment/flow-telemetry';
 import { useHaptic, useTelegramBackButton } from '@/lib/telegram';
 import { formatNumber } from '@/lib/utils/payment';
 
@@ -64,11 +63,6 @@ export default function InviteCenterPage() {
     false,
     entryStatus.isError || visiblePanel.isError
   );
-
-  useEffect(() => {
-    // 只延续已有 chat/paywall context，无活跃 replay 时不新开 recording。
-    retainPaywallFollowupIfActive();
-  }, []);
 
   return (
     <main className="mx-auto flex min-h-[calc(100dvh-var(--app-nav-space))] max-w-md flex-col bg-background text-foreground">
