@@ -5,8 +5,8 @@ scope: frontend
 category: business
 status: active
 owners: [frontend]
-last_verified_task: .trellis/tasks/10-27-drama-mobile-ux/
-last_verified_at: 2026-10-27
+last_verified_task: .trellis/tasks/11-03-five-route-navigation-p95/
+last_verified_at: 2026-11-04
 ---
 
 # 短剧体验
@@ -20,6 +20,8 @@ last_verified_at: 2026-10-27
 `components/drama/drama-home.tsx` 使用原 DramaPlayer 嵌入；主页上下滑或当前条目播完进入另一部；点击「观看完整短剧」进入专注详情并延续进度，详情上下滑与自动续播都在本剧内，末集停留。最后3秒只预取下一条地址，保留片尾；小幅纵向过渡，减少动态偏好下无动画。没有下一条时停在尾帧，不显示到头文案。剧场浏览列表仅固定搜索栏，栏目、分类、排序与续看入口随内容滚动；卡片封面下仅显示剧名，不展示简介或标签。返回保留条件与滚动。EpisodeSheet黑灰面板、简介/选集切换、30集分组、打开定位当前组；失败保留恢复入口；暂停不强制打断纯净模式，单击可唤回控件。
 
 `lib/api/drama.ts` 继续使用已有列表/详情/play契约，详情与签名并行。点击按本设备进度预取目标集；互动增量通过 social/like/comments API，与播放并行且互不阻塞。媒体每次换集、换剧、离开先保存后暂停并释放src，过时Promise不能恢复播放。浏览器有声自动播放受限时仅降级一次静音，失败保留手动播放。
+
+一级导航会在后台预算内预热 `/`、`/dramas` route chunk，但不会在底栏 intent 阶段额外拉短剧目录；五入口回归证明该请求会与剧场首批卡片的增量挂载形成竞态。目录继续由既有 React Query、持久缓存和页面 query 负责。`/`、`/dramas` 的点击到内容 ready 沿统一 `page.navigation` 口径记录，2 秒目标必须发布后按 Android/iOS 与 release 验证。
 
 ## 入口与调用者
 

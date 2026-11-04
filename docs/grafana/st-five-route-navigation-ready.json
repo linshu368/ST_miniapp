@@ -1,0 +1,253 @@
+{
+  "uid": "st-five-route-navigation-ready",
+  "title": "ST 五入口点击到内容可见（2秒目标）",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "tags": ["ST", "frontend", "mobile", "navigation", "2s-slo"],
+  "timezone": "Asia/Shanghai",
+  "refresh": "5m",
+  "time": { "from": "now-7d", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "environment",
+        "label": "环境",
+        "type": "custom",
+        "query": "production,test",
+        "current": { "text": "production", "value": "production" },
+        "options": [
+          { "text": "production", "value": "production", "selected": true },
+          { "text": "test", "value": "test", "selected": false }
+        ]
+      },
+      {
+        "name": "release",
+        "label": "版本（正则）",
+        "type": "textbox",
+        "query": ".*",
+        "current": { "text": ".*", "value": ".*" }
+      },
+      {
+        "name": "tg_platform",
+        "label": "平台",
+        "type": "custom",
+        "query": "Android : android|android_x,iOS : ios,Android+iOS : android|android_x|ios",
+        "current": { "text": "Android+iOS", "value": "android|android_x|ios" },
+        "options": [
+          { "text": "Android", "value": "android|android_x", "selected": false },
+          { "text": "iOS", "value": "ios", "selected": false },
+          { "text": "Android+iOS", "value": "android|android_x|ios", "selected": true }
+        ]
+      },
+      {
+        "name": "browser_selector",
+        "label": "Loki selector",
+        "type": "constant",
+        "query": "{service_name=\"st-miniapp\"}",
+        "current": {
+          "text": "{service_name=\"st-miniapp\"}",
+          "value": "{service_name=\"st-miniapp\"}"
+        },
+        "hide": 2
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "五入口当前窗口",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "点击到内容可见 P95（目标 ≤ 2000ms）",
+      "description": "真实 Link 点击/导航开始到目标页面 usePageReady(content)。仅成功、前台 SPA 导航；必须与终态面板联合判断。",
+      "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 2000 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+          "expr": "quantile_over_time(0.95, ${browser_selector:raw} |= \"st_page_navigation\" | logfmt | kind=\"measurement\" | type=\"st_page_navigation\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"engineering_v1\" | context_outcome=\"ready\" | context_visibility=\"foreground\" | context_route=~\"^(/|/dramas|/characters|/creation|/profile)$\" | context_tg_platform=~\"^($tg_platform)$\" | unwrap duration_ms | __error__=\"\" [$__range]) by (context_route, context_tg_platform)",
+          "legendFormat": "{{context_route}} · {{context_tg_platform}}",
+          "queryType": "instant"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "2秒内可见占比",
+      "description": "分子由同一条 page.navigation 的 duration_ms≤2000 计算，避免用占位或不同事件口径。",
+      "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 1,
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 0.9 },
+              { "color": "green", "value": 0.95 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+          "expr": "sum by (context_route, context_tg_platform) (count_over_time(${browser_selector:raw} |= \"st_page_navigation\" | logfmt | kind=\"measurement\" | type=\"st_page_navigation\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"engineering_v1\" | context_outcome=\"ready\" | context_visibility=\"foreground\" | context_route=~\"^(/|/dramas|/characters|/creation|/profile)$\" | context_tg_platform=~\"^($tg_platform)$\" | duration_ms <= 2000 [$__range])) / sum by (context_route, context_tg_platform) (count_over_time(${browser_selector:raw} |= \"st_page_navigation\" | logfmt | kind=\"measurement\" | type=\"st_page_navigation\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"engineering_v1\" | context_outcome=\"ready\" | context_visibility=\"foreground\" | context_route=~\"^(/|/dramas|/characters|/creation|/profile)$\" | context_tg_platform=~\"^($tg_platform)$\" [$__range]))",
+          "legendFormat": "{{context_route}} · {{context_tg_platform}}",
+          "queryType": "instant"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "P95 趋势（2秒阈值）",
+      "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+      "gridPos": { "h": 9, "w": 16, "x": 0, "y": 9 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 2000 }
+            ]
+          },
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": ["lastNotNull", "max"]
+        },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+          "expr": "quantile_over_time(0.95, ${browser_selector:raw} |= \"st_page_navigation\" | logfmt | kind=\"measurement\" | type=\"st_page_navigation\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"engineering_v1\" | context_outcome=\"ready\" | context_visibility=\"foreground\" | context_route=~\"^(/|/dramas|/characters|/creation|/profile)$\" | context_tg_platform=~\"^($tg_platform)$\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_route, context_tg_platform)",
+          "legendFormat": "{{context_route}} · {{context_tg_platform}}",
+          "queryType": "range"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "成功样本量（N<100 不判稳态）",
+      "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+      "gridPos": { "h": 9, "w": 8, "x": 16, "y": 9 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 100 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+          "expr": "sum by (context_route, context_tg_platform) (count_over_time(${browser_selector:raw} |= \"st_page_navigation\" | logfmt | kind=\"measurement\" | type=\"st_page_navigation\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"engineering_v1\" | context_outcome=\"ready\" | context_visibility=\"foreground\" | context_route=~\"^(/|/dramas|/characters|/creation|/profile)$\" | context_tg_platform=~\"^($tg_platform)$\" [$__range]))",
+          "legendFormat": "{{context_route}} · {{context_tg_platform}}",
+          "queryType": "instant"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "终态与卡住（防止成功样本幸存者偏差）",
+      "description": "ready/error/page_left 与 stalled 必须和 P95 同看；无数据不是达标。",
+      "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 18 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 35,
+            "stacking": { "mode": "normal", "group": "A" }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["sum"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+          "expr": "sum by (event_data_route, event_data_tg_platform, event_data_outcome) (count_over_time(${browser_selector:raw} |= \"st_page_terminal\" | logfmt | kind=\"event\" | event_name=\"st_page_terminal\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"engineering_v1\" | event_data_route=~\"^(/|/dramas|/characters|/creation|/profile)$\" | event_data_tg_platform=~\"^($tg_platform)$\" [$__auto]))",
+          "legendFormat": "terminal · {{event_data_route}} · {{event_data_tg_platform}} · {{event_data_outcome}}",
+          "queryType": "range"
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+          "expr": "sum by (event_data_route, event_data_tg_platform) (count_over_time(${browser_selector:raw} |= \"st_page_stall\" | logfmt | kind=\"event\" | event_name=\"st_page_stall\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"engineering_v1\" | event_data_route=~\"^(/|/dramas|/characters|/creation|/profile)$\" | event_data_tg_platform=~\"^($tg_platform)$\" [$__auto]))",
+          "legendFormat": "stall · {{event_data_route}} · {{event_data_tg_platform}}",
+          "queryType": "range"
+        }
+      ]
+    }
+  ]
+}

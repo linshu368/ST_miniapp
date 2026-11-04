@@ -29,6 +29,8 @@ describe('API engineering timing projection', () => {
     expect(apiRouteGroup('/api/dramas/short-id/playback?token=secret')).toBe('drama_playback');
     expect(apiRouteGroup('/api/dramas/short-id/play?episode=2')).toBe('drama_playback');
     expect(apiRouteGroup('/api/v1/conversations/id/messages?secret=yes')).toBe('conversation_turn');
+    expect(apiRouteGroup('/api/lobby-characters?sort=latest')).toBe('lobby_characters');
+    expect(apiRouteGroup('/api/favorites/ids')).toBe('favorites');
     expect(apiRouteGroup('/api/unknown/private-user')).toBe('other');
     expect(apiRouteGroup('https://private.example/api/dramas')).toBe('other');
   });

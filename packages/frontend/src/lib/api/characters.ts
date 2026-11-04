@@ -1,6 +1,6 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { DEFAULT_LOBBY_SORT } from '@miniapp/shared';
 import type {
   ApiResponse,
@@ -130,6 +130,19 @@ export function useCharactersQuery(sort: LobbySort = DEFAULT_LOBBY_SORT) {
     staleTime: 0,
     // 有本地快照时先让关键头像完成，再由大厅在 enrich 阶段校准；无数据时仍会立即 fetch。
     refetchOnMount: false,
+    gcTime: CHARACTER_CACHE_MAX_AGE_MS,
+  });
+}
+
+export function prefetchCharactersQuery(
+  queryClient: QueryClient,
+  sort: LobbySort = DEFAULT_LOBBY_SORT
+): Promise<void> {
+  return queryClient.prefetchQuery({
+    queryKey: characterKeys.list(sort),
+    queryFn: ({ signal }) => fetchCharacters(sort, signal),
+    initialData: () => readPersistedCharacters(sort),
+    staleTime: 30_000,
     gcTime: CHARACTER_CACHE_MAX_AGE_MS,
   });
 }
