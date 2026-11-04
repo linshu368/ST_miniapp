@@ -1,3 +1,4 @@
+import { ownsDramaSource } from '../drama-media-source';
 import type { DramaPlaybackTiming } from './drama-timing';
 import type { DramaMediaEvent, DramaMediaState } from '@miniapp/shared';
 import { observeDramaLongTasks, observeDramaResources } from './drama-resources';
@@ -97,7 +98,7 @@ export function observeDramaMedia(
   let qualityMediaTime = video.currentTime;
   const qualityEligible = () =>
     !disposed &&
-    video.currentSrc === source &&
+    ownsDramaSource(video, source) &&
     visible() &&
     !video.paused &&
     !video.seeking &&
@@ -199,14 +200,15 @@ export function observeDramaMedia(
     if (qualityFrame) changeQuality('playing');
   };
   const confirmQualityFrame = () => {
-    if (!qualityEnabled || disposed || video.currentSrc !== source || video.readyState < 2) return;
+    if (!qualityEnabled || disposed || !ownsDramaSource(video, source) || video.readyState < 2)
+      return;
     qualityFrame = true;
     if (qualitySawPlaying && qualityState !== 'waiting' && qualityEligible())
       changeQuality('playing');
   };
   const observeQualityProgress = () => {
     if (!qualityEnabled || disposed) return;
-    if (video.currentSrc !== source) {
+    if (!ownsDramaSource(video, source)) {
       stopQuality();
       return;
     }
@@ -246,7 +248,7 @@ export function observeDramaMedia(
     if (
       disposed ||
       timing.outcome !== 'playing' ||
-      video.currentSrc !== source ||
+      !ownsDramaSource(video, source) ||
       !visible() ||
       video.paused ||
       video.seeking ||
@@ -282,9 +284,9 @@ export function observeDramaMedia(
   const initialTime = 0;
   const stopResources = observeDramaResources(source, timing);
   const stopLongTasks = observeDramaLongTasks(timing);
-  const current = () => !disposed && !timing.outcome && video.currentSrc === source;
+  const current = () => !disposed && !timing.outcome && ownsDramaSource(video, source);
   const unbindState = timing.bindMediaState(() =>
-    !disposed && video.currentSrc === source ? mediaState(video) : undefined
+    !disposed && ownsDramaSource(video, source) ? mediaState(video) : undefined
   );
   const complete = () => {
     if (playing && frame && current()) timing.finish('playing');
@@ -298,7 +300,7 @@ export function observeDramaMedia(
   const onPlaying = () => {
     observeQualityPlaying();
     finishRebuffer(
-      video.currentSrc !== source
+      !ownsDramaSource(video, source)
         ? 'switched'
         : !visible()
           ? 'background'
@@ -428,12 +430,13 @@ export function observeDramaMedia(
       timing.mark('play_resolved');
       timing.mediaEvent('play_resolved', { trigger });
     },
-    rejected(error: unknown, trigger: 'automatic' | 'user' = 'automatic') {
+    rejected(error: unknown, trigger: 'automatic' | 'user' = 'automatic', retrying = false) {
       if (disposed || timing.outcome) return;
       timing.mark('play_rejected');
       timing.mediaEvent('play_rejected', { trigger, error: playError(error) });
       // 手动 play 的拒绝原本只更新 UI，观测不能增加新的业务终态。
-      if (trigger === 'user') return;
+      // A scheduled muted retry remains part of this startup intent.
+      if (trigger === 'user' || retrying) return;
       // AbortError 常来自释放旧 src，不能当作网络错误，更不能污染下一次播放。
       if (error instanceof Error && error.name === 'AbortError') return;
       timing.finish(
@@ -442,7 +445,7 @@ export function observeDramaMedia(
     },
     dispose() {
       stopQuality();
-      finishRebuffer(video.currentSrc === source ? 'disposed' : 'switched');
+      finishRebuffer(ownsDramaSource(video, source) ? 'disposed' : 'switched');
       stopResources();
       stopLongTasks();
       disposed = true;

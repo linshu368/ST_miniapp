@@ -20,7 +20,7 @@ import type {
 import { apiClient } from './client';
 import { dramaTiming } from '@/lib/perf/drama-observer';
 
-const DRAMA_CATALOG_CACHE_KEY = 'miniapp:drama-catalog:v1';
+const DRAMA_CATALOG_CACHE_KEY = 'miniapp:drama-catalog:stream-v2';
 const DRAMA_CATALOG_STALE_MS = 15 * 60_000;
 const DRAMA_CATALOG_MAX_AGE_MS = 24 * 60 * 60_000;
 const DRAMA_CATALOG_MAX_ITEMS = 300;
@@ -244,9 +244,19 @@ async function fetchDramaDetail(id: string, signal?: AbortSignal): Promise<Drama
 async function fetchDramaPlayback(
   id: string,
   videoId?: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  fallback = false
 ): Promise<DramaPlayback> {
-  const suffix = videoId ? `?video_id=${encodeURIComponent(videoId)}` : '';
+  const params = new URLSearchParams();
+  if (videoId) params.set('video_id', videoId);
+  if (
+    typeof document !== 'undefined' &&
+    (document.createElement('video').canPlayType('application/vnd.apple.mpegurl') ||
+      typeof MediaSource !== 'undefined')
+  )
+    params.set('format', 'hls');
+  if (fallback) params.set('fallback', 'mp4');
+  const suffix = params.size ? `?${params}` : '';
   return dramaTiming.query('playback', id, videoId, async (onAttempt) => {
     const data = await apiClient<GetDramaPlaybackData>(
       `/api/dramas/${encodeURIComponent(id)}/play${suffix}`,
@@ -298,11 +308,11 @@ export function useDramaDetailQuery(id: string) {
 }
 
 /** Each playback intent confirms the current provider; a prefetched old CDN URL cannot bypass shutdown. */
-export function useDramaPlaybackQuery(id: string, videoId?: string) {
+export function useDramaPlaybackQuery(id: string, videoId?: string, fallback = false) {
   const intent = useMemo(() => `${id}:${videoId ?? ''}:${createRequestId()}`, [id, videoId]);
   return useQuery({
-    queryKey: [...dramaKeys.playback(id, videoId), 'intent', intent],
-    queryFn: ({ signal }) => fetchDramaPlayback(id, videoId, signal),
+    queryKey: [...dramaKeys.playback(id, videoId), 'intent', intent, fallback],
+    queryFn: ({ signal }) => fetchDramaPlayback(id, videoId, signal, fallback),
     structuralSharing: false,
     enabled: Boolean(id),
     gcTime: 0,

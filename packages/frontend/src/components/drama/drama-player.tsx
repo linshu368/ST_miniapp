@@ -28,13 +28,14 @@ import { useDramaSwipe } from './use-drama-swipe';
 import { useDramaCommentsPanel } from './drama-comments-context';
 import {
   useDramaDetailQuery,
-  useDramaPlaybackQuery,
   useDramaSocialQuery,
   useDramaLikeMutation,
   usePreloadDramaPlayback,
 } from '@/lib/api/drama';
 import { resolveNextVideoId } from '@/lib/drama-playback';
 import { dramaTiming } from '@/lib/perf/drama-observer';
+import { useDramaStreamPlayback } from './use-drama-stream-playback';
+import { loadDramaSource } from '@/lib/drama-media-source';
 import { observeDramaMedia } from '@/lib/perf/drama-media';
 import type { DramaPlaybackTiming } from '@/lib/perf/drama-timing';
 import type { DramaSummary } from '@miniapp/shared';
@@ -155,7 +156,19 @@ export function DramaPlayer({
     });
   };
   // 播放与详情并行，元数据加载不阻塞首集的视频元素挂载或签名请求。
-  const playbackQuery = useDramaPlaybackQuery(id, activeVideoId ?? undefined);
+  const [retryVersion, setRetryVersion] = useState(0);
+  const timingRef = useRef<{
+    videoId: string | null;
+    retryVersion: number;
+    flow: DramaPlaybackTiming;
+  } | null>(null);
+  const { playbackQuery, recoverStream } = useDramaStreamPlayback(
+    id,
+    activeVideoId,
+    playbackOwner,
+    retryVersion,
+    timingRef
+  );
   const playback = playbackQuery.data;
   // Likes/comments are not needed for first frame. Start them after playback has
   // either resolved or failed so they cannot compete for the media URL.
@@ -168,14 +181,8 @@ export function DramaPlayer({
   const [buffering, setBuffering] = useState(true);
   const [mediaVisualReady, setMediaVisualReady] = useState(false);
   const [failed, setFailed] = useState(false);
-  const [retryVersion, setRetryVersion] = useState(0);
   const [retryState, setRetryState] = useState<'idle' | 'loading' | 'error'>('idle');
   const retryAttempt = useRef(0);
-  const timingRef = useRef<{
-    videoId: string | null;
-    retryVersion: number;
-    flow: DramaPlaybackTiming;
-  } | null>(null);
   const mediaTimingRef = useRef<ReturnType<typeof observeDramaMedia> | null>(null);
   const seekTimingRef = useRef<ReturnType<typeof dramaTiming.beginSeek> | null>(null);
   const [time, setTime] = useState(0);
@@ -504,7 +511,6 @@ export function DramaPlayer({
     // 上一个 effect 已绑定当前尝试；媒体 effect 仍只跟随原有 src/retry 依赖。
     const timing = timingRef.current!.flow;
     timing.mark('source_set');
-    videoEl.src = playback.play_url;
     const mediaTiming = observeDramaMedia(videoEl, playback.play_url, timing);
     mediaTimingRef.current = mediaTiming;
     const start = async () => {
@@ -519,10 +525,12 @@ export function DramaPlayer({
         await videoEl.play();
         mediaTiming.resolved('automatic');
       } catch (error: unknown) {
-        mediaTiming.rejected(error);
         if (cancelled) return;
+        const retryMuted =
+          error instanceof DOMException && error.name === 'NotAllowedError' && !videoEl.muted;
+        mediaTiming.rejected(error, 'automatic', retryMuted);
         // 浏览器可能禁止有声自动播放，只降级一次；仍失败时保留手动播放入口。
-        if (error instanceof DOMException && error.name === 'NotAllowedError' && !videoEl.muted) {
+        if (retryMuted) {
           videoEl.muted = true;
           setPlaybackPreferences({ muted: true });
           try {
@@ -541,7 +549,19 @@ export function DramaPlayer({
         }
       }
     };
-    void start();
+    const releaseSource = loadDramaSource(
+      videoEl,
+      playback,
+      () => {
+        void start();
+      },
+      () => {
+        if (!recoverStream()) {
+          setFailed(true);
+          setBuffering(false);
+        }
+      }
+    );
     return () => {
       cancelled = true;
       seekTimingRef.current?.('switched');
@@ -557,6 +577,7 @@ export function DramaPlayer({
       persistProgress.current(videoEl, true);
       mediaOwner.current = null;
       mediaTiming.dispose();
+      releaseSource();
       if (mediaTimingRef.current === mediaTiming) mediaTimingRef.current = null;
       // 换集、换剧或退出立即释放旧媒体，迟到的旧请求不能继续发声。
       videoEl.pause();
@@ -575,6 +596,7 @@ export function DramaPlayer({
     cancelPictureTap,
     setControlsVisible,
     embedded,
+    recoverStream,
   ]);
 
   useEffect(() => {
@@ -1046,6 +1068,7 @@ export function DramaPlayer({
               }
             }}
             onError={() => {
+              if (recoverStream()) return;
               if (embedded) markPageCriticalVisual('/watch', 'error');
               if (videoEl?.getAttribute('src')) {
                 videoEl.pause();

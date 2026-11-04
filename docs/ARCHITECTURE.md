@@ -844,3 +844,5 @@ Frontend `/creation/data` → `lib/api/creator-analytics.ts`（用户隔离React
 用户卡详情通过既有 character_creations 归属关系读取当前昵称。大厅卡片不显示署名，导入卡沿用卡片自己的作者字段。公开空间 /creators/[id] 按作者的公开别名分页获取当前可发现的用户作品，排除测试卡。空间仅使用已发布版本，私人访问和历史会话资格不扩大公开范围。公开别名与昵称无关，不能用于鉴权。旧作品无需重发或数据回填。
 
 部署前应用 20261103_public_creator_space_index.sql 为按别名查找创建索引，再独立执行 20261103_chat_sessions_reply_like_lookup_index.sql 并验证覆盖索引有效，最后发布后端与前端。每页最多12张，点赞（卡片赞+回复赞）和收藏直接随该页返回；用于判断是否有下一页的第13张不查计数。列表简介最多120字。首次加载的私有作品封面批量读取和签名，后续复用签名缓存。回退应用可保留索引。隔离数据库验证复用 scripts/test-creator-characters-local.sh。
+
+短剧 Cloudflare Stream A/B 的配置、同序置顶、播放器恢复和验收顺序见 [Stream A/B 接入](drama-stream-ab.md)。
