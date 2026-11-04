@@ -13,11 +13,11 @@ last_verified_at: 2026-11-04
 
 ## 职责与边界
 
-提供统一 REST client、Query provider、Telegram runtime、Zustand 状态、通用 UI，以及受控 PostHog Session Replay adapter。不拥有业务生成或支付结算。
+提供统一 REST client、Query provider、Telegram runtime、Zustand 状态、通用 UI。不拥有业务生成或支付结算。
 
 ## 当前状态
 
-API 与 server state 已集中，Tailwind/shadcn 作为 UI 基础。业务侧 PostHog 事件复用 `getReplayLifecycle().capture` 与 shared telemetry schema；缺 PostHog 公开配置、host 非 HTTPS 或 SDK 失败时前端 telemetry no-op。GET 传输失败由统一 API client 最多重试一次，React Query 不再叠加默认重试；queryFn 必须把 React Query 的 `AbortSignal` 传到底层请求，排队、退避与在途阶段的主动取消均不得再发请求。
+API 与 server state 已集中，Tailwind/shadcn 作为 UI 基础。GET 传输失败由统一 API client 最多重试一次，React Query 不再叠加默认重试；queryFn 必须把 React Query 的 `AbortSignal` 传到底层请求，排队、退避与在途阶段的主动取消均不得再发请求。
 
 默认关闭且非首屏必需的重型面板可用动态导入，并在首次打开后保持挂载以保留关闭动画和局部草稿；消息正文、输入框、播放器地址等关键路径不得为追求 bundle 数字而延后。
 
@@ -25,28 +25,26 @@ API 与 server state 已集中，Tailwind/shadcn 作为 UI 基础。业务侧 Po
 
 ## 入口与调用者
 
-所有 Frontend 页面和业务组件使用。聊天、支付、图片生成 helper 通过 replay lifecycle capture 发送安全事件。
+所有 Frontend 页面和业务组件使用。
 
 ## 涉及文件
 
-| 路径                                                      | 职责                                         |
-| --------------------------------------------------------- | -------------------------------------------- |
-| `packages/frontend/src/lib/api/client.ts`                 | REST client、有限重试与取消                  |
-| `packages/frontend/src/lib/api/query-client.ts`           | React Query 默认策略                         |
-| `packages/frontend/src/lib/api/`                          | Query hooks                                  |
-| `packages/frontend/src/lib/telemetry/`                    | PostHog adapter、lifecycle、masking 与 owner |
-| `packages/frontend/src/lib/payment/flow-telemetry.ts`     | 支付/回流事件 helper                         |
-| `packages/frontend/src/lib/image-generation/telemetry.ts` | 图片生成事件 helper                          |
-| `packages/frontend/src/components/ui/`                    | 公共 UI                                      |
-| `packages/frontend/src/stores/`                           | 跨组件客户端状态                             |
+| 路径                                                      | 职责                        |
+| --------------------------------------------------------- | --------------------------- |
+| `packages/frontend/src/lib/api/client.ts`                 | REST client、有限重试与取消 |
+| `packages/frontend/src/lib/api/query-client.ts`           | React Query 默认策略        |
+| `packages/frontend/src/lib/api/`                          | Query hooks                 |
+| `packages/frontend/src/lib/image-generation/telemetry.ts` | 图片生成事件 helper         |
+| `packages/frontend/src/components/ui/`                    | 公共 UI                     |
+| `packages/frontend/src/stores/`                           | 跨组件客户端状态            |
 
 ## 关键实现链路
 
-Provider 初始化 → Telegram 上下文 → query/client → 通用 loading/error/UI。业务 helper 先判断 active replay context，再通过 lifecycle capture，由 adapter 对 shared schema 和 forbidden keys 做运行时校验。读请求失败只由 API client 判定是否安全重试；调用方取消沿同一 signal 立即终止请求槽、退避与 fetch。
+Provider 初始化 → Telegram 上下文 → query/client → 通用 loading/error/UI。读请求失败只由 API client 判定是否安全重试；调用方取消沿同一 signal 立即终止请求槽、退避与 fetch。
 
 ## 数据、契约与外部依赖
 
-依赖 Telegram SDK、React Query、Zustand、shared DTO 和 `posthog-js`。浏览器公开变量不存 secret。
+依赖 Telegram SDK、React Query、Zustand、shared DTO。浏览器公开变量不存 secret。
 
 ## 关键节点与约束
 
@@ -58,7 +56,7 @@ Frontend typecheck、test、lint、build 与真机检查；取消/重试改动�
 
 ## 已知缺口与待核验项
 
-Telegram WebView 差异需持续人工回归；打开 Production PostHog 是独立运维步骤。生产 route bundle 与 Sentry 页面 P95 必须发布后复测，本地构建只提供相对体积证据。
+Telegram WebView 差异需持续人工回归；生产 route bundle 与 Sentry 页面 P95 必须发布后复测，本地构建只提供相对体积证据。
 
 ## 关联模块
 
