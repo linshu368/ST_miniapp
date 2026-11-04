@@ -5,8 +5,8 @@ scope: frontend
 category: business
 status: active
 owners: [frontend]
-last_verified_task: .trellis/tasks/archive/2026-11/11-03-latest-lobby-mobile-p95/
-last_verified_at: 2026-11-03
+last_verified_task: .trellis/tasks/11-04-lobby-fast-entry/
+last_verified_at: 2026-11-04
 ---
 
 # 角色模块发现与收藏
@@ -102,3 +102,9 @@ Android/iOS 角色列表首批均限制为4张卡；Android 首图高优先级�
 ### 心愿墙（本地候选）
 
 大厅搜索框右侧提供独立的「许个愿」入口，首屏可见并随搜索栏固定，与下一行的换一批分开；搜索空态保留直接输入入口。创作数据作品表现后与我的创作空态链接同一 /wishes 页面；不要给主导航新增独立槽位。只支持匿名公开，提交前明确所有人可见、不展示昵称头像。心愿来源独立保存在本地草稿元信息 sourceWishId，不得塞进 CharacterDraft 或system prompt。发布成功关联失败仍保留已发布结果，独立重试回应；原心愿不可用时允许返回我的创作。复用 @wishes 固定场景验收，入口不提前请求新API。
+
+## 推荐首屏与试聊返回
+
+推荐优先复用同账号批次和原卡锚点。冷首屏获取最多12张摘要，个人批次延迟时允许展示公共优质首屏，当次浏览保持已展示顺序。继续浏览尾部和搜索才读取完整目录。
+
+角色详情封面可点开全屏看完整原图，支持缩放、平移和退回原详情。

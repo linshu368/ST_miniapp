@@ -2,6 +2,7 @@ import type { Prisma } from '@prisma/client';
 import {
   LOBBY_ROTATION_HEAD_SIZE,
   LobbyRecommendationDataSchema,
+  LobbyRecommendationHeadIdsSchema,
   LobbyRecommendationRequestSchema,
   type LobbyRecommendationData,
   type LobbyRecommendationExposures,
@@ -78,7 +79,7 @@ function parseState(value: unknown): RecommendationState {
       const batch = object(entry);
       return {
         id: LobbyRecommendationRequestSchema.shape.request_id.parse(batch.id),
-        characterIds: LobbyRecommendationDataSchema.shape.head_ids.parse(batch.characterIds),
+        characterIds: LobbyRecommendationHeadIdsSchema.parse(batch.characterIds),
       };
     }),
   };
@@ -90,7 +91,7 @@ async function lock(tx: RecommendationDbClient, userId: string): Promise<void> {
   // Database serialization covers first insertion and multiple Railway replicas, unlike a process map.
   await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${'lobby-recommendation:' + userId}, 0))::text`;
 }
-async function readState(tx: RecommendationDbClient, userId: string) {
+async function readState(tx: Pick<RecommendationDbClient, '$queryRaw'>, userId: string) {
   const rows = await tx.$queryRaw<Array<{ state: unknown }>>`
     SELECT state FROM miniapp_features.user_lobby_recommendations WHERE user_id = ${userId}::uuid
   `;
@@ -112,6 +113,57 @@ function response(batch: StoredBatch, previousId: string | null): LobbyRecommend
     head_ids: batch.headIds,
     previous_batch_id: previousId,
   };
+}
+
+// An existing open/resume is a point-in-time read. Mutations and a miss still go through
+// the locked path, where state is read again before deciding whether to create a batch.
+export async function readReusableRecommendation(
+  db: Pick<RecommendationDbClient, '$queryRaw'>,
+  userId: string,
+  request: LobbyRecommendationRequest,
+  now: Date
+): Promise<LobbyRecommendationData | null> {
+  if (request.action !== 'open' && request.action !== 'resume') return null;
+  const state = await readState(db, userId);
+  if (!state) return null;
+  const { current, previous } = state;
+  if (request.action === 'resume') {
+    if (previous && previous.id === request.expected_batch_id) return response(previous, null);
+    return response(current, previous?.id ?? null);
+  }
+  if (
+    now.getTime() < Date.parse(current.expiresAt) ||
+    state.recent.some((batch) => batch.id === request.request_id) ||
+    (request.expected_batch_id && request.expected_batch_id !== current.id)
+  ) {
+    return response(current, previous?.id ?? null);
+  }
+  return null;
+}
+
+export interface LobbyHeadRow {
+  id: string;
+  name: string;
+  description: string;
+  avatar_url: string;
+  tags: unknown;
+  creator: string;
+}
+
+/** Limit after the authoritative visibility check so a delisted head is backfilled
+ * from the same batch, without sending any tail descriptions or covers to the app. */
+export async function readLobbyHeadRows(
+  db: Pick<RecommendationDbClient, '$queryRaw'>,
+  orderedIds: string[]
+): Promise<LobbyHeadRow[]> {
+  if (!orderedIds.length) return [];
+  return db.$queryRaw<LobbyHeadRow[]>`
+    SELECT c.id, c.name, c.description, c.avatar_url, c.tags, c.creator
+    FROM jsonb_array_elements_text(${JSON.stringify(orderedIds)}::jsonb) WITH ORDINALITY AS b(id, position)
+    JOIN app_core.characters c ON c.id = b.id::uuid
+    WHERE NOT c.is_test AND app_core.can_discover_character(c.id)
+    ORDER BY b.position LIMIT ${LOBBY_ROTATION_HEAD_SIZE}
+  `;
 }
 
 export interface UpdateRecommendationOptions {

@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CharacterSummary, LobbyRecommendationData } from '@miniapp/shared';
 import {
+  canReuseLobbyBatch,
+  checkedLobbyReadFrame,
   createLobbyRequestId,
   lobbyEntryRequest,
   lobbyRecommendationCacheKey,
@@ -82,6 +84,48 @@ describe('private recommendation state', () => {
       action: 'resume',
       expected_batch_id: batchId,
     });
+  });
+
+  it('reuses only a valid batch and preserves the exact one when returning after expiry', () => {
+    expect(canReuseLobbyBatch(undefined)).toBe(false);
+    expect(canReuseLobbyBatch({ ...batch, enabled: false })).toBe(false);
+    expect(canReuseLobbyBatch(batch)).toBe(true);
+    expect(canReuseLobbyBatch(batch, 'different-batch')).toBe(false);
+    vi.advanceTimersByTime(24 * 60 * 60_000);
+    expect(canReuseLobbyBatch(batch)).toBe(false);
+    expect(canReuseLobbyBatch(batch, batchId)).toBe(true);
+  });
+
+  it('keeps only still-visible cards in an old reading frame while persisting the authoritative batch', () => {
+    const card = (id: string, name: string) => ({
+      id,
+      name,
+      description: '',
+      avatar_url: '',
+      personality_tags: [],
+      author_name: '',
+      is_featured: false,
+    });
+    const original = { ...batch, head_cards: [card(secondId, 'removed'), card(firstId, 'old')] };
+    const current = {
+      ...batch,
+      batch_id: '50000000-0000-4000-8000-000000000003',
+      character_ids: [firstId],
+      head_ids: [firstId],
+      head_cards: [card(firstId, 'fresh')],
+    };
+    const frame = checkedLobbyReadFrame(original, current);
+    rememberLobbyRecommendation('checked-frame', current);
+    expect(frame.order).toEqual([firstId]);
+    expect(frame.cards?.map((c) => c.name)).toEqual(['fresh']);
+    expect(frame.batch.batch_id).toBe(original.batch_id);
+    expect(readLobbyRecommendation('checked-frame')).toEqual(current);
+  });
+
+  it('starts with open when this account has never received a batch', () => {
+    markLobbyVisit('account-without-a-batch');
+    expect(lobbyEntryRequest('account-without-a-batch').action).toBe('open');
+    expect(lobbyEntryRequest('account-without-a-batch').expected_batch_id).toBeNull();
   });
 
   it('keeps stored order while refreshing details and removing delisted cards', () => {

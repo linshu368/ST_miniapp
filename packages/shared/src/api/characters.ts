@@ -1,19 +1,16 @@
 import { z } from 'zod';
 
 // 列表页用的精简结构
-export interface CharacterSummary {
-  id: string;
-  name: string;
-  /** 角色一句话氛围描述，卡片上截断展示 */
-  description: string;
-  avatar_url: string;
-  /** 性格/特质标签，3-5 个，卡片和详情页都展示 */
-  personality_tags: string[];
-  /** 创作者展示名 */
-  author_name: string;
-  /** 全局精选资格；与个人轮换后的展示位置无关，列表和详情使用相同口径。 */
-  is_featured: boolean;
-}
+export const CharacterSummarySchema = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  description: z.string(),
+  avatar_url: z.string(),
+  personality_tags: z.array(z.string()),
+  author_name: z.string(),
+  is_featured: z.boolean(),
+});
+export type CharacterSummary = z.infer<typeof CharacterSummarySchema>;
 
 // 详情页 / 对话页用的完整结构
 export interface CharacterDetail extends CharacterSummary {
@@ -44,6 +41,9 @@ export function parseLobbySort(value: unknown): LobbySort {
 // GET /api/characters 的查询参数
 export interface GetCharactersQuery {
   sort?: LobbySort;
+  /** Public recommended head; ids is an optional CSV to revalidate an existing head in place. */
+  limit?: 12;
+  ids?: string;
 }
 
 // GET /api/characters 的响应体

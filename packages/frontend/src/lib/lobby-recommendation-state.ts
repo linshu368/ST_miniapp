@@ -14,6 +14,8 @@ const MAX_CACHE_AGE_MS = 30 * 24 * 60 * 60_000;
 const NEW_BROWSE_AFTER_MS = 30 * 60_000;
 const batches = new Map<string, LobbyRecommendationData>();
 const visits = new Map<string, number>();
+const validatedAt = new Map<string, number>();
+const HEAD_RECHECK_MS = 30 * 60_000;
 
 export function lobbyViewerScope(): string {
   return String(parseTelegramUser(getRawInitData()).id ?? 'local-browser');
@@ -61,9 +63,14 @@ export function readLobbyRecommendation(scope: string): LobbyRecommendationData 
   }
 }
 
-/** Only IDs and timestamps are private here; public card details keep their shared cache. */
+/** Only a validation in this document can skip a background check for delisting or signed covers. */
+export function needsLobbyHeadCheck(scope: string, now = Date.now()): boolean {
+  return now - (validatedAt.get(scope) ?? -Infinity) >= HEAD_RECHECK_MS;
+}
+
 export function rememberLobbyRecommendation(scope: string, data: LobbyRecommendationData): void {
   batches.set(scope, data);
+  validatedAt.set(scope, Date.now());
   try {
     window.localStorage.setItem(
       lobbyRecommendationCacheKey(scope),
@@ -86,11 +93,44 @@ export function lobbyEntryRequest(
 ): LobbyRecommendationRequest {
   const previous = visits.get(scope);
   const resume =
-    Boolean(restoreBatchId) || (previous !== undefined && now - previous < NEW_BROWSE_AFTER_MS);
+    Boolean(restoreBatchId) ||
+    (Boolean(readLobbyRecommendation(scope)?.batch_id) &&
+      previous !== undefined &&
+      now - previous < NEW_BROWSE_AFTER_MS);
   return {
     action: resume ? 'resume' : 'open',
     request_id: createLobbyRequestId(),
     expected_batch_id: restoreBatchId ?? readLobbyRecommendation(scope)?.batch_id ?? null,
+  };
+}
+
+/** Decide once per visit: crossing expiry while reading must never reorder the current screen. */
+export function canReuseLobbyBatch(
+  batch: LobbyRecommendationData | undefined,
+  restoreBatchId?: string | null,
+  now = Date.now()
+): boolean {
+  if (!batch?.enabled || !batch.batch_id) return false;
+  // A long chat still returns to the exact batch from that document, including past its 24h expiry.
+  if (restoreBatchId) return batch.batch_id === restoreBatchId;
+  return Date.parse(batch.expires_at ?? '') > now;
+}
+
+/** Another tab may have advanced beyond a returnable server batch. Only this
+ * document keeps that old reading order; persist the intact new server response separately. */
+export function checkedLobbyReadFrame(
+  batch: LobbyRecommendationData,
+  current: LobbyRecommendationData
+) {
+  const visible = new Set(current.character_ids);
+  const renewed = new Map(current.head_cards?.map((card) => [card.id, card]));
+  return {
+    batch,
+    checkedAgainst: current.batch_id,
+    order: batch.character_ids.filter((id) => visible.has(id)),
+    cards: batch.head_cards
+      ?.filter((card) => visible.has(card.id))
+      .map((card) => renewed.get(card.id) ?? card),
   };
 }
 

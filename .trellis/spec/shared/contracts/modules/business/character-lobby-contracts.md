@@ -5,8 +5,8 @@ scope: shared
 category: business
 status: active
 owners: [shared]
-last_verified_task: .trellis/tasks/11-02-lobby-quality-rotation/
-last_verified_at: 2026-11-02
+last_verified_task: .trellis/tasks/11-04-lobby-fast-entry/
+last_verified_at: 2026-11-04
 ---
 
 # 角色、大厅与收藏契约
@@ -70,3 +70,7 @@ api/creator-analytics.ts 定义严格query与按section区分的runtime响应。
 ### 心愿契约（本地候选）
 
 api/character-wishes.ts 定义输入长度、固定public可见性、分页、匿名DTO及明确 supported 布尔 mutation。PublishCreatorCharacterSchema 接受可选 wish_id，SetCreatorVisibilitySchema 保持独立不接受此字段。GetCreatorCharacterData 可携带 wish_response linked/not_linked；客户端不得把not_linked当角色发布失败。通知新增character_wish_response及{wish_id,character_id} metadata，VIP consumer须缩窄旧metadata类型；跳转根据校验UUID构造内部 /wishes/:id，不信任任意action_path。
+
+## 推荐首屏摘要
+
+个人推荐请求的 `include_head_cards` 是可选字段，新客户端可获得 `head_cards`。未选择该字段的客户端可继续使用原顺序协议。搜索和目录读取沿用已有公开契约。

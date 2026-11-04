@@ -5,8 +5,8 @@ scope: database
 category: infrastructure
 status: active
 owners: [database]
-last_verified_task: .trellis/tasks/11-02-lobby-quality-rotation/
-last_verified_at: 2026-11-02
+last_verified_task: .trellis/tasks/11-04-lobby-fast-entry/
+last_verified_at: 2026-11-04
 ---
 
 # Schema、RLS 与迁移执行基建
@@ -78,3 +78,7 @@ last_verified_at: 2026-11-02
 ## 前几屏优质轮换（2026-11-02，本地未发布）
 
 20261102_lobby_quality_rotation.sql新增miniapp_features用户批次/曝光摘要，RLS+后端CRUD，用户/角色FK到app_core并级联删除；评分表增加qualified-v1与可信证据三列，不回填旧分。增量validator保留owner/有效ACL/grant option及罕见CHECK OID/convalidated，首次安装包装避免重放抹去后续校验。先迁移后Backend与合格评分刷新；应用发布后全量生效，兼容旧配置字段，不修改已执行迁移。故障回退保留数据；远端执行及部署状态以本任务发布记录为准。
+
+## 大厅评分成功记录
+
+`miniapp_features.lobby_ranking_refresh_state` 界定同一算法与参数的最近一次成功计算，仅评分任务读写。单行、无用户数据，RLS开启，客户端无权限。由 `20261104_lobby_ranking_refresh_state.sql` 新增；旧程序可忽略。
