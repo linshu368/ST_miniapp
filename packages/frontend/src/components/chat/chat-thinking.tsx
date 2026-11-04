@@ -7,7 +7,6 @@ import {
   thinkingDisclosurePhase,
   type ThinkingDisclosurePhase,
 } from '@/lib/chat-thinking';
-import { PH_MASK_TEXT_CLASS, PH_NO_CAPTURE_CLASS } from '@/lib/telemetry/masking';
 import { cn } from '@/lib/utils';
 
 export function ChatThinkingToggle({
@@ -64,9 +63,7 @@ export function ChatThinking({
   }, [open, text.length]);
 
   return (
-    <section
-      className={cn('relative mb-3', PH_MASK_TEXT_CLASS, PH_NO_CAPTURE_CLASS, 'sentry-mask')}
-    >
+    <section className="relative mb-3 sentry-mask">
       <button
         type="button"
         aria-expanded={open}

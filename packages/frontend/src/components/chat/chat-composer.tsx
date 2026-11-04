@@ -4,7 +4,6 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Loader2 } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
-import { PH_CHAT_REPLAY_VISIBLE_CLASS } from '@/lib/telemetry/masking';
 import { ChatReplyPreferences } from './chat-reply-preferences';
 import { ChatThinkingToggle } from './chat-thinking';
 import {
@@ -95,12 +94,7 @@ export function ChatComposer({
   };
 
   return (
-    <div
-      className={cn(
-        'flex min-h-0 max-h-full shrink flex-col bg-background px-2.5 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2',
-        PH_CHAT_REPLAY_VISIBLE_CLASS
-      )}
-    >
+    <div className="flex min-h-0 max-h-full shrink flex-col bg-background px-2.5 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2">
       <ChatReplyPreferences
         maxContentHeight={limits.preferences}
         detailsDefaultOpen={detailsDefaultOpen}

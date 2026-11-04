@@ -53,14 +53,12 @@ describe('payment open storage', () => {
         orderId: 'TG_1',
         payUrl: 'https://pay.example/checkout',
         returnTo: '/chat/c1',
-        replayContextId: '11111111-1111-4111-8111-111111111111',
         now: 1_000,
       })
     ).toBeUndefined();
     expect(readPaymentOpenUrl('TG_1', 1_000)).toBe('https://pay.example/checkout');
     expect(readPaymentOpenMeta('TG_1', 1_000)).toEqual({
       returnTo: '/chat/c1',
-      replayContextId: '11111111-1111-4111-8111-111111111111',
       createdAt: 1_000,
     });
     expect(paymentOrderPagePath('TG_1', { paymentStarted: true, returnTo: '/chat/c1' })).toBe(
@@ -82,7 +80,6 @@ describe('payment open storage', () => {
         orderId: 'TG_1',
         payUrl: 'not-a-url',
         returnTo: null,
-        replayContextId: null,
       })
     ).toBe('invalid_url');
     expect(hasPaymentOpenUrl('TG_1')).toBe(false);
@@ -93,7 +90,6 @@ describe('payment open storage', () => {
         orderId: 'TG_1',
         payUrl: 'https://pay.example/checkout',
         returnTo: null,
-        replayContextId: null,
       })
     ).toBe('storage_unavailable');
   });
@@ -103,7 +99,6 @@ describe('payment open storage', () => {
       orderId: 'TG_1',
       payUrl: 'https://pay.example/checkout',
       returnTo: '/chat/c1',
-      replayContextId: null,
       now: 1_000,
     });
     expect(readPaymentOpenUrl('TG_1', 1_000 + PAYMENT_OPEN_TTL_MS + 1)).toBeNull();
@@ -112,7 +107,6 @@ describe('payment open storage', () => {
       orderId: 'TG_1',
       payUrl: 'https://pay.example/checkout',
       returnTo: null,
-      replayContextId: null,
       now: 5_000,
     });
     clearPaymentOpenIfTerminal('TG_1', 'pending');
@@ -123,7 +117,6 @@ describe('payment open storage', () => {
       orderId: 'TG_1',
       payUrl: 'https://pay.example/checkout',
       returnTo: null,
-      replayContextId: null,
       now: 6_000,
     });
     clearPaymentOpen('TG_1');
@@ -138,7 +131,7 @@ describe('payment open storage', () => {
       },
       history: { state: null, replaceState },
     });
-    adoptPayUrlQueryIntoStorage('TG_1', 'https://pay.example/x', '/chat/c1', null);
+    adoptPayUrlQueryIntoStorage('TG_1', 'https://pay.example/x', '/chat/c1');
     expect(readPaymentOpenUrl('TG_1')).toBe('https://pay.example/x');
     expect(replaceState).toHaveBeenCalled();
     const nextUrl = replaceState.mock.calls[0]?.[2] as string;

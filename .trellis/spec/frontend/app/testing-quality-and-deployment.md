@@ -38,7 +38,7 @@ shared contract 改动追加 `pnpm --filter @miniapp/shared test` 和所有消�
 - Sentry 事件必须经 sanitize；禁止 initData、token、支付信息、聊天正文、完整 API body。`global-error` 提供 reset，但不暴露内部错误。
 - Grafana 工程出口仅允许白名单 measurement/event 与 app/公开 SDK 版本 meta。托管 intake 要求的随机 `X-Faro-Session-Id` 仅在 exporter 内存期复用、只入请求头，不持久化、不进入 body/事件属性/聚合标签、不绑定业务用户；不得因此恢复 SDK session/user/page/browser/trace meta 或自动 instrumentation/Replay。SDK 的 Web Storage 可用性探测不等于允许持久化该标识。
 - Faro 2.13 默认传输的 `Idempotency-Key` 与当前托管入口 CORS 不兼容；工程出口仅扩展公开 `send/promiseBuffer/getTransportBody`，复用 20 批/并发 1 的原队列，出队后单次 fetch 三秒超时，不重试、不读取响应正文、不改全局 fetch 或 SDK 私有字段。Node 202 不替代浏览器 OPTIONS/POST 和 Cloud 实收验收。
-- Session Replay 画面的聊天正文例外见 `api-dataflow-and-state.md`：PostHog 与现有 Sentry Replay 允许显示用户输入和模型回复；该例外不适用于 Sentry 事件、日志或自定义事件属性。Sentry Replay 现有 `maskAllText: false` 不改；采样策略见 `.trellis/tasks/10-21-sentry-ux-monitoring/design.md` §4（2026-10-21 起：普通 trace 与 Replay 会话降采样，慢请求/卡顿/报错事件全量上报并带 Replay，不再是 100% 采样）。当前 PostHog 为 Free 套餐，Session Replay 最长保留 **30 天**；不得按 60 天描述或验收。
+- Session Replay 画面的聊天正文例外见 `api-dataflow-and-state.md`：Sentry Replay 允许显示用户输入和模型回复；该例外不适用于 Sentry 事件、日志或自定义事件属性。Sentry Replay 现有 `maskAllText: false` 不改；采样策略见 `.trellis/tasks/10-21-sentry-ux-monitoring/design.md` §4（2026-10-21 起：普通 trace 与 Replay 会话降采样，慢请求/卡顿/报错事件全量上报并带 Replay，不再是 100% 采样）。
 - Markdown 始终 sanitize；外链/图片 URL 使用允许协议；不得用 `dangerouslySetInnerHTML` 绕过现有安全层。
 - 回复后处理至少覆盖 artifact 好坏隔离、旧 `NULL`/缺失版本原文退化、流式不挂载 renderer、终态 choice 可用和同步防双击。真实 Worker 安全/DOM 行为由 `@miniapp/reply-renderer` 测试承担；Telegram WebView 真机仍是发布门禁。
 
@@ -80,8 +80,7 @@ Sentry错误捕获、Metrics、脱敏与日志保持，BrowserTracing在首屏lo
 PR #525 已移除独立 `/drama-cdn-experiment` 页面及实验取址/上报。复用 `packages/ui-tests` 的 `@drama` 场景验证普通播放、切集、重试及旧入口 404；模拟验收不能替代 Telegram 真机性能，操作与恢复见 [说明](../../../../ops/drama-bunny-preview/README.md)。
 
 - Frontend 部署 Vercel，配置见根/包部署文件和 `next.config.mjs`；`NEXT_PUBLIC_*` 都是公开值，secret 不得使用此前缀。
-- Next.js 只把**静态成员访问** `process.env.NEXT_PUBLIC_*` 内联进客户端包。经 `const env = process.env` 再读属性时，Preview/生产 bundle 里永远是 `undefined`，PostHog adapter 会走 `missing_config` no-op。`readPostHogBrowserEnv` 必须静态读取 `NEXT_PUBLIC_POSTHOG_KEY/HOST`。
-- Preview 可注入 PostHog 公开变量做真机验收；Production 留空即关闭。打开生产采集是独立运维步骤，不随功能 PR 默认启用，也不改变现有 Sentry Replay。
+- Next.js 只把**静态成员访问** `process.env.NEXT_PUBLIC_*` 内联进客户端包；经 `const env = process.env` 再读属性时，Preview/生产 bundle 里永远是 `undefined`。
 - Preview/production 的 `NEXT_PUBLIC_API_URL` 必须指向匹配 Backend。Feature PR 按 `VERCEL_GIT_PULL_REQUEST_ID`（或自定义环境名 `pr-{n}`）1:1 指向 `https://stminiapp-pr-{n}.up.railway.app`，构建时覆盖 Preview 共享变量里上一轮 PR 的残留值；`dev` 分支指向 development，production 指向 production。构建采用 standalone 并转译 shared。环境变化同时验证 CORS、Telegram Bot WebApp URL、Sentry release/source maps。
 - 数据库 migration 和 Backend 部署与 Frontend 解耦；契约演进遵循兼容 producer-first 顺序。
 - 发布前 `build` 必须通过；发布后 smoke test 首页、health/API、聊天、支付回跳并监控错误率。回滚 Vercel deployment 时确认 Backend/契约仍向后兼容。

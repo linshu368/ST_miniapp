@@ -13,11 +13,6 @@ vi.mock('../../../lib/notifications.js', () => ({
 vi.mock('../../../lib/invite-rewards.js', () => ({
   checkInviteFirstPaidReward: vi.fn(async () => undefined),
 }));
-vi.mock('./PaymentOrderTelemetry.js', () => ({
-  observePaymentOrderSettled: vi.fn(),
-  observePaymentOrderFailed: vi.fn(),
-}));
-
 const NOW = Date.parse('2026-11-03T08:00:00.000Z');
 
 function order(
