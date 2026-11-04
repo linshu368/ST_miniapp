@@ -18,7 +18,7 @@ last_verified_at: 2026-11-03
 ## 当前状态
 
 - 网页：邮箱密码登录（Supabase Auth，经后端 `/api/admin/supabase` 代理），test/production 两套会话隔离。
-- CLI：只连生产；同一登录方式与代理；会话存 `~/.config/mijing-admin/session.json`（0600），刷新时用目录锁串行，避免并行进程触发 refresh token 轮换冲突；非交互环境拒绝登录。
+- CLI：只连生产；2026-11-04 起免密登录——后端 `POST /api/admin/cli/session` 对 `ADMIN_CLI_ALLOWED_EMAILS` 白名单邮箱用 service-role `generateLink` + 一次性 client `verifyOtp` 签发该账号本人的会话（白名单为空即关闭，进程内限流 10 分钟 20 次，日志只记 user_id）。知道白名单邮箱即可登录，是用户确认过的取舍。会话存 `~/.config/mijing-admin/session.json`（0600），刷新时用目录锁串行。
 - `admin-client` 的调用函数显式接收 `apiBaseUrl` 与 base64 文件内容，不读 Vite 环境变量、不依赖浏览器 API。
 
 ## 入口与调用者
@@ -44,7 +44,7 @@ last_verified_at: 2026-11-03
 ## 关键节点与约束
 
 - 写操作的唯一授权边界是数据库函数（角色、`can_access_prod`、CAS）；CLI 的 `--yes` 门禁只防误操作，不替代授权。
-- CLI 不使用 service-role，不提供个人访问令牌；密码只由本人在终端输入。
+- CLI 本身不持有 service-role；会话签发在后端完成，签发后所有写操作仍以该账号身份经数据库函数鉴权与审计。
 
 ## 验证方式
 

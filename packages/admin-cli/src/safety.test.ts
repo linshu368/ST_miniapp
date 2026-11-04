@@ -194,7 +194,7 @@ describe('草稿护栏与校验', () => {
 });
 
 describe('登录与本机会话', () => {
-  it('非交互环境拒绝登录，不读取密码', async () => {
+  it('非交互环境且没给邮箱时直接报用法错误，不请求后端', async () => {
     saveConfig({ apiUrl: 'https://api.example.invalid', anonKey: 'anon' });
     await expectCliError(command('login').run(ctx(), { positionals: {}, options: {} }), 'usage');
   });
