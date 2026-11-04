@@ -25,6 +25,31 @@ export const lobbyRecommendationKeys = {
   viewer: (scope: string) => ['lobby-recommendation', scope] as const,
 };
 
+const ENTRY_RECOMMENDATION_TIMEOUT_MS = 1_500;
+const MANUAL_RECOMMENDATION_TIMEOUT_MS = 5_000;
+
+function awaitWithSignal<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(signal.reason);
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => {
+      cleanup();
+      reject(signal.reason);
+    };
+    const cleanup = () => signal.removeEventListener('abort', onAbort);
+    signal.addEventListener('abort', onAbort, { once: true });
+    void promise.then(
+      (value) => {
+        cleanup();
+        resolve(value);
+      },
+      (error: unknown) => {
+        cleanup();
+        reject(error);
+      }
+    );
+  });
+}
+
 function hasHeadDetails(batch: LobbyRecommendationData, catalogue: GetCharactersData | undefined) {
   if (!batch.enabled || batch.head_ids.length === 0) return true;
   const available = new Set(catalogue?.characters.map((character) => character.id));
@@ -33,20 +58,21 @@ function hasHeadDetails(batch: LobbyRecommendationData, catalogue: GetCharacters
 
 async function requestRecommendation(
   body: LobbyRecommendationRequest,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  timeoutMs = MANUAL_RECOMMENDATION_TIMEOUT_MS
 ): Promise<LobbyRecommendationData> {
   const controller = new AbortController();
   const onAbort = () => controller.abort(signal?.reason);
   if (signal?.aborted) onAbort();
   else signal?.addEventListener('abort', onAbort, { once: true });
   // Includes queueing and body decoding, not only receipt of response headers.
-  const timeout = setTimeout(() => controller.abort(new Error('推荐读取超时')), 5000);
+  const timeout = setTimeout(() => controller.abort(new Error('推荐读取超时')), timeoutMs);
   try {
     const data = await apiClient<unknown>('/api/characters/recommendation', {
       method: 'POST',
       body: JSON.stringify(body),
       signal: controller.signal,
-      timeoutMs: 5000,
+      timeoutMs,
       queuePriority: 'critical',
     });
     if (controller.signal.aborted) throw controller.signal.reason;
@@ -108,10 +134,31 @@ export function useLobbyRecommendation({
   const query = useQuery({
     queryKey: key,
     queryFn: async ({ signal }) => {
-      const result = await prepareBatch(await requestRecommendation(entry, signal), signal);
-      if (!signal.aborted && lobbyViewerScope() === scope)
-        rememberLobbyRecommendation(scope, result);
-      return result;
+      const deadline = new AbortController();
+      const onAbort = () => deadline.abort(signal.reason);
+      if (signal.aborted) onAbort();
+      else signal.addEventListener('abort', onAbort, { once: true });
+      const timeout = setTimeout(
+        () => deadline.abort(new Error('推荐入场准备超时')),
+        ENTRY_RECOMMENDATION_TIMEOUT_MS
+      );
+      try {
+        // 目录缺资料时 prepareBatch 会触发共享目录校准；校准可以在后台继续，
+        // 但当前页面必须在统一入场预算内降级，不能再次被慢目录拖住。
+        const result = await awaitWithSignal(
+          prepareBatch(
+            await requestRecommendation(entry, deadline.signal, ENTRY_RECOMMENDATION_TIMEOUT_MS),
+            deadline.signal
+          ),
+          deadline.signal
+        );
+        if (!deadline.signal.aborted && lobbyViewerScope() === scope)
+          rememberLobbyRecommendation(scope, result);
+        return result;
+      } finally {
+        clearTimeout(timeout);
+        signal.removeEventListener('abort', onAbort);
+      }
     },
     initialData: () => cachedAtEntry,
     enabled,

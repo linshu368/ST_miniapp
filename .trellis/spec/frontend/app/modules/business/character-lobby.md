@@ -65,6 +65,8 @@ BottomNav 对角色入口只在明确 hover/focus/touch intent 时按当前发�
 
 Android/iOS 角色列表首批均限制为4张卡；Android 首图高优先级且平台识别后仅首图 eager，iOS 保留前2图 eager。水合兜底同样只挂4张，避免移动端缓存命中时先挂6张。已有缓存时优先等待首图结算，异常兜底刷新分别延后至 Android 3秒、iOS 2.5秒，避免后台校准请求竞争前2秒关键窗口；图片正常结算后仍立即允许刷新。生产关键视觉 P95 的2秒目标必须按发布 release、Android/iOS、cache/fetch 和 mount/spa 分组复验，低于100个有效终态只标低样本，不得以本地 fixture 宣称达标。
 
+当前路由的会话史、角色社交批量和最新角标还需等待首张关键图成功、失败、无图或移动端兜底超时；应用级 entry-phase 在 SPA 导航后可能已经放行，不能单独作为大厅首屏门槛。视觉兜底必须记录 `page.critical_visual` timeout 终态。推荐自动 open 的入场读取使用1.5秒有限预算并沿既有目录/保存批次降级，用户明确触发的换批与撤回仍保留5秒预算且不自动重试。
+
 ## 关联模块
 
 `backend.business.character-lobby`、`shared.business.character-lobby-contracts`。
@@ -74,6 +76,7 @@ Android/iOS 角色列表首批均限制为4张卡；Android 首图高优先级�
 - 2026-10-23：任务 `10-23-roleplay-module-navigation` 将发现、对话和收藏归入角色模块，补齐显式续聊/新建及有限来源返回；本地预览与真实环境验收边界分别记录。
 - 2026-11-03：任务 `大厅默认最新与移动端 P95 优化`（`.trellis/tasks/archive/2026-11/11-03-latest-lobby-mobile-p95/`）角色大厅新会话默认最新，并收紧 Android/iOS 首屏卡片与缓存重校准预算；commit：未记录。
 - 2026-11-04：任务 `Optimize five-route mobile navigation readiness`（`.trellis/tasks/11-03-five-route-navigation-p95/`）增加角色入口显式 intent query 预取和五路由统一 ready 观测；2 秒目标仍以发布后生产样本为准。
+- 2026-11-04：同任务二阶段将会话史、社交计数和角标后置到当前路由关键视觉结算，并为自动推荐读取增加快速降级；手动换批语义不变。
 
 ## 连续试卡体验（2026-10-23）
 

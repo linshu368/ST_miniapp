@@ -21,7 +21,7 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "本地实现与验证完成。短剧 intent 业务数据预取因五入口回归中与增量列表挂载竞态而撤回，仅保留 route chunk 预热；characters/favorites/wallet 继续使用显式 intent prefetch。Grafana dashboard JSON 与 LogQL 已校验，但当前 Grafana 连接只读，Cloud 实例尚未导入。2 秒为发布目标，需按 release、route、Android/iOS 在每组 N>=100 后验收，不能用本地结果宣称生产达标。",
+  "notes": "一期五路由与 2026-11-04 characters/profile 长尾二阶段实现、自动化和定向移动回归均已完成。短剧 intent 业务数据预取因五入口回归中与增量列表挂载竞态而撤回，仅保留 route chunk 预热；characters/favorites/wallet 继续使用显式 intent prefetch。Grafana dashboard JSON 与 LogQL 已校验，但当前 Grafana 连接只读，Cloud 实例尚未导入。2 秒为发布目标，需按 release、route、Android/iOS 在每组 N>=100 后验收，不能用本地结果宣称生产达标。",
   "meta": {
     "module_impact": {
       "schema_version": 1,
@@ -40,8 +40,16 @@
       "apis": [
         "GET /api/dramas",
         "GET /api/lobby-characters?sort=latest",
+        "POST /api/characters/recommendation",
+        "GET /api/characters/social",
+        "GET /api/conversations",
         "GET /api/favorites",
-        "GET /api/wallet/balance"
+        "GET /api/wallet/balance",
+        "GET /api/wallet/checkin",
+        "GET /api/vip/status",
+        "GET /api/payment/plans",
+        "GET /api/invite/entry-status",
+        "GET /api/community/entry"
       ],
       "android": {
         "page_p95_baseline_ms": 4717,
@@ -59,7 +67,7 @@
         "source": "Grafana Cloud Loki production engineering_v1；页面使用 st_page_navigation、outcome=ready、foreground，按 route/tg_platform 分组；接口使用 st_api_total、outcome=ok，按 api_route/tg_platform 分组。",
         "window": "2026-10-27 18:00 至 2026-11-03 18:00 Asia/Shanghai（7d）；发布后按 release 连续观察至少两个完整24h窗口，每个 route/platform 终态样本少于100时标记低样本并延长窗口。"
       },
-      "notes": "页面基线取五路由中最慢项：Android /profile 4716.73ms(N=656)，iOS /profile 2690.8ms(N=147)。分路由：/ Android 1069.85(N=111)、iOS 946.9(N=27低样本)；/dramas Android 1382.93(N=268)、iOS 637.15(N=92低样本)；/characters Android 4035.9(N=808)、iOS 2319.65(N=162)；/profile 如上；/creation 当前未登记，无可见样本，不补零。接口聚合基线：dramas Android 3494.03(N=552)、iOS 3857.6(N=137)；wallet Android 3704.15(N=2851)、iOS 2966.4(N=599)；other（包含 lobby-characters/favorites 且有其它请求混入）Android 2768.02(N=3790)、iOS 2166.2(N=669)。2秒是发布目标；本地验证不能宣称生产已达标。"
+      "notes": "页面基线取五路由中最慢项：Android /profile 4716.73ms(N=656)，iOS /profile 2690.8ms(N=147)。分路由：/ Android 1069.85(N=111)、iOS 946.9(N=27低样本)；/dramas Android 1382.93(N=268)、iOS 637.15(N=92低样本)；/characters Android 4035.9(N=808)、iOS 2319.65(N=162)；/profile 如上；/creation 当前未登记，无可见样本，不补零。接口聚合基线：dramas Android 3494.03(N=552)、iOS 3857.6(N=137)；wallet Android 3704.15(N=2851)、iOS 2966.4(N=599)；other（包含 lobby-characters/favorites、recommendation/social/conversations 与其它请求）Android 2768.02(N=3790)、iOS 2166.2(N=669)。除 wallet 外，本轮新增列出的端点没有可独立归因的历史序列，不补零；发布后按 api_route 补采。2秒是发布目标；本地验证不能宣称生产已达标。"
     }
   }
 }

@@ -4,3 +4,4 @@
 {"file":".trellis/tasks/11-03-five-route-navigation-p95/prd.md","reason":"逐项核对验收标准"}
 {"file":".trellis/tasks/11-03-five-route-navigation-p95/design.md","reason":"核对失败路径、容量和回滚"}
 {"file":".trellis/tasks/11-03-five-route-navigation-p95/research/baseline-and-reuse.md","reason":"核对无样本和低样本边界"}
+{"file":"docs/performance/profile-characters-long-tail-analysis-2026-11-04.md","reason":"核对加载根因、统计口径和发布后验证边界"}

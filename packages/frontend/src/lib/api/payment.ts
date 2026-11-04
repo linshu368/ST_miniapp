@@ -66,8 +66,8 @@ async function postCreateOrder(body: CreatePaymentOrderRequest): Promise<CreateP
 }
 
 async function fetchWalletBalance(signal?: AbortSignal): Promise<GetWalletBalanceData> {
-  // Profile 的可用态只依赖余额；使用并发调度器为导航保留的 critical 槽，
-  // 避免签到、VIP、社区等同屏普通读取先占满非关键槽后让主内容排队。
+  // Profile shell 不等待余额，但余额卡仍是首屏唯一立即读取的数据；保留 critical 槽，
+  // 避免签到、VIP、社区等次级读取先占满连接后让金额长时间停在占位态。
   return apiClient<GetWalletBalanceData>('/api/wallet/balance', {
     queuePriority: 'critical',
     signal,
@@ -166,14 +166,15 @@ export function useWalletSpendingQuery() {
   });
 }
 
-export function useDailyCheckinQuery() {
+export function useDailyCheckinQuery({ enabled = true }: { enabled?: boolean } = {}) {
   const query = useQuery<GetDailyCheckinData>({
     queryKey: paymentKeys.checkin(),
     queryFn: fetchDailyCheckin,
+    enabled,
     staleTime: 30_000,
   });
   const { refetch } = query;
-  useRefetchOnForeground(refetch);
+  useRefetchOnForeground(refetch, enabled);
   const canClaim = query.data?.checkin.can_claim;
   const nextClaimAt = query.data?.checkin.next_claim_at;
   useEffect(() => {
@@ -186,7 +187,7 @@ export function useDailyCheckinQuery() {
       Math.max(0, waitMs) + 100
     );
     return () => window.clearTimeout(timer);
-  }, [canClaim, nextClaimAt, refetch]);
+  }, [canClaim, enabled, nextClaimAt, refetch]);
   return query;
 }
 
