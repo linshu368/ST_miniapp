@@ -281,6 +281,26 @@ describe('apiClient GET transport retry', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it('retries a declared idempotent POST once, and never leaks the option into fetch', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ success: true, data: { ok: true } }), { status: 200 })
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const pending = apiClient<{ ok: boolean }>('/api/dramas/play', {
+      method: 'POST',
+      body: '{}',
+      idempotent: true,
+    });
+    await vi.advanceTimersByTimeAsync(600);
+    await expect(pending).resolves.toEqual({ ok: true });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[0]?.[1]).not.toHaveProperty('idempotent');
+  });
+
   it('includes queue wait, response headers and body parsing without leaking observation options into fetch', async () => {
     __resetRequestConcurrencyForTests(1);
     let release!: () => void;

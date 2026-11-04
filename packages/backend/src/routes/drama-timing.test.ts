@@ -110,11 +110,16 @@ beforeEach(() => {
 });
 afterEach(() => vi.restoreAllMocks());
 
-async function request(path = `/api/dramas/${ID}/play`) {
+async function request(path = `/api/dramas/${ID}/play`, payload?: object) {
   const app = Fastify({ logger: false, genReqId: (req) => String(req.headers['x-request-id']) });
   await app.register(dramaRoutes);
   try {
-    return await app.inject({ url: path, headers: { 'x-request-id': 'correlated-request' } });
+    return await app.inject({
+      method: payload ? 'POST' : 'GET',
+      url: path,
+      payload,
+      headers: { 'x-request-id': 'correlated-request' },
+    });
   } finally {
     await app.close();
   }
@@ -228,4 +233,48 @@ it('makes signing failure measurable without logging the signing exception', asy
     delivery: { group: 'stream', provider: 'unknown', reason: 'unavailable' },
   });
   expect(JSON.stringify(mocks.info.mock.calls)).not.toContain('unit signing failure');
+});
+
+describe('POST /api/dramas/play（固定地址，使 CORS 预检可缓存）', () => {
+  const post = (payload: object) => request('/api/dramas/play', payload);
+
+  it('returns the same playback as GET, no-store, and is measured under its own route', async () => {
+    const response = await post({ drama_id: ID, video_id: VIDEO });
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['cache-control']).toBe('private, no-store');
+    expect(response.json().data.playback).toMatchObject({ video_id: VIDEO, playable: true });
+    expect(logged()).toMatchObject({
+      route: '/api/dramas/play',
+      db_read_ms: 20,
+      sign_ms: 50,
+      outcome: 'ok',
+    });
+    expect(JSON.stringify(mocks.info.mock.calls)).not.toContain('private-object-path');
+  });
+
+  it('keeps the HLS capability declaration in the body', async () => {
+    mocks.stream = true;
+    const hls = await post({ drama_id: ID, format: 'hls' });
+    expect(hls.json().data.playback).toMatchObject({ format: 'hls' });
+    expect(mocks.sign).not.toHaveBeenCalled();
+    const fallback = await post({ drama_id: ID, format: 'hls', fallback: 'mp4' });
+    expect(fallback.json().data.playback.delivery).toMatchObject({ reason: 'fallback' });
+  });
+
+  it('rejects malformed bodies and IDs before touching the database', async () => {
+    for (const body of [
+      { drama_id: 'invalid' },
+      { drama_id: ID, video_id: 'invalid' },
+      { drama_id: ID, extra: true },
+      { video_id: VIDEO },
+    ]) {
+      expect((await post(body)).statusCode).toBe(400);
+    }
+    expect(logged().db_read_ms).toBeUndefined();
+  });
+
+  it('video that does not belong to the drama is 404', async () => {
+    const other = '33333333-3333-4333-8333-333333333333';
+    expect((await post({ drama_id: ID, video_id: other })).statusCode).toBe(404);
+  });
 });
