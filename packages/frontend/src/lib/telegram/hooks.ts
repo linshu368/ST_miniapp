@@ -4,7 +4,7 @@
 // 规则：业务组件优先从这里 import，不要直接 import '@telegram-apps/sdk-react'。
 // 原因：未来迁移独立 web 时只需替换此文件，业务代码不动。
 
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import {
   backButton,
   downloadFile,
@@ -58,31 +58,56 @@ export function suspendTelegramVerticalSwipes(): () => void {
   }
 }
 
-/** 挂载 Telegram 原生返回键，点击时触发 onClick。
- *  非 TMA 环境下静默跳过（开发期浏览器不生效）。
- *  规则：对话页、详情页等"推开一扇门"之后的场景应该挂这个 hook，
- *  而不是在 UI 上画一个返回箭头——Telegram 原生返回键是这个场景的正解。 */
-export function useTelegramBackButton(onClick: () => void): void {
+// One native press must not run both the top dialog and its host page. With no dialog,
+// preserve the existing SDK behavior of notifying every registered page listener.
+type BackListener = { layer: 'page' | 'dialog'; run: () => void };
+const backListeners = new Set<BackListener>();
+let releaseNativeBack: (() => void) | undefined;
+
+function dispatchNativeBack() {
+  const active = [...backListeners];
+  const dialog = active.filter((listener) => listener.layer === 'dialog').at(-1);
+  if (dialog) dialog.run();
+  else active.forEach((listener) => listener.run());
+}
+
+/** A null handler releases this owner's native back button subscription. */
+export function useTelegramBackButton(
+  onClick: (() => void) | null,
+  layer: BackListener['layer'] = 'page'
+): void {
+  const callback = useRef(onClick);
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    callback.current = onClick;
+  }, [onClick]);
+  const enabled = onClick !== null;
+  useEffect(() => {
+    if (!enabled || typeof window === 'undefined') return;
+    const listener = { layer, run: () => callback.current?.() };
     try {
       if (!isTMA()) return;
-      if (!backButton.isMounted()) backButton.mount();
-      backButton.show();
-      const off = backButton.onClick(onClick);
+      if (!backListeners.size) {
+        if (!backButton.isMounted()) backButton.mount();
+        backButton.show();
+        releaseNativeBack = backButton.onClick(dispatchNativeBack);
+      }
+      backListeners.add(listener);
       return () => {
+        backListeners.delete(listener);
+        if (backListeners.size) return;
         try {
-          off();
+          releaseNativeBack?.();
           backButton.hide();
         } catch {
-          // 组件卸载期 SDK 可能已清理，忽略
+          // The client can disconnect while the final owner is leaving.
+        } finally {
+          releaseNativeBack = undefined;
         }
       };
     } catch {
-      // 非 TMA 或旧版客户端，静默
-      return;
+      // Ordinary browsers and old Telegram clients use the page's own controls.
     }
-  }, [onClick]);
+  }, [enabled, layer]);
 }
 
 /**

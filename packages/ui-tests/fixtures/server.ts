@@ -13,6 +13,7 @@ import {
   type CharacterWishCard,
   type NotificationItem,
   LobbyRecommendationRequestSchema,
+  PublicLobbyHeadIdsSchema,
   LobbyRecommendationExposuresSchema,
   type LobbyRecommendationData,
   CreatorAnalyticsQuerySchema,
@@ -322,11 +323,33 @@ export function createPreviewServer(apiPort: number, appPort: number) {
     };
   }
 
-  function reset(next: Scenario) {
+  function visibleLobbyCards() {
+    return data.characters
+      .filter((card) => {
+        const creation = creatorCards.get(card.id);
+        return (
+          !creation ||
+          (creation.state === 'ready' &&
+            creation.visibility === 'public' &&
+            creation.approved_revision !== null)
+        );
+      })
+      .map(({ id, name, description, avatar_url, personality_tags, author_name, is_featured }) => ({
+        id,
+        name,
+        description,
+        avatar_url,
+        personality_tags,
+        author_name,
+        is_featured,
+      }));
+  }
+
+  function reset(next: Scenario, lobbyCardCount = 36) {
     epoch += 1;
     for (const stream of streams) stream.end();
     streams.clear();
-    data = makeData(api, next.startsWith('lobby-rotation') ? 36 : 18);
+    data = makeData(api, next.startsWith('lobby-rotation') ? lobbyCardCount : 18);
     lobbyCurrent = null;
     lobbyPrevious = null;
     lobbyBatchCount = 0;
@@ -678,7 +701,15 @@ export function createPreviewServer(apiPort: number, appPort: number) {
           fail(res, 400, 'invalid_scenario', '请选择已定义场景');
           return;
         }
-        reset(requested);
+        const count =
+          body && typeof body === 'object' && 'lobby_card_count' in body
+            ? body.lobby_card_count
+            : 36;
+        if (typeof count !== 'number' || !Number.isInteger(count) || count < 12 || count > 1000) {
+          fail(res, 400, 'invalid_fixture_size', '角色数量应为12至1000之间的整数');
+          return;
+        }
+        reset(requested, count);
         json(res, 200, { scenario });
         return;
       }
@@ -1498,13 +1529,19 @@ export function createPreviewServer(apiPort: number, appPort: number) {
           fail(res, 503, 'SERVICE_UNAVAILABLE', '这次没换成功，请再试一下');
           return;
         }
-        const available = new Set(data.characters.map((card) => card.id));
-        const respond = (batch: LobbyRecommendationData) =>
+        const available = new Map(visibleLobbyCards().map((card) => [card.id, card]));
+        const respond = (batch: LobbyRecommendationData) => {
+          const character_ids = batch.character_ids.filter((id) => available.has(id));
+          const head_ids = character_ids.slice(0, 12);
           ok(res, {
             ...batch,
-            character_ids: batch.character_ids.filter((id) => available.has(id)),
-            head_ids: batch.character_ids.filter((id) => available.has(id)).slice(0, 12),
+            character_ids,
+            head_ids,
+            ...(input.include_head_cards
+              ? { head_cards: head_ids.map((id) => available.get(id)!) }
+              : {}),
           });
+        };
         if (
           input.action === 'resume' &&
           lobbyPrevious &&
@@ -1596,18 +1633,21 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         return;
       }
       if (path === '/api/characters' && method === 'GET') {
-        const characters = data.characters.filter((card) => {
-          const creation = creatorCards.get(card.id);
-          return (
-            !creation ||
-            (creation.state === 'ready' &&
-              creation.visibility === 'public' &&
-              creation.approved_revision !== null)
-          );
-        });
-        ok(res, {
-          characters: url.searchParams.get('sort') === 'latest' ? characters.reverse() : characters,
-        });
+        const cards = visibleLobbyCards();
+        const sort = url.searchParams.get('sort');
+        const head = sort === 'recommended' && url.searchParams.get('limit') === '12';
+        if (url.searchParams.has('ids')) {
+          const ids = PublicLobbyHeadIdsSchema.safeParse(url.searchParams.get('ids'));
+          if (!head || url.searchParams.getAll('ids').length !== 1 || !ids.success) {
+            fail(res, 400, 'BAD_REQUEST', '首屏角色校准请求无效');
+            return;
+          }
+          const byId = new Map(cards.map((card) => [card.id, card]));
+          ok(res, { characters: ids.data.flatMap((id) => byId.get(id) ?? []) });
+          return;
+        }
+        if (sort === 'latest') cards.reverse();
+        ok(res, { characters: head ? cards.slice(0, 12) : cards });
         return;
       }
       const publicCreatorPath = /^\/api\/creators\/([^/]+)\/characters$/.exec(path);

@@ -226,6 +226,31 @@ test('lobby fixture preserves 24h batches, lost-response idempotency and exposur
   const endpoint = '/api/characters/recommendation';
   const first = (await (await post(endpoint, { action: 'open', request_id: firstId })).json()).data;
   assert.equal(first.character_ids.length, 36);
+  assert.equal(first.head_cards, undefined);
+  const compact = (
+    await (
+      await post(endpoint, { action: 'open', request_id: firstId, include_head_cards: true })
+    ).json()
+  ).data;
+  assert.deepEqual(
+    compact.head_cards.map((card: { id: string }) => card.id),
+    first.head_ids
+  );
+  const publicHead = (await (await fetch(api + '/api/characters?sort=recommended&limit=12')).json())
+    .data.characters;
+  assert.equal(publicHead.length, 12);
+  assert.equal('greeting' in publicHead[0], false);
+  const checkIds = `${publicHead[3].id},${publicHead[0].id}`;
+  const checked = await fetch(api + '/api/characters?sort=recommended&limit=12&ids=' + checkIds);
+  assert.deepEqual(
+    (await checked.json()).data.characters.map((c: { id: string }) => c.id),
+    checkIds.split(',')
+  );
+  assert.equal(
+    (await fetch(api + '/api/characters?sort=recommended&limit=12&ids=invalid')).status,
+    400
+  );
+
   assert.equal(Date.parse(first.expires_at) - Date.parse(first.generated_at), 86400_000);
   const refresh = { action: 'refresh', request_id: nextId, expected_batch_id: firstId };
   assert.equal((await post(endpoint, refresh)).status, 503);
