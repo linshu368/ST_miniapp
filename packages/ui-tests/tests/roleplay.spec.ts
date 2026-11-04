@@ -271,7 +271,7 @@ test('@navigation @layout 五入口跨模块保持统一，末项与操作条不
   // 保留每项断言原超时，只给串行冷编译留足总预算。
   test.setTimeout(180_000);
   const nav = page.getByRole('navigation', { name: '主导航', exact: true });
-  const labels = ['角色', '创作', '首页', 'AI短剧', '我的'];
+  const labels = ['放映', '剧场', '秘境', '创作', '我的'];
   let baseline:
     | { background: string; radius: string; shadow: string; widths: number[] }
     | undefined;
@@ -286,7 +286,7 @@ test('@navigation @layout 五入口跨模块保持统一，末项与操作条不
     for (const [index, label] of labels.entries()) {
       await expect(nav.getByRole('link').nth(index)).toHaveAttribute('aria-label', label);
     }
-    await expect(nav.getByRole('link', { name: '首页', exact: true }).locator('svg')).toBeVisible();
+    await expect(nav.getByRole('link', { name: '秘境', exact: true }).locator('svg')).toBeVisible();
     const metrics = await nav.evaluate((node) => {
       const box = node.getBoundingClientRect();
       const style = getComputedStyle(node);
@@ -366,7 +366,7 @@ test('@navigation @layout 五入口跨模块保持统一，末项与操作条不
   await expect(
     page.getByRole('button', { name: '查看 林间旅人 的详情', exact: true })
   ).toBeVisible();
-  await checkNav('角色');
+  await checkNav('秘境');
   await preview.screenshot('统一五入口角色页', { fullPage: false });
   const lastCharacter = page.getByRole('button', { name: '查看 故事旅人 18 的详情', exact: true });
   // 列表按平台分批挂载；持续滚动哨兵，模拟用户浏览到末项，而不是假定末项已在 DOM。
@@ -379,19 +379,19 @@ test('@navigation @layout 五入口跨模块保持统一，末项与操作条不
   await conversationTab.scrollIntoViewIfNeeded();
   await conversationTab.click();
   await expect(page).toHaveURL(/\/chats$/);
-  await checkNav('角色');
-  await nav.getByRole('link', { name: 'AI短剧', exact: true }).click();
+  await checkNav('秘境');
+  await nav.getByRole('link', { name: '剧场', exact: true }).click();
   await expect(page).toHaveURL(/\/dramas$/);
-  await checkNav('AI短剧');
+  await checkNav('剧场');
   const lastDrama = page.getByRole('link', { name: '观看 时光旅人', exact: true });
   await revealScrollableListTail(page.getByLabel('短剧列表', { exact: true }), lastDrama);
   await lastDrama.scrollIntoViewIfNeeded();
   await aboveNav(lastDrama);
-  await nav.getByRole('link', { name: '首页', exact: true }).click();
-  await expect(page).toHaveURL(`${previewAppUrl}/`);
+  await nav.getByRole('link', { name: '放映', exact: true }).click();
+  await expect(page).toHaveURL(`${previewAppUrl}/watch`);
   await expect(page.locator('video')).toHaveCount(1);
   await page.locator('video').evaluate((node: HTMLVideoElement) => node.pause());
-  await checkNav('首页');
+  await checkNav('放映');
   await page.locator('[data-player-toggle-controls]').click({ position: { x: 80, y: 180 } });
   await expect(nav).toHaveCount(0);
   await expect
@@ -403,7 +403,7 @@ test('@navigation @layout 五入口跨模块保持统一，末项与操作条不
     .toBe(0);
   await page.goBack();
   await expect(page).toHaveURL(/\/dramas$/);
-  await checkNav('AI短剧');
+  await checkNav('剧场');
   await nav.getByRole('link', { name: '创作', exact: true }).click();
   await expect(page).toHaveURL(/\/creation$/);
   await checkNav('创作');
@@ -473,7 +473,7 @@ test('@navigation @layout 五入口跨模块保持统一，末项与操作条不
   await expect(nav).toHaveCount(0);
   await expectMobileLayout(page);
   await page.goto('/characters');
-  await checkNav('角色');
+  await checkNav('秘境');
 });
 
 test('@roleplay @character-social @layout 点赞收藏独立，列表详情和聊天同步', async ({
@@ -725,7 +725,7 @@ test('@startup 后台归因模块下载失败仍可浏览与跳页，邀请参�
   await expect.poll(() => deferredRequests).toBeGreaterThan(0);
   await page
     .getByRole('navigation', { name: '主导航' })
-    .getByRole('link', { name: 'AI短剧', exact: true })
+    .getByRole('link', { name: '剧场', exact: true })
     .click();
   await expect(page).toHaveURL(/\/dramas$/);
   await expect(page.getByRole('button', { name: '搜索短剧', exact: true })).toBeVisible();
@@ -737,13 +737,13 @@ test('@startup 后台归因模块下载失败仍可浏览与跳页，邀请参�
 test.describe('初始 HTML 框架', () => {
   test.use({ javaScriptEnabled: false });
 
-  for (const path of ['/', '/characters', '/dramas']) {
+  for (const path of ['/watch', '/characters', '/dramas']) {
     test(`@startup @layout ${path} 无 JS 时仍有框架和主导航`, async ({ page, preview }) => {
       await page.goto(path);
       await expect(page.locator('[data-startup-shell]')).toBeVisible();
       await expect(page.getByRole('navigation', { name: '主导航' })).toBeVisible();
-      await expect(page.getByRole('link', { name: 'AI短剧', exact: true })).toBeVisible();
-      if (path === '/') {
+      await expect(page.getByRole('link', { name: '剧场', exact: true })).toBeVisible();
+      if (path === '/watch') {
         await expect(page.getByText('加载中', { exact: true })).toHaveCount(0);
       }
       if (path === '/dramas') {
@@ -753,7 +753,9 @@ test.describe('初始 HTML 框架', () => {
       }
       expect((await preview.state()).requests).toEqual([]);
       await expectMobileLayout(page);
-      await preview.screenshot(`初始框架${path === '/' ? '大厅' : '短剧'}`);
+      await preview.screenshot(
+        `初始框架${path === '/characters' ? '大厅' : path === '/watch' ? '放映' : '短剧'}`
+      );
     });
   }
 });
@@ -784,7 +786,7 @@ test('@startup 原生 ready 不等待 Next 启动 JS，恢复下载后仍能进�
     await route.continue();
   });
   try {
-    await page.goto('/#tgWebAppVersion=9.6&tgWebAppPlatform=android', { waitUntil: 'commit' });
+    await page.goto('/watch#tgWebAppVersion=9.6&tgWebAppPlatform=android', { waitUntil: 'commit' });
     await expect(page.getByRole('heading', { name: '推荐', exact: true })).toBeVisible();
     await expect(page.getByRole('navigation', { name: '主导航' })).toBeVisible();
     await expect
@@ -802,14 +804,16 @@ test('@startup 原生 ready 不等待 Next 启动 JS，恢复下载后仍能进�
       )
     ).toBe(1);
     await preview.screenshot('启动JS阻塞时框架已展示');
-    await page.getByRole('link', { name: 'AI短剧', exact: true }).click();
-    await expect(page).toHaveURL(`${previewAppUrl}/#tgWebAppVersion=9.6&tgWebAppPlatform=android`);
+    await page.getByRole('link', { name: '剧场', exact: true }).click();
+    await expect(page).toHaveURL(
+      `${previewAppUrl}/watch#tgWebAppVersion=9.6&tgWebAppPlatform=android`
+    );
   } finally {
     release();
   }
   // Normal browser API fixtures do not provide Telegram's full native SDK. Remove
   // launch metadata after the isolated bridge assertion, then exercise normal content.
-  await page.evaluate(() => history.replaceState(history.state, '', '/'));
+  await page.evaluate(() => history.replaceState(history.state, '', '/watch'));
   await expect
     .poll(async () => (await preview.state()).requests.some((r) => r.path === '/api/dramas'))
     .toBe(true);
@@ -818,9 +822,24 @@ test('@startup 原生 ready 不等待 Next 启动 JS，恢复下载后仍能进�
       () => (window as Window & { __readyNotifications?: number }).__readyNotifications
     )
   ).toBe(1);
-  await page.getByRole('link', { name: 'AI短剧', exact: true }).click();
+  await page.getByRole('link', { name: '剧场', exact: true }).click();
   await expect(page).toHaveURL(`${previewAppUrl}/dramas`);
   await expect(page.getByRole('button', { name: '搜索短剧', exact: true })).toBeVisible();
+});
+
+test('@startup @navigation 冷启动 / 落到角色大厅，Telegram 启动参数随跳转保留', async ({
+  page,
+}) => {
+  // 拦住启动 JS，避免 SDK 读取后清理 hash，只验证服务端跳转本身。
+  await page.route('**/_next/**/*.js*', (route) => route.abort());
+  const launch = '?tgWebAppStartParam=inv_demo#tgWebAppVersion=9.6&tgWebAppPlatform=android';
+  await page.goto(`/${launch}`, { waitUntil: 'commit' });
+  await expect(page).toHaveURL(`${previewAppUrl}/characters${launch}`);
+  const nav = page.getByRole('navigation', { name: '主导航' });
+  await expect(nav.getByRole('link', { name: '秘境', exact: true })).toHaveAttribute(
+    'aria-current',
+    'page'
+  );
 });
 
 // These scenarios reuse the real gallery/hooks and local HTTP protocol, not a parallel page.

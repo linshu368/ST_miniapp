@@ -92,7 +92,7 @@
         {
           "refId": "A",
           "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
-          "expr": "quantile_over_time(0.95, ${browser_selector:raw} |= \"st_page_navigation\" | logfmt | kind=\"measurement\" | type=\"st_page_navigation\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"engineering_v1\" | context_outcome=\"ready\" | context_visibility=\"foreground\" | context_route=~\"^(/|/dramas|/characters|/creation|/profile)$\" | context_tg_platform=~\"^($tg_platform)$\" | unwrap duration_ms | __error__=\"\" [$__range]) by (context_route, context_tg_platform)",
+          "expr": "quantile_over_time(0.95, ${browser_selector:raw} |= \"st_page_navigation\" | logfmt | kind=\"measurement\" | type=\"st_page_navigation\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"engineering_v1\" | context_outcome=\"ready\" | context_visibility=\"foreground\" | context_route=~\"^(/watch|/|/dramas|/characters|/creation|/profile)$\" | context_tg_platform=~\"^($tg_platform)$\" | unwrap duration_ms | __error__=\"\" [$__range]) by (context_route, context_tg_platform)",
           "legendFormat": "{{context_route}} · {{context_tg_platform}}",
           "queryType": "instant"
         }
@@ -131,7 +131,7 @@
         {
           "refId": "A",
           "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
-          "expr": "sum by (context_route, context_tg_platform) (count_over_time(${browser_selector:raw} |= \"st_page_navigation\" | logfmt | kind=\"measurement\" | type=\"st_page_navigation\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"engineering_v1\" | context_outcome=\"ready\" | context_visibility=\"foreground\" | context_route=~\"^(/|/dramas|/characters|/creation|/profile)$\" | context_tg_platform=~\"^($tg_platform)$\" | duration_ms <= 2000 [$__range])) / sum by (context_route, context_tg_platform) (count_over_time(${browser_selector:raw} |= \"st_page_navigation\" | logfmt | kind=\"measurement\" | type=\"st_page_navigation\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"engineering_v1\" | context_outcome=\"ready\" | context_visibility=\"foreground\" | context_route=~\"^(/|/dramas|/characters|/creation|/profile)$\" | context_tg_platform=~\"^($tg_platform)$\" [$__range]))",
+          "expr": "sum by (context_route, context_tg_platform) (count_over_time(${browser_selector:raw} |= \"st_page_navigation\" | logfmt | kind=\"measurement\" | type=\"st_page_navigation\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"engineering_v1\" | context_outcome=\"ready\" | context_visibility=\"foreground\" | context_route=~\"^(/watch|/|/dramas|/characters|/creation|/profile)$\" | context_tg_platform=~\"^($tg_platform)$\" | duration_ms <= 2000 [$__range])) / sum by (context_route, context_tg_platform) (count_over_time(${browser_selector:raw} |= \"st_page_navigation\" | logfmt | kind=\"measurement\" | type=\"st_page_navigation\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"engineering_v1\" | context_outcome=\"ready\" | context_visibility=\"foreground\" | context_route=~\"^(/watch|/|/dramas|/characters|/creation|/profile)$\" | context_tg_platform=~\"^($tg_platform)$\" [$__range]))",
           "legendFormat": "{{context_route}} · {{context_tg_platform}}",
           "queryType": "instant"
         }
@@ -169,7 +169,7 @@
         {
           "refId": "A",
           "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
-          "expr": "quantile_over_time(0.95, ${browser_selector:raw} |= \"st_page_navigation\" | logfmt | kind=\"measurement\" | type=\"st_page_navigation\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"engineering_v1\" | context_outcome=\"ready\" | context_visibility=\"foreground\" | context_route=~\"^(/|/dramas|/characters|/creation|/profile)$\" | context_tg_platform=~\"^($tg_platform)$\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_route, context_tg_platform)",
+          "expr": "quantile_over_time(0.95, ${browser_selector:raw} |= \"st_page_navigation\" | logfmt | kind=\"measurement\" | type=\"st_page_navigation\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"engineering_v1\" | context_outcome=\"ready\" | context_visibility=\"foreground\" | context_route=~\"^(/watch|/|/dramas|/characters|/creation|/profile)$\" | context_tg_platform=~\"^($tg_platform)$\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_route, context_tg_platform)",
           "legendFormat": "{{context_route}} · {{context_tg_platform}}",
           "queryType": "range"
         }
@@ -204,7 +204,7 @@
         {
           "refId": "A",
           "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
-          "expr": "sum by (context_route, context_tg_platform) (count_over_time(${browser_selector:raw} |= \"st_page_navigation\" | logfmt | kind=\"measurement\" | type=\"st_page_navigation\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"engineering_v1\" | context_outcome=\"ready\" | context_visibility=\"foreground\" | context_route=~\"^(/|/dramas|/characters|/creation|/profile)$\" | context_tg_platform=~\"^($tg_platform)$\" [$__range]))",
+          "expr": "sum by (context_route, context_tg_platform) (count_over_time(${browser_selector:raw} |= \"st_page_navigation\" | logfmt | kind=\"measurement\" | type=\"st_page_navigation\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"engineering_v1\" | context_outcome=\"ready\" | context_visibility=\"foreground\" | context_route=~\"^(/watch|/|/dramas|/characters|/creation|/profile)$\" | context_tg_platform=~\"^($tg_platform)$\" [$__range]))",
           "legendFormat": "{{context_route}} · {{context_tg_platform}}",
           "queryType": "instant"
         }
@@ -236,14 +236,14 @@
         {
           "refId": "A",
           "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
-          "expr": "sum by (event_data_route, event_data_tg_platform, event_data_outcome) (count_over_time(${browser_selector:raw} |= \"st_page_terminal\" | logfmt | kind=\"event\" | event_name=\"st_page_terminal\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"engineering_v1\" | event_data_route=~\"^(/|/dramas|/characters|/creation|/profile)$\" | event_data_tg_platform=~\"^($tg_platform)$\" [$__auto]))",
+          "expr": "sum by (event_data_route, event_data_tg_platform, event_data_outcome) (count_over_time(${browser_selector:raw} |= \"st_page_terminal\" | logfmt | kind=\"event\" | event_name=\"st_page_terminal\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"engineering_v1\" | event_data_route=~\"^(/watch|/|/dramas|/characters|/creation|/profile)$\" | event_data_tg_platform=~\"^($tg_platform)$\" [$__auto]))",
           "legendFormat": "terminal · {{event_data_route}} · {{event_data_tg_platform}} · {{event_data_outcome}}",
           "queryType": "range"
         },
         {
           "refId": "B",
           "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
-          "expr": "sum by (event_data_route, event_data_tg_platform) (count_over_time(${browser_selector:raw} |= \"st_page_stall\" | logfmt | kind=\"event\" | event_name=\"st_page_stall\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"engineering_v1\" | event_data_route=~\"^(/|/dramas|/characters|/creation|/profile)$\" | event_data_tg_platform=~\"^($tg_platform)$\" [$__auto]))",
+          "expr": "sum by (event_data_route, event_data_tg_platform) (count_over_time(${browser_selector:raw} |= \"st_page_stall\" | logfmt | kind=\"event\" | event_name=\"st_page_stall\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"engineering_v1\" | event_data_route=~\"^(/watch|/|/dramas|/characters|/creation|/profile)$\" | event_data_tg_platform=~\"^($tg_platform)$\" [$__auto]))",
           "legendFormat": "stall · {{event_data_route}} · {{event_data_tg_platform}}",
           "queryType": "range"
         }

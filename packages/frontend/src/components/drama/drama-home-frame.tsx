@@ -17,7 +17,7 @@ export function DramaHomeFrame({
 }) {
   return (
     <main
-      aria-label="短剧首页"
+      aria-label="短剧放映"
       className="fixed inset-0 z-30 overflow-hidden bg-black text-[#eee7e2]"
     >
       <div className="relative mx-auto h-full max-w-lg">

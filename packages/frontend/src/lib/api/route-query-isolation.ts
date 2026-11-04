@@ -11,7 +11,7 @@ const DOMAIN_QUERY_KEYS: Record<RouteQueryDomain, readonly QueryKey[]> = {
 };
 
 function getRouteQueryDomain(pathname: string | null): RouteQueryDomain | null {
-  if (pathname === '/' || pathname === '/dramas' || pathname?.startsWith('/dramas/')) {
+  if (pathname === '/watch' || pathname === '/dramas' || pathname?.startsWith('/dramas/')) {
     return 'drama';
   }
   if (pathname === '/create' || pathname?.startsWith('/create/')) return 'image-plaza';

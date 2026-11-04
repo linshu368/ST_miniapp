@@ -8,7 +8,7 @@ const LONG_TOKEN = /^[0-9a-z_-]{20,}$/i;
 
 /** 已登记页面才进入工程聚合；未知短路径也可能含用户名，不能直接当标签。 */
 export const ENGINEERING_PAGE_ROUTES = new Set([
-  '/',
+  '/watch',
   '/characters',
   '/chats',
   '/chat/:id',
