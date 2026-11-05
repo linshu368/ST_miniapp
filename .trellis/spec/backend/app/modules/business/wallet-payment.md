@@ -82,3 +82,9 @@ send/regenerate 携带可选 `first_token_measurement`；后端通过既有 begi
 ## 支付供应商替换为 Vexutopia（2026-11-03）
 
 子千易整体删除（网关、表单回调、诊断脚本、配置）。`infrastructure/payment/VexutopiaPaymentGateway.ts` 负责建单（`Idempotency-Key = order-<本地订单号>`，仅超时/网络/限流/上游 503 重试一次）、单笔查单、批量 lookup 与 Webhook HMAC 验签。建单成功后先写 `provider_transaction_id`，写不进去就标 failed、不交出收银台。入账来源：`webhook`（验签 + `mijing_env` 本环境过滤）、`query`（轮询/回跳单笔查单）、`cron`（`PaymentReconciliation` 每 30 秒 / 5 分钟批量查最近 2 小时未履约订单，平台终态未付则本地提前置 expired）。回跳只导航。`payment.refunded` 只记事件和告警，不自动扣回。收银台确认上报整体删除；告警规则 v3 只读操作事件中的平台直接信号。任务：`.trellis/tasks/11-03-vexutopia-payment/`。
+
+## VIP 混合星尘奖励（2026-11-05）
+
+VIP 签到配置兼容旧数字及专项/通用拆分；报价、结果和 VIP benefits 都提供两钱包额度。创建月卡订单冻结 vip_bonus_main_credits，结算与到账通知读取订单快照；不修改旧订单或历史余额。
+
+隔离 PG 覆盖并发、幂等、旧订单及故障回滚；远端执行与部署状态见任务 `11-05-vip-mixed-rewards` 的发布记录。

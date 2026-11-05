@@ -186,6 +186,7 @@ export interface PaymentOrder {
   fulfillment_applied?: boolean;
   vip_duration_days?: number | null;
   vip_bonus_credits?: number | null;
+  vip_bonus_main_credits?: number | null;
   vip_valid_until?: string | null;
 }
 

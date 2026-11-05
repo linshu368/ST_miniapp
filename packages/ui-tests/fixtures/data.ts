@@ -125,6 +125,11 @@ export const scenarios = {
     description: '签到、会员引导、角色和影像完整路径',
     path: '/profile',
   },
+  'vip-mixed': {
+    label: 'VIP混合奖励',
+    description: '120专项＋30通用签到，月卡2000专项＋1000通用',
+    path: '/profile',
+  },
   vip: { label: '已开通 VIP', description: '会员身份、每日 150 星尘、续费入口', path: '/profile' },
   recharge: {
     label: '星尘充值',

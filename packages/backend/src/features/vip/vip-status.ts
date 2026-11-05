@@ -6,6 +6,7 @@ import {
   parseCheckinTierCredits,
   remainingVipDisplayDays,
   vipCheckinBonusCredits,
+  splitVipCheckinReward,
   type VipStatus,
 } from '@miniapp/shared';
 
@@ -32,6 +33,8 @@ export async function readVipBenefits(log?: SettlementLogger): Promise<VipStatus
     return {
       text_discount_rate: strategy.discountRate,
       checkin_base_credits: baseCredits,
+      checkin_main_credits: splitVipCheckinReward(strategy.checkin).main_credits,
+      checkin_bonus_credits: splitVipCheckinReward(strategy.checkin).bonus_credits,
       checkin_vip_credits: vipCheckinBonusCredits({
         config: strategy.checkin,
         vipActive: true,

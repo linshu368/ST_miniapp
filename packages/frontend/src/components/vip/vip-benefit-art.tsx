@@ -1,7 +1,8 @@
 import type { VipPlan, VipStatus } from '@miniapp/shared';
-import { Crown, Sparkles } from 'lucide-react';
+import { Crown, Sparkles, Gift, TicketPercent, Zap } from 'lucide-react';
 
 import { formatNumber } from '@/lib/utils/payment';
+import { vipPlanRewardLabel } from '@/lib/vip/rewards';
 import { vipEntryExpiryLabel } from '@/lib/vip/presentation';
 
 /** 主利益直接使用月卡发布值；加载失败时不臆造赠送额度。 */
@@ -12,7 +13,7 @@ export function VipBenefitArt({
   monthlyPlan: VipPlan | undefined;
   status: VipStatus | undefined;
 }) {
-  const bonus = monthlyPlan?.bonus_credits ?? 0;
+  const bonus = (monthlyPlan?.bonus_credits ?? 0) + (monthlyPlan?.bonus_main_credits ?? 0);
   if (status?.active) {
     return (
       <section
@@ -72,17 +73,69 @@ export function VipBenefitArt({
               <span className="text-[52px] font-bold leading-[1.15] tabular-nums tracking-tight">
                 {formatNumber(bonus)}
               </span>
-              <span className="text-[15px] font-semibold">专项星尘</span>
+              <span className="text-[15px] font-semibold">星尘</span>
             </div>
           ) : (
             <h2 className="mt-2 text-[28px] font-bold text-primary">会员专享权益</h2>
           )}
+          {(monthlyPlan?.bonus_main_credits ?? 0) > 0 ? (
+            <p className="mt-3 text-xs leading-5 text-primary/90">通用星尘可用于中高级模型</p>
+          ) : null}
           <p className="mt-3 flex items-center gap-1.5 text-[11px] leading-5 text-muted-foreground">
             <Sparkles className="size-3.5 shrink-0 text-primary/80" aria-hidden />
-            {bonus > 0 ? '开通后到账，可用于轻量模型对话' : '月卡内容以当前发布的套餐为准'}
+            {monthlyPlan && bonus > 0
+              ? vipPlanRewardLabel(monthlyPlan)
+              : '月卡内容以当前发布的套餐为准'}
           </p>
         </div>
       </div>
+    </section>
+  );
+}
+
+export function VipDailyBenefits({
+  active,
+  benefits,
+  discountLabel,
+}: {
+  active: boolean;
+  benefits: VipStatus['benefits'];
+  discountLabel: string | null;
+}) {
+  return (
+    <section aria-label="会员专享权益">
+      <h2 className="mb-3 px-1 text-sm font-bold">
+        {active ? '你的会员权益已生效' : '再享三项会员权益'}
+      </h2>
+      <div className="grid grid-cols-3 gap-2">
+        <div className="min-w-0 rounded-[20px] border border-border bg-card px-2 py-3 text-center">
+          <TicketPercent className="mx-auto size-4 text-primary" aria-hidden />
+          <p className="mt-2 text-[19px] font-bold tabular-nums text-primary">
+            {discountLabel ?? '—'}
+          </p>
+          <p className="mt-1 text-[10px] text-muted-foreground">全模型对话</p>
+        </div>
+        <div className="min-w-0 rounded-[20px] border border-border bg-card px-2 py-3 text-center">
+          <Gift className="mx-auto size-4 text-primary" aria-hidden />
+          <p className="mt-2 text-[19px] font-bold tabular-nums text-primary">
+            {benefits ? formatNumber(benefits.checkin_vip_credits) : '—'}
+            <span className="ml-0.5 whitespace-nowrap text-[9px] font-medium">星尘/天</span>
+          </p>
+          <p className="mt-1 text-[10px] text-muted-foreground">
+            {benefits && (benefits.checkin_main_credits ?? 0) > 0
+              ? `${formatNumber(benefits.checkin_bonus_credits ?? 0)} 专项＋${formatNumber(benefits.checkin_main_credits ?? 0)} 通用`
+              : '每日签到奖励'}
+          </p>
+        </div>
+        <div className="min-w-0 rounded-[20px] border border-border bg-card px-2 py-3 text-center">
+          <Zap className="mx-auto size-4 text-primary" aria-hidden />
+          <p className="mt-2 text-[17px] font-bold leading-7 text-primary">更多模型</p>
+          <p className="mt-1 text-[10px] text-muted-foreground">解锁标准与旗舰</p>
+        </div>
+      </div>
+      <p className="mt-2 px-1 text-[10px] leading-5 text-muted-foreground">
+        会员享对话优惠，聊天仍按轮消耗星尘。
+      </p>
     </section>
   );
 }

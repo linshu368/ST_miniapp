@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/backend/app/modules/business/wallet-payment.md", "reason": "VIP 混合奖励跨层规则"}
+{"file": ".trellis/spec/frontend/app/modules/business/wallet-payment.md", "reason": "VIP 混合奖励跨层规则"}
+{"file": ".trellis/spec/shared/contracts/modules/business/wallet-payment-contracts.md", "reason": "VIP 混合奖励跨层规则"}
+{"file": ".trellis/spec/database/supabase/modules/business/billing-payment.md", "reason": "VIP 混合奖励跨层规则"}
+{"file": ".trellis/spec/admin/app/modules/business/operations.md", "reason": "VIP 混合奖励跨层规则"}

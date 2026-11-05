@@ -475,3 +475,14 @@ task_result="$(psql --no-psqlrc -d "$DATABASE_URL" -At -c "SELECT (SELECT count(
 [[ "$task_result" == '1:1:60.0' || "$task_result" == '1:1:60' ]] || fail "calendar concurrency result=$task_result"
 
 echo "All VIP billing and calendar-day check-in local checks passed."
+
+# Mixed VIP rewards share the existing payment/checkin fixture and rollback suite.
+psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 -f "$ROOT/packages/shared/migrations/20261105_vip_mixed_rewards.sql" >/dev/null
+psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 -f "$ROOT/packages/shared/migrations/tests/vip_mixed_rewards.sql" >/dev/null
+for attempt in 1 2; do
+  (psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 -c "SELECT miniapp_features.claim_daily_checkin('00000000-0000-4000-8000-00000000f003');" >/dev/null 2>&1 || true) &
+done
+wait
+result="$(psql --no-psqlrc -d "$DATABASE_URL" -At -c "SELECT main_credits || ':' || bonus_credits || ':' || (SELECT count(*) FROM miniapp_features.daily_checkins WHERE user_id='00000000-0000-4000-8000-00000000f003') FROM billing.user_wallets WHERE user_id='00000000-0000-4000-8000-00000000f003';")"
+[[ "$result" == '30.0:120.0:1' || "$result" == '30:120:1' ]] || fail "mixed concurrency result=$result"
+echo 'Mixed VIP rewards, legacy snapshots, atomic rollback and concurrency passed.'
