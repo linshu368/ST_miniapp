@@ -28,6 +28,18 @@
 
 NEXT_PUBLIC_DRAMA_TIMING_MODE默认legacy。只有替代验证通过后显式启用unified，才移除专用start和快速成功全量诊断上传；保留100%≥5秒/非成功和5%不足5秒成功Pino细节，符合条件的final/network经Backend OTLP写Loki，purpose=diagnostic在路由/repository/导入器均禁止分析写入。全量工程统计不采样。Backend先兼容，再Frontend默认双轨，再TEST/Cloud/真实流程，最后独立批准生产切换；不开生产、不删旧对象。统一release由构建SHA决定。详见[统一定义与门禁](../drama-playback-timing.md)。
 
+## 派发前卡顿诊断（本地候选，尚未发布）
+
+`lib/preparation-diagnostics.ts` 补充两类非权威观测，不改变首字上限、路由、重试或计费：
+
+- Railway Pino `conversation.request_preparation`：聊天发送/重生成在 Fastify 内的 `before_body`、`body_parse`、`validation`、`pre_handler` 阶段；仅慢于 1 秒或前置失败/中断时输出。`pre_handler` 包含路由鉴权，不包含 handler 内业务准备；`body_parse` 是读取与解析请求体的合计，不等于纯网络上传。容器入口以前的排队不在计时范围。
+- Railway Pino `supabase.rest_wait`：REST 每次 fetch 尝试等到响应头的耗时；超过 1 秒先输出一次 `pending`，结束再输出结果。只保留白名单表/RPC 名、固定方法、状态及耗时，不保留 URL、查询条件、header 或正文。未知资源为 `other`。Response 原样返回、不读正文，因此此计时不代表完整 RPC/SQL/正文读取，也不能拆成连接池等待。
+- Sentry `prep.dependency.duration` 使用固定 stage/outcome/method 标签记录完成样本；挂起请求先看 Pino pending，不能只查成功完成分位数。这两类新诊断暂不接入 Grafana 指标，需在 Railway 日志核验，不能把 Cloud 空图解释成没有慢请求。
+
+现有 `st_prisma_operation_duration_seconds` 已包含 Prisma 调用方的池等待，但不覆盖 Supabase REST。`generation.pre_dispatch` 的各阶段分位数不得相加或当作同一个失败请求；缺少派发字段不能独立证明请求没有进入任何上游路径。成功首字 ≥5 秒为零也不代表超时失败为零；分布必须和超时、离页、缺失回执分别展示。
+
+发布后验证：在 TEST 发送/重生成、鉴权拒绝及受控慢 REST 场景核验日志；随后按生产新版本观察至少 24 小时，按 Android/iOS 同口径比较首字 P95 与全部请求超时率。当前未执行线上验收，不宣称历史事故已定根因。
+
 ## 三类核心测量
 
 | 类别     | 指标                      | 起点 → 终点                                                | 成功筛选 / 不可混用的情况                                       |
