@@ -2,6 +2,8 @@ import { mkdtempSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ImagePlazaModelCatalogSchema } from '@miniapp/shared';
+import { configMetadata } from '@miniapp/admin-client';
 
 const rpc = vi.hoisted(() => ({
   getManagedConfigs: vi.fn(),
@@ -141,6 +143,24 @@ describe('写操作门禁', () => {
 });
 
 describe('草稿护栏与校验', () => {
+  it('keeps image pricing parameters in the saved draft without recalculating manual credits', async () => {
+    const value = ImagePlazaModelCatalogSchema.parse(
+      configMetadata.image_plaza_model_catalog.defaultValue
+    );
+    value.pricing_factors = { exchange: 7.3, markup: 2.5, ratio: 100 };
+    value.models[0]!.resolutions[0]!.credits = 30;
+    const before = structuredClone(value);
+    stubState();
+    rpc.saveDraft.mockResolvedValue({ id: 'image-draft', base_version: 0 });
+    await command('config draft set').run(ctx({ yes: true }), {
+      positionals: { key: 'image_plaza_model_catalog' },
+      options: { value: JSON.stringify(value) },
+    });
+    expect(rpc.saveDraft).toHaveBeenCalledWith(
+      expect.objectContaining({ key: 'image_plaza_model_catalog', value: before })
+    );
+  });
+
   it('已有与线上不同的草稿时默认拒绝覆盖', async () => {
     stubState(25);
     await expectCliError(

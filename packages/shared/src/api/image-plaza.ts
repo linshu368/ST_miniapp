@@ -110,10 +110,31 @@ const ProviderImagePlazaModelSchema = ImagePlazaModelSchema.extend({
 });
 export type ProviderImagePlazaModel = z.infer<typeof ProviderImagePlazaModelSchema>;
 
+const ImagePlazaPricingInputSchema = z
+  .number()
+  .finite()
+  .positive()
+  .max(1_000_000)
+  .refine((value) => Number(value.toFixed(4)) === value, '定价参数最多四位小数');
+
+export const ImagePlazaPricingFactorsSchema = z.object({
+  exchange: ImagePlazaPricingInputSchema,
+  markup: ImagePlazaPricingInputSchema,
+  ratio: ImagePlazaPricingInputSchema,
+});
+export type ImagePlazaPricingFactors = z.infer<typeof ImagePlazaPricingFactorsSchema>;
+export const DEFAULT_IMAGE_PLAZA_PRICING_FACTORS: Readonly<ImagePlazaPricingFactors> = {
+  exchange: 7.3,
+  markup: 2,
+  ratio: 100,
+};
+
 export const ImagePlazaModelCatalogSchema = z
   .object({
     default_model_id: z.string().trim().min(1).max(80),
     models: z.array(ProviderImagePlazaModelSchema).min(1).max(30),
+    // 与目录一起草稿、发布和回滚；旧目录未保存参数时仍然可读。
+    pricing_factors: ImagePlazaPricingFactorsSchema.optional(),
     // 运营计算参考值随目录保存，不进入公开模型或服务端扣费输入。
     standard_prices: z
       .record(

@@ -1,4 +1,9 @@
-import type { ImagePlazaModelCatalog } from '@miniapp/shared';
+import {
+  DEFAULT_IMAGE_PLAZA_PRICING_FACTORS,
+  ImagePlazaPricingFactorsSchema,
+  type ImagePlazaModelCatalog,
+  type ImagePlazaPricingFactors as SavedImagePlazaPricingFactors,
+} from '@miniapp/shared';
 
 export interface ImagePlazaPricingFactors {
   exchange: number | null;
@@ -7,6 +12,25 @@ export interface ImagePlazaPricingFactors {
 }
 
 export const IMAGE_PLAZA_PRICING_INPUT_MAX = 1_000_000;
+
+export function getImagePlazaPricingFactors(
+  catalog: ImagePlazaModelCatalog
+): SavedImagePlazaPricingFactors {
+  return catalog.pricing_factors ?? { ...DEFAULT_IMAGE_PLAZA_PRICING_FACTORS };
+}
+
+export function updateImagePlazaPricingFactor(
+  catalog: ImagePlazaModelCatalog,
+  key: keyof SavedImagePlazaPricingFactors,
+  value: number | null
+): ImagePlazaModelCatalog | null {
+  const factors = ImagePlazaPricingFactorsSchema.safeParse({
+    ...getImagePlazaPricingFactors(catalog),
+    [key]: value,
+  });
+  // 父编辑器始终保持可解析目录，不能让一个空数字触发整份目录的默认值回退。
+  return factors.success ? { ...catalog, pricing_factors: factors.data } : null;
+}
 
 export function imagePlazaPriceKey(modelId: string, resolutionId: string): string {
   return JSON.stringify([modelId, resolutionId]);
