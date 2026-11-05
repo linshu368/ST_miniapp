@@ -1,0 +1,37 @@
+{
+  "id": "audit-observability-timing",
+  "name": "audit-observability-timing",
+  "title": "审计 Sentry 与 Grafana 链路及耗时口径",
+  "description": "只读审计全仓 Sentry/Grafana 覆盖与页面、HTTP、SSE 耗时起止语义。",
+  "status": "completed",
+  "dev_type": "research",
+  "scope": "repository-wide read-only observability audit",
+  "package": "backend",
+  "priority": "P2",
+  "creator": "cline",
+  "assignee": "cline",
+  "createdAt": "2026-11-05",
+  "completedAt": "2026-11-05",
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "no_module_change",
+      "reason": "Read-only audit; no runtime behavior, contract, module knowledge, database, or deployment changes."
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "Read-only audit only; no page, API, instrumentation, sampling, or production behavior is changed, so there is no release P95 target."
+    }
+  }
+}

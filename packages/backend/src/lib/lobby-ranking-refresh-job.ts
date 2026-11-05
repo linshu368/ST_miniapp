@@ -28,6 +28,7 @@ import {
   computeRawCardStats,
   persistRankingScores,
 } from '../features/lobby/ranking-stats.js';
+import { observeBackgroundRun } from './background-observability.js';
 
 // Recheck the shared due time hourly. A restart shortly before expiry must not
 // postpone the next computation by an entire day.
@@ -121,8 +122,14 @@ export function stopLobbyRankingRefreshJob(): void {
 
 /** 导出供手动触发使用；正常运行只由定时器调用 */
 export async function runLobbyRankingRefresh(log: FastifyBaseLogger): Promise<void> {
+  const observationStartedAt = performance.now();
   if (isRunning) {
     log.info({ kind: 'sys', event: 'lobby_ranking.skipped_local' }, '上一轮刷新还在跑，跳过本次');
+    observeBackgroundRun({
+      job: 'lobby_ranking_refresh',
+      outcome: 'skipped',
+      startedAt: observationStartedAt,
+    });
     return;
   }
 
@@ -132,6 +139,11 @@ export async function runLobbyRankingRefresh(log: FastifyBaseLogger): Promise<vo
       { kind: 'sys', event: 'lobby_ranking.skipped_no_direct_url' },
       'DIRECT_URL 未配置或非法，跳过本轮刷新：专用连接不可用时不回退到 API 共享池'
     );
+    observeBackgroundRun({
+      job: 'lobby_ranking_refresh',
+      outcome: 'skipped',
+      startedAt: observationStartedAt,
+    });
     return;
   }
 
@@ -139,6 +151,8 @@ export async function runLobbyRankingRefresh(log: FastifyBaseLogger): Promise<vo
   const startedAt = Date.now();
   let lockHeld = false;
   let timeoutChanged = false;
+  let outcome: 'success' | 'error' | 'skipped' = 'skipped';
+  let terminalError: unknown;
 
   try {
     // 配置读在锁外：走 Supabase REST，与专用连接无关。
@@ -210,6 +224,7 @@ export async function runLobbyRankingRefresh(log: FastifyBaseLogger): Promise<vo
 
     // 提交后再让读路径失效，否则缓存可能填进还没提交的旧值
     clearCharacterRankingScoreCache();
+    outcome = 'success';
 
     log.info(
       {
@@ -229,6 +244,8 @@ export async function runLobbyRankingRefresh(log: FastifyBaseLogger): Promise<vo
       '大厅排序分刷新完成'
     );
   } catch (err) {
+    outcome = 'error';
+    terminalError = err;
     log.error(
       { kind: 'sys', event: 'lobby_ranking.failed', err, durationMs: Date.now() - startedAt },
       '大厅排序分刷新失败，沿用上一轮结果'
@@ -262,5 +279,11 @@ export async function runLobbyRankingRefresh(log: FastifyBaseLogger): Promise<vo
         '释放专用数据库连接失败'
       );
     }
+    observeBackgroundRun({
+      job: 'lobby_ranking_refresh',
+      outcome,
+      startedAt: observationStartedAt,
+      error: terminalError,
+    });
   }
 }

@@ -317,7 +317,10 @@ describe('apiClient GET transport retry', () => {
       'fetch',
       vi.fn((_url: string, init: RequestInit) => {
         expect(init).not.toHaveProperty('onAttempt');
-        const response = new Response('{}', { status: 200 });
+        const response = new Response('{}', {
+          status: 200,
+          headers: { 'Server-Timing': 'backend;dur=420.5' },
+        });
         vi.spyOn(response, 'json').mockImplementation(
           () =>
             new Promise((resolve) =>
@@ -343,6 +346,7 @@ describe('apiClient GET transport retry', () => {
       endedAt: 3000,
       outcome: 'ok',
       status: 200,
+      upstreamMs: 420.5,
     });
     expect(engineering.measurement).toHaveBeenCalledWith(
       'api.total',
@@ -352,6 +356,11 @@ describe('apiClient GET transport retry', () => {
     expect(engineering.measurement).toHaveBeenCalledWith(
       'api.body',
       1500,
+      expect.objectContaining({ attempt: 1 })
+    );
+    expect(engineering.measurement).toHaveBeenCalledWith(
+      'api.upstream',
+      420.5,
       expect.objectContaining({ attempt: 1 })
     );
   });

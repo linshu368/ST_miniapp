@@ -3,6 +3,7 @@ import {
   PublicLobbyHeadIdsSchema,
   parseLobbySort,
 } from '@miniapp/shared';
+import * as Sentry from '@sentry/nextjs';
 
 import { resolvePublicApiUrl } from '../../../../resolve-public-api-url.mjs';
 
@@ -15,8 +16,36 @@ export const revalidate = 0;
 export const dynamic = 'force-dynamic';
 const UPSTREAM_TIMEOUT_MS = 5_000;
 
+function recordProxyDuration(startedAt: number, outcome: string, status: number): void {
+  try {
+    Sentry.metrics.distribution('lobby.proxy.duration', performance.now() - startedAt, {
+      unit: 'millisecond',
+      attributes: {
+        route: '/api/lobby-characters',
+        outcome,
+        status_class: `${Math.floor(status / 100)}xx`,
+      },
+    });
+  } catch {
+    // Observability must not change proxy behavior.
+  }
+}
+
+function captureProxyError(error: unknown): void {
+  try {
+    Sentry.withScope((scope) => {
+      scope.setTags({ service: 'frontend-next-proxy', route: '/api/lobby-characters' });
+      scope.setFingerprint(['frontend-next-proxy', 'lobby-characters']);
+      Sentry.captureException(error);
+    });
+  } catch {
+    // Preserve the original upstream error.
+  }
+}
+
 export async function GET(request: Request) {
-  // 只透传白名单内的排序值，避免把任意查询串转发给后端。
+  const startedAt = performance.now();
+  // Only forward allowlisted sort/selection values to the backend.
   const params = new URL(request.url).searchParams;
   const sort = parseLobbySort(params.get('sort'));
   const limit =
@@ -34,25 +63,38 @@ export async function GET(request: Request) {
       params.getAll('ids').length !== 1 ||
       params.getAll('sort').length !== 1 ||
       params.getAll('limit').length !== 1
-    )
+    ) {
+      recordProxyDuration(startedAt, 'bad_request', 400);
       return Response.json(
         { success: false, error: { code: 'BAD_REQUEST', message: '无效的角色列表' } },
         { status: 400 }
       );
+    }
     selection = `&ids=${ids.data.join(',')}`;
   }
-  const upstream = await fetch(`${BACKEND_URL}/api/characters?sort=${sort}${limit}${selection}`, {
-    cache: 'no-store',
-    // 浏览器离页与代理预算任一先到都终止 Railway 上游，避免旧大厅请求继续占连接。
-    signal: AbortSignal.any([request.signal, AbortSignal.timeout(UPSTREAM_TIMEOUT_MS)]),
-  });
-  const body = await upstream.text();
 
-  return new Response(body, {
-    status: upstream.status,
-    headers: {
-      'Content-Type': upstream.headers.get('Content-Type') || 'application/json; charset=utf-8',
-      'Cache-Control': 'no-store, no-cache, must-revalidate',
-    },
-  });
+  const upstreamStartedAt = performance.now();
+  try {
+    const upstream = await fetch(`${BACKEND_URL}/api/characters?sort=${sort}${limit}${selection}`, {
+      cache: 'no-store',
+      signal: AbortSignal.any([request.signal, AbortSignal.timeout(UPSTREAM_TIMEOUT_MS)]),
+    });
+    const body = await upstream.text();
+    const upstreamMs = performance.now() - upstreamStartedAt;
+    recordProxyDuration(startedAt, upstream.ok ? 'ok' : 'http_error', upstream.status);
+
+    return new Response(body, {
+      status: upstream.status,
+      headers: {
+        'Content-Type': upstream.headers.get('Content-Type') || 'application/json; charset=utf-8',
+        'Cache-Control': 'no-store, no-cache, must-revalidate',
+        'Server-Timing': `backend;dur=${upstreamMs.toFixed(1)}`,
+      },
+    });
+  } catch (error) {
+    const cancelled = request.signal.aborted;
+    recordProxyDuration(startedAt, cancelled ? 'aborted' : 'upstream_error', cancelled ? 499 : 500);
+    if (!cancelled) captureProxyError(error);
+    throw error;
+  }
 }

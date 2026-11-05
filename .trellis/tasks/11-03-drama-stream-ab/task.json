@@ -21,7 +21,7 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "用户授权生产30条全部合格用户固定1:1，iPhone/Android均入组并接受Android未实测风险。iOS功能通过，生产资源30/30验证；发布及开流验收进行中。",
+  "notes": "用户授权生产30条全部合格用户固定1:1，iPhone和Android均入组并接受Android未实测风险。iOS功能通过，生产资源30/30验证；发布及开流验收进行中。",
   "meta": {
     "module_impact": {
       "schema_version": 1,

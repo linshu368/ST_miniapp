@@ -72,7 +72,7 @@ const log = createLogger('conversation-turn');
 function reportChatLatency(
   metric: 'chat.first_token.duration' | 'chat.full_reply.duration',
   durationMs: number,
-  attributes: { character_id: string; outcome?: 'ok' | 'failed' | 'error' }
+  attributes: { character_id: string; action?: 'send' | 'regenerate'; outcome?: string }
 ): void {
   try {
     Sentry.metrics.distribution(metric, durationMs, {
@@ -574,7 +574,13 @@ export function useConversationTurn({
         return;
       const requestId = createConversationRequestId();
       replyTimingRef.current?.finish('superseded');
-      const replyTiming = new RoleplayReplyTiming(requestId, input.mode);
+      const replyTiming = new RoleplayReplyTiming(requestId, input.mode, (durationMs, outcome) => {
+        reportChatLatency('chat.full_reply.duration', durationMs, {
+          character_id: characterId,
+          action: input.mode,
+          outcome,
+        });
+      });
       replyTimingRef.current = replyTiming;
       observationRef.current?.unavailable('superseded');
       const observation = new FirstTokenObservation(
@@ -608,8 +614,6 @@ export function useConversationTurn({
 
       // 本轮之前的额度。生成结束后要拿它跟新值比，判断额度是不是刚好在这一轮见底
       const quotaBefore = freeQuotaRef.current;
-      const turnStartedAt = Date.now();
-
       const controller = new AbortController();
       abortRef.current = controller;
       setStreamError(null);
@@ -730,12 +734,6 @@ export function useConversationTurn({
         // A fast invalidation can resolve against a stale snapshot. The final
         // batch stays until the matching durable response actually takes over.
         if (!settledStatus) setStreaming(dropCurrentStreamingTurn);
-        if (input.mode === 'send') {
-          reportChatLatency('chat.full_reply.duration', Date.now() - turnStartedAt, {
-            character_id: characterId,
-            outcome: settledStatus && settledStatus !== 'complete' ? 'failed' : 'ok',
-          });
-        }
         await refreshQuotaAndBalance(quotaBefore, assistantMessageId, isCurrent);
       } catch (error) {
         if (!isCurrent()) return;
@@ -760,14 +758,6 @@ export function useConversationTurn({
             );
           } else {
             replyTiming.recovering();
-          }
-        }
-        if (!aborted) {
-          if (input.mode === 'send') {
-            reportChatLatency('chat.full_reply.duration', Date.now() - turnStartedAt, {
-              character_id: characterId,
-              outcome: 'error',
-            });
           }
         }
         // Reception is not success: let the retained batch's React commit decide

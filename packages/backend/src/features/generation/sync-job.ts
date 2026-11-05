@@ -35,6 +35,7 @@ import {
   hasOpenRouterKey,
   isCompleteGenerationData,
 } from './openrouter-metadata.js';
+import { observeBackgroundRun } from '../../lib/background-observability.js';
 
 const SYNC_INTERVAL_MS = 30 * 1000;
 const STARTUP_DELAY_MS = 5 * 1000;
@@ -146,13 +147,21 @@ export function stopChatHistorySyncJob(): void {
 }
 
 async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
+  const observationStartedAt = performance.now();
   if (isRunning) {
     log.info('[sync-job] previous run is still active, skipping this tick');
+    observeBackgroundRun({
+      job: 'chat_history_sync',
+      outcome: 'skipped',
+      startedAt: observationStartedAt,
+    });
     return;
   }
 
   isRunning = true;
   const startedAt = Date.now();
+  let outcome: 'success' | 'partial' | 'error' | 'skipped' = 'success';
+  let terminalError: unknown;
 
   try {
     const since = new Date(Date.now() - LOOKBACK_HOURS * 60 * 60 * 1000).toISOString();
@@ -172,6 +181,7 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
     const rowsById = new Map<string, ChatHistorySyncRow>();
     for (const [index, scan] of scans.entries()) {
       if (scan.status === 'rejected') {
+        outcome = 'partial';
         log.error(
           {
             kind: 'sys',
@@ -202,6 +212,7 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
     pruneRetryStates(Date.now());
 
     if (rows.length === 0) {
+      outcome = outcome === 'partial' ? 'partial' : 'skipped';
       log.info(
         {
           kind: 'sys',
@@ -288,6 +299,7 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
       const record = eligibleRows[index];
       if (!record) continue;
       if (result.status === 'rejected') {
+        outcome = 'partial';
         counts.failed++;
         registerRetryState(record, Date.now());
         log.error(
@@ -309,6 +321,7 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
         retryStates.delete(record.id);
       }
     }
+    if (counts.failed > 0) outcome = 'partial';
 
     log.info(
       {
@@ -330,8 +343,16 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
       '[sync-job] sync run finished'
     );
   } catch (err) {
+    outcome = 'error';
+    terminalError = err;
     log.error({ kind: 'sys', event: 'chathistory_sync.unexpected', err }, 'unexpected error');
   } finally {
+    observeBackgroundRun({
+      job: 'chat_history_sync',
+      outcome,
+      startedAt: observationStartedAt,
+      error: terminalError,
+    });
     isRunning = false;
   }
 }
