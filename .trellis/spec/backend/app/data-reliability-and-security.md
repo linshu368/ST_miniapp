@@ -30,11 +30,8 @@
 
 ## 可观测性与发布
 
-历史 v2 路径说明（当前接收接口已停止分析写入，旧 flag 不能恢复）：短剧v2遥测的分析持久化由 `platform/runtime-config.ts` 集中读取 `DRAMA_TIMING_PERSIST_ENABLED`（默认false，部署时生效），环境使用数据库target=test|production，不能把development直接写成分析环境。仅遥测路由调用 `features/drama/timing-repository.ts` 的2秒/最多2并发RPC；202只确认accepted，异步合并结果由drama.timing_persisted/failed/dropped日志独立确认；原Pino日志保留，不加入播放接口。分析域权限、单migration、保留期和独立Grafana步骤见 [操作说明](../../../../docs/grafana/drama-playback-runbook.md)。
-
 - 使用现有 pino、`requestLogger`；原始异常写 `{ err }`。Sentry 先脱敏再附 context。
 - 关键流程记录阶段、耗时、状态/计数、安全幂等摘要、provider/request id；job 记录扫描/推进/失败数，禁止逐行高频 info。
-- PostHog 支付终态是非核心观测：`POSTHOG_API_KEY`/`POSTHOG_HOST` 经 `platform/config.ts` 读取；`posthog-capture.ts` 用 Node 原生 fetch、短超时、无重试。只在 `complete`/`markFailed` 成功落库后异步发送 `payment_order_settled`/`payment_order_failed`。未配置时不反查用户。失败只记安全摘要，不得回滚或延迟结算。禁止把 token、`pay_url`、initData、错误 body 送往 PostHog。Production key 留空即关闭。
 - 发布顺序：兼容 migration → backend producer → consumers → 清理旧字段。说明旧数据、灰度/停止条件、rollback 或 forward-fix。生产 migration 手动逐文件，先 test 验证 shape、RLS/权限、读写、锁/容量和回滚。
 
 ## Scenario: 文字回复取消与残留恢复

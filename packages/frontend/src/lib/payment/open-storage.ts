@@ -1,16 +1,17 @@
-import type { ExternalPaymentOpenFailureKind } from '@miniapp/shared';
-
 import { safePaymentReturnTo } from '@/lib/utils/payment';
 
 import { readSessionJson, removeSessionKey, writeSessionJson } from './session-storage';
 
+/** 收银台链接没能保存或不合法时的原因；调用方据此决定是否仍打开外链。 */
+export type PaymentOpenFailureKind = 'invalid_url' | 'storage_unavailable';
+
 export const PAYMENT_OPEN_TTL_MS = 30 * 60 * 1000;
+// key 前缀沿用旧名，避免上线时正在支付的用户丢失已保存的收银台链接。
 const STORAGE_KEY_PREFIX = 'st.replay.payment_open:';
 
 type StoredPaymentOpen = {
   pay_url: string;
   returnTo: string | null;
-  replay_context_id: string | null;
   created_at: number;
 };
 
@@ -18,13 +19,11 @@ export type PaymentOpenWriteInput = {
   orderId: string;
   payUrl: string;
   returnTo: string | null;
-  replayContextId: string | null;
   now?: number;
 };
 
 export type PaymentOpenMeta = {
   returnTo: string | null;
-  replayContextId: string | null;
   createdAt: number;
 };
 
@@ -59,20 +58,17 @@ function parseRecord(orderId: string, now: number): StoredPaymentOpen | null {
   return {
     pay_url: stored.pay_url,
     returnTo: typeof stored.returnTo === 'string' ? stored.returnTo : null,
-    replay_context_id:
-      typeof stored.replay_context_id === 'string' ? stored.replay_context_id : null,
     created_at: stored.created_at,
   };
 }
 
 export function persistPaymentOpen(
   input: PaymentOpenWriteInput
-): ExternalPaymentOpenFailureKind | undefined {
+): PaymentOpenFailureKind | undefined {
   if (!isAllowedPaymentOpenUrl(input.payUrl)) return 'invalid_url';
   const written = writeSessionJson(storageKey(input.orderId), {
     pay_url: input.payUrl.trim(),
     returnTo: input.returnTo ? safePaymentReturnTo(input.returnTo) : null,
-    replay_context_id: input.replayContextId,
     created_at: input.now ?? Date.now(),
   } satisfies StoredPaymentOpen);
   return written ? undefined : 'storage_unavailable';
@@ -94,7 +90,6 @@ export function readPaymentOpenMeta(
   if (!stored) return null;
   return {
     returnTo: stored.returnTo ? safePaymentReturnTo(stored.returnTo) : null,
-    replayContextId: stored.replay_context_id,
     createdAt: stored.created_at,
   };
 }
@@ -128,15 +123,13 @@ export function paymentOrderPagePath(
 export function adoptPayUrlQueryIntoStorage(
   orderId: string,
   payUrlFromQuery: string | null,
-  returnTo: string | null,
-  replayContextId: string | null
+  returnTo: string | null
 ): void {
   if (!payUrlFromQuery || typeof window === 'undefined') return;
   persistPaymentOpen({
     orderId,
     payUrl: payUrlFromQuery,
     returnTo,
-    replayContextId,
   });
   const url = new URL(window.location.href);
   if (!url.searchParams.has('pay_url')) return;

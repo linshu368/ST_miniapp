@@ -43,6 +43,7 @@
 3. 对于复杂任务，创建 `design.md` 写技术设计，`implement.md` 写执行计划，`task.md` 写可执行的任务分解，然后再执行 `task.py start`。
 4. 在规划文档被审核完成并且任务移到 `in_progress` 之前，不要写产品代码。
 5. 在派发子代理时，用 `implement.jsonl` 和 `check.jsonl` 列出相关的规范/研究文件。
+6. 任务最后一次提交超过 14 天后用 `python3 ./.trellis/scripts/archive_stale.py --apply` 归档（不带 `--apply` 只列出）。`.trellis/tasks/archive/` 已写入 `.ignore`，默认搜索不会命中；查历史设计用 `rg -u <pattern> .trellis/tasks/archive`。
 
 复杂任务在 `task.py start` 前必须通过以下规划门禁：
 
@@ -59,6 +60,7 @@
 
 - 包管理器：`pnpm`；运行时：Node.js `>=22`。
 - TypeScript 严格模式；不要添加 `any`。
+- 运行时代码单文件不超过 500 行、单函数不超过 120 行（`pnpm lint:complexity`，CI 阻断新增超标）。改到基线里的超长文件/函数时顺手拆小，不要继续往里追加；拆小后运行 `node scripts/complexity-budget.mjs update` 收紧基线。定期复盘用 `pnpm complexity:report`。
 - 外部数据契约必须在 `packages/shared/src/api/*` 中定义，然后才能被后端处理器或前端使用者使用。
 - `frontend`、`backend` 和 `admin` 之间不能互相导入；跨应用调用使用 HTTP。
 - 前端/管理端代码不能直接使用数据库行类型。
@@ -103,6 +105,8 @@
 - bug 修复以及安全、计费、并发、契约、迁移等高风险改动，应在规划和风险评估中确认是否需要创建回归测试文件；未获确认时不得自动创建，但必须运行既有验证并记录可重复人工验证与剩余风险。
 - commit 遵循仓库近期 Conventional Commit 风格（如 `feat:`、`fix:`、`docs:`、`chore:`），一个提交对应一个完整变更单元。
 - 不自动 amend 或 push；不要把用户已有的无关修改混入提交。
+- 普通改动由 PR 作者负责发布。确认 PR 只包含本次改动，且最新提交的 `Quality Gate` 和适用检查均已通过后，作者自行合并，无需等待另一名工程师批准或代合。
+- 合入生产分支后，作者负责确认该版本已成功部署，并在线上核对本次改动的实际结果。发现异常时，由作者跟进修复或回滚。
 - 拉取/合并 upstream 时把上游代码视为只读；冲突解决保留上游行为，仅适配当前分支改动，除非用户明确授权改变上游逻辑。
 
 在开始实现之前，先阅读 `.trellis/spec/` 中的相关规格，以及它们引用的源文档。

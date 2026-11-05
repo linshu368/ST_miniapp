@@ -38,7 +38,7 @@ shared contract 改动追加 `pnpm --filter @miniapp/shared test` 和所有消�
 - Sentry 事件必须经 sanitize；禁止 initData、token、支付信息、聊天正文、完整 API body。`global-error` 提供 reset，但不暴露内部错误。
 - Grafana 工程出口仅允许白名单 measurement/event 与 app/公开 SDK 版本 meta。托管 intake 要求的随机 `X-Faro-Session-Id` 仅在 exporter 内存期复用、只入请求头，不持久化、不进入 body/事件属性/聚合标签、不绑定业务用户；不得因此恢复 SDK session/user/page/browser/trace meta 或自动 instrumentation/Replay。SDK 的 Web Storage 可用性探测不等于允许持久化该标识。
 - Faro 2.13 默认传输的 `Idempotency-Key` 与当前托管入口 CORS 不兼容；工程出口仅扩展公开 `send/promiseBuffer/getTransportBody`，复用 20 批/并发 1 的原队列，出队后单次 fetch 三秒超时，不重试、不读取响应正文、不改全局 fetch 或 SDK 私有字段。Node 202 不替代浏览器 OPTIONS/POST 和 Cloud 实收验收。
-- Session Replay 画面的聊天正文例外见 `api-dataflow-and-state.md`：PostHog 与现有 Sentry Replay 允许显示用户输入和模型回复；该例外不适用于 Sentry 事件、日志或自定义事件属性。Sentry Replay 现有 `maskAllText: false` 不改；采样策略见 `.trellis/tasks/10-21-sentry-ux-monitoring/design.md` §4（2026-10-21 起：普通 trace 与 Replay 会话降采样，慢请求/卡顿/报错事件全量上报并带 Replay，不再是 100% 采样）。当前 PostHog 为 Free 套餐，Session Replay 最长保留 **30 天**；不得按 60 天描述或验收。
+- Session Replay 画面的聊天正文例外见 `api-dataflow-and-state.md`：Sentry Replay 允许显示用户输入和模型回复；该例外不适用于 Sentry 事件、日志或自定义事件属性。Sentry Replay 现有 `maskAllText: false` 不改；采样策略见 `.trellis/tasks/10-21-sentry-ux-monitoring/design.md` §4（2026-10-21 起：普通 trace 与 Replay 会话降采样，慢请求/卡顿/报错事件全量上报并带 Replay，不再是 100% 采样）。
 - Markdown 始终 sanitize；外链/图片 URL 使用允许协议；不得用 `dangerouslySetInnerHTML` 绕过现有安全层。
 - 回复后处理至少覆盖 artifact 好坏隔离、旧 `NULL`/缺失版本原文退化、流式不挂载 renderer、终态 choice 可用和同步防双击。真实 Worker 安全/DOM 行为由 `@miniapp/reply-renderer` 测试承担；Telegram WebView 真机仍是发布门禁。
 
@@ -46,14 +46,14 @@ shared contract 改动追加 `pnpm --filter @miniapp/shared test` 和所有消�
 
 以下为既有SDK兜底与历史v1口径；本地HTML轻量路径和v2的4秒预算见后文「轻量HTML开屏与4秒预算」。
 
-- `Providers` 在 Telegram 初始化前输出 `EntryShell`：角色入口 `/characters` 复用 `LobbyShellSkeleton`，短剧列表复用 `DramaListHeader`/`DramaGridSkeleton`，导航复用无请求的 `BottomNavShell`；首页保留页面容器和主导航，不显示“加载中”文字，其他入口提供通用加载提示，深层路由沿用导航隐藏规则。初始化前不挂业务 reader，不读取身份或 storage。短剧数据/封面仍异步加载。
+- `Providers` 在 Telegram 初始化前输出 `EntryShell`：角色入口 `/characters` 复用 `LobbyShellSkeleton`，短剧列表复用 `DramaListHeader`/`DramaGridSkeleton`，导航复用无请求的 `BottomNavShell`；视频流 `/watch` 保留页面容器和主导航，不显示“加载中”文字，其他入口提供通用加载提示，深层路由沿用导航隐藏规则。初始化前不挂业务 reader，不读取身份或 storage。短剧数据/封面仍异步加载。
 - 初始化完成后，`startup-timing.ts` 检查框架并等待两次 `requestAnimationFrame`，给浏览器一次绘制机会，然后经 SDK `miniApp.ready()` 通知 Telegram 展示。不能用 `init()`、接口返回或封面 onLoad 替代该通知；普通浏览器/旧客户端安全降级，遥测失败不能影响 ready。
 - `startup.shell_ready.duration`（distribution，ms）：本次文档导航到初始化后框架提交并获得绘制机会的耗时，包含 HTML/JS 下载和 hydration。`measurement=post_render_frame` 表示它是框架可展示时间的保守近似，可能晚于静态 HTML 的实际首绘；不是 FCP、完整内容就绪，也不是原生遮罩实际消失时刻。
 - `startup.telegram_ready.duration`（distribution，ms）：同一起点到成功发送 `ready()`；`unavailable`/`failed` 不生成这条指标。shell 指标的 `telegram_ready=sent|unavailable|failed` 可区分真机与降级。
 - 两指标每份文档最多一次，SPA 切页和 BFCache 恢复不重记；StrictMode 清理不会伪造离开。`startup.outcome`（count）记录 `shell_ready|background|left|missing_shell`；观察期间切后台/提前离开的样本不进入耗时分布，恢复前台后仍通知 Telegram 展示。未执行到埋点的 JS 下载失败/初始化失败及用户点击入口到 WebView 导航前的等待不可观测，不能声称覆盖全部打开次数。
 - 指标只带入口路由模板、`tg_platform`、`net_type`、`measurement` 和 ready 状态，不含用户 ID、完整路径、query、initData。未知路由归 `/other`。`beforeSendMetric` 只对 `startup.*` 使用属性白名单，移除 SDK 自动附加的用户身份/Replay ID，保留 `sentry.release`、`sentry.environment` 和 SDK 版本；其他指标沿用既有处理。无需新服务或新环境变量。
 - P95：在 Sentry Metrics 选择 `startup.shell_ready.duration`，聚合 `p95`，过滤 `sentry.environment=production`、`telegram_ready=sent`；按 `route` 分组并显示 `count`。通过 `sentry.release` 比较版本，按 `tg_platform` 分开 Android/iOS；`startup.telegram_ready.duration` 同口径另画。`startup.outcome` 同时显示各结果计数，不能将失败填成 0ms，也不能平均各分组 P95。历史 `page.ready.duration` 起点不同，不能用于此指标的旧版对照或回补。
-- 本地回归：`pnpm test:ui --grep @startup` 在关闭 JS 的移动浏览器中验证首页/角色/短剧 HTML 的框架、主导航、无业务请求和无横向溢出；`page-tracker.test.ts` 覆盖导航零点、单次上报、StrictMode、后台/离开、桥接/遥测失败。Telegram 原生遮罩与线上指标接收仍需发布后的真机验证。
+- 本地回归：`pnpm test:ui --grep @startup` 在关闭 JS 的移动浏览器中验证视频流/角色/短剧 HTML 的框架、主导航、无业务请求和无横向溢出；`page-tracker.test.ts` 覆盖导航零点、单次上报、StrictMode、后台/离开、桥接/遥测失败。Telegram 原生遮罩与线上指标接收仍需发布后的真机验证。
 
 ### ready 前分段诊断（本地增量，待发布）
 
@@ -67,7 +67,7 @@ shared contract 改动追加 `pnpm --filter @miniapp/shared test` 和所有消�
 
 ## 轻量HTML开屏与4秒预算（2026-10-30，本地待发布）
 
-RootLayout的自包含inline启动脚本直接运行于HTML解析阶段，不走Next script队列；要求CSS token、内容框架和主导航实际可见并获得绘制机会。仅`/`、`/characters`、`/dramas`启用早期路径，其他入口保持原完成条件；首页框架复用DramaHomeFrame；不读取身份/storage，不发业务请求、不改变React DOM；业务接管前阻止静态框架链接整页跳转，保护尚未缓存的启动上下文。Android/iOS原生ready沿用SDK对应的native transport；普通浏览器/iframe/桥接失败或无框架的深链交给SDK兜底，已发送回执去重。CSS/框架未就绪的探测前台最多15秒，后台/离页样本不进耗时分布。
+RootLayout的自包含inline启动脚本直接运行于HTML解析阶段，不走Next script队列；要求CSS token、内容框架和主导航实际可见并获得绘制机会。仅`/watch`、`/characters`、`/dramas`启用早期路径（`/` 在服务端 307 到 `/characters`），其他入口保持原完成条件；视频流框架复用DramaHomeFrame；不读取身份/storage，不发业务请求、不改变React DOM；业务接管前阻止静态框架链接整页跳转，保护尚未缓存的启动上下文。Android/iOS原生ready沿用SDK对应的native transport；普通浏览器/iframe/桥接失败或无框架的深链交给SDK兜底，已发送回执去重。CSS/框架未就绪的探测前台最多15秒，后台/离页样本不进耗时分布。
 
 主指标起点与单位不变，HTML路径`measurement=html_post_render_frame`，补报取实际时间戳；`startup.budget`只在有效样本记录`within_4s|over_4s`。目标P95≤4000ms，辅助率严格>4000ms，恰好4000ms达标。v2阶段`definition=startup_phases_v2`的slow为>4000ms，历史v1的≥5000ms语义不改；HTML就绪可能早于Providers，阶段不再是主耗时的连续分解，逆序段省略。不得拿资源并集或分组P95相加。
 
@@ -80,11 +80,10 @@ Sentry错误捕获、Metrics、脱敏与日志保持，BrowserTracing在首屏lo
 PR #525 已移除独立 `/drama-cdn-experiment` 页面及实验取址/上报。复用 `packages/ui-tests` 的 `@drama` 场景验证普通播放、切集、重试及旧入口 404；模拟验收不能替代 Telegram 真机性能，操作与恢复见 [说明](../../../../ops/drama-bunny-preview/README.md)。
 
 - Frontend 部署 Vercel，配置见根/包部署文件和 `next.config.mjs`；`NEXT_PUBLIC_*` 都是公开值，secret 不得使用此前缀。
-- Next.js 只把**静态成员访问** `process.env.NEXT_PUBLIC_*` 内联进客户端包。经 `const env = process.env` 再读属性时，Preview/生产 bundle 里永远是 `undefined`，PostHog adapter 会走 `missing_config` no-op。`readPostHogBrowserEnv` 必须静态读取 `NEXT_PUBLIC_POSTHOG_KEY/HOST`。
-- Preview 可注入 PostHog 公开变量做真机验收；Production 留空即关闭。打开生产采集是独立运维步骤，不随功能 PR 默认启用，也不改变现有 Sentry Replay。
+- Next.js 只把**静态成员访问** `process.env.NEXT_PUBLIC_*` 内联进客户端包；经 `const env = process.env` 再读属性时，Preview/生产 bundle 里永远是 `undefined`。
 - Preview/production 的 `NEXT_PUBLIC_API_URL` 必须指向匹配 Backend。Feature PR 按 `VERCEL_GIT_PULL_REQUEST_ID`（或自定义环境名 `pr-{n}`）1:1 指向 `https://stminiapp-pr-{n}.up.railway.app`，构建时覆盖 Preview 共享变量里上一轮 PR 的残留值；`dev` 分支指向 development，production 指向 production。构建采用 standalone 并转译 shared。环境变化同时验证 CORS、Telegram Bot WebApp URL、Sentry release/source maps。
 - 数据库 migration 和 Backend 部署与 Frontend 解耦；契约演进遵循兼容 producer-first 顺序。
-- 发布前 `build` 必须通过；发布后 smoke test 首页、health/API、聊天、支付回跳并监控错误率。回滚 Vercel deployment 时确认 Backend/契约仍向后兼容。
+- 发布前 `build` 必须通过；发布后 smoke test 冷启动落地页（/ → /characters）、视频流 /watch、health/API、聊天、支付回跳并监控错误率。回滚 Vercel deployment 时确认 Backend/契约仍向后兼容。
 
 ## 短剧播放分段计时
 
@@ -96,7 +95,7 @@ v2 的实现/口径与验收见 [短剧看板操作说明](../../../../docs/graf
 
 `apiClient.onAttempt` 仅为可选的本地观测回调，包含排队、响应头与 body 解析，不能传入 fetch 或改变重试/超时。短剧 query 禁用 structural sharing，以保留结果对象与本次计时 WeakMap 的对应；实际播放 query key 包含本次 intent，旧地址／预取不能绕过关闭；两组统一确认路径，签名缓存仍在后端。播放器持有本次观察对象，旧组件更新不能重建/抢占导航目标的记录。成功必须同时有首帧与 playing；兼容降级明确标记，不能使用 canplay 代替。
 
-首页 embedded 与详情播放器的测量归属必须明确区分（home/detail），只在内存持有。子播放器 effect 可先于根 route effect：route('/') 应保留首页活跃观察，真正离开其 owner 路径才记 left；首页↔详情即便同剧也不能复用，同归属显式换剧/换集保留 switched。重复 ensure 不重启已终态，旧组件不能抢回新观察。既有 drama-timing 测试须覆盖这种 effect 顺序及跨归属/离页/后台；不为测量重建 src/播放业务 effect。
+首页 embedded 与详情播放器的测量归属必须明确区分（home/detail），只在内存持有。子播放器 effect 可先于根 route effect：route('/watch') 应保留视频流活跃观察，真正离开其 owner 路径才记 left；首页↔详情即便同剧也不能复用，同归属显式换剧/换集保留 switched。重复 ensure 不重启已终态，旧组件不能抢回新观察。既有 drama-timing 测试须覆盖这种 effect 顺序及跨归属/离页/后台；不为测量重建 src/播放业务 effect。
 
 每次等待超过 5 秒生成一次快照；失败、离开、后台等都生成终态，后台不计成慢播放。遥测异常不得影响请求/视频，地址/签名/对象路径不得进日志；上传契约按字段白名单和明细数量限制，禁止任意对象作为日志输入。关键回归及查询、发布、真机验收见 [排查说明](../../../../docs/drama-playback-timing.md)。
 
@@ -108,7 +107,7 @@ v2 的实现/口径与验收见 [短剧看板操作说明](../../../../docs/graf
 2. **Signatures**：shared `dramaTimingStages(marks)` 返回有限stages；报告兼容增加 `definition?: drama_v3`、`route?: /|/dramas|/dramas/:id`、`purpose?: diagnostic` 和四个有限阶段字段。兼容报告version仍2。
 3. **Contracts**：新tracker/日志/Faro共用阶段helper；缺失/逆序不补0，合法0保留。原elapsedMs和first_frame+playing终态不变。目录route/起点随观察绑定，background在owner内生成，不能在出口按当前路径/可见性猜测。构建SHA统一Grafana/DRAMA release。NEXT_PUBLIC_DRAMA_TIMING_MODE默认legacy；显式unified且Faro配置有效时，全量统计走Faro，100%≥5秒/非成功和5%不足5秒成功有界明细走Pino，符合条件的final/network另经Backend OTLP写Loki，专用start停发，diagnostic永不入分析库。
 4. **Validation & Error Matrix**：旧报告兼容；未知definition/route/purpose和敏感嵌套字段400，超body413，限流429，Pino失败仍尝试独立Cloud出口。202仅accepted；接口、repository和历史导入器均防止diagnostic落表。Faro关闭/非法配置保留legacy，遥测故障不得改变播放。
-5. **Good/Base/Bad Cases**：Good：首页启动仍归/，元数据→画面数据→首帧新段有有效N；Base：旧客户端和默认legacy继续原上报；Bad：迟到报告借当前页面归属、逆序填0、把5%日志用作总体成功率、把final与network当两次启动。
+5. **Good/Base/Bad Cases**：Good：视频流启动归/watch（2026-11-04 前为/），元数据→画面数据→首帧新段有有效N；Base：旧客户端和默认legacy继续原上报；Bad：迟到报告借当前页面归属、逆序填0、把5%日志用作总体成功率、把final与network当两次启动。
 6. **Tests Required**：扩展既有shared telemetry-contract、frontend drama-timing/observer/media/grafana及backend telemetry回归；所有消费者typecheck，相关lint/build。Cloud查询可执行不等于新信号往返或真实Telegram验收；本地@drama现有场景可复用作后续重复验收，不新增临时mock体系。
 7. **Wrong vs Correct**：Wrong为在SQL/前端另写新阶段计算并默认关闭旧链路；Correct为复用唯一helper，v3筛选隔离历史，Backend兼容→Frontend默认双轨→TEST/Cloud/真实流程验证→独立批准unified；接收端已按五秒长尾方案停止分析写入。旧表/视图/历史看板/保留期job本轮不删除。
 

@@ -1,10 +1,20 @@
 import { previewAppUrl, previewApiUrl } from './fixtures';
-import type { Locator, Page } from '@playwright/test';
+import type { Locator, Page, Request } from '@playwright/test';
 import type { GetDramaPlaybackData } from '@miniapp/shared';
 import { test, expect, expectMobileLayout } from './fixtures.js';
 
 const firstDrama = '60000000-0000-4000-8000-000000000001';
 const firstVideo = '70000000-0000-4000-8000-000000000001';
+
+const PLAY_PATH = '/api/dramas/play';
+/** 取址是固定地址的 POST，剧/集在请求体里；传 videoId 时只匹配未指定集或同一集的请求。 */
+function matchesPlay(request: Request, dramaId: string, videoId?: string) {
+  const body = request.postDataJSON() as { drama_id?: string; video_id?: string } | null;
+  return (
+    body?.drama_id === dramaId &&
+    (videoId === undefined || body.video_id === undefined || body.video_id === videoId)
+  );
+}
 const secondDrama = '60000000-0000-4000-8000-000000000002';
 const longDrama = '60000000-0000-4000-8000-000000000012';
 const tabs = (page: Page) => page.getByRole('navigation', { name: '短剧栏目' });
@@ -220,10 +230,10 @@ test('@drama 搜索不被原分类锁住，退出后恢复原分类', async ({ p
 });
 
 test('@drama 追剧整行都能继续看，收藏按钮只改变收藏', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/watch');
   await pauseReadyVideo(page);
   await page.getByRole('button', { name: '收藏这部剧', exact: true }).click();
-  await mainNav(page).getByRole('link', { name: 'AI短剧', exact: true }).click();
+  await mainNav(page).getByRole('link', { name: '剧场', exact: true }).click();
   await tabs(page).getByRole('button', { name: '追剧', exact: true }).click();
   const row = page.getByRole('link', { name: '继续观看 雾城来信', exact: true });
   // 从标题边的空白起手，而不是精准点击封面或“继续看”字样。
@@ -269,14 +279,14 @@ test('@drama 短暂试看保留历史，但不抢走已在追的继续看', asyn
   await expect(page.getByRole('link', { name: '继续观看 长安月未央', exact: true })).toBeVisible();
 });
 
-test('@drama @layout 首页中间入口可刷剧和追剧，换栏目释放旧视频', async ({ page, preview }) => {
-  await page.goto('/');
+test('@drama @layout 底栏视频入口可刷剧和追剧，换栏目释放旧视频', async ({ page, preview }) => {
+  await page.goto('/watch');
   const first = await pauseReadyVideo(page);
   const oldVideo = await first.elementHandle();
   const navigation = mainNav(page);
   await expect(navigation.getByRole('link')).toHaveCount(5);
-  await expect(navigation.getByRole('link').nth(2)).toHaveAttribute('aria-label', '首页');
-  await expect(navigation.getByRole('link', { name: '首页', exact: true })).toHaveAttribute(
+  await expect(navigation.getByRole('link').nth(0)).toHaveAttribute('aria-label', '放映');
+  await expect(navigation.getByRole('link', { name: '放映', exact: true })).toHaveAttribute(
     'aria-current',
     'page'
   );
@@ -296,7 +306,7 @@ test('@drama @layout 首页中间入口可刷剧和追剧，换栏目释放旧�
     )
   ).toBeTruthy();
   await pauseReadyVideo(page);
-  await mainNav(page).getByRole('link', { name: 'AI短剧', exact: true }).click();
+  await mainNav(page).getByRole('link', { name: '剧场', exact: true }).click();
   await tabs(page).getByRole('button', { name: '追剧', exact: true }).click();
   await expect(page.locator('video')).toHaveCount(0);
   await expect(page.getByRole('heading', { name: '雾城来信', exact: true })).toBeVisible();
@@ -306,8 +316,8 @@ test('@drama @layout 首页中间入口可刷剧和追剧，换栏目释放旧�
   await preview.screenshot('短剧追剧列表');
   await page.getByRole('button', { name: '取消收藏 雾城来信', exact: true }).click();
   await expect(page.getByRole('heading', { name: '喜欢的故事，留在这里' })).toBeVisible();
-  await navigation.getByRole('link', { name: '首页', exact: true }).click();
-  await expect(page).toHaveURL(`${previewAppUrl}/`);
+  await navigation.getByRole('link', { name: '放映', exact: true }).click();
+  await expect(page).toHaveURL(`${previewAppUrl}/watch`);
   await expect(page.locator('video')).toHaveCount(1);
   await expectMobileLayout(page);
 });
@@ -338,13 +348,11 @@ test('@drama 观看位置在本设备刷新后恢复，集数和秒数保持', a
     await resumed.evaluate((node) => (node as HTMLVideoElement).currentTime)
   ).toBeGreaterThanOrEqual(1.9);
   const state = await preview.state();
-  expect(
-    state.requests.some((item) => item.path.includes(`/api/dramas/${firstDrama}/play`))
-  ).toBeTruthy();
+  expect(state.requests.some((item) => item.path.includes(PLAY_PATH))).toBeTruthy();
 });
 
-test('@drama @layout 首页观看完整短剧进入专注详情，返回仍接着这部', async ({ page }) => {
-  await page.goto('/');
+test('@drama @layout 视频流观看完整短剧进入专注详情，返回仍接着这部', async ({ page }) => {
+  await page.goto('/watch');
   await pauseReadyVideo(page);
   await swipe(page.locator('[data-player-toggle-controls]'), [160, 450], [160, 220]);
   await expect(page.locator('video')).toHaveAttribute('aria-label', '长安月未央，第 1 集');
@@ -370,8 +378,8 @@ test('@drama @layout 首页观看完整短剧进入专注详情，返回仍接�
   await episode.evaluate((node: HTMLVideoElement) => {
     node.currentTime = 1;
   });
-  await page.getByRole('link', { name: '返回首页', exact: true }).click();
-  await expect(page).toHaveURL(`${previewAppUrl}/`);
+  await page.getByRole('link', { name: '返回放映', exact: true }).click();
+  await expect(page).toHaveURL(`${previewAppUrl}/watch`);
   await expect(page.locator('video')).toHaveAttribute('aria-label', '长安月未央，第 3 集');
   const resumed = await pauseReadyVideo(page);
   await expect
@@ -398,9 +406,9 @@ test('@drama @layout 首页观看完整短剧进入专注详情，返回仍接�
   await expect
     .poll(() => refreshed.evaluate((node: HTMLVideoElement) => node.currentTime))
     .toBeGreaterThanOrEqual(1.9);
-  await expect(page.getByRole('link', { name: '返回首页', exact: true })).toHaveAttribute(
+  await expect(page.getByRole('link', { name: '返回放映', exact: true })).toHaveAttribute(
     'href',
-    '/'
+    '/watch'
   );
   await expectMobileLayout(page);
 });
@@ -435,7 +443,7 @@ test('@drama 自动续播下一集，选集面板不会误触换剧', async ({ p
 });
 
 test('@drama 推荐支持上下滑换剧，横滑不换剧', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/watch');
   await pauseReadyVideo(page);
   const surface = page.getByLabel(
     '短剧播放画面，单击切换纯净模式，双击播放或暂停，上下滑切换短剧',
@@ -488,7 +496,7 @@ test('@drama 详情上下滑只换同剧集数，首尾不跨剧，末集播完�
 });
 
 test('@drama @layout 手指拖动画面跟随，短拖取消回弹，横滑多指不换剧', async ({ page, preview }) => {
-  await page.goto('/');
+  await page.goto('/watch');
   const video = await pauseReadyVideo(page);
   const picture = page.locator('[data-player-toggle-controls]');
   await touchPhase(picture, 'touchstart', [160, 350]);
@@ -573,6 +581,40 @@ test('@drama @layout 全宽进度先预览后定位，保留原播放状态，�
     .poll(() => video.evaluate((node: HTMLVideoElement) => node.currentTime))
     .toBeCloseTo(duration * 0.7, 1);
   await expect.poll(() => video.evaluate((node: HTMLVideoElement) => node.paused)).toBe(true);
+
+  // Android 的原生 range 会在指针松手后紧接着再触发一次 onChange（目标相差约 0.02s）。
+  // 合成这个回声：一次手势只能提交一次；超过忽略窗后的键盘操作仍照常提交。
+  await page.evaluate(() => {
+    const writes: number[] = [];
+    Reflect.set(window, '__seekWrites', writes);
+    const descriptor = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'currentTime')!;
+    Object.defineProperty(HTMLMediaElement.prototype, 'currentTime', {
+      ...descriptor,
+      set(this: HTMLMediaElement, value: number) {
+        writes.push(value);
+        descriptor.set!.call(this, value);
+      },
+    });
+  });
+  const seekWrites = () => page.evaluate(() => Reflect.get(window, '__seekWrites') as number[]);
+  await page.mouse.move(box.x + box.width * 0.2, box.y + 10);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.5, box.y + 10, { steps: 3 });
+  await page.mouse.up();
+  await slider.evaluate(
+    (node: HTMLInputElement, value) => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+      setter.call(node, String(value));
+      node.dispatchEvent(new Event('input', { bubbles: true }));
+    },
+    duration * 0.5 + 0.02
+  );
+  await page.waitForTimeout(150);
+  expect(await seekWrites()).toHaveLength(1);
+  await page.waitForTimeout(500);
+  await slider.focus();
+  await slider.press('Home');
+  await expect.poll(async () => (await seekWrites()).length).toBe(2);
 
   await video.evaluate(async (node: HTMLVideoElement) => {
     node.currentTime = 0.25;
@@ -704,18 +746,18 @@ test('@drama 失效的本地续看位置回退首集', async ({ page }) => {
 
 test('@drama 播放失败可重试，列表失败和空状态有出口', async ({ page, preview, request }) => {
   await preview.scenario('drama-play-error');
-  await page.goto('/');
+  await page.goto('/watch');
   await expect(page.getByText('播放暂时中断了')).toBeVisible({ timeout: 25000 });
   await expect(page.getByRole('button', { name: '下一部短剧' })).toBeEnabled();
   await request.post(`${previewApiUrl}/__preview/reset`, { data: { scenario: 'dramas' } });
   await page.getByRole('button', { name: '重新播放', exact: true }).click();
   await pauseReadyVideo(page);
-  await page.evaluate(() => localStorage.removeItem('miniapp:drama-catalog:v1'));
+  await page.evaluate(() => localStorage.removeItem('miniapp:drama-catalog:stream-v2'));
   await preview.scenario('drama-list-error');
   await page.goto('/dramas');
   await expect(page.getByText('短剧暂时没加载出来')).toBeVisible({ timeout: 25000 });
   await expect(page.getByRole('button', { name: '重新加载', exact: true })).toBeVisible();
-  await page.evaluate(() => localStorage.removeItem('miniapp:drama-catalog:v1'));
+  await page.evaluate(() => localStorage.removeItem('miniapp:drama-catalog:stream-v2'));
   await preview.scenario('empty');
   await page.goto('/dramas');
   await expect(page.getByRole('heading', { name: '好戏，即将开场' })).toBeVisible();
@@ -741,10 +783,9 @@ test('@drama 重试失败仍能再试，新地址只装载一次并接回原秒�
   let failures = 0;
   let successes = 0;
   await page.route(
-    (url) =>
-      url.pathname === `/api/dramas/${firstDrama}/play` &&
-      (!url.searchParams.has('video_id') || url.searchParams.get('video_id') === firstVideo),
+    (url) => url.pathname === PLAY_PATH,
     async (route) => {
+      if (!matchesPlay(route.request(), firstDrama, firstVideo)) return route.fallback();
       if (failing) {
         failures += 1;
         await failGate.promise;
@@ -819,10 +860,9 @@ test('@drama 迟到的重试不能覆盖新集数，也不能在退出后恢复�
     const gate = deferred();
     const delivered = deferred();
     let requested = false;
-    const match = (url: URL) =>
-      url.pathname === `/api/dramas/${firstDrama}/play` &&
-      (!url.searchParams.has('video_id') || url.searchParams.get('video_id') === currentVideo);
+    const match = (url: URL) => url.pathname === PLAY_PATH;
     await page.route(match, async (route) => {
+      if (!matchesPlay(route.request(), firstDrama, currentVideo)) return route.fallback();
       requested = true;
       const response = await route.fetch();
       const body = (await response.json()) as { data: GetDramaPlaybackData };
@@ -882,7 +922,7 @@ test('@drama 迟到的重试不能覆盖新集数，也不能在退出后恢复�
 });
 
 test('@drama 推荐目录后台失败不打断当前画面，刷新后也保留进度', async ({ page, context }) => {
-  await page.goto('/');
+  await page.goto('/watch');
   const video = await pauseReadyVideo(page);
   const original = (await video.elementHandle())!;
   await video.evaluate((node: HTMLVideoElement) => {
@@ -904,8 +944,9 @@ test('@drama 推荐目录后台失败不打断当前画面，刷新后也保留�
     }
   );
   await page.route(
-    (url) => url.pathname === `/api/dramas/${firstDrama}/play`,
+    (url) => url.pathname === PLAY_PATH,
     async (route) => {
+      if (!matchesPlay(route.request(), firstDrama)) return route.fallback();
       const response = await route.fetch();
       const body = (await response.json()) as { data: GetDramaPlaybackData };
       body.data.playback.play_url += '&backgroundrenewal=1';
@@ -1069,7 +1110,7 @@ test('@drama @layout 长选集打开和切回时看得到当前集，手动浏�
 });
 
 test('@drama @layout 点赞、评论和选集简介顺手可用，没有博主关注', async ({ page, preview }) => {
-  await page.goto('/');
+  await page.goto('/watch');
   const video = await pauseReadyVideo(page);
   await expect(page.getByRole('button', { name: /关注|转发|红包/ })).toHaveCount(0);
   await expectReachable(page, '点赞这部剧');
@@ -1117,7 +1158,7 @@ test('@drama @layout 点赞、评论和选集简介顺手可用，没有博主�
 
 test('@drama @layout 互动失败保留草稿，重试不重复，收缩视口仍能发送', async ({ page, preview }) => {
   await preview.scenario('drama-interaction-error');
-  await page.goto('/');
+  await page.goto('/watch');
   await pauseReadyVideo(page);
   await page.getByRole('button', { name: '点赞这部剧' }).click();
   await expect(page.getByText('点赞没能保存，请再试一次')).toBeVisible();
@@ -1142,11 +1183,11 @@ test('@drama @layout 互动失败保留草稿，重试不重复，收缩视口�
   await expectMobileLayout(page);
 });
 
-test('@drama 首页评论期间一条播完换下一部，草稿归属不变且不会多路发声', async ({
+test('@drama 视频流评论期间一条播完换下一部，草稿归属不变且不会多路发声', async ({
   page,
   preview,
 }) => {
-  await page.goto('/');
+  await page.goto('/watch');
   let video = await pauseReadyVideo(page);
   await page.getByRole('button', { name: '播放速度 1 倍，点击选择' }).click();
   await page.getByRole('button', { name: '1.25 倍', exact: true }).click();
@@ -1168,7 +1209,7 @@ test('@drama 首页评论期间一条播完换下一部，草稿归属不变且�
     node.currentTime = node.duration - 0.2;
     await node.play();
   });
-  await expect(page).toHaveURL(`${previewAppUrl}/`);
+  await expect(page).toHaveURL(`${previewAppUrl}/watch`);
   await expect(page.locator('video')).toHaveAttribute('aria-label', '星期五的告白，第 1 集');
   await expect(page.getByRole('dialog')).toBeVisible();
   await expect(page.getByText('《雾城来信》的评论')).toBeVisible();
@@ -1254,7 +1295,7 @@ test('@drama 播放页持续禁用 Telegram 收起手势，换剧和评论不释
       },
     });
   });
-  await page.goto('/#tgWebAppVersion=8.0&tgWebAppPlatform=android&tgWebAppThemeParams=%7B%7D');
+  await page.goto('/watch#tgWebAppVersion=8.0&tgWebAppPlatform=android&tgWebAppThemeParams=%7B%7D');
   const messages = () => page.evaluate(() => Reflect.get(window, '__swipeMessages') as boolean[]);
   await pauseReadyVideo(page);
   await expect.poll(async () => (await messages()).at(-1)).toBe(false);
@@ -1268,7 +1309,7 @@ test('@drama 播放页持续禁用 Telegram 收起手势，换剧和评论不释
   expect((await swipe(commentList, [180, 600], [180, 400])).prevented).toBe(false);
   await page.getByRole('button', { name: '关闭评论' }).click();
   expect(await messages()).toEqual(initial);
-  await mainNav(page).getByRole('link', { name: 'AI短剧', exact: true }).click();
+  await mainNav(page).getByRole('link', { name: '剧场', exact: true }).click();
   await expect.poll(async () => (await messages()).at(-1)).toBe(true);
   await page.getByRole('link', { name: '观看 雾城来信', exact: true }).click();
   await pauseReadyVideo(page);
@@ -1284,12 +1325,12 @@ test('@drama 播放页持续禁用 Telegram 收起手势，换剧和评论不释
 });
 
 test('@drama @layout 单击只切纯净模式，双击画面播放暂停，倍速直接选', async ({ page, preview }) => {
-  await page.goto('/');
+  await page.goto('/watch');
   const video = await pauseReadyVideo(page);
   const picture = page.locator('[data-player-toggle-controls]');
   const bounds = (await picture.boundingBox())!;
   const tap = () => page.touchscreen.tap(bounds.x + 65, bounds.y + 220);
-  // 单击只切界面：暂停状态不受影响，首页导航也收起。
+  // 单击只切界面：暂停状态不受影响，底部导航也收起。
   await tap();
   await expect(mainNav(page)).toHaveCount(0);
   await expect(page.getByRole('complementary', { name: '短剧互动' })).toHaveCount(0);
@@ -1333,7 +1374,7 @@ test('@drama @layout 单击只切纯净模式，双击画面播放暂停，倍�
 });
 
 test('@drama 从剧名和中央图标起手也能换剧，横滑后不会误开简介', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/watch');
   await pauseReadyVideo(page);
   await swipe(page.getByRole('button', { name: '查看完整简介' }), [150, 600], [150, 350]);
   await expect(page.locator('video')).toHaveAttribute('aria-label', '长安月未央，第 1 集');
@@ -1351,7 +1392,7 @@ test('@drama 从剧名和中央图标起手也能换剧，横滑后不会误开�
 });
 
 test('@drama @layout 面板横杠可以下拉收起，短拖回弹，内容滚动不误关', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/watch');
   const video = await pauseReadyVideo(page);
   await page.getByRole('button', { name: '打开评论' }).click();
   const dialog = page.getByRole('dialog');
@@ -1423,8 +1464,9 @@ test('@drama 关闭分流后重新进入必须等待原路径确认，旧地址�
   let confirmations = 0;
   const gate = deferred();
   await page.route(
-    (url) => url.pathname === `/api/dramas/${firstDrama}/play`,
+    (url) => url.pathname === PLAY_PATH,
     async (route) => {
+      if (!matchesPlay(route.request(), firstDrama)) return route.fallback();
       const response = await route.fetch();
       const body = (await response.json()) as { data: GetDramaPlaybackData };
       confirmations++;

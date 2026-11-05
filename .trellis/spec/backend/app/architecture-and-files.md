@@ -27,7 +27,6 @@
 ## `src/infrastructure/`
 
 - `payment/VexutopiaPaymentGateway.ts`：Vexutopia 建单、单笔/批量查单、Webhook HMAC 验签、错误码分类与有限重试，不决定业务结算规则。
-- `telemetry/posthog-capture.ts`：Node 原生 fetch 调 PostHog capture；短超时、无重试，失败不回滚业务。
 - `repositories/CharacterCardRepository.ts`：角色卡；`ChatSessionRepository.ts`、`ConversationHistoryRepository.ts`：会话、历史、current-postprocess 原子开轮；`TextPostprocessRepository.ts`：草稿/发布/版本快照 RPC；`ChatMessageAudioRepository.ts`：音频。
 - `MiniappCharacterFavoriteRepository.ts`、`MiniappCharacterFreeQuotaRepository.ts`、`MiniappPaymentOrderRepository.ts`、`MiniappUserSettingsRepository.ts`、`MiniappWalletRepository.ts`：各业务域持久化。
 - `conversation-errors.ts` 归一 repository 错误；`effective-display-name.ts` 计算展示昵称。

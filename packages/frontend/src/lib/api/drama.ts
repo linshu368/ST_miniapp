@@ -8,6 +8,7 @@ import type {
   DramaPlayback,
   DramaSummary,
   GetDramaByIdData,
+  DramaPlayRequest,
   GetDramaPlaybackData,
   GetDramasData,
   GetDramaSocialData,
@@ -20,7 +21,7 @@ import type {
 import { apiClient } from './client';
 import { dramaTiming } from '@/lib/perf/drama-observer';
 
-const DRAMA_CATALOG_CACHE_KEY = 'miniapp:drama-catalog:v1';
+const DRAMA_CATALOG_CACHE_KEY = 'miniapp:drama-catalog:stream-v2';
 const DRAMA_CATALOG_STALE_MS = 15 * 60_000;
 const DRAMA_CATALOG_MAX_AGE_MS = 24 * 60 * 60_000;
 const DRAMA_CATALOG_MAX_ITEMS = 300;
@@ -209,7 +210,7 @@ export function useDramaCommentMutations(id: string) {
 async function fetchDramas(
   kind: 'list' | 'queue' = 'list',
   signal?: AbortSignal,
-  route: '/' | '/dramas' = '/dramas'
+  route: '/watch' | '/dramas' = '/dramas'
 ): Promise<DramaSummary[]> {
   return dramaTiming.query(
     kind,
@@ -244,25 +245,73 @@ async function fetchDramaDetail(id: string, signal?: AbortSignal): Promise<Drama
 async function fetchDramaPlayback(
   id: string,
   videoId?: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  fallback = false
 ): Promise<DramaPlayback> {
-  const suffix = videoId ? `?video_id=${encodeURIComponent(videoId)}` : '';
+  // 固定地址的 POST：CORS 预检按 URL 缓存，原来每集一个 URL 导致每次都要预检。
+  const body: DramaPlayRequest = { drama_id: id };
+  if (videoId) body.video_id = videoId;
+  if (
+    typeof document !== 'undefined' &&
+    (document.createElement('video').canPlayType('application/vnd.apple.mpegurl') ||
+      typeof MediaSource !== 'undefined')
+  )
+    body.format = 'hls';
+  if (fallback) body.fallback = 'mp4';
   return dramaTiming.query('playback', id, videoId, async (onAttempt) => {
-    const data = await apiClient<GetDramaPlaybackData>(
-      `/api/dramas/${encodeURIComponent(id)}/play${suffix}`,
-      {
-        onAttempt,
-        signal,
-        timeoutMs: 5000,
-        queuePriority: 'critical',
-      }
-    );
+    const data = await apiClient<GetDramaPlaybackData>('/api/dramas/play', {
+      method: 'POST',
+      body: JSON.stringify(body),
+      // /play 只读，沿用 GET 时的传输层重试，吸收客户端到 Railway 的瞬时抖动。
+      idempotent: true,
+      onAttempt,
+      signal,
+      timeoutMs: 5000,
+      queuePriority: 'critical',
+    });
     return data.playback;
   });
 }
 
+// 播放意图在点击当下就发出取址，播放器挂载后的 useDramaPlaybackQuery 再接上这次请求，
+// 省掉路由跳转 + 播放器挂载（约 0.5s）的等待。请求不进 React Query 缓存：
+// 每次意图仍然重新取址（不复用意图发生前的结果），也就不需要放开 gcTime: 0。
+const PLAY_INTENT_TTL_MS = 10_000;
+const playIntents = new Map<string, { promise: Promise<DramaPlayback>; startedAt: number }>();
+const playIntentKey = (id: string, videoId?: string) => `${id}:${videoId ?? ''}`;
+
+/** 必须在 dramaTiming.beginPlayback 之后调用，请求才会挂到本次播放观察上。 */
+export function startDramaPlayIntent(id: string, videoId?: string): void {
+  const now = Date.now();
+  for (const [key, intent] of playIntents) {
+    if (now - intent.startedAt > PLAY_INTENT_TTL_MS) playIntents.delete(key);
+  }
+  const promise = fetchDramaPlayback(id, videoId);
+  // 没被接上时无人处理拒绝；接上的一方仍会拿到原始拒绝。
+  promise.catch(() => undefined);
+  playIntents.set(playIntentKey(id, videoId), { promise, startedAt: now });
+}
+
+/**
+ * 取播放地址：优先接上同 (剧, 集) 的意图请求（10 秒内有效、只用一次），接不上就新建请求。
+ * 回退 MP4 是新的请求语义，不接意图请求。
+ */
+export function loadDramaPlayback(
+  id: string,
+  videoId?: string,
+  signal?: AbortSignal,
+  fallback = false
+): Promise<DramaPlayback> {
+  const key = playIntentKey(id, videoId);
+  const intent = fallback ? undefined : playIntents.get(key);
+  if (!fallback) playIntents.delete(key);
+  return intent && Date.now() - intent.startedAt <= PLAY_INTENT_TTL_MS
+    ? intent.promise
+    : fetchDramaPlayback(id, videoId, signal, fallback);
+}
+
 // 保留结果对象身份，防止 structural sharing 把本次请求映射到旧对象的计时元数据。
-export function useDramaListQuery(route: '/' | '/dramas' = '/dramas') {
+export function useDramaListQuery(route: '/watch' | '/dramas' = '/dramas') {
   return useQuery({
     queryKey: dramaKeys.list(),
     queryFn: ({ signal }) => fetchDramas('list', signal, route),
@@ -298,11 +347,11 @@ export function useDramaDetailQuery(id: string) {
 }
 
 /** Each playback intent confirms the current provider; a prefetched old CDN URL cannot bypass shutdown. */
-export function useDramaPlaybackQuery(id: string, videoId?: string) {
+export function useDramaPlaybackQuery(id: string, videoId?: string, fallback = false) {
   const intent = useMemo(() => `${id}:${videoId ?? ''}:${createRequestId()}`, [id, videoId]);
   return useQuery({
-    queryKey: [...dramaKeys.playback(id, videoId), 'intent', intent],
-    queryFn: ({ signal }) => fetchDramaPlayback(id, videoId, signal),
+    queryKey: [...dramaKeys.playback(id, videoId), 'intent', intent, fallback],
+    queryFn: ({ signal }) => loadDramaPlayback(id, videoId, signal, fallback),
     structuralSharing: false,
     enabled: Boolean(id),
     gcTime: 0,
@@ -325,12 +374,13 @@ export function usePreloadDramaPlayback() {
   );
 }
 
-/** 点击卡片固定筛选队列，取址由实际播放意图负责。 */
+/** 点击卡片固定筛选队列，并在点击当下发出本次播放意图的取址（需在 beginPlayback 之后调用）。 */
 export function usePrefetchDramaPlayback() {
   const queryClient = useQueryClient();
-  return (id: string, browseQueue?: DramaSummary[], _videoId?: string) => {
+  return (id: string, browseQueue?: DramaSummary[], videoId?: string) => {
     // 点击时固定当前筛选/排序后的队列，保证进入播放后的上下滑仍沿用所见顺序。
     const list = browseQueue ?? queryClient.getQueryData<DramaSummary[]>(dramaKeys.list());
     if (list) queryClient.setQueryData(dramaKeys.browseQueue(), list);
+    startDramaPlayIntent(id, videoId);
   };
 }

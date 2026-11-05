@@ -1,0 +1,41 @@
+{
+  "id": "complexity-reduction",
+  "name": "complexity-reduction",
+  "title": "降复杂度专项（业务体验/稳定性/性能不变）",
+  "description": "",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P2",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-04",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "11-04-complexity-p01-budget-docs",
+    "11-04-complexity-p2-telemetry-cleanup",
+    "11-04-complexity-p3-chat-chain"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "no_module_change",
+      "reason": "父任务只做规划与汇总，模块变更由各子任务声明"
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "父任务不直接改代码；P3/P4 子任务需单独声明 required 并记录主链路页面与接口 P95"
+    }
+  }
+}

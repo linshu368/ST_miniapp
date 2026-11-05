@@ -331,7 +331,7 @@ describe('foreground playback quality windows', () => {
     video.frame?.();
     await vi.advanceTimersByTimeAsync(1000);
     observer.dispose();
-    expect(windows()).toEqual([expect.objectContaining({ route: '/', playing_ms: 1000 })]);
+    expect(windows()).toEqual([expect.objectContaining({ route: '/watch', playing_ms: 1000 })]);
     expect(Object.keys(windows()[0] ?? {})).not.toEqual(
       expect.arrayContaining(['dramaId', 'videoId', 'sessionId', 'source'])
     );
@@ -1201,4 +1201,42 @@ describe('video startup observation', () => {
     video.dispatchEvent(new Event('error'));
     expect(reports[0]?.outcome).toBe('error');
   });
+});
+
+it('retains the startup until an automatic muted retry produces its first frame', async () => {
+  const observer = bind();
+  observer.playCalled('automatic');
+  await vi.advanceTimersByTimeAsync(3200);
+  observer.rejected(
+    new DOMException('sound requires gesture', 'NotAllowedError'),
+    'automatic',
+    true
+  );
+  expect(tracker.ensurePlayback('a').outcome).toBeUndefined();
+  expect(reports.filter((report) => report.phase === 'final')).toHaveLength(0);
+  video.muted = true;
+  observer.playCalled('automatic');
+  await vi.advanceTimersByTimeAsync(400);
+  video.paused = false;
+  video.dispatchEvent(new Event('playing'));
+  video.frame?.();
+  const finals = reports.filter((report) => report.phase === 'final');
+  expect(finals).toHaveLength(1);
+  expect(finals[0]).toMatchObject({ outcome: 'playing', elapsedMs: 3600 });
+  expect(finals[0]?.media?.events).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ name: 'play_rejected', error: 'not_allowed' }),
+    ])
+  );
+  observer.dispose();
+});
+
+it('ends as autoplay blocked if the muted retry is also rejected', () => {
+  const observer = bind();
+  observer.rejected(new DOMException('first blocked', 'NotAllowedError'), 'automatic', true);
+  observer.rejected(new DOMException('muted retry blocked', 'NotAllowedError'));
+  expect(reports.filter((report) => report.phase === 'final')).toEqual([
+    expect.objectContaining({ outcome: 'autoplay_blocked' }),
+  ]);
+  observer.dispose();
 });

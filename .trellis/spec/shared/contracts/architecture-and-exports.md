@@ -8,7 +8,7 @@
 | `src/api/*`                  | HTTP/SSE DTO、枚举、跨端配置 schema；含 `api/telemetry.ts` replay 契约 |
 | `src/text-postprocess/*`     | 浏览器/Node 可用的纯编译、artifact 校验与分段 apply                    |
 | `src/config/database.ts`     | 数据库环境配置纯工具，不建立连接                                       |
-| `src/telemetry/sanitize.ts`  | 遥测脱敏纯函数；不能替代 PostHog DOM 屏蔽                              |
+| `src/telemetry/sanitize.ts`  | 遥测脱敏纯函数；不能替代 Session Replay DOM 屏蔽                       |
 | `src/logging/conventions.ts` | 日志字段约定；当前未从根出口导出                                       |
 | `src/*.ts`                   | 小型稳定纯函数、类型和 fixture                                         |
 | `src/__tests__/*`            | 契约与纯函数测试                                                       |

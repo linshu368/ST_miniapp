@@ -183,7 +183,8 @@ export const DramaTimingReportSchema = z
     phase: z.enum(['start', 'slow', 'final', 'network']),
     version: z.literal(2).optional(),
     definition: z.literal(DRAMA_TIMING_DEFINITION).optional(),
-    route: z.enum(['/', '/dramas', '/dramas/:id']).optional(),
+    // 视频流已从 / 移到 /watch；仍接受 /，避免尚未刷新的旧客户端报告被拒。
+    route: z.enum(['/watch', '/', '/dramas', '/dramas/:id']).optional(),
     // Unified diagnostics remain logs; they must never re-enter analytics storage.
     purpose: z.literal('diagnostic').optional(),
     context: z

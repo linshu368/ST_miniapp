@@ -1,31 +1,26 @@
+import { selectStreamDelivery, streamExperimentUser } from '../features/drama/stream.js';
 /**
  * backend / routes / telemetry.ts
  *
- * GET /api/telemetry/replay-context — 聊天回放用的最小只读用户标签。
+ * POST /api/telemetry/drama-timing — 短剧启动/播放计时报告，写日志与 Loki 诊断。
  */
 import type { FastifyInstance } from 'fastify';
 import {
   fail,
-  GetReplayContextQuerySchema,
   ok,
-  parseGetReplayContextData,
-  type GetReplayContextData,
   DRAMA_TIMING_BODY_LIMIT,
   DramaTimingReportSchema,
   dramaTimingLogFields,
   type PostDramaTimingData,
 } from '@miniapp/shared';
 import { requireTelegramAuth } from '../middleware/auth.js';
-import { getOrCreateDbUserRecord } from '../lib/user.js';
 import { requestLogger } from '../lib/logger.js';
-import { MiniappWalletRepository } from '../infrastructure/repositories/MiniappWalletRepository.js';
-import { getDramaTimingPersistenceConfig } from '../platform/runtime-config.js';
+import { getDramaTimingLogContext } from '../platform/runtime-config.js';
 import { dramaExperimentLogUser } from '../features/drama/delivery.js';
 import { observeDramaStartupDiagnostic } from '../lib/engineering-observability.js';
 
 export default async function telemetryRoutes(app: FastifyInstance) {
-  const wallets = new MiniappWalletRepository();
-  const timingConfig = getDramaTimingPersistenceConfig();
+  const timingConfig = getDramaTimingLogContext();
   // 仅保护本进程的诊断日志容量，不作为业务限流或跨副本一致性机制。
   const uploadWindows = new Map<number, { startedAt: number; count: number }>();
   let totalWindow = { startedAt: performance.now(), count: 0 };
@@ -68,13 +63,21 @@ export default async function telemetryRoutes(app: FastifyInstance) {
       const parsed = DramaTimingReportSchema.safeParse(request.body);
       if (!parsed.success)
         return reply.status(400).send(fail('BAD_REQUEST', 'Invalid timing report'));
+      const stream =
+        parsed.data.dramaId && parsed.data.videoId && parsed.data.delivery?.experimentId
+          ? selectStreamDelivery(userId, parsed.data.dramaId, parsed.data.videoId, true)
+          : null;
+      const identity =
+        stream && stream.delivery.experimentId === parsed.data.delivery?.experimentId
+          ? streamExperimentUser(userId, stream.config)
+          : dramaExperimentLogUser(userId);
       const log = requestLogger(request.log, 'drama');
       const fields = {
         ...dramaTimingLogFields(parsed.data),
         upload_request_id: request.id,
         environment: timingConfig.environment,
         server_release: timingConfig.release,
-        ...dramaExperimentLogUser(userId),
+        ...identity,
       };
       try {
         if (parsed.data.phase === 'slow') log.biz.warn(fields, 'drama frontend timing');
@@ -89,54 +92,4 @@ export default async function telemetryRoutes(app: FastifyInstance) {
       return reply.status(202).send(ok<PostDramaTimingData>({ accepted: true }));
     }
   );
-
-  // @frontend-ready: true
-  app.get(
-    '/api/telemetry/replay-context',
-    { preHandler: [requireTelegramAuth] },
-    async (request, reply) => {
-      if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
-
-      const query = GetReplayContextQuerySchema.safeParse(request.query);
-      if (!query.success) {
-        return reply.status(400).send(fail('BAD_REQUEST', 'Invalid query'));
-      }
-
-      const log = requestLogger(request.log, 'telemetry');
-      const startedAt = Date.now();
-      try {
-        const dbUser = await getOrCreateDbUserRecord(request.user);
-        const isPaidUser = await wallets.hasCompletedPayment(dbUser.id);
-        const data = parseGetReplayContextData({
-          telegram_user_id: String(request.user.id),
-          is_paid_user: isPaidUser,
-          total_chat_rounds: toTotalChatRounds(dbUser.total_round),
-        });
-
-        log.biz.info(
-          {
-            event: 'telemetry.replay_context.read',
-            isPaidUser: data.is_paid_user,
-            totalChatRounds: data.total_chat_rounds,
-            durationMs: Date.now() - startedAt,
-          },
-          'replay context 已读取'
-        );
-
-        return reply.send(ok<GetReplayContextData>(data));
-      } catch (err) {
-        log.sys.error(
-          { event: 'telemetry.replay_context.failed', err, durationMs: Date.now() - startedAt },
-          'replay context 读取失败'
-        );
-        return reply.status(500).send(fail('INTERNAL_ERROR', 'replay context 读取失败'));
-      }
-    }
-  );
-}
-
-function toTotalChatRounds(value: unknown): number {
-  const parsed = typeof value === 'number' ? value : Number(value);
-  if (!Number.isFinite(parsed) || parsed < 0) return 0;
-  return Math.floor(parsed);
 }

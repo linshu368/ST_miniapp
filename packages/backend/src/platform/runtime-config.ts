@@ -9,6 +9,7 @@
  */
 
 import { getDomainDb } from '../lib/supabase.js';
+import { z } from 'zod';
 import { config } from './config.js';
 export interface DramaPlaybackCdnConfig {
   tokenKey: string;
@@ -77,11 +78,10 @@ export function getDramaPlaybackCdnConfig(): DramaPlaybackCdnConfig | null {
   };
 }
 
-/** Deployment opt-in: a compatible backend may ship before the manual analytics migration. */
-export function getDramaTimingPersistenceConfig() {
+/** 短剧计时日志里标注的环境与服务端版本，供 Railway 日志导出后按 release 分窗对比。 */
+export function getDramaTimingLogContext() {
   const candidate = process.env.RAILWAY_GIT_COMMIT_SHA || process.env.SENTRY_RELEASE || 'unknown';
   return {
-    enabled: process.env.DRAMA_TIMING_PERSIST_ENABLED === 'true',
     environment: config.database.target,
     release: /^[a-zA-Z0-9_.-]{1,128}$/.test(candidate) ? candidate : 'unknown',
   };
@@ -285,4 +285,57 @@ export function clearRuntimeConfigInflightReads(): void {
   entryInflight.clear();
   entriesInflight.clear();
   pendingReadBatch = null;
+}
+
+const streamManifestSchema = z
+  .object({
+    environment: z.enum(['test', 'production']),
+    videos: z
+      .array(
+        z
+          .object({
+            dramaId: z.string().uuid(),
+            videoId: z.string().uuid(),
+            uid: z.string().regex(/^[a-f0-9]{32}$/),
+          })
+          .strict()
+      )
+      .length(30),
+  })
+  .strict();
+
+/** Invalid or overlapping experiments fail closed to the existing MP4 path. */
+export function getDramaStreamConfig(retainIdentity = false) {
+  if (
+    !retainIdentity &&
+    (process.env.DRAMA_STREAM_ENABLED !== 'true' || process.env.DRAMA_CDN_ENABLED === 'true')
+  )
+    return null;
+  try {
+    const manifest = streamManifestSchema.parse(
+      JSON.parse(process.env.DRAMA_STREAM_MANIFEST || '')
+    );
+    const id = process.env.DRAMA_STREAM_EXPERIMENT_ID || '';
+    const key = process.env.DRAMA_STREAM_EXPERIMENT_KEY || '';
+    const host = process.env.DRAMA_STREAM_HOST || '';
+    const keyId = process.env.DRAMA_STREAM_KEY_ID || '';
+    const privateKey = process.env.DRAMA_STREAM_PRIVATE_KEY || '';
+    const enrollmentBps = Number(process.env.DRAMA_STREAM_ENROLLMENT_BPS || '0');
+    if (!Number.isInteger(enrollmentBps) || enrollmentBps < 0 || enrollmentBps > 10000) return null;
+    if (
+      manifest.environment !== config.database.target ||
+      !/^[a-zA-Z0-9_-]{1,64}$/.test(id) ||
+      key.length < 32 ||
+      !/^customer-[a-zA-Z0-9-]+\.cloudflarestream\.com$/.test(host) ||
+      !/^[a-zA-Z0-9_-]+$/.test(keyId) ||
+      !privateKey ||
+      new Set(manifest.videos.map((v) => v.dramaId)).size !== 30 ||
+      new Set(manifest.videos.map((v) => v.videoId)).size !== 30 ||
+      new Set(manifest.videos.map((v) => v.uid)).size !== 30
+    )
+      return null;
+    return { ...manifest, id, key, host, keyId, privateKey, enrollmentBps };
+  } catch {
+    return null;
+  }
 }

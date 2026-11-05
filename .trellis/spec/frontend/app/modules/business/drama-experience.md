@@ -5,7 +5,7 @@ scope: frontend
 category: business
 status: active
 owners: [frontend]
-last_verified_task: .trellis/tasks/11-03-five-route-navigation-p95/
+last_verified_task: .trellis/tasks/11-04-drama-play-post-seek-dedupe/
 last_verified_at: 2026-11-04
 ---
 
@@ -19,7 +19,7 @@ last_verified_at: 2026-11-04
 
 `components/drama/drama-home.tsx` 使用原 DramaPlayer 嵌入；主页上下滑或当前条目播完进入另一部；点击「观看完整短剧」进入专注详情并延续进度，详情上下滑与自动续播都在本剧内，末集停留。最后3秒只预取下一条地址，保留片尾；小幅纵向过渡，减少动态偏好下无动画。没有下一条时停在尾帧，不显示到头文案。剧场浏览列表仅固定搜索栏，栏目、分类、排序与续看入口随内容滚动；卡片封面下仅显示剧名，不展示简介或标签。返回保留条件与滚动。EpisodeSheet黑灰面板、简介/选集切换、30集分组、打开定位当前组；失败保留恢复入口；暂停不强制打断纯净模式，单击可唤回控件。
 
-`lib/api/drama.ts` 继续使用已有列表/详情/play契约，详情与签名并行。点击按本设备进度预取目标集；互动增量通过 social/like/comments API，与播放并行且互不阻塞。媒体每次换集、换剧、离开先保存后暂停并释放src，过时Promise不能恢复播放。浏览器有声自动播放受限时仅降级一次静音，失败保留手动播放。
+`lib/api/drama.ts` 使用列表/详情契约，取址改为固定地址 `POST /api/dramas/play`（CORS 预检可缓存；旧 `GET /api/dramas/:id/play` 保留给旧客户端），详情与签名并行。点封面、详情页换剧在点击当下（`beginPlayback` 之后）发出取址，播放器的 `useDramaPlaybackQuery` 按 (剧, 集) 接上这次请求：10 秒内有效、只用一次、接不上就新建，每次播放意图仍重新取址，不复用意图前的结果。点击按本设备进度确定目标集；互动增量通过 social/like/comments API，与播放并行且互不阻塞。媒体每次换集、换剧、离开先保存后暂停并释放src，过时Promise不能恢复播放。浏览器有声自动播放受限时仅降级一次静音，失败保留手动播放。
 
 一级导航会在后台预算内预热 `/`、`/dramas` route chunk，但不会在底栏 intent 阶段额外拉短剧目录；五入口回归证明该请求会与剧场首批卡片的增量挂载形成竞态。目录继续由既有 React Query、持久缓存和页面 query 负责。`/`、`/dramas` 的点击到内容 ready 沿统一 `page.navigation` 口径记录，2 秒目标必须发布后按 Android/iOS 与 release 验证。
 
@@ -38,7 +38,7 @@ last_verified_at: 2026-11-04
 
 ## 关键实现链路
 
-目录 query → 选择剧集 → 详情与签名并行 → 媒体装载/恢复位置 → 播放、手势与互动；换集、换剧和离页先保存并释放旧媒体，过时请求不得抢回播放状态。
+目录 query → 选择剧集（封面/换剧点击即发取址）→ 详情与签名并行 → 媒体装载/恢复位置 → 播放、手势与互动；换集、换剧和离页先保存并释放旧媒体，过时请求不得抢回播放状态。
 
 ## 数据、契约与外部依赖
 
@@ -55,6 +55,8 @@ last_verified_at: 2026-11-04
 复用 `packages/ui-tests` 的 `@drama`、dramas/drama-list-error/drama-play-error/drama-interaction-error/empty 场景；默认390×844、窄屏320×568。已有前端类型、测试、lint/build及角色/影像固定验收继续执行。真实媒体、原生Telegram/系统手势与生产接口不以本地模拟结论替代。
 
 ## 已知缺口与待核验项
+
+进度条拖动会话在 `components/drama/use-drama-scrub.ts`：指针松手提交后 500ms 内忽略原生 range 的 onChange，避免 Android 上同一手势提交两次。提前发出取址只覆盖封面与详情页换剧；选集、首页自动播放的首次请求不在其内，修饰键点击封面可能多发一次不会被接上的请求。
 
 真实媒体、Telegram 原生手势、系统键盘和生产签名服务仍需真机与发布后观测；本地固定 fixture 不能替代生产 P95。
 
@@ -95,3 +97,7 @@ last_verified_at: 2026-11-04
 首页指定选集的 `video` 参数在媒体与详情就绪、该集0秒或实际位置写入后消费；保留 `from=feed`，后续刷新按最新观看记录恢复。有缓存剧目时目录后台失败不中断当前播放器，仅在控件可见时提供轻量刷新入口。
 
 已收藏/最近看过分别保留本会话滚动位置及行锚点，排序改变后优先找回刚点击的剧。选集每次打开或从简介切入时保证当前集与分组可见；集数分组固定在列表上方，用户开始翻组/滚动后不再自动抢位置。
+
+## Stream A/B 接入
+
+30 条有序环境清单由 Backend runtime-config 读取，账号固定 50:50 分配和入组比例分别哈希。列表同序置顶，鉴权后仅实际白名单单集参与实验。原生 HLS/hls.js 复用当前播放器，blob 源归属、一次 Supabase 恢复及累计重试等待贯通现有观测。配置默认关闭，真机与生产验收状态见本次任务，操作说明见 `docs/drama-stream-ab.md`。

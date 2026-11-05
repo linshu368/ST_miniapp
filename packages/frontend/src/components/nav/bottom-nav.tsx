@@ -36,7 +36,7 @@ function backgroundPrefetchTargets(
   roleplayHref: '/characters' | '/chats',
   routeWarmupOrder: MobilePerformancePolicy['routeWarmupOrder']
 ): string[] {
-  const candidates = [roleplayHref, '/creation', '/', '/dramas', '/profile'];
+  const candidates = [roleplayHref, '/creation', '/watch', '/dramas', '/profile'];
   const normalized = (href: string): PrimaryNavigationRoute =>
     href === '/chats' ? '/characters' : (href as PrimaryNavigationRoute);
   const current =
@@ -44,8 +44,8 @@ function backgroundPrefetchTargets(
       ? '/characters'
       : isCreationRoute(pathname)
         ? '/creation'
-        : pathname === '/'
-          ? '/'
+        : pathname === '/watch'
+          ? '/watch'
           : pathname?.startsWith('/dramas')
             ? '/dramas'
             : pathname?.startsWith('/profile')

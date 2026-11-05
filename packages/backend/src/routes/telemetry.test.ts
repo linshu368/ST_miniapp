@@ -1,14 +1,10 @@
 import Fastify from 'fastify';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DramaTimingReportSchema } from '@miniapp/shared';
-import { railwayDramaReport } from '../scripts/import-drama-timing.js';
+import { railwayDramaReport } from '../scripts/railway-drama-report.js';
 import { compareDramaCdn } from '../scripts/compare-drama-cdn.js';
 
-const wallets = {
-  hasCompletedPayment: vi.fn(async () => false),
-};
 const timingLogs = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }));
-const persistence = vi.hoisted(() => ({ rpc: vi.fn() }));
 const cloud = vi.hoisted(() => ({ diagnostic: vi.fn() }));
 vi.mock('../lib/engineering-observability.js', () => ({
   observeDramaStartupDiagnostic: cloud.diagnostic,
@@ -22,23 +18,7 @@ vi.mock('../lib/logger.js', () => ({
 
 vi.mock('../lib/supabase.js', () => ({
   getSupabaseClient: () => ({ schema: () => ({}) }),
-  getDomainDb: () => ({ rpc: persistence.rpc }),
-}));
-
-vi.mock('../lib/user.js', () => ({
-  getOrCreateDbUserRecord: vi.fn(async () => ({
-    id: '00000000-0000-0000-0000-000000000099',
-    tg_id: '99999',
-    total_round: 12,
-  })),
-}));
-
-vi.mock('../infrastructure/repositories/MiniappWalletRepository.js', () => ({
-  MiniappWalletRepository: class {
-    constructor() {
-      return wallets;
-    }
-  },
+  getDomainDb: () => ({ rpc: vi.fn() }),
 }));
 
 async function buildApp() {
@@ -48,63 +28,6 @@ async function buildApp() {
   await app.ready();
   return app;
 }
-
-describe('GET /api/telemetry/replay-context', () => {
-  beforeEach(() => {
-    wallets.hasCompletedPayment.mockReset();
-    wallets.hasCompletedPayment.mockResolvedValue(true);
-    vi.stubEnv('DEV_AUTH_BYPASS', '');
-    vi.stubEnv('MOCK_AUTH', '');
-  });
-
-  afterEach(() => {
-    vi.unstubAllEnvs();
-  });
-
-  it('rejects missing Telegram auth', async () => {
-    const app = await buildApp();
-    try {
-      const response = await app.inject({
-        method: 'GET',
-        url: '/api/telemetry/replay-context',
-      });
-      expect(response.statusCode).toBe(401);
-      const body = response.json() as { success: boolean };
-      expect(body.success).toBe(false);
-    } finally {
-      await app.close();
-    }
-  });
-
-  it('returns only GetReplayContextData for an authenticated user', async () => {
-    vi.stubEnv('DEV_AUTH_BYPASS', '1');
-    const app = await buildApp();
-    try {
-      const response = await app.inject({
-        method: 'GET',
-        url: '/api/telemetry/replay-context',
-      });
-      expect(response.statusCode).toBe(200);
-      const body = response.json() as {
-        success: boolean;
-        data: Record<string, unknown>;
-      };
-      expect(body).toEqual({
-        success: true,
-        data: {
-          telegram_user_id: '99999',
-          is_paid_user: true,
-          total_chat_rounds: 12,
-        },
-      });
-      expect(body.data).not.toHaveProperty('user_id');
-      expect(body.data).not.toHaveProperty('user_cohort');
-      expect(body.data).not.toHaveProperty('id');
-    } finally {
-      await app.close();
-    }
-  });
-});
 
 describe('POST /api/telemetry/drama-timing', () => {
   const report = {
@@ -247,7 +170,6 @@ describe('POST /api/telemetry/drama-timing', () => {
   it('derives experiment identity server-side and keeps seek out of startup persistence', async () => {
     vi.stubEnv('DRAMA_CDN_EXPERIMENT_ID', 'unit-ab');
     vi.stubEnv('DRAMA_CDN_EXPERIMENT_KEY', 'fictional-group-key-for-local-testing-only');
-    vi.stubEnv('DRAMA_TIMING_PERSIST_ENABLED', 'true');
     const app = await buildApp();
     try {
       const result = await app.inject({
@@ -265,7 +187,6 @@ describe('POST /api/telemetry/drama-timing', () => {
         experiment_id: 'unit-ab',
         experiment_user: expect.stringMatching(/^[a-f0-9]{64}$/),
       });
-      expect(persistence.rpc).not.toHaveBeenCalled();
       expect(JSON.stringify(timingLogs.info.mock.calls)).not.toContain('99999');
       const forged = await app.inject({
         method: 'POST',
@@ -309,8 +230,6 @@ describe('POST /api/telemetry/drama-timing', () => {
     vi.clearAllMocks();
     vi.stubEnv('DEV_AUTH_BYPASS', '1');
     vi.stubEnv('MOCK_AUTH', '');
-    vi.stubEnv('DRAMA_TIMING_PERSIST_ENABLED', 'false');
-    persistence.rpc.mockReturnValue({ abortSignal: async () => ({ data: 'stored', error: null }) });
   });
   afterEach(() => {
     vi.unstubAllEnvs();
@@ -327,7 +246,6 @@ describe('POST /api/telemetry/drama-timing', () => {
       });
       expect(response.statusCode).toBe(400);
       expect(timingLogs.info).not.toHaveBeenCalled();
-      expect(persistence.rpc).not.toHaveBeenCalled();
     } finally {
       await app.close();
     }
@@ -369,7 +287,6 @@ describe('POST /api/telemetry/drama-timing', () => {
         }),
         'drama frontend timing'
       );
-      expect(wallets.hasCompletedPayment).not.toHaveBeenCalled();
       const slow = await app.inject({
         method: 'POST',
         url: '/api/telemetry/drama-timing',
@@ -383,7 +300,6 @@ describe('POST /api/telemetry/drama-timing', () => {
   });
 
   it('never persists unified diagnostics even while legacy persistence remains enabled', async () => {
-    vi.stubEnv('DRAMA_TIMING_PERSIST_ENABLED', 'true');
     const app = await buildApp();
     try {
       const response = await app.inject({
@@ -396,7 +312,6 @@ describe('POST /api/telemetry/drama-timing', () => {
         expect.objectContaining({ purpose: 'diagnostic', route: '/' }),
         'drama frontend timing'
       );
-      expect(persistence.rpc).not.toHaveBeenCalled();
     } finally {
       await app.close();
     }
@@ -416,13 +331,11 @@ describe('POST /api/telemetry/drama-timing', () => {
       expect(cloud.diagnostic).toHaveBeenCalledWith(
         DramaTimingReportSchema.parse({ ...report, purpose: 'diagnostic' })
       );
-      expect(persistence.rpc).not.toHaveBeenCalled();
     } finally {
       await app.close();
     }
   });
-  it('blocks sampled diagnostics from historical import and direct repository writes', async () => {
-    const diagnostic = DramaTimingReportSchema.parse({ ...report, purpose: 'diagnostic' });
+  it('keeps sampled diagnostics out of the Railway comparison parser', () => {
     expect(
       railwayDramaReport({
         event: 'drama.frontend_timing',
@@ -430,14 +343,8 @@ describe('POST /api/telemetry/drama-timing', () => {
         purpose: 'diagnostic',
       })
     ).toBeUndefined();
-    const { DramaTimingRepository } = await import('../features/drama/timing-repository.js');
-    await expect(
-      new DramaTimingRepository().persist(diagnostic, { environment: 'test', release: 'test' })
-    ).rejects.toThrow('drama_diagnostic_is_not_an_analytics_fact');
-    expect(persistence.rpc).not.toHaveBeenCalled();
   });
   it('forwards validated diagnostics to Cloud without DB writes even with the legacy flag enabled', async () => {
-    vi.stubEnv('DRAMA_TIMING_PERSIST_ENABLED', 'true');
     const app = await buildApp();
     try {
       const response = await app.inject({
@@ -448,52 +355,12 @@ describe('POST /api/telemetry/drama-timing', () => {
       expect(response.statusCode).toBe(202);
       expect(response.json()).toEqual({ success: true, data: { accepted: true } });
       expect(cloud.diagnostic).toHaveBeenCalledWith(DramaTimingReportSchema.parse(report));
-      expect(persistence.rpc).not.toHaveBeenCalled();
     } finally {
       await app.close();
     }
-  });
-
-  it('does not depend on the legacy analytics database being available', async () => {
-    vi.stubEnv('DRAMA_TIMING_PERSIST_ENABLED', 'true');
-    persistence.rpc.mockReturnValue({
-      abortSignal: async () => ({ data: null, error: { code: 'db_unavailable' } }),
-    });
-    const app = await buildApp();
-    try {
-      const response = await app.inject({
-        method: 'POST',
-        url: '/api/telemetry/drama-timing',
-        payload: report,
-      });
-      expect(response.statusCode).toBe(202);
-      expect(response.json()).toEqual({ success: true, data: { accepted: true } });
-      expect(persistence.rpc).not.toHaveBeenCalled();
-    } finally {
-      await app.close();
-    }
-  });
-
-  it('bounds concurrent telemetry writes and rejects overload instead of accumulating a queue', async () => {
-    const { DramaTimingRepository, DramaTimingBusyError } =
-      await import('../features/drama/timing-repository.js');
-    const pending: Array<(result: { data: string; error: null }) => void> = [];
-    persistence.rpc.mockReturnValue({
-      abortSignal: () => new Promise((resolve) => pending.push(resolve)),
-    });
-    const repository = new DramaTimingRepository();
-    const context = { environment: 'test', release: 'test' };
-    const a = repository.persist(DramaTimingReportSchema.parse(report), context);
-    const b = repository.persist(DramaTimingReportSchema.parse(report), context);
-    await expect(
-      repository.persist(DramaTimingReportSchema.parse(report), context)
-    ).rejects.toBeInstanceOf(DramaTimingBusyError);
-    for (const resolve of pending) resolve({ data: 'stored', error: null });
-    await expect(Promise.all([a, b])).resolves.toEqual(['stored', 'stored']);
   });
 
   it('accepts a burst without constructing a database persistence queue', async () => {
-    vi.stubEnv('DRAMA_TIMING_PERSIST_ENABLED', 'true');
     const app = await buildApp();
     try {
       const responses = await Promise.all(
@@ -503,7 +370,6 @@ describe('POST /api/telemetry/drama-timing', () => {
       );
       expect(responses.every((response) => response.statusCode === 202)).toBe(true);
       expect(cloud.diagnostic).toHaveBeenCalledTimes(35);
-      expect(persistence.rpc).not.toHaveBeenCalled();
     } finally {
       await app.close();
     }

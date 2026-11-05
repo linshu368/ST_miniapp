@@ -117,7 +117,7 @@ describe('page tracker', () => {
   });
 
   it('pauses the watchdog while the page is in the background', () => {
-    beginPage('/');
+    beginPage('/characters');
     vi.advanceTimersByTime(1000);
     setVisibility('hidden');
     vi.advanceTimersByTime(PAGE_STALL_MS * 5);
@@ -937,7 +937,7 @@ describe('standalone HTML startup script', () => {
     const notify = vi.fn();
     const win = Object.assign(new EventTarget(), {
       location: {
-        pathname: '/',
+        pathname: '/characters',
         search: '',
         hash: platform ? `#tgWebAppVersion=9.6&tgWebAppPlatform=${platform}` : '',
       },

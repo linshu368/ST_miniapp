@@ -12,7 +12,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
   const pathname = usePathname();
   useRouteQueryIsolation(pathname);
   const controlsVisible = useDramaLibraryStore((state) => state.playbackControlsVisible);
-  const isDramaPlayback = pathname === '/' || /^\/dramas\/[^/]+/.test(pathname ?? '');
+  const isDramaPlayback = pathname === '/watch' || /^\/dramas\/[^/]+/.test(pathname ?? '');
   // 路由级持有：换剧和弹出面板都不能暂时把下滑交回 Telegram。
   useEffect(() => {
     if (!isDramaPlayback) return;

@@ -13,7 +13,7 @@ import { useFreshAfterFetch, usePageReady } from '@/lib/perf/page-ready';
 import { useDramaLibraryStore, useHydrateDramaLibrary } from '@/stores/drama-library-store';
 
 export function DramaHome() {
-  const query = useDramaListQuery('/');
+  const query = useDramaListQuery('/watch');
   const hydrated = useHydrateDramaLibrary();
   const controlsVisible = useDramaLibraryStore((state) => state.playbackControlsVisible);
   const activeId = useDramaLibraryStore((state) => state.browse.activeId);
@@ -38,7 +38,7 @@ export function DramaHome() {
   }, [hasPlayer]);
   const fresh = useFreshAfterFetch(query.isFetching, query.data !== undefined, query.isError);
   usePageReady(
-    '/',
+    '/watch',
     hydrated && query.data !== undefined && (!query.isError || hasPlayer),
     fresh,
     query.isError,
@@ -47,12 +47,12 @@ export function DramaHome() {
 
   useEffect(() => {
     if (query.data !== undefined || query.isError) markCriticalSettled();
-    if (query.data) dramaTiming.listReady(query.data, '/');
+    if (query.data) dramaTiming.listReady(query.data, '/watch');
     else if (query.isError) dramaTiming.listFailed();
   }, [query.data, query.isError]);
 
   const retry = () => {
-    dramaTiming.beginList('retry', undefined, '/');
+    dramaTiming.beginList('retry', undefined, '/watch');
     void query.refetch();
   };
 

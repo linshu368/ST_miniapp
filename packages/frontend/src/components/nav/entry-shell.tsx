@@ -8,7 +8,7 @@ export function EntryShell({ pathname }: { pathname: string }) {
   return (
     <>
       <div data-startup-content className="pb-[var(--app-nav-space)]" aria-busy="true">
-        {pathname === '/' ? (
+        {pathname === '/watch' ? (
           <DramaHomeFrame>
             <DramaHomeLoading />
           </DramaHomeFrame>
@@ -18,7 +18,7 @@ export function EntryShell({ pathname }: { pathname: string }) {
           <DramaListShell />
         ) : (
           <main className="mx-auto min-h-dvh w-full max-w-screen-xl p-6 pt-[calc(1.5rem+env(safe-area-inset-top))]">
-            {pathname !== '/' && (
+            {pathname !== '/watch' && (
               <p role="status" className="text-muted-foreground">
                 加载中
               </p>

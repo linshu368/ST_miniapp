@@ -1,7 +1,7 @@
 'use client';
 
 import { usePageReady } from '@/lib/perf/page-ready';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, ChevronLeft, Clock, Loader2, XCircle } from 'lucide-react';
@@ -12,21 +12,12 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { paymentKeys, usePaymentOrderQuery } from '@/lib/api/payment';
 import {
-  captureExternalPaymentOpenRequested,
-  capturePaymentFlowLeftObserved,
-  capturePaymentOrderStatusObserved,
-  observePaymentReturn,
-  resumePaymentReplayFromPending,
-  retainPaywallFollowupIfActive,
-} from '@/lib/payment/flow-telemetry';
-import {
   adoptPayUrlQueryIntoStorage,
   clearPaymentOpenIfTerminal,
   hasPaymentOpenUrl,
   readPaymentOpenMeta,
 } from '@/lib/payment/open-storage';
 import { reopenStoredPayment } from '@/lib/payment/open-created-payment';
-import { getReplayLifecycle } from '@/lib/telemetry';
 import {
   formatCountdown,
   formatNumber,
@@ -45,7 +36,6 @@ export default function PaymentPendingPage() {
   const orderId = params?.orderId ? decodeURIComponent(params.orderId) : undefined;
   const search = useSearchParams();
   const paymentStarted = search?.get('payment_started') === '1';
-  const paymentReturned = search?.get('payment') === 'returned';
   const returnToFromQuery = safePaymentReturnTo(search?.get('returnTo') ?? null);
   const [storedReturnTo, setStoredReturnTo] = useState<string | null>(null);
   const [canReopenPayment, setCanReopenPayment] = useState(false);
@@ -64,8 +54,6 @@ export default function PaymentPendingPage() {
     isError
   );
   const order = data?.order;
-  const orderRef = useRef(order);
-  orderRef.current = order;
   const pendingArrivalHint = RECHARGE_PAGE_DISPLAY.pendingArrivalHint;
 
   // 返回不能用 push：那会把星尘商店压成新的历史条目，商店自己的返回键再 back
@@ -73,10 +61,6 @@ export default function PaymentPendingPage() {
   // payment_started=1 只由充值页下单跳转时带上，所以它同时也是「上一格就是商店」的判据；
   // 支付回跳深链走的是 router.replace，栈里没有商店那一格，只能用 replace 顶掉本页。
   const goBack = useCallback(() => {
-    const current = orderRef.current;
-    if (current?.status === 'pending') {
-      capturePaymentFlowLeftObserved(current);
-    }
     if (paymentStarted) {
       router.back();
       return;
@@ -86,34 +70,14 @@ export default function PaymentPendingPage() {
   useTelegramBackButton(goBack);
 
   useEffect(() => {
-    retainPaywallFollowupIfActive();
-  }, []);
-
-  useEffect(() => {
     if (!orderId) return;
-    adoptPayUrlQueryIntoStorage(
-      orderId,
-      search?.get('pay_url') ?? null,
-      returnToFromQuery,
-      getReplayLifecycle().getSnapshot().replayContextId
-    );
-    resumePaymentReplayFromPending(orderId);
+    adoptPayUrlQueryIntoStorage(orderId, search?.get('pay_url') ?? null, returnToFromQuery);
     setCanReopenPayment(hasPaymentOpenUrl(orderId));
     setStoredReturnTo(readPaymentOpenMeta(orderId)?.returnTo ?? null);
   }, [orderId, returnToFromQuery, search]);
 
   useEffect(() => {
-    if (!paymentReturned || !orderId) return;
-    observePaymentReturn({
-      source: 'query_param',
-      orderId,
-      route: `/profile/recharge/${orderId}`,
-    });
-  }, [orderId, paymentReturned]);
-
-  useEffect(() => {
     if (!order) return;
-    capturePaymentOrderStatusObserved(order);
     if (!orderId) return;
     clearPaymentOpenIfTerminal(orderId, order.status);
     if (order.status !== 'pending') setCanReopenPayment(false);
@@ -188,20 +152,7 @@ export default function PaymentPendingPage() {
             canReopenPayment={canReopenPayment}
             onReopenPayment={() => {
               if (!orderId) return;
-              void (async () => {
-                const opened = await reopenStoredPayment({
-                  orderId,
-                  paymentType: order.payment_type,
-                });
-                if (!opened) {
-                  captureExternalPaymentOpenRequested({
-                    orderId,
-                    paymentType: order.payment_type,
-                    openFailureKind: 'storage_unavailable',
-                  });
-                  setCanReopenPayment(false);
-                }
-              })();
+              if (!reopenStoredPayment({ orderId })) setCanReopenPayment(false);
             }}
             onBack={goBack}
             arrivalHint={pendingArrivalHint}
@@ -210,7 +161,7 @@ export default function PaymentPendingPage() {
           <CompletedView
             order={order}
             // 支付已完成，本页不该再留在栈里等用户按返回退回来。
-            onHome={() => router.replace(returnTo ?? '/')}
+            onHome={() => router.replace(returnTo ?? '/characters')}
             onOrders={() => router.push('/profile/orders')}
           />
         ) : (

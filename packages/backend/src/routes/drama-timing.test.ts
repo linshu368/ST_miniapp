@@ -3,6 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DramaSigningObservation } from '../features/drama/signed-url.js';
 
 const mocks = vi.hoisted(() => ({
+  stream: false,
+  streamSignFailed: false,
+  streamGroup: 'stream' as 'stream' | 'supabase',
   now: 0,
   denied: false,
   failDb: false,
@@ -48,6 +51,31 @@ vi.mock('../features/drama/signed-url.js', () => ({
     getPlayUrl = mocks.sign;
   },
 }));
+vi.mock('../features/drama/stream.js', () => ({
+  pinStreamDramas: (dramas: unknown[]) => dramas,
+  selectStreamDelivery: () =>
+    mocks.stream
+      ? {
+          config: {},
+          video: { uid: 'unit' },
+          delivery: {
+            experimentId: 'stream-route-unit',
+            group: mocks.streamGroup,
+            provider: mocks.streamGroup,
+            reason: 'assigned',
+          },
+        }
+      : null,
+  signStreamPlayback: () => {
+    if (mocks.streamSignFailed) throw new Error('unit signing failure');
+    return {
+      playable: true,
+      play_url: 'https://example.invalid/hls',
+      expires_at: null,
+      format: 'hls',
+    };
+  },
+}));
 vi.mock('../features/drama/cover-url.js', () => ({
   buildCoverUrl: () => 'https://example.invalid/cover',
 }));
@@ -57,7 +85,16 @@ import dramaRoutes from './drama.js';
 
 beforeEach(() => {
   vi.clearAllMocks();
-  Object.assign(mocks, { now: 0, denied: false, failDb: false, hasVideos: true, signOk: true });
+  Object.assign(mocks, {
+    stream: false,
+    streamSignFailed: false,
+    streamGroup: 'stream',
+    now: 0,
+    denied: false,
+    failDb: false,
+    hasVideos: true,
+    signOk: true,
+  });
   vi.spyOn(performance, 'now').mockImplementation(() => mocks.now);
   mocks.sign.mockImplementation(
     async (_path: string, _log: unknown, observation: DramaSigningObservation) => {
@@ -73,11 +110,16 @@ beforeEach(() => {
 });
 afterEach(() => vi.restoreAllMocks());
 
-async function request(path = `/api/dramas/${ID}/play`) {
+async function request(path = `/api/dramas/${ID}/play`, payload?: object) {
   const app = Fastify({ logger: false, genReqId: (req) => String(req.headers['x-request-id']) });
   await app.register(dramaRoutes);
   try {
-    return await app.inject({ url: path, headers: { 'x-request-id': 'correlated-request' } });
+    return await app.inject({
+      method: payload ? 'POST' : 'GET',
+      url: path,
+      payload,
+      headers: { 'x-request-id': 'correlated-request' },
+    });
   } finally {
     await app.close();
   }
@@ -156,5 +198,83 @@ describe('drama backend timing', () => {
     const response = await request();
     expect(response.statusCode).toBe(200);
     expect(response.json().data.playback.playable).toBe(true);
+  });
+});
+
+it('keeps old clients on MP4 and serves HLS only to the assigned B client', async () => {
+  mocks.stream = true;
+  const old = await request();
+  expect(old.json().data.playback.format).toBeUndefined();
+  expect(mocks.sign).toHaveBeenCalledOnce();
+  mocks.sign.mockClear();
+  const hls = await request(`/api/dramas/${ID}/play?format=hls`);
+  expect(hls.json().data.playback).toMatchObject({
+    format: 'hls',
+    delivery: { group: 'stream', provider: 'stream' },
+  });
+  expect(mocks.sign).not.toHaveBeenCalled();
+});
+it('records the assigned B arm when recovering through Supabase', async () => {
+  mocks.stream = true;
+  const result = await request(`/api/dramas/${ID}/play?format=hls&fallback=mp4`);
+  expect(result.json().data.playback.delivery).toMatchObject({
+    group: 'stream',
+    provider: 'supabase',
+    reason: 'fallback',
+  });
+  expect(mocks.sign).toHaveBeenCalledOnce();
+});
+it('makes signing failure measurable without logging the signing exception', async () => {
+  mocks.stream = true;
+  mocks.streamSignFailed = true;
+  const result = await request(`/api/dramas/${ID}/play?format=hls`);
+  expect(result.json().data.playback).toMatchObject({
+    playable: false,
+    delivery: { group: 'stream', provider: 'unknown', reason: 'unavailable' },
+  });
+  expect(JSON.stringify(mocks.info.mock.calls)).not.toContain('unit signing failure');
+});
+
+describe('POST /api/dramas/play（固定地址，使 CORS 预检可缓存）', () => {
+  const post = (payload: object) => request('/api/dramas/play', payload);
+
+  it('returns the same playback as GET, no-store, and is measured under its own route', async () => {
+    const response = await post({ drama_id: ID, video_id: VIDEO });
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['cache-control']).toBe('private, no-store');
+    expect(response.json().data.playback).toMatchObject({ video_id: VIDEO, playable: true });
+    expect(logged()).toMatchObject({
+      route: '/api/dramas/play',
+      db_read_ms: 20,
+      sign_ms: 50,
+      outcome: 'ok',
+    });
+    expect(JSON.stringify(mocks.info.mock.calls)).not.toContain('private-object-path');
+  });
+
+  it('keeps the HLS capability declaration in the body', async () => {
+    mocks.stream = true;
+    const hls = await post({ drama_id: ID, format: 'hls' });
+    expect(hls.json().data.playback).toMatchObject({ format: 'hls' });
+    expect(mocks.sign).not.toHaveBeenCalled();
+    const fallback = await post({ drama_id: ID, format: 'hls', fallback: 'mp4' });
+    expect(fallback.json().data.playback.delivery).toMatchObject({ reason: 'fallback' });
+  });
+
+  it('rejects malformed bodies and IDs before touching the database', async () => {
+    for (const body of [
+      { drama_id: 'invalid' },
+      { drama_id: ID, video_id: 'invalid' },
+      { drama_id: ID, extra: true },
+      { video_id: VIDEO },
+    ]) {
+      expect((await post(body)).statusCode).toBe(400);
+    }
+    expect(logged().db_read_ms).toBeUndefined();
+  });
+
+  it('video that does not belong to the drama is 404', async () => {
+    const other = '33333333-3333-4333-8333-333333333333';
+    expect((await post({ drama_id: ID, video_id: other })).statusCode).toBe(404);
   });
 });

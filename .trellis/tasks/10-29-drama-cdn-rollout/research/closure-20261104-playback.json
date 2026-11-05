@@ -1,0 +1,370 @@
+{
+  "checked_at": "2026-11-04T03:11:14Z",
+  "query": {
+    "projectId": "ce38c0c0-88cd-407a-9c04-06124cd42e97",
+    "environmentId": "f03d6c61-84e3-434d-a81a-0ae209167ef5",
+    "serviceId": "8bd593b7-7c40-4ab6-8808-c0863f27a22a",
+    "filter": "@event:drama.frontend_timing",
+    "from": "2026-11-04T03:01:30.941Z",
+    "to": "2026-11-04T03:11:14Z",
+    "limit": 500
+  },
+  "post_shutdown_rows": 30,
+  "unsaturated": true,
+  "manual_feedback": {
+    "platform": "ios",
+    "initial": "已完成",
+    "clarification": "没有出现按钮，第三项实际未测"
+  },
+  "new_playback": {
+    "status": "passed",
+    "platform": "ios",
+    "manual_result": "user completed",
+    "provider_confirmed": true,
+    "observation": {
+      "timestamp": "2026-11-04T03:07:57.133240503Z",
+      "event": "drama.frontend_timing",
+      "observation_id": "34c96c99-1bcb-4e4a-b277-22972ea1bb26",
+      "type": "playback",
+      "phase": "final",
+      "entry": "direct",
+      "outcome": "playing",
+      "elapsed_ms": 2420.0000000000073,
+      "frame_method": "video_frame_callback",
+      "marks": {
+        "player_ready": 0,
+        "address_ready": 629,
+        "source_set": 633,
+        "metadata": 2315,
+        "first_frame": 2420,
+        "playing": 2390,
+        "play_called": 634,
+        "play_resolved": 2391,
+        "loadeddata": 2390,
+        "canplay": 2390
+      },
+      "recovery": {
+        "rootId": "34c96c99-1bcb-4e4a-b277-22972ea1bb26",
+        "cumulativeMs": 2420.0000000000073
+      },
+      "delivery": {
+        "experimentId": "drama-bunny-prod-20261029-v1",
+        "group": "supabase",
+        "provider": "supabase",
+        "reason": "disabled"
+      },
+      "assigned_group": "supabase",
+      "server_release": "26da44cc74420caf3642c33bcb4b4752eff6132c",
+      "address_source": "inflight",
+      "context": {
+        "platform": "ios",
+        "release": "26da44cc74420caf3642c33bcb4b4752eff6132c"
+      }
+    }
+  },
+  "episode_switch": {
+    "status": "passed",
+    "platform": "ios",
+    "manual_result": "user completed",
+    "provider_confirmed": true,
+    "successful_observations": [
+      {
+        "timestamp": "2026-11-04T03:07:37.509551606Z",
+        "event": "drama.frontend_timing",
+        "observation_id": "92dbc48e-7f79-48de-8297-ef5e0cf562fc",
+        "type": "playback",
+        "phase": "final",
+        "entry": "switch",
+        "outcome": "playing",
+        "elapsed_ms": 2572,
+        "frame_method": "video_frame_callback",
+        "marks": {
+          "player_ready": 13,
+          "address_ready": 624,
+          "source_set": 627,
+          "metadata": 2488,
+          "first_frame": 2572,
+          "playing": 2571,
+          "play_called": 628,
+          "play_resolved": 2571,
+          "loadeddata": 2564,
+          "canplay": 2570
+        },
+        "recovery": {
+          "rootId": "92dbc48e-7f79-48de-8297-ef5e0cf562fc",
+          "cumulativeMs": 2572
+        },
+        "delivery": {
+          "experimentId": "drama-bunny-prod-20261029-v1",
+          "group": "supabase",
+          "provider": "supabase",
+          "reason": "disabled"
+        },
+        "assigned_group": "supabase",
+        "server_release": "26da44cc74420caf3642c33bcb4b4752eff6132c",
+        "address_source": "fetch",
+        "context": {
+          "platform": "ios",
+          "release": "26da44cc74420caf3642c33bcb4b4752eff6132c"
+        }
+      },
+      {
+        "timestamp": "2026-11-04T03:07:47.167635532Z",
+        "event": "drama.frontend_timing",
+        "observation_id": "8adde0a8-de80-4a14-8810-4cc9ba16cf1c",
+        "type": "playback",
+        "phase": "final",
+        "entry": "switch",
+        "outcome": "playing",
+        "elapsed_ms": 2070.9999999999964,
+        "frame_method": "video_frame_callback",
+        "marks": {
+          "player_ready": 21,
+          "address_ready": 758,
+          "source_set": 760,
+          "metadata": 1990,
+          "first_frame": 2071,
+          "playing": 2068,
+          "play_called": 760,
+          "play_resolved": 2068,
+          "loadeddata": 2063,
+          "canplay": 2068
+        },
+        "recovery": {
+          "rootId": "8adde0a8-de80-4a14-8810-4cc9ba16cf1c",
+          "cumulativeMs": 2070.9999999999964
+        },
+        "delivery": {
+          "experimentId": "drama-bunny-prod-20261029-v1",
+          "group": "supabase",
+          "provider": "supabase",
+          "reason": "disabled"
+        },
+        "assigned_group": "supabase",
+        "server_release": "26da44cc74420caf3642c33bcb4b4752eff6132c",
+        "address_source": "fetch",
+        "context": {
+          "platform": "ios",
+          "release": "26da44cc74420caf3642c33bcb4b4752eff6132c"
+        }
+      },
+      {
+        "timestamp": "2026-11-04T03:08:33.753113140Z",
+        "event": "drama.frontend_timing",
+        "observation_id": "29e7354d-09a4-4c55-a931-d5b4da03cd60",
+        "type": "playback",
+        "phase": "final",
+        "entry": "switch",
+        "outcome": "playing",
+        "elapsed_ms": 2102,
+        "frame_method": "video_frame_callback",
+        "marks": {
+          "player_ready": 17,
+          "address_ready": 688,
+          "source_set": 693,
+          "metadata": 1694,
+          "first_frame": 1769,
+          "playing": 2102,
+          "play_called": 694,
+          "loadeddata": 1758,
+          "canplay": 2101
+        },
+        "recovery": {
+          "rootId": "29e7354d-09a4-4c55-a931-d5b4da03cd60",
+          "cumulativeMs": 2102
+        },
+        "delivery": {
+          "experimentId": "drama-bunny-prod-20261029-v1",
+          "group": "supabase",
+          "provider": "supabase",
+          "reason": "disabled"
+        },
+        "assigned_group": "supabase",
+        "server_release": "26da44cc74420caf3642c33bcb4b4752eff6132c",
+        "address_source": "fetch",
+        "context": {
+          "platform": "ios",
+          "release": "26da44cc74420caf3642c33bcb4b4752eff6132c"
+        }
+      },
+      {
+        "timestamp": "2026-11-04T03:08:41.833043825Z",
+        "event": "drama.frontend_timing",
+        "observation_id": "53cb99be-2b96-4ede-9f74-c7d9021dc469",
+        "type": "playback",
+        "phase": "final",
+        "entry": "switch",
+        "outcome": "playing",
+        "elapsed_ms": 3737.0000000000146,
+        "frame_method": "video_frame_callback",
+        "marks": {
+          "player_ready": 18,
+          "address_ready": 1114,
+          "source_set": 1118,
+          "metadata": 3635,
+          "first_frame": 3737,
+          "playing": 3733,
+          "play_called": 1119,
+          "play_resolved": 3733,
+          "loadeddata": 3728,
+          "canplay": 3733
+        },
+        "recovery": {
+          "rootId": "53cb99be-2b96-4ede-9f74-c7d9021dc469",
+          "cumulativeMs": 3737.0000000000146
+        },
+        "delivery": {
+          "experimentId": "drama-bunny-prod-20261029-v1",
+          "group": "supabase",
+          "provider": "supabase",
+          "reason": "disabled"
+        },
+        "assigned_group": "supabase",
+        "server_release": "26da44cc74420caf3642c33bcb4b4752eff6132c",
+        "address_source": "fetch",
+        "context": {
+          "platform": "ios",
+          "release": "26da44cc74420caf3642c33bcb4b4752eff6132c"
+        }
+      }
+    ]
+  },
+  "retry": {
+    "status": "not_tested",
+    "platform": "ios",
+    "manual_result": "No retry button appeared; user explicitly confirmed not tested.",
+    "retry_observations": 0,
+    "provider_confirmed": false
+  },
+  "source_evidence": {
+    "delivery_rows": 18,
+    "providers": ["supabase"],
+    "reasons": ["disabled"],
+    "actual_bunny_rows": 0,
+    "interpretation": "All 18 delivery-bearing reports are supabase/disabled; includes start/final/network phases, not 18 independent plays. Unknown delivery remains unknown.",
+    "first_automatic_start_failure": {
+      "timestamp": "2026-11-04T03:07:25.516516639Z",
+      "event": "drama.frontend_timing",
+      "observation_id": "0330a7b7-2460-4e51-883e-73f5dd573c31",
+      "type": "playback",
+      "phase": "final",
+      "entry": "direct",
+      "outcome": "autoplay_blocked",
+      "elapsed_ms": 2508,
+      "entry_elapsed_ms": 5106,
+      "marks": {
+        "player_ready": 1,
+        "address_ready": 951,
+        "source_set": 966,
+        "metadata": 2486,
+        "play_called": 971,
+        "play_rejected": 2508
+      },
+      "recovery": {
+        "rootId": "0330a7b7-2460-4e51-883e-73f5dd573c31",
+        "cumulativeMs": 2508
+      },
+      "delivery": {
+        "experimentId": "drama-bunny-prod-20261029-v1",
+        "group": "supabase",
+        "provider": "supabase",
+        "reason": "disabled"
+      },
+      "assigned_group": "supabase",
+      "server_release": "26da44cc74420caf3642c33bcb4b4752eff6132c",
+      "address_source": "inflight",
+      "context": {
+        "platform": "ios",
+        "release": "26da44cc74420caf3642c33bcb4b4752eff6132c"
+      }
+    },
+    "frame_verified_successes": 5
+  },
+  "original_bunny_group_supabase_disabled": {
+    "status": "not re-observed after shutdown",
+    "sample_groups": ["supabase"],
+    "configuration_and_source": "Experiment ID/HMAC key preserved; current production helper unchanged and derives assigned_group independently of enabled. This is configuration/source evidence, not a new original-Bunny-user playback."
+  },
+  "android": {
+    "status": "not tested; no device"
+  },
+  "old_url_prefetch_late_response": {
+    "source_review": "Current production delivery helper, playback intent query key, detail-only prefetch, retryAttempt guard and failed-refetch rejection reviewed; new unrelated release did not change these files.",
+    "real_shutdown_race": "not executed",
+    "observed_after_shutdown": "No Bunny provider seen in this received window. This is not exhaustive race coverage."
+  },
+  "post_shutdown_other_release": {
+    "deployment": {
+      "id": "2c0a329c-c9e2-4ac2-8cdc-856eb3384549",
+      "status": "SUCCESS",
+      "createdAt": "2026-11-04T03:08:58.460Z",
+      "updatedAt": "2026-11-04T03:10:03.715Z",
+      "serviceId": "8bd593b7-7c40-4ab6-8808-c0863f27a22a",
+      "environmentId": "f03d6c61-84e3-434d-a81a-0ae209167ef5",
+      "url": null,
+      "snapshotId": "8e888b07-8d6a-4f30-ad28-1f960fde9715",
+      "canRollback": true,
+      "canRedeploy": true,
+      "regions": ["asia-southeast1-eqsg3a"],
+      "meta": {
+        "reason": "deploy",
+        "commitMessage": "Merge pull request #652 from linshu368/fix/admin-cli-session-ws\n\nfix: give the CLI session exchange client a WebSocket transport",
+        "commitHash": "f0353fecd884f46bc011fb8c51b47405d3d566ec",
+        "branch": "main"
+      }
+    },
+    "status": {
+      "environment": {
+        "id": "f03d6c61-84e3-434d-a81a-0ae209167ef5",
+        "name": "production"
+      },
+      "services": [
+        {
+          "serviceId": "8bd593b7-7c40-4ab6-8808-c0863f27a22a",
+          "serviceName": "stminiapp",
+          "state": "online",
+          "statusText": "Online",
+          "activeDeployments": [
+            {
+              "id": "2c0a329c-c9e2-4ac2-8cdc-856eb3384549",
+              "status": "SUCCESS",
+              "createdAt": "2026-11-04T03:08:58.460Z",
+              "statusUpdatedAt": "2026-11-04T03:10:03.714Z"
+            }
+          ],
+          "replicaStatus": {
+            "running": 1,
+            "crashed": 0,
+            "total": 1
+          },
+          "cronJob": null,
+          "issues": {
+            "warningCount": 0,
+            "criticalCount": 0
+          },
+          "recentFailures": 0,
+          "recentFailedDeployments": [],
+          "hasIssues": false,
+          "isCronJob": false,
+          "hasVolume": false
+        }
+      ],
+      "pendingWork": [],
+      "summary": {
+        "totalServices": 1,
+        "servicesWithIssues": 0,
+        "totalFailures": 0
+      }
+    },
+    "readback": {
+      "DRAMA_CDN_ENABLED": "false",
+      "DRAMA_CDN_EXPERIMENT_ID": "drama-bunny-prod-20261029-v1",
+      "DATABASE_ENV": "production"
+    },
+    "playback_evidence_release": "26da44cc74420caf3642c33bcb4b4752eff6132c",
+    "current_release": "f0353fecd884f46bc011fb8c51b47405d3d566ec",
+    "current_release_media_smoke": "No additional media sample yet; config false and 1/1 online, critical playback files unchanged."
+  },
+  "remaining": "Retry manual + runtime chain; original Bunny group after-shutdown live sample; Android; controlled old-address/prefetch/late-response race.",
+  "git": "not staged, committed or pushed"
+}
