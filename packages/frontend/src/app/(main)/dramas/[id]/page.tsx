@@ -5,6 +5,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 
 import { DramaPlayer } from '@/components/drama/drama-player';
 import { startDramaPlayIntent, useDramaBrowseQueueQuery } from '@/lib/api/drama';
+import { preloadDramaHls } from '@/lib/drama-media-source';
 import { dramaTiming } from '@/lib/perf/drama-observer';
 import { useDramaLibraryStore, useHydrateDramaLibrary } from '@/stores/drama-library-store';
 
@@ -23,6 +24,7 @@ export default function DramaDetailPage() {
     const query = params.toString();
     router.replace(`/dramas/${id}${query ? `?${query}` : ''}`, { scroll: false });
   }, [id, router, searchParams, selectedVideo]);
+  useEffect(() => preloadDramaHls(), []);
   const hydrated = useHydrateDramaLibrary();
   const queueQuery = useDramaBrowseQueueQuery();
   const navigating = useRef(false);

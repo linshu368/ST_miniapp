@@ -6,6 +6,7 @@ import { Clapperboard, RefreshCw } from 'lucide-react';
 import { DramaPlayer } from './drama-player';
 import { DramaHomeFrame, DramaHomeLoading } from './drama-home-frame';
 import { cn } from '@/lib/utils';
+import { preloadDramaHls } from '@/lib/drama-media-source';
 import { useDramaListQuery } from '@/lib/api/drama';
 import { markCriticalSettled } from '@/lib/entry-phase';
 import { dramaTiming } from '@/lib/perf/drama-observer';
@@ -14,6 +15,7 @@ import { useDramaLibraryStore, useHydrateDramaLibrary } from '@/stores/drama-lib
 
 export function DramaHome() {
   const query = useDramaListQuery('/watch');
+  useEffect(() => preloadDramaHls(), []);
   const hydrated = useHydrateDramaLibrary();
   const controlsVisible = useDramaLibraryStore((state) => state.playbackControlsVisible);
   const activeId = useDramaLibraryStore((state) => state.browse.activeId);
