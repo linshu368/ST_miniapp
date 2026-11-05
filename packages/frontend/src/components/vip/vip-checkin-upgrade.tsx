@@ -1,16 +1,21 @@
 'use client';
 
+import type { DailyCheckinStatus } from '@miniapp/shared';
+
 import { ChevronRight, Crown, Loader2 } from 'lucide-react';
 
+import { rewardSplitLabel } from '@/lib/vip/rewards';
 import { formatNumber } from '@/lib/utils/payment';
 
 export function VipCheckinUpgrade({
   dailyCredits,
+  mainCredits = 0,
   onOpen,
   pending = false,
   compact = false,
 }: {
   dailyCredits: number;
+  mainCredits?: number;
   onOpen: () => void;
   pending?: boolean;
   compact?: boolean;
@@ -28,7 +33,9 @@ export function VipCheckinUpgrade({
         <span className="min-w-0 flex-1 text-[11px] leading-[18px]">
           开通 VIP，签到立即恢复
           <span className="ml-1 inline-block font-semibold text-[#efd8c2]">
-            {formatNumber(dailyCredits)} 星尘 / 天
+            {mainCredits > 0
+              ? rewardSplitLabel(dailyCredits - mainCredits, mainCredits)
+              : `${formatNumber(dailyCredits)} 星尘 / 天`}
           </span>
         </span>
         {pending ? (
@@ -66,8 +73,50 @@ export function VipCheckinUpgrade({
         </span>
       </span>
       <span className="mt-1 block text-[10px] leading-4 text-muted-foreground">
-        会员有效期内，每天签到领取
+        {mainCredits > 0
+          ? rewardSplitLabel(dailyCredits - mainCredits, mainCredits)
+          : '会员有效期内，每天签到领取'}
       </span>
     </button>
+  );
+}
+
+export function CheckinRewardStatus({
+  checkin,
+  checkinReadFailed,
+  hasClaimed,
+}: {
+  checkin: DailyCheckinStatus | undefined;
+  checkinReadFailed: boolean;
+  hasClaimed: boolean;
+}) {
+  return (
+    <p
+      className="mt-0.5 text-[11px] leading-5 text-[#aaa0a9]"
+      role={!checkin ? 'status' : undefined}
+    >
+      {checkinReadFailed ? (
+        '暂时无法确认签到状态'
+      ) : !checkin ? (
+        '正在查看今日奖励…'
+      ) : hasClaimed ? (
+        '今日星尘已领取'
+      ) : (
+        <>
+          <span className="font-medium tabular-nums text-[#dcc0ca]">
+            +{formatNumber(checkin.reward_credits)}
+          </span>{' '}
+          星尘待领取
+          {(checkin.main_reward_credits ?? 0) > 0 ? (
+            <span className="mt-1 block text-[10px] leading-4 text-muted-foreground">
+              {rewardSplitLabel(
+                checkin.bonus_reward_credits ?? 0,
+                checkin.main_reward_credits ?? 0
+              )}
+            </span>
+          ) : null}
+        </>
+      )}
+    </p>
   );
 }

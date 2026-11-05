@@ -122,6 +122,7 @@ export interface PaymentProductSnapshot {
   bonus_credits: number;
   vip_duration_days: number | null;
   vip_bonus_credits: number | null;
+  vip_bonus_main_credits?: number;
   gateway_product_name: string;
 }
 
@@ -145,6 +146,7 @@ export function buildVipPlans(
       price_cents: terms.price_cents,
       duration_days: terms.duration_days,
       bonus_credits: terms.bonus_credits,
+      bonus_main_credits: terms.bonus_main_credits ?? 0,
       title: terms.title,
       description: terms.description,
       badge_text: terms.badge_text,
@@ -179,6 +181,7 @@ export function buildVipProductSnapshot(
     bonus_credits: 0,
     vip_duration_days: terms.duration_days,
     vip_bonus_credits: terms.bonus_credits,
+    vip_bonus_main_credits: terms.bonus_main_credits ?? 0,
     gateway_product_name: planId === 'week' ? '周卡' : '月卡',
   };
 }

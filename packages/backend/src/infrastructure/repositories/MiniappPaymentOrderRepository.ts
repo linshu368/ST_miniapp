@@ -26,6 +26,7 @@ export interface MiniappPaymentOrderRow {
   product_id: string | null;
   vip_duration_days: number | null;
   vip_bonus_credits: number | null;
+  vip_bonus_main_credits?: number;
   fulfillment_applied: boolean;
   vip_valid_until: string | null;
   next_reconcile_at: string;
@@ -46,6 +47,7 @@ export interface CreateMiniappPaymentOrderInput {
   product_id: string;
   vip_duration_days: number | null;
   vip_bonus_credits: number | null;
+  vip_bonus_main_credits?: number;
 }
 
 export interface PaymentOperationEventInput {
@@ -323,6 +325,7 @@ export function toPaymentOrder(row: MiniappPaymentOrderRow): PaymentOrder {
     fulfillment_applied: row.fulfillment_applied,
     vip_duration_days: row.vip_duration_days,
     vip_bonus_credits: row.vip_bonus_credits,
+    vip_bonus_main_credits: row.vip_bonus_main_credits ?? 0,
     vip_valid_until: row.vip_valid_until,
   };
 }

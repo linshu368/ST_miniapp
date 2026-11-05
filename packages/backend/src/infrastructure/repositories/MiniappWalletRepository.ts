@@ -1,3 +1,5 @@
+import { toClaimedCheckin, type DailyCheckinRpcData } from '../../features/vip/claimed-checkin.js';
+export { toClaimedCheckin } from '../../features/vip/claimed-checkin.js';
 import { getDomainDb } from '../../lib/supabase.js';
 import { createLogger } from '../../lib/logger.js';
 import {
@@ -184,21 +186,6 @@ export interface ChargeLlmUsageInput {
 /**
  * 签到 RPC 数据
  */
-interface DailyCheckinRpcData {
-  /** 已领取时间 */
-  claimed_at: string;
-  /** 下次领取时间 */
-  next_claim_at: string;
-  /** 奖励星尘 */
-  reward_credits: number;
-  /** 基础签到星尘 */
-  base_reward_credits?: number;
-  /** VIP 签到星尘 */
-  vip_reward_credits?: number;
-  /** 钱包 ledger ID */
-  wallet_ledger_id?: string;
-  vip_checkin_config_fallback?: boolean;
-}
 
 /** 配置缺失或无法解析时的基础签到额。线上发放仍以 runtime_config 为准。 */
 /** @deprecated 遗留全员基础默认；发奖已改分档绝对额。 */
@@ -220,6 +207,8 @@ export interface DailyCheckinStatus {
   base_reward_credits: number;
   /** VIP 签到星尘 */
   vip_reward_credits: number;
+  main_reward_credits: number;
+  bonus_reward_credits: number;
 }
 
 /**
@@ -681,6 +670,8 @@ export class MiniappWalletRepository {
       reward_credits: quote.reward_credits,
       base_reward_credits: quote.base_reward_credits,
       vip_reward_credits: quote.vip_reward_credits,
+      main_reward_credits: quote.main_reward_credits,
+      bonus_reward_credits: quote.bonus_reward_credits,
     };
   }
 
@@ -765,33 +756,6 @@ export function toWalletBalance(row: MiniappWalletRow): GetWalletBalanceData {
  * @param raw 签到 RPC 数据
  * @returns 领取签到奖励结果
  */
-export function toClaimedCheckin(raw: DailyCheckinRpcData): {
-  claimed_at: string;
-  next_claim_at: string;
-  reward_credits: number;
-  base_reward_credits?: number;
-  vip_reward_credits?: number;
-} {
-  const rewardCredits = readRewardInteger(raw.reward_credits);
-  const baseRewardCredits =
-    raw.base_reward_credits == null ? undefined : readRewardInteger(raw.base_reward_credits);
-  const vipRewardCredits =
-    raw.vip_reward_credits == null ? undefined : readRewardInteger(raw.vip_reward_credits);
-  if (
-    baseRewardCredits !== undefined &&
-    vipRewardCredits !== undefined &&
-    baseRewardCredits + vipRewardCredits !== rewardCredits
-  ) {
-    throw new Error('签到奖励拆分与总额不一致');
-  }
-  return {
-    claimed_at: raw.claimed_at,
-    next_claim_at: raw.next_claim_at,
-    reward_credits: rewardCredits,
-    base_reward_credits: baseRewardCredits,
-    vip_reward_credits: vipRewardCredits,
-  };
-}
 
 /**
  * 转换为 MiniApp 钱包行
@@ -931,12 +895,4 @@ function readOptionalNullableNumber(
   const value = metadata[key];
   if (value === null) return null;
   return readOptionalNumber(value);
-}
-
-function readRewardInteger(value: unknown): number {
-  const parsed = typeof value === 'number' ? value : Number(value);
-  if (!Number.isInteger(parsed) || parsed < 0) {
-    throw new Error('签到奖励返回无效');
-  }
-  return parsed;
 }

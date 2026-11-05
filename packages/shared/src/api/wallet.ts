@@ -448,6 +448,8 @@ export interface DailyCheckinStatus {
   reward_credits: number;
   base_reward_credits?: number;
   vip_reward_credits?: number;
+  main_reward_credits?: number;
+  bonus_reward_credits?: number;
 }
 
 export interface GetDailyCheckinData {
@@ -463,5 +465,7 @@ export interface PostDailyCheckinData {
     reward_credits: number;
     base_reward_credits?: number;
     vip_reward_credits?: number;
+    main_reward_credits?: number;
+    bonus_reward_credits?: number;
   };
 }

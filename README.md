@@ -218,3 +218,7 @@ pnpm supabase:link:test
 
 短剧 Cloudflare Stream A/B 的配置、同序置顶、播放器恢复和验收顺序见 [Stream A/B 接入](docs/drama-stream-ab.md)。
 真机采样可用 `DRAMA_STREAM_SAMPLING_COHORT` 仅指定当前实验的两个 A/B 账号；需要先部署支持版本再配置，保持其他用户的哈希分组不变。独立 iPhone 操作工具见 [点播采样工具](scripts/ios-drama-sampler/README.md)。
+
+### VIP 混合奖励（2026-11-05）
+
+`20261105_vip_mixed_rewards.sql` 先经测试环境再生产执行，随后发布应用，最后通过运营 CLI 发布混合签到与开卡赠礼配置。旧签到数字及旧订单继续兼容；开卡奖励使用订单两钱包快照，同事务入账且不增加实付收入。回退先恢复旧配置，保留混合发放支持处理在途订单。详见 `.trellis/tasks/11-05-vip-mixed-rewards/`。

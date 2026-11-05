@@ -1,3 +1,4 @@
+import { PlanEditor, CheckinRewardEditor } from './VipPlanEditor';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
@@ -6,7 +7,6 @@ import {
   Button,
   Card,
   Divider,
-  Input,
   InputNumber,
   List,
   Modal,
@@ -21,16 +21,11 @@ import {
   DEFAULT_VIP_PLANS_CONFIG,
   DEFAULT_VIP_TEXT_DISCOUNT_RATE,
   FeatureFreeTrialLimitsSchema,
-  VIP_CHECKIN_FIXED_CREDITS_MAX,
-  VIP_PLAN_BONUS_CREDITS_MAX,
-  VIP_PLAN_DURATION_DAYS_MAX,
-  VIP_PLAN_PRICE_CENTS_MAX,
   VipCheckinBonusConfigSchema,
   VipPlansConfigSchema,
   VipTextDiscountRateSchema,
   type FeatureFreeTrialLimits,
   type VipCheckinBonusConfig,
-  type VipPlanTerms,
   type VipPlansConfig,
   type VipStrategyConfigKey,
 } from '@miniapp/shared';
@@ -49,12 +44,6 @@ import {
   resolveManagedWorkingValue,
 } from '@miniapp/admin-client';
 import type { AdminEnvironment } from '../lib/environment';
-import {
-  blankToNull,
-  checkinAbsoluteCredits,
-  vipPriceLabel,
-  withPlanPatch,
-} from '../lib/vipStrategyForm';
 
 function confirmWrite(
   environment: AdminEnvironment,
@@ -286,98 +275,6 @@ function asLimits(value: unknown): FeatureFreeTrialLimits {
   return parsed.success ? parsed.data : { ...DEFAULT_FEATURE_FREE_TRIAL_LIMITS };
 }
 
-function PlanEditor(props: {
-  label: string;
-  value: VipPlanTerms;
-  disabled: boolean;
-  lockBonus: boolean;
-  onChange: (next: VipPlanTerms) => void;
-}) {
-  return (
-    <Card type="inner" title={props.label}>
-      <Space direction="vertical" size="small" className="editor-stack">
-        <Typography.Text>标题</Typography.Text>
-        <Input
-          maxLength={40}
-          disabled={props.disabled}
-          value={props.value.title}
-          onChange={(event) =>
-            props.onChange(withPlanPatch(props.value, { title: event.target.value }))
-          }
-        />
-        <Typography.Text>说明</Typography.Text>
-        <Input
-          maxLength={200}
-          disabled={props.disabled}
-          value={props.value.description ?? ''}
-          onChange={(event) =>
-            props.onChange(
-              withPlanPatch(props.value, { description: blankToNull(event.target.value) })
-            )
-          }
-        />
-        <Typography.Text>角标</Typography.Text>
-        <Input
-          maxLength={40}
-          disabled={props.disabled}
-          value={props.value.badge_text ?? ''}
-          onChange={(event) =>
-            props.onChange(
-              withPlanPatch(props.value, { badge_text: blankToNull(event.target.value) })
-            )
-          }
-        />
-        <Typography.Text>价格（分）</Typography.Text>
-        <InputNumber
-          min={1}
-          max={VIP_PLAN_PRICE_CENTS_MAX}
-          precision={0}
-          disabled={props.disabled}
-          value={props.value.price_cents}
-          addonAfter="分"
-          onChange={(next) => {
-            if (typeof next === 'number') {
-              props.onChange(withPlanPatch(props.value, { price_cents: next }));
-            }
-          }}
-        />
-        <Typography.Text type="secondary">
-          页面展示 {vipPriceLabel(props.value.price_cents)}
-        </Typography.Text>
-        <Typography.Text>有效天数</Typography.Text>
-        <InputNumber
-          min={1}
-          max={VIP_PLAN_DURATION_DAYS_MAX}
-          precision={0}
-          disabled={props.disabled}
-          value={props.value.duration_days}
-          onChange={(next) => {
-            if (typeof next === 'number') {
-              props.onChange(withPlanPatch(props.value, { duration_days: next }));
-            }
-          }}
-        />
-        <Typography.Text>赠送专项星尘</Typography.Text>
-        <InputNumber
-          min={0}
-          max={VIP_PLAN_BONUS_CREDITS_MAX}
-          precision={0}
-          disabled={props.disabled || props.lockBonus}
-          value={props.lockBonus ? 0 : props.value.bonus_credits}
-          onChange={(next) => {
-            if (!props.lockBonus && typeof next === 'number') {
-              props.onChange(withPlanPatch(props.value, { bonus_credits: next }));
-            }
-          }}
-        />
-        {props.lockBonus ? (
-          <Typography.Text type="secondary">周卡赠送固定为 0，不能在这里修改。</Typography.Text>
-        ) : null}
-      </Space>
-    </Card>
-  );
-}
-
 export function VipStrategyView(props: {
   client: SupabaseClient;
   environment: AdminEnvironment;
@@ -452,7 +349,9 @@ export function VipStrategyView(props: {
                 value={plans.week}
                 disabled={!props.canWrite}
                 lockBonus
-                onChange={(week) => onChange({ ...plans, week: { ...week, bonus_credits: 0 } })}
+                onChange={(week) =>
+                  onChange({ ...plans, week: { ...week, bonus_credits: 0, bonus_main_credits: 0 } })
+                }
               />
               <PlanEditor
                 label="月卡"
@@ -492,27 +391,13 @@ export function VipStrategyView(props: {
 
       <Typography.Title level={4}>签到奖励</Typography.Title>
       <StrategyKeyCard {...shared} configKey="vip_checkin_bonus_config">
-        {(value, onChange) => {
-          const checkin = asCheckin(value);
-          return (
-            <Space direction="vertical">
-              <Typography.Text>VIP 每日签到专项星尘（绝对额）</Typography.Text>
-              <InputNumber
-                min={0}
-                max={VIP_CHECKIN_FIXED_CREDITS_MAX}
-                precision={0}
-                disabled={!props.canWrite}
-                value={checkin}
-                addonAfter="星尘"
-                onChange={(next) => {
-                  if (typeof next === 'number') {
-                    onChange(checkinAbsoluteCredits(next));
-                  }
-                }}
-              />
-            </Space>
-          );
-        }}
+        {(value, onChange) => (
+          <CheckinRewardEditor
+            value={asCheckin(value)}
+            disabled={!props.canWrite}
+            onChange={onChange}
+          />
+        )}
       </StrategyKeyCard>
 
       <Typography.Title level={4}>媒体免费次数</Typography.Title>

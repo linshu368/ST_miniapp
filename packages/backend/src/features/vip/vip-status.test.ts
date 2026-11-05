@@ -31,6 +31,8 @@ describe('published VIP benefits', () => {
       text_discount_rate: 0.95,
       checkin_base_credits: 60,
       checkin_vip_credits: 150,
+      checkin_bonus_credits: 150,
+      checkin_main_credits: 0,
     });
   });
 
