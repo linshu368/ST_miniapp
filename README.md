@@ -217,3 +217,4 @@ pnpm supabase:link:test
 - [Supabase spec](.trellis/spec/database/supabase/index.md)
 
 短剧 Cloudflare Stream A/B 的配置、同序置顶、播放器恢复和验收顺序见 [Stream A/B 接入](docs/drama-stream-ab.md)。
+真机采样可用 `DRAMA_STREAM_SAMPLING_COHORT` 仅指定当前实验的两个 A/B 账号；需要先部署支持版本再配置，保持其他用户的哈希分组不变。独立 iPhone 操作工具见 [点播采样工具](scripts/ios-drama-sampler/README.md)。

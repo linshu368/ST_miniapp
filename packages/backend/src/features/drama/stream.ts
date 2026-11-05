@@ -1,6 +1,6 @@
 import { createHmac, createPrivateKey, sign } from 'node:crypto';
 import type { DramaDelivery, DramaSummary } from '@miniapp/shared';
-import { getDramaStreamConfig } from '../../platform/runtime-config.js';
+import { getDramaStreamCohort, getDramaStreamConfig } from '../../platform/runtime-config.js';
 
 type StreamConfig = NonNullable<ReturnType<typeof getDramaStreamConfig>>;
 
@@ -8,9 +8,19 @@ export function streamExperimentUser(userId: number, config: StreamConfig) {
   const input = `${config.environment}:${config.id}:${userId}`;
   const bucket =
     createHmac('sha256', config.key).update(`bucket:${input}`).digest().readUInt32BE(0) % 10000;
+  const cohort = getDramaStreamCohort(config.id);
+  // Keep the public experiment and every other user's hash stable during controlled sampling.
+  const assignedGroup =
+    userId === cohort?.supabase
+      ? ('supabase' as const)
+      : userId === cohort?.stream
+        ? ('stream' as const)
+        : bucket < 5000
+          ? ('stream' as const)
+          : ('supabase' as const);
   return {
     experiment_id: config.id,
-    assigned_group: bucket < 5000 ? ('stream' as const) : ('supabase' as const),
+    assigned_group: assignedGroup,
     experiment_user: createHmac('sha256', config.key).update(`user:${input}`).digest('hex'),
   };
 }
