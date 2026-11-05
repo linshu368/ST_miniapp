@@ -46,6 +46,7 @@ pnpm admin config get miniapp_payment_plans                         # 复核
 - 每个配置只有一份草稿，网页和 CLI 共用。已有与线上不同的草稿时 `draft set` 默认拒绝（`draft_exists`），确认可以覆盖再加 `--replace-draft`。
 - 发布时若线上已被别人改过，数据库会拒绝（`conflict`），重新 `draft set` 即可。
 - 回滚：`pnpm admin config releases <key>` 找到发布 id，`pnpm admin config rollback <release-id>`。
+- 图片目录 `image_plaza_model_catalog` 的 `pricing_factors`（`exchange`、`markup`、`ratio`）与 USD `standard_prices` 一起保存、发布和回滚；CLI 不会根据参数自动改写各档位 `credits`，手工价格会保留。编辑此字段需使用支持该可选字段的新版 CLI。
 
 ### 角色上架、下架、排序
 

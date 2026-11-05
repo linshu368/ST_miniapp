@@ -59,6 +59,8 @@ packages/backend     ───────────────────�
 
 Shared 的 `main`/`types` 直接指向 `src/index.ts`，没有独立 build 产物；修改公开出口会直接影响所有消费者。
 
+图片广场目录的 USD 标准价与统一定价参数随运营草稿保存、发布和回滚；重新打开读取保存值。改变参数不会自动改写已发布星尘价，仍需明确重算并发布，详见 `packages/admin/README.md`。
+
 ## 3. 技术栈
 
 - **Frontend**：Next.js 14、React 18、TypeScript、TanStack React Query、Zustand、Radix UI、Tailwind CSS、Telegram SDK、Sentry。

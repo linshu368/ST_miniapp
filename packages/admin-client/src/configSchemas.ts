@@ -13,6 +13,7 @@ import {
   DEFAULT_CHECKIN_NEW_USER_CREDITS,
   DEFAULT_CHECKIN_VETERAN_CREDITS,
   DEFAULT_FEATURE_FREE_TRIAL_LIMITS,
+  DEFAULT_IMAGE_PLAZA_PRICING_FACTORS,
   DEFAULT_VIP_CHECKIN_BONUS_CONFIG,
   DEFAULT_VIP_PLANS_CONFIG,
   DEFAULT_VIP_TEXT_DISCOUNT_RATE,
@@ -600,6 +601,7 @@ export const configMetadata: Record<
     description: '管理图片广场模型、能力、画幅和各分辨率上架星尘价；用户端只读取已发布版本。',
     defaultValue: {
       default_model_id: 'seedream-v5-pro',
+      pricing_factors: { ...DEFAULT_IMAGE_PLAZA_PRICING_FACTORS },
       models: [
         ['qwen-image-3', 'Qwen Image 3', 60],
         ['qwen-image-3-pro', 'Qwen Image 3 Pro', 80],
