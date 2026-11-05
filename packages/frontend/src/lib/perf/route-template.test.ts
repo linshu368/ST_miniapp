@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { toRouteTemplate } from './route-template';
+import { engineeringRoute, toRouteTemplate } from './route-template';
 
 describe('toRouteTemplate', () => {
   it('replaces uuids and numeric ids so metric dimensions stay low-cardinality', () => {
@@ -20,5 +20,18 @@ describe('toRouteTemplate', () => {
     expect(toRouteTemplate('/api/v1/conversations/latest-badge')).toBe(
       '/api/v1/conversations/latest-badge'
     );
+  });
+
+  it('registers every creator and wish page as a finite engineering route', () => {
+    for (const route of [
+      '/creation/characters/new',
+      '/creation/characters/:id/edit',
+      '/creation/data',
+      '/creators/:id',
+      '/wishes',
+      '/wishes/:id',
+    ]) {
+      expect(engineeringRoute(route)).toBe(route);
+    }
   });
 });

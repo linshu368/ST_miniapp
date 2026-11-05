@@ -5,6 +5,7 @@ import {
   engineeringRoute,
   observeDramaStartupDiagnostic,
   observeChatFirstToken,
+  observeBackgroundJob,
   observeGenerationAttempt,
   observeGenerationDispatch,
   observeGenerationTerminal,
@@ -68,6 +69,19 @@ async function receiver(logStatus = 200) {
 const options = { enabled: true, environment: 'test', version: 'safe-test-release' };
 
 describe('engineering telemetry boundary', () => {
+  it('exports one bounded background-job terminal with duration and count', async () => {
+    const sink = await receiver();
+    stop = startEngineeringTelemetry({ ...options, endpoint: sink.endpoint });
+    observeBackgroundJob({ job: 'chat_history_sync', outcome: 'partial', durationMs: 1250 });
+    await stop();
+    const wire = JSON.stringify(sink.received);
+    expect(wire).toContain('st_background_job_duration');
+    expect(wire).toContain('st_background_job_runs');
+    expect(wire).toContain('background_job.terminal');
+    expect(wire).toContain('chat_history_sync');
+    expect(wire).toContain('partial');
+  });
+
   it('retains five-second terminal details and late network evidence as JSON log bodies', async () => {
     const sink = await receiver();
     stop = startEngineeringTelemetry({ ...options, endpoint: sink.endpoint });

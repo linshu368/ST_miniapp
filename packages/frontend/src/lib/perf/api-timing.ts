@@ -10,7 +10,16 @@ export function apiRouteGroup(path: string): string {
   const pathname = path.split(/[?#]/, 1)[0] ?? '';
   if (pathname === '/api/characters') return 'characters';
   if (pathname === '/api/lobby-characters') return 'lobby_characters';
+  if (pathname === '/api/characters/latest-badge' || pathname === '/api/characters/latest-seen')
+    return 'character_activity';
+  if (pathname === '/api/characters/recommendation') return 'character_recommendation';
+  if (pathname === '/api/characters/social') return 'character_social';
+  if (/^\/api\/characters\/[^/]+\/(?:social|like|comments)(?:\/|$)/.test(pathname))
+    return 'character_social';
   if (/^\/api\/characters\/[^/]+$/.test(pathname)) return 'character_detail';
+  if (pathname.startsWith('/api/creator/')) return 'creator';
+  if (pathname.startsWith('/api/creators/')) return 'creator_public';
+  if (pathname.startsWith('/api/character-wishes')) return 'character_wishes';
   if (pathname === '/api/favorites' || pathname === '/api/favorites/ids') return 'favorites';
   if (pathname.startsWith('/api/favorites/')) return 'favorites';
   if (pathname === '/api/v1/conversations') return 'conversations';
@@ -76,6 +85,9 @@ export function recordApiAttempt(
       recordEngineeringMeasurement('api.headers', timing.headersAt - timing.dispatchedAt, tags);
       recordEngineeringMeasurement('api.body', end - timing.headersAt, tags);
     }
+  }
+  if (timing.upstreamMs !== undefined) {
+    recordEngineeringMeasurement('api.upstream', timing.upstreamMs, tags);
   }
 }
 

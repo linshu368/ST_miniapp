@@ -17,6 +17,10 @@ export const ENGINEERING_PAGE_ROUTES = new Set([
   '/create/studio/:id',
   '/create/work/:id',
   '/creation',
+  '/creation/characters/new',
+  '/creation/characters/:id/edit',
+  '/creation/data',
+  '/creators/:id',
   '/dramas',
   '/dramas/:id',
   '/vip',
@@ -29,6 +33,8 @@ export const ENGINEERING_PAGE_ROUTES = new Set([
   '/profile/messages/:id',
   '/profile/invite',
   '/profile/support',
+  '/wishes',
+  '/wishes/:id',
 ]);
 
 export function engineeringRoute(route: string): string {
