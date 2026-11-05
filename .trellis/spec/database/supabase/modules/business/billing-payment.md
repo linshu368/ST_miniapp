@@ -101,3 +101,9 @@ send/regenerate 携带可选 `first_token_measurement`；后端通过既有 begi
 ## 支付供应商替换为 Vexutopia（2026-11-03）
 
 无迁移。`payment_orders.provider_transaction_id` 改为建单成功即写入 Vexutopia `tx_…`（`complete_payment_order` 的 `COALESCE` 写法兼容）。`next_reconcile_at`/`reconcile_attempts`/`reconcile_locked_until` 与 `checkout_*` 列、`record_checkout_confirmation` RPC 不再被调用，按约定保留不删。`payment_operation_events` 写入改为按 `event_key` 冲突忽略，便于对账把同一异常只记一次。
+
+## VIP 混合星尘奖励（2026-11-05）
+
+20261105_vip_mixed_rewards.sql 增订单/开卡审计通用赠送快照，旧值为 0；grant_vip_reward 复用 canonical 专项发放并原子更新通用余额及同一条 ledger。保留订单唯一约束、北京零点签到边界、原锁与幂等；赠送不计实付收入。先 test 后 production，应用部署完成后再发布拆分配置。回退先还原配置，保留混合结算能力直至在途订单结束，不回收已发奖励。
+
+隔离 PG 覆盖并发、幂等、旧订单及故障回滚；远端执行与部署状态见任务 `11-05-vip-mixed-rewards` 的发布记录。

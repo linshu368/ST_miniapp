@@ -278,3 +278,23 @@ test('@profile @recharge @layout 充值空态、失败和渠道关闭不会误�
   await expectMobileLayout(page);
   await preview.screenshot('充值页-会员与单套餐', { fullPage: false });
 });
+
+test('@profile @vip-mixed @layout 混合签到与月卡显示两种星尘', async ({ page, preview }) => {
+  await preview.scenario('vip-mixed');
+  await page.goto('/profile');
+  await expect(page.getByText('120 专项＋30 通用星尘').first()).toBeVisible();
+  await page.getByRole('button', { name: '每日签到', exact: true }).click();
+  await expect(page.getByText('通用星尘 +30', { exact: true })).toBeVisible();
+  await expect(page.getByText('专项星尘 +120', { exact: true })).toBeVisible();
+  const state = await preview.state();
+  expect(state.wallet.main_credits).toBe(3030);
+  expect(state.wallet.bonus_credits).toBe(720);
+  expect(state.wallet.credits).toBe(3750);
+  await expectMobileLayout(page);
+  await preview.screenshot('混合签到到账');
+  await page.getByRole('button', { name: '关闭签到提示' }).click();
+  await page.getByRole('button', { name: '查看 VIP 权益与续费' }).click();
+  await expect(page.getByText('2,000 专项＋1,000 通用星尘').first()).toBeVisible();
+  await expectMobileLayout(page);
+  await preview.screenshot('混合会员权益');
+});

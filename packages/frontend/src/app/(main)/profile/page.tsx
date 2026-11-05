@@ -29,7 +29,7 @@ import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Input } from '@/components/ui/input';
 import { VipEntryCard } from '@/components/vip/vip-entry-card';
-import { VipCheckinUpgrade } from '@/components/vip/vip-checkin-upgrade';
+import { VipCheckinUpgrade, CheckinRewardStatus } from '@/components/vip/vip-checkin-upgrade';
 
 import {
   paymentKeys,
@@ -541,25 +541,11 @@ export default function ProfilePage() {
                 <h2 className="text-[13px] font-medium text-[#eee7e5]">每日签到</h2>
                 <span className="text-[10px] text-[#8d838d]">每天 00:00 更新</span>
               </div>
-              <p
-                className="mt-0.5 text-[11px] leading-5 text-[#aaa0a9]"
-                role={!checkin ? 'status' : undefined}
-              >
-                {checkinReadFailed ? (
-                  '暂时无法确认签到状态'
-                ) : !checkin ? (
-                  '正在查看今日奖励…'
-                ) : hasClaimed ? (
-                  '今日星尘已领取'
-                ) : (
-                  <>
-                    <span className="font-medium tabular-nums text-[#dcc0ca]">
-                      +{formatNumber(checkin.reward_credits)}
-                    </span>{' '}
-                    星尘待领取
-                  </>
-                )}
-              </p>
+              <CheckinRewardStatus
+                checkin={checkin}
+                checkinReadFailed={checkinReadFailed}
+                hasClaimed={hasClaimed}
+              />
             </div>
             <Button
               type="button"
@@ -598,6 +584,7 @@ export default function ProfilePage() {
               <VipCheckinUpgrade
                 compact
                 dailyCredits={checkinUpgradeCredits}
+                mainCredits={vipStatus.data?.benefits?.checkin_main_credits ?? 0}
                 onOpen={() => void openVip()}
                 pending={markVipSeen.isPending}
               />
@@ -731,6 +718,7 @@ export default function ProfilePage() {
               <div className="mt-4 border-t border-border/70 pt-3">
                 <VipCheckinUpgrade
                   dailyCredits={checkinUpgradeCredits}
+                  mainCredits={vipStatus.data?.benefits?.checkin_main_credits ?? 0}
                   onOpen={() => void openVip()}
                   pending={markVipSeen.isPending}
                 />

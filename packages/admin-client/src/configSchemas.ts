@@ -714,7 +714,7 @@ export const configMetadata: Record<
   },
   vip_checkin_bonus_config: {
     label: 'VIP 每日签到星尘',
-    description: '有效 VIP 每日签到发放的专项星尘绝对额（非加成）。',
+    description: '有效 VIP 每日签到的专项与通用星尘绝对额（非加成）。兼容旧数字配置（全部专项）。',
     defaultValue: DEFAULT_VIP_CHECKIN_BONUS_CONFIG,
   },
   feature_free_trial_limits: {

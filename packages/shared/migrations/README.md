@@ -221,3 +221,7 @@ experience 域增加会话局部消息覆盖，`change_chat_message` 仅允许�
 新增miniapp_features个人推荐批次和角色曝光摘要，RLS开启、撤销浏览器访问、service_role受控CRUD；角色评分扩展qualified-v1可信历史，绝不回填旧评分。增量包装运营validator、保留owner/ACL/grant option/既有校验，重复执行不覆盖后续包装。无现有业务行重写或正式配置变更。
 
 顺序：先隔离PG17验证（`pnpm test:lobby-ranking`），未来通过既有workflow先TEST单文件，再独立批准Production；应用发布后直接全量轮换，核验qualified-v1评分刷新；新证据未就绪时沿用旧排序。缺迁移不得发布新job。出现失败回退推荐消费者，保留表/可信历史，不自动DROP或清理用户状态。20s语句/3s锁预算，远端运行前另核前置shape和表锁预算；本地通过不等于远端已执行。
+
+### VIP 混合奖励（2026-11-05）
+
+`20261105_vip_mixed_rewards.sql` 先经测试环境再生产执行，随后发布应用，最后通过运营 CLI 发布混合签到与开卡赠礼配置。旧签到数字及旧订单继续兼容；开卡奖励使用订单两钱包快照，同事务入账且不增加实付收入。回退先恢复旧配置，保留混合发放支持处理在途订单。详见 `.trellis/tasks/11-05-vip-mixed-rewards/`。

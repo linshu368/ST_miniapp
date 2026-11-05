@@ -849,3 +849,7 @@ Frontend `/creation/data` → `lib/api/creator-analytics.ts`（用户隔离React
 
 短剧 Cloudflare Stream A/B 的配置、同序置顶、播放器恢复和验收顺序见 [Stream A/B 接入](drama-stream-ab.md)。
 本地新增可选 `DRAMA_STREAM_SAMPLING_COHORT`，由 runtime-config 严格解析当前实验及两个不同的 Telegram 用户 ID，只覆盖这两个采样账号的分组；实验开关、入组及单集准入仍生效，其他用户保持原哈希。不增加接口或数据库对象；后端部署与生产配置分别核验，源码不代表生产已启用。Mac 端独立原生触摸工具沿用既有性能采集，不提供新的性能统计真相。
+
+### VIP 混合奖励（2026-11-05）
+
+`20261105_vip_mixed_rewards.sql` 先经测试环境再生产执行，随后发布应用，最后通过运营 CLI 发布混合签到与开卡赠礼配置。旧签到数字及旧订单继续兼容；开卡奖励使用订单两钱包快照，同事务入账且不增加实付收入。回退先恢复旧配置，保留混合发放支持处理在途订单。详见 `.trellis/tasks/11-05-vip-mixed-rewards/`。

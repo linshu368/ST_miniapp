@@ -251,6 +251,35 @@ describe('RechargeUseCase product snapshots', () => {
     );
   });
 
+  it('freezes both VIP gift wallets in a new order without changing the payment amount', async () => {
+    const strategy = publishedStrategy({ purchaseEnabled: true });
+    Object.assign(strategy.plans.month, {
+      price_cents: 3888,
+      bonus_credits: 2000,
+      bonus_main_credits: 1000,
+    });
+    vi.mocked(readVipStrategy).mockResolvedValue(strategy);
+    const month = harness();
+    await month.usecase.createOrder({
+      userId: month.order.user_id,
+      planId: 'month',
+      paymentType: 'alipay',
+    });
+    expect(month.orders.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        amount_cents: 3888,
+        credits_amount: 0,
+        bonus_credits: 0,
+        vip_bonus_credits: 2000,
+        vip_bonus_main_credits: 1000,
+        vip_duration_days: 31,
+      })
+    );
+    expect(month.gateway.createPayment).toHaveBeenCalledWith(
+      expect.objectContaining({ amount: '38.88' })
+    );
+  });
+
   it('rejects an unknown plan before creating an order', async () => {
     const { order, orders, usecase } = harness();
     await expect(
