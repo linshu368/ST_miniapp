@@ -1,0 +1,61 @@
+{
+  "id": "ios-drama-ab-sampling",
+  "name": "ios-drama-ab-sampling",
+  "title": "iPhone 短剧 Stream A/B 点播采样方案",
+  "description": "production真机原生触摸采样工具，移除追剧；实现与预演已获授权。账号定向和真机连接待核验。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "standalone-ios-sampling-tool",
+  "package": null,
+  "priority": "P2",
+  "creator": "linshu",
+  "assignee": "linshu",
+  "createdAt": "2026-11-05",
+  "completedAt": null,
+  "branch": "codex/ios-drama-sampling",
+  "base_branch": "main",
+  "worktree_path": "/Users/qj/.codex/worktrees/ios-drama-sampler-release/ST_miniAPP",
+  "commit": "e8cc968912a328ad24fa63e8fb4272bc66d4c55e",
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": ["backend.infrastructure.runtime-data-security"]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "独立Mac采样工具不修改页面/API；另增加仅两个采样账号的内存分组覆盖，不增加网络或DB请求，不以此宣称P95改善。实际起播/seek继续按已有埋点验证。",
+      "pages": ["/watch", "/dramas", "/dramas/:id"],
+      "apis": [
+        "GET /api/dramas",
+        "GET /api/dramas/:id",
+        "POST /api/dramas/play",
+        "POST /api/telemetry/drama-timing"
+      ],
+      "android": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": null,
+        "api_p95_baseline_ms": null,
+        "notes": "本轮无可见样本，不采集Android；不推测。"
+      },
+      "ios": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": null,
+        "api_p95_baseline_ms": null,
+        "notes": "本轮未读取线上样本，基线未知；工具增加样本，不承诺性能优化。"
+      },
+      "measurement": {
+        "source": "现有st-engineering-drama与现有事件；运行日志只作为动作证据。",
+        "window": "待用户确认环境并完成真机预演后冻结实际时间窗；按环境、实验、平台、组别、provider、release核验。"
+      },
+      "notes": "两组各30条预演后核对startup与符合wasPlaying/forward/buffered=no的seek终态；记录缓存、失败和缺终态。无应用发布，工具交付后真机验证。"
+    }
+  }
+}
