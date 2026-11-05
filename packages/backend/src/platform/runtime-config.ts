@@ -304,6 +304,27 @@ const streamManifestSchema = z
   })
   .strict();
 
+const streamCohortSchema = z
+  .object({
+    experimentId: z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/),
+    supabase: z.number().int().positive().safe(),
+    stream: z.number().int().positive().safe(),
+  })
+  .strict()
+  .refine((value) => value.supabase !== value.stream);
+
+/** Two sampling accounts only; invalid/stale settings leave ordinary bucketing intact. */
+export function getDramaStreamCohort(experimentId: string) {
+  const raw = process.env.DRAMA_STREAM_SAMPLING_COHORT;
+  if (!raw || raw.length > 512) return null;
+  try {
+    const cohort = streamCohortSchema.parse(JSON.parse(raw));
+    return cohort.experimentId === experimentId ? cohort : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Invalid or overlapping experiments fail closed to the existing MP4 path. */
 export function getDramaStreamConfig(retainIdentity = false) {
   if (

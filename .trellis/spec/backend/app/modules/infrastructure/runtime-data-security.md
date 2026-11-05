@@ -42,6 +42,8 @@ MiniApp 已鉴权接口通过 `lib/user.ts` 把同一 Telegram 用户的并发 g
 
 ## 关键节点与约束
 
+短剧真机采样的 `DRAMA_STREAM_SAMPLING_COHORT` 仅在 `runtime-config.ts` 读取：当前 experimentId 与两个不同的安全正整数 Telegram ID；非法或跨实验设置忽略，只覆盖指定两账号，其他用户HMAC与匿名实验用户标识保持不变。不绕过Stream开关、入组和实际单集白名单，迟到观测沿同一分组读取入口归属。生产启用仍需先部署后配置，详见 `docs/drama-stream-ab.md`。
+
 用户身份缓存只减少重复映射读取，不是鉴权或业务状态真相；失败不缓存，多副本各自缓存不影响正确性。runtime-config single-flight 只共享完全相同的当前读取，失败后清理，不增加配置传播陈旧窗口，也不叠加 Supabase SDK 的 GET 自动重试。
 
 ## 验证方式
