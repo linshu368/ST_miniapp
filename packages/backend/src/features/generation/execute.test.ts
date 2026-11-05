@@ -46,12 +46,16 @@ const telemetry = vi.hoisted(() => ({
   prepare: vi.fn(),
   terminal: vi.fn(),
 }));
+const providerAlerts = vi.hoisted(() => ({ observe: vi.fn() }));
 vi.mock('../../lib/engineering-observability.js', () => ({
   observeChatFirstToken: telemetry.chat,
   observeGenerationDispatch: telemetry.dispatch,
   observeGenerationAttempt: telemetry.attempt,
   observeGenerationPrepare: telemetry.prepare,
   observeGenerationTerminal: telemetry.terminal,
+}));
+vi.mock('./provider-alerts.js', () => ({
+  observeLlmProviderResponse: providerAlerts.observe,
 }));
 
 vi.mock('./quota.js', () => ({
@@ -201,6 +205,7 @@ function requestBodyOf(fetchMock: ReturnType<typeof stubUpstream>): Record<strin
 
 beforeEach(() => {
   Object.values(telemetry).forEach((fn) => fn.mockClear());
+  providerAlerts.observe.mockClear();
   preparation.readBilling.mockReset().mockImplementation(async () => billingContext);
   preparation.readRouting
     .mockReset()
@@ -479,6 +484,11 @@ describe('execute（失败路径）', () => {
       assistant_reply: null,
     });
     expect(onError).toHaveBeenCalled();
+    expect(providerAlerts.observe).toHaveBeenCalledWith({
+      provider: 'openrouter',
+      model: 'anthropic/claude-sonnet-4.5',
+      status: 429,
+    });
   });
 });
 
