@@ -30,6 +30,7 @@ import {
   useSetCreatorVisibilityMutation,
 } from '@/lib/api/creator-characters';
 import { useCharacterWishQuery } from '@/lib/api/character-wishes';
+import { usePageReady } from '@/lib/perf/page-ready';
 import { ApiClientError } from '@/lib/api/client';
 import {
   initialCharacterEditorDraft,
@@ -117,6 +118,13 @@ export function CharacterEditorPage({ characterId }: { characterId?: string }) {
     characterId ?? (requestedDraft && UUID.test(requestedDraft) ? requestedDraft : null);
   const list = useCreatorCharactersQuery();
   const detail = useCreatorCharacterQuery(characterId);
+  const route = characterId ? '/creation/characters/:id/edit' : '/creation/characters/new';
+  usePageReady(
+    route,
+    Boolean(draftId && list.data && (!characterId || detail.data)),
+    false,
+    list.isError || Boolean(characterId && detail.isError)
+  );
   useEffect(() => {
     if (!characterId && !draftId) {
       const params = new URLSearchParams(search.toString());

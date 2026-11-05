@@ -24,6 +24,7 @@ describe('lobby characters route', () => {
       expect.objectContaining({ cache: 'no-store', signal: expect.any(AbortSignal) })
     );
     expect(response.headers.get('Cache-Control')).toBe('no-store, no-cache, must-revalidate');
+    expect(response.headers.get('Server-Timing')).toMatch(/^backend;dur=\d+(?:\.\d)$/);
   });
 
   it('只透传白名单内的排序值', async () => {

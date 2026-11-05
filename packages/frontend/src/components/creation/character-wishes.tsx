@@ -31,6 +31,7 @@ import { chatEntryPath } from '@/lib/chat-entry';
 import { useTelegramBackButton } from '@/lib/telegram/hooks';
 import { useMemoryDraft } from '@/hooks/use-memory-draft';
 import { useCreatorCharactersQuery } from '@/lib/api/creator-characters';
+import { usePageReady } from '@/lib/perf/page-ready';
 import {
   useCharacterWishQuery,
   useCharacterWishesQuery,
@@ -197,6 +198,7 @@ export function CharacterWishesPage() {
   const rawPage = Number(search.get('page'));
   const page = Number.isInteger(rawPage) && rawPage > 0 && rawPage <= 10000 ? rawPage : 1;
   const query = useCharacterWishesQuery({ scope, sort, page, page_size: 12 });
+  usePageReady('/wishes', query.data !== undefined, false, query.isError);
   const [compose, setCompose] = useState(search.get('compose') === '1');
   const [sortOpen, setSortOpen] = useState(false);
   const backHref = fromPath(search.get('from'));
@@ -603,6 +605,7 @@ export function CharacterWishDetailPage({ id }: { id: string }) {
   const search = useSearchParams();
   const validId = UUID.test(id);
   const query = useCharacterWishQuery(validId ? id : undefined);
+  usePageReady('/wishes/:id', query.data !== undefined, false, !validId || query.isError);
   const withdraw = useWithdrawCharacterWishMutation();
   const response = useRespondCharacterWishMutation();
   const [picker, setPicker] = useState(false);

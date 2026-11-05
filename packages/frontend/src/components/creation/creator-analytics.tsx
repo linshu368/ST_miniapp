@@ -31,6 +31,7 @@ import {
   type CreatorAnalyticsFeedback,
 } from '@miniapp/shared';
 import { useCreatorAnalyticsQuery } from '@/lib/api/creator-analytics';
+import { usePageReady } from '@/lib/perf/page-ready';
 
 const displayDate = (value: string) =>
   new Intl.DateTimeFormat('zh-CN', {
@@ -80,6 +81,7 @@ export function CreatorAnalytics({ preview = false }: { preview?: boolean }) {
   const data = overview
     ? { ...overview.summary, rewards: overview.rewards, feedback: overview.feedback }
     : undefined;
+  usePageReady('/creation/data', Boolean(data), false, failed);
   const cards = overview?.works ?? [];
   const periodLabel = ANALYTICS_PERIODS.find((item) => item.id === period)!.label;
   const currentPage = panel ? pages[panel] : 1;

@@ -27,22 +27,33 @@ async function fetchCharacters(
 ): Promise<GetCharactersData> {
   // 大厅经 Vercel 同源代理，不走 apiClient；仍占 critical 槽，避免与直连 Railway 旁路齐射。
   return withRequestSlot('critical', signal, async () => {
-    const response = await timedFetch(
+    return timedFetch(
       `/api/lobby-characters?sort=${sort}${headOnly ? `&limit=${LOBBY_ROTATION_HEAD_SIZE}` : ''}${ids?.length ? `&ids=${ids.join(',')}` : ''}`,
       { cache: 'no-store', signal },
-      { requestId: createRequestId() }
+      { requestId: createRequestId() },
+      async (response) => {
+        const json = (await response.json().catch((error: unknown) => {
+          if (signal?.aborted || (error instanceof Error && error.name === 'AbortError'))
+            throw error;
+          return null;
+        })) as ApiResponse<GetCharactersData> | null;
+        if (!response.ok || !json?.success) {
+          throw new Error(
+            json && !json.success ? json.error.message : `API error: ${response.status}`
+          );
+        }
+        // An older upstream may ignore limit. Never write a partial head into the full-directory cache.
+        if (ids && json.data.characters.some((card) => !ids.includes(card.id)))
+          throw new Error('旧版目录不支持指定角色校准');
+        if (headOnly)
+          return {
+            ...json.data,
+            characters: json.data.characters.slice(0, LOBBY_ROTATION_HEAD_SIZE),
+          };
+        persistCharacters(sort, json.data);
+        return json.data;
+      }
     );
-    const json = (await response.json().catch(() => null)) as ApiResponse<GetCharactersData> | null;
-    if (!response.ok || !json?.success) {
-      throw new Error(json && !json.success ? json.error.message : `API error: ${response.status}`);
-    }
-    // An older upstream may ignore limit. Never write a partial head into the full-directory cache.
-    if (ids && json.data.characters.some((card) => !ids.includes(card.id)))
-      throw new Error('旧版目录不支持指定角色校准');
-    if (headOnly)
-      return { ...json.data, characters: json.data.characters.slice(0, LOBBY_ROTATION_HEAD_SIZE) };
-    persistCharacters(sort, json.data);
-    return json.data;
   });
 }
 

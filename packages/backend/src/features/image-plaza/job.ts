@@ -4,6 +4,7 @@ import { sendBackendSentryLog } from '../../lib/sentry.js';
 import { config } from '../../platform/config.js';
 import { ImagePlazaRepository, ImagePlazaSettlementError } from './repository.js';
 import { generateImagePlazaImage, ImagePlazaUpstreamError } from './upstream.js';
+import { observeBackgroundRun } from '../../lib/background-observability.js';
 
 let timer: NodeJS.Timeout | null = null;
 let running = false;
@@ -13,11 +14,18 @@ export function startImagePlazaGenerationJob(log: FastifyBaseLogger): void {
   const workerId = `image-plaza-${randomUUID()}`;
   const repository = new ImagePlazaRepository();
   const tick = async () => {
-    if (running) return;
+    const startedAt = performance.now();
+    if (running) {
+      observeBackgroundRun({ job: 'image_plaza_generation', outcome: 'skipped', startedAt });
+      return;
+    }
     running = true;
+    let outcome: 'success' | 'partial' | 'error' | 'skipped' = 'success';
+    let terminalError: unknown;
     try {
       await repository.markStaleDispatchedUnknown(new Date().toISOString());
       const jobs = await repository.claimJobs(workerId, 2, config.imagePlaza.workerLeaseSeconds);
+      if (jobs.length === 0) outcome = 'skipped';
       for (const attempt of jobs) {
         try {
           const reference = attempt.referenceArtifactId
@@ -48,6 +56,7 @@ export function startImagePlazaGenerationJob(log: FastifyBaseLogger): void {
             'Image plaza generation completed'
           );
         } catch (err) {
+          outcome = 'partial';
           const failure =
             err instanceof ImagePlazaUpstreamError || err instanceof ImagePlazaSettlementError
               ? err
@@ -89,8 +98,16 @@ export function startImagePlazaGenerationJob(log: FastifyBaseLogger): void {
         }
       }
     } catch (err) {
+      outcome = 'error';
+      terminalError = err;
       log.error({ err, event: 'image_plaza.worker.failed' }, 'Image plaza worker tick failed');
     } finally {
+      observeBackgroundRun({
+        job: 'image_plaza_generation',
+        outcome,
+        startedAt,
+        error: terminalError,
+      });
       running = false;
     }
   };

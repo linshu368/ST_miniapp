@@ -17,6 +17,7 @@ import {
 } from '@/lib/roleplay-navigation';
 import { characterRoomGradient } from '@/lib/utils/character-hue';
 import { supabasePublicImageUrl } from '@/lib/supabase-image';
+import { usePageReady } from '@/lib/perf/page-ready';
 
 const CharacterDetailSheet = dynamic(
   () =>
@@ -46,6 +47,7 @@ function PublicCreatorSpace({ id }: { id: string }) {
   }, [id, works.data]);
 
   const unavailable = works.error instanceof ApiClientError && works.error.status === 404;
+  usePageReady('/creators/:id', works.data !== undefined, false, works.isError);
   const pages = unavailable ? [] : (works.data?.pages ?? []);
   const cards = Array.from(
     new Map(pages.flatMap((p) => p.characters).map((c) => [c.id, c])).values()

@@ -9,14 +9,22 @@
  * secret 只在注册时返回一次：这里直接打印到当前终端，不经过 pino、不落盘，
  * 操作者必须立刻把它写进该环境 Railway 的 VEXUTOPIA_WEBHOOK_SECRET。轮换 secret = 删掉重建。
  */
+import '../instrumentation.js';
 import '../platform/config.js';
 import { VexutopiaPaymentGateway } from '../infrastructure/payment/VexutopiaPaymentGateway.js';
+import {
+  observeBackgroundRun,
+  startStandaloneObservability,
+} from '../lib/background-observability.js';
 
 /** 只订阅会改变本地状态或需要人工处理的事件；其余状态由对账任务批量查单拿到。 */
 const EVENTS = ['payment.completed', 'payment.refunded'];
 
 const [command, argument] = process.argv.slice(2);
 const gateway = new VexutopiaPaymentGateway();
+const observationStartedAt = performance.now();
+const stopObservability = startStandaloneObservability();
+let terminalError: unknown;
 
 try {
   if (command === 'list') {
@@ -46,6 +54,15 @@ try {
     process.exitCode = 1;
   }
 } catch (error) {
+  terminalError = error;
   console.error(error instanceof Error ? error.message : String(error));
   process.exitCode = 1;
 }
+
+observeBackgroundRun({
+  job: 'payment_webhooks',
+  outcome: process.exitCode ? 'error' : 'success',
+  startedAt: observationStartedAt,
+  error: terminalError,
+});
+await stopObservability();

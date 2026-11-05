@@ -300,6 +300,27 @@ export function observeRuntime(loopDelayMs: number, rss: number) {
   active?.gauge('st_runtime_rss_bytes', rss);
 }
 
+export type BackgroundJobOutcome = 'success' | 'partial' | 'error' | 'skipped' | 'cancelled';
+
+/** Process and scheduler jobs use fixed names only; business IDs never become labels. */
+export function observeBackgroundJob(input: {
+  job: string;
+  outcome: BackgroundJobOutcome;
+  durationMs: number;
+}): void {
+  if (!active) return;
+  const attrs = {
+    job: boundedLabel('background_job', input.job, 64),
+    outcome: input.outcome,
+  };
+  active.duration('st_background_job_duration', input.durationMs, attrs);
+  active.count('st_background_job_runs', attrs);
+  active.event('background_job.terminal', {
+    ...attrs,
+    duration_ms: Math.round(input.durationMs),
+  });
+}
+
 export function observeGenerationDispatch(input: {
   provider: string;
   model: string;
