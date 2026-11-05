@@ -127,10 +127,17 @@ PR 临时环境复制 development 后会立即删除该 Cron，避免多个调�
 
 ### 支付对账（快速 Worker + 过期 Cron）
 
-支付告警另有独立常驻服务 `stminiapp-payment-alert-monitor`：Start Command 为
+共享告警 outbox 由独立常驻服务 `stminiapp-payment-alert-monitor` 投递；该服务同时生产支付告警，
+也负责发送 API 服务写入的 Sentry 与 OpenRouter/Venice 限流、额度、账户访问告警，并在同轮主动查询
+Venice `GET /api/v1/billing/balance`：当 `balances.usd`（null 按 0）低于 **$10** 时发布 generation 域
+P1 `venice-balance-low`（fingerprint 含 `:generation:venice:balance_low`），恢复需连续两轮不低于阈值。
+余额探针失败（超时/5xx/非 Admin Key 导致的 401）只记日志，不关闭既有余额事故，也不阻断支付监控与 outbox。
+Start Command 为
 `./node_modules/.bin/tsx src/scripts/payment-alert-monitor.ts`，Restart Policy 为 `Always`，
 不设 Cron Schedule、healthcheck、域名或 TCP proxy。它以数据库 advisory lock 防止重叠，
-每分钟运行 P0、每五分钟运行 P1；只读支付操作事件（规则 v3 只看平台直接信号）并通过公共 outbox 发布。缺失或非法
+每分钟运行 P0、每五分钟运行 P1；支付规则只读支付操作事件（规则 v3 只看平台直接信号）并通过公共 outbox 发布，
+每轮同时有界投递一条到期通知。模型告警与 Venice 余额检查不新增服务；沿用 API 的 `VENICE_API_KEY`
+（**须为可调 billing 的 Admin Key**）、公共 outbox 与 `FEISHU_ALERT_WEBHOOK_URL`。缺失或非法
 `alerting` runtime config 时通知保持关闭。这里仅描述目标运行面，不授权 Railway apply、部署、
 环境变量或通知开关写入。
 

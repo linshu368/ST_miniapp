@@ -26,7 +26,7 @@ export async function streamCreatorPolish(
   signal: AbortSignal,
   send: (event: CreatorPolishEvent) => void
 ): Promise<{ completed: boolean; characters: number }> {
-  const upstream = resolveProviderUpstream('openrouter');
+  const upstream = resolveProviderUpstream('openrouter', MODEL_ID);
   if (!upstream.apiKey) throw new CreatorPolishError(503);
   const presets = await resolveCreatorPresets(input.draft.selectedPresetIds);
   const messages = buildPolishMessages(input.target, input.draft, presets);
