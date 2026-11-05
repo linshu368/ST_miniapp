@@ -13,8 +13,11 @@
 - `DRAMA_STREAM_HOST`：本账户 customer 播放主机名，使用 cloudflarestream.com 域名，不包含协议或路径。
 - `DRAMA_STREAM_KEY_ID`、`DRAMA_STREAM_PRIVATE_KEY`：本环境签名密钥的 ID 和 PEM 私钥（也接受供应商返回的 base64 PEM），仅进入后端 secret。
 - `DRAMA_STREAM_MANIFEST`：受保护的 JSON 配置，包含 `environment`（test 或 production）与有序 `videos` 数组。每项是 `dramaId`、`videoId`、`uid`。必须完整 30 项且每类 ID 唯一。采用全竖屏、多档 v3 片单，ID 以当前环境实际目录为准。
+- `DRAMA_STREAM_SAMPLING_COHORT`：可选的真机采样定向配置，JSON 严格包含 `experimentId`、`supabase`、`stream`；后两项是不同的正整数 Telegram 用户 ID，分别指定一个 A/B 账号。仅当前实验 ID 匹配时生效，其他账号继续原哈希。此配置不绕过开关、入组比例、客户端格式或单集白名单；无效/过期实验配置被忽略，不影响正常实验。真实账号配置仅留本机或服务端配置，不提交 Git。
 
 `DRAMA_CDN_ENABLED`（Bunny）和 Stream 同时启用时，Stream 禁止入组。无效配置也恢复原路径。配置就绪应由发布前核验确认，不能靠实际用户发现配置错误。
+
+定向能力需要先部署兼容后端，再设置当前实验的两个采样账号；不更换实验分配密钥或实验 ID。启用前核验 JSON，启用后核对两个账号的实际来源与回退，其他账号分桶应不变。该两账号的定向观察要与普通随机用户区分，不能当成独立随机用户样本。观察窗口内固定映射，关闭后迟到事件的归属仍依赖该映射；不要在事件尾部送达前更换它。移除定向配置会让这两个账号回到自然哈希，需另开观察窗口。
 
 ## 接口和客户端
 

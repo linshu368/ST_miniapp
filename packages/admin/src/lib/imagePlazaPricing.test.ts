@@ -3,13 +3,54 @@ import { ImagePlazaModelCatalogSchema } from '@miniapp/shared';
 import { configMetadata, parseManagedConfig } from '@miniapp/admin-client';
 import {
   calculateImagePlazaPrice,
+  getImagePlazaPricingFactors,
   imagePlazaPriceKey,
   recalculateImagePlazaCatalog,
+  updateImagePlazaPricingFactor,
 } from './imagePlazaPricing';
 
 const factors = { exchange: 7.3, markup: 2, ratio: 100 };
 
 describe('image plaza pricing calculator', () => {
+  it('keeps the valid catalog intact when a parameter is cleared and then re-entered', () => {
+    const catalog = ImagePlazaModelCatalogSchema.parse(
+      configMetadata.image_plaza_model_catalog.defaultValue
+    );
+    catalog.models[0].resolutions[0].credits = 30;
+    catalog.standard_prices = { [imagePlazaPriceKey(catalog.models[0].id, '1K')]: 0.04 };
+    const before = structuredClone(catalog);
+    for (const value of [null, 0, -1, NaN, Infinity, 1_000_001, 0.00001]) {
+      expect(updateImagePlazaPricingFactor(catalog, 'markup', value)).toBeNull();
+      expect(catalog).toEqual(before);
+    }
+    const updated = updateImagePlazaPricingFactor(catalog, 'markup', 2.5);
+    expect(updated?.pricing_factors).toEqual({ exchange: 7.3, markup: 2.5, ratio: 100 });
+    expect(updated?.models).toEqual(before.models);
+    expect(updated?.standard_prices).toEqual(before.standard_prices);
+    expect(ImagePlazaModelCatalogSchema.safeParse(updated).success).toBe(true);
+  });
+
+  it('loads saved parameters after reopening and preserves manual prices until recalculation', () => {
+    const catalog = ImagePlazaModelCatalogSchema.parse(
+      configMetadata.image_plaza_model_catalog.defaultValue
+    );
+    catalog.models[0].resolutions[0].credits = 30;
+    const modelsBefore = structuredClone(catalog.models);
+    catalog.pricing_factors = { exchange: 7.3, markup: 2.5, ratio: 100 };
+    const loaded = ImagePlazaModelCatalogSchema.parse(
+      parseManagedConfig('image_plaza_model_catalog', JSON.parse(JSON.stringify(catalog)))
+    );
+    expect(getImagePlazaPricingFactors(loaded)).toEqual(catalog.pricing_factors);
+    expect(loaded.models).toEqual(modelsBefore);
+    expect(calculateImagePlazaPrice(0.06, getImagePlazaPricingFactors(loaded))).toEqual({
+      raw: 109.5,
+      credits: 110,
+    });
+    delete loaded.pricing_factors;
+    expect(getImagePlazaPricingFactors(loaded)).toEqual(factors);
+    expect(loaded.pricing_factors).toBeUndefined();
+  });
+
   it('keeps saved standard prices through managed config parsing and recalculation', () => {
     const catalog = ImagePlazaModelCatalogSchema.parse(
       configMetadata.image_plaza_model_catalog.defaultValue

@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/frontend/app/index.md", "reason": "播放器交互与前端边界"}
+{"file": "packages/ui-tests/README.md", "reason": "复用短剧验收入口及真机边界"}
+{"file": ".trellis/tasks/11-05-ios-drama-ab-sampling/research/current-state.md", "reason": "本轮代码证据及未知项"}
+{"file": "docs/drama-stream-ab.md", "reason": "AB入组与性能样本口径"}
+{"file": ".trellis/spec/backend/app/index.md", "reason": "账号定向后端规范"}
+{"file": ".trellis/spec/backend/app/data-reliability-and-security.md", "reason": "配置与观测边界"}

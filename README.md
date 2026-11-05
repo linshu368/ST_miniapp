@@ -59,6 +59,8 @@ packages/backend     ───────────────────�
 
 Shared 的 `main`/`types` 直接指向 `src/index.ts`，没有独立 build 产物；修改公开出口会直接影响所有消费者。
 
+图片广场目录的 USD 标准价与统一定价参数随运营草稿保存、发布和回滚；重新打开读取保存值。改变参数不会自动改写已发布星尘价，仍需明确重算并发布，详见 `packages/admin/README.md`。
+
 ## 3. 技术栈
 
 - **Frontend**：Next.js 14、React 18、TypeScript、TanStack React Query、Zustand、Radix UI、Tailwind CSS、Telegram SDK、Sentry。
@@ -215,3 +217,4 @@ pnpm supabase:link:test
 - [Supabase spec](.trellis/spec/database/supabase/index.md)
 
 短剧 Cloudflare Stream A/B 的配置、同序置顶、播放器恢复和验收顺序见 [Stream A/B 接入](docs/drama-stream-ab.md)。
+真机采样可用 `DRAMA_STREAM_SAMPLING_COHORT` 仅指定当前实验的两个 A/B 账号；需要先部署支持版本再配置，保持其他用户的哈希分组不变。独立 iPhone 操作工具见 [点播采样工具](scripts/ios-drama-sampler/README.md)。
