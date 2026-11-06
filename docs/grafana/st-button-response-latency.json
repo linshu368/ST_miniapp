@@ -1,0 +1,268 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 1,
+  "links": [],
+  "panels": [
+    {
+      "gridPos": { "h": 5, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "options": {
+        "content": "# 关键业务动作反馈\n覆盖 `select_character`、`send_message`、`recharge_create_order`、`vip_create_order`、`daily_checkin`、`support_send_message`、`image_generate`、`voice_generate`、`create_conversation`。动作开始时冻结白名单 route 与 canonical entry；不采集 URL、ID、按钮文案或全局 DOM click。主指标是前台有效等待到反馈，目标 ≤2000ms；stall/discarded 必须与成功 N 同看。旧 release 的硬编码 `/chat/:id` 不能与新 release 混算。",
+        "mode": "markdown"
+      },
+      "title": "范围、安全与版本边界",
+      "type": "text"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "noValue": "No data",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 2000 }
+            ]
+          },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 5 },
+      "id": 2,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+          "editorMode": "code",
+          "expr": "quantile_over_time(0.95, ${browser_selector:raw} |= \"st_roleplay_action\" | logfmt | kind=\"measurement\" | type=\"st_roleplay_action\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"engineering_v1\" | context_source_measurement_version=\"action_foreground_v1\" | context_outcome=\"feedback\" | context_entry=~\"$entry\" | context_route=~\"$route\" | context_action=~\"$action\" | context_tg_platform=~\"$tg_platform\" | unwrap duration_ms | __error__=\"\" [$__range]) by (context_entry, context_route, context_action, context_tg_platform)",
+          "legendFormat": "{{context_entry}} {{context_route}} {{context_action}} {{context_tg_platform}}",
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "title": "反馈 P95（目标 ≤2000ms）",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+      "description": "只计算有 feedback duration 的动作；stall/discarded 不填 0，见终态面板。",
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "No data",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 0.95 }
+            ]
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 5 },
+      "id": 3,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+          "editorMode": "code",
+          "expr": "sum by (context_entry, context_route, context_action, context_tg_platform) (count_over_time(${browser_selector:raw} |= \"st_roleplay_action\" | logfmt | kind=\"measurement\" | type=\"st_roleplay_action\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"engineering_v1\" | context_source_measurement_version=\"action_foreground_v1\" | context_outcome=\"feedback\" | context_entry=~\"$entry\" | context_route=~\"$route\" | context_action=~\"$action\" | context_tg_platform=~\"$tg_platform\" | duration_ms <= 2000 [$__range])) / sum by (context_entry, context_route, context_action, context_tg_platform) (count_over_time(${browser_selector:raw} |= \"st_roleplay_action\" | logfmt | kind=\"measurement\" | type=\"st_roleplay_action\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"engineering_v1\" | context_source_measurement_version=\"action_foreground_v1\" | context_outcome=\"feedback\" | context_entry=~\"$entry\" | context_route=~\"$route\" | context_action=~\"$action\" | context_tg_platform=~\"$tg_platform\" [$__range]))",
+          "legendFormat": "{{context_entry}} {{context_action}} {{context_tg_platform}}",
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "title": "2秒内反馈占比",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "showPoints": "never" },
+          "noValue": "No data",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 2000 }
+            ]
+          },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 9, "w": 16, "x": 0, "y": 13 },
+      "id": 4,
+      "options": {
+        "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+          "editorMode": "code",
+          "expr": "quantile_over_time(0.95, ${browser_selector:raw} |= \"st_roleplay_action\" | logfmt | kind=\"measurement\" | type=\"st_roleplay_action\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"engineering_v1\" | context_source_measurement_version=\"action_foreground_v1\" | context_outcome=\"feedback\" | context_entry=~\"$entry\" | context_route=~\"$route\" | context_action=~\"$action\" | context_tg_platform=~\"$tg_platform\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_entry, context_route, context_action, context_tg_platform)",
+          "legendFormat": "{{context_entry}} {{context_action}} {{context_tg_platform}}",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "反馈 P95 趋势（2秒阈值）",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+      "description": "每 entry/route/action/platform N<100 时延长窗口。",
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "No data",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 100 }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 9, "w": 8, "x": 16, "y": 13 },
+      "id": 5,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+          "editorMode": "code",
+          "expr": "sum by (context_entry, context_route, context_action, context_tg_platform) (count_over_time(${browser_selector:raw} |= \"st_roleplay_action\" | logfmt | kind=\"measurement\" | type=\"st_roleplay_action\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"engineering_v1\" | context_source_measurement_version=\"action_foreground_v1\" | context_outcome=\"feedback\" | context_entry=~\"$entry\" | context_route=~\"$route\" | context_action=~\"$action\" | context_tg_platform=~\"$tg_platform\" [$__range]))",
+          "legendFormat": "{{context_entry}} {{context_action}} {{context_tg_platform}}",
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "title": "成功反馈样本量 N",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+      "description": "waiting 是发起量；feedback、stalled、discarded 不是互斥 cohort（stalled 可迟到 feedback），用于构成排障而非直接相减。",
+      "fieldConfig": { "defaults": { "noValue": "No data", "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 22 },
+      "id": 6,
+      "options": {
+        "legend": { "calcs": ["sum"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+          "editorMode": "code",
+          "expr": "sum by (event_data_entry, event_data_route, event_data_action, event_data_tg_platform, event_data_outcome) (count_over_time(${browser_selector:raw} |= \"st_roleplay_action\" | logfmt | kind=\"event\" | event_name=\"st_roleplay_action\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"engineering_v1\" | event_data_source_measurement_version=\"action_foreground_v1\" | event_data_entry=~\"$entry\" | event_data_route=~\"$route\" | event_data_action=~\"$action\" | event_data_tg_platform=~\"$tg_platform\" [$__auto]))",
+          "legendFormat": "{{event_data_entry}} {{event_data_action}} {{event_data_tg_platform}} {{event_data_outcome}}",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "发起、反馈、stall 与 discarded",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "5m",
+  "schemaVersion": 39,
+  "tags": ["st-miniapp", "engineering", "action", "latency"],
+  "templating": {
+    "list": [
+      {
+        "current": { "text": "production", "value": "production" },
+        "label": "环境",
+        "name": "environment",
+        "options": [],
+        "query": "production,test",
+        "type": "custom"
+      },
+      {
+        "current": { "text": ".*", "value": ".*" },
+        "label": "版本（正则，必须隔离旧 action route）",
+        "name": "release",
+        "options": [],
+        "query": ".*",
+        "type": "textbox"
+      },
+      {
+        "current": { "text": "Android+iOS", "value": "android|android_x|ios" },
+        "label": "平台",
+        "name": "tg_platform",
+        "options": [],
+        "query": "Android : android|android_x,iOS : ios,Android+iOS : android|android_x|ios",
+        "type": "custom"
+      },
+      {
+        "current": { "text": ".*", "value": ".*" },
+        "label": "Canonical entry",
+        "name": "entry",
+        "options": [],
+        "query": "全部 : .*,/watch,/dramas,/characters,/creation,/profile",
+        "type": "custom"
+      },
+      {
+        "current": { "text": ".*", "value": ".*" },
+        "label": "Route（正则）",
+        "name": "route",
+        "options": [],
+        "query": ".*",
+        "type": "textbox"
+      },
+      {
+        "current": { "text": ".*", "value": ".*" },
+        "label": "Action",
+        "name": "action",
+        "options": [],
+        "query": "全部 : .*,select_character,send_message,recharge_create_order,vip_create_order,daily_checkin,support_send_message,image_generate,voice_generate,create_conversation",
+        "type": "custom"
+      },
+      {
+        "current": {
+          "text": "{service_name=\"st-miniapp\"}",
+          "value": "{service_name=\"st-miniapp\"}"
+        },
+        "hide": 2,
+        "label": "Loki selector",
+        "name": "browser_selector",
+        "query": "{service_name=\"st-miniapp\"}",
+        "type": "constant"
+      }
+    ]
+  },
+  "time": { "from": "now-24h", "to": "now" },
+  "timezone": "browser",
+  "title": "ST 关键按钮反馈耗时（2秒目标）",
+  "uid": "st-button-response-latency",
+  "version": 1
+}

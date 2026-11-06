@@ -1,0 +1,284 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 1,
+  "links": [],
+  "panels": [
+    {
+      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "options": {
+        "content": "# 二级页面点击到内容可见\n主口径是前台 SPA `page.navigation` 到真实内容 ready；`page.launch` 只诊断冷/直达打开。Canonical entry 由审核后的固定映射筛选，不按 URL 深度推断。P95 必须与 N、terminal/stall 同看；N<100 只作低样本观察，无数据不补 0。目标 ≤2000ms。",
+        "mode": "markdown"
+      },
+      "title": "口径与低样本边界",
+      "type": "text"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+      "description": "成功、前台 SPA 导航；按 route 与 Android/iOS 分列。红线为 2000ms。",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "noValue": "No data",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 2000 }
+            ]
+          },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "id": 2,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+          "editorMode": "code",
+          "expr": "quantile_over_time(0.95, ${browser_selector:raw} |= \"st_page_navigation\" | logfmt | kind=\"measurement\" | type=\"st_page_navigation\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"engineering_v1\" | context_outcome=\"ready\" | context_visibility=\"foreground\" | context_tg_platform=~\"$tg_platform\" | context_route=~\"^(/dramas/:id|/chats|/chat/:id|/creators/:id|/wishes|/create|/creation/characters/new|/creation/data|/vip|/profile/recharge|/profile/orders|/profile/spending|/profile/messages|/profile/invite|/profile/support)$\" | context_route=~\"^($entry_routes)$\" | context_route=~\"^($route)$\" | unwrap duration_ms | __error__=\"\" [$__range]) by (context_route, context_tg_platform)",
+          "legendFormat": "{{context_route}} {{context_tg_platform}}",
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "title": "Navigation ready P95（目标 ≤2000ms）",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+      "description": "分子与分母来自同一批成功 page.navigation；失败、离页、stall 见终态面板。",
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "No data",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 0.95 }
+            ]
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "id": 3,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+          "editorMode": "code",
+          "expr": "sum by (context_route, context_tg_platform) (count_over_time(${browser_selector:raw} |= \"st_page_navigation\" | logfmt | kind=\"measurement\" | type=\"st_page_navigation\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"engineering_v1\" | context_outcome=\"ready\" | context_visibility=\"foreground\" | context_tg_platform=~\"$tg_platform\" | context_route=~\"^(/dramas/:id|/chats|/chat/:id|/creators/:id|/wishes|/create|/creation/characters/new|/creation/data|/vip|/profile/recharge|/profile/orders|/profile/spending|/profile/messages|/profile/invite|/profile/support)$\" | context_route=~\"^($entry_routes)$\" | context_route=~\"^($route)$\" | duration_ms <= 2000 [$__range])) / sum by (context_route, context_tg_platform) (count_over_time(${browser_selector:raw} |= \"st_page_navigation\" | logfmt | kind=\"measurement\" | type=\"st_page_navigation\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"engineering_v1\" | context_outcome=\"ready\" | context_visibility=\"foreground\" | context_tg_platform=~\"$tg_platform\" | context_route=~\"^(/dramas/:id|/chats|/chat/:id|/creators/:id|/wishes|/create|/creation/characters/new|/creation/data|/vip|/profile/recharge|/profile/orders|/profile/spending|/profile/messages|/profile/invite|/profile/support)$\" | context_route=~\"^($entry_routes)$\" | context_route=~\"^($route)$\" [$__range]))",
+          "legendFormat": "{{context_route}} {{context_tg_platform}}",
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "title": "2秒内 ready 占比",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "showPoints": "never" },
+          "noValue": "No data",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 2000 }
+            ]
+          },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 9, "w": 16, "x": 0, "y": 12 },
+      "id": 4,
+      "options": {
+        "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+          "editorMode": "code",
+          "expr": "quantile_over_time(0.95, ${browser_selector:raw} |= \"st_page_navigation\" | logfmt | kind=\"measurement\" | type=\"st_page_navigation\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"engineering_v1\" | context_outcome=\"ready\" | context_visibility=\"foreground\" | context_tg_platform=~\"$tg_platform\" | context_route=~\"^(/dramas/:id|/chats|/chat/:id|/creators/:id|/wishes|/create|/creation/characters/new|/creation/data|/vip|/profile/recharge|/profile/orders|/profile/spending|/profile/messages|/profile/invite|/profile/support)$\" | context_route=~\"^($entry_routes)$\" | context_route=~\"^($route)$\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_route, context_tg_platform)",
+          "legendFormat": "{{context_route}} {{context_tg_platform}}",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "Navigation ready P95 趋势（2秒阈值）",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+      "description": "每 route/platform N<100 时延长窗口，不判稳态。",
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "No data",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 100 }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 9, "w": 8, "x": 16, "y": 12 },
+      "id": 5,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+          "editorMode": "code",
+          "expr": "sum by (context_route, context_tg_platform) (count_over_time(${browser_selector:raw} |= \"st_page_navigation\" | logfmt | kind=\"measurement\" | type=\"st_page_navigation\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"engineering_v1\" | context_outcome=\"ready\" | context_visibility=\"foreground\" | context_tg_platform=~\"$tg_platform\" | context_route=~\"^(/dramas/:id|/chats|/chat/:id|/creators/:id|/wishes|/create|/creation/characters/new|/creation/data|/vip|/profile/recharge|/profile/orders|/profile/spending|/profile/messages|/profile/invite|/profile/support)$\" | context_route=~\"^($entry_routes)$\" | context_route=~\"^($route)$\" [$__range]))",
+          "legendFormat": "{{context_route}} {{context_tg_platform}}",
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "title": "成功样本量 N",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+      "description": "ready/error/page_left/background 与 stalled 一起显示，避免只看成功幸存者。",
+      "fieldConfig": { "defaults": { "noValue": "No data", "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 21 },
+      "id": 6,
+      "options": {
+        "legend": { "calcs": ["sum"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+          "editorMode": "code",
+          "expr": "sum by (event_name, event_data_route, event_data_tg_platform, event_data_outcome) (count_over_time(${browser_selector:raw} |~ \"st_page_(terminal|stall)\" | logfmt | kind=\"event\" | event_name=~\"st_page_(terminal|stall)\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"engineering_v1\" | event_data_tg_platform=~\"$tg_platform\" | event_data_route=~\"^(/dramas/:id|/chats|/chat/:id|/creators/:id|/wishes|/create|/creation/characters/new|/creation/data|/vip|/profile/recharge|/profile/orders|/profile/spending|/profile/messages|/profile/invite|/profile/support)$\" | event_data_route=~\"^($entry_routes)$\" | event_data_route=~\"^($route)$\" [$__auto]))",
+          "legendFormat": "{{event_data_route}} {{event_data_tg_platform}} {{event_data_outcome}}",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "终态与 stall 分母",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+      "description": "文档导航起点到 ready；不与 SPA navigation P95 混算。",
+      "fieldConfig": { "defaults": { "noValue": "No data", "unit": "ms" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 29 },
+      "id": 7,
+      "options": {
+        "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+          "editorMode": "code",
+          "expr": "quantile_over_time(0.95, ${browser_selector:raw} |= \"st_page_launch\" | logfmt | kind=\"measurement\" | type=\"st_page_launch\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"engineering_v1\" | context_outcome=\"ready\" | context_tg_platform=~\"$tg_platform\" | context_route=~\"^(/dramas/:id|/chats|/chat/:id|/creators/:id|/wishes|/create|/creation/characters/new|/creation/data|/vip|/profile/recharge|/profile/orders|/profile/spending|/profile/messages|/profile/invite|/profile/support)$\" | context_route=~\"^($entry_routes)$\" | context_route=~\"^($route)$\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_route, context_tg_platform)",
+          "legendFormat": "{{context_route}} {{context_tg_platform}}",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "辅助：冷/直达 launch P95（不进入 SPA 主口径）",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "5m",
+  "schemaVersion": 39,
+  "tags": ["st-miniapp", "engineering", "page", "latency"],
+  "templating": {
+    "list": [
+      {
+        "current": { "text": "production", "value": "production" },
+        "label": "环境",
+        "name": "environment",
+        "options": [],
+        "query": "production,test",
+        "type": "custom"
+      },
+      {
+        "current": { "text": ".*", "value": ".*" },
+        "label": "版本（正则）",
+        "name": "release",
+        "options": [],
+        "query": ".*",
+        "type": "textbox"
+      },
+      {
+        "current": { "text": "Android+iOS", "value": "android|android_x|ios" },
+        "label": "平台",
+        "name": "tg_platform",
+        "options": [],
+        "query": "Android : android|android_x,iOS : ios,Android+iOS : android|android_x|ios",
+        "type": "custom"
+      },
+      {
+        "current": { "text": "全部入口", "value": ".*" },
+        "label": "Canonical entry",
+        "name": "entry_routes",
+        "options": [],
+        "query": "全部入口 : .*,/dramas : /dramas/:id,/characters : /chats|/chat/:id|/creators/:id|/wishes,/creation : /create|/creation/characters/new|/creation/data,/profile : /vip|/profile/recharge|/profile/orders|/profile/spending|/profile/messages|/profile/invite|/profile/support",
+        "type": "custom"
+      },
+      {
+        "current": { "text": ".*", "value": ".*" },
+        "label": "Route（正则）",
+        "name": "route",
+        "options": [],
+        "query": ".*",
+        "type": "textbox"
+      },
+      {
+        "current": {
+          "text": "{service_name=\"st-miniapp\"}",
+          "value": "{service_name=\"st-miniapp\"}"
+        },
+        "hide": 2,
+        "label": "Loki selector",
+        "name": "browser_selector",
+        "query": "{service_name=\"st-miniapp\"}",
+        "type": "constant"
+      }
+    ]
+  },
+  "time": { "from": "now-24h", "to": "now" },
+  "timezone": "browser",
+  "title": "ST 二级页面点击到内容可见（2秒目标）",
+  "uid": "st-secondary-page-latency",
+  "version": 1
+}

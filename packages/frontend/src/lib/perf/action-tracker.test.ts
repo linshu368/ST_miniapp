@@ -51,6 +51,7 @@ describe('action tracker', () => {
     vi.useFakeTimers();
     distribution.mockClear();
     captureMessage.mockClear();
+    vi.stubGlobal('window', { location: { pathname: '/chat/123' } });
   });
   afterEach(() => {
     vi.useRealTimers();
@@ -75,8 +76,45 @@ describe('action tracker', () => {
     expect(engineering.measurement).toHaveBeenCalledWith(
       'roleplay.action',
       expect.any(Number),
-      expect.objectContaining({ action: 'send_message', stage: 'feedback', outcome: 'feedback' })
+      expect.objectContaining({
+        entry: '/characters',
+        route: '/chat/:id',
+        action: 'send_message',
+        stage: 'feedback',
+        outcome: 'feedback',
+      })
     );
+  });
+
+  it('mirrors every reviewed network action and freezes its safe route ownership at start', () => {
+    vi.stubGlobal('window', { location: { pathname: '/profile/recharge/123' } });
+    const actions = [
+      'select_character',
+      'send_message',
+      'recharge_create_order',
+      'vip_create_order',
+      'daily_checkin',
+      'support_send_message',
+      'image_generate',
+      'voice_generate',
+      'create_conversation',
+    ] as const;
+    const handles = actions.map((name) => startAction(name));
+    window.location.pathname = '/private/alice';
+    vi.advanceTimersByTime(200);
+    handles.forEach((handle) => handle.feedback());
+
+    expect(engineering.measurement.mock.calls.map(([, , attributes]) => attributes)).toEqual(
+      actions.map((action) =>
+        expect.objectContaining({
+          entry: '/profile',
+          route: '/profile/recharge/:id',
+          action,
+          outcome: 'feedback',
+        })
+      )
+    );
+    expect(JSON.stringify(engineering.measurement.mock.calls)).not.toContain('alice');
   });
 
   it('raises action_stall once, and still records the late feedback', () => {

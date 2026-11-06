@@ -1,6 +1,18 @@
 # 轻量经营与真实首字体验
 
-页面体验、角色扮演和短剧工程性能的独立遥测实施见 [工程性能验收](engineering-performance.md)。四张 `st-engineering-*.json` 是待 TEST Cloud 接入验证的源文件，不表示已上线；既有经营/首字/短剧看板和业务事实保持不变。
+页面体验、角色扮演和短剧工程性能的独立遥测实施见 [工程性能验收](engineering-performance.md)。仓库内工程 JSON 是可导入源文件；新增的二级页面、三级页面、关键按钮、非流式 API 与流式 API 五张看板尚未自动写入 Grafana Cloud，不表示线上已生效。既有经营/首字/短剧看板和业务事实保持不变。
+
+新增看板源：
+
+| 文件                              | UID                          | 口径                                                               |
+| --------------------------------- | ---------------------------- | ------------------------------------------------------------------ |
+| `st-secondary-page-latency.json`  | `st-secondary-page-latency`  | 固定二级 route 的 SPA ready、2秒占比、N、终态/stall；launch 仅辅助 |
+| `st-tertiary-page-latency.json`   | `st-tertiary-page-latency`   | 固定三级 route 的同口径页面观测                                    |
+| `st-button-response-latency.json` | `st-button-response-latency` | 九个关键网络/跨路由动作的前台反馈，按 entry/route/action/platform  |
+| `st-api-latency-non-stream.json`  | `st-api-latency-non-stream`  | 浏览器总等待与 Fastify route 耗时分开，显式排除 SSE/NDJSON         |
+| `st-stream-api-latency.json`      | `st-stream-api-latency`      | 聊天 SSE 首字与完整流、creator polish NDJSON 响应与完整流分开      |
+
+导入时在 Grafana 使用 Import dashboard，逐份上传 JSON，并确认 `grafanacloud-logs`、`grafanacloud-prom` UID 与目标 stack 一致；不一致时只在导入界面绑定对应 Loki/Mimir 数据源，不向仓库写 token。默认窗口 24h、刷新 5m。导入后先选 TEST/release 核对字段、单位、无数据行为和查询负载，再走生产发布流程。回退只删除/停用这五张看板；若要停止新增 action/creator 维度，回退对应 Frontend release 或关闭现有 `NEXT_PUBLIC_GRAFANA_ENABLED`，不需要数据库恢复。
 
 短剧启动使用独立新看板 `st-drama-playback`（`drama-playback.json`），不混入经营/首token看板。新路径需独立迁移和显式启用，发布、历史导入与真机步骤见 [操作说明](drama-playback-runbook.md)。仓库JSON存在不表示线上已导入。
 

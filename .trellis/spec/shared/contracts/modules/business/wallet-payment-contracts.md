@@ -25,11 +25,10 @@ Backend 与 Frontend 已统一使用。`PaymentOrder.settled_by` 已作为兼容
 
 ## 涉及文件
 
-| 路径                                   | 职责                  |
-| -------------------------------------- | --------------------- |
-| `packages/shared/src/api/wallet.ts`    | 钱包 DTO              |
-| `packages/shared/src/api/payment.ts`   | 支付 DTO              |
-| `packages/shared/src/api/telemetry.ts` | replay 事件与 context |
+| 路径                                 | 职责     |
+| ------------------------------------ | -------- |
+| `packages/shared/src/api/wallet.ts`  | 钱包 DTO |
+| `packages/shared/src/api/payment.ts` | 支付 DTO |
 
 ## 关键实现链路
 

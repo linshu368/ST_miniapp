@@ -415,7 +415,16 @@ try {
     { error: 2, ready: 8 }
   );
   let queriesChecked = 0;
-  for (const uid of ['st-engineering-pages', 'st-engineering-roleplay', 'st-engineering-drama']) {
+  for (const uid of [
+    'st-engineering-pages',
+    'st-engineering-roleplay',
+    'st-engineering-drama',
+    'st-secondary-page-latency',
+    'st-tertiary-page-latency',
+    'st-button-response-latency',
+    'st-api-latency-non-stream',
+    'st-stream-api-latency',
+  ]) {
     const dashboard = JSON.parse(
       await readFile(new URL(`../../../docs/grafana/${uid}.json`, import.meta.url), 'utf8')
     );
@@ -452,6 +461,15 @@ try {
           .replaceAll('$startup_cache', '.*')
           .replaceAll('$startup_frame', '.*')
           .replaceAll('$catalog_start', '.*')
+          .replaceAll('$entry_routes', '.*')
+          .replaceAll('$server_route', '.*')
+          .replaceAll('$api_route', '.*')
+          .replaceAll('$chat_action', 'send|regenerate')
+          .replaceAll('$polish_target', 'opening|background')
+          .replaceAll('$entry', '.*')
+          .replaceAll('$route', '.*')
+          .replaceAll('$action', '.*')
+          .replaceAll('$method', '.*')
           .replaceAll('$__range', '10m')
           .replaceAll('$__auto', '10m');
         if (target.datasource?.type === 'prometheus') continue;

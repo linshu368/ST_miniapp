@@ -37,8 +37,51 @@ export const ENGINEERING_PAGE_ROUTES = new Set([
   '/wishes/:id',
 ]);
 
+export type EngineeringEntry =
+  | '/watch'
+  | '/dramas'
+  | '/characters'
+  | '/creation'
+  | '/profile'
+  | 'other';
+
+const ENGINEERING_ROUTE_ENTRIES: Readonly<Record<string, EngineeringEntry>> = {
+  '/watch': '/watch',
+  '/dramas': '/dramas',
+  '/dramas/:id': '/dramas',
+  '/characters': '/characters',
+  '/chats': '/characters',
+  '/chat/:id': '/characters',
+  '/chat/:id/voice/:id': '/characters',
+  '/creators/:id': '/characters',
+  '/wishes': '/characters',
+  '/wishes/:id': '/characters',
+  '/creation': '/creation',
+  '/create': '/creation',
+  '/create/studio/:id': '/creation',
+  '/create/work/:id': '/creation',
+  '/creation/characters/new': '/creation',
+  '/creation/characters/:id/edit': '/creation',
+  '/creation/data': '/creation',
+  '/profile': '/profile',
+  '/vip': '/profile',
+  '/profile/recharge': '/profile',
+  '/profile/recharge/:id': '/profile',
+  '/profile/orders': '/profile',
+  '/profile/spending': '/profile',
+  '/profile/messages': '/profile',
+  '/profile/messages/:id': '/profile',
+  '/profile/invite': '/profile',
+  '/profile/support': '/profile',
+};
+
 export function engineeringRoute(route: string): string {
   return ENGINEERING_PAGE_ROUTES.has(route) ? route : 'other';
+}
+
+/** Canonical entry ownership is reviewed explicitly; URL depth must not invent product hierarchy. */
+export function engineeringEntry(route: string): EngineeringEntry {
+  return ENGINEERING_ROUTE_ENTRIES[engineeringRoute(route)] ?? 'other';
 }
 
 export function toRouteTemplate(pathWithQuery: string): string {

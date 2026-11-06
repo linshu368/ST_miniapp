@@ -50,7 +50,6 @@ last_verified_at: 2026-11-02
 | `packages/frontend/src/lib/roleplay-navigation.ts`                   | 有限来源、最后栏目和位置恢复                    |
 | `packages/frontend/src/components/chat/`                             | 聊天组件                                        |
 | `packages/frontend/src/components/chat/chat-message-image.tsx`       | 图片面板、结果卡、预览与图片事件调用            |
-| `packages/frontend/src/lib/image-generation/telemetry.ts`            | 图片生成前端事件 helper 与去重                  |
 | `packages/frontend/src/lib/api/conversation-stream.ts`               | SSE client                                      |
 | `packages/frontend/src/hooks/use-chat-session.ts`                    | 会话生命周期                                    |
 | `packages/frontend/src/hooks/use-conversation-turn.ts`               | 发送/重生成编排                                 |
