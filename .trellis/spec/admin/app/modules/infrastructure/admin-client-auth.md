@@ -35,7 +35,7 @@ last_verified_at: 2026-11-03
 | `packages/admin-client/src/adminApi.ts` 等    | 网页与 CLI 共用的 RPC/HTTP 调用                   |
 | `packages/admin-client/src/configSchemas.ts`  | managed config 注册表、校验、中文名与默认值       |
 | `packages/admin-client/src/menu.ts`           | 菜单分组 `ADMIN_MENU_GROUPS`                      |
-| `packages/admin-cli/src/*`                    | CLI：会话存储、确认门禁、命令                     |
+| `packages/admin-cli/src/`                     | CLI：会话存储、确认门禁、命令                     |
 
 ## 关键实现链路
 

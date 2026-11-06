@@ -5,8 +5,8 @@ scope: frontend
 category: infrastructure
 status: active
 owners: [frontend]
-last_verified_task: .trellis/tasks/11-03-five-route-navigation-p95/
-last_verified_at: 2026-11-04
+last_verified_task: .trellis/tasks/11-05-grafana-route-action-api-latency/
+last_verified_at: 2026-11-06
 ---
 
 # API、Telegram 与 UI 基建
@@ -25,19 +25,24 @@ API 与 server state 已集中，Tailwind/shadcn 作为 UI 基础。GET 传输�
 
 Android/Android X 的有效底栏导航点击到目标 `usePageReady` content ready/failed 之间启用内存级安静窗口；经两次绘制机会与有界 idle 后恢复未读、settings、Profile 次级读取和后台 route 预热，目标未结算时 4 秒强制放行。Characters 主列表与 Profile 钱包等 P0 不受阻塞；Android touch intent 只保留 Characters 主查询预取，iOS/other 沿用 characters、favorites、wallet 的既有 intent 策略。该调度独立于 Sentry/Grafana 开关，不改变 `page.navigation` 起止点。
 
+工程遥测的九个关键网络/跨路由 action 复用原 `startAction` 时钟与 settle owner；从动作开始起冻结审核后的低基数 route template 与 `/watch|/dramas|/characters|/creation|/profile` canonical entry，未知路径降为 `other`。不采集 URL/query/ID/按钮文案，也不增加全局 click listener。页面二/三级层级使用固定清单；浏览器 API 总等待、Fastify route 耗时、聊天 SSE 首字/完整流和 creator polish NDJSON 响应/完整流保持独立口径，完整流不套用 2 秒响应目标。仓库看板 JSON 不代表 Grafana Cloud 已导入或生产已实收。
+
 ## 入口与调用者
 
 所有 Frontend 页面和业务组件使用。
 
 ## 涉及文件
 
-| 路径                                            | 职责                        |
-| ----------------------------------------------- | --------------------------- |
-| `packages/frontend/src/lib/api/client.ts`       | REST client、有限重试与取消 |
-| `packages/frontend/src/lib/api/query-client.ts` | React Query 默认策略        |
-| `packages/frontend/src/lib/api/`                | Query hooks                 |
-| `packages/frontend/src/components/ui/`          | 公共 UI                     |
-| `packages/frontend/src/stores/`                 | 跨组件客户端状态            |
+| 路径                                               | 职责                          |
+| -------------------------------------------------- | ----------------------------- |
+| `packages/frontend/src/lib/api/client.ts`          | REST client、有限重试与取消   |
+| `packages/frontend/src/lib/api/query-client.ts`    | React Query 默认策略          |
+| `packages/frontend/src/lib/api/`                   | Query hooks                   |
+| `packages/frontend/src/lib/perf/action-tracker.ts` | 关键 action 时钟与安全投影    |
+| `packages/frontend/src/lib/perf/route-template.ts` | 页面 route 与 canonical entry |
+| `packages/frontend/src/components/ui/`             | 公共 UI                       |
+| `packages/frontend/src/stores/`                    | 跨组件客户端状态              |
+| `docs/grafana/`                                    | 页面/action/API 可导入看板源  |
 
 ## 关键实现链路
 
@@ -51,6 +56,8 @@ Provider 初始化 → Telegram 上下文 → query/client → 通用 loading/er
 
 浏览器公开变量必须静态读取 `NEXT_PUBLIC_*`。server state 不复制到 Zustand。事件属性禁止 initData、token、支付 URL、聊天正文、图片 prompt、图片 URL、Storage path 和 provider request id。POST 不自动重试；GET 总尝试次数最多两次，abort 不得转换成普通失败后重试。
 
+Action 的 route/entry 必须在动作发起时快照，避免跨路由反馈把动作错误归到目标页；新增页面或 ownership 变化必须显式审核白名单，禁止按 URL 深度自动归类。旧 release 的 action route 曾固定为 `/chat/:id`，新旧版本必须按 release 隔离。遥测、dashboard 或 exporter 失败只能丢弃，不能改变业务请求、SSE/NDJSON 读取、反馈时机、超时、重试或缓存。
+
 ## 验证方式
 
 Frontend typecheck、test、lint、build 与真机检查；取消/重试改动需覆盖退避取消和同源代理信号。
@@ -58,6 +65,8 @@ Frontend typecheck、test、lint、build 与真机检查；取消/重试改动�
 ## 已知缺口与待核验项
 
 Telegram WebView 差异需持续人工回归；生产 route bundle 与 Sentry 页面 P95 必须发布后复测，本地构建只提供相对体积证据。
+
+五张 route/action/API 看板仍需在目标 Grafana stack 核对 Loki/Mimir 数据源、查询语法、真实字段、Android/iOS 样本和两个完整 24h 窗口；无样本不得视为 0ms 或达标。服务端 HTTP 指标没有客户端平台标签，不能从客户端筛选反推服务端 Android/iOS 分组。
 
 ## 关联模块
 
@@ -74,6 +83,7 @@ Telegram WebView 差异需持续人工回归；生产 route bundle 与 Sentry �
 - 2026-10-29：任务 `Optimize Sentry slow pages and APIs`（`.trellis/tasks/archive/2026-10/10-29-optimize-sentry-slow-pages-apis/`）统一 GET 有限重试与查询取消，并明确可选重型 UI 的按需加载边界；commit：`f73e38a11dcf8556aba669c88dbd401569618cdf`。
 - 2026-11-04：任务 `Optimize five-route mobile navigation readiness`（`.trellis/tasks/11-03-five-route-navigation-p95/`）补齐五路由 ready、2 秒预算维度、平台 route chunk 优先级与低风险 intent 预取；生产是否达标仍需发布后按 route/platform 样本验证。
 - 2026-11-05：任务 `治理 Android 五入口公共导航长尾`（`.trellis/tasks/11-05-optimize-android-navigation-tail/`）增加 Android SPA 导航安静窗口、4 秒兜底和单 route 后台预热上限；iOS 行为与页面 ready 口径不变，效果需按新 release 生产复测。
+- 2026-11-06：任务 `Grafana 页面按钮与接口耗时看板`（`.trellis/tasks/11-05-grafana-route-action-api-latency/`）补齐九个 action 的安全 route/entry 投影及二/三级页面、非流式 API、SSE/NDJSON 五张看板源；Cloud 导入与生产样本仍需独立验收。
 
 ## 五入口公共导航适配（2026-10-27，本地）
 

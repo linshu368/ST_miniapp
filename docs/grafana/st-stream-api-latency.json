@@ -1,0 +1,338 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 1,
+  "links": [],
+  "panels": [
+    {
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "options": {
+        "content": "# 流式接口响应与完整生命周期\n聊天 `POST /api/v1/conversations/:id/messages`、`.../regenerate` 是 SSE：2秒目标只用于客户端首个可见正文/已启用思考 token 的 commit。Creator `POST /api/creator/polish` 是 **NDJSON**：2秒目标用于 headers/首段可见文本。客户端 full 与服务端 onResponse 是完整流诊断，只用于容量/长尾，**不设 2 秒 SLO**，也不能与首字 P95 相减。所有成功分位数必须与 terminal、N、离页/后台/取消共同查看；无数据不补 0。",
+        "mode": "markdown"
+      },
+      "title": "协议与 2 秒目标边界",
+      "type": "text"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "noValue": "No data",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 2000 }
+            ]
+          },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "id": 2,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+          "editorMode": "code",
+          "expr": "quantile_over_time(0.95, ${browser_selector:raw} |= \"st_roleplay_first_token\" | logfmt | kind=\"measurement\" | type=\"st_roleplay_first_token\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"engineering_v1\" | context_stage=\"first_token\" | context_outcome=\"observed\" | context_action=~\"$chat_action\" | context_tg_platform=~\"$tg_platform\" | unwrap duration_ms | __error__=\"\" [$__range]) by (context_action, context_tg_platform)",
+          "legendFormat": "SSE {{context_action}} {{context_tg_platform}}",
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "title": "SSE 首个可见 token P95（目标 ≤2000ms）",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+      "description": "成功首字样本内的 2 秒占比；超时/离页等终态另列，不填 0。",
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "No data",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 0.95 }
+            ]
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "id": 3,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+          "editorMode": "code",
+          "expr": "sum by (context_action, context_tg_platform) (count_over_time(${browser_selector:raw} |= \"st_roleplay_first_token\" | logfmt | kind=\"measurement\" | type=\"st_roleplay_first_token\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"engineering_v1\" | context_stage=\"first_token\" | context_outcome=\"observed\" | context_action=~\"$chat_action\" | context_tg_platform=~\"$tg_platform\" | duration_ms <= 2000 [$__range])) / sum by (context_action, context_tg_platform) (count_over_time(${browser_selector:raw} |= \"st_roleplay_first_token\" | logfmt | kind=\"measurement\" | type=\"st_roleplay_first_token\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"engineering_v1\" | context_stage=\"first_token\" | context_outcome=\"observed\" | context_action=~\"$chat_action\" | context_tg_platform=~\"$tg_platform\" [$__range]))",
+          "legendFormat": "SSE {{context_action}} {{context_tg_platform}}",
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "title": "SSE 首字 2秒内占比",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+      "description": "首字结果 N 与完整流结果分开；按 stage/action/outcome 查看超时、离页、后台和取消。",
+      "fieldConfig": { "defaults": { "noValue": "No data", "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 14 },
+      "id": 4,
+      "options": {
+        "legend": { "calcs": ["sum"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+          "editorMode": "code",
+          "expr": "sum by (event_data_stage, event_data_action, event_data_tg_platform, event_data_outcome) (count_over_time(${browser_selector:raw} |= \"st_roleplay_terminal\" | logfmt | kind=\"event\" | event_name=\"st_roleplay_terminal\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"engineering_v1\" | event_data_stage=~\"first_token|full_reply\" | event_data_action=~\"$chat_action\" | event_data_tg_platform=~\"$tg_platform\" [$__auto]))",
+          "legendFormat": "{{event_data_stage}} {{event_data_action}} {{event_data_tg_platform}} {{event_data_outcome}}",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "SSE 首字/完整流结果与样本分母",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+      "description": "客户端从动作开始到完整 reply 终态，仅诊断长尾；没有 2 秒阈值。",
+      "fieldConfig": { "defaults": { "noValue": "No data", "unit": "ms" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 23 },
+      "id": 5,
+      "options": {
+        "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+          "editorMode": "code",
+          "expr": "quantile_over_time(0.95, ${browser_selector:raw} |= \"st_roleplay_full_reply\" | logfmt | kind=\"measurement\" | type=\"st_roleplay_full_reply\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"engineering_v1\" | context_stage=\"full_reply\" | context_outcome=\"complete\" | context_action=~\"$chat_action\" | context_tg_platform=~\"$tg_platform\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_action, context_tg_platform)",
+          "legendFormat": "SSE full {{context_action}} {{context_tg_platform}}",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "诊断：SSE 客户端完整回复 P95（无2秒 SLO）",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+      "description": "Creator polish 是 NDJSON。headers 与 first_text 均从调用起点计时；红线 2000ms。",
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "showPoints": "never" },
+          "noValue": "No data",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 2000 }
+            ]
+          },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 23 },
+      "id": 6,
+      "options": {
+        "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+          "editorMode": "code",
+          "expr": "quantile_over_time(0.95, ${browser_selector:raw} |~ \"st_creator_polish_(headers|first_text)\" | logfmt | kind=\"measurement\" | type=~\"st_creator_polish_(headers|first_text)\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"engineering_v1\" | context_source_measurement_version=\"creator_polish_v1\" | context_target=~\"$polish_target\" | context_tg_platform=~\"$tg_platform\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (type, context_target, context_tg_platform)",
+          "legendFormat": "NDJSON {{type}} {{context_target}} {{context_tg_platform}}",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "NDJSON headers/首段文本 P95（2秒阈值）",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+      "description": "首段可见文本成功样本内 2 秒占比；终态失败不填 0。",
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "No data",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 0.95 }
+            ]
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 31 },
+      "id": 7,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+          "editorMode": "code",
+          "expr": "sum by (context_target, context_tg_platform) (count_over_time(${browser_selector:raw} |= \"st_creator_polish_first_text\" | logfmt | kind=\"measurement\" | type=\"st_creator_polish_first_text\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"engineering_v1\" | context_source_measurement_version=\"creator_polish_v1\" | context_target=~\"$polish_target\" | context_tg_platform=~\"$tg_platform\" | duration_ms <= 2000 [$__range])) / sum by (context_target, context_tg_platform) (count_over_time(${browser_selector:raw} |= \"st_creator_polish_first_text\" | logfmt | kind=\"measurement\" | type=\"st_creator_polish_first_text\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"engineering_v1\" | context_source_measurement_version=\"creator_polish_v1\" | context_target=~\"$polish_target\" | context_tg_platform=~\"$tg_platform\" [$__range]))",
+          "legendFormat": "NDJSON {{context_target}} {{context_tg_platform}}",
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "title": "NDJSON 首段文本 2秒内占比",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+      "description": "complete/error/aborted/timeout 与 target/platform 分母；full duration 仅诊断，无 2 秒阈值。",
+      "fieldConfig": { "defaults": { "noValue": "No data", "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 16, "x": 8, "y": 31 },
+      "id": 8,
+      "options": {
+        "legend": { "calcs": ["sum"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+          "editorMode": "code",
+          "expr": "sum by (event_data_target, event_data_tg_platform, event_data_outcome) (count_over_time(${browser_selector:raw} |= \"st_creator_polish_terminal\" | logfmt | kind=\"event\" | event_name=\"st_creator_polish_terminal\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"engineering_v1\" | event_data_source_measurement_version=\"creator_polish_v1\" | event_data_target=~\"$polish_target\" | event_data_tg_platform=~\"$tg_platform\" [$__auto]))",
+          "legendFormat": "terminal {{event_data_target}} {{event_data_tg_platform}} {{event_data_outcome}}",
+          "queryType": "range",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+          "editorMode": "code",
+          "expr": "quantile_over_time(0.95, ${browser_selector:raw} |= \"st_creator_polish_full\" | logfmt | kind=\"measurement\" | type=\"st_creator_polish_full\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"engineering_v1\" | context_source_measurement_version=\"creator_polish_v1\" | context_target=~\"$polish_target\" | context_tg_platform=~\"$tg_platform\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_target, context_tg_platform, context_outcome)",
+          "legendFormat": "full P95 {{context_target}} {{context_tg_platform}} {{context_outcome}}",
+          "queryType": "range",
+          "refId": "B"
+        }
+      ],
+      "title": "NDJSON 完整流终态、N 与 full P95（无2秒 SLO）",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "grafanacloud-prom" },
+      "description": "Fastify onResponse 的完整连接生命周期。SSE 与 NDJSON 一起用于容量/长尾诊断，不应用 2 秒阈值，也没有客户端平台标签。",
+      "fieldConfig": { "defaults": { "noValue": "No data", "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 39 },
+      "id": 9,
+      "options": {
+        "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "grafanacloud-prom" },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum by (le, route, method) (rate(st_http_server_duration_seconds_bucket{environment=\"$environment\",release=~\"$release\",route=~\"^(/api/v1/conversations/:id/messages|/api/v1/conversations/:id/regenerate|/api/creator/polish)$\"}[$__rate_interval])))",
+          "legendFormat": "full {{route}} {{method}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "服务端 SSE/NDJSON 完整流 P95（无2秒 SLO）",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "5m",
+  "schemaVersion": 39,
+  "tags": ["st-miniapp", "engineering", "stream", "sse", "ndjson"],
+  "templating": {
+    "list": [
+      {
+        "current": { "text": "production", "value": "production" },
+        "label": "环境",
+        "name": "environment",
+        "options": [],
+        "query": "production,test",
+        "type": "custom"
+      },
+      {
+        "current": { "text": ".*", "value": ".*" },
+        "label": "版本（正则）",
+        "name": "release",
+        "options": [],
+        "query": ".*",
+        "type": "textbox"
+      },
+      {
+        "current": { "text": "Android+iOS", "value": "android|android_x|ios" },
+        "label": "客户端平台",
+        "name": "tg_platform",
+        "options": [],
+        "query": "Android : android|android_x,iOS : ios,Android+iOS : android|android_x|ios",
+        "type": "custom"
+      },
+      {
+        "current": { "text": "send|regenerate", "value": "send|regenerate" },
+        "label": "SSE action",
+        "name": "chat_action",
+        "options": [],
+        "query": "全部 : send|regenerate,send,regenerate",
+        "type": "custom"
+      },
+      {
+        "current": { "text": "opening|background", "value": "opening|background" },
+        "label": "NDJSON polish target",
+        "name": "polish_target",
+        "options": [],
+        "query": "全部 : opening|background,opening,background",
+        "type": "custom"
+      },
+      {
+        "current": {
+          "text": "{service_name=\"st-miniapp\"}",
+          "value": "{service_name=\"st-miniapp\"}"
+        },
+        "hide": 2,
+        "label": "Loki selector",
+        "name": "browser_selector",
+        "query": "{service_name=\"st-miniapp\"}",
+        "type": "constant"
+      }
+    ]
+  },
+  "time": { "from": "now-24h", "to": "now" },
+  "timezone": "browser",
+  "title": "ST 流式接口响应与完整生命周期",
+  "uid": "st-stream-api-latency",
+  "version": 1
+}

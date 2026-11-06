@@ -1,0 +1,4 @@
+{"file":".trellis/spec/frontend/app/index.md","reason":"复核前端边界和最低质量检查"}
+{"file":".trellis/spec/frontend/app/testing-quality-and-deployment.md","reason":"复核性能、安全、真实环境验证"}
+{"file":".trellis/spec/backend/app/backend-rules.md","reason":"复核服务端指标低基数、故障隔离与质量门禁"}
+{"file":".trellis/tasks/11-05-grafana-route-action-api-latency/research/inventory-and-baseline.md","reason":"复核 dashboard 与现有信号/协议一致"}

@@ -1,0 +1,63 @@
+{
+  "id": "grafana-route-action-api-latency",
+  "name": "grafana-route-action-api-latency",
+  "title": "Grafana 页面按钮与接口耗时看板",
+  "description": "在现有 Grafana 工程看板中增加二级页面、三级页面、按钮、普通 API 与 SSE 接口耗时视图，Android/iOS 分列并以 2 秒为目标，复用现有遥测且不影响业务性能。",
+  "status": "in_progress",
+  "dev_type": "feature",
+  "scope": "frontend,backend-observability,docs,grafana",
+  "package": "frontend",
+  "priority": "P1",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-05",
+  "completedAt": null,
+  "branch": "codex/grafana-route-action-api-latency",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": ["frontend.infrastructure.client-ui-foundation"]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": [
+        "五入口下属二级页面（固定低基数路由清单）",
+        "五入口下属三级页面（固定低基数路由清单）"
+      ],
+      "apis": [
+        "所有已观测非流式 Fastify route（排除 SSE/NDJSON 长连接）",
+        "POST /api/v1/conversations/:id/messages",
+        "POST /api/v1/conversations/:id/regenerate",
+        "POST /api/creator/polish（NDJSON，单独标明非 SSE）"
+      ],
+      "android": {
+        "page_p95_baseline_ms": 2392,
+        "page_p95_target_ms": 2000
+      },
+      "ios": {
+        "page_p95_baseline_ms": 3362,
+        "page_p95_target_ms": 2000
+      },
+      "api": {
+        "p95_baseline_ms": 5002,
+        "p95_target_ms": 2000
+      },
+      "measurement": {
+        "source": "历史 Grafana Cloud Loki production engineering_v1 与既有任务只读基线；页面数值仅代表 /chat/:id，普通 API 与 SSE 分项见 notes，未观测路由不得补零。",
+        "window": "页面/SSE 最近可复用基线来自 2026-11-04 任务记录；普通 API 来自 2026-10-27 至 2026-11-03 的 7d 窗口。发布后按 release、route/action、Android/iOS 连续观察两个完整 24h 窗口，每组 N<100 延长窗口。"
+      },
+      "notes": "已知 /chat/:id page-ready P95：Android 2392ms(N=135)，iOS 3362ms(N=31，低样本)；其余二/三级页面没有同窗口可靠清单，保留无数据。普通 API 历史分组最高可见约 Android 3704.15ms、iOS 3857.6ms；修正后的细路由需按新 release 重建基线。SSE 点击到首字 P95：Android 4536ms、iOS 5002ms；2秒目标只作用于 headers/首个可见事件，不作用于完整生成时长。看板与遥测改动不得使业务页面/API/SSE P95相对同 release 稳定窗口回退超过5%。"
+    }
+  }
+}

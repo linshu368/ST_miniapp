@@ -1,0 +1,6 @@
+{"file":".trellis/spec/frontend/app/index.md","reason":"Frontend 总体边界与质量门禁"}
+{"file":".trellis/spec/frontend/app/testing-quality-and-deployment.md","reason":"Sentry/Grafana、性能与发布验证规则"}
+{"file":".trellis/spec/backend/app/backend-rules.md","reason":"服务端指标、安全、故障隔离与质量门禁"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"页面到接口的跨层口径检查"}
+{"file":".trellis/spec/frontend/app/modules/infrastructure/client-ui-foundation.md","reason":"五入口、page navigation 与客户端遥测当前事实"}
+{"file":".trellis/tasks/11-05-grafana-route-action-api-latency/research/inventory-and-baseline.md","reason":"现有信号、真实协议、缺口和历史基线"}

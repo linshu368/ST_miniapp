@@ -43,7 +43,6 @@
     "packages/frontend/src/components/drama/drama-player.tsx": 1512,
     "packages/frontend/src/hooks/use-conversation-turn.ts": 1054,
     "packages/frontend/src/lib/perf/drama-timing.ts": 642,
-    "packages/frontend/src/lib/perf/grafana.ts": 685,
     "packages/frontend/src/lib/perf/page-tracker.ts": 509,
     "packages/shared/src/api/models.ts": 697,
     "packages/shared/src/api/text-postprocess.ts": 1139,

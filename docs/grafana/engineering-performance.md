@@ -6,7 +6,7 @@
 
 经营看板继续读取已有 Supabase 轻量汇总；原首字回执、赢家身份、恢复和计费事实继续原样持久化。本次没有新增监控表、索引、cron、逐事件数据库查询/写入，原短剧分析上传的历史约定由2026-10-29五秒长尾任务修订：接收端仅将达到5秒的终态/network详情经既有后端OTLP写Loki，不再触发Supabase分析写入；历史表和SQL看板保留，发布后单独核验自然样本送达。
 
-五个独立入口：
+现有五个独立入口：
 
 | 源文件 / UID                          | 工程首先看什么                                              | 数据源        |
 | ------------------------------------- | ----------------------------------------------------------- | ------------- |
@@ -19,6 +19,36 @@
 页面、角色扮演、短剧和五入口专项是工程体验产出，Backend 看板是定位原因的证据。保留既有经营、首字 v4 和短剧看板，不覆盖其他 TextBot 项目。源 JSON 默认绑定当前 `grafanacloud-logs` / `grafanacloud-prom`，保留待接入模板；线上接入状态按实际 Cloud 样本独立更新，不因导入模板而视为验收。
 
 五入口专项固定覆盖 `/`、`/dramas`、`/characters`、`/creation`、`/profile`。P95 和 2 秒达标率都读取同一条 `page.navigation` 的 `duration_ms`；页面测量另带低基数 `readiness_budget=within_2s|over_2s` 供发布后核对。看板必须同时查看成功样本量、`page.terminal` 和 `page.stall`，单个 route/platform 少于 100 个成功终态只标低样本，无数据不能解释成达标。
+
+### Route/action/API 耗时专项（2026-11-06，仓库源文件）
+
+新增五张独立源码看板，尚未自动导入 Cloud：`st-secondary-page-latency`、`st-tertiary-page-latency`、`st-button-response-latency`、`st-api-latency-non-stream`、`st-stream-api-latency`。它们默认 24h/5m，环境、release、Android/iOS 可筛选；主响应阶段标出 2000ms，完整流只作长尾诊断。源码 JSON 通过不等于生产样本、查询或布局已验收。
+
+页面层级是产品 canonical ownership，不按斜杠数量推断：
+
+| Entry         | 二级 route                                                                                                                      | 三级 route                                                                |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `/watch`      | 无独立二级 route；完整短剧归 `/dramas`                                                                                          | 无                                                                        |
+| `/dramas`     | `/dramas/:id`                                                                                                                   | 无                                                                        |
+| `/characters` | `/chats`、`/chat/:id`、`/creators/:id`、`/wishes`                                                                               | `/chat/:id/voice/:id`、`/wishes/:id`                                      |
+| `/creation`   | `/create`、`/creation/characters/new`、`/creation/data`                                                                         | `/create/studio/:id`、`/create/work/:id`、`/creation/characters/:id/edit` |
+| `/profile`    | `/vip`、`/profile/recharge`、`/profile/orders`、`/profile/spending`、`/profile/messages`、`/profile/invite`、`/profile/support` | `/profile/recharge/:id`、`/profile/messages/:id`                          |
+
+页面主指标只使用前台 SPA `page.navigation` 到真实内容 ready；`page.launch` 保留为冷/直达辅助，不能混入同一 P95。每个 route/platform 的成功 N<100 时延长窗口，terminal/stall 继续作为失败与离页分母；无样本保持 No data。
+
+`roleplay.action` 沿名以兼容历史，但从本 release 起覆盖全部九个关键动作。动作开始时冻结白名单 route 与五入口 entry；未知路径降为 `other`，不发送 URL/query/ID/按钮文案。旧 release 只有五个动作且 route 硬编码 `/chat/:id`，必须用 release 隔离，不能回填或与新数据合组。纯本地展开、关闭、tab 与播放器手势不进入专项。
+
+非流式 API 看板保持两条独立时钟：浏览器 `api.total` 按有限 route group/method/platform 表示排队、有限重试、headers/body/解析后的总等待；服务端 `st_http_server_duration_seconds` 按 Fastify route/method/status 表示 onResponse 生命周期，没有客户端平台标签。两者不可相加、相减或逐请求配对。服务端查询显式排除两条聊天 SSE、creator polish NDJSON 和 `/api/telemetry/*`，不能简单用 `kind=standard` 排除所有 generation route。
+
+流式协议边界固定为：
+
+- SSE：`POST /api/v1/conversations/:id/messages` 与 `POST /api/v1/conversations/:id/regenerate`。2秒目标只作用于客户端 `roleplay.first_token` 的首个可见正文/已启用思考 token commit。
+- NDJSON：`POST /api/creator/polish`。2秒目标作用于 headers/首段可见文本，并按有限 `opening|background` target 排查。
+- 客户端 `roleplay.full_reply` / `creator.polish.full` 与服务端 onResponse 完整流 P95 只诊断容量和长尾，不设 2 秒 SLO，也不能从首字 P95 相减推算其余阶段。
+
+历史可复用基线：`/chat/:id` page-ready Android 2392ms（N=135）、iOS 3362ms（N=31，低样本）；旧普通 API 分组可见最高约 Android 3704.15ms、iOS 3857.6ms；聊天首字 Android 4536ms、iOS 5002ms。按钮和其余二/三级 route 没有可靠同窗基线，不补零。新 route/action 维度发布后必须按新 release 重建基线。
+
+发布后连续观察两个完整 24h 窗口，按 release + route/action + Android/iOS 检查 P95、≤2秒占比、N、失败/离页/stall 与 exporter health；每组 N<100 延长窗口。无样本不解释成 0ms。若新增同步异常、业务结果变化、Faro dropped/transport failure 激增，或同口径业务页面/API/SSE P95 相对稳定窗口回退超过 5%，先回退 action 投影对应 Frontend release；看板可独立保留排查或从 Cloud 删除。源码回退不删除历史日志。
 
 ## 短剧统一定义v3（本地代码，尚未发布）
 
@@ -62,7 +92,7 @@ NEXT_PUBLIC_DRAMA_TIMING_MODE默认legacy。只有替代验证通过后显式启
 
 ## 页面与接口覆盖
 
-已登记21个页面模板：`/`、`/characters`、`/chats`、`/chat/:id`、`/chat/:id/voice/:id`、`/create`、`/create/studio/:id`、`/create/work/:id`、`/creation`、`/dramas`、`/dramas/:id`、`/vip`、`/profile`、`/profile/recharge`、`/profile/recharge/:id`、`/profile/orders`、`/profile/spending`、`/profile/messages`、`/profile/messages/:id`、`/profile/invite`、`/profile/support`。
+已登记27个页面模板：`/watch`、`/characters`、`/chats`、`/chat/:id`、`/chat/:id/voice/:id`、`/create`、`/create/studio/:id`、`/create/work/:id`、`/creation`、`/creation/characters/new`、`/creation/characters/:id/edit`、`/creation/data`、`/creators/:id`、`/dramas`、`/dramas/:id`、`/vip`、`/profile`、`/profile/recharge`、`/profile/recharge/:id`、`/profile/orders`、`/profile/spending`、`/profile/messages`、`/profile/messages/:id`、`/profile/invite`、`/profile/support`、`/wishes`、`/wishes/:id`。
 
 - 路径白名单在 `lib/perf/route-template.ts`；页面通过现有 `usePageReady` 声明真实就绪/失败。未知短路径归 other，不把动态ID当维度。
 - API 客户端自动覆盖24个有限接口组，不输出原路径/query。诊断上传排除，防止采集递归。大厅同源代理等绕过统一客户端的请求不在 `api.total` 承诺内，页面端到端和后端HTTP仍可观测。

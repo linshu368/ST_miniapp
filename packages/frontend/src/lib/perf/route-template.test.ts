@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { engineeringRoute, toRouteTemplate } from './route-template';
+import { engineeringEntry, engineeringRoute, toRouteTemplate } from './route-template';
 
 describe('toRouteTemplate', () => {
   it('replaces uuids and numeric ids so metric dimensions stay low-cardinality', () => {
@@ -33,5 +33,13 @@ describe('toRouteTemplate', () => {
     ]) {
       expect(engineeringRoute(route)).toBe(route);
     }
+  });
+
+  it('maps reviewed routes to finite canonical entries without inferring from URL depth', () => {
+    expect(engineeringEntry('/dramas/:id')).toBe('/dramas');
+    expect(engineeringEntry('/chat/:id/voice/:id')).toBe('/characters');
+    expect(engineeringEntry('/creation/characters/new')).toBe('/creation');
+    expect(engineeringEntry('/profile/messages/:id')).toBe('/profile');
+    expect(engineeringEntry('/unreviewed/alice')).toBe('other');
   });
 });

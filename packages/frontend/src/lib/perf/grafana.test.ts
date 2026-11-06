@@ -137,6 +137,87 @@ describe('bounded engineering Faro exporter', () => {
     expect(JSON.stringify(fake.measurement.mock.calls)).not.toMatch(/PRIVATE_|request_id|user_id/);
   });
 
+  it('keeps finite action ownership while dropping unreviewed route and entry values', async () => {
+    const fake = fakeSdk();
+    const exporter = createEngineeringExporter(async () => fake.sdk);
+    await exporter.initialize();
+    exporter.measurement('roleplay.action', 900, {
+      route: '/profile/recharge/:id',
+      entry: '/profile',
+      action: 'recharge_create_order',
+      outcome: 'feedback',
+    });
+    exporter.event('roleplay.action', {
+      route: '/private/alice',
+      entry: '/private',
+      action: 'unknown_action',
+      outcome: 'waiting',
+    });
+
+    expect(fake.measurement.mock.calls.at(-1)?.[1].context).toMatchObject({
+      route: '/profile/recharge/:id',
+      entry: '/profile',
+      action: 'recharge_create_order',
+    });
+    expect(fake.event.mock.calls.at(-1)?.[1]).toMatchObject({
+      route: 'other',
+      entry: 'other',
+      action: 'other',
+    });
+  });
+
+  it('preserves finite creator polish protocol dimensions without accepting arbitrary targets', async () => {
+    const fake = fakeSdk();
+    const exporter = createEngineeringExporter(async () => fake.sdk);
+    await exporter.initialize();
+    exporter.measurement('creator.polish.first_text', 1200, {
+      target: 'opening',
+      source_measurement_version: 'creator_polish_v1',
+    });
+    exporter.event('creator.polish.terminal', {
+      target: 'PRIVATE_TARGET',
+      outcome: 'complete',
+      source_measurement_version: 'creator_polish_v1',
+    });
+
+    expect(fake.measurement.mock.calls.at(-1)?.[1].context).toMatchObject({
+      target: 'opening',
+      source_measurement_version: 'creator_polish_v1',
+    });
+    expect(fake.event.mock.calls.at(-1)?.[1]).toMatchObject({ target: 'other' });
+    expect(JSON.stringify(fake.event.mock.calls)).not.toContain('PRIVATE_TARGET');
+  });
+
+  it('keeps every finite API group used by the unified client', async () => {
+    const fake = fakeSdk();
+    const exporter = createEngineeringExporter(async () => fake.sdk);
+    await exporter.initialize();
+    for (const apiRoute of [
+      'character_activity',
+      'character_recommendation',
+      'character_social',
+      'creator',
+      'creator_public',
+      'character_wishes',
+    ]) {
+      exporter.measurement('api.total', 500, {
+        api_route: apiRoute,
+        method: 'GET',
+        outcome: 'ok',
+        source_measurement_version: 'api_logical_v1',
+      });
+    }
+
+    expect(fake.measurement.mock.calls.map((call) => call[1].context.api_route)).toEqual([
+      'character_activity',
+      'character_recommendation',
+      'character_social',
+      'creator',
+      'creator_public',
+      'character_wishes',
+    ]);
+  });
+
   it('allows bounded CDN fields while removing identities and unsafe experiment values twice', async () => {
     const fake = fakeSdk();
     const exporter = createEngineeringExporter(async () => fake.sdk);

@@ -6,6 +6,7 @@ import { createLogger } from '@/lib/logger';
 
 import { getMetricDimensions, getNetworkTags } from './env-tags';
 import { recordEngineeringEvent, recordEngineeringMeasurement } from './grafana';
+import { engineeringEntry, engineeringRoute, toRouteTemplate } from './route-template';
 
 const log = createLogger('perf');
 
@@ -36,23 +37,22 @@ export interface ActionHandle {
 
 const pending = new Map<TrackedAction, ActionHandle>();
 
-const roleplayActions = new Set<TrackedAction>([
-  'select_character',
-  'send_message',
-  'create_conversation',
-  'image_generate',
-  'voice_generate',
-]);
+function actionLocation(): Pick<ActiveAction, 'route' | 'entry'> {
+  const pathname =
+    typeof window === 'undefined' || !window.location ? '' : window.location.pathname;
+  const route = engineeringRoute(toRouteTemplate(pathname));
+  return { route, entry: engineeringEntry(route) };
+}
 
 function mirrorAction(
   action: ActiveAction,
   outcome: 'waiting' | 'stalled' | 'feedback' | 'discarded',
   durationMs?: number
 ): void {
-  if (!roleplayActions.has(action.name)) return;
   try {
     const attributes = {
-      route: '/chat/:id',
+      route: action.route,
+      entry: action.entry,
       action: action.name,
       stage: 'feedback',
       outcome,
@@ -90,6 +90,8 @@ function safely(stage: string, fn: () => void): void {
  */
 interface ActiveAction {
   name: TrackedAction;
+  route: string;
+  entry: ReturnType<typeof engineeringEntry>;
   startedAt: number;
   hiddenMs: number;
   hiddenSince: number | null;
@@ -157,6 +159,7 @@ export function startAction(name: TrackedAction): ActionHandle {
   const now = performance.now();
   const action: ActiveAction = {
     name,
+    ...actionLocation(),
     startedAt: now,
     hiddenMs: 0,
     hiddenSince: typeof document !== 'undefined' && document.hidden ? now : null,
