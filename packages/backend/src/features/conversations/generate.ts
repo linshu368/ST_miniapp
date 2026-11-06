@@ -38,6 +38,10 @@ import {
   settleExecutedTurn,
 } from './turn-execution.js';
 import { buildEngineHistory } from './history.js';
+import {
+  createConversationPreparationTiming,
+  type ConversationPreparationTiming,
+} from './preparation-timing.js';
 import type { ConversationStreamSink } from './sse.js';
 import { prepareTurnInputs } from './turn-preparation.js';
 import { createTurnScope } from './turn-scope.js';
@@ -70,6 +74,7 @@ export interface RunConversationTurnInput {
   /** Route entry time: ownership/config preparation shares one budget. */
   receivedAt?: number;
   receivedMonotonicAt?: number;
+  preparationTiming?: ConversationPreparationTiming;
   firstTokenDeadlineMs?: number;
   catalogSnapshot?: Awaited<ReturnType<typeof fetchModelCatalogSnapshot>>;
   /** Caller correlation, persisted for safe pre-start cancellation matching. */
@@ -138,6 +143,9 @@ export async function runConversationTurn(
   const turnStartedAt = input.receivedAt ?? Date.now();
   const requestStartedAt =
     input.receivedMonotonicAt ?? performance.now() - (Date.now() - turnStartedAt);
+  const preparation =
+    input.preparationTiming ?? createConversationPreparationTiming(requestStartedAt);
+  preparation.enter('settings');
   const {
     chargeId,
     model,
@@ -147,8 +155,6 @@ export async function runConversationTurn(
     windowLimits,
     executionPreparation,
     preparationSignal,
-    setupFinishedAt,
-    settingsFinishedAt,
   } = await prepareTurnInputs({
     sessionId: session.id,
     characterId: session.character_id,
@@ -165,8 +171,9 @@ export async function runConversationTurn(
   // 两个 RPC 都在会话行锁内做「生成中判定 + 陈旧流清理」，session_busy 与
   // regenerate_not_allowed 由它们以 SQLSTATE 抛出，仓库层已翻成业务错误码。
   preparationSignal.throwIfAborted();
+  preparation.enter('turn_open', model);
   const turn = await startTurn(session.id, mode, model.openRouterModelId, windowLimits);
-  const turnOpenedAt = performance.now();
+  preparation.enter('context');
   log.biz.info(
     {
       event: 'conversation.instruction_slots.resolved',
@@ -191,6 +198,7 @@ export async function runConversationTurn(
     userId,
     thinkingEnabled,
     requestStartedAt,
+    diagnosticStartedAt: preparation.startedAt,
     turnStartedAt,
     turn,
     model,
@@ -201,7 +209,7 @@ export async function runConversationTurn(
 
   try {
     // ── 组 prompt ─────────────────────────────────────────────────────────────
-    const { prompt, truncatedTurns, contextFinishedAt } = await loadTurnPrompt({
+    const { prompt, truncatedTurns } = await loadTurnPrompt({
       registerObservation: async () => {
         await observations.begin({ ...observationInput, history: [] });
         control.markObservationBegun();
@@ -215,19 +223,16 @@ export async function runConversationTurn(
       instructions: instructions.instructions,
     });
 
-    // ── 生成 ──────────────────────────────────────────────────────────────────
+    preparation.enter('dispatch_gate');
     const result = await execute(
       buildGenerationRequest(scope, prompt, executionPreparation),
-      createExecutionHooks(scope, prompt, {
-        setupFinishedAt,
-        settingsFinishedAt,
-        turnOpenedAt,
-        contextFinishedAt,
-      }),
+      createExecutionHooks(scope, prompt, preparation),
       log
     );
+    preparation.incomplete();
     return await settleExecutedTurn(scope, result, truncatedTurns);
   } catch (err) {
+    preparation.incomplete();
     return await failTurn(scope, err);
   } finally {
     control.dispose();
@@ -279,7 +284,7 @@ async function loadTurnPrompt(input: {
     persona: { displayName: input.displayName },
     instructions: input.instructions,
   });
-  return { prompt, truncatedTurns: context.truncatedTurns, contextFinishedAt: performance.now() };
+  return { prompt, truncatedTurns: context.truncatedTurns };
 }
 
 export interface StartedTurn {

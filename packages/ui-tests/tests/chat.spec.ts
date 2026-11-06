@@ -17,6 +17,7 @@ test('@chat @chat-like @layout 回复点赞有48px触区，轻点立即反馈并
   preview,
 }) => {
   await page.goto('/characters');
+  await page.getByRole('tab', { name: '推荐', exact: true }).click();
   const card = page.locator(`[data-lobby-character-id="${IDS.character}"]`);
   const characterLike = card.getByRole('button', { name: '点赞 林间旅人', exact: true });
   await expect(characterLike).toContainText('128');

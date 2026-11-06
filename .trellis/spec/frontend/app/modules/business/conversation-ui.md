@@ -17,6 +17,8 @@ last_verified_at: 2026-11-02
 
 ## 当前状态
 
+本地候选（尚未发布，2026-11-06）：新注册用户在第一次角色对话前看到轻量输入提示，可一键展开真实回复偏好抽屉，已展开时不关闭，不更改任何偏好；成功回复后才展示可主动展开的编辑/分支介绍。编辑只打开既有铅笔入口，分支只打开既有更多菜单，教程不直接提交修改或创建会话；说明采用短句，仅点明改话控制后续、最近10轮、已有后续不重写、分支保留原对话。输入、编辑、生成时收起自动提示。所有用户可在工具箱的“玩法小贴士”重看说明。引导不进入消息历史，原滚动行为抽到 use-chat-message-scroll，按原语义保留。
+
 本地候选（尚未发布）：最近十轮（一问一答为一轮）的用户消息和角色正文可就地编辑、单条删除。消息底部的44px更多按钮收纳分支及删除；角色回复的编辑以独立铅笔按钮与重生成/点赞置于右侧；用户消息的编辑仍在更多菜单。删除原位出现“确认吗？/取消/确认”，不增加第二层弹窗。编辑时收起普通输入框但保留草稿，取消/失败不丢内容，视口缩小后保存仍可点。角色附加富文本不进入编辑框。旧轮次仅保留分支，开场白无修改。
 
 完整角色回复的操作行分成两组：左侧为字数、图片、语音和更多工具，右侧为重新生成与点赞，点赞位于最右。两组保留留白；左组在窄屏可换行，右组固定靠右，保持重新生成 44px、点赞 48px 触区。未选低对比、选中主题色填充，没有常驻文字、公共人数、确认弹层或成功通知。立即点亮/取消并复用轻触觉反馈；只锁当前按钮，保存失败恢复原状态并在回复下轻提示。详情读取一并返回 liked，不增加逐消息 GET；确认后按 session_id + message_id 更新详情与历史分页，停止旧的详情请求后再更新缓存，避免迟到读取覆盖反馈。点赞属于当前会话内的固定回复版本，分支默认未赞、新重生成版本不继承旧赞。
@@ -33,7 +35,7 @@ last_verified_at: 2026-11-02
 
 文字回复等待 8 秒保留提示；本地或服务端 streaming 均展示“取消本次回复”，终态确认后在最新未成功回复下显示“重新生成”，复用原输入。客户端读流/取消/刷新均有限等待；旧请求身份隔离、消息去重防止切会话或取消后旧状态覆盖新回复。Telegram/移动设备验收仍未执行。
 
-自研聊天 UI、SSE、工具箱、语音和图片交互代码已落地。图片只保留普通“看看TA”入口，支持免费描述、普通图片免费次数/付费预览、确认/自定义、生成中、失败、余额不足、ready 卡和 Dialog 预览；高级图按钮与 VIP 锁定交互已删除。图片 telemetry 继续只记录安全摘要。
+自研聊天 UI、SSE、工具箱、语音和图片交互代码已落地。图片只保留普通“看看TA”入口，支持免费描述、普通图片免费次数/付费预览、确认/自定义、生成中、失败、余额不足、ready 卡和 Dialog 预览；高级图按钮与 VIP 锁定交互已删除。历史 PostHog 图片事件上报已在2026-11-04移除，不能用于当前使用量分析。
 
 ## 入口与调用者
 
@@ -50,7 +52,6 @@ last_verified_at: 2026-11-02
 | `packages/frontend/src/lib/roleplay-navigation.ts`                   | 有限来源、最后栏目和位置恢复                    |
 | `packages/frontend/src/components/chat/`                             | 聊天组件                                        |
 | `packages/frontend/src/components/chat/chat-message-image.tsx`       | 图片面板、结果卡、预览与图片事件调用            |
-| `packages/frontend/src/lib/image-generation/telemetry.ts`            | 图片生成前端事件 helper 与去重                  |
 | `packages/frontend/src/lib/api/conversation-stream.ts`               | SSE client                                      |
 | `packages/frontend/src/hooks/use-chat-session.ts`                    | 会话生命周期                                    |
 | `packages/frontend/src/hooks/use-conversation-turn.ts`               | 发送/重生成编排                                 |
@@ -65,7 +66,7 @@ last_verified_at: 2026-11-02
 
 ## 数据、契约与外部依赖
 
-消费 shared conversations/voice/images/telemetry 契约和 Backend HTTP/SSE。图片 telemetry helper 只接收业务 ID、attempt 摘要、状态和错误码；实际保存图片仍使用 URL 调 Telegram 下载，但 URL 不进入事件属性。
+消费 shared conversations/voice/images/telemetry 契约和 Backend HTTP/SSE。实际保存图片使用 URL 调 Telegram 下载；历史图片 PostHog helper 已移除。
 
 ## 关键节点与约束
 
@@ -189,3 +190,5 @@ ChatSessionDrawer将空/角色同名/明确默认分支名以created_at显示区
 聊天页用 `useApiConnectionWarmth` 保持到 API 源站的连接：页面可见且 5 分钟内有操作时请求 `/health`，经 `warmApiConnection` 节流到最多每 25 秒一次。它不走 `apiClient`，不带自定义头，失败静默。
 
 Wrong：用客户端时钟宣布失败，或把保温做成无上限轮询。Correct：服务端拥有失败判定，保温随用户活动有界运行。
+
+新手创作计数（2026-11-06，本地候选）：conversation-stream在成功新发送done后为请求开始时账号写入本地引导记录，最多10个session/request标记，同请求重复done不重复；重生成、停止、失败均不计。计数仅控制产品提示，不涉及账务/服务端total_round，未入组与过期账号不写；聊天中不展示创作邀请。

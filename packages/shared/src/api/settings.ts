@@ -2,6 +2,15 @@
 import { z } from 'zod';
 import { ReplyStylePreferencesSchema, type ReplyStylePreferences } from './reply-style-options';
 
+/** GET /api/users/onboarding: advisory UI only, never a permission or reward. */
+export const UserOnboardingSchema = z
+  .object({
+    eligible: z.boolean(),
+    expires_at: z.string().datetime().nullable(),
+  })
+  .strict();
+export type UserOnboardingData = z.infer<typeof UserOnboardingSchema>;
+
 /**
  * 回复长度档位 id。权威列表来自 runtime_config.pref_word_count_tiers，
  * 不再是固定四值枚举；非法或已下线的 id 在读取/渲染时回落到 default_tier_id。

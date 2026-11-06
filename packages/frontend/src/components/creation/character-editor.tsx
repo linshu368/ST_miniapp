@@ -40,6 +40,7 @@ import {
 import { useCharacterEditorDraft } from './use-character-editor-draft';
 import { CreatorDocumentImport, CreatorDocumentAttachments } from './character-editor-documents';
 import { CharacterPresetChoices } from './character-editor-presets';
+import { CharacterEditorHeader } from './character-editor-header';
 import {
   CharacterEditorModal,
   dismissTopCharacterEditorModal,
@@ -643,32 +644,12 @@ function CharacterEditor({
         void local.flush();
       }}
     >
-      <header className="flex min-h-11 items-center justify-between gap-3">
-        <button
-          type="button"
-          onClick={() => void goBack()}
-          disabled={busy}
-          className="flex min-h-11 shrink-0 items-center gap-2 text-sm text-foreground disabled:opacity-50"
-        >
-          <ArrowLeft className="size-4" />
-          {character ? '编辑角色' : '创建角色'}
-        </button>
-        <span
-          role="status"
-          className={cn(
-            'text-right text-[10px] leading-5 text-muted-foreground',
-            local.status === 'error' && 'text-destructive'
-          )}
-        >
-          {local.status === 'saving'
-            ? '保存中…'
-            : local.status === 'saved'
-              ? '草稿已保存到本地'
-              : local.status === 'error'
-                ? '本地保存暂不可用'
-                : '草稿自动保存在本地'}
-        </span>
-      </header>
+      <CharacterEditorHeader
+        editing={Boolean(character)}
+        busy={busy}
+        status={local.status}
+        onBack={() => void goBack()}
+      />
       {sourceWishId && (
         <aside className="mt-4 rounded-xl border border-primary/15 bg-primary/[0.04] px-3.5 py-3">
           <div className="flex items-center justify-between gap-3 text-xs">
