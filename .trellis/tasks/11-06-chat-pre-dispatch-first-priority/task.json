@@ -26,7 +26,9 @@
     "module_impact": {
       "schema_version": 1,
       "mode": "changes",
-      "modules": ["backend.business.conversation-generation"]
+      "modules": [
+        "backend.business.conversation-generation"
+      ]
     },
     "mobile_performance": {
       "schema_version": 1,
