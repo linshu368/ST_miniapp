@@ -244,7 +244,7 @@ function CharacterEditor({
   const adoptedCover = useRef<string | null>(null);
   const missingFields = creatorPublishMissingFields(draft, coverAssetId);
   const busy = working || upload.isPending || createStudio.isPending;
-  const reviewing = visibility === 'public' && (publish.isPending || setVisibility.isPending);
+  const publishing = visibility === 'public' && (publish.isPending || setVisibility.isPending);
   const sameContent = Boolean(
     character &&
     JSON.stringify(character.draft) === JSON.stringify(draft) &&
@@ -1077,7 +1077,7 @@ function CharacterEditor({
                   />
                 </span>
                 <span className="mt-2 block px-1 text-[11px] leading-6 text-muted-foreground">
-                  {value === 'public' ? '审核通过后进入大厅' : '进入自己的空间，只有自己能看到'}
+                  {value === 'public' ? '公开后进入大厅' : '进入自己的空间，只有自己能看到'}
                 </span>
               </label>
             ))}
@@ -1123,7 +1123,7 @@ function CharacterEditor({
           className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-primary/30 bg-primary text-sm font-semibold text-primary-foreground disabled:opacity-40"
         >
           {busy && <LoaderCircle className="size-4 animate-spin" />}
-          {reviewing ? '正在审核…' : busy ? '正在保存…' : unchanged ? '没有新修改' : submitLabel}
+          {publishing ? '正在发布…' : busy ? '正在保存…' : unchanged ? '没有新修改' : submitLabel}
         </button>
       </section>
       {recoveryOpen && (
