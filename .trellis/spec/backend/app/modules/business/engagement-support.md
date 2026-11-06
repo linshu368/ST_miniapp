@@ -17,6 +17,8 @@ last_verified_at: 2026-10-29
 
 ## 当前状态
 
+本地候选（尚未发布，2026-11-06）：新增 GET /api/users/onboarding，使用 requireTelegramAuth 与已有 getOrCreateDbUserRecord。按服务端账号 created_at 距今不足24小时且 total_round<10 判断首次入组，返回 eligible/expires_at（注册后7天）。只做有界身份读取，不查聊天正文或历史列表；资格是UI提示，不授予业务权限/奖励。故障返回503，日志只有是否符合和耗时/标准错误。无数据库迁移；发布时后端兼容接口先于前端。
+
 主要互动 API 已实现。邀请和官方社群等发奖 RPC 保留各自业务判定，但钱包加值与流水最终统一调用 `billing.grant_bonus_credits`。客服业务由独立 `ST_cs_platform` 服务负责，本仓库保留 Telegram 鉴权、用户身份映射和 `/api/support/*` 代理。
 
 ## 入口与调用者
