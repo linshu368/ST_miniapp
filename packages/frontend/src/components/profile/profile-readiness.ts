@@ -49,17 +49,14 @@ function useNearViewport(ref: RefObject<Element>, enabled: boolean): boolean {
   return ready;
 }
 
-export function useProfileReadiness(ref: RefObject<Element>): {
-  secondaryReadsReady: boolean;
-  serviceEntriesReady: boolean;
-} {
+export function useProfileReadiness(): { secondaryReadsReady: boolean } {
   const painted = useAfterFirstPaint();
   const navigationBackgroundAllowed = useNavigationBackgroundAllowed();
-  const secondaryReadsReady = painted && navigationBackgroundAllowed;
-  return {
-    secondaryReadsReady,
-    serviceEntriesReady: useNearViewport(ref, secondaryReadsReady),
-  };
+  return { secondaryReadsReady: painted && navigationBackgroundAllowed };
+}
+
+export function useProfileServiceEntriesReady(ref: RefObject<Element>, enabled: boolean): boolean {
+  return useNearViewport(ref, enabled);
 }
 
 function afterProfileNavigationQuiet(): Promise<void> {

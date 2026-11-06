@@ -1,5 +1,14 @@
 import { z } from 'zod';
 import { ProviderSlugSchema } from './provider-routing.js';
+import { LlmModelProviderSchema, type LlmModelProvider } from './model-providers.js';
+export {
+  LLM_MODEL_PROVIDERS,
+  LLM_MODEL_PROVIDER_LABELS,
+  LLM_PROVIDER_CAPABILITIES,
+  LlmModelProviderSchema,
+  type LlmModelProvider,
+  type LlmProviderCapability,
+} from './model-providers.js';
 
 import { VIP_TEXT_DISCOUNT_RATE, VipEntitlementSummarySchema } from './vip.js';
 import { VipTextDiscountRateSchema } from './vip-strategy.js';
@@ -58,11 +67,6 @@ export const FIRST_TOKEN_RETRY_MESSAGE = '这次回应稍慢，再试一次吧';
 const FirstTokenDurationSchema = z.number().int().positive().max(110_000);
 
 export const ModelCatalogTierKeySchema = z.enum(['light', 'standard', 'premium']);
-export const LlmModelProviderSchema = z.enum(['openrouter', 'venice']);
-export const LLM_MODEL_PROVIDER_LABELS: Record<z.infer<typeof LlmModelProviderSchema>, string> = {
-  openrouter: 'OpenRouter',
-  venice: 'Venice',
-};
 export const StableModelIdSchema = z
   .string()
   .trim()
@@ -240,7 +244,6 @@ export const ModelCatalogSchema = z
   });
 
 export type ModelCatalogTierKey = z.infer<typeof ModelCatalogTierKeySchema>;
-export type LlmModelProvider = z.infer<typeof LlmModelProviderSchema>;
 // Additive fields stay optional at typed legacy call sites; parsing always supplies defaults.
 export type ModelCatalogModel = Omit<
   z.infer<typeof ModelCatalogModelSchema>,
@@ -481,48 +484,6 @@ export const ProviderModelDirectorySchema = z.object({
 
 export type ProviderModelSummary = z.infer<typeof ProviderModelSummarySchema>;
 export type ProviderModelDirectory = z.infer<typeof ProviderModelDirectorySchema>;
-
-export interface LlmProviderCapability {
-  id: LlmModelProvider;
-  label: string;
-  defaultBaseUrl: string;
-  apiKeyEnv: string;
-  baseUrlEnv?: string;
-  chatCompletionsPath: '/chat/completions';
-  modelsPath: '/models';
-  supportsOpenRouterProviderRouting: boolean;
-  supportsOpenRouterGenerationMetadata: boolean;
-  promptCachingMode: 'openrouter_anthropic_cache_control' | 'venice_prompt_cache_key' | 'none';
-}
-
-export const LLM_PROVIDER_CAPABILITIES: Record<LlmModelProvider, LlmProviderCapability> = {
-  openrouter: {
-    id: 'openrouter',
-    label: 'OpenRouter',
-    defaultBaseUrl: 'https://openrouter.ai/api/v1',
-    apiKeyEnv: 'LLM_API_KEY',
-    baseUrlEnv: 'LLM_UPSTREAM_URL',
-    chatCompletionsPath: '/chat/completions',
-    modelsPath: '/models',
-    supportsOpenRouterProviderRouting: true,
-    supportsOpenRouterGenerationMetadata: true,
-    promptCachingMode: 'openrouter_anthropic_cache_control',
-  },
-  venice: {
-    id: 'venice',
-    label: 'Venice',
-    defaultBaseUrl: 'https://api.venice.ai/api/v1',
-    apiKeyEnv: 'VENICE_API_KEY',
-    baseUrlEnv: 'VENICE_BASE_URL',
-    chatCompletionsPath: '/chat/completions',
-    modelsPath: '/models',
-    supportsOpenRouterProviderRouting: false,
-    supportsOpenRouterGenerationMetadata: false,
-    promptCachingMode: 'venice_prompt_cache_key',
-  },
-};
-
-export const LLM_MODEL_PROVIDERS = Object.keys(LLM_PROVIDER_CAPABILITIES) as LlmModelProvider[];
 
 export const FixedDeductionConfigSchema = z.object({
   freeQuotaExhausted: z.number().finite().nonnegative(),

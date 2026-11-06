@@ -1,5 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import type { AlertEvaluation, LlmModelProvider } from '@miniapp/shared';
+import {
+  LlmModelProviderSchema,
+  type AlertEvaluation,
+  type LlmModelProvider,
+} from '@miniapp/shared';
 import { createLogger, type Logger } from '../../lib/logger.js';
 import { config } from '../../platform/config.js';
 import { AlertPublisher, type AlertPublishResult } from '../alerting/publisher.js';
@@ -208,7 +212,7 @@ function parseIncidentKey(key: string): {
 } {
   const [provider, alertClass] = key.split(':');
   return {
-    provider: provider === 'venice' ? 'venice' : 'openrouter',
+    provider: LlmModelProviderSchema.parse(provider),
     alertClass: alertClass as ProviderAlertClass,
   };
 }

@@ -84,11 +84,12 @@ const COMMON_API_VARIABLES = [
   'ST_BASE_URL',
   'ST_PROVISION_URL',
   'ST_USER_PASSWORD_SECRET',
+  'SURPLUS_API_BASE_URL',
+  'SURPLUS_API_KEY',
   'TELEGRAM_BOT_TOKEN',
   'TELEGRAM_COMMUNITY_BOT_TOKEN',
   'TELEGRAM_WEBHOOK_SECRET',
-  // Existing API variables not consumed by the payment monitor must remain
-  // preserved when applying IaC for the monitor service.
+  // Provider variables are preserved on the API service and explicitly referenced by the monitor.
   'VENICE_API_BASE_URL',
   'VENICE_API_KEY',
   'VEXUTOPIA_API_KEY',
@@ -178,6 +179,14 @@ export default defineRailway((ctx) => {
     VEXUTOPIA_BASE_URL: stminiapp.env.VEXUTOPIA_BASE_URL,
   };
 
+  const paymentAlertMonitorEnv = {
+    ...paymentCronEnv,
+    VENICE_API_BASE_URL: stminiapp.env.VENICE_API_BASE_URL,
+    VENICE_API_KEY: stminiapp.env.VENICE_API_KEY,
+    SURPLUS_API_BASE_URL: stminiapp.env.SURPLUS_API_BASE_URL,
+    SURPLUS_API_KEY: stminiapp.env.SURPLUS_API_KEY,
+  };
+
   const paymentReconcileWorker = service('stminiapp-payment-reconcile-cron', {
     source: github(REPOSITORY, { branch }),
     build: {
@@ -206,7 +215,7 @@ export default defineRailway((ctx) => {
     },
     start: './node_modules/.bin/tsx src/scripts/payment-alert-monitor.ts',
     deploy: { restartPolicyType: 'ALWAYS' },
-    env: paymentCronEnv,
+    env: paymentAlertMonitorEnv,
   });
 
   const paymentCron = fn('stminiapp-payment-cron', {

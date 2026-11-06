@@ -1,0 +1,32 @@
+{
+  "id": "first-token-report-compat",
+  "name": "first-token-report-compat",
+  "title": "修复旧 WebView 首字回报兼容性",
+  "description": "修复Chrome90/92首字回报在发请求前因超时接口不兼容失败，保留每次3秒与三次有限重试",
+  "status": "completed",
+  "dev_type": null,
+  "scope": "frontend",
+  "package": "frontend",
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-29",
+  "completedAt": "2026-11-06",
+  "branch": "fix/first-token-report-compat",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "2026-11-06 archive_stale：module knowledge 门禁未通过，未写回 spec（目标摘要冲突: .trellis/spec/frontend/app/modules/business/conversation-ui.md）",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": ["frontend.business.conversation-ui"]
+    }
+  }
+}

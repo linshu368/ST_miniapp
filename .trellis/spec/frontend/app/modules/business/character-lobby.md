@@ -5,8 +5,8 @@ scope: frontend
 category: business
 status: active
 owners: [frontend]
-last_verified_task: .trellis/tasks/11-04-lobby-fast-entry/
-last_verified_at: 2026-11-04
+last_verified_task: .trellis/tasks/11-05-optimize-android-navigation-tail/
+last_verified_at: 2026-11-06
 ---
 
 # 角色模块发现与收藏
@@ -79,6 +79,7 @@ Android/iOS 角色列表首批均限制为4张卡；Android 首图高优先级�
 - 2026-11-03：任务 `大厅默认最新与移动端 P95 优化`（`.trellis/tasks/archive/2026-11/11-03-latest-lobby-mobile-p95/`）角色大厅新会话默认最新，并收紧 Android/iOS 首屏卡片与缓存重校准预算；commit：未记录。
 - 2026-11-04：任务 `Optimize five-route mobile navigation readiness`（`.trellis/tasks/11-03-five-route-navigation-p95/`）增加角色入口显式 intent query 预取和五路由统一 ready 观测；2 秒目标仍以发布后生产样本为准。
 - 2026-11-04：同任务二阶段将会话史、社交计数和角标后置到当前路由关键视觉结算，并为自动推荐读取增加快速降级；手动换批语义不变。
+- 2026-11-06：任务 `治理 Android 五入口公共导航长尾`（`.trellis/tasks/11-05-optimize-android-navigation-tail/`）将 Android 目录 deadline 收紧为 1.8 秒，补齐 latest 代理公共缓存、公共首屏持久降级，并保留 450ms hedge 后迟到个人批次的有界完成与下次复用。
 
 ## 连续试卡体验（2026-10-23）
 
@@ -110,7 +111,9 @@ Android/iOS 角色列表首批均限制为4张卡；Android 首图高优先级�
 
 ## 推荐首屏与试聊返回
 
-推荐优先复用同账号批次和原卡锚点。冷首屏获取最多12张摘要，个人批次延迟时允许展示公共优质首屏，当次浏览保持已展示顺序。继续浏览尾部和搜索才读取完整目录。
+推荐优先复用同账号批次和原卡锚点。冷首屏获取最多12张摘要，个人批次超过 450ms 时并行展示公共优质首屏，当次浏览保持已展示顺序；迟到的个人批次允许在原 5 秒有限预算内完成并只写入下次可复用缓存，不能替换当前公共列表。继续浏览尾部和搜索才读取完整目录。
+
+Android/Android X 的角色目录请求使用 1.8 秒全阶段 deadline，iOS/other 保留 20 秒；timeout 不叠加 React Query 重试。无 selection 的 `latest` 成功响应允许复用 Backend 的 60 秒公共缓存头，同源代理只对白名单成功响应透传；推荐、指定 ID、失败响应仍强制 `no-store`。无 selection 的公共推荐首屏另存独立短期 localStorage 快照，损坏、过期或不可写时退回网络，不与个人批次缓存混用。
 
 角色详情封面可点开全屏看完整原图，支持缩放、平移和退回原详情。
 

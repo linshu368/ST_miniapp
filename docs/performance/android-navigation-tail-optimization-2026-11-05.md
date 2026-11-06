@@ -59,3 +59,19 @@
 4. 通知、客服、settings、签到、VIP、套餐、邀请、社群的 `api.queue` / `api.total` 和请求量：不得出现 >5% P95 回退或异常缺流量。
 
 停止条件：Android terminal/stall 上升、P0 被延后、次级内容 4.5 秒后仍缺失、iOS或普通请求 P95 回退超过5%。回滚只需回退 Frontend 导航安静窗口及其消费点，不涉及 Backend 或数据库。
+
+## 第二阶段：Characters 与 Profile 专项（2026-11-06）
+
+近 72 小时 Sentry release `a6fe0ee0bc250b4119e4732abcbbdad441cd39df` 与 Railway production 复核显示：Android `/characters` data-fresh P95 为 6782.35ms、客户端大厅 API P95 为 4195.615ms，而 Railway `/api/characters` 最慢分桶 P95 为 1471ms；`/profile` data-fresh P95 为 1869.81ms，wallet Railway 最慢 P95 为 142ms。另有同一 Android trace 中多个请求同时冻结约 158 秒。证据更符合 WebView 主线程、静态资源和同源请求竞争，而不是 Railway handler 或容量不足。Grafana MCP 当前因 OAuth 未授权，以上不是新 release 的验收结果。
+
+本阶段实施：
+
+- Android/Android X 角色目录使用 1.8 秒全阶段 deadline；iOS/other 保留 20 秒。
+- 自动推荐在 450ms 启动公共首屏 hedge；迟到个人批次保留 5 秒有界完成并只缓存给下一次，不替换当前列表。
+- 无 selection 的 latest 成功响应透传 60 秒公共缓存，推荐、指定 ID 和错误响应继续 `no-store`。
+- 公共推荐首 12 张使用独立短期 localStorage 快照，损坏或过期时安全退回网络。
+- Profile 头像菜单、VIP 展示卡和服务区移入次级动态 chunk，钱包、身份、充值、消息和客服入口仍在关键路径；原始 route chunk 从 42481 bytes 降至 34073 bytes（-19.8%）。
+
+本地验证：Frontend typecheck、63 文件/715 用例、lint、production build、复杂度检查和定向 11 用例通过。自动验收端口预热后，Profile Android+narrow 2/2、大厅首 12 张与迟到批次两条 Android 回归 2/2 通过。冷启动时本机 Next 开发编译 `/characters` 约 35.6 秒，超过 Playwright 内部等待而取消文档请求；该开发编译时间不计作产品 WebView 指标，也不能替代真机或生产验证。
+
+发布门禁仍为同一新 release 连续两个完整 24 小时窗口：Android `/characters`、`/profile` 前台有效 content-ready P95 ≤ 2000ms，2 秒达标率 ≥95%，且 terminal/stall/error 不恶化；每个 route/platform N<100 时延长到 7 天并标记低样本。iOS 同 release P95 不得回退超过 5%。浏览器冻结、后台和物理断网样本单列，不能宣称物理硬实时。Grafana OAuth 恢复并完成上述门禁前，任务保持 `in_progress`，不归档。

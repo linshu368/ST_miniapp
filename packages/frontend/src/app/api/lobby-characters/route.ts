@@ -15,6 +15,7 @@ const BACKEND_URL = resolvePublicApiUrl();
 export const revalidate = 0;
 export const dynamic = 'force-dynamic';
 const UPSTREAM_TIMEOUT_MS = 5_000;
+const PUBLIC_LATEST_CACHE_CONTROL = 'public, max-age=60, s-maxage=60, stale-while-revalidate=60';
 
 function recordProxyDuration(startedAt: number, outcome: string, status: number): void {
   try {
@@ -82,12 +83,16 @@ export async function GET(request: Request) {
     const body = await upstream.text();
     const upstreamMs = performance.now() - upstreamStartedAt;
     recordProxyDuration(startedAt, upstream.ok ? 'ok' : 'http_error', upstream.status);
+    const cacheControl =
+      upstream.ok && sort === 'latest' && !limit && !selection
+        ? PUBLIC_LATEST_CACHE_CONTROL
+        : 'no-store, no-cache, must-revalidate';
 
     return new Response(body, {
       status: upstream.status,
       headers: {
         'Content-Type': upstream.headers.get('Content-Type') || 'application/json; charset=utf-8',
-        'Cache-Control': 'no-store, no-cache, must-revalidate',
+        'Cache-Control': cacheControl,
         'Server-Timing': `backend;dur=${upstreamMs.toFixed(1)}`,
       },
     });

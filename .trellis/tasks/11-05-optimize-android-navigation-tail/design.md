@@ -48,3 +48,32 @@
 - BottomNav/policy：Android 上限 1，iOS/other 上限 2；Android intent 不预取非 P0 数据。
 - 页面接线：`usePageReady` ready/failed settle，cleanup 不伪结算；Profile wallet 不受 gate，次级 hooks 受 gate。
 - 命令：Frontend typecheck/test/lint/build、complexity、diff check；复用 `@profile` 和五入口/roleplay 现有 UI 场景。真机与生产 P95 只在发布后验证。
+
+## 7. 第二阶段最小充分方案（2026-11-06）
+
+### 7.1 复用与拒绝项
+
+- 复用 `timedFetch` 的全阶段 deadline、`MobilePerformancePolicy` 的平台分组、React Query 取消/去重、现有角色 localStorage 快照与 `secondaryReadsReady`。不新增 HTTP client、全局状态机或 Profile 聚合接口。
+- 复用 Backend `/api/characters?sort=latest` 已返回的 `public, max-age=60, s-maxage=60, stale-while-revalidate=60`，代理只做白名单透传；不为 `recommended` 发明边缘缓存，因为其公共冷启动排序允许重排，且个人批次绝不能进入公共缓存。
+- 不把页面 ready 提前到骨架，不用“2 秒后报错”冒充成功达标；缓存/公共首屏必须实际有可交互角色卡才算 content-ready。无缓存且网络失败时明确 error 作为独立 terminal。
+- 暂不做 Profile 聚合 API、Service Worker、全站资源缓存、数据库重构或通用自适应并发框架。Railway 同期容量和 handler 时长不支持这些作为第一步。
+
+### 7.2 `/characters` 路径
+
+1. 自动推荐在 450ms 启动已有/公共首屏 hedge；迟到个人批次继续在原 5 秒有限预算内完成，只写下一次可复用缓存，不重排当前视口。不得中止该幂等请求，否则会丢失已由服务端推进的批次并破坏返回一致性。
+2. Android 目录/公共首屏的 `timedFetch` 预算为 1.8 秒，iOS/other 仍为 20 秒。Android timeout 不在 React Query 叠加重试。
+3. `latest` 浏览器请求允许共享缓存，Next proxy 仅在成功且无 selection 时透传 Backend 的公共 60 秒策略；其余响应强制 `no-store`。
+4. 无 selection 的 public head 成功后写独立 `miniapp:lobby-public-head` 快照，idle 执行；读取时校验年龄与数组。指定 ID 校准永不复用该快照。
+
+### 7.3 `/profile` 路径
+
+继续使用已实现的 Android navigation quiet window。把 VIP 展示组件改为按需加载，并且在 `secondaryReadsReady` 前只渲染同尺寸静态占位；次级 chunk 不参与 route chunk 的首轮下载/解析。钱包、身份、充值、消息和客服链接不依赖该 chunk。
+
+### 7.4 可靠性、恢复与发布
+
+- timeout：自动推荐显示路径 450ms 后由公共首屏接管，个人/手动推荐请求预算 5 秒；Android 目录 1.8 秒、非 Android 目录 20 秒。浏览器冻结会暂停 JS timer，因此冻结样本通过 visibility/trace 单列，不能声称物理硬实时。
+- retry：POST 推荐仍不自动重试；GET 同源目录不额外叠加重试。手动 retry 复用原按钮。
+- 幂等/并发：推荐 request UUID、React Query key 和在途去重保持；独立 head 快照同 sort 只保留最后一次 idle 写入。
+- 降级：持久 head → 公共 head → 明确错误；任何 cache 解析/写入失败只退回网络，不阻断页面。
+- 容量：latest 边缘缓存减少 Railway 请求；不得增加请求数。发布后如果客户端请求量、stale 数据投诉、terminal/stall 或 iOS P95 恶化，停止放量并回退本阶段提交。
+- 发布顺序：先合并 Frontend；以 release 隔离观察 10%/50%/100%（发布平台不支持百分比时使用 Preview/TEST 真机后一次发布并保留即时回滚）。同 release 连续两个 24h 窗口通过才关闭任务。
