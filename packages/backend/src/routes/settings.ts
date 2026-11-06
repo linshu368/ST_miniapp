@@ -8,6 +8,7 @@ import type {
   SetUserAvatarRequest,
 } from '@miniapp/shared';
 import { requireTelegramAuth } from '../middleware/auth.js';
+import { registerUserOnboardingRoute } from './user-onboarding.js';
 import { getOrCreateDbUser } from '../lib/user.js';
 import {
   MiniappUserSettingsRepository,
@@ -21,6 +22,7 @@ import {
 } from '../lib/user-avatar.js';
 
 export default async function settingsRoutes(app: FastifyInstance) {
+  registerUserOnboardingRoute(app);
   const settings = new MiniappUserSettingsRepository();
 
   // @frontend-ready: true

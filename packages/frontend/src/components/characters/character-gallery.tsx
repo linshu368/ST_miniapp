@@ -122,6 +122,14 @@ function neighborIds(ids: string[], anchorId: string): string[] {
   return neighbors;
 }
 
+function experiencedCharacterIds(
+  sessions: readonly { message_count: number; character_id: string }[]
+) {
+  return new Set(
+    sessions.filter((item) => item.message_count > 0).map((item) => item.character_id)
+  );
+}
+
 export function CharacterGallery() {
   return <CharacterGalleryView key={lobbyViewerScope()} />;
 }
@@ -130,7 +138,7 @@ function CharacterGalleryView() {
   const router = useRouter();
   const performancePolicy = useMobilePerformancePolicy();
   const listBudget = performancePolicy.characters;
-  const [savedDiscovery] = useState(() => readRoleplayDiscovery('latest'));
+  const [savedDiscovery] = useState(() => readRoleplayDiscovery());
   // P0=列表；enrich=收藏/会话史/角标。列表有缓存或首包结算后 markCriticalSettled。
   const enrichReady = useEntryEnrichReady();
   const [criticalVisualSettled, setCriticalVisualSettled] = useState(false);
@@ -140,12 +148,7 @@ function CharacterGalleryView() {
   const history = useConversationsQuery(undefined, routeEnrichReady);
   // message_count 不计虚拟开场白；只标记已确认的用户对话，未命中不代表从未聊过。
   const experiencedIds = useMemo(
-    () =>
-      new Set(
-        (history.data?.sessions ?? [])
-          .filter((item) => item.message_count > 0)
-          .map((item) => item.character_id)
-      ),
+    () => experiencedCharacterIds(history.data?.sessions ?? []),
     [history.data?.sessions]
   );
   // 只在当前接口返回的有效会话中选择，不把服务端分页范围解释成全局最近。
@@ -842,7 +845,9 @@ function CharacterGalleryView() {
 
   const listHeader = (
     <>
-      <RoleplayHeader active="discover">{searchBar}</RoleplayHeader>
+      <RoleplayHeader active="discover" recommended={sort === 'recommended' && !query.trim()}>
+        {searchBar}
+      </RoleplayHeader>
       {sortTabs}
       <RecentConversationCard
         enabled={routeEnrichReady}

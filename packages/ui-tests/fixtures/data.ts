@@ -44,6 +44,31 @@ export const WISH_IDS = {
 } as const;
 
 export const scenarios = {
+  'new-user': {
+    label: '新人主线引导',
+    description: '选角色、第一句话、编辑与分支、返回找对话；可跳过（虚构新账号）',
+    path: '/characters',
+  },
+  'new-user-replied': {
+    label: '新人编辑与分支',
+    description: '已有第一轮回复，点击玩法提示可定位真实编辑和分支入口',
+    path: `/chat/${IDS.character}?session=${IDS.session}&from=discover`,
+  },
+  'new-user-near-creator': {
+    label: '新人创作邀请 · 第9轮',
+    description: '累计9轮，再完成一轮并结束基础引导，返回推荐可看到创作福利邀请',
+    path: `/chat/${IDS.character}?session=${IDS.session}&from=discover`,
+  },
+  'new-user-creator-ready': {
+    label: '新人创作邀请 · 满10轮',
+    description: '累计10轮，仅已入组且结束基础引导的用户主动返回推荐才会受邀',
+    path: `/chat/${IDS.character}?session=${IDS.session}&from=discover`,
+  },
+  'onboarding-error': {
+    label: '引导不可用',
+    description: '资格读取失败，不影响角色浏览与发送',
+    path: '/characters',
+  },
   wishes: {
     label: '角色心愿墙',
     description: '匿名公开许愿、我的心愿、支持、用作品回应与站内通知（虚构数据）',

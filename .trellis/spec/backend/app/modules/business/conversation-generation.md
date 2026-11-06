@@ -35,7 +35,6 @@ AI 回复后处理版本由数据库 current-postprocess RPC 在开轮事务内�
 | `packages/backend/src/features/text-postprocess/config.ts`                          | Admin 正式版本指针严格读取        |
 | `packages/backend/src/infrastructure/repositories/ConversationHistoryRepository.ts` | current-postprocess 开轮 RPC      |
 | `packages/backend/src/features/image/`                                              | 图片任务编排与 telemetry observer |
-| `packages/backend/src/features/image/ImageGenerationTelemetry.ts`                   | 图片生成安全事件 observer         |
 | `packages/backend/src/routes/images.ts`                                             | 图片 HTTP 入口                    |
 
 ## 关键实现链路

@@ -29,14 +29,13 @@ API 与 server state 已集中，Tailwind/shadcn 作为 UI 基础。GET 传输�
 
 ## 涉及文件
 
-| 路径                                                      | 职责                        |
-| --------------------------------------------------------- | --------------------------- |
-| `packages/frontend/src/lib/api/client.ts`                 | REST client、有限重试与取消 |
-| `packages/frontend/src/lib/api/query-client.ts`           | React Query 默认策略        |
-| `packages/frontend/src/lib/api/`                          | Query hooks                 |
-| `packages/frontend/src/lib/image-generation/telemetry.ts` | 图片生成事件 helper         |
-| `packages/frontend/src/components/ui/`                    | 公共 UI                     |
-| `packages/frontend/src/stores/`                           | 跨组件客户端状态            |
+| 路径                                            | 职责                        |
+| ----------------------------------------------- | --------------------------- |
+| `packages/frontend/src/lib/api/client.ts`       | REST client、有限重试与取消 |
+| `packages/frontend/src/lib/api/query-client.ts` | React Query 默认策略        |
+| `packages/frontend/src/lib/api/`                | Query hooks                 |
+| `packages/frontend/src/components/ui/`          | 公共 UI                     |
+| `packages/frontend/src/stores/`                 | 跨组件客户端状态            |
 
 ## 关键实现链路
 
