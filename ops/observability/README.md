@@ -131,3 +131,11 @@ resource 只含 service.name、service.namespace、service.version、deployment.
 - `generation.attempt_terminal`继续每attempt一次，增加network_stage及已完成阶段毫秒数；新的`generation.pre_dispatch`仅准备超过1秒时输出五段及total_ms。不含正文/身份/密钥，无逐token日志或Supabase I/O。
 - 两张诊断图追加在Backend看板；业务首字看板口径不变。按相同型号与release对比整体dispatch_offset和客户端六秒无字率，不能用各段P95相加，也不能用成功条件下P95解释全部失败。
 - 固定Alloy白名单必须与Backend一同发布。真实本地Alloy往返已验证新字段/metric保留、私有属性删除；Cloud查询语法通过，但生产样本和改善必须发布后验证。
+
+2026-11-06 候选沿用白名单中的 `outcome`、`stage`、`elapsed_ms` 与 `total_ms`。查询未完成派发门禁的日志：
+
+```logql
+{service_name="st-miniapp-backend",deployment_environment_name="production"} |= "generation.pre_dispatch" | outcome="incomplete"
+```
+
+`stage` 表示最后停留阶段，`elapsed_ms` 为该段已经花费的时间。该事件也包括正常的门禁拒绝，应与前台超时终态分开统计。新 release 的 `route_setup` 与 SSE `server_elapsed_ms` 起点包含鉴权与参数校验，现有实际派发 offset 的计时口径仍可用于前后比较。
