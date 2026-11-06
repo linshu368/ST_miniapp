@@ -107,6 +107,31 @@ describe('LlmProviderAlertObserver', () => {
     expect(publish).not.toHaveBeenCalled();
   });
 
+  it('keeps Surplus incidents attributed to Surplus through publish and recovery', async () => {
+    const evaluations: AlertEvaluation[] = [];
+    const observer = new LlmProviderAlertObserver(
+      {
+        publish: async (input) => {
+          evaluations.push(AlertEvaluationSchema.parse(input));
+          return { kind: 'accepted' };
+        },
+      },
+      log,
+      { environment: 'test' }
+    );
+
+    observer.observe({ provider: 'surplus', model: 'anthropic/claude-haiku-5.5', status: 429 });
+    await observer.flush();
+    observer.observe({ provider: 'surplus', model: 'anthropic/claude-haiku-5.5', status: 200 });
+    await observer.flush();
+
+    expect(evaluations.map((item) => item.fingerprint)).toEqual([
+      'test:generation:surplus:rate_limited:anthropic-claude-haiku-5-5',
+      'test:generation:surplus:rate_limited:anthropic-claude-haiku-5-5',
+    ]);
+    expect(evaluations.map((item) => item.state)).toEqual(['firing', 'healthy']);
+  });
+
   it('cools down a failed publish and retries only after a later response', async () => {
     let now = 1_000;
     const publish = vi

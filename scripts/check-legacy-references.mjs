@@ -101,6 +101,9 @@ const RULES = [
       'packages/backend/src/infrastructure/repositories/ConversationHistoryRepository.ts',
       // OpenRouter 元数据回填先从其专属表有界筛选候选 ID，再只读父记录；不写 chat_history。
       'packages/backend/src/infrastructure/repositories/OpenRouterChatHistoryRepository.ts',
+      // Surplus 无专属元数据表；该 provider-specific helper 仅由 ConversationHistoryRepository
+      // 委托做未结算行的有界只读扫描，不提供写入出口。
+      'packages/backend/src/infrastructure/repositories/surplus-billing-recovery.ts',
       // 集成测试直连库造数据、断言与清理，不经业务链路
       'packages/backend/src/infrastructure/repositories/conversations.integration.test.ts',
       // Local disposable PG/PostgREST fixtures only; no application writer or remote database.
@@ -116,7 +119,7 @@ const RULES = [
       'packages/backend/src/features/generation/upstream.ts',
       'packages/backend/src/features/generation/upstream.test.ts',
       // Shared provider capability data declares the relative path; only upstream.ts executes it.
-      'packages/shared/src/api/models.ts',
+      'packages/shared/src/api/model-providers.ts',
       // 图片广场非流式辅助任务：作品提示词翻译/标签分类，不生成聊天回复、不读写聊天历史，
       // 不进入用户聊天计费；调用仍归 generation/ 管理，不能豁免整个目录。
       'packages/backend/src/features/generation/image-plaza-prompt-translate.ts',

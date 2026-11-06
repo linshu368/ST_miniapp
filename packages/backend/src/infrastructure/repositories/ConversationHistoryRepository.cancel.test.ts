@@ -47,7 +47,9 @@ vi.mock('../../lib/supabase.js', () => ({
           return query;
         },
         eq(key: keyof ConversationHistoryRow, value: unknown) {
-          filters.push((row) => row[key] === value);
+          if (key === ('llm_billing_snapshot->>provider' as keyof ConversationHistoryRow)) {
+            filters.push((row) => row.llm_billing_snapshot?.provider === value);
+          } else filters.push((row) => row[key] === value);
           return query;
         },
         is(key: keyof ConversationHistoryRow, value: unknown) {
@@ -388,7 +390,7 @@ describe('persisted cancellation/completion arbitration', () => {
 });
 
 describe('billing recovery candidate selection', () => {
-  it('selects unsettled OpenRouter and Venice rows independently of provider metadata', async () => {
+  it('selects unsettled OpenRouter, Venice and Surplus rows by their durable identity', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-10-16T12:00:00Z'));
     const snapshot = { provider: 'openrouter' } as ConversationHistoryRow['llm_billing_snapshot'];
@@ -412,6 +414,13 @@ describe('billing recovery candidate selection', () => {
         llm_billing_snapshot: snapshot,
         llm_billing_settled_at: new Date().toISOString(),
       }),
+      row({
+        id: 'surplus',
+        llm_billing_snapshot: {
+          ...snapshot,
+          provider: 'surplus',
+        } as ConversationHistoryRow['llm_billing_snapshot'],
+      }),
       row({ id: 'no-id', llm_billing_snapshot: snapshot }),
       row({ id: 'no-snapshot', openrouter_chat_history: { llm_generation_id: 'gen-4' } }),
       row({
@@ -424,7 +433,7 @@ describe('billing recovery candidate selection', () => {
     state.rows = state.rows.map((item) => ({ ...item, status: 'success' }));
     const rows = (
       await Promise.all(
-        (['openrouter', 'venice'] as const).map((provider) =>
+        (['openrouter', 'venice', 'surplus'] as const).map((provider) =>
           new ConversationHistoryRepository().listRowsPendingBilling({
             since: '2026-10-16T00:00:00Z',
             limit: 50,
@@ -433,7 +442,7 @@ describe('billing recovery candidate selection', () => {
         )
       )
     ).flat();
-    expect(rows.map((item) => item.id)).toEqual(['openrouter', 'venice']);
+    expect(rows.map((item) => item.id)).toEqual(['openrouter', 'venice', 'surplus']);
     expect(state.select).toHaveBeenCalledWith(expect.stringContaining('llm_billing_settled_at'));
   });
 });

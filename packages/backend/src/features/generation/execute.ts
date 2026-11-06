@@ -239,7 +239,9 @@ function buildUpstreamBody(
           reasoning: { enabled: thinkingEnabled },
           ...(request.stream ? { stream_options: { include_usage: true } } : {}),
         }
-      : { reasoning: { enabled: thinkingEnabled, exclude: !thinkingEnabled } }),
+      : request.model.provider === 'openrouter'
+        ? { reasoning: { enabled: thinkingEnabled, exclude: !thinkingEnabled } }
+        : {}),
     ...(request.promptCaching &&
     capability.promptCachingMode === 'venice_prompt_cache_key' &&
     request.sessionId

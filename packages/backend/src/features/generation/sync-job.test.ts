@@ -794,19 +794,23 @@ describe('OpenRouter sync original-field persistence', () => {
 });
 
 describe('sync recovery sources', () => {
-  it.each(['openrouter', 'venice', 'missing'] as const)(
+  it.each(['openrouter', 'venice', 'surplus', 'missing'] as const)(
     'recovers %s independently of incomplete metadata and deduplicates parents',
     async (source) => {
       vi.useFakeTimers();
       vi.clearAllMocks();
       const input = syncInput({
         finishReason: 'stop',
-        snapshot: billingSnapshot({ provider: source === 'venice' ? 'venice' : 'openrouter' }),
+        snapshot: billingSnapshot({
+          provider:
+            source === 'venice' ? 'venice' : source === 'surplus' ? 'surplus' : 'openrouter',
+        }),
       });
       const record = {
         ...input.record,
-        generationId: 'gen-1',
-        callProvider: source === 'venice' ? 'venice' : 'openrouter',
+        generationId: source === 'surplus' ? null : 'gen-1',
+        callProvider:
+          source === 'venice' ? 'venice' : source === 'surplus' ? 'surplus' : 'openrouter',
         llm_finish_reason: 'stop',
       };
       if (source === 'openrouter')
@@ -836,7 +840,7 @@ describe('sync recovery sources', () => {
         expect(syncMocks.recordBillingOutcome).toHaveBeenCalledWith(
           expect.objectContaining({ historyId: 'row-1', billingSettledAt: expect.any(String) })
         );
-        if (source === 'venice') {
+        if (source === 'venice' || source === 'surplus') {
           expect(syncMocks.fetchGenerationData).not.toHaveBeenCalled();
           expect(syncMocks.upsert).not.toHaveBeenCalled();
         } else {
