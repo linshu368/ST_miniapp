@@ -10,6 +10,23 @@ function isAppleWebKit(): boolean {
   return typeof navigator !== 'undefined' && /iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent);
 }
 
+/**
+ * Apple 原生 HLS 总是从主清单第一个档位（多数片是 1080p，首片约 580KB）起播，
+ * 且要等首片下完才播。Stream 的 clientBandwidthHint 会把主清单裁成单一档位（不是重排）：
+ * 对生产 30 部片实测 2.5 时全部 ≤720p。代价是 iOS 在该流上不再自动切换画质。
+ * 必须在取址返回处改写，保证 play_url 在播放、快进监测和拖动进度条之间保持同一个值。
+ */
+const APPLE_HLS_BANDWIDTH_HINT_MBPS = 2.5;
+
+export function capAppleHlsQuality(playback: DramaPlayback): DramaPlayback {
+  if (playback.format !== 'hls' || !playback.play_url || !isAppleWebKit()) return playback;
+  const joiner = playback.play_url.includes('?') ? '&' : '?';
+  return {
+    ...playback,
+    play_url: `${playback.play_url}${joiner}clientBandwidthHint=${APPLE_HLS_BANDWIDTH_HINT_MBPS}`,
+  };
+}
+
 /** 非 Apple 平台提前拉取 hls.js chunk，让首次起播不再等待动态加载；失败时仍在起播时重试。 */
 export function preloadDramaHls(): void {
   if (isAppleWebKit()) return;
