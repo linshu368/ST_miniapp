@@ -11,6 +11,7 @@
 import { getDomainDb } from '../lib/supabase.js';
 import { z } from 'zod';
 import { config } from './config.js';
+import type { LlmModelProvider } from '@miniapp/shared';
 export interface DramaPlaybackCdnConfig {
   tokenKey: string;
   sourceOrigin: string;
@@ -93,19 +94,24 @@ export interface LlmProviderRuntimeConfig {
 }
 
 /** Provider credentials stay in backend runtime config; catalogs only store public provider IDs. */
-export function getLlmProviderRuntimeConfig(
-  provider: 'openrouter' | 'venice'
-): LlmProviderRuntimeConfig {
-  if (provider === 'openrouter') {
-    return {
-      baseUrl: process.env.LLM_UPSTREAM_URL || 'https://openrouter.ai/api/v1',
-      apiKey: process.env.LLM_API_KEY || process.env.OPENAI_API_KEY || '',
-    };
+export function getLlmProviderRuntimeConfig(provider: LlmModelProvider): LlmProviderRuntimeConfig {
+  switch (provider) {
+    case 'openrouter':
+      return {
+        baseUrl: process.env.LLM_UPSTREAM_URL || 'https://openrouter.ai/api/v1',
+        apiKey: process.env.LLM_API_KEY || process.env.OPENAI_API_KEY || '',
+      };
+    case 'venice':
+      return {
+        baseUrl: process.env.VENICE_API_BASE_URL || 'https://api.venice.ai/api/v1',
+        apiKey: process.env.VENICE_API_KEY || '',
+      };
+    case 'surplus':
+      return {
+        baseUrl: process.env.SURPLUS_API_BASE_URL || 'https://api.surplusintelligence.ai/v1',
+        apiKey: process.env.SURPLUS_API_KEY || '',
+      };
   }
-  return {
-    baseUrl: process.env.VENICE_API_BASE_URL || 'https://api.venice.ai/api/v1',
-    apiKey: process.env.VENICE_API_KEY || '',
-  };
 }
 
 export interface RuntimeConfigEntry {

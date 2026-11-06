@@ -8,6 +8,7 @@ import {
   toPublicModelCatalog,
   resolveFallbackProviders,
 } from '../api/models.js';
+import { LLM_PROVIDER_CAPABILITIES } from '../api/model-providers.js';
 
 describe('LlmPricingConfigSchema', () => {
   it('validates fixed per-round deductions', () => {
@@ -227,6 +228,35 @@ describe('ModelCatalogSchema', () => {
     expect(parsed.tiers[0]!.models[1]).toMatchObject({
       provider: 'venice',
       provider_model_id: 'google/gemini-flash',
+    });
+  });
+
+  it('accepts Surplus model mappings and scopes duplicate checks by provider', () => {
+    const catalog = structuredClone(validCatalog) as {
+      tiers: Array<{ models: Array<Record<string, unknown>> }>;
+    };
+    catalog.tiers[0]!.models.push({
+      id: 'surplus-flash',
+      provider: 'surplus',
+      provider_model_id: 'google/gemini-flash',
+      openrouter_model_id: 'google/gemini-flash',
+      display_name: 'Surplus Flash',
+      tagline: 'Surplus',
+      is_free: false,
+      enabled: true,
+      sort_order: 1,
+    });
+
+    const parsed = ModelCatalogSchema.parse(catalog);
+    expect(parsed.tiers[0]!.models[1]).toMatchObject({
+      provider: 'surplus',
+      provider_model_id: 'google/gemini-flash',
+    });
+    expect(LLM_PROVIDER_CAPABILITIES.surplus).toMatchObject({
+      label: 'Surplus Intelligence',
+      defaultBaseUrl: 'https://api.surplusintelligence.ai/v1',
+      apiKeyEnv: 'SURPLUS_API_KEY',
+      baseUrlEnv: 'SURPLUS_API_BASE_URL',
     });
   });
 

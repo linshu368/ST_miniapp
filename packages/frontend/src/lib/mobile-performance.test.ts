@@ -27,6 +27,13 @@ describe('mobile performance policy', () => {
     expect(ios.routePriority.slice(0, 2)).toEqual(['home', 'dramas']);
     expect(android.routeWarmupOrder.slice(0, 2)).toEqual(['/characters', '/profile']);
     expect(ios.routeWarmupOrder.slice(0, 2)).toEqual(['/profile', '/characters']);
+    expect(android.backgroundRoutePrefetchLimit).toBe(1);
+    expect(ios.backgroundRoutePrefetchLimit).toBe(2);
+    expect(getMobilePerformancePolicy('unknown').backgroundRoutePrefetchLimit).toBe(2);
+    expect(android.lobbyRequestTimeoutMs).toBe(1_800);
+    expect(getMobilePerformancePolicy('android_x').lobbyRequestTimeoutMs).toBe(1_800);
+    expect(ios.lobbyRequestTimeoutMs).toBe(20_000);
+    expect(getMobilePerformancePolicy('unknown').lobbyRequestTimeoutMs).toBe(20_000);
     expect(android.characters).toMatchObject({
       initialRenderCount: 4,
       renderBatchSize: 4,

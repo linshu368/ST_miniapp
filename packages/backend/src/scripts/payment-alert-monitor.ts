@@ -12,6 +12,8 @@ import {
   PaymentAlertMonitorRepository,
 } from '../features/payment/usecases/PaymentAlertMonitor.js';
 import { VeniceBalanceMonitor } from '../features/generation/venice-balance-alerts.js';
+import { SurplusBalanceMonitor } from '../features/generation/surplus-balance-alerts.js';
+import { runProviderBalanceMonitorRound } from '../features/generation/provider-balance-monitor-round.js';
 import {
   observeBackgroundRun,
   startStandaloneObservability,
@@ -21,6 +23,7 @@ const log = createLogger('payment-alert-monitor');
 const alertPublisher = new AlertPublisher(new PrismaAlertPersistence(), log);
 const monitor = new PaymentAlertMonitor(new PaymentAlertMonitorRepository(), alertPublisher, log);
 const veniceBalanceMonitor = new VeniceBalanceMonitor(alertPublisher, log);
+const surplusBalanceMonitor = new SurplusBalanceMonitor(alertPublisher, log);
 const deliveryWorker = new AlertDeliveryWorker(
   new FeishuAlertSink(config.alerting.feishuWebhookUrl),
   log
@@ -40,17 +43,13 @@ while (!shutdown.signal.aborted) {
       ADVISORY_LOCK_KEY,
       async () => {
         await monitor.runOnce();
-        // Venice USD 余额检查与支付规则解耦：失败只标记 partial，不阻断 outbox drain。
-        try {
-          const balance = await veniceBalanceMonitor.runOnce();
-          if (balance.outcome === 'probe_failed') outcome = 'partial';
-        } catch (err) {
-          outcome = 'partial';
-          log.sys.error(
-            { event: 'venice.balance_monitor.failed', err },
-            'Venice 余额监控本轮失败；不发布 healthy'
-          );
-        }
+        // Provider balance probes are independent from payment rules and outbox delivery.
+        const balanceOutcome = await runProviderBalanceMonitorRound({
+          venice: veniceBalanceMonitor,
+          surplus: surplusBalanceMonitor,
+          log,
+        });
+        if (balanceOutcome === 'partial') outcome = 'partial';
         // Delivery is non-critical: a failed drain must not make an otherwise successful monitor run fail.
         try {
           await deliveryWorker.deliverOne();

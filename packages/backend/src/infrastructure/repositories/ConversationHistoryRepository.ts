@@ -14,6 +14,7 @@
 // 用量元数据补齐 ≠ 结算完成：llm_billing_settled_at 有值才算扣费行、额度收口、金额回写都齐。
 
 import {
+  LlmModelProviderSchema,
   splitEditableReply,
   readPostprocessVersion,
   type ChatMessage,
@@ -28,6 +29,7 @@ import type {
 } from '@miniapp/shared';
 import type { GenerationMessage, GenerationStatus } from '../../features/generation/types.js';
 import { MiniappCharacterFreeQuotaRepository } from './MiniappCharacterFreeQuotaRepository.js';
+import { listSurplusRowsPendingBilling } from './surplus-billing-recovery.js';
 import { getDomainDb, type DomainDb } from '../../lib/supabase.js';
 import { ConversationRepositoryError, throwConversationRpcError } from './conversation-errors.js';
 import type { InstructionSlotModes } from '../../features/engine/types.js';
@@ -556,6 +558,8 @@ export class ConversationHistoryRepository {
     limit: number;
     provider: LlmModelProvider;
   }): Promise<ChatHistorySyncRow[]> {
+    if (input.provider === 'surplus') return listSurplusRowsPendingBilling(this.db, input);
+
     const table =
       input.provider === 'openrouter' ? 'openrouter_chat_history' : 'venice_chat_history';
     const other =
@@ -601,6 +605,7 @@ export class ConversationHistoryRepository {
     if (error) throw new Error('扫描缺失调用身份的对话失败', { cause: error });
     return (data ?? []).map((row) => {
       const provider = row.llm_billing_snapshot?.provider;
+      const parsedProvider = LlmModelProviderSchema.safeParse(provider);
       const conflict =
         (row.or_presence && row.venice_presence) ||
         (row.or_presence && provider !== 'openrouter') ||
@@ -608,13 +613,7 @@ export class ConversationHistoryRepository {
       return {
         ...row,
         generationId: null,
-        callProvider: conflict
-          ? null
-          : provider === 'openrouter'
-            ? 'openrouter'
-            : provider === 'venice'
-              ? 'venice'
-              : null,
+        callProvider: conflict || !parsedProvider.success ? null : parsedProvider.data,
       };
     }) as ChatHistorySyncRow[];
   }

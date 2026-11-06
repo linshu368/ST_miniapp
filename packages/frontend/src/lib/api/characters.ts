@@ -13,6 +13,7 @@ import type {
 import { createRequestId, timedFetch } from '@/lib/perf/request-timing';
 import { getRawInitData } from '@/lib/telegram/auth';
 import { parseTelegramUser } from '@/lib/telegram/user';
+import { getMobilePerformancePolicy } from '@/lib/mobile-performance';
 
 import { apiClient } from './client';
 import { withRequestSlot } from './request-concurrency';
@@ -27,10 +28,14 @@ async function fetchCharacters(
 ): Promise<GetCharactersData> {
   // 大厅经 Vercel 同源代理，不走 apiClient；仍占 critical 槽，避免与直连 Railway 旁路齐射。
   return withRequestSlot('critical', signal, async () => {
+    const publicLatest = sort === 'latest' && !headOnly && !ids?.length;
     return timedFetch(
       `/api/lobby-characters?sort=${sort}${headOnly ? `&limit=${LOBBY_ROTATION_HEAD_SIZE}` : ''}${ids?.length ? `&ids=${ids.join(',')}` : ''}`,
-      { cache: 'no-store', signal },
-      { requestId: createRequestId() },
+      { ...(publicLatest ? {} : { cache: 'no-store' as const }), signal },
+      {
+        requestId: createRequestId(),
+        timeoutMs: getMobilePerformancePolicy().lobbyRequestTimeoutMs,
+      },
       async (response) => {
         const json = (await response.json().catch((error: unknown) => {
           if (signal?.aborted || (error instanceof Error && error.name === 'AbortError'))
@@ -45,11 +50,14 @@ async function fetchCharacters(
         // An older upstream may ignore limit. Never write a partial head into the full-directory cache.
         if (ids && json.data.characters.some((card) => !ids.includes(card.id)))
           throw new Error('旧版目录不支持指定角色校准');
-        if (headOnly)
-          return {
+        if (headOnly) {
+          const head = {
             ...json.data,
             characters: json.data.characters.slice(0, LOBBY_ROTATION_HEAD_SIZE),
           };
+          if (!ids?.length) persistPublicLobbyHead(head);
+          return head;
+        }
         persistCharacters(sort, json.data);
         return json.data;
       }
@@ -87,6 +95,7 @@ export const characterKeys = {
 // v4 隔离「推荐 / 最新」两套顺序，并弃用只存单一顺序的 v3 快照。
 const CHARACTER_CACHE_KEY_PREFIX = 'miniapp:lobby-characters:v4';
 const CHARACTER_CACHE_MAX_AGE_MS = 24 * 60 * 60_000;
+const PUBLIC_HEAD_CACHE_KEY = 'miniapp:lobby-public-head:v1';
 
 function cacheKey(sort: LobbySort): string {
   return sort === 'recommended'
@@ -114,8 +123,29 @@ function readPersistedCharacters(sort: LobbySort): GetCharactersData | undefined
   }
 }
 
+function readPersistedPublicLobbyHead(): GetCharactersData | undefined {
+  if (typeof window === 'undefined') return undefined;
+  try {
+    const raw = window.localStorage.getItem(PUBLIC_HEAD_CACHE_KEY);
+    if (!raw) return undefined;
+    const cached = JSON.parse(raw) as { savedAt?: number; data?: GetCharactersData };
+    if (
+      !cached.savedAt ||
+      Date.now() - cached.savedAt > CHARACTER_CACHE_MAX_AGE_MS ||
+      !Array.isArray(cached.data?.characters)
+    ) {
+      window.localStorage.removeItem(PUBLIC_HEAD_CACHE_KEY);
+      return undefined;
+    }
+    return cached.data;
+  } catch {
+    return undefined;
+  }
+}
+
 const pendingPersist = new Map<LobbySort, GetCharactersData>();
 let persistScheduled = false;
+let pendingPublicHead: GetCharactersData | undefined;
 
 function flushPersistedCharacters(): void {
   persistScheduled = false;
@@ -127,6 +157,17 @@ function flushPersistedCharacters(): void {
     }
   }
   pendingPersist.clear();
+  if (pendingPublicHead) {
+    try {
+      window.localStorage.setItem(
+        PUBLIC_HEAD_CACHE_KEY,
+        JSON.stringify({ savedAt: Date.now(), data: pendingPublicHead })
+      );
+    } catch {
+      // 与完整目录一样，storage 不可用时只保留 React Query 内存结果。
+    }
+    pendingPublicHead = undefined;
+  }
 }
 
 // 整表 stringify + 同步写 localStorage 是主线程长任务；放在响应回调里会和列表渲染、
@@ -134,6 +175,15 @@ function flushPersistedCharacters(): void {
 // 推迟到空闲帧，同一 sort 的多次响应只写最后一份。
 function persistCharacters(sort: LobbySort, data: GetCharactersData): void {
   pendingPersist.set(sort, data);
+  schedulePersistedCharacters();
+}
+
+function persistPublicLobbyHead(data: GetCharactersData): void {
+  pendingPublicHead = data;
+  schedulePersistedCharacters();
+}
+
+function schedulePersistedCharacters(): void {
   if (persistScheduled) return;
   persistScheduled = true;
   if (typeof window.requestIdleCallback === 'function') {
@@ -193,6 +243,9 @@ export function usePublicLobbyHead(enabled: boolean, ids?: readonly string[], fo
     queryKey: characterKeys.publicHead(ids),
     queryFn: ({ signal }) => fetchCharacters('recommended', signal, true, ids),
     enabled,
+    initialData: () =>
+      enabled && !forceFresh && !ids?.length ? readPersistedPublicLobbyHead() : undefined,
+    initialDataUpdatedAt: 0,
     staleTime: forceFresh ? 0 : 30_000,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,

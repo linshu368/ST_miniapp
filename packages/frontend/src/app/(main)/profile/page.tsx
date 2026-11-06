@@ -6,7 +6,7 @@ import { feedbackAfterPaint, startAction } from '@/lib/perf/action-tracker';
 import { useFreshAfterFetch, usePageReady } from '@/lib/perf/page-ready';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ChevronRight,
   ArrowUpRight,
@@ -16,102 +16,52 @@ import {
   Check,
   Gem,
   Gift,
-  ImageUp,
-  Link as LinkIcon,
   Pencil,
-  RotateCcw,
-  Send,
   X,
-  type LucideIcon,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Input } from '@/components/ui/input';
-import { VipEntryCard } from '@/components/vip/vip-entry-card';
 import { VipCheckinUpgrade, CheckinRewardStatus } from '@/components/vip/vip-checkin-upgrade';
+import { ProfileAvatar } from '@/components/profile/profile-avatar';
+import {
+  useProfileMessagePrefetch,
+  useProfileReadiness,
+} from '@/components/profile/profile-readiness';
 
 import {
-  paymentKeys,
   useDailyCheckinMutation,
   useDailyCheckinQuery,
   useWalletBalanceQuery,
   usePaymentPlansQuery,
 } from '@/lib/api/payment';
 import { useMarkVipEntryViewedMutation, useVipStatusQuery } from '@/lib/api/vip';
-import { useInviteEntryStatusQuery } from '@/lib/api/invite';
-import {
-  notificationKeys,
-  prefetchNotifications,
-  useNotificationUnreadCountQuery,
-} from '@/lib/api/notifications';
-import { useSupportUnreadQuery } from '@/lib/api/support';
-import { afterEntryBackground, markCriticalSettled } from '@/lib/entry-phase';
-import { canPrefetchInBackground } from '@/lib/background-prefetch';
-import { useCommunityEntryQuery } from '@/lib/api/community';
-import {
-  usePatchUserSettingsMutation,
-  useSetUserAvatarMutation,
-  useUserSettingsQuery,
-} from '@/lib/api/settings';
+import { useNotificationUnreadCountQuery } from '@/lib/api/notifications';
+import { markCriticalSettled } from '@/lib/entry-phase';
+import { usePatchUserSettingsMutation } from '@/lib/api/settings';
 import { getRawInitData } from '@/lib/telegram/auth';
 import { formatNumber } from '@/lib/utils/payment';
 import { checkinRewardLines } from '@/lib/vip/presentation';
 import { useUserProfileStore } from '@/stores/user-profile-store';
 
-const CommunitySheet = dynamic(
-  () => import('@/components/profile/community-sheet').then((module) => module.CommunitySheet),
-  { ssr: false }
+const VipEntryCard = dynamic(
+  () => import('@/components/vip/vip-entry-card').then((module) => module.VipEntryCard),
+  { ssr: false, loading: ProfileVipPlaceholder }
 );
 
-/** 首屏先完成一次真实绘制，再启动会改变多个区域的次级读取。 */
-function useAfterFirstPaint(): boolean {
-  const [ready, setReady] = useState(false);
-  useEffect(() => {
-    let secondFrame: number | undefined;
-    const firstFrame = window.requestAnimationFrame(() => {
-      secondFrame = window.requestAnimationFrame(() => setReady(true));
-    });
-    return () => {
-      window.cancelAnimationFrame(firstFrame);
-      if (secondFrame !== undefined) window.cancelAnimationFrame(secondFrame);
-    };
-  }, []);
-  return ready;
-}
-
-/** 服务入口只有接近视口才需要数据；旧 WebView 无观察器时直接放行，不让入口永久缺失。 */
-function useNearViewport(ref: RefObject<Element>, enabled: boolean): boolean {
-  const [ready, setReady] = useState(false);
-  useEffect(() => {
-    if (!enabled || ready) return;
-    const node = ref.current;
-    if (!node || typeof IntersectionObserver === 'undefined') {
-      setReady(true);
-      return;
-    }
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (!entries.some((entry) => entry.isIntersecting)) return;
-        setReady(true);
-        observer.disconnect();
-      },
-      { rootMargin: '320px 0px' }
-    );
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [enabled, ready, ref]);
-  return ready;
-}
+const ProfileServicesSection = dynamic(
+  () =>
+    import('@/components/profile/profile-services-section').then(
+      (module) => module.ProfileServicesSection
+    ),
+  { ssr: false, loading: ProfileServicesFallback }
+);
 
 export default function ProfilePage() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const telegramUserId = useMemo(readTelegramUserId, []);
-  const afterFirstPaint = useAfterFirstPaint();
-  const servicesSectionRef = useRef<HTMLElement>(null);
-  const serviceEntriesReady = useNearViewport(servicesSectionRef, afterFirstPaint);
-  const [avatarMenuOpen, setAvatarMenuOpen] = useState(false);
+  const { secondaryReadsReady } = useProfileReadiness();
   const wallet = useWalletBalanceQuery();
   const walletFresh = useFreshAfterFetch(
     wallet.isFetching,
@@ -128,33 +78,21 @@ export default function ProfilePage() {
   const bonusCredits = wallet.data?.bonus_credits;
   // BottomNav 同屏常驻并负责轮询，这里只订阅缓存，避免同一端点两个 interval 各打一份。
   const unread = useNotificationUnreadCountQuery({ poll: false, enabled: false });
-  const supportUnread = useSupportUnreadQuery({ poll: false, enabled: false });
-  useEffect(() => {
-    const official = unread.data?.official ?? 0;
-    const personal = unread.data?.personal ?? 0;
-    if (official === 0 && personal === 0) return;
-    let active = true;
-    void afterEntryBackground().then(() => {
-      if (!active || !canPrefetchInBackground()) return;
-      router.prefetch('/profile/messages');
-      if (official > 0) void prefetchNotifications(queryClient, 'official');
-      if (personal > 0) void prefetchNotifications(queryClient, 'personal');
-    });
-    return () => {
-      active = false;
-    };
-  }, [queryClient, router, unread.data?.official, unread.data?.personal]);
+  useProfileMessagePrefetch(
+    queryClient,
+    router,
+    unread.data?.official ?? 0,
+    unread.data?.personal ?? 0
+  );
   const displayName = useUserProfileStore((s) => s.displayName);
   const photoUrl = useUserProfileStore((s) => s.photoUrl);
   const setDisplayName = useUserProfileStore((s) => s.setDisplayName);
   // 显示名和头像已有本地 profile store；只有打开头像菜单才需要读取服务端来源设置。
-  const userSettings = useUserSettingsQuery({ enabled: avatarMenuOpen });
   const patchSettings = usePatchUserSettingsMutation();
-  const setAvatar = useSetUserAvatarMutation();
-  const checkinQ = useDailyCheckinQuery({ enabled: afterFirstPaint });
+  const checkinQ = useDailyCheckinQuery({ enabled: secondaryReadsReady });
   const checkin = checkinQ.data?.checkin;
   const claimCheckin = useDailyCheckinMutation();
-  const vipStatus = useVipStatusQuery({ enabled: afterFirstPaint });
+  const vipStatus = useVipStatusQuery({ enabled: secondaryReadsReady });
   const vipDailyCredits = vipStatus.data?.benefits?.checkin_vip_credits;
   const checkinUpgradeCredits =
     !vipStatus.isError &&
@@ -164,23 +102,15 @@ export default function ProfilePage() {
     vipDailyCredits > 0
       ? vipDailyCredits
       : null;
-  const paymentPlans = usePaymentPlansQuery({ enabled: afterFirstPaint });
+  const paymentPlans = usePaymentPlansQuery({ enabled: secondaryReadsReady });
   const markVipSeen = useMarkVipEntryViewedMutation();
-  const inviteEntry = useInviteEntryStatusQuery({ enabled: serviceEntriesReady });
-  const communityEntry = useCommunityEntryQuery({ enabled: serviceEntriesReady });
-  const previousCommunityStatus = useRef(communityEntry.data?.claim_status);
 
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState('');
   const [checkinToast, setCheckinToast] = useState<string[] | null>(null);
   const [vipError, setVipError] = useState<string | null>(null);
-  const [avatarError, setAvatarError] = useState<string | null>(null);
-  const [communityOpen, setCommunityOpen] = useState(false);
-  const [communitySheetMounted, setCommunitySheetMounted] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const openingVip = useRef(false);
-  const avatarInputRef = useRef<HTMLInputElement>(null);
-  const avatarMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (isEditing) {
@@ -198,32 +128,6 @@ export default function ProfilePage() {
     );
     return () => window.clearTimeout(timer);
   }, [checkinToast, checkinUpgradeCredits]);
-
-  useEffect(() => {
-    const previous = previousCommunityStatus.current;
-    const current = communityEntry.data?.claim_status;
-    previousCommunityStatus.current = current;
-    if (previous === 'unclaimed' && current === 'rewarded') {
-      void queryClient.invalidateQueries({ queryKey: paymentKeys.wallet() });
-      void queryClient.invalidateQueries({ queryKey: notificationKeys.unread });
-    }
-  }, [communityEntry.data?.claim_status, queryClient]);
-
-  useEffect(() => {
-    if (!avatarMenuOpen) return;
-    const closeOnOutsidePress = (event: PointerEvent) => {
-      if (!avatarMenuRef.current?.contains(event.target as Node)) setAvatarMenuOpen(false);
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setAvatarMenuOpen(false);
-    };
-    document.addEventListener('pointerdown', closeOnOutsidePress);
-    document.addEventListener('keydown', closeOnEscape);
-    return () => {
-      document.removeEventListener('pointerdown', closeOnOutsidePress);
-      document.removeEventListener('keydown', closeOnEscape);
-    };
-  }, [avatarMenuOpen]);
 
   const startEdit = () => {
     setDraft(displayName);
@@ -256,50 +160,6 @@ export default function ProfilePage() {
     }
   };
 
-  const importAvatarFile = async (file: File | undefined) => {
-    if (!file) return;
-    setAvatarError(null);
-    try {
-      if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
-        throw new Error('仅支持 PNG、JPEG 或 WebP 图片');
-      }
-      if (file.size > 2 * 1024 * 1024) throw new Error('头像文件不能超过 2MB');
-      const dataBase64 = await readFileAsBase64(file);
-      await setAvatar.mutateAsync({
-        source: 'upload',
-        content_type: file.type,
-        data_base64: dataBase64,
-      });
-      setAvatarMenuOpen(false);
-    } catch (error) {
-      setAvatarError(error instanceof Error ? error.message : '头像上传失败');
-    } finally {
-      if (avatarInputRef.current) avatarInputRef.current.value = '';
-    }
-  };
-
-  const importAvatarUrl = async () => {
-    const url = window.prompt('粘贴 HTTPS 图片链接（PNG、JPEG 或 WebP，最大 2MB）');
-    if (!url?.trim()) return;
-    setAvatarError(null);
-    try {
-      await setAvatar.mutateAsync({ source: 'url', url: url.trim() });
-      setAvatarMenuOpen(false);
-    } catch (error) {
-      setAvatarError(error instanceof Error ? error.message : '头像导入失败');
-    }
-  };
-
-  const resetAvatar = async () => {
-    setAvatarError(null);
-    try {
-      await patchSettings.mutateAsync({ avatar_url: null });
-      setAvatarMenuOpen(false);
-    } catch (error) {
-      setAvatarError(error instanceof Error ? error.message : '恢复默认头像失败');
-    }
-  };
-
   const openVip = async () => {
     if (openingVip.current || vipStatus.isLoading || markVipSeen.isPending) return;
     openingVip.current = true;
@@ -327,94 +187,11 @@ export default function ProfilePage() {
       <h1 className="sr-only">我的</h1>
 
       <header className="relative z-20 flex items-center gap-3.5 px-1 pb-6">
-        <div ref={avatarMenuRef} className="relative shrink-0">
-          <button
-            type="button"
-            onClick={() => {
-              setAvatarError(null);
-              setAvatarMenuOpen((open) => !open);
-            }}
-            aria-label="更换头像"
-            aria-expanded={avatarMenuOpen}
-            aria-haspopup="menu"
-            className="group relative block rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-4 focus-visible:ring-offset-background"
-          >
-            <Avatar
-              className={`size-14 ring-1 ring-offset-[3px] ring-offset-[#19171a] transition group-hover:brightness-90 ${vipStatus.data?.active ? 'ring-[#d5b99d]/65' : 'ring-white/15'}`}
-            >
-              {photoUrl ? <AvatarImage src={photoUrl} alt={displayName} /> : null}
-              <AvatarFallback className="bg-[#3c303a] text-xl font-medium text-[#e5cbd5]">
-                {displayName.slice(0, 1).toUpperCase() || '我'}
-              </AvatarFallback>
-            </Avatar>
-            <span className="absolute -bottom-0.5 -right-0.5 grid size-6 place-items-center rounded-full border-2 border-background bg-secondary text-foreground">
-              <Pencil className="size-2.5" aria-hidden />
-            </span>
-          </button>
-          <input
-            ref={avatarInputRef}
-            type="file"
-            accept="image/png,image/jpeg,image/webp"
-            className="hidden"
-            onChange={(event) => void importAvatarFile(event.target.files?.[0])}
-          />
-          {avatarMenuOpen ? (
-            <div
-              role="menu"
-              className="absolute left-0 top-[calc(100%+0.9rem)] z-30 w-max min-w-[220px] max-w-[calc(100vw-2.5rem)] rounded-2xl border border-border bg-popover/95 p-2.5 shadow-[0_18px_60px_rgba(0,0,0,0.55)] ring-1 ring-primary/5 backdrop-blur-xl"
-            >
-              <span className="absolute -top-1.5 left-6 size-3 rotate-45 border-l border-t border-border bg-popover" />
-              <div className="relative flex items-center justify-center gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  role="menuitem"
-                  disabled={setAvatar.isPending}
-                  onClick={() => avatarInputRef.current?.click()}
-                  className="min-h-11 rounded-full border-border bg-card text-foreground hover:bg-secondary hover:text-foreground"
-                >
-                  <ImageUp aria-hidden />
-                  上传图片
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  role="menuitem"
-                  disabled={setAvatar.isPending}
-                  onClick={() => void importAvatarUrl()}
-                  className="min-h-11 rounded-full border-border bg-card text-foreground hover:bg-secondary hover:text-foreground"
-                >
-                  <LinkIcon aria-hidden />
-                  导入链接
-                </Button>
-              </div>
-              {userSettings.data?.settings.avatar_source === 'custom' ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  role="menuitem"
-                  disabled={patchSettings.isPending}
-                  onClick={() => void resetAvatar()}
-                  className="mt-1 min-h-11 w-full rounded-full text-muted-foreground hover:bg-secondary hover:text-foreground"
-                >
-                  <RotateCcw aria-hidden />
-                  恢复跟随 Telegram
-                </Button>
-              ) : null}
-              {avatarError ? (
-                <p
-                  role="alert"
-                  className="mt-2 max-w-[240px] px-2 text-center text-xs text-destructive"
-                >
-                  {avatarError}
-                </p>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
+        <ProfileAvatar
+          displayName={displayName}
+          photoUrl={photoUrl}
+          vipActive={vipStatus.data?.active === true}
+        />
         <div className="min-w-0 flex-1">
           {isEditing ? (
             <Input
@@ -594,14 +371,18 @@ export default function ProfilePage() {
       </div>
 
       <section aria-label="VIP 会员权益" className="relative mt-4">
-        <VipEntryCard
-          variant="profile"
-          status={vipStatus.data}
-          monthlyPlan={paymentPlans.data?.vip_plans?.find((plan) => plan.id === 'month')}
-          loading={!afterFirstPaint || vipStatus.isLoading || paymentPlans.isLoading}
-          disabled={markVipSeen.isPending}
-          onOpen={() => void openVip()}
-        />
+        {secondaryReadsReady ? (
+          <VipEntryCard
+            variant="profile"
+            status={vipStatus.data}
+            monthlyPlan={paymentPlans.data?.vip_plans?.find((plan) => plan.id === 'month')}
+            loading={vipStatus.isLoading || paymentPlans.isLoading}
+            disabled={markVipSeen.isPending}
+            onOpen={() => void openVip()}
+          />
+        ) : (
+          <ProfileVipPlaceholder />
+        )}
         {vipStatus.isError ? (
           <p className="px-4 pt-2 text-[11px] text-muted-foreground">会员状态暂时无法确认</p>
         ) : null}
@@ -612,79 +393,7 @@ export default function ProfilePage() {
         ) : null}
       </section>
 
-      <section ref={servicesSectionRef} aria-label="服务与帮助" className="relative mt-6">
-        <h2 className="mb-2.5 px-1 text-[11px] font-medium tracking-wider text-[#a79da6]">
-          服务与帮助
-        </h2>
-        <div className="overflow-hidden rounded-[20px] bg-[#222024]">
-          <Link
-            href="/profile/support"
-            aria-label={supportUnread.data?.has_unread ? '联系客服，有新回复' : '联系客服'}
-            className="group relative flex min-h-[76px] items-center gap-3 px-4 py-2.5 transition-colors hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#d7b4bf]"
-          >
-            <SupportMascot />
-            <span className="min-w-0 flex-1">
-              <span className="block text-[13px] font-medium">客服小助手</span>
-              <span className="mt-1 block text-[11px] leading-5 text-[#a89fa7]">
-                {supportUnread.data?.has_unread ? '有新回复，点这里查看' : '遇到问题，来找我聊聊'}
-              </span>
-            </span>
-            {supportUnread.data?.has_unread ? (
-              <span className="size-2 shrink-0 rounded-full bg-rose" aria-hidden />
-            ) : null}
-            <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-          </Link>
-
-          {inviteEntry.data?.entry_enabled ||
-          (communityEntry.data?.enabled && communityEntry.data.claim_status !== 'rewarded') ? (
-            <section aria-label="更多服务" className="relative border-t border-white/[0.05]">
-              <div className="divide-y divide-white/[0.05]">
-                {inviteEntry.data?.entry_enabled ? (
-                  <ProfileRow
-                    href="/profile/invite"
-                    Icon={Gift}
-                    title="邀请有礼"
-                    subtitle="和朋友一起探索秘境"
-                    trailing={
-                      !inviteEntry.data.center_entered ? (
-                        <span className="text-[11px] font-medium tabular-nums text-primary">
-                          2200 星尘
-                        </span>
-                      ) : undefined
-                    }
-                  />
-                ) : null}
-                {communityEntry.data?.enabled && communityEntry.data.claim_status !== 'rewarded' ? (
-                  <ProfileRow
-                    onClick={() => {
-                      setCommunitySheetMounted(true);
-                      setCommunityOpen(true);
-                    }}
-                    Icon={Send}
-                    title="官方社群"
-                    subtitle="加入社群，和大家交流玩法"
-                    trailing={
-                      communityEntry.data.claim_status === 'unclaimed' ||
-                      communityEntry.data.claim_status === 'existing_member' ? (
-                        <span className="text-[11px] font-medium tabular-nums text-primary">
-                          {formatNumber(communityEntry.data.reward_credits)} 星尘
-                        </span>
-                      ) : undefined
-                    }
-                  />
-                ) : null}
-              </div>
-            </section>
-          ) : null}
-        </div>
-      </section>
-      {communitySheetMounted && communityEntry.data ? (
-        <CommunitySheet
-          open={communityOpen}
-          onOpenChange={setCommunityOpen}
-          community={communityEntry.data}
-        />
-      ) : null}
+      {secondaryReadsReady ? <ProfileServicesSection /> : <ProfileServicesFallback />}
 
       {checkinToast ? (
         <div className="pointer-events-none fixed inset-x-0 top-[calc(env(safe-area-inset-top)+4.5rem)] z-[9999] flex justify-center px-5">
@@ -736,122 +445,40 @@ export default function ProfilePage() {
   );
 }
 
-function SupportMascot() {
+function ProfileVipPlaceholder() {
   return (
-    <svg
-      aria-hidden
-      viewBox="0 0 72 72"
-      className="size-11 shrink-0 text-[#d6beca] transition-transform duration-200 motion-safe:group-hover:-rotate-3"
-      fill="none"
+    <div
+      aria-label="正在准备 VIP 会员权益"
+      className="min-h-[154px] animate-pulse rounded-[22px] border border-[#d8bca0]/15 bg-[linear-gradient(120deg,#332b2b,#272126_65%,#30262c)] px-5 py-4 motion-reduce:animate-none"
     >
-      <ellipse cx="36" cy="65" rx="20" ry="3" fill="#d6beca12" />
-      <path d="M36 18V11" stroke="#d6beca" strokeWidth="2.5" strokeLinecap="round" />
-      <circle cx="36" cy="8" r="3.5" fill="#d6beca" />
-      <rect x="7" y="29" width="6" height="15" rx="3" fill="#d6beca80" />
-      <rect x="59" y="29" width="6" height="15" rx="3" fill="#d6beca80" />
-      <rect
-        x="13"
-        y="19"
-        width="46"
-        height="35"
-        rx="15"
-        fill="#d6beca22"
-        stroke="#d6becaa6"
-        strokeWidth="1.5"
-      />
-      <rect x="19" y="25" width="34" height="22" rx="9" fill="hsl(var(--background))" />
-      <path d="M27 33V34M45 33V34" stroke="#d6beca" strokeWidth="4" strokeLinecap="round" />
-      <path d="M32 39Q36 43 40 39" stroke="#d6beca" strokeWidth="2" strokeLinecap="round" />
-      <ellipse cx="24" cy="39" rx="3" ry="1.8" fill="hsl(var(--rose) / 0.55)" />
-      <ellipse cx="48" cy="39" rx="3" ry="1.8" fill="hsl(var(--rose) / 0.55)" />
-      <path
-        d="M26 55V60H46V55"
-        stroke="#d6beca73"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M54 13H60M57 10V16"
-        stroke="hsl(var(--rose) / 0.75)"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-      />
-    </svg>
+      <div className="h-3 w-24 rounded-full bg-white/[0.06]" />
+      <div className="mt-6 h-8 w-36 rounded-xl bg-white/[0.06]" />
+      <div className="mt-5 h-3 w-48 rounded-full bg-white/[0.04]" />
+    </div>
   );
 }
 
-function ProfileRow({
-  href,
-  onClick,
-  Icon,
-  title,
-  subtitle,
-  showDot = false,
-  iconClassName,
-  trailing,
-}: {
-  href?: string;
-  onClick?: () => void;
-  Icon: LucideIcon;
-  title: string;
-  subtitle: string;
-  showDot?: boolean;
-  iconClassName?: string;
-  trailing?: ReactNode;
-}) {
-  const content = (
-    <>
-      <span
-        className={`flex size-9 shrink-0 items-center justify-center rounded-xl ${iconClassName ?? 'bg-white/[0.03] text-[#b6a6b4]'}`}
+function ProfileServicesFallback() {
+  return (
+    <section aria-label="服务与帮助" className="relative mt-6">
+      <h2 className="mb-2.5 px-1 text-[11px] font-medium tracking-wider text-[#a79da6]">
+        服务与帮助
+      </h2>
+      <Link
+        href="/profile/support"
+        className="flex min-h-[76px] items-center gap-3 rounded-[20px] bg-[#222024] px-4 py-2.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#d7b4bf]"
       >
-        <Icon className="h-[18px] w-[18px]" aria-hidden />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-[13px] font-medium text-foreground">{title}</span>
-        <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{subtitle}</span>
-      </span>
-      <span className="flex shrink-0 items-center gap-2">
-        {trailing}
-        {showDot ? (
-          <span
-            role="status"
-            aria-label="有未读消息"
-            className="h-2 w-2 rounded-full bg-destructive"
-          />
-        ) : null}
-        <ChevronRight className="size-3.5 text-muted-foreground/70" aria-hidden />
-      </span>
-    </>
+        <span className="size-11 shrink-0 animate-pulse rounded-2xl bg-white/[0.04] motion-reduce:animate-none" />
+        <span className="min-w-0 flex-1">
+          <span className="block text-[13px] font-medium">客服小助手</span>
+          <span className="mt-1 block text-[11px] leading-5 text-[#a89fa7]">
+            遇到问题，来找我聊聊
+          </span>
+        </span>
+        <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+      </Link>
+    </section>
   );
-  const className =
-    'flex min-h-[72px] w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring';
-  return href ? (
-    <Link href={href} className={className}>
-      {content}
-    </Link>
-  ) : (
-    <button type="button" onClick={onClick} className={className}>
-      {content}
-    </button>
-  );
-}
-
-function readFileAsBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error('读取头像文件失败'));
-    reader.onload = () => {
-      const result = typeof reader.result === 'string' ? reader.result : '';
-      const separator = result.indexOf(',');
-      if (separator < 0) {
-        reject(new Error('读取头像文件失败'));
-        return;
-      }
-      resolve(result.slice(separator + 1));
-    };
-    reader.readAsDataURL(file);
-  });
 }
 
 function readTelegramUserId(): string | null {

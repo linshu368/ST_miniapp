@@ -30,6 +30,7 @@ const DURATION_BUCKETS = [
 ];
 const LABEL_VALUES = new Map<string, Set<string>>();
 const SAFE_KEY = /^[a-zA-Z0-9_./:*-]{1,120}$/;
+const LLM_PROVIDERS = new Set(['openrouter', 'venice', 'surplus']);
 type MetricAttributes = Record<string, string | number | boolean>;
 
 /** 模板/模型来自应用目录，仍限制不同值数量，防止意外把 ID 当标签。 */
@@ -49,8 +50,7 @@ export function engineeringRoute(route: string): string {
 
 function identity(input: { provider: string; model: string }): MetricAttributes {
   return {
-    platform:
-      input.provider === 'openrouter' || input.provider === 'venice' ? input.provider : 'unknown',
+    platform: LLM_PROVIDERS.has(input.provider) ? input.provider : 'unknown',
     model: boundedLabel('model', input.model, 64),
   };
 }
