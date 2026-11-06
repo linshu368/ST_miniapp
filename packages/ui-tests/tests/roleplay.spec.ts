@@ -62,10 +62,7 @@ async function expectStableScreenY(card: Locator, target: number) {
 
 async function openRecommendedLobby(page: Page, path = '/characters'): Promise<void> {
   await page.goto(path, { waitUntil: 'domcontentloaded', timeout: 90_000 });
-  const latest = page.getByRole('tab', { name: '最新', exact: true });
-  await expect(latest).toHaveAttribute('aria-selected', 'true');
   const recommended = page.getByRole('tab', { name: '推荐', exact: true });
-  await recommended.click();
   await expect(recommended).toHaveAttribute('aria-selected', 'true');
 }
 
