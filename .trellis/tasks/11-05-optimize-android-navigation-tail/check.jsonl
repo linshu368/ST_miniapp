@@ -1,0 +1,4 @@
+{"file":".trellis/spec/frontend/app/index.md","reason":"复核 Frontend 架构边界与质量命令。"}
+{"file":".trellis/spec/frontend/app/testing-quality-and-deployment.md","reason":"复核性能口径、测试与发布后验证。"}
+{"file":".trellis/spec/frontend/app/frontend-rules.md","reason":"复核实现复用、简洁性、测试必要性和无直接 fetch。"}
+{"file":".trellis/tasks/11-05-optimize-android-navigation-tail/research/android-public-navigation-tail.md","reason":"复核改动是否针对真实证据且未扩大范围。"}

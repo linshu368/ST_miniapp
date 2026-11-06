@@ -3,6 +3,8 @@
 import { useEffect, useRef } from 'react';
 import { usePathname } from 'next/navigation';
 
+import { settleNavigationQuietWindow } from '@/lib/navigation-quiet-window';
+
 import { markPageFailed, markPageReady } from './page-tracker';
 
 /**
@@ -22,8 +24,13 @@ export function usePageReady(
     // 子页面 effect 可能早于根路由 tracker；同一 commit 后再登记，避免缓存秒开漏报。
     queueMicrotask(() => {
       if (cancelled) return;
-      if (failed && !ready) markPageFailed(route, pathname);
-      else if (ready) markPageReady(route, 'content', pathname, cache);
+      if (failed && !ready) {
+        markPageFailed(route, pathname);
+        settleNavigationQuietWindow(pathname);
+      } else if (ready) {
+        markPageReady(route, 'content', pathname, cache);
+        settleNavigationQuietWindow(pathname);
+      }
     });
     return () => {
       cancelled = true;

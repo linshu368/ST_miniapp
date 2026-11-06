@@ -1,0 +1,73 @@
+{
+  "id": "optimize-android-navigation-tail",
+  "name": "optimize-android-navigation-tail",
+  "title": "治理 Android 五入口公共导航长尾",
+  "description": "针对 Android/Android X 五入口 SPA 导航增加有界安静窗口，延后非关键预热与 Profile 次级读取，降低公共长尾且保持 iOS 行为不变。",
+  "status": "in_progress",
+  "dev_type": "performance",
+  "scope": "frontend,docs,observability",
+  "package": "frontend",
+  "priority": "P1",
+  "creator": "cline",
+  "assignee": "cline",
+  "createdAt": "2026-11-05",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "实现与代码级验证完成。Android UI 固定验收 9/10 通过；剩余未开通会员用例单独复跑时页面、签到与 entry-viewed 200 均成功，但本地 Next 的 /vip router.push 未在45秒总预算内完成，该跳转不经过本次 BottomNav 安静窗口。全局 complexity 仅被范围外既有 use-drama-scrub 168行阻断；module knowledge check 被范围外 admin-client-auth 通配路径不存在阻断。生产 P95 必须按新 release 复测。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "frontend.infrastructure.client-ui-foundation",
+        "frontend.business.wallet-payment"
+      ]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": [
+        "/watch（历史五入口看板部分窗口显示为 /）",
+        "/dramas",
+        "/characters（含底栏恢复 /chats）",
+        "/creation",
+        "/profile"
+      ],
+      "apis": [
+        "GET /api/notifications/unread-count",
+        "GET /api/support/unread",
+        "GET /api/settings",
+        "GET /api/wallet/checkin",
+        "GET /api/vip/status",
+        "GET /api/payment/plans",
+        "GET /api/invite/entry-status",
+        "GET /api/community/entry"
+      ],
+      "android": {
+        "page_p95_baseline_ms": 4067.06,
+        "page_p95_target_ms": 2000
+      },
+      "ios": {
+        "page_p95_baseline_ms": 2078.4,
+        "page_p95_target_ms": 2000
+      },
+      "api": {
+        "p95_baseline_ms": 6304,
+        "p95_target_ms": 2000
+      },
+      "measurement": {
+        "source": "Grafana Cloud production 五入口 page.navigation 与 engineering_v1 api.total；按 tg_platform、route/api_route 分组。",
+        "window": "2026-10-29 至 2026-11-05（7d）；发布后按同一 release 连续观察两个完整 24h 窗口，每个 route/platform N<100 时延长至 7d 并标记低样本。"
+      },
+      "notes": "页面总体基线：Android P95 4067.06ms(N=2274)，iOS P95 2078.4ms(N=572)；Android /profile P95 5278.4ms(N=819)，iOS 2556.4ms(N=194)。接口保护基线取已见相关次级读取最慢的 Android community 约6304ms；本任务不改服务端处理或请求超时，只延后发起时机，接口目标为工程2秒目标并要求同release不得回退超过5%。Android-only调度，iOS行为必须保持；发布后同时核对2秒达标率、terminal/stall和请求量。"
+    }
+  }
+}
