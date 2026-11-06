@@ -4,6 +4,7 @@ const hook = vi.hoisted(() => ({
   pathname: '/create/work/example',
   ready: vi.fn(),
   failed: vi.fn(),
+  settle: vi.fn(),
   cleanups: [] as Array<() => void>,
 }));
 
@@ -16,6 +17,9 @@ vi.mock('react', () => ({
   useRef: (current: unknown) => ({ current }),
 }));
 vi.mock('./page-tracker', () => ({ markPageReady: hook.ready, markPageFailed: hook.failed }));
+vi.mock('@/lib/navigation-quiet-window', () => ({
+  settleNavigationQuietWindow: hook.settle,
+}));
 
 import { usePageReady } from './page-ready';
 
@@ -23,6 +27,7 @@ describe('page ready follows the visible business-content branch', () => {
   beforeEach(() => {
     hook.ready.mockClear();
     hook.failed.mockClear();
+    hook.settle.mockClear();
     hook.cleanups = [];
     hook.pathname = '/create/work/example';
   });
@@ -35,6 +40,7 @@ describe('page ready follows the visible business-content branch', () => {
     await Promise.resolve();
     expect(hook.failed).toHaveBeenCalledExactlyOnceWith('/create/work/:id', hook.pathname);
     expect(hook.ready).not.toHaveBeenCalled();
+    expect(hook.settle).toHaveBeenCalledExactlyOnceWith(hook.pathname);
   });
 
   it('preserves ready priority when usable cached content remains visible after a refresh error', async () => {
@@ -47,6 +53,7 @@ describe('page ready follows the visible business-content branch', () => {
       'cache'
     );
     expect(hook.failed).not.toHaveBeenCalled();
+    expect(hook.settle).toHaveBeenCalledExactlyOnceWith(hook.pathname);
   });
 
   it('does not report readiness while the visible panel is still loading', async () => {
@@ -54,6 +61,7 @@ describe('page ready follows the visible business-content branch', () => {
     await Promise.resolve();
     expect(hook.ready).not.toHaveBeenCalled();
     expect(hook.failed).not.toHaveBeenCalled();
+    expect(hook.settle).not.toHaveBeenCalled();
   });
 
   it('discards deferred notifications after the owning page effect is cleaned up', async () => {
@@ -62,5 +70,6 @@ describe('page ready follows the visible business-content branch', () => {
     await Promise.resolve();
     expect(hook.ready).not.toHaveBeenCalled();
     expect(hook.failed).not.toHaveBeenCalled();
+    expect(hook.settle).not.toHaveBeenCalled();
   });
 });

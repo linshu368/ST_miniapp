@@ -21,7 +21,9 @@ API 与 server state 已集中，Tailwind/shadcn 作为 UI 基础。GET 传输�
 
 默认关闭且非首屏必需的重型面板可用动态导入，并在首次打开后保持挂载以保留关闭动画和局部草稿；消息正文、输入框、播放器地址等关键路径不得为追求 bundle 数字而延后。
 
-五个一级路由 `/`、`/dramas`、`/characters`、`/creation`、`/profile` 统一复用真实 Link intent 到 `usePageReady` 的 `page.navigation` 计时。成功样本带有限 `readiness_budget=within_2s|over_2s`；失败、离页和停滞仍由 terminal/stall 事件单独观察，不能只看 ready 幸存样本。BottomNav 在入口关键工作结束后按 Android/iOS 优先级串行预热最多两个 route chunk；只有明确 hover/focus/touch intent 才预取 characters、favorites 或 wallet 主 query，短剧目录不在导航 intent 预取，避免与剧场增量列表挂载竞态。
+五个一级路由 `/watch`、`/dramas`、`/characters`、`/creation`、`/profile` 统一复用真实 Link intent 到 `usePageReady` 的 `page.navigation` 计时。成功样本带有限 `readiness_budget=within_2s|over_2s`；失败、离页和停滞仍由 terminal/stall 事件单独观察，不能只看 ready 幸存样本。BottomNav 在入口关键工作结束后按平台优先级串行预热 route chunk：Android/Android X 每轮最多一个，iOS/other 最多两个；短剧目录不在导航 intent 预取，避免与剧场增量列表挂载竞态。
+
+Android/Android X 的有效底栏导航点击到目标 `usePageReady` content ready/failed 之间启用内存级安静窗口；经两次绘制机会与有界 idle 后恢复未读、settings、Profile 次级读取和后台 route 预热，目标未结算时 4 秒强制放行。Characters 主列表与 Profile 钱包等 P0 不受阻塞；Android touch intent 只保留 Characters 主查询预取，iOS/other 沿用 characters、favorites、wallet 的既有 intent 策略。该调度独立于 Sentry/Grafana 开关，不改变 `page.navigation` 起止点。
 
 ## 入口与调用者
 
@@ -29,14 +31,13 @@ API 与 server state 已集中，Tailwind/shadcn 作为 UI 基础。GET 传输�
 
 ## 涉及文件
 
-| 路径                                                      | 职责                        |
-| --------------------------------------------------------- | --------------------------- |
-| `packages/frontend/src/lib/api/client.ts`                 | REST client、有限重试与取消 |
-| `packages/frontend/src/lib/api/query-client.ts`           | React Query 默认策略        |
-| `packages/frontend/src/lib/api/`                          | Query hooks                 |
-| `packages/frontend/src/lib/image-generation/telemetry.ts` | 图片生成事件 helper         |
-| `packages/frontend/src/components/ui/`                    | 公共 UI                     |
-| `packages/frontend/src/stores/`                           | 跨组件客户端状态            |
+| 路径                                            | 职责                        |
+| ----------------------------------------------- | --------------------------- |
+| `packages/frontend/src/lib/api/client.ts`       | REST client、有限重试与取消 |
+| `packages/frontend/src/lib/api/query-client.ts` | React Query 默认策略        |
+| `packages/frontend/src/lib/api/`                | Query hooks                 |
+| `packages/frontend/src/components/ui/`          | 公共 UI                     |
+| `packages/frontend/src/stores/`                 | 跨组件客户端状态            |
 
 ## 关键实现链路
 
@@ -72,6 +73,7 @@ Telegram WebView 差异需持续人工回归；生产 route bundle 与 Sentry �
 - 2026-10-20：任务 `Remove confirmed repository noise`（`.trellis/tasks/archive/2026-10/10-20-remove-confirmed-repository-noise/`）移除已删除的 Mock 与表单脚手架事实并同步当前前端基础设施边界；commit：`63eee1e847f678f4b2c434f872425a40fc7f891a`。
 - 2026-10-29：任务 `Optimize Sentry slow pages and APIs`（`.trellis/tasks/archive/2026-10/10-29-optimize-sentry-slow-pages-apis/`）统一 GET 有限重试与查询取消，并明确可选重型 UI 的按需加载边界；commit：`f73e38a11dcf8556aba669c88dbd401569618cdf`。
 - 2026-11-04：任务 `Optimize five-route mobile navigation readiness`（`.trellis/tasks/11-03-five-route-navigation-p95/`）补齐五路由 ready、2 秒预算维度、平台 route chunk 优先级与低风险 intent 预取；生产是否达标仍需发布后按 route/platform 样本验证。
+- 2026-11-05：任务 `治理 Android 五入口公共导航长尾`（`.trellis/tasks/11-05-optimize-android-navigation-tail/`）增加 Android SPA 导航安静窗口、4 秒兜底和单 route 后台预热上限；iOS 行为与页面 ready 口径不变，效果需按新 release 生产复测。
 
 ## 五入口公共导航适配（2026-10-27，本地）
 

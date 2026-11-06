@@ -6,7 +6,7 @@ import { feedbackAfterPaint, startAction } from '@/lib/perf/action-tracker';
 import { useFreshAfterFetch, usePageReady } from '@/lib/perf/page-ready';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   ChevronRight,
   ArrowUpRight,
@@ -30,6 +30,10 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Input } from '@/components/ui/input';
 import { VipEntryCard } from '@/components/vip/vip-entry-card';
 import { VipCheckinUpgrade } from '@/components/vip/vip-checkin-upgrade';
+import {
+  useProfileMessagePrefetch,
+  useProfileReadiness,
+} from '@/components/profile/profile-readiness';
 
 import {
   paymentKeys,
@@ -40,14 +44,9 @@ import {
 } from '@/lib/api/payment';
 import { useMarkVipEntryViewedMutation, useVipStatusQuery } from '@/lib/api/vip';
 import { useInviteEntryStatusQuery } from '@/lib/api/invite';
-import {
-  notificationKeys,
-  prefetchNotifications,
-  useNotificationUnreadCountQuery,
-} from '@/lib/api/notifications';
+import { notificationKeys, useNotificationUnreadCountQuery } from '@/lib/api/notifications';
 import { useSupportUnreadQuery } from '@/lib/api/support';
-import { afterEntryBackground, markCriticalSettled } from '@/lib/entry-phase';
-import { canPrefetchInBackground } from '@/lib/background-prefetch';
+import { markCriticalSettled } from '@/lib/entry-phase';
 import { useCommunityEntryQuery } from '@/lib/api/community';
 import {
   usePatchUserSettingsMutation,
@@ -64,53 +63,12 @@ const CommunitySheet = dynamic(
   { ssr: false }
 );
 
-/** 首屏先完成一次真实绘制，再启动会改变多个区域的次级读取。 */
-function useAfterFirstPaint(): boolean {
-  const [ready, setReady] = useState(false);
-  useEffect(() => {
-    let secondFrame: number | undefined;
-    const firstFrame = window.requestAnimationFrame(() => {
-      secondFrame = window.requestAnimationFrame(() => setReady(true));
-    });
-    return () => {
-      window.cancelAnimationFrame(firstFrame);
-      if (secondFrame !== undefined) window.cancelAnimationFrame(secondFrame);
-    };
-  }, []);
-  return ready;
-}
-
-/** 服务入口只有接近视口才需要数据；旧 WebView 无观察器时直接放行，不让入口永久缺失。 */
-function useNearViewport(ref: RefObject<Element>, enabled: boolean): boolean {
-  const [ready, setReady] = useState(false);
-  useEffect(() => {
-    if (!enabled || ready) return;
-    const node = ref.current;
-    if (!node || typeof IntersectionObserver === 'undefined') {
-      setReady(true);
-      return;
-    }
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (!entries.some((entry) => entry.isIntersecting)) return;
-        setReady(true);
-        observer.disconnect();
-      },
-      { rootMargin: '320px 0px' }
-    );
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [enabled, ready, ref]);
-  return ready;
-}
-
 export default function ProfilePage() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const telegramUserId = useMemo(readTelegramUserId, []);
-  const afterFirstPaint = useAfterFirstPaint();
   const servicesSectionRef = useRef<HTMLElement>(null);
-  const serviceEntriesReady = useNearViewport(servicesSectionRef, afterFirstPaint);
+  const { secondaryReadsReady, serviceEntriesReady } = useProfileReadiness(servicesSectionRef);
   const [avatarMenuOpen, setAvatarMenuOpen] = useState(false);
   const wallet = useWalletBalanceQuery();
   const walletFresh = useFreshAfterFetch(
@@ -129,21 +87,12 @@ export default function ProfilePage() {
   // BottomNav 同屏常驻并负责轮询，这里只订阅缓存，避免同一端点两个 interval 各打一份。
   const unread = useNotificationUnreadCountQuery({ poll: false, enabled: false });
   const supportUnread = useSupportUnreadQuery({ poll: false, enabled: false });
-  useEffect(() => {
-    const official = unread.data?.official ?? 0;
-    const personal = unread.data?.personal ?? 0;
-    if (official === 0 && personal === 0) return;
-    let active = true;
-    void afterEntryBackground().then(() => {
-      if (!active || !canPrefetchInBackground()) return;
-      router.prefetch('/profile/messages');
-      if (official > 0) void prefetchNotifications(queryClient, 'official');
-      if (personal > 0) void prefetchNotifications(queryClient, 'personal');
-    });
-    return () => {
-      active = false;
-    };
-  }, [queryClient, router, unread.data?.official, unread.data?.personal]);
+  useProfileMessagePrefetch(
+    queryClient,
+    router,
+    unread.data?.official ?? 0,
+    unread.data?.personal ?? 0
+  );
   const displayName = useUserProfileStore((s) => s.displayName);
   const photoUrl = useUserProfileStore((s) => s.photoUrl);
   const setDisplayName = useUserProfileStore((s) => s.setDisplayName);
@@ -151,10 +100,10 @@ export default function ProfilePage() {
   const userSettings = useUserSettingsQuery({ enabled: avatarMenuOpen });
   const patchSettings = usePatchUserSettingsMutation();
   const setAvatar = useSetUserAvatarMutation();
-  const checkinQ = useDailyCheckinQuery({ enabled: afterFirstPaint });
+  const checkinQ = useDailyCheckinQuery({ enabled: secondaryReadsReady });
   const checkin = checkinQ.data?.checkin;
   const claimCheckin = useDailyCheckinMutation();
-  const vipStatus = useVipStatusQuery({ enabled: afterFirstPaint });
+  const vipStatus = useVipStatusQuery({ enabled: secondaryReadsReady });
   const vipDailyCredits = vipStatus.data?.benefits?.checkin_vip_credits;
   const checkinUpgradeCredits =
     !vipStatus.isError &&
@@ -164,7 +113,7 @@ export default function ProfilePage() {
     vipDailyCredits > 0
       ? vipDailyCredits
       : null;
-  const paymentPlans = usePaymentPlansQuery({ enabled: afterFirstPaint });
+  const paymentPlans = usePaymentPlansQuery({ enabled: secondaryReadsReady });
   const markVipSeen = useMarkVipEntryViewedMutation();
   const inviteEntry = useInviteEntryStatusQuery({ enabled: serviceEntriesReady });
   const communityEntry = useCommunityEntryQuery({ enabled: serviceEntriesReady });
@@ -611,7 +560,7 @@ export default function ProfilePage() {
           variant="profile"
           status={vipStatus.data}
           monthlyPlan={paymentPlans.data?.vip_plans?.find((plan) => plan.id === 'month')}
-          loading={!afterFirstPaint || vipStatus.isLoading || paymentPlans.isLoading}
+          loading={!secondaryReadsReady || vipStatus.isLoading || paymentPlans.isLoading}
           disabled={markVipSeen.isPending}
           onOpen={() => void openVip()}
         />

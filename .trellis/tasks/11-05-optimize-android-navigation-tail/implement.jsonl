@@ -1,0 +1,5 @@
+{"file":".trellis/spec/frontend/app/index.md","reason":"Frontend 不可谈判规则与最低质量门禁。"}
+{"file":".trellis/spec/frontend/app/testing-quality-and-deployment.md","reason":"移动端 P95、page ready、Sentry/Grafana 与发布后真机验收口径。"}
+{"file":".trellis/spec/frontend/app/api-dataflow-and-state.md","reason":"React Query enabled、并发、缓存、取消和恢复约束。"}
+{"file":".trellis/spec/frontend/app/modules/infrastructure/client-ui-foundation.md","reason":"五入口导航、预热与公共客户端基础设施当前事实。"}
+{"file":".trellis/tasks/11-05-optimize-android-navigation-tail/research/android-public-navigation-tail.md","reason":"本任务生产基线、代码竞争点与版本边界。"}

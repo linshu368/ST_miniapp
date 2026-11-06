@@ -10,6 +10,7 @@ import { FavoriteFeedbackNotice } from '@/components/characters/favorite-feedbac
 import { EntryShell } from '@/components/nav/entry-shell';
 import { afterFirstScreen } from '@/lib/after-first-screen';
 import { ensureEntryPhaseWatching, useEntryBackgroundReady } from '@/lib/entry-phase';
+import { useNavigationBackgroundAllowed } from '@/lib/navigation-quiet-window';
 import { getQueryClient } from '@/lib/api/query-client';
 import { useUserSettingsQuery } from '@/lib/api/settings';
 import { PagePerfTracker } from '@/lib/perf/PagePerfTracker';
@@ -152,8 +153,9 @@ function UserSettingsHydrator() {
   const needsServerSettings =
     Boolean(pathname?.startsWith('/profile')) || Boolean(pathname?.startsWith('/chat'));
   const backgroundReady = useEntryBackgroundReady();
+  const navigationBackgroundAllowed = useNavigationBackgroundAllowed();
   const { data } = useUserSettingsQuery({
-    enabled: backgroundReady && needsServerSettings,
+    enabled: backgroundReady && navigationBackgroundAllowed && needsServerSettings,
   });
 
   useEffect(() => {

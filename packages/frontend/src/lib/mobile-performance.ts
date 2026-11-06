@@ -22,6 +22,7 @@ interface ListBudget {
 
 export interface MobilePerformancePolicy {
   platform: MobilePlatformGroup;
+  backgroundRoutePrefetchLimit: 1 | 2;
   characters: ListBudget;
   dramas: ListBudget;
   homePoster: {
@@ -37,6 +38,7 @@ export interface MobilePerformancePolicy {
 const POLICIES: Record<MobilePlatformGroup, MobilePerformancePolicy> = {
   android: {
     platform: 'android',
+    backgroundRoutePrefetchLimit: 1,
     characters: {
       initialRenderCount: 4,
       renderBatchSize: 4,
@@ -57,6 +59,7 @@ const POLICIES: Record<MobilePlatformGroup, MobilePerformancePolicy> = {
   },
   ios: {
     platform: 'ios',
+    backgroundRoutePrefetchLimit: 2,
     characters: {
       initialRenderCount: 4,
       renderBatchSize: 6,
@@ -77,6 +80,7 @@ const POLICIES: Record<MobilePlatformGroup, MobilePerformancePolicy> = {
   },
   other: {
     platform: 'other',
+    backgroundRoutePrefetchLimit: 2,
     characters: {
       // Hydration starts on this shared policy before Telegram exposes the platform.
       // Keep it aligned with mobile so cached lists never mount six cards first.
