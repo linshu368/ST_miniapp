@@ -1,7 +1,6 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  CREATOR_REVIEW_REJECTED_CODE,
   CREATOR_REVIEW_UNAVAILABLE_CODE,
   emptyCharacterDraft,
   type CreatorCharacter,
@@ -131,21 +130,21 @@ function publish(
   });
 }
 
-describe('creator public publication review', () => {
+describe('creator direct public publication', () => {
   it.each(['publish', 'visibility'] as const)(
-    'audits the owner-bound stored revision before public %s',
+    'directly approves the owner-bound stored revision for public %s',
     async (action) => {
       expect((await publish(action)).statusCode).toBe(200);
       expect(mocks.get).toHaveBeenCalledWith(cardId, ownerId);
-      expect(mocks.material).toHaveBeenCalledWith(cardId, ownerId, 2);
-      expect(mocks.review).toHaveBeenCalledWith(material);
+      expect(mocks.material).not.toHaveBeenCalled();
+      expect(mocks.review).not.toHaveBeenCalled();
       expect(mocks.mutate).toHaveBeenCalledWith({
         ownerId,
         id: cardId,
         action,
         expectedRevision: 2,
         visibility: 'public',
-        review: { approved: true, reason: '资料完整' },
+        review: { approved: true, reason: '直接发布' },
       });
       expect(mocks.clearLobby).toHaveBeenCalledTimes(1);
     }
@@ -158,31 +157,22 @@ describe('creator public publication review', () => {
     expect(mocks.mutate.mock.calls[0]![0]).not.toHaveProperty('review');
   });
 
-  it('returns a real content rejection without mutating the old card or clearing lobby data', async () => {
+  it('publishes edits to a public card even when the dormant reviewer would reject them', async () => {
     mocks.get.mockResolvedValue({ ...card(), visibility: 'public', approved_revision: 1 });
-    mocks.review.mockResolvedValue({ approved: false, reason: '请去掉站外转账广告。' });
-    const result = await publish();
-    expect(result.statusCode).toBe(422);
-    expect(result.json()).toMatchObject({
-      success: false,
-      error: { code: CREATOR_REVIEW_REJECTED_CODE, message: '请去掉站外转账广告。' },
-    });
-    expect(mocks.mutate).not.toHaveBeenCalled();
-    expect(mocks.clearLobby).not.toHaveBeenCalled();
+    mocks.review.mockResolvedValue({ approved: false, reason: '需要修改' });
+    expect((await publish()).statusCode).toBe(200);
+    expect(mocks.review).not.toHaveBeenCalled();
+    expect(mocks.material).not.toHaveBeenCalled();
+    expect(mocks.mutate.mock.calls[0]![0].review.approved).toBe(true);
+    expect(mocks.clearLobby).toHaveBeenCalledTimes(1);
   });
 
-  it('returns a retryable service error for invalid model output without leaking it', async () => {
-    mocks.review.mockRejectedValue(
-      Object.assign(new Error('untrusted provider body and prompt'), {
-        code: CREATOR_REVIEW_UNAVAILABLE_CODE,
-      })
-    );
-    const result = await publish();
-    expect(result.statusCode).toBe(503);
-    expect(result.json().error.code).toBe(CREATOR_REVIEW_UNAVAILABLE_CODE);
-    expect(result.body).not.toContain('untrusted');
-    expect(mocks.mutate).not.toHaveBeenCalled();
-    expect(mocks.clearLobby).not.toHaveBeenCalled();
+  it('publishes without calling an unavailable reviewer', async () => {
+    mocks.review.mockRejectedValue(new Error('review provider unavailable'));
+    expect((await publish()).statusCode).toBe(200);
+    expect(mocks.review).not.toHaveBeenCalled();
+    expect(mocks.material).not.toHaveBeenCalled();
+    expect(mocks.mutate.mock.calls[0]![0].review.approved).toBe(true);
   });
 
   it('does not let the browser supply a review decision', async () => {
@@ -225,16 +215,16 @@ describe('creator public publication review', () => {
     expect(mocks.review).not.toHaveBeenCalled();
   });
 
-  it('does not apply a reviewed result when the draft changed before final CAS', async () => {
+  it('rejects a draft changed before final publication CAS', async () => {
     mocks.mutate.mockRejectedValue(
-      Object.assign(new Error('edited during review'), { code: 'P0409' })
+      Object.assign(new Error('edited during publication'), { code: 'P0409' })
     );
     expect((await publish()).statusCode).toBe(409);
-    expect(mocks.review).toHaveBeenCalledTimes(1);
+    expect(mocks.review).not.toHaveBeenCalled();
     expect(mocks.clearLobby).not.toHaveBeenCalled();
   });
 
-  it('checks required fields before spending a public review call', async () => {
+  it('checks required fields before direct publication', async () => {
     const incomplete = card();
     incomplete.draft.opening = '';
     mocks.get.mockResolvedValue(incomplete);
@@ -374,12 +364,12 @@ describe('publication followed by wish response', () => {
       wish_response: { wish_id: wishId, status: 'not_linked' },
     });
   });
-  it('does not link a private card or bypass AI rejection', async () => {
+  it('does not link a private card or a failed publication', async () => {
     mocks.mutate.mockResolvedValue(card());
     expect((await publish('publish', 'private', { wish_id: wishId })).statusCode).toBe(200);
     expect(mocks.linkWish).not.toHaveBeenCalled();
-    mocks.review.mockResolvedValue({ approved: false, reason: '需要修改' });
-    expect((await publish('publish', 'public', { wish_id: wishId })).statusCode).toBe(422);
+    mocks.mutate.mockRejectedValue(Object.assign(new Error('stale'), { code: 'P0409' }));
+    expect((await publish('publish', 'public', { wish_id: wishId })).statusCode).toBe(409);
     expect(mocks.linkWish).not.toHaveBeenCalled();
   });
   it('does not accept wish metadata on the independent visibility endpoint', async () => {

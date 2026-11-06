@@ -303,7 +303,7 @@ export function CreatedCharacters() {
           <SheetDescription className="mt-3 text-sm leading-7">
             {changing?.visibility === 'public'
               ? '将不再展示在大厅，已收藏或使用过的用户仍可继续使用。'
-              : '审核通过后进入大厅，所有人都能与你的角色聊天。'}
+              : '公开后进入大厅，所有人都能与你的角色聊天。'}
           </SheetDescription>
           {error ? (
             <p role="alert" className="mt-3 text-sm text-destructive">
@@ -332,7 +332,7 @@ export function CreatedCharacters() {
           >
             {visibility.isPending
               ? changing?.visibility === 'private'
-                ? '正在审核…'
+                ? '正在发布…'
                 : '正在保存…'
               : changing?.visibility === 'public'
                 ? '确认设为私密'
