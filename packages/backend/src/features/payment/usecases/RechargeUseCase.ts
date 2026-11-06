@@ -86,6 +86,7 @@ export class RechargeUseCase {
       product_id: product.product_id,
       vip_duration_days: product.vip_duration_days,
       vip_bonus_credits: product.vip_bonus_credits,
+      vip_bonus_main_credits: product.vip_bonus_main_credits ?? 0,
     });
 
     const log = input.log ?? createLogger('payment');

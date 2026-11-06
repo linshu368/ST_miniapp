@@ -341,10 +341,18 @@ export function checkoutButtonLabel(input: {
 }
 
 export function checkinRewardLines(checkin: {
+  main_reward_credits?: number;
+  bonus_reward_credits?: number;
   reward_credits: number;
   base_reward_credits?: number;
   vip_reward_credits?: number;
 }): string[] {
+  if ((checkin.main_reward_credits ?? 0) > 0) {
+    return [
+      `专项星尘 +${formatNumber(checkin.bonus_reward_credits ?? 0)}`,
+      `通用星尘 +${formatNumber(checkin.main_reward_credits ?? 0)}`,
+    ];
+  }
   const base = checkin.base_reward_credits;
   const vip = checkin.vip_reward_credits;
   if (typeof vip === 'number' && vip > 0) {
@@ -383,7 +391,7 @@ export function billingFailureAction(code: string | undefined): BillingFailureAc
   return { type: 'unknown' };
 }
 
-export const MAIN_WALLET_NOTICE = '这个功能只能使用充值星尘，专项星尘不能抵扣。';
+export const MAIN_WALLET_NOTICE = '这个功能使用通用星尘，专项星尘不能抵扣。';
 
 export function supportsVipRenewal(item: Pick<NotificationItem, 'kind' | 'action_path'>): boolean {
   return item.kind === 'vip_expiry' || item.action_path === '/vip';
@@ -396,7 +404,12 @@ export function isVipOrder(order: Pick<PaymentOrder, 'product_type'>): boolean {
 export function orderBenefitLabel(
   order: Pick<
     PaymentOrder,
-    'product_type' | 'credits_amount' | 'bonus_credits' | 'vip_duration_days' | 'vip_bonus_credits'
+    | 'product_type'
+    | 'credits_amount'
+    | 'bonus_credits'
+    | 'vip_duration_days'
+    | 'vip_bonus_credits'
+    | 'vip_bonus_main_credits'
   >
 ): string {
   if (isVipOrder(order)) {
@@ -405,6 +418,9 @@ export function orderBenefitLabel(
         ? `${order.vip_duration_days} 天会员`
         : 'VIP 会员';
     const bonus = order.vip_bonus_credits ?? 0;
+    const main = order.vip_bonus_main_credits ?? 0;
+    if (main > 0)
+      return `${duration} · 赠送 ${formatNumber(bonus)} 专项＋${formatNumber(main)} 通用星尘`;
     return bonus > 0 ? `${duration} · 赠送 ${formatNumber(bonus)} 专项星尘` : duration;
   }
   return `${formatNumber(order.credits_amount + order.bonus_credits)} 星尘`;

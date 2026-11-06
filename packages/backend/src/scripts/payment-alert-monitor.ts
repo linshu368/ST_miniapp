@@ -11,17 +11,16 @@ import {
   PaymentAlertMonitor,
   PaymentAlertMonitorRepository,
 } from '../features/payment/usecases/PaymentAlertMonitor.js';
+import { VeniceBalanceMonitor } from '../features/generation/venice-balance-alerts.js';
 import {
   observeBackgroundRun,
   startStandaloneObservability,
 } from '../lib/background-observability.js';
 
 const log = createLogger('payment-alert-monitor');
-const monitor = new PaymentAlertMonitor(
-  new PaymentAlertMonitorRepository(),
-  new AlertPublisher(new PrismaAlertPersistence(), log),
-  log
-);
+const alertPublisher = new AlertPublisher(new PrismaAlertPersistence(), log);
+const monitor = new PaymentAlertMonitor(new PaymentAlertMonitorRepository(), alertPublisher, log);
+const veniceBalanceMonitor = new VeniceBalanceMonitor(alertPublisher, log);
 const deliveryWorker = new AlertDeliveryWorker(
   new FeishuAlertSink(config.alerting.feishuWebhookUrl),
   log
@@ -41,6 +40,17 @@ while (!shutdown.signal.aborted) {
       ADVISORY_LOCK_KEY,
       async () => {
         await monitor.runOnce();
+        // Venice USD 余额检查与支付规则解耦：失败只标记 partial，不阻断 outbox drain。
+        try {
+          const balance = await veniceBalanceMonitor.runOnce();
+          if (balance.outcome === 'probe_failed') outcome = 'partial';
+        } catch (err) {
+          outcome = 'partial';
+          log.sys.error(
+            { event: 'venice.balance_monitor.failed', err },
+            'Venice 余额监控本轮失败；不发布 healthy'
+          );
+        }
         // Delivery is non-critical: a failed drain must not make an otherwise successful monitor run fail.
         try {
           await deliveryWorker.deliverOne();

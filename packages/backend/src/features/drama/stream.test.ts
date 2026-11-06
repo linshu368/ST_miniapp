@@ -17,6 +17,7 @@ const videos = Array.from({ length: 30 }, () => ({
   uid: randomBytes(16).toString('hex'),
 }));
 beforeEach(() => {
+  vi.stubEnv('DRAMA_STREAM_SAMPLING_COHORT', '');
   vi.stubEnv('DRAMA_STREAM_ENABLED', 'true');
   vi.stubEnv('DRAMA_STREAM_ENROLLMENT_BPS', '10000');
   vi.stubEnv('DRAMA_CDN_ENABLED', 'false');
@@ -96,4 +97,50 @@ it('keeps assignments across enrollment expansion and retains telemetry identity
   vi.stubEnv('DRAMA_STREAM_ENABLED', 'false');
   const historical = selectStreamDelivery(42, videos[0]!.dramaId, videos[0]!.videoId, true)!;
   expect(historical.delivery.group).toBe(full.delivery.group);
+});
+
+it('targets only two sampling accounts without changing other users or eligibility', () => {
+  const config = getDramaStreamConfig()!;
+  const original = Array.from({ length: 100 }, (_, id) => streamExperimentUser(id + 1, config));
+  vi.stubEnv(
+    'DRAMA_STREAM_SAMPLING_COHORT',
+    JSON.stringify({ experimentId: config.id, supabase: 1, stream: 2 })
+  );
+  expect(streamExperimentUser(1, config).assigned_group).toBe('supabase');
+  expect(streamExperimentUser(2, config).assigned_group).toBe('stream');
+  for (let id = 3; id <= 100; id++) {
+    expect(streamExperimentUser(id, config)).toEqual(original[id - 1]);
+  }
+  expect(streamExperimentUser(1, config).experiment_user).toBe(original[0]!.experiment_user);
+  expect(selectStreamDelivery(2, videos[0]!.dramaId, videos[1]!.videoId)).toBeNull();
+  vi.stubEnv('DRAMA_STREAM_ENROLLMENT_BPS', '0');
+  expect(selectStreamDelivery(2, videos[0]!.dramaId, videos[0]!.videoId)).toBeNull();
+  vi.stubEnv('DRAMA_STREAM_ENROLLMENT_BPS', '10000');
+  vi.stubEnv('DRAMA_CDN_ENABLED', 'true');
+  expect(selectStreamDelivery(2, videos[0]!.dramaId, videos[0]!.videoId)).toBeNull();
+  vi.stubEnv('DRAMA_CDN_ENABLED', 'false');
+  vi.stubEnv('DRAMA_STREAM_ENABLED', 'false');
+  expect(selectStreamDelivery(2, videos[0]!.dramaId, videos[0]!.videoId)).toBeNull();
+  expect(
+    selectStreamDelivery(2, videos[0]!.dramaId, videos[0]!.videoId, true)?.delivery.group
+  ).toBe('stream');
+});
+
+it('ignores malformed, stale, duplicate or unsafe sampling account settings', () => {
+  const config = getDramaStreamConfig()!;
+  const baseline = streamExperimentUser(1, config);
+  for (const value of [
+    'invalid json',
+    JSON.stringify({ experimentId: 'old-experiment', supabase: 1, stream: 2 }),
+    JSON.stringify({ experimentId: config.id, supabase: 1, stream: 1 }),
+    JSON.stringify({ experimentId: config.id, supabase: -1, stream: 2 }),
+    JSON.stringify({ experimentId: config.id, supabase: '1', stream: 2 }),
+    JSON.stringify({ experimentId: config.id, supabase: 1, stream: Number.MAX_SAFE_INTEGER + 1 }),
+    JSON.stringify({ experimentId: config.id, supabase: 1, stream: 2, extra: true }),
+    ' '.repeat(513),
+  ]) {
+    vi.stubEnv('DRAMA_STREAM_SAMPLING_COHORT', value);
+    expect(getDramaStreamConfig()).not.toBeNull();
+    expect(streamExperimentUser(1, config)).toEqual(baseline);
+  }
 });

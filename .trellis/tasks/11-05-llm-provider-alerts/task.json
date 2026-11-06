@@ -1,0 +1,37 @@
+{
+  "id": "llm-provider-alerts",
+  "name": "llm-provider-alerts",
+  "title": "第三方模型限流与额度飞书告警",
+  "description": "复用现有飞书 outbox，为 OpenRouter/Venice 文本模型的 401/402/403/429 增加去重、恢复和脱敏告警",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "backend",
+  "package": "backend",
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-05",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "no_module_change",
+      "reason": "未改变会话生成的 API、数据、计费或失败语义；新增横向告警旁路并已在 ops/railway/README.md 记录运行事实，没有独立 alerting module 文档可更新。"
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "仅在模型上游响应头返回后异步发布告警，不增加或等待任何页面加载、HTTP/SSE 响应关键路径 I/O；无新增接口，Android/iOS 页面加载与接口 P95 不适用。发布后核对 generation P95 与未处理 rejection 日志。"
+    }
+  }
+}

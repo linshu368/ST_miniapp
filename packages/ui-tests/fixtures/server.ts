@@ -525,7 +525,7 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         wxpay_enabled: false,
         default_payment_type: 'alipay',
       };
-    if (next === 'vip')
+    if (next === 'vip' || next === 'vip-mixed')
       Object.assign(data.vip, {
         active: true,
         remaining_days: 31,
@@ -534,6 +534,10 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         last_plan_id: 'month',
         entry_badge_visible: false,
       });
+    if (next === 'vip-mixed') {
+      Object.assign(data.vip.benefits!, { checkin_main_credits: 30, checkin_bonus_credits: 120 });
+      Object.assign(data.plans.vip_plans![0]!, { bonus_credits: 2000, bonus_main_credits: 1000 });
+    }
     if (next === 'empty') {
       data.dramas = [];
       data.characters = [];
@@ -946,8 +950,14 @@ export function createPreviewServer(apiPort: number, appPort: number) {
             last_claimed_at: claimedAt,
             next_claim_at: claimedAt ? getNextDailyCheckinAt(claimedAt) : null,
             reward_credits: data.vip.active ? 150 : 30,
-            base_reward_credits: 30,
-            vip_reward_credits: 150,
+            base_reward_credits: data.vip.active ? 0 : 30,
+            vip_reward_credits: data.vip.active ? 150 : 0,
+            main_reward_credits: data.vip.active
+              ? (data.vip.benefits?.checkin_main_credits ?? 0)
+              : 0,
+            bonus_reward_credits: data.vip.active
+              ? (data.vip.benefits?.checkin_bonus_credits ?? 150)
+              : 30,
           },
         });
         return;
@@ -963,15 +973,25 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         }
         claimedAt = stamp();
         const reward = data.vip.active ? 150 : 30;
-        creditBonus(reward);
+        const mainGift = data.vip.active ? (data.vip.benefits?.checkin_main_credits ?? 0) : 0;
+        data.wallet.main_credits += mainGift;
+        data.wallet.credits += mainGift;
+        data.wallet.total_credits += mainGift;
+        creditBonus(reward - mainGift);
         ok(res, {
           wallet: data.wallet,
           checkin: {
             claimed_at: claimedAt,
             next_claim_at: getNextDailyCheckinAt(claimedAt),
             reward_credits: reward,
-            base_reward_credits: 30,
-            vip_reward_credits: 150,
+            base_reward_credits: data.vip.active ? 0 : 30,
+            vip_reward_credits: data.vip.active ? 150 : 0,
+            main_reward_credits: data.vip.active
+              ? (data.vip.benefits?.checkin_main_credits ?? 0)
+              : 0,
+            bonus_reward_credits: data.vip.active
+              ? (data.vip.benefits?.checkin_bonus_credits ?? 150)
+              : 30,
           },
         });
         return;

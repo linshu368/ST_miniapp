@@ -1,0 +1,37 @@
+{
+  "id": "image-pricing-parameters",
+  "name": "image-pricing-parameters",
+  "title": "Persist image plaza pricing parameters",
+  "description": "Persist only image-plaza pricing factors through existing catalog draft/publish lifecycle",
+  "status": "in_progress",
+  "dev_type": "fullstack",
+  "scope": "admin",
+  "package": "admin",
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-05",
+  "completedAt": null,
+  "branch": "codex/image-pricing-parameters",
+  "base_branch": "main",
+  "worktree_path": "/Users/qianpeijia/.codex/worktrees/image-pricing-parameters/repo",
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "no_module_change",
+      "reason": "Narrow bug fix to existing image-plaza model catalog editor; module ownership, entrypoints, lifecycle and capabilities stay unchanged. Existing documentation will describe persisted pricing metadata."
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "Only internal Admin form state plus optional catalog metadata; no user mobile page, route, query or charged price changes. No additional runtime requests."
+    }
+  }
+}
