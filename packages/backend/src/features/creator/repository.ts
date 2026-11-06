@@ -129,6 +129,7 @@ export class CreatorCharacterRepository {
     if (!draft.success || !runtime || typeof runtime !== 'object' || Array.isArray(runtime))
       throw Object.assign(new Error('Saved review material unavailable'), {
         code: CREATOR_REVIEW_UNAVAILABLE_CODE,
+        failure: 'material_unavailable',
       });
     const fields = runtime as Record<string, unknown>;
     if (
@@ -139,6 +140,7 @@ export class CreatorCharacterRepository {
     )
       throw Object.assign(new Error('Saved review material unavailable'), {
         code: CREATOR_REVIEW_UNAVAILABLE_CODE,
+        failure: 'material_unavailable',
       });
     return {
       name: fields.name,

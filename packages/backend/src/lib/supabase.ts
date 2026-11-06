@@ -12,6 +12,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import WebSocket from 'ws';
 import { config } from '../platform/config.js';
+import { observedSupabaseFetch } from './preparation-diagnostics.js';
 
 let _client: SupabaseClient | null = null;
 
@@ -39,6 +40,7 @@ export function getSupabaseClient(): SupabaseClient {
   }
 
   _client = createClient(url, key, {
+    global: { fetch: observedSupabaseFetch },
     auth: {
       autoRefreshToken: false,
       persistSession: false,
