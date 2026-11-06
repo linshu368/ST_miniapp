@@ -4,7 +4,6 @@
  * 本文件只拆出各阶段，不改变 await 与副作用顺序。
  */
 import { diagnoseRichReplyProtocol } from '@miniapp/shared';
-import { observeGenerationPreparationStages } from '../../lib/engineering-observability.js';
 import type { RequestLogger } from '../../lib/logger.js';
 import type { buildPrompt } from '../engine/index.js';
 import type { InstructionSlotModes } from '../engine/types.js';
@@ -15,6 +14,7 @@ import type { SseTapResult } from '../generation/upstream.js';
 import { TextPostprocessRepository } from '../text-postprocess/repository.js';
 import { appendActiveDelivery } from './active-delivery.js';
 import type { ConversationTurnOutcome } from './generate.js';
+import type { ConversationPreparationTiming } from './preparation-timing.js';
 import { historyRecords } from './turn-repositories.js';
 import type { TurnScope } from './turn-scope.js';
 
@@ -91,34 +91,17 @@ function createDeltaEmitter(scope: TurnScope) {
 export function createExecutionHooks(
   scope: TurnScope,
   prompt: ReturnType<typeof buildPrompt>,
-  stages: {
-    setupFinishedAt: number;
-    settingsFinishedAt: number;
-    turnOpenedAt: number;
-    contextFinishedAt: number;
-  }
+  preparation: ConversationPreparationTiming
 ): GenerationHooks {
-  const { control, observations, observationInput, model, requestStartedAt, chargeId, turn } =
-    scope;
+  const { control, observations, observationInput, chargeId, turn } = scope;
   const { emitStart, thinkingEnabled } = scope;
-  const { setupFinishedAt, settingsFinishedAt, turnOpenedAt, contextFinishedAt } = stages;
   const emitVisibleDelta = createDeltaEmitter(scope);
   return {
     onBeforeDispatch: async (snapshot) => {
       control.signal.throwIfAborted();
       await observations.begin({ ...observationInput, snapshot, history: prompt.messages });
       control.signal.throwIfAborted();
-      observeGenerationPreparationStages({
-        provider: model.provider,
-        model: model.providerModelId,
-        stages: {
-          route_setup: setupFinishedAt - requestStartedAt,
-          settings: settingsFinishedAt - setupFinishedAt,
-          turn_open: turnOpenedAt - settingsFinishedAt,
-          context: contextFinishedAt - turnOpenedAt,
-          dispatch_gate: performance.now() - contextFinishedAt,
-        },
-      });
+      preparation.ready();
       emitStart();
     },
     onBeforeReserve: async (reservedChargeId) => {
