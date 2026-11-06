@@ -4,6 +4,7 @@ const state = vi.hoisted(() => ({
   destroyed: vi.fn(),
   created: vi.fn(),
   attached: undefined as (() => void) | undefined,
+  order: [] as string[],
 }));
 vi.mock('hls.js', () => ({
   default: class {
@@ -17,8 +18,11 @@ vi.mock('hls.js', () => ({
     on(name: string, callback: () => void) {
       if (name === 'attached') state.attached = callback;
     }
-    loadSource() {}
+    loadSource() {
+      state.order.push('loadSource');
+    }
     attachMedia(video: HTMLVideoElement) {
+      state.order.push('attachMedia');
       video.src = 'blob:unit';
     }
     destroy() {
@@ -50,6 +54,7 @@ function nativeVideo() {
 beforeEach(() => {
   vi.clearAllMocks();
   state.attached = undefined;
+  state.order = [];
 });
 afterEach(() => vi.unstubAllGlobals());
 it('does not attach a pending HLS import after a source was cancelled', async () => {
@@ -79,6 +84,20 @@ it('uses hls.js on Android even when the WebView claims native HLS support', asy
   const cleanup = loadDramaSource(element, playback, ready, vi.fn());
   await vi.waitFor(() => expect(state.created).toHaveBeenCalledOnce());
   expect(element.src).toBe('blob:unit');
+  cleanup();
+});
+it('lets diagnostics subscribe before the manifest loads and never blocks playback', async () => {
+  vi.stubGlobal('navigator', { userAgent: ANDROID_UA });
+  const ready = vi.fn();
+  const onHls = vi.fn(() => {
+    state.order.push('observe');
+    throw new Error('diagnostic failure');
+  });
+  const cleanup = loadDramaSource(video(), playback, ready, vi.fn(), onHls);
+  await vi.waitFor(() => expect(onHls).toHaveBeenCalledOnce());
+  state.attached?.();
+  expect(state.order).toEqual(['observe', 'attachMedia', 'loadSource']);
+  expect(ready).toHaveBeenCalledOnce();
   cleanup();
 });
 it('keeps native HLS on iPhone', () => {
