@@ -16,9 +16,10 @@ import {
 import { cn } from '@/lib/utils';
 import { useTelegramBackButton } from '@/lib/telegram/hooks';
 import {
-  fileToImagePlazaPayload,
   useCreateImagePlazaConversationMutation,
+  validateImagePlazaReference,
 } from '@/lib/api/image-plaza';
+import { prepareCoverImage } from '@/lib/utils/cover-image';
 import {
   useCreatorCharactersQuery,
   useCreatorCharacterQuery,
@@ -310,7 +311,8 @@ function CharacterEditor({
     setWorking(true);
     setCoverError('');
     try {
-      const payload = await fileToImagePlazaPayload(file);
+      validateImagePlazaReference(file);
+      const payload = await prepareCoverImage(file);
       const { asset } = await upload.mutateAsync({
         id: crypto.randomUUID(),
         source: 'upload',
