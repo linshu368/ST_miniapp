@@ -42,3 +42,29 @@
 
 - 用户已明确要求开始处理优化，无需再次请求实施授权。
 - 这是调度与性能口径相关的高风险改动，规划确认在现有测试体系内增加/扩展回归用例，不引入新测试框架。
+
+## 2026-11-06 Android WebView 第二阶段
+
+### 新证据与范围
+
+- 生产当前 release `a6fe0ee0bc250b4119e4732abcbbdad441cd39df` 的近 72 小时 Sentry 数据显示：`/characters` Android `page.data_fresh` P95 为 6782.35ms，`/api/lobby-characters` 客户端 P95 为 4195.615ms；Railway 同期 `/api/characters` 分桶最慢 P95 为 1471ms，CPU/内存没有容量饱和。
+- `/profile` Android mount 后 shell ready P95 仅 29.44ms，但代表 trace 的路由提交前脚本可达数秒；wallet 在 Railway 最慢分桶 P95 142ms。一次 Android trace 中 wallet 与 unread 同时记录约 158 秒客户端超时，说明 WebView 冻结/恢复会把无关请求一起拖长，不能解释为两个后端同时变慢。
+- Grafana MCP 当前因 OAuth 未授权无法读取新窗口；旧 Grafana 基线保留为发布前基线，连接恢复后必须按同 release 补跑，不能把 Sentry mount→ready 与 Grafana click→content-ready 混算。
+
+### 新增要求
+
+- 自动推荐继续在 450ms 启动公共首屏 hedge，确保个人批次不阻塞 2 秒内容目标；原个人请求允许在 5 秒有界预算内完成并只写入下一次缓存，不能为追求当前指标中止幂等请求而丢失迟到批次。手动“换一批/撤回”继续保留 5 秒预算。
+- Android/Android X 的角色目录关键读取使用 1.8 秒客户端预算；iOS/other 保持既有 20 秒默认预算。预算覆盖请求槽排队、网络、响应体解析与契约校验；超时只结束当前读取，不自动重试写请求。
+- “最新”公共目录沿用 Backend 已声明的 60 秒公共缓存语义：同源代理只透传安全的公共缓存头，推荐/指定 ID 继续 `no-store`，不得缓存个人推荐批次。
+- 为无指定 ID 的公共推荐首屏使用独立持久快照；它不能覆盖完整目录缓存，也不能用于指定 ID 校准。命中时先显示快照、后台校准，失败保留原 error/retry 语义。
+- `/profile` 首屏继续只保证身份、钱包占位和主要入口；VIP 入口等非关键代码只在 Android 导航安静窗口释放后加载，避免目标路由 chunk 与次级组件 chunk 同时下载/解析。用户可主动点击的消息、充值、客服入口不能被该延后阻断。
+
+### 第二阶段验收
+
+- [ ] Android 自动推荐在 450ms 启动公共/持久首屏 hedge，迟到个人批次不替换当前列表但可供下次复用；手动换批仍有 5 秒预算。
+- [ ] Android 角色目录请求总预算为 1.8 秒；iOS/other 仍为 20 秒；调用方取消不误报为 timeout。
+- [ ] `latest` 代理响应保留公共 60 秒缓存，`recommended`、指定 ID、错误响应均为 `no-store`。
+- [ ] 公共推荐首屏快照与完整目录使用不同 key；损坏、过期、隐私模式安全降级，不能把部分首屏写成完整目录。
+- [ ] Profile 非关键动态代码在 `secondaryReadsReady` 前不挂载，基础身份、余额、充值、消息和客服入口仍可操作。
+- [ ] 发布门禁按 `/characters`、`/profile` × Android × 同一 release：前台有效 `content_ready` P95 ≤ 2000ms、2 秒达标率 ≥95%、每组 N≥100；同时检查 p99、terminal/stall/error/page_left 与 API 请求量。连续两个完整 24h 窗口均满足才宣称稳定达标，N 不足延长到 7d。
+- [ ] 物理断网、系统冻结和后台时间不承诺成功内容必达 2 秒；这些样本必须单列，且前台计时器可运行时需在预算内显示缓存或明确失败，恢复前台不得产生请求齐射。
