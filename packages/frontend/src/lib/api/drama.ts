@@ -20,6 +20,7 @@ import type {
 
 import { apiClient } from './client';
 import { dramaTiming } from '@/lib/perf/drama-observer';
+import { capAppleHlsQuality } from '@/lib/drama-media-source';
 
 const DRAMA_CATALOG_CACHE_KEY = 'miniapp:drama-catalog:stream-v2';
 const DRAMA_CATALOG_STALE_MS = 15 * 60_000;
@@ -269,7 +270,7 @@ async function fetchDramaPlayback(
       timeoutMs: 5000,
       queuePriority: 'critical',
     });
-    return data.playback;
+    return capAppleHlsQuality(data.playback);
   });
 }
 
