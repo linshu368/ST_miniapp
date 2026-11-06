@@ -18,6 +18,8 @@ import { flushSync } from 'react-dom';
 import { getRawInitData, INIT_DATA_HEADER } from '@/lib/telegram/auth';
 import { createLogger } from '@/lib/logger';
 import { API_URL } from './client';
+import { lobbyViewerScope } from '@/lib/lobby-recommendation-state';
+import { useOnboardingStore } from '@/stores/onboarding-store';
 
 const log = createLogger('conversation-stream');
 export const CONVERSATION_RECOVERING_MESSAGE = '正在接回这条回复，请稍候';
@@ -336,6 +338,7 @@ export const CONVERSATION_STREAM_IDLE_TIMEOUT_MS = 130_000;
 export const CONVERSATION_STREAM_DEADLINE_MS = 150_000;
 
 export async function streamConversationTurn(options: StreamTurnOptions): Promise<void> {
+  const guideScope = lobbyViewerScope();
   const controller = new AbortController();
   let idleTimer: ReturnType<typeof setTimeout>;
   let deadlineTimer: ReturnType<typeof setTimeout>;
@@ -387,7 +390,16 @@ export async function streamConversationTurn(options: StreamTurnOptions): Promis
           options.onReasoning?.(text);
         },
         onDone: (event) => {
-          if (!controller.signal.aborted) options.onDone(event);
+          if (controller.signal.aborted) return;
+          options.onDone(event);
+          // Local guide only: count successful new turns across cards, never regenerations or replay twice.
+          if (options.content !== undefined && event.status === 'complete')
+            useOnboardingStore
+              .getState()
+              .recordCompletedTurn(
+                guideScope,
+                `${options.sessionId}:${options.requestId ?? event.assistant_message_id}`
+              );
         },
       }),
     ]);

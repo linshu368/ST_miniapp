@@ -56,6 +56,7 @@ import {
   ImagePlazaQuoteRequestSchema,
   PatchGenerationConfigRequestSchema,
   PatchUserSettingsRequestSchema,
+  UserOnboardingSchema,
   SelectModelRequestSchema,
   SubmitImagePlazaAttemptRequestSchema,
   type ChatMessage,
@@ -97,6 +98,7 @@ export function createPreviewServer(apiPort: number, appPort: number) {
   const app = `http://${HOST}:${appPort}`;
   let data = makeData(api);
   let scenario: Scenario = 'standard';
+  let onboardingRounds = 0;
   let lobbyCurrent: LobbyRecommendationData | null = null;
   let lobbyPrevious: LobbyRecommendationData | null = null;
   let lobbyBatchCount = 0;
@@ -347,6 +349,14 @@ export function createPreviewServer(apiPort: number, appPort: number) {
   }
 
   function reset(next: Scenario, lobbyCardCount = 36) {
+    onboardingRounds =
+      next === 'new-user-near-creator'
+        ? 9
+        : next === 'new-user-creator-ready'
+          ? 10
+          : next === 'new-user-replied'
+            ? 1
+            : 0;
     epoch += 1;
     for (const stream of streams) stream.end();
     streams.clear();
@@ -543,6 +553,10 @@ export function createPreviewServer(apiPort: number, appPort: number) {
       data.characters = [];
       data.sessions = [];
       data.works = [];
+    }
+    if (next === 'new-user') {
+      data.messages = data.messages.filter((message) => message.turn_index === 0);
+      for (const session of data.sessions) session.message_count = 0;
     }
     if (next === 'no-balance')
       Object.assign(data.wallet, {
@@ -927,6 +941,21 @@ export function createPreviewServer(apiPort: number, appPort: number) {
           return;
         }
         servePlay(drama, url.searchParams.get('video_id'));
+        return;
+      }
+      if (path === '/api/users/onboarding' && method === 'GET') {
+        if (scenario === 'onboarding-error') {
+          fail(res, 503, 'ONBOARDING_UNAVAILABLE', '预览：引导读取失败');
+          return;
+        }
+        const eligible = scenario.startsWith('new-user') && onboardingRounds < 10;
+        ok(
+          res,
+          UserOnboardingSchema.parse({
+            eligible,
+            expires_at: eligible ? new Date(Date.now() + 7 * 86400_000).toISOString() : null,
+          })
+        );
         return;
       }
       if (path === '/api/users/settings') {
@@ -2193,7 +2222,10 @@ export function createPreviewServer(apiPort: number, appPort: number) {
               message.status = 'complete';
               message.finish_reason = 'stop';
             }
-            if (action === 'messages') session.message_count += 2;
+            if (action === 'messages') {
+              session.message_count += 2;
+              if (message.status === 'complete') onboardingRounds += 1;
+            }
             session.last_message_preview = message.content;
             write({
               type: 'done',
