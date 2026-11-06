@@ -21,10 +21,7 @@ import { AdminSessionError, requireAdminActor } from '../features/admin-access/s
 import { CharacterWishRepository } from '../features/character-wishes/repository.js';
 import { CreatorCharacterRepository } from '../features/creator/repository.js';
 import { clearLobbyFeaturedSnapshot } from '../features/lobby/featured-snapshot.js';
-import {
-  reviewCreatorCharacter,
-  testCreatorCharacterReview,
-} from '../features/generation/creator-review.js';
+import { testCreatorCharacterReview } from '../features/generation/creator-review.js';
 
 const idSchema = CreatorCharacterIdSchema;
 export default async function creatorCharacterRoutes(app: FastifyInstance) {
@@ -92,18 +89,15 @@ export default async function creatorCharacterRoutes(app: FastifyInstance) {
   const characterId = (request: FastifyRequest) =>
     idSchema.parse((request.params as { id: string }).id);
 
-  const publishCharacter = async (
-    request: FastifyRequest,
-    input: {
-      ownerId: string;
-      id: string;
-      action: 'publish' | 'visibility';
-      expectedRevision: number;
-      visibility: CreatorVisibility;
-    }
-  ) => {
+  const publishCharacter = async (input: {
+    ownerId: string;
+    id: string;
+    action: 'publish' | 'visibility';
+    expectedRevision: number;
+    visibility: CreatorVisibility;
+  }) => {
     const current = await repo.get(input.id, input.ownerId);
-    // Let SQL replay the exact last request or reject it as stale before spending another model call.
+    // Let SQL replay the exact last request or reject a stale revision.
     if (current.revision !== input.expectedRevision) return repo.mutate(input);
     if (input.action === 'publish' || input.visibility === 'public') {
       const missing = creatorPublishMissingFields(current.draft, current.cover_asset_id);
@@ -113,22 +107,9 @@ export default async function creatorCharacterRoutes(app: FastifyInstance) {
         });
     }
     if (input.visibility === 'private') return repo.mutate(input);
-    const material = await repo.getReviewMaterial(input.id, input.ownerId, input.expectedRevision);
-    const started = performance.now();
-    const review = await reviewCreatorCharacter(material);
-    request.log.info(
-      {
-        event: 'creator.review.finished',
-        characterId: input.id,
-        approved: review.approved,
-        duration_ms: performance.now() - started,
-      },
-      'creator public review'
-    );
-    if (!review.approved)
-      throw Object.assign(new Error(review.reason), { code: CREATOR_REVIEW_REJECTED_CODE });
-    // The RPC rechecks revision under its existing locks; no external call holds a database lock.
-    return repo.mutate({ ...input, review });
+    // Public submissions currently pass directly; retain the review service for future use.
+    // SQL still enforces ownership, required fields and the exact draft revision atomically.
+    return repo.mutate({ ...input, review: { approved: true, reason: '直接发布' } });
   };
 
   // @frontend-ready: true — caller identity also scopes an empty local draft list
@@ -188,7 +169,7 @@ export default async function creatorCharacterRoutes(app: FastifyInstance) {
     handle('publish', async (request, reply) => {
       const body = PublishCreatorCharacterSchema.parse(request.body);
       const ownerId = await viewer(request);
-      const character = await publishCharacter(request, {
+      const character = await publishCharacter({
         ownerId,
         id: characterId(request),
         action: 'publish',
@@ -228,7 +209,7 @@ export default async function creatorCharacterRoutes(app: FastifyInstance) {
     ownerOptions,
     handle('visibility', async (request, reply) => {
       const body = SetCreatorVisibilitySchema.parse(request.body);
-      const character = await publishCharacter(request, {
+      const character = await publishCharacter({
         ownerId: await viewer(request),
         id: characterId(request),
         action: 'visibility',

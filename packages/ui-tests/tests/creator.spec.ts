@@ -274,7 +274,7 @@ test('@creator @creator-review 审核拒绝显示原因并保留原稿，修改�
   await fillCharacter(page);
   await page.getByText('公开', { exact: true }).click();
   await page.getByRole('button', { name: '公开角色', exact: true }).click();
-  await expect(page.getByRole('button', { name: '正在审核…', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: '正在发布…', exact: true })).toBeDisabled();
   await expect(page.getByRole('alert').filter({ hasText: '未通过审核' })).toContainText(
     '未通过审核：描述中包含站外转账引导，请删除相关内容后重试。'
   );
