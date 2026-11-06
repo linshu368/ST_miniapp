@@ -2,7 +2,12 @@
 const MAX_EDGE = 1024;
 /** 压缩目标体积。原图最大放宽到 20MB，手机原图动辄几 MB~十几 MB，体积越大，
  * 弱网/WebView 下传输中途被断开的概率越高（生产排查：约一半上传在开始后 0.8~1s 内中断）。 */
-const TARGET_BYTES = 1.5 * 1024 * 1024;
+const TARGET_BYTES = 2 * 1024 * 1024;
+/** JPEG 画质阶梯，从高到低依次尝试，命中目标体积就停。75~85 是 JPEG 常见的"拐点"区间——
+ * 往上加画质肉眼几乎看不出差别，往下掉这个区间开始能看出块状纹路/边缘振纹，角色封面多是
+ * 插画风格（大片纯色+清晰线条），比真实照片更容易在低画质下露出压缩痕迹。地板定在拐点上沿，
+ * 不再往下试：宁可体积大一点，也不用更糊的画质换体积。 */
+const QUALITY_STEPS = [0.92, 0.85, 0.8];
 
 export interface PreparedCoverUpload {
   image_base64: string;
@@ -11,8 +16,8 @@ export interface PreparedCoverUpload {
 
 /**
  * 封面上传前在本地压缩成小图再传。调用方需先用 validateImagePlazaReference 做类型/大小校验。
- * 不像客服截图有 3MB 硬上限会直接拒绝，这里压到最低画质仍超限也继续传，只是不再降质——
- * 封面可以模糊，但不能传不上去。
+ * 不像客服截图有 3MB 硬上限会直接拒绝，这里到了画质地板仍超限也继续传，只是不再降质——
+ * 封面可以稍大，但不能传不上去，也不能糊。
  */
 export async function prepareCoverImage(file: File): Promise<PreparedCoverUpload> {
   const bitmap = await createImageBitmap(file);
@@ -29,7 +34,7 @@ export async function prepareCoverImage(file: File): Promise<PreparedCoverUpload
   bitmap.close();
 
   let best: Blob | null = null;
-  for (const quality of [0.85, 0.7, 0.5]) {
+  for (const quality of QUALITY_STEPS) {
     const blob = await new Promise<Blob | null>((resolve) =>
       canvas.toBlob(resolve, 'image/jpeg', quality)
     );
