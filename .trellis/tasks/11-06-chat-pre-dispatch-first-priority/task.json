@@ -1,0 +1,60 @@
+{
+  "id": "chat-pre-dispatch-first-priority",
+  "name": "chat-pre-dispatch-first-priority",
+  "title": "压缩聊天调用前等待并记录未派发阶段",
+  "description": "优先解决 5 秒内尚未收到 SSE start 的工程等待",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P1",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-06",
+  "completedAt": null,
+  "branch": "codex/chat-pre-dispatch-first-priority",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "backend.business.conversation-generation"
+      ]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": [],
+      "apis": [
+        "POST /api/v1/conversations/:id/messages",
+        "POST /api/v1/conversations/:id/regenerate"
+      ],
+      "android": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": null
+      },
+      "ios": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": null
+      },
+      "api": {
+        "p95_baseline_ms": null,
+        "p95_target_ms": 2000
+      },
+      "measurement": {
+        "source": "Grafana 客户端首 token 与后端实际派发，按 release、型号、Telegram 平台分组",
+        "window": "北京时间 2026-11-04 11:09–11-06 11:09，发布后取等长窗口"
+      },
+      "notes": "页面加载不适用，改动限聊天 POST。当前新查询接口不可用，双端和 API P95 无可见样本，不填零。发布后比较相同型号分布与窗口，目标 API 派发前 P95 下降，Android/iOS 点击到首 token P95 不退化；另核对 5 秒超时率与连接池等待。 首轮工程观察目标为接口入口到首发实际派发 P95 2000ms，非线上基线。"
+    }
+  }
+}

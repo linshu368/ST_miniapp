@@ -15,10 +15,8 @@ import { FirstTokenDeadlineError } from '../features/generation/first-token-fall
 
 import type { FastifyBaseLogger, FastifyInstance, FastifyReply } from 'fastify';
 import { GenerationObservationRepository } from '../infrastructure/repositories/GenerationObservationRepository.js';
-import { fetchModelCatalogSnapshot } from '../platform/model-tiers.js';
 import { fetchPublicReplyStyleOptions } from '../features/conversations/reply-style-options.js';
 import {
-  DEFAULT_FIRST_TOKEN_DEADLINE_MS,
   ReportFirstTokenRequestSchema,
   fail,
   ok,
@@ -51,6 +49,8 @@ import { requireTelegramAuth, type TelegramUser } from '../middleware/auth.js';
 import { getOrCreateDbUser } from '../lib/user.js';
 import { requestLogger, type RequestLogger } from '../lib/logger.js';
 import { startSseResponseMetric } from '../lib/perf-metrics.js';
+import { createConversationPreparationTiming } from '../features/conversations/preparation-timing.js';
+import { prepareConversationAdmission } from '../features/conversations/turn-preparation.js';
 import {
   ChatSessionRepository,
   toChatSession,
@@ -65,7 +65,6 @@ import {
   applyUserPlaceholderToSession,
   createReplyStreamSink,
   runConversationTurn,
-  withConversationPreparationDeadline,
   sendConversationError,
   type ConversationStreamSink,
   type ConversationTurnMode,
@@ -680,6 +679,7 @@ export default async function conversationRoutes(app: FastifyInstance) {
     const receivedMonotonicAt = performance.now();
     // 与 Fastify onResponse 的起点对齐，包含鉴权和参数校验，而不是从进入业务编排才起算。
     const requestStartedMonotonicAt = receivedMonotonicAt - reply.elapsedTime;
+    const preparationTiming = createConversationPreparationTiming(requestStartedMonotonicAt);
     const responseMetric = startSseResponseMetric(
       reply,
       mode.kind === 'send'
@@ -691,28 +691,12 @@ export default async function conversationRoutes(app: FastifyInstance) {
     const sink = createReplyStreamSink(reply, {
       onFirstVisibleToken: responseMetric.firstVisibleToken,
     });
-    let preparationSignal = AbortSignal.timeout(DEFAULT_FIRST_TOKEN_DEADLINE_MS);
-
     try {
-      // 模型目录与 Telegram→内部用户映射相互独立；身份创建由 tg_id 唯一约束保证幂等。
-      // 同时启动可去掉冷缓存下的一段串行往返，仍共同受默认首字准备预算约束。
-      const [catalog, dbUser] = await withConversationPreparationDeadline(
-        Promise.all([fetchModelCatalogSnapshot(), getOrCreateDbUser(tgUser)]),
-        preparationSignal
+      const { catalog, session, deadlineMs } = await prepareConversationAdmission(
+        getOrCreateDbUser(tgUser),
+        (userId) => sessions.requireSession(sessionId, userId),
+        receivedMonotonicAt
       );
-      const firstTokenDeadlineMs =
-        catalog.catalog.first_token_deadline_ms ?? DEFAULT_FIRST_TOKEN_DEADLINE_MS;
-      preparationSignal = AbortSignal.timeout(
-        Math.max(1, Math.ceil(firstTokenDeadlineMs - (performance.now() - receivedMonotonicAt)))
-      );
-      // Bound read-only preparation by the configured first-token budget.
-      // Race each preparation await, never a block containing generation or quota writes.
-      preparationSignal.throwIfAborted();
-      const session = await withConversationPreparationDeadline(
-        sessions.requireSession(sessionId, dbUser.id),
-        preparationSignal
-      );
-      preparationSignal.throwIfAborted();
       const outcome = await runConversationTurn({
         session,
         mode,
@@ -720,7 +704,8 @@ export default async function conversationRoutes(app: FastifyInstance) {
         log,
         receivedAt,
         receivedMonotonicAt,
-        firstTokenDeadlineMs,
+        preparationTiming,
+        firstTokenDeadlineMs: deadlineMs,
         catalogSnapshot: catalog,
         requestId: input.requestId,
         thinkingEnabled: input.thinkingEnabled,
@@ -732,6 +717,7 @@ export default async function conversationRoutes(app: FastifyInstance) {
       failTurn(reply, sink, error, log);
       return undefined;
     } finally {
+      preparationTiming.incomplete();
       responseMetric.finish(reply.statusCode);
     }
   }

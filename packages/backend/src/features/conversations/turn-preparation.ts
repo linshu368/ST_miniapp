@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { DEFAULT_FIRST_TOKEN_DEADLINE_MS } from '@miniapp/shared';
+import type { ChatSessionRow } from '../../infrastructure/repositories/ChatSessionRepository.js';
 import type { ConversationHistoryRepository } from '../../infrastructure/repositories/ConversationHistoryRepository.js';
 import type { MiniappUserSettingsRepository } from '../../infrastructure/repositories/MiniappUserSettingsRepository.js';
 import type { RequestLogger } from '../../lib/logger.js';
-import type { fetchModelCatalogSnapshot } from '../../platform/model-tiers.js';
+import { fetchModelCatalogSnapshot } from '../../platform/model-tiers.js';
 import { fetchPlatformInstructions } from '../engine/index.js';
 import { FirstTokenDeadlineError } from '../generation/first-token-fallback.js';
 import { prepareGeneration, resolveModelForUser } from '../generation/index.js';
@@ -20,6 +21,37 @@ export function withConversationPreparationDeadline<T>(
     if (signal.aborted) abort();
     work.then(resolve, reject).finally(() => signal.removeEventListener('abort', abort));
   });
+}
+
+export async function prepareConversationAdmission(
+  user: Promise<{ id: string }>,
+  readOwnedSession: (userId: string) => Promise<ChatSessionRow>,
+  startedAt: number
+) {
+  let signal = AbortSignal.timeout(DEFAULT_FIRST_TOKEN_DEADLINE_MS);
+  const sessionRead = user.then(({ id }) => {
+    signal.throwIfAborted();
+    return readOwnedSession(id);
+  });
+  // Ownership depends on identity alone. Handle rejection while the catalog is still pending.
+  void sessionRead.catch(() => undefined);
+  try {
+    const [catalog] = await withConversationPreparationDeadline(
+      Promise.all([fetchModelCatalogSnapshot(), user]),
+      signal
+    );
+    const deadlineMs = catalog.catalog.first_token_deadline_ms ?? DEFAULT_FIRST_TOKEN_DEADLINE_MS;
+    signal = AbortSignal.timeout(
+      Math.max(1, Math.ceil(deadlineMs - (performance.now() - startedAt)))
+    );
+    const session = await withConversationPreparationDeadline(sessionRead, signal);
+    signal.throwIfAborted();
+    return { catalog, session, deadlineMs };
+  } catch (error) {
+    // A late identity must not start a session read after the route has failed.
+    signal = AbortSignal.abort(error);
+    throw error;
+  }
 }
 
 /**
@@ -40,7 +72,6 @@ export async function prepareTurnInputs(input: {
   log: RequestLogger;
 }) {
   const { userId, log } = input;
-  const setupFinishedAt = performance.now();
   // Server protection starts at route entry; only the browser can measure submit-to-display.
   const preparationRemainingMs =
     (input.firstTokenDeadlineMs ?? DEFAULT_FIRST_TOKEN_DEADLINE_MS) -
@@ -78,7 +109,6 @@ export async function prepareTurnInputs(input: {
       ]),
       preparationSignal
     );
-  const settingsFinishedAt = performance.now();
 
   if (instructions.degraded) {
     log.sys.error(
@@ -96,7 +126,5 @@ export async function prepareTurnInputs(input: {
     windowLimits,
     executionPreparation,
     preparationSignal,
-    setupFinishedAt,
-    settingsFinishedAt,
   };
 }
