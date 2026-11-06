@@ -1,4 +1,6 @@
 import type { DramaPlayback } from '@miniapp/shared';
+import type HlsPlayer from 'hls.js';
+import type { HlsEvents } from '@/lib/perf/drama-hls';
 
 const owners = new WeakMap<HTMLVideoElement, string>();
 
@@ -42,7 +44,8 @@ export function loadDramaSource(
   video: HTMLVideoElement,
   playback: DramaPlayback,
   ready: () => void,
-  failed: () => void
+  failed: () => void,
+  onHls?: (hls: HlsPlayer, events: HlsEvents) => void
 ) {
   const source = playback.play_url!;
   let disposed = false;
@@ -71,6 +74,12 @@ export function loadDramaSource(
           startLevel: 0,
         });
         destroy = () => hls.destroy();
+        try {
+          // 必须在 loadSource 之前订阅，否则会漏掉主清单的加载统计。
+          onHls?.(hls, Hls.Events);
+        } catch {
+          /* 诊断不能影响播放 */
+        }
         hls.on(Hls.Events.ERROR, (_event, data) => {
           if (data.fatal && !disposed) failed();
         });

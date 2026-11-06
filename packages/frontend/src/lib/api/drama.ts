@@ -21,6 +21,7 @@ import type {
 import { apiClient } from './client';
 import { dramaTiming } from '@/lib/perf/drama-observer';
 import { capAppleHlsQuality } from '@/lib/drama-media-source';
+import { warmDramaStreamOrigin } from '@/lib/drama-stream-origin';
 
 const DRAMA_CATALOG_CACHE_KEY = 'miniapp:drama-catalog:stream-v2';
 const DRAMA_CATALOG_STALE_MS = 15 * 60_000;
@@ -288,6 +289,7 @@ export function startDramaPlayIntent(id: string, videoId?: string): void {
     if (now - intent.startedAt > PLAY_INTENT_TTL_MS) playIntents.delete(key);
   }
   const promise = fetchDramaPlayback(id, videoId);
+  warmDramaStreamOrigin();
   // 没被接上时无人处理拒绝；接上的一方仍会拿到原始拒绝。
   promise.catch(() => undefined);
   playIntents.set(playIntentKey(id, videoId), { promise, startedAt: now });

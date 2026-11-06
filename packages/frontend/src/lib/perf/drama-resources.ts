@@ -4,6 +4,7 @@ import {
   type DramaResourceTiming,
 } from '@miniapp/shared';
 import type { DramaPlaybackTiming } from './drama-timing';
+import { parseDramaStreamOrigin } from '@/lib/drama-stream-origin';
 
 const finite = (n: number) => Number.isFinite(n);
 const round = (n: number) => Math.round(n * 10) / 10;
@@ -64,6 +65,23 @@ export function mediaResourceFields(
                     : undefined,
         }
       : {}),
+  };
+}
+
+/**
+ * Stream 的子清单与分片 URL 和主清单不同，只按 URL 精确匹配会漏掉它们；同一时刻只有一个播放源，
+ * 所以 Stream 源接收同域名的全部请求并按路径分类。其余源仍只认精确 URL。
+ */
+export function mediaRequestMatcher(
+  source: string
+): (name: string) => { kind?: DramaResourceTiming['kind'] } | undefined {
+  const origin = parseDramaStreamOrigin(source);
+  if (!origin) return (name) => (name === source ? {} : undefined);
+  return (name) => {
+    if (name === source) return { kind: 'manifest' };
+    if (!name.startsWith(`${origin}/`)) return undefined;
+    const path = name.slice(origin.length).split(/[?#]/, 1)[0] ?? '';
+    return { kind: path.endsWith('.m3u8') ? 'playlist' : 'segment' };
   };
 }
 
@@ -181,6 +199,7 @@ export function observeDramaResources(source: string, timing: DramaPlaybackTimin
   const entries: DramaResourceTiming[] = [];
   const seen = new Set<string>();
   const sourceAt = timing.marks.source_set ?? timing.startedAt;
+  const match = mediaRequestMatcher(source);
   let truncated = false;
   let disposed = false;
   let changedAfterFinal = false;
@@ -205,12 +224,9 @@ export function observeDramaResources(source: string, timing: DramaPlaybackTimin
     if (disposed) return;
     for (const resource of resources) {
       // Same URL reused by a later src generation must not steal an earlier request.
-      if (
-        resource.entryType !== 'resource' ||
-        resource.name !== source ||
-        resource.startTime < sourceAt
-      )
-        continue;
+      if (resource.entryType !== 'resource' || resource.startTime < sourceAt) continue;
+      const matched = match(resource.name);
+      if (!matched) continue;
       const entry = resource as PerformanceResourceTiming;
       const key = `${entry.startTime}/${entry.responseEnd}/${entry.duration}`;
       if (seen.has(key)) continue;
@@ -222,7 +238,7 @@ export function observeDramaResources(source: string, timing: DramaPlaybackTimin
       const fields = mediaResourceFields(entry, timing.startedAt);
       if (!fields) continue;
       seen.add(key);
-      entries.push(fields);
+      entries.push(matched.kind ? { ...fields, kind: matched.kind } : fields);
       if (timing.outcome) changedAfterFinal = true;
     }
     timing.networkTiming(snapshot());

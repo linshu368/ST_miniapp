@@ -101,3 +101,5 @@ last_verified_at: 2026-11-04
 ## Stream A/B 接入
 
 30 条有序环境清单由 Backend runtime-config 读取，账号固定 50:50 分配和入组比例分别哈希。列表同序置顶，鉴权后仅实际白名单单集参与实验。原生 HLS/hls.js 复用当前播放器，blob 源归属、一次 Supabase 恢复及累计重试等待贯通现有观测。Apple 原生 HLS 的 `play_url` 在取址返回处（`capAppleHlsQuality`）追加 `clientBandwidthHint=2.5`，主清单被裁成 ≤720p 单档（实测 30 部片均不出 1080p），该流上 iOS 不自动切换画质；Android hls.js 从最低档起播，不受影响。配置默认关闭，真机与生产验收状态见本次任务，操作说明见 `docs/drama-stream-ab.md`。
+
+Stream 域名由 `NEXT_PUBLIC_DRAMA_STREAM_ORIGIN` 提供（`lib/drama-stream-origin.ts`）：根布局输出 CORS 与非 CORS 两条 preconnect，播放意图（`startDramaPlayIntent`）时重新插入，因为空闲连接约 10s 被关闭。播放地址每次 `/play` 现签，取到地址后立即设置源，不做清单预取。起播诊断对 Stream 源接收同域名的全部资源计时并按路径标 `kind`（manifest/playlist/segment），其余源仍只认精确 URL；hls.js 路径由 `perf/drama-hls.ts` 记录清单、子清单、init 与分片的首字节、字节数、档位和入缓冲时间（≤16 条，起播终态后停止），经 `loadDramaSource` 的 `onHls` 在加载主清单前订阅。上报只含数值与分类，不含 URL。带 `delivery` 的实验组诊断由 Backend 全量写入 Loki，其余流量仍只留起播 ≥5s / 快进 ≥3s。

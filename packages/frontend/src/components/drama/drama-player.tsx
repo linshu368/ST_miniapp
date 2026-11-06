@@ -36,6 +36,7 @@ import { resolveNextVideoId } from '@/lib/drama-playback';
 import { dramaTiming } from '@/lib/perf/drama-observer';
 import { useDramaStreamPlayback } from './use-drama-stream-playback';
 import { loadDramaSource } from '@/lib/drama-media-source';
+import { observeDramaHls } from '@/lib/perf/drama-hls';
 import { observeDramaMedia } from '@/lib/perf/drama-media';
 import type { DramaPlaybackTiming } from '@/lib/perf/drama-timing';
 import type { DramaSummary } from '@miniapp/shared';
@@ -560,7 +561,8 @@ export function DramaPlayer({
           setFailed(true);
           setBuffering(false);
         }
-      }
+      },
+      (hls, events) => observeDramaHls(hls, events, timing)
     );
     return () => {
       cancelled = true;

@@ -139,6 +139,10 @@ export class DramaPlaybackTiming {
     };
   }
 
+  hlsTiming(hls: NonNullable<DramaStartupDiagnostics['hls']>): void {
+    if (!this.outcome) this.diagnostics.hls = hls;
+  }
+
   networkTiming(network: DramaNetworkTiming, supplement = false): void {
     this.diagnostics.network = network;
     if (supplement && this.context && !this.networkReported) {
