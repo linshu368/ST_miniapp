@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { loadDramaSource, ownsDramaSource } from './drama-media-source';
+import { capAppleHlsQuality, loadDramaSource, ownsDramaSource } from './drama-media-source';
 const state = vi.hoisted(() => ({
   destroyed: vi.fn(),
   created: vi.fn(),
@@ -89,4 +89,22 @@ it('keeps native HLS on iPhone', () => {
   expect(element.src).toBe(playback.play_url);
   expect(ready).toHaveBeenCalledOnce();
   expect(state.created).not.toHaveBeenCalled();
+});
+it('caps Apple HLS quality with a bandwidth hint on the playback URL', () => {
+  vi.stubGlobal('navigator', { userAgent: IPHONE_UA });
+  expect(capAppleHlsQuality(playback).play_url).toBe(
+    'https://example.invalid/manifest?clientBandwidthHint=2.5'
+  );
+  expect(
+    capAppleHlsQuality({ ...playback, play_url: 'https://example.invalid/m?a=1' }).play_url
+  ).toBe('https://example.invalid/m?a=1&clientBandwidthHint=2.5');
+});
+it('leaves Android, MP4 and unplayable results untouched', () => {
+  vi.stubGlobal('navigator', { userAgent: ANDROID_UA });
+  expect(capAppleHlsQuality(playback)).toBe(playback);
+  vi.stubGlobal('navigator', { userAgent: IPHONE_UA });
+  const mp4 = { ...playback, format: 'mp4' as const };
+  expect(capAppleHlsQuality(mp4)).toBe(mp4);
+  const none = { ...playback, playable: false, play_url: null };
+  expect(capAppleHlsQuality(none)).toBe(none);
 });

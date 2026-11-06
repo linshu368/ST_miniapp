@@ -100,4 +100,4 @@ last_verified_at: 2026-11-04
 
 ## Stream A/B 接入
 
-30 条有序环境清单由 Backend runtime-config 读取，账号固定 50:50 分配和入组比例分别哈希。列表同序置顶，鉴权后仅实际白名单单集参与实验。原生 HLS/hls.js 复用当前播放器，blob 源归属、一次 Supabase 恢复及累计重试等待贯通现有观测。配置默认关闭，真机与生产验收状态见本次任务，操作说明见 `docs/drama-stream-ab.md`。
+30 条有序环境清单由 Backend runtime-config 读取，账号固定 50:50 分配和入组比例分别哈希。列表同序置顶，鉴权后仅实际白名单单集参与实验。原生 HLS/hls.js 复用当前播放器，blob 源归属、一次 Supabase 恢复及累计重试等待贯通现有观测。Apple 原生 HLS 的 `play_url` 在取址返回处（`capAppleHlsQuality`）追加 `clientBandwidthHint=2.5`，主清单被裁成 ≤720p 单档（实测 30 部片均不出 1080p），该流上 iOS 不自动切换画质；Android hls.js 从最低档起播，不受影响。配置默认关闭，真机与生产验收状态见本次任务，操作说明见 `docs/drama-stream-ab.md`。
