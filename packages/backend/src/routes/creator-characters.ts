@@ -27,6 +27,13 @@ import {
 } from '../features/generation/creator-review.js';
 
 const idSchema = CreatorCharacterIdSchema;
+
+/** 审核不可用的分类标签（如 http_429、invalid_response）；只认固定词表形态，绝不透出供应商正文。 */
+function reviewFailureOf(err: unknown): string {
+  const failure = err && typeof err === 'object' && 'failure' in err ? err.failure : null;
+  return typeof failure === 'string' && /^[a-z0-9_]{1,40}$/.test(failure) ? failure : 'unknown';
+}
+
 export default async function creatorCharacterRoutes(app: FastifyInstance) {
   const repo = new CreatorCharacterRepository();
   const ownerOptions = { preHandler: [requireTelegramAuth], bodyLimit: 8 * 1024 * 1024 };
@@ -51,7 +58,12 @@ export default async function creatorCharacterRoutes(app: FastifyInstance) {
           return reply.code(422).send(fail(CREATOR_REVIEW_REJECTED_CODE, err.message));
         if (code === CREATOR_REVIEW_UNAVAILABLE_CODE) {
           request.log.warn(
-            { err: Object.assign(new Error('Creator review unavailable'), { code }), action },
+            {
+              err: Object.assign(new Error('Creator review unavailable'), { code }),
+              event: 'creator.review.unavailable',
+              failure: reviewFailureOf(err),
+              action,
+            },
             'creator review unavailable'
           );
           return reply

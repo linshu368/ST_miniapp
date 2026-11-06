@@ -185,6 +185,42 @@ describe('creator public publication review', () => {
     expect(mocks.clearLobby).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['http_429', 'http_429'],
+    ['material_unavailable', 'material_unavailable'],
+    [undefined, 'unknown'],
+    ['Bad value: provider body', 'unknown'],
+  ])('logs review failure %s as %s without provider text', async (failure, logged) => {
+    const lines: string[] = [];
+    const loggedApp = Fastify({
+      logger: { level: 'warn', stream: { write: (line: string) => void lines.push(line) } },
+    });
+    loggedApp.addHook('preHandler', async (request) => {
+      request.user = { id: 1, first_name: 'Fixture' };
+    });
+    await loggedApp.register(creatorCharacterRoutes);
+    await loggedApp.ready();
+    mocks.review.mockRejectedValue(
+      Object.assign(new Error('untrusted provider body and prompt'), {
+        code: CREATOR_REVIEW_UNAVAILABLE_CODE,
+        failure,
+      })
+    );
+    const result = await loggedApp.inject({
+      method: 'POST',
+      url: '/api/creator/characters/' + cardId + '/publish',
+      payload: { expected_revision: 2, visibility: 'public' },
+    });
+    await loggedApp.close();
+    expect(result.statusCode).toBe(503);
+    const entry = lines
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+      .find((line) => line.event === 'creator.review.unavailable');
+    expect(entry).toMatchObject({ failure: logged, action: 'publish' });
+    expect(lines.join('')).not.toContain('untrusted');
+    expect(lines.join('')).not.toContain('Bad value');
+  });
+
   it('does not let the browser supply a review decision', async () => {
     expect(
       (await publish('publish', 'public', { review: { approved: true, reason: 'bypass' } }))
