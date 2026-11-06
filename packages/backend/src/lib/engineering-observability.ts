@@ -429,34 +429,25 @@ export function observeGenerationPrepare(input: {
   });
 }
 
-/** Non-overlapping wall-clock gates from route entry to dispatch, not a sum of parallel reads. */
+export type GenerationPreparationStage =
+  | 'route_setup'
+  | 'settings'
+  | 'turn_open'
+  | 'context'
+  | 'dispatch_gate';
+
 export function observeGenerationPreparationStages(input: {
   provider: string;
   model: string;
-  stages: Partial<
-    Record<'route_setup' | 'settings' | 'turn_open' | 'context' | 'dispatch_gate', number>
-  >;
+  stages?: Partial<Record<GenerationPreparationStage, number>>;
+  log?: MetricAttributes;
 }) {
   if (!active) return;
   const attrs = identity(input);
-  const detail: MetricAttributes = { ...attrs };
-  let total = 0;
-  for (const stage of [
-    'route_setup',
-    'settings',
-    'turn_open',
-    'context',
-    'dispatch_gate',
-  ] as const) {
-    const duration = input.stages[stage];
-    if (duration === undefined || !Number.isFinite(duration) || duration < 0) continue;
-    active.duration('st_generation_pre_dispatch_stage', duration, { ...attrs, stage });
-    detail[`${stage}_ms`] = Math.round(duration);
-    total += duration;
-  }
-  // Aggregates cover all turns; only slow preparation adds a diagnostic event.
-  if (total >= 1_000)
-    active.event('generation.pre_dispatch', { ...detail, total_ms: Math.round(total) });
+  if (input.stages)
+    for (const [stage, duration] of Object.entries(input.stages))
+      active.duration('st_generation_pre_dispatch_stage', duration, { ...attrs, stage });
+  if (input.log) active.event('generation.pre_dispatch', { ...attrs, ...input.log });
 }
 
 export type GenerationOutcome =

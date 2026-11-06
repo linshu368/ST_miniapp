@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ChatSessionRow } from '../../infrastructure/repositories/ChatSessionRepository.js';
 import type { RequestLogger } from '../../lib/logger.js';
+import { createConversationPreparationTiming } from './preparation-timing.js';
 import type { ConversationStreamSink } from './sse.js';
 
 const mocks = vi.hoisted(() => ({
@@ -173,12 +174,24 @@ describe('turn lifecycle recovery', () => {
       };
     });
     const turn = input({ kind: 'send', content: 'synthetic' });
-    const running = runConversationTurn({ ...turn, firstTokenDeadlineMs: 6000 });
+    const running = runConversationTurn({
+      ...turn,
+      receivedMonotonicAt: started,
+      preparationTiming: createConversationPreparationTiming(started - 250),
+      firstTokenDeadlineMs: 6000,
+    });
     await vi.advanceTimersByTimeAsync(4299);
     expect(deliveredAt).toBeUndefined();
     await vi.advanceTimersByTimeAsync(2);
     await running;
     expect(deliveredAt).toBe(4300);
+    expect(turn.sink.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'start',
+        server_elapsed_ms: 2550,
+        first_token_deadline_ms: 6000,
+      })
+    );
     expect(turn.sink.send).toHaveBeenCalledWith({ type: 'delta', text: 'synthetic first token' });
     expect(mocks.begin).toHaveBeenCalledTimes(2);
     expect(mocks.prepare).toHaveBeenCalledOnce();

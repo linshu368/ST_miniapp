@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const SESSION = '11111111-2222-4333-8444-555555555555';
 const routing = vi.hoisted(() => ({
+  catalog: vi.fn(),
   requireSession: vi.fn(),
   runTurn: vi.fn(),
   user: vi.fn(),
@@ -20,10 +21,7 @@ vi.mock('../middleware/auth.js', () => ({
 }));
 vi.mock('../lib/user.js', () => ({ getOrCreateDbUser: routing.user }));
 vi.mock('../platform/model-tiers.js', () => ({
-  fetchModelCatalogSnapshot: async () => ({
-    catalog: { first_token_deadline_ms: 6000 },
-    version: 1,
-  }),
+  fetchModelCatalogSnapshot: routing.catalog,
 }));
 vi.mock('../infrastructure/repositories/ChatSessionRepository.js', () => ({
   ChatSessionRepository: class {
@@ -75,6 +73,7 @@ vi.mock('../features/conversations/index.js', () => ({
 
 beforeEach(() => {
   Object.values(routing).forEach((mock) => mock.mockReset());
+  routing.catalog.mockResolvedValue({ catalog: { first_token_deadline_ms: 6000 }, version: 1 });
   routing.user.mockResolvedValue({ id: 'test-user' });
   routing.requireSession.mockResolvedValue({ id: SESSION, user_id: 'test-user' });
   routing.cancel.mockResolvedValue({ id: SESSION, status: 'stream_interrupted' });
@@ -179,6 +178,66 @@ async function buildApp() {
 }
 
 describe('thinking request validation before accepting a conversation turn', () => {
+  it('checks ownership while the catalog is pending and only then admits the turn', async () => {
+    let releaseCatalog!: () => void;
+    const pendingCatalog = new Promise<void>((resolve) => {
+      releaseCatalog = resolve;
+    });
+    routing.catalog.mockImplementation(async () => {
+      await pendingCatalog;
+      return { catalog: { first_token_deadline_ms: 5000 }, version: 1 };
+    });
+    const app = await buildApp();
+    const response = app
+      .inject({
+        method: 'POST',
+        url: `/api/v1/conversations/${SESSION}/messages`,
+        payload: { content: 'hello' },
+      })
+      .then((result) => result);
+    try {
+      await vi.waitFor(() => {
+        expect(routing.requireSession).toHaveBeenCalledExactlyOnceWith(SESSION, 'test-user');
+      });
+      expect(routing.runTurn).not.toHaveBeenCalled();
+      releaseCatalog();
+      expect((await response).statusCode).toBe(502);
+      expect(routing.runTurn).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ firstTokenDeadlineMs: 5000 })
+      );
+    } finally {
+      releaseCatalog();
+      await response;
+      await app.close();
+    }
+  });
+
+  it('does not read the session after a catalog failure and a late identity', async () => {
+    let releaseIdentity!: (identity: { id: string }) => void;
+    routing.user.mockReturnValue(
+      new Promise((resolve) => {
+        releaseIdentity = resolve;
+      })
+    );
+    routing.catalog.mockRejectedValue(new Error('catalog unavailable'));
+    const app = await buildApp();
+    try {
+      const response = await app.inject({
+        method: 'POST',
+        url: `/api/v1/conversations/${SESSION}/messages`,
+        payload: { content: 'hello' },
+      });
+      expect(response.statusCode).toBe(500);
+      releaseIdentity({ id: 'test-user' });
+      await Promise.resolve();
+      expect(routing.requireSession).not.toHaveBeenCalled();
+      expect(routing.runTurn).not.toHaveBeenCalled();
+    } finally {
+      releaseIdentity({ id: 'test-user' });
+      await app.close();
+    }
+  });
+
   it.each(['messages', 'regenerate'] as const)(
     '%s declares v4 before generation and keeps legacy requests compatible',
     async (path) => {
