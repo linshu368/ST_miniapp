@@ -1,0 +1,8 @@
+{"file":".trellis/spec/backend/app/index.md","reason":"Backend 入口与最低质量门禁"}
+{"file":".trellis/spec/backend/app/data-reliability-and-security.md","reason":"外部调用、日志、降级与可观测性约束"}
+{"file":".trellis/spec/backend/app/modules/business/conversation-generation.md","reason":"统一 generation 出口、供应商失败与计费边界"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"跨层边界与失败路径检查"}
+{"file": "packages/backend/src/scripts/payment-alert-monitor.ts", "reason": "余额探针挂载与 outbox drain 同进程"}
+{"file": "packages/backend/src/features/payment/usecases/PaymentAlertMonitor.ts", "reason": "恢复防抖与 monitor 模式参考"}
+{"file": "packages/backend/src/platform/venice-http.ts", "reason": "Venice 出站与代理"}
+{"file": "packages/shared/src/api/alerting.ts", "reason": "AlertEvaluation 信封与 metric unit 约束"}

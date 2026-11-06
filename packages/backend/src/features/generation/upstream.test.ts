@@ -5,6 +5,7 @@ import { pipeline } from 'node:stream/promises';
 import {
   createSseTap,
   resolveUpstreamUrl,
+  resolveProviderUpstream,
   forwardToUpstream,
   type SseTapResult,
 } from './upstream.js';
@@ -48,6 +49,41 @@ const DELTA = (content: string) => sseChunk({ choices: [{ delta: { content } }] 
 const DELTA_A = sseChunk({ id: 'gen-1', choices: [{ delta: { content: '你好' } }] });
 const DELTA_B = sseChunk({ id: 'gen-1', choices: [{ delta: { content: '，世界' } }] });
 const FINISH = sseChunk({ id: 'gen-1', choices: [{ delta: {}, finish_reason: 'stop' }] });
+
+describe('Surplus upstream routing', () => {
+  it('uses the Surplus env URL/key and omits OpenRouter-only headers', async () => {
+    const previousBaseUrl = process.env.SURPLUS_API_BASE_URL;
+    const previousApiKey = process.env.SURPLUS_API_KEY;
+    process.env.SURPLUS_API_BASE_URL = 'https://surplus.example/custom/v1/';
+    process.env.SURPLUS_API_KEY = 'surplus-test-key';
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchImpl);
+    try {
+      const upstream = resolveProviderUpstream('surplus', 'vendor/model');
+      expect(upstream).toEqual({
+        provider: 'surplus',
+        url: 'https://surplus.example/custom/v1/chat/completions',
+        apiKey: 'surplus-test-key',
+        model: 'vendor/model',
+      });
+
+      await forwardToUpstream({ ...upstream, method: 'POST', body: '{}' });
+      const init = fetchImpl.mock.calls[0]?.[1];
+      expect(init?.headers).toMatchObject({
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer surplus-test-key',
+      });
+      expect(init?.headers).not.toHaveProperty('HTTP-Referer');
+      expect(init?.headers).not.toHaveProperty('X-Title');
+    } finally {
+      vi.unstubAllGlobals();
+      if (previousBaseUrl === undefined) delete process.env.SURPLUS_API_BASE_URL;
+      else process.env.SURPLUS_API_BASE_URL = previousBaseUrl;
+      if (previousApiKey === undefined) delete process.env.SURPLUS_API_KEY;
+      else process.env.SURPLUS_API_KEY = previousApiKey;
+    }
+  });
+});
 
 describe('real fetch network timing', () => {
   it('isolates concurrent attempts and keeps the aborted response timestamp missing', async () => {

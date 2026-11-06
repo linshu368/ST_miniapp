@@ -354,6 +354,8 @@ T9 专表 contract：`20261016_openrouter_chat_history_drop_legacy_aliases.sql` 
 
 ### 4.9 图片创作广场（代码完成，实库 migration/canary 待执行）
 
+模型目录的可选 `pricing_factors` 与 USD `standard_prices` 一起经过运营草稿、发布和回滚；Admin 重新打开读回保存参数，实际报价与扣费继续读取已发布的各档位 `credits`，不随参数编辑自动重算。
+
 图片广场与角色回复图片完全独立：共享契约在 `shared/src/api/image-plaza.ts`，Backend 在 `features/image-plaza/` 与 `routes/image-plaza.ts`，Frontend 使用 `/create`、`/create/work/[workId]` 和 `/create/studio/[conversationId]`。报价、异步 Venice 生成、Storage、结算、分享返利、feed/详情/点赞/用同款都走这套独立链路；提示词在 textarea、shared schema、作品快照、attempt/message、数据库和上游调用中统一最多 2,000 字，不静默截断。Feed 始终返回启用标签目录；业务标签按 `snapshot.prompt_zh` 中文 label 字面包含筛选，「全部」不限制；分享时客户端未传标签即自动打标（2026-11-03 起恒开启，后端不再读 `image_plaza_tags_feature_enabled`）。
 
 `media_plaza.image_plaza_works` 是公开作品投影，`media_plaza.image_plaza_artifacts` 保存自有 Storage 元数据。`origin=generated` 必须关联真实用户和已结算 attempt；`origin=civitai_seed` 不得伪造用户、会话、attempt 或账务，只在内部保存 Civitai source ID/URL/heat，公开 DTO 仅返回自有签名 URL、模型和作品快照。本地 `like_count` 始终只由 `media_plaza.image_plaza_likes` 重算，不能混入来源热度。分享返利仍只允许 generated artifact，并通过 `billing.grant_bonus_credits` 发放。
@@ -656,30 +658,32 @@ packages/backend/src/
 
 ## 11. 环境变量（backend 主要项）
 
-| 变量                                                                               | 用途                                                                    |
-| ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `DATABASE_ENV` + `PROD_*` / `TEST_*` 变量组                                        | 选择环境并注入下面的标准名；非 prod 连生产库需 `ALLOW_PROD_DATABASE`    |
-| `DATABASE_URL` / `DIRECT_URL`                                                      | Prisma 连接                                                             |
-| `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` / `SUPABASE_PROJECT_REF`              | supabase-js 与环境隔离校验                                              |
-| `LLM_UPSTREAM_URL` / `LLM_API_KEY`                                                 | LLM 上游（默认 OpenRouter）与平台真实 key，仅 backend 持有              |
-| `MINIMAX_API_KEY` / `MINIMAX_TTS_URL` / `MINIMAX_TIMEOUT_MS`                       | 语音合成上游                                                            |
-| `DEEPSEEK_API_KEY` / `DEEPSEEK_URL` / `DEEPSEEK_MODEL`                             | 语音台词写稿上游                                                        |
-| `LIAOBOTS_AUTH` / `LIAOBOTS_BASE` / `GROK_MODEL`                                   | 图片 Grok/Liaobots 主上游；鉴权仅 backend secret                        |
-| `REPLICATE_TOKEN` / `REPLICATE_BASE` / `Z_MODEL`                                   | Grok 失败后的 Replicate Z 图片降级通道                                  |
-| `IMAGE_GENERATION_TIMEOUT_MS` / `IMAGE_DOWNLOAD_TIMEOUT_MS`                        | 图片 provider 与下载超时                                                |
-| `IMAGE_WORKER_ENABLED` / `IMAGE_WORKER_INTERVAL_MS` / `IMAGE_WORKER_LEASE_SECONDS` | 图片数据库任务 worker 与租约控制                                        |
-| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_WEBHOOK_SECRET` / `BOT_INTERNAL_SECRET`           | InitData 验签、webhook 与 Bot 内部端点鉴权                              |
-| `TELEGRAM_COMMUNITY_BOT_TOKEN`                                                     | 官方社群 Bot：成员校验 `getChatMember` 与 community-webhook 密钥派生    |
-| `CS_SERVICE_URL` / `CS_SERVICE_SECRET`                                             | 独立客服服务地址和共享密钥（Bot 转发与 `/api/support/*` 代理）          |
-| `ADMIN_PLATFORM_URL`                                                               | 运营后台 CORS                                                           |
-| `FRONTEND_URL`                                                                     | CORS 与支付回跳                                                         |
-| `PAYMENT_ENABLED` / `PAYMENT_RETURN_URL` / `VEXUTOPIA_*`                           | 支付开关、https 回跳地址、Vexutopia API Key / Base URL / Webhook secret |
-| `CHARACTER_STORAGE_BUCKET`                                                         | 角色卡资源 bucket（默认 `character-assets`）                            |
-| `DEFAULT_USER_AVATAR_URL`                                                          | 平台默认头像                                                            |
-| `CHAT_HISTORY_SYNC_ENABLED`                                                        | OpenRouter 用量回捞定时任务开关                                         |
-| `LOBBY_RANKING_REFRESH_ENABLED`                                                    | 大厅推荐排序分每日重算开关                                              |
-| `SENTRY_DSN` / `SENTRY_ENVIRONMENT` / `SENTRY_RELEASE`                             | 异常上报（release 缺省回退 `RAILWAY_GIT_COMMIT_SHA`）                   |
-| `MOCK_AUTH` / `DEV_AUTH_BYPASS` / `LOG_LEVEL` / `LOG_PRETTY`                       | 本地开发与回归脚本旁路                                                  |
+| 变量                                                                               | 用途                                                                          |
+| ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `DATABASE_ENV` + `PROD_*` / `TEST_*` 变量组                                        | 选择环境并注入下面的标准名；非 prod 连生产库需 `ALLOW_PROD_DATABASE`          |
+| `DATABASE_URL` / `DIRECT_URL`                                                      | Prisma 连接                                                                   |
+| `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` / `SUPABASE_PROJECT_REF`              | supabase-js 与环境隔离校验                                                    |
+| `LLM_UPSTREAM_URL` / `LLM_API_KEY`                                                 | LLM 上游（默认 OpenRouter）与平台真实 key，仅 backend 持有                    |
+| `VENICE_API_BASE_URL` / `VENICE_API_KEY`                                           | Venice OpenAI-compatible 上游与后端凭据                                       |
+| `SURPLUS_API_BASE_URL` / `SURPLUS_API_KEY`                                         | Surplus Intelligence OpenAI-compatible 上游与后端凭据；Admin 浏览器不接触密钥 |
+| `MINIMAX_API_KEY` / `MINIMAX_TTS_URL` / `MINIMAX_TIMEOUT_MS`                       | 语音合成上游                                                                  |
+| `DEEPSEEK_API_KEY` / `DEEPSEEK_URL` / `DEEPSEEK_MODEL`                             | 语音台词写稿上游                                                              |
+| `LIAOBOTS_AUTH` / `LIAOBOTS_BASE` / `GROK_MODEL`                                   | 图片 Grok/Liaobots 主上游；鉴权仅 backend secret                              |
+| `REPLICATE_TOKEN` / `REPLICATE_BASE` / `Z_MODEL`                                   | Grok 失败后的 Replicate Z 图片降级通道                                        |
+| `IMAGE_GENERATION_TIMEOUT_MS` / `IMAGE_DOWNLOAD_TIMEOUT_MS`                        | 图片 provider 与下载超时                                                      |
+| `IMAGE_WORKER_ENABLED` / `IMAGE_WORKER_INTERVAL_MS` / `IMAGE_WORKER_LEASE_SECONDS` | 图片数据库任务 worker 与租约控制                                              |
+| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_WEBHOOK_SECRET` / `BOT_INTERNAL_SECRET`           | InitData 验签、webhook 与 Bot 内部端点鉴权                                    |
+| `TELEGRAM_COMMUNITY_BOT_TOKEN`                                                     | 官方社群 Bot：成员校验 `getChatMember` 与 community-webhook 密钥派生          |
+| `CS_SERVICE_URL` / `CS_SERVICE_SECRET`                                             | 独立客服服务地址和共享密钥（Bot 转发与 `/api/support/*` 代理）                |
+| `ADMIN_PLATFORM_URL`                                                               | 运营后台 CORS                                                                 |
+| `FRONTEND_URL`                                                                     | CORS 与支付回跳                                                               |
+| `PAYMENT_ENABLED` / `PAYMENT_RETURN_URL` / `VEXUTOPIA_*`                           | 支付开关、https 回跳地址、Vexutopia API Key / Base URL / Webhook secret       |
+| `CHARACTER_STORAGE_BUCKET`                                                         | 角色卡资源 bucket（默认 `character-assets`）                                  |
+| `DEFAULT_USER_AVATAR_URL`                                                          | 平台默认头像                                                                  |
+| `CHAT_HISTORY_SYNC_ENABLED`                                                        | OpenRouter 用量回捞定时任务开关                                               |
+| `LOBBY_RANKING_REFRESH_ENABLED`                                                    | 大厅推荐排序分每日重算开关                                                    |
+| `SENTRY_DSN` / `SENTRY_ENVIRONMENT` / `SENTRY_RELEASE`                             | 异常上报（release 缺省回退 `RAILWAY_GIT_COMMIT_SHA`）                         |
+| `MOCK_AUTH` / `DEV_AUTH_BYPASS` / `LOG_LEVEL` / `LOG_PRETTY`                       | 本地开发与回归脚本旁路                                                        |
 
 Vercel 侧关键变量：`NEXT_PUBLIC_API_URL`（用户端 backend 公网域名）。Backend CORS 对应变量由 `packages/backend/src/platform/config.ts` 解析；`ops/env/*.example` 示例文件比实际清单窄，以代码为准。
 
@@ -846,3 +850,8 @@ Frontend `/creation/data` → `lib/api/creator-analytics.ts`（用户隔离React
 部署前应用 20261103_public_creator_space_index.sql 为按别名查找创建索引，再独立执行 20261103_chat_sessions_reply_like_lookup_index.sql 并验证覆盖索引有效，最后发布后端与前端。每页最多12张，点赞（卡片赞+回复赞）和收藏直接随该页返回；用于判断是否有下一页的第13张不查计数。列表简介最多120字。首次加载的私有作品封面批量读取和签名，后续复用签名缓存。回退应用可保留索引。隔离数据库验证复用 scripts/test-creator-characters-local.sh。
 
 短剧 Cloudflare Stream A/B 的配置、同序置顶、播放器恢复和验收顺序见 [Stream A/B 接入](drama-stream-ab.md)。
+本地新增可选 `DRAMA_STREAM_SAMPLING_COHORT`，由 runtime-config 严格解析当前实验及两个不同的 Telegram 用户 ID，只覆盖这两个采样账号的分组；实验开关、入组及单集准入仍生效，其他用户保持原哈希。不增加接口或数据库对象；后端部署与生产配置分别核验，源码不代表生产已启用。Mac 端独立原生触摸工具沿用既有性能采集，不提供新的性能统计真相。
+
+### VIP 混合奖励（2026-11-05）
+
+`20261105_vip_mixed_rewards.sql` 先经测试环境再生产执行，随后发布应用，最后通过运营 CLI 发布混合签到与开卡赠礼配置。旧签到数字及旧订单继续兼容；开卡奖励使用订单两钱包快照，同事务入账且不增加实付收入。回退先恢复旧配置，保留混合发放支持处理在途订单。详见 `.trellis/tasks/11-05-vip-mixed-rewards/`。

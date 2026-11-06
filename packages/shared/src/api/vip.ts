@@ -41,13 +41,14 @@ export const VipPlanSchema = z
     price_cents: z.number().int().min(1).max(VIP_PLAN_PRICE_CENTS_MAX),
     duration_days: z.number().int().min(1).max(VIP_PLAN_DURATION_DAYS_MAX),
     bonus_credits: z.number().int().min(0).max(VIP_PLAN_BONUS_CREDITS_MAX),
+    bonus_main_credits: z.number().int().min(0).max(VIP_PLAN_BONUS_CREDITS_MAX).optional(),
     title: z.string().trim().min(1).max(40),
     description: z.string().trim().max(200).nullable(),
     badge_text: z.string().trim().min(1).max(40).nullable(),
     available: z.boolean(),
   })
   .superRefine((plan, ctx) => {
-    if (plan.id === 'week' && plan.bonus_credits !== 0) {
+    if (plan.id === 'week' && (plan.bonus_credits !== 0 || (plan.bonus_main_credits ?? 0) !== 0)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['bonus_credits'],
@@ -86,6 +87,8 @@ export const VipStatusSchema = z.object({
       checkin_base_credits: nonnegativeInteger,
       /** VIP 每日签到绝对额。 */
       checkin_vip_credits: nonnegativeInteger,
+      checkin_main_credits: nonnegativeInteger.optional(),
+      checkin_bonus_credits: nonnegativeInteger.optional(),
     })
     .optional(),
 });

@@ -1,0 +1,67 @@
+{
+  "id": "fix-frontend-backend-observability",
+  "name": "fix-frontend-backend-observability",
+  "title": "修复前后端可观测性覆盖与耗时口径",
+  "description": "补齐 Frontend/Backend Sentry 与 Grafana 运行时覆盖，修正页面、HTTP、聊天和流式请求耗时终点，并输出修改后清单。",
+  "status": "in_progress",
+  "dev_type": "bugfix",
+  "scope": "frontend,backend,docs,observability",
+  "package": "frontend,backend",
+  "priority": "P1",
+  "creator": "cline",
+  "assignee": "cline",
+  "createdAt": "2026-11-05",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "no_module_change",
+      "reason": "本次只修正既有跨模块 Sentry/Grafana 工程遥测覆盖与计时边界，不改变业务模块职责、接口、数据契约、状态机或部署拓扑；完整测量定义与覆盖清单写入 docs/grafana。"
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": [
+        "/creation/characters/new",
+        "/creation/characters/:id/edit",
+        "/creation/data",
+        "/creators/:id",
+        "/wishes",
+        "/wishes/:id"
+      ],
+      "apis": [
+        "Frontend apiClient JSON requests",
+        "POST /api/v1/conversations/:id/messages|regenerate",
+        "POST /api/creator/polish",
+        "GET /api/lobby-characters"
+      ],
+      "android": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 2000
+      },
+      "ios": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 2000
+      },
+      "api": {
+        "p95_baseline_ms": 3858,
+        "p95_target_ms": 2000
+      },
+      "measurement": {
+        "source": "历史 Grafana Cloud Loki production engineering_v1；新增页面此前未登记，当前 Sentry API token 返回 403，缺失基线保留 null。",
+        "window": "历史窗口 2026-10-27 至 2026-11-03；发布后按 release/platform/route 连续观察两个完整 24h 窗口，每组 N<100 延长窗口。"
+      },
+      "notes": "普通 API 旧聚合最高约 3858ms；修正 route 分组后不跨版本混算。聊天与 creator polish 流按 first-token/full-reply 独立验收，不纳入普通 API 2 秒目标；观测变更本身不得造成超过 5% 的业务 P95 回退。"
+    }
+  }
+}

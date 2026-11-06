@@ -239,7 +239,9 @@ function buildUpstreamBody(
           reasoning: { enabled: thinkingEnabled },
           ...(request.stream ? { stream_options: { include_usage: true } } : {}),
         }
-      : { reasoning: { enabled: thinkingEnabled, exclude: !thinkingEnabled } }),
+      : request.model.provider === 'openrouter'
+        ? { reasoning: { enabled: thinkingEnabled, exclude: !thinkingEnabled } }
+        : {}),
     ...(request.promptCaching &&
     capability.promptCachingMode === 'venice_prompt_cache_key' &&
     request.sessionId
@@ -549,7 +551,7 @@ async function executeGeneration(
         onDispatch?: () => void,
         attempt?: { role: 'primary' | 'fallback'; timing: UpstreamTiming }
       ): Promise<Response> => {
-        const route = resolveProviderUpstream(model.provider);
+        const route = resolveProviderUpstream(model.provider, model.providerModelId);
         if (!route.apiKey) throw new Error(`Missing key for ${model.provider}`);
         let preferences =
           model.provider === 'openrouter' ? preferencesFor(model.providerModelId) : null;
@@ -601,12 +603,10 @@ async function executeGeneration(
           });
         }
         const response = await forwardToUpstream({
-          url: route.url,
+          ...route,
           method: 'POST',
           body,
           signal: attemptSignal,
-          apiKey: route.apiKey,
-          provider: model.provider,
           timing: attempt?.timing,
         });
         if (!onDispatch) observation.headersMs = performance.now() - observation.directDispatchedAt;

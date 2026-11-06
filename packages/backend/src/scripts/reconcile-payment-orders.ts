@@ -1,3 +1,4 @@
+import '../instrumentation.js';
 import '../platform/config.js';
 import { setTimeout as sleep } from 'node:timers/promises';
 
@@ -10,12 +11,18 @@ import { VexutopiaPaymentGateway } from '../infrastructure/payment/VexutopiaPaym
 import { createLogger } from '../lib/logger.js';
 import { closeSupabaseClient } from '../lib/supabase.js';
 import { config } from '../platform/config.js';
+import {
+  observeBackgroundRun,
+  startStandaloneObservability,
+} from '../lib/background-observability.js';
 
 const log = createLogger('payment');
 const orders = new MiniappPaymentOrderRepository();
 const gateway = new VexutopiaPaymentGateway();
 const shutdown = new AbortController();
 let exitCode = 0;
+let passStartedAt = performance.now();
+const stopObservability = startStandaloneObservability();
 
 for (const signal of ['SIGTERM', 'SIGINT'] as const) {
   process.once(signal, () => {
@@ -30,15 +37,17 @@ log.sys.info(
 
 try {
   await runPaymentReconciliationLoop({
-    runPass: () =>
-      runPaymentReconciliation({
+    runPass: () => {
+      passStartedAt = performance.now();
+      return runPaymentReconciliation({
         orders,
         gateway,
         log,
         paymentEnabled: config.payment.enabled,
         trigger: 'fast_reconcile',
         events: orders,
-      }),
+      });
+    },
     sleep: async (milliseconds, signal) => {
       try {
         await sleep(milliseconds, undefined, { signal });
@@ -49,6 +58,11 @@ try {
     },
     signal: shutdown.signal,
     onPass: (result) => {
+      observeBackgroundRun({
+        job: 'payment_reconciliation',
+        outcome: !config.payment.enabled ? 'skipped' : result.lookupFailed ? 'partial' : 'success',
+        startedAt: passStartedAt,
+      });
       if (!config.payment.enabled) {
         console.log('Payment reconciliation skipped: PAYMENT_ENABLED is not true');
         return;
@@ -59,6 +73,12 @@ try {
       );
     },
     onError: (error) => {
+      observeBackgroundRun({
+        job: 'payment_reconciliation',
+        outcome: 'error',
+        startedAt: passStartedAt,
+        error,
+      });
       const message = error instanceof Error ? error.message : String(error);
       log.sys.error(
         { event: 'payment.reconcile_worker.failed', err: error },
@@ -68,6 +88,12 @@ try {
     },
   });
 } catch (error) {
+  observeBackgroundRun({
+    job: 'payment_reconciliation_worker',
+    outcome: 'error',
+    startedAt: passStartedAt,
+    error,
+  });
   const message = error instanceof Error ? error.message : String(error);
   log.sys.error(
     { event: 'payment.reconcile_worker.failed', err: error },
@@ -87,5 +113,6 @@ try {
     exitCode = 1;
   }
 
-  process.exit(exitCode);
+  await stopObservability();
+  process.exitCode = exitCode;
 }

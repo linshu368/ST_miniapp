@@ -35,6 +35,8 @@ import {
   hasOpenRouterKey,
   isCompleteGenerationData,
 } from './openrouter-metadata.js';
+import { observeBackgroundRun } from '../../lib/background-observability.js';
+import { reconcileFixedProviderRecord } from './fixed-provider-recovery.js';
 
 const SYNC_INTERVAL_MS = 30 * 1000;
 const STARTUP_DELAY_MS = 5 * 1000;
@@ -145,14 +147,70 @@ export function stopChatHistorySyncJob(): void {
   retryStates.clear();
 }
 
+async function scanSyncRows(
+  input: { since: string; limit: number },
+  log: FastifyBaseLogger
+): Promise<{ rows: ChatHistorySyncRow[]; partial: boolean }> {
+  const sources = [
+    'openrouter_billing',
+    'venice_billing',
+    'surplus_billing',
+    'missing_identity',
+    'metadata',
+    'stale_streaming',
+  ];
+  const scans = await runSettledWithConcurrency(
+    [
+      () => history().listRowsPendingBilling({ ...input, provider: 'openrouter' }),
+      () => history().listRowsPendingBilling({ ...input, provider: 'venice' }),
+      () => history().listRowsPendingBilling({ ...input, provider: 'surplus' }),
+      () => history().listRowsMissingProviderIdentity(input),
+      () => openRouterHistory().listRowsMissingGenerationData(input),
+      () => history().listStaleStreaming(input),
+    ],
+    SCAN_CONCURRENCY
+  );
+  const rowsById = new Map<string, ChatHistorySyncRow>();
+  let partial = false;
+  for (const [index, scan] of scans.entries()) {
+    if (scan.status === 'rejected') {
+      partial = true;
+      log.error(
+        {
+          kind: 'sys',
+          event: 'chathistory_sync.fetch_failed',
+          err: scan.reason,
+          source: sources[index],
+        },
+        'failed to fetch incomplete chat history'
+      );
+      continue;
+    }
+    for (const row of scan.value) {
+      const previous = rowsById.get(row.id);
+      if (!previous || (row.llm_billing_settled_at && !previous.llm_billing_settled_at))
+        rowsById.set(row.id, row);
+    }
+  }
+  return { rows: [...rowsById.values()], partial };
+}
+
 async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
+  const observationStartedAt = performance.now();
   if (isRunning) {
     log.info('[sync-job] previous run is still active, skipping this tick');
+    observeBackgroundRun({
+      job: 'chat_history_sync',
+      outcome: 'skipped',
+      startedAt: observationStartedAt,
+    });
     return;
   }
 
   isRunning = true;
   const startedAt = Date.now();
+  let outcome: 'success' | 'partial' | 'error' | 'skipped' = 'success';
+  let terminalError: unknown;
 
   try {
     const since = new Date(Date.now() - LOOKBACK_HOURS * 60 * 60 * 1000).toISOString();
@@ -161,47 +219,13 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
     // Separate budgets keep a metadata backlog from hiding billing recovery.
     // A failed metadata scan must not prevent the independent billing repair.
     // 有界并发：避免每 30s 一次占满共享池的 5 条连接。
-    const scanTasks = [
-      () => history().listRowsPendingBilling({ ...input, provider: 'openrouter' }),
-      () => history().listRowsPendingBilling({ ...input, provider: 'venice' }),
-      () => history().listRowsMissingProviderIdentity(input),
-      () => openRouterHistory().listRowsMissingGenerationData(input),
-      () => history().listStaleStreaming(input),
-    ];
-    const scans = await runSettledWithConcurrency(scanTasks, SCAN_CONCURRENCY);
-    const rowsById = new Map<string, ChatHistorySyncRow>();
-    for (const [index, scan] of scans.entries()) {
-      if (scan.status === 'rejected') {
-        log.error(
-          {
-            kind: 'sys',
-            event: 'chathistory_sync.fetch_failed',
-            err: scan.reason,
-            source: [
-              'openrouter_billing',
-              'venice_billing',
-              'missing_identity',
-              'metadata',
-              'stale_streaming',
-            ][index],
-          },
-          'failed to fetch incomplete chat history'
-        );
-        continue;
-      }
-      for (const row of scan.value) {
-        const previous = rowsById.get(row.id);
-        // Settlement can complete between the independent scans. Never let an
-        // earlier pending snapshot discard the later terminal marker.
-        if (!previous || (row.llm_billing_settled_at && !previous.llm_billing_settled_at)) {
-          rowsById.set(row.id, row);
-        }
-      }
-    }
-    const rows = [...rowsById.values()];
+    const scanned = await scanSyncRows(input, log);
+    const rows = scanned.rows;
+    if (scanned.partial) outcome = 'partial';
     pruneRetryStates(Date.now());
 
     if (rows.length === 0) {
+      outcome = outcome === 'partial' ? 'partial' : 'skipped';
       log.info(
         {
           kind: 'sys',
@@ -288,6 +312,7 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
       const record = eligibleRows[index];
       if (!record) continue;
       if (result.status === 'rejected') {
+        outcome = 'partial';
         counts.failed++;
         registerRetryState(record, Date.now());
         log.error(
@@ -309,6 +334,7 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
         retryStates.delete(record.id);
       }
     }
+    if (counts.failed > 0) outcome = 'partial';
 
     log.info(
       {
@@ -330,8 +356,16 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
       '[sync-job] sync run finished'
     );
   } catch (err) {
+    outcome = 'error';
+    terminalError = err;
     log.error({ kind: 'sys', event: 'chathistory_sync.unexpected', err }, 'unexpected error');
   } finally {
+    observeBackgroundRun({
+      job: 'chat_history_sync',
+      outcome,
+      startedAt: observationStartedAt,
+      error: terminalError,
+    });
     isRunning = false;
   }
 }
@@ -349,21 +383,24 @@ async function processSyncRecord(input: {
   }
 
   const generationId = record.generationId;
-  const provider = record.callProvider;
-  if (
-    !provider ||
-    (record.llm_billing_snapshot?.provider && record.llm_billing_snapshot.provider !== provider)
-  ) {
-    log.error(
-      { event: 'chathistory_sync.provider_unresolved', id: record.id },
-      'call provider requires audit'
-    );
-    return 'manual_audit';
-  }
+  const provider = resolveSyncProvider(record, log);
+  if (!provider) return 'manual_audit';
 
   if (record.llm_billing_settled_at && (provider !== 'openrouter' || !generationId)) {
     return 'completed';
   }
+
+  if (provider !== 'openrouter' && (generationId || provider === 'surplus'))
+    return (await reconcileFixedProviderRecord({
+      record,
+      generationId,
+      provider,
+      log,
+      history: history(),
+      reconcile: reconcileCharge,
+    })) === 'settled'
+      ? 'completed'
+      : 'not_ready';
 
   if (!generationId) {
     // No upstream locator can be reconstructed after a crash. Only release an
@@ -398,11 +435,6 @@ async function processSyncRecord(input: {
       'call identity unavailable; manual audit required'
     );
     return 'manual_audit';
-  }
-
-  if (provider !== 'openrouter') {
-    const reconciled = await reconcileNonOpenRouterRecord({ record, generationId, provider, log });
-    return reconciled === 'settled' ? 'completed' : 'not_ready';
   }
 
   const stored = storedGenerationData.get(record.id) ?? null;
@@ -509,6 +541,23 @@ async function processSyncRecord(input: {
   return isCompleteGenerationData(genData) && reconciled.settled ? 'completed' : 'not_ready';
 }
 
+function resolveSyncProvider(
+  record: ChatHistorySyncRow,
+  log: FastifyBaseLogger
+): LlmModelProvider | null {
+  const provider = record.callProvider;
+  if (
+    provider &&
+    (!record.llm_billing_snapshot?.provider || record.llm_billing_snapshot.provider === provider)
+  )
+    return provider;
+  log.error(
+    { event: 'chathistory_sync.provider_unresolved', id: record.id },
+    'call provider requires audit'
+  );
+  return null;
+}
+
 function syncRecordFingerprint(record: ChatHistorySyncRow): string {
   return [
     record.callProvider ?? '',
@@ -586,70 +635,6 @@ function stableJson(value: unknown): string {
     .sort()
     .map((key) => `${JSON.stringify(key)}:${stableJson(row[key])}`)
     .join(',')}}`;
-}
-
-async function reconcileNonOpenRouterRecord(input: {
-  record: ChatHistorySyncRow;
-  generationId: string;
-  provider: Exclude<LlmModelProvider, 'openrouter'>;
-  log: FastifyBaseLogger;
-}): Promise<'settled' | 'not_ready'> {
-  const { record, generationId, provider, log } = input;
-  const finishReason = record.llm_finish_reason;
-  if (typeof finishReason !== 'string') return 'not_ready';
-
-  const model =
-    typeof record.llm_billing_snapshot?.provider_model_id === 'string'
-      ? record.llm_billing_snapshot.provider_model_id
-      : record.model;
-  let reconciled: ReconciledChargeResult;
-  try {
-    reconciled = await reconcileCharge({
-      record,
-      generationId,
-      genData: { model, finish_reason: finishReason },
-      finishReason,
-    });
-  } catch (err) {
-    log.error(
-      {
-        kind: 'sys',
-        event: 'chathistory_sync.non_openrouter_reconcile_failed',
-        err,
-        id: record.id,
-        provider,
-        generationId,
-        chargeId: record.llm_charge_id,
-      },
-      'failed to reconcile non-OpenRouter LLM usage charge'
-    );
-    return 'not_ready';
-  }
-
-  try {
-    await history().recordBillingOutcome({
-      historyId: record.id,
-      intendedDeduction: reconciled.intendedDeduction,
-      deductionRate: reconciled.deductionRate,
-      finishReason,
-      ...(reconciled.settled ? { billingSettledAt: new Date().toISOString() } : {}),
-    });
-  } catch (err) {
-    log.error(
-      {
-        kind: 'sys',
-        event: 'chathistory_sync.non_openrouter_update_failed',
-        err,
-        id: record.id,
-        provider,
-        generationId,
-      },
-      'failed to update non-OpenRouter chat history'
-    );
-    return 'not_ready';
-  }
-
-  return reconciled.settled ? 'settled' : 'not_ready';
 }
 
 interface ReconciledChargeResult {

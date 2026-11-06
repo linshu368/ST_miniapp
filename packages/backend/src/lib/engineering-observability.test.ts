@@ -1,14 +1,15 @@
 import { createServer, type Server } from 'node:http';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DramaTimingReportSchema, type DramaTimingReport } from '@miniapp/shared';
+import { createConversationPreparationTiming } from '../features/conversations/preparation-timing.js';
 import {
   engineeringRoute,
   observeDramaStartupDiagnostic,
   observeChatFirstToken,
+  observeBackgroundJob,
   observeGenerationAttempt,
   observeGenerationDispatch,
   observeGenerationTerminal,
-  observeGenerationPreparationStages,
   observeHttp,
   startEngineeringTelemetry,
 } from './engineering-observability.js';
@@ -68,6 +69,19 @@ async function receiver(logStatus = 200) {
 const options = { enabled: true, environment: 'test', version: 'safe-test-release' };
 
 describe('engineering telemetry boundary', () => {
+  it('exports one bounded background-job terminal with duration and count', async () => {
+    const sink = await receiver();
+    stop = startEngineeringTelemetry({ ...options, endpoint: sink.endpoint });
+    observeBackgroundJob({ job: 'chat_history_sync', outcome: 'partial', durationMs: 1250 });
+    await stop();
+    const wire = JSON.stringify(sink.received);
+    expect(wire).toContain('st_background_job_duration');
+    expect(wire).toContain('st_background_job_runs');
+    expect(wire).toContain('background_job.terminal');
+    expect(wire).toContain('chat_history_sync');
+    expect(wire).toContain('partial');
+  });
+
   it('retains five-second terminal details and late network evidence as JSON log bodies', async () => {
     const sink = await receiver();
     stop = startEngineeringTelemetry({ ...options, endpoint: sink.endpoint });
@@ -272,11 +286,13 @@ describe('engineering telemetry boundary', () => {
         responseHeadersMs: 90,
       },
     });
-    observeGenerationPreparationStages({
-      provider: 'openrouter',
-      model: 'safe-model',
-      stages: { route_setup: 100, settings: 200, turn_open: 200, context: 500, dispatch_gate: 200 },
-    });
+    const ready = createConversationPreparationTiming(performance.now() - 1200);
+    ready.enter('dispatch_gate', { provider: 'openrouter', providerModelId: 'safe-model' });
+    ready.ready();
+    const incomplete = createConversationPreparationTiming(performance.now() - 1200);
+    incomplete.enter('turn_open', { provider: 'openrouter', providerModelId: 'failed-turn-only' });
+    incomplete.incomplete();
+    incomplete.incomplete();
     observeChatFirstToken({
       requestedModel: 'selected-catalog-model',
       stage: 'accepted',
@@ -323,6 +339,28 @@ describe('engineering telemetry boundary', () => {
     expect(metrics).toHaveLength(1);
     const emitted = (metrics[0]!.body as unknown as MetricsPayload).resourceMetrics.flatMap((r) =>
       r.scopeMetrics.flatMap((s) => s.metrics)
+    );
+    expect(JSON.stringify(emitted)).not.toContain('failed-turn-only');
+    const records = sink.received
+      .filter((r) => r.path === '/v1/logs')
+      .flatMap((r) =>
+        (r.body as unknown as LogsPayload).resourceLogs.flatMap((resource) =>
+          resource.scopeLogs.flatMap((scope) => scope.logRecords)
+        )
+      );
+    const failedPreparation = records.filter(
+      (record) =>
+        record.eventName === 'generation.pre_dispatch' &&
+        JSON.stringify(record.attributes).includes('failed-turn-only')
+    );
+    expect(failedPreparation).toHaveLength(1);
+    expect(failedPreparation[0]?.attributes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: 'outcome', value: { stringValue: 'incomplete' } }),
+        expect.objectContaining({ key: 'stage', value: { stringValue: 'turn_open' } }),
+        expect.objectContaining({ key: 'elapsed_ms' }),
+        expect.objectContaining({ key: 'total_ms' }),
+      ])
     );
     const duration = emitted.find((m) => m.name === 'st_http_server_duration');
     expect(duration?.unit).toBe('s');

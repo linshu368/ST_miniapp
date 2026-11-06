@@ -1,0 +1,5 @@
+{"file": "AGENTS.md", "reason": "Relevant contracts, UI persistence and production lifecycle"}
+{"file": ".trellis/spec/admin/app/index.md", "reason": "Relevant contracts, UI persistence and production lifecycle"}
+{"file": ".trellis/spec/admin/app/ui-state-and-validation.md", "reason": "Relevant contracts, UI persistence and production lifecycle"}
+{"file": ".trellis/spec/shared/contracts/index.md", "reason": "Relevant contracts, UI persistence and production lifecycle"}
+{"file": "packages/admin-cli/README.md", "reason": "Relevant contracts, UI persistence and production lifecycle"}

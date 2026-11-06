@@ -1,23 +1,14 @@
 'use client';
 
+import { vipPlanRewardLabel, vipCheckinRewardLabel } from '@/lib/vip/rewards';
 import { usePageReady } from '@/lib/perf/page-ready';
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import {
-  AlertCircle,
-  ChevronLeft,
-  Crown,
-  ChevronRight,
-  Gift,
-  Loader2,
-  Sparkles,
-  TicketPercent,
-  Zap,
-} from 'lucide-react';
+import { AlertCircle, ChevronLeft, Crown, ChevronRight, Loader2, Sparkles } from 'lucide-react';
 import { type CreatePaymentOrderData, type PaymentType } from '@miniapp/shared';
 
-import { VipBenefitArt } from '@/components/vip/vip-benefit-art';
+import { VipBenefitArt, VipDailyBenefits } from '@/components/vip/vip-benefit-art';
 import { Button } from '@/components/ui/button';
 import { AlipayIcon, WeChatPayIcon } from '@/components/icons';
 import { formatNumber, formatYuanShort, safePaymentReturnTo } from '@/lib/utils/payment';
@@ -162,36 +153,11 @@ function VipPageContent() {
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden px-4 pb-5 pt-4">
         <VipBenefitArt monthlyPlan={monthlyPlan} status={vipQuery.data} />
 
-        <section aria-label="会员专享权益">
-          <h2 className="mb-3 px-1 text-sm font-bold">
-            {vipQuery.data?.active ? '你的会员权益已生效' : '再享三项会员权益'}
-          </h2>
-          <div className="grid grid-cols-3 gap-2">
-            <div className="min-w-0 rounded-[20px] border border-border bg-card px-2 py-3 text-center">
-              <TicketPercent className="mx-auto size-4 text-primary" aria-hidden />
-              <p className="mt-2 text-[19px] font-bold tabular-nums text-primary">
-                {discountLabel ?? '—'}
-              </p>
-              <p className="mt-1 text-[10px] text-muted-foreground">全模型对话</p>
-            </div>
-            <div className="min-w-0 rounded-[20px] border border-border bg-card px-2 py-3 text-center">
-              <Gift className="mx-auto size-4 text-primary" aria-hidden />
-              <p className="mt-2 text-[19px] font-bold tabular-nums text-primary">
-                {benefits ? formatNumber(benefits.checkin_vip_credits) : '—'}
-                <span className="ml-1 text-[10px] font-medium">星尘/天</span>
-              </p>
-              <p className="mt-1 text-[10px] text-muted-foreground">每日签到奖励</p>
-            </div>
-            <div className="min-w-0 rounded-[20px] border border-border bg-card px-2 py-3 text-center">
-              <Zap className="mx-auto size-4 text-primary" aria-hidden />
-              <p className="mt-2 text-[17px] font-bold leading-7 text-primary">更多模型</p>
-              <p className="mt-1 text-[10px] text-muted-foreground">解锁标准与旗舰</p>
-            </div>
-          </div>
-          <p className="mt-2 px-1 text-[10px] leading-5 text-muted-foreground">
-            会员享对话优惠，聊天仍按轮消耗星尘。
-          </p>
-        </section>
+        <VipDailyBenefits
+          active={vipQuery.data?.active ?? false}
+          benefits={benefits}
+          discountLabel={discountLabel}
+        />
 
         <section aria-label="VIP 月卡">
           {plansQuery.isLoading ? (
@@ -235,23 +201,26 @@ function VipPageContent() {
                   <span className="ml-1 text-[10px] text-muted-foreground">/期</span>
                 </p>
               </div>
-              {monthlyPlan.bonus_credits > 0 ? (
+              {monthlyPlan.bonus_credits + (monthlyPlan.bonus_main_credits ?? 0) > 0 ? (
                 <div className="mt-4 flex items-start gap-2 rounded-2xl border border-primary/15 bg-primary/[0.06] px-3 py-2.5">
                   <Sparkles className="mt-0.5 size-3.5 shrink-0 text-primary" aria-hidden />
                   <div>
                     <p className="text-xs font-semibold text-primary">
                       {vipQuery.data?.active ? '续费再赠' : '开通赠'}{' '}
-                      {formatNumber(monthlyPlan.bonus_credits)} 专项星尘
+                      {vipPlanRewardLabel(monthlyPlan)}
                     </p>
                     <p className="mt-1 text-[10px] text-muted-foreground">
-                      用于轻量模型对话，{vipQuery.data?.active ? '续费' : '开通'}后到账
+                      {(monthlyPlan.bonus_main_credits ?? 0) > 0
+                        ? '通用星尘可用于中高级模型，'
+                        : '用于轻量模型对话，'}
+                      {vipQuery.data?.active ? '续费' : '开通'}后到账
                     </p>
                   </div>
                 </div>
               ) : null}
               {benefits ? (
                 <p className="mt-3 text-[10px] leading-5 text-muted-foreground">
-                  会员每日签到 {formatNumber(benefits.checkin_vip_credits)} 星尘（非会员新用户每日{' '}
+                  会员每日签到 {vipCheckinRewardLabel(benefits)}（非会员新用户每日{' '}
                   {formatNumber(benefits.checkin_base_credits)}），记得来领取。
                 </p>
               ) : null}

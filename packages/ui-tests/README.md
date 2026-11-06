@@ -30,6 +30,7 @@ pnpm test:ui --grep @profile       # 签到、VIP、充值与社群展示
 pnpm test:ui --grep @recharge      # 充值金额、到账确认、失败恢复、VIP回流和窄屏
 pnpm test:ui --grep @roleplay      # 角色发现、进入对话与返回
 pnpm test:ui --grep @chat          # 深度思考、回复偏好、多行输入、余额不足
+pnpm test:ui --grep @onboarding    # 新人主线、编辑分支引导、跳过、旧用户与失败降级
 pnpm test:ui --grep @drama         # 视频首页、双列剧场、选集、追剧、续看与错误恢复
 pnpm test:ui --grep @image         # 同款、设置、生成、失败、保存原图入口
 pnpm test:ui --project=android    # 390×844，全部固定流程
@@ -204,3 +205,13 @@ UI fixture轮换用确定顺序方便验证，不代表生产随机算法；`pnp
 `pnpm test:ui:fixtures` 同时验证 shared 响应、拒绝 private 提交、本人筛选隔离、重复支持/重复回应/创建重试和500字上限。浏览器 fixture 只验证真实前端与模拟HTTP的完整链路；真实数据库权限、事务和通知幂等继续由后端/隔离Postgres验证，不代表远端迁移已执行或真实用户已收到通知。
 
 作者空间使用 `pnpm test:ui --grep @public-author-space` 检查分页、开聊返回及计数。只浏览两页应有两次作品请求，打开详情前没有逐卡或批量 social 请求。计数正确性与数据库迁移由 `bash scripts/test-creator-characters-local.sh` 在隔离 PostgreSQL 中验证。发布后分别观察作者空间 API 时延与 Android、iOS 页面可见耗时；本地 SQL 计时不代表线上 P95。
+
+VIP 混合奖励复用 `@profile`：`vip-mixed` 场景每日签到 120 专项＋30 通用，月卡 2000 专项＋1000 通用；检查两钱包余额、到账提示和窄屏布局。数据库原子发放由 `scripts/test-vip-billing-migrations.sh` 覆盖，页面模拟不代表真实支付验收。
+
+## 新人主线引导（2026-11-06，本地候选）
+
+固定场景 `new-user` 从发现页开始，`new-user-replied` 直接查看第一轮后的编辑/分支提示，`onboarding-error` 验证资格读取失败仍可聊天；`standard` 是旧用户，无自动引导。`@onboarding` 覆盖390/320宽度、首次默认推荐、一键展开回复偏好、真实编辑/更多菜单衔接、无自动写入、跳过刷新、返场找对话。原 `@chat-edit`/`@chat-branch` 继续验证实际修改与分支行为。
+
+进度按本机账号持久化，手动预览中刷新不会重播已跳过教程；仍可在聊天工具箱的“玩法小贴士”查看说明。自动用例使用独立浏览器上下文，可直接重复运行。这里的用户、对话及资格都是fixture，不访问生产数据；真机系统键盘与线上双端P95不由本地模拟代替。
+
+创作邀请复用 `@creator-onboarding`：`onboarding.spec.ts` 的 `seedBasicGuide` 固定本机9/10轮和基础引导状态，`new-user-near-creator` / `new-user-creator-ready` 提供相应虚构账号/消息；手动切服务端场景本身不会覆盖浏览器已保存进度。覆盖重生成不加轮、9轮换卡不邀请、跨卡第10轮成功返场、冷进入/最新/未完成基础引导不显示、关闭刷新不重复、AI润色与预设只定位不写入，390/320尺寸。邀请额外接口请求数断言为0；测试fixture和真实计费完全隔离。

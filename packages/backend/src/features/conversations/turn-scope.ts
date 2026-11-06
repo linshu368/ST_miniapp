@@ -38,17 +38,17 @@ export interface TurnScope {
   primaryAttemptId: string;
 }
 
-/** SSE start 只发一次；上游 2xx、首字超时补发和异常兜底都可能触发它。 */
+/** SSE start 只发一次。正常路径在派发门禁完成后发送。 */
 function createStartEmitter(input: {
   sink: ConversationStreamSink;
   mode: ConversationTurnMode;
   turn: StartedTurn;
   model: ResolvedModel;
   policy: FirstTokenPolicy;
-  requestStartedAt: number;
+  diagnosticStartedAt: number;
   thinkingEnabled: boolean;
 }): () => void {
-  const { sink, mode, turn, model, policy, requestStartedAt, thinkingEnabled } = input;
+  const { sink, mode, turn, model, policy, diagnosticStartedAt, thinkingEnabled } = input;
   let startEmitted = false;
   const emitStart = (): void => {
     if (startEmitted) return;
@@ -59,7 +59,7 @@ function createStartEmitter(input: {
       first_token_deadline_ms: policy.deadlineMs,
       requested_model_id: model.modelId,
       fallback_trigger_ms: policy.timeoutMs,
-      server_elapsed_ms: Math.round(performance.now() - requestStartedAt),
+      server_elapsed_ms: Math.round(performance.now() - diagnosticStartedAt),
       turn_index: turn.turnIndex,
       user_message_id: mode.kind === 'send' ? `${turn.historyId}:user` : null,
       assistant_message_id: turn.historyId,
@@ -115,6 +115,7 @@ export function createTurnScope(input: {
   userId: string;
   thinkingEnabled: boolean;
   requestStartedAt: number;
+  diagnosticStartedAt: number;
   turnStartedAt: number;
   turn: StartedTurn;
   model: ResolvedModel;
@@ -131,7 +132,7 @@ export function createTurnScope(input: {
     turn,
     model,
     policy,
-    requestStartedAt,
+    diagnosticStartedAt: input.diagnosticStartedAt,
     thinkingEnabled,
   });
   const observationInput = buildObservationInput({

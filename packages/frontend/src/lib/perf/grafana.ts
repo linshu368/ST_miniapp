@@ -43,7 +43,11 @@ const MEASUREMENTS = new Set([
   'api.queue',
   'api.headers',
   'api.body',
+  'api.upstream',
   'api.total',
+  'creator.polish.headers',
+  'creator.polish.first_text',
+  'creator.polish.full',
 ]);
 const EVENTS = new Set([
   'page.started',
@@ -62,6 +66,7 @@ const EVENTS = new Set([
   'drama.seek_terminal',
   'drama.seek_diagnostic',
   'api.terminal',
+  'creator.polish.terminal',
   'telemetry.health',
 ]);
 const ENUMS: Readonly<Record<string, readonly string[]>> = {

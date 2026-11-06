@@ -127,10 +127,22 @@ PR 临时环境复制 development 后会立即删除该 Cron，避免多个调�
 
 ### 支付对账（快速 Worker + 过期 Cron）
 
-支付告警另有独立常驻服务 `stminiapp-payment-alert-monitor`：Start Command 为
+共享告警 outbox 由独立常驻服务 `stminiapp-payment-alert-monitor` 投递；该服务同时生产支付告警，
+也负责发送 API 服务写入的 Sentry 与 OpenRouter/Venice/Surplus 限流、额度、账户访问告警，并在同轮主动查询
+Venice `GET /api/v1/billing/balance`：当 `balances.usd`（null 按 0）低于 **$10** 时发布 generation 域
+P1 `venice-balance-low`（fingerprint 含 `:generation:venice:balance_low`），恢复需连续两轮不低于阈值。
+Surplus Intelligence 使用 `SURPLUS_API_BASE_URL` 下的 `GET /payments/balance` 与 `SURPLUS_API_KEY`，读取
+`credit_balance_usdc` 微美元整数字符串并换算为可消费 USD 余额；余额低于
+**$10** 时发布 P1 `surplus-balance-low`（fingerprint 含 `:generation:surplus:balance_low`），并要求连续两轮恢复。
+任一余额探针失败（超时/网络/5xx/401 或响应不合法）只把本轮标为 partial，不关闭既有余额事故，也不阻断
+支付监控、另一个供应商探针与 outbox。
+Start Command 为
 `./node_modules/.bin/tsx src/scripts/payment-alert-monitor.ts`，Restart Policy 为 `Always`，
 不设 Cron Schedule、healthcheck、域名或 TCP proxy。它以数据库 advisory lock 防止重叠，
-每分钟运行 P0、每五分钟运行 P1；只读支付操作事件（规则 v3 只看平台直接信号）并通过公共 outbox 发布。缺失或非法
+每分钟运行 P0、每五分钟运行 P1；支付规则只读支付操作事件（规则 v3 只看平台直接信号）并通过公共 outbox 发布，
+每轮同时有界投递一条到期通知。模型告警与 Venice/Surplus 余额检查不新增服务；通过 Railway 服务变量引用沿用 API 的
+`VENICE_API_KEY`（**须为可调 billing 的 Admin Key**）、`SURPLUS_API_KEY`、对应 base URL、公共 outbox 与
+`FEISHU_ALERT_WEBHOOK_URL`。缺失或非法
 `alerting` runtime config 时通知保持关闭。这里仅描述目标运行面，不授权 Railway apply、部署、
 环境变量或通知开关写入。
 
@@ -222,6 +234,9 @@ Railway 控制台手动创建并逐项对齐：
 
 若运营模型目录启用 Venice，必须在 `stminiapp` 的对应 Railway 环境单独配置
 `VENICE_API_KEY`；可选的 `VENICE_API_BASE_URL` 默认是 `https://api.venice.ai/api/v1`。
+若启用 Surplus Intelligence，则同一环境必须配置 `SURPLUS_API_KEY` 与 `SURPLUS_API_BASE_URL`；余额监控要求该 base
+实现官方文档中的 `GET /payments/balance`。IaC 只把这些变量从 `stminiapp` 引用到 `stminiapp-payment-alert-monitor`，
+不会把真实密钥写入仓库。
 密钥只属于 backend，不得放入 Vercel/Admin 浏览器变量。先配置密钥并 redeploy backend，
 确认 `/api/platform/model-providers/venice/models` 可读取目录后，再发布含 Venice 模型的目录；
 回滚时先把目录发布回 OpenRouter 模型，再移除 Venice 密钥。

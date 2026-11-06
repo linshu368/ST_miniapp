@@ -26,6 +26,7 @@ import { Refine } from '@refinedev/core';
 import { dataProvider } from '@refinedev/supabase';
 import {
   CREATOR_REVIEW_PROMPT_KEY,
+  LLM_MODEL_PROVIDERS,
   ModelCatalogSchema,
   LlmProviderRoutingConfigSchema,
   type LlmModelProvider,
@@ -632,8 +633,7 @@ function AdminWorkspace(props: {
   );
 
   useEffect(() => {
-    void reloadProviderDirectory('openrouter');
-    void reloadProviderDirectory('venice');
+    for (const provider of LLM_MODEL_PROVIDERS) void reloadProviderDirectory(provider);
   }, [reloadProviderDirectory]);
 
   const currentConfig = useMemo(

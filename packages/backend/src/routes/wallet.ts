@@ -120,6 +120,8 @@ export default async function walletRoutes(app: FastifyInstance) {
             claimed_at: result.checkin.claimed_at,
             next_claim_at: result.checkin.next_claim_at,
             reward_credits: result.checkin.reward_credits,
+            main_reward_credits: result.checkin.main_reward_credits,
+            bonus_reward_credits: result.checkin.bonus_reward_credits,
             base_reward_credits: result.checkin.base_reward_credits,
             vip_reward_credits: result.checkin.vip_reward_credits,
           },

@@ -16,6 +16,7 @@
  * docs/payment-missing-credits-remediation.md 的「回调监控」一节。
  */
 
+import '../instrumentation.js';
 import '../platform/config.js';
 import {
   buildPaymentCallbackReport,
@@ -25,10 +26,17 @@ import {
 import { MiniappPaymentOrderRepository } from '../infrastructure/repositories/MiniappPaymentOrderRepository.js';
 import { createLogger } from '../lib/logger.js';
 import { closeSupabaseClient } from '../lib/supabase.js';
+import {
+  observeBackgroundRun,
+  startStandaloneObservability,
+} from '../lib/background-observability.js';
 
 const log = createLogger('payment');
 const args = process.argv.slice(2);
 let exitCode = 0;
+let terminalError: unknown;
+const observationStartedAt = performance.now();
+const stopObservability = startStandaloneObservability();
 
 try {
   const range = resolveShanghaiDayRange(Date.now(), parseDaysAgo(args));
@@ -42,6 +50,7 @@ try {
     args.includes('--json') ? JSON.stringify(report) : formatPaymentCallbackReport(report)
   );
 } catch (error) {
+  terminalError = error;
   const message = error instanceof Error ? error.message : String(error);
   log.sys.error({ event: 'payment.report.failed', err: error }, '支付回调日报生成失败');
   console.error(`Payment callback report failed: ${message}`);
@@ -50,6 +59,7 @@ try {
   try {
     await closeSupabaseClient();
   } catch (error) {
+    terminalError ??= error;
     log.sys.error(
       { event: 'payment.report.cleanup_failed', err: error },
       '支付回调日报资源清理失败'
@@ -57,7 +67,14 @@ try {
     exitCode = 1;
   }
 
-  process.exit(exitCode);
+  observeBackgroundRun({
+    job: 'payment_callback_report',
+    outcome: exitCode === 0 ? 'success' : 'error',
+    startedAt: observationStartedAt,
+    error: terminalError,
+  });
+  await stopObservability();
+  process.exitCode = exitCode;
 }
 
 function parseDaysAgo(argv: readonly string[]): number {

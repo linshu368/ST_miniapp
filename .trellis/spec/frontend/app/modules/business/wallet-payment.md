@@ -5,8 +5,8 @@ scope: frontend
 category: business
 status: active
 owners: [frontend]
-last_verified_task: .trellis/tasks/11-03-five-route-navigation-p95/
-last_verified_at: 2026-11-04
+last_verified_task: .trellis/tasks/11-05-optimize-android-navigation-tail/
+last_verified_at: 2026-11-06
 ---
 
 # 钱包、签到与充值
@@ -17,9 +17,9 @@ last_verified_at: 2026-11-04
 
 ## 当前状态
 
-钱包与支付页面已使用统一 API hooks；结算真相在服务端。`/profile` 的真实头像、编辑和功能入口 shell 可交互后即记录页面 ready，余额继续独立 loading/error/retry，不能用占位符冒充余额，也不能让钱包长尾代表整页均不可见。底栏只在明确 profile intent 时预取余额 query，复用同一缓存和超时，失败不阻止导航。
+钱包与支付页面已使用统一 API hooks；结算真相在服务端。`/profile` 的真实头像、编辑和功能入口 shell 可交互后即记录页面 ready，余额继续独立 loading/error/retry，不能用占位符冒充余额，也不能让钱包长尾代表整页均不可见。iOS/other 底栏仍在明确 profile intent 时预取余额 query；Android touch intent 只预取 route chunk，钱包由页面立即读取，避免极短触摸提前量内与 chunk 竞争。两者均复用同一缓存和超时，失败不阻止导航。
 
-Profile 首帧只立即读取钱包；消息/客服红点由常驻 BottomNav 拥有网络读取，页面只观察共享缓存。签到、VIP与套餐在首帧绘制后启动，头像设置按打开菜单读取，邀请与社区入口在服务区接近视口时启动；禁用阶段保留 loading/disabled 安全语义，IntersectionObserver 不可用时直接放行，不让入口永久缺失。
+Profile 首帧只立即读取钱包；消息/客服红点由常驻 BottomNav 拥有网络读取，页面只观察共享缓存。签到、VIP与套餐在首帧绘制后启动，头像设置按打开菜单读取，邀请与社区入口在服务区接近视口时启动；Android 底栏导航还需等目标 content ready/failed 后的 paint+idle 安静窗口释放，最迟 4 秒兜底。头像菜单只在打开时下载并挂载，VIP 展示卡与服务区在次级读取放行后动态加载；关键钱包、身份、充值、消息与客服入口不依赖这些次级 chunk。禁用阶段保留 loading/disabled 安全语义，IntersectionObserver 不可用时直接放行，不让入口永久缺失。
 
 ## 入口与调用者
 
@@ -65,7 +65,15 @@ WebView 回跳和第三方页面兼容需真机验证。
 - 2026-10-20：任务 `Remove confirmed repository noise`（`.trellis/tasks/archive/2026-10/10-20-remove-confirmed-repository-noise/`）删除无法恢复的乱码变更记录；commit：`63eee1e847f678f4b2c434f872425a40fc7f891a`。
 - 2026-11-04：任务 `Optimize five-route mobile navigation readiness`（`.trellis/tasks/11-03-five-route-navigation-p95/`）将 profile 页面 ready 与钱包异步结果解耦，并增加显式导航 intent 的余额预取；钱包 API P95 继续单独观测。
 - 2026-11-04：同任务二阶段将 Profile 查询按钱包、首帧后和近视口三级启动，减少移动端首帧请求扇出；未改变服务端结算与各区错误/重试语义。
+- 2026-11-05：任务 `治理 Android 五入口公共导航长尾`（`.trellis/tasks/11-05-optimize-android-navigation-tail/`）在 Android 底栏切入 Profile 时延后未读、settings、签到、VIP、套餐、邀请与社群次级读取；钱包仍立即读取，iOS 行为不变。
+- 2026-11-06：同任务第二阶段将头像菜单、VIP 展示卡和服务区拆为次级动态 chunk，Profile 原始 route chunk 从 42481 bytes 降到 34073 bytes；关键入口保持首帧可交互。
 
 ## 支付供应商替换为 Vexutopia（2026-11-03）
 
 前端只打开 https 收银台（`isAllowedPaymentOpenUrl` 不再接受 http 与 `weixin://`，`openPaymentUrl` 删除 scheme 分支）。充值页、VIP 页、订单结果页删除收银台确认上报与回填；“继续付款”所需的收银台地址缓存不变。
+
+## VIP 混合星尘奖励（2026-11-05）
+
+月卡卡片、我的页、签到引导与到账提示显示专项/通用两部分；总数仍为 3000/150。复用原查询及按钮，不新增页面请求。固定验收 vip-mixed 覆盖 390/320 宽度与钱包到账。
+
+隔离 PG 覆盖并发、幂等、旧订单及故障回滚；远端执行与部署状态见任务 `11-05-vip-mixed-rewards` 的发布记录。

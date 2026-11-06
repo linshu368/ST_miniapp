@@ -1,3 +1,4 @@
+import '../instrumentation.js';
 import '../platform/config.js';
 import { setTimeout as sleep } from 'node:timers/promises';
 import {
@@ -12,6 +13,10 @@ import {
 import { IMAGE_PLAZA_VENICE_RETRY_MODEL } from '../features/generation/image-plaza-prompt-translate.js';
 import { createLogger } from '../lib/logger.js';
 import { config } from '../platform/config.js';
+import {
+  observeBackgroundRun,
+  startStandaloneObservability,
+} from '../lib/background-observability.js';
 
 interface CliOptions {
   apply: boolean;
@@ -29,6 +34,10 @@ interface CliOptions {
 
 const log = createLogger('image-plaza-seed-prompt-translate');
 let exitCode = 0;
+let outcome: 'success' | 'partial' | 'error' = 'success';
+let terminalError: unknown;
+const observationStartedAt = performance.now();
+const stopObservability = startStandaloneObservability();
 
 try {
   const options = parseArgs(process.argv.slice(2));
@@ -86,10 +95,15 @@ try {
       console.log(
         `Image plaza seed prompt translate complete: translated=${batch.translated} skipped=${batch.skipped} failed=${batch.failed} marked=${batch.marked}`
       );
-      if (batch.failed > 0) exitCode = 1;
+      if (batch.failed > 0) {
+        exitCode = 1;
+        outcome = 'partial';
+      }
     }
   }
 } catch (err) {
+  outcome = 'error';
+  terminalError = err;
   log.sys.error(
     { event: 'image_plaza.seed_prompt.translate_failed', err },
     '种子提示词翻译任务失败'
@@ -100,6 +114,8 @@ try {
   try {
     await closeSeedPromptTranslateResources();
   } catch (err) {
+    outcome = 'error';
+    terminalError ??= err;
     log.sys.error(
       { event: 'image_plaza.seed_prompt.cleanup_failed', err },
       '种子提示词翻译资源清理失败'
@@ -108,6 +124,13 @@ try {
   }
 }
 
+observeBackgroundRun({
+  job: 'image_plaza_seed_prompt_translate',
+  outcome,
+  startedAt: observationStartedAt,
+  error: terminalError,
+});
+await stopObservability();
 process.exitCode = exitCode;
 
 async function runVeniceRetryMode(options: CliOptions): Promise<void> {

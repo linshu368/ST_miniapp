@@ -1,11 +1,9 @@
 import { useState } from 'react';
 import {
   Alert,
-  App as AntApp,
   Button,
   Card,
   Col,
-  Descriptions,
   Input,
   InputNumber,
   Row,
@@ -26,9 +24,10 @@ import {
   calculateImagePlazaPrice,
   imagePlazaPriceKey,
   IMAGE_PLAZA_PRICING_INPUT_MAX,
-  recalculateImagePlazaCatalog,
+  getImagePlazaPricingFactors,
   type ImagePlazaPricingFactors,
 } from '../lib/imagePlazaPricing';
+import { ImagePlazaPricingEditor } from './ImagePlazaPricingEditor';
 
 const RATIOS: ImagePlazaAspectRatio[] = [
   '1:1',
@@ -47,27 +46,8 @@ export function ImagePlazaModelCatalogEditor(props: {
   disabled?: boolean;
   onChange: (value: ImagePlazaModelCatalog) => void;
 }) {
-  const { message } = AntApp.useApp();
-  const [factors, setFactors] = useState<ImagePlazaPricingFactors>({
-    exchange: 7.3,
-    markup: 2,
-    ratio: 100,
-  });
+  const factors = getImagePlazaPricingFactors(props.value);
   const standardPrices = props.value.standard_prices ?? {};
-  const recalculated = recalculateImagePlazaCatalog(props.value, standardPrices, factors);
-  const exampleModel = props.value.models.find((model) =>
-    model.resolutions.some((tier) =>
-      calculateImagePlazaPrice(standardPrices[imagePlazaPriceKey(model.id, tier.id)], factors)
-    )
-  );
-  const exampleTier = exampleModel?.resolutions.find((tier) =>
-    calculateImagePlazaPrice(standardPrices[imagePlazaPriceKey(exampleModel.id, tier.id)], factors)
-  );
-  const exampleUsd =
-    exampleModel && exampleTier
-      ? standardPrices[imagePlazaPriceKey(exampleModel.id, exampleTier.id)]
-      : null;
-  const examplePrice = calculateImagePlazaPrice(exampleUsd, factors);
   const patchModel = (index: number, patch: Partial<ProviderImagePlazaModel>) => {
     const models = structuredClone(props.value.models);
     models[index] = { ...models[index], ...patch };
@@ -81,90 +61,7 @@ export function ImagePlazaModelCatalogEditor(props: {
         message="用户端只读取已发布目录"
         description="业务 ID 发布后保持稳定；Anime 的 provider ID 为 wai-Illustrious。报价和扣费均读取各分辨率的上架星尘价，有参考图不加价。"
       />
-      <Card size="small" title="统一定价参数（仅本次页面有效）">
-        <Space direction="vertical" className="editor-stack">
-          <Typography.Text type="secondary">
-            请填写每个模型各档位的 USD
-            标准价（含下架模型）。标准价随“保存草稿”保存，刷新后可继续使用；以下统一参数仅本次页面有效。
-          </Typography.Text>
-          <Space wrap>
-            <Typography.Text strong>原平台价 USD ×</Typography.Text>
-            <InputNumber
-              aria-label="统一汇率"
-              addonBefore="汇率"
-              min={0.0001}
-              max={IMAGE_PLAZA_PRICING_INPUT_MAX}
-              precision={4}
-              value={factors.exchange}
-              disabled={props.disabled}
-              onChange={(exchange) => setFactors((current) => ({ ...current, exchange }))}
-            />
-            <Typography.Text>×</Typography.Text>
-            <InputNumber
-              aria-label="统一加价倍率"
-              addonBefore="加价倍率"
-              min={0.0001}
-              max={IMAGE_PLAZA_PRICING_INPUT_MAX}
-              precision={4}
-              value={factors.markup}
-              disabled={props.disabled}
-              onChange={(markup) => setFactors((current) => ({ ...current, markup }))}
-            />
-            <Typography.Text>×</Typography.Text>
-            <InputNumber
-              aria-label="每元星尘数"
-              addonAfter="星尘 = 1 元"
-              min={0.0001}
-              max={IMAGE_PLAZA_PRICING_INPUT_MAX}
-              precision={4}
-              value={factors.ratio}
-              disabled={props.disabled}
-              onChange={(ratio) => setFactors((current) => ({ ...current, ratio }))}
-            />
-            <Button
-              type="primary"
-              disabled={props.disabled || !recalculated.catalog}
-              onClick={() => {
-                if (props.disabled || !recalculated.catalog) return;
-                props.onChange(recalculated.catalog);
-                message.success('已重算所有模型档位的上架价；请保存草稿并发布后生效。');
-              }}
-            >
-              一键重算
-            </Button>
-          </Space>
-          <Typography.Text type="secondary">
-            尾数不足 10
-            星尘自动向上补整十。修改参数只更新预览，点击重算才会覆盖上架价草稿（包括手工价格）。
-          </Typography.Text>
-          {recalculated.issues.length > 0 && (
-            <Alert
-              type="warning"
-              showIcon
-              message={`暂不能批量重算：${recalculated.issues.length} 个档位缺少有效标准价、参数无效或结果超出安全范围`}
-              description={`请检查：${recalculated.issues.join('；')}。输入必须大于 0、不超过 1,000,000，最多四位小数。`}
-            />
-          )}
-        </Space>
-      </Card>
-      <Card size="small" title="定价公式预览">
-        <Descriptions column={1} size="small">
-          <Descriptions.Item label="公式">
-            星尘价 = 向上补整十（USD × 汇率 × 加价倍率 × 每元星尘数）
-          </Descriptions.Item>
-          <Descriptions.Item label="示例">
-            {examplePrice && exampleModel && exampleTier
-              ? `${exampleModel.name} / ${exampleTier.label} (${exampleTier.id})：${exampleUsd} × ${factors.exchange} × ${factors.markup} × ${factors.ratio} = ${examplePrice.raw} → ${examplePrice.credits} 星尘`
-              : '填写至少一个档位的有效 USD 标准价和统一参数后显示实时示例。'}
-          </Descriptions.Item>
-          <Descriptions.Item label="换算">
-            {factors.ratio ?? '—'} 星尘 = 1 元人民币；此比例仅用于本页计算，不修改钱包或充值配置。
-          </Descriptions.Item>
-          <Descriptions.Item label="生效">
-            重算仅修改当前草稿，保存并发布后供新生成使用；历史订单不回溯。
-          </Descriptions.Item>
-        </Descriptions>
-      </Card>
+      <ImagePlazaPricingEditor {...props} />
       <div>
         <Typography.Text strong>默认模型</Typography.Text>
         <Select

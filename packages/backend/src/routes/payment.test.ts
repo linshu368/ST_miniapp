@@ -660,6 +660,7 @@ describe('toPaymentOrder', () => {
       fulfillment_applied: false,
       vip_duration_days: null,
       vip_bonus_credits: null,
+      vip_bonus_main_credits: 0,
       vip_valid_until: null,
     });
   });

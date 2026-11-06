@@ -100,6 +100,23 @@ describe('editable model catalog additions', () => {
     });
   });
 
+  it('preserves a Surplus provider mapping while parsing editable state', () => {
+    const surplusCatalog = structuredClone(catalog);
+    Object.assign(surplusCatalog.tiers[0]!.models[0]!, {
+      provider: 'surplus',
+      provider_model_id: 'anthropic/claude-haiku-5.5',
+      openrouter_model_id: 'anthropic/claude-haiku-5.5',
+    });
+
+    const parsed = EditableModelCatalogSchema.parse(surplusCatalog);
+
+    expect(parsed.tiers[0]?.models[0]).toMatchObject({
+      provider: 'surplus',
+      provider_model_id: 'anthropic/claude-haiku-5.5',
+      openrouter_model_id: 'anthropic/claude-haiku-5.5',
+    });
+  });
+
   it('keeps a newly added incomplete model editable', () => {
     const result = appendDraftModel(catalog, 0, 123);
     expect(result.tiers[0]?.models.at(-1)?.id).toBe('model-123-2');

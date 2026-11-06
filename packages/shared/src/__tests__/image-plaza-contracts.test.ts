@@ -48,6 +48,31 @@ function model(overrides: Record<string, unknown> = {}) {
 }
 
 describe('ImagePlazaModelCatalogSchema', () => {
+  it('preserves saved pricing parameters without injecting them into legacy catalogs', () => {
+    const legacy = { default_model_id: 'seedream-v5-pro', models: [model()] };
+    expect(ImagePlazaModelCatalogSchema.parse(legacy).pricing_factors).toBeUndefined();
+    const pricing_factors = { exchange: 7.3, markup: 2.5, ratio: 100 };
+    const saved = ImagePlazaModelCatalogSchema.parse({ ...legacy, pricing_factors });
+    const loaded = ImagePlazaModelCatalogSchema.parse(JSON.parse(JSON.stringify(saved)));
+    expect(loaded.pricing_factors).toEqual(pricing_factors);
+    expect(loaded.models).toEqual(legacy.models);
+  });
+
+  it.each([null, 0, -1, Infinity, NaN, 1_000_001, 0.00001, '2.5'])(
+    'rejects invalid pricing parameters %s',
+    (value) => {
+      for (const key of ['exchange', 'markup', 'ratio']) {
+        expect(
+          ImagePlazaModelCatalogSchema.safeParse({
+            default_model_id: 'seedream-v5-pro',
+            models: [model()],
+            pricing_factors: { exchange: 7.3, markup: 2.5, ratio: 100, [key]: value },
+          }).success
+        ).toBe(false);
+      }
+    }
+  );
+
   it('preserves optional standard prices across JSON round trips without changing models', () => {
     const legacy = { default_model_id: 'seedream-v5-pro', models: [model()] };
     const parsedLegacy = ImagePlazaModelCatalogSchema.parse(legacy);

@@ -38,6 +38,17 @@ interface VeniceModelRecord {
   };
 }
 
+interface SurplusModelRecord {
+  id: string;
+  name?: string;
+  description?: string | null;
+  contextLength?: number | null;
+  promptPrice: number;
+  completionPrice: number;
+  supportsChatText: boolean;
+  status?: string | null;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -59,6 +70,17 @@ function readNonNegativeInteger(value: unknown): number | null | undefined {
 function readUsdPrice(value: unknown): number | null {
   const numberValue = Number(value ?? 0);
   return Number.isFinite(numberValue) && numberValue >= 0 ? numberValue : null;
+}
+
+function readRequiredUsdPrice(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  return readUsdPrice(value);
+}
+
+function readStringArray(value: unknown): string[] | null {
+  if (!Array.isArray(value)) return null;
+  const values = value.map(readText);
+  return values.every((item): item is string => item !== undefined) ? values : null;
 }
 
 function parseVeniceModelsResponse(value: unknown): VeniceModelRecord[] {
@@ -90,6 +112,43 @@ function parseVeniceModelsResponse(value: unknown): VeniceModelRecord[] {
               },
             }
           : undefined,
+      },
+    ];
+  });
+}
+
+function parseSurplusModelsResponse(value: unknown): SurplusModelRecord[] {
+  if (!isRecord(value) || !Array.isArray(value.data)) {
+    throw new Error('Surplus models response is not a data array');
+  }
+
+  return value.data.flatMap<SurplusModelRecord>((item) => {
+    if (!isRecord(item)) return [];
+    const id = readText(item.id);
+    const pricing = isRecord(item.pricing) ? item.pricing : null;
+    const architecture = isRecord(item.architecture) ? item.architecture : null;
+    const inputModalities = readStringArray(architecture?.input_modalities);
+    const outputModalities = readStringArray(architecture?.output_modalities);
+    const promptPrice = readRequiredUsdPrice(pricing?.prompt);
+    const completionPrice = readRequiredUsdPrice(pricing?.completion);
+    if (
+      !id ||
+      promptPrice === null ||
+      completionPrice === null ||
+      !inputModalities ||
+      !outputModalities
+    )
+      return [];
+    return [
+      {
+        id,
+        name: readText(item.name),
+        description: readNullableText(item.description),
+        contextLength: readNonNegativeInteger(item.context_length),
+        promptPrice,
+        completionPrice,
+        supportsChatText: inputModalities.includes('text') && outputModalities.includes('text'),
+        status: readNullableText(item.status),
       },
     ];
   });
@@ -229,12 +288,108 @@ export class VeniceProviderDirectoryClient {
   }
 }
 
+export class SurplusProviderDirectoryClient {
+  private readonly endpoint: string;
+  private readonly cacheTtlMs: number;
+  private readonly timeoutMs: number;
+  private readonly fetchImpl: typeof fetch;
+  private readonly now: () => number;
+  private cached: ProviderModelDirectory | null = null;
+  private cachedAt = 0;
+  private inFlight: Promise<ProviderModelDirectory> | null = null;
+
+  constructor(options: Omit<ProviderDirectoryClientOptions, 'apiKey'> = {}) {
+    const runtime = getLlmProviderRuntimeConfig('surplus');
+    const upstreamBaseUrl = runtime.baseUrl.replace(/\/+$/, '');
+    this.endpoint =
+      options.endpoint ?? `${upstreamBaseUrl}${LLM_PROVIDER_CAPABILITIES.surplus.modelsPath}`;
+    this.cacheTtlMs = options.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS;
+    this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.fetchImpl = options.fetchImpl ?? fetch;
+    this.now = options.now ?? Date.now;
+  }
+
+  async getModels(options: { forceRefresh?: boolean } = {}): Promise<ProviderModelDirectory> {
+    if (!options.forceRefresh && this.cached && this.now() - this.cachedAt < this.cacheTtlMs) {
+      return this.cached;
+    }
+
+    if (!this.inFlight) {
+      this.inFlight = this.refresh().finally(() => {
+        this.inFlight = null;
+      });
+    }
+
+    try {
+      return await this.inFlight;
+    } catch (error) {
+      if (this.cached) return { ...this.cached, stale: true };
+      throw error;
+    }
+  }
+
+  private async refresh(): Promise<ProviderModelDirectory> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+
+    try {
+      const response = await this.fetchImpl(this.endpoint, {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        throw new Error(`Surplus models request failed with HTTP ${response.status}`);
+      }
+
+      const models = parseSurplusModelsResponse(await response.json())
+        .filter((model) => model.supportsChatText)
+        .map<ProviderModelSummary>((model) => {
+          const statusLabel = model.status?.trim() || null;
+          const unavailable =
+            statusLabel !== null &&
+            ['offline', 'unavailable', 'paused', 'delisted'].includes(statusLabel.toLowerCase());
+          return {
+            provider: 'surplus',
+            id: model.id,
+            name: model.name ?? model.id,
+            description: model.description ?? null,
+            context_length: model.contextLength ?? null,
+            prompt_usd_per_token: model.promptPrice,
+            completion_usd_per_token: model.completionPrice,
+            status: unavailable ? 'unavailable' : 'available',
+            raw_status_label: statusLabel,
+          };
+        })
+        .sort(
+          (left, right) => left.name.localeCompare(right.name) || left.id.localeCompare(right.id)
+        );
+
+      if (models.length === 0)
+        throw new Error('Surplus Intelligence returned no valid text models');
+
+      const directory = ProviderModelDirectorySchema.parse({
+        provider: 'surplus',
+        models,
+        fetched_at: new Date(this.now()).toISOString(),
+        stale: false,
+      });
+      this.cached = directory;
+      this.cachedAt = this.now();
+      return directory;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+}
+
 export const providerDirectoryClients: Record<
   LlmModelProvider,
   { getModels(options?: { forceRefresh?: boolean }): Promise<ProviderModelDirectory> }
 > = {
   openrouter: new OpenRouterProviderDirectoryClient(),
   venice: new VeniceProviderDirectoryClient(),
+  surplus: new SurplusProviderDirectoryClient(),
 };
 
 export async function getProviderModelDirectory(

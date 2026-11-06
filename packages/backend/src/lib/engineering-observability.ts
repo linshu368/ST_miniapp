@@ -30,6 +30,7 @@ const DURATION_BUCKETS = [
 ];
 const LABEL_VALUES = new Map<string, Set<string>>();
 const SAFE_KEY = /^[a-zA-Z0-9_./:*-]{1,120}$/;
+const LLM_PROVIDERS = new Set(['openrouter', 'venice', 'surplus']);
 type MetricAttributes = Record<string, string | number | boolean>;
 
 /** 模板/模型来自应用目录，仍限制不同值数量，防止意外把 ID 当标签。 */
@@ -49,8 +50,7 @@ export function engineeringRoute(route: string): string {
 
 function identity(input: { provider: string; model: string }): MetricAttributes {
   return {
-    platform:
-      input.provider === 'openrouter' || input.provider === 'venice' ? input.provider : 'unknown',
+    platform: LLM_PROVIDERS.has(input.provider) ? input.provider : 'unknown',
     model: boundedLabel('model', input.model, 64),
   };
 }
@@ -300,6 +300,27 @@ export function observeRuntime(loopDelayMs: number, rss: number) {
   active?.gauge('st_runtime_rss_bytes', rss);
 }
 
+export type BackgroundJobOutcome = 'success' | 'partial' | 'error' | 'skipped' | 'cancelled';
+
+/** Process and scheduler jobs use fixed names only; business IDs never become labels. */
+export function observeBackgroundJob(input: {
+  job: string;
+  outcome: BackgroundJobOutcome;
+  durationMs: number;
+}): void {
+  if (!active) return;
+  const attrs = {
+    job: boundedLabel('background_job', input.job, 64),
+    outcome: input.outcome,
+  };
+  active.duration('st_background_job_duration', input.durationMs, attrs);
+  active.count('st_background_job_runs', attrs);
+  active.event('background_job.terminal', {
+    ...attrs,
+    duration_ms: Math.round(input.durationMs),
+  });
+}
+
 export function observeGenerationDispatch(input: {
   provider: string;
   model: string;
@@ -408,34 +429,25 @@ export function observeGenerationPrepare(input: {
   });
 }
 
-/** Non-overlapping wall-clock gates from route entry to dispatch, not a sum of parallel reads. */
+export type GenerationPreparationStage =
+  | 'route_setup'
+  | 'settings'
+  | 'turn_open'
+  | 'context'
+  | 'dispatch_gate';
+
 export function observeGenerationPreparationStages(input: {
   provider: string;
   model: string;
-  stages: Partial<
-    Record<'route_setup' | 'settings' | 'turn_open' | 'context' | 'dispatch_gate', number>
-  >;
+  stages?: Partial<Record<GenerationPreparationStage, number>>;
+  log?: MetricAttributes;
 }) {
   if (!active) return;
   const attrs = identity(input);
-  const detail: MetricAttributes = { ...attrs };
-  let total = 0;
-  for (const stage of [
-    'route_setup',
-    'settings',
-    'turn_open',
-    'context',
-    'dispatch_gate',
-  ] as const) {
-    const duration = input.stages[stage];
-    if (duration === undefined || !Number.isFinite(duration) || duration < 0) continue;
-    active.duration('st_generation_pre_dispatch_stage', duration, { ...attrs, stage });
-    detail[`${stage}_ms`] = Math.round(duration);
-    total += duration;
-  }
-  // Aggregates cover all turns; only slow preparation adds a diagnostic event.
-  if (total >= 1_000)
-    active.event('generation.pre_dispatch', { ...detail, total_ms: Math.round(total) });
+  if (input.stages)
+    for (const [stage, duration] of Object.entries(input.stages))
+      active.duration('st_generation_pre_dispatch_stage', duration, { ...attrs, stage });
+  if (input.log) active.event('generation.pre_dispatch', { ...attrs, ...input.log });
 }
 
 export type GenerationOutcome =

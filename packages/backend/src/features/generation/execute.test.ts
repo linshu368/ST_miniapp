@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { config } from '../../platform/config.js';
 import type { GenerationSettlementEntry } from './settle.js';
 import type { GenerationLogger, GenerationRequest } from './types.js';
+import type { LlmModelProvider } from '@miniapp/shared';
 
 const originalVeniceConfig = { ...config.venice };
 
@@ -13,7 +14,7 @@ const pricing = {
 const defaultBillingContext = {
   modelId: 'anthropic-claude-sonnet-4-5',
   modelDisplayName: 'Claude Sonnet 4.5',
-  provider: 'openrouter' as 'openrouter' | 'venice',
+  provider: 'openrouter' as LlmModelProvider,
   providerModelId: 'anthropic/claude-sonnet-4.5',
   openRouterModelId: 'anthropic/claude-sonnet-4.5',
   modelTier: 'premium' as const,
@@ -46,12 +47,16 @@ const telemetry = vi.hoisted(() => ({
   prepare: vi.fn(),
   terminal: vi.fn(),
 }));
+const providerAlerts = vi.hoisted(() => ({ observe: vi.fn() }));
 vi.mock('../../lib/engineering-observability.js', () => ({
   observeChatFirstToken: telemetry.chat,
   observeGenerationDispatch: telemetry.dispatch,
   observeGenerationAttempt: telemetry.attempt,
   observeGenerationPrepare: telemetry.prepare,
   observeGenerationTerminal: telemetry.terminal,
+}));
+vi.mock('./provider-alerts.js', () => ({
+  observeLlmProviderResponse: providerAlerts.observe,
 }));
 
 vi.mock('./quota.js', () => ({
@@ -201,6 +206,7 @@ function requestBodyOf(fetchMock: ReturnType<typeof stubUpstream>): Record<strin
 
 beforeEach(() => {
   Object.values(telemetry).forEach((fn) => fn.mockClear());
+  providerAlerts.observe.mockClear();
   preparation.readBilling.mockReset().mockImplementation(async () => billingContext);
   preparation.readRouting
     .mockReset()
@@ -479,6 +485,11 @@ describe('execute（失败路径）', () => {
       assistant_reply: null,
     });
     expect(onError).toHaveBeenCalled();
+    expect(providerAlerts.observe).toHaveBeenCalledWith({
+      provider: 'openrouter',
+      model: 'anthropic/claude-sonnet-4.5',
+      status: 429,
+    });
   });
 });
 
@@ -596,6 +607,49 @@ describe('execute（请求体）', () => {
     expect(body.reasoning).toEqual({ enabled: true });
     expect(body.prompt_cache_key).toBe('session:session-1');
     expect(body.stream_options).toEqual({ include_usage: true });
+  });
+
+  it('Surplus uses only standard Chat Completions fields', async () => {
+    providerPreferences = { ignore: ['alibaba'], order: ['friendli'], allow_fallbacks: true };
+    billingContext = {
+      ...defaultBillingContext,
+      modelId: 'surplus-model',
+      modelDisplayName: 'Surplus Model',
+      provider: 'surplus',
+      providerModelId: 'anthropic/claude-haiku-5.5',
+      openRouterModelId: 'anthropic/claude-haiku-5.5',
+    };
+    vi.stubEnv('SURPLUS_API_BASE_URL', 'https://surplus.example/api/v1');
+    vi.stubEnv('SURPLUS_API_KEY', 'test-surplus-key');
+    const fetchMock = stubUpstream(() => sseResponse(['data: [DONE]\n\n']));
+
+    await execute(
+      request({
+        model: {
+          modelId: 'surplus-model',
+          provider: 'surplus',
+          providerModelId: 'anthropic/claude-haiku-5.5',
+          openRouterModelId: 'anthropic/claude-haiku-5.5',
+          tier: 'premium',
+          isFree: false,
+          entitlement: { active: true, validUntil: '2099-01-01T00:00:00.000Z' },
+        },
+        promptCaching: true,
+      }),
+      undefined,
+      fakeLogger()
+    );
+
+    const body = requestBodyOf(fetchMock) as Record<string, unknown>;
+    expect(body).toMatchObject({
+      model: 'anthropic/claude-haiku-5.5',
+      stream: true,
+    });
+    expect(body.provider).toBeUndefined();
+    expect(body.reasoning).toBeUndefined();
+    expect(body.venice_parameters).toBeUndefined();
+    expect(body.prompt_cache_key).toBeUndefined();
+    expect(body.stream_options).toBeUndefined();
   });
 
   it.each(['openrouter', 'venice'] as const)(

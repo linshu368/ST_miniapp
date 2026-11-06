@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
+import { useChatMessageScroll } from './use-chat-message-scroll';
 import { ArrowDown, Loader2 } from 'lucide-react';
 import { CHAT_MESSAGE_EDIT_ROUNDS, type ChatMessage } from '@miniapp/shared';
 import type { ReplyChoicePayload } from '@miniapp/reply-renderer';
@@ -9,9 +10,7 @@ import type { AssistantBodyPlan } from '@/lib/text-postprocess/reply-plan';
 
 import { ChatMessageBubble, ChatTypingBubble } from './chat-message-bubble';
 import { messageThinkingKey, type MessageThinkingMap } from '@/lib/chat-thinking';
-
-/** 距底部多少像素内算「用户还在看最新消息」，超出就认为他在翻历史 */
-const STICK_TO_BOTTOM_THRESHOLD_PX = 120;
+import { ChatGuide } from '@/components/onboarding/chat-guide';
 
 interface ChatMessageListProps {
   /** 已按 turn_index 升序，包含正在流式写入的那条 */
@@ -43,135 +42,40 @@ interface ChatMessageListProps {
   onEditingChange?: (editing: boolean) => void;
 }
 
-export function ChatMessageList({
-  messages,
-  characterName,
-  characterAvatarUrl,
-  userAvatarUrl,
-  hasMore,
-  loadingEarlier,
-  onLoadEarlier,
-  awaitingFirstToken,
-  replyStalled,
-  quotaExhaustedNotice,
-  renderFooter,
-  branchFor,
-  streamingMessageId,
-  displayName,
-  replyPlanFor,
-  choiceDisabledFor,
-  onChoice,
-  detailsDefaultOpen,
-  thinkingByMessage,
-  editDisabled = false,
-  viewportHeight,
-  onEditingChange,
-}: ChatMessageListProps) {
-  const editingRef = useRef(false);
-  const [editing, setEditing] = useState(false);
-  const handleEditingChange = useCallback(
-    (editing: boolean) => {
-      editingRef.current = editing;
-      setEditing(editing);
-      if (editing) stickToBottomRef.current = false;
-      onEditingChange?.(editing);
-    },
-    [onEditingChange]
-  );
+export function ChatMessageList(props: ChatMessageListProps) {
+  const {
+    messages,
+    characterName,
+    characterAvatarUrl,
+    hasMore,
+    loadingEarlier,
+    onLoadEarlier,
+    awaitingFirstToken,
+    replyStalled,
+    thinkingByMessage,
+    editDisabled = false,
+    onEditingChange,
+  } = props;
   const latestTurn = Math.max(0, ...messages.map((message) => message.turn_index));
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
-  const stickToBottomRef = useRef(true);
-  const earlierAnchorRef = useRef<{ firstId: string; height: number; top: number } | null>(null);
-  const [showLatestJump, setShowLatestJump] = useState(false);
-  const [hasUnseenReply, setHasUnseenReply] = useState(false);
-
-  const handleScroll = useCallback(() => {
-    const node = scrollRef.current;
-    if (!node) return;
-    if (earlierAnchorRef.current) earlierAnchorRef.current.top = node.scrollTop;
-    const distanceToBottom = node.scrollHeight - node.scrollTop - node.clientHeight;
-    const atBottom = distanceToBottom <= STICK_TO_BOTTOM_THRESHOLD_PX;
-    stickToBottomRef.current = atBottom && !editingRef.current;
-    setShowLatestJump(!atBottom);
-    if (atBottom) setHasUnseenReply(false);
-  }, []);
-
-  const loadEarlier = () => {
-    const node = scrollRef.current;
-    const first = messages[0];
-    if (!node || !first || loadingEarlier) return;
-    earlierAnchorRef.current = {
-      firstId: first.id,
-      height: node.scrollHeight,
-      top: node.scrollTop,
-    };
-    stickToBottomRef.current = false;
-    onLoadEarlier();
-  };
-
-  // 前插历史后保留原来读到的那句话；不能因消息变长而跳到底部或跳到页首。
-  useLayoutEffect(() => {
-    const node = scrollRef.current;
-    const anchor = earlierAnchorRef.current;
-    if (!node || !anchor) return;
-    if (messages[0]?.id !== anchor.firstId) {
-      node.scrollTop = anchor.top + node.scrollHeight - anchor.height;
-      earlierAnchorRef.current = null;
-      handleScroll();
-    } else if (!loadingEarlier) {
-      earlierAnchorRef.current = null;
-    }
-  }, [messages, loadingEarlier, handleScroll]);
-
-  const last = messages.at(-1);
-  const thinkingLength = last ? (thinkingByMessage?.[messageThinkingKey(last)]?.length ?? 0) : 0;
-  // 流式期间正文长度每帧都在变，把它放进依赖里才能跟着往下滚
-  const tail = `${last?.id ?? ''}:${last?.content.length ?? 0}:${thinkingLength}:${awaitingFirstToken}`;
-  const assistantUpdate =
-    last?.role === 'assistant'
-      ? `${last.id}:${last.revision}:${last.content.length}:${thinkingLength}:${last.status}`
-      : null;
-  const previousAssistantUpdate = useRef(assistantUpdate);
-
-  useEffect(() => {
-    const replyChanged =
-      assistantUpdate !== null && assistantUpdate !== previousAssistantUpdate.current;
-    previousAssistantUpdate.current = assistantUpdate;
-    if (!stickToBottomRef.current) {
-      if (replyChanged) setHasUnseenReply(true);
-      return;
-    }
-    const node = scrollRef.current;
-    if (!node) return;
-    node.scrollTop = node.scrollHeight;
-  }, [tail, assistantUpdate]);
-
-  const returnToLatest = () => {
-    const node = scrollRef.current;
-    if (!node) return;
-    earlierAnchorRef.current = null;
-    stickToBottomRef.current = true;
-    setShowLatestJump(false);
-    setHasUnseenReply(false);
-    node.scrollTo({ top: node.scrollHeight, behavior: 'auto' });
-  };
-
-  /**
-   * 键盘弹起会让消息区变矮，浏览器保留 scrollTop，最新那条就被推到折线以下。
-   * 只在用户本来就贴着底部时补一次，正在翻历史的人不该被拽回去。
-   */
-  useEffect(() => {
-    const node = scrollRef.current;
-    if (!node || typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(() => {
-      if (!stickToBottomRef.current) return;
-      node.scrollTop = node.scrollHeight;
-    });
-    observer.observe(node);
-    if (contentRef.current) observer.observe(contentRef.current);
-    return () => observer.disconnect();
-  }, []);
+  const {
+    editing,
+    handleEditingChange,
+    scrollRef,
+    contentRef,
+    handleScroll,
+    loadEarlier,
+    last,
+    showLatestJump,
+    hasUnseenReply,
+    returnToLatest,
+  } = useChatMessageScroll({
+    messages,
+    loadingEarlier,
+    onLoadEarlier,
+    awaitingFirstToken,
+    thinkingByMessage,
+    onEditingChange,
+  });
 
   // 行间不留 gap：每条消息自带上下留白，行距由行内 padding 决定（对齐原版 #chat）
   return (
@@ -196,55 +100,30 @@ export function ChatMessageList({
             </div>
           ) : null}
 
-          {messages
-            .filter((message) => !message.deleted)
-            .map((message) => (
-              <ChatMessageBubble
-                key={`${message.id}:${message.revision}`}
-                message={message}
-                editable={
-                  message.turn_index > 0 &&
-                  message.turn_index > latestTurn - CHAT_MESSAGE_EDIT_ROUNDS &&
-                  message.status !== 'streaming'
-                }
-                editDisabled={editDisabled}
-                editMenuDisabled={editing}
-                viewportHeight={viewportHeight}
-                onEditingChange={handleEditingChange}
-                characterName={characterName}
-                characterAvatarUrl={characterAvatarUrl}
-                userAvatarUrl={userAvatarUrl}
-                streaming={message.id === streamingMessageId || message.status === 'streaming'}
-                stalled={replyStalled && message.id === last?.id && message.status === 'streaming'}
-                quotaExhaustedNotice={
-                  quotaExhaustedNotice?.messageId === message.id
-                    ? quotaExhaustedNotice.text
-                    : undefined
-                }
-                renderFooter={
-                  renderFooter
-                    ? (tools, editAction) => renderFooter(message, tools, editAction)
-                    : undefined
-                }
-                branch={branchFor?.(message)}
-                replyPlan={message.role === 'assistant' ? replyPlanFor?.(message) : undefined}
-                displayName={displayName}
-                choiceDisabled={choiceDisabledFor?.(message) !== false}
-                onChoice={
-                  onChoice && message.role === 'assistant'
-                    ? (choice) => onChoice(message, choice)
-                    : undefined
-                }
-                detailsDefaultOpen={detailsDefaultOpen}
-                thinkingText={thinkingByMessage?.[messageThinkingKey(message)]}
-              />
-            ))}
+          <MessageRows
+            list={props}
+            latestTurn={latestTurn}
+            editing={editing}
+            lastId={last?.id}
+            onEditingChange={handleEditingChange}
+          />
 
           {awaitingFirstToken ? (
             <ChatTypingBubble
               characterName={characterName}
               characterAvatarUrl={characterAvatarUrl}
               stalled={replyStalled}
+            />
+          ) : null}
+          {messages.length > 0 ? (
+            <ChatGuide
+              messages={messages}
+              busy={
+                editing ||
+                editDisabled ||
+                awaitingFirstToken ||
+                messages.some((message) => message.status === 'streaming')
+              }
             />
           ) : null}
         </div>
@@ -260,5 +139,84 @@ export function ChatMessageList({
         </button>
       ) : null}
     </div>
+  );
+}
+
+function MessageRows({
+  list,
+  latestTurn,
+  editing,
+  lastId,
+  onEditingChange,
+}: {
+  list: ChatMessageListProps;
+  latestTurn: number;
+  editing: boolean;
+  lastId?: string;
+  onEditingChange: (editing: boolean) => void;
+}) {
+  const {
+    messages,
+    editDisabled,
+    viewportHeight,
+    characterName,
+    characterAvatarUrl,
+    userAvatarUrl,
+    streamingMessageId,
+    replyStalled,
+    quotaExhaustedNotice,
+    renderFooter,
+    branchFor,
+    replyPlanFor,
+    displayName,
+    choiceDisabledFor,
+    onChoice,
+    detailsDefaultOpen,
+    thinkingByMessage,
+  } = list;
+  return (
+    <>
+      {messages
+        .filter((message) => !message.deleted)
+        .map((message) => (
+          <ChatMessageBubble
+            key={`${message.id}:${message.revision}`}
+            message={message}
+            editable={
+              message.turn_index > 0 &&
+              message.turn_index > latestTurn - CHAT_MESSAGE_EDIT_ROUNDS &&
+              message.status !== 'streaming'
+            }
+            editDisabled={editDisabled}
+            editMenuDisabled={editing}
+            viewportHeight={viewportHeight}
+            onEditingChange={onEditingChange}
+            characterName={characterName}
+            characterAvatarUrl={characterAvatarUrl}
+            userAvatarUrl={userAvatarUrl}
+            streaming={message.id === streamingMessageId || message.status === 'streaming'}
+            stalled={replyStalled && message.id === lastId && message.status === 'streaming'}
+            quotaExhaustedNotice={
+              quotaExhaustedNotice?.messageId === message.id ? quotaExhaustedNotice.text : undefined
+            }
+            renderFooter={
+              renderFooter
+                ? (tools, editAction) => renderFooter(message, tools, editAction)
+                : undefined
+            }
+            branch={branchFor?.(message)}
+            replyPlan={message.role === 'assistant' ? replyPlanFor?.(message) : undefined}
+            displayName={displayName}
+            choiceDisabled={choiceDisabledFor?.(message) !== false}
+            onChoice={
+              onChoice && message.role === 'assistant'
+                ? (choice) => onChoice(message, choice)
+                : undefined
+            }
+            detailsDefaultOpen={detailsDefaultOpen}
+            thinkingText={thinkingByMessage?.[messageThinkingKey(message)]}
+          />
+        ))}
+    </>
   );
 }

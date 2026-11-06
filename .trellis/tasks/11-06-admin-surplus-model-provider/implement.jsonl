@@ -1,0 +1,9 @@
+{"file":".trellis/spec/admin/app/index.md","reason":"Admin architecture and managed configuration rules"}
+{"file":".trellis/spec/admin/app/modules/business/operations.md","reason":"Model catalog operations module contract"}
+{"file":".trellis/spec/shared/contracts/index.md","reason":"Shared external contract placement and consumer verification"}
+{"file":".trellis/spec/shared/contracts/modules/business/conversation-contracts.md","reason":"Provider/model contract module"}
+{"file":".trellis/spec/backend/app/index.md","reason":"Backend route, runtime and reliability rules"}
+{"file":".trellis/spec/backend/app/modules/business/conversation-generation.md","reason":"Unified generation and billing boundary"}
+{"file":".trellis/spec/backend/app/modules/infrastructure/runtime-data-security.md","reason":"Runtime secret and upstream access boundary"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Cross-layer compatibility and rollout review"}
+{"file":".trellis/tasks/11-06-admin-surplus-model-provider/research.md","reason":"Provider docs, reuse search and rejected alternatives"}

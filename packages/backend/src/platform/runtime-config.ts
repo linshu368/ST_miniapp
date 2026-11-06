@@ -11,6 +11,7 @@
 import { getDomainDb } from '../lib/supabase.js';
 import { z } from 'zod';
 import { config } from './config.js';
+import type { LlmModelProvider } from '@miniapp/shared';
 export interface DramaPlaybackCdnConfig {
   tokenKey: string;
   sourceOrigin: string;
@@ -93,19 +94,24 @@ export interface LlmProviderRuntimeConfig {
 }
 
 /** Provider credentials stay in backend runtime config; catalogs only store public provider IDs. */
-export function getLlmProviderRuntimeConfig(
-  provider: 'openrouter' | 'venice'
-): LlmProviderRuntimeConfig {
-  if (provider === 'openrouter') {
-    return {
-      baseUrl: process.env.LLM_UPSTREAM_URL || 'https://openrouter.ai/api/v1',
-      apiKey: process.env.LLM_API_KEY || process.env.OPENAI_API_KEY || '',
-    };
+export function getLlmProviderRuntimeConfig(provider: LlmModelProvider): LlmProviderRuntimeConfig {
+  switch (provider) {
+    case 'openrouter':
+      return {
+        baseUrl: process.env.LLM_UPSTREAM_URL || 'https://openrouter.ai/api/v1',
+        apiKey: process.env.LLM_API_KEY || process.env.OPENAI_API_KEY || '',
+      };
+    case 'venice':
+      return {
+        baseUrl: process.env.VENICE_API_BASE_URL || 'https://api.venice.ai/api/v1',
+        apiKey: process.env.VENICE_API_KEY || '',
+      };
+    case 'surplus':
+      return {
+        baseUrl: process.env.SURPLUS_API_BASE_URL || 'https://api.surplusintelligence.ai/v1',
+        apiKey: process.env.SURPLUS_API_KEY || '',
+      };
   }
-  return {
-    baseUrl: process.env.VENICE_API_BASE_URL || 'https://api.venice.ai/api/v1',
-    apiKey: process.env.VENICE_API_KEY || '',
-  };
 }
 
 export interface RuntimeConfigEntry {
@@ -303,6 +309,27 @@ const streamManifestSchema = z
       .length(30),
   })
   .strict();
+
+const streamCohortSchema = z
+  .object({
+    experimentId: z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/),
+    supabase: z.number().int().positive().safe(),
+    stream: z.number().int().positive().safe(),
+  })
+  .strict()
+  .refine((value) => value.supabase !== value.stream);
+
+/** Two sampling accounts only; invalid/stale settings leave ordinary bucketing intact. */
+export function getDramaStreamCohort(experimentId: string) {
+  const raw = process.env.DRAMA_STREAM_SAMPLING_COHORT;
+  if (!raw || raw.length > 512) return null;
+  try {
+    const cohort = streamCohortSchema.parse(JSON.parse(raw));
+    return cohort.experimentId === experimentId ? cohort : null;
+  } catch {
+    return null;
+  }
+}
 
 /** Invalid or overlapping experiments fail closed to the existing MP4 path. */
 export function getDramaStreamConfig(retainIdentity = false) {
