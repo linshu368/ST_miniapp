@@ -18,7 +18,10 @@ async function main() {
   // Graceful shutdown: close Fastify (stop accepting + drain in-flight) then exit 0 on stop signals.
   for (const signal of ['SIGTERM', 'SIGINT'] as const) {
     process.once(signal, async () => {
+      const startedAt = Date.now();
+      app.log.info({ signal }, 'Shutdown started, draining in-flight requests');
       await app.close();
+      app.log.info({ signal, durationMs: Date.now() - startedAt }, 'Shutdown complete');
       await Sentry.flush(2_000);
       process.exit(0);
     });
