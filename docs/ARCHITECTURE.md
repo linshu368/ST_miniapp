@@ -687,7 +687,7 @@ packages/backend/src/
 | `SENTRY_DSN` / `SENTRY_ENVIRONMENT` / `SENTRY_RELEASE`                             | 异常上报（release 缺省回退 `RAILWAY_GIT_COMMIT_SHA`）                         |
 | `MOCK_AUTH` / `DEV_AUTH_BYPASS` / `LOG_LEVEL` / `LOG_PRETTY`                       | 本地开发与回归脚本旁路                                                        |
 
-Vercel 侧关键变量：`NEXT_PUBLIC_API_URL`（用户端 backend 公网域名）。Backend CORS 对应变量由 `packages/backend/src/platform/config.ts` 解析；`ops/env/*.example` 示例文件比实际清单窄，以代码为准。
+Vercel 侧关键变量：`NEXT_PUBLIC_API_URL`（用户端 backend 公网域名）；`NEXT_PUBLIC_DRAMA_STREAM_ORIGIN`（Cloudflare Stream 播放域名 `https://customer-*.cloudflarestream.com`，与 backend `DRAMA_STREAM_HOST` 同值，只用于短剧起播 preconnect；缺失或格式不符时不输出提示，build 期固化，改后需 redeploy）。Backend CORS 对应变量由 `packages/backend/src/platform/config.ts` 解析；`ops/env/*.example` 示例文件比实际清单窄，以代码为准。
 
 > ST 时代的 `ST_*` / `LLM_PROXY_TOKEN_SECRET` 等变量应用已不消费；Railway IaC 的 `preserve()` 与生产控制台可能仍留名，属待清理项（§10.2）。
 

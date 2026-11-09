@@ -190,6 +190,10 @@ export function useCreateCreatorCoverMutation() {
         method: 'POST',
         body: JSON.stringify(CreatorCoverRequestSchema.parse(body)),
         timeoutMs: 60_000,
+        // 请求体的 id 由客户端生成，createCreatorCoverAsset 按这个 id 做了“先查是否已存在
+        // 再写”的幂等处理：传输层失败后原样重放，不会重复建资产。沿用 GET 的传输层重试，
+        // 吸收生产排查发现的那类“数据已传完、等响应时客户端掉线”的瞬时抖动。
+        idempotent: true,
       });
       return { asset: CreatorCoverAssetSchema.parse(data.asset) };
     },

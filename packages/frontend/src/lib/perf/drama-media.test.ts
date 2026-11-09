@@ -937,6 +937,52 @@ describe('video startup observation', () => {
     stop();
     expect(disconnect).toHaveBeenCalledTimes(1);
   });
+  it('classifies every same-origin Stream request without serializing the signed path', () => {
+    type Listener = (list: { getEntries(): PerformanceEntry[] }) => void;
+    let listener: Listener | undefined;
+    vi.stubGlobal(
+      'PerformanceObserver',
+      class {
+        static supportedEntryTypes = ['resource'];
+        constructor(callback: Listener) {
+          listener = callback;
+        }
+        observe() {}
+        disconnect() {}
+        takeRecords() {
+          return [];
+        }
+      }
+    );
+    const origin = 'https://customer-abc123.cloudflarestream.com';
+    const source = `${origin}/SIGNED.TOKEN/manifest/video.m3u8?clientBandwidthHint=2.5`;
+    const flow = tracker.ensurePlayback('a');
+    const stop = observeDramaResources(source, flow);
+    const resource = (name: string, startTime: number) =>
+      ({
+        entryType: 'resource',
+        name,
+        startTime,
+        fetchStart: startTime,
+        duration: 5,
+        responseEnd: startTime + 5,
+      }) as PerformanceResourceTiming;
+    listener?.({
+      getEntries: () => [
+        resource(source, 1),
+        resource(`${origin}/SIGNED.TOKEN/manifest/stream_t1.m3u8?a=1`, 2),
+        resource(`${origin}/SIGNED.TOKEN/video/1.mp4`, 3),
+        resource('https://customer-abc123.cloudflarestream.com.evil.invalid/x.m3u8', 4),
+        resource('https://other.invalid/poster.jpg', 5),
+      ],
+    });
+    flow.finish('playing');
+    const entries = reports.find((r) => r.phase === 'final')?.diagnostics?.network?.entries;
+    expect(entries?.map((entry) => entry.kind)).toEqual(['manifest', 'playlist', 'segment']);
+    expect(JSON.stringify(reports)).not.toContain('SIGNED');
+    expect(DramaTimingReportSchema.safeParse(reports.at(-1)).success).toBe(true);
+    stop();
+  });
   it('reports startup milestones, sanitized play results and live slow/final state', async () => {
     const observer = bind();
     observer.playCalled('automatic');

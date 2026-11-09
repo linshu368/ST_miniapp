@@ -209,6 +209,11 @@ function toTransportApiError(error: unknown): never {
   if (error instanceof RequestTimeoutError) {
     throw new ApiClientError('请求超时，请检查网络后重试', 0, 'client_timeout');
   }
+  // fetch 在连接中途被断开（弱网、WebView 切前后台）时按浏览器实现抛不同的 TypeError
+  // （Chrome "Failed to fetch"、Safari "Load failed" 等），原样抛出会在 UI 上露出英文底层报错。
+  if (error instanceof TypeError) {
+    throw new ApiClientError('网络连接中断，请检查网络后重试', 0, 'network_error');
+  }
   throw error;
 }
 

@@ -8,6 +8,7 @@ import { monitorEventLoopDelay } from 'node:perf_hooks';
 import * as Sentry from '@sentry/node';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { observeHttp, observeDb, observeRuntime } from './engineering-observability.js';
+import { registerPreparationDiagnostics } from './preparation-diagnostics.js';
 
 /** 初值，跑出基线后再调。 */
 const SLOW_REQUEST_MS = 3_000;
@@ -111,6 +112,7 @@ export function startSseResponseMetric(
 }
 
 export function registerRequestPerf(app: FastifyInstance): void {
+  registerPreparationDiagnostics(app);
   app.addHook('onResponse', async (request, reply) => {
     // 复用同一次测量，Grafana 与 Sentry 故障隔离，不新增请求 hook。
     const route = request.routeOptions?.url ?? 'unmatched';

@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/app/data-reliability-and-security.md", "reason": "日志脱敏与非关键遥测故障隔离"}
+{"file": "docs/grafana/engineering-performance.md", "reason": "明确Prisma/REST/HTTP阶段测量边界"}

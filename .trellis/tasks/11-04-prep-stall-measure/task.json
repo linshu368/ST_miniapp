@@ -1,0 +1,58 @@
+{
+  "id": "prep-stall-measure",
+  "name": "prep-stall-measure",
+  "title": "聊天派发前卡顿诊断埋点",
+  "description": "只观测 HTTP 前置阶段与 Supabase REST 响应头等待，不改交付策略",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P2",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-04",
+  "completedAt": null,
+  "branch": "feat/prep-stall-measure",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": ["backend.infrastructure.runtime-data-security"]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": [],
+      "apis": [
+        "POST /api/v1/conversations/:id/messages",
+        "POST /api/v1/conversations/:id/regenerate"
+      ],
+      "android": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": null
+      },
+      "ios": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": null
+      },
+      "api": {
+        "p95_baseline_ms": null,
+        "p95_target_ms": 4300
+      },
+      "measurement": {
+        "source": "发布后 Grafana Faro 首字成功及后端超时率，按平台与版本；本地 mock 只验证不改变行为",
+        "window": "发布后至少24小时，与发布前24小时同口径对照"
+      },
+      "notes": "页面不改故为null；Android/iOS 当前版本无法访问实时数据，API基线未知不补零，4300ms为不退化观察目标非达标声明；失败率单列避免成功样本截尾偏差。"
+    }
+  }
+}
