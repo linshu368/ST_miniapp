@@ -50,3 +50,9 @@ The user explicitly selected the documented GET lookup after clarification. Actu
 - Keep raw signed legacy extensions, merchant/order/channel/reference/amount checks, unknown-order rejection and atomic fulfilment.
 - Extend existing gateway/contract/payment route tests for absent/empty/legacy param and tampering. Run shared/backend tests, consumer typechecks and applicable lint/build checks.
 - Update README, architecture and payment specs; report real-provider recovery as unverified until deployed and checked. Do not deploy, stage or commit without the required final review.
+
+## Follow-up: nullable query pid (user approved 2026-11-09)
+
+- Make only query-response pid nullish; retain request credentials, notification schema and equality checks for supplied pid.
+- Extend existing tests for actual response structure, missing/null/malformed/mismatched pid, paid/unpaid and retained identity/amount checks.
+- Run shared/backend tests, all consumers typecheck, applicable lint/build/complexity checks; sync payment specs and module payload. Real recovery remains pending release verification.

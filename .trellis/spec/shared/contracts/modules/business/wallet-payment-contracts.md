@@ -70,6 +70,8 @@ VipCheckinBonusConfig 支持旧整数或严格 {bonus_credits,main_credits}；Vi
 
 ## TTZF epay contracts (2026-11-09)
 
+Provider query responses may omit pid or return null; EpayQueryResponseSchema accepts only those additional cases, while supplied pid must still have the numeric/digit-string shape. Backend compares non-null pid to the configured application ID. Signed notifications retain mandatory pid and merchant verification. Regression fixtures cover missing/null/malformed/mismatched pid and preserve numeric status, string money and local/provider identity guards.
+
 EpayNotificationSchema, EpayCreateResponseSchema and EpayQueryResponseSchema define provider data in api/payment.ts before backend consumption. Notification preserves string extension fields for signing; duplicate raw query fields are rejected before schema parsing. Optional param is not required or used as an environment guard; legacy signed param remains covered by signature verification. New provider IDs require EP + 30 lowercase hex digits. Numeric code/status and string yuan amounts are enforced; the backend additionally checks merchant/local-order identity, channel/reference and exact cents. Consumer PaymentOrder/CreatePaymentOrderData stay unchanged; pay_url remains HTTPS, not a QR image or application scheme. No provider secret reaches the browser.
 
 Telemetry sanitization covers key, appKey, sign, clientip, buyer and full notification/return query strings, including standalone Sentry spans. A task-specific explicit user instruction selects the documented server GET query; never emit its credential-bearing URL. Contract/telemetry regressions are in epay-contracts.test.ts; final verification status is in the task record.

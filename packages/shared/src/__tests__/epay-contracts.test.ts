@@ -35,6 +35,20 @@ describe('epay contracts and telemetry', () => {
     expect(EpayQueryResponseSchema.safeParse({ ...result, status: '1' }).success).toBe(false);
     expect(EpayQueryResponseSchema.safeParse({ ...result, money: 6 }).success).toBe(false);
   });
+  it.each([undefined, null, '1001', 1001])(
+    'accepts optional query pid %j only for queries',
+    (pid) => {
+      const response = { ...notification, pid, code: 1, status: 1, param: null, buyer: null };
+      if (pid === undefined) delete response.pid;
+      expect(EpayQueryResponseSchema.safeParse(response).success).toBe(true);
+      if (pid == null) expect(EpayNotificationSchema.safeParse(response).success).toBe(false);
+    }
+  );
+  it.each(['', 'null', 'merchant', -1, 1.5, {}, true])('rejects malformed query pid %j', (pid) => {
+    expect(
+      EpayQueryResponseSchema.safeParse({ ...notification, pid, code: 1, status: 1 }).success
+    ).toBe(false);
+  });
   it('scrubs credentials and payment callbacks from errors, breadcrumbs and span attributes', () => {
     const result = sanitizeTelemetry({
       request: {
