@@ -8,12 +8,8 @@ export const DRAMA_TIMING_MAX_RESOURCES = 16;
 export const DRAMA_TIMING_DEFINITION = 'drama_v3';
 
 // 实际引擎：只能来自运行时事实（hls.js MEDIA_ATTACHED 的 mediaSource 类型或装载分支），不能靠开关推测。
-export const DramaPlaybackEngineSchema = z.enum([
-  'hlsjs_mse',
-  'hlsjs_mms',
-  'native_hls',
-  'native_file',
-]);
+const DRAMA_PLAYBACK_ENGINES = ['hlsjs_mse', 'hlsjs_mms', 'native_hls', 'native_file'] as const;
+export const DramaPlaybackEngineSchema = z.enum(DRAMA_PLAYBACK_ENGINES);
 export type DramaPlaybackEngine = z.infer<typeof DramaPlaybackEngineSchema>;
 
 // 标识只用于串联日志；允许旧 WebView 的 web-* fallback，但不接受 URL 或任意正文。
