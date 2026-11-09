@@ -7,6 +7,7 @@ import { DramaPlayer } from './drama-player';
 import { DramaHomeFrame, DramaHomeLoading } from './drama-home-frame';
 import { cn } from '@/lib/utils';
 import { preloadDramaHls } from '@/lib/drama-media-source';
+import { afterNavigationQuietWindow } from '@/lib/navigation-quiet-window';
 import { useDramaListQuery } from '@/lib/api/drama';
 import { markCriticalSettled } from '@/lib/entry-phase';
 import { dramaTiming } from '@/lib/perf/drama-observer';
@@ -15,7 +16,16 @@ import { useDramaLibraryStore, useHydrateDramaLibrary } from '@/stores/drama-lib
 
 export function DramaHome() {
   const query = useDramaListQuery('/watch');
-  useEffect(() => preloadDramaHls(), []);
+  useEffect(() => {
+    let cancelled = false;
+    // 首帧绘制 + 一次空闲后才预取 hls.js chunk，不与首屏关键资源抢带宽。
+    void afterNavigationQuietWindow().then(() => {
+      if (!cancelled) preloadDramaHls();
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const hydrated = useHydrateDramaLibrary();
   const controlsVisible = useDramaLibraryStore((state) => state.playbackControlsVisible);
   const activeId = useDramaLibraryStore((state) => state.browse.activeId);

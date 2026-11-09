@@ -6,6 +6,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { DramaPlayer } from '@/components/drama/drama-player';
 import { startDramaPlayIntent, useDramaBrowseQueueQuery } from '@/lib/api/drama';
 import { preloadDramaHls } from '@/lib/drama-media-source';
+import { afterNavigationQuietWindow } from '@/lib/navigation-quiet-window';
 import { dramaTiming } from '@/lib/perf/drama-observer';
 import { useDramaLibraryStore, useHydrateDramaLibrary } from '@/stores/drama-library-store';
 
@@ -24,7 +25,16 @@ export default function DramaDetailPage() {
     const query = params.toString();
     router.replace(`/dramas/${id}${query ? `?${query}` : ''}`, { scroll: false });
   }, [id, router, searchParams, selectedVideo]);
-  useEffect(() => preloadDramaHls(), []);
+  useEffect(() => {
+    let cancelled = false;
+    // 首帧绘制 + 一次空闲后才预取 hls.js chunk，不与首屏关键资源抢带宽。
+    void afterNavigationQuietWindow().then(() => {
+      if (!cancelled) preloadDramaHls();
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const hydrated = useHydrateDramaLibrary();
   const queueQuery = useDramaBrowseQueueQuery();
   const navigating = useRef(false);

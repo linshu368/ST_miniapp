@@ -38,6 +38,31 @@ export function shouldUseHlsOnApple(): boolean {
  */
 const APPLE_HLS_BANDWIDTH_HINT_MBPS = 2.5;
 
+/** Stream 的视频分片固定 4.000s；续播向下对齐此边界，让 hls.js 第一片直接命中目标分片。 */
+export const STREAM_HLS_FRAGMENT_SECONDS = 4;
+
+/** 只对 hls 格式对齐；MP4（Supabase）和精确续播路径保持原值，由调用方决定是否传入对齐后的秒数。 */
+export function alignResumeSeconds(seconds: number, format: DramaPlayback['format']): number {
+  if (format !== 'hls' || seconds <= 0) return seconds;
+  return Math.floor(seconds / STREAM_HLS_FRAGMENT_SECONDS) * STREAM_HLS_FRAGMENT_SECONDS;
+}
+
+/**
+ * 续播目标秒数的唯一计算入口：临近片尾时重新进入归零（仅非精确续播路径），
+ * 否则按 exact 决定是否对齐到分片边界。duration 未知时（起播位置预设阶段）由调用方跳过临近片尾判断。
+ */
+export function resolveResumeTarget(params: {
+  seconds: number;
+  duration: number;
+  exact: boolean;
+  format: DramaPlayback['format'];
+}): number {
+  const { seconds, duration, exact, format } = params;
+  if (!exact && seconds >= duration - 0.5) return 0;
+  const clamped = Math.min(seconds, duration);
+  return exact ? clamped : alignResumeSeconds(clamped, format);
+}
+
 export function capAppleHlsQuality(playback: DramaPlayback): DramaPlayback {
   if (playback.format !== 'hls' || !playback.play_url || !isAppleWebKit() || shouldUseHlsOnApple())
     return playback;
@@ -69,13 +94,20 @@ export function ownsDramaSource(video: HTMLVideoElement, source: string): boolea
 }
 
 /** The cleanup invalidates pending imports before touching the shared video element. */
+export interface LoadDramaSourceOptions {
+  /** 续播目标秒数（已按需对齐），写入 hls.js 的 startPosition，让第一片直接拉目标分片。 */
+  startPosition?: number;
+  /** 实际装载的播放引擎确定后回调，供诊断打点。 */
+  onEngine?: (engine: DramaPlaybackEngine) => void;
+}
+
 export function loadDramaSource(
   video: HTMLVideoElement,
   playback: DramaPlayback,
   ready: () => void,
   failed: () => void,
   onHls?: (hls: HlsPlayer, events: HlsEvents) => void,
-  onEngine?: (engine: DramaPlaybackEngine) => void
+  options?: LoadDramaSourceOptions
 ) {
   const source = playback.play_url!;
   let disposed = false;
@@ -86,7 +118,7 @@ export function loadDramaSource(
     playback.format !== 'hls' || (native && isAppleWebKit() && !shouldUseHlsOnApple());
   if (useNative) {
     video.src = source;
-    onEngine?.(playback.format !== 'hls' ? 'native_file' : 'native_hls');
+    options?.onEngine?.(playback.format !== 'hls' ? 'native_file' : 'native_hls');
     ready();
   } else {
     void import('hls.js')
@@ -96,7 +128,7 @@ export function loadDramaSource(
           // 没有 MSE 时才退回原生播放器（如部分旧 WebView）。
           if (native) {
             video.src = source;
-            onEngine?.('native_hls');
+            options?.onEngine?.('native_hls');
             ready();
           } else failed();
           return;
@@ -106,6 +138,8 @@ export function loadDramaSource(
           fragLoadingTimeOut: 15000,
           // 从最低档起播并跳过带宽探测分片；ABR 随后自动升档。手机全屏播放器宽度已不会触发尺寸封顶。
           startLevel: 0,
+          // -1 是 hls.js 的自动默认值；传入续播秒数让第一片直接请求目标分片，不再先拉 sn0 探测带宽。
+          startPosition: options?.startPosition ?? -1,
         });
         destroy = () => hls.destroy();
         try {
@@ -120,7 +154,7 @@ export function loadDramaSource(
         hls.on(Hls.Events.MEDIA_ATTACHED, (_event, data) => {
           if (disposed) return;
           try {
-            onEngine?.(hlsEngineFromMediaSource(data.mediaSource));
+            options?.onEngine?.(hlsEngineFromMediaSource(data.mediaSource));
           } catch {
             /* 诊断不能影响播放 */
           }

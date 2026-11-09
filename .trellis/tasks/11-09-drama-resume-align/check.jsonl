@@ -1,0 +1,3 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": "packages/frontend/src/lib/drama-media-source.test.ts", "reason": "既有测试风格，新增用例落在此文件"}
+{"file": ".trellis/spec/frontend/app/modules/business/drama-experience.md", "reason": "drama-experience 模块规格"}
