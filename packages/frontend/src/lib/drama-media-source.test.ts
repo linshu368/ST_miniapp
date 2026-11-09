@@ -3,7 +3,7 @@ import { capAppleHlsQuality, loadDramaSource, ownsDramaSource } from './drama-me
 const state = vi.hoisted(() => ({
   destroyed: vi.fn(),
   created: vi.fn(),
-  attached: undefined as (() => void) | undefined,
+  attached: undefined as ((data?: { mediaSource?: unknown }) => void) | undefined,
   order: [] as string[],
 }));
 vi.mock('hls.js', () => ({
@@ -15,8 +15,8 @@ vi.mock('hls.js', () => ({
     constructor() {
       state.created();
     }
-    on(name: string, callback: () => void) {
-      if (name === 'attached') state.attached = callback;
+    on(name: string, callback: (event: string, data?: { mediaSource?: unknown }) => void) {
+      if (name === 'attached') state.attached = (data) => callback('attached', data);
     }
     loadSource() {
       state.order.push('loadSource');
@@ -30,6 +30,8 @@ vi.mock('hls.js', () => ({
     }
   },
 }));
+/** 测试里的最小 ManagedMediaSource 替身；只用于 instanceof 判断，不实现真实接口。 */
+class FakeManagedMediaSource {}
 function video() {
   return { src: '', currentSrc: '', canPlayType: () => '' } as unknown as HTMLVideoElement;
 }
@@ -56,7 +58,10 @@ beforeEach(() => {
   state.attached = undefined;
   state.order = [];
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+});
 it('does not attach a pending HLS import after a source was cancelled', async () => {
   const element = video(),
     ready = vi.fn();
@@ -126,4 +131,52 @@ it('leaves Android, MP4 and unplayable results untouched', () => {
   expect(capAppleHlsQuality(mp4)).toBe(mp4);
   const none = { ...playback, playable: false, play_url: null };
   expect(capAppleHlsQuality(none)).toBe(none);
+});
+it('stays on native HLS on iPhone when the flag is on but ManagedMediaSource is unavailable', () => {
+  vi.stubEnv('NEXT_PUBLIC_DRAMA_IOS_HLSJS', 'true');
+  vi.stubGlobal('navigator', { userAgent: IPHONE_UA });
+  const element = nativeVideo(),
+    ready = vi.fn();
+  loadDramaSource(element, playback, ready, vi.fn());
+  expect(element.src).toBe(playback.play_url);
+  expect(state.created).not.toHaveBeenCalled();
+  expect(capAppleHlsQuality(playback).play_url).toBe(
+    'https://example.invalid/manifest?clientBandwidthHint=2.5'
+  );
+});
+it('routes iPhone to hls.js when the flag is on and ManagedMediaSource exists, without the 720p cap', async () => {
+  vi.stubEnv('NEXT_PUBLIC_DRAMA_IOS_HLSJS', 'true');
+  vi.stubGlobal('navigator', { userAgent: IPHONE_UA });
+  vi.stubGlobal('window', { ManagedMediaSource: FakeManagedMediaSource });
+  expect(capAppleHlsQuality(playback)).toBe(playback);
+  const element = nativeVideo(),
+    ready = vi.fn(),
+    onEngine = vi.fn();
+  const cleanup = loadDramaSource(element, playback, ready, vi.fn(), undefined, onEngine);
+  await vi.waitFor(() => expect(state.created).toHaveBeenCalledOnce());
+  state.attached?.({ mediaSource: new FakeManagedMediaSource() });
+  expect(onEngine).toHaveBeenCalledWith('hlsjs_mms');
+  expect(ready).toHaveBeenCalledOnce();
+  cleanup();
+});
+it('tags the engine as hlsjs_mse when hls.js attaches a plain MediaSource', async () => {
+  vi.stubEnv('NEXT_PUBLIC_DRAMA_IOS_HLSJS', 'true');
+  vi.stubGlobal('navigator', { userAgent: IPHONE_UA });
+  vi.stubGlobal('window', { ManagedMediaSource: FakeManagedMediaSource });
+  const onEngine = vi.fn();
+  const cleanup = loadDramaSource(nativeVideo(), playback, vi.fn(), vi.fn(), undefined, onEngine);
+  await vi.waitFor(() => expect(state.created).toHaveBeenCalledOnce());
+  state.attached?.({ mediaSource: {} });
+  expect(onEngine).toHaveBeenCalledWith('hlsjs_mse');
+  cleanup();
+});
+it('reports native_file and native_hls through onEngine on the synchronous branches', () => {
+  vi.stubGlobal('navigator', { userAgent: IPHONE_UA });
+  const onEngine = vi.fn();
+  loadDramaSource(nativeVideo(), playback, vi.fn(), vi.fn(), undefined, onEngine);
+  expect(onEngine).toHaveBeenCalledWith('native_hls');
+  const mp4 = { ...playback, format: 'mp4' as const };
+  const onEngineMp4 = vi.fn();
+  loadDramaSource(nativeVideo(), mp4, vi.fn(), vi.fn(), undefined, onEngineMp4);
+  expect(onEngineMp4).toHaveBeenCalledWith('native_file');
 });
