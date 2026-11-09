@@ -1,0 +1,86 @@
+{
+  "id": "ttzf-payment-provider",
+  "name": "ttzf-payment-provider",
+  "title": "Replace Vexutopia with TTZF payment integration",
+  "description": "Replace retired Vexutopia with TTZF epay only; preserve atomic credits/VIP fulfilment, secure GET notification, query recovery and historical order isolation.",
+  "status": "planning",
+  "dev_type": "backend",
+  "scope": "payment",
+  "package": "backend",
+  "priority": "P1",
+  "creator": "cline",
+  "assignee": "cline",
+  "createdAt": "2026-11-09",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "packages/backend/src/infrastructure/payment",
+    "packages/backend/src/routes/payment.ts",
+    "packages/backend/src/features/payment",
+    "packages/backend/src/platform/config.ts",
+    "packages/backend/src/scripts",
+    "packages/shared/src/api/payment.ts",
+    ".railway/railway.ts",
+    ".github/workflows/railway-pr-env.yml",
+    "README.md",
+    "docs/ARCHITECTURE.md",
+    "ops/railway/README.md"
+  ],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "backend.business.wallet-payment",
+        "shared.business.wallet-payment-contracts",
+        "frontend.business.wallet-payment"
+      ]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": ["/profile/recharge", "/profile/recharge/:orderId", "/vip"],
+      "apis": [
+        "POST /api/payment/orders",
+        "GET /api/payment/orders/:id",
+        "GET /api/payment/return",
+        "GET /api/payment/notify/ttzf"
+      ],
+      "android": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 3000
+      },
+      "ios": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 3000
+      },
+      "api": {
+        "p95_baseline_ms": null,
+        "p95_target_ms": 3000
+      },
+      "measurement": {
+        "source": "Existing page-ready telemetry where route coverage is verified, plus backend request/Pino timing by route and platform; provider probe is not P95 evidence.",
+        "window": "Pre-cutover evidence where available; released-version observation for at least seven days, extend below 100 valid observations per route/platform."
+      },
+      "notes": "No visible Android/iOS page or API samples; baselines are null, never zero. Planning goals only: 3000 ms page/create, 1500 ms order detail evaluated separately. Verify platform-specific real handoff/return and telemetry coverage after release; viewport mocks and timeout ceilings cannot prove P95."
+    },
+    "planning_review": {
+      "status": "awaiting_user",
+      "runtime_code_changed": false,
+      "epay_only_requested": true
+    },
+    "provider_validation": {
+      "query_body_post": "unverified_application_code_500",
+      "charges_performed": false,
+      "remote_database_accessed": false
+    }
+  }
+}
