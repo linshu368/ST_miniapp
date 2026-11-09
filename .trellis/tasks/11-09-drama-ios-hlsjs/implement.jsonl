@@ -1,0 +1,6 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/frontend/app/testing-quality-and-deployment.md", "reason": "短剧统一测量 v3/媒体启动诊断/快进诊断契约段落，规定 schema 新增字段必须 Backend 先发布、Tests Required 范围"}
+{"file": ".trellis/spec/frontend/app/index.md", "reason": "前端最低质量检查命令与不可谈判规则（React Query、@miniapp/shared DTO、禁止直接 fetch）"}
+{"file": ".trellis/spec/shared/contracts/api-contracts.md", "reason": "drama-timing 诊断契约：DramaTimingReportSchema strict、32KiB body 限制、Backend 先于 Frontend 发布的既定顺序"}
+{"file": ".trellis/spec/backend/app/data-reliability-and-security.md", "reason": "后端短剧诊断字段写入路径（observeDramaStartupDiagnostic）、日志禁止字段、限流配额"}
+{"file": "docs/drama-playback-timing.md", "reason": "短剧耗时诊断字段口径、真机验收场景的权威说明文档"}

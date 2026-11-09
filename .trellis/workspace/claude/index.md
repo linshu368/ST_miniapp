@@ -9,8 +9,8 @@
 <!-- @@@auto:current-status -->
 
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 0
-- **Last Active**: -
+- **Total Sessions**: 1
+- **Last Active**: 2026-11-09
 <!-- @@@/auto:current-status -->
 
 ---
@@ -21,7 +21,7 @@
 
 | File           | Lines | Status |
 | -------------- | ----- | ------ |
-| `journal-1.md` | ~0    | Active |
+| `journal-1.md` | ~51   | Active |
 
 <!-- @@@/auto:active-documents -->
 
@@ -31,8 +31,9 @@
 
 <!-- @@@auto:session-history -->
 
-| #   | Date | Title | Commits | Branch |
-| --- | ---- | ----- | ------- | ------ |
+| #   | Date       | Title                               | Commits                                                                | Branch                 |
+| --- | ---------- | ----------------------------------- | ---------------------------------------------------------------------- | ---------------------- |
+| 1   | 2026-11-09 | iOS 短剧 hls.js 低档起播 + 引擎诊断 | `a79d2bb3`, `d5f686cc`, `0ac4295f`, `af309199`, `730028b0`, `a5027928` | `feat/drama-ios-hlsjs` |
 
 <!-- @@@/auto:session-history -->
 

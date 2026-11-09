@@ -1,0 +1,55 @@
+{
+  "id": "drama-ios-hlsjs",
+  "name": "drama-ios-hlsjs",
+  "title": "iOS 短剧 hls.js 低档起播 + 引擎诊断",
+  "description": "iOS 在支持 ManagedMediaSource 且开关打开时切到 hls.js 低档起播，去掉 720p 封顶，诊断按引擎（hlsjs_mse/hlsjs_mms/native_hls/native_file）区分；跨 frontend/shared/backend 三层。",
+  "status": "in_progress",
+  "dev_type": "feature",
+  "scope": "frontend",
+  "package": "frontend",
+  "priority": "P2",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-09",
+  "completedAt": null,
+  "branch": "feat/drama-ios-hlsjs",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": ["frontend.business.drama-experience"]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": ["短剧播放页（起播耗时与快进耗时，非页面加载）"],
+      "apis": [],
+      "android": {
+        "page_p95_baseline_ms": 6640,
+        "page_p95_target_ms": 6640
+      },
+      "ios": {
+        "page_p95_baseline_ms": 4830,
+        "page_p95_target_ms": 4830
+      },
+      "api": {
+        "p95_baseline_ms": null,
+        "p95_target_ms": null
+      },
+      "measurement": {
+        "source": "Grafana st-engineering-drama（Loki）st_drama_startup/st_drama_seek，cdn_group=stream，按 tg_platform=ios、engine 字段分前后；快进口径见 notes",
+        "window": "近 72h（截至 2026-11-09 15:48 UTC），stream 组成功样本"
+      },
+      "notes": "iOS 起播整体 P95 4.83s（N=14），direct 口径 P95 5.09s（N=7），元数据→loadeddata P50 1.76s；目标不写死数字，写方向性目标：iOS hls.js 路径起播 P95 不高于原生基线 4.83s，并能拿到分片级拆分。Android 基线 6.64s 取自同一近 72h 窗口的 direct 入口 P95（N=28/18 会话，非全入口口径，是当前唯一可查的近窗数据点）；本任务不改 Android 任何路径，baseline=target 只表示“不劣化”，不是本任务的优化承诺。接口不涉及，本任务不改任何 /api/dramas 接口。iOS 无缓冲快进 P95 4.06s（N=9）是原生口径；hls.js 下 buffered 判断方式不同（MSE vs 原生），发布后 hls.js 引擎快进 P95 不与此原生基线比较差值，只按 engine 维度分别观察趋势。样本少（N=14/N=9/N=28），发布后 N<30 只作方向参考，不补零。"
+    }
+  }
+}
