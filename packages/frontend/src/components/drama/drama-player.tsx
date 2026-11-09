@@ -40,7 +40,7 @@ import type HlsPlayer from 'hls.js';
 import { observeDramaHls, type HlsEvents } from '@/lib/perf/drama-hls';
 import { observeDramaMedia } from '@/lib/perf/drama-media';
 import type { DramaPlaybackTiming } from '@/lib/perf/drama-timing';
-import type { DramaSummary } from '@miniapp/shared';
+import type { DramaSummary, DramaPlaybackEngine } from '@miniapp/shared';
 import { cn } from '@/lib/utils';
 import { supabasePublicImageUrl } from '@/lib/supabase-image';
 import { markPageCriticalVisual } from '@/lib/perf/page-tracker';
@@ -189,6 +189,8 @@ export function DramaPlayer({
   const seekTimingRef = useRef<ReturnType<typeof dramaTiming.beginSeek> | null>(null);
   // hls.js 实例只在 hls 路径存在；快进诊断靠它记录分片加载。
   const hlsHandleRef = useRef<{ player: HlsPlayer; events: HlsEvents } | null>(null);
+  // 本次装载实际判定的播放引擎；原生路径下为 undefined。
+  const engineRef = useRef<DramaPlaybackEngine | undefined>(undefined);
   const [time, setTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [episodesOpen, setEpisodesOpen] = useState(false);
@@ -568,6 +570,10 @@ export function DramaPlayer({
       (hls, events) => {
         hlsHandleRef.current = { player: hls, events };
         observeDramaHls(hls, events, timing);
+      },
+      (engine) => {
+        engineRef.current = engine;
+        timing.engine = engine;
       }
     );
     return () => {
@@ -575,6 +581,7 @@ export function DramaPlayer({
       seekTimingRef.current?.('switched');
       seekTimingRef.current = null;
       hlsHandleRef.current = null;
+      engineRef.current = undefined;
       if (playback.video_id && Number.isFinite(videoEl.currentTime) && videoEl.readyState >= 1) {
         sourceCheckpoint.current = {
           videoId: playback.video_id,
@@ -1444,7 +1451,8 @@ export function DramaPlayer({
                           id,
                           currentVideoId ?? undefined,
                           playback.delivery,
-                          hlsHandleRef.current ?? undefined
+                          hlsHandleRef.current ?? undefined,
+                          engineRef.current
                         );
                       }}
                       onScrubbingChange={setScrubbing}
