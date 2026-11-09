@@ -28,3 +28,12 @@
 
 - User approved implementation and subsequently selected documented GET query after clarification.
 - User requested no further local verification and direct handoff for manual TEST-environment acceptance. Remaining test/build/UI runs were stopped; see verification.md. No commit, push, deployment, charge or remote database access.
+
+## 2026-11-09 follow-up
+
+- [x] Verify development callbacks reached the backend: six verify_failed events through 12:07 UTC; invalid_body, not a network-delivery failure. Logs do not preserve signed payloads or prove the rejected field.
+- [x] Remove optional param from creation, required schemas and environment comparisons; preserve signed legacy extensions and trusted local-order settlement guards.
+- [x] Extend existing regression files for both alipay/wxpay creation, missing/empty/legacy param, tampering and unknown orders.
+- [x] Check WeChat availability: code already supports wxpay throughout recharge/VIP/gateway/recovery; development public plans currently reports wxpay_enabled=false.
+- [x] User enabled WeChat manually in TEST. Rechecked public development plans: alipay_enabled=true, wxpay_enabled=true, default_payment_type=alipay. No production write or CLI repointing performed.
+- [ ] After release, verify real paid-order recovery, WeChat handoff/return on Android and iOS, duplicate callbacks and late-paid recovery. Reuse the local @profile fixture flow for repeatable channel-selection coverage; provider payment and device handoff remain real-environment checks.

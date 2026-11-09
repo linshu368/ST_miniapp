@@ -1,5 +1,15 @@
 # TTZF 切换交付记录
 
+## 2026-11-09 optional param correction
+
+User requested removing optional param. Local changes omit it from creation, remove callback/query requirements and environment comparisons, and retain signed legacy extensions, merchant/local-order/channel/reference/exact-amount checks and atomic fulfilment. No new dependency, API, migration or request/retry added. This session did not stage, commit, push or deploy these changes, query remote database rows or initiate real payments.
+
+Railway development read-only inspection through 12:07 UTC found six rejected callback events (invalid_body); delivery reached the backend, but logs do not identify the failed field or callback order. Public development plans initially reported wxpay_enabled=false. Existing frontend recharge/VIP, backend and provider gateway already support wxpay. After the user manually enabled it, public development plans was rechecked and returned alipay_enabled=true, wxpay_enabled=true, default_payment_type=alipay. This confirms channel configuration, not a real WeChat payment.
+
+Validation: shared 210/210 tests, payment-focused 142/142 tests, all workspace typechecks, frontend and admin builds, changed-TypeScript ESLint/Prettier, complexity budget and module knowledge checks passed. Full backend suite passed 1381/1381 with maxWorkers=2 and testTimeout=15000; initial default runs timed out during conversation-route setup, with one cascading mock failure. The isolated conversation rerun passed 51/51. Builds retain existing bundle/browser-data/Tailwind warnings. Backend runs via tsx and has no separate dist build.
+
+Post-release checks remain: recover the real development paid order through a trusted query/callback, verify unknown-order rejection and duplicate/late-paid handling, and check WeChat checkout/return on Android/iOS. Reuse and extend existing @profile scenarios for local channel selection; mocks do not establish provider success or mobile P95. No real payment recovery or production configuration change is claimed.
+
 ## 交付状态
 
 代码已切换为易支付：POST 建单、按用户再次指定的 GET 单笔查单、GET 通知验签、回跳/轮询恢复、有限并发对账。旧网关和注册 Webhook 脚本已移除，无数据库迁移。用户要求直接收尾，由工程师在 TEST 环境人工验证；后续本地测试、构建和 UI 验收已停止。

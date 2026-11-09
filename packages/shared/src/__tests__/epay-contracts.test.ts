@@ -11,7 +11,6 @@ describe('epay contracts and telemetry', () => {
     name: 'fixture',
     money: '6.000',
     trade_status: 'TRADE_SUCCESS',
-    param: 'fixture-env',
     sign: 'a'.repeat(32),
     sign_type: 'MD5',
   };
@@ -24,7 +23,11 @@ describe('epay contracts and telemetry', () => {
     expect(
       EpayNotificationSchema.safeParse({ ...notification, trade_status: 'SUCCESS' }).success
     ).toBe(false);
-    expect(EpayNotificationSchema.safeParse({ ...notification, param: '' }).success).toBe(false);
+    expect(EpayNotificationSchema.safeParse(notification).success).toBe(true);
+    expect(EpayNotificationSchema.safeParse({ ...notification, param: '' }).success).toBe(true);
+    expect(EpayNotificationSchema.parse({ ...notification, param: 'legacy-env' }).param).toBe(
+      'legacy-env'
+    );
   });
   it('accepts only explicit paid/unpaid query statuses and string amounts', () => {
     const result = { ...notification, pid: 1001, code: 1, status: 1 };

@@ -37,7 +37,6 @@ interface EpayOptions {
   appKey: string;
   notifyUrl: string;
   returnUrl: string;
-  environmentTag: string;
 }
 
 export class EpayPaymentGateway implements PaymentGateway {
@@ -48,27 +47,14 @@ export class EpayPaymentGateway implements PaymentGateway {
       ...config.payment.epay,
       notifyUrl: config.payment.notifyUrl,
       returnUrl: config.payment.returnUrl,
-      environmentTag: config.payment.environmentTag,
       ...options,
     };
   }
 
   get configured(): boolean {
-    const { baseUrl, appId, appKey, environmentTag } = this.options;
+    const { baseUrl, appId, appKey } = this.options;
     const url = httpsPaymentUrl(baseUrl);
-    return Boolean(
-      url &&
-      !url.search &&
-      !url.hash &&
-      /^\d{1,20}$/.test(appId) &&
-      appKey &&
-      environmentTag &&
-      environmentTag.length <= 120
-    );
-  }
-
-  get environment(): string {
-    return this.options.environmentTag;
+    return Boolean(url && !url.search && !url.hash && /^\d{1,20}$/.test(appId) && appKey);
   }
 
   async createPayment(params: CreatePaymentParams): Promise<PaymentResult> {
@@ -95,7 +81,6 @@ export class EpayPaymentGateway implements PaymentGateway {
       money: params.amount,
       clientip: params.clientIp,
       device: 'mobile',
-      param: this.environment,
       sign_type: 'MD5',
     };
     // 供应商未承诺建单幂等：只发一次，未知结果留给商户单号查单和通知恢复。
@@ -147,7 +132,6 @@ export class EpayPaymentGateway implements PaymentGateway {
       data.out_trade_no !== order.id ||
       String(data.pid) !== this.options.appId ||
       data.type !== order.payment_type ||
-      data.param !== this.environment ||
       (order.provider_transaction_id !== null && data.trade_no !== order.provider_transaction_id) ||
       !Number.isFinite(epayAmountCents(data.money))
     ) {

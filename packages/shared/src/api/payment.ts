@@ -19,7 +19,6 @@ export const EpayNotificationSchema = z
     name: z.string().min(1).max(2_048),
     money: z.string().regex(/^\d{1,12}(?:\.\d{1,3})?$/),
     trade_status: z.enum(['TRADE_PENDING', 'TRADE_SUCCESS', 'TRADE_REFUND', 'TRADE_ERROR']),
-    param: z.string().min(1).max(120),
     sign: z.string().regex(/^[a-fA-F0-9]{32}$/),
     sign_type: z.literal('MD5'),
   })
@@ -41,7 +40,6 @@ export const EpayQueryResponseSchema = z.object({
   type: PaymentTypeSchema,
   money: z.string().regex(/^\d{1,12}(?:\.\d{1,3})?$/),
   status: z.union([z.literal(0), z.literal(1)]),
-  param: z.string().min(1).max(120),
 });
 
 /**

@@ -143,8 +143,6 @@ export const config = {
     enabled: process.env.PAYMENT_ENABLED === 'true',
     returnUrl: process.env.PAYMENT_RETURN_URL || '',
     notifyUrl: process.env.PAYMENT_NOTIFY_URL || '',
-    // 随签名 param 原样回传，回调和查单仅接受本环境。
-    environmentTag: process.env.RAILWAY_ENVIRONMENT_NAME || nodeEnv,
     epay: {
       baseUrl: process.env.TTZF_BASE_URL || 'https://ttzf8.com/api',
       appId: process.env.TTZF_APP_ID?.trim() || '',

@@ -31,7 +31,6 @@ vi.mock('../platform/config.js', async (importOriginal) => {
         ...actual.config.payment,
         enabled: true,
         returnUrl: 'https://backend.example/api/payment/return',
-        environmentTag: 'test-env',
         notifyUrl: 'https://backend.example/api/payment/notify/ttzf',
         epay: {
           baseUrl: 'https://provider.example/api',
@@ -163,7 +162,6 @@ function notification(overrides: Record<string, string> = {}) {
     name: 'fixture',
     money: '6.000',
     trade_status: 'TRADE_SUCCESS',
-    param: 'test-env',
     sign_type: 'MD5',
     ...overrides,
   };
@@ -216,10 +214,32 @@ describe('epay settlement and notification', () => {
     }
   );
 
-  it('ignores another environment without touching local orders', async () => {
-    const { orders, result } = await deliver(notification({ param: 'other-environment' }));
-    expect(result.body).toBe('success');
+  it.each(['', 'legacy-environment'])('accepts signed optional param %j', async (param) => {
+    const { orders, result } = await deliver(notification({ param }));
+    expect(result).toEqual({ status: 200, body: 'success' });
+    expect(orders.complete).toHaveBeenCalledWith(ORDER_ID, 'tx_abc123', 'webhook');
+  });
+
+  it('still verifies signed legacy param before reading local orders', async () => {
+    const query = notification({ param: 'legacy-environment' }).replace(
+      'param=legacy-environment',
+      'param=tampered'
+    );
+    const { orders, result } = await deliver(query);
+    expect(result).toEqual({ status: 401, body: 'fail' });
     expect(orders.findById).not.toHaveBeenCalled();
+  });
+
+  it('rejects unknown local orders without granting benefits', async () => {
+    const orders = createOrders(createOrder({ id: ORDER_ID }));
+    const unknownOrders = { ...orders, findById: vi.fn(async () => null) };
+    const result = await handleEpayNotification(notification(), {
+      gateway: new EpayPaymentGateway(),
+      orders: unknownOrders,
+      log: createLog(),
+    });
+    expect(result).toEqual({ status: 404, body: 'fail' });
+    expect(orders.complete).not.toHaveBeenCalled();
   });
 
   it('reopens a late paid order and acknowledges duplicates without another notice', async () => {
