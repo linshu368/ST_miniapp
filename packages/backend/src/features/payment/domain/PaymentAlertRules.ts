@@ -5,7 +5,7 @@ import type { AlertEvaluation, AlertSeverity } from '@miniapp/shared';
  * v3：只看支付平台直接给出的信号（建单错误码、平台订单状态、Webhook 验签结果），
  * 不再从“用户打开过收银台却没付成”去推测故障——那是老供应商查不到任何状态时的权宜做法。
  */
-export const PAYMENT_ALERT_RULE_VERSION = 'v3';
+export const PAYMENT_ALERT_RULE_VERSION = 'v4';
 
 export type PaymentOperation = {
   event_kind: string;
@@ -85,7 +85,8 @@ const LOOKUP_ANOMALY_CLASSES = new Set([
 ]);
 const WEBHOOK_REJECTED_CLASSES = new Set([
   'signature_invalid',
-  'stale_timestamp',
+  'invalid_body',
+  'merchant_mismatch',
   'not_configured',
 ]);
 const QUERY_EVENT_KINDS = new Set(['payment_query', 'fast_reconcile', 'expiry_reconcile']);
@@ -126,6 +127,13 @@ export function evaluatePaymentAlertRules(
   snapshot: PaymentAlertSnapshot,
   now = new Date()
 ): AlertEvaluation[] {
+  const metrics = paymentMetrics(snapshot, now);
+  return [...settlementRules(metrics), ...providerRules(metrics)].map((rule) =>
+    evaluation(rule, now)
+  );
+}
+
+function paymentMetrics(snapshot: PaymentAlertSnapshot, now = new Date()) {
   const nowMs = now.getTime();
   const within = (ms: number, filter: (op: PaymentOperation) => boolean) =>
     snapshot.operations.filter((op) => {
@@ -194,7 +202,7 @@ export function evaluatePaymentAlertRules(
     payWindow.filter(
       (op) =>
         op.outcome === 'unpaid' &&
-        QUERY_EVENT_KINDS.has(op.event_kind) &&
+        (QUERY_EVENT_KINDS.has(op.event_kind) || op.event_kind === 'webhook') &&
         PAY_FAILED_CLASSES.has(op.error_class ?? '')
     )
   );
@@ -205,7 +213,31 @@ export function evaluatePaymentAlertRules(
   const payFailureHigh =
     failedPayOrders >= PAY_FAILURE_MIN_COUNT && payFailureRatio >= PAY_FAILURE_MIN_RATIO;
 
-  const rules: Rule[] = [
+  return {
+    creates,
+    createFailures,
+    createBlocked,
+    unresolvedPaid,
+    refunds,
+    queries,
+    queryFailures,
+    webhookRejected,
+    createFailureRatio,
+    slowCalls,
+    degraded,
+    degradedReasons,
+    failedPayOrders,
+    paidOrders,
+    payFailureRatio,
+    payFailureHigh,
+  };
+}
+
+type Metrics = ReturnType<typeof paymentMetrics>;
+
+function settlementRules(metrics: Metrics): Rule[] {
+  const { creates, createFailures, createBlocked, unresolvedPaid, refunds } = metrics;
+  return [
     {
       id: P0_PROVIDER_CREATE_FAILING_RULE_ID,
       severity: 'P0',
@@ -219,7 +251,7 @@ export function evaluatePaymentAlertRules(
       title: 'P0 支付平台建单连续失败',
       summary: `最近 10 分钟建单 ${creates.length} 次，失败 ${createFailures.length} 次：${describeClasses(createFailures)}`,
       recommendedAction:
-        '按错误分类处理：渠道维护/平台不可用看 Vexutopia 控制台；配置错误检查 VEXUTOPIA_API_KEY；写库失败查数据库。',
+        '按错误分类处理：平台不可用查看 TTZF 控制台；配置错误检查应用 ID 与应用密钥；写库失败查数据库。',
     },
     {
       id: P0_PAID_NOT_FULFILLED_RULE_ID,
@@ -234,7 +266,7 @@ export function evaluatePaymentAlertRules(
         .slice(0, 5)
         .map((op) => `【订单】${op.order_id ?? '未知'}（${label(op.error_class)}）`)
         .join('\n'),
-      recommendedAction: '按订单号核对平台单据与本地订单，修复后用对账任务或 resend-webhook 补发。',
+      recommendedAction: '按订单号核对平台单据与本地订单，修复后通过对账任务或供应商通知重试补账。',
     },
     {
       id: P1_REFUND_RULE_ID,
@@ -250,6 +282,25 @@ export function evaluatePaymentAlertRules(
         .join('\n'),
       recommendedAction: '人工确认是否需要收回已发放的会员或星尘。',
     },
+  ];
+}
+
+function providerRules(metrics: Metrics): Rule[] {
+  const {
+    createFailures,
+    queries,
+    queryFailures,
+    webhookRejected,
+    createFailureRatio,
+    slowCalls,
+    degraded,
+    degradedReasons,
+    failedPayOrders,
+    paidOrders,
+    payFailureRatio,
+    payFailureHigh,
+  } = metrics;
+  return [
     {
       id: P1_PROVIDER_QUERY_FAILING_RULE_ID,
       severity: 'P1',
@@ -262,7 +313,8 @@ export function evaluatePaymentAlertRules(
       location: { kind: 'dependency', component: 'provider_query' },
       title: 'P1 支付平台查单接口异常',
       summary: `最近 10 分钟查单 ${queries.length} 次，失败 ${queryFailures.length} 次：${describeClasses(queryFailures)}`,
-      recommendedAction: '查单失败期间只能靠 Webhook 入账；检查平台状态与 API Key。',
+      recommendedAction:
+        '查单失败期间依赖已验签通知入账；检查 TTZF 状态、应用配置及 GET 查单接口。',
     },
     {
       id: P1_PROVIDER_DEGRADED_RULE_ID,
@@ -278,7 +330,7 @@ export function evaluatePaymentAlertRules(
       title: 'P1 支付平台不稳定（预警）',
       summary: `用户尚未连续失败，但平台已出现异常：${degradedReasons.join('；')}`,
       recommendedAction:
-        '先看 Vexutopia 控制台和状态页；趋势继续恶化会升级为建单连续失败。必要时在后台临时关闭受影响的渠道。',
+        '先看 TTZF 控制台；趋势继续恶化会升级为建单连续失败。必要时在后台临时关闭受影响的渠道。',
     },
     {
       id: P1_PROVIDER_PAY_FAILURE_RATE_RULE_ID,
@@ -294,7 +346,7 @@ export function evaluatePaymentAlertRules(
       title: 'P1 支付失败占比异常偏高（预警）',
       summary: `最近 30 分钟平台判定付款失败 ${failedPayOrders} 笔，成功入账 ${paidOrders} 笔，失败占比 ${Math.round(payFailureRatio * 100)}%。收银台能打开但用户付不成，疑似渠道问题`,
       recommendedAction:
-        '用支付宝和微信各试付一笔确认是哪个渠道；在 Vexutopia 控制台查失败原因（failure_reason）；确认渠道故障后可在后台临时关闭该渠道。',
+        '核对已验签的 TRADE_ERROR 通知与 TTZF 控制台记录；确认渠道故障后可在后台临时关闭该渠道。',
     },
     {
       id: P1_WEBHOOK_REJECTED_RULE_ID,
@@ -305,10 +357,9 @@ export function evaluatePaymentAlertRules(
       location: { kind: 'delivery_path', component: 'webhook' },
       title: 'P1 支付回调验签失败',
       summary: `最近 10 分钟 ${webhookRejected.length} 次回调被拒`,
-      recommendedAction: '检查 VEXUTOPIA_WEBHOOK_SECRET 是否与本环境注册的端点一致。',
+      recommendedAction: '检查 TTZF 应用 ID、应用密钥、通知地址和环境标记是否一致。',
     },
   ];
-  return rules.map((r) => evaluation(r, now));
 }
 
 /**

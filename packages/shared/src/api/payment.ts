@@ -9,6 +9,41 @@ import { isVipPlanId, type VipPlan } from './vip.js';
 export type PaymentType = 'alipay' | 'wxpay';
 export const PaymentTypeSchema = z.enum(['alipay', 'wxpay']);
 
+/** TTZF 易支付 GET 通知的外部契约；签名覆盖扩展字段，由后端使用原始 query 验证。 */
+export const EpayNotificationSchema = z
+  .object({
+    pid: z.string().regex(/^\d{1,20}$/),
+    trade_no: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
+    out_trade_no: z.string().regex(/^EP[0-9a-f]{30}$/),
+    type: PaymentTypeSchema,
+    name: z.string().min(1).max(2_048),
+    money: z.string().regex(/^\d{1,12}(?:\.\d{1,3})?$/),
+    trade_status: z.enum(['TRADE_PENDING', 'TRADE_SUCCESS', 'TRADE_REFUND', 'TRADE_ERROR']),
+    param: z.string().min(1).max(120),
+    sign: z.string().regex(/^[a-fA-F0-9]{32}$/),
+    sign_type: z.literal('MD5'),
+  })
+  .catchall(z.string().max(2_048));
+export type EpayNotification = z.infer<typeof EpayNotificationSchema>;
+
+/** Provider responses are validated before any checkout or settlement is exposed. */
+export const EpayCreateResponseSchema = z.object({
+  code: z.literal(1),
+  trade_no: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
+  payurl: z.string().url().max(4_096),
+});
+
+export const EpayQueryResponseSchema = z.object({
+  code: z.literal(1),
+  pid: z.union([z.string().regex(/^\d{1,20}$/), z.number().int().nonnegative().safe()]),
+  trade_no: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
+  out_trade_no: z.string().regex(/^EP[0-9a-f]{30}$/),
+  type: PaymentTypeSchema,
+  money: z.string().regex(/^\d{1,12}(?:\.\d{1,3})?$/),
+  status: z.union([z.literal(0), z.literal(1)]),
+  param: z.string().min(1).max(120),
+});
+
 /**
  * Controls which checkout entries are presented to new purchasers. It deliberately does not
  * change gateway support: pending and historic orders continue to use their stored payment type.

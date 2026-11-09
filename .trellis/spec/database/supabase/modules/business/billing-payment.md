@@ -107,3 +107,9 @@ send/regenerate 携带可选 `first_token_measurement`；后端通过既有 begi
 20261105_vip_mixed_rewards.sql 增订单/开卡审计通用赠送快照，旧值为 0；grant_vip_reward 复用 canonical 专项发放并原子更新通用余额及同一条 ledger。保留订单唯一约束、北京零点签到边界、原锁与幂等；赠送不计实付收入。先 test 后 production，应用部署完成后再发布拆分配置。回退先还原配置，保留混合结算能力直至在途订单结束，不回收已发奖励。
 
 隔离 PG 覆盖并发、幂等、旧订单及故障回滚；远端执行与部署状态见任务 `11-05-vip-mixed-rewards` 的发布记录。
+
+## TTZF epay repository behavior (2026-11-09)
+
+No new schema objects or migrations. Existing billing.payment_orders and complete_payment_order remain the authoritative atomic fulfilment boundary. New EP-prefixed IDs isolate provider traffic from historical MA orders. attachProviderTransaction binds only null references on pending/expired rows and rereads after a racing update; an existing different reference is never overwritten. markFailed only changes pending rows without a provider reference, protecting early callbacks.
+
+The historical note that next_reconcile_at is unused is superseded: bounded reconciliation selects due EP orders (including null references), sorts by next_reconcile_at/id and rotates candidates before querying. Existing lease/attempt columns remain unused. Expiry no longer bulk-closes unknown or legacy outcomes. Refunds do not automatically change wallet/VIP balances. Repository mocks cover CAS/query predicates; actual RPC concurrency/rollback and target-environment schema verification remain for engineering TEST acceptance. No remote database was accessed for this change.

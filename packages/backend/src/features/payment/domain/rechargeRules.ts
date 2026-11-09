@@ -206,14 +206,6 @@ export async function resolvePaymentProduct(
   return buildCreditsProductSnapshot(plan);
 }
 
-export function generateMiniappOrderId(userId: string): string {
-  const timestamp = Date.now();
-  const random = Math.floor(Math.random() * 10000)
-    .toString()
-    .padStart(4, '0');
-  return `MA_${userId}_${timestamp}_${random}`;
-}
-
 export function formatAmountCny(priceCents: number): string {
   return (priceCents / 100).toFixed(2);
 }
