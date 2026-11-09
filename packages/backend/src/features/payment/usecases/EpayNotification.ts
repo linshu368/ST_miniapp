@@ -7,7 +7,7 @@ import {
 } from './PaymentOperationEvents.js';
 
 interface NotificationDeps {
-  gateway: Pick<EpayPaymentGateway, 'verifyNotification' | 'environment'>;
+  gateway: Pick<EpayPaymentGateway, 'verifyNotification'>;
   orders: Pick<
     MiniappPaymentOrderRepository,
     'findById' | 'complete' | 'reopenExpired' | 'attachProviderTransaction'
@@ -30,10 +30,7 @@ export async function handleEpayNotification(
     return { status: verification.reason === 'invalid_body' ? 400 : 401, body: 'fail' };
   }
   const event = verification.event;
-  if (event.param !== deps.gateway.environment) {
-    record(deps, null, 'skipped', 'foreign_environment');
-    return { status: 200, body: 'success' };
-  }
+  // param 是供应商可选扩展；归属以本环境持久化的随机订单号为准。
   const orderId = event.out_trade_no;
   try {
     const order = await deps.orders.findById(orderId);

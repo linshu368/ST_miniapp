@@ -1,5 +1,13 @@
 # TTZF epay cutover design
 
+## 2026-11-09 correction: remove param dependency
+
+User explicitly requested removing optional `param` after development callbacks failed body validation and queries returned response_invalid. These logs do not identify the exact rejected field. Supersedes the environment-param requirements below: do not send param at creation or require/compare it in callbacks/queries. Signed legacy extension fields still participate in MD5 verification. Environment isolation uses environment-specific callback URLs, credentials and databases plus lookup of the cryptographically random local EP order; unknown local orders fail without fulfilment. Never use optional provider metadata as an authorization boundary.
+
+Reuse the existing shared validators, gateway, callback use case, local order repository and atomic settlement; no new API, state, dependency, migration or worker. Preserve merchant/channel/reference/exact-amount checks, bounded calls, existing limited reconciliation and atomic duplicate handling. No added request, retry, transaction or capacity cost; no new fallback or compensation. Existing in-flight orders remain recoverable whether or not param is echoed. Deploy the compatible backend and payment workers together; do not revert to the param-required build while new orders lack it. Stop on unverifiable identity or amount; diagnose other response errors separately.
+
+The user's explicit removal instruction approves this narrow correction. Extend existing tests (no new test files) for missing/empty/legacy param, signed-extension tampering, unknown orders and retained settlement guards. Run shared/backend tests, all consumer typechecks, applicable build/lint/complexity checks. Existing mobile performance declaration and unknown baselines apply; no UI or request-count change. Real Android/iOS handoff and development paid-order recovery still require post-release verification; local tests do not establish P95 or successful payment.
+
 Approved by the user on 2026-11-09 to begin implementation. Signature casing corrected from the supplied screenshot: MD5 output is lowercase. User explicitly selected epay only; no native API adapter.
 
 ## Protocol evidence

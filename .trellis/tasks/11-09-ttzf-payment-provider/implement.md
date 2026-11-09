@@ -43,3 +43,10 @@ Check/format only explicit changed non-secret files. Backend has no build script
 ## Release gates
 
 The user explicitly selected the documented GET lookup after clarification. Actual authenticated lookup, provider trade reference format and HTTPS checkout still need live evidence. Local test fixtures do not establish those facts. Human must review final planning artifacts before implementation and final diffs before staging/commit.
+
+## Follow-up: optional param removal (user requested 2026-11-09)
+
+- Remove param from create payload and required shared fields; remove environmentTag and callback/query param comparisons.
+- Keep raw signed legacy extensions, merchant/order/channel/reference/amount checks, unknown-order rejection and atomic fulfilment.
+- Extend existing gateway/contract/payment route tests for absent/empty/legacy param and tampering. Run shared/backend tests, consumer typechecks and applicable lint/build checks.
+- Update README, architecture and payment specs; report real-provider recovery as unverified until deployed and checked. Do not deploy, stage or commit without the required final review.

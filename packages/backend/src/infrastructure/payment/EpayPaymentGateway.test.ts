@@ -17,7 +17,6 @@ const gateway = new EpayPaymentGateway({
   appKey: key,
   notifyUrl: 'https://backend.example/api/payment/notify/ttzf',
   returnUrl: 'https://backend.example/api/payment/return',
-  environmentTag: 'fixture-env',
 });
 const target = { id, provider_transaction_id: null, payment_type: 'wxpay' as const };
 const paid = {
@@ -28,7 +27,6 @@ const paid = {
   type: 'wxpay',
   money: '6.000',
   status: 1,
-  param: 'fixture-env',
 };
 const createInput = {
   orderId: id,
@@ -88,33 +86,37 @@ describe('epay protocol', () => {
 });
 
 describe('epay create and query', () => {
-  it('sends signed form fields, application ID, trusted client IP and environment', async () => {
-    const fetchMock = respond({
-      code: 1,
-      trade_no: '202611091234',
-      payurl: 'https://checkout.example/order',
-    });
-    expect(await gateway.createPayment(createInput)).toEqual({
-      success: true,
-      paymentUrl: 'https://checkout.example/order',
-      providerTransactionId: '202611091234',
-    });
-    const [url, options] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    expect(url).toBe('https://provider.example/api/epay/mapi.php');
-    expect(options).toMatchObject({ method: 'POST', redirect: 'error' });
-    const form = Object.fromEntries(new URLSearchParams(options.body as string));
-    expect(form).toMatchObject({
-      pid: '1001',
-      out_trade_no: id,
-      clientip: '203.0.113.10',
-      name: '星尘 + &',
-      money: '6.00',
-      param: 'fixture-env',
-    });
-    expect(form.return_url).toContain(`order_id=${id}`);
-    expect(verifyEpaySignature(form, key)).toBe(true);
-    expect(url).not.toContain(key);
-  });
+  it.each(['alipay', 'wxpay'] as const)(
+    'creates %s with signed fields and trusted client IP without param',
+    async (type) => {
+      const fetchMock = respond({
+        code: 1,
+        trade_no: '202611091234',
+        payurl: 'https://checkout.example/order',
+      });
+      expect(await gateway.createPayment({ ...createInput, type })).toEqual({
+        success: true,
+        paymentUrl: 'https://checkout.example/order',
+        providerTransactionId: '202611091234',
+      });
+      const [url, options] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+      expect(url).toBe('https://provider.example/api/epay/mapi.php');
+      expect(options).toMatchObject({ method: 'POST', redirect: 'error' });
+      const form = Object.fromEntries(new URLSearchParams(options.body as string));
+      expect(form).toMatchObject({
+        pid: '1001',
+        type,
+        out_trade_no: id,
+        clientip: '203.0.113.10',
+        name: '星尘 + &',
+        money: '6.00',
+      });
+      expect(form.return_url).toContain(`order_id=${id}`);
+      expect(form).not.toHaveProperty('param');
+      expect(verifyEpaySignature(form, key)).toBe(true);
+      expect(url).not.toContain(key);
+    }
+  );
   it.each([
     { code: 1, trade_no: 'x', qrcode: 'https://checkout.example/qr' },
     { code: 1, trade_no: 'x', payurl: 'javascript:alert(1)' },
@@ -168,7 +170,6 @@ describe('epay create and query', () => {
   });
   it.each([
     { pid: 1002 },
-    { param: 'other' },
     { out_trade_no: 'EP' + 'b'.repeat(30) },
     { type: 'alipay' },
     { status: '1' },
@@ -182,6 +183,10 @@ describe('epay create and query', () => {
       success: false,
       errorClass: 'response_invalid',
     });
+  });
+  it.each(['', 'legacy-environment', null])('ignores optional query param %j', async (param) => {
+    respond({ ...paid, param });
+    expect(await gateway.queryOrder(target)).toMatchObject({ success: true, paid: true });
   });
   it('checks stored provider reference and keeps status 0 nonterminal', async () => {
     respond(paid);
