@@ -34,7 +34,7 @@ export const EpayCreateResponseSchema = z.object({
 
 export const EpayQueryResponseSchema = z.object({
   code: z.literal(1),
-  pid: z.union([z.string().regex(/^\d{1,20}$/), z.number().int().nonnegative().safe()]),
+  pid: z.union([z.string().regex(/^\d{1,20}$/), z.number().int().nonnegative().safe()]).nullish(),
   trade_no: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
   out_trade_no: z.string().regex(/^EP[0-9a-f]{30}$/),
   type: PaymentTypeSchema,

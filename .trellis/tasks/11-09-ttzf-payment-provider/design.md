@@ -1,5 +1,11 @@
 # TTZF epay cutover design
 
+## 2026-11-09 correction: nullable query pid
+
+The user supplied the real query response shape: numeric code/status, string money, matching local/provider order IDs and channel, but pid=null (also param/buyer=null). The existing shared query schema reproduces exactly one failure at pid. User explicitly requested fixing it. Allow only omitted/null or valid numeric/digit-string pid in query responses; validate equality whenever non-null. Request pid/key and signed-notification pid remain mandatory. Reuse the existing gateway, shared schema, tests and atomic settlement; no API, dependency, state, database, timeout, retry, concurrency or capacity change. Queries are authenticated HTTPS requests to the configured provider with redirects disabled; continue verifying the returned random local order, channel, known provider reference and exact cents, with the existing atomic settlement amount check. Never treat malformed/mismatched pid as missing.
+
+Extend existing contract/gateway tests for omitted/null pid, paid/unpaid, malformed/mismatched pid and retained order/channel/reference guards; replay the response structure using fictional IDs. Deploy backend and payment workers together; no migration or old-data rewrite. Old non-null pid responses remain compatible. An old build will reject nullable responses again, so forward-fix on other unverified provider mismatches. Existing Android/iOS/API P95 declaration and null baselines apply; no new UI or network round trip. Real development reconciliation and device handoff remain post-release checks, not proven by fixtures.
+
 ## 2026-11-09 correction: remove param dependency
 
 User explicitly requested removing optional `param` after development callbacks failed body validation and queries returned response_invalid. These logs do not identify the exact rejected field. Supersedes the environment-param requirements below: do not send param at creation or require/compare it in callbacks/queries. Signed legacy extension fields still participate in MD5 verification. Environment isolation uses environment-specific callback URLs, credentials and databases plus lookup of the cryptographically random local EP order; unknown local orders fail without fulfilment. Never use optional provider metadata as an authorization boundary.

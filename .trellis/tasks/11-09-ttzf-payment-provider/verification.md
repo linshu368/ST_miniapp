@@ -1,5 +1,11 @@
 # TTZF 切换交付记录
 
+## Nullable query pid fix: local verification stopped at user request
+
+User supplied a successful query response with pid=null and requested the fix. Shared query schema now allows omitted/null pid, and gateway checks equality whenever pid is non-null. Request pid/key, signed notification pid, local order/channel/reference and exact-amount/atomic settlement guards remain required. Existing contract/gateway test files were extended using fictional data; no database migration or new dependency.
+
+User explicitly requested no local verification. Remaining backend test and frontend build processes were stopped; do not claim full backend/build success for this correction. Completed before that instruction: Shared 221 tests, all workspace typechecks, Admin build, changed-source lint/format and complexity checks. Initial backend/build runs encountered missing installed dependency files; frozen-lockfile dependency reinstall completed, without dependency version changes. The post-reinstall full backend test and frontend build were interrupted. Frontend build's existing Sentry integration uploaded source maps before interruption; no application was deployed. This fix remains uncommitted/unpushed/undeployed. Target development API and payment workers require the same compatible release, followed by real query/reconciliation verification; no payment recovery is claimed.
+
 ## 2026-11-09 optional param correction
 
 User requested removing optional param. Local changes omit it from creation, remove callback/query requirements and environment comparisons, and retain signed legacy extensions, merchant/local-order/channel/reference/exact-amount checks and atomic fulfilment. No new dependency, API, migration or request/retry added. This session did not stage, commit, push or deploy these changes, query remote database rows or initiate real payments.

@@ -127,6 +127,8 @@
 
 ## 3. 包清单
 
+支付查单兼容性：TTZF 成功响应可能返回 `pid: null` 或省略 pid，后端仅在非空时核对应用 ID；查单请求仍携带 pid/key，签名通知仍要求 pid。查单的订单号、渠道、交易号及精确金额校验继续生效，主动查单和对账 Worker 复用同一修复；无需数据库迁移。
+
 调用前准备减负候选（2026-10-30）：conversation owner复用单轮用户设置、平台规则和目录快照，execute使用同一冻结计费上下文，VIP与配置读取并行。既有experience.begin_chat_generation_observation扩展可选charge_id/history，初次原子持久化身份、最终原子冻结prompt/报价，原5次往返变2次；不新增表/任务/扫描。兼容migration先于backend发布，尚未生产验收。关键身份不能改为后台保存，超时免扣、停止、额度释放及一次结算边界保持原语义，详见docs/first-token-fallback.md。
 
 ### 3.1 契约层

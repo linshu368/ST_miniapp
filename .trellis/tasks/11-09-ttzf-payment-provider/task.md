@@ -37,3 +37,11 @@
 - [x] Check WeChat availability: code already supports wxpay throughout recharge/VIP/gateway/recovery; development public plans currently reports wxpay_enabled=false.
 - [x] User enabled WeChat manually in TEST. Rechecked public development plans: alipay_enabled=true, wxpay_enabled=true, default_payment_type=alipay. No production write or CLI repointing performed.
 - [ ] After release, verify real paid-order recovery, WeChat handoff/return on Android and iOS, duplicate callbacks and late-paid recovery. Reuse the local @profile fixture flow for repeatable channel-selection coverage; provider payment and device handoff remain real-environment checks.
+
+## Query pid compatibility fix (2026-11-09)
+
+- [x] Reproduce the supplied query response: only pid=null fails shared validation; no sensitive response fixture is committed.
+- [x] Accept omitted/null query pid; compare every non-null value and reject malformed input. Preserve request credentials, signed notification merchant checks, order/channel/reference/amount guards and atomic settlement.
+- [x] Extend existing shared/gateway regressions for paid/unpaid null/missing pid and invalid identity fields; no new test file or dependency.
+- [ ] Full local verification stopped at explicit user request. Shared tests, workspace typechecks, Admin build and source lint/format completed; backend rerun and frontend build interrupted. Details in verification.md.
+- [ ] After reviewed release, verify both API polling and development reconciliation recover without response_invalid, plus wrong merchant/ref/amount rejection. No live payment or deployment is authorized by this local fix.

@@ -188,6 +188,43 @@ describe('epay create and query', () => {
     respond({ ...paid, param });
     expect(await gateway.queryOrder(target)).toMatchObject({ success: true, paid: true });
   });
+  it.each([undefined, null])(
+    'accepts missing/null query pid %j with trusted order identity',
+    async (pid) => {
+      const response = { ...paid, pid, param: null, buyer: null };
+      if (pid === undefined) delete response.pid;
+      respond(response);
+      expect(
+        await gateway.queryOrder({ ...target, provider_transaction_id: paid.trade_no })
+      ).toMatchObject({
+        success: true,
+        paid: true,
+        amount: paid.money,
+        tradeNo: paid.trade_no,
+      });
+      respond({ ...response, status: 0 });
+      expect(await gateway.queryOrder(target)).toMatchObject({ success: true, paid: false });
+    }
+  );
+  it.each([
+    { pid: '' },
+    { pid: 'null' },
+    { pid: '1002' },
+    { pid: -1 },
+    { pid: true },
+    { out_trade_no: 'EP' + 'b'.repeat(30) },
+    { type: 'alipay' },
+    { money: '6.001' },
+    { trade_no: 'different' },
+  ])('keeps identity validation when query pid is null: %j', async (overrides) => {
+    respond({ ...paid, pid: null, ...overrides });
+    expect(
+      await gateway.queryOrder({ ...target, provider_transaction_id: paid.trade_no })
+    ).toMatchObject({
+      success: false,
+      errorClass: 'response_invalid',
+    });
+  });
   it('checks stored provider reference and keeps status 0 nonterminal', async () => {
     respond(paid);
     expect(

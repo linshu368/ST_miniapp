@@ -128,9 +128,10 @@ export class EpayPaymentGateway implements PaymentGateway {
     const parsed = EpayQueryResponseSchema.safeParse(body);
     if (!parsed.success) return paymentFailure('response_invalid');
     const data = parsed.data;
+    // 厂商查单可能不回传 pid；非空时仍须匹配，订单/渠道/交易号校验始终保留。
     if (
       data.out_trade_no !== order.id ||
-      String(data.pid) !== this.options.appId ||
+      (data.pid != null && String(data.pid) !== this.options.appId) ||
       data.type !== order.payment_type ||
       (order.provider_transaction_id !== null && data.trade_no !== order.provider_transaction_id) ||
       !Number.isFinite(epayAmountCents(data.money))

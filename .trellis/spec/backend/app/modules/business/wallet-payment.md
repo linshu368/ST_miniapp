@@ -105,6 +105,8 @@ Replaces retired Vexutopia in new purchases, callbacks, polling and workers. No 
 
 ### Validation & Error Matrix
 
+Query-response pid may be omitted/null, as observed in the provider's successful paid response. Validate any non-null pid against the configured application ID; malformed or mismatched values still fail. Request pid/key and signed notification pid remain required. Matching local order/channel/provider reference and exact amount remain settlement guards; null pid never bypasses them.
+
 Invalid signature/pid -> 401 fail; malformed or duplicate fields -> 400 fail; channel/ref/amount mismatch -> fail without fulfilment; persistence failure -> 500 fail for retry. Unknown local order -> 404 fail without fulfilment; absent/empty/legacy param does not block trusted local payments. Only TRADE_SUCCESS or numeric query status=1 enters the common settlement boundary. Fractional cents are rejected, trailing third decimal zero is accepted. Creation timeout, malformed success or failed reference persistence stays recoverable; no blind create retry. QR/scheme-only responses do not expose checkout. GET return parameters never grant benefits.
 
 ### Good/Base/Bad Cases
