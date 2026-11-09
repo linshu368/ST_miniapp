@@ -12,6 +12,8 @@ import {
   type DramaNetworkTiming,
 } from '@miniapp/shared';
 export type { DramaTimingReport } from '@miniapp/shared';
+import type HlsPlayer from 'hls.js';
+import type { HlsEvents } from './drama-hls';
 import type { ApiAttemptTiming } from '@/lib/api/client';
 import { recordEngineeringEvent } from './grafana';
 
@@ -574,7 +576,8 @@ export class DramaTimingTracker {
     wasPlaying: boolean,
     dramaId: string,
     videoId: string | undefined,
-    delivery?: DramaDelivery
+    delivery?: DramaDelivery,
+    hls?: { player: HlsPlayer; events: HlsEvents }
   ) {
     this.stopSeek?.('switched');
     const stop = observeDramaSeek(video, source, target, wasPlaying, {
@@ -585,6 +588,7 @@ export class DramaTimingTracker {
       context: this.context,
       route: this.playback?.owner === 'home' ? '/watch' : '/dramas/:id',
       sourceAt: this.playback?.marks.source_set ?? this.playback?.startedAt,
+      hls,
       now: this.now,
       emit: this.emit,
     });

@@ -23,6 +23,14 @@ const round = (n: number) => Math.round(n * 10) / 10;
 const positive = (n: number | undefined) =>
   n !== undefined && Number.isFinite(n) && n > 0 ? n : undefined;
 
+/** 分片时间范围 [start, start+duration) 是否包含快进目标；主视频与音轨各标各的，init 段没有范围。 */
+const coversTarget = (start: number, duration: number | undefined, target: number | undefined) =>
+  target !== undefined &&
+  duration !== undefined &&
+  Number.isFinite(start) &&
+  start <= target &&
+  target < start + duration;
+
 /**
  * 被动记录 hls.js 自带的加载统计（performance.now 时钟，与起播计时同源），
  * 跨域无 Timing-Allow-Origin 时仍有首字节与字节数。只取数值，不碰 URL。
@@ -31,7 +39,9 @@ export function recordHlsLoads(
   hls: HlsPlayer,
   events: HlsEvents,
   origin: number,
-  onChange: (snapshot: HlsLoadSnapshot) => void
+  onChange: (snapshot: HlsLoadSnapshot) => void,
+  /** 快进目标（秒）。给出时，覆盖该时间点的分片会被标记 coversTarget。 */
+  targetSeconds?: number
 ): () => void {
   const entries: DramaHlsLoad[] = [];
   const fragments = new Map<Fragment, DramaHlsLoad>();
@@ -100,6 +110,7 @@ export function recordHlsLoads(
     if (!loaded) return;
     const init = frag.sn === 'initSegment';
     const mediaMs = positive(frag.duration);
+    const covers = !init && coversTarget(frag.start, mediaMs, targetSeconds);
     push(
       {
         kind: init ? 'init' : 'fragment',
@@ -111,6 +122,7 @@ export function recordHlsLoads(
           ? { positionMs: round(frag.start * 1000) }
           : {}),
         ...(!init && mediaMs !== undefined ? { mediaMs: round(mediaMs * 1000) } : {}),
+        ...(covers ? { coversTarget: true } : {}),
         ...loaded,
       },
       frag

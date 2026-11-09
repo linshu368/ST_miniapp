@@ -58,6 +58,8 @@ const HlsLoadSchema = z
     endMs: Offset,
     appendedMs: Offset.optional(),
     bytes: z.number().int().nonnegative().max(1e12).optional(),
+    // 快进诊断：该分片的时间范围覆盖快进目标（frag.start ≤ 目标 < frag.start + duration）。
+    coversTarget: z.boolean().optional(),
   })
   .strict();
 

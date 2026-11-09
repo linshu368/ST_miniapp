@@ -86,7 +86,8 @@ export function mediaRequestMatcher(
 }
 
 /** Same-source overlapping requests are candidates, not a mapping from byte ranges to target frames.
- * Keep negative starts for requests already in flight when the seek was committed. */
+ * Keep negative starts for requests already in flight when the seek was committed.
+ * Stream 的子清单和分片 URL 与主清单不同，沿用起播的 mediaRequestMatcher 按签名前缀收，并只上报 kind。 */
 export function observeSeekResources(
   source: string,
   startedAt: number,
@@ -95,6 +96,7 @@ export function observeSeekResources(
 ) {
   const entries: DramaResourceTiming[] = [];
   const seen = new Set<string>();
+  const match = mediaRequestMatcher(source);
   let supported = supports('resource');
   let truncated = false;
   let closed = false;
@@ -121,13 +123,15 @@ export function observeSeekResources(
       const entry = resource as PerformanceResourceTiming;
       if (
         entry.entryType !== 'resource' ||
-        entry.name !== source ||
         entry.startTime < sourceAt ||
         entry.responseEnd < startedAt ||
         (endAt !== undefined && entry.startTime > endAt)
       )
         continue;
-      const key = `${entry.startTime}/${entry.responseEnd}`;
+      const matched = match(entry.name);
+      if (!matched) continue;
+      // 视频/音频分片可能并行且时间相同，key 必须含请求名才不会互相吃掉；key 只留在内存，不上报。
+      const key = `${entry.name}|${entry.startTime}|${entry.responseEnd}`;
       if (seen.has(key)) continue;
       if (entries.length >= DRAMA_TIMING_MAX_RESOURCES) {
         if (final && !truncated) changedAfterFinal = true;
@@ -137,7 +141,7 @@ export function observeSeekResources(
       const fields = mediaResourceFields(entry, startedAt);
       if (fields) {
         seen.add(key);
-        entries.push(fields);
+        entries.push(matched.kind ? { ...fields, kind: matched.kind } : fields);
         if (final) changedAfterFinal = true;
       }
     }
