@@ -153,18 +153,30 @@ Start Command 为
 **Railway cron 最短间隔是 5 分钟**（平台硬限制：GraphQL 会返回
 `Minimum interval between cron executions is 5 minutes`）。因此快速对账不能靠
 `* * * * *`，必须改成常驻 Worker：进程内 `while` 每 30 秒跑一轮
-`runPaymentReconciliation`，用 Vexutopia `POST /v1/payments/lookup` 一次批量查最近 2 小时
-未履约订单（`next_reconcile_at` / 租约列已不再使用）。过期兜底继续用 `*/5 * * * *`。
+`runPaymentReconciliation`，用 TTZF 易支付 `GET /api/epay/api.php`（act=order）单笔查最近 7 天
+未履约新订单。每轮最多 30 单、并发 3、派发预算 25 秒，每次查单限时 5 秒；按既有
+`next_reconcile_at` 查询前移到队尾，避免慢单饿死后续订单。已确认支付的结算允许完成。
+过期兜底继续用 `*/5 * * * *`，仅对查单确认未付且超过本地期限的单标记过期。
 
-**三个支付服务都需要 `PAYMENT_ENABLED` 与 `VEXUTOPIA_API_KEY`**（IaC 从 `stminiapp` 引用）；
-`VEXUTOPIA_WEBHOOK_SECRET` 只配在 `stminiapp`。每个环境注册自己的 Webhook 端点：
+**主服务及支付任务使用 `TTZF_APP_ID`、`TTZF_APP_KEY`、`TTZF_BASE_URL`**（IaC 引用主服务变量）。
+APP_ID 是应用 ID，不是商户号；BASE_URL 默认 `https://ttzf8.com/api`。
+主服务设置 `PAYMENT_NOTIFY_URL=https://<本环境后端域名>/api/payment/notify/ttzf` 和
+`PAYMENT_RETURN_URL=https://<本环境后端域名>/api/payment/return`，建单逐次携带，不需要注册 Webhook。
+建单不发送可选 `param`，回调/查单不依赖它。各环境使用独立回调地址、应用凭据及数据库；
+回调只能履约本环境已存在的随机 EP 订单，仍校验签名、商户、渠道、交易号与精确金额。
+厂商查单响应可能返回 `pid: null` 或省略该字段，后端接受这两种情况，有值时仍核对应用 ID；
+请求中的 pid/key 和签名回调中的 pid 仍必填。订单、渠道、交易号及金额校验不变。
+GET 查单遵循用户明确指定的协议：key 只在服务端 HTTPS 请求中传输，禁止日志/错误/遥测输出完整地址。
+生产与测试配置分开，不把真实凭据放入源码、命令行或文档。
 
-```bash
-pnpm --filter @miniapp/backend payment:webhooks register https://<该环境 backend 域名>/api/payment/webhook/vexutopia
-```
-
-secret 只显示一次，立即写入该环境 `stminiapp` 的 `VEXUTOPIA_WEBHOOK_SECRET` 并重新部署；
-轮换 = `payment:webhooks delete <endpoint_id>`（`list` 可查，实测不是文档写的 `we_` 前缀）后重新注册；secret 实测是 64 位十六进制串，不是文档写的 `whsec_` 前缀。PR 临时环境不注册端点，只靠查单入账。
+切换发布：先在明确的 TEST 环境联调建单、已付/未付查单、通知重放、晚付、VIP/星尘到账，再配置目标环境变量、部署 API 和两个任务，最后开放新建单。
+当前仅代码与本地模拟验证，不代表远端已部署或真实支付可用；必须核验真实返回的交易号格式、HTTPS payurl、金额与回跳。
+仅返回 qrcode/urlscheme 时目前不交出收银台，订单保留供后续可信恢复；需供应商返回 HTTPS payurl。
+故障时关闭 `PAYMENT_ENABLED`，保留 TTZF 配置和新版本回调/查单，处理完在途订单再恢复；不能切回已停用厂商。
+旧 `MA_…` 订单保留历史，未结订单人工核对，不用 TTZF 自动关闭/补账。无新增迁移。
+Android/iOS 真机分别验证支付宝/微信唤起、关闭/重开、Telegram 回跳；按平台观测至少 7 天 P95，无样本不得填零。
+支付 clientip 在 Railway 公共 HTTP 入口读取并校验 `X-Real-IP`，本地使用 socket IP；不得向不可信网络开放绕过边缘的 TCP/私有入口。
+依据：[Railway 请求头说明](https://docs.railway.com/networking/public-networking/specs-and-limits#technical-specifications)。
 
 IaC 可用时，`.railway/railway.ts` 会配置这两个服务。若目标环境尚不能用 IaC 管理，则在
 Railway 控制台手动创建并逐项对齐：
@@ -182,11 +194,11 @@ Railway 控制台手动创建并逐项对齐：
    - **清空 Cron Schedule**（不要填 `* * * * *`，平台会拒绝）
    - Restart Policy：`Always`（或 `On Failure`）
    - 进程保持 Online，日志约每 30 秒一轮 `Payment reconciliation: checked=…`。
-     `PAYMENT_ENABLED !== true` 时只 sleep，不查单。SIGTERM/SIGINT 下完本轮再退出。
-   - 每轮都会查到最近创建的订单，Webhook 缺失时到账延迟约 30 秒。
+     缺少 TTZF 配置时跳过；关闭 `PAYMENT_ENABLED` 后继续恢复已有订单。SIGTERM/SIGINT 停止派发并中止在途查询。
+   - 队列积压和供应商响应会影响恢复延迟，不能承诺每单 30 秒内到账。
 4. 过期服务（一次性 Cron）保持不变：Start Command
    `./node_modules/.bin/tsx src/scripts/expire-payment-orders.ts`，Cron Schedule `*/5 * * * *`，
-   Restart Policy `Never`。它先跑一轮同样的批量查单补账，批量查单成功后才执行判过期。
+   Restart Policy `Never`。它运行同样的有限并发查单补账，仅确认未付的超时订单可标记 expired，部分查询失败不影响其他订单恢复。
 5. 两个服务都关闭 healthcheck，不生成 Railway domain，不配置 TCP proxy。不要给
    Worker 加会打 `/health` 的 HTTP 探活（镜像 Dockerfile 的 HEALTHCHECK 针对 API；
    本服务没有 HTTP 端口，Railway 侧探活必须关掉，否则会把常驻循环判死）。

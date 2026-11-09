@@ -77,3 +77,9 @@ WebView 回跳和第三方页面兼容需真机验证。
 月卡卡片、我的页、签到引导与到账提示显示专项/通用两部分；总数仍为 3000/150。复用原查询及按钮，不新增页面请求。固定验收 vip-mixed 覆盖 390/320 宽度与钱包到账。
 
 隔离 PG 覆盖并发、幂等、旧订单及故障回滚；远端执行与部署状态见任务 `11-05-vip-mixed-rewards` 的发布记录。
+
+## TTZF epay consumer compatibility (2026-11-09)
+
+Backend now creates TTZF epay orders, while existing React Query hooks, HTTPS checkout opener, return navigation and DTOs remain unchanged. New IDs use EP + 30 hex digits; old history remains visible. Backend rejects QR-only/scheme-only checkout replies instead of passing unsupported values to the frontend. Backend owns all confirmation; return parameters never constitute payment success.
+
+Per user direction, further local UI acceptance is skipped and engineers validate in TEST: Alipay/WeChat handoff on Android/iOS, return/reopen, delayed fulfilment and credits/VIP balances. Reuse packages/ui-tests @recharge for future repeatable pending/paid/failed/return scenes; it cannot prove actual vendor calls, Telegram handoff, database fulfilment or page/API P95. No measured mobile baseline is available for this task.

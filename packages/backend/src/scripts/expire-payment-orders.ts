@@ -1,10 +1,9 @@
 import '../instrumentation.js';
 import '../platform/config.js';
-import { config } from '../platform/config.js';
 import { createLogger } from '../lib/logger.js';
 import { closeSupabaseClient } from '../lib/supabase.js';
 import { MiniappPaymentOrderRepository } from '../infrastructure/repositories/MiniappPaymentOrderRepository.js';
-import { VexutopiaPaymentGateway } from '../infrastructure/payment/VexutopiaPaymentGateway.js';
+import { EpayPaymentGateway } from '../infrastructure/payment/EpayPaymentGateway.js';
 import { runPaymentReconciliation } from '../features/payment/usecases/PaymentReconciliation.js';
 import {
   observeBackgroundRun,
@@ -13,6 +12,7 @@ import {
 
 const log = createLogger('payment');
 const orders = new MiniappPaymentOrderRepository();
+const gateway = new EpayPaymentGateway();
 let exitCode = 0;
 let outcome: 'success' | 'partial' | 'error' = 'success';
 let terminalError: unknown;
@@ -23,9 +23,9 @@ try {
   // 先查单补账、再判过期；即使对账 worker 停了，这一步也能把已付款订单追回来。
   const result = await runPaymentReconciliation({
     orders,
-    gateway: new VexutopiaPaymentGateway(),
+    gateway,
     log,
-    paymentEnabled: config.payment.enabled,
+    paymentEnabled: gateway.configured,
     trigger: 'expiry_reconcile',
     events: orders,
   });
@@ -34,15 +34,14 @@ try {
       `closed=${result.closed} lookupFailed=${result.lookupFailed}`
   );
 
-  // 不知道平台状态时不关单：过期虽然能被迟到确认重开，但会让用户看到错误的“已失效”。
   if (result.lookupFailed) {
     outcome = 'partial';
-    log.sys.error({ event: 'payment.cron.expiry_skipped' }, '批量查单失败，跳过本轮订单过期');
-    console.log('Expired payment orders: skipped (lookup failed)');
-  } else {
-    const expired = await orders.expireAllPending();
-    console.log(`Expired payment orders: ${expired}`);
+    log.sys.warn(
+      { event: 'payment.cron.partial' },
+      'Some queries failed; those orders remain recoverable'
+    );
   }
+  console.log(`Expired queried unpaid orders: ${result.closed}`);
 } catch (error) {
   terminalError = error;
   outcome = 'error';

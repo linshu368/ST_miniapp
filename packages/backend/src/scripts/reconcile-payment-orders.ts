@@ -7,10 +7,9 @@ import {
   runPaymentReconciliationLoop,
 } from '../features/payment/usecases/PaymentReconciliation.js';
 import { MiniappPaymentOrderRepository } from '../infrastructure/repositories/MiniappPaymentOrderRepository.js';
-import { VexutopiaPaymentGateway } from '../infrastructure/payment/VexutopiaPaymentGateway.js';
+import { EpayPaymentGateway } from '../infrastructure/payment/EpayPaymentGateway.js';
 import { createLogger } from '../lib/logger.js';
 import { closeSupabaseClient } from '../lib/supabase.js';
-import { config } from '../platform/config.js';
 import {
   observeBackgroundRun,
   startStandaloneObservability,
@@ -18,7 +17,7 @@ import {
 
 const log = createLogger('payment');
 const orders = new MiniappPaymentOrderRepository();
-const gateway = new VexutopiaPaymentGateway();
+const gateway = new EpayPaymentGateway();
 const shutdown = new AbortController();
 let exitCode = 0;
 let passStartedAt = performance.now();
@@ -31,7 +30,7 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const) {
 }
 
 log.sys.info(
-  { event: 'payment.reconcile_worker.started', paymentEnabled: config.payment.enabled },
+  { event: 'payment.reconcile_worker.started', paymentEnabled: gateway.configured },
   '支付订单对账 worker 启动'
 );
 
@@ -43,9 +42,10 @@ try {
         orders,
         gateway,
         log,
-        paymentEnabled: config.payment.enabled,
+        paymentEnabled: gateway.configured,
         trigger: 'fast_reconcile',
         events: orders,
+        signal: shutdown.signal,
       });
     },
     sleep: async (milliseconds, signal) => {
@@ -60,11 +60,11 @@ try {
     onPass: (result) => {
       observeBackgroundRun({
         job: 'payment_reconciliation',
-        outcome: !config.payment.enabled ? 'skipped' : result.lookupFailed ? 'partial' : 'success',
+        outcome: !gateway.configured ? 'skipped' : result.lookupFailed ? 'partial' : 'success',
         startedAt: passStartedAt,
       });
-      if (!config.payment.enabled) {
-        console.log('Payment reconciliation skipped: PAYMENT_ENABLED is not true');
+      if (!gateway.configured) {
+        console.log('Payment reconciliation skipped: provider credentials are not configured');
         return;
       }
       console.log(

@@ -15,7 +15,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -33,16 +33,21 @@ const TEST_PATTERN = /(\.test\.|\.spec\.|\/__tests__\/|\/tests?\/|\.d\.ts$)/;
 const SOURCE_PATTERN = /^packages\/[^/]+\/src\/.+\.tsx?$/;
 
 function runtimeSourceFiles() {
-  const out = execFileSync('git', ['ls-files', '--', 'packages'], {
-    cwd: repoRoot,
-    encoding: 'utf8',
-    maxBuffer: 64 * 1024 * 1024,
-  });
-  return out
-    .split('\n')
+  const out = execFileSync(
+    'git',
+    ['ls-files', '--cached', '--others', '--exclude-standard', '--', 'packages'],
+    {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      maxBuffer: 64 * 1024 * 1024,
+    }
+  );
+  // Validate the working tree too: replacements can be untracked and removed files still indexed.
+  return [...new Set(out.split('\n'))]
     .filter((file) => SOURCE_PATTERN.test(file))
     .filter(Boolean)
-    .filter((file) => !TEST_PATTERN.test(file) && !file.startsWith('packages/ui-tests/'));
+    .filter((file) => !TEST_PATTERN.test(file) && !file.startsWith('packages/ui-tests/'))
+    .filter((file) => existsSync(join(repoRoot, file)));
 }
 
 function functionName(node) {

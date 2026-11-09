@@ -1,18 +1,17 @@
+import { EpayPaymentGateway } from '../../../infrastructure/payment/EpayPaymentGateway.js';
+import { createEpayOrderId } from '../../../infrastructure/payment/epay-protocol.js';
 import { config } from '../../../platform/config.js';
 import {
   findPaymentPlan,
   formatAmountCny,
-  generateMiniappOrderId,
   ORDER_EXPIRE_MS,
-  PaymentPlansConfigError,
   resolvePaymentProduct,
 } from '../domain/rechargeRules.js';
 import { readVipStrategy } from '../../../platform/vip-strategy.js';
 import {
-  VexutopiaPaymentGateway,
   type PaymentGateway,
   type PaymentGatewayErrorClass,
-} from '../../../infrastructure/payment/VexutopiaPaymentGateway.js';
+} from '../../../infrastructure/payment/PaymentGateway.js';
 import {
   MiniappPaymentOrderRepository,
   toPaymentOrder,
@@ -26,17 +25,9 @@ import {
   type PaymentEventRecorder,
 } from './PaymentOperationEvents.js';
 
-/** 支付宝 / 微信通道的单笔范围（¥1–1,000）。超出时供应商会拒单，提前拦下避免留一张必败的本地单。 */
-const CHINA_PAY_MIN_CENTS = 100;
-const CHINA_PAY_MAX_CENTS = 100_000;
-
 type RechargeOrders = Pick<
   MiniappPaymentOrderRepository,
-  | 'create'
-  | 'markFailed'
-  | 'attachProviderTransaction'
-  | 'expirePendingByIdForUser'
-  | 'findByIdForUser'
+  'create' | 'markFailed' | 'attachProviderTransaction' | 'findByIdForUser'
 >;
 
 export class RechargeUseCase {
@@ -44,7 +35,7 @@ export class RechargeUseCase {
 
   constructor(
     private readonly orders: RechargeOrders = new MiniappPaymentOrderRepository(),
-    private readonly gateway: PaymentGateway = new VexutopiaPaymentGateway(),
+    private readonly gateway: PaymentGateway = new EpayPaymentGateway(),
     events?: PaymentEventRecorder
   ) {
     this.events = events;
@@ -54,6 +45,7 @@ export class RechargeUseCase {
     userId: string;
     planId: string;
     paymentType: PaymentType;
+    clientIp: string;
     log?: SettlementLogger;
   }): Promise<CreatePaymentOrderData> {
     if (!config.payment.enabled) {
@@ -66,14 +58,8 @@ export class RechargeUseCase {
       plans: strategy.plans,
       findPlan: findPaymentPlan,
     });
-    if (product.amount_cents < CHINA_PAY_MIN_CENTS || product.amount_cents > CHINA_PAY_MAX_CENTS) {
-      throw new PaymentPlansConfigError(
-        `套餐 ${product.product_id} 金额 ${product.amount_cents} 分超出支付宝/微信单笔范围`
-      );
-    }
-
     const now = Date.now();
-    const orderId = generateMiniappOrderId(input.userId);
+    const orderId = createEpayOrderId();
     const row = await this.orders.create({
       id: orderId,
       user_id: input.userId,
@@ -106,6 +92,7 @@ export class RechargeUseCase {
     const result = await this.gateway.createPayment({
       orderId,
       type: input.paymentType,
+      clientIp: input.clientIp,
       amount: formatAmountCny(product.amount_cents),
       // 收银台商品名由服务端产品快照决定，避免前端改名影响渠道受理或历史订单语义。
       description: product.gateway_product_name,
@@ -122,12 +109,17 @@ export class RechargeUseCase {
         },
         '支付平台建单失败'
       );
-      await this.failOrder(row, log, gatewayStartedAt, result.errorClass ?? 'response_invalid');
+      await this.failOrder(
+        row,
+        log,
+        gatewayStartedAt,
+        result.errorClass ?? 'response_invalid',
+        result.outcomeUnknown === true || result.success
+      );
       throw new Error(result.errorMessage || '创建支付订单失败');
     }
 
-    // 没有交易号的订单只能等 Webhook，查单兜底全部失效；宁可让用户重下一单，
-    // 也不交出这样的收银台。供应商侧那笔未付款交易 30 分钟后自行过期。
+    // Persist before exposing checkout; unknown persistence outcomes remain recoverable by merchant ID.
     let attached = false;
     try {
       attached = await this.orders.attachProviderTransaction(orderId, result.providerTransactionId);
@@ -138,7 +130,7 @@ export class RechargeUseCase {
       );
     }
     if (!attached) {
-      await this.failOrder(row, log, gatewayStartedAt, 'provider_ref_persist_failed');
+      await this.failOrder(row, log, gatewayStartedAt, 'provider_ref_persist_failed', true);
       throw new Error('创建支付订单失败，请稍后重试');
     }
 
@@ -162,7 +154,6 @@ export class RechargeUseCase {
   }
 
   async getOrderForUser(orderId: string, userId: string): Promise<PaymentOrder | null> {
-    await this.orders.expirePendingByIdForUser(orderId, userId);
     const row = await this.orders.findByIdForUser(orderId, userId);
     return row ? toPaymentOrder(row) : null;
   }
@@ -171,9 +162,10 @@ export class RechargeUseCase {
     row: MiniappPaymentOrderRow,
     log: SettlementLogger,
     gatewayStartedAt: number,
-    errorClass: PaymentGatewayErrorClass | 'provider_ref_persist_failed'
+    errorClass: PaymentGatewayErrorClass | 'provider_ref_persist_failed',
+    outcomeUnknown = false
   ): Promise<void> {
-    await this.orders.markFailed(row.id);
+    if (!outcomeUnknown) await this.orders.markFailed(row.id);
     recordPaymentOperationEvent(this.events, log, {
       event_key: `gateway_create:${row.id}`,
       order_id: row.id,

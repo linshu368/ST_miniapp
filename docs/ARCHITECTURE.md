@@ -127,6 +127,8 @@
 
 ## 3. 包清单
 
+支付查单兼容性：TTZF 成功响应可能返回 `pid: null` 或省略 pid，后端仅在非空时核对应用 ID；查单请求仍携带 pid/key，签名通知仍要求 pid。查单的订单号、渠道、交易号及精确金额校验继续生效，主动查单和对账 Worker 复用同一修复；无需数据库迁移。
+
 调用前准备减负候选（2026-10-30）：conversation owner复用单轮用户设置、平台规则和目录快照，execute使用同一冻结计费上下文，VIP与配置读取并行。既有experience.begin_chat_generation_observation扩展可选charge_id/history，初次原子持久化身份、最终原子冻结prompt/报价，原5次往返变2次；不新增表/任务/扫描。兼容migration先于backend发布，尚未生产验收。关键身份不能改为后台保存，超时免扣、停止、额度释放及一次结算边界保持原语义，详见docs/first-token-fallback.md。
 
 ### 3.1 契约层
@@ -448,28 +450,28 @@ experience.chat_sessions  1 ─── N  experience.chat_history
 
 `src/app.ts` 注册全部路由插件，均使用完整路径字面量（不用 Fastify prefix）。CORS 允许 `FRONTEND_URL` / `ADMIN_PLATFORM_URL`。
 
-| 路由文件                  | 主要路径                                                                                                                                                           | 鉴权                             |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------- |
-| `conversations.ts`        | `/api/v1/conversations*`、`/api/v1/generation-config`（见 §4.2）                                                                                                   | `X-Init-Data`                    |
-| `voice.ts`                | `/api/v1/voice/config`、`/api/v1/conversations/:sessionId/voice`、`.../messages/:messageId/voice`（见 §4.6）                                                       | `X-Init-Data`                    |
-| `images.ts`               | `/api/v1/images/config`、会话图片查询、`.../image-description`、`.../image`（见 §4.7）                                                                             | `X-Init-Data`                    |
-| `image-plaza.ts`          | `/api/image-plaza/*`：配置、feed/详情/点赞、会话/报价/参考图/attempt、分享                                                                                         | `X-Init-Data`                    |
-| `characters.ts`           | `GET /api/characters` · `/:id` · `/latest-badge` · `POST /latest-seen`                                                                                             | 列表公开，红点需鉴权             |
-| `favorites.ts`            | `GET /api/favorites` · `/ids`、`PUT`/`DELETE /api/favorites/:characterId`                                                                                          | `X-Init-Data`                    |
-| `models.ts`               | `GET /api/platform/openrouter/models`、`GET /api/v1/models/config`、`POST /api/v1/models/select`（旧 tiers 端点 `/api/platform/models` 已删）                      | 部分公开                         |
-| `settings.ts`             | `GET`/`PATCH /api/users/settings`、`POST /api/users/avatar`                                                                                                        | `X-Init-Data`                    |
-| `wallet.ts`               | `/api/wallet/balance` · `/spending` · `/free-quota/:characterId` · `/checkin`                                                                                      | `X-Init-Data`                    |
-| `payment.ts`              | `/api/payment/plans` · `/orders*` · `/return` · `/webhook/vexutopia`                                                                                               | HMAC-SHA256 回调验签             |
-| `vip.ts`                  | `GET /api/vip/status` · `POST /api/vip/entry-viewed`                                                                                                               | `X-Init-Data`                    |
-| `notifications.ts`        | `/api/notifications` · `/unread-count` · `/:id` · `/read`（已读必须带消息 id）                                                                                     | `X-Init-Data`                    |
-| `support.ts`              | `/api/support/conversation` · `/messages` · `/unread` · `/read`                                                                                                    | `X-Init-Data`                    |
-| `growth.ts`               | `POST /api/growth/miniapp-entry`（089 之后仅剩入口归因；渠道链接管理与 click 重定向已下线）                                                                        | `X-Init-Data`                    |
-| `invite.ts`               | `GET /api/invite/entry-status` · `POST /api/invite/center-view` · `POST /api/invite/bind` · `GET /api/invite/stats`（裂变邀请；发奖全在 `miniapp_traffic` RPC 内） | `X-Init-Data`                    |
-| `community.ts`            | `GET /api/community/entry` · `POST /api/community/verify-membership`（既有成员手动领奖）· `POST /api/telegram/community-webhook`（新成员入群自动发奖）             | `X-Init-Data` / TG secret        |
-| `bot.ts`                  | `POST /api/internal/bot/start`、`POST /api/telegram/webhook`                                                                                                       | 内部密钥 / TG secret             |
-| `admin-supabase-proxy.ts` | `POST /api/admin/character-assets/:characterId`、`POST /api/admin/invite-poster`（107 桶）、`ALL /api/admin/supabase/*`                                            | Supabase session                 |
-| `text-postprocess.ts`     | `/api/admin/text-postprocess*`：状态/历史、草稿保存/丢弃、发布、回滚、request lookup；`/api/v1/text-postprocess/versions` 批量读取不可变 artifact 快照             | Supabase session / `X-Init-Data` |
-| `app.ts`                  | `GET /health`                                                                                                                                                      | 公开                             |
+| 路由文件                              | 主要路径                                                                                                                                                           | 鉴权                             |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------- |
+| `conversations.ts`                    | `/api/v1/conversations*`、`/api/v1/generation-config`（见 §4.2）                                                                                                   | `X-Init-Data`                    |
+| `voice.ts`                            | `/api/v1/voice/config`、`/api/v1/conversations/:sessionId/voice`、`.../messages/:messageId/voice`（见 §4.6）                                                       | `X-Init-Data`                    |
+| `images.ts`                           | `/api/v1/images/config`、会话图片查询、`.../image-description`、`.../image`（见 §4.7）                                                                             | `X-Init-Data`                    |
+| `image-plaza.ts`                      | `/api/image-plaza/*`：配置、feed/详情/点赞、会话/报价/参考图/attempt、分享                                                                                         | `X-Init-Data`                    |
+| `characters.ts`                       | `GET /api/characters` · `/:id` · `/latest-badge` · `POST /latest-seen`                                                                                             | 列表公开，红点需鉴权             |
+| `favorites.ts`                        | `GET /api/favorites` · `/ids`、`PUT`/`DELETE /api/favorites/:characterId`                                                                                          | `X-Init-Data`                    |
+| `models.ts`                           | `GET /api/platform/openrouter/models`、`GET /api/v1/models/config`、`POST /api/v1/models/select`（旧 tiers 端点 `/api/platform/models` 已删）                      | 部分公开                         |
+| `settings.ts`                         | `GET`/`PATCH /api/users/settings`、`POST /api/users/avatar`                                                                                                        | `X-Init-Data`                    |
+| `wallet.ts`                           | `/api/wallet/balance` · `/spending` · `/free-quota/:characterId` · `/checkin`                                                                                      | `X-Init-Data`                    |
+| `payment.ts` / `payment-callbacks.ts` | `/api/payment/plans` · `/orders*` · `/return` · `/notify/ttzf`                                                                                                     | 易支付 GET 通知、MD5 验签        |
+| `vip.ts`                              | `GET /api/vip/status` · `POST /api/vip/entry-viewed`                                                                                                               | `X-Init-Data`                    |
+| `notifications.ts`                    | `/api/notifications` · `/unread-count` · `/:id` · `/read`（已读必须带消息 id）                                                                                     | `X-Init-Data`                    |
+| `support.ts`                          | `/api/support/conversation` · `/messages` · `/unread` · `/read`                                                                                                    | `X-Init-Data`                    |
+| `growth.ts`                           | `POST /api/growth/miniapp-entry`（089 之后仅剩入口归因；渠道链接管理与 click 重定向已下线）                                                                        | `X-Init-Data`                    |
+| `invite.ts`                           | `GET /api/invite/entry-status` · `POST /api/invite/center-view` · `POST /api/invite/bind` · `GET /api/invite/stats`（裂变邀请；发奖全在 `miniapp_traffic` RPC 内） | `X-Init-Data`                    |
+| `community.ts`                        | `GET /api/community/entry` · `POST /api/community/verify-membership`（既有成员手动领奖）· `POST /api/telegram/community-webhook`（新成员入群自动发奖）             | `X-Init-Data` / TG secret        |
+| `bot.ts`                              | `POST /api/internal/bot/start`、`POST /api/telegram/webhook`                                                                                                       | 内部密钥 / TG secret             |
+| `admin-supabase-proxy.ts`             | `POST /api/admin/character-assets/:characterId`、`POST /api/admin/invite-poster`（107 桶）、`ALL /api/admin/supabase/*`                                            | Supabase session                 |
+| `text-postprocess.ts`                 | `/api/admin/text-postprocess*`：状态/历史、草稿保存/丢弃、发布、回滚、request lookup；`/api/v1/text-postprocess/versions` 批量读取不可变 artifact 快照             | Supabase session / `X-Init-Data` |
+| `app.ts`                              | `GET /health`                                                                                                                                                      | 公开                             |
 
 frontend 自有 Route Handler：`GET /api/lobby-characters`（白名单 sort 参数后代理 backend 角色卡列表）。
 
@@ -567,15 +569,15 @@ packages/backend/src/
 
 ## 8. 部署
 
-| 单元         | 包 / 镜像                       | 说明                                                                                                                                                   | 平台           |
-| ------------ | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------- |
-| 平台前端     | `packages/frontend`             | Vercel 构建部署，对外域名绑定 Vercel                                                                                                                   | Vercel         |
-| 运营后台     | `packages/admin`                | 独立 Vercel 项目（Vite 静态构建）                                                                                                                      | Vercel         |
-| miniapp 后端 | `ops/docker/Dockerfile.backend` | Railway 服务 **`stminiapp`**（唯一对外 HTTP），容器内 :8080                                                                                            | Railway        |
-| 支付快速对账 | 同上镜像                        | Railway 服务 `stminiapp-payment-reconcile-cron`：常驻 worker，进程内约 30 秒一轮批量查单（最近 2 小时未履约订单）                                      | Railway        |
-| 支付过期任务 | 同上镜像                        | Railway Cron `stminiapp-payment-cron`：`*/5 * * * *` 跑过期前回溯对账 + 判过期                                                                         | Railway        |
-| VIP 到期提醒 | 同上镜像                        | Railway Cron `stminiapp-vip-reminder-cron`：development / production 均以 `20 * * * *` 执行 `--write`；各环境仍由 `vip_reminders_enabled` 控制真实写入 | Railway        |
-| 数据与存储   | 托管                            | PostgreSQL + Storage；test 与 production 两个项目                                                                                                      | Supabase Cloud |
+| 单元         | 包 / 镜像                       | 说明                                                                                                                                                      | 平台           |
+| ------------ | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| 平台前端     | `packages/frontend`             | Vercel 构建部署，对外域名绑定 Vercel                                                                                                                      | Vercel         |
+| 运营后台     | `packages/admin`                | 独立 Vercel 项目（Vite 静态构建）                                                                                                                         | Vercel         |
+| miniapp 后端 | `ops/docker/Dockerfile.backend` | Railway 服务 **`stminiapp`**（唯一对外 HTTP），容器内 :8080                                                                                               | Railway        |
+| 支付快速对账 | 同上镜像                        | Railway 服务 `stminiapp-payment-reconcile-cron`：每轮后等待 30 秒，最多 30 单、并发 3、派发预算 25 秒；按 next_reconcile_at 轮转最近 7 天易支付未履约订单 | Railway        |
+| 支付过期任务 | 同上镜像                        | Railway Cron `stminiapp-payment-cron`：`*/5 * * * *` 跑过期前回溯对账 + 判过期                                                                            | Railway        |
+| VIP 到期提醒 | 同上镜像                        | Railway Cron `stminiapp-vip-reminder-cron`：development / production 均以 `20 * * * *` 执行 `--write`；各环境仍由 `vip_reminders_enabled` 控制真实写入    | Railway        |
+| 数据与存储   | 托管                            | PostgreSQL + Storage；test 与 production 两个项目                                                                                                         | Supabase Cloud |
 
 **流量路径**：用户或内部使用者 → Vercel（页面 / SPA）→ backend 公网域名 → Supabase / OpenRouter / MiniMax。浏览器直接把 `/api/*` 发往 backend 域名，中间**没有任何反代**（ST 时代的 nginx 网关已随收敛退场）。
 
@@ -583,7 +585,7 @@ packages/backend/src/
 
 **Railway IaC**：`.railway/railway.ts` 声明 `development`（跟 `dev` 分支）与 `production`（跟 `main` 分支）。两个环境都包含上述三个常驻/支付服务与 VIP 提醒 Cron；提醒以 `--write` 运行，但各环境仍受自己的 `vip_reminders_enabled` 开关保护。改动需 `railway config plan/apply`，且渲染 production 必须显式 `RAILWAY_CONFIG_ENV=production`。**`main` 分支自动部署生产**（四个服务的 deployment trigger 均为 `branch=main`）——合并进 `main` 即上线，数据库迁移需在合并前按 §7.4 手动执行。对 `dev` 的 PR 会由 `railway-pr-env.yml` 拉起 `pr-{N}` 临时环境（变量继承 development，指向 test 库）；workflow 会把支付过期 Cron 校准为包内 `tsx` 启动命令，并删除 VIP 提醒 Cron，保证 TEST 只有 development 的单一提醒调度器。
 
-**支付入账路径**（供应商 Vexutopia，支付宝/微信 CNY；唯一出口 `features/payment/usecases/PaymentSettlement.settlePaidOrder`，幂等靠订单行锁与 `fulfillment_applied`，先到者写 `payment_orders.settled_by`）：`webhook`（`POST /api/payment/webhook/vexutopia`，HMAC 验签，按 metadata `mijing_env` 只处理本环境订单）→ `query`（订单页轮询或回跳时单笔查单）→ `cron`（对账 Worker 每 30 秒、过期 Cron 每 5 分钟用 `POST /v1/payments/lookup` 批量查单）。回跳 URL 不签名，只导航，不作为入账依据；历史订单的 `settled_by='return'` 保留。建单时 Vexutopia 交易号写入 `provider_transaction_id`，没有交易号的订单不会交出收银台。支付告警 v3 只看平台直接信号（建单错误码、平台订单状态、回调验签），见 `features/payment/domain/PaymentAlertRules.ts`。
+**支付入账路径**（TTZF 易支付，支付宝/微信 CNY）：`POST /api/epay/mapi.php` 建单；`GET /api/payment/notify/ttzf` 用应用密钥验证小写 MD5，校验 pid、本环境订单、渠道、交易号及精确金额；建单不发送可选 param，回调/查单不依赖其回传，旧通知扩展仍参与验签。轮询、回跳和 Worker 用 `GET /api/epay/api.php`（act=order）查单，只有 status=1 可结算。按用户指定协议，查询 key 仅进入服务端 HTTPS 请求，不输出到日志/异常/遥测，也不跟随重定向。所有可信结果仍进入 `PaymentSettlement.settlePaidOrder`，平台单号先 CAS 绑定，再复用订单行锁与 `fulfillment_applied` 原子履约。新订单 `EP` + 30 位随机十六进制，旧 Vexutopia 单只保留历史，不发送到 TTZF。建单超时或响应/写库不确定时保留 pending；无交易号也可按商户单号恢复。只有可信查单确认未付且超过本地期限才置 expired，晚付可重开；不批量关闭未知结果。回跳参数从不直接入账，退款只告警不自动扣回。支付告警 v4 使用建单/查单错误、已验签 TRADE_ERROR 与退款通知；关闭 PAYMENT_ENABLED 仅停止新建单，不停止配置完整时的回调/查单。无新增数据库迁移；上线联调和真机验收见 `ops/railway/README.md`。
 
 **体验监控**（Sentry org `wangqiao` / project `st-miniapp`，前后端共用，靠 `service` 标签区分）：p95/p99 来自 Sentry Metrics（全量，不受 trace 采样影响），"卡了"以 warning 事件表达并自带 Replay。前端 `src/lib/perf/` 记录请求耗时与超时（`apiClient` 默认 20 秒超时，图片/语音生成等长耗时接口例外）、页面可用耗时与 4 秒卡住（大厅/聊天列表/会话页/充值）、三个核心按钮 2.5 秒无反馈、资源加载失败；后端 `lib/perf-metrics.ts` 记录每路由耗时（对话/语音/图片生成单独 `kind=generation`）、Prisma 操作耗时（连接池超时标 `pool_timeout`）、事件循环延迟。采样：trace 0.2、Replay 会话 0.05、Replay 报错 1.0。指标清单、看板与排查流程见 `.trellis/tasks/10-21-sentry-ux-monitoring/dashboard-and-runbook.md`。阈值均为初值，待基线校准。
 
@@ -677,7 +679,7 @@ packages/backend/src/
 | `CS_SERVICE_URL` / `CS_SERVICE_SECRET`                                             | 独立客服服务地址和共享密钥（Bot 转发与 `/api/support/*` 代理）                |
 | `ADMIN_PLATFORM_URL`                                                               | 运营后台 CORS                                                                 |
 | `FRONTEND_URL`                                                                     | CORS 与支付回跳                                                               |
-| `PAYMENT_ENABLED` / `PAYMENT_RETURN_URL` / `VEXUTOPIA_*`                           | 支付开关、https 回跳地址、Vexutopia API Key / Base URL / Webhook secret       |
+| `PAYMENT_ENABLED` / `PAYMENT_RETURN_URL` / `PAYMENT_NOTIFY_URL` / `TTZF_*`         | 新建单开关、HTTPS 回跳/通知地址、易支付应用 ID/密钥及网关根地址               |
 | `CHARACTER_STORAGE_BUCKET`                                                         | 角色卡资源 bucket（默认 `character-assets`）                                  |
 | `DEFAULT_USER_AVATAR_URL`                                                          | 平台默认头像                                                                  |
 | `CHAT_HISTORY_SYNC_ENABLED`                                                        | OpenRouter 用量回捞定时任务开关                                               |

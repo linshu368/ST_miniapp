@@ -2,9 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { MiniappPaymentOrderRow } from '../../../infrastructure/repositories/MiniappPaymentOrderRepository.js';
 import type {
-  PaymentLookupItem,
-  PaymentLookupResult,
-} from '../../../infrastructure/payment/VexutopiaPaymentGateway.js';
+  PaymentQueryResult,
+  PaymentQueryTarget,
+} from '../../../infrastructure/payment/PaymentGateway.js';
 import { RECONCILE_WINDOW_MS, runPaymentReconciliation } from './PaymentReconciliation.js';
 
 vi.mock('../../../lib/notifications.js', () => ({
@@ -20,7 +20,7 @@ function order(
   overrides: Partial<MiniappPaymentOrderRow> = {}
 ): MiniappPaymentOrderRow {
   return {
-    id,
+    id: id.startsWith('MA') ? id : 'EP' + Buffer.from(id).toString('hex').padStart(30, '0'),
     user_id: '00000000-0000-0000-0000-000000000001',
     status: 'pending',
     payment_type: 'alipay',
@@ -47,32 +47,19 @@ function order(
   };
 }
 
-function item(
-  o: MiniappPaymentOrderRow,
-  overrides: Partial<PaymentLookupItem> = {}
-): PaymentLookupItem {
-  return {
-    transactionId: o.provider_transaction_id!,
-    found: true,
-    status: 'pending',
-    amount: '6',
-    currency: 'CNY',
-    orderId: o.id,
-    ...overrides,
-  };
-}
-
 function harness(
   candidates: MiniappPaymentOrderRow[],
-  lookup: (ids: string[]) => PaymentLookupResult
+  query: (order: PaymentQueryTarget, signal?: AbortSignal) => Promise<PaymentQueryResult>
 ) {
   const byId = new Map(candidates.map((o) => [o.id, o]));
   const orders = {
     listRecentUnsettled: vi.fn(async () => candidates),
+    scheduleReconciliation: vi.fn(async () => undefined),
     expirePendingById: vi.fn(async () => true),
     findById: vi.fn(async (id: string) => byId.get(id) ?? null),
+    attachProviderTransaction: vi.fn(async () => true),
     complete: vi.fn(
-      async (id: string, _tx: string | null, settledBy: MiniappPaymentOrderRow['settled_by']) => ({
+      async (id: string, _ref: string | null, settledBy: MiniappPaymentOrderRow['settled_by']) => ({
         ...byId.get(id)!,
         status: 'completed' as const,
         credits_added: true,
@@ -82,222 +69,133 @@ function harness(
     ),
     reopenExpired: vi.fn(async () => undefined),
   };
-  const gateway = { lookupPayments: vi.fn(async (ids: string[]) => lookup(ids)) };
+  const gateway = { queryOrder: vi.fn(query) };
   const events = { recordOperationEvent: vi.fn(async () => undefined) };
   const log = { biz: { info: vi.fn() }, sys: { warn: vi.fn(), error: vi.fn() } };
-  const run = (trigger: 'fast_reconcile' | 'expiry_reconcile' = 'fast_reconcile') =>
+  const run = (signal?: AbortSignal, paymentEnabled = true) =>
     runPaymentReconciliation({
       orders,
       gateway,
       log: log as never,
-      paymentEnabled: true,
-      trigger,
-      now: NOW,
       events,
-    });
-  return { orders, gateway, events, log, run };
-}
-
-const flush = () => new Promise((resolve) => setImmediate(resolve));
-
-describe('runPaymentReconciliation', () => {
-  beforeEach(() => vi.clearAllMocks());
-
-  it('does nothing when payments are disabled', async () => {
-    const { orders, gateway } = harness([order('A')], () => ({ success: true, items: [] }));
-    const result = await runPaymentReconciliation({
-      orders,
-      gateway,
-      log: { biz: { info: vi.fn() }, sys: { warn: vi.fn(), error: vi.fn() } } as never,
-      paymentEnabled: false,
+      signal,
+      paymentEnabled,
       trigger: 'fast_reconcile',
+      now: NOW,
     });
-    expect(result).toEqual({ checked: 0, settled: 0, closed: 0, lookupFailed: false });
-    expect(orders.listRecentUnsettled).not.toHaveBeenCalled();
-    expect(gateway.lookupPayments).not.toHaveBeenCalled();
+  return { orders, gateway, events, run };
+}
+const unpaid = async (): Promise<PaymentQueryResult> => ({
+  success: true,
+  paid: false,
+  status: 'pending',
+});
+const paid = async (o: PaymentQueryTarget): Promise<PaymentQueryResult> => ({
+  success: true,
+  paid: true,
+  amount: '6.000',
+  tradeNo: o.provider_transaction_id ?? 'recovered',
+});
+
+describe('epay bounded reconciliation', () => {
+  beforeEach(() => vi.clearAllMocks());
+  it('does nothing when credentials are unavailable or the queue is empty', async () => {
+    const h = harness([], unpaid);
+    await h.run(undefined, false);
+    expect(h.orders.listRecentUnsettled).not.toHaveBeenCalled();
+    await h.run();
+    expect(h.gateway.queryOrder).not.toHaveBeenCalled();
   });
-
-  it('looks up recent orders in one batch and settles the completed ones as cron', async () => {
-    const paid = order('PAID');
-    const waiting = order('WAIT');
-    const { orders, gateway, events, run } = harness([paid, waiting], () => ({
-      success: true,
-      items: [item(paid, { status: 'completed' }), item(waiting)],
-    }));
-
-    const result = await run();
-    await flush();
-
-    expect(orders.listRecentUnsettled).toHaveBeenCalledWith({
-      since: new Date(NOW - RECONCILE_WINDOW_MS).toISOString(),
-      limit: 300,
-    });
-    expect(gateway.lookupPayments).toHaveBeenCalledOnce();
-    expect(gateway.lookupPayments).toHaveBeenCalledWith(['tx_PAID', 'tx_WAIT']);
-    expect(orders.complete).toHaveBeenCalledWith('PAID', 'tx_PAID', 'cron');
-    expect(orders.complete).toHaveBeenCalledOnce();
-    expect(result).toEqual({ checked: 2, settled: 1, closed: 0, lookupFailed: false });
-    // 仍在等待付款的订单不记事件，免得每 30 秒刷一行。
-    const kinds = events.recordOperationEvent.mock.calls.map(
-      (call) => (call as unknown as [{ order_id: string | null }])[0].order_id
-    );
-    expect(kinds).not.toContain('WAIT');
-  });
-
-  it('credits a locally expired order that the customer paid late', async () => {
-    const late = order('LATE', { status: 'expired' });
-    const { orders, run } = harness([late], () => ({
-      success: true,
-      items: [item(late, { status: 'completed' })],
-    }));
-
-    expect((await run()).settled).toBe(1);
-    expect(orders.reopenExpired).toHaveBeenCalledWith('LATE');
-  });
-
-  it.each(['failed', 'expired', 'cancelled'])(
-    'closes a pending order the provider reports as %s',
-    async (status) => {
-      const dead = order('DEAD');
-      const { orders, events, run } = harness([dead], () => ({
-        success: true,
-        items: [item(dead, { status })],
-      }));
-
-      const result = await run();
-      await flush();
-
-      expect(orders.expirePendingById).toHaveBeenCalledWith('DEAD');
-      expect(orders.complete).not.toHaveBeenCalled();
-      expect(result.closed).toBe(1);
-      expect(events.recordOperationEvent).toHaveBeenCalledWith(
-        expect.objectContaining({ outcome: 'unpaid', error_class: `provider_${status}` })
-      );
-    }
-  );
-
-  it('splits more than 100 candidates into several lookups', async () => {
-    const many = Array.from({ length: 150 }, (_, i) => order(`O${i}`));
-    const { gateway, run } = harness(many, (ids) => ({
-      success: true,
-      items: ids.map((id) => ({ transactionId: id, found: true, status: 'pending' })),
-    }));
-
-    await run();
-
-    expect(gateway.lookupPayments).toHaveBeenCalledTimes(2);
-    expect(gateway.lookupPayments.mock.calls[0]?.[0]).toHaveLength(100);
-    expect(gateway.lookupPayments.mock.calls[1]?.[0]).toHaveLength(50);
-  });
-
-  it('probes the provider with an unknown id when there is nothing to reconcile', async () => {
-    const { gateway, events, run } = harness([], () => ({ success: true, items: [] }));
-    const result = await run();
-    await flush();
-
-    expect(gateway.lookupPayments).toHaveBeenCalledOnce();
-    expect(gateway.lookupPayments).toHaveBeenCalledWith(['tx_0000000000000000']);
-    expect(result).toEqual({ checked: 0, settled: 0, closed: 0, lookupFailed: false });
-    expect(events.recordOperationEvent).not.toHaveBeenCalled();
-  });
-
-  it('records a failed probe as a query failure so the provider outage is noticed early', async () => {
-    const { events, run } = harness([], () => ({
-      success: false,
-      errorClass: 'provider_unavailable',
-      errorMessage: 'down',
-    }));
-    const result = await run();
-    await flush();
-
-    expect(result.lookupFailed).toBe(true);
-    expect(events.recordOperationEvent).toHaveBeenCalledWith(
+  it('settles paid orders and durably rotates candidates before each query', async () => {
+    const o = order('paid');
+    const h = harness([o], paid);
+    expect(await h.run()).toEqual({ checked: 1, settled: 1, closed: 0, lookupFailed: false });
+    expect(h.orders.listRecentUnsettled).toHaveBeenCalledWith(
       expect.objectContaining({
-        event_kind: 'fast_reconcile',
-        outcome: 'failed',
-        error_class: 'provider_unavailable',
-        metadata: expect.objectContaining({ probe: true }),
+        since: new Date(NOW - RECONCILE_WINDOW_MS).toISOString(),
+        now: new Date(NOW).toISOString(),
+        limit: 30,
       })
     );
-  });
-
-  it('records a slow but successful lookup for the early-warning rule', async () => {
-    vi.useFakeTimers({ toFake: ['Date'] });
-    try {
-      const { events, run } = harness([], () => {
-        vi.advanceTimersByTime(4_000);
-        return { success: true, items: [] };
-      });
-      await run();
-      await flush();
-      expect(events.recordOperationEvent).toHaveBeenCalledWith(
-        expect.objectContaining({ outcome: 'succeeded', error_class: 'slow' })
-      );
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('reports a failed lookup so the expiry job can skip closing orders', async () => {
-    const { orders, events, run } = harness([order('A')], () => ({
-      success: false,
-      errorClass: 'timeout',
-      errorMessage: 'timeout',
-    }));
-
-    const result = await run('expiry_reconcile');
-    await flush();
-
-    expect(result.lookupFailed).toBe(true);
-    expect(orders.complete).not.toHaveBeenCalled();
-    expect(events.recordOperationEvent).toHaveBeenCalledWith(
-      expect.objectContaining({
-        event_kind: 'expiry_reconcile',
-        outcome: 'failed',
-        error_class: 'timeout',
-      })
+    expect(h.orders.scheduleReconciliation).toHaveBeenCalledWith(
+      o.id,
+      new Date(NOW + 30000).toISOString(),
+      expect.any(AbortSignal)
     );
+    expect(h.orders.scheduleReconciliation.mock.invocationCallOrder[0]).toBeLessThan(
+      h.gateway.queryOrder.mock.invocationCallOrder[0]!
+    );
+    expect(h.orders.complete).toHaveBeenCalledWith(o.id, o.provider_transaction_id, 'cron');
   });
-
-  it.each([
-    ['provider_not_found', { found: false }],
-    ['provider_ref_mismatch', { status: 'completed', orderId: 'SOMEONE_ELSE' }],
-    ['currency_mismatch', { status: 'completed', currency: 'USD' }],
-  ] as const)(
-    'refuses to settle on %s and records it once per order',
-    async (errorClass, overrides) => {
-      const odd = order('ODD');
-      const { orders, events, run } = harness([odd], () => ({
-        success: true,
-        items: [item(odd, overrides)],
-      }));
-
-      await run();
-      await flush();
-
-      expect(orders.complete).not.toHaveBeenCalled();
-      expect(events.recordOperationEvent).toHaveBeenCalledWith(
-        expect.objectContaining({
-          event_key: `fast_reconcile:${errorClass}:ODD`,
-          outcome: 'failed',
-          error_class: errorClass,
-        })
-      );
-    }
-  );
-
-  it('keeps going when one order fails to settle', async () => {
-    const first = order('FIRST');
-    const second = order('SECOND');
-    const { orders, run } = harness([first, second], () => ({
+  it('recovers expired orders and missing creation references but excludes legacy orders', async () => {
+    const late = order('late', { status: 'expired', provider_transaction_id: null });
+    const h = harness([late, order('MA_legacy')], paid);
+    expect((await h.run()).settled).toBe(1);
+    expect(h.gateway.queryOrder).toHaveBeenCalledOnce();
+    expect(h.orders.attachProviderTransaction).toHaveBeenCalledWith(late.id, 'recovered');
+    expect(h.orders.reopenExpired).toHaveBeenCalledWith(late.id);
+  });
+  it('expires only confirmed unpaid orders beyond the local deadline', async () => {
+    const expired = order('old', { expires_at: new Date(NOW - 1).toISOString() });
+    const h = harness([expired, order('new')], unpaid);
+    expect((await h.run()).closed).toBe(1);
+    expect(h.orders.expirePendingById).toHaveBeenCalledExactlyOnceWith(expired.id);
+  });
+  it('preserves unknown query outcomes and still settles other orders', async () => {
+    const first = order('failure', { expires_at: new Date(NOW - 1).toISOString() });
+    const second = order('ok');
+    const h = harness([first, second], async (o) =>
+      o.id === first.id ? { success: false, errorClass: 'timeout' } : paid(o)
+    );
+    expect(await h.run()).toEqual({ checked: 2, settled: 1, closed: 0, lookupFailed: true });
+    expect(h.orders.expirePendingById).not.toHaveBeenCalled();
+  });
+  it('never grants mismatched amounts and continues after a database error', async () => {
+    const h = harness([order('a'), order('b'), order('c')], paid);
+    h.orders.findById.mockRejectedValueOnce(new Error('db temporarily down'));
+    h.gateway.queryOrder.mockResolvedValueOnce({
       success: true,
-      items: [item(first, { status: 'completed' }), item(second, { status: 'completed' })],
-    }));
-    orders.findById.mockRejectedValueOnce(new Error('db hiccup'));
-
-    const result = await run();
-
-    expect(result.settled).toBe(1);
-    expect(orders.complete).toHaveBeenCalledWith('SECOND', 'tx_SECOND', 'cron');
+      paid: true,
+      amount: '6.01',
+      tradeNo: 'wrong',
+    });
+    const result = await h.run();
+    expect(result.lookupFailed).toBe(true);
+    expect(result.settled).toBeGreaterThan(0);
+    expect(h.orders.complete.mock.calls.length).toBeLessThan(3);
+  });
+  it('caps each pass at 30 and query concurrency at three', async () => {
+    let active = 0,
+      peak = 0;
+    const h = harness(
+      Array.from({ length: 45 }, (_, i) => order(String(i))),
+      async () => {
+        active++;
+        peak = Math.max(peak, active);
+        await new Promise((resolve) => setImmediate(resolve));
+        active--;
+        return unpaid();
+      }
+    );
+    expect((await h.run()).checked).toBe(30);
+    expect(peak).toBe(3);
+  });
+  it('stops dispatch on cancellation and waits for in-flight queries to abort', async () => {
+    const controller = new AbortController();
+    const h = harness(
+      Array.from({ length: 10 }, (_, i) => order(String(i))),
+      async (_o, signal) => {
+        setImmediate(() => controller.abort());
+        await new Promise<void>((resolve) =>
+          signal!.addEventListener('abort', () => resolve(), { once: true })
+        );
+        return { success: false, errorClass: 'timeout' };
+      }
+    );
+    const result = await h.run(controller.signal);
+    expect(result.lookupFailed).toBe(true);
+    expect(h.gateway.queryOrder).toHaveBeenCalledTimes(3);
+    expect(h.orders.expirePendingById).not.toHaveBeenCalled();
+    expect(h.orders.complete).not.toHaveBeenCalled();
   });
 });
