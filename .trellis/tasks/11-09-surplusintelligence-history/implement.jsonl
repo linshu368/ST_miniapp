@@ -1,0 +1,9 @@
+{"file": ".trellis/spec/backend/app/index.md", "reason": "Read the complete source; provider history, reliability, migration and compatibility constraints."}
+{"file": ".trellis/spec/backend/app/data-reliability-and-security.md", "reason": "Read the complete source; provider history, reliability, migration and compatibility constraints."}
+{"file": ".trellis/spec/database/supabase/index.md", "reason": "Read the complete source; provider history, reliability, migration and compatibility constraints."}
+{"file": ".trellis/spec/database/supabase/schema-and-object-conventions.md", "reason": "Read the complete source; provider history, reliability, migration and compatibility constraints."}
+{"file": ".trellis/spec/database/supabase/security-rls-and-grants.md", "reason": "Read the complete source; provider history, reliability, migration and compatibility constraints."}
+{"file": ".trellis/spec/database/supabase/migrations-and-rollbacks.md", "reason": "Read the complete source; provider history, reliability, migration and compatibility constraints."}
+{"file": ".trellis/spec/shared/contracts/index.md", "reason": "Read the complete source; provider history, reliability, migration and compatibility constraints."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Read the complete source; provider history, reliability, migration and compatibility constraints."}
+{"file": ".trellis/tasks/11-09-surplusintelligence-history/research.md", "reason": "Read the complete source; provider history, reliability, migration and compatibility constraints."}
