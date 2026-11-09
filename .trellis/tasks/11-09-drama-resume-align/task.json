@@ -1,0 +1,55 @@
+{
+  "id": "drama-resume-align",
+  "name": "drama-resume-align",
+  "title": "短剧续播位置对齐分片边界 + hls.js startPosition + 预加载提前",
+  "description": "短剧续播（历史进度）对齐 Stream 4s 分片边界并通过 hls.js startPosition 预设起播位置，避免 ABR 误判高档后重拉；preloadDramaHls 延后到首帧绘制+一次空闲后触发，避免与播放器挂载抢带宽。三批合入的第 1 批。",
+  "status": "in_progress",
+  "dev_type": "feature",
+  "scope": "drama",
+  "package": "frontend",
+  "priority": "P2",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-09",
+  "completedAt": null,
+  "branch": "feat/drama-resume-align",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": ["frontend.business.drama-experience"]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": ["短剧播放页（续播/起播耗时，非页面加载）"],
+      "apis": [],
+      "android": {
+        "page_p95_baseline_ms": 6640,
+        "page_p95_target_ms": 5050
+      },
+      "ios": {
+        "page_p95_baseline_ms": 5090,
+        "page_p95_target_ms": 5090
+      },
+      "api": {
+        "p95_baseline_ms": null,
+        "p95_target_ms": null
+      },
+      "measurement": {
+        "source": "Grafana st-engineering-drama（Loki），drama.startup_diagnostic，delivery.group=stream、entry=direct、outcome=playing、phase=final",
+        "window": "近 72h，截至 2026-11-09 15:48（北京时间）"
+      },
+      "notes": "门禁字段按\"起播/续播耗时\"口径填写（source_set→开始播放，Stream 组 direct 入口），不是页面加载 P95。Android direct 基线 P95 6.64s（N=28），其中 12 条历史续播样本（resumeExactPosition=false 路径）metadata_to_data 均值 1849ms，对比从头播放仅 185ms；对齐 4s 分片边界 + hls.js startPosition 预设后目标把该均值降到约 150ms，按现有样本推算整体 P95 降到约 5.05s。iOS direct 基线 P95 5.09s（N=7），本任务只让 onLoadedMetadata 的对齐规则同样适用于 iOS 原生 HLS 续播（减少落在分片末尾需多等下一片的概率），但样本量小（N=7）且主要收益机制（hls.js startPosition）不适用于 iOS 原生播放器，目标先定为\"不劣化\"，不单独承诺具体降幅。接口 /api/dramas/play 本批不改动（P50 48ms/P95 192ms），apis 留空、baseline/target 为 null。会话内首次起播 source_set→主清单请求 P95 984ms 的改善（目标 <100ms）不在本门禁的页面/接口两个字段里，另在 prd.md/design.md 的发布后验证中单独核对，不影响本门禁通过。发布后样本仍可能 N<30，只作方向参考，不补零；按 app_version/context.release 分前后对比。"
+    }
+  }
+}
