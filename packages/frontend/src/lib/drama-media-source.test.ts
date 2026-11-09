@@ -1,10 +1,17 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { capAppleHlsQuality, loadDramaSource, ownsDramaSource } from './drama-media-source';
+import {
+  alignResumeSeconds,
+  capAppleHlsQuality,
+  loadDramaSource,
+  ownsDramaSource,
+  resolveResumeTarget,
+} from './drama-media-source';
 const state = vi.hoisted(() => ({
   destroyed: vi.fn(),
   created: vi.fn(),
   attached: undefined as (() => void) | undefined,
   order: [] as string[],
+  lastConfig: undefined as Record<string, unknown> | undefined,
 }));
 vi.mock('hls.js', () => ({
   default: class {
@@ -12,8 +19,9 @@ vi.mock('hls.js', () => ({
     static isSupported() {
       return true;
     }
-    constructor() {
+    constructor(config: Record<string, unknown>) {
       state.created();
+      state.lastConfig = config;
     }
     on(name: string, callback: () => void) {
       if (name === 'attached') state.attached = callback;
@@ -55,6 +63,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   state.attached = undefined;
   state.order = [];
+  state.lastConfig = undefined;
 });
 afterEach(() => vi.unstubAllGlobals());
 it('does not attach a pending HLS import after a source was cancelled', async () => {
@@ -126,4 +135,49 @@ it('leaves Android, MP4 and unplayable results untouched', () => {
   expect(capAppleHlsQuality(mp4)).toBe(mp4);
   const none = { ...playback, playable: false, play_url: null };
   expect(capAppleHlsQuality(none)).toBe(none);
+});
+it('aligns resume seconds to the 4s Stream fragment boundary only for hls', () => {
+  expect(alignResumeSeconds(12.0, 'hls')).toBe(12);
+  expect(alignResumeSeconds(13.9, 'hls')).toBe(12);
+  expect(alignResumeSeconds(0, 'hls')).toBe(0);
+  expect(alignResumeSeconds(13.9, 'mp4')).toBe(13.9);
+  expect(alignResumeSeconds(13.9, undefined)).toBe(13.9);
+});
+it('resolves the resume target: near-ending restarts from zero on non-exact resume only', () => {
+  expect(resolveResumeTarget({ seconds: 119.6, duration: 120, exact: false, format: 'hls' })).toBe(
+    0
+  );
+  expect(resolveResumeTarget({ seconds: 119.6, duration: 120, exact: true, format: 'hls' })).toBe(
+    119.6
+  );
+});
+it('resolves the resume target: hls aligns on the non-exact path, mp4 and exact stay precise', () => {
+  expect(resolveResumeTarget({ seconds: 13.9, duration: 120, exact: false, format: 'hls' })).toBe(
+    12
+  );
+  expect(resolveResumeTarget({ seconds: 13.9, duration: 120, exact: true, format: 'hls' })).toBe(
+    13.9
+  );
+  expect(resolveResumeTarget({ seconds: 13.9, duration: 120, exact: false, format: 'mp4' })).toBe(
+    13.9
+  );
+  expect(resolveResumeTarget({ seconds: 130, duration: 120, exact: true, format: 'hls' })).toBe(
+    120
+  );
+});
+it('passes the resume startPosition into the hls.js config', async () => {
+  vi.stubGlobal('navigator', { userAgent: ANDROID_UA });
+  const cleanup = loadDramaSource(video(), playback, vi.fn(), vi.fn(), undefined, {
+    startPosition: 12,
+  });
+  await vi.waitFor(() => expect(state.created).toHaveBeenCalledOnce());
+  expect(state.lastConfig?.startPosition).toBe(12);
+  cleanup();
+});
+it('defaults startPosition to -1 (hls.js automatic) when none is given', async () => {
+  vi.stubGlobal('navigator', { userAgent: ANDROID_UA });
+  const cleanup = loadDramaSource(video(), playback, vi.fn(), vi.fn());
+  await vi.waitFor(() => expect(state.created).toHaveBeenCalledOnce());
+  expect(state.lastConfig?.startPosition).toBe(-1);
+  cleanup();
 });
