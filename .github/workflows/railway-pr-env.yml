@@ -65,9 +65,17 @@ jobs:
               --service-config "$RAILWAY_SERVICE" variables.PORT.value "8080" \
               --service-config "$RAILWAY_SERVICE" variables.SENTRY_ENVIRONMENT.value "preview" \
               --service-config "$RAILWAY_SERVICE" variables.PAYMENT_RETURN_URL.value "${BACKEND_URL}/api/payment/return" \
+              --service-config "$RAILWAY_SERVICE" variables.PAYMENT_NOTIFY_URL.value "${BACKEND_URL}/api/payment/notify/ttzf" \
               --service-config "$RAILWAY_PAYMENT_CRON_SERVICE_ID" deploy.startCommand "$PAYMENT_CRON_START_COMMAND" \
               --json
           fi
+
+          # Also repair callbacks in PR environments created before the provider cutover.
+          railway variable set \
+            --service "$RAILWAY_SERVICE" \
+            --environment "$ENV_NAME" \
+            "PAYMENT_NOTIFY_URL=${BACKEND_URL}/api/payment/notify/ttzf" \
+            "PAYMENT_RETURN_URL=${BACKEND_URL}/api/payment/return"
 
           # PR 环境可能在 development 修复前已经复制出来；每次 upsert 都校准一次，
           # 同时避免未来因源环境快照漂移再次使用镜像中不存在的全局 tsx。

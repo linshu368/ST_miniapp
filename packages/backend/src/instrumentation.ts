@@ -41,6 +41,7 @@ if (isSentryEnabled) {
     },
     beforeSend: (event) => sanitizeTelemetry(event),
     beforeSendTransaction: (event) => sanitizeTelemetry(event),
+    beforeSendSpan: (span) => sanitizeTelemetry(span),
     beforeBreadcrumb: (breadcrumb) => sanitizeTelemetry(breadcrumb),
   });
 }

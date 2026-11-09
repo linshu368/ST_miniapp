@@ -88,3 +88,33 @@ send/regenerate 携带可选 `first_token_measurement`；后端通过既有 begi
 VIP 签到配置兼容旧数字及专项/通用拆分；报价、结果和 VIP benefits 都提供两钱包额度。创建月卡订单冻结 vip_bonus_main_credits，结算与到账通知读取订单快照；不修改旧订单或历史余额。
 
 隔离 PG 覆盖并发、幂等、旧订单及故障回滚；远端执行与部署状态见任务 `11-05-vip-mixed-rewards` 的发布记录。
+
+## TTZF epay cutover (2026-11-09)
+
+### Scope / Trigger
+
+Replaces retired Vexutopia in new purchases, callbacks, polling and workers. No native API, provider registry or database migration. The preceding Vexutopia section describes historical behavior only.
+
+### Signatures
+
+`EpayPaymentGateway.createPayment({orderId, amount, type, description, clientIp})`; `queryOrder({id, provider_transaction_id, payment_type}, signal?)`; `GET /api/payment/notify/ttzf`; existing order/list/return consumer endpoints remain compatible.
+
+### Contracts
+
+`TTZF_APP_ID` is the application ID; `TTZF_APP_KEY` is its secret; `TTZF_BASE_URL` defaults to https://ttzf8.com/api. `PAYMENT_NOTIFY_URL` and `PAYMENT_RETURN_URL` must be environment-specific HTTPS backend routes. New IDs are EP plus 30 lowercase random hex digits. Signed param is the Railway environment name (nodeEnv locally). Creation is POST form; query is the user-selected documented GET act=order with credentials sent only to the HTTPS provider, never logged. All transport calls disable redirects; query disables caching. Lowercase MD5 signs raw sorted nonempty fields except sign/sign_type/signType. Railway public ingress supplies validated X-Real-IP; local requests use socket IP. Do not expose untrusted direct/private/TCP ingress.
+
+### Validation & Error Matrix
+
+Invalid signature/pid -> 401 fail; malformed or duplicate fields -> 400 fail; channel/ref/amount mismatch -> fail without fulfilment; persistence failure -> 500 fail for retry. Foreign signed environment -> success without local reads. Only TRADE_SUCCESS or numeric query status=1 enters the common settlement boundary. Fractional cents are rejected, trailing third decimal zero is accepted. Creation timeout, malformed success or failed reference persistence stays recoverable; no blind create retry. QR/scheme-only responses do not expose checkout. GET return parameters never grant benefits.
+
+### Good/Base/Bad Cases
+
+Good: early callback binds reference using CAS, then existing atomic complete RPC grants once. Base: status=0 remains recoverable; expired paid orders reopen. Bad: old MA IDs never query TTZF; mismatched trade references cannot overwrite the first binding. Recovery remains enabled with credentials even if PAYMENT_ENABLED disables new purchases. Worker limits: 30 candidates, concurrency 3, 25-second dispatch deadline, 5-second query; next_reconcile_at rotates before query, seven-day automatic window, later explicit queries/callbacks still recover. Only confirmed unpaid local-deadline orders expire; no bulk expiry. Refunds alert without automatic reversal.
+
+### Tests / Manual Acceptance
+
+Protocol, repository, callback/settlement and bounded-worker regressions are included. See task verification.md for completed checks and user-requested stop. Engineer validates TEST credentials, HTTPS checkout, paid/unpaid GET lookup, notification retries/concurrency, missing callbacks, late payments, credits/VIP and Android/iOS handoff/return. Local mocks do not prove database or provider behavior.
+
+### Wrong vs Correct
+
+Wrong: infer paid from return URL, round 6.001 to 6.00, or overwrite provider_transaction_id after an early callback. Correct: validate the trusted provider fact, compare exact cents, CAS the reference, then call PaymentSettlement.settlePaidOrder. Wrong: roll back to a retired-provider binary with TTZF orders in flight. Correct: disable new purchases and retain TTZF recovery while forward-fixing.

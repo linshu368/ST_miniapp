@@ -15,6 +15,11 @@ const SENSITIVE_KEY_NAMES = new Set([
   'refreshtoken',
   'idtoken',
   'secret',
+  'sign',
+  'key',
+  'appkey',
+  'clientip',
+  'buyer',
   'password',
   'xinitdata',
   'rawinitdata',
@@ -22,7 +27,7 @@ const SENSITIVE_KEY_NAMES = new Set([
 ]);
 
 const SENSITIVE_QUERY_PARAM =
-  /([?&#](?:authorization|token|access_token|refresh_token|id_token|secret|password|x-init-data|rawInitData|tgWebAppData)=)[^&#\s]*/gi;
+  /((?:^|[?&#])(?:authorization|token|access_token|refresh_token|id_token|secret|key|sign|clientip|password|x-init-data|rawInitData|tgWebAppData)=)[^&#\s]*/gi;
 
 export interface SanitizeTelemetryOptions {
   /** 超过该深度后的处理方式由 `beyondLimit` 决定。 */
@@ -51,6 +56,7 @@ export function isSensitiveTelemetryKey(key: string): boolean {
 
 function sanitizeString(value: string): string {
   return value
+    .replace(/(\/api\/payment\/(?:notify\/ttzf|return))\?[^\s"'<>]*/gi, `$1?${REDACTED}`)
     .replace(
       /(https?:\/\/customer-[a-z0-9-]+\.cloudflarestream\.com\/)[^/\s"<>]+/gi,
       `$1${REDACTED}`

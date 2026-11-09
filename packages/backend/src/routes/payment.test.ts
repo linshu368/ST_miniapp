@@ -1,17 +1,17 @@
-import { createHmac } from 'crypto';
+import { signEpay } from '../infrastructure/payment/epay-protocol.js';
 import Fastify from 'fastify';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { RequestLogger } from '../lib/logger.js';
 import type { MiniappPaymentOrderRow } from '../infrastructure/repositories/MiniappPaymentOrderRepository.js';
-import type {
-  PaymentQueryResult,
-  VexutopiaWebhookEvent,
-  WebhookVerification,
-} from '../infrastructure/payment/VexutopiaPaymentGateway.js';
+import type { PaymentQueryResult } from '../infrastructure/payment/PaymentGateway.js';
 import { insertUserNotification } from '../lib/notifications.js';
 import { checkInviteFirstPaidReward } from '../lib/invite-rewards.js';
-import { handleVexutopiaWebhook } from './payment.js';
+import { handleEpayNotification } from '../features/payment/usecases/EpayNotification.js';
+import { EpayPaymentGateway } from '../infrastructure/payment/EpayPaymentGateway.js';
+import { paymentClientIp } from './payment.js';
+import { fastifyLoggerOptions } from '../lib/logger.js';
+import pino from 'pino';
 import {
   isOrderFulfilled,
   reconcileWithGateway,
@@ -19,7 +19,8 @@ import {
 } from '../features/payment/usecases/PaymentSettlement.js';
 import { toPaymentOrder } from '../infrastructure/repositories/MiniappPaymentOrderRepository.js';
 
-const WEBHOOK_SECRET = 'whsec_route_test';
+const APP_KEY = 'fixture-app-secret';
+const ORDER_ID = 'EP' + 'a'.repeat(30);
 
 vi.mock('../platform/config.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../platform/config.js')>();
@@ -31,10 +32,11 @@ vi.mock('../platform/config.js', async (importOriginal) => {
         enabled: true,
         returnUrl: 'https://backend.example/api/payment/return',
         environmentTag: 'test-env',
-        vexutopia: {
-          baseUrl: 'https://vex.example/api/v1',
-          apiKey: 'vex_test_key',
-          webhookSecret: 'whsec_route_test',
+        notifyUrl: 'https://backend.example/api/payment/notify/ttzf',
+        epay: {
+          baseUrl: 'https://provider.example/api',
+          appId: '1001',
+          appKey: 'fixture-app-secret',
         },
       },
     },
@@ -91,20 +93,6 @@ function createOrder(overrides: Partial<MiniappPaymentOrderRow> = {}): MiniappPa
   };
 }
 
-function createEvent(overrides: Partial<VexutopiaWebhookEvent> = {}): VexutopiaWebhookEvent {
-  return {
-    event: 'payment.completed',
-    id: 'tx_abc123',
-    payment_id: 'tx_abc123',
-    status: 'completed',
-    amount: '6',
-    currency: 'CNY',
-    payment_method: 'wxpay',
-    metadata: { mijing_order_id: 'MA-order-1', mijing_env: 'test-env' },
-    ...overrides,
-  };
-}
-
 function createOrders(order = createOrder()) {
   return {
     findById: vi.fn(async () => order),
@@ -118,318 +106,185 @@ function createOrders(order = createOrder()) {
           settled_by: settledBy,
         })
     ),
+    attachProviderTransaction: vi.fn(async () => true),
     reopenExpired: vi.fn(async () => undefined),
   };
 }
 
-function verifiedGateway(event: VexutopiaWebhookEvent = createEvent()) {
-  return {
-    environment: 'test-env',
-    verifyWebhook: vi.fn((): WebhookVerification => ({ ok: true, event })),
-  };
-}
+beforeEach(() => vi.clearAllMocks());
 
-function rejectingGateway(reason: Extract<WebhookVerification, { ok: false }>['reason']) {
-  return {
-    environment: 'test-env',
-    verifyWebhook: vi.fn((): WebhookVerification => ({ ok: false, reason })),
-  };
-}
-
-function createEvents() {
-  return { recordOperationEvent: vi.fn(async () => undefined) };
-}
-
-async function deliver(
-  gateway: ReturnType<typeof verifiedGateway> | ReturnType<typeof rejectingGateway>,
-  orders = createOrders(),
-  events = createEvents()
-) {
-  const result = await handleVexutopiaWebhook(Buffer.from('{}'), 't=1,v1=x', {
-    gateway,
-    orders,
-    events,
-    log: createLog(),
+describe('payment request privacy and client address', () => {
+  it('uses only the validated Railway edge address in deployment and socket IP locally', () => {
+    const request = {
+      ip: '127.0.0.1',
+      headers: { 'x-real-ip': '203.0.113.10', 'x-forwarded-for': '198.51.100.1' },
+    };
+    expect(paymentClientIp(request, true)).toBe('203.0.113.10');
+    expect(paymentClientIp(request, false)).toBe('127.0.0.1');
+    expect(
+      paymentClientIp({ ...request, headers: { 'x-real-ip': '203.0.113.10,198.51.100.1' } }, true)
+    ).toBe('');
+    expect(paymentClientIp({ ...request, headers: {} }, true)).toBe('');
   });
-  // 事件写入是旁路异步的，等一拍再断言。
-  await new Promise((resolve) => setImmediate(resolve));
-  return { result, orders, events };
-}
-
-function recordedClasses(events: ReturnType<typeof createEvents>) {
-  return events.recordOperationEvent.mock.calls.map(
-    (call) => (call as unknown as [{ event_kind: string; error_class: string | null }])[0]
-  );
-}
-
-beforeEach(() => {
-  vi.clearAllMocks();
+  it('does not emit callback signatures, query fields or IPs in automatic Fastify logs', async () => {
+    const lines: string[] = [];
+    const options = fastifyLoggerOptions();
+    delete options.transport;
+    const logger = pino(
+      { ...options, level: 'info' },
+      {
+        write: (line: string) => {
+          lines.push(line);
+        },
+      }
+    );
+    const app = Fastify({ loggerInstance: logger });
+    app.get('/api/payment/notify/ttzf', () => 'fail');
+    try {
+      await app.inject(
+        '/api/payment/notify/ttzf?sign=fixture-sign&name=private-name&clientip=203.0.113.10'
+      );
+      const output = lines.join('');
+      expect(output).toContain('/api/payment/notify/ttzf');
+      for (const value of ['fixture-sign', 'private-name', '203.0.113.10'])
+        expect(output).not.toContain(value);
+    } finally {
+      await app.close();
+    }
+  });
 });
 
-describe('handleVexutopiaWebhook', () => {
-  it('completes a valid order and writes one arrival notification', async () => {
-    const { result, orders } = await deliver(verifiedGateway());
+function notification(overrides: Record<string, string> = {}) {
+  const fields = {
+    pid: '1001',
+    trade_no: 'tx_abc123',
+    out_trade_no: ORDER_ID,
+    type: 'wxpay',
+    name: 'fixture',
+    money: '6.000',
+    trade_status: 'TRADE_SUCCESS',
+    param: 'test-env',
+    sign_type: 'MD5',
+    ...overrides,
+  };
+  return new URLSearchParams({ ...fields, sign: signEpay(fields, APP_KEY) }).toString();
+}
 
-    expect(orders.complete).toHaveBeenCalledWith('MA-order-1', 'tx_abc123', 'webhook');
-    expect(insertUserNotification).toHaveBeenCalledOnce();
-    expect(result).toEqual({ status: 200, body: 'OK' });
-  });
+describe('epay settlement and notification', () => {
+  async function deliver(query = notification(), order = createOrder({ id: ORDER_ID })) {
+    const orders = createOrders(order);
+    const result = await handleEpayNotification(query, {
+      gateway: new EpayPaymentGateway(),
+      orders,
+      log: createLog(),
+      events: { recordOperationEvent: vi.fn(async () => undefined) },
+    });
+    return { orders, result };
+  }
 
-  it('runs the invite first-paid reward hook for the credited order', async () => {
-    await deliver(verifiedGateway());
-
-    expect(checkInviteFirstPaidReward).toHaveBeenCalledWith(
-      { userId: '00000000-0000-0000-0000-000000000001', orderId: 'MA-order-1' },
-      expect.anything()
+  it('binds an early callback before completing the order', async () => {
+    const { orders, result } = await deliver(
+      notification(),
+      createOrder({ id: ORDER_ID, provider_transaction_id: null })
     );
-  });
-
-  it('does not notify twice when a completed order receives a repeated callback', async () => {
-    const order = createOrder({ status: 'completed', credits_added: true, settled_by: 'webhook' });
-    const orders = {
-      findById: vi.fn(async () => order),
-      complete: vi.fn(async () => order),
-      reopenExpired: vi.fn(async () => undefined),
-    };
-
-    const { result } = await deliver(verifiedGateway(), orders);
-
-    expect(orders.complete).toHaveBeenCalledOnce();
-    expect(orders.reopenExpired).not.toHaveBeenCalled();
-    expect(insertUserNotification).not.toHaveBeenCalled();
-    // 到账通知不重发，但发奖判定要重跑：判定自带幂等，重放是上一次失败判定唯一的重试机会。
+    expect(result).toEqual({ status: 200, body: 'success' });
+    expect(orders.attachProviderTransaction).toHaveBeenCalledWith(ORDER_ID, 'tx_abc123');
+    expect(orders.complete).toHaveBeenCalledWith(ORDER_ID, 'tx_abc123', 'webhook');
+    expect(insertUserNotification).toHaveBeenCalledOnce();
     expect(checkInviteFirstPaidReward).toHaveBeenCalledOnce();
-    expect(result.status).toBe(200);
-  });
-
-  it('asks the provider to retry when local settlement fails', async () => {
-    const orders = createOrders();
-    orders.complete.mockRejectedValueOnce(new Error('db down'));
-
-    const { result } = await deliver(verifiedGateway(), orders);
-
-    expect(result).toEqual({ status: 500, body: 'retry' });
-  });
-
-  it('reopens an order that expired before the callback arrived, then credits it', async () => {
-    const { result, orders } = await deliver(
-      verifiedGateway(),
-      createOrders(createOrder({ status: 'expired' }))
-    );
-
-    expect(orders.reopenExpired).toHaveBeenCalledWith('MA-order-1');
-    expect(orders.complete).toHaveBeenCalledWith('MA-order-1', 'tx_abc123', 'webhook');
-    expect(insertUserNotification).toHaveBeenCalledOnce();
-    expect(result.status).toBe(200);
-  });
-
-  it('does not reopen an expired order that was already credited', async () => {
-    const { orders } = await deliver(
-      verifiedGateway(),
-      createOrders(createOrder({ status: 'expired', credits_added: true }))
-    );
-
-    expect(orders.reopenExpired).not.toHaveBeenCalled();
   });
 
   it.each([
-    ['signature_invalid', 401],
-    ['stale_timestamp', 401],
-    ['not_configured', 401],
-    ['invalid_body', 400],
-  ] as const)('rejects an unverified delivery (%s) with %s', async (reason, status) => {
-    const { result, orders, events } = await deliver(rejectingGateway(reason));
-
-    expect(orders.findById).not.toHaveBeenCalled();
+    [{ money: '6.001' }, 409],
+    [{ money: '6.01' }, 409],
+    [{ pid: '1002' }, 401],
+    [{ type: 'alipay' }, 409],
+    [{ trade_no: 'other' }, 409],
+    [{ sign_type: 'SHA256' }, 400],
+  ] as const)('rejects mismatched trusted fields %j', async (fields, status) => {
+    const { orders, result } = await deliver(notification(fields));
     expect(result.status).toBe(status);
-    expect(recordedClasses(events)).toEqual([
-      expect.objectContaining({ event_kind: 'webhook', error_class: reason }),
-    ]);
+    expect(orders.complete).not.toHaveBeenCalled();
   });
 
-  it('acknowledges events from another environment without touching local orders', async () => {
-    const { result, orders, events } = await deliver(
-      verifiedGateway(
-        createEvent({ metadata: { mijing_order_id: 'MA-order-1', mijing_env: 'production' } })
+  it.each(['TRADE_PENDING', 'TRADE_REFUND', 'TRADE_ERROR'])(
+    'acknowledges %s without crediting',
+    async (trade_status) => {
+      const { orders, result } = await deliver(notification({ trade_status }));
+      expect(result).toEqual({ status: 200, body: 'success' });
+      expect(orders.complete).not.toHaveBeenCalled();
+    }
+  );
+
+  it('ignores another environment without touching local orders', async () => {
+    const { orders, result } = await deliver(notification({ param: 'other-environment' }));
+    expect(result.body).toBe('success');
+    expect(orders.findById).not.toHaveBeenCalled();
+  });
+
+  it('reopens a late paid order and acknowledges duplicates without another notice', async () => {
+    const late = await deliver(notification(), createOrder({ id: ORDER_ID, status: 'expired' }));
+    expect(late.orders.reopenExpired).toHaveBeenCalledWith(ORDER_ID);
+    vi.clearAllMocks();
+    const duplicate = await deliver(
+      notification(),
+      createOrder({ id: ORDER_ID, status: 'completed', fulfillment_applied: true })
+    );
+    expect(duplicate.result.body).toBe('success');
+    expect(insertUserNotification).not.toHaveBeenCalled();
+  });
+
+  it('requests retry after a database failure', async () => {
+    const orders = createOrders(createOrder({ id: ORDER_ID }));
+    orders.complete.mockRejectedValueOnce(new Error('db down'));
+    expect(
+      await handleEpayNotification(notification(), {
+        gateway: new EpayPaymentGateway(),
+        orders,
+        log: createLog(),
+      })
+    ).toEqual({ status: 500, body: 'fail' });
+  });
+
+  it('does not complete when a competing callback has bound a different reference', async () => {
+    const orders = createOrders(createOrder({ id: ORDER_ID, provider_transaction_id: null }));
+    orders.attachProviderTransaction.mockResolvedValueOnce(false);
+    expect(
+      await settlePaidOrder(
+        { orderId: ORDER_ID, paidAmount: '6.00', providerTransactionId: 'tx_other' },
+        orders,
+        createLog(),
+        'query'
       )
-    );
-
-    expect(result).toEqual({ status: 200, body: 'ignored' });
-    expect(orders.findById).not.toHaveBeenCalled();
-    expect(recordedClasses(events)).toEqual([
-      expect.objectContaining({ error_class: 'foreign_environment' }),
-    ]);
-  });
-
-  it('acknowledges non-completion events without crediting', async () => {
-    const { result, orders } = await deliver(
-      verifiedGateway(createEvent({ event: 'payment.failed', status: 'failed' }))
-    );
-
+    ).toBe('failed');
     expect(orders.complete).not.toHaveBeenCalled();
-    expect(result.status).toBe(200);
   });
 
-  it('records refunds for manual follow-up instead of reversing benefits', async () => {
-    const { result, orders, events } = await deliver(
-      verifiedGateway(createEvent({ event: 'payment.refunded', type: 'refund' }))
+  it('recovers a missing create response using merchant ID and throttles polling', async () => {
+    const order = createOrder({ id: 'EP' + 'b'.repeat(30), provider_transaction_id: null });
+    const orders = createOrders(order);
+    const gateway = {
+      queryOrder: vi.fn(
+        async (): Promise<PaymentQueryResult> => ({
+          success: true,
+          paid: true,
+          amount: '6.00',
+          tradeNo: 'tx_abc123',
+        })
+      ),
+    };
+    expect(await reconcileWithGateway(toPaymentOrder(order), gateway, orders, createLog())).toBe(
+      true
     );
-
-    expect(orders.complete).not.toHaveBeenCalled();
-    expect(result.status).toBe(200);
-    expect(recordedClasses(events)).toEqual([
-      expect.objectContaining({ event_kind: 'webhook', error_class: 'refund' }),
-    ]);
-  });
-
-  it('acknowledges a completion without our order id and credits nothing', async () => {
-    const { result, orders } = await deliver(
-      verifiedGateway(createEvent({ metadata: { mijing_env: 'test-env' } }))
-    );
-
-    expect(orders.findById).not.toHaveBeenCalled();
-    expect(result.status).toBe(200);
-  });
-
-  it('refuses a completion whose transaction id does not match the order', async () => {
-    const { result, orders, events } = await deliver(
-      verifiedGateway(createEvent({ payment_id: 'tx_other', id: 'tx_other' }))
-    );
-
-    expect(orders.complete).not.toHaveBeenCalled();
-    expect(result.status).toBe(200);
-    expect(recordedClasses(events)).toEqual([
-      expect.objectContaining({ event_kind: 'settlement', error_class: 'provider_ref_mismatch' }),
-    ]);
-  });
-
-  it('refuses a completion in another currency', async () => {
-    const { orders, events } = await deliver(verifiedGateway(createEvent({ currency: 'USD' })));
-
-    expect(orders.complete).not.toHaveBeenCalled();
-    expect(recordedClasses(events)).toEqual([
-      expect.objectContaining({ event_kind: 'settlement', error_class: 'currency_mismatch' }),
-    ]);
-  });
-
-  it('refuses an amount mismatch without completing the order', async () => {
-    const { result, orders } = await deliver(verifiedGateway(createEvent({ amount: '6.01' })));
-
-    expect(orders.complete).not.toHaveBeenCalled();
-    expect(result.status).toBe(200);
-  });
-});
-
-describe('reconcileWithGateway', () => {
-  function createQueryGateway(result: PaymentQueryResult) {
-    return { queryOrder: vi.fn(async () => result) };
-  }
-
-  it('credits a pending order once the provider reports it as paid', async () => {
-    const orders = createOrders();
-    const gateway = createQueryGateway({
-      success: true,
-      paid: true,
-      amount: '6',
-      tradeNo: 'tx_abc123',
-    });
-    const order = toPaymentOrder(createOrder({ id: 'MA-query-paid' }));
-
-    const changed = await reconcileWithGateway(order, gateway, orders, createLog());
-
-    expect(gateway.queryOrder).toHaveBeenCalledWith(order);
-    expect(orders.complete).toHaveBeenCalledWith('MA-order-1', 'tx_abc123', 'query');
-    expect(changed).toBe(true);
-  });
-
-  it('credits an expired order the provider reports as paid', async () => {
-    const orders = createOrders(createOrder({ status: 'expired' }));
-    const gateway = createQueryGateway({ success: true, paid: true, amount: '6.00' });
-
-    const changed = await reconcileWithGateway(
-      toPaymentOrder(createOrder({ id: 'MA-query-expired', status: 'expired' })),
-      gateway,
-      orders,
-      createLog()
-    );
-
-    expect(orders.reopenExpired).toHaveBeenCalledOnce();
-    expect(changed).toBe(true);
-  });
-
-  it('leaves the order alone when the provider reports it unpaid', async () => {
-    const orders = createOrders();
-    const gateway = createQueryGateway({ success: true, paid: false });
-
-    const changed = await reconcileWithGateway(
-      toPaymentOrder(createOrder({ id: 'MA-query-unpaid' })),
-      gateway,
-      orders,
-      createLog()
-    );
-
-    expect(orders.complete).not.toHaveBeenCalled();
-    expect(changed).toBe(false);
-  });
-
-  it('does not query a terminal order at all', async () => {
-    const gateway = createQueryGateway({ success: true, paid: true, amount: '6.00' });
-
-    const changed = await reconcileWithGateway(
-      toPaymentOrder(createOrder({ id: 'MA-query-done', status: 'completed' })),
-      gateway,
-      createOrders(),
-      createLog()
-    );
-
-    expect(gateway.queryOrder).not.toHaveBeenCalled();
-    expect(changed).toBe(false);
-  });
-
-  it('skips an order that never got a provider transaction id', async () => {
-    const gateway = createQueryGateway({ success: true, paid: true, amount: '6.00' });
-    const events = createEvents();
-
-    const changed = await reconcileWithGateway(
-      toPaymentOrder(createOrder({ id: 'MA-query-noref', provider_transaction_id: null })),
-      gateway,
-      createOrders(),
-      createLog(),
-      'query',
-      events
-    );
-    await new Promise((resolve) => setImmediate(resolve));
-
-    expect(gateway.queryOrder).not.toHaveBeenCalled();
-    expect(changed).toBe(false);
-    expect(events.recordOperationEvent).toHaveBeenCalledWith(
-      expect.objectContaining({ outcome: 'skipped', error_class: 'missing_provider_ref' })
-    );
-  });
-
-  it('throttles repeated polling of the same order', async () => {
-    const gateway = createQueryGateway({ success: true, paid: false });
-    const order = toPaymentOrder(createOrder({ id: 'MA-query-throttled' }));
-
-    await reconcileWithGateway(order, gateway, createOrders(), createLog());
-    await reconcileWithGateway(order, gateway, createOrders(), createLog());
-
+    await reconcileWithGateway(toPaymentOrder(order), gateway, orders, createLog());
     expect(gateway.queryOrder).toHaveBeenCalledOnce();
+    expect(orders.complete).toHaveBeenCalledOnce();
   });
 
-  it('keeps the order pending when the provider amount disagrees', async () => {
-    const orders = createOrders();
-    const gateway = createQueryGateway({ success: true, paid: true, amount: '6.01' });
-
-    const changed = await reconcileWithGateway(
-      toPaymentOrder(createOrder({ id: 'MA-query-mismatch' })),
-      gateway,
-      orders,
-      createLog()
-    );
-
-    expect(orders.complete).not.toHaveBeenCalled();
-    expect(changed).toBe(false);
+  it('never queries an old provider order', async () => {
+    const gateway = { queryOrder: vi.fn(async () => ({ success: true, paid: false })) };
+    await reconcileWithGateway(toPaymentOrder(createOrder()), gateway, createOrders(), createLog());
+    expect(gateway.queryOrder).not.toHaveBeenCalled();
   });
 });
 
@@ -437,6 +292,7 @@ const routeOrders = {
   findById: vi.fn(async (): Promise<MiniappPaymentOrderRow | null> => createOrder()),
   complete: vi.fn(async () => createOrder({ status: 'completed', credits_added: true })),
   reopenExpired: vi.fn(async () => undefined),
+  attachProviderTransaction: vi.fn(async () => true),
   expirePendingByIdForUser: vi.fn(async () => undefined),
   findByIdForUser: vi.fn(async () => null),
   listByUser: vi.fn(async () => []),
@@ -484,6 +340,54 @@ async function buildPaymentApp() {
   return app;
 }
 
+describe('GET /api/payment/notify/ttzf', () => {
+  it('passes the raw signed query and returns the exact provider acknowledgement', async () => {
+    routeOrders.findById.mockResolvedValue(createOrder({ id: ORDER_ID }));
+    const app = await buildPaymentApp();
+    try {
+      const response = await app.inject(`/api/payment/notify/ttzf?${notification()}`);
+      expect(response.statusCode).toBe(200);
+      expect(response.body).toBe('success');
+      expect(response.headers['cache-control']).toBe('no-store');
+      expect(routeOrders.complete).toHaveBeenCalledWith(ORDER_ID, 'tx_abc123', 'webhook');
+    } finally {
+      await app.close();
+    }
+  });
+  it.each(['&money=6.00', '&pid=1001'])(
+    'rejects repeated fields before database access',
+    async (suffix) => {
+      const app = await buildPaymentApp();
+      try {
+        const response = await app.inject(`/api/payment/notify/ttzf?${notification()}${suffix}`);
+        expect(response.statusCode).toBe(400);
+        expect(routeOrders.findById).not.toHaveBeenCalled();
+      } finally {
+        await app.close();
+      }
+    }
+  );
+  it('rejects tampering and removes the old webhook endpoint', async () => {
+    const app = await buildPaymentApp();
+    try {
+      expect(
+        (
+          await app.inject(
+            `/api/payment/notify/ttzf?${notification().replace('money=6.000', 'money=7.000')}`
+          )
+        ).statusCode
+      ).toBe(401);
+      expect(
+        (await app.inject({ method: 'POST', url: '/api/payment/webhook/vexutopia', payload: {} }))
+          .statusCode
+      ).toBe(404);
+      expect(routeOrders.complete).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
+});
+
 describe('GET /api/payment/orders', () => {
   it('lists orders without expiring pending rows as a read side effect', async () => {
     vi.stubEnv('DEV_AUTH_BYPASS', '1');
@@ -497,78 +401,6 @@ describe('GET /api/payment/orders', () => {
 
       expect(response.statusCode).toBe(200);
       expect(routeOrders.listByUser).toHaveBeenCalledOnce();
-    } finally {
-      await app.close();
-      vi.unstubAllEnvs();
-    }
-  });
-});
-
-// 回调面回归护栏：验签依赖原始字节，必须确认路由真的把未解析的 body 交给了网关。
-describe('POST /api/payment/webhook/vexutopia', () => {
-  const payload = JSON.stringify(createEvent());
-  const sign = (body: string, t: number) =>
-    createHmac('sha256', WEBHOOK_SECRET).update(`${t}.${body}`).digest('hex');
-
-  it('credits the order for a correctly signed JSON delivery', async () => {
-    const app = await buildPaymentApp();
-    const t = Math.floor(Date.now() / 1000);
-
-    try {
-      const response = await app.inject({
-        method: 'POST',
-        url: '/api/payment/webhook/vexutopia',
-        headers: {
-          'content-type': 'application/json',
-          'x-vexutopia-signature': `t=${t},v1=${sign(payload, t)}`,
-        },
-        payload,
-      });
-
-      expect(response.statusCode).toBe(200);
-      expect(routeOrders.complete).toHaveBeenCalledWith('MA-order-1', 'tx_abc123', 'webhook');
-    } finally {
-      await app.close();
-    }
-  });
-
-  it('rejects a delivery whose body was re-serialized after signing', async () => {
-    const app = await buildPaymentApp();
-    const t = Math.floor(Date.now() / 1000);
-    const reserialized = JSON.stringify(JSON.parse(payload), null, 2);
-
-    try {
-      const response = await app.inject({
-        method: 'POST',
-        url: '/api/payment/webhook/vexutopia',
-        headers: {
-          'content-type': 'application/json',
-          'x-vexutopia-signature': `t=${t},v1=${sign(payload, t)}`,
-        },
-        payload: reserialized,
-      });
-
-      expect(response.statusCode).toBe(401);
-      expect(routeOrders.complete).not.toHaveBeenCalled();
-    } finally {
-      await app.close();
-    }
-  });
-
-  it('does not change how other payment routes parse JSON', async () => {
-    vi.stubEnv('DEV_AUTH_BYPASS', '1');
-    const app = await buildPaymentApp();
-
-    try {
-      const response = await app.inject({
-        method: 'POST',
-        url: '/api/payment/orders',
-        headers: { 'content-type': 'application/json' },
-        payload: JSON.stringify({ plan_id: '', payment_type: 'alipay' }),
-      });
-      // 解析成对象才会走到参数校验；若被解析成 Buffer 会是另一个错误路径。
-      expect(response.statusCode).toBe(400);
-      expect(response.json()).toMatchObject({ error: { code: 'BAD_REQUEST' } });
     } finally {
       await app.close();
       vi.unstubAllEnvs();
@@ -590,19 +422,20 @@ describe('GET /api/payment/return', () => {
   });
 
   it('queries the provider for the returning order and never credits from URL params', async () => {
+    routeOrders.findById.mockResolvedValueOnce(createOrder({ id: ORDER_ID }));
     const app = await buildPaymentApp();
 
     try {
       const response = await app.inject({
         method: 'GET',
-        url: '/api/payment/return?order_id=MA-order-1&status=success',
+        url: `/api/payment/return?out_trade_no=${ORDER_ID}&trade_status=TRADE_SUCCESS`,
       });
 
       expect(response.statusCode).toBe(302);
-      expect(routeOrders.findById).toHaveBeenCalledWith('MA-order-1');
-      expect(fetchMock.mock.calls.map((call) => String((call as unknown[])[0]))).toContain(
-        'https://vex.example/api/v1/payments/tx_abc123'
-      );
+      expect(routeOrders.findById).toHaveBeenCalledWith(ORDER_ID);
+      expect(
+        fetchMock.mock.calls.map((call) => String((call as unknown[])[0]).split('?')[0])
+      ).toContain('https://provider.example/api/epay/api.php');
       // 平台响应不是已完成交易，所以不能入账；URL 上的 status=success 不起作用。
       expect(routeOrders.complete).not.toHaveBeenCalled();
     } finally {
@@ -805,6 +638,7 @@ describe('VIP payment settlement', () => {
     const orders = {
       findById: vi.fn(async () => order),
       complete: vi.fn(async () => order),
+      attachProviderTransaction: vi.fn(async () => true),
       reopenExpired: vi.fn(async () => undefined),
     };
     for (const source of ['webhook', 'return', 'query', 'cron'] as const) {

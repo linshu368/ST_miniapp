@@ -6,7 +6,7 @@ Replace retired Vexutopia with TTZF using the epay API only, as explicitly reque
 
 ## Requirements
 
-- Use the supplied screenshots as the protocol authority and `test.txt` as the local credential source; never copy secret values into source, logs, URLs, task artifacts or fixtures.
+- Use the supplied screenshots as the protocol authority and `test.txt` as the local credential source; never copy secret values into source, logs, user-facing URLs, task artifacts or fixtures. The later explicit user instruction authorizes the documented server-to-provider GET lookup only.
 - Use `https://ttzf8.com/api/epay/mapi.php` for payment creation; do not implement the native API.
 - Fulfil each matching, verified paid order once through the existing atomic settlement boundary. Preserve product snapshots, VIP mixed rewards, balances and ledgers.
 - Preserve historical orders and explicitly isolate Vexutopia references from new-provider queries and settlement.
@@ -14,12 +14,12 @@ Replace retired Vexutopia with TTZF using the epay API only, as explicitly reque
 
 ## Acceptance Criteria
 
-- [ ] Epay form creation uses appId as pid, server-owned product/amount, client IP, mobile device, callback/return URL and the documented uppercase MD5 signature.
+- [ ] Epay form creation uses appId as pid, server-owned product/amount, client IP, mobile device, callback/return URL and the documented lowercase MD5 signature.
 - [ ] Validated HTTPS checkout URL and provider transaction ID are persisted before checkout is returned.
 - [ ] Signed GET notifications validate application, order, transaction, channel, exact amount and payment state; only TRADE_SUCCESS grants benefits.
 - [ ] Duplicate/concurrent confirmations cannot double-fulfil. Durable success/duplicate acknowledgement is success; retryable failures do not falsely acknowledge completion.
 - [ ] Browser return is navigation plus authoritative query, never proof of payment.
-- [ ] Query uses the documented epay endpoint with credentials kept in the POST body; actual provider support must be verified before release.
+- [ ] Query uses the explicitly selected documented GET epay endpoint; redact credentials from every log and telemetry export. Actual provider behavior is verified manually in TEST.
 - [ ] Missed notifications, early notifications, late payments, write failure and unknown creation outcomes have recoverable paths.
 - [ ] Reconciliation has bounded calls/concurrency/deadlines and fair processing. Failed queries never imply paid or confirmed unpaid finality.
 - [ ] Main backend, reconcile worker, expiry Cron and inherited alert-process config are updated together; obsolete Vexutopia operational paths are removed.

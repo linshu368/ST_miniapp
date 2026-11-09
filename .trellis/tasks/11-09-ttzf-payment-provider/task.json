@@ -3,7 +3,7 @@
   "name": "ttzf-payment-provider",
   "title": "Replace Vexutopia with TTZF payment integration",
   "description": "Replace retired Vexutopia with TTZF epay only; preserve atomic credits/VIP fulfilment, secure GET notification, query recovery and historical order isolation.",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": "backend",
   "scope": "payment",
   "package": "backend",
@@ -33,7 +33,7 @@
     "docs/ARCHITECTURE.md",
     "ops/railway/README.md"
   ],
-  "notes": "",
+  "notes": "Implementation prepared for manual TEST-environment verification at user request. No deployment or real payment performed.",
   "meta": {
     "module_impact": {
       "schema_version": 1,
@@ -41,7 +41,8 @@
       "modules": [
         "backend.business.wallet-payment",
         "shared.business.wallet-payment-contracts",
-        "frontend.business.wallet-payment"
+        "frontend.business.wallet-payment",
+        "database.business.billing-payment"
       ]
     },
     "mobile_performance": {
@@ -73,14 +74,23 @@
       "notes": "No visible Android/iOS page or API samples; baselines are null, never zero. Planning goals only: 3000 ms page/create, 1500 ms order detail evaluated separately. Verify platform-specific real handoff/return and telemetry coverage after release; viewport mocks and timeout ceilings cannot prove P95."
     },
     "planning_review": {
-      "status": "awaiting_user",
-      "runtime_code_changed": false,
-      "epay_only_requested": true
+      "status": "approved",
+      "runtime_code_changed": true,
+      "epay_only_requested": true,
+      "approved_at": "2026-11-09",
+      "evidence": "User: begin executing the switch. Screenshot correction: lowercase MD5 output."
     },
     "provider_validation": {
       "query_body_post": "unverified_application_code_500",
       "charges_performed": false,
-      "remote_database_accessed": false
+      "remote_database_accessed": false,
+      "query_transport": "documented_get_explicitly_selected_by_user_after_clarification",
+      "local_credentials": "test.txt absent and TTZF_APP_ID/KEY absent from backend .env at verification time"
+    },
+    "local_verification": {
+      "status": "stopped_at_user_request",
+      "handoff": "manual_test_environment",
+      "evidence": "User requested direct wrap-up and manual testing in TEST."
     }
   }
 }

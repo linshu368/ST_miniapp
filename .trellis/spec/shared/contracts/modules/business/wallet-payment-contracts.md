@@ -67,3 +67,9 @@ Shared tests 与 Backend/Frontend typecheck。
 VipCheckinBonusConfig 支持旧整数或严格 {bonus_credits,main_credits}；VipPlanTerms 增可选 bonus_main_credits，历史缺省 0。订单 DTO、VIP benefits、签到 DTO 提供通用额度并保留原总额字段。
 
 隔离 PG 覆盖并发、幂等、旧订单及故障回滚；远端执行与部署状态见任务 `11-05-vip-mixed-rewards` 的发布记录。
+
+## TTZF epay contracts (2026-11-09)
+
+EpayNotificationSchema, EpayCreateResponseSchema and EpayQueryResponseSchema define provider data in api/payment.ts before backend consumption. Notification preserves string extension fields for signing; duplicate raw query fields are rejected before schema parsing. New provider IDs require EP + 30 lowercase hex digits. Numeric code/status and string yuan amounts are enforced; the backend additionally checks identity/environment/reference and exact cents. Consumer PaymentOrder/CreatePaymentOrderData stay unchanged; pay_url remains HTTPS, not a QR image or application scheme. No provider secret reaches the browser.
+
+Telemetry sanitization covers key, appKey, sign, clientip, buyer and full notification/return query strings, including standalone Sentry spans. A task-specific explicit user instruction selects the documented server GET query; never emit its credential-bearing URL. Contract/telemetry regressions are in epay-contracts.test.ts; final verification status is in the task record.

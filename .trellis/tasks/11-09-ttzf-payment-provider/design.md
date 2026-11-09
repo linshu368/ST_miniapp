@@ -1,17 +1,17 @@
 # TTZF epay cutover design
 
-Draft for human review. Runtime code has not changed. User explicitly selected epay only; no native API adapter.
+Approved by the user on 2026-11-09 to begin implementation. Signature casing corrected from the supplied screenshot: MD5 output is lowercase. User explicitly selected epay only; no native API adapter.
 
 ## Protocol evidence
 
 User screenshots, supplied 2026-11-09, supersede inaccessible Google-document retrieval. Public gateway: `https://ttzf8.com/api/`.
 
 - Creation: POST `/epay/mapi.php`, UTF-8 form body. Fields: pid (application ID), type, out_trade_no, notify_url, optional return_url, name, money (yuan, up to three decimals), clientip, optional device/param/sitename, sign/sign_type.
-- Signature: ASCII ascending names; omit sign, sign_type, signType and empty values; join raw, unencoded `key=value` pairs with `&`; append the application secret directly; uppercase MD5. Form-encode only after signing.
+- Signature: ASCII ascending names; omit sign, sign_type, signType and empty values; join raw, unencoded `key=value` pairs with `&`; append the application secret directly; lowercase MD5. Form-encode only after signing.
 - Creation success: numeric code=1, trade_no, payurl and optional qrcode/urlscheme. Start with verified HTTPS payurl support; QR-only/app-scheme-only replies require explicit supported UI behavior rather than passing them off as hosted checkout.
 - Notification: GET with pid, trade_no, out_trade_no, type, name, money (actual paid amount), trade_status, optional param, sign/sign_type. Only TRADE_SUCCESS is paid; TRADE_PENDING/TRADE_REFUND/TRADE_ERROR never grant benefits. Return literal success after durable accepted processing or a safe duplicate.
 - Single order query: `/epay/api.php`, act=order, pid, key and trade_no or out_trade_no; numeric code=1 is a successful query; status=1 paid, status=0 unpaid. Verify returned identity, channel and money. A query that returns unpaid is not proof of an irreversible unpaid terminal state.
-- Document URL examples put key in the query string. Root rules prohibit secret in URLs. A read-only POST-body probe for a nonexistent order returned HTTP 200/application code 500. This does not establish POST support or valid authenticated lookup. Keep credentials out of URLs and verify form POST with provider support before release; do not silently fall back to GET-key.
+- The user explicitly reselected the documented GET lookup after the URL-secret restriction was explained (2026-11-09). This task-specific instruction authorizes key in the server-to-provider HTTPS lookup URL only. Do not log URLs or propagate raw transport errors; redact key/sign and callback queries from telemetry including standalone spans. Redirects and caching are disabled. No POST fallback or live success is assumed.
 
 ## Reuse investigation
 
@@ -44,8 +44,8 @@ Split touched over-budget code rather than growing it: old gateway is 538 lines;
 | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Slow upstream/body                      | Explicit overall-call timeout covering body parse; provisional create 7s/query 5s/pass 25s, with no reset on retry.                                                                              |
 | Unknown create outcome                  | No blind POST retry without provider idempotency evidence. Preserve query-by-local-order recovery, including missing-reference cases, rather than marking potentially paid orders unrecoverable. |
-| Read error/429/5xx                      | Limited safe-read retries with bounded backoff under original deadline; no auto-switch to Vexutopia.                                                                                             |
-| Forged/duplicate/conflicting GET fields | Validate scalar fields, body/query bounds, uppercase MD5 with constant-time comparison, application/order/amount/channel/reference. Reject ambiguous duplicates; signatures never logged.        |
+| Read error/429/5xx                      | No in-call retry; periodic reconciliation provides bounded safe-read retries, with durable queue rotation. No auto-switch to Vexutopia.                                                          |
+| Forged/duplicate/conflicting GET fields | Validate scalar fields, body/query bounds, lowercase MD5 with constant-time comparison, application/order/amount/channel/reference. Reject ambiguous duplicates; signatures never logged.        |
 | Early callback vs attach                | Permit only authenticated identity-matched association; attached conflicting reference must fail. Atomic settlement remains authority.                                                           |
 | Concurrent callback/query/job           | Existing DB lock and fulfillment_applied/legacy credits_added enforce once-only effects; no process mutex for correctness.                                                                       |
 | Lost callback / delayed payment         | Query polling and jobs converge through the same settlement; late-paid expired orders retain recovery.                                                                                           |
@@ -64,7 +64,7 @@ Current generated local order IDs are MA*<user UUID>*<timestamp>\_<random>; repo
 
 Historical completed rows remain unchanged. Old unresolved orders require an audited cutover disposition; source-only research cannot determine their real payment state. Do not mark them paid or silently cancel them. Retain clear operational reporting for manual resolution; do not automatically contact retired Vexutopia.
 
-Sequence: review -> local implementation/checks -> verify authenticated POST-body query and actual response shape in a named TEST/provider scenario -> deploy TEST main/worker/Cron together -> real Android/iOS Alipay/WeChat handoff and exact fulfilment -> reviewed production in-flight drain/config/deployment.
+Sequence: review -> local implementation/checks -> verify authenticated documented GET query and actual response shape in a named TEST/provider scenario -> deploy TEST main/worker/Cron together -> real Android/iOS Alipay/WeChat handoff and exact fulfilment -> reviewed production in-flight drain/config/deployment.
 
 Stop on paid-but-unfulfilled, reference/amount/environment mismatch or unverifiable queries. Disable new checkout while retaining recovery for already-created TTZF orders. Reverting to a Vexutopia-only binary would strand TTZF payments; use a compatible recovery build or forward-fix. Do not automatically re-enable retired Vexutopia.
 
