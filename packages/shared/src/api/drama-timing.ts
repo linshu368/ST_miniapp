@@ -7,6 +7,15 @@ export const DRAMA_TIMING_MAX_MEDIA_EVENTS = 32;
 export const DRAMA_TIMING_MAX_RESOURCES = 16;
 export const DRAMA_TIMING_DEFINITION = 'drama_v3';
 
+// 实际引擎：只能来自运行时事实（hls.js MEDIA_ATTACHED 的 mediaSource 类型或装载分支），不能靠开关推测。
+export const DramaPlaybackEngineSchema = z.enum([
+  'hlsjs_mse',
+  'hlsjs_mms',
+  'native_hls',
+  'native_file',
+]);
+export type DramaPlaybackEngine = z.infer<typeof DramaPlaybackEngineSchema>;
+
 // 标识只用于串联日志；允许旧 WebView 的 web-* fallback，但不接受 URL 或任意正文。
 const Id = z
   .string()
@@ -277,6 +286,7 @@ export const DramaTimingReportSchema = z
       .strict(),
     addressSource: z.enum(['fetch', 'inflight', 'cache', 'unknown']).optional(),
     frameMethod: z.enum(['video_frame_callback', 'playing_and_timeupdate']).optional(),
+    engine: DramaPlaybackEngineSchema.optional(),
     list: z
       .object({
         id: Id,
@@ -469,6 +479,7 @@ export function dramaTimingLogFields(report: DramaTimingReport) {
     elapsed_ms: report.elapsedMs,
     address_source: report.addressSource,
     frame_method: report.frameMethod,
+    engine: report.engine,
     ...Object.fromEntries(
       Object.entries(report.definition ? dramaTimingStages(report.marks) : report.stages).map(
         ([key, value]) => [`${key}_ms`, value]
