@@ -36,7 +36,8 @@ import { resolveNextVideoId } from '@/lib/drama-playback';
 import { dramaTiming } from '@/lib/perf/drama-observer';
 import { useDramaStreamPlayback } from './use-drama-stream-playback';
 import { loadDramaSource } from '@/lib/drama-media-source';
-import { observeDramaHls } from '@/lib/perf/drama-hls';
+import type HlsPlayer from 'hls.js';
+import { observeDramaHls, type HlsEvents } from '@/lib/perf/drama-hls';
 import { observeDramaMedia } from '@/lib/perf/drama-media';
 import type { DramaPlaybackTiming } from '@/lib/perf/drama-timing';
 import type { DramaSummary } from '@miniapp/shared';
@@ -186,6 +187,8 @@ export function DramaPlayer({
   const retryAttempt = useRef(0);
   const mediaTimingRef = useRef<ReturnType<typeof observeDramaMedia> | null>(null);
   const seekTimingRef = useRef<ReturnType<typeof dramaTiming.beginSeek> | null>(null);
+  // hls.js 实例只在 hls 路径存在；快进诊断靠它记录分片加载。
+  const hlsHandleRef = useRef<{ player: HlsPlayer; events: HlsEvents } | null>(null);
   const [time, setTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [episodesOpen, setEpisodesOpen] = useState(false);
@@ -562,12 +565,16 @@ export function DramaPlayer({
           setBuffering(false);
         }
       },
-      (hls, events) => observeDramaHls(hls, events, timing)
+      (hls, events) => {
+        hlsHandleRef.current = { player: hls, events };
+        observeDramaHls(hls, events, timing);
+      }
     );
     return () => {
       cancelled = true;
       seekTimingRef.current?.('switched');
       seekTimingRef.current = null;
+      hlsHandleRef.current = null;
       if (playback.video_id && Number.isFinite(videoEl.currentTime) && videoEl.readyState >= 1) {
         sourceCheckpoint.current = {
           videoId: playback.video_id,
@@ -1436,7 +1443,8 @@ export function DramaPlayer({
                           wasPlaying,
                           id,
                           currentVideoId ?? undefined,
-                          playback.delivery
+                          playback.delivery,
+                          hlsHandleRef.current ?? undefined
                         );
                       }}
                       onScrubbingChange={setScrubbing}

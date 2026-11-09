@@ -101,6 +101,30 @@ describe('hls.js load recorder', () => {
     expect(JSON.stringify(snapshots)).not.toContain('SIGNED');
   });
 
+  it('marks only the fragment whose time range contains the seek target', () => {
+    let last: { entries: Record<string, unknown>[] } | undefined;
+    recordHlsLoads(hls as unknown as HlsPlayer, events, 0, (s) => (last = s), 8);
+    // 区间为 [start, start+duration)：8 属于 [8,12)，不属于 [4,8)。
+    hls.emit('frag', { frag: fragment(1, 'main', { start: 4 }) });
+    hls.emit('frag', { frag: fragment(2, 'main', { start: 8 }) });
+    hls.emit('frag', { frag: fragment(3, 'main', { start: 12 }) });
+    hls.emit('frag', { frag: fragment(2, 'audio', { start: 8 }) });
+    hls.emit('frag', { frag: fragment('initSegment', 'main', { start: 8 }) });
+    const marked = last!.entries.filter((entry) => entry.coversTarget);
+    expect(marked.map((entry) => [entry.track, entry.sn])).toEqual([
+      ['main', 2],
+      ['audio', 2],
+    ]);
+    expect(JSON.stringify(last)).not.toContain('SIGNED');
+  });
+
+  it('never marks a target when none was given', () => {
+    let last: { entries: Record<string, unknown>[] } | undefined;
+    recordHlsLoads(hls as unknown as HlsPlayer, events, 0, (s) => (last = s));
+    hls.emit('frag', { frag: fragment(2, 'main', { start: 8 }) });
+    expect(last!.entries[0]).not.toHaveProperty('coversTarget');
+  });
+
   it('caps entries and marks truncation', () => {
     let last: { entries: unknown[]; truncated: boolean } | undefined;
     recordHlsLoads(hls as unknown as HlsPlayer, events, 0, (s) => (last = s));
