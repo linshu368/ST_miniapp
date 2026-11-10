@@ -1,0 +1,54 @@
+{
+  "id": "payment-availability-probe",
+  "name": "payment-availability-probe",
+  "title": "Payment availability probe and extensible response strategies",
+  "description": "Implement the approved standalone half-hour CNY 1 upstream create probe, discard probe orders, reuse Feishu alerts, document strategy extension, verify and archive.",
+  "status": "completed",
+  "dev_type": "backend",
+  "scope": "payment",
+  "package": "backend",
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-10",
+  "completedAt": "2026-11-10",
+  "branch": "feat_payblackcat",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "User approved implementation, documentation updates, and archive on 2026-11-10. No commit, deployment, actual upstream request, or production config changes authorized in this task. Default channel alipay; configurable. New orchestration regression tests approved by the reviewed risk plan.",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": ["backend.business.wallet-payment"]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "Standalone background service only; no mobile page, user-facing API, payment settlement or normal user gateway call changes. Shared quota and DB risks are bounded and require the documented rollout observation; no direct page/API P95 target applies.",
+      "android": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": null
+      },
+      "ios": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": null
+      },
+      "api": {
+        "p95_baseline_ms": null,
+        "p95_target_ms": null
+      },
+      "measurement": {
+        "source": "No visible Android, iOS or API samples collected in this design task.",
+        "window": "Observe 24 hours before and after enablement; extend for low sample counts."
+      },
+      "notes": "No visible samples. Null is not zero. Observe Android/iOS recharge page and user create-order API before and after enablement. Reassess if implementation touches user request paths."
+    }
+  }
+}

@@ -5,8 +5,8 @@ scope: backend
 category: business
 status: active
 owners: [backend]
-last_verified_task: .trellis/tasks/10-28-client-ready-first-token/
-last_verified_at: 2026-10-28
+last_verified_task: .trellis/tasks/archive/2026-11/11-10-payment-probe-auto-ip/
+last_verified_at: 2026-11-10
 ---
 
 # 钱包、签到与充值支付
@@ -66,6 +66,8 @@ Backend payment/wallet tests、runtime-config 批量读取与 fallback 测试、
 - 2026-10-27：任务 `10-27-sentry-performance-optimization` 将 `/api/payment/plans` 的四条同表配置读取合并为一次批量读取，订单权威读取保持独立。
 - 2026-10-13：任务 `10-10-image-plaza-v2` 收敛分享奖励写入口并隔离种子作品。
 - 2026-10-20：任务 `Remove confirmed repository noise`（`.trellis/tasks/archive/2026-10/10-20-remove-confirmed-repository-noise/`）删除无法恢复的乱码变更记录；commit：`63eee1e847f678f4b2c434f872425a40fc7f891a`。
+- 2026-11-10：任务 `Payment availability probe and extensible response strategies`（`.trellis/tasks/archive/2026-11/11-10-payment-availability-probe/`）Added isolated upstream-only payment probe, environment switch, bounded response strategies and extension documentation. Local code remains uncommitted; any archive HEAD reference is the starting baseline only；commit：`042bdc9c08264e4120f7870b049164d118657d58`。
+- 2026-11-10：任务 `支付探测自动获取本机IP`（`.trellis/tasks/archive/2026-11/11-10-payment-probe-auto-ip/`）Removed manual probe IP configuration in favor of local IPv4 selection and loopback fallback. Local changes remain uncommitted; archive HEAD is baseline only；commit：`042bdc9c08264e4120f7870b049164d118657d58`。
 
 ## 客户端首字交付 v4（2026-10-28）
 
@@ -120,3 +122,13 @@ Protocol, repository, callback/settlement and bounded-worker regressions are inc
 ### Wrong vs Correct
 
 Wrong: infer paid from return URL, round 6.001 to 6.00, or overwrite provider_transaction_id after an early callback. Correct: validate the trusted provider fact, compare exact cents, CAS the reference, then call PaymentSettlement.settlePaidOrder. Wrong: roll back to a retired-provider binary with TTZF orders in flight. Correct: disable new purchases and retain TTZF recovery while forward-fixing.
+
+## Payment availability probe (2026-11-10, local implementation)
+
+Independent Railway Cron `stminiapp-payment-availability-probe` runs every 30 minutes and exits. `PAYMENT_PROBE_ENABLED=true` enables it (default off), independently of normal PAYMENT_ENABLED. Channel defaults to alipay; PAYMENT_PROBE_CHANNEL may select wxpay. No client-IP environment setting is needed: resolvePaymentProbeClientIp selects a non-internal local IPv4, falling back to 127.0.0.1 when none is available or interface inspection fails. This is a local/container address, not verified public egress; there is no external discovery request. Normal user payment client IP handling is unchanged. Preview/pr environments skip before DB initialization.
+
+`src/scripts/payment-availability-probe.ts` composes `features/payment/availability/{probe,round,strategy}.ts`. The gateway receives one ephemeral CNY 1 request with optional AbortSignal; no local order, payment operation event, query, checkout navigation or retry. Independent session lock 731007 prevents overlap, not exactly-once per slot. Soft cancellation at 45 seconds precedes a 60-second hard deadline; failed unlock still closes the owning DB connection.
+
+New strategies implement PaymentAvailabilityStrategy (id, timeoutMs, appliesTo, handle) under `availability/strategies/` and register in `strategies/index.ts#createPaymentAvailabilityStrategies`. One/many use the same executor: at most 8 strategies, concurrency 2, per-strategy 1-25000ms budget, independent failures; total cancellation also cancels waiting work. Default feishu-alert uses the existing Publisher/outbox with fingerprint `<environment>:payment:upstream-create-probe:<channel>`. Only that rule opts into P1/recovered delivery; persistent failures reuse one incident. Acceptance means persistence, not actual delivery.
+
+Runtime and failure contracts: [probe spec](../../payment-availability-probe.md). Extension and rollout guide: `docs/payment-availability-probe.md`. Existing payment routes, settlement and user order persistence remain unchanged. No new schema objects or migrations. Live TEST/upstream/Feishu and production enablement/performance verification remain separate; code is not deployment evidence.

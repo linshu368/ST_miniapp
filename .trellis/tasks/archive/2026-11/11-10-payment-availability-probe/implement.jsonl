@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/backend/app/index.md", "reason": "Backend boundaries and quality gates"}
+{"file": ".trellis/spec/backend/app/data-reliability-and-security.md", "reason": "Timeouts, concurrency, observability and degradation"}
+{"file": ".trellis/spec/backend/app/modules/business/wallet-payment.md", "reason": "Current TTZF payment and settlement constraints"}
+{"file": ".trellis/spec/backend/app/testing-scripts-and-deployment.md", "reason": "Job deployment and verification"}
+{"file": ".trellis/spec/shared/contracts/index.md", "reason": "Reuse existing alert contracts"}
+{"file": ".trellis/spec/backend/app/payment-availability-probe.md", "reason": "Probe contracts and strategy extension requirements"}

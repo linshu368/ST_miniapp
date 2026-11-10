@@ -86,6 +86,16 @@ describe('epay protocol', () => {
 });
 
 describe('epay create and query', () => {
+  it('honors an already aborted caller without sending a create request', async () => {
+    const fetchMock = respond({ code: 1, trade_no: 'x', payurl: 'https://checkout.example' });
+    const controller = new AbortController();
+    controller.abort();
+    expect(await gateway.createPayment(createInput, controller.signal)).toMatchObject({
+      success: false,
+      errorClass: 'timeout',
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
   it.each(['alipay', 'wxpay'] as const)(
     'creates %s with signed fields and trusted client IP without param',
     async (type) => {

@@ -123,6 +123,22 @@ jobs:
             echo "PR environment has no VIP reminder cron"
           fi
 
+          # A copied probe must never create real upstream orders for every PR. Its runtime
+          # pr-* guard prevents requests even before this copied service is removed.
+          if railway service list --environment "$ENV_NAME" --json | python3 -c "
+          import json, sys
+          services = json.load(sys.stdin)
+          sys.exit(0 if any(s.get('name') == 'stminiapp-payment-availability-probe' for s in services) else 1)
+          "; then
+            railway service delete \
+              --service stminiapp-payment-availability-probe \
+              --environment "$ENV_NAME" \
+              --yes \
+              --json
+          else
+            echo "PR environment has no payment availability probe"
+          fi
+
       - name: Verify Admin Preview backend and CORS
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
