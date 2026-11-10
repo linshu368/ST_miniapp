@@ -15,14 +15,13 @@ pnpm --filter @miniapp/admin build
 
 ## 回复富文本规则
 
-导航中的「回复富文本规则」提供三栏工作台：规则列表、编辑器和真实渲染预览。工作台复用 `@miniapp/shared` 的 source/artifact 契约与编译规则，以及 `@miniapp/reply-renderer` 的最终渲染语义。
+导航中的「回复富文本规则」提供两栏工作台：规则列表和编辑器。工作台维护 `@miniapp/shared` 的 source/artifact 契约与编译规则；真实回复效果由用户端回复渲染链路负责，运营平台不再提供富文本效果预览。
 
 - 保存只更新草稿，不切换正式版本；发布只允许明确的已保存草稿。
 - 发布和回滚带 CAS 前提与 `request_id`。超时或结果未知时先使用“请求恢复”读取权威结果，不自动重试 mutation。
 - 历史回滚创建新版本，不修改旧快照；System Instructions 仍由独立配置入口管理。
-- 预览编译/执行在可终止 Worker 中完成；流式模拟阶段显示原文，完整或重置终态才运行 renderer。
 - 「正文」规则（编号 `body`）只控制样式：正则和模板不执行，样式以 `.作用域 > p` 作用于整条回复的普通段落，不影响卡片内部；停用后不输出样式，也不进入 v1 兼容皮肤。已有环境需通过「+ 新建 → 正文」添加后保存并发布。
-- source/正文、token、session 和完整错误响应不得进入日志。Preview 操作前必须确认环境；Production 写操作需要独立授权。
+- source/正文、token、session 和完整错误响应不得进入日志。Production 写操作需要独立授权。
 
 ## 图片广场定价与标签
 

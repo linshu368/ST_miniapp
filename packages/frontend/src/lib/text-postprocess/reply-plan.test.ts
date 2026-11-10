@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  TEXT_POSTPROCESS_POLICY_VERSION,
-  TEXT_POSTPROCESS_SCHEMA_VERSION,
   validateCompiledArtifact,
   type ChatMessage,
   type CompiledTextPostprocessArtifact,

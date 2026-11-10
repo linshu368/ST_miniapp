@@ -166,7 +166,7 @@ describe('runConversationTurn postprocess binding', () => {
     );
     mocks.execute.mockImplementation(
       async (
-        request: { userInput: string; messages: unknown[] },
+        _request: { userInput: string; messages: unknown[] },
         hooks: { onStreamOpen: () => void; onDelta: (text: string) => void }
       ) => {
         hooks.onStreamOpen();

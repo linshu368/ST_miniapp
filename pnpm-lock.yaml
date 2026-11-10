@@ -47,9 +47,6 @@ importers:
       '@miniapp/admin-client':
         specifier: workspace:*
         version: link:../admin-client
-      '@miniapp/reply-renderer':
-        specifier: workspace:*
-        version: link:../reply-renderer
       '@miniapp/shared':
         specifier: workspace:*
         version: link:../shared

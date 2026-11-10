@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  DEFAULT_PENDING_ARRIVAL_HINT,
   PaymentChannelsConfigSchema,
   PaymentPlansRuntimeConfigSchema,
   PaymentPlansSchema,

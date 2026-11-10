@@ -348,12 +348,6 @@ export async function generateZImage(input: {
   };
 }
 
-function resolveLiaobotsImageEndpoint(base: string): string {
-  const trimmed = base.trim().replace(/\/+$/, '');
-  if (trimmed.endsWith('/v1/images/generations')) return trimmed;
-  return `${trimmed}/v1/images/generations`;
-}
-
 function normalizeGeneratedMimeType(value: string | undefined): StoredImageMimeType | null {
   const mime = value?.split(';')[0]?.trim().toLowerCase();
   return mime === 'image/webp' || mime === 'image/png' || mime === 'image/jpeg' ? mime : null;
