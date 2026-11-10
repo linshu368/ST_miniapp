@@ -104,6 +104,8 @@ CREATE TABLE admin.config_releases(config_key text NOT NULL,
 INSERT INTO app_core.runtime_config VALUES ('max_context_turns',1,'75'),('retain_context_turns',1,'50');
 SQL
 
+# Production applies the reply-feedback migration (already on main) before this one.
+"${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/20261110_chat_reply_feedback.sql" >/dev/null
 "${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/20261110_story_memory.sql" >/dev/null
 "${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/tests/story_memory.sql"
 
