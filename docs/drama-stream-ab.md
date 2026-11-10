@@ -12,6 +12,10 @@
 - `DRAMA_STREAM_KEY_ID`、`DRAMA_STREAM_PRIVATE_KEY`：本环境签名密钥的 ID 和 PEM 私钥（也接受供应商返回的 base64 PEM），仅进入后端 secret。
 - `DRAMA_STREAM_MANIFEST`：受保护的 JSON 配置，包含 `environment`（test 或 production）与有序 `videos` 数组。每项是 `dramaId`、`videoId`、`uid`。必须完整 30 项且每类 ID 唯一。采用全竖屏、多档 v3 片单，ID 以当前环境实际目录为准。
 
+## 数据库中的 Stream 视频（存量迁移）
+
+`videos.storage_provider='cloudflare_stream'` 的行直接用库里的 `stream_uid` 签名播放，不属于上述清单，也不需要 `DRAMA_STREAM_ENABLED`；签名用同一组 `DRAMA_STREAM_HOST`、`DRAMA_STREAM_KEY_ID`、`DRAMA_STREAM_PRIVATE_KEY`，缺失时这些行不可播且不进列表。`DRAMA_LEGACY_SUPABASE_ENABLED` 默认开启（阶段一：存量 Supabase 视频与 Stream 视频并存）；设为 `false` 进入阶段二：Supabase 视频不再播放，只有所有视频都是就绪 Stream 的剧才进入列表。切换与回滚见 `.trellis/tasks/11-10-drama-stream-db-playback/prd.md`。
+
 清单必须匹配数据库环境，Stream 与 Bunny 开关互斥。停用 Stream 后新取址恢复原路径。旧入组比例和采样账号变量不再参与选源，部署本版本无需改动它们。签名凭证缺失或签名失败时，清单内单集返回不可播。
 
 ## 接口与客户端

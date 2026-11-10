@@ -76,7 +76,6 @@ export const STORY_MEMORY_PROMPT_PLACEHOLDERS = [
   '{{old_memory}}',
   '{{new_history}}',
   '{{recent_context}}',
-  '{{character_info}}',
   '{{max_chars}}',
 ] as const;
 

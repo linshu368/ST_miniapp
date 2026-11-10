@@ -506,7 +506,7 @@ export const configMetadata: Record<
   [STORY_MEMORY_PROMPT_KEY]: {
     label: '长期剧情记忆 prompt',
     description:
-      '后台压缩前情档案时使用的完整 prompt。必须包含 {{old_memory}}、{{new_history}}、{{recent_context}}、{{character_info}}、{{max_chars}}；可用 {{user_name}}、{{char_name}}。以「## 」开头的行是输出板块标题，系统据此校验输出是否齐全，说明性标题不要用「## 」。',
+      '后台压缩前情档案时使用的完整 prompt。必须包含 {{old_memory}}、{{new_history}}、{{recent_context}}、{{max_chars}}；可用 {{user_name}}、{{char_name}}。角色卡与开场白始终在聊天 prompt 最前面，不送进压缩。以「## 」开头的行是输出板块标题，系统据此校验输出是否齐全，说明性标题不要用「## 」。',
     defaultValue: DEFAULT_STORY_MEMORY_PROMPT,
   },
   pref_word_count_tiers: {
