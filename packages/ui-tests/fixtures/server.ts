@@ -1,4 +1,5 @@
 import { createServer, type ServerResponse } from 'node:http';
+import { createChatFeedbackFixture } from './chat-feedback.js';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -279,6 +280,7 @@ export function createPreviewServer(apiPort: number, appPort: number) {
   >();
   let branchFailureDelivered = false;
   const messageLikes = new Set<string>();
+  const replyFeedback = createChatFeedbackFixture();
   let messageLikeFailureDelivered = false;
   let messageEditFailureDelivered = false;
 
@@ -467,6 +469,7 @@ export function createPreviewServer(apiPort: number, appPort: number) {
     branchRequests.clear();
     branchFailureDelivered = false;
     messageLikes.clear();
+    replyFeedback.reset();
     messageLikeFailureDelivered = false;
     messageEditFailureDelivered = false;
     scenario = next;
@@ -1948,6 +1951,30 @@ export function createPreviewServer(apiPort: number, appPort: number) {
           deleted: saved.deleted,
           edit_version: saved.edit_version,
         });
+        return;
+      }
+      const feedbackMatch = path.match(
+        /^\/api\/v1\/conversations\/([^/]+)\/messages\/([^/]+)\/feedback$/
+      );
+      if (feedbackMatch && (method === 'GET' || method === 'PUT')) {
+        const [, sessionId, messageId] = feedbackMatch;
+        if (!data.sessions.some((session) => session.id === sessionId)) {
+          fail(res, 404, 'NOT_FOUND', '对话不存在');
+          return;
+        }
+        const message = currentConversationMessages(sessionId!).find(
+          (item) => item.id === messageId && item.role === 'assistant'
+        );
+        const result = replyFeedback.handle(
+          method,
+          sessionId!,
+          message,
+          Number(url.searchParams.get('edit_version')),
+          body,
+          scenario === 'chat-like-error'
+        );
+        if (result.status === 200) ok(res, result.data);
+        else fail(res, result.status, result.code!, result.message!);
         return;
       }
       const messageLikeMatch = path.match(

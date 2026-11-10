@@ -19,6 +19,7 @@ import vipRoutes from './routes/vip.js';
 import settingsRoutes from './routes/settings.js';
 import modelsRoutes from './routes/models.js';
 import conversationRoutes from './routes/conversations.js';
+import chatFeedbackRoutes from './routes/chat-feedback.js';
 import voiceRoutes from './routes/voice.js';
 import imageRoutes from './routes/images.js';
 import botRoutes from './routes/bot.js';
@@ -145,6 +146,7 @@ export async function buildApp() {
   await app.register(settingsRoutes);
   await app.register(modelsRoutes);
   await app.register(conversationRoutes);
+  await app.register(chatFeedbackRoutes);
   await app.register(voiceRoutes);
   await app.register(imageRoutes);
   await app.register(botRoutes);

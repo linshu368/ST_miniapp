@@ -1,0 +1,5 @@
+- [x] shared/SQL/Backend持久化
+- [x] Frontend提交与读取
+- [x] 复用固定UI和隔离SQL验收
+- [x] 代码检查及构建
+- [ ] TEST/production迁移与独立发布
