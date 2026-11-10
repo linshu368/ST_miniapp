@@ -218,9 +218,11 @@ describe('apiClient GET transport retry', () => {
   it('retains the first GET failure when a single-attempt experiment opts out', async () => {
     const fetchMock = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'));
     vi.stubGlobal('fetch', fetchMock);
+    // TypeError 经 toTransportApiError 转成中文友好文案（见 client.ts），断言的是
+    // "没有重试"这件事本身（只调用一次 fetch），不是原始浏览器报错文本有没有保留。
     await expect(
       apiClient('/api/transport-retry-fixture', { transportRetry: false })
-    ).rejects.toThrow('Failed to fetch');
+    ).rejects.toThrow('网络连接中断');
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(fetchMock.mock.calls[0]?.[1]).not.toHaveProperty('transportRetry');
   });

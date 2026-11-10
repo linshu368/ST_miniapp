@@ -94,10 +94,16 @@ last_verified_at: 2026-11-04
 
 播放重试先保存当前集与秒数，等待新地址成功后只装载一次；等待时按钮禁用，失败保留位置且可再试，换集/退出使旧尝试失效。同集后台签名更新也恢复原位置，保留用户暂停状态；正常片尾仍可续播。重试精确保留临近片尾位置，不套用重新进入已看完单集的归零规则。
 
+首页/详情自动恢复上次进度（非重试、非后台签名更新的历史续播）在 `format=hls` 时向下对齐到 Stream 固定的 4s 分片边界（`STREAM_HLS_FRAGMENT_SECONDS`），并把该秒数作为 `startPosition` 传给 hls.js，让第一片直接请求目标分片，不再先拉 0 秒分片探测带宽、再因设置 `currentTime` 清空重拉；MP4 与上述两种精确续播路径不对齐。
+
 首页指定选集的 `video` 参数在媒体与详情就绪、该集0秒或实际位置写入后消费；保留 `from=feed`，后续刷新按最新观看记录恢复。有缓存剧目时目录后台失败不中断当前播放器，仅在控件可见时提供轻量刷新入口。
 
 已收藏/最近看过分别保留本会话滚动位置及行锚点，排序改变后优先找回刚点击的剧。选集每次打开或从简介切入时保证当前集与分组可见；集数分组固定在列表上方，用户开始翻组/滚动后不再自动抢位置。
 
 ## Stream A/B 接入
 
-30 条有序环境清单由 Backend runtime-config 读取，账号固定 50:50 分配和入组比例分别哈希。列表同序置顶，鉴权后仅实际白名单单集参与实验。原生 HLS/hls.js 复用当前播放器，blob 源归属、一次 Supabase 恢复及累计重试等待贯通现有观测。配置默认关闭，真机与生产验收状态见本次任务，操作说明见 `docs/drama-stream-ab.md`。
+30 条有序环境清单由 Backend runtime-config 读取，账号固定 50:50 分配和入组比例分别哈希。列表同序置顶，鉴权后仅实际白名单单集参与实验。原生 HLS/hls.js 复用当前播放器，blob 源归属、一次 Supabase 恢复及累计重试等待贯通现有观测。Apple 原生 HLS 的 `play_url` 在取址返回处（`capAppleHlsQuality`）追加 `clientBandwidthHint=2.5`，主清单被裁成 ≤720p 单档（实测 30 部片均不出 1080p），该流上 iOS 不自动切换画质；Android hls.js 从最低档起播，不受影响。配置默认关闭，真机与生产验收状态见本次任务，操作说明见 `docs/drama-stream-ab.md`。
+
+Stream 域名由 `NEXT_PUBLIC_DRAMA_STREAM_ORIGIN` 提供（`lib/drama-stream-origin.ts`）：根布局输出 CORS 与非 CORS 两条 preconnect，播放意图（`startDramaPlayIntent`）时重新插入，因为空闲连接约 10s 被关闭。播放地址每次 `/play` 现签，取到地址后立即设置源，不做清单预取。起播诊断对 Stream 源接收同域名的全部资源计时并按路径标 `kind`（manifest/playlist/segment），其余源仍只认精确 URL；hls.js 路径由 `perf/drama-hls.ts` 记录清单、子清单、init 与分片的首字节、字节数、档位和入缓冲时间（≤16 条，起播终态后停止），经 `loadDramaSource` 的 `onHls` 在加载主清单前订阅。上报只含数值与分类，不含 URL。带 `delivery` 的实验组诊断由 Backend 全量写入 Loki，其余流量仍只留起播 ≥5s / 快进 ≥3s。
+
+非 Apple 平台的 `preloadDramaHls()`（提前 `import('hls.js')`）延后到首页/详情首帧绘制后的一次空闲触发（复用 `navigation-quiet-window.ts` 的 `afterNavigationQuietWindow()`），避免会话内首次起播时和播放器自身的 hls.js 导入抢带宽；非五入口导航或该安静窗口未激活时等价于立即预取，不劣化。

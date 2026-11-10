@@ -508,7 +508,8 @@ export function observeDramaStartupDiagnostic(report: DramaTimingReport): void {
   if (
     !active ||
     (report.type !== 'playback' && !(report.type === 'seek' && report.seek?.definition)) ||
-    report.elapsedMs < (report.type === 'seek' ? 3_000 : 5_000) ||
+    // CDN 实验组要解释中位数，快样本也全量保留；其余流量只留慢样本。
+    (!report.delivery && report.elapsedMs < (report.type === 'seek' ? 3_000 : 5_000)) ||
     (report.phase !== 'final' && report.phase !== 'network')
   )
     return;
@@ -525,6 +526,7 @@ export function observeDramaStartupDiagnostic(report: DramaTimingReport): void {
       phase: parsed.data.phase,
       outcome: parsed.data.outcome,
       total_ms: parsed.data.elapsedMs,
+      engine: parsed.data.engine ?? 'unknown',
     },
     JSON.stringify({ event, ...parsed.data })
   );

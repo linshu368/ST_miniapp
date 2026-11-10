@@ -15,6 +15,18 @@ const syncMocks = vi.hoisted(() => ({
   recordBillingOutcome: vi.fn(),
   fetchGenerationData: vi.fn(),
   enrichGeneration: vi.fn().mockResolvedValue(undefined),
+  surplusRecovery: vi.fn().mockResolvedValue({
+    scanned: 0,
+    claimed: 0,
+    completed: 0,
+    deferred: 0,
+    unavailable: 0,
+    failed: 0,
+  }),
+}));
+
+vi.mock('./surplus-request-recovery.js', () => ({
+  recoverSurplusRequestMetadata: syncMocks.surplusRecovery,
 }));
 
 vi.mock('../../infrastructure/repositories/GenerationObservationRepository.js', () => ({
@@ -70,6 +82,74 @@ vi.mock('../../infrastructure/repositories/MiniappCharacterFreeQuotaRepository.j
 
 const { reconcileCharge, startChatHistorySyncJob, stopChatHistorySyncJob } =
   await import('./sync-job.js');
+
+describe('Surplus Intelligence metadata scheduling', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    syncMocks.pendingRows.mockResolvedValue([]);
+    syncMocks.missingRows.mockResolvedValue([]);
+    syncMocks.staleRows.mockResolvedValue([]);
+    syncMocks.listRows.mockResolvedValue([]);
+    syncMocks.readGenerationDataBatch.mockResolvedValue(new Map());
+    syncMocks.surplusRecovery.mockResolvedValue({
+      scanned: 0,
+      claimed: 0,
+      completed: 0,
+      deferred: 0,
+      unavailable: 0,
+      failed: 0,
+    });
+  });
+
+  it('recovers already-settled call metadata even when no billing candidates exist', async () => {
+    vi.useFakeTimers();
+    syncMocks.surplusRecovery.mockResolvedValueOnce({
+      scanned: 1,
+      claimed: 1,
+      completed: 1,
+      deferred: 0,
+      unavailable: 0,
+      failed: 0,
+    });
+    const log = { info: vi.fn(), error: vi.fn(), warn: vi.fn(), child: vi.fn() };
+    log.child.mockReturnValue(log);
+    try {
+      startChatHistorySyncJob(log as unknown as FastifyBaseLogger);
+      await vi.advanceTimersByTimeAsync(5_001);
+      expect(syncMocks.surplusRecovery).toHaveBeenCalledWith({ log, requestBudget: 9 });
+      expect(log.info).toHaveBeenCalledWith(
+        expect.objectContaining({ scannedCount: 0, surplusMetadataCompletedCount: 1 }),
+        expect.any(String)
+      );
+    } finally {
+      stopChatHistorySyncJob();
+      vi.useRealTimers();
+    }
+  });
+
+  it('isolates a Surplus metadata scan failure and retries the next scheduler tick', async () => {
+    vi.useFakeTimers();
+    syncMocks.surplusRecovery.mockRejectedValueOnce(new Error('isolated metadata failure'));
+    const log = { info: vi.fn(), error: vi.fn(), warn: vi.fn(), child: vi.fn() };
+    log.child.mockReturnValue(log);
+    try {
+      startChatHistorySyncJob(log as unknown as FastifyBaseLogger);
+      await vi.advanceTimersByTimeAsync(5_001);
+      expect(log.error).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: 'chathistory_sync.surplus_metadata_failed',
+          err: expect.any(Error),
+        }),
+        expect.any(String)
+      );
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(syncMocks.surplusRecovery).toHaveBeenCalledTimes(2);
+    } finally {
+      stopChatHistorySyncJob();
+      vi.useRealTimers();
+    }
+  });
+});
 
 function lastCharge(): ChargeLlmUsageInput {
   const input = chargeLlmUsage.mock.calls.at(-1)?.[0] as ChargeLlmUsageInput | undefined;

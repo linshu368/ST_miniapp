@@ -1,0 +1,65 @@
+{
+  "id": "surplusintelligence-history",
+  "name": "surplusintelligence-history",
+  "title": "Surplus Intelligence 完整接入与调用明细落库",
+  "description": "补齐 Surplus 模型发布、生成/交付与恢复；新增 experience.surplusintelligence_chat_history，按来源尽可能完整保存非正文参数与受控响应，附字段覆盖清单、完整性和缺口诊断。",
+  "status": "in_progress",
+  "dev_type": "feature",
+  "scope": "backend,shared,database,admin,docs",
+  "package": "backend",
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-09",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "User approved implementation on 2026-11-10. TEST reported original delivery guard failure; CRLF input reproduced exact error. Use full forward compat migration; original checksum unchanged. Local four-format/replay/rollback regression passed; no remote migration, production action, staging, commit or push.",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "backend.business.conversation-generation",
+        "backend.infrastructure.runtime-data-security",
+        "database.business.conversation-storage",
+        "database.infrastructure.schema-security",
+        "shared.business.conversation-contracts",
+        "admin.business.operations"
+      ]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": ["/chat/[characterId]"],
+      "apis": [
+        "POST /api/v1/conversations/:id/messages (SSE first content)",
+        "POST /api/v1/conversations/:id/regenerate (SSE first content)"
+      ],
+      "android": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 3000
+      },
+      "ios": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 3000
+      },
+      "api": {
+        "p95_baseline_ms": null,
+        "p95_target_ms": 6000
+      },
+      "measurement": {
+        "source": "现有 OTLP/Grafana provider/model 首字观测与 Telegram Android/iOS 真实 WebView 页面加载采样；暂无可见真实样本，不用 mock 或其他供应商替代。",
+        "window": "发布前后各 24 小时，按环境/release/provider/model 和 Android/iOS 分窗；验证发送、重生成、取消和 OR 兜底。"
+      },
+      "notes": "基线 null 表示无可见数据，不是零；页面 3000ms 和 API 首字 6000ms 是待审核工程目标，并非已达成。API 指 SSE 首个内容，不是完整生成时长；保留深度思考/绝对截止语义。双端独立观测，低样本标 unknown；页面读取无预期新增往返仍需验收。"
+    }
+  }
+}

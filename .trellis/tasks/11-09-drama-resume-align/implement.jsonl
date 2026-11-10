@@ -1,0 +1,6 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": "packages/frontend/src/lib/drama-media-source.ts", "reason": "续播对齐与 startPosition 新增点"}
+{"file": "packages/frontend/src/components/drama/drama-player.tsx", "reason": "续播状态机、onLoadedMetadata、媒体加载 effect"}
+{"file": "packages/frontend/src/lib/navigation-quiet-window.ts", "reason": "afterNavigationQuietWindow 复用点"}
+{"file": "packages/frontend/src/components/drama/drama-home.tsx", "reason": "preloadDramaHls 调用点"}
+{"file": "packages/frontend/src/app/(main)/dramas/[id]/page.tsx", "reason": "preloadDramaHls 调用点"}

@@ -48,7 +48,15 @@ export const logPretty = resolveLogPretty({
 
 /** 供 Fastify `logger` 选项复用，保证应用日志与 request 日志同源同格式 */
 export function fastifyLoggerOptions(): Record<string, unknown> {
-  return buildPinoOptions({ level: logLevel, pretty: logPretty });
+  return {
+    ...buildPinoOptions({ level: logLevel, pretty: logPretty }),
+    // GET 支付通知包含可重放签名和商品信息。自动请求日志只保留路径与链路。
+    serializers: {
+      req(req: { method?: string; url?: string; id?: string }) {
+        return { method: req.method, url: req.url?.split('?')[0], id: req.id };
+      },
+    },
+  };
 }
 
 const rootLogger = pino(fastifyLoggerOptions() as unknown as pino.LoggerOptions);

@@ -80,6 +80,21 @@ describe('drama centralized logging', () => {
     });
   });
 
+  it('tags the terminal event with the playback engine, or unknown when never set', () => {
+    const tagged = dramaTiming.beginPlayback('a', 'direct');
+    tagged.engine = 'hlsjs_mms';
+    tagged.finish('playing');
+    expect(mocks.event.mock.calls.find(([name]) => name === 'drama.terminal')?.[1]).toMatchObject({
+      drama_engine: 'hlsjs_mms',
+    });
+    mocks.event.mockClear();
+    const untagged = dramaTiming.beginPlayback('b', 'direct');
+    untagged.finish('playing');
+    expect(mocks.event.mock.calls.find(([name]) => name === 'drama.terminal')?.[1]).toMatchObject({
+      drama_engine: 'unknown',
+    });
+  });
+
   it.each([
     ['error', 'not_started'],
     ['unplayable', 'not_started'],
@@ -318,6 +333,35 @@ describe('drama centralized logging', () => {
     expect(mocks.measurement.mock.calls.every(([name]) => name.startsWith('drama.seek'))).toBe(
       true
     );
+  });
+
+  it('tags seek diagnostics with the engine used for the owning playback', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+    const video = Object.assign(new EventTarget(), {
+      currentSrc: 'media',
+      src: 'media',
+      buffered: { length: 0 },
+      readyState: 2,
+      currentTime: 40,
+      seeking: false,
+      paused: true,
+    }) as unknown as HTMLVideoElement;
+    dramaTiming.beginSeek(
+      video,
+      'media',
+      40,
+      false,
+      'a',
+      'video',
+      undefined,
+      undefined,
+      'hlsjs_mse'
+    );
+    await vi.advanceTimersByTimeAsync(100);
+    video.dispatchEvent(new Event('seeked'));
+    expect(
+      mocks.event.mock.calls.find(([name]) => name === 'drama.seek_terminal')?.[1]
+    ).toMatchObject({ drama_engine: 'hlsjs_mse' });
   });
 
   it.each([

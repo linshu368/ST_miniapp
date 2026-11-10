@@ -4,13 +4,123 @@ import type { ReportFirstTokenRequest } from '@miniapp/shared';
 import type { ForkConversationData, ListConversationsData } from '@miniapp/shared';
 import type { Page } from '@playwright/test';
 import { IDS } from './fixtures.js';
-import { CHAT_SESSION_IDS, LONG_SESSION_TITLE } from '../fixtures/data.js';
+import { CHAT_SESSION_IDS, LONG_SESSION_TITLE, SURPLUS_PREVIEW_MODEL } from '../fixtures/data.js';
 
 function likeResponse(page: Page) {
   return page.waitForResponse(
     (response) => response.url().endsWith('/like') && response.request().method() === 'PUT'
   );
 }
+
+test('@chat @surplus @layout Surplus Intelligence 目录、发送、重答与取消沿用真实页面', async ({
+  page,
+  preview,
+  request,
+}) => {
+  await preview.scenario('chat-surplus');
+  const catalog = (await (await request.get(`${previewApiUrl}/api/v1/models/config`)).json()).data;
+  expect(catalog).toMatchObject({
+    selected_provider: SURPLUS_PREVIEW_MODEL.provider,
+    selected_provider_model_id: SURPLUS_PREVIEW_MODEL.provider_model_id,
+  });
+  await page.goto(chatPath);
+  await page.getByRole('button', { name: /展开引擎选择/ }).click();
+  await expect(page.getByText('Surplus Intelligence', { exact: true }).first()).toBeVisible();
+  await page.keyboard.press('Escape');
+  const answer = page.getByText('「那就出发吧。」旅人轻轻合上地图，把下一步的选择留给你。', {
+    exact: true,
+  });
+  await sendChat(page, '我们用 Surplus Intelligence 继续故事。');
+  await expect(answer).toBeVisible();
+  await expect(page.getByRole('button', { name: '取消本次回复', exact: true })).toHaveCount(0);
+  const regenerated = page.waitForResponse(
+    (response) => response.url().endsWith('/regenerate') && response.request().method() === 'POST'
+  );
+  await page.getByRole('button', { name: '换一个回复', exact: true }).click();
+  const generation = await regenerated;
+  expect(generation.ok()).toBeTruthy();
+  await expect
+    .poll(async () => {
+      const current = (
+        await (await request.get(`${previewApiUrl}/api/v1/conversations/${IDS.session}`)).json()
+      ).data;
+      const last = current.messages.at(-1);
+      return { revision: last?.revision, status: last?.status };
+    })
+    .toEqual({ revision: 2, status: 'complete' });
+  await expect(page.getByRole('button', { name: '取消本次回复', exact: true })).toHaveCount(0);
+  await expect(answer).toHaveCount(1);
+  const detail = (
+    await (await request.get(`${previewApiUrl}/api/v1/conversations/${IDS.session}`)).json()
+  ).data;
+  expect(detail.messages.at(-1)).toMatchObject({
+    model_id: SURPLUS_PREVIEW_MODEL.id,
+    revision: 2,
+    status: 'complete',
+  });
+  const started = page.waitForResponse(
+    (response) => response.url().endsWith('/messages') && response.request().method() === 'POST'
+  );
+  await sendChat(page, '这一轮先停下来。');
+  expect((await started).ok()).toBeTruthy();
+  const cancelled = page.waitForResponse(
+    (response) => response.url().endsWith('/cancel') && response.request().method() === 'POST'
+  );
+  await page.getByRole('button', { name: '取消本次回复', exact: true }).click();
+  expect((await cancelled).ok()).toBeTruthy();
+  await expect(page.getByRole('button', { name: '发送', exact: true })).toBeVisible();
+  const stopped = (
+    await (await request.get(`${previewApiUrl}/api/v1/conversations/${IDS.session}`)).json()
+  ).data;
+  expect(stopped.messages.at(-1)).toMatchObject({
+    model_id: SURPLUS_PREVIEW_MODEL.id,
+    status: 'interrupted',
+    finish_reason: 'user_cancelled',
+  });
+  await page.reload();
+  await expect(page.getByRole('button', { name: '发送', exact: true })).toBeVisible();
+  expect((await preview.state()).wallet.credits).toBe(3600);
+  await expectMobileLayout(page);
+  await preview.screenshot('Surplus Intelligence 重答与停止');
+});
+
+test('@chat @surplus @layout Surplus 慢主调用由 OpenRouter 兜底交付且不改变模型选择', async ({
+  page,
+  preview,
+  request,
+}) => {
+  await preview.scenario('chat-surplus-fallback');
+  await page.goto(chatPath);
+  await page.getByRole('button', { name: '关闭深度思考', exact: true }).click();
+  await sendChat(page, '等一会儿，也请把故事接下去。');
+  await expect(
+    page.getByText('「那就出发吧。」旅人轻轻合上地图，把下一步的选择留给你。', { exact: true })
+  ).toBeVisible();
+  const detail = (
+    await (await request.get(`${previewApiUrl}/api/v1/conversations/${IDS.session}`)).json()
+  ).data;
+  expect(detail.messages.at(-1)).toMatchObject({
+    model_id: 'preview-light',
+    status: 'complete',
+    finish_reason: 'stop',
+  });
+  const catalog = (await (await request.get(`${previewApiUrl}/api/v1/models/config`)).json()).data;
+  expect(catalog).toMatchObject({
+    selected_model_id: SURPLUS_PREVIEW_MODEL.id,
+    selected_provider: 'surplus',
+  });
+  expect(
+    (await preview.state()).requests.filter(
+      (item) => item.method === 'POST' && item.path.endsWith('/messages')
+    )
+  ).toHaveLength(1);
+  await page.reload();
+  await expect(
+    page.getByText('「那就出发吧。」旅人轻轻合上地图，把下一步的选择留给你。', { exact: true })
+  ).toHaveCount(1);
+  await expectMobileLayout(page);
+  await preview.screenshot('Surplus Intelligence 选择与兜底回复');
+});
 
 test('@chat @chat-like @layout 回复点赞有48px触区，轻点立即反馈并持久保存', async ({
   page,
@@ -371,6 +481,8 @@ test('@chat @layout 深度思考默认开启，正文出现后自动折叠', asy
     page.getByText('「那就出发吧。」旅人轻轻合上地图，把下一步的选择留给你。', { exact: true })
   ).toBeVisible();
   await expect(page.getByLabel('思考内容', { exact: true })).toHaveCount(0);
+  // The final text precedes SSE done; wait for terminal auto-collapse before reopening it.
+  await expect(page.getByRole('button', { name: '取消本次回复', exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'thinking' }).click();
   await expect(page.getByLabel('思考内容', { exact: true })).toBeVisible();
   await expectMobileLayout(page);

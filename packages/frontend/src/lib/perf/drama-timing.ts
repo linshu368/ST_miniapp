@@ -10,8 +10,11 @@ import {
   type DramaMediaState,
   type DramaStartupDiagnostics,
   type DramaNetworkTiming,
+  type DramaPlaybackEngine,
 } from '@miniapp/shared';
 export type { DramaTimingReport } from '@miniapp/shared';
+import type HlsPlayer from 'hls.js';
+import type { HlsEvents } from './drama-hls';
 import type { ApiAttemptTiming } from '@/lib/api/client';
 import { recordEngineeringEvent } from './grafana';
 
@@ -74,6 +77,7 @@ export class DramaPlaybackTiming {
   outcome?: DramaOutcome;
   addressSource?: DramaTimingReport['addressSource'];
   frameMethod?: DramaTimingReport['frameMethod'];
+  engine?: DramaPlaybackEngine;
   resolvedVideoId?: string;
   delivery?: DramaDelivery;
   private timer: ReturnType<typeof setTimeout>;
@@ -137,6 +141,10 @@ export class DramaPlaybackTiming {
     return () => {
       if (this.readLongTasks === read) this.readLongTasks = undefined;
     };
+  }
+
+  hlsTiming(hls: NonNullable<DramaStartupDiagnostics['hls']>): void {
+    if (!this.outcome) this.diagnostics.hls = hls;
   }
 
   networkTiming(network: DramaNetworkTiming, supplement = false): void {
@@ -268,6 +276,7 @@ export class DramaPlaybackTiming {
       stages,
       addressSource: this.addressSource,
       frameMethod: this.frameMethod,
+      engine: this.engine,
       cover: this.cover,
       list: list
         ? {
@@ -570,7 +579,9 @@ export class DramaTimingTracker {
     wasPlaying: boolean,
     dramaId: string,
     videoId: string | undefined,
-    delivery?: DramaDelivery
+    delivery?: DramaDelivery,
+    hls?: { player: HlsPlayer; events: HlsEvents },
+    engine?: DramaPlaybackEngine
   ) {
     this.stopSeek?.('switched');
     const stop = observeDramaSeek(video, source, target, wasPlaying, {
@@ -581,6 +592,8 @@ export class DramaTimingTracker {
       context: this.context,
       route: this.playback?.owner === 'home' ? '/watch' : '/dramas/:id',
       sourceAt: this.playback?.marks.source_set ?? this.playback?.startedAt,
+      hls,
+      engine,
       now: this.now,
       emit: this.emit,
     });

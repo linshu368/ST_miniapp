@@ -35,10 +35,17 @@ import {
 import { resolveNextVideoId } from '@/lib/drama-playback';
 import { dramaTiming } from '@/lib/perf/drama-observer';
 import { useDramaStreamPlayback } from './use-drama-stream-playback';
-import { loadDramaSource } from '@/lib/drama-media-source';
+import {
+  loadDramaSource,
+  resolveResumeTarget,
+  alignResumeSeconds,
+  type LoadDramaSourceOptions,
+} from '@/lib/drama-media-source';
+import type HlsPlayer from 'hls.js';
+import { observeDramaHls, type HlsEvents } from '@/lib/perf/drama-hls';
 import { observeDramaMedia } from '@/lib/perf/drama-media';
 import type { DramaPlaybackTiming } from '@/lib/perf/drama-timing';
-import type { DramaSummary } from '@miniapp/shared';
+import type { DramaSummary, DramaPlayback, DramaPlaybackEngine } from '@miniapp/shared';
 import { cn } from '@/lib/utils';
 import { supabasePublicImageUrl } from '@/lib/supabase-image';
 import { markPageCriticalVisual } from '@/lib/perf/page-tracker';
@@ -73,6 +80,32 @@ interface DramaPlayerProps {
 function formatTime(seconds: number) {
   const safe = Number.isFinite(seconds) ? Math.max(0, Math.floor(seconds)) : 0;
   return `${Math.floor(safe / 60)}:${String(safe % 60).padStart(2, '0')}`;
+}
+
+/** 续播秒数对齐分片后，和引擎诊断回调一起交给 loadDramaSource。 */
+function resumeSourceOptions(
+  pending: Pick<DramaProgressRecord, 'videoId' | 'seconds'> | undefined,
+  videoId: string | null | undefined,
+  exact: boolean,
+  format: DramaPlayback['format'],
+  onEngine: (engine: DramaPlaybackEngine) => void
+): LoadDramaSourceOptions {
+  const seconds = pending && pending.videoId === videoId ? pending.seconds : undefined;
+  return {
+    startPosition:
+      seconds === undefined ? undefined : exact ? seconds : alignResumeSeconds(seconds, format),
+    onEngine,
+  };
+}
+
+function assignPlaybackEngine(
+  engineRef: { current: DramaPlaybackEngine | undefined },
+  timing: DramaPlaybackTiming
+) {
+  return (engine: DramaPlaybackEngine) => {
+    engineRef.current = engine;
+    timing.engine = engine;
+  };
 }
 
 const ignoreGesture = (target: EventTarget | null) =>
@@ -118,6 +151,8 @@ export function DramaPlayer({
     !initialVideoId && Boolean(resume.current && !resume.current.completed)
   );
   const resumeExactPosition = useRef(false);
+  // hls.js 已按该秒数预设 startPosition 时，onLoadedMetadata 命中同一目标值可跳过重复 seek。
+  const appliedStartPositionRef = useRef<number | undefined>(undefined);
   const initialSelectionPending = useRef(Boolean(initialVideoId));
   const [activeVideoId, setActiveVideoId] = useState<string | null>(
     () =>
@@ -185,6 +220,10 @@ export function DramaPlayer({
   const retryAttempt = useRef(0);
   const mediaTimingRef = useRef<ReturnType<typeof observeDramaMedia> | null>(null);
   const seekTimingRef = useRef<ReturnType<typeof dramaTiming.beginSeek> | null>(null);
+  // hls.js 实例只在 hls 路径存在；快进诊断靠它记录分片加载。
+  const hlsHandleRef = useRef<{ player: HlsPlayer; events: HlsEvents } | null>(null);
+  // 本次装载实际判定的播放引擎；原生路径下为 undefined。
+  const engineRef = useRef<DramaPlaybackEngine | undefined>(undefined);
   const [time, setTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [episodesOpen, setEpisodesOpen] = useState(false);
@@ -549,6 +588,14 @@ export function DramaPlayer({
         }
       }
     };
+    const sourceOptions = resumeSourceOptions(
+      resumePending.current ? resume.current : undefined,
+      playback.video_id,
+      resumeExactPosition.current,
+      playback.format,
+      assignPlaybackEngine(engineRef, timing)
+    );
+    appliedStartPositionRef.current = sourceOptions.startPosition;
     const releaseSource = loadDramaSource(
       videoEl,
       playback,
@@ -560,12 +607,19 @@ export function DramaPlayer({
           setFailed(true);
           setBuffering(false);
         }
-      }
+      },
+      (hls, events) => {
+        hlsHandleRef.current = { player: hls, events };
+        observeDramaHls(hls, events, timing);
+      },
+      sourceOptions
     );
     return () => {
       cancelled = true;
       seekTimingRef.current?.('switched');
       seekTimingRef.current = null;
+      hlsHandleRef.current = null;
+      engineRef.current = undefined;
       if (playback.video_id && Number.isFinite(videoEl.currentTime) && videoEl.readyState >= 1) {
         sourceCheckpoint.current = {
           videoId: playback.video_id,
@@ -590,6 +644,7 @@ export function DramaPlayer({
     playback?.playable,
     playback?.video_id,
     playback?.expires_at,
+    playback?.format,
     retryVersion,
     retryState,
     setPlaybackPreferences,
@@ -1057,13 +1112,18 @@ export function DramaPlayer({
               ) {
                 resumePending.current = false;
                 // 重新进入已播完的单集从头看；中断恢复即使临近片尾也不能归零。
-                const target =
-                  !resumeExactPosition.current && progress.seconds >= video.duration - 0.5
-                    ? 0
-                    : Math.min(progress.seconds, video.duration);
+                const target = resolveResumeTarget({
+                  seconds: progress.seconds,
+                  duration: video.duration,
+                  exact: resumeExactPosition.current,
+                  format: playback?.format,
+                });
                 resumeExactPosition.current = false;
                 if (video.paused && target >= video.duration - 0.05) pausedAtEnd.current = true;
-                video.currentTime = target;
+                // hls.js 已按 startPosition 拉到同一目标分片时，不重复 seek 避免多一次清空重拉。
+                const alreadyApplied =
+                  hlsHandleRef.current !== null && appliedStartPositionRef.current === target;
+                if (!alreadyApplied) video.currentTime = target;
                 setTime(target);
               }
             }}
@@ -1434,7 +1494,9 @@ export function DramaPlayer({
                           wasPlaying,
                           id,
                           currentVideoId ?? undefined,
-                          playback.delivery
+                          playback.delivery,
+                          hlsHandleRef.current ?? undefined,
+                          engineRef.current
                         );
                       }}
                       onScrubbingChange={setScrubbing}

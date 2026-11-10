@@ -2,7 +2,7 @@ import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:net';
 import { createPreviewServer } from './server.js';
-import { IDS, WISH_IDS, makeData } from './data.js';
+import { IDS, WISH_IDS, SURPLUS_PREVIEW_MODEL, makeData } from './data.js';
 import {
   CharacterWishListDataSchema,
   CharacterWishDetailDataSchema,
@@ -12,7 +12,34 @@ import {
   VipStatusSchema,
   UserSettingsSchema,
   ImagePlazaWorkSchema,
+  GetModelCatalogDataSchema,
+  SelectModelDataSchema,
 } from '@miniapp/shared';
+
+test('Surplus Intelligence catalogue and model selection preserve public provider contracts', async () => {
+  await post('/__preview/reset', { scenario: 'chat-surplus' });
+  const initial = GetModelCatalogDataSchema.parse(
+    (await (await fetch(api + '/api/v1/models/config')).json()).data
+  );
+  assert.equal(initial.selected_provider, 'surplus');
+  assert.equal(initial.selected_provider_model_id, SURPLUS_PREVIEW_MODEL.provider_model_id);
+  for (const modelId of ['preview-light', SURPLUS_PREVIEW_MODEL.id]) {
+    const selected = SelectModelDataSchema.parse(
+      (await (await post('/api/v1/models/select', { model_id: modelId })).json()).data
+    );
+    assert.equal(selected.model_id, modelId);
+    assert.equal(
+      selected.provider,
+      modelId === SURPLUS_PREVIEW_MODEL.id ? 'surplus' : 'openrouter'
+    );
+    const generation = (await (await fetch(api + '/api/v1/generation-config')).json()).data;
+    assert.equal(generation.config.selected_model_id, modelId);
+  }
+  assert.equal(
+    (await post('/api/v1/models/select', { model_id: 'unconfigured-surplus' })).status,
+    400
+  );
+});
 
 test('check-in fixture returns a stable next Beijing midnight and rejects duplicate claims', async () => {
   await post('/__preview/reset', { scenario: 'standard' });

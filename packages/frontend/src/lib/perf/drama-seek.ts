@@ -1,4 +1,13 @@
-import type { DramaDelivery, DramaTimingReport, DramaNetworkTiming } from '@miniapp/shared';
+import type HlsPlayer from 'hls.js';
+import type {
+  DramaDelivery,
+  DramaTimingReport,
+  DramaNetworkTiming,
+  DramaStartupDiagnostics,
+  DramaPlaybackEngine,
+} from '@miniapp/shared';
+import { ownsDramaSource } from '../drama-media-source';
+import { recordHlsLoads, type HlsEvents } from './drama-hls';
 import { observeSeekResources } from './drama-resources';
 
 type End = 'playing' | 'error' | 'switched' | 'left' | 'background' | 'unverified';
@@ -23,6 +32,10 @@ export function observeDramaSeek(
     context?: DramaTimingReport['context'];
     route?: DramaTimingReport['route'];
     sourceAt?: number;
+    /** hls.js 路径才有：快进窗口内记录分片加载，并标出覆盖目标时间的分片。 */
+    hls?: { player: HlsPlayer; events: HlsEvents };
+    /** 本次播放装载时判定的引擎；原生路径下为 undefined。 */
+    engine?: DramaPlaybackEngine;
     now: () => number;
     emit: (report: DramaTimingReport) => void;
   }
@@ -49,7 +62,8 @@ export function observeDramaSeek(
   const samples: Sample[] = [];
   let finalReport: DramaTimingReport | undefined;
   const elapsed = () => Math.max(0, options.now() - startedAt);
-  const current = () => !ended && (video.currentSrc || video.src) === source;
+  // hls.js 走 MSE，currentSrc 是 blob: 地址，不能直接和 play_url 比；用播放器登记的所有权判断。
+  const current = () => !ended && ownsDramaSource(video, source);
   const readBuffer = (): { buffered: Seek['buffered']; ahead?: number } => {
     try {
       let ahead = 0;
@@ -102,7 +116,7 @@ export function observeDramaSeek(
     }
   };
   const network = observeSeekResources(source, startedAt, options.sourceAt ?? 0, (snapshot) => {
-    if (!finalReport || (video.currentSrc || video.src) !== source) return;
+    if (!finalReport || !ownsDramaSource(video, source)) return;
     try {
       options.emit({
         ...finalReport,
@@ -113,6 +127,23 @@ export function observeDramaSeek(
       /* Tail delivery never controls playback. */
     }
   });
+  let hlsLoads: DramaStartupDiagnostics['hls'];
+  let stopHls: (() => void) | undefined;
+  if (options.hls) {
+    try {
+      stopHls = recordHlsLoads(
+        options.hls.player,
+        options.hls.events,
+        startedAt,
+        (snapshot) => {
+          hlsLoads = snapshot;
+        },
+        target
+      );
+    } catch {
+      /* 诊断订阅失败不能影响快进。 */
+    }
+  }
   const buildReport = (
     phase: 'start' | 'slow' | 'final',
     outcome: DramaTimingReport['outcome'],
@@ -156,10 +187,12 @@ export function observeDramaSeek(
     },
     diagnostics: {
       network: networkSnapshot,
+      ...(hlsLoads ? { hls: hlsLoads } : {}),
       ...(frameMs === undefined
         ? {}
         : { frame: { callbackAtMs: frameMs, processingMs: frameProcessingMs } }),
     },
+    engine: options.engine,
     frameMethod,
     marks: {},
     stages: {},
@@ -189,6 +222,7 @@ export function observeDramaSeek(
     } catch {
       /* native cleanup */
     }
+    stopHls?.();
     emit('final', outcome);
     network.finish(
       Boolean(options.context) && (outcome === 'playing' || outcome === 'error'),

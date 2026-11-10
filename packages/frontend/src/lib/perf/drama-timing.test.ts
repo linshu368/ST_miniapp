@@ -566,4 +566,11 @@ describe('drama timeline', () => {
       stages: { navigation: 2000, address_wait: 200, address_to_source: 1800 },
     });
   });
+  it('carries the playback engine set after loading into the final report', async () => {
+    const flow = tracker.beginPlayback('a', 'direct');
+    flow.engine = 'hlsjs_mms';
+    await advance(10);
+    flow.finish('playing');
+    expect(last().engine).toBe('hlsjs_mms');
+  });
 });

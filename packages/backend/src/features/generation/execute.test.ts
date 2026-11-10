@@ -128,6 +128,15 @@ vi.mock('../billing/free-quota.js', async (importOriginal) => ({
 }));
 
 vi.mock('./settle.js', () => ({ settleGeneration: vi.fn() }));
+vi.mock('./surplus-reasoning.js', () => ({
+  getSurplusReasoningParameters: async (_modelId: string, requestedEnabled: boolean) => ({
+    parameters: {},
+    supportedParameters: [],
+    requestedEnabled,
+    control: 'unavailable',
+    reason: 'unsupported',
+  }),
+}));
 
 const { settleGeneration } = await import('./settle.js');
 const { execute, prepareGeneration } = await import('./execute.js');
@@ -649,7 +658,7 @@ describe('execute（请求体）', () => {
     expect(body.reasoning).toBeUndefined();
     expect(body.venice_parameters).toBeUndefined();
     expect(body.prompt_cache_key).toBeUndefined();
-    expect(body.stream_options).toBeUndefined();
+    expect(body.stream_options).toEqual({ include_usage: true });
   });
 
   it.each(['openrouter', 'venice'] as const)(

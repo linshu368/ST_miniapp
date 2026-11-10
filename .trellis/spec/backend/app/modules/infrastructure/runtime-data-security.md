@@ -46,6 +46,10 @@ MiniApp 已鉴权接口通过 `lib/user.ts` 把同一 Telegram 用户的并发 g
 
 用户身份缓存只减少重复映射读取，不是鉴权或业务状态真相；失败不缓存，多副本各自缓存不影响正确性。runtime-config single-flight 只共享完全相同的当前读取，失败后清理，不增加配置传播陈旧窗口，也不叠加 Supabase SDK 的 GET 自动重试。
 
+## 派发前诊断（本地候选，尚未发布）
+
+`lib/preparation-diagnostics.ts` 从现有 perf 注册入口补聊天 HTTP 前置阶段计时，并通过 Supabase `global.fetch` 仅观测 REST 响应头等待。慢/失败 Pino 事件为 `conversation.request_preparation` 与 `supabase.rest_wait`；挂起 REST 在 1 秒输出一次 pending，完成清理计时器。只记白名单对象名与固定字段，不读取正文或改变取消、超时和重试。Prisma 指标已含池等待但不涵盖 REST；新计时也不能推断 SQL/完整正文耗时。详细定义见 `docs/grafana/engineering-performance.md`。
+
 ## 验证方式
 
 `lib/user.test.ts` 覆盖同用户合并、用户隔离、失败恢复、TTL 与容量；`platform/runtime-config.test.ts` 覆盖单键/键集、严格/自定义 signal 隔离和失败恢复。运行 Backend typecheck 与完整非 integration 测试。
