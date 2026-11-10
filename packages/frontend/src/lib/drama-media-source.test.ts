@@ -6,12 +6,16 @@ import {
   ownsDramaSource,
   resolveResumeTarget,
 } from './drama-media-source';
+import { createInlinePlaylistLoader } from './drama-inline-manifest-loader';
 const state = vi.hoisted(() => ({
   destroyed: vi.fn(),
   created: vi.fn(),
   attached: undefined as ((data?: { mediaSource?: unknown }) => void) | undefined,
   order: [] as string[],
   lastConfig: undefined as Record<string, unknown> | undefined,
+}));
+vi.mock('./drama-inline-manifest-loader', () => ({
+  createInlinePlaylistLoader: vi.fn(() => 'fake-ploader-sentinel'),
 }));
 vi.mock('hls.js', () => ({
   default: class {
@@ -234,5 +238,25 @@ it('defaults startPosition to -1 (hls.js automatic) when none is given', async (
   const cleanup = loadDramaSource(video(), playback, vi.fn(), vi.fn());
   await vi.waitFor(() => expect(state.created).toHaveBeenCalledOnce());
   expect(state.lastConfig?.startPosition).toBe(-1);
+  cleanup();
+});
+it('builds a pLoader from inline_manifest and passes it into the Hls config', async () => {
+  vi.stubGlobal('navigator', { userAgent: ANDROID_UA });
+  const inlinePlayback = { ...playback, inline_manifest: '#EXTM3U\n...' };
+  const cleanup = loadDramaSource(video(), inlinePlayback, vi.fn(), vi.fn());
+  await vi.waitFor(() => expect(state.created).toHaveBeenCalledOnce());
+  expect(createInlinePlaylistLoader).toHaveBeenCalledWith(
+    inlinePlayback.play_url,
+    inlinePlayback.inline_manifest
+  );
+  expect(state.lastConfig?.pLoader).toBe('fake-ploader-sentinel');
+  cleanup();
+});
+it('omits pLoader when the backend did not provide inline_manifest', async () => {
+  vi.stubGlobal('navigator', { userAgent: ANDROID_UA });
+  const cleanup = loadDramaSource(video(), playback, vi.fn(), vi.fn());
+  await vi.waitFor(() => expect(state.created).toHaveBeenCalledOnce());
+  expect(createInlinePlaylistLoader).not.toHaveBeenCalled();
+  expect(state.lastConfig?.pLoader).toBeUndefined();
   cleanup();
 });

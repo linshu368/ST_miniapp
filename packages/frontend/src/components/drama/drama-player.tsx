@@ -610,7 +610,7 @@ export function DramaPlayer({
       },
       (hls, events) => {
         hlsHandleRef.current = { player: hls, events };
-        observeDramaHls(hls, events, timing);
+        observeDramaHls(hls, events, timing, Boolean(playback.inline_manifest));
       },
       sourceOptions
     );
@@ -645,6 +645,7 @@ export function DramaPlayer({
     playback?.video_id,
     playback?.expires_at,
     playback?.format,
+    playback?.inline_manifest,
     retryVersion,
     retryState,
     setPlaybackPreferences,

@@ -84,6 +84,7 @@ const DiagnosticsSchema = z
       .object({
         entries: z.array(HlsLoadSchema).max(DRAMA_TIMING_MAX_RESOURCES),
         truncated: z.boolean(),
+        manifestInline: z.boolean().optional(), // 主清单是否来自内联下发；旧客户端缺省，不推断为 false
       })
       .strict()
       .optional(),
