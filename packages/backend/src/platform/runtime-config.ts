@@ -322,9 +322,6 @@ export function getDramaStreamConfig(retainIdentity = false) {
     );
     const id = process.env.DRAMA_STREAM_EXPERIMENT_ID || '';
     const key = process.env.DRAMA_STREAM_EXPERIMENT_KEY || '';
-    const host = process.env.DRAMA_STREAM_HOST || '';
-    const keyId = process.env.DRAMA_STREAM_KEY_ID || '';
-    const privateKey = process.env.DRAMA_STREAM_PRIVATE_KEY || '';
     if (
       manifest.environment !== config.database.target ||
       !/^[a-zA-Z0-9_-]{1,64}$/.test(id) ||
@@ -335,14 +332,34 @@ export function getDramaStreamConfig(retainIdentity = false) {
     )
       return null;
     // A valid catalog still owns these videos when the signing credentials are unavailable.
-    const signing =
-      /^customer-[a-zA-Z0-9-]+\.cloudflarestream\.com$/.test(host) &&
-      /^[a-zA-Z0-9_-]+$/.test(keyId) &&
-      privateKey
-        ? { host, keyId, privateKey }
-        : null;
+    const signing = getDramaStreamSigningConfig();
     return { ...manifest, id, key, signing };
   } catch {
     return null;
   }
+}
+
+/**
+ * Signing material for videos whose Stream UID comes from the database (migrated library).
+ * Independent of the A/B experiment: no manifest, no enrollment. Invalid or absent => null.
+ */
+export function getDramaStreamSigningConfig() {
+  const host = process.env.DRAMA_STREAM_HOST || '';
+  const keyId = process.env.DRAMA_STREAM_KEY_ID || '';
+  const privateKey = process.env.DRAMA_STREAM_PRIVATE_KEY || '';
+  if (
+    !/^customer-[a-zA-Z0-9-]+\.cloudflarestream\.com$/.test(host) ||
+    !/^[a-zA-Z0-9_-]+$/.test(keyId) ||
+    !privateKey
+  )
+    return null;
+  return { host, keyId, privateKey };
+}
+
+/**
+ * Migration phase switch. Default (unset or anything but 'false') keeps legacy Supabase videos playable.
+ * 'false' ends the legacy library: only dramas whose every video is a ready Stream video are listed.
+ */
+export function isDramaLegacySupabaseEnabled() {
+  return process.env.DRAMA_LEGACY_SUPABASE_ENABLED !== 'false';
 }
