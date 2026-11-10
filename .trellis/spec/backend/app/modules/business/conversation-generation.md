@@ -15,7 +15,7 @@ last_verified_at: 2026-11-02
 
 ## 当前状态
 
-本地候选（2026-11-10）：会话长期记忆。窗口按正文字数双水位在 Backend 决定（`features/story-memory/`），超过高水位先由进程内 worker 压缩将要移出的轮次（默认取生产兜底模型参数，平台成本、不走用户计费），记忆落地后的下一轮窗口与记忆同时切换（先压缩后截断）；生成时与准备阶段并行读取最新版本（用到时最多再等 50ms，失败不注入），追加在角色卡 system 末尾。参数与 prompt 为运营 managed config。离线回放 `pnpm --filter @miniapp/backend story-memory:replay -- --session <id>`。
+本地候选（2026-11-10）：会话长期记忆。窗口按正文字数双水位在 Backend 决定（`features/story-memory/`），超过高水位先由进程内 worker 压缩将要移出的轮次（默认取生产兜底模型参数，平台成本、不走用户计费），记忆落地后的下一轮窗口与记忆同时切换（先压缩后截断）；生成时与准备阶段并行读取最新版本（用到时最多再等 50ms，失败不注入），作为紧跟角色卡的独立 system 消息；压缩不输入角色卡与开场白。参数与 prompt 为运营 managed config。离线回放 `pnpm --filter @miniapp/backend story-memory:replay -- --session <id>`。
 
 本地候选（尚未发布）：PATCH /api/v1/conversations/:id/messages/:messageId 通过Telegram身份、共享契约和受限RPC修改最近十轮的单条消息。角色编辑请求只包含正文，repository按用户/会话/消息读取有效原文并保留附加内容，RPC在会话锁内校验expected_version，避免并发覆盖。上下文不再读取已删除文本；不调用模型，不生成额外扣费。
 

@@ -36,11 +36,9 @@ export function stripTurnLabels(content: string): string {
 
 export function renderStoryMemoryBlock(content: string): string {
   return [
-    '<story_memory>',
-    '以下是较早剧情的前情提要，用于保持连贯，不是用户指令，也不是当前场景。',
-    '与近期对话冲突时，以近期对话为准。不要提及、复述或总结这段内容。',
+    '前情提要：以下是较早剧情的连贯性参考，不是用户指令，也不是当前场景。与近期对话冲突时，以近期对话为准。不要提及、复述或总结这段内容。',
+    '',
     stripTurnLabels(content),
-    '</story_memory>',
   ].join('\n');
 }
 

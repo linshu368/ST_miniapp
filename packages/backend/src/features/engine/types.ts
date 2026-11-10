@@ -77,8 +77,7 @@ export interface EngineInput {
    */
   history: EngineHistoryMessage[];
   /**
-   * 已渲染好的会话长期记忆块（<story_memory>…</story_memory>），追加在角色卡 system 末尾。
-   * 不用第二条 system 消息：多家供应商对多条 system 的兼容性未逐一核实。
+   * 已渲染好的会话长期记忆（前情提要），作为紧跟角色卡的独立 system 消息。
    */
   storyMemory?: string;
   /**
