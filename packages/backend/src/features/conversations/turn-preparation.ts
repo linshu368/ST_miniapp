@@ -8,7 +8,8 @@ import { fetchModelCatalogSnapshot } from '../../platform/model-tiers.js';
 import { fetchPlatformInstructions } from '../engine/index.js';
 import { FirstTokenDeadlineError } from '../generation/first-token-fallback.js';
 import { prepareGeneration, resolveModelForUser } from '../generation/index.js';
-import { fetchContextWindowLimits } from './context-window.js';
+import { fetchStoryMemoryConfig } from '../story-memory/config.js';
+import { readStoryMemoryForTurn } from '../story-memory/turn.js';
 
 /** Bound read-only preparation even if a dependency fails to honor its own timeout. */
 export function withConversationPreparationDeadline<T>(
@@ -55,7 +56,8 @@ export async function prepareConversationAdmission(
 }
 
 /**
- * 开轮之前的只读准备：模型、用户设置、平台规则、上下文窗口并行读取，同时预热计费准备。
+ * 开轮之前的只读准备：模型、用户设置、平台规则、记忆配置并行读取，同时预热计费准备。
+ * 最新记忆单独并行读取、有短截止且永不 reject，不进入下面的等待。
  *
  * 都放在写入之前：这里抛异常时会话还没被动过，不会留下没有回复的孤儿 user 行。
  * 准备期与首字共用路由入口开始的同一份预算，超时直接抛 FirstTokenDeadlineError。
@@ -96,13 +98,14 @@ export async function prepareTurnInputs(input: {
     payer: { userId, chargeId, log, signal: preparationSignal },
   });
   void executionPreparation.catch(() => undefined);
-  const [model, generationContext, instructions, windowLimits] =
+  const storyMemory = readStoryMemoryForTurn(input.sessionId);
+  const [model, generationContext, instructions, storyMemoryConfig] =
     await withConversationPreparationDeadline(
       Promise.all([
         modelPromise,
         generationContextPromise,
         instructionsPromise,
-        fetchContextWindowLimits(),
+        fetchStoryMemoryConfig(),
         // Ownership is already established. Recover stale writes concurrently
         // with independent reads, but always finish recovery before startTurn.
         input.history.recoverStaleStreaming(input.sessionId),
@@ -123,7 +126,8 @@ export async function prepareTurnInputs(input: {
     userConfig: generationContext.config,
     displayName: generationContext.displayName,
     instructions,
-    windowLimits,
+    storyMemoryConfig,
+    storyMemory,
     executionPreparation,
     preparationSignal,
   };

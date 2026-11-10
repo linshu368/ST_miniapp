@@ -16,7 +16,8 @@
 
 - `billing/`：角色免费额度与 usage 定价纯逻辑。
 - `community/`：官方群配置与 Telegram Bot API 客户端。
-- `conversations/`：`generate.ts` 一轮编排，`history.ts` 展开历史，`context-window.ts` 水位窗口，`sse.ts` 事件编码，`errors.ts` 错误归一，`user-placeholder.ts` 昵称占位。
+- `story-memory/`：正文字数水位（`window-plan.ts`）、生成链路接入（`turn.ts`）、压缩任务与 worker、结果校验。
+- `conversations/`：`generate.ts` 一轮编排，`history.ts` 展开历史，`sse.ts` 事件编码，`errors.ts` 错误归一，`user-placeholder.ts` 昵称占位。
 - `text-postprocess/`：Admin 状态/草稿/发布/回滚编排、隔离编译 Worker、严格配置读取和版本批次查询；不进入 generation/计费出口。
 - `engine/`：`prompt-engine.ts` 组消息，`render-instructions.ts` 渲染模板，`platform-instructions.ts` 取平台规则，`types.ts/index.ts` 定义内部边界；除配置读取外尽量纯函数。
 - `generation/`：生成/计费唯一出口；`execute.ts` 编排，`precheck.ts` 余额预检，`quota.ts` 免费额度，`resolve-model.ts` 模型解析，`prompt-caching.ts` 缓存策略，`upstream.ts` OpenRouter 流，`voice-billing.ts` 语音策略。

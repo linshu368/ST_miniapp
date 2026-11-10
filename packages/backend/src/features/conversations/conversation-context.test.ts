@@ -35,7 +35,7 @@ function row(
 }
 
 describe('assembleConversationContext', () => {
-  it('未泄洪时 truncatedTurns=0，开场白取窗口首轮快照', () => {
+  it('未截断时 truncatedTurns=0，开场白取窗口首轮快照', () => {
     const context = assembleConversationContext({
       windowStartTurn: 1,
       windowRows: [
@@ -52,10 +52,11 @@ describe('assembleConversationContext', () => {
         { role: 'user', content: '你好' },
         { role: 'assistant', content: '新回复' },
       ],
+      turns: [{ turnIndex: 1, userInput: '你好', assistantReply: '新回复' }],
     });
   });
 
-  it('泄洪后开场白仍取 turn 1 快照，不取窗口内第一轮', () => {
+  it('截断后开场白仍取 turn 1 快照，不取窗口内第一轮', () => {
     const context = assembleConversationContext({
       windowStartTurn: 27,
       windowRows: [row(27, '窗口内', '窗口回复', [{ role: 'assistant', content: '不是开场白' }])],
