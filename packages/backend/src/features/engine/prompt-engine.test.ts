@@ -115,6 +115,17 @@ describe('buildPrompt', () => {
     expect(messages.map((m) => m.role)).toEqual(['assistant', 'user', 'assistant', 'user']);
   });
 
+  it('会话记忆是紧跟角色卡的独立 system 消息，在开场白与历史之前，不并入角色卡', () => {
+    const { messages } = buildPrompt(input({ storyMemory: '前情提要：甲已离开。' }));
+    expect(messages[0]).toEqual({ role: 'system', content: '你是莫池来，说话简短。' });
+    expect(messages[1]).toEqual({ role: 'system', content: '前情提要：甲已离开。' });
+    expect(messages[2]).toEqual({ role: 'assistant', content: FIRST_MES });
+    const withoutCard = buildPrompt(
+      input({ character: { ...CHARACTER, system_prompt: '' }, storyMemory: '前情提要：甲。' })
+    ).messages;
+    expect(withoutCard[0]).toEqual({ role: 'system', content: '前情提要：甲。' });
+  });
+
   it('v1 只消费 system_prompt，其余角色卡字段不进 prompt', () => {
     const serialized = JSON.stringify(buildPrompt(input()).messages);
     expect(serialized).not.toContain('不该进 prompt 的字段');

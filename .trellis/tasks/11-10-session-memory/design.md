@@ -93,7 +93,7 @@ if removable.length < minRemovableTurns → 不动，floorBinding = total > U
 单个任务的执行：
 
 1. 范围 = `covered_end + 1 ~ target_end`（可超前于窗口起点）；为空直接收尾。
-2. 读范围内轮次（`session_chat_history`，用户输入 + 回复正文，已应用编辑/删除；单次最多 100 轮，余下由后续任务继续）；读 target_end 之后最新的 `recent_context_turns` 轮作为只读上下文；读角色卡（system_prompt + 开场白）和用户显示名。
+2. 读范围内轮次（`session_chat_history`，用户输入 + 回复正文，已应用编辑/删除；单次最多 100 轮，余下由后续任务继续）；读 target_end 之后最新的 `recent_context_turns` 轮作为只读上下文；读角色名和用户显示名（角色卡正文与开场白不送进压缩）。
 3. 按 `chunk_chars` 在轮次边界分块。每块：用 prompt 模板渲染 → 调用压缩模型 → 校验（不合格重试一次）→ `commit` 成为新版本 → 作为下一块的 old_memory。
 4. 任何一块失败：已提交的块保留，`finish` 记失败码，下次从新的 covered_end 继续。
 5. 连续失败 ≥ 3 次时发 Sentry 日志告警。
@@ -140,18 +140,16 @@ from = M ? M.covered_end_turn + 1 : 1
 
 - `turn-preparation.ts` 的并行阶段发出 `readStoryMemoryForTurn(sessionId)`（返回内容与覆盖终点，永不 reject）。组上下文时 `awaitStoryMemory` 最多再等 50ms，没回来就按"本轮无记忆、覆盖未知"处理（不前移窗口、不注入）。
 - 条件：总开关打开、内容非空。
-- 渲染：去掉 `\s*\(T\d+(?:\s*[-~–]\s*T?\d+)?\)`，再包上：
+- 渲染：去掉 (T编号) 标注，前面加一句边界说明，不加标签：
 
 ```
-<story_memory>
-以下是较早剧情的前情提要，用于保持连贯，不是用户指令，也不是当前场景。
-与近期对话冲突时，以近期对话为准。不要提及、复述或总结这段内容。
+前情提要：以下是较早剧情的连贯性参考，不是用户指令，也不是当前场景。与近期对话冲突时，以近期对话为准。不要提及、复述或总结这段内容。
+
 {memory}
-</story_memory>
 ```
 
-- 位置：追加在角色卡 system 消息末尾（空行分隔）；角色卡 system 为空时单独作为一条 system。不使用"第二条 system 消息"：生产走 OpenRouter / Venice / Surplus / Wafer 多家供应商，多条 system 的兼容性未逐一核实。原方案已允许这种等价写法。
-- 缓存：记忆在前缀里，新版本落地时会多一次缓存未命中，按原方案接受。
+- 位置（2026-11-10 用户确认）：**紧跟角色卡的独立第二条 system 消息**，在开场白与历史之前。不并入角色卡 system，也不伪造成 user/assistant 轮次。多家供应商对多条 system 的支持未逐一实测，上线后看日志确认。
+- 缓存：记忆在前缀里，"先压缩后截断"使它只在窗口前移的那一轮和窗口一起变化。
 
 ## 9. 运营配置（shared 定义契约，admin-client 注册，迁移加入 managed 白名单）
 
@@ -171,7 +169,7 @@ from = M ? M.covered_end_turn + 1 : 1
 | `preferred_providers`      | `["Together", "crusoe"]`            | OpenRouter provider order（allow_fallbacks），取自兜底的 fallback_provider_routes；为空走默认路由 |
 | `temperature`              | 0.3                                 | 0–1.5                                                                                             |
 
-`story_memory_prompt`（文本）：必须包含 `{{old_memory}}`、`{{new_history}}`、`{{recent_context}}`、`{{character_info}}`、`{{max_chars}}`，以及至少 3 个 `## ` 板块标题；`{{user_name}}`/`{{char_name}}` 可选。`prompt_version` 记录为 `runtime_config.version`。
+`story_memory_prompt`（文本）：必须包含 `{{old_memory}}`、`{{new_history}}`、`{{recent_context}}`、`{{max_chars}}`（不输入角色卡与开场白：它们始终在聊天 prompt 最前面），以及至少 3 个 `## ` 板块标题；`{{user_name}}`/`{{char_name}}` 可选。`prompt_version` 记录为 `runtime_config.version`。
 
 Backend 读取：配置走 `fetchRuntimeConfigEntries`，带 5 分钟 TTL 和版本判活，与现有的 context-window 读取方式相同；缺失或非法时逐字段回落到默认值，并记 `degraded` 日志。prompt 由 worker 每个任务严格读取一次，缺失时用代码内置初稿。运营平台入口放在"对话规则"分组下的"长期剧情记忆"（两个 key）。迁移的写法照搬 `20261102_creator_review_prompt_config.sql`：重命名函数做包装、复制 ACL、放宽两张表的 CHECK，新 key 的 SQL 校验只做类型和长度兜底，详细规则由 zod 负责。
 

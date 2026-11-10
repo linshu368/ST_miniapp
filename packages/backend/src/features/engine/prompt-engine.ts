@@ -5,7 +5,8 @@
  *
  * 移植自旧 bot 的 src/infrastructure/ai/SimplePromptEngine.ts 的 _buildMessages()。
  * 最终形状：
- *   [system: 角色卡 system_prompt + 会话长期记忆] + 历史（含虚拟 turn 0 开场白） + [user: 平台规则 + 本轮输入]
+ *   [system: 角色卡 system_prompt] + [system: 会话长期记忆（有则）] + 历史（含虚拟 turn 0 开场白）
+ *   + [user: 平台规则 + 本轮输入]
  *
  * 方案：docs/ST_remove-MVP实施方案.md §六。
  */
@@ -32,11 +33,13 @@ import { renderPlatformInstructions, wrapUserInput } from './render-instructions
 export function buildPrompt(input: EngineInput): EngineOutput {
   const messages: EngineMessage[] = [];
 
-  const systemParts = [input.character.system_prompt, input.storyMemory ?? ''].filter(
-    (part) => part.trim() !== ''
-  );
-  if (systemParts.length > 0) {
-    messages.push({ role: 'system', content: systemParts.join('\n\n') });
+  const systemPrompt = input.character.system_prompt;
+  if (systemPrompt.trim() !== '') {
+    messages.push({ role: 'system', content: systemPrompt });
+  }
+  // 会话记忆是独立的第二条 system，紧跟角色卡、在开场白与历史之前；不并入角色卡，也不伪造成对话轮次。
+  if (input.storyMemory?.trim()) {
+    messages.push({ role: 'system', content: input.storyMemory });
   }
 
   for (const message of input.history) {

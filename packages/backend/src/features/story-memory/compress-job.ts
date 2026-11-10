@@ -13,7 +13,6 @@ import {
   StoryMemoryCompressError,
 } from '../generation/story-memory-compress.js';
 import { characters, userSettings } from '../conversations/turn-repositories.js';
-import { replaceUserPlaceholder } from '@miniapp/shared';
 import type { StoryMemoryPromptTemplate } from './config.js';
 import {
   countChars,
@@ -73,6 +72,10 @@ export function chunkTurns(turns: StoryTurn[], chunkChars: number): StoryTurn[][
   return chunks;
 }
 
+/**
+ * 只取名字。角色卡 system prompt 与开场白始终在聊天 prompt 最前面、从不被截断，
+ * 不需要压缩，也不送进压缩输入。
+ */
 export async function loadStoryContext(job: {
   sessionId: string;
   userId: string;
@@ -82,17 +85,7 @@ export async function loadStoryContext(job: {
     characters().requireCard(job.characterId, job.userId, job.sessionId),
     userSettings().getDisplayName(job.userId),
   ]);
-  const cardText = [
-    card.system_prompt.trim(),
-    card.first_mes.trim() && `【开场白】\n${card.first_mes.trim()}`,
-  ]
-    .filter(Boolean)
-    .join('\n\n');
-  return {
-    userName: displayName,
-    charName: card.name,
-    characterInfo: replaceUserPlaceholder(cardText, displayName) || '（无）',
-  };
+  return { userName: displayName, charName: card.name };
 }
 
 /** 渲染 prompt → 调用压缩模型 → 校验；不合格重试一次，仍不合格抛出拒绝原因。 */
@@ -168,7 +161,6 @@ export async function runStoryMemoryJob(
         user_name: story.userName,
         char_name: story.charName,
         max_chars: String(ctx.config.memory_max_chars),
-        character_info: story.characterInfo,
         old_memory: memory ?? '（空）',
         new_history: newHistory,
         recent_context: recentText,

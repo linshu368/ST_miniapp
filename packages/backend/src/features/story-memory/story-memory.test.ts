@@ -158,7 +158,7 @@ describe('text helpers', () => {
 
   it('strips turn labels in all supported shapes', () => {
     expect(stripTurnLabels('甲出场 (T3)。乙离开（T5-T9）。丙 (T2、T4)')).toBe('甲出场。乙离开。丙');
-    expect(renderStoryMemoryBlock('甲 (T1)')).toContain('\n甲\n</story_memory>');
+    expect(renderStoryMemoryBlock('甲 (T1)')).toMatch(/^前情提要：.*\n\n甲$/);
   });
 
   it('renders turns with body only and substitutes placeholders once', () => {

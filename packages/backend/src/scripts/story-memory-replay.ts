@@ -89,7 +89,6 @@ async function main() {
         user_name: story.userName,
         char_name: story.charName,
         max_chars: String(config.memory_max_chars),
-        character_info: story.characterInfo,
         old_memory: memory ?? '（空）',
         new_history: newHistory,
         // Offline replay has no live window; the next chunk stands in as recent context.
