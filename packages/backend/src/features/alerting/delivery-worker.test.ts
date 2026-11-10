@@ -147,4 +147,42 @@ describe('AlertDeliveryWorker', () => {
     await expect(worker.deliverOne()).resolves.toBe('disabled');
     expect(sink.deliver).not.toHaveBeenCalled();
   });
+
+  it.each(['firing', 'recovered'] as const)(
+    'delivers the dedicated payment probe %s notification',
+    async (transition) => {
+      state.row = {
+        id: 1n,
+        attempt_count: 1,
+        notification_key: `test:payment:upstream-create-probe:alipay:${transition}:x`,
+        payload: {
+          severity: 'P1',
+          transition,
+          incident_fingerprint: 'test:payment:upstream-create-probe:alipay',
+        },
+      };
+      const sink = { deliver: vi.fn().mockResolvedValue({ kind: 'succeeded' }) };
+      expect(
+        await new AlertDeliveryWorker(sink as never, log, async () => config).deliverOne()
+      ).toBe('sent');
+      expect(sink.deliver).toHaveBeenCalledOnce();
+    }
+  );
+
+  it.each([
+    'test:payment:upstream-create-probe:all',
+    'test:payment:upstream-create-probe:alipay:extra',
+  ])('does not broaden the probe exception to %s', async (fingerprint) => {
+    state.row = {
+      id: 1n,
+      attempt_count: 1,
+      notification_key: 'x',
+      payload: { severity: 'P1', incident_fingerprint: fingerprint },
+    };
+    const sink = { deliver: vi.fn() };
+    expect(await new AlertDeliveryWorker(sink as never, log, async () => config).deliverOne()).toBe(
+      'abandoned'
+    );
+    expect(sink.deliver).not.toHaveBeenCalled();
+  });
 });

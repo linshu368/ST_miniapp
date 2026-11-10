@@ -13,6 +13,7 @@
     "payment:expire-orders": "tsx src/scripts/expire-payment-orders.ts",
     "payment:reconcile-orders": "tsx src/scripts/reconcile-payment-orders.ts",
     "payment:callback-report": "tsx src/scripts/payment-callback-report.ts",
+    "payment:probe": "tsx src/scripts/payment-availability-probe.ts",
     "vip:send-expiry-reminders": "tsx src/scripts/send-vip-expiry-reminders.ts",
     "story-memory:replay": "tsx src/scripts/story-memory-replay.ts",
     "image-plaza:seed": "tsx src/scripts/import-image-plaza-seed.ts",
