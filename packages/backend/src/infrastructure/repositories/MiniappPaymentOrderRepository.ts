@@ -206,13 +206,12 @@ export class MiniappPaymentOrderRepository {
     return typeof data === 'number' ? data : 0;
   }
 
-  /**
-   * 对账候选：最近创建、还没履约、有平台单号的订单。expired 也要带上——本地 15 分钟就判过期，
-   * 平台收银台却开 30 分钟，用户晚付的钱靠这里补账。
-   */
+  /** 包含建单响应丢失、无交易号的易支付订单；按持久化轮询时间排序避免慢单饿死后续订单。 */
   async listRecentUnsettled(input: {
     since: string;
     limit: number;
+    now: string;
+    signal?: AbortSignal;
   }): Promise<MiniappPaymentOrderRow[]> {
     const { data, error } = await this.db
       .from('payment_orders')
@@ -220,16 +219,30 @@ export class MiniappPaymentOrderRepository {
       .in('status', ['pending', 'expired'])
       .eq('credits_added', false)
       .eq('fulfillment_applied', false)
-      .not('provider_transaction_id', 'is', null)
+      .like('id', 'EP%')
       .gte('created_at', input.since)
-      .order('created_at', { ascending: true })
-      .limit(input.limit);
+      .lte('next_reconcile_at', input.now)
+      .order('next_reconcile_at', { ascending: true })
+      .order('id', { ascending: true })
+      .limit(input.limit)
+      .abortSignal(input.signal ?? AbortSignal.timeout(5_000));
 
     if (error) throw new Error(`查询待对账支付订单失败：${error.message}`);
     return (data ?? []) as MiniappPaymentOrderRow[];
   }
 
-  /** 平台已明确判定未支付终态时提前关单；仍是可被迟到确认重开的 expired，而不是 failed。 */
+  /** 查询前先排到队尾；崩溃后到期可重试，多实例重复只读查询仍由结算幂等兜底。 */
+  async scheduleReconciliation(id: string, nextAt: string, signal?: AbortSignal): Promise<void> {
+    const { error } = await this.db
+      .from('payment_orders')
+      .update({ next_reconcile_at: nextAt })
+      .eq('id', id)
+      .in('status', ['pending', 'expired'])
+      .abortSignal(signal ?? AbortSignal.timeout(5_000));
+    if (error) throw new Error('安排支付对账失败', { cause: error });
+  }
+
+  /** 查单确认未支付且超过本地期限后标记过期；迟到支付仍允许恢复履约。 */
   async expirePendingById(id: string): Promise<boolean> {
     const { data, error } = await this.db
       .from('payment_orders')
@@ -270,25 +283,29 @@ export class MiniappPaymentOrderRepository {
     if (error) throw new Error(`恢复超时支付订单失败：${error.message}`);
   }
 
-  /** 建单成功后记下供应商交易号，查单靠它。只写一次：不覆盖已有值，也不碰已离开 pending 的订单。 */
+  /** 以 CAS 固定首次交易号，允许通知先到/重复关联，永远不覆盖其他交易号。 */
   async attachProviderTransaction(id: string, providerTransactionId: string): Promise<boolean> {
     const { data, error } = await this.db
       .from('payment_orders')
       .update({ provider_transaction_id: providerTransactionId })
       .eq('id', id)
-      .eq('status', 'pending')
+      .in('status', ['pending', 'expired'])
       .is('provider_transaction_id', null)
       .select('id')
       .maybeSingle();
     if (error) throw new Error(`记录支付平台单号失败：${error.message}`);
-    return data !== null;
+    if (data !== null) return true;
+    const existing = await this.findById(id);
+    return existing?.provider_transaction_id === providerTransactionId;
   }
 
   async markFailed(id: string): Promise<void> {
     const { error } = await this.db
       .from('payment_orders')
       .update({ status: 'failed' })
-      .eq('id', id);
+      .eq('id', id)
+      .eq('status', 'pending')
+      .is('provider_transaction_id', null);
     if (error) throw new Error(`标记支付订单失败失败：${error.message}`);
   }
 

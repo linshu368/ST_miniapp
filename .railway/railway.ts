@@ -74,6 +74,7 @@ const COMMON_API_VARIABLES = [
   'OPENAI_MODEL',
   'PAYMENT_ENABLED',
   'PAYMENT_RETURN_URL',
+  'PAYMENT_NOTIFY_URL',
   'PROD_SUPABASE_PROJECT_REF',
   'POSTHOG_API_KEY',
   'POSTHOG_HOST',
@@ -92,9 +93,9 @@ const COMMON_API_VARIABLES = [
   // Provider variables are preserved on the API service and explicitly referenced by the monitor.
   'VENICE_API_BASE_URL',
   'VENICE_API_KEY',
-  'VEXUTOPIA_API_KEY',
-  'VEXUTOPIA_BASE_URL',
-  'VEXUTOPIA_WEBHOOK_SECRET',
+  'TTZF_APP_ID',
+  'TTZF_APP_KEY',
+  'TTZF_BASE_URL',
   'Z_MODEL',
 ] as const;
 const DEVELOPMENT_API_VARIABLES = [
@@ -174,9 +175,18 @@ export default defineRailway((ctx) => {
         }),
     PAYMENT_ENABLED: stminiapp.env.PAYMENT_ENABLED,
     PAYMENT_RETURN_URL: stminiapp.env.PAYMENT_RETURN_URL,
-    // 对账 worker / 过期 cron 要批量查单，必须拿到同一把 API Key；Webhook secret 只有 API 服务需要。
-    VEXUTOPIA_API_KEY: stminiapp.env.VEXUTOPIA_API_KEY,
-    VEXUTOPIA_BASE_URL: stminiapp.env.VEXUTOPIA_BASE_URL,
+    // 同环境的通知与查单使用同一应用凭据；关闭新建单后仍保留在途订单恢复。
+    TTZF_APP_ID: stminiapp.env.TTZF_APP_ID,
+    TTZF_APP_KEY: stminiapp.env.TTZF_APP_KEY,
+    TTZF_BASE_URL: stminiapp.env.TTZF_BASE_URL,
+  };
+
+  const paymentAlertMonitorEnv = {
+    ...paymentCronEnv,
+    VENICE_API_BASE_URL: stminiapp.env.VENICE_API_BASE_URL,
+    VENICE_API_KEY: stminiapp.env.VENICE_API_KEY,
+    SURPLUS_API_BASE_URL: stminiapp.env.SURPLUS_API_BASE_URL,
+    SURPLUS_API_KEY: stminiapp.env.SURPLUS_API_KEY,
   };
 
   const paymentAlertMonitorEnv = {

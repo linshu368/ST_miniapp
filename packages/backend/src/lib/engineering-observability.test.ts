@@ -216,6 +216,96 @@ describe('engineering telemetry boundary', () => {
     ).toBe(true);
   });
 
+  it('retains every CDN experiment sample with sub-request and hls.js load evidence', async () => {
+    const sink = await receiver();
+    stop = startEngineeringTelemetry({ ...options, endpoint: sink.endpoint });
+    const report = DramaTimingReportSchema.parse({
+      type: 'playback',
+      phase: 'final',
+      delivery: {
+        experimentId: 'drama-stream-prod-20261104-v1',
+        group: 'stream',
+        provider: 'stream',
+        reason: 'assigned',
+      },
+      id: 'fast-stream',
+      entry: 'cover',
+      outcome: 'playing',
+      elapsedMs: 1_200,
+      marks: { source_set: 100, metadata: 600, first_frame: 1_200, playing: 1_200 },
+      stages: {},
+      queries: [],
+      diagnostics: {
+        network: {
+          status: 'limited',
+          entries: [
+            {
+              startMs: 100,
+              fetchStartMs: 100,
+              responseEndMs: 300,
+              visibility: 'limited',
+              kind: 'segment',
+            },
+          ],
+          truncated: false,
+        },
+        hls: {
+          entries: [
+            {
+              kind: 'fragment',
+              track: 'main',
+              level: 0,
+              bitrate: 400_000,
+              sn: 1,
+              positionMs: 0,
+              mediaMs: 4_000,
+              startMs: 120,
+              firstByteMs: 380,
+              endMs: 520,
+              appendedMs: 540,
+              bytes: 83_000,
+            },
+          ],
+          truncated: false,
+        },
+      },
+    });
+    observeDramaStartupDiagnostic(report);
+    observeDramaStartupDiagnostic({
+      ...report,
+      type: 'seek',
+      id: 'fast-stream-seek',
+      elapsedMs: 800,
+      frameMethod: 'video_frame_callback',
+      seek: {
+        definition: 'drama_seek_resume_v1',
+        targetMs: 40_000,
+        direction: 'forward',
+        buffered: 'no',
+        wasPlaying: true,
+        seekedMs: 600,
+        frameMs: 700,
+        playingMs: 800,
+      },
+    });
+    observeDramaStartupDiagnostic({ ...report, delivery: undefined, id: 'fast-default' });
+    await stop();
+    const bodies = sink.received
+      .filter((r) => r.path === '/v1/logs')
+      .flatMap((r) =>
+        (r.body as unknown as LogsPayload).resourceLogs.flatMap((resource) =>
+          resource.scopeLogs.flatMap((scope) => scope.logRecords)
+        )
+      )
+      .map((r) => JSON.parse(r.body.stringValue) as DramaTimingReport);
+    // 非实验流量仍只留起播 ≥5s / 快进 ≥3s。
+    expect(bodies.map((b) => b.id)).toEqual(['fast-stream', 'fast-stream-seek']);
+    expect(bodies[0]?.diagnostics).toMatchObject({
+      network: { entries: [{ kind: 'segment' }] },
+      hls: { entries: [{ kind: 'fragment', firstByteMs: 380, bytes: 83_000 }] },
+    });
+  });
+
   it('does not connect when disabled and rejects raw URL/identifier route labels', async () => {
     const sink = await receiver();
     stop = startEngineeringTelemetry({ ...options, enabled: false, endpoint: sink.endpoint });

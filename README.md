@@ -124,7 +124,7 @@ pnpm --filter @miniapp/backend image-plaza:seed -- --input <xlsx>
 | CS 服务       | `CS_SERVICE_URL`, `CS_SERVICE_SECRET`                                                                               | 独立客服服务（ST_cs_platform）地址和共享密钥；Bot 转发与 `/api/support/*` 代理使用，`CS_SERVICE_ENABLED` 已废弃 |
 | LLM           | `LLM_UPSTREAM_URL`, `LLM_API_KEY`, `OPENAI_API_KEY`, `LLM_DEFAULT_MODEL`                                            | 生成上游与默认模型                                                                                              |
 | Voice         | `DEEPSEEK_*`, `MINIMAX_*`                                                                                           | 语音文案与 TTS；关键 key 缺失时语音不可用                                                                       |
-| Payment       | `PAYMENT_ENABLED`, `PAYMENT_RETURN_URL`, `VEXUTOPIA_API_KEY`, `VEXUTOPIA_BASE_URL`, `VEXUTOPIA_WEBHOOK_SECRET`      | 支付开关、https 回跳、Vexutopia 密钥与回调验签（API Key 也要配给对账 Worker / 过期 Cron）                       |
+| Payment       | `PAYMENT_ENABLED`, `PAYMENT_RETURN_URL`, `PAYMENT_NOTIFY_URL`, `TTZF_APP_ID`, `TTZF_APP_KEY`, `TTZF_BASE_URL`       | TTZF 易支付；应用 ID/密钥也需配置到对账 Worker 与过期 Cron。关新建单不停止已配置订单的通知/查单恢复。           |
 | Admin CLI     | `ADMIN_CLI_ALLOWED_EMAILS`                                                                                          | 运营平台 CLI 免密登录白名单（逗号分隔邮箱）；为空时 CLI 登录接口关闭                                            |
 | Telemetry     | `SENTRY_*`, `LOG_LEVEL`, `LOG_PRETTY`                                                                               | Sentry 和日志                                                                                                   |
 | Feature/asset | `DEFAULT_USER_AVATAR_URL`, `CHARACTER_STORAGE_BUCKET`, `CHAT_HISTORY_SYNC_ENABLED`, `LOBBY_RANKING_REFRESH_ENABLED` | 资源和运行开关                                                                                                  |
@@ -135,7 +135,7 @@ Venice 使用 `VENICE_API_BASE_URL` / `VENICE_API_KEY`，Surplus Intelligence �
 
 ### Frontend
 
-主要包括 `NEXT_PUBLIC_API_URL`、`NEXT_PUBLIC_DEFAULT_USER_AVATAR_URL`、`NEXT_PUBLIC_SENTRY_DSN`、`NEXT_PUBLIC_SENTRY_ENVIRONMENT`。仓库当前有本地 `.env.local`，不得把其中值复制到文档或日志；新增变量应补安全的 example 模板。
+主要包括 `NEXT_PUBLIC_API_URL`、`NEXT_PUBLIC_DEFAULT_USER_AVATAR_URL`、`NEXT_PUBLIC_SENTRY_DSN`、`NEXT_PUBLIC_SENTRY_ENVIRONMENT`；可选 `NEXT_PUBLIC_DRAMA_STREAM_ORIGIN`（短剧 Stream 播放域名，仅用于 preconnect，本地不配不影响功能）。仓库当前有本地 `.env.local`，不得把其中值复制到文档或日志；新增变量应补安全的 example 模板。
 
 ### Admin
 
@@ -224,3 +224,7 @@ pnpm supabase:link:test
 ### VIP 混合奖励（2026-11-05）
 
 `20261105_vip_mixed_rewards.sql` 先经测试环境再生产执行，随后发布应用，最后通过运营 CLI 发布混合签到与开卡赠礼配置。旧签到数字及旧订单继续兼容；开卡奖励使用订单两钱包快照，同事务入账且不增加实付收入。回退先恢复旧配置，保留混合发放支持处理在途订单。详见 `.trellis/tasks/11-05-vip-mixed-rewards/`。
+
+支付接入：TTZF 易支付建单不发送可选 `param`，回调与查单不要求回传该字段；环境隔离依赖独立回调地址、应用凭据及数据库，本环境订单仍需通过签名、商户、渠道、交易号及金额校验。见 `ops/railway/README.md`。
+
+查单响应兼容厂商返回 `pid: null` 或省略 pid，有值时仍核对应用 ID；查单请求凭据、回调 pid/签名和订单结算校验保持必需。
