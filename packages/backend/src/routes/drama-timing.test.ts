@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   denied: false,
   failDb: false,
   hasVideos: true,
+  dbStream: false,
   signOk: true,
   info: vi.fn(),
   metric: vi.fn(),
@@ -30,9 +31,20 @@ vi.mock('../features/drama/repository.js', () => ({
       if (mocks.failDb) throw new Error('drama playback read failed');
       return {
         id: ID,
-        videos: mocks.hasVideos
-          ? [{ id: VIDEO, upload_succeeded: true, object_path: 'private-object-path' }]
-          : [],
+        videos: !mocks.hasVideos
+          ? []
+          : mocks.dbStream
+            ? [
+                {
+                  id: VIDEO,
+                  upload_succeeded: true,
+                  object_path: null,
+                  storage_provider: 'cloudflare_stream',
+                  stream_uid: 'ab'.repeat(16),
+                  stream_ready_at: '2026-11-10T00:00:00Z',
+                },
+              ]
+            : [{ id: VIDEO, upload_succeeded: true, object_path: 'private-object-path' }],
       };
     }
     async listDramas() {
@@ -91,6 +103,7 @@ beforeEach(() => {
     denied: false,
     failDb: false,
     hasVideos: true,
+    dbStream: false,
     signOk: true,
   });
   vi.spyOn(performance, 'now').mockImplementation(() => mocks.now);
@@ -106,7 +119,10 @@ beforeEach(() => {
     }
   );
 });
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllEnvs();
+});
 
 async function request(path = `/api/dramas/${ID}/play`, payload?: object) {
   const app = Fastify({ logger: false, genReqId: (req) => String(req.headers['x-request-id']) });
@@ -224,6 +240,54 @@ it('makes signing failure measurable without logging the signing exception', asy
   expect(logged().delivery).toMatchObject({ provider: 'unknown', reason: 'unavailable' });
   expect(mocks.sign).not.toHaveBeenCalled();
   expect(JSON.stringify(mocks.info.mock.calls)).not.toContain('unit signing failure');
+});
+
+describe('Stream video stored in the database', () => {
+  beforeEach(() => {
+    mocks.dbStream = true;
+    vi.stubEnv('DRAMA_STREAM_HOST', 'customer-unit.cloudflarestream.com');
+    vi.stubEnv('DRAMA_STREAM_KEY_ID', 'unit-key');
+    vi.stubEnv('DRAMA_STREAM_PRIVATE_KEY', 'unit-private-key');
+  });
+
+  it('signs HLS from the stored uid for any client and never touches the Supabase signer', async () => {
+    for (const path of [
+      `/api/dramas/${ID}/play`,
+      `/api/dramas/${ID}/play?format=hls&fallback=mp4`,
+    ]) {
+      const result = await request(path);
+      expect(result.json().data.playback).toMatchObject({
+        video_id: VIDEO,
+        playable: true,
+        format: 'hls',
+      });
+      expect(result.json().data.playback.delivery).toBeUndefined();
+    }
+    expect(mocks.sign).not.toHaveBeenCalled();
+  });
+
+  it('reports a signing failure as unplayable without an error status or a Supabase retry', async () => {
+    mocks.streamSignFailed = true;
+    const result = await request();
+    expect(result.statusCode).toBe(200);
+    expect(result.json().data.playback).toMatchObject({ playable: false, play_url: null });
+    expect(mocks.sign).not.toHaveBeenCalled();
+    expect(logged()).toMatchObject({ error_stage: 'sign', outcome: 'unplayable' });
+  });
+
+  it('is unplayable (not an error) while signing is not configured', async () => {
+    vi.stubEnv('DRAMA_STREAM_PRIVATE_KEY', '');
+    const result = await request();
+    expect(result.json().data.playback).toMatchObject({ playable: false, play_url: null });
+  });
+
+  it('stage two refuses a legacy Supabase row', async () => {
+    mocks.dbStream = false;
+    vi.stubEnv('DRAMA_LEGACY_SUPABASE_ENABLED', 'false');
+    const result = await request();
+    expect(result.json().data.playback).toMatchObject({ playable: false, play_url: null });
+    expect(mocks.sign).not.toHaveBeenCalled();
+  });
 });
 
 describe('POST /api/dramas/play（固定地址，使 CORS 预检可缓存）', () => {

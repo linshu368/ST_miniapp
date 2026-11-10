@@ -4,11 +4,12 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { ok, fail } from '@miniapp/shared';
 import type { DramaDelivery, GetDramaPlaybackData } from '@miniapp/shared';
-import { isPlayable } from '../features/drama/assemble.js';
+import { playableVideos } from '../features/drama/assemble.js';
 import { selectDramaDelivery } from '../features/drama/delivery.js';
 import type { DramaRepository } from '../features/drama/repository.js';
 import type { DramaSignedUrlCache, DramaSigningObservation } from '../features/drama/signed-url.js';
 import { selectStreamDelivery, signStreamPlayback } from '../features/drama/stream.js';
+import { getDramaStreamSigningConfig } from '../platform/runtime-config.js';
 import type {
   DramaManifestObservation,
   DramaStreamManifestCache,
@@ -42,8 +43,15 @@ export interface DramaPlayInput {
   options: { video_id?: string; format?: 'hls'; fallback?: 'mp4' };
 }
 
+/** A/B experiment videos carry a delivery group; videos stored in the database as Stream have none. */
+interface StreamSource {
+  config: Parameters<typeof signStreamPlayback>[0];
+  video: { uid: string; videoId: string };
+  delivery?: DramaDelivery;
+}
+
 async function sendStreamPlayback(
-  stream: NonNullable<ReturnType<typeof selectStreamDelivery>>,
+  stream: StreamSource,
   request: FastifyRequest,
   reply: FastifyReply,
   streamManifests: DramaStreamManifestCache,
@@ -72,7 +80,9 @@ async function sendStreamPlayback(
     );
   } catch {
     // No token or signing error text is safe to include in telemetry.
-    timing.delivery = { ...stream.delivery, provider: 'unknown', reason: 'unavailable' };
+    timing.delivery = stream.delivery
+      ? { ...stream.delivery, provider: 'unknown', reason: 'unavailable' }
+      : undefined;
     timing.playable = false;
     await reply.send(
       ok<GetDramaPlaybackData>({
@@ -110,9 +120,8 @@ export function createDramaPlayHandler({
     if (!drama) return reply.status(404).send(fail('NOT_FOUND', '短剧不存在'));
 
     // 指定了就必须属于这部剧；不属于和不存在一律 404，不泄露该视频是否存在
-    const selected = await measure(request, 'assemble', () =>
-      videoId ? drama.videos.find((v) => v.id === videoId) : drama.videos.find(isPlayable)
-    );
+    const playable = await measure(request, 'assemble', () => playableVideos(drama));
+    const selected = videoId ? drama.videos.find((v) => v.id === videoId) : playable[0];
     if (videoId && !selected) {
       return reply.status(404).send(fail('NOT_FOUND', '视频不存在'));
     }
@@ -121,7 +130,7 @@ export function createDramaPlayHandler({
     reply.header('Cache-Control', 'private, no-store');
 
     // 未就绪的不签名，直接回不可播，让前端显示「暂无可用集数」
-    if (!selected || !isPlayable(selected)) {
+    if (!selected || !playable.includes(selected)) {
       timings.get(request)!.playable = false;
       const { delivery } = selectDramaDelivery(request.user!.id);
       const unavailable = delivery
@@ -138,6 +147,21 @@ export function createDramaPlayHandler({
             delivery: unavailable,
           },
         })
+      );
+    }
+
+    // A video migrated to Stream has no Supabase object: the database row owns its source.
+    if (selected.storage_provider === 'cloudflare_stream') {
+      return sendStreamPlayback(
+        {
+          config: { signing: getDramaStreamSigningConfig() },
+          video: { uid: selected.stream_uid!, videoId: selected.id },
+        },
+        request,
+        reply,
+        streamManifests,
+        timings,
+        measure
       );
     }
 
