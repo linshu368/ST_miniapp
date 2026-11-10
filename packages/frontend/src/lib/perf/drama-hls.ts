@@ -31,6 +31,35 @@ const coversTarget = (start: number, duration: number | undefined, target: numbe
   start <= target &&
   target < start + duration;
 
+const relativeMs = (origin: number, time: number) =>
+  positive(time) === undefined ? undefined : round(time - origin);
+
+/** 独立成顶层函数只是为了不让 recordHlsLoads 继续变长，不涉及可复用性。 */
+function loadTimingFields(origin: number, stats: LoaderStats) {
+  const startMs = relativeMs(origin, stats.loading.start);
+  const endMs = relativeMs(origin, stats.loading.end);
+  if (startMs === undefined || endMs === undefined) return undefined;
+  const firstByteMs = relativeMs(origin, stats.loading.first);
+  const bytes = positive(stats.total) ?? positive(stats.loaded);
+  return {
+    startMs,
+    endMs,
+    ...(firstByteMs !== undefined ? { firstByteMs } : {}),
+    ...(bytes !== undefined && bytes <= 1e12 ? { bytes: Math.round(bytes) } : {}),
+  };
+}
+
+function loadLevelFields(hls: HlsPlayer, index: number) {
+  const level = hls.levels[index];
+  const bitrate = positive(level?.bitrate);
+  const height = positive(level?.height);
+  return {
+    ...(Number.isInteger(index) && index >= 0 && index <= 64 ? { level: index } : {}),
+    ...(bitrate !== undefined && bitrate <= 1e9 ? { bitrate: Math.round(bitrate) } : {}),
+    ...(height !== undefined && height <= 32768 ? { height: Math.round(height) } : {}),
+  };
+}
+
 /**
  * 被动记录 hls.js 自带的加载统计（performance.now 时钟，与起播计时同源），
  * 跨域无 Timing-Allow-Origin 时仍有首字节与字节数。只取数值，不碰 URL。
@@ -41,37 +70,23 @@ export function recordHlsLoads(
   origin: number,
   onChange: (snapshot: HlsLoadSnapshot) => void,
   /** 快进目标（秒）。给出时，覆盖该时间点的分片会被标记 coversTarget。 */
-  targetSeconds?: number
+  targetSeconds?: number,
+  /** 本次主清单是否来自后端内联下发；原样放进每次 snapshot，不参与加载逻辑。 */
+  manifestInline?: boolean
 ): () => void {
   const entries: DramaHlsLoad[] = [];
   const fragments = new Map<Fragment, DramaHlsLoad>();
   let truncated = false;
   let stopped = false;
-  const at = (time: number) => (positive(time) === undefined ? undefined : round(time - origin));
-  const timing = (stats: LoaderStats) => {
-    const startMs = at(stats.loading.start);
-    const endMs = at(stats.loading.end);
-    if (startMs === undefined || endMs === undefined) return;
-    const firstByteMs = at(stats.loading.first);
-    const bytes = positive(stats.total) ?? positive(stats.loaded);
-    return {
-      startMs,
-      endMs,
-      ...(firstByteMs !== undefined ? { firstByteMs } : {}),
-      ...(bytes !== undefined && bytes <= 1e12 ? { bytes: Math.round(bytes) } : {}),
-    };
-  };
-  const levelFields = (index: number) => {
-    const level = hls.levels[index];
-    const bitrate = positive(level?.bitrate);
-    const height = positive(level?.height);
-    return {
-      ...(Number.isInteger(index) && index >= 0 && index <= 64 ? { level: index } : {}),
-      ...(bitrate !== undefined && bitrate <= 1e9 ? { bitrate: Math.round(bitrate) } : {}),
-      ...(height !== undefined && height <= 32768 ? { height: Math.round(height) } : {}),
-    };
-  };
-  const emit = () => onChange({ entries: entries.map((entry) => ({ ...entry })), truncated });
+  const at = (time: number) => relativeMs(origin, time);
+  const timing = (stats: LoaderStats) => loadTimingFields(origin, stats);
+  const levelFields = (index: number) => loadLevelFields(hls, index);
+  const emit = () =>
+    onChange({
+      entries: entries.map((entry) => ({ ...entry })),
+      truncated,
+      ...(manifestInline ? { manifestInline: true } : {}),
+    });
   const push = (entry: DramaHlsLoad, frag?: Fragment) => {
     if (entries.length >= DRAMA_TIMING_MAX_RESOURCES) {
       truncated = true;
@@ -160,11 +175,17 @@ export function recordHlsLoads(
 export function observeDramaHls(
   hls: HlsPlayer,
   events: HlsEvents,
-  timing: DramaPlaybackTiming
+  timing: DramaPlaybackTiming,
+  manifestInline?: boolean
 ): void {
   if (timing.outcome) return;
-  const stop = recordHlsLoads(hls, events, timing.startedAt, (snapshot) =>
-    timing.hlsTiming(snapshot)
+  const stop = recordHlsLoads(
+    hls,
+    events,
+    timing.startedAt,
+    (snapshot) => timing.hlsTiming(snapshot),
+    undefined,
+    manifestInline
   );
   timing.onFinish(stop);
 }

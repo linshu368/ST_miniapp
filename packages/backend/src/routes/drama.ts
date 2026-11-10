@@ -12,6 +12,7 @@ import { requireTelegramAuth } from '../middleware/auth.js';
 import { DramaRepository } from '../features/drama/repository.js';
 import { toDramaDetail, toDramaSummary } from '../features/drama/assemble.js';
 import { DramaSignedUrlCache } from '../features/drama/signed-url.js';
+import { DramaStreamManifestCache } from '../features/drama/stream-manifest-cache.js';
 import { buildCoverUrl } from '../features/drama/cover-url.js';
 import {
   createDramaPlayHandler,
@@ -25,9 +26,10 @@ export default async function dramaRoutes(app: FastifyInstance) {
   const repo = new DramaRepository();
   // 进程内缓存，整个 app 共用一份
   const signedUrls = new DramaSignedUrlCache();
+  const streamManifests = new DramaStreamManifestCache();
   const timings = new WeakMap<FastifyRequest, DramaRequestTiming>();
   app.addHook('onRequest', async (request) => {
-    timings.set(request, { stages: {}, sign: {} });
+    timings.set(request, { stages: {}, sign: {}, manifest: {} });
   });
   const measure = async <T>(
     request: FastifyRequest,
@@ -63,11 +65,13 @@ export default async function dramaRoutes(app: FastifyInstance) {
       route: request.routeOptions.url ?? 'unmatched',
       outcome,
       sign_cache: timing.sign.cache ?? 'unused',
+      manifest_cache: timing.manifest.cache ?? 'unused',
     };
     observeDramaRequest({
       route: attributes.route,
       outcome,
       signCache: attributes.sign_cache,
+      manifestCache: attributes.manifest_cache,
       stages: timing.stages,
       durationMs: reply.elapsedTime,
     });
@@ -84,6 +88,7 @@ export default async function dramaRoutes(app: FastifyInstance) {
           db_read_ms: timing.stages.db_read,
           assemble_ms: timing.stages.assemble,
           sign_ms: timing.stages.sign,
+          manifest_ms: timing.stages.manifest,
           error_stage: timing.errorStage,
           delivery: timing.delivery,
         },
@@ -126,7 +131,13 @@ export default async function dramaRoutes(app: FastifyInstance) {
     return reply.send(ok<GetDramaByIdData>({ drama: detail }));
   });
 
-  const handlePlay = createDramaPlayHandler({ repo, signedUrls, timings, measure });
+  const handlePlay = createDramaPlayHandler({
+    repo,
+    signedUrls,
+    streamManifests,
+    timings,
+    measure,
+  });
 
   // @frontend-ready: true — 旧客户端使用；新客户端走固定地址的 POST /api/dramas/play
   app.get('/api/dramas/:id/play', { preHandler: [authenticate] }, async (request, reply) => {

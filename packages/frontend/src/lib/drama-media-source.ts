@@ -2,6 +2,7 @@ import type { DramaPlayback, DramaPlaybackEngine } from '@miniapp/shared';
 import type HlsPlayer from 'hls.js';
 import type { MediaAttachedData } from 'hls.js';
 import type { HlsEvents } from '@/lib/perf/drama-hls';
+import { createInlinePlaylistLoader } from '@/lib/drama-inline-manifest-loader';
 
 const owners = new WeakMap<HTMLVideoElement, string>();
 
@@ -140,6 +141,10 @@ export function loadDramaSource(
           startLevel: 0,
           // -1 是 hls.js 的自动默认值；传入续播秒数让第一片直接请求目标分片，不再先拉 sn0 探测带宽。
           startPosition: options?.startPosition ?? -1,
+          // 后端随 /play 内联了主清单时，跳过这一次真实网络请求；子清单/分片仍走真实网络。
+          ...(playback.inline_manifest
+            ? { pLoader: createInlinePlaylistLoader(source, playback.inline_manifest) }
+            : {}),
         });
         destroy = () => hls.destroy();
         try {
