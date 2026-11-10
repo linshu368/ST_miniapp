@@ -526,6 +526,7 @@ export function observeDramaStartupDiagnostic(report: DramaTimingReport): void {
       phase: parsed.data.phase,
       outcome: parsed.data.outcome,
       total_ms: parsed.data.elapsedMs,
+      engine: parsed.data.engine ?? 'unknown',
     },
     JSON.stringify({ event, ...parsed.data })
   );

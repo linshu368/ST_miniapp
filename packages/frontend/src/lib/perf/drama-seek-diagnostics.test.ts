@@ -188,6 +188,7 @@ describe('hls.js seek diagnostics', () => {
       id: 'seek-id',
       dramaId: 'a',
       hls: handle,
+      engine: 'hlsjs_mse',
       now: () => performance.now(),
       emit: (report) => reports.push(report),
     });
@@ -223,6 +224,7 @@ describe('hls.js seek diagnostics', () => {
     const final = reports.find((report) => report.phase === 'final')!;
     // 旧实现里 blob 源会让观测在首次轮询时以 switched 结束。
     expect(final.outcome).toBe('playing');
+    expect(final.engine).toBe('hlsjs_mse');
     const entries = final.diagnostics!.hls!.entries;
     expect(entries.filter((entry) => entry.coversTarget)).toEqual([
       expect.objectContaining({ kind: 'fragment', track: 'main', sn: 2, level: 0 }),
