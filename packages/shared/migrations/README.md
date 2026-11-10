@@ -1,5 +1,16 @@
 # SQL 迁移文件
 
+## 2026-11-10 会话长期记忆与正文字数水位（本地 PG17 验证，远端未执行）
+
+`20261110_story_memory.sql`（domain: experience + admin managed key）。前置：`20261029_conversation_branches.sql`、`20261102_chat_message_overrides.sql`、`20261102_creator_review_prompt_config.sql`。
+
+- 新增 `experience.story_memories`（记忆版本，全部保留）与 `experience.story_memory_jobs`（每会话一行任务状态），均 RLS，service_role 只读，写入只走四个 SECURITY DEFINER RPC（前移+建任务 / 领取 / CAS 提交 / 收尾退避）。均 FK `chat_sessions ON DELETE CASCADE`。
+- 删除按轮数的旧泄洪：两个基础开轮函数里的 `apply_context_window_flood(...)` 调用原位替换为原样返回起点（锚点必须恰好一处，否则整笔失败），DROP 该函数，删除 `max_context_turns` / `retain_context_turns`。开轮 wrapper 链上的同名参数保留但不再使用。
+- `fork_chat_session` 改为 4 参数：按"覆盖终点早于锚点的最新记忆版本"继承原文并复制记忆；删除 5 参数旧版本。
+- `story_memory_config` / `story_memory_prompt` 加入 managed key（包装函数复制原 ACL、放宽两表 CHECK）。不插入 runtime_config 行，Backend 缺省用代码默认值。
+- 验证：`bash scripts/test-story-memory-migration.sh`（先回放分支/覆盖基线，再断言 RPC 行为、分支记忆选择、权限、并发领取与账户级联）。
+- 发布：TEST 单文件 → Backend/Admin → Production 单文件 → Backend/Admin。不准备回滚迁移，问题 forward-fix；不要把 Backend 回退到依赖 SQL 泄洪的版本。
+
 ## 2026-11-10 Surplus Intelligence 调用明细（本地实施，远端未执行）
 
 当前执行入口为 `20261110_surplusintelligence_chat_history_compat.sql`。原 `20261110_surplusintelligence_chat_history.sql` 保留不改：在整份SQL以Windows CRLF提交时，其函数定义转为LF、匹配模板却保留CRLF，可能触发 `Unexpected installed delivery provider branch`。兼容文件完整包含原迁移功能，可直接用于原文件失败回滚后的环境；不需要先成功执行原文件，也不要重跑已记账原文件或加force_rerun绕过。
