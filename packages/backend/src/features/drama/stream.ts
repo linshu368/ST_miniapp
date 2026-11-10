@@ -1,26 +1,13 @@
 import { createHmac, createPrivateKey, sign } from 'node:crypto';
 import type { DramaDelivery, DramaSummary } from '@miniapp/shared';
-import { getDramaStreamCohort, getDramaStreamConfig } from '../../platform/runtime-config.js';
+import { getDramaStreamConfig } from '../../platform/runtime-config.js';
 
 type StreamConfig = NonNullable<ReturnType<typeof getDramaStreamConfig>>;
 
 export function streamExperimentUser(userId: number, config: StreamConfig) {
   const input = `${config.environment}:${config.id}:${userId}`;
-  const bucket =
-    createHmac('sha256', config.key).update(`bucket:${input}`).digest().readUInt32BE(0) % 10000;
-  const cohort = getDramaStreamCohort(config.id);
-  // Keep the public experiment and every other user's hash stable during controlled sampling.
-  const assignedGroup =
-    userId === cohort?.supabase
-      ? ('supabase' as const)
-      : userId === cohort?.stream
-        ? ('stream' as const)
-        : bucket < 5000
-          ? ('stream' as const)
-          : ('supabase' as const);
   return {
     experiment_id: config.id,
-    assigned_group: assignedGroup,
     experiment_user: createHmac('sha256', config.key).update(`user:${input}`).digest('hex'),
   };
 }
@@ -33,26 +20,14 @@ export function pinStreamDramas(dramas: DramaSummary[]): DramaSummary[] {
   return [...dramas].sort((a, b) => (ranks.get(a.id) ?? 30) - (ranks.get(b.id) ?? 30));
 }
 
-export function selectStreamDelivery(
-  userId: number,
-  dramaId: string,
-  videoId: string,
-  retainIdentity = false
-) {
+export function selectStreamDelivery(dramaId: string, videoId: string, retainIdentity = false) {
   const config = getDramaStreamConfig(retainIdentity);
   const video = config?.videos.find((v) => v.dramaId === dramaId && v.videoId === videoId);
   if (!config || !video) return null;
-  const enrollment =
-    createHmac('sha256', config.key)
-      .update(`enrollment:${config.environment}:${config.id}:${userId}`)
-      .digest()
-      .readUInt32BE(0) % 10000;
-  if (!retainIdentity && enrollment >= config.enrollmentBps) return null;
-  const identity = streamExperimentUser(userId, config);
   const delivery: DramaDelivery = {
     experimentId: config.id,
-    group: identity.assigned_group,
-    provider: identity.assigned_group,
+    group: 'stream',
+    provider: 'stream',
     reason: 'assigned',
   };
   return { config, video, delivery };
@@ -60,26 +35,26 @@ export function selectStreamDelivery(
 
 /** Sign locally: no Stream management request participates in the first-frame path. */
 export function signStreamPlayback(config: StreamConfig, uid: string) {
+  if (!config.signing) throw new Error('drama_stream_signing_unavailable');
+  const { host, keyId, privateKey } = config.signing;
   const expires = Math.floor(Date.now() / 1000) + 900;
-  const header = Buffer.from(JSON.stringify({ alg: 'RS256', kid: config.keyId })).toString(
+  const header = Buffer.from(JSON.stringify({ alg: 'RS256', kid: keyId })).toString('base64url');
+  const payload = Buffer.from(JSON.stringify({ sub: uid, kid: keyId, exp: expires })).toString(
     'base64url'
   );
-  const payload = Buffer.from(
-    JSON.stringify({ sub: uid, kid: config.keyId, exp: expires })
-  ).toString('base64url');
   const input = `${header}.${payload}`;
   const signature = sign(
     'RSA-SHA256',
     Buffer.from(input),
     createPrivateKey(
-      config.privateKey.includes('-----BEGIN')
-        ? config.privateKey.replace(/\\n/g, '\n')
-        : Buffer.from(config.privateKey, 'base64')
+      privateKey.includes('-----BEGIN')
+        ? privateKey.replace(/\\n/g, '\n')
+        : Buffer.from(privateKey, 'base64')
     )
   ).toString('base64url');
   return {
     playable: true,
-    play_url: `https://${config.host}/${input}.${signature}/manifest/video.m3u8`,
+    play_url: `https://${host}/${input}.${signature}/manifest/video.m3u8`,
     expires_at: new Date(expires * 1000).toISOString(),
     format: 'hls' as const,
   };
