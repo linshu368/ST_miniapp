@@ -84,6 +84,10 @@ done
 "${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/20261102_chat_message_overrides.sql" >/dev/null
 "${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/20261102_chat_message_overrides.sql" >/dev/null
 "${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/tests/chat_message_overrides.sql"
+"${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/20261110_chat_reply_feedback.sql" >/dev/null
+"${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/20261110_chat_reply_feedback.sql" >/dev/null
+"${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/tests/chat_reply_feedback.sql"
+
 
 # Four competing edits must have exactly one winner, without losing its text.
 task_pids=()
@@ -112,10 +116,27 @@ done
 for task_pid in "${task_pids[@]}"; do wait "$task_pid"; done
 test -s "$task_temp/like-1"
 for task_attempt in 2 3 4; do cmp "$task_temp/like-1" "$task_temp/like-$task_attempt"; done
+# Four concurrent feedback submissions create one fixed-version record.
+task_pids=()
+for task_attempt in 1 2 3 4; do
+  "${task_psql[@]}" -Atqc "SELECT experience.save_chat_reply_feedback('10000000-0000-4000-8000-000000000005','20000000-0000-4000-8000-000000000005','30000000-0000-4000-8000-000000000538',0,'{}','')->'feedback'->>'id';" > "$task_temp/feedback-$task_attempt" &
+  task_pids+=("$!")
+done
+for task_pid in "${task_pids[@]}"; do wait "$task_pid"; done
+for task_attempt in 2 3 4; do cmp "$task_temp/feedback-1" "$task_temp/feedback-$task_attempt"; done
 "${task_psql[@]}" >/dev/null <<'SQL'
 DO $$ BEGIN
  IF (SELECT count(*) FROM experience.chat_sessions WHERE branch_request_id='40000000-0000-4000-8000-000000000099')<>1 THEN RAISE EXCEPTION 'concurrent request created duplicate branches'; END IF;
  IF (SELECT count(*) FROM experience.chat_message_likes WHERE session_id='20000000-0000-4000-8000-000000000003' AND message_id='30000000-0000-4000-8000-000000000301')<>1 THEN RAISE EXCEPTION 'concurrent feedback created duplicate likes'; END IF;
+END $$;
+-- Feedback preserves deleted-session evidence; account erasure still removes it.
+DELETE FROM experience.chat_sessions WHERE id='20000000-0000-4000-8000-000000000005';
+DO $$ BEGIN
+ IF NOT EXISTS(SELECT 1 FROM experience.chat_reply_feedback WHERE session_id='20000000-0000-4000-8000-000000000005') THEN RAISE EXCEPTION 'session deletion lost feedback evidence'; END IF;
+END $$;
+DELETE FROM app_core.users WHERE id='10000000-0000-4000-8000-000000000005';
+DO $$ BEGIN
+ IF EXISTS(SELECT 1 FROM experience.chat_reply_feedback WHERE user_id='10000000-0000-4000-8000-000000000005') THEN RAISE EXCEPTION 'account deletion retained private feedback'; END IF;
 END $$;
 -- All of one account's branch/reference facts disappear in the same transaction.
 DELETE FROM app_core.users WHERE id='10000000-0000-4000-8000-000000000001';

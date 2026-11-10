@@ -1,0 +1,55 @@
+{
+  "id": "chat-dislike-preview",
+  "name": "chat-dislike-preview",
+  "title": "聊天回复负反馈与分析记录",
+  "description": "",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "frontend",
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-10",
+  "completedAt": null,
+  "branch": "codex/chat-reply-feedback",
+  "base_branch": "main",
+  "worktree_path": "/Users/qianpeijia/PycharmProjects/pythonProject/ST_miniapp/worktrees/chat-reply-feedback",
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": ["backend.business.conversation-generation", "frontend.business.conversation-ui"]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": ["/chat/[characterId]"],
+      "apis": ["GET/PUT /api/v1/conversations/:id/messages/:messageId/feedback"],
+      "android": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 2500
+      },
+      "ios": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 2500
+      },
+      "api": {
+        "p95_baseline_ms": null,
+        "p95_target_ms": 1000
+      },
+      "measurement": {
+        "source": "现有本地ui-tests及生产既有请求日志；当前无可见线上新接口样本",
+        "window": "本地本轮验收，发布后24小时待真实用户样本"
+      },
+      "notes": "Android/iOS真实P95无可见样本保留null，目标并非测量结论。仅点击面板取数据，首屏新增请求为0；本地390/320验证交互和API契约，生产请求耗时复核不代替双端P95。"
+    }
+  }
+}

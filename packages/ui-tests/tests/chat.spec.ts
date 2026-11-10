@@ -122,7 +122,7 @@ test('@chat @surplus @layout Surplus 慢主调用由 OpenRouter 兜底交付且�
   await preview.screenshot('Surplus Intelligence 选择与兜底回复');
 });
 
-test('@chat @chat-like @layout 回复点赞有48px触区，轻点立即反馈并持久保存', async ({
+test('@chat @chat-like @layout 回复操作紧凑排布，点赞立即反馈并持久保存', async ({
   page,
   preview,
 }) => {
@@ -137,8 +137,8 @@ test('@chat @chat-like @layout 回复点赞有48px触区，轻点立即反馈并
   const like = page.getByTitle('赞第 1 轮回复', { exact: true });
   await like.scrollIntoViewIfNeeded();
   const box = await like.boundingBox();
-  expect(box?.width).toBeGreaterThanOrEqual(48);
-  expect(box?.height).toBeGreaterThanOrEqual(48);
+  expect(box?.width).toBeGreaterThanOrEqual(36);
+  expect(box?.height).toBeGreaterThanOrEqual(44);
   await page.getByRole('textbox', { name: '输入消息' }).fill('点赞不影响我正在写的话');
   const saved = likeResponse(page);
   await like.click({ position: { x: 4, y: 24 } });
@@ -730,4 +730,70 @@ test('@chat @chat-sessions @layout 同角色多段对话可区分，收纳管理
   await expectMobileLayout(page);
   await expect.poll(async () => Math.round((await drawer.boundingBox())?.x ?? -1)).toBe(0);
   await preview.screenshot('重命名置顶与切换后的对话记录');
+});
+
+test('@chat-dislike @layout 点踩可直接提交，窄屏提交栏始终可见', async ({ page, preview }) => {
+  await page.goto(chatPath);
+  await page.getByRole('textbox', { name: '输入消息' }).fill('保留我的聊天草稿');
+  const dislike = page.getByRole('button', { name: '不喜欢这条回复', exact: true });
+  await dislike.click();
+  const dialog = page.getByRole('dialog');
+  const submit = dialog.getByRole('button', { name: '提交反馈', exact: true });
+  await expect(submit).toBeEnabled();
+  await expect(submit).toBeInViewport({ ratio: 1 });
+  await preview.screenshot('点踩反馈首屏');
+  await submit.click();
+  await expect(dialog).not.toBeVisible();
+  const recorded = page.getByRole('button', { name: '查看这条回复的反馈', exact: true });
+  await expect(recorded).toHaveAttribute('aria-pressed', 'true');
+  await expect(recorded).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  await expect(page.getByRole('textbox', { name: '输入消息' })).toHaveValue('保留我的聊天草稿');
+  await recorded.click();
+  await dialog.getByRole('button', { name: '没有性张力', exact: true }).click();
+  await dialog.getByRole('textbox').fill('前面说好的事忘记了');
+  await dialog.getByRole('button', { name: '关闭反馈', exact: true }).click();
+  await recorded.click();
+  await expect(dialog.getByRole('textbox')).toHaveValue('前面说好的事忘记了');
+  await expect(dialog.getByRole('button', { name: '没有性张力', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true'
+  );
+  await page.setViewportSize({ width: 320, height: 340 });
+  await expect(submit).toBeInViewport({ ratio: 1 });
+  await submit.click();
+  await expect(dialog).not.toBeVisible();
+});
+
+test('@chat-dislike @layout 反馈失败保留草稿，重试与刷新读取同一份记录', async ({
+  page,
+  preview,
+}) => {
+  await preview.scenario('chat-like-error');
+  await page.goto(chatPath);
+  await page.getByRole('button', { name: '不喜欢这条回复', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByRole('button', { name: '重复啰嗦', exact: true }).click();
+  await dialog.getByRole('textbox').fill('总是重复相同的话');
+  const submit = dialog.getByRole('button', { name: '提交反馈', exact: true });
+  await submit.click();
+  await expect(dialog.getByRole('alert')).toContainText('重试');
+  await expect(dialog.getByRole('textbox')).toHaveValue('总是重复相同的话');
+  const before = await page.request.get(
+    `${previewApiUrl}/api/v1/conversations/${IDS.session}/messages/50000000-0000-4000-8000-000000000003/feedback?edit_version=0`
+  );
+  const first = await before.json();
+  await submit.click();
+  await expect(dialog).not.toBeVisible();
+  await page.reload();
+  await page.getByRole('button', { name: '不喜欢这条回复', exact: true }).click();
+  await expect(dialog.getByRole('textbox')).toHaveValue('总是重复相同的话');
+  await expect(dialog.getByRole('button', { name: '重复啰嗦', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true'
+  );
+  const after = await page.request.get(
+    `${previewApiUrl}/api/v1/conversations/${IDS.session}/messages/50000000-0000-4000-8000-000000000003/feedback?edit_version=0`
+  );
+  expect((await after.json()).data.feedback.id).toBe(first.data.feedback.id);
+  expect((await preview.state()).wallet.credits).toBe(3600);
 });

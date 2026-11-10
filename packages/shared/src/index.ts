@@ -71,3 +71,4 @@ export * from './api/creator-analytics.js';
 
 export * from './api/character-wishes.js';
 export * from './api/admin-cli-session';
+export * from './api/chat-feedback';

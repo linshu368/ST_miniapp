@@ -74,7 +74,7 @@ export function ChatMessageVoiceFooter({
           {toolsAction}
         </div>
         {editAction || regenerate || likeAction ? (
-          <div className="ml-auto flex shrink-0 items-center gap-1">
+          <div className="ml-auto flex shrink-0 items-center gap-0 [&>button]:w-9 [&>button]:rounded-md [&>button]:bg-transparent [&>button:hover]:bg-transparent [&>button:active]:bg-transparent">
             {editAction}
             {regenerate}
             {likeAction}
@@ -113,7 +113,7 @@ export function ChatMessageVoiceFooter({
           {toolsAction}
         </div>
         {editAction || regenerate || likeAction ? (
-          <div className="ml-auto flex shrink-0 items-center gap-1">
+          <div className="ml-auto flex shrink-0 items-center gap-0 [&>button]:w-9 [&>button]:rounded-md [&>button]:bg-transparent [&>button:hover]:bg-transparent [&>button:active]:bg-transparent">
             {editAction}
             {regenerate}
             {likeAction}
