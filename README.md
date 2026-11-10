@@ -131,11 +131,13 @@ pnpm --filter @miniapp/backend image-plaza:seed -- --input <xlsx>
 
 Venice 使用 `VENICE_API_BASE_URL` / `VENICE_API_KEY`，Surplus Intelligence 使用 `SURPLUS_API_BASE_URL` / `SURPLUS_API_KEY`；供应商凭据只配置在 Backend，不得放入前端环境变量。
 
+Surplus Intelligence 的官方默认 API 为 `https://api.surplusintelligence.ai/v1`，现有内部 provider 标识 `surplus` 保持兼容。聊天调用明细写入 `experience.surplusintelligence_chat_history`，保存实际非正文参数及按来源过滤的响应元数据；会话正文和账务结果仍归 `chat_history`。启用前必须先执行并验证完整兼容迁移 `20261110_surplusintelligence_chat_history_compat.sql`（原文件保留不改），再部署应用、通过运营 CLI 发布模型配置，具体顺序与恢复见 [迁移说明](packages/shared/migrations/README.md)。仓库实现不代表远端迁移或真实供应商验收已完成。
+
 开发 bypass（如 `MOCK_AUTH`、`DEV_AUTH_BYPASS`）禁止在 production 启用。
 
 ### Frontend
 
-主要包括 `NEXT_PUBLIC_API_URL`、`NEXT_PUBLIC_DEFAULT_USER_AVATAR_URL`、`NEXT_PUBLIC_SENTRY_DSN`、`NEXT_PUBLIC_SENTRY_ENVIRONMENT`；可选 `NEXT_PUBLIC_DRAMA_STREAM_ORIGIN`（短剧 Stream 播放域名，仅用于 preconnect，本地不配不影响功能）。仓库当前有本地 `.env.local`，不得把其中值复制到文档或日志；新增变量应补安全的 example 模板。
+主要包括 `NEXT_PUBLIC_API_URL`、`NEXT_PUBLIC_DEFAULT_USER_AVATAR_URL`、`NEXT_PUBLIC_SENTRY_DSN`、`NEXT_PUBLIC_SENTRY_ENVIRONMENT`；可选 `NEXT_PUBLIC_DRAMA_STREAM_ORIGIN`（短剧 Stream 播放域名，仅用于 preconnect，本地不配不影响功能）；可选 `NEXT_PUBLIC_DRAMA_IOS_HLSJS`（设为 `true` 时，iOS 短剧播放在设备支持 `ManagedMediaSource` 时改用 hls.js 低档起播；未设置或非 `true` 默认关闭，走现有原生 HLS）。仓库当前有本地 `.env.local`，不得把其中值复制到文档或日志；新增变量应补安全的 example 模板。
 
 ### Admin
 
@@ -218,8 +220,7 @@ pnpm supabase:link:test
 - [Shared spec](.trellis/spec/shared/contracts/index.md)
 - [Supabase spec](.trellis/spec/database/supabase/index.md)
 
-短剧 Cloudflare Stream A/B 的配置、同序置顶、播放器恢复和验收顺序见 [Stream A/B 接入](docs/drama-stream-ab.md)。
-真机采样可用 `DRAMA_STREAM_SAMPLING_COHORT` 仅指定当前实验的两个 A/B 账号；需要先部署支持版本再配置，保持其他用户的哈希分组不变。独立 iPhone 操作工具见 [点播采样工具](scripts/ios-drama-sampler/README.md)。
+短剧推荐列表置顶环境清单中的 30 部剧。所有账号播放清单指定单集时使用 Cloudflare Stream，播放其他单集时使用 Supabase。配置、重试与验收见[短剧播放来源](docs/drama-stream-ab.md)。iPhone 真机操作见[点播采样工具](scripts/ios-drama-sampler/README.md)。
 
 ### VIP 混合奖励（2026-11-05）
 
@@ -228,3 +229,7 @@ pnpm supabase:link:test
 支付接入：TTZF 易支付建单不发送可选 `param`，回调与查单不要求回传该字段；环境隔离依赖独立回调地址、应用凭据及数据库，本环境订单仍需通过签名、商户、渠道、交易号及金额校验。见 `ops/railway/README.md`。
 
 查单响应兼容厂商返回 `pid: null` 或省略 pid，有值时仍核对应用 ID；查单请求凭据、回调 pid/签名和订单结算校验保持必需。
+
+### 聊天回复负反馈
+
+回复点踩通过独立鉴权接口保存到 `experience.chat_reply_feedback`，空原因可提交，固定回复/编辑版本去重并保留当轮快照。只在面板打开时读取，不进入生成、计费或角色评分链路，无运营页面。迁移顺序、权限和批量分析口径见 [聊天回复反馈](docs/chat-reply-feedback.md)。

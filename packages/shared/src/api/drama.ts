@@ -104,6 +104,12 @@ export interface DramaPlayback {
   play_url: string | null;
   /** 签名有效期终点的 ISO 8601 时间，失败时为 null */
   expires_at: string | null;
+  /**
+   * Stream 主清单（m3u8）原始文本，内容与签名 token 无关，可安全跨用户复用。
+   * 仅在 Stream 组命中后端进程内缓存时才有值；未命中、超时或非 Stream 播放源时缺失，
+   * 前端必须照常对 play_url 发起网络请求。旧 Backend 缺失此字段。
+   */
+  inline_manifest?: string;
 }
 
 // GET /api/dramas 的响应体

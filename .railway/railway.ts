@@ -58,7 +58,6 @@ const COMMON_API_VARIABLES = [
   'DEEPSEEK_API_KEY',
   'DEFAULT_LLM_MODEL',
   'DIRECT_URL',
-  'DRAMA_TIMING_PERSIST_ENABLED',
   'ENGINEERING_TELEMETRY_ENABLED',
   'ENGINEERING_OTLP_ENDPOINT',
   'FRONTEND_URL',
@@ -76,9 +75,6 @@ const COMMON_API_VARIABLES = [
   'PAYMENT_RETURN_URL',
   'PAYMENT_NOTIFY_URL',
   'PROD_SUPABASE_PROJECT_REF',
-  'POSTHOG_API_KEY',
-  'POSTHOG_HOST',
-  'POSTHOG_TIMEOUT_MS',
   'REPLICATE_TOKEN',
   'SENTRY_DSN',
   'SENTRY_ENVIRONMENT',
@@ -179,6 +175,14 @@ export default defineRailway((ctx) => {
     TTZF_APP_ID: stminiapp.env.TTZF_APP_ID,
     TTZF_APP_KEY: stminiapp.env.TTZF_APP_KEY,
     TTZF_BASE_URL: stminiapp.env.TTZF_BASE_URL,
+  };
+
+  const paymentAlertMonitorEnv = {
+    ...paymentCronEnv,
+    VENICE_API_BASE_URL: stminiapp.env.VENICE_API_BASE_URL,
+    VENICE_API_KEY: stminiapp.env.VENICE_API_KEY,
+    SURPLUS_API_BASE_URL: stminiapp.env.SURPLUS_API_BASE_URL,
+    SURPLUS_API_KEY: stminiapp.env.SURPLUS_API_KEY,
   };
 
   const paymentAlertMonitorEnv = {

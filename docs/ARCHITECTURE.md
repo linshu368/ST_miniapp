@@ -11,7 +11,7 @@
 > | ⏳   | 在建或待建              |
 > | ❌   | 明确不做 / 已删除       |
 >
-> 当前进度：**自研引擎已全量上线，ST 链路（代码、schema、部署单元）已全部退场**；M5 自研聊天 UI、M6 切换（`chat_engine_mode` 开关已用完即删，083）、上下文水位线泄洪（077）均已交付。
+> 当前进度：**自研引擎已全量上线，ST 链路（代码、schema、部署单元）已全部退场**；M5 自研聊天 UI、M6 切换（`chat_engine_mode` 开关已用完即删，083）均已交付；上下文截断已由按轮数泄洪（077）换成正文字数水位 + 会话长期记忆（20261110）。
 > **Schema 划分一阶段已在生产落地**（2026-08-28 C3 割接完成，099 执行 9.4 秒、API 停机约 38 分钟）：原 `miniapp` schema 的 22 表 + 1 视图 + 24 函数已按归属域分布到 `app_core` / `miniapp_features` / `experience` / `billing` / `cs_platform`，`miniapp` 只剩空壳待批次 D 删除。
 > 语音消息生成链路已上线（080）；按次计费首版（101/102）曾整体回退（PR #298，test 库用 104 清理），随后以 **105_voice_billing_atomic** 重做落地，由 `runtime_config.voice_billing_enabled` 开关控制（默认关，详见 §4.6）。
 > 2026-09 新增两条增长链路：裂变邀请（105–109，`routes/invite.ts`）与官方社群入群奖励（108/109，`routes/community.ts`），发奖全部在数据库 RPC 内完成（见 §1 铁律 6）。
@@ -76,7 +76,7 @@
         │                                                                   │
         │  对话链路（核心）                                                  │
         │   routes/conversations.ts  /api/v1/conversations/*  REST + SSE    │
-        │     └ features/conversations  编排：预建轮次 → 窗口泄洪 →          │
+        │     └ features/conversations  编排：预建轮次 → 字数水位 →          │
         │         │                     组 prompt → 生成                    │
         │         ├ features/engine      prompt 组装（纯函数）              │
         │         └ features/generation  免费额度 → 余额预检 → 上游 → 落库  │
@@ -114,14 +114,14 @@
 
 ### 链路编号
 
-| 编号 | 方向                          | 用途                                                                                               |
-| ---- | ----------------------------- | -------------------------------------------------------------------------------------------------- |
-| ①    | frontend → backend（HTTP/SSE) | 全部业务 REST；对话发消息与重生成是 `text/event-stream`                                            |
-| ②    | backend → OpenRouter          | 唯一的 LLM 出口，平台真实 key 只在 backend 进程内                                                  |
-| ③    | backend ⇆ Supabase            | Prisma（`app_core` / `miniapp_features` / `billing`）+ supabase-js 按域客户端（RPC / 其余 schema） |
-| ④    | admin → backend               | 运营台 REST；admin 走 Supabase 会话                                                                |
-| ⑤    | Telegram → backend            | Bot `/start` 归因；其余私聊消息（文字 / 图片）转发给独立客服服务（`CS_SERVICE_URL`）               |
-| ⑥    | backend → MiniMax / DeepSeek  | 语音链路：DeepSeek 写台词稿，MiniMax 合成音频落 Storage                                            |
+| 编号 | 方向                          | 用途                                                                                                 |
+| ---- | ----------------------------- | ---------------------------------------------------------------------------------------------------- |
+| ①    | frontend → backend（HTTP/SSE) | 全部业务 REST；对话发消息与重生成是 `text/event-stream`                                              |
+| ②    | backend → 模型平台            | OpenRouter / Venice / Surplus Intelligence，统一走 features/generation；真实 key 只在 backend 进程内 |
+| ③    | backend ⇆ Supabase            | Prisma（`app_core` / `miniapp_features` / `billing`）+ supabase-js 按域客户端（RPC / 其余 schema）   |
+| ④    | admin → backend               | 运营台 REST；admin 走 Supabase 会话                                                                  |
+| ⑤    | Telegram → backend            | Bot `/start` 归因；其余私聊消息（文字 / 图片）转发给独立客服服务（`CS_SERVICE_URL`）                 |
+| ⑥    | backend → MiniMax / DeepSeek  | 语音链路：DeepSeek 写台词稿，MiniMax 合成音频落 Storage                                              |
 
 ---
 
@@ -178,13 +178,13 @@
 
 ### 4.1 分层
 
-| 层             | 位置                                                      | 性质                                                                                   |
-| -------------- | --------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| 路由与鉴权     | `routes/conversations.ts`                                 | 统一 `requireTelegramAuth`；ownership 落在仓库层                                       |
-| 编排           | `features/conversations/`                                 | `generate.ts`（一轮生成）/ `history.ts` / `context-window.ts` / `sse.ts` / `errors.ts` |
-| Prompt 组装    | `features/engine/`                                        | 纯函数，无 IO（唯一有 IO 的是读平台规则的 `platform-instructions.ts`）                 |
-| 生成与计费出口 | `features/generation/`                                    | 免费额度 → 余额预检 → 上游转发 + SSE tap → 终态落库与实扣                              |
-| 持久化         | `ChatSessionRepository` / `ConversationHistoryRepository` | supabase-js（`experience` 域）+ 原子 RPC                                               |
+| 层             | 位置                                                      | 性质                                                                                                    |
+| -------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| 路由与鉴权     | `routes/conversations.ts`                                 | 统一 `requireTelegramAuth`；ownership 落在仓库层                                                        |
+| 编排           | `features/conversations/`                                 | `generate.ts`（一轮生成）/ `history.ts` / `sse.ts` / `errors.ts`；记忆与水位在 `features/story-memory/` |
+| Prompt 组装    | `features/engine/`                                        | 纯函数，无 IO（唯一有 IO 的是读平台规则的 `platform-instructions.ts`）                                  |
+| 生成与计费出口 | `features/generation/`                                    | 免费额度 → 余额预检 → 上游转发 + SSE tap → 终态落库与实扣                                               |
+| 持久化         | `ChatSessionRepository` / `ConversationHistoryRepository` | supabase-js（`experience` 域）+ 原子 RPC                                                                |
 
 ### 4.2 接口清单（`/api/v1`）
 
@@ -209,13 +209,14 @@ SSE 事件契约定义在 `shared/src/api/conversations.ts`：`start`（带 mess
 
 ```
 1. requireTelegramAuth → userId；校验 session 归属
-2. 并行取数：模型解析 / 角色卡 / 用户生成配置 / 昵称 / 平台规则模板 / 窗口水位配置
+2. 并行取数：模型解析 / 角色卡 / 用户生成配置 / 昵称 / 平台规则模板 / 记忆配置；
+   最新会话记忆另行并行读取（用到时最多再等 50ms，失败即不注入，永不阻塞）
 3. RPC start_chat_history_turn（或 start_chat_history_regeneration）
-   → 会话行锁内分配 turn_index、必要时执行窗口泄洪（更新 context_window_start_turn）、
-     插入 status='streaming' 的 chat_history 行
-4. 读窗口内（turn_index ∈ [窗口起点, 本轮)）各轮最大 revision 展开历史；
+   → 会话行锁内分配 turn_index、插入 status='streaming' 的 chat_history 行（不再推进窗口）
+4. 读窗口内（turn_index ∈ [窗口起点, 本轮)）各轮最大 revision；按正文字数双水位与记忆覆盖决定窗口
+   （先压缩后截断），并不等待地调用 advance_story_memory_window（前移/提高压缩目标）；
    首轮用角色卡开场白，之后从首轮 prompt 快照恢复（开场白不计水位、始终保留）
-5. features/engine 组 messages，把完整 prompt 快照写回本轮 history 字段
+5. features/engine 组 messages（会话记忆作为紧跟角色卡的独立 system 消息），把完整 prompt 快照写回本轮 history 字段
 6. features/generation execute()：免费额度预留 → 定档扣费额 → 余额预检
    · 预检不过 → 收口成 insufficient_balance，路由返回 HTTP 402 JSON
    · 上游非 2xx / 连不上 → 路由返回 HTTP 502 JSON
@@ -242,9 +243,9 @@ v1 是旧 bot `SimplePromptEngine` 的忠实移植，最终形状：
 [system: 角色卡 system_prompt] + 历史（含虚拟 turn 0 开场白） + [user: 平台规则 + 本轮输入]
 ```
 
-- **上下文长度管理已落地（077）**：双水位线泄洪，窗口在 [A, B] 轮之间增长，超过高水位 B（`max_context_turns`，默认 75）一次性收缩到低水位 A（`retain_context_turns`，默认 50）。窗口起点持久化在 `chat_sessions.context_window_start_turn`，由开轮 RPC 在会话行锁内更新（`apply_context_window_flood`）；**不删** `chat_history`，只决定本轮 prompt 带哪些轮。引擎不二次裁剪，`truncatedTurns` 回填真实观测值。双水位（而非滑动窗口）是为了给 Anthropic prompt cache 制造稳定前缀；设计原稿：`git show b4491cd^:docs/context-window-and-prompt-cache.md`。
+- **上下文长度与会话长期记忆（20261110，取代 077 按轮数泄洪）**：窗口按"正文字数"（用户输入 + 回复正文，去掉富回复尾部与空白）计量。超过高水位 U 时从窗口起点按完整轮次移除，退到低水位 L 以下；最近保底轮数（≥ 11，大于用户可编辑的最近 10 轮）永不移除；保底之外可移除轮数不足时不截断并记 `floor_binding`。窗口决策在 Backend（`features/story-memory/window-plan.ts`），起点仍持久化在 `chat_sessions.context_window_start_turn`、只增不减，由 `advance_story_memory_window` CAS 前移并在同一事务里提高 `experience.story_memory_jobs.target_end`。进程内 worker（`features/story-memory/worker.ts`，10 秒一轮，SKIP LOCKED + 15 分钟租约）把目标范围分块交给压缩模型（默认取生产兜底模型参数 `deepseek/deepseek-v4.1-flash-1017` + Together/crusoe，可单独配置，经 `features/generation/story-memory-compress.ts`），代码校验后逐块写入 `experience.story_memories` 新版本（全部保留）；失败按 2·2^(n-1) 分钟退避，连续 5 次后 failed、下次截断复活，连续 3 次失败发 Sentry 告警。采用"先压缩、后截断"：超过 U 时先请求压缩到目标轮次、窗口不动，记忆覆盖后的下一轮窗口前移与新记忆同时生效（prompt 前缀每周期只变一次、无空窗），等待中超过 U + (U-L)/2 才强制前移。生成时最新版本去掉 (T编号)、加一句边界说明，作为紧跟角色卡的独立 system 消息（不并入角色卡、不伪造对话轮次）；压缩输入只含旧档案、新章节与只读近期对话，不含角色卡与开场白；读取在准备阶段并行发出，用到时最多再等 50ms。参数与压缩 prompt 是运营 managed config（`story_memory_config` / `story_memory_prompt`），总开关关闭时停止生成与注入、截断照常。回放：`pnpm --filter @miniapp/backend story-memory:replay -- --session <id>`；迁移验收：`bash scripts/test-story-memory-migration.sh`。设计见 `.trellis/tasks/11-10-session-memory/`。
 
-- **历史分支（2026-10-29，本地已实现，远端待迁移/发布）**：`POST /api/v1/conversations/:id/branch` 以完成回复为锚点，服务端读取低水位 A，继承截至该轮的最多 A 轮并重新编号。`experience.chat_branch_turns` 固定引用实际 history ID，分支再分支同样展开为实际 ID；来源后续生成、重生成或软删除不改动已继承上下文。消息与上下文读取 `session_chat_history`，本分支新 revision 覆盖继承轮；计费、生成和分析继续读取原事实表，不把继承记录计作新生成。用户范围的事务 advisory lock、唯一请求键与单事务负责幂等/限速，来源会话仍验证所属用户。之后沿原 A/B 窗口，记忆仅随轮次正文保留，不增加抽取服务。继承媒体不复制，不带原请求关联 ID；新回复正常支持媒体。发布顺序：迁移 → Backend → Frontend；已有分支不能退回完全旧 Backend，隐藏入口后保留读取能力并 forward-fix。验收与边界见 `.trellis/tasks/10-29-conversation-branches/`。
+- **历史分支（2026-10-29，本地已实现，远端待迁移/发布）**：`POST /api/v1/conversations/:id/branch` 以完成回复为锚点，继承范围由 20261110 重写：取源会话中覆盖终点早于锚点的最新记忆版本，复制为分支 version 1（covered_end=0，去掉 T 标注），再继承其后到锚点的原文（最多 500 轮）并重新编号；没有记忆时从第 1 轮继承。`experience.chat_branch_turns` 固定引用实际 history ID，分支再分支同样展开为实际 ID；来源后续生成、重生成或软删除不改动已继承上下文。消息与上下文读取 `session_chat_history`，本分支新 revision 覆盖继承轮；计费、生成和分析继续读取原事实表，不把继承记录计作新生成。用户范围的事务 advisory lock、唯一请求键与单事务负责幂等/限速，来源会话仍验证所属用户。之后两个会话的窗口与记忆各自演进。继承媒体不复制，不带原请求关联 ID；新回复正常支持媒体。发布顺序：迁移 → Backend → Frontend；已有分支不能退回完全旧 Backend，隐藏入口后保留读取能力并 forward-fix。验收与边界见 `.trellis/tasks/10-29-conversation-branches/`。
 - **不消费预设**：ST 酒馆格式的 `platform_presets` 已随 088 整体删除（数据留档在库外）。自建预设格式是待办（M4，见 §10）。
 - **不注入 `first_mes`**：开场白由编排层放进 history，引擎再注入会每轮重复一条。
 - **不做酒馆语义适配**：宏、世界书、正则、卡内嵌资源一律不支持，表现质量由 system prompt 与组装逻辑承担。
@@ -297,6 +298,8 @@ Admin `/api/admin/text-postprocess*` 提供状态/历史、草稿保存/丢弃�
 `settle.ts` 是 fire-and-forget 的：它第一步要等 OpenRouter 的异步用量统计（约 1.5 秒起），挂在请求里会让用户在回复已经流完之后继续等。它与请求内同步的 `finalizeTurn` 写同一行 `chat_history` 的**不同列**，列归属见 `ConversationHistoryRepository` 头注释，因此谁先落地都不会互相覆盖。
 
 OpenRouter 的原始调用元数据写入 `experience.openrouter_chat_history`，通过唯一 `chat_history_id` 与主表一对一关联，父行删除时级联删除。获取 generation ID 后幂等建占位；结算和 24 小时回捞使用同一 mapper，并统一消费厂商原名：`provider_name`、`finish_reason`、`usage`、可选 `usage_cache`、四个 `native_tokens_*`、`latency`、`generation_time`、`model`。保留 `llm_generation_id` 与经过内容过滤的 `llm_generation_data`。计费函数单独返回金额/结算结果，主表仓储显式接收这些结果；上游 `finish_reason` 与主表业务 `llm_finish_reason` 各有归属，取消/超时优先。Venice 的字段映射与专表保持原有结构。
+
+Surplus Intelligence 新增 `experience.surplusintelligence_chat_history`（本地实现，远端迁移与发布待单独验证）。实际非正文参数先冻结；响应按 body/stream/headers/request_record 保存厂商原名和受控嵌套字段，capture记录版本、完整性与排除/超限诊断，最大128KiB。ID与参数冲突拒绝，request ID不从generation ID猜测。Surplus输掉首字竞争时保留调用明细，OR胜者可有自己的明细；交付与固定档位结算只认原轮次和胜者快照。元数据恢复复用30秒调度的24h/50行窗口和每轮最多9次供应商读取预算，并发有界，不阻塞原计费恢复。新migration前向补齐catalog/provider CHECK及交付分支，不改历史迁移。接口与失败矩阵见 [Surplus调用规范](../.trellis/spec/backend/app/surplusintelligence-calls.md)。
 
 四份历史 migration 提供原名结构，TEST/Production 已在 2026-10-16 T5 核验记账/checksum 一致；文件声明不等于部署证明。本地新增主表清退实现：生成前 await 请求快照/对应 provider 占位，header/SSE/non-stream 首次 ID 采用 NULL-only CAS 与结果未知读回，单操作 5s、总 10s、至多两次写；SSE 先保存已收到的文本快照，再 await ID，故障不清空已收到的正文。主表/current 读取显式业务列，finalizeTurn 不再接收 generation ID；业务 finish reason 与计费仍归主表。Venice mapper/表不变，ID 来自 Venice 明细。
 
@@ -398,7 +401,7 @@ T9 专表 contract：`20261016_openrouter_chat_history_drop_legacy_aliases.sql` 
 experience.chat_sessions  1 ─── N  experience.chat_history
 ```
 
-- `chat_sessions`：一行一个会话，支持同一用户 × 同一角色多会话。`title` 创建时默认写角色名（079）；`pinned_at` 置顶（078）；`context_window_start_turn` 窗口起点（077）；`message_count` / `last_message_at` / `last_message_preview` 由触发器维护；软删用 `deleted_at`。
+- `chat_sessions`：一行一个会话，支持同一用户 × 同一角色多会话。`title` 创建时默认写角色名（079）；`pinned_at` 置顶（078）；`context_window_start_turn` 窗口起点（077，20261110 起由 Backend 按字数水位前移）；`message_count` / `last_message_at` / `last_message_preview` 由触发器维护；软删用 `deleted_at`。
 - `chat_history`：一行 = 某 session 内一个逻辑 turn 的一个生成 revision，同时是**上下文、计费与审计的唯一事实来源**。`postprocess_version` 可空：新 Backend 开轮成功时绑定正式版本，旧记录保留 `NULL` 且不回填；`history` 字段保存本次实际发给模型的完整 messages 快照——它也是表体积（~10 GB）97% 的来源，列级瘦身主战场。
 - `turn_index`：用户主动发起的轮次，从 1 递增，重生成不增加。`revision`：同一轮的生成版本，首次 0，重生成 +1，**最大 revision 即当前版本**。唯一索引 `(session_id, turn_index, revision)`。
 - 开场白不单独落行：新会话由 API 返回虚拟 turn 0；首轮生成时进入 prompt 快照，之后从快照恢复。
@@ -411,7 +414,7 @@ experience.chat_sessions  1 ─── N  experience.chat_history
 | `start_chat_history_turn`                                  | 锁 session、清理陈旧 streaming、分配 `max(turn_index)+1`、插入 revision 0 |
 | `start_chat_history_regeneration`                          | 锁 session、校验是最后一轮、复用 `user_input`、插入 `max(revision)+1`     |
 | `guard_chat_session_idle`                                  | 有 120 秒内的 `streaming` 行则抛 `55006`（→ 409）；陈旧行先收口再放行     |
-| `apply_context_window_flood`                               | 窗口超高水位 B 时把起点跳到只留低水位 A 轮（077）                         |
+| `advance_story_memory_window` 等四个记忆 RPC               | 窗口 CAS 前移 + 建任务、领取、CAS 提交版本、收尾退避（20261110）          |
 | `start_chat_history_turn_with_current_postprocess`         | 同事务读取正式指针/快照并委托显式版本开轮 wrapper，成功返回非空版本       |
 | `start_chat_history_regeneration_with_current_postprocess` | 同上，适用于最后一轮重生成                                                |
 
@@ -597,7 +600,7 @@ packages/backend/src/
 
 **本地页面验收**：`packages/ui-tests` 以虚构公开DTO提供HTTP/SSE场景，浏览器运行真实Frontend。手动与自动验收使用独立端口、状态和Next缓存，不依赖数据库、模型或支付；见 [移动端验收说明](../packages/ui-tests/README.md)。
 
-**CI/CD**（`.github/workflows/`）：`ci.yml`（typecheck / lint / import guard / **legacy guard** / 测试 / Docker 构建，矩阵仅 backend）、`db-migrate.yml`（手动迁移）、`pr-review.yml`、`railway-pr-env.yml`（PR 临时环境）。Vercel 和 Railway 都直接从 GitHub commit 构建；仓库不再发布 GHCR 镜像。
+**CI/CD**（`.github/workflows/`）：`ci.yml`（typecheck / lint / import guard / **legacy guard** / 测试 / Docker 构建，矩阵仅 backend）、`db-migrate.yml`（手动迁移）、`railway-pr-env.yml`（PR 临时环境）。Vercel 和 Railway 都直接从 GitHub commit 构建；仓库不再发布 GHCR 镜像。
 
 > 运维遗留（需人工处理）：Railway production 控制台的 `nginx-pro` / `st-bundle-pro` / 卷 `st-data-pro` 与两侧 `ST_*` 变量待手动删除（见 `ops/railway/README.md`）；废弃的 `pr-276` 环境仍挂着一条 `branch=main` 的 trigger；`Dockerfile.frontend` 仍是隐式 pnpm 取包写法（backend 已在 PR #295 修复构建卡死）。
 
@@ -620,7 +623,7 @@ packages/backend/src/
 | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | 会话数据模型 + 轮次/重生成语义 + 原子 RPC                                                 | migrations 069~073 / 077~079、`ChatSessionRepository`、`ConversationHistoryRepository`                                                       |
 | Prompt 引擎（含平台规则三件套与降级）                                                     | `features/engine/`                                                                                                                           |
-| 上下文双水位线泄洪 + Anthropic prompt cache                                               | 077、`features/conversations/context-window.ts`、`prompt-caching.ts`                                                                         |
+| 正文字数水位 + 会话长期记忆 + Anthropic prompt cache                                      | 20261110、`features/story-memory/`、`prompt-caching.ts`                                                                                      |
 | 生成与计费出口（含 finish_reason 计费闸门）                                               | `features/generation/` + 081/082                                                                                                             |
 | 对话 REST + SSE（含置顶 / 标题 / 分页）                                                   | `routes/conversations.ts` + `features/conversations/`                                                                                        |
 | AI 回复后处理（版本快照、Admin 工作台、Frontend/Admin 共用 renderer，TEST/PR 真机已验收） | `shared/src/text-postprocess`、`routes/text-postprocess.ts`、`packages/reply-renderer`、Frontend/Admin 接线、20260928–20260930 migrations    |
@@ -851,9 +854,12 @@ Frontend `/creation/data` → `lib/api/creator-analytics.ts`（用户隔离React
 
 部署前应用 20261103_public_creator_space_index.sql 为按别名查找创建索引，再独立执行 20261103_chat_sessions_reply_like_lookup_index.sql 并验证覆盖索引有效，最后发布后端与前端。每页最多12张，点赞（卡片赞+回复赞）和收藏直接随该页返回；用于判断是否有下一页的第13张不查计数。列表简介最多120字。首次加载的私有作品封面批量读取和签名，后续复用签名缓存。回退应用可保留索引。隔离数据库验证复用 scripts/test-creator-characters-local.sh。
 
-短剧 Cloudflare Stream A/B 的配置、同序置顶、播放器恢复和验收顺序见 [Stream A/B 接入](drama-stream-ab.md)。
-本地新增可选 `DRAMA_STREAM_SAMPLING_COHORT`，由 runtime-config 严格解析当前实验及两个不同的 Telegram 用户 ID，只覆盖这两个采样账号的分组；实验开关、入组及单集准入仍生效，其他用户保持原哈希。不增加接口或数据库对象；后端部署与生产配置分别核验，源码不代表生产已启用。Mac 端独立原生触摸工具沿用既有性能采集，不提供新的性能统计真相。
+短剧推荐列表置顶环境清单中的 30 部剧。所有账号播放清单指定单集时使用 Cloudflare Stream，播放其他单集时使用 Supabase。配置、重试与验收见[短剧播放来源](drama-stream-ab.md)。
 
 ### VIP 混合奖励（2026-11-05）
 
 `20261105_vip_mixed_rewards.sql` 先经测试环境再生产执行，随后发布应用，最后通过运营 CLI 发布混合签到与开卡赠礼配置。旧签到数字及旧订单继续兼容；开卡奖励使用订单两钱包快照，同事务入账且不增加实付收入。回退先恢复旧配置，保留混合发放支持处理在途订单。详见 `.trellis/tasks/11-05-vip-mixed-rewards/`。
+
+### 聊天回复负反馈
+
+回复点踩通过独立鉴权接口保存到 `experience.chat_reply_feedback`，空原因可提交，固定回复/编辑版本去重并保留当轮快照。只在面板打开时读取，不进入生成、计费或角色评分链路，无运营页面。迁移顺序、权限和批量分析口径见 [聊天回复反馈](chat-reply-feedback.md)。

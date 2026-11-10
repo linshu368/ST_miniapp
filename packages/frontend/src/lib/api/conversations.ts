@@ -149,7 +149,7 @@ export function useCreateConversationMutation() {
         body: JSON.stringify({ character_id: characterId }),
         queuePriority: 'critical',
       }),
-    onSuccess: (data, characterId) => {
+    onSuccess: (data, _characterId) => {
       // 新会话立刻可读，省掉进页面后的第一次 GET
       queryClient.setQueryData<GetConversationData>(conversationKeys.detail(data.session.id), {
         session: data.session,

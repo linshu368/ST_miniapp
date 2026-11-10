@@ -19,6 +19,7 @@ import vipRoutes from './routes/vip.js';
 import settingsRoutes from './routes/settings.js';
 import modelsRoutes from './routes/models.js';
 import conversationRoutes from './routes/conversations.js';
+import chatFeedbackRoutes from './routes/chat-feedback.js';
 import voiceRoutes from './routes/voice.js';
 import imageRoutes from './routes/images.js';
 import botRoutes from './routes/bot.js';
@@ -43,6 +44,7 @@ import {
   startImagePlazaGenerationJob,
   stopImagePlazaGenerationJob,
 } from './features/image-plaza/job.js';
+import { startStoryMemoryJob, stopStoryMemoryJob } from './features/story-memory/worker.js';
 import {
   startLobbyRankingRefreshJob,
   stopLobbyRankingRefreshJob,
@@ -145,6 +147,7 @@ export async function buildApp() {
   await app.register(settingsRoutes);
   await app.register(modelsRoutes);
   await app.register(conversationRoutes);
+  await app.register(chatFeedbackRoutes);
   await app.register(voiceRoutes);
   await app.register(imageRoutes);
   await app.register(botRoutes);
@@ -192,6 +195,7 @@ export async function buildApp() {
 
   startChatImageGenerationJob(app.log);
   startImagePlazaGenerationJob(app.log);
+  startStoryMemoryJob(app.log);
 
   const stopRuntimeMetrics = startRuntimeMetrics();
 
@@ -201,6 +205,7 @@ export async function buildApp() {
     stopLobbyRankingRefreshJob();
     stopChatImageGenerationJob();
     stopImagePlazaGenerationJob();
+    stopStoryMemoryJob();
     shutdownTextPostprocessValidation();
     await stopEngineeringTelemetry();
   });

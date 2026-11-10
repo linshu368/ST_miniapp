@@ -192,6 +192,7 @@ const ENUMS: Readonly<Record<string, readonly string[]>> = {
     'retry',
   ],
   network_status: ['unsupported', 'no_entry', 'limited', 'available', 'unknown'],
+  drama_engine: ['hlsjs_mse', 'hlsjs_mms', 'native_hls', 'native_file', 'unknown'],
   network_closed: ['deadline', 'terminal_tail', 'released', 'pending'],
   longtask_support: ['supported', 'unsupported', 'unknown'],
   detail_truncated: ['true', 'false'],

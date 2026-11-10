@@ -65,18 +65,15 @@ export class ChatSessionRepository {
     sourceSessionId: string;
     messageId: string;
     requestId: string;
-    retainTurns: number;
   }): Promise<ChatSessionRow> {
-    if (!Number.isInteger(input.retainTurns) || input.retainTurns < 1 || input.retainTurns > 1000) {
-      throw new Error('分支上下文配置不可用');
-    }
+    // Inherited range and memory copy are decided inside the RPC from the source's
+    // memory coverage, so the caller passes no window parameters.
     const { data, error } = await this.db
       .rpc('fork_chat_session', {
         p_user_id: input.userId,
         p_source_session_id: input.sourceSessionId,
         p_message_id: input.messageId,
         p_request_id: input.requestId,
-        p_retain_turns: input.retainTurns,
       })
       .abortSignal(AbortSignal.timeout(5_000));
     if (error) throwConversationRpcError(error, '创建对话分支失败');

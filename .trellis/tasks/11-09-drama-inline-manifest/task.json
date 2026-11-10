@@ -1,0 +1,57 @@
+{
+  "id": "drama-inline-manifest",
+  "name": "drama-inline-manifest",
+  "title": "短剧 Stream 主清单随 /play 内联下发（第一期）",
+  "description": "Stream 组 HLS 起播时，后端按视频 uid 内存缓存主清单内容并随 /play 下发，前端 hls.js 自定义 pLoader 直接返回，省掉一次主清单请求（约 180-210ms 本地测得，生产 P50 628ms/P95 2472ms）。",
+  "status": "in_progress",
+  "dev_type": "feature",
+  "scope": "cross-layer",
+  "package": "backend",
+  "priority": "P2",
+  "creator": "linshu",
+  "assignee": "linshu",
+  "createdAt": "2026-11-09",
+  "completedAt": null,
+  "branch": "feat/drama-inline-manifest",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": ["frontend.business.drama-experience"]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": ["短剧播放页（起播耗时，非页面加载）"],
+      "apis": ["/api/dramas/play"],
+      "android": {
+        "page_p95_baseline_ms": 6640,
+        "page_p95_target_ms": 4170
+      },
+      "ios": {
+        "page_p95_baseline_ms": 5090,
+        "page_p95_target_ms": 5090
+      },
+      "api": {
+        "p95_baseline_ms": 192,
+        "p95_target_ms": 192,
+        "p99_baseline_ms": 780,
+        "p99_target_ms": 1100
+      },
+      "measurement": {
+        "source": "Grafana st-engineering-drama（Loki）：mobile_performance 短剧起播诊断 source_to_playing（Stream 组，Android direct/iOS direct）；backend drama.request_timing 的 route=/api/dramas/play，关注新增 manifest_cache 命中率与 manifest_ms；本任务阶段一本机直连 Stream 的只读测量（主清单 TTFB 180-210ms，无 cf-cache-status，证实边缘不缓存这一层）",
+        "window": "基线：近 72h 截至 2026-11-09 15:48（Android N=28, iOS N=7）；发布后取等长窗口对比，样本量小仅供方向参考，不补零"
+      },
+      "notes": "Android 目标=基线-主清单P95(2472ms)，假定内联清单命中后省掉这一整跳；iOS 原生路径不受本任务影响，基线即目标，第2批打开hls.js开关后才有收益。API p95 目标维持不变（命中为主，miss概率低，30个白名单视频+分钟级TTL）；p99 目标上调到780+300ms超时上限=1100ms，覆盖冷缓存miss的最坏情况，不是劣化目标而是允许的上限。子清单/分片未内联，收益不含这两段，与批1/批2叠加效果需发布后合并评估。"
+    }
+  }
+}

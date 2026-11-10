@@ -35,7 +35,6 @@ describe('播放意图请求', () => {
     expect(JSON.parse(options.body)).toEqual({
       drama_id: ID,
       video_id: VIDEO,
-      fallback: 'mp4',
     });
   });
 
@@ -58,7 +57,7 @@ describe('播放意图请求', () => {
     expect(mocks.apiClient).toHaveBeenCalledTimes(2);
   });
 
-  it('接不上：集不同、或回退 MP4 都新建请求，且不消耗原意图', async () => {
+  it('接不上：集不同、或故障后重新取址 都新建请求，且不消耗原意图', async () => {
     startDramaPlayIntent(ID, VIDEO);
     await loadDramaPlayback(ID, undefined);
     await loadDramaPlayback(ID, VIDEO, undefined, true);

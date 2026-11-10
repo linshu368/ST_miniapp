@@ -7,7 +7,7 @@ import type { DramaPlaybackTiming } from '@/lib/perf/drama-timing';
 
 type TimingOwner = { videoId: string | null; retryVersion: number; flow: DramaPlaybackTiming };
 
-/** Query and one fallback share the same intent, including synchronous duplicate media errors. */
+/** Query and one fresh Stream request share the same intent, including synchronous duplicate media errors. */
 export function useDramaStreamPlayback(
   id: string,
   activeVideoId: string | null,
@@ -16,27 +16,29 @@ export function useDramaStreamPlayback(
   timingRef: MutableRefObject<TimingOwner | null>
 ) {
   const sourceIntent = `${id}:${activeVideoId ?? ''}`;
-  const [fallbackFor, setFallbackFor] = useState<string | null>(null);
-  const fallbackAttempted = useRef<string | null>(null);
+  const [retry, setRetry] = useState<{ intent: string; videoId: string } | null>(null);
+  const retrying = retry?.intent === sourceIntent;
+  const retryAttempted = useRef<string | null>(null);
   useEffect(() => {
-    fallbackAttempted.current = null;
-    setFallbackFor(null);
+    retryAttempted.current = null;
+    setRetry(null);
   }, [sourceIntent]);
   const playbackQuery = useDramaPlaybackQuery(
     id,
-    activeVideoId ?? undefined,
-    fallbackFor === sourceIntent
+    retrying ? retry.videoId : (activeVideoId ?? undefined),
+    retrying
   );
   const playback = playbackQuery.data;
   const recoverStream = useCallback(() => {
     if (
-      fallbackFor === sourceIntent ||
-      fallbackAttempted.current === sourceIntent ||
-      playback?.delivery?.group !== 'stream' ||
+      retrying ||
+      !playback?.video_id ||
+      retryAttempted.current === sourceIntent ||
+      playback.delivery?.group !== 'stream' ||
       (playback.delivery.provider !== 'stream' && playback.delivery.reason !== 'unavailable')
     )
       return false;
-    fallbackAttempted.current = sourceIntent;
+    retryAttempted.current = sourceIntent;
     if (timingRef.current) {
       timingRef.current.flow.delivery = playback.delivery;
       timingRef.current.flow.finish('error');
@@ -50,16 +52,19 @@ export function useDramaStreamPlayback(
     );
     flow.mark('player_ready');
     timingRef.current = { videoId: activeVideoId, retryVersion, flow };
-    setFallbackFor(sourceIntent);
+    // The first request may omit the episode; retry the exact video that failed.
+    setRetry({ intent: sourceIntent, videoId: playback.video_id });
     return true;
   }, [
-    fallbackFor,
+    retrying,
+    playback?.video_id,
     sourceIntent,
     playback?.delivery,
     id,
     activeVideoId,
     playbackOwner,
     retryVersion,
+    timingRef,
   ]);
 
   useEffect(() => {

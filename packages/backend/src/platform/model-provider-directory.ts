@@ -47,6 +47,7 @@ interface SurplusModelRecord {
   completionPrice: number;
   supportsChatText: boolean;
   status?: string | null;
+  supportedParameters?: string[];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -81,6 +82,14 @@ function readStringArray(value: unknown): string[] | null {
   if (!Array.isArray(value)) return null;
   const values = value.map(readText);
   return values.every((item): item is string => item !== undefined) ? values : null;
+}
+
+function readSupportedParameters(value: unknown): string[] | undefined {
+  if (!Array.isArray(value) || value.length > 128) return undefined;
+  const values = readStringArray(value);
+  return values?.every((name) => /^[a-z][a-z0-9_]{0,63}$/.test(name))
+    ? [...new Set(values)]
+    : undefined;
 }
 
 function parseVeniceModelsResponse(value: unknown): VeniceModelRecord[] {
@@ -149,6 +158,7 @@ function parseSurplusModelsResponse(value: unknown): SurplusModelRecord[] {
         completionPrice,
         supportsChatText: inputModalities.includes('text') && outputModalities.includes('text'),
         status: readNullableText(item.status),
+        supportedParameters: readSupportedParameters(item.supported_parameters),
       },
     ];
   });
@@ -328,6 +338,11 @@ export class SurplusProviderDirectoryClient {
     }
   }
 
+  /** Diagnostics can inspect the existing fresh cache without putting directory I/O on dispatch. */
+  peekModels(): ProviderModelDirectory | null {
+    return this.cached && this.now() - this.cachedAt < this.cacheTtlMs ? this.cached : null;
+  }
+
   private async refresh(): Promise<ProviderModelDirectory> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
@@ -359,6 +374,9 @@ export class SurplusProviderDirectoryClient {
             completion_usd_per_token: model.completionPrice,
             status: unavailable ? 'unavailable' : 'available',
             raw_status_label: statusLabel,
+            ...(model.supportedParameters
+              ? { supported_parameters: model.supportedParameters }
+              : {}),
           };
         })
         .sort(
@@ -383,13 +401,19 @@ export class SurplusProviderDirectoryClient {
   }
 }
 
+const surplusProviderDirectoryClient = new SurplusProviderDirectoryClient();
+
+export function getCachedSurplusModelDirectory(): ProviderModelDirectory | null {
+  return surplusProviderDirectoryClient.peekModels();
+}
+
 export const providerDirectoryClients: Record<
   LlmModelProvider,
   { getModels(options?: { forceRefresh?: boolean }): Promise<ProviderModelDirectory> }
 > = {
   openrouter: new OpenRouterProviderDirectoryClient(),
   venice: new VeniceProviderDirectoryClient(),
-  surplus: new SurplusProviderDirectoryClient(),
+  surplus: surplusProviderDirectoryClient,
 };
 
 export async function getProviderModelDirectory(

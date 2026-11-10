@@ -1,4 +1,6 @@
 import { ReplyStyleOptionsEditor } from './ReplyStyleOptionsEditor';
+import { StoryMemoryConfigEditor, StoryMemoryPromptEditor } from './StoryMemoryEditors';
+import { LlmPricingConfigEditor } from './LlmPricingConfigEditor';
 import { useState } from 'react';
 import {
   Alert,
@@ -16,6 +18,8 @@ import {
 } from 'antd';
 import {
   CREATOR_REVIEW_PROMPT_KEY,
+  STORY_MEMORY_CONFIG_KEY,
+  STORY_MEMORY_PROMPT_KEY,
   DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG,
   DEFAULT_PAYMENT_CHANNELS_CONFIG,
   DEFAULT_WORD_COUNT_TIERS_CONFIG,
@@ -24,7 +28,6 @@ import {
   ImagePlazaShareTipConfigSchema,
   ImagePlazaTagConfigSchema,
   LlmPricingConfigSchema,
-  MAX_FEATURE_FREE_TRIAL_LIMIT,
   ModelCatalogSchema,
   type ModelCatalog,
   type LlmModelProvider,
@@ -52,7 +55,6 @@ import {
   type ImageTextModelConfig,
   type ManagedConfigKey,
 } from '@miniapp/admin-client';
-import type { CharacterCard } from '@miniapp/admin-client';
 import { InviteCenterConfigEditor } from './InviteCenterConfigEditor';
 import { InviteRewardRulesEditor } from './InviteRewardRulesEditor';
 import {
@@ -429,6 +431,26 @@ export function ConfigValueEditor(props: {
     );
   }
 
+  if (props.configKey === STORY_MEMORY_CONFIG_KEY) {
+    return (
+      <StoryMemoryConfigEditor
+        value={props.value}
+        disabled={props.disabled}
+        onChange={props.onChange}
+      />
+    );
+  }
+
+  if (props.configKey === STORY_MEMORY_PROMPT_KEY) {
+    return (
+      <StoryMemoryPromptEditor
+        value={typeof props.value === 'string' ? props.value : ''}
+        disabled={props.disabled}
+        onChange={props.onChange}
+      />
+    );
+  }
+
   if (props.configKey === 'system_instructions') {
     return (
       <SystemInstructionsEditor
@@ -520,41 +542,12 @@ export function ConfigValueEditor(props: {
   }
 
   if (props.configKey === 'llm_pricing_config') {
-    const parsed = LlmPricingConfigSchema.safeParse(props.value);
-    const fixedDeduction = parsed.success
-      ? parsed.data.fixedDeduction
-      : {
-          freeQuotaExhausted: 10,
-          light: 15,
-          standard: 30,
-          premium: 50,
-        };
     return (
-      <Row gutter={[12, 12]}>
-        {(
-          [
-            ['freeQuotaExhausted', '免费模型超出免费轮次'],
-            ['light', '轻量档（付费）'],
-            ['standard', '标准档'],
-            ['premium', '旗舰档'],
-          ] as const
-        ).map(([key, label]) => (
-          <Col xs={24} md={12} lg={6} key={key}>
-            <Typography.Text>{label}（星尘/轮）</Typography.Text>
-            <InputNumber
-              min={0}
-              className="field-full"
-              value={fixedDeduction[key]}
-              disabled={props.disabled}
-              onChange={(number) =>
-                props.onChange({
-                  fixedDeduction: { ...fixedDeduction, [key]: number ?? 0 },
-                })
-              }
-            />
-          </Col>
-        ))}
-      </Row>
+      <LlmPricingConfigEditor
+        value={props.value}
+        disabled={props.disabled}
+        onChange={props.onChange}
+      />
     );
   }
 

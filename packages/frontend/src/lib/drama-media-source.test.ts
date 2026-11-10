@@ -6,12 +6,16 @@ import {
   ownsDramaSource,
   resolveResumeTarget,
 } from './drama-media-source';
+import { createInlinePlaylistLoader } from './drama-inline-manifest-loader';
 const state = vi.hoisted(() => ({
   destroyed: vi.fn(),
   created: vi.fn(),
-  attached: undefined as (() => void) | undefined,
+  attached: undefined as ((data?: { mediaSource?: unknown }) => void) | undefined,
   order: [] as string[],
   lastConfig: undefined as Record<string, unknown> | undefined,
+}));
+vi.mock('./drama-inline-manifest-loader', () => ({
+  createInlinePlaylistLoader: vi.fn(() => 'fake-ploader-sentinel'),
 }));
 vi.mock('hls.js', () => ({
   default: class {
@@ -23,8 +27,8 @@ vi.mock('hls.js', () => ({
       state.created();
       state.lastConfig = config;
     }
-    on(name: string, callback: () => void) {
-      if (name === 'attached') state.attached = callback;
+    on(name: string, callback: (event: string, data?: { mediaSource?: unknown }) => void) {
+      if (name === 'attached') state.attached = (data) => callback('attached', data);
     }
     loadSource() {
       state.order.push('loadSource');
@@ -38,6 +42,8 @@ vi.mock('hls.js', () => ({
     }
   },
 }));
+/** 测试里的最小 ManagedMediaSource 替身；只用于 instanceof 判断，不实现真实接口。 */
+class FakeManagedMediaSource {}
 function video() {
   return { src: '', currentSrc: '', canPlayType: () => '' } as unknown as HTMLVideoElement;
 }
@@ -65,7 +71,10 @@ beforeEach(() => {
   state.order = [];
   state.lastConfig = undefined;
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+});
 it('does not attach a pending HLS import after a source was cancelled', async () => {
   const element = video(),
     ready = vi.fn();
@@ -136,6 +145,56 @@ it('leaves Android, MP4 and unplayable results untouched', () => {
   const none = { ...playback, playable: false, play_url: null };
   expect(capAppleHlsQuality(none)).toBe(none);
 });
+it('stays on native HLS on iPhone when the flag is on but ManagedMediaSource is unavailable', () => {
+  vi.stubEnv('NEXT_PUBLIC_DRAMA_IOS_HLSJS', 'true');
+  vi.stubGlobal('navigator', { userAgent: IPHONE_UA });
+  const element = nativeVideo(),
+    ready = vi.fn();
+  loadDramaSource(element, playback, ready, vi.fn());
+  expect(element.src).toBe(playback.play_url);
+  expect(state.created).not.toHaveBeenCalled();
+  expect(capAppleHlsQuality(playback).play_url).toBe(
+    'https://example.invalid/manifest?clientBandwidthHint=2.5'
+  );
+});
+it('routes iPhone to hls.js when the flag is on and ManagedMediaSource exists, without the 720p cap', async () => {
+  vi.stubEnv('NEXT_PUBLIC_DRAMA_IOS_HLSJS', 'true');
+  vi.stubGlobal('navigator', { userAgent: IPHONE_UA });
+  vi.stubGlobal('window', { ManagedMediaSource: FakeManagedMediaSource });
+  expect(capAppleHlsQuality(playback)).toBe(playback);
+  const element = nativeVideo(),
+    ready = vi.fn(),
+    onEngine = vi.fn();
+  const cleanup = loadDramaSource(element, playback, ready, vi.fn(), undefined, { onEngine });
+  await vi.waitFor(() => expect(state.created).toHaveBeenCalledOnce());
+  state.attached?.({ mediaSource: new FakeManagedMediaSource() });
+  expect(onEngine).toHaveBeenCalledWith('hlsjs_mms');
+  expect(ready).toHaveBeenCalledOnce();
+  cleanup();
+});
+it('tags the engine as hlsjs_mse when hls.js attaches a plain MediaSource', async () => {
+  vi.stubEnv('NEXT_PUBLIC_DRAMA_IOS_HLSJS', 'true');
+  vi.stubGlobal('navigator', { userAgent: IPHONE_UA });
+  vi.stubGlobal('window', { ManagedMediaSource: FakeManagedMediaSource });
+  const onEngine = vi.fn();
+  const cleanup = loadDramaSource(nativeVideo(), playback, vi.fn(), vi.fn(), undefined, {
+    onEngine,
+  });
+  await vi.waitFor(() => expect(state.created).toHaveBeenCalledOnce());
+  state.attached?.({ mediaSource: {} });
+  expect(onEngine).toHaveBeenCalledWith('hlsjs_mse');
+  cleanup();
+});
+it('reports native_file and native_hls through onEngine on the synchronous branches', () => {
+  vi.stubGlobal('navigator', { userAgent: IPHONE_UA });
+  const onEngine = vi.fn();
+  loadDramaSource(nativeVideo(), playback, vi.fn(), vi.fn(), undefined, { onEngine });
+  expect(onEngine).toHaveBeenCalledWith('native_hls');
+  const mp4 = { ...playback, format: 'mp4' as const };
+  const onEngineMp4 = vi.fn();
+  loadDramaSource(nativeVideo(), mp4, vi.fn(), vi.fn(), undefined, { onEngine: onEngineMp4 });
+  expect(onEngineMp4).toHaveBeenCalledWith('native_file');
+});
 it('aligns resume seconds to the 4s Stream fragment boundary only for hls', () => {
   expect(alignResumeSeconds(12.0, 'hls')).toBe(12);
   expect(alignResumeSeconds(13.9, 'hls')).toBe(12);
@@ -179,5 +238,25 @@ it('defaults startPosition to -1 (hls.js automatic) when none is given', async (
   const cleanup = loadDramaSource(video(), playback, vi.fn(), vi.fn());
   await vi.waitFor(() => expect(state.created).toHaveBeenCalledOnce());
   expect(state.lastConfig?.startPosition).toBe(-1);
+  cleanup();
+});
+it('builds a pLoader from inline_manifest and passes it into the Hls config', async () => {
+  vi.stubGlobal('navigator', { userAgent: ANDROID_UA });
+  const inlinePlayback = { ...playback, inline_manifest: '#EXTM3U\n...' };
+  const cleanup = loadDramaSource(video(), inlinePlayback, vi.fn(), vi.fn());
+  await vi.waitFor(() => expect(state.created).toHaveBeenCalledOnce());
+  expect(createInlinePlaylistLoader).toHaveBeenCalledWith(
+    inlinePlayback.play_url,
+    inlinePlayback.inline_manifest
+  );
+  expect(state.lastConfig?.pLoader).toBe('fake-ploader-sentinel');
+  cleanup();
+});
+it('omits pLoader when the backend did not provide inline_manifest', async () => {
+  vi.stubGlobal('navigator', { userAgent: ANDROID_UA });
+  const cleanup = loadDramaSource(video(), playback, vi.fn(), vi.fn());
+  await vi.waitFor(() => expect(state.created).toHaveBeenCalledOnce());
+  expect(createInlinePlaylistLoader).not.toHaveBeenCalled();
+  expect(state.lastConfig?.pLoader).toBeUndefined();
   cleanup();
 });

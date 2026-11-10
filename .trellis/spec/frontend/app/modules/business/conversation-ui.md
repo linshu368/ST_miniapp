@@ -66,7 +66,7 @@ last_verified_at: 2026-11-02
 
 ## 数据、契约与外部依赖
 
-消费 shared conversations/voice/images/telemetry 契约和 Backend HTTP/SSE。实际保存图片使用 URL 调 Telegram 下载；历史图片 PostHog helper 已移除。
+消费 shared conversations/voice/images 契约和 Backend HTTP/SSE。实际保存图片使用 URL 调 Telegram 下载；历史图片 PostHog helper 已移除。
 
 ## 关键节点与约束
 

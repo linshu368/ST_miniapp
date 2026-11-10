@@ -33,6 +33,8 @@ import { listSurplusRowsPendingBilling } from './surplus-billing-recovery.js';
 import { getDomainDb, type DomainDb } from '../../lib/supabase.js';
 import { ConversationRepositoryError, throwConversationRpcError } from './conversation-errors.js';
 import type { InstructionSlotModes } from '../../features/engine/types.js';
+import type { StoryTurn } from '../../features/story-memory/text.js';
+import { turnsToMessages } from '../../features/conversations/history.js';
 
 export const STREAMING_STALE_SECONDS = 120;
 
@@ -162,10 +164,14 @@ export interface StartedHistoryTurn {
 export interface ConversationContext {
   /** 首轮实际 prompt 中保存的开场白；尚无历史时为 null，由调用方使用角色卡当前 first_mes */
   openingMessage: string | null;
-  messages: Array<{ role: 'user' | 'assistant'; content: string }>;
-  /** 被窗口截掉的早期轮数 = context_window_start_turn - 1；未泄洪为 0 */
+  messages: ConversationContextMessage[];
+  /** 窗口内的轮次（升序），生成链路据此按正文字数决定是否再前移窗口 */
+  turns: StoryTurn[];
+  /** 被窗口截掉的早期轮数 = context_window_start_turn - 1；未截断为 0 */
   truncatedTurns: number;
 }
+
+export type ConversationContextMessage = { role: 'user' | 'assistant'; content: string };
 
 export class ConversationHistoryRepository {
   constructor(private readonly db: DomainDb = getDomainDb('experience')) {}
@@ -253,16 +259,12 @@ export class ConversationHistoryRepository {
     userContent: string;
     model: string;
     staleAfterSeconds?: number;
-    maxContextTurns?: number;
-    retainContextTurns?: number;
   }): Promise<StartedHistoryTurn> {
-    const windowArgs = contextWindowRpcArgs(input);
     const args = {
       p_session_id: input.sessionId,
       p_user_content: input.userContent,
       p_model: input.model,
       p_stale_after_seconds: input.staleAfterSeconds ?? STREAMING_STALE_SECONDS,
-      ...windowArgs,
     };
     const data = await this.callStartRpc({
       rpc: 'start_chat_history_turn_with_current_postprocess',
@@ -277,16 +279,12 @@ export class ConversationHistoryRepository {
     turnIndex?: number;
     model: string;
     staleAfterSeconds?: number;
-    maxContextTurns?: number;
-    retainContextTurns?: number;
   }): Promise<StartedHistoryTurn> {
-    const windowArgs = contextWindowRpcArgs(input);
     const args = {
       p_session_id: input.sessionId,
       p_turn_index: input.turnIndex ?? null,
       p_model: input.model,
       p_stale_after_seconds: input.staleAfterSeconds ?? STREAMING_STALE_SECONDS,
-      ...windowArgs,
     };
     const data = await this.callStartRpc({
       rpc: 'start_chat_history_regeneration_with_current_postprocess',
@@ -658,7 +656,7 @@ export class ConversationHistoryRepository {
 
   /**
    * 返回 current turn 之前、窗口起点之后的当前版本上下文。
-   * 开场白始终从 turn 1 的 prompt 快照提取，不随泄洪丢掉。
+   * 开场白始终从 turn 1 的 prompt 快照提取，不随截断丢掉。
    * listMessages 不加这个过滤。
    *
    * knownWindowStartTurn：开轮 RPC 刚返回的窗口起点。调用方有就传，省掉一次 chat_sessions 读；
@@ -679,7 +677,7 @@ export class ConversationHistoryRepository {
       .select(SESSION_TURN_HEAD_COLUMNS)
       .eq('session_id', sessionId);
 
-    // 已泄洪时窗口不含 turn 1，但开场白要从 turn 1 的 prompt 快照取。
+    // 已截断时窗口不含 turn 1，但开场白要从 turn 1 的 prompt 快照取。
     // 用一条 OR 查询同时取回两者，而不是并发两次 GET：同一 session 连续打两次
     // current_chat_history 正是 ST-MINIAPP-2G（Consecutive HTTP）报的问题。
     const filtered =
@@ -828,20 +826,6 @@ function readInstructionSlotModes(
   return { choice: values[0], status: values[1], memory: values[2] } as InstructionSlotModes;
 }
 
-function contextWindowRpcArgs(input: { maxContextTurns?: number; retainContextTurns?: number }): {
-  p_max_context_turns?: number;
-  p_retain_context_turns?: number;
-} {
-  return {
-    ...(typeof input.maxContextTurns === 'number'
-      ? { p_max_context_turns: input.maxContextTurns }
-      : {}),
-    ...(typeof input.retainContextTurns === 'number'
-      ? { p_retain_context_turns: input.retainContextTurns }
-      : {}),
-  };
-}
-
 function readWindowStart(value: unknown): number {
   return typeof value === 'number' && Number.isInteger(value) && value >= 1 ? value : 1;
 }
@@ -852,16 +836,15 @@ export function assembleConversationContext(input: {
   openingHistory?: unknown[];
 }): ConversationContext {
   const openingSource = input.openingHistory ?? input.windowRows[0]?.history;
+  const turns = input.windowRows.map((row) => ({
+    turnIndex: row.turn_index,
+    userInput: row.user_input,
+    assistantReply: row.assistant_reply,
+  }));
   return {
     openingMessage: extractOpeningMessage(openingSource),
-    messages: input.windowRows.flatMap((row) => {
-      const messages: ConversationContext['messages'] = [];
-      if (row.user_input.trim()) messages.push({ role: 'user', content: row.user_input });
-      if (row.assistant_reply?.trim()) {
-        messages.push({ role: 'assistant', content: row.assistant_reply });
-      }
-      return messages;
-    }),
+    messages: turnsToMessages(turns),
+    turns,
     truncatedTurns: Math.max(input.windowStartTurn - 1, 0),
   };
 }

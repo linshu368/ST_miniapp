@@ -66,6 +66,12 @@ pnpm test:ui:fixtures            # 模拟服务本身的协议与隔离检查
 
 `fixtures/data.ts` 是场景与初始数据入口。金额仅为验收示例，不同步线上配置或用户资料。不要将 token、initData、生产响应、聊天或数据库导出放进 fixture / trace。聊天中的语音与附图仅提供静态配置和空记录，本轮不模拟它们的生成。
 
+### Surplus Intelligence 聊天
+
+`pnpm test:ui --grep '@surplus'` 复用 `chat.spec.ts` 的390/320尺寸及既有HTTP/SSE服务。`chat-surplus` 提供完整平台名称 **Surplus Intelligence**、内部 `provider=surplus` 和虚构 `provider_model_id=preview-surplus-text`，验证目录展示、发送、重生成、取消与刷新恢复。`chat-surplus-fallback` 模拟慢主调用后由现有 OpenRouter 模型交付，验证一次发送、回复保留和用户选择仍为 Surplus。
+
+fixture 不连接 `api.surplusintelligence.ai` 或其他供应商，模型ID与正文均为本地虚构数据。这里验证真实页面消费公开DTO/SSE的行为，不能证明真实供应商路由、调用明细落库或一次扣费；这些由后端、隔离数据库及目标环境验收承担。
+
 ## 扩展方式
 
 1. 优先在已有分组增加断言，复用 `tests/fixtures.ts` 的场景重置、网络检查和报告。
@@ -138,7 +144,7 @@ pnpm test:ui:fixtures            # 模拟服务本身的协议与隔离检查
 
 ### 回复点赞
 
-复用普通聊天与「历史对话分支」，新增「回复点赞失败」状态。`pnpm test:ui --grep @chat-like` 验证390/320布局、48px按钮边缘可点、点亮/取消与刷新持久化、失败恢复/草稿保留、历史轮次、分支和重新生成不继承旧赞。全部基于本地虚构数据；SQL权限/固定版本/幂等继续复用 `bash scripts/test-conversation-branches-migration.sh`，没有另建临时脚本或真实扣费。
+复用普通聊天与「历史对话分支」，新增「回复点赞失败」状态。`pnpm test:ui --grep @chat-like` 验证390/320布局、紧凑操作按钮边缘可点、点亮/取消与刷新持久化、失败恢复/草稿保留、历史轮次、分支和重新生成不继承旧赞。全部基于本地虚构数据；SQL权限/固定版本/幂等继续复用 `bash scripts/test-conversation-branches-migration.sh`，没有另建临时脚本或真实扣费。
 
 `pnpm test:ui --grep @startup` 关闭 JavaScript，验证首页、角色、短剧列表的初始 HTML 框架和五项导航，无业务 API 请求；不替代 Telegram 原生启动遮罩与 Sentry 生产指标接收验收。
 
@@ -215,3 +221,7 @@ VIP 混合奖励复用 `@profile`：`vip-mixed` 场景每日签到 120 专项＋
 进度按本机账号持久化，手动预览中刷新不会重播已跳过教程；仍可在聊天工具箱的“玩法小贴士”查看说明。自动用例使用独立浏览器上下文，可直接重复运行。这里的用户、对话及资格都是fixture，不访问生产数据；真机系统键盘与线上双端P95不由本地模拟代替。
 
 创作邀请复用 `@creator-onboarding`：`onboarding.spec.ts` 的 `seedBasicGuide` 固定本机9/10轮和基础引导状态，`new-user-near-creator` / `new-user-creator-ready` 提供相应虚构账号/消息；手动切服务端场景本身不会覆盖浏览器已保存进度。覆盖重生成不加轮、9轮换卡不邀请、跨卡第10轮成功返场、冷进入/最新/未完成基础引导不显示、关闭刷新不重复、AI润色与预设只定位不写入，390/320尺寸。邀请额外接口请求数断言为0；测试fixture和真实计费完全隔离。
+
+### 聊天回复反馈
+
+`pnpm test:ui --grep @chat-dislike` 复用标准聊天与`chat-like-error`虚构场景，覆盖空反馈提交、首屏提交栏、320px/340px压缩视口、关闭保留草稿、失败重试、写入成功丢响应不重复、刷新读取已存原因说明。首屏不逐条读反馈，打开面板才查询。右侧按钮36px宽44px高，无点击圆形底色。真实权限、编辑/分支快照和用户级清理由`bash scripts/test-conversation-branches-migration.sh`在隔离PG17覆盖。本地fixture不连接生产。

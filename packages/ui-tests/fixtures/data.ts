@@ -221,6 +221,16 @@ export const scenarios = {
     description: '先显示思考，正文开始后自动折叠',
     path: `/chat/${IDS.character}?session=${IDS.session}&from=discover`,
   },
+  'chat-surplus': {
+    label: 'Surplus Intelligence 聊天',
+    description: '虚构 Surplus 模型目录、发送、重答与取消；不连接供应商',
+    path: `/chat/${IDS.character}?session=${IDS.session}&from=discover`,
+  },
+  'chat-surplus-fallback': {
+    label: 'Surplus Intelligence 兜底',
+    description: '模拟 Surplus 主调用慢、OpenRouter 兜底交付；原模型选择保持',
+    path: `/chat/${IDS.character}?session=${IDS.session}&from=discover`,
+  },
   'chat-late-first-token': {
     label: '首字迟到',
     description: '客户端计时到点只提示网络慢，回复到达后提示消失，不误报重试',
@@ -646,6 +656,42 @@ export function makeData(api: string, characterCount = 18) {
 }
 
 export type PreviewData = ReturnType<typeof makeData>;
+
+/** Fictional model IDs; only the public provider label matches the real platform. */
+export const SURPLUS_PREVIEW_MODEL = {
+  id: 'preview-surplus',
+  provider: 'surplus',
+  provider_model_id: 'preview-surplus-text',
+  display_name: 'Surplus Intelligence',
+} as const;
+
+export function useSurplusPreviewCatalog(data: PreviewData): void {
+  const tier = data.models.catalog.tiers[0]!;
+  tier.models.push({
+    id: SURPLUS_PREVIEW_MODEL.id,
+    display_name: SURPLUS_PREVIEW_MODEL.display_name,
+    tagline: 'Surplus Intelligence 本地虚构回复',
+    is_free: true,
+    sort_order: 1,
+  });
+  data.models.catalog.default_model_id = SURPLUS_PREVIEW_MODEL.id;
+  selectPreviewModel(data, SURPLUS_PREVIEW_MODEL.id);
+}
+
+export function selectPreviewModel(data: PreviewData, modelId: string): boolean {
+  if (!data.models.catalog.tiers.some((tier) => tier.models.some((model) => model.id === modelId)))
+    return false;
+  const surplus = modelId === SURPLUS_PREVIEW_MODEL.id;
+  const providerModelId = surplus ? SURPLUS_PREVIEW_MODEL.provider_model_id : 'preview/model';
+  Object.assign(data.models, {
+    selected_model_id: modelId,
+    selected_openrouter_model_id: providerModelId,
+    selected_provider: surplus ? SURPLUS_PREVIEW_MODEL.provider : 'openrouter',
+    selected_provider_model_id: providerModelId,
+  });
+  data.generation.config.selected_model_id = modelId;
+  return true;
+}
 
 const nextBilling = {
   billing_mode: 'free_trial' as const,

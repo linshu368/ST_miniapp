@@ -82,8 +82,18 @@ vi.mock('../generation/index.js', () => ({
     entitlement: { active: false, validUntil: null },
   }),
 }));
-vi.mock('./context-window.js', () => ({
-  fetchContextWindowLimits: async () => ({ maxTurns: 50, retainTurns: 30 }),
+vi.mock('../story-memory/config.js', async () => {
+  const { DEFAULT_STORY_MEMORY_CONFIG } = await import('@miniapp/shared');
+  return { fetchStoryMemoryConfig: async () => DEFAULT_STORY_MEMORY_CONFIG };
+});
+vi.mock('../story-memory/turn.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../story-memory/turn.js')>()),
+  readStoryMemoryForTurn: async () => ({
+    content: null,
+    coveredEndTurn: 0,
+    outcome: 'empty',
+    readMs: 0,
+  }),
 }));
 const { runConversationTurn } = await import('./generate.js');
 const { GenerationCleanupPendingError } = await import('../generation/types.js');
@@ -123,7 +133,12 @@ beforeEach(() => {
     revision: 2,
     userContent: 'original',
   });
-  mocks.context.mockResolvedValue({ messages: [], openingMessage: 'hello', truncatedTurns: 0 });
+  mocks.context.mockResolvedValue({
+    messages: [],
+    turns: [],
+    openingMessage: 'hello',
+    truncatedTurns: 0,
+  });
   mocks.prompt.mockResolvedValue(undefined);
   mocks.find.mockResolvedValue({ status: 'streaming', llm_finish_reason: null });
   mocks.finalize.mockResolvedValue({ status: 'upstream_error', llm_finish_reason: null });
@@ -149,7 +164,7 @@ describe('turn lifecycle recovery', () => {
     });
     mocks.context.mockImplementation(async () => {
       await pause(1500);
-      return { messages: [], openingMessage: 'hello', truncatedTurns: 0 };
+      return { messages: [], turns: [], openingMessage: 'hello', truncatedTurns: 0 };
     });
     mocks.begin.mockImplementation(async () => pause(300));
     mocks.prepare.mockImplementation(async () => {
@@ -207,7 +222,12 @@ describe('turn lifecycle recovery', () => {
       first_mes: 'new bound opening',
       system_prompt: 'bound prompt',
     });
-    mocks.context.mockResolvedValue({ messages: [], openingMessage: null, truncatedTurns: 0 });
+    mocks.context.mockResolvedValue({
+      messages: [],
+      turns: [],
+      openingMessage: null,
+      truncatedTurns: 0,
+    });
     await runConversationTurn(input({ kind: 'send', content: 'first' }));
     expect(mocks.card).toHaveBeenCalledExactlyOnceWith('character', 'user', 'session');
     expect(mocks.buildPrompt).toHaveBeenCalledWith(
@@ -270,7 +290,7 @@ describe('turn lifecycle recovery', () => {
     });
     mocks.context.mockImplementation(async () => {
       await pause(600);
-      return { messages: [], openingMessage: 'hello', truncatedTurns: 0 };
+      return { messages: [], turns: [], openingMessage: 'hello', truncatedTurns: 0 };
     });
     mocks.execute.mockImplementation(async (_request, hooks) => {
       // Config reads already ran during context loading; execute must not issue them again.
@@ -637,7 +657,7 @@ describe('turn lifecycle recovery', () => {
     });
     mocks.context.mockImplementation(async () => {
       order.push('prompt context');
-      return { messages: [], openingMessage: 'hello', truncatedTurns: 0 };
+      return { messages: [], turns: [], openingMessage: 'hello', truncatedTurns: 0 };
     });
     await runConversationTurn({ ...input({ kind: 'send', content: 'original' }), requestId });
     expect(order).toEqual(['request identity', 'prompt context']);

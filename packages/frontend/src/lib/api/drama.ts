@@ -247,8 +247,7 @@ async function fetchDramaDetail(id: string, signal?: AbortSignal): Promise<Drama
 async function fetchDramaPlayback(
   id: string,
   videoId?: string,
-  signal?: AbortSignal,
-  fallback = false
+  signal?: AbortSignal
 ): Promise<DramaPlayback> {
   // 固定地址的 POST：CORS 预检按 URL 缓存，原来每集一个 URL 导致每次都要预检。
   const body: DramaPlayRequest = { drama_id: id };
@@ -259,7 +258,6 @@ async function fetchDramaPlayback(
       typeof MediaSource !== 'undefined')
   )
     body.format = 'hls';
-  if (fallback) body.fallback = 'mp4';
   return dramaTiming.query('playback', id, videoId, async (onAttempt) => {
     const data = await apiClient<GetDramaPlaybackData>('/api/dramas/play', {
       method: 'POST',
@@ -297,20 +295,20 @@ export function startDramaPlayIntent(id: string, videoId?: string): void {
 
 /**
  * 取播放地址：优先接上同 (剧, 集) 的意图请求（10 秒内有效、只用一次），接不上就新建请求。
- * 回退 MP4 是新的请求语义，不接意图请求。
+ * 播放失败后重新签发地址，跳过可能已失效的意图请求。
  */
 export function loadDramaPlayback(
   id: string,
   videoId?: string,
   signal?: AbortSignal,
-  fallback = false
+  freshRequest = false
 ): Promise<DramaPlayback> {
   const key = playIntentKey(id, videoId);
-  const intent = fallback ? undefined : playIntents.get(key);
-  if (!fallback) playIntents.delete(key);
+  const intent = freshRequest ? undefined : playIntents.get(key);
+  if (!freshRequest) playIntents.delete(key);
   return intent && Date.now() - intent.startedAt <= PLAY_INTENT_TTL_MS
     ? intent.promise
-    : fetchDramaPlayback(id, videoId, signal, fallback);
+    : fetchDramaPlayback(id, videoId, signal);
 }
 
 // 保留结果对象身份，防止 structural sharing 把本次请求映射到旧对象的计时元数据。
@@ -350,11 +348,11 @@ export function useDramaDetailQuery(id: string) {
 }
 
 /** Each playback intent confirms the current provider; a prefetched old CDN URL cannot bypass shutdown. */
-export function useDramaPlaybackQuery(id: string, videoId?: string, fallback = false) {
+export function useDramaPlaybackQuery(id: string, videoId?: string, freshRequest = false) {
   const intent = useMemo(() => `${id}:${videoId ?? ''}:${createRequestId()}`, [id, videoId]);
   return useQuery({
-    queryKey: [...dramaKeys.playback(id, videoId), 'intent', intent, fallback],
-    queryFn: ({ signal }) => loadDramaPlayback(id, videoId, signal, fallback),
+    queryKey: [...dramaKeys.playback(id, videoId), 'intent', intent, freshRequest],
+    queryFn: ({ signal }) => loadDramaPlayback(id, videoId, signal, freshRequest),
     structuralSharing: false,
     enabled: Boolean(id),
     gcTime: 0,

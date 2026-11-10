@@ -1,4 +1,5 @@
 import { createServer, type ServerResponse } from 'node:http';
+import { createChatFeedbackFixture } from './chat-feedback.js';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -80,6 +81,8 @@ import {
   later,
   makeData,
   makeChatSessionSamples,
+  useSurplusPreviewCatalog,
+  selectPreviewModel,
   scenarios,
   stamp,
   voiceConfig,
@@ -277,6 +280,7 @@ export function createPreviewServer(apiPort: number, appPort: number) {
   >();
   let branchFailureDelivered = false;
   const messageLikes = new Set<string>();
+  const replyFeedback = createChatFeedbackFixture();
   let messageLikeFailureDelivered = false;
   let messageEditFailureDelivered = false;
 
@@ -361,6 +365,7 @@ export function createPreviewServer(apiPort: number, appPort: number) {
     for (const stream of streams) stream.end();
     streams.clear();
     data = makeData(api, next.startsWith('lobby-rotation') ? lobbyCardCount : 18);
+    if (next === 'chat-surplus' || next === 'chat-surplus-fallback') useSurplusPreviewCatalog(data);
     lobbyCurrent = null;
     lobbyPrevious = null;
     lobbyBatchCount = 0;
@@ -464,6 +469,7 @@ export function createPreviewServer(apiPort: number, appPort: number) {
     branchRequests.clear();
     branchFailureDelivered = false;
     messageLikes.clear();
+    replyFeedback.reset();
     messageLikeFailureDelivered = false;
     messageEditFailureDelivered = false;
     scenario = next;
@@ -1790,11 +1796,16 @@ export function createPreviewServer(apiPort: number, appPort: number) {
       }
       if (path === '/api/v1/models/select' && method === 'POST') {
         const { model_id } = SelectModelRequestSchema.parse(body);
-        if (model_id !== 'preview-light') {
+        if (!selectPreviewModel(data, model_id)) {
           fail(res, 400, 'unknown_model', '预览模型不存在');
           return;
         }
-        ok(res, { model_id, openrouter_model_id: 'preview/model' });
+        ok(res, {
+          model_id,
+          openrouter_model_id: data.models.selected_openrouter_model_id,
+          provider: data.models.selected_provider,
+          provider_model_id: data.models.selected_provider_model_id,
+        });
         return;
       }
       if (path === '/api/v1/conversations') {
@@ -1940,6 +1951,30 @@ export function createPreviewServer(apiPort: number, appPort: number) {
           deleted: saved.deleted,
           edit_version: saved.edit_version,
         });
+        return;
+      }
+      const feedbackMatch = path.match(
+        /^\/api\/v1\/conversations\/([^/]+)\/messages\/([^/]+)\/feedback$/
+      );
+      if (feedbackMatch && (method === 'GET' || method === 'PUT')) {
+        const [, sessionId, messageId] = feedbackMatch;
+        if (!data.sessions.some((session) => session.id === sessionId)) {
+          fail(res, 404, 'NOT_FOUND', '对话不存在');
+          return;
+        }
+        const message = currentConversationMessages(sessionId!).find(
+          (item) => item.id === messageId && item.role === 'assistant'
+        );
+        const result = replyFeedback.handle(
+          method,
+          sessionId!,
+          message,
+          Number(url.searchParams.get('edit_version')),
+          body,
+          scenario === 'chat-like-error'
+        );
+        if (result.status === 200) ok(res, result.data);
+        else fail(res, result.status, result.code!, result.message!);
         return;
       }
       const messageLikeMatch = path.match(
@@ -2160,6 +2195,10 @@ export function createPreviewServer(apiPort: number, appPort: number) {
             content: '',
             status: 'streaming',
             finish_reason: null,
+            model_id:
+              scenario === 'chat-surplus-fallback'
+                ? 'preview-light'
+                : data.models.selected_model_id,
           };
           data.messages.push(message);
           const currentEpoch = epoch;
@@ -2176,6 +2215,7 @@ export function createPreviewServer(apiPort: number, appPort: number) {
           res.on('close', () => streams.delete(res));
           write({
             type: 'start',
+            requested_model_id: data.models.selected_model_id,
             turn_index: turn,
             revision: message.revision,
             user_message_id: userId,
@@ -2188,7 +2228,11 @@ export function createPreviewServer(apiPort: number, appPort: number) {
           if (parsed.thinking_enabled !== false)
             write({ type: 'reasoning', text: '沿着当前故事线，准备一个自然的回应。' });
           await delay(
-            scenario === 'chat-slow' ? 2200 : scenario === 'chat-late-first-token' ? 2500 : 700
+            scenario === 'chat-slow' || scenario === 'chat-surplus-fallback'
+              ? 2200
+              : scenario === 'chat-late-first-token'
+                ? 2500
+                : 700
           );
           if (
             currentEpoch !== epoch ||

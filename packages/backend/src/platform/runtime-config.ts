@@ -310,28 +310,6 @@ const streamManifestSchema = z
   })
   .strict();
 
-const streamCohortSchema = z
-  .object({
-    experimentId: z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/),
-    supabase: z.number().int().positive().safe(),
-    stream: z.number().int().positive().safe(),
-  })
-  .strict()
-  .refine((value) => value.supabase !== value.stream);
-
-/** Two sampling accounts only; invalid/stale settings leave ordinary bucketing intact. */
-export function getDramaStreamCohort(experimentId: string) {
-  const raw = process.env.DRAMA_STREAM_SAMPLING_COHORT;
-  if (!raw || raw.length > 512) return null;
-  try {
-    const cohort = streamCohortSchema.parse(JSON.parse(raw));
-    return cohort.experimentId === experimentId ? cohort : null;
-  } catch {
-    return null;
-  }
-}
-
-/** Invalid or overlapping experiments fail closed to the existing MP4 path. */
 export function getDramaStreamConfig(retainIdentity = false) {
   if (
     !retainIdentity &&
@@ -344,25 +322,44 @@ export function getDramaStreamConfig(retainIdentity = false) {
     );
     const id = process.env.DRAMA_STREAM_EXPERIMENT_ID || '';
     const key = process.env.DRAMA_STREAM_EXPERIMENT_KEY || '';
-    const host = process.env.DRAMA_STREAM_HOST || '';
-    const keyId = process.env.DRAMA_STREAM_KEY_ID || '';
-    const privateKey = process.env.DRAMA_STREAM_PRIVATE_KEY || '';
-    const enrollmentBps = Number(process.env.DRAMA_STREAM_ENROLLMENT_BPS || '0');
-    if (!Number.isInteger(enrollmentBps) || enrollmentBps < 0 || enrollmentBps > 10000) return null;
     if (
       manifest.environment !== config.database.target ||
       !/^[a-zA-Z0-9_-]{1,64}$/.test(id) ||
       key.length < 32 ||
-      !/^customer-[a-zA-Z0-9-]+\.cloudflarestream\.com$/.test(host) ||
-      !/^[a-zA-Z0-9_-]+$/.test(keyId) ||
-      !privateKey ||
       new Set(manifest.videos.map((v) => v.dramaId)).size !== 30 ||
       new Set(manifest.videos.map((v) => v.videoId)).size !== 30 ||
       new Set(manifest.videos.map((v) => v.uid)).size !== 30
     )
       return null;
-    return { ...manifest, id, key, host, keyId, privateKey, enrollmentBps };
+    // A valid catalog still owns these videos when the signing credentials are unavailable.
+    const signing = getDramaStreamSigningConfig();
+    return { ...manifest, id, key, signing };
   } catch {
     return null;
   }
+}
+
+/**
+ * Signing material for videos whose Stream UID comes from the database (migrated library).
+ * Independent of the A/B experiment: no manifest, no enrollment. Invalid or absent => null.
+ */
+export function getDramaStreamSigningConfig() {
+  const host = process.env.DRAMA_STREAM_HOST || '';
+  const keyId = process.env.DRAMA_STREAM_KEY_ID || '';
+  const privateKey = process.env.DRAMA_STREAM_PRIVATE_KEY || '';
+  if (
+    !/^customer-[a-zA-Z0-9-]+\.cloudflarestream\.com$/.test(host) ||
+    !/^[a-zA-Z0-9_-]+$/.test(keyId) ||
+    !privateKey
+  )
+    return null;
+  return { host, keyId, privateKey };
+}
+
+/**
+ * Migration phase switch. Default (unset or anything but 'false') keeps legacy Supabase videos playable.
+ * 'false' ends the legacy library: only dramas whose every video is a ready Stream video are listed.
+ */
+export function isDramaLegacySupabaseEnabled() {
+  return process.env.DRAMA_LEGACY_SUPABASE_ENABLED !== 'false';
 }
