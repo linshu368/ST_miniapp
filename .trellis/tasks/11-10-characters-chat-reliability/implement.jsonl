@@ -1,0 +1,12 @@
+{"file":".trellis/spec/frontend/app/index.md","reason":"Frontend constraints"}
+{"file":".trellis/spec/frontend/app/modules/business/character-lobby.md","reason":"Lobby cache, sorting and readiness"}
+{"file":".trellis/spec/frontend/app/modules/business/conversation-ui.md","reason":"Chat entry and rendering"}
+{"file":".trellis/spec/frontend/app/modules/infrastructure/client-ui-foundation.md","reason":"Auth, API, timing and scheduling"}
+{"file":".trellis/spec/backend/app/index.md","reason":"Backend ownership, routes and observability"}
+{"file":".trellis/spec/backend/app/data-reliability-and-security.md","reason":"Timeouts, bounded retries, cancellation and logging"}
+{"file":".trellis/spec/backend/app/modules/business/conversation-generation.md","reason":"Conversation read/write semantics"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Cross-layer consumer and failure checks"}
+{"file":"packages/ui-tests/README.md","reason":"Existing acceptance harness"}
+{"file":".trellis/tasks/11-10-characters-chat-reliability/research/reuse-and-evidence.md","reason":"Research and source limitations"}
+{"file":".trellis/tasks/11-10-characters-chat-reliability/design.md","reason":"Reviewed implementation boundary"}
+
