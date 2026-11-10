@@ -34,7 +34,7 @@ export function selectStreamDelivery(dramaId: string, videoId: string, retainIde
 }
 
 /** Sign locally: no Stream management request participates in the first-frame path. */
-export function signStreamPlayback(config: StreamConfig, uid: string) {
+export function signStreamPlayback(config: Pick<StreamConfig, 'signing'>, uid: string) {
   if (!config.signing) throw new Error('drama_stream_signing_unavailable');
   const { host, keyId, privateKey } = config.signing;
   const expires = Math.floor(Date.now() / 1000) + 900;
