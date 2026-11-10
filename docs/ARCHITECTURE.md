@@ -853,8 +853,7 @@ Frontend `/creation/data` → `lib/api/creator-analytics.ts`（用户隔离React
 
 部署前应用 20261103_public_creator_space_index.sql 为按别名查找创建索引，再独立执行 20261103_chat_sessions_reply_like_lookup_index.sql 并验证覆盖索引有效，最后发布后端与前端。每页最多12张，点赞（卡片赞+回复赞）和收藏直接随该页返回；用于判断是否有下一页的第13张不查计数。列表简介最多120字。首次加载的私有作品封面批量读取和签名，后续复用签名缓存。回退应用可保留索引。隔离数据库验证复用 scripts/test-creator-characters-local.sh。
 
-短剧 Cloudflare Stream A/B 的配置、同序置顶、播放器恢复和验收顺序见 [Stream A/B 接入](drama-stream-ab.md)。
-本地新增可选 `DRAMA_STREAM_SAMPLING_COHORT`，由 runtime-config 严格解析当前实验及两个不同的 Telegram 用户 ID，只覆盖这两个采样账号的分组；实验开关、入组及单集准入仍生效，其他用户保持原哈希。不增加接口或数据库对象；后端部署与生产配置分别核验，源码不代表生产已启用。Mac 端独立原生触摸工具沿用既有性能采集，不提供新的性能统计真相。
+短剧推荐列表置顶环境清单中的 30 部剧。所有账号播放清单指定单集时使用 Cloudflare Stream，播放其他单集时使用 Supabase。配置、重试与验收见[短剧播放来源](drama-stream-ab.md)。
 
 ### VIP 混合奖励（2026-11-05）
 
