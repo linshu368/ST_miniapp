@@ -17,6 +17,7 @@ const validResponse = {
       context_length: 200_000,
       pricing: { prompt: '0.000001', completion: '0.000005' },
       architecture: { input_modalities: ['text', 'image'], output_modalities: ['text'] },
+      supported_parameters: ['temperature', 'reasoning_effort'],
     },
     {
       id: 'image/example-model',
@@ -36,6 +37,7 @@ describe('SurplusProviderDirectoryClient', () => {
     });
 
     const directory = await client.getModels();
+    expect(client.peekModels()).toEqual(directory);
 
     expect(directory).toMatchObject({
       provider: 'surplus',
@@ -49,6 +51,7 @@ describe('SurplusProviderDirectoryClient', () => {
           prompt_usd_per_token: 0.000001,
           completion_usd_per_token: 0.000005,
           status: 'available',
+          supported_parameters: ['temperature', 'reasoning_effort'],
         },
       ],
     });
@@ -80,12 +83,14 @@ describe('SurplusProviderDirectoryClient', () => {
     });
 
     const pending = [client.getModels(), client.getModels()];
+    expect(client.peekModels()).toBeNull();
     resolveFirst(jsonResponse(validResponse));
     const [left, right] = await Promise.all(pending);
     expect(left).toEqual(right);
     expect(fetchImpl).toHaveBeenCalledTimes(1);
 
     now += 101;
+    expect(client.peekModels()).toBeNull();
     await expect(client.getModels()).resolves.toMatchObject({ provider: 'surplus', stale: true });
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
@@ -108,5 +113,20 @@ describe('SurplusProviderDirectoryClient', () => {
     await expect(noPrices.getModels()).rejects.toThrow(
       'Surplus Intelligence returned no valid text models'
     );
+  });
+
+  it('does not trust malformed capability names or unbounded capability lists', async () => {
+    for (const supported_parameters of [
+      ['reasoning', 4],
+      ['PRIVATE KEY'],
+      Array(129).fill('reasoning'),
+    ]) {
+      const model = { ...validResponse.data[0], supported_parameters };
+      const client = new SurplusProviderDirectoryClient({
+        endpoint: 'https://surplus.example/v1/models',
+        fetchImpl: vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({ data: [model] })),
+      });
+      expect((await client.getModels()).models[0]?.supported_parameters).toBeUndefined();
+    }
   });
 });

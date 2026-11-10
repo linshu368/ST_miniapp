@@ -36,3 +36,18 @@
 ## 复杂度
 
 execute/settle/sync-job/ConversationHistoryRepository 在超长基线中。按触达职责拆分请求构造、供应商记录、响应消费及恢复；通过验证后 update 收紧基线，不继续向超长方法追加。
+
+## 2026-11-10 响应保存范围补充
+
+- USER：要求Surplus受控响应参数尽可能全部保存；本次仅修订任务规划，不视为批准start或产品代码实施。
+- SOURCE：upstream.ts 的 boundedResponseMetadata 目前仅选id/object/created/model/usage/venice_parameters，不提取受控header或choice非正文叶子，不能直接作为本任务完整采集实现。现有OpenRouter mapper也仅是其专用字段集，不能照搬为Surplus完整协议。
+- DOC（本次重新读取官方页面）：routing-controls描述x-si-served-by/marketplace-attempts/attempts/buyer-cost-micro/truncated/adapted-params，脱敏状态及SSE withheld计数；请求详情包含供应商时延分解。whitelabel描述inline成本、末尾usage与详情补齐、限流头。见上方同URL；协议可选项不等于已在目标环境观测到。
+- DESIGN：扩大到body/SSE/header/request_record各来源的已识别受控字段，保留原名/类型/嵌套与来源，建立覆盖清单；choice中安全叶子不能因整块排除正文而遗漏。
+- DESIGN：response_metadata从32KiB调至初始128KiB，增加版本/完整性/缺口原因及优先保留策略；合法字段覆盖、敏感/未知/超限处置和50行恢复内存成本必须验证。深层token细项、system_fingerprint/service_tier等作为需按实际响应验证的候选，不宣称所有Surplus模型均返回。
+
+## 2026-11-10 TEST迁移失败与换行复现
+
+- USER：确认在测试库执行，截图显示预期的legacy ELSE provider分支及immutable delivery/PT409保护。截图不是完整catalog采集，不据此声明远端所有shape或迁移状态。
+- LOCAL-SQL：同一已安装函数，原迁移LF输入通过，CRLF输入必现P0001 `Unexpected installed delivery provider branch` / inline_code_block line9。`$delivery$`只归一化函数定义d，未归一化输入脚本中多行dollar-quoted模板，是可复现缺陷。
+- FIX：新完整compat文件归一化全部anchor/branch literal并校验唯一匹配；原文件bytes保持不变，兼容历史已成功环境的filename/checksum。没有改写旧交付函数的其他逻辑或移除版本保护。
+- BOUNDARY：额外空格或显式ELSIF等未确认语义/格式变体仍拒绝；本次修复不通过宽泛正则猜测未知目标。TEST重试结果待用户实际执行，未操作远端数据库。

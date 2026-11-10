@@ -2,8 +2,8 @@
   "id": "surplusintelligence-history",
   "name": "surplusintelligence-history",
   "title": "Surplus Intelligence 完整接入与调用明细落库",
-  "description": "补齐 Surplus 模型发布、生成/交付与恢复；新增 experience.surplusintelligence_chat_history 保存非正文参数与受控响应。",
-  "status": "planning",
+  "description": "补齐 Surplus 模型发布、生成/交付与恢复；新增 experience.surplusintelligence_chat_history，按来源尽可能完整保存非正文参数与受控响应，附字段覆盖清单、完整性和缺口诊断。",
+  "status": "in_progress",
   "dev_type": "feature",
   "scope": "backend,shared,database,admin,docs",
   "package": "backend",
@@ -21,7 +21,7 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "规划待用户审核；不执行远端迁移、生产发布或自动提交。",
+  "notes": "User approved implementation on 2026-11-10. TEST reported original delivery guard failure; CRLF input reproduced exact error. Use full forward compat migration; original checksum unchanged. Local four-format/replay/rollback regression passed; no remote migration, production action, staging, commit or push.",
   "meta": {
     "module_impact": {
       "schema_version": 1,

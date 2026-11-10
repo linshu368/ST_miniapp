@@ -258,6 +258,80 @@ echo 'PASS: model-specific provider pairs, legacy 1017, budget validation and va
 "${task_psql[@]}" -f "$task_root/packages/shared/migrations/tests/first_token_server_delivery_billing.sql" >/dev/null
 echo 'PASS: on-time server reply billed once despite browser deadline; server cutoffs, late first token, missing receipt and old failures unchanged'
 
+# Surplus expands the installed functions in place; keep all prior race/cancel
+# guards and ACLs. This is intentionally after the current dispatch/receipt chain.
+"${task_psql[@]}" -c "CREATE TABLE admin.surplus_history_function_shape AS SELECT oid,proowner,proacl,pg_get_functiondef(oid) AS definition FROM pg_proc WHERE oid IN ('admin.validate_model_catalog_core(jsonb)'::regprocedure,'experience.select_chat_generation_delivery(uuid,uuid,text)'::regprocedure);" >/dev/null
+# SQL editors and Windows checkouts can independently change installed/submitted
+# line endings. Each format scenario rolls back before the next one starts.
+python3 - "$task_root" "$task_dir" <<'PYSURPLUSFORMAT'
+import hashlib,pathlib,re,sys
+root=pathlib.Path(sys.argv[1]);dest=pathlib.Path(sys.argv[2])
+source=root/'packages/shared/migrations/20261110_surplusintelligence_chat_history.sql'
+dest.joinpath('surplus-original.sha256').write_text(hashlib.sha256(source.read_bytes()).hexdigest())
+original=source.read_text(encoding='utf-8')
+compat=(root/'packages/shared/migrations/20261110_surplusintelligence_chat_history_compat.sql').read_text(encoding='utf-8')
+def body(value):
+ return re.sub(r'^(?:BEGIN|COMMIT);\s*$','',value,flags=re.M)
+def installed(style,unknown=False):
+ normalize="d:=replace(d,E'\\r\\n',E'\\n');"
+ if style=='crlf': normalize+="d:=replace(d,E'\\n',E'\\r\\n');"
+ if unknown: normalize+="d:=replace(d,'IF a.provider=''openrouter'' THEN','IF a.provider=''unknown'' THEN');"
+ return "DO $format$ DECLARE d text:=pg_get_functiondef('experience.select_chat_generation_delivery(uuid,uuid,text)'::regprocedure); BEGIN "+normalize+" EXECUTE d; END $format$;\n"
+identity="""SELECT vip_t4_test.assert((SELECT count(*)=2 FROM admin.surplus_history_function_shape s
+ JOIN pg_proc p USING(oid) WHERE s.proowner=p.proowner AND s.proacl IS NOT DISTINCT FROM p.proacl),
+ 'Surplus format matrix changed existing function identity/ACL');
+SELECT vip_t4_test.assert((SELECT
+ split_part(replace(s.definition,E'\\r\\n',E'\\n'),'  IF a.provider=''openrouter'' THEN',1)=
+ split_part(replace(pg_get_functiondef(s.oid),E'\\r\\n',E'\\n'),'  IF a.provider=''openrouter'' THEN',1)
+ AND split_part(replace(s.definition,E'\\r\\n',E'\\n'),'  -- The entire quote stays intact;',2)=
+ split_part(replace(pg_get_functiondef(s.oid),E'\\r\\n',E'\\n'),'  -- The entire quote stays intact;',2)
+ FROM admin.surplus_history_function_shape s JOIN pg_proc p USING(oid)
+ WHERE p.oid='experience.select_chat_generation_delivery(uuid,uuid,text)'::regprocedure),
+ 'Surplus format matrix changed unrelated delivery guards or quote updates');
+"""
+for before in ('lf','crlf'):
+ for submitted in ('lf','crlf'):
+  migration=body(compat)
+  if submitted=='crlf': migration=migration.replace('\n','\r\n')
+  replay_before="CREATE TEMP TABLE surplus_format_after AS SELECT pg_get_functiondef('experience.select_chat_generation_delivery(uuid,uuid,text)'::regprocedure) AS definition;\n"
+  replay_after="SELECT vip_t4_test.assert((SELECT definition=pg_get_functiondef('experience.select_chat_generation_delivery(uuid,uuid,text)'::regprocedure) FROM surplus_format_after),'Surplus format replay changed delivery definition');\n"
+  sql='BEGIN;\n'+installed(before)+migration+'\n'+identity+replay_before+migration+'\n'+identity+replay_after+'ROLLBACK;\n'
+  dest.joinpath(f'surplus-format-{before}-{submitted}.sql').write_bytes(sql.encode())
+dest.joinpath('surplus-original-crlf.sql').write_bytes(('BEGIN;\n'+body(original).replace('\n','\r\n')).encode())
+dest.joinpath('surplus-unknown-branch.sql').write_text('BEGIN;\n'+installed('lf',True)+body(compat))
+PYSURPLUSFORMAT
+for task_installed_format in lf crlf; do
+  for task_submitted_format in lf crlf; do
+    "${task_psql[@]}" -f "$task_dir/surplus-format-$task_installed_format-$task_submitted_format.sql" >/dev/null
+  done
+done
+for task_refused_format in original-crlf unknown-branch; do
+  if "${task_psql[@]}" -f "$task_dir/surplus-$task_refused_format.sql" >"$task_dir/surplus-$task_refused_format.log" 2>&1; then
+    echo "FAIL: Surplus $task_refused_format was accepted" >&2
+    exit 1
+  fi
+  if ! python3 -c 'import pathlib,sys; sys.exit("Unexpected installed delivery provider branch" not in pathlib.Path(sys.argv[1]).read_text())' "$task_dir/surplus-$task_refused_format.log"; then
+    echo "FAIL: Surplus $task_refused_format failed at an unexpected guard" >&2
+    exit 1
+  fi
+  "${task_psql[@]}" >/dev/null <<'SQL'
+SELECT vip_t4_test.assert(to_regclass('experience.surplusintelligence_chat_history') IS NULL,'Rejected migration left a Surplus table');
+SELECT vip_t4_test.assert((SELECT count(*)=2 FROM admin.surplus_history_function_shape s JOIN pg_proc p USING(oid)
+  WHERE s.proowner=p.proowner AND s.proacl IS NOT DISTINCT FROM p.proacl AND s.definition=pg_get_functiondef(s.oid)),
+  'Rejected migration changed installed function definition or identity');
+SQL
+done
+"${task_psql[@]}" -f "$task_root/packages/shared/migrations/20261110_surplusintelligence_chat_history_compat.sql" >/dev/null
+"${task_psql[@]}" -f "$task_root/packages/shared/migrations/20261110_surplusintelligence_chat_history_compat.sql" >/dev/null
+python3 - "$task_root" "$task_dir" <<'PYSURPLUSHASH'
+import hashlib,pathlib,sys
+source=pathlib.Path(sys.argv[1])/'packages/shared/migrations/20261110_surplusintelligence_chat_history.sql'
+assert hashlib.sha256(source.read_bytes()).hexdigest()==pathlib.Path(sys.argv[2]).joinpath('surplus-original.sha256').read_text()
+PYSURPLUSHASH
+"${task_psql[@]}" -c "SELECT vip_t4_test.assert((SELECT count(*)=2 FROM admin.surplus_history_function_shape s JOIN pg_proc p USING(oid) WHERE s.proowner=p.proowner AND s.proacl IS NOT DISTINCT FROM p.proacl),'Surplus changed existing function OID/owner/ACL'); DROP TABLE admin.surplus_history_function_shape;" >/dev/null
+"${task_psql[@]}" -f "$task_root/packages/shared/migrations/tests/surplusintelligence_chat_history.sql" >/dev/null
+echo 'PASS: Surplus request/response identity, RLS, full metadata, winner/loser isolation, bounded retry and migration replay'
+
 # Run the existing real wallet/free-quota migration suite in another disposable DB.
 mkdir "$task_dir/bin"
 for task_command in psql createdb dropdb; do

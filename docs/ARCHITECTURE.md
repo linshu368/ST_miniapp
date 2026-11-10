@@ -114,14 +114,14 @@
 
 ### 链路编号
 
-| 编号 | 方向                          | 用途                                                                                               |
-| ---- | ----------------------------- | -------------------------------------------------------------------------------------------------- |
-| ①    | frontend → backend（HTTP/SSE) | 全部业务 REST；对话发消息与重生成是 `text/event-stream`                                            |
-| ②    | backend → OpenRouter          | 唯一的 LLM 出口，平台真实 key 只在 backend 进程内                                                  |
-| ③    | backend ⇆ Supabase            | Prisma（`app_core` / `miniapp_features` / `billing`）+ supabase-js 按域客户端（RPC / 其余 schema） |
-| ④    | admin → backend               | 运营台 REST；admin 走 Supabase 会话                                                                |
-| ⑤    | Telegram → backend            | Bot `/start` 归因；其余私聊消息（文字 / 图片）转发给独立客服服务（`CS_SERVICE_URL`）               |
-| ⑥    | backend → MiniMax / DeepSeek  | 语音链路：DeepSeek 写台词稿，MiniMax 合成音频落 Storage                                            |
+| 编号 | 方向                          | 用途                                                                                                 |
+| ---- | ----------------------------- | ---------------------------------------------------------------------------------------------------- |
+| ①    | frontend → backend（HTTP/SSE) | 全部业务 REST；对话发消息与重生成是 `text/event-stream`                                              |
+| ②    | backend → 模型平台            | OpenRouter / Venice / Surplus Intelligence，统一走 features/generation；真实 key 只在 backend 进程内 |
+| ③    | backend ⇆ Supabase            | Prisma（`app_core` / `miniapp_features` / `billing`）+ supabase-js 按域客户端（RPC / 其余 schema）   |
+| ④    | admin → backend               | 运营台 REST；admin 走 Supabase 会话                                                                  |
+| ⑤    | Telegram → backend            | Bot `/start` 归因；其余私聊消息（文字 / 图片）转发给独立客服服务（`CS_SERVICE_URL`）                 |
+| ⑥    | backend → MiniMax / DeepSeek  | 语音链路：DeepSeek 写台词稿，MiniMax 合成音频落 Storage                                              |
 
 ---
 
@@ -297,6 +297,8 @@ Admin `/api/admin/text-postprocess*` 提供状态/历史、草稿保存/丢弃�
 `settle.ts` 是 fire-and-forget 的：它第一步要等 OpenRouter 的异步用量统计（约 1.5 秒起），挂在请求里会让用户在回复已经流完之后继续等。它与请求内同步的 `finalizeTurn` 写同一行 `chat_history` 的**不同列**，列归属见 `ConversationHistoryRepository` 头注释，因此谁先落地都不会互相覆盖。
 
 OpenRouter 的原始调用元数据写入 `experience.openrouter_chat_history`，通过唯一 `chat_history_id` 与主表一对一关联，父行删除时级联删除。获取 generation ID 后幂等建占位；结算和 24 小时回捞使用同一 mapper，并统一消费厂商原名：`provider_name`、`finish_reason`、`usage`、可选 `usage_cache`、四个 `native_tokens_*`、`latency`、`generation_time`、`model`。保留 `llm_generation_id` 与经过内容过滤的 `llm_generation_data`。计费函数单独返回金额/结算结果，主表仓储显式接收这些结果；上游 `finish_reason` 与主表业务 `llm_finish_reason` 各有归属，取消/超时优先。Venice 的字段映射与专表保持原有结构。
+
+Surplus Intelligence 新增 `experience.surplusintelligence_chat_history`（本地实现，远端迁移与发布待单独验证）。实际非正文参数先冻结；响应按 body/stream/headers/request_record 保存厂商原名和受控嵌套字段，capture记录版本、完整性与排除/超限诊断，最大128KiB。ID与参数冲突拒绝，request ID不从generation ID猜测。Surplus输掉首字竞争时保留调用明细，OR胜者可有自己的明细；交付与固定档位结算只认原轮次和胜者快照。元数据恢复复用30秒调度的24h/50行窗口和每轮最多9次供应商读取预算，并发有界，不阻塞原计费恢复。新migration前向补齐catalog/provider CHECK及交付分支，不改历史迁移。接口与失败矩阵见 [Surplus调用规范](../.trellis/spec/backend/app/surplusintelligence-calls.md)。
 
 四份历史 migration 提供原名结构，TEST/Production 已在 2026-10-16 T5 核验记账/checksum 一致；文件声明不等于部署证明。本地新增主表清退实现：生成前 await 请求快照/对应 provider 占位，header/SSE/non-stream 首次 ID 采用 NULL-only CAS 与结果未知读回，单操作 5s、总 10s、至多两次写；SSE 先保存已收到的文本快照，再 await ID，故障不清空已收到的正文。主表/current 读取显式业务列，finalizeTurn 不再接收 generation ID；业务 finish reason 与计费仍归主表。Venice mapper/表不变，ID 来自 Venice 明细。
 

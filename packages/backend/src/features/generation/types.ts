@@ -12,6 +12,7 @@ import type { LlmBillingSnapshot } from '../../infrastructure/repositories/Conve
 import type { SseTapResult } from './upstream.js';
 import type { RequestLogger } from '../../lib/logger.js';
 import type { BalancePrecheck, BillingPlan } from './precheck.js';
+import type { SurplusReasoningResolution } from './surplus-reasoning.js';
 
 /**
  * 生成出口的日志入口。对话链路传请求内的 requestLogger（带 reqId），
@@ -66,6 +67,8 @@ export interface GenerationPreparation {
   routingPreferences: Array<OpenRouterProviderPreferences | null>;
   creatorUserId: string | null;
   quotaLimit?: number;
+  /** Capability evidence only; unsupported supplier effort values are never invented. */
+  surplusReasoning?: SurplusReasoningResolution;
   /** Paid models need no quota decision. One request-local read can overlap prompt assembly. */
   paidAdmission?: {
     userId: string;

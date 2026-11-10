@@ -7,3 +7,4 @@
 {"file": ".trellis/spec/shared/contracts/index.md", "reason": "Read the complete source; provider history, reliability, migration and compatibility constraints."}
 {"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Read the complete source; provider history, reliability, migration and compatibility constraints."}
 {"file": ".trellis/tasks/11-09-surplusintelligence-history/research.md", "reason": "Read the complete source; provider history, reliability, migration and compatibility constraints."}
+{"file": ".trellis/spec/backend/app/surplusintelligence-calls.md", "reason": "Surplus Intelligence call and recovery contract"}
