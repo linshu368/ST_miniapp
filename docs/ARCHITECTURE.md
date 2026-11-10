@@ -854,9 +854,12 @@ Frontend `/creation/data` → `lib/api/creator-analytics.ts`（用户隔离React
 
 部署前应用 20261103_public_creator_space_index.sql 为按别名查找创建索引，再独立执行 20261103_chat_sessions_reply_like_lookup_index.sql 并验证覆盖索引有效，最后发布后端与前端。每页最多12张，点赞（卡片赞+回复赞）和收藏直接随该页返回；用于判断是否有下一页的第13张不查计数。列表简介最多120字。首次加载的私有作品封面批量读取和签名，后续复用签名缓存。回退应用可保留索引。隔离数据库验证复用 scripts/test-creator-characters-local.sh。
 
-短剧 Cloudflare Stream A/B 的配置、同序置顶、播放器恢复和验收顺序见 [Stream A/B 接入](drama-stream-ab.md)。
-本地新增可选 `DRAMA_STREAM_SAMPLING_COHORT`，由 runtime-config 严格解析当前实验及两个不同的 Telegram 用户 ID，只覆盖这两个采样账号的分组；实验开关、入组及单集准入仍生效，其他用户保持原哈希。不增加接口或数据库对象；后端部署与生产配置分别核验，源码不代表生产已启用。Mac 端独立原生触摸工具沿用既有性能采集，不提供新的性能统计真相。
+短剧推荐列表置顶环境清单中的 30 部剧。所有账号播放清单指定单集时使用 Cloudflare Stream，播放其他单集时使用 Supabase。配置、重试与验收见[短剧播放来源](drama-stream-ab.md)。
 
 ### VIP 混合奖励（2026-11-05）
 
 `20261105_vip_mixed_rewards.sql` 先经测试环境再生产执行，随后发布应用，最后通过运营 CLI 发布混合签到与开卡赠礼配置。旧签到数字及旧订单继续兼容；开卡奖励使用订单两钱包快照，同事务入账且不增加实付收入。回退先恢复旧配置，保留混合发放支持处理在途订单。详见 `.trellis/tasks/11-05-vip-mixed-rewards/`。
+
+### 聊天回复负反馈
+
+回复点踩通过独立鉴权接口保存到 `experience.chat_reply_feedback`，空原因可提交，固定回复/编辑版本去重并保留当轮快照。只在面板打开时读取，不进入生成、计费或角色评分链路，无运营页面。迁移顺序、权限和批量分析口径见 [聊天回复反馈](chat-reply-feedback.md)。
