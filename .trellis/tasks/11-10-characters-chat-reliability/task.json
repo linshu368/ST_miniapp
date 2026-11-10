@@ -2,7 +2,7 @@
   "id": "characters-chat-reliability",
   "name": "characters-chat-reliability",
   "title": "Repair characters and chat entry reliability",
-  "description": "Fix confirmed WebView rendering, page recovery, lobby deadline and conversation read failures from the seven-day audit",
+  "description": "Fix confirmed WebView rendering, page recovery, lobby deadlines, conversation reads, official frontend Origin rejection and CORS preflight 500 classification",
   "status": "planning",
   "dev_type": "fullstack",
   "scope": "frontend/backend page entry reliability",
@@ -30,14 +30,15 @@
         "frontend.business.character-lobby",
         "frontend.business.conversation-ui",
         "frontend.infrastructure.client-ui-foundation",
-        "backend.business.conversation-generation"
+        "backend.business.conversation-generation",
+        "backend.infrastructure.runtime-data-security"
       ]
     },
     "mobile_performance": {
       "schema_version": 1,
       "mode": "required",
       "pages": ["/characters", "/chat/:id"],
-      "apis": ["GET /api/lobby-characters", "GET /api/v1/conversations/:id"],
+      "apis": ["GET /api/lobby-characters", "GET /api/v1/conversations/:id", "OPTIONS /api/*"],
       "android": {
         "page_p95_baseline_ms": 5229,
         "page_p95_target_ms": 2000
@@ -50,7 +51,10 @@
         "p95_baseline_ms": 1841,
         "p95_target_ms": 2000,
         "android_baseline_ms": null,
-        "ios_baseline_ms": null
+        "ios_baseline_ms": null,
+        "preflight_p95_baseline_ms": null,
+        "preflight_p95_target_ms": 1000,
+        "preflight_notes": "No visible Android/iOS preflight P95 baseline in the saved seven-day evidence; keep null and measure after release. Verify exact allowed-origin 204 and rejected-origin 403, without suppressing real OPTIONS 5xx."
       },
       "measurement": {
         "source": "Grafana Faro engineering_v1 page_navigation/page_launch and api_logical_v1; Sentry api.request.duration. Evidence: ../11-10-characters-chat-root-cause and ../11-10-seven-day-page-performance",

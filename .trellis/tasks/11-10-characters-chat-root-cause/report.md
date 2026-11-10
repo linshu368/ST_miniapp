@@ -1,5 +1,7 @@
 # Characters / Chat 故障与发布归因
 
+> 2026-11-10后续修正：用户确认st-miniapp-frontend.vercel.app为正式入口；生产预检实测该Origin500、app.themijing.com为204，原窗口固定正式域名有62条CORS拒绝。下文按Vercel/Headless归为“噪声”的解释不能据此排除真实正式访问故障。固定正式域名应优先精确放行；只有真正未授权来源才改403。原始计数保持，最新规划及证据见../11-10-characters-chat-reliability/research/cors-preflight.md。
+
 窗口：2026-11-03 16:20:05—2026-11-10 16:20:05，Asia/Shanghai；监控查询固定UTC 2026-11-03T08:20:05Z—2026-11-10T08:20:05Z。本次仅只读检查，没有修复或发布。
 
 ## 结论

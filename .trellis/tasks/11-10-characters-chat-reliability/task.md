@@ -1,5 +1,7 @@
 # 可执行任务
 
+新增B2纳入本轮交付，V1及D1必须同时覆盖B2；原P2仍等待最新扩展规划审核。
+
 | ID  | 状态                | 内容                                    | 文件范围                                                                                         | 依赖/验证                                    |
 | --- | ------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------ | -------------------------------------------- |
 | P1  | done                | 根因/源码/复用及可靠性调研              | research/, prd/design/implement/task                                                             | 审计证据核对                                 |
@@ -12,3 +14,11 @@
 | V1  | pending             | 扩展现有UI/单元失败恢复回归             | ui-tests既有fixture及chat/roleplay/startup，相关Vitest                                           | F1-F4/B1；消费者typecheck+build+lint         |
 | D1  | pending             | 更新模块spec、性能验证与回滚说明        | frontend/backend相关module，必要README/architecture                                              | V1；不宣称已上线                             |
 | C1  | pending             | 交付本地diff与检查报告                  | task报告                                                                                         | D1；不自动commit/push/deploy                 |
+
+## B2：CORS预检与拒绝分类（pending）
+
+- 前置：P2，具体证据见research/cors-preflight.md。
+- 文件：backend/src/app.ts、专用CORS注册helper及必要测试；复用shared/src/api/envelope.ts；README/ARCHITECTURE与Backend环境spec。
+- 行为：固定正式Vercel域名及既有合法Frontend/Admin预检204；新增可选精确来源配置与规范化，不改支付回跳用途；真正未授权Origin的OPTIONS/实际请求403且不执行业务，保留无Origin和开发/TEST/PR行为，不开放Vercel通配。部署配置差异单列待授权。
+- 诊断：结构化受控拒绝日志，保留真实服务错误；审查可定位自动化目标，未知仓外调用方不猜测。
+- 验证：Fastify.inject环境/来源/方法矩阵、无身份实际API鉴权、真实异常仍500、日志安全；Backend/shared测试、consumer typecheck和build；发布后分开观察204/403/真正5xx。

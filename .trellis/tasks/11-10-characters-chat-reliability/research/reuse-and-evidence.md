@@ -10,3 +10,5 @@
 - PagePerfTracker静态依赖drama-observer；它有原生document/click早期观测，不允许简单延后安装丢起点。首屏拆分需保留轻量捕获或原入口，否则该项不落地。
 - 未找到该前端项目的Vercel连接访问，不基于猜测改资源保留策略或升级框架。
 - 用户已请求修复并提供AGENTS要求使用任务；本次任务创建在授权范围内。复杂规划必须经最终摘要后的用户确认再进入实现，见workflow Phase1.5和trellis-brainstorm Non-Negotiable Planning Contract。
+- 2026-11-10用户追加OPTIONS 500归因及纳入规划，新增R8/AC9-12/B2。已确认app.ts普通Error拒绝Origin -> Fastify默认500；历史拒绝主要为Vercel域名与HeadlessChrome。方案纠正403分类和日志/访问目标，不放宽生产来源。详见cors-preflight.md。
+- 后续用户明确固定Vercel域名就是正式入口；生产实测该Origin500而app.themijing.com为204，原窗口固定正式域名有62条拒绝。修正“Vercel=Preview”错误推断：先修正式域名精确放行/规范化，再处理真正未授权来源403。FRONTEND_URL还用于支付回跳，增加可选精确Origin列表兼容两个已有入口；未经授权不修改生产配置，具体记录见formal-origin-probe.json。

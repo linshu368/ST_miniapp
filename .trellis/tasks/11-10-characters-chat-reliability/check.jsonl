@@ -9,4 +9,8 @@
 {"file":"packages/ui-tests/README.md","reason":"Existing acceptance harness"}
 {"file":".trellis/tasks/11-10-characters-chat-reliability/research/reuse-and-evidence.md","reason":"Research and source limitations"}
 {"file":".trellis/tasks/11-10-characters-chat-reliability/design.md","reason":"Reviewed implementation boundary"}
+{"file":".trellis/spec/backend/app/modules/infrastructure/runtime-data-security.md","reason":"CORS source policy, environment boundary and safe logging"}
+{"file":".trellis/spec/shared/contracts/index.md","reason":"Reuse the existing shared error envelope for rejected cross-origin requests"}
+{"file":".trellis/spec/shared/contracts/api-contracts.md","reason":"Existing shared error response contract and producer-consumer compatibility"}
+{"file":".trellis/tasks/11-10-characters-chat-reliability/research/cors-preflight.md","reason":"Confirmed OPTIONS 500 cause, source attribution limits and security regression matrix"}
 

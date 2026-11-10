@@ -1,5 +1,7 @@
 # 近七天生产页面性能审计
 
+> 正式域名修正：用户确认st-miniapp-frontend.vercel.app为正式入口；2026-11-10 17:31前后实测其生产OPTIONS被拒500，历史存在62条固定正式域名拒绝。Vercel后缀或HeadlessChrome本身不能用于排除正式流量影响；详见../11-10-characters-chat-reliability/research/cors-preflight.md。原始性能计数不变。
+
 > 后续补充：两页故障和部署关联见 ../11-10-characters-chat-root-cause/report.md。已找到独立CORS WARN来源，504条均为vercel.app；490条OPTIONS 500中442条为HeadlessChrome。上一版“缺Origin无法判断”的限制已补齐，不能将这些拒绝都视作正式入口故障。另查得同源大厅请求独立计时有453次Android timeout，不属于本报告37次api_logical_v1超时集合。
 
 观测窗口：2026-11-03 16:20:05—2026-11-10 16:20:05，Asia/Shanghai。Grafana 固定该窗口；Railway 指标为查询时最近168小时（与固定窗口相差数分钟），HTTP 明细按固定窗口提取，525条与指标总数一致。Sentry 为查询时最近7天，错误级事件另加固定结束时间。
