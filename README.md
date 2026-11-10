@@ -213,6 +213,7 @@ pnpm supabase:link:test
 - [MiniApp 开屏性能](docs/miniapp-startup-performance.md)
 - [数据库迁移目录与发布顺序](packages/shared/migrations/README.md)
 - [Railway 运维](ops/railway/README.md)
+- [支付上游探测与新增策略](docs/payment-availability-probe.md)
 - [后端日志与可观测性](.trellis/spec/backend/app/data-reliability-and-security.md)
 - [数据库域与归属](docs/ARCHITECTURE.md#51-数据库九域布局media_plaza-m1-之后)
 - [Trellis 工作流](.trellis/workflow.md)
@@ -227,6 +228,8 @@ pnpm supabase:link:test
 `20261105_vip_mixed_rewards.sql` 先经测试环境再生产执行，随后发布应用，最后通过运营 CLI 发布混合签到与开卡赠礼配置。旧签到数字及旧订单继续兼容；开卡奖励使用订单两钱包快照，同事务入账且不增加实付收入。回退先恢复旧配置，保留混合发放支持处理在途订单。详见 `.trellis/tasks/11-05-vip-mixed-rewards/`。
 
 支付接入：TTZF 易支付建单不发送可选 `param`，回调与查单不要求回传该字段；环境隔离依赖独立回调地址、应用凭据及数据库，本环境订单仍需通过签名、商户、渠道、交易号及金额校验。见 `ops/railway/README.md`。
+
+支付上游探测采用独立 `stminiapp-payment-availability-probe` Cron，默认每半小时一次 1 元待支付建单，不保存本地订单。仅 `PAYMENT_PROBE_ENABLED=true` 开启，默认关闭；`PAYMENT_PROBE_CHANNEL` 默认支付宝，探测 IP 自动获取本机 IPv4，无需配置。策略注册位于 `features/payment/availability/strategies/index.ts`，默认复用共享飞书告警。使用与扩展见 [探测说明](docs/payment-availability-probe.md)；仓库配置不代表远端已启用。
 
 查单响应兼容厂商返回 `pid: null` 或省略 pid，有值时仍核对应用 ID；查单请求凭据、回调 pid/签名和订单结算校验保持必需。
 

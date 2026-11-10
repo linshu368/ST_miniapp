@@ -156,6 +156,15 @@ export const config = {
     },
   },
 
+  // 独立 Cron 才消费这些参数；不改变用户建单或支付恢复开关。
+  paymentProbe: {
+    enabled: process.env.PAYMENT_PROBE_ENABLED === 'true',
+    channel: process.env.PAYMENT_PROBE_CHANNEL?.trim() || 'alipay',
+    preview:
+      process.env.SENTRY_ENVIRONMENT === 'preview' ||
+      /^(?:pr-|preview(?:-|$))/i.test(process.env.RAILWAY_ENVIRONMENT_NAME || ''),
+  },
+
   // 运营平台 CLI 免密登录白名单（逗号分隔邮箱）。为空时 /api/admin/cli/session 关闭。
   adminCli: {
     allowedEmails: (process.env.ADMIN_CLI_ALLOWED_EMAILS || '')

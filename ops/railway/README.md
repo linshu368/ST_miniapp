@@ -127,6 +127,17 @@ PR 临时环境复制 development 后会立即删除该 Cron，避免多个调�
 
 ### 支付对账（快速 Worker + 过期 Cron）
 
+主动建单探测独立运行于 `stminiapp-payment-availability-probe`，Start Command 为
+`./node_modules/.bin/tsx src/scripts/payment-availability-probe.ts`，Cron Schedule 为
+`*/30 * * * *`，Restart Policy 为 `Never`，无域名、healthcheck 或 TCP proxy。
+服务复用 backend 镜像；只在该服务设置 `PAYMENT_PROBE_ENABLED=true` 才启用，未设置默认关闭。
+`PAYMENT_PROBE_CHANNEL` 默认 `alipay`；探测 clientip 自动取本机非回环 IPv4，无可用地址时使用 `127.0.0.1`，无需手动配置或请求外部 IP 服务。
+IaC 保留开关和渠道两个部署变量，显式引用 API 的本环境 TTZF 凭据、notify/return URL、DB/DIRECT_URL 和观测配置。
+无需向探测服务配置飞书 webhook，告警仍由下面的共享 worker 投递。
+PR 工作流移除复制来的探测服务，运行时也拒绝 pr-/preview；代码与 IaC 不代表生产已启用。
+先部署新告警规则投递兼容，再 TEST 验证并启用；异常时关闭探测开关即可。
+单轮 1 元、无本地订单、多策略扩展与上线检查见 [支付探测说明](../../docs/payment-availability-probe.md)。
+
 共享告警 outbox 由独立常驻服务 `stminiapp-payment-alert-monitor` 投递；该服务同时生产支付告警，
 也负责发送 API 服务写入的 Sentry 与 OpenRouter/Venice/Surplus 限流、额度、账户访问告警，并在同轮主动查询
 Venice `GET /api/v1/billing/balance`：当 `balances.usd`（null 按 0）低于 **$10** 时发布 generation 域

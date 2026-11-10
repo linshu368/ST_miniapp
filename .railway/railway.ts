@@ -11,14 +11,15 @@
  *
  * 方案 Y 拓扑（网关收敛后）：对外域名绑 Vercel（前端在边缘，不在 Railway）。
  * ST 退场后 nginx 已无分发对象，st-bundle 整包退场；Railway 运行 backend API、
- * 一个常驻支付对账 Worker、一个无公网入口的支付过期 Cron，以及 VIP 到期提醒 Cron。
- * 四个服务都跟随
+ * 常驻支付对账/告警 Worker、支付过期/可用性探测 Cron，以及 VIP 到期提醒 Cron。
+ * 这些服务都跟随
  * 同一 GitHub 分支自动部署：
  *
  *   浏览器 ──▶ Vercel (页面) ──▶ stminiapp (backend, 对外域名) ──▶ Supabase / OpenRouter
  *                                      ▲
  *   常驻 Worker ──▶ stminiapp-payment-reconcile-cron（进程内每 30 秒查一轮）
  *   Railway Cron ──▶ stminiapp-payment-cron（每 5 分钟运行一次后退出）
+ *   Railway Cron ──▶ stminiapp-payment-availability-probe（每 30 分钟，默认关闭）
  *   Railway Cron ──▶ stminiapp-vip-reminder-cron（每小时运行一次后退出）
  *
  * 前端通过 build 期固化的 NEXT_PUBLIC_API_URL 直连 backend 的 Railway 公网域名，
@@ -185,14 +186,6 @@ export default defineRailway((ctx) => {
     SURPLUS_API_KEY: stminiapp.env.SURPLUS_API_KEY,
   };
 
-  const paymentAlertMonitorEnv = {
-    ...paymentCronEnv,
-    VENICE_API_BASE_URL: stminiapp.env.VENICE_API_BASE_URL,
-    VENICE_API_KEY: stminiapp.env.VENICE_API_KEY,
-    SURPLUS_API_BASE_URL: stminiapp.env.SURPLUS_API_BASE_URL,
-    SURPLUS_API_KEY: stminiapp.env.SURPLUS_API_KEY,
-  };
-
   const paymentReconcileWorker = service('stminiapp-payment-reconcile-cron', {
     source: github(REPOSITORY, { branch }),
     build: {
@@ -239,6 +232,33 @@ export default defineRailway((ctx) => {
       restartPolicyType: 'NEVER',
     },
     env: paymentCronEnv,
+  });
+
+  // One unpaid CNY 1 create request per run; keep it separate from user reconciliation
+  // and shared alert delivery. Missing probe variables keep this service disabled.
+  const paymentAvailabilityProbe = fn('stminiapp-payment-availability-probe', {
+    source: github(REPOSITORY, { branch }),
+    build: {
+      builder: 'DOCKERFILE',
+      buildCommand: 'pnpm install',
+      buildEnvironment: 'V3',
+      dockerfilePath: '/ops/docker/Dockerfile.backend',
+    },
+    start: './node_modules/.bin/tsx src/scripts/payment-availability-probe.ts',
+    deploy: {
+      cronSchedule: '*/30 * * * *',
+      restartPolicyType: 'NEVER',
+    },
+    env: {
+      ...paymentCronEnv,
+      PAYMENT_NOTIFY_URL: stminiapp.env.PAYMENT_NOTIFY_URL,
+      PAYMENT_PROBE_ENABLED: preserve(),
+      PAYMENT_PROBE_CHANNEL: preserve(),
+      SENTRY_DSN: stminiapp.env.SENTRY_DSN,
+      SENTRY_ENVIRONMENT: stminiapp.env.SENTRY_ENVIRONMENT,
+      ENGINEERING_TELEMETRY_ENABLED: stminiapp.env.ENGINEERING_TELEMETRY_ENABLED,
+      ENGINEERING_OTLP_ENDPOINT: stminiapp.env.ENGINEERING_OTLP_ENDPOINT,
+    },
   });
 
   // 两个环境都声明 Cron，但真实写入仍要各环境的 vip_reminders_enabled 显式为 true；
@@ -288,6 +308,9 @@ export default defineRailway((ctx) => {
     paymentReconcileWorker,
     paymentAlertMonitorWorker,
     paymentCron,
+    ...(['development', 'production'].includes(targetEnvironment)
+      ? [paymentAvailabilityProbe]
+      : []),
     vipReminderCron,
   ];
 

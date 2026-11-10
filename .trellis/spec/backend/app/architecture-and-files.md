@@ -23,6 +23,7 @@
 - `generation/`：生成/计费唯一出口；`execute.ts` 编排，`precheck.ts` 余额预检，`quota.ts` 免费额度，`resolve-model.ts` 模型解析，`prompt-caching.ts` 缓存策略，`upstream.ts` OpenRouter 流，`voice-billing.ts` 语音策略。
 - `lobby/`：精选、置顶、推荐排序参数/分数/统计与刷新。
 - `payment/domain/`：充值规则；`payment/usecases/`：下单、结算、回调报告、快速对账、订单过期、支付终态 telemetry observer。
+- `payment/availability/`：独立上游建单探测、轮次编排和有界策略执行；新策略放 `strategies/` 并在 `strategies/index.ts` 注册。默认飞书经既有 Publisher/outbox。扩展契约见 [支付探测说明](../../../../docs/payment-availability-probe.md)。
 - `voice/`：语音文本/提示词/草稿、音色目录、MiniMax/DeepSeek 上游、生成编排与计费配置。
 
 ## `src/infrastructure/`

@@ -49,6 +49,7 @@ export async function withSessionAdvisoryLock<T>(
     primaryError = err;
     throw err;
   } finally {
+    let cleanupError: unknown;
     if (connected && acquired) {
       try {
         const unlock = await client.query('SELECT pg_advisory_unlock($1::bigint) AS unlocked', [
@@ -59,7 +60,7 @@ export async function withSessionAdvisoryLock<T>(
         }
       } catch (err) {
         options.onCleanupError?.('unlock', err);
-        if (primaryError === undefined) throw err;
+        cleanupError = err;
       }
     }
 
@@ -68,9 +69,11 @@ export async function withSessionAdvisoryLock<T>(
         await client.end();
       } catch (err) {
         options.onCleanupError?.('close', err);
-        if (primaryError === undefined) throw err;
+        cleanupError ??= err;
       }
     }
+    // Even a failed unlock must close the owning session, which releases its advisory locks.
+    if (primaryError === undefined && cleanupError !== undefined) throw cleanupError;
   }
 }
 
