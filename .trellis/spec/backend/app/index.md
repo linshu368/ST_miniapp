@@ -14,6 +14,8 @@
 
 ## 功能模块现状
 
+Surplus Intelligence 调用记录、受控字段与恢复契约见 [Surplus 调用规范](./surplusintelligence-calls.md)。涉及该平台时同时核对新迁移和各环境执行证据。
+
 当前业务、基础设施和公共能力的实现位置与调用链见 [模块索引](./modules/index.md)。模块文件描述当前事实，本文及专题文件继续承载编码规范。
 
 ## 架构定位

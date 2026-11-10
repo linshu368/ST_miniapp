@@ -131,6 +131,8 @@ pnpm --filter @miniapp/backend image-plaza:seed -- --input <xlsx>
 
 Venice 使用 `VENICE_API_BASE_URL` / `VENICE_API_KEY`，Surplus Intelligence 使用 `SURPLUS_API_BASE_URL` / `SURPLUS_API_KEY`；供应商凭据只配置在 Backend，不得放入前端环境变量。
 
+Surplus Intelligence 的官方默认 API 为 `https://api.surplusintelligence.ai/v1`，现有内部 provider 标识 `surplus` 保持兼容。聊天调用明细写入 `experience.surplusintelligence_chat_history`，保存实际非正文参数及按来源过滤的响应元数据；会话正文和账务结果仍归 `chat_history`。启用前必须先执行并验证完整兼容迁移 `20261110_surplusintelligence_chat_history_compat.sql`（原文件保留不改），再部署应用、通过运营 CLI 发布模型配置，具体顺序与恢复见 [迁移说明](packages/shared/migrations/README.md)。仓库实现不代表远端迁移或真实供应商验收已完成。
+
 开发 bypass（如 `MOCK_AUTH`、`DEV_AUTH_BYPASS`）禁止在 production 启用。
 
 ### Frontend
