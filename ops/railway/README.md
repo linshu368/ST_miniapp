@@ -138,6 +138,11 @@ PR 工作流移除复制来的探测服务，运行时也拒绝 pr-/preview；�
 先部署新告警规则投递兼容，再 TEST 验证并启用；异常时关闭探测开关即可。
 单轮 1 元、无本地订单、多策略扩展与上线检查见 [支付探测说明](../../docs/payment-availability-probe.md)。
 
+2026-11-10 发布记录：已在 production 补建 `stminiapp-payment-availability-probe`，连接
+`main` 分支，按上述半小时周期与 Never 重启策略部署成功；development 未创建。
+本次沿用默认关闭配置 `PAYMENT_PROBE_ENABLED=false`，渠道为 `alipay`，未执行真实建单或
+飞书链路验收。完成上述受控验收后，将该服务的开关设为 `true` 并应用变量变更即可启用。
+
 共享告警 outbox 由独立常驻服务 `stminiapp-payment-alert-monitor` 投递；该服务同时生产支付告警，
 也负责发送 API 服务写入的 Sentry 与 OpenRouter/Venice/Surplus 限流、额度、账户访问告警，并在同轮主动查询
 Venice `GET /api/v1/billing/balance`：当 `balances.usd`（null 按 0）低于 **$10** 时发布 generation 域

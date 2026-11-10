@@ -20,3 +20,13 @@ README、Railway 运维、策略维护指南、Backend spec 已同步；钱包�
 ## 发布边界
 
 未发起真实 TTZF/飞书/DB 请求、未部署、未改线上环境变量、未提交或推送。容器本地地址不等于公网出口，上游实际是否接受该合成请求 IP 仍需受控 TEST 验收。已有 IP 环境变量不再读取，可在后续部署维护中移除。开关继续为 PAYMENT_PROBE_ENABLED，默认关闭。
+
+## 后续 production 补建 — 2026-11-10
+
+用户在代码推送后明确授权“帮我补到production”。通过 Railway 插件核实原服务尚未创建后，仅在 production 新建 `stminiapp-payment-availability-probe`，连接 `linshu368/ST_miniapp` 的 `main` 分支。应用前核对待发布变更只包含该新服务，无删除或其他服务变更。
+
+服务使用现有 backend Dockerfile、独立探测启动命令、`*/30 * * * *` 调度、`NEVER` 重启策略与现有 production 同区域；配置引用同环境 `stminiapp` 的数据库、TTZF 与观测变量，无公网域名、TCP proxy 或卷。保留默认 `PAYMENT_PROBE_ENABLED=false` 与 `PAYMENT_PROBE_CHANNEL=alipay`，无需 client IP 变量。
+
+部署 `36ae24f7-4b3b-401c-aa59-f98b83c18f8a` 状态为 `SUCCESS`，源码提交为 `246f5b062068d0003199717ddf93973acaf963b8`。回读确认 live 配置与调度正确、无遗留 staged changes；development 未创建该服务。构建沿用现有镜像，仍有 Node 20 与 package 要求 Node >=22 的既有 engine 提示，本次未修改共享镜像。
+
+本次只完成默认关闭的 production 服务部署，未执行真实上游建单、飞书发送或数据库业务验收，不能作为供应商可用性或告警送达证据。真实验收及开启条件仍按维护指南执行。原任务保持已归档状态，后续记录作为本次授权部署的补充证据。
