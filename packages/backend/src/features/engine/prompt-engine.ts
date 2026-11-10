@@ -5,7 +5,7 @@
  *
  * 移植自旧 bot 的 src/infrastructure/ai/SimplePromptEngine.ts 的 _buildMessages()。
  * 最终形状：
- *   [system: 角色卡 system_prompt] + 历史（含虚拟 turn 0 开场白） + [user: 平台规则 + 本轮输入]
+ *   [system: 角色卡 system_prompt + 会话长期记忆] + 历史（含虚拟 turn 0 开场白） + [user: 平台规则 + 本轮输入]
  *
  * 方案：docs/ST_remove-MVP实施方案.md §六。
  */
@@ -24,7 +24,7 @@ import { renderPlatformInstructions, wrapUserInput } from './render-instructions
  * 2. **不消费预设**（决策 7 二次修正）。system 段只有角色卡 system_prompt，
  *    description / personality / scenario / mes_example / post_history_instructions 全不进 prompt，
  *    与 bot 现状一致；ST 生态卡下架后再按新卡写法决定要不要并入。
- * 3. **不在引擎里裁窗口**。入模下界由 SQL 水位线决定，truncatedTurns 只回填观测值。
+ * 3. **不在引擎里裁窗口**。入模下界由会话编排的正文字数水位决定，truncatedTurns 只回填观测值。
  *
  * input.persona：把 messages 里的 {{user}} 换成生效显示名；空则回落「你」。
  * 在组装完成后再替换，system / 历史 / 本轮输入都覆盖到。
@@ -32,9 +32,11 @@ import { renderPlatformInstructions, wrapUserInput } from './render-instructions
 export function buildPrompt(input: EngineInput): EngineOutput {
   const messages: EngineMessage[] = [];
 
-  const systemPrompt = input.character.system_prompt;
-  if (systemPrompt.trim() !== '') {
-    messages.push({ role: 'system', content: systemPrompt });
+  const systemParts = [input.character.system_prompt, input.storyMemory ?? ''].filter(
+    (part) => part.trim() !== ''
+  );
+  if (systemParts.length > 0) {
+    messages.push({ role: 'system', content: systemParts.join('\n\n') });
   }
 
   for (const message of input.history) {

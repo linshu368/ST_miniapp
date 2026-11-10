@@ -117,6 +117,12 @@ export const config = {
     workerLeaseSeconds: parseInt(process.env.IMAGE_WORKER_LEASE_SECONDS || '180', 10),
   },
 
+  // 会话长期记忆后台压缩 worker；本地调试可用 STORY_MEMORY_WORKER_ENABLED=false 关闭。
+  // 是否生成/注入由运营配置 story_memory_config.enabled 控制。
+  storyMemory: {
+    workerEnabled: process.env.STORY_MEMORY_WORKER_ENABLED !== 'false',
+  },
+
   // Venice 出站可选代理：仅本地开发填写 VENICE_HTTPS_PROXY；Railway/生产留空直连。
   venice: {
     httpsProxy: process.env.VENICE_HTTPS_PROXY?.trim() || '',

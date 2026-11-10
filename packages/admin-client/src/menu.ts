@@ -1,4 +1,9 @@
-import { CREATOR_REVIEW_PROMPT_KEY, VIP_STRATEGY_CONFIG_KEYS } from '@miniapp/shared';
+import {
+  CREATOR_REVIEW_PROMPT_KEY,
+  STORY_MEMORY_CONFIG_KEY,
+  STORY_MEMORY_PROMPT_KEY,
+  VIP_STRATEGY_CONFIG_KEYS,
+} from '@miniapp/shared';
 import type { ManagedConfigKey } from './configSchemas';
 
 /**
@@ -112,6 +117,8 @@ export const ADMIN_MENU_GROUPS: readonly AdminMenuGroup[] = [
       },
       { kind: 'config', key: 'pref_word_count_tiers' },
       { kind: 'view', view: 'text_postprocess', label: '回复富文本规则', configKeys: [] },
+      { kind: 'config', key: STORY_MEMORY_CONFIG_KEY, label: '长期记忆参数' },
+      { kind: 'config', key: STORY_MEMORY_PROMPT_KEY, label: '长期记忆 prompt' },
     ],
   },
   {

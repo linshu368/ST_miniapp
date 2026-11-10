@@ -22,6 +22,7 @@ import {
   DEFAULT_FIRST_TOKEN_TIMEOUT_RATE_TARGET,
   FIRST_TOKEN_FALLBACK_MODEL_ID,
   type ChatMessageStatus,
+  type StoryMemoryConfig,
 } from '@miniapp/shared';
 import type { ChatSessionRow } from '../../infrastructure/repositories/ChatSessionRepository.js';
 import type { CharacterCardRow } from '../../infrastructure/repositories/CharacterCardRepository.js';
@@ -37,7 +38,14 @@ import {
   failTurn,
   settleExecutedTurn,
 } from './turn-execution.js';
-import { buildEngineHistory } from './history.js';
+import { buildEngineHistory, turnsToMessages } from './history.js';
+import { renderStoryMemoryBlock } from '../story-memory/text.js';
+import {
+  applyStoryMemoryWindow,
+  awaitStoryMemory,
+  type StoryMemoryRead,
+  type WindowedTurns,
+} from '../story-memory/turn.js';
 import {
   createConversationPreparationTiming,
   type ConversationPreparationTiming,
@@ -152,7 +160,8 @@ export async function runConversationTurn(
     userConfig,
     displayName,
     instructions,
-    windowLimits,
+    storyMemoryConfig,
+    storyMemory,
     executionPreparation,
     preparationSignal,
   } = await prepareTurnInputs({
@@ -172,7 +181,7 @@ export async function runConversationTurn(
   // regenerate_not_allowed 由它们以 SQLSTATE 抛出，仓库层已翻成业务错误码。
   preparationSignal.throwIfAborted();
   preparation.enter('turn_open', model);
-  const turn = await startTurn(session.id, mode, model.openRouterModelId, windowLimits);
+  const turn = await startTurn(session.id, mode, model.openRouterModelId);
   preparation.enter('context');
   log.biz.info(
     {
@@ -221,6 +230,9 @@ export async function runConversationTurn(
       userConfig,
       displayName,
       instructions: instructions.instructions,
+      storyMemoryConfig,
+      storyMemory,
+      log,
     });
 
     preparation.enter('dispatch_gate');
@@ -254,6 +266,9 @@ async function loadTurnPrompt(input: {
   userConfig: PromptInput['userConfig'];
   displayName: string;
   instructions: PromptInput['instructions'];
+  storyMemoryConfig: StoryMemoryConfig;
+  storyMemory: Promise<StoryMemoryRead>;
+  log: RequestLogger;
 }) {
   const { session, turn } = input;
   // Context reads can overlap the one atomic admission write. Join both before
@@ -272,19 +287,59 @@ async function loadTurnPrompt(input: {
   const card = cardRead.value;
   const context = contextRead.value;
   input.signal.throwIfAborted();
-  const history = buildEngineHistory(context.messages, context.openingMessage ?? card.first_mes);
+  // Issued during preparation; by now it has almost always settled. Extra wait is capped.
+  const memory = await awaitStoryMemory(input.storyMemory);
+  const windowed = applyStoryMemoryWindow({
+    sessionId: session.id,
+    turns: context.turns,
+    currentStart: turn.contextWindowStartTurn,
+    userInput: turn.userInput,
+    config: input.storyMemoryConfig,
+    memory,
+    log: input.log,
+  });
+  const history = buildEngineHistory(
+    turnsToMessages(windowed.turns),
+    context.openingMessage ?? card.first_mes
+  );
+  const storyMemory = storyMemoryBlock(session.id, windowed, memory, input);
+  const truncatedTurns = windowed.startTurn - 1;
 
   const prompt = buildPrompt({
     character: toEngineCharacter(card),
     history,
-    truncatedTurns: context.truncatedTurns,
+    storyMemory,
+    truncatedTurns,
     userInput: turn.userInput,
     userConfig: input.userConfig,
     slotModes: turn.slotModes,
     persona: { displayName: input.displayName },
     instructions: input.instructions,
   });
-  return { prompt, truncatedTurns: context.truncatedTurns };
+  return { prompt, truncatedTurns };
+}
+
+/** 渲染注入块，并记一条观测（读取耗时/结果、窗口动作），用于统计空窗率与额外等待。 */
+function storyMemoryBlock(
+  sessionId: string,
+  windowed: WindowedTurns,
+  memory: StoryMemoryRead,
+  input: { storyMemoryConfig: StoryMemoryConfig; log: RequestLogger }
+): string | undefined {
+  const injected = input.storyMemoryConfig.enabled && memory.content !== null;
+  input.log.biz.info(
+    {
+      event: 'story_memory.turn',
+      sessionId,
+      windowStart: windowed.startTurn,
+      windowAction: windowed.action,
+      injected,
+      readOutcome: memory.outcome,
+      readMs: memory.readMs,
+    },
+    injected ? '已注入会话记忆' : '未注入会话记忆'
+  );
+  return injected && memory.content ? renderStoryMemoryBlock(memory.content) : undefined;
 }
 
 export interface StartedTurn {
@@ -292,7 +347,7 @@ export interface StartedTurn {
   historyId: string;
   revision: number;
   userInput: string;
-  /** 开轮 RPC 在同一事务里算出的窗口起点，组上下文时直接用，不再回读会话 */
+  /** 开轮 RPC 返回的当前窗口起点；本轮可能再按正文字数前移，组上下文时直接用，不再回读会话 */
   contextWindowStartTurn: number;
   postprocessVersion: number;
   slotModes: InstructionSlotModes;
@@ -301,8 +356,7 @@ export interface StartedTurn {
 async function startTurn(
   sessionId: string,
   mode: ConversationTurnMode,
-  model: string,
-  windowLimits: { maxTurns: number; retainTurns: number }
+  model: string
 ): Promise<StartedTurn> {
   if (mode.kind === 'send') {
     const started = await historyRecords().startTurn({
@@ -312,8 +366,6 @@ async function startTurn(
       // Explicit recovery owns quota cleanup; the legacy RPC guard must not unlock
       // a row that crosses the 120-second horizon between recovery and this RPC.
       staleAfterSeconds: 24 * 60 * 60,
-      maxContextTurns: windowLimits.maxTurns,
-      retainContextTurns: windowLimits.retainTurns,
     });
     return {
       turnIndex: started.turnIndex,
@@ -330,8 +382,6 @@ async function startTurn(
     sessionId,
     model,
     staleAfterSeconds: 24 * 60 * 60,
-    maxContextTurns: windowLimits.maxTurns,
-    retainContextTurns: windowLimits.retainTurns,
   });
   return {
     turnIndex: started.turnIndex,

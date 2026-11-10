@@ -12,7 +12,6 @@ const CHARACTER = '11111111-2222-4333-8444-55555555555a';
 const mocks = vi.hoisted(() => ({
   fork: vi.fn(),
   user: vi.fn(),
-  limits: vi.fn(),
   list: vi.fn(),
   opening: vi.fn(),
   displayName: vi.fn(),
@@ -28,9 +27,6 @@ vi.mock('../middleware/auth.js', () => ({
   },
 }));
 vi.mock('../lib/user.js', () => ({ getOrCreateDbUser: mocks.user }));
-vi.mock('../features/conversations/context-window.js', () => ({
-  fetchContextWindowLimits: mocks.limits,
-}));
 vi.mock('../infrastructure/repositories/ChatSessionRepository.js', async (importOriginal) => ({
   ...(await importOriginal<
     typeof import('../infrastructure/repositories/ChatSessionRepository.js')
@@ -80,7 +76,6 @@ const inherited: ChatMessage = {
 beforeEach(() => {
   Object.values(mocks).forEach((mock) => mock.mockReset());
   mocks.user.mockResolvedValue({ id: USER });
-  mocks.limits.mockResolvedValue({ maxTurns: 75, retainTurns: 50 });
   mocks.displayName.mockResolvedValue('小林');
   mocks.opening.mockResolvedValue('开场白');
   mocks.fork.mockResolvedValue({
@@ -185,7 +180,6 @@ describe('conversation reply like boundary', () => {
         liked,
       });
       expect(mocks.setLike.mock.calls[1]).toEqual(mocks.setLike.mock.calls[0]);
-      expect(mocks.limits).not.toHaveBeenCalled();
       expect(mocks.list).not.toHaveBeenCalled();
     } finally {
       await app.close();
@@ -249,7 +243,6 @@ describe('conversation branch boundary', () => {
       expect(response.statusCode).toBe(401);
       expect(mocks.user).not.toHaveBeenCalled();
       expect(mocks.fork).not.toHaveBeenCalled();
-      expect(mocks.limits).not.toHaveBeenCalled();
     } finally {
       await app.close();
     }
@@ -292,8 +285,7 @@ describe('conversation branch boundary', () => {
     }
   });
 
-  it('uses server A, authenticated owner, and returns inherited reply with its own display version', async () => {
-    mocks.limits.mockResolvedValue({ maxTurns: 90, retainTurns: 37 });
+  it('uses the authenticated owner and returns inherited reply with its own display version', async () => {
     const app = await buildApp();
     try {
       const response = await app.inject({
@@ -308,7 +300,6 @@ describe('conversation branch boundary', () => {
         sourceSessionId: SOURCE,
         messageId: MESSAGE,
         requestId: REQUEST,
-        retainTurns: 37,
       });
       expect(mocks.list).toHaveBeenCalledExactlyOnceWith(BRANCH, '开场白');
       expect(response.json()).toMatchObject({

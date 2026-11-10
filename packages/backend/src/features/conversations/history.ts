@@ -8,6 +8,7 @@
  */
 
 import type { EngineHistoryMessage } from '../engine/index.js';
+import type { StoryTurn } from '../story-memory/text.js';
 
 /**
  * 开场白没有独立数据库行：首轮用角色卡当前值，之后用首轮 history 中保存的快照。
@@ -26,4 +27,18 @@ export function buildEngineHistory(
       .map((message) => ({ role: message.role, content: message.content }))
   );
   return history;
+}
+
+/** 窗口内轮次 → 入模消息。空输入/空回复不进 prompt，但轮次仍占窗口位置。 */
+export function turnsToMessages(
+  turns: StoryTurn[]
+): Array<{ role: 'user' | 'assistant'; content: string }> {
+  return turns.flatMap((turn) => {
+    const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+    if (turn.userInput.trim()) messages.push({ role: 'user', content: turn.userInput });
+    if (turn.assistantReply?.trim()) {
+      messages.push({ role: 'assistant', content: turn.assistantReply });
+    }
+    return messages;
+  });
 }
