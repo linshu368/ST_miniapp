@@ -150,8 +150,6 @@ anon key 是浏览器公开配置，但仍应按环境隔离；service-role 绝�
 
 Admin Vercel Preview 在构建期固定 API 映射：普通 branch Preview 与 `dev -> main` 发布 PR 必须配置 HTTPS 的 `VITE_ADMIN_TEST_API_URL`；目标分支为 `dev` 的功能 PR 固定使用 `https://stminiapp-pr-<PR号>.up.railway.app`。构建会拒绝缺失或非 HTTPS 的稳定 TEST 映射；PR Railway workflow 同时验证后端健康和 Admin 代理的 Vercel CORS 预检。
 
-辅助 AI 审查已停用并移除自动工作流；后续发布不运行或等待该项审查。正常的 Quality Gate、测试、构建和部署核验继续执行。
-
 ## 6. Supabase 与数据库迁移
 
 ```bash
