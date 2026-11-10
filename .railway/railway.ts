@@ -189,6 +189,14 @@ export default defineRailway((ctx) => {
     SURPLUS_API_KEY: stminiapp.env.SURPLUS_API_KEY,
   };
 
+  const paymentAlertMonitorEnv = {
+    ...paymentCronEnv,
+    VENICE_API_BASE_URL: stminiapp.env.VENICE_API_BASE_URL,
+    VENICE_API_KEY: stminiapp.env.VENICE_API_KEY,
+    SURPLUS_API_BASE_URL: stminiapp.env.SURPLUS_API_BASE_URL,
+    SURPLUS_API_KEY: stminiapp.env.SURPLUS_API_KEY,
+  };
+
   const paymentReconcileWorker = service('stminiapp-payment-reconcile-cron', {
     source: github(REPOSITORY, { branch }),
     build: {

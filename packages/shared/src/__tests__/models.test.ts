@@ -7,8 +7,41 @@ import {
   resolveRuntimeCatalogModel,
   toPublicModelCatalog,
   resolveFallbackProviders,
+  ProviderModelSummarySchema,
 } from '../api/models.js';
 import { LLM_PROVIDER_CAPABILITIES } from '../api/model-providers.js';
+
+describe('ProviderModelSummarySchema capabilities', () => {
+  const model = {
+    provider: 'surplus',
+    id: 'vendor/model',
+    name: 'Model',
+    description: null,
+    context_length: null,
+    prompt_usd_per_token: 0,
+    completion_usd_per_token: 0,
+    status: 'available',
+    raw_status_label: null,
+  };
+
+  it('keeps old summaries valid and preserves bounded optional parameter names', () => {
+    expect(ProviderModelSummarySchema.parse(model).supported_parameters).toBeUndefined();
+    expect(
+      ProviderModelSummarySchema.parse({ ...model, supported_parameters: ['reasoning_effort'] })
+        .supported_parameters
+    ).toEqual(['reasoning_effort']);
+    expect(
+      ProviderModelSummarySchema.safeParse({ ...model, supported_parameters: ['arbitrary value'] })
+        .success
+    ).toBe(false);
+    expect(
+      ProviderModelSummarySchema.safeParse({
+        ...model,
+        supported_parameters: Array(129).fill('reasoning'),
+      }).success
+    ).toBe(false);
+  });
+});
 
 describe('LlmPricingConfigSchema', () => {
   it('validates fixed per-round deductions', () => {

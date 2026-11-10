@@ -1,5 +1,21 @@
 # SQL 迁移文件
 
+## 2026-11-10 Surplus Intelligence 调用明细（本地实施，远端未执行）
+
+当前执行入口为 `20261110_surplusintelligence_chat_history_compat.sql`。原 `20261110_surplusintelligence_chat_history.sql` 保留不改：在整份SQL以Windows CRLF提交时，其函数定义转为LF、匹配模板却保留CRLF，可能触发 `Unexpected installed delivery provider branch`。兼容文件完整包含原迁移功能，可直接用于原文件失败回滚后的环境；不需要先成功执行原文件，也不要重跑已记账原文件或加force_rerun绕过。
+
+该迁移新增 `experience.surplusintelligence_chat_history`，以唯一 `chat_history_id` 关联父轮次，可选 attempt 必须同父；保存实际非正文请求参数、独立 request/generation ID、受控 body/SSE/header/request-record 数据和可用的用量/成本/时延投影。会话内容和计费权威仍在原链路；失败或输给 OpenRouter 的 Surplus 调用仍保留，不能凭明细存在推断交付胜者。
+
+- 兼容修复仅把函数定义、全部多行匹配模板及替换文本统一为LF，并要求目标锚点唯一；不放宽未知分支、不用旧版函数覆盖现网锁/CAS/计费逻辑。原文件在其他环境若已成功，保持原filename/checksum，本兼容文件按独立文件记账。整份失败的原迁移处于显式事务中，不应提交部分新表；先核对账本及实际结构，再通过标准workflow执行新文件。
+
+- 前置：现有多平台 catalog、first-token 表及 `20261026_first_token_nonretryable_conflicts.sql`、`20261028_first_token_race.sql`；目标必须已经支持当前请求登记/交付协议。迁移对安装中函数做带锚点的原位补丁，保留 OID/owner/ACL；未知 shape、旧40001永久重试或旧抢占限制会拒绝整笔操作。不要重跑旧文件绕过。
+- 同文件修正 catalog provider 校验、generation 两表 provider CHECK、交付函数三分支；不会将 Surplus 写入 Venice。CHECK 扩展涉及现有表扫描，5s锁/60s语句预算，生产先独立评估大小/锁窗口，超预算停止，不扩大预算硬跑。
+- 新表启用 RLS，撤销 PUBLIC/anon/authenticated，service_role 仅 CRUD；调用 RPC 仅 service_role 可执行，不给 metrics reader JSON 权限。请求16KiB、响应128KiB（数据库按JSONB文本UTF-8计数）；正文/思考/凭据字段递归拒绝。JSON允许项与缺口诊断由服务端严格mapper进一步约束。
+- `prepare_surplusintelligence_call` 在 dispatch 前冻结参数；`record_surplusintelligence_call` 以行锁/CAS保全身份及非空证据，不修改主表。首次终态可更新首帧暂定用量，匹配不可变request ID的已完成详情可更新成本/用量查询投影；早期inline JSON证据仍保留，迟到首帧不回退终态投影。`claim_surplusintelligence_request_record` 原子领取补齐额度（最多6次，有界退避），允许超120秒残留调用的元数据恢复，避免多副本重复探测；详情权限不足只标不可用，不阻塞固定档位结算。
+- 验证：扩展既有 `bash scripts/test-first-token-fallback-local.sh`，包含 migration重放、catalog校验、RPC/权限、ID与参数冲突、30位微美元精度/NULL/0、嵌套正文拒绝、容量、级联及Surplus输者/OR胜者。无Docker时隔离PGlite可验证SQL行为，但不能替代PG17/PostgREST、多连接并发、实际钱包及真实供应商验收。
+- 发布：隔离回归 → TEST 单文件 workflow migration/shape及权限核对 → 新 Backend/shared/Admin 和真实小样本 → Production 独立单文件 workflow → 新应用 → CLI草稿/diff/用户明确同意后发布模型。生产配置发布不是本迁移的一部分；不能以TEST结果替代Production。
+- 旧数据不回填未知参数或假响应；旧仅有Surplus计费快照的数据由兼容恢复处理。停止/恢复先禁用Surplus新流量并保留调用记录，使用兼容版本或受审阅forward-fix；禁止回退到把Surplus写进Venice的旧函数、DROP新表或重写旧账。
+
 ## 大厅评分去重
 
 `20261104_lobby_ranking_refresh_state.sql` 新增一条后台专用记录，保存最近成功评分口径和完成时间，与分数同事务写入。先迁移、再发新应用；首次无成功记录需计算一次。回退应用保留该表。仅在本地隔离PG17验收。

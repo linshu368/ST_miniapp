@@ -66,6 +66,12 @@ pnpm test:ui:fixtures            # 模拟服务本身的协议与隔离检查
 
 `fixtures/data.ts` 是场景与初始数据入口。金额仅为验收示例，不同步线上配置或用户资料。不要将 token、initData、生产响应、聊天或数据库导出放进 fixture / trace。聊天中的语音与附图仅提供静态配置和空记录，本轮不模拟它们的生成。
 
+### Surplus Intelligence 聊天
+
+`pnpm test:ui --grep '@surplus'` 复用 `chat.spec.ts` 的390/320尺寸及既有HTTP/SSE服务。`chat-surplus` 提供完整平台名称 **Surplus Intelligence**、内部 `provider=surplus` 和虚构 `provider_model_id=preview-surplus-text`，验证目录展示、发送、重生成、取消与刷新恢复。`chat-surplus-fallback` 模拟慢主调用后由现有 OpenRouter 模型交付，验证一次发送、回复保留和用户选择仍为 Surplus。
+
+fixture 不连接 `api.surplusintelligence.ai` 或其他供应商，模型ID与正文均为本地虚构数据。这里验证真实页面消费公开DTO/SSE的行为，不能证明真实供应商路由、调用明细落库或一次扣费；这些由后端、隔离数据库及目标环境验收承担。
+
 ## 扩展方式
 
 1. 优先在已有分组增加断言，复用 `tests/fixtures.ts` 的场景重置、网络检查和报告。
