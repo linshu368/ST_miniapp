@@ -50,10 +50,7 @@ function createSettleOnce(input: StreamInput, state: SettlementState) {
     signal,
     deliveryPersisted,
     releaseReservation,
-    headerGenerationId,
     upstreamRes,
-    chargeId,
-    observation,
   } = input;
   return (observed: SseTapResult): Promise<void> => {
     state.settlement ??= (async () => {
@@ -104,14 +101,9 @@ export async function consumeStream(input: StreamInput): Promise<GenerationResul
   const {
     request,
     billing,
-    reservation,
-    saveHistory,
     log,
-    upstreamStartedAt,
     hooks,
     signal,
-    deliveryPersisted,
-    releaseReservation,
     headerGenerationId,
     upstreamRes,
     chargeId,

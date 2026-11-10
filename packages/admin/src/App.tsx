@@ -25,7 +25,6 @@ import {
 import { Refine } from '@refinedev/core';
 import { dataProvider } from '@refinedev/supabase';
 import {
-  CREATOR_REVIEW_PROMPT_KEY,
   LLM_MODEL_PROVIDERS,
   ModelCatalogSchema,
   LlmProviderRoutingConfigSchema,
@@ -79,8 +78,16 @@ import {
   getCatalogProviderIssues,
   getFallbackProviderIssues,
 } from './lib/openRouterModels';
-import { getModelCatalogChangeSummary } from './lib/modelCatalogDiff';
 import { TextPostprocessView } from './components/TextPostprocessView';
+import { ReleaseChangeDetails } from './components/ReleaseChangeDetails';
+import {
+  draftSaveFields,
+  formatDate,
+  getReleaseChangeSummary,
+  jsonPreview,
+  maskConfigSecret,
+  releasePreviewValue,
+} from './lib/configReleaseDiff';
 import {
   configMenuKey,
   IMAGE_GENERATION_CONFIG_KEYS,
@@ -130,162 +137,6 @@ function confirmAction(title: string, content: React.ReactNode, danger = false):
       onCancel: () => resolve(false),
     });
   });
-}
-
-function jsonPreview(value: unknown): string {
-  if (typeof value === 'string') return value;
-  return JSON.stringify(value, null, 2);
-}
-
-function releasePreviewValue(release: Pick<ConfigRelease, 'value' | 'text_value'>): unknown {
-  return release.text_value ?? release.value;
-}
-
-function maskConfigSecret(key: ManagedConfigKey, value: unknown): unknown {
-  if (key !== 'image_text_model_config' || !isPlainObject(value)) return value;
-  return {
-    ...value,
-    api_key: typeof value.api_key === 'string' && value.api_key ? '••••••••' : '',
-  };
-}
-
-function draftSaveFields(
-  key: ManagedConfigKey,
-  parsed: unknown
-): { value: unknown; textValue?: string | null } {
-  if (isTextManagedConfig(key)) {
-    return { value: null, textValue: typeof parsed === 'string' ? parsed : String(parsed ?? '') };
-  }
-  return { value: parsed };
-}
-
-function formatDate(value: string): string {
-  return new Date(value).toLocaleString('zh-CN', { hour12: false });
-}
-
-interface ValueChange {
-  path: string;
-  before: unknown;
-  after: unknown;
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function collectValueChanges(
-  before: unknown,
-  after: unknown,
-  path = '配置值',
-  changes: ValueChange[] = []
-): ValueChange[] {
-  if (Object.is(before, after)) return changes;
-
-  if (Array.isArray(before) && Array.isArray(after)) {
-    const length = Math.max(before.length, after.length);
-    for (let index = 0; index < length; index += 1) {
-      collectValueChanges(before[index], after[index], `${path}[${index}]`, changes);
-    }
-    return changes;
-  }
-
-  if (isPlainObject(before) && isPlainObject(after)) {
-    const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
-    for (const key of keys) {
-      collectValueChanges(before[key], after[key], `${path}.${key}`, changes);
-    }
-    return changes;
-  }
-
-  changes.push({ path, before, after });
-  return changes;
-}
-
-function getPreviousRelease(
-  allReleases: ConfigRelease[],
-  release: ConfigRelease
-): ConfigRelease | undefined {
-  return allReleases
-    .filter(
-      (candidate) =>
-        candidate.config_key === release.config_key &&
-        candidate.runtime_version < release.runtime_version
-    )
-    .sort((left, right) => right.runtime_version - left.runtime_version)[0];
-}
-
-function formatChangeValue(value: unknown): string {
-  if (value === undefined) return '未设置';
-  const serialized = typeof value === 'string' ? value : (JSON.stringify(value) ?? String(value));
-  return serialized.length > 160 ? `${serialized.slice(0, 157)}…` : serialized;
-}
-
-function getReleaseChangeSummary(allReleases: ConfigRelease[], release: ConfigRelease): string {
-  const previousRelease = getPreviousRelease(allReleases, release);
-  if (!previousRelease) return '首次发布完整配置';
-  const previousValue = releasePreviewValue(previousRelease);
-  const currentValue = releasePreviewValue(release);
-  if (release.config_key === 'llm_model_catalog') {
-    const modelSummary = getModelCatalogChangeSummary(previousValue, currentValue);
-    if (modelSummary) return modelSummary;
-  }
-  const changes = collectValueChanges(previousValue, currentValue);
-  if (changes.length === 0) return '配置内容未变化';
-  return `${changes.length} 项：${changes
-    .slice(0, 2)
-    .map((change) => change.path)
-    .join('、')}${changes.length > 2 ? '…' : ''}`;
-}
-
-function ReleaseChangeDetails(props: {
-  release: ConfigRelease;
-  allReleases: ConfigRelease[];
-  compact?: boolean;
-}) {
-  const previousRelease = getPreviousRelease(props.allReleases, props.release);
-  const currentValue = maskConfigSecret(
-    props.release.config_key,
-    releasePreviewValue(props.release)
-  );
-  if (!previousRelease) {
-    return (
-      <div className="release-change-details">
-        <Typography.Text strong>首次发布的完整配置</Typography.Text>
-        {!props.compact ? <pre className="diff-preview">{jsonPreview(currentValue)}</pre> : null}
-      </div>
-    );
-  }
-
-  const changes = collectValueChanges(
-    maskConfigSecret(previousRelease.config_key, releasePreviewValue(previousRelease)),
-    currentValue
-  );
-  const visibleChanges = props.compact ? changes.slice(0, 3) : changes;
-
-  return (
-    <div className="release-change-details">
-      <Typography.Text strong>具体修改（{changes.length} 项）</Typography.Text>
-      {changes.length === 0 ? (
-        <Typography.Text type="secondary">配置内容未变化</Typography.Text>
-      ) : (
-        <div className="release-change-list">
-          {visibleChanges.map((change, index) => (
-            <div className="release-change-item" key={`${change.path}-${index}`}>
-              <code>{change.path}</code>
-              <span className="release-change-before">{formatChangeValue(change.before)}</span>
-              <span aria-hidden>→</span>
-              <span className="release-change-after">{formatChangeValue(change.after)}</span>
-            </div>
-          ))}
-          {props.compact && changes.length > visibleChanges.length ? (
-            <Typography.Text type="secondary">
-              另有 {changes.length - visibleChanges.length} 项修改，请在“发布历史”中展开查看。
-            </Typography.Text>
-          ) : null}
-        </div>
-      )}
-    </div>
-  );
 }
 
 export function AdminApp() {

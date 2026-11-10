@@ -8,10 +8,9 @@ import {
   type TextPostprocessRule,
 } from '@miniapp/shared';
 import { compileTextPostprocessSource } from '@miniapp/shared/src/text-postprocess/compile';
-import { STARTER_RULES, isBodyStyleRule } from './textPostprocessSamples';
+import { STARTER_RULES, isBodyStyleRule } from './textPostprocessTemplates';
 import {
   acceptLoadedState,
-  applyLocalChoice,
   beginLoad,
   casConflictNotice,
   createRuleId,
@@ -35,7 +34,6 @@ import {
   productionWriteConfirm,
   publishedAvailability,
   putMutation,
-  reduceStreamSim,
   replaceLocal,
   selectedRule,
   sessionEditSignature,
@@ -208,7 +206,6 @@ describe('text postprocess workbench', () => {
   });
 
   it('keeps editing the same rule id after the list is reordered', () => {
-    const loaded = load('test', serverState({ draftPattern: 'middle' }));
     const local = editableFromSource(
       source([rule('alpha', 'A'), rule('beta', 'B'), rule('gamma', 'C')])
     );
@@ -383,23 +380,12 @@ describe('text postprocess workbench', () => {
     ).toBe(false);
   });
 
-  it('requires an explicit production confirmation and keeps choice simulation local', () => {
+  it('requires an explicit production confirmation', () => {
     const confirm = productionWriteConfirm('production', '发布');
     expect(confirm.required).toBe(true);
     expect(confirm.content).toContain('生产环境');
     expect(confirm.content).toContain('不是测试环境');
     expect(productionWriteConfirm('test', '发布').required).toBe(false);
-    const choice = applyLocalChoice({ text: null, networkCalls: 0 }, '留下');
-    expect(choice).toEqual({ text: '留下', networkCalls: 0 });
-    expect(applyLocalChoice(choice, '离开')).toBe(choice);
-  });
-
-  it('pauses and resets mock streaming without reading a model', () => {
-    const started = reduceStreamSim({ phase: 'idle', visibleUnits: 0 }, 'start', 10);
-    const ticked = reduceStreamSim(started, 'tick', 10, 4);
-    const paused = reduceStreamSim(ticked, 'pause', 10);
-    expect(paused).toEqual({ phase: 'paused', visibleUnits: 4 });
-    expect(reduceStreamSim(paused, 'reset', 10)).toEqual({ phase: 'idle', visibleUnits: 0 });
   });
 
   it('copies a rule into a disabled rule with a new id', () => {

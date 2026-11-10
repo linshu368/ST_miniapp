@@ -43,49 +43,6 @@ export function isBodyStyleRule(ruleId: string): boolean {
   return ruleId === RICH_REPLY_BODY_RULE_ID;
 }
 
-export const PREVIEW_SAMPLES = {
-  full: [
-    '夜色压得很低，花园里只剩下虫鸣和远处隐约的水声。',
-    '',
-    '她低声说：“今晚见”。',
-    '',
-    '她没有回头，指尖却在石栏上停了很久，像是在等一个迟迟不来的答复。',
-    '',
-    '[choices]',
-    '[choice]握住她的手[/choice]',
-    '[choice]再问一次[/choice]',
-    '[choice]安静等待[/choice]',
-    '[/choices]',
-    '',
-    '[status]',
-    '<details><summary>此刻</summary>',
-    '```markdown',
-    '地点：花园',
-    '时间：深夜',
-    '```',
-    '</details>',
-    '[/status]',
-    '',
-    '[memory]',
-    '<details><summary>工作记忆</summary>',
-    '```markdown',
-    '当前记忆数目：1/7',
-    '```',
-    '</details>',
-    '[/memory]',
-    '',
-    '普通 **markdown** 与 `code`。',
-  ].join('\n'),
-  plain: '这是一段没有规则标记的普通回复。\n\n- 列表一\n- 列表二',
-  broken: '这里有未闭合的 [highlight]只有开头',
-  recoveryEof: '正文。\n\n[choices]\n[choice]继续[/choice]\n\n[status]\n地点：花园',
-  recoveryFence: '```markdown\n【choices】\n［choice］继续［/choice］\n【status】\n地点：花园\n```',
-  choice:
-    '[choices]\n[choice]接受邀请[/choice]\n[choice]再考虑一下[/choice]\n[choice]先观察[/choice]\n[/choices]',
-} as const;
-
-export type PreviewSampleKey = keyof typeof PREVIEW_SAMPLES;
-
 export const STARTER_RULES: readonly TextPostprocessRule[] = [
   {
     id: 'choice',

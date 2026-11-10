@@ -24,7 +24,6 @@ import {
   ImagePlazaShareTipConfigSchema,
   ImagePlazaTagConfigSchema,
   LlmPricingConfigSchema,
-  MAX_FEATURE_FREE_TRIAL_LIMIT,
   ModelCatalogSchema,
   type ModelCatalog,
   type LlmModelProvider,
@@ -52,7 +51,6 @@ import {
   type ImageTextModelConfig,
   type ManagedConfigKey,
 } from '@miniapp/admin-client';
-import type { CharacterCard } from '@miniapp/admin-client';
 import { InviteCenterConfigEditor } from './InviteCenterConfigEditor';
 import { InviteRewardRulesEditor } from './InviteRewardRulesEditor';
 import {
