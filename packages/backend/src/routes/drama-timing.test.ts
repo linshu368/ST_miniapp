@@ -5,7 +5,6 @@ import type { DramaSigningObservation } from '../features/drama/signed-url.js';
 const mocks = vi.hoisted(() => ({
   stream: false,
   streamSignFailed: false,
-  streamGroup: 'stream' as 'stream' | 'supabase',
   now: 0,
   denied: false,
   failDb: false,
@@ -57,11 +56,11 @@ vi.mock('../features/drama/stream.js', () => ({
     mocks.stream
       ? {
           config: {},
-          video: { uid: 'unit' },
+          video: { videoId: VIDEO, uid: 'unit' },
           delivery: {
             experimentId: 'stream-route-unit',
-            group: mocks.streamGroup,
-            provider: mocks.streamGroup,
+            group: 'stream',
+            provider: 'stream',
             reason: 'assigned',
           },
         }
@@ -88,7 +87,6 @@ beforeEach(() => {
   Object.assign(mocks, {
     stream: false,
     streamSignFailed: false,
-    streamGroup: 'stream',
     now: 0,
     denied: false,
     failDb: false,
@@ -201,29 +199,20 @@ describe('drama backend timing', () => {
   });
 });
 
-it('keeps old clients on MP4 and serves HLS only to the assigned B client', async () => {
-  mocks.stream = true;
-  const old = await request();
-  expect(old.json().data.playback.format).toBeUndefined();
-  expect(mocks.sign).toHaveBeenCalledOnce();
-  mocks.sign.mockClear();
-  const hls = await request(`/api/dramas/${ID}/play?format=hls`);
-  expect(hls.json().data.playback).toMatchObject({
-    format: 'hls',
-    delivery: { group: 'stream', provider: 'stream' },
-  });
-  expect(mocks.sign).not.toHaveBeenCalled();
-});
-it('records the assigned B arm when recovering through Supabase', async () => {
-  mocks.stream = true;
-  const result = await request(`/api/dramas/${ID}/play?format=hls&fallback=mp4`);
-  expect(result.json().data.playback.delivery).toMatchObject({
-    group: 'stream',
-    provider: 'supabase',
-    reason: 'fallback',
-  });
-  expect(mocks.sign).toHaveBeenCalledOnce();
-});
+it.each(['', '?format=hls', '?format=hls&fallback=mp4'])(
+  'serves Stream for a listed video through the legacy GET endpoint %s',
+  async (query) => {
+    mocks.stream = true;
+    const result = await request(`/api/dramas/${ID}/play${query}`);
+    expect(result.json().data.playback).toMatchObject({
+      video_id: VIDEO,
+      format: 'hls',
+      delivery: { group: 'stream', provider: 'stream' },
+    });
+    expect(logged().delivery.provider).toBe('stream');
+    expect(mocks.sign).not.toHaveBeenCalled();
+  }
+);
 it('makes signing failure measurable without logging the signing exception', async () => {
   mocks.stream = true;
   mocks.streamSignFailed = true;
@@ -232,6 +221,8 @@ it('makes signing failure measurable without logging the signing exception', asy
     playable: false,
     delivery: { group: 'stream', provider: 'unknown', reason: 'unavailable' },
   });
+  expect(logged().delivery).toMatchObject({ provider: 'unknown', reason: 'unavailable' });
+  expect(mocks.sign).not.toHaveBeenCalled();
   expect(JSON.stringify(mocks.info.mock.calls)).not.toContain('unit signing failure');
 });
 
@@ -258,7 +249,11 @@ describe('POST /api/dramas/play（固定地址，使 CORS 预检可缓存）', (
     expect(hls.json().data.playback).toMatchObject({ format: 'hls' });
     expect(mocks.sign).not.toHaveBeenCalled();
     const fallback = await post({ drama_id: ID, format: 'hls', fallback: 'mp4' });
-    expect(fallback.json().data.playback.delivery).toMatchObject({ reason: 'fallback' });
+    expect(fallback.json().data.playback.delivery).toMatchObject({
+      provider: 'stream',
+      reason: 'assigned',
+    });
+    expect(mocks.sign).not.toHaveBeenCalled();
   });
 
   it('rejects malformed bodies and IDs before touching the database', async () => {

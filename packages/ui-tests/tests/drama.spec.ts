@@ -764,6 +764,45 @@ test('@drama 播放失败可重试，列表失败和空状态有出口', async (
   await expect(page.locator('video')).toHaveCount(0);
 });
 
+test('@drama Stream 签名失败只自动重取同一集一次，手动重试也不请求 MP4', async ({ page }) => {
+  const requests: Array<{ video_id?: string; fallback?: string }> = [];
+  await page.route(
+    (url) => url.pathname === PLAY_PATH,
+    async (route) => {
+      if (!matchesPlay(route.request(), firstDrama)) return route.fallback();
+      requests.push(route.request().postDataJSON());
+      await route.fulfill({
+        json: {
+          success: true,
+          data: {
+            playback: {
+              video_id: firstVideo,
+              playable: false,
+              play_url: null,
+              expires_at: null,
+              delivery: {
+                experimentId: 'fixture',
+                group: 'stream',
+                provider: 'unknown',
+                reason: 'unavailable',
+              },
+            },
+          },
+        },
+      });
+    }
+  );
+  await page.goto(`/dramas/${firstDrama}`);
+  const retry = page.getByRole('button', { name: '重新播放', exact: true });
+  await expect.poll(() => requests.length).toBe(2);
+  await expect(retry).toBeEnabled();
+  await retry.click();
+  await expect.poll(() => requests.length).toBe(3);
+  await expect(retry).toBeEnabled();
+  expect(requests.slice(1).map((body) => body.video_id)).toEqual([firstVideo, firstVideo]);
+  expect(requests.every((body) => body.fallback === undefined)).toBe(true);
+});
+
 test('@drama 重试失败仍能再试，新地址只装载一次并接回原秒数', async ({ page }) => {
   await page.goto(`/dramas/${firstDrama}`);
   const video = await pauseReadyVideo(page);
