@@ -11,7 +11,7 @@ import {
   type TextPostprocessVersionSnapshot,
 } from '@miniapp/shared';
 import type { AdminEnvironment } from './environment';
-import { blankRule, type EditableRule, type EditableSource } from './textPostprocessSamples';
+import type { EditableRule, EditableSource } from './textPostprocessTemplates';
 
 export type LogicalAction = 'save' | 'publish' | 'rollback' | 'discard';
 
@@ -738,49 +738,6 @@ export function summarizeVersionChange(
       .join('；'),
     180
   );
-}
-
-export interface StreamSim {
-  phase: 'idle' | 'running' | 'paused';
-  visibleUnits: number;
-}
-
-export function reduceStreamSim(
-  state: StreamSim,
-  event: 'start' | 'pause' | 'resume' | 'reset' | 'tick',
-  total: number,
-  step = 1
-): StreamSim {
-  if (event === 'reset') return { phase: 'idle', visibleUnits: 0 };
-  if (event === 'start') return { phase: 'running', visibleUnits: 0 };
-  if (event === 'pause')
-    return {
-      phase: state.phase === 'running' ? 'paused' : state.phase,
-      visibleUnits: state.visibleUnits,
-    };
-  if (event === 'resume') {
-    return {
-      phase: state.phase === 'paused' ? 'running' : state.phase,
-      visibleUnits: state.visibleUnits,
-    };
-  }
-  if (state.phase !== 'running') return state;
-  const next = Math.min(total, state.visibleUnits + step);
-  return { phase: next >= total ? 'paused' : 'running', visibleUnits: next };
-}
-
-export function visibleSample(sample: string, units: number): string {
-  return [...sample].slice(0, Math.max(0, units)).join('');
-}
-
-export interface LocalChoiceSim {
-  text: string | null;
-  networkCalls: number;
-}
-
-export function applyLocalChoice(state: LocalChoiceSim, text: string): LocalChoiceSim {
-  if (state.text !== null) return state;
-  return { text, networkCalls: state.networkCalls };
 }
 
 function keepSelection(local: EditableSource, selectedRuleId: string | null): string | null {

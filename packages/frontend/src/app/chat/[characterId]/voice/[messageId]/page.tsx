@@ -1,6 +1,6 @@
 'use client';
 
-import { feedbackAfterPaint, startAction } from '@/lib/perf/action-tracker';
+import { startAction } from '@/lib/perf/action-tracker';
 import { usePageReady } from '@/lib/perf/page-ready';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';

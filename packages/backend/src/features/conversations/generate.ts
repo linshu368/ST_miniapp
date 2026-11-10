@@ -136,7 +136,7 @@ export function resolveFirstTokenPolicy(
 export async function runConversationTurn(
   input: RunConversationTurnInput
 ): Promise<ConversationTurnOutcome> {
-  const { session, mode, sink, log } = input;
+  const { session, mode, log } = input;
   // Old clients cannot display reasoning or cancel their legacy first-answer timer.
   const thinkingEnabled = input.thinkingEnabled ?? false;
   const userId = session.user_id;

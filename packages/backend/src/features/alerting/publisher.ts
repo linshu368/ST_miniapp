@@ -1,4 +1,4 @@
-import { AlertEvaluationSchema, type AlertEvaluation } from '@miniapp/shared';
+import { AlertEvaluationSchema } from '@miniapp/shared';
 import type { Logger } from '../../lib/logger.js';
 import { createSafeAlertCard, type SafeAlertCard } from './safe-card.js';
 import type { AlertPersistence } from './repository.js';

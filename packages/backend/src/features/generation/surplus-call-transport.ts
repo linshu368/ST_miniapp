@@ -232,7 +232,7 @@ async function confirmHeaders(input: ObservationInput): Promise<string | null> {
 }
 
 async function observeResponse(input: ObservationInput): Promise<Response> {
-  const { response, repository, historyId, capture } = input;
+  const { response, capture } = input;
   const headerId = await confirmHeaders(input);
   let identity = headerId;
   let identityWork = Promise.resolve();

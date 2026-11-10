@@ -143,7 +143,7 @@ export class FirstTokenObservation {
     this.requestUrl ??= url ?? null;
     this.connectionProven =
       connectionAgeMs !== null && connectionAgeMs < CONNECTION_PROOF_MAX_AGE_MS;
-    if (this.requestUrl && !this.timingObserver) this.watchRequestTiming(this.requestUrl);
+    if (this.requestUrl && !this.timingObserver) this.watchRequestTiming();
     if (this.outcome) return;
     this.dispatchedMs ??= performance.now() - this.startedAt;
   }
@@ -151,7 +151,7 @@ export class FirstTokenObservation {
    * The page-wide resource buffer stops recording after 250 entries, which a long chat session
    * with avatars and covers fills early. An observer still receives this request's entry.
    */
-  private watchRequestTiming(url: string): void {
+  private watchRequestTiming(): void {
     if (typeof PerformanceObserver === 'undefined') return;
     try {
       const observer = new PerformanceObserver((list) => this.acceptTiming(list.getEntries()));
