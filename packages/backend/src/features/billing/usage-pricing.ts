@@ -25,7 +25,8 @@ export type FixedDeductionCategory =
   | 'light'
   | 'standard'
   | 'premium'
-  | 'standard_fallback';
+  | 'standard_fallback'
+  | 'free_zone';
 
 export interface FixedDeductionDecision {
   amount: number;
@@ -37,11 +38,14 @@ export function resolveFixedDeduction(input: {
   isFreeRound: boolean;
   modelTier: 'light' | 'standard' | 'premium' | null;
   config: FixedDeductionConfig;
+  /** 畅聊免费模型：开放期间一律 0，单独一类，不占旧的免费轮次 */
+  isFreeZone?: boolean;
 }): FixedDeductionDecision {
   const amounts = Object.values(input.config);
   if (amounts.some((amount) => !Number.isFinite(amount) || amount < 0)) {
     throw new Error('invalid fixed deduction inputs');
   }
+  if (input.isFreeZone) return { amount: 0, category: 'free_zone' };
 
   if (input.isFreeModel) {
     return input.isFreeRound

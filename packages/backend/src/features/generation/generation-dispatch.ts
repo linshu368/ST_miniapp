@@ -107,12 +107,16 @@ function createForward(input: DispatchInput) {
           dispatchOffsetMs: performance.now() - observation.startedAt,
         });
       }
+      const freeZone =
+        actualRequest.model.provider === 'surplus' ? actualRequest.model.freeZone : undefined;
       const response = await forwardToUpstream({
         ...route,
         method: 'POST',
         body: JSON.stringify(body),
         signal: attemptSignal,
         timing: attempt?.timing,
+        // 凑不到折扣底线时 Surplus 直接 404，交给兜底，不会派给更贵的卖家。
+        ...(freeZone ? { headers: { 'X-Min-Discount': String(freeZone.minDiscountPct) } } : {}),
       });
       if (!onDispatch) observation.headersMs = performance.now() - observation.directDispatchedAt;
       return response;

@@ -48,6 +48,11 @@ export interface ResolvedModel {
     timeoutRateTarget: number;
     catalogVersion: number;
   };
+  /**
+   * 畅聊免费模型。只作用于 Surplus 主调用：请求带折扣底线头和供应商白名单；
+   * 兜底（OpenRouter 1017）不受影响。
+   */
+  freeZone?: { candidateId: string; providers: string[]; minDiscountPct: number };
 }
 
 export interface GenerationMessage {

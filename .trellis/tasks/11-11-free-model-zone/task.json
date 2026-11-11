@@ -1,0 +1,64 @@
+{
+  "id": "free-model-zone",
+  "name": "free-model-zone",
+  "title": "畅聊栏目（免费模型）第一版",
+  "description": "",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-11",
+  "completedAt": null,
+  "branch": "codex/free-model-section",
+  "base_branch": "dev",
+  "worktree_path": "/Users/qianpeijia/PycharmProjects/pythonProject/ST_miniapp/worktrees/free-model-section",
+  "commit": null,
+  "pr_url": "https://github.com/linshu368/ST_miniapp/pull/745",
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "frontend.business.conversation-ui",
+        "shared.business.conversation-contracts",
+        "backend.business.conversation-generation",
+        "backend.business.wallet-payment"
+      ]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": ["/chat/[characterId]"],
+      "apis": [
+        "GET /api/v1/models/config",
+        "POST /api/v1/models/select",
+        "对话生成接口（仅免费模型首字上限 7.5s）"
+      ],
+      "android": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 2500
+      },
+      "ios": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 2500
+      },
+      "api": {
+        "p95_baseline_ms": null,
+        "p95_target_ms": 1000
+      },
+      "measurement": {
+        "source": "本地 ui-tests 预览；线上既有前端遥测",
+        "window": "本地本轮验收，发布后24小时"
+      },
+      "notes": "栏目计算读进程内 30 秒缓存，目录接口不加查库；首屏无新增请求；免费模型首字放宽是产品取舍，由在架业务指标约束。双端真实 P95 无样本保留 null。"
+    }
+  }
+}
