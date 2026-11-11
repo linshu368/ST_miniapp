@@ -1,6 +1,9 @@
 import {
   CREATOR_REVIEW_PROMPT_KEY,
   CreatorReviewPromptSchema,
+  DEFAULT_FREE_ZONE_CONFIG,
+  FREE_ZONE_CONFIG_KEY,
+  FreeZoneConfigSchema,
   DEFAULT_CREATOR_REVIEW_PROMPT,
   DEFAULT_STORY_MEMORY_CONFIG,
   DEFAULT_STORY_MEMORY_PROMPT,
@@ -57,6 +60,7 @@ export const managedConfigKeys = [
   'llm_model_catalog',
   'llm_pricing_config',
   'llm_provider_routing_config',
+  FREE_ZONE_CONFIG_KEY,
   'system_instructions',
   CREATOR_REVIEW_PROMPT_KEY,
   'choice_rules',
@@ -320,6 +324,7 @@ export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   llm_model_catalog: ModelCatalogSchema,
   llm_pricing_config: LlmPricingConfigSchema,
   llm_provider_routing_config: LlmProviderRoutingConfigSchema,
+  [FREE_ZONE_CONFIG_KEY]: FreeZoneConfigSchema,
   system_instructions: SystemInstructionsSchema,
   [CREATOR_REVIEW_PROMPT_KEY]: CreatorReviewPromptSchema,
   choice_rules: InstructionSlotRulesSchema,
@@ -496,6 +501,13 @@ export const configMetadata: Record<
     description:
       '管理回复偏好中的选项名称、说明、展示顺序与独立开关；沿用草稿、发布和回滚。英文占位符与规则内容由你维护，本次仅存储，不参与模型生成。',
     defaultValue: { options: [] },
+  },
+  [FREE_ZONE_CONFIG_KEY]: {
+    label: '畅聊（免费模型）',
+    description:
+      '对话页引擎面板最上方的「畅聊」栏目。enabled 总开关只决定用户能不能看到；只要配了候选，后台每 30 分钟都会评估。period 是福利期（开放时显示结束时间）；scope 为 own_cards 时只有用户自己创作的角色卡能用，别人的卡显示「仅限自创角色卡」。candidates 是候选池：id 必须以 free- 开头，surplus_model 填 Surplus 模型名，family 是系列（下架时优先换同系列），benchmark_tier 是对标档位（划线原价取这一档的星尘价）。screening 是 Surplus 官方数据初筛门槛（只看 trusted 供应商；min_discount_pct 同时作为请求的折扣底线；首字是分档值，常见档位 1670/2254/3043/4108/5546/7487 毫秒，门槛要设在档位之上）。每个模型同一时间只用一家供应商：达标供应商里，价格和最便宜一家差不到 price_band_ratio 倍的算一档、挑首字最快的，更贵的档只在便宜档没人时才用；选定后一直用（保缓存），它不达标或业务越线才按同一规则顺延到下一家，全部不行才下架。on_shelf 是在架真实业务数据的越线标准；relist 是重新上架的连续达标次数与冷却期；first_token 是免费模型启动兜底的等待时间和首字总上限。门槛填 null 表示这一项不检查。',
+
+    defaultValue: DEFAULT_FREE_ZONE_CONFIG,
   },
   [STORY_MEMORY_CONFIG_KEY]: {
     label: '长期剧情记忆参数',
