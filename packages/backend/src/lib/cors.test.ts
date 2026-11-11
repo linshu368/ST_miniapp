@@ -11,7 +11,10 @@ describe('CORS boundary', () => {
       await registerCors(app, {
         frontendUrl: ' https://app.example/ ',
         adminPlatformUrl: 'https://admin.example',
-        frontendAllowedOrigins: ['https://st-miniapp-frontend.vercel.app'],
+        frontendAllowedOrigins: [
+          'https://st-miniapp-frontend.vercel.app',
+          'https://short-drama-demo-sigma.vercel.app',
+        ],
         development,
       });
       app.route({ method: ['GET', 'POST'], url: '/protected', handler });
@@ -24,6 +27,7 @@ describe('CORS boundary', () => {
           'https://app.example',
           'https://admin.example',
           'https://st-miniapp-frontend.vercel.app',
+          'https://short-drama-demo-sigma.vercel.app',
         ]) {
           const preflight = await app.inject({
             method: 'OPTIONS',

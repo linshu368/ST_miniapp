@@ -56,7 +56,7 @@ DDL 锁超时 5 秒、语句上限 30 秒；执行前核验目标结构和角色
 未来顺序：先 TEST 结构核验和迁移验收，再经单独授权生产迁移 → Backend → 秘境 Frontend 与幕间。
 回退应用时保留事实表与渠道，不删除已收集数据；归因偏差做可审计 forward-fix。
 跨域仅增准确幕间域名 `https://short-drama-demo-sigma.vercel.app`，生产不允许其他 Vercel 来源；原秘境/Admin 来源保留。
-为避免超长 buildApp 继续膨胀，抽出原 CORS 注册并收紧对应复杂度基线。
+发布前同步现有 dev/main 后，复用已有 lib/cors.ts，仅追加精确幕间来源；不保留平行 CORS 实现。
 
 ## 本地验证与体验
 
@@ -92,3 +92,7 @@ Supabase 连接工具请求失败，当前线上结构、155 个视频的现状�
 真实链路仍需隔离 TEST 后端/内容、当前结构核验、合法 Telegram 启动上下文、可达 HTTPS 联调入口及 Cloudflare 有效签发配置。
 尚缺 Telegram iOS/Android 真机播放、原生 HLS、有效签名的实际跨域预检/媒体分片及真实两端落库闭环证据。
 本地样本通过不能替代这些验收。
+
+## 发布前复核
+
+2026-11-11：已只读确认 TEST 与生产 users/botlinks/chat_history 结构。生产仍保留可空历史初始化标记，TEST 已删除；通过 `to_jsonb` 可选读取，只作为历史使用证据，不恢复旧身份映射。对应迁移与本地断言加入精确 legacy guard 例外。上游已拆分的 conversation-history-billing.ts 同时登记为原 Repository 的委托文件，修复继承的门禁遗漏，无业务逻辑修改。
