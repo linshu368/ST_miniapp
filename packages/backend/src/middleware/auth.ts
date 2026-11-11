@@ -1,5 +1,5 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
-import { createHmac } from 'crypto';
+import { createHmac, timingSafeEqual } from 'crypto';
 import { config } from '../platform/config.js';
 
 export interface TelegramUser {
@@ -20,9 +20,9 @@ export interface TelegramUser {
  * @param initDataStr 来自 X-Init-Data header 的字符串
  * @returns 校验成功返回 TelegramUser 对象，失败抛出错误
  */
-export function verifyTelegramInitData(initDataStr: string): TelegramUser {
+export function verifyTelegramInitData(initDataStr: string, allowMock = true): TelegramUser {
   // 仅在非 production 环境 + 显式开启时才 bypass
-  if (process.env.NODE_ENV !== 'production' && process.env.MOCK_AUTH === '1') {
+  if (allowMock && process.env.NODE_ENV !== 'production' && process.env.MOCK_AUTH === '1') {
     try {
       const urlParams = new URLSearchParams(initDataStr);
       return JSON.parse(decodeURIComponent(urlParams.get('user')!)) as TelegramUser;
@@ -36,6 +36,9 @@ export function verifyTelegramInitData(initDataStr: string): TelegramUser {
   }
 
   const urlParams = new URLSearchParams(initDataStr);
+  if (new Set(urlParams.keys()).size !== [...urlParams.keys()].length) {
+    throw new Error('Duplicate Telegram fields');
+  }
   const hash = urlParams.get('hash');
 
   if (!hash) {
@@ -60,19 +63,23 @@ export function verifyTelegramInitData(initDataStr: string): TelegramUser {
   // Create signature
   const signature = createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
 
-  if (signature !== hash) {
+  if (
+    !/^[a-f0-9]{64}$/i.test(hash) ||
+    !timingSafeEqual(Buffer.from(signature, 'hex'), Buffer.from(hash, 'hex'))
+  ) {
     throw new Error('Invalid Telegram signature');
   }
 
   // Check expiration (auth_date is in seconds)
-  const authDateStr = urlParams.get('auth_date');
-  if (authDateStr) {
-    const authDate = parseInt(authDateStr, 10);
-    const now = Math.floor(Date.now() / 1000);
-    // 24 hours expiration
-    if (now - authDate > 24 * 60 * 60) {
-      throw new Error('Telegram authentication expired');
-    }
+  const authDate = Number(urlParams.get('auth_date'));
+  const now = Math.floor(Date.now() / 1000);
+  if (
+    !Number.isSafeInteger(authDate) ||
+    authDate <= 0 ||
+    authDate > now + 30 ||
+    now - authDate > 86400
+  ) {
+    throw new Error('Telegram authentication expired or invalid');
   }
 
   // Parse user info
@@ -82,7 +89,9 @@ export function verifyTelegramInitData(initDataStr: string): TelegramUser {
   }
 
   try {
-    return JSON.parse(userStr) as TelegramUser;
+    const user = JSON.parse(userStr) as TelegramUser;
+    if (!Number.isSafeInteger(user.id) || user.id <= 0) throw new Error('Invalid Telegram user');
+    return user;
   } catch (e) {
     throw new Error('Invalid user info format');
   }
@@ -100,7 +109,11 @@ export async function requireTelegramAuth(request: FastifyRequest, reply: Fastif
   );
 
   // 如果处于 Bypass 模式，并且没有提供 initData，则自动放行并注入默认测试用户
-  if (process.env.DEV_AUTH_BYPASS === '1' && (!initData || typeof initData !== 'string')) {
+  if (
+    process.env.NODE_ENV !== 'production' &&
+    process.env.DEV_AUTH_BYPASS === '1' &&
+    (!initData || typeof initData !== 'string')
+  ) {
     console.log(`[Auth] Using DEV_AUTH_BYPASS for request to ${request.url}`);
     request.user = { id: 99999, first_name: 'Dev', last_name: 'User', username: 'dev_bypass' };
     return;

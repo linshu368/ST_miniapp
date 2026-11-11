@@ -89,6 +89,12 @@ const RULES = [
     id: 'st-handle',
     pattern: /\bst_handle\b|\bst_initialized_at\b|\bderiveStHandle\b|st-bridge/g,
     message: 'ST 身份映射已退场（迁移 111/112）。用户身份只用 app_core.users.tg_id',
+    // Read-only historical eligibility evidence: production still retains the optional marker.
+    // No provisioning, identity mapping or writes to the retired column.
+    allow: [
+      'packages/shared/migrations/20261111_mujian_entry_funnel.sql',
+      'scripts/mujian-entry-assertions.sql',
+    ],
   },
 
   // ── 一个关键行为一条主路径 ──────────────────────────────────────────────
@@ -99,6 +105,8 @@ const RULES = [
       'experience.chat_history 只能由 ConversationHistoryRepository 读写（列归属见该文件头注释）',
     allow: [
       'packages/backend/src/infrastructure/repositories/ConversationHistoryRepository.ts',
+      // Existing repository delegation extracted upstream; not an independent writer.
+      'packages/backend/src/infrastructure/repositories/conversation-history-billing.ts',
       // OpenRouter 元数据回填先从其专属表有界筛选候选 ID，再只读父记录；不写 chat_history。
       'packages/backend/src/infrastructure/repositories/OpenRouterChatHistoryRepository.ts',
       // Surplus 无专属元数据表；该 provider-specific helper 仅由 ConversationHistoryRepository
