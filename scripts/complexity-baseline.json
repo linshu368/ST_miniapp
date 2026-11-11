@@ -67,7 +67,6 @@
     "packages/admin/src/components/VipStrategyView.tsx#StrategyKeyCard": 184,
     "packages/admin/src/components/VipStrategyView.tsx#VipStrategyView": 165,
     "packages/admin/src/components/WordCountTiersEditor.tsx#WordCountTiersEditor": 199,
-    "packages/backend/src/app.ts#buildApp": 156,
     "packages/backend/src/features/generation/first-token-fallback.ts#forwardWithFirstTokenFallback": 507,
     "packages/backend/src/features/generation/first-token-fallback.ts#peek": 215,
     "packages/backend/src/features/generation/settle.ts#runSettlement": 195,
