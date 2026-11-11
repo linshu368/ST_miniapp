@@ -11,6 +11,7 @@ trap cleanup EXIT
 psql=("$pgbin/psql" -X -h "$tmp" -p 55439 -d postgres -v ON_ERROR_STOP=1)
 "${psql[@]}" -f "$root/scripts/mujian-entry-fixture.sql" >/dev/null
 "${psql[@]}" -f "$root/packages/shared/migrations/20261111_mujian_entry_funnel.sql" >/dev/null
+"${psql[@]}" -f "$root/packages/shared/migrations/tests/20261111_mujian_entry_funnel.sql"
 "${psql[@]}" -f "$root/scripts/mujian-entry-assertions.sql"
 
 # Concurrent retries share one identity, one fact and one first-source increment.

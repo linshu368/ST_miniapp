@@ -53,7 +53,9 @@ GROUP BY source_key;
 新表启用 RLS，anon/authenticated/PUBLIC 无表权限或函数执行权；service_role 有必要读写，函数使用 SECURITY INVOKER。
 DDL 锁超时 5 秒、语句上限 30 秒；执行前核验目标结构和角色权限。迁移仅由既有单文件工作流发布，不随应用自动执行。
 
-未来顺序：先 TEST 结构核验和迁移验收，再经单独授权生产迁移 → Backend → 秘境 Frontend 与幕间。
+发布顺序：先 TEST 结构核验和迁移验收，再经授权生产迁移 → Backend → 秘境 Frontend 与幕间。
+`Database Migration` 工作流仅在 TEST apply 后运行与迁移同名的 `migrations/tests/*.sql`。
+幕间断言在事务内创建保留编号的虚构账号，检查新/老/未知资格、来源、乱序、去重及转化后全部回滚，并确认没有残留；生产不会运行这些断言。
 回退应用时保留事实表与渠道，不删除已收集数据；归因偏差做可审计 forward-fix。
 跨域仅增准确幕间域名 `https://short-drama-demo-sigma.vercel.app`，生产不允许其他 Vercel 来源；原秘境/Admin 来源保留。
 发布前同步现有 dev/main 后，复用已有 lib/cors.ts，仅追加精确幕间来源；不保留平行 CORS 实现。
