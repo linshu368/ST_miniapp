@@ -1,5 +1,7 @@
 # 移动端预览与固定验收
 
+聊天读取优化继续复用 `@chat` / `@roleplay`；`@chat-history` 在禁用 `Array.findLast` 的页面中连续翻完 200 轮，逐轮核对无遗漏/重复并保留草稿。数据库投影、真实首字与 Android/iOS P95 另由 PG17/正式环境验收，页面 fixture 不替代这些证据。
+
 日常页面修改先复用本环境。真实 Next.js 页面、React Query 和 SSE consumer 照常运行，API 由本机虚构数据提供；无需数据库、Telegram 登录、支付或模型密钥。不是生产联调环境。
 
 ## 快速开始
@@ -225,3 +227,7 @@ VIP 混合奖励复用 `@profile`：`vip-mixed` 场景每日签到 120 专项＋
 ### 聊天回复反馈
 
 `pnpm test:ui --grep @chat-dislike` 复用标准聊天与`chat-like-error`虚构场景，覆盖空反馈提交、首屏提交栏、320px/340px压缩视口、关闭保留草稿、失败重试、写入成功丢响应不重复、刷新读取已存原因说明。首屏不逐条读反馈，打开面板才查询。右侧按钮36px宽44px高，无点击圆形底色。真实权限、编辑/分支快照和用户级清理由`bash scripts/test-conversation-branches-migration.sh`在隔离PG17覆盖。本地fixture不连接生产。
+
+## 幕间独立站本地验收
+
+`pnpm --filter @miniapp/ui-tests exec playwright test -c playwright.mujian.config.ts` 验证同级幕间静态仓库，可加 `--ui` 交互查看。使用已有短剧 fixture/视频、模拟 Telegram 与拦截 API；固定 3188 端口，和原有 3120/3121、3130/3131 分离。覆盖目录/换集/销毁、收藏与历史、失败重试、HLS.js、两种弹窗、自然来源和无身份入口。详情与真实联调缺口见 `docs/mujian-integration.md`。

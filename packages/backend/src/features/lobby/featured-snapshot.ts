@@ -21,21 +21,23 @@
  */
 
 import type { FastifyBaseLogger } from 'fastify';
-import { discoverableCharacterWhere } from '../creator/access.js';
 import { prisma } from '../../lib/db.js';
 import { resolveLobbyFeaturedIds } from './featured.js';
 import { loadCharacterRankingScores } from './ranking-stats.js';
+import { readFeaturedCatalog, type CatalogSnapshot } from './catalog-read.js';
 
 const FEATURED_SNAPSHOT_TTL_MS = 2_000;
 
 /** at 只用于判断是否新鲜；过期后仍保留，作为刷新失败时的降级值 */
 let lastGood: { at: number; ids: ReadonlySet<string> } | null = null;
 let inflight: Promise<ReadonlySet<string>> | null = null;
+let operatorSnapshot: CatalogSnapshot<{ id: string }> | null = null;
 
 /** 单测与运营改固定位后清缓存用 */
 export function clearLobbyFeaturedSnapshot(): void {
   lastGood = null;
   inflight = null;
+  operatorSnapshot = null;
 }
 
 export async function loadLobbyFeaturedIdSet(log: FastifyBaseLogger): Promise<ReadonlySet<string>> {
@@ -53,15 +55,11 @@ async function refresh(log: FastifyBaseLogger): Promise<ReadonlySet<string>> {
   try {
     // 串行占池：金框刷新已有 single-flight，再并行会在那一瞬间占 2 条 Prisma 连接。
     // 排序分读有自己的缓存 + single-flight。
-    const operatorOrdered = await prisma.character.findMany({
-      where: discoverableCharacterWhere,
-      orderBy: [{ sort_order: 'asc' }, { created_at: 'desc' }],
-      select: { id: true },
-    });
+    operatorSnapshot = await readFeaturedCatalog(prisma, operatorSnapshot);
     const snapshot = await loadCharacterRankingScores();
 
     const ids = resolveLobbyFeaturedIds({
-      operatorOrdered,
+      operatorOrdered: operatorSnapshot.value,
       snapshot,
     });
     // 只记成功结果：失败时的空集一旦记下，会把「没金框」钉住整整一个 TTL。

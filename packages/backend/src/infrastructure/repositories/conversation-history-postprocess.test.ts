@@ -259,6 +259,19 @@ describe('postprocess history mapping', () => {
     ).toEqual([]);
   });
 
+  it('uses exact projected identity and treats projected null as authoritative', () => {
+    const legacy = { ...row, history: [{ request_id: 'legacy' }] };
+    expect(
+      toChatMessages({ ...legacy, display_request_id: '  RAW-Request  ' })[1]?.request_id
+    ).toBe('  RAW-Request  ');
+    expect(toChatMessages({ ...legacy, display_request_id: null })[1]).not.toHaveProperty(
+      'request_id'
+    );
+    expect(
+      toChatMessages({ ...legacy, display_request_id: 'branch-source', is_inherited: true })[1]
+    ).not.toHaveProperty('request_id');
+  });
+
   it('keeps the raw reply as content and puts the stored version only on the assistant message', () => {
     const [user, assistant] = toChatMessages(row);
     expect(user?.content).toBe('raw-user');
@@ -330,7 +343,10 @@ describe('branch-aware history reads', () => {
       calls.push({ method, args });
       return query;
     }
-    const db = { from: (table: string) => record('from', [table]) };
+    const db = {
+      from: (table: string) => record('from', [table]),
+      rpc: (...args: unknown[]) => record('rpc', args),
+    };
     return {
       calls,
       history: new ConversationHistoryRepository(db as unknown as DomainDb),
@@ -339,20 +355,21 @@ describe('branch-aware history reads', () => {
 
   it('reads inherited and local rows through the overlay for paged display only', async () => {
     const { calls, history } = reader();
-    await history.listMessages('branch', '', { beforeTurnIndex: 26 });
-    expect(calls).toContainEqual({ method: 'from', args: ['session_chat_history'] });
-    expect(calls).toContainEqual({ method: 'eq', args: ['session_id', 'branch'] });
-    expect(calls).toContainEqual({ method: 'lt', args: ['turn_index', 26] });
-    expect(calls).toContainEqual({ method: 'limit', args: [26] });
-    expect(calls.find((call) => call.method === 'select')?.args[0]).toContain('is_inherited');
-    expect(calls.find((call) => call.method === 'select')?.args[0]).toContain(',liked');
+    await history.listMessages('branch', '', { userId: 'owner', beforeTurnIndex: 26 });
+    expect(calls).toContainEqual({
+      method: 'rpc',
+      args: [
+        'list_chat_message_page',
+        { p_user_id: 'owner', p_session_id: 'branch', p_before_turn_index: 26, p_turn_limit: 25 },
+      ],
+    });
     expect(calls.some((call) => call.method === 'abortSignal')).toBe(true);
   });
 
   it('continues to apply the stored A/B window to the branch overlay', async () => {
     const { calls, history } = reader();
     await history.getContextBeforeTurn('branch', 77, 27);
-    expect(calls).toContainEqual({ method: 'from', args: ['session_chat_history'] });
+    expect(calls).toContainEqual({ method: 'from', args: ['session_chat_display'] });
     expect(calls.find((call) => call.method === 'select')?.args[0]).not.toContain('liked');
     expect(calls).toContainEqual({
       method: 'or',
@@ -363,7 +380,7 @@ describe('branch-aware history reads', () => {
   it('does not make inherited ids writable through the existing media lookup', async () => {
     const { calls, history } = reader();
     await history.findCurrentTurnById('branch', 'history');
-    expect(calls).toContainEqual({ method: 'from', args: ['session_chat_history'] });
+    expect(calls).toContainEqual({ method: 'from', args: ['session_chat_display'] });
     expect(calls).toContainEqual({ method: 'eq', args: ['is_inherited', false] });
     expect(calls).toContainEqual({ method: 'eq', args: ['session_id', 'branch'] });
   });

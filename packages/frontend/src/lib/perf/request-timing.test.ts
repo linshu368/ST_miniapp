@@ -18,6 +18,11 @@ vi.mock('@telegram-apps/sdk-react', () => ({ retrieveLaunchParams: () => ({}) })
 
 import { snapshotInflight } from './inflight';
 import {
+  __resetRequestConcurrencyForTests,
+  getRequestConcurrencyStats,
+  withRequestSlot,
+} from '../api/request-concurrency';
+import {
   outcomeForStatus,
   RequestTimeoutError,
   SLOW_REQUEST_MS,
@@ -34,6 +39,7 @@ describe('outcomeForStatus', () => {
 
 describe('timedFetch', () => {
   beforeEach(() => {
+    __resetRequestConcurrencyForTests();
     distribution.mockClear();
     count.mockClear();
     captureMessage.mockClear();
@@ -216,5 +222,50 @@ describe('timedFetch', () => {
         attributes: expect.objectContaining({ outcome: 'invalid_response' }),
       })
     );
+  });
+
+  it('includes slot queue time in the deadline and never dispatches expired work', async () => {
+    __resetRequestConcurrencyForTests(1);
+    let release: () => void = () => {};
+    const occupied = withRequestSlot(
+      'critical',
+      undefined,
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        })
+    );
+    await Promise.resolve();
+    const fetch = vi.fn();
+    vi.stubGlobal('fetch', fetch);
+    const pending = timedFetch(
+      '/api/characters',
+      {},
+      { requestId: 'queued', timeoutMs: 1000, priority: 'critical' },
+      async () => 'done'
+    );
+    const assertion = expect(pending).rejects.toBeInstanceOf(RequestTimeoutError);
+    await vi.advanceTimersByTimeAsync(1001);
+    await assertion;
+    expect(fetch).not.toHaveBeenCalled();
+    expect(getRequestConcurrencyStats().waiting).toBe(0);
+    release();
+    await occupied;
+    expect(snapshotInflight()).toEqual([]);
+  });
+
+  it('releases a slot when an uncooperative body reader never settles', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}')));
+    const pending = timedFetch(
+      '/api/characters',
+      {},
+      { requestId: 'stuck-body', timeoutMs: 1000, priority: 'critical' },
+      () => new Promise<never>(() => {})
+    );
+    const assertion = expect(pending).rejects.toBeInstanceOf(RequestTimeoutError);
+    await vi.advanceTimersByTimeAsync(1001);
+    await assertion;
+    expect(getRequestConcurrencyStats().inFlight).toBe(0);
+    expect(snapshotInflight()).toEqual([]);
   });
 });

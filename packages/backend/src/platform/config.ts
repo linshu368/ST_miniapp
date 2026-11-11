@@ -1,5 +1,5 @@
-import 'dotenv/config';
 import { createDatabaseConfig, resolveDefaultUserAvatarUrl } from '@miniapp/shared';
+import 'dotenv/config';
 
 const nodeEnv = process.env.NODE_ENV || 'development';
 const databaseConfig = createDatabaseConfig({
@@ -43,6 +43,10 @@ function engineeringTelemetryEndpoint(): string {
 export const config = {
   port: parseInt(process.env.PORT || '3001', 10),
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000',
+  frontendAllowedOrigins: (process.env.FRONTEND_ALLOWED_ORIGINS || '')
+    .split(',')
+    .filter((value) => value.trim()),
+  devAuthBypass: process.env.DEV_AUTH_BYPASS === '1',
   adminPlatformUrl: process.env.ADMIN_PLATFORM_URL || 'https://st-admin-platform.vercel.app',
   nodeEnv,
   engineeringTelemetry: {

@@ -1,5 +1,7 @@
 # ST_miniAPP 架构说明
 
+本地候选（2026-11-11，未部署）：聊天历史读取采用索引选轮次后加载小型展示投影；原 admission 事务维护精确身份/开场白，旧 writer 仅使投影失效，有限人工回填覆盖旧记录。原 prompt、账务、分支与上下文窗口语义保持不变。读写切换及恢复见 [聊天历史优化说明](chat-history-read-performance.md)，正式 TEST/生产覆盖与 Android/iOS 不退化验收仍是发布门槛。
+
 > 本文档描述项目当前架构（2026-09-30 更新，基于 2026-08-12 自研引擎版重写）。
 > 九域划分与跨域豁免以本文 §5.1 和铁律 8 为准。ST 替换动机、归属地图原稿、099 割接剧本已移出工作区，取回方式见 §12。
 >
@@ -865,3 +867,7 @@ Frontend `/creation/data` → `lib/api/creator-analytics.ts`（用户隔离React
 ### 聊天回复负反馈
 
 回复点踩通过独立鉴权接口保存到 `experience.chat_reply_feedback`，空原因可提交，固定回复/编辑版本去重并保留当轮快照。只在面板打开时读取，不进入生成、计费或角色评分链路，无运营页面。迁移顺序、权限和批量分析口径见 [聊天回复反馈](chat-reply-feedback.md)。
+
+### 幕间两段进入事实（本地实现，待发布）
+
+`miniapp_traffic.app_entry_facts` 持有幕间→秘境的验签进入事实与固定资格；Backend 是唯一写入方，通过事务关联 `app_core.users` 并读取 `experience.chat_history` 作为历史证据。目录/播放接口不写秘境进入时间；浏览、点击、社群与 Bot 私聊授权相互独立。见 [对象归属、兼容与回滚](mujian-integration.md)。
