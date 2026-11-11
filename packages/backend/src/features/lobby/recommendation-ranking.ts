@@ -34,6 +34,34 @@ export interface RecommendationOrder {
   degraded: boolean;
 }
 
+/** 新用户保护期：注册后这么久内，首页头部固定为分数最高的一批，不做个性化轮换。 */
+export const NEW_USER_FIXED_HEAD_DAYS = 7;
+
+export function isNewUserFixedHeadWindow(createdAt: string | undefined, now: number): boolean {
+  const created = createdAt ? Date.parse(createdAt) : Number.NaN;
+  if (!Number.isFinite(created)) return false;
+  return now - created < NEW_USER_FIXED_HEAD_DAYS * DAY;
+}
+
+/**
+ * 新用户固定头部：直接取已有的受保护质量顺序（分数降序，样本太少时回落运营顺序），
+ * 不做抽样、曝光惩罚和与上一批的去重，所以同一时期所有新用户看到同一批，换批也不变。
+ */
+export function buildNewUserOrder(
+  candidates: readonly RecommendationCandidate[],
+  fixedOrder: readonly string[]
+): RecommendationOrder {
+  const visible = new Set(candidates.map((c) => c.id));
+  const characterIds = [...new Set([...fixedOrder, ...candidates.map((c) => c.id)])].filter((id) =>
+    visible.has(id)
+  );
+  return {
+    characterIds,
+    headIds: characterIds.slice(0, LOBBY_ROTATION_HEAD_SIZE),
+    degraded: false,
+  };
+}
+
 /** Bounded recovery is independent of quality; unseen cards have no exposure penalty. */
 export function exposureWeight(lastSeenAt: number | undefined, now: number, trusted: boolean) {
   if (lastSeenAt === undefined) return 1;
