@@ -16,7 +16,9 @@ vi.mock('../middleware/auth.js', () => ({
     request.user = { id: 123, first_name: 'fixture' };
   },
 }));
-vi.mock('../lib/user.js', () => ({ getOrCreateDbUser: async () => ({ id: userId }) }));
+vi.mock('../lib/user.js', () => ({
+  getOrCreateDbUser: async () => ({ id: userId, created_at: '2026-11-01T00:00:00.000Z' }),
+}));
 vi.mock('../features/lobby/recommendation.js', () => ({
   getLobbyRecommendation: mocks.get,
   reportLobbyRecommendationExposures: mocks.exposures,
@@ -68,7 +70,12 @@ describe('authenticated recommendation ordering', () => {
     const response = await post('', body);
     expect(response.statusCode).toBe(200);
     expect(response.headers['cache-control']).toBe('private, no-store');
-    expect(mocks.get).toHaveBeenCalledWith(userId, body, expect.any(Object));
+    expect(mocks.get).toHaveBeenCalledWith(
+      userId,
+      body,
+      expect.any(Object),
+      '2026-11-01T00:00:00.000Z'
+    );
     const exposures = await post('/exposures', { batch_id: batchId, character_ids: [cardId] });
     expect(exposures.json().data.accepted).toBe(1);
     expect(mocks.exposures).toHaveBeenCalledWith(

@@ -57,7 +57,7 @@ export class EpayPaymentGateway implements PaymentGateway {
     return Boolean(url && !url.search && !url.hash && /^\d{1,20}$/.test(appId) && appKey);
   }
 
-  async createPayment(params: CreatePaymentParams): Promise<PaymentResult> {
+  async createPayment(params: CreatePaymentParams, signal?: AbortSignal): Promise<PaymentResult> {
     const returnUrl = httpsPaymentUrl(this.options.returnUrl);
     const notifyUrl = httpsPaymentUrl(this.options.notifyUrl);
     if (
@@ -90,7 +90,8 @@ export class EpayPaymentGateway implements PaymentGateway {
         ...fields,
         sign: signEpay(fields, this.options.appKey),
       },
-      7_000
+      7_000,
+      signal
     );
     if (!response.success) return { ...response, outcomeUnknown: true };
     const { body } = response;

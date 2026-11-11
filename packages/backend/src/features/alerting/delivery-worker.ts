@@ -15,6 +15,14 @@ import { backoffMs } from './semantics.js';
  */
 function feishuNotificationSuppressed(card: SafeAlertCard): boolean {
   const fingerprint = card.incident_fingerprint;
+  // Only this dedicated synthetic rule opts into P1 and recovery; keep old payment rules intact.
+  if (
+    typeof fingerprint === 'string' &&
+    /^(?:development|test|preview|production):payment:upstream-create-probe:(?:alipay|wxpay)$/.test(
+      fingerprint
+    )
+  )
+    return false;
   const isExperience = typeof fingerprint === 'string' && fingerprint.includes(':experience:');
   const isFromSentry = typeof fingerprint === 'string' && fingerprint.includes(':sentry:');
   const isGeneration = typeof fingerprint === 'string' && fingerprint.includes(':generation:');

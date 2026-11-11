@@ -18,6 +18,7 @@ export * from './api/vip-strategy';
 export * from './api/settings';
 export * from './api/instruction-slot-rules';
 export * from './api/word-count-tiers';
+export * from './api/story-memory';
 export * from './api/lobby-ranking-params';
 export * from './api/lobby-recommendation';
 export * from './api/wallet';
@@ -71,3 +72,4 @@ export * from './api/creator-analytics.js';
 
 export * from './api/character-wishes.js';
 export * from './api/admin-cli-session';
+export * from './api/chat-feedback';

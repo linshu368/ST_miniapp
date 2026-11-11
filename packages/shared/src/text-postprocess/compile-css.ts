@@ -1,3 +1,5 @@
+/// <reference path="./css-tree-entries.d.ts" />
+
 import parse, { type CssNode } from 'css-tree/parser';
 import walk from 'css-tree/walker';
 import generate from 'css-tree/generator';

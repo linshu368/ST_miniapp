@@ -44,8 +44,6 @@ MiniApp 已鉴权接口通过 `lib/user.ts` 把同一 Telegram 用户的并发 g
 
 ## 关键节点与约束
 
-短剧真机采样的 `DRAMA_STREAM_SAMPLING_COHORT` 仅在 `runtime-config.ts` 读取：当前 experimentId 与两个不同的安全正整数 Telegram ID；非法或跨实验设置忽略，只覆盖指定两账号，其他用户HMAC与匿名实验用户标识保持不变。不绕过Stream开关、入组和实际单集白名单，迟到观测沿同一分组读取入口归属。生产启用仍需先部署后配置，详见 `docs/drama-stream-ab.md`。
-
 用户身份缓存只减少重复映射读取，不是鉴权或业务状态真相；失败不缓存，多副本各自缓存不影响正确性。runtime-config single-flight 只共享完全相同的当前读取，失败后清理，不增加配置传播陈旧窗口，也不叠加 Supabase SDK 的 GET 自动重试。
 
 ## 派发前诊断（本地候选，尚未发布）
@@ -88,6 +86,6 @@ MiniApp 已鉴权接口通过 `lib/user.ts` 把同一 Telegram 用户的并发 g
 - 2026-09-18：任务 `图片生成 PostHog 接入规划`（`.trellis/tasks/archive/2026-09/09-17-image-generation-posthog-plan/`）记录 PostHog capture 泛化为服务端非关键终态事件；commit：`7ab4a18ac4924d9a23d35dfc6f4f75be0401c9fe`。
 - 2026-10-20：任务 `Remove confirmed repository noise`（`.trellis/tasks/archive/2026-10/10-20-remove-confirmed-repository-noise/`）移除已删除的 Upstash 配置缓存事实并同步当前运行时配置边界；commit：`63eee1e847f678f4b2c434f872425a40fc7f891a`。
 
-## Stream A/B 接入
+## 短剧播放来源
 
-30 条有序环境清单由 Backend runtime-config 读取，账号固定 50:50 分配和入组比例分别哈希。列表同序置顶，鉴权后仅实际白名单单集参与实验。原生 HLS/hls.js 复用当前播放器，blob 源归属、一次 Supabase 恢复及累计重试等待贯通现有观测。配置默认关闭，真机与生产验收状态见本次任务，操作说明见 `docs/drama-stream-ab.md`。
+Stream 开关开启时，列表和取址共用本环境的 30 条有序清单。后端验证鉴权、可播状态及单集归属，再按剧 ID 和视频 ID 匹配清单。匹配时签发 Stream HLS，重试仍使用 Stream。旧入组比例和定向采样账号配置均已退休。签名失败返回不可播，日志记录实际结果。发布步骤见 `docs/drama-stream-ab.md`。

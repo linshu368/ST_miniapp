@@ -15,7 +15,6 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@miniapp/admin-client": "workspace:*",
-    "@miniapp/reply-renderer": "workspace:*",
     "@miniapp/shared": "workspace:*",
     "@refinedev/core": "^5.0.12",
     "@refinedev/supabase": "^6.0.2",

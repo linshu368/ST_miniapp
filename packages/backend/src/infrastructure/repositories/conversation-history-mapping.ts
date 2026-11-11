@@ -1,6 +1,7 @@
 import { readPostprocessVersion, type ChatMessage, type ChatMessageStatus } from '@miniapp/shared';
 import type { InstructionSlotModes } from '../../features/engine/types.js';
 import type { GenerationMessage } from '../../features/generation/types.js';
+import { turnsToMessages } from '../../features/conversations/history.js';
 import type {
   ConversationContext,
   ConversationHistoryRow,
@@ -54,23 +55,6 @@ function readInstructionSlotModes(
   return { choice: values[0], status: values[1], memory: values[2] } as InstructionSlotModes;
 }
 
-export function contextWindowRpcArgs(input: {
-  maxContextTurns?: number;
-  retainContextTurns?: number;
-}): {
-  p_max_context_turns?: number;
-  p_retain_context_turns?: number;
-} {
-  return {
-    ...(typeof input.maxContextTurns === 'number'
-      ? { p_max_context_turns: input.maxContextTurns }
-      : {}),
-    ...(typeof input.retainContextTurns === 'number'
-      ? { p_retain_context_turns: input.retainContextTurns }
-      : {}),
-  };
-}
-
 export function readWindowStart(value: unknown): number {
   return typeof value === 'number' && Number.isInteger(value) && value >= 1 ? value : 1;
 }
@@ -82,6 +66,11 @@ export function assembleConversationContext(input: {
   openingMessage?: string | null;
 }): ConversationContext {
   const openingSource = input.openingHistory ?? input.windowRows[0]?.history;
+  const turns = input.windowRows.map((row) => ({
+    turnIndex: row.turn_index,
+    userInput: row.user_input,
+    assistantReply: row.assistant_reply,
+  }));
   return {
     openingMessage:
       input.openingMessage !== undefined
@@ -89,14 +78,8 @@ export function assembleConversationContext(input: {
         : input.windowRows[0]?.display_opening_message !== undefined
           ? input.windowRows[0].display_opening_message
           : extractOpeningMessage(openingSource),
-    messages: input.windowRows.flatMap((row) => {
-      const messages: ConversationContext['messages'] = [];
-      if (row.user_input.trim()) messages.push({ role: 'user', content: row.user_input });
-      if (row.assistant_reply?.trim()) {
-        messages.push({ role: 'assistant', content: row.assistant_reply });
-      }
-      return messages;
-    }),
+    messages: turnsToMessages(turns),
+    turns,
     truncatedTurns: Math.max(input.windowStartTurn - 1, 0),
   };
 }

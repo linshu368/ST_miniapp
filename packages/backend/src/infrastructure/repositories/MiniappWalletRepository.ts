@@ -187,10 +187,6 @@ export interface ChargeLlmUsageInput {
  * 签到 RPC 数据
  */
 
-/** 配置缺失或无法解析时的基础签到额。线上发放仍以 runtime_config 为准。 */
-/** @deprecated 遗留全员基础默认；发奖已改分档绝对额。 */
-export const DEFAULT_DAILY_CHECKIN_BASE_CREDITS = 0;
-
 /**
  * 签到状态
  */

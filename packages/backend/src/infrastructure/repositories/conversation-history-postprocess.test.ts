@@ -91,23 +91,21 @@ const started = {
 };
 
 describe('postprocess turn binding', () => {
-  it('calls the current-version send and regeneration RPCs with window args', async () => {
+  it('calls the current-version send and regeneration RPCs without window args', async () => {
     const send = repository(() => ({ data: started, error: null }));
     const turn = await send.history.startTurn({
       sessionId: 'session',
       userContent: 'raw-user',
       model: 'model-a',
-      maxContextTurns: 75,
-      retainContextTurns: 50,
     });
     expect(send.calls.map((call) => call.name)).toEqual([
       'start_chat_history_turn_with_current_postprocess',
     ]);
     expect(send.calls[0]?.args).toMatchObject({
       p_user_content: 'raw-user',
-      p_max_context_turns: 75,
-      p_retain_context_turns: 50,
     });
+    expect(send.calls[0]?.args).not.toHaveProperty('p_max_context_turns');
+    expect(send.calls[0]?.args).not.toHaveProperty('p_retain_context_turns');
     expect(turn).toMatchObject({
       userContent: 'raw-user',
       postprocessVersion: 4,

@@ -1,10 +1,32 @@
 # SQL 迁移文件
 
-## 2026-11-11 聊天历史展示投影（本地候选，远端未执行）
+## 2026-11-11 聊天历史展示投影（TEST 已执行，Production 待验证）
 
 依次验证 `20261111_chat_history_display_metadata.sql` → `20261111_chat_history_display_reads.sql`，然后有限回填、核验覆盖/读写性能，再发布 Backend。新表归 experience；原始 prompt 和账务不迁移、不裁剪。service_role 保留原 admission 的 invoker 写权限，新对象对 anon/authenticated 不开放。
 
-`maintenance/chat_history_display_backfill.sql` 和 `maintenance/chat_history_display_write_recovery.sql` 是同一 migration 来源下的人工维护/恢复脚本，**不加入自动 schema migration 队列**；前者每批独立事务，需要 psql `\gexec`，不得包在外层事务中。完整前置、锁/容量、重访与恢复顺序见 [操作说明](../../../docs/chat-history-read-performance.md)。本地一次性 PG17 harness 覆盖回填/恢复，不代表正式 TEST 已执行。
+`maintenance/chat_history_display_backfill.sql` 和 `maintenance/chat_history_display_write_recovery.sql` 是同一 migration 来源下的人工维护/恢复脚本，**不加入自动 schema migration 队列**；前者每批独立事务，需要 psql `\gexec`，不得包在外层事务中。完整前置、锁/容量、重访与恢复顺序见 [操作说明](../../../docs/chat-history-read-performance.md)。用户已确认两份扩展迁移在 TEST 执行，预检已核对对象存在；本地一次性 PG17 harness 覆盖回填/恢复，不代表 TEST 存量业务记录已完成回填或 Production 已执行。
+
+## 2026-11-11 轻量文本专项星尘优先扣（本地 PG17 验证，远端未执行）
+
+`20261111_light_text_bonus_first_debit.sql`（domain: billing）。前置：`20260921_wallet_debit_refund.sql`。
+
+- 只改 `billing.apply_wallet_debit` 里 `main_then_bonus` 的拆分顺序：由「先通用后专项」改为「专项优先，不足部分再扣通用」。其余与原函数逐字一致（`CREATE OR REPLACE`，权限与注释重申）。起因：用户反馈轻量模型消耗了充值买来的通用星尘，专项星尘（只能给轻量模型用）反而闲置。
+- 策略标识符保持 `main_then_bonus`：`charge_llm_usage` 的取值校验、在途快照、待恢复同步扣款都写着它，保持不变才能让在途扣款也走新顺序、不出现新旧混用窗口。含义自本迁移起为「轻量文本组合扣款：专项优先」。
+- 不受影响：`main_only`（标准/旗舰/图片/语音）、余额不足整笔失败、`debit_key` 幂等、原路退款（按流水里的 main/bonus 数额还原）、创作者分成（按消耗额算）。
+- 历史流水不改写：以 `main_delta` / `bonus_delta` 为准，不能用 metadata 里的 policy 字符串推断某笔的扣款顺序。
+- 验证：`bash scripts/test-vip-billing-migrations.sh`、`bash scripts/test-first-token-fallback-local.sh`；`vip_billing_t2_scenarios` / `vip_llm_t4_scenarios` 的组合扣断言已改为专项优先，并新增「专项足够只扣专项、退款原路还原」。
+- 发布：TEST 单文件（走 Database Migration workflow）→ 验证 → Production 单文件。后端无需同步发布：TS 侧 `allocateWalletDebit` 只是契约辅助，真实扣款只在 SQL。不准备回滚迁移，问题 forward-fix。
+
+## 2026-11-10 会话长期记忆与正文字数水位（本地 PG17 验证，远端未执行）
+
+`20261110_story_memory.sql`（domain: experience + admin managed key）。前置：`20261029_conversation_branches.sql`、`20261102_chat_message_overrides.sql`、`20261102_creator_review_prompt_config.sql`。
+
+- 新增 `experience.story_memories`（记忆版本，全部保留）与 `experience.story_memory_jobs`（每会话一行任务状态），均 RLS，service_role 只读，写入只走四个 SECURITY DEFINER RPC（前移+建任务 / 领取 / CAS 提交 / 收尾退避）。均 FK `chat_sessions ON DELETE CASCADE`。
+- 删除按轮数的旧泄洪：两个基础开轮函数里的 `apply_context_window_flood(...)` 调用原位替换为原样返回起点（锚点必须恰好一处，否则整笔失败），DROP 该函数，删除 `max_context_turns` / `retain_context_turns`。开轮 wrapper 链上的同名参数保留但不再使用。
+- `fork_chat_session` 改为 4 参数：按"覆盖终点早于锚点的最新记忆版本"继承原文并复制记忆；删除 5 参数旧版本。
+- `story_memory_config` / `story_memory_prompt` 加入 managed key（包装函数复制原 ACL、放宽两表 CHECK）。不插入 runtime_config 行，Backend 缺省用代码默认值。
+- 验证：`bash scripts/test-story-memory-migration.sh`（先回放分支/覆盖基线，再断言 RPC 行为、分支记忆选择、权限、并发领取与账户级联）。
+- 发布：TEST 单文件 → Backend/Admin → Production 单文件 → Backend/Admin。不准备回滚迁移，问题 forward-fix；不要把 Backend 回退到依赖 SQL 泄洪的版本。
 
 ## 2026-11-10 Surplus Intelligence 调用明细（本地实施，远端未执行）
 

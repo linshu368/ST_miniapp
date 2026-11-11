@@ -48,7 +48,7 @@ export interface PaymentQueryResult {
 }
 
 export interface PaymentGateway {
-  createPayment(params: CreatePaymentParams): Promise<PaymentResult>;
+  createPayment(params: CreatePaymentParams, signal?: AbortSignal): Promise<PaymentResult>;
   queryOrder(order: PaymentQueryTarget, signal?: AbortSignal): Promise<PaymentQueryResult>;
 }
 

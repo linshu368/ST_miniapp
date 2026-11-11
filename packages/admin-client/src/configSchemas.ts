@@ -2,12 +2,17 @@ import {
   CREATOR_REVIEW_PROMPT_KEY,
   CreatorReviewPromptSchema,
   DEFAULT_CREATOR_REVIEW_PROMPT,
+  DEFAULT_STORY_MEMORY_CONFIG,
+  DEFAULT_STORY_MEMORY_PROMPT,
+  STORY_MEMORY_CONFIG_KEY,
+  STORY_MEMORY_PROMPT_KEY,
+  StoryMemoryConfigSchema,
+  StoryMemoryPromptSchema,
   FIRST_TOKEN_FALLBACK_MODEL_ID,
   DEFAULT_FIRST_TOKEN_DEADLINE_MS,
   DEFAULT_FALLBACK_TOKEN_TIMEOUT_MS,
   DEFAULT_CHARACTER_FREE_CHAT_QUOTA_LIMIT,
   DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG,
-  DEFAULT_FEATURE_FREE_TRIAL_LIMIT,
   DEFAULT_LLM_PROVIDER_ROUTING_CONFIG,
   DEFAULT_LOBBY_RANKING_PARAMS,
   DEFAULT_CHECKIN_NEW_USER_CREDITS,
@@ -28,7 +33,6 @@ import {
   ImagePlazaShareTipConfigSchema,
   ImagePlazaTagConfigSchema,
   LobbyRankingParamsSchema,
-  MediaFeatureFreeTrialLimitSchema,
   LlmModelProviderSchema,
   ModelCatalogSchema,
   normalizeCatalogModelInput,
@@ -60,6 +64,8 @@ export const managedConfigKeys = [
   'memory_rules',
   'reply_style_options',
   'pref_word_count_tiers',
+  STORY_MEMORY_CONFIG_KEY,
+  STORY_MEMORY_PROMPT_KEY,
   'lobby_ranking_params',
   'miniapp_invite_reward_rules',
   'miniapp_invite_center_config',
@@ -90,6 +96,7 @@ export type ManagedConfigKey = (typeof managedConfigKeys)[number];
 /** 存 runtime_config.text_value 的 managed key；草稿 value 为 null */
 export const TEXT_MANAGED_CONFIG_KEYS = [
   CREATOR_REVIEW_PROMPT_KEY,
+  STORY_MEMORY_PROMPT_KEY,
   'system_instructions',
   'image_description_system_prompt',
 ] as const;
@@ -320,6 +327,8 @@ export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   memory_rules: InstructionSlotRulesSchema,
   reply_style_options: ReplyStyleOptionsConfigSchema,
   pref_word_count_tiers: WordCountTiersConfigSchema,
+  [STORY_MEMORY_CONFIG_KEY]: StoryMemoryConfigSchema,
+  [STORY_MEMORY_PROMPT_KEY]: StoryMemoryPromptSchema,
   lobby_ranking_params: LobbyRankingParamsSchema,
   miniapp_invite_reward_rules: InviteRewardRulesSchema,
   miniapp_invite_center_config: InviteCenterConfigSchema,
@@ -487,6 +496,18 @@ export const configMetadata: Record<
     description:
       '管理回复偏好中的选项名称、说明、展示顺序与独立开关；沿用草稿、发布和回滚。英文占位符与规则内容由你维护，本次仅存储，不参与模型生成。',
     defaultValue: { options: [] },
+  },
+  [STORY_MEMORY_CONFIG_KEY]: {
+    label: '长期剧情记忆参数',
+    description:
+      '按正文字数（不含选项/状态栏，去掉空白）截断历史：超过高水位时退到低水位以下，最近「保底轮数」永不截断（至少 11，保证用户可编辑的最近 10 轮不会被压缩）。被截断的章节由后台模型压缩成前情档案并注入后续生成。超过高水位时先在后台压缩、记忆落地后再截断，窗口与记忆同一轮切换；压缩迟迟不成功时超过「高水位 + 高低水位落差的一半」才强制截断。关闭开关时停止生成与注入，直接截断。压缩模型与供应商顺序独立于聊天兜底配置。',
+    defaultValue: DEFAULT_STORY_MEMORY_CONFIG,
+  },
+  [STORY_MEMORY_PROMPT_KEY]: {
+    label: '长期剧情记忆 prompt',
+    description:
+      '后台压缩前情档案时使用的完整 prompt。必须包含 {{old_memory}}、{{new_history}}、{{recent_context}}、{{max_chars}}；可用 {{user_name}}、{{char_name}}。角色卡与开场白始终在聊天 prompt 最前面，不送进压缩。以「## 」开头的行是输出板块标题，系统据此校验输出是否齐全，说明性标题不要用「## 」。',
+    defaultValue: DEFAULT_STORY_MEMORY_PROMPT,
   },
   pref_word_count_tiers: {
     label: '回复长度档位',

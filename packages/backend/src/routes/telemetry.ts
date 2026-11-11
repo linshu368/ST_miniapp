@@ -65,11 +65,17 @@ export default async function telemetryRoutes(app: FastifyInstance) {
         return reply.status(400).send(fail('BAD_REQUEST', 'Invalid timing report'));
       const stream =
         parsed.data.dramaId && parsed.data.videoId && parsed.data.delivery?.experimentId
-          ? selectStreamDelivery(userId, parsed.data.dramaId, parsed.data.videoId, true)
+          ? selectStreamDelivery(parsed.data.dramaId, parsed.data.videoId, true)
           : null;
       const identity =
         stream && stream.delivery.experimentId === parsed.data.delivery?.experimentId
-          ? streamExperimentUser(userId, stream.config)
+          ? {
+              ...streamExperimentUser(userId, stream.config),
+              // An A-arm event sent after cutover still carries its original delivery.
+              ...(parsed.data.delivery.group === stream.delivery.group
+                ? { assigned_group: stream.delivery.group }
+                : {}),
+            }
           : dramaExperimentLogUser(userId);
       const log = requestLogger(request.log, 'drama');
       const fields = {

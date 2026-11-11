@@ -69,6 +69,22 @@ async function receiver(logStatus = 200) {
 const options = { enabled: true, environment: 'test', version: 'safe-test-release' };
 
 describe('engineering telemetry boundary', () => {
+  it('accepts reports both with and without the engine field (deploy-order compatibility)', () => {
+    const base = {
+      type: 'playback' as const,
+      phase: 'final' as const,
+      id: 'compat-observation',
+      outcome: 'playing' as const,
+      elapsedMs: 1_000,
+      marks: {},
+      stages: {},
+      queries: [],
+    };
+    expect(DramaTimingReportSchema.safeParse(base).success).toBe(true);
+    expect(DramaTimingReportSchema.safeParse({ ...base, engine: 'hlsjs_mms' }).success).toBe(true);
+    expect(DramaTimingReportSchema.safeParse({ ...base, engine: 'bogus' }).success).toBe(false);
+  });
+
   it('exports one bounded background-job terminal with duration and count', async () => {
     const sink = await receiver();
     stop = startEngineeringTelemetry({ ...options, endpoint: sink.endpoint });
@@ -98,6 +114,7 @@ describe('engineering telemetry boundary', () => {
       id: 'slow-observation',
       entry: 'episode',
       videoId: 'safe-video',
+      engine: 'native_hls',
       outcome: 'playing',
       elapsedMs: 6_000,
       marks: {
@@ -201,6 +218,7 @@ describe('engineering telemetry boundary', () => {
       event: 'drama.startup_diagnostic',
       ...report,
     });
+    expect(records[1]?.attributes.some((a) => a.key === 'engine')).toBe(true);
     expect(bodies[2]).toMatchObject({ phase: 'network', id: 'slow-observation' });
     expect(bodies[6]).toMatchObject({
       event: 'drama.seek_diagnostic',

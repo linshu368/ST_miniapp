@@ -4,6 +4,7 @@ import type {
   DramaTimingReport,
   DramaNetworkTiming,
   DramaStartupDiagnostics,
+  DramaPlaybackEngine,
 } from '@miniapp/shared';
 import { ownsDramaSource } from '../drama-media-source';
 import { recordHlsLoads, type HlsEvents } from './drama-hls';
@@ -33,6 +34,8 @@ export function observeDramaSeek(
     sourceAt?: number;
     /** hls.js 路径才有：快进窗口内记录分片加载，并标出覆盖目标时间的分片。 */
     hls?: { player: HlsPlayer; events: HlsEvents };
+    /** 本次播放装载时判定的引擎；原生路径下为 undefined。 */
+    engine?: DramaPlaybackEngine;
     now: () => number;
     emit: (report: DramaTimingReport) => void;
   }
@@ -189,6 +192,7 @@ export function observeDramaSeek(
         ? {}
         : { frame: { callbackAtMs: frameMs, processingMs: frameProcessingMs } }),
     },
+    engine: options.engine,
     frameMethod,
     marks: {},
     stages: {},

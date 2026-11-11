@@ -13,7 +13,6 @@ import { getDomainDb, type DomainDb } from '../../lib/supabase.js';
 import { ConversationRepositoryError, throwConversationRpcError } from './conversation-errors.js';
 import * as billing from './conversation-history-billing.js';
 import {
-  contextWindowRpcArgs,
   mapStartedTurn,
   withStoredRequestId,
   type StartedHistoryTurnRpc,
@@ -125,16 +124,12 @@ export class ConversationHistoryRepository {
     userContent: string;
     model: string;
     staleAfterSeconds?: number;
-    maxContextTurns?: number;
-    retainContextTurns?: number;
   }): Promise<StartedHistoryTurn> {
-    const windowArgs = contextWindowRpcArgs(input);
     const args = {
       p_session_id: input.sessionId,
       p_user_content: input.userContent,
       p_model: input.model,
       p_stale_after_seconds: input.staleAfterSeconds ?? STREAMING_STALE_SECONDS,
-      ...windowArgs,
     };
     const data = await this.callStartRpc({
       rpc: 'start_chat_history_turn_with_current_postprocess',
@@ -149,16 +144,12 @@ export class ConversationHistoryRepository {
     turnIndex?: number;
     model: string;
     staleAfterSeconds?: number;
-    maxContextTurns?: number;
-    retainContextTurns?: number;
   }): Promise<StartedHistoryTurn> {
-    const windowArgs = contextWindowRpcArgs(input);
     const args = {
       p_session_id: input.sessionId,
       p_turn_index: input.turnIndex ?? null,
       p_model: input.model,
       p_stale_after_seconds: input.staleAfterSeconds ?? STREAMING_STALE_SECONDS,
-      ...windowArgs,
     };
     const data = await this.callStartRpc({
       rpc: 'start_chat_history_regeneration_with_current_postprocess',

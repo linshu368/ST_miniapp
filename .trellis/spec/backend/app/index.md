@@ -11,6 +11,7 @@
 | [数据、可靠性、安全与可观测性](./data-reliability-and-security.md) | DB、外部调用、鉴权、并发、任务、日志、配置 |
 | [测试、脚本、构建与部署](./testing-scripts-and-deployment.md)      | 测试、验收、Railway、定时任务、迁移        |
 | [规范约定](./backend-rules.md)                                     | 工程相关约束                               |
+| [支付上游探测与策略扩展](./payment-availability-probe.md)          | 主动支付探测、新策略、告警过滤与独立 Cron  |
 
 ## 功能模块现状
 

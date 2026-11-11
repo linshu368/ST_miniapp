@@ -158,4 +158,43 @@ describe('hls.js load recorder', () => {
     expect([...hls.handlers.values()].every((set) => set.size === 0)).toBe(true);
     vi.useRealTimers();
   });
+
+  it('passes manifestInline through to the startup diagnostic snapshot', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+    const reports: DramaTimingReport[] = [];
+    const tracker = new DramaTimingTracker(
+      () => performance.now(),
+      () => 'id',
+      (report) => reports.push(report)
+    );
+    const flow = tracker.beginPlayback('a', 'cover');
+    flow.mark('source_set');
+    observeDramaHls(hls as unknown as HlsPlayer, events, flow, true);
+    const at = flow.startedAt;
+    hls.emit('manifest', { stats: stats(at + 1, at + 1, at + 1) });
+    flow.finish('playing');
+    const final = reports.find((r) => r.phase === 'final')!;
+    expect(final.diagnostics?.hls?.manifestInline).toBe(true);
+    expect(DramaTimingReportSchema.safeParse(final).success).toBe(true);
+    vi.useRealTimers();
+  });
+
+  it('omits manifestInline when not passed (no false placeholder)', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+    const reports: DramaTimingReport[] = [];
+    const tracker = new DramaTimingTracker(
+      () => performance.now(),
+      () => 'id',
+      (report) => reports.push(report)
+    );
+    const flow = tracker.beginPlayback('a', 'cover');
+    flow.mark('source_set');
+    observeDramaHls(hls as unknown as HlsPlayer, events, flow);
+    const at = flow.startedAt;
+    hls.emit('manifest', { stats: stats(at + 1, at + 1, at + 1) });
+    flow.finish('playing');
+    const final = reports.find((r) => r.phase === 'final')!;
+    expect(final.diagnostics?.hls).not.toHaveProperty('manifestInline');
+    vi.useRealTimers();
+  });
 });

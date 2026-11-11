@@ -46,16 +46,6 @@ it('rejects partial, wrong-environment, duplicate and overlapping manifests', ()
   vi.stubEnv('DRAMA_CDN_ENABLED', 'true');
   expect(getDramaStreamConfig()).toBeNull();
 });
-it('assigns deterministically with both arms and only matches the selected episode', () => {
-  const config = getDramaStreamConfig()!;
-  const groups = new Set(
-    Array.from({ length: 100 }, (_, n) => streamExperimentUser(n, config).assigned_group)
-  );
-  expect(groups.size).toBe(2);
-  expect(streamExperimentUser(42, config)).toEqual(streamExperimentUser(42, config));
-  expect(selectStreamDelivery(42, videos[0]!.dramaId, videos[1]!.videoId)).toBeNull();
-  expect(selectStreamDelivery(42, videos[0]!.dramaId, videos[0]!.videoId)).not.toBeNull();
-});
 it('pins the same 30 in order without dropping or duplicating the tail', () => {
   const items: DramaSummary[] = [...videos].reverse().map((v) => ({
     id: v.dramaId,
@@ -90,57 +80,35 @@ it('creates a verifiable, expiring token for exactly one UID', () => {
   expect(claims.exp * 1000).toBeGreaterThan(Date.now());
 });
 
-it('keeps assignments across enrollment expansion and retains telemetry identity on shutdown', () => {
-  const full = selectStreamDelivery(42, videos[0]!.dramaId, videos[0]!.videoId)!;
+it('selects the manifest episodes irrespective of retired enrollment or cohort settings', () => {
   vi.stubEnv('DRAMA_STREAM_ENROLLMENT_BPS', '0');
-  expect(selectStreamDelivery(42, videos[0]!.dramaId, videos[0]!.videoId)).toBeNull();
-  vi.stubEnv('DRAMA_STREAM_ENABLED', 'false');
-  const historical = selectStreamDelivery(42, videos[0]!.dramaId, videos[0]!.videoId, true)!;
-  expect(historical.delivery.group).toBe(full.delivery.group);
-});
-
-it('targets only two sampling accounts without changing other users or eligibility', () => {
-  const config = getDramaStreamConfig()!;
-  const original = Array.from({ length: 100 }, (_, id) => streamExperimentUser(id + 1, config));
   vi.stubEnv(
     'DRAMA_STREAM_SAMPLING_COHORT',
-    JSON.stringify({ experimentId: config.id, supabase: 1, stream: 2 })
+    JSON.stringify({
+      experimentId: 'stream-unit',
+      supabase: 1,
+      stream: 2,
+    })
   );
-  expect(streamExperimentUser(1, config).assigned_group).toBe('supabase');
-  expect(streamExperimentUser(2, config).assigned_group).toBe('stream');
-  for (let id = 3; id <= 100; id++) {
-    expect(streamExperimentUser(id, config)).toEqual(original[id - 1]);
+  for (const video of videos) {
+    expect(selectStreamDelivery(video.dramaId, video.videoId)?.delivery).toMatchObject({
+      group: 'stream',
+      provider: 'stream',
+    });
   }
-  expect(streamExperimentUser(1, config).experiment_user).toBe(original[0]!.experiment_user);
-  expect(selectStreamDelivery(2, videos[0]!.dramaId, videos[1]!.videoId)).toBeNull();
-  vi.stubEnv('DRAMA_STREAM_ENROLLMENT_BPS', '0');
-  expect(selectStreamDelivery(2, videos[0]!.dramaId, videos[0]!.videoId)).toBeNull();
-  vi.stubEnv('DRAMA_STREAM_ENROLLMENT_BPS', '10000');
-  vi.stubEnv('DRAMA_CDN_ENABLED', 'true');
-  expect(selectStreamDelivery(2, videos[0]!.dramaId, videos[0]!.videoId)).toBeNull();
-  vi.stubEnv('DRAMA_CDN_ENABLED', 'false');
+  const first = videos[0]!;
+  expect(selectStreamDelivery(first.dramaId, videos[1]!.videoId)).toBeNull();
+  expect(selectStreamDelivery(randomUUID(), randomUUID())).toBeNull();
   vi.stubEnv('DRAMA_STREAM_ENABLED', 'false');
-  expect(selectStreamDelivery(2, videos[0]!.dramaId, videos[0]!.videoId)).toBeNull();
-  expect(
-    selectStreamDelivery(2, videos[0]!.dramaId, videos[0]!.videoId, true)?.delivery.group
-  ).toBe('stream');
+  expect(selectStreamDelivery(first.dramaId, first.videoId)).toBeNull();
+  const retained = selectStreamDelivery(first.dramaId, first.videoId, true)!;
+  expect(streamExperimentUser(1, retained.config).experiment_user).toMatch(/^[a-f0-9]{64}$/);
 });
 
-it('ignores malformed, stale, duplicate or unsafe sampling account settings', () => {
-  const config = getDramaStreamConfig()!;
-  const baseline = streamExperimentUser(1, config);
-  for (const value of [
-    'invalid json',
-    JSON.stringify({ experimentId: 'old-experiment', supabase: 1, stream: 2 }),
-    JSON.stringify({ experimentId: config.id, supabase: 1, stream: 1 }),
-    JSON.stringify({ experimentId: config.id, supabase: -1, stream: 2 }),
-    JSON.stringify({ experimentId: config.id, supabase: '1', stream: 2 }),
-    JSON.stringify({ experimentId: config.id, supabase: 1, stream: Number.MAX_SAFE_INTEGER + 1 }),
-    JSON.stringify({ experimentId: config.id, supabase: 1, stream: 2, extra: true }),
-    ' '.repeat(513),
-  ]) {
-    vi.stubEnv('DRAMA_STREAM_SAMPLING_COHORT', value);
-    expect(getDramaStreamConfig()).not.toBeNull();
-    expect(streamExperimentUser(1, config)).toEqual(baseline);
-  }
+it('keeps a listed video on Stream when its signing credentials are missing', () => {
+  vi.stubEnv('DRAMA_STREAM_PRIVATE_KEY', '');
+  const video = videos[29]!;
+  const stream = selectStreamDelivery(video.dramaId, video.videoId)!;
+  expect(stream.delivery.provider).toBe('stream');
+  expect(() => signStreamPlayback(stream.config, video.uid)).toThrow();
 });

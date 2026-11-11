@@ -9,8 +9,10 @@ import {
   LobbyRotationConfigSchema,
 } from '@miniapp/shared';
 import {
+  buildNewUserOrder,
   buildRecommendationOrder,
   exposureWeight,
+  isNewUserFixedHeadWindow,
   QUALIFIED_QUALITY_VERSION,
   type BuildRecommendationInput,
 } from './recommendation-ranking.js';
@@ -271,5 +273,39 @@ describe('rotation consumer contracts', () => {
         character_ids: Array(41).fill(id),
       }).success
     ).toBe(false);
+  });
+});
+
+describe('new user fixed head', () => {
+  const created = '2026-11-01T00:00:00.000Z';
+  const at = (days: number) => Date.parse(created) + days * day;
+
+  it('covers the first 7 days after registration only', () => {
+    expect(isNewUserFixedHeadWindow(created, at(0))).toBe(true);
+    expect(isNewUserFixedHeadWindow(created, at(7) - 1)).toBe(true);
+    expect(isNewUserFixedHeadWindow(created, at(7))).toBe(false);
+  });
+
+  it('falls back to the normal strategy without a valid registration time', () => {
+    expect(isNewUserFixedHeadWindow(undefined, at(1))).toBe(false);
+    expect(isNewUserFixedHeadWindow('not-a-date', at(1))).toBe(false);
+  });
+
+  it('uses the given quality order for the 12-card head and never marks it degraded', () => {
+    const { candidates } = input(30);
+    const fixed = [...candidates].reverse().map((c) => c.id);
+    const order = buildNewUserOrder(candidates, fixed);
+    expect(order.headIds).toEqual(fixed.slice(0, 12));
+    expect(order.characterIds).toHaveLength(30);
+    expect(order.degraded).toBe(false);
+  });
+
+  it('drops hidden ids and appends candidates missing from the fixed order', () => {
+    const { candidates } = input(14);
+    const hidden = '99999999-0000-4000-8000-000000000000';
+    const order = buildNewUserOrder(candidates, [hidden, candidates[3]!.id]);
+    expect(order.characterIds).not.toContain(hidden);
+    expect(order.characterIds[0]).toBe(candidates[3]!.id);
+    expect(order.characterIds).toHaveLength(14);
   });
 });

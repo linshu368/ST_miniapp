@@ -78,17 +78,11 @@ describe.skipIf(!canRunAgainstDatabase)(
     let characterId: string;
     let characterName: string;
 
-    async function createCompletedTurn(
-      sessionId: string,
-      userInput: string,
-      reply: string,
-      window?: { maxContextTurns: number; retainContextTurns: number }
-    ) {
+    async function createCompletedTurn(sessionId: string, userInput: string, reply: string) {
       const started = await history.startTurn({
         sessionId,
         userContent: userInput,
         model: MODEL,
-        ...window,
       });
       await history.setPromptHistory(started.historyId, [
         { role: 'system', content: 'system' },
@@ -313,91 +307,6 @@ describe.skipIf(!canRunAgainstDatabase)(
           status: 'success',
         });
       }
-    });
-
-    it('超过高水位后入模窗口收到低水位，开场白仍在，全量历史仍可翻', async () => {
-      const { session } = await sessions.createSession(userId, characterId);
-      const window = { maxContextTurns: 3, retainContextTurns: 2 };
-      for (let turn = 1; turn <= 4; turn += 1) {
-        await createCompletedTurn(session.id, `用户${turn}`, `回复${turn}`, window);
-      }
-
-      const next = await history.startTurn({
-        sessionId: session.id,
-        userContent: '第五句',
-        model: MODEL,
-        ...window,
-      });
-      expect(next.turnIndex).toBe(5);
-      expect(next.contextWindowStartTurn).toBe(3);
-
-      const context = await history.getContextBeforeTurn(session.id, next.turnIndex);
-      expect(context.truncatedTurns).toBe(2);
-      expect(context.openingMessage).toBe(FIRST_MES);
-      expect(context.messages).toEqual([
-        { role: 'user', content: '用户3' },
-        { role: 'assistant', content: '回复3' },
-        { role: 'user', content: '用户4' },
-        { role: 'assistant', content: '回复4' },
-      ]);
-
-      const page = await history.listMessages(session.id, FIRST_MES, { userId: session.user_id });
-      expect(page.messages.map((message) => message.content)).toContain('用户1');
-      expect(page.messages[0]?.content).toBe(FIRST_MES);
-
-      await history.finalizeTurn({
-        historyId: next.historyId,
-        content: '第五句回复',
-        status: 'success',
-      });
-    });
-
-    it('A=B 时退化为滑动窗口；重生成不把本轮旧回复带进 prompt', async () => {
-      const { session } = await sessions.createSession(userId, characterId);
-      const window = { maxContextTurns: 3, retainContextTurns: 3 };
-      for (let turn = 1; turn <= 4; turn += 1) {
-        await createCompletedTurn(session.id, `滑${turn}`, `滑回${turn}`, window);
-      }
-
-      const fifth = await history.startTurn({
-        sessionId: session.id,
-        userContent: '滑5',
-        model: MODEL,
-        ...window,
-      });
-      expect(fifth.contextWindowStartTurn).toBe(2);
-      await history.finalizeTurn({
-        historyId: fifth.historyId,
-        content: '滑回5',
-        status: 'success',
-      });
-
-      const regenerated = await history.startRegeneration({
-        sessionId: session.id,
-        model: MODEL,
-        ...window,
-      });
-      expect(regenerated.turnIndex).toBe(5);
-      expect(regenerated.contextWindowStartTurn).toBe(2);
-
-      const context = await history.getContextBeforeTurn(session.id, regenerated.turnIndex);
-      expect(context.truncatedTurns).toBe(1);
-      expect(context.openingMessage).toBe(FIRST_MES);
-      expect(context.messages.map((message) => message.content)).toEqual([
-        '滑2',
-        '滑回2',
-        '滑3',
-        '滑回3',
-        '滑4',
-        '滑回4',
-      ]);
-      expect(context.messages.map((message) => message.content)).not.toContain('滑回5');
-
-      await history.finalizeTurn({
-        historyId: regenerated.historyId,
-        content: '新版本',
-        status: 'success',
-      });
     });
 
     it('建会话 title 默认为角色名，清空重命名恢复为角色名', async () => {

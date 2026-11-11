@@ -10,6 +10,7 @@ import {
   type DramaMediaState,
   type DramaStartupDiagnostics,
   type DramaNetworkTiming,
+  type DramaPlaybackEngine,
 } from '@miniapp/shared';
 export type { DramaTimingReport } from '@miniapp/shared';
 import type HlsPlayer from 'hls.js';
@@ -76,6 +77,7 @@ export class DramaPlaybackTiming {
   outcome?: DramaOutcome;
   addressSource?: DramaTimingReport['addressSource'];
   frameMethod?: DramaTimingReport['frameMethod'];
+  engine?: DramaPlaybackEngine;
   resolvedVideoId?: string;
   delivery?: DramaDelivery;
   private timer: ReturnType<typeof setTimeout>;
@@ -274,6 +276,7 @@ export class DramaPlaybackTiming {
       stages,
       addressSource: this.addressSource,
       frameMethod: this.frameMethod,
+      engine: this.engine,
       cover: this.cover,
       list: list
         ? {
@@ -577,7 +580,8 @@ export class DramaTimingTracker {
     dramaId: string,
     videoId: string | undefined,
     delivery?: DramaDelivery,
-    hls?: { player: HlsPlayer; events: HlsEvents }
+    hls?: { player: HlsPlayer; events: HlsEvents },
+    engine?: DramaPlaybackEngine
   ) {
     this.stopSeek?.('switched');
     const stop = observeDramaSeek(video, source, target, wasPlaying, {
@@ -589,6 +593,7 @@ export class DramaTimingTracker {
       route: this.playback?.owner === 'home' ? '/watch' : '/dramas/:id',
       sourceAt: this.playback?.marks.source_set ?? this.playback?.startedAt,
       hls,
+      engine,
       now: this.now,
       emit: this.emit,
     });

@@ -1,6 +1,7 @@
 export const STREAMING_STALE_SECONDS = 120;
 import type { LlmModelProvider } from '@miniapp/shared';
 import type { InstructionSlotModes } from '../../features/engine/types.js';
+import type { StoryTurn } from '../../features/story-memory/text.js';
 
 export interface ConversationHistoryRow {
   user_deleted?: boolean;
@@ -101,7 +102,11 @@ export interface StartedHistoryTurn {
 export interface ConversationContext {
   /** 首轮实际 prompt 中保存的开场白；尚无历史时为 null，由调用方使用角色卡当前 first_mes */
   openingMessage: string | null;
-  messages: Array<{ role: 'user' | 'assistant'; content: string }>;
-  /** 被窗口截掉的早期轮数 = context_window_start_turn - 1；未泄洪为 0 */
+  messages: ConversationContextMessage[];
+  /** Ascending context turns used by the upstream story-memory watermarks. */
+  turns: StoryTurn[];
+  /** 被窗口截掉的早期轮数 = context_window_start_turn - 1；未截断为 0 */
   truncatedTurns: number;
 }
+
+export type ConversationContextMessage = { role: 'user' | 'assistant'; content: string };

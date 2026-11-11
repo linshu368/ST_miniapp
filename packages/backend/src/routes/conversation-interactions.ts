@@ -1,4 +1,3 @@
-import { fetchContextWindowLimits } from '../features/conversations/context-window.js';
 /**
  * backend / routes / conversations.ts
  *
@@ -211,7 +210,6 @@ export function registerConversationBranch(
       const startedAt = Date.now();
       const dbUser = await getOrCreateDbUser(request.user);
       try {
-        const limits = await fetchContextWindowLimits();
         // The RPC owns authorization and idempotency together: a retry may recover
         // an already-created branch even after its original conversation was deleted.
         const [branched, displayName] = await Promise.all([
@@ -220,7 +218,6 @@ export function registerConversationBranch(
             sourceSessionId,
             messageId: parsed.data.message_id,
             requestId: parsed.data.request_id,
-            retainTurns: limits.retainTurns,
           }),
           settings.getDisplayName(dbUser.id),
         ]);

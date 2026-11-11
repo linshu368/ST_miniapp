@@ -481,7 +481,8 @@ export function observeDramaRequest(input: {
   route: string;
   outcome: 'ok' | 'http_error' | 'unplayable';
   signCache: string;
-  stages: Partial<Record<'auth' | 'db_read' | 'assemble' | 'sign', number>>;
+  manifestCache?: string;
+  stages: Partial<Record<'auth' | 'db_read' | 'assemble' | 'sign' | 'manifest', number>>;
   durationMs: number;
 }) {
   if (!active) return;
@@ -491,9 +492,13 @@ export function observeDramaRequest(input: {
     sign_cache: ['hit', 'miss', 'inflight', 'unused'].includes(input.signCache)
       ? input.signCache
       : 'unknown',
+    manifest_cache:
+      input.manifestCache && ['hit', 'miss', 'inflight', 'unused'].includes(input.manifestCache)
+        ? input.manifestCache
+        : 'unused',
   };
   const detail: MetricAttributes = { ...attrs, total_ms: Math.round(input.durationMs) };
-  for (const stage of ['auth', 'db_read', 'assemble', 'sign'] as const) {
+  for (const stage of ['auth', 'db_read', 'assemble', 'sign', 'manifest'] as const) {
     const ms = input.stages[stage];
     if (ms !== undefined && Number.isFinite(ms) && ms >= 0) {
       active.duration('st_drama_server_stage', ms, { ...attrs, stage });
@@ -526,6 +531,7 @@ export function observeDramaStartupDiagnostic(report: DramaTimingReport): void {
       phase: parsed.data.phase,
       outcome: parsed.data.outcome,
       total_ms: parsed.data.elapsedMs,
+      engine: parsed.data.engine ?? 'unknown',
     },
     JSON.stringify({ event, ...parsed.data })
   );

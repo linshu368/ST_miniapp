@@ -69,4 +69,12 @@ describe('withSessionAdvisoryLock', () => {
     expect(fake.query).toHaveBeenCalledTimes(2);
     expect(fake.end).toHaveBeenCalledOnce();
   });
+
+  it('still closes the owning session when unlock fails after successful work', async () => {
+    const fake = client([{ locked: true }, { unlocked: false }]);
+    await expect(
+      withSessionAdvisoryLock(731_007, async () => 'done', { createClient: () => fake.client })
+    ).rejects.toThrow('not released');
+    expect(fake.end).toHaveBeenCalledOnce();
+  });
 });

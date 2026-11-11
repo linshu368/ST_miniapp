@@ -29,6 +29,8 @@ last_verified_at: 2026-11-02
 
 新发送与重生成使用 `experience.start_chat_history_*_with_current_postprocess`：在开轮事务内读取 `app_core.runtime_config` 当前正式指针、校验不可变 artifact 快照，再复用既有显式版本 wrapper 写入非空 `chat_history.postprocess_version`。旧 wrapper 的 `NULL=不绑定` 保留兼容，旧行不回填。
 
+本地候选（2026-11-10，未执行远端迁移）：`20261110_story_memory.sql` 新增 `experience.story_memories`（会话记忆版本，覆盖终点随版本严格递增，全部保留供分支按锚点选择）与 `experience.story_memory_jobs`（每会话一行压缩任务状态，租约/退避）。窗口起点改由 Backend 按正文字数水位经 `advance_story_memory_window` CAS 前移并同事务建任务；按轮数的 `apply_context_window_flood` 已删除。`fork_chat_session` 改为 4 参数，按记忆覆盖范围继承原文并复制记忆。
+
 ## 入口与调用者
 
 ## 涉及文件
@@ -36,7 +38,9 @@ last_verified_at: 2026-11-02
 | 路径                                                                                  | 职责                                             |
 | ------------------------------------------------------------------------------------- | ------------------------------------------------ |
 | `packages/shared/migrations/069_miniapp_chat_sessions.sql`                            | 会话基线                                         |
-| `packages/shared/migrations/077_context_window.sql`                                   | 上下文水位                                       |
+| `packages/shared/migrations/077_context_window.sql`                                   | 窗口起点列（泄洪逻辑已由 20261110 删除）         |
+| `packages/shared/migrations/20261110_story_memory.sql`                                | 会话长期记忆、字数水位前移、分支记忆继承         |
+| `scripts/test-story-memory-migration.sh`                                              | PostgreSQL 17 隔离记忆验收入口                   |
 | `packages/shared/migrations/080_chat_message_voice.sql`                               | 语音元数据                                       |
 | `packages/shared/migrations/20260914_chat_message_images.sql`                         | 图片 attempt、租约与 Storage bucket              |
 | `packages/shared/migrations/20260930_bind_current_text_postprocess_on_turn_start.sql` | 开轮原子绑定当前正式展示版本                     |
