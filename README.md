@@ -236,3 +236,7 @@ pnpm supabase:link:test
 ### 聊天回复负反馈
 
 回复点踩通过独立鉴权接口保存到 `experience.chat_reply_feedback`，空原因可提交，固定回复/编辑版本去重并保留当轮快照。只在面板打开时读取，不进入生成、计费或角色评分链路，无运营页面。迁移顺序、权限和批量分析口径见 [聊天回复反馈](docs/chat-reply-feedback.md)。
+
+### 幕间入口与归因（本地接入）
+
+幕间复用短剧 API；两端进入事实、精准 CORS 来源、迁移与本地验收见 [幕间接入说明](docs/mujian-integration.md)。新增迁移与应用发布分开，未执行线上迁移或部署。

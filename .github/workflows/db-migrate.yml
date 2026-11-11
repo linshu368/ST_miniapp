@@ -154,6 +154,21 @@ jobs:
             ENVIRONMENT="$ENVIRONMENT" \
             bash scripts/apply-repo-migration.sh
 
+      # Matching assertions are opt-in per migration and must roll back their fixtures.
+      # Never run synthetic identity / attribution checks against Production.
+      - name: Verify migration on TEST
+        if: ${{ inputs.mode == 'apply' && inputs.environment == 'test' }}
+        env:
+          MIGRATION_FILE: ${{ inputs.migration_file }}
+        run: |
+          set -euo pipefail
+          verification_file="packages/shared/migrations/tests/$(basename "$MIGRATION_FILE")"
+          if [[ -f "$verification_file" ]]; then
+            DB_URL="$(<"$RUNNER_TEMP/db_url")"
+            echo "::add-mask::$DB_URL"
+            psql "$DB_URL" -X -v ON_ERROR_STOP=1 -f "$verification_file"
+          fi
+
       - name: Cleanup database URL
         if: always()
         run: rm -f "$RUNNER_TEMP/db_url"
