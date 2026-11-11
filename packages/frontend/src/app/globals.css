@@ -32,6 +32,7 @@
     --rose: 353 45% 52%;
     --rose-fill: 352 40% 45%;
     --success: 88 22% 38%;
+    --primary-bright: 40 80% 72%;
     --warn: 34 55% 42%;
     --glow: 34 53.4% 55%;
   }
@@ -74,6 +75,8 @@
     --rose: 353 40% 68.6%;
     --rose-fill: 352 33.6% 58%;
     --success: 88 16.5% 62%;
+    /* 畅聊栏目开放时用的亮金：同色相提亮一档，和主色、VIP 金区分开 */
+    --primary-bright: 40 80% 72%;
     --warn: 34 46.8% 60.2%;
     --glow: 34 53.4% 68%;
   }
@@ -131,6 +134,26 @@
   animation: model-tier-pulse 1.8s ease-out infinite;
 }
 
+/* 畅聊栏目开放时卡头掠过的一道光。只动 transform，弱机也不掉帧。 */
+@keyframes free-zone-sweep {
+  0% {
+    transform: translateX(-160%) skewX(-18deg);
+  }
+  60%,
+  100% {
+    transform: translateX(420%) skewX(-18deg);
+  }
+}
+
+.free-zone-sweep::after {
+  position: absolute;
+  inset: -30% auto -30% 0;
+  width: 26%;
+  content: '';
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 10%), transparent);
+  animation: free-zone-sweep 4.2s ease-in-out infinite;
+}
+
 @keyframes vip-gold-flow {
   0% {
     background-position: 0% 50%;
@@ -172,6 +195,7 @@
 @media (prefers-reduced-motion: reduce) {
   .model-current-shimmer::after,
   .model-tier-pulse,
+  .free-zone-sweep::after,
   .vip-benefit-frame,
   .vip-benefit-title {
     animation: none;

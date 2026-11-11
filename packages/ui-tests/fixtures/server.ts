@@ -91,6 +91,7 @@ import {
 } from './data.js';
 
 import { makeCreatorAnalytics } from './creator-analytics.js';
+import { applyFreeZoneScenario, selectFreeZonePreviewModel } from './free-zone.js';
 
 const HOST = '127.0.0.1';
 export const PREVIEW_PROTOCOL = 'st-miniapp-ui-v1';
@@ -366,6 +367,7 @@ export function createPreviewServer(apiPort: number, appPort: number) {
     streams.clear();
     data = makeData(api, next.startsWith('lobby-rotation') ? lobbyCardCount : 18);
     if (next === 'chat-surplus' || next === 'chat-surplus-fallback') useSurplusPreviewCatalog(data);
+    applyFreeZoneScenario(data, next);
     lobbyCurrent = null;
     lobbyPrevious = null;
     lobbyBatchCount = 0;
@@ -1796,7 +1798,12 @@ export function createPreviewServer(apiPort: number, appPort: number) {
       }
       if (path === '/api/v1/models/select' && method === 'POST') {
         const { model_id } = SelectModelRequestSchema.parse(body);
-        if (!selectPreviewModel(data, model_id)) {
+        const freeZone = selectFreeZonePreviewModel(data, model_id);
+        if (freeZone === 'closed') {
+          fail(res, 409, 'FREE_ZONE_UNAVAILABLE', '畅聊模型暂未开放');
+          return;
+        }
+        if (freeZone === null && !selectPreviewModel(data, model_id)) {
           fail(res, 400, 'unknown_model', '预览模型不存在');
           return;
         }

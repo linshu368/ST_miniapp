@@ -1,11 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { ChevronDown, ChevronLeft, PanelLeft, MessageCircle } from 'lucide-react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 
 import { FavoriteButton } from '@/components/characters/favorite-button';
-import { useModelCatalogQuery } from '@/lib/api/models';
+import { modelCatalogKeys, useModelCatalogQuery } from '@/lib/api/models';
+import { freeZoneBoundaryDelay, isFreeZoneOpen, selectedFreeZoneModel } from '@/lib/free-zone';
 import { useEntryEnrichReady } from '@/lib/entry-phase';
 import { cn } from '@/lib/utils';
 
@@ -55,7 +57,26 @@ export function ChatTopBar({
     standard: '标准引擎',
     premium: '旗舰引擎',
   };
-  const modelLabel = selectedTier ? (engineLabels[selectedTier.key] ?? '选择引擎') : '选择引擎';
+  const freeSelected = selectedFreeZoneModel(catalog.data);
+  const freeZone = catalog.data?.free_zone ?? null;
+  // 栏目开放、但用户还没在用免费模型时，胶囊挂一个小角标把人引进面板。
+  const showFreeBadge = isFreeZoneOpen(freeZone) && !freeSelected;
+  const modelLabel = freeSelected
+    ? '畅聊引擎'
+    : selectedTier
+      ? (engineLabels[selectedTier.key] ?? '选择引擎')
+      : '选择引擎';
+
+  // 到了栏目开始/结束的时间点重新拉一次目录，面板关着时角标和选择也会跟着更新。
+  const queryClient = useQueryClient();
+  const boundaryDelay = freeZoneBoundaryDelay(freeZone);
+  useEffect(() => {
+    if (boundaryDelay === null) return;
+    const timer = setTimeout(() => {
+      void queryClient.invalidateQueries({ queryKey: modelCatalogKeys.detail });
+    }, boundaryDelay + 1000);
+    return () => clearTimeout(timer);
+  }, [boundaryDelay, queryClient]);
 
   return (
     <DialogPrimitive.Root open={modelOpen} onOpenChange={setModelOpen} modal={false}>
@@ -90,10 +111,20 @@ export function ChatTopBar({
               <button
                 type="button"
                 aria-label={`当前${modelLabel}，${modelOpen ? '收起' : '展开'}引擎选择`}
-                className="mt-1 inline-flex min-h-8 max-w-full items-center gap-1 rounded-full border border-primary/70 bg-primary/10 px-3 text-[11px] font-semibold text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                className={cn(
+                  'relative mt-1 inline-flex min-h-8 max-w-full items-center gap-1 rounded-full border px-3 text-[11px] font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary',
+                  freeSelected
+                    ? 'border-primary-bright/80 bg-primary-bright/15 text-primary-bright'
+                    : 'border-primary/70 bg-primary/10 text-primary'
+                )}
               >
                 <span
-                  className="size-1.5 shrink-0 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]"
+                  className={cn(
+                    'size-1.5 shrink-0 rounded-full',
+                    freeSelected
+                      ? 'bg-primary-bright shadow-[0_0_6px_hsl(var(--primary-bright)/0.9)]'
+                      : 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]'
+                  )}
                   aria-hidden
                 />
                 <span className="truncate">{modelLabel}</span>
@@ -104,6 +135,11 @@ export function ChatTopBar({
                   )}
                   aria-hidden
                 />
+                {showFreeBadge ? (
+                  <span className="pointer-events-none absolute -right-3 -top-2 whitespace-nowrap rounded-full bg-primary-bright px-1.5 text-[9px] font-bold leading-[15px] text-[#090b12] shadow-[0_2px_6px_rgba(0,0,0,0.4)]">
+                    畅聊中
+                  </span>
+                ) : null}
               </button>
             </DialogPrimitive.Trigger>
           </div>
