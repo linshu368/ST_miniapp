@@ -74,6 +74,8 @@ def main() -> int:
     active_names = {p.name for p in active}
     candidates = []
     for task_dir in active:
+        if read_task(task_dir).get("status") == "paused":
+            continue
         last = last_commit_date(task_dir)
         if last is None or last >= cutoff:
             continue
