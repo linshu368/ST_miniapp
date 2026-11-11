@@ -89,6 +89,12 @@ const RULES = [
     id: 'st-handle',
     pattern: /\bst_handle\b|\bst_initialized_at\b|\bderiveStHandle\b|st-bridge/g,
     message: 'ST 身份映射已退场（迁移 111/112）。用户身份只用 app_core.users.tg_id',
+    // Read-only historical eligibility evidence: production still retains the optional marker.
+    // No provisioning, identity mapping or writes to the retired column.
+    allow: [
+      'packages/shared/migrations/20261111_mujian_entry_funnel.sql',
+      'scripts/mujian-entry-assertions.sql',
+    ],
   },
 
   // ── 一个关键行为一条主路径 ──────────────────────────────────────────────

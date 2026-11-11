@@ -24,6 +24,7 @@ import { fastifyLoggerOptions } from './lib/logger.js';
 import { registerRequestPerf, startRuntimeMetrics } from './lib/perf-metrics.js';
 import { bindRequestSentryContext } from './lib/sentry.js';
 import { config } from './platform/config.js';
+import { getMujianOrigin } from './platform/runtime-config.js';
 import adminCliSessionRoutes from './routes/admin-cli-session.js';
 import adminSupabaseProxyRoutes from './routes/admin-supabase-proxy.js';
 import alertRoutes from './routes/alerts.js';
@@ -77,7 +78,7 @@ export async function buildApp() {
   await registerCors(app, {
     frontendUrl: config.frontendUrl,
     adminPlatformUrl: config.adminPlatformUrl,
-    frontendAllowedOrigins: config.frontendAllowedOrigins,
+    frontendAllowedOrigins: [...config.frontendAllowedOrigins, getMujianOrigin()],
     development:
       config.nodeEnv !== 'production' ||
       (config.database.target === 'test' && config.devAuthBypass),
