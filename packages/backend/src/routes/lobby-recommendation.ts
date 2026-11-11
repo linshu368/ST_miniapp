@@ -25,7 +25,7 @@ export default async function lobbyRecommendationRoutes(app: FastifyInstance) {
     const started = performance.now();
     try {
       const user = await getOrCreateDbUser(request.user);
-      const data = await getLobbyRecommendation(user.id, parsed.data, request.log);
+      const data = await getLobbyRecommendation(user.id, parsed.data, request.log, user.created_at);
       if (parsed.data.include_head_cards) {
         const cards = await loadLobbyHeadCards(data.character_ids, request.log);
         const head = cards.map((card) => card.id);

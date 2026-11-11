@@ -15,7 +15,9 @@ import { discoverableCharacterWhere } from '../creator/access.js';
 import { buildRecommendedOrder } from './recommended-ranking.js';
 import { loadCharacterRankingScores } from './ranking-stats.js';
 import {
+  buildNewUserOrder,
   buildRecommendationOrder,
+  isNewUserFixedHeadWindow,
   recommendationHash,
   type RecommendationCandidate,
 } from './recommendation-ranking.js';
@@ -137,9 +139,11 @@ async function filterVisibleBatch(
 export async function getLobbyRecommendation(
   userId: string,
   request: LobbyRecommendationRequest,
-  log: FastifyBaseLogger
+  log: FastifyBaseLogger,
+  userCreatedAt?: string
 ): Promise<LobbyRecommendationData> {
   const now = new Date();
+  const fixedForNewUser = isNewUserFixedHeadWindow(userCreatedAt, now.getTime());
   const saved = await readReusableRecommendation(prisma, userId, request, now);
   if (saved) {
     // A role may have gone private since this order was saved. Revalidate just IDs;
@@ -147,9 +151,11 @@ export async function getLobbyRecommendation(
     return filterVisibleBatch(saved);
   }
   const seed = recommendationHash(request.request_id);
+  // 固定种子：冷启动卡的插入位置也不随请求变化，新用户头部才真正稳定。
+  const rankingSeed = fixedForNewUser ? 0 : seed;
   const [config, { candidates, snapshot, ordered, fallbackOrder }] = await Promise.all([
     loadLobbyRotationConfig(log),
-    prepareRanking(seed),
+    prepareRanking(rankingSeed),
   ]);
   const generated: Array<{ headCount: number; repeatCount: number; degraded: boolean }> = [];
   const result = await updateRecommendation(prisma, userId, request, {
@@ -157,16 +163,18 @@ export async function getLobbyRecommendation(
     config,
     visibleIds: candidates.map((candidate) => candidate.id),
     build: (exposures, recent) => {
-      const order = buildRecommendationOrder({
-        candidates: ordered,
-        fallbackOrder,
-        snapshot,
-        exposures,
-        recent,
-        config,
-        seed,
-        now: now.getTime(),
-      });
+      const order = fixedForNewUser
+        ? buildNewUserOrder(candidates, fallbackOrder)
+        : buildRecommendationOrder({
+            candidates: ordered,
+            fallbackOrder,
+            snapshot,
+            exposures,
+            recent,
+            config,
+            seed,
+            now: now.getTime(),
+          });
       const previousHead = new Set(recent[0]?.characterIds ?? []);
       generated.push({
         headCount: order.headIds.length,
@@ -184,6 +192,7 @@ export async function getLobbyRecommendation(
         event: 'lobby_rotation.generated',
         ...generatedSummary,
         action: request.action,
+        newUserFixed: fixedForNewUser,
       },
       '推荐新批次已保存'
     );
