@@ -30,8 +30,8 @@ describe('mobile performance policy', () => {
     expect(android.backgroundRoutePrefetchLimit).toBe(1);
     expect(ios.backgroundRoutePrefetchLimit).toBe(2);
     expect(getMobilePerformancePolicy('unknown').backgroundRoutePrefetchLimit).toBe(2);
-    expect(android.lobbyRequestTimeoutMs).toBe(1_800);
-    expect(getMobilePerformancePolicy('android_x').lobbyRequestTimeoutMs).toBe(1_800);
+    expect(android.lobbyRequestTimeoutMs).toBe(4_000);
+    expect(getMobilePerformancePolicy('android_x').lobbyRequestTimeoutMs).toBe(4_000);
     expect(ios.lobbyRequestTimeoutMs).toBe(20_000);
     expect(getMobilePerformancePolicy('unknown').lobbyRequestTimeoutMs).toBe(20_000);
     expect(android.characters).toMatchObject({

@@ -1,0 +1,40 @@
+{
+  "id": "characters-chat-root-cause",
+  "name": "characters-chat-root-cause",
+  "title": "Diagnose characters and chat page failures and stalls",
+  "description": "Read-only root-cause analysis of existing production errors and four-second stalls",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P2",
+  "creator": "cline",
+  "assignee": "cline",
+  "createdAt": "2026-11-10",
+  "completedAt": "2026-11-10",
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    ".trellis/tasks/11-10-characters-chat-root-cause/report.md",
+    ".trellis/tasks/11-10-characters-chat-root-cause/evidence.json"
+  ],
+  "notes": "Read-only audit: 30 errors, 280 stalls, 47 server starts, 525 HTTP 5xx and 504 CORS rejections reconciled. No production changes. Exact causality remains incomplete for 10 chat errors and Vercel resource-load failures.",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "no_module_change",
+      "reason": "Read-only monitoring and deployment correlation audit only."
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "Only measures existing mobile failures and stalls; no code or deployment changes."
+    }
+  }
+}

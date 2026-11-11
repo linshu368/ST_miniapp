@@ -1,16 +1,21 @@
 'use client';
 
+import { useEntryEnrichReady } from '@/lib/entry-phase';
+import type { ReplyChoicePayload } from '@miniapp/reply-renderer';
+import { CHAT_MESSAGE_EDIT_ROUNDS, type ChatMessage } from '@miniapp/shared';
+import { ArrowDown, Loader2 } from 'lucide-react';
+import dynamic from 'next/dynamic';
 import type { ReactNode } from 'react';
 import { useChatMessageScroll } from './use-chat-message-scroll';
-import { ArrowDown, Loader2 } from 'lucide-react';
-import { CHAT_MESSAGE_EDIT_ROUNDS, type ChatMessage } from '@miniapp/shared';
-import type { ReplyChoicePayload } from '@miniapp/reply-renderer';
 
 import type { AssistantBodyPlan } from '@/lib/text-postprocess/reply-plan';
 
-import { ChatMessageBubble, ChatTypingBubble } from './chat-message-bubble';
 import { messageThinkingKey, type MessageThinkingMap } from '@/lib/chat-thinking';
-import { ChatGuide } from '@/components/onboarding/chat-guide';
+import { ChatMessageBubble, ChatTypingBubble } from './chat-message-bubble';
+const ChatGuide = dynamic(
+  () => import('@/components/onboarding/chat-guide').then((module) => module.ChatGuide),
+  { ssr: false }
+);
 
 interface ChatMessageListProps {
   /** 已按 turn_index 升序，包含正在流式写入的那条 */
@@ -43,6 +48,7 @@ interface ChatMessageListProps {
 }
 
 export function ChatMessageList(props: ChatMessageListProps) {
+  const enrichReady = useEntryEnrichReady();
   const {
     messages,
     characterName,
@@ -115,7 +121,7 @@ export function ChatMessageList(props: ChatMessageListProps) {
               stalled={replyStalled}
             />
           ) : null}
-          {messages.length > 0 ? (
+          {enrichReady && messages.length > 0 ? (
             <ChatGuide
               messages={messages}
               busy={

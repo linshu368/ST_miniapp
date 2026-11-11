@@ -1,0 +1,40 @@
+{
+  "id": "seven-day-page-performance",
+  "name": "seven-day-page-performance",
+  "title": "Audit seven-day production page performance",
+  "description": "Read-only seven-day production performance audit",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P2",
+  "creator": "cline",
+  "assignee": "cline",
+  "createdAt": "2026-11-10",
+  "completedAt": "2026-11-10",
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    ".trellis/tasks/11-10-seven-day-page-performance/report.md",
+    ".trellis/tasks/11-10-seven-day-page-performance/evidence.json"
+  ],
+  "notes": "Read-only audit delivered in report.md with sanitized aggregate evidence.json. Verified all 28 route groups, P95/N label joins, 525 Railway 5xx, 40 page errors, 477 stalls, 37 API timeouts. No product or production mutations.",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "no_module_change",
+      "reason": "Read-only monitoring audit and aggregate report; no runtime module changes."
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "Measures existing per-route Android/iOS page and API P95; no code, configuration, database or deployment changes and no release verification."
+    }
+  }
+}

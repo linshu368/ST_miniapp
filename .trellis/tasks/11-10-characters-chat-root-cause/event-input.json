@@ -1,0 +1,157 @@
+[
+  {
+    "id": "a524cd576a8745fda79cd3cb2fb5f763",
+    "issue": "ST-MINIAPP-4Y",
+    "kind": "chat_stall"
+  },
+  {
+    "id": "9c5bafc91b174ec1b254d1e84bf6c4ae",
+    "issue": "ST-MINIAPP-4Y",
+    "kind": "chat_stall"
+  },
+  {
+    "id": "ffd0df7e09924af89e4257fca61f7897",
+    "issue": "ST-MINIAPP-4Y",
+    "kind": "chat_stall"
+  },
+  {
+    "id": "a6c6efbb721944fe9ae87667763f5b21",
+    "issue": "ST-MINIAPP-4Y",
+    "kind": "chat_stall"
+  },
+  {
+    "id": "8bafbe26deb2485f8ca901af05270f1e",
+    "issue": "ST-MINIAPP-4Y",
+    "kind": "chat_stall"
+  },
+  {
+    "id": "21129d20390c4ea6a7657619c55abddf",
+    "issue": "ST-MINIAPP-4Y",
+    "kind": "chat_stall"
+  },
+  {
+    "id": "b7b9a0a1b85b4d5e83d9f751cd98e3aa",
+    "issue": "ST-MINIAPP-4Y",
+    "kind": "chat_stall"
+  },
+  {
+    "id": "babe085eb44842949e48e191db42822b",
+    "issue": "ST-MINIAPP-4Y",
+    "kind": "chat_stall"
+  },
+  {
+    "id": "2c44997f7fa0421d835406f302273d24",
+    "issue": "ST-MINIAPP-4Y",
+    "kind": "chat_stall"
+  },
+  {
+    "id": "8039786482c04726ad9e2b9684ee4397",
+    "issue": "ST-MINIAPP-4Y",
+    "kind": "chat_stall"
+  },
+  {
+    "id": "cabf84add3f64ef68520afa06fd9bb4a",
+    "issue": "ST-MINIAPP-4Y",
+    "kind": "chat_stall"
+  },
+  {
+    "id": "ddf6833ba5694ce88d02f3a4c76b2f54",
+    "issue": "ST-MINIAPP-4Y",
+    "kind": "chat_stall"
+  },
+  {
+    "id": "c478d892e880403481b82c014a576e9c",
+    "issue": "ST-MINIAPP-4Y",
+    "kind": "chat_stall"
+  },
+  {
+    "id": "1706b9b5c8774f54a14eec71baf0bbab",
+    "issue": "ST-MINIAPP-4Y",
+    "kind": "chat_stall"
+  },
+  {
+    "id": "9d90d4ef8b4c4bb6a950425dbc26b132",
+    "issue": "ST-MINIAPP-4Y",
+    "kind": "chat_stall"
+  },
+  {
+    "id": "6cb2e15b1ab34ff9af5126db28ab8f28",
+    "issue": "ST-MINIAPP-4Y",
+    "kind": "chat_stall"
+  },
+  {
+    "id": "c4b1bd602cc04f1c811df40696cc1129",
+    "issue": "ST-MINIAPP-4Y",
+    "kind": "chat_stall"
+  },
+  {
+    "id": "2c6902c75ad945898e87e0c2f3330743",
+    "issue": "ST-MINIAPP-4Y",
+    "kind": "chat_stall"
+  },
+  {
+    "id": "c0a6e82c28304c11b3c7c0e85dc12986",
+    "issue": "ST-MINIAPP-4Y",
+    "kind": "chat_stall"
+  },
+  {
+    "id": "d058e86b58274715aab2d713b1b71d79",
+    "issue": "ST-MINIAPP-4Y",
+    "kind": "chat_stall"
+  },
+  {
+    "id": "c5d7cb3dab5f433a9ed76c210b9e52d1",
+    "issue": "ST-MINIAPP-4Y",
+    "kind": "chat_stall"
+  },
+  {
+    "id": "7d693a4c1b324ee1bc56110110c8fe58",
+    "issue": "ST-MINIAPP-59",
+    "kind": "characters_stall"
+  },
+  {
+    "id": "c38859d3f64b4d928dbba1452c17f4da",
+    "issue": "ST-MINIAPP-59",
+    "kind": "characters_stall"
+  },
+  {
+    "id": "e3c75a8dd78b43da81c5a3da85a1a175",
+    "issue": "ST-MINIAPP-59",
+    "kind": "characters_stall"
+  },
+  {
+    "id": "83e17da5c47b431bb9038f3eb342971b",
+    "issue": "ST-MINIAPP-59",
+    "kind": "characters_stall"
+  },
+  {
+    "id": "976745fea81344f48fb24caddb21f104",
+    "issue": "ST-MINIAPP-59",
+    "kind": "characters_stall"
+  },
+  {
+    "id": "090d8e2cac8b47bf9d744031861d1bd3",
+    "issue": "ST-MINIAPP-59",
+    "kind": "characters_stall"
+  },
+  {
+    "id": "0e9069fe70e64568b0cfe1bb4e0bf46d",
+    "issue": "ST-MINIAPP-59",
+    "kind": "characters_stall"
+  },
+  {
+    "id": "1b11cd3a4ab6402cab638f189aaebed4",
+    "issue": "ST-MINIAPP-7C",
+    "kind": "exception"
+  },
+  {
+    "id": "0974a16b24454d0cb840b4671bab6fb6",
+    "issue": "ST-MINIAPP-4",
+    "kind": "exception"
+  },
+  {
+    "id": "41fbd28a3dcb4050a77b167145b3ee83",
+    "issue": "ST-MINIAPP-1P",
+    "kind": "exception"
+  }
+]

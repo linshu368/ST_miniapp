@@ -2,6 +2,8 @@
 
 ---
 
+2026-11-11 clarification: existing planning gates, including the mobile_performance declaration checked by task.py start, remain in force. Future development does not require fixed-sample local performance testing or the paused 11-11 mechanism. Task-specific acceptance commitments remain applicable.
+
 ## Core Principles
 
 1. **Plan before code** — figure out what to do before you start

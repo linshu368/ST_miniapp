@@ -224,7 +224,7 @@ describe.skipIf(!canRunAgainstDatabase)(
       expect(rows.map((row) => row.revision)).toEqual([0, 1, 2, 3]);
       expect(rows.at(-1)?.assistant_reply).toBe('版本 3');
 
-      const page = await history.listMessages(session.id, FIRST_MES);
+      const page = await history.listMessages(session.id, FIRST_MES, { userId: session.user_id });
       expect(page.messages.filter((message) => message.turn_index === 1)).toHaveLength(2);
       expect(page.messages.find((message) => message.role === 'assistant')?.content).toBe(
         FIRST_MES
