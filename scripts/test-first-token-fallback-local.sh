@@ -104,7 +104,7 @@ ALTER TABLE app_core.runtime_config ADD COLUMN description text, ADD COLUMN vers
   ADD COLUMN updated_at timestamptz DEFAULT now(), ADD COLUMN text_value text;
 CREATE TABLE app_core.characters(id uuid PRIMARY KEY);
 SQL
-for task_file in fixtures/vip_billing_t2_harness.sql 20260924_vip_billing_schema_pg_cron_compat.sql 20260921_wallet_debit_refund.sql tests/vip_llm_t4_setup.sql 20260922_llm_vip_wallet_charge.sql; do
+for task_file in fixtures/vip_billing_t2_harness.sql 20260924_vip_billing_schema_pg_cron_compat.sql 20260921_wallet_debit_refund.sql 20261111_light_text_bonus_first_debit.sql tests/vip_llm_t4_setup.sql 20260922_llm_vip_wallet_charge.sql; do
   "${task_psql[@]}" -f "$task_root/packages/shared/migrations/$task_file" >/dev/null
 done
 # Apply the original quota definition with the schema split's canonical names.

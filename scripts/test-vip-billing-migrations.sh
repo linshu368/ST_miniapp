@@ -55,6 +55,7 @@ SQL
 for file in \
   20260924_vip_billing_schema_pg_cron_compat.sql \
   20260921_wallet_debit_refund.sql \
+  20261111_light_text_bonus_first_debit.sql \
   20260921_vip_payment_fulfillment.sql \
   20260921_feature_free_trial_checkin_reminder.sql
 do

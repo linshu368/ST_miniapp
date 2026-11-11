@@ -459,7 +459,7 @@ describe('wallet policy and splits', () => {
     ).toBe(true);
   });
 
-  it('allocates light-text combination debit atomically and refunds the same split', () => {
+  it('allocates light-text combination debit bonus-first, atomically, and refunds the same split', () => {
     const combination = allocateWalletDebit({
       policy: 'main_then_bonus',
       amount: 13,
@@ -472,9 +472,29 @@ describe('wallet policy and splits', () => {
       value: {
         policy: 'main_then_bonus',
         debit_key: 'llm:msg-1',
-        main_credits: 10,
-        bonus_credits: 3,
+        main_credits: 0,
+        bonus_credits: 13,
         total_credits: 13,
+      },
+    });
+
+    // 专项不够时，先扣光专项，再用通用补足。
+    expect(
+      allocateWalletDebit({
+        policy: 'main_then_bonus',
+        amount: 25,
+        main_credits: 10,
+        bonus_credits: 20,
+        debit_key: 'llm:msg-1b',
+      })
+    ).toEqual({
+      ok: true,
+      value: {
+        policy: 'main_then_bonus',
+        debit_key: 'llm:msg-1b',
+        main_credits: 5,
+        bonus_credits: 20,
+        total_credits: 25,
       },
     });
 
@@ -513,7 +533,7 @@ describe('wallet policy and splits', () => {
 
     expect(
       allocateWalletRefund({
-        original_debit: { main_credits: 10, bonus_credits: 3, total_credits: 13 },
+        original_debit: { main_credits: 0, bonus_credits: 13, total_credits: 13 },
         refund_key: 'refund:llm:msg-1',
         debit_key: 'llm:msg-1',
       })
@@ -522,8 +542,8 @@ describe('wallet policy and splits', () => {
       value: {
         refund_key: 'refund:llm:msg-1',
         debit_key: 'llm:msg-1',
-        main_credits: 10,
-        bonus_credits: 3,
+        main_credits: 0,
+        bonus_credits: 13,
         total_credits: 13,
       },
     });
