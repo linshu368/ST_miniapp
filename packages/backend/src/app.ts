@@ -46,6 +46,10 @@ import {
 } from './features/image-plaza/job.js';
 import { startStoryMemoryJob, stopStoryMemoryJob } from './features/story-memory/worker.js';
 import {
+  startFreeZoneEvaluationJob,
+  stopFreeZoneEvaluationJob,
+} from './features/free-zone/evaluation-job.js';
+import {
   startLobbyRankingRefreshJob,
   stopLobbyRankingRefreshJob,
 } from './lib/lobby-ranking-refresh-job.js';
@@ -196,6 +200,7 @@ export async function buildApp() {
   startChatImageGenerationJob(app.log);
   startImagePlazaGenerationJob(app.log);
   startStoryMemoryJob(app.log);
+  startFreeZoneEvaluationJob(app.log);
 
   const stopRuntimeMetrics = startRuntimeMetrics();
 
@@ -206,6 +211,7 @@ export async function buildApp() {
     stopChatImageGenerationJob();
     stopImagePlazaGenerationJob();
     stopStoryMemoryJob();
+    stopFreeZoneEvaluationJob();
     shutdownTextPostprocessValidation();
     await stopEngineeringTelemetry();
   });

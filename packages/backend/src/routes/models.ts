@@ -1,7 +1,8 @@
-import { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import {
   fail,
   GetModelCatalogQuerySchema,
+  isFreeZoneModelId,
   LlmModelProviderSchema,
   ok,
   resolveEnabledCatalogModel,
@@ -9,6 +10,8 @@ import {
 } from '@miniapp/shared';
 import type {
   GetModelCatalogData,
+  ModelCatalog,
+  ModelCatalogTierKey,
   OpenRouterModelDirectory,
   ProviderModelDirectory,
   SelectModelData,
@@ -26,16 +29,76 @@ import { VipStatusService } from '../features/vip/vip-status.js';
 import { getCharacterCreatorOwner } from '../features/generation/creator-billing.js';
 import { canUseCharacter } from '../features/creator/access.js';
 import {
+  resolveCatalogFreeZone,
+  resolveFreeZoneSelection,
+} from '../features/free-zone/selection.js';
+import {
   coverageForTextWallet,
   presentTextModelCatalog,
   quoteAcceptedTextUsage,
   resolveTextModelSelection,
+  type TextWalletDenial,
 } from '../features/generation/text-billing.js';
 
 export default async function modelsRoutes(app: FastifyInstance) {
   const settings = new MiniappUserSettingsRepository();
   const wallets = new MiniappWalletRepository();
   const vip = new VipStatusService();
+
+  /** 切到付费模型前先看可用钱包够不够这一档的实扣；不够返回拒绝原因。 */
+  async function paidSelectionWalletBlock(input: {
+    userId: string;
+    characterId: string | undefined;
+    entitlement: Awaited<ReturnType<VipStatusService['getStatus']>>;
+    modelId: string;
+    tier: ModelCatalogTierKey | null;
+    log: ReturnType<typeof requestLogger>;
+  }): Promise<{ code: TextWalletDenial; message: string } | null> {
+    const quotedTier = input.tier ?? 'standard';
+    const [wallet, pricing, strategy, creatorUserId] = await Promise.all([
+      wallets.getOrCreate(input.userId),
+      getPricingConfig(),
+      readVipStrategy(),
+      getCharacterCreatorOwner(input.characterId ?? null),
+    ]);
+    const quote = quoteAcceptedTextUsage({
+      originalCredits: pricing.fixedDeduction[quotedTier],
+      tier: quotedTier,
+      isVip: input.entitlement.active,
+      isFreeRound: false,
+      vipValidUntil: input.entitlement.valid_until,
+      discountRate: strategy.discountRate,
+      discountConfigVersion: strategy.discountVersion,
+      creatorSelf: creatorUserId === input.userId,
+    });
+    const coverage = coverageForTextWallet({
+      policy: quote.wallet_policy,
+      payableCredits: quote.payable_credits,
+      mainCredits: wallet.main_credits,
+      bonusCredits: wallet.bonus_credits,
+    });
+    if (coverage.ok) return null;
+    input.log.biz.info(
+      {
+        event: 'models.select.wallet_blocked',
+        userId: input.userId,
+        modelId: input.modelId,
+        tier: input.tier,
+        policy: quote.wallet_policy,
+        code: coverage.code,
+        available: coverage.available,
+        required: quote.payable_credits,
+      },
+      '模型切换被可用钱包拒绝'
+    );
+    return {
+      code: coverage.code,
+      message:
+        coverage.code === 'MAIN_CREDITS_INSUFFICIENT'
+          ? '充值星尘不足，标准/旗舰模型不能使用专项星尘'
+          : '星尘余额不足，请先充值后再切换付费模型',
+    };
+  }
 
   // @frontend-ready: true
   app.get('/api/platform/openrouter/models', async (request, reply) => {
@@ -92,12 +155,42 @@ export default async function modelsRoutes(app: FastifyInstance) {
           readVipStrategy(),
           getCharacterCreatorOwner(characterId ?? null),
         ]);
+      const isOwnCard = creatorUserId === dbUser.id;
+      const freeZone = await resolveCatalogFreeZone({
+        userId: dbUser.id,
+        characterId: characterId ?? null,
+        settingsModelId: userSettings.selected_model_id,
+        catalog: snapshot.catalog,
+        isOwnCard,
+        pricing: pricing.fixedDeduction,
+      });
       const selection = resolveTextModelSelection({
         catalog: snapshot.catalog,
-        persistedModelId: userSettings.selected_model_id,
+        persistedModelId: freeZone.usable ? null : freeZone.modelId,
         vipActive: entitlement.active,
       });
-      const selectedModel = resolveEnabledCatalogModel(snapshot.catalog, selection.modelId);
+      const catalogModel = resolveEnabledCatalogModel(snapshot.catalog, selection.modelId);
+      // 畅聊免费模型不在付费目录里，选中时按它自己的 Surplus 上游返回。
+      const selectedModel = freeZone.usable
+        ? {
+            id: freeZone.usable.candidate.id,
+            openrouter_model_id: freeZone.usable.candidate.surplus_model,
+            provider: 'surplus' as const,
+            provider_model_id: freeZone.usable.candidate.surplus_model,
+          }
+        : catalogModel;
+      if (freeZone.replacement) {
+        log.biz.info(
+          {
+            event: 'models.config.free_zone_replaced',
+            userId: dbUser.id,
+            fromModelId: userSettings.selected_model_id,
+            toModelId: selectedModel.id,
+            reason: freeZone.replacement.reason,
+          },
+          '畅聊模型不可用，已自动替换'
+        );
+      }
 
       if (userSettings.selected_model_id !== selectedModel.id) {
         try {
@@ -134,7 +227,7 @@ export default async function modelsRoutes(app: FastifyInstance) {
             pricing: pricing.fixedDeduction,
             vip: entitlement,
             discountRate: strategy.discountRate,
-            creatorSelf: creatorUserId === dbUser.id,
+            creatorSelf: isOwnCard,
           }),
           selected_model_id: selectedModel.id,
           selected_openrouter_model_id: selectedModel.openrouter_model_id,
@@ -146,6 +239,7 @@ export default async function modelsRoutes(app: FastifyInstance) {
             remaining_days: entitlement.remaining_days,
             valid_until: entitlement.valid_until,
           },
+          free_zone: freeZone.view,
         })
       );
     }
@@ -173,6 +267,21 @@ export default async function modelsRoutes(app: FastifyInstance) {
         if (characterId && !(await canUseCharacter(dbUser.id, characterId))) {
           return reply.status(404).send(fail('CHARACTER_NOT_FOUND', '角色不可用'));
         }
+        if (isFreeZoneModelId(parsed.data.model_id)) {
+          const freeZone = {
+            modelId: parsed.data.model_id,
+            catalog: snapshot.catalog,
+            characterId,
+          };
+          return selectFreeZoneModel({
+            ...freeZone,
+            reply,
+            request,
+            userId: dbUser.id,
+            log,
+            settings,
+          });
+        }
         const selectedModel = resolveEnabledCatalogModel(snapshot.catalog, parsed.data.model_id);
         const selectedTier =
           snapshot.catalog.tiers.find((tier) =>
@@ -197,50 +306,16 @@ export default async function modelsRoutes(app: FastifyInstance) {
           return reply.status(403).send(fail('VIP_REQUIRED', '标准/旗舰模型需要有效 VIP'));
         }
 
-        const quotedTier = selectedTier ?? 'standard';
         if (!selectedModel.is_free) {
-          const [wallet, pricing, strategy, creatorUserId] = await Promise.all([
-            wallets.getOrCreate(dbUser.id),
-            getPricingConfig(),
-            readVipStrategy(),
-            getCharacterCreatorOwner(characterId ?? null),
-          ]);
-          const quote = quoteAcceptedTextUsage({
-            originalCredits: pricing.fixedDeduction[quotedTier],
-            tier: quotedTier,
-            isVip: entitlement.active,
-            isFreeRound: false,
-            vipValidUntil: entitlement.valid_until,
-            discountRate: strategy.discountRate,
-            discountConfigVersion: strategy.discountVersion,
-            creatorSelf: creatorUserId === dbUser.id,
+          const blocked = await paidSelectionWalletBlock({
+            userId: dbUser.id,
+            characterId,
+            entitlement,
+            modelId: selectedModel.id,
+            tier: selectedTier,
+            log,
           });
-          const coverage = coverageForTextWallet({
-            policy: quote.wallet_policy,
-            payableCredits: quote.payable_credits,
-            mainCredits: wallet.main_credits,
-            bonusCredits: wallet.bonus_credits,
-          });
-          if (!coverage.ok) {
-            log.biz.info(
-              {
-                event: 'models.select.wallet_blocked',
-                userId: dbUser.id,
-                modelId: selectedModel.id,
-                tier: selectedTier,
-                policy: quote.wallet_policy,
-                code: coverage.code,
-                available: coverage.available,
-                required: quote.payable_credits,
-              },
-              '模型切换被可用钱包拒绝'
-            );
-            const message =
-              coverage.code === 'MAIN_CREDITS_INSUFFICIENT'
-                ? '充值星尘不足，标准/旗舰模型不能使用专项星尘'
-                : '星尘余额不足，请先充值后再切换付费模型';
-            return reply.status(402).send(fail(coverage.code, message));
-          }
+          if (blocked) return reply.status(402).send(fail(blocked.code, blocked.message));
         }
 
         await settings.setSelectedModelId(dbUser.id, request.user, selectedModel.id);
@@ -270,5 +345,55 @@ export default async function modelsRoutes(app: FastifyInstance) {
         return reply.status(400).send(fail('MODEL_UNAVAILABLE', '该模型暂不可用'));
       }
     }
+  );
+}
+
+/**
+ * 选畅聊免费模型：只看此刻对这张卡开不开放，不查钱包也不查 VIP（应扣 0）。
+ */
+async function selectFreeZoneModel(input: {
+  modelId: string;
+  catalog: ModelCatalog;
+  characterId: string | undefined;
+  userId: string;
+  request: FastifyRequest;
+  reply: FastifyReply;
+  log: ReturnType<typeof requestLogger>;
+  settings: MiniappUserSettingsRepository;
+}) {
+  const { reply, log, userId, settings } = input;
+  const decision = await resolveFreeZoneSelection({
+    persistedModelId: input.modelId,
+    userId,
+    characterId: input.characterId ?? null,
+    catalog: input.catalog,
+  });
+  if (decision?.kind !== 'usable' || !input.request.user) {
+    log.biz.info(
+      { event: 'models.select.free_zone_unavailable', userId, modelId: input.modelId },
+      '畅聊模型此刻不可用'
+    );
+    return reply.status(409).send(fail('FREE_ZONE_UNAVAILABLE', '畅聊模型暂未开放'));
+  }
+  const { candidate } = decision.listed;
+  await settings.setSelectedModelId(userId, input.request.user, candidate.id);
+  log.biz.info(
+    {
+      event: 'models.select.done',
+      userId,
+      modelId: candidate.id,
+      provider: 'surplus',
+      model: candidate.surplus_model,
+      freeZone: true,
+    },
+    '用户切换模型'
+  );
+  return reply.send(
+    ok<SelectModelData>({
+      model_id: candidate.id,
+      openrouter_model_id: candidate.surplus_model,
+      provider: 'surplus',
+      provider_model_id: candidate.surplus_model,
+    })
   );
 }
