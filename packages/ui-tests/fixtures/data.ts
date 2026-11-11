@@ -1,3 +1,4 @@
+import { FREE_ZONE_SCENARIOS } from './free-zone.js';
 import {
   DEFAULT_PAYMENT_CHANNELS_CONFIG,
   DEFAULT_WORD_COUNT_TIERS_CONFIG,
@@ -229,6 +230,22 @@ export const scenarios = {
   'chat-surplus-fallback': {
     label: 'Surplus Intelligence 兜底',
     description: '模拟 Surplus 主调用慢、OpenRouter 兜底交付；原模型选择保持',
+    path: `/chat/${IDS.character}?session=${IDS.session}&from=discover`,
+  },
+  'free-zone': {
+    ...FREE_ZONE_SCENARIOS['free-zone'],
+    path: `/chat/${IDS.character}?session=${IDS.session}&from=discover`,
+  },
+  'free-zone-not-started': {
+    ...FREE_ZONE_SCENARIOS['free-zone-not-started'],
+    path: `/chat/${IDS.character}?session=${IDS.session}&from=discover`,
+  },
+  'free-zone-own-card': {
+    ...FREE_ZONE_SCENARIOS['free-zone-own-card'],
+    path: `/chat/${IDS.character}?session=${IDS.session}&from=discover`,
+  },
+  'free-zone-replaced': {
+    ...FREE_ZONE_SCENARIOS['free-zone-replaced'],
     path: `/chat/${IDS.character}?session=${IDS.session}&from=discover`,
   },
   'chat-late-first-token': {
