@@ -21,6 +21,7 @@ import { usePaymentPlansQuery } from '@/lib/api/payment';
 import { useVipStatusQuery } from '@/lib/api/vip';
 import { redirectToRecharge } from '@/lib/recharge-redirect';
 import { cn } from '@/lib/utils';
+import { freeZoneClosedHint, selectedFreeZoneModel } from '@/lib/free-zone';
 import { formatYuanShort } from '@/lib/utils/payment';
 import {
   billingFailureAction,
@@ -30,6 +31,8 @@ import {
   publishedDiscountRate,
   formatDiscountLabel,
 } from '@/lib/vip/presentation';
+
+import { ChatFreeZoneSection } from './chat-free-zone-section';
 
 /**
  * 切换生成模型。版式照搬原版的 ModelTierSwitcher：当前引擎条、可折叠档位、
@@ -80,9 +83,12 @@ export function ChatModelSwitcher({
 
   const selectedId = data?.selected_model_id ?? '';
   const allModels = data?.catalog.tiers.flatMap((tier) => tier.models) ?? [];
-  const selectedModel =
-    allModels.find((model) => model.id === selectedId) ??
-    allModels.find((model) => model.id === data?.catalog.default_model_id);
+  // 畅聊免费模型不在付费三档里，选中时单独取名字和样式。
+  const freeSelected = selectedFreeZoneModel(data);
+  const selectedModel = freeSelected
+    ? null
+    : (allModels.find((model) => model.id === selectedId) ??
+      allModels.find((model) => model.id === data?.catalog.default_model_id));
   const selectedTier = data?.catalog.tiers.find((tier) =>
     tier.models.some((model) => model.id === selectedModel?.id)
   );
@@ -150,6 +156,7 @@ export function ChatModelSwitcher({
   );
   const vipPlans = paymentPlans.data?.vip_plans ?? [];
   const vipBenefits = vipStatus.data?.benefits;
+  const freeZone = data.free_zone ?? null;
 
   return (
     <div className="space-y-4">
@@ -162,20 +169,30 @@ export function ChatModelSwitcher({
         <div className="relative z-10 flex items-center gap-3">
           <span
             className="model-tier-pulse size-3 shrink-0 rounded-full"
-            style={{ backgroundColor: selectedTier?.color ?? 'hsl(var(--primary))' }}
+            style={{
+              backgroundColor: freeSelected
+                ? 'hsl(var(--primary-bright))'
+                : (selectedTier?.color ?? 'hsl(var(--primary))'),
+            }}
           />
           <div className="min-w-0 flex-1">
             <p className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
               当前引擎
             </p>
             <p className="truncate text-[15px] font-semibold text-foreground">
-              {selectedModel?.display_name ?? '等待选择'}
+              {freeSelected?.display_name ?? selectedModel?.display_name ?? '等待选择'}
             </p>
           </div>
           {isFetching ? (
             <span className="shrink-0 text-[10px] text-muted-foreground">同步中</span>
           ) : null}
+          {!isFetching && freeSelected ? (
+            <span className="shrink-0 rounded-full border border-primary-bright/45 bg-primary-bright/10 px-2.5 py-1 text-[10px] font-bold text-primary-bright">
+              畅聊 · 0 星尘
+            </span>
+          ) : null}
           {!isFetching &&
+          !freeSelected &&
           (data.vip_status?.active || selectedTier?.discount_source === 'creator') &&
           discountLabel ? (
             <span className="shrink-0 rounded-full border border-success/40 bg-success/10 px-2.5 py-1 text-[10px] font-bold text-success">
@@ -209,6 +226,19 @@ export function ChatModelSwitcher({
       ) : null}
 
       <div className="space-y-3">
+        {freeZone ? (
+          <ChatFreeZoneSection
+            zone={freeZone}
+            tiers={data.catalog.tiers}
+            selectedId={selectedId}
+            selecting={selectModel.isPending}
+            onSelect={(modelId) => void handleSelect(modelId)}
+            onClosedTap={() => {
+              setError(null);
+              setFeedback(freeZoneClosedHint(freeZone));
+            }}
+          />
+        ) : null}
         {data.catalog.tiers.map((tier) => (
           <TierSection
             key={tier.key}

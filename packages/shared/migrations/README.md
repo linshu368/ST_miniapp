@@ -1,5 +1,15 @@
 # SQL 迁移文件
 
+## 2026-11-12 畅聊（免费模型）栏目（本地 PG17 验证，远端未执行）
+
+`20261112_free_zone.sql`（domain: miniapp_features + miniapp_analytics 只读投影 + admin managed key）。前置：已有 `miniapp_analytics.chat_first_token_facts`、`experience.surplusintelligence_chat_history`、`experience.chat_reply_feedback`。
+
+- 新增 `miniapp_features.free_zone_models`（每个候选一行当前上下架状态，唯一写入方是后端评估任务）与 `free_zone_events`（只追加的上下架记录）。RLS 开启，撤销 PUBLIC/anon/authenticated；events 只给 INSERT/SELECT。
+- 新增四个只读视图 `miniapp_analytics.free_zone_turn_facts / free_zone_dislikes / free_zone_model_states / free_zone_model_events`，评估任务与 Grafana 共用同一口径；存在 `first_token_metrics_reader` 时授予 SELECT（Grafana 经此角色读取，不需要基表权限）。
+- `free_zone_config` 加入 managed key（包装函数复制原 ACL、放宽两表 CHECK）。不插入 runtime_config 行：后端缺省视为总开关关、候选为空。
+- 验证：`bash scripts/test-free-zone-migration.sh`（managed key 链、状态约束、投影、权限、重复执行）。
+- 发布：TEST 单文件 → Backend/Admin/Frontend（总开关默认关，线上无变化）→ Production 单文件 → 运营平台填候选池并打开开关。回滚：关总开关；删除对象见文件头注释。
+
 ## 2026-11-11 聊天历史展示投影（TEST 已执行，Production 待验证）
 
 依次验证 `20261111_chat_history_display_metadata.sql` → `20261111_chat_history_display_reads.sql`，然后有限回填、核验覆盖/读写性能，再发布 Backend。新表归 experience；原始 prompt 和账务不迁移、不裁剪。service_role 保留原 admission 的 invoker 写权限，新对象对 anon/authenticated 不开放。

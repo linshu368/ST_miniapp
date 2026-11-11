@@ -88,6 +88,7 @@ export async function prepareTurnInputs(input: {
   const modelPromise = resolveModelForUser(userId, {
     selectedModelId: generationContextPromise.then(({ config }) => config.selected_model_id),
     catalogSnapshot: input.catalogSnapshot,
+    characterId: input.characterId,
   });
   // Read-only generation settings must not sit behind opening the turn and
   // reading its context. The same promise is consumed once by execute.

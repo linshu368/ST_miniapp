@@ -1,5 +1,6 @@
 import {
   CREATOR_REVIEW_PROMPT_KEY,
+  FREE_ZONE_CONFIG_KEY,
   STORY_MEMORY_CONFIG_KEY,
   STORY_MEMORY_PROMPT_KEY,
   VIP_STRATEGY_CONFIG_KEYS,
@@ -97,6 +98,7 @@ export const ADMIN_MENU_GROUPS: readonly AdminMenuGroup[] = [
       },
       { kind: 'config', key: 'llm_provider_routing_config' },
       { kind: 'config', key: 'llm_pricing_config' },
+      { kind: 'config', key: FREE_ZONE_CONFIG_KEY, label: '畅聊（免费模型）' },
     ],
   },
   {
