@@ -1,22 +1,21 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
-import { DEFAULT_LOBBY_SORT, LOBBY_ROTATION_HEAD_SIZE } from '@miniapp/shared';
 import type {
   ApiResponse,
-  GetCharactersData,
   GetCharacterByIdData,
+  GetCharactersData,
   LobbyLatestBadgeData,
   LobbySort,
 } from '@miniapp/shared';
+import { DEFAULT_LOBBY_SORT, LOBBY_ROTATION_HEAD_SIZE } from '@miniapp/shared';
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 
+import { getMobilePerformancePolicy } from '@/lib/mobile-performance';
 import { createRequestId, timedFetch } from '@/lib/perf/request-timing';
 import { getRawInitData } from '@/lib/telegram/auth';
 import { parseTelegramUser } from '@/lib/telegram/user';
-import { getMobilePerformancePolicy } from '@/lib/mobile-performance';
 
 import { apiClient } from './client';
-import { withRequestSlot } from './request-concurrency';
 import { useRefetchOnForeground } from './use-refetch-on-foreground';
 
 // ==== 纯 fetch 函数（私有，不导出给业务）====
@@ -27,42 +26,44 @@ async function fetchCharacters(
   ids?: readonly string[]
 ): Promise<GetCharactersData> {
   // 大厅经 Vercel 同源代理，不走 apiClient；仍占 critical 槽，避免与直连 Railway 旁路齐射。
-  return withRequestSlot('critical', signal, async () => {
-    const publicLatest = sort === 'latest' && !headOnly && !ids?.length;
-    return timedFetch(
-      `/api/lobby-characters?sort=${sort}${headOnly ? `&limit=${LOBBY_ROTATION_HEAD_SIZE}` : ''}${ids?.length ? `&ids=${ids.join(',')}` : ''}`,
-      { ...(publicLatest ? {} : { cache: 'no-store' as const }), signal },
-      {
-        requestId: createRequestId(),
-        timeoutMs: getMobilePerformancePolicy().lobbyRequestTimeoutMs,
-      },
-      async (response) => {
-        const json = (await response.json().catch((error: unknown) => {
-          if (signal?.aborted || (error instanceof Error && error.name === 'AbortError'))
-            throw error;
-          return null;
-        })) as ApiResponse<GetCharactersData> | null;
-        if (!response.ok || !json?.success) {
-          throw new Error(
-            json && !json.success ? json.error.message : `API error: ${response.status}`
-          );
-        }
-        // An older upstream may ignore limit. Never write a partial head into the full-directory cache.
-        if (ids && json.data.characters.some((card) => !ids.includes(card.id)))
-          throw new Error('旧版目录不支持指定角色校准');
-        if (headOnly) {
-          const head = {
-            ...json.data,
-            characters: json.data.characters.slice(0, LOBBY_ROTATION_HEAD_SIZE),
-          };
-          if (!ids?.length) persistPublicLobbyHead(head);
-          return head;
-        }
-        persistCharacters(sort, json.data);
-        return json.data;
+  const publicLatest = sort === 'latest' && !headOnly && !ids?.length;
+  const data = await timedFetch(
+    `/api/lobby-characters?sort=${sort}${headOnly ? `&limit=${LOBBY_ROTATION_HEAD_SIZE}` : ''}${ids?.length ? `&ids=${ids.join(',')}` : ''}`,
+    { ...(publicLatest ? {} : { cache: 'no-store' as const }), signal },
+    {
+      requestId: createRequestId(),
+      priority: 'critical',
+      timeoutMs: getMobilePerformancePolicy().lobbyRequestTimeoutMs,
+    },
+    async (response) => {
+      const json = (await response.json().catch((error: unknown) => {
+        if (signal?.aborted || (error instanceof Error && error.name === 'AbortError')) throw error;
+        return null;
+      })) as ApiResponse<GetCharactersData> | null;
+      if (!response.ok || !json?.success) {
+        throw new Error(
+          json && !json.success ? json.error.message : `API error: ${response.status}`
+        );
       }
-    );
-  });
+      // An older upstream may ignore limit. Never write a partial head into the full-directory cache.
+      if (ids && json.data.characters.some((card) => !ids.includes(card.id)))
+        throw new Error('旧版目录不支持指定角色校准');
+      if (headOnly) {
+        const head = {
+          ...json.data,
+          characters: json.data.characters.slice(0, LOBBY_ROTATION_HEAD_SIZE),
+        };
+        return head;
+      }
+      return json.data;
+    }
+  );
+  if (signal?.aborted) throw signal.reason ?? new DOMException('Aborted', 'AbortError');
+  // A late body must not overwrite cached cards after its total deadline expired.
+  if (headOnly) {
+    if (!ids?.length) persistPublicLobbyHead(data);
+  } else persistCharacters(sort, data);
+  return data;
 }
 
 async function fetchCharacterById(

@@ -4,18 +4,37 @@ set -euo pipefail
 task_root="$(cd "$(dirname "$0")/.." && pwd)"
 task_container="st-conversation-branches-${RANDOM}-$$"
 task_temp="$(mktemp -d)"
-cleanup() { docker rm -f "$task_container" >/dev/null 2>&1 || true; rm -rf "$task_temp"; }
+task_database="st_chat_test_${RANDOM}_$$"
+cleanup() {
+  if [[ -n "${ST_CHAT_PG_BIN:-}" ]]; then
+    "${task_admin_psql[@]}" -c "DROP DATABASE IF EXISTS $task_database WITH (FORCE)" >/dev/null 2>&1 || true
+  else
+    docker rm -f "$task_container" >/dev/null 2>&1 || true
+  fi
+  rm -rf "$task_temp"
+}
 trap cleanup EXIT
+if [[ -n "${ST_CHAT_PG_BIN:-}" ]]; then
+  # Explicit local-only opt-in supports portable Windows PG17; never read project env/URIs.
+  [[ "${ST_CHAT_PG_PORT:-}" =~ ^[0-9]+$ ]] || exit 1
+  task_admin_psql=("$ST_CHAT_PG_BIN/psql" -X -h 127.0.0.1 -p "$ST_CHAT_PG_PORT" -U postgres -d postgres -v ON_ERROR_STOP=1)
+  [[ "$("${task_admin_psql[@]}" -Atqc 'SHOW server_version_num')" == 17* ]] || exit 1
+  "${task_admin_psql[@]}" -c "CREATE DATABASE $task_database" >/dev/null
+  task_psql=("$ST_CHAT_PG_BIN/psql" -X -h 127.0.0.1 -p "$ST_CHAT_PG_PORT" -U postgres -d "$task_database" -v ON_ERROR_STOP=1)
+else
 docker run -d --rm --name "$task_container" --network none -e POSTGRES_HOST_AUTH_METHOD=trust postgres:17 >/dev/null
 for task_attempt in $(seq 1 30); do
   if [[ "$(docker logs "$task_container" 2>&1)" == *'PostgreSQL init process complete'* ]] && docker exec "$task_container" pg_isready -U postgres >/dev/null 2>&1; then break; fi
   sleep 1
 done
 task_psql=(docker exec -i "$task_container" psql -X -U postgres -v ON_ERROR_STOP=1)
+fi
 "${task_psql[@]}" >/dev/null <<'SQL'
-CREATE ROLE anon NOLOGIN;
-CREATE ROLE authenticated NOLOGIN;
-CREATE ROLE service_role NOLOGIN BYPASSRLS;
+DO $$ BEGIN
+ IF NOT EXISTS(SELECT FROM pg_roles WHERE rolname='anon') THEN CREATE ROLE anon NOLOGIN; END IF;
+ IF NOT EXISTS(SELECT FROM pg_roles WHERE rolname='authenticated') THEN CREATE ROLE authenticated NOLOGIN; END IF;
+ IF NOT EXISTS(SELECT FROM pg_roles WHERE rolname='service_role') THEN CREATE ROLE service_role NOLOGIN BYPASSRLS; END IF;
+END $$;
 CREATE SCHEMA app_core;
 CREATE SCHEMA experience;
 CREATE SCHEMA miniapp_features;
@@ -56,14 +75,16 @@ INSERT INTO app_core.text_postprocess_versions VALUES(1,1,1,'{"schema_version":1
 INSERT INTO app_core.runtime_config VALUES('miniapp_text_postprocess_config',1,'{"version":1,"schema_version":1,"policy_version":1}');
 SQL
 # Use the repository's actual prior function bodies, translated only for the completed schema split.
-python3 - "$task_root" <<'PY' | "${task_psql[@]}" >/dev/null
+task_python=python3
+command -v python3 >/dev/null || task_python=python
+"$task_python" - "$task_root" <<'PY' | "${task_psql[@]}" >/dev/null
 import sys
 from pathlib import Path
 root=Path(sys.argv[1])/'packages/shared/migrations'
-a=(root/'072_chat_history_conversation_source.sql').read_text()
+a=(root/'072_chat_history_conversation_source.sql').read_text(encoding='utf-8')
 for first,last in [('CREATE OR REPLACE FUNCTION miniapp.guard_chat_session_idle(', 'CREATE OR REPLACE FUNCTION miniapp.start_chat_history_turn('),('CREATE OR REPLACE FUNCTION miniapp.tf_refresh_chat_session_stats_from_history()', '-- 旧 M1 表')]:
  print(a[a.index(first):a.index(last,a.index(first))].replace('miniapp.','experience.'))
-b=(root/'077_context_window.sql').read_text()
+b=(root/'077_context_window.sql').read_text(encoding='utf-8')
 print(b[b.index('CREATE OR REPLACE FUNCTION miniapp.apply_context_window_flood('):b.index('COMMIT;')].replace('miniapp.','experience.'))
 PY
 for task_migration in \
@@ -88,6 +109,62 @@ done
 "${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/20261110_chat_reply_feedback.sql" >/dev/null
 "${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/tests/chat_reply_feedback.sql"
 
+
+# Reuse the real observation DDL and admission function, without unrelated
+# billing/reporting migrations or network providers in this display harness.
+"$task_python" - "$task_root" <<'PY' | "${task_psql[@]}" >/dev/null
+import sys
+from pathlib import Path
+src=(Path(sys.argv[1])/'packages/shared/migrations/20261023_chat_first_token_fallback.sql').read_text(encoding='utf-8')
+print(src[src.index('CREATE TABLE IF NOT EXISTS experience.chat_generation_requests'):src.index('ALTER TABLE experience.chat_generation_requests ENABLE')])
+PY
+"${task_psql[@]}" >/dev/null <<'SQL'
+ALTER TABLE experience.chat_generation_requests ADD COLUMN fallback_timeout_ms integer, ADD COLUMN recoverable_delivery boolean NOT NULL DEFAULT false;
+ALTER TABLE experience.chat_generation_requests ENABLE ROW LEVEL SECURITY;
+ALTER TABLE experience.chat_generation_attempts ENABLE ROW LEVEL SECURITY;
+GRANT SELECT,INSERT,UPDATE ON experience.chat_generation_requests,experience.chat_generation_attempts TO service_role;
+SQL
+"${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/20261030_chat_generation_dispatch_prepare.sql" >/dev/null
+for task_migration in 20261111_chat_history_display_metadata.sql 20261111_chat_history_display_reads.sql; do
+  "${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/$task_migration" >/dev/null
+  "${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/$task_migration" >/dev/null
+done
+"${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/tests/chat_history_display.sql"
+# Exercise finite batches and the inverse admission patch against the same fixtures.
+"${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/maintenance/chat_history_display_backfill.sql" >/dev/null
+"${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/maintenance/chat_history_display_write_recovery.sql" >/dev/null
+"${task_psql[@]}" >/dev/null <<'SQL'
+DO $$ BEGIN
+ IF EXISTS(SELECT 1 FROM experience.chat_history_display_metadata WHERE projection_version<>0)
+   OR has_function_privilege('service_role','experience.list_chat_message_page(uuid,uuid,integer,integer)','EXECUTE')
+   OR position('chat_display_projection_v1' IN pg_get_functiondef('experience.begin_chat_generation_observation(uuid,jsonb)'::regprocedure))>0
+ THEN RAISE EXCEPTION 'write recovery retained trusted projection or maintenance branch'; END IF;
+END $$;
+SQL
+for task_migration in 20261111_chat_history_display_metadata.sql 20261111_chat_history_display_reads.sql; do
+  "${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/$task_migration" >/dev/null
+done
+"${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/tests/chat_history_display.sql" >/dev/null
+# A legacy writer owns the parent lock. Backfill must skip, then revisit after
+# commit; it cannot publish an older snapshot over the writer's accepted history.
+"${task_psql[@]}" -Atqc "BEGIN; UPDATE experience.chat_history SET history=history WHERE id='30000000-0000-4000-8000-000000000001'; SELECT pg_advisory_xact_lock(61111001); SELECT pg_sleep(2); COMMIT;" >/dev/null &
+task_writer=$!
+for task_attempt in $(seq 1 50); do
+  if [[ "$("${task_psql[@]}" -Atqc "SELECT count(*) FROM pg_locks WHERE locktype='advisory' AND objid=61111001 AND granted")" == 1 ]]; then break; fi
+  sleep 0.02
+done
+test "$("${task_psql[@]}" -Atqc "SELECT experience.backfill_chat_history_display(ARRAY['30000000-0000-4000-8000-000000000001'::uuid])")" = 0
+wait "$task_writer"
+test "$("${task_psql[@]}" -Atqc "SELECT experience.backfill_chat_history_display(ARRAY['30000000-0000-4000-8000-000000000001'::uuid])")" = 1
+if [[ "${ST_CHAT_BENCHMARK:-}" == 1 ]]; then
+  "$task_python" - "$task_root" <<'PY' | "${task_psql[@]}" >/dev/null
+import sys
+from pathlib import Path
+src=(Path(sys.argv[1])/'packages/shared/migrations/20261030_chat_generation_dispatch_prepare.sql').read_text(encoding='utf-8')
+print(src.replace('experience.begin_chat_generation_observation(', 'experience.benchmark_baseline_admission('))
+PY
+  "${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/tests/chat_history_display_performance.sql"
+fi
 
 # Four competing edits must have exactly one winner, without losing its text.
 task_pids=()

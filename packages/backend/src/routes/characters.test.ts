@@ -243,14 +243,19 @@ describe('character detail creator credit', () => {
 
 describe('public bounded recommendation fallback', () => {
   it('revalidates the supplied public IDs in their original order without drawing a new head', async () => {
-    mocks.author.mockResolvedValue([character]);
+    mocks.author.mockResolvedValue([
+      { id: cardId, fingerprint: 'a'.repeat(64), payload: character },
+    ]);
     const response = await app.inject({
       url: `/api/characters?sort=recommended&limit=12&ids=${viewerId},${cardId}`,
       headers: { 'x-test-anonymous': '1' },
     });
     expect(response.statusCode).toBe(200);
     expect(response.json().data.characters.map((row: { id: string }) => row.id)).toEqual([cardId]);
-    expect(mocks.author.mock.calls[0]?.slice(1)).toEqual([JSON.stringify([viewerId, cardId]), 12]);
+    expect(mocks.author.mock.calls[0]?.slice(1, 3)).toEqual([
+      JSON.stringify([viewerId, cardId]),
+      12,
+    ]);
     expect(mocks.publicHead).not.toHaveBeenCalled();
     expect(mocks.characters).not.toHaveBeenCalled();
   });
@@ -281,7 +286,9 @@ describe('public bounded recommendation fallback', () => {
   });
   it('uses the head-only path for an unauthenticated caller without loading the full directory', async () => {
     mocks.publicHead.mockResolvedValue([cardId]);
-    mocks.author.mockResolvedValue([character]);
+    mocks.author.mockResolvedValue([
+      { id: cardId, fingerprint: 'a'.repeat(64), payload: character },
+    ]);
     const response = await app.inject({
       url: '/api/characters?sort=recommended&limit=12',
       headers: { 'x-test-anonymous': '1' },

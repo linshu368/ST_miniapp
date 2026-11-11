@@ -4,6 +4,8 @@ node_modules/
 .next-ui-preview/
 .next-ui-test/
 /output/playwright/
+/output/performance/
+.next-perf/
 dist/
 .env
 .env.local

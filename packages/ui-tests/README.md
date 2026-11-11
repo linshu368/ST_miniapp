@@ -1,5 +1,7 @@
 # 移动端预览与固定验收
 
+聊天读取优化继续复用 `@chat` / `@roleplay`；`@chat-history` 在禁用 `Array.findLast` 的页面中连续翻完 200 轮，逐轮核对无遗漏/重复并保留草稿。数据库投影、真实首字与 Android/iOS P95 另由 PG17/正式环境验收，页面 fixture 不替代这些证据。
+
 日常页面修改先复用本环境。真实 Next.js 页面、React Query 和 SSE consumer 照常运行，API 由本机虚构数据提供；无需数据库、Telegram 登录、支付或模型密钥。不是生产联调环境。
 
 ## 快速开始

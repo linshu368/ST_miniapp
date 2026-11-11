@@ -17,6 +17,8 @@ last_verified_at: 2026-11-06
 
 ## 当前状态
 
+2026-11-11 本地候选：timedFetch 可选 priority 将请求槽队列纳入同一总截止，默认调用行为不变；显式 abort race 防止响应体卡住后占槽，同步解析延迟 timer 时也检查单调时钟。全局错误边界原址 reload 且沿用失败埋点，不依赖 Router Context；Telegram 原始签名身份从合法启动来源捕获到内存，既有 URL 清理顺序保留。不得新增凭据持久化或自动重放聊天写请求。
+
 API 与 server state 已集中，Tailwind/shadcn 作为 UI 基础。GET 传输失败由统一 API client 最多重试一次，React Query 不再叠加默认重试；queryFn 必须把 React Query 的 `AbortSignal` 传到底层请求，排队、退避与在途阶段的主动取消均不得再发请求。
 
 默认关闭且非首屏必需的重型面板可用动态导入，并在首次打开后保持挂载以保留关闭动画和局部草稿；消息正文、输入框、播放器地址等关键路径不得为追求 bundle 数字而延后。
