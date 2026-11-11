@@ -1,16 +1,31 @@
 'use client';
 
+import { useGuideInputBusy, useOnboarding } from '@/hooks/use-onboarding';
+import type { ChatMessage } from '@miniapp/shared';
+import { ChevronDown, ChevronRight, GitBranch, Pencil, X } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { useEffect, useState } from 'react';
-import { ChevronDown, ChevronRight, GitBranch, Pencil, X } from 'lucide-react';
-import type { ChatMessage } from '@miniapp/shared';
-import { useGuideInputBusy, useOnboarding } from '@/hooks/use-onboarding';
 import { useCreatorReturnVisit } from './creator-invitation';
 
 const StoryGuideSheet = dynamic(
   () => import('./story-guide-sheet').then((module) => module.StoryGuideSheet),
   { ssr: false }
 );
+
+function lastCompleteReply(messages: readonly ChatMessage[]): ChatMessage | undefined {
+  // No findLast dependency or whole-history copy on every streaming render.
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const message = messages[index];
+    if (
+      message?.role === 'assistant' &&
+      message.turn_index > 0 &&
+      !message.deleted &&
+      message.status === 'complete'
+    )
+      return message;
+  }
+  return undefined;
+}
 
 export function ChatGuide({ messages, busy }: { messages: ChatMessage[]; busy: boolean }) {
   useCreatorReturnVisit();
@@ -19,13 +34,7 @@ export function ChatGuide({ messages, busy }: { messages: ChatMessage[]; busy: b
   const [open, setOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [preferencesShown, setPreferencesShown] = useState(false);
-  const reply = messages.findLast(
-    (message) =>
-      message.role === 'assistant' &&
-      message.turn_index > 0 &&
-      !message.deleted &&
-      message.status === 'complete'
-  );
+  const reply = lastCompleteReply(messages);
   const replyId = reply?.id;
   useEffect(() => {
     if (!active) return;

@@ -10,6 +10,7 @@ import {
   type LobbyRotationConfig,
 } from '@miniapp/shared';
 import type { RecentRecommendationHead, RecommendationOrder } from './recommendation-ranking.js';
+export { readLobbyHeadRows, type LobbyHeadRow } from './head-read.js';
 
 export type RecommendationDbClient = Pick<Prisma.TransactionClient, '$queryRaw' | '$executeRaw'>;
 export interface RecommendationDatabase {
@@ -139,31 +140,6 @@ export async function readReusableRecommendation(
     return response(current, previous?.id ?? null);
   }
   return null;
-}
-
-export interface LobbyHeadRow {
-  id: string;
-  name: string;
-  description: string;
-  avatar_url: string;
-  tags: unknown;
-  creator: string;
-}
-
-/** Limit after the authoritative visibility check so a delisted head is backfilled
- * from the same batch, without sending any tail descriptions or covers to the app. */
-export async function readLobbyHeadRows(
-  db: Pick<RecommendationDbClient, '$queryRaw'>,
-  orderedIds: string[]
-): Promise<LobbyHeadRow[]> {
-  if (!orderedIds.length) return [];
-  return db.$queryRaw<LobbyHeadRow[]>`
-    SELECT c.id, c.name, c.description, c.avatar_url, c.tags, c.creator
-    FROM jsonb_array_elements_text(${JSON.stringify(orderedIds)}::jsonb) WITH ORDINALITY AS b(id, position)
-    JOIN app_core.characters c ON c.id = b.id::uuid
-    WHERE NOT c.is_test AND app_core.can_discover_character(c.id)
-    ORDER BY b.position LIMIT ${LOBBY_ROTATION_HEAD_SIZE}
-  `;
 }
 
 export interface UpdateRecommendationOptions {

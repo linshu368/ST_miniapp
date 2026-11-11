@@ -1,5 +1,11 @@
 # SQL 迁移文件
 
+## 2026-11-11 聊天历史展示投影（本地候选，远端未执行）
+
+依次验证 `20261111_chat_history_display_metadata.sql` → `20261111_chat_history_display_reads.sql`，然后有限回填、核验覆盖/读写性能，再发布 Backend。新表归 experience；原始 prompt 和账务不迁移、不裁剪。service_role 保留原 admission 的 invoker 写权限，新对象对 anon/authenticated 不开放。
+
+`maintenance/chat_history_display_backfill.sql` 和 `maintenance/chat_history_display_write_recovery.sql` 是同一 migration 来源下的人工维护/恢复脚本，**不加入自动 schema migration 队列**；前者每批独立事务，需要 psql `\gexec`，不得包在外层事务中。完整前置、锁/容量、重访与恢复顺序见 [操作说明](../../../docs/chat-history-read-performance.md)。本地一次性 PG17 harness 覆盖回填/恢复，不代表正式 TEST 已执行。
+
 ## 2026-11-10 Surplus Intelligence 调用明细（本地实施，远端未执行）
 
 当前执行入口为 `20261110_surplusintelligence_chat_history_compat.sql`。原 `20261110_surplusintelligence_chat_history.sql` 保留不改：在整份SQL以Windows CRLF提交时，其函数定义转为LF、匹配模板却保留CRLF，可能触发 `Unexpected installed delivery provider branch`。兼容文件完整包含原迁移功能，可直接用于原文件失败回滚后的环境；不需要先成功执行原文件，也不要重跑已记账原文件或加force_rerun绕过。

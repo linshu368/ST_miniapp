@@ -3,7 +3,7 @@
   "name": "characters-chat-reliability",
   "title": "Repair characters and chat entry reliability",
   "description": "Plan WebView/page-entry reliability, CORS fixes and bounded long-conversation history reads, including prompt TOAST diagnosis and a compatible display read model",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": "fullstack",
   "scope": "frontend/backend page entry reliability and experience history read performance",
   "package": "backend",
@@ -21,7 +21,7 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "2026-11-11: Added R9/AC13-16/B3 after read-only Sentry, Railway and production Supabase catalog research. Include independent prompt detoast A/B diagnosis; local Docker/psql unavailable, no benchmark result yet. Planning only; no product code, migrations, remote writes or task start. Latest expanded plan still requires implementation review. Preserve existing task identity and unrelated workspace changes. User confirmed R10 / AC17-20 hard gates: no page or reply performance regression, complete visible history without missing records, unchanged reading/interaction experience and existing functionality. This is planning clarification, not implementation approval. Design review: existing chat_generation_requests and begin_chat_generation_observation provide a reuse candidate. New metadata table/parsing trigger is provisional; benchmark read-only reuse and confirm AC14 boundaries before final implementation planning. R10 hard gates unchanged. User then requested combining both approaches. Authoritative B3 plan is research/history-combined-design.md: bounded page-key selection plus complete display projection, reuse actual atomic admission writer and request identity, cheap invalidation for legacy writers (no stored-history parsing trigger), bounded legacy backfill including earliest-page opening, related-path consumer audit and DB-write recovery. AC14 is retained, AC21 adds combined completion criteria. Supersedes the earlier provisional read-only-first/table decision. Planning only; not implementation approval.",
+  "notes": "2026-11-11: Added R9/AC13-16/B3 after read-only Sentry, Railway and production Supabase catalog research. Include independent prompt detoast A/B diagnosis; local Docker/psql unavailable, no benchmark result yet. Planning only; no product code, migrations, remote writes or task start. Latest expanded plan still requires implementation review. Preserve existing task identity and unrelated workspace changes. User confirmed R10 / AC17-20 hard gates: no page or reply performance regression, complete visible history without missing records, unchanged reading/interaction experience and existing functionality. This is planning clarification, not implementation approval. Design review: existing chat_generation_requests and begin_chat_generation_observation provide a reuse candidate. New metadata table/parsing trigger is provisional; benchmark read-only reuse and confirm AC14 boundaries before final implementation planning. R10 hard gates unchanged. User then requested combining both approaches. Authoritative B3 plan is research/history-combined-design.md: bounded page-key selection plus complete display projection, reuse actual atomic admission writer and request identity, cheap invalidation for legacy writers (no stored-history parsing trigger), bounded legacy backfill including earliest-page opening, related-path consumer audit and DB-write recovery. AC14 is retained, AC21 adds combined completion criteria. Supersedes the earlier provisional read-only-first/table decision. Planning only; not implementation approval. 2026-11-11 execution update: user explicitly authorized implementation and requested automatic archive after the entire task is complete. Local implementation and PG17 regression are present; see research/implementation-validation.md. Remote migrations/deployment and no-regression hard gates remain outstanding. Do not archive merely because code/build/unit tests pass.\n2026-11-11 用户关闭本地性能测试机制并暂停11-11任务；已移除通用门禁，本任务继续独立复核。主体实现已落地，整体验收未完成，详见research/completion-review.md。\n2026-11-11 澄清纠正：仅后续开发不强制本地性能实测；此前规划门禁与本任务验收不受影响。原mobile_performance声明/start校验已恢复，11-11新增机制继续暂停。",
   "meta": {
     "module_impact": {
       "schema_version": 1,
@@ -33,7 +33,8 @@
         "backend.business.conversation-generation",
         "backend.infrastructure.runtime-data-security",
         "database.business.conversation-storage",
-        "database.infrastructure.schema-security"
+        "database.infrastructure.schema-security",
+        "backend.business.character-lobby"
       ]
     },
     "mobile_performance": {
@@ -155,7 +156,7 @@
           "target_local_get_p95_ms": 500,
           "target_10000_vs_100_turns_p95_ratio_max": 2,
           "source": "Planned synthetic PG17 10/100/1000/10000-turn matrix and ordinary-column / history element / full snapshot / scalar projection comparison; >=100 samples per group with controlled payload, revision, inheritance and cache conditions",
-          "limitation": "Docker and psql unavailable in current PATH; not run. No production business-row query, EXPLAIN ANALYZE or load test authorized."
+          "limitation": "Local portable PostgreSQL 17.11 synthetic harness executed; latest 10000/100-turn SQL P95 ratio 3.41 exceeds target. Full controlled matrix and real GET not yet validated. No production business-row query or load test performed."
         },
         "hard_acceptance": {
           "requirements": ["R10", "AC17", "AC18", "AC19", "AC20"],
@@ -179,7 +180,7 @@
         },
         "combined_design": {
           "source": "research/history-combined-design.md",
-          "status": "planned_not_benchmarked",
+          "status": "implemented_local_hard_gates_pending",
           "acceptance": ["AC13", "AC14", "AC15", "AC16", "AC17", "AC18", "AC19", "AC20", "AC21"],
           "completion": "New and legacy visible history, initial/deep/earliest pages; valid projection coverage and no fallback in release cohort. Uncovered scope remains incomplete.",
           "write_budget": "Atomic writer plus invalidation cost included in matched preparation/first-visible/write P95; all no-regression gates remain.",
@@ -195,6 +196,26 @@
         }
       },
       "notes": "Top-level Android/iOS baseline refers specifically to chat SPA; route-specific metrics are not averaged. API baseline is the saved client conversation_detail GET success P95, distinct from new server_get spans. No visible long-conversation or per-platform API/DB P95: null, never zero. iOS chat N=75 is low sample. Goals are engineering targets, not measured attainment. Monitor errors/stalls/timeouts/retries/fallback/coverage and generation writes; no release or remote write in this task turn."
+    },
+    "archive_after_completion": true,
+    "local_validation": {
+      "report": "research/implementation-validation.md",
+      "database": "isolated PostgreSQL 17.11 synthetic fixtures",
+      "remote_migrations_applied": true,
+      "production_deployed": false,
+      "archive_ready": false,
+      "remaining": [
+        "TEST legacy projection coverage and behavior verification",
+        "history write/preparation/first-visible no-regression remains unverified with measured extra write cost",
+        "read-growth variance and end-to-end effect verification",
+        "production migrations/backfill/CORS configuration/rollout and actual business validation"
+      ],
+      "ui": "62 chat/roleplay cases covered by full run plus targeted reruns; not one clean full run or physical-device validation",
+      "remote_migrations_environment": "test",
+      "production_migrations_applied": false,
+      "completion_review": "research/completion-review.md",
+      "local_mobile_gate_required": false,
+      "existing_planning_gates_preserved": true
     }
   }
 }

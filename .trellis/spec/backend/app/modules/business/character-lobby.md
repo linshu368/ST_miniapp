@@ -86,3 +86,9 @@ character-wishes routes 使用服务端认证身份，repository 调 miniapp_fea
 ## 推荐首屏与评分去重
 
 open/resume复用已保存批次并校验当前可见性；创建、换批及撤回保留锁内复查。首屏可选择附带最多12张卡片摘要。评分任务取得专用锁后检查单行成功标记，仅在缺失、规则变化或距离上次完成已满24小时时重算。
+
+## 本地直连性能优化（2026-11-11，正式采样未通过）
+
+recommendation/featured 原缓存 owner 与2秒周期不变，catalog-read 在同一数据库快照计算实际投影SHA256，未变化只传摘要。候选原10000上限与金框无上限保持分别读取，不依赖 updated_at、不改变评分或冷卡随机算法。head-read 每次执行原可见性筛选及缺位补齐，再逐行核验完整公开字段；仅变化字段组回传完整卡片，不截描述/标签。每DB客户端缓存上限256条/2MiB，请求固定dispatch快照以抵御并发替换，缺payload或身份不匹配报错，不以旧卡兜底。读等待12秒上限、无新增重试；超时不刷新缓存，但不声称强制取消已提交的驱动SQL。
+
+复用既有HTTP/DTO/角色权限，无新migration或依赖。失败沿用原owner错误/金框降级语义，应用回退即可恢复旧读法。`catalog-read.integration.test.ts` 用显式 ST_LOBBY_PG_PORT=55439 的一次性本机PG17库验证真实参数化SQL、字段/顺序/隐私失效、完整描述、10000/全量范围；不加载应用env或远端URL。现有catalog/head/route/ranking回归继续运行。

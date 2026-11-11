@@ -15,6 +15,8 @@ last_verified_at: 2026-10-30
 
 ## 当前状态
 
+2026-11-11 本地候选 CORS：`FRONTEND_ALLOWED_ORIGINS` 逗号分隔额外精确 origin，与 FRONTEND_URL/ADMIN_PLATFORM_URL 一起规范化配置；请求 Origin 必须精确匹配，生产不接受 Vercel 通配。未授权预检及实际请求均在业务前返回 shared 403 envelope；无 Origin 保留既有客户端鉴权。只有合法来源获得 Timing-Allow-Origin，拒绝日志仅有限分类，不记录原始 Origin。开发/显式 TEST bypass 的旧预览便利保留，生产不能由 bypass 打开。验证见 `lib/cors.test.ts`；部署配置需单独应用。
+
 Supabase 按域访问，服务日志使用 Pino；模型目录由 `platform/model-tiers.ts` 集中读取 `llm_model_catalog`，损坏时降级到 `DEFAULT_CATALOG`，不再读取旧 tiers key。
 
 `runtime-config.ts` 的单键读取支持调用方传入取消信号，供 Admin 状态读取等严格查询使用。无调用方 signal 的非严格单键和相同键集批量读取会在进程内合并同时在途的 Promise，但不跨请求缓存配置结果；严格读取和自定义 signal 始终保持独立取消边界。对话的文本后处理版本不再由进程缓存维护，而由数据库开轮事务读取权威指针并绑定。

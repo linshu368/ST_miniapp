@@ -96,6 +96,8 @@ test('@chat @surplus @layout Surplus 慢主调用由 OpenRouter 兜底交付且�
   await expect(
     page.getByText('「那就出发吧。」旅人轻轻合上地图，把下一步的选择留给你。', { exact: true })
   ).toBeVisible();
+  // The final text chunk can precede the terminal SSE event and persisted status.
+  await expect(page.getByRole('button', { name: '取消本次回复', exact: true })).toHaveCount(0);
   const detail = (
     await (await request.get(`${previewApiUrl}/api/v1/conversations/${IDS.session}`)).json()
   ).data;
@@ -234,6 +236,31 @@ async function loadBranchTurn(page: Page, turn: number) {
   }
   throw new Error(`第 ${turn} 轮没有加载出来`);
 }
+
+test('@chat @chat-history 旧WebView连续翻完200轮，完整记录与草稿保留', async ({
+  page,
+  preview,
+}) => {
+  await preview.scenario('chat-branch');
+  await page.addInitScript(() => {
+    Object.defineProperty(Array.prototype, 'findLast', { value: undefined, configurable: true });
+  });
+  await page.goto(chatPath);
+  await expect(
+    page.getByRole('button', { name: '第200轮角色回复操作', exact: true })
+  ).toBeAttached();
+  await page.getByRole('textbox', { name: '输入消息' }).fill('翻页时保留的草稿');
+  await loadBranchTurn(page, 1);
+  await expect(page.getByRole('button', { name: '查看更早的消息', exact: true })).toHaveCount(0);
+  const turns = await page
+    .getByRole('button', { name: /^第\d+轮角色回复操作$/ })
+    .evaluateAll((buttons) =>
+      buttons.map((button) => Number(button.getAttribute('aria-label')?.match(/第(\d+)轮/)?.[1]))
+    );
+  expect(turns).toEqual(Array.from({ length: 200 }, (_, index) => index + 1));
+  await expect(page.getByRole('textbox', { name: '输入消息' })).toHaveValue('翻页时保留的草稿');
+  await expectMobileLayout(page);
+});
 
 async function openBranch(page: Page, turn: number): Promise<ForkConversationData> {
   const button = await loadBranchTurn(page, turn);

@@ -1,16 +1,18 @@
 'use client';
 
+import { markPageFailed } from '@/lib/perf/page-tracker';
+import { toRouteTemplate } from '@/lib/perf/route-template';
 import * as Sentry from '@sentry/nextjs';
 import { useEffect } from 'react';
 
 export default function GlobalError({
   error,
-  reset,
 }: {
   error: Error & { digest?: string };
   reset: () => void;
 }) {
   useEffect(() => {
+    markPageFailed(toRouteTemplate(window.location.pathname), window.location.pathname);
     Sentry.captureException(error);
   }, [error]);
 
@@ -23,7 +25,7 @@ export default function GlobalError({
           <button
             type="button"
             className="mt-6 rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground"
-            onClick={reset}
+            onClick={() => window.location.reload()}
           >
             重新加载
           </button>

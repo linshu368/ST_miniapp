@@ -20,13 +20,20 @@ export function getRawInitData(): string | undefined {
     // ignore
   }
 
-  // Fallback for local development if MOCK_AUTH is used
+  // Capture the original signed payload before launch-url cleanup. The server
+  // remains the authority; never rebuild credentials from initDataUnsafe.
   if (typeof window !== 'undefined') {
-    const urlParams = new URLSearchParams(window.location.search);
-    const tgWebAppData = urlParams.get('tgWebAppData');
-    if (tgWebAppData) {
-      cachedRawInitData = tgWebAppData;
-      return tgWebAppData;
+    const host = window as Window & { Telegram?: { WebApp?: { initData?: unknown } } };
+    const candidates = [
+      host.Telegram?.WebApp?.initData,
+      new URLSearchParams(window.location.hash.slice(1)).get('tgWebAppData'),
+      new URLSearchParams(window.location.search).get('tgWebAppData'),
+    ];
+    for (const data of candidates) {
+      if (typeof data === 'string' && data.trim()) {
+        cachedRawInitData = data;
+        return data;
+      }
     }
   }
 

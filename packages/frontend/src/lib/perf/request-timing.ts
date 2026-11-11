@@ -2,6 +2,7 @@
 
 import * as Sentry from '@sentry/nextjs';
 
+import { withRequestSlot, type RequestPriority } from '@/lib/api/request-concurrency';
 import { createLogger } from '@/lib/logger';
 
 import { getMetricDimensions, getNetworkTags } from './env-tags';
@@ -132,6 +133,23 @@ function reportRequest(report: TimingReport): void {
 export interface TimedFetchMeta {
   requestId: string;
   timeoutMs?: number;
+  /** Opt in when the caller's deadline must include waiting for a connection slot. */
+  priority?: RequestPriority;
+}
+
+/** Release the request slot even if a stalled body reader ignores cancellation. */
+async function untilAborted<T>(signal: AbortSignal, run: () => Promise<T>): Promise<T> {
+  if (signal.aborted) throw signal.reason ?? new DOMException('Aborted', 'AbortError');
+  let onAbort: () => void = () => {};
+  const aborted = new Promise<never>((_resolve, reject) => {
+    onAbort = () => reject(signal.reason);
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+  try {
+    return await Promise.race([run(), aborted]);
+  } finally {
+    signal.removeEventListener('abort', onAbort);
+  }
 }
 
 /**
@@ -162,24 +180,41 @@ export async function timedFetch<T>(
   }, timeoutMs);
 
   const startedAt = performance.now();
+  const assertActive = () => {
+    // Synchronous JSON parsing can delay the timer callback; still reject a late result.
+    if (!controller.signal.aborted && performance.now() - startedAt >= timeoutMs) {
+      timedOut = true;
+      controller.abort();
+    }
+    if (controller.signal.aborted)
+      throw controller.signal.reason ?? new DOMException('Aborted', 'AbortError');
+  };
   let responseStatus: number | undefined;
   trackRequestStart(meta.requestId, route);
   try {
-    const response = await fetch(url, { ...init, signal: controller.signal });
-    responseStatus = response.status;
-    reportHeaders(route, method, performance.now() - startedAt, response.status);
-    const result = await consume(response);
+    const result = await withRequestSlot(meta.priority ?? 'bypass', controller.signal, () =>
+      untilAborted(controller.signal, async () => {
+        assertActive();
+        const response = await fetch(url, { ...init, signal: controller.signal });
+        assertActive();
+        responseStatus = response.status;
+        reportHeaders(route, method, performance.now() - startedAt, response.status);
+        const value = await consume(response);
+        assertActive();
+        return value;
+      })
+    );
     reportRequest({
       requestId: meta.requestId,
       route,
       method,
-      outcome: outcomeForStatus(response.status),
+      outcome: outcomeForStatus(responseStatus!),
       durationMs: performance.now() - startedAt,
-      status: response.status,
+      status: responseStatus,
     });
     return result;
   } catch (error) {
-    if (timedOut) {
+    if (timedOut && !external?.aborted) {
       reportRequest({
         requestId: meta.requestId,
         route,

@@ -1,174 +1,46 @@
-// 对话的唯一事实来源：experience.chat_history。**这个表只由本仓库写。**
-//
-// 一行代表 session 内一个 turn 的一个 revision；同轮 revision 最大者是当前版本。
-// 存量 ST 行没有 session_id / turn_index / revision，本仓库不会读到它们。
-//
-// 一轮生成会分三段写同一行，三段的列集合基本不重叠，所以谁先落地都不会覆盖对方：
-//   1. startTurn / startRegeneration  开轮 RPC 建行：身份与轮次列 + status='streaming'
-//   2. setPromptHistory → finalizeTurn 请求内同步收口：prompt 快照 + 用户可见终态
-//   3. saveBillingSnapshot / recordBillingOutcome
-//      异步补齐：请求时定价快照、扣费额与结算完成时间；OpenRouter 用量元数据在其一对一表
-// 唯一共享的列是 llm_finish_reason：第 2 段写 SSE tap 观测值，第 3 段仅在真的从
-// OpenRouter 取到更权威的值时才覆盖（它要等用量统计，必然晚于第 2 段）。
-// 第 3 段的实现见 features/generation/settle.ts 与 features/generation/sync-job.ts。
-// 用量元数据补齐 ≠ 结算完成：llm_billing_settled_at 有值才算扣费行、额度收口、金额回写都齐。
-
+import { STREAMING_STALE_SECONDS } from './conversation-history-types.js';
+// Public conversation repository facade; generation identity/prompt writes live
+// in the atomic admission RPC. Display reads never require provider snapshots.
 import {
-  LlmModelProviderSchema,
   splitEditableReply,
-  readPostprocessVersion,
-  type ChatMessage,
-  type ChatMessageStatus,
-} from '@miniapp/shared';
-import type {
-  LlmModelProvider,
-  CancelConversationTurnRequest,
-  SetMessageLikeData,
-  ChangeChatMessageData,
-  ChangeChatMessageRequest,
+  type CancelConversationTurnRequest,
+  type ChangeChatMessageData,
+  type ChangeChatMessageRequest,
+  type SetMessageLikeData,
 } from '@miniapp/shared';
 import type { GenerationMessage, GenerationStatus } from '../../features/generation/types.js';
-import { MiniappCharacterFreeQuotaRepository } from './MiniappCharacterFreeQuotaRepository.js';
-import { listSurplusRowsPendingBilling } from './surplus-billing-recovery.js';
 import { getDomainDb, type DomainDb } from '../../lib/supabase.js';
 import { ConversationRepositoryError, throwConversationRpcError } from './conversation-errors.js';
-import type { InstructionSlotModes } from '../../features/engine/types.js';
-
-export const STREAMING_STALE_SECONDS = 120;
-
-// Explicit projections keep retiring call columns out of normal chat reads before DROP.
-const CURRENT_TURN_COLUMNS =
-  'id,user_id,model,user_input,assistant_reply,history,character_id,status,upstream_status,deduction_rate,created_at,llm_finish_reason,llm_charge_id,session_id,turn_index,revision,postprocess_version,rich_reply_metadata,first_token_preview';
-const TURN_COLUMNS = `${CURRENT_TURN_COLUMNS},llm_billing_snapshot,llm_billing_settled_at`;
-
-// history 是每轮完整 prompt 快照，随轮次线性变长（TOAST 大户）。读路径只需要 request_id（在 [0]）
-// 和开场白（在 [0] 或 [1]，取决于有无 system 段），所以只取前两个元素，避免每次读历史都把
-// 整个快照经 PostgREST 传回。注意这只省传输与反序列化；jsonb 无法切片，库侧仍会 detoast。
-const CURRENT_TURN_HEAD_COLUMNS = CURRENT_TURN_COLUMNS.replace(
-  ',history,',
-  ',history_head:history->0,history_next:history->1,'
-);
-const SESSION_TURN_HEAD_COLUMNS = `${CURRENT_TURN_HEAD_COLUMNS},is_inherited`;
-const MESSAGE_DISPLAY_COLUMNS = `${SESSION_TURN_HEAD_COLUMNS},liked,user_deleted,assistant_deleted,user_edit_version,assistant_edit_version`;
-
-type HeadProjectedRow = Omit<ConversationHistoryRow, 'history'> & {
-  history?: unknown[];
-  history_head?: unknown;
-  history_next?: unknown;
-};
-
-/** 把窄投影还原成 history 的前两个元素；未带别名列（旧投影/测试替身）时原样返回。 */
-function restoreHistoryHead(row: HeadProjectedRow): ConversationHistoryRow {
-  const { history_head: head, history_next: next, ...rest } = row;
-  if (head === undefined && next === undefined) {
-    return { ...rest, history: rest.history ?? [] };
-  }
-  return { ...rest, history: [head, next].filter((item) => item !== null && item !== undefined) };
-}
-
-export interface ConversationHistoryRow {
-  user_deleted?: boolean;
-  assistant_deleted?: boolean;
-  user_edit_version?: number;
-  assistant_edit_version?: number;
-  is_inherited?: boolean;
-  liked?: boolean;
-  first_token_preview?: { kind: 'delta' | 'reasoning'; text: string } | null;
-  id: string;
-  user_id: string;
-  model: string;
-  user_input: string;
-  assistant_reply: string | null;
-  history: unknown[];
-  character_id: string | null;
-  status: string;
-  upstream_status: number | null;
-  deduction_rate: number | null;
-  created_at: string;
-  llm_finish_reason: string | null;
-  llm_charge_id: string | null;
-  llm_billing_snapshot: LlmBillingSnapshot | null;
-  llm_billing_settled_at: string | null;
-  session_id: string;
-  turn_index: number;
-  revision: number;
-  /** 迁移未执行时视图没有这一列。缺失按 null，不用当前配置顶上。 */
-  postprocess_version?: number | null;
-  rich_reply_metadata?: unknown;
-}
-
-export interface CreatorRewardSnapshot {
-  character_id: string;
-  creator_user_id: string;
-  rate: 0.4;
-  wallet: 'bonus';
-  policy_version: 1;
-}
-
-/** 请求时定价快照。回捞按此重建 charge，不重新定价。 */
-export interface LlmBillingSnapshot {
-  charge_id: string;
-  model_id: string | null;
-  provider?: LlmModelProvider;
-  provider_model_id?: string;
-  model_display_name: string;
-  model_markup: number;
-  fixed_deduction: number;
-  fixed_deduction_category: string;
-  catalog_version: number;
-  pricing_config_version: number;
-  exchange_rate: number;
-  billing_mode: 'fixed_tier';
-  original_credits?: number;
-  discount_rate?: number | null;
-  discounted_exact?: number;
-  payable_credits?: number;
-  wallet_policy?: 'main_only' | 'main_then_bonus';
-  requires_vip?: boolean;
-  vip_active?: boolean;
-  vip_valid_until?: string | null;
-  model_tier?: string | null;
-  vip_discount_config_version?: number | null;
-  creator_reward?: CreatorRewardSnapshot;
-}
-
-export interface ChatHistorySyncRow {
-  id: string;
-  user_id: string;
-  model: string;
-  generationId: string | null;
-  callProvider: LlmModelProvider | null;
-  session_id?: string;
-  llm_finish_reason: string | null;
-  llm_charge_id: string | null;
-  assistant_reply: string | null;
-  status: string;
-  llm_billing_snapshot: LlmBillingSnapshot | null;
-  llm_billing_settled_at: string | null;
-}
-
-export interface StartedHistoryTurn {
-  turnIndex: number;
-  historyId: string;
-  revision: number;
-  userContent: string;
-  contextWindowStartTurn: number;
-  /** current-version RPC 实际写入的非空正式版本。 */
-  postprocessVersion: number;
-  /** Immutable modes chosen by the same database transaction that created this revision. */
-  slotModes: InstructionSlotModes;
-}
-
-export interface ConversationContext {
-  /** 首轮实际 prompt 中保存的开场白；尚无历史时为 null，由调用方使用角色卡当前 first_mes */
-  openingMessage: string | null;
-  messages: Array<{ role: 'user' | 'assistant'; content: string }>;
-  /** 被窗口截掉的早期轮数 = context_window_start_turn - 1；未泄洪为 0 */
-  truncatedTurns: number;
-}
+import * as billing from './conversation-history-billing.js';
+import {
+  contextWindowRpcArgs,
+  mapStartedTurn,
+  withStoredRequestId,
+  type StartedHistoryTurnRpc,
+} from './conversation-history-mapping.js';
+import { ConversationHistoryReads } from './conversation-history-reads.js';
+import type { ConversationHistoryRow, StartedHistoryTurn } from './conversation-history-types.js';
+import { MiniappCharacterFreeQuotaRepository } from './MiniappCharacterFreeQuotaRepository.js';
+export {
+  assembleConversationContext,
+  clampLimit,
+  extractOpeningMessage,
+  latestRevisionRows,
+  toChatMessages,
+  toChatMessageStatus,
+  toOpeningMessage,
+  withStoredRequestId,
+} from './conversation-history-mapping.js';
+export * from './conversation-history-types.js';
+export { STREAMING_STALE_SECONDS } from './conversation-history-types.js';
+const TURN_COLUMNS =
+  'id,user_id,model,user_input,assistant_reply,character_id,status,upstream_status,deduction_rate,created_at,llm_finish_reason,llm_charge_id,session_id,turn_index,revision,postprocess_version,rich_reply_metadata,first_token_preview,llm_billing_snapshot,llm_billing_settled_at';
 
 export class ConversationHistoryRepository {
-  constructor(private readonly db: DomainDb = getDomainDb('experience')) {}
+  private readonly reads: ConversationHistoryReads;
+  constructor(private readonly db: DomainDb = getDomainDb('experience')) {
+    this.reads = new ConversationHistoryReads(db);
+  }
 
   async changeMessage(input: {
     userId: string;
@@ -511,496 +383,58 @@ export class ConversationHistoryRepository {
     }
   }
 
-  /**
-   * 生成终态结算：实扣金额、计费意图与结算完成时间。
-   * 由 features/generation/settle.ts 与 sync-job.ts 调用。
-   * OpenRouter 元数据由专用 repository 写入；这里仅接受仍属主表的计费字段。
-   * billingSettledAt 有值才表示扣费行、额度收口、金额回写都齐；不要用元数据是否齐全代替。
-   */
-  async recordBillingOutcome(input: {
-    historyId: string;
-    deductionRate?: number;
-    intendedDeduction?: number;
-    finishReason?: string | null;
-    billingSettledAt?: string;
-  }): Promise<void> {
-    const { error } = await this.db
-      .from('chat_history')
-      .update({
-        ...(input.deductionRate !== undefined ? { deduction_rate: input.deductionRate } : {}),
-        ...(input.intendedDeduction !== undefined
-          ? { llm_intended_deduction: input.intendedDeduction }
-          : {}),
-        ...(input.billingSettledAt ? { llm_billing_settled_at: input.billingSettledAt } : {}),
-      })
-      .eq('id', input.historyId)
-      .abortSignal(AbortSignal.timeout(5_000));
-    if (error) throw new Error(`回写生成计费结果失败：${error.message}`);
-    await this.applySuccessfulFinishReason(input.historyId, input.finishReason);
-  }
-
-  /**
-   * 扣费前先落下请求时定价快照。charge 行还没建出来时，回捞靠它按原价补建。
-   * 由 features/generation/settle.ts 调用；不碰用量元数据列。
-   */
-  async saveBillingSnapshot(historyId: string, snapshot: LlmBillingSnapshot): Promise<void> {
-    const { error } = await this.db
-      .from('chat_history')
-      .update({ llm_billing_snapshot: snapshot })
-      .eq('id', historyId)
-      .abortSignal(AbortSignal.timeout(5_000));
-    if (error) throw new Error(`回写计费快照失败：${error.message}`);
-  }
-
-  /** Each provider gets its own budget so incomplete metadata cannot hide completed-call billing. */
-  async listRowsPendingBilling(input: {
-    since: string;
-    limit: number;
-    provider: LlmModelProvider;
-  }): Promise<ChatHistorySyncRow[]> {
-    if (input.provider === 'surplus') return listSurplusRowsPendingBilling(this.db, input);
-
-    const table =
-      input.provider === 'openrouter' ? 'openrouter_chat_history' : 'venice_chat_history';
-    const other =
-      table === 'openrouter_chat_history' ? 'venice_chat_history' : 'openrouter_chat_history';
-    const { data, error } = await this.db
-      .from('chat_history')
-      .select(
-        `id,user_id,model,llm_finish_reason,llm_charge_id,assistant_reply,status,llm_billing_snapshot,llm_billing_settled_at,${table}!inner(llm_generation_id),${other}!left(llm_generation_id)`
-      )
-      .not(`${table}.llm_generation_id`, 'is', null)
-      .not('llm_billing_snapshot', 'is', null)
-      .is('llm_billing_settled_at', null)
-      .neq('status', 'streaming')
-      .gte('created_at', input.since)
-      .order('created_at', { ascending: true })
-      .limit(input.limit)
-      .abortSignal(AbortSignal.timeout(5_000));
-    if (error) throw new Error('扫描未完成计费的对话失败', { cause: error });
-    return (data ?? []).map((row) => mapProviderSyncRow(row, table));
-  }
-
-  /** Missing identities remain observable after removing the legacy parent ID. */
-  async listRowsMissingProviderIdentity(input: {
-    since: string;
-    limit: number;
-  }): Promise<ChatHistorySyncRow[]> {
-    const { data, error } = await this.db
-      .from('chat_history')
-      .select(
-        'id,user_id,model,session_id,llm_finish_reason,llm_charge_id,assistant_reply,status,llm_billing_snapshot,llm_billing_settled_at,openrouter_chat_history!left(llm_generation_id),venice_chat_history!left(llm_generation_id),or_presence:openrouter_chat_history!left(chat_history_id),venice_presence:venice_chat_history!left(chat_history_id)'
-      )
-      .not('openrouter_chat_history.llm_generation_id', 'is', null)
-      .not('venice_chat_history.llm_generation_id', 'is', null)
-      .is('openrouter_chat_history', null)
-      .is('venice_chat_history', null)
-      .not('llm_billing_snapshot', 'is', null)
-      .is('llm_billing_settled_at', null)
-      .gte('created_at', input.since)
-      .lt('created_at', new Date(Date.now() - STREAMING_STALE_SECONDS * 1000).toISOString())
-      .order('created_at', { ascending: true })
-      .limit(input.limit)
-      .abortSignal(AbortSignal.timeout(5_000));
-    if (error) throw new Error('扫描缺失调用身份的对话失败', { cause: error });
-    return (data ?? []).map((row) => {
-      const provider = row.llm_billing_snapshot?.provider;
-      const parsedProvider = LlmModelProviderSchema.safeParse(provider);
-      const conflict =
-        (row.or_presence && row.venice_presence) ||
-        (row.or_presence && provider !== 'openrouter') ||
-        (row.venice_presence && provider !== 'venice');
-      return {
-        ...row,
-        generationId: null,
-        callProvider: conflict || !parsedProvider.success ? null : parsedProvider.data,
-      };
-    }) as ChatHistorySyncRow[];
-  }
-
-  /** A restarted execution owner must not leave a durable quota/session reservation busy. */
-  async listStaleStreaming(input: { since: string; limit: number }): Promise<ChatHistorySyncRow[]> {
-    const { data, error } = await this.db
-      .from('chat_history')
-      .select(
-        'id,user_id,model,session_id,llm_finish_reason,llm_charge_id,assistant_reply,status,llm_billing_snapshot,llm_billing_settled_at'
-      )
-      .eq('status', 'streaming')
-      .gte('created_at', input.since)
-      .lt('created_at', new Date(Date.now() - STREAMING_STALE_SECONDS * 1000).toISOString())
-      .order('created_at', { ascending: true })
-      .limit(input.limit)
-      .abortSignal(AbortSignal.timeout(5_000));
-    if (error) throw new Error('扫描超时对话失败', { cause: error });
-    return (data ?? []).map((row) => ({
-      ...row,
-      generationId: null,
-      callProvider: null,
-    })) as ChatHistorySyncRow[];
-  }
-
-  private async applySuccessfulFinishReason(
-    historyId: string,
-    finishReason: string | null | undefined
-  ): Promise<void> {
-    if (typeof finishReason !== 'string') return;
-    const { error } = await this.db
-      .from('chat_history')
-      .update({ llm_finish_reason: finishReason })
-      .eq('id', historyId)
-      .eq('status', 'success')
-      .or(
-        'llm_finish_reason.is.null,and(llm_finish_reason.neq.cancelled,llm_finish_reason.neq.user_cancelled,llm_finish_reason.neq.timeout)'
-      )
-      .abortSignal(AbortSignal.timeout(5_000));
-    if (error) throw new Error(`补齐生成完成原因失败：${error.message}`);
-  }
-
-  /**
-   * 返回 current turn 之前、窗口起点之后的当前版本上下文。
-   * 开场白始终从 turn 1 的 prompt 快照提取，不随泄洪丢掉。
-   * listMessages 不加这个过滤。
-   *
-   * knownWindowStartTurn：开轮 RPC 刚返回的窗口起点。调用方有就传，省掉一次 chat_sessions 读；
-   * 没有（如生图按已存在的轮次组上下文）时仍回读会话。
-   */
-  async getContextBeforeTurn(
-    sessionId: string,
-    turnIndex: number,
-    knownWindowStartTurn?: number
-  ): Promise<ConversationContext> {
-    const windowStartTurn =
-      knownWindowStartTurn === undefined
-        ? await this.readWindowStartTurn(sessionId)
-        : readWindowStart(knownWindowStartTurn);
-
-    const base = this.db
-      .from('session_chat_history')
-      .select(SESSION_TURN_HEAD_COLUMNS)
-      .eq('session_id', sessionId);
-
-    // 已泄洪时窗口不含 turn 1，但开场白要从 turn 1 的 prompt 快照取。
-    // 用一条 OR 查询同时取回两者，而不是并发两次 GET：同一 session 连续打两次
-    // current_chat_history 正是 ST-MINIAPP-2G（Consecutive HTTP）报的问题。
-    const filtered =
-      windowStartTurn <= 1
-        ? base.gte('turn_index', windowStartTurn).lt('turn_index', turnIndex)
-        : base.or(
-            `turn_index.eq.1,and(turn_index.gte.${windowStartTurn},turn_index.lt.${turnIndex})`
-          );
-
-    const { data, error } = await filtered
-      .order('turn_index', { ascending: true })
-      .abortSignal(AbortSignal.timeout(5_000));
-    if (error) throw new Error(`读取会话上下文失败：${error.message}`);
-
-    const rows = ((data ?? []) as unknown as HeadProjectedRow[]).map(restoreHistoryHead);
-    if (windowStartTurn <= 1) {
-      return assembleConversationContext({ windowStartTurn, windowRows: rows });
-    }
-
-    return assembleConversationContext({
-      windowStartTurn,
-      windowRows: rows.filter((row) => row.turn_index >= windowStartTurn),
-      openingHistory: rows.find((row) => row.turn_index === 1)?.history,
-    });
-  }
-
-  private async readWindowStartTurn(sessionId: string): Promise<number> {
-    const { data, error } = await this.db
-      .from('chat_sessions')
-      .select('context_window_start_turn')
-      .eq('id', sessionId)
-      .abortSignal(AbortSignal.timeout(5_000))
-      .maybeSingle();
-    if (error) throw new Error(`读取上下文窗口起点失败：${error.message}`);
-    return readWindowStart(
-      (data as { context_window_start_turn?: unknown } | null)?.context_window_start_turn
-    );
-  }
-
-  /**
-   * 按 id 取一轮，并确认它属于该会话。语音生成要拿这条回复的正文。
-   *
-   * 走 current_chat_history 而不是 chat_history：只有当前版本的回复才在页面上，
-   * 被重生成顶掉的旧版本用户已经看不到了，不该还能为它生成语音。
-   */
-  async findCurrentTurnById(
-    sessionId: string,
-    historyId: string
-  ): Promise<ConversationHistoryRow | null> {
-    const { data, error } = await this.db
-      .from('session_chat_history')
-      .select(MESSAGE_DISPLAY_COLUMNS)
-      .eq('is_inherited', false)
-      .eq('id', historyId)
-      .eq('session_id', sessionId)
-      .abortSignal(AbortSignal.timeout(5_000))
-      .maybeSingle();
-
-    if (error) throw new Error(`查询对话轮次失败：${error.message}`);
-    return data ? restoreHistoryHead(data as unknown as HeadProjectedRow) : null;
-  }
-
-  async listMessages(
-    sessionId: string,
-    openingMessage: string,
-    options: { limit?: number; beforeTurnIndex?: number } = {}
-  ): Promise<{ messages: ChatMessage[]; hasMore: boolean }> {
-    const limit = clampLimit(options.limit, 50, 200);
-    const turnLimit = Math.max(Math.ceil(limit / 2), 1);
-
-    let query = this.db
-      .from('session_chat_history')
-      .select(MESSAGE_DISPLAY_COLUMNS)
-      .eq('session_id', sessionId)
-      .not('turn_index', 'is', null);
-    if (typeof options.beforeTurnIndex === 'number') {
-      query = query.lt('turn_index', options.beforeTurnIndex);
-    }
-
-    const { data, error } = await query
-      .order('turn_index', { ascending: false })
-      .limit(turnLimit + 1)
-      .abortSignal(AbortSignal.timeout(5_000));
-    if (error) throw new Error(`查询会话消息失败：${error.message}`);
-
-    const latest = ((data ?? []) as unknown as HeadProjectedRow[]).map(restoreHistoryHead);
-    const hasMore = latest.length > turnLimit;
-    const page = latest.slice(0, turnLimit).reverse();
-    const persistedOpening = extractOpeningMessage(
-      latest.slice().sort((left, right) => left.turn_index - right.turn_index)[0]?.history
-    );
-    // 长会话向前翻到最后一页时才补开场白；第一页不足一页时同样会命中。
-    const includeOpening = !hasMore;
-    const messages = page.flatMap(toChatMessages);
-    if (includeOpening && (persistedOpening ?? openingMessage).trim()) {
-      messages.unshift(toOpeningMessage(sessionId, persistedOpening ?? openingMessage));
-    }
-    return { messages, hasMore };
-  }
-}
-
-interface StartedHistoryTurnRpc {
-  turn_index?: number;
-  history_id?: string;
-  revision?: number;
-  context_window_start_turn?: number;
-  postprocess_version?: number | null;
-  choice_rules_mode?: unknown;
-  status_rules_mode?: unknown;
-  memory_rules_mode?: unknown;
-}
-
-function mapStartedTurn(
-  result: StartedHistoryTurnRpc | null,
-  userContent: string
-): StartedHistoryTurn {
-  const postprocessVersion = readPostprocessVersion(result?.postprocess_version);
-  const slotModes = readInstructionSlotModes(result);
-  if (
-    typeof result?.turn_index !== 'number' ||
-    !result.history_id ||
-    typeof result.revision !== 'number' ||
-    postprocessVersion === null ||
-    slotModes === null
+  recordBillingOutcome(
+    ...args: Parameters<typeof billing.recordBillingOutcome> extends [DomainDb, ...infer Rest]
+      ? Rest
+      : never
   ) {
-    throw new Error('创建对话轮次结果字段不完整');
+    return billing.recordBillingOutcome(this.db, ...args);
   }
-  return {
-    turnIndex: result.turn_index,
-    historyId: result.history_id,
-    revision: result.revision,
-    userContent,
-    contextWindowStartTurn: readWindowStart(result.context_window_start_turn),
-    postprocessVersion,
-    slotModes,
-  };
-}
 
-function readInstructionSlotModes(
-  result: StartedHistoryTurnRpc | null
-): InstructionSlotModes | null {
-  const values = [result?.choice_rules_mode, result?.status_rules_mode, result?.memory_rules_mode];
-  if (!values.every((value) => value === 'full' || value === 'concise' || value === 'off')) {
-    return null;
+  saveBillingSnapshot(
+    ...args: Parameters<typeof billing.saveBillingSnapshot> extends [DomainDb, ...infer Rest]
+      ? Rest
+      : never
+  ) {
+    return billing.saveBillingSnapshot(this.db, ...args);
   }
-  return { choice: values[0], status: values[1], memory: values[2] } as InstructionSlotModes;
-}
 
-function contextWindowRpcArgs(input: { maxContextTurns?: number; retainContextTurns?: number }): {
-  p_max_context_turns?: number;
-  p_retain_context_turns?: number;
-} {
-  return {
-    ...(typeof input.maxContextTurns === 'number'
-      ? { p_max_context_turns: input.maxContextTurns }
-      : {}),
-    ...(typeof input.retainContextTurns === 'number'
-      ? { p_retain_context_turns: input.retainContextTurns }
-      : {}),
-  };
-}
-
-function readWindowStart(value: unknown): number {
-  return typeof value === 'number' && Number.isInteger(value) && value >= 1 ? value : 1;
-}
-
-export function assembleConversationContext(input: {
-  windowStartTurn: number;
-  windowRows: ConversationHistoryRow[];
-  openingHistory?: unknown[];
-}): ConversationContext {
-  const openingSource = input.openingHistory ?? input.windowRows[0]?.history;
-  return {
-    openingMessage: extractOpeningMessage(openingSource),
-    messages: input.windowRows.flatMap((row) => {
-      const messages: ConversationContext['messages'] = [];
-      if (row.user_input.trim()) messages.push({ role: 'user', content: row.user_input });
-      if (row.assistant_reply?.trim()) {
-        messages.push({ role: 'assistant', content: row.assistant_reply });
-      }
-      return messages;
-    }),
-    truncatedTurns: Math.max(input.windowStartTurn - 1, 0),
-  };
-}
-
-export function latestRevisionRows(rows: ConversationHistoryRow[]): ConversationHistoryRow[] {
-  const latest = new Map<number, ConversationHistoryRow>();
-  for (const row of rows) {
-    const existing = latest.get(row.turn_index);
-    if (!existing || row.revision > existing.revision) latest.set(row.turn_index, row);
+  listRowsPendingBilling(
+    ...args: Parameters<typeof billing.listRowsPendingBilling> extends [DomainDb, ...infer Rest]
+      ? Rest
+      : never
+  ) {
+    return billing.listRowsPendingBilling(this.db, ...args);
   }
-  return [...latest.values()].sort((left, right) => left.turn_index - right.turn_index);
-}
 
-export function extractOpeningMessage(history: unknown[] | undefined): string | null {
-  if (!Array.isArray(history)) return null;
-  for (const item of history) {
-    if (!item || typeof item !== 'object') continue;
-    const candidate = item as { role?: unknown; content?: unknown };
-    if (candidate.role === 'assistant' && typeof candidate.content === 'string') {
-      const content = candidate.content.trim();
-      if (content) return content;
-    }
+  listRowsMissingProviderIdentity(
+    ...args: Parameters<typeof billing.listRowsMissingProviderIdentity> extends [
+      DomainDb,
+      ...infer Rest,
+    ]
+      ? Rest
+      : never
+  ) {
+    return billing.listRowsMissingProviderIdentity(this.db, ...args);
   }
-  return null;
-}
 
-export function toChatMessages(row: ConversationHistoryRow): ChatMessage[] {
-  return [
-    {
-      id: `${row.id}:user`,
-      ...(row.user_edit_version ? { edit_version: row.user_edit_version } : {}),
-      ...(row.user_deleted ? { deleted: true } : {}),
-      ...(row.is_inherited ? { inherited: true } : {}),
-      session_id: row.session_id,
-      turn_index: row.turn_index,
-      role: 'user',
-      revision: row.revision,
-      content: row.user_deleted ? '' : row.user_input,
-      status: 'complete',
-      error_code: null,
-      finish_reason: null,
-      model_id: null,
-      postprocess_version: null,
-      created_at: row.created_at,
-    },
-    {
-      id: row.id,
-      ...(row.assistant_edit_version ? { edit_version: row.assistant_edit_version } : {}),
-      ...(row.assistant_deleted ? { deleted: true } : {}),
-      ...(row.is_inherited ? { inherited: true } : {}),
-      ...(typeof row.liked === 'boolean' ? { liked: row.liked } : {}),
-      ...(!row.is_inherited && extractRequestId(row.history)
-        ? { request_id: extractRequestId(row.history)! }
-        : {}),
-      session_id: row.session_id,
-      turn_index: row.turn_index,
-      role: 'assistant',
-      revision: row.revision,
-      content: row.assistant_deleted
-        ? ''
-        : (row.assistant_reply ??
-          (row.first_token_preview?.kind === 'delta' ? row.first_token_preview.text : '')),
-      ...(row.status === 'streaming' && row.first_token_preview?.kind === 'reasoning'
-        ? { reasoning: row.first_token_preview.text }
-        : {}),
-      status: toChatMessageStatus(row.status),
-      error_code: toErrorCode(row.status),
-      finish_reason: row.llm_finish_reason,
-      model_id: row.model,
-      postprocess_version: readPostprocessVersion(row.postprocess_version),
-      created_at: row.created_at,
-    },
-  ];
-}
+  listStaleStreaming(
+    ...args: Parameters<typeof billing.listStaleStreaming> extends [DomainDb, ...infer Rest]
+      ? Rest
+      : never
+  ) {
+    return billing.listStaleStreaming(this.db, ...args);
+  }
 
-export function toOpeningMessage(sessionId: string, content: string, createdAt = ''): ChatMessage {
-  return {
-    id: `opening:${sessionId}`,
-    session_id: sessionId,
-    turn_index: 0,
-    role: 'assistant',
-    revision: 0,
-    content,
-    status: 'complete',
-    error_code: null,
-    finish_reason: null,
-    model_id: null,
-    postprocess_version: null,
-    created_at: createdAt,
-  };
-}
+  getContextBeforeTurn(...args: Parameters<ConversationHistoryReads['getContextBeforeTurn']>) {
+    return this.reads.getContextBeforeTurn(...args);
+  }
 
-export function toChatMessageStatus(status: string): ChatMessageStatus {
-  if (status === 'streaming') return 'streaming';
-  if (status === 'success') return 'complete';
-  if (status === 'stream_interrupted') return 'interrupted';
-  return 'failed';
-}
+  findCurrentTurnById(...args: Parameters<ConversationHistoryReads['findCurrentTurnById']>) {
+    return this.reads.findCurrentTurnById(...args);
+  }
 
-function toErrorCode(status: string): string | null {
-  return ['streaming', 'success', 'stream_interrupted'].includes(status) ? null : status;
-}
-
-export function clampLimit(value: number | undefined, fallback: number, max: number): number {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return fallback;
-  return Math.min(Math.floor(value), max);
-}
-
-export function withStoredRequestId(
-  history: GenerationMessage[],
-  requestId?: string
-): Array<GenerationMessage & { request_id?: string }> {
-  if (!requestId) return history;
-  const first = history[0] ?? { role: 'system', content: '' };
-  return [{ ...first, request_id: requestId }, ...history.slice(1)];
-}
-
-function extractRequestId(history: unknown[]): string | undefined {
-  const first = history[0];
-  if (!first || typeof first !== 'object') return undefined;
-  const requestId = (first as { request_id?: unknown }).request_id;
-  return typeof requestId === 'string' ? requestId : undefined;
-}
-
-function mapProviderSyncRow(
-  value: unknown,
-  table: 'openrouter_chat_history' | 'venice_chat_history'
-): ChatHistorySyncRow {
-  const row = value as Omit<ChatHistorySyncRow, 'generationId' | 'callProvider'> & {
-    openrouter_chat_history?: { llm_generation_id: string | null };
-    venice_chat_history?: { llm_generation_id: string | null };
-  };
-  const provider = table === 'openrouter_chat_history' ? 'openrouter' : 'venice';
-  const conflict =
-    !!(row.openrouter_chat_history && row.venice_chat_history) ||
-    !!(row.llm_billing_snapshot?.provider && row.llm_billing_snapshot.provider !== provider);
-  return {
-    ...row,
-    generationId: row[table]?.llm_generation_id ?? null,
-    callProvider: conflict ? null : provider,
-  };
+  listMessages(...args: Parameters<ConversationHistoryReads['listMessages']>) {
+    return this.reads.listMessages(...args);
+  }
 }
