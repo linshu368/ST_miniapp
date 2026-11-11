@@ -1,5 +1,7 @@
 # 调研记录
 
+- 2026-11-11用户要求增加长会话性能与prompt解压处理，新增R9/AC13-16/B3；最新生产结构、Sentry/Railway证据、最小数据库增量及实测限制见[history-read-performance.md](history-read-performance.md)。旧规划“无数据库增量”约束被这一明确范围扩展取代，首次窄投影并非本次优化。目录已由用户改为characters-chat-abliaty，本轮同步修复context manifests的旧路径；保留原task身份与其他既有改动。
+
 - 已读取根README、ARCHITECTURE、workflow、frontend/backend/shared spec索引、相关模块、cross-layer guide、ui-tests README及Trellis brainstorm/before-dev。
 - 使用Supabase技能与官方JavaScript abortSignal文档：https://supabase.com/docs/reference/javascript/using-modifiers-abortsignal 。abortSignal控制fetch，不证明服务器SQL立即中止。
 - 审计：../11-10-characters-chat-root-cause/report.md；../11-10-seven-day-page-performance/report.md。两目录既有未跟踪文件不得混入产品提交。
