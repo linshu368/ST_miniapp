@@ -1,5 +1,11 @@
 # SQL 迁移文件
 
+## 2026-11-11 聊天历史展示投影（TEST 已执行，Production 待验证）
+
+依次验证 `20261111_chat_history_display_metadata.sql` → `20261111_chat_history_display_reads.sql`，然后有限回填、核验覆盖/读写性能，再发布 Backend。新表归 experience；原始 prompt 和账务不迁移、不裁剪。service_role 保留原 admission 的 invoker 写权限，新对象对 anon/authenticated 不开放。
+
+`maintenance/chat_history_display_backfill.sql` 和 `maintenance/chat_history_display_write_recovery.sql` 是同一 migration 来源下的人工维护/恢复脚本，**不加入自动 schema migration 队列**；前者每批独立事务，需要 psql `\gexec`，不得包在外层事务中。完整前置、锁/容量、重访与恢复顺序见 [操作说明](../../../docs/chat-history-read-performance.md)。用户已确认两份扩展迁移在 TEST 执行，预检已核对对象存在；本地一次性 PG17 harness 覆盖回填/恢复，不代表 TEST 存量业务记录已完成回填或 Production 已执行。
+
 ## 2026-11-11 轻量文本专项星尘优先扣（本地 PG17 验证，远端未执行）
 
 `20261111_light_text_bonus_first_debit.sql`（domain: billing）。前置：`20260921_wallet_debit_refund.sql`。

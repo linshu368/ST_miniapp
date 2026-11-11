@@ -17,6 +17,8 @@ last_verified_at: 2026-11-04
 
 ## 当前状态
 
+2026-11-11 本地候选：chat_history_display_metadata 开启 RLS，撤销 PUBLIC/anon/authenticated/service 默认权限后仅给 service SELECT/INSERT/UPDATE，以保持原 admission SECURITY INVOKER。投影视图为 security_invoker，分页函数仅 service 可执行且核验 owner；有限回填函数仅运维角色，失效 trigger 函数固定 search_path 并撤销外部执行。旧 history RLS/ACL 的生产差异仍须独立核验，本次不默认为已修复。
+
 高级图片应用退场后，`20260928_remove_advanced_image_config.sql` 作为待人工执行的 forward migration，删除四个 `image_advanced_*` runtime/Admin 配置并以 managed-key、validator 和 CHECK 三层阻止回写；普通图片 `feature_free_trial_limits.basic_image`、历史图片 attempt 与结算对象不变。
 
 ## 入口与调用者

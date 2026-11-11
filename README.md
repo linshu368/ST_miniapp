@@ -118,7 +118,7 @@ pnpm --filter @miniapp/backend image-plaza:seed -- --input <xlsx>
 
 | 类别          | 变量                                                                                                                | 说明                                                                                                            |
 | ------------- | ------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| Runtime/CORS  | `NODE_ENV`, `PORT`, `FRONTEND_URL`, `ADMIN_PLATFORM_URL`                                                            | 服务环境、端口和允许来源                                                                                        |
+| Runtime/CORS  | `NODE_ENV`, `PORT`, `FRONTEND_URL`, `ADMIN_PLATFORM_URL`, `FRONTEND_ALLOWED_ORIGINS`                                | 服务环境、端口和精确允许来源；额外来源逗号分隔，不接受路径或通配符                                              |
 | 数据库选择    | `DATABASE_ENV`, `TEST_*`, `PROD_*`, `DATABASE_URL`, `DIRECT_URL`, `SUPABASE_*`                                      | 测试/生产项目、连接与 service role；`ALLOW_PROD_DATABASE` 仅紧急人工操作                                        |
 | Telegram      | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `BOT_INTERNAL_SECRET`, `TELEGRAM_COMMUNITY_BOT_TOKEN`              | Bot、webhook 和内部调用鉴权                                                                                     |
 | CS 服务       | `CS_SERVICE_URL`, `CS_SERVICE_SECRET`                                                                               | 独立客服服务（ST_cs_platform）地址和共享密钥；Bot 转发与 `/api/support/*` 代理使用，`CS_SERVICE_ENABLED` 已废弃 |

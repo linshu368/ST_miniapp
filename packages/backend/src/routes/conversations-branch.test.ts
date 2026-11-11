@@ -301,7 +301,7 @@ describe('conversation branch boundary', () => {
         messageId: MESSAGE,
         requestId: REQUEST,
       });
-      expect(mocks.list).toHaveBeenCalledExactlyOnceWith(BRANCH, '开场白');
+      expect(mocks.list).toHaveBeenCalledExactlyOnceWith(BRANCH, '开场白', { userId: USER });
       expect(response.json()).toMatchObject({
         success: true,
         data: {

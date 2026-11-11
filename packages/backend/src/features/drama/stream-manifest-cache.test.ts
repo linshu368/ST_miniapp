@@ -6,58 +6,28 @@ import {
 
 // 这几条都是「写错了也不报错、只会悄悄退化」的逻辑：
 // 命中判断错了会把过期内容发给用户；single-flight 失效会并发打爆 Stream 源站；
-// 超时写错会让 /play 被真实网络抖动拖慢而不是稳定降级。
+// 未命中时如果又开始等网络，/play 会重新被 Stream 拉取耗时拖慢。
 
 const UID = 'uid-1111';
 const OTHER = 'uid-2222';
+const URL = 'https://stream.invalid/token/manifest/video.m3u8';
+const HOUR = 60 * 60 * 1000;
+
+/** 让已完成的后台拉取写入缓存（拉取函数是立即 resolve 的 async 函数） */
+const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+/** 触发一次未命中并等后台拉取写入缓存 */
+async function warm(cache: DramaStreamManifestCache, uid = UID, url = URL) {
+  await cache.getManifest(uid, url);
+  await flush();
+}
 
 afterEach(() => {
   vi.useRealTimers();
 });
 
 describe('DramaStreamManifestCache', () => {
-  it('TTL 内复用同一份内容，不重复拉取', async () => {
-    let calls = 0;
-    const cache = new DramaStreamManifestCache(async () => `#EXTM3U\n# call-${++calls}`);
-
-    const first = await cache.getManifest(UID, 'https://stream.invalid/token/manifest/video.m3u8');
-    const second = await cache.getManifest(
-      UID,
-      'https://stream.invalid/token2/manifest/video.m3u8'
-    );
-
-    expect(calls).toBe(1);
-    expect(second).toBe(first);
-  });
-
-  it('不同 uid 各自缓存，互不串用', async () => {
-    const cache = new DramaStreamManifestCache(async (url) => `content-for-${url}`);
-
-    const a = await cache.getManifest(UID, 'https://stream.invalid/a/manifest/video.m3u8');
-    const b = await cache.getManifest(OTHER, 'https://stream.invalid/b/manifest/video.m3u8');
-
-    expect(a).not.toBe(b);
-  });
-
-  it('同一个 uid 并发请求只拉一次', async () => {
-    let calls = 0;
-    const cache = new DramaStreamManifestCache(async () => {
-      calls++;
-      await new Promise((r) => setTimeout(r, 10));
-      return `content-${calls}`;
-    });
-
-    const results = await Promise.all([
-      cache.getManifest(UID, 'https://stream.invalid/token/manifest/video.m3u8'),
-      cache.getManifest(UID, 'https://stream.invalid/token/manifest/video.m3u8'),
-      cache.getManifest(UID, 'https://stream.invalid/token/manifest/video.m3u8'),
-    ]);
-
-    expect(calls).toBe(1);
-    expect(new Set(results).size).toBe(1);
-  });
-
-  it('observes miss、inflight 和 hit，不改变返回内容', async () => {
+  it('未命中时立即返回 undefined，不等待拉取；拉取完成后下一次命中', async () => {
     let resolve!: (content: string) => void;
     const cache = new DramaStreamManifestCache(
       () =>
@@ -66,74 +36,112 @@ describe('DramaStreamManifestCache', () => {
         })
     );
     const miss: DramaManifestObservation = {};
-    const waiting: DramaManifestObservation = {};
-    const hit: DramaManifestObservation = {};
-    const first = cache.getManifest(
-      UID,
-      'https://stream.invalid/token/manifest/video.m3u8',
-      undefined,
-      miss
-    );
-    const second = cache.getManifest(
-      UID,
-      'https://stream.invalid/token/manifest/video.m3u8',
-      undefined,
-      waiting
-    );
+
+    // 拉取一直没有返回，/play 也不能被它卡住
+    expect(await cache.getManifest(UID, URL, undefined, miss)).toBeUndefined();
     expect(miss.cache).toBe('miss');
-    expect(waiting.cache).toBe('inflight');
+
     resolve('#EXTM3U');
-    const result = await first;
-    expect(await second).toBe(result);
-    expect(
-      await cache.getManifest(
-        UID,
-        'https://stream.invalid/token/manifest/video.m3u8',
-        undefined,
-        hit
-      )
-    ).toBe(result);
+    await flush();
+    const hit: DramaManifestObservation = {};
+    expect(await cache.getManifest(UID, URL, undefined, hit)).toBe('#EXTM3U');
     expect(hit.cache).toBe('hit');
   });
 
-  it('超过 TTL 后重新拉取', async () => {
+  it('TTL 内复用同一份内容，不重复拉取，与签名 token 无关', async () => {
+    let calls = 0;
+    const cache = new DramaStreamManifestCache(async () => `#EXTM3U\n# call-${++calls}`);
+
+    await warm(cache, UID, 'https://stream.invalid/token/manifest/video.m3u8');
+    const second = await cache.getManifest(
+      UID,
+      'https://stream.invalid/token2/manifest/video.m3u8'
+    );
+
+    expect(calls).toBe(1);
+    expect(second).toBe('#EXTM3U\n# call-1');
+  });
+
+  it('不同 uid 各自缓存，互不串用', async () => {
+    const cache = new DramaStreamManifestCache(async (url) => `content-for-${url}`);
+
+    await warm(cache, UID, 'https://stream.invalid/a/manifest/video.m3u8');
+    await warm(cache, OTHER, 'https://stream.invalid/b/manifest/video.m3u8');
+
+    expect(await cache.getManifest(UID, URL)).toBe(
+      'content-for-https://stream.invalid/a/manifest/video.m3u8'
+    );
+    expect(await cache.getManifest(OTHER, URL)).toBe(
+      'content-for-https://stream.invalid/b/manifest/video.m3u8'
+    );
+  });
+
+  it('后台拉取进行中，同一个 uid 的其他请求不再发起拉取，标记为 inflight', async () => {
+    let calls = 0;
+    let resolve!: (content: string) => void;
+    const cache = new DramaStreamManifestCache(() => {
+      calls++;
+      return new Promise<string>((done) => {
+        resolve = done;
+      });
+    });
+    const first: DramaManifestObservation = {};
+    const second: DramaManifestObservation = {};
+    const third: DramaManifestObservation = {};
+
+    const results = await Promise.all([
+      cache.getManifest(UID, URL, undefined, first),
+      cache.getManifest(UID, URL, undefined, second),
+      cache.getManifest(UID, URL, undefined, third),
+    ]);
+
+    expect(calls).toBe(1);
+    expect(results).toEqual([undefined, undefined, undefined]);
+    expect([first.cache, second.cache, third.cache]).toEqual(['miss', 'inflight', 'inflight']);
+
+    resolve('#EXTM3U');
+    await flush();
+    expect(await cache.getManifest(UID, URL)).toBe('#EXTM3U');
+    expect(calls).toBe(1);
+  });
+
+  it('6 小时内命中，超过 TTL 后不返回旧内容并重新拉取', async () => {
     vi.useFakeTimers();
     let calls = 0;
     const cache = new DramaStreamManifestCache(async () => `content-${++calls}`);
 
-    const first = await cache.getManifest(UID, 'https://stream.invalid/token/manifest/video.m3u8');
-    await vi.advanceTimersByTimeAsync(10 * 60 * 1000 - 1000);
-    expect(await cache.getManifest(UID, 'https://stream.invalid/token/manifest/video.m3u8')).toBe(
-      first
-    );
+    await cache.getManifest(UID, URL);
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(6 * HOUR - 1000);
+    expect(await cache.getManifest(UID, URL)).toBe('content-1');
 
     await vi.advanceTimersByTimeAsync(2000);
-    const renewed = await cache.getManifest(
-      UID,
-      'https://stream.invalid/token/manifest/video.m3u8'
-    );
+    const expired: DramaManifestObservation = {};
+    expect(await cache.getManifest(UID, URL, undefined, expired)).toBeUndefined();
+    expect(expired.cache).toBe('miss');
+
+    await vi.advanceTimersByTimeAsync(0);
     expect(calls).toBe(2);
-    expect(renewed).not.toBe(first);
+    expect(await cache.getManifest(UID, URL)).toBe('content-2');
   });
 
   it('容量超限按插入顺序淘汰最旧的', async () => {
     const cache = new DramaStreamManifestCache(async (url) => url);
-    const base = 'https://stream.invalid/token/manifest/video.m3u8';
 
     for (let i = 0; i < 65; i++) {
-      await cache.getManifest(`uid-${i}`, `${base}?i=${i}`);
+      await warm(cache, `uid-${i}`, `${URL}?i=${i}`);
     }
 
     const evicted: DramaManifestObservation = {};
-    await cache.getManifest('uid-0', `${base}?i=0`, undefined, evicted);
+    await cache.getManifest('uid-0', `${URL}?i=0`, undefined, evicted);
     expect(evicted.cache).toBe('miss');
 
     const kept: DramaManifestObservation = {};
-    await cache.getManifest('uid-64', `${base}?i=64`, undefined, kept);
+    await cache.getManifest('uid-64', `${URL}?i=64`, undefined, kept);
     expect(kept.cache).toBe('hit');
   });
 
-  it('拉取失败降级成 undefined，不抛异常，日志不含 URL', async () => {
+  it('拉取失败不抛异常，日志只记类别、不含 URL', async () => {
     const warn = vi.fn();
     const cache = new DramaStreamManifestCache(async () => {
       throw new Error('network down');
@@ -144,34 +152,51 @@ describe('DramaStreamManifestCache', () => {
       'https://stream.invalid/secret-token/manifest/video.m3u8',
       { warn }
     );
+    await flush();
 
     expect(result).toBeUndefined();
+    expect(warn).toHaveBeenCalledTimes(1);
     const logged = JSON.stringify(warn.mock.calls);
+    expect(logged).toContain('drama_manifest_fetch_failed');
     expect(logged).not.toContain('secret-token');
     expect(logged).not.toContain('stream.invalid');
   });
 
-  it('超时降级成 undefined，即使注入的拉取函数不支持 AbortSignal', async () => {
+  it('后台拉取 3s 超时后放弃并释放 inflight，即使注入的拉取函数不支持 AbortSignal', async () => {
     vi.useFakeTimers();
-    const cache = new DramaStreamManifestCache(() => new Promise<string>(() => {}));
+    const warn = vi.fn();
+    let calls = 0;
+    const cache = new DramaStreamManifestCache(() => {
+      calls++;
+      return new Promise<string>(() => {});
+    });
 
-    const pending = cache.getManifest(UID, 'https://stream.invalid/token/manifest/video.m3u8');
-    await vi.advanceTimersByTimeAsync(300);
+    expect(await cache.getManifest(UID, URL, { warn })).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(2999);
+    const stillWaiting: DramaManifestObservation = {};
+    await cache.getManifest(UID, URL, { warn }, stillWaiting);
+    expect(stillWaiting.cache).toBe('inflight');
 
-    expect(await pending).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(JSON.stringify(warn.mock.calls)).toContain('drama_manifest_timeout');
+
+    const retried: DramaManifestObservation = {};
+    await cache.getManifest(UID, URL, { warn }, retried);
+    expect(retried.cache).toBe('miss');
+    expect(calls).toBe(2);
   });
 
-  it('内容过大时拒绝写入缓存并降级', async () => {
+  it('内容过大时拒绝写入缓存', async () => {
     const warn = vi.fn();
     const cache = new DramaStreamManifestCache(async () => 'x'.repeat(16 * 1024 + 1));
 
-    const result = await cache.getManifest(
-      UID,
-      'https://stream.invalid/token/manifest/video.m3u8',
-      { warn }
-    );
+    await cache.getManifest(UID, URL, { warn });
+    await flush();
 
-    expect(result).toBeUndefined();
+    expect(JSON.stringify(warn.mock.calls)).toContain('drama_manifest_too_large');
+    const next: DramaManifestObservation = {};
+    expect(await cache.getManifest(UID, URL, undefined, next)).toBeUndefined();
+    expect(next.cache).toBe('miss');
   });
 
   it('失败不写入缓存，下次重新尝试', async () => {
@@ -182,12 +207,10 @@ describe('DramaStreamManifestCache', () => {
       return 'ok';
     });
 
-    expect(
-      await cache.getManifest(UID, 'https://stream.invalid/token/manifest/video.m3u8')
-    ).toBeUndefined();
-    expect(await cache.getManifest(UID, 'https://stream.invalid/token/manifest/video.m3u8')).toBe(
-      'ok'
-    );
+    await warm(cache);
+    expect(await cache.getManifest(UID, URL)).toBeUndefined();
+    await flush();
+    expect(await cache.getManifest(UID, URL)).toBe('ok');
     expect(calls).toBe(2);
   });
 });

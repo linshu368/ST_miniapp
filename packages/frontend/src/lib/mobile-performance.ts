@@ -40,7 +40,7 @@ const POLICIES: Record<MobilePlatformGroup, MobilePerformancePolicy> = {
   android: {
     platform: 'android',
     backgroundRoutePrefetchLimit: 1,
-    lobbyRequestTimeoutMs: 1_800,
+    lobbyRequestTimeoutMs: 4_000,
     characters: {
       initialRenderCount: 4,
       renderBatchSize: 4,

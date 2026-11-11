@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useConversationQuery, useCreateConversationMutation } from '@/lib/api/conversations';
 import { chatEntryPath } from '@/lib/chat-entry';
@@ -21,6 +21,25 @@ function replaceChatUrl(
     '',
     chatEntryPath(characterId, { sessionId: sessionId ?? undefined, source })
   );
+}
+
+function entryErrorMessage(
+  createError: unknown,
+  detailCode: string | undefined,
+  createFailed: boolean,
+  detailFailed: boolean
+): string | null {
+  const createCode =
+    createError instanceof Error ? (createError as { code?: string }).code : undefined;
+  if (
+    [createCode, detailCode].some((code) => code === 'UNAUTHORIZED' || code === 'AUTH_REQUIRED')
+  ) {
+    return '登录信息已失效，请从 Telegram 重新打开小程序';
+  }
+  if (createFailed) return '对话创建失败，请重试';
+  return detailFailed && detailCode !== 'session_not_found' && detailCode !== 'NOT_FOUND'
+    ? '对话加载失败，请重试'
+    : null;
 }
 
 /**
@@ -120,13 +139,12 @@ export function useChatSession(characterId: string) {
     if (activeSessionId) void conversationQuery.refetch();
   }, [activeSessionId, conversationQuery, createConversation]);
 
-  const entryError = createConversation.isError
-    ? '对话创建失败，请重试'
-    : conversationQuery.isError &&
-        detailErrorCode !== 'session_not_found' &&
-        detailErrorCode !== 'NOT_FOUND'
-      ? '对话加载失败，请重试'
-      : null;
+  const entryError = entryErrorMessage(
+    createConversation.error,
+    detailErrorCode,
+    createConversation.isError,
+    conversationQuery.isError
+  );
 
   const ready = Boolean(activeSessionId) && conversationQuery.isSuccess;
 

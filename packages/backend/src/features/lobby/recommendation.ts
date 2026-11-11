@@ -14,6 +14,7 @@ import { fetchRuntimeConfigEntry } from '../../platform/runtime-config.js';
 import { discoverableCharacterWhere } from '../creator/access.js';
 import { buildRecommendedOrder } from './recommended-ranking.js';
 import { loadCharacterRankingScores } from './ranking-stats.js';
+import { readRecommendationCatalog, type CatalogSnapshot } from './catalog-read.js';
 import {
   buildNewUserOrder,
   buildRecommendationOrder,
@@ -29,7 +30,8 @@ import {
 
 let configCache: { expires: number; value: LobbyRotationConfig } | null = null;
 let configInflight: Promise<LobbyRotationConfig> | null = null;
-let catalogCache: { expires: number; value: RecommendationCandidate[] } | null = null;
+let catalogCache: { expires: number; snapshot: CatalogSnapshot<RecommendationCandidate> } | null =
+  null;
 let catalogInflight: Promise<RecommendationCandidate[]> | null = null;
 
 export function clearLobbyRecommendationCache() {
@@ -65,29 +67,12 @@ export async function loadLobbyRotationConfig(
 }
 
 async function loadCandidates(): Promise<RecommendationCandidate[]> {
-  if (catalogCache && catalogCache.expires > Date.now()) return catalogCache.value;
+  if (catalogCache && catalogCache.expires > Date.now()) return catalogCache.snapshot.value;
   if (catalogInflight) return catalogInflight;
   catalogInflight = (async () => {
-    // Only completeness is used by exploration. Keep every character's description in
-    // Postgres instead of moving the whole catalog of text to the ranking process.
-    const cards = await prisma.$queryRaw<
-      Array<{ id: string; tags: unknown; can_explore: boolean }>
-    >`
-      SELECT c.id, c.tags,
-        (c.name ~ '[^[:space:]]' AND c.description ~ '[^[:space:]]') AS can_explore
-      FROM app_core.characters c
-      WHERE NOT c.is_test AND app_core.can_discover_character(c.id)
-      ORDER BY c.sort_order ASC, c.created_at DESC LIMIT 10000
-    `;
-    const value = cards.map((card) => ({
-      id: card.id,
-      tags: Array.isArray(card.tags)
-        ? card.tags.filter((tag): tag is string => typeof tag === 'string')
-        : [],
-      canExplore: card.can_explore,
-    }));
-    catalogCache = { expires: Date.now() + 2000, value };
-    return value;
+    const snapshot = await readRecommendationCatalog(prisma, catalogCache?.snapshot ?? null);
+    catalogCache = { expires: Date.now() + 2000, snapshot };
+    return snapshot.value;
   })().finally(() => {
     catalogInflight = null;
   });

@@ -1,0 +1,124 @@
+{
+  "id": "local-mobile-performance-gate",
+  "name": "local-mobile-performance-gate",
+  "title": "本地移动端性能验收与规划门禁",
+  "description": "暂停新增本地性能采样及结果门禁，待后续研究；既有规划和质量门禁保留。",
+  "status": "paused",
+  "dev_type": "fullstack",
+  "scope": "local performance harness and Trellis acceptance gates",
+  "package": "frontend",
+  "priority": "P1",
+  "creator": "cline",
+  "assignee": "cline",
+  "createdAt": "2026-11-11",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    ".trellis/tasks/11-10-characters-chat-abliaty/task.json",
+    ".trellis/spec/guides/local-mobile-performance-gate.md",
+    "AGENTS.md",
+    ".trellis/workflow.md",
+    ".trellis/tasks/11-11-local-mobile-performance-gate/research/implementation-validation.md"
+  ],
+  "notes": "2026-11-11 用户澄清：后续开发不再强制做本地性能测试，此前已有门禁不受影响。原mobile_performance规划声明及start校验已恢复；本任务新增采样/结果/归档/CI门禁继续停用，任务保持paused，待重新研究。不完成、不归档，历史报告保留，最后批次清理成功。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "frontend.infrastructure.client-ui-foundation",
+        "backend.infrastructure.runtime-data-security"
+      ]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": ["/characters", "/chat/:id"],
+      "apis": ["GET /api/lobby-characters", "GET /api/v1/conversations/:id"],
+      "android": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 2000
+      },
+      "ios": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 2000
+      },
+      "api": {
+        "p95_baseline_ms": null,
+        "p95_target_ms": 2000
+      },
+      "measurement": {
+        "source": "尚无本机制本地TEST双引擎20样本基线；模拟模式用户已确认。旧生产混合版本和PG微基准不作匹配基线。",
+        "window": "未来运行：每组固定N=20正式尝试，预热独立；记录run起止、代码/环境/浏览器/数据版本；发布后核对实况但不替代本地验收。"
+      },
+      "notes": "Android=Chromium模拟，iOS=WebKit模拟，必须device_mode=emulated。双方页面/API本地基线均无可见样本，保持null。规划目标不是已测结果；更严聊天不退化另验收。",
+      "local_gate": {
+        "schema_version": 1,
+        "policy": "local-mobile-p95-v2",
+        "implementation_status": "disabled_by_user",
+        "environment": "supabase_test",
+        "project_ref": "zoqelpfhurwehlvypryl",
+        "device_mode": "emulated",
+        "platforms": {
+          "android": "chromium",
+          "ios": "webkit"
+        },
+        "samples_per_group": 20,
+        "p95_limit_ms": 2000,
+        "quantile_method": "nearest_rank",
+        "framework_retries": 0,
+        "scenario_refs": [
+          "lobby-document-network",
+          "lobby-spa-network",
+          "chat-short-document-network",
+          "chat-long-document-network",
+          "chat-short-spa-network",
+          "chat-long-spa-network",
+          "chat-long-deep-page-network"
+        ],
+        "measured_status": "incomplete",
+        "decision": "blocked",
+        "report": "evidence/local-mobile.json",
+        "waiver": null,
+        "plan": "design.md",
+        "validation": "implement.md",
+        "resources": {
+          "operation_timeout_ms": 30000,
+          "run_timeout_ms": 21600000,
+          "max_history_rows": 50000,
+          "max_payload_bytes": 268435456,
+          "workers": 1,
+          "interval_ms": 1000
+        },
+        "cleanup": "exact_run_manifest",
+        "cache_profile": "isolated-context-real-network",
+        "covered_paths": [
+          "packages/ui-tests/",
+          "packages/backend/src/scripts/local-performance/",
+          "packages/frontend/src/lib/perf/",
+          "packages/frontend/next.config.mjs",
+          "packages/frontend/tsconfig.performance.json",
+          ".trellis/scripts/",
+          ".trellis/tests/",
+          ".github/workflows/performance-gate.yml",
+          "package.json",
+          "packages/backend/src/features/lobby/",
+          "packages/backend/src/routes/characters.test.ts"
+        ],
+        "last_run_ended_at": "2026-11-11T09:05:23.784Z",
+        "last_run_source_fingerprint": "291de70b97dc06c1972ed016f0f90f0ad1f9754c76b2adf15dd856b02b854fc4",
+        "enforced": false
+      }
+    },
+    "planning_status": "approved_implementation_started",
+    "execution_status": "paused_by_user",
+    "existing_planning_gates_preserved": true
+  }
+}

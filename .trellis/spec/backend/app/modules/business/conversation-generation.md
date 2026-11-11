@@ -15,6 +15,8 @@ last_verified_at: 2026-11-02
 
 ## 当前状态
 
+2026-11-11 本地候选：历史展示使用 `list_chat_message_page(user_id,session_id,before_turn_index,turn_limit)`，最多 K+1 轮，owner 校验后读取；Repository facade 保持生成/计费签名，专用 reads/mapping/billing 文件各自有界。context/cancel 读取 `session_chat_display`，recover/require/finalize 不返回无 consumer 的整份 history。读页仅对明确传输中断有限重试，SQL 超时不重试；日志按 identity/owner/settings/recover/opening/page 分段。部署前必须执行两份 20261111 扩展迁移、回填并核验全覆盖，见 `docs/chat-history-read-performance.md`。未上线，不以本地测试替代实际准备/首字 P95。
+
 本地候选（2026-11-10）：会话长期记忆。窗口按正文字数双水位在 Backend 决定（`features/story-memory/`），超过高水位先由进程内 worker 压缩将要移出的轮次（默认取生产兜底模型参数，平台成本、不走用户计费），记忆落地后的下一轮窗口与记忆同时切换（先压缩后截断）；生成时与准备阶段并行读取最新版本（用到时最多再等 50ms，失败不注入），作为紧跟角色卡的独立 system 消息；压缩不输入角色卡与开场白。参数与 prompt 为运营 managed config。离线回放 `pnpm --filter @miniapp/backend story-memory:replay -- --session <id>`。
 
 本地候选（尚未发布）：PATCH /api/v1/conversations/:id/messages/:messageId 通过Telegram身份、共享契约和受限RPC修改最近十轮的单条消息。角色编辑请求只包含正文，repository按用户/会话/消息读取有效原文并保留附加内容，RPC在会话锁内校验expected_version，避免并发覆盖。上下文不再读取已删除文本；不调用模型，不生成额外扣费。
