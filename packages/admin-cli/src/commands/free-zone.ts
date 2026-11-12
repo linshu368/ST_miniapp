@@ -2,6 +2,7 @@ import {
   FREE_ZONE_CHECK_LABELS,
   FREE_ZONE_STATUS_LABELS,
   fetchFreeZoneStatus,
+  freeZoneReasonView,
   screenFreeZoneCandidates,
 } from '@miniapp/admin-client';
 import {
@@ -29,8 +30,17 @@ function statusHuman(data: AdminFreeZoneStatusResponse): string {
           ? `冷却到 ${model.cooldown_until ?? '?'}`
           : `连续达标 ${model.consecutive_passes}/${data.required_passes}`;
     const removed = model.in_config ? '' : '（已不在候选池）';
+    const view = freeZoneReasonView(model);
+    const reason =
+      view.kind === 'text'
+        ? view.text
+        : view.kind === 'tags'
+          ? [view.tags.map((tag) => `${tag.failed ? '✗' : '✓'}${tag.text}`).join(' '), view.note]
+              .filter(Boolean)
+              .join('；')
+          : '';
     lines.push(
-      `${status}\t${model.display_name ?? model.candidate_id}${removed}\t${detail}${model.last_reason ? `\t${model.last_reason}` : ''}`
+      `${status}\t${model.display_name ?? model.candidate_id}${removed}\t${detail}${reason ? `\t${reason}` : ''}`
     );
   }
   return lines.join('\n');

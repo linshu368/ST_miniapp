@@ -7,10 +7,15 @@ import {
   Space,
   Table,
   Tag,
+  Tooltip,
   Typography,
   type TableColumnsType,
 } from 'antd';
-import { FREE_ZONE_STATUS_LABELS, fetchFreeZoneStatus } from '@miniapp/admin-client';
+import {
+  FREE_ZONE_STATUS_LABELS,
+  fetchFreeZoneStatus,
+  freeZoneReasonView,
+} from '@miniapp/admin-client';
 import type {
   AdminFreeZoneEvent,
   AdminFreeZoneStatusModel,
@@ -38,6 +43,33 @@ function detail(model: AdminFreeZoneStatusModel, requiredPasses: number): string
   if (model.status === 'cooling') return `冷却到 ${time(model.cooldown_until)}`;
   if (model.status === 'unlisted') return `连续达标 ${model.consecutive_passes}/${requiredPasses}`;
   return '等下一轮评估';
+}
+
+/** 没过的项标红排前面、过了的标灰；悬停看原始原因全文。 */
+function ReasonCell(props: { model: AdminFreeZoneStatusModel }) {
+  const view = freeZoneReasonView(props.model);
+  if (view.kind === 'none') return <Typography.Text type="secondary">—</Typography.Text>;
+  if (view.kind === 'text') return <Typography.Text type="secondary">{view.text}</Typography.Text>;
+  return (
+    <Tooltip title={props.model.last_reason ?? undefined}>
+      <Space orientation="vertical" size={2}>
+        <Space wrap size={[4, 4]}>
+          {view.tags.map((tag) => (
+            <Tooltip key={tag.text} title={tag.hint}>
+              <Tag
+                color={tag.failed ? 'red' : undefined}
+                variant={tag.failed ? 'outlined' : 'filled'}
+              >
+                {tag.failed ? '✗ ' : '✓ '}
+                {tag.text}
+              </Tag>
+            </Tooltip>
+          ))}
+        </Space>
+        {view.note ? <Typography.Text type="danger">{view.note}</Typography.Text> : null}
+      </Space>
+    </Tooltip>
+  );
 }
 
 function columns(requiredPasses: number): TableColumnsType<AdminFreeZoneStatusModel> {
@@ -79,8 +111,8 @@ function columns(requiredPasses: number): TableColumnsType<AdminFreeZoneStatusMo
       render: (_, model) => {
         const excluded = Object.entries(model.excluded_providers);
         return (
-          <Space orientation="vertical" size={0}>
-            <Typography.Text type="secondary">{model.last_reason ?? '—'}</Typography.Text>
+          <Space orientation="vertical" size={4}>
+            <ReasonCell model={model} />
             {excluded.length ? (
               <Typography.Text type="warning">
                 排除中：{excluded.map(([name, until]) => `${name}（到 ${time(until)}）`).join('、')}
