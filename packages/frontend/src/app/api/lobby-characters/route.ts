@@ -1,6 +1,7 @@
 import {
   LOBBY_ROTATION_HEAD_SIZE,
   PublicLobbyHeadIdsSchema,
+  fail,
   parseLobbySort,
 } from '@miniapp/shared';
 import * as Sentry from '@sentry/nextjs';
@@ -75,10 +76,11 @@ export async function GET(request: Request) {
   }
 
   const upstreamStartedAt = performance.now();
+  const deadline = AbortSignal.timeout(UPSTREAM_TIMEOUT_MS);
   try {
     const upstream = await fetch(`${BACKEND_URL}/api/characters?sort=${sort}${limit}${selection}`, {
       cache: 'no-store',
-      signal: AbortSignal.any([request.signal, AbortSignal.timeout(UPSTREAM_TIMEOUT_MS)]),
+      signal: AbortSignal.any([request.signal, deadline]),
     });
     const body = await upstream.text();
     const upstreamMs = performance.now() - upstreamStartedAt;
@@ -98,8 +100,22 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     const cancelled = request.signal.aborted;
-    recordProxyDuration(startedAt, cancelled ? 'aborted' : 'upstream_error', cancelled ? 499 : 500);
+    const timedOut = deadline.aborted;
+    const status = cancelled ? 499 : timedOut ? 504 : 502;
+    recordProxyDuration(
+      startedAt,
+      cancelled ? 'aborted' : timedOut ? 'timeout' : 'upstream_error',
+      status
+    );
     if (!cancelled) captureProxyError(error);
-    throw error;
+    // A thrown proxy error may become an HTML error page, hiding the recoverable
+    // failure from the same JSON consumer used for successful catalogue responses.
+    return Response.json(
+      fail(
+        cancelled ? 'REQUEST_ABORTED' : timedOut ? 'UPSTREAM_TIMEOUT' : 'UPSTREAM_UNAVAILABLE',
+        cancelled ? '请求已取消' : '角色列表暂时无法加载，请重试'
+      ),
+      { status, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } }
+    );
   }
 }

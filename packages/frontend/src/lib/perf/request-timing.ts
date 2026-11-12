@@ -134,7 +134,9 @@ export interface TimedFetchMeta {
   requestId: string;
   timeoutMs?: number;
   /** Opt in when the caller's deadline must include waiting for a connection slot. */
-  priority?: RequestPriority;
+  priority?: RequestPriority | 'bypass';
+  /** Runs only after acquiring a slot, so queue expiry never looks like a dispatch. */
+  onDispatch?: () => void;
 }
 
 /** Release the request slot even if a stalled body reader ignores cancellation. */
@@ -195,6 +197,11 @@ export async function timedFetch<T>(
     const result = await withRequestSlot(meta.priority ?? 'bypass', controller.signal, () =>
       untilAborted(controller.signal, async () => {
         assertActive();
+        try {
+          meta.onDispatch?.();
+        } catch {
+          // Timing observers must not prevent an otherwise valid request.
+        }
         const response = await fetch(url, { ...init, signal: controller.signal });
         assertActive();
         responseStatus = response.status;

@@ -232,13 +232,17 @@ async function fetchDramas(
   );
 }
 
-async function fetchDramaDetail(id: string, signal?: AbortSignal): Promise<DramaDetail> {
+async function fetchDramaDetail(
+  id: string,
+  signal?: AbortSignal,
+  priority: 'critical' | 'background' = 'critical'
+): Promise<DramaDetail> {
   return dramaTiming.query('detail', id, undefined, async (onAttempt) => {
     const data = await apiClient<GetDramaByIdData>(`/api/dramas/${encodeURIComponent(id)}`, {
       onAttempt,
       signal,
       timeoutMs: 5000,
-      queuePriority: 'normal',
+      queuePriority: priority,
     });
     return data.drama;
   });
@@ -367,7 +371,7 @@ export function usePreloadDramaPlayback() {
     (id: string, _videoId?: string) => {
       void client.prefetchQuery({
         queryKey: dramaKeys.detail(id),
-        queryFn: ({ signal }) => fetchDramaDetail(id, signal),
+        queryFn: ({ signal }) => fetchDramaDetail(id, signal, 'background'),
         retry: false,
       });
     },

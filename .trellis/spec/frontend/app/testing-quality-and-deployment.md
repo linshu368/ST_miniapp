@@ -1,5 +1,15 @@
 # Frontend 测试、质量、性能与部署
 
+## 慢页面公共等待回归（2026-11-12，本地候选）
+
+- 请求期限验证必须占满真实 request-concurrency 槽再发请求，断言排队过期没有 fetch、取消不重试、槽可再次使用；再验证排队加响应体消费共用原单次预算。仅测 fetch 自身超时不能证明完整等待有界。复用 `client.retry.test.ts`、`request-timing.test.ts` 与 `request-concurrency.test.ts`。
+- 创建结果缓存必须用实际 QueryObserver 验证 disabled→新 query key；仅断言 `refetchOnMount:false` 配置不能证明不重复 GET。首次订阅后恢复 staleTime=0 不应再 GET，之后 focus/invalidation 必须能读到新服务端状态。复用 `conversations-entry.test.ts`，不扩大历史会话 TTL。
+- Android 导航调度须覆盖深层 Link、popstate、旧 generation、成功/失败与4秒兜底；下载属性即使为空仍是下载，不应触发调度。验证监听清理与 iOS 不受影响，不能只测底栏五入口。
+- Next 大厅代理断言调用方取消499、期限504、网络502的 JSON envelope 和 no-store；同时保留公开latest与推荐/selection缓存隔离。禁止把错误响应改成成功或提前ready来降低P95。
+- UI 复用既有 @startup/@navigation、@chat-sessions/@chat-history、@creator-data/@wishes、@profile/@image/@drama 场景。首次 Next dev 编译超时应保留trace，在文档已有常驻预览服务完成首次编译后复跑；不延长断言超时或跳过业务检查。封面fixture必须可被浏览器真实解码，不能绕过产品校验。
+- 本地通过仅证明实现与恢复路径。生产对照按 route/platform/release 及导航/冷启动/挂载分别统计，同时验证error/stall/left；Sentry请求计时纳入排队后的版本边界须注明，不能混加不同出口的timeout计数。
+- 本机Windows+pnpm的Next14 standalone产物包含指向真实依赖的绝对junction；`next/dist/lib/recursive-delete.js` 会stat并递归跟随目录符号链接。重复build前应将本轮生成的 `.next/standalone` 整体移到仓库内、构建目录外的 `output/build-snapshots/`，移动前核验源/目标绝对路径均在workspace内且目标不存在；不得递归删除这棵链接树。依赖已被清空时按原锁文件恢复并重新验证，不以更换依赖版本或修改生产output选项临时绕过。
+
 ## 当前测试基础与要求
 
 当前 Vitest 重点覆盖纯逻辑/API parser/store：conversation SSE、会话标题、模型 cache、聊天入口/额度弹窗、composer 布局/回复展示、Telegram hooks/launch URL、Sentry sanitize、通知工具、用户 profile store，以及 Next lobby route。暂无完整 RTL/jsdom/E2E 体系；不能把缺失说成已覆盖。

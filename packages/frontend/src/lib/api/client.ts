@@ -9,7 +9,7 @@ import {
   RequestTimeoutError,
   timedFetch,
 } from '@/lib/perf/request-timing';
-import { withRequestSlot, type RequestPriority } from '@/lib/api/request-concurrency';
+import type { RequestPriority } from '@/lib/api/request-concurrency';
 import { recordApiAttempt, recordApiTotal, shouldObserveApiTiming } from '@/lib/perf/api-timing';
 
 export const API_URL =
@@ -272,7 +272,15 @@ async function apiClientOnce<T>(
   return timedFetch(
     url,
     { ...fetchOptions, headers },
-    { requestId, timeoutMs: timeoutMs ?? resolveTimeoutMs(path) },
+    {
+      requestId,
+      timeoutMs: timeoutMs ?? resolveTimeoutMs(path),
+      // The timer must start before acquiring a slot, including on retries.
+      priority: resolveRequestPriority(path, resolveMethod(options), options?.queuePriority),
+      onDispatch: () => {
+        if (timing) timing.dispatchedAt = performance.now();
+      },
+    },
     async (res) => {
       if (timing) {
         timing.headersAt = performance.now();
@@ -312,7 +320,6 @@ async function apiClientOnce<T>(
  */
 export async function apiClient<T>(path: string, options?: ApiRequestInit): Promise<T> {
   const method = resolveMethod(options);
-  const priority = resolveRequestPriority(path, method, options?.queuePriority);
   const idempotent = method === 'GET' || options?.idempotent === true;
   const maxAttempts =
     idempotent && options?.transportRetry !== false ? 1 + GET_TRANSPORT_RETRY_MAX : 1;
@@ -339,10 +346,7 @@ export async function apiClient<T>(path: string, options?: ApiRequestInit): Prom
           }
         }
         try {
-          const result = await withRequestSlot(priority, signal, () => {
-            if (timing) timing.dispatchedAt = performance.now();
-            return apiClientOnce<T>(path, options, timing);
-          });
+          const result = await apiClientOnce<T>(path, options, timing);
           if (timing) timing.outcome = 'ok';
           return result;
         } catch (error) {
