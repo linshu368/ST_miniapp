@@ -1,9 +1,12 @@
 import dayjs, { type Dayjs } from 'dayjs';
 import {
+  AdminFreeZoneScreeningRequestSchema,
   DEFAULT_FREE_ZONE_CONFIG,
   FreeZoneConfigSchema,
+  type AdminFreeZoneScreeningRequest,
   type FreeZoneCandidate,
   type FreeZoneConfig,
+  type FreeZoneScreeningCheckKey,
 } from '@miniapp/shared';
 import type { ZodIssue } from 'zod';
 
@@ -198,4 +201,36 @@ export function describeFreeZoneStatus(config: FreeZoneConfig, now: Date): FreeZ
     type: 'success',
     text: `开放中：栏目显示「${formatPeriodTime(period.ends_at)} 结束」。${scope}一个在架模型都没有时显示「暂未开放」。`,
   };
+}
+
+/**
+ * 「按当前门槛筛选」的请求：用页面上还没保存的候选和门槛；模型名还没填好的行先跳过。
+ * 门槛本身不合法时返回 null（按钮置灰，先把门槛改对）。
+ */
+export function screeningRequestFrom(config: FreeZoneConfig): AdminFreeZoneScreeningRequest | null {
+  const parsed = AdminFreeZoneScreeningRequestSchema.safeParse({
+    candidates: config.candidates
+      .map((candidate) => ({
+        id: candidate.id.trim(),
+        surplus_model: candidate.surplus_model.trim(),
+        display_name: candidate.display_name.trim(),
+      }))
+      .filter((candidate) => /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(candidate.surplus_model)),
+    screening: config.screening,
+  });
+  return parsed.success ? parsed.data : null;
+}
+
+export function formatCheckValue(key: FreeZoneScreeningCheckKey, value: number | null): string {
+  if (value === null) return '未知';
+  const oneDecimal = Math.round(value * 10) / 10;
+  if (key === 'min_uptime_pct' || key === 'min_realized_discount_pct') return `${oneDecimal}%`;
+  if (key === 'max_ttft_p50_ms' || key === 'max_ttft_p90_ms') return `${Math.round(value)}ms`;
+  if (key === 'min_tps') return String(oneDecimal);
+  return String(Math.round(value));
+}
+
+/** Surplus 价格是每百万 token 的微美元。 */
+export function formatPricePer1m(micro: number | null): string {
+  return micro === null ? '—' : `$${(micro / 1_000_000).toFixed(2)}`;
 }

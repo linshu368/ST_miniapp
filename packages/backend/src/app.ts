@@ -27,6 +27,7 @@ import { config } from './platform/config.js';
 import { getMujianOrigin } from './platform/runtime-config.js';
 import adminCliSessionRoutes from './routes/admin-cli-session.js';
 import adminSupabaseProxyRoutes from './routes/admin-supabase-proxy.js';
+import adminFreeZoneRoutes from './routes/admin-free-zone.js';
 import alertRoutes from './routes/alerts.js';
 import botRoutes from './routes/bot.js';
 import characterSocialRoutes from './routes/character-social.js';
@@ -106,6 +107,7 @@ export async function buildApp() {
   await app.register(inviteRoutes);
   await app.register(communityRoutes);
   await app.register(adminSupabaseProxyRoutes);
+  await app.register(adminFreeZoneRoutes);
   await app.register(adminCliSessionRoutes);
   await app.register(notificationRoutes);
   await app.register(supportRoutes);

@@ -5,8 +5,11 @@ import {
   asFreeZoneConfig,
   deriveCandidateId,
   describeFreeZoneStatus,
+  formatCheckValue,
+  formatPricePer1m,
   freeZoneIssues,
   parseMinutesList,
+  screeningRequestFrom,
   toPeriodTime,
 } from './freeZoneForm';
 
@@ -97,5 +100,34 @@ describe('describeFreeZoneStatus', () => {
     expect(describeFreeZoneStatus(config({}), at('2026-11-20T00:00:00Z')).text).toContain(
       '已经结束'
     );
+  });
+});
+
+describe('screening helpers', () => {
+  it('builds a request from unsaved form values and skips rows without a model name', () => {
+    const value = asFreeZoneConfig({
+      candidates: [
+        { id: 'free-a', surplus_model: ' deepseek-v4-pro ', display_name: 'A' },
+        { id: '', surplus_model: '', display_name: '' },
+      ],
+      screening: { max_ttft_p50_ms: 3100 },
+    });
+    expect(screeningRequestFrom(value)).toMatchObject({
+      candidates: [{ id: 'free-a', surplus_model: 'deepseek-v4-pro', display_name: 'A' }],
+      screening: { max_ttft_p50_ms: 3100, min_discount_pct: 85 },
+    });
+    expect(screeningRequestFrom(asFreeZoneConfig({}))).toBeNull();
+    const broken = asFreeZoneConfig({
+      candidates: [{ id: 'free-a', surplus_model: 'x', display_name: 'A' }],
+      screening: { min_discount_pct: null },
+    });
+    expect(screeningRequestFrom(broken)).toBeNull();
+  });
+
+  it('formats values the way operators read them', () => {
+    expect(formatCheckValue('min_uptime_pct', 92.74)).toBe('92.7%');
+    expect(formatCheckValue('max_ttft_p50_ms', 3043)).toBe('3043ms');
+    expect(formatCheckValue('min_samples', null)).toBe('未知');
+    expect(formatPricePer1m(308358)).toBe('$0.31');
   });
 });
