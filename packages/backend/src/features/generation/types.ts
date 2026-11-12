@@ -105,6 +105,8 @@ export interface GenerationRequest {
   stream: boolean;
   /** Defaults on; exposed reasoning is progress and never saved as reply content. */
   thinkingEnabled?: boolean;
+  /** 思考过程是否显示给用户并算作出字；缺省跟 thinkingEnabled（见 reasoning-display.ts） */
+  revealReasoning?: boolean;
   /** Explicit user cancellation and the conversation deadline; disconnects do not abort. */
   signal?: AbortSignal;
   /**
