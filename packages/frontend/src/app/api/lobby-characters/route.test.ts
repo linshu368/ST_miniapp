@@ -5,6 +5,7 @@ describe('lobby characters route', () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   it('keeps the default recommended route uncached', async () => {
@@ -109,11 +110,50 @@ describe('lobby characters route', () => {
     const pending = GET(
       new Request('http://localhost/api/lobby-characters', { signal: controller.signal })
     );
-    const rejected = expect(pending).rejects.toMatchObject({ name: 'AbortError' });
     await Promise.resolve();
     controller.abort();
 
-    await rejected;
+    const response = await pending;
+    expect(response.status).toBe(499);
+    expect(await response.json()).toMatchObject({
+      success: false,
+      error: { code: 'REQUEST_ABORTED' },
+    });
+    expect(response.headers.get('Cache-Control')).toContain('no-store');
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns a non-cacheable JSON failure when the upstream cannot connect', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('connection failed')));
+    const response = await GET(new Request('http://localhost/api/lobby-characters?sort=latest'));
+    expect(response.status).toBe(502);
+    expect(await response.json()).toEqual({
+      success: false,
+      error: { code: 'UPSTREAM_UNAVAILABLE', message: '角色列表暂时无法加载，请重试' },
+    });
+    expect(response.headers.get('Cache-Control')).toContain('no-store');
+  });
+
+  it('distinguishes the proxy deadline from cancellation and never caches the timeout', async () => {
+    const deadline = new AbortController();
+    vi.spyOn(AbortSignal, 'timeout').mockReturnValue(deadline.signal);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        (_url: string, init: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            init.signal?.addEventListener('abort', () => reject(init.signal?.reason));
+          })
+      )
+    );
+    const pending = GET(new Request('http://localhost/api/lobby-characters?sort=latest'));
+    deadline.abort(new DOMException('timeout', 'TimeoutError'));
+    const response = await pending;
+    expect(response.status).toBe(504);
+    expect(await response.json()).toMatchObject({
+      success: false,
+      error: { code: 'UPSTREAM_TIMEOUT' },
+    });
+    expect(response.headers.get('Cache-Control')).toContain('no-store');
   });
 });
