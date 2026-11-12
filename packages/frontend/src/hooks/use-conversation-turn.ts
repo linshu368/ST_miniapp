@@ -97,6 +97,8 @@ interface UseConversationTurnOptions {
   onSessionGone: () => void;
   goBack: () => void;
   onRestoreSendContent: (content: string) => void;
+  /** 深度思考关着、这一轮却照样收到了思考过程（模型关不掉思考），每轮最多报一次 */
+  onThinkingIgnored?: (modelId: string) => void;
 }
 
 type PendingTurn = {
@@ -142,8 +144,11 @@ export function useConversationTurn({
   onSessionGone,
   goBack,
   onRestoreSendContent,
+  onThinkingIgnored,
 }: UseConversationTurnOptions) {
   const router = useRouter();
+  const thinkingIgnoredRef = useRef(onThinkingIgnored);
+  thinkingIgnoredRef.current = onThinkingIgnored;
   const queryClient = useQueryClient();
   const freeQuotaQuery = useCharacterFreeQuotaQuery(characterId);
   const refetchFreeQuota = freeQuotaQuery.refetch;
@@ -659,6 +664,8 @@ export function useConversationTurn({
       let settledStatus: ChatMessageStatus | null = null;
       // 这一轮收不收思考过程：开关开着，或服务端 start 说要显示（畅聊免费模型关不掉思考）
       let revealThisTurn = thinkingEnabled;
+      let turnModelId = selectedModelId;
+      let thinkingIgnoredReported = false;
 
       try {
         await streamConversationTurn({
@@ -681,6 +688,7 @@ export function useConversationTurn({
               requestId,
             };
             assistantMessageId = event.assistant_message_id;
+            turnModelId = event.requested_model_id ?? turnModelId;
             if (event.thinking_enabled === true) {
               revealThisTurn = true;
               observation.thinkingEnabled = true;
@@ -702,6 +710,10 @@ export function useConversationTurn({
           },
           onReasoning: (text) => {
             if (!isCurrent() || !revealThisTurn || !assistantMessageId || !text) return;
+            if (!thinkingEnabled && !thinkingIgnoredReported) {
+              thinkingIgnoredReported = true;
+              thinkingIgnoredRef.current?.(turnModelId ?? 'unknown');
+            }
             const key = messageThinkingKey({
               session_id: sessionId,
               id: assistantMessageId,

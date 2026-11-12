@@ -1,4 +1,6 @@
-import { test, expect, chatPath, expectMobileLayout } from './fixtures.js';
+import { test, expect, chatPath, expectMobileLayout, sendChat } from './fixtures.js';
+
+const THINKING_ALWAYS_ON_NOTICE = '当前模型不支持关闭深度思考，思考过程会照常显示';
 
 /** 畅聊（免费模型）栏目：真实页面消费虚构的栏目状态；不连接 Surplus，也不证明真实计费。 */
 
@@ -73,29 +75,32 @@ test('@chat @free-zone 后端不下发栏目时面板和顶栏保持原样', asy
   await expect(page.getByText('免费畅聊', { exact: true })).toHaveCount(0);
 });
 
-test('@chat @free-zone @layout 关不掉思考的免费模型，关深度思考时轻提示一句', async ({
+test('@chat @free-zone @layout 关不掉思考的模型：关着深度思考仍出思考时轻提示，再点关闭也提示', async ({
   page,
   preview,
 }) => {
   await preview.scenario('free-zone');
   await page.goto(chatPath);
   await page.getByRole('button', { name: /展开引擎选择/ }).click();
-  const zone = page.locator('[data-free-zone="open"]');
-  await zone.getByRole('button', { name: /GLM 5.2 fast/ }).click();
+  await page
+    .locator('[data-free-zone="open"]')
+    .getByRole('button', { name: /GLM 5.2 fast/ })
+    .click();
   await expect(page.getByRole('button', { name: /当前畅聊引擎/ })).toBeVisible();
 
-  const hint = page.getByText('GLM 5.2 fast 不支持关闭深度思考，思考过程会照常显示');
+  const notice = page.getByText(THINKING_ALWAYS_ON_NOTICE);
+  // 还没发现它关不掉，第一次关不提示
   await page.getByRole('button', { name: '关闭深度思考', exact: true }).click();
-  await expect(hint).toBeVisible();
+  await expect(notice).toHaveCount(0);
+  await sendChat(page);
+  await expect(notice).toBeVisible();
   await expectMobileLayout(page);
-  // 打开方向开关是起作用的，不提示；提示也会自己消失
-  await page.getByRole('button', { name: '开启深度思考', exact: true }).click();
-  await expect(hint).toHaveCount(0);
+  await expect(notice).toHaveCount(0, { timeout: 6_000 });
 
-  // 开关起作用的模型不打扰
-  await page.getByRole('button', { name: /展开引擎选择/ }).click();
-  await zone.getByRole('button', { name: /DeepSeek V4 Pro/ }).click();
-  await expect(page.getByRole('button', { name: /当前畅聊引擎/ })).toBeVisible();
+  // 记住了：再点关闭就提示
+  const on = page.getByRole('button', { name: '开启深度思考', exact: true });
+  await expect(on).toBeEnabled();
+  await on.click();
   await page.getByRole('button', { name: '关闭深度思考', exact: true }).click();
-  await expect(page.getByText(/不支持关闭深度思考/)).toHaveCount(0);
+  await expect(notice).toBeVisible();
 });
