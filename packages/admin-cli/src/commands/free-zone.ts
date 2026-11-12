@@ -1,14 +1,17 @@
 import {
   FREE_ZONE_CHECK_LABELS,
+  FREE_ZONE_STATUS_GROUPS,
   FREE_ZONE_STATUS_LABELS,
   fetchFreeZoneStatus,
   freeZoneReasonView,
+  freeZoneStatusGroup,
   screenFreeZoneCandidates,
 } from '@miniapp/admin-client';
 import {
   AdminFreeZoneScreeningRequestSchema,
   type AdminFreeZoneScreeningRequest,
   type AdminFreeZoneScreeningResponse,
+  type AdminFreeZoneStatusModel,
   type AdminFreeZoneStatusResponse,
 } from '@miniapp/shared';
 import { withReadRetry } from '../client';
@@ -17,31 +20,42 @@ import { CliError } from '../errors';
 
 /** 畅聊调试：和运营平台畅聊页的「线上状态」「按当前门槛筛选」同一组只读接口。 */
 
+function statusLine(model: AdminFreeZoneStatusModel, requiredPasses: number): string {
+  const status = model.status ? FREE_ZONE_STATUS_LABELS[model.status] : '未评估';
+  const detail =
+    model.status === 'listed'
+      ? `供应商 ${model.providers.join('、')}`
+      : model.status === 'cooling'
+        ? `冷却到 ${model.cooldown_until ?? '?'}`
+        : `连续达标 ${model.consecutive_passes}/${requiredPasses}`;
+  const marks = [
+    model.in_config ? '' : '（已不在候选池）',
+    model.ever_listed && model.last_delist?.cause === 'official' ? '（曾上架）' : '',
+  ].join('');
+  const view = freeZoneReasonView(model);
+  const reason =
+    view.kind === 'text'
+      ? view.text
+      : view.kind === 'tags'
+        ? [view.tags.map((tag) => `${tag.failed ? '✗' : '✓'}${tag.text}`).join(' '), view.note]
+            .filter(Boolean)
+            .join('；')
+        : '';
+  const delist =
+    model.last_delist?.cause === 'business' && model.status !== 'listed'
+      ? `\t下架：${model.last_delist.reason ?? ''}`
+      : '';
+  return `  ${status}\t${model.display_name ?? model.candidate_id}${marks}\t${detail}${delist}${reason ? `\t${reason}` : ''}`;
+}
+
 function statusHuman(data: AdminFreeZoneStatusResponse): string {
   const lines = [
     `总开关：${data.enabled ? '开' : '关'}；最近评估：${data.last_evaluated_at ?? '还没评估过'}`,
   ];
-  for (const model of data.models) {
-    const status = model.status ? FREE_ZONE_STATUS_LABELS[model.status] : '未评估';
-    const detail =
-      model.status === 'listed'
-        ? `供应商 ${model.providers.join('、')}`
-        : model.status === 'cooling'
-          ? `冷却到 ${model.cooldown_until ?? '?'}`
-          : `连续达标 ${model.consecutive_passes}/${data.required_passes}`;
-    const removed = model.in_config ? '' : '（已不在候选池）';
-    const view = freeZoneReasonView(model);
-    const reason =
-      view.kind === 'text'
-        ? view.text
-        : view.kind === 'tags'
-          ? [view.tags.map((tag) => `${tag.failed ? '✗' : '✓'}${tag.text}`).join(' '), view.note]
-              .filter(Boolean)
-              .join('；')
-          : '';
-    lines.push(
-      `${status}\t${model.display_name ?? model.candidate_id}${removed}\t${detail}${reason ? `\t${reason}` : ''}`
-    );
+  for (const group of FREE_ZONE_STATUS_GROUPS) {
+    const models = data.models.filter((model) => freeZoneStatusGroup(model) === group.key);
+    lines.push(`【${group.label}】${models.length} 个`);
+    for (const model of models) lines.push(statusLine(model, data.required_passes));
   }
   return lines.join('\n');
 }

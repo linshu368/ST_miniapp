@@ -4,6 +4,7 @@ import {
   Alert,
   Card,
   Col,
+  Collapse,
   DatePicker,
   Input,
   InputNumber,
@@ -300,6 +301,34 @@ function OpenSettings(props: {
   );
 }
 
+/** 候选池默认收起：几十个模型时不用一直往下翻。 */
+function CandidatePool(props: {
+  value: FreeZoneConfig['candidates'];
+  disabled?: boolean;
+  onChange: (value: FreeZoneConfig['candidates']) => void;
+}) {
+  return (
+    <Section title={`候选池（${props.value.length}/50）`}>
+      <Collapse
+        size="small"
+        items={[
+          {
+            key: 'pool',
+            label: `展开编辑候选池（${props.value.length} 个）`,
+            children: (
+              <FreeZoneCandidatesEditor
+                value={props.value}
+                disabled={props.disabled}
+                onChange={props.onChange}
+              />
+            ),
+          },
+        ]}
+      />
+    </Section>
+  );
+}
+
 /** 运营平台「畅聊（免费模型）」：栏目开放、候选池、自动上下架门槛和首字参数。 */
 export function FreeZoneConfigEditor(props: {
   value: unknown;
@@ -335,13 +364,11 @@ export function FreeZoneConfigEditor(props: {
       <Section title="线上状态">
         <FreeZoneStatusPanel />
       </Section>
-      <Section title={`候选池（${value.candidates.length}/50）`}>
-        <FreeZoneCandidatesEditor
-          value={value.candidates}
-          disabled={props.disabled}
-          onChange={(candidates) => update({ candidates })}
-        />
-      </Section>
+      <CandidatePool
+        value={value.candidates}
+        disabled={props.disabled}
+        onChange={(candidates) => update({ candidates })}
+      />
       <Section
         title="官方数据初筛"
         hint="上架前用；在架后每 30 分钟用同一套门槛复核正在用的供应商。只看 Surplus 标为 trusted 的供应商。"
