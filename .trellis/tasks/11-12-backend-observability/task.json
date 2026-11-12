@@ -1,0 +1,39 @@
+{
+  "id": "backend-observability",
+  "name": "backend-observability",
+  "title": "Backend-observability-and-error-contracts",
+  "description": "规划统一全量链路记录、低侵入插件扩展、错误码迁移及状态码/日志等级组合策略与告警，整体设计待用户审批。",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-12",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "docs/backend-logging-design.md",
+    "docs/backend-error-code-design.md",
+    "docs/backend-error-code-review.md"
+  ],
+  "notes": "用户确认生产所有链路全量记录、优先终态与可排查，扩展低侵入；日志告警环境变量 LOG_ALERTING_ENABLED 默认 false。全局错误码按 docs/backend-error-code-review.md 设计，第 13 节差异逐项迁移、第 14 节专项验收。待完善可靠投递容量、错误分支消费者矩阵、策略执行方/跨实例窗口与恢复/告警复用边界及阈值、性能基线和模块影响清单。整体实施尚未审批。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "pending"
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "pending"
+    }
+  }
+}
