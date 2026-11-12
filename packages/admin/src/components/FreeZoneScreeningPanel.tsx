@@ -22,6 +22,7 @@ const PROVIDER_KEYS: readonly FreeZoneScreeningCheckKey[] = [
   'max_ttft_p50_ms',
   'max_ttft_p90_ms',
   'min_tps',
+  'min_cache_hit_rate_pct',
 ];
 
 const MIN_KEYS = new Set<FreeZoneScreeningCheckKey>([
@@ -29,6 +30,7 @@ const MIN_KEYS = new Set<FreeZoneScreeningCheckKey>([
   'min_samples',
   'min_uptime_pct',
   'min_tps',
+  'min_cache_hit_rate_pct',
   'min_realized_discount_pct',
 ]);
 
@@ -232,7 +234,7 @@ export function FreeZoneScreeningPanel(props: { config: FreeZoneConfig }) {
             size="small"
             rowKey="candidate_id"
             pagination={false}
-            scroll={{ x: 1010 }}
+            scroll={{ x: 1110 }}
             columns={modelColumns(run.request)}
             dataSource={run.data.models}
             expandable={{

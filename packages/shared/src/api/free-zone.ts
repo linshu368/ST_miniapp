@@ -51,6 +51,8 @@ export const FreeZoneScreeningSchema = z.object({
   max_ttft_p50_ms: DurationMsSchema.nullable().default(3000),
   max_ttft_p90_ms: DurationMsSchema.nullable().default(7500),
   min_tps: z.number().positive().max(100_000).nullable().default(30),
+  /** 供应商近 24 小时缓存命中率下限（Surplus 统计的是这家所有买家的命中率）；命中低，同样的对话实际花费更高 */
+  min_cache_hit_rate_pct: PercentSchema.nullable().default(70),
   min_samples: z.number().int().nonnegative().nullable().default(200),
   /**
    * 选供应商时的价格分档倍数：和最便宜的达标供应商价格差不到这个倍数的算同一档、比首字；

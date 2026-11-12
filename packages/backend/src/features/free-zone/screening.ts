@@ -112,6 +112,13 @@ function screenProvider(
     check('max_ttft_p50_ms', perf?.ttftP50Ms ?? null, rules.max_ttft_p50_ms, 'max', '首字p50'),
     check('max_ttft_p90_ms', perf?.ttftP90Ms ?? null, rules.max_ttft_p90_ms, 'max', '首字p90'),
     check('min_tps', perf?.tpsP50 ?? null, rules.min_tps, 'min', '出字速度'),
+    check(
+      'min_cache_hit_rate_pct',
+      perf?.cacheHitRatePct ?? null,
+      rules.min_cache_hit_rate_pct,
+      'min',
+      '缓存命中率'
+    ),
   ];
   return {
     provider,
