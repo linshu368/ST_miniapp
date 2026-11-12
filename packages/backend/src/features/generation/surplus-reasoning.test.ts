@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { getSurplusReasoningParameters } from './surplus-reasoning.js';
+import { getSurplusReasoningParameters, surplusReasoningBody } from './surplus-reasoning.js';
 import {
   getProviderModelDirectory,
   getCachedSurplusModelDirectory,
@@ -29,24 +29,38 @@ const directory = {
 describe('getSurplusReasoningParameters', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it.each([true, false])(
-    'does not invent universally accepted effort values for enabled=%s',
-    async (enabled) => {
+  it.each([
+    [true, 'medium'],
+    [false, 'none'],
+  ] as const)(
+    'maps the thinking switch (%s) to effort %s in the declared spelling',
+    async (enabled, effort) => {
       vi.mocked(getProviderModelDirectory).mockResolvedValue({
         ...directory,
         models: [{ ...model, supported_parameters: ['reasoning_effort', 'include_reasoning'] }],
       });
       await expect(getSurplusReasoningParameters('vendor/model', enabled)).resolves.toEqual({
-        parameters: {},
+        parameters: { reasoning_effort: effort },
         supportedParameters: ['reasoning_effort', 'include_reasoning'],
         requestedEnabled: enabled,
-        control: 'provider_default',
-        reason: 'effort_values_unspecified',
+        control: 'effort',
+        reason: 'effort_mapped',
       });
     }
   );
 
-  it('marks unsupported or unknown models without synthesizing a reasoning object', async () => {
+  it('prefers the reasoning object when the model declares it', async () => {
+    vi.mocked(getProviderModelDirectory).mockResolvedValue({
+      ...directory,
+      models: [{ ...model, supported_parameters: ['reasoning', 'reasoning_effort'] }],
+    });
+    await expect(getSurplusReasoningParameters('vendor/model', false)).resolves.toMatchObject({
+      parameters: { reasoning: { effort: 'none' } },
+      control: 'effort',
+    });
+  });
+
+  it('sends nothing for models that declare no reasoning control', async () => {
     vi.mocked(getProviderModelDirectory).mockResolvedValue({ ...directory, models: [model] });
     await expect(getSurplusReasoningParameters('unknown', true)).resolves.toMatchObject({
       parameters: {},
@@ -55,12 +69,12 @@ describe('getSurplusReasoningParameters', () => {
     });
   });
 
-  it('degrades directory failure without failing generation', async () => {
+  it('still sends the object form when the directory is unavailable; Surplus drops it if unsupported', async () => {
     vi.mocked(getProviderModelDirectory).mockRejectedValue(new Error('directory unavailable'));
     await expect(getSurplusReasoningParameters('vendor/model', false)).resolves.toMatchObject({
-      parameters: {},
+      parameters: { reasoning: { effort: 'none' } },
       requestedEnabled: false,
-      control: 'unavailable',
+      control: 'effort',
       reason: 'directory_unavailable',
     });
   });
@@ -80,8 +94,30 @@ describe('getSurplusReasoningParameters', () => {
       getSurplusReasoningParameters('vendor/model', false, { cachedOnly: true })
     ).resolves.toMatchObject({
       supportedParameters: ['reasoning'],
-      control: 'provider_default',
+      control: 'effort',
     });
     expect(getProviderModelDirectory).not.toHaveBeenCalled();
+  });
+});
+
+describe('surplusReasoningBody', () => {
+  const base = {
+    parameters: {},
+    requestedEnabled: true,
+    control: 'effort' as const,
+    reason: 'effort_mapped' as const,
+  };
+
+  it('follows the switch of the current turn, not the prepared default', () => {
+    const resolution = { ...base, supportedParameters: ['reasoning'] };
+    expect(surplusReasoningBody(resolution, true)).toEqual({ reasoning: { effort: 'medium' } });
+    expect(surplusReasoningBody(resolution, false)).toEqual({ reasoning: { effort: 'none' } });
+  });
+
+  it('adds nothing when there is no resolution or no control', () => {
+    expect(surplusReasoningBody(undefined, false)).toEqual({});
+    expect(
+      surplusReasoningBody({ ...base, control: 'unavailable', supportedParameters: [] }, false)
+    ).toEqual({});
   });
 });
