@@ -103,6 +103,7 @@ const FIELD_LABELS: Record<string, string> = {
   max_ttft_p50_ms: '首字 p50 上限',
   max_ttft_p90_ms: '首字 p90 上限',
   min_tps: '出字速度',
+  min_cache_hit_rate_pct: '缓存命中率',
   min_samples: '最少样本',
   price_band_ratio: '价格分档倍数',
   window_hours: '统计窗口',
@@ -224,7 +225,13 @@ export function screeningRequestFrom(config: FreeZoneConfig): AdminFreeZoneScree
 export function formatCheckValue(key: FreeZoneScreeningCheckKey, value: number | null): string {
   if (value === null) return '未知';
   const oneDecimal = Math.round(value * 10) / 10;
-  if (key === 'min_uptime_pct' || key === 'min_realized_discount_pct') return `${oneDecimal}%`;
+  if (
+    key === 'min_uptime_pct' ||
+    key === 'min_cache_hit_rate_pct' ||
+    key === 'min_realized_discount_pct'
+  ) {
+    return `${oneDecimal}%`;
+  }
   if (key === 'max_ttft_p50_ms' || key === 'max_ttft_p90_ms') return `${Math.round(value)}ms`;
   if (key === 'min_tps') return String(oneDecimal);
   return String(Math.round(value));
