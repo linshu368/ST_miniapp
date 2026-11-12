@@ -3,6 +3,7 @@ import type HlsPlayer from 'hls.js';
 import type { MediaAttachedData } from 'hls.js';
 import type { HlsEvents } from '@/lib/perf/drama-hls';
 import { createInlinePlaylistLoader } from '@/lib/drama-inline-manifest-loader';
+import { restartStalledAudioOnSeek } from '@/lib/drama-hls-seek';
 
 const owners = new WeakMap<HTMLVideoElement, string>();
 
@@ -146,7 +147,11 @@ export function loadDramaSource(
             ? { pLoader: createInlinePlaylistLoader(source, playback.inline_manifest) }
             : {}),
         });
-        destroy = () => hls.destroy();
+        const stopSeekRestart = restartStalledAudioOnSeek(hls, Hls.Events, video);
+        destroy = () => {
+          stopSeekRestart();
+          hls.destroy();
+        };
         try {
           // 必须在 loadSource 之前订阅，否则会漏掉主清单的加载统计。
           onHls?.(hls, Hls.Events);
