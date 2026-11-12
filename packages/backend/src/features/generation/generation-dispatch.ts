@@ -12,7 +12,7 @@ import {
 import { resolveProviderUpstream, forwardToUpstream } from './upstream.js';
 import { forwardWithFirstTokenFallback, type TransportModel } from './first-token-fallback.js';
 import { buildUpstreamBody } from './generation-body.js';
-import { surplusReasoningBody } from './surplus-reasoning.js';
+import { learnSurplusReasoningRejection, surplusReasoningBody } from './surplus-reasoning.js';
 import { forwardSurplusCall } from './surplus-call-transport.js';
 import type { UpstreamTiming } from './upstream-timing.js';
 import type { GenerationRequest, GenerationPreparation, GenerationLogger } from './types.js';
@@ -95,7 +95,11 @@ function createForward(input: DispatchInput) {
       ...buildUpstreamBody(actualRequest, preferences),
       // 深度思考开关：Surplus 按模型声明的写法发思考强度（兜底等其他供应商不受影响）
       ...(actualRequest.model.provider === 'surplus'
-        ? surplusReasoningBody(prepared.surplusReasoning, actualRequest.thinkingEnabled ?? true)
+        ? surplusReasoningBody(
+            prepared.surplusReasoning,
+            actualRequest.thinkingEnabled ?? true,
+            actualRequest.model.freeZone?.providers[0]
+          )
         : {}),
     };
     const dispatch = async () => {
@@ -126,6 +130,8 @@ function createForward(input: DispatchInput) {
         ...(freeZone ? { headers: { 'X-Min-Discount': String(freeZone.minDiscountPct) } } : {}),
       });
       if (!onDispatch) observation.headersMs = performance.now() - observation.directDispatchedAt;
+      // 供应商不认 reasoning 字段：记下来，之后发给它的请求不再带（这一轮交给兜底）
+      if (freeZone) void learnSurplusReasoningRejection(response, freeZone.providers[0]);
       return response;
     };
     return model.provider === 'surplus'

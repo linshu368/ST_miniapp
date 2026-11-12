@@ -13,6 +13,11 @@
  */
 import type { FreeZoneProbe } from '@miniapp/shared';
 import { forwardToUpstream, resolveProviderUpstream } from '../generation/upstream.js';
+import {
+  isSurplusReasoningRejection,
+  noteSurplusReasoningRejected,
+  surplusReasoningAccepted,
+} from '../generation/surplus-reasoning.js';
 
 const PROBE_TIMEOUT_MS = 20_000;
 const UNROUTABLE_CODES = new Set([
@@ -91,23 +96,42 @@ export function createSurplusProbe(
     const timer = setTimeout(() => controller.abort(), timeoutMs + 1_000);
     const base = { provider, first_token_ms: null };
     try {
-      const response = await forward({
-        ...route,
-        method: 'POST',
-        headers: { 'X-Min-Discount': String(minDiscountPct) },
-        body: JSON.stringify({
-          model,
-          stream: true,
-          max_tokens: 16,
-          provider: [provider],
-          // 量的是「不思考」时的首字；思考过程会作为首个字显示，不额外拖慢
-          reasoning: { effort: 'none' },
-          messages: [{ role: 'user', content: '只回复一个字：好' }],
-        }),
-        signal: controller.signal,
-      });
+      const send = (withReasoning: boolean) =>
+        forward({
+          ...route,
+          method: 'POST',
+          headers: { 'X-Min-Discount': String(minDiscountPct) },
+          body: JSON.stringify({
+            model,
+            stream: true,
+            max_tokens: 16,
+            provider: [provider],
+            // 量的是「不思考」时的首字；思考过程会作为首个字显示，不额外拖慢
+            ...(withReasoning ? { reasoning: { effort: 'none' } } : {}),
+            messages: [{ role: 'user', content: '只回复一个字：好' }],
+          }),
+          signal: controller.signal,
+        });
+      let response = await send(surplusReasoningAccepted(provider));
+      let errorText: string | null = null;
+      if (response.status === 400) {
+        errorText = await response.text().catch(() => '');
+        // 这家不认 reasoning 字段：记下来（对话请求也跟着不带），去掉再探一次
+        if (isSurplusReasoningRejection(400, errorText)) {
+          noteSurplusReasoningRejected(provider);
+          response = await send(false);
+          errorText = null;
+        }
+      }
       if (!response.ok) {
-        const { code, message } = errorCode(await response.json().catch(() => null));
+        const text = errorText ?? (await response.text().catch(() => ''));
+        let parsed: unknown = null;
+        try {
+          parsed = JSON.parse(text);
+        } catch {
+          parsed = null;
+        }
+        const { code, message } = errorCode(parsed);
         const unroutable =
           (code !== null && UNROUTABLE_CODES.has(code)) ||
           response.status === 404 ||
