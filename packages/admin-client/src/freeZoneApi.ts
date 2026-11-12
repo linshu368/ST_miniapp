@@ -103,6 +103,7 @@ export const FREE_ZONE_CHECK_LABELS: Record<FreeZoneScreeningCheckKey, string> =
   min_tps: '出字速度',
   min_cache_hit_rate_pct: '缓存命中率',
   min_realized_discount_pct: '7 天成交折扣',
+  probe: '探测派单',
 };
 
 export const FREE_ZONE_STATUS_LABELS = {
@@ -154,7 +155,9 @@ export function freeZoneReasonView(model: AdminFreeZoneStatusModel): FreeZoneRea
         failed: item.passed === 0,
         hint: modelLevel
           ? `模型整体${item.passed === 0 ? '没过' : '过了'}`
-          : `${item.total} 家 trusted 供应商里有 ${item.passed} 家过了`,
+          : item.key === 'probe'
+            ? `真发请求探了 ${item.total} 家，${item.passed} 家带 ${item.threshold}% 折扣底线派得出去`
+            : `${item.total} 家 trusted 供应商里有 ${item.passed} 家过了`,
       };
     })
     .sort((a, b) => Number(b.failed) - Number(a.failed));
@@ -194,4 +197,11 @@ export function freeZoneStatusGroup(model: AdminFreeZoneStatusModel): FreeZoneSt
   if (model.status === 'listed') return 'listed';
   if (model.last_delist?.cause === 'business') return 'business_delisted';
   return 'not_listed';
+}
+
+/** 在架模型的探测首字，给「详情」用：「探测首字 2.3 秒」；没有探测为空串。 */
+export function freeZoneProbeText(model: AdminFreeZoneStatusModel): string {
+  const probe = model.probe;
+  if (!probe || probe.outcome !== 'ok' || probe.first_token_ms === null) return '';
+  return `探测首字 ${(probe.first_token_ms / 1000).toFixed(1)} 秒`;
 }

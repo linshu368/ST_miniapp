@@ -15,6 +15,7 @@ import {
   FREE_ZONE_STATUS_GROUPS,
   FREE_ZONE_STATUS_LABELS,
   fetchFreeZoneStatus,
+  freeZoneProbeText,
   freeZoneReasonView,
   freeZoneStatusGroup,
   type FreeZoneStatusGroup,
@@ -41,7 +42,8 @@ function time(iso: string | null): string {
 
 function detail(model: AdminFreeZoneStatusModel, requiredPasses: number): string {
   if (model.status === 'listed') {
-    return `用 ${model.providers.join('、')}，${time(model.provider_since)} 起`;
+    const probe = freeZoneProbeText(model);
+    return `用 ${model.providers.join('、')}，${time(model.provider_since)} 起${probe ? `；${probe}` : ''}`;
   }
   if (model.status === 'cooling') return `冷却到 ${time(model.cooldown_until)}`;
   if (model.status === 'unlisted') return `连续达标 ${model.consecutive_passes}/${requiredPasses}`;
