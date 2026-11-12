@@ -91,7 +91,11 @@ import {
 } from './data.js';
 
 import { makeCreatorAnalytics } from './creator-analytics.js';
-import { applyFreeZoneScenario, selectFreeZonePreviewModel } from './free-zone.js';
+import {
+  applyFreeZoneScenario,
+  FREE_ZONE_KEEPS_THINKING_ID,
+  selectFreeZonePreviewModel,
+} from './free-zone.js';
 
 const HOST = '127.0.0.1';
 export const PREVIEW_PROTOCOL = 'st-miniapp-ui-v1';
@@ -2208,6 +2212,7 @@ export function createPreviewServer(apiPort: number, appPort: number) {
                 : data.models.selected_model_id,
           };
           data.messages.push(message);
+          const keepsThinking = data.models.selected_model_id === FREE_ZONE_KEEPS_THINKING_ID;
           const currentEpoch = epoch;
           const write = (event: ConversationStreamEvent) => {
             if (!res.destroyed && !res.writableEnded)
@@ -2227,12 +2232,13 @@ export function createPreviewServer(apiPort: number, appPort: number) {
             revision: message.revision,
             user_message_id: userId,
             assistant_message_id: message.id,
-            thinking_enabled: parsed.thinking_enabled !== false,
+            // 畅聊免费模型的思考过程一律显示；关不掉思考的那个，开关关着也照样吐思考
+            thinking_enabled: parsed.thinking_enabled !== false || keepsThinking,
             // A short frozen budget reaches the browser deadline without a slow test.
             ...(scenario === 'chat-late-first-token' ? { first_token_deadline_ms: 1_000 } : {}),
           });
           await delay(150);
-          if (parsed.thinking_enabled !== false)
+          if (parsed.thinking_enabled !== false || keepsThinking)
             write({ type: 'reasoning', text: '沿着当前故事线，准备一个自然的回应。' });
           await delay(
             scenario === 'chat-slow' || scenario === 'chat-surplus-fallback'
