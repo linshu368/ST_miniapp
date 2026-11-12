@@ -10,14 +10,7 @@ const TIER_OPTIONS = [
   { value: 'light', label: '轻量' },
 ];
 
-/** 深度思考开关对这个模型管不管用；不是「能开关」的，用户点深度思考时会轻提示一句 */
-const THINKING_OPTIONS = [
-  { value: 'switchable', label: '能开关' },
-  { value: 'always', label: '关不掉' },
-  { value: 'hidden', label: '不显示思考' },
-];
-
-type TextField = Exclude<keyof FreeZoneCandidate, 'benchmark_tier' | 'thinking'>;
+type TextField = Exclude<keyof FreeZoneCandidate, 'benchmark_tier'>;
 
 const TEXT_COLUMNS: ReadonlyArray<{
   key: TextField;
@@ -48,44 +41,6 @@ const TEXT_COLUMNS: ReadonlyArray<{
 interface Row {
   index: number;
   candidate: FreeZoneCandidate;
-}
-
-/** 下拉选择的两列：对标档位、深度思考 */
-function selectColumns(
-  disabled: boolean | undefined,
-  patch: (index: number, change: Partial<FreeZoneCandidate>) => void
-): TableColumnsType<Row> {
-  return [
-    {
-      title: '对标档位',
-      key: 'benchmark_tier',
-      width: 100,
-      render: (_: unknown, row: Row) => (
-        <Select
-          className="field-full"
-          value={row.candidate.benchmark_tier}
-          options={TIER_OPTIONS}
-          disabled={disabled}
-          onChange={(benchmark_tier) => patch(row.index, { benchmark_tier })}
-        />
-      ),
-    },
-    {
-      title: '深度思考',
-      key: 'thinking',
-      width: 120,
-      render: (_: unknown, row: Row) => (
-        <Select
-          className="field-full"
-          // 旧配置没有这一项，按默认「能开关」显示
-          value={row.candidate.thinking ?? 'switchable'}
-          options={THINKING_OPTIONS}
-          disabled={disabled}
-          onChange={(thinking) => patch(row.index, { thinking })}
-        />
-      ),
-    },
-  ];
 }
 
 /**
@@ -130,7 +85,20 @@ export function FreeZoneCandidatesEditor(props: {
         />
       ),
     })),
-    ...selectColumns(props.disabled, patch),
+    {
+      title: '对标档位',
+      key: 'benchmark_tier',
+      width: 100,
+      render: (_: unknown, row: Row) => (
+        <Select
+          className="field-full"
+          value={row.candidate.benchmark_tier}
+          options={TIER_OPTIONS}
+          disabled={props.disabled}
+          onChange={(benchmark_tier) => patch(row.index, { benchmark_tier })}
+        />
+      ),
+    },
     {
       title: '操作',
       key: 'actions',
@@ -172,14 +140,13 @@ export function FreeZoneCandidatesEditor(props: {
       <Typography.Text type="secondary">
         顺序就是栏目里的展示顺序。免费模型 id 必须以 free- 开头；上线后别再改
         id，否则选了它的用户会被自动换走。
-        系列用来在下架时优先换同系列；对标档位决定划线原价（取这一档当前的星尘价）；
-        深度思考填这个模型在当前供应商上的实测，不是「能开关」的，用户点深度思考时会轻提示一句。
+        系列用来在下架时优先换同系列；对标档位决定划线原价（取这一档当前的星尘价）。
       </Typography.Text>
       <Table<Row>
         size="small"
         rowKey="index"
         pagination={false}
-        scroll={{ x: 1250 }}
+        scroll={{ x: 1130 }}
         columns={columns}
         dataSource={list.map((candidate, index) => ({ index, candidate }))}
       />

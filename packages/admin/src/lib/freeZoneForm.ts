@@ -46,7 +46,6 @@ export const EMPTY_FREE_ZONE_CANDIDATE: FreeZoneCandidate = {
   tagline: '',
   family: '',
   benchmark_tier: 'light',
-  thinking: 'switchable',
 };
 
 /** 新候选的 id 留空时，按 Surplus 模型名生成一个：deepseek-v4.1 → free-deepseek-v4-1。 */
@@ -97,7 +96,6 @@ const FIELD_LABELS: Record<string, string> = {
   tagline: '介绍语',
   family: '系列',
   benchmark_tier: '对标档位',
-  thinking: '深度思考',
   min_discount_pct: '折扣底线',
   min_qualified_offers: '达标报价数',
   min_realized_discount_pct: '7 天成交折扣',
