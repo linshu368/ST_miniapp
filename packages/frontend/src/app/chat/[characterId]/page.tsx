@@ -35,7 +35,7 @@ import type { CharacterDetailTab } from '@/components/characters/character-detai
 import { ChatSplash } from '@/components/chat/chat-splash';
 import { useChatSession } from '@/hooks/use-chat-session';
 import { useMemoryDraft } from '@/hooks/use-memory-draft';
-import { useApiConnectionWarmth } from '@/hooks/use-api-connection-warmth';
+import { useApiConnectionWarmth } from '@/hooks/use-connection-warmth';
 import { useConversationTurn } from '@/hooks/use-conversation-turn';
 import { useConversationBranch } from '@/hooks/use-conversation-branch';
 import { useCharacterQuery } from '@/lib/api/characters';

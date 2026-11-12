@@ -1,14 +1,15 @@
 'use client';
 
 import { useEffect } from 'react';
-import { Clapperboard, RefreshCw } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 
 import { DramaPlayer } from './drama-player';
-import { DramaHomeFrame, DramaHomeLoading } from './drama-home-frame';
+import { DramaHomeEmpty, DramaHomeFrame, DramaHomeLoading } from './drama-home-frame';
 import { cn } from '@/lib/utils';
 import { preloadDramaHls } from '@/lib/drama-media-source';
 import { afterNavigationQuietWindow } from '@/lib/navigation-quiet-window';
 import { useDramaListQuery } from '@/lib/api/drama';
+import { useDramaStreamWarmth } from '@/hooks/use-connection-warmth';
 import { markCriticalSettled } from '@/lib/entry-phase';
 import { dramaTiming } from '@/lib/perf/drama-observer';
 import { useFreshAfterFetch, usePageReady } from '@/lib/perf/page-ready';
@@ -16,6 +17,7 @@ import { useDramaLibraryStore, useHydrateDramaLibrary } from '@/stores/drama-lib
 
 export function DramaHome() {
   const query = useDramaListQuery('/watch');
+  useDramaStreamWarmth();
   useEffect(() => {
     let cancelled = false;
     // 首帧绘制 + 一次空闲后才预取 hls.js chunk，不与首屏关键资源抢带宽。
@@ -89,27 +91,7 @@ export function DramaHome() {
       {!hydrated || (query.isLoading && !playerId) ? (
         <DramaHomeLoading />
       ) : !playerId ? (
-        <div
-          role="status"
-          className="flex h-full flex-col items-center justify-center px-8 text-center"
-        >
-          <Clapperboard className="mb-5 h-10 w-10 text-[#eee7e2]/30" />
-          <h2 className="text-lg font-semibold">
-            {query.isError ? '短剧暂时没加载出来' : '好戏，即将开场'}
-          </h2>
-          <p className="mt-2 text-sm text-[#eee7e2]/45">
-            {query.isError
-              ? '网络可能开了个小差，再试一次就好。'
-              : '短剧正在陆续上架，稍后回来看看。'}
-          </p>
-          <button
-            type="button"
-            onClick={retry}
-            className="mt-6 min-h-11 rounded-full bg-[#dfd2cf] px-6 text-sm font-semibold text-black"
-          >
-            {query.isError ? '重新加载' : '刷新看看'}
-          </button>
-        </div>
+        <DramaHomeEmpty isError={query.isError} onRetry={retry} />
       ) : (
         <DramaPlayer
           key={playerId}

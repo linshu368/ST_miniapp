@@ -7,6 +7,7 @@ import { Bookmark, Check, ChevronRight, Clapperboard, Clock3, Play, Search, X } 
 import type { DramaSummary } from '@miniapp/shared';
 
 import { useDramaListQuery, usePrefetchDramaPlayback } from '@/lib/api/drama';
+import { useDramaStreamWarmth } from '@/hooks/use-connection-warmth';
 import { selectDramas } from '@/lib/drama-catalog';
 import { DramaListHeader, DramaGridSkeleton } from '@/components/drama/drama-list-shell';
 import { markCriticalSettled } from '@/lib/entry-phase';
@@ -47,6 +48,7 @@ function saveLibraryPosition(filter: 'saved' | 'recent', position: DramaLibraryP
 
 export default function DramasPage() {
   const router = useRouter();
+  useDramaStreamWarmth();
   const performancePolicy = useMobilePerformancePolicy();
   const listBudget = performancePolicy.dramas;
   const { data, isLoading, isError, isFetching, refetch } = useDramaListQuery();
