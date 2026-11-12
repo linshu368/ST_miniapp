@@ -31,6 +31,9 @@ export const FREE_ZONE_SCENARIOS = {
 
 export type FreeZoneScenario = keyof typeof FREE_ZONE_SCENARIOS;
 
+/** 预览里假定这个免费模型关不掉思考（线上 GLM 实测如此）：深度思考关着也照样吐思考过程 */
+export const FREE_ZONE_KEEPS_THINKING_ID = 'free-glm-5-2';
+
 export function isFreeZoneScenario(value: string): value is FreeZoneScenario {
   return Object.hasOwn(FREE_ZONE_SCENARIOS, value);
 }
@@ -45,8 +48,6 @@ const MODELS: PublicFreeZone['models'] = [
     tagline: '中文专精，剧情推理巅峰',
     benchmark_tier: 'premium',
     original_credits: 55,
-    // 关不掉思考：选它后关深度思考会轻提示
-    thinking: 'always',
   },
   {
     id: 'free-deepseek-v4-pro',
@@ -54,7 +55,6 @@ const MODELS: PublicFreeZone['models'] = [
     tagline: '性价比之王，稳定，几乎无甲',
     benchmark_tier: 'standard',
     original_credits: 33,
-    thinking: 'switchable',
   },
   {
     id: 'free-gemini-3-5-flash',
@@ -62,7 +62,6 @@ const MODELS: PublicFreeZone['models'] = [
     tagline: 'NSFW场景好',
     benchmark_tier: 'light',
     original_credits: 15,
-    thinking: 'switchable',
   },
 ];
 

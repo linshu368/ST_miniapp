@@ -77,7 +77,7 @@ import { useTelegramBackButton } from '@/lib/telegram';
 import { getRawInitData } from '@/lib/telegram/auth';
 import { parseTelegramUser } from '@/lib/telegram/user';
 import { readThinkingPreference, writeThinkingPreference } from '@/lib/chat-thinking';
-import { freeZoneThinkingHint, selectedFreeZoneModel } from '@/lib/free-zone';
+import { useThinkingNotice } from '@/hooks/use-thinking-notice';
 import { useVisualViewportHeight } from '@/lib/use-visual-viewport-height';
 import {
   markCriticalSettled,
@@ -191,14 +191,7 @@ export default function SelfHostedChatPage() {
   }, [session.ready, session.entryError]);
   const modelCatalogQuery = useModelCatalogQuery({ enabled: enrichReady, characterId });
   const selectedModelId = modelCatalogQuery.data?.selected_model_id ?? null;
-  const selectedFreeModel = useMemo(
-    () => selectedFreeZoneModel(modelCatalogQuery.data),
-    [modelCatalogQuery.data]
-  );
-  const thinkingHint = useCallback(
-    (nextEnabled: boolean) => freeZoneThinkingHint(selectedFreeModel, nextEnabled),
-    [selectedFreeModel]
-  );
+  const thinkingNotice = useThinkingNotice(selectedModelId);
   const selectedModelUsesFreeQuota = useMemo(() => {
     const catalog = modelCatalogQuery.data?.catalog;
     if (!catalog || !selectedModelId) return null;
@@ -338,6 +331,7 @@ export default function SelfHostedChatPage() {
     onSessionGone: abandonSessionWithDraft,
     goBack,
     onRestoreSendContent: restoreSendContent,
+    onThinkingIgnored: thinkingNotice.onThinkingIgnored,
   });
 
   const userSettingsQuery = useUserSettingsQuery({ enabled: backgroundReady });
@@ -813,8 +807,11 @@ export default function SelfHostedChatPage() {
           detailsDefaultOpen={detailsDefaultOpen}
           onDetailsDefaultOpenChange={handleDetailsDefaultOpenChange}
           thinkingEnabled={thinkingEnabled}
-          onThinkingEnabledChange={changeThinkingEnabled}
-          thinkingHint={thinkingHint}
+          onThinkingEnabledChange={(enabled) => {
+            changeThinkingEnabled(enabled);
+            thinkingNotice.onThinkingToggled(enabled);
+          }}
+          notice={thinkingNotice.notice}
           leftSlot={
             <ChatToolsSheet
               onCreateConversation={() => {

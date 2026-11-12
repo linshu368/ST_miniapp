@@ -1,4 +1,4 @@
-import type { GetModelCatalogData, PublicFreeZone, PublicFreeZoneModel } from '@miniapp/shared';
+import type { GetModelCatalogData, PublicFreeZone } from '@miniapp/shared';
 
 /**
  * 畅聊栏目的展示判断（纯函数）。栏目状态由后端算好下发，这里只负责：
@@ -75,22 +75,4 @@ export function freeZoneBoundaryDelay(
 export function selectedFreeZoneModel(data: GetModelCatalogData | undefined, now = new Date()) {
   if (!data || !isFreeZoneOpen(data.free_zone, now)) return null;
   return data.free_zone?.models.find((model) => model.id === data.selected_model_id) ?? null;
-}
-
-/**
- * 用户点深度思考时，当前免费模型不吃这个开关就轻提示一句（关不掉的照样显示思考，
- * 不显示思考的开了也看不到），免得以为出了 bug；开关起作用返回 null。
- */
-export function freeZoneThinkingHint(
-  model: Pick<PublicFreeZoneModel, 'display_name' | 'thinking'> | null,
-  nextEnabled: boolean
-): string | null {
-  if (!model) return null;
-  if (model.thinking === 'always' && !nextEnabled) {
-    return `${model.display_name} 不支持关闭深度思考，思考过程会照常显示`;
-  }
-  if (model.thinking === 'hidden' && nextEnabled) {
-    return `${model.display_name} 不支持显示思考过程`;
-  }
-  return null;
 }
