@@ -167,6 +167,29 @@ export const AdminFreeZoneStatusResponseSchema = z.object({
   events: z.array(AdminFreeZoneEventSchema),
 });
 
+/**
+ * 运营手动「立即上架」：跳过连续达标次数和冷却期，直接用一家供应商上架；之后照常每 30 分钟评估，
+ * 官方数据或业务数据不达标照样会换供应商或下架。不指定供应商时按当前行情和初筛门槛选。
+ */
+export const AdminFreeZoneListNowRequestSchema = z.object({
+  candidate_id: z.string().trim().min(1).max(64),
+  provider: z
+    .string()
+    .trim()
+    .regex(/^[a-z0-9][a-z0-9._-]{0,63}$/, '供应商名只能是小写字母、数字和 . _ -')
+    .optional(),
+});
+
+export const AdminFreeZoneListNowResponseSchema = z.object({
+  candidate_id: z.string(),
+  display_name: z.string(),
+  provider: z.string(),
+  /** requested：运营指定的；screening：按当前初筛结果选的 */
+  provider_source: z.enum(['requested', 'screening']),
+  /** 上架前的状态；null 表示还没被评估过 */
+  previous_status: FreeZoneModelStatusSchema.nullable(),
+});
+
 export type FreeZoneScreeningCheckKey = z.infer<typeof FreeZoneScreeningCheckKeySchema>;
 export type FreeZoneScreeningCheck = z.infer<typeof FreeZoneScreeningCheckSchema>;
 export type FreeZoneCheckSummary = z.infer<typeof FreeZoneCheckSummarySchema>;
@@ -180,3 +203,5 @@ export type AdminFreeZoneStatusModel = z.infer<typeof AdminFreeZoneStatusModelSc
 export type AdminFreeZoneStatusModelInput = z.input<typeof AdminFreeZoneStatusModelSchema>;
 export type AdminFreeZoneEvent = z.infer<typeof AdminFreeZoneEventSchema>;
 export type AdminFreeZoneStatusResponse = z.infer<typeof AdminFreeZoneStatusResponseSchema>;
+export type AdminFreeZoneListNowRequest = z.input<typeof AdminFreeZoneListNowRequestSchema>;
+export type AdminFreeZoneListNowResponse = z.infer<typeof AdminFreeZoneListNowResponseSchema>;
