@@ -27,6 +27,8 @@ import {
   toPeriodTime,
 } from '../lib/freeZoneForm';
 import { FreeZoneCandidatesEditor } from './FreeZoneCandidatesEditor';
+import { FreeZoneScreeningPanel } from './FreeZoneScreeningPanel';
+import { FreeZoneStatusPanel } from './FreeZoneStatusPanel';
 
 interface NumberField<K extends string> {
   key: K;
@@ -323,6 +325,9 @@ export function FreeZoneConfigEditor(props: {
       <Section title="栏目开放">
         <OpenSettings value={value} disabled={props.disabled} onChange={update} />
       </Section>
+      <Section title="线上状态">
+        <FreeZoneStatusPanel />
+      </Section>
       <Section title={`候选池（${value.candidates.length}/50）`}>
         <FreeZoneCandidatesEditor
           value={value.candidates}
@@ -340,6 +345,7 @@ export function FreeZoneConfigEditor(props: {
           disabled={props.disabled}
           onChange={(patch) => update({ screening: { ...value.screening, ...patch } })}
         />
+        <FreeZoneScreeningPanel config={value} />
       </Section>
       <Section
         title="在架业务数据"

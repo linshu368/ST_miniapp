@@ -34,7 +34,7 @@ const TEXT_COLUMNS: ReadonlyArray<{
     placeholder: 'DeepSeek V4 Pro',
     maxLength: 40,
   },
-  { key: 'tagline', title: '介绍语', width: 200, placeholder: '一句话介绍', maxLength: 40 },
+  { key: 'tagline', title: '介绍语', width: 200, placeholder: '可留空', maxLength: 40 },
   { key: 'family', title: '系列', width: 110, placeholder: 'deepseek', maxLength: 40 },
 ];
 
