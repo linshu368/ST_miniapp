@@ -582,7 +582,8 @@ test('@chat @chat-edit @layout 最近十轮就地编辑、取消及删除单条�
   const editButton = page.getByRole('button', { name: '编辑第11轮角色正文', exact: true });
   await editButton.scrollIntoViewIfNeeded();
   const editBox = await editButton.boundingBox();
-  expect(editBox?.width).toBeGreaterThanOrEqual(44);
+  // 回复操作栏紧凑排布（编辑/重生成/赞/踩一行放下）：宽 36、高保持 44，和点赞用例一致
+  expect(editBox?.width).toBeGreaterThanOrEqual(36);
   expect(editBox?.height).toBeGreaterThanOrEqual(44);
   await editButton.click();
   const editor = page.getByRole('textbox', { name: '编辑角色回复' });
