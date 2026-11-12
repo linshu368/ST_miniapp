@@ -12,9 +12,12 @@ import {
   type TableColumnsType,
 } from 'antd';
 import {
+  FREE_ZONE_STATUS_GROUPS,
   FREE_ZONE_STATUS_LABELS,
   fetchFreeZoneStatus,
   freeZoneReasonView,
+  freeZoneStatusGroup,
+  type FreeZoneStatusGroup,
 } from '@miniapp/admin-client';
 import type {
   AdminFreeZoneEvent,
@@ -72,57 +75,133 @@ function ReasonCell(props: { model: AdminFreeZoneStatusModel }) {
   );
 }
 
-function columns(requiredPasses: number): TableColumnsType<AdminFreeZoneStatusModel> {
-  return [
-    {
-      title: '候选',
-      key: 'name',
-      width: 220,
-      render: (_, model) => (
-        <Space orientation="vertical" size={0}>
-          <Typography.Text>
-            {model.display_name ?? model.candidate_id}
-            {model.in_config ? null : <Tag style={{ marginLeft: 6 }}>已不在候选池</Tag>}
-          </Typography.Text>
-          <Typography.Text type="secondary">{model.surplus_model}</Typography.Text>
-        </Space>
+function NameCell(props: { model: AdminFreeZoneStatusModel; group: FreeZoneStatusGroup }) {
+  const { model } = props;
+  return (
+    <Space orientation="vertical" size={0}>
+      <Typography.Text>
+        {model.display_name ?? model.candidate_id}
+        {model.in_config ? null : <Tag style={{ marginLeft: 6 }}>已不在候选池</Tag>}
+        {props.group === 'not_listed' && model.ever_listed ? (
+          <Tooltip
+            title={model.last_delist ? `${time(model.last_delist.at)} 因官方数据下架` : undefined}
+          >
+            <Tag style={{ marginLeft: 6 }}>曾上架</Tag>
+          </Tooltip>
+        ) : null}
+      </Typography.Text>
+      <Typography.Text type="secondary">{model.surplus_model}</Typography.Text>
+    </Space>
+  );
+}
+
+function ExcludedProviders(props: { model: AdminFreeZoneStatusModel }) {
+  const excluded = Object.entries(props.model.excluded_providers);
+  if (excluded.length === 0) return null;
+  return (
+    <Typography.Text type="warning">
+      排除中：{excluded.map(([name, until]) => `${name}（到 ${time(until)}）`).join('、')}
+    </Typography.Text>
+  );
+}
+
+/** 三块共用一套列：在架的不显示状态和原因；业务下架的多一列下架原因。 */
+function columns(
+  requiredPasses: number,
+  group: FreeZoneStatusGroup
+): TableColumnsType<AdminFreeZoneStatusModel> {
+  const name = {
+    title: '候选',
+    key: 'name',
+    width: 220,
+    render: (_: unknown, model: AdminFreeZoneStatusModel) => (
+      <NameCell model={model} group={group} />
+    ),
+  };
+  const detailColumn = {
+    title: '详情',
+    key: 'detail',
+    width: 220,
+    render: (_: unknown, model: AdminFreeZoneStatusModel) => detail(model, requiredPasses),
+  };
+  if (group === 'listed') {
+    return [
+      name,
+      detailColumn,
+      {
+        title: '排除中的供应商',
+        key: 'excluded',
+        render: (_, model) =>
+          Object.keys(model.excluded_providers).length > 0 ? (
+            <ExcludedProviders model={model} />
+          ) : (
+            <Typography.Text type="secondary">—</Typography.Text>
+          ),
+      },
+    ];
+  }
+  const status = {
+    title: '状态',
+    key: 'status',
+    width: 90,
+    render: (_: unknown, model: AdminFreeZoneStatusModel) =>
+      model.status ? (
+        <Tag color={STATUS_COLORS[model.status]}>{FREE_ZONE_STATUS_LABELS[model.status]}</Tag>
+      ) : (
+        <Tag>未评估</Tag>
       ),
-    },
+  };
+  const reason = {
+    title: '最近原因',
+    key: 'reason',
+    render: (_: unknown, model: AdminFreeZoneStatusModel) => (
+      <Space orientation="vertical" size={4}>
+        <ReasonCell model={model} />
+        <ExcludedProviders model={model} />
+      </Space>
+    ),
+  };
+  if (group === 'not_listed') return [name, status, detailColumn, reason];
+  return [
+    name,
+    status,
+    detailColumn,
     {
-      title: '状态',
-      key: 'status',
-      width: 90,
+      title: '下架原因',
+      key: 'delist',
+      width: 240,
       render: (_, model) =>
-        model.status ? (
-          <Tag color={STATUS_COLORS[model.status]}>{FREE_ZONE_STATUS_LABELS[model.status]}</Tag>
+        model.last_delist ? (
+          <Space orientation="vertical" size={0}>
+            <Typography.Text type="secondary">{time(model.last_delist.at)}</Typography.Text>
+            <Typography.Text type="danger">{model.last_delist.reason ?? '—'}</Typography.Text>
+          </Space>
         ) : (
-          <Tag>未评估</Tag>
+          '—'
         ),
     },
-    {
-      title: '详情',
-      key: 'detail',
-      width: 220,
-      render: (_, model) => detail(model, requiredPasses),
-    },
-    {
-      title: '最近原因',
-      key: 'reason',
-      render: (_, model) => {
-        const excluded = Object.entries(model.excluded_providers);
-        return (
-          <Space orientation="vertical" size={4}>
-            <ReasonCell model={model} />
-            {excluded.length ? (
-              <Typography.Text type="warning">
-                排除中：{excluded.map(([name, until]) => `${name}（到 ${time(until)}）`).join('、')}
-              </Typography.Text>
-            ) : null}
-          </Space>
-        );
-      },
-    },
+    reason,
   ];
+}
+
+function GroupTable(props: {
+  data: AdminFreeZoneStatusResponse;
+  group: FreeZoneStatusGroup;
+  models: AdminFreeZoneStatusModel[];
+}) {
+  if (props.models.length === 0) {
+    return <Typography.Text type="secondary">暂无。</Typography.Text>;
+  }
+  return (
+    <Table<AdminFreeZoneStatusModel>
+      size="small"
+      rowKey="candidate_id"
+      pagination={false}
+      scroll={{ x: 760 }}
+      columns={columns(props.data.required_passes, props.group)}
+      dataSource={props.models}
+    />
+  );
 }
 
 function EventList(props: { data: AdminFreeZoneStatusResponse }) {
@@ -149,7 +228,7 @@ function EventList(props: { data: AdminFreeZoneStatusResponse }) {
   );
 }
 
-/** 评估任务落库的线上状态：哪些在架（用户能选）、哪些在攒连续达标、哪些在冷却。 */
+/** 评估任务落库的线上状态，分三块：在架、未上架、因业务数据下架；每块可折叠。 */
 export function FreeZoneStatusPanel() {
   const api = useAdminApi();
   const [data, setData] = useState<AdminFreeZoneStatusResponse | null>(null);
@@ -174,8 +253,17 @@ export function FreeZoneStatusPanel() {
   }, [load]);
 
   if (!api) return <Typography.Text type="secondary">当前页面拿不到后端地址。</Typography.Text>;
-  const count = (status: keyof typeof FREE_ZONE_STATUS_LABELS) =>
-    data?.models.filter((model) => model.status === status).length ?? 0;
+  const grouped = new Map<FreeZoneStatusGroup, AdminFreeZoneStatusModel[]>(
+    FREE_ZONE_STATUS_GROUPS.map((group) => [group.key, []])
+  );
+  for (const model of data?.models ?? []) grouped.get(freeZoneStatusGroup(model))?.push(model);
+  // 默认展开在架的；业务下架的有内容才展开；未上架的模型多，默认收起
+  const defaultOpen: FreeZoneStatusGroup[] = [
+    'listed',
+    ...((grouped.get('business_delisted')?.length ?? 0) > 0
+      ? (['business_delisted'] as const)
+      : []),
+  ];
 
   return (
     <Space orientation="vertical" size="small" className="editor-stack">
@@ -184,27 +272,32 @@ export function FreeZoneStatusPanel() {
           刷新
         </Button>
         {data ? (
-          <>
-            <Tag color="green">在架 {count('listed')}</Tag>
-            <Tag>未上架 {count('unlisted')}</Tag>
-            <Tag color="orange">冷却中 {count('cooling')}</Tag>
-            <Typography.Text type="secondary">
-              按已发布的配置；最近评估 {time(data.last_evaluated_at)}，每 30 分钟一次。
-              {data.enabled ? '' : '总开关关着，用户看不到栏目。'}
-            </Typography.Text>
-          </>
+          <Typography.Text type="secondary">
+            按已发布的配置；最近评估 {time(data.last_evaluated_at)}，每 30 分钟一次。
+            {data.enabled ? '' : '总开关关着，用户看不到栏目。'}
+          </Typography.Text>
         ) : null}
       </Space>
       {error ? <Alert type="error" showIcon title={error} /> : null}
       {data ? (
         <>
-          <Table<AdminFreeZoneStatusModel>
+          <Collapse
             size="small"
-            rowKey="candidate_id"
-            pagination={false}
-            scroll={{ x: 760 }}
-            columns={columns(data.required_passes)}
-            dataSource={data.models}
+            defaultActiveKey={defaultOpen}
+            items={FREE_ZONE_STATUS_GROUPS.map((group) => ({
+              key: group.key,
+              label: (
+                <Space size={6}>
+                  <Typography.Text strong>
+                    {group.label}（{grouped.get(group.key)?.length ?? 0}）
+                  </Typography.Text>
+                  <Typography.Text type="secondary">{group.hint}</Typography.Text>
+                </Space>
+              ),
+              children: (
+                <GroupTable data={data} group={group.key} models={grouped.get(group.key) ?? []} />
+              ),
+            }))}
           />
           <Collapse
             size="small"
