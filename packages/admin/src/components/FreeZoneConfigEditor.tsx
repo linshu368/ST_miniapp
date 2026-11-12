@@ -76,6 +76,13 @@ const SCREENING_FIELDS: ReadonlyArray<NumberField<keyof FreeZoneScreening & stri
   { key: 'max_ttft_p50_ms', label: '首字 p50 上限（毫秒）', hint: TTFT_BUCKETS, min: 1 },
   { key: 'max_ttft_p90_ms', label: '首字 p90 上限（毫秒）', hint: TTFT_BUCKETS, min: 1 },
   { key: 'min_tps', label: '出字速度（tokens/秒）', hint: '供应商 tps p50 下限' },
+  {
+    key: 'min_cache_hit_rate_pct',
+    label: '缓存命中率（%）',
+    hint: '供应商近 24 小时缓存命中率下限（Surplus 统计的是这家所有买家的）；命中低，同样的对话花得更多',
+    max: 100,
+    precision: 1,
+  },
   { key: 'min_samples', label: '最少样本', hint: '供应商近 24 小时请求数不够就不算达标' },
   {
     key: 'price_band_ratio',

@@ -126,6 +126,7 @@ describe('screening helpers', () => {
 
   it('formats values the way operators read them', () => {
     expect(formatCheckValue('min_uptime_pct', 92.74)).toBe('92.7%');
+    expect(formatCheckValue('min_cache_hit_rate_pct', 9.5)).toBe('9.5%');
     expect(formatCheckValue('max_ttft_p50_ms', 3043)).toBe('3043ms');
     expect(formatCheckValue('min_samples', null)).toBe('未知');
     expect(formatPricePer1m(308358)).toBe('$0.31');
