@@ -114,7 +114,7 @@ function listNowPlan(model: AdminFreeZoneStatusModel, provider: string | undefin
     `现在：${status}${model.status === 'cooling' ? `，冷却到 ${model.cooldown_until ?? '?'}` : ''}`,
     model.last_delist ? `上次下架：${model.last_delist.at} ${model.last_delist.reason ?? ''}` : '',
     excluded ? `排除中的供应商：${excluded}` : '',
-    `供应商：${provider ? `${provider}（指定）` : '按当前行情和初筛门槛选'}`,
+    `供应商：${provider ? `${provider}（指定）` : '按当前行情和初筛门槛选'}；上架前先真发一次派单探测，按折扣底线派不出单就不上`,
     '上架后跳过连续达标和冷却，立即对用户可见；之后照常每 30 分钟评估，不达标照样换供应商或下架。',
   ]
     .filter(Boolean)

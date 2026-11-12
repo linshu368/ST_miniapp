@@ -2,37 +2,59 @@ import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_FREE_ZONE_CONFIG, FreeZoneConfigSchema } from '@miniapp/shared';
 import { initialState, listManually, type FreeZoneModelState } from './lifecycle.js';
 import { FreeZoneListNowError, listFreeZoneModelNow, type ListNowDeps } from './manual-list.js';
+import type { ProbeFn } from './probe.js';
 import type { ManualListingOutcome } from './repository.js';
 import type { SurplusModelMarket } from './surplus-market.js';
 
 const NOW = new Date('2026-11-12T08:30:00.000Z');
 
-function market(provider: string, uptimePct = 98): SurplusModelMarket {
+function market(provider: string, uptimePct = 98, ...others: string[]): SurplusModelMarket {
   return {
     book: {
-      offers: Array.from({ length: 5 }, () => ({
-        provider,
-        discountPct: 95,
-        pricePer1m: 1000,
-        available: true,
-        healthy: true,
-        trusted: true,
-      })),
+      offers: [provider, ...others].flatMap((name) =>
+        Array.from({ length: 5 }, () => ({
+          provider: name,
+          discountPct: 95,
+          pricePer1m: 1000,
+          available: true,
+          healthy: true,
+          trusted: true,
+        }))
+      ),
       realized7dDiscountPct: 90,
     },
-    performance: [
-      {
-        provider,
-        requests: 1000,
-        uptimePct,
-        ttftP50Ms: 1670,
-        ttftP90Ms: 4108,
-        tpsP50: 54,
-        cacheHitRatePct: 80,
-      },
-    ],
+    performance: [provider, ...others].map((name, index) => ({
+      provider: name,
+      requests: 1000,
+      uptimePct,
+      // 第一家最快：pickProvider 会先挑它
+      ttftP50Ms: 1670 + index * 500,
+      ttftP90Ms: 4108,
+      tpsP50: 54,
+      cacheHitRatePct: 80,
+    })),
   };
 }
+
+const okProbe: ProbeFn = async ({ provider }) => ({
+  provider,
+  outcome: 'ok',
+  first_token_ms: 900,
+  detail: null,
+});
+
+/** 订单簿达标、按折扣底线派不出单（DeepSeek 官方渠道 11-12 的情况） */
+const unroutableAt =
+  (bad: string): ProbeFn =>
+  async (input) =>
+    input.provider === bad
+      ? {
+          provider: bad,
+          outcome: 'unroutable',
+          first_token_ms: null,
+          detail: '404 minimum_discount_not_met',
+        }
+      : okProbe(input);
 
 const coolingGlm: FreeZoneModelState = {
   ...initialState('free-glm-5'),
@@ -86,6 +108,7 @@ function deps(overrides: Partial<ListNowDeps> = {}): ListNowDeps & {
     saved,
     loadConfig: async () => config,
     fetchMarket: async () => market('zai'),
+    probe: okProbe,
     now: () => NOW,
     save: async (input): Promise<ManualListingOutcome> => {
       const next = input.build(coolingGlm);
@@ -156,5 +179,50 @@ describe('listFreeZoneModelNow', () => {
       statusCode: 409,
       message: expect.stringContaining('已经在架'),
     });
+  });
+
+  it('skips a provider the dispatch probe cannot route at the discount floor', async () => {
+    const d = deps({
+      fetchMarket: async () => market('deepseek', 98, 'dashscope-cn'),
+      probe: unroutableAt('deepseek'),
+    });
+    const result = await listFreeZoneModelNow({ candidateId: 'free-glm-5' }, d);
+    expect(result.provider).toBe('dashscope-cn');
+    expect(d.saved[0]?.providers).toEqual(['dashscope-cn']);
+  });
+
+  it('refuses when no screened provider can actually be dispatched', async () => {
+    const d = deps({
+      fetchMarket: async () => market('deepseek'),
+      probe: unroutableAt('deepseek'),
+    });
+    await expect(listFreeZoneModelNow({ candidateId: 'free-glm-5' }, d)).rejects.toMatchObject({
+      statusCode: 409,
+      message: expect.stringContaining('派不出去'),
+    });
+    expect(d.saved).toHaveLength(0);
+  });
+
+  it('refuses a requested provider that cannot be dispatched', async () => {
+    const d = deps({ probe: unroutableAt('deepseek') });
+    await expect(
+      listFreeZoneModelNow({ candidateId: 'free-glm-5', provider: 'deepseek' }, d)
+    ).rejects.toMatchObject({ statusCode: 409, message: expect.stringContaining('派不出单') });
+    expect(d.saved).toHaveLength(0);
+  });
+
+  it('does not list when the probe cannot tell (network trouble)', async () => {
+    const d = deps({
+      probe: async ({ provider }) => ({
+        provider,
+        outcome: 'error',
+        first_token_ms: null,
+        detail: 'timeout',
+      }),
+    });
+    await expect(listFreeZoneModelNow({ candidateId: 'free-glm-5' }, d)).rejects.toMatchObject({
+      statusCode: 502,
+    });
+    expect(d.saved).toHaveLength(0);
   });
 });
