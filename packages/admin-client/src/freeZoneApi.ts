@@ -1,7 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
+  AdminFreeZoneListNowResponseSchema,
   AdminFreeZoneScreeningResponseSchema,
   AdminFreeZoneStatusResponseSchema,
+  type AdminFreeZoneListNowRequest,
+  type AdminFreeZoneListNowResponse,
   type AdminFreeZoneScreeningRequest,
   type AdminFreeZoneScreeningResponse,
   type AdminFreeZoneStatusModel,
@@ -12,12 +15,14 @@ import type { ZodType, ZodTypeDef } from 'zod';
 import { readAdminAccessToken } from './textPostprocessApi';
 
 /**
- * 畅聊调试接口（只读）：线上状态、按门槛筛选候选池。网页和 CLI 共用。
+ * 畅聊调试接口：线上状态、按门槛筛选候选池（只读），以及手动立即上架。网页和 CLI 共用。
  * 筛选要实时问 Surplus，候选多时要等十几秒，超时放宽到 60 秒。
  */
 
 const SCREENING_TIMEOUT_MS = 60_000;
 const STATUS_TIMEOUT_MS = 15_000;
+/** 不指定供应商时要现问一次这个模型的行情 */
+const LIST_NOW_TIMEOUT_MS = 30_000;
 
 async function callFreeZoneApi<T>(
   client: SupabaseClient,
@@ -65,6 +70,20 @@ function apiUrl(apiBaseUrl: string, path: string): string {
   const root = apiBaseUrl.replace(/\/+$/, '');
   if (!root) throw new Error('后端地址未配置');
   return `${root}${path}`;
+}
+
+/** 立即上架一个候选（跳过连续达标和冷却）；不指定供应商时按当前行情选。 */
+export function listFreeZoneModelNow(
+  client: SupabaseClient,
+  apiBaseUrl: string,
+  request: AdminFreeZoneListNowRequest
+): Promise<AdminFreeZoneListNowResponse> {
+  return callFreeZoneApi(
+    client,
+    apiUrl(apiBaseUrl, '/api/admin/free-zone/list-now'),
+    { method: 'POST', body: request, timeoutMs: LIST_NOW_TIMEOUT_MS },
+    AdminFreeZoneListNowResponseSchema
+  );
 }
 
 export function fetchFreeZoneStatus(
