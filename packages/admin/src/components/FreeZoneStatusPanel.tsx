@@ -26,6 +26,7 @@ import type {
   AdminFreeZoneStatusResponse,
 } from '@miniapp/shared';
 import { useAdminApi } from '../lib/adminApiContext';
+import { FreeZoneListNowButton } from './FreeZoneListNowButton';
 
 const STATUS_COLORS = { listed: 'green', unlisted: 'default', cooling: 'orange' } as const;
 
@@ -190,17 +191,27 @@ function GroupTable(props: {
   data: AdminFreeZoneStatusResponse;
   group: FreeZoneStatusGroup;
   models: AdminFreeZoneStatusModel[];
+  onChanged: () => void;
 }) {
   if (props.models.length === 0) {
     return <Typography.Text type="secondary">暂无。</Typography.Text>;
   }
+  const base = columns(props.data.required_passes, props.group);
+  const action = {
+    title: '操作',
+    key: 'action',
+    width: 100,
+    render: (_: unknown, model: AdminFreeZoneStatusModel) => (
+      <FreeZoneListNowButton model={model} onListed={props.onChanged} />
+    ),
+  };
   return (
     <Table<AdminFreeZoneStatusModel>
       size="small"
       rowKey="candidate_id"
       pagination={false}
-      scroll={{ x: 760 }}
-      columns={columns(props.data.required_passes, props.group)}
+      scroll={{ x: 860 }}
+      columns={props.group === 'listed' ? base : [...base, action]}
       dataSource={props.models}
     />
   );
@@ -297,7 +308,12 @@ export function FreeZoneStatusPanel() {
                 </Space>
               ),
               children: (
-                <GroupTable data={data} group={group.key} models={grouped.get(group.key) ?? []} />
+                <GroupTable
+                  data={data}
+                  group={group.key}
+                  models={grouped.get(group.key) ?? []}
+                  onChanged={() => void load()}
+                />
               ),
             }))}
           />
