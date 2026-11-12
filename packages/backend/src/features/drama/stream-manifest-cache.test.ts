@@ -213,4 +213,43 @@ describe('DramaStreamManifestCache', () => {
     expect(await cache.getManifest(UID, URL)).toBe('ok');
     expect(calls).toBe(2);
   });
+
+  it('预热后首次访问即命中；已缓存和拉取中的不重复拉取，失败只计数', async () => {
+    const urls: string[] = [];
+    const cache = new DramaStreamManifestCache(async (url) => {
+      urls.push(url);
+      if (url.includes('bad')) throw new Error('network down');
+      return `#EXTM3U ${url}`;
+    });
+    await warm(cache, UID, `${URL}?cached`);
+    await cache.getManifest(OTHER, `${URL}?inflight`);
+
+    const result = await cache.prewarm([
+      { uid: UID, playUrl: `${URL}?again` },
+      { uid: OTHER, playUrl: `${URL}?again` },
+      { uid: 'uid-3333', playUrl: `${URL}?new` },
+      { uid: 'uid-4444', playUrl: `${URL}?bad` },
+    ]);
+
+    expect(result).toEqual({ cached: 3, failed: 1 });
+    expect(urls).toEqual([`${URL}?cached`, `${URL}?inflight`, `${URL}?new`, `${URL}?bad`]);
+    const hit: DramaManifestObservation = {};
+    expect(await cache.getManifest('uid-3333', URL, undefined, hit)).toBe(`#EXTM3U ${URL}?new`);
+    expect(hit.cache).toBe('hit');
+  });
+
+  it('预热限制并发，不一次性打满 Stream 源站', async () => {
+    let active = 0;
+    let peak = 0;
+    const cache = new DramaStreamManifestCache(async () => {
+      peak = Math.max(peak, ++active);
+      await flush();
+      active--;
+      return '#EXTM3U';
+    });
+    const targets = Array.from({ length: 30 }, (_, i) => ({ uid: `uid-${i}`, playUrl: URL }));
+
+    expect(await cache.prewarm(targets)).toEqual({ cached: 30, failed: 0 });
+    expect(peak).toBe(4);
+  });
 });
