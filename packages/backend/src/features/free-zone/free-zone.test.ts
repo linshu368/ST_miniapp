@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_FREE_ZONE_CONFIG, FreeZoneConfigSchema } from '@miniapp/shared';
-import { pickProvider, screenModel, type QualifiedProvider } from './screening.js';
+import {
+  pickProvider,
+  screenModel,
+  summarizeScreening,
+  type QualifiedProvider,
+} from './screening.js';
 import {
   advanceState,
   initialState,
@@ -82,6 +87,26 @@ describe('screenModel', () => {
     expect(result.pass).toBe(false);
     expect(result.reasons.join()).toContain('缓存命中率 9.5 < 70');
     expect(screenModel(lowCache, { ...rules, min_cache_hit_rate_pct: null }).pass).toBe(true);
+  });
+});
+
+describe('summarizeScreening', () => {
+  it('counts how many providers pass each check and names the closest one', () => {
+    const result = screenModel(
+      market(
+        [...fiveDeep('fast'), offer('slow', 95)],
+        [perf('fast', { ttftP50Ms: 4108 }), perf('slow', { uptimePct: 80 })]
+      ),
+      rules
+    );
+    const summary = summarizeScreening(result);
+    expect(summary.pass).toBe(false);
+    const byKey = Object.fromEntries(summary.checks.map((item) => [item.key, item]));
+    expect(byKey.min_qualified_offers).toMatchObject({ passed: 1, total: 2, threshold: 5 });
+    expect(byKey.max_ttft_p50_ms).toMatchObject({ passed: 1, total: 2 });
+    expect(byKey.min_uptime_pct).toMatchObject({ passed: 1, total: 2 });
+    expect(byKey.min_realized_discount_pct).toMatchObject({ passed: 1, total: 1 });
+    expect(summary.closest).toEqual({ provider: 'fast', failed: ['max_ttft_p50_ms'] });
   });
 });
 

@@ -4,6 +4,7 @@ import {
   AdminFreeZoneStatusResponseSchema,
   type AdminFreeZoneScreeningRequest,
   type AdminFreeZoneScreeningResponse,
+  type AdminFreeZoneStatusModel,
   type AdminFreeZoneStatusResponse,
   type FreeZoneScreeningCheckKey,
 } from '@miniapp/shared';
@@ -109,3 +110,60 @@ export const FREE_ZONE_STATUS_LABELS = {
   unlisted: '未上架',
   cooling: '冷却中',
 } as const;
+
+export interface FreeZoneReasonTag {
+  text: string;
+  /** true：没有一家 trusted 供应商过了这一项（就是它把模型卡住） */
+  failed: boolean;
+  /** 悬停说明：几家里有几家过了 */
+  hint: string;
+}
+
+export type FreeZoneReasonView =
+  | { kind: 'none' }
+  | { kind: 'text'; text: string }
+  | { kind: 'tags'; tags: FreeZoneReasonTag[]; note: string | null };
+
+/**
+ * 「最近原因」怎么展示：在架或初筛已通过的不说（除非有别的原因，比如达标供应商都在排除期）；
+ * 没通过的，每个检查项一个标签——没有一家过的标红排前面，有人过的标灰。
+ * 每项都有人过、却没有一家全过时，补一句最接近的那家差哪几项。
+ */
+export function freeZoneReasonView(model: AdminFreeZoneStatusModel): FreeZoneReasonView {
+  if (model.status === 'listed') return { kind: 'none' };
+  const summary = model.screening;
+  if (!summary || summary.pass) {
+    return model.last_reason ? { kind: 'text', text: model.last_reason } : { kind: 'none' };
+  }
+  const checks = summary.checks.filter((item) => item.threshold !== null);
+  if (checks.every((item) => item.total === 0)) {
+    return {
+      kind: 'tags',
+      tags: [
+        { text: '没有 trusted 供应商', failed: true, hint: '这个模型没有 trusted 供应商挂单' },
+      ],
+      note: null,
+    };
+  }
+  const tags = checks
+    .map((item) => {
+      const label = FREE_ZONE_CHECK_LABELS[item.key];
+      const modelLevel = item.key === 'min_realized_discount_pct';
+      return {
+        text: modelLevel ? label : `${label} ${item.passed}/${item.total}`,
+        failed: item.passed === 0,
+        hint: modelLevel
+          ? `模型整体${item.passed === 0 ? '没过' : '过了'}`
+          : `${item.total} 家 trusted 供应商里有 ${item.passed} 家过了`,
+      };
+    })
+    .sort((a, b) => Number(b.failed) - Number(a.failed));
+  const closest = summary.closest;
+  const note =
+    tags.some((tag) => tag.failed) || !closest
+      ? null
+      : `每项都有供应商过，但没有一家全过；最接近的 ${closest.provider} 差：${closest.failed
+          .map((key) => FREE_ZONE_CHECK_LABELS[key])
+          .join('、')}`;
+  return { kind: 'tags', tags, note };
+}

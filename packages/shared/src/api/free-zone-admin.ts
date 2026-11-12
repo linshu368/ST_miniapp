@@ -85,6 +85,24 @@ export const AdminFreeZoneScreeningResponseSchema = z.object({
   impact: z.array(AdminFreeZoneParameterImpactSchema),
 });
 
+/** 评估任务每轮记下的逐项汇总：每一项有几家 trusted 供应商过了。 */
+export const FreeZoneCheckSummarySchema = z.object({
+  key: FreeZoneScreeningCheckKeySchema,
+  /** null：这一项门槛留空，不检查 */
+  threshold: z.number().nullable(),
+  passed: z.number().int().nonnegative(),
+  total: z.number().int().nonnegative(),
+});
+
+export const FreeZoneScreeningSummarySchema = z.object({
+  pass: z.boolean(),
+  checks: z.array(FreeZoneCheckSummarySchema),
+  /** 没过的项最少的那家供应商，以及它没过哪几项（每项都有人过、却没有一家全过时看这个） */
+  closest: z
+    .object({ provider: z.string(), failed: z.array(FreeZoneScreeningCheckKeySchema) })
+    .nullable(),
+});
+
 export const FreeZoneModelStatusSchema = z.enum(['unlisted', 'listed', 'cooling']);
 
 export const AdminFreeZoneStatusModelSchema = z.object({
@@ -102,6 +120,8 @@ export const AdminFreeZoneStatusModelSchema = z.object({
   /** 因业务越线被排除的供应商 → 排除到期时间 */
   excluded_providers: z.record(z.string()),
   last_reason: z.string().nullable(),
+  /** 最近一轮官方初筛的逐项汇总；新字段上线前评估的记录为 null */
+  screening: FreeZoneScreeningSummarySchema.nullable(),
   evaluated_at: z.string().nullable(),
 });
 
@@ -124,6 +144,8 @@ export const AdminFreeZoneStatusResponseSchema = z.object({
 
 export type FreeZoneScreeningCheckKey = z.infer<typeof FreeZoneScreeningCheckKeySchema>;
 export type FreeZoneScreeningCheck = z.infer<typeof FreeZoneScreeningCheckSchema>;
+export type FreeZoneCheckSummary = z.infer<typeof FreeZoneCheckSummarySchema>;
+export type FreeZoneScreeningSummary = z.infer<typeof FreeZoneScreeningSummarySchema>;
 export type AdminFreeZoneScreeningRequest = z.input<typeof AdminFreeZoneScreeningRequestSchema>;
 export type AdminFreeZoneModelResult = z.infer<typeof AdminFreeZoneModelResultSchema>;
 export type AdminFreeZoneProviderResult = z.infer<typeof AdminFreeZoneProviderResultSchema>;
