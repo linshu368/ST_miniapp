@@ -75,6 +75,14 @@ describe('screenModel', () => {
     ];
     expect(screenModel(market(shallow), rules).pass).toBe(false);
   });
+
+  it('rejects a provider below the cache hit line, and skips the check when cleared', () => {
+    const lowCache = market(fiveDeep('google'), [perf('google', { cacheHitRatePct: 9.5 })]);
+    const result = screenModel(lowCache, rules);
+    expect(result.pass).toBe(false);
+    expect(result.reasons.join()).toContain('缓存命中率 9.5 < 70');
+    expect(screenModel(lowCache, { ...rules, min_cache_hit_rate_pct: null }).pass).toBe(true);
+  });
 });
 
 describe('pickProvider', () => {

@@ -25,6 +25,7 @@ const OPTIONAL_CHECKS: readonly FreeZoneScreeningCheckKey[] = [
   'max_ttft_p50_ms',
   'max_ttft_p90_ms',
   'min_tps',
+  'min_cache_hit_rate_pct',
   'min_realized_discount_pct',
 ];
 

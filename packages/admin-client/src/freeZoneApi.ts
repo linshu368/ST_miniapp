@@ -100,6 +100,7 @@ export const FREE_ZONE_CHECK_LABELS: Record<FreeZoneScreeningCheckKey, string> =
   max_ttft_p50_ms: '首字 p50',
   max_ttft_p90_ms: '首字 p90',
   min_tps: '出字速度',
+  min_cache_hit_rate_pct: '缓存命中率',
   min_realized_discount_pct: '7 天成交折扣',
 };
 
