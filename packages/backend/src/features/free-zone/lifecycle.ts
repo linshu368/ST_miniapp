@@ -50,7 +50,7 @@ export type BusinessVerdict =
 type Cause = 'official' | 'business';
 
 export type FreeZoneEvent =
-  | { type: 'listed'; providers: string[] }
+  | { type: 'listed'; providers: string[]; manual?: boolean }
   | { type: 'provider_switched'; from: string; to: string; cause: Cause; reasons: string[] }
   | { type: 'delisted'; cause: Cause; reasons: string[]; cooldownUntil: string }
   | { type: 'cooldown_ended' };
@@ -229,6 +229,35 @@ function advanceListed(
   const reasons = screening.pass ? [`${current} 不再达标`] : screening.reasons;
   const next = switchOrDelist(step, screening, 'official', reasons);
   return { state: next.state, events: [next.event] };
+}
+
+/**
+ * 运营手动上架：不管现在是未上架还是冷却中，直接用 provider 上架。连续达标数记满、冷却清掉，
+ * 这家供应商的排除也解除（运营明确要用它）；7 天内的业务下架记录保留，再下架时冷却照样逐级拉长。
+ * 之后的评估和普通在架模型一样：业务指标从现在重新累计，不达标照常换供应商或下架。
+ */
+export function listManually(input: {
+  state: FreeZoneModelState;
+  provider: string;
+  now: Date;
+  requiredPasses: number;
+}): { state: FreeZoneModelState; event: FreeZoneEvent } {
+  const { state, provider, now } = input;
+  const excludedProviders = activeExclusions(state, now);
+  delete excludedProviders[provider];
+  return {
+    state: {
+      ...state,
+      status: 'listed',
+      providers: [provider],
+      providerSince: now.toISOString(),
+      excludedProviders,
+      consecutivePasses: Math.max(state.consecutivePasses, input.requiredPasses),
+      cooldownUntil: null,
+      lastReason: null,
+    },
+    event: { type: 'listed', providers: [provider], manual: true },
+  };
 }
 
 /**

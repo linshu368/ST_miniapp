@@ -20,7 +20,7 @@ import {
 } from './lifecycle.js';
 import {
   loadFreeZoneMetrics,
-  loadFreeZoneStates,
+  loadFreeZoneStatesVersioned,
   saveFreeZoneEvaluation,
   type EvaluatedCandidate,
   type ModelMetrics,
@@ -178,7 +178,7 @@ export async function runFreeZoneEvaluation(
       observeBackgroundRun({ job: JOB, outcome: 'skipped', startedAt });
       return;
     }
-    const states = await loadFreeZoneStates();
+    const { states, versions } = await loadFreeZoneStatesVersioned();
     const listed = config.candidates.flatMap((candidate) => {
       const state = states.get(candidate.id);
       return state?.status === 'listed' ? [{ id: candidate.id, since: state.providerSince }] : [];
@@ -229,12 +229,14 @@ export async function runFreeZoneEvaluation(
         state: next.state,
         events: next.events,
         metrics: snapshotMetrics(probe, config.screening, business, modelMetrics),
+        version: versions.get(candidate.id) ?? null,
       };
     });
 
-    const outcome = await saveFreeZoneEvaluation(evaluated, MIN_INTERVAL_MINUTES);
+    const { outcome, skipped } = await saveFreeZoneEvaluation(evaluated, MIN_INTERVAL_MINUTES);
     if (outcome === 'saved') invalidateFreeZoneSnapshot();
-    for (const item of outcome === 'saved' ? evaluated : []) {
+    const written = evaluated.filter((item) => !skipped.includes(item.state.candidateId));
+    for (const item of outcome === 'saved' ? written : []) {
       for (const event of item.events) {
         log.info(
           {
@@ -253,6 +255,7 @@ export async function runFreeZoneEvaluation(
         event: 'free_zone.evaluated',
         outcome,
         candidates: evaluated.length,
+        skippedChangedMeanwhile: skipped,
         listed: evaluated.filter((item) => item.state.status === 'listed').length,
         marketsMissing: markets.filter((market) => market === null).length,
         probes: probed.reduce((sum, item) => sum + item.probes.length, 0),

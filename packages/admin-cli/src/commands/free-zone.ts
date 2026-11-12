@@ -6,6 +6,7 @@ import {
   freeZoneProbeText,
   freeZoneReasonView,
   freeZoneStatusGroup,
+  listFreeZoneModelNow,
   screenFreeZoneCandidates,
 } from '@miniapp/admin-client';
 import {
@@ -16,10 +17,10 @@ import {
   type AdminFreeZoneStatusResponse,
 } from '@miniapp/shared';
 import { withReadRetry } from '../client';
-import { stringOption, type CommandSpec } from '../command';
+import { requiredPositional, stringOption, type CommandSpec } from '../command';
 import { CliError } from '../errors';
 
-/** 畅聊调试：和运营平台畅聊页的「线上状态」「按当前门槛筛选」同一组只读接口。 */
+/** 畅聊调试：和运营平台畅聊页的「线上状态」「按当前门槛筛选」「立即上架」同一组接口。 */
 
 function statusLine(model: AdminFreeZoneStatusModel, requiredPasses: number): string {
   const status = model.status ? FREE_ZONE_STATUS_LABELS[model.status] : '未评估';
@@ -82,6 +83,38 @@ function screeningHuman(data: AdminFreeZoneScreeningResponse): string {
   return lines.join('\n');
 }
 
+/** 按 id（可省略 free- 前缀）或显示名找候选。 */
+function findModel(
+  data: AdminFreeZoneStatusResponse,
+  query: string
+): AdminFreeZoneStatusModel | undefined {
+  const lower = query.trim().toLowerCase();
+  return data.models.find(
+    (model) =>
+      model.in_config &&
+      (model.candidate_id === lower ||
+        model.candidate_id === `free-${lower}` ||
+        model.display_name?.toLowerCase() === lower)
+  );
+}
+
+function listNowPlan(model: AdminFreeZoneStatusModel, provider: string | undefined): string {
+  const status = model.status ? FREE_ZONE_STATUS_LABELS[model.status] : '未评估';
+  const excluded = Object.entries(model.excluded_providers)
+    .map(([name, until]) => `${name}（到 ${until}）`)
+    .join('、');
+  return [
+    `候选：${model.display_name ?? model.candidate_id}（${model.candidate_id}）`,
+    `现在：${status}${model.status === 'cooling' ? `，冷却到 ${model.cooldown_until ?? '?'}` : ''}`,
+    model.last_delist ? `上次下架：${model.last_delist.at} ${model.last_delist.reason ?? ''}` : '',
+    excluded ? `排除中的供应商：${excluded}` : '',
+    `供应商：${provider ? `${provider}（指定）` : '按当前行情和初筛门槛选'}`,
+    '上架后跳过连续达标和冷却，立即对用户可见；之后照常每 30 分钟评估，不达标照样换供应商或下架。',
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
 export const freeZoneCommands: CommandSpec[] = [
   {
     name: 'free-zone status',
@@ -129,6 +162,51 @@ export const freeZoneCommands: CommandSpec[] = [
       const { client, config } = await ctx.auth();
       const data = await screenFreeZoneCandidates(client, config.apiUrl, request);
       return { data, human: screeningHuman(data) };
+    },
+  },
+  {
+    name: 'free-zone list-now',
+    summary: '畅聊：立即上架一个候选（跳过连续达标和冷却；之后照常评估）',
+    write: true,
+    positionals: [
+      { name: 'candidate', description: '候选 id（可省略 free- 前缀）或显示名', required: true },
+    ],
+    options: {
+      provider: { type: 'string', description: '指定供应商；不填按当前行情和初筛门槛选' },
+    },
+    examples: [
+      'pnpm admin free-zone list-now glm-5',
+      'pnpm admin free-zone list-now "GLM 5" --provider zai --yes',
+    ],
+    async run(ctx, input) {
+      const query = requiredPositional(input, 'candidate');
+      const provider = stringOption(input, 'provider');
+      const { client, config } = await ctx.auth();
+      const status = await withReadRetry(() => fetchFreeZoneStatus(client, config.apiUrl));
+      const model = findModel(status, query);
+      if (!model) throw new CliError('not_found', `已发布的候选池里找不到「${query}」`);
+      if (model.status === 'listed') {
+        throw new CliError('conflict', `${model.display_name ?? model.candidate_id} 已经在架`);
+      }
+      await ctx.confirm({
+        action: `立即上架畅聊模型 ${model.display_name ?? model.candidate_id}`,
+        human: listNowPlan(model, provider),
+        preview: {
+          candidate_id: model.candidate_id,
+          status: model.status,
+          cooldown_until: model.cooldown_until,
+          excluded_providers: model.excluded_providers,
+          provider: provider ?? null,
+        },
+      });
+      const data = await listFreeZoneModelNow(client, config.apiUrl, {
+        candidate_id: model.candidate_id,
+        provider,
+      });
+      return {
+        data,
+        human: `已上架 ${data.display_name}，供应商 ${data.provider}（${data.provider_source === 'requested' ? '指定' : '按行情选'}）`,
+      };
     },
   },
 ];

@@ -1,12 +1,26 @@
 import type { FastifyInstance } from 'fastify';
-import { AdminFreeZoneScreeningRequestSchema, fail, ok } from '@miniapp/shared';
+import {
+  AdminFreeZoneListNowRequestSchema,
+  AdminFreeZoneScreeningRequestSchema,
+  fail,
+  ok,
+} from '@miniapp/shared';
 import { authorizeAdminOperator } from '../features/admin-access/session.js';
 import { previewFreeZoneScreening } from '../features/free-zone/admin-preview.js';
 import { loadFreeZoneStatus } from '../features/free-zone/admin-status.js';
 import { fetchFreeZoneConfig } from '../features/free-zone/config.js';
+import { FreeZoneListNowError, listFreeZoneModelNow } from '../features/free-zone/manual-list.js';
+
+const LIST_NOW_ERROR_CODES = {
+  400: 'BAD_REQUEST',
+  404: 'NOT_FOUND',
+  409: 'CONFLICT',
+  502: 'UPSTREAM_UNAVAILABLE',
+} as const;
 
 /**
- * 运营平台调试畅聊：线上状态、按页面上的门槛筛选候选池。两个接口都只读，viewer 也能用。
+ * 运营平台调试畅聊：线上状态、按页面上的门槛筛选候选池（只读，viewer 也能用）；
+ * 手动立即上架（写操作，只有 owner/operator）。
  */
 export default async function adminFreeZoneRoutes(app: FastifyInstance) {
   app.get('/api/admin/free-zone/status', async (request, reply) => {
@@ -49,5 +63,34 @@ export default async function adminFreeZoneRoutes(app: FastifyInstance) {
       'admin free zone screening preview'
     );
     return reply.send(ok(result));
+  });
+
+  app.post('/api/admin/free-zone/list-now', async (request, reply) => {
+    if (!(await authorizeAdminOperator(request, reply, 'write'))) return reply;
+    const parsed = AdminFreeZoneListNowRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0];
+      return reply
+        .status(400)
+        .send(
+          fail('BAD_REQUEST', `参数不合法：${issue?.path.join('.') ?? ''} ${issue?.message ?? ''}`)
+        );
+    }
+    try {
+      const result = await listFreeZoneModelNow({
+        candidateId: parsed.data.candidate_id,
+        provider: parsed.data.provider,
+      });
+      request.log.info(
+        { kind: 'biz', event: 'admin.free_zone.listed_manually', ...result },
+        '运营手动上架畅聊模型'
+      );
+      return reply.send(ok(result));
+    } catch (err) {
+      if (!(err instanceof FreeZoneListNowError)) throw err;
+      return reply
+        .status(err.statusCode)
+        .send(fail(LIST_NOW_ERROR_CODES[err.statusCode], err.message));
+    }
   });
 }
