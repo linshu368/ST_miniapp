@@ -61,6 +61,7 @@ export function buildGenerationRequest(
       },
     },
     thinkingEnabled,
+    revealReasoning: scope.revealReasoning,
     signal: control.signal,
     // Anthropic prompt cache 的 cache_control 断点，配合双水位线泄洪制造稳定前缀
     promptCaching: true,
@@ -94,7 +95,7 @@ export function createExecutionHooks(
   preparation: ConversationPreparationTiming
 ): GenerationHooks {
   const { control, observations, observationInput, chargeId, turn } = scope;
-  const { emitStart, thinkingEnabled } = scope;
+  const { emitStart, revealReasoning } = scope;
   const emitVisibleDelta = createDeltaEmitter(scope);
   return {
     onBeforeDispatch: async (snapshot) => {
@@ -138,7 +139,7 @@ export function createExecutionHooks(
     onStreamOpen: emitStart,
     onDelta: (text) => emitVisibleDelta('delta', text),
     onReasoningDelta: (text) => {
-      if (thinkingEnabled) emitVisibleDelta('reasoning', text);
+      if (revealReasoning) emitVisibleDelta('reasoning', text);
     },
   };
 }

@@ -880,6 +880,26 @@ describe('reasoning is progress, never a roleplay answer or billing proof', () =
     expect(savedHistory()[0]?.assistant_reply).toBe('角色正文');
   });
 
+  it('reveal overrides the off switch: always-thinking free models still show their thought', async () => {
+    const reasoning = vi.fn();
+    stubUpstream(
+      sseResponse([
+        `data: ${JSON.stringify({ choices: [{ delta: { reasoning_content: '先想一想' } }] })}\n\n`,
+        DELTA('角色正文'),
+        `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }] })}\n\n`,
+        'data: [DONE]\n\n',
+      ])
+    );
+    const result = await execute(
+      request({ thinkingEnabled: false, revealReasoning: true }),
+      { onReasoningDelta: reasoning },
+      fakeLogger()
+    );
+    expect(reasoning).toHaveBeenCalledWith('先想一想');
+    expect(result).toMatchObject({ status: 'success', content: '角色正文' });
+    expect(savedHistory()[0]?.assistant_reply).toBe('角色正文');
+  });
+
   it('non-streaming replies also keep thought out of content and await call identity before callbacks', async () => {
     const order: string[] = [];
     stubUpstream(
