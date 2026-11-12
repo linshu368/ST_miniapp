@@ -34,7 +34,8 @@ export const FreeZoneCandidateSchema = z.object({
     .max(200)
     .regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/),
   display_name: z.string().trim().min(1).max(40),
-  tagline: z.string().trim().min(1).max(40),
+  /** 一句话介绍，可以留空（留空时栏目里不显示这一行） */
+  tagline: z.string().trim().max(40).default(''),
   /** 系列：下架时优先换同系列，例如 deepseek、gemini */
   family: z.string().trim().min(1).max(40),
   /** 对标档位：划线原价取这一档当前的星尘价 */
