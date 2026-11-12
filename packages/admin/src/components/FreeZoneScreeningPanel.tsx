@@ -51,6 +51,8 @@ interface Run {
 }
 
 function thresholdText(key: FreeZoneScreeningCheckKey, request: AdminFreeZoneScreeningRequest) {
+  // 派单探测只在评估任务里做，筛选预览没有这一列
+  if (key === 'probe') return '评估时探测';
   const value = request.screening?.[key];
   if (value === null || value === undefined) return '不检查';
   return `${MIN_KEYS.has(key) ? '≥' : '≤'} ${formatCheckValue(key, value)}`;

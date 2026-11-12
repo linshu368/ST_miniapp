@@ -59,6 +59,14 @@ export const FreeZoneScreeningSchema = z.object({
    * 更贵的档只有便宜档没人时才考虑。
    */
   price_band_ratio: z.number().min(1).max(100).default(3),
+  /**
+   * 派单探测：评估时对在架、准备上架的模型，用选定的供应商带折扣底线真发一个只要几个字的请求。
+   * 派不出去（折扣底线达不到、没有可用卖家）就当这家不达标——订单簿上的折扣和 Surplus
+   * 派单时估算的折扣可能不一样。
+   */
+  probe_enabled: z.boolean().default(true),
+  /** 探测首字上限；留空只记录不检查 */
+  max_probe_ttft_ms: DurationMsSchema.nullable().default(null),
 });
 
 export const FreeZoneOnShelfSchema = z.object({

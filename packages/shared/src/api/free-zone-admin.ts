@@ -18,6 +18,8 @@ export const FreeZoneScreeningCheckKeySchema = z.enum([
   'min_tps',
   'min_cache_hit_rate_pct',
   'min_realized_discount_pct',
+  /** 派单探测：只在评估任务里有（筛选预览不发真实请求） */
+  'probe',
 ]);
 
 export const FreeZoneScreeningCheckSchema = z.object({
@@ -103,6 +105,16 @@ export const FreeZoneScreeningSummarySchema = z.object({
     .nullable(),
 });
 
+/** 一次派单探测的结果 */
+export const FreeZoneProbeSchema = z.object({
+  provider: z.string(),
+  /** ok：派出去了；unroutable：折扣底线达不到 / 没有可用卖家；error：网络等说不清的失败（本轮维持现状） */
+  outcome: z.enum(['ok', 'unroutable', 'error']),
+  /** 首个字（正文或思考）出现的耗时；超时为探测上限 */
+  first_token_ms: z.number().nonnegative().nullable(),
+  detail: z.string().nullable(),
+});
+
 export const FreeZoneModelStatusSchema = z.enum(['unlisted', 'listed', 'cooling']);
 
 export const AdminFreeZoneStatusModelSchema = z.object({
@@ -122,6 +134,8 @@ export const AdminFreeZoneStatusModelSchema = z.object({
   last_reason: z.string().nullable(),
   /** 最近一轮官方初筛的逐项汇总；新字段上线前评估的记录为 null */
   screening: FreeZoneScreeningSummarySchema.nullable(),
+  /** 最近一轮评估里，最终选定（或在用）的那家供应商的探测结果 */
+  probe: FreeZoneProbeSchema.nullable().default(null),
   /** 上过架没有（看上下架记录） */
   ever_listed: z.boolean().default(false),
   /** 最近一次下架：原因类别、时间、原因；从没下架过为 null */
@@ -156,6 +170,7 @@ export const AdminFreeZoneStatusResponseSchema = z.object({
 export type FreeZoneScreeningCheckKey = z.infer<typeof FreeZoneScreeningCheckKeySchema>;
 export type FreeZoneScreeningCheck = z.infer<typeof FreeZoneScreeningCheckSchema>;
 export type FreeZoneCheckSummary = z.infer<typeof FreeZoneCheckSummarySchema>;
+export type FreeZoneProbe = z.infer<typeof FreeZoneProbeSchema>;
 export type FreeZoneScreeningSummary = z.infer<typeof FreeZoneScreeningSummarySchema>;
 export type AdminFreeZoneScreeningRequest = z.input<typeof AdminFreeZoneScreeningRequestSchema>;
 export type AdminFreeZoneModelResult = z.infer<typeof AdminFreeZoneModelResultSchema>;

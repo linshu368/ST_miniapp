@@ -8,7 +8,7 @@
  * 不动；业务指标查询失败，在架模型本轮不按业务数据下架。
  */
 import type { FastifyBaseLogger } from 'fastify';
-import type { FreeZoneCandidate } from '@miniapp/shared';
+import type { FreeZoneCandidate, FreeZoneConfig } from '@miniapp/shared';
 import { observeBackgroundRun } from '../../lib/background-observability.js';
 import { fetchFreeZoneConfig } from './config.js';
 import {
@@ -16,6 +16,7 @@ import {
   initialState,
   judgeBusinessMetrics,
   type BusinessVerdict,
+  type FreeZoneModelState,
 } from './lifecycle.js';
 import {
   loadFreeZoneMetrics,
@@ -25,6 +26,8 @@ import {
   type ModelMetrics,
 } from './repository.js';
 import { screenModel, summarizeScreening, type ScreeningResult } from './screening.js';
+import { createSurplusProbe, type ProbeFn } from './probe.js';
+import { applyProbes, probeCheck, type ProbedScreening } from './probe-screening.js';
 import { fetchSurplusModelMarket, type SurplusModelMarket } from './surplus-market.js';
 import { invalidateFreeZoneSnapshot } from './snapshot.js';
 
@@ -87,12 +90,46 @@ async function fetchMarkets(
   return results;
 }
 
+/** 每个候选按初筛结果做派单探测（并发同行情一样受限）。 */
+async function probeAll(
+  candidates: FreeZoneCandidate[],
+  screenings: Array<ScreeningResult | null>,
+  states: Map<string, FreeZoneModelState>,
+  rules: FreeZoneConfig['screening'],
+  now: Date,
+  probe: ProbeFn
+): Promise<ProbedScreening[]> {
+  const results: ProbedScreening[] = [];
+  for (let start = 0; start < candidates.length; start += MARKET_CONCURRENCY) {
+    const batch = candidates.slice(start, start + MARKET_CONCURRENCY);
+    results.push(
+      ...(await Promise.all(
+        batch.map((candidate, offset) =>
+          applyProbes({
+            model: candidate.surplus_model,
+            screening: screenings[start + offset] ?? null,
+            state: states.get(candidate.id) ?? initialState(candidate.id),
+            now,
+            rules,
+            probe,
+          })
+        )
+      ))
+    );
+  }
+  return results;
+}
+
 function snapshotMetrics(
-  screening: ScreeningResult | null,
+  probed: ProbedScreening,
+  rules: FreeZoneConfig['screening'],
   business: BusinessVerdict,
   metrics: ModelMetrics | undefined
 ): Record<string, unknown> {
+  const screening = probed.screening;
   return {
+    probe: probed.chosen,
+    probes: probed.probes,
     screening: screening
       ? {
           pass: screening.pass,
@@ -104,7 +141,7 @@ function snapshotMetrics(
           })),
           realized_7d_discount_pct: screening.realized7dDiscountPct,
           reasons: screening.reasons.slice(0, 10),
-          summary: summarizeScreening(screening),
+          summary: summarizeScreening(screening, probeCheck(probed.probes, rules)),
         }
       : null,
     business: business.kind,
@@ -123,7 +160,12 @@ function snapshotMetrics(
   };
 }
 
-export async function runFreeZoneEvaluation(log: FastifyBaseLogger): Promise<void> {
+const defaultProbe = createSurplusProbe();
+
+export async function runFreeZoneEvaluation(
+  log: FastifyBaseLogger,
+  probeImpl: ProbeFn = defaultProbe
+): Promise<void> {
   const startedAt = performance.now();
   if (running) {
     observeBackgroundRun({ job: JOB, outcome: 'skipped', startedAt });
@@ -153,10 +195,22 @@ export async function runFreeZoneEvaluation(log: FastifyBaseLogger): Promise<voi
     ]);
 
     const now = new Date();
+    const screenings = markets.map((market) =>
+      market ? screenModel(market, config.screening) : null
+    );
+    const probed = await probeAll(
+      config.candidates,
+      screenings,
+      states,
+      config.screening,
+      now,
+      probeImpl
+    );
     const evaluated: EvaluatedCandidate[] = config.candidates.map((candidate, index) => {
       const state = states.get(candidate.id) ?? initialState(candidate.id);
-      const market = markets[index] ?? null;
-      const screening = market ? screenModel(market, config.screening) : null;
+      const probe = probed[index] ?? { screening: null, hold: true, probes: [], chosen: null };
+      // 探测说不清时按「数据缺失」处理：在架的维持、未上架的这一轮不算达标也不清零
+      const screening = probe.hold ? null : probe.screening;
       const modelMetrics = metrics?.get(candidate.id);
       const business: BusinessVerdict =
         state.status === 'listed' && metrics
@@ -174,7 +228,7 @@ export async function runFreeZoneEvaluation(log: FastifyBaseLogger): Promise<voi
         surplusModel: candidate.surplus_model,
         state: next.state,
         events: next.events,
-        metrics: snapshotMetrics(screening, business, modelMetrics),
+        metrics: snapshotMetrics(probe, config.screening, business, modelMetrics),
       };
     });
 
@@ -201,6 +255,11 @@ export async function runFreeZoneEvaluation(log: FastifyBaseLogger): Promise<voi
         candidates: evaluated.length,
         listed: evaluated.filter((item) => item.state.status === 'listed').length,
         marketsMissing: markets.filter((market) => market === null).length,
+        probes: probed.reduce((sum, item) => sum + item.probes.length, 0),
+        probesUnroutable: probed.reduce(
+          (sum, item) => sum + item.probes.filter((p) => p.outcome === 'unroutable').length,
+          0
+        ),
       },
       '畅聊评估完成'
     );
