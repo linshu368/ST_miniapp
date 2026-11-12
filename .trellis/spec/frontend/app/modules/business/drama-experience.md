@@ -107,3 +107,5 @@ last_verified_at: 2026-11-04
 Stream 域名由 `NEXT_PUBLIC_DRAMA_STREAM_ORIGIN` 提供（`lib/drama-stream-origin.ts`）：根布局输出 CORS 与非 CORS 两条 preconnect，播放意图（`startDramaPlayIntent`）时重新插入，因为空闲连接约 10s 被关闭。播放地址每次 `/play` 现签，取到地址后立即设置源，不做清单预取。起播诊断对 Stream 源接收同域名的全部资源计时并按路径标 `kind`（manifest/playlist/segment），其余源仍只认精确 URL；hls.js 路径由 `perf/drama-hls.ts` 记录清单、子清单、init 与分片的首字节、字节数、档位和入缓冲时间（≤16 条，起播终态后停止），经 `loadDramaSource` 的 `onHls` 在加载主清单前订阅。上报只含数值与分类，不含 URL。带 `delivery` 的实验组诊断由 Backend 全量写入 Loki，其余流量仍只留起播 ≥5s / 快进 ≥3s。
 
 非 Apple 平台的 `preloadDramaHls()`（提前 `import('hls.js')`）延后到首页/详情首帧绘制后的一次空闲触发（复用 `navigation-quiet-window.ts` 的 `afterNavigationQuietWindow()`），避免会话内首次起播时和播放器自身的 hls.js 导入抢带宽；非五入口导航或该安静窗口未激活时等价于立即预取，不劣化。
+
+hls.js 路径（Android `hlsjs_mse`、iOS `hlsjs_mms`）由 `lib/drama-hls-seek.ts` 的 `restartStalledAudioOnSeek` 处理无缓冲快进的音视频串行：hls.js 1.7.4 会把领先视频的已下载音频片挂起等视频入缓冲，快进时不中止它，导致目标音频片要等目标视频片入缓冲后才请求。`seeking` 时若目标未缓冲且挂着一片不覆盖目标的音频，调用 `hls.stopLoad()` + `hls.startLoad(currentTime, true)` 让两路并行请求；其余快进不介入，异常吞掉等价于现状。升级 hls.js 时先用快进诊断的两路覆盖分片 `startMs` 差确认上游是否已修复，修复后删除。（任务 `.trellis/tasks/11-12-drama-seek-parallel-av/`）
