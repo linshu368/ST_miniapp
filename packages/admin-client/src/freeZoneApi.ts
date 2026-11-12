@@ -8,7 +8,7 @@ import {
   type AdminFreeZoneStatusResponse,
   type FreeZoneScreeningCheckKey,
 } from '@miniapp/shared';
-import type { ZodType } from 'zod';
+import type { ZodType, ZodTypeDef } from 'zod';
 import { readAdminAccessToken } from './textPostprocessApi';
 
 /**
@@ -23,7 +23,7 @@ async function callFreeZoneApi<T>(
   client: SupabaseClient,
   url: string,
   init: { method: 'GET' | 'POST'; body?: unknown; timeoutMs: number },
-  schema: ZodType<T>
+  schema: ZodType<T, ZodTypeDef, unknown>
 ): Promise<T> {
   const token = await readAdminAccessToken(client);
   if (!token) throw new Error('登录状态已失效，请重新登录当前环境');
@@ -166,4 +166,32 @@ export function freeZoneReasonView(model: AdminFreeZoneStatusModel): FreeZoneRea
           .map((key) => FREE_ZONE_CHECK_LABELS[key])
           .join('、')}`;
   return { kind: 'tags', tags, note };
+}
+
+export type FreeZoneStatusGroup = 'listed' | 'not_listed' | 'business_delisted';
+
+/** 线上状态分三块（网页与 CLI 共用的顺序和说明）。 */
+export const FREE_ZONE_STATUS_GROUPS: ReadonlyArray<{
+  key: FreeZoneStatusGroup;
+  label: string;
+  hint: string;
+}> = [
+  { key: 'listed', label: '在架', hint: '用户现在能选的' },
+  {
+    key: 'not_listed',
+    label: '未上架',
+    hint: '从没上过架的，以及上过架、因 Surplus 官方数据不达标下架的（标「曾上架」）',
+  },
+  {
+    key: 'business_delisted',
+    label: '因业务数据下架',
+    hint: '上过架，在我们自己的流量上越线被下掉的；冷却期满、重新达标后会回到在架',
+  },
+];
+
+/** 在架看当前状态；不在架的，最近一次是因业务数据下架的单独一块，其余都算未上架。 */
+export function freeZoneStatusGroup(model: AdminFreeZoneStatusModel): FreeZoneStatusGroup {
+  if (model.status === 'listed') return 'listed';
+  if (model.last_delist?.cause === 'business') return 'business_delisted';
+  return 'not_listed';
 }

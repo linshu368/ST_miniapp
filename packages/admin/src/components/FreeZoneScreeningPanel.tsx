@@ -1,6 +1,16 @@
 import { useState } from 'react';
 import dayjs from 'dayjs';
-import { Alert, Button, Space, Table, Tag, Tooltip, Typography, type TableColumnsType } from 'antd';
+import {
+  Alert,
+  Button,
+  Collapse,
+  Space,
+  Table,
+  Tag,
+  Tooltip,
+  Typography,
+  type TableColumnsType,
+} from 'antd';
 import { FREE_ZONE_CHECK_LABELS, screenFreeZoneCandidates } from '@miniapp/admin-client';
 import type {
   AdminFreeZoneModelResult,
@@ -180,6 +190,34 @@ function Impact(props: { data: AdminFreeZoneScreeningResponse }) {
   );
 }
 
+function ResultTable(props: {
+  request: AdminFreeZoneScreeningRequest;
+  models: AdminFreeZoneModelResult[];
+}) {
+  return (
+    <Table<AdminFreeZoneModelResult>
+      size="small"
+      rowKey="candidate_id"
+      pagination={false}
+      scroll={{ x: 1110 }}
+      columns={modelColumns(props.request)}
+      dataSource={props.models}
+      expandable={{
+        rowExpandable: (model) => model.providers.length > 0,
+        expandedRowRender: (model) => (
+          <Table<AdminFreeZoneProviderResult>
+            size="small"
+            rowKey="provider"
+            pagination={false}
+            columns={providerColumns(props.request)}
+            dataSource={model.providers}
+          />
+        ),
+      }}
+    />
+  );
+}
+
 /**
  * 「按当前门槛筛选」：用页面上的门槛（不用先保存）拿 Surplus 实时行情过一遍候选池。
  * 只读，不影响评估任务；Surplus 行情在后端缓存 1 分钟，改门槛再点很快。
@@ -230,25 +268,29 @@ export function FreeZoneScreeningPanel(props: { config: FreeZoneConfig }) {
             }`}
           />
           <Impact data={run.data} />
-          <Table<AdminFreeZoneModelResult>
+          <Collapse
             size="small"
-            rowKey="candidate_id"
-            pagination={false}
-            scroll={{ x: 1110 }}
-            columns={modelColumns(run.request)}
-            dataSource={run.data.models}
-            expandable={{
-              rowExpandable: (model) => model.providers.length > 0,
-              expandedRowRender: (model) => (
-                <Table<AdminFreeZoneProviderResult>
-                  size="small"
-                  rowKey="provider"
-                  pagination={false}
-                  columns={providerColumns(run.request)}
-                  dataSource={model.providers}
-                />
+            defaultActiveKey={['pass']}
+            items={[
+              {
+                key: 'pass',
+                label: `达标（${passed}）`,
+                models: run.data.models.filter((m) => m.pass),
+              },
+              {
+                key: 'fail',
+                label: `不达标（${run.data.models.length - passed}）`,
+                models: run.data.models.filter((m) => !m.pass),
+              },
+            ].map((group) => ({
+              key: group.key,
+              label: group.label,
+              children: group.models.length ? (
+                <ResultTable request={run.request} models={group.models} />
+              ) : (
+                <Typography.Text type="secondary">暂无。</Typography.Text>
               ),
-            }}
+            }))}
           />
           <Typography.Text type="secondary">
             每列是「这一项有几家 trusted

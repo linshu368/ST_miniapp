@@ -28,6 +28,15 @@ interface StatusRow {
   evaluated_at: Date | null;
 }
 
+/** 每个候选的上下架历史摘要：上过架没有、最近一次下架的原因 */
+interface HistoryRow {
+  candidate_id: string;
+  ever_listed: boolean;
+  last_delist_cause: 'official' | 'business' | null;
+  last_delist_reason: string | null;
+  last_delisted_at: Date | null;
+}
+
 interface EventRow {
   candidate_id: string;
   event_type: AdminFreeZoneEvent['event_type'];
@@ -56,9 +65,24 @@ function screeningSummary(
 export function buildFreeZoneStatus(
   config: FreeZoneConfig,
   rows: StatusRow[],
-  events: EventRow[]
+  events: EventRow[],
+  history: HistoryRow[] = []
 ): AdminFreeZoneStatusResponse {
   const byId = new Map(rows.map((row) => [row.candidate_id, row]));
+  const historyById = new Map(history.map((row) => [row.candidate_id, row]));
+  const fromHistory = (id: string) => {
+    const item = historyById.get(id);
+    return {
+      ever_listed: item?.ever_listed ?? false,
+      last_delist: item?.last_delisted_at
+        ? {
+            cause: item.last_delist_cause,
+            at: item.last_delisted_at.toISOString(),
+            reason: item.last_delist_reason,
+          }
+        : null,
+    };
+  };
   const fromRow = (row: StatusRow | undefined) => ({
     status: row?.status ?? null,
     providers: row?.providers ?? [],
@@ -76,6 +100,7 @@ export function buildFreeZoneStatus(
     surplus_model: candidate.surplus_model,
     in_config: true,
     ...fromRow(byId.get(candidate.id)),
+    ...fromHistory(candidate.id),
   }));
   const ids = new Set(config.candidates.map((candidate) => candidate.id));
   const removed: AdminFreeZoneStatusModel[] = rows
@@ -86,6 +111,7 @@ export function buildFreeZoneStatus(
       surplus_model: row.surplus_model,
       in_config: false,
       ...fromRow(row),
+      ...fromHistory(row.candidate_id),
     }));
   const evaluated = rows.flatMap((row) => (row.evaluated_at ? [row.evaluated_at.getTime()] : []));
   return {
@@ -107,7 +133,7 @@ export function buildFreeZoneStatus(
 export async function loadFreeZoneStatus(
   config: FreeZoneConfig
 ): Promise<AdminFreeZoneStatusResponse> {
-  const [rows, events] = await Promise.all([
+  const [rows, events, history] = await Promise.all([
     prisma.$queryRaw<StatusRow[]>`
       SELECT candidate_id, surplus_model, status, providers, provider_since, excluded_providers,
         consecutive_passes, cooldown_until, last_reason, last_metrics, evaluated_at
@@ -117,6 +143,16 @@ export async function loadFreeZoneStatus(
       FROM miniapp_features.free_zone_events
       ORDER BY created_at DESC
       LIMIT ${EVENT_LIMIT}`,
+    prisma.$queryRaw<HistoryRow[]>`
+      SELECT candidate_id,
+        bool_or(event_type = 'listed') AS ever_listed,
+        (array_agg(cause ORDER BY created_at DESC) FILTER (WHERE event_type = 'delisted'))[1]
+          AS last_delist_cause,
+        (array_agg(reason ORDER BY created_at DESC) FILTER (WHERE event_type = 'delisted'))[1]
+          AS last_delist_reason,
+        max(created_at) FILTER (WHERE event_type = 'delisted') AS last_delisted_at
+      FROM miniapp_features.free_zone_events
+      GROUP BY candidate_id`,
   ]);
-  return buildFreeZoneStatus(config, rows, events);
+  return buildFreeZoneStatus(config, rows, events, history);
 }
