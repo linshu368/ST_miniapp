@@ -24,7 +24,7 @@ import {
   type EvaluatedCandidate,
   type ModelMetrics,
 } from './repository.js';
-import { screenModel, type ScreeningResult } from './screening.js';
+import { screenModel, summarizeScreening, type ScreeningResult } from './screening.js';
 import { fetchSurplusModelMarket, type SurplusModelMarket } from './surplus-market.js';
 import { invalidateFreeZoneSnapshot } from './snapshot.js';
 
@@ -104,6 +104,7 @@ function snapshotMetrics(
           })),
           realized_7d_discount_pct: screening.realized7dDiscountPct,
           reasons: screening.reasons.slice(0, 10),
+          summary: summarizeScreening(screening),
         }
       : null,
     business: business.kind,

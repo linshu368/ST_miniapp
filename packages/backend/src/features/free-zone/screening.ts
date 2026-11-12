@@ -6,9 +6,11 @@
  * 宁可少上一个模型，也不把没把握的渠道给用户用。
  */
 import type {
+  FreeZoneCheckSummary,
   FreeZoneScreening,
   FreeZoneScreeningCheck,
   FreeZoneScreeningCheckKey,
+  FreeZoneScreeningSummary,
 } from '@miniapp/shared';
 import type { MarketBook, ProviderPerformance, SurplusModelMarket } from './surplus-market.js';
 
@@ -168,6 +170,36 @@ export function screenModel(market: SurplusModelMarket, rules: FreeZoneScreening
     modelCheck: publicCheck(modelCheck),
     detail,
   };
+}
+
+/**
+ * 把一轮初筛压成运营一眼能看的汇总：每一项有几家供应商过了（0 家 = 这一项把模型卡死），
+ * 外加「离达标最近」的那家没过哪几项——每项都有人过、却没有一家全过时，靠它看差在哪。
+ */
+export function summarizeScreening(result: ScreeningResult): FreeZoneScreeningSummary {
+  const keys = result.detail[0]?.checks.map((item) => item.key) ?? [];
+  const checks: FreeZoneCheckSummary[] = keys.map((key) => {
+    const rows = result.detail.map((row) => row.checks.find((item) => item.key === key));
+    return {
+      key,
+      threshold: rows[0]?.threshold ?? null,
+      passed: rows.filter((item) => item?.pass === true).length,
+      total: rows.length,
+    };
+  });
+  checks.push({
+    key: result.modelCheck.key,
+    threshold: result.modelCheck.threshold,
+    passed: result.modelCheck.pass === false ? 0 : 1,
+    total: 1,
+  });
+  const ranked = result.detail
+    .map((row) => ({
+      provider: row.provider,
+      failed: row.checks.filter((item) => item.pass === false).map((item) => item.key),
+    }))
+    .sort((a, b) => a.failed.length - b.failed.length);
+  return { pass: result.pass, checks, closest: ranked[0] ?? null };
 }
 
 const UNKNOWN = Number.POSITIVE_INFINITY;
