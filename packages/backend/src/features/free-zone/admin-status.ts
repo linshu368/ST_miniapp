@@ -2,11 +2,13 @@
  * 运营平台「线上状态」：评估任务落库的当前状态 + 最近的上下架记录。只读。
  * 候选按已发布配置的顺序排；已从候选池删掉、表里还留着记录的排在最后。
  */
-import type {
-  AdminFreeZoneEvent,
-  AdminFreeZoneStatusModel,
-  AdminFreeZoneStatusResponse,
-  FreeZoneConfig,
+import {
+  FreeZoneScreeningSummarySchema,
+  type AdminFreeZoneEvent,
+  type AdminFreeZoneStatusModel,
+  type AdminFreeZoneStatusResponse,
+  type FreeZoneConfig,
+  type FreeZoneScreeningSummary,
 } from '@miniapp/shared';
 import { prisma } from '../../lib/db.js';
 
@@ -22,6 +24,7 @@ interface StatusRow {
   consecutive_passes: number;
   cooldown_until: Date | null;
   last_reason: string | null;
+  last_metrics: Record<string, unknown> | null;
   evaluated_at: Date | null;
 }
 
@@ -38,6 +41,18 @@ function iso(value: Date | null): string | null {
   return value ? value.toISOString() : null;
 }
 
+/** last_metrics.screening 里评估任务记下的逐项汇总；旧记录没有，解析不了就当没有。 */
+function screeningSummary(
+  metrics: Record<string, unknown> | null
+): FreeZoneScreeningSummary | null {
+  const screening = metrics?.screening;
+  if (typeof screening !== 'object' || screening === null) return null;
+  const { pass, summary } = screening as { pass?: unknown; summary?: unknown };
+  if (typeof summary !== 'object' || summary === null) return null;
+  const parsed = FreeZoneScreeningSummarySchema.safeParse({ ...summary, pass });
+  return parsed.success ? parsed.data : null;
+}
+
 export function buildFreeZoneStatus(
   config: FreeZoneConfig,
   rows: StatusRow[],
@@ -52,6 +67,7 @@ export function buildFreeZoneStatus(
     cooldown_until: iso(row?.cooldown_until ?? null),
     excluded_providers: row?.excluded_providers ?? {},
     last_reason: row?.last_reason ?? null,
+    screening: screeningSummary(row?.last_metrics ?? null),
     evaluated_at: iso(row?.evaluated_at ?? null),
   });
   const configured: AdminFreeZoneStatusModel[] = config.candidates.map((candidate) => ({
@@ -94,7 +110,7 @@ export async function loadFreeZoneStatus(
   const [rows, events] = await Promise.all([
     prisma.$queryRaw<StatusRow[]>`
       SELECT candidate_id, surplus_model, status, providers, provider_since, excluded_providers,
-        consecutive_passes, cooldown_until, last_reason, evaluated_at
+        consecutive_passes, cooldown_until, last_reason, last_metrics, evaluated_at
       FROM miniapp_features.free_zone_models`,
     prisma.$queryRaw<EventRow[]>`
       SELECT candidate_id, event_type, cause, providers, reason, created_at

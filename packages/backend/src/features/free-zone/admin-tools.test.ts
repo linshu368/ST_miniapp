@@ -135,6 +135,18 @@ describe('buildFreeZoneStatus', () => {
       consecutive_passes: 1,
       cooldown_until: null,
       last_reason: null,
+      last_metrics:
+        candidate_id === 'free-b'
+          ? {
+              screening: {
+                pass: false,
+                summary: {
+                  checks: [{ key: 'min_tps', threshold: 30, passed: 0, total: 2 }],
+                  closest: { provider: 'zai', failed: ['min_tps'] },
+                },
+              },
+            }
+          : { screening: { pass: true } },
       evaluated_at: at,
     });
     const status = buildFreeZoneStatus(
@@ -151,6 +163,12 @@ describe('buildFreeZoneStatus', () => {
       ['free-b', 'listed', true],
       ['free-gone', 'unlisted', false],
     ]);
+    expect(status.models[1]?.screening).toEqual({
+      pass: false,
+      checks: [{ key: 'min_tps', threshold: 30, passed: 0, total: 2 }],
+      closest: { provider: 'zai', failed: ['min_tps'] },
+    });
+    expect(status.models[2]?.screening).toBeNull();
     // 介绍语可以不填
     expect(config.candidates[0]?.tagline).toBe('');
   });
