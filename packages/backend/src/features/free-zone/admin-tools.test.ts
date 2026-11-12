@@ -152,8 +152,22 @@ describe('buildFreeZoneStatus', () => {
     const status = buildFreeZoneStatus(
       config,
       [row('free-gone', 'unlisted'), row('free-b', 'listed')],
-      []
+      [],
+      [
+        {
+          candidate_id: 'free-a',
+          ever_listed: true,
+          last_delist_cause: 'business',
+          last_delist_reason: '兜底交付率% 30 > 15',
+          last_delisted_at: at,
+        },
+      ]
     );
+    expect(status.models[0]).toMatchObject({
+      ever_listed: true,
+      last_delist: { cause: 'business', at: at.toISOString(), reason: '兜底交付率% 30 > 15' },
+    });
+    expect(status.models[1]).toMatchObject({ ever_listed: false, last_delist: null });
     expect(status.required_passes).toBe(3);
     expect(status.last_evaluated_at).toBe(at.toISOString());
     expect(

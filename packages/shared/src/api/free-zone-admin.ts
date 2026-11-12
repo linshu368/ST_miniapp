@@ -122,6 +122,17 @@ export const AdminFreeZoneStatusModelSchema = z.object({
   last_reason: z.string().nullable(),
   /** 最近一轮官方初筛的逐项汇总；新字段上线前评估的记录为 null */
   screening: FreeZoneScreeningSummarySchema.nullable(),
+  /** 上过架没有（看上下架记录） */
+  ever_listed: z.boolean().default(false),
+  /** 最近一次下架：原因类别、时间、原因；从没下架过为 null */
+  last_delist: z
+    .object({
+      cause: z.enum(['official', 'business']).nullable(),
+      at: z.string(),
+      reason: z.string().nullable(),
+    })
+    .nullable()
+    .default(null),
   evaluated_at: z.string().nullable(),
 });
 
@@ -151,5 +162,6 @@ export type AdminFreeZoneModelResult = z.infer<typeof AdminFreeZoneModelResultSc
 export type AdminFreeZoneProviderResult = z.infer<typeof AdminFreeZoneProviderResultSchema>;
 export type AdminFreeZoneScreeningResponse = z.infer<typeof AdminFreeZoneScreeningResponseSchema>;
 export type AdminFreeZoneStatusModel = z.infer<typeof AdminFreeZoneStatusModelSchema>;
+export type AdminFreeZoneStatusModelInput = z.input<typeof AdminFreeZoneStatusModelSchema>;
 export type AdminFreeZoneEvent = z.infer<typeof AdminFreeZoneEventSchema>;
 export type AdminFreeZoneStatusResponse = z.infer<typeof AdminFreeZoneStatusResponseSchema>;
