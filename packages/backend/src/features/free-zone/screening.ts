@@ -5,7 +5,11 @@
  * 门槛设了但数据未知（平台给 null、样本不足没出单元格），按不达标处理——
  * 宁可少上一个模型，也不把没把握的渠道给用户用。
  */
-import type { FreeZoneScreening } from '@miniapp/shared';
+import type {
+  FreeZoneScreening,
+  FreeZoneScreeningCheck,
+  FreeZoneScreeningCheckKey,
+} from '@miniapp/shared';
 import type { MarketBook, ProviderPerformance, SurplusModelMarket } from './surplus-market.js';
 
 export interface ProviderScreening {
@@ -14,6 +18,8 @@ export interface ProviderScreening {
   /** 达标报价里最便宜的价格；Surplus 在白名单内按便宜优先派单，所以这就是预期价 */
   price: number | null;
   performance: ProviderPerformance | null;
+  /** 逐项检查结果（运营平台的筛选预览按这个画表） */
+  checks: FreeZoneScreeningCheck[];
   failures: string[];
 }
 
@@ -32,19 +38,38 @@ export interface ScreeningResult {
   /** 不达标原因（模型层 + 供应商层汇总），用于事件记录和看板 */
   reasons: string[];
   realized7dDiscountPct: number | null;
+  /** 模型层检查：7 天成交折扣 */
+  modelCheck: FreeZoneScreeningCheck;
   detail: ProviderScreening[];
 }
 
-function atLeast(value: number | null, min: number | null, label: string): string | null {
-  if (min === null) return null;
-  if (value === null) return `${label}未知`;
-  return value >= min ? null : `${label} ${round(value)} < ${min}`;
+interface Check extends FreeZoneScreeningCheck {
+  failure: string | null;
 }
 
-function atMost(value: number | null, max: number | null, label: string): string | null {
-  if (max === null) return null;
-  if (value === null) return `${label}未知`;
-  return value <= max ? null : `${label} ${round(value)} > ${max}`;
+/** 门槛留空 = 不检查；门槛设了但值未知 = 不达标（宁可少上，不上没把握的）。 */
+function check(
+  key: FreeZoneScreeningCheckKey,
+  value: number | null,
+  threshold: number | null,
+  direction: 'min' | 'max',
+  label: string
+): Check {
+  if (threshold === null) return { key, value, threshold, pass: null, failure: null };
+  if (value === null) return { key, value, threshold, pass: false, failure: `${label}未知` };
+  const pass = direction === 'min' ? value >= threshold : value <= threshold;
+  const sign = direction === 'min' ? '<' : '>';
+  return {
+    key,
+    value,
+    threshold,
+    pass,
+    failure: pass ? null : `${label} ${round(value)} ${sign} ${threshold}`,
+  };
+}
+
+function publicCheck({ key, value, threshold, pass }: Check): FreeZoneScreeningCheck {
+  return { key, value, threshold, pass };
 }
 
 function round(value: number): number {
@@ -80,22 +105,21 @@ function screenProvider(
   perf: ProviderPerformance | null,
   rules: FreeZoneScreening
 ): ProviderScreening {
-  const failures = [
-    rules.min_qualified_offers === null || offers.count >= rules.min_qualified_offers
-      ? null
-      : `达标报价 ${offers.count} < ${rules.min_qualified_offers}`,
-    atLeast(perf?.requests ?? null, rules.min_samples, '样本量'),
-    atLeast(perf?.uptimePct ?? null, rules.min_uptime_pct, '成功率'),
-    atMost(perf?.ttftP50Ms ?? null, rules.max_ttft_p50_ms, '首字p50'),
-    atMost(perf?.ttftP90Ms ?? null, rules.max_ttft_p90_ms, '首字p90'),
-    atLeast(perf?.tpsP50 ?? null, rules.min_tps, '出字速度'),
-  ].filter((item): item is string => item !== null);
+  const checks = [
+    check('min_qualified_offers', offers.count, rules.min_qualified_offers, 'min', '达标报价'),
+    check('min_samples', perf?.requests ?? null, rules.min_samples, 'min', '样本量'),
+    check('min_uptime_pct', perf?.uptimePct ?? null, rules.min_uptime_pct, 'min', '成功率'),
+    check('max_ttft_p50_ms', perf?.ttftP50Ms ?? null, rules.max_ttft_p50_ms, 'max', '首字p50'),
+    check('max_ttft_p90_ms', perf?.ttftP90Ms ?? null, rules.max_ttft_p90_ms, 'max', '首字p90'),
+    check('min_tps', perf?.tpsP50 ?? null, rules.min_tps, 'min', '出字速度'),
+  ];
   return {
     provider,
     qualifiedOffers: offers.count,
     price: offers.price,
     performance: perf,
-    failures,
+    checks: checks.map(publicCheck),
+    failures: checks.flatMap((item) => (item.failure ? [item.failure] : [])),
   };
 }
 
@@ -114,11 +138,14 @@ export function screenModel(market: SurplusModelMarket, rules: FreeZoneScreening
       qualifiedOffers: row.qualifiedOffers,
     }));
 
-  const modelFailure = atLeast(
+  const modelCheck = check(
+    'min_realized_discount_pct',
     market.book.realized7dDiscountPct,
     rules.min_realized_discount_pct,
+    'min',
     '7天成交折扣'
   );
+  const modelFailure = modelCheck.failure;
   const reasons: string[] = [];
   if (modelFailure) reasons.push(modelFailure);
   if (detail.length === 0) reasons.push('没有 trusted 供应商');
@@ -131,6 +158,7 @@ export function screenModel(market: SurplusModelMarket, rules: FreeZoneScreening
     qualified,
     reasons,
     realized7dDiscountPct: market.book.realized7dDiscountPct,
+    modelCheck: publicCheck(modelCheck),
     detail,
   };
 }

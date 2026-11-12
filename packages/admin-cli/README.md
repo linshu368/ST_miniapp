@@ -76,6 +76,14 @@ pnpm admin text-rules draft --file source.json && pnpm admin text-rules publish
 
 富文本规则写入超时（结果未知）时不要重试，先 `pnpm admin text-rules recover <request-id>` 查结果。
 
+### 畅聊（免费模型）调试
+
+```bash
+pnpm admin free-zone status                      # 每个候选在架/未上架/冷却中、供应商、最近原因
+pnpm admin free-zone screen                      # 按已发布门槛实时过一遍候选池（只读）
+pnpm admin free-zone screen --file draft.json    # 试未发布的门槛：文件是 free_zone_config 的值
+```
+
 ## 给 AI 助手的约定
 
 - 用 `pnpm -s admin ... --json`（在仓库子目录用 `pnpm -s -w admin`）。不加 `-s` 时 pnpm 会往 stdout 打印脚本横幅，JSON 就解析不了。

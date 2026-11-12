@@ -33,6 +33,7 @@ export * from './api/invite';
 export * from './api/community';
 export * from './api/models';
 export * from './api/free-zone.js';
+export * from './api/free-zone-admin.js';
 export * from './api/provider-routing';
 export * from './api/notifications';
 export * from './api/support';

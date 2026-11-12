@@ -94,10 +94,11 @@ export async function loadAdminActor(userId: string, access: AdminAccess): Promi
 
 export async function authorizeAdminOperator(
   request: FastifyRequest,
-  reply: FastifyReply
+  reply: FastifyReply,
+  access: AdminAccess = 'write'
 ): Promise<boolean> {
   try {
-    await requireAdminActor(request.headers.authorization, 'write');
+    await requireAdminActor(request.headers.authorization, access);
     return true;
   } catch (error) {
     if (error instanceof AdminSessionError) {
