@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AdminFreeZoneStatusModel } from '@miniapp/shared';
-import { freeZoneReasonView, freeZoneStatusGroup } from './freeZoneApi';
+import { freeZoneProbeText, freeZoneReasonView, freeZoneStatusGroup } from './freeZoneApi';
 
 function model(patch: Partial<AdminFreeZoneStatusModel>): AdminFreeZoneStatusModel {
   return {
@@ -16,6 +16,7 @@ function model(patch: Partial<AdminFreeZoneStatusModel>): AdminFreeZoneStatusMod
     excluded_providers: {},
     last_reason: 'raw reason',
     screening: null,
+    probe: null,
     ever_listed: false,
     last_delist: null,
     evaluated_at: null,
@@ -108,5 +109,41 @@ describe('freeZoneStatusGroup', () => {
       )
     ).toBe('not_listed');
     expect(freeZoneStatusGroup(model({ status: null }))).toBe('not_listed');
+  });
+});
+
+describe('freeZoneProbeText', () => {
+  it('shows the probed first-token time for a routed probe only', () => {
+    const probe = (outcome: 'ok' | 'unroutable', ms: number | null) => ({
+      provider: 'deepseek',
+      outcome,
+      first_token_ms: ms,
+      detail: null,
+    });
+    expect(freeZoneProbeText(model({ probe: probe('ok', 2254) }))).toBe('探测首字 2.3 秒');
+    expect(freeZoneProbeText(model({ probe: probe('unroutable', null) }))).toBe('');
+    expect(freeZoneProbeText(model({}))).toBe('');
+  });
+
+  it('labels the probe check with how many providers routed', () => {
+    const view = freeZoneReasonView(
+      model({
+        screening: {
+          pass: false,
+          checks: [{ key: 'probe', threshold: 85, passed: 0, total: 2 }],
+          closest: null,
+        },
+      })
+    );
+    expect(view).toMatchObject({
+      kind: 'tags',
+      tags: [
+        {
+          text: '探测派单 0/2',
+          failed: true,
+          hint: '真发请求探了 2 家，0 家带 85% 折扣底线派得出去',
+        },
+      ],
+    });
   });
 });

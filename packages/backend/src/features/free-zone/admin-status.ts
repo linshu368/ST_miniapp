@@ -3,11 +3,13 @@
  * 候选按已发布配置的顺序排；已从候选池删掉、表里还留着记录的排在最后。
  */
 import {
+  FreeZoneProbeSchema,
   FreeZoneScreeningSummarySchema,
   type AdminFreeZoneEvent,
   type AdminFreeZoneStatusModel,
   type AdminFreeZoneStatusResponse,
   type FreeZoneConfig,
+  type FreeZoneProbe,
   type FreeZoneScreeningSummary,
 } from '@miniapp/shared';
 import { prisma } from '../../lib/db.js';
@@ -48,6 +50,12 @@ interface EventRow {
 
 function iso(value: Date | null): string | null {
   return value ? value.toISOString() : null;
+}
+
+/** last_metrics.probe：最近一轮最终选定那家的派单探测 */
+function lastProbe(metrics: Record<string, unknown> | null): FreeZoneProbe | null {
+  const parsed = FreeZoneProbeSchema.safeParse(metrics?.probe);
+  return parsed.success ? parsed.data : null;
 }
 
 /** last_metrics.screening 里评估任务记下的逐项汇总；旧记录没有，解析不了就当没有。 */
@@ -92,6 +100,7 @@ export function buildFreeZoneStatus(
     excluded_providers: row?.excluded_providers ?? {},
     last_reason: row?.last_reason ?? null,
     screening: screeningSummary(row?.last_metrics ?? null),
+    probe: lastProbe(row?.last_metrics ?? null),
     evaluated_at: iso(row?.evaluated_at ?? null),
   });
   const configured: AdminFreeZoneStatusModel[] = config.candidates.map((candidate) => ({

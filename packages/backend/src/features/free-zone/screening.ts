@@ -176,7 +176,10 @@ export function screenModel(market: SurplusModelMarket, rules: FreeZoneScreening
  * 把一轮初筛压成运营一眼能看的汇总：每一项有几家供应商过了（0 家 = 这一项把模型卡死），
  * 外加「离达标最近」的那家没过哪几项——每项都有人过、却没有一家全过时，靠它看差在哪。
  */
-export function summarizeScreening(result: ScreeningResult): FreeZoneScreeningSummary {
+export function summarizeScreening(
+  result: ScreeningResult,
+  probe: { threshold: number; passed: number; total: number } | null = null
+): FreeZoneScreeningSummary {
   const keys = result.detail[0]?.checks.map((item) => item.key) ?? [];
   const checks: FreeZoneCheckSummary[] = keys.map((key) => {
     const rows = result.detail.map((row) => row.checks.find((item) => item.key === key));
@@ -193,6 +196,7 @@ export function summarizeScreening(result: ScreeningResult): FreeZoneScreeningSu
     passed: result.modelCheck.pass === false ? 0 : 1,
     total: 1,
   });
+  if (probe) checks.push({ key: 'probe', ...probe });
   const ranked = result.detail
     .map((row) => ({
       provider: row.provider,
