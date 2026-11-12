@@ -3,11 +3,13 @@
  * 候选按已发布配置的顺序排；已从候选池删掉、表里还留着记录的排在最后。
  */
 import {
+  FreeZoneBusinessSnapshotSchema,
   FreeZoneProbeSchema,
   FreeZoneScreeningSummarySchema,
   type AdminFreeZoneEvent,
   type AdminFreeZoneStatusModel,
   type AdminFreeZoneStatusResponse,
+  type FreeZoneBusinessSnapshot,
   type FreeZoneConfig,
   type FreeZoneProbe,
   type FreeZoneScreeningSummary,
@@ -58,6 +60,15 @@ function lastProbe(metrics: Record<string, unknown> | null): FreeZoneProbe | nul
   return parsed.success ? parsed.data : null;
 }
 
+/** last_metrics 里评估任务记下的业务数据（只有在架模型才有 turns）。 */
+function businessSnapshot(
+  row: Pick<StatusRow, 'status' | 'last_metrics'> | undefined
+): FreeZoneBusinessSnapshot | null {
+  if (row?.status !== 'listed') return null;
+  const parsed = FreeZoneBusinessSnapshotSchema.safeParse(row.last_metrics ?? {});
+  return parsed.success ? parsed.data : null;
+}
+
 /** last_metrics.screening 里评估任务记下的逐项汇总；旧记录没有，解析不了就当没有。 */
 function screeningSummary(
   metrics: Record<string, unknown> | null
@@ -101,6 +112,7 @@ export function buildFreeZoneStatus(
     last_reason: row?.last_reason ?? null,
     screening: screeningSummary(row?.last_metrics ?? null),
     probe: lastProbe(row?.last_metrics ?? null),
+    business: businessSnapshot(row),
     evaluated_at: iso(row?.evaluated_at ?? null),
   });
   const configured: AdminFreeZoneStatusModel[] = config.candidates.map((candidate) => ({

@@ -115,6 +115,7 @@ const FIELD_LABELS: Record<string, string> = {
   max_timeout_pct: '超时率',
   max_refusal_pct: '拒答率',
   max_truncation_pct: '截断率',
+  max_interrupted_pct: '生成中断率',
   max_dislike_pct: '点踩率',
   required_passes: '连续达标次数',
   cooldown_official_minutes: '官方原因冷却',
