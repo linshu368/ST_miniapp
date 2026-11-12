@@ -1,4 +1,5 @@
 import { Readable, Writable } from 'node:stream';
+import { revealsReasoning } from './reasoning-display.js';
 import { pipeline } from 'node:stream/promises';
 import { createSseTap, type SseTapResult } from './upstream.js';
 import type { FreeQuotaReservation } from './quota.js';
@@ -124,13 +125,12 @@ export async function consumeStream(input: StreamInput): Promise<GenerationResul
   const tap = createSseTap({
     generationId: headerGenerationId,
     onGenerationId: request.firstToken ? undefined : hooks?.onGenerationId,
-    onReasoningDelta:
-      request.thinkingEnabled === false
-        ? undefined
-        : (delta) => {
-            noteFirstToken(delta);
-            hooks?.onReasoningDelta?.(delta);
-          },
+    onReasoningDelta: !revealsReasoning(request)
+      ? undefined
+      : (delta) => {
+          noteFirstToken(delta);
+          hooks?.onReasoningDelta?.(delta);
+        },
     onDelta: (delta) => {
       noteFirstToken(delta);
       hooks?.onDelta?.(delta);

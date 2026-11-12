@@ -657,6 +657,8 @@ export function useConversationTurn({
       let assistantMessageId: string | null = null;
       let assistantRevision = pendingRef.current.revision;
       let settledStatus: ChatMessageStatus | null = null;
+      // 这一轮收不收思考过程：开关开着，或服务端 start 说要显示（畅聊免费模型关不掉思考）
+      let revealThisTurn = thinkingEnabled;
 
       try {
         await streamConversationTurn({
@@ -679,6 +681,10 @@ export function useConversationTurn({
               requestId,
             };
             assistantMessageId = event.assistant_message_id;
+            if (event.thinking_enabled === true) {
+              revealThisTurn = true;
+              observation.thinkingEnabled = true;
+            }
             observation.started(event.server_elapsed_ms);
             observation.identify(
               event.assistant_message_id,
@@ -695,7 +701,7 @@ export function useConversationTurn({
             setStreaming((current) => (current ? appendStreamText(current, text) : current));
           },
           onReasoning: (text) => {
-            if (!isCurrent() || !thinkingEnabled || !assistantMessageId || !text) return;
+            if (!isCurrent() || !revealThisTurn || !assistantMessageId || !text) return;
             const key = messageThinkingKey({
               session_id: sessionId,
               id: assistantMessageId,

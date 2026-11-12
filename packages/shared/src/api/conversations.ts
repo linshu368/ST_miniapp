@@ -275,7 +275,10 @@ export interface ConversationStreamStartEvent {
   user_message_id: string | null;
   assistant_message_id: string;
   revision: number;
-  /** Requested setting for this turn, not a guarantee that the model exposes reasoning. */
+  /**
+   * 这一轮是否显示思考过程：默认等于请求里的开关；畅聊免费模型恒为 true（关不掉思考的模型照样先想，
+   * 过程要让用户看到）。不保证模型真的会吐出思考过程。
+   */
   thinking_enabled?: boolean;
   /** 本轮开轮时绑定的规则版本。旧 start 事件没有该字段时按 null 解释。 */
   postprocess_version?: number | null;
