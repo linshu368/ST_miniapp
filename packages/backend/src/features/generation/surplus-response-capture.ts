@@ -74,10 +74,13 @@ export class SurplusResponseCapture {
     const item = surplusRecord(value);
     if (
       !item ||
-      !['provider_default', 'unavailable'].includes(String(item.control)) ||
-      !['effort_values_unspecified', 'unsupported', 'directory_unavailable'].includes(
-        String(item.reason)
-      ) ||
+      !['effort', 'provider_default', 'unavailable'].includes(String(item.control)) ||
+      ![
+        'effort_mapped',
+        'effort_values_unspecified',
+        'unsupported',
+        'directory_unavailable',
+      ].includes(String(item.reason)) ||
       typeof item.requestedEnabled !== 'boolean' ||
       !Array.isArray(item.supportedParameters) ||
       item.supportedParameters.length > 128 ||
