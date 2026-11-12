@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { AdminFreeZoneStatusModel } from '@miniapp/shared';
-import { freeZoneProbeText, freeZoneReasonView, freeZoneStatusGroup } from './freeZoneApi';
+import {
+  freeZoneBusinessText,
+  freeZoneProbeText,
+  freeZoneReasonView,
+  freeZoneStatusGroup,
+} from './freeZoneApi';
 
 function model(patch: Partial<AdminFreeZoneStatusModel>): AdminFreeZoneStatusModel {
   return {
@@ -17,6 +22,7 @@ function model(patch: Partial<AdminFreeZoneStatusModel>): AdminFreeZoneStatusMod
     last_reason: 'raw reason',
     screening: null,
     probe: null,
+    business: null,
     ever_listed: false,
     last_delist: null,
     evaluated_at: null,
@@ -145,5 +151,39 @@ describe('freeZoneProbeText', () => {
         },
       ],
     });
+  });
+});
+
+describe('freeZoneBusinessText', () => {
+  const business = {
+    turns: 78,
+    fallback_delivered_pct: 39.74,
+    no_output_pct: 41,
+    primary_delivered_turns: 46,
+    interrupted_turns: 14,
+    interrupted_pct: 30.43,
+    ttft_p90_ms: 9000,
+  };
+
+  it('puts fallback and mid-generation interruption side by side', () => {
+    expect(freeZoneBusinessText(model({ status: 'listed', business }))).toBe(
+      '78 轮 · 兜底 39.7% · 中断 30.4%（14/46） · 没出字 41%'
+    );
+  });
+
+  it('copes with evaluations recorded before the interruption fields existed', () => {
+    const old = {
+      ...business,
+      primary_delivered_turns: null,
+      interrupted_turns: null,
+      interrupted_pct: null,
+    };
+    expect(freeZoneBusinessText(model({ status: 'listed', business: old }))).toBe(
+      '78 轮 · 兜底 39.7% · 中断 — · 没出字 41%'
+    );
+    expect(
+      freeZoneBusinessText(model({ status: 'listed', business: { ...business, turns: 0 } }))
+    ).toBe('还没有用户轮次');
+    expect(freeZoneBusinessText(model({ status: 'unlisted' }))).toBe('');
   });
 });

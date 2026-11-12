@@ -30,7 +30,7 @@ CREATE TABLE experience.chat_reply_feedback(created_at timestamptz NOT NULL DEFA
 CREATE TABLE miniapp_analytics.chat_first_token_facts(
   chat_history_id uuid, request_received_at timestamptz, requested_model_id text,
   primary_actual_first_token_ms numeric, delivery_role text, server_first_token_timeout boolean,
-  business_finish_reason text);
+  business_finish_reason text, business_status text);
 CREATE FUNCTION admin.is_managed_config_key(p_config_key text) RETURNS boolean
 LANGUAGE sql IMMUTABLE AS $$ SELECT p_config_key IN ('system_instructions') $$;
 CREATE FUNCTION admin.validate_managed_config_value(p_config_key text, p_value jsonb, p_text_value text DEFAULT NULL)
@@ -127,4 +127,28 @@ SQL
 
 # The Grafana role reads through the views without base-table grants.
 "${task_psql[@]}" -Atqc "SET ROLE first_token_metrics_reader; SELECT count(*) FROM miniapp_analytics.free_zone_turn_facts;" | grep -qx 2
-printf 'PASS: free zone PG17 (managed key chain, state invariants, projections, grants, re-run)\n'
+# 20261112_free_zone_interrupted.sql: append primary_delivered / interrupted, twice (re-run is a no-op).
+"${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/20261112_free_zone_interrupted.sql" >/dev/null
+"${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/20261112_free_zone_interrupted.sql" >/dev/null
+"${task_psql[@]}" >/dev/null <<'SQL'
+DO $interrupted$
+BEGIN
+  INSERT INTO miniapp_analytics.chat_first_token_facts VALUES
+    ('b0000000-0000-4000-8000-000000000001', now(), 'free-glm', 2100, 'primary', false, NULL, 'stream_interrupted'),
+    ('b0000000-0000-4000-8000-000000000002', now(), 'free-glm', 2100, 'primary', false, 'timeout', 'stream_interrupted'),
+    ('b0000000-0000-4000-8000-000000000003', now(), 'free-glm', 2100, 'primary', false, 'user_cancelled', 'stream_interrupted'),
+    ('b0000000-0000-4000-8000-000000000004', now(), 'free-glm', 2100, 'primary', false, 'content_filter', 'stream_interrupted'),
+    ('b0000000-0000-4000-8000-000000000005', now(), 'free-glm', NULL, NULL, false, 'timeout', 'stream_interrupted'),
+    ('b0000000-0000-4000-8000-000000000006', now(), 'free-glm', NULL, 'fallback', false, 'error', 'stream_interrupted'),
+    ('b0000000-0000-4000-8000-000000000007', now(), 'free-glm', 2100, 'primary', false, 'stop', 'success');
+  ASSERT (SELECT count(*) FROM miniapp_analytics.free_zone_turn_facts WHERE model_id = 'free-glm' AND interrupted) = 2,
+    'only upstream breaks after the free model started count (not user stop, filter, no-output, fallback)';
+  ASSERT (SELECT count(*) FROM miniapp_analytics.free_zone_turn_facts WHERE model_id = 'free-glm' AND primary_delivered) = 5;
+  ASSERT (SELECT bool_and(interrupted IS NOT NULL AND primary_delivered IS NOT NULL) FROM miniapp_analytics.free_zone_turn_facts);
+  ASSERT has_table_privilege('first_token_metrics_reader', 'miniapp_analytics.free_zone_turn_facts', 'SELECT');
+  ASSERT NOT has_table_privilege('authenticated', 'miniapp_analytics.free_zone_turn_facts', 'SELECT');
+END
+$interrupted$;
+SQL
+"${task_psql[@]}" -Atqc "SET ROLE first_token_metrics_reader; SELECT count(*) FILTER (WHERE interrupted) FROM miniapp_analytics.free_zone_turn_facts;" | grep -qx 2
+printf 'PASS: free zone PG17 (managed key chain, state invariants, projections, grants, re-run, interrupted)\n'

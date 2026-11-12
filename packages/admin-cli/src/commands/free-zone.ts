@@ -3,6 +3,7 @@ import {
   FREE_ZONE_STATUS_GROUPS,
   FREE_ZONE_STATUS_LABELS,
   fetchFreeZoneStatus,
+  freeZoneBusinessText,
   freeZoneProbeText,
   freeZoneReasonView,
   freeZoneStatusGroup,
@@ -26,7 +27,12 @@ function statusLine(model: AdminFreeZoneStatusModel, requiredPasses: number): st
   const status = model.status ? FREE_ZONE_STATUS_LABELS[model.status] : '未评估';
   const detail =
     model.status === 'listed'
-      ? `供应商 ${model.providers.join('、')}${freeZoneProbeText(model) ? `（${freeZoneProbeText(model)}）` : ''}`
+      ? [
+          `供应商 ${model.providers.join('、')}${freeZoneProbeText(model) ? `（${freeZoneProbeText(model)}）` : ''}`,
+          freeZoneBusinessText(model),
+        ]
+          .filter(Boolean)
+          .join('\t')
       : model.status === 'cooling'
         ? `冷却到 ${model.cooldown_until ?? '?'}`
         : `连续达标 ${model.consecutive_passes}/${requiredPasses}`;

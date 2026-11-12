@@ -15,6 +15,7 @@ import {
   FREE_ZONE_STATUS_GROUPS,
   FREE_ZONE_STATUS_LABELS,
   fetchFreeZoneStatus,
+  freeZoneBusinessText,
   freeZoneProbeText,
   freeZoneReasonView,
   freeZoneStatusGroup,
@@ -131,6 +132,16 @@ function columns(
     return [
       name,
       detailColumn,
+      {
+        title: '当前供应商业务数据',
+        key: 'business',
+        width: 300,
+        render: (_, model) => (
+          <Tooltip title="当前供应商开始用之后、统计窗口内的真实轮次，截至最近一轮评估。中断＝开始出字后没写完就断了（不含用户点停），分母是它自己交付的轮次。">
+            <Typography.Text>{freeZoneBusinessText(model) || '—'}</Typography.Text>
+          </Tooltip>
+        ),
+      },
       {
         title: '排除中的供应商',
         key: 'excluded',

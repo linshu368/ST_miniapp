@@ -243,6 +243,7 @@ describe('judgeBusinessMetrics', () => {
     ttftP90Ms: 4000,
     refusalPct: null,
     truncationPct: null,
+    interruptedPct: 4,
     dislikePct: null,
   };
 
@@ -253,6 +254,15 @@ describe('judgeBusinessMetrics', () => {
   it('fails when any configured line is crossed', () => {
     const verdict = judgeBusinessMetrics({ ...base, noOutputPct: 12 }, onShelf);
     expect(verdict).toEqual({ kind: 'fail', reasons: ['没出字率% 12 > 10'] });
+  });
+
+  it('judges the mid-generation interruption rate once a line is set', () => {
+    expect(judgeBusinessMetrics({ ...base, interruptedPct: 30.4 }, onShelf).kind).toBe('pass');
+    const verdict = judgeBusinessMetrics(
+      { ...base, interruptedPct: 30.4 },
+      { ...onShelf, max_interrupted_pct: 5 }
+    );
+    expect(verdict).toEqual({ kind: 'fail', reasons: ['生成中断率% 30.4 > 5'] });
   });
 });
 
