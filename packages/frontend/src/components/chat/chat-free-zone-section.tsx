@@ -14,7 +14,7 @@ const TIER_FALLBACK: Record<string, { label: string; color: string }> = {
 };
 
 /**
- * 「畅聊」栏目：放在轻量/标准/旗舰上面，骨架沿用档位卡，开放时用亮金描边和一道光带。
+ * 「畅聊」栏目：放在轻量/标准/旗舰上面，骨架沿用档位卡，用畅聊专用强调色（--free-zone，和主色金区分开），开放时描边加一道光带。
  * 开放写结束时间；未开放默认折叠，卡头照样显示规则（也是宣传位），点开能预览、不能选。
  */
 export function ChatFreeZoneSection({
@@ -44,8 +44,8 @@ export function ChatFreeZoneSection({
       className={cn(
         'relative overflow-hidden rounded-2xl border',
         open
-          ? 'border-primary-bright/50 bg-[linear-gradient(165deg,hsl(var(--primary-bright)/0.16)_0%,hsl(var(--card))_55%)]'
-          : 'border-primary/20 bg-[linear-gradient(165deg,hsl(var(--primary)/0.06)_0%,hsl(var(--card))_55%)]'
+          ? 'border-free-zone/50 bg-[linear-gradient(165deg,hsl(var(--free-zone)/0.16)_0%,hsl(var(--card))_55%)]'
+          : 'border-free-zone/20 bg-[linear-gradient(165deg,hsl(var(--free-zone)/0.06)_0%,hsl(var(--card))_55%)]'
       )}
     >
       {open ? (
@@ -105,7 +105,7 @@ function FreeZoneHeader({
         <span
           className={cn(
             'shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold leading-none text-[#090b12]',
-            open ? 'bg-primary-bright' : 'bg-primary'
+            open ? 'bg-free-zone' : 'bg-free-zone/60'
           )}
         >
           畅聊
@@ -125,7 +125,7 @@ function FreeZoneHeader({
         <span
           className={cn(
             'rounded-md px-2 py-1 text-[10.5px] font-medium leading-none',
-            open ? 'bg-primary-bright/15 text-primary-bright' : 'bg-primary/10 text-primary'
+            open ? 'bg-free-zone/15 text-free-zone' : 'bg-free-zone/10 text-free-zone/70'
           )}
         >
           每轮 0 星尘
@@ -137,9 +137,7 @@ function FreeZoneHeader({
         <span
           className={cn(
             'flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold tabular-nums',
-            open
-              ? 'border-primary-bright/45 text-primary-bright'
-              : 'border-border text-muted-foreground'
+            open ? 'border-free-zone/45 text-free-zone' : 'border-border text-muted-foreground'
           )}
         >
           <Clock3 className="size-3" aria-hidden />
@@ -179,14 +177,14 @@ function FreeZoneModelRow({
       aria-pressed={active}
       className={cn(
         'flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors disabled:cursor-wait disabled:opacity-60 motion-reduce:transition-none',
-        active ? 'bg-primary/10' : open ? 'hover:bg-secondary' : 'cursor-default'
+        active ? 'bg-free-zone/10' : open ? 'hover:bg-secondary' : 'cursor-default'
       )}
     >
       {open ? (
         <span
           className={cn(
             'flex size-5 shrink-0 items-center justify-center rounded-full border transition-transform',
-            active ? 'scale-110 border-transparent bg-primary' : 'border-border'
+            active ? 'scale-110 border-transparent bg-free-zone' : 'border-border'
           )}
         >
           {active ? <Check className="size-3.5 text-primary-foreground" aria-hidden /> : null}
@@ -218,7 +216,7 @@ function FreeZoneModelRow({
         <span
           className={cn(
             'block text-[13px] font-bold tabular-nums',
-            open ? 'text-primary-bright' : 'text-primary'
+            open ? 'text-free-zone' : 'text-free-zone/70'
           )}
         >
           0<span className="ml-0.5 text-[10px] font-medium">星尘</span>

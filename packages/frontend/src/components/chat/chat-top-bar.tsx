@@ -114,7 +114,7 @@ export function ChatTopBar({
                 className={cn(
                   'relative mt-1 inline-flex min-h-8 max-w-full items-center gap-1 rounded-full border px-3 text-[11px] font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary',
                   freeSelected
-                    ? 'border-primary-bright/80 bg-primary-bright/15 text-primary-bright'
+                    ? 'border-free-zone/80 bg-free-zone/15 text-free-zone'
                     : 'border-primary/70 bg-primary/10 text-primary'
                 )}
               >
@@ -122,7 +122,7 @@ export function ChatTopBar({
                   className={cn(
                     'size-1.5 shrink-0 rounded-full',
                     freeSelected
-                      ? 'bg-primary-bright shadow-[0_0_6px_hsl(var(--primary-bright)/0.9)]'
+                      ? 'bg-free-zone shadow-[0_0_6px_hsl(var(--free-zone)/0.9)]'
                       : 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]'
                   )}
                   aria-hidden
@@ -136,7 +136,7 @@ export function ChatTopBar({
                   aria-hidden
                 />
                 {showFreeBadge ? (
-                  <span className="pointer-events-none absolute -right-3 -top-2 whitespace-nowrap rounded-full bg-primary-bright px-1.5 text-[9px] font-bold leading-[15px] text-[#090b12] shadow-[0_2px_6px_rgba(0,0,0,0.4)]">
+                  <span className="pointer-events-none absolute -right-3 -top-2 whitespace-nowrap rounded-full bg-free-zone px-1.5 text-[9px] font-bold leading-[15px] text-[#090b12] shadow-[0_2px_6px_rgba(0,0,0,0.4)]">
                     畅聊中
                   </span>
                 ) : null}

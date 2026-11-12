@@ -19,6 +19,9 @@ export const MAX_USER_INPUT_LENGTH = 8000;
 /** 快到上限时才提示，平时不打扰 */
 const COUNTER_REVEAL_AT = MAX_USER_INPUT_LENGTH - 500;
 
+/** 深度思考轻提示停留多久 */
+const THINKING_NOTICE_MS = 2800;
+
 interface ChatComposerProps {
   viewportHeight: number | null;
   value: string;
@@ -36,6 +39,8 @@ interface ChatComposerProps {
   onDetailsDefaultOpenChange: (value: ReplyDetailsDefaultOpen) => void;
   thinkingEnabled: boolean;
   onThinkingEnabledChange: (enabled: boolean) => void;
+  /** 点深度思考后要不要轻提示（当前模型不吃这个开关时返回提示文字） */
+  thinkingHint?: (nextEnabled: boolean) => string | null;
 }
 
 export function ChatComposer({
@@ -52,10 +57,23 @@ export function ChatComposer({
   onDetailsDefaultOpenChange,
   thinkingEnabled,
   onThinkingEnabledChange,
+  thinkingHint,
 }: ChatComposerProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const compositionActiveRef = useRef(false);
   const [expanded, setExpanded] = useState(false);
+  // 每次点击都重新计时（同一句话连点也要重新出现），所以带上序号
+  const [thinkingNotice, setThinkingNotice] = useState<{ text: string; seq: number } | null>(null);
+  useEffect(() => {
+    if (!thinkingNotice) return;
+    const timer = window.setTimeout(() => setThinkingNotice(null), THINKING_NOTICE_MS);
+    return () => window.clearTimeout(timer);
+  }, [thinkingNotice]);
+  const changeThinkingEnabled = (enabled: boolean) => {
+    onThinkingEnabledChange(enabled);
+    const text = thinkingHint?.(enabled) ?? null;
+    setThinkingNotice((current) => (text ? { text, seq: (current?.seq ?? 0) + 1 } : null));
+  };
   const limits = composerViewportLimits(
     viewportHeight,
     typeof window === 'undefined' ? 640 : window.innerHeight
@@ -94,7 +112,17 @@ export function ChatComposer({
   };
 
   return (
-    <div className="flex min-h-0 max-h-full shrink flex-col bg-background px-2.5 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2">
+    <div className="relative flex min-h-0 max-h-full shrink flex-col bg-background px-2.5 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2">
+      {thinkingNotice ? (
+        // 回复偏好条会裁掉溢出的内容，所以提示浮在整个输入区上方、靠右对着深度思考按钮
+        <p
+          key={thinkingNotice.seq}
+          role="status"
+          className="pointer-events-none absolute bottom-full right-3 z-20 mb-1 max-w-[min(18rem,calc(100%-1.5rem))] rounded-xl border border-border bg-card px-3 py-2 text-[12px] leading-snug text-foreground shadow-[0_8px_24px_rgb(0_0_0/45%)]"
+        >
+          {thinkingNotice.text}
+        </p>
+      ) : null}
       <ChatReplyPreferences
         maxContentHeight={limits.preferences}
         detailsDefaultOpen={detailsDefaultOpen}
@@ -103,7 +131,7 @@ export function ChatComposer({
           <ChatThinkingToggle
             enabled={thinkingEnabled}
             disabled={generating || disabled}
-            onChange={onThinkingEnabledChange}
+            onChange={changeThinkingEnabled}
           />
         }
       />

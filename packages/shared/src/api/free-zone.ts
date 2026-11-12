@@ -20,6 +20,15 @@ const PercentSchema = z.number().min(0).max(100);
 const DurationMsSchema = z.number().int().positive().max(110_000);
 const IsoTimeSchema = z.string().datetime({ offset: true });
 
+/**
+ * 深度思考开关对这个免费模型管不管用（按当前供应商实测，运营在候选池里填）：
+ * - switchable：开关正常起作用；
+ * - always：关不掉，关了照样思考、思考过程照样显示（例如 dashscope-cn 上的 GLM 5.3）；
+ * - hidden：不显示思考过程，开了也看不到（默默思考或不思考的模型）。
+ * 不是 switchable 的，用户点深度思考时前端轻提示一句，免得以为出了 bug。
+ */
+export const FreeZoneThinkingSchema = z.enum(['switchable', 'always', 'hidden']);
+
 export const FreeZoneCandidateSchema = z.object({
   id: z
     .string()
@@ -40,6 +49,7 @@ export const FreeZoneCandidateSchema = z.object({
   family: z.string().trim().min(1).max(40),
   /** 对标档位：划线原价取这一档当前的星尘价 */
   benchmark_tier: ModelCatalogTierKeySchema,
+  thinking: FreeZoneThinkingSchema.default('switchable'),
 });
 
 export const FreeZoneScreeningSchema = z.object({
@@ -144,6 +154,7 @@ export const FreeZoneConfigSchema = z
     }
   });
 
+export type FreeZoneThinking = z.infer<typeof FreeZoneThinkingSchema>;
 export type FreeZoneCandidate = z.infer<typeof FreeZoneCandidateSchema>;
 export type FreeZoneScreening = z.infer<typeof FreeZoneScreeningSchema>;
 export type FreeZoneOnShelf = z.infer<typeof FreeZoneOnShelfSchema>;
@@ -161,6 +172,8 @@ export const PublicFreeZoneModelSchema = z.object({
   benchmark_tier: ModelCatalogTierKeySchema,
   /** 划线原价：对标档位当前的星尘价 */
   original_credits: z.number().int().nonnegative(),
+  /** 深度思考开关对它管不管用，见 FreeZoneThinkingSchema */
+  thinking: FreeZoneThinkingSchema.default('switchable'),
 });
 
 const PublicFreeZoneBase = {
