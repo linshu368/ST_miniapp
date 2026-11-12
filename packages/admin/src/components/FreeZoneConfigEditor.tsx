@@ -148,6 +148,13 @@ const ON_SHELF_FIELDS: ReadonlyArray<NumberField<keyof FreeZoneOnShelf & string>
     max: 100,
     precision: 1,
   },
+  {
+    key: 'max_interrupted_pct',
+    label: '生成中断率上限（%）',
+    hint: '开始出字后没写完就断了，占它自己交付轮次的比例；不含用户点停；留空不检查',
+    max: 100,
+    precision: 1,
+  },
   { key: 'max_dislike_pct', label: '点踩率上限（%）', hint: '留空不检查', max: 100, precision: 1 },
 ];
 

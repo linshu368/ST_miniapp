@@ -39,6 +39,8 @@ export interface BusinessMetrics {
   ttftP90Ms: number | null;
   refusalPct: number | null;
   truncationPct: number | null;
+  /** 免费模型自己交付的轮次里，开始出字后没写完就断了的比例 */
+  interruptedPct: number | null;
   dislikePct: number | null;
 }
 
@@ -91,6 +93,7 @@ export function judgeBusinessMetrics(
     exceeds(metrics.ttftP90Ms, rules.max_ttft_p90_ms, '真实首字p90'),
     exceeds(metrics.refusalPct, rules.max_refusal_pct, '拒答率%'),
     exceeds(metrics.truncationPct, rules.max_truncation_pct, '截断率%'),
+    exceeds(metrics.interruptedPct, rules.max_interrupted_pct, '生成中断率%'),
     exceeds(metrics.dislikePct, rules.max_dislike_pct, '点踩率%'),
   ].filter((item): item is string => item !== null);
   return reasons.length > 0 ? { kind: 'fail', reasons } : { kind: 'pass' };

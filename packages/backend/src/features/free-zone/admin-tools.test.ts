@@ -145,8 +145,16 @@ describe('buildFreeZoneStatus', () => {
                   closest: { provider: 'zai', failed: ['min_tps'] },
                 },
               },
+              business: 'insufficient',
+              turns: 46,
+              fallback_delivered_pct: 39.7,
+              no_output_pct: 41,
+              primary_delivered_turns: 28,
+              interrupted_turns: 7,
+              interrupted_pct: 25,
+              ttft_p90_ms: 9100,
             }
-          : { screening: { pass: true } },
+          : { screening: { pass: true }, turns: 12, fallback_delivered_pct: 0 },
       evaluated_at: at,
     });
     const status = buildFreeZoneStatus(
@@ -183,6 +191,17 @@ describe('buildFreeZoneStatus', () => {
       closest: { provider: 'zai', failed: ['min_tps'] },
     });
     expect(status.models[2]?.screening).toBeNull();
+    // 业务数据只给在架模型看；不在架的即使 last_metrics 里有旧数也不显示
+    expect(status.models[1]?.business).toEqual({
+      turns: 46,
+      fallback_delivered_pct: 39.7,
+      no_output_pct: 41,
+      primary_delivered_turns: 28,
+      interrupted_turns: 7,
+      interrupted_pct: 25,
+      ttft_p90_ms: 9100,
+    });
+    expect(status.models[2]?.business).toBeNull();
     // 介绍语可以不填
     expect(config.candidates[0]?.tagline).toBe('');
   });

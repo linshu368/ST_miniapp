@@ -63,6 +63,9 @@ export async function loadFreeZoneStates(): Promise<Map<string, FreeZoneModelSta
 }
 
 export interface ModelMetrics extends BusinessMetrics {
+  /** 免费模型自己交付的轮次（中断率的分母）与其中中断的轮次 */
+  primaryDeliveredTurns: number;
+  interruptedTurns: number;
   /** 每次成功出字调用的平均实际价格（美元），只观察不判定 */
   avgCostUsd: number | null;
   avgPromptTokens: number | null;
@@ -77,6 +80,8 @@ interface MetricsRow {
   ttft_p90_ms: number | null;
   refusal_pct: number | null;
   truncation_pct: number | null;
+  primary_delivered_turns: number;
+  interrupted_turns: number;
   avg_cost_usd: number | null;
   avg_prompt_tokens: number | null;
   dislikes: number;
@@ -107,6 +112,8 @@ export async function loadFreeZoneMetrics(
           (percentile_cont(0.9) WITHIN GROUP (ORDER BY primary_ttft_ms))::float8 AS ttft_p90_ms,
           (avg(CASE WHEN refused THEN 100 ELSE 0 END))::float8 AS refusal_pct,
           (avg(CASE WHEN truncated THEN 100 ELSE 0 END))::float8 AS truncation_pct,
+          (count(*) FILTER (WHERE primary_delivered))::int AS primary_delivered_turns,
+          (count(*) FILTER (WHERE interrupted))::int AS interrupted_turns,
           (avg(buyer_cost_usd) FILTER (WHERE primary_output))::float8 AS avg_cost_usd,
           (avg(prompt_tokens) FILTER (WHERE primary_output))::float8 AS avg_prompt_tokens
         FROM miniapp_analytics.free_zone_turn_facts f
@@ -134,6 +141,12 @@ export async function loadFreeZoneMetrics(
         ttftP90Ms: row.ttft_p90_ms,
         refusalPct: row.refusal_pct,
         truncationPct: row.truncation_pct,
+        interruptedPct:
+          row.primary_delivered_turns > 0
+            ? (row.interrupted_turns / row.primary_delivered_turns) * 100
+            : null,
+        primaryDeliveredTurns: row.primary_delivered_turns,
+        interruptedTurns: row.interrupted_turns,
         dislikePct: row.turns > 0 ? (row.dislikes / row.turns) * 100 : null,
         avgCostUsd: row.avg_cost_usd,
         avgPromptTokens: row.avg_prompt_tokens,

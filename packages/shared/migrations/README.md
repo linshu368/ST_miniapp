@@ -1,5 +1,14 @@
 # SQL 迁移文件
 
+## 2026-11-12 畅聊每轮事实补「生成中断」（本地 PG17 验证）
+
+`20261112_free_zone_interrupted.sql`（domain: miniapp_analytics 只读投影）。前置：`20261112_free_zone.sql`。
+
+- `miniapp_analytics.free_zone_turn_facts` 末尾追加两列：`primary_delivered`（这一轮由免费模型自己交付）、`interrupted`（免费模型开始出字后没写完就断了：`stream_interrupted` 且不是 `user_cancelled` / `content_filter`）。中断率 = interrupted / primary_delivered。
+- 只用 `CREATE OR REPLACE VIEW` 追加列，已有列、属主与授权不变；重复执行无副作用。
+- 验证：`bash scripts/test-free-zone-migration.sh`（新增中断口径断言、Grafana 角色可读）。
+- 发布：TEST 单文件 → Production 单文件 → Backend（后端评估读这两列；迁移未执行时评估会记 metrics_failed，只是本轮不按业务数据判断）。回滚：先回退后端，再按文件头注释重建视图。
+
 ## 2026-11-12 历史回复改绑富文本规则 v19（本地 PG17 验证）
 
 `20261112_rebind_text_postprocess_v19.sql`（domain: experience）。回复富文本规则 v18（11-05）删掉了 choice / status / memory / dialogue 四条停用规则，内置卡片和对白的样式写在它们的 css 里，随之丢失。11-12 已在运营平台回滚到 v17，生成了 v19。
