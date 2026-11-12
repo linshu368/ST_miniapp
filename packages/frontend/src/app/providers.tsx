@@ -10,7 +10,10 @@ import { FavoriteFeedbackNotice } from '@/components/characters/favorite-feedbac
 import { EntryShell } from '@/components/nav/entry-shell';
 import { afterFirstScreen } from '@/lib/after-first-screen';
 import { ensureEntryPhaseWatching, useEntryBackgroundReady } from '@/lib/entry-phase';
-import { useNavigationBackgroundAllowed } from '@/lib/navigation-quiet-window';
+import {
+  bindNavigationQuietWindow,
+  useNavigationBackgroundAllowed,
+} from '@/lib/navigation-quiet-window';
 import { getQueryClient } from '@/lib/api/query-client';
 import { useUserSettingsQuery } from '@/lib/api/settings';
 import { PagePerfTracker } from '@/lib/perf/PagePerfTracker';
@@ -52,11 +55,14 @@ export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => getQueryClient());
   const [telegramReady, setTelegramReady] = useState(false);
   const entryStartParam = useRef('');
-  const backgroundReady = useEntryBackgroundReady();
+  // Attribution is a startup task: later navigation must not unmount and replay it.
+  const backgroundReady = useEntryBackgroundReady(false);
   const pathname = usePathname();
   const [entryPathname] = useState(pathname);
   const [showQueryDevtools, setShowQueryDevtools] = useState(false);
   const hydrateUserProfile = useUserProfileStore((s) => s.hydrate);
+
+  useEffect(() => bindNavigationQuietWindow(), []);
 
   useEffect(() => {
     // 调试浮标会挡住手机预览的发送按钮，开发时显式用 ?devtools=1 开启。

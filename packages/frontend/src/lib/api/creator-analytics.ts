@@ -16,7 +16,11 @@ export function useCreatorAnalyticsQuery(input: Partial<CreatorAnalyticsQuery>, 
         if (value !== undefined) params.set(key, String(value));
       });
       const data = CreatorAnalyticsDataSchema.parse(
-        await apiClient<unknown>(`/api/creator/analytics?${params}`, { signal, timeoutMs: 30_000 })
+        await apiClient<unknown>(`/api/creator/analytics?${params}`, {
+          signal,
+          timeoutMs: 30_000,
+          queuePriority: !input.section || input.section === 'overview' ? 'critical' : 'normal',
+        })
       );
       if (data.section !== (input.section ?? 'overview')) throw new Error('创作数据未正确加载');
       return data;

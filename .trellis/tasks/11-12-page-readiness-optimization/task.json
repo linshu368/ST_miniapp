@@ -1,0 +1,318 @@
+{
+  "id": "page-readiness-optimization",
+  "name": "page-readiness-optimization",
+  "title": "生产慢页面与失败恢复整体优化",
+  "description": "按已审核的13页优化设计实施，复用现有调度/缓存/遥测并验证失败恢复",
+  "status": "in_progress",
+  "dev_type": "frontend",
+  "scope": "frontend",
+  "package": "frontend",
+  "priority": "P2",
+  "creator": "cline",
+  "assignee": "cline",
+  "createdAt": "2026-11-12",
+  "completedAt": null,
+  "branch": "perf/overnight-page-readiness",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    ".trellis/tasks/11-12-page-readiness-optimization/implementation-report.md",
+    "packages/frontend/src/lib/api/client.ts",
+    "packages/frontend/src/lib/api/conversations.ts",
+    "packages/frontend/src/lib/navigation-quiet-window.ts",
+    "packages/frontend/src/app/api/lobby-characters/route.ts",
+    "packages/ui-tests/tests/creator.spec.ts"
+  ],
+  "notes": "本轮本地实现与验证完成，详见implementation-report.md；按仓库流程在人工审阅/提交/归档前保持in_progress，未自动暂存、提交、推送或部署。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "frontend.infrastructure.client-ui-foundation",
+        "frontend.business.conversation-ui",
+        "frontend.business.engagement-support",
+        "frontend.business.character-lobby",
+        "frontend.business.drama-experience"
+      ]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": [
+        "/characters",
+        "/chat/:id",
+        "/create",
+        "/creation/characters/:id/edit",
+        "/creation/data",
+        "/dramas",
+        "/dramas/:id",
+        "/profile",
+        "/profile/messages",
+        "/profile/messages/:id",
+        "/profile/support",
+        "/watch",
+        "/wishes"
+      ],
+      "apis": [
+        "/api/lobby-characters",
+        "/api/v1/conversations/:id",
+        "/api/notifications",
+        "/api/notifications/:id",
+        "/api/support/conversation",
+        "/api/image-plaza/feed",
+        "/api/creator/analytics",
+        "/api/dramas/play",
+        "/api/v1/conversations (POST)",
+        "/api/character-wishes",
+        "/api/character-wishes/:id",
+        "/api/creator/characters/:id",
+        "/api/dramas/:id",
+        "/api/support/unread"
+      ],
+      "android": {
+        "page_p95_baseline_ms": 4573.689999999998,
+        "page_p95_target_ms": 2000,
+        "baseline_route": "/profile",
+        "baseline_measurement": "st_page_navigation",
+        "baseline_n": 107
+      },
+      "ios": {
+        "page_p95_baseline_ms": 174.9999999999998,
+        "page_p95_target_ms": 2000,
+        "baseline_route": "/profile",
+        "baseline_measurement": "st_page_navigation",
+        "baseline_n": 27,
+        "note": "低样本；已小于2秒，要求不退化"
+      },
+      "api": {
+        "p95_baseline_ms": null,
+        "p95_target_ms": 2000,
+        "android_p95_baseline_ms": null,
+        "ios_p95_baseline_ms": null,
+        "reason": "原报告普通API成功分布未按Android/iOS拆分，且分类与单endpoint不能互换；缺少双端同口径接口基线。仅保留全平台参考，不回填为双端实测。",
+        "all_platform_reference": {
+          "metric": "Grafana api_logical_v1",
+          "api_category": "conversation_detail",
+          "method": "GET",
+          "p95_baseline_ms": 1916.5199999999988,
+          "n": 1285
+        }
+      },
+      "measurement": {
+        "source": "原任务report.md/evidence.json；Grafana Faro engineering_v1、ready、foreground，Sentry请求计时独立辅助；未重新查询生产",
+        "window": "2026-11-11 19:00:00—2026-11-12 10:09:24 Asia/Shanghai"
+      },
+      "notes": "本次仅交付方案，未实施/发布。顶层双端页面基线取同一/profile导航分组，不能代表13页合并P95；完整逐页、逐口径基线复用baseline_source。超标23分组在over_budget_cohorts。导航/挂载建议目标2000ms；大厅冷启动首阶段4000ms、最终向2000ms推进；N<100低样本，无样本null，不混合来源或相减独立P95。接口尚需采集双端基线。目标均为设计建议。 本任务实施以原设计为准；不执行生产迁移/部署，线上效果须发布后验证。",
+      "post_release_verification": "实施后冻结同release至少24小时基线、发布后至少24小时比较；低流量48—72小时或延长，主要分组至少100成功样本，错误/离页/超时与资源同时复核，低样本不宣称收益。",
+      "over_budget_cohorts": [
+        {
+          "context_route": "/characters",
+          "context_tg_platform": "android",
+          "type": "st_page_launch",
+          "p95_baseline_ms": 8309.599999999997,
+          "n": 115,
+          "p95_target_ms": 2000
+        },
+        {
+          "context_route": "/characters",
+          "context_tg_platform": "ios",
+          "type": "st_page_launch",
+          "p95_baseline_ms": 7382.199999999999,
+          "n": 25,
+          "p95_target_ms": 2000
+        },
+        {
+          "context_route": "/chat/:id",
+          "context_tg_platform": "android",
+          "type": "st_page_launch",
+          "p95_baseline_ms": 6664.3,
+          "n": 1,
+          "p95_target_ms": 2000
+        },
+        {
+          "context_route": "/chat/:id",
+          "context_tg_platform": "android",
+          "type": "st_page_navigation",
+          "p95_baseline_ms": 7530.149999999988,
+          "n": 51,
+          "p95_target_ms": 2000
+        },
+        {
+          "context_route": "/chat/:id",
+          "context_tg_platform": "android",
+          "type": "st_page_ready",
+          "p95_baseline_ms": 2614.179999999998,
+          "n": 128,
+          "p95_target_ms": 2000
+        },
+        {
+          "context_route": "/chat/:id",
+          "context_tg_platform": "ios",
+          "type": "st_page_navigation",
+          "p95_baseline_ms": 6471.499999999998,
+          "n": 12,
+          "p95_target_ms": 2000
+        },
+        {
+          "context_route": "/create",
+          "context_tg_platform": "android",
+          "type": "st_page_navigation",
+          "p95_baseline_ms": 3927.089999999999,
+          "n": 10,
+          "p95_target_ms": 2000
+        },
+        {
+          "context_route": "/creation/characters/:id/edit",
+          "context_tg_platform": "android",
+          "type": "st_page_navigation",
+          "p95_baseline_ms": 2941.6,
+          "n": 3,
+          "p95_target_ms": 2000
+        },
+        {
+          "context_route": "/creation/data",
+          "context_tg_platform": "android",
+          "type": "st_page_navigation",
+          "p95_baseline_ms": 4139.37,
+          "n": 4,
+          "p95_target_ms": 2000
+        },
+        {
+          "context_route": "/creation/data",
+          "context_tg_platform": "android",
+          "type": "st_page_ready",
+          "p95_baseline_ms": 3147.055,
+          "n": 4,
+          "p95_target_ms": 2000
+        },
+        {
+          "context_route": "/dramas",
+          "context_tg_platform": "android",
+          "type": "st_page_navigation",
+          "p95_baseline_ms": 2065.57,
+          "n": 52,
+          "p95_target_ms": 2000
+        },
+        {
+          "context_route": "/dramas/:id",
+          "context_tg_platform": "android",
+          "type": "st_page_navigation",
+          "p95_baseline_ms": 6259.71,
+          "n": 7,
+          "p95_target_ms": 2000
+        },
+        {
+          "context_route": "/dramas/:id",
+          "context_tg_platform": "android",
+          "type": "st_page_ready",
+          "p95_baseline_ms": 5510.32,
+          "n": 7,
+          "p95_target_ms": 2000
+        },
+        {
+          "context_route": "/dramas/:id",
+          "context_tg_platform": "ios",
+          "type": "st_page_navigation",
+          "p95_baseline_ms": 8501.8,
+          "n": 5,
+          "p95_target_ms": 2000
+        },
+        {
+          "context_route": "/dramas/:id",
+          "context_tg_platform": "ios",
+          "type": "st_page_ready",
+          "p95_baseline_ms": 7392.599999999999,
+          "n": 5,
+          "p95_target_ms": 2000
+        },
+        {
+          "context_route": "/profile",
+          "context_tg_platform": "android",
+          "type": "st_page_navigation",
+          "p95_baseline_ms": 4573.689999999998,
+          "n": 107,
+          "p95_target_ms": 2000
+        },
+        {
+          "context_route": "/profile/messages",
+          "context_tg_platform": "ios",
+          "type": "st_page_navigation",
+          "p95_baseline_ms": 8169.249999999999,
+          "n": 4,
+          "p95_target_ms": 2000
+        },
+        {
+          "context_route": "/profile/messages/:id",
+          "context_tg_platform": "android",
+          "type": "st_page_launch",
+          "p95_baseline_ms": 17979.3,
+          "n": 1,
+          "p95_target_ms": 2000
+        },
+        {
+          "context_route": "/profile/support",
+          "context_tg_platform": "ios",
+          "type": "st_page_navigation",
+          "p95_baseline_ms": 3303.1999999999994,
+          "n": 5,
+          "p95_target_ms": 2000
+        },
+        {
+          "context_route": "/profile/support",
+          "context_tg_platform": "ios",
+          "type": "st_page_ready",
+          "p95_baseline_ms": 3286.5999999999995,
+          "n": 5,
+          "p95_target_ms": 2000
+        },
+        {
+          "context_route": "/watch",
+          "context_tg_platform": "android",
+          "type": "st_page_launch",
+          "p95_baseline_ms": 2300.5,
+          "n": 1,
+          "p95_target_ms": 2000
+        },
+        {
+          "context_route": "/watch",
+          "context_tg_platform": "android",
+          "type": "st_page_navigation",
+          "p95_baseline_ms": 3262.7999999999965,
+          "n": 56,
+          "p95_target_ms": 2000
+        },
+        {
+          "context_route": "/wishes",
+          "context_tg_platform": "android",
+          "type": "st_page_navigation",
+          "p95_baseline_ms": 4146.899999999999,
+          "n": 9,
+          "p95_target_ms": 2000
+        }
+      ],
+      "baseline_source": "../11-12-overnight-page-performance/evidence.json、report.md与slow-pages-optimization-design.md"
+    },
+    "review": {
+      "source": "用户已阅读13页设计后明确要求开始整体优化",
+      "implementation_approved": true,
+      "scope": "本地实现与验证，保持原设计业务不变量"
+    },
+    "local_validation": {
+      "frontend_unit_tests": 785,
+      "frontend_unit_files": 70,
+      "workspace_typecheck": "passed (8 packages)",
+      "fixture_tests": 11,
+      "frontend_lint": "passed with existing warnings",
+      "frontend_build": "passed on final source; Next dependency integrity checked; standalone isolated under ignored output snapshot",
+      "ui": "passed: 40 selected cases / 9.8 minutes / 390px and 320px",
+      "production": "not deployed / P95 unverified",
+      "status": "local implementation and validation complete; final human review before staging/commit; production validation after release"
+    }
+  }
+}

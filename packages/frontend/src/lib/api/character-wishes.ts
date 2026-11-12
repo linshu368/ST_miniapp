@@ -42,7 +42,7 @@ export function useCharacterWishesQuery(input: Partial<CharacterWishQuery> = {})
         Object.entries(query).map(([key, value]) => [key, String(value)])
       );
       return CharacterWishListDataSchema.parse(
-        await apiClient(`/api/character-wishes?${params}`, { signal })
+        await apiClient(`/api/character-wishes?${params}`, { signal, queuePriority: 'critical' })
       );
     },
     // Reordering keeps the current cards on screen; changing viewer or list scope must never reuse them.
@@ -62,7 +62,10 @@ export function useCharacterWishQuery(id?: string) {
     queryKey: characterWishKeys.detail(id ?? ''),
     queryFn: async ({ signal }) =>
       CharacterWishDetailDataSchema.parse(
-        await apiClient(`/api/character-wishes/${encodeURIComponent(id!)}`, { signal })
+        await apiClient(`/api/character-wishes/${encodeURIComponent(id!)}`, {
+          signal,
+          queuePriority: 'critical',
+        })
       ),
     enabled: Boolean(id),
     staleTime: 20_000,

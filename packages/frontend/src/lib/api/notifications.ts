@@ -12,6 +12,7 @@ import type {
 } from '@miniapp/shared';
 import { applyReadToNotifications, subtractUnread } from '@/lib/notifications/read-state';
 import { apiClient } from './client';
+import type { RequestPriority } from './request-concurrency';
 import { useRefetchOnForeground } from './use-refetch-on-foreground';
 
 export const notificationKeys = {
@@ -24,12 +25,16 @@ export const notificationKeys = {
 // 公告随时可能被运营下架，缓存久了会留在页面上，所以这两个查询都保持短鲜活期。
 const NOTIFICATION_POLL_MS = 20_000;
 
-function notificationListQueryOptions(scope: NotificationScope) {
+function notificationListQueryOptions(
+  scope: NotificationScope,
+  priority: RequestPriority = 'critical'
+) {
   return {
     queryKey: notificationKeys.list(scope),
     queryFn: ({ signal }: { signal: AbortSignal }) =>
       apiClient<GetNotificationsData>(`/api/notifications?scope=${encodeURIComponent(scope)}`, {
         signal,
+        queuePriority: priority,
       }),
     staleTime: 0,
     refetchOnMount: 'always' as const,
@@ -44,7 +49,7 @@ export function useNotificationsQuery(scope: NotificationScope) {
 }
 
 export function prefetchNotifications(client: QueryClient, scope: NotificationScope) {
-  return client.prefetchQuery(notificationListQueryOptions(scope));
+  return client.prefetchQuery(notificationListQueryOptions(scope, 'background'));
 }
 
 /**
@@ -80,6 +85,7 @@ export function useNotificationDetailQuery(id: string | undefined) {
       if (!id) throw new Error('notification id is required');
       return apiClient<GetNotificationDetailData>(`/api/notifications/${encodeURIComponent(id)}`, {
         signal,
+        queuePriority: 'critical',
       });
     },
     staleTime: 0,

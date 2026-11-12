@@ -4,19 +4,11 @@ import { useEffect, useState } from 'react';
 
 import { getTelegramPlatform } from '@/lib/perf/env-tags';
 import { mobilePlatformGroup } from '@/lib/mobile-performance';
+import { ENGINEERING_PAGE_ROUTES, toRouteTemplate } from '@/lib/perf/route-template';
 
 export const NAVIGATION_QUIET_FALLBACK_MS = 4_000;
 const NAVIGATION_IDLE_TIMEOUT_MS = 500;
 const NAVIGATION_TIMER_RELEASE_MS = 50;
-
-const PRIMARY_ROUTE_PATHS = new Set([
-  '/watch',
-  '/dramas',
-  '/characters',
-  '/chats',
-  '/creation',
-  '/profile',
-]);
 
 let quiet = false;
 let targetPathname: string | null = null;
@@ -111,7 +103,10 @@ export function beginNavigationQuietWindow(
   platform = getTelegramPlatform()
 ): boolean {
   const pathname = normalizedPathname(href);
-  if (mobilePlatformGroup(platform) !== 'android' || !PRIMARY_ROUTE_PATHS.has(pathname)) {
+  if (
+    mobilePlatformGroup(platform) !== 'android' ||
+    !ENGINEERING_PAGE_ROUTES.has(toRouteTemplate(pathname))
+  ) {
     return false;
   }
   if (quiet && targetPathname === pathname) return true;
@@ -126,6 +121,40 @@ export function beginNavigationQuietWindow(
   fallbackTimer = setTimeout(() => release(currentGeneration), NAVIGATION_QUIET_FALLBACK_MS);
   if (changed) notify();
   return true;
+}
+
+/** Scheduling must also cover deep links, and must work with telemetry disabled. */
+export function bindNavigationQuietWindow(): () => void {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return () => {};
+  const onClick = (event: MouseEvent) => {
+    if (
+      event.defaultPrevented ||
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey
+    )
+      return;
+    const link = event.target instanceof Element ? event.target.closest('a[href]') : null;
+    if (
+      !(link instanceof HTMLAnchorElement) ||
+      link.hasAttribute('download') ||
+      (link.target && link.target !== '_self')
+    )
+      return;
+    const target = new URL(link.href, window.location.href);
+    if (target.origin !== window.location.origin || target.pathname === window.location.pathname)
+      return;
+    beginNavigationQuietWindow(target.pathname);
+  };
+  const onBack = () => beginNavigationQuietWindow(window.location.pathname);
+  document.addEventListener('click', onClick, { capture: true });
+  window.addEventListener('popstate', onBack);
+  return () => {
+    document.removeEventListener('click', onClick, { capture: true });
+    window.removeEventListener('popstate', onBack);
+  };
 }
 
 /** Content-ready/error has committed. Background work resumes after paint plus an idle chance. */
