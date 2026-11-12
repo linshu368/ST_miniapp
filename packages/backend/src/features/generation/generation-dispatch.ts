@@ -12,6 +12,7 @@ import {
 import { resolveProviderUpstream, forwardToUpstream } from './upstream.js';
 import { forwardWithFirstTokenFallback, type TransportModel } from './first-token-fallback.js';
 import { buildUpstreamBody } from './generation-body.js';
+import { surplusReasoningBody } from './surplus-reasoning.js';
 import { forwardSurplusCall } from './surplus-call-transport.js';
 import type { UpstreamTiming } from './upstream-timing.js';
 import type { GenerationRequest, GenerationPreparation, GenerationLogger } from './types.js';
@@ -90,7 +91,13 @@ function createForward(input: DispatchInput) {
       ...request,
       model: { ...request.model, ...model, openRouterModelId: model.providerModelId },
     };
-    const body = buildUpstreamBody(actualRequest, preferences);
+    const body = {
+      ...buildUpstreamBody(actualRequest, preferences),
+      // 深度思考开关：Surplus 按模型声明的写法发思考强度（兜底等其他供应商不受影响）
+      ...(actualRequest.model.provider === 'surplus'
+        ? surplusReasoningBody(prepared.surplusReasoning, actualRequest.thinkingEnabled ?? true)
+        : {}),
+    };
     const dispatch = async () => {
       signal.throwIfAborted();
       attemptSignal.throwIfAborted();
