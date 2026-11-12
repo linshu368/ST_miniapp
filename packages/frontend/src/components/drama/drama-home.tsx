@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils';
 import { preloadDramaHls } from '@/lib/drama-media-source';
 import { afterNavigationQuietWindow } from '@/lib/navigation-quiet-window';
 import { useDramaListQuery } from '@/lib/api/drama';
+import { useDramaStreamWarmth } from '@/hooks/use-connection-warmth';
 import { markCriticalSettled } from '@/lib/entry-phase';
 import { dramaTiming } from '@/lib/perf/drama-observer';
 import { useFreshAfterFetch, usePageReady } from '@/lib/perf/page-ready';
@@ -16,6 +17,7 @@ import { useDramaLibraryStore, useHydrateDramaLibrary } from '@/stores/drama-lib
 
 export function DramaHome() {
   const query = useDramaListQuery('/watch');
+  useDramaStreamWarmth();
   useEffect(() => {
     let cancelled = false;
     // 首帧绘制 + 一次空闲后才预取 hls.js chunk，不与首屏关键资源抢带宽。

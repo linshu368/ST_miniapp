@@ -20,6 +20,9 @@ const FETCH_TIMEOUT_MS = 3000;
 /** 真实主清单约 1.3KB；留足安全余量，防止源站返回异常大的内容撑爆缓存 */
 const MAX_MANIFEST_BYTES = 16 * 1024;
 
+/** 启动预热的并发上限：30 个 uid 不必一次性打到 Stream 源站 */
+const PREWARM_CONCURRENCY = 4;
+
 export interface DramaManifestObservation {
   cache?: 'hit' | 'miss' | 'inflight';
 }
@@ -90,9 +93,44 @@ export class DramaStreamManifestCache {
     }
     if (observation) observation.cache = 'miss';
 
+    this.startFetch(uid, playUrl, log);
+    return undefined;
+  }
+
+  /**
+   * 部署会清空进程内缓存，每个视频的首次访问都拿不到内联清单；启动后在后台预先拉好。
+   * 已缓存或拉取中的跳过，和 /play 触发的拉取共用 single-flight。不抛异常。
+   */
+  async prewarm(
+    targets: ReadonlyArray<{ uid: string; playUrl: string }>,
+    log?: SanitizedLogger
+  ): Promise<{ cached: number; failed: number }> {
+    const queue = [...targets];
+    const result = { cached: 0, failed: 0 };
+    const worker = async () => {
+      for (let target = queue.shift(); target; target = queue.shift()) {
+        const cached = this.entries.get(target.uid);
+        const content =
+          cached && cached.cachedAtMs + TTL_MS > Date.now()
+            ? cached.content
+            : await (this.inFlight.get(target.uid) ??
+                this.startFetch(target.uid, target.playUrl, log));
+        if (content === undefined) result.failed += 1;
+        else result.cached += 1;
+      }
+    };
+    await Promise.all(Array.from({ length: PREWARM_CONCURRENCY }, worker));
+    return result;
+  }
+
+  private startFetch(
+    uid: string,
+    playUrl: string,
+    log?: SanitizedLogger
+  ): Promise<string | undefined> {
     const task = this.fetchAndCache(uid, playUrl, log).finally(() => this.inFlight.delete(uid));
     this.inFlight.set(uid, task);
-    return undefined;
+    return task;
   }
 
   private async fetchAndCache(
