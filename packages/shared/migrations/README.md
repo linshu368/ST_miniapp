@@ -1,5 +1,13 @@
 # SQL 迁移文件
 
+## 2026-11-12 历史回复改绑富文本规则 v19（本地 PG17 验证）
+
+`20261112_rebind_text_postprocess_v19.sql`（domain: experience）。回复富文本规则 v18（11-05）删掉了 choice / status / memory / dialogue 四条停用规则，内置卡片和对白的样式写在它们的 css 里，随之丢失。11-12 已在运营平台回滚到 v17，生成了 v19。
+
+- 只把 `experience.chat_history.postprocess_version` 从 18 改为 19，不碰正文。同一事务内先调用 `experience.text_postprocess_bind_enter()` 通过写保护。
+- 保护条件：v19 快照与 v17 完全相同，且 v18 缺少 choice 规则。不满足时打印 NOTICE 并跳过，TEST 等规则版本号不同的环境会走这条分支。重复执行时改绑 0 行。
+- 发布：TEST 单文件（预期跳过）→ Production 单文件。不准备回滚。
+
 ## 2026-11-12 畅聊（免费模型）栏目（本地 PG17 验证，远端未执行）
 
 `20261112_free_zone.sql`（domain: miniapp_features + miniapp_analytics 只读投影 + admin managed key）。前置：已有 `miniapp_analytics.chat_first_token_facts`、`experience.surplusintelligence_chat_history`、`experience.chat_reply_feedback`。
