@@ -1,0 +1,61 @@
+{
+  "id": "drama-seek-parallel-av",
+  "name": "drama-seek-parallel-av",
+  "title": "短剧快进音视频并行拉取",
+  "description": "hls.js 无缓冲向前快进时消除音频等视频的串行拉取",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "frontend",
+  "priority": "P2",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-12",
+  "completedAt": null,
+  "branch": "feat/drama-seek-parallel-av",
+  "base_branch": "main",
+  "worktree_path": "/Users/qj/python_project/ST_miniAPP_seek_parallel",
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "packages/frontend/src/lib/drama-hls-seek.ts",
+    "packages/frontend/src/lib/drama-media-source.ts"
+  ],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": ["frontend.business.drama-experience"]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": ["/dramas/:id 与首页短剧播放器（无缓冲向前快进）"],
+      "apis": [],
+      "android": {
+        "page_p95_baseline_ms": 3306,
+        "page_p95_target_ms": 3000,
+        "notes": "口径=stream 组 hlsjs_mse 无缓冲向前快进 drama_seek_resume_v1 P95，n=98/24 会话；真实用户 3908ms（n=38/19 会话，CI 2523–6044）。起播不受影响。"
+      },
+      "ios": {
+        "page_p95_baseline_ms": 2262,
+        "page_p95_target_ms": 3000,
+        "notes": "hlsjs_mms n=47/9 会话（手工 38 条），串行 4/46；目标为不劣化。native_hls 不涉及。"
+      },
+      "api": {
+        "p95_baseline_ms": null,
+        "p95_target_ms": null,
+        "notes": "不新增也不改动接口请求。"
+      },
+      "measurement": {
+        "source": "Loki {service_name=\"st-miniapp-backend\"} |= \"drama.seek_diagnostic\"（delivery 存在时全量写入），release 为 b9923f3c 后代",
+        "window": "基线 2026-11-09T08:47Z～11-12T03:46Z；发布后 3–7 天，会话 <8 只报方向"
+      },
+      "notes": "双端差异：Android 串行 27/90、P95 超 3s；iOS MMS 串行 4/46、P95 已在 3s 内。低样本：iOS 真实会话仅 6 个，Android 真实用户 P95 CI 跨 3s。null 字段：api 不适用。验证：发布后复算两路覆盖分片 startMs 差（串行占比→接近 0）与 P50/P95，真实/疑似手工（会话终态≥15）分层；另看 not_resumed/error 比例不上升。"
+    }
+  }
+}
