@@ -21,8 +21,8 @@ import { readAdminAccessToken } from './textPostprocessApi';
 
 const SCREENING_TIMEOUT_MS = 60_000;
 const STATUS_TIMEOUT_MS = 15_000;
-/** 不指定供应商时要现问一次这个模型的行情 */
-const LIST_NOW_TIMEOUT_MS = 30_000;
+/** 要现问行情，再真发派单探测（最多探 3 家，每家最多 20 秒） */
+const LIST_NOW_TIMEOUT_MS = 90_000;
 
 async function callFreeZoneApi<T>(
   client: SupabaseClient,

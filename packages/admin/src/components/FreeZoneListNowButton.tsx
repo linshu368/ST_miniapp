@@ -39,8 +39,8 @@ export function FreeZoneListNowButton(props: {
       title={`立即上架 ${name}？`}
       description={
         <Typography.Text type="secondary" style={{ display: 'block', maxWidth: 280 }}>
-          跳过连续达标和冷却，用户马上能看到；供应商按当前行情选。之后照常每 30
-          分钟评估，不达标照样换供应商或下架。
+          跳过连续达标和冷却，用户马上能看到。供应商按当前行情选，并先真发一次请求确认按折扣底线派得出单；
+          之后照常每 30 分钟评估，不达标照样换供应商或下架。
         </Typography.Text>
       }
       okText="上架"
