@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import Link from 'next/link';
-import { Search } from 'lucide-react';
+import { Clapperboard, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 /** Shared HTML/interactive frame; no identity, storage, or business queries. */
@@ -72,6 +72,28 @@ export function DramaHomeLoading() {
       className="flex h-full items-center justify-center text-sm text-[#eee7e2]/40"
     >
       <span className="animate-pulse">好戏，即将开始</span>
+    </div>
+  );
+}
+
+export function DramaHomeEmpty({ isError, onRetry }: { isError: boolean; onRetry: () => void }) {
+  return (
+    <div
+      role="status"
+      className="flex h-full flex-col items-center justify-center px-8 text-center"
+    >
+      <Clapperboard className="mb-5 h-10 w-10 text-[#eee7e2]/30" />
+      <h2 className="text-lg font-semibold">{isError ? '短剧暂时没加载出来' : '好戏，即将开场'}</h2>
+      <p className="mt-2 text-sm text-[#eee7e2]/45">
+        {isError ? '网络可能开了个小差，再试一次就好。' : '短剧正在陆续上架，稍后回来看看。'}
+      </p>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="mt-6 min-h-11 rounded-full bg-[#dfd2cf] px-6 text-sm font-semibold text-black"
+      >
+        {isError ? '重新加载' : '刷新看看'}
+      </button>
     </div>
   );
 }

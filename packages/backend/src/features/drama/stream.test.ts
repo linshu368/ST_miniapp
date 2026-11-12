@@ -8,6 +8,7 @@ import {
   selectStreamDelivery,
   signStreamPlayback,
   streamExperimentUser,
+  streamManifestWarmupTargets,
 } from './stream.js';
 
 const key = generateKeyPairSync('rsa', { modulusLength: 2048 });
@@ -111,4 +112,18 @@ it('keeps a listed video on Stream when its signing credentials are missing', ()
   const stream = selectStreamDelivery(video.dramaId, video.videoId)!;
   expect(stream.delivery.provider).toBe('stream');
   expect(() => signStreamPlayback(stream.config, video.uid)).toThrow();
+});
+
+it('signs one warmup target per listed UID, and none when Stream is off or unsigned', () => {
+  const targets = streamManifestWarmupTargets();
+  expect(targets.map((t) => t.uid)).toEqual(videos.map((v) => v.uid));
+  expect(targets[0]!.playUrl).toMatch(
+    /^https:\/\/customer-unit\.cloudflarestream\.com\/.+\/manifest\/video\.m3u8$/
+  );
+  vi.stubEnv('DRAMA_STREAM_PRIVATE_KEY', 'not-a-key');
+  expect(streamManifestWarmupTargets()).toEqual([]);
+  vi.stubEnv('DRAMA_STREAM_PRIVATE_KEY', '');
+  expect(streamManifestWarmupTargets()).toEqual([]);
+  vi.stubEnv('DRAMA_STREAM_ENABLED', 'false');
+  expect(streamManifestWarmupTargets()).toEqual([]);
 });
