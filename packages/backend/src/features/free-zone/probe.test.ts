@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_FREE_ZONE_CONFIG, type FreeZoneProbe } from '@miniapp/shared';
 import { initialState, type FreeZoneModelState } from './lifecycle.js';
 import { createSurplusProbe, type ProbeFn } from './probe.js';
+import {
+  clearSurplusReasoningRejections,
+  surplusReasoningAccepted,
+} from '../generation/surplus-reasoning.js';
 import { applyProbes, probeCheck } from './probe-screening.js';
 import { summarizeScreening, type ScreeningResult } from './screening.js';
 
@@ -44,6 +48,32 @@ describe('createSurplusProbe', () => {
     expect((await run(reject(503, 'no_healthy_sellers'))).outcome).toBe('unroutable');
     expect((await run(reject(500, 'internal'))).outcome).toBe('error');
     expect((await run(reject(429, 'rate_limited'))).outcome).toBe('error');
+  });
+
+  it('retries without reasoning when the provider rejects the field, and remembers it', async () => {
+    clearSurplusReasoningRejections();
+    const bodies: string[] = [];
+    const probe = createSurplusProbe({
+      forward: (async (input: { body?: string }) => {
+        bodies.push(String(input.body));
+        return bodies.length === 1
+          ? new Response(
+              JSON.stringify({
+                error: {
+                  code: 'request_rejected',
+                  message: '{"detail":[{"type":"extra_forbidden","loc":["body","reasoning"]}]}',
+                },
+              }),
+              { status: 400 }
+            )
+          : sse(['data: {"choices":[{"delta":{"content":"好"}}]}\n\n']);
+      }) as never,
+    });
+    const result = await probe({ model: 'glm-5.2', provider: 'picky', minDiscountPct: 85 });
+    expect(result.outcome).toBe('ok');
+    expect(bodies[0]).toContain('"reasoning"');
+    expect(bodies[1]).not.toContain('"reasoning"');
+    expect(surplusReasoningAccepted('picky')).toBe(false);
   });
 
   it('treats a network failure or an empty stream as unknown', async () => {

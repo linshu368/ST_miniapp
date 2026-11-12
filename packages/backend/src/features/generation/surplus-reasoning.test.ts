@@ -1,5 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { getSurplusReasoningParameters, surplusReasoningBody } from './surplus-reasoning.js';
+import {
+  clearSurplusReasoningRejections,
+  getSurplusReasoningParameters,
+  isSurplusReasoningRejection,
+  learnSurplusReasoningRejection,
+  noteSurplusReasoningRejected,
+  surplusReasoningAccepted,
+  surplusReasoningBody,
+} from './surplus-reasoning.js';
 import {
   getProviderModelDirectory,
   getCachedSurplusModelDirectory,
@@ -119,5 +127,47 @@ describe('surplusReasoningBody', () => {
     expect(
       surplusReasoningBody({ ...base, control: 'unavailable', supportedParameters: [] }, false)
     ).toEqual({});
+  });
+});
+
+describe('strict upstream providers', () => {
+  const resolution = {
+    parameters: {},
+    supportedParameters: ['reasoning'],
+    requestedEnabled: true,
+    control: 'effort' as const,
+    reason: 'effort_mapped' as const,
+  };
+  const rejection = JSON.stringify({
+    error: {
+      code: 'request_rejected',
+      message:
+        '{"object":"error","message":{"detail":[{"type":"extra_forbidden","loc":["body","reasoning"],"msg":"Extra inputs are not permitted"}]}}',
+    },
+  });
+
+  beforeEach(() => clearSurplusReasoningRejections());
+
+  it('never sends reasoning to providers known to reject extra fields', () => {
+    expect(surplusReasoningBody(resolution, true, 'mistral')).toEqual({});
+    expect(surplusReasoningBody(resolution, true, 'dashscope-cn')).toEqual({
+      reasoning: { effort: 'medium' },
+    });
+  });
+
+  it('recognizes the reasoning rejection and only that', () => {
+    expect(isSurplusReasoningRejection(400, rejection)).toBe(true);
+    expect(isSurplusReasoningRejection(404, rejection)).toBe(false);
+    expect(isSurplusReasoningRejection(400, '{"error":{"code":"request_rejected"}}')).toBe(false);
+  });
+
+  it('learns a rejecting provider from a 400 and stops sending reasoning to it for a while', async () => {
+    const response = new Response(rejection, { status: 400 });
+    await learnSurplusReasoningRejection(response, 'novel-provider');
+    expect(await response.text()).toBe(rejection);
+    expect(surplusReasoningBody(resolution, false, 'novel-provider')).toEqual({});
+    expect(surplusReasoningAccepted('novel-provider', Date.now() + 7 * 60 * 60 * 1000)).toBe(true);
+    noteSurplusReasoningRejected('other', 0);
+    expect(surplusReasoningAccepted('other', 1)).toBe(false);
   });
 });

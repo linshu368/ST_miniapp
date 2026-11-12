@@ -13,6 +13,55 @@ export interface SurplusReasoningResolution {
 }
 
 /**
+ * 有的上游供应商接口很严，不认识的字段直接 400。实测 2026-11-12：Surplus 把 GLM 5.2 派给 mistral 时，
+ * 带 reasoning 返回 400 request_rejected「Extra inputs are not permitted」，去掉就正常。
+ * Surplus 的 supported_parameters 按模型给、不分供应商，所以这里按供应商记：
+ * 已知的直接不发；其余碰到一次就记 REJECTION_TTL_MS，期间发给它的请求都不带思考参数。
+ */
+const STRICT_PROVIDERS = new Set(['mistral']);
+const REJECTION_TTL_MS = 6 * 60 * 60 * 1000;
+const rejectedUntil = new Map<string, number>();
+
+export function surplusReasoningAccepted(provider: string | undefined, now = Date.now()): boolean {
+  if (!provider) return true;
+  if (STRICT_PROVIDERS.has(provider)) return false;
+  const until = rejectedUntil.get(provider);
+  return until === undefined || until <= now;
+}
+
+/** 400 且错误里点名 reasoning 是多余 / 不认识的字段 */
+export function isSurplusReasoningRejection(status: number, text: string): boolean {
+  return (
+    status === 400 &&
+    /reasoning/i.test(text) &&
+    /extra_forbidden|not permitted|unrecognized|unknown (?:field|parameter|argument)|not allowed|unsupported/i.test(
+      text
+    )
+  );
+}
+
+export function noteSurplusReasoningRejected(provider: string, now = Date.now()): void {
+  rejectedUntil.set(provider, now + REJECTION_TTL_MS);
+}
+
+/** 读 400 响应的副本（不动原响应），是「不认 reasoning」就记下这家供应商。 */
+export async function learnSurplusReasoningRejection(
+  response: Response,
+  provider: string | undefined
+): Promise<void> {
+  if (!provider || response.status !== 400) return;
+  const text = await response
+    .clone()
+    .text()
+    .catch(() => '');
+  if (isSurplusReasoningRejection(response.status, text)) noteSurplusReasoningRejected(provider);
+}
+
+export function clearSurplusReasoningRejections(): void {
+  rejectedUntil.clear();
+}
+
+/**
  * 深度思考开关 → Surplus 的思考强度（官方 Reasoning Controls：按 supported_parameters 选写法，
  * `reasoning` 是 `{ effort }` 对象，`reasoning_effort` 是顶层字符串；没声明的由 Surplus 自动去掉）。
  *
@@ -24,9 +73,12 @@ export interface SurplusReasoningResolution {
  */
 export function surplusReasoningBody(
   resolution: SurplusReasoningResolution | undefined,
-  enabled: boolean
+  enabled: boolean,
+  /** 钉住的上游供应商（畅聊只发一家）；接口严格、不认 reasoning 的不发 */
+  provider?: string
 ): Record<string, unknown> {
   if (!resolution || resolution.control === 'unavailable') return {};
+  if (!surplusReasoningAccepted(provider)) return {};
   const effort = enabled ? 'medium' : 'none';
   const supported = resolution.supportedParameters;
   // 目录拿不到时也发对象写法：模型不支持的话 Surplus 会自己去掉（响应头 X-SI-Adapted-Params）
