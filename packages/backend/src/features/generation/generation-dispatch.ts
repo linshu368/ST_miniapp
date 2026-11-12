@@ -13,6 +13,7 @@ import { resolveProviderUpstream, forwardToUpstream } from './upstream.js';
 import { forwardWithFirstTokenFallback, type TransportModel } from './first-token-fallback.js';
 import { buildUpstreamBody } from './generation-body.js';
 import { learnSurplusReasoningRejection, surplusReasoningBody } from './surplus-reasoning.js';
+import { revealsReasoning } from './reasoning-display.js';
 import { forwardSurplusCall } from './surplus-call-transport.js';
 import type { UpstreamTiming } from './upstream-timing.js';
 import type { GenerationRequest, GenerationPreparation, GenerationLogger } from './types.js';
@@ -177,7 +178,8 @@ export async function dispatchGeneration(input: DispatchInput): Promise<{
     primary: request.model,
     requestedModelId: request.model.modelId,
     totalBudgetMs: policy.deadlineMs,
-    thinkingEnabled: request.thinkingEnabled ?? true,
+    // 显示规则：免费模型的思考过程也算出字（见 reasoning-display.ts）
+    thinkingEnabled: revealsReasoning(request),
     fallbackModelId: policy.fallbackModelId,
     primaryAttemptId: request.firstToken.primaryAttemptId,
     timeoutMs: policy.timeoutMs,
