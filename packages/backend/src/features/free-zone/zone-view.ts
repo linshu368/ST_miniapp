@@ -43,6 +43,7 @@ export function resolveFreeZoneView(input: {
       tagline: candidate.tagline,
       benchmark_tier: candidate.benchmark_tier,
       original_credits: originalCredits(candidate.benchmark_tier, input.pricing),
+      thinking: candidate.thinking,
     })),
   };
   if (now.getTime() < startsAt) {
