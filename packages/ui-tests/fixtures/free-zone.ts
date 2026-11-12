@@ -45,6 +45,8 @@ const MODELS: PublicFreeZone['models'] = [
     tagline: '中文专精，剧情推理巅峰',
     benchmark_tier: 'premium',
     original_credits: 55,
+    // 关不掉思考：选它后关深度思考会轻提示
+    thinking: 'always',
   },
   {
     id: 'free-deepseek-v4-pro',
@@ -52,6 +54,7 @@ const MODELS: PublicFreeZone['models'] = [
     tagline: '性价比之王，稳定，几乎无甲',
     benchmark_tier: 'standard',
     original_credits: 33,
+    thinking: 'switchable',
   },
   {
     id: 'free-gemini-3-5-flash',
@@ -59,6 +62,7 @@ const MODELS: PublicFreeZone['models'] = [
     tagline: 'NSFW场景好',
     benchmark_tier: 'light',
     original_credits: 15,
+    thinking: 'switchable',
   },
 ];
 
