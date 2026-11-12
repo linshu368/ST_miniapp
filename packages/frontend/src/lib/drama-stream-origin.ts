@@ -18,12 +18,20 @@ export const DRAMA_STREAM_ORIGIN = parseDramaStreamOrigin(
 // hls.js 用 CORS 请求，iOS 原生 <video> 不带 crossorigin，两者不共用连接池，各需一条。
 export const DRAMA_STREAM_PRECONNECT_MODES = ['anonymous', undefined] as const;
 
+/** 滚动等高频活动事件也会调用；间隔内重复插入没有意义。 */
+const MIN_REWARM_MS = 1_000;
+let lastWarmAt = Number.NEGATIVE_INFINITY;
+
 /**
- * 页面加载时建好的空闲连接约 10s 就会被浏览器关闭；播放意图到设置源之间约 0.4s，
- * 足够完成 DNS 与 TLS。重新插入元素才会再次触发预连接。
+ * 页面加载时建好的空闲连接约 10s 就会被浏览器关闭，重新插入元素才会再次触发预连接。
+ * 播放意图到首个 Stream 请求只有约 0.3s，不够 DNS 与 TLS，所以短剧页面可见期间
+ * 由 useDramaStreamWarmth 周期调用，意图处的调用只是兜底。
  */
 export function warmDramaStreamOrigin(): void {
   if (!DRAMA_STREAM_ORIGIN || typeof document === 'undefined') return;
+  const now = performance.now();
+  if (now - lastWarmAt < MIN_REWARM_MS) return;
+  lastWarmAt = now;
   try {
     for (const node of document.head.querySelectorAll('link[data-drama-stream-warm]'))
       node.remove();

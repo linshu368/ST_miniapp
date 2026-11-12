@@ -33,6 +33,20 @@ export function selectStreamDelivery(dramaId: string, videoId: string, retainIde
   return { config, video, delivery };
 }
 
+/** 白名单视频的主清单预热目标；实验未开启或签名不可用时为空。 */
+export function streamManifestWarmupTargets(): Array<{ uid: string; playUrl: string }> {
+  const config = getDramaStreamConfig();
+  if (!config?.signing) return [];
+  try {
+    return config.videos.map((v) => ({
+      uid: v.uid,
+      playUrl: signStreamPlayback(config, v.uid).play_url,
+    }));
+  } catch {
+    return [];
+  }
+}
+
 /** Sign locally: no Stream management request participates in the first-frame path. */
 export function signStreamPlayback(config: Pick<StreamConfig, 'signing'>, uid: string) {
   if (!config.signing) throw new Error('drama_stream_signing_unavailable');
