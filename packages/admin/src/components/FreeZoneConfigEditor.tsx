@@ -95,6 +95,12 @@ const SCREENING_FIELDS: ReadonlyArray<NumberField<keyof FreeZoneScreening & stri
     step: 0.5,
     precision: 1,
   },
+  {
+    key: 'max_probe_ttft_ms',
+    label: '探测首字上限（毫秒）',
+    hint: '派单探测量到的首字超过它就算这家不达标；留空只记录、不卡',
+    min: 1,
+  },
 ];
 
 const ON_SHELF_FIELDS: ReadonlyArray<NumberField<keyof FreeZoneOnShelf & string>> = [
@@ -301,6 +307,27 @@ function OpenSettings(props: {
   );
 }
 
+function ProbeSwitch(props: {
+  enabled: boolean;
+  disabled?: boolean;
+  onChange: (enabled: boolean) => void;
+}) {
+  return (
+    <Space align="start">
+      <Switch checked={props.enabled} disabled={props.disabled} onChange={props.onChange} />
+      <div>
+        <Typography.Text strong>派单探测{props.enabled ? '已开启' : '已关闭'}</Typography.Text>
+        <div>
+          <Typography.Text type="secondary">
+            每 30
+            分钟评估时，对在架和准备上架的模型，用选定的供应商带折扣底线真发一个只要几个字的请求；派不出去就换下一家或下架（订单簿上的折扣和派单时实际估算的不一定一样）。下面的「按当前门槛筛选」不发真实请求，不含这一项。
+          </Typography.Text>
+        </div>
+      </div>
+    </Space>
+  );
+}
+
 /** 候选池默认收起：几十个模型时不用一直往下翻。 */
 function CandidatePool(props: {
   value: FreeZoneConfig['candidates'];
@@ -373,6 +400,11 @@ export function FreeZoneConfigEditor(props: {
         title="官方数据初筛"
         hint="上架前用；在架后每 30 分钟用同一套门槛复核正在用的供应商。只看 Surplus 标为 trusted 的供应商。"
       >
+        <ProbeSwitch
+          enabled={value.screening.probe_enabled}
+          disabled={props.disabled}
+          onChange={(probe_enabled) => update({ screening: { ...value.screening, probe_enabled } })}
+        />
         <NumberFields
           value={value.screening}
           fields={SCREENING_FIELDS}

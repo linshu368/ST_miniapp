@@ -106,6 +106,8 @@ const FIELD_LABELS: Record<string, string> = {
   min_cache_hit_rate_pct: '缓存命中率',
   min_samples: '最少样本',
   price_band_ratio: '价格分档倍数',
+  probe_enabled: '派单探测',
+  max_probe_ttft_ms: '探测首字上限',
   window_hours: '统计窗口',
   min_turns: '最少轮数',
   max_no_output_pct: '没出字率',

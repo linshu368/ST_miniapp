@@ -18,7 +18,7 @@ const CACHE_TTL_MS = 60_000;
 const CONCURRENCY = 4;
 
 /** 可以单独「放开」看影响的门槛（必填的折扣底线、分档倍数不在内）。 */
-const OPTIONAL_CHECKS: readonly FreeZoneScreeningCheckKey[] = [
+const OPTIONAL_CHECKS: readonly Exclude<FreeZoneScreeningCheckKey, 'probe'>[] = [
   'min_qualified_offers',
   'min_samples',
   'min_uptime_pct',
