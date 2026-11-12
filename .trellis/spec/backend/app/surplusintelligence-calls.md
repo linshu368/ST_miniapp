@@ -23,7 +23,7 @@
 - 纯诊断写入按单调用有界队列有序进行，不额外阻塞首字；请求冻结和身份CAS仍为正确性边界。终态/取消有限收口并记录失败，不重发POST。
 - 成本缺失保持NULL，0须来自真实返回；大整数/微美元不损精度。首帧临时统计不冻结为最终投影；首个终态可纠正，随后经同request ID验证的request_record可更新权威投影，早期inline JSON证据保留。
 - Surplus输者与OR胜者可同父有各自明细；只有delivery attempt/报价快照匹配的胜者可恢复计费。
-- SSE明确include_usage。深度思考开关映射为思考强度：开=medium、关=none（2026-11-12 对畅聊在架模型实测：所有被测供应商都接受；Gemini 3 系列关掉隐藏思考后首字从 6～30 秒降到 1.5～4 秒，开时吐出思考过程；DeepSeek/GLM 恒定思考、参数无害）。写法按模型目录 supported_parameters：声明 reasoning 发 `reasoning: {effort}`，只声明 reasoning_effort 发顶层字符串，都没声明不发；目录仅复用现有缓存，不冷查询，缓存冷时发对象写法交 Surplus 自行去掉。不用 `{enabled:false}`（部分模型无效）。
+- SSE明确include_usage。深度思考开关映射为思考强度：开=medium、关=none（2026-11-12 对畅聊在架模型实测：所有被测供应商都接受；Gemini 3 系列关掉隐藏思考后首字从 6～30 秒降到 1.5～4 秒，开时吐出思考过程；DeepSeek/GLM 恒定思考、参数无害）。写法按模型目录 supported_parameters：声明 reasoning 发 `reasoning: {effort}`，只声明 reasoning_effort 发顶层字符串，都没声明不发；目录仅复用现有缓存，不冷查询，缓存冷时发对象写法交 Surplus 自行去掉。不用 `{enabled:false}`（部分模型无效）。Surplus 的 supported_parameters 按模型、不分供应商：接口严格的供应商会因多余字段 400（实测 mistral：`extra_forbidden` loc=body.reasoning），对钉住的供应商按名单（mistral）或运行中学到的拒绝（6 小时）不发思考参数；派单探测碰到同类 400 去掉参数重探并记下。
 - 恢复与收费独立：30秒既有调度、24h/50条标量扫描、至多3个worker，共享每轮9次GET预算，单GET5秒、每行最多6次且退避。只对确认request ID读取自身详情，403/404终止该来源；无ID终态标unavailable，不永久pending。prepared/dispatched超过120秒可按未知调用补录，不伪造终态或改账。
 
 ## 4. Validation & Error Matrix
