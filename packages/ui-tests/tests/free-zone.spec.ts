@@ -72,3 +72,30 @@ test('@chat @free-zone 后端不下发栏目时面板和顶栏保持原样', asy
   await page.getByRole('button', { name: /展开引擎选择/ }).click();
   await expect(page.getByText('免费畅聊', { exact: true })).toHaveCount(0);
 });
+
+test('@chat @free-zone @layout 关不掉思考的免费模型，关深度思考时轻提示一句', async ({
+  page,
+  preview,
+}) => {
+  await preview.scenario('free-zone');
+  await page.goto(chatPath);
+  await page.getByRole('button', { name: /展开引擎选择/ }).click();
+  const zone = page.locator('[data-free-zone="open"]');
+  await zone.getByRole('button', { name: /GLM 5.2 fast/ }).click();
+  await expect(page.getByRole('button', { name: /当前畅聊引擎/ })).toBeVisible();
+
+  const hint = page.getByText('GLM 5.2 fast 不支持关闭深度思考，思考过程会照常显示');
+  await page.getByRole('button', { name: '关闭深度思考', exact: true }).click();
+  await expect(hint).toBeVisible();
+  await expectMobileLayout(page);
+  // 打开方向开关是起作用的，不提示；提示也会自己消失
+  await page.getByRole('button', { name: '开启深度思考', exact: true }).click();
+  await expect(hint).toHaveCount(0);
+
+  // 开关起作用的模型不打扰
+  await page.getByRole('button', { name: /展开引擎选择/ }).click();
+  await zone.getByRole('button', { name: /DeepSeek V4 Pro/ }).click();
+  await expect(page.getByRole('button', { name: /当前畅聊引擎/ })).toBeVisible();
+  await page.getByRole('button', { name: '关闭深度思考', exact: true }).click();
+  await expect(page.getByText(/不支持关闭深度思考/)).toHaveCount(0);
+});

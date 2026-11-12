@@ -275,6 +275,7 @@ describe('resolveFreeZoneView', () => {
     tagline: '中文专精',
     family: 'glm',
     benchmark_tier: 'premium' as const,
+    thinking: 'always' as const,
   };
   const config = FreeZoneConfigSchema.parse({
     enabled: true,
@@ -307,6 +308,15 @@ describe('resolveFreeZoneView', () => {
     const open = view();
     expect(open).toMatchObject({ state: 'open', ends_at: config.period?.ends_at });
     expect(open?.models[0]?.original_credits).toBe(55);
+    expect(open?.models[0]?.thinking).toBe('always');
+  });
+
+  it('defaults thinking to switchable for candidates published before the field existed', () => {
+    const legacy = FreeZoneConfigSchema.parse({
+      ...config,
+      candidates: [{ ...candidate, thinking: undefined }],
+    });
+    expect(legacy.candidates[0]?.thinking).toBe('switchable');
   });
 });
 
@@ -319,6 +329,7 @@ describe('chooseReplacement', () => {
       tagline: 't',
       family,
       benchmark_tier: 'light' as const,
+      thinking: 'switchable' as const,
     },
     providers: ['p'],
   });

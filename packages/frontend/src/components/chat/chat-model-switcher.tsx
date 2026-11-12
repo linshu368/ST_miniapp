@@ -171,7 +171,7 @@ export function ChatModelSwitcher({
             className="model-tier-pulse size-3 shrink-0 rounded-full"
             style={{
               backgroundColor: freeSelected
-                ? 'hsl(var(--primary-bright))'
+                ? 'hsl(var(--free-zone))'
                 : (selectedTier?.color ?? 'hsl(var(--primary))'),
             }}
           />
@@ -187,7 +187,7 @@ export function ChatModelSwitcher({
             <span className="shrink-0 text-[10px] text-muted-foreground">同步中</span>
           ) : null}
           {!isFetching && freeSelected ? (
-            <span className="shrink-0 rounded-full border border-primary-bright/45 bg-primary-bright/10 px-2.5 py-1 text-[10px] font-bold text-primary-bright">
+            <span className="shrink-0 rounded-full border border-free-zone/45 bg-free-zone/10 px-2.5 py-1 text-[10px] font-bold text-free-zone">
               畅聊 · 0 星尘
             </span>
           ) : null}
