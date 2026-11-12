@@ -78,6 +78,8 @@ export const FreeZoneOnShelfSchema = z.object({
   max_ttft_p90_ms: DurationMsSchema.nullable().default(7500),
   max_refusal_pct: PercentSchema.nullable().default(null),
   max_truncation_pct: PercentSchema.nullable().default(null),
+  /** 生成中断率：免费模型开始出字后没写完就断了，占它自己交付的轮次的比例（不含用户点停） */
+  max_interrupted_pct: PercentSchema.nullable().default(null),
   max_dislike_pct: PercentSchema.nullable().default(null),
 });
 

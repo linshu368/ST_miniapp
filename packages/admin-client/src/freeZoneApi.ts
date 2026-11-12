@@ -224,3 +224,27 @@ export function freeZoneProbeText(model: AdminFreeZoneStatusModel): string {
   if (!probe || probe.outcome !== 'ok' || probe.first_token_ms === null) return '';
   return `探测首字 ${(probe.first_token_ms / 1000).toFixed(1)} 秒`;
 }
+
+function pct(value: number | null): string {
+  return value === null ? '—' : `${Math.round(value * 10) / 10}%`;
+}
+
+/**
+ * 在架模型的业务数据一句话：兜底多了是花钱，中断是用户体验实打实受损，两个都摆出来。
+ * 只统计当前供应商开始用之后、统计窗口内的轮次，截至最近一轮评估。
+ */
+export function freeZoneBusinessText(model: AdminFreeZoneStatusModel): string {
+  const business = model.business;
+  if (!business) return '';
+  if (business.turns === 0) return '还没有用户轮次';
+  const interrupted =
+    business.interrupted_turns !== null && business.primary_delivered_turns
+      ? `中断 ${pct(business.interrupted_pct)}（${business.interrupted_turns}/${business.primary_delivered_turns}）`
+      : `中断 ${pct(business.interrupted_pct)}`;
+  return [
+    `${business.turns} 轮`,
+    `兜底 ${pct(business.fallback_delivered_pct)}`,
+    interrupted,
+    `没出字 ${pct(business.no_output_pct)}`,
+  ].join(' · ');
+}

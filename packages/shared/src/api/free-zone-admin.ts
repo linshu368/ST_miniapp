@@ -117,6 +117,22 @@ export const FreeZoneProbeSchema = z.object({
 
 export const FreeZoneModelStatusSchema = z.enum(['unlisted', 'listed', 'cooling']);
 
+/**
+ * 在架模型最近一轮评估时的真实业务数据：只统计当前供应商开始用之后、统计窗口内的轮次。
+ * 百分比都是 0–100；没有样本的项为 null。
+ */
+export const FreeZoneBusinessSnapshotSchema = z.object({
+  turns: z.number().int().nonnegative(),
+  fallback_delivered_pct: z.number().nullable().default(null),
+  no_output_pct: z.number().nullable().default(null),
+  /** 免费模型自己交付的轮次（中断率的分母） */
+  primary_delivered_turns: z.number().int().nonnegative().nullable().default(null),
+  interrupted_turns: z.number().int().nonnegative().nullable().default(null),
+  /** 开始出字后没写完就断了 / 免费模型自己交付的轮次；新字段上线前的评估记录为 null */
+  interrupted_pct: z.number().nullable().default(null),
+  ttft_p90_ms: z.number().nullable().default(null),
+});
+
 export const AdminFreeZoneStatusModelSchema = z.object({
   candidate_id: z.string(),
   display_name: z.string().nullable(),
@@ -134,6 +150,8 @@ export const AdminFreeZoneStatusModelSchema = z.object({
   last_reason: z.string().nullable(),
   /** 最近一轮官方初筛的逐项汇总；新字段上线前评估的记录为 null */
   screening: FreeZoneScreeningSummarySchema.nullable(),
+  /** 在架模型最近一轮评估时的业务数据；不在架或还没数据为 null */
+  business: FreeZoneBusinessSnapshotSchema.nullable().default(null),
   /** 最近一轮评估里，最终选定（或在用）的那家供应商的探测结果 */
   probe: FreeZoneProbeSchema.nullable().default(null),
   /** 上过架没有（看上下架记录） */
@@ -194,6 +212,7 @@ export type FreeZoneScreeningCheckKey = z.infer<typeof FreeZoneScreeningCheckKey
 export type FreeZoneScreeningCheck = z.infer<typeof FreeZoneScreeningCheckSchema>;
 export type FreeZoneCheckSummary = z.infer<typeof FreeZoneCheckSummarySchema>;
 export type FreeZoneProbe = z.infer<typeof FreeZoneProbeSchema>;
+export type FreeZoneBusinessSnapshot = z.infer<typeof FreeZoneBusinessSnapshotSchema>;
 export type FreeZoneScreeningSummary = z.infer<typeof FreeZoneScreeningSummarySchema>;
 export type AdminFreeZoneScreeningRequest = z.input<typeof AdminFreeZoneScreeningRequestSchema>;
 export type AdminFreeZoneModelResult = z.infer<typeof AdminFreeZoneModelResultSchema>;
