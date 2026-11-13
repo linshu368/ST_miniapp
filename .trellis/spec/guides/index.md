@@ -12,6 +12,7 @@ Use these guides before implementation when the task crosses layers, repeats exi
 
 ## Required Triggers
 
+- All new/changed feature and bug-fix plans must complete the [logging integration planning gate](../backend/app/logging-integration-planning.md), including explicit reuse of existing logs.
 - Shared API contract changes.
 - Fastify route plus frontend hook changes.
 - Supabase migration or Prisma schema changes.

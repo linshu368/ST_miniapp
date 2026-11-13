@@ -51,3 +51,15 @@
 - 模块知识载荷校验通过；运行说明和 backend spec 同步。此次仅后端内部日志与 CI 检查变动，没有前端/shared 契约或构建配置变动，未重复两端 build；最近一次合并验证记录中的两端构建仍可追溯。
 
 真实 Feishu/Railway 查询、供应商/数据库环境集成与发布后 Android/iOS/API P95 未执行，不能据本地测试宣称通过。静态 guard 不承诺识别任意高阶别名或第三方 SDK 内部请求；已登记的底层日志 transport、通知 adapter 和离线导入例外各自有明确边界。
+
+## 日志接入规划门禁验证（2026-11-13）
+
+原有运行时代码日志 AST 门禁存在，规划阶段没有日志接入声明的硬校验。本次补齐 `meta.logging_integration`：新任务默认 pending，所有任务（包括旧任务重新启动）在 start 写状态/活动指针/执行 hook 前校验；Quality Gate 校验 base..HEAD 触及的活动任务规划。AGENTS、workflow、PRD 模板及专题 spec 同步明确新增/修改功能必须接入或验证复用，纯非运行行为改动才可说明理由后不适用。
+
+- `python -m unittest discover -s scripts -p test_logging_planning_gate.py`：8 项通过，涵盖创建默认值、完整/不适用声明、占位及非法字段、缺失声明、两种会话模式下无副作用、降级启动、CI 选择与基线失败。
+- 当前任务的独立 logging planning gate 与模块知识载荷校验通过。
+- 工具提交 `eee9f3b9` 后，用本轮起点 `ff7dfe3a` 以及本地 `origin/dev`、`origin/main` 引用分别运行 `--base`，均选中并通过当前任务，验证真实 Git diff 路径；这些本地引用检查不代表远程 CI 已执行。
+- `node --test scripts/check-backend-logging.test.mjs`：3 项通过；`pnpm lint:backend-logging`：311 个运行文件通过。
+- 本轮只变更 Python 工具、CI 及规划规范，没有修改应用包、依赖或运行时配置；不重复前轮已通过的应用 typecheck/build。Python 语法检查及变更文件格式检查通过。
+
+门禁检查结构完整性，不会自动判断理由真实性或证明业务日志覆盖。CI 不追溯未触及/已归档规划，也不要求每个仅改源码的 PR 都有任务文件；功能变更仍需遵循先规划、再实现并验证日志接入的项目流程。未执行远程 CI、push 或部署。
