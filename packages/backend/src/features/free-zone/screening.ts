@@ -78,20 +78,31 @@ function round(value: number): number {
   return Math.round(value * 10) / 10;
 }
 
+/** 运营屏蔽的渠道：报价一律不参与竞争（和非 trusted 一样跳过）。 */
+export function isBlockedProvider(rules: FreeZoneScreening, provider: string): boolean {
+  const target = provider.toLowerCase();
+  return rules.blocked_providers.some((item) => item.toLowerCase() === target);
+}
+
 function qualifiedOffers(
   book: MarketBook,
-  minDiscountPct: number
+  rules: FreeZoneScreening,
+  blockedSeen: Set<string>
 ): Map<string, { count: number; price: number | null }> {
   const byProvider = new Map<string, { count: number; price: number | null }>();
   for (const offer of book.offers) {
     if (!offer.trusted) continue;
+    if (isBlockedProvider(rules, offer.provider)) {
+      blockedSeen.add(offer.provider);
+      continue;
+    }
     const entry = byProvider.get(offer.provider) ?? { count: 0, price: null };
     byProvider.set(offer.provider, entry);
     const qualified =
       offer.available &&
       offer.healthy &&
       offer.discountPct !== null &&
-      offer.discountPct >= minDiscountPct;
+      offer.discountPct >= rules.min_discount_pct;
     if (!qualified) continue;
     entry.count += 1;
     if (offer.pricePer1m !== null && (entry.price === null || offer.pricePer1m < entry.price)) {
@@ -133,7 +144,8 @@ function screenProvider(
 }
 
 export function screenModel(market: SurplusModelMarket, rules: FreeZoneScreening): ScreeningResult {
-  const offers = qualifiedOffers(market.book, rules.min_discount_pct);
+  const blockedSeen = new Set<string>();
+  const offers = qualifiedOffers(market.book, rules, blockedSeen);
   const perfByProvider = new Map(market.performance.map((row) => [row.provider, row]));
   const detail = [...offers.entries()].map(([provider, entry]) =>
     screenProvider(provider, entry, perfByProvider.get(provider) ?? null, rules)
@@ -157,8 +169,11 @@ export function screenModel(market: SurplusModelMarket, rules: FreeZoneScreening
   const modelFailure = modelCheck.failure;
   const reasons: string[] = [];
   if (modelFailure) reasons.push(modelFailure);
-  if (detail.length === 0) reasons.push('没有 trusted 供应商');
-  else if (qualified.length === 0) {
+  if (detail.length === 0) {
+    reasons.push(
+      blockedSeen.size > 0 ? `只有屏蔽渠道：${[...blockedSeen].join('、')}` : '没有 trusted 供应商'
+    );
+  } else if (qualified.length === 0) {
     for (const row of detail) reasons.push(`${row.provider}: ${row.failures.join('，')}`);
   }
 
