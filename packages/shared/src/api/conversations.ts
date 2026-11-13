@@ -3,6 +3,7 @@
 // 路由前缀 /api/v1/conversations 由 M3b 实现、M5 消费；鉴权统一走 requireTelegramAuth（X-Init-Data）
 
 import type { PreferredWordCount } from './settings';
+import type { ChatFolderSummary } from './conversation-folders';
 import { z } from 'zod';
 import { splitEditableReply } from '../rich-reply-protocol';
 import {
@@ -72,6 +73,8 @@ export interface ChatSession {
   message_count: number;
   /** null = 未置顶。置顶会话排在列表最前，多个置顶之间按此时间倒序 */
   pinned_at: string | null;
+  /** 用户放入的分组；null/缺省 = 未分组（旧后端不返回该字段） */
+  folder_id?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -153,7 +156,16 @@ export interface ListConversationsQuery {
   character_id?: string;
   limit?: number;
   offset?: number;
+  /** 分组 id；`none` = 只看未分组；不传 = 全部 */
+  folder?: string;
+  /** 按对话名搜索（不区分大小写，1–30 字）；与 folder 同时传时以搜索为准、不限分组 */
+  q?: string;
+  /** 管理模式的快捷筛选：short = 只聊了一两句（≤2 轮）；idle = 30 天没聊 */
+  quick?: ConversationQuickFilter;
 }
+
+export const CONVERSATION_QUICK_FILTERS = ['short', 'idle'] as const;
+export type ConversationQuickFilter = (typeof CONVERSATION_QUICK_FILTERS)[number];
 
 /**
  * 列表恒定过滤掉 message_count = 0 的会话：进角色卡就会建会话，一句话没发的那些
@@ -164,6 +176,11 @@ export interface ListConversationsQuery {
 export interface ListConversationsData {
   sessions: ChatSession[];
   total: number;
+  /**
+   * 仅全量列表（不带 character_id）的首页（offset=0）附带，供标签栏显示数量。
+   * 读取失败或迁移未执行时缺省，前端据此隐藏分组入口。
+   */
+  folder_summary?: ChatFolderSummary;
 }
 
 // ==== GET /api/v1/conversations/:id ====
@@ -207,7 +224,7 @@ export interface SetMessageLikeData {
 // ==== PATCH /api/v1/conversations/:id ====
 
 /**
- * 两个字段都可选：只传 title 是重命名，只传 pinned 是置顶/取消置顶，都不传是空操作。
+ * 字段都可选：只传 title 是重命名，只传 pinned 是置顶/取消置顶，只传 folder_id 是移到分组，都不传是空操作。
  * title = null 是有意义的取值（恢复为当前角色名），所以「本次不改标题」只能用
  * 「不带 title 字段」表达，不能用 null 兼任。
  */
@@ -215,6 +232,8 @@ export interface UpdateConversationRequest {
   /** null 表示恢复为当前绑定角色的 name */
   title?: string | null;
   pinned?: boolean;
+  /** 移到分组；null = 移出分组 */
+  folder_id?: string | null;
 }
 
 export interface UpdateConversationData {

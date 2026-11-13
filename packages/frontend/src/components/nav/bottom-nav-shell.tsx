@@ -3,20 +3,20 @@
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { canPrefetchInBackground } from '@/lib/background-prefetch';
-import { NibIcon, PersonIcon, ScreenIcon, SparkIcon, TicketIcon, type NavIcon } from './nav-icons';
+import { ChatIcon, NibIcon, PersonIcon, SparkIcon, TicketIcon, type NavIcon } from './nav-icons';
 
 type NavItem = { href: string; label: string; Icon: NavIcon; center?: true };
 
-// 名称按页面职责取：放映=沉浸刷剧，剧场=找剧追剧，秘境=角色大厅（冷启动落地页，居中）。
+// 名称按页面职责取：剧场=找剧刷剧（放映从剧场进入），对话=接着聊，秘境=角色大厅（冷启动落地页，居中）。
 const NAV_ITEMS: readonly NavItem[] = [
-  { href: '/watch', label: '放映', Icon: ScreenIcon },
   { href: '/dramas', label: '剧场', Icon: TicketIcon },
+  { href: '/chats', label: '对话', Icon: ChatIcon },
   { href: '/characters', label: '秘境', Icon: SparkIcon, center: true },
   { href: '/creation', label: '创作', Icon: NibIcon },
   { href: '/profile', label: '我的', Icon: PersonIcon },
 ];
 
-const HEAVY_ROUTE_HREFS = new Set<string>(['/watch', '/dramas', '/creation']);
+const HEAVY_ROUTE_HREFS = new Set<string>(['/dramas', '/creation']);
 const EASE_OUT = 'ease-[cubic-bezier(0.22,1,0.36,1)]';
 
 export function isCreationRoute(pathname: string | null | undefined): boolean {
@@ -28,21 +28,17 @@ export function isCreationRoute(pathname: string | null | undefined): boolean {
   );
 }
 
-function isRoleplayPath(pathname: string | null | undefined): boolean {
-  return pathname === '/characters' || pathname === '/chats';
-}
-
-/** 底栏某一项是否覆盖该路径：秘境含对话列表，创作含 /create 子页，放映只认自身。 */
+/** 底栏某一项是否覆盖该路径：创作含 /create 子页，剧场含放映与详情，其余按前缀。 */
 function matchesNavItem(href: string, pathname: string | null | undefined): boolean {
   if (!pathname) return false;
-  if (href === '/characters') return isRoleplayPath(pathname);
   if (href === '/creation') return isCreationRoute(pathname);
-  if (href === '/watch') return pathname === '/watch';
+  if (href === '/dramas') return pathname.startsWith('/dramas') || pathname === '/watch';
   return pathname.startsWith(href);
 }
 
-// 深层页面（支付流程、沉浸式输入页、消息与客服会话）隐藏底部导航，让主内容拿满可视高度
+// 深层页面（支付流程、沉浸式输入页、消息与客服会话、放映与短剧详情）隐藏底部导航，让主内容拿满可视高度
 const HIDDEN_PREFIXES = [
+  '/watch',
   '/profile/recharge',
   '/profile/messages',
   '/profile/support',
@@ -54,11 +50,10 @@ const HIDDEN_PREFIXES = [
   '/vip',
 ];
 
-export function isBottomNavHidden(pathname: string | null, controlsVisible = true) {
+export function isBottomNavHidden(pathname: string | null) {
   return Boolean(
     pathname &&
-    ((pathname === '/watch' && !controlsVisible) ||
-      HIDDEN_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)) ||
+    (HIDDEN_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)) ||
       /^\/dramas\/[^/]+/.test(pathname))
   );
 }
@@ -144,28 +139,18 @@ function NavItemContent({
 /** 启动时只复用导航展示，不读取身份、storage 或挂业务 query。 */
 export function BottomNavShell({
   pathname,
-  controlsVisible = true,
   highlighted = pathname,
-  roleplayHref = '/characters',
   hasUnread = false,
   onIntent,
   onNavigate,
 }: {
   pathname: string;
-  controlsVisible?: boolean;
   highlighted?: string | null;
-  roleplayHref?: '/characters' | '/chats';
   hasUnread?: boolean;
   onIntent?: (href: string) => void;
-  onNavigate?: (
-    event: React.MouseEvent<HTMLAnchorElement>,
-    targetHref: string,
-    href: string,
-    current: boolean
-  ) => void;
+  onNavigate?: (event: React.MouseEvent<HTMLAnchorElement>, href: string, current: boolean) => void;
 }) {
-  if (isBottomNavHidden(pathname, controlsVisible)) return null;
-  const currentRoleplayPath = isRoleplayPath(pathname) ? pathname : null;
+  if (isBottomNavHidden(pathname)) return null;
   const activeIndex = NAV_ITEMS.findIndex(({ href }) => matchesNavItem(href, highlighted));
   return (
     // 不用 backdrop-blur：导航悬浮在持续滚动、带流光动画的列表上方，模糊要每帧重采样背后内容，
@@ -183,25 +168,24 @@ export function BottomNavShell({
           <ActivePill index={activeIndex} />
           {NAV_ITEMS.map((item, index) => {
             const { href, label } = item;
-            const targetHref =
-              href === '/characters' ? (currentRoleplayPath ?? roleplayHref) : href;
             const current = matchesNavItem(href, pathname);
             const prefetchOnIntent = () => {
               if (!current && (!HEAVY_ROUTE_HREFS.has(href) || canPrefetchInBackground())) {
-                onIntent?.(targetHref);
+                onIntent?.(href);
               }
             };
             return (
               <Link
                 key={href}
-                href={targetHref}
+                href={href}
                 prefetch={false}
-                scroll={href === '/characters' ? false : undefined}
+                // 角色大厅与对话列表各自恢复滚动位置，不让路由切换先滚回顶部。
+                scroll={href === '/characters' || href === '/chats' ? false : undefined}
                 // 底栏常驻；关闭视口自动预取，只在明确 hover/focus/touch 意图时拉目标路由。
                 onMouseEnter={prefetchOnIntent}
                 onFocus={prefetchOnIntent}
                 onTouchStart={prefetchOnIntent}
-                onClick={(event) => onNavigate?.(event, targetHref, href, current)}
+                onClick={(event) => onNavigate?.(event, href, current)}
                 aria-current={current ? 'page' : undefined}
                 aria-label={label}
                 className={cn(

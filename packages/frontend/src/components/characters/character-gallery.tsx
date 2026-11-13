@@ -12,11 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 
-import {
-  useCharacterQuery,
-  useLobbyLatestBadgeQuery,
-  useMarkLobbyLatestSeenMutation,
-} from '@/lib/api/characters';
+import { useLobbyLatestBadgeQuery, useMarkLobbyLatestSeenMutation } from '@/lib/api/characters';
 import { useLobbyDiscoveryFeed } from '@/lib/api/lobby-recommendations';
 import { lobbyViewerScope } from '@/lib/lobby-recommendation-state';
 import { markCriticalSettled, useEntryEnrichReady } from '@/lib/entry-phase';
@@ -44,7 +40,6 @@ import { CharacterCard } from './character-card';
 import { useLobbyExposures } from './use-lobby-exposures';
 import type { CharacterDetailTab } from './character-detail-sheet';
 import { RoleplayHeader } from '@/components/roleplay/roleplay-header';
-import { RecentConversationCard } from '@/components/roleplay/recent-conversation-card';
 
 const CharacterDetailSheet = dynamic(
   () =>
@@ -149,20 +144,6 @@ function CharacterGalleryView() {
   // message_count 不计虚拟开场白；只标记已确认的用户对话，未命中不代表从未聊过。
   const experiencedIds = useMemo(
     () => experiencedCharacterIds(history.data?.sessions ?? []),
-    [history.data?.sessions]
-  );
-  // 只在当前接口返回的有效会话中选择，不把服务端分页范围解释成全局最近。
-  const recentConversation = useMemo(
-    () =>
-      history.data?.sessions
-        .filter(
-          (item) =>
-            item.message_count > 0 && Number.isFinite(Date.parse(item.last_message_at ?? ''))
-        )
-        .sort(
-          (left, right) =>
-            Date.parse(right.last_message_at ?? '') - Date.parse(left.last_message_at ?? '')
-        )[0],
     [history.data?.sessions]
   );
   const [restoreSnapshot, setRestoreSnapshot] = useState<LobbyReturnSnapshot | null>(() =>
@@ -332,18 +313,6 @@ function CharacterGalleryView() {
     root.classList.add('featured-paused');
     return () => root.classList.remove('featured-paused');
   }, [previewId]);
-  const recentDetail = useCharacterQuery(recentConversation?.character_id, {
-    enabled: false,
-    sessionId: recentConversation?.id,
-  });
-  const recentCharacter = useMemo(
-    () =>
-      recentConversation
-        ? (characters.find((c) => c.id === recentConversation.character_id) ??
-          recentDetail.data?.character)
-        : undefined,
-    [characters, recentConversation, recentDetail.data]
-  );
 
   useEffect(() => {
     if (!restoreSnapshot) return;
@@ -590,7 +559,7 @@ function CharacterGalleryView() {
   }, [isRestoring, isLoading, restoreFromSnapshot]);
 
   // The card can move *after* the first correct scroll: offscreen rows replace their
-  // intrinsic estimates, the recent-chat strip mounts, or Next restores the document scroll.
+  // intrinsic estimates or Next restores the document scroll.
   // Keep the already visible anchor steady through those layout changes, never through user input.
   useLayoutEffect(() => {
     const id = restoredAnchorIdRef.current;
@@ -849,15 +818,6 @@ function CharacterGalleryView() {
         {searchBar}
       </RoleplayHeader>
       {sortTabs}
-      <RecentConversationCard
-        enabled={routeEnrichReady}
-        recent={recentConversation}
-        character={recentCharacter}
-        loading={history.isLoading}
-        error={history.isError}
-        fetching={history.isFetching}
-        onRetry={() => void history.refetch()}
-      />
       {batchNotice && sort === 'recommended' ? (
         <div
           role="status"

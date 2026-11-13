@@ -365,8 +365,10 @@ export function installDramaTiming(): () => void {
       return;
     const link = event.target instanceof Element ? event.target.closest('a') : null;
     const href = link?.getAttribute('href');
+    // 剧场封面进放映已按 cover 计起播，不再另起一条放映目录计时。
     if (
       (href === '/watch' || href === '/dramas') &&
+      link?.getAttribute('data-drama-cover') == null &&
       link?.getAttribute('target') !== '_blank' &&
       window.location.pathname !== href
     )

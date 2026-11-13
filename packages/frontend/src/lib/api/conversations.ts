@@ -18,6 +18,7 @@ import type {
   SetMessageLikeRequest,
   UpdateConversationData,
 } from '@miniapp/shared';
+import { rememberChatLanding } from '@/lib/landing-route';
 import { apiClient, ApiClientError } from './client';
 import { characterSocialKeys, refreshCharacterSocial } from './character-social';
 
@@ -42,9 +43,13 @@ export function useConversationsQuery(characterId: string | undefined, enabled =
       const search = new URLSearchParams();
       if (characterId) search.set('character_id', characterId);
       const query = search.toString();
-      return apiClient<ListConversationsData>(`/api/v1/conversations${query ? `?${query}` : ''}`, {
-        signal,
-      });
+      const data = await apiClient<ListConversationsData>(
+        `/api/v1/conversations${query ? `?${query}` : ''}`,
+        { signal }
+      );
+      // 全量列表已滤掉一句没发的会话，total 就是「有没有对话记录」，用来决定下次打开落在哪页。
+      if (!characterId) rememberChatLanding(data.total > 0);
+      return data;
     },
     // 大厅「聊过」标记可稍旧；拉长鲜活期减少与列表/进聊争槽。
     staleTime: 60_000,
@@ -67,7 +72,10 @@ export function conversationDetailQueryOptions(
     enabled: Boolean(sessionId),
     queryFn: async ({ signal }) => {
       if (!sessionId) throw new Error('session id is required');
-      return fetchConversationDetail(sessionId, 10_000, signal);
+      const data = await fetchConversationDetail(sessionId, 10_000, signal);
+      // 新用户发完第一句后详情会重拉；这里记下，下次打开就直接进对话，不必等再看一次列表。
+      if (data.session.message_count > 0) rememberChatLanding(true);
+      return data;
     },
     // Query-key changes also fetch stale data; refetchOnMount:false alone cannot prevent
     // the duplicate GET after creation. Exempt only the exact confirmed cache object.
@@ -291,7 +299,13 @@ export function useUpdateConversationMutation() {
 
   return useMutation({
     /** title 传 null 表示恢复为当前绑定角色的 name */
-    mutationFn: async (input: { sessionId: string; title?: string | null; pinned?: boolean }) => {
+    mutationFn: async (input: {
+      sessionId: string;
+      title?: string | null;
+      pinned?: boolean;
+      /** 移到分组；null = 移出分组 */
+      folder_id?: string | null;
+    }) => {
       const { sessionId, ...patch } = input;
       return apiClient<UpdateConversationData>(
         `/api/v1/conversations/${encodeURIComponent(sessionId)}`,

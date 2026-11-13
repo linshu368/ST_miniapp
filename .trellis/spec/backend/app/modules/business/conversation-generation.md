@@ -231,3 +231,34 @@ Wrong：把客户端 6 秒超时当成投递失败而免扣，或把建连耗时
 发送和重生成复用同一入口。身份确认后即可开始会话归属查询，与模型目录读取重叠；两份结果就绪才进入开轮。准备中止时，晚到的身份结果不得发起归属查询。配置预算、身份检查、开轮锁和计费快照仍按既有顺序生效。
 
 诊断使用 Fastify 请求入口单调时钟。SSE `server_elapsed_ms` 和准备分段包含鉴权、参数校验；模型预算仍使用原业务时钟。未完成派发门禁时，通过原 OTLP `generation.pre_dispatch` 最多发送一次 `outcome=incomplete`，携带停留阶段、该段耗时及总耗时；已完成门禁的请求继续写原直方图。通过慢目录并发、迟到身份、SSE 起始时间及日志与直方图隔离回归。线上比较时按 release 区分新旧分段起点。
+
+## Scenario: 对话页分组、按角色归拢与批量整理（2026-11-13，本地实现，迁移未远端执行）
+
+### 1. Scope / Trigger
+
+对话页（`/chats`）成为有对话记录用户的落地页，重度用户需要分组、按角色归拢、搜索、批量清理与翻页。只改会话组织方式，不改生成、计费或会话内容。
+
+### 2. Signatures
+
+- `GET /api/v1/conversations` 新增 `folder=<uuid>|none`、`q`（对话名 ILIKE，≤30 字，转义 `%_\`、去掉 `*`）、`quick=short|idle`、`summary=1`（仅全量首页附 `folder_summary`，与列表并行读 `experience.chat_folder_summary`）。
+- `GET /api/v1/conversations/groups?folder=&limit=&offset=&summary=1` → `{groups:[{session,session_count}], total}`（`experience.list_chat_session_groups`）。
+- `PATCH /api/v1/conversations/:id` 增 `folder_id: uuid|null`，与 title/pinned 合并成一次 UPDATE。
+- `POST /api/v1/conversations/batch` `{session_ids[1..100], action: move|pin|unpin|delete, folder_id?}` → `{updated}`。
+- `POST/PATCH/DELETE /api/v1/conversation-folders[/:id]`。
+- 文件：`routes/conversation-folders.ts`、`infrastructure/repositories/ChatFolderRepository.ts`；`ChatSessionRepository.listSessions/updateSession` 扩展。
+
+### 3. Contracts
+
+分组归属由复合 FK `(user_id, folder_id) → chat_folders(user_id, id)` 在数据库层保证；删分组 `ON DELETE SET NULL (folder_id)` 只清分组。批量写一条 UPDATE，按 `user_id`、未软删、`message_count>0` 过滤，`updated` 为实际生效条数；删除即软删，与单条同口径。分组名 trim 后 1–12 字、同用户不重名、上限 20（应用层计数 + 唯一约束）。错误码独立为 `ChatFolderErrorCode`，不进生成链路的 `ConversationErrorCode` 穷举。
+
+### 4. Validation & Error Matrix
+
+非法 folder/quick → 400；分组不存在或非本人（含 FK 23503）→ 404 `folder_not_found`；重名 23505 → 409 `folder_name_taken`；超限 → 409 `folder_limit`；迁移未执行（42P01/42703/PGRST202）→ 503 `folders_unavailable`。汇总读取失败只记 `conversation.folder.summary_failed` warn，列表照常返回不带汇总（前端隐藏分组入口）。
+
+### 5. Good / Base / Bad Cases
+
+Good：迁移后首页一次请求带列表与汇总。Base：迁移前默认列表照常（不引用新列），分组入口隐藏。Bad：大厅「聊过」标记的列表请求也带汇总（只有对话页首页带 `summary=1`）；批量删除绕过软删。
+
+### 6. Tests Required
+
+`scripts/test-chat-folders-migration.sh`（一次性 PG17：重复执行、跨用户 FK、列级置空、汇总/归拢/分页、ACL、用户级联）；后端既有单测全量；`pnpm test:ui --grep @chats` 覆盖新建→挑选放入→删分组、单条移动、按角色与整组操作、搜索翻页、快速筛选批量删除、少量对话不出工具。

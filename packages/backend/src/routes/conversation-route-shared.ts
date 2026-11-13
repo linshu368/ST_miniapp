@@ -1,3 +1,4 @@
+import type { ChatFolderRepository } from '../infrastructure/repositories/ChatFolderRepository.js';
 import type { ChatSessionRepository } from '../infrastructure/repositories/ChatSessionRepository.js';
 import type { ConversationHistoryRepository } from '../infrastructure/repositories/ConversationHistoryRepository.js';
 import type { MiniappUserSettingsRepository } from '../infrastructure/repositories/MiniappUserSettingsRepository.js';
@@ -5,6 +6,7 @@ export interface ConversationRouteRepositories {
   sessions: ChatSessionRepository;
   history: ConversationHistoryRepository;
   settings: MiniappUserSettingsRepository;
+  folders: ChatFolderRepository;
 }
 
 export const UUID_PATTERN =
