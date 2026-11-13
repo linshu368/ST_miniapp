@@ -239,6 +239,25 @@ function Section(props: { title: string; hint?: string; children: ReactNode }) {
   );
 }
 
+/** 线上状态；在架模型的「并发」直接改表单里的候选池。 */
+function StatusSection(props: {
+  value: FreeZoneConfig;
+  disabled?: boolean;
+  onChange: (patch: Partial<FreeZoneConfig>) => void;
+}) {
+  return (
+    <Section title="线上状态">
+      <FreeZoneStatusPanel
+        parallel={{
+          candidates: props.value.candidates,
+          disabled: props.disabled,
+          onChange: (candidates) => props.onChange({ candidates }),
+        }}
+      />
+    </Section>
+  );
+}
+
 function OpenSettings(props: {
   value: FreeZoneConfig;
   disabled?: boolean;
@@ -375,9 +394,7 @@ export function FreeZoneConfigEditor(props: {
       <Section title="栏目开放">
         <OpenSettings value={value} disabled={props.disabled} onChange={update} />
       </Section>
-      <Section title="线上状态">
-        <FreeZoneStatusPanel />
-      </Section>
+      <StatusSection value={value} disabled={props.disabled} onChange={update} />
       <CandidatePool
         value={value.candidates}
         disabled={props.disabled}
