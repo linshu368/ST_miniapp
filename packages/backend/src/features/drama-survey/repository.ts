@@ -1,5 +1,5 @@
 /**
- * 短剧原因问卷（一次性）。答卷在 miniapp_analytics，只写不读；
+ * 短剧原因问卷（一次性）。答卷在 miniapp_analytics（不经 PostgREST），线上只写不读；
  * "是否已领过奖励"看 billing.wallet_ledger，提交与发奖由 billing.submit_drama_survey 在同一事务里完成。
  * 问卷结束后整块删除（见 migrations/20261113_drama_survey.sql 文件头）。
  */
@@ -9,6 +9,7 @@ import {
   type ParsedDismissDramaSurveyRequest,
   type ParsedSubmitDramaSurveyRequest,
 } from '@miniapp/shared';
+import { prisma } from '../../lib/db.js';
 import { getDomainDb, type DomainDb } from '../../lib/supabase.js';
 import { fetchRuntimeConfigEntry } from '../../platform/runtime-config.js';
 
@@ -23,14 +24,11 @@ export class DramaSurveyError extends Error {
 
 export class DramaSurveyRepository {
   constructor(
-    private readonly databases?: { billing: DomainDb; analytics: DomainDb },
+    private readonly database?: DomainDb,
     private readonly readEnabled: () => Promise<boolean> = readDramaSurveyEnabled
   ) {}
   private get billing() {
-    return this.databases?.billing ?? getDomainDb('billing');
-  }
-  private get analytics() {
-    return this.databases?.analytics ?? getDomainDb('miniapp_analytics');
+    return this.database ?? getDomainDb('billing');
   }
 
   isEnabled() {
@@ -74,23 +72,24 @@ export class DramaSurveyRepository {
     });
   }
 
-  /** 叉掉只为算回答率和对比叉掉人群的观看深度；已提交的记录不会被覆盖。 */
+  /**
+   * 叉掉只为算回答率和对比叉掉人群的观看深度；已提交的记录不会被覆盖。
+   * miniapp_analytics 没有暴露给 PostgREST，和 free-zone 一样走直连 SQL。
+   */
   async dismiss(userId: string, body: ParsedDismissDramaSurveyRequest) {
-    const { error } = await this.analytics
-      .from('drama_survey_responses')
-      .upsert(
-        {
-          survey_key: DRAMA_SURVEY_KEY,
-          user_id: userId,
-          status: 'dismissed',
-          platform: body.platform || null,
-          engaged_dramas: body.engagement.engaged_dramas,
-          max_episode: body.engagement.max_episode,
-        },
-        { onConflict: 'survey_key,user_id', ignoreDuplicates: true }
-      )
-      .abortSignal(AbortSignal.timeout(TIMEOUT_MS));
-    if (error) throw new DramaSurveyError(error.code);
+    try {
+      await prisma.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe(`SET LOCAL statement_timeout = ${TIMEOUT_MS}`);
+        await tx.$executeRaw`
+          INSERT INTO miniapp_analytics.drama_survey_responses
+            (survey_key, user_id, status, platform, engaged_dramas, max_episode)
+          VALUES (${DRAMA_SURVEY_KEY}, ${userId}::uuid, 'dismissed', ${body.platform || null},
+            ${body.engagement.engaged_dramas}, ${body.engagement.max_episode})
+          ON CONFLICT (survey_key, user_id) DO NOTHING`;
+      });
+    } catch (err) {
+      throw new DramaSurveyError(err instanceof Error && 'code' in err ? String(err.code) : 'db');
+    }
   }
 }
 
