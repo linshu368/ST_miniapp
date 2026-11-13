@@ -30,6 +30,16 @@
 
 ## 可观测性与发布
 
+### 统一运行时事件接入契约
+
+1. **范围**：`platform/observability/` 为统一事件底座，分模块接入；运行时 stdout 由 Railway 捕获，不新增日志存储或重放。底座存在不代表全仓覆盖完成。
+2. **签名**：`createObserver(sinks)` 提供 `emit/start/observe/observeSync`；`start().finish()` 一次有效；`withContext(context, run)` 使用隔离作用域，嵌套操作继承 trace 并新建 span。
+3. **契约**：只投影 EventFields 白名单。固定字段和关联标识不可由扩展字段覆盖；传原始 err，出口过滤未知消息，只保留受控类型、有界源码位置和 cause。`observe` 执行一次，原结果/异常回传；写操作异常默认 outcome_known=false，不推断是否提交。
+4. **错误矩阵**：输出同步抛错/异步拒绝只增加健康计数；摘要提取失败记录 unknown，不替换业务成功；关闭可选输出不代表基础 stdout 可被诊断等级关闭。
+5. **案例**：正常为父子 span 和独立请求上下文；基线为无 HTTP 的根操作；错误为记录完整 SDK Error.message、body 或按异常重执行业务。
+6. **验证**：核心回归覆盖并发隔离、嵌套、原值/异常、执行一次、重复 finish、输出故障、摘要异常、敏感字段与超限；每个接入模块另验证其协议终态。
+7. **正误对照**：错误做法是将 Error 序列化后直接写出或用 enterWith 污染其他请求；正确做法是受控错误投影及 run 作用域，业务自己决定实际结算和交付结果。
+
 - 使用现有 pino、`requestLogger`；原始异常写 `{ err }`。Sentry 先脱敏再附 context。
 - 关键流程记录阶段、耗时、状态/计数、安全幂等摘要、provider/request id；job 记录扫描/推进/失败数，禁止逐行高频 info。
 - 发布顺序：兼容 migration → backend producer → consumers → 清理旧字段。说明旧数据、灰度/停止条件、rollback 或 forward-fix。生产 migration 手动逐文件，先 test 验证 shape、RLS/权限、读写、锁/容量和回滚。
