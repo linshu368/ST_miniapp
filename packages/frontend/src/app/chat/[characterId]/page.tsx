@@ -29,6 +29,7 @@ import {
 } from '@/components/chat/chat-reply-presentation';
 import { ChatRegenerateButton } from '@/components/chat/chat-regenerate-button';
 import { ChatToolsSheet } from '@/components/chat/chat-tools-sheet';
+import { DramaSurveyPrompt } from '@/components/chat/drama-survey-prompt';
 import { ChatTopBar } from '@/components/chat/chat-top-bar';
 import { lobbyImageUrl } from '@/components/characters/character-card';
 import type { CharacterDetailTab } from '@/components/characters/character-detail-sheet';
@@ -850,6 +851,8 @@ export default function SelfHostedChatPage() {
           }}
         />
       ) : null}
+
+      <DramaSurveyPrompt {...{ generating, messages, userScope }} failed={streamError != null} />
 
       {/* 始终挂着：ChatSplash 自己负责收场动画并在结束后返回 null，条件卸载会把动画切掉 */}
       <ChatSplash
