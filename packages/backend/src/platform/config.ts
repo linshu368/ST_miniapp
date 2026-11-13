@@ -1,5 +1,6 @@
 import { createDatabaseConfig, resolveDefaultUserAvatarUrl } from '@miniapp/shared';
 import 'dotenv/config';
+import { parseLogAlertPolicy } from './observability/alert-policy.js';
 
 const nodeEnv = process.env.NODE_ENV || 'development';
 const databaseConfig = createDatabaseConfig({
@@ -179,6 +180,7 @@ export const config = {
 
   // Webhook 是部署 secret；是否发送、重试和限流属于 runtime_config.alerting，默认关闭。
   alerting: {
+    logs: parseLogAlertPolicy(process.env.LOG_ALERTING_ENABLED, process.env.LOG_ALERT_RULES),
     feishuWebhookUrl: process.env.FEISHU_ALERT_WEBHOOK_URL || '',
     // Sentry → 后端 webhook 的共享密钥；为空时该入口一律 401（安全默认）。
     sentryWebhookSecret: process.env.SENTRY_ALERT_WEBHOOK_SECRET || '',

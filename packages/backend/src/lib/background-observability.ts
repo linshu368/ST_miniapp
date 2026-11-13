@@ -3,6 +3,7 @@ import * as Sentry from '@sentry/node';
 import { config } from '../platform/config.js';
 import { finishBackgroundOperation } from '../platform/observability/jobs.js';
 import { observationOutcome } from '../platform/observability/outcomes.js';
+import { startLogAlerts } from '../platform/observability/alert-runtime.js';
 import {
   observeBackgroundJob,
   startEngineeringTelemetry,
@@ -47,8 +48,9 @@ export function observeBackgroundRun(input: {
 }
 
 export function startStandaloneObservability(): () => Promise<void> {
+  const stopLogAlerts = startLogAlerts();
   const stopEngineering = startEngineeringTelemetry(config.engineeringTelemetry);
   return async () => {
-    await Promise.allSettled([stopEngineering(), Sentry.flush(2_500)]);
+    await Promise.allSettled([stopEngineering(), stopLogAlerts(), Sentry.flush(2_500)]);
   };
 }

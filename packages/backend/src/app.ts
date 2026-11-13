@@ -4,6 +4,7 @@ import Fastify, { type FastifyServerOptions } from 'fastify';
 import { requestId } from './platform/observability/context.js';
 import { registerHttpObservation } from './platform/observability/http.js';
 import { observation } from './platform/observability/runtime.js';
+import { startLogAlerts } from './platform/observability/alert-runtime.js';
 import { startChatHistorySyncJob, stopChatHistorySyncJob } from './features/generation/index.js';
 import {
   startImagePlazaGenerationJob,
@@ -56,6 +57,7 @@ import voiceRoutes from './routes/voice.js';
 import walletRoutes from './routes/wallet.js';
 
 export async function buildApp() {
+  const stopLogAlerts = startLogAlerts();
   const stopEngineeringTelemetry = startEngineeringTelemetry(config.engineeringTelemetry);
   const app = Fastify({
     logger: fastifyLoggerOptions() as unknown as FastifyServerOptions['logger'],
@@ -155,6 +157,7 @@ export async function buildApp() {
     stopStoryMemoryJob();
     shutdownTextPostprocessValidation();
     await stopEngineeringTelemetry();
+    await stopLogAlerts();
   });
 
   return app;
