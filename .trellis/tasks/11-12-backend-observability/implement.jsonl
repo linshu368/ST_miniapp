@@ -1,7 +1,7 @@
-{"file": ".trellis/spec/backend/app/data-reliability-and-security.md", "reason": "????????"}
-{"file": ".trellis/spec/backend/app/architecture-and-files.md", "reason": "?????????"}
-{"file": ".trellis/spec/backend/app/testing-scripts-and-deployment.md", "reason": "?????"}
-{"file": ".trellis/spec/shared/contracts/api-contracts.md", "reason": "??????"}
-{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "?????"}
-{"file": "docs/backend-error-code-review.md", "reason": "??????"}
-{"file": ".trellis/tasks/11-12-backend-observability/research/implementation-review-2026-11-13.md", "reason": "????????????????????"}
+﻿{"file":".trellis/spec/backend/app/data-reliability-and-security.md","reason":"Implementation and verification contract: .trellis/spec/backend/app/data-reliability-and-security.md"}
+{"file":".trellis/spec/backend/app/architecture-and-files.md","reason":"Implementation and verification contract: .trellis/spec/backend/app/architecture-and-files.md"}
+{"file":".trellis/spec/backend/app/testing-scripts-and-deployment.md","reason":"Implementation and verification contract: .trellis/spec/backend/app/testing-scripts-and-deployment.md"}
+{"file":".trellis/spec/shared/contracts/api-contracts.md","reason":"Implementation and verification contract: .trellis/spec/shared/contracts/api-contracts.md"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Implementation and verification contract: .trellis/spec/guides/cross-layer-thinking-guide.md"}
+{"file":"docs/backend-error-code-review.md","reason":"Implementation and verification contract: docs/backend-error-code-review.md"}
+{"file":".trellis/tasks/11-12-backend-observability/research/implementation-review-2026-11-13.md","reason":"Implementation and verification contract: .trellis/tasks/11-12-backend-observability/research/implementation-review-2026-11-13.md"}
