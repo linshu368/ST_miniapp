@@ -40,6 +40,8 @@
 6. **验证**：核心回归覆盖并发隔离、嵌套、原值/异常、执行一次、重复 finish、输出故障、摘要异常、敏感字段与超限；每个接入模块另验证其协议终态。
 7. **正误对照**：错误做法是将 Error 序列化后直接写出或用 enterWith 污染其他请求；正确做法是受控错误投影及 run 作用域，业务自己决定实际结算和交付结果。
 
+HTTP 根级 `registerHttpObservation` 在 CORS/鉴权之前运行，使用回调 hook 在 `withContext` 内继续；响应头回传 X-Request-Id/X-Trace-Id。raw finish/close 与 onResponse 共用一次终态守卫，hijack SSE 也记录传输结果；SSE HTTP 200 业务结果保持 unknown，由流所有者另报。默认 Fastify 请求日志关闭，避免双份开始/终态。基础 stdout 与 LOG_LEVEL 独立，测试默认静默；logger-options 独立于配置/数据库初始化，错误对象及 Pino 自动生成的 msg 都须清洗。
+
 - 使用现有 pino、`requestLogger`；原始异常写 `{ err }`。Sentry 先脱敏再附 context。
 - 关键流程记录阶段、耗时、状态/计数、安全幂等摘要、provider/request id；job 记录扫描/推进/失败数，禁止逐行高频 info。
 - 发布顺序：兼容 migration → backend producer → consumers → 清理旧字段。说明旧数据、灰度/停止条件、rollback 或 forward-fix。生产 migration 手动逐文件，先 test 验证 shape、RLS/权限、读写、锁/容量和回滚。
