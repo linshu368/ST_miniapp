@@ -1,4 +1,13 @@
-import { Button, Input, Select, Space, Table, Typography, type TableColumnsType } from 'antd';
+import {
+  Button,
+  Input,
+  InputNumber,
+  Select,
+  Space,
+  Table,
+  Typography,
+  type TableColumnsType,
+} from 'antd';
 import type { FreeZoneCandidate } from '@miniapp/shared';
 import { deriveCandidateId, EMPTY_FREE_ZONE_CANDIDATE } from '../lib/freeZoneForm';
 
@@ -10,7 +19,7 @@ const TIER_OPTIONS = [
   { value: 'light', label: '轻量' },
 ];
 
-type TextField = Exclude<keyof FreeZoneCandidate, 'benchmark_tier'>;
+type TextField = Exclude<keyof FreeZoneCandidate, 'benchmark_tier' | 'parallel_requests'>;
 
 const TEXT_COLUMNS: ReadonlyArray<{
   key: TextField;
@@ -41,6 +50,45 @@ const TEXT_COLUMNS: ReadonlyArray<{
 interface Row {
   index: number;
   candidate: FreeZoneCandidate;
+}
+
+type Patch = (index: number, change: Partial<FreeZoneCandidate>) => void;
+
+/** 对标档位、并发请求数：不是文本的两列。 */
+function settingColumns(patch: Patch, disabled?: boolean): TableColumnsType<Row> {
+  return [
+    {
+      title: '对标档位',
+      key: 'benchmark_tier',
+      width: 100,
+      render: (_: unknown, row: Row) => (
+        <Select
+          className="field-full"
+          value={row.candidate.benchmark_tier}
+          options={TIER_OPTIONS}
+          disabled={disabled}
+          onChange={(benchmark_tier) => patch(row.index, { benchmark_tier })}
+        />
+      ),
+    },
+    {
+      title: '并发',
+      key: 'parallel_requests',
+      width: 80,
+      render: (_: unknown, row: Row) => (
+        <InputNumber
+          className="field-full"
+          min={1}
+          max={3}
+          precision={0}
+          // 旧配置里没有这一项，按默认 1 显示
+          value={row.candidate.parallel_requests ?? 1}
+          disabled={disabled}
+          onChange={(value) => patch(row.index, { parallel_requests: value ?? 1 })}
+        />
+      ),
+    },
+  ];
 }
 
 /**
@@ -85,20 +133,7 @@ export function FreeZoneCandidatesEditor(props: {
         />
       ),
     })),
-    {
-      title: '对标档位',
-      key: 'benchmark_tier',
-      width: 100,
-      render: (_: unknown, row: Row) => (
-        <Select
-          className="field-full"
-          value={row.candidate.benchmark_tier}
-          options={TIER_OPTIONS}
-          disabled={props.disabled}
-          onChange={(benchmark_tier) => patch(row.index, { benchmark_tier })}
-        />
-      ),
-    },
+    ...settingColumns(patch, props.disabled),
     {
       title: '操作',
       key: 'actions',
@@ -141,12 +176,14 @@ export function FreeZoneCandidatesEditor(props: {
         顺序就是栏目里的展示顺序。免费模型 id 必须以 free- 开头；上线后别再改
         id，否则选了它的用户会被自动换走。
         系列用来在下架时优先换同系列；对标档位决定划线原价（取这一档当前的星尘价）。
+        并发：在架时每轮同时发几路请求（1–3），先出字的胜出、其余取消，都没在「启动兜底等待」内出字就和兜底一起竞争；兜底率高的模型可以调到
+        2–3，每多一路多花一份 Surplus 费用。
       </Typography.Text>
       <Table<Row>
         size="small"
         rowKey="index"
         pagination={false}
-        scroll={{ x: 1130 }}
+        scroll={{ x: 1210 }}
         columns={columns}
         dataSource={list.map((candidate, index) => ({ index, candidate }))}
       />

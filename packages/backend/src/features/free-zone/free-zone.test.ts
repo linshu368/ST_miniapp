@@ -293,6 +293,7 @@ describe('resolveFreeZoneView', () => {
     tagline: '中文专精',
     family: 'glm',
     benchmark_tier: 'premium' as const,
+    parallel_requests: 1,
   };
   const config = FreeZoneConfigSchema.parse({
     enabled: true,
@@ -337,6 +338,7 @@ describe('chooseReplacement', () => {
       tagline: 't',
       family,
       benchmark_tier: 'light' as const,
+      parallel_requests: 1,
     },
     providers: ['p'],
   });

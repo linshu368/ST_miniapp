@@ -52,7 +52,13 @@ export interface ResolvedModel {
    * 畅聊免费模型。只作用于 Surplus 主调用：请求带折扣底线头和供应商白名单；
    * 兜底（OpenRouter 1017）不受影响。
    */
-  freeZone?: { candidateId: string; providers: string[]; minDiscountPct: number };
+  freeZone?: {
+    candidateId: string;
+    providers: string[];
+    minDiscountPct: number;
+    /** 同时发几路主请求（1–3），先出字的胜出 */
+    parallelRequests?: number;
+  };
 }
 
 export interface GenerationMessage {
