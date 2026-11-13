@@ -58,6 +58,21 @@ function terminalFields(
   };
 }
 
+function finishResponse(
+  state: RequestObservation,
+  request: FastifyRequest,
+  reply: FastifyReply,
+  interrupted: boolean
+): void {
+  const fields = terminalFields(state, reply, interrupted);
+  const rejected =
+    fields.outcome === 'rejected' && [401, 403, 409, 429].includes(fields.http_status ?? 0);
+  state.operation.finish(
+    { ...fields, route: request.routeOptions.url ?? 'unmatched' },
+    rejected ? 'warn' : undefined
+  );
+}
+
 function attachCompletion(
   state: RequestObservation,
   request: FastifyRequest,
@@ -66,13 +81,7 @@ function attachCompletion(
   const finish = (interrupted: boolean) => {
     reply.raw.removeListener('finish', complete);
     reply.raw.removeListener('close', close);
-    state.operation.finish(
-      {
-        ...terminalFields(state, reply, interrupted),
-        route: request.routeOptions.url ?? 'unmatched',
-      },
-      [401, 403, 409, 429].includes(reply.raw.statusCode) ? 'warn' : undefined
-    );
+    finishResponse(state, request, reply, interrupted);
   };
   const complete = () => finish(false);
   const close = () => finish(!reply.raw.writableFinished);
@@ -122,11 +131,7 @@ export function registerHttpObservation(
   });
   app.addHook('onResponse', async (request, reply) => {
     const state = states.get(request);
-    if (state)
-      state.operation.finish({
-        ...terminalFields(state, reply, false),
-        route: request.routeOptions.url ?? 'unmatched',
-      });
+    if (state) finishResponse(state, request, reply, false);
   });
   app.addHook('onTimeout', async (request, reply) => {
     states.get(request)?.operation.finish({

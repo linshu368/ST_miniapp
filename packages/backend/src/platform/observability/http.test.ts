@@ -19,6 +19,30 @@ function setup() {
 }
 
 describe('HTTP observation', () => {
+  it.each([false, true])('keeps rejection levels consistent with hijacked=%s', async (hijacked) => {
+    const { app, records } = setup();
+    for (const status of [401, 403, 409, 429]) {
+      app.get(`/status/${status}`, async (_request, reply) => {
+        if (hijacked) {
+          reply.hijack();
+          reply.raw.writeHead(status, { 'content-type': 'application/json' });
+          reply.raw.end('{}');
+        } else return reply.code(status).send({ success: false, error: { code: 'REJECTED' } });
+      });
+    }
+    try {
+      for (const status of [401, 403, 409, 429])
+        expect((await app.inject(`/status/${status}`)).statusCode).toBe(status);
+      const terminals = records.filter((record) => record.event === 'operation.terminal');
+      expect(terminals).toHaveLength(4);
+      expect(
+        terminals.every((record) => record.level === 'warn' && record.outcome === 'rejected')
+      ).toBe(true);
+    } finally {
+      await app.close();
+    }
+  });
+
   it('records a real socket disconnect without inventing a completed response', async () => {
     const { app, records } = setup();
     app.get('/disconnect', async (_request, reply) => {
@@ -87,6 +111,13 @@ describe('HTTP observation', () => {
       const terminals = records.filter((record) => record.event === 'operation.terminal');
       expect(terminals).toHaveLength(5);
       expect(terminals.map((record) => record.http_status)).toEqual([200, 404, 401, 500, 400]);
+      expect(terminals.map((record) => record.level)).toEqual([
+        'info',
+        'info',
+        'warn',
+        'error',
+        'info',
+      ]);
       expect(terminals[2]?.public_error_code).toBe('UNAUTHORIZED');
       expect(JSON.stringify(records)).not.toContain('private-data');
       expect(terminals[1]?.route).toBe('unmatched');
