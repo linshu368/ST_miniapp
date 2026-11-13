@@ -60,6 +60,12 @@ export const FreeZoneScreeningSchema = z.object({
    */
   price_band_ratio: z.number().min(1).max(100).default(3),
   /**
+   * 屏蔽的渠道（Surplus 供应商名，不分大小写）：这些渠道的报价一律不参与初筛和挑供应商，
+   * 所有模型都一样。在架模型下一轮复核时自动换到别家，没有别家就下架。
+   * 例如 dashscope-cn 会因内容审核把角色扮演回复写到一半掐断。
+   */
+  blocked_providers: z.array(z.string().trim().min(1).max(64)).max(20).default([]),
+  /**
    * 派单探测：评估时对在架、准备上架的模型，用选定的供应商带折扣底线真发一个只要几个字的请求。
    * 派不出去（折扣底线达不到、没有可用卖家）就当这家不达标——订单簿上的折扣和 Surplus
    * 派单时估算的折扣可能不一样。

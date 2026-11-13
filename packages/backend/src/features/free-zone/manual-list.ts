@@ -1,7 +1,7 @@
 /**
  * 运营手动「立即上架」一个畅聊候选：不等连续达标、不等冷却。
  *
- * 供应商：运营指定就用指定的；没指定就按当前行情和已发布的初筛门槛选（和评估同一套规则，
+ * 供应商：运营指定就用指定的（屏蔽渠道除外）；没指定就按当前行情和已发布的初筛门槛选（和评估同一套规则，
  * 但不看排除期——运营明确要上，排除的那家也可以用）。没有达标的又没指定，就不上，告诉运营原因。
  * 上架前和评估一样真发一次派单探测：订单簿看着达标、按折扣底线却派不出单的供应商不上，
  * 否则用户每一轮都落到兜底（11-12 实测 DeepSeek 官方渠道就是这样）。
@@ -13,7 +13,7 @@ import { initialState, listManually } from './lifecycle.js';
 import { createSurplusProbe, type ProbeFn } from './probe.js';
 import { applyProbes } from './probe-screening.js';
 import { saveManualListing, type ManualListingOutcome } from './repository.js';
-import { pickProvider, screenModel } from './screening.js';
+import { isBlockedProvider, pickProvider, screenModel } from './screening.js';
 import { invalidateFreeZoneSnapshot } from './snapshot.js';
 import { fetchSurplusModelMarket, type SurplusModelMarket } from './surplus-market.js';
 
@@ -118,6 +118,9 @@ export async function listFreeZoneModelNow(
   const candidate = config.candidates.find((item) => item.id === input.candidateId);
   if (!candidate) {
     throw new FreeZoneListNowError(404, `已发布的候选池里没有 ${input.candidateId}`);
+  }
+  if (input.provider && isBlockedProvider(config.screening, input.provider)) {
+    throw new FreeZoneListNowError(409, `${input.provider} 在屏蔽渠道里，先在初筛门槛里移除再上架`);
   }
   if (input.provider) {
     await checkRequestedProvider(config, candidate.surplus_model, input.provider, deps);

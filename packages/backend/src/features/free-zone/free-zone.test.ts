@@ -65,6 +65,24 @@ describe('screenModel', () => {
     expect(result.reasons).toContain('没有 trusted 供应商');
   });
 
+  it('drops blocked providers (case-insensitive) and falls back to the remaining ones', () => {
+    const offers = [...fiveDeep('dashscope-cn', 500), ...fiveDeep('deepseek', 900)];
+    const performance = [perf('dashscope-cn', { ttftP50Ms: 1000 }), perf('deepseek')];
+    const blocked = { ...rules, blocked_providers: ['DashScope-CN'] };
+    const result = screenModel(market(offers, performance), blocked);
+    expect(result.qualified).toEqual([qualified('deepseek', 900, 1670)]);
+    expect(result.detail.map((row) => row.provider)).toEqual(['deepseek']);
+  });
+
+  it('says so when every trusted provider is blocked', () => {
+    const result = screenModel(market(fiveDeep('dashscope-cn'), [perf('dashscope-cn')]), {
+      ...rules,
+      blocked_providers: ['dashscope-cn'],
+    });
+    expect(result.pass).toBe(false);
+    expect(result.reasons).toEqual(['只有屏蔽渠道：dashscope-cn']);
+  });
+
   it('treats unknown metrics as failing when the threshold is set, skips null thresholds', () => {
     const unknownUptime = market(fiveDeep('deepseek'), [perf('deepseek', { uptimePct: null })]);
     expect(screenModel(unknownUptime, rules).reasons.join()).toContain('成功率未知');
