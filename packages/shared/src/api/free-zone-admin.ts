@@ -135,6 +135,17 @@ export const FreeZoneBusinessSnapshotSchema = z.object({
   ttft_p90_ms: z.number().nullable().default(null),
 });
 
+/**
+ * Surplus 标的直购参考价（多为 OpenRouter 价），折扣就是相对它算的。
+ * 单位：微美元 / 百万 token（900000 = 每百万 0.9 美元）。
+ */
+export const FreeZoneDirectPriceSchema = z.object({
+  input_per_1m: z.number().nonnegative().nullable(),
+  output_per_1m: z.number().nonnegative().nullable(),
+  /** 参考价来源，例如 OpenRouter */
+  source: z.string().nullable(),
+});
+
 export const AdminFreeZoneStatusModelSchema = z.object({
   candidate_id: z.string(),
   display_name: z.string().nullable(),
@@ -156,6 +167,8 @@ export const AdminFreeZoneStatusModelSchema = z.object({
   business: FreeZoneBusinessSnapshotSchema.nullable().default(null),
   /** 最近一轮评估里，最终选定（或在用）的那家供应商的探测结果 */
   probe: FreeZoneProbeSchema.nullable().default(null),
+  /** 最近一轮评估时 Surplus 标的原价；还没评估过或行情没拿到为 null */
+  direct_price: FreeZoneDirectPriceSchema.nullable().default(null),
   /** 上过架没有（看上下架记录） */
   ever_listed: z.boolean().default(false),
   /** 最近一次下架：原因类别、时间、原因；从没下架过为 null */
@@ -244,3 +257,4 @@ export type AdminFreeZoneListNowRequest = z.input<typeof AdminFreeZoneListNowReq
 export type AdminFreeZoneListNowResponse = z.infer<typeof AdminFreeZoneListNowResponseSchema>;
 export type AdminFreeZoneDelistNowRequest = z.input<typeof AdminFreeZoneDelistNowRequestSchema>;
 export type AdminFreeZoneDelistNowResponse = z.infer<typeof AdminFreeZoneDelistNowResponseSchema>;
+export type FreeZoneDirectPrice = z.infer<typeof FreeZoneDirectPriceSchema>;

@@ -124,11 +124,21 @@ function snapshotMetrics(
   probed: ProbedScreening,
   rules: FreeZoneConfig['screening'],
   business: BusinessVerdict,
-  metrics: ModelMetrics | undefined
+  metrics: ModelMetrics | undefined,
+  market: SurplusModelMarket | null | undefined
 ): Record<string, unknown> {
   const screening = probed.screening;
+  const direct = market?.book.directPrice;
   return {
     probe: probed.chosen,
+    // 原价：运营平台据此决定每个模型的折扣底线
+    direct_price: direct
+      ? {
+          input_per_1m: direct.inputPer1m,
+          output_per_1m: direct.outputPer1m,
+          source: direct.source,
+        }
+      : null,
     probes: probed.probes,
     screening: screening
       ? {
@@ -242,7 +252,7 @@ export async function runFreeZoneEvaluation(
         surplusModel: candidate.surplus_model,
         state: next.state,
         events: next.events,
-        metrics: snapshotMetrics(probe, rules, business, modelMetrics),
+        metrics: snapshotMetrics(probe, rules, business, modelMetrics, markets[index]),
         version: versions.get(candidate.id) ?? null,
       };
     });
