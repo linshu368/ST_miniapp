@@ -131,6 +131,23 @@ describe('freeZoneProbeText', () => {
     expect(freeZoneProbeText(model({}))).toBe('');
   });
 
+  it('names the blocked channel when it is the only trusted provider', () => {
+    const view = freeZoneReasonView(
+      model({
+        last_reason: '只有屏蔽渠道：dashscope-cn',
+        screening: {
+          pass: false,
+          checks: [{ key: 'min_qualified_offers', threshold: 1, passed: 0, total: 0 }],
+          closest: null,
+        },
+      })
+    );
+    expect(view).toMatchObject({
+      kind: 'tags',
+      tags: [{ text: '只有屏蔽渠道：dashscope-cn', failed: true }],
+    });
+  });
+
   it('labels the probe check with how many providers routed', () => {
     const view = freeZoneReasonView(
       model({

@@ -157,10 +157,13 @@ export function freeZoneReasonView(model: AdminFreeZoneStatusModel): FreeZoneRea
   }
   const checks = summary.checks.filter((item) => item.threshold !== null);
   if (checks.every((item) => item.total === 0)) {
+    const blocked = model.last_reason?.split('；').find((part) => part.startsWith('只有屏蔽渠道'));
     return {
       kind: 'tags',
       tags: [
-        { text: '没有 trusted 供应商', failed: true, hint: '这个模型没有 trusted 供应商挂单' },
+        blocked
+          ? { text: blocked, failed: true, hint: '这个模型的 trusted 供应商都在屏蔽渠道里' }
+          : { text: '没有 trusted 供应商', failed: true, hint: '这个模型没有 trusted 供应商挂单' },
       ],
       note: null,
     };
