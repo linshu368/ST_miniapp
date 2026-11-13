@@ -53,7 +53,7 @@ export function createLogAlerts(policy: LogAlertPolicy, sink: Delivery, health: 
       }
       const card: SafeAlertCard = {
         title: `Backend ${rule.id}`,
-        summary: `event=${event.event}\noperation=${event.operation}\noutcome=${event.outcome ?? 'unknown'}\nerror_code=${event.error_code ?? '-'}\nevent_id=${event.event_id}\nSearch event_id in Railway logs.`,
+        summary: `event=${event.event}\noperation=${event.operation}\noutcome=${event.outcome ?? 'unknown'}\nerror_code=${event.error_code ?? '-'}\npublic_error_code=${event.public_error_code ?? '-'}\nevent_id=${event.event_id}\nSearch event_id in Railway logs.`,
         severity: rule.severity,
         transition: 'firing',
         incident_fingerprint: rule.id,

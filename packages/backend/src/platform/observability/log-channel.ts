@@ -8,6 +8,7 @@ export interface AlertLog {
   operation: string;
   level: number;
   error_code?: string;
+  public_error_code?: string;
   outcome?: string;
   http_status?: number;
   duration_ms?: number;
@@ -29,6 +30,8 @@ export function publishAlertLog(record: Record<string, unknown>, level: number):
   if (record.event.startsWith('observability.')) return;
   try {
     const code = record.error_code ?? record.errorCode ?? record.code ?? record.errorClass;
+    const status = record.http_status ?? record.statusCode ?? record.status;
+    const duration = record.duration_ms ?? record.durationMs;
     const event: AlertLog = {
       event_id:
         typeof record.event_id === 'string' && /^[a-f0-9-]{36}$/.test(record.event_id)
@@ -38,9 +41,16 @@ export function publishAlertLog(record: Record<string, unknown>, level: number):
       operation: safeName(record.operation ?? record.module ?? 'legacy'),
       level,
       ...(typeof code === 'string' ? { error_code: safeName(code) } : {}),
+      ...(typeof record.public_error_code === 'string'
+        ? { public_error_code: safeName(record.public_error_code) }
+        : {}),
       ...(typeof record.outcome === 'string' ? { outcome: safeName(record.outcome) } : {}),
-      ...(typeof record.http_status === 'number' ? { http_status: record.http_status } : {}),
-      ...(typeof record.duration_ms === 'number' ? { duration_ms: record.duration_ms } : {}),
+      ...(typeof status === 'number' && Number.isInteger(status) && status >= 100 && status <= 599
+        ? { http_status: status }
+        : {}),
+      ...(typeof duration === 'number' && Number.isFinite(duration) && duration >= 0
+        ? { duration_ms: duration }
+        : {}),
     };
     // The notification points to the same physical Railway log, including legacy events.
     record.event_id = event.event_id;

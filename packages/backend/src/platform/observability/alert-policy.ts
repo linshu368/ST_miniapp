@@ -11,6 +11,7 @@ export const logAlertRuleSchema = z
     events: names.optional(),
     operations: names.optional(),
     error_codes: names.optional(),
+    public_error_codes: names.optional(),
     outcomes: names.optional(),
     min_http_status: z.number().int().min(100).max(599).optional(),
     min_duration_ms: z.number().finite().nonnegative().optional(),
@@ -48,7 +49,12 @@ export function matchesLogRule(rule: LogAlertRule, event: AlertLog): boolean {
     (!rule.events || rule.events.includes(event.event)) &&
     (!rule.operations || rule.operations.includes(event.operation)) &&
     (!rule.error_codes ||
-      (event.error_code !== undefined && rule.error_codes.includes(event.error_code))) &&
+      [event.error_code, event.public_error_code].some(
+        (code) => code !== undefined && rule.error_codes!.includes(code)
+      )) &&
+    (!rule.public_error_codes ||
+      (event.public_error_code !== undefined &&
+        rule.public_error_codes.includes(event.public_error_code))) &&
     (!rule.outcomes || (event.outcome !== undefined && rule.outcomes.includes(event.outcome))) &&
     (rule.min_http_status === undefined ||
       (event.http_status !== undefined && event.http_status >= rule.min_http_status)) &&

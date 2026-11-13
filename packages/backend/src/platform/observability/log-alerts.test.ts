@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import pino from 'pino';
 import { Writable } from 'node:stream';
 import { fastifyLoggerOptions } from '../../lib/logger-options.js';
-import { parseLogAlertPolicy } from './alert-policy.js';
+import { matchesLogRule, parseLogAlertPolicy } from './alert-policy.js';
 import { createLogAlerts } from './log-alerts.js';
 import { subscribeLogAlerts, type AlertLog } from './log-channel.js';
 
@@ -17,6 +17,75 @@ const event: AlertLog = {
 afterEach(() => vi.useRealTimers());
 
 describe('direct runtime log alerts', () => {
+  it('alerts on legacy errors and public codes while retaining distinct codes and safe aliases', () => {
+    const received: AlertLog[] = [];
+    const lines: string[] = [];
+    const stop = subscribeLogAlerts((entry) => received.push(entry));
+    const logger = pino(
+      { ...fastifyLoggerOptions(), level: 'info', transport: undefined },
+      new Writable({
+        write(chunk, _encoding, done) {
+          lines.push(String(chunk));
+          done();
+        },
+      })
+    );
+    try {
+      logger.error(new Error('private-error'));
+      logger.error({ err: new Error('private-error') });
+      logger.fatal('private-text');
+      logger.error({
+        event: 'operation.terminal',
+        operation: 'http.request',
+        error_code: 'DEPENDENCY_FAILED',
+        public_error_code: 'AUTH_DEPENDENCY_UNAVAILABLE',
+        statusCode: 503,
+        durationMs: 9000,
+      });
+      expect(received.map((entry) => entry.event)).toEqual([
+        'logger.error',
+        'logger.error',
+        'logger.fatal',
+        'operation.terminal',
+      ]);
+      expect(received[3]).toMatchObject({
+        error_code: 'DEPENDENCY_FAILED',
+        public_error_code: 'AUTH_DEPENDENCY_UNAVAILABLE',
+        http_status: 503,
+        duration_ms: 9000,
+      });
+      for (const errorCode of ['DEPENDENCY_FAILED', 'AUTH_DEPENDENCY_UNAVAILABLE']) {
+        const rule = parseLogAlertPolicy(
+          'true',
+          JSON.stringify([
+            { id: 'code', error_codes: [errorCode], min_http_status: 500, min_duration_ms: 8000 },
+          ])
+        ).rules[0]!;
+        expect(matchesLogRule(rule, received[3]!)).toBe(true);
+      }
+      const strict = parseLogAlertPolicy(
+        'true',
+        JSON.stringify([{ id: 'public', public_error_codes: ['AUTH_DEPENDENCY_UNAVAILABLE'] }])
+      ).rules[0]!;
+      expect(matchesLogRule(strict, received[3]!)).toBe(true);
+      expect(matchesLogRule(strict, { ...event, error_code: 'AUTH_DEPENDENCY_UNAVAILABLE' })).toBe(
+        false
+      );
+      expect(lines.join('')).not.toContain('private');
+      received.forEach((entry, index) =>
+        expect(JSON.parse(lines[index]!).event_id).toBe(entry.event_id)
+      );
+      logger.error({ event: 'invalid.numbers', statusCode: 999, durationMs: Infinity });
+      expect(received.at(-1)).not.toHaveProperty('http_status');
+      expect(received.at(-1)).not.toHaveProperty('duration_ms');
+    } finally {
+      stop();
+    }
+    const before = received.length;
+    logger.error({ err: new Error('private-disabled') });
+    expect(received).toHaveLength(before);
+  });
+
   it('does no parsing or sending while disabled, even with invalid rule config', async () => {
     const sink = { deliver: vi.fn() };
     const alerts = createLogAlerts(parseLogAlertPolicy(undefined, 'not-json'), sink, vi.fn());

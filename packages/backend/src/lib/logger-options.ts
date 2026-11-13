@@ -81,24 +81,20 @@ export function fastifyLoggerOptions(): Record<string, unknown> {
         level: number
       ) {
         const first: unknown = args[0];
-        if (first && typeof first === 'object' && !(first instanceof Error)) {
-          const record = { ...this.bindings(), ...first };
-          publishAlertLog(record, level);
-          args[0] = record;
-        }
-        // Pino otherwise derives msg from Error.message, bypassing the err serializer.
-        if (first instanceof Error) {
-          method.call(this, { err: first }, 'Operation failed');
-        } else if (first && typeof first === 'object' && 'err' in first) {
-          method.call(this, args[0], 'Operation reported an error');
-        } else {
-          // Free-form messages can interpolate provider bodies, user text or URL credentials.
-          const record = args[0];
-          if (record && typeof record === 'object') {
-            const event = 'event' in record ? record.event : undefined;
-            method.call(this, record, safeName(event, 'Structured log'));
-          } else method.call(this, 'Unstructured log message withheld');
-        }
+        const record: Record<string, unknown> = {
+          ...this.bindings(),
+          ...(first instanceof Error
+            ? { err: first }
+            : first && typeof first === 'object'
+              ? first
+              : {}),
+        };
+        // Legacy failures (including Fastify's own errors) must not silently bypass alerts.
+        // Fixed fallback names cannot expose interpolated text or Error.message.
+        if (level >= 50 && typeof record.event !== 'string')
+          record.event = level >= 60 ? 'logger.fatal' : 'logger.error';
+        publishAlertLog(record, level);
+        method.call(this, record, safeName(record.event, 'Structured log'));
       },
     },
     // GET 支付通知包含可重放签名和商品信息。自动请求日志只保留路径与链路。

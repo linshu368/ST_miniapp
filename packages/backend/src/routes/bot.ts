@@ -91,7 +91,7 @@ export default async function botRoutes(app: FastifyInstance) {
         });
         return reply.send(ok({ ignored: false, forwarded: true }));
       } catch (error) {
-        request.log.error({ err: error }, '[bot] forward to cs service failed');
+        request.log.error({ event: 'bot.forward_cs.failed', err: error }, 'CS forwarding failed');
         captureBackendException(error, request, 'bot.forward_cs', { tg_id: tgId });
         return reply.send(ok({ ignored: false, forwarded: false }));
       }
