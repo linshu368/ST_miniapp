@@ -78,7 +78,6 @@
     "packages/backend/src/routes/admin-supabase-proxy.ts#adminSupabaseProxyRoutes": 162,
     "packages/backend/src/routes/character-social.ts#characterSocialRoutes": 147,
     "packages/backend/src/routes/characters.ts#characterRoutes": 253,
-    "packages/backend/src/routes/community.ts#communityRoutes": 229,
     "packages/backend/src/routes/creator-characters.ts#creatorCharacterRoutes": 217,
     "packages/backend/src/routes/creator-tools.ts#creatorToolsRoutes": 166,
     "packages/backend/src/routes/drama.ts#dramaRoutes": 123,

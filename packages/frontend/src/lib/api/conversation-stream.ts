@@ -20,6 +20,7 @@ import { createLogger } from '@/lib/logger';
 import { API_URL } from './client';
 import { lobbyViewerScope } from '@/lib/lobby-recommendation-state';
 import { useOnboardingStore } from '@/stores/onboarding-store';
+import { noteCompletedRound } from '@/lib/growth/prompt-visit';
 
 const log = createLogger('conversation-stream');
 export const CONVERSATION_RECOVERING_MESSAGE = '正在接回这条回复，请稍候';
@@ -172,6 +173,15 @@ export function createConversationRequestId(): string {
   bytes[8] = (bytes[8]! & 0x3f) | 0x80;
   const hex = Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('');
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+/**
+ * 只算成功的新一轮，不算重新生成，也不会重复计数：新人引导的跨卡计轮，
+ * 加上增长弹窗「本次打开新完成的轮数」。
+ */
+function recordNewTurn(guideScope: string, turnId: string): void {
+  useOnboardingStore.getState().recordCompletedTurn(guideScope, turnId);
+  noteCompletedRound();
 }
 
 /**
@@ -395,14 +405,11 @@ export async function streamConversationTurn(options: StreamTurnOptions): Promis
         onDone: (event) => {
           if (controller.signal.aborted) return;
           options.onDone(event);
-          // Local guide only: count successful new turns across cards, never regenerations or replay twice.
           if (options.content !== undefined && event.status === 'complete')
-            useOnboardingStore
-              .getState()
-              .recordCompletedTurn(
-                guideScope,
-                `${options.sessionId}:${options.requestId ?? event.assistant_message_id}`
-              );
+            recordNewTurn(
+              guideScope,
+              `${options.sessionId}:${options.requestId ?? event.assistant_message_id}`
+            );
         },
       }),
     ]);

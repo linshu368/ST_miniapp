@@ -43,6 +43,7 @@ import dramaInteractionRoutes from './routes/drama-interactions.js';
 import dramaRoutes from './routes/drama.js';
 import favoriteRoutes from './routes/favorites.js';
 import growthRoutes from './routes/growth.js';
+import growthPromptRoutes from './routes/growth-prompts.js';
 import imagePlazaRoutes from './routes/image-plaza.js';
 import imageRoutes from './routes/images.js';
 import inviteRoutes from './routes/invite.js';
@@ -104,6 +105,7 @@ export async function buildApp() {
   await app.register(imageRoutes);
   await app.register(botRoutes);
   await app.register(growthRoutes);
+  await app.register(growthPromptRoutes);
   await app.register(inviteRoutes);
   await app.register(communityRoutes);
   await app.register(adminSupabaseProxyRoutes);
