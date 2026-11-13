@@ -32,6 +32,7 @@ import { FreeZoneDelistNowButton } from './FreeZoneDelistNowButton';
 import { FreeZoneListNowButton } from './FreeZoneListNowButton';
 import {
   DISCOUNT_HINT,
+  FreeZoneDirectPrice,
   FreeZoneDiscountInput,
   FreeZoneParallelInput,
   PARALLEL_HINT,
@@ -232,6 +233,18 @@ function GroupTable(props: {
         <FreeZoneListNowButton model={model} onListed={props.onChanged} />
       ),
   };
+  const price = {
+    title: (
+      <Tooltip title="Surplus 标的原价（直购参考价，多为 OpenRouter 价），折扣相对它算。输入 / 输出，每百万 token；悬停看按折扣底线的最高价。">
+        <span>原价（入/出）</span>
+      </Tooltip>
+    ),
+    key: 'price',
+    width: 120,
+    render: (_: unknown, model: AdminFreeZoneStatusModel) => (
+      <FreeZoneDirectPrice model={model} editing={props.editing} />
+    ),
+  };
   const discount = {
     title: (
       <Tooltip title={DISCOUNT_HINT}>
@@ -261,11 +274,11 @@ function GroupTable(props: {
       size="small"
       rowKey="candidate_id"
       pagination={false}
-      scroll={{ x: 1040 }}
+      scroll={{ x: 1160 }}
       columns={
         props.group === 'listed'
-          ? [...base, discount, parallel, action]
-          : [...base, discount, action]
+          ? [...base, price, discount, parallel, action]
+          : [...base, price, discount, action]
       }
       dataSource={props.models}
     />
