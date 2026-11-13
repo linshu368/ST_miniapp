@@ -5,6 +5,9 @@ import { AdminCliSessionRequestSchema, fail, ok, type AdminCliSessionData } from
 import { AdminSessionError, loadAdminActor } from '../features/admin-access/session.js';
 import { getSupabaseClient } from '../lib/supabase.js';
 import { config } from '../platform/config.js';
+import { clientFetch } from '../platform/observability/fetch.js';
+
+const fetch = clientFetch('admin.session', 'supabase');
 
 /**
  * 运营平台 CLI 免密登录（用户决策 2026-11-04）：只凭白名单邮箱签发该运营账号的会话。

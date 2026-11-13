@@ -8,6 +8,9 @@
  */
 
 import { config } from '../platform/config.js';
+import { clientFetch } from '../platform/observability/fetch.js';
+
+const fetch = clientFetch('telegram.identity', 'telegram');
 
 let telegramBotUsernamePromise: Promise<string | null> | null = null;
 

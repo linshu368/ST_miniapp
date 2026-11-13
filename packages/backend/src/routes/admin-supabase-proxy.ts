@@ -10,6 +10,9 @@ import {
 import { authorizeAdminOperator } from '../features/admin-access/session.js';
 import { config } from '../platform/config.js';
 import { getSupabaseClient } from '../lib/supabase.js';
+import { clientFetch } from '../platform/observability/fetch.js';
+
+const fetch = clientFetch('admin.supabase_proxy', 'supabase');
 
 const ALLOWED_PATH_PREFIXES = ['auth/v1/', 'rest/v1/', 'storage/v1/'];
 const FORWARDED_REQUEST_HEADERS = [

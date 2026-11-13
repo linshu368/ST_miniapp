@@ -1,3 +1,6 @@
+import { clientFetch } from '../../platform/observability/fetch.js';
+
+const fetch = clientFetch('community.telegram', 'telegram');
 export async function getCommunityMemberStatus(
   token: string,
   chatId: string,

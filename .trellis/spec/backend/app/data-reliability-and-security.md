@@ -42,6 +42,8 @@
 
 HTTP 根级 `registerHttpObservation` 在 CORS/鉴权之前运行，使用回调 hook 在 `withContext` 内继续；响应头回传 X-Request-Id/X-Trace-Id。raw finish/close 与 onResponse 共用一次终态守卫，hijack SSE 也记录传输结果；SSE HTTP 200 业务结果保持 unknown，由流所有者另报。默认 Fastify 请求日志关闭，避免双份开始/终态。基础 stdout 与 LOG_LEVEL 独立，测试默认静默；logger-options 独立于配置/数据库初始化，错误对象及 Pino 自动生成的 msg 都须清洗。
 
+出站客户端在原模块声明 `clientFetch(operation, provider)`，只包装该客户端的 fetch；`observedFetch` 可传入已有 undici/代理实现。记录到 response_headers，不读取正文、不改 signal/timeout/redirect、不添加重试。非成功 HTTP 是 attempt 失败，不等于业务失败；写入抛错为 outcome_known=false。Supabase 从既有 observedSupabaseFetch 接入（含非 REST 请求）；Prisma 从 measureDbOperation 接入 model/raw/unsafe raw。SDK 返回的业务错误仍由 repository/业务边界判断，禁止把 HTTP 200 当作 RPC 业务成功。
+
 - 使用现有 pino、`requestLogger`；原始异常写 `{ err }`。Sentry 先脱敏再附 context。
 - 关键流程记录阶段、耗时、状态/计数、安全幂等摘要、provider/request id；job 记录扫描/推进/失败数，禁止逐行高频 info。
 - 发布顺序：兼容 migration → backend producer → consumers → 清理旧字段。说明旧数据、灰度/停止条件、rollback 或 forward-fix。生产 migration 手动逐文件，先 test 验证 shape、RLS/权限、读写、锁/容量和回滚。

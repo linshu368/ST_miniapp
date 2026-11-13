@@ -5,6 +5,9 @@
 // 超时或失败一律降级为 undefined，不抛异常、不重试——/play 本身不能因为这层缓存变慢或出错。
 
 import type { SanitizedLogger } from './signed-url.js';
+import { clientFetch } from '../../platform/observability/fetch.js';
+
+const fetch = clientFetch('drama.manifest', 'cloudflare');
 
 /** 缓存容量上限。当前白名单固定 30 个 uid，留出增长空间 */
 const MAX_ENTRIES = 64;

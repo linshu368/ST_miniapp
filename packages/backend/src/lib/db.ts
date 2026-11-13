@@ -33,5 +33,11 @@ export const prisma = baseClient.$extends({
     $executeRaw({ args, query }) {
       return measureDbOperation('raw', 'executeRaw', () => query(args));
     },
+    $queryRawUnsafe({ args, query }) {
+      return measureDbOperation('raw', 'queryRawUnsafe', () => query(args));
+    },
+    $executeRawUnsafe({ args, query }) {
+      return measureDbOperation('raw', 'executeRawUnsafe', () => query(args));
+    },
   },
 }) as unknown as PrismaClient;

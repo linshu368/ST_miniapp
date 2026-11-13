@@ -1,6 +1,9 @@
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 import { getSupabaseClient } from './supabase.js';
+import { clientFetch } from '../platform/observability/fetch.js';
+
+const fetch = clientFetch('storage.avatar', 'http');
 
 const AVATAR_BUCKET = 'miniapp-user-avatars';
 const MAX_AVATAR_BYTES = 2 * 1024 * 1024;

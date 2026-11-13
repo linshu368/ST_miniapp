@@ -3,6 +3,9 @@ import { config } from '../platform/config.js';
 import { ImageUpstreamError } from '../features/generation/image-upstream.js';
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
+import { clientFetch } from '../platform/observability/fetch.js';
+
+const fetch = clientFetch('storage.chat_image', 'http');
 
 const IMAGE_BUCKET = 'miniapp-chat-images';
 
