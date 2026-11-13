@@ -1,8 +1,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
+  AdminFreeZoneDelistNowResponseSchema,
   AdminFreeZoneListNowResponseSchema,
   AdminFreeZoneScreeningResponseSchema,
   AdminFreeZoneStatusResponseSchema,
+  type AdminFreeZoneDelistNowRequest,
+  type AdminFreeZoneDelistNowResponse,
   type AdminFreeZoneListNowRequest,
   type AdminFreeZoneListNowResponse,
   type AdminFreeZoneScreeningRequest,
@@ -15,7 +18,7 @@ import type { ZodType, ZodTypeDef } from 'zod';
 import { readAdminAccessToken } from './textPostprocessApi';
 
 /**
- * 畅聊调试接口：线上状态、按门槛筛选候选池（只读），以及手动立即上架。网页和 CLI 共用。
+ * 畅聊调试接口：线上状态、按门槛筛选候选池（只读），以及手动立即上架、手动下架。网页和 CLI 共用。
  * 筛选要实时问 Surplus，候选多时要等十几秒，超时放宽到 60 秒。
  */
 
@@ -83,6 +86,20 @@ export function listFreeZoneModelNow(
     apiUrl(apiBaseUrl, '/api/admin/free-zone/list-now'),
     { method: 'POST', body: request, timeoutMs: LIST_NOW_TIMEOUT_MS },
     AdminFreeZoneListNowResponseSchema
+  );
+}
+
+/** 手动下架一个在架模型；下架后一直停着，要用时走立即上架。 */
+export function delistFreeZoneModelNow(
+  client: SupabaseClient,
+  apiBaseUrl: string,
+  request: AdminFreeZoneDelistNowRequest
+): Promise<AdminFreeZoneDelistNowResponse> {
+  return callFreeZoneApi(
+    client,
+    apiUrl(apiBaseUrl, '/api/admin/free-zone/delist-now'),
+    { method: 'POST', body: request, timeoutMs: STATUS_TIMEOUT_MS },
+    AdminFreeZoneDelistNowResponseSchema
   );
 }
 
@@ -215,6 +232,22 @@ export const FREE_ZONE_STATUS_GROUPS: ReadonlyArray<{
 ];
 
 /** 在架看当前状态；不在架的，最近一次是因业务数据下架的单独一块，其余都算未上架。 */
+/**
+ * 运营手动下架、还没重新上架：冷却中且最近一次下架没有原因分类（自动下架都带 official/business）。
+ * 这种不会自动回来，状态显示「手动下架」而不是冷却到某个时间。
+ */
+export function isFreeZoneManualHold(model: AdminFreeZoneStatusModel): boolean {
+  return (
+    model.status === 'cooling' && model.last_delist !== null && model.last_delist.cause === null
+  );
+}
+
+/** 状态标签：手动下架单独显示，其余按状态。 */
+export function freeZoneStatusLabel(model: AdminFreeZoneStatusModel): string {
+  if (!model.status) return '未评估';
+  return isFreeZoneManualHold(model) ? '手动下架' : FREE_ZONE_STATUS_LABELS[model.status];
+}
+
 export function freeZoneStatusGroup(model: AdminFreeZoneStatusModel): FreeZoneStatusGroup {
   if (model.status === 'listed') return 'listed';
   if (model.last_delist?.cause === 'business') return 'business_delisted';
