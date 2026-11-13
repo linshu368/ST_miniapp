@@ -208,6 +208,22 @@ export const AdminFreeZoneListNowResponseSchema = z.object({
   previous_status: FreeZoneModelStatusSchema.nullable(),
 });
 
+/**
+ * 运营手动「下架」：在架模型立即下架，正在用它的用户下一轮自动换成别的免费模型。
+ * 不会被评估任务自动加回来（冷却截止设到很远），要用时走「立即上架」。
+ * 不要求在候选池里：移出候选池后仍停在在架状态的行也能用它收掉。
+ */
+export const AdminFreeZoneDelistNowRequestSchema = z.object({
+  candidate_id: z.string().trim().min(1).max(64),
+});
+
+export const AdminFreeZoneDelistNowResponseSchema = z.object({
+  candidate_id: z.string(),
+  display_name: z.string(),
+  /** 下架前在用的供应商 */
+  providers: z.array(z.string()),
+});
+
 export type FreeZoneScreeningCheckKey = z.infer<typeof FreeZoneScreeningCheckKeySchema>;
 export type FreeZoneScreeningCheck = z.infer<typeof FreeZoneScreeningCheckSchema>;
 export type FreeZoneCheckSummary = z.infer<typeof FreeZoneCheckSummarySchema>;
@@ -224,3 +240,5 @@ export type AdminFreeZoneEvent = z.infer<typeof AdminFreeZoneEventSchema>;
 export type AdminFreeZoneStatusResponse = z.infer<typeof AdminFreeZoneStatusResponseSchema>;
 export type AdminFreeZoneListNowRequest = z.input<typeof AdminFreeZoneListNowRequestSchema>;
 export type AdminFreeZoneListNowResponse = z.infer<typeof AdminFreeZoneListNowResponseSchema>;
+export type AdminFreeZoneDelistNowRequest = z.input<typeof AdminFreeZoneDelistNowRequestSchema>;
+export type AdminFreeZoneDelistNowResponse = z.infer<typeof AdminFreeZoneDelistNowResponseSchema>;
