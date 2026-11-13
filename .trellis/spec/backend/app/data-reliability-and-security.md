@@ -44,6 +44,8 @@ HTTP 根级 `registerHttpObservation` 在 CORS/鉴权之前运行，使用回调
 
 出站客户端在原模块声明 `clientFetch(operation, provider)`，只包装该客户端的 fetch；`observedFetch` 可传入已有 undici/代理实现。记录到 response_headers，不读取正文、不改 signal/timeout/redirect、不添加重试。非成功 HTTP 是 attempt 失败，不等于业务失败；写入抛错为 outcome_known=false。Supabase 从既有 observedSupabaseFetch 接入（含非 REST 请求）；Prisma 从 measureDbOperation 接入 model/raw/unsafe raw。SDK 返回的业务错误仍由 repository/业务边界判断，禁止把 HTTP 200 当作 RPC 业务成功。
 
+生成入口 `execute` 用独立子操作记录安全结果，不输出正文；原执行/计费及 hooks 不变。`createReplyStreamSink` 在 open 建立交付操作，流内 error 和 done 提供应用结果；断连优先记录 interrupted，后续后台生成成功不能改写已中断的交付。`observeGenerationAttempt` 与 `observeBackgroundJob` 的基础事件在可选工程遥测开关之前输出。工程 OTLP exporter 拆至 engineering-telemetry-exporter，原指标口径及出口配置不变。
+
 - 使用现有 pino、`requestLogger`；原始异常写 `{ err }`。Sentry 先脱敏再附 context。
 - 关键流程记录阶段、耗时、状态/计数、安全幂等摘要、provider/request id；job 记录扫描/推进/失败数，禁止逐行高频 info。
 - 发布顺序：兼容 migration → backend producer → consumers → 清理旧字段。说明旧数据、灰度/停止条件、rollback 或 forward-fix。生产 migration 手动逐文件，先 test 验证 shape、RLS/权限、读写、锁/容量和回滚。

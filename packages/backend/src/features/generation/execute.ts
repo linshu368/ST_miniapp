@@ -1,4 +1,6 @@
 import { createLogger } from '../../lib/logger.js';
+import { observation as runtimeObservation } from '../../platform/observability/runtime.js';
+import type { EventFields } from '../../platform/observability/events.js';
 import {
   observeGenerationAttempt,
   observeGenerationPrepare,
@@ -18,6 +20,41 @@ export { prepareGeneration } from './generation-prepare.js';
 export { GENERATION_TIMEOUT_MS } from './generation-runtime.js';
 
 export async function execute(
+  request: GenerationRequest,
+  hooks?: GenerationHooks,
+  log: GenerationLogger = createLogger('generation')
+): Promise<GenerationResult> {
+  return runtimeObservation.observe(
+    'generation.execute',
+    () => executeObserved(request, hooks, log),
+    (result): EventFields => ({
+      provider: request.model.provider,
+      upstream_status: result.upstreamStatus,
+      stage: 'generation_terminal',
+      outcome:
+        result.finishReason === 'user_cancelled' || result.finishReason === 'cancelled'
+          ? 'cancelled'
+          : result.finishReason === 'timeout' || result.finishReason === 'first_token_timeout'
+            ? 'timed_out'
+            : result.status === 'success'
+              ? 'succeeded'
+              : result.status === 'insufficient_balance'
+                ? 'rejected'
+                : result.status === 'stream_interrupted'
+                  ? 'interrupted'
+                  : 'failed',
+      outcome_known: result.status !== 'stream_interrupted',
+      error_code:
+        result.status === 'success'
+          ? undefined
+          : result.denial === 'vip_required'
+            ? 'VIP_REQUIRED'
+            : result.status.toUpperCase(),
+    })
+  );
+}
+
+async function executeObserved(
   request: GenerationRequest,
   hooks?: GenerationHooks,
   log: GenerationLogger = createLogger('generation')
