@@ -164,6 +164,22 @@ describe('listFreeZoneModelNow', () => {
     expect(d.saved).toHaveLength(0);
   });
 
+  it('probes with the candidate’s own discount floor when it has one', async () => {
+    const base = deps();
+    const config = await base.loadConfig();
+    const probe = vi.fn(okProbe);
+    const d = deps({
+      probe,
+      loadConfig: async () => ({
+        ...config,
+        screening: { ...config.screening, min_discount_pct: 90 },
+        candidates: config.candidates.map((item) => ({ ...item, min_discount_pct: 86 })),
+      }),
+    });
+    await listFreeZoneModelNow({ candidateId: 'free-glm-5', provider: 'zai' }, d);
+    expect(probe).toHaveBeenCalledWith(expect.objectContaining({ minDiscountPct: 86 }));
+  });
+
   it('refuses when nothing passes screening and no provider was given', async () => {
     const d = deps({ fetchMarket: async () => market('zai', 50) });
     await expect(listFreeZoneModelNow({ candidateId: 'free-glm-5' }, d)).rejects.toMatchObject({

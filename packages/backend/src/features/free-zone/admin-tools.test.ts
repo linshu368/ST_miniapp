@@ -82,6 +82,20 @@ describe('previewFreeZoneScreening', () => {
     expect(result.checked_at).toBe('2026-11-12T03:00:00.000Z');
   });
 
+  it('uses a candidate’s own discount floor when set, the shared floor otherwise', async () => {
+    // 报价全是 95% 折扣：统一底线 96 时都不达标，单独设 90 的那个达标
+    const cheapPriced = [
+      { id: 'free-own', surplus_model: 'good', display_name: 'OWN', min_discount_pct: 90 },
+      { id: 'free-shared', surplus_model: 'good', display_name: 'SHARED' },
+    ];
+    const result = await previewFreeZoneScreening(
+      { candidates: cheapPriced, screening: { ...rules, min_discount_pct: 96 } },
+      { fetchMarket: async () => markets.good!, now: () => 0 }
+    );
+    const pass = Object.fromEntries(result.models.map((model) => [model.candidate_id, model.pass]));
+    expect(pass).toEqual({ 'free-own': true, 'free-shared': false });
+  });
+
   it('reuses market data for a minute so tweaking a threshold is instant', async () => {
     let calls = 0;
     let clock = 0;

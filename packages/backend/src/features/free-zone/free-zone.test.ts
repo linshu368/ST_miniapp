@@ -294,6 +294,7 @@ describe('resolveFreeZoneView', () => {
     family: 'glm',
     benchmark_tier: 'premium' as const,
     parallel_requests: 1,
+    min_discount_pct: null,
   };
   const config = FreeZoneConfigSchema.parse({
     enabled: true,
@@ -339,6 +340,7 @@ describe('chooseReplacement', () => {
       family,
       benchmark_tier: 'light' as const,
       parallel_requests: 1,
+      min_discount_pct: null,
     },
     providers: ['p'],
   });

@@ -7,7 +7,11 @@
  * 否则用户每一轮都落到兜底（11-12 实测 DeepSeek 官方渠道就是这样）。
  * 上架后和普通在架模型一样，每 30 分钟评估一次，不达标照常换供应商或下架。
  */
-import type { AdminFreeZoneListNowResponse, FreeZoneConfig } from '@miniapp/shared';
+import {
+  freeZoneRulesFor,
+  type AdminFreeZoneListNowResponse,
+  type FreeZoneConfig,
+} from '@miniapp/shared';
 import { fetchFreeZoneConfig } from './config.js';
 import { initialState, listManually } from './lifecycle.js';
 import { createSurplusProbe, type ProbeFn } from './probe.js';
@@ -114,11 +118,13 @@ export async function listFreeZoneModelNow(
   input: { candidateId: string; provider?: string },
   deps: ListNowDeps = defaultDeps
 ): Promise<AdminFreeZoneListNowResponse> {
-  const config = await deps.loadConfig();
-  const candidate = config.candidates.find((item) => item.id === input.candidateId);
+  const published = await deps.loadConfig();
+  const candidate = published.candidates.find((item) => item.id === input.candidateId);
   if (!candidate) {
     throw new FreeZoneListNowError(404, `已发布的候选池里没有 ${input.candidateId}`);
   }
+  // 折扣底线按这个模型取（单独设了就用它）；探测和初筛都读 config.screening
+  const config = { ...published, screening: freeZoneRulesFor(published.screening, candidate) };
   if (input.provider && isBlockedProvider(config.screening, input.provider)) {
     throw new FreeZoneListNowError(409, `${input.provider} 在屏蔽渠道里，先在初筛门槛里移除再上架`);
   }
