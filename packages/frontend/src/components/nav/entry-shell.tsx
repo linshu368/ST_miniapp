@@ -1,4 +1,5 @@
 import { LobbyShellSkeleton } from '@/components/characters/lobby-shell-skeleton';
+import { ChatsShellSkeleton } from '@/components/conversations/chats-shell-skeleton';
 import { DramaListShell } from '@/components/drama/drama-list-shell';
 import { BottomNavShell } from './bottom-nav-shell';
 import { DramaHomeFrame, DramaHomeLoading } from '@/components/drama/drama-home-frame';
@@ -7,7 +8,12 @@ import { DramaHomeFrame, DramaHomeLoading } from '@/components/drama/drama-home-
 export function EntryShell({ pathname }: { pathname: string }) {
   return (
     <>
-      <div data-startup-content className="pb-[var(--app-nav-space)]" aria-busy="true">
+      <div
+        data-startup-content
+        data-startup-fullscreen={pathname === '/watch' ? '' : undefined}
+        className="pb-[var(--app-nav-space)]"
+        aria-busy="true"
+      >
         {pathname === '/watch' ? (
           <DramaHomeFrame>
             <DramaHomeLoading />
@@ -16,6 +22,8 @@ export function EntryShell({ pathname }: { pathname: string }) {
           <LobbyShellSkeleton />
         ) : pathname === '/dramas' ? (
           <DramaListShell />
+        ) : pathname === '/chats' ? (
+          <ChatsShellSkeleton />
         ) : (
           <main className="mx-auto min-h-dvh w-full max-w-screen-xl p-6 pt-[calc(1.5rem+env(safe-area-inset-top))]">
             {pathname !== '/watch' && (

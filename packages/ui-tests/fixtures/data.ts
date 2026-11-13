@@ -253,6 +253,11 @@ export const scenarios = {
     description: '客户端计时到点只提示网络慢，回复到达后提示消失，不误报重试',
     path: `/chat/${IDS.character}?session=${IDS.session}&from=discover`,
   },
+  'chat-folders': {
+    label: '对话分组与整理',
+    description: '32 段对话、多角色多段、2 个分组，含只聊一两句与 30 天没聊',
+    path: '/chats',
+  },
   'chat-sessions': {
     label: '同角色多段对话',
     description: '日期区分、长名称、分支来源、当前对话和收纳管理',

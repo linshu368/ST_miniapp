@@ -1,5 +1,6 @@
 import { createServer, type ServerResponse } from 'node:http';
 import { createChatFeedbackFixture } from './chat-feedback.js';
+import { createChatFolderFixture, makeFolderSessionSamples } from './chat-folders.js';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -286,6 +287,7 @@ export function createPreviewServer(apiPort: number, appPort: number) {
   let branchFailureDelivered = false;
   const messageLikes = new Set<string>();
   const replyFeedback = createChatFeedbackFixture();
+  const chatFolders = createChatFolderFixture();
   let messageLikeFailureDelivered = false;
   let messageEditFailureDelivered = false;
 
@@ -476,6 +478,7 @@ export function createPreviewServer(apiPort: number, appPort: number) {
     branchFailureDelivered = false;
     messageLikes.clear();
     replyFeedback.reset();
+    chatFolders.reset();
     messageLikeFailureDelivered = false;
     messageEditFailureDelivered = false;
     scenario = next;
@@ -577,6 +580,11 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         main_credits: 0,
         bonus_credits: 0,
       });
+    if (next === 'chat-folders') {
+      const sample = makeFolderSessionSamples(data.sessions[0]!, data.characters);
+      data.sessions = sample.sessions;
+      chatFolders.reset(sample.folders);
+    }
     if (next === 'chat-sessions') {
       const messages = data.messages;
       data.sessions = makeChatSessionSamples(data.sessions[0]!);
@@ -1819,6 +1827,18 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         });
         return;
       }
+      const folderResult = chatFolders.handle(method, path, url, body, data.sessions);
+      if (folderResult) {
+        if (folderResult.status === 200) ok(res, folderResult.data);
+        else
+          fail(
+            res,
+            folderResult.status,
+            folderResult.code ?? 'BAD_REQUEST',
+            folderResult.message ?? '请求无效'
+          );
+        return;
+      }
       if (path === '/api/v1/conversations') {
         if (method === 'POST') {
           if (typeof body !== 'object' || body === null || !('character_id' in body))
@@ -1845,23 +1865,6 @@ export function createPreviewServer(apiPort: number, appPort: number) {
           };
           data.messages.push(greeting);
           ok(res, { session, messages: [greeting] });
-          return;
-        }
-        if (method === 'GET') {
-          const sessions = data.sessions
-            .filter(
-              (item) =>
-                item.message_count > 0 &&
-                (!url.searchParams.get('character_id') ||
-                  item.character_id === url.searchParams.get('character_id'))
-            )
-            .sort(
-              (a, b) =>
-                (b.pinned_at ?? '').localeCompare(a.pinned_at ?? '') ||
-                (b.last_message_at ?? '').localeCompare(a.last_message_at ?? '') ||
-                b.created_at.localeCompare(a.created_at)
-            );
-          ok(res, { sessions, total: sessions.length });
           return;
         }
       }
@@ -2048,7 +2051,10 @@ export function createPreviewServer(apiPort: number, appPort: number) {
             typeof patch !== 'object' ||
             ('title' in patch && patch.title !== null && typeof patch.title !== 'string') ||
             (patch.pinned !== undefined && typeof patch.pinned !== 'boolean') ||
-            (!('title' in patch) && patch.pinned === undefined)
+            ('folder_id' in patch &&
+              patch.folder_id !== null &&
+              typeof patch.folder_id !== 'string') ||
+            (!('title' in patch) && patch.pinned === undefined && !('folder_id' in patch))
           ) {
             fail(res, 400, 'BAD_REQUEST', '会话参数无效');
             return;
@@ -2060,6 +2066,13 @@ export function createPreviewServer(apiPort: number, appPort: number) {
               '新的对话';
           }
           if (patch.pinned !== undefined) session.pinned_at = patch.pinned ? stamp() : null;
+          if ('folder_id' in patch) {
+            if (patch.folder_id && !chatFolders.has(patch.folder_id)) {
+              fail(res, 404, 'folder_not_found', '分组不存在');
+              return;
+            }
+            session.folder_id = patch.folder_id ?? null;
+          }
           session.updated_at = stamp();
           ok(res, { session } satisfies UpdateConversationData);
           return;

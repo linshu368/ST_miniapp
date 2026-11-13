@@ -33,7 +33,8 @@ pnpm test:ui --grep @recharge      # 充值金额、到账确认、失败恢复�
 pnpm test:ui --grep @roleplay      # 角色发现、进入对话与返回
 pnpm test:ui --grep @chat          # 深度思考、回复偏好、多行输入、余额不足
 pnpm test:ui --grep @onboarding    # 新人主线、编辑分支引导、跳过、旧用户与失败降级
-pnpm test:ui --grep @drama         # 视频首页、双列剧场、选集、追剧、续看与错误恢复
+pnpm test:ui --grep @drama         # 双列剧场、点封面进放映与返回定位、选集、追剧、续看与错误恢复
+pnpm test:ui --grep @chats         # 对话页：分组标签、挑选放入、移到分组、按角色归拢与整组操作、搜索翻页、管理批量删除
 pnpm test:ui --grep @image         # 同款、设置、生成、失败、保存原图入口
 pnpm test:ui --project=android    # 390×844，全部固定流程
 pnpm test:ui --project=narrow     # 320×568，关键布局流程
@@ -231,3 +232,7 @@ VIP 混合奖励复用 `@profile`：`vip-mixed` 场景每日签到 120 专项＋
 ## 幕间独立站本地验收
 
 `pnpm --filter @miniapp/ui-tests exec playwright test -c playwright.mujian.config.ts` 验证同级幕间静态仓库，可加 `--ui` 交互查看。使用已有短剧 fixture/视频、模拟 Telegram 与拦截 API；固定 3188 端口，和原有 3120/3121、3130/3131 分离。覆盖目录/换集/销毁、收藏与历史、失败重试、HLS.js、两种弹窗、自然来源和无身份入口。详情与真实联调缺口见 `docs/mujian-integration.md`。
+
+## 对话页分组与整理（@chats）
+
+`pnpm test:ui --grep @chats` 复用对话页 390/320 尺寸。场景 `chat-folders` 提供 32 段虚构对话（前 4 个角色各 3 段、2 个分组、若干只聊一两句与 30 天未聊），分组、搜索、快捷筛选、按角色归拢与批量接口由 `fixtures/chat-folders.ts` 按 Backend 同口径在内存实现；`standard` 场景只有 1 段对话，用于验证对话少时不出现工具。冷启动 `/` 按 cookie `st_landing` 落地对话页的跳转在 `@startup @navigation` 中验证。
