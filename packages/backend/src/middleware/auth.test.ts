@@ -6,6 +6,21 @@ import { requireTelegramAuth } from './auth.js';
 
 afterEach(() => vi.unstubAllEnvs());
 describe('Telegram authentication failure contracts', () => {
+  it.each(['production', 'development'])('limits development bypass in %s', async (nodeEnv) => {
+    vi.stubEnv('NODE_ENV', nodeEnv);
+    vi.stubEnv('DEV_AUTH_BYPASS', '1');
+    const app = Fastify();
+    // @frontend-ready: false — merge regression fixture only.
+    app.get('/protected', { preHandler: requireTelegramAuth }, async () => ({ success: true }));
+    try {
+      const response = await app.inject('/protected');
+      expect(response.statusCode).toBe(nodeEnv === 'production' ? 401 : 200);
+      if (nodeEnv === 'production') expect(response.json().error.code).toBe('UNAUTHORIZED');
+    } finally {
+      await app.close();
+    }
+  });
+
   it('distinguishes absent identity, server configuration and invalid signature without leaking input', async () => {
     vi.stubEnv('DEV_AUTH_BYPASS', '0');
     vi.stubEnv('MOCK_AUTH', '0');

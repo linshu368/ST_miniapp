@@ -35,7 +35,7 @@ import type { CharacterDetailTab } from '@/components/characters/character-detai
 import { ChatSplash } from '@/components/chat/chat-splash';
 import { useChatSession } from '@/hooks/use-chat-session';
 import { useMemoryDraft } from '@/hooks/use-memory-draft';
-import { useApiConnectionWarmth } from '@/hooks/use-api-connection-warmth';
+import { useApiConnectionWarmth } from '@/hooks/use-connection-warmth';
 import { useConversationTurn } from '@/hooks/use-conversation-turn';
 import { useConversationBranch } from '@/hooks/use-conversation-branch';
 import { useCharacterQuery } from '@/lib/api/characters';
@@ -77,6 +77,7 @@ import { useTelegramBackButton } from '@/lib/telegram';
 import { getRawInitData } from '@/lib/telegram/auth';
 import { parseTelegramUser } from '@/lib/telegram/user';
 import { readThinkingPreference, writeThinkingPreference } from '@/lib/chat-thinking';
+import { useThinkingNotice } from '@/hooks/use-thinking-notice';
 import { useVisualViewportHeight } from '@/lib/use-visual-viewport-height';
 import {
   markCriticalSettled,
@@ -190,6 +191,7 @@ export default function SelfHostedChatPage() {
   }, [session.ready, session.entryError]);
   const modelCatalogQuery = useModelCatalogQuery({ enabled: enrichReady, characterId });
   const selectedModelId = modelCatalogQuery.data?.selected_model_id ?? null;
+  const thinkingNotice = useThinkingNotice(selectedModelId);
   const selectedModelUsesFreeQuota = useMemo(() => {
     const catalog = modelCatalogQuery.data?.catalog;
     if (!catalog || !selectedModelId) return null;
@@ -329,6 +331,7 @@ export default function SelfHostedChatPage() {
     onSessionGone: abandonSessionWithDraft,
     goBack,
     onRestoreSendContent: restoreSendContent,
+    onThinkingIgnored: thinkingNotice.onThinkingIgnored,
   });
 
   const userSettingsQuery = useUserSettingsQuery({ enabled: backgroundReady });
@@ -804,7 +807,11 @@ export default function SelfHostedChatPage() {
           detailsDefaultOpen={detailsDefaultOpen}
           onDetailsDefaultOpenChange={handleDetailsDefaultOpenChange}
           thinkingEnabled={thinkingEnabled}
-          onThinkingEnabledChange={changeThinkingEnabled}
+          onThinkingEnabledChange={(enabled) => {
+            changeThinkingEnabled(enabled);
+            thinkingNotice.onThinkingToggled(enabled);
+          }}
+          notice={thinkingNotice.notice}
           leftSlot={
             <ChatToolsSheet
               onCreateConversation={() => {

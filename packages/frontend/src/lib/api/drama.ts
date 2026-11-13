@@ -1,6 +1,12 @@
 'use client';
 
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  skipToken,
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 import { useCallback, useMemo } from 'react';
 import { createRequestId } from '@/lib/perf/request-timing';
 import type {
@@ -232,13 +238,17 @@ async function fetchDramas(
   );
 }
 
-async function fetchDramaDetail(id: string, signal?: AbortSignal): Promise<DramaDetail> {
+async function fetchDramaDetail(
+  id: string,
+  signal?: AbortSignal,
+  priority: 'critical' | 'background' = 'critical'
+): Promise<DramaDetail> {
   return dramaTiming.query('detail', id, undefined, async (onAttempt) => {
     const data = await apiClient<GetDramaByIdData>(`/api/dramas/${encodeURIComponent(id)}`, {
       onAttempt,
       signal,
       timeoutMs: 5000,
-      queuePriority: 'normal',
+      queuePriority: priority,
     });
     return data.drama;
   });
@@ -337,6 +347,19 @@ export function useDramaBrowseQueueQuery() {
   });
 }
 
+/**
+ * 放映页的换剧队列：剧场点封面/随便看看时冻结的顺序；深链没有快照时退回目录。
+ * 只订阅缓存不发请求，避免冷启动深链在目录之外再拉一次队列。
+ */
+export function useDramaFeedQueue(catalog: DramaSummary[] | undefined): DramaSummary[] | undefined {
+  const { data } = useQuery<DramaSummary[]>({
+    queryKey: dramaKeys.browseQueue(),
+    queryFn: skipToken,
+    staleTime: Infinity,
+  });
+  return data ?? catalog;
+}
+
 export function useDramaDetailQuery(id: string) {
   return useQuery({
     queryKey: dramaKeys.detail(id),
@@ -367,7 +390,7 @@ export function usePreloadDramaPlayback() {
     (id: string, _videoId?: string) => {
       void client.prefetchQuery({
         queryKey: dramaKeys.detail(id),
-        queryFn: ({ signal }) => fetchDramaDetail(id, signal),
+        queryFn: ({ signal }) => fetchDramaDetail(id, signal, 'background'),
         retry: false,
       });
     },

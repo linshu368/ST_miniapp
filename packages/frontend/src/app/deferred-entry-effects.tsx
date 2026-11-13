@@ -1,12 +1,11 @@
 'use client';
 
 import { useEffect } from 'react';
-import { INVITE_START_PARAM_PREFIX } from '@miniapp/shared';
 import { afterEntryBackground } from '@/lib/entry-phase';
 import { recordMiniappEntry } from '@/lib/api/growth';
 import { bindInvite } from '@/lib/api/invite';
 import { getRawInitData } from '@/lib/telegram/auth';
-import { INVITE_BIND_PENDING_KEY, PAYMENT_RETURN_PREFIX } from '@/lib/telegram/launch-url';
+import { INVITE_BIND_PENDING_KEY } from '@/lib/telegram/launch-url';
 
 const INVITE_BIND_DONE_KEY = 'invite_bind_done';
 
@@ -23,66 +22,42 @@ export function DeferredEntryEffects({ startParam }: { startParam: string }) {
 function GrowthEntryReporter({ startParam }: { startParam: string }) {
   useEffect(() => {
     let cancelled = false;
-    void afterEntryBackground().then(() => {
-      if (cancelled) return;
-      try {
-        const rawInitData = getRawInitData();
-        console.log('[Growth] Telegram initData status:', { available: Boolean(rawInitData) });
-
-        // 即使没有 rawInitData，也可以尝试从 URL 中获取 startapp 参数 (本地开发环境)
-        const sourceId = startParam;
-        console.log('[Growth] Extracted sourceId:', sourceId);
-
-        console.log('[Growth] GrowthEntryReporter sourceId:', sourceId);
-
-        if (
-          !sourceId ||
-          sourceId === 'payment_return' ||
-          sourceId.startsWith(PAYMENT_RETURN_PREFIX) ||
-          // 邀请深链不是渠道码：source_id='invite' 由绑定接口守卫式写入（阶段二计划 E2），
-          // 走 botlinks 渠道逻辑会互相踩踏。
-          sourceId.startsWith(INVITE_START_PARAM_PREFIX)
-        ) {
-          console.log('[Growth] No sourceId found, skipping report');
-          return;
-        }
-
-        const key = `growth_entry_reported:${sourceId}`;
-        try {
-          if (sessionStorage.getItem(key) === '1') {
-            console.log('[Growth] GrowthEntryReporter already reported in this session');
-            return;
+    void afterEntryBackground()
+      .then(async () => {
+        const raw = getRawInitData();
+        if (!raw || cancelled) return;
+        // A digest isolates sessions and accounts without persisting initData itself.
+        const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw));
+        const key = `growth_entry_ack:${Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('')}`;
+        for (let attempt = 0; attempt < 3 && !cancelled; attempt++) {
+          try {
+            if (sessionStorage.getItem(key) === '1') return;
+          } catch {
+            /* Storage is optional; server deduplication is authoritative. */
           }
-          sessionStorage.setItem(key, '1');
-        } catch (e) {
-          console.warn('[Growth] sessionStorage access failed:', e);
-        }
-
-        console.log(
-          '[Growth] GrowthEntryReporter calling recordMiniappEntry with sourceId:',
-          sourceId
-        );
-        recordMiniappEntry(sourceId)
-          .then((res) => {
-            console.log('[Growth] GrowthEntryReporter success:', res);
-          })
-          .catch((err) => {
-            console.error('[Growth] GrowthEntryReporter failed:', err);
-            try {
-              sessionStorage.removeItem(key);
-            } catch {
-              // ignore
+          try {
+            const result = await recordMiniappEntry();
+            if (result.recorded) {
+              try {
+                sessionStorage.setItem(key, '1');
+              } catch {
+                /* optional */
+              }
+              return;
             }
-          });
-      } catch (err) {
-        console.error('[Growth] Unhandled error in GrowthEntryReporter:', err);
-      }
-    });
+          } catch {
+            /* Attribution failure must not block the product. */
+          }
+          if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 1000 * 2 ** attempt));
+        }
+      })
+      .catch(() => {
+        /* Optional background reporting. */
+      });
     return () => {
       cancelled = true;
     };
   }, [startParam]);
-
   return null;
 }
 

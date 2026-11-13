@@ -96,7 +96,8 @@ export class FirstTokenObservation {
     public deadlineMs: number,
     private readonly report: (body: ReportFirstTokenRequest) => void,
     private readonly onTimeout: () => void,
-    readonly thinkingEnabled = true,
+    /** 这一轮的思考过程算不算首字；服务端 start 说要显示时会被置为 true */
+    public thinkingEnabled = true,
     private readonly action: 'send' | 'regenerate' = 'send',
     private requestedModel = 'unknown'
   ) {

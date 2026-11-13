@@ -4,6 +4,7 @@ import { parseDramaStreamOrigin } from './drama-stream-origin';
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   vi.resetModules();
 });
 
@@ -30,12 +31,34 @@ it('re-inserts one CORS and one native preconnect per playback intent', async ()
     querySelectorAll: () => links.splice(0).map((link) => ({ remove: () => link })),
   };
   vi.stubGlobal('document', { head, createElement: () => ({ dataset: {} }) });
+  let now = 0;
+  vi.spyOn(performance, 'now').mockImplementation(() => now);
   const { warmDramaStreamOrigin } = await import('./drama-stream-origin');
   warmDramaStreamOrigin();
+  now = 1_000;
   warmDramaStreamOrigin();
   expect(links).toHaveLength(2);
   expect(links.map((link) => link.crossOrigin)).toEqual(['anonymous', undefined]);
   expect(links.every((link) => link.rel === 'preconnect')).toBe(true);
+});
+
+it('skips re-inserting within a second, so scroll events do not churn the head', async () => {
+  vi.stubEnv('NEXT_PUBLIC_DRAMA_STREAM_ORIGIN', 'https://customer-abc123.cloudflarestream.com');
+  const appendChild = vi.fn();
+  vi.stubGlobal('document', {
+    head: { appendChild, querySelectorAll: () => [] },
+    createElement: () => ({ dataset: {} }),
+  });
+  let now = 5_000;
+  vi.spyOn(performance, 'now').mockImplementation(() => now);
+  const { warmDramaStreamOrigin } = await import('./drama-stream-origin');
+  warmDramaStreamOrigin();
+  now = 5_999;
+  warmDramaStreamOrigin();
+  expect(appendChild).toHaveBeenCalledTimes(2);
+  now = 6_000;
+  warmDramaStreamOrigin();
+  expect(appendChild).toHaveBeenCalledTimes(4);
 });
 
 it('does nothing without a configured origin', async () => {

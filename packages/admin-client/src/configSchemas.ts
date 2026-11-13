@@ -1,6 +1,9 @@
 import {
   CREATOR_REVIEW_PROMPT_KEY,
   CreatorReviewPromptSchema,
+  DEFAULT_FREE_ZONE_CONFIG,
+  FREE_ZONE_CONFIG_KEY,
+  FreeZoneConfigSchema,
   DEFAULT_CREATOR_REVIEW_PROMPT,
   DEFAULT_STORY_MEMORY_CONFIG,
   DEFAULT_STORY_MEMORY_PROMPT,
@@ -57,6 +60,7 @@ export const managedConfigKeys = [
   'llm_model_catalog',
   'llm_pricing_config',
   'llm_provider_routing_config',
+  FREE_ZONE_CONFIG_KEY,
   'system_instructions',
   CREATOR_REVIEW_PROMPT_KEY,
   'choice_rules',
@@ -320,6 +324,7 @@ export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   llm_model_catalog: ModelCatalogSchema,
   llm_pricing_config: LlmPricingConfigSchema,
   llm_provider_routing_config: LlmProviderRoutingConfigSchema,
+  [FREE_ZONE_CONFIG_KEY]: FreeZoneConfigSchema,
   system_instructions: SystemInstructionsSchema,
   [CREATOR_REVIEW_PROMPT_KEY]: CreatorReviewPromptSchema,
   choice_rules: InstructionSlotRulesSchema,
@@ -496,6 +501,12 @@ export const configMetadata: Record<
     description:
       '管理回复偏好中的选项名称、说明、展示顺序与独立开关；沿用草稿、发布和回滚。英文占位符与规则内容由你维护，本次仅存储，不参与模型生成。',
     defaultValue: { options: [] },
+  },
+  [FREE_ZONE_CONFIG_KEY]: {
+    label: '畅聊（免费模型）',
+    description:
+      '对话页引擎面板最上方的「畅聊」栏目：总开关、福利期、使用范围、规则文字，以及候选池和自动上下架门槛。总开关只决定用户能不能看到；只要配了候选，后台每 30 分钟都会评估。门槛留空（null）表示这一项不检查。',
+    defaultValue: DEFAULT_FREE_ZONE_CONFIG,
   },
   [STORY_MEMORY_CONFIG_KEY]: {
     label: '长期剧情记忆参数',

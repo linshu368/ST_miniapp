@@ -48,6 +48,11 @@ export interface ResolvedModel {
     timeoutRateTarget: number;
     catalogVersion: number;
   };
+  /**
+   * 畅聊免费模型。只作用于 Surplus 主调用：请求带折扣底线头和供应商白名单；
+   * 兜底（OpenRouter 1017）不受影响。
+   */
+  freeZone?: { candidateId: string; providers: string[]; minDiscountPct: number };
 }
 
 export interface GenerationMessage {
@@ -100,6 +105,8 @@ export interface GenerationRequest {
   stream: boolean;
   /** Defaults on; exposed reasoning is progress and never saved as reply content. */
   thinkingEnabled?: boolean;
+  /** 思考过程是否显示给用户并算作出字；缺省跟 thinkingEnabled（见 reasoning-display.ts） */
+  revealReasoning?: boolean;
   /** Explicit user cancellation and the conversation deadline; disconnects do not abort. */
   signal?: AbortSignal;
   /**

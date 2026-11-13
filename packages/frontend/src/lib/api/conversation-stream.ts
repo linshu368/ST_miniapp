@@ -235,6 +235,8 @@ async function readConversationStream(options: StreamTurnOptions): Promise<void>
   let buffer = '';
   let finished = false;
   let firstTokenFlushed = false;
+  // 这一轮显示不显示思考过程：默认跟开关；服务端在 start 里说要显示（畅聊免费模型关不掉思考）就显示
+  let revealReasoning = options.thinkingEnabled !== false;
 
   const pushText = (batch: ReturnType<typeof createDeltaBatcher>, text: string): void => {
     const meaningful = text.trim().length > 0;
@@ -253,6 +255,7 @@ async function readConversationStream(options: StreamTurnOptions): Promise<void>
   const handle = (event: ConversationStreamEvent): void => {
     switch (event.type) {
       case 'start':
+        if (event.thinking_enabled === true) revealReasoning = true;
         onStart(event);
         return;
       case 'delta':
@@ -264,7 +267,7 @@ async function readConversationStream(options: StreamTurnOptions): Promise<void>
         return;
       case 'reasoning':
         batcher.flush();
-        if (options.thinkingEnabled !== false && typeof event.text === 'string') {
+        if (revealReasoning && typeof event.text === 'string') {
           pushText(reasoningBatcher, event.text);
         }
         return;

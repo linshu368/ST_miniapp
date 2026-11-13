@@ -1,6 +1,7 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useRef, useState } from 'react';
 import type {
   CancelConversationTurnData,
   CancelConversationTurnRequest,
@@ -17,6 +18,7 @@ import type {
   SetMessageLikeRequest,
   UpdateConversationData,
 } from '@miniapp/shared';
+import { rememberChatLanding } from '@/lib/landing-route';
 import { apiClient, ApiClientError } from './client';
 import { characterSocialKeys, refreshCharacterSocial } from './character-social';
 
@@ -41,9 +43,13 @@ export function useConversationsQuery(characterId: string | undefined, enabled =
       const search = new URLSearchParams();
       if (characterId) search.set('character_id', characterId);
       const query = search.toString();
-      return apiClient<ListConversationsData>(`/api/v1/conversations${query ? `?${query}` : ''}`, {
-        signal,
-      });
+      const data = await apiClient<ListConversationsData>(
+        `/api/v1/conversations${query ? `?${query}` : ''}`,
+        { signal }
+      );
+      // 全量列表已滤掉一句没发的会话，total 就是「有没有对话记录」，用来决定下次打开落在哪页。
+      if (!characterId) rememberChatLanding(data.total > 0);
+      return data;
     },
     // 大厅「聊过」标记可稍旧；拉长鲜活期减少与列表/进聊争槽。
     staleTime: 60_000,
@@ -57,20 +63,66 @@ export function useConversationsQuery(characterId: string | undefined, enabled =
  * 不写进缓存——逐帧 setQueryData 会让所有订阅方重渲染，且流被中断后
  * 缓存里会留下一条永远不会收口的假消息。
  */
-export function useConversationQuery(sessionId: string | undefined) {
-  return useQuery<GetConversationData>({
+export function conversationDetailQueryOptions(
+  sessionId: string | undefined,
+  createdData?: GetConversationData
+) {
+  return queryOptions<GetConversationData>({
     queryKey: conversationKeys.detail(sessionId ?? ''),
     enabled: Boolean(sessionId),
     queryFn: async ({ signal }) => {
       if (!sessionId) throw new Error('session id is required');
-      return fetchConversationDetail(sessionId, 10_000, signal);
+      const data = await fetchConversationDetail(sessionId, 10_000, signal);
+      // 新用户发完第一句后详情会重拉；这里记下，下次打开就直接进对话，不必等再看一次列表。
+      if (data.session.message_count > 0) rememberChatLanding(true);
+      return data;
     },
-    staleTime: 0,
+    // Query-key changes also fetch stale data; refetchOnMount:false alone cannot prevent
+    // the duplicate GET after creation. Exempt only the exact confirmed cache object.
+    staleTime: (query) =>
+      createdData?.session.id === sessionId &&
+      query.state.status === 'success' &&
+      query.state.data === createdData
+        ? Infinity
+        : 0,
     // 库里还有一条没收口的 assistant 消息时轮询到它收口为止。
     // 断流或另一端生成后仍以服务端终态为准；不能把浏览器 abort 当成取消成功。
     refetchInterval: (query) =>
       query.state.data?.messages.some((message) => message.status === 'streaming') ? 1_500 : false,
   });
+}
+
+export function useConversationQuery(
+  sessionId: string | undefined,
+  createdSessionId: string | null = null
+) {
+  const client = useQueryClient();
+  const entry = useRef<{ id: string | null; data?: GetConversationData }>({ id: null });
+  const [settledCreationId, setSettledCreationId] = useState<string | null>(null);
+  if (entry.current.id !== createdSessionId) {
+    entry.current = {
+      id: createdSessionId,
+      data: createdSessionId
+        ? client.getQueryData(conversationKeys.detail(createdSessionId))
+        : undefined,
+    };
+  }
+  // Selecting another conversation consumes the exemption; returning must read current truth.
+  if (sessionId !== createdSessionId) entry.current.data = undefined;
+  const query = useQuery(
+    conversationDetailQueryOptions(
+      sessionId,
+      settledCreationId === createdSessionId ? undefined : entry.current.data
+    )
+  );
+  useEffect(() => {
+    if (!createdSessionId || sessionId !== createdSessionId || !entry.current.data) return;
+    // Changing freshness on the same enabled key does not fetch again. Consume after
+    // the first subscription so foreground/focus can still refresh an unchanged empty chat.
+    entry.current.data = undefined;
+    setSettledCreationId(createdSessionId);
+  }, [createdSessionId, sessionId]);
+  return query;
 }
 
 /** 有限等待，供详情 query 与取消前精确定位当前 revision 复用。 */
@@ -143,6 +195,7 @@ export function useCreateConversationMutation() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    retry: false,
     mutationFn: async (characterId: string) =>
       apiClient<CreateConversationData>('/api/v1/conversations', {
         method: 'POST',
@@ -246,7 +299,13 @@ export function useUpdateConversationMutation() {
 
   return useMutation({
     /** title 传 null 表示恢复为当前绑定角色的 name */
-    mutationFn: async (input: { sessionId: string; title?: string | null; pinned?: boolean }) => {
+    mutationFn: async (input: {
+      sessionId: string;
+      title?: string | null;
+      pinned?: boolean;
+      /** 移到分组；null = 移出分组 */
+      folder_id?: string | null;
+    }) => {
       const { sessionId, ...patch } = input;
       return apiClient<UpdateConversationData>(
         `/api/v1/conversations/${encodeURIComponent(sessionId)}`,

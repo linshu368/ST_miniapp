@@ -455,6 +455,79 @@ describe('apiClient GET transport retry', () => {
     await blocker;
   });
 
+  it('expires queued attempts without dispatching them later or leaking a slot', async () => {
+    __resetRequestConcurrencyForTests(1);
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    let release!: () => void;
+    const blocker = withRequestSlot(
+      'normal',
+      undefined,
+      () =>
+        new Promise<void>((done) => {
+          release = done;
+        })
+    );
+    await Promise.resolve();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response(JSON.stringify({ success: true, data: { ok: true } })));
+    vi.stubGlobal('fetch', fetchMock);
+    const attempts: ApiAttemptTiming[] = [];
+    const pending = apiClient('/api/dramas', {
+      timeoutMs: 1000,
+      onAttempt: (timing) => attempts.push(timing),
+    });
+    const rejected = expect(pending).rejects.toMatchObject({ code: 'client_timeout' });
+    await vi.advanceTimersByTimeAsync(2200);
+    await rejected;
+    expect(attempts).toHaveLength(2);
+    expect(attempts.every((timing) => timing.dispatchedAt === undefined)).toBe(true);
+    expect(attempts.every((timing) => timing.outcome === 'timeout')).toBe(true);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(engineering.event).toHaveBeenCalledWith(
+      'api.terminal',
+      expect.objectContaining({ outcome: 'timeout', attempts: 2 })
+    );
+    release();
+    await blocker;
+    await expect(apiClient('/api/dramas')).resolves.toEqual({ ok: true });
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('uses the remaining attempt time after queueing instead of restarting the deadline', async () => {
+    __resetRequestConcurrencyForTests(1);
+    let release!: () => void;
+    const blocker = withRequestSlot(
+      'normal',
+      undefined,
+      () =>
+        new Promise<void>((done) => {
+          release = done;
+        })
+    );
+    await Promise.resolve();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => new Promise<Response>(() => {}))
+    );
+    const attempts: ApiAttemptTiming[] = [];
+    const pending = apiClient('/api/dramas', {
+      timeoutMs: 1000,
+      transportRetry: false,
+      onAttempt: (timing) => attempts.push(timing),
+    });
+    const rejected = expect(pending).rejects.toMatchObject({ code: 'client_timeout' });
+    await vi.advanceTimersByTimeAsync(800);
+    release();
+    await blocker;
+    await vi.advanceTimersByTimeAsync(200);
+    await rejected;
+    expect(attempts[0]).toMatchObject({ queuedAt: 0, dispatchedAt: 800, endedAt: 1000 });
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it('cancels transport retry backoff without dispatching another request', async () => {
     vi.spyOn(Math, 'random').mockReturnValue(0);
     const fetchMock = vi.fn().mockRejectedValueOnce(new TypeError('Failed to fetch'));

@@ -20,11 +20,11 @@ function Line({ className, children }: { className?: string; children: ReactNode
   );
 }
 
-/** 放映：竖屏画面里的播放符号，对应上下刷剧。 */
-export const ScreenIcon: NavIcon = ({ className }) => (
+/** 对话：左下带尾巴的气泡，对应接着聊。 */
+export const ChatIcon: NavIcon = ({ className }) => (
   <Line className={className}>
-    <rect x="6.5" y="3" width="11" height="18" rx="3" />
-    <path d="M10.6 9.6v4.8l3.9-2.4z" fill="currentColor" />
+    <path d="M7.6 4h8.8A2.6 2.6 0 0 1 19 6.6v6.8a2.6 2.6 0 0 1-2.6 2.6h-5.2l-3.8 3.4V16A2.4 2.4 0 0 1 5 13.6v-7A2.6 2.6 0 0 1 7.6 4Z" />
+    <path d="M9 8.8h6M9 11.8h3.6" />
   </Line>
 );
 

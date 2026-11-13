@@ -31,6 +31,10 @@ last_verified_at: 2026-11-02
 
 本地候选（2026-11-10，未执行远端迁移）：`20261110_story_memory.sql` 新增 `experience.story_memories`（会话记忆版本，覆盖终点随版本严格递增，全部保留供分支按锚点选择）与 `experience.story_memory_jobs`（每会话一行压缩任务状态，租约/退避）。窗口起点改由 Backend 按正文字数水位经 `advance_story_memory_window` CAS 前移并同事务建任务；按轮数的 `apply_context_window_flood` 已删除。`fork_chat_session` 改为 4 参数，按记忆覆盖范围继承原文并复制记忆。
 
+### 对话分组（2026-11-13 本地实现，TEST/生产未执行）
+
+`20261113_chat_folders.sql`（domain experience）：`experience.chat_folders(id, user_id → app_core.users ON DELETE CASCADE, name trim 后 1–12 字, created_at, updated_at, UNIQUE(user_id,id), UNIQUE(user_id,name))`；`experience.chat_sessions.folder_id uuid NULL` 复合 FK `(user_id, folder_id) → chat_folders(user_id,id) ON DELETE SET NULL (folder_id)`；部分索引 `idx_chat_sessions_user_folder_recent ... WHERE deleted_at IS NULL AND folder_id IS NOT NULL`；函数 `chat_folder_summary(uuid)`、`list_chat_session_groups(uuid,uuid,boolean,int,int)`（SECURITY DEFINER、search_path=pg_catalog、3s）。RLS 开启，表与函数只授 service_role。归属：分组组织的是用户核心互动内容，与会话同生命周期、同消费者，属 experience。发布顺序 TEST → 生产迁移（独立确认）→ Backend → Frontend；回滚只回退应用、保留表列，缺陷 forward-fix。生产规模（2026-11-13）：chat_sessions 约 2 万行/19MB，加列为元数据变更、建索引无匹配行。
+
 ## 入口与调用者
 
 ## 涉及文件

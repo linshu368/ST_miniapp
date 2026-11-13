@@ -1,5 +1,6 @@
 import { createServer, type ServerResponse } from 'node:http';
 import { createChatFeedbackFixture } from './chat-feedback.js';
+import { createChatFolderFixture, makeFolderSessionSamples } from './chat-folders.js';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -91,6 +92,11 @@ import {
 } from './data.js';
 
 import { makeCreatorAnalytics } from './creator-analytics.js';
+import {
+  applyFreeZoneScenario,
+  FREE_ZONE_KEEPS_THINKING_ID,
+  selectFreeZonePreviewModel,
+} from './free-zone.js';
 
 const HOST = '127.0.0.1';
 export const PREVIEW_PROTOCOL = 'st-miniapp-ui-v1';
@@ -281,6 +287,7 @@ export function createPreviewServer(apiPort: number, appPort: number) {
   let branchFailureDelivered = false;
   const messageLikes = new Set<string>();
   const replyFeedback = createChatFeedbackFixture();
+  const chatFolders = createChatFolderFixture();
   let messageLikeFailureDelivered = false;
   let messageEditFailureDelivered = false;
 
@@ -366,6 +373,7 @@ export function createPreviewServer(apiPort: number, appPort: number) {
     streams.clear();
     data = makeData(api, next.startsWith('lobby-rotation') ? lobbyCardCount : 18);
     if (next === 'chat-surplus' || next === 'chat-surplus-fallback') useSurplusPreviewCatalog(data);
+    applyFreeZoneScenario(data, next);
     lobbyCurrent = null;
     lobbyPrevious = null;
     lobbyBatchCount = 0;
@@ -470,6 +478,7 @@ export function createPreviewServer(apiPort: number, appPort: number) {
     branchFailureDelivered = false;
     messageLikes.clear();
     replyFeedback.reset();
+    chatFolders.reset();
     messageLikeFailureDelivered = false;
     messageEditFailureDelivered = false;
     scenario = next;
@@ -571,6 +580,11 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         main_credits: 0,
         bonus_credits: 0,
       });
+    if (next === 'chat-folders') {
+      const sample = makeFolderSessionSamples(data.sessions[0]!, data.characters);
+      data.sessions = sample.sessions;
+      chatFolders.reset(sample.folders);
+    }
     if (next === 'chat-sessions') {
       const messages = data.messages;
       data.sessions = makeChatSessionSamples(data.sessions[0]!);
@@ -1796,7 +1810,12 @@ export function createPreviewServer(apiPort: number, appPort: number) {
       }
       if (path === '/api/v1/models/select' && method === 'POST') {
         const { model_id } = SelectModelRequestSchema.parse(body);
-        if (!selectPreviewModel(data, model_id)) {
+        const freeZone = selectFreeZonePreviewModel(data, model_id);
+        if (freeZone === 'closed') {
+          fail(res, 409, 'FREE_ZONE_UNAVAILABLE', '畅聊模型暂未开放');
+          return;
+        }
+        if (freeZone === null && !selectPreviewModel(data, model_id)) {
           fail(res, 400, 'unknown_model', '预览模型不存在');
           return;
         }
@@ -1806,6 +1825,18 @@ export function createPreviewServer(apiPort: number, appPort: number) {
           provider: data.models.selected_provider,
           provider_model_id: data.models.selected_provider_model_id,
         });
+        return;
+      }
+      const folderResult = chatFolders.handle(method, path, url, body, data.sessions);
+      if (folderResult) {
+        if (folderResult.status === 200) ok(res, folderResult.data);
+        else
+          fail(
+            res,
+            folderResult.status,
+            folderResult.code ?? 'BAD_REQUEST',
+            folderResult.message ?? '请求无效'
+          );
         return;
       }
       if (path === '/api/v1/conversations') {
@@ -1834,23 +1865,6 @@ export function createPreviewServer(apiPort: number, appPort: number) {
           };
           data.messages.push(greeting);
           ok(res, { session, messages: [greeting] });
-          return;
-        }
-        if (method === 'GET') {
-          const sessions = data.sessions
-            .filter(
-              (item) =>
-                item.message_count > 0 &&
-                (!url.searchParams.get('character_id') ||
-                  item.character_id === url.searchParams.get('character_id'))
-            )
-            .sort(
-              (a, b) =>
-                (b.pinned_at ?? '').localeCompare(a.pinned_at ?? '') ||
-                (b.last_message_at ?? '').localeCompare(a.last_message_at ?? '') ||
-                b.created_at.localeCompare(a.created_at)
-            );
-          ok(res, { sessions, total: sessions.length });
           return;
         }
       }
@@ -2037,7 +2051,10 @@ export function createPreviewServer(apiPort: number, appPort: number) {
             typeof patch !== 'object' ||
             ('title' in patch && patch.title !== null && typeof patch.title !== 'string') ||
             (patch.pinned !== undefined && typeof patch.pinned !== 'boolean') ||
-            (!('title' in patch) && patch.pinned === undefined)
+            ('folder_id' in patch &&
+              patch.folder_id !== null &&
+              typeof patch.folder_id !== 'string') ||
+            (!('title' in patch) && patch.pinned === undefined && !('folder_id' in patch))
           ) {
             fail(res, 400, 'BAD_REQUEST', '会话参数无效');
             return;
@@ -2049,6 +2066,13 @@ export function createPreviewServer(apiPort: number, appPort: number) {
               '新的对话';
           }
           if (patch.pinned !== undefined) session.pinned_at = patch.pinned ? stamp() : null;
+          if ('folder_id' in patch) {
+            if (patch.folder_id && !chatFolders.has(patch.folder_id)) {
+              fail(res, 404, 'folder_not_found', '分组不存在');
+              return;
+            }
+            session.folder_id = patch.folder_id ?? null;
+          }
           session.updated_at = stamp();
           ok(res, { session } satisfies UpdateConversationData);
           return;
@@ -2201,6 +2225,7 @@ export function createPreviewServer(apiPort: number, appPort: number) {
                 : data.models.selected_model_id,
           };
           data.messages.push(message);
+          const keepsThinking = data.models.selected_model_id === FREE_ZONE_KEEPS_THINKING_ID;
           const currentEpoch = epoch;
           const write = (event: ConversationStreamEvent) => {
             if (!res.destroyed && !res.writableEnded)
@@ -2220,12 +2245,13 @@ export function createPreviewServer(apiPort: number, appPort: number) {
             revision: message.revision,
             user_message_id: userId,
             assistant_message_id: message.id,
-            thinking_enabled: parsed.thinking_enabled !== false,
+            // 畅聊免费模型的思考过程一律显示；关不掉思考的那个，开关关着也照样吐思考
+            thinking_enabled: parsed.thinking_enabled !== false || keepsThinking,
             // A short frozen budget reaches the browser deadline without a slow test.
             ...(scenario === 'chat-late-first-token' ? { first_token_deadline_ms: 1_000 } : {}),
           });
           await delay(150);
-          if (parsed.thinking_enabled !== false)
+          if (parsed.thinking_enabled !== false || keepsThinking)
             write({ type: 'reasoning', text: '沿着当前故事线，准备一个自然的回应。' });
           await delay(
             scenario === 'chat-slow' || scenario === 'chat-surplus-fallback'

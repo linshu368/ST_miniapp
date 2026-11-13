@@ -1,3 +1,4 @@
+import { FREE_ZONE_SCENARIOS } from './free-zone.js';
 import {
   DEFAULT_PAYMENT_CHANNELS_CONFIG,
   DEFAULT_WORD_COUNT_TIERS_CONFIG,
@@ -231,10 +232,31 @@ export const scenarios = {
     description: '模拟 Surplus 主调用慢、OpenRouter 兜底交付；原模型选择保持',
     path: `/chat/${IDS.character}?session=${IDS.session}&from=discover`,
   },
+  'free-zone': {
+    ...FREE_ZONE_SCENARIOS['free-zone'],
+    path: `/chat/${IDS.character}?session=${IDS.session}&from=discover`,
+  },
+  'free-zone-not-started': {
+    ...FREE_ZONE_SCENARIOS['free-zone-not-started'],
+    path: `/chat/${IDS.character}?session=${IDS.session}&from=discover`,
+  },
+  'free-zone-own-card': {
+    ...FREE_ZONE_SCENARIOS['free-zone-own-card'],
+    path: `/chat/${IDS.character}?session=${IDS.session}&from=discover`,
+  },
+  'free-zone-replaced': {
+    ...FREE_ZONE_SCENARIOS['free-zone-replaced'],
+    path: `/chat/${IDS.character}?session=${IDS.session}&from=discover`,
+  },
   'chat-late-first-token': {
     label: '首字迟到',
     description: '客户端计时到点只提示网络慢，回复到达后提示消失，不误报重试',
     path: `/chat/${IDS.character}?session=${IDS.session}&from=discover`,
+  },
+  'chat-folders': {
+    label: '对话分组与整理',
+    description: '32 段对话、多角色多段、2 个分组，含只聊一两句与 30 天没聊',
+    path: '/chats',
   },
   'chat-sessions': {
     label: '同角色多段对话',

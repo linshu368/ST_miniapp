@@ -18,6 +18,8 @@ const config: Config = {
         input: 'hsl(var(--input))',
         ring: 'hsl(var(--ring))',
         background: 'hsl(var(--background))',
+        /** 畅聊（免费模型）专用强调色，和主色金区分开 */
+        'free-zone': 'hsl(var(--free-zone) / <alpha-value>)',
         foreground: 'hsl(var(--foreground))',
         primary: {
           DEFAULT: 'hsl(var(--primary))',

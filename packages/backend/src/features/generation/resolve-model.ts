@@ -21,7 +21,13 @@ import {
   resolveEnabledCatalogModel,
   type LlmModelProvider,
 } from '@miniapp/shared';
-import { fetchModelCatalogSnapshot, getModelBillingContext } from '../../platform/model-tiers.js';
+import {
+  fetchModelCatalogSnapshot,
+  getModelBillingContext,
+  getPricingConfig,
+} from '../../platform/model-tiers.js';
+import { settleFreeZoneSelection } from '../free-zone/selection.js';
+import { buildFreeZoneResolvedModel } from '../free-zone/resolved-model.js';
 import { MiniappUserSettingsRepository } from '../../infrastructure/repositories/MiniappUserSettingsRepository.js';
 import { createLogger } from '../../lib/logger.js';
 import { VipStatusService } from '../vip/vip-status.js';
@@ -76,14 +82,26 @@ export async function resolveModelForUser(
   preparation?: {
     selectedModelId: string | null | Promise<string | null>;
     catalogSnapshot?: Awaited<ReturnType<typeof fetchModelCatalogSnapshot>>;
+    /** 畅聊范围限自创卡时要判断这张卡是不是用户自己的 */
+    characterId?: string | null;
   }
 ): Promise<ResolvedModel> {
   const log = createLogger('generation');
-  const [persistedModelId, snapshot, entitlement] = await Promise.all([
+  const [storedModelId, snapshot, entitlement] = await Promise.all([
     preparation ? preparation.selectedModelId : userSettings().getSelectedModelId(userId),
     preparation?.catalogSnapshot ?? fetchModelCatalogSnapshot(),
     vipStatus().getStatus(userId, log),
   ]);
+  const freeZone = await resolveFreeZoneTurn({
+    userId,
+    persistedModelId: storedModelId,
+    characterId: preparation?.characterId ?? null,
+    snapshot,
+    entitlement: { active: entitlement.active, validUntil: entitlement.valid_until },
+    log,
+  });
+  if (freeZone.model) return freeZone.model;
+  const persistedModelId = freeZone.persistedModelId;
   const selection = resolveTextModelSelection({
     catalog: snapshot.catalog,
     persistedModelId,
@@ -144,5 +162,57 @@ export async function resolveModelForUser(
       active: entitlement.active,
       validUntil: entitlement.valid_until,
     },
+  };
+}
+
+/**
+ * 选中的是畅聊免费模型时：可用就直接返回免费模型；不可用就按「同系列 → 随机 → 默认模型」
+ * 换掉并写回，再按换后的模型继续。写回失败不阻断本轮（下一次打开面板还会再换）。
+ */
+async function resolveFreeZoneTurn(input: {
+  userId: string;
+  persistedModelId: string | null;
+  characterId: string | null;
+  snapshot: Awaited<ReturnType<typeof fetchModelCatalogSnapshot>>;
+  entitlement: ResolvedModel['entitlement'];
+  log: ReturnType<typeof createLogger>;
+}): Promise<{ model: ResolvedModel | null; persistedModelId: string | null }> {
+  const settled = await settleFreeZoneSelection({
+    persistedModelId: input.persistedModelId,
+    userId: input.userId,
+    characterId: input.characterId,
+    catalog: input.snapshot.catalog,
+  });
+  if (settled.replacement) {
+    try {
+      if (settled.modelId)
+        await userSettings().correctSelectedModelId(input.userId, settled.modelId);
+    } catch (err) {
+      input.log.sys.error(
+        { err, event: 'free_zone.selection_persist_failed', userId: input.userId },
+        '畅聊模型替换后写回选择失败，本轮仍按替换后的模型生成'
+      );
+    }
+    input.log.biz.info(
+      {
+        event: 'free_zone.selection_replaced',
+        userId: input.userId,
+        fromModelId: input.persistedModelId,
+        toModelId: settled.modelId,
+        reason: settled.replacement.reason,
+      },
+      '畅聊模型不可用，本轮已替换'
+    );
+  }
+  if (!settled.usable) return { model: null, persistedModelId: settled.modelId };
+  return {
+    model: buildFreeZoneResolvedModel({
+      listed: settled.usable.listed,
+      zone: settled.usable.snapshot,
+      catalogSnapshot: input.snapshot,
+      pricing: await getPricingConfig(),
+      entitlement: input.entitlement,
+    }),
+    persistedModelId: settled.modelId,
   };
 }

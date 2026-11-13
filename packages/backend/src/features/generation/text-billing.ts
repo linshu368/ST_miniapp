@@ -20,6 +20,7 @@ import {
   type WalletDebitPolicy,
 } from '@miniapp/shared';
 import type { CreatorRewardSnapshot } from '../../infrastructure/repositories/ConversationHistoryRepository.js';
+import type { FixedDeductionCategory } from '../billing/usage-pricing.js';
 
 export interface TextEntitlement {
   active: boolean;
@@ -95,13 +96,7 @@ export function tierForTextQuote(modelTier: ModelCatalogTierKey | null): ModelCa
 }
 
 export function originalCreditsForDecision(input: {
-  category:
-    | 'free_quota'
-    | 'free_quota_exhausted'
-    | 'light'
-    | 'standard'
-    | 'premium'
-    | 'standard_fallback';
+  category: FixedDeductionCategory;
   undiscountedAmount: number;
   config: FixedDeductionConfig;
 }): number {

@@ -987,6 +987,33 @@ describe('useConversationTurn asynchronous ownership', () => {
     expect(RenderTurn('s2').thinkingByMessage).toEqual({});
   });
 
+  it('shows thinking with the switch off when the server says this turn reveals it', async () => {
+    let options!: Parameters<
+      typeof import('@/lib/api/conversation-stream').streamConversationTurn
+    >[0];
+    let finish!: () => void;
+    runtime.stream.mockImplementation((value) => {
+      options = value;
+      return new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+    });
+    const run = RenderTurn('s1', [], false).runTurn({ mode: 'send', content: 'hello' });
+    expect(options.thinkingEnabled).toBe(false);
+    options.onStart({
+      type: 'start',
+      assistant_message_id: 'a1',
+      user_message_id: 'u1',
+      turn_index: 1,
+      revision: 0,
+      thinking_enabled: true,
+    });
+    options.onReasoning?.('免费模型先想一想');
+    expect(RenderTurn('s1', [], false).thinkingByMessage['s1:a1:0']).toBe('免费模型先想一想');
+    finish();
+    await run;
+  });
+
   it('confirmed cancellation ignores late thinking from that request', async () => {
     let options!: Parameters<
       typeof import('@/lib/api/conversation-stream').streamConversationTurn

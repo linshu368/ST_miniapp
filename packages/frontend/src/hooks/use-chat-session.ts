@@ -57,7 +57,7 @@ export function useChatSession(characterId: string) {
   const resetCreatedConversation = createConversation.reset;
   const createdSessionId = createConversation.data?.session.id ?? null;
   const activeSessionId = sessionId ?? createdSessionId;
-  const conversationQuery = useConversationQuery(activeSessionId ?? undefined);
+  const conversationQuery = useConversationQuery(activeSessionId ?? undefined, createdSessionId);
 
   const returnTo = useMemo(
     () =>

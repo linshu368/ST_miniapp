@@ -11,7 +11,6 @@ import { useRouteQueryIsolation } from '@/lib/api/route-query-isolation';
 export default function MainLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   useRouteQueryIsolation(pathname);
-  const controlsVisible = useDramaLibraryStore((state) => state.playbackControlsVisible);
   const isDramaPlayback = pathname === '/watch' || /^\/dramas\/[^/]+/.test(pathname ?? '');
   // 路由级持有：换剧和弹出面板都不能暂时把下滑交回 Telegram。
   useEffect(() => {
@@ -22,7 +21,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
       useDramaLibraryStore.getState().setPlaybackControlsVisible(true);
     };
   }, [isDramaPlayback]);
-  const hideBottomNav = isBottomNavHidden(pathname, controlsVisible);
+  const hideBottomNav = isBottomNavHidden(pathname);
 
   return (
     <>

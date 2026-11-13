@@ -21,9 +21,9 @@ last_verified_at: 2026-11-06
 
 本地候选（尚未发布，2026-11-06）：首次无浏览记录默认推荐，保留已有筛选选择及试聊返回顺序。发现页在搜索下方展示一条可跳过的新手提示，完成首次对话后在返回时说明“对话”栏目可找回故事。资格只在 entry background 阶段读取，首屏不依赖它；按 Telegram 账号保存本机进度，完成、跳过、过期不重放。换角色不重置。资格失败不出教程，也不阻碍浏览/开聊；不以本地缓存为空或会话列表分页为空判断新人。
 
-全局底栏为「角色 / 剧场 / 中央首页 / 影像 / 我的」；角色模块保留 `/characters` 发现与 `/chats` 对话两个栏目。发现页只将「发现／对话」栏目和搜索放在固定顶部区域，推荐/最新/已收藏筛选随内容滚动，不显示占用空间的 ROLEPLAY/角色标题；接着聊卡片位于普通滚动内容区。收藏角色已从原聊天页迁入发现筛选，收藏状态仍只读取 React Query/favorite cache。
+全局底栏为「剧场 / 对话 / 秘境（居中）/ 创作 / 我的」（2026-11-12）；`/characters` 发现与 `/chats` 对话各是底栏一级入口，顶部只显示当前栏目名，不再互相切换。发现页只将栏目名和搜索放在固定顶部区域，推荐/最新/已收藏筛选随内容滚动，不显示占用空间的 ROLEPLAY/角色标题。「接着聊」卡已移除（2026-11-13）：接着聊属于对话页，有对话记录的用户冷启动直接进 `/chats`。收藏角色已从原聊天页迁入发现筛选，收藏状态仍只读取 React Query/favorite cache。
 
-发现、详情和会话数据继续使用既有 Backend API。详情按角色读取有效会话，有记录时主操作继续已有对话，并单列新对话；无记录时开始对话；历史读取失败显示重试，不能推断成无记录后默认创建。接着聊只从现有接口返回的有效历史中按活动时间选择，不保证全局最后一段。
+发现、详情和会话数据继续使用既有 Backend API。详情按角色读取有效会话，有记录时主操作继续已有对话，并单列新对话；无记录时开始对话；历史读取失败显示重试，不能推断成无记录后默认创建。发现页的会话列表只用于「聊过」标记。
 
 首次且没有已保存发现条件时默认展示「最新」；用户主动选择的推荐/最新仍在当前浏览器会话内保留。从角色卡进入聊天前记录同文档短生命周期返回快照，返回发现时恢复排序、搜索、收藏筛选、角色 ID 顺序摘要、锚点卡和滚动位置；快照读入组件 state 后立即清理共享存储，后续只使用本次挂载副本。模块间切换另保存栏目、发现条件和滚动标量，不保存服务端角色或收藏 DTO。
 
@@ -31,7 +31,7 @@ BottomNav 对角色入口只在明确 hover/focus/touch intent 时按当前发�
 
 ## 入口与调用者
 
-主导航「角色」恢复当前浏览器会话中最后使用的发现/对话栏目；当前已在角色模块时再次点击底栏角色入口会回到当前栏目顶部。发现中的角色卡打开详情，再明确继续或新开对话；进入聊天时携带有限来源 `from=discover`。聊天顶部、Telegram BackButton 与 Splash 退出共同返回来源栏目；系统 history 返回继续使用发现快照恢复现场。
+底栏「秘境」固定进入 `/characters`、「对话」固定进入 `/chats`，不再记忆最后栏目；已在本栏目时再点回到顶部（秘境同时清理发现返回快照）。发现中的角色卡打开详情，再明确继续或新开对话；进入聊天时携带有限来源 `from=discover`。聊天顶部、Telegram BackButton 与 Splash 退出共同返回来源栏目；系统 history 返回继续使用发现快照恢复现场。
 
 ## 涉及文件
 
@@ -39,13 +39,13 @@ BottomNav 对角色入口只在明确 hover/focus/touch intent 时按当前发�
 | -------------------------------------------------------- | ---------------------------- |
 | `packages/frontend/src/app/(main)/characters/page.tsx`   | 角色发现页面                 |
 | `packages/frontend/src/components/characters/`           | 大厅卡片、详情与返回快照接线 |
-| `packages/frontend/src/components/roleplay/`             | 固定栏目与接着聊内容卡片     |
+| `packages/frontend/src/components/roleplay/`             | 固定栏目                     |
 | `packages/frontend/src/components/chat/chat-top-bar.tsx` | 聊天顶部返回来源栏目         |
-| `packages/frontend/src/components/nav/bottom-nav.tsx`    | 角色入口与最后栏目恢复       |
+| `packages/frontend/src/components/nav/bottom-nav.tsx`    | 秘境/对话入口与回顶          |
 | `packages/frontend/src/lib/api/characters.ts`            | 角色 query                   |
 | `packages/frontend/src/lib/api/favorites.ts`             | 收藏 query/mutation          |
 | `packages/frontend/src/lib/lobby-return.ts`              | 发现返回快照 helper          |
-| `packages/frontend/src/lib/roleplay-navigation.ts`       | 有限来源、发现条件与栏目位置 |
+| `packages/frontend/src/lib/roleplay-navigation.ts`       | 有限来源、发现条件与滚动位置 |
 
 ## 关键实现链路
 
@@ -85,7 +85,7 @@ Android/iOS 角色列表首批均限制为4张卡；Android 首图高优先级�
 
 ## 连续试卡体验（2026-10-23）
 
-发现卡片对已加载的有效历史显示轻量「聊过」；message_count 不计虚拟开场白，仅用户发起的轮次触发标记，未命中不得解释为从未聊过。退出不等于负反馈，不自动隐藏/重排/删除卡片或会话。接着聊缩成紧凑入口，发现主内容继续用于找角色。可见返回发现/对话沿有限来源；原筛选与卡片锚点恢复继续保留。快速ready直接进入，等待结束后开屏计时器停止。
+发现卡片对已加载的有效历史显示轻量「聊过」；message_count 不计虚拟开场白，仅用户发起的轮次触发标记，未命中不得解释为从未聊过。退出不等于负反馈，不自动隐藏/重排/删除卡片或会话。发现主内容只用于找角色（接着聊在对话页）。可见返回发现/对话沿有限来源；原筛选与卡片锚点恢复继续保留。快速ready直接进入，等待结束后开屏计时器停止。
 
 收藏所有入口共享按角色pending与防重复；不同角色允许并发，失败仅回滚对应角色，最后一笔完成再刷新；独立临时提示宿主避免取消收藏移除卡片时吞掉失败。
 
