@@ -78,6 +78,9 @@ jobs:
       - name: Check complexity budget
         run: pnpm lint:complexity
 
+      - name: Check backend logging boundaries
+        run: pnpm lint:backend-logging
+
       - name: Test shared package
         run: pnpm --filter @miniapp/shared test
 

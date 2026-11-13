@@ -1,5 +1,7 @@
 # ST_miniAPP 架构说明
 
+本地候选（2026-11-13，未部署）：Backend `platform/observability` 统一上下文和基础事件，Railway 捕获 stdout；日志告警默认关闭，开启后按配置直接通知，无新增存储/outbox。原支付告警与可选工程 OTLP 保持独立。覆盖、兼容边界和发布验证见 [运行时日志](backend-observability-runtime.md)。
+
 本地候选（2026-11-11，未部署）：聊天历史读取采用索引选轮次后加载小型展示投影；原 admission 事务维护精确身份/开场白，旧 writer 仅使投影失效，有限人工回填覆盖旧记录。原 prompt、账务、分支与上下文窗口语义保持不变。读写切换及恢复见 [聊天历史优化说明](chat-history-read-performance.md)，正式 TEST/生产覆盖与 Android/iOS 不退化验收仍是发布门槛。
 
 > 本文档描述项目当前架构（2026-09-30 更新，基于 2026-08-12 自研引擎版重写）。

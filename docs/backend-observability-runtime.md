@@ -1,0 +1,84 @@
+# Backend 运行时日志与告警
+
+状态：2026-11-13 本地实现，尚未部署。以本文和 `11-12-backend-observability` 任务为准；旧 logging/error-code design 中的持久化、补传和窗口告警不属于本次实现。
+
+## 输出与查询
+
+Backend 使用 Pino stdout，Railway 负责捕获、保存和查询。不新增日志库、采集器、磁盘缓冲或补传任务。现有可选 Sentry/工程 OTLP 和支付业务告警保持独立。
+
+基础事件包含 `schema_version=1`、`event_id`、`module`、`operation`、`trace_id`、`span_id`、可选 `parent_span_id/request_id`、`outcome/outcome_known`、耗时和安全状态码。`reqId` 保留兼容。`LOG_LEVEL` 只控制诊断日志；基础事件不受其过滤，测试环境默认静默。
+
+HTTP 在鉴权前建立上下文，响应回传 `X-Request-Id/X-Trace-Id`。Railway 中可按响应的 request_id/trace_id 搜索整个请求，再按 span_id 看一次调用。通知带 event_id，可搜索对应原始日志。同一操作的 started/terminal 共用 span_id，event_id 各不相同。不同请求和定时任务的上下文独立。
+
+`http_status` 是实际发出的状态；未发响应时为空。SSE 200 只代表传输，生成 attempt、最终业务结果和流交付分别记录。用户断开后后台生成成功不能把交付改成成功。支付回调 ACK、商户查单、入账分别记录；未知提交结果不得据日志直接重做扣费/入账。
+
+DB 和显式第三方 fetch 记录一次 transport attempt，到响应头为止；不读取正文、不增加业务重试。响应体解析、SDK 业务错误由现有业务边界负责。强杀进程可能只留下 started，不伪造终态，也不宣称应用能保证 Railway 的保存 SLA。
+
+## 安全字段
+
+新增调用使用 observation 的字段白名单；遗留 Pino 同样丢弃未登记的 DTO/正文/个人信息，字符串插值不作为输出消息。传入原始 `{ err }`，序列化只保留受控错误类型和源码文件/行号，去掉 message、绝对路径和 SDK 原始内容。业务原因必须显式提供稳定 `error_code`，不能从私密错误文本中猜测。
+
+Sentry 的异常、日志、breadcrumb、span 各自经过出口投影；自动捕获的 request/user/extra 和错误正文不发送。SDK 标记的路由模板保留性能分组。短剧完整诊断继续通过 shared 严格 schema 校验后写入，不能套普通标量投影而丢失原性能字段。
+
+生产服务和定时任务禁止 console；离线导入/回放/报表 CLI 的人读/JSON 输出是明确例外。`payment-callback-report --json` 保留既有报表协议，不混入通知系统。
+
+## 日志告警
+
+配置仅在进程启动时读取，修改需重新部署/重启：
+
+| 配置                       | 行为                                                             |
+| -------------------------- | ---------------------------------------------------------------- |
+| `LOG_ALERTING_ENABLED`     | 未配置、空或 `false` 关闭；仅 `true` 开启；其他值配置失败        |
+| `LOG_ALERT_RULES`          | 可选 JSON 数组，最多 32 条、16 KiB；开启时严格校验，关闭时不解析 |
+| `FEISHU_ALERT_WEBHOOK_URL` | 复用现有服务端 secret；开启时必须有效，不写入仓库或日志          |
+
+不开启时没有匹配、通知请求或通知队列。开启但未配规则时只匹配 error/fatal。每条日志只使用第一条匹配规则；同一请求的不同日志可以分别告警，不做聚合或去重。
+
+规则字段：`id`（唯一）、`severity`（P0/P1/P2，默认 P1）、`min_level`（info/warn/error/fatal，默认 error）；可选 `events/operations/error_codes/outcomes` 字符串数组、`min_http_status/min_duration_ms`。同一条规则内所有条件同时满足。示例规则内容如下，不包含 webhook：
+
+```json
+[
+  {
+    "id": "failed-http",
+    "events": ["operation.terminal"],
+    "operations": ["http.request"],
+    "min_http_status": 500,
+    "min_level": "error",
+    "severity": "P1"
+  }
+]
+```
+
+核心日志和带 event 的既有 Pino 日志均可匹配；诊断日志被 LOG_LEVEL 过滤后不会产生告警。遗留 `code/errorCode/errorClass` 映射到规则的 error_codes。通知只含规则、事件、操作、结果、错误码和 event_id，不带正文、用户标识、原始错误或凭证。
+
+通知直接复用 Feishu HTTP adapter，最多 4 个并发，2.5 秒超时，不重试、不落库、不积压、不补发。过载丢弃通知并记录 `observability.alert.capacity_exceeded`，发送失败记录 `observability.alert.delivery_failed`，这些内部事件不再次触发告警。关闭进程时仅有界等待正在发送的通知。这个开关不控制原支付 outbox/余额告警。
+
+## 错误契约迁移矩阵
+
+| 评审差异                         | 本批处理与消费者                                                                                                                                                                                                                 |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 支付建单 400 兜底                | 已知套餐/购买开关业务拒绝保留 PAYMENT_CREATE_FAILED/400；typed CheckoutError 按配置500、上游502/503、限流429、超时504、写入未知500分类。未知异常500，禁止返回 raw message。Frontend 以通用 envelope/message 处理，不自动重发建单 |
+| upstream_error 502/504           | 总超时改 upstream_timeout/504；流内同码。前端接受新旧码、保留已收到文本；首字超时专有码不变                                                                                                                                      |
+| MODEL_UNAVAILABLE 400/409        | 模型切换改409，与广场一致；保留原 code，前端通用失败分支                                                                                                                                                                         |
+| 广场余额不足409/402              | 改402，保留 INSUFFICIENT_BALANCE；消费方不依赖409作为余额判断                                                                                                                                                                    |
+| Telegram 鉴权                    | 缺失/非法身份401增加 UNAUTHORIZED；缺服务配置500/CONFIGURATION_ERROR。删除 URL/initData console                                                                                                                                  |
+| Admin 身份依赖                   | 无身份401、无权限403；身份服务5xx/网络和角色查询故障503/AUTH_DEPENDENCY_UNAVAILABLE。Admin、文本后处理、Creator 和 CLI 的对应 catch 同步；不再误触发重新登录                                                                     |
+| 素材/代理 message-only           | 保留顶层 message，兼容增加 code；代理响应继续原样透传，只有本地失败分类。代理新增30秒明确截止                                                                                                                                    |
+| 运营模型测试超时                 | 504/MODEL_TEST_TIMEOUT；网络仍502/MODEL_TEST_NETWORK_ERROR；Admin 显示安全服务消息                                                                                                                                               |
+| 图片描述422兜底                  | 本批保留公开协议；底层 transport 和 image.description.failed 的 errorCode 记录技术原因。持久化 ImageErrorCode 涉及任务状态消费者，不能仅凭现有字符串统一改状态                                                                   |
+| 支付交易号冲突409/500            | 保留已验签业务拒绝与结算持久化失败的不同边界；不把未知数据库失败自动转成可重试冲突；既有幂等/回调测试验证                                                                                                                        |
+| FEATURE_FREE_TRIAL_INVALID_STATE | 保留公开码和现有失败闭合。非法限额/ordinal/status 与 RPC 预留失效证据来源不同，不按同名码猜测重试资格；需在独立业务状态迁移中拆分                                                                                                |
+| 通用 INTERNAL/UPSTREAM 等        | 保留未完成消费者迁移的旧公开码；HTTP 实际状态、DB/供应商操作与安全原始异常上下文用于排障，不全局重写业务结果                                                                                                                     |
+| 设计目录第2—11节候选码           | 目录是评审词汇，不代表每个码都有真实生产者；仅 shared 与已验证的生产者接入项成为当前公开契约                                                                                                                                     |
+
+兼容发布：Backend 兼容增加字段/码 → 对应消费者验证。旧客户端保留通用错误显示。无数据库迁移和历史状态回填。公共码的三个保留范围（媒体描述、免费试用、其余兜底）仍需后续业务契约迁移，不把本批日志整改当作全部错误目录落地。
+
+## 验证与发布
+
+本地：`pnpm lint:backend-logging`、`pnpm lint:complexity`、backend 相关测试与全量无凭证测试、shared 测试、`pnpm -r typecheck`、Frontend/Admin build。安全测试覆盖私密输入、并发上下文、一次终态、socket 断开、响应身份、通知关闭/超时/失败/容量。静态 guard 检查运行时代码的 console、未登记直接 fetch 和全局 fetch 替换；不声称覆盖所有第三方 SDK 内部实现。
+
+发布后：先保持通知关闭，检查普通成功/401/404/500、SSE 断开、支付 ACK/结算、定时任务的 Railway 链路；再按真实业务需要配置规则和 secret。对照发布前后各24小时的 Android/iOS 页面与 API P95，基线未见样本保持 null，N<100 延长窗口。当前未执行生产部署、真实支付/供应商调用或发送飞书通知。
+
+建议本地长期验收复用 `packages/ui-tests` 的 @chat/@profile/@image，补充超时显示、半截流保留、余额不足及支付未知状态查看原订单；现有模拟不能替代真实计费、系统键盘及生产 P95。
+
+回滚：关闭 LOG_ALERTING_ENABLED 并重启即可停止新通知；按模块回滚应用提交，不改数据。出现敏感字段、异常通知量或性能劣化时停止发布并定位 event/operation。

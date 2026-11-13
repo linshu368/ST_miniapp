@@ -50,6 +50,12 @@ HTTP 根级 `registerHttpObservation` 在 CORS/鉴权之前运行，使用回调
 - 关键流程记录阶段、耗时、状态/计数、安全幂等摘要、provider/request id；job 记录扫描/推进/失败数，禁止逐行高频 info。
 - 发布顺序：兼容 migration → backend producer → consumers → 清理旧字段。说明旧数据、灰度/停止条件、rollback 或 forward-fix。生产 migration 手动逐文件，先 test 验证 shape、RLS/权限、读写、锁/容量和回滚。
 
+### 运行时日志补充（2026-11-13，本地未部署）
+
+定时任务用 runObservedJob 建独立上下文，由已有 observeBackgroundRun 提供真实终态；resolved void 不能推定成功。支付语义事件使用脱敏业务键，禁止原订单/用户/metadata 进入通知。
+
+Pino 标量白名单与 Sentry 各出口过滤原始内容；短剧诊断必须走 validatedDramaLog 的 shared schema 保留完整安全结构。生产代码禁止 console，离线 CLI stdout 是明确例外，CI 执行 lint:backend-logging。LOG_ALERTING_ENABLED 默认关闭；开启时第一条规则匹配即直接发送安全通知，4并发/2.5秒/无持久化无重试。内部通知故障事件不递归。完整配置与错误契约保留边界见 docs/backend-observability-runtime.md。
+
 ## Scenario: 文字回复取消与残留恢复
 
 ### 1. Scope / Trigger
