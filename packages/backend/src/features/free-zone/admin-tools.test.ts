@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_FREE_ZONE_CONFIG, FreeZoneConfigSchema } from '@miniapp/shared';
 import { clearScreeningPreviewCache, previewFreeZoneScreening } from './admin-preview.js';
+import { parseMarketBook } from './surplus-market.js';
 import { buildFreeZoneStatus } from './admin-status.js';
 import type { SurplusModelMarket } from './surplus-market.js';
 
@@ -160,6 +161,7 @@ describe('buildFreeZoneStatus', () => {
                 },
               },
               business: 'insufficient',
+              direct_price: { input_per_1m: 900000, output_per_1m: 1500000, source: 'OpenRouter' },
               turns: 46,
               fallback_delivered_pct: 39.7,
               no_output_pct: 41,
@@ -205,6 +207,13 @@ describe('buildFreeZoneStatus', () => {
       closest: { provider: 'zai', failed: ['min_tps'] },
     });
     expect(status.models[2]?.screening).toBeNull();
+    // 原价来自最近一轮评估；旧记录没有就是 null
+    expect(status.models[1]?.direct_price).toEqual({
+      input_per_1m: 900000,
+      output_per_1m: 1500000,
+      source: 'OpenRouter',
+    });
+    expect(status.models[2]?.direct_price).toBeNull();
     // 业务数据只给在架模型看；不在架的即使 last_metrics 里有旧数也不显示
     expect(status.models[1]?.business).toEqual({
       turns: 46,
@@ -240,5 +249,25 @@ describe('parameterImpact for qualified offers', () => {
     );
     const offers = result.impact.find((item) => item.key === 'min_qualified_offers');
     expect(offers?.unlocks).toEqual(['free-thin']);
+  });
+});
+
+describe('parseMarketBook direct price', () => {
+  it('reads the reference price the discounts are measured against', () => {
+    const book = parseMarketBook({
+      offers: [],
+      direct_price: {
+        input_per_1m: 900000,
+        output_per_1m: 1500000,
+        reference_source: 'openrouter',
+        reference_provider: 'OpenRouter',
+      },
+    });
+    expect(book.directPrice).toEqual({
+      inputPer1m: 900000,
+      outputPer1m: 1500000,
+      source: 'OpenRouter',
+    });
+    expect(parseMarketBook({ offers: [] }).directPrice).toBeUndefined();
   });
 });

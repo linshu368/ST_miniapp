@@ -1,5 +1,6 @@
 import { InputNumber, Tooltip, Typography } from 'antd';
 import type { AdminFreeZoneStatusModel, FreeZoneCandidate } from '@miniapp/shared';
+import { freeZoneDiscountFloor } from '@miniapp/shared';
 
 /**
  * 线上状态里直接改每个模型的单独设置（折扣底线、并发数）；改的是表单里的候选池，
@@ -77,5 +78,42 @@ export function FreeZoneDiscountInput(props: Props) {
       disabled={found.editing.disabled}
       onChange={(value) => found.patch({ min_discount_pct: value ?? null })}
     />
+  );
+}
+
+/** 微美元/百万 token → 「$0.9」；小于 0.1 美元多留一位，免得都显示成 0。 */
+function usd(micro: number | null): string {
+  if (micro === null) return '?';
+  const value = micro / 1_000_000;
+  return `$${Number(value.toFixed(value < 0.1 ? 3 : 2))}`;
+}
+
+/**
+ * 原价（Surplus 标的直购参考价，折扣就是相对它算的）：输入 / 输出，每百万 token。
+ * 悬停看按这个模型当前的折扣底线大约多少钱，方便定底线。
+ */
+export function FreeZoneDirectPrice(props: Props) {
+  const price = props.model.direct_price;
+  if (!price) return <Typography.Text type="secondary">等下一轮评估</Typography.Text>;
+  const candidate = props.editing?.candidates.find((item) => item.id === props.model.candidate_id);
+  const floor = props.editing
+    ? freeZoneDiscountFloor({ min_discount_pct: props.editing.defaultDiscountPct }, candidate)
+    : null;
+  const at = (micro: number | null) =>
+    micro === null || floor === null ? null : (micro * (100 - floor)) / 100;
+  const hint = [
+    `原价（${price.source ?? 'Surplus 参考价'}）：输入 ${usd(price.input_per_1m)} / 输出 ${usd(price.output_per_1m)}，每百万 token`,
+    floor === null
+      ? null
+      : `按 ${floor}% 折扣底线，最高约：输入 ${usd(at(price.input_per_1m))} / 输出 ${usd(at(price.output_per_1m))}`,
+  ]
+    .filter(Boolean)
+    .join('。');
+  return (
+    <Tooltip title={hint}>
+      <span style={{ whiteSpace: 'nowrap' }}>
+        {usd(price.input_per_1m)} / {usd(price.output_per_1m)}
+      </span>
+    </Tooltip>
   );
 }
