@@ -45,10 +45,15 @@ export const FreeZoneCandidateSchema = z.object({
    * 就和兜底一起竞争。用来压兜底率高的模型，代价是多花几路的 Surplus 费用。
    */
   parallel_requests: z.number().int().min(1).max(3).default(1),
+  /**
+   * 这个模型单独的折扣底线（%）；留空用初筛里的统一底线。初筛、派单探测和真实请求的
+   * X-Min-Discount 都按它。有些模型原价本来就低，可以放宽一点。
+   */
+  min_discount_pct: z.number().int().min(1).max(100).nullable().default(null),
 });
 
 export const FreeZoneScreeningSchema = z.object({
-  /** 折扣底线，同时作为请求时的 X-Min-Discount */
+  /** 统一折扣底线，同时作为请求时的 X-Min-Discount；候选单独设了就按候选的 */
   min_discount_pct: z.number().int().min(1).max(100).default(85),
   min_qualified_offers: z.number().int().min(1).max(10_000).nullable().default(5),
   min_realized_discount_pct: PercentSchema.nullable().default(85),
@@ -162,6 +167,22 @@ export type FreeZoneRelist = z.infer<typeof FreeZoneRelistSchema>;
 export type FreeZoneConfig = z.infer<typeof FreeZoneConfigSchema>;
 
 export const DEFAULT_FREE_ZONE_CONFIG: FreeZoneConfig = FreeZoneConfigSchema.parse({});
+
+/** 这个模型实际用的折扣底线：候选单独设了就用它，否则用统一值。 */
+export function freeZoneDiscountFloor(
+  screening: Pick<FreeZoneScreening, 'min_discount_pct'>,
+  candidate: { min_discount_pct?: number | null } | null | undefined
+): number {
+  return candidate?.min_discount_pct ?? screening.min_discount_pct;
+}
+
+/** 把初筛门槛里的折扣底线换成这个模型的，其余照旧——下游一律读 min_discount_pct。 */
+export function freeZoneRulesFor(
+  screening: FreeZoneScreening,
+  candidate: { min_discount_pct?: number | null } | null | undefined
+): FreeZoneScreening {
+  return { ...screening, min_discount_pct: freeZoneDiscountFloor(screening, candidate) };
+}
 
 // ── 公开契约 ──────────────────────────────────────────────────────────────
 

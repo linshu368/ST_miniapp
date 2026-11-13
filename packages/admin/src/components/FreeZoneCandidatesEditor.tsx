@@ -19,7 +19,10 @@ const TIER_OPTIONS = [
   { value: 'light', label: '轻量' },
 ];
 
-type TextField = Exclude<keyof FreeZoneCandidate, 'benchmark_tier' | 'parallel_requests'>;
+type TextField = Exclude<
+  keyof FreeZoneCandidate,
+  'benchmark_tier' | 'parallel_requests' | 'min_discount_pct'
+>;
 
 const TEXT_COLUMNS: ReadonlyArray<{
   key: TextField;
@@ -68,6 +71,25 @@ function settingColumns(patch: Patch, disabled?: boolean): TableColumnsType<Row>
           options={TIER_OPTIONS}
           disabled={disabled}
           onChange={(benchmark_tier) => patch(row.index, { benchmark_tier })}
+        />
+      ),
+    },
+    {
+      title: '折扣底线',
+      key: 'min_discount_pct',
+      width: 100,
+      render: (_: unknown, row: Row) => (
+        <InputNumber
+          className="field-full"
+          min={1}
+          max={100}
+          precision={0}
+          placeholder="统一"
+          suffix="%"
+          // 旧配置里没有这一项：空着 = 用统一底线
+          value={row.candidate.min_discount_pct ?? null}
+          disabled={disabled}
+          onChange={(value) => patch(row.index, { min_discount_pct: value ?? null })}
         />
       ),
     },
@@ -176,6 +198,7 @@ export function FreeZoneCandidatesEditor(props: {
         顺序就是栏目里的展示顺序。免费模型 id 必须以 free- 开头；上线后别再改
         id，否则选了它的用户会被自动换走。
         系列用来在下架时优先换同系列；对标档位决定划线原价（取这一档当前的星尘价）。
+        折扣底线：空着用初筛里的统一底线，填了就按这个模型自己的（原价本来就低的模型可以放宽）。
         并发：在架时每轮同时发几路请求（1–3），先出字的胜出、其余取消，都没在「启动兜底等待」内出字就和兜底一起竞争；兜底率高的模型可以调到
         2–3，每多一路多花一份 Surplus 费用。
       </Typography.Text>
@@ -183,7 +206,7 @@ export function FreeZoneCandidatesEditor(props: {
         size="small"
         rowKey="index"
         pagination={false}
-        scroll={{ x: 1210 }}
+        scroll={{ x: 1310 }}
         columns={columns}
         dataSource={list.map((candidate, index) => ({ index, candidate }))}
       />
