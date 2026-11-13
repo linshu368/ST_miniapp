@@ -342,7 +342,7 @@ export default async function modelsRoutes(app: FastifyInstance) {
           { event: 'models.select.unavailable', err: error, modelId: parsed.data.model_id },
           'unavailable model selection'
         );
-        return reply.status(400).send(fail('MODEL_UNAVAILABLE', '该模型暂不可用'));
+        return reply.status(400).send(fail('MODEL_UNAVAILABLE', '这个模型暂时用不了'));
       }
     }
   );

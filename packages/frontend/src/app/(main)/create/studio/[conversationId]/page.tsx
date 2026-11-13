@@ -224,7 +224,7 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
       router.push(next.pathname + next.search);
     } catch (error) {
       if (coverRouteVersion.current === routeVersion)
-        setNotice(error instanceof Error ? error.message : '暂时未能使用这张封面，请重试');
+        setNotice(error instanceof Error ? error.message : '这张封面没用上，再试一次吧');
     } finally {
       coverBusy.current = false;
     }
@@ -500,7 +500,7 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
   if ((!config.data && config.isError) || (!data && conversation.isError))
     return (
       <StudioMessage>
-        <p>生成记录暂时无法读取。</p>
+        <p>生成记录没读出来，稍后再看看。</p>
         <button
           type="button"
           disabled={config.isFetching || conversation.isFetching}
@@ -515,7 +515,7 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
       </StudioMessage>
     );
   if (!config.data?.enabled || !data || !model)
-    return <StudioMessage>图片创作暂不可用</StudioMessage>;
+    return <StudioMessage>图片创作暂时用不了</StudioMessage>;
 
   const tip = config.data.share_tip;
   const rate = `${Math.round(config.data.share_rebate_rate * 100)}%`;
@@ -1039,7 +1039,7 @@ function attemptFailureMessage(errorCode: string): string {
     return '图片服务暂未接受本次生成，请调整后重试';
   }
   if (errorCode.includes('reference')) return '参考图当前不可用，请重新添加后再试';
-  return '图片服务未完成本次生成，请稍后重试';
+  return '这次图片没生成出来，再试一次吧';
 }
 
 function StudioMessage({ children }: { children: React.ReactNode }) {

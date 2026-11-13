@@ -337,7 +337,7 @@ async function readConversationStream(options: StreamTurnOptions): Promise<void>
 
   if (!finished) {
     throw new ConversationStreamError(
-      '生成中断，请稍后重试',
+      '生成中断了，再点一次重新来',
       response.status,
       'upstream_error',
       undefined,

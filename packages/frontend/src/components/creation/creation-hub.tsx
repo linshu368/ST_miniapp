@@ -261,7 +261,7 @@ export function CreationHub() {
             <section>
               <h3 className="text-sm font-medium text-primary">他人使用，获得 40% 星尘奖励</h3>
               <p className="mt-2 text-[13px] leading-7 text-muted-foreground">
-                其他用户使用你的角色卡并消耗星尘，你可获得该次实际消耗的 40% 作为专项星尘奖励。
+                其他玩家使用你的角色卡并消耗星尘，你可获得该次实际消耗的 40% 作为专项星尘奖励。
               </p>
               <p className="mt-2 rounded-xl bg-white/[0.035] px-3 py-2 text-xs leading-6 text-foreground/80">
                 例如：他人消耗 100 星尘，你获得 40 星尘。

@@ -170,7 +170,7 @@ export default function ProfilePage() {
       }
       router.push('/vip');
     } catch {
-      setVipError('暂时无法打开 VIP，请重试');
+      setVipError('VIP 页没打开，再试一次吧');
     } finally {
       openingVip.current = false;
     }
@@ -384,7 +384,7 @@ export default function ProfilePage() {
           <ProfileVipPlaceholder />
         )}
         {vipStatus.isError ? (
-          <p className="px-4 pt-2 text-[11px] text-muted-foreground">会员状态暂时无法确认</p>
+          <p className="px-4 pt-2 text-[11px] text-muted-foreground">会员状态没查到，稍后再看看</p>
         ) : null}
         {vipError ? (
           <p role="alert" className="px-4 pt-2 text-xs text-destructive">

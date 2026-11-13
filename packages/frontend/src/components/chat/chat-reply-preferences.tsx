@@ -257,7 +257,7 @@ export function ChatReplyPreferences({
                 </button>
               </div>
             ) : lengthOptions.length === 0 ? (
-              <p className="py-2 text-[11px] text-muted-foreground">暂无可用档位</p>
+              <p className="py-2 text-[11px] text-muted-foreground">这里暂时没有可选的档位</p>
             ) : (
               <div
                 className="grid gap-1.5"

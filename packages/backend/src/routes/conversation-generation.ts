@@ -359,7 +359,7 @@ function failTurn(
       { event: 'conversation.turn.failed_mid_stream', err: error },
       '流已开始后失败，改以流内 error 事件收口'
     );
-    sink.send({ type: 'error', code: 'upstream_error', message: '生成中断，请稍后重试' });
+    sink.send({ type: 'error', code: 'upstream_error', message: '生成中断了，再点一次重新来' });
     sink.close();
     return;
   }

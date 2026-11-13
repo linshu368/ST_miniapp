@@ -22,7 +22,7 @@ export function formatMediaBillingPreview(
   allowFreeTrial = true
 ): string {
   if (refreshing) return '正在更新费用…';
-  if (failed || !billing) return '费用暂不可用，请稍后重试';
+  if (failed || !billing) return '费用没查到，稍后再试';
   if (allowFreeTrial && billing.billing_mode === 'free_trial') {
     return formatFreeTrialBillingLabel(billing.free_trial_ordinal, billing.free_trial_limit);
   }

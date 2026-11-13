@@ -895,7 +895,7 @@ export function useConversationTurn({
               }),
               new Promise<never>((_resolve, reject) => {
                 timer = setTimeout(
-                  () => reject(new Error('本次回复尚未确认，请稍后重试取消')),
+                  () => reject(new Error('这次回复还没确认好，稍后再点停止')),
                   remaining
                 );
               }),
@@ -954,7 +954,7 @@ export function useConversationTurn({
           setStreamError('本次回复未开始，原消息已保留');
           return;
         }
-        if (!assistantMessageId) throw new Error('本次回复尚未确认，请稍后重试取消');
+        if (!assistantMessageId) throw new Error('这次回复还没确认好，稍后再点停止');
         if (message) observationRef.current?.identify(assistantMessageId, message.revision);
         const result = await cancelTurn({
           sessionId,

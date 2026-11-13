@@ -437,7 +437,7 @@ export default function SelfHostedChatPage() {
               code === 'CONFLICT'
                 ? '这条回复正在生成语音'
                 : code === 'VOICE_UNAVAILABLE'
-                  ? '语音功能暂不可用'
+                  ? '语音暂时用不了'
                   : '语音生成没能开始，请重试'
             );
           },
