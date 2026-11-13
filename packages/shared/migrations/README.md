@@ -1,5 +1,17 @@
 # SQL 迁移文件
 
+## 2026-11-13 短剧原因问卷（本地 PG17 验证，远端未执行）
+
+`20261113_drama_survey.sql`（domain: miniapp_analytics + billing）。前置：`app_core.users`、`app_core.runtime_config`、`billing.user_wallets`、`billing.wallet_ledger`。
+
+- 新增 `miniapp_analytics.drama_survey_responses`：一次性问卷答卷，每个账号每份问卷一行（提交或叉掉）。问卷只弹给前端本机追剧记录里有过有效观看的用户；答卷包含 Q2a/Q2b 选项编码与客户端上报的观看深度（有效观看剧数、最大集数）。只用于分析，产品运行时不读；"是否已领过奖励"由后端查 `billing.wallet_ledger`。按 schema 规范第 5 条归入 analytics：不是平台资产，也不属于某个 MiniApp 功能的运行状态。
+- 新增 `billing.submit_drama_survey(...)`：在同一事务里写答卷、加 bonus 星尘、记流水（`entry_type='survey_reward'`，`reference_type='survey'`，`reference_id=survey_key`）。"每账号只领一次"由答卷表主键保证，并发提交只发一次；没有在 `wallet_ledger` 上新建唯一索引，避免建索引时阻塞扣费写入。流水类型约束按 `20261030` 的方式追加，使用 NOT VALID。
+- RLS 开启，撤销 PUBLIC/anon/authenticated；service_role 对答卷表只有 SELECT/INSERT，函数只授予 service_role。
+- `app_core.runtime_config.miniapp_drama_survey_enabled` 默认 false。
+- 验证：`bash scripts/test-drama-survey-migration.sh`（重复执行、流水类型、发奖与幂等、叉掉后提交、提交后叉掉不降级、非法输入不发奖、权限、4 路并发只发一次）。
+- 发布：TEST 单文件 → Backend/Frontend（开关关，线上无变化）→ Production 单文件 → 打开开关。回收：`pnpm --filter backend drama-survey:report -- --out <path>`。
+- 收尾：关开关 → 导出 CSV → DROP 函数与答卷表（语句见文件头）。`survey_reward` 流水是资金审计事实，保留。
+
 ## 2026-11-12 畅聊每轮事实补「生成中断」（本地 PG17 验证）
 
 `20261112_free_zone_interrupted.sql`（domain: miniapp_analytics 只读投影）。前置：`20261112_free_zone.sql`。
