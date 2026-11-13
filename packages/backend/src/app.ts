@@ -34,6 +34,7 @@ import characterSocialRoutes from './routes/character-social.js';
 import characterWishRoutes from './routes/character-wishes.js';
 import characterRoutes from './routes/characters.js';
 import chatFeedbackRoutes from './routes/chat-feedback.js';
+import dramaSurveyRoutes from './routes/drama-survey.js';
 import communityRoutes from './routes/community.js';
 import conversationRoutes from './routes/conversations.js';
 import creatorAnalyticsRoutes from './routes/creator-analytics.js';
@@ -106,6 +107,7 @@ export async function buildApp() {
   await app.register(growthRoutes);
   await app.register(inviteRoutes);
   await app.register(communityRoutes);
+  await app.register(dramaSurveyRoutes);
   await app.register(adminSupabaseProxyRoutes);
   await app.register(adminFreeZoneRoutes);
   await app.register(adminCliSessionRoutes);

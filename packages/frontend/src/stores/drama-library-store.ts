@@ -112,6 +112,32 @@ function readHistory(value: unknown): Record<string, DramaProgress> {
   );
 }
 
+function libraryStorageKey() {
+  const userId = parseTelegramUser(getRawInitData()).id;
+  return `st-drama-library-v1:${Number.isSafeInteger(userId) ? userId : 'local'}`;
+}
+
+/** 有效观看：engagedAt > 0；缺省是旧版记录，按 DramaProgress 的约定视为看过；0 是短暂试看/误点。 */
+const isEngaged = (progress: DramaProgress) =>
+  progress.engagedAt === undefined || progress.engagedAt > 0;
+
+/**
+ * 直接读本机追剧记录（不依赖 store 是否已 hydrate），供聊天页等非短剧页面判断用户是否真正看过短剧。
+ * 读不到存储时按没看过处理。
+ */
+export function readDramaEngagement(): { engagedDramas: number; maxEpisode: number } {
+  try {
+    const raw: unknown = JSON.parse(localStorage.getItem(libraryStorageKey()) ?? '{}');
+    const engaged = Object.values(readHistory(record(raw) ? raw.history : null)).filter(isEngaged);
+    return {
+      engagedDramas: engaged.length,
+      maxEpisode: engaged.reduce((max, item) => Math.max(max, item.episode), 0),
+    };
+  } catch {
+    return { engagedDramas: 0, maxEpisode: 0 };
+  }
+}
+
 // 这里只持久化有界的观看位置和ID；签名播放地址及Telegram凭证不落盘。
 function persist(state: Pick<DramaLibraryState, 'storageKey' | 'saved' | 'history'>) {
   try {
@@ -143,8 +169,7 @@ export const useDramaLibraryStore = create<DramaLibraryState>((set, get) => ({
   speed: 1,
   setPlaybackPreferences: (patch) => set(patch),
   hydrate: () => {
-    const userId = parseTelegramUser(getRawInitData()).id;
-    const storageKey = `st-drama-library-v1:${Number.isSafeInteger(userId) ? userId : 'local'}`;
+    const storageKey = libraryStorageKey();
     if (get().hydrated && get().storageKey === storageKey) return;
     let saved: string[] = [];
     let history: Record<string, DramaProgress> = {};
