@@ -67,6 +67,7 @@ export function DramaSurveySheet({
   const result = submit.data ?? null;
   const current = step === 0 ? openAnswer : watchAnswer;
   const setCurrent = step === 0 ? setOpenAnswer : setWatchAnswer;
+  const canAdvance = isAnswered(current);
 
   const send = () =>
     submit.mutate(
@@ -104,7 +105,7 @@ export function DramaSurveySheet({
             onSubmit={(event) => {
               event.preventDefault();
               if (step < TOTAL_STEPS - 1) {
-                if (current.reasons.length > 0) setStep(step + 1);
+                if (canAdvance) setStep(step + 1);
               } else if (!pending) send();
             }}
           >
@@ -134,7 +135,7 @@ export function DramaSurveySheet({
               ) : null}
               <button
                 type="submit"
-                disabled={step < TOTAL_STEPS - 1 ? current.reasons.length === 0 : pending}
+                disabled={step < TOTAL_STEPS - 1 ? !canAdvance : pending}
                 aria-busy={pending}
                 className={PRIMARY_BUTTON}
               >
@@ -154,6 +155,11 @@ export function DramaSurveySheet({
 
 const otherTextOf = (answer: ChoiceAnswer) =>
   answer.reasons.includes(DRAMA_SURVEY_OTHER_REASON.id) ? answer.otherText : '';
+
+/** 至少选一项；选了「其他」必须写明原因，否则这一项没有分析价值。 */
+const isAnswered = (answer: ChoiceAnswer) =>
+  answer.reasons.length > 0 &&
+  (!answer.reasons.includes(DRAMA_SURVEY_OTHER_REASON.id) || answer.otherText.trim() !== '');
 
 function describe(
   result: { status: string; credits: number } | null,
@@ -249,12 +255,13 @@ function ChoiceQuestion({
       </div>
       {answer.reasons.includes(DRAMA_SURVEY_OTHER_REASON.id) ? (
         <input
-          aria-label="其他原因说明（选填）"
+          aria-label="其他原因说明（必填）"
+          aria-required
           data-sentry-mask
           maxLength={200}
           value={answer.otherText}
           onChange={(event) => onChange({ ...answer, otherText: event.target.value })}
-          placeholder="说说是什么原因（选填）"
+          placeholder="请写下具体原因，填写后才能继续"
           className="mt-2 w-full rounded-xl border border-white/10 bg-black/10 px-3 py-2.5 text-base text-zinc-200 outline-none placeholder:text-sm placeholder:text-zinc-600 focus:border-primary/50"
         />
       ) : null}

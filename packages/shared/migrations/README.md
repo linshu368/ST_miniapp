@@ -8,7 +8,7 @@
 - 新增 `billing.submit_drama_survey(...)`：在同一事务里写答卷、加 bonus 星尘、记流水（`entry_type='survey_reward'`，`reference_type='survey'`，`reference_id=survey_key`）。"每账号只领一次"由答卷表主键保证，并发提交只发一次；没有在 `wallet_ledger` 上新建唯一索引，避免建索引时阻塞扣费写入。流水类型约束按 `20261030` 的方式追加，使用 NOT VALID。
 - RLS 开启，撤销 PUBLIC/anon/authenticated；service_role 对答卷表只有 SELECT/INSERT，函数只授予 service_role。
 - `app_core.runtime_config.miniapp_drama_survey_enabled` 默认 false。
-- 验证：`bash scripts/test-drama-survey-migration.sh`（重复执行、流水类型、发奖与幂等、叉掉后提交、提交后叉掉不降级、非法输入不发奖、权限、4 路并发只发一次）。
+- 执行：2026-11-13 TEST（run 43391746773）、Production（run 43418231723）均已 COMMIT；TEST 真机核对提交与叉掉两类答卷落表正确。
 - 发布：TEST 单文件 → Backend/Frontend（开关关，线上无变化）→ Production 单文件 → 打开开关。回收：`pnpm --filter backend drama-survey:report -- --out <path>`。
 - 收尾：关开关 → 导出 CSV → DROP 函数与答卷表（语句见文件头）。`survey_reward` 流水是资金审计事实，保留。
 
