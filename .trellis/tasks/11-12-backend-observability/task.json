@@ -69,6 +69,49 @@
         "window": "Compare 24 hours before and after deployment; extend when N\u003c100, separately for Android and iOS."
       },
       "notes": "Null means unmeasured. Target ordinary pages/APIs at 2000ms and no more than 5 percent P95 regression. Measure SSE and long jobs separately. Real production verification remains required."
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "required",
+      "scope": ["Backend HTTP, providers, payment, scheduled jobs and logging planning/CI tools"],
+      "integration_points": [
+        "Reuse platform/observability, safe Pino output, clientFetch and runObservedJob; no additional storage"
+      ],
+      "events": [
+        {
+          "event": "operation.terminal",
+          "operation": "http.request",
+          "levels": ["info", "warn", "error"],
+          "outcomes": ["succeeded", "failed", "rejected", "interrupted", "unknown"],
+          "fields": [
+            "http_status",
+            "public_error_code",
+            "duration_ms",
+            "request_id",
+            "trace_id",
+            "span_id"
+          ]
+        },
+        {
+          "event": "operation.terminal",
+          "operation": "job.free_zone_evaluation",
+          "levels": ["info", "warn", "error"],
+          "outcomes": ["succeeded", "failed", "skipped", "unknown"],
+          "fields": ["duration_ms", "trace_id", "span_id", "outcome_known"]
+        }
+      ],
+      "failure_paths": [
+        "HTTP 401/403/409/429/5xx and disconnect; provider timeout; missing-event errors; concurrent jobs; disabled/failed notification"
+      ],
+      "correlation": "Reuse request ALS and isolated job roots; transport child spans; one terminal event per operation.",
+      "redaction": "Safe fields and child bindings only; bounded DB/network error codes and cause; omit raw error messages, personal data, bodies, URLs and credentials.",
+      "alerting": "LOG_ALERTING_ENABLED remains off by default; on uses existing direct bounded rules with internal/public codes, no persistence or new deployment resources.",
+      "verification": [
+        "Backend full credential-free tests plus logger/http/alert/free-zone regression tests",
+        "Backend typecheck, ESLint, complexity and AST logging guard",
+        "Python planning gate tests including pending/missing declaration, state isolation and CI selection",
+        "After release inspect Railway correlation and actual notifications; record real Android/iOS/API P95 without inventing samples"
+      ]
     }
   }
 }

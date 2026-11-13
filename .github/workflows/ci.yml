@@ -35,6 +35,26 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Check logging integration plans
+        env:
+          PLAN_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ -z "$PLAN_BASE" ] || [[ "$PLAN_BASE" =~ ^0+$ ]]; then
+            echo "No prior commit is available for planning comparison" >&2
+            exit 1
+          fi
+          python .trellis/scripts/logging_planning_gate.py --base "$PLAN_BASE"
+
+      - name: Test logging planning gate
+        run: python -m unittest discover -s scripts -p 'test_logging_planning_gate.py'
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4

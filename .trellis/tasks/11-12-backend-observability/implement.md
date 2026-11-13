@@ -20,3 +20,11 @@
 复用现有 Pino hooks、safeError/safeLogRecord、告警通道、clientFetch/runObservedJob。内部错误码与公开错误码保持独立，既有 error_codes 规则兼容匹配两者；不改公开 API、业务重试、支付/生成行为或数据库。告警仍默认关闭，不增加存储、限频配置、窗口聚合或部署资源。各模块可独立回滚；上线后继续沿用原任务的真实 P95 验证要求。
 
 回归必要性：此次涉及敏感数据出口、告警漏报和并发关联，补充已有 logger/log-alerts/http/core/free-zone 测试；静态检查如需独立用例可新建 Node test 文件。覆盖嵌套子 logger、Error/普通错误对象、关闭时零通知、HTTP/SSE 公开码、旧字段别名、重复终态、行情超时和 job 并发上下文，验证正常返回/失败行为不变。每批 backend typecheck、相关测试、ESLint、复杂度；最后全量无凭证 backend 测试与日志门禁。新增日志文件或规则不成为业务状态源。
+
+## 后续功能规划日志门禁（用户已要求实施）
+
+复用 task.py start 的现有校验位置、task_store 的任务模板和 Quality Gate。增加 meta.logging_integration（pending/required/not_applicable），新任务默认为 pending；任何任务 start 前必须完成，旧任务重新启动时补声明。required 覆盖影响范围、复用接入点、事件/等级/结果/字段、链路、脱敏、失败路径、告警和验证。纯文档/静态样式不适用需要具体理由；功能改动优先声明复用现有日志，不能以“已有统一日志”为理由跳过评估。
+
+CI 按 base..HEAD 校验新增/修改的活跃任务规划（task.json/prd/design/implement/task），不追溯未改动或存档的历史任务；本地 start 没有缺字段兼容豁免。缺失、pending、占位或结构不全时失败，发生在状态/活动指针写入前。规则说明集中于项目 spec，AGENTS、workflow 与生成 PRD 引用；不修改全局 Trellis 或 bundled skill。
+
+风险与验证：无业务数据/服务/移动端性能变化，仅本地规划与 CI；校验失败不得产生状态副作用。允许新建 Python unittest 文件，覆盖创建默认值、校验矩阵、正常/无会话 start 阻断、旧任务重启、CI 变更选择和未改动历史兼容。按工具代码和规范两批提交，可回滚新增校验调用；日志运行时门禁保持不变。
