@@ -143,6 +143,11 @@ export default defineRailway((ctx) => {
       buildEnvironment: 'V3',
       dockerfilePath: '/ops/docker/Dockerfile.backend',
     },
+    // 排空期上限：后端单轮生成最长 110s，加收尾落库余量，并覆盖 120s 的过期回收窗口；
+    // 旧容器一旦跑完当前请求就会退出，不会每次都等满。
+    deploy: {
+      drainingSeconds: 130,
+    },
     env: Object.fromEntries(apiVariableNames.map((name) => [name, preserve()])),
   });
 
