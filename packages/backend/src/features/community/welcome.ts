@@ -47,7 +47,7 @@ export function buildCommunityWelcome(input: CommunityWelcomeInput): CommunityWe
   const mention = `<a href="tg://user?id=${input.telegramUserId}">${name}</a>`;
   if (input.rewardCredits !== null) {
     return {
-      text: `🎉 欢迎 ${mention} 加入秘境社群！\n入群奖励 <b>${input.rewardCredits} 星尘</b>已到账，回去就能接着聊。`,
+      text: `🎉 欢迎 ${mention} 加入秘境社群！\n入群奖励 <b>${input.rewardCredits} 星尘</b>已到账。`,
       buttonText: '回到秘境继续聊 ›',
     };
   }
