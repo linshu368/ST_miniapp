@@ -302,7 +302,7 @@ export function CreatedCharacters() {
           <SheetTitle>{changing?.visibility === 'public' ? '设为私密' : '公开你的角色'}</SheetTitle>
           <SheetDescription className="mt-3 text-sm leading-7">
             {changing?.visibility === 'public'
-              ? '将不再展示在大厅，已收藏或使用过的用户仍可继续使用。'
+              ? '将不再展示在大厅，已收藏或使用过的玩家仍可继续使用。'
               : '公开后进入大厅，所有人都能与你的角色聊天。'}
           </SheetDescription>
           {error ? (
@@ -326,7 +326,7 @@ export function CreatedCharacters() {
                 });
                 setChanging(null);
               } catch (e) {
-                setError(e instanceof Error ? e.message : '暂时未能修改，请重试');
+                setError(e instanceof Error ? e.message : '没改成功，再试一次吧');
               }
             }}
           >

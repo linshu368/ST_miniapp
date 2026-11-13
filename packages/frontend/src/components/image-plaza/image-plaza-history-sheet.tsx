@@ -106,7 +106,7 @@ function HistoryList({
           role="alert"
           className="rounded-2xl border border-destructive/30 bg-destructive/5 p-4 text-sm"
         >
-          <p>生成记录暂时未能同步。</p>
+          <p>生成记录还没同步好，稍后再看看。</p>
           <button
             type="button"
             disabled={query.isFetching}

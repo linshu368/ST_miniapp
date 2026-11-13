@@ -53,7 +53,7 @@ export interface PaymentGateway {
 }
 
 const USER_MESSAGES: Record<PaymentGatewayErrorClass, string> = {
-  configuration: '支付暂不可用，请稍后再试',
+  configuration: '支付暂时用不了，稍后再试',
   provider_rejected: '创建支付订单失败，请稍后重试',
   method_maintenance: '该支付方式维护中，请换一种支付方式',
   rate_limited: '支付系统繁忙，请稍后重试',

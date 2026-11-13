@@ -154,7 +154,7 @@ export function ConversationRow({
           {nested ? <span className="shrink-0">{session.message_count} 轮</span> : null}
         </span>
         <span className="mt-1 block truncate text-xs text-muted-foreground">
-          {session.last_message_preview || '暂无消息摘要'}
+          {session.last_message_preview || '还没聊几句'}
         </span>
       </span>
     </>
