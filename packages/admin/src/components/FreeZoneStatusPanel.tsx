@@ -30,6 +30,11 @@ import type {
 import { useAdminApi } from '../lib/adminApiContext';
 import { FreeZoneDelistNowButton } from './FreeZoneDelistNowButton';
 import { FreeZoneListNowButton } from './FreeZoneListNowButton';
+import {
+  FreeZoneParallelInput,
+  PARALLEL_HINT,
+  type FreeZoneParallelEditing,
+} from './FreeZoneParallelInput';
 
 const STATUS_COLORS = { listed: 'green', unlisted: 'default', cooling: 'orange' } as const;
 
@@ -208,6 +213,7 @@ function GroupTable(props: {
   group: FreeZoneStatusGroup;
   models: AdminFreeZoneStatusModel[];
   onChanged: () => void;
+  parallel?: FreeZoneParallelEditing;
 }) {
   if (props.models.length === 0) {
     return <Typography.Text type="secondary">暂无。</Typography.Text>;
@@ -224,13 +230,25 @@ function GroupTable(props: {
         <FreeZoneListNowButton model={model} onListed={props.onChanged} />
       ),
   };
+  const parallel = {
+    title: (
+      <Tooltip title={PARALLEL_HINT}>
+        <span>并发</span>
+      </Tooltip>
+    ),
+    key: 'parallel',
+    width: 80,
+    render: (_: unknown, model: AdminFreeZoneStatusModel) => (
+      <FreeZoneParallelInput model={model} editing={props.parallel} />
+    ),
+  };
   return (
     <Table<AdminFreeZoneStatusModel>
       size="small"
       rowKey="candidate_id"
       pagination={false}
-      scroll={{ x: 860 }}
-      columns={[...base, action]}
+      scroll={{ x: 940 }}
+      columns={props.group === 'listed' ? [...base, parallel, action] : [...base, action]}
       dataSource={props.models}
     />
   );
@@ -261,7 +279,7 @@ function EventList(props: { data: AdminFreeZoneStatusResponse }) {
 }
 
 /** 评估任务落库的线上状态，分三块：在架、未上架、因业务数据下架；每块可折叠。 */
-export function FreeZoneStatusPanel() {
+export function FreeZoneStatusPanel(props: { parallel?: FreeZoneParallelEditing }) {
   const api = useAdminApi();
   const [data, setData] = useState<AdminFreeZoneStatusResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -305,7 +323,8 @@ export function FreeZoneStatusPanel() {
         </Button>
         {data ? (
           <Typography.Text type="secondary">
-            按已发布的配置；最近评估 {time(data.last_evaluated_at)}，每 30 分钟一次。
+            按已发布的配置；最近评估 {time(data.last_evaluated_at)}，每 30
+            分钟一次。在架模型的「并发」改完要保存并发布配置才生效。
             {data.enabled ? '' : '总开关关着，用户看不到栏目。'}
           </Typography.Text>
         ) : null}
@@ -332,6 +351,7 @@ export function FreeZoneStatusPanel() {
                   group={group.key}
                   models={grouped.get(group.key) ?? []}
                   onChanged={() => void load()}
+                  parallel={props.parallel}
                 />
               ),
             }))}
