@@ -1,18 +1,14 @@
 'use client';
 
-import { useEffect, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { PenLine } from 'lucide-react';
 
-import { rememberRoleplayScroll, rememberRoleplayView } from '@/lib/roleplay-navigation';
-import { cn } from '@/lib/utils';
 import { DiscoveryGuide } from '@/components/onboarding/discovery-guide';
 import { CreatorInvitation } from '@/components/onboarding/creator-invitation';
 
-const VIEWS = [
-  { key: 'discover', href: '/characters', label: '发现' },
-  { key: 'conversations', href: '/chats', label: '对话' },
-] as const;
+// 发现与对话已分别是底栏一级入口，顶部只标出当前栏目，不再互相切换。
+const VIEW_LABELS = { discover: '发现', conversations: '对话' } as const;
 
 export function RoleplayHeader({
   active,
@@ -23,45 +19,17 @@ export function RoleplayHeader({
   children?: ReactNode;
   recommended?: boolean;
 }) {
-  const currentPath = active === 'discover' ? '/characters' : '/chats';
-
-  useEffect(() => {
-    rememberRoleplayView(currentPath);
-  }, [currentPath]);
-
   return (
     <>
       <header className="sticky top-0 z-30 w-full shrink-0 border-b border-border/70 bg-background/95 pt-[calc(0.5rem+env(safe-area-inset-top))] pb-1 backdrop-blur-xl">
-        <h1 className="sr-only">角色扮演</h1>
-        <nav
-          aria-label="角色栏目"
-          className="mx-auto flex w-full max-w-screen-xl gap-2 px-4 sm:px-6 lg:px-8"
-        >
-          {VIEWS.map((view) => (
-            <Link
-              key={view.key}
-              href={view.href}
-              scroll={false}
-              aria-current={view.key === active ? 'page' : undefined}
-              onClick={() => {
-                rememberRoleplayScroll(currentPath);
-                rememberRoleplayView(view.href);
-              }}
-              className={cn(
-                'relative flex min-h-11 min-w-20 items-center justify-center px-4 pb-2 text-sm font-semibold transition-colors',
-                'focus-visible:rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                view.key === active ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
-              )}
-            >
-              {view.label}
-              {view.key === active ? (
-                <span
-                  className="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-primary"
-                  aria-hidden
-                />
-              ) : null}
-            </Link>
-          ))}
+        <div className="mx-auto flex w-full max-w-screen-xl gap-2 px-4 sm:px-6 lg:px-8">
+          <h1 className="relative flex min-h-11 min-w-20 items-center justify-center px-4 pb-2 text-sm font-semibold text-primary">
+            {VIEW_LABELS[active]}
+            <span
+              className="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-primary"
+              aria-hidden
+            />
+          </h1>
           <Link
             href="/creation/characters/new"
             aria-label="创作角色卡"
@@ -72,7 +40,7 @@ export function RoleplayHeader({
               创作角色
             </span>
           </Link>
-        </nav>
+        </div>
         {children}
       </header>
       <DiscoveryGuide conversations={active === 'conversations'} />

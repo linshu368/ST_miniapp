@@ -18,7 +18,7 @@ function bootstrapStartupShell(): void {
   const pathname = window.location.pathname;
   // Only these routes already have an equivalent, independently verified HTML frame.
   // Other entries keep their existing post-hydration readiness contract.
-  if (pathname !== '/watch' && pathname !== '/characters' && pathname !== '/dramas') return;
+  if (['/watch', '/characters', '/dramas', '/chats'].indexOf(pathname) < 0) return;
   const state: EarlyStartup = { startedAt: performance.now() };
   window.__miniappStartup = state;
   const protectLaunchContext = (event: MouseEvent) => {
@@ -62,13 +62,13 @@ function bootstrapStartupShell(): void {
     );
   };
   const shellVisible = () => {
-    // The CSS token distinguishes the styled frame from unstyled HTML. The inner marker
-    // and navigation check avoid declaring an empty min-height wrapper ready.
+    // CSS token = styled frame; inner marker + nav (fullscreen /watch has none) = not an empty wrapper.
     return (
       Boolean(getComputedStyle(document.documentElement).getPropertyValue('--app-nav-height')) &&
       visible(document.querySelector('[data-startup-content] main')) &&
       visible(document.querySelector('[data-startup-content]')) &&
-      visible(document.querySelector('[data-startup-shell] nav[aria-label="主导航"]'))
+      (document.querySelector('[data-startup-content][data-startup-fullscreen]') !== null ||
+        visible(document.querySelector('[data-startup-shell] nav[aria-label="主导航"]')))
     );
   };
   const notify = (): 'sent' | 'unavailable' | 'failed' => {

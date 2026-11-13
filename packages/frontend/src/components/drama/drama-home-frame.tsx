@@ -1,7 +1,6 @@
 import type { ReactNode } from 'react';
 import Link from 'next/link';
-import { Clapperboard, Search } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { ArrowLeft, Clapperboard, Search } from 'lucide-react';
 
 /** Shared HTML/interactive frame; no identity, storage, or business queries. */
 export function DramaHomeFrame({
@@ -24,13 +23,23 @@ export function DramaHomeFrame({
         {controlsVisible ? (
           <header className="pointer-events-none relative z-20 flex [&_a]:pointer-events-auto [&_button]:pointer-events-auto h-[calc(60px+env(safe-area-inset-top))] items-center justify-between bg-gradient-to-b from-black/65 to-transparent px-5 pt-[env(safe-area-inset-top)]">
             <div className="flex h-full items-center gap-7">
-              <h1 className="relative flex h-full items-center text-[18px] font-bold">
-                推荐
-                <span
-                  aria-hidden
-                  className="absolute bottom-1.5 left-1/2 h-0.5 w-4 -translate-x-1/2 rounded-full bg-white"
-                />
-              </h1>
+              <div className="flex h-full items-center gap-2">
+                {/* 放映只从剧场进入，返回固定回剧场；剧场会找回最后看的那部。 */}
+                <Link
+                  href="/dramas"
+                  aria-label="返回剧场"
+                  className="-ml-3 flex h-11 w-11 items-center justify-center rounded-full bg-black/20"
+                >
+                  <ArrowLeft className="h-6 w-6" />
+                </Link>
+                <h1 className="relative flex h-full items-center text-[18px] font-bold">
+                  推荐
+                  <span
+                    aria-hidden
+                    className="absolute bottom-1.5 left-1/2 h-0.5 w-4 -translate-x-1/2 rounded-full bg-white"
+                  />
+                </h1>
+              </div>
               <Link
                 href="/dramas"
                 onClick={() => onBrowse?.('library')}
@@ -52,14 +61,8 @@ export function DramaHomeFrame({
             </div>
           </header>
         ) : null}
-        <div
-          className={cn(
-            'absolute inset-x-0 top-0',
-            controlsVisible ? 'bottom-[var(--app-nav-space)]' : 'bottom-0'
-          )}
-        >
-          {children}
-        </div>
+        {/* 放映页不再显示底栏，画面始终铺满到底部安全区。 */}
+        <div className="absolute inset-0">{children}</div>
       </div>
     </main>
   );

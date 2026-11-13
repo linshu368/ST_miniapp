@@ -23,7 +23,7 @@ API 与 server state 已集中，Tailwind/shadcn 作为 UI 基础。GET 传输�
 
 默认关闭且非首屏必需的重型面板可用动态导入，并在首次打开后保持挂载以保留关闭动画和局部草稿；消息正文、输入框、播放器地址等关键路径不得为追求 bundle 数字而延后。
 
-五个一级路由 `/watch`、`/dramas`、`/characters`、`/creation`、`/profile` 统一复用真实 Link intent 到 `usePageReady` 的 `page.navigation` 计时。成功样本带有限 `readiness_budget=within_2s|over_2s`；失败、离页和停滞仍由 terminal/stall 事件单独观察，不能只看 ready 幸存样本。BottomNav 在入口关键工作结束后按平台优先级串行预热 route chunk：Android/Android X 每轮最多一个，iOS/other 最多两个；短剧目录不在导航 intent 预取，避免与剧场增量列表挂载竞态。
+五个一级路由 `/dramas`、`/chats`、`/characters`、`/creation`、`/profile`（2026-11-12 起，放映 `/watch` 改为剧场内的全屏子页、不显示底栏）统一复用真实 Link intent 到 `usePageReady` 的 `page.navigation` 计时。成功样本带有限 `readiness_budget=within_2s|over_2s`；失败、离页和停滞仍由 terminal/stall 事件单独观察，不能只看 ready 幸存样本。BottomNav 在入口关键工作结束后按平台优先级串行预热 route chunk：Android/Android X 每轮最多一个，iOS/other 最多两个；短剧目录不在导航 intent 预取，避免与剧场增量列表挂载竞态。
 
 Android/Android X 的有效底栏导航点击到目标 `usePageReady` content ready/failed 之间启用内存级安静窗口；经两次绘制机会与有界 idle 后恢复未读、settings、Profile 次级读取和后台 route 预热，目标未结算时 4 秒强制放行。Characters 主列表与 Profile 钱包等 P0 不受阻塞；Android touch intent 只保留 Characters 主查询预取，iOS/other 沿用 characters、favorites、wallet 的既有 intent 策略。该调度独立于 Sentry/Grafana 开关，不改变 `page.navigation` 起止点。
 

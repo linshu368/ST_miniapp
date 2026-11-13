@@ -24,6 +24,7 @@ export * from './api/lobby-recommendation';
 export * from './api/wallet';
 export * from './api/feature-free-trials';
 export * from './api/conversations';
+export * from './api/conversation-folders';
 export * from './api/generation-observations';
 export * from './api/voice';
 export * from './api/images';
