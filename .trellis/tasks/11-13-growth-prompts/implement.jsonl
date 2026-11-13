@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/database/supabase/schema-and-object-conventions.md", "reason": "新表归属与对象约定"}
+{"file": ".trellis/spec/backend/app/modules/business/engagement-support.md", "reason": "社群奖励与 webhook 现状"}
+{"file": ".trellis/spec/frontend/app/modules/business/engagement-support.md", "reason": "前端社群入口现状"}
+{"file": ".trellis/spec/shared/contracts/modules/business/engagement-support-contracts.md", "reason": "社群契约"}

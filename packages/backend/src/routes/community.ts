@@ -1,5 +1,5 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyBaseLogger, FastifyInstance } from 'fastify';
 import {
   fail,
   ok,
@@ -11,10 +11,12 @@ import { requireTelegramAuth } from '../middleware/auth.js';
 import { getOrCreateDbUser } from '../lib/user.js';
 import { getDomainDb } from '../lib/supabase.js';
 import { readOfficialCommunityConfig } from '../features/community/config.js';
+import { hasEarlierEligibleJoin, readCommunityClaimFacts } from '../features/community/facts.js';
 import {
   getCommunityMemberStatus,
   isActiveCommunityMember,
 } from '../features/community/telegram-client.js';
+import { sendCommunityWelcome, type CommunityWelcomeInput } from '../features/community/welcome.js';
 
 interface CommunityUpdate {
   update_id?: number;
@@ -22,7 +24,10 @@ interface CommunityUpdate {
     date?: number;
     chat?: { id?: number };
     old_chat_member?: { status?: string };
-    new_chat_member?: { status?: string; user?: { id?: number } };
+    new_chat_member?: {
+      status?: string;
+      user?: { id?: number; first_name?: string; last_name?: string };
+    };
   };
 }
 type GrantRow = {
@@ -30,8 +35,17 @@ type GrantRow = {
   credits: number;
   granted_at: string | null;
 };
+type JoinOutcome =
+  | { matched: false; status?: 'failed' }
+  | { matched: true; status: VerifyCommunityMembershipData['status'] | 'failed'; credits?: number };
 
 export default async function communityRoutes(app: FastifyInstance) {
+  registerCommunityEntry(app);
+  registerCommunityVerify(app);
+  registerCommunityWebhook(app);
+}
+
+function registerCommunityEntry(app: FastifyInstance) {
   // @frontend-ready: true
   app.get('/api/community/entry', { preHandler: [requireTelegramAuth] }, async (request, reply) => {
     if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
@@ -39,27 +53,12 @@ export default async function communityRoutes(app: FastifyInstance) {
       readOfficialCommunityConfig(),
       getOrCreateDbUser(request.user),
     ]);
-    const [claim, exclusion] = community.chatId
-      ? await Promise.all([
-          getDomainDb('miniapp_features')
-            .from('community_reward_claims')
-            .select('granted_at')
-            .eq('user_id', user.id)
-            .eq('community_chat_id', community.chatId)
-            .maybeSingle(),
-          getDomainDb('miniapp_features')
-            .from('community_reward_exclusions')
-            .select('telegram_user_id')
-            .eq('community_chat_id', community.chatId)
-            .eq('telegram_user_id', String(request.user.id))
-            .maybeSingle(),
-        ])
-      : [
-          { data: null, error: null },
-          { data: null, error: null },
-        ];
-    if (claim.error || exclusion.error) {
-      request.log.error({ err: claim.error ?? exclusion.error }, '[community] entry query failed');
+    let facts = { grantedAt: null as string | null, excluded: false };
+    try {
+      if (community.chatId)
+        facts = await readCommunityClaimFacts(user.id, String(request.user.id), community.chatId);
+    } catch (err) {
+      request.log.error({ err }, '[community] entry query failed');
       return reply.status(500).send(fail('INTERNAL', '查询奖励失败'));
     }
     return reply.send(
@@ -70,12 +69,14 @@ export default async function communityRoutes(app: FastifyInstance) {
         reward_credits: community.rewardCredits,
         telegram_url: community.url,
         fallback_handle: community.handle,
-        claim_status: resolveCommunityClaimStatus(Boolean(claim.data), Boolean(exclusion.data)),
-        rewarded_at: claim.data?.granted_at ?? null,
+        claim_status: resolveCommunityClaimStatus(Boolean(facts.grantedAt), facts.excluded),
+        rewarded_at: facts.grantedAt,
       })
     );
   });
+}
 
+function registerCommunityVerify(app: FastifyInstance) {
   // @frontend-ready: true
   app.post(
     '/api/community/verify-membership',
@@ -140,7 +141,9 @@ export default async function communityRoutes(app: FastifyInstance) {
       }
     }
   );
+}
 
+function registerCommunityWebhook(app: FastifyInstance) {
   // @frontend-ready: false - Telegram Community Bot webhook
   app.post('/api/telegram/community-webhook', async (request, reply) => {
     if (
@@ -152,7 +155,8 @@ export default async function communityRoutes(app: FastifyInstance) {
       return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
     const update = (request.body ?? {}) as CommunityUpdate;
     const event = update.chat_member;
-    const telegramUserId = event?.new_chat_member?.user?.id;
+    const joiner = event?.new_chat_member?.user;
+    const telegramUserId = joiner?.id;
     const chatId = event?.chat?.id;
     const occurredAt = event?.date ? new Date(event.date * 1000) : null;
     if (
@@ -208,57 +212,114 @@ export default async function communityRoutes(app: FastifyInstance) {
       return reply.status(500).send(fail('INTERNAL', 'Webhook processing failed'));
     }
     if (!finalEligible) return reply.send(ok({ ignored: true }));
-    const receiptId = receipt.data.update_id;
-    const user = await getDomainDb('app_core')
-      .from('users')
-      .select('id')
-      .eq('tg_id', String(telegramUserId))
-      .maybeSingle();
-    if (user.error) {
-      await markReceiptFailed(receiptId, request.log, user.error);
-      return reply.send(ok({ ignored: false, matched: false, status: 'failed' }));
-    }
-    if (!user.data) {
-      const unmatched = await getDomainDb('miniapp_features')
-        .from('telegram_community_update_receipts')
-        .update({ result: 'unmatched' })
-        .eq('update_id', receiptId);
-      if (unmatched.error) {
-        request.log.error(
-          { err: unmatched.error, updateId: receiptId },
-          '[community] unmatched receipt update failed'
-        );
-        return reply.send(ok({ ignored: false, matched: false, status: 'failed' }));
-      }
-      return reply.send(ok({ ignored: false, matched: false }));
-    }
-    let result: VerifyCommunityMembershipData;
-    try {
-      result = await grant(
-        user.data.id,
-        String(telegramUserId),
-        community.chatId,
-        community.rewardCredits,
-        receiptId
-      );
-    } catch (err) {
-      await markReceiptFailed(receiptId, request.log, err);
-      // 收据保留失败事实，交由人工补偿；返回 2xx 防止 Telegram 持续重投打库。
-      return reply.send(ok({ ignored: false, matched: true, status: 'failed' }));
-    }
-    const processed = await getDomainDb('miniapp_features')
-      .from('telegram_community_update_receipts')
-      .update({ result: result.status, processed_at: new Date().toISOString() })
-      .eq('update_id', receiptId);
-    if (processed.error) {
-      // RPC 已提交时绝不能把收据改写为 failed；记录 update_id 供对账修复。
-      request.log.error(
-        { err: processed.error, updateId: receiptId },
-        '[community] rewarded receipt update failed'
-      );
-    }
-    return reply.send(ok({ ignored: false, matched: true, status: result.status }));
+    const receiptId = receipt.data.update_id as number;
+    const outcome = await settleEligibleJoin(
+      receiptId,
+      String(telegramUserId),
+      community,
+      request.log
+    );
+    // 欢迎语在应答之外异步发送：Telegram 慢或失败都不影响发奖与 webhook 2xx。
+    void welcomeAfterJoin(
+      outcome,
+      receiptId,
+      {
+        chatId: String(chatId),
+        telegramUserId: telegramUserId!,
+        firstName: joiner?.first_name,
+        lastName: joiner?.last_name,
+      },
+      request.log
+    );
+    return reply.send(
+      ok({
+        ignored: false,
+        matched: outcome.matched,
+        ...(outcome.status ? { status: outcome.status } : {}),
+      })
+    );
   });
+}
+
+/** 有效入群之后：匹配账号并发奖，收据记录处理结果。失败保留收据供人工补偿。 */
+async function settleEligibleJoin(
+  receiptId: number,
+  telegramUserId: string,
+  community: { chatId: string; rewardCredits: number },
+  log: FastifyBaseLogger
+): Promise<JoinOutcome> {
+  const user = await getDomainDb('app_core')
+    .from('users')
+    .select('id')
+    .eq('tg_id', telegramUserId)
+    .maybeSingle();
+  if (user.error) {
+    await markReceiptFailed(receiptId, log, user.error);
+    return { matched: false, status: 'failed' };
+  }
+  if (!user.data) {
+    const unmatched = await getDomainDb('miniapp_features')
+      .from('telegram_community_update_receipts')
+      .update({ result: 'unmatched' })
+      .eq('update_id', receiptId);
+    if (unmatched.error) {
+      log.error(
+        { err: unmatched.error, updateId: receiptId },
+        '[community] unmatched receipt update failed'
+      );
+      return { matched: false, status: 'failed' };
+    }
+    return { matched: false };
+  }
+  let result: VerifyCommunityMembershipData;
+  try {
+    result = await grant(
+      user.data.id,
+      telegramUserId,
+      community.chatId,
+      community.rewardCredits,
+      receiptId
+    );
+  } catch (err) {
+    await markReceiptFailed(receiptId, log, err);
+    // 收据保留失败事实，交由人工补偿；返回 2xx 防止 Telegram 持续重投打库。
+    return { matched: true, status: 'failed' };
+  }
+  const processed = await getDomainDb('miniapp_features')
+    .from('telegram_community_update_receipts')
+    .update({ result: result.status, processed_at: new Date().toISOString() })
+    .eq('update_id', receiptId);
+  if (processed.error) {
+    // RPC 已提交时绝不能把收据改写为 failed；记录 update_id 供对账修复。
+    log.error(
+      { err: processed.error, updateId: receiptId },
+      '[community] rewarded receipt update failed'
+    );
+  }
+  return { matched: true, status: result.status, credits: result.reward_credits };
+}
+
+/**
+ * 首次领到奖励：欢迎并写明到账星尘；还没账号的人：只在第一次有效入群时欢迎并引导进秘境。
+ * 退群重进（already_rewarded / 已欢迎过）不再发，避免刷屏。
+ */
+async function welcomeAfterJoin(
+  outcome: JoinOutcome,
+  receiptId: number,
+  base: Omit<CommunityWelcomeInput, 'rewardCredits'>,
+  log: FastifyBaseLogger
+): Promise<void> {
+  try {
+    if (outcome.matched && outcome.status === 'rewarded') {
+      await sendCommunityWelcome({ ...base, rewardCredits: outcome.credits ?? null }, log);
+      return;
+    }
+    if (outcome.matched || outcome.status === 'failed') return;
+    if (await hasEarlierEligibleJoin(String(base.telegramUserId), base.chatId, receiptId)) return;
+    await sendCommunityWelcome({ ...base, rewardCredits: null }, log);
+  } catch (err) {
+    log.warn({ err, event: 'community.welcome.failed' }, '[community] welcome skipped');
+  }
 }
 
 export function isValidTelegramUpdateIdentity(
