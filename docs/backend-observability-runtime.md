@@ -18,6 +18,10 @@ DB 和显式第三方 fetch 记录一次 transport attempt，到响应头为止�
 
 新增调用使用 observation 的字段白名单；遗留 Pino 同样丢弃未登记的 DTO/正文/个人信息，字符串插值不作为输出消息。传入原始 `{ err }`，序列化只保留受控错误类型和源码文件/行号，去掉 message、绝对路径和 SDK 原始内容。业务原因必须显式提供稳定 `error_code`，不能从私密错误文本中猜测。
 
+子 logger 的初始绑定、嵌套绑定和后续 `setBindings` 也执行白名单投影。Pino 会重置子 logger 的绑定 formatter 并缓存 JSON，因此在 `onChild` 使用其导出的 symbols 重建一次安全缓存；升级 Pino 必须运行 logger 回归测试，不在每条日志输出时解析 JSON。
+
+错误对象保留经过格式校验的 SQLSTATE、Prisma/PostgREST 和已登记网络错误码，普通 SDK 错误对象也可留下 `code`；foundation 日志再次投影后仍保留最多两层 cause。未知错误码、message/details 和 SQL 参数继续丢弃。畅聊评估使用 `candidateCount/listedCount/missingMarketCount/probeCount/unroutableProbeCount/skippedChangedCount`，不输出候选记录或响应正文。
+
 Sentry 的异常、日志、breadcrumb、span 各自经过出口投影；自动捕获的 request/user/extra 和错误正文不发送。SDK 标记的路由模板保留性能分组。短剧完整诊断继续通过 shared 严格 schema 校验后写入，不能套普通标量投影而丢失原性能字段。
 
 生产服务和定时任务禁止 console；离线导入/回放/报表 CLI 的人读/JSON 输出是明确例外。`payment-callback-report --json` 保留既有报表协议，不混入通知系统。
@@ -34,7 +38,7 @@ Sentry 的异常、日志、breadcrumb、span 各自经过出口投影；自动�
 
 不开启时没有匹配、通知请求或通知队列。开启但未配规则时只匹配 error/fatal。每条日志只使用第一条匹配规则；同一请求的不同日志可以分别告警，不做聚合或去重。
 
-规则字段：`id`（唯一）、`severity`（P0/P1/P2，默认 P1）、`min_level`（info/warn/error/fatal，默认 error）；可选 `events/operations/error_codes/outcomes` 字符串数组、`min_http_status/min_duration_ms`。同一条规则内所有条件同时满足。示例规则内容如下，不包含 webhook：
+规则字段：`id`（唯一）、`severity`（P0/P1/P2，默认 P1）、`min_level`（info/warn/error/fatal，默认 error）；可选 `events/operations/error_codes/public_error_codes/outcomes` 字符串数组、`min_http_status/min_duration_ms`。同一条规则内所有条件同时满足。`error_codes` 兼容匹配内部或公开错误码；`public_error_codes` 只匹配公开错误码，二者配置时仍按 AND 判断。示例规则内容如下，不包含 webhook：
 
 ```json
 [
@@ -49,7 +53,11 @@ Sentry 的异常、日志、breadcrumb、span 各自经过出口投影；自动�
 ]
 ```
 
-核心日志和带 event 的既有 Pino 日志均可匹配；诊断日志被 LOG_LEVEL 过滤后不会产生告警。遗留 `code/errorCode/errorClass` 映射到规则的 error_codes。通知只含规则、事件、操作、结果、错误码和 event_id，不带正文、用户标识、原始错误或凭证。
+核心日志和带 event 的既有 Pino 日志均可匹配；没有 event 的 error/fatal 自动使用 `logger.error/logger.fatal`，包含直接传入 Error 和仅消息的调用。建议业务失败补明确事件名，例如客服转发 `bot.forward_cs.failed`、启动失败 `server.start_failed`；兜底事件不替代业务分类。诊断日志被 LOG_LEVEL 过滤后不会产生告警。
+
+遗留 `code/errorCode/errorClass` 映射为内部错误码；没有显式码时可取受控 `err.code/error.code`。`public_error_code` 单独保留，HTTP/SSE 公开错误码可用于规则匹配。`statusCode/status` 数值和 `durationMs` 兼容映射到 HTTP 状态/耗时，非法数值不参与匹配。通知只含规则、事件、操作、结果、内部/公开错误码和 event_id，不带正文、用户标识、原始错误或凭证。
+
+401/403/409/429 的 rejected 终态为 warn，正常响应和裸响应共用同一等级计算；5xx 为 error，其他已有等级规则保留，仍只输出一次终态。
 
 通知直接复用 Feishu HTTP adapter，最多 4 个并发，2.5 秒超时，不重试、不落库、不积压、不补发。过载丢弃通知并记录 `observability.alert.capacity_exceeded`，发送失败记录 `observability.alert.delivery_failed`，这些内部事件不再次触发告警。关闭进程时仅有界等待正在发送的通知。这个开关不控制原支付 outbox/余额告警。
 
@@ -76,6 +84,8 @@ Sentry 的异常、日志、breadcrumb、span 各自经过出口投影；自动�
 ## 验证与发布
 
 本地：`pnpm lint:backend-logging`、`pnpm lint:complexity`、backend 相关测试与全量无凭证测试、shared 测试、`pnpm -r typecheck`、Frontend/Admin build。安全测试覆盖私密输入、并发上下文、一次终态、socket 断开、响应身份、通知关闭/超时/失败/容量。静态 guard 检查运行时代码的 console、未登记直接 fetch 和全局 fetch 替换；不声称覆盖所有第三方 SDK 内部实现。
+
+日志 guard 使用 TypeScript AST 检查 fetch 值引用，覆盖别名、默认参数、globalThis 属性和 undici 导入；单独导入 wrapper 不能放行原生 fetch。定时 job/worker 文件必须接入 runObservedJob。CI 同时运行 `node --test scripts/check-backend-logging.test.mjs`。原始 transport 例外集中列出：日志底座、避免告警递归的飞书 adapter、离线种子导入器；不将该检查当作全程序数据流证明。畅聊行情/评估、OpenRouter/Surplus 模型目录、Surplus 余额及请求恢复均已补接入，原截止时间、缓存、并发与重试策略不变。
 
 发布后：先保持通知关闭，检查普通成功/401/404/500、SSE 断开、支付 ACK/结算、定时任务的 Railway 链路；再按真实业务需要配置规则和 secret。对照发布前后各24小时的 Android/iOS 页面与 API P95，基线未见样本保持 null，N<100 延长窗口。当前未执行生产部署、真实支付/供应商调用或发送飞书通知。
 

@@ -39,3 +39,15 @@
 - 格式化检查通过。默认 lint-staged 曾遇到索引锁/暂存恢复错误，串行执行 `pnpm exec lint-staged --no-stash --no-hide-partially-staged --concurrent false` 成功；工作区没有未解决冲突。
 
 未执行上游新增迁移、生产操作或真实告警；原任务的线上验证边界继续适用。
+
+## 审计整改验证（2026-11-13）
+
+针对用户确认的六类缺口完成五个代码提交：子 logger 安全边界、遗留错误及告警字段、受控诊断字段、HTTP 等级、别名 transport 与后台上下文/CI。未新增依赖、运行时配置或公开 API，未改数据库、业务重试和资金流程；Railway 捕获与默认关闭告警保持不变。
+
+- 全量无凭证 Backend：156 文件 / 1697 项通过，沿用 `--exclude '**/*.integration.test.ts' --maxWorkers=2 --testTimeout=15000`。
+- 后端 typecheck、全后端 ESLint、复杂度（34 文件 / 104 函数存量基线）、`git diff --check` 通过。
+- `node --test scripts/check-backend-logging.test.mjs`：3 项通过；AST 日志门禁覆盖 311 个运行时文件，通过。
+- 专项覆盖：嵌套/后加子绑定、父子隔离、实际 Pino JSON 的安全错误码/有限 cause、无 event error/fatal、公开码与内部码区别、状态/耗时别名、关闭后无通知、HTTP 正常及裸响应的 401/403/409/429 等级、畅聊行情成功/超时且无新增重试、重叠任务独立根上下文/跳过/失败终态。
+- 模块知识载荷校验通过；运行说明和 backend spec 同步。此次仅后端内部日志与 CI 检查变动，没有前端/shared 契约或构建配置变动，未重复两端 build；最近一次合并验证记录中的两端构建仍可追溯。
+
+真实 Feishu/Railway 查询、供应商/数据库环境集成与发布后 Android/iOS/API P95 未执行，不能据本地测试宣称通过。静态 guard 不承诺识别任意高阶别名或第三方 SDK 内部请求；已登记的底层日志 transport、通知 adapter 和离线导入例外各自有明确边界。

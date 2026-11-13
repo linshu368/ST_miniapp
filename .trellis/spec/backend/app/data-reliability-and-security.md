@@ -56,6 +56,10 @@ HTTP 根级 `registerHttpObservation` 在 CORS/鉴权之前运行，使用回调
 
 Pino 标量白名单与 Sentry 各出口过滤原始内容；短剧诊断必须走 validatedDramaLog 的 shared schema 保留完整安全结构。生产代码禁止 console，离线 CLI stdout 是明确例外，CI 执行 lint:backend-logging。LOG_ALERTING_ENABLED 默认关闭；开启时第一条规则匹配即直接发送安全通知，4并发/2.5秒/无持久化无重试。内部通知故障事件不递归。完整配置与错误契约保留边界见 docs/backend-observability-runtime.md。
 
+审计补充：Pino 子 logger 会重置绑定 formatter，必须在 onChild 重建安全绑定缓存，同时过滤后续 setBindings；升级 Pino 验证实际 JSON 输出。SDK 普通错误对象仅保留受控 code，foundation 再投影不能丢失有限 cause 链。无 event 的 error/fatal 以固定 logger.error/logger.fatal 兜底，业务优先登记稳定 event。告警保留 error_code/public_error_code 两个事实，error_codes 兼容匹配任一，public_error_codes 精确匹配公开码；关闭时仍不进行匹配或通知。HTTP 各完成回调共用等级判断，禁止首个回调遗漏 severity 后锁死错误等级。
+
+新客户端的 fetch 默认值、别名和 SDK transport 注入也要显式登记；新定时 worker 必须建立独立 runObservedJob 上下文。静态 AST guard 检查这些边界并在 CI 跑自测，但不替代异步上下文、终态和返回身份测试。计数字段使用明确的 Count/\_count 名称，不传整个业务对象来获得排障信息。
+
 ## Scenario: 文字回复取消与残留恢复
 
 ### 1. Scope / Trigger
