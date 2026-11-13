@@ -40,6 +40,10 @@ import {
 } from '@/lib/api/image-plaza';
 import { StudioArtifactCard } from '@/components/image-plaza/studio-artifact-card';
 import {
+  StudioReferencePicker,
+  UNSUPPORTED_REFERENCE_NOTICE,
+} from '@/components/image-plaza/studio-reference-picker';
+import {
   useCreateCreatorCoverMutation,
   useCreatorCharactersQuery,
 } from '@/lib/api/creator-characters';
@@ -148,7 +152,6 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
   const submit = useSubmitImagePlazaAttemptMutation(conversationId);
   const upload = useUploadImagePlazaReferenceMutation();
   const share = useShareImagePlazaMutation();
-  const fileInput = useRef<HTMLInputElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const messagesRef = useRef<HTMLDivElement | null>(null);
   const followLatestRef = useRef(true);
@@ -419,7 +422,7 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
   const chooseReference = async (file?: File) => {
     if (!file || !model) return;
     if (!model.supports_i2i) {
-      showNotice('当前模型不支持添加参考图');
+      showNotice(UNSUPPORTED_REFERENCE_NOTICE);
       return;
     }
     let token: number;
@@ -766,26 +769,11 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
             />
           </div>
           <div className="mt-3 flex shrink-0 flex-wrap items-center gap-1">
-            <input
-              ref={fileInput}
-              type="file"
-              accept="image/png,image/jpeg,image/webp"
-              className="hidden"
-              onChange={(event) => {
-                void chooseReference(event.target.files?.[0]);
-                event.currentTarget.value = '';
-              }}
+            <StudioReferencePicker
+              supportsReference={model.supports_i2i}
+              onChoose={chooseReference}
+              onNotice={showNotice}
             />
-            <button
-              type="button"
-              onClick={() => fileInput.current?.click()}
-              disabled={!model.supports_i2i}
-              aria-label="添加参考图"
-              title={model.supports_i2i ? '添加参考图' : '当前模型不支持参考图'}
-              className="grid size-11 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-background/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"
-            >
-              <ImagePlus className="size-5" aria-hidden />
-            </button>
             <button
               type="button"
               onClick={() => setSettingsOpen(true)}
