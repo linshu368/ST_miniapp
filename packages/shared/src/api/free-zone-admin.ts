@@ -43,6 +43,8 @@ export const AdminFreeZoneScreeningRequestSchema = z.object({
           .max(200)
           .regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/),
         display_name: z.string().trim().max(40),
+        /** 这个模型单独的折扣底线；不填用统一底线 */
+        min_discount_pct: z.number().int().min(1).max(100).nullable().optional(),
       })
     )
     .min(1)

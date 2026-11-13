@@ -8,7 +8,7 @@
  * 不动；业务指标查询失败，在架模型本轮不按业务数据下架。
  */
 import type { FastifyBaseLogger } from 'fastify';
-import type { FreeZoneCandidate, FreeZoneConfig } from '@miniapp/shared';
+import { freeZoneRulesFor, type FreeZoneCandidate, type FreeZoneConfig } from '@miniapp/shared';
 import { observeBackgroundRun } from '../../lib/background-observability.js';
 import { fetchFreeZoneConfig } from './config.js';
 import {
@@ -110,7 +110,7 @@ async function probeAll(
             screening: screenings[start + offset] ?? null,
             state: states.get(candidate.id) ?? initialState(candidate.id),
             now,
-            rules,
+            rules: freeZoneRulesFor(rules, candidate),
             probe,
           })
         )
@@ -163,6 +163,18 @@ function snapshotMetrics(
   };
 }
 
+/** 初筛：折扣底线按模型取（候选单独设了就用它，否则用统一值）。 */
+function screenAll(
+  config: FreeZoneConfig,
+  markets: ReadonlyArray<SurplusModelMarket | null>
+): Array<ScreeningResult | null> {
+  return markets.map((market, index) =>
+    market
+      ? screenModel(market, freeZoneRulesFor(config.screening, config.candidates[index]))
+      : null
+  );
+}
+
 const defaultProbe = createSurplusProbe();
 
 export async function runFreeZoneEvaluation(
@@ -198,9 +210,7 @@ export async function runFreeZoneEvaluation(
     ]);
 
     const now = new Date();
-    const screenings = markets.map((market) =>
-      market ? screenModel(market, config.screening) : null
-    );
+    const screenings = screenAll(config, markets);
     const probed = await probeAll(
       config.candidates,
       screenings,
@@ -211,6 +221,7 @@ export async function runFreeZoneEvaluation(
     );
     const evaluated: EvaluatedCandidate[] = config.candidates.map((candidate, index) => {
       const state = states.get(candidate.id) ?? initialState(candidate.id);
+      const rules = freeZoneRulesFor(config.screening, candidate);
       const probe = probed[index] ?? { screening: null, hold: true, probes: [], chosen: null };
       // 探测说不清时按「数据缺失」处理：在架的维持、未上架的这一轮不算达标也不清零
       const screening = probe.hold ? null : probe.screening;
@@ -231,7 +242,7 @@ export async function runFreeZoneEvaluation(
         surplusModel: candidate.surplus_model,
         state: next.state,
         events: next.events,
-        metrics: snapshotMetrics(probe, config.screening, business, modelMetrics),
+        metrics: snapshotMetrics(probe, rules, business, modelMetrics),
         version: versions.get(candidate.id) ?? null,
       };
     });

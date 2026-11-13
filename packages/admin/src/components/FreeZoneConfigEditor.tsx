@@ -239,7 +239,7 @@ function Section(props: { title: string; hint?: string; children: ReactNode }) {
   );
 }
 
-/** 线上状态；在架模型的「并发」直接改表单里的候选池。 */
+/** 线上状态；每个模型的「折扣底线」和在架模型的「并发」直接改表单里的候选池。 */
 function StatusSection(props: {
   value: FreeZoneConfig;
   disabled?: boolean;
@@ -248,8 +248,9 @@ function StatusSection(props: {
   return (
     <Section title="线上状态">
       <FreeZoneStatusPanel
-        parallel={{
+        editing={{
           candidates: props.value.candidates,
+          defaultDiscountPct: props.value.screening.min_discount_pct,
           disabled: props.disabled,
           onChange: (candidates) => props.onChange({ candidates }),
         }}
