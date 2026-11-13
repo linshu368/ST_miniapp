@@ -13,7 +13,8 @@ import {
 } from 'antd';
 import {
   FREE_ZONE_STATUS_GROUPS,
-  FREE_ZONE_STATUS_LABELS,
+  freeZoneStatusLabel,
+  isFreeZoneManualHold,
   fetchFreeZoneStatus,
   freeZoneBusinessText,
   freeZoneProbeText,
@@ -27,6 +28,7 @@ import type {
   AdminFreeZoneStatusResponse,
 } from '@miniapp/shared';
 import { useAdminApi } from '../lib/adminApiContext';
+import { FreeZoneDelistNowButton } from './FreeZoneDelistNowButton';
 import { FreeZoneListNowButton } from './FreeZoneListNowButton';
 
 const STATUS_COLORS = { listed: 'green', unlisted: 'default', cooling: 'orange' } as const;
@@ -47,6 +49,7 @@ function detail(model: AdminFreeZoneStatusModel, requiredPasses: number): string
     const probe = freeZoneProbeText(model);
     return `用 ${model.providers.join('、')}，${time(model.provider_since)} 起${probe ? `；${probe}` : ''}`;
   }
+  if (isFreeZoneManualHold(model)) return '手动下架，点「立即上架」才会回来';
   if (model.status === 'cooling') return `冷却到 ${time(model.cooldown_until)}`;
   if (model.status === 'unlisted') return `连续达标 ${model.consecutive_passes}/${requiredPasses}`;
   return '等下一轮评估';
@@ -160,7 +163,9 @@ function columns(
     width: 90,
     render: (_: unknown, model: AdminFreeZoneStatusModel) =>
       model.status ? (
-        <Tag color={STATUS_COLORS[model.status]}>{FREE_ZONE_STATUS_LABELS[model.status]}</Tag>
+        <Tag color={isFreeZoneManualHold(model) ? 'default' : STATUS_COLORS[model.status]}>
+          {freeZoneStatusLabel(model)}
+        </Tag>
       ) : (
         <Tag>未评估</Tag>
       ),
@@ -212,9 +217,12 @@ function GroupTable(props: {
     title: '操作',
     key: 'action',
     width: 100,
-    render: (_: unknown, model: AdminFreeZoneStatusModel) => (
-      <FreeZoneListNowButton model={model} onListed={props.onChanged} />
-    ),
+    render: (_: unknown, model: AdminFreeZoneStatusModel) =>
+      props.group === 'listed' ? (
+        <FreeZoneDelistNowButton model={model} onDelisted={props.onChanged} />
+      ) : (
+        <FreeZoneListNowButton model={model} onListed={props.onChanged} />
+      ),
   };
   return (
     <Table<AdminFreeZoneStatusModel>
@@ -222,7 +230,7 @@ function GroupTable(props: {
       rowKey="candidate_id"
       pagination={false}
       scroll={{ x: 860 }}
-      columns={props.group === 'listed' ? base : [...base, action]}
+      columns={[...base, action]}
       dataSource={props.models}
     />
   );
