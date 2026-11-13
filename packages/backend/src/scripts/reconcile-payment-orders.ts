@@ -64,12 +64,21 @@ try {
         startedAt: passStartedAt,
       });
       if (!gateway.configured) {
-        console.log('Payment reconciliation skipped: provider credentials are not configured');
+        log.sys.info(
+          { event: 'payment.reconciliation.skipped', outcome: 'skipped' },
+          'Payment provider is not configured'
+        );
         return;
       }
-      console.log(
-        `Payment reconciliation: checked=${result.checked} settled=${result.settled} ` +
-          `closed=${result.closed} lookupFailed=${result.lookupFailed}`
+      log.sys.info(
+        {
+          event: 'payment.reconciliation.summary',
+          checkedCount: result.checked,
+          settledCount: result.settled,
+          closedCount: result.closed,
+          failedCount: result.lookupFailed,
+        },
+        'Payment reconciliation completed'
       );
     },
     onError: (error) => {

@@ -31,7 +31,9 @@ export function createObservedFetch(observer: ReturnType<typeof createObserver>)
         return response;
       } catch (err) {
         const signal = init?.signal ?? (input instanceof Request ? input.signal : undefined);
-        const timeout = signal?.reason instanceof Error && signal.reason.name === 'TimeoutError';
+        const timeout =
+          (signal?.reason instanceof Error && signal.reason.name === 'TimeoutError') ||
+          (err instanceof Error && err.name === 'TimeoutError');
         op.finish(
           {
             outcome: timeout ? 'timed_out' : signal?.aborted ? 'cancelled' : 'failed',

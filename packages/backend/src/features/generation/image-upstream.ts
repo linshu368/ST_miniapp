@@ -178,7 +178,6 @@ export async function generateGrokImage(input: {
     throw toImageTransportError('provider', error, true);
   }
 
-  console.log('response', response);
   let body: GrokImageResponse;
   try {
     body = (await response.json()) as GrokImageResponse;

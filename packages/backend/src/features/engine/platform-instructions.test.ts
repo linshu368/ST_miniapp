@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { observation } from '../../platform/observability/runtime.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_WORD_COUNT_TIERS_CONFIG } from '@miniapp/shared';
 import {
@@ -171,7 +172,7 @@ describe('buildSnapshot：字数档位的契约校验与降级', () => {
   });
 
   it('模板或任一槽位非法时只使用安全 fallback，并且日志不含规则正文', () => {
-    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const logged = vi.spyOn(observation, 'emit').mockImplementation(() => {});
     const invalidSlots = entries(VALID);
     invalidSlots.set('choice_rules', {
       value: { on_first_two_turns: 'secret rule' },
@@ -220,15 +221,18 @@ describe('buildSnapshot：字数档位的契约校验与降级', () => {
       },
     ],
   ])('%s：置 degraded、打日志，且两个出口都回落到内置兜底', (_name, wordCountValue) => {
-    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const logged = vi.spyOn(observation, 'emit').mockImplementation(() => {});
 
     const snapshot = buildSnapshot(entries(wordCountValue));
 
     expect(snapshot.degraded).toBe(true);
     expect(logged).toHaveBeenCalledOnce();
-    const message = String(logged.mock.calls[0]?.[0]);
-    expect(message).toContain('pref_word_count_tiers');
-    expect(message).toContain('version 7');
+    expect(logged).toHaveBeenCalledWith(
+      'engine.word_count_contract_degraded',
+      'engine.config',
+      expect.objectContaining({ resource: 'pref_word_count_tiers', config_version: 7 }),
+      'warn'
+    );
 
     // prompt 出口与 MiniApp 出口必须是同一份内置兜底
     const publicTiers = toPublicWordCountTiersFromEngine(snapshot.instructions.wordCountTiers);

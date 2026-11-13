@@ -1,6 +1,10 @@
 import * as Sentry from '@sentry/node';
 import type { FastifyRequest } from 'fastify';
 import { sanitizeTelemetry } from '@miniapp/shared';
+import { safeLogAttributes } from '../platform/observability/safe-log.js';
+import { safeName } from '../platform/observability/events.js';
+
+const capturedErrors = new WeakSet<Error>();
 
 type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 type LogValue = string | number | boolean | null | undefined;
@@ -43,12 +47,16 @@ export function sendBackendSentryLog(
   eventName: string,
   attributes: LogAttributes = {}
 ): void {
-  const safeAttributes = sanitizeTelemetry({
+  const safeAttributes = safeLogAttributes({
     service: 'backend',
     event_name: eventName,
     ...attributes,
   });
-  Sentry.logger[level](eventName, safeAttributes);
+  try {
+    Sentry.logger[level](safeName(eventName), safeAttributes);
+  } catch {
+    /* Optional SDK output must not fail the request. */
+  }
 }
 
 export function captureBackendException(
@@ -57,15 +65,23 @@ export function captureBackendException(
   stage: string,
   attributes: LogAttributes = {}
 ): void {
-  Sentry.withScope((scope) => {
-    const context = getRequestTelemetryContext(request);
-    scope.setTag('service', 'backend');
-    scope.setTag('stage', stage);
-    scope.setTag('request_id', context.requestId);
-    for (const [name, value] of Object.entries(attributes)) {
-      if (value !== undefined && value !== null) scope.setTag(name, String(value));
-    }
-    scope.setContext('request', sanitizeTelemetry({ ...context, stage, ...attributes }));
-    Sentry.captureException(error instanceof Error ? error : new Error(String(error)));
-  });
+  if (error instanceof Error && capturedErrors.has(error)) return;
+  try {
+    Sentry.withScope((scope) => {
+      const context = getRequestTelemetryContext(request);
+      scope.setTag('service', 'backend');
+      scope.setTag('stage', stage);
+      scope.setTag('request_id', context.requestId);
+      for (const [name, value] of Object.entries(attributes)) {
+        if (value !== undefined && value !== null) scope.setTag(name, String(value));
+      }
+      scope.setContext('request', sanitizeTelemetry({ ...context, stage, ...attributes }));
+      Sentry.captureException(
+        error instanceof Error ? error : new Error('Non-error failure', { cause: error })
+      );
+    });
+    if (error instanceof Error) capturedErrors.add(error);
+  } catch {
+    /* Observation cannot replace the original failure. */
+  }
 }

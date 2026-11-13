@@ -31,9 +31,15 @@ await runObservedJob('expire_payment_orders', async () => {
       trigger: 'expiry_reconcile',
       events: orders,
     });
-    console.log(
-      `Reconciled before expiry: checked=${result.checked} settled=${result.settled} ` +
-        `closed=${result.closed} lookupFailed=${result.lookupFailed}`
+    log.sys.info(
+      {
+        event: 'payment.expiry.summary',
+        checkedCount: result.checked,
+        settledCount: result.settled,
+        closedCount: result.closed,
+        failedCount: result.lookupFailed,
+      },
+      'Expiry reconciliation completed'
     );
 
     if (result.lookupFailed) {
@@ -43,7 +49,6 @@ await runObservedJob('expire_payment_orders', async () => {
         'Some queries failed; those orders remain recoverable'
       );
     }
-    console.log(`Expired queried unpaid orders: ${result.closed}`);
   } catch (error) {
     terminalError = error;
     outcome = 'error';

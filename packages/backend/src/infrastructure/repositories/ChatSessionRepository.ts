@@ -1,3 +1,4 @@
+import { observation } from '../../platform/observability/runtime.js';
 // 自研引擎对话会话仓库（M1）。
 //
 // 方案：docs/ST_remove-MVP实施方案.md §5.1 / §5.2 / §5.7。
@@ -195,8 +196,11 @@ export class ChatSessionRepository {
     if (result.error && isMissingPinnedColumn(result.error)) {
       // 只在第一次探到时降级并记一次；之后直接走无置顶排序的分支，不再白打一次请求
       this.pinnedColumnMissing = true;
-      console.warn(
-        '[ChatSessionRepository] chat_sessions.pinned_at 不存在，本次按最近活跃排序。请执行迁移 078_chat_session_pinned.sql'
+      observation.emit(
+        'conversation.pinned_column_missing',
+        'conversation.config',
+        { outcome: 'degraded', outcome_known: false },
+        'warn'
       );
       result = await run(false);
     }

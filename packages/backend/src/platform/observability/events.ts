@@ -28,6 +28,7 @@ export interface EventFields {
   attempt?: number;
   duration_ms?: number;
   count?: number;
+  config_version?: number;
   err?: unknown;
 }
 
@@ -122,7 +123,7 @@ export function safeFields(fields: EventFields): Omit<EventFields, 'err'> & { er
   ] as const) {
     if (fields[key] !== undefined) result[key] = safeName(fields[key]);
   }
-  for (const key of ['duration_ms', 'attempt', 'count'] as const) {
+  for (const key of ['duration_ms', 'attempt', 'count', 'config_version'] as const) {
     const value = fields[key];
     if (typeof value === 'number' && Number.isFinite(value) && value >= 0)
       result[key] = Math.min(value, Number.MAX_SAFE_INTEGER);

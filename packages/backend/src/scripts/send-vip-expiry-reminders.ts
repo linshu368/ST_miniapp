@@ -35,7 +35,10 @@ await runObservedJob('vip_expiry_reminders', async () => {
         error: (bindings, message) => log.sys.error(bindings, message),
       },
     });
-    console.log(JSON.stringify(summary));
+    log.sys.info(
+      { event: 'vip.reminder.summary', failedCount: summary.failed },
+      'VIP reminder run completed'
+    );
     if (summary.failed > 0) {
       exitCode = 1;
       outcome = 'partial';
