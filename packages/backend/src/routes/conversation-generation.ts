@@ -349,9 +349,9 @@ function failTurn(
   }
   if (error instanceof Error && error.name === 'TimeoutError') {
     if (sink.opened) {
-      sink.send({ type: 'error', code: 'upstream_error', message: '请求处理超时，请重试。' });
+      sink.send({ type: 'error', code: 'upstream_timeout', message: '请求处理超时，请重试。' });
       sink.close();
-    } else void reply.status(504).send(fail('upstream_error', '请求处理超时，请重试。'));
+    } else void reply.status(504).send(fail('upstream_timeout', '请求处理超时，请重试。'));
     return;
   }
   if (sink.opened) {

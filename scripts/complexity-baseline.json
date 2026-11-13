@@ -19,7 +19,6 @@
     "packages/backend/src/infrastructure/repositories/ChatMessageImageRepository.ts": 605,
     "packages/backend/src/infrastructure/repositories/MiniappUserSettingsRepository.ts": 528,
     "packages/backend/src/infrastructure/repositories/MiniappWalletRepository.ts": 895,
-    "packages/backend/src/routes/image-plaza.ts": 525,
     "packages/backend/src/routes/images.ts": 529,
     "packages/frontend/src/app/(main)/create/page.tsx": 554,
     "packages/frontend/src/app/(main)/create/studio/[conversationId]/page.tsx": 1074,

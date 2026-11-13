@@ -49,7 +49,16 @@ export default async function creatorCharacterRoutes(app: FastifyInstance) {
         if (err instanceof AdminSessionError)
           return reply
             .code(err.statusCode)
-            .send(fail(err.statusCode === 401 ? 'UNAUTHORIZED' : 'FORBIDDEN', err.message));
+            .send(
+              fail(
+                err.statusCode === 503
+                  ? 'AUTH_DEPENDENCY_UNAVAILABLE'
+                  : err.statusCode === 401
+                    ? 'UNAUTHORIZED'
+                    : 'FORBIDDEN',
+                err.message
+              )
+            );
         const code = err && typeof err === 'object' && 'code' in err ? err.code : null;
         if (code === CREATOR_REVIEW_REJECTED_CODE && err instanceof Error)
           return reply.code(422).send(fail(CREATOR_REVIEW_REJECTED_CODE, err.message));

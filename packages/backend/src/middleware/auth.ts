@@ -1,6 +1,8 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { createHmac } from 'crypto';
 import { config } from '../platform/config.js';
+import { BACKEND_ERROR_STATUS, fail } from '@miniapp/shared';
+import { observation } from '../platform/observability/runtime.js';
 
 export interface TelegramUser {
   id: number;
@@ -94,14 +96,9 @@ export function verifyTelegramInitData(initDataStr: string): TelegramUser {
 export async function requireTelegramAuth(request: FastifyRequest, reply: FastifyReply) {
   const initData = request.headers['x-init-data'];
 
-  console.log(
-    `[Auth] requireTelegramAuth called for ${request.url}, initData present:`,
-    !!initData
-  );
-
   // 如果处于 Bypass 模式，并且没有提供 initData，则自动放行并注入默认测试用户
   if (process.env.DEV_AUTH_BYPASS === '1' && (!initData || typeof initData !== 'string')) {
-    console.log(`[Auth] Using DEV_AUTH_BYPASS for request to ${request.url}`);
+    request.log.debug({ event: 'auth.development_bypass' }, 'Development authentication bypass');
     request.user = { id: 99999, first_name: 'Dev', last_name: 'User', username: 'dev_bypass' };
     return;
   }
@@ -109,10 +106,22 @@ export async function requireTelegramAuth(request: FastifyRequest, reply: Fastif
   if (!initData || typeof initData !== 'string') {
     return reply.status(401).send({
       success: false,
-      error: { message: 'Missing or invalid X-Init-Data header' },
+      error: { code: 'UNAUTHORIZED', message: 'Missing or invalid X-Init-Data header' },
     });
   }
 
+  if (
+    !config.telegramBotToken &&
+    !(process.env.NODE_ENV !== 'production' && process.env.MOCK_AUTH === '1')
+  ) {
+    observation.emit('auth.configuration_failed', 'auth.telegram', {
+      outcome: 'failed',
+      error_code: 'CONFIGURATION_ERROR',
+    });
+    return reply
+      .status(BACKEND_ERROR_STATUS.CONFIGURATION_ERROR)
+      .send(fail('CONFIGURATION_ERROR', 'Authentication service unavailable'));
+  }
   try {
     const user = verifyTelegramInitData(initData);
     // 将 user 挂载到 request 上，需配合 type augmentation
@@ -121,7 +130,7 @@ export async function requireTelegramAuth(request: FastifyRequest, reply: Fastif
     request.log.warn({ err: error }, 'Telegram auth failed');
     return reply.status(401).send({
       success: false,
-      error: { message: error instanceof Error ? error.message : 'Unauthorized' },
+      error: { code: 'UNAUTHORIZED', message: 'Unauthorized' },
     });
   }
 }

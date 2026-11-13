@@ -124,6 +124,8 @@ export default async function adminCliSessionRoutes(app: FastifyInstance) {
       return reply.send(ok(data));
     } catch (error) {
       if (error instanceof AdminSessionError) {
+        if (error.statusCode === 503)
+          return reply.status(503).send(fail('AUTH_DEPENDENCY_UNAVAILABLE', error.message));
         request.log.warn(
           { event: 'admin_cli.session.refused', reason: 'not_admin' },
           'CLI 登录被拒'
