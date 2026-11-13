@@ -220,7 +220,7 @@ function VipPageContent() {
               ) : null}
               {benefits ? (
                 <p className="mt-3 text-[10px] leading-5 text-muted-foreground">
-                  会员每日签到 {vipCheckinRewardLabel(benefits)}（非会员新用户每日{' '}
+                  会员每日签到 {vipCheckinRewardLabel(benefits)}（非会员新玩家每日{' '}
                   {formatNumber(benefits.checkin_base_credits)}），记得来领取。
                 </p>
               ) : null}

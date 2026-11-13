@@ -87,7 +87,7 @@ const FIELDS = [
   {
     key: 'opening',
     label: '开场白',
-    placeholder: '用户进入聊天后看到的第一段内容。可以描写开场场景，也可以让角色先说一句话。',
+    placeholder: '玩家进入聊天后看到的第一段内容。可以描写开场场景，也可以让角色先说一句话。',
     rows: 5,
     required: true,
     divider: true,
@@ -1086,7 +1086,7 @@ function CharacterEditor({
           </div>
           {character?.published_revision && visibility === 'private' ? (
             <p className="mt-3 text-[11px] leading-6 text-muted-foreground">
-              已收藏或使用过这张卡的用户仍可继续聊天。
+              已收藏或使用过这张卡的玩家仍可继续聊天。
             </p>
           ) : null}
         </fieldset>
