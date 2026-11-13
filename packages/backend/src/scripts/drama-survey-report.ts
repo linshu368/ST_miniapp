@@ -3,13 +3,13 @@
  *
  *   pnpm --filter backend drama-survey:report [-- --out ./drama-survey.csv]
  *
- * 读 miniapp_analytics.drama_survey_responses，打印汇总（回答率、Q1 分布、两组原因占比，按平台拆分），
- * 并把原始答卷导出为 CSV。连接哪个环境由 backend 的 Supabase 环境变量决定。
+ * 读 miniapp_analytics.drama_survey_responses，打印汇总（回答率、两组原因占比，按平台和观看深度拆分），
+ * 并把原始答卷导出为 CSV。连接哪个环境由 backend 的 DATABASE_URL 决定。
  */
 import '../platform/config.js';
 import { writeFile } from 'node:fs/promises';
 import { DRAMA_SURVEY_KEY } from '@miniapp/shared';
-import { closeSupabaseClient, getDomainDb } from '../lib/supabase.js';
+import { prisma } from '../lib/db.js';
 import {
   dramaSurveyCsv,
   summarizeDramaSurvey,
@@ -18,27 +18,26 @@ import {
 } from '../features/drama-survey/report.js';
 
 const PAGE = 1000;
-const COLUMNS: string =
-  'user_id,status,open_reasons,open_other_text,watch_reasons,watch_other_text,comment,platform,engaged_dramas,max_episode,created_at,submitted_at';
 const outIndex = process.argv.indexOf('--out');
 const outPath =
   (outIndex > 0 ? process.argv[outIndex + 1] : undefined) ??
   `drama-survey-${new Date().toISOString().slice(0, 10)}.csv`;
 
+// miniapp_analytics 没有暴露给 PostgREST，走直连 SQL；列与 DramaSurveyRow、migration 对齐。
 async function readAll(): Promise<DramaSurveyRow[]> {
   const rows: DramaSurveyRow[] = [];
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await getDomainDb('miniapp_analytics')
-      .from('drama_survey_responses')
-      .select(COLUMNS)
-      .eq('survey_key', DRAMA_SURVEY_KEY)
-      .order('created_at', { ascending: true })
-      .order('user_id', { ascending: true })
-      .range(from, from + PAGE - 1);
-    if (error) throw new Error(`读取问卷失败：${error.code ?? ''} ${error.message}`);
-    // 没有生成的库类型，列表由 COLUMNS 与 migration 对齐。
-    rows.push(...((data ?? []) as unknown as DramaSurveyRow[]));
-    if (!data || data.length < PAGE) return rows;
+  for (let offset = 0; ; offset += PAGE) {
+    const page = await prisma.$queryRaw<DramaSurveyRow[]>`
+      SELECT user_id::text, status, open_reasons, open_other_text, watch_reasons, watch_other_text,
+        comment, platform, engaged_dramas, max_episode,
+        to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at,
+        to_char(submitted_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS submitted_at
+      FROM miniapp_analytics.drama_survey_responses r
+      WHERE r.survey_key = ${DRAMA_SURVEY_KEY}
+      ORDER BY r.created_at, r.user_id
+      LIMIT ${PAGE} OFFSET ${offset}`;
+    rows.push(...page);
+    if (page.length < PAGE) return rows;
   }
 }
 
@@ -83,5 +82,5 @@ try {
   console.error(err instanceof Error ? err.message : err);
   process.exitCode = 1;
 } finally {
-  await closeSupabaseClient();
+  await prisma.$disconnect();
 }
