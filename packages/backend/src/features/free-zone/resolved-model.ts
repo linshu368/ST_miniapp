@@ -61,6 +61,7 @@ export function buildFreeZoneResolvedModel(input: {
       candidateId: candidate.id,
       providers,
       minDiscountPct: input.zone.config.screening.min_discount_pct,
+      parallelRequests: candidate.parallel_requests,
     },
   };
 }
