@@ -40,6 +40,11 @@ export const FreeZoneCandidateSchema = z.object({
   family: z.string().trim().min(1).max(40),
   /** 对标档位：划线原价取这一档当前的星尘价 */
   benchmark_tier: ModelCatalogTierKeySchema,
+  /**
+   * 在架时每轮同时发几路主请求（1–3）：先出字的胜出、其余取消；都没在「启动兜底等待」内出字，
+   * 就和兜底一起竞争。用来压兜底率高的模型，代价是多花几路的 Surplus 费用。
+   */
+  parallel_requests: z.number().int().min(1).max(3).default(1),
 });
 
 export const FreeZoneScreeningSchema = z.object({
