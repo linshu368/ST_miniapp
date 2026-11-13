@@ -5,6 +5,8 @@ import {
   freeZoneProbeText,
   freeZoneReasonView,
   freeZoneStatusGroup,
+  freeZoneStatusLabel,
+  isFreeZoneManualHold,
 } from './freeZoneApi';
 
 function model(patch: Partial<AdminFreeZoneStatusModel>): AdminFreeZoneStatusModel {
@@ -202,5 +204,29 @@ describe('freeZoneBusinessText', () => {
       freeZoneBusinessText(model({ status: 'listed', business: { ...business, turns: 0 } }))
     ).toBe('还没有用户轮次');
     expect(freeZoneBusinessText(model({ status: 'unlisted' }))).toBe('');
+  });
+});
+
+describe('manual hold', () => {
+  const held = model({
+    status: 'cooling',
+    cooldown_until: '2100-01-01T00:00:00.000Z',
+    last_delist: { cause: null, at: '2026-11-13T08:00:00.000Z', reason: '运营手动下架' },
+  });
+
+  it('labels a manually delisted model instead of showing the cooldown', () => {
+    expect(isFreeZoneManualHold(held)).toBe(true);
+    expect(freeZoneStatusLabel(held)).toBe('手动下架');
+  });
+
+  it('keeps automatic cooldowns and other states as they are', () => {
+    const cooling = model({
+      status: 'cooling',
+      last_delist: { cause: 'official', at: '2026-11-13T08:00:00.000Z', reason: 'x' },
+    });
+    expect(isFreeZoneManualHold(cooling)).toBe(false);
+    expect(freeZoneStatusLabel(cooling)).toBe('冷却中');
+    expect(freeZoneStatusLabel(model({ status: 'listed' }))).toBe('在架');
+    expect(freeZoneStatusLabel(model({ status: null }))).toBe('未评估');
   });
 });
