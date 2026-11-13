@@ -43,6 +43,19 @@ const DeferredEntryEffects = dynamic(
       }),
   { ssr: false }
 );
+// 进群 / VIP 增长弹窗：入口后台阶段之后才加载，不占首屏。
+const GrowthPromptHost = dynamic(
+  () =>
+    import('@/components/growth/growth-prompt-host')
+      .then((module) => module.GrowthPromptHost)
+      .catch(() => {
+        console.warn('[Startup] Growth prompt module unavailable');
+        return function GrowthPromptHostUnavailable() {
+          return null;
+        };
+      }),
+  { ssr: false }
+);
 const ReactQueryDevtools = dynamic(
   () => import('@tanstack/react-query-devtools').then((module) => module.ReactQueryDevtools),
   { ssr: false }
@@ -128,6 +141,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         {telegramReady ? children : <EntryShell pathname={pathname} />}
       </div>
       {telegramReady ? <FavoriteFeedbackNotice /> : null}
+      {telegramReady && backgroundReady ? <GrowthPromptHost /> : null}
       {showQueryDevtools ? <ReactQueryDevtools initialIsOpen={false} /> : null}
     </QueryClientProvider>
   );

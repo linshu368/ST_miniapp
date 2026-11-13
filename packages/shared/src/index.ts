@@ -32,6 +32,7 @@ export * from './api/image-plaza';
 export * from './api/growth';
 export * from './api/invite';
 export * from './api/community';
+export * from './api/growth-prompts';
 export * from './api/models';
 export * from './api/free-zone.js';
 export * from './api/free-zone-admin.js';

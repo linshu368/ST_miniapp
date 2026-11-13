@@ -1,6 +1,7 @@
 import { createServer, type ServerResponse } from 'node:http';
 import { createChatFeedbackFixture } from './chat-feedback.js';
 import { createChatFolderFixture, makeFolderSessionSamples } from './chat-folders.js';
+import { createGrowthPromptFixture } from './growth-prompts.js';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -288,6 +289,7 @@ export function createPreviewServer(apiPort: number, appPort: number) {
   const messageLikes = new Set<string>();
   const replyFeedback = createChatFeedbackFixture();
   const chatFolders = createChatFolderFixture();
+  const growthPrompts = createGrowthPromptFixture();
   let messageLikeFailureDelivered = false;
   let messageEditFailureDelivered = false;
 
@@ -479,6 +481,7 @@ export function createPreviewServer(apiPort: number, appPort: number) {
     messageLikes.clear();
     replyFeedback.reset();
     chatFolders.reset();
+    growthPrompts.reset();
     messageLikeFailureDelivered = false;
     messageEditFailureDelivered = false;
     scenario = next;
@@ -1086,15 +1089,23 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         fail(res, 409, 'preview_payment_disabled', '本地预览不创建真实支付订单');
         return;
       }
+      const growthResult = growthPrompts.handle(method, path, body, scenario);
+      if (growthResult !== undefined) {
+        ok(res, growthResult);
+        return;
+      }
       if (path === '/api/community/entry' && method === 'GET') {
         ok(res, {
           enabled: true,
           title: '官方社群',
           description: '交流灵感，领取奖励',
-          reward_credits: 100,
+          reward_credits: scenario === 'growth-community' ? 500 : 100,
           telegram_url: 'https://t.me/preview_community',
           fallback_handle: '@preview_community',
-          claim_status: scenario === 'community-joined' ? 'rewarded' : 'unclaimed',
+          claim_status:
+            scenario === 'community-joined' || growthPrompts.communityRewarded
+              ? 'rewarded'
+              : 'unclaimed',
           rewarded_at: null,
         });
         return;
