@@ -44,16 +44,16 @@ describe('free quota exhausted notice config', () => {
   it('accepts valid runtime copy', () => {
     expect(
       parseFreeQuotaExhaustedDialogConfig({
-        text: '和「{characterName}」的免费轮次用完了。往后每轮消耗星尘。',
+        text: '和「{characterName}」的免费轮次用完了。接下来每聊一轮会用掉一点星尘。',
       })
     ).toEqual({
-      text: '和「{characterName}」的免费轮次用完了。往后每轮消耗星尘。',
+      text: '和「{characterName}」的免费轮次用完了。接下来每聊一轮会用掉一点星尘。',
     });
   });
 
   it('falls back to safe defaults for missing or invalid config', () => {
     expect(parseFreeQuotaExhaustedDialogConfig(null)).toMatchObject({
-      text: '和「{characterName}」的免费轮次用完了。这是这张卡的免费额度，其他角色不受影响。往后每轮消耗星尘。',
+      text: '和「{characterName}」的免费轮次用完了。这是这张卡的免费额度，其他角色不受影响。接下来每聊一轮会用掉一点星尘。',
     });
     expect(
       parseFreeQuotaExhaustedDialogConfig({
@@ -61,14 +61,14 @@ describe('free quota exhausted notice config', () => {
         description: '后续聊天将消耗星尘。',
       })
     ).toMatchObject({
-      text: '和「{characterName}」的免费轮次用完了。这是这张卡的免费额度，其他角色不受影响。往后每轮消耗星尘。',
+      text: '和「{characterName}」的免费轮次用完了。这是这张卡的免费额度，其他角色不受影响。接下来每聊一轮会用掉一点星尘。',
     });
     expect(
       parseFreeQuotaExhaustedDialogConfig({
         text: '',
       })
     ).toMatchObject({
-      text: '和「{characterName}」的免费轮次用完了。这是这张卡的免费额度，其他角色不受影响。往后每轮消耗星尘。',
+      text: '和「{characterName}」的免费轮次用完了。这是这张卡的免费额度，其他角色不受影响。接下来每聊一轮会用掉一点星尘。',
     });
   });
 });

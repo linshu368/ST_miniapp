@@ -144,7 +144,7 @@ export function ConversationListBody({
 
   if (query.isLoading && count === 0) return <Hint>正在读取历史对话…</Hint>;
   if (query.isError && count === 0) {
-    return <LoadError text="历史对话加载失败，请稍后重试。" onRetry={() => void query.refetch()} />;
+    return <LoadError text="对话没加载出来，点一下再试试。" onRetry={() => void query.refetch()} />;
   }
   if (count === 0) {
     return <EmptyState view={view} activeFolder={activeFolder} onPickForFolder={onPickForFolder} />;

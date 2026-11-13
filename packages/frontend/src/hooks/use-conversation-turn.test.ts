@@ -1244,7 +1244,7 @@ describe('useConversationTurn asynchronous ownership', () => {
     expect(runtime.cancel).not.toHaveBeenCalled();
     const after = RenderTurn();
     expect(after.cancelling).toBe(false);
-    expect(after.streamError).toContain('请稍后重试取消');
+    expect(after.streamError).toContain('稍后再点停止');
     finish();
     await run;
   });

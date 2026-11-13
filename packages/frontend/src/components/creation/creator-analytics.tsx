@@ -591,7 +591,7 @@ export function CreatorAnalytics({ preview = false }: { preview?: boolean }) {
               rewardRows(data.rewards.slice(0, SUMMARY_SIZE))
             ) : (
               <p className="py-6 text-center text-xs text-muted-foreground">
-                {period === 'all' ? '暂无奖励记录' : '这段时间暂无奖励记录'}
+                {period === 'all' ? '还没有奖励记录' : '这段时间还没有奖励记录'}
               </p>
             )}
           </section>
@@ -620,7 +620,7 @@ export function CreatorAnalytics({ preview = false }: { preview?: boolean }) {
               feedbackRows(data.feedback.slice(0, SUMMARY_SIZE), true)
             ) : (
               <p className="py-6 text-center text-xs text-muted-foreground">
-                {period === 'all' ? '还没有公开评论' : '这段时间暂无公开评论'}
+                {period === 'all' ? '还没有公开评论' : '这段时间还没有公开评论'}
               </p>
             )}
           </section>
@@ -725,14 +725,14 @@ export function CreatorAnalytics({ preview = false }: { preview?: boolean }) {
                 {listRewards.length ? (
                   rewardRows(listRewards)
                 ) : (
-                  <p className="py-8 text-center text-xs text-muted-foreground">暂无奖励记录</p>
+                  <p className="py-8 text-center text-xs text-muted-foreground">还没有奖励记录</p>
                 )}
               </>
             ) : listFeedback.length ? (
               feedbackRows(listFeedback)
             ) : (
               <p className="py-8 text-center text-xs text-muted-foreground">
-                {period === 'all' ? '还没有公开评论' : '这段时间暂无公开评论'}
+                {period === 'all' ? '还没有公开评论' : '这段时间还没有公开评论'}
               </p>
             )}
           </div>

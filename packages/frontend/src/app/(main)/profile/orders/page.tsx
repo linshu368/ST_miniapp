@@ -181,11 +181,11 @@ function OrdersPageContent() {
 function EmptyState({ tab }: { tab: TabKey }) {
   const text =
     tab === 'completed'
-      ? '暂无已完成的订单'
+      ? '还没有已完成的订单'
       : tab === 'pending'
-        ? '暂无待支付的订单'
+        ? '没有待支付的订单'
         : tab === 'expired'
-          ? '暂无已过期的订单'
+          ? '没有已过期的订单'
           : '这里空空如也';
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-3 py-20 text-center text-muted-foreground">
