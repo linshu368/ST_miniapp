@@ -326,7 +326,7 @@ export function CreatedCharacters() {
                 });
                 setChanging(null);
               } catch (e) {
-                setError(e instanceof Error ? e.message : '暂时未能修改，请重试');
+                setError(e instanceof Error ? e.message : '没改成功，再试一次吧');
               }
             }}
           >

@@ -174,7 +174,8 @@ export function CharacterEditorPage({ characterId }: { characterId?: string }) {
       character={detail.data?.character}
       reloadCharacter={async () => {
         const result = await detail.refetch();
-        if (result.error || !result.data) throw result.error ?? new Error('暂时无法读取最新角色。');
+        if (result.error || !result.data)
+          throw result.error ?? new Error('没读到最新的角色，再试一次吧。');
         return result.data.character;
       }}
     />
@@ -352,7 +353,7 @@ function CharacterEditor({
       router.push(`/create/studio/${studioId}?creator_return=${encodeURIComponent(editorPath)}`);
     } catch (error) {
       if (mounted.current)
-        setCoverError(error instanceof Error ? error.message : '暂时无法进入图片创作，请重试。');
+        setCoverError(error instanceof Error ? error.message : '没能进入图片创作，再试一次吧。');
     } finally {
       busyRef.current = false;
       if (mounted.current) setWorking(false);
@@ -536,7 +537,7 @@ function CharacterEditor({
       backupId.current = null;
     } catch (error) {
       setNotice(
-        error instanceof Error ? error.message : '未能保留修改，当前内容没有替换，请重试。'
+        error instanceof Error ? error.message : '修改没保存成功，现在的内容没变，再试一次吧。'
       );
     } finally {
       busyRef.current = false;

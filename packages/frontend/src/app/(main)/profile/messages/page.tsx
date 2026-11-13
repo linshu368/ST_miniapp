@@ -53,7 +53,7 @@ export default function MessageCenterPage() {
         }
         router.push(`/profile/messages/${item.id}`);
       } catch {
-        setOpenError('暂时无法打开这条消息');
+        setOpenError('这条消息没打开，再试一次吧');
       } finally {
         openingId.current = null;
       }
@@ -117,7 +117,9 @@ export default function MessageCenterPage() {
         ) : query.isError ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 py-20 text-center">
             <RefreshCw className="h-8 w-8 text-muted-foreground/60" aria-hidden />
-            <p className="text-[13px] font-medium text-muted-foreground">消息暂时无法加载</p>
+            <p className="text-[13px] font-medium text-muted-foreground">
+              消息没加载出来，再试一次吧
+            </p>
             <Button
               variant="outline"
               size="sm"
@@ -203,7 +205,7 @@ function EmptyState({ scope }: { scope: NotificationScope }) {
         <Icon className="h-8 w-8 opacity-50" aria-hidden />
       </div>
       <p className="text-[13px] font-bold text-foreground">
-        {official ? '暂无官方消息' : '暂无消息'}
+        {official ? '还没有官方消息' : '还没有消息'}
       </p>
       <p className="text-[12px]">
         {official ? '官方公告发布后会出现在这里。' : '系统通知和互动消息会出现在这里。'}

@@ -683,12 +683,12 @@ export function CharacterWishDetailPage({ id }: { id: string }) {
         </p>
       ) : null}
       {!validId ? (
-        <div className="py-16 text-center text-sm text-muted-foreground">这个心愿暂时无法查看</div>
+        <div className="py-16 text-center text-sm text-muted-foreground">这个心愿暂时看不了</div>
       ) : query.isPending ? (
         <Loading />
       ) : query.isError ? (
         <ErrorState
-          text={errorMessage(query.error, '这个心愿暂时无法查看，可能已被撤回。')}
+          text={errorMessage(query.error, '这个心愿暂时看不了，可能已经被撤回了。')}
           retry={() => void query.refetch()}
         />
       ) : wish ? (

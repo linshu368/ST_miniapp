@@ -129,7 +129,7 @@ describe('lobby characters route', () => {
     expect(response.status).toBe(502);
     expect(await response.json()).toEqual({
       success: false,
-      error: { code: 'UPSTREAM_UNAVAILABLE', message: '角色列表暂时无法加载，请重试' },
+      error: { code: 'UPSTREAM_UNAVAILABLE', message: '角色没加载出来，再试一次吧' },
     });
     expect(response.headers.get('Cache-Control')).toContain('no-store');
   });

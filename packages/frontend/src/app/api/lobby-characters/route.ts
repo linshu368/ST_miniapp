@@ -113,7 +113,7 @@ export async function GET(request: Request) {
     return Response.json(
       fail(
         cancelled ? 'REQUEST_ABORTED' : timedOut ? 'UPSTREAM_TIMEOUT' : 'UPSTREAM_UNAVAILABLE',
-        cancelled ? '请求已取消' : '角色列表暂时无法加载，请重试'
+        cancelled ? '请求已取消' : '角色没加载出来，再试一次吧'
       ),
       { status, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } }
     );

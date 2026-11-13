@@ -27,7 +27,7 @@ export const FreeQuotaExhaustedDialogConfigSchema = z.object({
 export type FreeQuotaExhaustedDialogConfig = z.infer<typeof FreeQuotaExhaustedDialogConfigSchema>;
 
 export const DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG: FreeQuotaExhaustedDialogConfig = {
-  text: '和「{characterName}」的免费轮次用完了。这是这张卡的免费额度，其他角色不受影响。往后每轮消耗星尘。',
+  text: '和「{characterName}」的免费轮次用完了。这是这张卡的免费额度，其他角色不受影响。接下来每聊一轮会用掉一点星尘。',
 };
 
 // ==== GET /api/wallet/balance ====

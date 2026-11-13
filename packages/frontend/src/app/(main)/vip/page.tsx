@@ -91,7 +91,7 @@ function VipPageContent() {
     : plansQuery.isLoading
       ? '正在读取月卡…'
       : plansQuery.isError
-        ? '月卡暂时无法加载'
+        ? '月卡没加载出来，再试一次吧'
         : !monthlyPlan || !monthlyPlan.available
           ? '月卡暂未开放'
           : `${vipQuery.data?.active ? '续费 VIP 月卡' : '开通 VIP 月卡'} ¥${formatYuanShort(monthlyPlan.price_cents)}`;
@@ -129,7 +129,7 @@ function VipPageContent() {
       openPrepared(result);
     } catch {
       notification('error');
-      setCheckoutError('暂时无法创建订单，请稍后重试。');
+      setCheckoutError('订单没创建成功，再试一次吧。');
     } finally {
       submitLock.current = false;
     }
@@ -167,7 +167,7 @@ function VipPageContent() {
             </div>
           ) : plansQuery.isError ? (
             <div className="rounded-[24px] border border-destructive/30 bg-destructive/5 px-4 py-6 text-center">
-              <p className="text-sm font-semibold">月卡暂时无法加载</p>
+              <p className="text-sm font-semibold">月卡没加载出来，再试一次吧</p>
               <Button
                 variant="outline"
                 size="sm"
