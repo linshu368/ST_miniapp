@@ -47,6 +47,7 @@ export const EMPTY_FREE_ZONE_CANDIDATE: FreeZoneCandidate = {
   family: '',
   benchmark_tier: 'light',
   parallel_requests: 1,
+  min_discount_pct: null,
 };
 
 /** 新候选的 id 留空时，按 Surplus 模型名生成一个：deepseek-v4.1 → free-deepseek-v4-1。 */
@@ -221,6 +222,8 @@ export function screeningRequestFrom(config: FreeZoneConfig): AdminFreeZoneScree
         id: candidate.id.trim(),
         surplus_model: candidate.surplus_model.trim(),
         display_name: candidate.display_name.trim(),
+        // 单独设了折扣底线的模型按它筛
+        min_discount_pct: candidate.min_discount_pct ?? null,
       }))
       .filter((candidate) => /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(candidate.surplus_model)),
     screening: config.screening,

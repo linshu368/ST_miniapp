@@ -8,6 +8,7 @@ import {
   DEFAULT_FALLBACK_TOKEN_TIMEOUT_MS,
   DEFAULT_FIRST_TOKEN_TIMEOUT_RATE_TARGET,
   FIRST_TOKEN_FALLBACK_MODEL_ID,
+  freeZoneDiscountFloor,
   resolveFallbackProviders,
 } from '@miniapp/shared';
 import type { fetchModelCatalogSnapshot, LlmPricingConfig } from '../../platform/model-tiers.js';
@@ -60,7 +61,8 @@ export function buildFreeZoneResolvedModel(input: {
     freeZone: {
       candidateId: candidate.id,
       providers,
-      minDiscountPct: input.zone.config.screening.min_discount_pct,
+      // 这个模型单独设了折扣底线就按它，否则用统一值
+      minDiscountPct: freeZoneDiscountFloor(input.zone.config.screening, candidate),
       parallelRequests: candidate.parallel_requests,
     },
   };
