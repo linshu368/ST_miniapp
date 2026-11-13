@@ -146,6 +146,24 @@ describe('listFreeZoneModelNow', () => {
     expect(d.saved[0]?.providers).toEqual(['deepinfra']);
   });
 
+  it('refuses a requested provider that is on the blocked list', async () => {
+    const base = deps();
+    const config = await base.loadConfig();
+    const probe = vi.fn(okProbe);
+    const d = deps({
+      probe,
+      loadConfig: async () => ({
+        ...config,
+        screening: { ...config.screening, blocked_providers: ['dashscope-cn'] },
+      }),
+    });
+    await expect(
+      listFreeZoneModelNow({ candidateId: 'free-glm-5', provider: 'DashScope-CN' }, d)
+    ).rejects.toMatchObject({ statusCode: 409, message: expect.stringContaining('屏蔽渠道') });
+    expect(probe).not.toHaveBeenCalled();
+    expect(d.saved).toHaveLength(0);
+  });
+
   it('refuses when nothing passes screening and no provider was given', async () => {
     const d = deps({ fetchMarket: async () => market('zai', 50) });
     await expect(listFreeZoneModelNow({ candidateId: 'free-glm-5' }, d)).rejects.toMatchObject({
