@@ -10,7 +10,11 @@ import {
   observeGenerationPrepare,
 } from '../../lib/engineering-observability.js';
 import { resolveProviderUpstream, forwardToUpstream } from './upstream.js';
-import { forwardWithFirstTokenFallback, type TransportModel } from './first-token-fallback.js';
+import {
+  forwardWithFirstTokenFallback,
+  type PersistGate,
+  type TransportModel,
+} from './first-token-fallback.js';
 import { buildUpstreamBody } from './generation-body.js';
 import { learnSurplusReasoningRejection, surplusReasoningBody } from './surplus-reasoning.js';
 import { revealsReasoning } from './reasoning-display.js';
@@ -63,7 +67,7 @@ function createForward(input: DispatchInput) {
     model: TransportModel,
     attemptSignal: AbortSignal,
     onDispatch?: () => void,
-    attempt?: { role: 'primary' | 'fallback'; timing: UpstreamTiming }
+    attempt?: { role: 'primary' | 'fallback'; timing: UpstreamTiming; gate?: PersistGate }
   ): Promise<Response> => {
     const route = resolveProviderUpstream(model.provider, model.providerModelId);
     if (!route.apiKey) throw new Error(`Missing key for ${model.provider}`);
@@ -142,6 +146,7 @@ function createForward(input: DispatchInput) {
           signal: attemptSignal,
           log: input.log,
           reasoning: prepared.surplusReasoning,
+          gate: attempt?.gate,
           dispatch,
         })
       : dispatch();
@@ -182,6 +187,8 @@ export async function dispatchGeneration(input: DispatchInput): Promise<{
     thinkingEnabled: revealsReasoning(request),
     fallbackModelId: policy.fallbackModelId,
     primaryAttemptId: request.firstToken.primaryAttemptId,
+    // 畅聊免费模型可配同时发几路主请求（运营平台候选池「并发」）
+    primaryCount: request.model.freeZone?.parallelRequests ?? 1,
     timeoutMs: policy.timeoutMs,
     fallbackTimeoutMs: policy.fallbackTimeoutMs,
     remainingFirstTokenMs: policy.deadlineMs - elapsed,
