@@ -24,6 +24,7 @@ export interface EventFields {
   stage?: string;
   provider?: string;
   resource?: string;
+  business_key?: string;
   attempt?: number;
   duration_ms?: number;
   count?: number;
@@ -117,6 +118,7 @@ export function safeFields(fields: EventFields): Omit<EventFields, 'err'> & { er
     'stage',
     'provider',
     'resource',
+    'business_key',
   ] as const) {
     if (fields[key] !== undefined) result[key] = safeName(fields[key]);
   }

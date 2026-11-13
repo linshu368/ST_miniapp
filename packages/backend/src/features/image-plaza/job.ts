@@ -1,3 +1,4 @@
+import { runObservedJob } from '../../platform/observability/jobs.js';
 import { randomUUID } from 'node:crypto';
 import type { FastifyBaseLogger } from 'fastify';
 import { sendBackendSentryLog } from '../../lib/sentry.js';
@@ -111,9 +112,12 @@ export function startImagePlazaGenerationJob(log: FastifyBaseLogger): void {
       running = false;
     }
   };
-  timer = setInterval(() => void tick(), Math.max(1000, config.imagePlaza.workerIntervalMs));
+  timer = setInterval(
+    () => void runObservedJob('image_plaza_generation', tick),
+    Math.max(1000, config.imagePlaza.workerIntervalMs)
+  );
   timer.unref();
-  void tick();
+  void runObservedJob('image_plaza_generation', tick);
 }
 
 export function stopImagePlazaGenerationJob(): void {

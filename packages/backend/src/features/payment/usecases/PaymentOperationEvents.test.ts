@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { recordPaymentOperationEvent } from './PaymentOperationEvents.js';
 import type { SettlementLogger } from './PaymentSettlement.js';
+import { observation } from '../../../platform/observability/runtime.js';
 
 function log() {
   const sink = { error: vi.fn(), info: vi.fn() };
@@ -9,6 +10,37 @@ function log() {
 }
 
 describe('recordPaymentOperationEvent', () => {
+  it('emits safe payment facts without requiring a side-channel database recorder', () => {
+    const spy = vi.spyOn(observation, 'emit');
+    try {
+      recordPaymentOperationEvent(undefined, log().logger, {
+        event_key: 'private-key',
+        order_id: 'private-order',
+        user_id: 'private-user',
+        event_kind: 'gateway_create',
+        stage: 'gateway',
+        outcome: 'failed',
+        source: 'backend',
+        trigger: 'create_order',
+        occurred_at: '2026-11-13T00:00:00Z',
+        error_class: 'timeout',
+        metadata: { raw: 'private-content' },
+      });
+      expect(spy).toHaveBeenCalledWith(
+        'payment.operation',
+        'payment.gateway_create',
+        expect.objectContaining({
+          outcome: 'failed',
+          outcome_known: false,
+          error_code: 'timeout',
+          business_key: expect.stringMatching(/^[a-f0-9]{24}$/),
+        })
+      );
+      expect(JSON.stringify(spy.mock.calls)).not.toContain('private-');
+    } finally {
+      spy.mockRestore();
+    }
+  });
   it('contains a side-channel write failure without changing the caller outcome', async () => {
     const recorder = {
       recordOperationEvent: vi.fn(async () => {

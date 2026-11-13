@@ -1,3 +1,4 @@
+import { runObservedJob } from '../../platform/observability/jobs.js';
 /**
  * backend / features / generation / sync-job.ts
  *
@@ -54,11 +55,11 @@ export function startChatHistorySyncJob(log: FastifyBaseLogger): void {
   if (timerId || startupTimerId) return;
   const jlog = log.child({ module: 'chat-history-sync' });
   timerId = setInterval(() => {
-    void runSyncJob(jlog);
+    void runObservedJob('chat_history_sync', () => runSyncJob(jlog));
   }, SYNC_INTERVAL_MS);
   startupTimerId = setTimeout(() => {
     startupTimerId = null;
-    void runSyncJob(jlog);
+    void runObservedJob('chat_history_sync', () => runSyncJob(jlog));
   }, STARTUP_DELAY_MS);
   jlog.info({ kind: 'sys', event: 'chathistory_sync.started' }, 'Chat history sync job started');
 }

@@ -79,12 +79,10 @@ try {
         startedAt: passStartedAt,
         error,
       });
-      const message = error instanceof Error ? error.message : String(error);
       log.sys.error(
         { event: 'payment.reconcile_worker.failed', err: error },
         '支付订单对账本轮失败'
       );
-      console.error(`Payment reconciliation failed: ${message}`);
     },
   });
 } catch (error) {
@@ -94,12 +92,10 @@ try {
     startedAt: passStartedAt,
     error,
   });
-  const message = error instanceof Error ? error.message : String(error);
   log.sys.error(
     { event: 'payment.reconcile_worker.failed', err: error },
     '支付订单对账 worker 退出'
   );
-  console.error(`Payment reconciliation worker failed: ${message}`);
   exitCode = 1;
 } finally {
   log.sys.info({ event: 'payment.reconcile_worker.stopped' }, '支付订单对账 worker 停止');

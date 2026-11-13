@@ -1,3 +1,4 @@
+import { runObservedJob } from '../../platform/observability/jobs.js';
 import type { FastifyBaseLogger } from 'fastify';
 import { randomUUID } from 'node:crypto';
 import { createLogger, type Logger } from '../../lib/logger.js';
@@ -16,10 +17,10 @@ export function startChatImageGenerationJob(appLog?: FastifyBaseLogger): void {
   const log = createLogger('image');
   appLog?.info('[image-job] Chat image generation job enabled');
   timer = setInterval(() => {
-    void tick(log);
+    void runObservedJob('chat_image_generation', () => tick(log));
   }, config.image.workerIntervalMs);
   timer.unref();
-  void tick(log);
+  void runObservedJob('chat_image_generation', () => tick(log));
 }
 
 export function stopChatImageGenerationJob(): void {

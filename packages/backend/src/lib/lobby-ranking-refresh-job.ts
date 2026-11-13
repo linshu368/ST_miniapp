@@ -1,3 +1,4 @@
+import { runObservedJob } from '../platform/observability/jobs.js';
 /**
  * backend / lib / lobby-ranking-refresh-job.ts
  *
@@ -98,12 +99,12 @@ export function startLobbyRankingRefreshJob(log: FastifyBaseLogger): void {
   const jlog = log.child({ module: 'lobby-ranking-refresh' });
 
   timerId = setInterval(() => {
-    void runLobbyRankingRefresh(jlog);
+    void runObservedJob('lobby_ranking_refresh', () => runLobbyRankingRefresh(jlog));
   }, FRESHNESS_CHECK_INTERVAL_MS);
 
   startupTimerId = setTimeout(() => {
     startupTimerId = null;
-    void runLobbyRankingRefresh(jlog);
+    void runObservedJob('lobby_ranking_refresh', () => runLobbyRankingRefresh(jlog));
   }, STARTUP_DELAY_MS);
 
   jlog.info({ kind: 'sys', event: 'lobby_ranking.started' }, 'Lobby ranking refresh job started');

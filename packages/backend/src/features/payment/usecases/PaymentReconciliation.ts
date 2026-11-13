@@ -3,6 +3,7 @@ import type {
   MiniappPaymentOrderRow,
 } from '../../../infrastructure/repositories/MiniappPaymentOrderRepository.js';
 import type { PaymentGateway } from '../../../infrastructure/payment/PaymentGateway.js';
+import { observation } from '../../../platform/observability/runtime.js';
 import { isEpayOrderId } from '../../../infrastructure/payment/epay-protocol.js';
 import { SLOW_CALL_ERROR_CLASS, SLOW_CALL_MS } from '../domain/PaymentAlertRules.js';
 import { settlePaidOrder, type SettlementLogger } from './PaymentSettlement.js';
@@ -52,6 +53,18 @@ interface ReconcileInput {
 export async function runPaymentReconciliation(
   input: ReconcileInput
 ): Promise<PaymentReconciliationResult> {
+  return observation.observe(
+    'payment.reconciliation',
+    () => reconcileBatch(input),
+    (result) => ({
+      outcome: !input.paymentEnabled ? 'skipped' : result.lookupFailed ? 'degraded' : 'succeeded',
+      outcome_known: !result.lookupFailed,
+      count: result.checked,
+    })
+  );
+}
+
+async function reconcileBatch(input: ReconcileInput): Promise<PaymentReconciliationResult> {
   const result: PaymentReconciliationResult = {
     checked: 0,
     settled: 0,

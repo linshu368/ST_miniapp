@@ -2,8 +2,42 @@ import { describe, expect, it, vi } from 'vitest';
 import { createObserver } from './core.js';
 import { currentContext, newContext, requestId, withContext } from './context.js';
 import { safeError, safeFields, type ObservationEvent } from './events.js';
+import { finishBackgroundOperation, runObservedJob } from './jobs.js';
+import { observation } from './runtime.js';
 
 describe('observation execution boundaries', () => {
+  it('isolates simultaneous jobs and uses their reported result instead of resolved void', async () => {
+    const records: ObservationEvent[] = [];
+    const observer = createObserver([
+      (event) => {
+        records.push(event);
+      },
+    ]);
+    const spy = vi.spyOn(observation, 'start').mockImplementation(observer.start);
+    try {
+      await Promise.all(
+        ['success', 'error'].map((job) =>
+          runObservedJob(job, async () => {
+            await Promise.resolve();
+            finishBackgroundOperation(job, {
+              outcome: job === 'success' ? 'succeeded' : 'failed',
+              outcome_known: job === 'success',
+            });
+          })
+        )
+      );
+      expect(records).toHaveLength(4);
+      expect(new Set(records.map((event) => event.trace_id)).size).toBe(2);
+      expect(
+        records
+          .filter((event) => event.event === 'operation.terminal')
+          .map((event) => event.outcome)
+      ).toEqual(['succeeded', 'failed']);
+      expect(currentContext()).toBeUndefined();
+    } finally {
+      spy.mockRestore();
+    }
+  });
   it('isolates overlapping requests and nests child operations without losing the parent', async () => {
     const records: ObservationEvent[] = [];
     const observer = createObserver([

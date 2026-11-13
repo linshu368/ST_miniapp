@@ -1,3 +1,4 @@
+import { runObservedJob } from '../../platform/observability/jobs.js';
 /**
  * 会话长期记忆的后台 worker。进程内定时领取，多副本靠 SKIP LOCKED 与租约互斥。
  * 任何失败只影响记忆本身：旧版本保留，任务按退避重试。
@@ -165,7 +166,7 @@ export function startStoryMemoryJob(log: FastifyBaseLogger): void {
       running = false;
     }
   };
-  timer = setInterval(() => void tick(), TICK_INTERVAL_MS);
+  timer = setInterval(() => void runObservedJob('story_memory', tick), TICK_INTERVAL_MS);
   timer.unref();
 }
 

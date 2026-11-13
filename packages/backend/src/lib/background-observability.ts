@@ -1,6 +1,8 @@
 import * as Sentry from '@sentry/node';
 
 import { config } from '../platform/config.js';
+import { finishBackgroundOperation } from '../platform/observability/jobs.js';
+import { observationOutcome } from '../platform/observability/outcomes.js';
 import {
   observeBackgroundJob,
   startEngineeringTelemetry,
@@ -14,6 +16,11 @@ export function observeBackgroundRun(input: {
   error?: unknown;
 }): void {
   const durationMs = performance.now() - input.startedAt;
+  finishBackgroundOperation(input.job, {
+    outcome: observationOutcome(input.outcome),
+    outcome_known: input.outcome !== 'error',
+    err: input.error,
+  });
   try {
     observeBackgroundJob({ job: input.job, outcome: input.outcome, durationMs });
   } catch {

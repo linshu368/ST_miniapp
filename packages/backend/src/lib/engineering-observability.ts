@@ -5,6 +5,7 @@ import {
 } from './engineering-telemetry-exporter.js';
 import { observation } from '../platform/observability/runtime.js';
 import { observationOutcome } from '../platform/observability/outcomes.js';
+import { hasBackgroundOperation } from '../platform/observability/jobs.js';
 export type { EngineeringTelemetryConfig } from './engineering-telemetry-exporter.js';
 
 import type { UpstreamTiming } from '../features/generation/upstream-timing.js';
@@ -100,11 +101,12 @@ export function observeBackgroundJob(input: {
   outcome: BackgroundJobOutcome;
   durationMs: number;
 }): void {
-  observation.emit('job.terminal', `job.${input.job}`, {
-    outcome: observationOutcome(input.outcome),
-    outcome_known: input.outcome !== 'error',
-    duration_ms: input.durationMs,
-  });
+  if (!hasBackgroundOperation(input.job))
+    observation.emit('job.terminal', `job.${input.job}`, {
+      outcome: observationOutcome(input.outcome),
+      outcome_known: input.outcome !== 'error',
+      duration_ms: input.durationMs,
+    });
   if (!active) return;
   const attrs = {
     job: boundedLabel('background_job', input.job, 64),
