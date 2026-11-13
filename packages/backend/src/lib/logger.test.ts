@@ -6,6 +6,33 @@ import { newContext, withContext } from '../platform/observability/context.js';
 import { safeLogRecord, validatedDramaLog } from '../platform/observability/safe-log.js';
 
 describe('Pino compatibility safety', () => {
+  it('filters nested child bindings and later additions without mutating the parent', () => {
+    const lines: string[] = [];
+    const output = new Writable({
+      write(chunk, _encoding, done) {
+        lines.push(String(chunk));
+        done();
+      },
+    });
+    const log = pino({ ...fastifyLoggerOptions(), level: 'info', transport: undefined }, output);
+    const child = log.child({ module: 'test', arbitraryPayload: { text: 'private-child' } });
+    child.setBindings({ reqId: 'child-request', customContent: 'private-addition' });
+    child.child({ kind: 'sys', prompt: 'private-nested' }, { level: 'warn' }).warn({
+      event: 'test.child',
+    });
+    child.info({ event: 'test.parent' });
+    log.info({ event: 'test.root' });
+    expect(lines.join('')).not.toContain('private');
+    expect(JSON.parse(lines[0] ?? '{}')).toMatchObject({
+      module: 'test',
+      kind: 'sys',
+      reqId: 'child-request',
+      event: 'test.child',
+    });
+    expect(JSON.parse(lines[1] ?? '{}')).not.toHaveProperty('kind');
+    expect(JSON.parse(lines[2] ?? '{}')).not.toHaveProperty('reqId');
+  });
+
   it('retains validated performance diagnostics and rejects extra sensitive report fields', () => {
     const report = {
       type: 'playback',

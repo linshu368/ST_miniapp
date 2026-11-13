@@ -27,11 +27,29 @@ export const logPretty = resolveLogPretty({
   prettyAvailable: isPinoPrettyAvailable(),
 });
 
+function sanitizeChildBindings(child: pino.Logger): void {
+  // Pino resets the bindings formatter for children and caches their JSON before onChild.
+  // Rebuild that cache once, using Pino's exported symbols; never parse every output line.
+  const target = child as pino.Logger & {
+    [pino.symbols.chindingsSym]: string;
+    [pino.symbols.formattersSym]: NonNullable<pino.LoggerOptions['formatters']>;
+  };
+  const bindings = child.bindings();
+  target[pino.symbols.formattersSym] = {
+    ...target[pino.symbols.formattersSym],
+    bindings: safeLogRecord,
+    log: safeLogRecord,
+  };
+  target[pino.symbols.chindingsSym] = '';
+  child.setBindings(bindings);
+}
+
 /** 供 Fastify `logger` 选项复用，保证应用日志与 request 日志同源同格式 */
 export function fastifyLoggerOptions(): Record<string, unknown> {
   const base = buildPinoOptions({ level: logLevel, pretty: logPretty });
   return {
     ...base,
+    onChild: sanitizeChildBindings,
     redact: {
       paths: [
         ...REDACT_PATHS,
