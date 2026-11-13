@@ -31,108 +31,111 @@ function reviewFailureOf(err: unknown): string {
   return typeof failure === 'string' && /^[a-z0-9_]{1,40}$/.test(failure) ? failure : 'unknown';
 }
 
-export default async function creatorCharacterRoutes(app: FastifyInstance) {
-  const repo = new CreatorCharacterRepository();
-  const ownerOptions = { preHandler: [requireTelegramAuth], bodyLimit: 8 * 1024 * 1024 };
-  const handle =
-    (action: string, run: (request: FastifyRequest, reply: FastifyReply) => Promise<unknown>) =>
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      const started = performance.now();
-      reply.header('Cache-Control', 'private, no-store');
-      try {
-        return await run(request, reply);
-      } catch (err) {
-        if (err instanceof Error && err.name === 'ZodError')
-          return reply
-            .code(400)
-            .send(fail('BAD_REQUEST', '填写内容有误或超过导入上限，请检查后重试'));
-        if (err instanceof AdminSessionError)
-          return reply
-            .code(err.statusCode)
-            .send(
-              fail(
-                err.statusCode === 503
-                  ? 'AUTH_DEPENDENCY_UNAVAILABLE'
-                  : err.statusCode === 401
-                    ? 'UNAUTHORIZED'
-                    : 'FORBIDDEN',
-                err.message
-              )
-            );
-        const code = err && typeof err === 'object' && 'code' in err ? err.code : null;
-        if (code === CREATOR_REVIEW_REJECTED_CODE && err instanceof Error)
-          return reply.code(422).send(fail(CREATOR_REVIEW_REJECTED_CODE, err.message));
-        if (code === CREATOR_REVIEW_UNAVAILABLE_CODE) {
-          request.log.warn(
-            {
-              err: Object.assign(new Error('Creator review unavailable'), { code }),
-              event: 'creator.review.unavailable',
-              failure: reviewFailureOf(err),
-              action,
-            },
-            'creator review unavailable'
+const handle =
+  (action: string, run: (request: FastifyRequest, reply: FastifyReply) => Promise<unknown>) =>
+  async (request: FastifyRequest, reply: FastifyReply) => {
+    const started = performance.now();
+    reply.header('Cache-Control', 'private, no-store');
+    try {
+      return await run(request, reply);
+    } catch (err) {
+      if (err instanceof Error && err.name === 'ZodError')
+        return reply
+          .code(400)
+          .send(fail('BAD_REQUEST', '填写内容有误或超过导入上限，请检查后重试'));
+      if (err instanceof AdminSessionError)
+        return reply
+          .code(err.statusCode)
+          .send(
+            fail(
+              err.statusCode === 503
+                ? 'AUTH_DEPENDENCY_UNAVAILABLE'
+                : err.statusCode === 401
+                  ? 'UNAUTHORIZED'
+                  : 'FORBIDDEN',
+              err.message
+            )
           );
-          return reply
-            .code(503)
-            .send(
-              fail(CREATOR_REVIEW_UNAVAILABLE_CODE, '暂时无法完成审核，请稍后重试。原稿已保留。')
-            );
-        }
-        if (code === 'MISSING_FIELDS' && err instanceof Error)
-          return reply.code(400).send(fail('MISSING_FIELDS', err.message));
-        if (code === 'P0404') return reply.code(404).send(fail('NOT_FOUND', '角色或封面已不可用'));
-        if (code === 'P0409')
-          return reply.code(409).send(fail('CONFLICT', '这份角色已更新，请重新加载后再操作'));
-        if (code === 'P0429')
-          return reply.code(429).send(fail('RATE_LIMITED', '创作有点频繁，请稍后再试'));
-        if (code === '22023')
-          return reply.code(400).send(fail('BAD_REQUEST', '请先补齐角色必填内容'));
-        if (code === '42501') return reply.code(403).send(fail('FORBIDDEN', '没有操作权限'));
-        // RPC validation errors may contain draft fragments in detail: log only a sanitized error.
-        request.log.error(
-          { err: Object.assign(new Error('Creator operation failed'), { code }), action },
-          'creator operation failed'
+      const code = err && typeof err === 'object' && 'code' in err ? err.code : null;
+      if (code === CREATOR_REVIEW_REJECTED_CODE && err instanceof Error)
+        return reply.code(422).send(fail(CREATOR_REVIEW_REJECTED_CODE, err.message));
+      if (code === CREATOR_REVIEW_UNAVAILABLE_CODE) {
+        request.log.warn(
+          {
+            err: Object.assign(new Error('Creator review unavailable'), { code }),
+            event: 'creator.review.unavailable',
+            failure: reviewFailureOf(err),
+            action,
+          },
+          'creator review unavailable'
         );
         return reply
           .code(503)
-          .send(fail('SERVICE_UNAVAILABLE', '暂时没能完成，请保留原稿并稍后重试'));
-      } finally {
-        request.log.info(
-          { action, status: reply.statusCode, duration_ms: performance.now() - started },
-          'creator operation'
-        );
+          .send(
+            fail(CREATOR_REVIEW_UNAVAILABLE_CODE, '暂时无法完成审核，请稍后重试。原稿已保留。')
+          );
       }
-    };
-  const viewer = async (request: FastifyRequest) => {
-    if (!request.user) throw new AdminSessionError(401, '请重新打开小程序');
-    return (await getOrCreateDbUser(request.user)).id;
+      if (code === 'MISSING_FIELDS' && err instanceof Error)
+        return reply.code(400).send(fail('MISSING_FIELDS', err.message));
+      if (code === 'P0404') return reply.code(404).send(fail('NOT_FOUND', '角色或封面已不可用'));
+      if (code === 'P0409')
+        return reply.code(409).send(fail('CONFLICT', '这份角色已更新，请重新加载后再操作'));
+      if (code === 'P0429')
+        return reply.code(429).send(fail('RATE_LIMITED', '创作有点频繁，请稍后再试'));
+      if (code === '22023')
+        return reply.code(400).send(fail('BAD_REQUEST', '请先补齐角色必填内容'));
+      if (code === '42501') return reply.code(403).send(fail('FORBIDDEN', '没有操作权限'));
+      // RPC validation errors may contain draft fragments in detail: log only a sanitized error.
+      request.log.error(
+        { err: Object.assign(new Error('Creator operation failed'), { code }), action },
+        'creator operation failed'
+      );
+      return reply
+        .code(503)
+        .send(fail('SERVICE_UNAVAILABLE', '暂时没能完成，请保留原稿并稍后重试'));
+    } finally {
+      request.log.info(
+        { action, status: reply.statusCode, duration_ms: performance.now() - started },
+        'creator operation'
+      );
+    }
   };
-  const characterId = (request: FastifyRequest) =>
-    idSchema.parse((request.params as { id: string }).id);
+const viewer = async (request: FastifyRequest) => {
+  if (!request.user) throw new AdminSessionError(401, '请重新打开小程序');
+  return (await getOrCreateDbUser(request.user)).id;
+};
+const characterId = (request: FastifyRequest) =>
+  idSchema.parse((request.params as { id: string }).id);
 
-  const publishCharacter = async (input: {
+const publishCharacter = async (
+  repo: CreatorCharacterRepository,
+  input: {
     ownerId: string;
     id: string;
     action: 'publish' | 'visibility';
     expectedRevision: number;
     visibility: CreatorVisibility;
-  }) => {
-    const current = await repo.get(input.id, input.ownerId);
-    // Let SQL replay the exact last request or reject a stale revision.
-    if (current.revision !== input.expectedRevision) return repo.mutate(input);
-    if (input.action === 'publish' || input.visibility === 'public') {
-      const missing = creatorPublishMissingFields(current.draft, current.cover_asset_id);
-      if (missing.length)
-        throw Object.assign(new Error('请先完成：' + missing.join('、')), {
-          code: 'MISSING_FIELDS',
-        });
-    }
-    if (input.visibility === 'private') return repo.mutate(input);
-    // Public submissions currently pass directly; retain the review service for future use.
-    // SQL still enforces ownership, required fields and the exact draft revision atomically.
-    return repo.mutate({ ...input, review: { approved: true, reason: '直接发布' } });
-  };
+  }
+) => {
+  const current = await repo.get(input.id, input.ownerId);
+  // Let SQL replay the exact last request or reject a stale revision.
+  if (current.revision !== input.expectedRevision) return repo.mutate(input);
+  if (input.action === 'publish' || input.visibility === 'public') {
+    const missing = creatorPublishMissingFields(current.draft, current.cover_asset_id);
+    if (missing.length)
+      throw Object.assign(new Error('请先完成：' + missing.join('、')), {
+        code: 'MISSING_FIELDS',
+      });
+  }
+  if (input.visibility === 'private') return repo.mutate(input);
+  // Public submissions currently pass directly; retain the review service for future use.
+  // SQL still enforces ownership, required fields and the exact draft revision atomically.
+  return repo.mutate({ ...input, review: { approved: true, reason: '直接发布' } });
+};
 
+export default async function creatorCharacterRoutes(app: FastifyInstance) {
+  const repo = new CreatorCharacterRepository();
+  const ownerOptions = { preHandler: [requireTelegramAuth], bodyLimit: 8 * 1024 * 1024 };
   // @frontend-ready: true — caller identity also scopes an empty local draft list
   app.get(
     '/api/creator/characters',
@@ -190,7 +193,7 @@ export default async function creatorCharacterRoutes(app: FastifyInstance) {
     handle('publish', async (request, reply) => {
       const body = PublishCreatorCharacterSchema.parse(request.body);
       const ownerId = await viewer(request);
-      const character = await publishCharacter({
+      const character = await publishCharacter(repo, {
         ownerId,
         id: characterId(request),
         action: 'publish',
@@ -230,7 +233,7 @@ export default async function creatorCharacterRoutes(app: FastifyInstance) {
     ownerOptions,
     handle('visibility', async (request, reply) => {
       const body = SetCreatorVisibilitySchema.parse(request.body);
-      const character = await publishCharacter({
+      const character = await publishCharacter(repo, {
         ownerId: await viewer(request),
         id: characterId(request),
         action: 'visibility',
@@ -241,6 +244,10 @@ export default async function creatorCharacterRoutes(app: FastifyInstance) {
       return reply.send(ok({ character }));
     })
   );
+  registerReviewTest(app);
+}
+
+function registerReviewTest(app: FastifyInstance): void {
   // @frontend-ready: true — Admin dry run; never saves policy or alters a real character.
   app.post(
     '/api/admin/creator-characters/review-test',

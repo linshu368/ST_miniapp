@@ -207,6 +207,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export default async function adminSupabaseProxyRoutes(app: FastifyInstance) {
+  registerModelTest(app);
+  registerInvitePoster(app);
+  registerCharacterAsset(app);
+  registerSupabaseProxy(app);
+}
+
+function registerModelTest(app: FastifyInstance): void {
   // @frontend-ready: true - admin tests image_text_model_config with an OpenAI-compatible text call
   app.post('/api/admin/image-text-model/test', async (request, reply) => {
     if (!(await authorizeAdminOperator(request, reply))) return reply;
@@ -248,7 +255,9 @@ export default async function adminSupabaseProxyRoutes(app: FastifyInstance) {
       return reply.status(testError.statusCode).send(fail(testError.code, testError.message));
     }
   });
+}
 
+function registerInvitePoster(app: FastifyInstance): void {
   // @frontend-ready: true —— admin 素材编辑器上传邀请海报，返回 public URL 由运营写进 poster_url
   app.post(
     '/api/admin/invite-poster',
@@ -290,7 +299,9 @@ export default async function adminSupabaseProxyRoutes(app: FastifyInstance) {
       return reply.send({ posterUrl });
     }
   );
+}
 
+function registerCharacterAsset(app: FastifyInstance): void {
   // @frontend-ready: true —— admin 角色卡头像上传
   app.post(
     '/api/admin/character-assets/:characterId',
@@ -346,7 +357,9 @@ export default async function adminSupabaseProxyRoutes(app: FastifyInstance) {
       return reply.send({ avatarUrl });
     }
   );
+}
 
+function registerSupabaseProxy(app: FastifyInstance): void {
   // @frontend-ready: true —— admin 前端的 Supabase 请求统一代理
   app.all('/api/admin/supabase/*', async (request, reply) => {
     if (!config.supabase.url) {
@@ -381,12 +394,10 @@ export default async function adminSupabaseProxyRoutes(app: FastifyInstance) {
       return reply.send(Buffer.from(await response.arrayBuffer()));
     } catch (error) {
       request.log.error({ err: error, upstreamUrl: upstreamUrl.origin }, 'Supabase proxy failed');
-      return reply
-        .status(isTimeoutError(error) ? 504 : 502)
-        .send({
-          code: isTimeoutError(error) ? 'ADMIN_PROXY_TIMEOUT' : 'ADMIN_PROXY_UNAVAILABLE',
-          message: 'Supabase 暂时无法访问，请稍后重试',
-        });
+      return reply.status(isTimeoutError(error) ? 504 : 502).send({
+        code: isTimeoutError(error) ? 'ADMIN_PROXY_TIMEOUT' : 'ADMIN_PROXY_UNAVAILABLE',
+        message: 'Supabase 暂时无法访问，请稍后重试',
+      });
     }
   });
 }
