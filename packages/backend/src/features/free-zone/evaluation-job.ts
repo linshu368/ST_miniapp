@@ -257,12 +257,12 @@ export async function runFreeZoneEvaluation(
         kind: 'sys',
         event: 'free_zone.evaluated',
         outcome,
-        candidates: evaluated.length,
-        skippedChangedMeanwhile: skipped,
-        listed: evaluated.filter((item) => item.state.status === 'listed').length,
-        marketsMissing: markets.filter((market) => market === null).length,
-        probes: probed.reduce((sum, item) => sum + item.probes.length, 0),
-        probesUnroutable: probed.reduce(
+        candidateCount: evaluated.length,
+        skippedChangedCount: skipped.length,
+        listedCount: evaluated.filter((item) => item.state.status === 'listed').length,
+        missingMarketCount: markets.filter((market) => market === null).length,
+        probeCount: probed.reduce((sum, item) => sum + item.probes.length, 0),
+        unroutableProbeCount: probed.reduce(
           (sum, item) => sum + item.probes.filter((p) => p.outcome === 'unroutable').length,
           0
         ),

@@ -116,13 +116,8 @@ export function safeLogRecord(record: Record<string, unknown>): Record<string, u
     } else if (key === 'err')
       result.err = value; // Pino's err serializer owns this boundary.
     else if (key === 'error' && value && typeof value === 'object') {
-      // Foundation errors have already been projected. Rebuild their stack to avoid trusting arbitrary text.
-      const projected = value as { type?: unknown; stack?: unknown };
-      const err = new Error('Error details withheld');
-      err.name = safeName(projected.type, 'Error');
-      if (typeof projected.stack === 'string')
-        err.stack = projected.stack.replace(/at ([\w.-]+\.[cm]?[jt]s:\d+:\d+)/g, 'at /$1');
-      result.error = safeError(err);
+      // Re-project foundation errors without discarding their bounded cause/code chain.
+      result.error = safeError(value);
     } else if (key === 'req' && value && typeof value === 'object') {
       const req = value as { method?: unknown; id?: unknown; url?: unknown };
       result.req = {

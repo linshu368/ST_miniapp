@@ -35,6 +35,7 @@ export interface EventFields {
 export interface SafeError {
   type: string;
   message: string;
+  code?: string;
   stack?: string;
   cause?: SafeError;
 }
@@ -83,25 +84,46 @@ export function safeName(value: unknown, fallback = 'unknown'): string {
   return typeof value === 'string' && /^[a-zA-Z0-9_.:/-]{1,160}$/.test(value) ? value : fallback;
 }
 
+/** Recognized database/network code formats only; never infer codes from private messages. */
+export function safeErrorCode(error: unknown): string | undefined {
+  try {
+    const code =
+      error && typeof error === 'object' ? (error as { code?: unknown }).code : undefined;
+    return typeof code === 'string' &&
+      /^(?:(?:[0-9][0-9A-Z]|[FPX][0-9A-Z])[0-9A-Z]{3}|P[0-9]{4}|PGRST[0-9]{3}|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|EPIPE|ABORT_ERR|UND_ERR_(?:CONNECT|HEADERS|BODY)_TIMEOUT)$/.test(
+        code
+      )
+      ? code
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Error.message, SDK detail and cause text can contain credentials or user content. */
 export function safeError(error: unknown, depth = 0): SafeError {
   try {
-    if (!(error instanceof Error)) return { type: 'Error', message: 'Non-error failure' };
-    const type = ERROR_TYPES.has(error.name) ? error.name : 'Error';
+    if (!error || typeof error !== 'object') return { type: 'Error', message: 'Non-error failure' };
+    const source = error as { type?: unknown; stack?: unknown; cause?: unknown };
+    // Already projected foundation errors use type; SDK objects may only carry code.
+    const name = error instanceof Error ? error.name : source.type;
+    const type = typeof name === 'string' && ERROR_TYPES.has(name) ? name : 'Error';
+    const code = safeErrorCode(error);
     // Preserve source locations, not the first message line, URL, absolute path or function arguments.
-    const frames = (error.stack ?? '')
+    const frames = (typeof source.stack === 'string' ? source.stack : '')
       .slice(0, 16_384)
       .split('\n')
       .slice(1, 13)
-      .map((line) => /(?:[/\\])([\w.-]+\.[cm]?[jt]s):(\d+):(\d+)\)?$/.exec(line.trim()))
+      .map((line) => /(?:^at\s+|[/\\])([\w.-]+\.[cm]?[jt]s):(\d+):(\d+)\)?$/.exec(line.trim()))
       .filter((frame) => frame !== null)
       .map((frame) => `    at ${frame[1]}:${frame[2]}:${frame[3]}`);
     return {
       type,
       message: 'Error details withheld; inspect error_code and source locations',
+      ...(code ? { code } : {}),
       ...(frames.length ? { stack: `${type}\n${frames.join('\n')}` } : {}),
-      ...(error.cause !== undefined && depth < 2
-        ? { cause: safeError(error.cause, depth + 1) }
+      ...(source.cause !== undefined && depth < 2
+        ? { cause: safeError(source.cause, depth + 1) }
         : {}),
     };
   } catch {

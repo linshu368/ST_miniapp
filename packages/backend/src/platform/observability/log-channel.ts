@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { currentContext } from './context.js';
-import { safeName } from './events.js';
+import { safeErrorCode, safeName } from './events.js';
 
 export interface AlertLog {
   event_id: string;
@@ -29,7 +29,12 @@ export function publishAlertLog(record: Record<string, unknown>, level: number):
   if (!consumer || typeof record.event !== 'string') return;
   if (record.event.startsWith('observability.')) return;
   try {
-    const code = record.error_code ?? record.errorCode ?? record.code ?? record.errorClass;
+    const code =
+      record.error_code ??
+      record.errorCode ??
+      record.code ??
+      record.errorClass ??
+      safeErrorCode(record.err ?? record.error);
     const status = record.http_status ?? record.statusCode ?? record.status;
     const duration = record.duration_ms ?? record.durationMs;
     const event: AlertLog = {

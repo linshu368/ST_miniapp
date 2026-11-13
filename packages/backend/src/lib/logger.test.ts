@@ -4,8 +4,54 @@ import { describe, expect, it, vi } from 'vitest';
 import { fastifyLoggerOptions, foundationLoggerOptions } from './logger.js';
 import { newContext, withContext } from '../platform/observability/context.js';
 import { safeLogRecord, validatedDramaLog } from '../platform/observability/safe-log.js';
+import { safeError } from '../platform/observability/events.js';
 
 describe('Pino compatibility safety', () => {
+  it('retains bounded diagnostic codes and causes through physical JSON output', () => {
+    const lines: string[] = [];
+    const output = new Writable({
+      write(chunk, _encoding, done) {
+        lines.push(String(chunk));
+        done();
+      },
+    });
+    const log = pino({ ...fastifyLoggerOptions(), level: 'info', transport: undefined }, output);
+    const databaseError = { code: '23505', message: 'private-query', details: 'private-params' };
+    log.error({ event: 'db.failed', err: databaseError });
+    const error = Object.assign(new Error('private-error', { cause: databaseError }), {
+      code: 'ECONNRESET',
+    });
+    error.stack = 'Error: private-error\n    at run (D:/private/source.ts:10:2)';
+    log.error({ event: 'operation.terminal', error: safeError(error) });
+    log.info({
+      event: 'free_zone.evaluated',
+      candidateCount: 5,
+      listedCount: 3,
+      missingMarketCount: 2,
+      probeCount: 8,
+      unroutableProbeCount: 4,
+      skippedChangedCount: 1,
+    });
+    expect(JSON.parse(lines[0]!).err.code).toBe('23505');
+    expect(JSON.parse(lines[1]!).error).toMatchObject({
+      code: 'ECONNRESET',
+      cause: { code: '23505' },
+    });
+    expect(JSON.parse(lines[1]!).error.stack).toContain('source.ts:10:2');
+    expect(JSON.parse(lines[2]!)).toMatchObject({
+      candidateCount: 5,
+      listedCount: 3,
+      missingMarketCount: 2,
+      probeCount: 8,
+      unroutableProbeCount: 4,
+      skippedChangedCount: 1,
+    });
+    expect(lines.join('')).not.toContain('private');
+    expect(safeError({ code: 'private-unknown-code', message: 'private' })).not.toHaveProperty(
+      'code'
+    );
+  });
+
   it('filters nested child bindings and later additions without mutating the parent', () => {
     const lines: string[] = [];
     const output = new Writable({
