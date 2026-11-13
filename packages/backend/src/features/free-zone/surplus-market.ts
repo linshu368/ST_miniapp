@@ -22,6 +22,8 @@ export interface MarketOffer {
 export interface MarketBook {
   offers: MarketOffer[];
   realized7dDiscountPct: number | null;
+  /** 直购参考价（折扣的基准，多为 OpenRouter 价），微美元/百万 token */
+  directPrice?: { inputPer1m: number | null; outputPer1m: number | null; source: string | null };
 }
 
 export interface ProviderPerformance {
@@ -72,6 +74,7 @@ export function parseMarketBook(value: unknown): MarketBook {
   const root = isRecord(value) ? value : {};
   const offers = Array.isArray(root.offers) ? root.offers : [];
   const realized = isRecord(root.realized_7d) ? root.realized_7d : {};
+  const direct = isRecord(root.direct_price) ? root.direct_price : null;
   return {
     offers: offers.flatMap<MarketOffer>((item) => {
       if (!isRecord(item)) return [];
@@ -89,6 +92,13 @@ export function parseMarketBook(value: unknown): MarketBook {
       ];
     }),
     realized7dDiscountPct: num(realized.discount_pct),
+    directPrice: direct
+      ? {
+          inputPer1m: num(direct.input_per_1m),
+          outputPer1m: num(direct.output_per_1m),
+          source: text(direct.reference_provider) ?? text(direct.reference_source),
+        }
+      : undefined,
   };
 }
 

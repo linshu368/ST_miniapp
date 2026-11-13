@@ -24,6 +24,7 @@ function model(patch: Partial<AdminFreeZoneStatusModel>): AdminFreeZoneStatusMod
     last_reason: 'raw reason',
     screening: null,
     probe: null,
+    direct_price: null,
     business: null,
     ever_listed: false,
     last_delist: null,
