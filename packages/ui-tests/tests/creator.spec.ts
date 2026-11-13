@@ -144,7 +144,7 @@ async function fillCharacter(page: Page) {
     .getByPlaceholder('描述你的角色或故事，会展示在卡片和聊天页顶部')
     .fill('一封旧信，和一段等待续写的重逢。');
   await page
-    .getByPlaceholder('用户进入聊天后看到的第一段内容。可以描写开场场景，也可以让角色先说一句话。')
+    .getByPlaceholder('玩家进入聊天后看到的第一段内容。可以描写开场场景，也可以让角色先说一句话。')
     .fill('「你终于回来了。」他轻轻合上手里的书。');
   await page
     .getByPlaceholder(background)
@@ -202,7 +202,7 @@ test('@creator @layout 私密发布、本人试聊、编辑与可见性切换连
     .click();
   await page.getByRole('button', { name: '修改旧书店的林舟的可见性' }).click();
   await expect(
-    page.getByText('将不再展示在大厅，已收藏或使用过的用户仍可继续使用。')
+    page.getByText('将不再展示在大厅，已收藏或使用过的玩家仍可继续使用。')
   ).toBeVisible();
   await page.getByRole('button', { name: '确认设为私密', exact: true }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -423,7 +423,7 @@ test('@creator 润色截断仍可采用，刷新后可恢复上一版', async ({
   await preview.scenario('creator-polish-partial');
   await page.goto('/creation/characters/new');
   const opening = page.getByPlaceholder(
-    '用户进入聊天后看到的第一段内容。可以描写开场场景，也可以让角色先说一句话。'
+    '玩家进入聊天后看到的第一段内容。可以描写开场场景，也可以让角色先说一句话。'
   );
   await page.getByRole('textbox', { name: '名称' }).fill('旧书店的林舟');
   await opening.fill('「好久不见。」他轻轻合上书。');
