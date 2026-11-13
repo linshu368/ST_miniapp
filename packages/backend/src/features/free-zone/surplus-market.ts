@@ -6,6 +6,9 @@
  * 单次请求 8 秒上限、不重试：评估任务每 30 分钟一轮，这一轮拿不到就等下一轮。
  */
 import { getLlmProviderRuntimeConfig } from '../../platform/runtime-config.js';
+import { clientFetch } from '../../platform/observability/fetch.js';
+
+const fetch = clientFetch('free_zone.market', 'surplus');
 
 const REQUEST_TIMEOUT_MS = 8_000;
 

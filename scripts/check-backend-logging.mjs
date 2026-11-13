@@ -1,5 +1,144 @@
 import { readdirSync, readFileSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { join, relative, resolve } from 'node:path';
+import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
+
+const ts = createRequire(new URL('../packages/backend/package.json', import.meta.url))(
+  'typescript'
+);
+
+// Transport primitives and offline import adapters are explicit exceptions, not per-file comments.
+const rawFetchOwners = new Set([
+  'platform/observability/fetch.ts',
+  'features/alerting/feishu-alert-sink.ts', // Instrumenting notification delivery could recursively alert.
+  'features/image-plaza/seed-import.ts', // Offline importer; proxy, limits and retries have their own tests.
+]);
+
+/** Parse value references, including aliases/defaults; merely importing a wrapper is insufficient. */
+export function inspectLogging(source, path) {
+  const file = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true);
+  const problems = [];
+  const clients = new Set();
+  const observers = new Set();
+  const rawNames = new Set(['fetch']);
+  let registeredFetch = false;
+  let timer = false;
+  let observedJob = false;
+  const jobs = new Set();
+  for (const statement of file.statements) {
+    if (!ts.isImportDeclaration(statement)) continue;
+    const module = statement.moduleSpecifier.text;
+    const bindings = statement.importClause?.namedBindings;
+    if (!bindings || !ts.isNamedImports(bindings)) continue;
+    for (const item of bindings.elements) {
+      const imported = (item.propertyName ?? item.name).text;
+      if (module.endsWith('/observability/fetch.js')) {
+        if (imported === 'clientFetch') clients.add(item.name.text);
+        if (imported === 'observedFetch') observers.add(item.name.text);
+      }
+      if (module.endsWith('/observability/jobs.js') && imported === 'runObservedJob')
+        jobs.add(item.name.text);
+      if (module === 'undici' && imported === 'fetch') rawNames.add(item.name.text);
+    }
+    // Local fetch must actually be created by an imported clientFetch below.
+  }
+  function discover(node) {
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.name.text === 'fetch' &&
+      node.initializer &&
+      ts.isCallExpression(node.initializer) &&
+      ts.isIdentifier(node.initializer.expression) &&
+      clients.has(node.initializer.expression.text)
+    )
+      registeredFetch = true;
+    ts.forEachChild(node, discover);
+  }
+  discover(file);
+  function withinObserver(node) {
+    for (let parent = node.parent; parent; parent = parent.parent) {
+      if (
+        ts.isCallExpression(parent) &&
+        ts.isIdentifier(parent.expression) &&
+        observers.has(parent.expression.text)
+      )
+        return true;
+    }
+    return false;
+  }
+  function globalFetch(node) {
+    return (
+      (ts.isPropertyAccessExpression(node) &&
+        ts.isIdentifier(node.expression) &&
+        node.expression.text === 'globalThis' &&
+        node.name.text === 'fetch') ||
+      (ts.isElementAccessExpression(node) &&
+        ts.isIdentifier(node.expression) &&
+        node.expression.text === 'globalThis' &&
+        ts.isStringLiteral(node.argumentExpression) &&
+        node.argumentExpression.text === 'fetch')
+    );
+  }
+  function reference(node) {
+    const parent = node.parent;
+    return !(
+      (ts.isPropertyAccessExpression(parent) && parent.name === node) ||
+      ((ts.isPropertyAssignment(parent) ||
+        ts.isVariableDeclaration(parent) ||
+        ts.isParameter(parent) ||
+        ts.isPropertyDeclaration(parent) ||
+        ts.isMethodDeclaration(parent) ||
+        ts.isFunctionDeclaration(parent)) &&
+        parent.name === node)
+    );
+  }
+  function walk(node) {
+    if (ts.isTypeNode(node) || ts.isImportDeclaration(node)) return;
+    if (
+      ts.isBinaryExpression(node) &&
+      globalFetch(node.left) &&
+      node.operatorToken.kind === ts.SyntaxKind.EqualsToken
+    )
+      problems.push('global fetch replacement is not allowed');
+    const raw =
+      globalFetch(node) ||
+      (ts.isIdentifier(node) &&
+        rawNames.has(node.text) &&
+        reference(node) &&
+        !(node.text === 'fetch' && registeredFetch));
+    const destructured =
+      ts.isVariableDeclaration(node) &&
+      ts.isObjectBindingPattern(node.name) &&
+      node.initializer &&
+      ts.isIdentifier(node.initializer) &&
+      node.initializer.text === 'globalThis' &&
+      node.name.elements.some(
+        (element) => (element.propertyName ?? element.name).getText(file) === 'fetch'
+      );
+    if ((raw || destructured) && !rawFetchOwners.has(path) && !withinObserver(node))
+      problems.push('register the transport with observedFetch/clientFetch (including aliases)');
+    if (ts.isCallExpression(node)) {
+      const callee = node.expression;
+      if (ts.isIdentifier(callee)) {
+        if (callee.text === 'setInterval') timer = true;
+        if (jobs.has(callee.text)) observedJob = true;
+      }
+      if (
+        ts.isPropertyAccessExpression(callee) &&
+        ts.isIdentifier(callee.expression) &&
+        callee.expression.text === 'console' &&
+        ['log', 'info', 'warn', 'error', 'debug'].includes(callee.name.text)
+      )
+        problems.push('use structured Pino/observation instead of console');
+    }
+    ts.forEachChild(node, walk);
+  }
+  walk(file);
+  if (timer && /(?:^|\/)(?:job|worker|[^/]+-job)\.ts$/.test(path) && !observedJob)
+    problems.push('scheduled worker requires runObservedJob context');
+  return [...new Set(problems)];
+}
 
 const root = 'packages/backend/src';
 const scheduled = new Set([
@@ -29,22 +168,16 @@ function visit(directory) {
     if (path.startsWith('scripts/') && !scheduled.has(entry.name)) continue;
     checked++;
     const source = readFileSync(filename, 'utf8');
-    if (/\bconsole\s*\.\s*(?:log|info|warn|error|debug)\s*\(/.test(source))
-      problems.push(`${path}: use structured Pino/observation instead of console`);
-    if (
-      /\b(?:globalThis\.)?fetch\s*\(/.test(source) &&
-      !/\b(?:clientFetch|observedFetch)\b/.test(source)
-    )
-      problems.push(`${path}: register the transport with observedFetch/clientFetch`);
-    if (/\bglobalThis\.fetch\s*=/.test(source))
-      problems.push(`${path}: global fetch replacement is not allowed`);
+    problems.push(...inspectLogging(source, path).map((problem) => `${path}: ${problem}`));
   }
 }
-visit(root);
-if (problems.length) {
-  console.error(problems.join('\n'));
-  process.exitCode = 1;
-} else
-  console.log(
-    `Backend logging guard passed (${checked} runtime files; offline CLI output excluded).`
-  );
+if (resolve(process.argv[1] ?? '') === fileURLToPath(import.meta.url)) {
+  visit(root);
+  if (problems.length) {
+    console.error(problems.join('\n'));
+    process.exitCode = 1;
+  } else
+    console.log(
+      `Backend logging guard passed (${checked} runtime files; offline CLI output excluded).`
+    );
+}

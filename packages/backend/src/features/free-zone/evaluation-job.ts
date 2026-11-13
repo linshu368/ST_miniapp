@@ -10,6 +10,7 @@
 import type { FastifyBaseLogger } from 'fastify';
 import type { FreeZoneCandidate, FreeZoneConfig } from '@miniapp/shared';
 import { observeBackgroundRun } from '../../lib/background-observability.js';
+import { runObservedJob } from '../../platform/observability/jobs.js';
 import { fetchFreeZoneConfig } from './config.js';
 import {
   advanceState,
@@ -169,6 +170,10 @@ export async function runFreeZoneEvaluation(
   log: FastifyBaseLogger,
   probeImpl: ProbeFn = defaultProbe
 ): Promise<void> {
+  return runObservedJob(JOB, () => evaluateFreeZone(log, probeImpl));
+}
+
+async function evaluateFreeZone(log: FastifyBaseLogger, probeImpl: ProbeFn): Promise<void> {
   const startedAt = performance.now();
   if (running) {
     observeBackgroundRun({ job: JOB, outcome: 'skipped', startedAt });
