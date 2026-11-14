@@ -355,7 +355,7 @@ describe('streamConversationTurn — 流开始后的失败', () => {
         sseResponse([
           frame(START),
           frame({ type: 'delta', text: '写了一半' }),
-          frame({ type: 'error', code, message: '生成中断，请稍后重试' }),
+          frame({ type: 'error', code, message: '生成中断了，再点一次重新来' }),
         ])
       );
 

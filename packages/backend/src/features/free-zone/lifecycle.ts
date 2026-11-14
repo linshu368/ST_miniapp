@@ -54,7 +54,8 @@ type Cause = 'official' | 'business';
 export type FreeZoneEvent =
   | { type: 'listed'; providers: string[]; manual?: boolean }
   | { type: 'provider_switched'; from: string; to: string; cause: Cause; reasons: string[] }
-  | { type: 'delisted'; cause: Cause; reasons: string[]; cooldownUntil: string }
+  /** cause 为 null 表示运营手动下架 */
+  | { type: 'delisted'; cause: Cause | null; reasons: string[]; cooldownUntil: string }
   | { type: 'cooldown_ended' };
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
@@ -260,6 +261,37 @@ export function listManually(input: {
       lastReason: null,
     },
     event: { type: 'listed', providers: [provider], manual: true },
+  };
+}
+
+/** 手动下架的冷却截止：远到评估任务永远不会自动把它加回来，只能走「立即上架」。 */
+export const MANUAL_HOLD_UNTIL = '2100-01-01T00:00:00.000Z';
+export const MANUAL_DELIST_REASON = '运营手动下架';
+
+/**
+ * 运营手动下架：立即下架并一直停着，不参与自动上架；「立即上架」会清掉冷却把它拿回来。
+ * 业务下架记录和供应商排除原样保留（不是业务原因下架，不计入冷却梯度）。
+ */
+export function delistManually(input: { state: FreeZoneModelState }): {
+  state: FreeZoneModelState;
+  event: FreeZoneEvent;
+} {
+  return {
+    state: {
+      ...input.state,
+      status: 'cooling',
+      providers: [],
+      providerSince: null,
+      consecutivePasses: 0,
+      cooldownUntil: MANUAL_HOLD_UNTIL,
+      lastReason: `${MANUAL_DELIST_REASON}：点「立即上架」才会回来`,
+    },
+    event: {
+      type: 'delisted',
+      cause: null,
+      reasons: [MANUAL_DELIST_REASON],
+      cooldownUntil: MANUAL_HOLD_UNTIL,
+    },
   };
 }
 

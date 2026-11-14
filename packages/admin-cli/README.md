@@ -84,6 +84,7 @@ pnpm admin free-zone screen                      # 按已发布门槛实时过�
 pnpm admin free-zone screen --file draft.json    # 试未发布的门槛：文件是 free_zone_config 的值
 pnpm admin free-zone list-now glm-5              # 立即上架（跳过连续达标和冷却；写操作，要 --yes）
 pnpm admin free-zone list-now glm-5 --provider zai   # 指定供应商上架
+pnpm admin free-zone delist-now glm-5            # 手动下架（一直停着，要用时 list-now；写操作，要 --yes）
 ```
 
 ## 给 AI 助手的约定

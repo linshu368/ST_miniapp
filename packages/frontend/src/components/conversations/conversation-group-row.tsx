@@ -104,7 +104,7 @@ export function ConversationGroupRow({
                 </time>
               </span>
               <span className="mt-1 block truncate text-xs text-muted-foreground">
-                {lead.last_message_preview || '暂无消息摘要'}
+                {lead.last_message_preview || '还没聊几句'}
               </span>
             </span>
           </Link>

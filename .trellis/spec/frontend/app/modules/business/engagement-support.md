@@ -17,6 +17,7 @@ last_verified_at: 2026-10-29
 
 ## 当前状态
 
+增长弹窗（2026-11-13，任务 `11-13-growth-prompts`）：`components/growth/growth-prompt-host.tsx` 在 providers 的入口后台阶段之后动态挂载，每次打开取一次 `GET /api/growth/prompts`；`lib/growth/prompt-visit.ts` 记录本次打开新完成的轮数（`conversation-stream` onDone 只算新一轮）与唯一弹窗位。服务端轮数 + 本次轮数 ≥ `at_rounds` 时，在大厅/对话/剧场/我的/聊天页的平静时刻（前台、无聚焦输入框、无其它 dialog）停 1.5s 后弹出居中礼券 `growth-prompt-card.tsx`。进群主按钮直接 `openTelegramCommunity`，之后启用社群入口查询，变成 rewarded 时轻提示到账并失效钱包/未读；VIP 主按钮进 `/vip?returnTo=`。新人创作邀请在本次已弹过增长弹窗时让路。本地预览场景：`growth-community`、`growth-vip`。
 个人中心相关入口与主要查询/变更操作已落地。客服未读继续以服务端跨设备水位为权威；30 秒有效缓存内重复挂载不强制刷新，窗口前台时保留 20 秒轮询，query 取消信号传递到底层请求。前端不增加跨用户或长 TTL 未读结果缓存。
 
 ## 入口与调用者

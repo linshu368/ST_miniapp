@@ -43,6 +43,8 @@ export const AdminFreeZoneScreeningRequestSchema = z.object({
           .max(200)
           .regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/),
         display_name: z.string().trim().max(40),
+        /** 这个模型单独的折扣底线；不填用统一底线 */
+        min_discount_pct: z.number().int().min(1).max(100).nullable().optional(),
       })
     )
     .min(1)
@@ -133,6 +135,17 @@ export const FreeZoneBusinessSnapshotSchema = z.object({
   ttft_p90_ms: z.number().nullable().default(null),
 });
 
+/**
+ * Surplus 标的直购参考价（多为 OpenRouter 价），折扣就是相对它算的。
+ * 单位：微美元 / 百万 token（900000 = 每百万 0.9 美元）。
+ */
+export const FreeZoneDirectPriceSchema = z.object({
+  input_per_1m: z.number().nonnegative().nullable(),
+  output_per_1m: z.number().nonnegative().nullable(),
+  /** 参考价来源，例如 OpenRouter */
+  source: z.string().nullable(),
+});
+
 export const AdminFreeZoneStatusModelSchema = z.object({
   candidate_id: z.string(),
   display_name: z.string().nullable(),
@@ -154,6 +167,8 @@ export const AdminFreeZoneStatusModelSchema = z.object({
   business: FreeZoneBusinessSnapshotSchema.nullable().default(null),
   /** 最近一轮评估里，最终选定（或在用）的那家供应商的探测结果 */
   probe: FreeZoneProbeSchema.nullable().default(null),
+  /** 最近一轮评估时 Surplus 标的原价；还没评估过或行情没拿到为 null */
+  direct_price: FreeZoneDirectPriceSchema.nullable().default(null),
   /** 上过架没有（看上下架记录） */
   ever_listed: z.boolean().default(false),
   /** 最近一次下架：原因类别、时间、原因；从没下架过为 null */
@@ -208,6 +223,22 @@ export const AdminFreeZoneListNowResponseSchema = z.object({
   previous_status: FreeZoneModelStatusSchema.nullable(),
 });
 
+/**
+ * 运营手动「下架」：在架模型立即下架，正在用它的用户下一轮自动换成别的免费模型。
+ * 不会被评估任务自动加回来（冷却截止设到很远），要用时走「立即上架」。
+ * 不要求在候选池里：移出候选池后仍停在在架状态的行也能用它收掉。
+ */
+export const AdminFreeZoneDelistNowRequestSchema = z.object({
+  candidate_id: z.string().trim().min(1).max(64),
+});
+
+export const AdminFreeZoneDelistNowResponseSchema = z.object({
+  candidate_id: z.string(),
+  display_name: z.string(),
+  /** 下架前在用的供应商 */
+  providers: z.array(z.string()),
+});
+
 export type FreeZoneScreeningCheckKey = z.infer<typeof FreeZoneScreeningCheckKeySchema>;
 export type FreeZoneScreeningCheck = z.infer<typeof FreeZoneScreeningCheckSchema>;
 export type FreeZoneCheckSummary = z.infer<typeof FreeZoneCheckSummarySchema>;
@@ -224,3 +255,6 @@ export type AdminFreeZoneEvent = z.infer<typeof AdminFreeZoneEventSchema>;
 export type AdminFreeZoneStatusResponse = z.infer<typeof AdminFreeZoneStatusResponseSchema>;
 export type AdminFreeZoneListNowRequest = z.input<typeof AdminFreeZoneListNowRequestSchema>;
 export type AdminFreeZoneListNowResponse = z.infer<typeof AdminFreeZoneListNowResponseSchema>;
+export type AdminFreeZoneDelistNowRequest = z.input<typeof AdminFreeZoneDelistNowRequestSchema>;
+export type AdminFreeZoneDelistNowResponse = z.infer<typeof AdminFreeZoneDelistNowResponseSchema>;
+export type FreeZoneDirectPrice = z.infer<typeof FreeZoneDirectPriceSchema>;

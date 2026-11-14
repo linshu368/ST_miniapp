@@ -13,7 +13,8 @@ import {
 } from 'antd';
 import {
   FREE_ZONE_STATUS_GROUPS,
-  FREE_ZONE_STATUS_LABELS,
+  freeZoneStatusLabel,
+  isFreeZoneManualHold,
   fetchFreeZoneStatus,
   freeZoneBusinessText,
   freeZoneProbeText,
@@ -27,7 +28,16 @@ import type {
   AdminFreeZoneStatusResponse,
 } from '@miniapp/shared';
 import { useAdminApi } from '../lib/adminApiContext';
+import { FreeZoneDelistNowButton } from './FreeZoneDelistNowButton';
 import { FreeZoneListNowButton } from './FreeZoneListNowButton';
+import {
+  DISCOUNT_HINT,
+  FreeZoneDirectPrice,
+  FreeZoneDiscountInput,
+  FreeZoneParallelInput,
+  PARALLEL_HINT,
+  type FreeZoneCandidateEditing,
+} from './FreeZoneCandidateInputs';
 
 const STATUS_COLORS = { listed: 'green', unlisted: 'default', cooling: 'orange' } as const;
 
@@ -47,6 +57,7 @@ function detail(model: AdminFreeZoneStatusModel, requiredPasses: number): string
     const probe = freeZoneProbeText(model);
     return `用 ${model.providers.join('、')}，${time(model.provider_since)} 起${probe ? `；${probe}` : ''}`;
   }
+  if (isFreeZoneManualHold(model)) return '手动下架，点「立即上架」才会回来';
   if (model.status === 'cooling') return `冷却到 ${time(model.cooldown_until)}`;
   if (model.status === 'unlisted') return `连续达标 ${model.consecutive_passes}/${requiredPasses}`;
   return '等下一轮评估';
@@ -160,7 +171,9 @@ function columns(
     width: 90,
     render: (_: unknown, model: AdminFreeZoneStatusModel) =>
       model.status ? (
-        <Tag color={STATUS_COLORS[model.status]}>{FREE_ZONE_STATUS_LABELS[model.status]}</Tag>
+        <Tag color={isFreeZoneManualHold(model) ? 'default' : STATUS_COLORS[model.status]}>
+          {freeZoneStatusLabel(model)}
+        </Tag>
       ) : (
         <Tag>未评估</Tag>
       ),
@@ -203,6 +216,7 @@ function GroupTable(props: {
   group: FreeZoneStatusGroup;
   models: AdminFreeZoneStatusModel[];
   onChanged: () => void;
+  editing?: FreeZoneCandidateEditing;
 }) {
   if (props.models.length === 0) {
     return <Typography.Text type="secondary">暂无。</Typography.Text>;
@@ -212,8 +226,47 @@ function GroupTable(props: {
     title: '操作',
     key: 'action',
     width: 100,
+    render: (_: unknown, model: AdminFreeZoneStatusModel) =>
+      props.group === 'listed' ? (
+        <FreeZoneDelistNowButton model={model} onDelisted={props.onChanged} />
+      ) : (
+        <FreeZoneListNowButton model={model} onListed={props.onChanged} />
+      ),
+  };
+  const price = {
+    title: (
+      <Tooltip title="Surplus 标的原价（直购参考价，多为 OpenRouter 价），折扣相对它算。输入 / 输出，每百万 token；悬停看按折扣底线的最高价。">
+        <span>原价（入/出）</span>
+      </Tooltip>
+    ),
+    key: 'price',
+    width: 120,
     render: (_: unknown, model: AdminFreeZoneStatusModel) => (
-      <FreeZoneListNowButton model={model} onListed={props.onChanged} />
+      <FreeZoneDirectPrice model={model} editing={props.editing} />
+    ),
+  };
+  const discount = {
+    title: (
+      <Tooltip title={DISCOUNT_HINT}>
+        <span>折扣底线</span>
+      </Tooltip>
+    ),
+    key: 'discount',
+    width: 100,
+    render: (_: unknown, model: AdminFreeZoneStatusModel) => (
+      <FreeZoneDiscountInput model={model} editing={props.editing} />
+    ),
+  };
+  const parallel = {
+    title: (
+      <Tooltip title={PARALLEL_HINT}>
+        <span>并发</span>
+      </Tooltip>
+    ),
+    key: 'parallel',
+    width: 80,
+    render: (_: unknown, model: AdminFreeZoneStatusModel) => (
+      <FreeZoneParallelInput model={model} editing={props.editing} />
     ),
   };
   return (
@@ -221,8 +274,12 @@ function GroupTable(props: {
       size="small"
       rowKey="candidate_id"
       pagination={false}
-      scroll={{ x: 860 }}
-      columns={props.group === 'listed' ? base : [...base, action]}
+      scroll={{ x: 1160 }}
+      columns={
+        props.group === 'listed'
+          ? [...base, price, discount, parallel, action]
+          : [...base, price, discount, action]
+      }
       dataSource={props.models}
     />
   );
@@ -253,7 +310,7 @@ function EventList(props: { data: AdminFreeZoneStatusResponse }) {
 }
 
 /** 评估任务落库的线上状态，分三块：在架、未上架、因业务数据下架；每块可折叠。 */
-export function FreeZoneStatusPanel() {
+export function FreeZoneStatusPanel(props: { editing?: FreeZoneCandidateEditing }) {
   const api = useAdminApi();
   const [data, setData] = useState<AdminFreeZoneStatusResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -297,7 +354,8 @@ export function FreeZoneStatusPanel() {
         </Button>
         {data ? (
           <Typography.Text type="secondary">
-            按已发布的配置；最近评估 {time(data.last_evaluated_at)}，每 30 分钟一次。
+            按已发布的配置；最近评估 {time(data.last_evaluated_at)}，每 30
+            分钟一次。「折扣底线」「并发」改完要保存并发布配置才生效。
             {data.enabled ? '' : '总开关关着，用户看不到栏目。'}
           </Typography.Text>
         ) : null}
@@ -324,6 +382,7 @@ export function FreeZoneStatusPanel() {
                   group={group.key}
                   models={grouped.get(group.key) ?? []}
                   onChanged={() => void load()}
+                  editing={props.editing}
                 />
               ),
             }))}

@@ -5,6 +5,8 @@ import {
   freeZoneProbeText,
   freeZoneReasonView,
   freeZoneStatusGroup,
+  freeZoneStatusLabel,
+  isFreeZoneManualHold,
 } from './freeZoneApi';
 
 function model(patch: Partial<AdminFreeZoneStatusModel>): AdminFreeZoneStatusModel {
@@ -22,6 +24,7 @@ function model(patch: Partial<AdminFreeZoneStatusModel>): AdminFreeZoneStatusMod
     last_reason: 'raw reason',
     screening: null,
     probe: null,
+    direct_price: null,
     business: null,
     ever_listed: false,
     last_delist: null,
@@ -131,6 +134,23 @@ describe('freeZoneProbeText', () => {
     expect(freeZoneProbeText(model({}))).toBe('');
   });
 
+  it('names the blocked channel when it is the only trusted provider', () => {
+    const view = freeZoneReasonView(
+      model({
+        last_reason: '只有屏蔽渠道：dashscope-cn',
+        screening: {
+          pass: false,
+          checks: [{ key: 'min_qualified_offers', threshold: 1, passed: 0, total: 0 }],
+          closest: null,
+        },
+      })
+    );
+    expect(view).toMatchObject({
+      kind: 'tags',
+      tags: [{ text: '只有屏蔽渠道：dashscope-cn', failed: true }],
+    });
+  });
+
   it('labels the probe check with how many providers routed', () => {
     const view = freeZoneReasonView(
       model({
@@ -185,5 +205,29 @@ describe('freeZoneBusinessText', () => {
       freeZoneBusinessText(model({ status: 'listed', business: { ...business, turns: 0 } }))
     ).toBe('还没有用户轮次');
     expect(freeZoneBusinessText(model({ status: 'unlisted' }))).toBe('');
+  });
+});
+
+describe('manual hold', () => {
+  const held = model({
+    status: 'cooling',
+    cooldown_until: '2100-01-01T00:00:00.000Z',
+    last_delist: { cause: null, at: '2026-11-13T08:00:00.000Z', reason: '运营手动下架' },
+  });
+
+  it('labels a manually delisted model instead of showing the cooldown', () => {
+    expect(isFreeZoneManualHold(held)).toBe(true);
+    expect(freeZoneStatusLabel(held)).toBe('手动下架');
+  });
+
+  it('keeps automatic cooldowns and other states as they are', () => {
+    const cooling = model({
+      status: 'cooling',
+      last_delist: { cause: 'official', at: '2026-11-13T08:00:00.000Z', reason: 'x' },
+    });
+    expect(isFreeZoneManualHold(cooling)).toBe(false);
+    expect(freeZoneStatusLabel(cooling)).toBe('冷却中');
+    expect(freeZoneStatusLabel(model({ status: 'listed' }))).toBe('在架');
+    expect(freeZoneStatusLabel(model({ status: null }))).toBe('未评估');
   });
 });

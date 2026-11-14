@@ -20,8 +20,8 @@ export default function GlobalError({
     <html lang="zh">
       <body className="flex min-h-screen items-center justify-center bg-background p-6 text-foreground">
         <main className="w-full max-w-sm text-center">
-          <h1 className="text-xl font-semibold">页面暂时无法正常显示</h1>
-          <p className="mt-3 text-sm text-muted-foreground">问题信息已记录，请稍后重试。</p>
+          <h1 className="text-xl font-semibold">这一页卡住了</h1>
+          <p className="mt-3 text-sm text-muted-foreground">问题已经记下来了，刷新一下再试试。</p>
           <button
             type="button"
             className="mt-6 rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground"

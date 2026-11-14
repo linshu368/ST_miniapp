@@ -114,7 +114,7 @@ export default function CustomVoicePage() {
             code === 'CONFLICT'
               ? '这条回复正在生成语音，请稍后再试'
               : code === 'VOICE_UNAVAILABLE'
-                ? '语音功能暂不可用'
+                ? '语音暂时用不了'
                 : (mutationError as Error).message || '语音生成没能开始，请重试'
           );
         },

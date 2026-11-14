@@ -28,13 +28,13 @@ export function CommunitySheet({
     community.claim_status === 'ineligible' || status === 'ineligible'
       ? '本奖励仅面向活动上线后新加入的成员。'
       : status === 'disabled'
-        ? '活动当前未开放，暂时无法领取奖励。'
+        ? '活动还没开放，先逛逛别的吧。'
         : status === 'pending'
           ? '入群申请仍在等待审批，请通过后再验证。'
           : status === 'not_member'
             ? '尚未检测到入群，请完成加入后重试。'
             : verify.isError
-              ? '验证暂时失败，请稍后重试。'
+              ? '没验证成功，稍后再试一次吧。'
               : null;
   useEffect(() => {
     if (!open) {
@@ -70,7 +70,7 @@ export function CommunitySheet({
         ) : null}
         {openFailed ? (
           <div className="mt-4 rounded-2xl border border-border bg-secondary p-4 text-sm text-muted-foreground">
-            未能打开社群，请在 Telegram 搜索完整账号{' '}
+            没能打开社群，可以在 Telegram 搜索{' '}
             <strong className="text-foreground">{community.fallback_handle}</strong>
           </div>
         ) : null}

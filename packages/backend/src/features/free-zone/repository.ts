@@ -304,3 +304,42 @@ export async function saveManualListing(input: {
     { timeout: 10_000, maxWait: 5_000 }
   );
 }
+
+export type ManualDelistingOutcome =
+  | { kind: 'saved'; previous: FreeZoneModelState; state: FreeZoneModelState }
+  | { kind: 'not_listed' };
+
+/**
+ * 运营手动下架落库：锁住这一行，确认在架，按 build 算出新状态写回并记一条下架事件。
+ * 只更新已有的行（在架必然有行），所以不需要 surplus_model，移出候选池的行也能收掉。
+ * 写入会刷新 updated_at，正在推算的评估看到版本变了就不会覆盖。
+ */
+export async function saveManualDelisting(input: {
+  candidateId: string;
+  build: (current: FreeZoneModelState) => { state: FreeZoneModelState; event: FreeZoneEvent };
+}): Promise<ManualDelistingOutcome> {
+  return prisma.$transaction(
+    async (tx): Promise<ManualDelistingOutcome> => {
+      const [row] = await tx.$queryRaw<StateRow[]>`
+        SELECT ${STATE_COLUMNS} FROM miniapp_features.free_zone_models
+        WHERE candidate_id = ${input.candidateId} FOR UPDATE`;
+      const previous = row ? toState(row) : null;
+      if (previous?.status !== 'listed') return { kind: 'not_listed' };
+      const { state: s, event } = input.build(previous);
+      await tx.$executeRaw`
+        UPDATE miniapp_features.free_zone_models SET
+          status = ${s.status}, providers = ${s.providers}::text[],
+          provider_since = ${s.providerSince}::timestamptz,
+          consecutive_passes = ${s.consecutivePasses}, cooldown_until = ${s.cooldownUntil}::timestamptz,
+          last_reason = ${s.lastReason}, updated_at = now()
+        WHERE candidate_id = ${s.candidateId}`;
+      const eventData = eventRow(event, s.providers);
+      await tx.$executeRaw`
+        INSERT INTO miniapp_features.free_zone_events (candidate_id, event_type, cause, providers, reason)
+        VALUES (${s.candidateId}, ${event.type}, ${eventData.cause}, ${previous.providers}::text[],
+          ${eventData.reason})`;
+      return { kind: 'saved', previous, state: s };
+    },
+    { timeout: 10_000, maxWait: 5_000 }
+  );
+}

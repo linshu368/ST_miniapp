@@ -46,6 +46,8 @@ export const EMPTY_FREE_ZONE_CANDIDATE: FreeZoneCandidate = {
   tagline: '',
   family: '',
   benchmark_tier: 'light',
+  parallel_requests: 1,
+  min_discount_pct: null,
 };
 
 /** 新候选的 id 留空时，按 Surplus 模型名生成一个：deepseek-v4.1 → free-deepseek-v4-1。 */
@@ -96,6 +98,7 @@ const FIELD_LABELS: Record<string, string> = {
   tagline: '介绍语',
   family: '系列',
   benchmark_tier: '对标档位',
+  parallel_requests: '并发',
   min_discount_pct: '折扣底线',
   min_qualified_offers: '达标报价数',
   min_realized_discount_pct: '7 天成交折扣',
@@ -106,6 +109,7 @@ const FIELD_LABELS: Record<string, string> = {
   min_cache_hit_rate_pct: '缓存命中率',
   min_samples: '最少样本',
   price_band_ratio: '价格分档倍数',
+  blocked_providers: '屏蔽渠道',
   probe_enabled: '派单探测',
   max_probe_ttft_ms: '探测首字上限',
   window_hours: '统计窗口',
@@ -218,6 +222,8 @@ export function screeningRequestFrom(config: FreeZoneConfig): AdminFreeZoneScree
         id: candidate.id.trim(),
         surplus_model: candidate.surplus_model.trim(),
         display_name: candidate.display_name.trim(),
+        // 单独设了折扣底线的模型按它筛
+        min_discount_pct: candidate.min_discount_pct ?? null,
       }))
       .filter((candidate) => /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(candidate.surplus_model)),
     screening: config.screening,

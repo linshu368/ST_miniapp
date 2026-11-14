@@ -211,6 +211,16 @@ export const scenarios = {
   checked: { label: '今日已签到', description: '已领取状态及会员引导', path: '/profile' },
   'checkin-error': { label: '签到失败', description: '失败反馈与再次操作', path: '/profile' },
   'vip-error': { label: '权益暂不可读', description: '不展示未经确认的会员收益', path: '/profile' },
+  'growth-community': {
+    label: '增长弹窗 · 进群',
+    description: '累计 13 轮，聊天页弹出进群礼券；点主按钮后社群入口改报已领取，回到页面提示到账',
+    path: `/chat/${IDS.character}?session=${IDS.session}&from=chats`,
+  },
+  'growth-vip': {
+    label: '增长弹窗 · VIP',
+    description: '累计 50 轮，对话页弹出 VIP 月卡礼券；主按钮进入 VIP 支付页',
+    path: '/chats',
+  },
   'community-joined': {
     label: '社群奖励已领取',
     description: '官方社群入口隐藏',

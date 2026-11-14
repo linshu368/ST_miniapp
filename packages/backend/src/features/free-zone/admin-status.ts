@@ -4,6 +4,7 @@
  */
 import {
   FreeZoneBusinessSnapshotSchema,
+  FreeZoneDirectPriceSchema,
   FreeZoneProbeSchema,
   FreeZoneScreeningSummarySchema,
   type AdminFreeZoneEvent,
@@ -11,6 +12,7 @@ import {
   type AdminFreeZoneStatusResponse,
   type FreeZoneBusinessSnapshot,
   type FreeZoneConfig,
+  type FreeZoneDirectPrice,
   type FreeZoneProbe,
   type FreeZoneScreeningSummary,
 } from '@miniapp/shared';
@@ -52,6 +54,12 @@ interface EventRow {
 
 function iso(value: Date | null): string | null {
   return value ? value.toISOString() : null;
+}
+
+/** last_metrics.direct_price：最近一轮评估时 Surplus 标的原价 */
+function directPrice(metrics: Record<string, unknown> | null): FreeZoneDirectPrice | null {
+  const parsed = FreeZoneDirectPriceSchema.safeParse(metrics?.direct_price);
+  return parsed.success ? parsed.data : null;
 }
 
 /** last_metrics.probe：最近一轮最终选定那家的派单探测 */
@@ -112,6 +120,7 @@ export function buildFreeZoneStatus(
     last_reason: row?.last_reason ?? null,
     screening: screeningSummary(row?.last_metrics ?? null),
     probe: lastProbe(row?.last_metrics ?? null),
+    direct_price: directPrice(row?.last_metrics ?? null),
     business: businessSnapshot(row),
     evaluated_at: iso(row?.evaluated_at ?? null),
   });

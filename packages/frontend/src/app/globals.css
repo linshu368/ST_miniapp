@@ -154,6 +154,32 @@
   animation: free-zone-sweep 4.2s ease-in-out infinite;
 }
 
+/* 增长弹窗主按钮：出现后掠过两道光，提示「点这里」。只动 transform。 */
+@keyframes growth-cta-sheen {
+  0% {
+    transform: translateX(-160%) skewX(-18deg);
+  }
+  100% {
+    transform: translateX(360%) skewX(-18deg);
+  }
+}
+
+.growth-cta-sheen::after {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 40%;
+  content: '';
+  background: linear-gradient(100deg, transparent, rgb(255 255 255 / 55%), transparent);
+  transform: translateX(-160%) skewX(-18deg);
+  animation: growth-cta-sheen 1.6s ease-out 0.55s 2;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .growth-cta-sheen::after {
+    animation: none;
+  }
+}
+
 @keyframes vip-gold-flow {
   0% {
     background-position: 0% 50%;

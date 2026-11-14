@@ -1,0 +1,71 @@
+{
+  "id": "growth-prompts",
+  "name": "growth-prompts",
+  "title": "进群与 VIP 增长弹窗",
+  "description": "累计 13 轮进群弹窗、50 轮 VIP 弹窗（居中礼券）、社群发奖后群欢迎语",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P2",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-13",
+  "completedAt": null,
+  "branch": "feat/growth-prompts",
+  "base_branch": "dev",
+  "worktree_path": "/Users/qianpeijia/PycharmProjects/pythonProject/ST_miniapp/worktrees/growth-prompts",
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "backend.business.engagement-support",
+        "frontend.business.engagement-support",
+        "shared.business.engagement-support-contracts"
+      ]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": ["/chat/:id", "/characters", "/chats"],
+      "apis": [
+        "GET /api/growth/prompts（新增，后台优先级，页面就绪后）",
+        "POST /api/growth/prompts/events（新增，弹出/点击时）"
+      ],
+      "android": {
+        "page_p95_baseline_ms": 2588.84,
+        "page_p95_target_ms": 2718,
+        "baseline_route": "/chat/:id",
+        "baseline_measurement": "sentry metrics page.ready.duration",
+        "note": "/characters 1513.04、/chats 1064.24，目标同为 +5% 以内"
+      },
+      "ios": {
+        "page_p95_baseline_ms": 2352.6,
+        "page_p95_target_ms": 2470,
+        "baseline_route": "/chat/:id",
+        "baseline_measurement": "sentry metrics page.ready.duration",
+        "note": "/characters 1457.5、/chats 2382.4，目标同为 +5% 以内"
+      },
+      "api": {
+        "p95_baseline_ms": null,
+        "p95_target_ms": 1500,
+        "endpoint": "GET /api/growth/prompts",
+        "baseline_platform": "android",
+        "reason": "新接口无历史基线；不阻塞页面，目标与同类轻量读接口一致，iOS 同目标"
+      },
+      "measurement": {
+        "source": "Sentry metrics page.ready.duration（route × tg_platform）；接口看 Railway 路由日志 duration 与 Sentry http.client span",
+        "window": "基线 2026-11-06—11-13 近 7 天；发布后 24 小时同口径复查"
+      },
+      "notes": "弹窗宿主与资格请求在 backgroundReady 之后动态挂载，首屏请求数不变；每次打开最多 1 次 GET。"
+    }
+  }
+}

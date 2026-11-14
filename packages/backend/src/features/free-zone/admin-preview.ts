@@ -5,11 +5,12 @@
  * 所以这里说达标，评估任务看到的也是达标（行情在两次之间变了除外）。
  * 行情按模型缓存 1 分钟：运营改一个门槛再点一次，不用重新等 Surplus。
  */
-import type {
-  AdminFreeZoneModelResult,
-  AdminFreeZoneScreeningResponse,
-  FreeZoneScreening,
-  FreeZoneScreeningCheckKey,
+import {
+  freeZoneRulesFor,
+  type AdminFreeZoneModelResult,
+  type AdminFreeZoneScreeningResponse,
+  type FreeZoneScreening,
+  type FreeZoneScreeningCheckKey,
 } from '@miniapp/shared';
 import { pickProvider, screenModel } from './screening.js';
 import { fetchSurplusModelMarket, type SurplusModelMarket } from './surplus-market.js';
@@ -33,6 +34,8 @@ export interface PreviewCandidate {
   id: string;
   surplus_model: string;
   display_name: string;
+  /** 这个模型单独的折扣底线；不填用统一底线 */
+  min_discount_pct?: number | null;
 }
 
 type MarketFetcher = (model: string) => Promise<SurplusModelMarket>;
@@ -125,7 +128,13 @@ function modelResult(
  * 带着折扣底线的请求根本派不出去，算它达标会误导。
  */
 export function parameterImpact(
-  entries: Array<{ id: string; market: SurplusModelMarket; pass: boolean }>,
+  entries: Array<{
+    id: string;
+    market: SurplusModelMarket;
+    pass: boolean;
+    /** 这个模型自己的折扣底线；不填用 rules 里的统一值 */
+    minDiscountPct?: number | null;
+  }>,
   rules: FreeZoneScreening
 ): AdminFreeZoneScreeningResponse['impact'] {
   return OPTIONAL_CHECKS.filter((key) => rules[key] !== null).map((key) => {
@@ -133,7 +142,14 @@ export function parameterImpact(
     return {
       key,
       unlocks: entries
-        .filter((entry) => !entry.pass && screenModel(entry.market, relaxed).pass)
+        .filter(
+          (entry) =>
+            !entry.pass &&
+            screenModel(
+              entry.market,
+              freeZoneRulesFor(relaxed, { min_discount_pct: entry.minDiscountPct })
+            ).pass
+        )
         .map((entry) => entry.id),
     };
   });
@@ -147,12 +163,23 @@ export async function previewFreeZoneScreening(
   const fetchMarket = cachedFetcher(deps.fetchMarket ?? fetchSurplusModelMarket, now);
   const markets = await fetchAll(input.candidates, fetchMarket);
   const models = input.candidates.map((candidate, index) =>
-    modelResult(candidate, markets[index] ?? new Error('missing'), input.screening)
+    modelResult(
+      candidate,
+      markets[index] ?? new Error('missing'),
+      freeZoneRulesFor(input.screening, candidate)
+    )
   );
   const entries = input.candidates.flatMap((candidate, index) => {
     const market = markets[index];
     return market && !(market instanceof Error)
-      ? [{ id: candidateKey(candidate), market, pass: models[index]?.pass ?? false }]
+      ? [
+          {
+            id: candidateKey(candidate),
+            market,
+            pass: models[index]?.pass ?? false,
+            minDiscountPct: candidate.min_discount_pct,
+          },
+        ]
       : [];
   });
   return {

@@ -133,7 +133,7 @@ export function ChatModelSwitcher({
         setError(MAIN_WALLET_NOTICE);
         return;
       }
-      setError('该模型暂不可用');
+      setError('这个模型暂时用不了');
     }
   };
 

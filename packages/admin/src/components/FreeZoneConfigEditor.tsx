@@ -27,6 +27,7 @@ import {
   parseMinutesList,
   toPeriodTime,
 } from '../lib/freeZoneForm';
+import { FreeZoneScreeningOptions } from './FreeZoneScreeningOptions';
 import { FreeZoneCandidatesEditor } from './FreeZoneCandidatesEditor';
 import { FreeZoneScreeningPanel } from './FreeZoneScreeningPanel';
 import { FreeZoneStatusPanel } from './FreeZoneStatusPanel';
@@ -238,6 +239,26 @@ function Section(props: { title: string; hint?: string; children: ReactNode }) {
   );
 }
 
+/** 线上状态；每个模型的「折扣底线」和在架模型的「并发」直接改表单里的候选池。 */
+function StatusSection(props: {
+  value: FreeZoneConfig;
+  disabled?: boolean;
+  onChange: (patch: Partial<FreeZoneConfig>) => void;
+}) {
+  return (
+    <Section title="线上状态">
+      <FreeZoneStatusPanel
+        editing={{
+          candidates: props.value.candidates,
+          defaultDiscountPct: props.value.screening.min_discount_pct,
+          disabled: props.disabled,
+          onChange: (candidates) => props.onChange({ candidates }),
+        }}
+      />
+    </Section>
+  );
+}
+
 function OpenSettings(props: {
   value: FreeZoneConfig;
   disabled?: boolean;
@@ -314,27 +335,6 @@ function OpenSettings(props: {
   );
 }
 
-function ProbeSwitch(props: {
-  enabled: boolean;
-  disabled?: boolean;
-  onChange: (enabled: boolean) => void;
-}) {
-  return (
-    <Space align="start">
-      <Switch checked={props.enabled} disabled={props.disabled} onChange={props.onChange} />
-      <div>
-        <Typography.Text strong>派单探测{props.enabled ? '已开启' : '已关闭'}</Typography.Text>
-        <div>
-          <Typography.Text type="secondary">
-            每 30
-            分钟评估时，对在架和准备上架的模型，用选定的供应商带折扣底线真发一个只要几个字的请求；派不出去就换下一家或下架（订单簿上的折扣和派单时实际估算的不一定一样）。下面的「按当前门槛筛选」不发真实请求，不含这一项。
-          </Typography.Text>
-        </div>
-      </div>
-    </Space>
-  );
-}
-
 /** 候选池默认收起：几十个模型时不用一直往下翻。 */
 function CandidatePool(props: {
   value: FreeZoneConfig['candidates'];
@@ -395,9 +395,7 @@ export function FreeZoneConfigEditor(props: {
       <Section title="栏目开放">
         <OpenSettings value={value} disabled={props.disabled} onChange={update} />
       </Section>
-      <Section title="线上状态">
-        <FreeZoneStatusPanel />
-      </Section>
+      <StatusSection value={value} disabled={props.disabled} onChange={update} />
       <CandidatePool
         value={value.candidates}
         disabled={props.disabled}
@@ -407,10 +405,10 @@ export function FreeZoneConfigEditor(props: {
         title="官方数据初筛"
         hint="上架前用；在架后每 30 分钟用同一套门槛复核正在用的供应商。只看 Surplus 标为 trusted 的供应商。"
       >
-        <ProbeSwitch
-          enabled={value.screening.probe_enabled}
+        <FreeZoneScreeningOptions
+          value={value.screening}
           disabled={props.disabled}
-          onChange={(probe_enabled) => update({ screening: { ...value.screening, probe_enabled } })}
+          onChange={(screening) => update({ screening })}
         />
         <NumberFields
           value={value.screening}

@@ -8,7 +8,7 @@
     "packages/admin-client/src/configSchemas.ts": 758,
     "packages/admin/src/App.tsx": 1276,
     "packages/admin/src/components/CharacterCardsView.tsx": 936,
-    "packages/admin/src/components/ConfigValueEditor.tsx": 844,
+    "packages/admin/src/components/ConfigValueEditor.tsx": 843,
     "packages/admin/src/components/ModelCatalogEditor.tsx": 809,
     "packages/admin/src/components/TextPostprocessView.tsx": 794,
     "packages/admin/src/lib/textPostprocessWorkbench.ts": 775,
@@ -25,7 +25,7 @@
     "packages/frontend/src/app/(main)/profile/recharge/page.tsx": 522,
     "packages/frontend/src/app/chat/[characterId]/page.tsx": 859,
     "packages/frontend/src/components/characters/character-detail-sheet.tsx": 501,
-    "packages/frontend/src/components/characters/character-gallery.tsx": 1003,
+    "packages/frontend/src/components/characters/character-gallery.tsx": 1000,
     "packages/frontend/src/components/chat/chat-message-image.tsx": 512,
     "packages/frontend/src/components/creation/character-editor.tsx": 1224,
     "packages/frontend/src/components/creation/character-wishes.tsx": 975,
@@ -44,7 +44,7 @@
     "packages/admin/src/App.tsx#AdminWorkspace": 953,
     "packages/admin/src/components/AnnouncementsView.tsx#AnnouncementsView": 242,
     "packages/admin/src/components/CharacterCardsView.tsx#CharacterCardsView": 842,
-    "packages/admin/src/components/ConfigValueEditor.tsx#ConfigValueEditor": 604,
+    "packages/admin/src/components/ConfigValueEditor.tsx#ConfigValueEditor": 597,
     "packages/admin/src/components/CreatorReviewPromptEditor.tsx#CreatorReviewPromptEditor": 142,
     "packages/admin/src/components/FallbackConfigEditor.tsx#FallbackConfigEditor": 256,
     "packages/admin/src/components/ImagePlazaConfigEditors.tsx#ImagePlazaModelCatalogEditor": 181,
@@ -70,10 +70,9 @@
     "packages/backend/src/features/lobby/ranking-stats.ts#computeRawCardStats": 205,
     "packages/backend/src/features/lobby/recommendation-ranking.ts#buildRecommendationOrder": 129,
     "packages/backend/src/features/voice/generate.ts#runVoiceGeneration": 227,
-    "packages/backend/src/lib/lobby-ranking-refresh-job.ts#runLobbyRankingRefresh": 144,
+    "packages/backend/src/lib/lobby-ranking-refresh-job.ts#runLobbyRankingRefresh": 128,
     "packages/backend/src/routes/character-social.ts#characterSocialRoutes": 147,
     "packages/backend/src/routes/characters.ts#characterRoutes": 253,
-    "packages/backend/src/routes/community.ts#communityRoutes": 229,
     "packages/backend/src/routes/creator-tools.ts#creatorToolsRoutes": 166,
     "packages/backend/src/routes/drama.ts#dramaRoutes": 123,
     "packages/backend/src/routes/image-plaza.ts#imagePlazaRoutes": 436,
@@ -142,7 +141,6 @@
     "packages/frontend/src/lib/perf/early-startup.ts#bootstrapStartupShell": 122,
     "packages/frontend/src/lib/perf/grafana.ts#createEngineeringExporter": 208,
     "packages/frontend/src/lib/perf/startup-phases.ts#collectStartupDetails": 150,
-    "packages/frontend/src/lib/perf/startup-timing.ts#observeStartupShell": 158,
-    "packages/frontend/src/stores/drama-library-store.ts#useDramaLibraryStore": 121
+    "packages/frontend/src/lib/perf/startup-timing.ts#observeStartupShell": 158
   }
 }

@@ -17,6 +17,7 @@ last_verified_at: 2026-09-08
 
 ## 当前状态
 
+增长弹窗契约（2026-11-13）：`api/growth-prompts.ts` 定义 `GetGrowthPromptsData`（`total_rounds` + 按优先级排序的 `community`/`vip` 弹窗）与 `RecordGrowthPromptEventRequestSchema`（kind × shown/accepted/dismissed，strict）。
 本地候选（尚未发布，2026-11-06）：settings.ts 增加 UserOnboardingSchema/UserOnboardingData，对应 GET /api/users/onboarding 的 eligible:boolean 与 expires_at:ISO|null。用户身份不从请求body传入；只供轻量新手UI，不能作奖励或权限依据。旧后端缺少接口时新前端静默不展示；旧客户端无需改变现有settings契约。
 
 Frontend、Backend、Admin 与 CS Platform 按各自接口消费。

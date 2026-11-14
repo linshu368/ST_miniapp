@@ -1,12 +1,14 @@
 import {
   FREE_ZONE_CHECK_LABELS,
   FREE_ZONE_STATUS_GROUPS,
-  FREE_ZONE_STATUS_LABELS,
   fetchFreeZoneStatus,
   freeZoneBusinessText,
   freeZoneProbeText,
   freeZoneReasonView,
+  delistFreeZoneModelNow,
   freeZoneStatusGroup,
+  freeZoneStatusLabel,
+  isFreeZoneManualHold,
   listFreeZoneModelNow,
   screenFreeZoneCandidates,
 } from '@miniapp/admin-client';
@@ -21,10 +23,10 @@ import { withReadRetry } from '../client';
 import { requiredPositional, stringOption, type CommandSpec } from '../command';
 import { CliError } from '../errors';
 
-/** 畅聊调试：和运营平台畅聊页的「线上状态」「按当前门槛筛选」「立即上架」同一组接口。 */
+/** 畅聊调试：和运营平台畅聊页的「线上状态」「按当前门槛筛选」「立即上架」「下架」同一组接口。 */
 
 function statusLine(model: AdminFreeZoneStatusModel, requiredPasses: number): string {
-  const status = model.status ? FREE_ZONE_STATUS_LABELS[model.status] : '未评估';
+  const status = freeZoneStatusLabel(model);
   const detail =
     model.status === 'listed'
       ? [
@@ -33,9 +35,11 @@ function statusLine(model: AdminFreeZoneStatusModel, requiredPasses: number): st
         ]
           .filter(Boolean)
           .join('\t')
-      : model.status === 'cooling'
-        ? `冷却到 ${model.cooldown_until ?? '?'}`
-        : `连续达标 ${model.consecutive_passes}/${requiredPasses}`;
+      : isFreeZoneManualHold(model)
+        ? '要用时 list-now 才会回来'
+        : model.status === 'cooling'
+          ? `冷却到 ${model.cooldown_until ?? '?'}`
+          : `连续达标 ${model.consecutive_passes}/${requiredPasses}`;
   const marks = [
     model.in_config ? '' : '（已不在候选池）',
     model.ever_listed && model.last_delist?.cause === 'official' ? '（曾上架）' : '',
@@ -89,15 +93,16 @@ function screeningHuman(data: AdminFreeZoneScreeningResponse): string {
   return lines.join('\n');
 }
 
-/** 按 id（可省略 free- 前缀）或显示名找候选。 */
+/** 按 id（可省略 free- 前缀）或显示名找候选；下架时连已不在候选池的行也找。 */
 function findModel(
   data: AdminFreeZoneStatusResponse,
-  query: string
+  query: string,
+  includeOutOfPool = false
 ): AdminFreeZoneStatusModel | undefined {
   const lower = query.trim().toLowerCase();
   return data.models.find(
     (model) =>
-      model.in_config &&
+      (model.in_config || includeOutOfPool) &&
       (model.candidate_id === lower ||
         model.candidate_id === `free-${lower}` ||
         model.display_name?.toLowerCase() === lower)
@@ -105,13 +110,13 @@ function findModel(
 }
 
 function listNowPlan(model: AdminFreeZoneStatusModel, provider: string | undefined): string {
-  const status = model.status ? FREE_ZONE_STATUS_LABELS[model.status] : '未评估';
+  const status = freeZoneStatusLabel(model);
   const excluded = Object.entries(model.excluded_providers)
     .map(([name, until]) => `${name}（到 ${until}）`)
     .join('、');
   return [
     `候选：${model.display_name ?? model.candidate_id}（${model.candidate_id}）`,
-    `现在：${status}${model.status === 'cooling' ? `，冷却到 ${model.cooldown_until ?? '?'}` : ''}`,
+    `现在：${status}${model.status === 'cooling' && !isFreeZoneManualHold(model) ? `，冷却到 ${model.cooldown_until ?? '?'}` : ''}`,
     model.last_delist ? `上次下架：${model.last_delist.at} ${model.last_delist.reason ?? ''}` : '',
     excluded ? `排除中的供应商：${excluded}` : '',
     `供应商：${provider ? `${provider}（指定）` : '按当前行情和初筛门槛选'}；上架前先真发一次派单探测，按折扣底线派不出单就不上`,
@@ -212,6 +217,47 @@ export const freeZoneCommands: CommandSpec[] = [
       return {
         data,
         human: `已上架 ${data.display_name}，供应商 ${data.provider}（${data.provider_source === 'requested' ? '指定' : '按行情选'}）`,
+      };
+    },
+  },
+  {
+    name: 'free-zone delist-now',
+    summary: '畅聊：手动下架一个在架模型（一直停着，要用时 list-now 才会回来）',
+    write: true,
+    positionals: [
+      { name: 'candidate', description: '候选 id（可省略 free- 前缀）或显示名', required: true },
+    ],
+    examples: [
+      'pnpm admin free-zone delist-now glm-5',
+      'pnpm admin free-zone delist-now "GLM 5" --yes',
+    ],
+    async run(ctx, input) {
+      const query = requiredPositional(input, 'candidate');
+      const { client, config } = await ctx.auth();
+      const status = await withReadRetry(() => fetchFreeZoneStatus(client, config.apiUrl));
+      const model = findModel(status, query, true);
+      if (!model) throw new CliError('not_found', `找不到「${query}」`);
+      const name = model.display_name ?? model.candidate_id;
+      if (model.status !== 'listed') throw new CliError('conflict', `${name} 现在不在架`);
+      await ctx.confirm({
+        action: `手动下架畅聊模型 ${name}`,
+        human: [
+          `候选：${name}（${model.candidate_id}）${model.in_config ? '' : '，已不在候选池'}`,
+          `现在：在架，供应商 ${model.providers.join('、')}`,
+          '下架后用户马上看不到，正在用它的用户下一轮自动换成别的免费模型；不会自动回来，要用时 list-now。',
+        ].join('\n'),
+        preview: {
+          candidate_id: model.candidate_id,
+          status: model.status,
+          providers: model.providers,
+        },
+      });
+      const data = await delistFreeZoneModelNow(client, config.apiUrl, {
+        candidate_id: model.candidate_id,
+      });
+      return {
+        data,
+        human: `已下架 ${data.display_name}（原供应商 ${data.providers.join('、')}）`,
       };
     },
   },

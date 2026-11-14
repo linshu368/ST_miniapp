@@ -1,4 +1,5 @@
 import type { GenerationLogger, GenerationRequest } from './types.js';
+import type { PersistGate } from './first-token-fallback.js';
 import type { SurplusReasoningResolution } from './surplus-reasoning.js';
 import {
   SurplusIntelligenceChatHistoryRepository,
@@ -16,14 +17,57 @@ type CallInput = {
   log: GenerationLogger;
   dispatch: () => Promise<Response>;
   reasoning?: SurplusReasoningResolution;
+  /** 多路主请求时才有：这一轮只有一行 Surplus 调用记录，分出胜负后只写胜出那一路 */
+  gate?: PersistGate;
 };
+
+type SurplusCallWrites = Pick<
+  SurplusIntelligenceChatHistoryRepository,
+  'prepare' | 'ensureGenerationId' | 'saveObservation'
+>;
+
+/**
+ * 多路主请求共用一行调用记录，而记录里的调用 ID 一旦写入就不能改：分出胜负前的写入先排队、
+ * 立即返回（不能卡住读流，否则谁都出不了字），定下来后胜出那一路按原顺序补写，其余丢弃。
+ * 准备记录（请求参数）每一路都相同、可重复，照常直接写。
+ */
+function gatedWrites(
+  repository: SurplusIntelligenceChatHistoryRepository,
+  gate: PersistGate,
+  log: GenerationLogger,
+  historyId: string
+): SurplusCallWrites {
+  let chain: Promise<boolean> = gate.owns();
+  const later = (write: () => Promise<void>): Promise<void> => {
+    chain = chain.then(async (owns) => {
+      if (owns)
+        await write().catch((err: unknown) =>
+          log.sys.error(
+            { err, event: 'chathistory.surplus_metadata.failed', historyId },
+            'Surplus call metadata could not be confirmed'
+          )
+        );
+      return owns;
+    });
+    return Promise.resolve();
+  };
+  return {
+    prepare: (input) => repository.prepare(input),
+    ensureGenerationId: (id, generationId) =>
+      later(() => repository.ensureGenerationId(id, generationId)),
+    saveObservation: (id, patch) => later(() => repository.saveObservation(id, patch)),
+  };
+}
 
 /** Observe the original attempt before the first-token race can cancel a loser.
  * No conversation bytes are persisted here; downstream receives the original bytes. */
 export async function forwardSurplusCall(input: CallInput): Promise<Response> {
   if (!input.request.historyId) return input.dispatch();
-  const repository = new SurplusIntelligenceChatHistoryRepository();
   const historyId = input.request.historyId;
+  const direct = new SurplusIntelligenceChatHistoryRepository();
+  const repository: SurplusCallWrites = input.gate
+    ? gatedWrites(direct, input.gate, input.log, historyId)
+    : direct;
   const capture = new SurplusResponseCapture();
   if (input.reasoning)
     capture.recordReasoningControl({
@@ -87,7 +131,7 @@ export async function forwardSurplusCall(input: CallInput): Promise<Response> {
 
 type ObservationInput = CallInput & {
   response: Response;
-  repository: SurplusIntelligenceChatHistoryRepository;
+  repository: SurplusCallWrites;
   historyId: string;
   capture: SurplusResponseCapture;
   startedAt: number;
@@ -97,7 +141,7 @@ type ObservationInput = CallInput & {
 
 function createObservationQueue(
   input: Pick<CallInput, 'log'>,
-  repository: SurplusIntelligenceChatHistoryRepository,
+  repository: SurplusCallWrites,
   historyId: string
 ) {
   let pending = Promise.resolve();
@@ -143,7 +187,7 @@ function terminalPatch(capture: SurplusResponseCapture): SurplusObservationPatch
 
 async function saveSafely(
   input: Pick<CallInput, 'log'>,
-  repository: SurplusIntelligenceChatHistoryRepository,
+  repository: SurplusCallWrites,
   historyId: string,
   patch: SurplusObservationPatch
 ): Promise<void> {

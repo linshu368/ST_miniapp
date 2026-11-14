@@ -40,10 +40,20 @@ export const FreeZoneCandidateSchema = z.object({
   family: z.string().trim().min(1).max(40),
   /** 对标档位：划线原价取这一档当前的星尘价 */
   benchmark_tier: ModelCatalogTierKeySchema,
+  /**
+   * 在架时每轮同时发几路主请求（1–3）：先出字的胜出、其余取消；都没在「启动兜底等待」内出字，
+   * 就和兜底一起竞争。用来压兜底率高的模型，代价是多花几路的 Surplus 费用。
+   */
+  parallel_requests: z.number().int().min(1).max(3).default(1),
+  /**
+   * 这个模型单独的折扣底线（%）；留空用初筛里的统一底线。初筛、派单探测和真实请求的
+   * X-Min-Discount 都按它。有些模型原价本来就低，可以放宽一点。
+   */
+  min_discount_pct: z.number().int().min(1).max(100).nullable().default(null),
 });
 
 export const FreeZoneScreeningSchema = z.object({
-  /** 折扣底线，同时作为请求时的 X-Min-Discount */
+  /** 统一折扣底线，同时作为请求时的 X-Min-Discount；候选单独设了就按候选的 */
   min_discount_pct: z.number().int().min(1).max(100).default(85),
   min_qualified_offers: z.number().int().min(1).max(10_000).nullable().default(5),
   min_realized_discount_pct: PercentSchema.nullable().default(85),
@@ -59,6 +69,12 @@ export const FreeZoneScreeningSchema = z.object({
    * 更贵的档只有便宜档没人时才考虑。
    */
   price_band_ratio: z.number().min(1).max(100).default(3),
+  /**
+   * 屏蔽的渠道（Surplus 供应商名，不分大小写）：这些渠道的报价一律不参与初筛和挑供应商，
+   * 所有模型都一样。在架模型下一轮复核时自动换到别家，没有别家就下架。
+   * 例如 dashscope-cn 会因内容审核把角色扮演回复写到一半掐断。
+   */
+  blocked_providers: z.array(z.string().trim().min(1).max(64)).max(20).default([]),
   /**
    * 派单探测：评估时对在架、准备上架的模型，用选定的供应商带折扣底线真发一个只要几个字的请求。
    * 派不出去（折扣底线达不到、没有可用卖家）就当这家不达标——订单簿上的折扣和 Surplus
@@ -151,6 +167,22 @@ export type FreeZoneRelist = z.infer<typeof FreeZoneRelistSchema>;
 export type FreeZoneConfig = z.infer<typeof FreeZoneConfigSchema>;
 
 export const DEFAULT_FREE_ZONE_CONFIG: FreeZoneConfig = FreeZoneConfigSchema.parse({});
+
+/** 这个模型实际用的折扣底线：候选单独设了就用它，否则用统一值。 */
+export function freeZoneDiscountFloor(
+  screening: Pick<FreeZoneScreening, 'min_discount_pct'>,
+  candidate: { min_discount_pct?: number | null } | null | undefined
+): number {
+  return candidate?.min_discount_pct ?? screening.min_discount_pct;
+}
+
+/** 把初筛门槛里的折扣底线换成这个模型的，其余照旧——下游一律读 min_discount_pct。 */
+export function freeZoneRulesFor(
+  screening: FreeZoneScreening,
+  candidate: { min_discount_pct?: number | null } | null | undefined
+): FreeZoneScreening {
+  return { ...screening, min_discount_pct: freeZoneDiscountFloor(screening, candidate) };
+}
 
 // ── 公开契约 ──────────────────────────────────────────────────────────────
 
