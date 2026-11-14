@@ -5,3 +5,4 @@
 {"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Implementation and verification contract: .trellis/spec/guides/cross-layer-thinking-guide.md"}
 {"file":"docs/backend-error-code-review.md","reason":"Implementation and verification contract: docs/backend-error-code-review.md"}
 {"file":".trellis/tasks/11-12-backend-observability/research/implementation-review-2026-11-13.md","reason":"Implementation and verification contract: .trellis/tasks/11-12-backend-observability/research/implementation-review-2026-11-13.md"}
+{"file": ".trellis/tasks/11-12-backend-observability/research/business-correlation-2026-11-14.md", "reason": "Business identity sources, Railway projection and independent export boundaries"}

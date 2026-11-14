@@ -1,11 +1,14 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomBytes, randomUUID } from 'node:crypto';
+import { safeBusinessFields, type BusinessFields } from './business-context.js';
 
 export interface ObservationContext {
   trace_id: string;
   span_id: string;
   parent_span_id?: string;
   request_id?: string;
+  /** Per-root metadata is enriched after auth; spans keep their immutable trace identity. */
+  business?: BusinessFields;
 }
 
 const storage = new AsyncLocalStorage<Readonly<ObservationContext>>();
@@ -22,6 +25,7 @@ export function newContext(request?: string): ObservationContext {
   return {
     trace_id: randomBytes(16).toString('hex'),
     span_id: randomBytes(8).toString('hex'),
+    business: {},
     ...(request ? { request_id: requestId(request) } : {}),
   };
 }
@@ -34,4 +38,28 @@ export function childContext(): ObservationContext {
 
 export function withContext<T>(context: ObservationContext, run: () => T): T {
   return storage.run(Object.freeze({ ...context }), run);
+}
+
+export function bindBusinessContext(fields: BusinessFields): void {
+  const business = currentContext()?.business;
+  if (business) Object.assign(business, safeBusinessFields(fields));
+}
+
+/** Different entities processed concurrently must not mutate the request/job parent's metadata. */
+export function withBusinessContext<T>(fields: BusinessFields, run: () => T): T {
+  const context = currentContext() ?? newContext();
+  return withContext(
+    { ...context, business: { ...context.business, ...safeBusinessFields(fields) } },
+    run
+  );
+}
+
+export function contextLogFields(
+  context: ObservationContext
+): Omit<ObservationContext, 'business'> & BusinessFields;
+export function contextLogFields(): Partial<Omit<ObservationContext, 'business'>> & BusinessFields;
+export function contextLogFields(context = currentContext()) {
+  if (!context) return {};
+  const { business, ...trace } = context;
+  return { ...safeBusinessFields(business ?? {}), ...trace };
 }

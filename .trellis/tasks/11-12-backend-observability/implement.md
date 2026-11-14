@@ -1,5 +1,15 @@
 # 执行计划
 
+## 2026-11-14 业务关联字段补充
+
+1. 扩展现有 context、EventFields/Pino 安全投影；业务字段与固定 trace/span 不互相覆盖，保留 legacy 字段别名输入，输出统一 snake_case。新增内部 helper 只服务已有消费者。
+2. HTTP 模板绑定业务模块与 UUID 目标；鉴权成功绑定 Telegram 身份，内部身份解析（含缓存命中/共享 inflight）绑定内部 user_id。创建角色、已验证会话与 POST 短剧播放补充对象字段，不加 DB 查询。
+3. 检查 started/terminal、连接断开、子 transport、并行业务作用域及独立 job；Sentry/告警出口继续不传新增业务身份。同步运行说明、README/架构和相关规范。
+4. 扩展已有 core/http/logger/user/auth 及相关业务测试，必要时在这些文件中增加测试，不创建平行框架。验证非法 ID/伪造用户/未知字段被丢弃，两个用户并发不串号，缓存等待者均绑定，404/500/SSE 终态保持结果；运行 backend typecheck、全量无凭证测试、受影响文件 ESLint、日志 guard、复杂度和 diff 检查。公开契约不变，consumer 以既有 route 测试和后端类型检查验证。
+5. 人工发布后在 Railway 从已知用户/卡/剧/会话找到 trace，再核对 HTTP→DB/provider→业务终态；分别验证成功、拒绝、供应商失败、SSE 断开。复用本地 @chat/@creator/@drama 流程辅助造请求，不新增 UI 或一次性脚本；真机/真实供应商/P95 不由模拟替代。
+
+本次规划由当前代码调研与用户明确范围确认后执行，原任务保持 in_progress；补充的验收结果单独记录，旧验证结果不充当本次证明。
+
 1. 核心事件、字段投影、安全错误、并发上下文、一次终态；验证输出失败不影响业务。
 2. HTTP/Pino：关联 ID、404/500/提前响应、超时/中断/SSE；Sentry 出口安全独立核验。
 3. DB/第三方：保留返回身份、AbortSignal、超时与重试；验证异常、非成功状态和未读正文。

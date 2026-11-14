@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { currentContext } from './context.js';
+import { contextLogFields } from './context.js';
 import { safeErrorCode, safeName } from './events.js';
 
 export interface AlertLog {
@@ -59,7 +59,7 @@ export function publishAlertLog(record: Record<string, unknown>, level: number):
     };
     // The notification points to the same physical Railway log, including legacy events.
     record.event_id = event.event_id;
-    Object.assign(record, currentContext());
+    Object.assign(record, contextLogFields());
     consumer(event);
   } catch {
     // Optional alert projection must not interfere with the log or business operation.

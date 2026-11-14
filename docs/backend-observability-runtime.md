@@ -1,6 +1,6 @@
 # Backend 运行时日志与告警
 
-状态：2026-11-13 本地实现，尚未部署。以本文和 `11-12-backend-observability` 任务为准；旧 logging/error-code design 中的持久化、补传和窗口告警不属于本次实现。
+状态：2026-11-14 补充业务关联字段，本地实现，尚未部署。以本文和 `11-12-backend-observability` 任务为准；旧 logging/error-code design 中的持久化、补传和窗口告警不属于本次实现。
 
 ## 输出与查询
 
@@ -15,6 +15,41 @@ HTTP 在鉴权前建立上下文，响应回传 `X-Request-Id/X-Trace-Id`。Rail
 DB 和显式第三方 fetch 记录一次 transport attempt，到响应头为止；不读取正文、不增加业务重试。响应体解析、SDK 业务错误由现有业务边界负责。强杀进程可能只留下 started，不伪造终态，也不宣称应用能保证 Railway 的保存 SLA。
 
 ## 安全字段
+
+### 用户、业务对象与会话定位
+
+以下字段在有可靠来源时进入 Railway 的单行 stdout JSON；缺失不补零、不伪造。`module/operation` 继续描述技术操作，`business_module` 表示来源业务，所以 DB/provider 日志可以同时关联聊天或创作。
+
+| 字段                    | 含义与来源                                                                                                                                         |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `business_module`       | HTTP 模板识别的 `chat/character/creator/drama`；内部作用域还支持 `image/voice/payment`，不代表这些模块所有入口已完成自动映射。                     |
+| `user_id`               | `getOrCreateDbUser` / `getOrCreateDbUserRecord` 成功解析的内部 UUID；缓存命中及共享查询等待者各自绑定。生成作用域也从已有 GenerationRequest 绑定。 |
+| `telegram_user_id`      | Telegram 验签成功的用户 ID，十进制字符串。短剧浏览/播放没有内部用户查询，只有此字段；不为日志额外查库。开发 bypass 仅非生产保留虚构身份。          |
+| `session_id`            | 聊天会话 UUID；不是登录 session/token，也不是客户端播放诊断会话。                                                                                  |
+| `character_id`          | 角色卡 UUID；角色/创作路由目标、创建会话参数或 ownership 校验后会话记录中的角色。                                                                  |
+| `creation_id`           | 当前角色创作操作中等于 `character_id`；现有 `character_creations` 使用角色卡主键，没有独立创作项目 ID。                                            |
+| `drama_id` / `video_id` | 短剧及单集 UUID；GET 剧目标来自路由，POST 播放在参数校验后补充，默认选集后补实际视频 ID。                                                          |
+
+对象 ID 表示操作目标，不代表资源存在或用户有权访问；404/403 等仍按结果判断。身份未验证的 401 日志没有用户标识。HTTP started 发生于鉴权前，通过相同 trace 可找到之后带身份的终态；没有取得内部用户映射的失败路径只保留已知字段。原日志的 `userId/sessionId/characterId/creationId/dramaId/videoId` UUID 输入归一到 snake_case；数字 userId 不会被误当内部 UUID。日志没有统一 `project_id`，避免把角色、创作、短剧混成同一种实体。
+
+请求内调用 `bindBusinessContext(fields)` 补充关联；并行处理不同对象使用 `withBusinessContext(fields, run)` 克隆作用域。HTTP 完成/中断回调读取同一请求已补充的字段，子 span 继承；后台根上下文独立。新增标识只用于 Railway 日志，不进入 Sentry 的 event/breadcrumb/log/span、告警通知或指标标签。允许内部 ID 不等于开放姓名、联系方式、正文和凭证。
+
+### Railway 查询示例
+
+部署此版本后，在对应环境 Backend 服务的应用日志或 Log Explorer 中查询（替换尖括号占位符）：
+
+```text
+@user_id:<内部用户UUID>
+@telegram_user_id:<Telegram用户ID>
+@session_id:<会话UUID>
+@character_id:<角色卡UUID>
+@creation_id:<角色卡UUID> AND @business_module:creator
+@drama_id:<短剧UUID> AND @video_id:<单集UUID>
+@business_module:chat AND (@level:error OR @level:warn)
+@trace_id:<链路ID>
+```
+
+先用用户/对象 ID 找到异常事件，再复制 trace_id 查看此前身份尚未解析的 HTTP/DB 日志及后续生成/供应商/业务终态；按 span_id 区分具体操作。这些是应用 JSON 字段，不是 Railway 边缘 HTTP 日志的 requestId。自定义属性与 AND/OR 查询语法依据 [Railway 官方日志文档](https://docs.railway.com/observability/logs)（2026-11-14 核对）。本地 JSON 测试不代表已在生产检索成功，发布后须逐项实测。
 
 新增调用使用 observation 的字段白名单；遗留 Pino 同样丢弃未登记的 DTO/正文/个人信息，字符串插值不作为输出消息。传入原始 `{ err }`，序列化只保留受控错误类型和源码文件/行号，去掉 message、绝对路径和 SDK 原始内容。业务原因必须显式提供稳定 `error_code`，不能从私密错误文本中猜测。
 

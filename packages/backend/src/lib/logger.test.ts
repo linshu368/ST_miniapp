@@ -2,11 +2,69 @@ import pino from 'pino';
 import { Writable } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
 import { fastifyLoggerOptions, foundationLoggerOptions } from './logger.js';
-import { newContext, withContext } from '../platform/observability/context.js';
-import { safeLogRecord, validatedDramaLog } from '../platform/observability/safe-log.js';
+import { bindBusinessContext, newContext, withContext } from '../platform/observability/context.js';
+import {
+  safeLogAttributes,
+  safeLogRecord,
+  validatedDramaLog,
+} from '../platform/observability/safe-log.js';
 import { safeError } from '../platform/observability/events.js';
 
 describe('Pino compatibility safety', () => {
+  it('writes canonical business identifiers into physical JSON without leaking private fields', () => {
+    const lines: string[] = [];
+    const output = new Writable({
+      write(chunk, _encoding, done) {
+        lines.push(String(chunk));
+        done();
+      },
+    });
+    const log = pino({ ...fastifyLoggerOptions(), level: 'info', transport: undefined }, output);
+    const userId = '11111111-1111-4111-8111-111111111111';
+    const objectId = '22222222-2222-4222-8222-222222222222';
+    const context = newContext('business-request');
+    withContext(context, () => {
+      bindBusinessContext({
+        user_id: userId,
+        telegram_user_id: '123456',
+        business_module: 'creator',
+      });
+      log.child({ characterId: objectId }).child({ creationId: objectId }).info({
+        event: 'creator.saved',
+        sessionId: objectId,
+        user_id: objectId,
+        email: 'private-email',
+        username: 'private-name',
+        initData: 'private-init',
+        token: 'private-token',
+      });
+    });
+    log.info({
+      event: 'drama.play',
+      dramaId: objectId,
+      videoId: objectId,
+      sessionId: 'private-session',
+      userId: 123456,
+    });
+    expect(JSON.parse(lines[0]!)).toMatchObject({
+      user_id: userId,
+      telegram_user_id: '123456',
+      business_module: 'creator',
+      character_id: objectId,
+      creation_id: objectId,
+      session_id: objectId,
+      trace_id: context.trace_id,
+      request_id: 'business-request',
+    });
+    expect(JSON.parse(lines[1]!)).toMatchObject({ drama_id: objectId, video_id: objectId });
+    expect(JSON.parse(lines[1]!)).not.toHaveProperty('user_id');
+    expect(JSON.parse(lines[1]!)).not.toHaveProperty('session_id');
+    expect(lines.join('')).not.toContain('private');
+    expect(lines.join('')).not.toContain('[REDACTED]');
+    expect(
+      safeLogAttributes({ user_id: userId, sessionId: objectId, telegram_user_id: '123456' })
+    ).toEqual({});
+  });
   it('retains bounded diagnostic codes and causes through physical JSON output', () => {
     const lines: string[] = [];
     const output = new Writable({

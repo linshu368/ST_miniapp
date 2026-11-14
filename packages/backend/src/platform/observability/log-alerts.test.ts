@@ -167,6 +167,9 @@ describe('direct runtime log alerts', () => {
       logger.child({ module: 'payment' }).error(
         {
           event: 'payment.failed',
+          user_id: '11111111-1111-4111-8111-111111111111',
+          telegram_user_id: '123456',
+          session_id: '22222222-2222-4222-8222-222222222222',
           err: new Error('private-body'),
           body: 'private-body',
           token: 'private-token',
@@ -175,6 +178,10 @@ describe('direct runtime log alerts', () => {
       );
       expect(received).toHaveLength(1);
       expect(JSON.stringify(received)).not.toContain('private');
+      expect(received[0]).not.toHaveProperty('user_id');
+      expect(received[0]).not.toHaveProperty('telegram_user_id');
+      expect(received[0]).not.toHaveProperty('session_id');
+      expect(JSON.parse(lines[0] ?? '{}').user_id).toBe('11111111-1111-4111-8111-111111111111');
       expect(JSON.parse(lines[0] ?? '{}').event_id).toBe(received[0]?.event_id);
       logger.error({ event: 'observability.alert.delivery_failed' });
       expect(received).toHaveLength(1);

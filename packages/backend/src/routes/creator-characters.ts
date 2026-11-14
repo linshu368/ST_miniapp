@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { bindBusinessContext } from '../platform/observability/context.js';
 import {
   CreateCreatorCharacterSchema,
   SaveCreatorCharacterSchema,
@@ -151,6 +152,7 @@ export default async function creatorCharacterRoutes(app: FastifyInstance) {
     ownerOptions,
     handle('create', async (request, reply) => {
       const body = CreateCreatorCharacterSchema.parse(request.body);
+      bindBusinessContext({ character_id: body.id, creation_id: body.id });
       const character = await repo.mutate({
         ownerId: await viewer(request),
         id: body.id,

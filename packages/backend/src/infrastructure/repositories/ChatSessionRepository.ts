@@ -1,4 +1,5 @@
 import { observation } from '../../platform/observability/runtime.js';
+import { bindBusinessContext } from '../../platform/observability/context.js';
 // 自研引擎对话会话仓库（M1）。
 //
 // 方案：docs/ST_remove-MVP实施方案.md §5.1 / §5.2 / §5.7。
@@ -149,7 +150,10 @@ export class ChatSessionRepository {
       .maybeSingle();
 
     if (error) throw new Error(`查询空会话失败：${error.message}`);
-    return (data as ChatSessionRow | null) ?? null;
+    const session = (data as ChatSessionRow | null) ?? null;
+    if (session)
+      bindBusinessContext({ session_id: session.id, character_id: session.character_id });
+    return session;
   }
 
   private async insertSession(

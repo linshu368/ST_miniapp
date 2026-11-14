@@ -1,6 +1,6 @@
 # ST_miniapp
 
-本地日志整改候选（2026-11-13，未部署）：Railway 捕获 Pino stdout；关联链路、字段白名单、错误契约兼容和默认关闭的直接日志告警见 [运行说明](docs/backend-observability-runtime.md)。无需新增日志存储。
+本地日志整改候选（2026-11-14，未部署）：Railway 捕获 Pino stdout；补充用户、业务模块、角色/创作、短剧/单集及会话 ID，与 trace/request 关联。字段来源、查询示例、错误契约兼容和默认关闭的直接日志告警见 [运行说明](docs/backend-observability-runtime.md)。无需新增日志存储。
 
 ST_miniapp 是围绕 Telegram MiniApp、AI 角色聊天、钱包/支付、语音、增长运营和客服能力构建的 pnpm monorepo。仓库包含面向用户的 Next.js 前端、Fastify API、内部运营 SPA、共享契约/迁移包，以及由 Frontend 和 Admin 共用的回复渲染包。客服平台已拆到独立仓库 [`linshu368/ST_cs_platform`](https://github.com/linshu368/ST_cs_platform)，本仓库只保留 Bot 消息转发和 `/api/support/*` 代理。
 

@@ -1,6 +1,7 @@
 import type { Breadcrumb, Event, Log, StackFrame } from '@sentry/node';
 import { safeName } from './events.js';
 import { safeLogRecord, safeLogAttributes } from './safe-log.js';
+import { withoutBusinessIds } from './business-context.js';
 
 function safeFrame(frame: StackFrame): StackFrame {
   const filename = frame.filename?.split(/[\\/]/).pop()?.split('?')[0];
@@ -19,7 +20,7 @@ export function safeSentryBreadcrumb(breadcrumb: Breadcrumb): Breadcrumb {
     level: breadcrumb.level,
     category: safeName(breadcrumb.category),
     message: 'Breadcrumb details withheld',
-    data: breadcrumb.data ? safeLogRecord(breadcrumb.data) : undefined,
+    data: breadcrumb.data ? withoutBusinessIds(safeLogRecord(breadcrumb.data)) : undefined,
   };
 }
 
@@ -34,7 +35,9 @@ export function safeSentryEvent<T extends Event>(event: T): T {
   if (event.fingerprint?.[0] === 'background-job' && event.fingerprint.length === 2)
     result.fingerprint = ['background-job', safeName(event.fingerprint[1])];
   result.message = event.message ? 'Backend event details withheld' : undefined;
-  result.tags = event.tags ? (safeLogRecord(event.tags) as Event['tags']) : undefined;
+  result.tags = event.tags
+    ? (withoutBusinessIds(safeLogRecord(event.tags)) as Event['tags'])
+    : undefined;
   const trace = event.contexts?.trace;
   result.contexts = trace
     ? {
@@ -72,7 +75,7 @@ export function safeSentryEvent<T extends Event>(event: T): T {
   result.spans = event.spans?.map((span) => ({
     ...span,
     description: 'Backend operation',
-    data: safeLogAttributes(span.data ?? {}),
+    data: withoutBusinessIds(safeLogAttributes(span.data ?? {})),
   }));
   return result;
 }
@@ -81,6 +84,8 @@ export function safeSentryLog(log: Log): Log {
   return {
     ...log,
     message: safeName(log.message, 'Backend log'),
-    attributes: log.attributes ? (safeLogRecord(log.attributes) as Log['attributes']) : undefined,
+    attributes: log.attributes
+      ? (withoutBusinessIds(safeLogRecord(log.attributes)) as Log['attributes'])
+      : undefined,
   };
 }

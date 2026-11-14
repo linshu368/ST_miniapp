@@ -1,3 +1,5 @@
+import { safeBusinessFields, type BusinessFields } from './business-context.js';
+
 export type Outcome =
   | 'succeeded'
   | 'rejected'
@@ -12,7 +14,7 @@ export type Outcome =
 export type EventLevel = 'info' | 'warn' | 'error' | 'fatal';
 
 /** Only explicitly projected metadata crosses an output boundary. Never pass a DTO here. */
-export interface EventFields {
+export interface EventFields extends BusinessFields {
   outcome?: Outcome;
   outcome_known?: boolean;
   http_status?: number | null;
@@ -132,7 +134,7 @@ export function safeError(error: unknown, depth = 0): SafeError {
 }
 
 export function safeFields(fields: EventFields): Omit<EventFields, 'err'> & { err?: SafeError } {
-  const result: Omit<EventFields, 'err'> & { err?: SafeError } = {};
+  const result: Omit<EventFields, 'err'> & { err?: SafeError } = safeBusinessFields(fields);
   for (const key of [
     'error_code',
     'public_error_code',

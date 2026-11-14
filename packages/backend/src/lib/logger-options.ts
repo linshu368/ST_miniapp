@@ -3,7 +3,7 @@ import pino from 'pino';
 import { buildPinoOptions, REDACT_PATHS } from '@miniapp/shared/src/logging/conventions';
 
 import { resolveLogPretty } from './log-pretty.js';
-import { currentContext } from '../platform/observability/context.js';
+import { contextLogFields } from '../platform/observability/context.js';
 import { safeError, safeName } from '../platform/observability/events.js';
 import { publishAlertLog } from '../platform/observability/log-channel.js';
 import { safeLogRecord } from '../platform/observability/safe-log.js';
@@ -53,10 +53,7 @@ export function fastifyLoggerOptions(): Record<string, unknown> {
     redact: {
       paths: [
         ...REDACT_PATHS,
-        'userId',
-        'user_id',
         'telegramUserId',
-        'telegram_user_id',
         'username',
         'email',
         'body',
@@ -72,7 +69,7 @@ export function fastifyLoggerOptions(): Record<string, unknown> {
       bindings: safeLogRecord,
       log: safeLogRecord,
     },
-    mixin: () => ({ ...currentContext() }),
+    mixin: () => contextLogFields(),
     hooks: {
       logMethod(
         this: pino.Logger,
@@ -88,6 +85,7 @@ export function fastifyLoggerOptions(): Record<string, unknown> {
             : first && typeof first === 'object'
               ? first
               : {}),
+          ...contextLogFields(),
         };
         // Legacy failures (including Fastify's own errors) must not silently bypass alerts.
         // Fixed fallback names cannot expose interpolated text or Error.message.

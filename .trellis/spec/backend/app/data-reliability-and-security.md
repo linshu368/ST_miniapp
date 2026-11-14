@@ -60,6 +60,38 @@ Pino 标量白名单与 Sentry 各出口过滤原始内容；短剧诊断必须�
 
 新客户端的 fetch 默认值、别名和 SDK transport 注入也要显式登记；新定时 worker 必须建立独立 runObservedJob 上下文。静态 AST guard 检查这些边界并在 CI 跑自测，但不替代异步上下文、终态和返回身份测试。计数字段使用明确的 Count/\_count 名称，不传整个业务对象来获得排障信息。
 
+## 场景：Railway 业务关联字段（2026-11-14）
+
+### 1. 范围与触发条件
+
+用户/会话/角色创作/短剧日志接入，以及修改 Pino 白名单、ALS、身份缓存或 Sentry 出口时适用；本地实现不代表线上已部署。
+
+### 2. 签名
+
+`bindBusinessContext(fields: BusinessFields): void` 补充当前请求；`withBusinessContext<T>(fields, run): T` 克隆并行业务作用域；`contextLogFields()` 展平安全字段供 Pino/observer 使用。没有新的公开 API/数据库对象/环境变量。
+
+### 3. 字段契约
+
+`user_id/session_id/character_id/creation_id/drama_id/video_id` 只接受 UUID 并规范为小写，legacy camelCase 输入统一为 snake_case。`telegram_user_id` 只由鉴权成功路径绑定为安全正整数字符串，不把 Telegram 数字混入 user_id。当前创作以角色卡为实体，creation_id=character_id；不要虚构 project_id。business_module 采用固定词表，与技术 module/operation 分开。HTTP 参数目标不等于 ownership 证明。
+
+根上下文各有独立关联容器，子 span 共享，HTTP started 后补入的身份可用于 raw finish/close 终态。不同对象的并行任务用 withBusinessContext，不能修改共享父容器。内部身份缓存和 inflight 的每个调用者必须在 await 后绑定，不能只在实际查询分支绑定。禁止为了日志额外查库；无映射身份时留空。只允许 Railway stdout 输出这些 ID；Sentry 的所有出口、告警和指标保持排除。
+
+### 4. 校验与错误矩阵
+
+非法/缺失 ID → 丢弃；鉴权失败 → 无身份字段；身份查询失败 → 不虚构 user_id；资源不存在/越权 → 可保留请求目标但结果为原拒绝；SSE 断开 → 已有关联字段+interrupted，一次终态。日志不新增重试或改变业务异常。
+
+### 5. 正常、基础与错误场景
+
+正常：按用户/会话找到 trace，再查 DB/provider 子 span。基础：短剧只需 Telegram 鉴权，不增加用户查库。错误：把用户 DTO 整体传 logger，或并行卡片处理共享一个可变对象。
+
+### 6. 必须验证
+
+既有 core/http/logger/user/auth/sentry 测试覆盖真实 JSON、共享 inflight/cache、不同请求/作用域隔离、延迟补字段、断开、非法 ID 和所有遥测出口。业务 route 测试保留协议；发布后按运行说明在 Railway 实测检索，真实 P95 仍按任务窗口记录。
+
+### 7. 错误与正确做法
+
+错误：只在 `resolveDbUserIdentity` 内绑定用户，等待同一 Promise 的其他请求丢身份。正确：`const user = await loadDbUserIdentity(tgUser); bindBusinessContext({ user_id: user.id });`。并行业务用 `withBusinessContext({ session_id }, () => run())`；日志白名单允许 ID 后仍应单独验证 Sentry beforeSendSpan，不仅验证 beforeSend。
+
 ## Scenario: 文字回复取消与残留恢复
 
 ### 1. Scope / Trigger

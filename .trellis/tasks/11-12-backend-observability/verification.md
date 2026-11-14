@@ -1,5 +1,24 @@
 # 本地验证记录（2026-11-13）
 
+## 业务关联字段补充（2026-11-14）
+
+按用户要求补充现有 PRD/design/implement/task 与 logging_integration，并修改代码。仅工作区变更，未暂存/提交/push/部署，未进行数据库操作或真实通知。原任务仍为 in_progress，线上 Railway/P95 验收项保持未完成。
+
+实现范围：`business_module`、内部 `user_id`、验签后的 `telegram_user_id`，以及 `session_id/character_id/creation_id/drama_id/video_id` 的受控输出。HTTP 模板绑定目标，鉴权/身份解析及现有业务边界补充，子 span 继承、生成作用域隔离，HTTP raw finish/close 读到后来取得的字段。缓存等待者和命中者分别绑定身份，不增加查询。legacy UUID 别名统一输出；Sentry 独立 span/log/event/breadcrumb 出口及告警通知排除新增身份。没有新公开 API、前端、依赖、数据库或部署配置。
+
+已完成检查：
+
+- Backend 全量：`pnpm --filter @miniapp/backend exec vitest run --exclude '**/*.integration.test.ts' --maxWorkers=2 --testTimeout=15000`，156 文件 / 1704 项通过。首次使用默认 5 秒时，取消路由动态导入用例超时并导致后续 mock 调用串扰；沿用本任务既有 15 秒预算后全量通过，没有为此修改业务代码或测试超时配置。
+- 最后增加创作首次保存失败与短剧 POST 校验/失败/默认选集断言后，重新运行 observability、logger、user、sentry、auth、drama-play、creator-characters 专项：10 文件 / 88 项通过。新增测试都在既有测试文件中；未重新跑无关全量用例。
+- `pnpm --filter @miniapp/backend typecheck`、全部变更 TS 的 ESLint、`pnpm lint:backend-logging`（313 运行时文件）通过。
+- `pnpm lint:complexity` 通过，既有基线 34 文件 / 104 函数，没有本次新增超标；其余未改文件的存量增长警告仍存在。
+- 变更文件 Prettier、`git diff --check`、当前任务 logging planning gate 与 module knowledge check 通过。模块载荷原有哈希与当前文件字节不一致；逐模块比对确认原正文一致、差异仅计划的 last_verified 元数据后刷新字节哈希，未覆盖上游正文。
+- 实际 Pino Writable JSON 验证 ID 未被过滤或 REDACTED、别名归一、当前身份优先、敏感字段不输出；回归覆盖真实签名成功/失败、身份查库失败、共享 inflight/cache、并发请求/实体作用域、独立根、晚补字段和真实 socket 断开的一次终态。通知仅通过事件 ID 关联，不携带用户/会话 ID。
+
+范围与限制：无需重跑 Frontend/Admin build 或跨包 consumer typecheck（未改 shared/API/部署）；Backend 没有独立 dist build。普通单测不访问集成数据库，真实供应商、支付、生产日志可见性和 Android/iOS/API P95 尚未验收，无样本保持 null。
+
+发布后人工步骤：在正确 Railway 环境部署后，复用本地验收流程的 @chat/@creator/@drama 场景，实际执行会话创建/发送/断开、创作保存失败、短剧 GET/POST 播放失败；按运行说明的用户/对象字段筛选，再按 trace_id 核对 HTTP→DB/provider→终态，检查匿名/401 不带身份、通知无身份。建议将这套查询断言纳入现有本地验收流程，模拟结果不能代替真实 Railway 和真机性能验证。发布后各 24 小时分别核验 Android/iOS 页面、普通 API、SSE 首包/完整生成，样本不足延长窗口。发现敏感字段、串号、容量或 P95 劣化时停止发布并回滚应用。
+
 基线 98fd5708，分支 feat_log_modules。未 push、未部署、未访问生产业务数据、未执行 migration，也未发送真实飞书通知。
 
 ## 已通过

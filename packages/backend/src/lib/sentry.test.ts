@@ -37,6 +37,28 @@ function request(): FastifyRequest {
 }
 
 describe('backend Sentry request correlation', () => {
+  it('does not export Railway business identifiers in tags, breadcrumbs, spans or logs', () => {
+    const id = '11111111-1111-4111-8111-111111111111';
+    const fields = {
+      user_id: id,
+      characterId: id,
+      session_id: id,
+      creation_id: id,
+      drama_id: id,
+      video_id: id,
+      telegram_user_id: '123456',
+    };
+    const event = safeSentryEvent({
+      tags: fields,
+      breadcrumbs: [{ data: fields }],
+      spans: [
+        { span_id: 'span', trace_id: 'trace', start_timestamp: 1, timestamp: 2, data: fields },
+      ],
+    });
+    const log = safeSentryLog({ level: 'info', message: 'test', attributes: fields });
+    expect(JSON.stringify({ event, log })).not.toContain(id);
+    expect(JSON.stringify({ event, log })).not.toContain('123456');
+  });
   it('isolates SDK failures from business execution', () => {
     vi.mocked(Sentry.logger.error).mockImplementationOnce(() => {
       throw new Error('sdk failure');

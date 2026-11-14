@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import {
   childContext,
+  contextLogFields,
   currentContext,
   newContext,
   withContext,
@@ -34,7 +35,7 @@ export function createObserver(sinks: readonly EventSink[]) {
       const projected = safeFields(fields);
       const record: ObservationEvent = Object.freeze({
         ...projected,
-        ...(currentContext() ?? newContext()),
+        ...contextLogFields(currentContext() ?? newContext()),
         schema_version: 1,
         event_id: randomUUID(),
         event: safeName(event),

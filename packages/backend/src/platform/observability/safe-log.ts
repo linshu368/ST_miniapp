@@ -1,4 +1,5 @@
 import { safeError, safeName } from './events.js';
+import { safeBusinessFields, withoutBusinessIds } from './business-context.js';
 import {
   DramaTimingReportSchema,
   dramaTimingLogFields,
@@ -86,7 +87,8 @@ const BOOLEAN_FIELDS = new Set([
 export function safeLogAttributes(
   record: Record<string, unknown>
 ): Record<string, string | number | boolean> {
-  const projected = safeLogRecord(record);
+  // Used by Sentry beforeSendSpan and log helpers as well as the final event scrubber.
+  const projected = withoutBusinessIds(safeLogRecord(record));
   const result: Record<string, string | number | boolean> = {};
   for (const [key, value] of Object.entries(projected)) {
     if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean')
@@ -100,7 +102,7 @@ export function safeLogRecord(record: Record<string, unknown>): Record<string, u
   const validated = (record as { [VALIDATED_DRAMA]?: ReturnType<typeof dramaTimingLogFields> })[
     VALIDATED_DRAMA
   ];
-  const result: Record<string, unknown> = { ...validated };
+  const result: Record<string, unknown> = { ...validated, ...safeBusinessFields(record) };
   for (const [key, value] of Object.entries(record)) {
     if (TEXT_FIELDS.has(key) && typeof value === 'string') result[key] = safeName(value);
     else if (

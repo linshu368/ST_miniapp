@@ -23,3 +23,15 @@ HTTP 根 hook 覆盖提前响应与连接中断。显式包装既有客户端，
 ## 可验证性
 
 用内存 sink、Fastify inject/真实 socket、mock transport 验证并发、脱敏、失败隔离、断开和 SSE。支付运行既有幂等/冲突测试。告警关闭时不解析规则或触发网络，开启时验证规则与失败路径。真实 Railway 查询与移动端 P95 留作发布后人工验证，不用本地模拟代替。
+
+## 2026-11-14 业务关联增量设计（用户授权实施）
+
+复用调研见 `research/business-correlation-2026-11-14.md`。复用 ALS、observer、Pino mixin/白名单、鉴权、用户身份缓存及现有业务校验点；不新增 shared API、数据库函数、查询、前端 hooks 或组件。新增一个内部类型化字段投影文件和一个 HTTP 路由映射文件，避免在各业务复制字段清洗。
+
+链路 context 保持不可变；每个根上下文持有独立的有界关联字段容器，子 span 共享本次业务关联。身份在鉴权/内部用户映射成功后补入，使早已创建的 HTTP operation 在 finish/close 时也能读取。共享用户 inflight Promise 的每个调用者在 await 后绑定自己的上下文，不能只在生产该 Promise 的分支绑定。并行处理不同业务实体时使用克隆关联容器的 `withBusinessContext` 作用域，job 根容器不继承 HTTP 身份。
+
+HTTP 路由模板显式识别 conversations、characters、creator、dramas，参数 ID 只接受 UUID；不遍历请求体猜测任意 id。对象 ID 表示请求目标，不能作为 ownership 证据。POST 短剧播放在校验后绑定剧/集；角色创建在已有返回/校验点补充卡 ID；会话 ownership 通过后补角色 ID。通用 transport 的 module 仍表示 http/db/provider，另以 business_module 表示来源业务。
+
+内部 UUID 的历史 camelCase 名称归一为 snake_case，非法值直接丢弃；telegram_user_id 只从鉴权上下文写入，禁止将任意 legacy userId 数字解释成内部用户。Sentry 复用过滤器时显式去掉本次业务关联字段；告警继续窄投影，指标不接入这些高基数字段。
+
+可靠性：仅增加固定字段内存投影，无新超时/重试/事务/补偿/限流路径；不改变原业务幂等与错误。字段数量和长度固定，输出仍走既有失败隔离。不存在的 ID 留空，不为补日志查库。风险是并发串号、实体语义混淆和出口泄漏，须用真实 JSON 与并发测试锁定。兼容为日志增量字段，无迁移/旧数据回填；应用部署后才生效，回滚应用即可恢复。停止条件沿用敏感字段/容量/P95 劣化；Android/iOS/API 继续按原任务窗口核验，无样本保持 null。

@@ -3,6 +3,7 @@ import { createHmac, timingSafeEqual } from 'crypto';
 import { config } from '../platform/config.js';
 import { BACKEND_ERROR_STATUS, fail } from '@miniapp/shared';
 import { observation } from '../platform/observability/runtime.js';
+import { bindBusinessContext } from '../platform/observability/context.js';
 
 export interface TelegramUser {
   id: number;
@@ -113,6 +114,7 @@ export async function requireTelegramAuth(request: FastifyRequest, reply: Fastif
   ) {
     request.log.debug({ event: 'auth.development_bypass' }, 'Development authentication bypass');
     request.user = { id: 99999, first_name: 'Dev', last_name: 'User', username: 'dev_bypass' };
+    bindBusinessContext({ telegram_user_id: String(request.user.id) });
     return;
   }
 
@@ -139,6 +141,7 @@ export async function requireTelegramAuth(request: FastifyRequest, reply: Fastif
     const user = verifyTelegramInitData(initData);
     // 将 user 挂载到 request 上，需配合 type augmentation
     request.user = user;
+    bindBusinessContext({ telegram_user_id: String(user.id) });
   } catch (error) {
     request.log.warn({ err: error }, 'Telegram auth failed');
     return reply.status(401).send({

@@ -75,7 +75,8 @@
       "mode": "required",
       "scope": ["Backend HTTP, providers, payment, scheduled jobs and logging planning/CI tools"],
       "integration_points": [
-        "Reuse platform/observability, safe Pino output, clientFetch and runObservedJob; no additional storage"
+        "Reuse platform/observability, safe Pino output, clientFetch and runObservedJob; no additional storage",
+        "2026-11-14: Reuse auth, user identity cache, HTTP route templates and verified business records to bind user/session/character/creation/drama/video correlation; no extra DB queries"
       ],
       "events": [
         {
@@ -89,7 +90,15 @@
             "duration_ms",
             "request_id",
             "trace_id",
-            "span_id"
+            "span_id",
+            "business_module",
+            "user_id",
+            "telegram_user_id",
+            "session_id",
+            "character_id",
+            "creation_id",
+            "drama_id",
+            "video_id"
           ]
         },
         {
@@ -101,16 +110,18 @@
         }
       ],
       "failure_paths": [
-        "HTTP 401/403/409/429/5xx and disconnect; provider timeout; missing-event errors; concurrent jobs; disabled/failed notification"
+        "HTTP 401/403/409/429/5xx and disconnect; provider timeout; missing-event errors; concurrent jobs; disabled/failed notification",
+        "Identity lookup failure, invalid IDs, shared identity inflight waiters, concurrent resource scopes, late HTTP terminal enrichment and safe output projection"
       ],
-      "correlation": "Reuse request ALS and isolated job roots; transport child spans; one terminal event per operation.",
-      "redaction": "Safe fields and child bindings only; bounded DB/network error codes and cause; omit raw error messages, personal data, bodies, URLs and credentials.",
+      "correlation": "Reuse request ALS and isolated job roots; transport child spans; one terminal event per operation. Per-root bounded business correlation is enriched after authentication and user resolution; independent business scopes clone the correlation fields. Creator creation_id equals character_id in the existing model.",
+      "redaction": "Allow validated internal UUIDs and authenticated Telegram identifier only in Railway JSON; no names/contact data, raw errors, bodies, URLs, credentials or initData. Exclude new business identifiers from Sentry, alert notifications and metric labels. Missing or invalid IDs are omitted.",
       "alerting": "LOG_ALERTING_ENABLED remains off by default; on uses existing direct bounded rules with internal/public codes, no persistence or new deployment resources.",
       "verification": [
         "Backend full credential-free tests plus logger/http/alert/free-zone regression tests",
         "Backend typecheck, ESLint, complexity and AST logging guard",
         "Python planning gate tests including pending/missing declaration, state isolation and CI selection",
-        "After release inspect Railway correlation and actual notifications; record real Android/iOS/API P95 without inventing samples"
+        "After release inspect Railway correlation and actual notifications; record real Android/iOS/API P95 without inventing samples",
+        "Assert physical Pino JSON contains canonical user/session/character/creation/drama/video IDs; test auth, identity cache/inflight, HTTP failures/SSE, concurrent scopes and Sentry/alert exclusion"
       ]
     }
   }

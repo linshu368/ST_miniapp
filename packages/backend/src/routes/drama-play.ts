@@ -2,6 +2,7 @@
 // 两者只负责把参数解析成 { dramaId, options }，签名、计时和视频选源都在这里。
 
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import { bindBusinessContext } from '../platform/observability/context.js';
 import { ok, fail } from '@miniapp/shared';
 import type { DramaDelivery, GetDramaPlaybackData } from '@miniapp/shared';
 import { playableVideos } from '../features/drama/assemble.js';
@@ -116,12 +117,15 @@ export function createDramaPlayHandler({
       return reply.status(400).send(fail('BAD_REQUEST', '视频 ID 无效'));
     }
 
+    bindBusinessContext({ business_module: 'drama', drama_id: id, video_id: videoId });
+
     const drama = await measure(request, 'db_read', () => repo.getDramaForPlayback(id));
     if (!drama) return reply.status(404).send(fail('NOT_FOUND', '短剧不存在'));
 
     // 指定了就必须属于这部剧；不属于和不存在一律 404，不泄露该视频是否存在
     const playable = await measure(request, 'assemble', () => playableVideos(drama));
     const selected = videoId ? drama.videos.find((v) => v.id === videoId) : playable[0];
+    if (selected) bindBusinessContext({ video_id: selected.id });
     if (videoId && !selected) {
       return reply.status(404).send(fail('NOT_FOUND', '视频不存在'));
     }

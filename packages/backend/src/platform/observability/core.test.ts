@@ -1,11 +1,65 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createObserver } from './core.js';
-import { currentContext, newContext, requestId, withContext } from './context.js';
+import {
+  bindBusinessContext,
+  currentContext,
+  newContext,
+  requestId,
+  withBusinessContext,
+  withContext,
+} from './context.js';
 import { safeError, safeFields, type ObservationEvent } from './events.js';
 import { finishBackgroundOperation, runObservedJob } from './jobs.js';
 import { observation } from './runtime.js';
 
 describe('observation execution boundaries', () => {
+  it('enriches an existing terminal and isolates parallel business scopes and job roots', async () => {
+    const records: ObservationEvent[] = [];
+    const observer = createObserver([
+      (event) => {
+        records.push(event);
+      },
+    ]);
+    const userId = '11111111-1111-4111-8111-111111111111';
+    const sessions = [
+      '22222222-2222-4222-8222-222222222222',
+      '33333333-3333-4333-8333-333333333333',
+    ];
+    const root = observer.start('http.request', {}, newContext());
+    await withContext(root.context, async () => {
+      bindBusinessContext({ user_id: userId, business_module: 'chat' });
+      await Promise.all(
+        sessions.map((session_id) =>
+          withBusinessContext({ session_id }, () =>
+            observer.observe('provider.generate', async () => {
+              await Promise.resolve();
+              expect(currentContext()?.business?.session_id).toBe(session_id);
+              return session_id;
+            })
+          )
+        )
+      );
+      expect(currentContext()?.business).toEqual({ user_id: userId, business_module: 'chat' });
+      withContext(newContext(), () => {
+        expect(currentContext()?.business).toEqual({});
+        observer.emit('job.finished', 'job.test');
+      });
+    });
+    root.finish({ outcome: 'succeeded' });
+    const terminal = records.at(-1)!;
+    expect(terminal).toMatchObject({ user_id: userId, business_module: 'chat' });
+    expect(terminal).not.toHaveProperty('session_id');
+    expect(terminal).not.toHaveProperty('business');
+    for (const session_id of sessions) {
+      const events = records.filter((event) => event.session_id === session_id);
+      expect(events).toHaveLength(2);
+      expect(
+        events.every((event) => event.user_id === userId && event.trace_id === terminal.trace_id)
+      ).toBe(true);
+    }
+    expect(records.find((event) => event.event === 'job.finished')).not.toHaveProperty('user_id');
+    expect(currentContext()).toBeUndefined();
+  });
   it('isolates simultaneous jobs and uses their reported result instead of resolved void', async () => {
     const records: ObservationEvent[] = [];
     const observer = createObserver([
