@@ -150,10 +150,7 @@ export class ChatSessionRepository {
       .maybeSingle();
 
     if (error) throw new Error(`查询空会话失败：${error.message}`);
-    const session = (data as ChatSessionRow | null) ?? null;
-    if (session)
-      bindBusinessContext({ session_id: session.id, character_id: session.character_id });
-    return session;
+    return (data as ChatSessionRow | null) ?? null;
   }
 
   private async insertSession(
@@ -253,7 +250,10 @@ export class ChatSessionRepository {
       .maybeSingle();
 
     if (error) throw new Error(`查询会话失败：${error.message}`);
-    return (data as ChatSessionRow | null) ?? null;
+    const session = (data as ChatSessionRow | null) ?? null;
+    if (session)
+      bindBusinessContext({ session_id: session.id, character_id: session.character_id });
+    return session;
   }
 
   async requireSession(sessionId: string, userId: string): Promise<ChatSessionRow> {

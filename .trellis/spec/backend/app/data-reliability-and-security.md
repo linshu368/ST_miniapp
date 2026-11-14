@@ -44,6 +44,8 @@ HTTP 根级 `registerHttpObservation` 在 CORS/鉴权之前运行，使用回调
 
 出站客户端在原模块声明 `clientFetch(operation, provider)`，只包装该客户端的 fetch；`observedFetch` 可传入已有 undici/代理实现。记录到 response_headers，不读取正文、不改 signal/timeout/redirect、不添加重试。非成功 HTTP 是 attempt 失败，不等于业务失败；写入抛错为 outcome_known=false。Supabase 从既有 observedSupabaseFetch 接入（含非 REST 请求）；Prisma 从 measureDbOperation 接入 model/raw/unsafe raw。SDK 返回的业务错误仍由 repository/业务边界判断，禁止把 HTTP 200 当作 RPC 业务成功。
 
+共享与 dedicated Prisma 都必须应用 `applyPrismaObservation`，保留原单连接/transaction 语义；pg advisory lease 用 observer 包装原 connect/lock/unlock/close。新增 new PrismaClient/createClient/pg 入口时独立核对接线，AST fetch 检查不会发现独立 DB 客户端漏接。不新增日志 SQL 或查询参数；锁竞争未取得是业务 skipped，不是数据库执行失败。
+
 生成入口 `execute` 用独立子操作记录安全结果，不输出正文；原执行/计费及 hooks 不变。`createReplyStreamSink` 在 open 建立交付操作，流内 error 和 done 提供应用结果；断连优先记录 interrupted，后续后台生成成功不能改写已中断的交付。`observeGenerationAttempt` 与 `observeBackgroundJob` 的基础事件在可选工程遥测开关之前输出。工程 OTLP exporter 拆至 engineering-telemetry-exporter，原指标口径及出口配置不变。
 
 - 使用现有 pino、`requestLogger`；原始异常写 `{ err }`。Sentry 先脱敏再附 context。
@@ -73,6 +75,8 @@ Pino 标量白名单与 Sentry 各出口过滤原始内容；短剧诊断必须�
 ### 3. 字段契约
 
 `user_id/session_id/character_id/creation_id/drama_id/video_id` 只接受 UUID 并规范为小写，legacy camelCase 输入统一为 snake_case。`telegram_user_id` 只由鉴权成功路径绑定为安全正整数字符串，不把 Telegram 数字混入 user_id。当前创作以角色卡为实体，creation_id=character_id；不要虚构 project_id。business_module 采用固定词表，与技术 module/operation 分开。HTTP 参数目标不等于 ownership 证明。
+
+补充审计：影像创作的 `image_conversation_id`（兼容 legacy conversationId）与聊天 session_id 分开，`attempt_id/work_id/artifact_id/message_id/audio_id/image_id` 使用同样 UUID 投影和出口排除。路由映射同时识别 :id 与 :sessionId；getSession ownership 读取成功后补角色，而不是仅在空会话复用分支绑定。图片/影像/记忆 worker 逐实体克隆上下文，支付语义事件从已有可信事件取内部用户，群 webhook 验 secret 和身份后绑定，不增加查库。业务模块还覆盖 growth/community/support/wallet/vip/free_zone。
 
 根上下文各有独立关联容器，子 span 共享，HTTP started 后补入的身份可用于 raw finish/close 终态。不同对象的并行任务用 withBusinessContext，不能修改共享父容器。内部身份缓存和 inflight 的每个调用者必须在 await 后绑定，不能只在实际查询分支绑定。禁止为了日志额外查库；无映射身份时留空。只允许 Railway stdout 输出这些 ID；Sentry 的所有出口、告警和指标保持排除。
 

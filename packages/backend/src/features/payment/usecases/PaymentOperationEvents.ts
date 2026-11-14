@@ -1,6 +1,7 @@
 import type { SettlementLogger } from './PaymentSettlement.js';
 import { createHash } from 'node:crypto';
 import { observation } from '../../../platform/observability/runtime.js';
+import { safeBusinessFields } from '../../../platform/observability/business-context.js';
 import { observationOutcome } from '../../../platform/observability/outcomes.js';
 import type { PaymentOperationEventInput } from '../../../infrastructure/repositories/MiniappPaymentOrderRepository.js';
 
@@ -19,6 +20,8 @@ export function recordPaymentOperationEvent(
   event: PaymentOperationEventInput
 ): void {
   observation.emit('payment.operation', `payment.${event.event_kind}`, {
+    business_module: 'payment',
+    ...safeBusinessFields({ user_id: event.user_id }),
     stage: event.stage,
     outcome:
       event.outcome === 'started'

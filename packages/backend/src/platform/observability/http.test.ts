@@ -19,6 +19,71 @@ function setup() {
 }
 
 describe('HTTP observation', () => {
+  it.each([
+    ['/api/v1/conversations/:sessionId/messages/:messageId/voice', 'voice', 'session_id'],
+    [
+      '/api/v1/conversations/:sessionId/messages/:messageId/image-description',
+      'image',
+      'session_id',
+    ],
+    ['/api/image-plaza/conversations/:conversationId/attempts', 'image', 'image_conversation_id'],
+    ['/api/image-plaza/attempts/:attemptId', 'image', 'attempt_id'],
+    ['/api/image-plaza/works/:workId', 'image', 'work_id'],
+    ['/api/growth/prompts', 'growth', undefined],
+    ['/api/v1/drama-survey', 'growth', undefined],
+    ['/api/telegram/community-webhook', 'community', undefined],
+    ['/api/payment/orders/:id', 'payment', undefined],
+  ] as const)('correlates the explicit target of %s', async (route, business_module, field) => {
+    const { app, records } = setup();
+    const id = '11111111-1111-4111-8111-111111111111';
+    app.get(route, async () => ({ success: false }));
+    try {
+      await app.inject(route.replace(/:[A-Za-z]+/g, id));
+      expect(records.at(-1)).toMatchObject({ business_module });
+      if (field) expect(records.at(-1)).toHaveProperty(field, id);
+      if (business_module === 'image' && field !== 'session_id')
+        expect(records.at(-1)).not.toHaveProperty('session_id');
+      if (route.includes(':messageId')) expect(records.at(-1)).toHaveProperty('message_id', id);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('projects only named image request/response IDs and never infers user identity from payloads', async () => {
+    const { app, records } = setup();
+    const id = '11111111-1111-4111-8111-111111111111';
+    app.post('/api/image-plaza/share', async () => ({
+      success: true,
+      data: { work: { id }, user_id: id, prompt: 'private' },
+    }));
+    app.post('/api/image-plaza/conversations', async () => ({
+      success: true,
+      data: { conversation: { id, messages: ['private'] } },
+    }));
+    try {
+      await app.inject({
+        method: 'POST',
+        url: '/api/image-plaza/share',
+        payload: { artifact_id: id, user_id: id, text: 'private' },
+      });
+      expect(records.at(-1)).toMatchObject({
+        business_module: 'image',
+        artifact_id: id,
+        work_id: id,
+      });
+      expect(records.at(-1)).not.toHaveProperty('user_id');
+      await app.inject({
+        method: 'POST',
+        url: '/api/image-plaza/conversations',
+        payload: { source_work_id: id },
+      });
+      expect(records.at(-1)).toMatchObject({ image_conversation_id: id, work_id: id });
+      expect(records.at(-1)).not.toHaveProperty('session_id');
+      expect(JSON.stringify(records)).not.toContain('private');
+    } finally {
+      await app.close();
+    }
+  });
   it('preserves business targets on failures and later user identity on concurrent terminals', async () => {
     const { app, records, observer } = setup();
     const first = '11111111-1111-4111-8111-111111111111';

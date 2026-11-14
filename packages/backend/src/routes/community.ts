@@ -9,6 +9,7 @@ import {
 import { config } from '../platform/config.js';
 import { requireTelegramAuth } from '../middleware/auth.js';
 import { getOrCreateDbUser } from '../lib/user.js';
+import { bindBusinessContext } from '../platform/observability/context.js';
 import { getDomainDb } from '../lib/supabase.js';
 import { readOfficialCommunityConfig } from '../features/community/config.js';
 import { hasEarlierEligibleJoin, readCommunityClaimFacts } from '../features/community/facts.js';
@@ -165,6 +166,7 @@ function registerCommunityWebhook(app: FastifyInstance) {
       Number.isNaN(occurredAt.getTime())
     )
       return reply.send(ok({ ignored: true }));
+    bindBusinessContext({ telegram_user_id: String(telegramUserId) });
     const community = await readOfficialCommunityConfig();
     const oldStatus = event?.old_chat_member?.status ?? 'unknown';
     const newStatus = event?.new_chat_member?.status ?? 'unknown';
@@ -272,6 +274,7 @@ async function settleEligibleJoin(
     return { matched: false };
   }
   let result: VerifyCommunityMembershipData;
+  bindBusinessContext({ user_id: user.data.id });
   try {
     result = await grant(
       user.data.id,

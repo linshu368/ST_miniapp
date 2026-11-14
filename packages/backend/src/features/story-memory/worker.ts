@@ -1,4 +1,5 @@
 import { runObservedJob } from '../../platform/observability/jobs.js';
+import { withBusinessContext } from '../../platform/observability/context.js';
 /**
  * 会话长期记忆的后台 worker。进程内定时领取，多副本靠 SKIP LOCKED 与租约互斥。
  * 任何失败只影响记忆本身：旧版本保留，任务按退避重试。
@@ -150,7 +151,15 @@ async function processClaimedJobs(
 
   let outcome: 'success' | 'partial' = 'success';
   for (const job of jobs) {
-    const ok = await processJob({ log, repository, workerId, config, job, inputs });
+    const ok = await withBusinessContext(
+      {
+        business_module: 'chat',
+        user_id: job.userId,
+        session_id: job.sessionId,
+        character_id: job.characterId,
+      },
+      () => processJob({ log, repository, workerId, config, job, inputs })
+    );
     if (!ok) outcome = 'partial';
   }
   return outcome;

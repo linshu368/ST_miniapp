@@ -8,10 +8,31 @@ export interface BusinessFields {
   creation_id?: string;
   drama_id?: string;
   video_id?: string;
+  image_conversation_id?: string;
+  attempt_id?: string;
+  work_id?: string;
+  artifact_id?: string;
+  message_id?: string;
+  audio_id?: string;
+  image_id?: string;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const MODULES = new Set(['chat', 'character', 'creator', 'drama', 'image', 'voice', 'payment']);
+const MODULES = new Set([
+  'chat',
+  'character',
+  'creator',
+  'drama',
+  'image',
+  'voice',
+  'payment',
+  'growth',
+  'community',
+  'support',
+  'wallet',
+  'vip',
+  'free_zone',
+]);
 const ID_ALIASES = {
   user_id: 'userId',
   session_id: 'sessionId',
@@ -19,6 +40,13 @@ const ID_ALIASES = {
   creation_id: 'creationId',
   drama_id: 'dramaId',
   video_id: 'videoId',
+  image_conversation_id: 'conversationId',
+  attempt_id: 'attemptId',
+  work_id: 'workId',
+  artifact_id: 'artifactId',
+  message_id: 'messageId',
+  audio_id: 'audioId',
+  image_id: 'imageId',
 } as const;
 
 export function safeBusinessFields(record: object): BusinessFields {

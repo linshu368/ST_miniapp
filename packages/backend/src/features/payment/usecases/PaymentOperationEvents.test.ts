@@ -10,6 +10,31 @@ function log() {
 }
 
 describe('recordPaymentOperationEvent', () => {
+  it('correlates a verified internal user from a payment event outside an HTTP request', () => {
+    const spy = vi.spyOn(observation, 'emit');
+    const user_id = '11111111-1111-4111-8111-111111111111';
+    try {
+      recordPaymentOperationEvent(undefined, log().logger, {
+        event_key: 'private-key',
+        order_id: 'private-order',
+        user_id,
+        event_kind: 'settlement',
+        stage: 'settlement',
+        outcome: 'succeeded',
+        source: 'backend',
+        trigger: 'settlement',
+        occurred_at: '2026-11-14T00:00:00Z',
+      });
+      expect(spy).toHaveBeenCalledWith(
+        'payment.operation',
+        'payment.settlement',
+        expect.objectContaining({ user_id, business_module: 'payment' })
+      );
+      expect(JSON.stringify(spy.mock.calls)).not.toContain('private');
+    } finally {
+      spy.mockRestore();
+    }
+  });
   it('emits safe payment facts without requiring a side-channel database recorder', () => {
     const spy = vi.spyOn(observation, 'emit');
     try {

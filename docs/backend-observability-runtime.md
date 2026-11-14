@@ -20,15 +20,18 @@ DB 和显式第三方 fetch 记录一次 transport attempt，到响应头为止�
 
 以下字段在有可靠来源时进入 Railway 的单行 stdout JSON；缺失不补零、不伪造。`module/operation` 继续描述技术操作，`business_module` 表示来源业务，所以 DB/provider 日志可以同时关联聊天或创作。
 
-| 字段                    | 含义与来源                                                                                                                                         |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `business_module`       | HTTP 模板识别的 `chat/character/creator/drama`；内部作用域还支持 `image/voice/payment`，不代表这些模块所有入口已完成自动映射。                     |
-| `user_id`               | `getOrCreateDbUser` / `getOrCreateDbUserRecord` 成功解析的内部 UUID；缓存命中及共享查询等待者各自绑定。生成作用域也从已有 GenerationRequest 绑定。 |
-| `telegram_user_id`      | Telegram 验签成功的用户 ID，十进制字符串。短剧浏览/播放没有内部用户查询，只有此字段；不为日志额外查库。开发 bypass 仅非生产保留虚构身份。          |
-| `session_id`            | 聊天会话 UUID；不是登录 session/token，也不是客户端播放诊断会话。                                                                                  |
-| `character_id`          | 角色卡 UUID；角色/创作路由目标、创建会话参数或 ownership 校验后会话记录中的角色。                                                                  |
-| `creation_id`           | 当前角色创作操作中等于 `character_id`；现有 `character_creations` 使用角色卡主键，没有独立创作项目 ID。                                            |
-| `drama_id` / `video_id` | 短剧及单集 UUID；GET 剧目标来自路由，POST 播放在参数校验后补充，默认选集后补实际视频 ID。                                                          |
+| 字段                             | 含义与来源                                                                                                                                            |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `business_module`                | HTTP 模板识别 `chat/character/creator/drama/image/voice/payment/growth/community/support/wallet/vip/free_zone`；DB/供应商的技术 module 保持自身含义。 |
+| `user_id`                        | `getOrCreateDbUser` / `getOrCreateDbUserRecord` 成功解析的内部 UUID；缓存命中及共享查询等待者各自绑定。生成作用域也从已有 GenerationRequest 绑定。    |
+| `telegram_user_id`               | Telegram 验签成功的用户 ID，十进制字符串。短剧浏览/播放没有内部用户查询，只有此字段；不为日志额外查库。开发 bypass 仅非生产保留虚构身份。             |
+| `session_id`                     | 聊天会话 UUID；不是登录 session/token，也不是客户端播放诊断会话。                                                                                     |
+| `character_id`                   | 角色卡 UUID；角色/创作路由目标、创建会话参数或 ownership 校验后会话记录中的角色。                                                                     |
+| `creation_id`                    | 当前角色创作操作中等于 `character_id`；现有 `character_creations` 使用角色卡主键，没有独立创作项目 ID。                                               |
+| `drama_id` / `video_id`          | 短剧及单集 UUID；GET 剧目标来自路由，POST 播放在参数校验后补充，默认选集后补实际视频 ID。                                                             |
+| `image_conversation_id`          | 影像创作会话 UUID；对应 image-plaza 的 conversationId，和聊天 session_id 分开。创建/读取/生成响应仅提取明确 DTO 的标识。                              |
+| `attempt_id/work_id/artifact_id` | 影像生成任务、作品、素材 UUID；来自明确路由、分享/来源作品参数或服务端成功结果，不读取正文。                                                          |
+| `message_id/audio_id/image_id`   | 聊天消息、语音任务、图片任务 UUID；已知消息路由或业务/worker 记录。                                                                                   |
 
 对象 ID 表示操作目标，不代表资源存在或用户有权访问；404/403 等仍按结果判断。身份未验证的 401 日志没有用户标识。HTTP started 发生于鉴权前，通过相同 trace 可找到之后带身份的终态；没有取得内部用户映射的失败路径只保留已知字段。原日志的 `userId/sessionId/characterId/creationId/dramaId/videoId` UUID 输入归一到 snake_case；数字 userId 不会被误当内部 UUID。日志没有统一 `project_id`，避免把角色、创作、短剧混成同一种实体。
 
@@ -45,11 +48,22 @@ DB 和显式第三方 fetch 记录一次 transport attempt，到响应头为止�
 @character_id:<角色卡UUID>
 @creation_id:<角色卡UUID> AND @business_module:creator
 @drama_id:<短剧UUID> AND @video_id:<单集UUID>
+@image_conversation_id:<影像创作会话UUID>
+@attempt_id:<影像生成任务UUID>
+@work_id:<作品UUID>
 @business_module:chat AND (@level:error OR @level:warn)
 @trace_id:<链路ID>
 ```
 
 先用用户/对象 ID 找到异常事件，再复制 trace_id 查看此前身份尚未解析的 HTTP/DB 日志及后续生成/供应商/业务终态；按 span_id 区分具体操作。这些是应用 JSON 字段，不是 Railway 边缘 HTTP 日志的 requestId。自定义属性与 AND/OR 查询语法依据 [Railway 官方日志文档](https://docs.railway.com/observability/logs)（2026-11-14 核对）。本地 JSON 测试不代表已在生产检索成功，发布后须逐项实测。
+
+### 合并审计补充
+
+普通 `ChatSessionRepository.getSession` 在已有 ownership 查询成功后绑定角色/会话，不再仅覆盖空会话复用。语音/图片路由的 :sessionId/:messageId 也映射；影像/图片/长期记忆 worker 逐实体使用独立业务作用域，批量任务的根终态不带最后一个实体的身份。支付语义事件可记录已有可信内部 user_id，订单原值继续只用摘要；群 webhook 在验证 secret/身份后使用已有查询补用户。
+
+群欢迎语复用 clientFetch 与原 5 秒超时、不重试。transport succeeded 只代表 HTTP 成功，Telegram payload.ok=false 另有 community.welcome.failed；异步欢迎失败不改变原奖励或 webhook ACK。增长资格用 community_prompt/vip_prompt 布尔，事件使用 prompt_kind/action/recorded，保留 biz/sys kind；不把 prompt 数组或问卷正文加入白名单。问卷完成/失败有稳定 drama_survey 事件。
+
+共享和大厅专用 Prisma 复用 `applyPrismaObservation` 的 model/raw/unsafe raw 扩展；专用连接仍为单连接锁持有者。pg advisory lease 的 connect/lock/unlock/close 使用既有 observer，记录有界操作结果、耗时和链路，不输出 SQL、参数或连接地址。不新增数据库调用、池或锁，也不改变任务超时/清理顺序。
 
 新增调用使用 observation 的字段白名单；遗留 Pino 同样丢弃未登记的 DTO/正文/个人信息，字符串插值不作为输出消息。传入原始 `{ err }`，序列化只保留受控错误类型和源码文件/行号，去掉 message、绝对路径和 SDK 原始内容。业务原因必须显式提供稳定 `error_code`，不能从私密错误文本中猜测。
 

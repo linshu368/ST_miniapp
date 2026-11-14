@@ -121,6 +121,18 @@ pnpm lint:backend-logging
 
 规划工具回归须覆盖：创建默认 pending、required/N/A 正常路径、缺失/占位/非法内容拒绝、旧任务及有/无会话启动前无副作用、CI 文件选择与不可用基线。功能任务仍按影响范围运行 typecheck、既有测试和适用的构建/人工验收。日志验证应覆盖失败终态、原结果/错误不变、敏感值不输出及关闭告警无处理；不能以结构校验代替。
 
+## 2026-11-14 接入与合并审查要求
+
+声明完整只是第一步；实施/评审必须核对以下证据：
+
+1. **来源与语义**：user_id 来自既有内部映射，telegram_user_id 来自已验签请求或已验证 webhook；对象目标可由固定路由/已知 DTO 的 UUID 字段识别，不代表 ownership 成功。聊天 session_id 与影像 image_conversation_id 分开；当前角色 creation_id 等于 character_id。禁止为了日志加查询。
+2. **真实输出**：新业务事件使用稳定 event 和 biz/sys kind，结果摘要用白名单内有界标量。字段从 producer → EventFields/ALS → Pino formatter/serializer/redact → stdout 全链验证；调用点传字段不等于 Railway 实际能看到。数组/DTO 不放宽为任意输出，优先固定计数/布尔。
+3. **并发与完成**：请求/任务根隔离；批量工作逐实体 withBusinessContext，子 span 继承明确的用户/对象。缓存命中、共享 inflight 等待者和已有会话读取必须各自绑定；HTTP finish/close/超时仍一次终态。后台 void resolved、HTTP 200、Telegram payload.ok=false 不能混为业务成功。
+4. **出口与故障**：新增 fetch/SDK 使用既有 transport，独立 Prisma/Supabase/pg 客户端也逐一核对接线，不改变连接/锁/事务、timeout/signal/重试。原始错误以 { err } 安全投影；若 HTTP 200 内部业务失败，已有业务边界另报。新高基数 ID 不进入 Sentry 的独立 span/log/event/breadcrumb、指标标签或通知正文；离线报表 CLI 的 stdout 协议是明确例外。
+5. **合并审查**：上游新增/变更的入口、定时任务、SDK、任务规划和字段白名单必须重查。AST guard 只能检查已定义的语法边界，不能证明语义覆盖；尤其不能用 mock route 注入字段代替真实 repository 绑定测试。缺失日志规划的触及任务应补声明，不能关闭门禁或修改上游性能样本。
+
+验收复用既有测试，并按风险验证实际 JSON、失败/断开、原结果不变和并发隔离；跨包合并运行 shared tests、所有消费者 typecheck 与适用 build。部署后用正确环境的已知用户/对象查 Railway，再用 trace 关联身份解析前事件；无线上样本不宣称检索/P95 已通过。
+
 ## 7. 错误与正确做法
 
 错误：`{"schema_version":1,"mode":"not_applicable","reason":"已有 logger，本次不新增日志"}`。结构检查无法判断这种理由的真实性，但功能规划评审必须拒绝。

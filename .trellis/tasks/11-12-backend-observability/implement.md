@@ -1,5 +1,15 @@
 # 执行计划
 
+## 合并适配与日志完整性审计
+
+1. 检查五个冲突的 base/ours/theirs，合并上游文案及新增 shared export，保留日志分支错误契约和拆分结果；复杂度基线只保留实际仍存在的超标项。
+2. 运行日志 AST 门禁，核对上游新增/变更的 HTTP、SDK、后台和业务日志；补 transport、被投影丢弃的必要标量、业务模块与正确对象 ID；复用既有 schema/授权点，无新业务查询。
+   补查 createClient/new PrismaClient/pg 的实际接缝：复用共享 Prisma 扩展到 dedicated client，pg lease 包装原 connect/query/end；拆小已超标排序方法并回归锁/清理顺序，无新增 SQL 或重试。
+3. 按审计结果扩展现有 welcome/growth/http/logger/core 等回归文件，核对 Telegram payload 失败、HTTP 非成功、并发上下文、投影/通知安全；合并消费者覆盖 shared 与 SSE 流错误兼容。
+   会话字段绑定位置错误涉及身份归属，允许新建一个纯 mock repository 回归文件，直接调用真实 getSession/requireSession 验证 ownership 条件和字段，防止 route mock 掩盖再次错绑。
+4. 补齐新增任务 logging_integration、后端/前端/shared 入口与 implement/check 规范的接入检查；同步运行说明、验收记录和模块知识载荷。
+5. 运行 shared tests、全仓 typecheck、backend 全量无凭证测试（2 workers/15 秒）、Frontend 流式测试、Frontend/Admin build、变更文件 lint/format、日志/复杂度/规划门禁与 diff 检查。记录合并索引状态和未覆盖线上实测；最终人工审核后方可暂存/提交。
+
 ## 2026-11-14 业务关联字段补充
 
 1. 扩展现有 context、EventFields/Pino 安全投影；业务字段与固定 trace/span 不互相覆盖，保留 legacy 字段别名输入，输出统一 snake_case。新增内部 helper 只服务已有消费者。

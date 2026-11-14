@@ -36,6 +36,7 @@ Surplus Intelligence 调用记录、受控字段与恢复契约见 [Surplus 调�
 5. 所有 `app.get/post/put/patch/delete` 注册附近必须保留 `@frontend-ready: true|false`；`false` 要有业务原因。
 6. 不新增 `any`；不读取散落的 `process.env` 替代 `platform/config.ts`；不另建生成、计费、runtime config 或日志体系。
 7. 不改动受保护的 `DEV_SEED_*` UUID 或对应 `prisma/seed.ts` upsert，除非同步核验所有消费者。
+8. 日志接入不仅运行 AST 门禁：按 [日志接入规划](./logging-integration-planning.md) 核对可信用户/对象来源、路由参数名、实际 Pino JSON 白名单、批量作用域和 HTTP/业务结果；新入口及合并上游同样适用。
 
 ## 最低质量检查
 

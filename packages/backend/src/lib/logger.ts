@@ -13,7 +13,7 @@
  * 说明：
  *   - Fastify 的 `request.log`（已带 reqId）与本 logger 输出格式一致；两者共存。
  *   - 报错请传原始 Error 对象 `{ err }`，由 pino err 序列化器保留 stack/cause，
- *     禁止 `String(err)` 丢栈（见 docs/日志系统.md §7）。
+ *     禁止 `String(err)` 丢栈（见 docs/backend-observability-runtime.md）。
  *   - 输出：NODE_ENV=production → stdout JSON；本地有 pino-pretty 时彩色。
  *   - Dockerfile 等 prod 依赖镜像可能不装 pino-pretty：即使 NODE_ENV=development
  *     也回退 JSON，避免启动期 `unable to determine transport target` 崩掉。

@@ -11,6 +11,59 @@ import {
 import { safeError } from '../platform/observability/events.js';
 
 describe('Pino compatibility safety', () => {
+  it('keeps growth/community summaries and extended object IDs through JSON and excludes telemetry IDs', () => {
+    const lines: string[] = [];
+    const output = new Writable({
+      write(chunk, _encoding, done) {
+        lines.push(String(chunk));
+        done();
+      },
+    });
+    const log = pino({ ...fastifyLoggerOptions(), level: 'info', transport: undefined }, output);
+    const id = '11111111-1111-4111-8111-111111111111';
+    const ids = {
+      conversationId: id,
+      attemptId: id,
+      workId: id,
+      artifactId: id,
+      messageId: id,
+      imageId: id,
+      audioId: id,
+    };
+    log.info({
+      event: 'growth.prompt.event',
+      kind: 'biz',
+      prompt_kind: 'vip',
+      recorded: false,
+      community_prompt: true,
+      vip_prompt: false,
+      rewarded: true,
+      with_button: false,
+      ...ids,
+      prompts: ['private'],
+      text: 'private',
+    });
+    const record = JSON.parse(lines[0]!);
+    expect(record).toMatchObject({
+      kind: 'biz',
+      prompt_kind: 'vip',
+      recorded: false,
+      community_prompt: true,
+      vip_prompt: false,
+      rewarded: true,
+      with_button: false,
+      image_conversation_id: id,
+      attempt_id: id,
+      work_id: id,
+      artifact_id: id,
+      message_id: id,
+      image_id: id,
+      audio_id: id,
+    });
+    expect(record).not.toHaveProperty('session_id');
+    expect(lines[0]).not.toContain('private');
+    expect(safeLogAttributes(ids)).toEqual({});
+  });
   it('writes canonical business identifiers into physical JSON without leaking private fields', () => {
     const lines: string[] = [];
     const output = new Writable({

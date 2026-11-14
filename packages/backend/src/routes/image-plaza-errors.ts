@@ -23,7 +23,7 @@ export function routeError(request: FastifyRequest, reply: FastifyReply, err: un
     message.includes('config_invalid') ||
     message.includes('provider_unavailable')
   )
-    return reply.status(503).send(fail('IMAGE_PLAZA_UNAVAILABLE', '图片创作暂不可用'));
+    return reply.status(503).send(fail('IMAGE_PLAZA_UNAVAILABLE', '图片创作暂时用不了'));
   if (expected)
     return reply.status(409).send(fail('REQUEST_REJECTED', '请求状态已变化，请刷新后重试'));
   return reply.status(500).send(fail('INTERNAL_ERROR', '请求失败，请稍后重试'));

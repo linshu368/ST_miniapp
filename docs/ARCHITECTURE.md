@@ -1,5 +1,7 @@
 # ST_miniAPP 架构说明
 
+2026-11-14 日志合并审计（本地未部署）：补齐媒体/影像对象、逐实体 worker、支付/群身份、增长/问卷事件及欢迎语 transport；共享与大厅专用 Prisma 复用同一观测扩展，pg lease 观测原连接/锁/清理调用，不新增 SQL/池或修改事务。字段和安全出口见 [运行时日志](backend-observability-runtime.md)。
+
 本地候选（2026-11-14，未部署）：Backend `platform/observability` 统一上下文和基础事件，Railway 捕获 stdout；请求内补充已验证用户及角色/创作/短剧/单集/会话关联，business_module 与技术 module 分开。复用身份缓存和已有业务记录，不新增查库；新增身份不进入 Sentry/告警/指标标签。日志告警默认关闭，开启后按配置直接通知，无新增存储/outbox。原支付告警与可选工程 OTLP 保持独立。覆盖、兼容边界和发布验证见 [运行时日志](backend-observability-runtime.md)。
 
 本地候选（2026-11-11，未部署）：聊天历史读取采用索引选轮次后加载小型展示投影；原 admission 事务维护精确身份/开场白，旧 writer 仅使投影失效，有限人工回填覆盖旧记录。原 prompt、账务、分支与上下文窗口语义保持不变。读写切换及恢复见 [聊天历史优化说明](chat-history-read-performance.md)，正式 TEST/生产覆盖与 Android/iOS 不退化验收仍是发布门槛。

@@ -1,5 +1,25 @@
 # 本地验证记录（2026-11-13）
 
+## 合并与完整性审计验证（2026-11-14）
+
+合并来源：本地 HEAD `043c60dc`，待合入 `f25d969b8dc78ee059bb9fcb3eccab271c802f5f`。开始时 Git 已在合并中，自动合并内容已暂存，5 个文件存在 unmerged 索引；本轮未执行 git add/commit/push。五个文件内容的冲突标记已清除，Git 索引仍待人工最终审阅后标记解决。处理取舍及 8 类日志遗漏详见 [审计调研](research/merge-audit-2026-11-14.md)，最终路径/摘要和拟暂存清单见 [审阅记录](merge-review-2026-11-14.md)。
+
+本轮修复覆盖：普通 owned session 字段落点、媒体参数、影像对象/任务、逐实体 worker、支付/群身份、欢迎语 transport、增长/问卷字段、专用 Prisma/pg 数据库观测及日志规划/规范承接。没有执行上游新增的两份 migration、访问生产业务数据、改变业务重试/计费或部署。日志告警仍默认关闭，未发送真实飞书通知。
+
+最终验证：
+
+- Backend 全量：`pnpm --filter @miniapp/backend exec vitest run --exclude '**/*.integration.test.ts' --maxWorkers=2 --testTimeout=15000`，162 文件 / 1750 项通过。追加 pg 回归首次用错了闭包 spy 接缝（spy start 不能捕获 observe 内部闭包），修正测试到真实 observe 接缝后，专项 4 文件 / 31 项与最终全量均通过；未为测试改变运行时结果。
+- Shared：23 文件 / 239 项通过；Frontend 流式与发送链路：2 文件 / 83 项通过；Admin-client free-zone consumer：1 文件 / 12 项通过。
+- `pnpm -r typecheck` 8 个包通过；新增数据库观测后 Backend typecheck 再次通过。Frontend/Admin 生产 build 均通过，保留既有 img/hooks/样式类、浏览器数据和大 chunk 警告；无日志相关构建错误。
+- 变更 TS 的 ESLint、Prettier、`git diff --check`、日志 AST 门禁（323 运行文件）、AST guard 自测 3 项、migration 文件名静态检查通过。Backend 无独立 dist build。
+- 复杂度检查通过，收紧为 34 文件 / 102 函数；大厅排序主方法拆出原持久化事务和清理流程，保持提交后缓存失效、解锁/复位/断开顺序，未提高预算。其他未修改的上游存量增长警告保留。
+- Python 日志规划门禁 8 项通过；backend-observability 与 growth-prompts 的独立声明校验通过。模块载荷基于当前合并后的各模块正文重建前缀、保留原日志附录并追加审计，刷新字节哈希后 module_knowledge check 通过，未用旧正文覆盖上游增长模块。
+- 新建的两个回归文件有已记录风险依据：真实 ChatSessionRepository 读取绑定，以及共享/dedicated Prisma model/raw/unsafe raw 的原参数/返回/异常与敏感字段。其他回归扩展既有文件；HTTP/worker 作用域、实际 JSON、通知/Sentry 排除、Telegram payload 失败和锁清理的既有用例继续通过。
+
+环境修复记录：首次两端构建及后续 Vitest 启动遇到 node_modules 内 Next/lightningcss/sourcemap-codec 文件缺失，执行 `pnpm install --frozen-lockfile --force` 修复，锁文件和依赖版本未变。Prisma generate 第一次遇到测试进程占用 Windows engine DLL，测试结束后再次执行成功（6.19.3），未修改 schema 或运行迁移。Frontend build 按现有配置自动上传 Sentry sourcemap；这不是应用部署，也不证明生产日志验收完成。
+
+线上与人工边界：真实 TEST/生产数据库集成、支付/供应商、Telegram WebView、Railway 属性检索及 Android/iOS/API/SSE P95 均未在本轮执行。继续按 task.json 的发布前后 24 小时窗口分平台验证，缺样本保持 null。建议把用户→对象→trace 的日志断言接入现有 @chat/@image/@creator/@drama 验收分组；本次不新增页面流程或一次性 UI mock 系统。静态检查只覆盖已定义语法，不能宣称任意 SDK 内部或所有历史业务分支已被形式化证明。
+
 ## 业务关联字段补充（2026-11-14）
 
 按用户要求补充现有 PRD/design/implement/task 与 logging_integration，并修改代码。仅工作区变更，未暂存/提交/push/部署，未进行数据库操作或真实通知。原任务仍为 in_progress，线上 Railway/P95 验收项保持未完成。

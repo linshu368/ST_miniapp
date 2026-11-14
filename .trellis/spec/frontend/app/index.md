@@ -23,6 +23,7 @@
 5. 样式用 Tailwind 和现有 shadcn/Radix；除 `app/globals.css` 等既有全局入口外不新增 CSS/SCSS。先复用已有组件，不引入 Redux/MUI/AntD/styled-components/GraphQL/Socket.io 等替代栈。
 6. ST bridge 已退场。不得新增 iframe、`postMessage`、`platformAction`、`useSTEvent` 或 `@repo/bridge-protocol`。
 7. 未经需求明确，不重做 UX、文案、布局或视觉。关键交互必须覆盖 loading/error/empty/disabled/success 和移动端安全区。
+8. 功能规划须完成 [日志接入声明](../../backend/app/logging-integration-planning.md)：明确关联的 Backend 事件及响应 X-Request-Id/X-Trace-Id；不把浏览器日志视为服务端证据，不把用户/业务 ID 自动加入 Sentry/Faro 标签。正文与 Replay 边界继续按专题规范执行。
 
 ## 最低质量检查
 

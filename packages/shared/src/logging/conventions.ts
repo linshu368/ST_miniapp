@@ -9,7 +9,7 @@
  *   - 服务端包（backend / sync-engine）各自 `import pino`，把 buildPinoOptions() 喂进去，
  *     从而保证字段约定 / 脱敏清单 / kind 语义**单点定义**、两端输出格式一致。
  *
- * 设计见 docs/日志系统.md。
+ * 当前运行说明见 docs/backend-observability-runtime.md。
  */
 
 /** 业务/系统分层：biz=业务流水（还原用户行为）/ sys=系统&外部依赖（修 Bug） */

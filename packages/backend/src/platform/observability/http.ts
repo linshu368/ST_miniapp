@@ -1,8 +1,12 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { newContext, withContext } from './context.js';
+import { bindBusinessContext, newContext, withContext } from './context.js';
 import type { createObserver, Operation } from './core.js';
 import type { EventFields } from './events.js';
-import { httpBusinessFields } from './http-business.js';
+import {
+  httpBusinessFields,
+  imageBodyBusinessFields,
+  imageResponseBusinessFields,
+} from './http-business.js';
 
 interface RequestObservation {
   operation: Operation;
@@ -116,7 +120,11 @@ export function registerHttpObservation(
     // Callback hook deliberately continues inside run; async hooks would end this scope too early.
     withContext(context, done);
   });
+  app.addHook('preHandler', async (request) => {
+    bindBusinessContext(imageBodyBusinessFields(request));
+  });
   app.addHook('preSerialization', async (request, _reply, payload) => {
+    bindBusinessContext(imageResponseBusinessFields(request, payload));
     const state = states.get(request);
     if (state) Object.assign(state, responseSummary(payload));
     return payload;

@@ -62,6 +62,9 @@ const TEXT_FIELDS = new Set([
   'experiment_id',
   'assigned_group',
   'experiment_identity',
+  'prompt_kind',
+  'sort',
+  'mode',
 ]);
 const NUMBER_FIELDS = new Set([
   'config_version',
@@ -82,6 +85,15 @@ const BOOLEAN_FIELDS = new Set([
   'enabled',
   'acquired',
   'clientGone',
+  'recorded',
+  'rewarded',
+  'with_button',
+  'community_prompt',
+  'vip_prompt',
+  'hasCursor',
+  'hasSearch',
+  'hasTag',
+  'liked',
 ]);
 
 export function safeLogAttributes(
