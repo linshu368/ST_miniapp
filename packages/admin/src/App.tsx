@@ -33,6 +33,7 @@ import {
   type ProviderModelDirectory,
 } from '@miniapp/shared';
 import { LoginPage } from './components/LoginPage';
+import { AdminApiProvider } from './lib/adminApiContext';
 import { ConfigValueEditor } from './components/ConfigValueEditor';
 import { findDuplicateOpenRouterAssignments } from './components/ModelCatalogEditor';
 import { CharacterCardsView } from './components/CharacterCardsView';
@@ -306,16 +307,18 @@ export function AdminApp() {
 
   return (
     <Refine dataProvider={refineDataProvider} resources={[]} options={{ syncWithLocation: false }}>
-      <AdminWorkspace
-        client={client}
-        environment={environment}
-        admin={admin}
-        onEnvironmentChange={switchEnvironment}
-        onLogout={async () => {
-          await client.auth.signOut();
-          await loadIdentity(client);
-        }}
-      />
+      <AdminApiProvider client={client} environment={environment}>
+        <AdminWorkspace
+          client={client}
+          environment={environment}
+          admin={admin}
+          onEnvironmentChange={switchEnvironment}
+          onLogout={async () => {
+            await client.auth.signOut();
+            await loadIdentity(client);
+          }}
+        />
+      </AdminApiProvider>
     </Refine>
   );
 }

@@ -72,7 +72,7 @@ function ImagePlazaWorkDetail({ workId }: { workId: string }) {
             {query.error instanceof ApiClientError && query.error.status === 404
               ? '作品不存在或已下架'
               : query.error instanceof ApiClientError && [401, 403].includes(query.error.status)
-                ? '暂无访问权限，请重新进入应用'
+                ? '这里暂时打不开，从小程序重新进来试试'
                 : '作品加载失败，请重试'}
           </p>
           <button type="button" onClick={() => void query.refetch()} className="text-primary">

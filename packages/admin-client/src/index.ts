@@ -5,3 +5,4 @@ export * from './announcementsApi';
 export * from './inviteAdminApi';
 export * from './textPostprocessApi';
 export * from './menu';
+export * from './freeZoneApi';

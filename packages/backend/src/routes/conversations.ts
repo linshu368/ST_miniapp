@@ -1,8 +1,14 @@
 import type { FastifyInstance } from 'fastify';
+import { ChatFolderRepository } from '../infrastructure/repositories/ChatFolderRepository.js';
 import { ChatSessionRepository } from '../infrastructure/repositories/ChatSessionRepository.js';
 import { ConversationHistoryRepository } from '../infrastructure/repositories/ConversationHistoryRepository.js';
 import { MiniappUserSettingsRepository } from '../infrastructure/repositories/MiniappUserSettingsRepository.js';
 import { registerConversationDetail } from './conversation-detail.js';
+import {
+  registerChatFolders,
+  registerConversationBatch,
+  registerConversationGroups,
+} from './conversation-folders.js';
 import {
   registerConversationGetConfig,
   registerConversationPatchConfig,
@@ -29,6 +35,7 @@ export default async function conversationRoutes(app: FastifyInstance) {
     sessions: new ChatSessionRepository(),
     history: new ConversationHistoryRepository(),
     settings: new MiniappUserSettingsRepository(),
+    folders: new ChatFolderRepository(),
   };
   registerConversationCancel(app, repositories);
   registerConversationFirstToken(app, repositories);
@@ -37,6 +44,10 @@ export default async function conversationRoutes(app: FastifyInstance) {
   registerConversationEditMessage(app, repositories);
   registerConversationCreate(app, repositories);
   registerConversationList(app, repositories);
+  // 静态段 /groups、/batch 与 /:id 并存：find-my-way 优先匹配静态路由。
+  registerConversationGroups(app, repositories);
+  registerConversationBatch(app, repositories);
+  registerChatFolders(app, repositories);
   registerConversationDetail(app, repositories);
   registerConversationUpdate(app, repositories);
   registerConversationDelete(app, repositories);

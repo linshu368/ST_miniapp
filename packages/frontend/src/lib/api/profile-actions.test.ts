@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { QueryClient, type MutationOptions } from '@tanstack/react-query';
+import {
+  QueryClient,
+  type MutationOptions,
+  type QueryFunctionContext,
+} from '@tanstack/react-query';
 import type {
   CommunityEntryData,
   GetDailyCheckinData,
@@ -10,14 +14,16 @@ import type {
 import { apiClient } from './client';
 import { paymentKeys, useDailyCheckinMutation } from './payment';
 import { communityKeys, useVerifyCommunityMembershipMutation } from './community';
-import { notificationKeys } from './notifications';
+import { notificationKeys, prefetchNotifications, useNotificationsQuery } from './notifications';
 
-const hooks = vi.hoisted(() => ({ mutation: vi.fn(), client: vi.fn() }));
+const hooks = vi.hoisted(() => ({ mutation: vi.fn(), client: vi.fn(), query: vi.fn() }));
 vi.mock('@tanstack/react-query', async (original) => ({
   ...(await original<typeof import('@tanstack/react-query')>()),
   useMutation: hooks.mutation,
   useQueryClient: hooks.client,
+  useQuery: hooks.query,
 }));
+vi.mock('./use-refetch-on-foreground', () => ({ useRefetchOnForeground: vi.fn() }));
 vi.mock('./client', () => ({ apiClient: vi.fn(), ApiClientError: class extends Error {} }));
 
 const wallet: GetWalletBalanceData = {
@@ -47,12 +53,51 @@ beforeEach(() => {
   vi.clearAllMocks();
   client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
   hooks.client.mockReturnValue(client);
+  hooks.query.mockReturnValue({ refetch: vi.fn() });
   client.setQueryData(paymentKeys.wallet(), wallet);
   client.setQueryData(paymentKeys.checkin(), checkin);
   client.setQueryData(communityKeys.entry, community);
   client.setQueryData(notificationKeys.unread, { total: 0 });
 });
 afterEach(() => client.clear());
+
+describe('message body request scheduling', () => {
+  it('gives visible content the reserved slot without extending notification freshness', async () => {
+    vi.mocked(apiClient).mockResolvedValue({ notifications: [] });
+    useNotificationsQuery('official');
+    const options = hooks.query.mock.lastCall![0] as {
+      staleTime: number;
+      refetchOnMount: string;
+      queryFn: (context: QueryFunctionContext) => Promise<unknown>;
+    };
+    await options.queryFn({ signal: new AbortController().signal } as QueryFunctionContext);
+    expect(apiClient).toHaveBeenCalledWith(
+      '/api/notifications?scope=official',
+      expect.objectContaining({ queuePriority: 'critical' })
+    );
+    expect(options).toMatchObject({ staleTime: 0, refetchOnMount: 'always' });
+  });
+
+  it('keeps speculative prefetch in the background and shares its in-flight query', async () => {
+    let finish!: (value: unknown) => void;
+    vi.mocked(apiClient).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    );
+    const first = prefetchNotifications(client, 'personal');
+    const second = prefetchNotifications(client, 'personal');
+    expect(apiClient).toHaveBeenCalledOnce();
+    expect(apiClient).toHaveBeenCalledWith(
+      '/api/notifications?scope=personal',
+      expect.objectContaining({ queuePriority: 'background' })
+    );
+    finish({ notifications: [] });
+    await Promise.all([first, second]);
+    expect(client.getQueryData(notificationKeys.list('personal'))).toEqual({ notifications: [] });
+  });
+});
 
 function mutation<T>() {
   const options = hooks.mutation.mock.lastCall?.[0] as MutationOptions<T, Error, void>;

@@ -10,8 +10,14 @@ import {
   observeGenerationPrepare,
 } from '../../lib/engineering-observability.js';
 import { resolveProviderUpstream, forwardToUpstream } from './upstream.js';
-import { forwardWithFirstTokenFallback, type TransportModel } from './first-token-fallback.js';
+import {
+  forwardWithFirstTokenFallback,
+  type PersistGate,
+  type TransportModel,
+} from './first-token-fallback.js';
 import { buildUpstreamBody } from './generation-body.js';
+import { learnSurplusReasoningRejection, surplusReasoningBody } from './surplus-reasoning.js';
+import { revealsReasoning } from './reasoning-display.js';
 import { forwardSurplusCall } from './surplus-call-transport.js';
 import type { UpstreamTiming } from './upstream-timing.js';
 import type { GenerationRequest, GenerationPreparation, GenerationLogger } from './types.js';
@@ -61,7 +67,7 @@ function createForward(input: DispatchInput) {
     model: TransportModel,
     attemptSignal: AbortSignal,
     onDispatch?: () => void,
-    attempt?: { role: 'primary' | 'fallback'; timing: UpstreamTiming }
+    attempt?: { role: 'primary' | 'fallback'; timing: UpstreamTiming; gate?: PersistGate }
   ): Promise<Response> => {
     const route = resolveProviderUpstream(model.provider, model.providerModelId);
     if (!route.apiKey) throw new Error(`Missing key for ${model.provider}`);
@@ -90,7 +96,17 @@ function createForward(input: DispatchInput) {
       ...request,
       model: { ...request.model, ...model, openRouterModelId: model.providerModelId },
     };
-    const body = buildUpstreamBody(actualRequest, preferences);
+    const body = {
+      ...buildUpstreamBody(actualRequest, preferences),
+      // 深度思考开关：Surplus 按模型声明的写法发思考强度（兜底等其他供应商不受影响）
+      ...(actualRequest.model.provider === 'surplus'
+        ? surplusReasoningBody(
+            prepared.surplusReasoning,
+            actualRequest.thinkingEnabled ?? true,
+            actualRequest.model.freeZone?.providers[0]
+          )
+        : {}),
+    };
     const dispatch = async () => {
       signal.throwIfAborted();
       attemptSignal.throwIfAborted();
@@ -107,14 +123,20 @@ function createForward(input: DispatchInput) {
           dispatchOffsetMs: performance.now() - observation.startedAt,
         });
       }
+      const freeZone =
+        actualRequest.model.provider === 'surplus' ? actualRequest.model.freeZone : undefined;
       const response = await forwardToUpstream({
         ...route,
         method: 'POST',
         body: JSON.stringify(body),
         signal: attemptSignal,
         timing: attempt?.timing,
+        // 凑不到折扣底线时 Surplus 直接 404，交给兜底，不会派给更贵的卖家。
+        ...(freeZone ? { headers: { 'X-Min-Discount': String(freeZone.minDiscountPct) } } : {}),
       });
       if (!onDispatch) observation.headersMs = performance.now() - observation.directDispatchedAt;
+      // 供应商不认 reasoning 字段：记下来，之后发给它的请求不再带（这一轮交给兜底）
+      if (freeZone) void learnSurplusReasoningRejection(response, freeZone.providers[0]);
       return response;
     };
     return model.provider === 'surplus'
@@ -124,6 +146,7 @@ function createForward(input: DispatchInput) {
           signal: attemptSignal,
           log: input.log,
           reasoning: prepared.surplusReasoning,
+          gate: attempt?.gate,
           dispatch,
         })
       : dispatch();
@@ -160,9 +183,12 @@ export async function dispatchGeneration(input: DispatchInput): Promise<{
     primary: request.model,
     requestedModelId: request.model.modelId,
     totalBudgetMs: policy.deadlineMs,
-    thinkingEnabled: request.thinkingEnabled ?? true,
+    // 显示规则：免费模型的思考过程也算出字（见 reasoning-display.ts）
+    thinkingEnabled: revealsReasoning(request),
     fallbackModelId: policy.fallbackModelId,
     primaryAttemptId: request.firstToken.primaryAttemptId,
+    // 畅聊免费模型可配同时发几路主请求（运营平台候选池「并发」）
+    primaryCount: request.model.freeZone?.parallelRequests ?? 1,
     timeoutMs: policy.timeoutMs,
     fallbackTimeoutMs: policy.fallbackTimeoutMs,
     remainingFirstTokenMs: policy.deadlineMs - elapsed,

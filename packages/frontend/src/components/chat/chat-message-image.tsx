@@ -215,7 +215,7 @@ export function ChatMessageImageFooter({
       }
       if (action.type === 'unavailable') {
         setStage('failed');
-        setError('这个图片档位暂不可用');
+        setError('这个图片档位暂时用不了');
         return;
       }
       if (candidate.status === 402 || action.type === 'recharge') {

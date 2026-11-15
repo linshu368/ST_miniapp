@@ -19,6 +19,7 @@ const secondDrama = '60000000-0000-4000-8000-000000000002';
 const longDrama = '60000000-0000-4000-8000-000000000012';
 const tabs = (page: Page) => page.getByRole('navigation', { name: '短剧栏目' });
 const mainNav = (page: Page) => page.getByRole('navigation', { name: '主导航' });
+const backToTheater = (page: Page) => page.getByRole('link', { name: '返回剧场', exact: true });
 
 test('@drama 移除独立 CDN 实验入口', async ({ page, preview }) => {
   await preview.scenario('dramas');
@@ -168,7 +169,12 @@ test('@drama @layout 剧场只固定搜索，进入选集后返回原筛选', as
   await expect(page.getByRole('link', { name: '观看 雾城来信', exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: '观看 无人到站', exact: true })).toHaveCount(0);
   await page.getByRole('link', { name: '观看 雾城来信', exact: true }).click();
-  await expect(page).toHaveURL(new RegExp(`/dramas/${firstDrama}$`));
+  // 剧场封面进入放映（上下滑换剧），完整短剧再进详情选集。
+  await expect(page).toHaveURL(`${previewAppUrl}/watch`);
+  await expect(mainNav(page)).toHaveCount(0);
+  await pauseReadyVideo(page);
+  await page.getByRole('link', { name: '观看完整短剧 雾城来信', exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/dramas/${firstDrama}\\?from=feed$`));
   await pauseReadyVideo(page);
   const playerTags = page.getByRole('list', { name: '短剧标签', exact: true });
   await expect(playerTags.getByRole('listitem')).toHaveCount(6);
@@ -191,7 +197,10 @@ test('@drama @layout 剧场只固定搜索，进入选集后返回原筛选', as
   await dialog.getByRole('button', { name: '第 3 集', exact: true }).click();
   await expect(page.locator('video')).toHaveAttribute('aria-label', '雾城来信，第 3 集');
   await pauseReadyVideo(page);
-  await page.getByRole('link', { name: '返回短剧', exact: true }).click();
+  await page.getByRole('link', { name: '返回放映', exact: true }).click();
+  await expect(page).toHaveURL(`${previewAppUrl}/watch`);
+  await pauseReadyVideo(page);
+  await backToTheater(page).click();
   await expect(search).toHaveValue('雾城');
   await expect(page.getByText('全部短剧中搜索', { exact: true })).toBeVisible();
   await search.fill('');
@@ -233,7 +242,7 @@ test('@drama 追剧整行都能继续看，收藏按钮只改变收藏', async (
   await page.goto('/watch');
   await pauseReadyVideo(page);
   await page.getByRole('button', { name: '收藏这部剧', exact: true }).click();
-  await mainNav(page).getByRole('link', { name: '剧场', exact: true }).click();
+  await backToTheater(page).click();
   await tabs(page).getByRole('button', { name: '追剧', exact: true }).click();
   const row = page.getByRole('link', { name: '继续观看 雾城来信', exact: true });
   // 从标题边的空白起手，而不是精准点击封面或“继续看”字样。
@@ -264,14 +273,15 @@ test('@drama 短暂试看保留历史，但不抢走已在追的继续看', asyn
   await page.getByRole('link', { name: '返回短剧', exact: true }).click();
   await expect(page.getByRole('link', { name: '继续观看 雾城来信', exact: true })).toBeVisible();
   await page.getByRole('link', { name: '观看 长安月未央', exact: true }).click();
-  await expect(page).toHaveURL(new RegExp(`/dramas/${secondDrama}$`));
+  await expect(page).toHaveURL(`${previewAppUrl}/watch`);
+  await expect(page.locator('video')).toHaveAttribute('aria-label', '长安月未央，第 1 集');
   const preview = await pauseReadyVideo(page);
   // 快进产生的秒数只能形成历史，不能冒充真实累计观看。
   await preview.evaluate((node: HTMLVideoElement) => {
     node.currentTime = 2;
   });
   await expect.poll(() => preview.evaluate((node: HTMLVideoElement) => node.currentTime)).toBe(2);
-  await page.getByRole('link', { name: '返回短剧', exact: true }).click();
+  await backToTheater(page).click();
   await expect(page.getByRole('link', { name: '继续观看 雾城来信', exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: '继续观看 长安月未央', exact: true })).toHaveCount(0);
   await tabs(page).getByRole('button', { name: '追剧', exact: true }).click();
@@ -279,17 +289,27 @@ test('@drama 短暂试看保留历史，但不抢走已在追的继续看', asyn
   await expect(page.getByRole('link', { name: '继续观看 长安月未央', exact: true })).toBeVisible();
 });
 
-test('@drama @layout 底栏视频入口可刷剧和追剧，换栏目释放旧视频', async ({ page, preview }) => {
-  await page.goto('/watch');
-  const first = await pauseReadyVideo(page);
-  const oldVideo = await first.elementHandle();
+test('@drama @layout 剧场点封面进入放映，按列表换剧，返回停在最后看的那部', async ({
+  page,
+  preview,
+}) => {
+  await page.goto('/dramas');
   const navigation = mainNav(page);
   await expect(navigation.getByRole('link')).toHaveCount(5);
-  await expect(navigation.getByRole('link').nth(0)).toHaveAttribute('aria-label', '放映');
-  await expect(navigation.getByRole('link', { name: '放映', exact: true })).toHaveAttribute(
+  await expect(navigation.getByRole('link').nth(0)).toHaveAttribute('aria-label', '剧场');
+  await expect(navigation.getByRole('link').nth(1)).toHaveAttribute('aria-label', '对话');
+  await expect(navigation.getByRole('link', { name: '剧场', exact: true })).toHaveAttribute(
     'aria-current',
     'page'
   );
+  await expect(
+    page.getByRole('link', { name: '随便看看，从精选开始连播', exact: true })
+  ).toBeVisible();
+  await page.getByRole('link', { name: '观看 雾城来信', exact: true }).click();
+  await expect(page).toHaveURL(`${previewAppUrl}/watch`);
+  await expect(navigation).toHaveCount(0);
+  const first = await pauseReadyVideo(page);
+  const oldVideo = await first.elementHandle();
   await expectReachable(page, '收藏这部剧');
   await page.getByRole('button', { name: '收藏这部剧', exact: true }).click();
   await expect(page.getByRole('button', { name: '取消收藏', exact: true })).toHaveAttribute(
@@ -306,9 +326,12 @@ test('@drama @layout 底栏视频入口可刷剧和追剧，换栏目释放旧�
     )
   ).toBeTruthy();
   await pauseReadyVideo(page);
-  await mainNav(page).getByRole('link', { name: '剧场', exact: true }).click();
-  await tabs(page).getByRole('button', { name: '追剧', exact: true }).click();
+  await backToTheater(page).click();
+  await expect(page).toHaveURL(`${previewAppUrl}/dramas`);
   await expect(page.locator('video')).toHaveCount(0);
+  await expect(page.getByRole('link', { name: '观看 长安月未央', exact: true })).toBeInViewport();
+  await preview.screenshot('放映返回剧场停在最后看的那部', { fullPage: false });
+  await tabs(page).getByRole('button', { name: '追剧', exact: true }).click();
   await expect(page.getByRole('heading', { name: '雾城来信', exact: true })).toBeVisible();
   await expect(page.getByText('收藏与观看进度保存在当前设备')).toBeVisible();
   await page.reload();
@@ -316,9 +339,12 @@ test('@drama @layout 底栏视频入口可刷剧和追剧，换栏目释放旧�
   await preview.screenshot('短剧追剧列表');
   await page.getByRole('button', { name: '取消收藏 雾城来信', exact: true }).click();
   await expect(page.getByRole('heading', { name: '喜欢的故事，留在这里' })).toBeVisible();
-  await navigation.getByRole('link', { name: '放映', exact: true }).click();
+  await page.getByRole('button', { name: '去发现好剧', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '发现好剧' })).toBeVisible();
+  // 随便看看从上次放映停下的那部开始，按全部精选顺序连播。
+  await page.getByRole('link', { name: '随便看看，从精选开始连播', exact: true }).click();
   await expect(page).toHaveURL(`${previewAppUrl}/watch`);
-  await expect(page.locator('video')).toHaveCount(1);
+  await expect(page.locator('video')).toHaveAttribute('aria-label', '长安月未央，第 1 集');
   await expectMobileLayout(page);
 });
 
@@ -385,7 +411,8 @@ test('@drama @layout 视频流观看完整短剧进入专注详情，返回仍�
   await expect
     .poll(() => resumed.evaluate((node: HTMLVideoElement) => node.currentTime))
     .toBeGreaterThanOrEqual(0.9);
-  await expect(mainNav(page)).toBeVisible();
+  await expect(mainNav(page)).toHaveCount(0);
+  await expect(backToTheater(page)).toBeVisible();
   // 从推荐页简介主动选集，同样进入专注观看，并直接定位所选集数。
   await page.getByRole('button', { name: '查看完整简介', exact: true }).click();
   await page.getByRole('tab', { name: '选集', exact: true }).click();
@@ -1348,18 +1375,23 @@ test('@drama 播放页持续禁用 Telegram 收起手势，换剧和评论不释
   expect((await swipe(commentList, [180, 600], [180, 400])).prevented).toBe(false);
   await page.getByRole('button', { name: '关闭评论' }).click();
   expect(await messages()).toEqual(initial);
-  await mainNav(page).getByRole('link', { name: '剧场', exact: true }).click();
+  await backToTheater(page).click();
   await expect.poll(async () => (await messages()).at(-1)).toBe(true);
   await page.getByRole('link', { name: '观看 雾城来信', exact: true }).click();
   await pauseReadyVideo(page);
   await expect.poll(async () => (await messages()).at(-1)).toBe(false);
-  const detailStart = await messages();
+  const playbackStart = await messages();
+  // 放映 → 详情 → 放映都属于播放路由，往返不能把下滑交回 Telegram。
+  await page.getByRole('link', { name: '观看完整短剧 雾城来信', exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/dramas/${firstDrama}\\?from=feed$`));
+  await pauseReadyVideo(page);
   await swipe(page.locator('[data-player-toggle-controls]'), [180, 500], [180, 250]);
-  await expect(page).toHaveURL(new RegExp(`/dramas/${firstDrama}$`));
   await expect(page.locator('video')).toHaveAttribute('aria-label', '雾城来信，第 2 集');
   await pauseReadyVideo(page);
-  expect(await messages()).toEqual(detailStart);
-  await page.getByRole('link', { name: '返回短剧', exact: true }).click();
+  await page.getByRole('link', { name: '返回放映', exact: true }).click();
+  await pauseReadyVideo(page);
+  expect(await messages()).toEqual(playbackStart);
+  await backToTheater(page).click();
   await expect.poll(async () => (await messages()).at(-1)).toBe(true);
 });
 
@@ -1369,9 +1401,9 @@ test('@drama @layout 单击只切纯净模式，双击画面播放暂停，倍�
   const picture = page.locator('[data-player-toggle-controls]');
   const bounds = (await picture.boundingBox())!;
   const tap = () => page.touchscreen.tap(bounds.x + 65, bounds.y + 220);
-  // 单击只切界面：暂停状态不受影响，底部导航也收起。
+  // 单击只切界面：暂停状态不受影响，顶部返回与栏目也收起。
   await tap();
-  await expect(mainNav(page)).toHaveCount(0);
+  await expect(backToTheater(page)).toHaveCount(0);
   await expect(page.getByRole('complementary', { name: '短剧互动' })).toHaveCount(0);
   await expect.poll(() => video.evaluate((node: HTMLVideoElement) => node.paused)).toBe(true);
   // 两次真实触屏点按：纯净模式下直接继续播放，不闪出控件。
@@ -1379,19 +1411,19 @@ test('@drama @layout 单击只切纯净模式，双击画面播放暂停，倍�
   await tap();
   await expect(page.getByRole('status', { name: '继续播放中', exact: true })).toBeVisible();
   await expect.poll(() => video.evaluate((node: HTMLVideoElement) => node.paused)).toBe(false);
-  await expect(mainNav(page)).toHaveCount(0);
+  await expect(backToTheater(page)).toHaveCount(0);
   await page.waitForTimeout(350); // 下一次独立双击，超过识别窗口。
   await tap();
   await tap();
   await expect(page.getByRole('status', { name: '已暂停', exact: true })).toBeVisible();
   await expect.poll(() => video.evaluate((node: HTMLVideoElement) => node.paused)).toBe(true);
-  await expect(mainNav(page)).toHaveCount(0);
+  await expect(backToTheater(page)).toHaveCount(0);
   await preview.screenshot('纯净模式双击暂停');
   await expect(page.getByRole('status', { name: '已暂停', exact: true })).toHaveCount(0);
-  await expect(mainNav(page)).toHaveCount(0);
+  await expect(backToTheater(page)).toHaveCount(0);
   // 单击唤回界面，仍然暂停。
   await picture.click({ position: { x: 75, y: 330 } });
-  await expect(mainNav(page)).toBeVisible();
+  await expect(backToTheater(page)).toBeVisible();
   await expect.poll(() => video.evaluate((node: HTMLVideoElement) => node.paused)).toBe(true);
   // 中央图标保留直接播放，第二击落到下方画面也不能改变界面。
   await page.getByRole('button', { name: '继续播放', exact: true }).dblclick({ delay: 60 });

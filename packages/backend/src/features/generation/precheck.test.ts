@@ -47,6 +47,31 @@ const FREE_MODEL: ModelBillingContext = {
 const INACTIVE = { active: false, validUntil: null };
 
 describe('resolveBillingPlan', () => {
+  it('quotes free-zone turns at zero without VIP, recording the benchmark price', () => {
+    const plan = resolveBillingPlan({
+      chargeId: 'free-zone-charge',
+      billing: {
+        ...PAID_MODEL,
+        modelId: 'free-glm',
+        provider: 'surplus',
+        modelTier: null,
+        freeZone: { candidateId: 'free-glm', originalCredits: 50 },
+      },
+      isFreeRound: false,
+      pricing: PRICING,
+      entitlement: INACTIVE,
+      log: fakeLogger(),
+    });
+    expect(plan.fixedDeduction).toEqual({ amount: 0, category: 'free_zone' });
+    expect(plan.snapshot).toMatchObject({
+      payable_credits: 0,
+      original_credits: 50,
+      fixed_deduction_category: 'free_zone',
+      requires_vip: false,
+      model_markup: 0,
+    });
+  });
+
   it('freezes creator identity and an independent self discount without granting VIP access', () => {
     const creator = {
       characterId: '60000000-0000-4000-8000-000000000001',

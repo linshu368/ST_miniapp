@@ -99,7 +99,7 @@ export function ChatSessionDrawer({
             ) : !query.isError && sessions.length === 0 ? (
               <div className="flex flex-col items-center justify-center gap-1 py-8 text-xs text-muted-foreground">
                 <MessageSquare className="h-6 w-6 opacity-40" aria-hidden />
-                <span>暂无对话记录</span>
+                <span>还没有对话，去找个角色聊聊吧</span>
               </div>
             ) : null}
             {sessions.map((session) => (

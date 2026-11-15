@@ -10,7 +10,7 @@ const SAVE_LABELS = {
   idle: '草稿自动保存在本地',
   saving: '保存中…',
   saved: '草稿已保存到本地',
-  error: '本地保存暂不可用',
+  error: '这份草稿没存到本机',
 };
 
 export function CharacterEditorHeader({

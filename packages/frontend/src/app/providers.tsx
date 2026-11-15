@@ -10,7 +10,10 @@ import { FavoriteFeedbackNotice } from '@/components/characters/favorite-feedbac
 import { EntryShell } from '@/components/nav/entry-shell';
 import { afterFirstScreen } from '@/lib/after-first-screen';
 import { ensureEntryPhaseWatching, useEntryBackgroundReady } from '@/lib/entry-phase';
-import { useNavigationBackgroundAllowed } from '@/lib/navigation-quiet-window';
+import {
+  bindNavigationQuietWindow,
+  useNavigationBackgroundAllowed,
+} from '@/lib/navigation-quiet-window';
 import { getQueryClient } from '@/lib/api/query-client';
 import { useUserSettingsQuery } from '@/lib/api/settings';
 import { PagePerfTracker } from '@/lib/perf/PagePerfTracker';
@@ -40,6 +43,19 @@ const DeferredEntryEffects = dynamic(
       }),
   { ssr: false }
 );
+// 进群 / VIP 增长弹窗：入口后台阶段之后才加载，不占首屏。
+const GrowthPromptHost = dynamic(
+  () =>
+    import('@/components/growth/growth-prompt-host')
+      .then((module) => module.GrowthPromptHost)
+      .catch(() => {
+        console.warn('[Startup] Growth prompt module unavailable');
+        return function GrowthPromptHostUnavailable() {
+          return null;
+        };
+      }),
+  { ssr: false }
+);
 const ReactQueryDevtools = dynamic(
   () => import('@tanstack/react-query-devtools').then((module) => module.ReactQueryDevtools),
   { ssr: false }
@@ -52,11 +68,14 @@ export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => getQueryClient());
   const [telegramReady, setTelegramReady] = useState(false);
   const entryStartParam = useRef('');
-  const backgroundReady = useEntryBackgroundReady();
+  // Attribution is a startup task: later navigation must not unmount and replay it.
+  const backgroundReady = useEntryBackgroundReady(false);
   const pathname = usePathname();
   const [entryPathname] = useState(pathname);
   const [showQueryDevtools, setShowQueryDevtools] = useState(false);
   const hydrateUserProfile = useUserProfileStore((s) => s.hydrate);
+
+  useEffect(() => bindNavigationQuietWindow(), []);
 
   useEffect(() => {
     // 调试浮标会挡住手机预览的发送按钮，开发时显式用 ?devtools=1 开启。
@@ -122,6 +141,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         {telegramReady ? children : <EntryShell pathname={pathname} />}
       </div>
       {telegramReady ? <FavoriteFeedbackNotice /> : null}
+      {telegramReady && backgroundReady ? <GrowthPromptHost /> : null}
       {showQueryDevtools ? <ReactQueryDevtools initialIsOpen={false} /> : null}
     </QueryClientProvider>
   );

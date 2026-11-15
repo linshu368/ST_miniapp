@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 
 import { DramaPlayer } from '@/components/drama/drama-player';
+import { useDramaStreamWarmth } from '@/hooks/use-connection-warmth';
 import { startDramaPlayIntent, useDramaBrowseQueueQuery } from '@/lib/api/drama';
 import { preloadDramaHls } from '@/lib/drama-media-source';
 import { afterNavigationQuietWindow } from '@/lib/navigation-quiet-window';
@@ -13,6 +14,7 @@ import { useDramaLibraryStore, useHydrateDramaLibrary } from '@/stores/drama-lib
 export default function DramaDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  useDramaStreamWarmth();
   const searchParams = useSearchParams();
   const returnToHome = searchParams.get('from') === 'feed';
   const selectedVideo = searchParams.get('video');

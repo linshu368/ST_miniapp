@@ -1282,7 +1282,7 @@ export function DramaPlayer({
                 aria-label="短剧互动"
                 className={cn(
                   'pointer-events-none absolute right-2 z-20 flex flex-col items-center gap-2 [&_button]:pointer-events-auto',
-                  embedded ? 'bottom-[188px]' : 'bottom-[232px]'
+                  embedded ? 'bottom-[calc(188px+env(safe-area-inset-bottom))]' : 'bottom-[232px]'
                 )}
                 data-player-no-swipe
               >
@@ -1335,10 +1335,7 @@ export function DramaPlayer({
               </aside>
               <section
                 ref={controlsFooter}
-                className={cn(
-                  'pointer-events-none absolute inset-x-0 bottom-0 z-10 px-4 pt-6 [&_button]:pointer-events-auto [&_input]:pointer-events-auto [&_a]:pointer-events-auto',
-                  embedded ? 'pb-2' : 'pb-[calc(0.5rem+env(safe-area-inset-bottom))]'
-                )}
+                className="pointer-events-none absolute inset-x-0 bottom-0 z-10 px-4 pb-[calc(0.5rem+env(safe-area-inset-bottom))] pt-6 [&_button]:pointer-events-auto [&_input]:pointer-events-auto [&_a]:pointer-events-auto"
               >
                 <p
                   role="status"

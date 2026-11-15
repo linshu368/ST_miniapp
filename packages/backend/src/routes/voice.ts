@@ -288,7 +288,7 @@ export default async function voiceRoutes(app: FastifyInstance) {
       }
       // 写稿与合成是两个供应商两把 key，缺任何一把都走不完整条链路
       if (!config.voice.draft.apiKey || !config.voice.apiKey) {
-        return reply.status(503).send(fail('VOICE_UNAVAILABLE', '语音功能暂不可用'));
+        return reply.status(503).send(fail('VOICE_UNAVAILABLE', '语音暂时用不了'));
       }
 
       const body = (request.body ?? {}) as CreateMessageVoiceRequest;

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { ArrowUpRight, X } from 'lucide-react';
 import { useOnboarding } from '@/hooks/use-onboarding';
+import { isPromptSlotTaken } from '@/lib/growth/prompt-visit';
 import { lobbyViewerScope } from '@/lib/lobby-recommendation-state';
 import {
   isBasicGuideFinished,
@@ -49,6 +50,9 @@ function CreatorInvitationView({ recommended }: { recommended: boolean }) {
       (progress?.completedTurns?.length ?? 0) < 10
     )
       return;
+    // 进群 / VIP 弹窗优先：本次打开已弹过就留到下次。创作邀请是底部小卡，不占弹窗位，
+    // 否则会把稍后第 13 轮的进群弹窗挡掉。
+    if (isPromptSlotTaken()) return;
     update({ creatorInvite: 'shown' });
     setVisible(true);
   }, [ready, eligible, recommended, returned, progress?.completedTurns?.length, update]);

@@ -11,30 +11,31 @@
 
 ## App Router 页面
 
-| 路由                                                                | 文件与职责                                                                     |
-| ------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| `/`                                                                 | 无页面；`next.config.mjs` 307 到 `/characters`（冷启动落地页），透传 query     |
-| `/watch`                                                            | `(main)/watch/page.tsx`，短剧沉浸视频流，底栏第一位「放映」                    |
-| `/characters`                                                       | `(main)/characters/page.tsx`，角色模块「发现」；角色 gallery、搜索排序与接着聊 |
-| `/dramas` / `/dramas/[id]`                                          | 双列剧场/追剧库与本剧专注播放、选集                                            |
-| `/chats`                                                            | `(main)/chats/page.tsx`，角色模块「对话」；跨角色历史与会话管理                |
-| `/create`                                                           | 影像广场入口；当前已实现图片生成链路                                           |
-| `/profile`                                                          | 我的页、余额/签到、VIP 入口、设置、社区入口                                    |
-| `/vip`                                                              | 月卡权益、会员身份、开通或续费；保留历史周卡状态展示                           |
-| `/profile/recharge`                                                 | 星尘套餐独立下单、VIP权益引导；`/[orderId]` 支付等待/轮询/回跳                 |
-| `/profile/orders` / `/profile/spending`                             | 订单分页与消费流水                                                             |
-| `/profile/messages` / `/profile/messages/[id]` / `/profile/support` | 通知列表、单条详情与站内客服                                                   |
-| `/profile/invite`                                                   | 邀请中心、统计与分享                                                           |
-| `/chat/[characterId]`                                               | 自研聊天主页面；会话选择、历史分页、SSE 发送/重生成、工具/语音                 |
-| `/chat/[characterId]/voice/[messageId]`                             | 指定消息的自定义语音二级页                                                     |
-| `/api/lobby-characters`                                             | Next route handler；大厅角色代理/缓存边界，带就近测试                          |
+| 路由                                                                | 文件与职责                                                                                                                                                 |
+| ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/`                                                                 | 无页面；`next.config.mjs` 307 到 `/characters`（冷启动落地页），透传 query                                                                                 |
+| `/watch`                                                            | `(main)/watch/page.tsx`，短剧沉浸视频流，底栏第一位「放映」                                                                                                |
+| `/characters`                                                       | `(main)/characters/page.tsx`，角色模块「发现」；角色 gallery 与搜索排序（接着聊入口在对话页）                                                              |
+| `/dramas` / `/dramas/[id]`                                          | 双列剧场/追剧库与本剧专注播放、选集                                                                                                                        |
+| `/chats`                                                            | `(main)/chats/page.tsx` 壳 + `components/conversations/`；对话页：有对话记录用户的冷启动落地页，跨角色历史、分组标签、按角色归拢、搜索、管理（多选）与翻页 |
+| `/create`                                                           | 影像广场入口；当前已实现图片生成链路                                                                                                                       |
+| `/profile`                                                          | 我的页、余额/签到、VIP 入口、设置、社区入口                                                                                                                |
+| `/vip`                                                              | 月卡权益、会员身份、开通或续费；保留历史周卡状态展示                                                                                                       |
+| `/profile/recharge`                                                 | 星尘套餐独立下单、VIP权益引导；`/[orderId]` 支付等待/轮询/回跳                                                                                             |
+| `/profile/orders` / `/profile/spending`                             | 订单分页与消费流水                                                                                                                                         |
+| `/profile/messages` / `/profile/messages/[id]` / `/profile/support` | 通知列表、单条详情与站内客服                                                                                                                               |
+| `/profile/invite`                                                   | 邀请中心、统计与分享                                                                                                                                       |
+| `/chat/[characterId]`                                               | 自研聊天主页面；会话选择、历史分页、SSE 发送/重生成、工具/语音                                                                                             |
+| `/chat/[characterId]/voice/[messageId]`                             | 指定消息的自定义语音二级页                                                                                                                                 |
+| `/api/lobby-characters`                                             | Next route handler；大厅角色代理/缓存边界，带就近测试                                                                                                      |
 
-`(main)/layout.tsx` 负责主区底部导航可见性。全局导航为「放映 / 剧场 / 秘境（中央圆钮，角色大厅，落地页）/ 创作 / 我的」（2026-11-04 起；名称按页面职责取，中间位给最高频的角色大厅）；悬浮圆角岛样式，选中项香槟光底滑动，中央星芒圆钮凸出岛面；统一贴底暖黑样式，`/characters` 和 `/chats` 同属角色模块，顶部固定「发现 / 对话」栏目，发现页搜索固定，推荐/最新随内容滚动；收藏入口统一在创作空间。角色入口记住当前浏览器会话中的最后栏目与滚动位置，已有 `/chats` 链接继续有效。聊天页在主布局外，避免底栏干扰沉浸交互。导航和布局共同使用 BottomNav 的隐藏规则，工作室、VIP/充值、消息、客服、短剧详情及视频流纯净模式不占导航空间；高度和安全区由 globals.css 的 --app-nav-height / --app-nav-space 统一供内容、短剧固定区及影像作品操作条使用。页面组件负责组装和路由状态，不复制 API client、数据转换或通用 UI。
+`(main)/layout.tsx` 负责主区底部导航可见性。全局导航为「剧场 / 对话 / 秘境（中央圆钮，角色大厅）/ 创作 / 我的」（2026-11-12 起；放映并进剧场成为无底栏全屏子页）；冷启动 `/` 由 next.config 按 cookie `st_landing=chats` 选择落地页：有对话记录进 `/chats`，否则进 `/characters`（cookie 由 `lib/landing-route.ts` 在读到全量会话列表或会话详情后写入/清除）；悬浮圆角岛样式，选中项香槟光底滑动，中央星芒圆钮凸出岛面；统一贴底暖黑样式，`/characters` 和 `/chats` 各是底栏一级入口，顶部只显示当前栏目名，发现页搜索固定，推荐/最新随内容滚动；收藏入口统一在创作空间。秘境、对话入口不再记忆最后栏目，各自记住滚动位置。聊天页在主布局外，避免底栏干扰沉浸交互。导航和布局共同使用 BottomNav 的隐藏规则，工作室、VIP/充值、消息、客服、短剧详情及视频流纯净模式不占导航空间；高度和安全区由 globals.css 的 --app-nav-height / --app-nav-space 统一供内容、短剧固定区及影像作品操作条使用。页面组件负责组装和路由状态，不复制 API client、数据转换或通用 UI。
 
 ## 目录职责
 
 - `components/characters/`：角色发现卡片、画廊、详情 Sheet、收藏按钮、精选框；角色详情区分继续已有会话与显式新对话。
-- `components/roleplay/`：模块固定顶部栏目与接着聊卡片；接着聊卡片在普通内容区滚动，不占固定顶部。
+- `components/roleplay/`：模块固定顶部栏目。
+- `components/conversations/`：对话页（列表、分组标签、按角色归拢行、管理模式、底部面板、启动骨架）；数据 hooks 在 `lib/api/conversation-folders.ts`。
 - `components/chat/`：聊天顶栏、消息列表/气泡/Markdown、终态 `ReplyRenderer` 接线、composer、重生成、会话抽屉/行操作、模型/生成/语音设置、工具 Sheet、splash 和布局/展示纯函数。
 - `components/payment/`：套餐卡等支付表现组件；不直接下单。
 - `components/profile/`：个人中心复用 UI（当前社区 Sheet）。

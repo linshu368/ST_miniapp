@@ -44,7 +44,6 @@ export function restoreCreatorWorksScroll(id: string) {
   delete creatorOpener.scroll;
 }
 
-const VIEW_KEY = 'miniapp:roleplay-view:v1';
 const DISCOVERY_KEY = 'miniapp:roleplay-discovery:v1';
 const SCROLL_PREFIX = 'miniapp:roleplay-scroll:v1:';
 
@@ -81,14 +80,6 @@ export function roleplayReturnPath(
   if (origin === 'created') return '/creation?tab=created';
   if (origin === 'space') return '/creation?tab=favorites';
   return origin === 'conversations' ? '/chats' : '/characters';
-}
-
-export function readRoleplayView(): RoleplayView {
-  return read(VIEW_KEY) === '/chats' ? '/chats' : '/characters';
-}
-
-export function rememberRoleplayView(path: RoleplayView): void {
-  write(VIEW_KEY, path);
 }
 
 export function rememberRoleplayScroll(path: RoleplayView): void {

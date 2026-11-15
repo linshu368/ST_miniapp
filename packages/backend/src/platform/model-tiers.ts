@@ -155,6 +155,8 @@ export interface ModelBillingContext {
   modelTier: ModelCatalogTierKey | null;
   catalogVersion: number;
   isFree: boolean;
+  /** 畅聊免费模型：本轮应扣 0，原价按对标档位记进快照。和旧的角色卡免费轮次无关。 */
+  freeZone?: { candidateId: string; originalCredits: number };
 }
 
 export async function getModelBillingContext(

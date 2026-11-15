@@ -1,0 +1,77 @@
+{
+  "id": "chat-folders",
+  "name": "chat-folders",
+  "title": "对话页分组、按角色归拢与批量管理",
+  "description": "对话页 A 稿：用户分组标签、按角色归拢、搜索、批量管理、翻页；杂而不乱",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P2",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-13",
+  "completedAt": null,
+  "branch": "feat/theater-merge",
+  "base_branch": "main",
+  "worktree_path": "/Users/qianpeijia/PycharmProjects/pythonProject/ST_miniapp/worktrees/theater-merge",
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "frontend.business.conversation-ui",
+        "backend.business.conversation-generation",
+        "database.business.conversation-storage"
+      ]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": ["/chats"],
+      "apis": [
+        "GET /api/v1/conversations（新增 folder/q/quick 条件与首页 folder_summary，后端并行）",
+        "GET /api/v1/conversations/groups（新增，仅按角色模式）",
+        "POST /api/v1/conversations/batch（新增）",
+        "POST/PATCH/DELETE /api/v1/conversation-folders（新增）"
+      ],
+      "android": {
+        "page_p95_baseline_ms": 903.42,
+        "page_p95_target_ms": 1200,
+        "baseline_route": "/chats",
+        "baseline_measurement": "sentry page.ready.duration",
+        "note": "落地页后入口流量变化，按同口径复查"
+      },
+      "ios": {
+        "page_p95_baseline_ms": 2594.8,
+        "page_p95_target_ms": 2600,
+        "baseline_route": "/chats",
+        "baseline_measurement": "sentry page.ready.duration",
+        "note": "不退化；iOS 基线偏高另行跟进"
+      },
+      "api": {
+        "p95_baseline_ms": 1635.65,
+        "p95_target_ms": 1800,
+        "endpoint": "GET /api/v1/conversations（http.client span）",
+        "baseline_platform": "android",
+        "baseline_n": 1100,
+        "ios_p95_baseline_ms": 1371,
+        "ios_p95_target_ms": 1510,
+        "ios_baseline_n": 350,
+        "reason": "汇总与列表并行，目标为不超过基线 +10%；Android 为主口径，iOS 另列"
+      },
+      "measurement": {
+        "source": "Sentry spans http.client（os.name 分组）与 page.ready.duration",
+        "window": "接口：2026-11-06—11-13 近 7 天；页面：2026-11-11 19:00—11-12 10:09；发布后 24 小时复查"
+      },
+      "notes": "新增请求只在用户操作时发生（切分组、搜索、展开、批量）；首屏请求数不变。"
+    }
+  }
+}

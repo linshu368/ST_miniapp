@@ -3,6 +3,10 @@ import { ProviderSlugSchema } from './provider-routing.js';
 import { LlmModelProviderSchema, type LlmModelProvider } from './model-providers.js';
 import { VipEntitlementSummarySchema } from './vip.js';
 import { WalletDebitPolicySchema } from './wallet.js';
+import { ModelCatalogTierKeySchema } from './model-tier-key.js';
+import { PublicFreeZoneSchema } from './free-zone.js';
+
+export { ModelCatalogTierKeySchema, type ModelCatalogTierKey } from './model-tier-key.js';
 
 /** Delay after primary dispatch before starting the fallback; primary remains eligible. */
 export const DEFAULT_FIRST_TOKEN_TIMEOUT_MS = 4_000;
@@ -51,7 +55,6 @@ export function resolveFallbackProviders(
 export const FIRST_TOKEN_RETRY_MESSAGE = '这次回应稍慢，再试一次吧';
 const FirstTokenDurationSchema = z.number().int().positive().max(110_000);
 
-export const ModelCatalogTierKeySchema = z.enum(['light', 'standard', 'premium']);
 export const StableModelIdSchema = z
   .string()
   .trim()
@@ -228,7 +231,6 @@ export const ModelCatalogSchema = z
     }
   });
 
-export type ModelCatalogTierKey = z.infer<typeof ModelCatalogTierKeySchema>;
 // Additive fields stay optional at typed legacy call sites; parsing always supplies defaults.
 export type ModelCatalogModel = Omit<
   z.infer<typeof ModelCatalogModelSchema>,
@@ -293,6 +295,8 @@ export const GetModelCatalogDataSchema = z.object({
   selected_provider_model_id: z.string().trim().min(1).optional(),
   catalog_version: z.number().int().nonnegative(),
   vip_status: VipEntitlementSummarySchema.optional(),
+  /** 畅聊栏目；缺省或 null 表示不显示。 */
+  free_zone: PublicFreeZoneSchema.nullable().optional(),
 });
 
 export const SelectModelRequestSchema = z.object({

@@ -182,6 +182,9 @@ describe('hls.js seek diagnostics', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(handle).toBeDefined();
     const fake = handle!.player as unknown as FakeHls;
+    // 播放器自身（快进重启加载）在整个播放期间订阅分片事件；这里只校验诊断自己的订阅。
+    const hlsEventNames = ['manifest', 'level', 'audio', 'frag', 'buffered'];
+    const playerHandlers = hlsEventNames.map((name) => fake.handlers.get(name)?.size ?? 0);
 
     const target = 10; // 秒：落在 start=8、时长 4 的分片里
     const stop = observeDramaSeek(video as unknown as HTMLVideoElement, SOURCE, target, true, {
@@ -252,8 +255,7 @@ describe('hls.js seek diagnostics', () => {
 
     // 终态后不再订阅，迟到的分片事件不会改动已发出的报告。
     stop();
-    for (const name of ['manifest', 'level', 'audio', 'frag', 'buffered'])
-      expect(fake.handlers.get(name)?.size ?? 0).toBe(0);
+    expect(hlsEventNames.map((name) => fake.handlers.get(name)?.size ?? 0)).toEqual(playerHandlers);
   });
 
   it('does not touch hls diagnostics for non-hls sources', async () => {

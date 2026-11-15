@@ -363,3 +363,8 @@ export function getDramaStreamSigningConfig() {
 export function isDramaLegacySupabaseEnabled() {
   return process.env.DRAMA_LEGACY_SUPABASE_ENABLED !== 'false';
 }
+
+/** Registered Mujian origin only; no Vercel wildcard or user-controlled hostname. */
+export function getMujianOrigin(): string {
+  return 'https://short-drama-demo-sigma.vercel.app';
+}

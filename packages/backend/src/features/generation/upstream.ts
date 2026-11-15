@@ -64,9 +64,12 @@ export async function forwardToUpstream(input: {
   provider?: LlmModelProvider;
   model?: string;
   timing?: UpstreamTiming;
+  /** 供应商专属请求头，比如 Surplus 的 X-Min-Discount */
+  headers?: Record<string, string>;
 }): Promise<Response> {
   const provider = input.provider ?? 'openrouter';
   const forwardHeaders: Record<string, string> = {
+    ...input.headers,
     'Content-Type': 'application/json',
     Authorization: `Bearer ${input.apiKey ?? LLM_API_KEY}`,
   };

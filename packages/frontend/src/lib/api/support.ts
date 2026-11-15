@@ -22,7 +22,10 @@ export function useSupportConversationQuery() {
   return useQuery({
     queryKey: supportKeys.conversation,
     queryFn: ({ signal }) =>
-      apiClient<GetSupportConversationData>('/api/support/conversation', { signal }),
+      apiClient<GetSupportConversationData>('/api/support/conversation', {
+        signal,
+        queuePriority: 'critical',
+      }),
     refetchInterval: 5_000,
     refetchIntervalInBackground: false,
   });

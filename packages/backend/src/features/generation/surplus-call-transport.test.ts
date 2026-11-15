@@ -347,3 +347,55 @@ describe('Surplus call transport', () => {
     expect(store.prepare).not.toHaveBeenCalled();
   });
 });
+
+describe('Surplus call transport with parallel primaries', () => {
+  const stream = (id: string) =>
+    new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(
+            new TextEncoder().encode(
+              `data: ${JSON.stringify({ id, choices: [{ delta: { content: '你好' } }] })}\n\ndata: [DONE]\n\n`
+            )
+          );
+          controller.close();
+        },
+      }),
+      { headers: { 'content-type': 'text/event-stream', 'x-generation-id': id } }
+    );
+  const gated = (owns: Promise<boolean>) => ({
+    ...input(async () => stream('gen-a')),
+    gate: { owns: () => owns },
+  });
+
+  it('streams without waiting for the race and drops every write when this call loses', async () => {
+    let decide!: (owns: boolean) => void;
+    const owns = new Promise<boolean>((resolve) => {
+      decide = resolve;
+    });
+    const response = await forwardSurplusCall(gated(owns));
+    expect(await response.text()).toContain('你好');
+    expect(store.prepare).toHaveBeenCalledTimes(1);
+    expect(store.saveObservation).not.toHaveBeenCalled();
+    expect(store.ensureGenerationId).not.toHaveBeenCalled();
+    decide(false);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(store.saveObservation).not.toHaveBeenCalled();
+    expect(store.ensureGenerationId).not.toHaveBeenCalled();
+  });
+
+  it('replays the queued writes in order once this call wins', async () => {
+    let decide!: (owns: boolean) => void;
+    const owns = new Promise<boolean>((resolve) => {
+      decide = resolve;
+    });
+    const response = await forwardSurplusCall(gated(owns));
+    await response.text();
+    decide(true);
+    await waitForTerminalObservation();
+    expect(store.ensureGenerationId).toHaveBeenCalledWith('turn-1', 'gen-a');
+    const statuses = store.saveObservation.mock.calls.map((call) => call[1].call_status);
+    expect(statuses[0]).toBe('dispatched');
+    expect(statuses.at(-1)).toBe('completed');
+  });
+});

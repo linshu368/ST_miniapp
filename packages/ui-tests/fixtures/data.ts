@@ -1,3 +1,4 @@
+import { FREE_ZONE_SCENARIOS } from './free-zone.js';
 import {
   DEFAULT_PAYMENT_CHANNELS_CONFIG,
   DEFAULT_WORD_COUNT_TIERS_CONFIG,
@@ -210,6 +211,16 @@ export const scenarios = {
   checked: { label: '今日已签到', description: '已领取状态及会员引导', path: '/profile' },
   'checkin-error': { label: '签到失败', description: '失败反馈与再次操作', path: '/profile' },
   'vip-error': { label: '权益暂不可读', description: '不展示未经确认的会员收益', path: '/profile' },
+  'growth-community': {
+    label: '增长弹窗 · 进群',
+    description: '累计 13 轮，聊天页弹出进群礼券；点主按钮后社群入口改报已领取，回到页面提示到账',
+    path: `/chat/${IDS.character}?session=${IDS.session}&from=chats`,
+  },
+  'growth-vip': {
+    label: '增长弹窗 · VIP',
+    description: '累计 50 轮，对话页弹出 VIP 月卡礼券；主按钮进入 VIP 支付页',
+    path: '/chats',
+  },
   'community-joined': {
     label: '社群奖励已领取',
     description: '官方社群入口隐藏',
@@ -231,10 +242,31 @@ export const scenarios = {
     description: '模拟 Surplus 主调用慢、OpenRouter 兜底交付；原模型选择保持',
     path: `/chat/${IDS.character}?session=${IDS.session}&from=discover`,
   },
+  'free-zone': {
+    ...FREE_ZONE_SCENARIOS['free-zone'],
+    path: `/chat/${IDS.character}?session=${IDS.session}&from=discover`,
+  },
+  'free-zone-not-started': {
+    ...FREE_ZONE_SCENARIOS['free-zone-not-started'],
+    path: `/chat/${IDS.character}?session=${IDS.session}&from=discover`,
+  },
+  'free-zone-own-card': {
+    ...FREE_ZONE_SCENARIOS['free-zone-own-card'],
+    path: `/chat/${IDS.character}?session=${IDS.session}&from=discover`,
+  },
+  'free-zone-replaced': {
+    ...FREE_ZONE_SCENARIOS['free-zone-replaced'],
+    path: `/chat/${IDS.character}?session=${IDS.session}&from=discover`,
+  },
   'chat-late-first-token': {
     label: '首字迟到',
     description: '客户端计时到点只提示网络慢，回复到达后提示消失，不误报重试',
     path: `/chat/${IDS.character}?session=${IDS.session}&from=discover`,
+  },
+  'chat-folders': {
+    label: '对话分组与整理',
+    description: '32 段对话、多角色多段、2 个分组，含只聊一两句与 30 天没聊',
+    path: '/chats',
   },
   'chat-sessions': {
     label: '同角色多段对话',

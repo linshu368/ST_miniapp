@@ -3,6 +3,7 @@
  * 观测登记参数和 turn control。执行阶段见 turn-execution.ts。
  */
 import { randomUUID } from 'node:crypto';
+import { shouldRevealReasoning } from '../generation/reasoning-display.js';
 import type { GenerationObservationRepository } from '../../infrastructure/repositories/GenerationObservationRepository.js';
 import type { ChatSessionRow } from '../../infrastructure/repositories/ChatSessionRepository.js';
 import type { RequestLogger } from '../../lib/logger.js';
@@ -26,6 +27,8 @@ export interface TurnScope {
   log: RequestLogger;
   userId: string;
   thinkingEnabled: boolean;
+  /** 这一轮显示思考过程（免费模型恒为 true，见 reasoning-display.ts） */
+  revealReasoning: boolean;
   requestStartedAt: number;
   turn: StartedTurn;
   model: ResolvedModel;
@@ -124,6 +127,7 @@ export function createTurnScope(input: {
 }): TurnScope {
   const { turnInput, userId, thinkingEnabled, requestStartedAt, turn, model, policy } = input;
   const { session, mode, sink, log } = turnInput;
+  const revealReasoning = shouldRevealReasoning(thinkingEnabled, model);
   const observations = generationObservations();
   const primaryAttemptId = randomUUID();
   const emitStart = createStartEmitter({
@@ -133,7 +137,8 @@ export function createTurnScope(input: {
     model,
     policy,
     diagnosticStartedAt: input.diagnosticStartedAt,
-    thinkingEnabled,
+    // 告诉前端这一轮要不要显示思考过程（免费模型即使开关关着也显示）
+    thinkingEnabled: revealReasoning,
   });
   const observationInput = buildObservationInput({
     turn,
@@ -165,6 +170,7 @@ export function createTurnScope(input: {
     log,
     userId,
     thinkingEnabled,
+    revealReasoning,
     requestStartedAt,
     turn,
     model,

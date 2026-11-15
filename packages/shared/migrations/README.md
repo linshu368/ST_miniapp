@@ -1,5 +1,44 @@
 # SQL 迁移文件
 
+## 2026-11-13 短剧原因问卷（本地 PG17 验证，远端未执行）
+
+`20261113_drama_survey.sql`（domain: miniapp_analytics + billing）。前置：`app_core.users`、`app_core.runtime_config`、`billing.user_wallets`、`billing.wallet_ledger`。
+
+- 新增 `miniapp_analytics.drama_survey_responses`：一次性问卷答卷，每个账号每份问卷一行（提交或叉掉）。问卷只弹给前端本机追剧记录里有过有效观看的用户；答卷包含 Q2a/Q2b 选项编码与客户端上报的观看深度（有效观看剧数、最大集数）。只用于分析，产品运行时不读；"是否已领过奖励"由后端查 `billing.wallet_ledger`。按 schema 规范第 5 条归入 analytics：不是平台资产，也不属于某个 MiniApp 功能的运行状态。
+- 新增 `billing.submit_drama_survey(...)`：在同一事务里写答卷、加 bonus 星尘、记流水（`entry_type='survey_reward'`，`reference_type='survey'`，`reference_id=survey_key`）。"每账号只领一次"由答卷表主键保证，并发提交只发一次；没有在 `wallet_ledger` 上新建唯一索引，避免建索引时阻塞扣费写入。流水类型约束按 `20261030` 的方式追加，使用 NOT VALID。
+- RLS 开启，撤销 PUBLIC/anon/authenticated；service_role 对答卷表只有 SELECT/INSERT，函数只授予 service_role。
+- `app_core.runtime_config.miniapp_drama_survey_enabled` 默认 false。
+- 执行：2026-11-13 TEST（run 43391746773）、Production（run 43418231723）均已 COMMIT；TEST 真机核对提交与叉掉两类答卷落表正确。
+- 发布：TEST 单文件 → Backend/Frontend（开关关，线上无变化）→ Production 单文件 → 打开开关。回收：`pnpm --filter backend drama-survey:report -- --out <path>`。
+- 收尾：关开关 → 导出 CSV → DROP 函数与答卷表（语句见文件头）。`survey_reward` 流水是资金审计事实，保留。
+
+## 2026-11-12 畅聊每轮事实补「生成中断」（本地 PG17 验证）
+
+`20261112_free_zone_interrupted.sql`（domain: miniapp_analytics 只读投影）。前置：`20261112_free_zone.sql`。
+
+- `miniapp_analytics.free_zone_turn_facts` 末尾追加两列：`primary_delivered`（这一轮由免费模型自己交付）、`interrupted`（免费模型开始出字后没写完就断了：`stream_interrupted` 且不是 `user_cancelled` / `content_filter`）。中断率 = interrupted / primary_delivered。
+- 只用 `CREATE OR REPLACE VIEW` 追加列，已有列、属主与授权不变；重复执行无副作用。
+- 验证：`bash scripts/test-free-zone-migration.sh`（新增中断口径断言、Grafana 角色可读）。
+- 发布：TEST 单文件 → Production 单文件 → Backend（后端评估读这两列；迁移未执行时评估会记 metrics_failed，只是本轮不按业务数据判断）。回滚：先回退后端，再按文件头注释重建视图。
+
+## 2026-11-12 历史回复改绑富文本规则 v19（本地 PG17 验证）
+
+`20261112_rebind_text_postprocess_v19.sql`（domain: experience）。回复富文本规则 v18（11-05）删掉了 choice / status / memory / dialogue 四条停用规则，内置卡片和对白的样式写在它们的 css 里，随之丢失。11-12 已在运营平台回滚到 v17，生成了 v19。
+
+- 只把 `experience.chat_history.postprocess_version` 从 18 改为 19，不碰正文。同一事务内先调用 `experience.text_postprocess_bind_enter()` 通过写保护。
+- 保护条件：v19 快照与 v17 完全相同，且 v18 缺少 choice 规则。不满足时打印 NOTICE 并跳过，TEST 等规则版本号不同的环境会走这条分支。重复执行时改绑 0 行。
+- 发布：TEST 单文件（预期跳过）→ Production 单文件。不准备回滚。
+
+## 2026-11-12 畅聊（免费模型）栏目（本地 PG17 验证，远端未执行）
+
+`20261112_free_zone.sql`（domain: miniapp_features + miniapp_analytics 只读投影 + admin managed key）。前置：已有 `miniapp_analytics.chat_first_token_facts`、`experience.surplusintelligence_chat_history`、`experience.chat_reply_feedback`。
+
+- 新增 `miniapp_features.free_zone_models`（每个候选一行当前上下架状态，唯一写入方是后端评估任务）与 `free_zone_events`（只追加的上下架记录）。RLS 开启，撤销 PUBLIC/anon/authenticated；events 只给 INSERT/SELECT。
+- 新增四个只读视图 `miniapp_analytics.free_zone_turn_facts / free_zone_dislikes / free_zone_model_states / free_zone_model_events`，评估任务与 Grafana 共用同一口径；存在 `first_token_metrics_reader` 时授予 SELECT（Grafana 经此角色读取，不需要基表权限）。
+- `free_zone_config` 加入 managed key（包装函数复制原 ACL、放宽两表 CHECK）。不插入 runtime_config 行：后端缺省视为总开关关、候选为空。
+- 验证：`bash scripts/test-free-zone-migration.sh`（managed key 链、状态约束、投影、权限、重复执行）。
+- 发布：TEST 单文件 → Backend/Admin/Frontend（总开关默认关，线上无变化）→ Production 单文件 → 运营平台填候选池并打开开关。回滚：关总开关；删除对象见文件头注释。
+
 ## 2026-11-11 聊天历史展示投影（TEST 已执行，Production 待验证）
 
 依次验证 `20261111_chat_history_display_metadata.sql` → `20261111_chat_history_display_reads.sql`，然后有限回填、核验覆盖/读写性能，再发布 Backend。新表归 experience；原始 prompt 和账务不迁移、不裁剪。service_role 保留原 admission 的 invoker 写权限，新对象对 anon/authenticated 不开放。

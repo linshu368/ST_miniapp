@@ -225,7 +225,7 @@ test('@profile @recharge 下单失败保留选择和金额，VIP入口保留原�
     payment_type: 'alipay',
   });
   await expect(page.getByLabel('充值确认').getByRole('alert')).toHaveText(
-    '暂时无法创建订单，请稍后重试。'
+    '订单没创建成功，再试一次吧。'
   );
   await expect(page.getByRole('button', { name: '立即支付 ¥30', exact: true })).toBeEnabled();
   await expect(page.getByLabel('充值确认').getByText('21,600', { exact: true })).toBeVisible();
@@ -243,7 +243,7 @@ test('@profile @recharge @layout 充值空态、失败和渠道关闭不会误�
 }) => {
   await preview.scenario('recharge-error');
   await page.goto('/profile/recharge');
-  await expect(page.getByText('充值套餐暂时无法加载')).toBeVisible();
+  await expect(page.getByText('充值套餐没加载出来，再试一次吧')).toBeVisible();
   await expect(page.getByRole('button', { name: '重新加载', exact: true })).toBeVisible();
   await expect(page.getByLabel('充值确认').getByRole('button')).toBeDisabled();
   await expect(page.getByRole('link', { name: '订单', exact: true })).toBeVisible();
@@ -259,7 +259,7 @@ test('@profile @recharge @layout 充值空态、失败和渠道关闭不会误�
     .getByRole('radio')
     .first()
     .click();
-  await expect(page.getByText('暂不可用，请稍后再试')).toBeVisible();
+  await expect(page.getByText('暂时用不了，稍后再试')).toBeVisible();
   await expect(page.getByRole('button', { name: '立即支付 ¥10', exact: true })).toBeDisabled();
   expect(
     (await preview.state()).requests.filter(

@@ -353,7 +353,7 @@ describe('streamConversationTurn — 流开始后的失败', () => {
       sseResponse([
         frame(START),
         frame({ type: 'delta', text: '写了一半' }),
-        frame({ type: 'error', code: 'upstream_error', message: '生成中断，请稍后重试' }),
+        frame({ type: 'error', code: 'upstream_error', message: '生成中断了，再点一次重新来' }),
       ])
     );
 
@@ -604,6 +604,29 @@ describe('thinking stream', () => {
       expect(sink.deltas.join('')).toBe('visible');
     }
   );
+
+  it('shows thought with the switch off when the server reveals it for this turn', async () => {
+    fetchMock.mockResolvedValue(
+      sseResponse([
+        frame({ ...START, thinking_enabled: true }),
+        frame({ type: 'reasoning', text: '免费模型先想' }),
+        frame({ type: 'delta', text: 'visible' }),
+        frame(DONE),
+      ])
+    );
+    const sink = collector();
+    const thought: string[] = [];
+    await streamConversationTurn({
+      sessionId: 's1',
+      content: 'hello',
+      thinkingEnabled: false,
+      ...sink.options,
+      onReasoning: (text) => thought.push(text),
+    });
+    expect(JSON.parse(fetchMock.mock.calls[0]![1].body).thinking_enabled).toBe(false);
+    expect(thought.join('')).toBe('免费模型先想');
+    expect(sink.deltas.join('')).toBe('visible');
+  });
 
   it('ignores invalid reasoning text and unknown events without exposing their payload', async () => {
     fetchMock.mockResolvedValue(

@@ -18,10 +18,10 @@ describe('free quota exhausted notice copy', () => {
     expect(
       formatFreeQuotaExhaustedNotice(
         {
-          text: '和「{characterName}」的免费轮次用完了。往后每轮消耗星尘。',
+          text: '和「{characterName}」的免费轮次用完了。接下来每聊一轮会用掉一点星尘。',
         },
         '非常非常长的角色名字'
       )
-    ).toBe('和「非常非常长的…」的免费轮次用完了。往后每轮消耗星尘。');
+    ).toBe('和「非常非常长的…」的免费轮次用完了。接下来每聊一轮会用掉一点星尘。');
   });
 });

@@ -194,7 +194,11 @@ export async function runConversationTurn(
     '已使用持久化的平台规则槽位模式'
   );
 
-  const policy = resolveFirstTokenPolicy(model.firstTokenPolicy, input.firstTokenDeadlineMs);
+  // 路由入口按付费目录的总上限设截止；畅聊免费模型有自己更长的总上限，不被它覆盖。
+  const policy = resolveFirstTokenPolicy(
+    model.firstTokenPolicy,
+    model.freeZone ? undefined : input.firstTokenDeadlineMs
+  );
   model.firstTokenPolicy = policy;
   observeChatFirstToken({
     requestedModel: model.modelId,

@@ -4,7 +4,6 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 
-import { useDramaLibraryStore } from '@/stores/drama-library-store';
 import { useNotificationUnreadCountQuery } from '@/lib/api/notifications';
 import { useSupportUnreadQuery } from '@/lib/api/support';
 import { prefetchCharactersQuery } from '@/lib/api/characters';
@@ -24,12 +23,7 @@ import {
   type MobilePerformancePolicy,
   type PrimaryNavigationRoute,
 } from '@/lib/mobile-performance';
-import {
-  readRoleplayDiscovery,
-  readRoleplayView,
-  rememberRoleplayScroll,
-  rememberRoleplayView,
-} from '@/lib/roleplay-navigation';
+import { readRoleplayDiscovery, rememberRoleplayScroll } from '@/lib/roleplay-navigation';
 
 import { BottomNavShell, isCreationRoute } from './bottom-nav-shell';
 
@@ -37,30 +31,30 @@ export { isBottomNavHidden } from './bottom-nav-shell';
 
 const BACKGROUND_PREFETCH_GAP_MS = 800;
 
+const PRIMARY_ROUTES: readonly PrimaryNavigationRoute[] = [
+  '/dramas',
+  '/chats',
+  '/characters',
+  '/creation',
+  '/profile',
+];
+
+function primaryRouteOf(pathname: string | null): PrimaryNavigationRoute | null {
+  if (pathname === '/characters' || pathname === '/chats') return pathname;
+  if (isCreationRoute(pathname)) return '/creation';
+  if (pathname === '/watch' || pathname?.startsWith('/dramas')) return '/dramas';
+  if (pathname?.startsWith('/profile')) return '/profile';
+  return null;
+}
+
 function backgroundPrefetchTargets(
   pathname: string | null,
-  roleplayHref: '/characters' | '/chats',
   routeWarmupOrder: MobilePerformancePolicy['routeWarmupOrder'],
   limit: MobilePerformancePolicy['backgroundRoutePrefetchLimit']
 ): string[] {
-  const candidates = [roleplayHref, '/creation', '/watch', '/dramas', '/profile'];
-  const normalized = (href: string): PrimaryNavigationRoute =>
-    href === '/chats' ? '/characters' : (href as PrimaryNavigationRoute);
-  const current =
-    pathname === '/characters' || pathname === '/chats'
-      ? '/characters'
-      : isCreationRoute(pathname)
-        ? '/creation'
-        : pathname === '/watch'
-          ? '/watch'
-          : pathname?.startsWith('/dramas')
-            ? '/dramas'
-            : pathname?.startsWith('/profile')
-              ? '/profile'
-              : null;
-  return candidates
-    .filter((href) => normalized(href) !== current)
-    .map((href, index) => ({ href, index, rank: routeWarmupOrder.indexOf(normalized(href)) }))
+  const current = primaryRouteOf(pathname);
+  return PRIMARY_ROUTES.filter((href) => href !== current)
+    .map((href, index) => ({ href, index, rank: routeWarmupOrder.indexOf(href) }))
     .sort((left, right) => left.rank - right.rank || left.index - right.index)
     .slice(0, limit)
     .map(({ href }) => href);
@@ -85,14 +79,12 @@ function prefetchPrimaryRouteData(
 
 function useBackgroundRoutePrefetch(
   pathname: string | null,
-  roleplayHref: '/characters' | '/chats',
   policy: MobilePerformancePolicy,
   router: { prefetch: (href: string) => void }
 ): void {
   useEffect(() => {
     const targets = backgroundPrefetchTargets(
       pathname,
-      roleplayHref,
       policy.routeWarmupOrder,
       policy.backgroundRoutePrefetchLimit
     );
@@ -134,30 +126,19 @@ function useBackgroundRoutePrefetch(
         window.cancelIdleCallback(idleHandle);
       }
     };
-  }, [pathname, policy, roleplayHref, router]);
+  }, [pathname, policy, router]);
 }
 
 export function BottomNav() {
   const pathname = usePathname();
   const performancePolicy = useMobilePerformancePolicy();
   const queryClient = useQueryClient();
-  const dramaControlsVisible = useDramaLibraryStore((state) => state.playbackControlsVisible);
   const router = useRouter();
   const currentRoleplayPath = pathname === '/characters' || pathname === '/chats' ? pathname : null;
-  const [roleplayHref, setRoleplayHref] = useState<'/characters' | '/chats'>('/characters');
   const navigationBackgroundAllowed = useNavigationBackgroundAllowed();
-
-  useEffect(() => {
-    if (currentRoleplayPath) {
-      rememberRoleplayView(currentRoleplayPath);
-      setRoleplayHref(currentRoleplayPath);
-      return;
-    }
-    setRoleplayHref(readRoleplayView());
-  }, [currentRoleplayPath]);
   // Touch intent gives almost no lead time. Warm adjacent chunks only after the current
   // destination has painted, and serialize them to avoid recreating the entry burst.
-  useBackgroundRoutePrefetch(pathname, roleplayHref, performancePolicy, router);
+  useBackgroundRoutePrefetch(pathname, performancePolicy, router);
 
   // 未读属于「我的」：只在 profile 拉取/轮询。大厅、影像、聊天都不提前打，缓存仍可画红点。
   const onProfileTab = Boolean(pathname?.startsWith('/profile'));
@@ -185,27 +166,23 @@ export function BottomNav() {
   return (
     <BottomNavShell
       pathname={pathname}
-      controlsVisible={dramaControlsVisible}
       highlighted={pendingHref ?? pathname}
-      roleplayHref={currentRoleplayPath ?? roleplayHref}
       hasUnread={hasUnread}
       onIntent={(href) => {
         router.prefetch(href);
         prefetchPrimaryRouteData(queryClient, href, performancePolicy.platform);
       }}
-      onNavigate={(event, targetHref, href, current) => {
-        if (!current) beginNavigationQuietWindow(targetHref);
+      onNavigate={(event, href, current) => {
+        if (!current) beginNavigationQuietWindow(href);
         if (currentRoleplayPath) rememberRoleplayScroll(currentRoleplayPath);
-        if (href === '/characters') {
-          rememberRoleplayView(targetHref === '/chats' ? '/chats' : '/characters');
-          if (currentRoleplayPath) {
-            event.preventDefault();
-            if (currentRoleplayPath === '/characters') clearLobbyReturnSnapshot();
-            window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
-            rememberRoleplayScroll(currentRoleplayPath);
-          }
+        // 已在大厅或对话列表时再点本栏目：回到顶部，不重新进入页面。
+        if (current && href === currentRoleplayPath) {
+          event.preventDefault();
+          if (href === '/characters') clearLobbyReturnSnapshot();
+          window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+          rememberRoleplayScroll(href);
         }
-        if (!current) setPendingHref(targetHref);
+        if (!current) setPendingHref(href);
       }}
     />
   );

@@ -168,7 +168,7 @@ function RechargePageContent() {
       launchPayment(result);
     } catch {
       notification('error');
-      setCheckoutError('暂时无法创建订单，请稍后重试。');
+      setCheckoutError('订单没创建成功，再试一次吧。');
     } finally {
       submitLock.current = false;
     }
@@ -245,7 +245,7 @@ function RechargePageContent() {
           {isError ? (
             <div className="flex min-h-[180px] flex-col items-center justify-center rounded-[20px] border border-white/10 bg-white/[0.025] px-6 text-center">
               <AlertCircle className="size-6 text-[#c4aaa1]" aria-hidden />
-              <p className="mt-3 text-sm font-medium">充值套餐暂时无法加载</p>
+              <p className="mt-3 text-sm font-medium">充值套餐没加载出来，再试一次吧</p>
               <p className="mt-1 text-xs text-[#a99b9b]">稍后重试，已付款的订单仍可查看</p>
               <Button
                 variant="outline"
@@ -400,7 +400,7 @@ function RechargePageContent() {
               );
             })}
             {paymentTypes.length === 0 ? (
-              <span className="text-xs text-[#b2a5a4]">暂不可用，请稍后再试</span>
+              <span className="text-xs text-[#b2a5a4]">暂时用不了，稍后再试</span>
             ) : null}
           </div>
         </div>
