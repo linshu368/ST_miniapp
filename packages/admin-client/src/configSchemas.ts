@@ -47,6 +47,9 @@ import {
   VipPlansConfigSchema,
   VipTextDiscountRateSchema,
   WordCountTiersConfigSchema,
+  DEFAULT_DRIVE_MODES_CONFIG,
+  DRIVE_MODE_OPTIONS_KEY,
+  DriveModesConfigSchema,
 } from '@miniapp/shared';
 import { z } from 'zod';
 
@@ -67,6 +70,7 @@ export const managedConfigKeys = [
   'status_rules',
   'memory_rules',
   'reply_style_options',
+  DRIVE_MODE_OPTIONS_KEY,
   'pref_word_count_tiers',
   STORY_MEMORY_CONFIG_KEY,
   STORY_MEMORY_PROMPT_KEY,
@@ -331,6 +335,7 @@ export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   status_rules: InstructionSlotRulesSchema,
   memory_rules: InstructionSlotRulesSchema,
   reply_style_options: ReplyStyleOptionsConfigSchema,
+  [DRIVE_MODE_OPTIONS_KEY]: DriveModesConfigSchema,
   pref_word_count_tiers: WordCountTiersConfigSchema,
   [STORY_MEMORY_CONFIG_KEY]: StoryMemoryConfigSchema,
   [STORY_MEMORY_PROMPT_KEY]: StoryMemoryPromptSchema,
@@ -501,6 +506,12 @@ export const configMetadata: Record<
     description:
       '管理回复偏好中的选项名称、说明、展示顺序与独立开关；沿用草稿、发布和回滚。英文占位符写进主体模板；用户开启的选项，规则内容替换对应占位符，未开启时替换为空。',
     defaultValue: { options: [] },
+  },
+  [DRIVE_MODE_OPTIONS_KEY]: {
+    label: '剧情模式',
+    description:
+      '回复偏好最上方的「剧情模式」：用户选择剧情由谁推动。每档的名称和说明展示给用户；规则替换主体模板里的 {{DRIVE_RULES}}，模型每次只看到用户所选的一档，所以每档规则必须自成一体。未选择的用户使用默认档。',
+    defaultValue: DEFAULT_DRIVE_MODES_CONFIG,
   },
   [FREE_ZONE_CONFIG_KEY]: {
     label: '畅聊（免费模型）',

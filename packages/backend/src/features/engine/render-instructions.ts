@@ -22,6 +22,7 @@ import type {
   InstructionSlotMode,
   InstructionSlotModes,
 } from './types.js';
+import { selectDriveRules } from './drive-mode.js';
 
 /** pref_custom_instructions 为空时注入模板的占位文案，与 bot 一致 */
 export const EMPTY_CUSTOM_INSTRUCTIONS = '暂无';
@@ -135,6 +136,11 @@ export function renderPlatformInstructions(
     instructions.template,
     instructions.replyStyles,
     userConfig.pref_reply_styles
+  );
+  rendered = replaceAll(
+    rendered,
+    /\{\{DRIVE_RULES\}\}/g,
+    selectDriveRules(instructions.driveModes, userConfig.pref_drive_mode).rules
   );
   rendered = replaceAll(
     rendered,

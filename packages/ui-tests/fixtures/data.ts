@@ -5,6 +5,7 @@ import {
   GetImagePlazaConfigDataSchema,
   GetModelCatalogDataSchema,
   ImagePlazaWorkSchema,
+  PublicDriveModesSchema,
   toPublicWordCountTiers,
   UserGenerationConfigSchema,
   UserSettingsSchema,
@@ -515,9 +516,28 @@ export function makeData(api: string, characterCount = 18) {
       pref_show_status: true,
       pref_show_memory: false,
       pref_reply_styles: {},
+      pref_drive_mode: 'active',
       pref_custom_instructions: null,
     }),
     word_count_tiers: toPublicWordCountTiers(DEFAULT_WORD_COUNT_TIERS_CONFIG),
+    // 虚构文案，只验证界面消费公开字段；正式名称和说明由运营配置。
+    drive_modes: PublicDriveModesSchema.parse({
+      modes: [
+        { id: 'follow', ui_label: '我来带', description: '你说一句，TA 接一句，剧情只听你的。' },
+        {
+          id: 'active',
+          ui_label: '等 TA 撩',
+          description: 'TA 会主动撩你、提要求，不用你一直找话。',
+        },
+        {
+          id: 'plot',
+          ui_label: '来点意外',
+          description: '时不时出点事、来个新人，故事自己往前走。',
+        },
+        { id: 'novel', ui_label: '替我演', description: '你只管定方向，连你的戏份也一起写好。' },
+      ],
+      default_mode_id: 'active',
+    }),
     reply_style_options: [
       { id: 'style-dialogue', name: '角色多说话', description: '以角色对白为主，减少环境旁白。' },
       { id: 'style-concise', name: '节奏紧凑', description: '保持简洁，让对话自然向前。' },
