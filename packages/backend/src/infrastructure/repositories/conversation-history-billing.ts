@@ -31,7 +31,7 @@ export async function recordBillingOutcome(
     })
     .eq('id', input.historyId)
     .abortSignal(AbortSignal.timeout(5_000));
-  if (error) throw new Error(`回写生成计费结果失败：${error.message}`);
+  if (error) throw new Error(`回写生成计费结果失败：${error.message}`, { cause: error });
   await applySuccessfulFinishReason(db, input.historyId, input.finishReason);
 }
 
@@ -49,7 +49,7 @@ export async function saveBillingSnapshot(
     .update({ llm_billing_snapshot: snapshot })
     .eq('id', historyId)
     .abortSignal(AbortSignal.timeout(5_000));
-  if (error) throw new Error(`回写计费快照失败：${error.message}`);
+  if (error) throw new Error(`回写计费快照失败：${error.message}`, { cause: error });
 }
 
 /** Each provider gets its own budget so incomplete metadata cannot hide completed-call billing. */
@@ -162,7 +162,7 @@ export async function applySuccessfulFinishReason(
       'llm_finish_reason.is.null,and(llm_finish_reason.neq.cancelled,llm_finish_reason.neq.user_cancelled,llm_finish_reason.neq.timeout)'
     )
     .abortSignal(AbortSignal.timeout(5_000));
-  if (error) throw new Error(`补齐生成完成原因失败：${error.message}`);
+  if (error) throw new Error(`补齐生成完成原因失败：${error.message}`, { cause: error });
 }
 
 function mapProviderSyncRow(

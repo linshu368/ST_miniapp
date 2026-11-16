@@ -1,3 +1,4 @@
+import { observation } from './observability/runtime.js';
 /**
  * backend / platform / model-tiers.ts
  *
@@ -69,7 +70,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function normalizeCatalog(value: unknown): ModelCatalog | null {
   const parsed = ModelCatalogSchema.safeParse(value);
   if (!parsed.success) {
-    console.error('[model-tiers] Invalid llm_model_catalog:', parsed.error.flatten());
+    observation.emit(
+      'models.catalog_invalid',
+      'models.config',
+      { outcome: 'degraded', outcome_known: false, err: parsed.error },
+      'warn'
+    );
     return null;
   }
 
@@ -106,7 +112,12 @@ async function refreshModelConfig(catalogEntry?: RuntimeConfigEntry | null): Pro
       return;
     }
   } catch (err) {
-    console.error('[model-tiers] Error refreshing model config:', err);
+    observation.emit(
+      'models.refresh_failed',
+      'models.config',
+      { outcome: 'degraded', outcome_known: false, err: err },
+      'warn'
+    );
   }
 
   if (!cachedCatalog) {
@@ -230,7 +241,12 @@ export async function getPricingConfig(): Promise<LlmPricingConfig> {
       };
       const parsedPricing = LlmPricingConfigSchema.safeParse(mergedPricing);
       if (!parsedPricing.success) {
-        console.error('[model-tiers] Invalid llm_pricing_config:', parsedPricing.error.flatten());
+        observation.emit(
+          'models.pricing_invalid',
+          'models.config',
+          { outcome: 'degraded', outcome_known: false, err: parsedPricing.error },
+          'warn'
+        );
         return cachedPricing ?? DEFAULT_PRICING;
       }
       cachedPricing = { ...parsedPricing.data, version: entry.version };
@@ -241,7 +257,12 @@ export async function getPricingConfig(): Promise<LlmPricingConfig> {
       return cachedPricing;
     }
   } catch (err) {
-    console.error('[model-tiers] Error fetching llm_pricing_config:', err);
+    observation.emit(
+      'models.pricing_read_failed',
+      'models.config',
+      { outcome: 'degraded', outcome_known: false, err: err },
+      'warn'
+    );
   }
 
   return cachedPricing || DEFAULT_PRICING;

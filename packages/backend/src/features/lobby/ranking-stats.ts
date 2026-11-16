@@ -1,3 +1,4 @@
+import { observation } from '../../platform/observability/runtime.js';
 /**
  * backend / features / lobby / ranking-stats.ts
  *
@@ -125,7 +126,12 @@ async function loadCharacterRankingScoresFresh(): Promise<RankingSnapshot | null
     cache = { at: Date.now(), value };
     return value;
   } catch (error) {
-    console.warn('[lobby] 读取角色排序分失败，本次退回运营顺序', error);
+    observation.emit(
+      'lobby.ranking_read_degraded',
+      'lobby.config',
+      { outcome: 'degraded', outcome_known: false, err: error },
+      'warn'
+    );
     return cache?.value ?? null;
   }
 }

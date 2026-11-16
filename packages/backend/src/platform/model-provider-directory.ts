@@ -10,6 +10,9 @@ import {
 import { OpenRouterModelsClient, openRouterModelsClient } from './openrouter-models.js';
 import { getLlmProviderRuntimeConfig } from './runtime-config.js';
 import { veniceFetch } from './venice-http.js';
+import { clientFetch } from './observability/fetch.js';
+
+const fetch = clientFetch('provider.surplus.models', 'surplus');
 
 const DEFAULT_CACHE_TTL_MS = 15 * 60 * 1000;
 const DEFAULT_TIMEOUT_MS = 8_000;

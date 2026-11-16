@@ -7,6 +7,7 @@ import {
 import * as Sentry from '@sentry/nextjs';
 
 import { resolvePublicApiUrl } from '../../../../resolve-public-api-url.mjs';
+import { createLobbyProxyObservation } from './proxy-observation';
 
 // Resolve from Vercel's deployment context instead of reading the raw
 // NEXT_PUBLIC_API_URL at runtime, where a stale project-wide Preview value can
@@ -47,6 +48,7 @@ function captureProxyError(error: unknown): void {
 
 export async function GET(request: Request) {
   const startedAt = performance.now();
+  const observation = createLobbyProxyObservation(request);
   // Only forward allowlisted sort/selection values to the backend.
   const params = new URL(request.url).searchParams;
   const sort = parseLobbySort(params.get('sort'));
@@ -67,9 +69,10 @@ export async function GET(request: Request) {
       params.getAll('limit').length !== 1
     ) {
       recordProxyDuration(startedAt, 'bad_request', 400);
+      observation.finish(400, 'rejected', 'BAD_REQUEST');
       return Response.json(
         { success: false, error: { code: 'BAD_REQUEST', message: '无效的角色列表' } },
-        { status: 400 }
+        { status: 400, headers: observation.responseHeaders() }
       );
     }
     selection = `&ids=${ids.data.join(',')}`;
@@ -81,7 +84,9 @@ export async function GET(request: Request) {
     const upstream = await fetch(`${BACKEND_URL}/api/characters?sort=${sort}${limit}${selection}`, {
       cache: 'no-store',
       signal: AbortSignal.any([request.signal, deadline]),
+      headers: { 'X-Request-Id': observation.requestId },
     });
+    observation.upstream(upstream.headers);
     const body = await upstream.text();
     const upstreamMs = performance.now() - upstreamStartedAt;
     recordProxyDuration(startedAt, upstream.ok ? 'ok' : 'http_error', upstream.status);
@@ -90,14 +95,19 @@ export async function GET(request: Request) {
         ? PUBLIC_LATEST_CACHE_CONTROL
         : 'no-store, no-cache, must-revalidate';
 
-    return new Response(body, {
+    const response = new Response(body, {
       status: upstream.status,
-      headers: {
+      headers: observation.responseHeaders({
         'Content-Type': upstream.headers.get('Content-Type') || 'application/json; charset=utf-8',
         'Cache-Control': cacheControl,
         'Server-Timing': `backend;dur=${upstreamMs.toFixed(1)}`,
-      },
+      }),
     });
+    observation.finish(
+      upstream.status,
+      upstream.ok ? 'succeeded' : upstream.status < 500 ? 'rejected' : 'failed'
+    );
+    return response;
   } catch (error) {
     const cancelled = request.signal.aborted;
     const timedOut = deadline.aborted;
@@ -108,6 +118,11 @@ export async function GET(request: Request) {
       status
     );
     if (!cancelled) captureProxyError(error);
+    observation.finish(
+      status,
+      cancelled ? 'cancelled' : timedOut ? 'timed_out' : 'failed',
+      cancelled ? 'REQUEST_ABORTED' : timedOut ? 'UPSTREAM_TIMEOUT' : 'UPSTREAM_UNAVAILABLE'
+    );
     // A thrown proxy error may become an HTML error page, hiding the recoverable
     // failure from the same JSON consumer used for successful catalogue responses.
     return Response.json(
@@ -115,7 +130,12 @@ export async function GET(request: Request) {
         cancelled ? 'REQUEST_ABORTED' : timedOut ? 'UPSTREAM_TIMEOUT' : 'UPSTREAM_UNAVAILABLE',
         cancelled ? '请求已取消' : '角色没加载出来，再试一次吧'
       ),
-      { status, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } }
+      {
+        status,
+        headers: observation.responseHeaders({
+          'Cache-Control': 'no-store, no-cache, must-revalidate',
+        }),
+      }
     );
   }
 }

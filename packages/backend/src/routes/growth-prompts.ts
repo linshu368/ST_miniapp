@@ -92,7 +92,8 @@ export default async function growthPromptRoutes(app: FastifyInstance) {
       request.log.info(
         {
           event: 'growth.prompts.read',
-          prompts: prompts.map((prompt) => prompt.kind),
+          community_prompt: prompts.some((prompt) => prompt.kind === 'community'),
+          vip_prompt: prompts.some((prompt) => prompt.kind === 'vip'),
           duration_ms: Date.now() - started,
         },
         'growth prompts read'
@@ -135,7 +136,8 @@ export default async function growthPromptRoutes(app: FastifyInstance) {
         request.log.info(
           {
             event: 'growth.prompt.event',
-            kind,
+            kind: 'biz',
+            prompt_kind: kind,
             action: event,
             recorded,
             duration_ms: Date.now() - started,
@@ -145,7 +147,13 @@ export default async function growthPromptRoutes(app: FastifyInstance) {
         return reply.send(ok<RecordGrowthPromptEventData>({ recorded }));
       } catch (err) {
         request.log.warn(
-          { err, event: 'growth.prompt.event_failed', kind, action: event },
+          {
+            err,
+            event: 'growth.prompt.event_failed',
+            kind: 'sys',
+            prompt_kind: kind,
+            action: event,
+          },
           'growth prompt event failed'
         );
         return reply.status(503).send(fail('GROWTH_PROMPTS_UNAVAILABLE', '暂时无法记录'));

@@ -62,7 +62,7 @@ export class FeatureFreeTrialRepository {
       .select('ordinal,status')
       .eq('user_id', userId)
       .eq('feature', feature);
-    if (error) throw new Error(`查询免费体验额度失败：${error.message}`);
+    if (error) throw new Error(`查询免费体验额度失败：${error.message}`, { cause: error });
 
     const summarized = summarizeFeatureFreeTrialQuota({
       feature,
@@ -96,7 +96,7 @@ export class FeatureFreeTrialRepository {
       p_reference_id: input.referenceId,
       p_ttl_seconds: input.ttlSeconds ?? 900,
     });
-    if (error) throw new Error(`预留免费体验额度失败：${error.message}`);
+    if (error) throw new Error(`预留免费体验额度失败：${error.message}`, { cause: error });
     return parseReservationResult(data as FreeTrialRpcResult);
   }
 
@@ -115,7 +115,7 @@ export class FeatureFreeTrialRepository {
       p_feature: input.feature,
       p_reference_id: input.referenceId,
     });
-    if (error) throw new Error(`释放免费体验额度失败：${error.message}`);
+    if (error) throw new Error(`释放免费体验额度失败：${error.message}`, { cause: error });
   }
 
   /**
@@ -129,7 +129,7 @@ export class FeatureFreeTrialRepository {
       p_user_id: userId,
       p_feature: feature,
     });
-    if (error) throw new Error(`回收过期免费体验额度失败：${error.message}`);
+    if (error) throw new Error(`回收过期免费体验额度失败：${error.message}`, { cause: error });
   }
 }
 

@@ -1,4 +1,5 @@
 import { epayAmountCents, isEpayOrderId } from '../../../infrastructure/payment/epay-protocol.js';
+import { observation } from '../../../platform/observability/runtime.js';
 /**
  * backend / features / payment / usecases / PaymentSettlement.ts
  *
@@ -56,6 +57,21 @@ export function isOrderFulfilled(
  * credits 历史行在回填前仍认 credits_added。同一订单重放由邀请日志去重。
  */
 export async function settlePaidOrder(
+  ...args: Parameters<typeof settlePaidOrderObserved>
+): Promise<SettlementOutcome> {
+  return observation.observe(
+    'payment.settlement',
+    () => settlePaidOrderObserved(...args),
+    (result) => ({
+      outcome:
+        result === 'completed' ? 'succeeded' : result === 'order_not_found' ? 'rejected' : 'failed',
+      outcome_known: result !== 'failed',
+      error_code: result === 'completed' ? undefined : `PAYMENT_${result.toUpperCase()}`,
+    })
+  );
+}
+
+async function settlePaidOrderObserved(
   input: {
     orderId: string;
     paidAmount: string | undefined;

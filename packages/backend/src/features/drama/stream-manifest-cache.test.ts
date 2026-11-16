@@ -156,6 +156,13 @@ describe('DramaStreamManifestCache', () => {
 
     expect(result).toBeUndefined();
     expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'drama.manifest.failed',
+        error_code: 'DRAMA_MANIFEST_FAILED',
+      }),
+      expect.any(String)
+    );
     const logged = JSON.stringify(warn.mock.calls);
     expect(logged).toContain('drama_manifest_fetch_failed');
     expect(logged).not.toContain('secret-token');

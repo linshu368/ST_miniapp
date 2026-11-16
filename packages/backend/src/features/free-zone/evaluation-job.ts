@@ -10,6 +10,7 @@
 import type { FastifyBaseLogger } from 'fastify';
 import { freeZoneRulesFor, type FreeZoneCandidate, type FreeZoneConfig } from '@miniapp/shared';
 import { observeBackgroundRun } from '../../lib/background-observability.js';
+import { runObservedJob } from '../../platform/observability/jobs.js';
 import { fetchFreeZoneConfig } from './config.js';
 import {
   advanceState,
@@ -191,6 +192,10 @@ export async function runFreeZoneEvaluation(
   log: FastifyBaseLogger,
   probeImpl: ProbeFn = defaultProbe
 ): Promise<void> {
+  return runObservedJob(JOB, () => evaluateFreeZone(log, probeImpl));
+}
+
+async function evaluateFreeZone(log: FastifyBaseLogger, probeImpl: ProbeFn): Promise<void> {
   const startedAt = performance.now();
   if (running) {
     observeBackgroundRun({ job: JOB, outcome: 'skipped', startedAt });
@@ -278,12 +283,12 @@ export async function runFreeZoneEvaluation(
         kind: 'sys',
         event: 'free_zone.evaluated',
         outcome,
-        candidates: evaluated.length,
-        skippedChangedMeanwhile: skipped,
-        listed: evaluated.filter((item) => item.state.status === 'listed').length,
-        marketsMissing: markets.filter((market) => market === null).length,
-        probes: probed.reduce((sum, item) => sum + item.probes.length, 0),
-        probesUnroutable: probed.reduce(
+        candidateCount: evaluated.length,
+        skippedChangedCount: skipped.length,
+        listedCount: evaluated.filter((item) => item.state.status === 'listed').length,
+        missingMarketCount: markets.filter((market) => market === null).length,
+        probeCount: probed.reduce((sum, item) => sum + item.probes.length, 0),
+        unroutableProbeCount: probed.reduce(
           (sum, item) => sum + item.probes.filter((p) => p.outcome === 'unroutable').length,
           0
         ),

@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import * as Sentry from '@sentry/node';
 import { logger } from './logger.js';
+import { observedFetch } from '../platform/observability/fetch.js';
 
 const SLOW_MS = 1_000;
 const CHAT_ROUTES = new Set([
@@ -144,7 +145,7 @@ function restIdentity(input: Parameters<typeof fetch>[0], init?: RequestInit) {
 /** Pass through untouched. fetch resolves at HEADERS; this is not SQL or full-body latency. */
 export const observedSupabaseFetch: typeof fetch = async (input, init) => {
   const identity = restIdentity(input, init);
-  if (!identity) return globalThis.fetch(input, init);
+  if (!identity) return observedFetch('db.supabase', input, init, { provider: 'supabase' });
   const started = performance.now();
   let outcome: Outcome = 'error';
   let status: number | undefined;
@@ -167,7 +168,10 @@ export const observedSupabaseFetch: typeof fetch = async (input, init) => {
   const timer = setTimeout(() => report('pending'), SLOW_MS);
   timer.unref();
   try {
-    const response = await globalThis.fetch(input, init);
+    const response = await observedFetch('db.supabase', input, init, {
+      provider: 'supabase',
+      resource: identity.resource,
+    });
     status = response.status;
     outcome = response.ok ? 'ok' : 'error';
     return response;

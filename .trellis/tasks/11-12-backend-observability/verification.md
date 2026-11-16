@@ -1,0 +1,149 @@
+# 本地验证记录（2026-11-13）
+
+## 合并与完整性审计验证（2026-11-14）
+
+合并来源：本地 HEAD `043c60dc`，待合入 `f25d969b8dc78ee059bb9fcb3eccab271c802f5f`。开始时 Git 已在合并中，自动合并内容已暂存，5 个文件存在 unmerged 索引；本轮未执行 git add/commit/push。五个文件内容的冲突标记已清除，Git 索引仍待人工最终审阅后标记解决。处理取舍及 8 类日志遗漏详见 [审计调研](research/merge-audit-2026-11-14.md)，最终路径/摘要和拟暂存清单见 [审阅记录](merge-review-2026-11-14.md)。
+
+本轮修复覆盖：普通 owned session 字段落点、媒体参数、影像对象/任务、逐实体 worker、支付/群身份、欢迎语 transport、增长/问卷字段、专用 Prisma/pg 数据库观测及日志规划/规范承接。没有执行上游新增的两份 migration、访问生产业务数据、改变业务重试/计费或部署。日志告警仍默认关闭，未发送真实飞书通知。
+
+最终验证：
+
+- Backend 全量：`pnpm --filter @miniapp/backend exec vitest run --exclude '**/*.integration.test.ts' --maxWorkers=2 --testTimeout=15000`，162 文件 / 1750 项通过。追加 pg 回归首次用错了闭包 spy 接缝（spy start 不能捕获 observe 内部闭包），修正测试到真实 observe 接缝后，专项 4 文件 / 31 项与最终全量均通过；未为测试改变运行时结果。
+- Shared：23 文件 / 239 项通过；Frontend 流式与发送链路：2 文件 / 83 项通过；Admin-client free-zone consumer：1 文件 / 12 项通过。
+- `pnpm -r typecheck` 8 个包通过；新增数据库观测后 Backend typecheck 再次通过。Frontend/Admin 生产 build 均通过，保留既有 img/hooks/样式类、浏览器数据和大 chunk 警告；无日志相关构建错误。
+- 变更 TS 的 ESLint、Prettier、`git diff --check`、日志 AST 门禁（323 运行文件）、AST guard 自测 3 项、migration 文件名静态检查通过。Backend 无独立 dist build。
+- 复杂度检查通过，收紧为 34 文件 / 102 函数；大厅排序主方法拆出原持久化事务和清理流程，保持提交后缓存失效、解锁/复位/断开顺序，未提高预算。其他未修改的上游存量增长警告保留。
+- Python 日志规划门禁 8 项通过；backend-observability 与 growth-prompts 的独立声明校验通过。模块载荷基于当前合并后的各模块正文重建前缀、保留原日志附录并追加审计，刷新字节哈希后 module_knowledge check 通过，未用旧正文覆盖上游增长模块。
+- 新建的两个回归文件有已记录风险依据：真实 ChatSessionRepository 读取绑定，以及共享/dedicated Prisma model/raw/unsafe raw 的原参数/返回/异常与敏感字段。其他回归扩展既有文件；HTTP/worker 作用域、实际 JSON、通知/Sentry 排除、Telegram payload 失败和锁清理的既有用例继续通过。
+
+环境修复记录：首次两端构建及后续 Vitest 启动遇到 node_modules 内 Next/lightningcss/sourcemap-codec 文件缺失，执行 `pnpm install --frozen-lockfile --force` 修复，锁文件和依赖版本未变。Prisma generate 第一次遇到测试进程占用 Windows engine DLL，测试结束后再次执行成功（6.19.3），未修改 schema 或运行迁移。Frontend build 按现有配置自动上传 Sentry sourcemap；这不是应用部署，也不证明生产日志验收完成。
+
+线上与人工边界：真实 TEST/生产数据库集成、支付/供应商、Telegram WebView、Railway 属性检索及 Android/iOS/API/SSE P95 均未在本轮执行。继续按 task.json 的发布前后 24 小时窗口分平台验证，缺样本保持 null。建议把用户→对象→trace 的日志断言接入现有 @chat/@image/@creator/@drama 验收分组；本次不新增页面流程或一次性 UI mock 系统。静态检查只覆盖已定义语法，不能宣称任意 SDK 内部或所有历史业务分支已被形式化证明。
+
+## 业务关联字段补充（2026-11-14）
+
+按用户要求补充现有 PRD/design/implement/task 与 logging_integration，并修改代码。仅工作区变更，未暂存/提交/push/部署，未进行数据库操作或真实通知。原任务仍为 in_progress，线上 Railway/P95 验收项保持未完成。
+
+实现范围：`business_module`、内部 `user_id`、验签后的 `telegram_user_id`，以及 `session_id/character_id/creation_id/drama_id/video_id` 的受控输出。HTTP 模板绑定目标，鉴权/身份解析及现有业务边界补充，子 span 继承、生成作用域隔离，HTTP raw finish/close 读到后来取得的字段。缓存等待者和命中者分别绑定身份，不增加查询。legacy UUID 别名统一输出；Sentry 独立 span/log/event/breadcrumb 出口及告警通知排除新增身份。没有新公开 API、前端、依赖、数据库或部署配置。
+
+已完成检查：
+
+- Backend 全量：`pnpm --filter @miniapp/backend exec vitest run --exclude '**/*.integration.test.ts' --maxWorkers=2 --testTimeout=15000`，156 文件 / 1704 项通过。首次使用默认 5 秒时，取消路由动态导入用例超时并导致后续 mock 调用串扰；沿用本任务既有 15 秒预算后全量通过，没有为此修改业务代码或测试超时配置。
+- 最后增加创作首次保存失败与短剧 POST 校验/失败/默认选集断言后，重新运行 observability、logger、user、sentry、auth、drama-play、creator-characters 专项：10 文件 / 88 项通过。新增测试都在既有测试文件中；未重新跑无关全量用例。
+- `pnpm --filter @miniapp/backend typecheck`、全部变更 TS 的 ESLint、`pnpm lint:backend-logging`（313 运行时文件）通过。
+- `pnpm lint:complexity` 通过，既有基线 34 文件 / 104 函数，没有本次新增超标；其余未改文件的存量增长警告仍存在。
+- 变更文件 Prettier、`git diff --check`、当前任务 logging planning gate 与 module knowledge check 通过。模块载荷原有哈希与当前文件字节不一致；逐模块比对确认原正文一致、差异仅计划的 last_verified 元数据后刷新字节哈希，未覆盖上游正文。
+- 实际 Pino Writable JSON 验证 ID 未被过滤或 REDACTED、别名归一、当前身份优先、敏感字段不输出；回归覆盖真实签名成功/失败、身份查库失败、共享 inflight/cache、并发请求/实体作用域、独立根、晚补字段和真实 socket 断开的一次终态。通知仅通过事件 ID 关联，不携带用户/会话 ID。
+
+范围与限制：无需重跑 Frontend/Admin build 或跨包 consumer typecheck（未改 shared/API/部署）；Backend 没有独立 dist build。普通单测不访问集成数据库，真实供应商、支付、生产日志可见性和 Android/iOS/API P95 尚未验收，无样本保持 null。
+
+发布后人工步骤：在正确 Railway 环境部署后，复用本地验收流程的 @chat/@creator/@drama 场景，实际执行会话创建/发送/断开、创作保存失败、短剧 GET/POST 播放失败；按运行说明的用户/对象字段筛选，再按 trace_id 核对 HTTP→DB/provider→终态，检查匿名/401 不带身份、通知无身份。建议将这套查询断言纳入现有本地验收流程，模拟结果不能代替真实 Railway 和真机性能验证。发布后各 24 小时分别核验 Android/iOS 页面、普通 API、SSE 首包/完整生成，样本不足延长窗口。发现敏感字段、串号、容量或 P95 劣化时停止发布并回滚应用。
+
+基线 98fd5708，分支 feat_log_modules。未 push、未部署、未访问生产业务数据、未执行 migration，也未发送真实飞书通知。
+
+## 已通过
+
+- Backend 全量无凭证测试：149 个文件 / 1619 项。命令：`pnpm --filter @miniapp/backend exec vitest run --exclude '**/*.integration.test.ts' --maxWorkers=2 --testTimeout=15000`。
+- 重构后的 Admin/Creator 路由及 Sentry 专项：3 文件 / 39 项。
+- Shared：20 文件 / 233 项（`pnpm --filter @miniapp/shared test`）。
+- Frontend 流式消费者：1 文件 / 31 项（新旧错误码均保留半截文本）。
+- `pnpm -r typecheck` 所有包通过；末次 Backend 改动另跑 typecheck 通过。
+- Backend ESLint、`pnpm lint:backend-logging`（291 个运行时文件）、`pnpm lint:complexity` 通过。复杂度基线从最初 38 文件/108 函数收紧到 35/105；不修改无关 Admin 基线。
+- `pnpm --filter @miniapp/frontend build`、`pnpm --filter @miniapp/admin build` 通过。存在既有 img/hooks、Browserslist 数据和大 chunk 提示，不作为本次新增缺陷。
+
+初次全量与 Next build 并行时有动态导入超时；旧 console 断言也随迁移失败。更新断言后单独复跑失败文件 47 项通过，再完整运行得到上述 149/1619 全通过。未修改业务截止时间来规避测试失败。
+
+## 覆盖证据
+
+核心：并发与嵌套 ALS、一次终态、执行一次/原结果与原错误、输出失败隔离、敏感字段。HTTP：提前响应、真实 socket 断开、hijack SSE、状态与请求关联。transport：未消费响应正文、未变更 Response/AbortSignal、超时/取消、无自动写重试。支付：既有幂等、未知写入和回调验证。通知：关闭不解析规则、不发送；第一条命中、匹配失败、4并发上限、2.5秒退出、无递归、原 event_id 可回查。
+
+## 仍未验证及兼容保留
+
+未采集真实 Android/iOS 页面或 API P95，未核验 Railway 保存和实际通知投递；task.json 中无样本基线保持 null。应在发布后按24小时窗口验证，样本不足延长。
+
+图片描述公开422、免费试用 INVALID_STATE、尚未单独验证的通用兜底保持兼容，不能宣称历史错误目录全量落地；源码原因与消费者分析见运行说明的矩阵。真实供应商/支付/数据库集成需要目标环境及单独数据验证，普通无凭证单测不替代。
+
+建议复用 ui-tests 的 @chat/@profile/@image 持续验收失败显示、半截文本、余额不足与支付未知状态查询；本次没有更改页面流程，不新增临时 UI mock 系统。
+
+## 合并冲突验证（2026-11-13）
+
+将上游 `05119f25` 合并至日志分支 `26eaa901`，解决 14 个冲突文件。保留上游会话分组、增长入口、畅聊任务、请求调度与 Telegram 签名/有效期/生产 bypass 限制；保留日志上下文、CORS 链路头、默认关闭告警和已验证的超时错误码。复杂度基线沿用双方已完成的收紧，不重新引入已拆分的超长文件/函数。
+
+模块知识载荷重新基于上游会话分组文档生成并通过 `module_knowledge.py check`，避免未来归档覆盖上游说明。鉴权和 CORS 涉及安全与跨域契约，在已有测试文件补充生产 bypass 禁止与链路头暴露断言，没有新建测试文件。
+
+- Backend：155 文件 / 1687 项通过；补充后的鉴权/CORS 专项 2 文件 / 10 项通过。
+- Shared：21 文件 / 235 项通过；Frontend 请求计时/流式消费：2 文件 / 42 项通过。
+- 全仓 typecheck、Backend ESLint、日志门禁（311 运行时文件）、复杂度检查通过；既有复杂度增长警告保留，不扩大此次冲突处理范围。
+- Frontend/Admin 生产构建通过。首次分别被本地 Next.js/lightningcss 包文件缺失阻断，按冻结 lockfile 修复安装后复跑成功；未变更依赖声明或锁文件。保留既有样式、img/hooks 与大 chunk 警告。
+- 格式化检查通过。默认 lint-staged 曾遇到索引锁/暂存恢复错误，串行执行 `pnpm exec lint-staged --no-stash --no-hide-partially-staged --concurrent false` 成功；工作区没有未解决冲突。
+
+未执行上游新增迁移、生产操作或真实告警；原任务的线上验证边界继续适用。
+
+## 审计整改验证（2026-11-13）
+
+针对用户确认的六类缺口完成五个代码提交：子 logger 安全边界、遗留错误及告警字段、受控诊断字段、HTTP 等级、别名 transport 与后台上下文/CI。未新增依赖、运行时配置或公开 API，未改数据库、业务重试和资金流程；Railway 捕获与默认关闭告警保持不变。
+
+- 全量无凭证 Backend：156 文件 / 1697 项通过，沿用 `--exclude '**/*.integration.test.ts' --maxWorkers=2 --testTimeout=15000`。
+- 后端 typecheck、全后端 ESLint、复杂度（34 文件 / 104 函数存量基线）、`git diff --check` 通过。
+- `node --test scripts/check-backend-logging.test.mjs`：3 项通过；AST 日志门禁覆盖 311 个运行时文件，通过。
+- 专项覆盖：嵌套/后加子绑定、父子隔离、实际 Pino JSON 的安全错误码/有限 cause、无 event error/fatal、公开码与内部码区别、状态/耗时别名、关闭后无通知、HTTP 正常及裸响应的 401/403/409/429 等级、畅聊行情成功/超时且无新增重试、重叠任务独立根上下文/跳过/失败终态。
+- 模块知识载荷校验通过；运行说明和 backend spec 同步。此次仅后端内部日志与 CI 检查变动，没有前端/shared 契约或构建配置变动，未重复两端 build；最近一次合并验证记录中的两端构建仍可追溯。
+
+真实 Feishu/Railway 查询、供应商/数据库环境集成与发布后 Android/iOS/API P95 未执行，不能据本地测试宣称通过。静态 guard 不承诺识别任意高阶别名或第三方 SDK 内部请求；已登记的底层日志 transport、通知 adapter 和离线导入例外各自有明确边界。
+
+## 日志接入规划门禁验证（2026-11-13）
+
+原有运行时代码日志 AST 门禁存在，规划阶段没有日志接入声明的硬校验。本次补齐 `meta.logging_integration`：新任务默认 pending，所有任务（包括旧任务重新启动）在 start 写状态/活动指针/执行 hook 前校验；Quality Gate 校验 base..HEAD 触及的活动任务规划。AGENTS、workflow、PRD 模板及专题 spec 同步明确新增/修改功能必须接入或验证复用，纯非运行行为改动才可说明理由后不适用。
+
+- `python -m unittest discover -s scripts -p test_logging_planning_gate.py`：8 项通过，涵盖创建默认值、完整/不适用声明、占位及非法字段、缺失声明、两种会话模式下无副作用、降级启动、CI 选择与基线失败。
+- 当前任务的独立 logging planning gate 与模块知识载荷校验通过。
+- 工具提交 `eee9f3b9` 后，用本轮起点 `ff7dfe3a` 以及本地 `origin/dev`、`origin/main` 引用分别运行 `--base`，均选中并通过当前任务，验证真实 Git diff 路径；这些本地引用检查不代表远程 CI 已执行。
+- `node --test scripts/check-backend-logging.test.mjs`：3 项通过；`pnpm lint:backend-logging`：311 个运行文件通过。
+- 本轮只变更 Python 工具、CI 及规划规范，没有修改应用包、依赖或运行时配置；不重复前轮已通过的应用 typecheck/build。Python 语法检查及变更文件格式检查通过。
+
+门禁检查结构完整性，不会自动判断理由真实性或证明业务日志覆盖。CI 不追溯未触及/已归档规划，也不要求每个仅改源码的 PR 都有任务文件；功能变更仍需遵循先规划、再实现并验证日志接入的项目流程。未执行远程 CI、push 或部署。
+
+## 2026-11-16 完整性审计补全
+
+本轮后续复用评估见文末「复用与文件配置设计验证」，对应的候选配置功能尚未实现。
+
+用户确认处理本轮六类缺口。按模块提交异常边界 ee033593、warn/短剧事件 ddefd6de、数据库 cause/仓储拆分 79747ff9、对账轮次 8e24ae84、大厅代理 fd10cd9e、静态门禁 9228feae。
+
+- 运行时数据库/存储错误转换共 146 处补标准 cause，已映射会话/分组业务错误也保留原对象；公开消息、状态和错误码不变。安全投影仅保留允许的嵌套 code/有限 cause，原 message/details 不输出。四个超长仓储拆成既有类型/映射、feed、worker/check-in 边界，原公开入口重导出兼容；复杂度文件基线由 34 收紧到 30，函数基线 102 不扩张。
+- 设置/头像/生成偏好/Bot 32 项回归，warn/短剧 42 项，仓储/图片/签到 197 项，对账 10 项，大厅代理 10 项通过。新增回归文件已在本轮审核执行计划与风险评估中明确允许；没有建立平行测试体系。
+- 全量无凭证 Backend：164 文件 / 1766 项通过，`--exclude '**/*.integration.test.ts' --maxWorkers=2 --testTimeout=15000`。Shared：23 文件 / 239 项通过；`pnpm -r typecheck` 所有包通过。
+- Node 静态门禁 9 项、331 个运行文件检查通过；受影响 Backend/Frontend/脚本 ESLint 通过。包括新脚本默认纳入、局部 fetch 注册不豁免其他块、独立 DB 创建、非 fetch HTTP、逐回调/轮次包装、cause 丢失和已有人工 CLI/采样/供应商 deadline 轮询例外。
+- `module-updates.json` 旧摘要与当前模块文件不匹配，已基于当前模块源重新生成摘要并保留其全部现状及已有任务候选，再追加本轮事实与两个 Frontend 模块；载荷校验通过，不直接归档或覆盖模块源。
+
+Frontend 初次构建因本地 Next.js 自身缺失 `webpack-build/impl` 文件而失败，执行 `pnpm install --frozen-lockfile --force` 恢复同锁定版本安装后，Frontend/Admin 生产构建均通过；没有改依赖声明或 lockfile。保留既有 Browserslist、Tailwind、img/hooks 与 Admin 大 chunk 提示。格式、diff 和模块载荷校验通过；规划门禁按本轮基线 `018996b8..HEAD` 的真实 Git diff 路径验证通过，Python 8 项规划工具回归通过。
+
+门禁复核提交 8c947a89 额外阻断同一个 timer 回调先调用已包装任务、随后在作用域外执行实际工作的绕过；重新运行 9 项 Node 回归、331 个运行文件检查和脚本 ESLint 通过。它只修改检查器，没有变更已通过全量回归的运行时代码。
+
+未执行远程 CI、push、生产查询、真实供应商/支付/通知或迁移。后端日志由 Railway 捕获，代理摘要位于 Next.js 运行时 stdout；公共缓存命中的 ID 对应源站执行，不是新增请求样本。真实 Railway/通知及 Android/iOS/API P95 仍按原任务发布窗口验收。建议后续在现有 ui-tests 的 @profile/@roleplay 复用设置/头像失败与大厅代理超时/取消场景，并配合正确环境的 Railway 查询和通知核验；本轮没有新增页面流程或临时 mock 系统。
+
+## 2026-11-16 复用与文件配置设计验证
+
+本节为当时评估状态，后续用户要求已实施，最新文件来源和 SDK 边界见文末「集中目录与规则文件验证」。
+
+基于源码 `ca98570f` 核对核心依赖、业务映射、Pino 输出、框架/DB adapter、配置装配与 Docker 复制范围。归纳于 `docs/logging-reuse-and-alert-config.md`，并从 README、运行说明与 Backend spec 索引链接。
+
+- 只更新评估/任务/规范文档，没有产品或部署配置变动；文件加载、模块/精确 HTTP/上游状态筛选和公共 SDK 均明确标注为候选功能，没有宣称已接入。
+- 以真实 parser 验证 modules/business_modules/http_statuses/upstream_statuses 当前均被 strict schema 拒绝；现有 min_http_status=500 能匹配 503，关闭时忽略非法规则。
+- 文档 2 个 JSON 示例语法通过，现有规则示例通过当前 parser；目标新字段示例确认当前 schema 不支持。14 个相对链接目标存在。
+- 既有 log-alerts.test.ts：1 文件 / 7 项通过；任务日志规划、模块知识载荷、格式及 diff 校验通过。未新增测试文件，文档改动无需重复应用 typecheck/build；前轮应用证据见上一节。
+- 配置设计覆盖开启/关闭、来源冲突、文件缺失/超限/错误版本、字段/状态校验、模块语义、第一条匹配、默认兜底、容器路径、兼容/回滚与后续实现验收。未核验生产开关或部署规则实值。
+
+## 2026-11-16 集中目录与规则文件验证
+
+用户要求实施唯一文件规则并预留公共 SDK。7db9a051 集中实现及兼容入口；498a54f2 落地文件 loader、schema/matcher/投影、新筛选、SDK factory、验证命令与 CI；SDK 导入依赖防线补充于 d0d18dfc。
+
+- 实现/测试集中 `platform/observability/`，仅四个旧 lib 入口作重导出；Shared 旧 logging conventions 只有 Backend 消费，已迁入同一目录，没有改变 shared DTO 或公开 API。
+- 规则唯一来源 alert-rules.json；LOG_ALERT_RULES 不读取且无路径环境覆盖，启动时有界读取16KiB并冻结策略。关闭零文件 I/O，开启错误/缺失/超限/未知字段或版本 fail fast，错误不回显配置内容/路径。四条规则中仅 runtime-errors 启用，原默认 error/fatal 范围保持。
+- 技术/业务模块及 HTTP/上游状态分开匹配；条件 AND、列表 OR、第一条命中，停用专项规则不代表抑制后续兜底。告警通道保留窄字段，用户/会话/正文/凭据仍排除，通知并发/超时及无重试/持久化不变。
+- SDK 导出不导入配置、文件、Pino singleton、框架、DB、Sentry 或具体渠道，fetch/job 通过注入 observer 工作，Delivery 接口与品牌信息分离。业务字段投影仍为后续抽包的明确适配接缝，没有发布独立 SDK 包。
+- 相关模块 10 文件 / 72 项通过；全量无凭证 Backend 166 文件 / 1784 项通过，参数 `--exclude '**/*.integration.test.ts' --maxWorkers=2 --testTimeout=15000`。Shared 23 文件 / 239 项，全仓 typecheck、全 Backend ESLint、9 项 Node 门禁回归、342 个运行文件检查、8 项 Python 规划回归及复杂度30文件/102函数存量基线通过。新增 SDK 依赖 mock 后独立3项再验证通过。
+- logging:validate 在包 cwd 与仓库根通过，均输出 version=1/rules=4/enabled_rules=1，未初始化数据库或发送通知。CI 已接同一命令；真实 Docker COPY 范围包括 src 内 JSON。
+- Frontend 构建再次因本地 Next.js 的 webpack-build/impl 安装文件缺失而失败，按 frozen lockfile force 修复同锁版本后完整构建退出0；本地重复构建曾再次缺文件，记录为现有安装问题，不据此修改应用配置或依赖版本。Admin typecheck + Vite 生产构建退出0；保留既有 img/hooks 与大 chunk 警告，未改锁文件。
+- 当前全部变更格式检查和 git diff --check 通过；19 个文档相对链接存在，目录说明及运行说明中的 JSON 示例通过实际规则 schema。日志接入规划门禁（对比51fe1be3）和模块知识载荷校验通过；代码、规则、文档保持同一来源。
+
+当前未部署、未 push、未核验生产旧规则/开关实值、实际通知或平台保存/P95；发布前须将需要保留的旧环境规则迁入文件，运行校验后随应用发布。真实 Android/iOS/API 验收沿用原窗口，仍不补造基线样本。

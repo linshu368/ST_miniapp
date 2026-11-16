@@ -1,5 +1,8 @@
 import { Buffer } from 'node:buffer';
 import { getSupabaseClient } from '../../lib/supabase.js';
+import { clientFetch } from '../../platform/observability/fetch.js';
+
+const fetch = clientFetch('storage.image_plaza', 'http');
 
 const BUCKET = 'image-plaza';
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;

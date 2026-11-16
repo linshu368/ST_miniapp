@@ -1,3 +1,5 @@
+import { runObservedJob } from '../platform/observability/jobs.js';
+import { applyPrismaObservation } from '../platform/observability/prisma.js';
 /**
  * backend / lib / lobby-ranking-refresh-job.ts
  *
@@ -89,7 +91,7 @@ function createDedicatedClient(): PrismaClient | null {
   url.searchParams.set('connection_limit', '1');
   url.searchParams.set('pool_timeout', String(DIRECT_POOL_TIMEOUT_S));
 
-  return new PrismaClient({ datasources: { db: { url: url.toString() } } });
+  return applyPrismaObservation(new PrismaClient({ datasources: { db: { url: url.toString() } } }));
 }
 
 export function startLobbyRankingRefreshJob(log: FastifyBaseLogger): void {
@@ -98,12 +100,12 @@ export function startLobbyRankingRefreshJob(log: FastifyBaseLogger): void {
   const jlog = log.child({ module: 'lobby-ranking-refresh' });
 
   timerId = setInterval(() => {
-    void runLobbyRankingRefresh(jlog);
+    void runObservedJob('lobby_ranking_refresh', () => runLobbyRankingRefresh(jlog));
   }, FRESHNESS_CHECK_INTERVAL_MS);
 
   startupTimerId = setTimeout(() => {
     startupTimerId = null;
-    void runLobbyRankingRefresh(jlog);
+    void runObservedJob('lobby_ranking_refresh', () => runLobbyRankingRefresh(jlog));
   }, STARTUP_DELAY_MS);
 
   jlog.info({ kind: 'sys', event: 'lobby_ranking.started' }, 'Lobby ranking refresh job started');
@@ -209,18 +211,7 @@ export async function runLobbyRankingRefresh(log: FastifyBaseLogger): Promise<vo
     }
 
     // 落表单独短事务：避免 INSERT 成功、DELETE 失败留下半截覆盖态。
-    await dedicated.$transaction(
-      async (tx) => {
-        await persistRankingScores(tx, scores, params);
-        await tx.$executeRaw`
-          INSERT INTO miniapp_features.lobby_ranking_refresh_state (singleton, scoring_rules, completed_at)
-          VALUES (true, ${rules}::jsonb, clock_timestamp())
-          ON CONFLICT (singleton) DO UPDATE SET scoring_rules = EXCLUDED.scoring_rules,
-            completed_at = EXCLUDED.completed_at
-        `;
-      },
-      { timeout: PERSIST_TRANSACTION_TIMEOUT_MS, maxWait: PERSIST_MAX_WAIT_MS }
-    );
+    await persistSnapshot(dedicated, scores, params, rules);
 
     // 提交后再让读路径失效，否则缓存可能填进还没提交的旧值
     clearCharacterRankingScoreCache();
@@ -251,39 +242,66 @@ export async function runLobbyRankingRefresh(log: FastifyBaseLogger): Promise<vo
       '大厅排序分刷新失败，沿用上一轮结果'
     );
   } finally {
-    if (lockHeld) {
-      try {
-        await dedicated.$queryRaw`SELECT pg_advisory_unlock(${ADVISORY_LOCK_KEY}::bigint)`;
-      } catch (err) {
-        log.warn(
-          { kind: 'sys', event: 'lobby_ranking.unlock_failed', err },
-          '释放排序刷新 advisory lock 失败'
-        );
-      }
-    }
-    if (timeoutChanged) {
-      try {
-        await dedicated.$queryRaw`SELECT set_config('statement_timeout', '120000', false)`;
-      } catch {
-        // 即将 disconnect；复位失败可忽略
-      }
-    }
-
-    isRunning = false;
-
-    try {
-      await dedicated.$disconnect();
-    } catch (err) {
-      log.warn(
-        { kind: 'sys', event: 'lobby_ranking.disconnect_failed', err },
-        '释放专用数据库连接失败'
-      );
-    }
+    await releaseDedicatedClient(dedicated, lockHeld, timeoutChanged, log);
     observeBackgroundRun({
       job: 'lobby_ranking_refresh',
       outcome,
       startedAt: observationStartedAt,
       error: terminalError,
     });
+  }
+}
+
+async function persistSnapshot(
+  dedicated: PrismaClient,
+  scores: Parameters<typeof persistRankingScores>[1],
+  params: Parameters<typeof persistRankingScores>[2],
+  rules: string
+): Promise<void> {
+  await dedicated.$transaction(
+    async (tx) => {
+      await persistRankingScores(tx, scores, params);
+      await tx.$executeRaw`
+        INSERT INTO miniapp_features.lobby_ranking_refresh_state (singleton, scoring_rules, completed_at)
+        VALUES (true, ${rules}::jsonb, clock_timestamp())
+        ON CONFLICT (singleton) DO UPDATE SET scoring_rules = EXCLUDED.scoring_rules,
+          completed_at = EXCLUDED.completed_at
+      `;
+    },
+    { timeout: PERSIST_TRANSACTION_TIMEOUT_MS, maxWait: PERSIST_MAX_WAIT_MS }
+  );
+}
+
+async function releaseDedicatedClient(
+  dedicated: PrismaClient,
+  lockHeld: boolean,
+  timeoutChanged: boolean,
+  log: FastifyBaseLogger
+): Promise<void> {
+  if (lockHeld) {
+    try {
+      await dedicated.$queryRaw`SELECT pg_advisory_unlock(${ADVISORY_LOCK_KEY}::bigint)`;
+    } catch (err) {
+      log.warn(
+        { kind: 'sys', event: 'lobby_ranking.unlock_failed', err },
+        '释放排序刷新 advisory lock 失败'
+      );
+    }
+  }
+  if (timeoutChanged) {
+    try {
+      await dedicated.$queryRaw`SELECT set_config('statement_timeout', '120000', false)`;
+    } catch {
+      // The owning connection is about to close; resetting its timeout is best-effort.
+    }
+  }
+  isRunning = false;
+  try {
+    await dedicated.$disconnect();
+  } catch (err) {
+    log.warn(
+      { kind: 'sys', event: 'lobby_ranking.disconnect_failed', err },
+      '释放专用数据库连接失败'
+    );
   }
 }

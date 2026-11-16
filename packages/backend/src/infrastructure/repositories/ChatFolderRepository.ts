@@ -18,9 +18,10 @@ const RPC_TIMEOUT_MS = 3_000;
 export class ChatFolderRepositoryError extends Error {
   constructor(
     readonly code: ChatFolderErrorCode,
-    message: string
+    message: string,
+    options?: ErrorOptions
   ) {
-    super(message);
+    super(message, options);
     this.name = 'ChatFolderRepositoryError';
   }
 }
@@ -33,15 +34,17 @@ interface PostgrestError {
 /** 23503 = 外键：分组不存在或不属于本人；23505 = 同名分组 */
 export function toFolderError(error: PostgrestError, fallback: string): Error {
   if (error.code === '23503')
-    return new ChatFolderRepositoryError('folder_not_found', '分组不存在');
+    return new ChatFolderRepositoryError('folder_not_found', '分组不存在', { cause: error });
   if (error.code === '23505') {
-    return new ChatFolderRepositoryError('folder_name_taken', '已经有同名分组');
+    return new ChatFolderRepositoryError('folder_name_taken', '已经有同名分组', { cause: error });
   }
   // 42P01/42703/PGRST202：迁移未执行，分组功能整体不可用，不影响原有列表。
   if (error.code === '42P01' || error.code === '42703' || error.code === 'PGRST202') {
-    return new ChatFolderRepositoryError('folders_unavailable', '分组功能暂不可用');
+    return new ChatFolderRepositoryError('folders_unavailable', '分组功能暂不可用', {
+      cause: error,
+    });
   }
-  return new Error(`${fallback}：${error.message}`);
+  return new Error(`${fallback}：${error.message}`, { cause: error });
 }
 
 interface FolderRow {

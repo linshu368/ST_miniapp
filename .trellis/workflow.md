@@ -167,6 +167,7 @@ Phase 3: Finish  → verify, update spec, commit, and wrap up
 - Lightweight tasks may be PRD-only plus the generated `task.md`. Complex ST_miniapp tasks must have reviewed `prd.md`, `design.md`, `implement.md`, and `task.md` before `task.py start`.
 - Every task must resolve `task.json.meta.module_impact` before start: declare affected IDs from `.trellis/spec/modules-index.md`, or use `no_module_change` with a concrete reason. Completed changes provide reviewed `module-updates.json`; archive applies it to the working tree before moving the task.
 - Every newly created task must resolve `task.json.meta.mobile_performance` before start. Feature development, bug fixes, and solution design declare Android/iOS page-load P95 and API P95 scope, baselines, targets, evidence window, and post-release validation, or use `not_applicable` with a concrete reason. Never invent or zero-fill missing samples.
+- Every new/changed feature and bug-fix plan must resolve `task.json.meta.logging_integration`, including explicit reuse of existing logs. Follow [logging integration planning](spec/backend/app/logging-integration-planning.md) for events, levels/outcomes, fields, correlation, redaction, failure paths, alerting and verification. Only work with no runtime impact may use justified `not_applicable`; missing/pending declarations block start, including resumed old tasks.
 
 ### Parent / Child Task Trees
 
@@ -200,6 +201,7 @@ Load `trellis-brainstorm`; stay in planning.
 Lightweight: `prd.md` can be enough. Complex: finish `prd.md`, `design.md`, `implement.md`, and `task.md`; ask for review before `task.py start`.
 Read `.trellis/spec/modules-index.md` and affected module files; replace pending module_impact with changes/no_module_change before start.
 Resolve `meta.mobile_performance`: record Android/iOS page-load and API P95 planning, or provide a concrete `not_applicable` reason. `pending` cannot start.
+Resolve `meta.logging_integration` using `.trellis/spec/backend/app/logging-integration-planning.md`. New/changed features must plan log integration or explicit reuse; missing/pending/incomplete declarations cannot start.
 Multi-deliverable scope: consider a parent task plus independently verifiable child tasks; dependencies must be written in child artifacts, not implied by tree position.
 Sub-agent mode: curate `implement.jsonl` and `check.jsonl` as spec/research manifests before start.
 [/workflow-state:planning]
@@ -215,6 +217,7 @@ Load `trellis-brainstorm`; stay in planning.
 Lightweight: `prd.md` can be enough. Complex: finish `prd.md`, `design.md`, `implement.md`, and `task.md`; ask for review before `task.py start`.
 Read `.trellis/spec/modules-index.md` and affected module files; replace pending module_impact with changes/no_module_change before start.
 Resolve `meta.mobile_performance`: record Android/iOS page-load and API P95 planning, or provide a concrete `not_applicable` reason. `pending` cannot start.
+Resolve `meta.logging_integration` using `.trellis/spec/backend/app/logging-integration-planning.md`. New/changed features must plan log integration or explicit reuse; missing/pending/incomplete declarations cannot start.
 Multi-deliverable scope: consider a parent task plus independently verifiable child tasks; dependencies must be written in child artifacts, not implied by tree position.
 Inline mode: skip jsonl curation; Phase 2 reads artifacts/specs via `trellis-before-dev`.
 [/workflow-state:planning-inline]
@@ -224,6 +227,8 @@ Inline mode: skip jsonl curation; Phase 2 reads artifacts/specs via `trellis-bef
 - 2.1 Implement `[required · repeatable]`
 - 2.2 Quality check `[required · repeatable]`
 - 2.3 Rollback `[on demand]`
+
+Implement and verify the reviewed logging plan alongside the feature: reuse existing HTTP/transport/job context, cover the changed failure paths, and keep safe field projection and default-off alerts. Run applicable logging tests and `pnpm lint:backend-logging`; passing the planning schema alone does not prove runtime coverage. CI also validates active task planning artifacts touched by the change.
 
 实施时只为复杂业务编排、非显然约束、关键状态转换和边界处理补充简洁的 why 注释；简单自解释方法无需注释，项目要求的结构化注释不受影响。默认不自动创建测试文件，只有用户明确要求、已审核规划/验收标准确认或风险评估确认需要回归锁定时才创建；这不影响运行现有相关测试、typecheck、lint、build、静态检查和人工回归。
 
@@ -469,22 +474,25 @@ For lightweight tasks, `prd.md` can be enough. For complex ST_miniapp tasks, `pr
 
 Before start, new tasks must also resolve `task.json.meta.mobile_performance`. Use `required` with affected pages/APIs, Android/iOS page P95, API P95, measurement source/window, and validation notes; or use `not_applicable` with a concrete reason. Missing samples remain `null` and are described as “无可见样本”; do not infer or fill zero.
 
+Before every start, resolve `task.json.meta.logging_integration` according to [the logging planning contract](spec/backend/app/logging-integration-planning.md). This applies to old tasks too. Record a complete `required` plan for new/changed features, including reused logging; justify `not_applicable` only for work with no runtime impact. The gate runs before task state, active pointer or hooks are changed.
+
 After this command succeeds, the breadcrumb auto-switches to `[workflow-state:in_progress]`, and the rest of Phase 2 / 3 follows.
 
 If `task.py start` errors with a session-identity message (no context key from hook input, `TRELLIS_CONTEXT_ID`, or platform-native session env), follow the hint in the error to set up session identity, then retry.
 
 #### 1.5 Completion criteria
 
-| Condition                                                                        |  Required   |
-| -------------------------------------------------------------------------------- | :---------: |
-| `prd.md` exists                                                                  |     ✅      |
-| User confirms task should enter implementation                                   |     ✅      |
-| `task.py start` has been run (status = in_progress)                              |     ✅      |
-| `meta.mobile_performance` is resolved (`required` or justified `not_applicable`) |     ✅      |
-| `research/` has artifacts (complex tasks)                                        | recommended |
-| `design.md` exists (complex tasks)                                               |     ✅      |
-| `implement.md` exists (complex tasks)                                            |     ✅      |
-| `task.md` exists and is broken down into executable tasks (complex tasks)        |     ✅      |
+| Condition                                                                                     |  Required   |
+| --------------------------------------------------------------------------------------------- | :---------: |
+| `prd.md` exists                                                                               |     ✅      |
+| User confirms task should enter implementation                                                |     ✅      |
+| `task.py start` has been run (status = in_progress)                                           |     ✅      |
+| `meta.mobile_performance` is resolved (`required` or justified `not_applicable`)              |     ✅      |
+| `meta.logging_integration` is complete (`required` or justified non-runtime `not_applicable`) |     ✅      |
+| `research/` has artifacts (complex tasks)                                                     | recommended |
+| `design.md` exists (complex tasks)                                                            |     ✅      |
+| `implement.md` exists (complex tasks)                                                         |     ✅      |
+| `task.md` exists and is broken down into executable tasks (complex tasks)                     |     ✅      |
 
 [Claude Code, Cursor, OpenCode, codex-sub-agent, Kiro, Gemini, Qoder, CodeBuddy, Copilot, Droid, Pi, Oh My Pi, ZCode, Snow, Reasonix, Trae, Grok, Kimi Code]
 

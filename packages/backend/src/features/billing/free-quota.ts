@@ -1,3 +1,4 @@
+import { observation } from '../../platform/observability/runtime.js';
 import {
   CHARACTER_FREE_CHAT_QUOTA_LIMIT_CONFIG_KEY,
   DEFAULT_CHARACTER_FREE_CHAT_QUOTA_LIMIT,
@@ -44,7 +45,12 @@ export async function getFreeQuotaExhaustedDialogConfig(): Promise<FreeQuotaExha
     .maybeSingle();
 
   if (error) {
-    console.warn(`[free-quota] 读取额度耗尽提示配置失败，使用默认文案：${error.message}`);
+    observation.emit(
+      'billing.quota_config_degraded',
+      'billing.config',
+      { outcome: 'degraded', outcome_known: false, err: error },
+      'warn'
+    );
     return DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG;
   }
   return parseFreeQuotaExhaustedDialogConfig(data?.value);

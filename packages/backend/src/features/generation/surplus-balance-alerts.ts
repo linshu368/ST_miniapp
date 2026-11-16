@@ -1,9 +1,12 @@
+import { clientFetch } from '../../platform/observability/fetch.js';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
 import type { AlertEvaluation } from '@miniapp/shared';
 import type { Logger } from '../../lib/logger.js';
 import { getLlmProviderRuntimeConfig } from '../../platform/runtime-config.js';
 import type { AlertPublisher } from '../alerting/publisher.js';
+
+const fetch = clientFetch('provider.surplus.balance', 'surplus');
 
 /** Keep the provider balance policy aligned with the existing Venice early warning. */
 export const SURPLUS_USD_BALANCE_THRESHOLD = 10;

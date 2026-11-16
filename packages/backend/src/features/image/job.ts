@@ -1,3 +1,5 @@
+import { runObservedJob } from '../../platform/observability/jobs.js';
+import { withBusinessContext } from '../../platform/observability/context.js';
 import type { FastifyBaseLogger } from 'fastify';
 import { randomUUID } from 'node:crypto';
 import { createLogger, type Logger } from '../../lib/logger.js';
@@ -16,10 +18,10 @@ export function startChatImageGenerationJob(appLog?: FastifyBaseLogger): void {
   const log = createLogger('image');
   appLog?.info('[image-job] Chat image generation job enabled');
   timer = setInterval(() => {
-    void tick(log);
+    void runObservedJob('chat_image_generation', () => tick(log));
   }, config.image.workerIntervalMs);
   timer.unref();
-  void tick(log);
+  void runObservedJob('chat_image_generation', () => tick(log));
 }
 
 export function stopChatImageGenerationJob(): void {
@@ -45,7 +47,20 @@ async function tick(log: Logger): Promise<void> {
       outcome = 'skipped';
       return;
     }
-    await Promise.all(jobs.map((attempt) => runImageGeneration({ attempt, imageConfig, log })));
+    await Promise.all(
+      jobs.map((attempt) =>
+        withBusinessContext(
+          {
+            business_module: 'image',
+            user_id: attempt.user_id,
+            session_id: attempt.session_id,
+            message_id: attempt.message_id,
+            image_id: attempt.id,
+          },
+          () => runImageGeneration({ attempt, imageConfig, log })
+        )
+      )
+    );
   } catch (error) {
     outcome = 'error';
     terminalError = error;

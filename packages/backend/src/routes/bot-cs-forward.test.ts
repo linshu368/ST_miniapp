@@ -5,6 +5,7 @@ const SECRET = 'webhook-secret';
 const USER_ID = '00000000-0000-4000-8000-000000000042';
 
 const mocks = vi.hoisted(() => ({
+  logError: vi.fn(),
   forwardBotMessageToCs: vi.fn(),
   getOrCreateMiniappUserByTgId: vi.fn(),
   recordBotStart: vi.fn(),
@@ -26,6 +27,9 @@ vi.mock('../lib/sentry.js', () => ({ captureBackendException: mocks.captureBacke
 async function buildApp() {
   const { default: botRoutes } = await import('./bot.js');
   const app = Fastify({ logger: false });
+  app.addHook('onRequest', async (request) => {
+    request.log.error = mocks.logError;
+  });
   await app.register(botRoutes);
   await app.ready();
   return app;
@@ -52,6 +56,7 @@ const post = (app: Awaited<ReturnType<typeof buildApp>>, text: string) =>
 describe('bot webhook → cs service', () => {
   beforeEach(() => {
     for (const fn of [
+      mocks.logError,
       mocks.forwardBotMessageToCs,
       mocks.getOrCreateMiniappUserByTgId,
       mocks.recordBotStart,
@@ -119,6 +124,37 @@ describe('bot webhook → cs service', () => {
       await app.close();
     }
   });
+
+  it.each(['internal', 'webhook'])(
+    'records original /start failure on %s without changing the response',
+    async (source) => {
+      const err = new Error('fixture start failure');
+      mocks.recordBotStart.mockRejectedValueOnce(err);
+      const app = await buildApp();
+      try {
+        const response =
+          source === 'webhook'
+            ? await post(app, '/start')
+            : await app.inject({
+                method: 'POST',
+                url: '/api/internal/bot/start',
+                headers: { 'x-bot-internal-secret': 'internal' },
+                payload: { tg_id: 123456 },
+              });
+        expect(response.statusCode).toBe(500);
+        expect(response.json().error).toEqual({ code: 'INTERNAL_ERROR', message: err.message });
+        expect(mocks.logError).toHaveBeenCalledWith(
+          expect.objectContaining({
+            err,
+            event: source === 'webhook' ? 'bot.webhook.start_failed' : 'bot.start.failed',
+          }),
+          expect.any(String)
+        );
+      } finally {
+        await app.close();
+      }
+    }
+  );
 
   it('转发失败仍回 200，避免 Telegram 重投卡住后续更新，并上报 Sentry', async () => {
     mocks.forwardBotMessageToCs.mockRejectedValue(new Error('timeout'));

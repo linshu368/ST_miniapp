@@ -4,14 +4,16 @@
 
 ## 专题导航
 
-| 文档                                                               | 必读场景                                   |
-| ------------------------------------------------------------------ | ------------------------------------------ |
-| [架构、入口与文件职责](./architecture-and-files.md)                | 所有 Backend 任务                          |
-| [路由、功能域与调用链](./routes-and-features.md)                   | API、业务流程、LLM、支付、语音、增长       |
-| [数据、可靠性、安全与可观测性](./data-reliability-and-security.md) | DB、外部调用、鉴权、并发、任务、日志、配置 |
-| [测试、脚本、构建与部署](./testing-scripts-and-deployment.md)      | 测试、验收、Railway、定时任务、迁移        |
-| [规范约定](./backend-rules.md)                                     | 工程相关约束                               |
-| [支付上游探测与策略扩展](./payment-availability-probe.md)          | 主动支付探测、新策略、告警过滤与独立 Cron  |
+| 文档                                                                                         | 必读场景                                   |
+| -------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| [架构、入口与文件职责](./architecture-and-files.md)                                          | 所有 Backend 任务                          |
+| [路由、功能域与调用链](./routes-and-features.md)                                             | API、业务流程、LLM、支付、语音、增长       |
+| [数据、可靠性、安全与可观测性](./data-reliability-and-security.md)                           | DB、外部调用、鉴权、并发、任务、日志、配置 |
+| [测试、脚本、构建与部署](./testing-scripts-and-deployment.md)                                | 测试、验收、Railway、定时任务、迁移        |
+| [规范约定](./backend-rules.md)                                                               | 工程相关约束                               |
+| [日志接入规划门禁](./logging-integration-planning.md)                                        | 所有新增/修改功能、问题修复的任务规划      |
+| [集中日志模块与 SDK 边界](../../../../packages/backend/src/platform/observability/README.md) | 文件规则配置、SDK 候选入口、项目适配与迁移 |
+| [支付上游探测与策略扩展](./payment-availability-probe.md)                                    | 主动支付探测、新策略、告警过滤与独立 Cron  |
 
 ## 功能模块现状
 
@@ -35,6 +37,7 @@ Surplus Intelligence 调用记录、受控字段与恢复契约见 [Surplus 调�
 5. 所有 `app.get/post/put/patch/delete` 注册附近必须保留 `@frontend-ready: true|false`；`false` 要有业务原因。
 6. 不新增 `any`；不读取散落的 `process.env` 替代 `platform/config.ts`；不另建生成、计费、runtime config 或日志体系。
 7. 不改动受保护的 `DEV_SEED_*` UUID 或对应 `prisma/seed.ts` upsert，除非同步核验所有消费者。
+8. 日志接入不仅运行 AST 门禁：按 [日志接入规划](./logging-integration-planning.md) 核对可信用户/对象来源、路由参数名、实际 Pino JSON 白名单、批量作用域和 HTTP/业务结果；新入口及合并上游同样适用。
 
 ## 最低质量检查
 

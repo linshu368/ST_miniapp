@@ -1,4 +1,5 @@
 import { EpayPaymentGateway } from '../../../infrastructure/payment/EpayPaymentGateway.js';
+import { CheckoutError } from './checkout-errors.js';
 import { createEpayOrderId } from '../../../infrastructure/payment/epay-protocol.js';
 import { config } from '../../../platform/config.js';
 import {
@@ -49,7 +50,7 @@ export class RechargeUseCase {
     log?: SettlementLogger;
   }): Promise<CreatePaymentOrderData> {
     if (!config.payment.enabled) {
-      throw new Error('支付功能未开启');
+      throw new CheckoutError('PAYMENT_DISABLED', '支付功能未开启');
     }
 
     const strategy = await readVipStrategy();
@@ -116,7 +117,7 @@ export class RechargeUseCase {
         result.errorClass ?? 'response_invalid',
         result.outcomeUnknown === true || result.success
       );
-      throw new Error(result.errorMessage || '创建支付订单失败');
+      throw CheckoutError.gateway(result.errorClass ?? 'response_invalid');
     }
 
     // Persist before exposing checkout; unknown persistence outcomes remain recoverable by merchant ID.
@@ -131,7 +132,7 @@ export class RechargeUseCase {
     }
     if (!attached) {
       await this.failOrder(row, log, gatewayStartedAt, 'provider_ref_persist_failed', true);
-      throw new Error('创建支付订单失败，请稍后重试');
+      throw new CheckoutError('PAYMENT_CREATE_UNKNOWN', '支付结果暂未确认，请先查看订单记录');
     }
 
     recordPaymentOperationEvent(this.events, log, {

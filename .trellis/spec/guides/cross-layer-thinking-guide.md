@@ -14,6 +14,7 @@ Check each boundary:
 - Which layer owns defaults and normalization?
 - What happens for empty, null, invalid, unauthorized, and upstream-failure cases?
 - Which tests prove the round trip?
+- Which existing or new log events cover this change, its failure paths, and request/job correlation? Complete the [logging integration planning gate](../backend/app/logging-integration-planning.md) before starting implementation.
 
 ST_miniapp-specific reminders:
 

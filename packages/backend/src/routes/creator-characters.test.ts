@@ -53,6 +53,9 @@ vi.mock('../features/lobby/featured-snapshot.js', () => ({
 }));
 vi.mock('../platform/config.js', () => ({ config: { database: { target: 'test' } } }));
 import creatorCharacterRoutes from './creator-characters.js';
+import { createObserver } from '../platform/observability/core.js';
+import { registerHttpObservation } from '../platform/observability/http.js';
+import type { ObservationEvent } from '../platform/observability/events.js';
 
 const ownerId = '10000000-0000-4000-8000-000000000001';
 const cardId = '10000000-0000-4000-8000-000000000002';
@@ -94,6 +97,7 @@ function card(): CreatorCharacter {
   };
 }
 let app: FastifyInstance;
+const observationRecords: ObservationEvent[] = [];
 beforeEach(async () => {
   vi.resetAllMocks();
   mocks.user.mockResolvedValue({ id: ownerId });
@@ -109,6 +113,15 @@ beforeEach(async () => {
     revision: 3,
   });
   app = Fastify();
+  observationRecords.length = 0;
+  registerHttpObservation(
+    app,
+    createObserver([
+      (event) => {
+        observationRecords.push(event);
+      },
+    ])
+  );
   app.addHook('preHandler', async (request) => {
     request.user = { id: 1, first_name: 'Fixture' };
   });
@@ -131,6 +144,22 @@ function publish(
 }
 
 describe('creator direct public publication', () => {
+  it('binds a newly created draft ID before persistence, including the failure terminal', async () => {
+    mocks.mutate.mockRejectedValueOnce({ code: 'P0409' });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/creator/characters',
+      payload: { id: cardId, draft: emptyCharacterDraft() },
+    });
+    expect(response.statusCode).toBe(409);
+    expect(observationRecords.at(-1)).toMatchObject({
+      event: 'operation.terminal',
+      business_module: 'creator',
+      character_id: cardId,
+      creation_id: cardId,
+      http_status: 409,
+    });
+  });
   it.each(['publish', 'visibility'] as const)(
     'directly approves the owner-bound stored revision for public %s',
     async (action) => {

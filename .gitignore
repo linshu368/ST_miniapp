@@ -16,6 +16,7 @@ dist/
 .cursor/mcp.json
 
 *.tsbuildinfo
+__pycache__/
 
 .DS_Store
 
