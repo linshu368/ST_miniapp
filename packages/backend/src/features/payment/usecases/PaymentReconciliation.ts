@@ -4,6 +4,7 @@ import type {
 } from '../../../infrastructure/repositories/MiniappPaymentOrderRepository.js';
 import type { PaymentGateway } from '../../../infrastructure/payment/PaymentGateway.js';
 import { observation } from '../../../platform/observability/runtime.js';
+import { finishBackgroundOperation, runObservedJob } from '../../../platform/observability/jobs.js';
 import { isEpayOrderId } from '../../../infrastructure/payment/epay-protocol.js';
 import { SLOW_CALL_ERROR_CLASS, SLOW_CALL_MS } from '../domain/PaymentAlertRules.js';
 import { settlePaidOrder, type SettlementLogger } from './PaymentSettlement.js';
@@ -191,12 +192,31 @@ export async function runPaymentReconciliationLoop(input: {
   onError: (error: unknown) => void;
 }): Promise<void> {
   while (!input.signal.aborted) {
-    try {
-      input.onPass(await input.runPass());
-    } catch (error) {
-      if (input.signal.aborted) return;
-      input.onError(error);
-    }
+    // Keep result/error reporters in the round's context, not only the inner DB/payment calls.
+    await runObservedJob('payment_reconciliation', async () => {
+      try {
+        const result = await input.runPass();
+        input.onPass(result);
+        finishBackgroundOperation('payment_reconciliation', {
+          outcome: result.lookupFailed ? 'degraded' : 'succeeded',
+          outcome_known: !result.lookupFailed,
+        });
+      } catch (error) {
+        if (input.signal.aborted) {
+          finishBackgroundOperation('payment_reconciliation', {
+            outcome: 'cancelled',
+            outcome_known: false,
+          });
+          return;
+        }
+        input.onError(error);
+        finishBackgroundOperation('payment_reconciliation', {
+          outcome: 'failed',
+          outcome_known: false,
+          err: error,
+        });
+      }
+    });
     if (input.signal.aborted) return;
     try {
       await input.sleep(RECONCILE_LOOP_DELAY_MS, input.signal);
