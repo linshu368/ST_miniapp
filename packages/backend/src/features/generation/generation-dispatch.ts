@@ -21,6 +21,7 @@ import { revealsReasoning } from './reasoning-display.js';
 import { forwardSurplusCall } from './surplus-call-transport.js';
 import type { UpstreamTiming } from './upstream-timing.js';
 import { recordFreeZoneCall } from '../free-zone/call-ledger.js';
+import { noteFreeZonePrimaryCall } from '../free-zone/unroutable-guard.js';
 import type { GenerationRequest, GenerationPreparation, GenerationLogger } from './types.js';
 
 export interface ExecutionObservation {
@@ -202,15 +203,26 @@ export async function dispatchGeneration(input: DispatchInput): Promise<{
     deferPersistence: request.firstToken.deferPersistence,
     onReady: request.firstToken.onReady,
     forward,
-    // 畅聊：每一路调用（含并发落败、被取消的）都记下来，事后按账单补真实花费
-    onCallSettled:
-      freeZone && historyId
-        ? (call) =>
+    // 畅聊：每一路调用（含并发落败、被取消的）都记下来，事后按账单补真实花费；
+    // 主请求另外计入「派不出去」计数，比例过高当场下架
+    onCallSettled: freeZone
+      ? (call) => {
+          if (historyId) {
             recordFreeZoneCall(
               { ...call, chatHistoryId: historyId, candidateId: freeZone.candidateId },
               log.sys
-            )
-        : undefined,
+            );
+          }
+          if (call.role === 'primary') {
+            noteFreeZonePrimaryCall({
+              candidateId: freeZone.candidateId,
+              providers: freeZone.providers,
+              httpStatus: call.httpStatus,
+              maxUnroutablePct: freeZone.maxUnroutablePct ?? null,
+            });
+          }
+        }
+      : undefined,
     onObservationError: (err) =>
       log.sys.warn(
         { err, event: 'llm.attempt.observation_failed', historyId: request.historyId },

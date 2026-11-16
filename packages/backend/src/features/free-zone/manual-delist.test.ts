@@ -9,7 +9,7 @@ import {
   type FreeZoneModelState,
 } from './lifecycle.js';
 import { delistFreeZoneModelNow, type DelistNowDeps } from './manual-delist.js';
-import type { ManualDelistingOutcome } from './repository.js';
+import type { DelistingOutcome } from './repository.js';
 import type { ScreeningResult } from './screening.js';
 
 const NOW = new Date('2026-11-13T08:00:00.000Z');
@@ -76,7 +76,7 @@ describe('delistManually', () => {
   });
 });
 
-function deps(outcome: (current: FreeZoneModelState) => ManualDelistingOutcome): DelistNowDeps {
+function deps(outcome: (current: FreeZoneModelState) => DelistingOutcome): DelistNowDeps {
   const config = FreeZoneConfigSchema.parse({
     ...DEFAULT_FREE_ZONE_CONFIG,
     candidates: [
