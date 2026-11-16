@@ -4,7 +4,7 @@ import { LlmModelProviderSchema, type LlmModelProvider } from './model-providers
 import { VipEntitlementSummarySchema } from './vip.js';
 import { WalletDebitPolicySchema } from './wallet.js';
 import { ModelCatalogTierKeySchema } from './model-tier-key.js';
-import { PublicFreeZoneSchema } from './free-zone.js';
+import { FreeZoneModelIdSchema, PublicFreeZoneSchema } from './free-zone.js';
 
 export { ModelCatalogTierKeySchema, type ModelCatalogTierKey } from './model-tier-key.js';
 
@@ -128,6 +128,60 @@ export const ModelCatalogTierSchema = z.object({
   models: z.array(z.preprocess(normalizeCatalogModelInput, ModelCatalogModelSchema)).min(1),
 });
 
+/**
+ * 模型目录「免费畅聊」板块：运营直接指定的免费模型（OpenRouter、Venice 等）。
+ * 和轻量/标准/旗舰同一条通路——一次首发 + 兜底，不做 Surplus 候选池那套初筛、派单探测、
+ * 在架评估和自动上下架：启用就出现在畅聊栏目里，遵守栏目的开关、福利期和使用范围，
+ * 本轮扣 0 星尘，原价按对标档位显示。Surplus 模型要放到畅聊候选池（带折扣底线和评估）。
+ */
+export const CatalogFreeZoneModelSchema = z.object({
+  id: FreeZoneModelIdSchema,
+  provider: LlmModelProviderSchema.refine(
+    (provider) => provider !== 'surplus',
+    'Surplus 模型请放到畅聊候选池'
+  ),
+  provider_model_id: z.string().trim().min(1).max(200),
+  display_name: z.string().trim().min(1).max(40),
+  /** 一句话介绍，可以留空 */
+  tagline: z.string().trim().max(40).default(''),
+  /** 系列：栏目里有模型不可用时，优先换同系列，例如 deepseek、gemini */
+  family: z.string().trim().min(1).max(40),
+  /** 对标档位：决定划线原价 */
+  benchmark_tier: ModelCatalogTierKeySchema,
+  first_token_timeout_ms: FirstTokenDurationSchema.default(DEFAULT_FIRST_TOKEN_TIMEOUT_MS),
+  enabled: z.boolean().default(true),
+});
+
+function checkFreeZoneModels(
+  catalog: {
+    tiers: Array<{ models: Array<{ id: string }> }>;
+    free_zone_models: Array<z.infer<typeof CatalogFreeZoneModelSchema>>;
+    first_token_deadline_ms: number;
+  },
+  ctx: z.RefinementCtx
+): void {
+  const tierIds = new Set(catalog.tiers.flatMap((tier) => tier.models.map((model) => model.id)));
+  const seenIds = new Set<string>();
+  const seenUpstreams = new Set<string>();
+  for (const [index, model] of catalog.free_zone_models.entries()) {
+    const issue = (field: string, message: string) =>
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['free_zone_models', index, field],
+        message,
+      });
+    if (seenIds.has(model.id) || tierIds.has(model.id)) issue('id', '免费模型 id 重复');
+    seenIds.add(model.id);
+    const upstream = `${model.provider}:${model.provider_model_id}`;
+    if (seenUpstreams.has(upstream)) issue('provider_model_id', '同一个上游模型只能加一次');
+    seenUpstreams.add(upstream);
+    if (model.provider === 'openrouter' && !/^[^\s/]+\/[^\s/]+$/.test(model.provider_model_id))
+      issue('provider_model_id', 'OpenRouter 模型 ID 应为 vendor/model');
+    if (model.first_token_timeout_ms >= catalog.first_token_deadline_ms)
+      issue('first_token_timeout_ms', '启动兜底阈值必须短于总等待上限');
+  }
+}
+
 export const ModelCatalogSchema = z
   .object({
     default_model_id: z.string().trim().min(1),
@@ -151,8 +205,10 @@ export const ModelCatalogSchema = z
       .max(1)
       .default(DEFAULT_FIRST_TOKEN_TIMEOUT_RATE_TARGET),
     tiers: z.array(ModelCatalogTierSchema).min(1),
+    free_zone_models: z.array(CatalogFreeZoneModelSchema).max(20).default([]),
   })
   .superRefine((catalog, ctx) => {
+    checkFreeZoneModels(catalog, ctx);
     const tierKeys = catalog.tiers.map((tier) => tier.tier);
     if (new Set(tierKeys).size !== tierKeys.length) {
       ctx.addIssue({
@@ -238,6 +294,12 @@ export type ModelCatalogModel = Omit<
 > & {
   first_token_timeout_ms?: number;
 };
+export type CatalogFreeZoneModel = Omit<
+  z.infer<typeof CatalogFreeZoneModelSchema>,
+  'first_token_timeout_ms'
+> & {
+  first_token_timeout_ms?: number;
+};
 export type ModelCatalogTier = Omit<z.infer<typeof ModelCatalogTierSchema>, 'models'> & {
   models: ModelCatalogModel[];
 };
@@ -248,8 +310,10 @@ export type ModelCatalog = Omit<
   | 'first_token_timeout_rate_target'
   | 'fallback_model_id'
   | 'fallback_timeout_ms'
+  | 'free_zone_models'
 > & {
   tiers: ModelCatalogTier[];
+  free_zone_models?: CatalogFreeZoneModel[];
   fallback_model_id?: string;
   fallback_timeout_ms?: number;
   first_token_deadline_ms?: number;
