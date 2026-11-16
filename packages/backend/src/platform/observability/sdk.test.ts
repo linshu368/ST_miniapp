@@ -7,6 +7,24 @@ vi.mock('pino', () => {
 vi.mock('node:fs', () => {
   throw new Error('SDK must not import filesystem');
 });
+vi.mock('node:fs/promises', () => {
+  throw new Error('SDK must not import async filesystem');
+});
+vi.mock('fastify', () => {
+  throw new Error('SDK must not import a web framework');
+});
+vi.mock('@prisma/client', () => {
+  throw new Error('SDK must not import Prisma');
+});
+vi.mock('@supabase/supabase-js', () => {
+  throw new Error('SDK must not import Supabase');
+});
+vi.mock('@sentry/node', () => {
+  throw new Error('SDK must not import Sentry');
+});
+vi.mock('../../features/alerting/feishu-alert-sink.js', () => {
+  throw new Error('SDK must not import a delivery channel');
+});
 vi.mock('../config.js', () => {
   throw new Error('SDK must not bootstrap application config');
 });
