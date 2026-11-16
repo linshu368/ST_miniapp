@@ -152,6 +152,8 @@ export class DramaStreamManifestCache {
       // 只记错误类别，不记 URL/Token
       log?.warn(
         {
+          event: 'drama.manifest.failed',
+          error_code: 'DRAMA_MANIFEST_FAILED',
           reason:
             err instanceof Error && err.name === 'TimeoutError'
               ? 'drama_manifest_timeout'

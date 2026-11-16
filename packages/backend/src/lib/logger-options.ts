@@ -89,8 +89,9 @@ export function fastifyLoggerOptions(): Record<string, unknown> {
         };
         // Legacy failures (including Fastify's own errors) must not silently bypass alerts.
         // Fixed fallback names cannot expose interpolated text or Error.message.
-        if (level >= 50 && typeof record.event !== 'string')
-          record.event = level >= 60 ? 'logger.fatal' : 'logger.error';
+        if (level >= 40 && typeof record.event !== 'string')
+          record.event =
+            level >= 60 ? 'logger.fatal' : level >= 50 ? 'logger.error' : 'logger.warn';
         publishAlertLog(record, level);
         method.call(this, record, safeName(record.event, 'Structured log'));
       },

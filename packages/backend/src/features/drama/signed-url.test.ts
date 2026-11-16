@@ -87,6 +87,10 @@ describe('DramaSignedUrlCache', () => {
     const result = await cache.getPlayUrl(PATH, { warn });
 
     expect(result).toEqual({ playable: false, play_url: null, expires_at: null });
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'drama.sign.failed', error_code: 'DRAMA_SIGN_FAILED' }),
+      expect.any(String)
+    );
     const logged = JSON.stringify(warn.mock.calls);
     expect(logged).not.toContain('11111111');
     expect(logged).not.toContain('token');

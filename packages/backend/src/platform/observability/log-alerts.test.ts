@@ -17,6 +17,40 @@ const event: AlertLog = {
 afterEach(() => vi.useRealTimers());
 
 describe('direct runtime log alerts', () => {
+  it('matches unlabelled warnings only when configured, preserves correlation and skips work after stop', () => {
+    const received: AlertLog[] = [];
+    const lines: string[] = [];
+    const stop = subscribeLogAlerts((entry) => received.push(entry));
+    const logger = pino(
+      { ...fastifyLoggerOptions(), level: 'info', transport: undefined },
+      {
+        write(line: string) {
+          lines.push(line);
+        },
+      }
+    );
+    try {
+      logger.warn(
+        { reason: 'fixture_warning', err: new Error('private fixture') },
+        'private fixture'
+      );
+      expect(received).toHaveLength(1);
+      expect(received[0]).toMatchObject({ event: 'logger.warn', level: 40 });
+      const rules = parseLogAlertPolicy(
+        'true',
+        '[{"id":"warnings","min_level":"warn","events":["logger.warn"]}]'
+      ).rules;
+      expect(matchesLogRule(rules[0]!, received[0]!)).toBe(true);
+      expect(matchesLogRule(parseLogAlertPolicy('true').rules[0]!, received[0]!)).toBe(false);
+      expect(JSON.parse(lines[0]!).event_id).toBe(received[0]!.event_id);
+      expect(lines.join('')).not.toContain('private fixture');
+    } finally {
+      stop();
+    }
+    logger.warn({ reason: 'fixture_disabled' });
+    expect(received).toHaveLength(1);
+    expect(JSON.parse(lines[1]!)).not.toHaveProperty('event_id');
+  });
   it('alerts on legacy errors and public codes while retaining distinct codes and safe aliases', () => {
     const received: AlertLog[] = [];
     const lines: string[] = [];
