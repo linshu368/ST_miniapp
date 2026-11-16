@@ -149,7 +149,7 @@ export class ChatSessionRepository {
       .limit(1)
       .maybeSingle();
 
-    if (error) throw new Error(`查询空会话失败：${error.message}`);
+    if (error) throw new Error(`查询空会话失败：${error.message}`, { cause: error });
     return (data as ChatSessionRow | null) ?? null;
   }
 
@@ -168,7 +168,7 @@ export class ChatSessionRepository {
       .select('*')
       .single();
 
-    if (error) throw new Error(`创建会话失败：${error.message}`);
+    if (error) throw new Error(`创建会话失败：${error.message}`, { cause: error });
     return data as ChatSessionRow;
   }
 
@@ -249,7 +249,7 @@ export class ChatSessionRepository {
       .is('deleted_at', null)
       .maybeSingle();
 
-    if (error) throw new Error(`查询会话失败：${error.message}`);
+    if (error) throw new Error(`查询会话失败：${error.message}`, { cause: error });
     const session = (data as ChatSessionRow | null) ?? null;
     if (session)
       bindBusinessContext({ session_id: session.id, character_id: session.character_id });
@@ -304,7 +304,7 @@ export class ChatSessionRepository {
     if (error)
       throw patch.folderId
         ? toFolderError(error, '更新会话失败')
-        : new Error(`更新会话失败：${error.message}`);
+        : new Error(`更新会话失败：${error.message}`, { cause: error });
     if (!data) {
       throw new ConversationRepositoryError('session_not_found', `会话不存在：${sessionId}`);
     }
@@ -323,7 +323,7 @@ export class ChatSessionRepository {
       .select('id')
       .maybeSingle();
 
-    if (error) throw new Error(`删除会话失败：${error.message}`);
+    if (error) throw new Error(`删除会话失败：${error.message}`, { cause: error });
     if (!data) {
       throw new ConversationRepositoryError('session_not_found', `会话不存在：${sessionId}`);
     }

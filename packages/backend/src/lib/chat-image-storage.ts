@@ -92,7 +92,7 @@ export async function deleteGeneratedMessageImage(path: string): Promise<void> {
     throw new Error('拒绝删除不属于聊天图片命名空间的对象');
   }
   const { error } = await getSupabaseClient().storage.from(IMAGE_BUCKET).remove([path]);
-  if (error) throw new Error(`删除聊天图片对象失败：${error.message}`);
+  if (error) throw new Error(`删除聊天图片对象失败：${error.message}`, { cause: error });
 }
 
 async function downloadImage(

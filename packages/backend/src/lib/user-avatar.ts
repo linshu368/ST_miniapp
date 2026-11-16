@@ -89,7 +89,7 @@ export async function storeUserAvatar(userId: string, image: ValidatedImage): Pr
     cacheControl: '3600',
     upsert: true,
   });
-  if (error) throw new Error(`保存头像失败：${error.message}`);
+  if (error) throw new Error(`保存头像失败：${error.message}`, { cause: error });
 
   const { data } = client.storage.from(AVATAR_BUCKET).getPublicUrl(objectPath);
   return `${data.publicUrl}?v=${Date.now()}`;
@@ -100,7 +100,7 @@ export async function deleteStoredUserAvatar(userId: string): Promise<void> {
     (extension) => `${userId}/avatar.${extension}`
   );
   const { error } = await getSupabaseClient().storage.from(AVATAR_BUCKET).remove(paths);
-  if (error) throw new Error(`删除自定义头像失败：${error.message}`);
+  if (error) throw new Error(`删除自定义头像失败：${error.message}`, { cause: error });
 }
 
 function validateImage(buffer: Buffer): ValidatedImage {

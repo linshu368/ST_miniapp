@@ -97,7 +97,7 @@ export class ChatMessageAudioRepository {
       .select('*')
       .eq('session_id', sessionId);
 
-    if (error) throw new Error(`查询会话语音失败：${error.message}`);
+    if (error) throw new Error(`查询会话语音失败：${error.message}`, { cause: error });
 
     const byMessage = new Map<string, ChatMessageAudioRow[]>();
     for (const row of (data ?? []) as ChatMessageAudioRow[]) {
@@ -122,7 +122,7 @@ export class ChatMessageAudioRepository {
       .eq('is_active', true)
       .maybeSingle();
 
-    if (error) throw new Error(`查询消息语音失败：${error.message}`);
+    if (error) throw new Error(`查询消息语音失败：${error.message}`, { cause: error });
     return (data as ChatMessageAudioRow | null) ?? null;
   }
 
@@ -140,7 +140,7 @@ export class ChatMessageAudioRepository {
       .eq('status', 'pending')
       .maybeSingle();
 
-    if (error) throw new Error(`查询消息生成中语音失败：${error.message}`);
+    if (error) throw new Error(`查询消息生成中语音失败：${error.message}`, { cause: error });
     return (data as ChatMessageAudioRow | null) ?? null;
   }
 
@@ -151,7 +151,7 @@ export class ChatMessageAudioRepository {
       .eq('id', id)
       .maybeSingle();
 
-    if (error) throw new Error(`查询语音记录失败：${error.message}`);
+    if (error) throw new Error(`查询语音记录失败：${error.message}`, { cause: error });
     return (data as ChatMessageAudioRow | null) ?? null;
   }
 
@@ -210,7 +210,7 @@ export class ChatMessageAudioRepository {
         .from('chat_message_audio')
         .update({ is_active: false, updated_at: new Date().toISOString() })
         .eq('id', existing.id);
-      if (error) throw new Error(`让位旧语音失败：${error.message}`);
+      if (error) throw new Error(`让位旧语音失败：${error.message}`, { cause: error });
     }
 
     const { data, error } = await this.db
@@ -246,7 +246,7 @@ export class ChatMessageAudioRepository {
 
     if (error) {
       if (error.code === '23505') throw new AudioConflictError('already_generating');
-      throw new Error(`创建语音生成记录失败：${error.message}`);
+      throw new Error(`创建语音生成记录失败：${error.message}`, { cause: error });
     }
     return data as ChatMessageAudioRow;
   }
@@ -267,7 +267,7 @@ export class ChatMessageAudioRepository {
       })
       .eq('id', id);
 
-    if (error) throw new Error(`保存语音台词失败：${error.message}`);
+    if (error) throw new Error(`保存语音台词失败：${error.message}`, { cause: error });
   }
 
   /**
@@ -301,13 +301,15 @@ export class ChatMessageAudioRepository {
           .from('chat_message_audio')
           .update({ is_active: false, updated_at: new Date().toISOString() })
           .eq('id', active.id);
-        if (deactivateError) throw new Error(`让位旧语音失败：${deactivateError.message}`);
+        if (deactivateError)
+          throw new Error(`让位旧语音失败：${deactivateError.message}`, { cause: deactivateError });
       }
       const { error: activateError } = await this.db
         .from('chat_message_audio')
         .update({ is_active: true, updated_at: new Date().toISOString() })
         .eq('id', id);
-      if (activateError) throw new Error(`激活新语音失败：${activateError.message}`);
+      if (activateError)
+        throw new Error(`激活新语音失败：${activateError.message}`, { cause: activateError });
     }
 
     const { error } = await this.db
@@ -327,7 +329,7 @@ export class ChatMessageAudioRepository {
       })
       .eq('id', id);
 
-    if (error) throw new Error(`更新语音生成结果失败：${error.message}`);
+    if (error) throw new Error(`更新语音生成结果失败：${error.message}`, { cause: error });
   }
 
   /**
@@ -348,7 +350,7 @@ export class ChatMessageAudioRepository {
       })
       .eq('id', id);
 
-    if (error) throw new Error(`标记语音生成失败失败：${error.message}`);
+    if (error) throw new Error(`标记语音生成失败失败：${error.message}`, { cause: error });
     // 免费体验：免费体验次数、免费体验额度、免费体验标签
     if (row?.billing_mode === 'free_trial' && row.free_trial_ordinal !== null) {
       try {

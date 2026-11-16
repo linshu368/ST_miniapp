@@ -30,7 +30,7 @@ export class MiniappCharacterFreeQuotaRepository {
       .eq('user_id', userId)
       .eq('character_id', characterId)
       .maybeSingle();
-    if (error) throw new Error(`查询角色卡免费轮次失败：${error.message}`);
+    if (error) throw new Error(`查询角色卡免费轮次失败：${error.message}`, { cause: error });
     const usedRounds = Number((data as { used_rounds?: number } | null)?.used_rounds ?? 0);
     return {
       usedRounds,
@@ -53,7 +53,7 @@ export class MiniappCharacterFreeQuotaRepository {
         p_quota_limit: input.quotaLimit,
       })
       .abortSignal(AbortSignal.timeout(5_000));
-    if (error) throw new Error(`预留角色卡免费轮次失败：${error.message}`);
+    if (error) throw new Error(`预留角色卡免费轮次失败：${error.message}`, { cause: error });
     return normalizeDecision(data);
   }
 
@@ -64,7 +64,7 @@ export class MiniappCharacterFreeQuotaRepository {
         p_success: success,
       })
       .abortSignal(AbortSignal.timeout(5_000));
-    if (error) throw new Error(`确认角色卡免费轮次失败：${error.message}`);
+    if (error) throw new Error(`确认角色卡免费轮次失败：${error.message}`, { cause: error });
     return normalizeDecision(data);
   }
 
@@ -82,7 +82,7 @@ export class MiniappCharacterFreeQuotaRepository {
       .eq('charge_key', chargeId)
       .abortSignal(AbortSignal.timeout(5_000))
       .maybeSingle();
-    if (error) throw new Error(`查询角色卡免费轮次决定失败：${error.message}`);
+    if (error) throw new Error(`查询角色卡免费轮次决定失败：${error.message}`, { cause: error });
     if ((data as { status?: string } | null)?.status !== 'reserved') return null;
     return this.finalize(chargeId, success);
   }

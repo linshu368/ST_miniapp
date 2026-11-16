@@ -54,7 +54,8 @@ export async function classifyImagePlazaTags(input: {
     const safeError = new Error(
       err instanceof Error && /^image_plaza_tagging_[a-z0-9_]+$/.test(err.message)
         ? err.message
-        : 'image_plaza_tagging_failed'
+        : 'image_plaza_tagging_failed',
+      { cause: err }
     );
     input.log.warn(
       {

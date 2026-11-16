@@ -121,7 +121,7 @@ export async function findTelegramIdByUserId(userId: string): Promise<string | n
     .maybeSingle();
 
   if (error) {
-    throw new Error(`查询 MiniApp 用户 Telegram ID 失败：${error.message}`);
+    throw new Error(`查询 MiniApp 用户 Telegram ID 失败：${error.message}`, { cause: error });
   }
 
   const tgId = data?.tg_id;
@@ -214,7 +214,7 @@ export async function recordBotStart(
     .maybeSingle();
 
   if (error) {
-    throw new Error(`记录 bot /start 时间失败：${error.message}`);
+    throw new Error(`记录 bot /start 时间失败：${error.message}`, { cause: error });
   }
 
   return (data as MiniappDbUser | null) ?? user;
@@ -234,7 +234,7 @@ async function markMiniappEnteredAt(userId: string): Promise<MiniappDbUser> {
     .maybeSingle();
 
   if (error) {
-    throw new Error(`记录 MiniApp 首次进入时间失败：${error.message}`);
+    throw new Error(`记录 MiniApp 首次进入时间失败：${error.message}`, { cause: error });
   }
 
   if (data) return data as MiniappDbUser;
