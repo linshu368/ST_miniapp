@@ -102,6 +102,13 @@ export const FreeZoneOnShelfSchema = z.object({
   /** 生成中断率：免费模型开始出字后没写完就断了，占它自己交付的轮次的比例（不含用户点停） */
   max_interrupted_pct: PercentSchema.nullable().default(null),
   max_dislike_pct: PercentSchema.nullable().default(null),
+  /**
+   * 派不出去率上限：真实请求被 Surplus 拒绝派单（折扣底线达不到、没有可用卖家，404/503）的比例。
+   * 和上面几项不同，不等 30 分钟一轮的评估、不看统计窗口和最少轮数：每次请求后按这个模型
+   * 最近 20 次主请求算，至少 10 次拿到响应、比例超过上限就立刻下架（按官方原因冷却）。
+   * 派单探测只发几个字，可能派得出去；几万 token 的真实对话却几乎全被拒，每轮都落到原价兜底。
+   */
+  max_unroutable_pct: PercentSchema.nullable().default(50),
 });
 
 export const FreeZoneRelistSchema = z.object({

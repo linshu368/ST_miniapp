@@ -64,6 +64,7 @@ export function buildFreeZoneResolvedModel(input: {
       // 这个模型单独设了折扣底线就按它，否则用统一值
       minDiscountPct: freeZoneDiscountFloor(input.zone.config.screening, candidate),
       parallelRequests: candidate.parallel_requests,
+      maxUnroutablePct: input.zone.config.on_shelf.max_unroutable_pct,
     },
   };
 }

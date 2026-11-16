@@ -331,27 +331,34 @@ export async function saveManualListing(input: {
   );
 }
 
-export type ManualDelistingOutcome =
+export type DelistingOutcome =
   | { kind: 'saved'; previous: FreeZoneModelState; state: FreeZoneModelState }
-  | { kind: 'not_listed' };
+  | { kind: 'not_listed' }
+  /** build 判断不该下架（例如这期间供应商已经换了） */
+  | { kind: 'unchanged' };
 
 /**
- * 运营手动下架落库：锁住这一行，确认在架，按 build 算出新状态写回并记一条下架事件。
+ * 评估之外的下架落库（运营手动下架、真实请求派不出去）：锁住这一行，确认在架，
+ * 按 build 算出新状态写回并记一条下架事件；build 返回 null 表示不动。
  * 只更新已有的行（在架必然有行），所以不需要 surplus_model，移出候选池的行也能收掉。
  * 写入会刷新 updated_at，正在推算的评估看到版本变了就不会覆盖。
  */
-export async function saveManualDelisting(input: {
+export async function saveDelisting(input: {
   candidateId: string;
-  build: (current: FreeZoneModelState) => { state: FreeZoneModelState; event: FreeZoneEvent };
-}): Promise<ManualDelistingOutcome> {
+  build: (
+    current: FreeZoneModelState
+  ) => { state: FreeZoneModelState; event: FreeZoneEvent } | null;
+}): Promise<DelistingOutcome> {
   return prisma.$transaction(
-    async (tx): Promise<ManualDelistingOutcome> => {
+    async (tx): Promise<DelistingOutcome> => {
       const [row] = await tx.$queryRaw<StateRow[]>`
         SELECT ${STATE_COLUMNS} FROM miniapp_features.free_zone_models
         WHERE candidate_id = ${input.candidateId} FOR UPDATE`;
       const previous = row ? toState(row) : null;
       if (previous?.status !== 'listed') return { kind: 'not_listed' };
-      const { state: s, event } = input.build(previous);
+      const built = input.build(previous);
+      if (!built) return { kind: 'unchanged' };
+      const { state: s, event } = built;
       await tx.$executeRaw`
         UPDATE miniapp_features.free_zone_models SET
           status = ${s.status}, providers = ${s.providers}::text[],
