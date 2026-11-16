@@ -34,6 +34,9 @@ vi.mock('../runtime-config.js', () => {
 vi.mock('./runtime.js', () => {
   throw new Error('SDK must not import application singleton');
 });
+vi.mock('./labels.zh-CN.js', () => {
+  throw new Error('SDK must not import project display dictionaries');
+});
 
 describe('SDK extraction boundary', () => {
   it('imports factories without application dependencies and preserves fetch results', async () => {
@@ -88,6 +91,8 @@ describe('SDK extraction boundary', () => {
     expect(first.at(-1)?.outcome).toBe('succeeded');
     expect(second.at(-1)?.outcome).toBe('skipped');
     expect(first[0]?.trace_id).not.toBe(second[0]?.trace_id);
+    expect(first.every((event) => event.call_scene === 'job.fixture')).toBe(true);
+    expect(second.every((event) => event.call_scene === 'job.fixture')).toBe(true);
     await a.runObservedJob('unreported', async () => {});
     expect(first.at(-1)?.outcome).toBe('unknown');
     const err = new Error('fixture error');
@@ -117,5 +122,22 @@ describe('SDK extraction boundary', () => {
     await alerts.close();
     expect(sink.deliver.mock.calls[0]?.[0]).toMatchObject({ title: 'Example fixture' });
     expect(sink.deliver.mock.calls[0]?.[0].summary).not.toMatch(/Backend|Railway|Feishu/);
+  });
+
+  it('injects a project-independent display catalog without importing application labels', async () => {
+    const { createLogPresentation } = await import('./sdk.js');
+    const display = createLogPresentation({
+      modules: { api: 'API' },
+      scenes: {},
+      events: {},
+      results: { succeeded: 'OK' },
+      errors: {},
+      details: {},
+      counts: {},
+      fallback: { module: 'System', scene: 'Event', result: 'Recorded', error: 'Error' },
+    });
+    expect(
+      display({ module: 'api', event: 'example', outcome: 'succeeded', msg: 'private' })
+    ).toMatchObject({ module_name: 'API', result: 'OK', scenario: 'example' });
   });
 });

@@ -5,6 +5,169 @@ import { fastifyLoggerOptions, foundationLoggerOptions } from './logger.js';
 import { bindBusinessContext, newContext, withContext } from './context.js';
 import { safeLogAttributes, safeLogRecord, validatedDramaLog } from './safe-log.js';
 import { safeError } from './events.js';
+import { chineseLogCatalog } from './labels.zh-CN.js';
+import { createJobObservation } from './job-core.js';
+import { createObserver } from './core.js';
+
+function captureLogs() {
+  const lines: string[] = [];
+  const output = new Writable({
+    write(chunk, _encoding, done) {
+      lines.push(String(chunk));
+      done();
+    },
+  });
+  return {
+    lines,
+    log: pino({ ...fastifyLoggerOptions(), level: 'info', transport: undefined }, output),
+  };
+}
+
+describe('Railway readable summaries', () => {
+  it('keeps overlapping job call scenes isolated through nested child loggers', async () => {
+    const { log, lines } = captureLogs();
+    const jobs = createJobObservation(createObserver([]));
+    await Promise.all(
+      ['payment_reconciliation', 'vip_expiry_reminders'].map((job) =>
+        jobs.runObservedJob(job, async () => {
+          await Promise.resolve();
+          log
+            .child({ module: 'db' })
+            .info({ event: 'operation.terminal', operation: 'db.supabase', outcome: 'succeeded' });
+        })
+      )
+    );
+    const rows = lines.map((line) => JSON.parse(line));
+    expect(rows.map((row) => row.call_scene).sort()).toEqual([
+      'job.payment_reconciliation',
+      'job.vip_expiry_reminders',
+    ]);
+    expect(new Set(rows.map((row) => row.trace_id)).size).toBe(2);
+    expect(rows.some((row) => row.msg.includes('支付订单对账'))).toBe(true);
+    expect(rows.some((row) => row.msg.includes('会员到期提醒'))).toBe(true);
+  });
+  it('shows Chinese module/scenario/result and keeps original machine fields and precise duration', () => {
+    const { log, lines } = captureLogs();
+    withContext({ ...newContext('summary-request'), call_scene: 'GET:/api/vip/status' }, () => {
+      bindBusinessContext({ business_module: 'vip' });
+      log.child({ module: 'db' }).info(
+        {
+          event: 'operation.terminal',
+          operation: 'db.supabase',
+          outcome: 'succeeded',
+          resource: 'runtime_config',
+          upstream_status: 200,
+          duration_ms: 29.581,
+          module_name: 'private-module',
+          scenario: 'private-scenario',
+          error_message: 'private-error',
+        },
+        'private-message'
+      );
+    });
+    const row = JSON.parse(lines[0]!);
+    expect(row).toMatchObject({
+      module_name: '会员权益·数据库',
+      scenario: '读取会员状态 / 访问 Supabase',
+      result: '成功',
+      module: 'db',
+      operation: 'db.supabase',
+      event: 'operation.terminal',
+      duration_ms: 29.581,
+      call_scene: 'GET:/api/vip/status',
+      request_id: 'summary-request',
+      upstream_status: 200,
+    });
+    expect(row.msg).toContain('[会员权益·数据库]');
+    expect(row.msg).toContain('30ms');
+    expect(row).not.toHaveProperty('error_message');
+    expect(lines[0]).not.toContain('private');
+  });
+
+  it('describes recognized causes without copying raw error text, stack paths or credentials', () => {
+    const { log, lines } = captureLogs();
+    const cause = Object.assign(new Error('private-token'), { code: 'ECONNRESET' });
+    const err = new Error('private-sql', { cause });
+    err.stack = 'Error: private-sql\n    at execute (D:/private/worker.ts:12:3)';
+    log.error({
+      event: 'payment.probe.failed',
+      module: 'payment',
+      public_error_code: 'INTERNAL_ERROR',
+      err,
+    });
+    log.error({ event: 'operation.terminal', operation: 'db.supabase', error: safeError(err) });
+    for (const line of lines) {
+      const row = JSON.parse(line);
+      expect(row.error_message).toBe('连接被对端重置');
+      expect(row.msg).toContain('连接被对端重置');
+      expect(line).not.toContain('private');
+    }
+    expect(JSON.parse(lines[0]!).err.stack).toContain('worker.ts:12:3');
+  });
+
+  it('shows probe and strategy results independently from an HTTP 200 transport result', () => {
+    const { log, lines } = captureLogs();
+    log.info({
+      event: 'payment.probe.completed',
+      module: 'payment-availability-probe',
+      outcome: 'partial',
+      probe_result: 'unavailable',
+      paymentType: 'alipay',
+      errorClass: 'timeout',
+      strategy_failed_count: 1,
+      strategy_success_count: 0,
+      upstream_status: 200,
+      duration_ms: 1200,
+    });
+    const row = JSON.parse(lines[0]!);
+    expect(row).toMatchObject({
+      result: '部分失败',
+      error_message: '支付上游请求超时',
+      probe_result: 'unavailable',
+    });
+    expect(row.msg).toContain('建单探测不可用');
+    expect(row.msg).toContain('渠道：支付宝');
+    expect(row.msg).toContain('策略失败:1');
+    expect(row.msg).not.toContain('｜成功｜');
+  });
+
+  it('does not label generic info, SSE unknown or skipped checks as success', () => {
+    const { log, lines } = captureLogs();
+    log.info({ event: 'test.event', module: 'new-module' });
+    log.info({
+      event: 'operation.terminal',
+      operation: 'http.request',
+      outcome: 'unknown',
+      http_status: 200,
+    });
+    log.info({ event: 'llm.balance.check_skipped', outcome: 'skipped', reason: 'free_round' });
+    expect(lines.map((line) => JSON.parse(line).result)).toEqual([
+      '已记录',
+      '结果未确认',
+      '已跳过',
+    ]);
+    expect(JSON.parse(lines[0]!).msg).toContain('test.event');
+    expect(JSON.parse(lines[2]!).msg).toContain('免费轮无需查询钱包');
+  });
+
+  it('falls back to a stable event if a display adapter fails', () => {
+    const { log, lines } = captureLogs();
+    const original = Object.getOwnPropertyDescriptor(chineseLogCatalog, 'events')!;
+    try {
+      Object.defineProperty(chineseLogCatalog, 'events', {
+        configurable: true,
+        get() {
+          throw new Error('private');
+        },
+      });
+      expect(() => log.info({ event: 'test.fallback' })).not.toThrow();
+    } finally {
+      Object.defineProperty(chineseLogCatalog, 'events', original);
+    }
+    expect(JSON.parse(lines[0]!).msg).toBe('test.fallback');
+    expect(lines[0]).not.toContain('private');
+  });
+});
 
 describe('Pino compatibility safety', () => {
   it('keeps growth/community summaries and extended object IDs through JSON and excludes telemetry IDs', () => {

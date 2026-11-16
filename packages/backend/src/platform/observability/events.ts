@@ -31,6 +31,7 @@ export interface EventFields extends BusinessFields {
   duration_ms?: number;
   count?: number;
   config_version?: number;
+  call_scene?: string;
   err?: unknown;
 }
 
@@ -144,6 +145,7 @@ export function safeFields(fields: EventFields): Omit<EventFields, 'err'> & { er
     'provider',
     'resource',
     'business_key',
+    'call_scene',
   ] as const) {
     if (fields[key] !== undefined) result[key] = safeName(fields[key]);
   }

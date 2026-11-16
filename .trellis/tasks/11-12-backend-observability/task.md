@@ -58,3 +58,9 @@
 - [x] sdk.ts 纯入口与可注入 fetch/job/Delivery，项目装配保留品牌；SDK 导入隔离回归已覆盖框架/DB/Sentry/渠道。
 - [x] 日志模块 72 项、全量 Backend 166 文件/1784 项、Shared 239 项、全仓 typecheck、ESLint、342 文件门禁和复杂度通过。
 - [x] Frontend/Admin 构建与最终文档/模块载荷复核通过；生产规则迁移、真实通知与 P95 继续发布后核验。
+
+## Railway 中文摘要
+
+- [ ] 统一展示 factory/中文词表及 HTTP/job call_scene；验证实际 JSON、安全、SDK 隔离和原始机器字段。
+- [ ] 支付探测显式摘要及余额预检真实结果，覆盖关闭/跳过/配置错误/部分失败/异常。
+- [ ] Backend 验证、门禁、规范与模块载荷同步，按模块提交；生产 Railway 展示及 P95 随发布核验。
