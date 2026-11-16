@@ -2,7 +2,7 @@
 
 状态：2026-11-16 补齐异常边界、数据库 cause、warn 告警、对账轮次、代理关联与门禁，本地实现，尚未部署。以本文和 `11-12-backend-observability` 任务为准；旧 logging/error-code design 中的持久化、补传和窗口告警不属于本次实现。
 
-跨项目复用边界、迁移清单与统一文件告警的候选契约见 [日志复用与告警配置设计](logging-reuse-and-alert-config.md)。该文档中的文件来源和新增筛选字段是设计方案，当前规则仍从 LOG_ALERT_RULES 环境变量读取。
+实现和测试已集中到 [日志模块目录](../packages/backend/src/platform/observability/README.md)，包含规则文件与无启动副作用的 SDK 候选入口。规则唯一来源为该目录的 `alert-rules.json`，不再读取 LOG_ALERT_RULES 环境变量；模块及精确 HTTP/上游状态筛选已实现。
 
 ## 输出与查询
 
@@ -93,15 +93,15 @@ Sentry 的异常、日志、breadcrumb、span 各自经过出口投影；自动�
 
 配置仅在进程启动时读取，修改需重新部署/重启：
 
-| 配置                       | 行为                                                             |
-| -------------------------- | ---------------------------------------------------------------- |
-| `LOG_ALERTING_ENABLED`     | 未配置、空或 `false` 关闭；仅 `true` 开启；其他值配置失败        |
-| `LOG_ALERT_RULES`          | 可选 JSON 数组，最多 32 条、16 KiB；开启时严格校验，关闭时不解析 |
-| `FEISHU_ALERT_WEBHOOK_URL` | 复用现有服务端 secret；开启时必须有效，不写入仓库或日志          |
+| 配置                                      | 行为                                                        |
+| ----------------------------------------- | ----------------------------------------------------------- |
+| `LOG_ALERTING_ENABLED`                    | 未配置、空或 `false` 关闭；仅 `true` 开启；其他值配置失败   |
+| `platform/observability/alert-rules.json` | 唯一规则来源：version=1/rules，最多32条/16KiB；关闭时不读取 |
+| `FEISHU_ALERT_WEBHOOK_URL`                | 复用现有服务端 secret；开启时必须有效，不写入仓库或日志     |
 
-不开启时没有匹配、通知请求或通知队列。开启但未配规则时只匹配 error/fatal。每条日志只使用第一条匹配规则；同一请求的不同日志可以分别告警，不做聚合或去重。
+不开启时没有文件读取、解析、匹配、通知请求或通知队列。开启后读取并冻结文件快照；文件缺失、非法、超限或未知版本时 fail fast，不回显内容/路径。默认文件仅启用 runtime-errors，保持 error/fatal 行为，三个专项示例先停用。旧 LOG_ALERT_RULES 即使存在也不生效；发布前需将旧部署自定义规则迁入文件。每条日志只使用第一条匹配规则；同一请求的不同日志可以分别告警，不做聚合或去重。
 
-规则字段：`id`（唯一）、`severity`（P0/P1/P2，默认 P1）、`min_level`（info/warn/error/fatal，默认 error）；可选 `events/operations/error_codes/public_error_codes/outcomes` 字符串数组、`min_http_status/min_duration_ms`。同一条规则内所有条件同时满足。`error_codes` 兼容匹配内部或公开错误码；`public_error_codes` 只匹配公开错误码，二者配置时仍按 AND 判断。示例规则内容如下，不包含 webhook：
+规则字段与 JSON 示例以 [模块配置契约](../packages/backend/src/platform/observability/README.md) 为准：增加 enabled、modules/business_modules、http_statuses/upstream_statuses，保留 events/operations、错误码、结果及状态/耗时下限。不同条件 AND、列表内 OR；停用专项规则仍可能命中后续兜底。`error_codes` 兼容内部或公开码，`public_error_codes` 只匹配公开码。以下数组应放入文件的 rules 属性，不包含 webhook：
 
 ```json
 [

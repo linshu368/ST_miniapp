@@ -123,6 +123,8 @@ Frontend 初次构建因本地 Next.js 自身缺失 `webpack-build/impl` 文件�
 
 ## 2026-11-16 复用与文件配置设计验证
 
+本节为当时评估状态，后续用户要求已实施，最新文件来源和 SDK 边界见文末「集中目录与规则文件验证」。
+
 基于源码 `ca98570f` 核对核心依赖、业务映射、Pino 输出、框架/DB adapter、配置装配与 Docker 复制范围。归纳于 `docs/logging-reuse-and-alert-config.md`，并从 README、运行说明与 Backend spec 索引链接。
 
 - 只更新评估/任务/规范文档，没有产品或部署配置变动；文件加载、模块/精确 HTTP/上游状态筛选和公共 SDK 均明确标注为候选功能，没有宣称已接入。
@@ -130,3 +132,18 @@ Frontend 初次构建因本地 Next.js 自身缺失 `webpack-build/impl` 文件�
 - 文档 2 个 JSON 示例语法通过，现有规则示例通过当前 parser；目标新字段示例确认当前 schema 不支持。14 个相对链接目标存在。
 - 既有 log-alerts.test.ts：1 文件 / 7 项通过；任务日志规划、模块知识载荷、格式及 diff 校验通过。未新增测试文件，文档改动无需重复应用 typecheck/build；前轮应用证据见上一节。
 - 配置设计覆盖开启/关闭、来源冲突、文件缺失/超限/错误版本、字段/状态校验、模块语义、第一条匹配、默认兜底、容器路径、兼容/回滚与后续实现验收。未核验生产开关或部署规则实值。
+
+## 2026-11-16 集中目录与规则文件验证
+
+用户要求实施唯一文件规则并预留公共 SDK。7db9a051 集中实现及兼容入口；498a54f2 落地文件 loader、schema/matcher/投影、新筛选、SDK factory、验证命令与 CI；SDK 导入依赖防线补充于 d0d18dfc。
+
+- 实现/测试集中 `platform/observability/`，仅四个旧 lib 入口作重导出；Shared 旧 logging conventions 只有 Backend 消费，已迁入同一目录，没有改变 shared DTO 或公开 API。
+- 规则唯一来源 alert-rules.json；LOG_ALERT_RULES 不读取且无路径环境覆盖，启动时有界读取16KiB并冻结策略。关闭零文件 I/O，开启错误/缺失/超限/未知字段或版本 fail fast，错误不回显配置内容/路径。四条规则中仅 runtime-errors 启用，原默认 error/fatal 范围保持。
+- 技术/业务模块及 HTTP/上游状态分开匹配；条件 AND、列表 OR、第一条命中，停用专项规则不代表抑制后续兜底。告警通道保留窄字段，用户/会话/正文/凭据仍排除，通知并发/超时及无重试/持久化不变。
+- SDK 导出不导入配置、文件、Pino singleton、框架、DB、Sentry 或具体渠道，fetch/job 通过注入 observer 工作，Delivery 接口与品牌信息分离。业务字段投影仍为后续抽包的明确适配接缝，没有发布独立 SDK 包。
+- 相关模块 10 文件 / 72 项通过；全量无凭证 Backend 166 文件 / 1784 项通过，参数 `--exclude '**/*.integration.test.ts' --maxWorkers=2 --testTimeout=15000`。Shared 23 文件 / 239 项，全仓 typecheck、全 Backend ESLint、9 项 Node 门禁回归、342 个运行文件检查、8 项 Python 规划回归及复杂度30文件/102函数存量基线通过。新增 SDK 依赖 mock 后独立3项再验证通过。
+- logging:validate 在包 cwd 与仓库根通过，均输出 version=1/rules=4/enabled_rules=1，未初始化数据库或发送通知。CI 已接同一命令；真实 Docker COPY 范围包括 src 内 JSON。
+- Frontend 构建再次因本地 Next.js 的 webpack-build/impl 安装文件缺失而失败，按 frozen lockfile force 修复同锁版本后完整构建退出0；本地重复构建曾再次缺文件，记录为现有安装问题，不据此修改应用配置或依赖版本。Admin typecheck + Vite 生产构建退出0；保留既有 img/hooks 与大 chunk 警告，未改锁文件。
+- 当前全部变更格式检查和 git diff --check 通过；19 个文档相对链接存在，目录说明及运行说明中的 JSON 示例通过实际规则 schema。日志接入规划门禁（对比51fe1be3）和模块知识载荷校验通过；代码、规则、文档保持同一来源。
+
+当前未部署、未 push、未核验生产旧规则/开关实值、实际通知或平台保存/P95；发布前须将需要保留的旧环境规则迁入文件，运行校验后随应用发布。真实 Android/iOS/API 验收沿用原窗口，仍不补造基线样本。

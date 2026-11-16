@@ -1,5 +1,7 @@
 # ST_miniAPP 架构说明
 
+2026-11-16 日志目录集中（本地未部署）：Pino、Sentry/后台观测接线和规则统一位于 `platform/observability/`，旧 lib 入口仅重导出。规则唯一来源为目录内 alert-rules.json，配置中心只读取总开关/secret；不再读取 LOG_ALERT_RULES。sdk.ts 导出不触发应用启动的 factory/契约，框架、文件及通知渠道由项目装配，参见 [模块说明](../packages/backend/src/platform/observability/README.md)。
+
 2026-11-16 本地日志补全：数据库转换保留 cause，安全出口继续去除原始消息；支付对账的执行及汇总位于同一轮次根上下文。大厅 Next.js 代理只透传有界请求 ID、回传受控链路头，并在自身部署 stdout 记录固定摘要，与 Backend Railway 日志按请求关联。无新增日志存储、SQL、业务重试或公开 API；详情见 [运行说明](backend-observability-runtime.md)。
 
 2026-11-14 日志合并审计（本地未部署）：补齐媒体/影像对象、逐实体 worker、支付/群身份、增长/问卷事件及欢迎语 transport；共享与大厅专用 Prisma 复用同一观测扩展，pg lease 观测原连接/锁/清理调用，不新增 SQL/池或修改事务。字段和安全出口见 [运行时日志](backend-observability-runtime.md)。

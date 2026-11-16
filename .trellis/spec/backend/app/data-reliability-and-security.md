@@ -30,6 +30,8 @@
 
 ## 可观测性与发布
 
+日志实现、测试及规则集中在 `platform/observability/`；`alert-rules.json` 是唯一规则来源，LOG_ALERT_RULES 环境变量已移除读取。总开关默认关闭时零文件 I/O，开启时只读固定模块相对 URL 并冻结快照，文件错误 fail fast。业务仍通过 runtime-config 的统一 getter 取得配置。模块/业务模块、HTTP/上游状态分别精确匹配；停用专项规则不抑制后续兜底。`logging:validate` 和 CI 校验真实文件，无数据库或通知副作用。SDK 候选入口不导入 runtime、配置、文件、Pino、DB 或具体渠道；业务字段与框架适配保持显式，完整契约见 [模块 README](../../../../packages/backend/src/platform/observability/README.md)。
+
 ### 统一运行时事件接入契约
 
 1. **范围**：`platform/observability/` 为统一事件底座，分模块接入；运行时 stdout 由 Railway 捕获，不新增日志存储或重放。底座存在不代表全仓覆盖完成。

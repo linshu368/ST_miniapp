@@ -16,6 +16,8 @@
 
 `src/lib/logger.ts`、`logger-options.ts`、`sentry.ts`、`background-observability.ts` 只保留重导出，兼容既有业务消费者，没有第二份实现。进程 `instrumentation.ts` 和独立 Frontend 代理仍由各自运行时装配，不能跨应用导入服务端 singleton。
 
+飞书投递 adapter 与原支付 outbox 共用，继续由 `features/alerting/` 提供；日志模块通过渠道无关接口装配它。业务监控、工程指标 exporter 与实际 route/repository 是消费者，不属于 SDK 核心。
+
 ## 2. 命令与运行时签名
 
 ```bash
@@ -122,7 +124,7 @@ pnpm --filter @miniapp/backend logging:validate
 node --test scripts/check-backend-logging.test.mjs
 ```
 
-配置回归覆盖关闭零 I/O、旧变量被忽略、真实默认文件、未知字段/版本/超限/缺失、技术/业务模块、HTTP/上游状态、条件组合和停用规则。SDK 回归在 Pino、文件、配置、默认 runtime 导入时主动失败，验证纯入口没有拉起应用；另验证注入 transport 原结果、job 实例隔离和替换通知渠道。
+配置回归覆盖关闭零 I/O、旧变量被忽略、真实默认文件、未知字段/版本/超限/缺失、技术/业务模块、HTTP/上游状态、条件组合和停用规则。SDK 回归在 Pino、文件、配置、默认 runtime、框架、数据库、Sentry 或具体通知渠道导入时主动失败，验证纯入口没有拉起应用；另验证注入 transport 原结果、job 实例隔离和替换通知渠道。
 
 迁移/发布还必须验证并发上下文、一次终态、HTTP/SSE 断开、原错误/返回值、敏感输出、通知关闭/失败/容量，并在目标部署检查 JSON 是否存在及 stdout 是否能查询。Docker 当前复制 Backend 包，文件放在 src 内随同发布；真实保存、通知与 Android/iOS/API P95 仍由发布后验收负责。
 

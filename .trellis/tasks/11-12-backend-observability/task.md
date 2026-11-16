@@ -50,3 +50,11 @@
 - [x] 全量无凭证 Backend 164 文件 / 1766 项、Shared 239 项及全仓 typecheck 通过。
 - [x] Frontend/Admin 构建、格式与模块载荷校验通过；真实 Railway/通知/P95 仍是发布后验收项。
 - [x] 日志复用评估、跨项目迁移清单和统一告警文件候选契约已归纳；新增文件加载及模块/精确状态筛选为后续实现范围。
+
+## 集中目录与规则文件落地
+
+- [x] 日志实现/测试集中 platform/observability，原 lib 入口只保留重导出，Shared 旧约定迁入模块（7db9a051）。
+- [x] alert-rules.json 为唯一来源，停止读取 LOG_ALERT_RULES；规则 loader、模块/状态筛选、logging:validate 与 CI 已接入（498a54f2）。
+- [x] sdk.ts 纯入口与可注入 fetch/job/Delivery，项目装配保留品牌；SDK 导入隔离回归已覆盖框架/DB/Sentry/渠道。
+- [x] 日志模块 72 项、全量 Backend 166 文件/1784 项、Shared 239 项、全仓 typecheck、ESLint、342 文件门禁和复杂度通过。
+- [x] Frontend/Admin 构建与最终文档/模块载荷复核通过；生产规则迁移、真实通知与 P95 继续发布后核验。
