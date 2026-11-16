@@ -38,7 +38,9 @@
         "backend.business.character-lobby",
         "backend.business.engagement-support",
         "shared.business.conversation-contracts",
-        "shared.business.wallet-payment-contracts"
+        "shared.business.wallet-payment-contracts",
+        "frontend.business.character-lobby",
+        "frontend.infrastructure.client-ui-foundation"
       ]
     },
     "mobile_performance": {
@@ -59,7 +61,8 @@
         "GET /api/growth/prompts and POST /api/growth/prompts/events",
         "GET/POST /api/v1/drama-survey and POST /dismiss",
         "POST /api/telegram/community-webhook",
-        "Media voice/image and image-plaza request paths; background generation and lobby/lease operations"
+        "Media voice/image and image-plaza request paths; background generation and lobby/lease operations",
+        "GET /api/lobby-characters Next.js proxy: bounded correlation and one safe terminal log"
       ],
       "android": {
         "page_p95_baseline_ms": null,
@@ -84,13 +87,15 @@
       "mode": "required",
       "scope": [
         "Backend HTTP, providers, payment, scheduled jobs and logging planning/CI tools",
-        "Merge f25d969b and audit image/voice/payment/community/growth identity and field projection"
+        "Merge f25d969b and audit image/voice/payment/community/growth identity and field projection",
+        "2026-11-16: caught exceptions, legacy warnings, database error causes, reconciliation rounds, Next.js lobby proxy and AST guard gaps"
       ],
       "integration_points": [
         "Reuse platform/observability, safe Pino output, clientFetch and runObservedJob; no additional storage",
         "2026-11-14: Reuse auth, user identity cache, HTTP route templates and verified business records to bind user/session/character/creation/drama/video correlation; no extra DB queries",
         "Reuse explicit HTTP target/response ID projection, owned ChatSessionRepository.getSession and per-entity image/plaza/story-memory contexts; welcome clientFetch; growth scalar summaries",
-        "Shared/dedicated applyPrismaObservation and observed PostgreSQL advisory lease connect/lock/unlock/close; original connection, lock, transaction and timeout preserved"
+        "Shared/dedicated applyPrismaObservation and observed PostgreSQL advisory lease connect/lock/unlock/close; original connection, lock, transaction and timeout preserved",
+        "Reuse safe Pino hooks/cause projection, observed reconciliation loops and local Next.js server JSON summary with bounded correlation headers"
       ],
       "events": [
         {
@@ -164,12 +169,27 @@
           "levels": ["info", "error"],
           "outcomes": ["succeeded", "failed"],
           "fields": ["outcome_known", "duration_ms", "request_id", "trace_id", "span_id"]
+        },
+        {
+          "event": "lobby.proxy.terminal",
+          "operation": "lobby.proxy",
+          "levels": ["info", "warn", "error"],
+          "outcomes": ["succeeded", "rejected", "failed", "timed_out", "cancelled"],
+          "fields": [
+            "request_id",
+            "upstream_request_id",
+            "trace_id",
+            "http_status",
+            "duration_ms",
+            "public_error_code"
+          ]
         }
       ],
       "failure_paths": [
         "HTTP 401/403/409/429/5xx and disconnect; provider timeout; missing-event errors; concurrent jobs; disabled/failed notification",
         "Identity lookup failure, invalid IDs, shared identity inflight waiters, concurrent resource scopes, late HTTP terminal enrichment and safe output projection",
-        "Normal owned-session reads missing character binding, :sessionId media routes, batched worker cross-entity metadata, Telegram HTTP 200/payload failure, growth projection omissions and new upstream task missing log plan"
+        "Normal owned-session reads missing character binding, :sessionId media routes, batched worker cross-entity metadata, Telegram HTTP 200/payload failure, growth projection omissions and new upstream task missing log plan",
+        "Caught DB/storage failures retaining compatible HTTP responses; unlabelled warn alerts; wrapped DB cause; per-round callback trace; proxy body/timeout/cancel/header failures; uninstrumented SDK clients/timers"
       ],
       "correlation": "Reuse request ALS and isolated job roots; transport child spans; one terminal event per operation. Per-root bounded business correlation is enriched after authentication and user resolution; independent business scopes clone the correlation fields. Creator creation_id equals character_id in the existing model.",
       "redaction": "Allow validated internal UUIDs and authenticated Telegram identifier only in Railway JSON; no names/contact data, raw errors, bodies, URLs, credentials or initData. Exclude new business identifiers from Sentry, alert notifications and metric labels. Missing or invalid IDs are omitted.",

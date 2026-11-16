@@ -50,6 +50,10 @@ export default async function botRoutes(app: FastifyInstance) {
         })
       );
     } catch (error) {
+      request.log.error(
+        { event: 'bot.start.failed', error_code: 'BOT_START_RECORD_FAILED', err: error },
+        'Bot start recording failed'
+      );
       const message = error instanceof Error ? error.message : 'Bot start recording failed';
       return reply.status(500).send(fail('INTERNAL_ERROR', message));
     }
@@ -108,6 +112,10 @@ export default async function botRoutes(app: FastifyInstance) {
         })
       );
     } catch (error) {
+      request.log.error(
+        { event: 'bot.webhook.start_failed', error_code: 'BOT_START_RECORD_FAILED', err: error },
+        'Telegram webhook start failed'
+      );
       const message = error instanceof Error ? error.message : 'Telegram webhook failed';
       return reply.status(500).send(fail('INTERNAL_ERROR', message));
     }

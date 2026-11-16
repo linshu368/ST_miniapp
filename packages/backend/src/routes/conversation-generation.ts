@@ -214,6 +214,14 @@ export function registerConversationPatchConfig(
       try {
         await settings.patch(dbUser.id, request.user, patch);
       } catch (error) {
+        request.log.error(
+          {
+            event: 'conversation.config.update_failed',
+            error_code: 'GENERATION_CONFIG_UPDATE_FAILED',
+            err: error,
+          },
+          'Generation preferences update failed'
+        );
         const message = error instanceof Error ? error.message : '生成配置更新失败';
         return reply.status(400).send(fail('BAD_REQUEST', message));
       }
