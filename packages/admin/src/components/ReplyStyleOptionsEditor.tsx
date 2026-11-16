@@ -98,7 +98,7 @@ export function ReplyStyleOptionsEditor({
 
       <div className="reply-style-options__notice" role="note">
         <span className="reply-style-options__notice-dot" aria-hidden />
-        发布后，名称与说明会展示给用户。英文占位符与规则内容目前仅存储，不参与生成。
+        发布后，名称与说明会展示给用户。用户开启的选项，规则内容会替换主体模板里对应的英文占位符；未开启时占位符替换为空。
       </div>
 
       <div className="reply-style-options__workspace">
@@ -212,7 +212,7 @@ export function ReplyStyleOptionsEditor({
                   className="reply-style-options__marker"
                   onChange={(event) => updateOption(selected.id, { marker: event.target.value })}
                 />
-                <em>自行定义标志，不会自动写入主体模板。</em>
+                <em>需自行写进主体模板的对应位置；模板里找不到时，开启后规则追加在模板末尾。</em>
               </label>
               <label className="reply-style-options__field">
                 <span>

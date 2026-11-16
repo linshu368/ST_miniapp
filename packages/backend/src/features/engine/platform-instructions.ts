@@ -15,6 +15,7 @@ import { observation } from '../../platform/observability/runtime.js';
 import {
   DEFAULT_WORD_COUNT_TIERS_CONFIG,
   InstructionSlotRulesSchema,
+  ReplyStyleOptionsConfigSchema,
   toPublicWordCountTiers,
   WordCountTiersConfigSchema,
   type PublicWordCountTiers,
@@ -25,13 +26,18 @@ import {
   fetchRuntimeConfigEntries,
   type RuntimeConfigEntry,
 } from '../../platform/runtime-config.js';
-import type { EnginePlatformInstructions, EngineWordCountTiers } from './types.js';
+import type {
+  EnginePlatformInstructions,
+  EngineReplyStyle,
+  EngineWordCountTiers,
+} from './types.js';
 
 export const PLATFORM_INSTRUCTIONS_TEMPLATE_KEY = 'system_instructions';
 export const WORD_COUNT_TIERS_KEY = 'pref_word_count_tiers';
 export const CHOICE_RULES_KEY = 'choice_rules';
 export const STATUS_RULES_KEY = 'status_rules';
 export const MEMORY_RULES_KEY = 'memory_rules';
+export const REPLY_STYLE_OPTIONS_KEY = 'reply_style_options';
 
 const CONFIG_KEYS = [
   PLATFORM_INSTRUCTIONS_TEMPLATE_KEY,
@@ -39,6 +45,7 @@ const CONFIG_KEYS = [
   CHOICE_RULES_KEY,
   STATUS_RULES_KEY,
   MEMORY_RULES_KEY,
+  REPLY_STYLE_OPTIONS_KEY,
 ] as const;
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -286,6 +293,9 @@ export function buildSnapshot(
     degraded = true;
   }
 
+  const replyStyles = readReplyStyles(entries);
+  if (replyStyles.degraded) degraded = true;
+
   return {
     instructions: {
       template: template && isCurrentTemplate(template) ? template : FALLBACK_TEMPLATE,
@@ -293,9 +303,46 @@ export function buildSnapshot(
       choiceRules: slotRules.choiceRules.rules,
       statusRules: slotRules.statusRules.rules,
       memoryRules: slotRules.memoryRules.rules,
+      replyStyles: replyStyles.styles,
     },
     degraded,
   };
+}
+
+/** 未配置 = 没有可选风格；配置损坏时同样不注入任何风格，并打降级日志。 */
+function readReplyStyles(entries: Map<string, RuntimeConfigEntry>): {
+  styles: EngineReplyStyle[];
+  degraded: boolean;
+} {
+  const entry = entries.get(REPLY_STYLE_OPTIONS_KEY);
+  if (!entry) return { styles: [], degraded: false };
+
+  const parsed = ReplyStyleOptionsConfigSchema.safeParse(entry.value);
+  if (parsed.success) {
+    return {
+      styles: parsed.data.options.map(({ id, marker, rules, enabled }) => ({
+        id,
+        marker,
+        rules,
+        enabled,
+      })),
+      degraded: false,
+    };
+  }
+
+  // Validation issues can contain operator rule text; log only the config identity/version.
+  observation.emit(
+    'engine.reply_styles_degraded',
+    'engine.config',
+    {
+      outcome: 'degraded',
+      outcome_known: false,
+      resource: REPLY_STYLE_OPTIONS_KEY,
+      config_version: entry.version,
+    },
+    'warn'
+  );
+  return { styles: [], degraded: true };
 }
 
 function readSlotRules(
