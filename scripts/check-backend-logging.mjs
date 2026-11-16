@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { inspectBoundaries } from './logging-boundary-checks.mjs';
 
 const ts = createRequire(new URL('../packages/backend/package.json', import.meta.url))(
   'typescript'
@@ -21,10 +22,6 @@ export function inspectLogging(source, path) {
   const clients = new Set();
   const observers = new Set();
   const rawNames = new Set(['fetch']);
-  let registeredFetch = false;
-  let timer = false;
-  let observedJob = false;
-  const jobs = new Set();
   for (const statement of file.statements) {
     if (!ts.isImportDeclaration(statement)) continue;
     const module = statement.moduleSpecifier.text;
@@ -36,26 +33,35 @@ export function inspectLogging(source, path) {
         if (imported === 'clientFetch') clients.add(item.name.text);
         if (imported === 'observedFetch') observers.add(item.name.text);
       }
-      if (module.endsWith('/observability/jobs.js') && imported === 'runObservedJob')
-        jobs.add(item.name.text);
       if (module === 'undici' && imported === 'fetch') rawNames.add(item.name.text);
     }
     // Local fetch must actually be created by an imported clientFetch below.
   }
-  function discover(node) {
-    if (
-      ts.isVariableDeclaration(node) &&
-      ts.isIdentifier(node.name) &&
-      node.name.text === 'fetch' &&
-      node.initializer &&
-      ts.isCallExpression(node.initializer) &&
-      ts.isIdentifier(node.initializer.expression) &&
-      clients.has(node.initializer.expression.text)
-    )
-      registeredFetch = true;
-    ts.forEachChild(node, discover);
+  function registeredFetch(node) {
+    // A client in one block cannot exempt a raw fetch in another block or shadowed parameter.
+    for (let scope = node.parent; scope; scope = scope.parent) {
+      if (
+        ts.isFunctionLike(scope) &&
+        scope.parameters.some((item) => item.name.getText(file) === 'fetch')
+      )
+        return false;
+      if (!ts.isBlock(scope) && !ts.isSourceFile(scope)) continue;
+      const declaration = scope.statements
+        .filter(ts.isVariableStatement)
+        .flatMap((item) => [...item.declarationList.declarations])
+        .find((item) => ts.isIdentifier(item.name) && item.name.text === 'fetch');
+      if (declaration) {
+        const call = declaration.initializer;
+        return (
+          call &&
+          ts.isCallExpression(call) &&
+          ts.isIdentifier(call.expression) &&
+          clients.has(call.expression.text)
+        );
+      }
+    }
+    return false;
   }
-  discover(file);
   function withinObserver(node) {
     for (let parent = node.parent; parent; parent = parent.parent) {
       if (
@@ -106,7 +112,7 @@ export function inspectLogging(source, path) {
       (ts.isIdentifier(node) &&
         rawNames.has(node.text) &&
         reference(node) &&
-        !(node.text === 'fetch' && registeredFetch));
+        !(node.text === 'fetch' && registeredFetch(node)));
     const destructured =
       ts.isVariableDeclaration(node) &&
       ts.isObjectBindingPattern(node.name) &&
@@ -120,10 +126,6 @@ export function inspectLogging(source, path) {
       problems.push('register the transport with observedFetch/clientFetch (including aliases)');
     if (ts.isCallExpression(node)) {
       const callee = node.expression;
-      if (ts.isIdentifier(callee)) {
-        if (callee.text === 'setInterval') timer = true;
-        if (jobs.has(callee.text)) observedJob = true;
-      }
       if (
         ts.isPropertyAccessExpression(callee) &&
         ts.isIdentifier(callee.expression) &&
@@ -135,19 +137,25 @@ export function inspectLogging(source, path) {
     ts.forEachChild(node, walk);
   }
   walk(file);
-  if (timer && /(?:^|\/)(?:job|worker|[^/]+-job)\.ts$/.test(path) && !observedJob)
-    problems.push('scheduled worker requires runObservedJob context');
-  return [...new Set(problems)];
+  return [...new Set([...problems, ...inspectBoundaries(ts, file, path)])];
 }
 
 const root = 'packages/backend/src';
-const scheduled = new Set([
-  'expire-payment-orders.ts',
-  'reconcile-payment-orders.ts',
-  'send-vip-expiry-reminders.ts',
-  'payment-availability-probe.ts',
-  'payment-alert-monitor.ts',
+const offlineScripts = new Set([
+  'translate-image-plaza-seed-prompts.ts',
+  'story-memory-replay.ts',
+  'railway-drama-report.ts',
+  'payment-callback-report.ts',
+  'import-image-plaza-seed.ts',
+  'drama-survey-report.ts',
+  'compare-drama-stream.ts',
+  'compare-drama-startup-optimizations.ts',
+  'compare-drama-cdn.ts',
 ]);
+export function isRuntimeLogFile(path) {
+  // New scripts are checked by default; human/JSON CLI exceptions require an explicit review.
+  return !path.startsWith('scripts/') || !offlineScripts.has(path.slice('scripts/'.length));
+}
 const problems = [];
 let checked = 0;
 function visit(directory) {
@@ -165,7 +173,7 @@ function visit(directory) {
       continue;
     const path = relative(root, filename).replaceAll('\\', '/');
     // Offline import/replay/report CLIs have an intentional human/JSON stdout contract.
-    if (path.startsWith('scripts/') && !scheduled.has(entry.name)) continue;
+    if (!isRuntimeLogFile(path)) continue;
     checked++;
     const source = readFileSync(filename, 'utf8');
     problems.push(...inspectLogging(source, path).map((problem) => `${path}: ${problem}`));
