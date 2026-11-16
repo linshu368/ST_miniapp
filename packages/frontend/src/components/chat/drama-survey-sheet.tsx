@@ -33,8 +33,17 @@ interface ChoiceAnswer {
 }
 const TOTAL_STEPS = 3;
 const emptyChoice: ChoiceAnswer = { reasons: [], otherText: '' };
-const PRIMARY_BUTTON =
-  'flex min-h-12 w-full items-center justify-center rounded-xl bg-primary text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:bg-white/[0.07] disabled:text-zinc-500';
+/**
+ * 弹窗压在整个聊天页上，弱机 WebView 里每一帧动画都可能要重新合成整屏，所以点击反馈一律即时切换：
+ * 不用 transition（一次点击只重绘一帧）；hover 只在真正有鼠标的设备上生效，否则手机上点完会"粘住"；
+ * 去掉系统点击高亮和双击缩放判定，改用 active 态给按下反馈。
+ */
+const TAP =
+  'touch-manipulation select-none [-webkit-tap-highlight-color:transparent] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
+const PRIMARY_BUTTON = cn(
+  TAP,
+  'flex min-h-12 w-full items-center justify-center rounded-xl bg-primary text-sm font-medium text-primary-foreground active:bg-primary/80 [@media(hover:hover)]:hover:bg-primary/90 disabled:bg-white/[0.07] disabled:text-zinc-500'
+);
 
 export function DramaSurveySheet({
   open,
@@ -88,6 +97,9 @@ export function DramaSurveySheet({
       <SheetContent
         side="bottom"
         className="mx-auto flex max-h-[88dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-[28px] border-white/10 bg-[#202022] px-5 pt-3 text-zinc-100 motion-reduce:animate-none motion-reduce:transition-none"
+        // 默认遮罩的 backdrop-blur 会在每次重绘时对整屏聊天页重新模糊，弱机上点选项明显掉帧；
+        // 保留同样的遮罩色，只去掉模糊（70% 不透明度下模糊本身几乎看不出来）。
+        overlayClassName="backdrop-blur-none"
         onOpenAutoFocus={(event) => event.preventDefault()}
       >
         <SurveyHeader
@@ -192,7 +204,10 @@ function SurveyHeader({
         <SheetClose
           aria-label="关闭问卷"
           disabled={pending}
-          className="-mr-2 flex size-11 shrink-0 items-center justify-center rounded-full text-zinc-400 hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className={cn(
+            TAP,
+            '-mr-2 flex size-11 shrink-0 items-center justify-center rounded-full text-zinc-400 active:bg-white/10 [@media(hover:hover)]:hover:bg-white/5'
+          )}
         >
           <X className="size-[18px]" aria-hidden />
         </SheetClose>
@@ -241,10 +256,11 @@ function ChoiceQuestion({
               aria-pressed={selected}
               onClick={() => toggle(option.id)}
               className={cn(
-                'flex min-h-11 items-center justify-between gap-2 rounded-xl border px-3 py-2.5 text-left text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                TAP,
+                'flex min-h-11 items-center justify-between gap-2 rounded-xl border px-3 py-2.5 text-left text-[13px]',
                 selected
-                  ? 'border-primary/50 bg-primary/10 text-primary'
-                  : 'border-white/[0.08] bg-white/[0.025] text-zinc-300 hover:bg-white/5'
+                  ? 'border-primary/50 bg-primary/10 text-primary active:bg-primary/15'
+                  : 'border-white/[0.08] bg-white/[0.025] text-zinc-300 active:bg-white/[0.06] [@media(hover:hover)]:hover:bg-white/5'
               )}
             >
               {option.label}
