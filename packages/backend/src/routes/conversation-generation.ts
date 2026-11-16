@@ -20,7 +20,7 @@ import type {
   RegenerateRequest,
   SendMessageRequest,
 } from '@miniapp/shared';
-import { fail, ok, PatchGenerationConfigRequestSchema } from '@miniapp/shared';
+import { fail, ok, PatchGenerationConfigRequestSchema, toPublicDriveModes } from '@miniapp/shared';
 import type { FastifyBaseLogger, FastifyInstance, FastifyReply } from 'fastify';
 import {
   createReplyStreamSink,
@@ -167,8 +167,14 @@ export function registerConversationGetConfig(
       const word_count_tiers = toPublicWordCountTiersFromEngine(
         platform.instructions.wordCountTiers
       );
+      const driveModes = platform.instructions.driveModes;
       return reply.send(
-        ok<GetGenerationConfigData>({ config, word_count_tiers, reply_style_options })
+        ok<GetGenerationConfigData>({
+          config,
+          word_count_tiers,
+          reply_style_options,
+          ...(driveModes ? { drive_modes: toPublicDriveModes(driveModes) } : {}),
+        })
       );
     }
   );
@@ -206,6 +212,7 @@ export function registerConversationPatchConfig(
       if ('pref_show_status' in body) patch.pref_show_status = body.pref_show_status;
       if ('pref_show_memory' in body) patch.pref_show_memory = body.pref_show_memory;
       if ('pref_reply_styles' in body) patch.pref_reply_styles = body.pref_reply_styles;
+      if ('pref_drive_mode' in body) patch.pref_drive_mode = body.pref_drive_mode;
       if ('pref_custom_instructions' in body) {
         patch.pref_custom_instructions = body.pref_custom_instructions;
       }
@@ -234,8 +241,14 @@ export function registerConversationPatchConfig(
       const word_count_tiers = toPublicWordCountTiersFromEngine(
         platform.instructions.wordCountTiers
       );
+      const driveModes = platform.instructions.driveModes;
       return reply.send(
-        ok<PatchGenerationConfigData>({ config, word_count_tiers, reply_style_options })
+        ok<PatchGenerationConfigData>({
+          config,
+          word_count_tiers,
+          reply_style_options,
+          ...(driveModes ? { drive_modes: toPublicDriveModes(driveModes) } : {}),
+        })
       );
     }
   );

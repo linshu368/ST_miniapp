@@ -1,0 +1,123 @@
+{
+  "id": "drive-mode",
+  "name": "drive-mode",
+  "title": "剧情模式：四档剧情主导权",
+  "description": "回复偏好新增四档剧情模式（我来带/等 TA 撩/来点意外/替我演），主体模板拆出 {{DRIVE_RULES}} 槽位与共同底线",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P2",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-16",
+  "completedAt": null,
+  "branch": "feat/drive-mode",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "backend.business.conversation-generation",
+        "frontend.business.conversation-ui",
+        "shared.business.conversation-contracts",
+        "database.business.conversation-storage",
+        "admin.business.operations"
+      ]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": ["/chat/:id"],
+      "apis": ["GET /api/v1/generation-config", "PATCH /api/v1/generation-config"],
+      "android": {
+        "page_p95_baseline_ms": 2402.94,
+        "page_p95_target_ms": 2523,
+        "baseline_route": "/chat/:id",
+        "baseline_measurement": "sentry metrics page.ready.duration",
+        "note": "样本 3567；抽屉内容只在展开时渲染，首屏请求数不变，目标为 +5% 以内"
+      },
+      "ios": {
+        "page_p95_baseline_ms": 2151.25,
+        "page_p95_target_ms": 2259,
+        "baseline_route": "/chat/:id",
+        "baseline_measurement": "sentry metrics page.ready.duration",
+        "note": "样本 697；目标为 +5% 以内"
+      },
+      "api": {
+        "p95_baseline_ms": 108.3,
+        "p95_target_ms": 114,
+        "endpoint": "GET /api/v1/generation-config",
+        "baseline_platform": "android",
+        "reason": "新配置并入既有平台规则的同一次读取与版本缓存，不增加数据库往返；PATCH 基线 305.9ms（样本 3120），目标 +5% 以内；iOS 同目标"
+      },
+      "measurement": {
+        "source": "Sentry metrics page.ready.duration（route × tg_platform）；接口看 Sentry http.server span（transaction 维度）",
+        "window": "基线 2026-11-09—11-16 近 7 天；发布后 24 小时同口径复查"
+      },
+      "notes": "剧情模式栏目在抽屉展开后才渲染；生成链路只多一次内存里的字符串替换。"
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "required",
+      "scope": [
+        "platform instructions snapshot（drive_mode_options 读取与模板槽位校验）",
+        "GET/PATCH /api/v1/generation-config",
+        "conversation turn（每轮剧情模式记录）"
+      ],
+      "integration_points": [
+        "Reuse observation.emit in engine/platform-instructions（engine.config）, request pino logger in conversation-generation route, log.biz in generate.ts and existing rich_reply_metadata persistence"
+      ],
+      "events": [
+        {
+          "event": "engine.drive_modes_degraded",
+          "operation": "engine.config",
+          "levels": ["warn"],
+          "outcomes": ["degraded"],
+          "fields": ["resource", "config_version"]
+        },
+        {
+          "event": "engine.drive_slot_missing",
+          "operation": "engine.config",
+          "levels": ["warn"],
+          "outcomes": ["degraded"],
+          "fields": ["resource", "config_version"]
+        },
+        {
+          "event": "conversation.instruction_slots.resolved",
+          "operation": "conversation.turn",
+          "levels": ["info"],
+          "outcomes": ["succeeded"],
+          "fields": ["sessionId", "turnIndex", "revision", "slotModes", "driveMode"]
+        },
+        {
+          "event": "conversation.config.update_failed",
+          "operation": "http.request",
+          "levels": ["error"],
+          "outcomes": ["rejected"],
+          "fields": ["error_code", "err"]
+        }
+      ],
+      "failure_paths": [
+        "drive_mode_options 缺失 → 保守规则（不告警）；JSON 损坏 → 保守规则 + drive_modes_degraded；模板缺 {{DRIVE_RULES}} 而模式已配置 → drive_slot_missing 且 snapshot degraded；PATCH 非启用 id 或配置不可用 → 400；诊断写入失败沿用 conversation.rich_reply.diagnosis_failed"
+      ],
+      "correlation": "沿用请求 ALS 与 turn 日志上下文（sessionId/turnIndex/revision）；每轮档位同时落在 experience.chat_history.rich_reply_metadata.drive_mode，可与 chat_history 行直接关联。",
+      "redaction": "只记录配置 key、版本号与档位 id；不记录规则正文、模板正文、校验错误详情（可能含运营文本）或用户手写偏好。",
+      "alerting": "不新增告警规则；degraded 事件为 warn，沿用既有 conversation.instructions.degraded 观测。",
+      "verification": [
+        "platform-instructions.test：损坏配置降级且 emit 参数不含规则正文；模板缺槽位时 emit engine.drive_slot_missing",
+        "render-instructions.test：所选档位注入、回落默认档、未配置注入保守规则",
+        "pnpm lint:backend-logging 与 logging:validate 通过"
+      ]
+    }
+  }
+}

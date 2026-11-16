@@ -29,7 +29,7 @@ import type { CharacterCardRow } from '../../infrastructure/repositories/Charact
 import { observeChatFirstToken } from '../../lib/engineering-observability.js';
 import type { RequestLogger } from '../../lib/logger.js';
 import type { fetchModelCatalogSnapshot } from '../../platform/model-tiers.js';
-import { buildPrompt, type EngineCharacter } from '../engine/index.js';
+import { buildPrompt, selectDriveRules, type EngineCharacter } from '../engine/index.js';
 import type { InstructionSlotModes } from '../engine/types.js';
 import { execute, type GenerationStatus, type ResolvedModel } from '../generation/index.js';
 import {
@@ -183,6 +183,11 @@ export async function runConversationTurn(
   preparation.enter('turn_open', model);
   const turn = await startTurn(session.id, mode, model.openRouterModelId);
   preparation.enter('context');
+  // 与 prompt 渲染同一来源、同一解析口径，记录本轮实际注入的剧情模式。
+  const driveMode = selectDriveRules(
+    instructions.instructions.driveModes,
+    userConfig.pref_drive_mode
+  ).modeId;
   log.biz.info(
     {
       event: 'conversation.instruction_slots.resolved',
@@ -190,6 +195,7 @@ export async function runConversationTurn(
       turnIndex: turn.turnIndex,
       revision: turn.revision,
       slotModes: turn.slotModes,
+      driveMode,
     },
     '已使用持久化的平台规则槽位模式'
   );
@@ -217,6 +223,7 @@ export async function runConversationTurn(
     model,
     policy,
     chargeId,
+    driveMode,
   });
   const { observations, observationInput, control } = scope;
 

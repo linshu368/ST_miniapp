@@ -27,6 +27,8 @@ export {
   wrapUserInput,
 } from './render-instructions.js';
 
+export { selectDriveRules } from './drive-mode.js';
+
 export {
   engineWordCountTiersToConfig,
   fetchPlatformInstructions,

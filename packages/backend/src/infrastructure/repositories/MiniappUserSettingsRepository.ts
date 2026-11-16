@@ -1,7 +1,9 @@
 import { getDomainDb } from '../../lib/supabase.js';
 import {
+  enabledDriveModes,
   normalizeTelegramAvatarUrl,
   ReplyStylePreferencesSchema,
+  resolveDriveMode,
   type PatchUserSettingsRequest,
   type UserGenerationConfig,
   type VoiceConfig,
@@ -205,7 +207,7 @@ export class MiniappUserSettingsRepository {
       this.db
         .from('miniapp_user_settings')
         .select(
-          'selected_model_id, pref_word_count, pref_show_options, pref_show_status, pref_show_memory, pref_reply_styles, pref_custom_instructions, display_name, tg_first_name, tg_username'
+          'selected_model_id, pref_word_count, pref_show_options, pref_show_status, pref_show_memory, pref_reply_styles, pref_drive_mode, pref_custom_instructions, display_name, tg_first_name, tg_username'
         )
         .eq('user_id', userId)
         .abortSignal(AbortSignal.timeout(5_000))
@@ -224,6 +226,7 @@ export class MiniappUserSettingsRepository {
       | 'pref_show_status'
       | 'pref_show_memory'
       | 'pref_reply_styles'
+      | 'pref_drive_mode'
       | 'pref_custom_instructions'
       | 'display_name'
       | 'tg_first_name'
@@ -231,6 +234,7 @@ export class MiniappUserSettingsRepository {
     > | null;
 
     const publicTiers = toPublicWordCountTiersFromEngine(instructions.instructions.wordCountTiers);
+    const driveModes = instructions.instructions.driveModes;
     const stored = row?.pref_word_count ?? null;
     const pref_word_count =
       stored !== null && publicTiers.tiers.some((tier) => tier.id === stored)
@@ -244,6 +248,9 @@ export class MiniappUserSettingsRepository {
       pref_show_status: row?.pref_show_status ?? true,
       pref_show_memory: row?.pref_show_memory ?? true,
       pref_reply_styles: normalizeReplyStylePreferences(row?.pref_reply_styles),
+      ...(driveModes
+        ? { pref_drive_mode: resolveDriveMode(row?.pref_drive_mode, driveModes).id }
+        : {}),
       pref_custom_instructions: row?.pref_custom_instructions ?? null,
     };
     return { config, displayName: resolveEffectiveDisplayName(row) };
@@ -424,6 +431,15 @@ export class MiniappUserSettingsRepository {
       const parsed = ReplyStylePreferencesSchema.safeParse(patch.pref_reply_styles);
       if (!parsed.success) throw new Error('无效的回复风格偏好');
       update.pref_reply_styles = parsed.data;
+    }
+    if ('pref_drive_mode' in patch) {
+      const next = typeof patch.pref_drive_mode === 'string' ? patch.pref_drive_mode.trim() : '';
+      const config = (await fetchPlatformInstructions()).instructions.driveModes;
+      // 只接受当前启用的档位；配置不可用时拒绝写入，避免存下一个日后才失效的值。
+      if (!config || !enabledDriveModes(config).some((mode) => mode.id === next)) {
+        throw new Error('无效的剧情模式');
+      }
+      update.pref_drive_mode = next;
     }
     if ('pref_custom_instructions' in patch) {
       update.pref_custom_instructions = normalizeNullableText(patch.pref_custom_instructions, 2000);

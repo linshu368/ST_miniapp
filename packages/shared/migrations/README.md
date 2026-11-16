@@ -1,5 +1,15 @@
 # SQL 迁移文件
 
+## 2026-11-17 剧情模式（本地 PG17 验证，远端未执行）
+
+`20261117_drive_mode.sql`（domain: app_core 用户偏好 + admin managed key）。前置：`app_core.miniapp_user_settings`、admin managed config 函数链。
+
+- `app_core.miniapp_user_settings` 新增可空列 `pref_drive_mode`（无默认值，只改目录不重写表）+ CHECK `miniapp_user_settings_pref_drive_mode_check`（NULL 或 `^[a-z][a-z0-9-]{0,31}$`）。NULL 表示跟随默认档；是否为启用档位由后端写入时校验。
+- managed key `drive_mode_options`：沿用改名包装链，库里只校验是带 `modes` 数组与 `default_mode_id` 字符串的 JSON 对象，字段规则在 shared `DriveModesConfigSchema`；草稿/发布表的 key CHECK 放宽到新 key，未知 key 仍拒绝。不预置 runtime_config 行（缺失时引擎注入保守规则、前端隐藏栏目）。
+- 每轮档位写在既有 `experience.chat_history.rich_reply_metadata.drive_mode`（既有 CHECK 允许附加键），不改热表结构。
+- 验证：`bash scripts/test-drive-mode-migration.sh`（连跑两次幂等、key 链与 ACL、草稿/发布约束、偏好列 CHECK）。
+- 发布：TEST 单文件 → Production 单文件 → Backend/Frontend → 运营发布剧情模式、主体模板、回复风格。回滚：先回滚主体模板并停用剧情模式，再回退代码；需要时 `ALTER TABLE app_core.miniapp_user_settings DROP COLUMN pref_drive_mode`，函数链保留。
+
 ## 2026-11-16 畅聊每次上游调用的真实花费（本地 PG17 验证，远端未执行）
 
 `20261116_free_zone_calls.sql`（domain: miniapp_features + miniapp_analytics 只读投影）。无前置依赖（不建跨 schema 外键）。
