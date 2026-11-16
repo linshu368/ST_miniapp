@@ -6,6 +6,14 @@
 
 ## 输出与查询
 
+### 中文摘要（2026-11-16，本地未部署）
+
+首行 msg 显示“中文模块·技术模块 / 调用场景 / 真实结果 / 安全错误说明 / 状态及耗时”，新增 module_name、scenario、result、error_message。call_scene 将已注册 HTTP 路由模板或定时任务名传给 DB/供应商子日志；原始 URL、查询及正文不进入该字段。未知模块/场景保留机器码，没有结果的 info 不自动视作成功。展示词表集中在日志目录 labels.zh-CN.ts，SDK 只导出可注入展示工厂；示例和字段边界见 [模块说明](../packages/backend/src/platform/observability/README.md#8-railway-中文首行与场景)。
+
+支付探测显式记录建单结果、渠道、错误分类及策略成功/失败/跳过/超时/取消计数，修复嵌套结果被白名单过滤的遗漏。模型供应商余额监控分别记录真实结果；生成与媒体余额预检保留通过/拒绝/跳过/查询异常。探测可用不证明支付全链路；SSE/HTTP200、建单和策略执行仍分别判定。基础日志没有采样或减少，告警规则仍匹配原有英文机器字段且默认关闭。
+
+原始 Error.message 和任意插值 msg 继续不直接输出；中文 error_message 由受控分类、可识别 cause 或状态生成，未知原因保留未分类提示及既有安全源码位置。当前只完成本地日志/测试验证，按用户要求未运行本地 UI/浏览器；实际 Railway 展示待应用发布后核验。
+
 Backend 使用 Pino stdout，Railway 负责捕获、保存和查询。不新增日志库、采集器、磁盘缓冲或补传任务。现有可选 Sentry/工程 OTLP 和支付业务告警保持独立。
 
 基础事件包含 `schema_version=1`、`event_id`、`module`、`operation`、`trace_id`、`span_id`、可选 `parent_span_id/request_id`、`outcome/outcome_known`、耗时和安全状态码。`reqId` 保留兼容。`LOG_LEVEL` 只控制诊断日志；基础事件不受其过滤，测试环境默认静默。
