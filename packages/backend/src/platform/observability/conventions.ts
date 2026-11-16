@@ -1,13 +1,12 @@
 /**
- * shared / logging / conventions.ts
+ * backend / platform / observability / conventions.ts
  *
  * 日志系统的「约定层」：零运行时依赖、浏览器安全。
  *
  * 关键纪律：
  *   - 本文件**不 import pino**（也不 import 任何运行时库），只产出「配置对象」。
- *   - 本文件**不得**从 `shared/src/index.ts` re-export，否则会被打进 frontend bundle。
- *   - 服务端包（backend / sync-engine）各自 `import pino`，把 buildPinoOptions() 喂进去，
- *     从而保证字段约定 / 脱敏清单 / kind 语义**单点定义**、两端输出格式一致。
+ *   - 输出约定在日志模块内单点定义；浏览器使用自己的应用接线，不依赖服务端 singleton。
+ *   - 调用者把 buildPinoOptions() 喂给 Pino，SDK 候选入口可复用这份无启动副作用的约定。
  *
  * 当前运行说明见 docs/backend-observability-runtime.md。
  */

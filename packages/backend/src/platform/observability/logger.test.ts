@@ -2,13 +2,9 @@ import pino from 'pino';
 import { Writable } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
 import { fastifyLoggerOptions, foundationLoggerOptions } from './logger.js';
-import { bindBusinessContext, newContext, withContext } from '../platform/observability/context.js';
-import {
-  safeLogAttributes,
-  safeLogRecord,
-  validatedDramaLog,
-} from '../platform/observability/safe-log.js';
-import { safeError } from '../platform/observability/events.js';
+import { bindBusinessContext, newContext, withContext } from './context.js';
+import { safeLogAttributes, safeLogRecord, validatedDramaLog } from './safe-log.js';
+import { safeError } from './events.js';
 
 describe('Pino compatibility safety', () => {
   it('keeps growth/community summaries and extended object IDs through JSON and excludes telemetry IDs', () => {

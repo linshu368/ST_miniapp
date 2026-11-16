@@ -1,5 +1,5 @@
 import pino from 'pino';
-import { foundationLoggerOptions } from '../../lib/logger-options.js';
+import { foundationLoggerOptions } from './logger-options.js';
 import { createObserver } from './core.js';
 
 // Foundation events are independent of diagnostic LOG_LEVEL. Railway owns capture/storage.

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import pino from 'pino';
 import { Writable } from 'node:stream';
-import { fastifyLoggerOptions } from '../../lib/logger-options.js';
+import { fastifyLoggerOptions } from './logger-options.js';
 import { matchesLogRule, parseLogAlertPolicy } from './alert-policy.js';
 import { createLogAlerts } from './log-alerts.js';
 import { subscribeLogAlerts, type AlertLog } from './log-channel.js';

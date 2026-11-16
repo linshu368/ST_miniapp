@@ -63,3 +63,10 @@ CI 按 base..HEAD 校验新增/修改的活跃任务规划（task.json/prd/desig
 复用调研基于 core/context/events、Pino 安全输出、HTTP/fetch/job/DB adapter、告警 schema/channel/runtime 与实际 Docker 复制范围。产物为 `docs/logging-reuse-and-alert-config.md`，作为当前任务的设计补充，逐项区分已有行为和拟扩展规则。
 
 本轮只写评估/规划/规范文档，保留现有运行时配置；无需新增测试文件或重复构建应用。验证现有 parser 的支持矩阵、文档 JSON 语法/当前规则示例、相对链接、格式、任务规划及模块载荷；沿用前轮应用验证记录，不据文档修改宣称新增运行能力。文件方案后续实现须覆盖关闭零读取、来源冲突、错误文件、模块/状态匹配和原行为兼容，并按既有发布 P95 门禁执行。
+
+## 2026-11-16 集中目录与文件规则实施（用户已授权）
+
+1. 先完成本次规划与相关规范阅读；复用已有目录、parser/matcher、Delivery、core/fetch/job factory、Pino 安全 hooks 和原 CLI/CI，不建设 SDK 发布平台。
+2. 迁入日志相关实现/测试及仅 Backend 消费的 logging conventions，自动解析并更新导入/测试 mock；低依赖 sdk.ts 导出与项目启动装配分离。运行相关回归、类型、门禁/复杂度，按模块提交。
+3. 加版本化规则文件、有界 loader、纯验证和模块/HTTP/上游条件；移除环境规则读取，保留总开关/secret。补关闭不读、cwd无关、无效/超限/未知字段、条件组合、第一条匹配、通知安全测试；允许为这些安全/契约/导入风险新建配置及 SDK 回归文件。
+4. 加目录 README、纯 logging:validate 命令和 CI，验证真实文件；运行全量无凭证 Backend、Shared、全仓 typecheck、适用 ESLint、门禁、格式/复杂度、Frontend/Admin build；更新真实目录/配置/SDK边界文档及模块载荷并提交。

@@ -57,3 +57,13 @@ HTTP 路由模板显式识别 conversations、characters、creator、dramas，�
 AST 门禁检查显式 HTTP/数据库创建及实际调度边界，例外集中登记基础 transport、通知递归边界和离线 CLI。优先现有 AST 遍历，不引入全程序污点分析或 SDK 扫描框架；验证别名和作用域，不能以同文件任意 import/call 作为全文件豁免。静态检查仍不替代运行结果验证。
 
 可靠性评估：无新增外部调用、SQL、事务、补偿、业务幂等/并发状态或容量队列，超时/退避/限流沿用原值；增加日志为固定大小。风险是 cause 泄漏、重复终态、回调改变循环行为、链路头污染和门禁误报，必须回归。应用分批发布/回滚即可，无迁移与旧数据回填；前后端可独立部署，旧后端无 trace 头时留空。Android/iOS/API 仍按既有真实样本发布窗口验证，基线 null 不推测。
+
+## 2026-11-16 集中目录、唯一文件来源与 SDK 接缝
+
+沿用 `src/platform/observability/` 为唯一日志目录，迁入 lib 下 logger/options/pretty、Sentry helper、后台观测接线及仅 Backend 消费的 shared logging conventions，更新模块内导入和测试；旧 lib 入口仅保留单行重导出兼容，不保留双实现。共享对外 API/DTO 不变；进程 instrumentation 和独立 Frontend 代理保留自身启动/部署边界。目录 README 区分 SDK 候选核心、项目适配与配置。
+
+`alert-rules.json` 使用 version=1 + rules；默认启用 runtime-errors，专项模块/429 示例先 disabled，避免改变生产默认通知集合。规则支持 enabled、modules、business_modules、http_statuses、upstream_statuses，数组内 OR/条件间 AND/第一条命中；停用专项规则并不抑制后续兜底。纯 schema/matcher 不读取环境。platform/config 只将总开关交给固定模块相对 URL 的有界文件 loader，不读取 LOG_ALERT_RULES，也不提供路径环境覆盖或旧 JSON 回退。关闭先短路零 I/O；开启文件缺失/损坏/超限/未知字段一律稳定分类报错，禁止回显配置或文件错误正文。独立 CLI/CI 可在无数据库/凭据条件下校验规则文件。
+
+SDK 接缝：`sdk.ts` 只导出纯核心、可注入 fetch/job factory、规则解析匹配及渠道无关 Delivery 接口，不导入 Pino singleton、配置/文件、DB、Fastify 或飞书；既有 runtime/fetch/jobs 继续装配同一实例，项目 branding 放 alert-runtime。业务字段白名单仍是明确的项目扩展模板，未来抽包时替换/类型化，不开放任意 DTO 输出。
+
+可靠性：原 timeout、并发、幂等、事务、回调和原始结果保持；配置仅启动读取一次，无 watcher/合并/远程配置。文件读取上限16KiB，规则最多32；通知仍4并发/2.5秒/无重试/持久化。风险是目录改动造成隐式循环、SDK 导入拉起业务、数据/告警字段泄漏与规则误匹配，须用全量消费者类型与运行回归验证。发布随应用包含 JSON，开关默认关闭；回滚代码恢复旧规则来源时须独立核对部署配置，不把文件误交旧 strict parser。移动端受影响接口与真实 P95 窗口沿用既有 meta，保持无样本 null，不新增假样本。

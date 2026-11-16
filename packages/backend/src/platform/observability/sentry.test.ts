@@ -27,7 +27,7 @@ import {
   sendBackendSentryLog,
   captureBackendException,
 } from './sentry.js';
-import { safeSentryEvent, safeSentryLog } from '../platform/observability/sentry-safety.js';
+import { safeSentryEvent, safeSentryLog } from './sentry-safety.js';
 
 function request(): FastifyRequest {
   return {
