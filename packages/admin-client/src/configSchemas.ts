@@ -499,7 +499,7 @@ export const configMetadata: Record<
   reply_style_options: {
     label: '回复风格',
     description:
-      '管理回复偏好中的选项名称、说明、展示顺序与独立开关；沿用草稿、发布和回滚。英文占位符与规则内容由你维护，本次仅存储，不参与模型生成。',
+      '管理回复偏好中的选项名称、说明、展示顺序与独立开关；沿用草稿、发布和回滚。英文占位符写进主体模板；用户开启的选项，规则内容替换对应占位符，未开启时替换为空。',
     defaultValue: { options: [] },
   },
   [FREE_ZONE_CONFIG_KEY]: {

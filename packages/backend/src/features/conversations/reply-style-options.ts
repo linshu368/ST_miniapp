@@ -1,10 +1,12 @@
 import { observation } from '../../platform/observability/runtime.js';
 import { ReplyStyleOptionsConfigSchema, type PublicReplyStyleOption } from '@miniapp/shared';
 import { fetchRuntimeConfigEntry } from '../../platform/runtime-config.js';
+import { REPLY_STYLE_OPTIONS_KEY } from '../engine/index.js';
 
-export const REPLY_STYLE_OPTIONS_KEY = 'reply_style_options';
-
-/** UI metadata only. Private markers and rules never enter this projection or generation. */
+/**
+ * UI metadata only. Private markers and rules never enter this public projection;
+ * generation reads them separately through the engine's platform instructions.
+ */
 export async function fetchPublicReplyStyleOptions(): Promise<PublicReplyStyleOption[]> {
   const entry = await fetchRuntimeConfigEntry(REPLY_STYLE_OPTIONS_KEY, AbortSignal.timeout(5_000));
   if (!entry) return [];

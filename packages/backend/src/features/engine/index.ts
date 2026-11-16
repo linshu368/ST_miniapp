@@ -12,6 +12,7 @@ export type {
   EngineMessage,
   EngineOutput,
   EnginePlatformInstructions,
+  EngineReplyStyle,
   EngineWordCountTiers,
   PromptEngine,
 } from './types.js';
@@ -19,6 +20,7 @@ export type {
 export { buildPrompt, promptEngine } from './prompt-engine.js';
 
 export {
+  applyReplyStyles,
   EMPTY_CUSTOM_INSTRUCTIONS,
   renderPlatformInstructions,
   resolveWordCountPromptValue,
@@ -31,6 +33,7 @@ export {
   invalidatePlatformInstructionsCache,
   parseWordCountTiers,
   PLATFORM_INSTRUCTIONS_TEMPLATE_KEY,
+  REPLY_STYLE_OPTIONS_KEY,
   toPublicWordCountTiersFromEngine,
   WORD_COUNT_TIERS_KEY,
   type PlatformInstructionsSnapshot,
