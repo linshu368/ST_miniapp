@@ -167,7 +167,7 @@ function PublicCreatorSpace({ id }: { id: string }) {
             >
               {works.isFetchingNextPage && <Loader2 className="size-4 animate-spin" aria-hidden />}
               {works.isFetchNextPageError
-                ? '未能加载，点此重试'
+                ? '没加载出来，点这里再试试'
                 : works.isFetchingNextPage
                   ? '正在加载…'
                   : '查看更多作品'}

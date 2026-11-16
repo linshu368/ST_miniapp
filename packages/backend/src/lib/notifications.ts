@@ -19,5 +19,5 @@ export async function insertUserNotification(input: {
     created_at: now,
     updated_at: now,
   });
-  if (error) throw new Error(`创建用户消息失败：${error.message}`);
+  if (error) throw new Error(`创建用户消息失败：${error.message}`, { cause: error });
 }

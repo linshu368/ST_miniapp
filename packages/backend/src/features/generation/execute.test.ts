@@ -128,13 +128,15 @@ vi.mock('../billing/free-quota.js', async (importOriginal) => ({
 }));
 
 vi.mock('./settle.js', () => ({ settleGeneration: vi.fn() }));
-vi.mock('./surplus-reasoning.js', () => ({
+// 模型目录固定为「声明了 reasoning」；请求体映射用真实的 surplusReasoningBody
+vi.mock('./surplus-reasoning.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./surplus-reasoning.js')>()),
   getSurplusReasoningParameters: async (_modelId: string, requestedEnabled: boolean) => ({
     parameters: {},
-    supportedParameters: [],
+    supportedParameters: ['reasoning'],
     requestedEnabled,
-    control: 'unavailable',
-    reason: 'unsupported',
+    control: 'effort',
+    reason: 'effort_mapped',
   }),
 }));
 
@@ -618,6 +620,40 @@ describe('execute（请求体）', () => {
     expect(body.stream_options).toEqual({ include_usage: true });
   });
 
+  it('Surplus turns hidden thinking off when the deep-thinking switch is off', async () => {
+    billingContext = {
+      ...defaultBillingContext,
+      modelId: 'surplus-model',
+      modelDisplayName: 'Surplus Model',
+      provider: 'surplus',
+      providerModelId: 'google/gemini-3.8-flash',
+      openRouterModelId: 'google/gemini-3.8-flash',
+    };
+    vi.stubEnv('SURPLUS_API_BASE_URL', 'https://surplus.example/api/v1');
+    vi.stubEnv('SURPLUS_API_KEY', 'test-surplus-key');
+    const fetchMock = stubUpstream(() => sseResponse(['data: [DONE]\n\n']));
+
+    await execute(
+      request({
+        model: {
+          modelId: 'surplus-model',
+          provider: 'surplus',
+          providerModelId: 'google/gemini-3.8-flash',
+          openRouterModelId: 'google/gemini-3.8-flash',
+          tier: 'light',
+          isFree: false,
+          entitlement: { active: true, validUntil: '2099-01-01T00:00:00.000Z' },
+        },
+        thinkingEnabled: false,
+      }),
+      undefined,
+      fakeLogger()
+    );
+
+    const body = requestBodyOf(fetchMock) as Record<string, unknown>;
+    expect(body.reasoning).toEqual({ effort: 'none' });
+  });
+
   it('Surplus uses only standard Chat Completions fields', async () => {
     providerPreferences = { ignore: ['alibaba'], order: ['friendli'], allow_fallbacks: true };
     billingContext = {
@@ -655,7 +691,8 @@ describe('execute（请求体）', () => {
       stream: true,
     });
     expect(body.provider).toBeUndefined();
-    expect(body.reasoning).toBeUndefined();
+    // 深度思考开关按 Surplus 的 reasoning.effort 写法发（默认开 = medium），不套 OpenRouter 的 enabled/exclude
+    expect(body.reasoning).toEqual({ effort: 'medium' });
     expect(body.venice_parameters).toBeUndefined();
     expect(body.prompt_cache_key).toBeUndefined();
     expect(body.stream_options).toEqual({ include_usage: true });
@@ -839,6 +876,26 @@ describe('reasoning is progress, never a roleplay answer or billing proof', () =
       fakeLogger()
     );
     expect(reasoning).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ status: 'success', content: '角色正文' });
+    expect(savedHistory()[0]?.assistant_reply).toBe('角色正文');
+  });
+
+  it('reveal overrides the off switch: always-thinking free models still show their thought', async () => {
+    const reasoning = vi.fn();
+    stubUpstream(
+      sseResponse([
+        `data: ${JSON.stringify({ choices: [{ delta: { reasoning_content: '先想一想' } }] })}\n\n`,
+        DELTA('角色正文'),
+        `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }] })}\n\n`,
+        'data: [DONE]\n\n',
+      ])
+    );
+    const result = await execute(
+      request({ thinkingEnabled: false, revealReasoning: true }),
+      { onReasoningDelta: reasoning },
+      fakeLogger()
+    );
+    expect(reasoning).toHaveBeenCalledWith('先想一想');
     expect(result).toMatchObject({ status: 'success', content: '角色正文' });
     expect(savedHistory()[0]?.assistant_reply).toBe('角色正文');
   });

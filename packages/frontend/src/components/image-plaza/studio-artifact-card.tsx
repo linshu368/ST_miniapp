@@ -47,7 +47,7 @@ export function StudioArtifactCard(props: StudioArtifactCardProps) {
         setShowOriginal(true);
       }
     } catch {
-      setSaveFeedback('保存未能发起，请重试，或打开原图保存。');
+      setSaveFeedback('没能保存，再试一次，或者打开原图保存。');
       setShowOriginal(true);
     } finally {
       savingRef.current = false;

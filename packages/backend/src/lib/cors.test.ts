@@ -11,7 +11,10 @@ describe('CORS boundary', () => {
       await registerCors(app, {
         frontendUrl: ' https://app.example/ ',
         adminPlatformUrl: 'https://admin.example',
-        frontendAllowedOrigins: ['https://st-miniapp-frontend.vercel.app'],
+        frontendAllowedOrigins: [
+          'https://st-miniapp-frontend.vercel.app',
+          'https://short-drama-demo-sigma.vercel.app',
+        ],
         development,
       });
       app.route({ method: ['GET', 'POST'], url: '/protected', handler });
@@ -24,6 +27,7 @@ describe('CORS boundary', () => {
           'https://app.example',
           'https://admin.example',
           'https://st-miniapp-frontend.vercel.app',
+          'https://short-drama-demo-sigma.vercel.app',
         ]) {
           const preflight = await app.inject({
             method: 'OPTIONS',
@@ -37,6 +41,9 @@ describe('CORS boundary', () => {
           expect(preflight.statusCode).toBe(204);
           expect(preflight.headers['access-control-allow-origin']).toBe(origin);
           expect(preflight.headers['timing-allow-origin']).toBe(origin);
+          const response = await app.inject({ url: '/auth', headers: { origin } });
+          expect(response.headers['access-control-expose-headers']).toContain('x-request-id');
+          expect(response.headers['access-control-expose-headers']).toContain('x-trace-id');
           expect((await app.inject({ url: '/auth', headers: { origin } })).statusCode).toBe(401);
           expect((await app.inject({ url: '/error', headers: { origin } })).statusCode).toBe(500);
         }

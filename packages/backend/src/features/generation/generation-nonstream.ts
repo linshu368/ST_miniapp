@@ -1,4 +1,5 @@
 import { MAX_CONVERSATION_REASONING_LENGTH } from '@miniapp/shared';
+import { revealsReasoning } from './reasoning-display.js';
 import type { ModelBillingContext } from '../../platform/model-tiers.js';
 import { SurplusIntelligenceChatHistoryRepository } from '../../infrastructure/repositories/SurplusIntelligenceChatHistoryRepository.js';
 import { safeSurplusIdentity } from './surplus-response-schema.js';
@@ -125,11 +126,10 @@ export async function consumeNonStream(input: NonStreamInput): Promise<Generatio
           }
         : undefined,
   });
-  const reasoningIsFirstToken =
-    request.thinkingEnabled !== false && exposedReasoning.trim().length > 0;
+  const reveal = revealsReasoning(request);
+  const reasoningIsFirstToken = reveal && exposedReasoning.trim().length > 0;
   if (reasoningIsFirstToken) hooks?.onFirstToken?.();
-  if (request.thinkingEnabled !== false && exposedReasoning)
-    hooks?.onReasoningDelta?.(exposedReasoning);
+  if (reveal && exposedReasoning) hooks?.onReasoningDelta?.(exposedReasoning);
   if (assistantReply) {
     if (!reasoningIsFirstToken) hooks?.onFirstToken?.();
     hooks?.onDelta?.(assistantReply);

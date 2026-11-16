@@ -1,6 +1,9 @@
 import { IMAGE_PLAZA_PROMPT_MAX_CHARS } from '@miniapp/shared';
 import { config } from '../../platform/config.js';
 import { veniceFetch } from '../../platform/venice-http.js';
+import { clientFetch } from '../../platform/observability/fetch.js';
+
+const fetch = clientFetch('image.prompt_translation', 'llm');
 
 const VENICE_TIMEOUT_MS = 45_000;
 const DEEPSEEK_TIMEOUT_MS = 60_000;

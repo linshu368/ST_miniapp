@@ -41,3 +41,5 @@
 ## Quality Check
 
 验证 SQL 语法、幂等性、事务与锁、权限/RLS、跨 schema 依赖、测试库执行前后 shape、回滚与观察。将环境、命令、结果和差异记录到任务，禁止只写“执行成功”。
+
+幕间新增归因事实的对象归属、跨域依赖、资格依据、RLS、迁移与恢复见 [本地接入说明](../../../../docs/mujian-integration.md)（MIGRATION，未线上执行）。

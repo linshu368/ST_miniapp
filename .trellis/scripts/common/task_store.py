@@ -222,6 +222,8 @@ def _default_prd_content(title: str, description: str | None = None) -> str:
 
 - Keep `prd.md` focused on requirements, constraints, and acceptance criteria.
 - Lightweight tasks can remain PRD-only.
+- 日志接入验收：新增或修改功能必须评估现有日志的复用/补充，覆盖成功、失败、超时/中断和脱敏；不新增日志存储，告警默认关闭。
+- 规划完成后填写 `task.json.meta.logging_integration`（事件、等级、字段、链路、失败路径、告警、验证）；纯文档/静态样式可 `not_applicable` 并写具体理由。缺失或 pending 时 start/CI 阻断。完整格式见 `.trellis/spec/backend/app/logging-integration-planning.md`。
 - For complex tasks, add `design.md` for technical design, `implement.md` for execution planning, and `task.md` for the executable task breakdown before `task.py start`.
 """
 
@@ -395,6 +397,10 @@ def cmd_create(args: argparse.Namespace) -> int:
     )
     meta.setdefault(
         "mobile_performance",
+        {"schema_version": 1, "mode": "pending"},
+    )
+    meta.setdefault(
+        "logging_integration",
         {"schema_version": 1, "mode": "pending"},
     )
 

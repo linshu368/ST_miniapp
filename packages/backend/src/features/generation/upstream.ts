@@ -22,6 +22,9 @@ import { getLlmProviderRuntimeConfig } from '../../platform/runtime-config.js';
 import { veniceFetch } from '../../platform/venice-http.js';
 import { withUpstreamTiming, type UpstreamTiming } from './upstream-timing.js';
 import { observeLlmProviderResponse } from './provider-alerts.js';
+import { clientFetch } from '../../platform/observability/fetch.js';
+
+const fetch = clientFetch('generation.transport', 'llm');
 
 const LLM_UPSTREAM_URL = getLlmProviderRuntimeConfig('openrouter').baseUrl;
 
@@ -64,9 +67,12 @@ export async function forwardToUpstream(input: {
   provider?: LlmModelProvider;
   model?: string;
   timing?: UpstreamTiming;
+  /** 供应商专属请求头，比如 Surplus 的 X-Min-Discount */
+  headers?: Record<string, string>;
 }): Promise<Response> {
   const provider = input.provider ?? 'openrouter';
   const forwardHeaders: Record<string, string> = {
+    ...input.headers,
     'Content-Type': 'application/json',
     Authorization: `Bearer ${input.apiKey ?? LLM_API_KEY}`,
   };

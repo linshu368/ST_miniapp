@@ -222,7 +222,16 @@ async function readActor(
     if (error instanceof AdminSessionError) {
       await reply
         .status(error.statusCode)
-        .send(fail(error.statusCode === 401 ? 'UNAUTHORIZED' : 'FORBIDDEN', error.message));
+        .send(
+          fail(
+            error.statusCode === 503
+              ? 'AUTH_DEPENDENCY_UNAVAILABLE'
+              : error.statusCode === 401
+                ? 'UNAUTHORIZED'
+                : 'FORBIDDEN',
+            error.message
+          )
+        );
       return null;
     }
     throw error;

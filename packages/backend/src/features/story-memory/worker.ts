@@ -1,3 +1,5 @@
+import { runObservedJob } from '../../platform/observability/jobs.js';
+import { withBusinessContext } from '../../platform/observability/context.js';
 /**
  * 会话长期记忆的后台 worker。进程内定时领取，多副本靠 SKIP LOCKED 与租约互斥。
  * 任何失败只影响记忆本身：旧版本保留，任务按退避重试。
@@ -121,6 +123,10 @@ async function processJob(input: {
   return errorCode === null;
 }
 
+function isClaimTimeout(err: unknown): boolean {
+  return err instanceof Error && /abort|timed? ?out|timeout/i.test(err.message);
+}
+
 async function processClaimedJobs(
   log: FastifyBaseLogger,
   repository: StoryMemoryRepository,
@@ -128,8 +134,15 @@ async function processClaimedJobs(
 ): Promise<'success' | 'partial' | 'skipped'> {
   const config = await fetchStoryMemoryConfig();
   if (!config.enabled) return 'skipped';
-  const jobs = await repository.claimJobs(workerId, CLAIM_LIMIT, LEASE_SECONDS);
-  if (jobs.length === 0) return 'skipped';
+  const jobs = await repository
+    .claimJobs(workerId, CLAIM_LIMIT, LEASE_SECONDS)
+    .catch((err: unknown) => {
+      // 领取只是定时轮询，超时下一个周期自然重试，不算错误；其他失败照常上报。
+      if (!isClaimTimeout(err)) throw err;
+      log.warn({ event: 'story_memory.claim.timeout' }, '领取记忆任务超时，下个周期重试');
+      return null;
+    });
+  if (!jobs || jobs.length === 0) return 'skipped';
   // Claimed jobs must always be finished, even when shared inputs cannot be loaded.
   const inputs = await loadJobInputs(config).catch((err: unknown) => {
     log.error({ err, event: 'story_memory.inputs.failed' }, '记忆任务的 prompt 或模型读取失败');
@@ -138,7 +151,15 @@ async function processClaimedJobs(
 
   let outcome: 'success' | 'partial' = 'success';
   for (const job of jobs) {
-    const ok = await processJob({ log, repository, workerId, config, job, inputs });
+    const ok = await withBusinessContext(
+      {
+        business_module: 'chat',
+        user_id: job.userId,
+        session_id: job.sessionId,
+        character_id: job.characterId,
+      },
+      () => processJob({ log, repository, workerId, config, job, inputs })
+    );
     if (!ok) outcome = 'partial';
   }
   return outcome;
@@ -165,7 +186,7 @@ export function startStoryMemoryJob(log: FastifyBaseLogger): void {
       running = false;
     }
   };
-  timer = setInterval(() => void tick(), TICK_INTERVAL_MS);
+  timer = setInterval(() => void runObservedJob('story_memory', tick), TICK_INTERVAL_MS);
   timer.unref();
 }
 

@@ -6,6 +6,9 @@ import type { MiniappPaymentOrderRepository } from '../infrastructure/repositori
 import { reconcileWithGateway } from '../features/payment/usecases/PaymentSettlement.js';
 import { handleEpayNotification } from '../features/payment/usecases/EpayNotification.js';
 import { recordPaymentOperationEvent } from '../features/payment/usecases/PaymentOperationEvents.js';
+import { clientFetch } from '../platform/observability/fetch.js';
+
+const fetch = clientFetch('payment.callback_forward', 'http');
 
 export function registerPaymentCallbacks(
   app: FastifyInstance,

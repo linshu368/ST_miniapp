@@ -97,6 +97,8 @@ interface UseConversationTurnOptions {
   onSessionGone: () => void;
   goBack: () => void;
   onRestoreSendContent: (content: string) => void;
+  /** 深度思考关着、这一轮却照样收到了思考过程（模型关不掉思考），每轮最多报一次 */
+  onThinkingIgnored?: (modelId: string) => void;
 }
 
 type PendingTurn = {
@@ -142,8 +144,11 @@ export function useConversationTurn({
   onSessionGone,
   goBack,
   onRestoreSendContent,
+  onThinkingIgnored,
 }: UseConversationTurnOptions) {
   const router = useRouter();
+  const thinkingIgnoredRef = useRef(onThinkingIgnored);
+  thinkingIgnoredRef.current = onThinkingIgnored;
   const queryClient = useQueryClient();
   const freeQuotaQuery = useCharacterFreeQuotaQuery(characterId);
   const refetchFreeQuota = freeQuotaQuery.refetch;
@@ -657,6 +662,10 @@ export function useConversationTurn({
       let assistantMessageId: string | null = null;
       let assistantRevision = pendingRef.current.revision;
       let settledStatus: ChatMessageStatus | null = null;
+      // 这一轮收不收思考过程：开关开着，或服务端 start 说要显示（畅聊免费模型关不掉思考）
+      let revealThisTurn = thinkingEnabled;
+      let turnModelId = selectedModelId;
+      let thinkingIgnoredReported = false;
 
       try {
         await streamConversationTurn({
@@ -679,6 +688,11 @@ export function useConversationTurn({
               requestId,
             };
             assistantMessageId = event.assistant_message_id;
+            turnModelId = event.requested_model_id ?? turnModelId;
+            if (event.thinking_enabled === true) {
+              revealThisTurn = true;
+              observation.thinkingEnabled = true;
+            }
             observation.started(event.server_elapsed_ms);
             observation.identify(
               event.assistant_message_id,
@@ -695,7 +709,11 @@ export function useConversationTurn({
             setStreaming((current) => (current ? appendStreamText(current, text) : current));
           },
           onReasoning: (text) => {
-            if (!isCurrent() || !thinkingEnabled || !assistantMessageId || !text) return;
+            if (!isCurrent() || !revealThisTurn || !assistantMessageId || !text) return;
+            if (!thinkingEnabled && !thinkingIgnoredReported) {
+              thinkingIgnoredReported = true;
+              thinkingIgnoredRef.current?.(turnModelId ?? 'unknown');
+            }
             const key = messageThinkingKey({
               session_id: sessionId,
               id: assistantMessageId,
@@ -877,7 +895,7 @@ export function useConversationTurn({
               }),
               new Promise<never>((_resolve, reject) => {
                 timer = setTimeout(
-                  () => reject(new Error('本次回复尚未确认，请稍后重试取消')),
+                  () => reject(new Error('这次回复还没确认好，稍后再点停止')),
                   remaining
                 );
               }),
@@ -936,7 +954,7 @@ export function useConversationTurn({
           setStreamError('本次回复未开始，原消息已保留');
           return;
         }
-        if (!assistantMessageId) throw new Error('本次回复尚未确认，请稍后重试取消');
+        if (!assistantMessageId) throw new Error('这次回复还没确认好，稍后再点停止');
         if (message) observationRef.current?.identify(assistantMessageId, message.revision);
         const result = await cancelTurn({
           sessionId,

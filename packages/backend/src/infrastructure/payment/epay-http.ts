@@ -1,4 +1,7 @@
 import { paymentFailure, type PaymentGatewayErrorClass } from './PaymentGateway.js';
+import { clientFetch } from '../../platform/observability/fetch.js';
+
+const fetch = clientFetch('payment.transport', 'ttzf');
 
 type FormResponse =
   | { success: true; body: Record<string, unknown> }

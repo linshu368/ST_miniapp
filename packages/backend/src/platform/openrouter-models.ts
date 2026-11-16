@@ -4,6 +4,9 @@ import {
   type OpenRouterModelDirectory,
   type OpenRouterModelSummary,
 } from '@miniapp/shared';
+import { clientFetch } from './observability/fetch.js';
+
+const fetch = clientFetch('provider.openrouter.models', 'openrouter');
 
 const DEFAULT_CACHE_TTL_MS = 15 * 60 * 1000;
 const DEFAULT_TIMEOUT_MS = 8_000;

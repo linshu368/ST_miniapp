@@ -1,0 +1,84 @@
+{
+  "id": "theater-merge",
+  "name": "theater-merge",
+  "title": "剧场合并放映、底栏拆出对话",
+  "description": "放映视频流并进剧场列表（B 点开即放映），底栏拆出对话，秘境居中",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P2",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-12",
+  "completedAt": null,
+  "branch": "feat/theater-merge",
+  "base_branch": "main",
+  "worktree_path": "/Users/qianpeijia/PycharmProjects/pythonProject/ST_miniapp/worktrees/theater-merge",
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "frontend.business.drama-experience",
+        "frontend.business.character-lobby",
+        "frontend.infrastructure.client-ui-foundation"
+      ]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": ["/dramas", "/watch", "/chats", "/characters"],
+      "apis": [
+        "GET /api/dramas（沿用，无新增请求）",
+        "POST /api/dramas/play（封面点击即发取址，沿用）"
+      ],
+      "android": {
+        "page_p95_baseline_ms": 1515.095,
+        "page_p95_target_ms": 2000,
+        "baseline_route": "/dramas",
+        "baseline_measurement": "sentry page.ready.duration",
+        "baseline_n": 49
+      },
+      "ios": {
+        "page_p95_baseline_ms": 814,
+        "page_p95_target_ms": 2000,
+        "baseline_route": "/dramas",
+        "baseline_measurement": "sentry page.ready.duration",
+        "baseline_n": 15,
+        "note": "低样本，要求不退化"
+      },
+      "api": {
+        "p95_baseline_ms": null,
+        "p95_target_ms": 2000,
+        "reason": "无新增接口与请求；现有接口未按双端拆分采集，不回填推测值"
+      },
+      "measurement": {
+        "source": "Sentry metrics page.ready.duration by route×tg_platform（引自 11-12-overnight-page-performance/evidence.json）",
+        "window": "2026-11-11 19:00—2026-11-12 10:09 Asia/Shanghai；发布后 24 小时复查"
+      },
+      "other_pages": {
+        "/watch": {
+          "android": 1640.8,
+          "ios": 1315.8
+        },
+        "/chats": {
+          "android": 903.42,
+          "ios": 2594.8
+        },
+        "/characters": {
+          "android": 1524.635,
+          "ios": 1332.7
+        }
+      },
+      "notes": "纯前端路由/展示调整；剧场首屏新增 3 张 44px 宽小封面。"
+    }
+  }
+}

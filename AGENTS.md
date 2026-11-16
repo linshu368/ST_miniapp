@@ -53,6 +53,9 @@
 4. **演进与恢复**：说明兼容、迁移/发布顺序、旧数据、灰度、停止条件、回滚或 forward-fix。
 5. **可验证性**：`implement.md`/`task.md` 必须覆盖失败路径、consumer 校验、人工场景和可执行命令，而不只验证 happy path。
 6. **Android/iOS 性能与 P95**：功能开发、问题修改和方案设计必须在 `task.json.meta.mobile_performance` 中声明受影响页面与接口，分别记录 Android、iOS 页面加载 P95 及接口 P95 的基线、目标、数据来源、观测窗口和发布后验证；无可见样本不得补零或推测，确实不适用时必须写明具体理由。声明为 `pending` 或内容不完整时，`task.py start` 必须阻断。
+7. **日志系统接入**：所有新增功能、功能修改及问题修复的规划必须完成 `task.json.meta.logging_integration`，说明接入或复用位置、事件/operation、等级/结果、允许字段、链路关联、脱敏、失败路径、告警策略及验证。已有日志不构成豁免，必须确认其覆盖本次变化；只有纯文档、静态样式等不影响运行行为的任务可填写有具体理由的 `not_applicable`。缺失、`pending` 或内容不完整时 `task.py start` 必须阻断，旧任务重新启动同样适用。CI 校验本次变更触及的活动任务规划；详细字段与命令见 [日志接入规划规范](.trellis/spec/backend/app/logging-integration-planning.md)。
+
+2026-11-11补充：此前规划门禁继续适用，包括 `meta.mobile_performance` 声明完整性与 `pending` 阻断。后续开发不强制运行固定样本的本地性能测试，也不要求接入暂停中的 `11-11-local-mobile-performance-gate`；具体任务已明确的验收要求继续保留。
 
 2026-11-11补充：此前规划门禁继续适用，包括 `meta.mobile_performance` 声明完整性与 `pending` 阻断。后续开发不强制运行固定样本的本地性能测试，也不要求接入暂停中的 `11-11-local-mobile-performance-gate`；具体任务已明确的验收要求继续保留。
 

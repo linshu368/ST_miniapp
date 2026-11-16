@@ -22,6 +22,9 @@ import { config } from '../../platform/config.js';
 import { buildVoiceUserPrompt, VOICE_SYSTEM_PROMPT } from './voice-prompt.js';
 import { extractQuotedLines, normalizeConvertedText } from './voice-text.js';
 import { stageCode, toTransportError, VoiceUpstreamError } from './voice-upstream.js';
+import { clientFetch } from '../../platform/observability/fetch.js';
+
+const fetch = clientFetch('voice.draft', 'deepseek');
 
 /** 给足思考空间。写稿便宜，宁可多留 token 也别让思考把正文挤掉 */
 const MAX_TOKENS = 20000;

@@ -111,7 +111,7 @@ describe('RechargeUseCase gateway failure', () => {
         clientIp: '203.0.113.10',
         paymentType: 'wxpay',
       })
-    ).rejects.toThrow('gateway down');
+    ).rejects.toMatchObject({ code: 'PAYMENT_INVALID_RESPONSE', statusCode: 502 });
 
     const createdId = vi.mocked(orders.create).mock.calls[0]?.[0].id;
     expect(createdId).toEqual(expect.stringMatching(/^EP[0-9a-f]{30}$/));
@@ -338,7 +338,7 @@ describe('RechargeUseCase product snapshots', () => {
         clientIp: '203.0.113.10',
         paymentType: 'wxpay',
       })
-    ).rejects.toThrow('gateway down');
+    ).rejects.toMatchObject({ code: 'PAYMENT_INVALID_RESPONSE', statusCode: 502 });
     expect(orders.markFailed).toHaveBeenCalledOnce();
   });
 
@@ -393,7 +393,7 @@ describe('RechargeUseCase product snapshots', () => {
         clientIp: '203.0.113.10',
         paymentType: 'alipay',
       })
-    ).rejects.toThrow('创建支付订单失败');
+    ).rejects.toMatchObject({ code: 'PAYMENT_CREATE_UNKNOWN', statusCode: 500 });
     expect(orders.markFailed).not.toHaveBeenCalled();
 
     orders.attachProviderTransaction.mockResolvedValueOnce(false);
@@ -404,7 +404,7 @@ describe('RechargeUseCase product snapshots', () => {
         clientIp: '203.0.113.10',
         paymentType: 'alipay',
       })
-    ).rejects.toThrow('创建支付订单失败');
+    ).rejects.toMatchObject({ code: 'PAYMENT_CREATE_UNKNOWN', statusCode: 500 });
     expect(orders.markFailed).not.toHaveBeenCalled();
   });
 
@@ -417,6 +417,7 @@ describe('RechargeUseCase product snapshots', () => {
           success: false,
           outcomeUnknown: true,
           errorMessage: 'timeout',
+          errorClass: 'timeout',
         }),
       } as never
     );
@@ -427,7 +428,7 @@ describe('RechargeUseCase product snapshots', () => {
         clientIp: '203.0.113.10',
         paymentType: 'alipay',
       })
-    ).rejects.toThrow('timeout');
+    ).rejects.toMatchObject({ code: 'PAYMENT_TIMEOUT', statusCode: 504 });
     expect(orders.markFailed).not.toHaveBeenCalled();
   });
 });

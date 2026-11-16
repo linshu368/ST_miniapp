@@ -1,5 +1,13 @@
 # ST_miniAPP 架构说明
 
+2026-11-16 日志目录集中（本地未部署）：Pino、Sentry/后台观测接线和规则统一位于 `platform/observability/`，旧 lib 入口仅重导出。规则唯一来源为目录内 alert-rules.json，配置中心只读取总开关/secret；不再读取 LOG_ALERT_RULES。sdk.ts 导出不触发应用启动的 factory/契约，框架、文件及通知渠道由项目装配，参见 [模块说明](../packages/backend/src/platform/observability/README.md)。
+
+2026-11-16 本地日志补全：数据库转换保留 cause，安全出口继续去除原始消息；支付对账的执行及汇总位于同一轮次根上下文。大厅 Next.js 代理只透传有界请求 ID、回传受控链路头，并在自身部署 stdout 记录固定摘要，与 Backend Railway 日志按请求关联。无新增日志存储、SQL、业务重试或公开 API；详情见 [运行说明](backend-observability-runtime.md)。
+
+2026-11-14 日志合并审计（本地未部署）：补齐媒体/影像对象、逐实体 worker、支付/群身份、增长/问卷事件及欢迎语 transport；共享与大厅专用 Prisma 复用同一观测扩展，pg lease 观测原连接/锁/清理调用，不新增 SQL/池或修改事务。字段和安全出口见 [运行时日志](backend-observability-runtime.md)。
+
+本地候选（2026-11-14，未部署）：Backend `platform/observability` 统一上下文和基础事件，Railway 捕获 stdout；请求内补充已验证用户及角色/创作/短剧/单集/会话关联，business_module 与技术 module 分开。复用身份缓存和已有业务记录，不新增查库；新增身份不进入 Sentry/告警/指标标签。日志告警默认关闭，开启后按配置直接通知，无新增存储/outbox。原支付告警与可选工程 OTLP 保持独立。覆盖、兼容边界和发布验证见 [运行时日志](backend-observability-runtime.md)。
+
 本地候选（2026-11-11，未部署）：聊天历史读取采用索引选轮次后加载小型展示投影；原 admission 事务维护精确身份/开场白，旧 writer 仅使投影失效，有限人工回填覆盖旧记录。原 prompt、账务、分支与上下文窗口语义保持不变。读写切换及恢复见 [聊天历史优化说明](chat-history-read-performance.md)，正式 TEST/生产覆盖与 Android/iOS 不退化验收仍是发布门槛。
 
 > 本文档描述项目当前架构（2026-09-30 更新，基于 2026-08-12 自研引擎版重写）。
@@ -383,7 +391,7 @@ T9 专表 contract：`20261016_openrouter_chat_history_drop_legacy_aliases.sql` 
 | `experience`        | 核心互动内容     | `chat_sessions` / `chat_history` / `chat_message_audio` / `chat_message_images`（图片 attempt 与租约）/ 视图 `current_chat_history`；Venice 一对一调用明细表已存在（TEST/Production 的 20260929 文件未记账漂移不可重跑）；OpenRouter 明细表 TEST/Production 四份 migration 已于 2026-10-16 T5 核验记账且 checksum 一致，主表清退仍待独立实施/验收 |
 | `media_plaza`       | 图片创作广场     | 8 张 `image_plaza_*` 表（会话、消息、报价、参考图、attempt、artifact、作品、点赞）与 3 个图片广场 RPC；Backend 直接访问，不保留旧 schema 兼容入口                                                                                                                                                                                                 |
 | `billing`           | 钱               | `payment_orders` / `wallet_ledger` / `user_wallets` / `llm_usage_charges` / `llm_usage_charge_dedup` / `character_free_chat_quotas` / `vip_memberships` / `vip_purchase_grants` / `feature_free_trials` / `image_plaza_share_rewards` / `wallet_refunds` / `_decisions`                                                                           |
-| `miniapp_features`  | 产品功能状态     | `character_favorites` / `character_ranking_scores` / `daily_checkins` / `notifications` / `notification_reads` / `community_reward_claims` / `telegram_community_update_receipts`（108）；`wish_roles` 仅保留历史数据，无应用层消费者                                                                                                             |
+| `miniapp_features`  | 产品功能状态     | `character_favorites` / `character_ranking_scores` / `daily_checkins` / `notifications` / `notification_reads` / `community_reward_claims` / `telegram_community_update_receipts`（108）/ `growth_prompt_states`（增长弹窗）；`wish_roles` 仅保留历史数据，无应用层消费者                                                                         |
 | `cs_platform`       | 旧客服（已停用） | 旧 CS 回访画像与会话、`support_conversations` / `support_messages` 历史；客服已迁到独立仓库 `linshu368/ST_cs_platform`（库里 `cs` schema），本表只读保留                                                                                                                                                                                          |
 | `admin`             | 运营管理         | 运营台账号、文本后处理草稿 / 发布请求 / 审计及其他运营配置过程事实                                                                                                                                                                                                                                                                                |
 | `miniapp_traffic`   | 渠道归因         | `botlinks` + 裂变邀请三表 `invite_codes` / `invite_relations` / `invite_reward_logs`（105，acquisition 域，名称不改）                                                                                                                                                                                                                             |
@@ -473,6 +481,7 @@ experience.chat_sessions  1 ─── N  experience.chat_history
 | `notifications.ts`                    | `/api/notifications` · `/unread-count` · `/:id` · `/read`（已读必须带消息 id）                                                                                     | `X-Init-Data`                    |
 | `support.ts`                          | `/api/support/conversation` · `/messages` · `/unread` · `/read`                                                                                                    | `X-Init-Data`                    |
 | `growth.ts`                           | `POST /api/growth/miniapp-entry`（089 之后仅剩入口归因；渠道链接管理与 click 重定向已下线）                                                                        | `X-Init-Data`                    |
+| `growth-prompts.ts`                   | `GET /api/growth/prompts`（增长弹窗资格）· `POST /api/growth/prompts/events`（展示/处理记录）                                                                      | `X-Init-Data`                    |
 | `invite.ts`                           | `GET /api/invite/entry-status` · `POST /api/invite/center-view` · `POST /api/invite/bind` · `GET /api/invite/stats`（裂变邀请；发奖全在 `miniapp_traffic` RPC 内） | `X-Init-Data`                    |
 | `community.ts`                        | `GET /api/community/entry` · `POST /api/community/verify-membership`（既有成员手动领奖）· `POST /api/telegram/community-webhook`（新成员入群自动发奖）             | `X-Init-Data` / TG secret        |
 | `bot.ts`                              | `POST /api/internal/bot/start`、`POST /api/telegram/webhook`                                                                                                       | 内部密钥 / TG secret             |
@@ -867,3 +876,7 @@ Frontend `/creation/data` → `lib/api/creator-analytics.ts`（用户隔离React
 ### 聊天回复负反馈
 
 回复点踩通过独立鉴权接口保存到 `experience.chat_reply_feedback`，空原因可提交，固定回复/编辑版本去重并保留当轮快照。只在面板打开时读取，不进入生成、计费或角色评分链路，无运营页面。迁移顺序、权限和批量分析口径见 [聊天回复反馈](chat-reply-feedback.md)。
+
+### 幕间两段进入事实（本地实现，待发布）
+
+`miniapp_traffic.app_entry_facts` 持有幕间→秘境的验签进入事实与固定资格；Backend 是唯一写入方，通过事务关联 `app_core.users` 并读取 `experience.chat_history` 作为历史证据。目录/播放接口不写秘境进入时间；浏览、点击、社群与 Bot 私聊授权相互独立。见 [对象归属、兼容与回滚](mujian-integration.md)。

@@ -20,6 +20,7 @@ import { createLogger } from '@/lib/logger';
 import { API_URL } from './client';
 import { lobbyViewerScope } from '@/lib/lobby-recommendation-state';
 import { useOnboardingStore } from '@/stores/onboarding-store';
+import { noteCompletedRound } from '@/lib/growth/prompt-visit';
 
 const log = createLogger('conversation-stream');
 export const CONVERSATION_RECOVERING_MESSAGE = '正在接回这条回复，请稍候';
@@ -175,6 +176,15 @@ export function createConversationRequestId(): string {
 }
 
 /**
+ * 只算成功的新一轮，不算重新生成，也不会重复计数：新人引导的跨卡计轮，
+ * 加上增长弹窗「本次打开新完成的轮数」。
+ */
+function recordNewTurn(guideScope: string, turnId: string): void {
+  useOnboardingStore.getState().recordCompletedTurn(guideScope, turnId);
+  noteCompletedRound();
+}
+
+/**
  * 发一轮消息或重生成，把 SSE 事件分发到回调。
  *
  * 关于 abort：它只停止本地读流。后端明确不因客户端断开而终止生成（sse.ts），
@@ -235,6 +245,8 @@ async function readConversationStream(options: StreamTurnOptions): Promise<void>
   let buffer = '';
   let finished = false;
   let firstTokenFlushed = false;
+  // 这一轮显示不显示思考过程：默认跟开关；服务端在 start 里说要显示（畅聊免费模型关不掉思考）就显示
+  let revealReasoning = options.thinkingEnabled !== false;
 
   const pushText = (batch: ReturnType<typeof createDeltaBatcher>, text: string): void => {
     const meaningful = text.trim().length > 0;
@@ -253,6 +265,7 @@ async function readConversationStream(options: StreamTurnOptions): Promise<void>
   const handle = (event: ConversationStreamEvent): void => {
     switch (event.type) {
       case 'start':
+        if (event.thinking_enabled === true) revealReasoning = true;
         onStart(event);
         return;
       case 'delta':
@@ -264,7 +277,7 @@ async function readConversationStream(options: StreamTurnOptions): Promise<void>
         return;
       case 'reasoning':
         batcher.flush();
-        if (options.thinkingEnabled !== false && typeof event.text === 'string') {
+        if (revealReasoning && typeof event.text === 'string') {
           pushText(reasoningBatcher, event.text);
         }
         return;
@@ -324,7 +337,7 @@ async function readConversationStream(options: StreamTurnOptions): Promise<void>
 
   if (!finished) {
     throw new ConversationStreamError(
-      '生成中断，请稍后重试',
+      '生成中断了，再点一次重新来',
       response.status,
       'upstream_error',
       undefined,
@@ -392,14 +405,11 @@ export async function streamConversationTurn(options: StreamTurnOptions): Promis
         onDone: (event) => {
           if (controller.signal.aborted) return;
           options.onDone(event);
-          // Local guide only: count successful new turns across cards, never regenerations or replay twice.
           if (options.content !== undefined && event.status === 'complete')
-            useOnboardingStore
-              .getState()
-              .recordCompletedTurn(
-                guideScope,
-                `${options.sessionId}:${options.requestId ?? event.assistant_message_id}`
-              );
+            recordNewTurn(
+              guideScope,
+              `${options.sessionId}:${options.requestId ?? event.assistant_message_id}`
+            );
         },
       }),
     ]);

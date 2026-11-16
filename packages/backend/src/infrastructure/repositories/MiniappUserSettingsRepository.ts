@@ -3,10 +3,7 @@ import {
   normalizeTelegramAvatarUrl,
   ReplyStylePreferencesSchema,
   type PatchUserSettingsRequest,
-  type ReplyStylePreferences,
-  type StoredPreferredWordCount,
   type UserGenerationConfig,
-  type UserSettings,
   type VoiceConfig,
 } from '@miniapp/shared';
 import {
@@ -24,50 +21,16 @@ import {
   toPublicWordCountTiersFromEngine,
   type PlatformInstructionsSnapshot,
 } from '../../features/engine/platform-instructions.js';
-
-export interface MiniappUserSettingsRow {
-  user_id: string;
-  tg_username: string | null;
-  tg_first_name: string | null;
-  tg_last_name: string | null;
-  display_name: string | null;
-  avatar_url: string | null;
-  tg_avatar_url: string | null;
-  custom_avatar_url: string | null;
-  total_round: number;
-  /** NULL = 从未选择，跟随 runtime_config 的 default_tier_id（086） */
-  pref_word_count: StoredPreferredWordCount;
-  pref_show_options: boolean;
-  pref_show_status: boolean;
-  pref_show_memory: boolean;
-  pref_reply_styles: ReplyStylePreferences;
-  pref_custom_instructions: string | null;
-  selected_model_id: string | null;
-  characters_last_seen_at: string | null;
-  pref_voice_id: string | null;
-  pref_voice_playback_rate: number;
-  created_at: string;
-  updated_at: string;
-}
-
-type MutableUserSettingsFields = Partial<
-  Pick<
-    MiniappUserSettingsRow,
-    | 'display_name'
-    | 'custom_avatar_url'
-    | 'pref_word_count'
-    | 'pref_show_options'
-    | 'pref_show_status'
-    | 'pref_show_memory'
-    | 'pref_reply_styles'
-    | 'pref_custom_instructions'
-  >
->;
-
-type InstructionSlotPreferencePatch = Pick<
+import {
+  MiniappUserSettingsRow,
   MutableUserSettingsFields,
-  'pref_show_options' | 'pref_show_status' | 'pref_show_memory'
->;
+  pickInstructionSlotPreferences,
+  omitInstructionSlotPreferences,
+  normalizeReplyStylePreferences,
+  normalizeNullableText,
+} from './user-settings-model.js';
+
+export { type MiniappUserSettingsRow, toUserSettings } from './user-settings-model.js';
 
 export class MiniappUserSettingsRepository {
   private readonly db = getDomainDb('app_core');
@@ -91,7 +54,7 @@ export class MiniappUserSettingsRepository {
     if (error) {
       const afterRace = await this.findByUserId(userId);
       if (afterRace) return afterRace;
-      throw new Error(`创建 MiniApp 用户设置失败：${error.message}`);
+      throw new Error(`创建 MiniApp 用户设置失败：${error.message}`, { cause: error });
     }
 
     return data as MiniappUserSettingsRow;
@@ -114,7 +77,7 @@ export class MiniappUserSettingsRepository {
       const { error } = await this.db
         .rpc('update_reply_style_preferences', { p_user_id: userId, p_patch: replyStyles })
         .abortSignal(AbortSignal.timeout(5_000));
-      if (error) throw new Error(`原子更新回复风格偏好失败：${error.message}`);
+      if (error) throw new Error(`原子更新回复风格偏好失败：${error.message}`, { cause: error });
     }
 
     // The migration owns false -> true window resets in this RPC. Keeping these
@@ -129,7 +92,7 @@ export class MiniappUserSettingsRepository {
           p_pref_show_memory: slotPreferences.pref_show_memory ?? null,
         })
         .abortSignal(AbortSignal.timeout(5_000));
-      if (error) throw new Error(`原子更新生成偏好失败：${error.message}`);
+      if (error) throw new Error(`原子更新生成偏好失败：${error.message}`, { cause: error });
     }
 
     if (Object.keys(otherFields).length > 0) {
@@ -141,7 +104,7 @@ export class MiniappUserSettingsRepository {
           updated_at: new Date().toISOString(),
         })
         .eq('user_id', userId);
-      if (error) throw new Error(`更新 MiniApp 用户设置失败：${error.message}`);
+      if (error) throw new Error(`更新 MiniApp 用户设置失败：${error.message}`, { cause: error });
     }
 
     const row = await this.findByUserId(userId);
@@ -165,7 +128,7 @@ export class MiniappUserSettingsRepository {
       .eq('user_id', userId)
       .select('*')
       .single();
-    if (error) throw new Error(`更新用户头像失败：${error.message}`);
+    if (error) throw new Error(`更新用户头像失败：${error.message}`, { cause: error });
     return data as MiniappUserSettingsRow;
   }
 
@@ -186,7 +149,7 @@ export class MiniappUserSettingsRepository {
       .select('*')
       .single();
 
-    if (error) throw new Error(`更新模型选择失败：${error.message}`);
+    if (error) throw new Error(`更新模型选择失败：${error.message}`, { cause: error });
     return data as MiniappUserSettingsRow;
   }
 
@@ -202,7 +165,7 @@ export class MiniappUserSettingsRepository {
         updated_at: new Date().toISOString(),
       })
       .eq('user_id', userId);
-    if (error) throw new Error(`修正模型选择失败：${error.message}`);
+    if (error) throw new Error(`修正模型选择失败：${error.message}`, { cause: error });
   }
 
   async getSelectedModelId(userId: string): Promise<string | null> {
@@ -212,7 +175,7 @@ export class MiniappUserSettingsRepository {
       .eq('user_id', userId)
       .maybeSingle();
 
-    if (error) throw new Error(`查询用户模型选择失败：${error.message}`);
+    if (error) throw new Error(`查询用户模型选择失败：${error.message}`, { cause: error });
     return (
       (data as Pick<MiniappUserSettingsRow, 'selected_model_id'> | null)?.selected_model_id ?? null
     );
@@ -251,7 +214,7 @@ export class MiniappUserSettingsRepository {
     ]);
     const { data, error } = result;
 
-    if (error) throw new Error(`查询用户生成配置失败：${error.message}`);
+    if (error) throw new Error(`查询用户生成配置失败：${error.message}`, { cause: error });
 
     const row = data as Pick<
       MiniappUserSettingsRow,
@@ -299,7 +262,7 @@ export class MiniappUserSettingsRepository {
       .eq('user_id', userId)
       .maybeSingle();
 
-    if (error) throw new Error(`查询语音偏好失败：${error.message}`);
+    if (error) throw new Error(`查询语音偏好失败：${error.message}`, { cause: error });
 
     const row = data as Pick<
       MiniappUserSettingsRow,
@@ -337,7 +300,7 @@ export class MiniappUserSettingsRepository {
       .update(update)
       .eq('user_id', userId);
 
-    if (error) throw new Error(`更新语音偏好失败：${error.message}`);
+    if (error) throw new Error(`更新语音偏好失败：${error.message}`, { cause: error });
     return await this.getVoiceConfig(userId);
   }
 
@@ -354,7 +317,7 @@ export class MiniappUserSettingsRepository {
       .eq('user_id', userId)
       .maybeSingle();
 
-    if (error) throw new Error(`查询用户昵称失败：${error.message}`);
+    if (error) throw new Error(`查询用户昵称失败：${error.message}`, { cause: error });
     return resolveEffectiveDisplayName(
       data as Pick<MiniappUserSettingsRow, 'display_name' | 'tg_first_name' | 'tg_username'> | null
     );
@@ -368,7 +331,7 @@ export class MiniappUserSettingsRepository {
       .eq('user_id', userId)
       .maybeSingle();
 
-    if (error) throw new Error(`查询「最新」查看时间失败：${error.message}`);
+    if (error) throw new Error(`查询「最新」查看时间失败：${error.message}`, { cause: error });
     return (
       (data as Pick<MiniappUserSettingsRow, 'characters_last_seen_at'> | null)
         ?.characters_last_seen_at ?? null
@@ -383,7 +346,7 @@ export class MiniappUserSettingsRepository {
       .update({ characters_last_seen_at: now, updated_at: now })
       .eq('user_id', userId);
 
-    if (error) throw new Error(`更新「最新」查看时间失败：${error.message}`);
+    if (error) throw new Error(`更新「最新」查看时间失败：${error.message}`, { cause: error });
   }
 
   private async findByUserId(userId: string): Promise<MiniappUserSettingsRow | null> {
@@ -393,7 +356,7 @@ export class MiniappUserSettingsRepository {
       .eq('user_id', userId)
       .maybeSingle();
 
-    if (error) throw new Error(`查询 MiniApp 用户设置失败：${error.message}`);
+    if (error) throw new Error(`查询 MiniApp 用户设置失败：${error.message}`, { cause: error });
     return (data as MiniappUserSettingsRow | null) ?? null;
   }
 
@@ -411,7 +374,7 @@ export class MiniappUserSettingsRepository {
       .select('*')
       .single();
 
-    if (error) throw new Error(`刷新 Telegram 用户信息失败：${error.message}`);
+    if (error) throw new Error(`刷新 Telegram 用户信息失败：${error.message}`, { cause: error });
     return data as MiniappUserSettingsRow;
   }
 
@@ -468,60 +431,4 @@ export class MiniappUserSettingsRepository {
 
     return update;
   }
-}
-
-function pickInstructionSlotPreferences(
-  update: MutableUserSettingsFields
-): InstructionSlotPreferencePatch {
-  return {
-    ...(update.pref_show_options !== undefined
-      ? { pref_show_options: update.pref_show_options }
-      : {}),
-    ...(update.pref_show_status !== undefined ? { pref_show_status: update.pref_show_status } : {}),
-    ...(update.pref_show_memory !== undefined ? { pref_show_memory: update.pref_show_memory } : {}),
-  };
-}
-
-function omitInstructionSlotPreferences(
-  update: Omit<MutableUserSettingsFields, 'pref_reply_styles'>
-): Omit<MutableUserSettingsFields, keyof InstructionSlotPreferencePatch | 'pref_reply_styles'> {
-  const {
-    pref_show_options: _choice,
-    pref_show_status: _status,
-    pref_show_memory: _memory,
-    ...rest
-  } = update;
-  return rest;
-}
-
-export function toUserSettings(row: MiniappUserSettingsRow): UserSettings {
-  const customAvatar = row.custom_avatar_url?.trim();
-  const telegramAvatar = normalizeTelegramAvatarUrl(row.tg_avatar_url);
-  return {
-    display_name: row.display_name,
-    avatar_url: customAvatar || telegramAvatar || config.defaultUserAvatarUrl,
-    avatar_source: customAvatar ? 'custom' : telegramAvatar ? 'telegram' : 'default',
-    pref_word_count: row.pref_word_count,
-    pref_show_options: row.pref_show_options ?? true,
-    pref_show_status: row.pref_show_status ?? true,
-    pref_show_memory: row.pref_show_memory ?? true,
-    pref_reply_styles: normalizeReplyStylePreferences(row.pref_reply_styles),
-    pref_custom_instructions: row.pref_custom_instructions,
-    updated_at: row.updated_at,
-  };
-}
-
-function normalizeReplyStylePreferences(value: unknown): ReplyStylePreferences {
-  const parsed = ReplyStylePreferencesSchema.safeParse(value);
-  return parsed.success ? parsed.data : {};
-}
-
-function normalizeNullableText(value: unknown, maxLength: number): string | null {
-  if (value === null || value === undefined) return null;
-  if (typeof value !== 'string') {
-    throw new Error('设置字段类型错误');
-  }
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  return trimmed.slice(0, maxLength);
 }

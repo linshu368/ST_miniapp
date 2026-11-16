@@ -6,8 +6,8 @@ import { getTelegramPlatform } from '@/lib/perf/env-tags';
 
 export type MobilePlatformGroup = 'android' | 'ios' | 'other';
 export type PrimaryNavigationRoute =
-  | '/watch'
   | '/dramas'
+  | '/chats'
   | '/characters'
   | '/creation'
   | '/profile';
@@ -57,7 +57,7 @@ const POLICIES: Record<MobilePlatformGroup, MobilePerformancePolicy> = {
     },
     homePoster: { width: 480, height: 640, quality: 64, videoPreload: 'metadata' },
     routePriority: ['characters', 'home', 'dramas', 'other'],
-    routeWarmupOrder: ['/characters', '/profile', '/watch', '/dramas', '/creation'],
+    routeWarmupOrder: ['/characters', '/profile', '/chats', '/dramas', '/creation'],
   },
   ios: {
     platform: 'ios',
@@ -79,7 +79,7 @@ const POLICIES: Record<MobilePlatformGroup, MobilePerformancePolicy> = {
     },
     homePoster: { width: 480, height: 640, quality: 64, videoPreload: 'metadata' },
     routePriority: ['home', 'dramas', 'characters', 'other'],
-    routeWarmupOrder: ['/profile', '/characters', '/watch', '/dramas', '/creation'],
+    routeWarmupOrder: ['/profile', '/characters', '/chats', '/dramas', '/creation'],
   },
   other: {
     platform: 'other',
@@ -103,7 +103,7 @@ const POLICIES: Record<MobilePlatformGroup, MobilePerformancePolicy> = {
     },
     homePoster: { width: 480, height: 640, quality: 64, videoPreload: 'auto' },
     routePriority: ['home', 'characters', 'dramas', 'other'],
-    routeWarmupOrder: ['/watch', '/characters', '/dramas', '/profile', '/creation'],
+    routeWarmupOrder: ['/dramas', '/characters', '/chats', '/profile', '/creation'],
   },
 };
 

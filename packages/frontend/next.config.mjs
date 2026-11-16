@@ -43,10 +43,19 @@ const nextConfig = {
     outputFileTracingRoot: join(__dirname, '../..'),
   },
   transpilePackages: ['@miniapp/shared', '@miniapp/reply-renderer'],
-  // 冷启动落地页是角色大厅。服务端跳转避免先加载视频流；query 原样透传，
-  // Telegram 放在 hash 里的 tgWebAppData 由浏览器在跳转后保留。用 307 而非 308，避免客户端缓存永久跳转。
+  // 冷启动落地页：有对话记录的用户进「对话」，其余进角色大厅。cookie 由前端读到会话后写入
+  // （src/lib/landing-route.ts，名称与取值须一致）。按顺序匹配，第一条命中即跳。
+  // query 原样透传，Telegram 放在 hash 里的 tgWebAppData 由浏览器在跳转后保留。用 307 而非 308，避免客户端缓存永久跳转。
   async redirects() {
-    return [{ source: '/', destination: '/characters', permanent: false }];
+    return [
+      {
+        source: '/',
+        has: [{ type: 'cookie', key: 'st_landing', value: 'chats' }],
+        destination: '/chats',
+        permanent: false,
+      },
+      { source: '/', destination: '/characters', permanent: false },
+    ];
   },
   webpack: (config) => {
     config.resolve.extensionAlias = {

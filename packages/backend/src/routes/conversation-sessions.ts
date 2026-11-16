@@ -20,6 +20,7 @@ import type {
 } from '@miniapp/shared';
 import { fail, ok } from '@miniapp/shared';
 import type { FastifyInstance } from 'fastify';
+import { bindBusinessContext } from '../platform/observability/context.js';
 import {
   applyUserPlaceholderToMessages,
   applyUserPlaceholderToSession,
@@ -35,6 +36,11 @@ import {
   parsePositiveInt,
   type ConversationRouteRepositories,
 } from './conversation-route-shared.js';
+import {
+  parseListFilters,
+  readFolderSummary,
+  sendChatFolderError,
+} from './conversation-folders.js';
 
 export function registerConversationCreate(
   app: FastifyInstance,
@@ -54,12 +60,14 @@ export function registerConversationCreate(
       }
 
       const log = requestLogger(request.log, 'conversations');
+      bindBusinessContext({ character_id: characterId });
       const dbUser = await getOrCreateDbUser(request.user);
       try {
         const [created, displayName] = await Promise.all([
           sessions.createSession(dbUser.id, characterId),
           settings.getDisplayName(dbUser.id),
         ]);
+        bindBusinessContext({ session_id: created.session.id });
         log.biz.info(
           {
             event: 'conversation.session.created',
@@ -94,7 +102,7 @@ export function registerConversationCreate(
 
 export function registerConversationList(
   app: FastifyInstance,
-  { sessions, history, settings }: ConversationRouteRepositories
+  { sessions, settings, folders }: ConversationRouteRepositories
 ) {
   // @frontend-ready: true
   app.get(
@@ -103,23 +111,26 @@ export function registerConversationList(
     async (request, reply) => {
       if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
 
-      const query = request.query as {
-        character_id?: string;
-        limit?: string;
-        offset?: string;
-      };
+      const query = request.query as Record<string, string | undefined>;
       if (query.character_id !== undefined && !UUID_PATTERN.test(query.character_id)) {
         return reply.status(400).send(fail('BAD_REQUEST', '角色卡 ID 无效'));
       }
+      const filters = parseListFilters(query);
+      if (!filters) return reply.status(400).send(fail('BAD_REQUEST', '筛选条件无效'));
 
       const dbUser = await getOrCreateDbUser(request.user);
-      const [{ sessions: rows, total }, displayName] = await Promise.all([
+      const offset = parsePositiveInt(query.offset);
+      // 只有对话页首页显式要汇总；大厅「聊过」标记等其他列表调用不多查一次库。
+      const wantsSummary = query.summary === '1' && !query.character_id && !offset;
+      const [{ sessions: rows, total }, displayName, folderSummary] = await Promise.all([
         sessions.listSessions(dbUser.id, {
           characterId: query.character_id,
           limit: parsePositiveInt(query.limit),
-          offset: parsePositiveInt(query.offset),
+          offset,
+          ...filters,
         }),
         settings.getDisplayName(dbUser.id),
+        wantsSummary ? readFolderSummary(folders, dbUser.id, request.log) : null,
       ]);
 
       return reply.send(
@@ -128,6 +139,7 @@ export function registerConversationList(
             applyUserPlaceholderToSession(toChatSession(row), displayName)
           ),
           total,
+          ...(folderSummary ? { folder_summary: folderSummary } : {}),
         })
       );
     }
@@ -159,7 +171,15 @@ export function registerConversationUpdate(
       if (body.pinned !== undefined && typeof body.pinned !== 'boolean') {
         return reply.status(400).send(fail('BAD_REQUEST', '置顶状态无效'));
       }
-      if (!hasTitle && body.pinned === undefined) {
+      const hasFolder = 'folder_id' in body;
+      if (
+        hasFolder &&
+        body.folder_id !== null &&
+        (typeof body.folder_id !== 'string' || !UUID_PATTERN.test(body.folder_id))
+      ) {
+        return reply.status(400).send(fail('BAD_REQUEST', '分组无效'));
+      }
+      if (!hasTitle && body.pinned === undefined && !hasFolder) {
         return reply.status(400).send(fail('BAD_REQUEST', '没有需要更新的字段'));
       }
 
@@ -169,6 +189,7 @@ export function registerConversationUpdate(
           sessions.updateSession(sessionId, dbUser.id, {
             ...(hasTitle ? { title: body.title ?? null } : {}),
             ...(body.pinned === undefined ? {} : { pinned: body.pinned }),
+            ...(hasFolder ? { folderId: body.folder_id ?? null } : {}),
           }),
           settings.getDisplayName(dbUser.id),
         ]);
@@ -178,7 +199,7 @@ export function registerConversationUpdate(
           })
         );
       } catch (error) {
-        if (sendConversationError(reply, error)) return;
+        if (sendConversationError(reply, error) || sendChatFolderError(reply, error)) return;
         throw error;
       }
     }

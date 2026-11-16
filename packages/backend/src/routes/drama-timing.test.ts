@@ -64,6 +64,7 @@ vi.mock('../features/drama/signed-url.js', () => ({
 }));
 vi.mock('../features/drama/stream.js', () => ({
   pinStreamDramas: (dramas: unknown[]) => dramas,
+  streamManifestWarmupTargets: () => [],
   selectStreamDelivery: () =>
     mocks.stream
       ? {

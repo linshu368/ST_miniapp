@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const SESSION = '11111111-2222-4333-8444-555555555555';
 const routing = vi.hoisted(() => ({
+  logError: vi.fn(),
   catalog: vi.fn(),
   requireSession: vi.fn(),
   runTurn: vi.fn(),
@@ -171,6 +172,9 @@ async function buildApp() {
   const { default: conversationRoutes } = await import('./conversations.js');
   const { default: settingsRoutes } = await import('./settings.js');
   const app = Fastify({ logger: false });
+  app.addHook('onRequest', async (request) => {
+    request.log.error = routing.logError;
+  });
   await app.register(conversationRoutes);
   await app.register(settingsRoutes);
   await app.ready();
@@ -178,6 +182,29 @@ async function buildApp() {
 }
 
 describe('thinking request validation before accepting a conversation turn', () => {
+  it('records the original preferences failure while retaining the public 400 contract', async () => {
+    const err = new Error('fixture preferences failure');
+    routing.patch.mockRejectedValueOnce(err);
+    const app = await buildApp();
+    try {
+      const response = await app.inject({
+        method: 'PATCH',
+        url: '/api/v1/generation-config',
+        payload: {},
+      });
+      expect(response.statusCode).toBe(400);
+      expect(response.json().error).toEqual({ code: 'BAD_REQUEST', message: err.message });
+      expect(routing.logError).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: 'conversation.config.update_failed',
+          err,
+        }),
+        expect.any(String)
+      );
+    } finally {
+      await app.close();
+    }
+  });
   it('checks ownership while the catalog is pending and only then admits the turn', async () => {
     let releaseCatalog!: () => void;
     const pendingCatalog = new Promise<void>((resolve) => {

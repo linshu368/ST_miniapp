@@ -18,6 +18,7 @@ import {
 } from 'antd';
 import {
   CREATOR_REVIEW_PROMPT_KEY,
+  FREE_ZONE_CONFIG_KEY,
   STORY_MEMORY_CONFIG_KEY,
   STORY_MEMORY_PROMPT_KEY,
   DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG,
@@ -65,6 +66,7 @@ import {
 import { LobbyRankingParamsEditor } from './LobbyRankingParamsEditor';
 import { ModelCatalogEditor } from './ModelCatalogEditor';
 import { FallbackConfigEditor } from './FallbackConfigEditor';
+import { FreeZoneConfigEditor } from './FreeZoneConfigEditor';
 import { ProviderRoutingConfigEditor } from './ProviderRoutingConfigEditor';
 import { SystemInstructionsEditor } from './SystemInstructionsEditor';
 import { CreatorReviewPromptEditor } from './CreatorReviewPromptEditor';
@@ -430,6 +432,8 @@ export function ConfigValueEditor(props: {
       />
     );
   }
+
+  if (props.configKey === FREE_ZONE_CONFIG_KEY) return <FreeZoneConfigEditor {...props} />;
 
   if (props.configKey === STORY_MEMORY_CONFIG_KEY) {
     return (

@@ -17,6 +17,7 @@
     "lint:legacy": "node scripts/check-legacy-references.mjs",
     "lint:migrations": "node scripts/check-migration-filenames.mjs",
     "lint:complexity": "node scripts/complexity-budget.mjs check",
+    "lint:backend-logging": "node scripts/check-backend-logging.mjs",
     "complexity:report": "node scripts/complexity-budget.mjs report",
     "test:migration-ledger": "bash scripts/apply-repo-migration.test.sh",
     "import-character": "pnpm --filter @miniapp/backend exec tsx ../../scripts/import-character.ts",

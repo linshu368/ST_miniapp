@@ -80,6 +80,7 @@ export function useCreatorCharacterQuery(id: string | undefined) {
     queryFn: ({ signal }) =>
       apiClient<GetCreatorCharacterData>(`/api/creator/characters/${encodeURIComponent(id!)}`, {
         signal,
+        queuePriority: 'critical',
       }),
     enabled: Boolean(id),
     staleTime: 30_000,

@@ -17,6 +17,7 @@ vi.mock('../lib/supabase.js', () => ({}));
 vi.mock('../platform/config.js', () => ({ config: { database: { target: 'test' } } }));
 
 import { createDramaPlayHandler, type DramaRequestTiming, type DramaStage } from './drama-play.js';
+import { currentContext, newContext, withContext } from '../platform/observability/context.js';
 
 const DRAMA_ID = '11111111-1111-4111-8111-111111111111';
 const VIDEO_ID = '22222222-2222-4222-8222-222222222222';
@@ -115,6 +116,32 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe('createDramaPlayHandler — Stream 内联清单', () => {
+  it('retains validated POST targets when playback lookup fails without extra queries', async () => {
+    const failure = new Error('lookup failed');
+    const read = vi.fn().mockRejectedValue(failure);
+    const d = deps({ repo: { getDramaForPlayback: read } });
+    const handler = createDramaPlayHandler(d);
+    const request = fakeRequest();
+    registerRequest(d.timings, request);
+    await withContext(newContext(), async () => {
+      await expect(
+        handler(request, fakeReply(), { dramaId: DRAMA_ID, options: { video_id: VIDEO_ID } })
+      ).rejects.toBe(failure);
+      expect(currentContext()?.business).toEqual({
+        business_module: 'drama',
+        drama_id: DRAMA_ID,
+        video_id: VIDEO_ID,
+      });
+    });
+    expect(read).toHaveBeenCalledExactlyOnceWith(DRAMA_ID);
+    await withContext(newContext(), async () => {
+      const reply = fakeReply();
+      await handler(request, reply, { dramaId: 'private-invalid', options: {} });
+      expect(reply.statusCode).toBe(400);
+      expect(currentContext()?.business).toEqual({});
+    });
+    expect(read).toHaveBeenCalledOnce();
+  });
   it('Stream 组命中缓存时，响应带 inline_manifest', async () => {
     mocks.selectStreamDelivery.mockReturnValue({
       config: {},
@@ -135,7 +162,10 @@ describe('createDramaPlayHandler — Stream 内联清单', () => {
     registerRequest(d.timings, request);
     const reply = fakeReply();
 
-    await handler(request, reply, { dramaId: DRAMA_ID, options: { format: 'hls' } });
+    await withContext(newContext(), async () => {
+      await handler(request, reply, { dramaId: DRAMA_ID, options: { format: 'hls' } });
+      expect(currentContext()?.business).toMatchObject({ drama_id: DRAMA_ID, video_id: VIDEO_ID });
+    });
 
     const body = reply.send.mock.calls[0]![0];
     expect(body.data.playback.inline_manifest).toBe('#EXTM3U\n...');

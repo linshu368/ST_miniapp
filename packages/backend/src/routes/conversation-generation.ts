@@ -214,6 +214,14 @@ export function registerConversationPatchConfig(
       try {
         await settings.patch(dbUser.id, request.user, patch);
       } catch (error) {
+        request.log.error(
+          {
+            event: 'conversation.config.update_failed',
+            error_code: 'GENERATION_CONFIG_UPDATE_FAILED',
+            err: error,
+          },
+          'Generation preferences update failed'
+        );
         const message = error instanceof Error ? error.message : '生成配置更新失败';
         return reply.status(400).send(fail('BAD_REQUEST', message));
       }
@@ -349,9 +357,9 @@ function failTurn(
   }
   if (error instanceof Error && error.name === 'TimeoutError') {
     if (sink.opened) {
-      sink.send({ type: 'error', code: 'upstream_error', message: '请求处理超时，请重试。' });
+      sink.send({ type: 'error', code: 'upstream_timeout', message: '请求处理超时，请重试。' });
       sink.close();
-    } else void reply.status(504).send(fail('upstream_error', '请求处理超时，请重试。'));
+    } else void reply.status(504).send(fail('upstream_timeout', '请求处理超时，请重试。'));
     return;
   }
   if (sink.opened) {
@@ -359,7 +367,7 @@ function failTurn(
       { event: 'conversation.turn.failed_mid_stream', err: error },
       '流已开始后失败，改以流内 error 事件收口'
     );
-    sink.send({ type: 'error', code: 'upstream_error', message: '生成中断，请稍后重试' });
+    sink.send({ type: 'error', code: 'upstream_error', message: '生成中断了，再点一次重新来' });
     sink.close();
     return;
   }

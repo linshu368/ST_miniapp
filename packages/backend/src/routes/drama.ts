@@ -5,7 +5,7 @@
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { requestLogger } from '../lib/logger.js';
-import { pinStreamDramas } from '../features/drama/stream.js';
+import { pinStreamDramas, streamManifestWarmupTargets } from '../features/drama/stream.js';
 import { DramaPlaybackOptionsSchema, DramaPlayRequestSchema, ok, fail } from '@miniapp/shared';
 import type { GetDramaByIdData, GetDramasData } from '@miniapp/shared';
 import { requireTelegramAuth } from '../middleware/auth.js';
@@ -27,6 +27,16 @@ export default async function dramaRoutes(app: FastifyInstance) {
   // 进程内缓存，整个 app 共用一份
   const signedUrls = new DramaSignedUrlCache();
   const streamManifests = new DramaStreamManifestCache();
+  app.addHook('onReady', async () => {
+    // 不等预热完成：启动和健康检查不受 Stream 源站影响。
+    void streamManifests
+      .prewarm(streamManifestWarmupTargets(), app.log)
+      .then((result) => {
+        if (result.cached + result.failed > 0)
+          app.log.info(result, 'drama inline manifest prewarm done');
+      })
+      .catch(() => undefined);
+  });
   const timings = new WeakMap<FastifyRequest, DramaRequestTiming>();
   app.addHook('onRequest', async (request) => {
     timings.set(request, { stages: {}, sign: {}, manifest: {} });

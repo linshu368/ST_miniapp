@@ -1,3 +1,4 @@
+import { observation } from './observability/runtime.js';
 /**
  * backend / platform / runtime-config.ts
  *
@@ -11,6 +12,11 @@
 import { getDomainDb } from '../lib/supabase.js';
 import { z } from 'zod';
 import { config } from './config.js';
+
+/** Deployment-only log alerts: disabling does not initialize any database-backed alert policy. */
+export function getLogAlertSettings() {
+  return { ...config.alerting.logs, webhookUrl: config.alerting.feishuWebhookUrl };
+}
 import type { LlmModelProvider } from '@miniapp/shared';
 export interface DramaPlaybackCdnConfig {
   tokenKey: string;
@@ -196,7 +202,12 @@ async function fetchRuntimeConfigEntryDirect(
   const { data, error } = await bounded.maybeSingle();
 
   if (error) {
-    console.error(`[runtime-config] Failed to fetch ${key}:`, error);
+    observation.emit(
+      'config.read_failed',
+      'config.config',
+      { outcome: 'degraded', outcome_known: false, err: error },
+      'warn'
+    );
     return null;
   }
   if (!data) return null;
@@ -274,7 +285,12 @@ async function fetchRuntimeConfigEntriesDirect(
     .abortSignal(signal);
 
   if (error) {
-    console.error(`[runtime-config] Failed to fetch ${keys.join(' / ')}:`, error);
+    observation.emit(
+      'config.batch_read_failed',
+      'config.config',
+      { outcome: 'degraded', outcome_known: false, err: error },
+      'warn'
+    );
     return new Map();
   }
 
@@ -362,4 +378,9 @@ export function getDramaStreamSigningConfig() {
  */
 export function isDramaLegacySupabaseEnabled() {
   return process.env.DRAMA_LEGACY_SUPABASE_ENABLED !== 'false';
+}
+
+/** Registered Mujian origin only; no Vercel wildcard or user-controlled hostname. */
+export function getMujianOrigin(): string {
+  return 'https://short-drama-demo-sigma.vercel.app';
 }

@@ -96,7 +96,7 @@ export function CheckinRewardStatus({
       role={!checkin ? 'status' : undefined}
     >
       {checkinReadFailed ? (
-        '暂时无法确认签到状态'
+        '签到状态没查到，稍后再试'
       ) : !checkin ? (
         '正在查看今日奖励…'
       ) : hasClaimed ? (

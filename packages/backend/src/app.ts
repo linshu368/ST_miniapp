@@ -1,7 +1,10 @@
 import type { HealthData } from '@miniapp/shared';
 import { ok } from '@miniapp/shared';
 import Fastify, { type FastifyServerOptions } from 'fastify';
-import { randomUUID } from 'node:crypto';
+import { requestId } from './platform/observability/context.js';
+import { registerHttpObservation } from './platform/observability/http.js';
+import { observation } from './platform/observability/runtime.js';
+import { startLogAlerts } from './platform/observability/alert-runtime.js';
 import { startChatHistorySyncJob, stopChatHistorySyncJob } from './features/generation/index.js';
 import {
   startImagePlazaGenerationJob,
@@ -13,6 +16,10 @@ import { startStoryMemoryJob, stopStoryMemoryJob } from './features/story-memory
 import { registerCors } from './lib/cors.js';
 import { startEngineeringTelemetry } from './lib/engineering-observability.js';
 import {
+  startFreeZoneEvaluationJob,
+  stopFreeZoneEvaluationJob,
+} from './features/free-zone/evaluation-job.js';
+import {
   startLobbyRankingRefreshJob,
   stopLobbyRankingRefreshJob,
 } from './lib/lobby-ranking-refresh-job.js';
@@ -20,14 +27,17 @@ import { fastifyLoggerOptions } from './lib/logger.js';
 import { registerRequestPerf, startRuntimeMetrics } from './lib/perf-metrics.js';
 import { bindRequestSentryContext } from './lib/sentry.js';
 import { config } from './platform/config.js';
+import { getMujianOrigin } from './platform/runtime-config.js';
 import adminCliSessionRoutes from './routes/admin-cli-session.js';
 import adminSupabaseProxyRoutes from './routes/admin-supabase-proxy.js';
+import adminFreeZoneRoutes from './routes/admin-free-zone.js';
 import alertRoutes from './routes/alerts.js';
 import botRoutes from './routes/bot.js';
 import characterSocialRoutes from './routes/character-social.js';
 import characterWishRoutes from './routes/character-wishes.js';
 import characterRoutes from './routes/characters.js';
 import chatFeedbackRoutes from './routes/chat-feedback.js';
+import dramaSurveyRoutes from './routes/drama-survey.js';
 import communityRoutes from './routes/community.js';
 import conversationRoutes from './routes/conversations.js';
 import creatorAnalyticsRoutes from './routes/creator-analytics.js';
@@ -37,6 +47,7 @@ import dramaInteractionRoutes from './routes/drama-interactions.js';
 import dramaRoutes from './routes/drama.js';
 import favoriteRoutes from './routes/favorites.js';
 import growthRoutes from './routes/growth.js';
+import growthPromptRoutes from './routes/growth-prompts.js';
 import imagePlazaRoutes from './routes/image-plaza.js';
 import imageRoutes from './routes/images.js';
 import inviteRoutes from './routes/invite.js';
@@ -54,26 +65,26 @@ import voiceRoutes from './routes/voice.js';
 import walletRoutes from './routes/wallet.js';
 
 export async function buildApp() {
+  const stopLogAlerts = startLogAlerts();
   const stopEngineeringTelemetry = startEngineeringTelemetry(config.engineeringTelemetry);
   const app = Fastify({
     logger: fastifyLoggerOptions() as unknown as FastifyServerOptions['logger'],
-    // 跨边界链路追踪：优先复用入站 X-Request-Id，否则生成。见 docs/日志系统.md §6
+    disableRequestLogging: true,
+    // Accept only a bounded correlation ID; it never authorizes or deduplicates a request.
     genReqId(req) {
-      const hdr = req.headers['x-request-id'];
-      if (typeof hdr === 'string' && hdr.length > 0) return hdr;
-      if (Array.isArray(hdr) && hdr[0]) return hdr[0];
-      return randomUUID();
+      return requestId(req.headers['x-request-id']);
     },
   });
 
-  app.addHook('onRequest', async (request, reply) => {
+  registerHttpObservation(app, observation);
+  app.addHook('onRequest', async (request) => {
     bindRequestSentryContext(request);
   });
   registerRequestPerf(app);
   await registerCors(app, {
     frontendUrl: config.frontendUrl,
     adminPlatformUrl: config.adminPlatformUrl,
-    frontendAllowedOrigins: config.frontendAllowedOrigins,
+    frontendAllowedOrigins: [...config.frontendAllowedOrigins, getMujianOrigin()],
     development:
       config.nodeEnv !== 'production' ||
       (config.database.target === 'test' && config.devAuthBypass),
@@ -98,9 +109,12 @@ export async function buildApp() {
   await app.register(imageRoutes);
   await app.register(botRoutes);
   await app.register(growthRoutes);
+  await app.register(growthPromptRoutes);
   await app.register(inviteRoutes);
   await app.register(communityRoutes);
+  await app.register(dramaSurveyRoutes);
   await app.register(adminSupabaseProxyRoutes);
+  await app.register(adminFreeZoneRoutes);
   await app.register(adminCliSessionRoutes);
   await app.register(notificationRoutes);
   await app.register(supportRoutes);
@@ -142,6 +156,7 @@ export async function buildApp() {
   startChatImageGenerationJob(app.log);
   startImagePlazaGenerationJob(app.log);
   startStoryMemoryJob(app.log);
+  startFreeZoneEvaluationJob(app.log);
 
   const stopRuntimeMetrics = startRuntimeMetrics();
 
@@ -152,8 +167,10 @@ export async function buildApp() {
     stopChatImageGenerationJob();
     stopImagePlazaGenerationJob();
     stopStoryMemoryJob();
+    stopFreeZoneEvaluationJob();
     shutdownTextPostprocessValidation();
     await stopEngineeringTelemetry();
+    await stopLogAlerts();
   });
 
   return app;
