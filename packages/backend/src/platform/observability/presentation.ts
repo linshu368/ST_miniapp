@@ -109,7 +109,14 @@ export function createLogPresentation(catalog: LogPresentationCatalog) {
     const result = lookup(catalog.results, outcome) ?? catalog.fallback.result;
     const error_message = errorMessage(record, catalog, outcome, level);
     const details: string[] = [];
-    for (const field of ['probe_result', 'paymentType', 'reason', 'resource', 'stage'] as const) {
+    for (const field of [
+      'probe_result',
+      'paymentType',
+      'provider',
+      'reason',
+      'resource',
+      'stage',
+    ] as const) {
       const value = lookup(catalog.details, record[field]);
       if (value) details.push(value);
     }

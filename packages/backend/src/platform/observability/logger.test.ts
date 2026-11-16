@@ -24,6 +24,28 @@ function captureLogs() {
 }
 
 describe('Railway readable summaries', () => {
+  it('names provider and storage operations with their caller scene', () => {
+    const { log, lines } = captureLogs();
+    log.info({
+      event: 'operation.terminal',
+      module: 'provider',
+      operation: 'provider.venice',
+      provider: 'venice',
+      call_scene: 'POST:/api/v1/conversations/:id/messages',
+      outcome: 'succeeded',
+    });
+    log.info({
+      event: 'operation.terminal',
+      module: 'storage',
+      operation: 'storage.avatar',
+      outcome: 'succeeded',
+    });
+    const rows = lines.map((line) => JSON.parse(line));
+    expect(rows[0].msg).toContain('[模型供应商]');
+    expect(rows[0].msg).toContain('发送聊天消息 / 调用 Venice 模型服务');
+    expect(rows[0].msg).toContain('供应商：Venice');
+    expect(rows[1]).toMatchObject({ module_name: '对象存储', scenario: '读取头像资源' });
+  });
   it('keeps overlapping job call scenes isolated through nested child loggers', async () => {
     const { log, lines } = captureLogs();
     const jobs = createJobObservation(createObserver([]));
