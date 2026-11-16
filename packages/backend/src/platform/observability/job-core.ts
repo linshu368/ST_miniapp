@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { newContext, withContext } from './context.js';
 import type { createObserver, Operation } from './core.js';
 import type { EventFields } from './events.js';
+import { safeName } from './events.js';
 
 /** Each factory owns its job reporters; importing this module never starts an application. */
 export function createJobObservation(observer: ReturnType<typeof createObserver>) {
@@ -15,7 +16,8 @@ export function createJobObservation(observer: ReturnType<typeof createObserver>
       if (current?.job === job) current.operation.finish(fields);
     },
     async runObservedJob<T>(job: string, run: () => Promise<T>): Promise<T> {
-      const operation = observer.start(`job.${job}`, {}, newContext());
+      const context = { ...newContext(), call_scene: safeName(`job.${job}`) };
+      const operation = observer.start(`job.${job}`, {}, context);
       return jobs.run({ job, operation }, () =>
         withContext(operation.context, async () => {
           try {

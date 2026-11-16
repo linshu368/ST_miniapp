@@ -176,14 +176,28 @@ export async function checkWalletBalance(input: {
   const { userId, requiredAmount, walletPolicy, openRouterModelId, log } = input;
 
   if (requiredAmount === 0) {
-    log.biz.debug(
-      { event: 'llm.balance.check_skipped', userId, model: openRouterModelId },
+    log.biz.info(
+      {
+        event: 'llm.balance.check_skipped',
+        outcome: 'skipped',
+        reason: 'free_round',
+        userId,
+        model: openRouterModelId,
+      },
       'free model balance check skipped'
     );
     return { ok: true };
   }
 
-  const wallet = await wallets().findByUserId(userId);
+  const wallet = await wallets()
+    .findByUserId(userId)
+    .catch((err: unknown) => {
+      log.sys.error(
+        { event: 'llm.balance.precheck_failed', outcome: 'failed', err },
+        '生成余额预检查询失败'
+      );
+      throw err;
+    });
   const coverage = coverageForTextWallet({
     policy: walletPolicy,
     payableCredits: requiredAmount,
@@ -194,6 +208,7 @@ export async function checkWalletBalance(input: {
     log.biz.info(
       {
         event: 'llm.balance.insufficient',
+        outcome: 'rejected',
         userId,
         policy: walletPolicy,
         code: coverage.code,
@@ -210,5 +225,14 @@ export async function checkWalletBalance(input: {
     };
   }
 
+  log.biz.info(
+    {
+      event: 'llm.balance.precheck_passed',
+      outcome: 'succeeded',
+      userId,
+      model: openRouterModelId,
+    },
+    '生成余额预检通过'
+  );
   return { ok: true };
 }

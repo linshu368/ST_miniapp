@@ -32,3 +32,5 @@ export type {
   LogAlertPresentation,
 } from './alert-types.js';
 export { buildPinoOptions } from './conventions.js';
+export { createLogPresentation } from './presentation.js';
+export type { LogPresentation, LogPresentationCatalog } from './presentation.js';
