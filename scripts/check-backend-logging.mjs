@@ -11,6 +11,7 @@ const ts = createRequire(new URL('../packages/backend/package.json', import.meta
 // Transport primitives and offline import adapters are explicit exceptions, not per-file comments.
 const rawFetchOwners = new Set([
   'platform/observability/fetch.ts',
+  'platform/observability/fetch-core.ts',
   'features/alerting/feishu-alert-sink.ts', // Instrumenting notification delivery could recursively alert.
   'features/image-plaza/seed-import.ts', // Offline importer; proxy, limits and retries have their own tests.
 ]);

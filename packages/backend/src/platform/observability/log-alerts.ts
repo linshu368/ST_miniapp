@@ -1,17 +1,22 @@
-import type { SafeAlertCard } from '../../features/alerting/safe-card.js';
-import type { FeishuDeliveryResult } from '../../features/alerting/feishu-alert-sink.js';
 import { matchesLogRule, type LogAlertPolicy } from './alert-policy.js';
-import type { AlertLog } from './log-channel.js';
-
-interface Delivery {
-  deliver(card: SafeAlertCard, timeoutMs: number): Promise<FeishuDeliveryResult>;
-}
+import type {
+  AlertLog,
+  LogAlertCard,
+  LogAlertDelivery,
+  LogAlertDeliveryResult,
+  LogAlertPresentation,
+} from './alert-types.js';
 type Health = (event: 'delivery_failed' | 'capacity_exceeded', count: number) => void;
 const TIMEOUT_MS = 2_500;
 const MAX_IN_FLIGHT = 4;
 
 /** Best-effort per-log notifications: no database, retry, backlog or replay. */
-export function createLogAlerts(policy: LogAlertPolicy, sink: Delivery, health: Health) {
+export function createLogAlerts(
+  policy: LogAlertPolicy,
+  sink: LogAlertDelivery,
+  health: Health,
+  presentation: LogAlertPresentation = {}
+) {
   const pending = new Set<Promise<void>>();
   let closed = false;
   let dropped = 0;
@@ -24,11 +29,11 @@ export function createLogAlerts(policy: LogAlertPolicy, sink: Delivery, health: 
     }
   };
 
-  async function deliver(card: SafeAlertCard): Promise<void> {
+  async function deliver(card: LogAlertCard): Promise<void> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       // Also bound shutdown if a future adapter ignores its AbortSignal deadline.
-      const deadline = new Promise<FeishuDeliveryResult>((resolve) => {
+      const deadline = new Promise<LogAlertDeliveryResult>((resolve) => {
         timer = setTimeout(() => resolve({ kind: 'retryable', errorClass: 'timeout' }), TIMEOUT_MS);
       });
       const result = await Promise.race([sink.deliver(card, TIMEOUT_MS), deadline]);
@@ -51,9 +56,9 @@ export function createLogAlerts(policy: LogAlertPolicy, sink: Delivery, health: 
         if ((dropped & (dropped - 1)) === 0) report('capacity_exceeded', dropped);
         return;
       }
-      const card: SafeAlertCard = {
-        title: `Backend ${rule.id}`,
-        summary: `event=${event.event}\noperation=${event.operation}\noutcome=${event.outcome ?? 'unknown'}\nerror_code=${event.error_code ?? '-'}\npublic_error_code=${event.public_error_code ?? '-'}\nevent_id=${event.event_id}\nSearch event_id in Railway logs.`,
+      const card: LogAlertCard = {
+        title: `${presentation.serviceName ?? 'Service'} ${rule.id}`,
+        summary: `event=${event.event}\noperation=${event.operation}\noutcome=${event.outcome ?? 'unknown'}\nerror_code=${event.error_code ?? '-'}\npublic_error_code=${event.public_error_code ?? '-'}\nevent_id=${event.event_id}\n${presentation.logLookupHint ?? 'Search event_id in service logs.'}`,
         severity: rule.severity,
         transition: 'firing',
         incident_fingerprint: rule.id,

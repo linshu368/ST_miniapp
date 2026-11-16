@@ -8,6 +8,7 @@
     "pnpm": ">=9"
   },
   "scripts": {
+    "logging:validate": "tsx src/platform/observability/validate-alert-rules.ts",
     "dev": "tsx watch --import ./src/instrumentation.ts src/server.ts",
     "start": "npx prisma generate && tsx --import ./src/instrumentation.ts src/server.ts",
     "payment:expire-orders": "tsx src/scripts/expire-payment-orders.ts",

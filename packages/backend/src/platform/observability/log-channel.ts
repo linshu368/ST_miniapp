@@ -1,18 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { contextLogFields } from './context.js';
 import { safeErrorCode, safeName } from './events.js';
-
-export interface AlertLog {
-  event_id: string;
-  event: string;
-  operation: string;
-  level: number;
-  error_code?: string;
-  public_error_code?: string;
-  outcome?: string;
-  http_status?: number;
-  duration_ms?: number;
-}
+import { safeBusinessFields } from './business-context.js';
+import type { AlertLog } from './alert-types.js';
+export type { AlertLog } from './alert-types.js';
 
 let consumer: ((event: AlertLog) => void) | undefined;
 
@@ -36,6 +27,8 @@ export function publishAlertLog(record: Record<string, unknown>, level: number):
       record.errorClass ??
       safeErrorCode(record.err ?? record.error);
     const status = record.http_status ?? record.statusCode ?? record.status;
+    const upstreamStatus = record.upstream_status;
+    const businessModule = safeBusinessFields(record).business_module;
     const duration = record.duration_ms ?? record.durationMs;
     const event: AlertLog = {
       event_id:
@@ -44,6 +37,8 @@ export function publishAlertLog(record: Record<string, unknown>, level: number):
           : randomUUID(),
       event: safeName(record.event),
       operation: safeName(record.operation ?? record.module ?? 'legacy'),
+      ...(typeof record.module === 'string' ? { module: safeName(record.module) } : {}),
+      ...(businessModule ? { business_module: businessModule } : {}),
       level,
       ...(typeof code === 'string' ? { error_code: safeName(code) } : {}),
       ...(typeof record.public_error_code === 'string'
@@ -52,6 +47,12 @@ export function publishAlertLog(record: Record<string, unknown>, level: number):
       ...(typeof record.outcome === 'string' ? { outcome: safeName(record.outcome) } : {}),
       ...(typeof status === 'number' && Number.isInteger(status) && status >= 100 && status <= 599
         ? { http_status: status }
+        : {}),
+      ...(typeof upstreamStatus === 'number' &&
+      Number.isInteger(upstreamStatus) &&
+      upstreamStatus >= 100 &&
+      upstreamStatus <= 599
+        ? { upstream_status: upstreamStatus }
         : {}),
       ...(typeof duration === 'number' && Number.isFinite(duration) && duration >= 0
         ? { duration_ms: duration }

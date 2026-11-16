@@ -137,6 +137,7 @@ describe('direct runtime log alerts', () => {
     const policy = parseLogAlertPolicy(
       'true',
       JSON.stringify([
+        { id: 'disabled', enabled: false },
         {
           id: 'payment',
           operations: ['payment.settlement'],
@@ -153,7 +154,7 @@ describe('direct runtime log alerts', () => {
     await alerts.close();
     expect(sink.deliver).toHaveBeenCalledTimes(1);
     expect(sink.deliver.mock.calls[0]?.[0]).toMatchObject({
-      title: 'Backend payment',
+      title: 'Service payment',
       notification_key: event.event_id,
     });
   });
@@ -201,6 +202,9 @@ describe('direct runtime log alerts', () => {
       logger.child({ module: 'payment' }).error(
         {
           event: 'payment.failed',
+          business_module: 'payment',
+          statusCode: 200,
+          upstream_status: 429,
           user_id: '11111111-1111-4111-8111-111111111111',
           telegram_user_id: '123456',
           session_id: '22222222-2222-4222-8222-222222222222',
@@ -211,6 +215,12 @@ describe('direct runtime log alerts', () => {
         'private-message'
       );
       expect(received).toHaveLength(1);
+      expect(received[0]).toMatchObject({
+        module: 'payment',
+        business_module: 'payment',
+        http_status: 200,
+        upstream_status: 429,
+      });
       expect(JSON.stringify(received)).not.toContain('private');
       expect(received[0]).not.toHaveProperty('user_id');
       expect(received[0]).not.toHaveProperty('telegram_user_id');

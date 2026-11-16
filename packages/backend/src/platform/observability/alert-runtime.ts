@@ -12,14 +12,19 @@ export function startLogAlerts(): () => Promise<void> {
   if (!active) {
     const sink = new FeishuAlertSink(policy.webhookUrl);
     if (!sink.configured()) throw new Error('Log alerts require a valid Feishu webhook');
-    const alerts = createLogAlerts(policy, sink, (reason, count) => {
-      observation.emit(
-        `observability.alert.${reason}`,
-        'observability.alert',
-        { outcome: 'degraded', count },
-        'warn'
-      );
-    });
+    const alerts = createLogAlerts(
+      policy,
+      sink,
+      (reason, count) => {
+        observation.emit(
+          `observability.alert.${reason}`,
+          'observability.alert',
+          { outcome: 'degraded', count },
+          'warn'
+        );
+      },
+      { serviceName: 'Backend', logLookupHint: 'Search event_id in Railway logs.' }
+    );
     const unsubscribe = subscribeLogAlerts(alerts.accept);
     active = {
       references: 0,

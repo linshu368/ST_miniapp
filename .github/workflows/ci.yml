@@ -100,6 +100,8 @@ jobs:
 
       - name: Check backend logging boundaries
         run: pnpm lint:backend-logging
+      - name: Validate log alert rules
+        run: pnpm --filter @miniapp/backend logging:validate
       - name: Test backend logging guard
         run: node --test scripts/check-backend-logging.test.mjs
 
