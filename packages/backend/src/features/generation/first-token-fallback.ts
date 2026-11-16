@@ -41,6 +41,8 @@ export interface SettledCall {
   /** Surplus 请求号（响应头 x-si-request-id），响应头前就停下的没有 */
   requestId: string | null;
   generationId: string | null;
+  /** 上游响应状态码；响应头前就停下的没有 */
+  httpStatus: number | null;
 }
 
 export interface FirstTokenAttemptStore {
@@ -196,6 +198,7 @@ export async function forwardWithFirstTokenFallback(input: {
         endReason: reason,
         requestId: attempt.requestId,
         generationId: attempt.observation.generation_id ?? null,
+        httpStatus: attempt.observation.http_status ?? null,
       });
     }
     if (attempt.controller.signal.reason instanceof LostFirstTokenRace) {

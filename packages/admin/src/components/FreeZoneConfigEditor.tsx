@@ -157,6 +157,13 @@ const ON_SHELF_FIELDS: ReadonlyArray<NumberField<keyof FreeZoneOnShelf & string>
     precision: 1,
   },
   { key: 'max_dislike_pct', label: '点踩率上限（%）', hint: '留空不检查', max: 100, precision: 1 },
+  {
+    key: 'max_unroutable_pct',
+    label: '派不出去率上限（%）',
+    hint: '真实请求被 Surplus 拒绝派单（折扣底线达不到、没有卖家）的比例。不等评估、不看统计窗口和最少轮数：最近 20 次主请求里至少 10 次有响应、超过就立刻下架，按官方原因冷却；留空不检查',
+    max: 100,
+    precision: 1,
+  },
 ];
 
 const RELIST_FIELDS: ReadonlyArray<NumberField<'required_passes' | 'cooldown_official_minutes'>> = [
