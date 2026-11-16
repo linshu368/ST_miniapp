@@ -161,6 +161,8 @@ function snapshotMetrics(
           turns: metrics.turns,
           no_output_pct: metrics.noOutputPct,
           fallback_delivered_pct: metrics.fallbackDeliveredPct,
+          slow_fallback_pct: metrics.slowFallbackPct,
+          error_fallback_pct: metrics.errorFallbackPct,
           timeout_pct: metrics.timeoutPct,
           primary_delivered_turns: metrics.primaryDeliveredTurns,
           interrupted_turns: metrics.interruptedTurns,

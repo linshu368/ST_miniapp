@@ -266,7 +266,7 @@ function pct(value: number | null): string {
 }
 
 /**
- * 在架模型的业务数据一句话：兜底多了是花钱，中断是用户体验实打实受损，两个都摆出来。
+ * 在架模型的业务数据一句话：超时兜底让用户多等、报错兜底多花点钱，中断是用户体验实打实受损。
  * 只统计当前供应商开始用之后、统计窗口内的轮次，截至最近一轮评估。
  */
 export function freeZoneBusinessText(model: AdminFreeZoneStatusModel): string {
@@ -277,10 +277,13 @@ export function freeZoneBusinessText(model: AdminFreeZoneStatusModel): string {
     business.interrupted_turns !== null && business.primary_delivered_turns
       ? `中断 ${pct(business.interrupted_pct)}（${business.interrupted_turns}/${business.primary_delivered_turns}）`
       : `中断 ${pct(business.interrupted_pct)}`;
-  return [
-    `${business.turns} 轮`,
-    `兜底 ${pct(business.fallback_delivered_pct)}`,
-    interrupted,
-    `没出字 ${pct(business.no_output_pct)}`,
-  ].join(' · ');
+  // 兜底按起因拆开：超时兜底影响体验；报错兜底（报错、空回复后立刻兜底）影响小。旧记录没有拆分就照旧显示
+  const fallback =
+    business.slow_fallback_pct !== null || business.error_fallback_pct !== null
+      ? [
+          `超时兜底 ${pct(business.slow_fallback_pct)}`,
+          `报错兜底 ${pct(business.error_fallback_pct)}`,
+        ]
+      : [`兜底 ${pct(business.fallback_delivered_pct)}`, `没出字 ${pct(business.no_output_pct)}`];
+  return [`${business.turns} 轮`, ...fallback, interrupted].join(' · ');
 }

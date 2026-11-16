@@ -257,6 +257,8 @@ describe('judgeBusinessMetrics', () => {
     turns: 100,
     noOutputPct: 1,
     fallbackDeliveredPct: 5,
+    slowFallbackPct: 3,
+    errorFallbackPct: 2,
     timeoutPct: 0.5,
     ttftP90Ms: 4000,
     refusalPct: null,
@@ -272,6 +274,18 @@ describe('judgeBusinessMetrics', () => {
   it('fails when any configured line is crossed', () => {
     const verdict = judgeBusinessMetrics({ ...base, noOutputPct: 12 }, onShelf);
     expect(verdict).toEqual({ kind: 'fail', reasons: ['没出字率% 12 > 10'] });
+  });
+
+  it('limits only the slow fallback; error fallback is shown but never judged', () => {
+    const noisy = { ...base, slowFallbackPct: 8, errorFallbackPct: 60, fallbackDeliveredPct: 68 };
+    expect(judgeBusinessMetrics(noisy, onShelf).kind).toBe('pass');
+    expect(judgeBusinessMetrics(noisy, { ...onShelf, max_slow_fallback_pct: 10 }).kind).toBe(
+      'pass'
+    );
+    expect(judgeBusinessMetrics(noisy, { ...onShelf, max_slow_fallback_pct: 5 })).toEqual({
+      kind: 'fail',
+      reasons: ['超时兜底率% 8 > 5'],
+    });
   });
 
   it('judges the mid-generation interruption rate once a line is set', () => {

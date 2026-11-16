@@ -193,6 +193,42 @@ describe('buildSnapshot：字数档位的契约校验与降级', () => {
     expect(logged.mock.calls.flat().join(' ')).not.toContain('secret rule');
   });
 
+  it('回复风格目录随平台规则读取；缺失不降级，损坏时不注入且日志不含规则正文', () => {
+    const style = {
+      id: 'style-a',
+      name: '尺度',
+      description: '',
+      marker: '{{CHIDU}}',
+      rules: 'secret style rule',
+      enabled: true,
+    };
+    const withStyles = entries(VALID);
+    withStyles.set('reply_style_options', {
+      value: { options: [style] },
+      textValue: null,
+      version: 5,
+    });
+    const snapshot = buildSnapshot(withStyles);
+    expect(snapshot.degraded).toBe(false);
+    expect(snapshot.instructions.replyStyles).toEqual([
+      { id: 'style-a', marker: '{{CHIDU}}', rules: 'secret style rule', enabled: true },
+    ]);
+
+    expect(buildSnapshot(entries(VALID)).instructions.replyStyles).toEqual([]);
+    expect(buildSnapshot(entries(VALID)).degraded).toBe(false);
+
+    const logged = vi.spyOn(observation, 'emit').mockImplementation(() => {});
+    withStyles.set('reply_style_options', {
+      value: { options: [{ ...style, unexpected: true }] },
+      textValue: null,
+      version: 6,
+    });
+    const broken = buildSnapshot(withStyles);
+    expect(broken.degraded).toBe(true);
+    expect(broken.instructions.replyStyles).toEqual([]);
+    expect(JSON.stringify(logged.mock.calls)).not.toContain('secret style rule');
+  });
+
   // 回归：宽松解析放过、shared 契约拦下的配置，过去会静默把整张档位表换成内置默认档，
   // 既不打日志也不置 degraded，且 prompt 侧仍用运营配置——两个出口分叉。
   it.each([

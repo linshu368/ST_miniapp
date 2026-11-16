@@ -1,5 +1,13 @@
 # Frontend 测试、质量、性能与部署
 
+## 根入口冷启动（2026-11-16，本地候选）
+
+PagePerfTracker 接收解析后的语义 pathname，在 SDK 就绪后立即启动，不等待 History fallback 结束；等待框架不能逃过 document watchdog。路径规范化前后同属一个真实落地页，不重新计时。standalone 快照和本机 cold-start 日志位于 gitignore 覆盖的 output 目录，不提交生成服务器产物。
+
+根路径按 landing cookie rewrite 到已有静态页；首次 document 必须 200、无 Location/redirectedFrom。Providers 仅从真实 layout segments 解析两个入口，SSR/初次 hydration 不读取可变 cookie；SDK 捕获和敏感 URL 清理后，微任务中调用原生 replaceState(null, '', canonicalPath)，由 Next 复制内部 state 并同步 pathname。不要把带 \_\_NA 的 history.state 传回此调用，否则 Next14 跳过 Router 同步。业务等待规范路径；受限 History 环境仅走保留内存身份的 SPA fallback。不得 reload 已脱敏 URL 丢失身份。
+
+复用 @startup 覆盖新旧用户、无效 cookie、阻塞/恢复 JS、邀请绑定、History、无额外 document/RSC、无 hydration 错误；保留既有 bridge 去重/失败测试与 Telegram 真机验收。会话可见第一页 critical、分页 normal，signal/总期限不变。groups 指标使用有限 conversation_groups，Faro 白名单在 grafana-schema.ts；历史 detail 含 groups，按发布边界分开比较。
+
 ## 慢页面公共等待回归（2026-11-12，本地候选）
 
 - 请求期限验证必须占满真实 request-concurrency 槽再发请求，断言排队过期没有 fetch、取消不重试、槽可再次使用；再验证排队加响应体消费共用原单次预算。仅测 fetch 自身超时不能证明完整等待有界。复用 `client.retry.test.ts`、`request-timing.test.ts` 与 `request-concurrency.test.ts`。

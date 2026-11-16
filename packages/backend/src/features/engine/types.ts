@@ -64,6 +64,16 @@ export interface EnginePlatformInstructions {
   choiceRules: InstructionSlotRules;
   statusRules: InstructionSlotRules;
   memoryRules: InstructionSlotRules;
+  /** 运营维护的回复风格目录（reply_style_options），按用户 pref_reply_styles 注入模板。 */
+  replyStyles: EngineReplyStyle[];
+}
+
+/** 回复风格的私有部分：marker 是运营写进主体模板的占位符，rules 是开启时替换进去的规则。 */
+export interface EngineReplyStyle {
+  id: string;
+  marker: string;
+  rules: string;
+  enabled: boolean;
 }
 
 export interface EngineInput {

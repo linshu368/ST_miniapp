@@ -126,6 +126,10 @@ export const FreeZoneModelStatusSchema = z.enum(['unlisted', 'listed', 'cooling'
 export const FreeZoneBusinessSnapshotSchema = z.object({
   turns: z.number().int().nonnegative(),
   fallback_delivered_pct: z.number().nullable().default(null),
+  /** 超时兜底：等待时间到了兜底启动时免费模型还没出字（之后才报错也算）、或到总上限都没出字（影响体验）；旧记录为 null */
+  slow_fallback_pct: z.number().nullable().default(null),
+  /** 报错兜底：等待时间到之前就报错、空回复，立刻兜底（影响小）；旧记录为 null */
+  error_fallback_pct: z.number().nullable().default(null),
   no_output_pct: z.number().nullable().default(null),
   /** 免费模型自己交付的轮次（中断率的分母） */
   primary_delivered_turns: z.number().int().nonnegative().nullable().default(null),

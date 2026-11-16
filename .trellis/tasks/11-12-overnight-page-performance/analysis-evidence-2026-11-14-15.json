@@ -1,0 +1,4278 @@
+{
+  "window": {
+    "start": "2026-11-13T16:00:00Z",
+    "end": "2026-11-15T16:00:00Z",
+    "timeZone": "Asia/Shanghai"
+  },
+  "deployedCommit": "47414e2ff5271f2dd5219cf07f19ae0632056fa1",
+  "referenceEvidence": "evidence-2026-11-14-15.json",
+  "collectedAt": "2026-11-16T06:52:07.550Z",
+  "loki": {
+    "apiStagesP95": {
+      "query": "quantile_over_time(0.95, {service_name=\"st-miniapp\"} |~ \"st_api_(queue|headers|body|upstream)\" | logfmt | kind=\"measurement\" | type=~\"st_api_(queue|headers|body|upstream)\" | app_name=\"st-miniapp\" | app_environment=\"production\" | context_measurement_version=\"engineering_v1\" | context_source_measurement_version=\"api_attempt_v1\" | context_outcome=\"ok\" | unwrap duration_ms | __error__=\"\" [172800s]) by(type,context_api_route,context_method)",
+      "data": [
+        {
+          "timestamp": "1794758400.000",
+          "value": 203.86577837732,
+          "labels": {
+            "context_api_route": "character_detail",
+            "context_method": "GET",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1598.8141509149293,
+          "labels": {
+            "context_api_route": "character_detail",
+            "context_method": "GET",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 3484.7605467492685,
+          "labels": {
+            "context_api_route": "character_detail",
+            "context_method": "GET",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 15.15506498743548,
+          "labels": {
+            "context_api_route": "community",
+            "context_method": "GET",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1208.6443785524227,
+          "labels": {
+            "context_api_route": "community",
+            "context_method": "GET",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 2323.854373129617,
+          "labels": {
+            "context_api_route": "community",
+            "context_method": "GET",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 4.878317176214749,
+          "labels": {
+            "context_api_route": "conversation_detail",
+            "context_method": "DELETE",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1014.6740449462325,
+          "labels": {
+            "context_api_route": "conversation_detail",
+            "context_method": "DELETE",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1.0100000000000005,
+          "labels": {
+            "context_api_route": "conversation_detail",
+            "context_method": "DELETE",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 901.2218897795809,
+          "labels": {
+            "context_api_route": "conversation_detail",
+            "context_method": "GET",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1419.2407730224386,
+          "labels": {
+            "context_api_route": "conversation_detail",
+            "context_method": "GET",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 19.31462389550474,
+          "labels": {
+            "context_api_route": "conversation_detail",
+            "context_method": "GET",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 536.000138882776,
+          "labels": {
+            "context_api_route": "conversation_detail",
+            "context_method": "PATCH",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1345.556451878802,
+          "labels": {
+            "context_api_route": "conversation_detail",
+            "context_method": "PATCH",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 656.1649858800383,
+          "labels": {
+            "context_api_route": "conversation_detail",
+            "context_method": "PATCH",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1.0100000000000005,
+          "labels": {
+            "context_api_route": "conversation_detail",
+            "context_method": "POST",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 538.7634251241764,
+          "labels": {
+            "context_api_route": "conversation_detail",
+            "context_method": "POST",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 0.28120777839192473,
+          "labels": {
+            "context_api_route": "conversation_detail",
+            "context_method": "POST",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 23.114342353371864,
+          "labels": {
+            "context_api_route": "conversation_turn",
+            "context_method": "GET",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1598.8141509149293,
+          "labels": {
+            "context_api_route": "conversation_turn",
+            "context_method": "GET",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 4848.994837656737,
+          "labels": {
+            "context_api_route": "conversation_turn",
+            "context_method": "GET",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 8.125882085307405,
+          "labels": {
+            "context_api_route": "conversation_turn",
+            "context_method": "PATCH",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1689.1524924116063,
+          "labels": {
+            "context_api_route": "conversation_turn",
+            "context_method": "PATCH",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 0.7066557710870215,
+          "labels": {
+            "context_api_route": "conversation_turn",
+            "context_method": "PATCH",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 315.20839294989446,
+          "labels": {
+            "context_api_route": "conversation_turn",
+            "context_method": "POST",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1212.1929802278394,
+          "labels": {
+            "context_api_route": "conversation_turn",
+            "context_method": "POST",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 48.971347029668976,
+          "labels": {
+            "context_api_route": "conversation_turn",
+            "context_method": "POST",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 68.14850882374141,
+          "labels": {
+            "context_api_route": "conversation_turn",
+            "context_method": "PUT",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1398.7596556922795,
+          "labels": {
+            "context_api_route": "conversation_turn",
+            "context_method": "PUT",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1.5000255903610795,
+          "labels": {
+            "context_api_route": "conversation_turn",
+            "context_method": "PUT",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 48.006387633928746,
+          "labels": {
+            "context_api_route": "conversations",
+            "context_method": "GET",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1536.3826262886764,
+          "labels": {
+            "context_api_route": "conversations",
+            "context_method": "GET",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 883.3923861349474,
+          "labels": {
+            "context_api_route": "conversations",
+            "context_method": "GET",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 37.80344460873721,
+          "labels": {
+            "context_api_route": "conversations",
+            "context_method": "POST",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1211.0101130026997,
+          "labels": {
+            "context_api_route": "conversations",
+            "context_method": "POST",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 413.99609268029866,
+          "labels": {
+            "context_api_route": "conversations",
+            "context_method": "POST",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 29.16763498486336,
+          "labels": {
+            "context_api_route": "drama_detail",
+            "context_method": "GET",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1551.9905074452397,
+          "labels": {
+            "context_api_route": "drama_detail",
+            "context_method": "GET",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 62.55342063683555,
+          "labels": {
+            "context_api_route": "drama_detail",
+            "context_method": "GET",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 20.490023510403724,
+          "labels": {
+            "context_api_route": "drama_playback",
+            "context_method": "POST",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1236.306348468698,
+          "labels": {
+            "context_api_route": "drama_playback",
+            "context_method": "POST",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 43.916961067165616,
+          "labels": {
+            "context_api_route": "drama_playback",
+            "context_method": "POST",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 11.719180240818067,
+          "labels": {
+            "context_api_route": "drama_social",
+            "context_method": "GET",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1473.6677663057144,
+          "labels": {
+            "context_api_route": "drama_social",
+            "context_method": "GET",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 618.138971835389,
+          "labels": {
+            "context_api_route": "drama_social",
+            "context_method": "GET",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 7.59030867453448,
+          "labels": {
+            "context_api_route": "drama_social",
+            "context_method": "PUT",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 935.7391818112351,
+          "labels": {
+            "context_api_route": "drama_social",
+            "context_method": "PUT",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 0.6864104524211867,
+          "labels": {
+            "context_api_route": "drama_social",
+            "context_method": "PUT",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 943.5046880934929,
+          "labels": {
+            "context_api_route": "dramas",
+            "context_method": "GET",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1849.9006584251729,
+          "labels": {
+            "context_api_route": "dramas",
+            "context_method": "GET",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 63.782682910466804,
+          "labels": {
+            "context_api_route": "dramas",
+            "context_method": "GET",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 2.558613045774209,
+          "labels": {
+            "context_api_route": "favorites",
+            "context_method": "DELETE",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1322.892709960295,
+          "labels": {
+            "context_api_route": "favorites",
+            "context_method": "DELETE",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 253.80612141187666,
+          "labels": {
+            "context_api_route": "favorites",
+            "context_method": "DELETE",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 86.95907464544543,
+          "labels": {
+            "context_api_route": "favorites",
+            "context_method": "GET",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1506.1537754734056,
+          "labels": {
+            "context_api_route": "favorites",
+            "context_method": "GET",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 945.3837955768888,
+          "labels": {
+            "context_api_route": "favorites",
+            "context_method": "GET",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 36.70495680694437,
+          "labels": {
+            "context_api_route": "favorites",
+            "context_method": "PUT",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1548.8689312139263,
+          "labels": {
+            "context_api_route": "favorites",
+            "context_method": "PUT",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 0.6035126616227409,
+          "labels": {
+            "context_api_route": "favorites",
+            "context_method": "PUT",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 14.349179821589455,
+          "labels": {
+            "context_api_route": "growth",
+            "context_method": "GET",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1567.2651789458819,
+          "labels": {
+            "context_api_route": "growth",
+            "context_method": "GET",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 2953.1969536668794,
+          "labels": {
+            "context_api_route": "growth",
+            "context_method": "GET",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 16.161508416303413,
+          "labels": {
+            "context_api_route": "growth",
+            "context_method": "POST",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1697.5528361169013,
+          "labels": {
+            "context_api_route": "growth",
+            "context_method": "POST",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 2571.988357912883,
+          "labels": {
+            "context_api_route": "growth",
+            "context_method": "POST",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 16.889428509963565,
+          "labels": {
+            "context_api_route": "image_plaza",
+            "context_method": "GET",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1188.5356357250755,
+          "labels": {
+            "context_api_route": "image_plaza",
+            "context_method": "GET",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 13.98737664239145,
+          "labels": {
+            "context_api_route": "image_plaza",
+            "context_method": "GET",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 5.547629220424368,
+          "labels": {
+            "context_api_route": "image_plaza",
+            "context_method": "POST",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1659.690954012533,
+          "labels": {
+            "context_api_route": "image_plaza",
+            "context_method": "POST",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1.594850970820784,
+          "labels": {
+            "context_api_route": "image_plaza",
+            "context_method": "POST",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 27.602792775221136,
+          "labels": {
+            "context_api_route": "images",
+            "context_method": "GET",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1424.9123722954932,
+          "labels": {
+            "context_api_route": "images",
+            "context_method": "GET",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 4480.804259603505,
+          "labels": {
+            "context_api_route": "images",
+            "context_method": "GET",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 15.515863574800568,
+          "labels": {
+            "context_api_route": "invite",
+            "context_method": "GET",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1311.5423460424897,
+          "labels": {
+            "context_api_route": "invite",
+            "context_method": "GET",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 2372.482530765408,
+          "labels": {
+            "context_api_route": "invite",
+            "context_method": "GET",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 6.858436161882011,
+          "labels": {
+            "context_api_route": "invite",
+            "context_method": "POST",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1582.4712974263548,
+          "labels": {
+            "context_api_route": "invite",
+            "context_method": "POST",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 363.643962361411,
+          "labels": {
+            "context_api_route": "invite",
+            "context_method": "POST",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 255.14239561256107,
+          "labels": {
+            "context_api_route": "models",
+            "context_method": "GET",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 2110.7424704201176,
+          "labels": {
+            "context_api_route": "models",
+            "context_method": "GET",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1476.5643215188236,
+          "labels": {
+            "context_api_route": "models",
+            "context_method": "GET",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 14.226606688685823,
+          "labels": {
+            "context_api_route": "models",
+            "context_method": "POST",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1663.9514612957212,
+          "labels": {
+            "context_api_route": "models",
+            "context_method": "POST",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1.0100000000000005,
+          "labels": {
+            "context_api_route": "models",
+            "context_method": "POST",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 73.7946825198234,
+          "labels": {
+            "context_api_route": "notifications",
+            "context_method": "GET",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1364.2794747181094,
+          "labels": {
+            "context_api_route": "notifications",
+            "context_method": "GET",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 3903.1345267182232,
+          "labels": {
+            "context_api_route": "notifications",
+            "context_method": "GET",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 107.86153094525329,
+          "labels": {
+            "context_api_route": "notifications",
+            "context_method": "POST",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1118.8888613841525,
+          "labels": {
+            "context_api_route": "notifications",
+            "context_method": "POST",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 0.8699517487540591,
+          "labels": {
+            "context_api_route": "notifications",
+            "context_method": "POST",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 24.977983750285983,
+          "labels": {
+            "context_api_route": "other",
+            "context_method": "GET",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1391.4734210457548,
+          "labels": {
+            "context_api_route": "other",
+            "context_method": "GET",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1951.5224192982894,
+          "labels": {
+            "context_api_route": "other",
+            "context_method": "GET",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 509.6545460509209,
+          "labels": {
+            "context_api_route": "other",
+            "context_method": "PATCH",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 2029.394054279164,
+          "labels": {
+            "context_api_route": "other",
+            "context_method": "PATCH",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 4.445084292338414,
+          "labels": {
+            "context_api_route": "other",
+            "context_method": "PATCH",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 192.03446130213922,
+          "labels": {
+            "context_api_route": "other",
+            "context_method": "POST",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1476.5643215188236,
+          "labels": {
+            "context_api_route": "other",
+            "context_method": "POST",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1034.4813608025938,
+          "labels": {
+            "context_api_route": "other",
+            "context_method": "POST",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 8.045578858170035,
+          "labels": {
+            "context_api_route": "other",
+            "context_method": "PUT",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1539.1841640097794,
+          "labels": {
+            "context_api_route": "other",
+            "context_method": "PUT",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 192.29141118683563,
+          "labels": {
+            "context_api_route": "other",
+            "context_method": "PUT",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 35.00062333141601,
+          "labels": {
+            "context_api_route": "payment",
+            "context_method": "GET",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1364.2794747181094,
+          "labels": {
+            "context_api_route": "payment",
+            "context_method": "GET",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1990.2176951755796,
+          "labels": {
+            "context_api_route": "payment",
+            "context_method": "GET",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 110.75659904674993,
+          "labels": {
+            "context_api_route": "payment",
+            "context_method": "POST",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 4536.288751505701,
+          "labels": {
+            "context_api_route": "payment",
+            "context_method": "POST",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 0.4889541501723234,
+          "labels": {
+            "context_api_route": "payment",
+            "context_method": "POST",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 26.2843246217676,
+          "labels": {
+            "context_api_route": "settings",
+            "context_method": "GET",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1536.3826262886764,
+          "labels": {
+            "context_api_route": "settings",
+            "context_method": "GET",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 3463.771758833706,
+          "labels": {
+            "context_api_route": "settings",
+            "context_method": "GET",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 47.06859123929943,
+          "labels": {
+            "context_api_route": "settings",
+            "context_method": "PATCH",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1120.1493141090882,
+          "labels": {
+            "context_api_route": "settings",
+            "context_method": "PATCH",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 0.6035126616227409,
+          "labels": {
+            "context_api_route": "settings",
+            "context_method": "PATCH",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 7.4726857567203036,
+          "labels": {
+            "context_api_route": "settings",
+            "context_method": "POST",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 3134.6031929343094,
+          "labels": {
+            "context_api_route": "settings",
+            "context_method": "POST",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 0.19904130087832153,
+          "labels": {
+            "context_api_route": "settings",
+            "context_method": "POST",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 20.090427875092146,
+          "labels": {
+            "context_api_route": "support",
+            "context_method": "GET",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1476.5643215188236,
+          "labels": {
+            "context_api_route": "support",
+            "context_method": "GET",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 5566.1501563524325,
+          "labels": {
+            "context_api_route": "support",
+            "context_method": "GET",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 2.402632988978936,
+          "labels": {
+            "context_api_route": "support",
+            "context_method": "POST",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1127.7126765564,
+          "labels": {
+            "context_api_route": "support",
+            "context_method": "POST",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 0.8710314940403786,
+          "labels": {
+            "context_api_route": "support",
+            "context_method": "POST",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 552.3684644643914,
+          "labels": {
+            "context_api_route": "text_postprocess",
+            "context_method": "POST",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 2153.1929782450984,
+          "labels": {
+            "context_api_route": "text_postprocess",
+            "context_method": "POST",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1766.825981977069,
+          "labels": {
+            "context_api_route": "text_postprocess",
+            "context_method": "POST",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 25.330404111162938,
+          "labels": {
+            "context_api_route": "vip",
+            "context_method": "GET",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1410.9105674294346,
+          "labels": {
+            "context_api_route": "vip",
+            "context_method": "GET",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1791.7878367559472,
+          "labels": {
+            "context_api_route": "vip",
+            "context_method": "GET",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 6.120877344066075,
+          "labels": {
+            "context_api_route": "vip",
+            "context_method": "POST",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1082.490633724875,
+          "labels": {
+            "context_api_route": "vip",
+            "context_method": "POST",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 2.484534498880287,
+          "labels": {
+            "context_api_route": "vip",
+            "context_method": "POST",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 40.103434377374555,
+          "labels": {
+            "context_api_route": "voice",
+            "context_method": "GET",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1598.8141509149293,
+          "labels": {
+            "context_api_route": "voice",
+            "context_method": "GET",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 3134.6031929343094,
+          "labels": {
+            "context_api_route": "voice",
+            "context_method": "GET",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 27.80518436055702,
+          "labels": {
+            "context_api_route": "voice",
+            "context_method": "PATCH",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1431.476307436103,
+          "labels": {
+            "context_api_route": "voice",
+            "context_method": "PATCH",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 7.579858650981543,
+          "labels": {
+            "context_api_route": "voice",
+            "context_method": "PATCH",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 10.65671638784346,
+          "labels": {
+            "context_api_route": "wallet",
+            "context_method": "GET",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 956.6584404773099,
+          "labels": {
+            "context_api_route": "wallet",
+            "context_method": "GET",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 7.77286803476689,
+          "labels": {
+            "context_api_route": "wallet",
+            "context_method": "GET",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 7.757858920864557,
+          "labels": {
+            "context_api_route": "wallet",
+            "context_method": "POST",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1033.4909950097756,
+          "labels": {
+            "context_api_route": "wallet",
+            "context_method": "POST",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1337.641563832426,
+          "labels": {
+            "context_api_route": "wallet",
+            "context_method": "POST",
+            "type": "st_api_queue"
+          }
+        }
+      ],
+      "metadata": {
+        "linesReturned": 147,
+        "maxLinesAllowed": 100,
+        "resultsTruncated": false,
+        "totalLinesScanned": 1456162,
+        "startTime": "2026-11-13T16:00:00Z",
+        "endTime": "2026-11-15T16:00:00Z"
+      }
+    },
+    "apiStagesN": {
+      "query": "sum by(type,context_api_route,context_method)(count_over_time({service_name=\"st-miniapp\"} |~ \"st_api_(queue|headers|body|upstream)\" | logfmt | kind=\"measurement\" | type=~\"st_api_(queue|headers|body|upstream)\" | app_name=\"st-miniapp\" | app_environment=\"production\" | context_measurement_version=\"engineering_v1\" | context_source_measurement_version=\"api_attempt_v1\" | context_outcome=\"ok\" [172800s]))",
+      "data": [
+        {
+          "timestamp": "1794758400.000",
+          "value": 7195,
+          "labels": {
+            "context_api_route": "character_detail",
+            "context_method": "GET",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 7195,
+          "labels": {
+            "context_api_route": "character_detail",
+            "context_method": "GET",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 7195,
+          "labels": {
+            "context_api_route": "character_detail",
+            "context_method": "GET",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1024,
+          "labels": {
+            "context_api_route": "community",
+            "context_method": "GET",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1024,
+          "labels": {
+            "context_api_route": "community",
+            "context_method": "GET",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1024,
+          "labels": {
+            "context_api_route": "community",
+            "context_method": "GET",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 151,
+          "labels": {
+            "context_api_route": "conversation_detail",
+            "context_method": "DELETE",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 151,
+          "labels": {
+            "context_api_route": "conversation_detail",
+            "context_method": "DELETE",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 151,
+          "labels": {
+            "context_api_route": "conversation_detail",
+            "context_method": "DELETE",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 19224,
+          "labels": {
+            "context_api_route": "conversation_detail",
+            "context_method": "GET",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 19224,
+          "labels": {
+            "context_api_route": "conversation_detail",
+            "context_method": "GET",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 19224,
+          "labels": {
+            "context_api_route": "conversation_detail",
+            "context_method": "GET",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 16,
+          "labels": {
+            "context_api_route": "conversation_detail",
+            "context_method": "PATCH",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 16,
+          "labels": {
+            "context_api_route": "conversation_detail",
+            "context_method": "PATCH",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 16,
+          "labels": {
+            "context_api_route": "conversation_detail",
+            "context_method": "PATCH",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 5,
+          "labels": {
+            "context_api_route": "conversation_detail",
+            "context_method": "POST",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 5,
+          "labels": {
+            "context_api_route": "conversation_detail",
+            "context_method": "POST",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 5,
+          "labels": {
+            "context_api_route": "conversation_detail",
+            "context_method": "POST",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 3879,
+          "labels": {
+            "context_api_route": "conversation_turn",
+            "context_method": "GET",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 3879,
+          "labels": {
+            "context_api_route": "conversation_turn",
+            "context_method": "GET",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 3879,
+          "labels": {
+            "context_api_route": "conversation_turn",
+            "context_method": "GET",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 386,
+          "labels": {
+            "context_api_route": "conversation_turn",
+            "context_method": "PATCH",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 386,
+          "labels": {
+            "context_api_route": "conversation_turn",
+            "context_method": "PATCH",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 386,
+          "labels": {
+            "context_api_route": "conversation_turn",
+            "context_method": "PATCH",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 13905,
+          "labels": {
+            "context_api_route": "conversation_turn",
+            "context_method": "POST",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 13905,
+          "labels": {
+            "context_api_route": "conversation_turn",
+            "context_method": "POST",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 13905,
+          "labels": {
+            "context_api_route": "conversation_turn",
+            "context_method": "POST",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 32,
+          "labels": {
+            "context_api_route": "conversation_turn",
+            "context_method": "PUT",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 32,
+          "labels": {
+            "context_api_route": "conversation_turn",
+            "context_method": "PUT",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 32,
+          "labels": {
+            "context_api_route": "conversation_turn",
+            "context_method": "PUT",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 3387,
+          "labels": {
+            "context_api_route": "conversations",
+            "context_method": "GET",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 3386,
+          "labels": {
+            "context_api_route": "conversations",
+            "context_method": "GET",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 3386,
+          "labels": {
+            "context_api_route": "conversations",
+            "context_method": "GET",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 822,
+          "labels": {
+            "context_api_route": "conversations",
+            "context_method": "POST",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 822,
+          "labels": {
+            "context_api_route": "conversations",
+            "context_method": "POST",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 822,
+          "labels": {
+            "context_api_route": "conversations",
+            "context_method": "POST",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 356,
+          "labels": {
+            "context_api_route": "drama_detail",
+            "context_method": "GET",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 356,
+          "labels": {
+            "context_api_route": "drama_detail",
+            "context_method": "GET",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 356,
+          "labels": {
+            "context_api_route": "drama_detail",
+            "context_method": "GET",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 536,
+          "labels": {
+            "context_api_route": "drama_playback",
+            "context_method": "POST",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 536,
+          "labels": {
+            "context_api_route": "drama_playback",
+            "context_method": "POST",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 536,
+          "labels": {
+            "context_api_route": "drama_playback",
+            "context_method": "POST",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 323,
+          "labels": {
+            "context_api_route": "drama_social",
+            "context_method": "GET",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 323,
+          "labels": {
+            "context_api_route": "drama_social",
+            "context_method": "GET",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 323,
+          "labels": {
+            "context_api_route": "drama_social",
+            "context_method": "GET",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 2,
+          "labels": {
+            "context_api_route": "drama_social",
+            "context_method": "PUT",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 2,
+          "labels": {
+            "context_api_route": "drama_social",
+            "context_method": "PUT",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 2,
+          "labels": {
+            "context_api_route": "drama_social",
+            "context_method": "PUT",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 235,
+          "labels": {
+            "context_api_route": "dramas",
+            "context_method": "GET",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 235,
+          "labels": {
+            "context_api_route": "dramas",
+            "context_method": "GET",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 235,
+          "labels": {
+            "context_api_route": "dramas",
+            "context_method": "GET",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 14,
+          "labels": {
+            "context_api_route": "favorites",
+            "context_method": "DELETE",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 14,
+          "labels": {
+            "context_api_route": "favorites",
+            "context_method": "DELETE",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 14,
+          "labels": {
+            "context_api_route": "favorites",
+            "context_method": "DELETE",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 4013,
+          "labels": {
+            "context_api_route": "favorites",
+            "context_method": "GET",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 4013,
+          "labels": {
+            "context_api_route": "favorites",
+            "context_method": "GET",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 4013,
+          "labels": {
+            "context_api_route": "favorites",
+            "context_method": "GET",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 157,
+          "labels": {
+            "context_api_route": "favorites",
+            "context_method": "PUT",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 157,
+          "labels": {
+            "context_api_route": "favorites",
+            "context_method": "PUT",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 157,
+          "labels": {
+            "context_api_route": "favorites",
+            "context_method": "PUT",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 922,
+          "labels": {
+            "context_api_route": "growth",
+            "context_method": "GET",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 922,
+          "labels": {
+            "context_api_route": "growth",
+            "context_method": "GET",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 922,
+          "labels": {
+            "context_api_route": "growth",
+            "context_method": "GET",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1400,
+          "labels": {
+            "context_api_route": "growth",
+            "context_method": "POST",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1400,
+          "labels": {
+            "context_api_route": "growth",
+            "context_method": "POST",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1400,
+          "labels": {
+            "context_api_route": "growth",
+            "context_method": "POST",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 230,
+          "labels": {
+            "context_api_route": "image_plaza",
+            "context_method": "GET",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 230,
+          "labels": {
+            "context_api_route": "image_plaza",
+            "context_method": "GET",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 230,
+          "labels": {
+            "context_api_route": "image_plaza",
+            "context_method": "GET",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 157,
+          "labels": {
+            "context_api_route": "image_plaza",
+            "context_method": "POST",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 157,
+          "labels": {
+            "context_api_route": "image_plaza",
+            "context_method": "POST",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 157,
+          "labels": {
+            "context_api_route": "image_plaza",
+            "context_method": "POST",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1817,
+          "labels": {
+            "context_api_route": "images",
+            "context_method": "GET",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1817,
+          "labels": {
+            "context_api_route": "images",
+            "context_method": "GET",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1817,
+          "labels": {
+            "context_api_route": "images",
+            "context_method": "GET",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 483,
+          "labels": {
+            "context_api_route": "invite",
+            "context_method": "GET",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 483,
+          "labels": {
+            "context_api_route": "invite",
+            "context_method": "GET",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 483,
+          "labels": {
+            "context_api_route": "invite",
+            "context_method": "GET",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 17,
+          "labels": {
+            "context_api_route": "invite",
+            "context_method": "POST",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 17,
+          "labels": {
+            "context_api_route": "invite",
+            "context_method": "POST",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 17,
+          "labels": {
+            "context_api_route": "invite",
+            "context_method": "POST",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 2035,
+          "labels": {
+            "context_api_route": "models",
+            "context_method": "GET",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 2035,
+          "labels": {
+            "context_api_route": "models",
+            "context_method": "GET",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 2035,
+          "labels": {
+            "context_api_route": "models",
+            "context_method": "GET",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 571,
+          "labels": {
+            "context_api_route": "models",
+            "context_method": "POST",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 571,
+          "labels": {
+            "context_api_route": "models",
+            "context_method": "POST",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 571,
+          "labels": {
+            "context_api_route": "models",
+            "context_method": "POST",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1145,
+          "labels": {
+            "context_api_route": "notifications",
+            "context_method": "GET",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1145,
+          "labels": {
+            "context_api_route": "notifications",
+            "context_method": "GET",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1145,
+          "labels": {
+            "context_api_route": "notifications",
+            "context_method": "GET",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 18,
+          "labels": {
+            "context_api_route": "notifications",
+            "context_method": "POST",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 18,
+          "labels": {
+            "context_api_route": "notifications",
+            "context_method": "POST",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 18,
+          "labels": {
+            "context_api_route": "notifications",
+            "context_method": "POST",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 15250,
+          "labels": {
+            "context_api_route": "other",
+            "context_method": "GET",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 15250,
+          "labels": {
+            "context_api_route": "other",
+            "context_method": "GET",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 15250,
+          "labels": {
+            "context_api_route": "other",
+            "context_method": "GET",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 10,
+          "labels": {
+            "context_api_route": "other",
+            "context_method": "PATCH",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 10,
+          "labels": {
+            "context_api_route": "other",
+            "context_method": "PATCH",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 10,
+          "labels": {
+            "context_api_route": "other",
+            "context_method": "PATCH",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 6287,
+          "labels": {
+            "context_api_route": "other",
+            "context_method": "POST",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 6287,
+          "labels": {
+            "context_api_route": "other",
+            "context_method": "POST",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 6286,
+          "labels": {
+            "context_api_route": "other",
+            "context_method": "POST",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 31,
+          "labels": {
+            "context_api_route": "other",
+            "context_method": "PUT",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 31,
+          "labels": {
+            "context_api_route": "other",
+            "context_method": "PUT",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 31,
+          "labels": {
+            "context_api_route": "other",
+            "context_method": "PUT",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1862,
+          "labels": {
+            "context_api_route": "payment",
+            "context_method": "GET",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1861,
+          "labels": {
+            "context_api_route": "payment",
+            "context_method": "GET",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1861,
+          "labels": {
+            "context_api_route": "payment",
+            "context_method": "GET",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 4,
+          "labels": {
+            "context_api_route": "payment",
+            "context_method": "POST",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 4,
+          "labels": {
+            "context_api_route": "payment",
+            "context_method": "POST",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 4,
+          "labels": {
+            "context_api_route": "payment",
+            "context_method": "POST",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 3550,
+          "labels": {
+            "context_api_route": "settings",
+            "context_method": "GET",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 3550,
+          "labels": {
+            "context_api_route": "settings",
+            "context_method": "GET",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 3550,
+          "labels": {
+            "context_api_route": "settings",
+            "context_method": "GET",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1427,
+          "labels": {
+            "context_api_route": "settings",
+            "context_method": "PATCH",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1427,
+          "labels": {
+            "context_api_route": "settings",
+            "context_method": "PATCH",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1427,
+          "labels": {
+            "context_api_route": "settings",
+            "context_method": "PATCH",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1,
+          "labels": {
+            "context_api_route": "settings",
+            "context_method": "POST",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1,
+          "labels": {
+            "context_api_route": "settings",
+            "context_method": "POST",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1,
+          "labels": {
+            "context_api_route": "settings",
+            "context_method": "POST",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 621,
+          "labels": {
+            "context_api_route": "support",
+            "context_method": "GET",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 621,
+          "labels": {
+            "context_api_route": "support",
+            "context_method": "GET",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 621,
+          "labels": {
+            "context_api_route": "support",
+            "context_method": "GET",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 14,
+          "labels": {
+            "context_api_route": "support",
+            "context_method": "POST",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 14,
+          "labels": {
+            "context_api_route": "support",
+            "context_method": "POST",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 14,
+          "labels": {
+            "context_api_route": "support",
+            "context_method": "POST",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 675,
+          "labels": {
+            "context_api_route": "text_postprocess",
+            "context_method": "POST",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 675,
+          "labels": {
+            "context_api_route": "text_postprocess",
+            "context_method": "POST",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 675,
+          "labels": {
+            "context_api_route": "text_postprocess",
+            "context_method": "POST",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1507,
+          "labels": {
+            "context_api_route": "vip",
+            "context_method": "GET",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1507,
+          "labels": {
+            "context_api_route": "vip",
+            "context_method": "GET",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1507,
+          "labels": {
+            "context_api_route": "vip",
+            "context_method": "GET",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 18,
+          "labels": {
+            "context_api_route": "vip",
+            "context_method": "POST",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 18,
+          "labels": {
+            "context_api_route": "vip",
+            "context_method": "POST",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 18,
+          "labels": {
+            "context_api_route": "vip",
+            "context_method": "POST",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 2003,
+          "labels": {
+            "context_api_route": "voice",
+            "context_method": "GET",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 2003,
+          "labels": {
+            "context_api_route": "voice",
+            "context_method": "GET",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 2003,
+          "labels": {
+            "context_api_route": "voice",
+            "context_method": "GET",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 20,
+          "labels": {
+            "context_api_route": "voice",
+            "context_method": "PATCH",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 20,
+          "labels": {
+            "context_api_route": "voice",
+            "context_method": "PATCH",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 20,
+          "labels": {
+            "context_api_route": "voice",
+            "context_method": "PATCH",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 47281,
+          "labels": {
+            "context_api_route": "wallet",
+            "context_method": "GET",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 47281,
+          "labels": {
+            "context_api_route": "wallet",
+            "context_method": "GET",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 47281,
+          "labels": {
+            "context_api_route": "wallet",
+            "context_method": "GET",
+            "type": "st_api_queue"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 222,
+          "labels": {
+            "context_api_route": "wallet",
+            "context_method": "POST",
+            "type": "st_api_body"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 222,
+          "labels": {
+            "context_api_route": "wallet",
+            "context_method": "POST",
+            "type": "st_api_headers"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 222,
+          "labels": {
+            "context_api_route": "wallet",
+            "context_method": "POST",
+            "type": "st_api_queue"
+          }
+        }
+      ],
+      "metadata": {
+        "linesReturned": 147,
+        "maxLinesAllowed": 100,
+        "resultsTruncated": false,
+        "totalLinesScanned": 1500178,
+        "startTime": "2026-11-13T16:00:00Z",
+        "endTime": "2026-11-15T16:00:00Z"
+      }
+    },
+    "stallTypes": {
+      "query": "sum by (event_data_route,event_data_navigation_type,event_data_tg_platform) (count_over_time({service_name=\"st-miniapp\"} |= \"st_page_stall\" | logfmt | kind=\"event\" | event_name=\"st_page_stall\" | app_name=\"st-miniapp\" | app_environment=\"production\" | event_data_measurement_version=\"engineering_v1\" [172800s]))",
+      "data": [
+        {
+          "timestamp": "1794758400.000",
+          "value": 107,
+          "labels": {
+            "event_data_navigation_type": "document",
+            "event_data_route": "/characters",
+            "event_data_tg_platform": "android"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 9,
+          "labels": {
+            "event_data_navigation_type": "document",
+            "event_data_route": "/characters",
+            "event_data_tg_platform": "ios"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 4,
+          "labels": {
+            "event_data_navigation_type": "document",
+            "event_data_route": "/characters",
+            "event_data_tg_platform": "tdesktop"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 4,
+          "labels": {
+            "event_data_navigation_type": "document",
+            "event_data_route": "/characters",
+            "event_data_tg_platform": "unknown"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1,
+          "labels": {
+            "event_data_navigation_type": "document",
+            "event_data_route": "/chat/:id",
+            "event_data_tg_platform": "android"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 121,
+          "labels": {
+            "event_data_navigation_type": "document",
+            "event_data_route": "/chats",
+            "event_data_tg_platform": "android"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 9,
+          "labels": {
+            "event_data_navigation_type": "document",
+            "event_data_route": "/chats",
+            "event_data_tg_platform": "ios"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 5,
+          "labels": {
+            "event_data_navigation_type": "document",
+            "event_data_route": "/chats",
+            "event_data_tg_platform": "tdesktop"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 3,
+          "labels": {
+            "event_data_navigation_type": "document",
+            "event_data_route": "/chats",
+            "event_data_tg_platform": "unknown"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1,
+          "labels": {
+            "event_data_navigation_type": "document",
+            "event_data_route": "/creation/characters/new",
+            "event_data_tg_platform": "android"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1,
+          "labels": {
+            "event_data_navigation_type": "document",
+            "event_data_route": "/dramas",
+            "event_data_tg_platform": "android"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1,
+          "labels": {
+            "event_data_navigation_type": "document",
+            "event_data_route": "/profile/invite",
+            "event_data_tg_platform": "android"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1,
+          "labels": {
+            "event_data_navigation_type": "document",
+            "event_data_route": "/watch",
+            "event_data_tg_platform": "android"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 2,
+          "labels": {
+            "event_data_navigation_type": "mount",
+            "event_data_route": "/chat/:id",
+            "event_data_tg_platform": "android"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 2,
+          "labels": {
+            "event_data_navigation_type": "mount",
+            "event_data_route": "/chat/:id",
+            "event_data_tg_platform": "tdesktop"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 2,
+          "labels": {
+            "event_data_navigation_type": "mount",
+            "event_data_route": "/chats",
+            "event_data_tg_platform": "android"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 9,
+          "labels": {
+            "event_data_navigation_type": "spa",
+            "event_data_route": "/characters",
+            "event_data_tg_platform": "android"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 2,
+          "labels": {
+            "event_data_navigation_type": "spa",
+            "event_data_route": "/characters",
+            "event_data_tg_platform": "ios"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 53,
+          "labels": {
+            "event_data_navigation_type": "spa",
+            "event_data_route": "/chat/:id",
+            "event_data_tg_platform": "android"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 7,
+          "labels": {
+            "event_data_navigation_type": "spa",
+            "event_data_route": "/chat/:id",
+            "event_data_tg_platform": "ios"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1,
+          "labels": {
+            "event_data_navigation_type": "spa",
+            "event_data_route": "/chat/:id",
+            "event_data_tg_platform": "tdesktop"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 11,
+          "labels": {
+            "event_data_navigation_type": "spa",
+            "event_data_route": "/chats",
+            "event_data_tg_platform": "android"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1,
+          "labels": {
+            "event_data_navigation_type": "spa",
+            "event_data_route": "/chats",
+            "event_data_tg_platform": "ios"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1,
+          "labels": {
+            "event_data_navigation_type": "spa",
+            "event_data_route": "/chats",
+            "event_data_tg_platform": "unknown"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 8,
+          "labels": {
+            "event_data_navigation_type": "spa",
+            "event_data_route": "/creation",
+            "event_data_tg_platform": "android"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1,
+          "labels": {
+            "event_data_navigation_type": "spa",
+            "event_data_route": "/creation",
+            "event_data_tg_platform": "ios"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 3,
+          "labels": {
+            "event_data_navigation_type": "spa",
+            "event_data_route": "/creation/characters/:id/edit",
+            "event_data_tg_platform": "android"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1,
+          "labels": {
+            "event_data_navigation_type": "spa",
+            "event_data_route": "/creation/characters/new",
+            "event_data_tg_platform": "android"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 8,
+          "labels": {
+            "event_data_navigation_type": "spa",
+            "event_data_route": "/creation/data",
+            "event_data_tg_platform": "android"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 3,
+          "labels": {
+            "event_data_navigation_type": "spa",
+            "event_data_route": "/creators/:id",
+            "event_data_tg_platform": "android"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 20,
+          "labels": {
+            "event_data_navigation_type": "spa",
+            "event_data_route": "/dramas",
+            "event_data_tg_platform": "android"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1,
+          "labels": {
+            "event_data_navigation_type": "spa",
+            "event_data_route": "/dramas",
+            "event_data_tg_platform": "ios"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 5,
+          "labels": {
+            "event_data_navigation_type": "spa",
+            "event_data_route": "/dramas/:id",
+            "event_data_tg_platform": "android"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 1,
+          "labels": {
+            "event_data_navigation_type": "spa",
+            "event_data_route": "/dramas/:id",
+            "event_data_tg_platform": "ios"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 20,
+          "labels": {
+            "event_data_navigation_type": "spa",
+            "event_data_route": "/profile",
+            "event_data_tg_platform": "android"
+          }
+        },
+        {
+          "timestamp": "1794758400.000",
+          "value": 5,
+          "labels": {
+            "event_data_navigation_type": "spa",
+            "event_data_route": "/watch",
+            "event_data_tg_platform": "android"
+          }
+        }
+      ],
+      "metadata": {
+        "linesReturned": 36,
+        "maxLinesAllowed": 100,
+        "resultsTruncated": false,
+        "totalLinesScanned": 1511473,
+        "startTime": "2026-11-13T16:00:00Z",
+        "endTime": "2026-11-15T16:00:00Z"
+      }
+    }
+  },
+  "sentry": {
+    "startupStages": {
+      "executedSearch": {
+        "dataset": "metrics",
+        "query": "environment:production timestamp:>=2026-11-13T16:00:00Z timestamp:<2026-11-15T16:00:00Z metric.name:startup.stage.duration route:[/chats,/characters] tg_platform:[android,ios] definition:startup_phases_v2",
+        "fields": ["route", "tg_platform", "stage", "p95(value)", "count(value)"],
+        "sort": "-count(value)",
+        "timeRange": {
+          "statsPeriod": "7d",
+          "start": null,
+          "end": null
+        }
+      },
+      "results": [
+        {
+          "route": "/chats",
+          "tg_platform": "android",
+          "stage": "ready_call",
+          "p95(value)": 6.62,
+          "count(value)": 482
+        },
+        {
+          "route": "/chats",
+          "tg_platform": "android",
+          "stage": "before_providers",
+          "p95(value)": 5433.18,
+          "count(value)": 482
+        },
+        {
+          "route": "/chats",
+          "tg_platform": "android",
+          "stage": "last_script_to_providers",
+          "p95(value)": 138.36,
+          "count(value)": 482
+        },
+        {
+          "route": "/chats",
+          "tg_platform": "android",
+          "stage": "document_download",
+          "p95(value)": 301.09998,
+          "count(value)": 482
+        },
+        {
+          "route": "/chats",
+          "tg_platform": "android",
+          "stage": "document_ttfb",
+          "p95(value)": 4405.48,
+          "count(value)": 482
+        },
+        {
+          "route": "/chats",
+          "tg_platform": "android",
+          "stage": "module_to_render",
+          "p95(value)": 119.22,
+          "count(value)": 482
+        },
+        {
+          "route": "/chats",
+          "tg_platform": "android",
+          "stage": "telegram_init",
+          "p95(value)": 14.2,
+          "count(value)": 482
+        },
+        {
+          "route": "/chats",
+          "tg_platform": "android",
+          "stage": "bootstrap",
+          "p95(value)": 80.38,
+          "count(value)": 482
+        },
+        {
+          "route": "/chats",
+          "tg_platform": "android",
+          "stage": "render_to_init",
+          "p95(value)": 132.08,
+          "count(value)": 482
+        },
+        {
+          "route": "/chats",
+          "tg_platform": "android",
+          "stage": "next_script_fetch_union",
+          "p95(value)": 1168.64,
+          "count(value)": 482
+        },
+        {
+          "route": "/chats",
+          "tg_platform": "android",
+          "stage": "react_commit",
+          "p95(value)": 74.7,
+          "count(value)": 482
+        },
+        {
+          "route": "/characters",
+          "tg_platform": "android",
+          "stage": "bootstrap",
+          "p95(value)": 50.7,
+          "count(value)": 342
+        },
+        {
+          "route": "/characters",
+          "tg_platform": "android",
+          "stage": "render_to_init",
+          "p95(value)": 91.02,
+          "count(value)": 342
+        },
+        {
+          "route": "/characters",
+          "tg_platform": "android",
+          "stage": "module_to_render",
+          "p95(value)": 132.5,
+          "count(value)": 342
+        },
+        {
+          "route": "/characters",
+          "tg_platform": "android",
+          "stage": "react_commit",
+          "p95(value)": 139.08,
+          "count(value)": 342
+        },
+        {
+          "route": "/characters",
+          "tg_platform": "android",
+          "stage": "document_ttfb",
+          "p95(value)": 5255.52,
+          "count(value)": 342
+        },
+        {
+          "route": "/characters",
+          "tg_platform": "android",
+          "stage": "next_script_fetch_union",
+          "p95(value)": 4501,
+          "count(value)": 342
+        },
+        {
+          "route": "/characters",
+          "tg_platform": "android",
+          "stage": "last_script_to_providers",
+          "p95(value)": 170.40001,
+          "count(value)": 342
+        },
+        {
+          "route": "/characters",
+          "tg_platform": "android",
+          "stage": "ready_call",
+          "p95(value)": 7.16,
+          "count(value)": 342
+        },
+        {
+          "route": "/characters",
+          "tg_platform": "android",
+          "stage": "document_download",
+          "p95(value)": 341.41998,
+          "count(value)": 342
+        },
+        {
+          "route": "/characters",
+          "tg_platform": "android",
+          "stage": "telegram_init",
+          "p95(value)": 17.04,
+          "count(value)": 342
+        },
+        {
+          "route": "/characters",
+          "tg_platform": "android",
+          "stage": "before_providers",
+          "p95(value)": 8794.22,
+          "count(value)": 342
+        },
+        {
+          "route": "/characters",
+          "tg_platform": "ios",
+          "stage": "bootstrap",
+          "p95(value)": 4.2,
+          "count(value)": 86
+        },
+        {
+          "route": "/characters",
+          "tg_platform": "ios",
+          "stage": "before_providers",
+          "p95(value)": 8657.8,
+          "count(value)": 86
+        },
+        {
+          "route": "/characters",
+          "tg_platform": "ios",
+          "stage": "module_to_render",
+          "p95(value)": 33,
+          "count(value)": 86
+        },
+        {
+          "route": "/characters",
+          "tg_platform": "ios",
+          "stage": "telegram_init",
+          "p95(value)": 6,
+          "count(value)": 86
+        },
+        {
+          "route": "/characters",
+          "tg_platform": "ios",
+          "stage": "ready_call",
+          "p95(value)": 3,
+          "count(value)": 86
+        },
+        {
+          "route": "/characters",
+          "tg_platform": "ios",
+          "stage": "last_script_to_providers",
+          "p95(value)": 127.2,
+          "count(value)": 86
+        },
+        {
+          "route": "/characters",
+          "tg_platform": "ios",
+          "stage": "document_ttfb",
+          "p95(value)": 3645.8,
+          "count(value)": 86
+        },
+        {
+          "route": "/characters",
+          "tg_platform": "ios",
+          "stage": "render_to_init",
+          "p95(value)": 24.2,
+          "count(value)": 86
+        },
+        {
+          "route": "/characters",
+          "tg_platform": "ios",
+          "stage": "document_download",
+          "p95(value)": 638.2,
+          "count(value)": 86
+        },
+        {
+          "route": "/characters",
+          "tg_platform": "ios",
+          "stage": "next_script_fetch_union",
+          "p95(value)": 2421.6,
+          "count(value)": 86
+        },
+        {
+          "route": "/characters",
+          "tg_platform": "ios",
+          "stage": "react_commit",
+          "p95(value)": 84,
+          "count(value)": 86
+        },
+        {
+          "route": "/chats",
+          "tg_platform": "ios",
+          "stage": "ready_call",
+          "p95(value)": 2.3,
+          "count(value)": 84
+        },
+        {
+          "route": "/chats",
+          "tg_platform": "ios",
+          "stage": "bootstrap",
+          "p95(value)": 4,
+          "count(value)": 84
+        },
+        {
+          "route": "/chats",
+          "tg_platform": "ios",
+          "stage": "render_to_init",
+          "p95(value)": 25.6,
+          "count(value)": 84
+        },
+        {
+          "route": "/chats",
+          "tg_platform": "ios",
+          "stage": "telegram_init",
+          "p95(value)": 5.3,
+          "count(value)": 84
+        },
+        {
+          "route": "/chats",
+          "tg_platform": "ios",
+          "stage": "last_script_to_providers",
+          "p95(value)": 150.8,
+          "count(value)": 84
+        },
+        {
+          "route": "/chats",
+          "tg_platform": "ios",
+          "stage": "next_script_fetch_union",
+          "p95(value)": 1018.5,
+          "count(value)": 84
+        },
+        {
+          "route": "/chats",
+          "tg_platform": "ios",
+          "stage": "module_to_render",
+          "p95(value)": 82.6,
+          "count(value)": 84
+        },
+        {
+          "route": "/chats",
+          "tg_platform": "ios",
+          "stage": "react_commit",
+          "p95(value)": 43,
+          "count(value)": 84
+        },
+        {
+          "route": "/chats",
+          "tg_platform": "ios",
+          "stage": "document_ttfb",
+          "p95(value)": 2938.9,
+          "count(value)": 84
+        },
+        {
+          "route": "/chats",
+          "tg_platform": "ios",
+          "stage": "document_download",
+          "p95(value)": 762.5,
+          "count(value)": 84
+        },
+        {
+          "route": "/chats",
+          "tg_platform": "ios",
+          "stage": "before_providers",
+          "p95(value)": 6308.5,
+          "count(value)": 84
+        },
+        {
+          "route": "/chats",
+          "tg_platform": "android",
+          "stage": "paint_wait",
+          "p95(value)": 40,
+          "count(value)": 22
+        },
+        {
+          "route": "/characters",
+          "tg_platform": "ios",
+          "stage": "paint_wait",
+          "p95(value)": 162.2,
+          "count(value)": 14
+        },
+        {
+          "route": "/characters",
+          "tg_platform": "android",
+          "stage": "paint_wait",
+          "p95(value)": 34.4,
+          "count(value)": 9
+        },
+        {
+          "route": "/chats",
+          "tg_platform": "ios",
+          "stage": "paint_wait",
+          "p95(value)": 143,
+          "count(value)": 9
+        }
+      ],
+      "notes": []
+    },
+    "apiPlatformBaseline": {
+      "executedSearch": {
+        "dataset": "metrics",
+        "query": "environment:production timestamp:>=2026-11-13T16:00:00Z timestamp:<2026-11-15T16:00:00Z metric.name:api.request.duration outcome:ok route:[/api/lobby-characters,/api/v1/conversations/:id,/api/v1/conversations/groups,/api/v1/conversations,/api/creator/analytics] tg_platform:[android,ios]",
+        "fields": ["route", "tg_platform", "p95(value)", "count(value)"],
+        "sort": "-count(value)",
+        "timeRange": {
+          "statsPeriod": "7d",
+          "start": null,
+          "end": null
+        }
+      },
+      "results": [
+        {
+          "route": "/api/v1/conversations/:id",
+          "tg_platform": "android",
+          "p95(value)": 2003.0076,
+          "count(value)": 15805
+        },
+        {
+          "route": "/api/v1/conversations",
+          "tg_platform": "android",
+          "p95(value)": 1993.5121,
+          "count(value)": 3736
+        },
+        {
+          "route": "/api/v1/conversations/:id",
+          "tg_platform": "ios",
+          "p95(value)": 2059.2937,
+          "count(value)": 2141
+        },
+        {
+          "route": "/api/lobby-characters",
+          "tg_platform": "android",
+          "p95(value)": 3154.0051,
+          "count(value)": 1398
+        },
+        {
+          "route": "/api/v1/conversations/groups",
+          "tg_platform": "android",
+          "p95(value)": 3205.625,
+          "count(value)": 1360
+        },
+        {
+          "route": "/api/v1/conversations",
+          "tg_platform": "ios",
+          "p95(value)": 2012,
+          "count(value)": 482
+        },
+        {
+          "route": "/api/lobby-characters",
+          "tg_platform": "ios",
+          "p95(value)": 5888,
+          "count(value)": 270
+        },
+        {
+          "route": "/api/v1/conversations/groups",
+          "tg_platform": "ios",
+          "p95(value)": 3180.1,
+          "count(value)": 189
+        },
+        {
+          "route": "/api/creator/analytics",
+          "tg_platform": "android",
+          "p95(value)": 5955.86,
+          "count(value)": 34
+        },
+        {
+          "route": "/api/creator/analytics",
+          "tg_platform": "ios",
+          "p95(value)": 801,
+          "count(value)": 1
+        }
+      ],
+      "notes": []
+    },
+    "errorReleases": {
+      "executedSearch": {
+        "dataset": "errors",
+        "query": "environment:production timestamp:>=2026-11-13T16:00:00Z timestamp:<2026-11-15T16:00:00Z level:[error,fatal]",
+        "fields": ["release", "count()"],
+        "sort": "-count()",
+        "timeRange": {
+          "statsPeriod": null,
+          "start": "2026-11-13T16:00:00Z",
+          "end": "2026-11-15T16:00:00Z"
+        }
+      },
+      "results": [
+        {
+          "release": "47414e2ff5271f2dd5219cf07f19ae0632056fa1",
+          "count()": 229
+        }
+      ],
+      "notes": []
+    },
+    "slow_breakdown": {
+      "executedSearch": {
+        "dataset": "errors",
+        "query": "environment:production timestamp:>=2026-11-13T16:00:00Z timestamp:<2026-11-15T16:00:00Z title:slow_request",
+        "fields": ["transaction", "count()"],
+        "sort": "-count()",
+        "timeRange": {
+          "statsPeriod": null,
+          "start": "2026-11-13T16:00:00Z",
+          "end": "2026-11-15T16:00:00Z"
+        }
+      },
+      "results": [
+        {
+          "transaction": "/chat/:characterId",
+          "count()": 3601
+        },
+        {
+          "transaction": "/characters",
+          "count()": 1028
+        },
+        {
+          "transaction": "/profile",
+          "count()": 599
+        },
+        {
+          "transaction": "/chats",
+          "count()": 374
+        },
+        {
+          "transaction": "/dramas",
+          "count()": 102
+        },
+        {
+          "transaction": "",
+          "count()": 95
+        },
+        {
+          "transaction": "/creation",
+          "count()": 73
+        },
+        {
+          "transaction": "/watch",
+          "count()": 27
+        },
+        {
+          "transaction": "/profile/recharge",
+          "count()": 18
+        },
+        {
+          "transaction": "/creation/characters/new",
+          "count()": 18
+        },
+        {
+          "transaction": "/profile/messages",
+          "count()": 11
+        },
+        {
+          "transaction": "/creation/data",
+          "count()": 10
+        },
+        {
+          "transaction": "/profile/recharge/:orderId",
+          "count()": 8
+        },
+        {
+          "transaction": "/vip",
+          "count()": 6
+        },
+        {
+          "transaction": "/creation/characters/:id/edit",
+          "count()": 5
+        },
+        {
+          "transaction": "/profile/spending",
+          "count()": 5
+        },
+        {
+          "transaction": "/creators/:id",
+          "count()": 5
+        },
+        {
+          "transaction": "incomplete-app-router-transaction",
+          "count()": 3
+        },
+        {
+          "transaction": "/dramas/:id",
+          "count()": 3
+        },
+        {
+          "transaction": "/create/studio/:conversationId",
+          "count()": 2
+        },
+        {
+          "transaction": "/profile/invite",
+          "count()": 1
+        },
+        {
+          "transaction": "/profile/support",
+          "count()": 1
+        },
+        {
+          "transaction": "/wishes",
+          "count()": 1
+        },
+        {
+          "transaction": "/create",
+          "count()": 1
+        }
+      ],
+      "notes": []
+    },
+    "eventSamples": {
+      "ST-MINIAPP-8T": {
+        "executedSearch": {
+          "dataset": "errors",
+          "query": "environment:production AND timestamp:>=2026-11-13T16:00:00Z AND timestamp:<2026-11-15T16:00:00Z AND issue:ST-MINIAPP-8T",
+          "fields": ["id", "timestamp", "issue", "title", "transaction", "release", "trace"],
+          "sort": "-timestamp",
+          "timeRange": {
+            "statsPeriod": null,
+            "start": "2026-11-13T16:00:00Z",
+            "end": "2026-11-15T16:00:00Z"
+          }
+        },
+        "events": [
+          {
+            "id": "34df7d9bf72849b3bda41cd33fccdadb",
+            "timestamp": "2026-11-15T15:53:14+00:00",
+            "issue": "ST-MINIAPP-8T",
+            "transaction": "GET /api/v1/conversations/:id",
+            "release": "47414e2ff5271f2dd5219cf07f19ae0632056fa1",
+            "trace": "e7d625ca27024a90a16e2ac769218a49"
+          },
+          {
+            "id": "e69b36d176004edd883ea5da7f9404cc",
+            "timestamp": "2026-11-15T15:40:56+00:00",
+            "issue": "ST-MINIAPP-8T",
+            "transaction": "GET /api/v1/conversations/:id",
+            "release": "47414e2ff5271f2dd5219cf07f19ae0632056fa1",
+            "trace": "fd764869a2614eb09a478f30ee089472"
+          }
+        ]
+      },
+      "ST-MINIAPP-AD": {
+        "executedSearch": {
+          "dataset": "errors",
+          "query": "environment:production timestamp:>=2026-11-13T16:00:00Z timestamp:<2026-11-15T16:00:00Z issue:ST-MINIAPP-AD",
+          "fields": ["id", "timestamp", "issue", "title", "transaction", "release", "trace"],
+          "sort": "-timestamp",
+          "timeRange": {
+            "statsPeriod": null,
+            "start": "2026-11-13T16:00:00Z",
+            "end": "2026-11-15T16:00:00Z"
+          }
+        },
+        "events": [
+          {
+            "id": "1f5d7184550f4e69a008129258006b94",
+            "timestamp": "2026-11-15T15:35:10+00:00",
+            "issue": "ST-MINIAPP-AD",
+            "transaction": "POST /api/v1/conversations/:id/first-token",
+            "release": "47414e2ff5271f2dd5219cf07f19ae0632056fa1",
+            "trace": "049c3004b59b443ebdaf993ea9e2e978"
+          },
+          {
+            "id": "0053aeeec7e644289bcb654ac1b35ac9",
+            "timestamp": "2026-11-15T15:35:09+00:00",
+            "issue": "ST-MINIAPP-AD",
+            "transaction": "POST /api/v1/conversations/:id/first-token",
+            "release": "47414e2ff5271f2dd5219cf07f19ae0632056fa1",
+            "trace": "4a00037cde594d35bdb017399a02d7d2"
+          }
+        ]
+      },
+      "ST-MINIAPP-8S": {
+        "executedSearch": {
+          "dataset": "errors",
+          "query": "environment:production timestamp:>=2026-11-13T16:00:00Z timestamp:<2026-11-15T16:00:00Z issue:ST-MINIAPP-8S",
+          "fields": ["id", "timestamp", "issue", "title", "transaction", "release", "trace"],
+          "sort": "-timestamp",
+          "timeRange": {
+            "statsPeriod": null,
+            "start": "2026-11-13T16:00:00Z",
+            "end": "2026-11-15T16:00:00Z"
+          }
+        },
+        "events": [
+          {
+            "id": "37010a5a68fa40d3b59e19ead9e04e42",
+            "timestamp": "2026-11-15T15:35:07+00:00",
+            "issue": "ST-MINIAPP-8S",
+            "transaction": "GET /api/v1/conversations/:id",
+            "release": "47414e2ff5271f2dd5219cf07f19ae0632056fa1",
+            "trace": "6207ded7da924ea0a61e840390958375"
+          },
+          {
+            "id": "948509b3d5544b74b63b98d16025638a",
+            "timestamp": "2026-11-13T20:27:02+00:00",
+            "issue": "ST-MINIAPP-8S",
+            "transaction": "GET /api/v1/conversations/:id",
+            "release": "47414e2ff5271f2dd5219cf07f19ae0632056fa1",
+            "trace": "1f40b46d4cba4e20879a0eb4cea54b4b"
+          }
+        ]
+      },
+      "ST-MINIAPP-AJ": {
+        "executedSearch": {
+          "dataset": "errors",
+          "query": "environment:production timestamp:>=2026-11-13T16:00:00Z timestamp:<2026-11-15T16:00:00Z issue:ST-MINIAPP-AJ",
+          "fields": ["id", "timestamp", "issue", "title", "transaction", "release", "trace"],
+          "sort": "-timestamp",
+          "timeRange": {
+            "statsPeriod": null,
+            "start": "2026-11-13T16:00:00Z",
+            "end": "2026-11-15T16:00:00Z"
+          }
+        },
+        "events": [
+          {
+            "id": "613194e8185a479fa144bf24f0acb5e0",
+            "timestamp": "2026-11-14T12:15:10+00:00",
+            "issue": "ST-MINIAPP-AJ",
+            "transaction": "POST /api/v1/conversations/:id/first-token",
+            "release": "47414e2ff5271f2dd5219cf07f19ae0632056fa1",
+            "trace": "7f8a8db530c14e7d8474de04a5d060a3"
+          },
+          {
+            "id": "4177697a6c7346b689af53e4f62efe65",
+            "timestamp": "2026-11-14T12:15:06+00:00",
+            "issue": "ST-MINIAPP-AJ",
+            "transaction": "GET /api/community/entry",
+            "release": "47414e2ff5271f2dd5219cf07f19ae0632056fa1",
+            "trace": "4dcbebccdaa94fd5aa5ee5ae01937783"
+          }
+        ]
+      },
+      "ST-MINIAPP-BR": {
+        "executedSearch": {
+          "dataset": "errors",
+          "query": "environment:production timestamp:>=2026-11-13T16:00:00Z timestamp:<2026-11-15T16:00:00Z issue:ST-MINIAPP-BR",
+          "fields": ["id", "timestamp", "issue", "title", "transaction", "release", "trace"],
+          "sort": "-timestamp",
+          "timeRange": {
+            "statsPeriod": null,
+            "start": "2026-11-13T16:00:00Z",
+            "end": "2026-11-15T16:00:00Z"
+          }
+        },
+        "events": [
+          {
+            "id": "b126c0b289a0423382469f68885d08b1",
+            "timestamp": "2026-11-15T15:34:57+00:00",
+            "issue": "ST-MINIAPP-BR",
+            "transaction": "GET /api/v1/conversations/groups",
+            "release": "47414e2ff5271f2dd5219cf07f19ae0632056fa1",
+            "trace": "02451b51bdba4b3cb0e993ed926d2626"
+          },
+          {
+            "id": "0553ff6f0a1241039548dabb99028c05",
+            "timestamp": "2026-11-15T09:20:23+00:00",
+            "issue": "ST-MINIAPP-BR",
+            "transaction": "GET /api/v1/conversations/groups",
+            "release": "47414e2ff5271f2dd5219cf07f19ae0632056fa1",
+            "trace": "3f9efeb33e114476a47f7c45e74b7578"
+          }
+        ]
+      },
+      "ST-MINIAPP-C8": {
+        "executedSearch": {
+          "dataset": "errors",
+          "query": "environment:production timestamp:>=2026-11-13T16:00:00Z timestamp:<2026-11-15T16:00:00Z issue:ST-MINIAPP-C8",
+          "fields": ["id", "timestamp", "issue", "title", "transaction", "release", "trace"],
+          "sort": "-timestamp",
+          "timeRange": {
+            "statsPeriod": null,
+            "start": "2026-11-13T16:00:00Z",
+            "end": "2026-11-15T16:00:00Z"
+          }
+        },
+        "events": [
+          {
+            "id": "a90ccc7352d34f42b13f89554bdab54f",
+            "timestamp": "2026-11-15T15:53:57+00:00",
+            "issue": "ST-MINIAPP-C8",
+            "transaction": "",
+            "release": "47414e2ff5271f2dd5219cf07f19ae0632056fa1",
+            "trace": "4edfb4be5ea74e47bb99c427ae0c6ceb"
+          },
+          {
+            "id": "ad6a556f2cdd48038743197187ca42f4",
+            "timestamp": "2026-11-15T15:53:54+00:00",
+            "issue": "ST-MINIAPP-C8",
+            "transaction": "/creation/characters/new",
+            "release": "47414e2ff5271f2dd5219cf07f19ae0632056fa1",
+            "trace": "dcc94c57188c4218ba43e3a22001cfd1"
+          }
+        ]
+      },
+      "ST-MINIAPP-34": {
+        "executedSearch": {
+          "dataset": "errors",
+          "query": "environment:production timestamp:>=2026-11-13T16:00:00Z timestamp:<2026-11-15T16:00:00Z issue:ST-MINIAPP-34",
+          "fields": ["id", "timestamp", "issue", "title", "transaction", "release", "trace"],
+          "sort": "-timestamp",
+          "timeRange": {
+            "statsPeriod": null,
+            "start": "2026-11-13T16:00:00Z",
+            "end": "2026-11-15T16:00:00Z"
+          }
+        },
+        "events": [
+          {
+            "id": "0db26dd1be4a4d65ae4a14e06f40afe1",
+            "timestamp": "2026-11-15T09:20:59+00:00",
+            "issue": "ST-MINIAPP-34",
+            "transaction": "/chat/:characterId",
+            "release": "47414e2ff5271f2dd5219cf07f19ae0632056fa1",
+            "trace": "346c1ba0f5f8415ca275ebb60bc10d61"
+          },
+          {
+            "id": "5cc3c5729e1c4400b9a88fd58d39b769",
+            "timestamp": "2026-11-15T09:10:57+00:00",
+            "issue": "ST-MINIAPP-34",
+            "transaction": "/chats",
+            "release": "47414e2ff5271f2dd5219cf07f19ae0632056fa1",
+            "trace": "4c22e95f0aa54e2e8908fabd54f3a3db"
+          }
+        ]
+      }
+    }
+  },
+  "railway": {
+    "detail_failures_text": {
+      "query": {
+        "filter": "\"Conversation detail failed\"",
+        "start": "2026-11-13T16:00:00Z",
+        "end": "2026-11-15T16:00:00Z"
+      },
+      "returned": 149,
+      "limit": 500,
+      "phaseCounts": {
+        "page": 133,
+        "recover": 4,
+        "owner": 10,
+        "identity": 1,
+        "opening": 1
+      },
+      "errorTypes": {
+        "DOMException": 131,
+        "Error": 7,
+        "ConversationRepositoryError": 10,
+        "Object": 1
+      },
+      "codes": {
+        "P0404": 1
+      },
+      "classifications": {
+        "explicit_abort": 138,
+        "history_page_read": 2,
+        "identity_read": 1
+      },
+      "samples": [
+        {
+          "timestamp": "2026-11-13T16:11:08.975037692Z",
+          "phase": "page",
+          "elapsedMs": 296,
+          "errorType": "DOMException",
+          "codes": [],
+          "flags": ["explicit_abort"]
+        },
+        {
+          "timestamp": "2026-11-13T16:13:04.653182432Z",
+          "phase": "page",
+          "elapsedMs": 79,
+          "errorType": "DOMException",
+          "codes": [],
+          "flags": ["explicit_abort"]
+        },
+        {
+          "timestamp": "2026-11-13T16:14:00.588625791Z",
+          "phase": "page",
+          "elapsedMs": 78,
+          "errorType": "DOMException",
+          "codes": [],
+          "flags": ["explicit_abort"]
+        },
+        {
+          "timestamp": "2026-11-13T16:25:38.202155579Z",
+          "phase": "page",
+          "elapsedMs": 109,
+          "errorType": "DOMException",
+          "codes": [],
+          "flags": ["explicit_abort"]
+        },
+        {
+          "timestamp": "2026-11-13T16:35:34.783222816Z",
+          "phase": "page",
+          "elapsedMs": 122,
+          "errorType": "DOMException",
+          "codes": [],
+          "flags": ["explicit_abort"]
+        },
+        {
+          "timestamp": "2026-11-13T17:15:38.964341578Z",
+          "phase": "page",
+          "elapsedMs": 128,
+          "errorType": "DOMException",
+          "codes": [],
+          "flags": ["explicit_abort"]
+        },
+        {
+          "timestamp": "2026-11-13T17:15:51.744045866Z",
+          "phase": "page",
+          "elapsedMs": 69,
+          "errorType": "DOMException",
+          "codes": [],
+          "flags": ["explicit_abort"]
+        },
+        {
+          "timestamp": "2026-11-13T17:34:10.550098988Z",
+          "phase": "page",
+          "elapsedMs": 125,
+          "errorType": "DOMException",
+          "codes": [],
+          "flags": ["explicit_abort"]
+        },
+        {
+          "timestamp": "2026-11-13T17:57:45.034799835Z",
+          "phase": "page",
+          "elapsedMs": 60,
+          "errorType": "DOMException",
+          "codes": [],
+          "flags": ["explicit_abort"]
+        },
+        {
+          "timestamp": "2026-11-13T18:26:59.153022648Z",
+          "phase": "page",
+          "elapsedMs": 120,
+          "errorType": "DOMException",
+          "codes": [],
+          "flags": ["explicit_abort"]
+        },
+        {
+          "timestamp": "2026-11-13T18:27:07.086691329Z",
+          "phase": "page",
+          "elapsedMs": 104,
+          "errorType": "DOMException",
+          "codes": [],
+          "flags": ["explicit_abort"]
+        },
+        {
+          "timestamp": "2026-11-13T18:31:26.419163346Z",
+          "phase": "page",
+          "elapsedMs": 138,
+          "errorType": "DOMException",
+          "codes": [],
+          "flags": ["explicit_abort"]
+        },
+        {
+          "timestamp": "2026-11-13T19:23:00.195832175Z",
+          "phase": "page",
+          "elapsedMs": 115,
+          "errorType": "DOMException",
+          "codes": [],
+          "flags": ["explicit_abort"]
+        },
+        {
+          "timestamp": "2026-11-13T19:33:12.676564179Z",
+          "phase": "page",
+          "elapsedMs": 146,
+          "errorType": "DOMException",
+          "codes": [],
+          "flags": ["explicit_abort"]
+        },
+        {
+          "timestamp": "2026-11-13T20:09:43.474345355Z",
+          "phase": "page",
+          "elapsedMs": 944,
+          "errorType": "DOMException",
+          "codes": [],
+          "flags": ["explicit_abort"]
+        },
+        {
+          "timestamp": "2026-11-13T20:15:57.356304340Z",
+          "phase": "page",
+          "elapsedMs": 53,
+          "errorType": "DOMException",
+          "codes": [],
+          "flags": ["explicit_abort"]
+        },
+        {
+          "timestamp": "2026-11-13T20:16:02.649207816Z",
+          "phase": "page",
+          "elapsedMs": 84,
+          "errorType": "DOMException",
+          "codes": [],
+          "flags": ["explicit_abort"]
+        },
+        {
+          "timestamp": "2026-11-13T20:16:52.574258879Z",
+          "phase": "page",
+          "elapsedMs": 931,
+          "errorType": "DOMException",
+          "codes": [],
+          "flags": ["explicit_abort"]
+        },
+        {
+          "timestamp": "2026-11-13T20:20:44.782956012Z",
+          "phase": "page",
+          "elapsedMs": 61,
+          "errorType": "DOMException",
+          "codes": [],
+          "flags": ["explicit_abort"]
+        },
+        {
+          "timestamp": "2026-11-13T20:27:02.199383825Z",
+          "phase": "page",
+          "elapsedMs": 5598,
+          "errorType": "Error",
+          "codes": [],
+          "flags": ["explicit_abort", "history_page_read"]
+        }
+      ]
+    },
+    "cluster_decoded": {
+      "query": {
+        "filter": "@level:error",
+        "start": "2026-11-15T15:30:00Z",
+        "end": "2026-11-15T15:40:00Z"
+      },
+      "returned": 96,
+      "limit": 500,
+      "phaseCounts": {
+        "unlabelled": 96
+      },
+      "errorTypes": {
+        "DOMException": 5,
+        "StoryMemoryJobError": 6,
+        "Error": 20,
+        "PaymentPlansConfigError": 1,
+        "Object": 1,
+        "AbortError": 3
+      },
+      "codes": {
+        "ABORT_ERR": 3
+      },
+      "classifications": {
+        "explicit_abort": 37,
+        "group_list_read": 1,
+        "history_page_read": 1,
+        "first_token_report": 2
+      },
+      "samples": [
+        {
+          "timestamp": "2026-11-15T15:31:23.171721102Z",
+          "phase": "unlabelled",
+          "errorType": "DOMException",
+          "codes": [],
+          "flags": ["explicit_abort"]
+        },
+        {
+          "timestamp": "2026-11-15T15:31:56.088866950Z",
+          "phase": "unlabelled",
+          "errorType": "StoryMemoryJobError",
+          "codes": [],
+          "flags": []
+        },
+        {
+          "timestamp": "2026-11-15T15:33:01.031459463Z",
+          "phase": "unlabelled",
+          "errorType": "DOMException",
+          "codes": [],
+          "flags": ["explicit_abort"]
+        },
+        {
+          "timestamp": "2026-11-15T15:34:37.135087380Z",
+          "phase": "unlabelled",
+          "errorType": "StoryMemoryJobError",
+          "codes": [],
+          "flags": []
+        },
+        {
+          "timestamp": "2026-11-15T15:34:57.528919543Z",
+          "phase": "unlabelled",
+          "errorType": "Error",
+          "codes": [],
+          "flags": ["explicit_abort", "group_list_read"]
+        },
+        {
+          "timestamp": "2026-11-15T15:34:59.514662779Z",
+          "phase": "unlabelled",
+          "codes": [],
+          "flags": []
+        },
+        {
+          "timestamp": "2026-11-15T15:34:59.514669146Z",
+          "phase": "unlabelled",
+          "codes": [],
+          "flags": ["explicit_abort"]
+        },
+        {
+          "timestamp": "2026-11-15T15:34:59.514674288Z",
+          "phase": "unlabelled",
+          "codes": [],
+          "flags": ["explicit_abort"]
+        },
+        {
+          "timestamp": "2026-11-15T15:34:59.514678615Z",
+          "phase": "unlabelled",
+          "codes": [],
+          "flags": []
+        },
+        {
+          "timestamp": "2026-11-15T15:34:59.514683152Z",
+          "phase": "unlabelled",
+          "codes": [],
+          "flags": []
+        },
+        {
+          "timestamp": "2026-11-15T15:34:59.514687795Z",
+          "phase": "unlabelled",
+          "codes": [],
+          "flags": []
+        },
+        {
+          "timestamp": "2026-11-15T15:34:59.514691913Z",
+          "phase": "unlabelled",
+          "codes": [],
+          "flags": []
+        },
+        {
+          "timestamp": "2026-11-15T15:34:59.514696502Z",
+          "phase": "unlabelled",
+          "codes": [],
+          "flags": []
+        },
+        {
+          "timestamp": "2026-11-15T15:34:59.514700504Z",
+          "phase": "unlabelled",
+          "codes": [],
+          "flags": []
+        },
+        {
+          "timestamp": "2026-11-15T15:34:59.514705554Z",
+          "phase": "unlabelled",
+          "codes": [],
+          "flags": []
+        },
+        {
+          "timestamp": "2026-11-15T15:34:59.514709696Z",
+          "phase": "unlabelled",
+          "codes": [],
+          "flags": []
+        },
+        {
+          "timestamp": "2026-11-15T15:34:59.514713841Z",
+          "phase": "unlabelled",
+          "codes": [],
+          "flags": []
+        },
+        {
+          "timestamp": "2026-11-15T15:34:59.514718200Z",
+          "phase": "unlabelled",
+          "codes": [],
+          "flags": []
+        },
+        {
+          "timestamp": "2026-11-15T15:34:59.514723406Z",
+          "phase": "unlabelled",
+          "codes": [],
+          "flags": []
+        },
+        {
+          "timestamp": "2026-11-15T15:34:59.514728158Z",
+          "phase": "unlabelled",
+          "codes": [],
+          "flags": []
+        }
+      ]
+    }
+  },
+  "pairedStartupSamples": [
+    {
+      "eventId": "cebd2a2edd904d0eafb2262bc9f16fdb",
+      "timestamp": "2026-11-15T15:39:31Z",
+      "route": "/chats",
+      "document_redirect_count": 1,
+      "document_redirect_start_ms": 31.69999998807907,
+      "document_redirect_end_ms": 5087,
+      "document_pre_fetch_ms": 5087,
+      "document_request_wait_ms": 837.6999999880791,
+      "document_ttfb_ms": 5931.0999999940395,
+      "next_script_fetch_union_ms": 2573,
+      "script_count": 27,
+      "script_transfer_bytes": 362923,
+      "script_zero_transfer_count": 0,
+      "telegram_init_ms": 7.900000005960464,
+      "bootstrap_ms": 97.5
+    },
+    {
+      "eventId": "5d55a92d26ad4e48b2c6218ca8de1bb2",
+      "timestamp": "2026-11-15T15:33:07Z",
+      "route": "/chats",
+      "document_redirect_count": 1,
+      "document_redirect_start_ms": 0.5,
+      "document_redirect_end_ms": 4841.900000095367,
+      "document_pre_fetch_ms": 4841.900000095367,
+      "document_request_wait_ms": 88.7000002861023,
+      "document_ttfb_ms": 4932.400000095367,
+      "next_script_fetch_union_ms": 47.10000038146973,
+      "script_count": 28,
+      "script_transfer_bytes": 0,
+      "script_zero_transfer_count": 28,
+      "telegram_init_ms": 2,
+      "bootstrap_ms": 2
+    }
+  ],
+  "codeFindings": [
+    {
+      "id": "C1",
+      "path": "packages/frontend/src/lib/api/client.ts",
+      "line": 152,
+      "finding": "Actual groups/list GET hooks pass query strings and no explicit queuePriority; default classifier returns normal. New landing page P0 can miss reserved critical slot."
+    },
+    {
+      "id": "C2",
+      "path": "packages/frontend/src/lib/perf/api-timing.ts",
+      "line": 26,
+      "finding": "/api/v1/conversations/groups matches generic single-segment conversation_detail classifier; no separate fixed groups branch."
+    },
+    {
+      "id": "C3",
+      "path": "packages/frontend/src/lib/perf/api-timing.ts",
+      "line": 82,
+      "finding": "Queue duration only recorded after dispatchedAt exists; queue-expired requests have no stage measurement."
+    },
+    {
+      "id": "C4",
+      "path": "packages/backend/src/routes/conversation-detail.ts",
+      "line": 53,
+      "finding": "Socket close aborts controller; generic catch rethrows. Fixed-window AbortError sample stack points to onClose."
+    },
+    {
+      "id": "C5",
+      "path": "packages/frontend/src/components/creation/character-editor.tsx",
+      "line": 133,
+      "finding": "Unconditional crypto.randomUUID call on new-draft initialization; C8 confirms unavailable browser API, exact minified call is not source-mapped."
+    },
+    {
+      "id": "C6",
+      "path": "packages/frontend/src/lib/api/first-token-reports.ts",
+      "line": 102,
+      "finding": "Client receipt deadline is 3 seconds including queue, while identity can take up to 5 seconds and report RPC has a separate 3-second timeout."
+    }
+  ],
+  "limitations": [
+    "Only sanitized aggregates, code facts and event/trace references saved; no raw logs, business identities, request bodies, credentials or Replay.",
+    "The two paired startup examples prove their own redirect/pre-fetch delay, not a causal allocation of all 434 stalls.",
+    "Stage P95 distributions are independent and success-only; never added or subtracted to assign durations. Expired queues are absent from queue-stage measurements.",
+    "Abort-on-close origin is confirmed for sampled events; initiating cause may be user navigation, client deadline or connection loss.",
+    "PostgREST deadlines are observed, but database SQL execution/lock/pool/physical network causes remain unproven without deeper correlated evidence.",
+    "Commit ancestry alone is insufficient under squash; deployed file contents and reachable release commits were checked.",
+    "All 229 fixed-window Sentry error/fatal events are tagged release 47414e2f; this does not prove complete visibility of all visits."
+  ],
+  "traceAvailability": {
+    "samples": [
+      {
+        "trace": "6207ded7da924ea0a61e840390958375",
+        "spans": 0
+      },
+      {
+        "trace": "049c3004b59b443ebdaf993ea9e2e978",
+        "spans": 0
+      },
+      {
+        "trace": "d80faa84fe97418a9011612f5b42a92b",
+        "spans": 0
+      },
+      {
+        "trace": "a55b2bbc90224e17b3fe02934ca304f7",
+        "spans": 0
+      },
+      {
+        "trace": "9b497208fc0e4c45a8d2bdbd14dd3083",
+        "spans": 0
+      }
+    ],
+    "note": "Resource summaries returned no spans; not evidence that real requests had no work."
+  },
+  "stallSampleLimits": {
+    "chats": {
+      "eventId": "a3208c10571f406ea12db287ad054676",
+      "waitedMs": 4000,
+      "inflightEntries": 2
+    },
+    "chat": {
+      "eventId": "8298f06b22024202b494f298b0e06ea6",
+      "waitedMs": 4000,
+      "inflightEntries": 8
+    },
+    "characters": {
+      "eventId": "576049420bf44ea38aaba73e4329e51a",
+      "waitedMs": 4001,
+      "inflightEntries": 1
+    },
+    "note": "MCP rendered inflight members as [Object], so specific API paths cannot be recovered from these summaries."
+  }
+}
