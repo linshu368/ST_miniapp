@@ -82,6 +82,7 @@ vi.mock('../text-postprocess/repository.js', () => ({
 vi.mock('../engine/index.js', () => ({
   buildPrompt: mocks.buildPrompt,
   fetchPlatformInstructions: mocks.fetchInstructions,
+  selectDriveRules: () => ({ modeId: null, rules: '' }),
 }));
 
 vi.mock('../story-memory/config.js', () => ({

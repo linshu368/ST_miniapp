@@ -39,6 +39,8 @@ export interface TurnScope {
   control: TurnControl;
   emitStart: () => void;
   primaryAttemptId: string;
+  /** 本轮注入的剧情模式 id；未配置剧情模式时为 null。只用于诊断记录。 */
+  driveMode: string | null;
 }
 
 /** SSE start 只发一次。正常路径在派发门禁完成后发送。 */
@@ -124,6 +126,7 @@ export function createTurnScope(input: {
   model: ResolvedModel;
   policy: FirstTokenPolicy;
   chargeId: string;
+  driveMode: string | null;
 }): TurnScope {
   const { turnInput, userId, thinkingEnabled, requestStartedAt, turn, model, policy } = input;
   const { session, mode, sink, log } = turnInput;
@@ -181,5 +184,6 @@ export function createTurnScope(input: {
     control,
     emitStart,
     primaryAttemptId,
+    driveMode: input.driveMode,
   };
 }

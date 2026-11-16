@@ -277,6 +277,8 @@ v1 是旧 bot `SimplePromptEngine` 的忠实移植，最终形状：
 
 回复风格目录独立存储在 `runtime_config.reply_style_options`，不属于上述模型平台规则。Admin“平台规则 → 回复风格”管理名称、说明、运营自填标记/文本、顺序和启停，沿用草稿/发布/历史/回滚。generation-config API仅公开已发布启用项的id/name/description；私有marker/rules不下发给前端。生成时引擎随平台规则一起读取该目录（同一版本缓存）：用户开启且启用的风格，rules 替换主体模板里对应 marker；其余 marker 清空，不把占位符原样发给模型；开启了但 marker 不在模板里的，rules 追加在模板末尾。风格按生成时的用户偏好取值，重生成用当前开关。用户选择存为 `miniapp_user_settings.pref_reply_styles` JSONB，专用service_role invoker RPC按id原子合并，前端同样按id乐观确认/回滚。空目录隐藏用户界面区域，新项目默认关闭。迁移 `20261023_reply_style_options.sql` 须先TEST后Production再部署消费者。
 
+剧情模式目录存储在 `runtime_config.drive_mode_options`（shared `DriveModesConfigSchema`：1–8 档，每档 id/名称/说明/规则/启停/排序，另有默认档）。主体模板用 `{{DRIVE_RULES}}` 标出注入位置，引擎按用户 `miniapp_user_settings.pref_drive_mode` 取档（未选、停用、未知 id 回落默认档），模型每次只看到一档；目录缺失或损坏时注入 shared `FALLBACK_DRIVE_RULES`（等同上线前的防抢话）。模式已配置而模板缺占位符时记 `engine.drive_slot_missing` 并置 degraded。替换顺序：回复风格 marker → `{{DRIVE_RULES}}` → 固定占位符 → 用户手写偏好。generation-config API 只公开启用档位的 id/名称/说明；PATCH 只接受启用档位。每轮实际档位写入 `experience.chat_history.rich_reply_metadata.drive_mode`。迁移 `20261117_drive_mode.sql` 须先 TEST 后 Production，再部署消费者，最后发布运营配置；回滚先回滚主体模板，再回退代码。
+
 ### 4.4.1 AI 回复后处理与展示
 
 后处理不改变模型输入、生成计费或原始回复正文。模型输出协议以 `packages/shared/src/rich-reply-protocol.ts` 为唯一版本化事实源：固定 choices/status/memory 与中文引号对白先由 shared 解析为可信结构化 slot；原始回复不回写，已识别的畸形模块安全降级，边界不明确时保留原文；运营规则只处理其余文本。Admin 编辑的是版本化 source；Backend 发布时在可终止 Worker 中编译，并把 source 与 compiled artifact 原子写入 `app_core.text_postprocess_versions`。Frontend 与 Admin 的最终展示都复用 `@miniapp/reply-renderer`，renderer 只消费已校验 artifact 和原文，不接触发布 API、数据库或 source compiler。

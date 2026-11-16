@@ -193,6 +193,69 @@ describe('buildSnapshot：字数档位的契约校验与降级', () => {
     expect(logged.mock.calls.flat().join(' ')).not.toContain('secret rule');
   });
 
+  it('剧情模式随平台规则读取；损坏时降级为空且日志不含规则正文', () => {
+    const mode = {
+      id: 'active',
+      ui_label: '等 TA 撩',
+      description: '',
+      rules: 'secret drive rule',
+      enabled: true,
+      sort_order: 0,
+    };
+    const withModes = entries(VALID);
+    withModes.set('system_instructions', {
+      value: null,
+      textValue: `${TEMPLATE} {{DRIVE_RULES}}`,
+      version: 2,
+    });
+    withModes.set('drive_mode_options', {
+      value: { modes: [mode], default_mode_id: 'active' },
+      textValue: null,
+      version: 3,
+    });
+    const snapshot = buildSnapshot(withModes);
+    expect(snapshot.degraded).toBe(false);
+    expect(snapshot.instructions.driveModes?.default_mode_id).toBe('active');
+    expect(buildSnapshot(entries(VALID)).instructions.driveModes).toBeNull();
+
+    const logged = vi.spyOn(observation, 'emit').mockImplementation(() => {});
+    withModes.set('drive_mode_options', {
+      value: { modes: [{ ...mode, enabled: false }], default_mode_id: 'active' },
+      textValue: null,
+      version: 4,
+    });
+    const broken = buildSnapshot(withModes);
+    expect(broken.degraded).toBe(true);
+    expect(broken.instructions.driveModes).toBeNull();
+    expect(JSON.stringify(logged.mock.calls)).not.toContain('secret drive rule');
+  });
+
+  // 回复风格曾因占位符没进模板而静默失效；剧情模式配了但模板缺槽位必须告警并置降级。
+  it('剧情模式已配置但模板缺 {{DRIVE_RULES}} 时告警', () => {
+    const logged = vi.spyOn(observation, 'emit').mockImplementation(() => {});
+    const missing = entries(VALID);
+    missing.set('drive_mode_options', {
+      value: {
+        modes: [
+          {
+            id: 'follow',
+            ui_label: '我来带',
+            description: '',
+            rules: 'r',
+            enabled: true,
+            sort_order: 0,
+          },
+        ],
+        default_mode_id: 'follow',
+      },
+      textValue: null,
+      version: 5,
+    });
+    const snapshot = buildSnapshot(missing);
+    expect(snapshot.degraded).toBe(true);
+    expect(logged.mock.calls.map((call) => call[0])).toContain('engine.drive_slot_missing');
+  });
+
   it('回复风格目录随平台规则读取；缺失不降级，损坏时不注入且日志不含规则正文', () => {
     const style = {
       id: 'style-a',

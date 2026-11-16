@@ -546,6 +546,20 @@ test('@chat @layout 多行输入与回复偏好可操作，多个风格独立开
   await expect(page.getByRole('button', { name: '发送', exact: true })).toBeInViewport();
   await page.getByRole('button', { name: /回复偏好/ }).click();
   await expect(page.getByText('回复长度', { exact: true })).toBeVisible();
+  // 剧情模式：四档单选，默认档选中，切换后说明随之变化并写入偏好。
+  const driveModes = page.getByRole('radiogroup', { name: '剧情模式' });
+  await expect(driveModes.getByRole('radio')).toHaveCount(4);
+  await expect(driveModes.getByRole('radio', { name: '等 TA 撩' })).toBeChecked();
+  await driveModes.getByRole('radio', { name: '替我演' }).click();
+  await expect(driveModes.getByRole('radio', { name: '替我演' })).toBeChecked();
+  await expect(
+    page.getByText('你只管定方向，连你的戏份也一起写好。', { exact: false })
+  ).toBeVisible();
+  await page.reload();
+  await page.getByRole('button', { name: /回复偏好/ }).click();
+  await expect(
+    page.getByRole('radiogroup', { name: '剧情模式' }).getByRole('radio', { name: '替我演' })
+  ).toBeChecked();
   await page.getByRole('button', { name: '详细', exact: true }).click();
   const dialogue = page.getByRole('switch', { name: '角色多说话', exact: true });
   const concise = page.getByRole('switch', { name: '节奏紧凑', exact: true });

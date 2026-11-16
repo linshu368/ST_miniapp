@@ -5,7 +5,7 @@
 // 与本模块的组装逻辑承担。
 // {{user}} 是唯一例外：组 prompt 时替换为 persona.displayName。
 
-import type { InstructionSlotRules, UserGenerationConfig } from '@miniapp/shared';
+import type { DriveModesConfig, InstructionSlotRules, UserGenerationConfig } from '@miniapp/shared';
 
 /** Persisted by the turn-start RPC; never part of a public DTO. */
 export type InstructionSlotMode = 'full' | 'concise' | 'off';
@@ -66,6 +66,8 @@ export interface EnginePlatformInstructions {
   memoryRules: InstructionSlotRules;
   /** 运营维护的回复风格目录（reply_style_options），按用户 pref_reply_styles 注入模板。 */
   replyStyles: EngineReplyStyle[];
+  /** 剧情模式（drive_mode_options）；未配置或损坏时为 null，渲染时注入内置保守规则。 */
+  driveModes: DriveModesConfig | null;
 }
 
 /** 回复风格的私有部分：marker 是运营写进主体模板的占位符，rules 是开启时替换进去的规则。 */

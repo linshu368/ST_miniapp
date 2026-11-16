@@ -15,6 +15,7 @@ import { observation } from '../../platform/observability/runtime.js';
 import {
   DEFAULT_WORD_COUNT_TIERS_CONFIG,
   InstructionSlotRulesSchema,
+  DRIVE_MODE_OPTIONS_KEY,
   ReplyStyleOptionsConfigSchema,
   toPublicWordCountTiers,
   WordCountTiersConfigSchema,
@@ -31,6 +32,7 @@ import type {
   EngineReplyStyle,
   EngineWordCountTiers,
 } from './types.js';
+import { readDriveModes, warnIfDriveSlotMissing } from './drive-mode.js';
 
 export const PLATFORM_INSTRUCTIONS_TEMPLATE_KEY = 'system_instructions';
 export const WORD_COUNT_TIERS_KEY = 'pref_word_count_tiers';
@@ -46,6 +48,7 @@ const CONFIG_KEYS = [
   STATUS_RULES_KEY,
   MEMORY_RULES_KEY,
   REPLY_STYLE_OPTIONS_KEY,
+  DRIVE_MODE_OPTIONS_KEY,
 ] as const;
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -68,6 +71,7 @@ const FALLBACK_TEMPLATE = [
   '{{CHOICE_RULES}}',
   '{{STATUS_RULES}}',
   '{{MEMORY_RULES}}',
+  '{{DRIVE_RULES}}',
   '输出篇幅为 {{WORD_COUNT}} 字，仅使用简体中文。',
   '用户个人偏好为：{{USER_CUSTOM_INSTRUCTIONS}}',
 ].join('\n');
@@ -296,14 +300,28 @@ export function buildSnapshot(
   const replyStyles = readReplyStyles(entries);
   if (replyStyles.degraded) degraded = true;
 
+  const driveModes = readDriveModes(entries);
+  if (driveModes.degraded) degraded = true;
+  const effectiveTemplate = template && isCurrentTemplate(template) ? template : FALLBACK_TEMPLATE;
+  if (
+    warnIfDriveSlotMissing(
+      effectiveTemplate,
+      driveModes.config,
+      entries.get(PLATFORM_INSTRUCTIONS_TEMPLATE_KEY)?.version
+    )
+  ) {
+    degraded = true;
+  }
+
   return {
     instructions: {
-      template: template && isCurrentTemplate(template) ? template : FALLBACK_TEMPLATE,
+      template: effectiveTemplate,
       wordCountTiers: wordCountTiers ?? FALLBACK_WORD_COUNT_TIERS,
       choiceRules: slotRules.choiceRules.rules,
       statusRules: slotRules.statusRules.rules,
       memoryRules: slotRules.memoryRules.rules,
       replyStyles: replyStyles.styles,
+      driveModes: driveModes.config,
     },
     degraded,
   };

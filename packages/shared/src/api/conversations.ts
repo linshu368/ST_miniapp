@@ -12,6 +12,7 @@ import {
   type PublicReplyStyleOption,
 } from './reply-style-options';
 import type { PublicWordCountTiers } from './word-count-tiers';
+import { DriveModeIdSchema, type PublicDriveModes } from './drive-modes';
 
 // ==== 领域对象 ====
 
@@ -96,6 +97,11 @@ export interface UserGenerationConfig {
   pref_show_memory: boolean;
   /** Missing means no selected styles; independent boolean choices. */
   pref_reply_styles?: ReplyStylePreferences;
+  /**
+   * 生效的剧情模式 id（已按启用档位与默认档解析）。未配置剧情模式时缺省，
+   * 此时引擎使用内置的保守规则。
+   */
+  pref_drive_mode?: string;
   pref_custom_instructions: string | null;
 }
 
@@ -108,6 +114,7 @@ export const UserGenerationConfigSchema: z.ZodType<UserGenerationConfig> = z
     pref_show_status: z.boolean(),
     pref_show_memory: z.boolean(),
     pref_reply_styles: ReplyStylePreferencesSchema.optional(),
+    pref_drive_mode: DriveModeIdSchema.optional(),
     pref_custom_instructions: z.string().nullable(),
   })
   .strict();
@@ -349,6 +356,8 @@ export interface GetGenerationConfigData {
   word_count_tiers: PublicWordCountTiers;
   /** Enabled options in operator order; no private marker or rule text. */
   reply_style_options?: PublicReplyStyleOption[];
+  /** 启用的剧情模式；未配置时缺省，前端隐藏该栏目。不含规则正文。 */
+  drive_modes?: PublicDriveModes;
 }
 
 // ==== PATCH /api/v1/generation-config ====
@@ -364,6 +373,8 @@ export interface PatchGenerationConfigRequest {
   pref_show_memory?: boolean;
   /** Partial map merge; unrelated option IDs are preserved. */
   pref_reply_styles?: ReplyStylePreferences;
+  /** 必须是当前启用的剧情模式 id */
+  pref_drive_mode?: string;
   pref_custom_instructions?: string | null;
 }
 
@@ -375,6 +386,7 @@ export const PatchGenerationConfigRequestSchema: z.ZodType<PatchGenerationConfig
     pref_show_status: z.boolean().optional(),
     pref_show_memory: z.boolean().optional(),
     pref_reply_styles: ReplyStylePreferencesSchema.optional(),
+    pref_drive_mode: DriveModeIdSchema.optional(),
     pref_custom_instructions: z.string().nullable().optional(),
   })
   .strict();
@@ -384,6 +396,7 @@ export interface PatchGenerationConfigData {
   word_count_tiers: PublicWordCountTiers;
   /** Enabled options in operator order; no private marker or rule text. */
   reply_style_options?: PublicReplyStyleOption[];
+  drive_modes?: PublicDriveModes;
 }
 
 /** POST /api/v1/conversations/:id/cancel. The ID binds cancellation to one revision. */
