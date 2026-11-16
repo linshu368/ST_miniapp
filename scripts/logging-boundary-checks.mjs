@@ -131,6 +131,7 @@ export function inspectBoundaries(ts, file, path) {
       ts.isFunctionExpression(node) ||
       ts.isFunctionDeclaration(node)
     ) {
+      if (!node.body) return false;
       if (!ts.isBlock(node.body)) return observedFetch(node.body, depth + 1);
       const returns = [];
       const find = (child) => {
@@ -178,6 +179,31 @@ export function inspectBoundaries(ts, file, path) {
         found = true;
     });
     return found;
+  }
+  function scheduledWork(node, depth = 0) {
+    if (!node || depth > 12) return false;
+    node = unwrap(node);
+    if (!node) return false;
+    if (ts.isFunctionLike(node)) return scheduledWork(node.body, depth + 1);
+    if (ts.isBlock(node))
+      return (
+        node.statements.length > 0 &&
+        node.statements.every((statement) => scheduledWork(statement, depth + 1))
+      );
+    if (
+      ts.isExpressionStatement(node) ||
+      ts.isReturnStatement(node) ||
+      ts.isAwaitExpression(node) ||
+      ts.isVoidExpression(node)
+    )
+      return scheduledWork(node.expression, depth + 1);
+    if (ts.isCallExpression(node))
+      return (
+        isImport(node.expression, '/observability/jobs.js', 'runObservedJob') ||
+        (ts.isIdentifier(node.expression) &&
+          scheduledWork(definitions.get(node.expression.text), depth + 1))
+      );
+    return false;
   }
   function providerPolling(node) {
     // A deadline-bounded provider status poll belongs to its caller's operation, not a cron round.
@@ -244,7 +270,7 @@ export function inspectBoundaries(ts, file, path) {
       const interval =
         node.expression.getText(file) === 'setInterval' ||
         (info?.module.replace(/^node:/, '') === 'timers' && info.name === 'setInterval');
-      if (interval && path !== 'lib/perf-metrics.ts' && !containsJob(node.arguments[0]))
+      if (interval && path !== 'lib/perf-metrics.ts' && !scheduledWork(node.arguments[0]))
         problems.push('scheduled callback requires runObservedJob on its execution path');
       if (
         observationCall(node.expression) &&

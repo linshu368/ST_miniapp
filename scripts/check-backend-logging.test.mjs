@@ -87,6 +87,7 @@ test('checks each timer and polling round independently of file name or other wr
     'setInterval(()=>work(),1000);',
     job + "setInterval(()=>runObservedJob('ok',work),1000); setInterval(()=>work(),1000);",
     job + "const unused=()=>runObservedJob('unused',work); setInterval(()=>work(),1000);",
+    job + "setInterval(async()=>{await runObservedJob('unrelated',health); await work();},1000);",
     "import {setTimeout as sleep} from 'node:timers/promises'; while(!signal.aborted){ await work(); await sleep(1000); }",
     job +
       "while(true){ const unused=()=>runObservedJob('unused',work); await work(); await input.sleep(1000); }",
