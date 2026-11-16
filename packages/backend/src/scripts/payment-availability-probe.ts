@@ -10,7 +10,10 @@ import {
 import { EpayPaymentGateway } from '../infrastructure/payment/EpayPaymentGateway.js';
 import { AlertPublisher } from '../features/alerting/publisher.js';
 import { paymentProbeGuard } from '../features/payment/availability/probe.js';
-import { runPaymentProbeRound } from '../features/payment/availability/round.js';
+import {
+  runPaymentProbeRound,
+  type PaymentProbeRoundResult,
+} from '../features/payment/availability/round.js';
 import { createPaymentAvailabilityStrategies } from '../features/payment/availability/strategies/index.js';
 
 const log = createLogger('payment-availability-probe');
@@ -18,6 +21,27 @@ const startedAt = performance.now();
 const shutdown = new AbortController();
 const stopObservability = startStandaloneObservability();
 const ADVISORY_LOCK_KEY = 731_007;
+
+/** Project only facts already returned by the probe; never pass nested payment/provider objects. */
+function probeSummary(result: PaymentProbeRoundResult) {
+  const probe = result.probe;
+  const observed = probe?.kind === 'available' || probe?.kind === 'unavailable' ? probe : undefined;
+  return {
+    outcome: result.outcome,
+    probe_result: probe?.kind,
+    reason: result.reason ?? (probe && 'reason' in probe ? probe.reason : undefined),
+    paymentType: observed?.channel,
+    duration_ms: observed?.durationMs,
+    errorClass: observed?.errorClass,
+    strategy_success_count: result.strategies.filter((item) => item.outcome === 'succeeded').length,
+    strategy_failed_count: result.strategies.filter((item) => item.outcome === 'failed').length,
+    strategy_skipped_count: result.strategies.filter((item) => item.outcome === 'skipped').length,
+    strategy_timed_out_count: result.strategies.filter((item) => item.outcome === 'timed_out')
+      .length,
+    strategy_cancelled_count: result.strategies.filter((item) => item.outcome === 'cancelled')
+      .length,
+  };
+}
 let outcome: 'success' | 'partial' | 'error' | 'skipped' = 'error';
 let disconnect: (() => Promise<void>) | undefined;
 const onShutdown = () => shutdown.abort();
@@ -37,7 +61,15 @@ await runObservedJob('payment_availability_probe', async () => {
     const guarded = paymentProbeGuard(config.paymentProbe);
     if (guarded) {
       outcome = guarded.kind === 'skipped' ? 'skipped' : 'error';
-      log.biz.info({ event: 'payment.probe.guarded', ...guarded }, '支付探测未发送请求');
+      log.biz.info(
+        {
+          event: 'payment.probe.guarded',
+          outcome: guarded.kind === 'skipped' ? 'skipped' : 'failed',
+          probe_result: guarded.kind,
+          ...('reason' in guarded ? { reason: guarded.reason } : {}),
+        },
+        '支付探测未发送请求'
+      );
     } else {
       // Disabled/preview runs must not initialize or connect the alert database client.
       const [{ PrismaAlertPersistence }, { prisma }] = await Promise.all([
@@ -62,7 +94,10 @@ await runObservedJob('payment_availability_probe', async () => {
           }),
       });
       outcome = result.outcome;
-      log.biz.info({ event: 'payment.probe.completed', ...result }, '支付探测轮次结束');
+      log.biz.info(
+        { event: 'payment.probe.completed', ...probeSummary(result) },
+        '支付探测轮次结束'
+      );
     }
   } catch (err) {
     log.sys.error({ event: 'payment.probe.failed', err }, '支付探测轮次失败');

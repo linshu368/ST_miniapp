@@ -27,6 +27,10 @@ export async function runProviderBalanceMonitorRound(input: {
       continue;
     }
     if (result.value.outcome === 'probe_failed') outcome = 'partial';
+    input.log.sys.info(
+      { event: `${provider}.balance_monitor.completed`, provider, outcome: result.value.outcome },
+      '供应商余额监控结果'
+    );
   }
   return outcome;
 }
