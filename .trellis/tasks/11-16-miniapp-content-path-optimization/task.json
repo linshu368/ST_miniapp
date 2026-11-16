@@ -1,0 +1,198 @@
+{
+  "id": "miniapp-content-path-optimization",
+  "name": "miniapp-content-path-optimization",
+  "title": "Optimize MiniApp content request path and client cache",
+  "description": "Implement code-grounded batches A/B/C, cache-only lobby summaries and safe in-memory details. User explicitly excludes local UI verification.",
+  "status": "in_progress",
+  "dev_type": "fullstack",
+  "scope": "miniapp-content-path",
+  "package": "frontend",
+  "priority": "P1",
+  "creator": "cline",
+  "assignee": "cline",
+  "createdAt": "2026-11-16",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    ".trellis/tasks/11-12-overnight-page-performance/code-grounded-optimization-design.md",
+    "packages/frontend/src/lib/api/characters.ts",
+    "packages/frontend/src/components/conversations/use-session-character.ts",
+    "packages/backend/src/infrastructure/repositories/ChatFolderRepository.ts",
+    "packages/backend/src/routes/conversation-folders.ts",
+    "packages/frontend/src/lib/api/lobby-recommendation-request.ts",
+    "packages/frontend/src/lib/api/lobby-recommendation-change.ts"
+  ],
+  "notes": "A/B/C and scoped client cache implemented locally. Workspace typecheck and frontend build passed. Backend full regression remains non-green; see verification.md. User explicitly stopped further local tests; no UI, commit, push, deployment or D/E rollout. Planning and four module knowledge updates completed.",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "frontend.business.conversation-ui",
+        "frontend.business.character-lobby",
+        "frontend.infrastructure.client-ui-foundation",
+        "backend.business.conversation-generation"
+      ]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": ["/chats", "/characters", "/chat/:id"],
+      "apis": [
+        "GET /api/lobby-characters",
+        "GET /api/v1/conversations",
+        "GET /api/v1/conversations/groups",
+        "GET /api/characters/:id",
+        "POST /api/characters/recommendation"
+      ],
+      "android": {
+        "page_p95_baseline_ms": 8276.43022616461,
+        "page_p95_target_ms": 4000,
+        "baseline_route": "/chats",
+        "baseline_measurement": "Grafana st_page_launch engineering_v1 ready foreground",
+        "baseline_n": 436
+      },
+      "ios": {
+        "page_p95_baseline_ms": 6145.815685278473,
+        "page_p95_target_ms": 4000,
+        "baseline_route": "/chats",
+        "baseline_measurement": "Grafana st_page_launch engineering_v1 ready foreground",
+        "baseline_n": 81,
+        "note": "Low sample; validate after extending the window."
+      },
+      "api": {
+        "p95_baseline_ms": 3205.625,
+        "p95_target_ms": 2000,
+        "endpoint": "GET /api/v1/conversations/groups",
+        "baseline_platform": "android",
+        "baseline_n": 1360,
+        "android_p95_baseline_ms": 3205.625,
+        "ios_p95_baseline_ms": 3180.1,
+        "ios_p95_target_ms": 2000,
+        "ios_baseline_n": 189
+      },
+      "measurement": {
+        "source": "Existing evidence-2026-11-14-15.json for Faro pages; new analysis-evidence-2026-11-14-15.json for Sentry success-only per-platform endpoint metrics. Sources remain separate.",
+        "window": "2026-11-14 00:00 through 2026-11-16 00:00 Asia/Shanghai, end-exclusive."
+      },
+      "notes": "A/B/C local candidate. Baselines unchanged Nov14-15: chats Android 8276.43ms N436/iOS 6145.82 N81(low); characters Android 7961.23 N293/iOS 7096.16 N77(low). Groups API Android 3205.625 N1360/iOS 3180.1 N189. Content target 4000ms and ordinary API 2000ms. No post-release evidence or local UI claimed. Existing public snapshots reused; details user/session scoped in memory only.",
+      "post_release_verification": "At least 24 hours before/after a controlled release, same cohort/platform/source, extend 48-72h for low traffic and require at least 100 successful samples. Verify errors, cancellation, missing reports, billing and rollback conditions; no mandatory fixed-sample local performance runner.",
+      "api_route_baselines": [
+        {
+          "endpoint": "GET /api/v1/conversations/groups",
+          "android_p95_ms": 3205.625,
+          "android_n": 1360,
+          "ios_p95_ms": 3180.1,
+          "ios_n": 189,
+          "target_ms": 2000
+        },
+        {
+          "endpoint": "GET /api/v1/conversations",
+          "android_p95_ms": 1993.5,
+          "android_n": 3736,
+          "ios_p95_ms": 2012,
+          "ios_n": 482,
+          "target_ms": 2000
+        },
+        {
+          "endpoint": "GET /api/lobby-characters",
+          "android_p95_ms": 3154.005,
+          "android_n": 1398,
+          "ios_p95_ms": 5888,
+          "ios_n": 270,
+          "target_ms": 2000
+        },
+        {
+          "endpoint": "GET /api/characters/:id",
+          "android_p95_ms": null,
+          "ios_p95_ms": null,
+          "target_ms": 2000,
+          "note": "No independent per-platform total baseline available in this task; do not substitute queue/stage percentiles or invent zeros."
+        },
+        {
+          "endpoint": "POST /api/characters/recommendation",
+          "android_p95_ms": null,
+          "ios_p95_ms": null,
+          "target_ms": 2000,
+          "note": "No per-platform total baseline here. Entry deadline 1500ms and manual deadline 5000ms are configuration budgets, not measured P95."
+        }
+      ],
+      "additional_page_baselines": [
+        {
+          "route": "/characters",
+          "measurement": "foreground document launch",
+          "android_p95_ms": 7961.234,
+          "android_n": 293,
+          "ios_p95_ms": 7096.163,
+          "ios_n": 77,
+          "target_ms": 4000
+        },
+        {
+          "route": "/chat/:id",
+          "measurement": "foreground SPA navigation; must not mix with document launch",
+          "android_p95_ms": 4570,
+          "android_n": 781,
+          "ios_p95_ms": 3508,
+          "ios_n": 128,
+          "target_ms": 2000
+        }
+      ]
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "required",
+      "scope": [
+        "Conversation groups read deadline and optional summary degradation",
+        "Cache-only chats lookup and recommendation entry budget"
+      ],
+      "integration_points": [
+        "Existing route requestLogger conversations sys.warn plus operation.terminal HTTP root",
+        "Existing apiClient/onAttempt/onDispatch Faro/Sentry finite groups labels and entry-phase scheduling"
+      ],
+      "events": [
+        {
+          "event": "conversation.groups.unavailable",
+          "operation": "conversation.groups.read",
+          "levels": ["warn"],
+          "outcomes": ["timed_out", "degraded"],
+          "fields": ["error_code", "durationMs", "userId", "err"]
+        },
+        {
+          "event": "conversation.folder.summary_failed",
+          "operation": "conversation.folder.summary",
+          "levels": ["warn"],
+          "outcomes": ["timed_out", "degraded"],
+          "fields": ["durationMs", "userId", "err"]
+        },
+        {
+          "event": "operation.terminal",
+          "operation": "http.request",
+          "levels": ["info", "warn", "error"],
+          "outcomes": ["succeeded", "failed", "timed_out", "cancelled"],
+          "fields": ["http_status", "public_error_code", "request_id", "trace_id", "duration_ms"]
+        }
+      ],
+      "failure_paths": [
+        "Own groups deadline/known dependency timeout -> 503; unknown programming/permission errors remain errors",
+        "Summary deadline cancels transport; late failure observed without unhandled rejection or replacing primary result",
+        "Missing/invalid/expired/denied storage -> no full catalogue request; detail normal and viewer/session isolated",
+        "Entry vs manual recommendation budgets, 400 compatibility attempt shares controller, cancellation and stale response guards unchanged"
+      ],
+      "correlation": "Reuse release/platform/finite route and existing request timing; backend response headers retain request/trace identifiers. No extra DB lookups or user identifiers as labels.",
+      "redaction": "Finite routes/stages only; never raw URL, query/hash, cookie, initData, token, user data, response content or payment URL. Backend safe {err} projection unchanged.",
+      "alerting": "Reuse current default-off alerts, no new notifications; failure isolation and expected caller cancellation severity unchanged. Compare groups independently after release because historical detail included groups.",
+      "verification": [
+        "Mocked Supabase RPC deadline and cause/unknown failure tests; Fastify inject summary/group contract assertions",
+        "Real QueryObserver/SSR cache/priority/TTL/viewer/session tests and existing frontend suites",
+        "Workspace typecheck, build, logging/complexity/static checks; no local UI or live DB per user/project instructions"
+      ]
+    }
+  }
+}

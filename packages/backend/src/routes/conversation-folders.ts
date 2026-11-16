@@ -35,6 +35,7 @@ import {
 } from './conversation-route-shared.js';
 
 const SEARCH_MAX = 30;
+export const FOLDER_SUMMARY_TIMEOUT_MS = 250;
 
 const FOLDER_ERROR_STATUS: Record<ChatFolderErrorCode, number> = {
   folder_not_found: 404,
@@ -76,20 +77,39 @@ export async function readFolderSummary(
   userId: string,
   log: FastifyBaseLogger
 ): Promise<ChatFolderSummary | null> {
+  const startedAt = performance.now();
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      const err = new DOMException('Folder summary deadline exceeded', 'TimeoutError');
+      controller.abort(err);
+      reject(err);
+    }, FOLDER_SUMMARY_TIMEOUT_MS);
+  });
   try {
-    return await folders.summary(userId);
+    // Race protects the response even if a transport ignores cancellation; both
+    // late fulfillment and late rejection remain observed by Promise.race.
+    return await Promise.race([folders.summary(userId, controller.signal), deadline]);
   } catch (err) {
     requestLogger(log, 'conversations').sys.warn(
-      { event: 'conversation.folder.summary_failed', err, userId },
+      {
+        event: 'conversation.folder.summary_failed',
+        err,
+        userId,
+        durationMs: performance.now() - startedAt,
+      },
       '读取分组汇总失败，列表不带汇总'
     );
     return null;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
 export function registerConversationGroups(
   app: FastifyInstance,
-  { settings, folders }: ConversationRouteRepositories
+  { settings, folders }: Pick<ConversationRouteRepositories, 'settings' | 'folders'>
 ) {
   // @frontend-ready: true
   app.get(
@@ -127,6 +147,17 @@ export function registerConversationGroups(
           })
         );
       } catch (error) {
+        if (error instanceof ChatFolderRepositoryError && error.code === 'folders_unavailable') {
+          requestLogger(request.log, 'conversations').sys.warn(
+            {
+              event: 'conversation.groups.unavailable',
+              err: error,
+              userId: dbUser.id,
+              error_code: error.code,
+            },
+            '按角色列表暂不可用，可退回平铺'
+          );
+        }
         if (sendChatFolderError(reply, error)) return;
         throw error;
       }

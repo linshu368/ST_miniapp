@@ -102,7 +102,11 @@ export function registerConversationCreate(
 
 export function registerConversationList(
   app: FastifyInstance,
-  { sessions, settings, folders }: ConversationRouteRepositories
+  {
+    sessions,
+    settings,
+    folders,
+  }: Pick<ConversationRouteRepositories, 'sessions' | 'settings' | 'folders'>
 ) {
   // @frontend-ready: true
   app.get(

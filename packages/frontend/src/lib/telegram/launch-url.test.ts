@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { canonicalizeLandingPath, entryPathname } from '../landing-route';
 
 import {
   getTelegramStartParam,
@@ -67,5 +68,50 @@ describe('captured launch context', () => {
       },
     });
     expect(() => rememberInviteStartParam('inv_Abcd1234')).not.toThrow();
+  });
+});
+
+describe('root landing after launch capture', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it('uses the rewritten route tree, only for the two root destinations', () => {
+    expect(entryPathname('/', ['(main)', 'chats'])).toBe('/chats');
+    expect(entryPathname('/', ['(main)', 'characters'])).toBe('/characters');
+    expect(entryPathname('/', ['profile'])).toBe('/');
+    expect(entryPathname('/', ['chats', 'extra'])).toBe('/');
+    expect(entryPathname('/chat/id', ['(main)', 'chats'])).toBe('/chat/id');
+  });
+  it('keeps captured context and harmless URL parameters without a second navigation', () => {
+    const replaceState = vi.fn();
+    const original =
+      'https://example.test/?startapp=inv_Abcd1234#tgWebAppData=hash%3Dfictional&tgWebAppPlatform=android';
+    const start = getTelegramStartParam(undefined, new URL(original).search);
+    const safe = new URL(stripSensitiveTelegramLaunchParams(original));
+    vi.stubGlobal('window', { location: safe, history: { replaceState, state: { __NA: true } } });
+    expect(canonicalizeLandingPath('/chats')).toBe(true);
+    expect(replaceState).toHaveBeenCalledExactlyOnceWith(
+      null,
+      '',
+      '/chats' + safe.search + safe.hash
+    );
+    expect(start).toBe('inv_Abcd1234');
+    expect(JSON.stringify(replaceState.mock.calls)).not.toContain('fictional');
+  });
+  it('leaves deep links alone and reports sandbox History failures for the SPA fallback', () => {
+    const replaceState = vi.fn(() => {
+      throw new Error('denied');
+    });
+    vi.stubGlobal('window', {
+      location: new URL('https://example.test/chat/id?session=x'),
+      history: { replaceState },
+    });
+    expect(canonicalizeLandingPath('/chats')).toBe(true);
+    expect(replaceState).not.toHaveBeenCalled();
+    vi.stubGlobal('window', {
+      location: new URL('https://example.test/'),
+      history: { replaceState },
+    });
+    expect(canonicalizeLandingPath('/profile')).toBe(true);
+    expect(replaceState).not.toHaveBeenCalled();
+    expect(canonicalizeLandingPath('/characters')).toBe(false);
   });
 });

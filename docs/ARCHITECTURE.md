@@ -1,6 +1,12 @@
 # ST_miniAPP 架构说明
 
+2026-11-16 内容链候选：`/chats` 的公开摘要lookup仅订阅已有Query/持久快照，补缺详情在enrich/导航安静窗后以normal执行，按既有用户+session key短期内存复用。分组RPC只对自身取消期限或已知依赖超时返回503/folders_unavailable，未知编程/权限错误保留；groups和flat共用250ms可取消的可选summary预算。自动推荐open/resume总预算1500ms，手动刷新/撤回（包括兼容open）保持5000ms，UUID和viewer隔离不变。HTTP契约不新增字段，无SQL迁移；先兼容Backend再Frontend，生产验收与条件性D/E变更见 [实施说明](../.trellis/tasks/11-12-overnight-page-performance/content-path-optimization-2026-11-16.md)。
+
+2026-11-16 MiniApp 冷启动专项（本地候选）：`/` 按 landing cookie 内部 rewrite 到已有静态 `/chats` 或 `/characters`，返回一个文档；Providers 根据实际路由树保持 SSR 框架一致，捕获 Telegram 启动上下文后用原生 History API 同步规范路径，再挂业务。可见会话列表第一页使用预留 critical 槽，分页维持 normal；groups 遥测独立于 conversation_detail，历史指标不能直接混比。未改变后端/鉴权/私人缓存，生产效果需发布后验证。见 [专项说明](../.trellis/tasks/11-12-overnight-page-performance/cold-start-optimization-2026-11-16.md)。
+
 2026-11-16 日志目录集中（本地未部署）：Pino、Sentry/后台观测接线和规则统一位于 `platform/observability/`，旧 lib 入口仅重导出。规则唯一来源为目录内 alert-rules.json，配置中心只读取总开关/secret；不再读取 LOG_ALERT_RULES。sdk.ts 导出不触发应用启动的 factory/契约，框架、文件及通知渠道由项目装配，参见 [模块说明](../packages/backend/src/platform/observability/README.md)。
+
+Railway 展示补充（本地未部署）：统一 Pino 出口由可注入纯展示工厂和项目中文词表生成首行；HTTP 注册模板/任务名随 ALS 继承，原事件码与告警匹配不变。探测和预检投影真实标量结果，不读取正文、不新增查询/重试。SDK 导出工厂，词表留在项目适配；不恢复原始错误消息或增加日志存储。
 
 2026-11-16 本地日志补全：数据库转换保留 cause，安全出口继续去除原始消息；支付对账的执行及汇总位于同一轮次根上下文。大厅 Next.js 代理只透传有界请求 ID、回传受控链路头，并在自身部署 stdout 记录固定摘要，与 Backend Railway 日志按请求关联。无新增日志存储、SQL、业务重试或公开 API；详情见 [运行说明](backend-observability-runtime.md)。
 

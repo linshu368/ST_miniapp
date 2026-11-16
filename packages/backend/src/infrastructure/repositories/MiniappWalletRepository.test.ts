@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { VipPlansSchema } from '@miniapp/shared';
+import { observation } from '../../platform/observability/runtime.js';
+import { createObserver } from '../../platform/observability/core.js';
+import type { ObservationEvent } from '../../platform/observability/events.js';
 
 import {
   formatSpendingStatus,
@@ -81,6 +84,64 @@ function wallet(overrides: Partial<MiniappWalletRow> = {}): MiniappWalletRow {
     ...overrides,
   };
 }
+
+describe('media wallet precheck observation', () => {
+  it.each([5, 80])(
+    'keeps the wallet result and one actual terminal for main balance %s',
+    async (main) => {
+      const events: ObservationEvent[] = [];
+      const observer = createObserver([
+        (event) => {
+          events.push(event);
+        },
+      ]);
+      const spy = vi.spyOn(observation, 'observe').mockImplementation(observer.observe);
+      try {
+        const repo = new MiniappWalletRepository();
+        const entity = wallet({ main_credits: main });
+        const read = vi.spyOn(repo, 'getOrCreate').mockResolvedValueOnce(entity);
+        const result = await repo.precheckMainCredits(entity.user_id, 30);
+        expect(result.ok).toBe(main >= 30);
+        expect(result.wallet).toBe(entity);
+        expect(read).toHaveBeenCalledOnce();
+        expect(events.filter((event) => event.event === 'operation.terminal')).toHaveLength(1);
+        expect(events.at(-1)).toMatchObject({
+          operation: 'wallet.balance.precheck',
+          outcome: main >= 30 ? 'succeeded' : 'rejected',
+          outcome_known: true,
+        });
+        expect(events.at(-1)).not.toHaveProperty('wallet');
+      } finally {
+        spy.mockRestore();
+      }
+    }
+  );
+
+  it('does not change the original error or retry when the wallet query fails', async () => {
+    const events: ObservationEvent[] = [];
+    const observer = createObserver([
+      (event) => {
+        events.push(event);
+      },
+    ]);
+    const spy = vi.spyOn(observation, 'observe').mockImplementation(observer.observe);
+    try {
+      const repo = new MiniappWalletRepository();
+      const err = Object.assign(new Error('private-wallet'), { code: 'ECONNRESET' });
+      const read = vi.spyOn(repo, 'getOrCreate').mockRejectedValueOnce(err);
+      await expect(repo.precheckMainCredits('user', 30)).rejects.toBe(err);
+      expect(read).toHaveBeenCalledOnce();
+      expect(events.at(-1)).toMatchObject({
+        outcome: 'failed',
+        outcome_known: false,
+        err: { code: 'ECONNRESET' },
+      });
+      expect(JSON.stringify(events)).not.toContain('private');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
 
 describe('formatSpendingStatus', () => {
   it('shows the three settlement paths directly', () => {

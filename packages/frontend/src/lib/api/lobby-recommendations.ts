@@ -1,21 +1,18 @@
 'use client';
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  LobbyRecommendationDataSchema,
   LOBBY_ROTATION_HEAD_SIZE,
   type GetCharactersData,
   type LobbySort,
   type LobbyRecommendationData,
   type LobbyRecommendationExposures,
   type LobbyRecommendationExposuresData,
-  type LobbyRecommendationRequest,
 } from '@miniapp/shared';
 import {
   canReuseLobbyBatch,
   checkedLobbyReadFrame,
-  createLobbyRequestId,
   lobbyEntryRequest,
   lobbyViewerScope,
   markLobbyVisit,
@@ -24,13 +21,13 @@ import {
   readLobbyRecommendation,
   rememberLobbyRecommendation,
 } from '@/lib/lobby-recommendation-state';
-import { apiClient, ApiClientError } from './client';
+import { apiClient } from './client';
 import {
-  characterKeys,
-  readLegacyHeadCards,
-  useCharactersQuery,
-  usePublicLobbyHead,
-} from './characters';
+  requestRecommendation,
+  ENTRY_RECOMMENDATION_TIMEOUT_MS,
+} from './lobby-recommendation-request';
+import { useLobbyRecommendationChange } from './lobby-recommendation-change';
+import { characterKeys, useCharactersQuery, usePublicLobbyHead } from './characters';
 import type { LobbyReturnSnapshot } from '@/lib/lobby-return';
 
 type ReadFrame = ReturnType<typeof checkedLobbyReadFrame>;
@@ -40,58 +37,19 @@ export const lobbyRecommendationKeys = {
   viewer: (scope: string) => ['lobby-recommendation', scope] as const,
 };
 
-const MANUAL_RECOMMENDATION_TIMEOUT_MS = 5_000;
-
 function hasHeadDetails(batch: LobbyRecommendationData, catalogue: GetCharactersData | undefined) {
   if (!batch.enabled || batch.head_ids.length === 0) return true;
   const available = new Set(catalogue?.characters.map((character) => character.id));
   return batch.head_ids.every((id) => available.has(id));
 }
 
-async function requestRecommendation(
-  body: LobbyRecommendationRequest,
-  signal?: AbortSignal,
-  timeoutMs = MANUAL_RECOMMENDATION_TIMEOUT_MS
-): Promise<LobbyRecommendationData> {
-  const controller = new AbortController();
-  const onAbort = () => controller.abort(signal?.reason);
-  if (signal?.aborted) onAbort();
-  else signal?.addEventListener('abort', onAbort, { once: true });
-  // Includes queueing and body decoding, not only receipt of response headers.
-  const timeout = setTimeout(() => controller.abort(new Error('推荐读取超时')), timeoutMs);
-  try {
-    const fetch = (payload: LobbyRecommendationRequest) =>
-      apiClient<unknown>('/api/characters/recommendation', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-        signal: controller.signal,
-        timeoutMs,
-        queuePriority: 'critical',
-      });
-    const data = await fetch({ ...body, include_head_cards: true }).catch((error: unknown) => {
-      // An older strict request schema rejects the opt-in flag before processing the intent.
-      if (error instanceof ApiClientError && error.status === 400) return fetch(body);
-      throw error;
-    });
-    if (controller.signal.aborted) throw controller.signal.reason;
-    return LobbyRecommendationDataSchema.parse(data);
-  } finally {
-    clearTimeout(timeout);
-    signal?.removeEventListener('abort', onAbort);
-  }
-}
-
-export function useLobbyRecommendation({
-  enabled,
-  restoreBatchId,
-}: {
-  enabled: boolean;
-  restoreBatchId?: string | null;
-}) {
-  const client = useQueryClient();
-  const scope = lobbyViewerScope();
-
-  const key = useMemo(() => lobbyRecommendationKeys.viewer(scope), [scope]);
+/** Entry identity/cache decisions stay stable for a visit; manual intents are separate. */
+function useLobbyEntry(
+  enabled: boolean,
+  scope: string,
+  restoreBatchId: string | null | undefined,
+  client: ReturnType<typeof useQueryClient>
+) {
   // Re-entering the recommended tab is a new visit; expiry is not a timer on an open list.
   const returningFrame = useMemo(() => {
     const frame = lastReadFrames.get(scope);
@@ -119,11 +77,29 @@ export function useLobbyRecommendation({
         : undefined,
     [enabled, scope, restoreBatchId, reuseCached]
   );
+  return { returningFrame, cachedAtEntry, reuseCached, visit };
+}
+
+export function useLobbyRecommendation({
+  enabled,
+  restoreBatchId,
+}: {
+  enabled: boolean;
+  restoreBatchId?: string | null;
+}) {
+  const client = useQueryClient();
+  const scope = lobbyViewerScope();
+
+  const key = useMemo(() => lobbyRecommendationKeys.viewer(scope), [scope]);
+  const { returningFrame, cachedAtEntry, reuseCached, visit } = useLobbyEntry(
+    enabled,
+    scope,
+    restoreBatchId,
+    client
+  );
   const recheck = visit?.recheck;
   const [rechecked, setRechecked] = useState<{ visit: typeof visit; frame: ReadFrame }>();
   const completedEntry = useRef<string>();
-  const pending = useRef(false);
-  const failedIntent = useRef<LobbyRecommendationRequest | null>(null);
 
   useEffect(() => {
     if (!enabled) return;
@@ -150,7 +126,8 @@ export function useLobbyRecommendation({
               expected_batch_id: cachedAtEntry.batch_id,
             }
           : entry,
-        signal
+        signal,
+        ENTRY_RECOMMENDATION_TIMEOUT_MS
       );
       if (!signal.aborted && lobbyViewerScope() === scope) {
         if (recheck && cachedAtEntry && result.batch_id !== cachedAtEntry.batch_id) {
@@ -174,68 +151,10 @@ export function useLobbyRecommendation({
     retry: false,
   });
 
-  const mutation = useMutation({
-    mutationKey: [...key, 'change'],
-    mutationFn: async (request: LobbyRecommendationRequest) => {
-      await client.cancelQueries({ queryKey: key });
-      let result;
-      try {
-        result = await requestRecommendation(request);
-      } catch (error) {
-        if (
-          !(request.action === 'refresh' && error instanceof ApiClientError && error.status === 409)
-        )
-          throw error;
-        result = await requestRecommendation({
-          action: 'open',
-          request_id: createLobbyRequestId(),
-        });
-      }
-      if (result.enabled && result.head_cards === undefined) {
-        return { ...result, ...(await readLegacyHeadCards(client, result.character_ids)) };
-      }
-      return result;
-    },
-    onSuccess: (result) => {
-      if (lobbyViewerScope() !== scope) return;
-      lastReadFrames.delete(scope);
-      setRechecked(undefined);
-      rememberLobbyRecommendation(scope, result);
-      client.setQueryData(key, result);
-      failedIntent.current = null;
-    },
-    retry: false,
+  const changes = useLobbyRecommendationChange(scope, key, () => {
+    lastReadFrames.delete(scope);
+    setRechecked(undefined);
   });
-
-  const change = useCallback(
-    async (action: 'refresh' | 'undo', restoreId?: string | null) => {
-      if (pending.current || lobbyViewerScope() !== scope) return null;
-      const current = client.getQueryData<LobbyRecommendationData>(key);
-      if (action === 'undo' && !current?.batch_id) return null;
-      const intent = action === 'refresh' && !current?.batch_id ? 'open' : action;
-      const previous = failedIntent.current;
-      const request: LobbyRecommendationRequest =
-        previous?.action === intent && previous.expected_batch_id === (current?.batch_id ?? null)
-          ? previous
-          : {
-              action: intent,
-              request_id: createLobbyRequestId(),
-              expected_batch_id: current?.batch_id ?? null,
-              ...(action === 'undo' ? { restore_batch_id: restoreId } : {}),
-            };
-      failedIntent.current = request;
-      pending.current = true;
-      try {
-        const result = await mutation.mutateAsync(request);
-        return lobbyViewerScope() === scope ? result : null;
-      } catch {
-        return null;
-      } finally {
-        pending.current = false;
-      }
-    },
-    [client, key, mutation, scope]
-  );
 
   // An expired saved batch on a new browse is not painted then abruptly shuffled.
   // On failure, even that old batch is preferable to losing the user's list.
@@ -265,10 +184,10 @@ export function useLobbyRecommendation({
     ready: !awaitingNewBatch,
     isFetching: query.isFetching,
     failed: query.isError,
-    pending: mutation.isPending,
-    changeFailed: mutation.isError,
-    refresh: () => change('refresh'),
-    undo: (restoreId: string) => change('undo', restoreId),
+    pending: changes.pending,
+    changeFailed: changes.changeFailed,
+    refresh: changes.refresh,
+    undo: changes.undo,
     scope,
   };
 }

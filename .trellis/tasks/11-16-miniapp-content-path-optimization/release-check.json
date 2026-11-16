@@ -1,0 +1,6 @@
+{
+  "date": "2026-11-16",
+  "source": "Sentry MCP find_releases, wangqiao/st-miniapp, query fde375a5",
+  "matching_releases": 0,
+  "interpretation": "No matching Sentry release returned; not proof of absence of deployment. 24h same-release observation is unverified. Only local A/B/C candidates; D/E deferred."
+}

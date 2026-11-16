@@ -833,8 +833,10 @@ test('@startup @navigation 冷启动 / 落到角色大厅，Telegram 启动参�
   // 拦住启动 JS，避免 SDK 读取后清理 hash，只验证服务端跳转本身。
   await page.route('**/_next/**/*.js*', (route) => route.abort());
   const launch = '?tgWebAppStartParam=inv_demo#tgWebAppVersion=9.6&tgWebAppPlatform=android';
-  await page.goto(`/${launch}`, { waitUntil: 'commit' });
-  await expect(page).toHaveURL(`${previewAppUrl}/characters${launch}`);
+  const response = await page.goto(`/${launch}`, { waitUntil: 'commit' });
+  expect(response?.status()).toBe(200);
+  expect(response?.request().redirectedFrom()).toBeNull();
+  await expect(page).toHaveURL(`${previewAppUrl}/${launch}`);
   const nav = page.getByRole('navigation', { name: '主导航' });
   await expect(nav.getByRole('link', { name: '秘境', exact: true })).toHaveAttribute(
     'aria-current',
@@ -856,8 +858,10 @@ test('@startup @navigation 有对话记录的用户冷启动 / 落到对话，�
 
   await page.route('**/_next/**/*.js*', (route) => route.abort());
   const launch = '?tgWebAppStartParam=inv_demo#tgWebAppVersion=9.6&tgWebAppPlatform=android';
-  await page.goto(`/${launch}`, { waitUntil: 'commit' });
-  await expect(page).toHaveURL(`${previewAppUrl}/chats${launch}`);
+  const response = await page.goto(`/${launch}`, { waitUntil: 'commit' });
+  expect(response?.status()).toBe(200);
+  expect(response?.request().redirectedFrom()).toBeNull();
+  await expect(page).toHaveURL(`${previewAppUrl}/${launch}`);
   await expect(
     page
       .getByRole('navigation', { name: '主导航' })
@@ -873,6 +877,122 @@ test('@startup @navigation 有对话记录的用户冷启动 / 落到对话，�
 });
 
 // These scenarios reuse the real gallery/hooks and local HTTP protocol, not a parallel page.
+test('@startup restricted History falls back to SPA without losing the landing context', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const original = window.history.replaceState;
+    let rejected = false;
+    window.history.replaceState = function (data, unused, url) {
+      if (!rejected && location.pathname === '/' && String(url).startsWith('/characters')) {
+        rejected = true;
+        (window as Window & { __landingHistoryRejected?: boolean }).__landingHistoryRejected = true;
+        throw new DOMException('Fixture history restriction', 'SecurityError');
+      }
+      return original.call(this, data, unused, url);
+    };
+  });
+  const response = await page.goto('/?startapp=channel_fallback#section=story');
+  expect(response?.status()).toBe(200);
+  await expect(page).toHaveURL(
+    `${previewAppUrl}/characters?startapp=channel_fallback#section=story`
+  );
+  await expect(page.locator('[data-main-content]')).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => (window as Window & { __landingHistoryRejected?: boolean }).__landingHistoryRejected
+    )
+  ).toBe(true);
+});
+
+test('@startup root payment return retains the existing orders destination', async ({
+  page,
+  preview,
+}) => {
+  const response = await page.goto('/?startapp=payment_return');
+  expect(response?.status()).toBe(200);
+  expect(response?.request().redirectedFrom()).toBeNull();
+  await expect(page).toHaveURL(`${previewAppUrl}/profile/orders?payment=returned`);
+  await expect(page.locator('[data-main-content]')).toBeVisible();
+  await expect
+    .poll(async () =>
+      (await preview.state()).requests.some((request) => request.path === '/api/payment/orders')
+    )
+    .toBe(true);
+});
+
+for (const landing of ['characters', 'chats'] as const) {
+  test(`@startup root rewrite ${landing} hydrates once, preserves launch context and browser history`, async ({
+    page,
+    context,
+    preview,
+  }) => {
+    await context.addCookies([
+      { name: 'st_landing', value: landing === 'chats' ? 'chats' : 'invalid', url: previewAppUrl },
+    ]);
+    let release!: () => void;
+    const allowed = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const documents: string[] = [];
+    const rsc: string[] = [];
+    const inviteCodes: string[] = [];
+    const errors: string[] = [];
+    page.on('request', (request) => {
+      if (new URL(request.url()).pathname === '/api/invite/bind')
+        inviteCodes.push(request.postDataJSON().invite_code);
+      if (request.isNavigationRequest() && request.frame() === page.mainFrame())
+        documents.push(new URL(request.url()).pathname);
+      if (new URL(request.url()).searchParams.has('_rsc'))
+        rsc.push(new URL(request.url()).pathname);
+    });
+    page.on('console', (message) => {
+      if (message.type() === 'error') errors.push(message.text());
+    });
+    await page.route('**/_next/**/*.js*', async (route) => {
+      await allowed;
+      await route.continue();
+    });
+    try {
+      const response = await page.goto('/?startapp=inv_Abcd1234&campaign=fixture#section=story', {
+        waitUntil: 'commit',
+      });
+      expect(response?.status()).toBe(200);
+      expect(response?.request().redirectedFrom()).toBeNull();
+      await expect(page.locator('[data-startup-pathname]')).toHaveAttribute(
+        'data-startup-pathname',
+        `/${landing}`
+      );
+      expect((await preview.state()).requests).toEqual([]);
+    } finally {
+      release();
+    }
+    await expect(page).toHaveURL(
+      `${previewAppUrl}/${landing}?startapp=inv_Abcd1234&campaign=fixture#section=story`
+    );
+    await expect(page.locator('[data-main-content]')).toBeVisible();
+    await expect.poll(() => inviteCodes).toEqual(['Abcd1234']);
+    await expect
+      .poll(() => page.evaluate(() => sessionStorage.getItem('invite_bind_done')))
+      .toBe('1');
+    expect(documents).toEqual(['/']);
+    expect(rsc).not.toContain(`/${landing}`);
+    expect(errors.filter((error) => /hydrat|did not match|server html/i.test(error))).toEqual([]);
+    const historySize = await page.evaluate(() => history.length);
+    const profile = page
+      .getByRole('navigation', { name: '主导航' })
+      .getByRole('link', { name: '我的', exact: true });
+    await profile.click();
+    await expect(page).toHaveURL(`${previewAppUrl}/profile`);
+    await page.goBack();
+    await expect(page).toHaveURL(new RegExp(`/${landing}\\?`));
+    await expect(page.locator('[data-main-content]')).toBeVisible();
+    expect(await page.evaluate(() => history.length)).toBe(historySize + 1);
+    await page.reload();
+    await expect(page.locator('[data-main-content]')).toBeVisible();
+  });
+}
+
 test('@roleplay @lobby-rotation @layout 换批保留质量分层入口，撤回恢复顺序', async ({
   page,
   preview,
