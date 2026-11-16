@@ -81,6 +81,22 @@ export const DEFAULT_DRIVE_MODES_CONFIG: DriveModesConfig = {
   default_mode_id: 'follow',
 };
 
+/** 运营平台编辑中的草稿：允许暂时不完整，保存前再按 DriveModesConfigSchema 校验。 */
+export const EditableDriveModesConfigSchema = z.object({
+  modes: z.array(
+    z.object({
+      id: z.string(),
+      ui_label: z.string(),
+      description: z.string(),
+      rules: z.string(),
+      enabled: z.boolean(),
+      sort_order: z.number().int().nonnegative(),
+    })
+  ),
+  default_mode_id: z.string(),
+});
+export type EditableDriveModesConfig = z.infer<typeof EditableDriveModesConfigSchema>;
+
 /** 下发给 MiniApp 的公开部分：不含规则正文，只含启用档位。 */
 export const PublicDriveModesSchema = z
   .object({
