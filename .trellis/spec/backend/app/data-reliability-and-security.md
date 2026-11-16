@@ -44,7 +44,7 @@ HTTP 根级 `registerHttpObservation` 在 CORS/鉴权之前运行，使用回调
 
 出站客户端在原模块声明 `clientFetch(operation, provider)`，只包装该客户端的 fetch；`observedFetch` 可传入已有 undici/代理实现。记录到 response_headers，不读取正文、不改 signal/timeout/redirect、不添加重试。非成功 HTTP 是 attempt 失败，不等于业务失败；写入抛错为 outcome_known=false。Supabase 从既有 observedSupabaseFetch 接入（含非 REST 请求）；Prisma 从 measureDbOperation 接入 model/raw/unsafe raw。SDK 返回的业务错误仍由 repository/业务边界判断，禁止把 HTTP 200 当作 RPC 业务成功。
 
-共享与 dedicated Prisma 都必须应用 `applyPrismaObservation`，保留原单连接/transaction 语义；pg advisory lease 用 observer 包装原 connect/lock/unlock/close。新增 new PrismaClient/createClient/pg 入口时独立核对接线，AST fetch 检查不会发现独立 DB 客户端漏接。不新增日志 SQL 或查询参数；锁竞争未取得是业务 skipped，不是数据库执行失败。
+共享与 dedicated Prisma 都必须应用 `applyPrismaObservation`，保留原单连接/transaction 语义；pg advisory lease 用 observer 包装原 connect/lock/unlock/close。AST 门禁现在核对 Prisma/Supabase/pg 创建边界及实际包装；新增其他 SDK/动态入口仍需独立评审接线。不新增日志 SQL 或查询参数；锁竞争未取得是业务 skipped，不是数据库执行失败。
 
 生成入口 `execute` 用独立子操作记录安全结果，不输出正文；原执行/计费及 hooks 不变。`createReplyStreamSink` 在 open 建立交付操作，流内 error 和 done 提供应用结果；断连优先记录 interrupted，后续后台生成成功不能改写已中断的交付。`observeGenerationAttempt` 与 `observeBackgroundJob` 的基础事件在可选工程遥测开关之前输出。工程 OTLP exporter 拆至 engineering-telemetry-exporter，原指标口径及出口配置不变。
 
@@ -58,9 +58,11 @@ HTTP 根级 `registerHttpObservation` 在 CORS/鉴权之前运行，使用回调
 
 Pino 标量白名单与 Sentry 各出口过滤原始内容；短剧诊断必须走 validatedDramaLog 的 shared schema 保留完整安全结构。生产代码禁止 console，离线 CLI stdout 是明确例外，CI 执行 lint:backend-logging。LOG_ALERTING_ENABLED 默认关闭；开启时第一条规则匹配即直接发送安全通知，4并发/2.5秒/无持久化无重试。内部通知故障事件不递归。完整配置与错误契约保留边界见 docs/backend-observability-runtime.md。
 
-审计补充：Pino 子 logger 会重置绑定 formatter，必须在 onChild 重建安全绑定缓存，同时过滤后续 setBindings；升级 Pino 验证实际 JSON 输出。SDK 普通错误对象仅保留受控 code，foundation 再投影不能丢失有限 cause 链。无 event 的 error/fatal 以固定 logger.error/logger.fatal 兜底，业务优先登记稳定 event。告警保留 error_code/public_error_code 两个事实，error_codes 兼容匹配任一，public_error_codes 精确匹配公开码；关闭时仍不进行匹配或通知。HTTP 各完成回调共用等级判断，禁止首个回调遗漏 severity 后锁死错误等级。
+审计补充：Pino 子 logger 会重置绑定 formatter，必须在 onChild 重建安全绑定缓存，同时过滤后续 setBindings；升级 Pino 验证实际 JSON 输出。SDK 普通错误对象仅保留受控 code，foundation 再投影不能丢失有限 cause 链。数据库异常转换使用 `new Error(compatibleMessage, { cause: originalError })`，已映射业务错误也保留 cause，禁止只复制 message；捕获后返回响应的业务边界仍须记录 `{ err }`，不能依赖不会触发的 onError。无 event 的 warn/error/fatal 以固定 logger.warn/logger.error/logger.fatal 兜底，业务优先登记稳定 event；默认告警仍只匹配 error/fatal。告警保留 error_code/public_error_code 两个事实，error_codes 兼容匹配任一，public_error_codes 精确匹配公开码；关闭时仍不进行匹配或通知。HTTP 各完成回调共用等级判断，禁止首个回调遗漏 severity 后锁死错误等级。
 
 新客户端的 fetch 默认值、别名和 SDK transport 注入也要显式登记；新定时 worker 必须建立独立 runObservedJob 上下文。静态 AST guard 检查这些边界并在 CI 跑自测，但不替代异步上下文、终态和返回身份测试。计数字段使用明确的 Count/\_count 名称，不传整个业务对象来获得排障信息。
+
+每轮任务的结果/异常回调必须处于同一根上下文中，不能只包装 runPass 后在作用域外记录汇总。AST 按实际 setInterval 回调、sleep 轮询循环检查，不依赖 job/worker 文件名或同文件出现过任意 wrapper。新 scripts 默认检查，新增离线例外必须核对其人工 stdout 协议及运行时消费者；当前例外和具体语法边界见 `scripts/check-backend-logging.mjs`、`scripts/logging-boundary-checks.mjs` 与运行说明。
 
 ## 场景：Railway 业务关联字段（2026-11-14）
 

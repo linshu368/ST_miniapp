@@ -1,5 +1,7 @@
 # ST_miniapp
 
+2026-11-16 日志完整性补全（本地未部署）：补齐捕获异常、warn 告警、数据库 cause、对账每轮上下文和大厅 Next.js 代理链路，并扩展 DB/HTTP/调度静态门禁。Backend 由 Railway 捕获，代理摘要在 Next.js 服务端 stdout；缓存、业务契约和默认关闭告警保持兼容，详见 [运行说明](docs/backend-observability-runtime.md)。
+
 2026-11-14 合并审计补齐媒体/影像任务、后台实体与独立数据库客户端的日志接入；字段语义、模块查询及安全边界见 [运行说明](docs/backend-observability-runtime.md)，验证结果见 [任务记录](.trellis/tasks/11-12-backend-observability/verification.md)。本地实现尚未部署。
 
 本地日志整改候选（2026-11-14，未部署）：Railway 捕获 Pino stdout；补充用户、业务模块、角色/创作、短剧/单集及会话 ID，与 trace/request 关联。字段来源、查询示例、错误契约兼容和默认关闭的直接日志告警见 [运行说明](docs/backend-observability-runtime.md)。无需新增日志存储。

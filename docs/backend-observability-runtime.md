@@ -1,6 +1,6 @@
 # Backend 运行时日志与告警
 
-状态：2026-11-14 补充业务关联字段，本地实现，尚未部署。以本文和 `11-12-backend-observability` 任务为准；旧 logging/error-code design 中的持久化、补传和窗口告警不属于本次实现。
+状态：2026-11-16 补齐异常边界、数据库 cause、warn 告警、对账轮次、代理关联与门禁，本地实现，尚未部署。以本文和 `11-12-backend-observability` 任务为准；旧 logging/error-code design 中的持久化、补传和窗口告警不属于本次实现。
 
 ## 输出与查询
 
@@ -75,6 +75,18 @@ Sentry 的异常、日志、breadcrumb、span 各自经过出口投影；自动�
 
 生产服务和定时任务禁止 console；离线导入/回放/报表 CLI 的人读/JSON 输出是明确例外。`payment-callback-report --json` 保留既有报表协议，不混入通知系统。
 
+## 审计补全与跨服务关联
+
+2026-11-16 异常边界补全：设置/头像/生成偏好与 Bot 捕获异常时记录稳定事件和原始 `{ err }`，公开 HTTP/错误码继续兼容。数据库错误包装通过标准 `cause` 保留原对象；安全出口只投影允许的 SQLSTATE/PostgREST/网络代码，原 message/details 不输出。短剧签名、manifest 降级分别记录 `drama.sign.failed` / `drama.manifest.failed`，仍保持不可播/无内联清单的原降级结果。
+
+支付对账每轮在 `runObservedJob('payment_reconciliation', ...)` 内执行 runPass 及 onPass/onError，底层 `payment.reconciliation` 是其子操作。job 终态、汇总与子调用共享 trace；轮次独立，sleep 在轮次之外；取消不新增错误回调、查询或重试。
+
+### 大厅 Next.js 代理的部署边界
+
+`GET /api/lobby-characters` 的摘要输出在 Next.js 服务端 stdout，和 Backend Railway stdout 属于不同运行时。请求 ID 接受 `[a-zA-Z0-9_-]{1,128}`，否则生成 UUID；只把该 ID 转发 Backend，回传通过相同格式校验的 `X-Request-Id` 及 32 位 hex `X-Trace-Id`，不转发客户端凭证或任意链路头。
+
+每次实际执行代理只有一条 `lobby.proxy.terminal` JSON，含 request/upstream request/trace ID、状态、结果、耗时及固定公开错误码；不含 URL、query、正文、凭证或原始异常。成功/参数拒绝/连接失败/超时/取消/读取失败均覆盖，输出失败不影响响应。这个独立服务端摘要不接入 Backend 的日志告警开关，不新增上报接口或通知请求。latest 公共缓存保持原值；缓存命中返回的关联 ID 对应源站执行，不能当作该浏览器新执行了一次代理。
+
 ## 日志告警
 
 配置仅在进程启动时读取，修改需重新部署/重启：
@@ -102,7 +114,7 @@ Sentry 的异常、日志、breadcrumb、span 各自经过出口投影；自动�
 ]
 ```
 
-核心日志和带 event 的既有 Pino 日志均可匹配；没有 event 的 error/fatal 自动使用 `logger.error/logger.fatal`，包含直接传入 Error 和仅消息的调用。建议业务失败补明确事件名，例如客服转发 `bot.forward_cs.failed`、启动失败 `server.start_failed`；兜底事件不替代业务分类。诊断日志被 LOG_LEVEL 过滤后不会产生告警。
+核心日志和带 event 的既有 Pino 日志均可匹配；没有 event 的 warn/error/fatal 自动使用 `logger.warn/logger.error/logger.fatal`，包含直接传入 Error 和仅消息的调用。warn 只有配置允许的级别/规则命中时才通知，默认规则仍只匹配 error/fatal。业务失败优先补明确事件名，例如客服转发 `bot.forward_cs.failed`、启动失败 `server.start_failed`；兜底事件不替代业务分类。诊断日志被 LOG_LEVEL 过滤后不会产生告警。
 
 遗留 `code/errorCode/errorClass` 映射为内部错误码；没有显式码时可取受控 `err.code/error.code`。`public_error_code` 单独保留，HTTP/SSE 公开错误码可用于规则匹配。`statusCode/status` 数值和 `durationMs` 兼容映射到 HTTP 状态/耗时，非法数值不参与匹配。通知只含规则、事件、操作、结果、内部/公开错误码和 event_id，不带正文、用户标识、原始错误或凭证。
 
@@ -134,7 +146,9 @@ Sentry 的异常、日志、breadcrumb、span 各自经过出口投影；自动�
 
 本地：`pnpm lint:backend-logging`、`pnpm lint:complexity`、backend 相关测试与全量无凭证测试、shared 测试、`pnpm -r typecheck`、Frontend/Admin build。安全测试覆盖私密输入、并发上下文、一次终态、socket 断开、响应身份、通知关闭/超时/失败/容量。静态 guard 检查运行时代码的 console、未登记直接 fetch 和全局 fetch 替换；不声称覆盖所有第三方 SDK 内部实现。
 
-日志 guard 使用 TypeScript AST 检查 fetch 值引用，覆盖别名、默认参数、globalThis 属性和 undici 导入；单独导入 wrapper 不能放行原生 fetch。定时 job/worker 文件必须接入 runObservedJob。CI 同时运行 `node --test scripts/check-backend-logging.test.mjs`。原始 transport 例外集中列出：日志底座、避免告警递归的飞书 adapter、离线种子导入器；不将该检查当作全程序数据流证明。畅聊行情/评估、OpenRouter/Surplus 模型目录、Surplus 余额及请求恢复均已补接入，原截止时间、缓存、并发与重试策略不变。
+日志 guard 使用 TypeScript AST 检查 fetch 值引用，覆盖别名、默认参数、globalThis 属性和 undici 导入；局部 fetch 注册不能豁免其他块或被遮蔽的参数。还检查 Prisma 包装、Supabase 实际 global.fetch、pg 创建入口，以及 undici.request/stream/pipeline/connect 和 Node HTTP request/get 的观测边界。每个周期回调及带 sleep 的轮询循环分别检查 runObservedJob，不依赖文件名；新 scripts 默认纳入，离线 CLI 需显式登记。包装 Error.message 时必须保留 cause。
+
+CI 运行 `node --test scripts/check-backend-logging.test.mjs`。例外集中登记：日志 fetch 底座、避免通知递归的飞书 adapter、离线种子导入/翻译 helper 及人工 CLI、perf-metrics 采样；pg lease owner 额外核对 connect/lock/unlock/close 四个观测。generateZImage 是已有 deadline 内的供应商状态轮询，由其调用方业务操作及每次 transport 记录，不能套成后台调度。检查仍不是全程序数据流证明，动态 import/反射或其他 SDK 入口需评审确认。畅聊行情/评估、模型/余额/恢复客户端的原截止、缓存、并发与重试不变。
 
 发布后：先保持通知关闭，检查普通成功/401/404/500、SSE 断开、支付 ACK/结算、定时任务的 Railway 链路；再按真实业务需要配置规则和 secret。对照发布前后各24小时的 Android/iOS 页面与 API P95，基线未见样本保持 null，N<100 延长窗口。当前未执行生产部署、真实支付/供应商调用或发送飞书通知。
 

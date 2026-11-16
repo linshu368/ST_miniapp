@@ -135,6 +135,16 @@ pnpm lint:backend-logging
 
 ## 7. 错误与正确做法
 
+2026-11-16 静态接入契约补充：
+
+- **范围**：Backend 运行时 `.ts`；新脚本默认纳入，人工/JSON CLI 例外集中登记。Frontend 代理在自身部署 stdout 记录，不能跨应用 import Backend logger。
+- **签名**：`pnpm lint:backend-logging`，成功退出 0，发现未接入边界退出 1 并给出路径和原因；`node --test scripts/check-backend-logging.test.mjs` 验证检测器。
+- **契约**：Prisma 实际应用扩展；Supabase 使用已观测 global.fetch；pg 使用登记的 lease 边界；Node HTTP/undici 调用处包装 observation。每个 setInterval 回调、sleep 轮询轮次独立建立 runObservedJob，结果/错误 reporter 在同一作用域内。包装原错误的 message 时保留 cause。
+- **校验矩阵**：仅导入/无关调用 wrapper、另一个已包装 timer、局部 fetch 注册、无观测的 SDK 创建或丢弃 cause 均不能豁免；离线 helper、perf 采样、deadline 内供应商状态轮询是有明确消费者和理由的例外。
+- **案例**：Good 为同一轮 job 与回调共享 trace；Base 为既有 API 复用 HTTP 终态；Bad 为同文件出现过一次 wrapper 就认为全文件覆盖。动态 import/反射/其他 SDK 不在全程序证明范围，评审继续逐项确认。
+- **验证**：9 组 Node 回归覆盖 aliases、实际包装/调用路径、作用域、异常 cause、新脚本默认检查及误报例外；功能回归另验证真实 JSON、原结果和一次终态。
+- **正误对照**：错误为 `onPass(await runObservedJob(name, runPass))`，回调已离开任务作用域；正确为 `runObservedJob(name, async () => onPass(await runPass()))` 并在该作用域内报告实际终态。公开错误码/响应兼容与敏感字段规则不因接入而放宽。
+
 错误：`{"schema_version":1,"mode":"not_applicable","reason":"已有 logger，本次不新增日志"}`。结构检查无法判断这种理由的真实性，但功能规划评审必须拒绝。
 
 正确：使用 `required`，列出已有日志接入位置、事件和本次新增失败分支的验证；如果已有事件不能定位问题，再补最小必要的受控摘要。只有明确不影响运行行为的任务，例如“仅修正文档错字，不涉及运行代码、配置或部署”，才使用 `not_applicable`。

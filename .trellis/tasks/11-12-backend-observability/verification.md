@@ -102,3 +102,19 @@
 - 本轮只变更 Python 工具、CI 及规划规范，没有修改应用包、依赖或运行时配置；不重复前轮已通过的应用 typecheck/build。Python 语法检查及变更文件格式检查通过。
 
 门禁检查结构完整性，不会自动判断理由真实性或证明业务日志覆盖。CI 不追溯未触及/已归档规划，也不要求每个仅改源码的 PR 都有任务文件；功能变更仍需遵循先规划、再实现并验证日志接入的项目流程。未执行远程 CI、push 或部署。
+
+## 2026-11-16 完整性审计补全
+
+用户确认处理本轮六类缺口。按模块提交异常边界 ee033593、warn/短剧事件 ddefd6de、数据库 cause/仓储拆分 79747ff9、对账轮次 8e24ae84、大厅代理 fd10cd9e、静态门禁 9228feae。
+
+- 运行时数据库/存储错误转换共 146 处补标准 cause，已映射会话/分组业务错误也保留原对象；公开消息、状态和错误码不变。安全投影仅保留允许的嵌套 code/有限 cause，原 message/details 不输出。四个超长仓储拆成既有类型/映射、feed、worker/check-in 边界，原公开入口重导出兼容；复杂度文件基线由 34 收紧到 30，函数基线 102 不扩张。
+- 设置/头像/生成偏好/Bot 32 项回归，warn/短剧 42 项，仓储/图片/签到 197 项，对账 10 项，大厅代理 10 项通过。新增回归文件已在本轮审核执行计划与风险评估中明确允许；没有建立平行测试体系。
+- 全量无凭证 Backend：164 文件 / 1766 项通过，`--exclude '**/*.integration.test.ts' --maxWorkers=2 --testTimeout=15000`。Shared：23 文件 / 239 项通过；`pnpm -r typecheck` 所有包通过。
+- Node 静态门禁 9 项、331 个运行文件检查通过；受影响 Backend/Frontend/脚本 ESLint 通过。包括新脚本默认纳入、局部 fetch 注册不豁免其他块、独立 DB 创建、非 fetch HTTP、逐回调/轮次包装、cause 丢失和已有人工 CLI/采样/供应商 deadline 轮询例外。
+- `module-updates.json` 旧摘要与当前模块文件不匹配，已基于当前模块源重新生成摘要并保留其全部现状及已有任务候选，再追加本轮事实与两个 Frontend 模块；载荷校验通过，不直接归档或覆盖模块源。
+
+Frontend 初次构建因本地 Next.js 自身缺失 `webpack-build/impl` 文件而失败，执行 `pnpm install --frozen-lockfile --force` 恢复同锁定版本安装后，Frontend/Admin 生产构建均通过；没有改依赖声明或 lockfile。保留既有 Browserslist、Tailwind、img/hooks 与 Admin 大 chunk 提示。格式、diff 和模块载荷校验通过；规划门禁按本轮基线 `018996b8..HEAD` 的真实 Git diff 路径验证通过，Python 8 项规划工具回归通过。
+
+门禁复核提交 8c947a89 额外阻断同一个 timer 回调先调用已包装任务、随后在作用域外执行实际工作的绕过；重新运行 9 项 Node 回归、331 个运行文件检查和脚本 ESLint 通过。它只修改检查器，没有变更已通过全量回归的运行时代码。
+
+未执行远程 CI、push、生产查询、真实供应商/支付/通知或迁移。后端日志由 Railway 捕获，代理摘要位于 Next.js 运行时 stdout；公共缓存命中的 ID 对应源站执行，不是新增请求样本。真实 Railway/通知及 Android/iOS/API P95 仍按原任务发布窗口验收。建议后续在现有 ui-tests 的 @profile/@roleplay 复用设置/头像失败与大厅代理超时/取消场景，并配合正确环境的 Railway 查询和通知核验；本轮没有新增页面流程或临时 mock 系统。
