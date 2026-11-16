@@ -175,7 +175,14 @@ export class DramaSignedUrlCache {
     try {
       cdn = selectedCdn === undefined ? this.cdnConfig() : selectedCdn;
     } catch {
-      log?.warn({ reason: 'drama_cdn_config_invalid' }, 'drama signed url failed');
+      log?.warn(
+        {
+          event: 'drama.sign.failed',
+          error_code: 'DRAMA_CDN_CONFIG_INVALID',
+          reason: 'drama_cdn_config_invalid',
+        },
+        'drama signed url failed'
+      );
       return FAILED;
     }
     // Credential changes must not reuse a URL signed by the prior configuration.
@@ -238,6 +245,8 @@ export class DramaSignedUrlCache {
       // 只记错误码，不记路径/URL/Token
       log?.warn(
         {
+          event: 'drama.sign.failed',
+          error_code: 'DRAMA_SIGN_FAILED',
           reason:
             err instanceof Error &&
             ['drama_sign_timeout', 'drama_cdn_source_invalid', 'drama_cdn_source_expired'].includes(

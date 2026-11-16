@@ -120,6 +120,15 @@ def cmd_start(args: argparse.Namespace) -> int:
         print(colored(f"Error: mobile performance declaration invalid: {exc}", Colors.RED))
         return 1
 
+    # Also applies to old tasks resumed after the policy change; never write state first.
+    try:
+        from logging_planning_gate import LoggingPlanningGateError, validate_logging_integration
+
+        validate_logging_integration(task_data)
+    except (LoggingPlanningGateError, OSError, ValueError) as exc:
+        print(colored(f"Error: logging integration declaration invalid: {exc}", Colors.RED))
+        return 1
+
     if not resolve_context_key():
         # Degraded mode: no session identity available.
         # Hook didn't inject TRELLIS_CONTEXT_ID (common on Windows + Claude Code,

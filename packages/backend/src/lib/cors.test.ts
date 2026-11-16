@@ -41,6 +41,9 @@ describe('CORS boundary', () => {
           expect(preflight.statusCode).toBe(204);
           expect(preflight.headers['access-control-allow-origin']).toBe(origin);
           expect(preflight.headers['timing-allow-origin']).toBe(origin);
+          const response = await app.inject({ url: '/auth', headers: { origin } });
+          expect(response.headers['access-control-expose-headers']).toContain('x-request-id');
+          expect(response.headers['access-control-expose-headers']).toContain('x-trace-id');
           expect((await app.inject({ url: '/auth', headers: { origin } })).statusCode).toBe(401);
           expect((await app.inject({ url: '/error', headers: { origin } })).statusCode).toBe(500);
         }

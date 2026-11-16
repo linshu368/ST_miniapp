@@ -1,3 +1,5 @@
+import { observation } from '../../platform/observability/runtime.js';
+import { bindBusinessContext } from '../../platform/observability/context.js';
 // 自研引擎对话会话仓库（M1）。
 //
 // 方案：docs/ST_remove-MVP实施方案.md §5.1 / §5.2 / §5.7。
@@ -147,7 +149,7 @@ export class ChatSessionRepository {
       .limit(1)
       .maybeSingle();
 
-    if (error) throw new Error(`查询空会话失败：${error.message}`);
+    if (error) throw new Error(`查询空会话失败：${error.message}`, { cause: error });
     return (data as ChatSessionRow | null) ?? null;
   }
 
@@ -166,7 +168,7 @@ export class ChatSessionRepository {
       .select('*')
       .single();
 
-    if (error) throw new Error(`创建会话失败：${error.message}`);
+    if (error) throw new Error(`创建会话失败：${error.message}`, { cause: error });
     return data as ChatSessionRow;
   }
 
@@ -224,8 +226,11 @@ export class ChatSessionRepository {
     if (result.error && isMissingPinnedColumn(result.error)) {
       // 只在第一次探到时降级并记一次；之后直接走无置顶排序的分支，不再白打一次请求
       this.pinnedColumnMissing = true;
-      console.warn(
-        '[ChatSessionRepository] chat_sessions.pinned_at 不存在，本次按最近活跃排序。请执行迁移 078_chat_session_pinned.sql'
+      observation.emit(
+        'conversation.pinned_column_missing',
+        'conversation.config',
+        { outcome: 'degraded', outcome_known: false },
+        'warn'
       );
       result = await run(false);
     }
@@ -244,8 +249,11 @@ export class ChatSessionRepository {
       .is('deleted_at', null)
       .maybeSingle();
 
-    if (error) throw new Error(`查询会话失败：${error.message}`);
-    return (data as ChatSessionRow | null) ?? null;
+    if (error) throw new Error(`查询会话失败：${error.message}`, { cause: error });
+    const session = (data as ChatSessionRow | null) ?? null;
+    if (session)
+      bindBusinessContext({ session_id: session.id, character_id: session.character_id });
+    return session;
   }
 
   async requireSession(sessionId: string, userId: string): Promise<ChatSessionRow> {
@@ -296,7 +304,7 @@ export class ChatSessionRepository {
     if (error)
       throw patch.folderId
         ? toFolderError(error, '更新会话失败')
-        : new Error(`更新会话失败：${error.message}`);
+        : new Error(`更新会话失败：${error.message}`, { cause: error });
     if (!data) {
       throw new ConversationRepositoryError('session_not_found', `会话不存在：${sessionId}`);
     }
@@ -315,7 +323,7 @@ export class ChatSessionRepository {
       .select('id')
       .maybeSingle();
 
-    if (error) throw new Error(`删除会话失败：${error.message}`);
+    if (error) throw new Error(`删除会话失败：${error.message}`, { cause: error });
     if (!data) {
       throw new ConversationRepositoryError('session_not_found', `会话不存在：${sessionId}`);
     }

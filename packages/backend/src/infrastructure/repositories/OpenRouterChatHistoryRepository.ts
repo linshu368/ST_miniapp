@@ -79,7 +79,7 @@ export class OpenRouterChatHistoryRepository {
         { onConflict: 'chat_history_id' }
       )
       .abortSignal(AbortSignal.timeout(5_000));
-    if (error) throw new Error(`回写 OpenRouter 调用明细失败：${error.message}`);
+    if (error) throw new Error(`回写 OpenRouter 调用明细失败：${error.message}`, { cause: error });
   }
 
   /** Batch-load facts for the sync worker so a 50-row recovery batch costs one read, not N reads. */
@@ -154,7 +154,9 @@ export class OpenRouterChatHistoryRepository {
       .limit(input.limit)
       .abortSignal(AbortSignal.timeout(5_000));
     if (candidateError)
-      throw new Error(`扫描待补齐的 OpenRouter 调用明细失败：${candidateError.message}`);
+      throw new Error(`扫描待补齐的 OpenRouter 调用明细失败：${candidateError.message}`, {
+        cause: candidateError,
+      });
 
     const ids = (candidates ?? [])
       .map((row) => (row as OpenRouterCandidateRow).chat_history_id)
@@ -169,7 +171,9 @@ export class OpenRouterChatHistoryRepository {
       .in('id', ids)
       .abortSignal(AbortSignal.timeout(5_000));
     if (historyError)
-      throw new Error(`读取待补齐 OpenRouter 对话轮次失败：${historyError.message}`);
+      throw new Error(`读取待补齐 OpenRouter 对话轮次失败：${historyError.message}`, {
+        cause: historyError,
+      });
 
     const generationIdByHistoryId = new Map(
       (candidates ?? []).flatMap((row) => {

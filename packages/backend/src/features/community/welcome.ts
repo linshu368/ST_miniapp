@@ -2,6 +2,9 @@ import type { FastifyBaseLogger } from 'fastify';
 
 import { buildMiniappDeepLink } from '../../lib/telegram-links.js';
 import { config } from '../../platform/config.js';
+import { clientFetch } from '../../platform/observability/fetch.js';
+
+const fetch = clientFetch('community.welcome.telegram', 'telegram');
 
 /**
  * 入群欢迎语：由发奖 bot（TELEGRAM_COMMUNITY_BOT_TOKEN）在发奖结果确定后发到官方群。

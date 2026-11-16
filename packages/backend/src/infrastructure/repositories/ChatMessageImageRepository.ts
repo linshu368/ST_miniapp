@@ -3,101 +3,23 @@ import type {
   ImageErrorCode,
   ImagePromptSource,
   MediaBillingMode,
-  MessageImageAttempt,
   MessageImageState,
-  MessageImageStatus,
   WalletDebitPolicy,
 } from '@miniapp/shared';
 import { getDomainDb } from '../../lib/supabase.js';
 import { FeatureFreeTrialRepository } from './FeatureFreeTrialRepository.js';
+import {
+  ImageConflictError,
+  ChatMessageImageRow,
+  SettlementResult,
+  toMessageImageAttempt,
+} from './chat-message-image-model.js';
 
-type NumericValue = string | number;
-
-export class ImageConflictError extends Error {
-  constructor() {
-    super('这条回复正在生成图片');
-    this.name = 'ImageConflictError';
-  }
-}
-
-export interface ChatMessageImageRow {
-  id: string;
-  user_id: string;
-  session_id: string;
-  message_id: string;
-  attempt_no: number;
-  /** 图片生成等级：basic、advanced */
-  image_tier: ImageGenerationTier | null;
-  prompt_cn: string | null;
-  prompt_source: ImagePromptSource | null;
-  description_user_prompt: string | null;
-  prompt_en: string | null;
-  provider_prompt: string | null;
-  provider: string;
-  model: string;
-  base_url_host: string | null;
-  width: number;
-  height: number;
-  output_format: string;
-  price_credits: NumericValue;
-  price_label: string;
-  original_price_credits?: NumericValue | null;
-  vip_discount_rate?: NumericValue | null;
-  vip_discounted_exact?: NumericValue | null;
-  vip_discount_config_version?: number | null;
-  /** 计费模式：免费体验、付费 */
-  billing_mode: MediaBillingMode | null;
-  /** 免费体验次数：1、2、3 */
-  free_trial_ordinal: number | null;
-  /** 计费额度：星尘 */
-  wallet_policy: WalletDebitPolicy | null;
-  /** 会员有效期：时间戳 */
-  vip_valid_until: string | null;
-  status: ImageInternalStatus;
-  is_current: boolean;
-  lease_owner: string | null;
-  lease_expires_at: string | null;
-  next_attempt_at: string;
-  stage: string | null;
-  provider_request_id: string | null;
-  storage_path: string | null;
-  image_url: string | null;
-  mime_type: 'image/webp' | 'image/png' | 'image/jpeg' | null;
-  byte_size: number | null;
-  latency_ms: number | null;
-  error_code: ImageErrorCode | null;
-  credits_charged: NumericValue;
-  debit_ledger_id: string | null;
-  charged_at: string | null;
-  completed_at: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-type ImageInternalStatus =
-  | 'draft_describing'
-  | 'draft_ready'
-  | 'draft_failed'
-  | 'pending'
-  | 'leased'
-  | 'generating'
-  | 'storing'
-  | 'ready'
-  | 'failed'
-  | 'failed_unknown';
-
-interface SettlementResult {
-  charge_status?:
-    | 'charged'
-    | 'already_charged'
-    | 'free_trial_consumed'
-    | 'already_free_trial_consumed'
-    | 'insufficient_balance'
-    | 'free_trial_invalid';
-  ledger_id?: string | null;
-  required?: NumericValue;
-  available?: NumericValue;
-}
+export {
+  ImageConflictError,
+  type ChatMessageImageRow,
+  toMessageImageAttempt,
+} from './chat-message-image-model.js';
 
 export class ChatMessageImageRepository {
   private readonly db = getDomainDb('experience');
@@ -113,7 +35,7 @@ export class ChatMessageImageRepository {
       .not('status', 'in', '(draft_describing,draft_ready,draft_failed)')
       .order('created_at', { ascending: false });
 
-    if (error) throw new Error(`查询会话图片失败：${error.message}`);
+    if (error) throw new Error(`查询会话图片失败：${error.message}`, { cause: error });
 
     const byMessage = new Map<string, ChatMessageImageRow[]>();
     for (const row of (data ?? []) as ChatMessageImageRow[]) {
@@ -208,7 +130,7 @@ export class ChatMessageImageRepository {
 
     if (error) {
       if (error.code === '23505') throw new ImageConflictError();
-      throw new Error(`创建图片生成记录失败：${error.message}`);
+      throw new Error(`创建图片生成记录失败：${error.message}`, { cause: error });
     }
     return data as ChatMessageImageRow;
   }
@@ -260,7 +182,7 @@ export class ChatMessageImageRepository {
       })
       .select('*')
       .single();
-    if (error) throw new Error(`创建图片描述草稿失败：${error.message}`);
+    if (error) throw new Error(`创建图片描述草稿失败：${error.message}`, { cause: error });
     return data as ChatMessageImageRow;
   }
 
@@ -356,7 +278,7 @@ export class ChatMessageImageRepository {
       .select('*')
       .maybeSingle();
     if (error?.code === '23505') throw new ImageConflictError();
-    if (error) throw new Error(`确认图片描述草稿失败：${error.message}`);
+    if (error) throw new Error(`确认图片描述草稿失败：${error.message}`, { cause: error });
     if (!data) throw new ImageConflictError();
     await this.deleteDescriptionDrafts({
       userId: input.userId,
@@ -378,7 +300,7 @@ export class ChatMessageImageRepository {
       p_limit: limit,
       p_lease_seconds: leaseSeconds,
     });
-    if (error) throw new Error(`领取图片生成任务失败：${error.message}`);
+    if (error) throw new Error(`领取图片生成任务失败：${error.message}`, { cause: error });
     return (data ?? []) as ChatMessageImageRow[];
   }
 
@@ -388,7 +310,7 @@ export class ChatMessageImageRepository {
       .select('*')
       .eq('id', id)
       .maybeSingle();
-    if (error) throw new Error(`查询图片生成记录失败：${error.message}`);
+    if (error) throw new Error(`查询图片生成记录失败：${error.message}`, { cause: error });
     return (data as ChatMessageImageRow | null) ?? null;
   }
 
@@ -482,7 +404,7 @@ export class ChatMessageImageRepository {
         latency_ms: input.latencyMs,
       },
     });
-    if (error) throw new Error(`图片生成结算失败：${error.message}`);
+    if (error) throw new Error(`图片生成结算失败：${error.message}`, { cause: error });
     return (data ?? {}) as SettlementResult;
   }
 
@@ -493,7 +415,7 @@ export class ChatMessageImageRepository {
       .eq('message_id', messageId)
       .in('status', ['pending', 'leased', 'generating', 'storing'])
       .maybeSingle();
-    if (error) throw new Error(`查询图片生成中记录失败：${error.message}`);
+    if (error) throw new Error(`查询图片生成中记录失败：${error.message}`, { cause: error });
     return (data as ChatMessageImageRow | null) ?? null;
   }
 
@@ -504,7 +426,7 @@ export class ChatMessageImageRepository {
       .eq('message_id', messageId)
       .order('attempt_no', { ascending: false })
       .limit(1);
-    if (error) throw new Error(`查询图片生成次数失败：${error.message}`);
+    if (error) throw new Error(`查询图片生成次数失败：${error.message}`, { cause: error });
     const row = (data ?? [])[0] as { attempt_no?: unknown } | undefined;
     return typeof row?.attempt_no === 'number' ? row.attempt_no : 0;
   }
@@ -530,12 +452,12 @@ export class ChatMessageImageRepository {
       );
     if (input.excludeId) query = query.neq('id', input.excludeId);
     const { error } = await query;
-    if (error) throw new Error(`清理图片描述草稿失败：${error.message}`);
+    if (error) throw new Error(`清理图片描述草稿失败：${error.message}`, { cause: error });
   }
 
   private async update(id: string, patch: Record<string, unknown>): Promise<void> {
     const { error } = await this.db.from('chat_message_images').update(patch).eq('id', id);
-    if (error) throw new Error(`更新图片生成记录失败：${error.message}`);
+    if (error) throw new Error(`更新图片生成记录失败：${error.message}`, { cause: error });
   }
 
   // 免费体验：免费体验次数、免费体验额度、免费体验标签
@@ -557,48 +479,4 @@ export class ChatMessageImageRepository {
       // 释放失败不覆盖原始失败原因；过期回收 RPC 会兜底释放名额。
     }
   }
-}
-
-export function toMessageImageAttempt(row: ChatMessageImageRow): MessageImageAttempt {
-  if (!row.prompt_cn || !row.prompt_source) throw new Error('图片 attempt 尚未进入可公开状态');
-  return {
-    id: row.id,
-    message_id: row.message_id,
-    attempt_no: row.attempt_no,
-    tier: row.image_tier ?? 'basic',
-    status: toPublicStatus(row.status),
-    prompt_cn: row.prompt_cn,
-    prompt_source: row.prompt_source,
-    image_url: row.status === 'ready' ? row.image_url : null,
-    width: row.width,
-    height: row.height,
-    mime_type: row.status === 'ready' ? row.mime_type : null,
-    byte_size: row.status === 'ready' ? row.byte_size : null,
-    error_code: row.status === 'failed' || row.status === 'failed_unknown' ? row.error_code : null,
-    price_credits: toNumber(row.price_credits),
-    price_label: row.price_label,
-    credits_charged: toNumber(row.credits_charged),
-    billing_mode: row.billing_mode ?? 'paid',
-    /** 免费体验次数：1、2、3 */
-    free_trial_ordinal: row.free_trial_ordinal ?? null,
-    wallet_policy: row.wallet_policy ?? 'main_only',
-    vip_valid_until: row.vip_valid_until ?? null,
-    created_at: row.created_at,
-    updated_at: row.updated_at,
-    completed_at: row.completed_at,
-  };
-}
-
-function toPublicStatus(status: ImageInternalStatus): MessageImageStatus {
-  if (status === 'draft_describing' || status === 'draft_ready' || status === 'draft_failed') {
-    throw new Error('图片描述草稿状态不得进入公开 attempt');
-  }
-  if (status === 'leased' || status === 'storing') return 'generating';
-  return status;
-}
-
-function toNumber(value: NumericValue): number {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) throw new Error(`无效数值字段：${String(value)}`);
-  return parsed;
 }

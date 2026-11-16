@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const state = {
   tokenUser: { id: '00000000-0000-4000-8000-0000000000a1' } as { id: string } | null,
-  userError: null as { message: string } | null,
+  userError: null as { message: string; status?: number } | null,
   adminUser: {
     role: 'owner',
     can_access_test: true,
@@ -49,9 +49,21 @@ describe('requireAdminActor', () => {
   it('rejects a missing or invalid session', async () => {
     await expect(requireAdminActor(undefined, 'read')).rejects.toMatchObject({ statusCode: 401 });
     state.tokenUser = null;
-    state.userError = { message: 'bad' };
+    state.userError = { message: 'bad', status: 401 };
     await expect(requireAdminActor('Bearer token', 'write')).rejects.toMatchObject({
       statusCode: 401,
+    });
+  });
+
+  it('keeps identity and role dependency failures separate from session rejection', async () => {
+    state.userError = { message: 'private upstream failure', status: 503 };
+    await expect(requireAdminActor('Bearer token', 'read')).rejects.toMatchObject({
+      statusCode: 503,
+    });
+    state.userError = null;
+    state.adminError = { message: 'private query failure' };
+    await expect(requireAdminActor('Bearer token', 'read')).rejects.toMatchObject({
+      statusCode: 503,
     });
   });
 

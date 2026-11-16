@@ -348,28 +348,31 @@ describe('streamConversationTurn — 流未开始的失败', () => {
 });
 
 describe('streamConversationTurn — 流开始后的失败', () => {
-  it('流内 error 事件抛出，已收到的增量不回滚', async () => {
-    fetchMock.mockResolvedValue(
-      sseResponse([
-        frame(START),
-        frame({ type: 'delta', text: '写了一半' }),
-        frame({ type: 'error', code: 'upstream_error', message: '生成中断了，再点一次重新来' }),
-      ])
-    );
+  it.each(['upstream_error', 'upstream_timeout'] as const)(
+    '流内 %s 事件抛出，已收到的增量不回滚',
+    async (code) => {
+      fetchMock.mockResolvedValue(
+        sseResponse([
+          frame(START),
+          frame({ type: 'delta', text: '写了一半' }),
+          frame({ type: 'error', code, message: '生成中断了，再点一次重新来' }),
+        ])
+      );
 
-    const sink = collector();
-    const error = (await streamConversationTurn({
-      sessionId: 's1',
-      content: '你好',
-      ...sink.options,
-    }).catch((e: unknown) => e)) as ConversationStreamError;
+      const sink = collector();
+      const error = (await streamConversationTurn({
+        sessionId: 's1',
+        content: '你好',
+        ...sink.options,
+      }).catch((e: unknown) => e)) as ConversationStreamError;
 
-    expect(error).toBeInstanceOf(ConversationStreamError);
-    expect(error.code).toBe('upstream_error');
-    // 半截正文必须已经交给渲染层，UI 才能保留它
-    expect(sink.deltas.join('')).toBe('写了一半');
-    expect(sink.done).toHaveLength(0);
-  });
+      expect(error).toBeInstanceOf(ConversationStreamError);
+      expect(error.code).toBe(code);
+      // 半截正文必须已经交给渲染层，UI 才能保留它
+      expect(sink.deltas.join('')).toBe('写了一半');
+      expect(sink.done).toHaveLength(0);
+    }
+  );
 
   it('流没等到 done 就断了，按中断处理', async () => {
     fetchMock.mockResolvedValue(

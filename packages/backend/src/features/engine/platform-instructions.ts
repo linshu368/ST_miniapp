@@ -1,3 +1,4 @@
+import { observation } from '../../platform/observability/runtime.js';
 /**
  * backend / features / engine / platform-instructions.ts
  *
@@ -227,10 +228,11 @@ export function buildSnapshot(
 
   const template = parseTemplate(entries.get(PLATFORM_INSTRUCTIONS_TEMPLATE_KEY));
   if (!template || !isCurrentTemplate(template)) {
-    console.error(
-      `[engine] runtime_config ${PLATFORM_INSTRUCTIONS_TEMPLATE_KEY} (version ${
-        entries.get(PLATFORM_INSTRUCTIONS_TEMPLATE_KEY)?.version ?? -1
-      }) 缺失、非法或包含废弃占位符；平台规则已降级到内置兜底模板`
+    observation.emit(
+      'engine.template_degraded',
+      'engine.config',
+      { outcome: 'degraded', outcome_known: false },
+      'warn'
     );
     degraded = true;
   }
@@ -238,8 +240,11 @@ export function buildSnapshot(
   const wordCountEntry = entries.get(WORD_COUNT_TIERS_KEY);
   let wordCountTiers = parseWordCountTiers(wordCountEntry?.value);
   if (!wordCountTiers) {
-    console.error(
-      `[engine] runtime_config ${WORD_COUNT_TIERS_KEY} 缺失或格式非法，字数档位已降级到内置兜底`
+    observation.emit(
+      'engine.word_count_degraded',
+      'engine.config',
+      { outcome: 'degraded', outcome_known: false },
+      'warn'
     );
     degraded = true;
   } else {
@@ -252,10 +257,16 @@ export function buildSnapshot(
       // 回灌契约校验后的值：两个出口从此拿到同一份（已 trim）数据
       wordCountTiers = configToEngineWordCountTiers(validated.config);
     } else {
-      console.error(
-        `[engine] runtime_config ${WORD_COUNT_TIERS_KEY}（version ${
-          wordCountEntry?.version ?? -1
-        }）不满足 shared 契约，字数档位已整表降级到内置兜底：${validated.issues.join('；')}`
+      observation.emit(
+        'engine.word_count_contract_degraded',
+        'engine.config',
+        {
+          outcome: 'degraded',
+          outcome_known: false,
+          resource: WORD_COUNT_TIERS_KEY,
+          config_version: wordCountEntry?.version,
+        },
+        'warn'
       );
       wordCountTiers = null;
       degraded = true;
@@ -296,8 +307,11 @@ function readSlotRules(
   if (rules) return { rules, degraded: false };
 
   // Do not include validation issues or a JSON value here: both can contain operator rule text.
-  console.error(
-    `[engine] runtime_config ${key} (version ${entry?.version ?? -1}) 缺失或不满足 instruction-slot schema；已使用安全兜底`
+  observation.emit(
+    'engine.slot_rules_degraded',
+    'engine.config',
+    { outcome: 'degraded', outcome_known: false },
+    'warn'
   );
   return { rules: FALLBACK_SLOT_RULES, degraded: true };
 }
@@ -311,7 +325,12 @@ export async function fetchPlatformInstructions(): Promise<PlatformInstructionsS
   try {
     entries = await fetchRuntimeConfigEntries(CONFIG_KEYS);
   } catch (error) {
-    console.error('[engine] 读取平台规则失败:', error);
+    observation.emit(
+      'engine.instructions_read_failed',
+      'engine.config',
+      { outcome: 'degraded', outcome_known: false, err: error },
+      'warn'
+    );
     entries = new Map();
   }
 

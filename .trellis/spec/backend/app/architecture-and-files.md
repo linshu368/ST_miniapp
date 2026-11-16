@@ -38,7 +38,7 @@ Repository 隐藏 schema client/Prisma 行形状，返回领域结果；跨 sche
 ## `src/lib/`、`src/platform/` 与其他目录
 
 - `lib/db.ts`：Prisma 单例；`lib/supabase.ts`：按域 Supabase client。
-- `lib/logger.ts`/`log-pretty.ts`：pino；`lib/sentry.ts`：监控与脱敏。
+- `platform/observability/`：集中日志核心、Pino/Sentry/后台观测接线、规则和测试；`sdk.ts` 只导出低依赖 factory/契约，文件规则及项目 singleton 留在装配层。`lib/logger.ts`、`logger-options.ts`、`sentry.ts`、`background-observability.ts` 仅重导出兼容。
 - `chat-history-logger.ts` + `chat-history-sync-job.ts`：终态即时记录与轮询补齐；`chat-voice-storage.ts`：语音 Storage。
 - `lobby-ranking-refresh-job.ts`/`lobby-latest-badge.ts`：大厅后台能力；`notifications.ts`/`notification-scope.ts`：通知；`cs-service.ts`：调用独立客服服务（linshu368/ST_cs_platform）；`telegram-links.ts`、`user-avatar.ts`、`user.ts`：边界工具。
 - `platform/config.ts`：环境变量解析唯一中心；`runtime-config.ts`：DB 配置读取唯一入口；`model-tiers.ts`、`openrouter-models.ts`：模型档位和目录。

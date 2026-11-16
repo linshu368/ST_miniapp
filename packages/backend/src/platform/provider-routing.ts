@@ -1,3 +1,4 @@
+import { observation } from './observability/runtime.js';
 /**
  * backend / platform / provider-routing.ts
  *
@@ -42,9 +43,11 @@ export async function getProviderRoutingConfig(): Promise<LlmProviderRoutingConf
 
     const parsed = LlmProviderRoutingConfigSchema.safeParse(entry.value);
     if (!parsed.success) {
-      console.error(
-        '[provider-routing] Invalid llm_provider_routing_config:',
-        parsed.error.flatten()
+      observation.emit(
+        'routing.config_invalid',
+        'routing.config',
+        { outcome: 'degraded', outcome_known: false, err: parsed.error },
+        'warn'
       );
       return cachedConfig ?? DEFAULT_LLM_PROVIDER_ROUTING_CONFIG;
     }
@@ -54,7 +57,12 @@ export async function getProviderRoutingConfig(): Promise<LlmProviderRoutingConf
     lastFetchTime = now;
     return cachedConfig;
   } catch (err) {
-    console.error('[provider-routing] Error fetching llm_provider_routing_config:', err);
+    observation.emit(
+      'routing.config_read_failed',
+      'routing.config',
+      { outcome: 'degraded', outcome_known: false, err: err },
+      'warn'
+    );
     return cachedConfig ?? DEFAULT_LLM_PROVIDER_ROUTING_CONFIG;
   }
 }

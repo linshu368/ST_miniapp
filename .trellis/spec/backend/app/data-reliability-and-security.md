@@ -30,9 +30,75 @@
 
 ## 可观测性与发布
 
+日志实现、测试及规则集中在 `platform/observability/`；`alert-rules.json` 是唯一规则来源，LOG_ALERT_RULES 环境变量已移除读取。总开关默认关闭时零文件 I/O，开启时只读固定模块相对 URL 并冻结快照，文件错误 fail fast。业务仍通过 runtime-config 的统一 getter 取得配置。模块/业务模块、HTTP/上游状态分别精确匹配；停用专项规则不抑制后续兜底。`logging:validate` 和 CI 校验真实文件，无数据库或通知副作用。SDK 候选入口不导入 runtime、配置、文件、Pino、DB 或具体渠道；业务字段与框架适配保持显式，完整契约见 [模块 README](../../../../packages/backend/src/platform/observability/README.md)。
+
+### 统一运行时事件接入契约
+
+1. **范围**：`platform/observability/` 为统一事件底座，分模块接入；运行时 stdout 由 Railway 捕获，不新增日志存储或重放。底座存在不代表全仓覆盖完成。
+2. **签名**：`createObserver(sinks)` 提供 `emit/start/observe/observeSync`；`start().finish()` 一次有效；`withContext(context, run)` 使用隔离作用域，嵌套操作继承 trace 并新建 span。
+3. **契约**：只投影 EventFields 白名单。固定字段和关联标识不可由扩展字段覆盖；传原始 err，出口过滤未知消息，只保留受控类型、有界源码位置和 cause。`observe` 执行一次，原结果/异常回传；写操作异常默认 outcome_known=false，不推断是否提交。
+4. **错误矩阵**：输出同步抛错/异步拒绝只增加健康计数；摘要提取失败记录 unknown，不替换业务成功；关闭可选输出不代表基础 stdout 可被诊断等级关闭。
+5. **案例**：正常为父子 span 和独立请求上下文；基线为无 HTTP 的根操作；错误为记录完整 SDK Error.message、body 或按异常重执行业务。
+6. **验证**：核心回归覆盖并发隔离、嵌套、原值/异常、执行一次、重复 finish、输出故障、摘要异常、敏感字段与超限；每个接入模块另验证其协议终态。
+7. **正误对照**：错误做法是将 Error 序列化后直接写出或用 enterWith 污染其他请求；正确做法是受控错误投影及 run 作用域，业务自己决定实际结算和交付结果。
+
+HTTP 根级 `registerHttpObservation` 在 CORS/鉴权之前运行，使用回调 hook 在 `withContext` 内继续；响应头回传 X-Request-Id/X-Trace-Id。raw finish/close 与 onResponse 共用一次终态守卫，hijack SSE 也记录传输结果；SSE HTTP 200 业务结果保持 unknown，由流所有者另报。默认 Fastify 请求日志关闭，避免双份开始/终态。基础 stdout 与 LOG_LEVEL 独立，测试默认静默；logger-options 独立于配置/数据库初始化，错误对象及 Pino 自动生成的 msg 都须清洗。
+
+出站客户端在原模块声明 `clientFetch(operation, provider)`，只包装该客户端的 fetch；`observedFetch` 可传入已有 undici/代理实现。记录到 response_headers，不读取正文、不改 signal/timeout/redirect、不添加重试。非成功 HTTP 是 attempt 失败，不等于业务失败；写入抛错为 outcome_known=false。Supabase 从既有 observedSupabaseFetch 接入（含非 REST 请求）；Prisma 从 measureDbOperation 接入 model/raw/unsafe raw。SDK 返回的业务错误仍由 repository/业务边界判断，禁止把 HTTP 200 当作 RPC 业务成功。
+
+共享与 dedicated Prisma 都必须应用 `applyPrismaObservation`，保留原单连接/transaction 语义；pg advisory lease 用 observer 包装原 connect/lock/unlock/close。AST 门禁现在核对 Prisma/Supabase/pg 创建边界及实际包装；新增其他 SDK/动态入口仍需独立评审接线。不新增日志 SQL 或查询参数；锁竞争未取得是业务 skipped，不是数据库执行失败。
+
+生成入口 `execute` 用独立子操作记录安全结果，不输出正文；原执行/计费及 hooks 不变。`createReplyStreamSink` 在 open 建立交付操作，流内 error 和 done 提供应用结果；断连优先记录 interrupted，后续后台生成成功不能改写已中断的交付。`observeGenerationAttempt` 与 `observeBackgroundJob` 的基础事件在可选工程遥测开关之前输出。工程 OTLP exporter 拆至 engineering-telemetry-exporter，原指标口径及出口配置不变。
+
 - 使用现有 pino、`requestLogger`；原始异常写 `{ err }`。Sentry 先脱敏再附 context。
 - 关键流程记录阶段、耗时、状态/计数、安全幂等摘要、provider/request id；job 记录扫描/推进/失败数，禁止逐行高频 info。
 - 发布顺序：兼容 migration → backend producer → consumers → 清理旧字段。说明旧数据、灰度/停止条件、rollback 或 forward-fix。生产 migration 手动逐文件，先 test 验证 shape、RLS/权限、读写、锁/容量和回滚。
+
+### 运行时日志补充（2026-11-13，本地未部署）
+
+定时任务用 runObservedJob 建独立上下文，由已有 observeBackgroundRun 提供真实终态；resolved void 不能推定成功。支付语义事件使用脱敏业务键，禁止原订单/用户/metadata 进入通知。
+
+Pino 标量白名单与 Sentry 各出口过滤原始内容；短剧诊断必须走 validatedDramaLog 的 shared schema 保留完整安全结构。生产代码禁止 console，离线 CLI stdout 是明确例外，CI 执行 lint:backend-logging。LOG_ALERTING_ENABLED 默认关闭；开启时第一条规则匹配即直接发送安全通知，4并发/2.5秒/无持久化无重试。内部通知故障事件不递归。完整配置与错误契约保留边界见 docs/backend-observability-runtime.md。
+
+审计补充：Pino 子 logger 会重置绑定 formatter，必须在 onChild 重建安全绑定缓存，同时过滤后续 setBindings；升级 Pino 验证实际 JSON 输出。SDK 普通错误对象仅保留受控 code，foundation 再投影不能丢失有限 cause 链。数据库异常转换使用 `new Error(compatibleMessage, { cause: originalError })`，已映射业务错误也保留 cause，禁止只复制 message；捕获后返回响应的业务边界仍须记录 `{ err }`，不能依赖不会触发的 onError。无 event 的 warn/error/fatal 以固定 logger.warn/logger.error/logger.fatal 兜底，业务优先登记稳定 event；默认告警仍只匹配 error/fatal。告警保留 error_code/public_error_code 两个事实，error_codes 兼容匹配任一，public_error_codes 精确匹配公开码；关闭时仍不进行匹配或通知。HTTP 各完成回调共用等级判断，禁止首个回调遗漏 severity 后锁死错误等级。
+
+新客户端的 fetch 默认值、别名和 SDK transport 注入也要显式登记；新定时 worker 必须建立独立 runObservedJob 上下文。静态 AST guard 检查这些边界并在 CI 跑自测，但不替代异步上下文、终态和返回身份测试。计数字段使用明确的 Count/\_count 名称，不传整个业务对象来获得排障信息。
+
+每轮任务的结果/异常回调必须处于同一根上下文中，不能只包装 runPass 后在作用域外记录汇总。AST 按实际 setInterval 回调、sleep 轮询循环检查，不依赖 job/worker 文件名或同文件出现过任意 wrapper。新 scripts 默认检查，新增离线例外必须核对其人工 stdout 协议及运行时消费者；当前例外和具体语法边界见 `scripts/check-backend-logging.mjs`、`scripts/logging-boundary-checks.mjs` 与运行说明。
+
+## 场景：Railway 业务关联字段（2026-11-14）
+
+### 1. 范围与触发条件
+
+用户/会话/角色创作/短剧日志接入，以及修改 Pino 白名单、ALS、身份缓存或 Sentry 出口时适用；本地实现不代表线上已部署。
+
+### 2. 签名
+
+`bindBusinessContext(fields: BusinessFields): void` 补充当前请求；`withBusinessContext<T>(fields, run): T` 克隆并行业务作用域；`contextLogFields()` 展平安全字段供 Pino/observer 使用。没有新的公开 API/数据库对象/环境变量。
+
+### 3. 字段契约
+
+`user_id/session_id/character_id/creation_id/drama_id/video_id` 只接受 UUID 并规范为小写，legacy camelCase 输入统一为 snake_case。`telegram_user_id` 只由鉴权成功路径绑定为安全正整数字符串，不把 Telegram 数字混入 user_id。当前创作以角色卡为实体，creation_id=character_id；不要虚构 project_id。business_module 采用固定词表，与技术 module/operation 分开。HTTP 参数目标不等于 ownership 证明。
+
+补充审计：影像创作的 `image_conversation_id`（兼容 legacy conversationId）与聊天 session_id 分开，`attempt_id/work_id/artifact_id/message_id/audio_id/image_id` 使用同样 UUID 投影和出口排除。路由映射同时识别 :id 与 :sessionId；getSession ownership 读取成功后补角色，而不是仅在空会话复用分支绑定。图片/影像/记忆 worker 逐实体克隆上下文，支付语义事件从已有可信事件取内部用户，群 webhook 验 secret 和身份后绑定，不增加查库。业务模块还覆盖 growth/community/support/wallet/vip/free_zone。
+
+根上下文各有独立关联容器，子 span 共享，HTTP started 后补入的身份可用于 raw finish/close 终态。不同对象的并行任务用 withBusinessContext，不能修改共享父容器。内部身份缓存和 inflight 的每个调用者必须在 await 后绑定，不能只在实际查询分支绑定。禁止为了日志额外查库；无映射身份时留空。只允许 Railway stdout 输出这些 ID；Sentry 的所有出口、告警和指标保持排除。
+
+### 4. 校验与错误矩阵
+
+非法/缺失 ID → 丢弃；鉴权失败 → 无身份字段；身份查询失败 → 不虚构 user_id；资源不存在/越权 → 可保留请求目标但结果为原拒绝；SSE 断开 → 已有关联字段+interrupted，一次终态。日志不新增重试或改变业务异常。
+
+### 5. 正常、基础与错误场景
+
+正常：按用户/会话找到 trace，再查 DB/provider 子 span。基础：短剧只需 Telegram 鉴权，不增加用户查库。错误：把用户 DTO 整体传 logger，或并行卡片处理共享一个可变对象。
+
+### 6. 必须验证
+
+既有 core/http/logger/user/auth/sentry 测试覆盖真实 JSON、共享 inflight/cache、不同请求/作用域隔离、延迟补字段、断开、非法 ID 和所有遥测出口。业务 route 测试保留协议；发布后按运行说明在 Railway 实测检索，真实 P95 仍按任务窗口记录。
+
+### 7. 错误与正确做法
+
+错误：只在 `resolveDbUserIdentity` 内绑定用户，等待同一 Promise 的其他请求丢身份。正确：`const user = await loadDbUserIdentity(tgUser); bindBusinessContext({ user_id: user.id });`。并行业务用 `withBusinessContext({ session_id }, () => run())`；日志白名单允许 ID 后仍应单独验证 Sentry beforeSendSpan，不仅验证 beforeSend。
 
 ## Scenario: 文字回复取消与残留恢复
 

@@ -1,4 +1,7 @@
 import { config } from '../platform/config.js';
+import { clientFetch } from '../platform/observability/fetch.js';
+
+const fetch = clientFetch('support.proxy', 'cs');
 
 /** 客服服务在 Vercel 上，正常几百毫秒；超时宁可快速失败也不拖住 Telegram webhook */
 const CS_SERVICE_TIMEOUT_MS = 5_000;

@@ -28,6 +28,7 @@ describe('conversationErrorStatus', () => {
     message_change_not_allowed: 409,
     message_change_conflict: 409,
     upstream_error: 502,
+    upstream_timeout: 504,
     first_token_timeout: 504,
     fallback_first_token_timeout: 504,
     primary_first_token_timeout: 504,

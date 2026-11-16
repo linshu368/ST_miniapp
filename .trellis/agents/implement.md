@@ -44,6 +44,8 @@ labels: [trellis, implement]
 
 ## 实施要求
 
+- 新增/修改功能或合并上游入口前，检查任务 `meta.logging_integration`，按 `.trellis/spec/backend/app/logging-integration-planning.md` 完成接入或显式复用。确认字段通过最终 Pino JSON 投影、用户来自鉴权/既有映射、对象 ID 含义正确、并行对象作用域隔离；新增 transport 复用现有 wrapper，HTTP/ACK 成功与实际业务结果分别上报。
+
 - 先复用现有组件、模块、feature、hook、store、bridge、contract 与工具能力，再决定是否新增实现。
 - 在保证可复用性、可扩展性、高可用性的同时，保持实现简洁明了，不增加无用代码或无意义抽象。
 - 只实现任务要求的内容，不做投机性扩展。

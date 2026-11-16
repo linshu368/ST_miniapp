@@ -10,6 +10,9 @@ import {
 import { authorizeAdminOperator } from '../features/admin-access/session.js';
 import { config } from '../platform/config.js';
 import { getSupabaseClient } from '../lib/supabase.js';
+import { clientFetch } from '../platform/observability/fetch.js';
+
+const fetch = clientFetch('admin.supabase_proxy', 'supabase');
 
 const ALLOWED_PATH_PREFIXES = ['auth/v1/', 'rest/v1/', 'storage/v1/'];
 const FORWARDED_REQUEST_HEADERS = [
@@ -142,8 +145,8 @@ async function testImageTextModel(
     });
   } catch (error) {
     throw new ImageTextModelTestError(
-      502,
-      'MODEL_TEST_NETWORK_ERROR',
+      isTimeoutError(error) ? 504 : 502,
+      isTimeoutError(error) ? 'MODEL_TEST_TIMEOUT' : 'MODEL_TEST_NETWORK_ERROR',
       isTimeoutError(error) ? '模型调用超时' : '模型调用网络失败'
     );
   }
@@ -204,6 +207,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export default async function adminSupabaseProxyRoutes(app: FastifyInstance) {
+  registerModelTest(app);
+  registerInvitePoster(app);
+  registerCharacterAsset(app);
+  registerSupabaseProxy(app);
+}
+
+function registerModelTest(app: FastifyInstance): void {
   // @frontend-ready: true - admin tests image_text_model_config with an OpenAI-compatible text call
   app.post('/api/admin/image-text-model/test', async (request, reply) => {
     if (!(await authorizeAdminOperator(request, reply))) return reply;
@@ -245,7 +255,9 @@ export default async function adminSupabaseProxyRoutes(app: FastifyInstance) {
       return reply.status(testError.statusCode).send(fail(testError.code, testError.message));
     }
   });
+}
 
+function registerInvitePoster(app: FastifyInstance): void {
   // @frontend-ready: true —— admin 素材编辑器上传邀请海报，返回 public URL 由运营写进 poster_url
   app.post(
     '/api/admin/invite-poster',
@@ -256,12 +268,16 @@ export default async function adminSupabaseProxyRoutes(app: FastifyInstance) {
 
       const body = request.body as { imageBase64?: unknown };
       if (typeof body?.imageBase64 !== 'string' || body.imageBase64.length === 0) {
-        return reply.status(400).send({ message: 'Poster image data is required' });
+        return reply
+          .status(400)
+          .send({ code: 'BAD_REQUEST', message: 'Poster image data is required' });
       }
       const image = Buffer.from(body.imageBase64, 'base64');
       const sniffed = sniffPosterImage(image);
       if (!sniffed || image.length > INVITE_POSTER_MAX_BYTES) {
-        return reply.status(400).send({ message: '仅支持不超过 10 MB 的 PNG / JPG / WEBP 图片' });
+        return reply
+          .status(400)
+          .send({ code: 'BAD_REQUEST', message: '仅支持不超过 10 MB 的 PNG / JPG / WEBP 图片' });
       }
 
       // 每次上传落新对象（时间戳 + 随机段），不覆盖旧对象：
@@ -274,6 +290,7 @@ export default async function adminSupabaseProxyRoutes(app: FastifyInstance) {
       if (uploadError) {
         request.log.error({ err: uploadError, storagePath }, 'Invite poster upload failed');
         return reply.status(502).send({
+          code: 'STORAGE_UPLOAD_FAILED',
           message: '邀请海报上传失败，请确认迁移 107 已执行（miniapp-invite-posters 桶存在）',
         });
       }
@@ -282,7 +299,9 @@ export default async function adminSupabaseProxyRoutes(app: FastifyInstance) {
       return reply.send({ posterUrl });
     }
   );
+}
 
+function registerCharacterAsset(app: FastifyInstance): void {
   // @frontend-ready: true —— admin 角色卡头像上传
   app.post(
     '/api/admin/character-assets/:characterId',
@@ -294,7 +313,9 @@ export default async function adminSupabaseProxyRoutes(app: FastifyInstance) {
       const { characterId } = request.params as { characterId: string };
       const body = request.body as { pngBase64?: unknown };
       if (typeof body?.pngBase64 !== 'string') {
-        return reply.status(400).send({ message: 'PNG image data is required' });
+        return reply
+          .status(400)
+          .send({ code: 'BAD_REQUEST', message: 'PNG image data is required' });
       }
       const png = Buffer.from(body.pngBase64, 'base64');
       const pngSignature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -303,14 +324,17 @@ export default async function adminSupabaseProxyRoutes(app: FastifyInstance) {
         png.length > 5 * 1024 * 1024 ||
         !png.subarray(0, pngSignature.length).equals(pngSignature)
       ) {
-        return reply.status(400).send({ message: 'Only PNG images up to 5 MB are supported' });
+        return reply
+          .status(400)
+          .send({ code: 'BAD_REQUEST', message: 'Only PNG images up to 5 MB are supported' });
       }
 
       const character = await prisma.character.findUnique({
         where: { id: characterId },
         select: { id: true },
       });
-      if (!character) return reply.status(404).send({ message: 'Character not found' });
+      if (!character)
+        return reply.status(404).send({ code: 'NOT_FOUND', message: 'Character not found' });
 
       const bucket = process.env.CHARACTER_STORAGE_BUCKET || 'character-assets';
       const storagePath = `characters/platform_${characterId}.png`;
@@ -320,7 +344,9 @@ export default async function adminSupabaseProxyRoutes(app: FastifyInstance) {
         .upload(storagePath, png, { contentType: 'image/png', upsert: true });
       if (uploadError) {
         request.log.error({ err: uploadError, characterId }, 'Character avatar upload failed');
-        return reply.status(502).send({ message: 'Character avatar upload failed' });
+        return reply
+          .status(502)
+          .send({ code: 'STORAGE_UPLOAD_FAILED', message: 'Character avatar upload failed' });
       }
 
       const avatarUrl = `${config.supabase.url}/storage/v1/object/public/${bucket}/${storagePath}`;
@@ -331,18 +357,24 @@ export default async function adminSupabaseProxyRoutes(app: FastifyInstance) {
       return reply.send({ avatarUrl });
     }
   );
+}
 
+function registerSupabaseProxy(app: FastifyInstance): void {
   // @frontend-ready: true —— admin 前端的 Supabase 请求统一代理
   app.all('/api/admin/supabase/*', async (request, reply) => {
     if (!config.supabase.url) {
-      return reply.status(503).send({ message: 'Supabase proxy is not configured' });
+      return reply
+        .status(503)
+        .send({ code: 'CONFIGURATION_ERROR', message: 'Supabase proxy is not configured' });
     }
 
     let upstreamUrl: URL;
     try {
       upstreamUrl = buildUpstreamUrl(request);
     } catch {
-      return reply.status(404).send({ message: 'Unsupported Supabase proxy path' });
+      return reply
+        .status(404)
+        .send({ code: 'ADMIN_PROXY_PATH_NOT_ALLOWED', message: 'Unsupported Supabase proxy path' });
     }
 
     try {
@@ -351,6 +383,7 @@ export default async function adminSupabaseProxyRoutes(app: FastifyInstance) {
         headers: buildRequestHeaders(request),
         body: serializeBody(request),
         redirect: 'manual',
+        signal: AbortSignal.timeout(30_000),
       });
 
       reply.status(response.status);
@@ -361,7 +394,10 @@ export default async function adminSupabaseProxyRoutes(app: FastifyInstance) {
       return reply.send(Buffer.from(await response.arrayBuffer()));
     } catch (error) {
       request.log.error({ err: error, upstreamUrl: upstreamUrl.origin }, 'Supabase proxy failed');
-      return reply.status(502).send({ message: 'Supabase 暂时无法访问，请稍后重试' });
+      return reply.status(isTimeoutError(error) ? 504 : 502).send({
+        code: isTimeoutError(error) ? 'ADMIN_PROXY_TIMEOUT' : 'ADMIN_PROXY_UNAVAILABLE',
+        message: 'Supabase 暂时无法访问，请稍后重试',
+      });
     }
   });
 }

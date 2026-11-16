@@ -1,5 +1,9 @@
 import { fetch as undiciFetch, ProxyAgent, type RequestInit as UndiciRequestInit } from 'undici';
 import { config } from './config.js';
+import { clientFetch } from './observability/fetch.js';
+import { observedFetch } from './observability/fetch.js';
+
+const fetch = clientFetch('provider.venice', 'venice');
 
 let proxyAgent: ProxyAgent | undefined;
 let proxyAgentForUrl: string | undefined;
@@ -23,10 +27,17 @@ export async function veniceFetch(
     return fetch(input, init);
   }
 
-  return undiciFetch(input as never, {
-    ...(init as UndiciRequestInit),
-    dispatcher,
-  }) as unknown as Promise<Response>;
+  return observedFetch(
+    'provider.venice',
+    input,
+    init,
+    { provider: 'venice' },
+    (url, options) =>
+      undiciFetch(url as never, {
+        ...(options as UndiciRequestInit),
+        dispatcher,
+      }) as unknown as Promise<Response>
+  );
 }
 
 function getVeniceProxyAgent(): ProxyAgent | undefined {

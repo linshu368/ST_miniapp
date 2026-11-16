@@ -15,7 +15,7 @@ import {
 import { requireTelegramAuth } from '../middleware/auth.js';
 import { getOrCreateDbUser } from '../lib/user.js';
 import { requestLogger } from '../lib/logger.js';
-import { DramaSurveyError, DramaSurveyRepository } from '../features/drama-survey/repository.js';
+import { DramaSurveyRepository } from '../features/drama-survey/repository.js';
 
 type Action = 'status' | 'submit' | 'dismiss';
 
@@ -64,17 +64,20 @@ export default async function dramaSurveyRoutes(app: FastifyInstance) {
       outcome = result.status;
       return reply.send(ok(result));
     } catch (err) {
-      // 仓储错误只带 PostgREST code，不带 detail（可能含用户填写的文字）；其他错误换成不含原文的占位。
-      log.sys.error(
-        { err: err instanceof DramaSurveyError ? err : new Error(`Drama survey ${action} failed`) },
-        'drama survey failed'
-      );
+      // Raw errors go through the shared safe serializer; survey text/details never cross stdout.
+      log.sys.error({ event: 'drama_survey.failed', action, err }, 'drama survey failed');
       return reply
         .code(503)
         .send(fail('SERVICE_UNAVAILABLE', action === 'submit' ? '提交失败，请重试' : '请稍后再试'));
     } finally {
       log.biz.info(
-        { action, outcome, status: reply.statusCode, elapsedMs: performance.now() - started },
+        {
+          event: 'drama_survey.completed',
+          action,
+          outcome,
+          status: reply.statusCode,
+          elapsedMs: performance.now() - started,
+        },
         'drama survey'
       );
     }

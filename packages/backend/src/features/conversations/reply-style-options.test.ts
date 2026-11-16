@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fetchPublicReplyStyleOptions } from './reply-style-options.js';
+import { observation } from '../../platform/observability/runtime.js';
+import { createObserver } from '../../platform/observability/core.js';
 
 const runtime = vi.hoisted(() => ({ fetch: vi.fn() }));
 vi.mock('../../platform/runtime-config.js', () => ({ fetchRuntimeConfigEntry: runtime.fetch }));
@@ -59,15 +61,22 @@ describe('published reply-style UI metadata', () => {
   });
 
   it('invalid catalogs are omitted without logging private config or validation issues', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const records: unknown[] = [];
+    vi.spyOn(observation, 'emit').mockImplementation(
+      createObserver([
+        (event) => {
+          records.push(event);
+        },
+      ]).emit
+    );
     runtime.fetch.mockResolvedValue({
       value: { options: [{ ...option, name: '', description: 'PRIVATE_DESCRIPTION' }] },
       textValue: null,
       version: 9,
     });
     expect(await fetchPublicReplyStyleOptions()).toEqual([]);
-    const log = warn.mock.calls.flat().join(' ');
-    expect(log).toContain('version 9');
+    const log = JSON.stringify(records);
+    expect(records[0]).toMatchObject({ resource: 'reply_style_options', config_version: 9 });
     expect(log).not.toContain('PRIVATE_');
   });
 });

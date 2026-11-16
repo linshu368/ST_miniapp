@@ -1,3 +1,4 @@
+import { clientFetch } from '../../platform/observability/fetch.js';
 import type { FastifyBaseLogger } from 'fastify';
 import {
   SurplusIntelligenceChatHistoryRepository,
@@ -6,6 +7,8 @@ import {
 } from '../../infrastructure/repositories/SurplusIntelligenceChatHistoryRepository.js';
 import { getLlmProviderRuntimeConfig } from '../../platform/runtime-config.js';
 import { SurplusResponseCapture } from './surplus-response-capture.js';
+
+const fetch = clientFetch('provider.surplus.recovery', 'surplus');
 
 const LOOKBACK_MS = 24 * 60 * 60 * 1000;
 const FETCH_LIMIT = 9;

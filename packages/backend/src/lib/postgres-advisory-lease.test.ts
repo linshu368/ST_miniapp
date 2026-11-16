@@ -1,4 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
+import { observation } from '../platform/observability/runtime.js';
+import { createObserver } from '../platform/observability/core.js';
+import type { ObservationEvent } from '../platform/observability/events.js';
 import {
   withSessionAdvisoryLock,
   type SessionAdvisoryLockClient,
@@ -17,6 +20,34 @@ function client(responses: Array<{ locked?: boolean; unlocked?: boolean }>): {
 }
 
 describe('withSessionAdvisoryLock', () => {
+  it('observes dedicated connect/lock/unlock/close without logging lock SQL or keys', async () => {
+    const records: ObservationEvent[] = [];
+    const spy = vi.spyOn(observation, 'observe').mockImplementation(
+      createObserver([
+        (event) => {
+          records.push(event);
+        },
+      ]).observe
+    );
+    const fake = client([{ locked: true }, { unlocked: true }]);
+    try {
+      await expect(
+        withSessionAdvisoryLock(731006, async () => 'original', { createClient: () => fake.client })
+      ).resolves.toEqual({ acquired: true, value: 'original' });
+      expect(
+        records
+          .filter((event) => event.event === 'operation.terminal')
+          .map((event) => event.operation)
+      ).toEqual(['db.lease.connect', 'db.lease.lock', 'db.lease.unlock', 'db.lease.close']);
+      expect(JSON.stringify(records)).not.toContain('731006');
+      expect(JSON.stringify(records)).not.toContain('SELECT');
+      expect(fake.connect).toHaveBeenCalledOnce();
+      expect(fake.query).toHaveBeenCalledTimes(2);
+      expect(fake.end).toHaveBeenCalledOnce();
+    } finally {
+      spy.mockRestore();
+    }
+  });
   it('acquires and releases the lease through the same dedicated client', async () => {
     const fake = client([{ locked: true }, { unlocked: true }]);
     const work = vi.fn().mockResolvedValue('done');

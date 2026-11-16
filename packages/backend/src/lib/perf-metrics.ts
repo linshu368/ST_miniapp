@@ -9,6 +9,8 @@ import * as Sentry from '@sentry/node';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { observeHttp, observeDb, observeRuntime } from './engineering-observability.js';
 import { registerPreparationDiagnostics } from './preparation-diagnostics.js';
+import { observation } from '../platform/observability/runtime.js';
+import { withContext } from '../platform/observability/context.js';
 
 /** 初值，跑出基线后再调。 */
 const SLOW_REQUEST_MS = 3_000;
@@ -185,11 +187,20 @@ export async function measureDbOperation<T>(
   run: () => Promise<T>
 ): Promise<T> {
   const startedAt = performance.now();
+  const operationObservation = observation.start(`db.prisma.${model}.${operation}`);
   let outcome = 'ok';
   try {
-    return await run();
+    const result = await withContext(operationObservation.context, run);
+    operationObservation.finish({ outcome: 'succeeded', outcome_known: true });
+    return result;
   } catch (err) {
     outcome = (err as { code?: string } | null)?.code === 'P2024' ? 'pool_timeout' : 'error';
+    operationObservation.finish({
+      outcome: 'failed',
+      outcome_known: false,
+      error_code: outcome === 'pool_timeout' ? 'DATABASE_POOL_TIMEOUT' : 'DATABASE_ERROR',
+      err,
+    });
     throw err;
   } finally {
     const durationMs = performance.now() - startedAt;
