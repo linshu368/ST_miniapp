@@ -1,5 +1,9 @@
 # 设计
 
+## 2026-11-14 合并日志接入补充
+
+复用统一 HTTP/ALS、身份映射、Supabase transport 与 Pino 白名单，不新增日志存储或业务查询。GET 资格摘要使用 community_prompt/vip_prompt 布尔，POST 事件保留 biz/sys kind、独立 prompt_kind/action/recorded；不输出整组 prompt 或用户信息。群欢迎语通过 clientFetch 保留原 5 秒截止、零重试和异步发送；HTTP 结果与 payload.ok 失败分别由 transport/业务事件表达。验签后的群 webhook 与已有用户查询补关联，失败不影响原奖励/ACK。完整事件、脱敏、告警与验证见 task.json.meta.logging_integration；既有业务/性能设计及样本保持原义。
+
 ## 1. 复用调研
 
 | 检索对象                                                                               | 结论                                                                                                                                                 |

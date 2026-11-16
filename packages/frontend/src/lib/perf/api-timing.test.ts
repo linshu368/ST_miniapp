@@ -31,6 +31,10 @@ describe('API engineering timing projection', () => {
     expect(apiRouteGroup('/api/dramas/play')).toBe('drama_playback');
     expect(apiRouteGroup('/api/v1/conversations/id/messages?secret=yes')).toBe('conversation_turn');
     expect(apiRouteGroup('/api/lobby-characters?sort=latest')).toBe('lobby_characters');
+    expect(apiRouteGroup('/api/v1/conversations/groups?offset=0&summary=1')).toBe(
+      'conversation_groups'
+    );
+    expect(apiRouteGroup('/api/v1/conversations/session-id')).toBe('conversation_detail');
     expect(apiRouteGroup('/api/characters/latest-badge')).toBe('character_activity');
     expect(apiRouteGroup('/api/characters/latest-seen')).toBe('character_activity');
     expect(apiRouteGroup('/api/characters/social')).toBe('character_social');

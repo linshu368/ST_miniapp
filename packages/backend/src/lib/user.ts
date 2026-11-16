@@ -1,5 +1,6 @@
 import { getDomainDb } from './supabase.js';
 import type { TelegramUser } from '../middleware/auth.js';
+import { bindBusinessContext } from '../platform/observability/context.js';
 
 /**
  * 几乎每个已登录接口都先走这里，PostgREST 挂死时它曾拖到约 300s（Sentry GET users p50 58s）。
@@ -44,6 +45,13 @@ const identityInflight = new Map<string, Promise<MiniappDbUserIdentity>>();
  * 不再写 public.users，MiniApp 身份从这里开始独立。
  */
 export async function getOrCreateDbUser(tgUser: TelegramUser): Promise<MiniappDbUserIdentity> {
+  // Bind in each caller, including cache hits and waiters sharing another request's Promise.
+  const user = await loadDbUserIdentity(tgUser);
+  bindBusinessContext({ user_id: user.id });
+  return user;
+}
+
+async function loadDbUserIdentity(tgUser: TelegramUser): Promise<MiniappDbUserIdentity> {
   const tgIdStr = tgUser.id.toString();
   const now = Date.now();
   const cached = identityCache.get(tgIdStr);
@@ -63,8 +71,10 @@ export async function getOrCreateDbUser(tgUser: TelegramUser): Promise<MiniappDb
 }
 
 /** 需要 source_id / total_round 等可变字段的少数调用方必须显式走完整行读取。 */
-export function getOrCreateDbUserRecord(tgUser: TelegramUser): Promise<MiniappDbUser> {
-  return getOrCreateMiniappUserByTgId(tgUser.id.toString(), null, true);
+export async function getOrCreateDbUserRecord(tgUser: TelegramUser): Promise<MiniappDbUser> {
+  const user = await getOrCreateMiniappUserByTgId(tgUser.id.toString(), null, true);
+  bindBusinessContext({ user_id: user.id });
+  return user;
 }
 
 /** 测试与显式恢复入口；正常业务无需主动清理，TTL 会自动失效。 */
@@ -111,7 +121,7 @@ export async function findTelegramIdByUserId(userId: string): Promise<string | n
     .maybeSingle();
 
   if (error) {
-    throw new Error(`查询 MiniApp 用户 Telegram ID 失败：${error.message}`);
+    throw new Error(`查询 MiniApp 用户 Telegram ID 失败：${error.message}`, { cause: error });
   }
 
   const tgId = data?.tg_id;
@@ -204,7 +214,7 @@ export async function recordBotStart(
     .maybeSingle();
 
   if (error) {
-    throw new Error(`记录 bot /start 时间失败：${error.message}`);
+    throw new Error(`记录 bot /start 时间失败：${error.message}`, { cause: error });
   }
 
   return (data as MiniappDbUser | null) ?? user;
@@ -224,7 +234,7 @@ async function markMiniappEnteredAt(userId: string): Promise<MiniappDbUser> {
     .maybeSingle();
 
   if (error) {
-    throw new Error(`记录 MiniApp 首次进入时间失败：${error.message}`);
+    throw new Error(`记录 MiniApp 首次进入时间失败：${error.message}`, { cause: error });
   }
 
   if (data) return data as MiniappDbUser;

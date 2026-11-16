@@ -46,6 +46,19 @@ describe('bounded engineering Faro exporter', () => {
     vi.unstubAllGlobals();
   });
 
+  it('keeps groups API distinct from conversation detail through the finite exporter', async () => {
+    const fake = fakeSdk();
+    const exporter = createEngineeringExporter(async () => fake.sdk);
+    await exporter.initialize();
+    exporter.measurement('api.total', 500, { api_route: 'conversation_groups' });
+    expect(fake.measurement).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        context: expect.objectContaining({ api_route: 'conversation_groups' }),
+      })
+    );
+  });
+
   it('does not import or send when disabled or when public config is invalid', async () => {
     const fake = fakeSdk();
     const loader = vi.fn(async () => fake.sdk);

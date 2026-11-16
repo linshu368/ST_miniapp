@@ -5,6 +5,8 @@ node_modules/
 .next-ui-test/
 /output/playwright/
 /output/performance/
+/output/build-snapshots/
+/output/cold-start-*.log
 .next-perf/
 dist/
 .env
@@ -16,6 +18,7 @@ dist/
 .cursor/mcp.json
 
 *.tsbuildinfo
+__pycache__/
 
 .DS_Store
 

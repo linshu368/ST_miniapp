@@ -66,6 +66,68 @@
         "window": "基线 2026-11-06—11-13 近 7 天；发布后 24 小时同口径复查"
       },
       "notes": "弹窗宿主与资格请求在 backgroundReady 之后动态挂载，首屏请求数不变；每次打开最多 1 次 GET。"
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "required",
+      "scope": [
+        "GET /api/growth/prompts",
+        "POST /api/growth/prompts/events",
+        "Community reward webhook and asynchronous welcome"
+      ],
+      "integration_points": [
+        "Reuse request ALS, getOrCreateDbUserRecord, Pino safe projection, observed Supabase transport and clientFetch in community/welcome.ts"
+      ],
+      "events": [
+        {
+          "event": "growth.prompts.read",
+          "operation": "http.request",
+          "levels": ["info", "warn", "error"],
+          "outcomes": ["succeeded", "failed", "rejected"],
+          "fields": [
+            "business_module",
+            "user_id",
+            "telegram_user_id",
+            "request_id",
+            "trace_id",
+            "community_prompt",
+            "vip_prompt",
+            "duration_ms"
+          ]
+        },
+        {
+          "event": "growth.prompt.event",
+          "operation": "http.request",
+          "levels": ["info", "warn"],
+          "outcomes": ["succeeded", "failed"],
+          "fields": ["prompt_kind", "action", "recorded", "user_id", "trace_id", "duration_ms"]
+        },
+        {
+          "event": "community.welcome.failed",
+          "operation": "community.welcome.telegram",
+          "levels": ["info", "warn"],
+          "outcomes": ["succeeded", "failed", "timed_out"],
+          "fields": [
+            "event",
+            "rewarded",
+            "with_button",
+            "duration_ms",
+            "upstream_status",
+            "trace_id"
+          ]
+        }
+      ],
+      "failure_paths": [
+        "Unauthenticated/invalid input, identity or state/payment reads fail, repeated/capped event returns recorded=false, welcome HTTP error or payload.ok=false, timeout and old-message deletion failure"
+      ],
+      "correlation": "HTTP ALS binds verified Telegram/internal user; verified community webhook binds identity from existing validated update and user lookup. Async welcome inherits trace; no extra DB reads.",
+      "redaction": "Bounded boolean/enum/count summaries only. No prompt arrays, survey or chat text, names, contact data, request bodies, Telegram token, URL or API description. Raw err is serialized safely. IDs only in Railway, excluded from Sentry/alerts/metric labels.",
+      "alerting": "Existing rules remain disabled by default; no new alert rules/resources. Welcome failures are warn and cannot fail reward or webhook ACK; no sendMessage retry.",
+      "verification": [
+        "Existing welcome/prompt-rule/community/HTTP/logger regressions and Backend typecheck/lint:backend-logging",
+        "Actual JSON retains prompt_kind/recorded/boolean summaries, transport records HTTP outcome while payload failure remains explicit business failure",
+        "After deployment inspect Railway user/trace correlation and existing task performance window; local mocks do not establish production delivery or P95"
+      ]
     }
   }
 }

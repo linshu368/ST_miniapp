@@ -21,7 +21,7 @@ export class MiniappCharacterFavoriteRepository {
     const { data, error } = await this.db.rpc('list_character_favorites', {
       p_user_id: userId,
     });
-    if (error) throw new Error(`查询角色收藏失败：${error.message}`);
+    if (error) throw new Error(`查询角色收藏失败：${error.message}`, { cause: error });
     return (data ?? []) as CharacterFavoriteRow[];
   }
 
@@ -35,7 +35,7 @@ export class MiniappCharacterFavoriteRepository {
       p_character_id: characterId,
       p_favorited: favorited,
     });
-    if (error) throw new Error(`更新角色收藏失败：${error.message}`);
+    if (error) throw new Error(`更新角色收藏失败：${error.message}`, { cause: error });
     return data as CharacterFavoriteStateRow;
   }
 }

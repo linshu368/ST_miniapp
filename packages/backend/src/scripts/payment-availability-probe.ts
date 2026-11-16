@@ -1,3 +1,4 @@
+import { runObservedJob } from '../platform/observability/jobs.js';
 import '../instrumentation.js';
 import { config } from '../platform/config.js';
 import { createLogger } from '../lib/logger.js';
@@ -31,51 +32,53 @@ const hardDeadline = setTimeout(() => {
 }, 60_000);
 hardDeadline.unref();
 
-try {
-  const guarded = paymentProbeGuard(config.paymentProbe);
-  if (guarded) {
-    outcome = guarded.kind === 'skipped' ? 'skipped' : 'error';
-    log.biz.info({ event: 'payment.probe.guarded', ...guarded }, '支付探测未发送请求');
-  } else {
-    // Disabled/preview runs must not initialize or connect the alert database client.
-    const [{ PrismaAlertPersistence }, { prisma }] = await Promise.all([
-      import('../features/alerting/repository.js'),
-      import('../lib/db.js'),
-    ]);
-    disconnect = () => prisma.$disconnect();
-    const publisher = new AlertPublisher(new PrismaAlertPersistence(), log);
-    const result = await runPaymentProbeRound({
-      settings: config.paymentProbe,
-      gateway: new EpayPaymentGateway(),
-      strategies: createPaymentAvailabilityStrategies(publisher, config.database.environment),
-      signal: shutdown.signal,
-      withLease: (work) =>
-        withSessionAdvisoryLock(ADVISORY_LOCK_KEY, work, {
-          onCleanupError(stage, err) {
-            log.sys.error(
-              { event: 'payment.probe.lease_cleanup_failed', stage, err },
-              '支付探测锁清理失败'
-            );
-          },
-        }),
-    });
-    outcome = result.outcome;
-    log.biz.info({ event: 'payment.probe.completed', ...result }, '支付探测轮次结束');
-  }
-} catch (err) {
-  log.sys.error({ event: 'payment.probe.failed', err }, '支付探测轮次失败');
-} finally {
+await runObservedJob('payment_availability_probe', async () => {
   try {
-    await disconnect?.();
+    const guarded = paymentProbeGuard(config.paymentProbe);
+    if (guarded) {
+      outcome = guarded.kind === 'skipped' ? 'skipped' : 'error';
+      log.biz.info({ event: 'payment.probe.guarded', ...guarded }, '支付探测未发送请求');
+    } else {
+      // Disabled/preview runs must not initialize or connect the alert database client.
+      const [{ PrismaAlertPersistence }, { prisma }] = await Promise.all([
+        import('../features/alerting/repository.js'),
+        import('../lib/db.js'),
+      ]);
+      disconnect = () => prisma.$disconnect();
+      const publisher = new AlertPublisher(new PrismaAlertPersistence(), log);
+      const result = await runPaymentProbeRound({
+        settings: config.paymentProbe,
+        gateway: new EpayPaymentGateway(),
+        strategies: createPaymentAvailabilityStrategies(publisher, config.database.environment),
+        signal: shutdown.signal,
+        withLease: (work) =>
+          withSessionAdvisoryLock(ADVISORY_LOCK_KEY, work, {
+            onCleanupError(stage, err) {
+              log.sys.error(
+                { event: 'payment.probe.lease_cleanup_failed', stage, err },
+                '支付探测锁清理失败'
+              );
+            },
+          }),
+      });
+      outcome = result.outcome;
+      log.biz.info({ event: 'payment.probe.completed', ...result }, '支付探测轮次结束');
+    }
   } catch (err) {
-    outcome = 'error';
-    log.sys.error({ event: 'payment.probe.cleanup_failed', err }, '支付探测连接清理失败');
+    log.sys.error({ event: 'payment.probe.failed', err }, '支付探测轮次失败');
+  } finally {
+    try {
+      await disconnect?.();
+    } catch (err) {
+      outcome = 'error';
+      log.sys.error({ event: 'payment.probe.cleanup_failed', err }, '支付探测连接清理失败');
+    }
+    if (shutdown.signal.aborted) outcome = 'error';
+    observeBackgroundRun({ job: 'payment_availability_probe', outcome, startedAt });
+    await stopObservability();
+    clearTimeout(cleanupDeadline);
+    clearTimeout(hardDeadline);
+    for (const signal of ['SIGTERM', 'SIGINT'] as const) process.removeListener(signal, onShutdown);
+    process.exitCode = outcome === 'partial' || outcome === 'error' ? 1 : 0;
   }
-  if (shutdown.signal.aborted) outcome = 'error';
-  observeBackgroundRun({ job: 'payment_availability_probe', outcome, startedAt });
-  await stopObservability();
-  clearTimeout(cleanupDeadline);
-  clearTimeout(hardDeadline);
-  for (const signal of ['SIGTERM', 'SIGINT'] as const) process.removeListener(signal, onShutdown);
-  process.exitCode = outcome === 'partial' || outcome === 'error' ? 1 : 0;
-}
+});

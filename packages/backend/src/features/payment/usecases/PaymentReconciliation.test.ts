@@ -5,7 +5,19 @@ import type {
   PaymentQueryResult,
   PaymentQueryTarget,
 } from '../../../infrastructure/payment/PaymentGateway.js';
-import { RECONCILE_WINDOW_MS, runPaymentReconciliation } from './PaymentReconciliation.js';
+import {
+  RECONCILE_WINDOW_MS,
+  runPaymentReconciliation,
+  runPaymentReconciliationLoop,
+} from './PaymentReconciliation.js';
+import {
+  currentContext,
+  newContext,
+  withContext,
+} from '../../../platform/observability/context.js';
+import { createObserver } from '../../../platform/observability/core.js';
+import { observation } from '../../../platform/observability/runtime.js';
+import type { ObservationEvent } from '../../../platform/observability/events.js';
 
 vi.mock('../../../lib/notifications.js', () => ({
   insertUserNotification: vi.fn(async () => undefined),
@@ -14,6 +26,74 @@ vi.mock('../../../lib/invite-rewards.js', () => ({
   checkInviteFirstPaidReward: vi.fn(async () => undefined),
 }));
 const NOW = Date.parse('2026-11-03T08:00:00.000Z');
+
+describe('reconciliation round correlation', () => {
+  it('keeps pass/reporters together, isolates rounds, and leaves sleep outside the round', async () => {
+    const events: ObservationEvent[] = [];
+    const observer = createObserver([
+      (event) => {
+        events.push(event);
+      },
+    ]);
+    const spy = vi.spyOn(observation, 'start').mockImplementation(observer.start);
+    const shutdown = new AbortController();
+    const traces: string[] = [];
+    const reported: string[] = [];
+    const failure = new Error('fixture round failure');
+    const outer = newContext();
+    let round = 0;
+    try {
+      await withContext(outer, () =>
+        runPaymentReconciliationLoop({
+          signal: shutdown.signal,
+          runPass: async () => {
+            traces.push(currentContext()!.trace_id);
+            if (++round === 2) throw failure;
+            return { checked: 1, settled: 0, closed: 0, lookupFailed: round === 3 };
+          },
+          onPass: () => {
+            reported.push(currentContext()!.trace_id);
+          },
+          onError: (err) => {
+            expect(err).toBe(failure);
+            reported.push(currentContext()!.trace_id);
+          },
+          sleep: async () => {
+            expect(currentContext()!.trace_id).toBe(outer.trace_id);
+            if (round === 3) shutdown.abort();
+          },
+        })
+      );
+      expect(reported).toEqual(traces);
+      expect(new Set(traces).size).toBe(3);
+      expect(traces).not.toContain(outer.trace_id);
+      const terminals = events.filter((event) => event.event === 'operation.terminal');
+      expect(terminals.map((event) => event.outcome)).toEqual(['succeeded', 'failed', 'degraded']);
+      expect(terminals.map((event) => event.trace_id)).toEqual(traces);
+      expect(terminals[1]?.err).toBeDefined();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('preserves cancellation without error callbacks or another sleep', async () => {
+    const shutdown = new AbortController();
+    const onError = vi.fn();
+    const sleep = vi.fn();
+    await runPaymentReconciliationLoop({
+      signal: shutdown.signal,
+      onError,
+      sleep,
+      runPass: async () => {
+        shutdown.abort();
+        throw new Error('cancelled fixture');
+      },
+      onPass: vi.fn(),
+    });
+    expect(onError).not.toHaveBeenCalled();
+    expect(sleep).not.toHaveBeenCalled();
+  });
+});
 
 function order(
   id: string,

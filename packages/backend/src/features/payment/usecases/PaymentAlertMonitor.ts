@@ -31,7 +31,8 @@ export class PaymentAlertMonitorRepository {
       ),
       QUERY_TIMEOUT_MS
     );
-    if (error) throw new Error(`payment alert event scan failed: ${error.message}`);
+    if (error)
+      throw new Error(`payment alert event scan failed: ${error.message}`, { cause: error });
     return { operations: ((data ?? []) as PaymentOperation[]).reverse() };
   }
 }

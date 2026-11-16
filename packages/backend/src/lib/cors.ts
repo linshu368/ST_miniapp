@@ -107,6 +107,12 @@ export async function registerCors(app: FastifyInstance, config: CorsConfig): Pr
       'x-client-info',
       'x-supabase-api-version',
     ],
-    exposedHeaders: ['content-range', 'range-unit', 'x-supabase-api-version'],
+    exposedHeaders: [
+      'content-range',
+      'range-unit',
+      'x-supabase-api-version',
+      'x-request-id',
+      'x-trace-id',
+    ],
   });
 }

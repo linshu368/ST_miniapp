@@ -1,5 +1,17 @@
 # ST_miniapp
 
+2026-11-16 内容链优化（本地候选）：会话页只读已有公开角色摘要，缺失详情走 normal 并按用户/会话保留1分钟内存缓存；分组只读依赖超时返回既有503，标签summary最多等待250ms；自动推荐预算1.5秒、手动操作5秒。无新增私人持久缓存或数据库迁移。本轮按用户要求不启动本地UI，详情及发布门禁见 [实施说明](.trellis/tasks/11-12-overnight-page-performance/content-path-optimization-2026-11-16.md)。
+
+2026-11-16 MiniApp 冷启动专项（本地候选）：根入口按 landing cookie 内部 rewrite，直接返回已有会话或大厅静态框架；保存 Telegram 启动参数后再规范地址，减少一次文档跳转。可见会话第一页使用预留 critical 槽。研究、验证和发布复测见 [专项说明](.trellis/tasks/11-12-overnight-page-performance/cold-start-optimization-2026-11-16.md)。
+
+2026-11-16 日志完整性补全（本地未部署）：补齐捕获异常、warn 告警、数据库 cause、对账每轮上下文和大厅 Next.js 代理链路，并扩展 DB/HTTP/调度静态门禁。Backend 由 Railway 捕获，代理摘要在 Next.js 服务端 stdout；缓存、业务契约和默认关闭告警保持兼容，详见 [运行说明](docs/backend-observability-runtime.md)。
+
+日志实现、告警规则和 SDK 候选入口现已集中在 [日志模块目录](packages/backend/src/platform/observability/README.md)。后续只改目录内 `alert-rules.json` 管理模块/状态码等规则，执行 `pnpm --filter @miniapp/backend logging:validate` 后随应用发布；LOG_ALERT_RULES 环境变量已停止读取。总开关默认关闭、通知 secret 仍独立部署。
+
+2026-11-14 合并审计补齐媒体/影像任务、后台实体与独立数据库客户端的日志接入；字段语义、模块查询及安全边界见 [运行说明](docs/backend-observability-runtime.md)，验证结果见 [任务记录](.trellis/tasks/11-12-backend-observability/verification.md)。本地实现尚未部署。
+
+本地日志整改候选（2026-11-14，未部署）：Railway 捕获 Pino stdout；补充用户、业务模块、角色/创作、短剧/单集及会话 ID，与 trace/request 关联。字段来源、查询示例、错误契约兼容和默认关闭的直接日志告警见 [运行说明](docs/backend-observability-runtime.md)。无需新增日志存储。
+
 ST_miniapp 是围绕 Telegram MiniApp、AI 角色聊天、钱包/支付、语音、增长运营和客服能力构建的 pnpm monorepo。仓库包含面向用户的 Next.js 前端、Fastify API、内部运营 SPA、共享契约/迁移包，以及由 Frontend 和 Admin 共用的回复渲染包。客服平台已拆到独立仓库 [`linshu368/ST_cs_platform`](https://github.com/linshu368/ST_cs_platform)，本仓库只保留 Bot 消息转发和 `/api/support/*` 代理。
 
 > 深层架构、数据流和路由清单见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)；Railway 生产运维见 [`ops/railway/README.md`](ops/railway/README.md)。本文负责新成员入门、依赖关系、环境、命令和交付约定。

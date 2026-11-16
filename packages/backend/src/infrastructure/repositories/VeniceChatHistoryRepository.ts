@@ -79,6 +79,6 @@ export class VeniceChatHistoryRepository {
         { onConflict: 'chat_history_id' }
       )
       .abortSignal(AbortSignal.timeout(5_000));
-    if (error) throw new Error(`回写 Venice 调用明细失败：${error.message}`);
+    if (error) throw new Error(`回写 Venice 调用明细失败：${error.message}`, { cause: error });
   }
 }

@@ -79,7 +79,7 @@ export class StoryMemoryRepository {
       .limit(1)
       .abortSignal(signal)
       .maybeSingle();
-    if (error) throw new Error(`读取会话记忆失败：${error.message}`);
+    if (error) throw new Error(`读取会话记忆失败：${error.message}`, { cause: error });
     const row = data as { version?: unknown; content?: unknown; covered_end_turn?: unknown } | null;
     if (
       !row ||
@@ -110,7 +110,7 @@ export class StoryMemoryRepository {
         p_target_end: targetEnd,
       })
       .abortSignal(AbortSignal.timeout(RPC_TIMEOUT_MS));
-    if (error) throw new Error(`前移上下文窗口失败：${error.message}`);
+    if (error) throw new Error(`前移上下文窗口失败：${error.message}`, { cause: error });
     return data === true;
   }
 
@@ -126,7 +126,7 @@ export class StoryMemoryRepository {
         p_lease_seconds: leaseSeconds,
       })
       .abortSignal(AbortSignal.timeout(RPC_TIMEOUT_MS));
-    if (error) throw new Error(`领取记忆任务失败：${error.message}`);
+    if (error) throw new Error(`领取记忆任务失败：${error.message}`, { cause: error });
     if (!Array.isArray(data)) return [];
     return data.map(toClaimedJob).filter((job): job is ClaimedStoryMemoryJob => job !== null);
   }
@@ -157,7 +157,7 @@ export class StoryMemoryRepository {
         p_lease_seconds: input.leaseSeconds,
       })
       .abortSignal(AbortSignal.timeout(RPC_TIMEOUT_MS));
-    if (error) throw new Error(`提交会话记忆失败：${error.message}`);
+    if (error) throw new Error(`提交会话记忆失败：${error.message}`, { cause: error });
     if (typeof data !== 'number') throw new Error('提交会话记忆结果字段不完整');
     return data;
   }
@@ -178,7 +178,7 @@ export class StoryMemoryRepository {
         p_range_end: input.rangeEnd,
       })
       .abortSignal(AbortSignal.timeout(RPC_TIMEOUT_MS));
-    if (error) throw new Error(`结束记忆任务失败：${error.message}`);
+    if (error) throw new Error(`结束记忆任务失败：${error.message}`, { cause: error });
     const result = isRecord(data) ? data : {};
     return {
       status: typeof result.status === 'string' ? result.status : 'unknown',
@@ -202,7 +202,7 @@ export class StoryMemoryRepository {
       .order('turn_index', { ascending: true })
       .limit(input.limit)
       .abortSignal(AbortSignal.timeout(RPC_TIMEOUT_MS));
-    if (error) throw new Error(`读取待压缩轮次失败：${error.message}`);
+    if (error) throw new Error(`读取待压缩轮次失败：${error.message}`, { cause: error });
     return toTurns(data);
   }
 
@@ -222,7 +222,7 @@ export class StoryMemoryRepository {
       .order('turn_index', { ascending: false })
       .limit(input.limit)
       .abortSignal(AbortSignal.timeout(RPC_TIMEOUT_MS));
-    if (error) throw new Error(`读取近期轮次失败：${error.message}`);
+    if (error) throw new Error(`读取近期轮次失败：${error.message}`, { cause: error });
     return toTurns(data).reverse();
   }
 }

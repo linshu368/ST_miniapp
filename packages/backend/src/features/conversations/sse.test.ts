@@ -2,6 +2,9 @@ import { EventEmitter } from 'node:events';
 import { describe, expect, it, vi } from 'vitest';
 import type { FastifyReply } from 'fastify';
 import { createReplyStreamSink, encodeStreamEvent } from './sse.js';
+import { observation } from '../../platform/observability/runtime.js';
+import { createObserver } from '../../platform/observability/core.js';
+import type { ObservationEvent } from '../../platform/observability/events.js';
 
 /** 只实现 sink 会碰到的那几个成员，其余交给类型断言 */
 class FakeRaw extends EventEmitter {
@@ -9,6 +12,9 @@ class FakeRaw extends EventEmitter {
   ended = false;
   head: { status: number; headers: Record<string, string> } | null = null;
   chunks: string[] = [];
+  get headersSent(): boolean {
+    return this.head !== null;
+  }
 
   writeHead(status: number, headers: Record<string, string>): void {
     this.head = { status, headers };
@@ -48,6 +54,58 @@ describe('encodeStreamEvent', () => {
 });
 
 describe('createReplyStreamSink', () => {
+  it('records SSE application failure separately from HTTP 200 and keeps one terminal after close', () => {
+    const records: ObservationEvent[] = [];
+    const observer = createObserver([
+      (event) => {
+        records.push(event);
+      },
+    ]);
+    const spy = vi.spyOn(observation, 'start').mockImplementation(observer.start);
+    try {
+      const { reply, raw } = fakeReply();
+      const sink = createReplyStreamSink(reply);
+      sink.open();
+      sink.send({ type: 'error', code: 'upstream_error', message: 'private-provider-message' });
+      sink.close();
+      raw.emit('close');
+      sink.close();
+      expect(records).toHaveLength(2);
+      expect(records[1]).toMatchObject({
+        outcome: 'failed',
+        http_status: 200,
+        public_error_code: 'upstream_error',
+      });
+      expect(JSON.stringify(records)).not.toContain('private-provider-message');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('records an already disconnected stream as interrupted, even if later generation completes', () => {
+    const records: ObservationEvent[] = [];
+    const observer = createObserver([
+      (event) => {
+        records.push(event);
+      },
+    ]);
+    const spy = vi.spyOn(observation, 'start').mockImplementation(observer.start);
+    try {
+      const { reply, raw } = fakeReply();
+      const sink = createReplyStreamSink(reply);
+      raw.emit('close');
+      sink.open();
+      sink.close();
+      expect(records).toHaveLength(2);
+      expect(records[1]).toMatchObject({
+        outcome: 'interrupted',
+        http_status: null,
+        outcome_known: false,
+      });
+    } finally {
+      spy.mockRestore();
+    }
+  });
   it('open 之前不写任何字节，opened 为 false', () => {
     const { reply, raw } = fakeReply();
     const sink = createReplyStreamSink(reply);

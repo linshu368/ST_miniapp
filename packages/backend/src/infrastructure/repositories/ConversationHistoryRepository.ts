@@ -192,7 +192,7 @@ export class ConversationHistoryRepository {
       .eq('id', historyId)
       .eq('status', 'success')
       .abortSignal(AbortSignal.timeout(5_000));
-    if (error) throw new Error(`写入富文本协议诊断失败：${error.message}`);
+    if (error) throw new Error(`写入富文本协议诊断失败：${error.message}`, { cause: error });
   }
 
   async setPromptHistory(
@@ -209,7 +209,7 @@ export class ConversationHistoryRepository {
       .eq('id', historyId)
       .eq('status', 'streaming')
       .abortSignal(AbortSignal.timeout(5_000));
-    if (error) throw new Error(`写入对话上下文快照失败：${error.message}`);
+    if (error) throw new Error(`写入对话上下文快照失败：${error.message}`, { cause: error });
   }
 
   /**
@@ -241,7 +241,7 @@ export class ConversationHistoryRepository {
       .select(TURN_COLUMNS)
       .abortSignal(AbortSignal.timeout(5_000))
       .maybeSingle();
-    if (error) throw new Error(`收口对话轮次失败：${error.message}`);
+    if (error) throw new Error(`收口对话轮次失败：${error.message}`, { cause: error });
     // Cancellation, stale recovery and completion compete on the same persisted state.
     // A late generator must return the winner instead of replacing its terminal status.
     if (data) return data as ConversationHistoryRow;
@@ -283,7 +283,7 @@ export class ConversationHistoryRepository {
       .select('id')
       .abortSignal(AbortSignal.timeout(5_000))
       .maybeSingle();
-    if (error) throw new Error(`保存生成额度身份失败：${error.message}`);
+    if (error) throw new Error(`保存生成额度身份失败：${error.message}`, { cause: error });
     if (!data) throw new Error('回复已被取消或结束');
   }
 
@@ -294,7 +294,7 @@ export class ConversationHistoryRepository {
       .eq('id', historyId)
       .abortSignal(AbortSignal.timeout(5_000))
       .single();
-    if (error) throw new Error(`读取对话终态失败：${error.message}`);
+    if (error) throw new Error(`读取对话终态失败：${error.message}`, { cause: error });
     return data as ConversationHistoryRow;
   }
 
@@ -308,7 +308,7 @@ export class ConversationHistoryRepository {
       .eq('id', historyId)
       .abortSignal(AbortSignal.timeout(5_000))
       .single();
-    if (error) throw new Error(`读取对话状态失败：${error.message}`);
+    if (error) throw new Error(`读取对话状态失败：${error.message}`, { cause: error });
     return data;
   }
 
@@ -326,7 +326,7 @@ export class ConversationHistoryRepository {
         p_reason: reason ?? null,
       })
       .abortSignal(AbortSignal.timeout(5_000));
-    if (error) throw new Error(`取消对话回复失败：${error.message}`);
+    if (error) throw new Error(`取消对话回复失败：${error.message}`, { cause: error });
     // Do not unlock before the execution owner finalizes the free-quota reservation.
     // Bounded waiting also works across replicas; a dead owner is recovered by the stale guard.
     const deadline = Date.now() + 8_000;
@@ -346,7 +346,7 @@ export class ConversationHistoryRepository {
       .eq('status', 'streaming')
       .lt('created_at', cutoff)
       .abortSignal(AbortSignal.timeout(5_000));
-    if (error) throw new Error(`读取超时对话回复失败：${error.message}`);
+    if (error) throw new Error(`读取超时对话回复失败：${error.message}`, { cause: error });
     for (const candidate of (data ?? []) as ConversationHistoryRow[]) {
       // Keep streaming while reclaiming the reservation, so a new turn cannot be
       // misclassified as paid. The live worker's deadline precedes this recovery.

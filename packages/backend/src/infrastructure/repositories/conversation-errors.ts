@@ -9,9 +9,10 @@ import type { ConversationErrorCode } from '@miniapp/shared';
 export class ConversationRepositoryError extends Error {
   constructor(
     readonly code: ConversationErrorCode,
-    message: string
+    message: string,
+    options?: ErrorOptions
   ) {
-    super(message);
+    super(message, options);
     this.name = 'ConversationRepositoryError';
   }
 }
@@ -41,7 +42,7 @@ export function throwConversationRpcError(
 ): never {
   const mapped = error.code ? SQLSTATE_TO_CODE[error.code] : undefined;
   if (mapped) {
-    throw new ConversationRepositoryError(mapped, error.message);
+    throw new ConversationRepositoryError(mapped, error.message, { cause: error });
   }
-  throw new Error(`${fallbackMessage}：${error.message}`);
+  throw new Error(`${fallbackMessage}：${error.message}`, { cause: error });
 }

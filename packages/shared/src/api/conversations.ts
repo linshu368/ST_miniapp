@@ -135,7 +135,8 @@ export type ConversationErrorCode =
   | 'reply_like_not_allowed'
   | 'message_change_not_allowed'
   | 'message_change_conflict'
-  | 'upstream_error';
+  | 'upstream_error'
+  | 'upstream_timeout';
 
 // ==== POST /api/v1/conversations ====
 

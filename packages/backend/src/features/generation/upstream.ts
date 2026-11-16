@@ -22,6 +22,9 @@ import { getLlmProviderRuntimeConfig } from '../../platform/runtime-config.js';
 import { veniceFetch } from '../../platform/venice-http.js';
 import { withUpstreamTiming, type UpstreamTiming } from './upstream-timing.js';
 import { observeLlmProviderResponse } from './provider-alerts.js';
+import { clientFetch } from '../../platform/observability/fetch.js';
+
+const fetch = clientFetch('generation.transport', 'llm');
 
 const LLM_UPSTREAM_URL = getLlmProviderRuntimeConfig('openrouter').baseUrl;
 

@@ -7,6 +7,9 @@
 // 多等 300ms，且超时中止后不写缓存，冷视频一直热不起来（命中率仅 13%）。
 
 import type { SanitizedLogger } from './signed-url.js';
+import { clientFetch } from '../../platform/observability/fetch.js';
+
+const fetch = clientFetch('drama.manifest', 'cloudflare');
 
 /** 缓存容量上限。当前白名单固定 30 个 uid，留出增长空间 */
 const MAX_ENTRIES = 64;
@@ -149,6 +152,8 @@ export class DramaStreamManifestCache {
       // 只记错误类别，不记 URL/Token
       log?.warn(
         {
+          event: 'drama.manifest.failed',
+          error_code: 'DRAMA_MANIFEST_FAILED',
           reason:
             err instanceof Error && err.name === 'TimeoutError'
               ? 'drama_manifest_timeout'

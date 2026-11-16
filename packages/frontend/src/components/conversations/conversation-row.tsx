@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef } from 'react';
+import { useRef } from 'react';
 import Link from 'next/link';
 import {
   Check,
@@ -12,7 +12,7 @@ import {
   PinOff,
   Trash2,
 } from 'lucide-react';
-import { DEFAULT_LOBBY_SORT, type CharacterSummary, type ChatSession } from '@miniapp/shared';
+import type { ChatSession } from '@miniapp/shared';
 
 import { lobbyImageUrl } from '@/components/characters/character-card';
 import { ReturnFlash } from '@/components/ui/return-flash';
@@ -22,42 +22,13 @@ import {
   useSessionRowActions,
   type SessionRowActions,
 } from '@/components/chat/session-row-actions';
-import { useCharacterQuery, useCharactersQuery } from '@/lib/api/characters';
 import { resolveSessionTitle } from '@/lib/api/conversations';
 import { chatEntryPath } from '@/lib/chat-entry';
 import { rememberRoleplayScroll } from '@/lib/roleplay-navigation';
 import { cn } from '@/lib/utils';
-
-export type LobbySummaryLookup =
-  | { status: 'pending' }
-  | { status: 'ready'; byId: ReadonlyMap<string, CharacterSummary> }
-  | { status: 'unavailable' };
-
-/**
- * 会话列表只带 character_id；头像和名字先查大厅摘要（通常已在本地缓存），
- * 查不到（下架或大厅读失败）才逐行回退详情。原来每行各拉一次详情，20 行就是 20 个请求（ST-MINIAPP-1Y）。
- */
-export function useLobbySummaryLookup(): LobbySummaryLookup {
-  const lobby = useCharactersQuery(DEFAULT_LOBBY_SORT);
-  const characters = lobby.data?.characters;
-  return useMemo<LobbySummaryLookup>(() => {
-    if (characters) return { status: 'ready', byId: new Map(characters.map((c) => [c.id, c])) };
-    return lobby.isError ? { status: 'unavailable' } : { status: 'pending' };
-  }, [characters, lobby.isError]);
-}
-
-export function useSessionCharacter(session: ChatSession, lookup: LobbySummaryLookup) {
-  const summary =
-    lookup.status === 'ready' && !session.character_version_id
-      ? lookup.byId.get(session.character_id)
-      : undefined;
-  // 大厅摘要还在读时先不发详情，否则冷启动又退化成 N 个请求。
-  const { data } = useCharacterQuery(session.character_id, {
-    enabled: lookup.status !== 'pending' && !summary,
-    sessionId: session.id,
-  });
-  return summary ?? data?.character;
-}
+import { useSessionCharacter, type LobbySummaryLookup } from './use-session-character';
+export { useLobbySummaryLookup, useSessionCharacter } from './use-session-character';
+export type { LobbySummaryLookup } from './use-session-character';
 
 export function SessionAvatar({ url, small }: { url: string | null; small?: boolean }) {
   return (

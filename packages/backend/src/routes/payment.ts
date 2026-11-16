@@ -1,4 +1,9 @@
 import { type FastifyInstance, type FastifyRequest } from 'fastify';
+import { CheckoutError } from '../features/payment/usecases/checkout-errors.js';
+import {
+  UnknownPaymentPlanError,
+  VipPurchaseDisabledError,
+} from '../features/payment/domain/rechargeRules.js';
 import { isIP } from 'node:net';
 import { config } from '../platform/config.js';
 import { ok, fail } from '@miniapp/shared';
@@ -119,7 +124,6 @@ function registerCreate(app: FastifyInstance, recharge: RechargeUseCase) {
       );
       return reply.send(ok(data));
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Create payment order failed';
       log.sys.warn(
         {
           event: 'recharge.order.create_failed',
@@ -134,7 +138,11 @@ function registerCreate(app: FastifyInstance, recharge: RechargeUseCase) {
           .status(503)
           .send(fail('PAYMENT_PLANS_UNAVAILABLE', '充值套餐暂不可用，请稍后重试'));
       }
-      return reply.status(400).send(fail('PAYMENT_CREATE_FAILED', message));
+      if (error instanceof CheckoutError)
+        return reply.status(error.statusCode).send(fail(error.code, error.message));
+      if (error instanceof UnknownPaymentPlanError || error instanceof VipPurchaseDisabledError)
+        return reply.status(400).send(fail('PAYMENT_CREATE_FAILED', error.message));
+      return reply.status(500).send(fail('INTERNAL_ERROR', '创建支付订单失败，请稍后重试'));
     }
   });
 }

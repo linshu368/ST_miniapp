@@ -93,7 +93,8 @@ export function useConversationPages(filter: ConversationListFilter, enabled = t
     queryFn: async ({ pageParam, signal }) => {
       const data = await apiClient<ListConversationsData>(
         `/api/v1/conversations?${listSearch(filter, pageParam, limit)}`,
-        { signal }
+        // Only the visible first page uses the slot reserved for first-screen work.
+        { signal, queuePriority: pageParam === 0 ? 'critical' : 'normal' }
       );
       keepSummary(queryClient, data.folder_summary);
       if (pageParam === 0 && filter.folder === 'all' && !filter.q && !filter.quick) {
@@ -123,7 +124,8 @@ export function useConversationGroups(folder: FolderFilter, enabled = true) {
       if (pageParam === 0) search.set('summary', '1');
       const data = await apiClient<ListConversationGroupsData>(
         `/api/v1/conversations/groups?${search.toString()}`,
-        { signal }
+        // A known 503 should fall back to flat immediately, not repeat a 3s RPC.
+        { signal, queuePriority: pageParam === 0 ? 'critical' : 'normal', transportRetry: false }
       );
       keepSummary(queryClient, data.folder_summary);
       // 默认按角色时首屏走这里：同样据此记下「有对话记录」，下次打开直接进对话。

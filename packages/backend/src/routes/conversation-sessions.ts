@@ -20,6 +20,7 @@ import type {
 } from '@miniapp/shared';
 import { fail, ok } from '@miniapp/shared';
 import type { FastifyInstance } from 'fastify';
+import { bindBusinessContext } from '../platform/observability/context.js';
 import {
   applyUserPlaceholderToMessages,
   applyUserPlaceholderToSession,
@@ -59,12 +60,14 @@ export function registerConversationCreate(
       }
 
       const log = requestLogger(request.log, 'conversations');
+      bindBusinessContext({ character_id: characterId });
       const dbUser = await getOrCreateDbUser(request.user);
       try {
         const [created, displayName] = await Promise.all([
           sessions.createSession(dbUser.id, characterId),
           settings.getDisplayName(dbUser.id),
         ]);
+        bindBusinessContext({ session_id: created.session.id });
         log.biz.info(
           {
             event: 'conversation.session.created',
@@ -99,7 +102,11 @@ export function registerConversationCreate(
 
 export function registerConversationList(
   app: FastifyInstance,
-  { sessions, settings, folders }: ConversationRouteRepositories
+  {
+    sessions,
+    settings,
+    folders,
+  }: Pick<ConversationRouteRepositories, 'sessions' | 'settings' | 'folders'>
 ) {
   // @frontend-ready: true
   app.get(

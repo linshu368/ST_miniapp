@@ -1,7 +1,10 @@
 import type { HealthData } from '@miniapp/shared';
 import { ok } from '@miniapp/shared';
 import Fastify, { type FastifyServerOptions } from 'fastify';
-import { randomUUID } from 'node:crypto';
+import { requestId } from './platform/observability/context.js';
+import { registerHttpObservation } from './platform/observability/http.js';
+import { observation } from './platform/observability/runtime.js';
+import { startLogAlerts } from './platform/observability/alert-runtime.js';
 import { startChatHistorySyncJob, stopChatHistorySyncJob } from './features/generation/index.js';
 import {
   startImagePlazaGenerationJob,
@@ -62,19 +65,19 @@ import voiceRoutes from './routes/voice.js';
 import walletRoutes from './routes/wallet.js';
 
 export async function buildApp() {
+  const stopLogAlerts = startLogAlerts();
   const stopEngineeringTelemetry = startEngineeringTelemetry(config.engineeringTelemetry);
   const app = Fastify({
     logger: fastifyLoggerOptions() as unknown as FastifyServerOptions['logger'],
-    // 跨边界链路追踪：优先复用入站 X-Request-Id，否则生成。见 docs/日志系统.md §6
+    disableRequestLogging: true,
+    // Accept only a bounded correlation ID; it never authorizes or deduplicates a request.
     genReqId(req) {
-      const hdr = req.headers['x-request-id'];
-      if (typeof hdr === 'string' && hdr.length > 0) return hdr;
-      if (Array.isArray(hdr) && hdr[0]) return hdr[0];
-      return randomUUID();
+      return requestId(req.headers['x-request-id']);
     },
   });
 
-  app.addHook('onRequest', async (request, reply) => {
+  registerHttpObservation(app, observation);
+  app.addHook('onRequest', async (request) => {
     bindRequestSentryContext(request);
   });
   registerRequestPerf(app);
@@ -167,6 +170,7 @@ export async function buildApp() {
     stopFreeZoneEvaluationJob();
     shutdownTextPostprocessValidation();
     await stopEngineeringTelemetry();
+    await stopLogAlerts();
   });
 
   return app;

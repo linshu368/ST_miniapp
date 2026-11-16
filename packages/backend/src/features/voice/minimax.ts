@@ -1,5 +1,8 @@
 import { config } from '../../platform/config.js';
 import { stageCode, toTransportError, VoiceUpstreamError } from './voice-upstream.js';
+import { clientFetch } from '../../platform/observability/fetch.js';
+
+const fetch = clientFetch('voice.tts', 'minimax');
 
 /**
  * MiniMax 上游客户端，只负责 TTS 合成（写稿在 voice-draft.ts，走 DeepSeek）。

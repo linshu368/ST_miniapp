@@ -51,7 +51,7 @@ export class ConversationHistoryReads {
     const { data, error } = await filtered
       .order('turn_index', { ascending: true })
       .abortSignal(AbortSignal.timeout(5_000));
-    if (error) throw new Error(`读取会话上下文失败：${error.message}`);
+    if (error) throw new Error(`读取会话上下文失败：${error.message}`, { cause: error });
 
     const rows = (data ?? []) as unknown as ConversationHistoryRow[];
     if (windowStartTurn <= 1) {
@@ -72,7 +72,7 @@ export class ConversationHistoryReads {
       .eq('id', sessionId)
       .abortSignal(AbortSignal.timeout(5_000))
       .maybeSingle();
-    if (error) throw new Error(`读取上下文窗口起点失败：${error.message}`);
+    if (error) throw new Error(`读取上下文窗口起点失败：${error.message}`, { cause: error });
     return readWindowStart(
       (data as { context_window_start_turn?: unknown } | null)?.context_window_start_turn
     );
@@ -97,7 +97,7 @@ export class ConversationHistoryReads {
       .abortSignal(AbortSignal.timeout(5_000))
       .maybeSingle();
 
-    if (error) throw new Error(`查询对话轮次失败：${error.message}`);
+    if (error) throw new Error(`查询对话轮次失败：${error.message}`, { cause: error });
     return data as unknown as ConversationHistoryRow | null;
   }
 

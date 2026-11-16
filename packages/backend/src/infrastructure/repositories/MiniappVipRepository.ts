@@ -75,7 +75,7 @@ export class MiniappVipRepository {
       .is('vip_entry_seen_at', null)
       .select('user_id')
       .maybeSingle();
-    if (error) throw new Error(`标记 VIP 入口已查看失败：${error.message}`);
+    if (error) throw new Error(`标记 VIP 入口已查看失败：${error.message}`, { cause: error });
     if (data) return;
 
     const { data: existing, error: readError } = await this.appCore
@@ -83,7 +83,8 @@ export class MiniappVipRepository {
       .select('user_id')
       .eq('user_id', userId)
       .maybeSingle();
-    if (readError) throw new Error(`查询 VIP 入口状态失败：${readError.message}`);
+    if (readError)
+      throw new Error(`查询 VIP 入口状态失败：${readError.message}`, { cause: readError });
     if (existing) return;
 
     const { error: insertError } = await this.appCore.from('miniapp_user_settings').insert({
@@ -98,7 +99,7 @@ export class MiniappVipRepository {
       .eq('user_id', userId)
       .maybeSingle();
     if (afterError || !afterRace) {
-      throw new Error(`标记 VIP 入口已查看失败：${insertError.message}`);
+      throw new Error(`标记 VIP 入口已查看失败：${insertError.message}`, { cause: insertError });
     }
   }
 }

@@ -1,5 +1,13 @@
 # Frontend API、数据流与状态管理
 
+## 会话摘要缓存与入口预算（2026-11-16，本地候选）
+
+`use-session-character.ts` 分离会话行的数据策略与视图；lookup仅以disabled observers复用公开目录/public-head的既有Query key和快照，不发全表请求。持久快照按CharacterSummarySchema、既有24小时TTL及合法savedAt校验，损坏/过期/未来时间删除，storage拒绝只用内存；按数据实际时间合并，不能把读盘时刻伪装成新数据。
+
+缺失详情在entry enrich/导航安静窗后走normal，复用三槽中普通最多两槽；会话行详情staleTime=60秒，gc沿用5分钟，不新增持久化。key必须继续包含viewer与session，绑定character_version_id的会话不得使用当前大厅摘要；其他详情调用的默认TTL/优先级不改。
+
+推荐自动入口open/resume总期限1500ms，手动refresh/undo和手动退回open为5000ms，400兼容尝试共享同一控制器/截止。复用现有450ms公开头hedge和旧批次保留，私人推荐不进入共享公共缓存。分组约定404/503才降平铺，未知500保留错误；groups禁用额外transportRetry，不能重复3秒RPC后才降级。
+
 ## API 层地图
 
 - `client.ts`：唯一通用 HTTP client，拼 `API_URL`、注入 Telegram `X-Init-Data`、解析 shared envelope/错误；只供 `lib/api` 使用。
@@ -111,3 +119,13 @@ recoverable_delivery仅新Backend显式启用；旧请求/终结账单不回填�
 唯一新增迁移20261027_recoverable_chat_delivery.sql：experience拥有策略/首字检查点，billing资格函数读取事实；analytics只追加无正文的策略/时刻/失败锁存字段。无新cron、逐token数据库写、业务回填或公开权限。先TEST、后生产迁移、后Backend/Frontend。回退保留新增对象和终账，必要时forward-fix。
 
 验证：本任务release-review记录自动化、真实PG、TEST流/浏览器和生产版本证据；测试通过不等于线上1%目标已达成。看板v3区分前台等待超时与系统无首字截断，显示分布只用浏览器业务侧实际时长，后台/缺报不填0。
+
+## Scenario: 大厅服务端代理日志与链路（2026-11-16 本地候选）
+
+1. **Scope / Trigger**：`GET /api/lobby-characters` 是独立 Next.js 服务端边界；自身连接/取消/读取失败不能仅依靠 Backend Railway 日志发现。只记录固定 JSON 服务端摘要，复用 Sentry 时长指标，不引入依赖/采集服务。
+2. **Signatures**：`createLobbyProxyObservation(request)` 提供 `requestId`、`upstream(headers)`、`responseHeaders(initial?)`、`finish(status, outcome, publicCode?)`。只允许 route 模块调用，不能导入客户端组件。
+3. **Contracts**：接收/转发有界 `X-Request-Id`（1–128 个字母/数字/下划线/连字符），非法时生成 UUID；回传经过格式校验的 Backend request ID 和 32 位 hex trace ID。单次实际执行输出 `lobby.proxy.terminal`，含状态/耗时/结果及固定公开码，无 URL、query、响应正文、身份、凭证和原异常。公共 latest 缓存、推荐不缓存及既有 timeout/signal 不变；缓存中的 ID 属于源站执行，不代表新浏览器请求执行。
+4. **Validation / Errors**：成功、参数拒绝、HTTP 拒绝、网络/读取失败、5 秒截止、调用方取消分别记录；502/504/499 保留原 JSON 契约。读取失败也保留已取得的后端 trace。日志输出失败不改变响应；不转发客户端任意 headers 或接受非法后端关联头。
+5. **Good / Base / Bad**：Good 为按代理 request/trace 查询 Backend；Base 为旧后端无 trace 时省略字段；Bad 为将 query、凭证或 Error.message 写日志，或把共享缓存响应的 ID 当作本次浏览器执行 ID。
+6. **Tests Required**：扩展 route.test.ts，断言头透传/非法输入替换、成功/502/504/499 一条终态、正文与凭证不输出、日志输出故障隔离、缓存值不变；Frontend typecheck/lint/build 和现有消费者检查。
+7. **Wrong vs Correct**：错误是原样转发全量请求头、用浏览器 logger 或仅 Sentry 指标代替服务端摘要；正确是在 server route 使用受控单行 JSON，并仅将校验后的链路头回传。该摘要在 Next.js 部署 stdout，Backend 日志告警开关不控制此独立运行时，不新增旁路告警请求。

@@ -10,7 +10,6 @@ import {
   ok,
   DRAMA_TIMING_BODY_LIMIT,
   DramaTimingReportSchema,
-  dramaTimingLogFields,
   type PostDramaTimingData,
 } from '@miniapp/shared';
 import { requireTelegramAuth } from '../middleware/auth.js';
@@ -18,6 +17,7 @@ import { requestLogger } from '../lib/logger.js';
 import { getDramaTimingLogContext } from '../platform/runtime-config.js';
 import { dramaExperimentLogUser } from '../features/drama/delivery.js';
 import { observeDramaStartupDiagnostic } from '../lib/engineering-observability.js';
+import { validatedDramaLog } from '../platform/observability/safe-log.js';
 
 export default async function telemetryRoutes(app: FastifyInstance) {
   const timingConfig = getDramaTimingLogContext();
@@ -79,7 +79,7 @@ export default async function telemetryRoutes(app: FastifyInstance) {
           : dramaExperimentLogUser(userId);
       const log = requestLogger(request.log, 'drama');
       const fields = {
-        ...dramaTimingLogFields(parsed.data),
+        ...validatedDramaLog(parsed.data),
         upload_request_id: request.id,
         environment: timingConfig.environment,
         server_release: timingConfig.release,

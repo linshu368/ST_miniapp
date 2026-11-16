@@ -2,12 +2,16 @@
 
 import { useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSelectedLayoutSegments } from 'next/navigation';
 import { QueryClientProvider } from '@tanstack/react-query';
 
 import { FavoriteFeedbackNotice } from '@/components/characters/favorite-feedback-notice';
 
 import { EntryShell } from '@/components/nav/entry-shell';
+import {
+  canonicalizeLandingPath,
+  entryPathname as resolveEntryPathname,
+} from '@/lib/landing-route';
 import { afterFirstScreen } from '@/lib/after-first-screen';
 import { ensureEntryPhaseWatching, useEntryBackgroundReady } from '@/lib/entry-phase';
 import {
@@ -71,7 +75,12 @@ export function Providers({ children }: { children: React.ReactNode }) {
   // Attribution is a startup task: later navigation must not unmount and replay it.
   const backgroundReady = useEntryBackgroundReady(false);
   const pathname = usePathname();
-  const [entryPathname] = useState(pathname);
+  const segments = useSelectedLayoutSegments();
+  const shellPathname = resolveEntryPathname(pathname, segments);
+  const [entryPathname] = useState(shellPathname);
+  const router = useRouter();
+  // Mount business readers only after Next synchronizes the temporary root alias.
+  const businessReady = telegramReady && pathname !== '/';
   const [showQueryDevtools, setShowQueryDevtools] = useState(false);
   const hydrateUserProfile = useUserProfileStore((s) => s.hydrate);
 
@@ -103,9 +112,20 @@ export function Providers({ children }: { children: React.ReactNode }) {
     // initTelegramSdk 是同步副作用,initData 在它跑完后立即可读;
     // hydrate 把 telegram first_name + localStorage 覆盖合成 displayName
     hydrateUserProfile();
-    markStartupPhase('bootstrap_finished');
-    setTelegramReady(true);
-  }, [hydrateUserProfile]);
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      if (!canonicalizeLandingPath(entryPathname)) {
+        // Keep the SDK's in-memory identity if a sandbox rejects native History.
+        router.replace(entryPathname + window.location.search + window.location.hash);
+      }
+      markStartupPhase('bootstrap_finished');
+      setTelegramReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [hydrateUserProfile, entryPathname, router]);
 
   useEffect(() => {
     if (!telegramReady) return;
@@ -131,17 +151,18 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
   return (
     <QueryClientProvider client={queryClient}>
-      {telegramReady ? <PaymentReturnRedirect startParam={entryStartParam.current} /> : null}
-      {telegramReady && backgroundReady ? (
+      {businessReady ? <PaymentReturnRedirect startParam={entryStartParam.current} /> : null}
+      {businessReady && backgroundReady ? (
         <DeferredEntryEffects startParam={entryStartParam.current} />
       ) : null}
-      {telegramReady ? <UserSettingsHydrator /> : null}
-      {telegramReady ? <PagePerfTracker /> : null}
+      {businessReady ? <UserSettingsHydrator /> : null}
+      {/* Keep the real landing watchdog running even while a History fallback is pending. */}
+      {telegramReady ? <PagePerfTracker pathname={shellPathname} /> : null}
       <div data-startup-shell className="min-h-screen">
-        {telegramReady ? children : <EntryShell pathname={pathname} />}
+        {businessReady ? children : <EntryShell pathname={shellPathname} />}
       </div>
-      {telegramReady ? <FavoriteFeedbackNotice /> : null}
-      {telegramReady && backgroundReady ? <GrowthPromptHost /> : null}
+      {businessReady ? <FavoriteFeedbackNotice /> : null}
+      {businessReady && backgroundReady ? <GrowthPromptHost /> : null}
       {showQueryDevtools ? <ReactQueryDevtools initialIsOpen={false} /> : null}
     </QueryClientProvider>
   );

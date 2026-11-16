@@ -18,9 +18,10 @@ const RPC_TIMEOUT_MS = 3_000;
 export class ChatFolderRepositoryError extends Error {
   constructor(
     readonly code: ChatFolderErrorCode,
-    message: string
+    message: string,
+    options?: ErrorOptions
   ) {
-    super(message);
+    super(message, options);
     this.name = 'ChatFolderRepositoryError';
   }
 }
@@ -33,15 +34,17 @@ interface PostgrestError {
 /** 23503 = 外键：分组不存在或不属于本人；23505 = 同名分组 */
 export function toFolderError(error: PostgrestError, fallback: string): Error {
   if (error.code === '23503')
-    return new ChatFolderRepositoryError('folder_not_found', '分组不存在');
+    return new ChatFolderRepositoryError('folder_not_found', '分组不存在', { cause: error });
   if (error.code === '23505') {
-    return new ChatFolderRepositoryError('folder_name_taken', '已经有同名分组');
+    return new ChatFolderRepositoryError('folder_name_taken', '已经有同名分组', { cause: error });
   }
   // 42P01/42703/PGRST202：迁移未执行，分组功能整体不可用，不影响原有列表。
   if (error.code === '42P01' || error.code === '42703' || error.code === 'PGRST202') {
-    return new ChatFolderRepositoryError('folders_unavailable', '分组功能暂不可用');
+    return new ChatFolderRepositoryError('folders_unavailable', '分组功能暂不可用', {
+      cause: error,
+    });
   }
-  return new Error(`${fallback}：${error.message}`);
+  return new Error(`${fallback}：${error.message}`, { cause: error });
 }
 
 interface FolderRow {
@@ -62,10 +65,11 @@ export class ChatFolderRepository {
     return getDomainDb('experience');
   }
 
-  async summary(userId: string): Promise<ChatFolderSummary> {
+  async summary(userId: string, callerSignal?: AbortSignal): Promise<ChatFolderSummary> {
+    const deadline = AbortSignal.timeout(RPC_TIMEOUT_MS);
     const { data, error } = await this.db
       .rpc('chat_folder_summary', { p_user_id: userId })
-      .abortSignal(AbortSignal.timeout(RPC_TIMEOUT_MS));
+      .abortSignal(callerSignal ? AbortSignal.any([callerSignal, deadline]) : deadline);
     if (error) throw toFolderError(error, '读取分组汇总失败');
     const value = data as ChatFolderSummary | null;
     if (!value || !Array.isArray(value.folders)) throw new Error('分组汇总结果不完整');
@@ -128,7 +132,8 @@ export class ChatFolderRepository {
     userId: string,
     options: { folder?: string; limit?: number; offset?: number }
   ): Promise<{ groups: SessionGroupRow[]; total: number }> {
-    const { data, error } = await this.db
+    const deadline = AbortSignal.timeout(RPC_TIMEOUT_MS);
+    const result = await this.db
       .rpc('list_chat_session_groups', {
         p_user_id: userId,
         p_folder_id: options.folder && options.folder !== 'none' ? options.folder : null,
@@ -136,10 +141,39 @@ export class ChatFolderRepository {
         p_limit: options.limit ?? 20,
         p_offset: options.offset ?? 0,
       })
-      .abortSignal(AbortSignal.timeout(RPC_TIMEOUT_MS));
-    if (error) throw toFolderError(error, '读取按角色列表失败');
+      .abortSignal(deadline)
+      .then(undefined, (err: unknown) => {
+        const abortLike =
+          err instanceof Error && (err.name === 'AbortError' || err.name === 'TimeoutError');
+        if (deadline.aborted && (err === deadline.reason || abortLike)) {
+          throw new ChatFolderRepositoryError('folders_unavailable', '分组读取超时，请稍后重试', {
+            cause: err,
+          });
+        }
+        throw err;
+      });
+    const { data, error } = result;
+    // Known database errors retain their meaning, even if the deadline also fired.
+    // Only the read's own unclassified abort or stable dependency timeout may degrade.
+    if (error) {
+      if (
+        error.code === '57014' ||
+        error.code === 'PGRST003' ||
+        (deadline.aborted && !error.code)
+      ) {
+        throw new ChatFolderRepositoryError('folders_unavailable', '分组功能暂不可用', {
+          cause: error,
+        });
+      }
+      throw toFolderError(error, '读取按角色列表失败');
+    }
     const value = data as { groups: SessionGroupRow[]; total: number } | null;
     if (!value || !Array.isArray(value.groups)) throw new Error('按角色列表结果不完整');
+    if (deadline.aborted) {
+      throw new ChatFolderRepositoryError('folders_unavailable', '分组读取超时，请稍后重试', {
+        cause: deadline.reason,
+      });
+    }
     return value;
   }
 
