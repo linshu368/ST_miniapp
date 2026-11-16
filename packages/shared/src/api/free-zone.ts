@@ -89,7 +89,12 @@ export const FreeZoneOnShelfSchema = z.object({
   window_hours: z.number().int().min(1).max(168).default(24),
   min_turns: z.number().int().min(1).max(100_000).default(50),
   max_no_output_pct: PercentSchema.nullable().default(10),
-  max_fallback_delivered_pct: PercentSchema.nullable().default(15),
+  /**
+   * 超时兜底率上限：免费模型在「启动兜底等待」内没出字被兜底抢先，或到首字总上限都没出字。
+   * 这类会让用户多等，所以设上限。报错兜底（报错、空回复后立刻兜底）对体验影响小，只显示不设上限。
+   * 默认留空：上线时不改变现有判定。
+   */
+  max_slow_fallback_pct: PercentSchema.nullable().default(null),
   max_timeout_pct: PercentSchema.nullable().default(2),
   max_ttft_p90_ms: DurationMsSchema.nullable().default(7500),
   max_refusal_pct: PercentSchema.nullable().default(null),

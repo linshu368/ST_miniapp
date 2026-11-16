@@ -148,7 +148,7 @@ function columns(
         key: 'business',
         width: 300,
         render: (_, model) => (
-          <Tooltip title="当前供应商开始用之后、统计窗口内的真实轮次，截至最近一轮评估。中断＝开始出字后没写完就断了（不含用户点停），分母是它自己交付的轮次。">
+          <Tooltip title="当前供应商开始用之后、统计窗口内的真实轮次，截至最近一轮评估。超时兜底＝启动兜底等待内没出字被兜底抢先、或到总上限都没出字；报错兜底＝报错、空回复后立刻兜底；中断＝开始出字后没写完就断了（不含用户点停），分母是它自己交付的轮次。">
             <Typography.Text>{freeZoneBusinessText(model) || '—'}</Typography.Text>
           </Tooltip>
         ),

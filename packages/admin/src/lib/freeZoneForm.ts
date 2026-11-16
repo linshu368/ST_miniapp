@@ -115,7 +115,7 @@ const FIELD_LABELS: Record<string, string> = {
   window_hours: '统计窗口',
   min_turns: '最少轮数',
   max_no_output_pct: '没出字率',
-  max_fallback_delivered_pct: '兜底交付率',
+  max_slow_fallback_pct: '超时兜底率',
   max_timeout_pct: '超时率',
   max_refusal_pct: '拒答率',
   max_truncation_pct: '截断率',
