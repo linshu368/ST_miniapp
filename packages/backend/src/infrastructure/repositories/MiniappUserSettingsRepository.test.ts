@@ -38,6 +38,7 @@ function initialRow(): MiniappUserSettingsRow {
     pref_show_status: true,
     pref_show_memory: true,
     pref_reply_styles: {},
+    pref_drive_mode: null,
     pref_custom_instructions: 'existing preference',
     selected_model_id: null,
     characters_last_seen_at: null,

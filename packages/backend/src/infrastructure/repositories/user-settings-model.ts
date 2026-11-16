@@ -23,6 +23,8 @@ export interface MiniappUserSettingsRow {
   pref_show_status: boolean;
   pref_show_memory: boolean;
   pref_reply_styles: ReplyStylePreferences;
+  /** NULL = 从未选择，跟随 drive_mode_options 的默认档 */
+  pref_drive_mode: string | null;
   pref_custom_instructions: string | null;
   selected_model_id: string | null;
   characters_last_seen_at: string | null;
@@ -42,6 +44,7 @@ export type MutableUserSettingsFields = Partial<
     | 'pref_show_status'
     | 'pref_show_memory'
     | 'pref_reply_styles'
+    | 'pref_drive_mode'
     | 'pref_custom_instructions'
   >
 >;

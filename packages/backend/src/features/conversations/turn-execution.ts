@@ -209,6 +209,7 @@ export async function settleExecutedTurn(
       historyId: turn.historyId,
       postprocessVersion: turn.postprocessVersion,
       slotModes: turn.slotModes,
+      driveMode: scope.driveMode,
       content: persisted.assistant_reply ?? result.content,
       log,
     });
@@ -297,6 +298,7 @@ async function persistRichReplyDiagnosis(input: {
   historyId: string;
   postprocessVersion: number;
   slotModes: InstructionSlotModes;
+  driveMode: string | null;
   content: string;
   log: RequestLogger;
 }): Promise<void> {
@@ -325,6 +327,8 @@ async function persistRichReplyDiagnosis(input: {
           ? 'full'
           : 'concise',
       ...diagnosis,
+      // 每轮实际使用的剧情模式，供按模式统计轮数、重生成率等；表上 CHECK 允许附加键。
+      ...(input.driveMode ? { drive_mode: input.driveMode } : {}),
     });
   } catch (err) {
     // A completed reply must remain successful when this advisory snapshot cannot
