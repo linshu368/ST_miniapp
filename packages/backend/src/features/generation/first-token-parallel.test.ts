@@ -3,6 +3,7 @@ import {
   forwardWithFirstTokenFallback,
   type FirstTokenAttemptStore,
   type PersistGate,
+  type SettledCall,
   type TransportModel,
 } from './first-token-fallback.js';
 import type { AttemptObservation } from '../../infrastructure/repositories/GenerationObservationRepository.js';
@@ -39,6 +40,7 @@ function race(primaries: Plan[], fallback: Plan = {}) {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
   const calls: Call[] = [];
   const observations: AttemptObservation[] = [];
+  const settled: SettledCall[] = [];
   const store: FirstTokenAttemptStore = {
     prepareFallback: vi.fn(async () => {}),
     observe: vi.fn(async (attempt) => {
@@ -66,7 +68,11 @@ function race(primaries: Plan[], fallback: Plan = {}) {
         gate: attempt.gate,
       };
       calls.push(call);
-      const headers = { 'content-type': 'text/event-stream', 'x-generation-id': call.generationId };
+      const headers: Record<string, string> = {
+        'content-type': 'text/event-stream',
+        'x-generation-id': call.generationId,
+      };
+      if (attempt.role === 'primary') headers['x-si-request-id'] = `req-p${index}`;
       if (plan.failAt !== undefined) {
         await new Promise((resolve) => setTimeout(resolve, plan.failAt));
         signal.throwIfAborted();
@@ -112,6 +118,7 @@ function race(primaries: Plan[], fallback: Plan = {}) {
     store,
     forward,
     onObservationError: vi.fn(),
+    onCallSettled: (call) => settled.push(call),
   });
   void result.catch(() => {});
   const persistedPrimaries = () => observations.filter((item) => item.role === 'primary');
@@ -123,7 +130,7 @@ function race(primaries: Plan[], fallback: Plan = {}) {
       count: written.length,
     };
   };
-  return { result, calls, store, persistedPrimaries, writtenFrom, controller };
+  return { result, calls, store, persistedPrimaries, writtenFrom, controller, settled };
 }
 
 describe('parallel primary requests', () => {
@@ -183,6 +190,25 @@ describe('parallel primary requests', () => {
     expect(written.ids.size).toBe(1);
     expect(written.count).toBe(2);
     expect(test.persistedPrimaries().at(-1)?.end_reason).toBe('cancelled');
+    await delivered.response.body?.cancel();
+  });
+
+  it('reports every call for costing, including cancelled losers and the fallback', async () => {
+    const test = race([{}, {}, { tokenAt: 8_000 }], { tokenAt: 2_500 });
+    await vi.advanceTimersByTimeAsync(8_001);
+    const delivered = await test.result;
+    await vi.advanceTimersByTimeAsync(0);
+    const bySlot = test.settled
+      .map((call) => [call.role, call.slot, call.endReason, call.requestId] as const)
+      .sort((a, b) => `${a[0]}${a[1]}`.localeCompare(`${b[0]}${b[1]}`));
+    expect(bySlot).toEqual([
+      ['fallback', 0, 'cancelled', null],
+      ['primary', 0, 'cancelled', 'req-p0'],
+      ['primary', 1, 'cancelled', 'req-p1'],
+      ['primary', 2, 'first_token_observed', 'req-p2'],
+    ]);
+    expect(test.settled.every((call) => call.dispatchedAt)).toBe(true);
+    expect(test.settled.find((call) => call.role === 'fallback')?.provider).toBe('openrouter');
     await delivered.response.body?.cancel();
   });
 
