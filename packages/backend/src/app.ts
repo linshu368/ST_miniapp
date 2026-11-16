@@ -20,6 +20,10 @@ import {
   stopFreeZoneEvaluationJob,
 } from './features/free-zone/evaluation-job.js';
 import {
+  startFreeZoneCallCostJob,
+  stopFreeZoneCallCostJob,
+} from './features/free-zone/call-costs.js';
+import {
   startLobbyRankingRefreshJob,
   stopLobbyRankingRefreshJob,
 } from './lib/lobby-ranking-refresh-job.js';
@@ -157,6 +161,7 @@ export async function buildApp() {
   startImagePlazaGenerationJob(app.log);
   startStoryMemoryJob(app.log);
   startFreeZoneEvaluationJob(app.log);
+  startFreeZoneCallCostJob(app.log);
 
   const stopRuntimeMetrics = startRuntimeMetrics();
 
@@ -168,6 +173,7 @@ export async function buildApp() {
     stopImagePlazaGenerationJob();
     stopStoryMemoryJob();
     stopFreeZoneEvaluationJob();
+    stopFreeZoneCallCostJob();
     shutdownTextPostprocessValidation();
     await stopEngineeringTelemetry();
     await stopLogAlerts();
