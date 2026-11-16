@@ -1,10 +1,29 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryObserver } from '@tanstack/react-query';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { QueryClientProvider } from '@tanstack/react-query';
 import type { GetConversationData } from '@miniapp/shared';
 
-vi.mock('./client', () => ({ apiClient: vi.fn(), ApiClientError: class extends Error {} }));
-import { apiClient } from './client';
+vi.mock('./client', () => ({
+  apiClient: vi.fn(),
+  ApiClientError: class extends Error {
+    constructor(
+      message: string,
+      readonly status: number
+    ) {
+      super(message);
+    }
+  },
+}));
+import { apiClient, ApiClientError } from './client';
 import { conversationDetailQueryOptions, conversationKeys } from './conversations';
+import {
+  useConversationGroups,
+  useConversationPages,
+  conversationListKeys,
+} from './conversation-folders';
+import { useConversationView } from '@/components/conversations/use-conversation-view';
 
 function conversation(id: string, title = '已确认会话'): GetConversationData {
   return {
@@ -40,6 +59,84 @@ function observe(id: string, created?: GetConversationData) {
   cleanups.push(observer.subscribe(() => {}));
   return observer;
 }
+
+describe('visible conversation page scheduling', () => {
+  it.each([503, 404, 500])(
+    'only degrades agreed unavailable status %s without rewriting preference',
+    (status) => {
+      const setItem = vi.fn();
+      // Model the terminal state of a mounted query, not a new SSR retry-on-mount.
+      client.setDefaultOptions({ queries: { retry: false, retryOnMount: false } });
+      vi.stubGlobal('window', { localStorage: { getItem: () => null, setItem } });
+      const groups = client
+        .getQueryCache()
+        .build(client, { queryKey: conversationListKeys.groups('all') });
+      groups.setState({
+        error: new ApiClientError('Synthetic read failure', status),
+        status: 'error',
+        fetchStatus: 'idle',
+      });
+      const saved = conversation('saved').session;
+      client.setQueryData(conversationListKeys.pages({ folder: 'all' }), {
+        pages: [{ sessions: [saved], total: 1 }],
+        pageParams: [0],
+      });
+      let view!: ReturnType<typeof useConversationView>;
+      function Probe() {
+        view = useConversationView();
+        return null;
+      }
+      renderToStaticMarkup(createElement(QueryClientProvider, { client }, createElement(Probe)));
+      expect(view.grouped).toBe(status === 500);
+      expect(view.sessions).toEqual([saved]);
+      expect(setItem).not.toHaveBeenCalled();
+      vi.unstubAllGlobals();
+    }
+  );
+  it.each(['groups', 'pages'] as const)(
+    'reserves critical for the first %s page and propagates cancellation',
+    async (kind) => {
+      let first!: () => Promise<unknown>;
+      let next!: () => Promise<unknown>;
+      function Probe() {
+        const groups = useConversationGroups('all', kind === 'groups');
+        const pages = useConversationPages({ folder: 'all' }, kind === 'pages');
+        const query = kind === 'groups' ? groups : pages;
+        first = () => query.refetch();
+        next = () => query.fetchNextPage();
+        return null;
+      }
+      renderToStaticMarkup(createElement(QueryClientProvider, { client }, createElement(Probe)));
+      const rows = Array.from({ length: 20 }, (_, i) => conversation(String(i)).session);
+      vi.mocked(apiClient).mockResolvedValue({ total: 21, sessions: rows, groups: rows });
+      await first();
+      if (kind === 'groups')
+        expect(apiClient).toHaveBeenLastCalledWith(
+          expect.any(String),
+          expect.objectContaining({ transportRetry: false })
+        );
+      expect(apiClient).toHaveBeenLastCalledWith(
+        expect.stringContaining('offset=0'),
+        expect.objectContaining({ queuePriority: 'critical', signal: expect.any(AbortSignal) })
+      );
+      await next();
+      expect(apiClient).toHaveBeenLastCalledWith(
+        expect.stringContaining('offset=20'),
+        expect.objectContaining({ queuePriority: 'normal', signal: expect.any(AbortSignal) })
+      );
+      let signal: AbortSignal | undefined;
+      vi.mocked(apiClient).mockImplementation((_path, options) => {
+        signal = options?.signal ?? undefined;
+        return new Promise(() => {});
+      });
+      const refetch = first();
+      await vi.waitFor(() => expect(signal).toBeDefined());
+      await client.cancelQueries({ queryKey: conversationKeys.lists });
+      expect(signal?.aborted).toBe(true);
+      await refetch;
+    }
+  );
+});
 
 describe('confirmed conversation creation cache', () => {
   it('does not read the same confirmed creation again, including a query-key transition', async () => {

@@ -5,8 +5,8 @@ scope: frontend
 category: business
 status: active
 owners: [frontend]
-last_verified_task: .trellis/tasks/11-02-chat-message-edit-delete/
-last_verified_at: 2026-11-02
+last_verified_task: .trellis/tasks/11-16-miniapp-content-path-optimization/
+last_verified_at: 2026-11-16
 ---
 
 # 用户会话、语音与图片界面
@@ -206,3 +206,21 @@ ChatSessionDrawer将空/角色同名/明确默认分支名以created_at显示区
 Wrong：用客户端时钟宣布失败，或把保温做成无上限轮询。Correct：服务端拥有失败判定，保温随用户活动有界运行。
 
 新手创作计数（2026-11-06，本地候选）：conversation-stream在成功新发送done后为请求开始时账号写入本地引导记录，最多10个session/request标记，同请求重复done不重复；重生成、停止、失败均不计。计数仅控制产品提示，不涉及账务/服务端total_round，未入组与过期账号不写；聊天中不展示创作邀请。
+
+## Cold-start optimization (2026-11-16, local candidate)
+
+Root `/` is internally rewritten to the existing static chats/characters route using mutually exclusive landing-cookie rules. Providers resolves the initial shell from the actual layout tree; after capturing Telegram launch context and sanitizing sensitive URL parameters, it canonicalizes the already-loaded path with Next-integrated native History, then mounts business readers. HTML early-ready handles the root alias without an extra document request. Private API data and identity are never cached by this routing rule.
+
+Visible conversation list/groups first pages explicitly use critical request priority; subsequent pages remain normal, with existing signals, deadlines and retry limits. The groups timing dimension is conversation_groups, distinct from historical conversation_detail. Finite telemetry schema lives in grafana-schema.ts; the native HTML ready transport is independently serialized to keep the startup function within its complexity limit.
+
+Existing startup/launch/API tests and local @startup/@navigation/@chats flows verify mechanisms; production Android/iOS P95 remains a post-release requirement. Implementation/research and rollback: `.trellis/tasks/11-16-miniapp-cold-start-optimization/`.
+
+## Content-path optimization (2026-11-16, local candidate)
+
+Chats reads public character summaries through passive Query observers and existing validated persisted catalogue/head snapshots. It does not dispatch a cold full catalogue. Missing details wait for entry enrichment/navigation quiet and use normal priority, with 60-second row freshness in the existing viewer/session-scoped memory key. Version-bound sessions never use current public summaries as their authoritative character. Existing storage keys/24h TTL remain; invalid/expired/future snapshots are removed, denied storage uses memory. No private list/message/balance/permission/payment persistence was added.
+
+Groups read deadlines and stable dependency timeout codes use existing 503/folders_unavailable; programming/permission errors retain failure semantics. Optional summary is capped at 250ms for groups and flat, with SDK cancellation and a bounded consumer race; no duplicate full list read. Groups transport retry is disabled so the agreed fallback is not delayed by another RPC. Cancellation does not prove PostgreSQL has stopped.
+
+Automatic recommendation entry uses a 1500ms shared deadline; manual refresh/undo and manual fallback open remain 5000ms. Existing hedge, batch ownership, viewer guards and retry UUIDs remain. Request transport/manual mutation and conversation row data hooks are separated without new framework or dependencies.
+
+User explicitly excludes launching local UI verification. Unit/contract/type/build/static checks and remaining production gates are recorded in `.trellis/tasks/11-16-miniapp-content-path-optimization/verification.md`; real Telegram interactions/P95 and conditional prewarming/CDN changes remain post-release work.

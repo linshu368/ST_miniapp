@@ -5,8 +5,8 @@ scope: backend
 category: business
 status: active
 owners: [backend]
-last_verified_task: .trellis/tasks/11-02-fallback-provider-priority/
-last_verified_at: 2026-11-02
+last_verified_task: .trellis/tasks/11-16-miniapp-content-path-optimization/
+last_verified_at: 2026-11-16
 ---
 
 # 会话与生成
@@ -262,3 +262,13 @@ Good：迁移后首页一次请求带列表与汇总。Base：迁移前默认列
 ### 6. Tests Required
 
 `scripts/test-chat-folders-migration.sh`（一次性 PG17：重复执行、跨用户 FK、列级置空、汇总/归拢/分页、ACL、用户级联）；后端既有单测全量；`pnpm test:ui --grep @chats` 覆盖新建→挑选放入→删分组、单条移动、按角色与整组操作、搜索翻页、快速筛选批量删除、少量对话不出工具。
+
+## Content-path optimization (2026-11-16, local candidate)
+
+Chats reads public character summaries through passive Query observers and existing validated persisted catalogue/head snapshots. It does not dispatch a cold full catalogue. Missing details wait for entry enrichment/navigation quiet and use normal priority, with 60-second row freshness in the existing viewer/session-scoped memory key. Version-bound sessions never use current public summaries as their authoritative character. Existing storage keys/24h TTL remain; invalid/expired/future snapshots are removed, denied storage uses memory. No private list/message/balance/permission/payment persistence was added.
+
+Groups read deadlines and stable dependency timeout codes use existing 503/folders_unavailable; programming/permission errors retain failure semantics. Optional summary is capped at 250ms for groups and flat, with SDK cancellation and a bounded consumer race; no duplicate full list read. Groups transport retry is disabled so the agreed fallback is not delayed by another RPC. Cancellation does not prove PostgreSQL has stopped.
+
+Automatic recommendation entry uses a 1500ms shared deadline; manual refresh/undo and manual fallback open remain 5000ms. Existing hedge, batch ownership, viewer guards and retry UUIDs remain. Request transport/manual mutation and conversation row data hooks are separated without new framework or dependencies.
+
+User explicitly excludes launching local UI verification. Unit/contract/type/build/static checks and remaining production gates are recorded in `.trellis/tasks/11-16-miniapp-content-path-optimization/verification.md`; real Telegram interactions/P95 and conditional prewarming/CDN changes remain post-release work.

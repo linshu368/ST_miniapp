@@ -1,5 +1,13 @@
 # Frontend API、数据流与状态管理
 
+## 会话摘要缓存与入口预算（2026-11-16，本地候选）
+
+`use-session-character.ts` 分离会话行的数据策略与视图；lookup仅以disabled observers复用公开目录/public-head的既有Query key和快照，不发全表请求。持久快照按CharacterSummarySchema、既有24小时TTL及合法savedAt校验，损坏/过期/未来时间删除，storage拒绝只用内存；按数据实际时间合并，不能把读盘时刻伪装成新数据。
+
+缺失详情在entry enrich/导航安静窗后走normal，复用三槽中普通最多两槽；会话行详情staleTime=60秒，gc沿用5分钟，不新增持久化。key必须继续包含viewer与session，绑定character_version_id的会话不得使用当前大厅摘要；其他详情调用的默认TTL/优先级不改。
+
+推荐自动入口open/resume总期限1500ms，手动refresh/undo和手动退回open为5000ms，400兼容尝试共享同一控制器/截止。复用现有450ms公开头hedge和旧批次保留，私人推荐不进入共享公共缓存。分组约定404/503才降平铺，未知500保留错误；groups禁用额外transportRetry，不能重复3秒RPC后才降级。
+
 ## API 层地图
 
 - `client.ts`：唯一通用 HTTP client，拼 `API_URL`、注入 Telegram `X-Init-Data`、解析 shared envelope/错误；只供 `lib/api` 使用。

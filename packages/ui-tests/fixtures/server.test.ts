@@ -53,6 +53,17 @@ test('check-in fixture returns a stable next Beijing midnight and rejects duplic
 });
 
 let api: string;
+test('startup invite binding returns a public terminal result and rejects invalid codes', async () => {
+  await post('/__preview/reset', { scenario: 'standard' });
+  assert.deepEqual(
+    (await (await post('/api/invite/bind', { invite_code: 'Abcd1234' })).json()).data,
+    { status: 'not_new_user' }
+  );
+  assert.deepEqual(
+    (await (await post('/api/invite/bind', { invite_code: 'invalid' })).json()).data,
+    { status: 'invalid_code' }
+  );
+});
 let server: ReturnType<typeof createPreviewServer>['server'];
 before(async () => {
   const probe = createServer();

@@ -23,6 +23,7 @@ export function apiRouteGroup(path: string): string {
   if (pathname === '/api/favorites' || pathname === '/api/favorites/ids') return 'favorites';
   if (pathname.startsWith('/api/favorites/')) return 'favorites';
   if (pathname === '/api/v1/conversations') return 'conversations';
+  if (pathname === '/api/v1/conversations/groups') return 'conversation_groups';
   if (/^\/api\/v1\/conversations\/[^/]+$/.test(pathname)) return 'conversation_detail';
   if (pathname.startsWith('/api/v1/conversations/')) return 'conversation_turn';
   if (pathname === '/api/dramas') return 'dramas';

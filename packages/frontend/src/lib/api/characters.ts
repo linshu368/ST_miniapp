@@ -7,15 +7,26 @@ import type {
   LobbyLatestBadgeData,
   LobbySort,
 } from '@miniapp/shared';
-import { DEFAULT_LOBBY_SORT, LOBBY_ROTATION_HEAD_SIZE } from '@miniapp/shared';
-import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import {
+  CharacterSummarySchema,
+  DEFAULT_LOBBY_SORT,
+  LOBBY_ROTATION_HEAD_SIZE,
+} from '@miniapp/shared';
+import { useMemo } from 'react';
+import {
+  useMutation,
+  useQueries,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from '@tanstack/react-query';
 
 import { getMobilePerformancePolicy } from '@/lib/mobile-performance';
 import { createRequestId, timedFetch } from '@/lib/perf/request-timing';
 import { getRawInitData } from '@/lib/telegram/auth';
 import { parseTelegramUser } from '@/lib/telegram/user';
 
-import { apiClient } from './client';
+import { apiClient, type ApiRequestInit } from './client';
 import { useRefetchOnForeground } from './use-refetch-on-foreground';
 
 // ==== 纯 fetch 函数（私有，不导出给业务）====
@@ -69,10 +80,14 @@ async function fetchCharacters(
 async function fetchCharacterById(
   id: string,
   signal?: AbortSignal,
-  sessionId?: string | null
+  sessionId?: string | null,
+  queuePriority?: ApiRequestInit['queuePriority']
 ): Promise<GetCharacterByIdData> {
   const query = sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : '';
-  return apiClient<GetCharacterByIdData>(`/api/characters/${id}${query}`, { signal });
+  return apiClient<GetCharacterByIdData>(`/api/characters/${id}${query}`, {
+    signal,
+    queuePriority,
+  });
 }
 
 // ==== Query Keys ====
@@ -104,44 +119,44 @@ function cacheKey(sort: LobbySort): string {
     : `${CHARACTER_CACHE_KEY_PREFIX}:${sort}`;
 }
 
-function readPersistedCharacters(sort: LobbySort): GetCharactersData | undefined {
+function readPersistedCatalogue(
+  key: string
+): { data: GetCharactersData; savedAt: number } | undefined {
   if (typeof window === 'undefined') return undefined;
   try {
-    const raw = window.localStorage.getItem(cacheKey(sort));
+    const raw = window.localStorage.getItem(key);
     if (!raw) return undefined;
     const cached = JSON.parse(raw) as { savedAt?: number; data?: GetCharactersData };
+    const characters = CharacterSummarySchema.array().safeParse(cached.data?.characters);
     if (
+      !Number.isFinite(cached.savedAt) ||
       !cached.savedAt ||
+      cached.savedAt > Date.now() ||
       Date.now() - cached.savedAt > CHARACTER_CACHE_MAX_AGE_MS ||
-      !Array.isArray(cached.data?.characters)
+      !characters.success
     ) {
-      window.localStorage.removeItem(cacheKey(sort));
+      window.localStorage.removeItem(key);
       return undefined;
     }
-    return cached.data;
+    return characters.success
+      ? { data: { characters: characters.data }, savedAt: cached.savedAt }
+      : undefined;
   } catch {
+    try {
+      window.localStorage.removeItem(key);
+    } catch {
+      /* Storage is optional. */
+    }
     return undefined;
   }
 }
 
+function readPersistedCharacters(sort: LobbySort): GetCharactersData | undefined {
+  return readPersistedCatalogue(cacheKey(sort))?.data;
+}
+
 function readPersistedPublicLobbyHead(): GetCharactersData | undefined {
-  if (typeof window === 'undefined') return undefined;
-  try {
-    const raw = window.localStorage.getItem(PUBLIC_HEAD_CACHE_KEY);
-    if (!raw) return undefined;
-    const cached = JSON.parse(raw) as { savedAt?: number; data?: GetCharactersData };
-    if (
-      !cached.savedAt ||
-      Date.now() - cached.savedAt > CHARACTER_CACHE_MAX_AGE_MS ||
-      !Array.isArray(cached.data?.characters)
-    ) {
-      window.localStorage.removeItem(PUBLIC_HEAD_CACHE_KEY);
-      return undefined;
-    }
-    return cached.data;
-  } catch {
-    return undefined;
-  }
+  return readPersistedCatalogue(PUBLIC_HEAD_CACHE_KEY)?.data;
 }
 
 const pendingPersist = new Map<LobbySort, GetCharactersData>();
@@ -195,6 +210,56 @@ function schedulePersistedCharacters(): void {
 }
 
 // ==== React Query hooks（业务层唯一入口）====
+
+/** Same keys and fetch owners as the lobby, with passive observers only. */
+export function cachedLobbyCharacterQueries() {
+  const head = readPersistedCatalogue(PUBLIC_HEAD_CACHE_KEY);
+  return [
+    ...(['recommended', 'latest'] as const).map((sort) => {
+      const cached = readPersistedCatalogue(cacheKey(sort));
+      return {
+        queryKey: characterKeys.list(sort),
+        queryFn: ({ signal }: { signal: AbortSignal }) => fetchCharacters(sort, signal),
+        initialData: cached?.data,
+        initialDataUpdatedAt: cached?.savedAt,
+        enabled: false,
+      };
+    }),
+    {
+      queryKey: characterKeys.publicHead(),
+      queryFn: ({ signal }: { signal: AbortSignal }) =>
+        fetchCharacters('recommended', signal, true),
+      initialData: head?.data,
+      initialDataUpdatedAt: head?.savedAt,
+      enabled: false,
+    },
+  ];
+}
+
+/** Subscribe to existing public summaries; disabled observers never dispatch a catalogue read. */
+export function useCachedLobbyCharacters(): GetCharactersData | undefined {
+  const queries = useMemo(cachedLobbyCharacterQueries, []);
+  const [recommended, latest, head] = useQueries({ queries });
+  const { data: recommendedData, dataUpdatedAt: recommendedAt = 0 } = recommended ?? {};
+  const { data: latestData, dataUpdatedAt: latestAt = 0 } = latest ?? {};
+  const { data: headData, dataUpdatedAt: headAt = 0 } = head ?? {};
+  return useMemo(() => {
+    const sources = [
+      { data: recommendedData, at: recommendedAt },
+      { data: latestData, at: latestAt },
+      { data: headData, at: headAt },
+    ].filter((source) => source.data !== undefined);
+    if (!sources.length) return undefined;
+    // More recent public data wins; no recommendation order or private detail is cached here.
+    sources.sort((a, b) => a.at - b.at);
+    const cards = new Map(
+      sources.flatMap(
+        (source) => source.data?.characters.map((card) => [card.id, card] as const) ?? []
+      )
+    );
+    return { characters: [...cards.values()] };
+  }, [recommendedData, latestData, headData, recommendedAt, latestAt, headAt]);
+}
 
 export function useCharactersQuery(sort: LobbySort = DEFAULT_LOBBY_SORT, enabled = true) {
   return useQuery<GetCharactersData>({
@@ -293,14 +358,20 @@ export function useMarkLobbyLatestSeenMutation() {
  */
 export function useCharacterQuery(
   id: string | undefined,
-  options: { enabled?: boolean; sessionId?: string | null } = {}
+  options: {
+    enabled?: boolean;
+    sessionId?: string | null;
+    queuePriority?: ApiRequestInit['queuePriority'];
+    staleTime?: number;
+  } = {}
 ) {
   return useQuery<GetCharacterByIdData>({
     queryKey: id ? characterKeys.detail(id, options.sessionId) : characterKeys.all,
     enabled: !!id && options.enabled !== false,
+    ...(options.staleTime === undefined ? {} : { staleTime: options.staleTime }),
     queryFn: async ({ signal }) => {
       if (!id) throw new Error('character id is required');
-      return fetchCharacterById(id, signal, options.sessionId);
+      return fetchCharacterById(id, signal, options.sessionId, options.queuePriority);
     },
   });
 }
