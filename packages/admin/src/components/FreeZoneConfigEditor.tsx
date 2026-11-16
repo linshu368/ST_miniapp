@@ -122,9 +122,9 @@ const ON_SHELF_FIELDS: ReadonlyArray<NumberField<keyof FreeZoneOnShelf & string>
     precision: 1,
   },
   {
-    key: 'max_fallback_delivered_pct',
-    label: '兜底交付率上限（%）',
-    hint: '最后交给用户的是兜底模型写的回复',
+    key: 'max_slow_fallback_pct',
+    label: '超时兜底率上限（%）',
+    hint: '启动兜底等待内没出字、被兜底抢先（报错、空回复后立刻兜底的不算，只显示不设上限）',
     max: 100,
     precision: 1,
   },

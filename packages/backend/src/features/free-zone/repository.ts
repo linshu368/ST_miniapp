@@ -76,6 +76,8 @@ interface MetricsRow {
   turns: number;
   no_output_pct: number | null;
   fallback_delivered_pct: number | null;
+  slow_fallback_pct: number | null;
+  error_fallback_pct: number | null;
   timeout_pct: number | null;
   ttft_p90_ms: number | null;
   refusal_pct: number | null;
@@ -120,6 +122,23 @@ export async function loadFreeZoneMetrics(
         JOIN scope s ON s.model_id = f.model_id
         WHERE f.turn_at >= GREATEST(now() - make_interval(hours => ${windowHours}::int), s.since)
         GROUP BY f.model_id
+      ), causes AS (
+        -- 兜底按起因拆开：报错/空回复后立刻兜底 vs 等待内没出字（含到总上限都没出字）。
+        -- 出字前用户自己取消的不算兜底。
+        SELECT c.requested_model_id AS model_id,
+          (avg(CASE WHEN c.delivery_role IS DISTINCT FROM 'primary'
+                     AND c.primary_end_reason IN ('upstream_error', 'stream_interrupted')
+                    THEN 100 ELSE 0 END))::float8 AS error_fallback_pct,
+          (avg(CASE WHEN c.delivery_role IS DISTINCT FROM 'primary'
+                     AND c.primary_end_reason IS DISTINCT FROM 'upstream_error'
+                     AND c.primary_end_reason IS DISTINCT FROM 'stream_interrupted'
+                     AND NOT (c.business_finish_reason IS NOT DISTINCT FROM 'user_cancelled'
+                              AND NOT COALESCE(c.server_first_token_timeout, false))
+                    THEN 100 ELSE 0 END))::float8 AS slow_fallback_pct
+        FROM miniapp_analytics.chat_first_token_facts c
+        JOIN scope s ON s.model_id = c.requested_model_id
+        WHERE c.request_received_at >= GREATEST(now() - make_interval(hours => ${windowHours}::int), s.since)
+        GROUP BY c.requested_model_id
       ), dislikes AS (
         SELECT d.model_id, count(*)::int AS dislikes
         FROM miniapp_analytics.free_zone_dislikes d
@@ -127,8 +146,8 @@ export async function loadFreeZoneMetrics(
         WHERE d.created_at >= GREATEST(now() - make_interval(hours => ${windowHours}::int), s.since)
         GROUP BY d.model_id
       )
-      SELECT t.*, COALESCE(d.dislikes, 0) AS dislikes
-      FROM turns t LEFT JOIN dislikes d USING (model_id)`;
+      SELECT t.*, c.slow_fallback_pct, c.error_fallback_pct, COALESCE(d.dislikes, 0) AS dislikes
+      FROM turns t LEFT JOIN causes c USING (model_id) LEFT JOIN dislikes d USING (model_id)`;
   });
   return new Map(
     rows.map((row) => [
@@ -137,6 +156,8 @@ export async function loadFreeZoneMetrics(
         turns: row.turns,
         noOutputPct: row.no_output_pct,
         fallbackDeliveredPct: row.fallback_delivered_pct,
+        slowFallbackPct: row.slow_fallback_pct,
+        errorFallbackPct: row.error_fallback_pct,
         timeoutPct: row.timeout_pct,
         ttftP90Ms: row.ttft_p90_ms,
         refusalPct: row.refusal_pct,

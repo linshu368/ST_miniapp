@@ -218,6 +218,9 @@ describe('buildFreeZoneStatus', () => {
     expect(status.models[1]?.business).toEqual({
       turns: 46,
       fallback_delivered_pct: 39.7,
+      // 拆分字段上线前的评估记录没有这两项
+      slow_fallback_pct: null,
+      error_fallback_pct: null,
       no_output_pct: 41,
       primary_delivered_turns: 28,
       interrupted_turns: 7,
