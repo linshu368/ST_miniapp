@@ -1,4 +1,5 @@
 import { ReplyStyleOptionsEditor } from './ReplyStyleOptionsEditor';
+import { DriveModeOptionsEditor } from './DriveModeOptionsEditor';
 import { StoryMemoryConfigEditor, StoryMemoryPromptEditor } from './StoryMemoryEditors';
 import { LlmPricingConfigEditor } from './LlmPricingConfigEditor';
 import { useState } from 'react';
@@ -18,6 +19,7 @@ import {
 } from 'antd';
 import {
   CREATOR_REVIEW_PROMPT_KEY,
+  DRIVE_MODE_OPTIONS_KEY,
   FREE_ZONE_CONFIG_KEY,
   STORY_MEMORY_CONFIG_KEY,
   STORY_MEMORY_PROMPT_KEY,
@@ -434,6 +436,7 @@ export function ConfigValueEditor(props: {
   }
 
   if (props.configKey === FREE_ZONE_CONFIG_KEY) return <FreeZoneConfigEditor {...props} />;
+  if (props.configKey === DRIVE_MODE_OPTIONS_KEY) return <DriveModeOptionsEditor {...props} />;
 
   if (props.configKey === STORY_MEMORY_CONFIG_KEY) {
     return (
