@@ -1,5 +1,7 @@
 # ST_miniapp
 
+2026-11-16 MiniApp 冷启动专项（本地候选）：根入口按 landing cookie 内部 rewrite，直接返回已有会话或大厅静态框架；保存 Telegram 启动参数后再规范地址，减少一次文档跳转。可见会话第一页使用预留 critical 槽。研究、验证和发布复测见 [专项说明](.trellis/tasks/11-12-overnight-page-performance/cold-start-optimization-2026-11-16.md)。
+
 2026-11-16 日志完整性补全（本地未部署）：补齐捕获异常、warn 告警、数据库 cause、对账每轮上下文和大厅 Next.js 代理链路，并扩展 DB/HTTP/调度静态门禁。Backend 由 Railway 捕获，代理摘要在 Next.js 服务端 stdout；缓存、业务契约和默认关闭告警保持兼容，详见 [运行说明](docs/backend-observability-runtime.md)。
 
 日志实现、告警规则和 SDK 候选入口现已集中在 [日志模块目录](packages/backend/src/platform/observability/README.md)。后续只改目录内 `alert-rules.json` 管理模块/状态码等规则，执行 `pnpm --filter @miniapp/backend logging:validate` 后随应用发布；LOG_ALERT_RULES 环境变量已停止读取。总开关默认关闭、通知 secret 仍独立部署。

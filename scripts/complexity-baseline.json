@@ -29,7 +29,6 @@
     "packages/frontend/src/components/drama/drama-player.tsx": 1512,
     "packages/frontend/src/hooks/use-conversation-turn.ts": 1044,
     "packages/frontend/src/lib/perf/drama-timing.ts": 642,
-    "packages/frontend/src/lib/perf/grafana.ts": 685,
     "packages/frontend/src/lib/perf/page-tracker.ts": 509,
     "packages/shared/src/api/text-postprocess.ts": 1139,
     "packages/shared/src/text-postprocess/compile-css.ts": 634,
@@ -134,7 +133,6 @@
     "packages/frontend/src/lib/api/lobby-recommendations.ts#useLobbyRecommendation": 191,
     "packages/frontend/src/lib/perf/drama-media.ts#observeDramaMedia": 403,
     "packages/frontend/src/lib/perf/drama-seek.ts#observeDramaSeek": 324,
-    "packages/frontend/src/lib/perf/early-startup.ts#bootstrapStartupShell": 122,
     "packages/frontend/src/lib/perf/grafana.ts#createEngineeringExporter": 208,
     "packages/frontend/src/lib/perf/startup-phases.ts#collectStartupDetails": 150,
     "packages/frontend/src/lib/perf/startup-timing.ts#observeStartupShell": 158

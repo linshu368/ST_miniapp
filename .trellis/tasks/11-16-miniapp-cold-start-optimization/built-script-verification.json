@@ -1,0 +1,29 @@
+{
+  "environment": "Production-minified HTML inline script evaluated in the existing VM style; not a real Telegram WebView",
+  "results": [
+    {
+      "landing": "characters",
+      "platform": "android",
+      "readyNotifications": 1,
+      "status": "sent"
+    },
+    {
+      "landing": "characters",
+      "platform": "ios",
+      "readyNotifications": 1,
+      "status": "sent"
+    },
+    {
+      "landing": "chats",
+      "platform": "android",
+      "readyNotifications": 1,
+      "status": "sent"
+    },
+    {
+      "landing": "chats",
+      "platform": "ios",
+      "readyNotifications": 1,
+      "status": "sent"
+    }
+  ]
+}

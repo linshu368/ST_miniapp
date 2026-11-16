@@ -10,6 +10,7 @@ export function EntryShell({ pathname }: { pathname: string }) {
     <>
       <div
         data-startup-content
+        data-startup-pathname={pathname}
         data-startup-fullscreen={pathname === '/watch' ? '' : undefined}
         className="pb-[var(--app-nav-space)]"
         aria-busy="true"

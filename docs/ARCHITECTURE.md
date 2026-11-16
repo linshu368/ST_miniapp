@@ -1,5 +1,7 @@
 # ST_miniAPP 架构说明
 
+2026-11-16 MiniApp 冷启动专项（本地候选）：`/` 按 landing cookie 内部 rewrite 到已有静态 `/chats` 或 `/characters`，返回一个文档；Providers 根据实际路由树保持 SSR 框架一致，捕获 Telegram 启动上下文后用原生 History API 同步规范路径，再挂业务。可见会话列表第一页使用预留 critical 槽，分页维持 normal；groups 遥测独立于 conversation_detail，历史指标不能直接混比。未改变后端/鉴权/私人缓存，生产效果需发布后验证。见 [专项说明](../.trellis/tasks/11-12-overnight-page-performance/cold-start-optimization-2026-11-16.md)。
+
 2026-11-16 日志目录集中（本地未部署）：Pino、Sentry/后台观测接线和规则统一位于 `platform/observability/`，旧 lib 入口仅重导出。规则唯一来源为目录内 alert-rules.json，配置中心只读取总开关/secret；不再读取 LOG_ALERT_RULES。sdk.ts 导出不触发应用启动的 factory/契约，框架、文件及通知渠道由项目装配，参见 [模块说明](../packages/backend/src/platform/observability/README.md)。
 
 2026-11-16 本地日志补全：数据库转换保留 cause，安全出口继续去除原始消息；支付对账的执行及汇总位于同一轮次根上下文。大厅 Next.js 代理只透传有界请求 ID、回传受控链路头，并在自身部署 stdout 记录固定摘要，与 Backend Railway 日志按请求关联。无新增日志存储、SQL、业务重试或公开 API；详情见 [运行说明](backend-observability-runtime.md)。

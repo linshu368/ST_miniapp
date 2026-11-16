@@ -1,4 +1,5 @@
 import { createServer, type ServerResponse } from 'node:http';
+import type { InviteBindData } from '@miniapp/shared';
 import { createChatFeedbackFixture } from './chat-feedback.js';
 import { createChatFolderFixture, makeFolderSessionSamples } from './chat-folders.js';
 import { createGrowthPromptFixture } from './growth-prompts.js';
@@ -1125,6 +1126,18 @@ export function createPreviewServer(apiPort: number, appPort: number) {
       }
       if (path === '/api/invite/entry-status' && method === 'GET') {
         ok(res, { entry_enabled: false, center_entered: true });
+        return;
+      }
+      if (path === '/api/invite/bind' && method === 'POST') {
+        const code = (body as { invite_code?: unknown } | null)?.invite_code;
+        // The standard fixture is an existing account; binding reaches a terminal
+        // result without mutating any real invitation relationship.
+        ok(res, {
+          status:
+            typeof code === 'string' && /^[A-Za-z0-9]{8}$/.test(code)
+              ? 'not_new_user'
+              : 'invalid_code',
+        } satisfies InviteBindData);
         return;
       }
       if (path === '/api/notifications' && method === 'GET') {

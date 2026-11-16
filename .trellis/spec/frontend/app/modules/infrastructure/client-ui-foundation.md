@@ -5,8 +5,8 @@ scope: frontend
 category: infrastructure
 status: active
 owners: [frontend]
-last_verified_task: .trellis/tasks/11-05-optimize-android-navigation-tail/
-last_verified_at: 2026-11-06
+last_verified_task: .trellis/tasks/11-16-miniapp-cold-start-optimization/
+last_verified_at: 2026-11-16
 ---
 
 # API、Telegram 与 UI 基建
@@ -83,3 +83,11 @@ Telegram WebView 差异需持续人工回归；生产 route bundle 与 Sentry �
 ## 五入口公共导航适配（2026-10-27，本地）
 
 BottomNav 在角色/AI短剧/首页/生成/我的统一贴底暖黑五入口，中央播放符号保留，中央使用无底座折叠播放标记，当前栏目用字重/图标轻底托反馈；未读点仍属于我的，角色入口保留最后栏目。BottomNav 导出的 isBottomNavHidden 同时约束 MainLayout 内容留白，避免隐藏底栏后残留空白。globals.css 的 --app-nav-height / --app-nav-space 是高度与安全区来源；短剧固定滚动区、普通入口最小高度、影像作品操作条与提示同步使用。没有更改各闭环业务接口或内部操作。
+
+## Cold-start optimization (2026-11-16, local candidate)
+
+Root `/` is internally rewritten to the existing static chats/characters route using mutually exclusive landing-cookie rules. Providers resolves the initial shell from the actual layout tree; after capturing Telegram launch context and sanitizing sensitive URL parameters, it canonicalizes the already-loaded path with Next-integrated native History, then mounts business readers. HTML early-ready handles the root alias without an extra document request. Private API data and identity are never cached by this routing rule.
+
+Visible conversation list/groups first pages explicitly use critical request priority; subsequent pages remain normal, with existing signals, deadlines and retry limits. The groups timing dimension is conversation_groups, distinct from historical conversation_detail. Finite telemetry schema lives in grafana-schema.ts; the native HTML ready transport is independently serialized to keep the startup function within its complexity limit.
+
+Existing startup/launch/API tests and local @startup/@navigation/@chats flows verify mechanisms; production Android/iOS P95 remains a post-release requirement. Implementation/research and rollback: `.trellis/tasks/11-16-miniapp-cold-start-optimization/`.

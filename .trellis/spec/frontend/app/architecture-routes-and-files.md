@@ -13,7 +13,7 @@
 
 | 路由                                                                | 文件与职责                                                                                                                                                 |
 | ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/`                                                                 | 无页面；`next.config.mjs` 307 到 `/characters`（冷启动落地页），透传 query                                                                                 |
+| `/`                                                                 | Cookie-conditioned internal rewrite to static `/chats` or `/characters`; launch capture then native History canonicalization, no document redirect         |
 | `/watch`                                                            | `(main)/watch/page.tsx`，短剧沉浸视频流，底栏第一位「放映」                                                                                                |
 | `/characters`                                                       | `(main)/characters/page.tsx`，角色模块「发现」；角色 gallery 与搜索排序（接着聊入口在对话页）                                                              |
 | `/dramas` / `/dramas/[id]`                                          | 双列剧场/追剧库与本剧专注播放、选集                                                                                                                        |
