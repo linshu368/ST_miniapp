@@ -130,7 +130,6 @@
     "packages/frontend/src/hooks/use-conversation-turn.ts#useConversationTurn": 912,
     "packages/frontend/src/lib/api/conversation-stream.ts#readConversationStream": 151,
     "packages/frontend/src/lib/api/lobby-recommendations.ts#useLobbyDiscoveryFeed": 171,
-    "packages/frontend/src/lib/api/lobby-recommendations.ts#useLobbyRecommendation": 191,
     "packages/frontend/src/lib/perf/drama-media.ts#observeDramaMedia": 403,
     "packages/frontend/src/lib/perf/drama-seek.ts#observeDramaSeek": 324,
     "packages/frontend/src/lib/perf/grafana.ts#createEngineeringExporter": 208,

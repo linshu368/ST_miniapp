@@ -124,7 +124,8 @@ export function useConversationGroups(folder: FolderFilter, enabled = true) {
       if (pageParam === 0) search.set('summary', '1');
       const data = await apiClient<ListConversationGroupsData>(
         `/api/v1/conversations/groups?${search.toString()}`,
-        { signal, queuePriority: pageParam === 0 ? 'critical' : 'normal' }
+        // A known 503 should fall back to flat immediately, not repeat a 3s RPC.
+        { signal, queuePriority: pageParam === 0 ? 'critical' : 'normal', transportRetry: false }
       );
       keepSummary(queryClient, data.folder_summary);
       // 默认按角色时首屏走这里：同样据此记下「有对话记录」，下次打开直接进对话。

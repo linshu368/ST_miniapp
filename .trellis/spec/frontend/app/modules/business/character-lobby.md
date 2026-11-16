@@ -5,8 +5,8 @@ scope: frontend
 category: business
 status: active
 owners: [frontend]
-last_verified_task: .trellis/tasks/11-05-optimize-android-navigation-tail/
-last_verified_at: 2026-11-06
+last_verified_task: .trellis/tasks/11-16-miniapp-content-path-optimization/
+last_verified_at: 2026-11-16
 ---
 
 # 角色模块发现与收藏
@@ -125,3 +125,13 @@ Android/Android X 的角色目录请求使用 1.8 秒全阶段 deadline，iOS/ot
 创作首屏只介绍AI润色（先写大概，满意再采用）和可多选预设模板（补充扮演/回复规则，先看说明），按钮仅滚动定位，不生成/提交/预选；原头部拆为character-editor-header，保留保存状态与返回行为。
 
 邀请在底部导航上方以无蒙层轻浮卡展示，不插入角色列表、不影响返回位置；44px收起按钮，关闭后不重复。创作编辑页提示仅AI润色与预设规则，点击只定位原控件，不自动产生付费操作。
+
+## Content-path optimization (2026-11-16, local candidate)
+
+Chats reads public character summaries through passive Query observers and existing validated persisted catalogue/head snapshots. It does not dispatch a cold full catalogue. Missing details wait for entry enrichment/navigation quiet and use normal priority, with 60-second row freshness in the existing viewer/session-scoped memory key. Version-bound sessions never use current public summaries as their authoritative character. Existing storage keys/24h TTL remain; invalid/expired/future snapshots are removed, denied storage uses memory. No private list/message/balance/permission/payment persistence was added.
+
+Groups read deadlines and stable dependency timeout codes use existing 503/folders_unavailable; programming/permission errors retain failure semantics. Optional summary is capped at 250ms for groups and flat, with SDK cancellation and a bounded consumer race; no duplicate full list read. Groups transport retry is disabled so the agreed fallback is not delayed by another RPC. Cancellation does not prove PostgreSQL has stopped.
+
+Automatic recommendation entry uses a 1500ms shared deadline; manual refresh/undo and manual fallback open remain 5000ms. Existing hedge, batch ownership, viewer guards and retry UUIDs remain. Request transport/manual mutation and conversation row data hooks are separated without new framework or dependencies.
+
+User explicitly excludes launching local UI verification. Unit/contract/type/build/static checks and remaining production gates are recorded in `.trellis/tasks/11-16-miniapp-content-path-optimization/verification.md`; real Telegram interactions/P95 and conditional prewarming/CDN changes remain post-release work.

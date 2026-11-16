@@ -5,10 +5,25 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { QueryClientProvider } from '@tanstack/react-query';
 import type { GetConversationData } from '@miniapp/shared';
 
-vi.mock('./client', () => ({ apiClient: vi.fn(), ApiClientError: class extends Error {} }));
-import { apiClient } from './client';
+vi.mock('./client', () => ({
+  apiClient: vi.fn(),
+  ApiClientError: class extends Error {
+    constructor(
+      message: string,
+      readonly status: number
+    ) {
+      super(message);
+    }
+  },
+}));
+import { apiClient, ApiClientError } from './client';
 import { conversationDetailQueryOptions, conversationKeys } from './conversations';
-import { useConversationGroups, useConversationPages } from './conversation-folders';
+import {
+  useConversationGroups,
+  useConversationPages,
+  conversationListKeys,
+} from './conversation-folders';
+import { useConversationView } from '@/components/conversations/use-conversation-view';
 
 function conversation(id: string, title = '已确认会话'): GetConversationData {
   return {
@@ -46,6 +61,38 @@ function observe(id: string, created?: GetConversationData) {
 }
 
 describe('visible conversation page scheduling', () => {
+  it.each([503, 404, 500])(
+    'only degrades agreed unavailable status %s without rewriting preference',
+    (status) => {
+      const setItem = vi.fn();
+      // Model the terminal state of a mounted query, not a new SSR retry-on-mount.
+      client.setDefaultOptions({ queries: { retry: false, retryOnMount: false } });
+      vi.stubGlobal('window', { localStorage: { getItem: () => null, setItem } });
+      const groups = client
+        .getQueryCache()
+        .build(client, { queryKey: conversationListKeys.groups('all') });
+      groups.setState({
+        error: new ApiClientError('Synthetic read failure', status),
+        status: 'error',
+        fetchStatus: 'idle',
+      });
+      const saved = conversation('saved').session;
+      client.setQueryData(conversationListKeys.pages({ folder: 'all' }), {
+        pages: [{ sessions: [saved], total: 1 }],
+        pageParams: [0],
+      });
+      let view!: ReturnType<typeof useConversationView>;
+      function Probe() {
+        view = useConversationView();
+        return null;
+      }
+      renderToStaticMarkup(createElement(QueryClientProvider, { client }, createElement(Probe)));
+      expect(view.grouped).toBe(status === 500);
+      expect(view.sessions).toEqual([saved]);
+      expect(setItem).not.toHaveBeenCalled();
+      vi.unstubAllGlobals();
+    }
+  );
   it.each(['groups', 'pages'] as const)(
     'reserves critical for the first %s page and propagates cancellation',
     async (kind) => {
@@ -63,6 +110,11 @@ describe('visible conversation page scheduling', () => {
       const rows = Array.from({ length: 20 }, (_, i) => conversation(String(i)).session);
       vi.mocked(apiClient).mockResolvedValue({ total: 21, sessions: rows, groups: rows });
       await first();
+      if (kind === 'groups')
+        expect(apiClient).toHaveBeenLastCalledWith(
+          expect.any(String),
+          expect.objectContaining({ transportRetry: false })
+        );
       expect(apiClient).toHaveBeenLastCalledWith(
         expect.stringContaining('offset=0'),
         expect.objectContaining({ queuePriority: 'critical', signal: expect.any(AbortSignal) })

@@ -5,7 +5,7 @@ scope: frontend
 category: infrastructure
 status: active
 owners: [frontend]
-last_verified_task: .trellis/tasks/11-16-miniapp-cold-start-optimization/
+last_verified_task: .trellis/tasks/11-16-miniapp-content-path-optimization/
 last_verified_at: 2026-11-16
 ---
 
@@ -91,3 +91,13 @@ Root `/` is internally rewritten to the existing static chats/characters route u
 Visible conversation list/groups first pages explicitly use critical request priority; subsequent pages remain normal, with existing signals, deadlines and retry limits. The groups timing dimension is conversation_groups, distinct from historical conversation_detail. Finite telemetry schema lives in grafana-schema.ts; the native HTML ready transport is independently serialized to keep the startup function within its complexity limit.
 
 Existing startup/launch/API tests and local @startup/@navigation/@chats flows verify mechanisms; production Android/iOS P95 remains a post-release requirement. Implementation/research and rollback: `.trellis/tasks/11-16-miniapp-cold-start-optimization/`.
+
+## Content-path optimization (2026-11-16, local candidate)
+
+Chats reads public character summaries through passive Query observers and existing validated persisted catalogue/head snapshots. It does not dispatch a cold full catalogue. Missing details wait for entry enrichment/navigation quiet and use normal priority, with 60-second row freshness in the existing viewer/session-scoped memory key. Version-bound sessions never use current public summaries as their authoritative character. Existing storage keys/24h TTL remain; invalid/expired/future snapshots are removed, denied storage uses memory. No private list/message/balance/permission/payment persistence was added.
+
+Groups read deadlines and stable dependency timeout codes use existing 503/folders_unavailable; programming/permission errors retain failure semantics. Optional summary is capped at 250ms for groups and flat, with SDK cancellation and a bounded consumer race; no duplicate full list read. Groups transport retry is disabled so the agreed fallback is not delayed by another RPC. Cancellation does not prove PostgreSQL has stopped.
+
+Automatic recommendation entry uses a 1500ms shared deadline; manual refresh/undo and manual fallback open remain 5000ms. Existing hedge, batch ownership, viewer guards and retry UUIDs remain. Request transport/manual mutation and conversation row data hooks are separated without new framework or dependencies.
+
+User explicitly excludes launching local UI verification. Unit/contract/type/build/static checks and remaining production gates are recorded in `.trellis/tasks/11-16-miniapp-content-path-optimization/verification.md`; real Telegram interactions/P95 and conditional prewarming/CDN changes remain post-release work.
