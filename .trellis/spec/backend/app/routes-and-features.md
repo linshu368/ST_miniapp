@@ -1,5 +1,11 @@
 # Backend 路由、功能域与调用链
 
+## 会话分组只读降级（2026-11-16，本地候选）
+
+ChatFolderRepository.listGroups仅对自己的3秒读期限、SQL57014/PostgREST PGRST003或原有功能不可用码映射folders_unavailable/503；已知编程/权限错误即使与期限同时到达也保留错误语义，外部AbortError未触发自身期限时不降级。映射只限只读groups，不扩散到写入未知结果。
+
+groups及flat的可选folder_summary共用250ms独立预算，向SDK透传取消信号且以Promise race约束不合作传输；失败/超时仅省略summary，迟到结果不改主体、不另读全量列表。HTTP取消不能证明数据库端已立即停止；正式环境另核对实际容量和SQL时长。日志复用conversation.groups.unavailable、conversation.folder.summary_failed及HTTP根终态，保留安全{err}/cause和request/trace关联，不记录私人列表。
+
 ## 路由插件清单
 
 | 文件                                       | 功能与依赖                                                                                       |

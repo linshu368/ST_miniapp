@@ -5,6 +5,8 @@ node_modules/
 .next-ui-test/
 /output/playwright/
 /output/performance/
+/output/build-snapshots/
+/output/cold-start-*.log
 .next-perf/
 dist/
 .env

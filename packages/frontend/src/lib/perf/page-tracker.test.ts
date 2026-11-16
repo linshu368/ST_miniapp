@@ -236,6 +236,21 @@ describe('page tracker', () => {
     );
   });
 
+  it('keeps document time zero when root hydration mounts its canonical landing page', () => {
+    vi.advanceTimersByTime(2100);
+    beginPage('/chats');
+    vi.advanceTimersByTime(200);
+    markPageReady('/chats');
+    expect(engineering.measurement).toHaveBeenCalledWith(
+      'page.launch',
+      2300,
+      expect.objectContaining({ route: '/chats', navigation_type: 'document' })
+    );
+    expect(
+      engineering.measurement.mock.calls.filter(([name]) => name === 'page.navigation')
+    ).toHaveLength(0);
+  });
+
   it('does not count background-ready as visible success until foreground resumes', () => {
     beginPage('/characters');
     setVisibility('hidden');
@@ -921,11 +936,20 @@ describe('document startup timing', () => {
 });
 
 describe('standalone HTML startup script', () => {
-  function boot({ platform = 'android', css = true, bridgeFails = false } = {}) {
+  function boot({
+    platform = 'android',
+    css = true,
+    bridgeFails = false,
+    pathname = '/characters',
+    landing = '/characters',
+  } = {}) {
     let now = 100;
     let sequence = 0;
     const frames = new Map<number, FrameRequestCallback>();
-    const visibleNode = { getBoundingClientRect: () => ({ width: 390, height: 800 }) };
+    const visibleNode = {
+      getBoundingClientRect: () => ({ width: 390, height: 800 }),
+      getAttribute: () => landing,
+    };
     const doc = Object.assign(new EventTarget(), {
       hidden: false,
       documentElement: {},
@@ -937,7 +961,7 @@ describe('standalone HTML startup script', () => {
     const notify = vi.fn();
     const win = Object.assign(new EventTarget(), {
       location: {
-        pathname: '/characters',
+        pathname,
         search: '',
         hash: platform ? `#tgWebAppVersion=9.6&tgWebAppPlatform=${platform}` : '',
       },
@@ -971,6 +995,23 @@ describe('standalone HTML startup script', () => {
     };
     return { win, doc, postEvent, notify, paint, context, frames };
   }
+
+  it.each(['/chats', '/characters'])(
+    'notifies for root rewritten to %s before hydration',
+    (landing) => {
+      const b = boot({ pathname: '/', landing });
+      b.paint();
+      b.paint();
+      expect(b.postEvent).toHaveBeenCalledExactlyOnceWith('web_app_ready', '{}');
+    }
+  );
+
+  it('does not acknowledge an unrecognized root shell', () => {
+    const b = boot({ pathname: '/', landing: '/profile' });
+    b.paint();
+    b.paint();
+    expect(b.postEvent).not.toHaveBeenCalled();
+  });
 
   it.each(['android', 'ios'])(
     'notifies the %s native bridge without Next, React, Sentry, or SDK modules',

@@ -3,6 +3,13 @@ import { checkWalletBalance, resolveBillingPlan } from './precheck.js';
 import type { LlmPricingConfig, ModelBillingContext } from '../../platform/model-tiers.js';
 import type { GenerationLogger } from './types.js';
 
+const readWallet = vi.hoisted(() => vi.fn());
+vi.mock('../../infrastructure/repositories/MiniappWalletRepository.js', () => ({
+  MiniappWalletRepository: class {
+    findByUserId = readWallet;
+  },
+}));
+
 function fakeLogger(): GenerationLogger {
   const sink = {
     debug: vi.fn(),
@@ -250,9 +257,60 @@ describe('checkWalletBalance', () => {
         log,
       })
     ).resolves.toEqual({ ok: true });
-    expect(log.biz.debug).toHaveBeenCalledWith(
-      expect.objectContaining({ event: 'llm.balance.check_skipped' }),
+    expect(log.biz.info).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'llm.balance.check_skipped',
+        outcome: 'skipped',
+        reason: 'free_round',
+      }),
       expect.any(String)
     );
+  });
+
+  it.each([true, false])(
+    'records the actual precheck result without additional reads: %s',
+    async (covered) => {
+      readWallet
+        .mockReset()
+        .mockResolvedValue({ main_credits: covered ? 50 : 5, bonus_credits: 0 });
+      const log = fakeLogger();
+      const result = await checkWalletBalance({
+        userId: 'user-1',
+        requiredAmount: 30,
+        walletPolicy: 'main_only',
+        openRouterModelId: PAID_MODEL.openRouterModelId,
+        log,
+      });
+      expect(result.ok).toBe(covered);
+      expect(readWallet).toHaveBeenCalledOnce();
+      expect(log.biz.info).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: covered ? 'llm.balance.precheck_passed' : 'llm.balance.insufficient',
+          outcome: covered ? 'succeeded' : 'rejected',
+        }),
+        expect.any(String)
+      );
+    }
+  );
+
+  it('records query failure and rethrows the same error without labelling it insufficient balance', async () => {
+    const err = new Error('private-query');
+    readWallet.mockReset().mockRejectedValue(err);
+    const log = fakeLogger();
+    await expect(
+      checkWalletBalance({
+        userId: 'user-1',
+        requiredAmount: 30,
+        walletPolicy: 'main_only',
+        openRouterModelId: PAID_MODEL.openRouterModelId,
+        log,
+      })
+    ).rejects.toBe(err);
+    expect(readWallet).toHaveBeenCalledOnce();
+    expect(log.sys.error).toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'llm.balance.precheck_failed', outcome: 'failed', err }),
+      expect.any(String)
+    );
+    expect(log.biz.info).not.toHaveBeenCalled();
   });
 });

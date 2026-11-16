@@ -1,5 +1,7 @@
 # MiniApp 开屏优化与对照基线
 
+2026-11-16 冷启动专项（本地候选）：根入口从 307 改为按 cookie 的内部 rewrite；静态 HTML 框架根据真实路由树呈现，early-ready 支持根别名。SDK 先捕获并清理启动参数，然后在 Next 初始化 effect 后使用 History API 规范 URL，业务等待 Router 路径同步；既有分段和 document 零点保持。首屏会话第一页显式 critical，后续分页 normal。此方案减少一个可控制的文档请求，不承诺固定减少 5 秒。周末数据、研究来源、实施与发布验收见 [冷启动专项说明](../.trellis/tasks/11-12-overnight-page-performance/cold-start-optimization-2026-11-16.md)，历史基线保持原样。
+
 ## 目标与冻结基线
 
 完成标准是文档导航零点（WebView 开始加载）到同一指定框架具备展示条件，P95 ≤4000ms。辅助指标为 **>4000ms** 样本数 / 有效样本数；恰好4000ms计为达标。完整内容、视频首帧和业务可操作耗时继续各自统计。
