@@ -35,6 +35,10 @@ export interface BusinessMetrics {
   turns: number;
   noOutputPct: number | null;
   fallbackDeliveredPct: number | null;
+  /** 超时兜底：等待内没出字被兜底抢先、或到总上限都没出字 */
+  slowFallbackPct: number | null;
+  /** 报错兜底：报错、空回复后立刻兜底（只观察，不设上限） */
+  errorFallbackPct: number | null;
   timeoutPct: number | null;
   ttftP90Ms: number | null;
   refusalPct: number | null;
@@ -89,7 +93,7 @@ export function judgeBusinessMetrics(
   }
   const reasons = [
     exceeds(metrics.noOutputPct, rules.max_no_output_pct, '没出字率%'),
-    exceeds(metrics.fallbackDeliveredPct, rules.max_fallback_delivered_pct, '兜底交付率%'),
+    exceeds(metrics.slowFallbackPct, rules.max_slow_fallback_pct, '超时兜底率%'),
     exceeds(metrics.timeoutPct, rules.max_timeout_pct, '超时率%'),
     exceeds(metrics.ttftP90Ms, rules.max_ttft_p90_ms, '真实首字p90'),
     exceeds(metrics.refusalPct, rules.max_refusal_pct, '拒答率%'),
