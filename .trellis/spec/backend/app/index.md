@@ -4,15 +4,16 @@
 
 ## 专题导航
 
-| 文档                                                               | 必读场景                                   |
-| ------------------------------------------------------------------ | ------------------------------------------ |
-| [架构、入口与文件职责](./architecture-and-files.md)                | 所有 Backend 任务                          |
-| [路由、功能域与调用链](./routes-and-features.md)                   | API、业务流程、LLM、支付、语音、增长       |
-| [数据、可靠性、安全与可观测性](./data-reliability-and-security.md) | DB、外部调用、鉴权、并发、任务、日志、配置 |
-| [测试、脚本、构建与部署](./testing-scripts-and-deployment.md)      | 测试、验收、Railway、定时任务、迁移        |
-| [规范约定](./backend-rules.md)                                     | 工程相关约束                               |
-| [日志接入规划门禁](./logging-integration-planning.md)              | 所有新增/修改功能、问题修复的任务规划      |
-| [支付上游探测与策略扩展](./payment-availability-probe.md)          | 主动支付探测、新策略、告警过滤与独立 Cron  |
+| 文档                                                                           | 必读场景                                           |
+| ------------------------------------------------------------------------------ | -------------------------------------------------- |
+| [架构、入口与文件职责](./architecture-and-files.md)                            | 所有 Backend 任务                                  |
+| [路由、功能域与调用链](./routes-and-features.md)                               | API、业务流程、LLM、支付、语音、增长               |
+| [数据、可靠性、安全与可观测性](./data-reliability-and-security.md)             | DB、外部调用、鉴权、并发、任务、日志、配置         |
+| [测试、脚本、构建与部署](./testing-scripts-and-deployment.md)                  | 测试、验收、Railway、定时任务、迁移                |
+| [规范约定](./backend-rules.md)                                                 | 工程相关约束                                       |
+| [日志接入规划门禁](./logging-integration-planning.md)                          | 所有新增/修改功能、问题修复的任务规划              |
+| [跨项目复用与告警配置设计](../../../../docs/logging-reuse-and-alert-config.md) | 迁移评估、统一规则文件设计；注意区分现状与候选契约 |
+| [支付上游探测与策略扩展](./payment-availability-probe.md)                      | 主动支付探测、新策略、告警过滤与独立 Cron          |
 
 ## 功能模块现状
 

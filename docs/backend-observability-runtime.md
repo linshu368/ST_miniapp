@@ -2,6 +2,8 @@
 
 状态：2026-11-16 补齐异常边界、数据库 cause、warn 告警、对账轮次、代理关联与门禁，本地实现，尚未部署。以本文和 `11-12-backend-observability` 任务为准；旧 logging/error-code design 中的持久化、补传和窗口告警不属于本次实现。
 
+跨项目复用边界、迁移清单与统一文件告警的候选契约见 [日志复用与告警配置设计](logging-reuse-and-alert-config.md)。该文档中的文件来源和新增筛选字段是设计方案，当前规则仍从 LOG_ALERT_RULES 环境变量读取。
+
 ## 输出与查询
 
 Backend 使用 Pino stdout，Railway 负责捕获、保存和查询。不新增日志库、采集器、磁盘缓冲或补传任务。现有可选 Sentry/工程 OTLP 和支付业务告警保持独立。

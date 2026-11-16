@@ -23,7 +23,8 @@
   "relatedFiles": [
     "docs/backend-logging-design.md",
     "docs/backend-error-code-design.md",
-    "docs/backend-error-code-review.md"
+    "docs/backend-error-code-review.md",
+    "docs/logging-reuse-and-alert-config.md"
   ],
   "notes": "User approved module-by-module commits, compatibility-first migration and disabled-by-default direct log alerts. No push.",
   "meta": {
