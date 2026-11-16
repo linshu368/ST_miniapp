@@ -124,7 +124,7 @@ const ON_SHELF_FIELDS: ReadonlyArray<NumberField<keyof FreeZoneOnShelf & string>
   {
     key: 'max_slow_fallback_pct',
     label: '超时兜底率上限（%）',
-    hint: '启动兜底等待内没出字、被兜底抢先（报错、空回复后立刻兜底的不算，只显示不设上限）',
+    hint: '等到「启动兜底等待」还没出字就算（之后才报错也算）；等待内就报错、空回复立刻兜底的是报错兜底，只显示不设上限',
     max: 100,
     precision: 1,
   },

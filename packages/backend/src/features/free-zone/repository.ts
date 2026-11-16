@@ -123,15 +123,20 @@ export async function loadFreeZoneMetrics(
         WHERE f.turn_at >= GREATEST(now() - make_interval(hours => ${windowHours}::int), s.since)
         GROUP BY f.model_id
       ), causes AS (
-        -- 兜底按起因拆开：报错/空回复后立刻兜底 vs 等待内没出字（含到总上限都没出字）。
-        -- 出字前用户自己取消的不算兜底。
+        -- 兜底按起因拆开，超时优先：只有「免费模型报错/空回复后立刻启动兜底」才算报错兜底
+        -- （兜底启动时间不早于免费模型结束）；兜底启动时免费模型还在跑（等待时间到了），
+        -- 哪怕它后来报错，或到总上限都没出字，都算超时兜底。出字前用户自己取消的不算兜底。
+        -- 多路并发时记录的是最后结束的那一路，规则一样。
         SELECT c.requested_model_id AS model_id,
           (avg(CASE WHEN c.delivery_role IS DISTINCT FROM 'primary'
                      AND c.primary_end_reason IN ('upstream_error', 'stream_interrupted')
+                     AND c.primary_wait_ms IS NOT NULL
+                     AND c.primary_wait_ms + 50 >= COALESCE(c.primary_observed_until_ms, 0)
                     THEN 100 ELSE 0 END))::float8 AS error_fallback_pct,
           (avg(CASE WHEN c.delivery_role IS DISTINCT FROM 'primary'
-                     AND c.primary_end_reason IS DISTINCT FROM 'upstream_error'
-                     AND c.primary_end_reason IS DISTINCT FROM 'stream_interrupted'
+                     AND NOT (c.primary_end_reason IN ('upstream_error', 'stream_interrupted')
+                              AND c.primary_wait_ms IS NOT NULL
+                              AND c.primary_wait_ms + 50 >= COALESCE(c.primary_observed_until_ms, 0))
                      AND NOT (c.business_finish_reason IS NOT DISTINCT FROM 'user_cancelled'
                               AND NOT COALESCE(c.server_first_token_timeout, false))
                     THEN 100 ELSE 0 END))::float8 AS slow_fallback_pct
