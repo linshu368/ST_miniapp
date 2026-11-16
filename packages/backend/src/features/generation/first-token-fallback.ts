@@ -29,6 +29,20 @@ export interface PersistGate {
   owns(): Promise<boolean>;
 }
 
+/** 一次真正发出的上游调用结束（胜出、落败、取消、报错）时的事实，用于事后核算花费 */
+export interface SettledCall {
+  role: 'primary' | 'fallback';
+  /** 第几路：并发主请求 0–2，兜底 0 */
+  slot: number;
+  provider: LlmModelProvider;
+  providerModelId: string;
+  dispatchedAt: string;
+  endReason: NonNullable<AttemptObservation['end_reason']>;
+  /** Surplus 请求号（响应头 x-si-request-id），响应头前就停下的没有 */
+  requestId: string | null;
+  generationId: string | null;
+}
+
 export interface FirstTokenAttemptStore {
   prepareFallback(attempt: AttemptObservation, triggeredMs: number): Promise<void>;
   observe(attempt: AttemptObservation): Promise<void>;
@@ -67,6 +81,8 @@ interface Attempt {
   truncated: boolean;
   /** 多路主请求时才有：决定这一路的写入要不要真正落库 */
   gate?: PersistGate;
+  slot: number;
+  requestId: string | null;
   stop(): void;
 }
 
@@ -104,6 +120,8 @@ export async function forwardWithFirstTokenFallback(input: {
     attempt: { role: 'primary' | 'fallback'; timing: UpstreamTiming; gate?: PersistGate }
   ): Promise<Response>;
   onObservationError(error: unknown): void;
+  /** 每次真正发出的调用结束时各报一次（含并发落败、被取消的），只用于核算花费 */
+  onCallSettled?(call: SettledCall): void;
 }): Promise<{
   response: Response;
   model: TransportModel;
@@ -167,8 +185,19 @@ export async function forwardWithFirstTokenFallback(input: {
     // 所有主请求都结束了还没人胜出：最后结束的那一路代表这一轮的主请求
     if (attempt.gate && primaries.every((item) => item.recorded)) decideSlot(attempt);
     attempt.observation.end_reason = reason;
-    if (attempt.observation.dispatched_at)
+    if (attempt.observation.dispatched_at) {
       attempt.observation.observed_until_ms = performance.now() - attempt.startedAt;
+      input.onCallSettled?.({
+        role: attempt.observation.role,
+        slot: attempt.slot,
+        provider: attempt.model.provider,
+        providerModelId: attempt.model.providerModelId,
+        dispatchedAt: attempt.observation.dispatched_at,
+        endReason: reason,
+        requestId: attempt.requestId,
+        generationId: attempt.observation.generation_id ?? null,
+      });
+    }
     if (attempt.controller.signal.reason instanceof LostFirstTokenRace) {
       attempt.observation.discarded_response = {
         reason: 'race_lost',
@@ -225,7 +254,8 @@ export async function forwardWithFirstTokenFallback(input: {
   const createAttempt = (
     model: TransportModel,
     role: 'primary' | 'fallback',
-    id: string
+    id: string,
+    slot = 0
   ): Attempt => {
     const controller = new AbortController();
     return {
@@ -242,6 +272,8 @@ export async function forwardWithFirstTokenFallback(input: {
       content: '',
       reasoning: '',
       truncated: false,
+      slot,
+      requestId: null,
       stop: () => {},
     };
   };
@@ -341,6 +373,9 @@ export async function forwardWithFirstTokenFallback(input: {
     observation.headers_ms = performance.now() - attempt.startedAt;
     observation.http_status = response.status;
     observation.generation_id = response.headers.get('x-generation-id');
+    if (model.provider === 'surplus')
+      attempt.requestId =
+        response.headers.get('x-si-request-id') ?? response.headers.get('x-request-id');
     if (!response.ok || !response.body) {
       recordTerminal(attempt, 'upstream_error');
       stop();
@@ -570,8 +605,8 @@ export async function forwardWithFirstTokenFallback(input: {
     startFallback();
   } else {
     const count = Math.max(1, Math.min(3, Math.floor(input.primaryCount ?? 1)));
-    primaries = Array.from({ length: count }, () =>
-      createAttempt(input.primary, 'primary', input.primaryAttemptId)
+    primaries = Array.from({ length: count }, (_, slot) =>
+      createAttempt(input.primary, 'primary', input.primaryAttemptId, slot)
     );
     if (count > 1)
       for (const attempt of primaries)

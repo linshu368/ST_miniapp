@@ -1,5 +1,14 @@
 # SQL 迁移文件
 
+## 2026-11-16 畅聊每次上游调用的真实花费（本地 PG17 验证，远端未执行）
+
+`20261116_free_zone_calls.sql`（domain: miniapp_features + miniapp_analytics 只读投影）。无前置依赖（不建跨 schema 外键）。
+
+- 新增 `miniapp_features.free_zone_calls`：畅聊每次真正发出的上游调用一行（并发主请求每路一行、兜底一行，含落败/被取消的），唯一键 `(chat_history_id, role, slot)`。后端竞速结束时写入，花费由后台任务按 Surplus 账单明细 / OpenRouter 生成编号事后补上。`cost_source`：`surplus_bill`、`surplus_bill_matched`（响应头前就取消、没请求号，按「同模型 + 结算时间」从账单配上）、`openrouter_generation`、`estimated`（兜底中途停下又查不到，写入定期算好的估算值）、`unavailable`（按 0）。RLS 开启，撤销 PUBLIC/anon/authenticated；service_role 只有 SELECT/INSERT/UPDATE。
+- 新增只读视图 `miniapp_analytics.free_zone_call_costs`（每次调用的有效花费）与 `free_zone_turn_costs`（每轮合计，`cost_pending` 的轮次统计时排除）；存在 `first_token_metrics_reader` 时授予 SELECT。
+- 验证：`bash scripts/test-free-zone-calls-migration.sh`（每轮合计、查不到按 0、估算、约束、权限、重复执行）。
+- 发布：TEST 单文件 → Production 单文件 → Backend（迁移未执行时后端写入失败只记日志，不影响对话）。回滚：先回退后端，再按文件头注释删除视图与表。
+
 ## 2026-11-13 短剧原因问卷（本地 PG17 验证，远端未执行）
 
 `20261113_drama_survey.sql`（domain: miniapp_analytics + billing）。前置：`app_core.users`、`app_core.runtime_config`、`billing.user_wallets`、`billing.wallet_ledger`。
