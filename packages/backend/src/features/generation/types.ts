@@ -58,6 +58,8 @@ export interface ResolvedModel {
     minDiscountPct: number;
     /** 同时发几路主请求（1–3），先出字的胜出 */
     parallelRequests?: number;
+    /** 派不出去率上限（%），超过立刻下架；null 不检查 */
+    maxUnroutablePct?: number | null;
   };
 }
 

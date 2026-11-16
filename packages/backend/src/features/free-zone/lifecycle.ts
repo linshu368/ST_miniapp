@@ -268,6 +268,20 @@ export function listManually(input: {
   };
 }
 
+/**
+ * 真实请求派不出去而当场下架（见 unroutable-guard.ts）：本质是 Surplus 没有达标的卖家，
+ * 按官方原因处理——冷却同官方原因，冷却后照常由评估按初筛 + 派单探测重新上架。
+ */
+export function delistUnroutable(input: {
+  state: FreeZoneModelState;
+  now: Date;
+  relist: FreeZoneRelist;
+  reasons: string[];
+}): { state: FreeZoneModelState; event: FreeZoneEvent } {
+  const { state, now, relist, reasons } = input;
+  return delist({ state, now, relist, ratio: 1 }, 'official', reasons);
+}
+
 /** 手动下架的冷却截止：远到评估任务永远不会自动把它加回来，只能走「立即上架」。 */
 export const MANUAL_HOLD_UNTIL = '2100-01-01T00:00:00.000Z';
 export const MANUAL_DELIST_REASON = '运营手动下架';

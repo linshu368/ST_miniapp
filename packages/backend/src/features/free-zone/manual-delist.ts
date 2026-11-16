@@ -6,17 +6,17 @@ import type { AdminFreeZoneDelistNowResponse, FreeZoneConfig } from '@miniapp/sh
 import { fetchFreeZoneConfig } from './config.js';
 import { delistManually } from './lifecycle.js';
 import { FreeZoneListNowError } from './manual-list.js';
-import { saveManualDelisting, type ManualDelistingOutcome } from './repository.js';
+import { saveDelisting, type DelistingOutcome } from './repository.js';
 import { invalidateFreeZoneSnapshot } from './snapshot.js';
 
 export interface DelistNowDeps {
   loadConfig: () => Promise<FreeZoneConfig>;
-  save: typeof saveManualDelisting;
+  save: typeof saveDelisting;
 }
 
 const defaultDeps: DelistNowDeps = {
   loadConfig: fetchFreeZoneConfig,
-  save: saveManualDelisting,
+  save: saveDelisting,
 };
 
 export async function delistFreeZoneModelNow(
@@ -27,11 +27,11 @@ export async function delistFreeZoneModelNow(
   // 不要求在候选池里：移出候选池后仍停在在架状态的行也要能收掉
   const candidate = config.candidates.find((item) => item.id === input.candidateId);
   const name = candidate?.display_name ?? input.candidateId;
-  const outcome: ManualDelistingOutcome = await deps.save({
+  const outcome: DelistingOutcome = await deps.save({
     candidateId: input.candidateId,
     build: (current) => delistManually({ state: current }),
   });
-  if (outcome.kind === 'not_listed') {
+  if (outcome.kind !== 'saved') {
     throw new FreeZoneListNowError(409, `${name} 现在不在架`);
   }
   invalidateFreeZoneSnapshot();
