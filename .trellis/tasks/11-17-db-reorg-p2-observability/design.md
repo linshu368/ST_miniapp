@@ -32,9 +32,40 @@
 
 重新执行 `20261026_grafana_light_core.sql` 中的函数与 cron 段。汇总表是派生缓存，随时可重算。
 
-## 2b 及之后（待逐个设计）
+## 2b 整表迁入 ops，删除短剧旧 SQL 链路
 
-- 2b 上游调用合并：`ops.llm_calls` 收 3 张供应商表与 `free_zone_calls` 的明细和成本；畅聊多路调用身份进 `chat_generation_attempts`。改 `select_chat_generation_delivery`、`conversation-history-billing`、`surplus-billing-recovery`、`free-zone/call-costs` 的读取。2a 的函数随之改读 `ops.llm_calls`。
-- 2c `chat_generation_requests` 纯测速列外迁到 `ops.chat_generation_timings`，逐列对照三个读取函数确认。
-- 2d 其余 O 表进 `ops`（短剧播放观测、告警、支付事件、媒体生成调用）。
-- 2e `miniapp_analytics` 视图改读 `ops`，收回 `first_token_metrics_reader` 对 `experience` 的直接授权；前后对比看板数字。
+### 迁入 ops（`20261117_db_reorg_ops_alerts_free_zone_events.sql`）
+
+| 原位置                              | 新位置                                      | 读写方                                                                                            |
+| ----------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `app_core.alert_incidents`          | `ops.alert_incidents`                       | `backend/src/features/alerting/repository.ts`                                                     |
+| `app_core.alert_delivery_attempts`  | `ops.alert_delivery_jobs`（J，投递 outbox） | `repository.ts`、`delivery-worker.ts`                                                             |
+| `miniapp_features.free_zone_events` | `ops.free_zone_events`                      | `free-zone/repository.ts`、`admin-status.ts`；分析视图 `miniapp_analytics.free_zone_model_events` |
+
+- `ALTER TABLE ... SET SCHEMA` 原样搬，数据、索引、约束、序列、RLS、授权随表走；分析视图按 OID 引用自动跟随。生产上这三张表没有函数或 cron 引用。
+- 后端只用 Prisma 原生 SQL（写死 schema 名），不经 PostgREST，`ops` 不需要加入暴露列表。
+- 旧位置留同名兼容视图（`security_invoker`，授权同原表），让迁移之后、后端发布之前的旧后端照常工作。后端上线生产后，由阶段 2 下一个 migration 删除。
+- 本地测试用后端真实 SQL 打兼容视图和 `ops` 两边：`FOR UPDATE`、`INSERT ... RETURNING`、`ON CONFLICT DO NOTHING`、`UPDATE ... FROM`（`FOR UPDATE SKIP LOCKED`）。
+
+`billing.payment_operation_events` 不在本步：它的写入函数 `billing.record_checkout_confirmation` 在结账链路上，且发现快速对账每 30 秒反复查询已过期订单（单日 24,591 次，13 笔订单），表一天涨约 2.5 万行。与阶段 4 支付对账一起处理，进生产前先问所有者。
+
+### 删除短剧旧 SQL 链路（`20261117_db_reorg_drop_drama_playback_sql.sql`）
+
+- 10-29 起不再写库，11-04 已删写库代码与开关；表中只剩 10-27~10-29 的 1307 行，旧看板只看 14 天，11-12 起为空。短剧诊断已改走 Loki（`st-engineering-drama`）。
+- 删除表（含策略）、视图 `drama_playback_facts`、两个函数、停用的 cron `drama_metrics_cleanup_daily`、组角色 `drama_metrics_reader`（`grafana_cloud` 仍经 `first_token_metrics_reader` 读其他分析视图）。
+- 迁移内守卫：11-01 之后有写入、或有其他函数/视图依赖时拒绝执行。
+- Grafana：删除看板 `st-drama-playback`，移除 `st-engineering-backend`、`st-engineering-drama` 指向它的链接；仓库 JSON 同步。
+
+### 发布顺序
+
+1. TEST 执行两个 migration；dev 后端（TEST 环境）切到 `ops`。
+2. 生产执行两个 migration（兼容视图让旧后端照常工作），删 Grafana 看板与链接。
+3. 后端发布：从最新 main 拉发布分支，只带本步后端改动。
+4. 生产后端上线后核对告警写入与畅聊事件写入落在 `ops`，再在下一个 migration 删兼容视图。
+
+## 2c 及之后（待逐个设计）
+
+- 上游调用合并：`ops.llm_calls` 收 3 张供应商表与 `free_zone_calls` 的明细和成本；畅聊多路调用身份进 `chat_generation_attempts`。改 `select_chat_generation_delivery`、`conversation-history-billing`、`surplus-billing-recovery`、`free-zone/call-costs` 的读取。2a 的函数随之改读 `ops.llm_calls`。
+- `chat_generation_requests` 纯测速列外迁到 `ops.chat_generation_timings`，逐列对照三个读取函数确认。
+- 其余 O 表进 `ops`（支付事件随阶段 4、媒体生成调用）。
+- `miniapp_analytics` 视图改读 `ops`，收回 `first_token_metrics_reader` 对 `experience` 的直接授权；前后对比看板数字。

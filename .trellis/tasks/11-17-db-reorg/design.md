@@ -85,7 +85,7 @@
 
 ### 阶段 2：观测外迁
 
-- 建 `ops.llm_calls`（attempt*id 主键）、`ops.llm_cost_jobs`、`ops.chat_generation_timings`、`ops.media_generation_calls`、`ops.payment_events`、`ops.alert*\*`、`ops.drama_playback_observations`、`ops.free_zone_events`。
+- 建 `ops.llm_calls`（attempt*id 主键）、`ops.llm_cost_jobs`、`ops.chat_generation_timings`、`ops.media_generation_calls`、`ops.payment_events`、`ops.alert*\*`、`ops.free_zone_events`。短剧播放 SQL 观测已停写，2b 直接删除，不迁。
 - 上游调用合并：
   - 畅聊多路调用写入 `experience.chat_generation_attempts`，补 candidate_id 和 slot 列；
   - 3 张供应商表和 `free_zone_calls` 的明细、成本写入 `ops.llm_calls`；

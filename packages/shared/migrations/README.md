@@ -1,5 +1,20 @@
 # SQL 迁移文件
 
+## 2026-11-17 数据库重组阶段 2b：告警、畅聊事件迁入 ops；删除短剧旧 SQL 链路（本地 PG17 非超级用户验证）
+
+`20261117_db_reorg_ops_alerts_free_zone_events.sql`（domain: ops）。计划见 `.trellis/tasks/11-17-db-reorg-p2-observability/design.md` 2b。
+
+- `app_core.alert_incidents` → `ops.alert_incidents`；`app_core.alert_delivery_attempts` → `ops.alert_delivery_jobs`；`miniapp_features.free_zone_events` → `ops.free_zone_events`。`SET SCHEMA` 原样搬，分析视图 `free_zone_model_events` 自动跟随。
+- 旧位置留同名兼容视图（`security_invoker`，授权同原表），给发布前的旧后端用；后端上线生产后由下一个 migration 删除。
+- 验证：`bash scripts/test-db-reorg-p2b-migration.sh`。以 service_role 执行后端真实 SQL：旧 SQL 经兼容视图、新 SQL 直接打 `ops`，含 `FOR UPDATE`、`RETURNING`、`ON CONFLICT DO NOTHING`、`UPDATE ... FROM`（`SKIP LOCKED`）；序列接续、FK/RLS 随表、事件只追加、浏览器角色无权限。
+- 发布：TEST → Production → 后端发布（改读 `ops`）→ 删兼容视图。回滚：兼容视图在，旧后端可直接回退。
+
+`20261117_db_reorg_drop_drama_playback_sql.sql`（domain: miniapp_analytics）。
+
+- 删除已停写的短剧 SQL 观测：`drama_playback_observations` 表、`drama_playback_facts` 视图、记录/清理函数、停用的 cron、组角色 `drama_metrics_reader`。11-01 之后有写入或有外部依赖时拒绝。
+- 验证：`bash scripts/test-db-reorg-p2b-drama-migration.sh`（正常删除两次幂等；近期写入、外部视图两种情况拒绝且不改动；`grafana_cloud` 读其他分析视图不受影响）。
+- 发布：TEST → Production，同时删 Grafana 看板 `st-drama-playback` 与两处链接。回滚：不可逆，结构可从 `20261027_drama_playback_observability*.sql` 重建，历史行以每日备份为准。
+
 ## 2026-11-17 数据库重组阶段 2a：经营看板日汇总刷新提速（本地 PG17 非超级用户验证）
 
 `20261117_db_reorg_core_refresh_bounded.sql`（domain: miniapp_analytics，派生缓存）。计划见 `.trellis/tasks/11-17-db-reorg-p2-observability/design.md` 2a。

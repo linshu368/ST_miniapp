@@ -217,15 +217,17 @@ tables:
 
   app_core.alert_incidents:
     nature: O
-    owner: backend/src/features/alerting
-    status: moving
-    move: [{ to: ops.alert_incidents, cols: ['*'], phase: 2 }]
+    owner: 20261117_db_reorg_ops_alerts_free_zone_events.sql（兼容视图）
+    status: drop
+    phase: 2
+    note: 表已迁到 ops.alert_incidents；同名兼容视图只为发布窗口内的旧后端保留，后端上线后删除
 
   app_core.alert_delivery_attempts:
-    nature: O
-    owner: backend/src/features/alerting
-    status: moving
-    move: [{ to: ops.alert_delivery_jobs, cols: ['*'], phase: 2 }]
+    nature: J
+    owner: 20261117_db_reorg_ops_alerts_free_zone_events.sql（兼容视图）
+    status: drop
+    phase: 2
+    note: 表已迁到 ops.alert_delivery_jobs；同名兼容视图后端上线后删除
 
   # ───────────────────────── experience ─────────────────────────
   experience.chat_sessions:
@@ -786,9 +788,10 @@ tables:
 
   miniapp_features.free_zone_events:
     nature: O
-    owner: backend/src/features/free-zone
-    status: moving
-    move: [{ to: ops.free_zone_events, cols: ['*'], phase: 2 }]
+    owner: 20261117_db_reorg_ops_alerts_free_zone_events.sql（兼容视图）
+    status: drop
+    phase: 2
+    note: 表已迁到 ops.free_zone_events；同名兼容视图后端上线后删除
 
   miniapp_features.free_zone_models:
     nature: S
@@ -932,11 +935,6 @@ tables:
       status: active,
       note: 表名含 grafana 属存量豁免。cron grafana_core_recent_30m 刷今天、grafana_core_yesterday_close 刷昨天（2a）,
     }
-  miniapp_analytics.drama_playback_observations:
-    nature: O
-    owner: scripts（播放观测导入）
-    status: moving
-    move: [{ to: ops.drama_playback_observations, cols: ['*'], phase: 2 }]
   miniapp_analytics.drama_survey_responses:
     nature: E
     owner: backend/src/features/drama-survey
@@ -989,26 +987,11 @@ tables:
       phase: 2,
       retention_days: 365,
     }
-  ops.alert_incidents:
-    { nature: O, owner: backend/src/features/alerting, status: planned, phase: 2 }
+  ops.alert_incidents: { nature: O, owner: backend/src/features/alerting, status: active }
   ops.alert_delivery_jobs:
-    {
-      nature: J,
-      owner: backend/src/features/alerting,
-      status: planned,
-      phase: 2,
-      note: 告警投递 outbox,
-    }
-  ops.drama_playback_observations:
-    { nature: O, owner: scripts（播放观测导入）, status: planned, phase: 2, retention_days: 180 }
+    { nature: J, owner: backend/src/features/alerting, status: active, note: 告警投递 outbox }
   ops.free_zone_events:
-    {
-      nature: O,
-      owner: backend/src/features/free-zone,
-      status: planned,
-      phase: 2,
-      retention_days: 365,
-    }
+    { nature: O, owner: backend/src/features/free-zone, status: active, retention_days: 365 }
 
   # ───────────────────────── cs_feed（视图层） ─────────────────────────
   cs_feed.user_identities:

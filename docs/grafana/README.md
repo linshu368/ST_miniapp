@@ -2,7 +2,7 @@
 
 页面体验、角色扮演和短剧工程性能的独立遥测实施见 [工程性能验收](engineering-performance.md)。四张 `st-engineering-*.json` 是待 TEST Cloud 接入验证的源文件，不表示已上线；既有经营/首字/短剧看板和业务事实保持不变。
 
-短剧启动使用独立新看板 `st-drama-playback`（`drama-playback.json`），不混入经营/首token看板。新路径需独立迁移和显式启用，发布、历史导入与真机步骤见 [操作说明](drama-playback-runbook.md)。仓库JSON存在不表示线上已导入。
+短剧启动诊断看 `st-engineering-drama`（Loki）。旧 SQL 看板 `st-drama-playback` 及其表、视图、函数已于 2026-11-17 删除（数据库重组 2b）。Loki 链路的发布与真机步骤见 [操作说明](drama-playback-runbook.md)。
 
 运营入口是 `st-model-overview`（经营核心）；首字与兜底监控在 `st-engineering-roleplay`。`chat-first-token-manual` 只剩迁移指引，原 4 个"已合并"看板和 TextBot 系列已于 2026-11-04 删除。旧表和历史缓存保留，11个旧全历史cron退出。不要再整体启用旧缓存任务。
 
