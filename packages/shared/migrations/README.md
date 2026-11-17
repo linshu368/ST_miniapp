@@ -1,5 +1,15 @@
 # SQL 迁移文件
 
+## 2026-11-17 数据库重组阶段 2a：经营看板日汇总刷新提速（本地 PG17 非超级用户验证）
+
+`20261117_db_reorg_core_refresh_bounded.sql`（domain: miniapp_analytics，派生缓存）。计划见 `.trellis/tasks/11-17-db-reorg-p2-observability/design.md` 2a。
+
+- 问题：`grafana_core_recent_30m` 在一条命令里刷新今天和昨天，每条 5s 超时、同一事务连坐。函数逐行随机查供应商明细表，当天 4533 行 5.8s，11-17 午后 8 次失败 6 次，看板停更。
+- 函数同签名、同输出、同权限。openrouter/venice 明细先按 `created_at` 取 `[当天 00:00 - 5 分钟, 次日 01:00)` 再哈希配对（生产实测明细比聊天记录晚 0~111 秒写入）。计费表仍按 `charge_key` 查。
+- cron 拆两个：`grafana_core_recent_30m` 只刷今天（20s）；新增 `grafana_core_yesterday_close`（`17 16-22 * * *` GMT，北京时间 00:17~06:17）只刷昨天（30s）。
+- 验证：`bash scripts/test-db-reorg-p2a-migration.sh`。保留旧函数副本，在 3 天随机合成数据上逐天比较新旧输出逐行一致；把窗口改窄会被测试抓到。生产执行前只读比较 11-16 全天 8035 行，新旧写法 0 行不同。
+- 发布：TEST 单文件 → Production 单文件，无应用代码改动。回滚：重新执行 `20261026_grafana_light_core.sql` 的函数与 cron 段。
+
 ## 2026-11-17 数据库重组阶段 1f：删除无读者的 analytics_grafana（本地 PG17 非超级用户验证）
 
 `20261117_db_reorg_drop_analytics_grafana.sql`（domain: miniapp_analytics 为唯一看数入口）。
