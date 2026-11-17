@@ -57,9 +57,9 @@ const RULES = [
   {
     id: 'dropped-schema-sql',
     pattern:
-      /\b(?:from|join|into|update|table)\s+(?:st_platform|st_users|st_infra|miniapp_simulation|growth)\.\w+/gi,
+      /\b(?:from|join|into|update|table)\s+(?:st_platform|st_users|st_infra|miniapp_simulation|growth|cs_platform)\.\w+/gi,
     message:
-      'st_platform / st_users / st_infra（088）、growth（089）、miniapp_simulation（090）已删库。渠道归因走 miniapp_traffic',
+      'st_platform / st_users / st_infra（088）、growth（089）、miniapp_simulation（090）、cs_platform（20261117）已删库。渠道归因走 miniapp_traffic，客服在独立仓库的 cs schema',
   },
 
   // ── 已整包删除的 package ────────────────────────────────────────────────
@@ -94,6 +94,8 @@ const RULES = [
     allow: [
       'packages/shared/migrations/20261111_mujian_entry_funnel.sql',
       'scripts/mujian-entry-assertions.sql',
+      // 20261117 重组 1d：删除 st_handle 列本身（st_initialized_at 仍作幕间资格依据，阶段 3 迁走）。
+      'packages/shared/migrations/20261117_db_reorg_cleanup.sql',
     ],
   },
 

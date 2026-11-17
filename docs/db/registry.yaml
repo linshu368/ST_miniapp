@@ -43,10 +43,11 @@ schemas:
     { status: drop, phase: 1, note: 视图与物化视图并入 miniapp_analytics，Grafana 面板 SQL 同步改 }
   cs: { status: external, note: 客服仓库 linshu368/ST_cs_platform 拥有 }
   drama_archive: { status: external, note: 上传端拥有；本仓库只拥有 drama_likes / drama_comments }
-  cs_platform:
-    { status: drop, phase: 1, note: 旧客服，已停用；所有者 2026-11-17 确认可删，导出归档后删除 }
-  miniapp: { status: drop, phase: 1, note: 空壳 }
-  public: { status: drop, phase: 1, note: 2 个旧 bot 残留函数 }
+  public:
+    {
+      status: active,
+      note: 只放 Supabase 平台对象，不放业务对象（旧 bot 残留函数已于 20261117_db_reorg_cleanup.sql 删除）,
+    }
 
 tables:
   # ───────────────────────── app_core ─────────────────────────
@@ -62,8 +63,12 @@ tables:
           phase: 3,
         }
       - { to: experience.user_chat_stats, cols: [total_round], phase: 3 }
-    drop_cols:
-      - { cols: [st_handle, st_initialized_at], phase: 1, note: 代码与函数零引用 }
+      - {
+          to: miniapp_traffic.user_attributions,
+          cols: [st_initialized_at],
+          phase: 3,
+          note: miniapp_traffic.record_app_entry 经 to_jsonb(u) 读它作幕间资格依据，搬迁时同步改函数,
+        }
     note: 阶段 3 从 miniapp_user_settings 迁入 TG 资料与用户自定义资料（见 app_core.miniapp_user_settings.move）
 
   app_core.miniapp_user_settings:
@@ -798,22 +803,6 @@ tables:
         excluded_providers: [供应商 → 剔除原因],
       }
 
-  miniapp_features.drama_survey_responses:
-    nature: E
-    owner: backend/src/features/drama-survey
-    status: planned
-    phase: 1
-    from: miniapp_analytics.drama_survey_responses（整表迁入；会发奖，属产品功能）
-
-  miniapp_features.wish_roles:
-    {
-      nature: E,
-      owner: none,
-      status: drop,
-      phase: 1,
-      note: 已被 character_wishes 取代、无运行时读者；导出归档后删除,
-    }
-
   miniapp_features.character_comments:
     { nature: E, owner: backend/src/features/character-social, status: active }
   miniapp_features.character_comment_reports:
@@ -892,7 +881,7 @@ tables:
       nature: E,
       owner: ops 脚本 / 运营,
       status: active,
-      note: '阶段 1 把 "Purchase_amount" / "Procurement_days" 改为小写列名',
+      note: 投放成本列 purchase_amount / procurement_days（20261117 由大写改名）,
     }
   miniapp_traffic.traffic_clicks:
     { nature: D, owner: rpc:miniapp_traffic.increment_click, status: active }
@@ -946,8 +935,8 @@ tables:
   miniapp_analytics.drama_survey_responses:
     nature: E
     owner: backend/src/features/drama-survey
-    status: moving
-    move: [{ to: miniapp_features.drama_survey_responses, cols: ['*'], phase: 1 }]
+    status: drop
+    note: 一次性问卷，会发奖（属产品功能，放错了域）。问卷仍在线（开关开），为避免改线上发奖函数 billing.submit_drama_survey 不迁移；问卷结束（关开关、导出 CSV）后整表与函数删除。
 
   # ───────────────────────── ops（新建，全部 planned） ─────────────────────────
   ops.llm_calls:

@@ -7,7 +7,7 @@ datasource db {
   url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
   // 只列有 model 落在里面的 schema（migration 099 的归属划分）。
-  // $queryRaw 用全限定名访问 experience / cs_platform，不需要在这里声明。
+  // $queryRaw 用全限定名访问 experience，不需要在这里声明。
   schemas   = ["app_core", "miniapp_features", "billing"]
 }
 
