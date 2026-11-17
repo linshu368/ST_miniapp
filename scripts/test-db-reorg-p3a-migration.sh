@@ -5,12 +5,14 @@
 # - enter_user: new account records source, entry markers fill once, no write when nothing changes;
 # - old backend writes on app_core.users and the old increment RPC still land in the new tables;
 # - check_invite_chat_rounds_reward and record_app_entry read the new tables;
+# - pre-step drops the TEST-only funnel_stats view and refuses while other views still depend on dropped columns;
 # - contract refuses while a function reads moved columns; reconciles release-window race leftovers (missing
 #   attribution values/rows, rounds written only to users), then drops the moved columns and compat objects, idempotently.
 set -euo pipefail
 task_root="$(cd "$(dirname "$0")/.." && pwd)"
 expand="$task_root/packages/shared/migrations/20261117_db_reorg_p3a_user_attributions.sql"
 contract="$task_root/packages/shared/migrations/20261117_db_reorg_p3a_user_attributions_contract.sql"
+drop_funnel="$task_root/packages/shared/migrations/20261117_db_reorg_p3a_drop_test_funnel_stats.sql"
 task_container="st-db-reorg-p3a-${RANDOM}-$$"
 trap 'docker rm -f "$task_container" >/dev/null 2>&1 || true' EXIT
 docker run -d --rm --name "$task_container" --network none -e POSTGRES_HOST_AUTH_METHOD=trust -e TZ=Asia/Shanghai postgres:17 >/dev/null
@@ -259,6 +261,19 @@ BEGIN
 END $entry$;
 SQL
 echo 'OK: expand'
+
+# TEST-only legacy view blocks DROP COLUMN; the pre-step drops it and refuses (listing all) while other views still depend.
+"${admin_psql[@]}" >/dev/null <<'SQL'
+CREATE VIEW miniapp_analytics.funnel_stats AS
+  SELECT count(id) FILTER (WHERE bot_entered_at IS NOT NULL) AS bot_entered_count,
+    count(id) FILTER (WHERE miniapp_entered_at IS NOT NULL) AS miniapp_entered_count FROM app_core.users;
+CREATE VIEW test_fixture.rounds_view AS SELECT sum(total_round) AS n FROM app_core.miniapp_user_settings;
+SQL
+if "${admin_psql[@]}" >/dev/null 2>&1 < "$drop_funnel"; then echo 'pre-step ignored another dependent view' >&2; exit 1; fi
+"${admin_psql[@]}" -c "DROP VIEW test_fixture.rounds_view" >/dev/null
+"${admin_psql[@]}" >/dev/null < "$drop_funnel"
+"${admin_psql[@]}" >/dev/null < "$drop_funnel"
+[[ "$("${admin_psql[@]}" -At -c "SELECT to_regclass('miniapp_analytics.funnel_stats') IS NULL")" == t ]] || { echo 'funnel_stats survived' >&2; exit 1; }
 
 # Contract refuses while a function still reads a moved column.
 "${admin_psql[@]}" -c "CREATE FUNCTION app_core.legacy_reader() RETURNS bigint LANGUAGE sql AS 'SELECT sum(u.total_round) FROM app_core.users u'" >/dev/null
