@@ -15,6 +15,7 @@ import {
   type QualityVerdict,
 } from './lifecycle.js';
 import { chooseReplacement, resolveFreeZoneView } from './zone-view.js';
+import { evaluateFreeZoneAccess } from './access.js';
 import type { SurplusModelMarket } from './surplus-market.js';
 
 const rules = DEFAULT_FREE_ZONE_CONFIG.screening;
@@ -298,15 +299,27 @@ describe('resolveFreeZoneView', () => {
   });
   const listed = [{ source: 'surplus' as const, candidate, providers: ['zai'] }];
   const at = (iso: string) => new Date(iso);
-  const view = (overrides: Partial<Parameters<typeof resolveFreeZoneView>[0]> = {}) =>
-    resolveFreeZoneView({
-      config,
-      listed,
-      now: at('2026-11-20T00:00:00Z'),
-      isOwnCard: true,
+  const view = (
+    overrides: {
+      config?: typeof config;
+      listed?: typeof listed;
+      now?: Date;
+      isOwnCard?: boolean;
+    } = {}
+  ) => {
+    const cfg = overrides.config ?? config;
+    return resolveFreeZoneView({
+      config: cfg,
+      listed: overrides.listed ?? listed,
+      isOwnCard: overrides.isOwnCard ?? true,
       pricing,
-      ...overrides,
+      access: evaluateFreeZoneAccess({
+        config: cfg,
+        now: overrides.now ?? at('2026-11-20T00:00:00Z'),
+        facts: null,
+      }),
     });
+  };
 
   it('is hidden when disabled or after the period', () => {
     expect(view({ config: { ...config, enabled: false } })).toBeNull();
@@ -318,7 +331,8 @@ describe('resolveFreeZoneView', () => {
     expect(view({ listed: [] })?.state).toBe('no_models');
     expect(view({ isOwnCard: false })?.state).toBe('own_card_only');
     const open = view();
-    expect(open).toMatchObject({ state: 'open', ends_at: config.period?.ends_at });
+    expect(open).toMatchObject({ state: 'open', ends_at: '2026-11-29T16:00:00.000Z' });
+    expect(open?.access).toMatchObject({ via: 'welfare', audience: 'everyone' });
     expect(open?.models[0]?.original_credits).toBe(55);
   });
 });

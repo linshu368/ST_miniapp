@@ -6,6 +6,7 @@ import { ChevronDown, ChevronLeft, PanelLeft, MessageCircle } from 'lucide-react
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 
 import { FavoriteButton } from '@/components/characters/favorite-button';
+import { growthPromptKeys } from '@/lib/api/growth-prompts';
 import { modelCatalogKeys, useModelCatalogQuery } from '@/lib/api/models';
 import { freeZoneBoundaryDelay, isFreeZoneOpen, selectedFreeZoneModel } from '@/lib/free-zone';
 import { useEntryEnrichReady } from '@/lib/entry-phase';
@@ -74,6 +75,8 @@ export function ChatTopBar({
     if (boundaryDelay === null) return;
     const timer = setTimeout(() => {
       void queryClient.invalidateQueries({ queryKey: modelCatalogKeys.detail });
+      // 试用到点、畅聊日开始/结束时 VIP 弹窗的资格也跟着变，不必等下次打开小程序。
+      void queryClient.invalidateQueries({ queryKey: growthPromptKeys.all });
     }, boundaryDelay + 1000);
     return () => clearTimeout(timer);
   }, [boundaryDelay, queryClient]);

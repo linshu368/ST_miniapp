@@ -49,6 +49,11 @@ export interface ChatMessage {
   /** 生成时的模型快照，仅 assistant 消息有值。改配置后历史输出仍可解释（总方案决策 10） */
   model_id: string | null;
   /**
+   * 这一轮每轮扣多少星尘（开轮时定下的档位价，仅 assistant 消息）；0 表示免费轮（畅聊等）。
+   * 缺省表示不知道：旧后端、继承的历史、本地流式占位。前端据此在「免费 → 付费」那一轮前加分隔线。
+   */
+  credits_per_turn?: number;
+  /**
    * 展示规则发布版本。缺失或 null 都表示这条消息继续用原来的 Markdown；
    * 旧 producer 不写该字段时不能拿当前线上版本顶上。
    */

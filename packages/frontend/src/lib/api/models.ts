@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from './client';
 import {
   GetModelCatalogDataSchema,
+  isFreeZoneModelId,
   type GetModelCatalogData,
   type SelectModelData,
   type SelectModelRequest,
@@ -148,4 +149,21 @@ function writeLastGoodCatalog(
   } catch {
     // Storage may be unavailable inside hardened WebViews; React Query still keeps memory cache.
   }
+}
+
+/**
+ * 开通 VIP 后自动选回畅聊：开通礼让畅聊对他开放，拉一次最新目录，开放且有在架模型就选第一个。
+ * 已经选着免费模型就不动。失败只是没自动选上，用户自己去面板选，不重试。
+ */
+export async function reselectFreeZoneAfterVip(): Promise<string | null> {
+  const data = await apiClient<GetModelCatalogData>('/api/v1/models/config');
+  const zone = data.free_zone;
+  if (zone?.state !== 'open' || zone.models.length === 0) return null;
+  if (isFreeZoneModelId(data.selected_model_id)) return data.selected_model_id;
+  const target = zone.models[0]!.id;
+  await apiClient<SelectModelData>('/api/v1/models/select', {
+    method: 'POST',
+    body: JSON.stringify({ model_id: target } satisfies SelectModelRequest),
+  });
+  return target;
 }
