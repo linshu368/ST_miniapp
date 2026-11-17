@@ -8,7 +8,7 @@ import {
   delistFreeZoneModelNow,
   freeZoneStatusGroup,
   freeZoneStatusLabel,
-  isFreeZoneManualHold,
+  isFreeZoneHeld,
   listFreeZoneModelNow,
   screenFreeZoneCandidates,
 } from '@miniapp/admin-client';
@@ -25,7 +25,7 @@ import { CliError } from '../errors';
 
 /** 畅聊调试：和运营平台畅聊页的「线上状态」「按当前门槛筛选」「立即上架」「下架」同一组接口。 */
 
-function statusLine(model: AdminFreeZoneStatusModel, requiredPasses: number): string {
+function statusLine(model: AdminFreeZoneStatusModel): string {
   const status = freeZoneStatusLabel(model);
   const detail =
     model.status === 'listed'
@@ -35,11 +35,11 @@ function statusLine(model: AdminFreeZoneStatusModel, requiredPasses: number): st
         ]
           .filter(Boolean)
           .join('\t')
-      : isFreeZoneManualHold(model)
+      : isFreeZoneHeld(model)
         ? '要用时 list-now 才会回来'
         : model.status === 'cooling'
-          ? `冷却到 ${model.cooldown_until ?? '?'}`
-          : `连续达标 ${model.consecutive_passes}/${requiredPasses}`;
+          ? `冷却到 ${model.cooldown_until ?? '?'}，之后报价达标就上架`
+          : '等报价达标';
   const marks = [
     model.in_config ? '' : '（已不在候选池）',
     model.ever_listed && model.last_delist?.cause === 'official' ? '（曾上架）' : '',
@@ -67,7 +67,7 @@ function statusHuman(data: AdminFreeZoneStatusResponse): string {
   for (const group of FREE_ZONE_STATUS_GROUPS) {
     const models = data.models.filter((model) => freeZoneStatusGroup(model) === group.key);
     lines.push(`【${group.label}】${models.length} 个`);
-    for (const model of models) lines.push(statusLine(model, data.required_passes));
+    for (const model of models) lines.push(statusLine(model));
   }
   return lines.join('\n');
 }
@@ -116,7 +116,7 @@ function listNowPlan(model: AdminFreeZoneStatusModel, provider: string | undefin
     .join('、');
   return [
     `候选：${model.display_name ?? model.candidate_id}（${model.candidate_id}）`,
-    `现在：${status}${model.status === 'cooling' && !isFreeZoneManualHold(model) ? `，冷却到 ${model.cooldown_until ?? '?'}` : ''}`,
+    `现在：${status}${model.status === 'cooling' && !isFreeZoneHeld(model) ? `，冷却到 ${model.cooldown_until ?? '?'}` : ''}`,
     model.last_delist ? `上次下架：${model.last_delist.at} ${model.last_delist.reason ?? ''}` : '',
     excluded ? `排除中的供应商：${excluded}` : '',
     `供应商：${provider ? `${provider}（指定）` : '按当前行情和初筛门槛选'}；上架前先真发一次派单探测，按折扣底线派不出单就不上`,

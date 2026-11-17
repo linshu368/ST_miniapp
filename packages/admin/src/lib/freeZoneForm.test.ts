@@ -8,7 +8,6 @@ import {
   formatCheckValue,
   formatPricePer1m,
   freeZoneIssues,
-  parseMinutesList,
   screeningRequestFrom,
   toPeriodTime,
 } from './freeZoneForm';
@@ -74,10 +73,6 @@ describe('form helpers', () => {
         period: { starts_at: iso, ends_at: toPeriodTime(dayjs('2026-11-19T20:30')) },
       }).success
     ).toBe(true);
-  });
-
-  it('parses the cooldown ladder with either comma', () => {
-    expect(parseMinutesList('1440, 4320，10080')).toEqual([1440, 4320, 10080]);
   });
 });
 

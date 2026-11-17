@@ -69,14 +69,6 @@ export function formatPeriodTime(iso: string): string {
   return dayjs(iso).format('M月D日 HH:mm');
 }
 
-/** 业务原因冷却梯度：逗号或空格分隔的分钟数。 */
-export function parseMinutesList(text: string): number[] {
-  return text
-    .split(/[,，\s]+/)
-    .filter((item) => item.length > 0)
-    .map((item) => Number(item));
-}
-
 const SECTION_LABELS: Record<string, string> = {
   enabled: '总开关',
   rules_text: '规则文字',
@@ -84,7 +76,7 @@ const SECTION_LABELS: Record<string, string> = {
   scope: '使用范围',
   candidates: '候选池',
   screening: '官方数据初筛',
-  on_shelf: '在架业务数据',
+  on_shelf: '在架质量',
   relist: '上架与冷却',
   first_token: '首字',
 };
@@ -112,19 +104,10 @@ const FIELD_LABELS: Record<string, string> = {
   blocked_providers: '屏蔽渠道',
   probe_enabled: '派单探测',
   max_probe_ttft_ms: '探测首字上限',
-  window_hours: '统计窗口',
-  min_turns: '最少轮数',
-  max_no_output_pct: '没出字率',
-  max_slow_fallback_pct: '超时兜底率',
-  max_timeout_pct: '超时率',
-  max_refusal_pct: '拒答率',
-  max_truncation_pct: '截断率',
-  max_interrupted_pct: '生成中断率',
-  max_dislike_pct: '点踩率',
+  max_interrupted_pct: '中断率',
+  max_unusable_pct: '不可用率',
   max_unroutable_pct: '派不出去率',
-  required_passes: '连续达标次数',
-  cooldown_official_minutes: '官方原因冷却',
-  cooldown_business_minutes: '业务原因冷却梯度',
+  price_cooldown_minutes: '价格原因下架后冷却',
   primary_wait_ms: '启动兜底等待',
   deadline_ms: '首字总上限',
 };
