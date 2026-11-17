@@ -1,10 +1,10 @@
 # 数据库契约
 
 > **读者是 AI。** 任何会改变数据库形状或数据落位的改动，动手前必须读完本文件，并查 [`registry.yaml`](./registry.yaml) 里相关表的条目。包括：
+>
 > - 写 migration；新表、新列、新视图、新函数；
 > - 往 jsonb 里加键、加 `runtime_config` key；
 > - 让外部系统读库。
->
 > - 本文件描述**目标结构**和落位规则。存量表迁到目标结构的进度只看 `registry.yaml`（`status` / `phase`）。
 > - 数据库落位问题以本文件为准。`docs/ARCHITECTURE.md` 与 `.trellis/spec/database/` 里与本文件冲突的旧描述，一律视为过时。
 > - 迁移执行、RLS、回滚纪律仍按 `.trellis/spec/database/supabase/migrations-and-rollbacks.md` 和 `security-rls-and-grants.md`。
@@ -20,7 +20,7 @@
 5. jsonb 不是后门：要被过滤、计费、分支判断的值必须是真列。
 6. 表名不带供应商名。一个功能的配置是一个对象型 key。不给函数套 `_before_*` 包装层。
 7. 外部系统（客服仓库、Grafana、指标读者）只读视图层：`cs_feed`、`miniapp_analytics`。产品请求路径不读 `ops` 和 `miniapp_analytics`。
-8. 新建或删除表、列，同一个 PR 里更新 `registry.yaml`。
+8. 建表、删表、搬表，同一个 PR 里更新 `registry.yaml`。列只在 registry 有列清单时同步：`moving` 表的 `keep`/`move`，或 jsonb 的 `keys`。
 
 ---
 
@@ -28,20 +28,21 @@
 
 ### 1.1 业务域（schema）：归谁管
 
-| schema | 管什么 | 不管什么（常见误放） |
-|---|---|---|
-| `app_core` | 用户身份与资料、用户偏好、角色卡（内容、版本、上架、创作草稿）、全局运行配置与后处理版本 | 告警、计数缓存、功能一次性标记 |
-| `experience` | 对话：会话、轮次内容、交付状态、上游调用身份、语音和角色附图产物、长期记忆、对话内用户操作（编辑、点赞、反馈） | 价格与扣费、测速、上游用量和成本 |
-| `media_plaza` | 图片广场完整链路：会话、消息、生成尝试、产物、作品、点赞 | 价格与扣费 |
-| `billing` | 订单、流水、余额、扣费记录与价格快照、免费额度、VIP 权益、返利与奖励账 | 支付监控事件、结账测速 |
-| `miniapp_features` | 随某个产品功能上下线的状态：社交（收藏、点赞、评论、心愿）、大厅推荐、签到、通知、社群、畅聊候选、用户标记 | 跨功能根数据、调用明细 |
-| `miniapp_traffic` | 渠道链接、点击、入口事实、邀请关系、用户归因 | 用户身份本身 |
-| `admin` | 运营平台自身：运营账号、草稿、发布记录、运营审计 | 发布后的运行真相（在 `app_core`） |
-| `ops` | 工程观测：上游调用明细（耗时、token、成本、原始返回）、测速、支付与运维事件、告警、播放观测 | 任何会改变用户结果或扣费的数据 |
-| `miniapp_analytics` | 只为看数存在的视图、物化视图、离线快照、日汇总；Grafana 与指标读者的唯一入口 | 产品运行会读的结果（例如大厅排序分属于 `miniapp_features`） |
-| `cs_feed` | 本仓库维护、给客服仓库读的只读视图 | 任何表 |
+| schema              | 管什么                                                                                                         | 不管什么（常见误放）                                        |
+| ------------------- | -------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `app_core`          | 用户身份与资料、用户偏好、角色卡（内容、版本、上架、创作草稿）、全局运行配置与后处理版本                       | 告警、计数缓存、功能一次性标记                              |
+| `experience`        | 对话：会话、轮次内容、交付状态、上游调用身份、语音和角色附图产物、长期记忆、对话内用户操作（编辑、点赞、反馈） | 价格与扣费、测速、上游用量和成本                            |
+| `media_plaza`       | 图片广场完整链路：会话、消息、生成尝试、产物、作品、点赞                                                       | 价格与扣费                                                  |
+| `billing`           | 订单、流水、余额、扣费记录与价格快照、免费额度、VIP 权益、返利与奖励账                                         | 支付监控事件、结账测速                                      |
+| `miniapp_features`  | 随某个产品功能上下线的状态：社交（收藏、点赞、评论、心愿）、大厅推荐、签到、通知、社群、畅聊候选、用户标记     | 跨功能根数据、调用明细                                      |
+| `miniapp_traffic`   | 渠道链接、点击、入口事实、邀请关系、用户归因                                                                   | 用户身份本身                                                |
+| `admin`             | 运营平台自身：运营账号、草稿、发布记录、运营审计                                                               | 发布后的运行真相（在 `app_core`）                           |
+| `ops`               | 工程观测：上游调用明细（耗时、token、成本、原始返回）、测速、支付与运维事件、告警、播放观测                    | 任何会改变用户结果或扣费的数据                              |
+| `miniapp_analytics` | 只为看数存在的视图、物化视图、离线快照、日汇总；Grafana 与指标读者的唯一入口                                   | 产品运行会读的结果（例如大厅排序分属于 `miniapp_features`） |
+| `cs_feed`           | 本仓库维护、给客服仓库读的只读视图                                                                             | 任何表                                                      |
 
 外部或待删的 schema（本仓库不新增对象）：
+
 - `cs`：客服仓库 ST_cs_platform 拥有。
 - `drama_archive`：短剧上传端拥有，本仓库只拥有 `drama_likes`、`drama_comments` 两张表。
 - `cs_platform`、`miniapp`、`public`：待删除。
@@ -52,17 +53,18 @@
 
 按顺序判定，命中第一个就停：
 
-| 序 | 代号 | 性质 | 判定问题 | 表名形态 | 只能放在 |
-|---|---|---|---|---|---|
-| 1 | **M** | 钱 | 这个值写错了，会多扣、少扣星尘、现金或权益吗？ | `*_orders` `*_ledger` `*_charges` `*_grants` `*_rewards` `*_quotas` | `billing` |
-| 2 | **O** | 观测 | 删掉它，用户看到的结果和扣的钱都完全不变吗？ | `*_calls` `*_timings` `*_events` `*_observations` | `ops` |
-| 3 | **J** | 任务 | 它有租约、重试次数、下次重试时间、last_error 吗？ | `*_jobs` | 任务所属业务域（`ops` 内部任务放 `ops`） |
-| 4 | **D** | 派生 | 它能从别的表重新算出来吗？ | `*_stats` `*_scores` `*_daily` `*_snapshot(s)`、视图 | 产品会读的放所属域；只看数的放 `miniapp_analytics` |
-| 5 | **C** | 配置 | 是运营或工程发布、带版本的规则吗？ | `runtime_config` key、`*_versions`、`admin.*_drafts/_releases` | `app_core`（运行真相）/ `admin`（发布过程） |
-| 6 | **S** | 状态 | 只关心最新值、可以随时覆盖吗？（偏好、关系、标记、进度） | `*_preferences` `*_states` `*_marks`、`a_b` 关系表 | 所属域 |
-| 7 | **E** | 实体 | 用户能看到、别处会引用的业务对象 | 名词复数 | 所属域 |
+| 序  | 代号  | 性质 | 判定问题                                                 | 表名形态                                                            | 只能放在                                           |
+| --- | ----- | ---- | -------------------------------------------------------- | ------------------------------------------------------------------- | -------------------------------------------------- |
+| 1   | **M** | 钱   | 这个值写错了，会多扣、少扣星尘、现金或权益吗？           | `*_orders` `*_ledger` `*_charges` `*_grants` `*_rewards` `*_quotas` | `billing`                                          |
+| 2   | **O** | 观测 | 删掉它，用户看到的结果和扣的钱都完全不变吗？             | `*_calls` `*_timings` `*_events` `*_observations`                   | `ops`                                              |
+| 3   | **J** | 任务 | 它有租约、重试次数、下次重试时间、last_error 吗？        | `*_jobs`                                                            | 任务所属业务域（`ops` 内部任务放 `ops`）           |
+| 4   | **D** | 派生 | 它能从别的表重新算出来吗？                               | `*_stats` `*_scores` `*_daily` `*_snapshot(s)`、视图                | 产品会读的放所属域；只看数的放 `miniapp_analytics` |
+| 5   | **C** | 配置 | 是运营或工程发布、带版本的规则吗？                       | `runtime_config` key、`*_versions`、`admin.*_drafts/_releases`      | `app_core`（运行真相）/ `admin`（发布过程）        |
+| 6   | **S** | 状态 | 只关心最新值、可以随时覆盖吗？（偏好、关系、标记、进度） | `*_preferences` `*_states` `*_marks`、`a_b` 关系表                  | 所属域                                             |
+| 7   | **E** | 实体 | 用户能看到、别处会引用的业务对象                         | 名词复数                                                            | 所属域                                             |
 
 判定细则：
+
 - 测速、耗时类数据要先过第 1、2 题。只要被计费或交付判定读取（例如 `client_first_token_visible_ms` 被 `billing.chat_delivery_billing_gate` 读），它就不是 O，属于所在表的 S/E。判定以"有没有业务代码或函数读它做决定"为准，不看名字像不像测速。
 - 实体表可以带**自身**的生命周期列：`status`、状态迁移时间（`completed_at`、`deleted_at`）、主人可改的展示属性（标题、置顶、文件夹），以及在 registry 里登记为 D 的、由触发器维护的计数缓存。除此之外的其他性质都不行。
 - 一张表只登记一个性质。确实混合的存量表，在 registry 里按列组登记目标去向。
@@ -90,6 +92,7 @@
 ### 2.2 新表
 
 在任务的 `design.md` 里先写清下面几项，再写 migration：
+
 1. `schema.table`、一句话业务含义、性质代号；
 2. 权威写入模块（registry 的 `owner`）、读者；
 3. 生命周期与保留期。`ops` 表必须写保留天数和清理方式；
@@ -102,11 +105,11 @@
 
 jsonb 只允许三种用途，列名必须体现用途：
 
-| 用途 | 列名 | 例 |
-|---|---|---|
+| 用途                                 | 列名         | 例                                            |
+| ------------------------------------ | ------------ | --------------------------------------------- |
 | 不可变快照（写一次，按当时状态保存） | `*_snapshot` | 价格快照、角色卡版本内容、发给模型的 messages |
-| 供应商或外部系统原始返回 | `raw_*` | `raw_usage`、`raw_response` |
-| 观测诊断明细（只在 O 表） | `*_detail` | 慢请求诊断 |
+| 供应商或外部系统原始返回             | `raw_*`      | `raw_usage`、`raw_response`                   |
+| 观测诊断明细（只在 O 表）            | `*_detail`   | 慢请求诊断                                    |
 
 - 新列禁止叫 `metadata`、`extra`、`data`、`info`、`payload`、`state` 这类不说明用途的名字。存量的 `metadata` 列冻结，不加新键。
 - 业务代码要拿来过滤、排序、聚合、计费、分支判断的值，必须是真列。
@@ -130,6 +133,7 @@ jsonb 只允许三种用途，列名必须体现用途：
 ### 2.6 新的外部读者
 
 外部系统（客服仓库、Grafana、指标脚本）**不直接读业务表**：
+
 - 客服读 `cs_feed.*` 视图，给专属角色授权视图级 SELECT。
 - 看板、指标读 `miniapp_analytics.*` 视图，同上。
 - 内部表改结构时，同一个 PR 改视图，保持视图输出列不变；要变就同时改外部仓库。
@@ -160,19 +164,19 @@ jsonb 只允许三种用途，列名必须体现用途：
 
 ## 5. 禁止清单（都是本仓库真实出现过的）
 
-| 反模式 | 存量例子 | 正确做法 |
-|---|---|---|
-| 测速、诊断列加进实体表 | `chat_history.upstream_status`、`chat_generation_attempts.*_ms` | 放 `ops.llm_calls`、`ops.chat_generation_timings` |
-| 价格、折扣、扣费列抄进业务表 | `chat_message_audio` / `chat_message_images` 各 12 列计费字段 | 放 `billing.usage_charges`，业务表只存 `charge_id` |
-| 租约、重试列加进实体表 | `chat_message_images.lease_*`、`payment_orders.reconcile_*` | 放 `*_jobs` 旁表，参照 `experience.story_memory_jobs` |
-| 按供应商分别建表 | `openrouter_` / `venice_` / `surplusintelligence_chat_history` | 一张 `ops.llm_calls`，供应商写在 `provider` 列 |
-| 一次性 UI 标记加列 | `vip_entry_seen_at`、`*_full_rules_remaining` | `miniapp_features.user_marks` |
-| 同一个数存两份 | `users.total_round` 和 `miniapp_user_settings.total_round` | 一处权威（D 表），另一处删除 |
-| jsonb 藏业务字段 | `rich_reply_metadata.drive_mode` | 真列或旁表 |
-| 函数包装链 | `admin.is_managed_config_key_before_*` 共 24 个 | 登记表加一个函数 |
-| 配置散装 key | `voice_*` 8 个、`image_*` 15 个 | `<feature>_config` 对象 |
-| 外部系统直读业务表 | 客服角色对几乎全库有 SELECT | `cs_feed` 视图加视图级授权 |
-| 看数表混进产品数据 | `miniapp_analytics.drama_survey_responses`（会发奖） | 放所属功能域 |
+| 反模式                       | 存量例子                                                        | 正确做法                                              |
+| ---------------------------- | --------------------------------------------------------------- | ----------------------------------------------------- |
+| 测速、诊断列加进实体表       | `chat_history.upstream_status`、`chat_generation_attempts.*_ms` | 放 `ops.llm_calls`、`ops.chat_generation_timings`     |
+| 价格、折扣、扣费列抄进业务表 | `chat_message_audio` / `chat_message_images` 各 12 列计费字段   | 放 `billing.usage_charges`，业务表只存 `charge_id`    |
+| 租约、重试列加进实体表       | `chat_message_images.lease_*`、`payment_orders.reconcile_*`     | 放 `*_jobs` 旁表，参照 `experience.story_memory_jobs` |
+| 按供应商分别建表             | `openrouter_` / `venice_` / `surplusintelligence_chat_history`  | 一张 `ops.llm_calls`，供应商写在 `provider` 列        |
+| 一次性 UI 标记加列           | `vip_entry_seen_at`、`*_full_rules_remaining`                   | `miniapp_features.user_marks`                         |
+| 同一个数存两份               | `users.total_round` 和 `miniapp_user_settings.total_round`      | 一处权威（D 表），另一处删除                          |
+| jsonb 藏业务字段             | `rich_reply_metadata.drive_mode`                                | 真列或旁表                                            |
+| 函数包装链                   | `admin.is_managed_config_key_before_*` 共 24 个                 | 登记表加一个函数                                      |
+| 配置散装 key                 | `voice_*` 8 个、`image_*` 15 个                                 | `<feature>_config` 对象                               |
+| 外部系统直读业务表           | 客服角色对几乎全库有 SELECT                                     | `cs_feed` 视图加视图级授权                            |
+| 看数表混进产品数据           | `miniapp_analytics.drama_survey_responses`（会发奖）            | 放所属功能域                                          |
 
 ---
 
@@ -192,11 +196,13 @@ jsonb 只允许三种用途，列名必须体现用途：
 ## 7. CI 警告（不阻断合并）
 
 `Quality Gate` 会对比 migration 和 `registry.yaml`，遇到下列情况在 PR 上给出警告：
+
 - 建表或加列没有在 registry 登记；
-- 给 `frozen` 或 `moving` 的表加列；
-- 表名含供应商名，或后缀与登记的性质不符；
-- `billing` 以外出现 `*_credits`、`price_*`、`*_ledger_id`、`*_discount_*` 新列；
-- `*_jobs` 以外出现 `lease_*`、`next_attempt_at`、`*_attempts`、`next_retry_at` 新列；
+- 给 `frozen` 或 `moving` 的表加列（registry 中某条 `move` 计划迁入该表的列除外）；
+- 新表名含供应商名；新表登记的性质与所在 schema 不符（M 不在 `billing`、O 不在 `ops`、J 表名不以 `_jobs` 结尾）；
+- 新建 schema 没有在 registry 的 `schemas` 登记；删表后 registry 仍登记为在用；
+- `billing` 以外出现 `*_credits`、`*_cents`、`price_*`、`*_discount*` 新列（`*_charge_id`、`*_ledger_id` 引用列允许）；
+- `*_jobs` 以外出现 `lease_*`、`next_attempt_at`、`next_retry_at`、`attempts`、`*_attempts`、`attempt_count`、`last_error` 新列；
 - `ops` 以外出现 `*_ms` 新列（在 registry 标了 `billing_input: true` 的除外）；
 - 新列名为 `metadata`、`extra`、`data`、`info`、`payload`；
 - 函数名含 `_before_`。

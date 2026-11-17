@@ -19,25 +19,26 @@
 version: 1
 
 schemas:
-  app_core:          {status: active,   purpose: 用户身份与资料、偏好、角色卡、全局运行配置}
-  experience:        {status: active,   purpose: 对话内容、交付状态、语音与附图产物、长期记忆}
-  media_plaza:       {status: active,   purpose: 图片广场}
-  billing:           {status: active,   purpose: 钱}
-  miniapp_features:  {status: active,   purpose: 随功能上下线的产品状态}
-  miniapp_traffic:   {status: active,   purpose: 渠道、入口、邀请、用户归因}
-  admin:             {status: active,   purpose: 运营平台过程}
-  miniapp_analytics: {status: active,   purpose: 看数视图与离线汇总；Grafana/指标读者唯一入口}
-  ops:               {status: planned,  phase: 1, purpose: 工程观测（上游调用明细、测速、事件、告警）}
-  cs_feed:           {status: planned,  phase: 1, purpose: 给客服仓库读的只读视图}
-  analytics_grafana: {status: drop,     phase: 1, note: 视图与物化视图并入 miniapp_analytics，Grafana 面板 SQL 同步改}
-  cs:                {status: external, note: 客服仓库 linshu368/ST_cs_platform 拥有}
-  drama_archive:     {status: external, note: 上传端拥有；本仓库只拥有 drama_likes / drama_comments}
-  cs_platform:       {status: drop,     phase: 1, note: 旧客服，已停用；所有者 2026-11-17 确认可删，导出归档后删除}
-  miniapp:           {status: drop,     phase: 1, note: 空壳}
-  public:            {status: drop,     phase: 1, note: 2 个旧 bot 残留函数}
+  app_core: { status: active, purpose: 用户身份与资料、偏好、角色卡、全局运行配置 }
+  experience: { status: active, purpose: 对话内容、交付状态、语音与附图产物、长期记忆 }
+  media_plaza: { status: active, purpose: 图片广场 }
+  billing: { status: active, purpose: 钱 }
+  miniapp_features: { status: active, purpose: 随功能上下线的产品状态 }
+  miniapp_traffic: { status: active, purpose: 渠道、入口、邀请、用户归因 }
+  admin: { status: active, purpose: 运营平台过程 }
+  miniapp_analytics: { status: active, purpose: 看数视图与离线汇总；Grafana/指标读者唯一入口 }
+  ops: { status: planned, phase: 1, purpose: 工程观测（上游调用明细、测速、事件、告警） }
+  cs_feed: { status: planned, phase: 1, purpose: 给客服仓库读的只读视图 }
+  analytics_grafana:
+    { status: drop, phase: 1, note: 视图与物化视图并入 miniapp_analytics，Grafana 面板 SQL 同步改 }
+  cs: { status: external, note: 客服仓库 linshu368/ST_cs_platform 拥有 }
+  drama_archive: { status: external, note: 上传端拥有；本仓库只拥有 drama_likes / drama_comments }
+  cs_platform:
+    { status: drop, phase: 1, note: 旧客服，已停用；所有者 2026-11-17 确认可删，导出归档后删除 }
+  miniapp: { status: drop, phase: 1, note: 空壳 }
+  public: { status: drop, phase: 1, note: 2 个旧 bot 残留函数 }
 
 tables:
-
   # ───────────────────────── app_core ─────────────────────────
   app_core.users:
     nature: E
@@ -45,10 +46,14 @@ tables:
     status: moving
     keep: [id, tg_id, created_at, updated_at]
     move:
-      - {to: miniapp_traffic.user_attributions, cols: [source_id, bot_entered_at, miniapp_entered_at], phase: 3}
-      - {to: experience.user_chat_stats, cols: [total_round], phase: 3}
+      - {
+          to: miniapp_traffic.user_attributions,
+          cols: [source_id, bot_entered_at, miniapp_entered_at],
+          phase: 3,
+        }
+      - { to: experience.user_chat_stats, cols: [total_round], phase: 3 }
     drop_cols:
-      - {cols: [st_handle, st_initialized_at], phase: 1, note: 代码与函数零引用}
+      - { cols: [st_handle, st_initialized_at], phase: 1, note: 代码与函数零引用 }
     note: 阶段 3 从 miniapp_user_settings 迁入 TG 资料与用户自定义资料（见 app_core.miniapp_user_settings.move）
 
   app_core.miniapp_user_settings:
@@ -57,11 +62,62 @@ tables:
     status: moving
     note: 阶段 3 拆完后整表改名为 app_core.user_preferences
     move:
-      - {to: app_core.users, cols: [tg_username, tg_first_name, tg_last_name, tg_avatar_url, display_name, custom_avatar_url, avatar_url], phase: 3, note: avatar_url 若可由另两列推导则删除}
-      - {to: experience.user_chat_stats, cols: [total_round], phase: 3, note: 与 users.total_round 重复，合并为一份}
-      - {to: miniapp_features.user_marks, cols: [characters_last_seen_at, vip_entry_seen_at, choice_full_rules_remaining, status_full_rules_remaining, memory_full_rules_remaining], phase: 3, note: "*_full_rules_remaining 由 app_core.claim_instruction_slot_modes 读写，函数同步改"}
-      - {to: billing.image_plaza_share_rewards, cols: [image_plaza_first_share_completed_at], phase: 3, note: 首次分享资格改为由返利记录是否存在推导，删列}
-    keep: [user_id, selected_model_id, pref_word_count, pref_show_options, pref_custom_instructions, pref_show_status, pref_show_memory, pref_reply_styles, pref_drive_mode, pref_voice_id, pref_voice_playback_rate, created_at, updated_at]
+      - {
+          to: app_core.users,
+          cols:
+            [
+              tg_username,
+              tg_first_name,
+              tg_last_name,
+              tg_avatar_url,
+              display_name,
+              custom_avatar_url,
+              avatar_url,
+            ],
+          phase: 3,
+          note: avatar_url 若可由另两列推导则删除,
+        }
+      - {
+          to: experience.user_chat_stats,
+          cols: [total_round],
+          phase: 3,
+          note: 与 users.total_round 重复，合并为一份,
+        }
+      - {
+          to: miniapp_features.user_marks,
+          cols:
+            [
+              characters_last_seen_at,
+              vip_entry_seen_at,
+              choice_full_rules_remaining,
+              status_full_rules_remaining,
+              memory_full_rules_remaining,
+            ],
+          phase: 3,
+          note: '*_full_rules_remaining 由 app_core.claim_instruction_slot_modes 读写，函数同步改',
+        }
+      - {
+          to: billing.image_plaza_share_rewards,
+          cols: [image_plaza_first_share_completed_at],
+          phase: 3,
+          note: 首次分享资格改为由返利记录是否存在推导，删列,
+        }
+    keep:
+      [
+        user_id,
+        selected_model_id,
+        pref_word_count,
+        pref_show_options,
+        pref_custom_instructions,
+        pref_show_status,
+        pref_show_memory,
+        pref_reply_styles,
+        pref_drive_mode,
+        pref_voice_id,
+        pref_voice_playback_rate,
+        created_at,
+        updated_at,
+      ]
 
   app_core.user_preferences:
     nature: S
@@ -75,8 +131,40 @@ tables:
     owner: backend/src/infrastructure/repositories/CharacterCardRepository.ts
     status: moving
     move:
-      - {to: app_core.character_listings, cols: [enabled, sort_order, last_listed_at, archived_at], phase: 3, note: 上架状态由运营发布写入，与卡内容写入方不同}
-    keep: [id, name, description, avatar_url, creator_notes, alternate_greetings, character_book, character_version, creator, extensions, first_mes, mes_example, personality, post_history_instructions, scenario, spec, spec_version, system_prompt, tags, raw_card, card_hash, character_persona_and_style, is_test, created_at, updated_at]
+      - {
+          to: app_core.character_listings,
+          cols: [enabled, sort_order, last_listed_at, archived_at],
+          phase: 3,
+          note: 上架状态由运营发布写入，与卡内容写入方不同,
+        }
+    keep:
+      [
+        id,
+        name,
+        description,
+        avatar_url,
+        creator_notes,
+        alternate_greetings,
+        character_book,
+        character_version,
+        creator,
+        extensions,
+        first_mes,
+        mes_example,
+        personality,
+        post_history_instructions,
+        scenario,
+        spec,
+        spec_version,
+        system_prompt,
+        tags,
+        raw_card,
+        card_hash,
+        character_persona_and_style,
+        is_test,
+        created_at,
+        updated_at,
+      ]
     note: 官方卡读本表内容列、创作卡读 character_versions，同一事实两条路径；是否统一为"内容全进版本表"另行评估（design.md 候选项）
 
   app_core.character_listings:
@@ -86,10 +174,24 @@ tables:
     phase: 3
     from: app_core.characters 的 enabled / sort_order / last_listed_at / archived_at
 
-  app_core.character_versions:      {nature: E, owner: backend/src/features/creator, status: active, note: 不可变卡内容版本；会话按版本绑定}
-  app_core.character_cover_assets:  {nature: E, owner: backend/src/features/creator, status: active}
-  app_core.character_creations:     {nature: S, owner: backend/src/features/creator, status: active, note: 作者草稿与审核状态；发布 CAS 同事务写 characters/versions，故留在 app_core}
-  app_core.character_access_grants: {nature: S, owner: backend/src/features/creator, status: active}
+  app_core.character_versions:
+    {
+      nature: E,
+      owner: backend/src/features/creator,
+      status: active,
+      note: 不可变卡内容版本；会话按版本绑定,
+    }
+  app_core.character_cover_assets:
+    { nature: E, owner: backend/src/features/creator, status: active }
+  app_core.character_creations:
+    {
+      nature: S,
+      owner: backend/src/features/creator,
+      status: active,
+      note: 作者草稿与审核状态；发布 CAS 同事务写 characters/versions，故留在 app_core,
+    }
+  app_core.character_access_grants:
+    { nature: S, owner: backend/src/features/creator, status: active }
 
   app_core.runtime_config:
     nature: C
@@ -97,19 +199,20 @@ tables:
     status: active
     note: key 规则见 CONTRACT §2.4；待清理 key 见下方 runtime_config_keys
 
-  app_core.text_postprocess_versions: {nature: C, owner: backend/src/features/text-postprocess, status: active}
+  app_core.text_postprocess_versions:
+    { nature: C, owner: backend/src/features/text-postprocess, status: active }
 
   app_core.alert_incidents:
     nature: O
     owner: backend/src/features/alerting
     status: moving
-    move: [{to: ops.alert_incidents, cols: ["*"], phase: 2}]
+    move: [{ to: ops.alert_incidents, cols: ['*'], phase: 2 }]
 
   app_core.alert_delivery_attempts:
     nature: O
     owner: backend/src/features/alerting
     status: moving
-    move: [{to: ops.alert_deliveries, cols: ["*"], phase: 2}]
+    move: [{ to: ops.alert_delivery_jobs, cols: ['*'], phase: 2 }]
 
   # ───────────────────────── experience ─────────────────────────
   experience.chat_sessions:
@@ -122,12 +225,48 @@ tables:
     nature: E
     owner: backend/src/infrastructure/repositories/ConversationHistoryRepository.ts（CI legacy guard 唯一读写入口）
     status: moving
-    keep: [id, user_id, session_id, character_id, turn_index, revision, model, user_input, assistant_reply, status, llm_finish_reason, created_at, postprocess_version, choice_rules_mode, status_rules_mode, memory_rules_mode, rich_reply_metadata, llm_charge_id]
+    keep:
+      [
+        id,
+        user_id,
+        session_id,
+        character_id,
+        turn_index,
+        revision,
+        model,
+        user_input,
+        assistant_reply,
+        status,
+        llm_finish_reason,
+        created_at,
+        postprocess_version,
+        choice_rules_mode,
+        status_rules_mode,
+        memory_rules_mode,
+        rich_reply_metadata,
+        llm_charge_id,
+      ]
     move:
-      - {to: ops.llm_calls, cols: [upstream_status], phase: 2}
-      - {to: experience.chat_prompt_snapshots, cols: [history], phase: 5, note: 23 GB 中约 97% 来自本列；13 个 RPC 引用}
-      - {to: experience.chat_generation_requests, cols: [first_token_preview], phase: 5, note: 交付恢复用，属交付状态}
-      - {to: billing.usage_charges, cols: [deduction_rate, llm_intended_deduction, llm_billing_snapshot, llm_billing_settled_at], phase: 6, note: 计费门禁、交付仲裁、Surplus 结算恢复都读这些列}
+      - { to: ops.llm_calls, cols: [upstream_status], phase: 2 }
+      - {
+          to: experience.chat_prompt_snapshots,
+          cols: [history],
+          phase: 5,
+          note: 23 GB 中约 97% 来自本列；13 个 RPC 引用,
+        }
+      - {
+          to: experience.chat_generation_requests,
+          cols: [first_token_preview],
+          phase: 5,
+          note: 交付恢复用，属交付状态,
+        }
+      - {
+          to: billing.usage_charges,
+          cols:
+            [deduction_rate, llm_intended_deduction, llm_billing_snapshot, llm_billing_settled_at],
+          phase: 6,
+          note: 计费门禁、交付仲裁、Surplus 结算恢复都读这些列,
+        }
     keys:
       rich_reply_metadata: [展示用富回复元数据；drive_mode 阶段 5 迁为真列]
     note: 计费字段迁出前，llm_charge_id 是业务侧唯一允许的计费关联
@@ -145,69 +284,298 @@ tables:
     status: moving
     billing_input: true
     note: 名字像观测，实为交付状态与计费依据（billing.chat_delivery_billing_gate、experience.report_chat_first_token、cancel_chat_generation 读取）
-    keep: [chat_history_id, client_request_id, mode, request_received_at, requested_model_id, requested_provider, requested_provider_model_id, catalog_version, fallback_model_id, first_token_deadline_ms, delivery_attempt_id, requires_visible_token, user_stop_billing_enabled, recoverable_delivery, first_token_timeout, server_timeout_stage, server_first_token_ready_ms, billing_rejected, client_outcome, client_reason, client_delivery_failed, client_first_token_visible_ms, measurement_method, created_at]
+    keep:
+      [
+        chat_history_id,
+        client_request_id,
+        mode,
+        request_received_at,
+        requested_model_id,
+        requested_provider,
+        requested_provider_model_id,
+        catalog_version,
+        fallback_model_id,
+        first_token_deadline_ms,
+        delivery_attempt_id,
+        requires_visible_token,
+        user_stop_billing_enabled,
+        recoverable_delivery,
+        first_token_timeout,
+        server_timeout_stage,
+        server_first_token_ready_ms,
+        billing_rejected,
+        client_outcome,
+        client_reason,
+        client_delivery_failed,
+        client_first_token_visible_ms,
+        measurement_method,
+        created_at,
+      ]
     move:
-      - {to: ops.chat_generation_timings, cols: [primary_timeout_ms, timeout_rate_target, fallback_timeout_ms, fallback_triggered_ms, first_token_emitted_ms, client_request_dispatched_ms, client_first_token_received_ms, client_backgrounded, client_wait_finished_ms, client_reported_at], phase: 2, note: 阶段 2 设计时逐列对照三个读取函数再确认}
+      - {
+          to: ops.chat_generation_timings,
+          cols:
+            [
+              primary_timeout_ms,
+              timeout_rate_target,
+              fallback_timeout_ms,
+              fallback_triggered_ms,
+              first_token_emitted_ms,
+              client_request_dispatched_ms,
+              client_first_token_received_ms,
+              client_backgrounded,
+              client_wait_finished_ms,
+              client_reported_at,
+            ],
+          phase: 2,
+          note: 阶段 2 设计时逐列对照三个读取函数再确认,
+        }
 
   experience.chat_generation_attempts:
     nature: S
     owner: backend/src/infrastructure/repositories/GenerationObservationRepository.ts
     status: moving
     note: 只保留上游调用身份（交付仲裁与结算要用）；畅聊多路调用并入本表
-    keep: [id, chat_history_id, role, provider, provider_model_id, generation_id, dispatched_at, end_reason, finish_reason, updated_at]
+    keep:
+      [
+        id,
+        chat_history_id,
+        role,
+        provider,
+        provider_model_id,
+        generation_id,
+        dispatched_at,
+        end_reason,
+        finish_reason,
+        updated_at,
+      ]
     move:
-      - {to: ops.llm_calls, cols: [dispatch_offset_ms, headers_ms, first_chunk_ms, first_token_ms, observed_until_ms, http_status, provider_latency_ms, provider_latency_scope, provider_name, provider_reported_model, discarded_response], phase: 2}
+      - {
+          to: ops.llm_calls,
+          cols:
+            [
+              dispatch_offset_ms,
+              headers_ms,
+              first_chunk_ms,
+              first_token_ms,
+              observed_until_ms,
+              http_status,
+              provider_latency_ms,
+              provider_latency_scope,
+              provider_name,
+              provider_reported_model,
+              discarded_response,
+            ],
+          phase: 2,
+        }
 
   experience.openrouter_chat_history:
     nature: O
     owner: backend/src/infrastructure/repositories/OpenRouterChatHistoryRepository.ts
     status: moving
-    move: [{to: ops.llm_calls, cols: ["*"], phase: 2, note: generation_id 身份已在 attempts；select_chat_generation_delivery 与 conversation-history-billing 同步改}]
+    move:
+      [
+        {
+          to: ops.llm_calls,
+          cols: ['*'],
+          phase: 2,
+          note: generation_id 身份已在 attempts；select_chat_generation_delivery 与 conversation-history-billing 同步改,
+        },
+      ]
 
   experience.venice_chat_history:
     nature: O
     owner: backend/src/infrastructure/repositories/VeniceChatHistoryRepository.ts
     status: moving
-    move: [{to: ops.llm_calls, cols: ["*"], phase: 2}]
+    move: [{ to: ops.llm_calls, cols: ['*'], phase: 2 }]
 
   experience.surplusintelligence_chat_history:
     nature: O
     owner: backend/src/infrastructure/repositories/SurplusIntelligenceChatHistoryRepository.ts
     status: moving
     move:
-      - {to: ops.llm_calls, cols: ["*"], phase: 2, note: surplus-billing-recovery 改为读 attempts 身份}
-      - {to: ops.llm_cost_jobs, cols: [request_record_status, request_record_attempts, request_record_next_retry_at, metadata_capture_status], phase: 2}
+      - {
+          to: ops.llm_calls,
+          cols: ['*'],
+          phase: 2,
+          note: surplus-billing-recovery 改为读 attempts 身份,
+        }
+      - {
+          to: ops.llm_cost_jobs,
+          cols:
+            [
+              request_record_status,
+              request_record_attempts,
+              request_record_next_retry_at,
+              metadata_capture_status,
+            ],
+          phase: 2,
+        }
 
   experience.chat_message_audio:
     nature: E
     owner: backend/src/infrastructure/repositories/ChatMessageAudioRepository.ts
     status: moving
-    keep: [id, message_id, session_id, user_id, revision, is_active, status, voice_id, tts_model, tts_speed, source_chars, spoken_chars, spoken_text, storage_path, audio_url, duration_ms, error_code, created_at, updated_at]
+    keep:
+      [
+        id,
+        message_id,
+        session_id,
+        user_id,
+        revision,
+        is_active,
+        status,
+        voice_id,
+        tts_model,
+        tts_speed,
+        source_chars,
+        spoken_chars,
+        spoken_text,
+        storage_path,
+        audio_url,
+        duration_ms,
+        error_code,
+        created_at,
+        updated_at,
+      ]
     move:
-      - {to: ops.media_generation_calls, cols: [latency_ms], phase: 2}
-      - {to: billing.usage_charges, cols: [credits_charged, debit_ledger_id, charged_at, billing_mode, free_trial_ordinal, price_credits, price_label, original_price_credits, vip_discount_rate, vip_discounted_exact, vip_valid_until, vip_discount_config_version], phase: 6, note: 本表改存 charge_id}
+      - { to: ops.media_generation_calls, cols: [latency_ms], phase: 2 }
+      - {
+          to: billing.usage_charges,
+          cols:
+            [
+              credits_charged,
+              debit_ledger_id,
+              charged_at,
+              billing_mode,
+              free_trial_ordinal,
+              price_credits,
+              price_label,
+              original_price_credits,
+              vip_discount_rate,
+              vip_discounted_exact,
+              vip_valid_until,
+              vip_discount_config_version,
+            ],
+          phase: 6,
+          note: 本表改存 charge_id,
+        }
 
   experience.chat_message_images:
     nature: E
     owner: backend/src/infrastructure/repositories/ChatMessageImageRepository.ts
     status: moving
-    keep: [id, user_id, session_id, message_id, attempt_no, prompt_cn, prompt_source, prompt_en, description_user_prompt, provider, model, width, height, output_format, image_tier, status, is_current, storage_path, image_url, mime_type, byte_size, error_code, completed_at, created_at, updated_at]
+    keep:
+      [
+        id,
+        user_id,
+        session_id,
+        message_id,
+        attempt_no,
+        prompt_cn,
+        prompt_source,
+        prompt_en,
+        description_user_prompt,
+        provider,
+        model,
+        width,
+        height,
+        output_format,
+        image_tier,
+        status,
+        is_current,
+        storage_path,
+        image_url,
+        mime_type,
+        byte_size,
+        error_code,
+        completed_at,
+        created_at,
+        updated_at,
+      ]
     move:
-      - {to: ops.media_generation_calls, cols: [provider_prompt, base_url_host, latency_ms], phase: 2}
-      - {to: experience.chat_image_jobs, cols: [lease_owner, lease_expires_at, next_attempt_at, stage, provider_request_id], phase: 4}
-      - {to: billing.usage_charges, cols: [price_credits, price_label, credits_charged, debit_ledger_id, charged_at, billing_mode, free_trial_ordinal, wallet_policy, vip_valid_until, original_price_credits, vip_discount_rate, vip_discounted_exact, vip_discount_config_version], phase: 6}
+      - {
+          to: ops.media_generation_calls,
+          cols: [provider_prompt, base_url_host, latency_ms],
+          phase: 2,
+        }
+      - {
+          to: experience.chat_image_jobs,
+          cols: [lease_owner, lease_expires_at, next_attempt_at, stage, provider_request_id],
+          phase: 4,
+        }
+      - {
+          to: billing.usage_charges,
+          cols:
+            [
+              price_credits,
+              price_label,
+              credits_charged,
+              debit_ledger_id,
+              charged_at,
+              billing_mode,
+              free_trial_ordinal,
+              wallet_policy,
+              vip_valid_until,
+              original_price_credits,
+              vip_discount_rate,
+              vip_discounted_exact,
+              vip_discount_config_version,
+            ],
+          phase: 6,
+        }
 
-  experience.chat_image_jobs:    {nature: J, owner: backend/src/features/image, status: planned, phase: 4, from: chat_message_images 租约列}
-  experience.user_chat_stats:    {nature: D, owner: rpc:app_core.increment_user_total_round（改归 experience）, status: planned, phase: 3, from: users.total_round + miniapp_user_settings.total_round}
+  experience.chat_image_jobs:
+    {
+      nature: J,
+      owner: backend/src/features/image,
+      status: planned,
+      phase: 4,
+      from: chat_message_images 租约列,
+    }
+  experience.user_chat_stats:
+    {
+      nature: D,
+      owner: rpc:app_core.increment_user_total_round（改归 experience）,
+      status: planned,
+      phase: 3,
+      from: users.total_round + miniapp_user_settings.total_round,
+    }
 
-  experience.chat_branch_turns:              {nature: S, owner: rpc:experience.fork_chat_session, status: active}
-  experience.chat_folders:                   {nature: E, owner: backend/src/infrastructure/repositories/ChatFolderRepository.ts, status: active}
-  experience.chat_history_display_metadata:  {nature: D, owner: rpc:experience.backfill_chat_history_display, status: active, note: 消息列表展示投影缓存}
-  experience.chat_message_likes:             {nature: S, owner: rpc:experience.set_chat_message_like, status: active}
-  experience.chat_message_overrides:         {nature: S, owner: backend/src/features/conversations, status: active}
-  experience.chat_reply_feedback:            {nature: E, owner: backend/src/features/chat-feedback, status: active}
-  experience.story_memories:                 {nature: D, owner: backend/src/infrastructure/repositories/StoryMemoryRepository.ts, status: active}
-  experience.story_memory_jobs:              {nature: J, owner: backend/src/infrastructure/repositories/StoryMemoryRepository.ts, status: active, note: 任务表样板}
+  experience.chat_branch_turns:
+    { nature: S, owner: rpc:experience.fork_chat_session, status: active }
+  experience.chat_folders:
+    {
+      nature: E,
+      owner: backend/src/infrastructure/repositories/ChatFolderRepository.ts,
+      status: active,
+    }
+  experience.chat_history_display_metadata:
+    {
+      nature: D,
+      owner: rpc:experience.backfill_chat_history_display,
+      status: active,
+      note: 消息列表展示投影缓存,
+    }
+  experience.chat_message_likes:
+    { nature: S, owner: rpc:experience.set_chat_message_like, status: active }
+  experience.chat_message_overrides:
+    { nature: S, owner: backend/src/features/conversations, status: active }
+  experience.chat_reply_feedback:
+    { nature: E, owner: backend/src/features/chat-feedback, status: active }
+  experience.story_memories:
+    {
+      nature: D,
+      owner: backend/src/infrastructure/repositories/StoryMemoryRepository.ts,
+      status: active,
+    }
+  experience.story_memory_jobs:
+    {
+      nature: J,
+      owner: backend/src/infrastructure/repositories/StoryMemoryRepository.ts,
+      status: active,
+      note: 任务表样板,
+    }
 
   # ───────────────────────── media_plaza ─────────────────────────
   media_plaza.image_plaza_attempts:
@@ -215,22 +583,43 @@ tables:
     owner: backend/src/features/image-plaza
     status: moving
     move:
-      - {to: media_plaza.image_plaza_jobs, cols: [lease_owner, lease_expires_at, provider_request_id], phase: 4}
-      - {to: billing.usage_charges, cols: [quote_credits, debit_ledger_id, credits_charged, charged_at], phase: 6}
+      - {
+          to: media_plaza.image_plaza_jobs,
+          cols: [lease_owner, lease_expires_at, provider_request_id],
+          phase: 4,
+        }
+      - {
+          to: billing.usage_charges,
+          cols: [quote_credits, debit_ledger_id, credits_charged, charged_at],
+          phase: 6,
+        }
 
   media_plaza.image_plaza_quotes:
     nature: M
     owner: backend/src/features/image-plaza
     status: moving
-    move: [{to: billing.usage_charges, cols: ["*"], phase: 6, note: 报价即 status=quoted 的扣费记录}]
+    move:
+      [{ to: billing.usage_charges, cols: ['*'], phase: 6, note: 报价即 status=quoted 的扣费记录 }]
 
-  media_plaza.image_plaza_jobs:              {nature: J, owner: backend/src/features/image-plaza, status: planned, phase: 4}
-  media_plaza.image_plaza_conversations:     {nature: E, owner: backend/src/features/image-plaza, status: active}
-  media_plaza.image_plaza_messages:          {nature: E, owner: backend/src/features/image-plaza, status: active}
-  media_plaza.image_plaza_artifacts:         {nature: E, owner: backend/src/features/image-plaza, status: active}
-  media_plaza.image_plaza_reference_assets:  {nature: E, owner: backend/src/features/image-plaza, status: active}
-  media_plaza.image_plaza_works:             {nature: E, owner: backend/src/features/image-plaza, status: active, note: like_count 为 D 列，只由 image_plaza_likes 决定}
-  media_plaza.image_plaza_likes:             {nature: S, owner: backend/src/features/image-plaza, status: active}
+  media_plaza.image_plaza_jobs:
+    { nature: J, owner: backend/src/features/image-plaza, status: planned, phase: 4 }
+  media_plaza.image_plaza_conversations:
+    { nature: E, owner: backend/src/features/image-plaza, status: active }
+  media_plaza.image_plaza_messages:
+    { nature: E, owner: backend/src/features/image-plaza, status: active }
+  media_plaza.image_plaza_artifacts:
+    { nature: E, owner: backend/src/features/image-plaza, status: active }
+  media_plaza.image_plaza_reference_assets:
+    { nature: E, owner: backend/src/features/image-plaza, status: active }
+  media_plaza.image_plaza_works:
+    {
+      nature: E,
+      owner: backend/src/features/image-plaza,
+      status: active,
+      note: like_count 为 D 列，只由 image_plaza_likes 决定,
+    }
+  media_plaza.image_plaza_likes:
+    { nature: S, owner: backend/src/features/image-plaza, status: active }
 
   # ───────────────────────── billing ─────────────────────────
   billing.payment_orders:
@@ -238,16 +627,26 @@ tables:
     owner: backend/src/infrastructure/repositories/MiniappPaymentOrderRepository.ts（入账只走 PaymentSettlement.settlePaidOrder）
     status: moving
     move:
-      - {to: ops.payment_events, cols: [checkout_confirmed_at, last_checkout_confirmed_at, checkout_confirm_count], phase: 2, note: 先确认结账确认是否影响对账调度，若影响则归 J}
-      - {to: billing.payment_reconcile_jobs, cols: [next_reconcile_at, last_reconciled_at, reconcile_attempts, reconcile_locked_until], phase: 4}
+      - {
+          to: ops.payment_events,
+          cols: [checkout_confirmed_at, last_checkout_confirmed_at, checkout_confirm_count],
+          phase: 2,
+          note: 先确认结账确认是否影响对账调度，若影响则归 J,
+        }
+      - {
+          to: billing.payment_reconcile_jobs,
+          cols: [next_reconcile_at, last_reconciled_at, reconcile_attempts, reconcile_locked_until],
+          phase: 4,
+        }
 
-  billing.payment_reconcile_jobs:  {nature: J, owner: backend/src/features/payment, status: planned, phase: 4}
+  billing.payment_reconcile_jobs:
+    { nature: J, owner: backend/src/features/payment, status: planned, phase: 4 }
 
   billing.payment_operation_events:
     nature: O
     owner: backend/src/infrastructure/repositories/MiniappPaymentOrderRepository.ts
     status: moving
-    move: [{to: ops.payment_events, cols: ["*"], phase: 2, note: PaymentAlertMonitor 同步改读}]
+    move: [{ to: ops.payment_events, cols: ['*'], phase: 2, note: PaymentAlertMonitor 同步改读 }]
 
   billing.usage_charges:
     nature: M
@@ -261,21 +660,71 @@ tables:
     nature: M
     owner: backend/src/infrastructure/repositories/MiniappWalletRepository.ts
     status: moving
-    move: [{to: billing.usage_charges, cols: ["*"], phase: 6, note: usage_cost_usd / exchange_rate / model_markup 是我方成本，迁 ops.llm_calls}]
+    move:
+      [
+        {
+          to: billing.usage_charges,
+          cols: ['*'],
+          phase: 6,
+          note: usage_cost_usd / exchange_rate / model_markup 是我方成本，迁 ops.llm_calls,
+        },
+      ]
 
-  billing.llm_usage_charge_dedup: {nature: M, owner: rpc:billing, status: moving, phase: 6, note: 旧表"保留最近 100 条、更早压缩"的产物；usage_charges 行瘦身后不再需要}
+  billing.llm_usage_charge_dedup:
+    {
+      nature: M,
+      owner: rpc:billing,
+      status: moving,
+      phase: 6,
+      note: 旧表"保留最近 100 条、更早压缩"的产物；usage_charges 行瘦身后不再需要,
+    }
 
-  billing.user_wallets:          {nature: M, owner: backend/src/infrastructure/repositories/MiniappWalletRepository.ts, status: active, note: 余额是流水的投影；first_paid_at / last_paid_at / total_paid_amount 是同事务维护的 D 列}
-  billing.wallet_ledger:         {nature: M, owner: rpc:billing.grant_bonus_credits / apply_wallet_debit, status: active, keys: {metadata: [存量冻结，不加新键]}}
-  billing.wallet_refunds:        {nature: M, owner: rpc:billing.refund_wallet_debit, status: active}
-  billing.vip_memberships:       {nature: M, owner: backend/src/infrastructure/repositories/MiniappVipRepository.ts, status: active}
-  billing.vip_purchase_grants:   {nature: M, owner: rpc:billing（VIP 履约）, status: active}
-  billing.feature_free_trials:   {nature: M, owner: backend/src/infrastructure/repositories/FeatureFreeTrialRepository.ts, status: active}
-  billing.character_free_chat_quotas:          {nature: M, owner: backend/src/infrastructure/repositories/MiniappCharacterFreeQuotaRepository.ts, status: active}
-  billing.character_free_chat_quota_decisions: {nature: M, owner: backend/src/infrastructure/repositories/MiniappCharacterFreeQuotaRepository.ts, status: active}
-  billing.image_plaza_share_rewards:           {nature: M, owner: rpc:billing.share_image_plaza_artifact, status: active}
-  billing.character_creator_rewards:           {nature: M, owner: backend/src/features/creator, status: active}
-  billing.character_creator_reward_balances:   {nature: M, owner: rpc:billing（作者奖励）, status: active}
+  billing.user_wallets:
+    {
+      nature: M,
+      owner: backend/src/infrastructure/repositories/MiniappWalletRepository.ts,
+      status: active,
+      note: 余额是流水的投影；first_paid_at / last_paid_at / total_paid_amount 是同事务维护的 D 列,
+    }
+  billing.wallet_ledger:
+    {
+      nature: M,
+      owner: rpc:billing.grant_bonus_credits / apply_wallet_debit,
+      status: active,
+      keys: { metadata: [存量冻结，不加新键] },
+    }
+  billing.wallet_refunds: { nature: M, owner: rpc:billing.refund_wallet_debit, status: active }
+  billing.vip_memberships:
+    {
+      nature: M,
+      owner: backend/src/infrastructure/repositories/MiniappVipRepository.ts,
+      status: active,
+    }
+  billing.vip_purchase_grants: { nature: M, owner: rpc:billing（VIP 履约）, status: active }
+  billing.feature_free_trials:
+    {
+      nature: M,
+      owner: backend/src/infrastructure/repositories/FeatureFreeTrialRepository.ts,
+      status: active,
+    }
+  billing.character_free_chat_quotas:
+    {
+      nature: M,
+      owner: backend/src/infrastructure/repositories/MiniappCharacterFreeQuotaRepository.ts,
+      status: active,
+    }
+  billing.character_free_chat_quota_decisions:
+    {
+      nature: M,
+      owner: backend/src/infrastructure/repositories/MiniappCharacterFreeQuotaRepository.ts,
+      status: active,
+    }
+  billing.image_plaza_share_rewards:
+    { nature: M, owner: rpc:billing.share_image_plaza_artifact, status: active }
+  billing.character_creator_rewards:
+    { nature: M, owner: backend/src/features/creator, status: active }
+  billing.character_creator_reward_balances:
+    { nature: M, owner: rpc:billing（作者奖励）, status: active }
 
   # ───────────────────────── miniapp_features ─────────────────────────
   miniapp_features.user_marks:
@@ -290,29 +739,54 @@ tables:
     nature: S
     owner: backend/src/infrastructure/repositories/GrowthPromptRepository.ts
     status: moving
-    move: [{to: miniapp_features.user_marks, cols: ["*"], phase: 3}]
+    move: [{ to: miniapp_features.user_marks, cols: ['*'], phase: 3 }]
 
   miniapp_features.free_zone_calls:
     nature: O
     owner: backend/src/features/free-zone
     status: moving
     move:
-      - {to: experience.chat_generation_attempts, cols: [chat_history_id, candidate_id, role, slot, provider, provider_model, dispatched_at, end_reason, request_id, generation_id], phase: 2, note: 畅聊每一路调用都是一次上游调用}
-      - {to: ops.llm_calls, cols: [cost_usd, cost_source, prompt_tokens, completion_tokens], phase: 2}
-      - {to: ops.llm_cost_jobs, cols: [cost_attempts, settled_at], phase: 2}
+      - {
+          to: experience.chat_generation_attempts,
+          cols:
+            [
+              chat_history_id,
+              candidate_id,
+              role,
+              slot,
+              provider,
+              provider_model,
+              dispatched_at,
+              end_reason,
+              request_id,
+              generation_id,
+            ],
+          phase: 2,
+          note: 畅聊每一路调用都是一次上游调用,
+        }
+      - {
+          to: ops.llm_calls,
+          cols: [cost_usd, cost_source, prompt_tokens, completion_tokens],
+          phase: 2,
+        }
+      - { to: ops.llm_cost_jobs, cols: [cost_attempts, settled_at], phase: 2 }
 
   miniapp_features.free_zone_events:
     nature: O
     owner: backend/src/features/free-zone
     status: moving
-    move: [{to: ops.free_zone_events, cols: ["*"], phase: 2}]
+    move: [{ to: ops.free_zone_events, cols: ['*'], phase: 2 }]
 
   miniapp_features.free_zone_models:
     nature: S
     owner: backend/src/features/free-zone
     status: active
     reads: [ops.llm_calls（后台评估任务聚合后写回 status / last_metrics）]
-    keys: {last_metrics: [评估指标快照，键名以 shared FreeZone 评估 schema 为准], excluded_providers: [供应商 → 剔除原因]}
+    keys:
+      {
+        last_metrics: [评估指标快照，键名以 shared FreeZone 评估 schema 为准],
+        excluded_providers: [供应商 → 剔除原因],
+      }
 
   miniapp_features.drama_survey_responses:
     nature: E
@@ -321,59 +795,149 @@ tables:
     phase: 1
     from: miniapp_analytics.drama_survey_responses（整表迁入；会发奖，属产品功能）
 
-  miniapp_features.wish_roles:  {nature: E, owner: none, status: drop, phase: 1, note: 已被 character_wishes 取代、无运行时读者；导出归档后删除}
+  miniapp_features.wish_roles:
+    {
+      nature: E,
+      owner: none,
+      status: drop,
+      phase: 1,
+      note: 已被 character_wishes 取代、无运行时读者；导出归档后删除,
+    }
 
-  miniapp_features.character_comments:          {nature: E, owner: backend/src/features/character-social, status: active}
-  miniapp_features.character_comment_reports:   {nature: E, owner: backend/src/features/character-social, status: active}
-  miniapp_features.character_favorites:         {nature: S, owner: backend/src/infrastructure/repositories/MiniappCharacterFavoriteRepository.ts, status: active}
-  miniapp_features.character_likes:             {nature: S, owner: backend/src/features/character-social, status: active}
-  miniapp_features.character_wishes:            {nature: E, owner: backend/src/features/character-wishes, status: active}
-  miniapp_features.character_wish_supports:     {nature: S, owner: backend/src/features/character-wishes, status: active}
-  miniapp_features.character_wish_responses:    {nature: S, owner: backend/src/features/character-wishes, status: active}
-  miniapp_features.character_ranking_scores:    {nature: D, owner: backend/src/lib/lobby-ranking-refresh-job.ts, status: active, reads: [experience.chat_history（离线聚合，存量豁免）]}
-  miniapp_features.lobby_ranking_refresh_state: {nature: J, owner: backend/src/lib/lobby-ranking-refresh-job.ts, status: active}
-  miniapp_features.user_lobby_recommendations:  {nature: D, owner: backend/src/features/lobby, status: active}
-  miniapp_features.user_character_exposures:    {nature: S, owner: backend/src/features/lobby, status: active}
-  miniapp_features.daily_checkins:              {nature: E, owner: rpc:miniapp_features.claim_daily_checkin, status: active, note: 发放的星尘只在 billing.wallet_ledger}
-  miniapp_features.notifications:               {nature: E, owner: backend/src/lib/notifications.ts, status: active, keys: {metadata: [存量冻结，不加新键]}}
-  miniapp_features.notification_reads:          {nature: S, owner: backend/src/routes/notifications.ts, status: active}
-  miniapp_features.community_reward_claims:     {nature: E, owner: backend/src/features/community, status: active}
-  miniapp_features.community_reward_exclusions: {nature: S, owner: backend/src/features/community, status: active}
-  miniapp_features.telegram_community_update_receipts: {nature: J, owner: backend/src/features/community, status: active, note: webhook 收件箱与幂等；表名含 telegram 属存量豁免}
+  miniapp_features.character_comments:
+    { nature: E, owner: backend/src/features/character-social, status: active }
+  miniapp_features.character_comment_reports:
+    { nature: E, owner: backend/src/features/character-social, status: active }
+  miniapp_features.character_favorites:
+    {
+      nature: S,
+      owner: backend/src/infrastructure/repositories/MiniappCharacterFavoriteRepository.ts,
+      status: active,
+    }
+  miniapp_features.character_likes:
+    { nature: S, owner: backend/src/features/character-social, status: active }
+  miniapp_features.character_wishes:
+    { nature: E, owner: backend/src/features/character-wishes, status: active }
+  miniapp_features.character_wish_supports:
+    { nature: S, owner: backend/src/features/character-wishes, status: active }
+  miniapp_features.character_wish_responses:
+    { nature: S, owner: backend/src/features/character-wishes, status: active }
+  miniapp_features.character_ranking_scores:
+    {
+      nature: D,
+      owner: backend/src/lib/lobby-ranking-refresh-job.ts,
+      status: active,
+      reads: [experience.chat_history（离线聚合，存量豁免）],
+    }
+  miniapp_features.lobby_ranking_refresh_state:
+    {
+      nature: S,
+      owner: backend/src/lib/lobby-ranking-refresh-job.ts,
+      status: active,
+      note: 单行刷新水位,
+    }
+  miniapp_features.user_lobby_recommendations:
+    { nature: D, owner: backend/src/features/lobby, status: active }
+  miniapp_features.user_character_exposures:
+    { nature: S, owner: backend/src/features/lobby, status: active }
+  miniapp_features.daily_checkins:
+    {
+      nature: E,
+      owner: rpc:miniapp_features.claim_daily_checkin,
+      status: active,
+      note: 发放的星尘只在 billing.wallet_ledger,
+    }
+  miniapp_features.notifications:
+    {
+      nature: E,
+      owner: backend/src/lib/notifications.ts,
+      status: active,
+      keys: { metadata: [存量冻结，不加新键] },
+    }
+  miniapp_features.notification_reads:
+    { nature: S, owner: backend/src/routes/notifications.ts, status: active }
+  miniapp_features.community_reward_claims:
+    { nature: E, owner: backend/src/features/community, status: active }
+  miniapp_features.community_reward_exclusions:
+    { nature: S, owner: backend/src/features/community, status: active }
+  miniapp_features.telegram_community_update_receipts:
+    {
+      nature: J,
+      owner: backend/src/features/community,
+      status: active,
+      note: webhook 收件箱与幂等；表名含 telegram 属存量豁免,
+    }
 
   # ───────────────────────── miniapp_traffic ─────────────────────────
-  miniapp_traffic.user_attributions:  {nature: E, owner: rpc:miniapp_traffic.record_app_entry, status: planned, phase: 3, from: app_core.users 的 source_id / bot_entered_at / miniapp_entered_at}
-  miniapp_traffic.botlinks:           {nature: E, owner: ops 脚本 / 运营, status: active, note: "阶段 1 把 \"Purchase_amount\" / \"Procurement_days\" 改为小写列名"}
-  miniapp_traffic.traffic_clicks:     {nature: D, owner: rpc:miniapp_traffic.increment_click, status: active}
-  miniapp_traffic.app_entry_facts:    {nature: E, owner: rpc:miniapp_traffic.record_app_entry, status: active}
-  miniapp_traffic.invite_codes:       {nature: E, owner: backend/src/routes/invite.ts, status: active}
-  miniapp_traffic.invite_relations:   {nature: E, owner: backend/src/routes/invite.ts, status: active}
-  miniapp_traffic.invite_reward_logs: {nature: E, owner: rpc:miniapp_traffic.grant_invite_reward, status: active, note: 星尘只在 wallet_ledger}
+  miniapp_traffic.user_attributions:
+    {
+      nature: E,
+      owner: rpc:miniapp_traffic.record_app_entry,
+      status: planned,
+      phase: 3,
+      from: app_core.users 的 source_id / bot_entered_at / miniapp_entered_at,
+    }
+  miniapp_traffic.botlinks:
+    {
+      nature: E,
+      owner: ops 脚本 / 运营,
+      status: active,
+      note: '阶段 1 把 "Purchase_amount" / "Procurement_days" 改为小写列名',
+    }
+  miniapp_traffic.traffic_clicks:
+    { nature: D, owner: rpc:miniapp_traffic.increment_click, status: active }
+  miniapp_traffic.app_entry_facts:
+    { nature: E, owner: rpc:miniapp_traffic.record_app_entry, status: active }
+  miniapp_traffic.invite_codes: { nature: E, owner: backend/src/routes/invite.ts, status: active }
+  miniapp_traffic.invite_relations:
+    { nature: E, owner: backend/src/routes/invite.ts, status: active }
+  miniapp_traffic.invite_reward_logs:
+    {
+      nature: E,
+      owner: rpc:miniapp_traffic.grant_invite_reward,
+      status: active,
+      note: 星尘只在 wallet_ledger,
+    }
 
   # ───────────────────────── admin ─────────────────────────
-  admin.admin_users:                {nature: E, owner: backend/src/features/admin-access, status: active}
-  admin.audit_logs:                 {nature: E, owner: rpc:admin, status: active, note: 运营审计属运营平台自身，不进 ops}
-  admin.config_drafts:              {nature: C, owner: rpc:admin, status: active}
-  admin.config_releases:            {nature: C, owner: rpc:admin, status: active}
-  admin.character_layout_drafts:    {nature: C, owner: rpc:admin, status: active}
-  admin.character_layout_releases:  {nature: C, owner: rpc:admin, status: active}
-  admin.character_layout_state:     {nature: C, owner: rpc:admin, status: active}
-  admin.environment_config:         {nature: C, owner: rpc:admin, status: active}
-  admin.managed_config_keys:        {nature: C, owner: rpc:admin, status: planned, phase: 1, note: 取代 24 个 *_before_* 包装链的白名单与校验类型登记表}
+  admin.admin_users: { nature: E, owner: backend/src/features/admin-access, status: active }
+  admin.audit_logs:
+    { nature: E, owner: rpc:admin, status: active, note: 运营审计属运营平台自身，不进 ops }
+  admin.config_drafts: { nature: C, owner: rpc:admin, status: active }
+  admin.config_releases: { nature: C, owner: rpc:admin, status: active }
+  admin.character_layout_drafts: { nature: C, owner: rpc:admin, status: active }
+  admin.character_layout_releases: { nature: C, owner: rpc:admin, status: active }
+  admin.character_layout_state: { nature: C, owner: rpc:admin, status: active }
+  admin.environment_config: { nature: C, owner: rpc:admin, status: active }
+  admin.managed_config_keys:
+    {
+      nature: C,
+      owner: rpc:admin,
+      status: planned,
+      phase: 1,
+      note: 取代 24 个 *_before_* 包装链的白名单与校验类型登记表,
+    }
 
   # ───────────────────────── miniapp_analytics ─────────────────────────
-  miniapp_analytics.card_position_snapshot: {nature: D, owner: 定时任务（ops/schema-split/cron-job5-prod.sql）, status: active}
-  miniapp_analytics.grafana_core_daily:     {nature: D, owner: rpc:miniapp_analytics.refresh_grafana_core_day, status: active, note: 表名含 grafana 属存量豁免}
+  miniapp_analytics.card_position_snapshot:
+    { nature: D, owner: 定时任务（ops/schema-split/cron-job5-prod.sql）, status: active }
+  miniapp_analytics.grafana_core_daily:
+    {
+      nature: D,
+      owner: rpc:miniapp_analytics.refresh_grafana_core_day,
+      status: active,
+      note: 表名含 grafana 属存量豁免,
+    }
   miniapp_analytics.drama_playback_observations:
     nature: O
     owner: scripts（播放观测导入）
     status: moving
-    move: [{to: ops.drama_playback_observations, cols: ["*"], phase: 2}]
+    move: [{ to: ops.drama_playback_observations, cols: ['*'], phase: 2 }]
   miniapp_analytics.drama_survey_responses:
     nature: E
     owner: backend/src/features/drama-survey
     status: moving
-    move: [{to: miniapp_features.drama_survey_responses, cols: ["*"], phase: 1}]
+    move: [{ to: miniapp_features.drama_survey_responses, cols: ['*'], phase: 1 }]
 
   # ───────────────────────── ops（新建，全部 planned） ─────────────────────────
   ops.llm_calls:
@@ -382,47 +946,188 @@ tables:
     status: planned
     phase: 2
     note: 每次上游调用一行，attempt_id 为主键（软引用 experience.chat_generation_attempts.id）；合并 attempts 测速列、三张供应商表、free_zone_calls 成本列、chat_history.upstream_status、llm_usage_charges 成本列（阶段 6）
-    keys: {raw_request: [供应商请求参数原样], raw_usage: [供应商用量与生成元数据原样], discarded_detail: [落败调用的响应摘要]}
+    keys:
+      {
+        raw_request: [供应商请求参数原样],
+        raw_usage: [供应商用量与生成元数据原样],
+        discarded_detail: [落败调用的响应摘要],
+      }
     retention_days: 180
-  ops.llm_cost_jobs:             {nature: J, owner: backend/src/features/free-zone/call-costs.ts + surplus 用量回填, status: planned, phase: 2, note: 上游成本与用量的事后补查任务}
-  ops.chat_generation_timings:   {nature: O, owner: backend/src/infrastructure/repositories/GenerationObservationRepository.ts, status: planned, phase: 2, retention_days: 180}
-  ops.media_generation_calls:    {nature: O, owner: backend/src/features/voice + image, status: planned, phase: 2, retention_days: 180}
-  ops.payment_events:            {nature: O, owner: backend/src/infrastructure/repositories/MiniappPaymentOrderRepository.ts, status: planned, phase: 2, retention_days: 365}
-  ops.alert_incidents:           {nature: O, owner: backend/src/features/alerting, status: planned, phase: 2}
-  ops.alert_deliveries:          {nature: J, owner: backend/src/features/alerting, status: planned, phase: 2, note: 告警投递 outbox}
-  ops.drama_playback_observations: {nature: O, owner: scripts（播放观测导入）, status: planned, phase: 2, retention_days: 180}
-  ops.free_zone_events:          {nature: O, owner: backend/src/features/free-zone, status: planned, phase: 2, retention_days: 365}
+  ops.llm_cost_jobs:
+    {
+      nature: J,
+      owner: backend/src/features/free-zone/call-costs.ts + surplus 用量回填,
+      status: planned,
+      phase: 2,
+      note: 上游成本与用量的事后补查任务,
+    }
+  ops.chat_generation_timings:
+    {
+      nature: O,
+      owner: backend/src/infrastructure/repositories/GenerationObservationRepository.ts,
+      status: planned,
+      phase: 2,
+      retention_days: 180,
+    }
+  ops.media_generation_calls:
+    {
+      nature: O,
+      owner: backend/src/features/voice + image,
+      status: planned,
+      phase: 2,
+      retention_days: 180,
+    }
+  ops.payment_events:
+    {
+      nature: O,
+      owner: backend/src/infrastructure/repositories/MiniappPaymentOrderRepository.ts,
+      status: planned,
+      phase: 2,
+      retention_days: 365,
+    }
+  ops.alert_incidents:
+    { nature: O, owner: backend/src/features/alerting, status: planned, phase: 2 }
+  ops.alert_delivery_jobs:
+    {
+      nature: J,
+      owner: backend/src/features/alerting,
+      status: planned,
+      phase: 2,
+      note: 告警投递 outbox,
+    }
+  ops.drama_playback_observations:
+    { nature: O, owner: scripts（播放观测导入）, status: planned, phase: 2, retention_days: 180 }
+  ops.free_zone_events:
+    {
+      nature: O,
+      owner: backend/src/features/free-zone,
+      status: planned,
+      phase: 2,
+      retention_days: 365,
+    }
 
   # ───────────────────────── cs_feed（新建视图层） ─────────────────────────
-  cs_feed.users:          {nature: D, owner: 本仓库, status: planned, phase: 1, note: 客服读 users + 资料 + total_rounds + VIP 截止}
-  cs_feed.wallets:        {nature: D, owner: 本仓库, status: planned, phase: 1}
-  cs_feed.payment_orders: {nature: D, owner: 本仓库, status: planned, phase: 1}
-  cs_feed.chat_sessions:  {nature: D, owner: 本仓库, status: planned, phase: 1}
-  cs_feed.chat_messages:  {nature: D, owner: 本仓库, status: planned, phase: 1}
+  cs_feed.users:
+    {
+      nature: D,
+      owner: 本仓库,
+      status: planned,
+      phase: 1,
+      note: 客服读 users + 资料 + total_rounds + VIP 截止,
+    }
+  cs_feed.wallets: { nature: D, owner: 本仓库, status: planned, phase: 1 }
+  cs_feed.payment_orders: { nature: D, owner: 本仓库, status: planned, phase: 1 }
+  cs_feed.chat_sessions: { nature: D, owner: 本仓库, status: planned, phase: 1 }
+  cs_feed.chat_messages: { nature: D, owner: 本仓库, status: planned, phase: 1 }
 
   # ───────────────────────── 本仓库在外部 schema 里拥有的表 ─────────────────────────
-  drama_archive.drama_likes:    {nature: S, owner: backend/src/features/drama, status: active, note: 外部 schema 中本仓库拥有的表}
-  drama_archive.drama_comments: {nature: E, owner: backend/src/features/drama, status: active}
+  drama_archive.drama_likes:
+    {
+      nature: S,
+      owner: backend/src/features/drama,
+      status: active,
+      note: 外部 schema 中本仓库拥有的表,
+    }
+  drama_archive.drama_comments: { nature: E, owner: backend/src/features/drama, status: active }
 
 # runtime_config key 清理（阶段 1 逐个复核后执行）
 runtime_config_keys:
   drop_candidates:
-    - {key: miniapp_daily_checkin_bonus_credits, reason: 描述已写明"发奖不再读取"}
-    - {key: lobby_pinned_characters, reason: ARCHITECTURE 写明后端不再读取；只剩 admin 校验函数引用}
-    - {key: image_plaza_tags_feature_enabled, reason: 后端不再读取；只剩 admin 校验函数引用}
-    - {key: ai_config_source, reason: 代码与函数零引用}
-    - {key: interaction_mode_blocks, reason: 代码与函数零引用}
-    - {key: llm_model_tiers, reason: 代码与函数零引用}
-    - {key: miniapp_chat_message_credit_cost, reason: 代码与函数零引用（已被 llm_pricing_config 取代）}
-    - {key: miniapp_model_tier_credit_costs, reason: 代码与函数零引用}
-    - {key: miniapp_payment_prompt_dialog_config, reason: 只剩 admin 校验函数引用，需确认前端是否经通用接口读取}
-    - {key: miniapp_recharge_page_config, reason: 同上}
+    - { key: miniapp_daily_checkin_bonus_credits, reason: 描述已写明"发奖不再读取" }
+    - {
+        key: lobby_pinned_characters,
+        reason: ARCHITECTURE 写明后端不再读取；只剩 admin 校验函数引用,
+      }
+    - { key: image_plaza_tags_feature_enabled, reason: 后端不再读取；只剩 admin 校验函数引用 }
+    - { key: ai_config_source, reason: 代码与函数零引用 }
+    - { key: interaction_mode_blocks, reason: 代码与函数零引用 }
+    - { key: llm_model_tiers, reason: 代码与函数零引用 }
+    - {
+        key: miniapp_chat_message_credit_cost,
+        reason: 代码与函数零引用（已被 llm_pricing_config 取代）,
+      }
+    - { key: miniapp_model_tier_credit_costs, reason: 代码与函数零引用 }
+    - {
+        key: miniapp_payment_prompt_dialog_config,
+        reason: 只剩 admin 校验函数引用，需确认前端是否经通用接口读取,
+      }
+    - { key: miniapp_recharge_page_config, reason: 同上 }
   merge_into_object:
-    - {into: voice_config, keys: [voice_billing_enabled, voice_generation_credits, voice_max_spoken_chars, voice_price_label, voice_draft_failed_hint, voice_over_limit_hint, voice_tts_failed_hint]}
-    - {into: chat_image_config, keys: [image_generation_enabled, image_generation_credits, image_width, image_height, image_max_output_bytes, image_max_prompt_chars, image_price_label, image_prompt_policy, image_default_art_style, image_description_system_prompt, image_text_model_config, image_description_failed_hint, image_failed_unknown_hint, image_generation_failed_hint, image_prompt_over_limit_hint]}
-    - {into: image_plaza_config, keys: [image_plaza_enabled, image_plaza_model_catalog, image_plaza_share_rebate_rate, image_plaza_share_tip, image_plaza_tags]}
-    - {into: community_config, keys: [miniapp_official_community_enabled, miniapp_official_community_chat_id, miniapp_official_community_url, miniapp_official_community_fallback_handle, miniapp_official_community_copy, miniapp_official_community_reward_credits, miniapp_official_community_reward_started_at]}
-    - {into: invite_config, keys: [miniapp_invite_entry_enabled, miniapp_invite_center_config, miniapp_invite_reward_rules]}
-    - {into: checkin_config, keys: [miniapp_checkin_new_user_credits, miniapp_checkin_veteran_credits, vip_checkin_bonus_config]}
-    - {into: vip_config, keys: [vip_plans_config, vip_purchase_enabled, vip_reminders_enabled, vip_text_discount_rate]}
-    - {into: feature_free_trial_limits, keys: [media_feature_free_trial_limit]}
+    - {
+        into: voice_config,
+        keys:
+          [
+            voice_billing_enabled,
+            voice_generation_credits,
+            voice_max_spoken_chars,
+            voice_price_label,
+            voice_draft_failed_hint,
+            voice_over_limit_hint,
+            voice_tts_failed_hint,
+          ],
+      }
+    - {
+        into: chat_image_config,
+        keys:
+          [
+            image_generation_enabled,
+            image_generation_credits,
+            image_width,
+            image_height,
+            image_max_output_bytes,
+            image_max_prompt_chars,
+            image_price_label,
+            image_prompt_policy,
+            image_default_art_style,
+            image_description_system_prompt,
+            image_text_model_config,
+            image_description_failed_hint,
+            image_failed_unknown_hint,
+            image_generation_failed_hint,
+            image_prompt_over_limit_hint,
+          ],
+      }
+    - {
+        into: image_plaza_config,
+        keys:
+          [
+            image_plaza_enabled,
+            image_plaza_model_catalog,
+            image_plaza_share_rebate_rate,
+            image_plaza_share_tip,
+            image_plaza_tags,
+          ],
+      }
+    - {
+        into: community_config,
+        keys:
+          [
+            miniapp_official_community_enabled,
+            miniapp_official_community_chat_id,
+            miniapp_official_community_url,
+            miniapp_official_community_fallback_handle,
+            miniapp_official_community_copy,
+            miniapp_official_community_reward_credits,
+            miniapp_official_community_reward_started_at,
+          ],
+      }
+    - {
+        into: invite_config,
+        keys:
+          [miniapp_invite_entry_enabled, miniapp_invite_center_config, miniapp_invite_reward_rules],
+      }
+    - {
+        into: checkin_config,
+        keys:
+          [
+            miniapp_checkin_new_user_credits,
+            miniapp_checkin_veteran_credits,
+            vip_checkin_bonus_config,
+          ],
+      }
+    - {
+        into: vip_config,
+        keys:
+          [vip_plans_config, vip_purchase_enabled, vip_reminders_enabled, vip_text_discount_rate],
+      }
+    - { into: feature_free_trial_limits, keys: [media_feature_free_trial_limit] }

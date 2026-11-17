@@ -5,6 +5,7 @@
 项目长期按功能插入式地加表、加列，业务字段、计费字段、测速与监控字段、任务租约字段混在同一批宽表里。90% 以上的代码由 AI 编写，缺少"字段该放哪"的规则，复杂度持续上升。
 
 本任务要做两件事：
+
 1. 建立一份写给 AI 读的数据库契约：业务域 × 数据性质，加上 registry 和 CI 警告，让新增改动自动落到正确的位置。
 2. 趁用户量还小（一百多人），把存量结构**彻底**拆分重组到契约描述的目标结构。
 
@@ -20,7 +21,7 @@
 1. 新增 `docs/db/CONTRACT.md`（规则）与 `docs/db/registry.yaml`（全量表登记：现状 + 目标 + 阶段），作为数据库落位的唯一权威。
 2. 让 Claude Code 和 Codex 都自动读到落位规则：
    - `AGENTS.md` 放落位卡；
-   - 新增 `CLAUDE.md` 引用 `AGENTS.md`；
+   - Claude Code 已会加载 `AGENTS.md`，不另建 `CLAUDE.md`；
    - 旧 spec 与 ARCHITECTURE 里同类描述改为指向契约。
 3. `Quality Gate` 加契约 lint：对比 migration 与 registry，只给 PR 警告。
 4. 按 `design.md` 的阶段 1–6 完成迁移。每个阶段完成后，registry 回写为最终状态。

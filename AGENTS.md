@@ -94,7 +94,7 @@
   5. jsonb 只用于 `*_snapshot`、`raw_*`、`*_detail`。要过滤、计费、分支判断的值必须是真列。新列不叫 `metadata`/`extra`/`data`。
   6. 表名不带供应商名。一个功能一个 `<feature>_config` 对象 key。函数不套 `*_before_*` 包装层。
   7. 外部系统只读 `cs_feed` / `miniapp_analytics` 视图。产品请求路径不读 `ops` / `miniapp_analytics`。
-  8. 建表、删表、加列、删列，同一个 PR 更新 `registry.yaml`。CI 对违规给警告；违反时 PR 描述必须写理由。
+  8. 建表、删表、搬表，同一个 PR 更新 `registry.yaml`。CI 对违规给警告（`pnpm lint:db-contract`）；违反时 PR 描述必须写理由。
 - 新建表、视图、物化视图或数据库函数前，在任务 PRD/design 中按 CONTRACT §2.2 记录坐标、权威写入模块、生命周期与保留期、跨域引用；归属未完成不得创建 migration，也不得把对象暂放 `public`。
 - `packages/shared/migrations/` 是唯一 migration 源，不得创建 `supabase/migrations/` 平行来源或改写历史 migration。
 - migration 一次执行一个文件，记录前后 shape、权限/RLS、关键读写、锁/容量和回滚。

@@ -21,17 +21,18 @@
 
 ## 阶段总览
 
-| 阶段 | 内容 | 动钱 | 风险 | 外部协同 |
-|---|---|---|---|---|
-| 0 | 契约、registry、AGENTS/CLAUDE 落位卡、契约 lint（警告） | 否 | 低 | 无 |
-| 1 | 地基与清理：建 `ops`、`cs_feed`；客服切视图并收回旧授权；`analytics_grafana` 并入；删死表、死列、死配置、包装链 | 否 | 低-中 | 客服仓库、Grafana |
-| 2 | 观测外迁：所有 O 进 `ops`；上游调用合并为 attempts（身份）+ `ops.llm_calls`（明细） | 间接 | 中 | Grafana、指标读者 |
-| 3 | 用户与状态拆分：users / settings / characters 拆分，`user_marks`、`user_chat_stats`、`user_attributions`、`character_listings` | 否 | 中 | 客服视图同步 |
-| 4 | 任务字段外迁：各 `*_jobs` 表 | 支付对账间接 | 中 | 无 |
-| 5 | 对话热表瘦身：`history` 进 `chat_prompt_snapshots`；`first_token_preview` 进交付表；`drive_mode` 改真列 | 否 | 中-高 | 无 |
-| 6 | 计费统一：`billing.usage_charges` 收编 4 处计费字段和报价；删 dedup 压缩 | 是 | 高 | 客服视图、看板 |
+| 阶段 | 内容                                                                                                                           | 动钱         | 风险  | 外部协同          |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------ | ------------ | ----- | ----------------- |
+| 0    | 契约、registry、AGENTS 落位卡、契约 lint（警告）                                                                               | 否           | 低    | 无                |
+| 1    | 地基与清理：建 `ops`、`cs_feed`；客服切视图并收回旧授权；`analytics_grafana` 并入；删死表、死列、死配置、包装链                | 否           | 低-中 | 客服仓库、Grafana |
+| 2    | 观测外迁：所有 O 进 `ops`；上游调用合并为 attempts（身份）+ `ops.llm_calls`（明细）                                            | 间接         | 中    | Grafana、指标读者 |
+| 3    | 用户与状态拆分：users / settings / characters 拆分，`user_marks`、`user_chat_stats`、`user_attributions`、`character_listings` | 否           | 中    | 客服视图同步      |
+| 4    | 任务字段外迁：各 `*_jobs` 表                                                                                                   | 支付对账间接 | 中    | 无                |
+| 5    | 对话热表瘦身：`history` 进 `chat_prompt_snapshots`；`first_token_preview` 进交付表；`drive_mode` 改真列                        | 否           | 中-高 | 无                |
+| 6    | 计费统一：`billing.usage_charges` 收编 4 处计费字段和报价；删 dedup 压缩                                                       | 是           | 高    | 客服视图、看板    |
 
 **为什么这样排序**：
+
 - 先建地基（`ops`、视图层），后搬数据，这样搬的时候外部不受影响。
 - 先搬不碰钱的，最后统一钱。
 - 阶段 2 先把上游调用"身份"和"明细"拆开。这样阶段 6 计费只依赖身份（experience），不依赖 `ops`。
@@ -56,14 +57,17 @@
 
 ## 阶段要点
 
-### 阶段 0：契约（本 PR + 一个 lint PR）
-- 本 PR：`docs/db/CONTRACT.md`、`docs/db/registry.yaml`、AGENTS 落位卡、`CLAUDE.md`、旧 spec 和 ARCHITECTURE 改为指针。
-- lint PR：
-  - `scripts/db-contract-lint.mjs` 解析本次 PR 新增或修改的 migration，按 CONTRACT §7 规则对照 registry；
-  - 输出 GitHub Actions `::warning` 注释，退出码恒为 0；
-  - 接入 `Quality Gate`；附固定样例测试。
+### 阶段 0：契约（PR #870，已含 lint）
+
+- 文档：`docs/db/CONTRACT.md`、`docs/db/registry.yaml`、AGENTS 落位卡，旧 spec 和 ARCHITECTURE 改为指针。Claude Code 已会加载 AGENTS.md，不另建 CLAUDE.md。
+- lint：`scripts/db-contract-lint.mjs`（`pnpm lint:db-contract`）。
+  - CI 中只查相对 base 新增或修改的 migration，按 CONTRACT §7 规则对照 registry；
+  - 输出 GitHub Actions `::warning` 注释；脚本自身故障也只告警，退出码恒为 0；
+  - 已接入 `Quality Gate`；固定样例测试见 `scripts/db-contract-lint.test.mjs`。
+  - 对 11 月存量 migration 试跑，命中的正是本任务要拆的插入点（供应商表、free_zone_calls、drive_mode 加列等），无误报。
 
 ### 阶段 1：地基与清理
+
 - `ops` schema：service_role 读写；Grafana 与指标读者不授权，只通过 `miniapp_analytics` 视图读。
 - `cs_feed` 视图：按客服仓库实际读取的列建 5 个视图，授权给 `cs_runtime_v1`。客服仓库改为读视图并上线后：
   - 收回 `cs_runtime_v1` 对业务表的直接 SELECT；
@@ -80,7 +84,8 @@
 - `admin` 包装链：建 `admin.managed_config_keys(key, value_kind, …)` 登记表，`is_managed_config_key` / `validate_managed_config_value` 改为查表，删除 24 个 `*_before_*`。
 
 ### 阶段 2：观测外迁
-- 建 `ops.llm_calls`（attempt_id 主键）、`ops.llm_cost_jobs`、`ops.chat_generation_timings`、`ops.media_generation_calls`、`ops.payment_events`、`ops.alert_*`、`ops.drama_playback_observations`、`ops.free_zone_events`。
+
+- 建 `ops.llm_calls`（attempt*id 主键）、`ops.llm_cost_jobs`、`ops.chat_generation_timings`、`ops.media_generation_calls`、`ops.payment_events`、`ops.alert*\*`、`ops.drama_playback_observations`、`ops.free_zone_events`。
 - 上游调用合并：
   - 畅聊多路调用写入 `experience.chat_generation_attempts`，补 candidate_id 和 slot 列；
   - 3 张供应商表和 `free_zone_calls` 的明细、成本写入 `ops.llm_calls`；
@@ -90,6 +95,7 @@
 - 核对：迁移前后同一时间窗的首字 P95、超时率、畅聊成本、支付告警，数字一致。
 
 ### 阶段 3：用户与状态拆分
+
 - `miniapp_user_settings` 拆成 4 份：
   - 资料列移到 `app_core.users`；
   - 偏好列保留，整表改名为 `app_core.user_preferences`；
@@ -100,10 +106,12 @@
 - 同步改：Prisma 模型、`claim_instruction_slot_modes`、`share_image_plaza_artifact`、邀请轮数奖励函数、`cs_feed` 视图、分析视图。
 
 ### 阶段 4：任务字段外迁
+
 - 建 `experience.chat_image_jobs`、`media_plaza.image_plaza_jobs`、`billing.payment_reconcile_jobs`，照 `story_memory_jobs` 的领取/提交模式。
 - 支付对账属于资金相邻改动：先双读核对一个对账周期，再删旧列。
 
 ### 阶段 5：对话热表瘦身
+
 - `chat_history.history` 移到 `experience.chat_prompt_snapshots`。
   - 13 个 RPC 引用这一列，逐个改；
   - 搬运按批次在线执行，避免长锁 23 GB 表；
@@ -112,6 +120,7 @@
 - 核对：消息列表、重生成、分叉、展示回填的人工场景；发送与列表接口的 P95。
 
 ### 阶段 6：计费统一（单独详细设计，所有者评审后才执行）
+
 - 设计 `billing.usage_charges`：
   - 一次可计费动作一行；
   - 记录 feature 与引用、价格快照、生命周期 quoted → reserved → charged / waived / refunded、debit_ledger_id。
