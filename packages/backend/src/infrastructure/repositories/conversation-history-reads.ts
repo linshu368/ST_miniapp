@@ -35,7 +35,7 @@ export class ConversationHistoryReads {
 
     const base = this.db
       .from('session_chat_display')
-      .select('turn_index,user_input,assistant_reply,display_opening_message')
+      .select('turn_index,user_input,assistant_reply,display_opening_message,status')
       .eq('session_id', sessionId);
 
     // 已泄洪时窗口不含 turn 1，但开场白仍要保留 turn 1 的值。
