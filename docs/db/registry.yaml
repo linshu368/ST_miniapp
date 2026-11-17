@@ -930,7 +930,7 @@ tables:
       nature: D,
       owner: rpc:miniapp_analytics.refresh_grafana_core_day,
       status: active,
-      note: 表名含 grafana 属存量豁免,
+      note: 表名含 grafana 属存量豁免。cron grafana_core_recent_30m 刷今天、grafana_core_yesterday_close 刷昨天（2a）,
     }
   miniapp_analytics.drama_playback_observations:
     nature: O

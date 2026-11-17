@@ -18,7 +18,7 @@
   "commit": null,
   "pr_url": null,
   "subtasks": [],
-  "children": ["11-17-db-reorg-p1-foundation"],
+  "children": ["11-17-db-reorg-p1-foundation", "11-17-db-reorg-p2-observability"],
   "parent": null,
   "relatedFiles": [],
   "notes": "",
