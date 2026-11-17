@@ -6,7 +6,7 @@
 
 - 新表 `miniapp_traffic.user_attributions`（来源、bot/MiniApp 首次进入、历史标记）与 `experience.user_chat_stats`（累计轮数，以 users 为准合并 settings 那份）；从 users 回填。
 - 新函数 `app_core.ensure_user`、`miniapp_traffic.enter_user`、`experience.increment_user_total_round`、`experience.user_total_round`。`record_app_entry`、`check_invite_chat_rounds_reward`、`cs_feed.user_profiles`、`traffic_daily_stats` 改读新表（视图输出不变）。删除 8 个无人使用的分析视图。
-- 发布窗口：users 上的触发器把旧后端写的归因列同步到新表；`app_core.increment_user_total_round` 暂留为兼容壳。收缩步删触发器、兼容壳与 users 的 5 列、settings.total_round（守卫：新表缺值或仍有函数引用旧列时拒绝）。
+- 发布窗口：users 上的触发器把旧后端写的归因列同步到新表；`app_core.increment_user_total_round` 暂留为兼容壳。收缩步先在 users 锁内按回填规则再补一次（扩展执行期间旧后端只写进 users 的残差，生产实测 1 人差 1 轮），再删触发器、兼容壳与 users 的 5 列、settings.total_round（守卫：补齐后仍有缺口或仍有函数引用旧列时拒绝）。
 - 验证：`bash scripts/test-db-reorg-p3a-migration.sh`。
 - 发布：TEST 扩展 → 生产扩展 → 后端发布 → 核对 → TEST/生产收缩。回滚：扩展步不删列，回退后端即可。
 

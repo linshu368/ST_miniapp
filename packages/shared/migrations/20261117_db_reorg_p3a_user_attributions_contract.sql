@@ -6,7 +6,9 @@
 -- 删除：触发器 users_sync_attribution 及其函数、兼容函数 app_core.increment_user_total_round；
 --   app_core.users 的 source_id / bot_entered_at / miniapp_entered_at / total_round / st_initialized_at；
 --   app_core.miniapp_user_settings.total_round（重复计数，无读者）。
--- 守卫：新表缺行（users 有、归因表无）或仍有函数/视图引用旧列时拒绝。
+-- 补齐：扩展迁移执行期间旧后端仍在写，回填快照之后、兼容函数替换之前提交的写入只落在 users
+--   （生产 11-17 实测 1 个用户差 1 轮）。删列前在锁内按扩展迁移同一规则再补一次：归因只补空值，轮数取大。
+-- 守卫：补齐后仍有缺口，或仍有函数引用旧列时拒绝。
 --
 -- Verify: bash scripts/test-db-reorg-p3a-migration.sh（末段）。
 -- Release: TEST -> Production。
@@ -22,9 +24,33 @@ BEGIN
   IF to_regclass('miniapp_traffic.user_attributions') IS NULL OR to_regclass('experience.user_chat_stats') IS NULL THEN
     RAISE EXCEPTION 'apply 20261117_db_reorg_p3a_user_attributions.sql first';
   END IF;
-  -- 只有 users 还有这些列时才需要核对（可重跑）。
+  -- 只有 users 还有这些列时才需要补齐与核对（可重跑）。
   IF EXISTS (SELECT 1 FROM information_schema.columns
              WHERE table_schema = 'app_core' AND table_name = 'users' AND column_name = 'total_round') THEN
+    -- 后面 DROP COLUMN 本来就要 ACCESS EXCLUSIVE，提前拿锁，避免补齐与删列之间再有写入漏掉。
+    LOCK TABLE app_core.users IN ACCESS EXCLUSIVE MODE;
+
+    INSERT INTO miniapp_traffic.user_attributions AS ua
+      (user_id, source_id, bot_entered_at, miniapp_entered_at, st_initialized_at, created_at, updated_at)
+    SELECT u.id, u.source_id, u.bot_entered_at, u.miniapp_entered_at,
+      (to_jsonb(u) ->> 'st_initialized_at')::timestamptz, u.created_at, u.updated_at
+    FROM app_core.users u
+    ON CONFLICT (user_id) DO UPDATE SET
+      source_id = COALESCE(ua.source_id, EXCLUDED.source_id),
+      bot_entered_at = COALESCE(ua.bot_entered_at, EXCLUDED.bot_entered_at),
+      miniapp_entered_at = COALESCE(ua.miniapp_entered_at, EXCLUDED.miniapp_entered_at),
+      st_initialized_at = COALESCE(ua.st_initialized_at, EXCLUDED.st_initialized_at),
+      updated_at = now()
+    WHERE (ua.source_id IS NULL AND EXCLUDED.source_id IS NOT NULL)
+       OR (ua.bot_entered_at IS NULL AND EXCLUDED.bot_entered_at IS NOT NULL)
+       OR (ua.miniapp_entered_at IS NULL AND EXCLUDED.miniapp_entered_at IS NOT NULL)
+       OR (ua.st_initialized_at IS NULL AND EXCLUDED.st_initialized_at IS NOT NULL);
+
+    INSERT INTO experience.user_chat_stats AS st (user_id, total_round, updated_at)
+    SELECT u.id, u.total_round, now() FROM app_core.users u WHERE u.total_round > 0
+    ON CONFLICT (user_id) DO UPDATE SET total_round = EXCLUDED.total_round, updated_at = now()
+    WHERE st.total_round < EXCLUDED.total_round;
+
     IF EXISTS (SELECT 1 FROM app_core.users u
                LEFT JOIN miniapp_traffic.user_attributions a ON a.user_id = u.id
                WHERE a.user_id IS NULL

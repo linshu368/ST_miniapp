@@ -5,7 +5,8 @@
 # - enter_user: new account records source, entry markers fill once, no write when nothing changes;
 # - old backend writes on app_core.users and the old increment RPC still land in the new tables;
 # - check_invite_chat_rounds_reward and record_app_entry read the new tables;
-# - contract refuses while new tables lag, then drops the moved columns and compat objects, idempotently.
+# - contract refuses while a function reads moved columns; reconciles release-window race leftovers (missing
+#   attribution values/rows, rounds written only to users), then drops the moved columns and compat objects, idempotently.
 set -euo pipefail
 task_root="$(cd "$(dirname "$0")/.." && pwd)"
 expand="$task_root/packages/shared/migrations/20261117_db_reorg_p3a_user_attributions.sql"
@@ -259,10 +260,22 @@ END $entry$;
 SQL
 echo 'OK: expand'
 
-# Contract refuses while a value only exists on users.
-"${admin_psql[@]}" -c "UPDATE miniapp_traffic.user_attributions SET source_id = NULL WHERE user_id = (SELECT id FROM app_core.users WHERE tg_id = '1003')" >/dev/null
-if "${admin_psql[@]}" >/dev/null 2>&1 < "$contract"; then echo 'contract ran while attributions lag' >&2; exit 1; fi
-"${admin_psql[@]}" -c "UPDATE miniapp_traffic.user_attributions a SET source_id = u.source_id FROM app_core.users u WHERE u.id = a.user_id AND u.tg_id = '1003'" >/dev/null
+# Contract refuses while a function still reads a moved column.
+"${admin_psql[@]}" -c "CREATE FUNCTION app_core.legacy_reader() RETURNS bigint LANGUAGE sql AS 'SELECT sum(u.total_round) FROM app_core.users u'" >/dev/null
+if "${admin_psql[@]}" >/dev/null 2>&1 < "$contract"; then echo 'contract ran while a function reads moved columns' >&2; exit 1; fi
+"${admin_psql[@]}" -c "DROP FUNCTION app_core.legacy_reader()" >/dev/null
+
+# Release-window race leftovers (old backend wrote only to users while expand ran) are reconciled, not refused.
+"${admin_psql[@]}" >/dev/null <<'SQL'
+UPDATE miniapp_traffic.user_attributions SET source_id = NULL, miniapp_entered_at = NULL
+  WHERE user_id = (SELECT id FROM app_core.users WHERE tg_id = '1003');
+DELETE FROM miniapp_traffic.user_attributions WHERE user_id = (SELECT id FROM app_core.users WHERE tg_id = '1004');
+UPDATE app_core.users SET total_round = total_round + 1 WHERE tg_id = '1005';
+CREATE TABLE test_fixture.race AS
+  SELECT u.tg_id, u.source_id, u.miniapp_entered_at, u.total_round,
+    experience.user_total_round(u.id) AS stats_before
+  FROM app_core.users u WHERE u.tg_id IN ('1003', '1004', '1005');
+SQL
 
 "${admin_psql[@]}" >/dev/null < "$contract"
 "${admin_psql[@]}" >/dev/null < "$contract"
@@ -279,6 +292,18 @@ BEGIN
   END IF;
   IF (SELECT count(*) FROM miniapp_traffic.traffic_daily_stats) < 20 OR (SELECT count(*) FROM cs_feed.user_profiles) < 60 THEN
     RAISE EXCEPTION 'views broken after contract'; END IF;
+  IF EXISTS (SELECT 1 FROM test_fixture.race r JOIN app_core.users u ON u.tg_id = r.tg_id
+             LEFT JOIN miniapp_traffic.user_attributions a ON a.user_id = u.id
+             WHERE a.user_id IS NULL
+                OR a.source_id IS DISTINCT FROM r.source_id
+                OR a.miniapp_entered_at IS DISTINCT FROM r.miniapp_entered_at
+                OR experience.user_total_round(u.id) <> GREATEST(r.total_round, r.stats_before)) THEN
+    RAISE EXCEPTION 'race leftovers not reconciled';
+  END IF;
+  IF (SELECT stats_before FROM test_fixture.race WHERE tg_id = '1005')
+     >= (SELECT total_round FROM test_fixture.race WHERE tg_id = '1005') THEN
+    RAISE EXCEPTION 'fixture did not create a rounds gap';
+  END IF;
 END $after$;
 INSERT INTO test_fixture.r VALUES ('post_enter', miniapp_traffic.enter_user('8001', 'chan_a', 'miniapp'));
 INSERT INTO test_fixture.r VALUES ('post_entry', miniapp_traffic.record_app_entry('8002', 'mijing', '', now()));
