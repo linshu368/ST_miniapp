@@ -215,20 +215,6 @@ tables:
   app_core.text_postprocess_versions:
     { nature: C, owner: backend/src/features/text-postprocess, status: active }
 
-  app_core.alert_incidents:
-    nature: O
-    owner: 20261117_db_reorg_ops_alerts_free_zone_events.sql（兼容视图）
-    status: drop
-    phase: 2
-    note: 表已迁到 ops.alert_incidents；同名兼容视图只为发布窗口内的旧后端保留，后端上线后删除
-
-  app_core.alert_delivery_attempts:
-    nature: J
-    owner: 20261117_db_reorg_ops_alerts_free_zone_events.sql（兼容视图）
-    status: drop
-    phase: 2
-    note: 表已迁到 ops.alert_delivery_jobs；同名兼容视图后端上线后删除
-
   # ───────────────────────── experience ─────────────────────────
   experience.chat_sessions:
     nature: E
@@ -785,13 +771,6 @@ tables:
           phase: 2,
         }
       - { to: ops.llm_cost_jobs, cols: [cost_attempts, settled_at], phase: 2 }
-
-  miniapp_features.free_zone_events:
-    nature: O
-    owner: 20261117_db_reorg_ops_alerts_free_zone_events.sql（兼容视图）
-    status: drop
-    phase: 2
-    note: 表已迁到 ops.free_zone_events；同名兼容视图后端上线后删除
 
   miniapp_features.free_zone_models:
     nature: S

@@ -73,6 +73,7 @@ const RULES = [
       'packages/shared/migrations/20261010_payment_alerting_foundation.sql',
       'packages/shared/migrations/20261112_free_zone.sql',
       'packages/shared/migrations/20261117_db_reorg_ops_alerts_free_zone_events.sql',
+      'packages/shared/migrations/20261117_db_reorg_drop_ops_compat_views.sql',
     ],
   },
 
