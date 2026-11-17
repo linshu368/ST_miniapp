@@ -6,10 +6,9 @@ import { RefreshCw } from 'lucide-react';
 import { DramaPlayer } from './drama-player';
 import { DramaHomeEmpty, DramaHomeFrame, DramaHomeLoading } from './drama-home-frame';
 import { cn } from '@/lib/utils';
-import { preloadDramaHls } from '@/lib/drama-media-source';
-import { afterNavigationQuietWindow } from '@/lib/navigation-quiet-window';
 import { useDramaFeedQueue, useDramaListQuery } from '@/lib/api/drama';
 import { useDramaStreamWarmth } from '@/hooks/use-connection-warmth';
+import { useDramaPlaybackWarmup } from '@/hooks/use-drama-playback-warmup';
 import { markCriticalSettled } from '@/lib/entry-phase';
 import { dramaTiming } from '@/lib/perf/drama-observer';
 import { useFreshAfterFetch, usePageReady } from '@/lib/perf/page-ready';
@@ -19,16 +18,7 @@ import { useDramaLibraryStore, useHydrateDramaLibrary } from '@/stores/drama-lib
 export function DramaHome() {
   const query = useDramaListQuery('/watch');
   useDramaStreamWarmth();
-  useEffect(() => {
-    let cancelled = false;
-    // 首帧绘制 + 一次空闲后才预取 hls.js chunk，不与首屏关键资源抢带宽。
-    void afterNavigationQuietWindow().then(() => {
-      if (!cancelled) preloadDramaHls();
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  useDramaPlaybackWarmup();
   const hydrated = useHydrateDramaLibrary();
   const controlsVisible = useDramaLibraryStore((state) => state.playbackControlsVisible);
   const activeId = useDramaLibraryStore((state) => state.browse.activeId);
