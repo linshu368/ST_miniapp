@@ -32,7 +32,9 @@
         "frontend.business.conversation-ui",
         "frontend.business.drama-experience",
         "shared.business.conversation-contracts",
-        "database.business.conversation-storage"
+        "database.business.conversation-storage",
+        "backend.business.wallet-payment",
+        "database.business.billing-payment"
       ]
     },
     "mobile_performance": {
@@ -52,7 +54,9 @@
         "POST /api/dramas/play",
         "GET /api/image-plaza/video-artifacts/:artifactId/playback",
         "GET /api/image-plaza/video-artifacts/:artifactId/download",
-        "POST /api/image-plaza/playback-observations"
+        "POST /api/image-plaza/playback-observations",
+        "GET /api/image-plaza/works/:workId",
+        "POST /api/image-plaza/conversations/:conversationId/video-attempts"
       ],
       "android": {
         "page_p95_baseline_ms": null,
@@ -79,7 +83,8 @@
         "视频上传Cloudflare、编码状态、发布与补偿",
         "工作室/详情HLS取址、下载、首帧和失败恢复",
         "短剧复用能力回归及业务上下文白名单修正",
-        "TEST全部13个视频迁移、校验、数据切换与清理"
+        "TEST全部13个视频迁移、校验、数据切换与清理",
+        "TEST预览缺签名导致详情503，以及钱包视频预扣P0001的定位和最小守卫恢复"
       ],
       "integration_points": [
         "platform/observability/fetch.ts与jobs.ts、context.ts",
@@ -138,7 +143,8 @@
       "failure_paths": [
         "上传超时或未知结果、429和有限退避、重复创建与重启恢复",
         "转码失败、码率未就绪、发布结果未知及补偿失败",
-        "无权限、签名失效、HLS失败、切源/离页/后台中断与下载尚未就绪"
+        "无权限、签名失效、HLS失败、切源/离页/后台中断与下载尚未就绪",
+        "Railway缺配置、钱包类型遗漏、迁移未知/重复守卫或属性异常；沿原HTTP/DB根及安全cause关联，不输出任意异常正文"
       ],
       "correlation": "统一business_module=image，修正video被过滤问题；可信任务/鉴权记录绑定user、image_conversation、attempt、artifact、work，继承request/trace/span。异步轮次独立根、逐资产隔离，不为日志额外查库。",
       "redaction": "只输出显式白名单的状态、计数、耗时和安全错误；不记录token、私钥、签名URL、提示词、完整响应或任意DTO；业务ID不进入指标/Sentry标签。",
@@ -146,7 +152,8 @@
       "verification": [
         "真实Pino JSON验证关联字段、脱敏、一次终态、并发隔离、原错误与业务结果不变",
         "pnpm lint:backend-logging及既有观测测试；覆盖上传未知、转码失败、刷新失败和关闭告警",
-        "前端首帧/seek/卡顿到后端出口全链验证；TEST/Railway实际检索在环境与发布确认后执行"
+        "前端首帧/seek/卡顿到后端出口全链验证；TEST/Railway实际检索在环境与发布确认后执行",
+        "pr-566真实提交HTTP500/request/trace/cause=P0001及预览修复后12作品HTTP200；钱包forward-fix执行后复核目录/账本及受控生成"
       ]
     },
     "test_data_migration": {
@@ -169,9 +176,20 @@
       "rendition_min": 3,
       "rendition_max": 5,
       "sample_download_range_readable": true,
-      "database_cutover_applied": false,
+      "database_cutover_applied": true,
       "source_cleanup_applied": false,
-      "runtime_config": "复用DRAMA_STREAM签名、CLOUDFLARE_ACCOUNT_ID和现有VIDEO_STREAM_API_TOKEN；.env私钥格式已修复，不输出或提交值"
+      "runtime_config": "复用DRAMA_STREAM签名、CLOUDFLARE_ACCOUNT_ID和现有VIDEO_STREAM_API_TOKEN；.env私钥格式已修复，不输出或提交值",
+      "database_cutover_run": "https://github.com/linshu368/ST_miniapp/actions/runs/44105293858"
+    },
+    "preview_recovery": {
+      "environment": "pr-566",
+      "deployment_id": "1c35abe9-4257-4ace-860e-9767c2a494c1",
+      "commit": "73056646d8117b904258e157c053b890fb6b98d7",
+      "public_work_count": 12,
+      "playback_api_verified": true,
+      "wallet_guard_fix_remote_applied": true,
+      "wallet_guard_fix_ledger_recorded": false,
+      "generation_blocker": "Venice queue HTTP402; three attempts confirmed failed with video_provider_http_402 and no artifact"
     }
   }
 }

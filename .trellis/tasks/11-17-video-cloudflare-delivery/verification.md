@@ -33,3 +33,15 @@ TEST-API结构采集（不是MCP/生产结论）：现有video_quotes 13列、vi
 - 13条数据SQL已在独立PG引擎测试身份拒绝、末行CAS失败导致前12行整笔回滚、13行成功与重复执行稳定。
 - 新封面路径实测：Cloudflare JPEG获取、Supabase私有上传、同名upsert、签名回读SHA-256一致；随机临时TEST封面已清理，原13个封面未改动。
 - 只读OpenAPI与样本下载的最终报告确认下载ready且Range可读。真实13条云端映射在Git外checkpoint保全；切库和源MP4清理尚未执行。
+
+## TEST 预览恢复与生成故障（2026-11-17）
+
+- 修复前：health 200，用户指定视频详情 503 / IMAGE_PLAZA_UNAVAILABLE。pr-566 已部署73056646，但缺全部DRAMA_STREAM签名/管理变量；本地.env不进入镜像。
+- 修复：仅向pr-566 Backend安全复制用户授权.env的五项Stream配置；未输出或提交值。Railway新部署1c35abe9-4257-4ace-860e-9767c2a494c1为SUCCESS，同一源码SHA。
+- HTTPS验收：原失败详情200；12个已发布视频的详情、artifact刷新、封面、HLS主/子清单和真实分片全部通过，3–5档。未进行本地UI或真机/P95测试。最初诊断客户端一次403，后续签名公钥验证、UID与host/密钥ID比对通过，正常浏览器User-Agent链路全量200；不把单个客户端失败泛化为播放不可用。
+- 生成第一故障：14:47Z提交在reserve边界P0001。只读TEST目录证实11-11重建的helper只允许chat/image，原10-27视频类型丢失；ledger CHECK仍允许视频。新forward-fix只补唯一已知守卫，不覆盖现行钱包主体。
+- 用户报告执行后于14:56Z复核：视频类型允许、bonus-first、service-only权限及security/search_path均true；仓库repo_migrations未登记此文件。不使用force_rerun、不重复改库，账本来源需另对账。
+- 当前生成故障：14:53:47、14:53:58、14:54:12Z的三个任务均已进入Venice queue并收到HTTP402；三个任务API回读均为failed / video_provider_http_402且无产物。官方Venice视频文档定义queue402为余额不足。需要运营者核对该环境VENICE_API_KEY对应余额/支出额度；本轮未发起额外付费生成、未换模型密钥，不能宣称新生成成功。
+- 回归：Backend五文件36项；shared24文件253项；8个workspace消费者typecheck通过。新增隔离PG/WASM加载真实钱包/视频reserve/refund函数，覆盖故障复现、一次扣退、余额不足、bonus-first/main_only、幂等与ACL、未知形状原子拒绝及matching只读postflight；既有Stream SQL交付回归仍通过。单连接不代替并发实况。
+- 静态：迁移命名、db-contract、日志规划/AST、模块payload、复杂度及脚本Prettier通过；db-contract有不相关drive_mode moving表警告，复杂度为原有基线提示。无运行时TS/TSX改动，本次保留同SHA原已通过的Frontend/Admin构建证据，不重复构建或上传source maps。
+- 根因复盘：部署配置传播遗漏与全局钱包函数重定义丢失后续调用方类型；此前交付测试替代了钱包函数，缺少真实reserve链路。防复发以真实函数联测、预览配置核对、保留helper调用方白名单和逐阶段验收为准。相关规则已补spec，工作区不自动提交/推送。

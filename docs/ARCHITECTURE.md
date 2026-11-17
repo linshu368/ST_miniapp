@@ -1,5 +1,7 @@
 # ST_miniAPP 架构说明
 
+2026-11-17 广场视频 TEST 修复：详情播放复用 Backend 的 DRAMA_STREAM 三项签名配置，Railway 预览环境必须单独配置；本地 `.env` 不随镜像发布。`pr-566` 已补齐五项 Stream 配置并验证12个已发布作品。视频预扣经 `billing.reserve_media_plaza_video → billing.apply_wallet_debit`，后者的完整重定义必须保留视频调用方的类型白名单；新守卫修复已在 TEST 生效（仓库账本未登记），只扩展该类型，现行专项优先和权限核验通过；后续真实任务被 Venice queue 的402拒绝。见 [运行手册](video-plaza-stream.md)。
+
 2026-11-16 内容链候选：`/chats` 的公开摘要lookup仅订阅已有Query/持久快照，补缺详情在enrich/导航安静窗后以normal执行，按既有用户+session key短期内存复用。分组RPC只对自身取消期限或已知依赖超时返回503/folders_unavailable，未知编程/权限错误保留；groups和flat共用250ms可取消的可选summary预算。自动推荐open/resume总预算1500ms，手动刷新/撤回（包括兼容open）保持5000ms，UUID和viewer隔离不变。HTTP契约不新增字段，无SQL迁移；先兼容Backend再Frontend，生产验收与条件性D/E变更见 [实施说明](../.trellis/tasks/11-12-overnight-page-performance/content-path-optimization-2026-11-16.md)。
 
 2026-11-16 MiniApp 冷启动专项（本地候选）：`/` 按 landing cookie 内部 rewrite 到已有静态 `/chats` 或 `/characters`，返回一个文档；Providers 根据实际路由树保持 SSR 框架一致，捕获 Telegram 启动上下文后用原生 History API 同步规范路径，再挂业务。可见会话列表第一页使用预留 critical 槽，分页维持 normal；groups 遥测独立于 conversation_detail，历史指标不能直接混比。未改变后端/鉴权/私人缓存，生产效果需发布后验证。见 [专项说明](../.trellis/tasks/11-12-overnight-page-performance/cold-start-optimization-2026-11-16.md)。

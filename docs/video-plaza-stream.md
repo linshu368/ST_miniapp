@@ -1,12 +1,22 @@
 # 广场视频 Cloudflare Stream 切换
 
-本地候选代码，TEST 数据库迁移及应用发布尚待执行；不代表生产已部署。范围是未来新生成视频与指定 TEST 的现有13条。用户确认不保留广场旧MP4播放兼容，封面及业务数据保留在Supabase。
+2026-11-17 TEST 实况：13条资产映射已由 Database Migration 执行并记账；`pr-566` 部署 SHA `73056646`，补齐签名/管理配置后，12个已发布视频的详情、刷新取址、封面、主/子清单与实际分片通过 HTTPS 验证（3–5档）。生产未在本任务操作。范围是未来新生成视频与指定 TEST 的现有13条；不保留广场旧MP4播放兼容，封面及业务数据保留在Supabase。
 
 ## 配置
 
 后端复用短剧 `DRAMA_STREAM_HOST`、`DRAMA_STREAM_KEY_ID`、`DRAMA_STREAM_PRIVATE_KEY`，不依赖短剧A/B开关或片单。私钥接受完整PEM或Base64 PEM；`.env` 多行PEM必须正确引用，不能只解析出首行。上传读取 `CLOUDFLARE_ACCOUNT_ID` 与 `CLOUDFLARE_API_TOKEN`；现有 `VIDEO_STREAM_API_TOKEN` 作为管理Token别名继续使用。不需要 `VIDEO_STREAM_CONFIG` 或 `VIDEO_STREAM_PRIVATE_KEY`。
 
 账户必须与短剧播放host及签名密钥相符，Token需Stream读写权限。账户ID不能由customer主机名推测。OAuth仅供Codex连接，不能替代服务端Token。变量只存后端受保护环境，不提交`.env`。播放本地签名不需要管理Token；新生成受理需要完整管理配置。默认交付期限20分钟。
+
+本地 `.env` 不会自动进入 Railway。每个预览 Backend 都必须有上述三项 DRAMA_STREAM 与两项管理配置；缺少签名时 feed 封面仍可显示，但作品详情会在签发播放地址时返回 `IMAGE_PLAZA_UNAVAILABLE`/503。验证清单时使用正常浏览器 User-Agent；诊断客户端受到 Cloudflare 拒绝不能直接推断浏览器播放失败，须对比同一签名和实际分片。
+
+## 视频预扣守卫修复（TEST 已生效，账本待对账）
+
+11-11 的专项优先钱包迁移重建 `apply_wallet_debit` 时恢复了早期 chat/image 类型列表，遗漏10-27已加入的视频预扣类型。TEST 目录确认 ledger CHECK 允许视频类型，当前 helper 却拒绝；提交日志在 `video-repository.ts:213` 出现 P0001，尚未进入模型调用。
+
+新增 `20261117_media_plaza_video_wallet_entry_guard.sql` 只对当前 helper 的唯一已知守卫补回 `media_plaza_video_reserve`，完整保留现行分账、幂等、权限与函数 OID；未知形状拒绝，已修复重放为空操作。匹配的 TEST postflight 只读核验类型、专项优先及权限。隔离 PostgreSQL/WASM 已验证真实 reserve/refund、重复调用、余额不足与原策略不变。用户报告已执行后，14:56Z TEST 只读目录确认视频类型、专项优先、固定 search_path 与权限均符合；仓库迁移账本无该文件记录，执行来源须单独对账，不盲重跑旧视频/钱包迁移或修改历史流水。
+
+14:53:47、14:53:58、14:54:12Z 同一会话的三个新任务已越过预扣并进入 Venice queue，均被上游402拒绝；任务 API 为 failed / video_provider_http_402，无视频产物，尚未进入 Cloudflare 上传。Venice 官方视频文档将 queue 402 定义为余额不足；需由运营者核对 pr-566 当前 VENICE_API_KEY 的供应商余额/支出额度，补足后再由用户重试。未替换模型密钥、未发起额外付费生成。
 
 ## 数据和交付
 

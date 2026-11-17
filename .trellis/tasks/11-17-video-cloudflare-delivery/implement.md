@@ -53,3 +53,21 @@
 保存不含secret的stage/计数/时延、13/13校验与恢复摘要；真实Cloudflare处理、码率、权限、下载、真机和P95分别标注已验或未验。本功能纳入既有@image，并用@drama锁定复用回归。完成后更新相关spec/README/架构与module-updates，再按最终内容审核暂存/提交，未经明确授权不推送。
 
 2026-11-17用户执行中明确“不需要本地UI验证测试”：停止本地UI验收，保留现有fixture契约适配，不再继续Windows预览环境排查。UI未完成，不作为通过证据；类型/单测/构建与真实Cloudflare校验继续。
+
+## TEST 预览详情 503 排查与恢复（2026-11-17）
+
+- 已部署 SHA 为 `73056646`，`pr-566` 的健康检查 200，指定视频详情复现 `IMAGE_PLAZA_UNAVAILABLE`/503。
+- Railway 环境变量清单缺少全部 DRAMA_STREAM 签名配置及 Cloudflare 管理配置。源码在详情签发链接时要求前者；本地 `.env` 不会随镜像进入 Railway。
+- 复用用户指定的本地 Backend `.env`，仅补齐 `pr-566` Backend 的三项签名配置及账户/管理 Token，共五项。通过现有 getter 校验签名与管理配置；不改产品契约、数据库、认证开关或其他环境。
+- 五项一次性提交，更新值的操作可安全重复；变更后等待同一已部署构建重启，核验 health、原失败详情、全部公开视频作品取址以及每个 HLS 主清单/实际分片；未取得实际响应不宣称恢复。部署失败保留已部署构建与云端资产，先检查配置，不重跑数据迁移。
+- 日志复用 `image_plaza.request_failed`、HTTP 终态和 `video.delivery.manifest`；只记录状态/结果/时延/计数和已有 request/trace，不保存私钥、Token、initData 或播放签名。配置变更与部署由 Railway 审计；本次不打开通知告警。
+- 通过 HTTPS API 验证，不运行本地 UI；移动端 P95 仍无有效样本，不能把单次 API 时延写成 P95。
+
+## 视频受理钱包守卫恢复计划（2026-11-17）
+
+- Railway 14:47:29Z 的提交请求在 `video-repository.ts:213` 失败，数据库 cause 为 P0001。确认目标 TEST 后，以只读事务采集函数/约束目录；`reserve_media_plaza_video` 传入视频预扣类型，而当前 `apply_wallet_debit` 只允许 chat/image。11-11 轻量文本专项优先迁移重建函数时覆盖了10-27的视频白名单扩展，账本 CHECK 仍允许视频类型。
+- 复用原 reserve/refund、统一钱包 helper、幂等键和日志出口；拒绝重跑10-27旧迁移（会恢复旧发布函数）或覆盖新版钱包函数。新增单文件 forward-fix，只替换当前函数内唯一、已知的 entry_type 守卫，原主体与 bonus-first、所有属性/ACL/OID 保持，未知形状事务拒绝。已修复重放为空操作。
+- 数据落位：已有 billing/M 函数，writer 与生命周期不变，无新对象/列/jsonb 键，也不新增跨域引用。5秒锁/30秒语句期限；函数替换与断言同事务，无钱包/流水数据回填、无模型调用。并发 DDL 由 workflow 环境互斥，应用调用沿原钱包行锁和幂等路径；未知执行结果先查账本/目录，不 force_rerun。
+- 日志复用提交 HTTP 根、db.supabase 与 `image_plaza.request_failed` 的 request/trace/cause；新增迁移只输出固定守卫失败码，允许类型变化不放开任意错误正文，不打开通知。验证已有真实日志 P0001 关联与后续响应；审批后在 TEST workflow 执行并复核目录。
+- 风险评估：涉及钱与迁移，必须新增最小隔离 PostgreSQL/WASM 回归，加载真实钱包/视频 reserve/refund 函数及新迁移；覆盖旧守卫复现、视频预扣/幂等/退款一次、额度不足零扣、聊天专项优先/图片通用策略不变、非法类型、未知守卫拒绝/原子回滚、重放和 ACL。单连接不冒充多连接并发；已有钱包机制未改。
+- 发布/恢复：审核最终文件后提交/单独授权推送，再通过 Database Migration 单文件 TEST apply，回读类型守卫和流水约束；不动生产。保留现行分账/退款事实，异常停止受理并采用新 forward-fix，不重跑旧钱包迁移。工程师可复用既有 @image 场景补真实提交失败提示；本轮免本地 UI，单次 HTTP 耗时不作 Android/iOS P95。

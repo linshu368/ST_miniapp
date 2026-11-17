@@ -1,5 +1,7 @@
 # ST_miniapp
 
+2026-11-17 广场 Stream TEST 验证：13 条资产映射已通过 workflow 执行；`pr-566` Backend 已补齐受保护的短剧签名/Cloudflare 管理配置，12 个已发布视频的详情、刷新取址、封面及 HLS 分片验证通过。新生成受理遗漏的视频钱包类型已在 TEST 修复，分账/权限回读通过；三次实际任务随后进入 Venice queue，但上游返回402，供应商余额仍待处理。修复脚本为 `20261117_media_plaza_video_wallet_entry_guard.sql`，仓库账本尚未登记。执行顺序和验证边界见 [运行手册](docs/video-plaza-stream.md)。
+
 2026-11-16 内容链优化（本地候选）：会话页只读已有公开角色摘要，缺失详情走 normal 并按用户/会话保留1分钟内存缓存；分组只读依赖超时返回既有503，标签summary最多等待250ms；自动推荐预算1.5秒、手动操作5秒。无新增私人持久缓存或数据库迁移。本轮按用户要求不启动本地UI，详情及发布门禁见 [实施说明](.trellis/tasks/11-12-overnight-page-performance/content-path-optimization-2026-11-16.md)。
 
 2026-11-16 MiniApp 冷启动专项（本地候选）：根入口按 landing cookie 内部 rewrite，直接返回已有会话或大厅静态框架；保存 Telegram 启动参数后再规范地址，减少一次文档跳转。可见会话第一页使用预留 critical 槽。研究、验证和发布复测见 [专项说明](.trellis/tasks/11-12-overnight-page-performance/cold-start-optimization-2026-11-16.md)。
