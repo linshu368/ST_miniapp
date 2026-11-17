@@ -19,12 +19,12 @@ import type {
 import type { ExecutionObservation } from './generation-dispatch.js';
 /**
  * 单次聊天回复的可见正文上限（字符）。只数用户看得到的正文，不含推理。
- * 对应约 4500 token（实测 1.65 字符/可见 token）；近 7 天 3.7 万条成功回复里只有 20 条
- * （0.05%）的可见 token 超过 4500。
- * 模型偶发失控（无限续写记忆栏、复读）时靠它提前掐断，而不是烧到超时，单条可达 3 万字符。
+ * 对应约 3300 token（实测 1.65 字符/可见 token）。这是产品上有意收紧的长度：近 7 天约 1.4%
+ * 的正常回复会超过它（主要是 gemini-3.8-flash、deepseek-v4-pro 这类长文模型），会被截断。
+ * 同时拦截模型失控（无限续写记忆栏、复读），否则只能烧到超时，单条可达 3 万字符。
  * 触顶按中断处理：finish_reason=length，不扣费，已生成的部分保留。
  */
-export const CHAT_MAX_VISIBLE_CHARS = 7_400;
+export const CHAT_MAX_VISIBLE_CHARS = 5_400;
 
 type StreamInput = {
   request: GenerationRequest;
