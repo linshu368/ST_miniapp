@@ -54,6 +54,20 @@ export class MiniappVipRepository {
     };
   }
 
+  /** 最近一次开通/续费的时间（畅聊开通礼从这里算）；走 (user_id, granted_at DESC) 索引 */
+  async readLatestGrantAt(userId: string): Promise<string | null> {
+    const { data, error } = await this.billing
+      .from('vip_purchase_grants')
+      .select('granted_at')
+      .eq('user_id', userId)
+      .order('granted_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw new Error(`查询 VIP 开通记录失败：${error.message}`, { cause: error });
+    const grantedAt = (data as { granted_at?: unknown } | null)?.granted_at;
+    return typeof grantedAt === 'string' ? grantedAt : null;
+  }
+
   /**
    * 记录查看 VIP 入口。首次查看时间（first_at）写入后不再变，重装也不能把角标写回来。
    */

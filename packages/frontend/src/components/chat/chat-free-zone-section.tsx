@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { Check, ChevronDown, Clock3 } from 'lucide-react';
 import type { PublicFreeZone, PublicFreeZoneModel, PublicModelCatalogTier } from '@miniapp/shared';
 
-import { freeZoneStatusText, isFreeZoneOpen } from '@/lib/free-zone';
+import { freeZoneRulesText, freeZoneStatusText, isFreeZoneOpen, isVipZone } from '@/lib/free-zone';
 import { cn } from '@/lib/utils';
 
 const TIER_FALLBACK: Record<string, { label: string; color: string }> = {
@@ -16,6 +16,7 @@ const TIER_FALLBACK: Record<string, { label: string; color: string }> = {
 /**
  * 「畅聊」栏目：放在轻量/标准/旗舰上面，骨架沿用档位卡，用畅聊专用强调色（--free-zone，和主色金区分开），开放时描边加一道光带。
  * 开放写结束时间；未开放默认折叠，卡头照样显示规则（也是宣传位），点开能预览、不能选。
+ * 福利期外按身份展示：新人试用、会员（带 VIP 标签）、非会员（会员专享 + 卡内开通按钮）。
  */
 export function ChatFreeZoneSection({
   zone,
@@ -24,6 +25,7 @@ export function ChatFreeZoneSection({
   selecting,
   onSelect,
   onClosedTap,
+  onUpgrade,
 }: {
   zone: PublicFreeZone;
   tiers: PublicModelCatalogTier[];
@@ -31,6 +33,8 @@ export function ChatFreeZoneSection({
   selecting: boolean;
   onSelect: (modelId: string) => void;
   onClosedTap: () => void;
+  /** 非会员点「开通 VIP」 */
+  onUpgrade: () => void;
 }) {
   const open = isFreeZoneOpen(zone);
   // 用户手动开合优先；开放状态一变就回到默认（开放展开、未开放折叠）。
@@ -60,6 +64,19 @@ export function ChatFreeZoneSection({
         collapsed={collapsed}
         onToggle={() => setOverride(!collapsed)}
       />
+      {zone.state === 'vip_only' ? (
+        <div className="relative z-10 px-4 pb-3.5">
+          <button
+            type="button"
+            onClick={onUpgrade}
+            className="min-h-11 w-full rounded-xl bg-[linear-gradient(180deg,#f2d4a7,#d7ac78_60%,#c4935f)] text-[14.5px] font-extrabold text-[#2a1c10] shadow-[inset_0_1px_0_rgba(255,255,255,0.5)] transition-transform active:scale-[0.98]"
+          >
+            {zone.access && zone.access.vip_welcome_days > 0
+              ? `开通 VIP，立享 ${zone.access.vip_welcome_days} 天畅聊`
+              : '开通 VIP，每周畅聊'}
+          </button>
+        </div>
+      ) : null}
       {collapsed || zone.models.length === 0 ? null : (
         <div className="divide-y divide-border border-t border-border">
           {zone.models.map((model) => (
@@ -93,7 +110,8 @@ function FreeZoneHeader({
   collapsed: boolean;
   onToggle: () => void;
 }) {
-  const rules = zone.rules.trim();
+  const rules = freeZoneRulesText(zone);
+  const vipOnly = zone.state === 'vip_only';
   return (
     <button
       type="button"
@@ -110,9 +128,13 @@ function FreeZoneHeader({
         >
           畅聊
         </span>
-        <span className="min-w-0 flex-1 truncate text-[15px] font-semibold text-foreground">
-          免费畅聊
-        </span>
+        <span className="min-w-0 truncate text-[15px] font-semibold text-foreground">免费畅聊</span>
+        {isVipZone(zone) ? (
+          <span className="shrink-0 rounded-md border border-primary/50 px-1.5 py-px text-[10.5px] font-bold leading-tight text-primary">
+            VIP
+          </span>
+        ) : null}
+        <span className="flex-1" />
         <ChevronDown
           className={cn(
             'size-4 shrink-0 text-muted-foreground transition-transform motion-reduce:transition-none',
@@ -137,7 +159,11 @@ function FreeZoneHeader({
         <span
           className={cn(
             'flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold tabular-nums',
-            open ? 'border-free-zone/45 text-free-zone' : 'border-border text-muted-foreground'
+            open
+              ? 'border-free-zone/45 text-free-zone'
+              : vipOnly
+                ? 'border-primary/50 text-primary'
+                : 'border-border text-muted-foreground'
           )}
         >
           <Clock3 className="size-3" aria-hidden />

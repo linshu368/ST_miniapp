@@ -9,6 +9,7 @@ import { AlertCircle, ChevronLeft, Crown, ChevronRight, Loader2, Sparkles } from
 import { type CreatePaymentOrderData, type PaymentType } from '@miniapp/shared';
 
 import { VipBenefitArt, VipDailyBenefits } from '@/components/vip/vip-benefit-art';
+import { VipFreeZoneBenefit } from '@/components/vip/vip-free-zone-benefit';
 import { Button } from '@/components/ui/button';
 import { AlipayIcon, WeChatPayIcon } from '@/components/icons';
 import { formatNumber, formatYuanShort, safePaymentReturnTo } from '@/lib/utils/payment';
@@ -201,6 +202,7 @@ function VipPageContent() {
                   <span className="ml-1 text-[10px] text-muted-foreground">/期</span>
                 </p>
               </div>
+              <VipFreeZoneBenefit renewing={vipQuery.data?.active ?? false} />
               {monthlyPlan.bonus_credits + (monthlyPlan.bonus_main_credits ?? 0) > 0 ? (
                 <div className="mt-4 flex items-start gap-2 rounded-2xl border border-primary/15 bg-primary/[0.06] px-3 py-2.5">
                   <Sparkles className="mt-0.5 size-3.5 shrink-0 text-primary" aria-hidden />

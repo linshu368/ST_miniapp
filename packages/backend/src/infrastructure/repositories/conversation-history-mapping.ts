@@ -150,6 +150,7 @@ export function toChatMessages(row: ConversationHistoryRow): ChatMessage[] {
       error_code: toErrorCode(row.status),
       finish_reason: row.llm_finish_reason,
       model_id: row.model,
+      ...creditsPerTurn(row.deduction_rate),
       postprocess_version: readPostprocessVersion(row.postprocess_version),
       created_at: row.created_at,
     },
@@ -203,4 +204,11 @@ function extractRequestId(history: unknown[] | undefined): string | undefined {
   if (!first || typeof first !== 'object') return undefined;
   const requestId = (first as { request_id?: unknown }).request_id;
   return typeof requestId === 'string' ? requestId : undefined;
+}
+
+/** deduction_rate 是开轮时定下的每轮星尘；继承的历史在视图里是 NULL，不下发 */
+function creditsPerTurn(rate: number | string | null | undefined): { credits_per_turn?: number } {
+  if (rate === null || rate === undefined) return {};
+  const value = Number(rate);
+  return Number.isFinite(value) && value >= 0 ? { credits_per_turn: value } : {};
 }

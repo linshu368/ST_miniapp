@@ -1,8 +1,8 @@
 /**
  * 畅聊栏目的对外状态与自动换模型（纯函数）。
  *
- * 栏目状态只由后端按「用户 + 角色卡 + 当前时间」算出，前端不判断规则：
- * 开放规则会分阶段变化（整周免费 → 每周时段 → 限定范围），这样改规则不用改前端。
+ * 栏目状态只由后端按「用户身份 + 角色卡 + 当前时间」算出，前端不判断规则：
+ * 开放规则会变（福利期 → 新人试用 / 会员开通礼 / 会员每周畅聊日），这样改规则不用改前端。
  */
 import type {
   CatalogFreeZoneModel,
@@ -13,6 +13,7 @@ import type {
   ModelCatalogTierKey,
   PublicFreeZone,
 } from '@miniapp/shared';
+import type { FreeZoneAccessResult } from './access.js';
 
 /** 栏目里一个模型对用户可见的信息，两种来源都有 */
 export type FreeZoneEntry = Pick<
@@ -43,19 +44,20 @@ function originalCredits(tier: ModelCatalogTierKey, pricing: FixedDeductionConfi
   return Math.max(0, Math.round(pricing[tier]));
 }
 
-/** 返回 null 表示栏目不显示（总开关关、没配福利期、福利期已结束）。 */
+/**
+ * 返回 null 表示栏目不显示（总开关关、没配福利期、福利期已结束且没开按身份开放）。
+ * 开不开放由 access（evaluateFreeZoneAccess 的结果）决定；这里再叠加在架模型与卡片范围。
+ */
 export function resolveFreeZoneView(input: {
   config: FreeZoneConfig;
   listed: ListedFreeModel[];
-  now: Date;
   isOwnCard: boolean;
   pricing: FixedDeductionConfig;
+  access: FreeZoneAccessResult;
 }): PublicFreeZone | null {
-  const { config, listed, now } = input;
-  if (!config.enabled || !config.period) return null;
-  const startsAt = Date.parse(config.period.starts_at);
-  const endsAt = Date.parse(config.period.ends_at);
-  if (now.getTime() >= endsAt) return null;
+  const { config, listed, access } = input;
+  const state = access.state;
+  if (state.kind === 'hidden') return null;
 
   const base = {
     rules: config.rules_text,
@@ -66,15 +68,31 @@ export function resolveFreeZoneView(input: {
       benchmark_tier: candidate.benchmark_tier,
       original_credits: originalCredits(candidate.benchmark_tier, input.pricing),
     })),
+    access: access.publicAccess,
   };
-  if (now.getTime() < startsAt) {
-    return { state: 'not_started', starts_at: config.period.starts_at, ...base };
+  const iso = (ms: number) => new Date(ms).toISOString();
+  switch (state.kind) {
+    case 'not_started':
+      return { state: 'not_started', starts_at: iso(state.startsAt), ...base };
+    case 'vip_waiting':
+      return { state: 'vip_waiting', starts_at: iso(state.startsAt), ...base };
+    case 'vip_only':
+      return {
+        state: 'vip_only',
+        vip_day: {
+          open: state.vipDay.open,
+          starts_at: iso(state.vipDay.startsAt),
+          ends_at: iso(state.vipDay.endsAt),
+        },
+        ...base,
+      };
+    case 'open':
+      if (listed.length === 0) return { state: 'no_models', ...base };
+      if (config.scope === 'own_cards' && !input.isOwnCard) {
+        return { state: 'own_card_only', ...base };
+      }
+      return { state: 'open', ends_at: iso(state.endsAt), ...base };
   }
-  if (listed.length === 0) return { state: 'no_models', ...base };
-  if (config.scope === 'own_cards' && !input.isOwnCard) {
-    return { state: 'own_card_only', ...base };
-  }
-  return { state: 'open', ends_at: config.period.ends_at, ...base };
 }
 
 /**

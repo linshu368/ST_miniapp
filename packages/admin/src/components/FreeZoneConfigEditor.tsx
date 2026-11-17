@@ -28,6 +28,7 @@ import {
   freeZoneIssues,
   toPeriodTime,
 } from '../lib/freeZoneForm';
+import { FreeZoneAccessEditor } from './FreeZoneAccessEditor';
 import { FreeZoneScreeningOptions } from './FreeZoneScreeningOptions';
 import { FreeZoneCandidatesEditor } from './FreeZoneCandidatesEditor';
 import { FreeZoneScreeningPanel } from './FreeZoneScreeningPanel';
@@ -240,8 +241,8 @@ function OpenSettings(props: {
           }}
         />
         <Typography.Text type="secondary">
-          开放时栏目显示「结束时间 结束」；没到开始时间显示「开始时间
-          开始」；过了结束时间栏目隐藏。要延长就改结束时间。
+          福利期内所有人都能用：栏目显示「结束时间 结束」；没到开始时间显示「开始时间
+          开始」。过了结束时间：按身份开放关着就隐藏，开着就按下面的规则。
         </Typography.Text>
       </div>
       <div>
@@ -336,6 +337,13 @@ export function FreeZoneConfigEditor(props: {
       ) : null}
       <Section title="栏目开放">
         <OpenSettings value={value} disabled={props.disabled} onChange={update} />
+      </Section>
+      <Section title="福利期外按身份开放（新人试用 / 会员）">
+        <FreeZoneAccessEditor
+          value={value.access}
+          disabled={props.disabled}
+          onChange={(access) => update({ access })}
+        />
       </Section>
       <StatusSection value={value} disabled={props.disabled} onChange={update} />
       <CandidatePool

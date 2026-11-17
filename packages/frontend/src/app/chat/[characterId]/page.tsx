@@ -600,6 +600,7 @@ export default function SelfHostedChatPage() {
       <ChatMessageList
         key={activeSessionId ?? 'pending'}
         messages={messages}
+        freeZoneCatalog={modelCatalogQuery.data}
         editDisabled={generating || serverBusy || branch.creating || !session.ready}
         onEditingChange={setEditingMessage}
         viewportHeight={viewportHeight}
