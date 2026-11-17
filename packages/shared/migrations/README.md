@@ -1,5 +1,16 @@
 # SQL 迁移文件
 
+## 2026-11-17 数据库重组阶段 3b-2：资料进 users，settings 改名 user_preferences（本地 PG17 非超级用户验证）
+
+`20261117_db_reorg_p3b2_user_profile.sql`（扩展）+ `20261117_db_reorg_p3b2_user_profile_contract.sql`（收缩，后端发布后执行）。计划见 `.trellis/tasks/11-17-db-reorg-p3-user-state/design.md` 3b-2。
+
+- `app_core.users` 加 6 个资料列并回填；TG 资料刷新改为 `app_core.refresh_user_profile`，值没变不写。`avatar_url`（旧 TG 头像链接，无人读）不迁，收缩步删除。
+- 扩展步建同名自动可更新视图 `app_core.user_preferences`（只含偏好列），新后端从发布起就用最终名字；`cs_feed.user_identities`（保留 security_barrier）与两个运营函数改读 users，输出不变。
+- 发布窗口资料双向同步，新建 settings 行先从 users 填资料（不变式：窗口内两边一致，收缩步才能按 settings 补 users）。
+- 收缩：锁表补齐 → 守卫（除 4 个偏好函数外无函数/视图引用旧表）→ 删视图、表改名（约束同步改名）、删 7 个资料列 → 4 个偏好函数换新表名。
+- 验证：`bash scripts/test-db-reorg-p3b2-migration.sh`。
+- 发布：TEST 扩展 → 生产扩展 → 后端发布 → 核对 → TEST/生产收缩。回滚：扩展步不删列且双向同步，回退后端即可。
+
 ## 2026-11-17 数据库重组阶段 3b-1：一次性标记进 user_marks（本地 PG17 非超级用户验证）
 
 `20261117_db_reorg_p3b1_user_marks.sql`（扩展）+ `20261117_db_reorg_p3b1_user_marks_contract.sql`（收缩，后端发布后执行）。计划见 `.trellis/tasks/11-17-db-reorg-p3-user-state/design.md` 3b-1。

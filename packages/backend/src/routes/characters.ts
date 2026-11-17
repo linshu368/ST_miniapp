@@ -128,7 +128,7 @@ async function resolveCharacterDetailCredit(
             AND app_core.can_discover_character(card.id)
         ) THEN ${publicCreatorIdSql(Prisma.sql`creation.owner_user_id`)} END AS public_creator_id
       FROM app_core.character_creations creation
-      LEFT JOIN app_core.miniapp_user_settings settings ON settings.user_id = creation.owner_user_id
+      LEFT JOIN app_core.users settings ON settings.id = creation.owner_user_id
       WHERE creation.character_id = ${characterId}::uuid
     `;
     if (profile)

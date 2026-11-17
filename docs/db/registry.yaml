@@ -51,44 +51,33 @@ tables:
   # ───────────────────────── app_core ─────────────────────────
   app_core.users:
     nature: E
-    owner: backend/src/lib/user.ts
-    status: moving
-    keep: [id, tg_id, created_at, updated_at]
-    note: 3a 已把归因列迁到 miniapp_traffic.user_attributions、轮数迁到 experience.user_chat_stats（收缩步删列）。建号只走 app_core.ensure_user。阶段 3b 从 miniapp_user_settings 迁入 TG 资料与用户自定义资料
+    owner: backend/src/lib/user.ts（身份）+ backend/src/infrastructure/repositories/UserProfileRepository.ts（资料）
+    status: active
+    keep:
+      [
+        id,
+        tg_id,
+        tg_username,
+        tg_first_name,
+        tg_last_name,
+        tg_avatar_url,
+        display_name,
+        custom_avatar_url,
+        created_at,
+        updated_at,
+      ]
+    note: 身份 + 资料。建号只走 app_core.ensure_user；TG 资料只经 app_core.refresh_user_profile（值没变不写）。归因在 miniapp_traffic.user_attributions、轮数在 experience.user_chat_stats（3a），资料 3b-2 从 miniapp_user_settings 迁入
 
   app_core.miniapp_user_settings:
     nature: S
     owner: backend/src/infrastructure/repositories/MiniappUserSettingsRepository.ts
-    status: moving
-    note: 阶段 3 拆完后整表改名为 app_core.user_preferences。*_full_rules_remaining 三列与 claim_instruction_slot_modes 等 4 个函数 10-13 起只为回滚保留，3b-1 已删
-    move:
-      - {
-          to: app_core.users,
-          cols:
-            [
-              tg_username,
-              tg_first_name,
-              tg_last_name,
-              tg_avatar_url,
-              display_name,
-              custom_avatar_url,
-              avatar_url,
-            ],
-          phase: 3,
-          note: avatar_url 若可由另两列推导则删除,
-        }
-      - {
-          to: miniapp_features.user_marks,
-          cols: [characters_last_seen_at, vip_entry_seen_at],
-          phase: 3,
-          note: 3b-1 已回填并双向同步，收缩步删列,
-        }
-      - {
-          to: billing.image_plaza_share_rewards,
-          cols: [image_plaza_first_share_completed_at],
-          phase: 3,
-          note: 3b-1 首发分享改由返利记录是否存在推导（生产 7 人完全一致），收缩步删列,
-        }
+    status: drop
+    note: 3b-2 改名 app_core.user_preferences（资料列迁到 users，avatar_url 无人读直接删；标记 3b-1 已迁 user_marks、计数器已删）。只剩发布窗口，收缩步改名
+
+  app_core.user_preferences:
+    nature: S
+    owner: backend/src/infrastructure/repositories/MiniappUserSettingsRepository.ts
+    status: active
     keep:
       [
         user_id,
@@ -105,13 +94,7 @@ tables:
         created_at,
         updated_at,
       ]
-
-  app_core.user_preferences:
-    nature: S
-    owner: backend/src/infrastructure/repositories/MiniappUserSettingsRepository.ts
-    status: planned
-    phase: 3
-    from: app_core.miniapp_user_settings（改名，只保留生成与语音偏好）
+    note: 用户级生成与语音偏好（每用户一行，无行=全部默认）。由 miniapp_user_settings 改名（3b-2）；回复风格、三个指令槽开关只经各自 RPC 原子更新
 
   app_core.characters:
     nature: E
