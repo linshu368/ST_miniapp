@@ -66,6 +66,6 @@ export function buildPublicCreatorPageQuery(publicId: string, page: number): Pri
         FROM shown w JOIN app_core.characters c ON c.id = w.id
         LEFT JOIN reply_likes r ON r.character_id = c.id
       ), '[]'::jsonb) AS cards
-    FROM author a LEFT JOIN app_core.miniapp_user_settings s ON s.user_id = a.owner_user_id
+    FROM author a LEFT JOIN app_core.users s ON s.id = a.owner_user_id
   `;
 }

@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 /**
  * 剧情模式：用户选择“剧情由谁推动”。运营在 runtime_config.drive_mode_options 维护四档左右的
- * 名称、说明和注入主体模板 {{DRIVE_RULES}} 的规则；用户的选择存在 miniapp_user_settings.pref_drive_mode。
+ * 名称、说明和注入主体模板 {{DRIVE_RULES}} 的规则；用户的选择存在 app_core.user_preferences.pref_drive_mode。
  */
 export const DRIVE_MODE_OPTIONS_KEY = 'drive_mode_options';
 export const MAX_DRIVE_MODES = 8;

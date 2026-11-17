@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-/** 用户偏好与档位表匹配用的稳定 id（写入 miniapp_user_settings.pref_word_count） */
+/** 用户偏好与档位表匹配用的稳定 id（写入 app_core.user_preferences.pref_word_count） */
 export const WordCountTierIdSchema = z
   .string()
   .trim()

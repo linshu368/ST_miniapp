@@ -1,7 +1,6 @@
 import { getDomainDb } from '../../lib/supabase.js';
 import {
   enabledDriveModes,
-  normalizeTelegramAvatarUrl,
   ReplyStylePreferencesSchema,
   resolveDriveMode,
   type PatchUserSettingsRequest,
@@ -16,7 +15,6 @@ import {
   resolveVoiceId,
 } from '../../features/voice/voice-catalog.js';
 import { resolveEffectiveDisplayName } from './effective-display-name.js';
-import { config } from '../../platform/config.js';
 import type { TelegramUser } from '../../middleware/auth.js';
 import {
   fetchPlatformInstructions,
@@ -24,42 +22,37 @@ import {
   type PlatformInstructionsSnapshot,
 } from '../../features/engine/platform-instructions.js';
 import {
+  composeSettingsRow,
   MiniappUserSettingsRow,
   MutableUserSettingsFields,
   pickInstructionSlotPreferences,
   omitInstructionSlotPreferences,
   normalizeReplyStylePreferences,
   normalizeNullableText,
+  splitProfileFields,
+  type UserPreferencesRow,
 } from './user-settings-model.js';
+import { UserProfileRepository } from './UserProfileRepository.js';
 
 export { type MiniappUserSettingsRow, toUserSettings } from './user-settings-model.js';
 
+/** 偏好表（数据库重组 3b-2 起；资料在 app_core.users，经 UserProfileRepository）。 */
+const PREFERENCES = 'user_preferences';
+const GENERATION_PREFERENCE_COLUMNS =
+  'selected_model_id, pref_word_count, pref_show_options, pref_show_status, pref_show_memory, pref_reply_styles, pref_drive_mode, pref_custom_instructions';
+
 export class MiniappUserSettingsRepository {
   private readonly db = getDomainDb('app_core');
+  private readonly profiles = new UserProfileRepository();
 
+  /**
+   * 刷新 TG 资料并确保偏好行存在，返回资料 + 偏好。
+   * 先刷新资料再建偏好行：建行时数据库会从 users 带上资料，两边保持一致。
+   */
   async getOrCreate(userId: string, tgUser: TelegramUser): Promise<MiniappUserSettingsRow> {
-    const existing = await this.findByUserId(userId);
-    if (existing) {
-      return await this.refreshTelegramProfile(userId, tgUser);
-    }
-
-    // pref_word_count 刻意不写：留 NULL 才表示「未选过」，新用户才会跟随运营台的默认档（086）
-    const { data, error } = await this.db
-      .from('miniapp_user_settings')
-      .insert({
-        user_id: userId,
-        ...this.telegramProfileFields(tgUser),
-      })
-      .select('*')
-      .single();
-
-    if (error) {
-      const afterRace = await this.findByUserId(userId);
-      if (afterRace) return afterRace;
-      throw new Error(`创建 MiniApp 用户设置失败：${error.message}`, { cause: error });
-    }
-
-    return data as MiniappUserSettingsRow;
+    const profile = await this.profiles.refreshTelegram(userId, tgUser);
+    const preferences = await this.ensurePreferences(userId);
+    return composeSettingsRow(preferences, profile);
   }
 
   async patch(
@@ -72,7 +65,9 @@ export class MiniappUserSettingsRepository {
     const update = await this.normalizePatch(patch);
     const { pref_reply_styles: replyStyles, ...ordinaryUpdate } = update;
     const slotPreferences = pickInstructionSlotPreferences(ordinaryUpdate);
-    const otherFields = omitInstructionSlotPreferences(ordinaryUpdate);
+    const { profile, preferences } = splitProfileFields(
+      omitInstructionSlotPreferences(ordinaryUpdate)
+    );
 
     if (replyStyles && Object.keys(replyStyles).length > 0) {
       // Never read/replace the whole map: different switches must merge atomically in SQL.
@@ -82,9 +77,8 @@ export class MiniappUserSettingsRepository {
       if (error) throw new Error(`原子更新回复风格偏好失败：${error.message}`, { cause: error });
     }
 
-    // The migration owns false -> true window resets in this RPC. Keeping these
-    // fields out of any normal update prevents a concurrent profile write from
-    // replacing a just-reset counter with a stale direct write.
+    // The migration owns these three switches in one RPC so concurrent patches
+    // cannot overwrite each other with a stale read-modify-write.
     if (Object.keys(slotPreferences).length > 0) {
       const { error } = await this.db
         .rpc('update_instruction_slot_preferences', {
@@ -97,21 +91,17 @@ export class MiniappUserSettingsRepository {
       if (error) throw new Error(`原子更新生成偏好失败：${error.message}`, { cause: error });
     }
 
-    if (Object.keys(otherFields).length > 0) {
+    await this.profiles.update(userId, profile);
+
+    if (Object.keys(preferences).length > 0) {
       const { error } = await this.db
-        .from('miniapp_user_settings')
-        .update({
-          ...this.telegramProfileFields(tgUser),
-          ...otherFields,
-          updated_at: new Date().toISOString(),
-        })
+        .from(PREFERENCES)
+        .update({ ...preferences, updated_at: new Date().toISOString() })
         .eq('user_id', userId);
       if (error) throw new Error(`更新 MiniApp 用户设置失败：${error.message}`, { cause: error });
     }
 
-    const row = await this.findByUserId(userId);
-    if (!row) throw new Error('更新 MiniApp 用户设置后未找到用户设置');
-    return row;
+    return await this.findComposed(userId);
   }
 
   async setCustomAvatar(
@@ -120,18 +110,8 @@ export class MiniappUserSettingsRepository {
     avatarUrl: string
   ): Promise<MiniappUserSettingsRow> {
     await this.getOrCreate(userId, tgUser);
-    const { data, error } = await this.db
-      .from('miniapp_user_settings')
-      .update({
-        ...this.telegramProfileFields(tgUser),
-        custom_avatar_url: avatarUrl,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('user_id', userId)
-      .select('*')
-      .single();
-    if (error) throw new Error(`更新用户头像失败：${error.message}`, { cause: error });
-    return data as MiniappUserSettingsRow;
+    await this.profiles.update(userId, { custom_avatar_url: avatarUrl });
+    return await this.findComposed(userId);
   }
 
   async setSelectedModelId(
@@ -139,58 +119,47 @@ export class MiniappUserSettingsRepository {
     tgUser: TelegramUser,
     selectedModelId: string
   ): Promise<MiniappUserSettingsRow> {
-    await this.getOrCreate(userId, tgUser);
+    const current = await this.getOrCreate(userId, tgUser);
     const { data, error } = await this.db
-      .from('miniapp_user_settings')
-      .update({
-        ...this.telegramProfileFields(tgUser),
-        selected_model_id: selectedModelId,
-        updated_at: new Date().toISOString(),
-      })
+      .from(PREFERENCES)
+      .update({ selected_model_id: selectedModelId, updated_at: new Date().toISOString() })
       .eq('user_id', userId)
       .select('*')
       .single();
 
     if (error) throw new Error(`更新模型选择失败：${error.message}`, { cause: error });
-    return data as MiniappUserSettingsRow;
+    return { ...current, ...(data as UserPreferencesRow) };
   }
 
   /**
-   * 生成路径没有 Telegram 资料，只改模型选择，避免把展示名写成空。
-   * 没有设置行时更新 0 行，调用方照样用本轮解析结果。
+   * 生成路径只改模型选择。没有偏好行时更新 0 行，调用方照样用本轮解析结果。
    */
   async correctSelectedModelId(userId: string, selectedModelId: string): Promise<void> {
     const { error } = await this.db
-      .from('miniapp_user_settings')
-      .update({
-        selected_model_id: selectedModelId,
-        updated_at: new Date().toISOString(),
-      })
+      .from(PREFERENCES)
+      .update({ selected_model_id: selectedModelId, updated_at: new Date().toISOString() })
       .eq('user_id', userId);
     if (error) throw new Error(`修正模型选择失败：${error.message}`, { cause: error });
   }
 
   async getSelectedModelId(userId: string): Promise<string | null> {
     const { data, error } = await this.db
-      .from('miniapp_user_settings')
+      .from(PREFERENCES)
       .select('selected_model_id')
       .eq('user_id', userId)
       .maybeSingle();
 
     if (error) throw new Error(`查询用户模型选择失败：${error.message}`, { cause: error });
     return (
-      (data as Pick<MiniappUserSettingsRow, 'selected_model_id'> | null)?.selected_model_id ?? null
+      (data as Pick<UserPreferencesRow, 'selected_model_id'> | null)?.selected_model_id ?? null
     );
   }
 
   /**
    * 自研引擎的用户生成配置读取通道（M1）。
    *
-   * 三个 pref_* 字段自 migration 015 就已存在，此前从未被任何生成路径消费；
-   * 引擎侧的用法见 M2（{{WORD_COUNT}} / {{USER_CUSTOM_INSTRUCTIONS}}）。
    * 配置属于用户层、对该用户所有会话生效（总方案决策 10），因此不接受 session 维度入参。
-   *
-   * 用户还没有设置行、或存档档位为 NULL（从未选过，见 086）时，回复长度回落到运营台当前的
+   * 用户还没有偏好行、或存档档位为 NULL（从未选过，见 086）时，回复长度回落到运营台当前的
    * default_tier_id——这是运营台改默认档能被用户看到的唯一通路，不要在这里改成硬编码档位。
    * 若存档 id 已从启用档位中下线，同样回落，避免 UI 出现无选中态。
    */
@@ -198,28 +167,31 @@ export class MiniappUserSettingsRepository {
     return (await this.getGenerationContext(userId)).config;
   }
 
-  /** One request-local read keeps model, prompt preferences and persona consistent. */
+  /**
+   * 一轮只读一次：模型、提示偏好与 persona 昵称在本轮内冻结。
+   * 偏好与资料分在两张表，同一请求内并行读取；任一失败即整体失败，不降级。
+   */
   async getGenerationContext(
     userId: string,
     instructionPromise?: Promise<PlatformInstructionsSnapshot>
   ): Promise<{ config: UserGenerationConfig; displayName: string }> {
-    const [result, instructions] = await Promise.all([
+    const [preferenceResult, names, instructions] = await Promise.all([
       this.db
-        .from('miniapp_user_settings')
-        .select(
-          'selected_model_id, pref_word_count, pref_show_options, pref_show_status, pref_show_memory, pref_reply_styles, pref_drive_mode, pref_custom_instructions, display_name, tg_first_name, tg_username'
-        )
+        .from(PREFERENCES)
+        .select(GENERATION_PREFERENCE_COLUMNS)
         .eq('user_id', userId)
         .abortSignal(AbortSignal.timeout(5_000))
         .maybeSingle(),
+      this.profiles.readNames(userId).catch((err: unknown) => {
+        throw new Error(`查询用户生成配置失败：${(err as Error).message}`, { cause: err });
+      }),
       instructionPromise ?? fetchPlatformInstructions(),
     ]);
-    const { data, error } = result;
-
+    const { data, error } = preferenceResult;
     if (error) throw new Error(`查询用户生成配置失败：${error.message}`, { cause: error });
 
     const row = data as Pick<
-      MiniappUserSettingsRow,
+      UserPreferencesRow,
       | 'selected_model_id'
       | 'pref_word_count'
       | 'pref_show_options'
@@ -228,9 +200,6 @@ export class MiniappUserSettingsRepository {
       | 'pref_reply_styles'
       | 'pref_drive_mode'
       | 'pref_custom_instructions'
-      | 'display_name'
-      | 'tg_first_name'
-      | 'tg_username'
     > | null;
 
     const publicTiers = toPublicWordCountTiersFromEngine(instructions.instructions.wordCountTiers);
@@ -253,7 +222,7 @@ export class MiniappUserSettingsRepository {
         : {}),
       pref_custom_instructions: row?.pref_custom_instructions ?? null,
     };
-    return { config, displayName: resolveEffectiveDisplayName(row) };
+    return { config, displayName: resolveEffectiveDisplayName(names) };
   }
 
   /**
@@ -264,7 +233,7 @@ export class MiniappUserSettingsRepository {
    */
   async getVoiceConfig(userId: string): Promise<VoiceConfig> {
     const { data, error } = await this.db
-      .from('miniapp_user_settings')
+      .from(PREFERENCES)
       .select('pref_voice_id, pref_voice_playback_rate')
       .eq('user_id', userId)
       .maybeSingle();
@@ -272,7 +241,7 @@ export class MiniappUserSettingsRepository {
     if (error) throw new Error(`查询语音偏好失败：${error.message}`, { cause: error });
 
     const row = data as Pick<
-      MiniappUserSettingsRow,
+      UserPreferencesRow,
       'pref_voice_id' | 'pref_voice_playback_rate'
     > | null;
 
@@ -302,10 +271,7 @@ export class MiniappUserSettingsRepository {
       update.pref_voice_playback_rate = patch.playbackRate;
     }
 
-    const { error } = await this.db
-      .from('miniapp_user_settings')
-      .update(update)
-      .eq('user_id', userId);
+    const { error } = await this.db.from(PREFERENCES).update(update).eq('user_id', userId);
 
     if (error) throw new Error(`更新语音偏好失败：${error.message}`, { cause: error });
     return await this.getVoiceConfig(userId);
@@ -318,54 +284,44 @@ export class MiniappUserSettingsRepository {
    * 与 getGenerationConfig 分开是因为 UserGenerationConfig 是对外契约，显示名属于用户资料。
    */
   async getDisplayName(userId: string): Promise<string> {
-    const { data, error } = await this.db
-      .from('miniapp_user_settings')
-      .select('display_name, tg_first_name, tg_username')
-      .eq('user_id', userId)
-      .maybeSingle();
-
-    if (error) throw new Error(`查询用户昵称失败：${error.message}`, { cause: error });
-    return resolveEffectiveDisplayName(
-      data as Pick<MiniappUserSettingsRow, 'display_name' | 'tg_first_name' | 'tg_username'> | null
-    );
+    return resolveEffectiveDisplayName(await this.profiles.readNames(userId));
   }
 
-  private async findByUserId(userId: string): Promise<MiniappUserSettingsRow | null> {
+  /** pref_word_count 刻意不写：留 NULL 才表示「未选过」，新用户才会跟随运营台的默认档（086）。 */
+  private async ensurePreferences(userId: string): Promise<UserPreferencesRow> {
+    const existing = await this.findPreferences(userId);
+    if (existing) return existing;
+
     const { data, error } = await this.db
-      .from('miniapp_user_settings')
+      .from(PREFERENCES)
+      .insert({ user_id: userId })
+      .select('*')
+      .single();
+    if (!error) return data as UserPreferencesRow;
+
+    const afterRace = await this.findPreferences(userId);
+    if (afterRace) return afterRace;
+    throw new Error(`创建 MiniApp 用户设置失败：${error.message}`, { cause: error });
+  }
+
+  private async findPreferences(userId: string): Promise<UserPreferencesRow | null> {
+    const { data, error } = await this.db
+      .from(PREFERENCES)
       .select('*')
       .eq('user_id', userId)
       .maybeSingle();
 
     if (error) throw new Error(`查询 MiniApp 用户设置失败：${error.message}`, { cause: error });
-    return (data as MiniappUserSettingsRow | null) ?? null;
+    return (data as UserPreferencesRow | null) ?? null;
   }
 
-  private async refreshTelegramProfile(
-    userId: string,
-    tgUser: TelegramUser
-  ): Promise<MiniappUserSettingsRow> {
-    const { data, error } = await this.db
-      .from('miniapp_user_settings')
-      .update({
-        ...this.telegramProfileFields(tgUser),
-        updated_at: new Date().toISOString(),
-      })
-      .eq('user_id', userId)
-      .select('*')
-      .single();
-
-    if (error) throw new Error(`刷新 Telegram 用户信息失败：${error.message}`, { cause: error });
-    return data as MiniappUserSettingsRow;
-  }
-
-  private telegramProfileFields(tgUser: TelegramUser) {
-    return {
-      tg_username: tgUser.username ?? null,
-      tg_first_name: tgUser.first_name ?? null,
-      tg_last_name: tgUser.last_name ?? null,
-      tg_avatar_url: normalizeTelegramAvatarUrl(tgUser.photo_url),
-    };
+  private async findComposed(userId: string): Promise<MiniappUserSettingsRow> {
+    const [preferences, profile] = await Promise.all([
+      this.findPreferences(userId),
+      this.profiles.read(userId),
+    ]);
+    if (!preferences) throw new Error('更新 MiniApp 用户设置后未找到用户设置');
+    return composeSettingsRow(preferences, profile);
   }
 
   private async normalizePatch(
