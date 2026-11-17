@@ -110,6 +110,21 @@ function cacheUserIdentity(tgId: string, identity: MiniappDbUserIdentity): void 
   });
 }
 
+/** 注册时间：畅聊新人试用从这里算。生成链路只有 user UUID，所以单独按主键读。 */
+export async function findUserCreatedAt(userId: string): Promise<string | null> {
+  const { data, error } = await getDomainDb('app_core')
+    .from('users')
+    .select('created_at')
+    .eq('id', userId)
+    .abortSignal(AbortSignal.timeout(USER_READ_TIMEOUT_MS))
+    .maybeSingle();
+  if (error) {
+    throw new Error(`查询 MiniApp 用户注册时间失败：${error.message}`, { cause: error });
+  }
+  const createdAt = (data as { created_at?: unknown } | null)?.created_at;
+  return typeof createdAt === 'string' ? createdAt : null;
+}
+
 /** 支付 webhook/cron 没有 Telegram header，用内部 user UUID 反查 analytics identity。 */
 export async function findTelegramIdByUserId(userId: string): Promise<string | null> {
   const { data, error } = await getDomainDb('app_core')

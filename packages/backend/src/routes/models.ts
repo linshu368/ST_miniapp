@@ -29,6 +29,10 @@ import { VipStatusService } from '../features/vip/vip-status.js';
 import { getCharacterCreatorOwner } from '../features/generation/creator-billing.js';
 import { canUseCharacter } from '../features/creator/access.js';
 import {
+  createAccessFactsLoader,
+  type AccessFactsLoader,
+} from '../features/free-zone/access-facts.js';
+import {
   resolveCatalogFreeZone,
   resolveFreeZoneSelection,
 } from '../features/free-zone/selection.js';
@@ -164,6 +168,11 @@ export default async function modelsRoutes(app: FastifyInstance) {
         catalog: snapshot.catalog,
         isOwnCard,
         pricing: pricing.fixedDeduction,
+        loadFacts: createAccessFactsLoader({
+          userId: dbUser.id,
+          createdAt: dbUser.created_at,
+          vipValidUntil: entitlement.valid_until,
+        }),
       });
       const selection = resolveTextModelSelection({
         catalog: snapshot.catalog,
@@ -283,6 +292,13 @@ export default async function modelsRoutes(app: FastifyInstance) {
             userId: dbUser.id,
             log,
             settings,
+            // 福利期外要按身份判断能不能选；会员到期时间只在需要时才读。
+            loadFacts: async () =>
+              createAccessFactsLoader({
+                userId: dbUser.id,
+                createdAt: dbUser.created_at,
+                vipValidUntil: (await vip.getStatus(dbUser.id, log)).valid_until,
+              })(),
           });
         }
         const selectedModel = resolveEnabledCatalogModel(snapshot.catalog, parsed.data.model_id);
@@ -352,7 +368,7 @@ export default async function modelsRoutes(app: FastifyInstance) {
 }
 
 /**
- * 选畅聊免费模型：只看此刻对这张卡开不开放，不查钱包也不查 VIP（应扣 0）。
+ * 选畅聊免费模型：只看此刻对这个用户、这张卡开不开放，不查钱包（应扣 0）。
  */
 async function selectFreeZoneModel(input: {
   modelId: string;
@@ -363,6 +379,7 @@ async function selectFreeZoneModel(input: {
   reply: FastifyReply;
   log: ReturnType<typeof requestLogger>;
   settings: MiniappUserSettingsRepository;
+  loadFacts: AccessFactsLoader;
 }) {
   const { reply, log, userId, settings } = input;
   const decision = await resolveFreeZoneSelection({
@@ -370,6 +387,7 @@ async function selectFreeZoneModel(input: {
     userId,
     characterId: input.characterId ?? null,
     catalog: input.catalog,
+    loadFacts: input.loadFacts,
   });
   if (decision?.kind !== 'usable' || !input.request.user) {
     log.biz.info(

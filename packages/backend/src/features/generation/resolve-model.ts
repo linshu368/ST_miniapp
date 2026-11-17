@@ -26,6 +26,7 @@ import {
   getModelBillingContext,
   getPricingConfig,
 } from '../../platform/model-tiers.js';
+import { createAccessFactsLoader } from '../free-zone/access-facts.js';
 import { settleFreeZoneSelection } from '../free-zone/selection.js';
 import { buildFreeZoneResolvedModel } from '../free-zone/resolved-model.js';
 import { MiniappUserSettingsRepository } from '../../infrastructure/repositories/MiniappUserSettingsRepository.js';
@@ -182,6 +183,11 @@ async function resolveFreeZoneTurn(input: {
     userId: input.userId,
     characterId: input.characterId,
     catalog: input.snapshot.catalog,
+    // 只有选着免费模型、且福利期外按身份开放时才会真的去读（注册时间、最近开通）。
+    loadFacts: createAccessFactsLoader({
+      userId: input.userId,
+      vipValidUntil: input.entitlement.validUntil,
+    }),
   });
   if (settled.replacement) {
     try {
