@@ -59,18 +59,24 @@
   - 客服工作台冒烟；
   - 画像试跑通过。
 
-### 1d 清理（主仓库）
+### 1d 清理（主仓库）— `20261117_db_reorg_cleanup.sql`
 
-- 删列：`app_core.users.st_handle`、`st_initialized_at`。
-- 改名：`miniapp_traffic.botlinks."Purchase_amount"` / `"Procurement_days"` → `purchase_amount` / `procurement_days`，同步改引用它们的视图和运维脚本。
-- 迁表：`miniapp_analytics.drama_survey_responses` → `miniapp_features`（`ALTER TABLE ... SET SCHEMA`），同步改 `features/drama-survey`、`scripts/drama-survey-report`、`drama_metrics_reader` 的授权。
-- 删表：
-  - `miniapp_features.wish_roles`；
-  - `cs_platform` 整个 schema，含 3 个函数、2 个视图，以及到 `admin` 的 FK；
-  - `miniapp` 空 schema；
-  - `public.compute_daily_metrics`、`public.show_dashboard`，以及两个停用的 cron 任务。
-  - **删前归档**：以 Supabase 每日备份为准（见"已定"），不另外导出。
-- 后端：`lib/supabase.ts` 的域客户端列表移除 `cs_platform`；legacy guard 加入 `cs_platform`、`wish_roles`。
+实际范围（核对依赖后调整）：
+
+- 删列 `app_core.users.st_handle`：代码、函数、视图零引用；可由 tg_id 确定性推导。
+  - **`st_initialized_at` 保留**：`miniapp_traffic.record_app_entry` 经 `to_jsonb(u)` 读它作幕间资格依据，阶段 3 随归因字段迁到 `miniapp_traffic.user_attributions`，同步改函数。
+- 改名 `miniapp_traffic.botlinks` 两个大写列。依赖视图 `traffic_daily_stats` 按列号引用，输出不变。
+- 删表 `miniapp_features.wish_roles` 及 `create_wish_role` / `complete_wish_role` 两个函数。
+- 先从 PostgREST 暴露列表（authenticator 的 `pgrst.db_schemas`、`pgrst.db_extra_search_path`，099 起 GUC 接管）去掉 `miniapp`、`cs_platform`，保持原顺序；再删两个 schema；提交时 NOTIFY 先 reload config 再 reload schema。
+- 删除 `public.compute_daily_metrics` / `show_dashboard` 与两个停用 cron。`public` schema 本身保留，Supabase 需要它。
+- **不迁 `drama_survey_responses`**：问卷仍在线，迁表要改线上发奖函数 `billing.submit_drama_survey`。它是一次性问卷，结束后整表删除，registry 标为 drop。
+- 后端：`DOMAIN_SCHEMAS` 去掉 `cs_platform`；legacy guard 的 dropped-schema 规则加入 `cs_platform`。
+- 归档：以 Supabase 每日备份为准。删除内容要么可推导（st_handle），要么所有者已确认可丢弃（cs_platform、wish_roles）。
+- 验证：`bash scripts/test-db-reorg-p1d-migration.sh`（有 GUC、无 GUC 两种环境）；后端 typecheck 与单测；legacy guard。
+- 上线后核对：
+  - 生产 `pgrst.db_schemas` 新值；
+  - 后端 `/health` 与一次真实对话请求正常；
+  - 运营台读写配置正常（admin schema 经 PostgREST）。
 
 ### 1e 托管配置包装链改登记表（主仓库加 admin-client）
 

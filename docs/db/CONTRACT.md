@@ -45,7 +45,7 @@
 
 - `cs`：客服仓库 ST_cs_platform 拥有。
 - `drama_archive`：短剧上传端拥有，本仓库只拥有 `drama_likes`、`drama_comments` 两张表。
-- `cs_platform`、`miniapp`、`public`：待删除。
+- `public`：只放 Supabase 平台对象，不放业务对象。（旧客服 `cs_platform` 与空壳 `miniapp` 已于 2026-11-17 删除。）
 
 **新建 schema 的门槛**：只有当一类数据有独立的读者权限或生命周期，并且放进现有域会混淆落位时，才新建。新建要在 `registry.yaml.schemas` 登记、补授权，并更新本表。功能分组靠**表名前缀**（`lobby_*`、`free_zone_*`、`image_plaza_*`），不靠 schema。
 

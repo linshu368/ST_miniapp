@@ -1,5 +1,18 @@
 # SQL 迁移文件
 
+## 2026-11-17 数据库重组阶段 1d：清理无读者的结构（本地 PG17 验证，远端未执行）
+
+`20261117_db_reorg_cleanup.sql`（domain: app_core / miniapp_traffic / miniapp_features / PostgREST 暴露配置）。计划见 `.trellis/tasks/11-17-db-reorg-p1-foundation/design.md` 1d。
+
+- 删除 `app_core.users.st_handle`，零引用，唯一索引随列删除。`st_initialized_at` 保留：幕间资格函数在读它，阶段 3 再搬。
+- `miniapp_traffic.botlinks` 的 `"Purchase_amount"` / `"Procurement_days"` 改名为小写；视图 `traffic_daily_stats` 按列号引用，输出不变。
+- 删除 `miniapp_features.wish_roles` 与 `create_wish_role` / `complete_wish_role`。
+- 从 authenticator 的 `pgrst.db_schemas`、`pgrst.db_extra_search_path` 去掉 `miniapp`、`cs_platform`，保持原顺序，旧值打印在 NOTICE。然后删除 `cs_platform`（CASCADE）与空 `miniapp` schema，提交时 NOTIFY pgrst 先重载配置、再重载 schema。没有这两个 GUC 的环境跳过改写。
+- 注销两个停用 cron（`daily_metrics_midnight` / `noon`），删除 `public.compute_daily_metrics` / `show_dashboard`。
+- 归档以 Supabase 每日备份为准（所有者确认）。删除不可逆；暴露列表可按 NOTICE 旧值恢复。
+- 验证：`bash scripts/test-db-reorg-p1d-migration.sh`（两次幂等、暴露列表只少两项且顺序不变、视图输出不变、无 GUC / 无 pg_cron 环境安全跳过）。
+- 发布：TEST 单文件 → Production 单文件 → 后端（只去掉不再使用的 cs_platform 域客户端，先后顺序不敏感）。上线后核对后端 `/health`、真实对话、运营台读写。
+
 ## 2026-11-17 数据库重组阶段 1a：建 ops 与 cs_feed（本地 PG17 验证，远端未执行）
 
 `20261117_db_reorg_ops_cs_feed.sql`（domain: ops 新建 + cs_feed 新建）。规则见 `docs/db/CONTRACT.md`，计划见 `.trellis/tasks/11-17-db-reorg-p1-foundation/design.md`。前置：`app_core.users` / `miniapp_user_settings`、`billing.user_wallets` / `vip_memberships` / `payment_orders`、`experience.chat_sessions`。
