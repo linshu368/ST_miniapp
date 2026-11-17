@@ -10,6 +10,7 @@ import {
 import { Buffer } from 'node:buffer';
 import { getDomainDb } from '../../lib/supabase.js';
 import { signPrivateVideoPath } from './storage.js';
+import { signPlazaStreamPlayback } from './video-stream-playback.js';
 
 export class ImagePlazaSettlementError extends Error {
   readonly outcomeUnknown: boolean;
@@ -63,8 +64,9 @@ export interface WorkRow {
 
 export interface VideoArtifactRow {
   id: string;
-  attempt_id: string;
-  storage_path: string;
+  attempt_id: string | null;
+  stream_uid: string;
+  playback_url: string;
   poster_path: string | null;
   width: number;
   height: number;
@@ -180,7 +182,7 @@ export async function mapVideoConversationAttempt(
     artifact: artifact
       ? {
           id: artifact.id,
-          video_url: await signPrivateVideoPath(artifact.storage_path),
+          playback: await signPlazaStreamPlayback(artifact.stream_uid),
           poster_url: artifact.poster_path
             ? await signPrivateVideoPath(artifact.poster_path)
             : null,

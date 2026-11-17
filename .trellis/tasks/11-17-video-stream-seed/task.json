@@ -1,0 +1,59 @@
+{
+  "id": "video-stream-seed",
+  "name": "video-stream-seed",
+  "title": "表格视频导入 Cloudflare Stream 与生产 SQL 交接",
+  "description": "",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-17",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "no_module_change",
+      "reason": "离线导入产物与交接，不修改仓库运行时组件、数据库 schema 或 API。"
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "本任务只准备离线媒体、写入 main 私有 Storage 与交接 SQL；不发布页面或接口。真实 HLS 性能由播放代码任务测试。"
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "required",
+      "scope": ["离线首帧准备、Storage 校验及 Stream 导入"],
+      "integration_points": ["本地批处理终态和按来源 ID 保存的本地回执"],
+      "events": [
+        {
+          "event": "video_seed.result",
+          "operation": "video.seed.prepare",
+          "levels": ["info", "warn", "error"],
+          "outcomes": ["succeeded", "failed", "unknown", "skipped"],
+          "fields": ["source_video_id", "stage", "duration_ms", "status", "count"]
+        }
+      ],
+      "failure_paths": [
+        "源站超时及拒绝、FFmpeg 失败、封面重复及 SHA256 冲突、Stream 鉴权/配额拒绝和结果未知"
+      ],
+      "correlation": "以源视频 ID 与工作簿指纹关联本地批次和回执，不接入运行时请求链路。",
+      "redaction": "只记录状态、阶段、公开来源数字 ID 和计数，不输出原文、上游响应内容和凭据。",
+      "alerting": "批处理以本地错误摘要和退出码报告失败，未新增生产告警。",
+      "verification": ["检查终态计数，覆盖源站失败、重复上传、缺回执及 SQL 日志脱敏。"]
+    }
+  }
+}

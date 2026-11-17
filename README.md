@@ -127,14 +127,10 @@ pnpm --filter @miniapp/backend image-plaza:seed -- --input <xlsx>
 pnpm --filter @miniapp/backend video-plaza:estimate-size -- --input <原表xlsx> --report video-seed-size-report.json
 pnpm --filter @miniapp/backend video-plaza:seed -- --input <原表xlsx> --translations <翻译包video.xlsx> --report <报告> --confirm-size <报告SHA256>
 
-# TEST 固定 10 条：先四路下载/两路 FFmpeg 产出本地 manifest，再单独预检/上传私有 Storage
-pnpm --filter @miniapp/backend video-plaza:seed-assets -- --target test --phase process --canary 10 --concurrency 4 --ffmpeg-concurrency 2 --input <原表xlsx> --translations <翻译包video.xlsx> --report <报告> --confirm-size <报告SHA256> --output <本地输出目录>
-pnpm --filter @miniapp/backend video-plaza:seed-upload -- --target test --phase upload --manifest <processed-manifest.json> --confirm-project-ref <TEST_REF>
-# 人工核对上一步身份/桶/对象数后才增加 --apply；上传器不写业务表
+# 广场视频改为Stream：TEST全部13条及未来生成视频，按独立步骤迁移
+pnpm --filter @miniapp/backend video-plaza:stream-migrate --phase preflight --directory <仓库外恢复目录>
+# upload / verify / sql / cleanup 的参数、门禁与执行顺序见 docs/video-plaza-stream.md
 
-# 上传后复用同一签名 URL 验证首段/中段 Range；SQL 仅在对象全部 verified 且目录已审核后生成
-pnpm --filter @miniapp/backend video-plaza:seed-validate-playback -- --target test --manifest <processed-manifest.json> --confirm-project-ref <TEST_REF>
-pnpm --filter @miniapp/backend video-plaza:seed-sql -- --target test --processed-manifest <processed-manifest.json> --upload-state <upload-state.json> --catalog <审核后的模型目录.json> --output packages/shared/migrations/<YYYYMMDD>_media_plaza_video_seed_test_10.sql --confirm-project-ref <TEST_REF>
 ```
 
 TEST 视频种子 SQL 只能通过 GitHub Actions `Database Migration` 选择 `environment=test` 单文件执行。工作流会向该次 `psql` 会话注入 TEST project ref 与 Storage 已核验标记；执行脚本会拒绝把 `_seed_test_` 文件用于 production，也会拒绝缺少这些确认值的直接执行。
@@ -164,7 +160,7 @@ Surplus Intelligence 的官方默认 API 为 `https://api.surplusintelligence.ai
 
 开发 bypass（如 `MOCK_AUTH`、`DEV_AUTH_BYPASS`）禁止在 production 启用。
 
-视频创作还使用 `VIDEO_PLAZA_WORKER_ENABLED`、`VIDEO_PLAZA_*`、`FFMPEG_PATH` 与 `FFPROBE_PATH`；worker默认关闭，部署环境须提供ffmpeg/ffprobe。视频目录/报价/提交与结果展示继续复用影像广场链路。
+视频创作使用 `VIDEO_PLAZA_WORKER_ENABLED`、`VIDEO_PLAZA_*`，复用短剧 `DRAMA_STREAM_HOST/KEY_ID/PRIVATE_KEY` 与同账户管理凭证。新交付不依赖FFmpeg，FFmpeg仅供离线素材工具。Stream迁移、配置及恢复见[操作说明](docs/video-plaza-stream.md)，本地实现不代表TEST数据库或生产已切换。
 
 ### Frontend
 

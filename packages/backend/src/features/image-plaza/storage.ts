@@ -1,3 +1,4 @@
+import { config } from '../../platform/config.js';
 import { Buffer } from 'node:buffer';
 import { getSupabaseClient } from '../../lib/supabase.js';
 import { clientFetch } from '../../platform/observability/fetch.js';
@@ -252,28 +253,32 @@ export async function signSharedWorkImagePath(
 export async function uploadPlazaVideoAsset(input: {
   path: string;
   bytes: Buffer;
-  contentType: 'video/mp4' | 'image/jpeg' | 'image/webp';
+  contentType: 'image/jpeg' | 'image/webp';
+  upsert?: boolean;
 }): Promise<void> {
   assertVideoPath(input.path);
-  const maxBytes = input.contentType === 'video/mp4' ? 200 * 1024 * 1024 : 20 * 1024 * 1024;
-  if (input.bytes.byteLength < 1 || input.bytes.byteLength > maxBytes) {
+  if (input.bytes.byteLength < 1 || input.bytes.byteLength > 20 * 1024 * 1024)
     throw new Error('video_plaza_asset_size_invalid');
-  }
-  if (input.contentType === 'video/mp4') {
-    if (input.bytes.length < 12 || input.bytes.toString('ascii', 4, 8) !== 'ftyp')
-      throw new Error('video_plaza_mp4_invalid');
-  } else {
-    validatePlazaImage(input.bytes, input.contentType);
-  }
-  const { error } = await getSupabaseClient()
-    .storage.from(VIDEO_BUCKET)
-    .upload(input.path, input.bytes, {
-      contentType: input.contentType,
-      cacheControl: '31536000',
-      upsert: false,
-    });
-  if (error)
-    throw new Error(`video_plaza_storage_upload_failed:${error.message}`, { cause: error });
+  validatePlazaImage(input.bytes, input.contentType);
+  const path = input.path.split('/').map(encodeURIComponent).join('/');
+  const response = await clientFetch('video.delivery.poster_store', 'supabase')(
+    `${config.supabase.url}/storage/v1/object/${VIDEO_BUCKET}/${path}`,
+    {
+      method: 'POST',
+      redirect: 'error',
+      signal: AbortSignal.timeout(15_000),
+      headers: {
+        Authorization: `Bearer ${config.supabase.serviceRoleKey}`,
+        apikey: config.supabase.serviceRoleKey,
+        'Content-Type': input.contentType,
+        'Cache-Control': 'max-age=31536000',
+        'x-upsert': String(input.upsert ?? false),
+      },
+      body: new Uint8Array(input.bytes).buffer,
+    }
+  );
+  await response.body?.cancel();
+  if (!response.ok) throw new Error('video_plaza_poster_upload_failed');
 }
 
 export async function deletePlazaVideoAssets(paths: string[]): Promise<void> {

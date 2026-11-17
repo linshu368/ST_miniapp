@@ -293,7 +293,11 @@ function plazaVideoAttempt(
       status === 'ready'
         ? {
             id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-            video_url: 'https://videos.example.test/generated.mp4',
+            playback: {
+              format: 'hls',
+              play_url: 'https://videos.example.test/manifest/video.m3u8',
+              expires_at: '2026-11-17T00:00:00.000Z',
+            },
             poster_url: 'https://videos.example.test/generated.jpg',
             width: 1920,
             height: 1080,

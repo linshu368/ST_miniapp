@@ -18,7 +18,6 @@ import {
   startVideoPlazaGenerationJob,
   stopVideoPlazaGenerationJob,
 } from './features/image-plaza/video-job.js';
-import { initializeVideoMedia } from './features/image-plaza/video-media.js';
 import { startChatImageGenerationJob, stopChatImageGenerationJob } from './features/image/job.js';
 import { startStoryMemoryJob, stopStoryMemoryJob } from './features/story-memory/worker.js';
 import { shutdownTextPostprocessValidation } from './features/text-postprocess/validate-pool.js';
@@ -164,7 +163,6 @@ export async function buildApp() {
 
   startChatImageGenerationJob(app.log);
   startImagePlazaGenerationJob(app.log);
-  await initializeVideoMedia(app.log);
   startVideoPlazaGenerationJob(app.log);
   startStoryMemoryJob(app.log);
   startFreeZoneEvaluationJob(app.log);

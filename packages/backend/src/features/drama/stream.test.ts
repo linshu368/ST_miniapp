@@ -2,7 +2,11 @@ import { generateKeyPairSync, randomBytes, randomUUID, verify } from 'node:crypt
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { DramaSummary } from '@miniapp/shared';
 vi.mock('../../platform/config.js', () => ({ config: { database: { target: 'test' } } }));
-import { getDramaStreamConfig } from '../../platform/runtime-config.js';
+import {
+  getDramaStreamConfig,
+  getVideoStreamConfig,
+  getDramaStreamSigningConfig,
+} from '../../platform/runtime-config.js';
 import {
   pinStreamDramas,
   selectStreamDelivery,
@@ -126,4 +130,21 @@ it('signs one warmup target per listed UID, and none when Stream is off or unsig
   expect(streamManifestWarmupTargets()).toEqual([]);
   vi.stubEnv('DRAMA_STREAM_ENABLED', 'false');
   expect(streamManifestWarmupTargets()).toEqual([]);
+});
+
+it('reuses drama signing with the locally configured plaza management token and rejects malformed private keys before new generation', () => {
+  vi.stubEnv('CLOUDFLARE_ACCOUNT_ID', 'a'.repeat(32));
+  vi.stubEnv('CLOUDFLARE_API_TOKEN', '');
+  vi.stubEnv('VIDEO_STREAM_API_TOKEN', 'fixture-management-token');
+  expect(getVideoStreamConfig()).toMatchObject({
+    host: 'customer-unit.cloudflarestream.com',
+    keyId: 'unit-key',
+    accountId: 'a'.repeat(32),
+  });
+  vi.stubEnv('VIDEO_STREAM_API_TOKEN', '');
+  expect(getVideoStreamConfig()).toBeNull();
+  expect(getDramaStreamSigningConfig()).not.toBeNull();
+  vi.stubEnv('VIDEO_STREAM_API_TOKEN', 'fixture-management-token');
+  vi.stubEnv('DRAMA_STREAM_PRIVATE_KEY', '-----BEGIN RSA PRIVATE KEY-----');
+  expect(getVideoStreamConfig()).toBeNull();
 });

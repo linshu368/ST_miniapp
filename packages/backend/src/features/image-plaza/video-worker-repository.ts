@@ -118,45 +118,12 @@ export class VideoPlazaWorkerRepository {
     workerId: string,
     downloadUrl: string | null
   ): Promise<void> {
-    const { error } = await this.plaza
-      .from('video_attempts')
-      .update({
-        status: 'storing',
-        download_url: downloadUrl,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', attemptId)
-      .eq('lease_owner', workerId)
-      .in('status', ['queued', 'processing']);
-    if (error)
-      throw new Error(`video_plaza_storing_update_failed:${error.message}`, { cause: error });
-  }
-
-  async publish(input: {
-    attemptId: string;
-    workerId: string;
-    storagePath: string;
-    byteSize: number;
-    width: number;
-    height: number;
-    durationMs: number;
-    posterPath: string;
-    posterWidth: number;
-    posterHeight: number;
-  }): Promise<void> {
-    const { error } = await this.plaza.rpc('publish_video_artifact', {
-      p_attempt_id: input.attemptId,
-      p_worker_id: input.workerId,
-      p_storage_path: input.storagePath,
-      p_byte_size: input.byteSize,
-      p_width: input.width,
-      p_height: input.height,
-      p_duration_ms: input.durationMs,
-      p_poster_path: input.posterPath,
-      p_poster_width: input.posterWidth,
-      p_poster_height: input.posterHeight,
+    const { error } = await this.plaza.rpc('enqueue_video_delivery', {
+      p_attempt_id: attemptId,
+      p_worker_id: workerId,
+      p_download_url: downloadUrl,
     });
-    if (error) throw new Error(`video_plaza_publish_failed:${error.message}`, { cause: error });
+    if (error) throw new Error('video_plaza_delivery_enqueue_unknown', { cause: error });
   }
 
   async fail(

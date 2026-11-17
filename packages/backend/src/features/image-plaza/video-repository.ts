@@ -1,3 +1,5 @@
+import type { VideoArtifactRow } from './repository-model.js';
+import { signPlazaStreamPlayback } from './video-stream-playback.js';
 import {
   type ProviderVideoPlazaModel,
   type SubmitVideoPlazaAttemptData,
@@ -39,16 +41,6 @@ export interface VideoAttemptRow extends VideoQuoteRow {
   download_url: string | null;
   next_poll_at: string | null;
   poll_count: number;
-}
-
-interface VideoArtifactRow {
-  id: string;
-  attempt_id: string;
-  storage_path: string;
-  poster_path: string | null;
-  width: number;
-  height: number;
-  duration_ms: number;
 }
 
 export class VideoPlazaRepository extends VideoPlazaWorkerRepository {
@@ -361,7 +353,7 @@ export class VideoPlazaRepository extends VideoPlazaWorkerRepository {
       artifact: artifact
         ? {
             id: artifact.id,
-            video_url: await signPrivateVideoPath(artifact.storage_path),
+            playback: await signPlazaStreamPlayback(artifact.stream_uid),
             poster_url: artifact.poster_path
               ? await signPrivateVideoPath(artifact.poster_path)
               : null,

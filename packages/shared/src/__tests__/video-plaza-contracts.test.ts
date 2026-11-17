@@ -1,3 +1,4 @@
+import { VideoPlazaPlaybackObservationSchema, PlazaVideoWorkSchema } from '../api/video-plaza.js';
 import { describe, expect, it } from 'vitest';
 import {
   CreateVideoReferenceFromImageArtifactDataSchema,
@@ -250,4 +251,26 @@ describe('image plaza compatibility extensions', () => {
       media_types: ['image', 'video'],
     });
   });
+});
+
+it('accepts attempt-less HLS seed works and rejects observation secrets/identity', () => {
+  const observation = {
+    artifact_id: '11111111-1111-4111-8111-111111111111',
+    stage: 'first_frame',
+    outcome: 'succeeded',
+    duration_ms: 123,
+  };
+  expect(VideoPlazaPlaybackObservationSchema.safeParse(observation).success).toBe(true);
+  for (const extra of [
+    { user_id: observation.artifact_id },
+    { url: 'private' },
+    { duration_ms: Infinity },
+    { count: 1001 },
+  ])
+    expect(
+      VideoPlazaPlaybackObservationSchema.safeParse({ ...observation, ...extra }).success
+    ).toBe(false);
+  expect(PlazaVideoWorkSchema.shape).toHaveProperty('artifact_id');
+  expect(PlazaVideoWorkSchema.shape).not.toHaveProperty('attempt_id');
+  expect(PlazaVideoWorkSchema.shape).not.toHaveProperty('video_url');
 });

@@ -3,12 +3,10 @@ import { randomUUID } from 'node:crypto';
 import { config } from '../../platform/config.js';
 import { withBusinessContext } from '../../platform/observability/context.js';
 import { finishBackgroundOperation, runObservedJob } from '../../platform/observability/jobs.js';
-import { deletePlazaVideoAssets, uploadPlazaVideoAsset } from './storage.js';
-import { isVideoMediaAvailable, prepareVideo } from './video-media.js';
+import { getVideoStreamConfig } from '../../platform/runtime-config.js';
+import { startVideoDeliveryJob, stopVideoDeliveryJob } from './video-delivery-job.js';
 import { VideoPlazaRepository, type VideoAttemptRow } from './video-repository.js';
 import {
-  completeVideo,
-  downloadVideo,
   queueVideo,
   recommendedVideoPollDelayMs,
   retrieveVideo,
@@ -24,7 +22,8 @@ export function wakeVideoPlazaGenerationJob(): void {
 }
 
 export function startVideoPlazaGenerationJob(log: FastifyBaseLogger): void {
-  if (!config.imagePlaza.videoWorkerEnabled || !isVideoMediaAvailable() || timer) return;
+  if (!config.imagePlaza.videoWorkerEnabled || !getVideoStreamConfig() || timer) return;
+  startVideoDeliveryJob(log);
   const repository = new VideoPlazaRepository();
   const workerId = `video-${process.pid}-${randomUUID()}`;
   let rerunRequested = false;
@@ -48,7 +47,12 @@ export function startVideoPlazaGenerationJob(log: FastifyBaseLogger): void {
         await Promise.all(
           submitting.map((attempt) =>
             withBusinessContext(
-              { business_module: 'video', user_id: attempt.user_id, attempt_id: attempt.id },
+              {
+                business_module: 'image',
+                user_id: attempt.user_id,
+                image_conversation_id: attempt.conversation_id,
+                attempt_id: attempt.id,
+              },
               () => submit(repository, attempt, workerId, log)
             )
           )
@@ -61,7 +65,12 @@ export function startVideoPlazaGenerationJob(log: FastifyBaseLogger): void {
         await Promise.all(
           polling.map((attempt) =>
             withBusinessContext(
-              { business_module: 'video', user_id: attempt.user_id, attempt_id: attempt.id },
+              {
+                business_module: 'image',
+                user_id: attempt.user_id,
+                image_conversation_id: attempt.conversation_id,
+                attempt_id: attempt.id,
+              },
               () => poll(repository, attempt, workerId, log)
             )
           )
@@ -95,6 +104,7 @@ export function startVideoPlazaGenerationJob(log: FastifyBaseLogger): void {
 }
 
 export function stopVideoPlazaGenerationJob(): void {
+  stopVideoDeliveryJob();
   if (timer) clearInterval(timer);
   timer = null;
   wakeTick = null;
@@ -193,9 +203,7 @@ async function poll(
     });
     return;
   }
-  const storagePath = `media-plaza-video/attempts/${attempt.id}/video.mp4`;
-  const posterPath = `media-plaza-video/attempts/${attempt.id}/poster.jpg`;
-  let publishing = false;
+  let handingOff = false;
   try {
     const result = await retrieveVideo({
       providerModelId: attempt.provider_model_id,
@@ -216,43 +224,20 @@ async function poll(
       );
       return;
     }
+    handingOff = true;
     await repository.markStoring(attempt.id, workerId, result.downloadUrl ?? attempt.download_url);
-    const bytes =
-      result.bytes ?? (await downloadVideo(result.downloadUrl ?? attempt.download_url ?? ''));
-    const media = await prepareVideo(bytes);
-    await uploadPreparedVideo(media, storagePath, posterPath);
-    // RPC 提交结果一旦可能未知，就保留对象交给对账流程，避免删除其实已发布的资源。
-    publishing = true;
-    await repository.publish({
-      attemptId: attempt.id,
-      workerId,
-      storagePath,
-      byteSize: media.video.byteLength,
-      width: media.width,
-      height: media.height,
-      durationMs: media.durationMs,
-      posterPath,
-      posterWidth: media.width,
-      posterHeight: media.height,
-    });
-    void completeVideo(attempt.provider_model_id, attempt.provider_request_id).catch((err) =>
-      log.warn(
-        { err, event: 'video_plaza.complete_failed', attemptId: attempt.id },
-        'Video provider cleanup failed'
-      )
-    );
     log.info(
-      {
-        event: 'video_plaza.ready',
-        attemptId: attempt.id,
-        modelId: attempt.model_id,
-        pollCount: attempt.poll_count,
-        finalizationLatencyMs: Date.now() - startedAt,
-        totalLatencyMs: Math.max(0, Date.now() - Date.parse(attempt.created_at)),
-      },
-      'Video ready'
+      { event: 'video_plaza.delivery_enqueued', stage: 'storing', provider: 'cloudflare' },
+      'Video delivery enqueued'
     );
   } catch (err) {
+    if (handingOff) {
+      log.error(
+        { err, event: 'video_plaza.delivery_handoff_unknown' },
+        'Video delivery handoff requires reconciliation'
+      );
+      return;
+    }
     if (err instanceof VideoPlazaUpstreamError && err.disposition === 'retry') {
       if (Date.now() - Date.parse(attempt.created_at) < config.imagePlaza.videoPollDeadlineMs) {
         await repository.schedulePoll(attempt.id, workerId, 'processing', attempt.poll_count + 1);
@@ -265,21 +250,13 @@ async function poll(
       });
       return;
     }
-    if (!publishing) {
-      await deletePlazaVideoAssets([storagePath, posterPath]).catch((cleanupErr) =>
-        log.warn(
-          { err: cleanupErr, event: 'video_plaza.storage_cleanup_failed', attemptId: attempt.id },
-          'Video storage cleanup failed'
-        )
-      );
-    }
     const moderation =
       err instanceof VideoPlazaUpstreamError && err.code === 'video_moderation_rejected';
     const expired =
       err instanceof VideoPlazaUpstreamError && err.code === 'video_provider_media_expired';
     await repository.fail(attempt.id, workerId, {
       status: moderation ? 'moderation_rejected' : expired ? 'expired' : 'failed',
-      code: err instanceof Error ? err.message.slice(0, 120) : 'video_processing_failed',
+      code: err instanceof VideoPlazaUpstreamError ? err.code : 'video_processing_failed',
       refund: true,
     });
     log.error(
@@ -295,27 +272,4 @@ async function poll(
       'Video processing failed'
     );
   }
-}
-
-async function uploadPreparedVideo(
-  media: Awaited<ReturnType<typeof prepareVideo>>,
-  storagePath: string,
-  posterPath: string
-): Promise<void> {
-  const uploadResults = await Promise.allSettled([
-    uploadPlazaVideoAsset({
-      path: storagePath,
-      bytes: media.video,
-      contentType: 'video/mp4',
-    }),
-    uploadPlazaVideoAsset({
-      path: posterPath,
-      bytes: media.poster,
-      contentType: 'image/jpeg',
-    }),
-  ]);
-  const failedUpload = uploadResults.find(
-    (result): result is PromiseRejectedResult => result.status === 'rejected'
-  );
-  if (failedUpload) throw failedUpload.reason;
 }

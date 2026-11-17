@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { VideoPlazaPlaybackSchema } from './video-playback.js';
+export * from './video-playback.js';
 
 export const VIDEO_PLAZA_MAX_FILE_BYTES = 200 * 1024 * 1024;
 
@@ -287,7 +289,7 @@ export type VideoPlazaAttemptStatus = z.infer<typeof VideoPlazaAttemptStatusSche
 
 export const VideoPlazaArtifactSchema = z.object({
   id: z.string().uuid(),
-  video_url: z.string().url(),
+  playback: VideoPlazaPlaybackSchema,
   poster_url: z.string().url().nullable(),
   width: z.number().int().positive(),
   height: z.number().int().positive(),
@@ -361,8 +363,8 @@ export const PlazaVideoFeedItemSchema = z.object({
 export type PlazaVideoFeedItem = z.infer<typeof PlazaVideoFeedItemSchema>;
 
 export const PlazaVideoWorkSchema = PlazaVideoFeedItemSchema.extend({
-  attempt_id: z.string().uuid(),
-  video_url: z.string().url(),
+  artifact_id: z.string().uuid(),
+  playback: VideoPlazaPlaybackSchema,
   snapshot: VideoPlazaSnapshotSchema,
 });
 export type PlazaVideoWork = z.infer<typeof PlazaVideoWorkSchema>;
@@ -375,9 +377,8 @@ export type GetVideoPlazaAttemptData = z.infer<typeof GetVideoPlazaAttemptDataSc
 
 export const GetVideoPlazaPlaybackDataSchema = z.object({
   artifact_id: z.string().uuid(),
-  video_url: z.string().url(),
+  playback: VideoPlazaPlaybackSchema,
   poster_url: z.string().url().nullable(),
-  expires_at: z.string().datetime(),
 });
 export type GetVideoPlazaPlaybackData = z.infer<typeof GetVideoPlazaPlaybackDataSchema>;
 

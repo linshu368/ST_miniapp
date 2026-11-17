@@ -805,8 +805,12 @@ export function makeData(api: string, characterCount = 18) {
     like_count: 8,
     liked: false,
     published_at: now,
-    attempt_id: '41000000-0000-4000-8000-000000000001',
-    video_url: `${api}/assets/drama-preview.mp4`,
+    artifact_id: '41000000-0000-4000-8000-000000000001',
+    playback: {
+      format: 'hls',
+      play_url: `${api}/assets/plaza-video/master.m3u8`,
+      expires_at: new Date(Date.now() + 900_000).toISOString(),
+    },
     snapshot: {
       prompt: 'A gentle breeze moves through a quiet forest',
       model_id: 'wan-3-0-pro',

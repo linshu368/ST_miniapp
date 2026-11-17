@@ -1,0 +1,177 @@
+{
+  "id": "video-cloudflare-delivery",
+  "name": "video-cloudflare-delivery",
+  "title": "视频生成迁入Cloudflare Stream并接入多码率播放和日志",
+  "description": "广场未上生产，无旧MP4兼容：新生成使用Cloudflare Stream；TEST全部13条迁移，保留封面/业务数据，补齐日志与ABR播放。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "cross-layer",
+  "package": "backend",
+  "priority": "P1",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-17",
+  "completedAt": null,
+  "branch": "feat_video_park",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "backend.business.conversation-generation",
+        "backend.infrastructure.runtime-data-security",
+        "frontend.business.conversation-ui",
+        "frontend.business.drama-experience",
+        "shared.business.conversation-contracts",
+        "database.business.conversation-storage"
+      ]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": [
+        "/create",
+        "/create/studio/[conversationId]",
+        "/create/work/[workId]",
+        "/dramas",
+        "/dramas/[id]"
+      ],
+      "apis": [
+        "GET /api/image-plaza/config",
+        "GET /api/image-plaza/conversations/:conversationId",
+        "GET /api/image-plaza/video-attempts/:attemptId",
+        "POST /api/dramas/play",
+        "GET /api/image-plaza/video-artifacts/:artifactId/playback",
+        "GET /api/image-plaza/video-artifacts/:artifactId/download",
+        "POST /api/image-plaza/playback-observations"
+      ],
+      "android": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 1500
+      },
+      "ios": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 1500
+      },
+      "api": {
+        "p95_baseline_ms": null,
+        "p95_target_ms": 800
+      },
+      "measurement": {
+        "source": "源码/旧视频规划的性能目标；本任务尚无同环境同版本的可见线上样本",
+        "window": "同环境发布前取基线，发布后24小时及低样本7天复查；用户本轮明确免除本地UI验收，不填造页面或真机P95"
+      },
+      "notes": "Android/iOS页面和接口基线均为null，不补零或推测。广场目标继承既有1500ms页面、800ms接口；首帧/未缓冲seek目标沿用原视频规划2000ms，单列并注明网络条件。短剧原指标和行为应不退化，不把云端编码/模型耗时混入播放P95。"
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "required",
+      "scope": [
+        "视频上传Cloudflare、编码状态、发布与补偿",
+        "工作室/详情HLS取址、下载、首帧和失败恢复",
+        "短剧复用能力回归及业务上下文白名单修正",
+        "TEST全部13个视频迁移、校验、数据切换与清理"
+      ],
+      "integration_points": [
+        "platform/observability/fetch.ts与jobs.ts、context.ts",
+        "events.ts、safe-log.ts、logger-options.ts、labels.zh-CN.ts及alert-rules.json",
+        "既有video-job、HTTP取址边界与前端媒体观测接收出口"
+      ],
+      "events": [
+        {
+          "event": "operation.terminal",
+          "operation": "video.delivery.upload",
+          "levels": ["info", "warn", "error"],
+          "outcomes": ["succeeded", "rejected", "failed", "timed_out", "unknown"],
+          "fields": [
+            "provider",
+            "stage",
+            "upstream_status",
+            "duration_ms",
+            "error_code",
+            "attempt_id",
+            "trace_id"
+          ]
+        },
+        {
+          "event": "operation.terminal",
+          "operation": "video.delivery.encode",
+          "levels": ["info", "warn", "error"],
+          "outcomes": ["skipped", "succeeded", "failed", "timed_out", "unknown"],
+          "fields": [
+            "provider",
+            "stage",
+            "outcome",
+            "count",
+            "duration_ms",
+            "attempt_id",
+            "artifact_id",
+            "trace_id"
+          ]
+        },
+        {
+          "event": "operation.terminal",
+          "operation": "video.delivery.playback",
+          "levels": ["info", "warn", "error"],
+          "outcomes": ["succeeded", "rejected", "failed", "timed_out", "interrupted", "degraded"],
+          "fields": [
+            "provider",
+            "http_status",
+            "public_error_code",
+            "duration_ms",
+            "request_id",
+            "trace_id",
+            "artifact_id",
+            "work_id"
+          ]
+        }
+      ],
+      "failure_paths": [
+        "上传超时或未知结果、429和有限退避、重复创建与重启恢复",
+        "转码失败、码率未就绪、发布结果未知及补偿失败",
+        "无权限、签名失效、HLS失败、切源/离页/后台中断与下载尚未就绪"
+      ],
+      "correlation": "统一business_module=image，修正video被过滤问题；可信任务/鉴权记录绑定user、image_conversation、attempt、artifact、work，继承request/trace/span。异步轮次独立根、逐资产隔离，不为日志额外查库。",
+      "redaction": "只输出显式白名单的状态、计数、耗时和安全错误；不记录token、私钥、签名URL、提示词、完整响应或任意DTO；业务ID不进入指标/Sentry标签。",
+      "alerting": "补集中中文标签及适用规则，沿用告警默认关闭和通知失败隔离；429等按warn处理，不能把所有异常升级或直接发送通知。",
+      "verification": [
+        "真实Pino JSON验证关联字段、脱敏、一次终态、并发隔离、原错误与业务结果不变",
+        "pnpm lint:backend-logging及既有观测测试；覆盖上传未知、转码失败、刷新失败和关闭告警",
+        "前端首帧/seek/卡顿到后端出口全链验证；TEST/Railway实际检索在环境与发布确认后执行"
+      ]
+    },
+    "test_data_migration": {
+      "target": "test",
+      "project_ref": "zoqelpfhurwehlvypryl",
+      "asset_count": 13,
+      "seed_count": 10,
+      "generated_count": 3,
+      "source_bytes": 74247409,
+      "source_objects_readable": 13,
+      "local_hash_verified": 9,
+      "local_recovery_needed": 4,
+      "tls_verification": true,
+      "production_writes": false,
+      "legacy_playback_compatibility": false,
+      "source_cleanup": "13/13云端和应用验收后，仅清理原13个MP4，保留封面与本地恢复副本",
+      "source_backup_count": 13,
+      "uploaded_count": 13,
+      "verified_count": 13,
+      "rendition_min": 3,
+      "rendition_max": 5,
+      "sample_download_range_readable": true,
+      "database_cutover_applied": false,
+      "source_cleanup_applied": false,
+      "runtime_config": "复用DRAMA_STREAM签名、CLOUDFLARE_ACCOUNT_ID和现有VIDEO_STREAM_API_TOKEN；.env私钥格式已修复，不输出或提交值"
+    }
+  }
+}

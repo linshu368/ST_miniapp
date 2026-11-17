@@ -1,3 +1,4 @@
+import { signPlazaStreamPlayback } from './video-stream-playback.js';
 import {
   ImagePlazaSnapshotSchema,
   VideoPlazaSnapshotSchema,
@@ -164,8 +165,8 @@ export class ImagePlazaWorkRepository {
     if (feedImages) return summary;
     return {
       ...summary,
-      attempt_id: artifact.attempt_id,
-      video_url: await signSharedVideoPath(artifact.storage_path),
+      artifact_id: artifact.id,
+      playback: await signPlazaStreamPlayback(artifact.stream_uid),
       snapshot: snapshot.data,
     };
   }

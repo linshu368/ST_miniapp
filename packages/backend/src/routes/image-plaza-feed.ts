@@ -12,7 +12,7 @@ import {
   publicImagePlazaFeedTags,
 } from '../features/image-plaza/config.js';
 import { ImagePlazaRepository } from '../features/image-plaza/repository.js';
-import { isVideoMediaAvailable } from '../features/image-plaza/video-media.js';
+import { getVideoStreamConfig } from '../platform/runtime-config.js';
 import { requireTelegramAuth } from '../middleware/auth.js';
 import { config } from '../platform/config.js';
 import { routeError } from './image-plaza-errors.js';
@@ -36,7 +36,7 @@ export function registerImagePlazaConfigRoute(
           ok<GetImagePlazaConfigData>({
             enabled: runtime.enabled,
             video_models:
-              isVideoMediaAvailable() && config.imagePlaza.videoWorkerEnabled
+              getVideoStreamConfig() !== null && config.imagePlaza.videoWorkerEnabled
                 ? (runtime.videoCatalog?.models
                     .filter((model) => model.enabled)
                     .sort((a, b) => a.sort_order - b.sort_order)
@@ -52,7 +52,7 @@ export function registerImagePlazaConfigRoute(
                     ) ?? [])
                 : [],
             default_video_model_id:
-              isVideoMediaAvailable() && config.imagePlaza.videoWorkerEnabled
+              getVideoStreamConfig() !== null && config.imagePlaza.videoWorkerEnabled
                 ? (runtime.videoCatalog?.default_model_id ?? null)
                 : null,
             models: runtime.catalog.models

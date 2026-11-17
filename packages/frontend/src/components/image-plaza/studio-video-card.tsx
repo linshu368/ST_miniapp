@@ -1,5 +1,7 @@
 'use client';
 
+import { PlazaVideoPlayer } from './plaza-video-player';
+import { useVideoPlazaDownloadMutation } from '@/lib/api/video-plaza';
 import { useMobilePerformancePolicy } from '@/lib/mobile-performance';
 import { supabasePublicImageSrcSet, supabasePublicImageUrl } from '@/lib/supabase-image';
 import { requestTelegramFileDownload } from '@/lib/telegram/hooks';
@@ -23,7 +25,7 @@ type StudioVideoCardProps = {
 function useStudioVideoMedia(props: StudioVideoCardProps) {
   const performancePolicy = useMobilePerformancePolicy();
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const downloadRequest = useVideoPlazaDownloadMutation(props.artifact.id);
   const settled = useRef(false);
   const [active, setActive] = useState(false);
   const [mediaReady, setMediaReady] = useState(false);
@@ -87,19 +89,7 @@ function useStudioVideoMedia(props: StudioVideoCardProps) {
     return () => observer.disconnect();
   }, [active, performancePolicy.imagePlaza.videoActivationRootMargin]);
 
-  const activateAndPlay = () => {
-    const node = videoRef.current;
-    if (!node) return;
-    if (!active) {
-      // Bind synchronously inside the user gesture so iOS/Android WebView can honor play().
-      node.src = props.artifact.video_url;
-      node.load();
-      setActive(true);
-    }
-    void node.play().catch(() => {
-      // Native controls remain available when autoplay policy rejects the first play().
-    });
-  };
+  const activateAndPlay = () => setActive(true);
 
   const handlePosterError = () => {
     if (!posterUrl) return;
@@ -112,10 +102,28 @@ function useStudioVideoMedia(props: StudioVideoCardProps) {
     settle('error');
   };
 
-  const download = () => downloadVideoArtifact(props);
+  const download = async () => {
+    try {
+      const result = await downloadRequest.mutateAsync();
+      if (result.status === 'processing') {
+        props.onNotice('视频下载文件正在准备，请稍后再次点击下载');
+        return;
+      }
+      if (result.status === 'failed') {
+        props.onNotice('视频下载准备失败，请稍后重试');
+        return;
+      }
+      const accepted = await requestTelegramFileDownload(
+        result.download_url,
+        `video-${props.artifact.id}.mp4`
+      );
+      if (!accepted) window.open(result.download_url, '_blank', 'noopener,noreferrer');
+    } catch {
+      props.onNotice('下载未完成，请稍后重试');
+    }
+  };
   return {
     containerRef,
-    videoRef,
     active,
     displayPoster,
     mediaReady,
@@ -135,7 +143,6 @@ function useStudioVideoMedia(props: StudioVideoCardProps) {
 export function StudioVideoCard(props: StudioVideoCardProps) {
   const {
     containerRef,
-    videoRef,
     active,
     displayPoster,
     mediaReady,
@@ -153,15 +160,13 @@ export function StudioVideoCard(props: StudioVideoCardProps) {
   return (
     <article className="overflow-hidden rounded-3xl bg-card ring-1 ring-border">
       <div ref={containerRef} className="relative aspect-video w-full bg-black">
-        <video
-          ref={videoRef}
-          src={active ? props.artifact.video_url : undefined}
+        <PlazaVideoPlayer
+          key={props.artifact.id}
+          artifactId={props.artifact.id}
+          playback={props.artifact.playback}
           poster={displayPoster ?? undefined}
-          controls={active}
-          playsInline
-          preload={active ? 'metadata' : 'none'}
-          onLoadedMetadata={() => setMediaReady(true)}
-          className="absolute inset-0 size-full object-contain"
+          active={active}
+          onReady={() => setMediaReady(true)}
         />
         {displayPoster && !posterFailed && (!mediaReady || !posterSettled) ? (
           <img
@@ -225,17 +230,4 @@ export function StudioVideoCard(props: StudioVideoCardProps) {
       </div>
     </article>
   );
-}
-
-async function downloadVideoArtifact(props: StudioVideoCardProps): Promise<void> {
-  try {
-    const accepted = await requestTelegramFileDownload(
-      props.artifact.video_url,
-      `video-${props.artifact.id}.mp4`
-    );
-    if (!accepted) window.open(props.artifact.video_url, '_blank', 'noopener,noreferrer');
-  } catch {
-    props.onNotice('下载未完成，已为你打开原视频');
-    window.open(props.artifact.video_url, '_blank', 'noopener,noreferrer');
-  }
 }

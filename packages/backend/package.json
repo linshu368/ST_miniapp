@@ -30,7 +30,8 @@
     "test": "vitest run --exclude '**/*.integration.test.ts'",
     "test:integration": "vitest run src/infrastructure/repositories/conversations.integration.test.ts",
     "typecheck": "tsc --noEmit",
-    "test:lobby-ranking": "vitest run src/features/lobby/ranking-score.test.ts src/features/lobby/recommended-ranking.test.ts src/features/lobby/ranking-params.test.ts src/features/lobby/recommendation-ranking.test.ts src/routes/lobby-recommendation.test.ts src/features/lobby/ranking-stats.integration.test.ts"
+    "test:lobby-ranking": "vitest run src/features/lobby/ranking-score.test.ts src/features/lobby/recommended-ranking.test.ts src/features/lobby/ranking-params.test.ts src/features/lobby/recommendation-ranking.test.ts src/routes/lobby-recommendation.test.ts src/features/lobby/ranking-stats.integration.test.ts",
+    "video-plaza:stream-migrate": "tsx src/scripts/migrate-video-plaza-stream.ts"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.0",

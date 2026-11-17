@@ -42,7 +42,7 @@ if [[ ! "$MIGRATION_NAME" =~ ^[A-Za-z0-9._-]+$ ]]; then
   die "MIGRATION_USAGE: unexpected characters in filename: $MIGRATION_NAME"
 fi
 
-if [[ "$MIGRATION_NAME" == *_media_plaza_video_seed_test_* ]]; then
+if [[ "$MIGRATION_NAME" == *_media_plaza_video_seed_test_* || "$MIGRATION_NAME" == *_media_plaza_stream_test_* ]]; then
   [[ "$ENVIRONMENT" == "test" ]] \
     || die "MIGRATION_ENVIRONMENT_MISMATCH: TEST video seed migration requires ENVIRONMENT=test"
   [[ "${GITHUB_ACTIONS:-}" == "true" ]] \
@@ -225,7 +225,7 @@ record_ledger_with_retry() {
 
 apply_sql() {
   # 迁移文件自己带 BEGIN/COMMIT。这里不再包一层，避免套娃事务把文件里的 COMMIT 提交掉外层。
-  if [[ "$MIGRATION_NAME" == *_media_plaza_video_seed_test_* ]]; then
+  if [[ "$MIGRATION_NAME" == *_media_plaza_video_seed_test_* || "$MIGRATION_NAME" == *_media_plaza_stream_test_* ]]; then
     # Supavisor does not preserve custom GUCs supplied as startup parameters. Open the
     # transaction first so transaction pooling pins one backend, then set the approvals
     # in that same psql session before the migration performs its independent checks.

@@ -800,6 +800,21 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         return;
       }
 
+      if (
+        /^\/assets\/plaza-video\/(?:master\.m3u8|[01]\/(?:index\.m3u8|segment[0-9]+\.mpegts))$/.test(
+          path
+        ) &&
+        (method === 'GET' || method === 'HEAD')
+      ) {
+        const file = await readFile(new URL(`.${path}`, import.meta.url));
+        res.writeHead(200, {
+          'Content-Type': path.endsWith('.m3u8') ? 'application/vnd.apple.mpegurl' : 'video/mp2t',
+          'Content-Length': file.length,
+        });
+        res.end(method === 'HEAD' ? undefined : file);
+        return;
+      }
+
       if (path === '/assets/drama-preview.mp4' && (method === 'GET' || method === 'HEAD')) {
         const video = await readFile(new URL('./assets/drama-preview.mp4', import.meta.url));
         const range = req.headers.range;
@@ -2427,6 +2442,44 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         });
         return;
       }
+      if (path === '/api/image-plaza/playback-observations' && method === 'POST') {
+        ok(res, { accepted: true });
+        return;
+      }
+      const videoArtifactMatch = path.match(
+        /^\/api\/image-plaza\/video-artifacts\/([^/]+)\/(playback|download)$/
+      );
+      if (videoArtifactMatch && method === 'GET') {
+        const artifact = [...videoAttempts.values()]
+          .map((a) => a.artifact)
+          .find((a) => a?.id === videoArtifactMatch[1]);
+        const work = data.works.find(
+          (w) => w.media_type === 'video' && w.artifact_id === videoArtifactMatch[1]
+        );
+        if (!artifact && (!work || work.media_type !== 'video')) {
+          fail(res, 404, 'NOT_FOUND', '视频不存在');
+          return;
+        }
+        if (videoArtifactMatch[2] === 'download') {
+          ok(res, {
+            status: 'ready',
+            download_url: `${api}/assets/drama-preview.mp4`,
+            expires_at: new Date(Date.now() + 900_000).toISOString(),
+          });
+          return;
+        }
+        ok(res, {
+          artifact_id: videoArtifactMatch[1],
+          poster_url:
+            artifact?.poster_url ?? (work?.media_type === 'video' ? work.poster_url : null),
+          playback: {
+            format: 'hls',
+            play_url: `${api}/assets/plaza-video/master.m3u8`,
+            expires_at: new Date(Date.now() + 900_000).toISOString(),
+          },
+        });
+        return;
+      }
       const videoAttemptMatch = path.match(/^\/api\/image-plaza\/video-attempts\/([^/]+)$/);
       if (videoAttemptMatch && method === 'GET') {
         const attempt = videoAttempts.get(videoAttemptMatch[1]!);
@@ -2540,7 +2593,11 @@ export function createPreviewServer(apiPort: number, appPort: number) {
             },
             artifact: {
               id: randomUUID(),
-              video_url: `${api}/assets/drama-preview.mp4`,
+              playback: {
+                format: 'hls',
+                play_url: `${api}/assets/plaza-video/master.m3u8`,
+                expires_at: new Date(Date.now() + 900_000).toISOString(),
+              },
               poster_url: `${api}/assets/scene.svg?tone=1`,
               width: 1280,
               height: 720,

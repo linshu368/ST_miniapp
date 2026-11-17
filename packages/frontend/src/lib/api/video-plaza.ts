@@ -4,6 +4,8 @@ import type {
   GetImagePlazaConversationData,
   GetVideoPlazaAttemptData,
   GetVideoPlazaPlaybackData,
+  GetVideoPlazaDownloadData,
+  VideoPlazaPlaybackObservation,
   ShareVideoPlazaWorkData,
   ShareVideoPlazaWorkRequest,
   SubmitVideoPlazaAttemptData,
@@ -201,11 +203,11 @@ export function useVideoPlazaAttemptQuery(attemptId: string) {
   return query;
 }
 
-export function useVideoPlazaPlaybackMutation(attemptId: string) {
+export function useVideoPlazaPlaybackMutation(artifactId: string) {
   return useMutation({
     mutationFn: () =>
       apiClient<GetVideoPlazaPlaybackData>(
-        `/api/image-plaza/video-attempts/${attemptId}/playback`,
+        `/api/image-plaza/video-artifacts/${artifactId}/playback`,
         { signal: AbortSignal.timeout(10_000) }
       ),
   });
@@ -224,5 +226,26 @@ export function useShareVideoPlazaMutation() {
       void client.invalidateQueries({ queryKey: [...imagePlazaKeys.all, 'feed'] });
       void client.invalidateQueries({ queryKey: paymentKeys.wallet() });
     },
+  });
+}
+
+export function useVideoPlazaDownloadMutation(artifactId: string) {
+  return useMutation({
+    mutationFn: () =>
+      apiClient<GetVideoPlazaDownloadData>(
+        `/api/image-plaza/video-artifacts/${artifactId}/download`,
+        { signal: AbortSignal.timeout(20_000) }
+      ),
+  });
+}
+export function useVideoPlazaObservationMutation() {
+  return useMutation({
+    mutationFn: (body: VideoPlazaPlaybackObservation) =>
+      apiClient<{ accepted: true }>('/api/image-plaza/playback-observations', {
+        method: 'POST',
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(5000),
+      }),
+    retry: false,
   });
 }

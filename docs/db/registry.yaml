@@ -552,6 +552,27 @@ tables:
     }
 
   # ───────────────────────── media_plaza ─────────────────────────
+  media_plaza.video_quotes:
+    nature: M
+    owner: backend/src/features/image-plaza/video-repository.ts
+    status: moving
+    note: MIGRATION 20261027；广场视频未生产发布，历史报价落位债务待迁billing，本次不加列
+  media_plaza.video_attempts:
+    nature: E
+    owner: rpc:billing.reserve_media_plaza_video
+    status: moving
+    note: MIGRATION 20261027；历史混合J/M字段待拆，本次交付租约进入video_delivery_jobs，不加列
+  media_plaza.video_artifacts:
+    nature: E
+    owner: rpc:media_plaza.publish_video_artifact
+    status: active
+    note: Stream UID/稳定链接与产物同生命周期；封面在Supabase；20261117扩展待TEST workflow执行
+  media_plaza.video_delivery_jobs:
+    nature: J
+    owner: backend/src/features/image-plaza/video-delivery-repository.ts
+    status: planned
+    note: 唯一attempt交付、TUS会话/源hash/租约/退避；终态保留7天，未知保留至对账；service_role，禁止前端读取
+
   media_plaza.image_plaza_attempts:
     nature: E
     owner: backend/src/features/image-plaza

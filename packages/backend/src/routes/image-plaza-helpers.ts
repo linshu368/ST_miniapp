@@ -1,7 +1,7 @@
 import { fail } from '@miniapp/shared';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { getImagePlazaRuntimeConfig } from '../features/image-plaza/config.js';
-import { isVideoMediaAvailable } from '../features/image-plaza/video-media.js';
+import { getVideoStreamConfig } from '../platform/runtime-config.js';
 import { getOrCreateDbUser } from '../lib/user.js';
 import { config } from '../platform/config.js';
 
@@ -33,7 +33,7 @@ export function requireVideoGenerationProvider(): void {
   if (
     !config.imagePlaza.videoWorkerEnabled ||
     !config.imagePlaza.apiKey ||
-    !isVideoMediaAvailable()
+    !getVideoStreamConfig()
   ) {
     throw new Error('video_plaza_provider_unavailable');
   }

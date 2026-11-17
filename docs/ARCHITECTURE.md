@@ -380,6 +380,8 @@ T9 专表 contract：`20261016_openrouter_chat_history_drop_legacy_aliases.sql` 
 
 2026-09-24 产品确认 TEST 真机 VIP 验收通过。当时任务日志中的 TEST 状态是 `vip_purchase_enabled=true`、`vip_reminders_enabled=true`。Production 购买、提醒和数据都未按本任务打开，上线仍等 T9 的明确批准。
 
+2026-11-17本地候选：广场视频统一Cloudflare Stream；Supabase保留稳定UID/链接、封面与业务事实。独立video_delivery_jobs承担TUS断点、租约/退避/未知隔离；发布及明确失败退款由RPC原子收敛。按artifact鉴权的HLS取址/MP4下载与工作室/详情共用播放器，业务日志模块image。TEST全部13条云资产已上传核验，数据库和应用切换尚未执行，生产不在本任务操作范围；顺序与恢复见[操作说明](video-plaza-stream.md)。
+
 ### 4.9 图片与视频创作广场（图片 M1 已执行；视频 migration/canary 待执行）
 
 图片广场与角色回复图片完全独立：共享契约在 `shared/src/api/image-plaza.ts`，Backend 在 `features/image-plaza/` 与 `routes/image-plaza.ts`，Frontend 使用 `/create`、`/create/work/[workId]` 和 `/create/studio/[conversationId]`。报价、异步 Venice 生成、Storage、结算、分享返利、feed/详情/点赞/用同款都走这套独立链路；提示词在 textarea、shared schema、作品快照、attempt/message、数据库和上游调用中统一最多 2,000 字，不静默截断。Feed/config 始终返回图片与视频共用的启用标签目录，目录支持运营分组、顺序与 chip/grid 布局；单/多标签和计数都按配置 label 对 `snapshot.prompt_zh` 做转义后的字面包含匹配，「全部」不限制，不按作品 `tags` 数组筛选。分享时客户端未传标签即自动打标，不再读取已退役开关。

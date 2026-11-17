@@ -1,3 +1,4 @@
+import { registerVideoPlazaPlaybackRoutes } from './video-plaza-playback.js';
 import {
   ShareVideoPlazaWorkRequestSchema,
   SubmitVideoPlazaAttemptRequestSchema,
@@ -7,7 +8,6 @@ import {
   ok,
   type CreateVideoReferenceFromImageArtifactData,
   type GetVideoPlazaAttemptData,
-  type GetVideoPlazaPlaybackData,
   type GetVideoPlazaTagCountsData,
   type ShareVideoPlazaWorkData,
   type SubmitVideoPlazaAttemptData,
@@ -124,6 +124,7 @@ export function registerVideoPlazaAttemptRoutes(
   repository: ImagePlazaRepository,
   videos: () => VideoPlazaRepository
 ) {
+  registerVideoPlazaPlaybackRoutes(app);
   // @frontend-ready: true
   app.post(
     '/api/image-plaza/conversations/:conversationId/video-attempts',
@@ -167,33 +168,6 @@ export function registerVideoPlazaAttemptRoutes(
         const attempt = await videos().getAttempt(attemptId, context.id);
         if (!attempt) return reply.status(404).send(fail('NOT_FOUND', '视频任务不存在'));
         return reply.send(ok<GetVideoPlazaAttemptData>({ attempt }));
-      } catch (err) {
-        return routeError(request, reply, err);
-      }
-    }
-  );
-
-  // @frontend-ready: true
-  app.get(
-    '/api/image-plaza/video-attempts/:attemptId/playback',
-    { preHandler: [requireTelegramAuth] },
-    async (request, reply) => {
-      const context = await userContext(request, reply);
-      if (!context) return;
-      const { attemptId } = request.params as { attemptId: string };
-      if (!UUID_PATTERN.test(attemptId))
-        return reply.status(400).send(fail('BAD_REQUEST', '视频任务 ID 无效'));
-      try {
-        const attempt = await videos().getAttempt(attemptId, context.id);
-        if (!attempt?.artifact) return reply.status(404).send(fail('NOT_FOUND', '视频尚未生成'));
-        return reply.send(
-          ok<GetVideoPlazaPlaybackData>({
-            artifact_id: attempt.artifact.id,
-            video_url: attempt.artifact.video_url,
-            poster_url: attempt.artifact.poster_url,
-            expires_at: new Date(Date.now() + 15 * 60_000).toISOString(),
-          })
-        );
       } catch (err) {
         return routeError(request, reply, err);
       }

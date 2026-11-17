@@ -1,5 +1,6 @@
 'use client';
 
+import { PlazaVideoPlayer } from '@/components/image-plaza/plaza-video-player';
 import { usePageReady } from '@/lib/perf/page-ready';
 import { ArrowLeft, Heart, LoaderCircle, RotateCcw, WandSparkles } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
@@ -10,7 +11,6 @@ import {
   useCreateImagePlazaConversationMutation,
   useImagePlazaWorkQuery,
   useSetImagePlazaLikeMutation,
-  useVideoPlazaPlaybackMutation,
 } from '@/lib/api/image-plaza';
 
 export default function ImagePlazaWorkPage() {
@@ -33,14 +33,10 @@ function ImagePlazaWorkDetail({ workId }: { workId: string }) {
   const createConversation = useCreateImagePlazaConversationMutation();
   const [showReference, setShowReference] = useState(false);
   const work = query.data?.work;
-  const videoWork = work?.media_type === 'video' ? work : null;
-  const playback = useVideoPlazaPlaybackMutation(videoWork?.attempt_id ?? '');
   const imageWork = work?.media_type === 'image' ? work : null;
   const [displayedImage, setDisplayedImage] = useState<string | null>(imageWork?.image_url ?? null);
   const [failedImage, setFailedImage] = useState(false);
   const [retryImage, setRetryImage] = useState(0);
-  const [videoUrl, setVideoUrl] = useState<string | null>(null);
-  const [videoRefreshAttempted, setVideoRefreshAttempted] = useState(false);
   const imageUrl =
     showReference && imageWork?.reference_image_url
       ? imageWork.reference_image_url
@@ -65,10 +61,6 @@ function ImagePlazaWorkDetail({ workId }: { workId: string }) {
       image.onerror = null;
     };
   }, [imageUrl, retryImage]);
-
-  useEffect(() => {
-    if (videoWork?.video_url) setVideoUrl(videoWork.video_url);
-  }, [videoWork?.video_url]);
 
   if (query.isLoading)
     return (
@@ -116,20 +108,11 @@ function ImagePlazaWorkDetail({ workId }: { workId: string }) {
           style={{ aspectRatio: `${work.width} / ${work.height}`, maxHeight: '72vh' }}
         >
           {work.media_type === 'video' ? (
-            <video
-              src={videoUrl ?? work.video_url}
+            <PlazaVideoPlayer
+              key={work.artifact_id}
+              artifactId={work.artifact_id}
+              playback={work.playback}
               poster={work.poster_url ?? undefined}
-              controls
-              playsInline
-              preload="metadata"
-              onError={() => {
-                if (videoRefreshAttempted || playback.isPending) return;
-                setVideoRefreshAttempted(true);
-                playback.mutate(undefined, {
-                  onSuccess: (fresh) => setVideoUrl(fresh.video_url),
-                });
-              }}
-              className="h-full w-full object-contain"
             />
           ) : (
             <img
