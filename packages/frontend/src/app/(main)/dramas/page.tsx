@@ -5,6 +5,7 @@ import { Search, X } from 'lucide-react';
 
 import { useDramaListQuery } from '@/lib/api/drama';
 import { useDramaStreamWarmth } from '@/hooks/use-connection-warmth';
+import { useDramaPlaybackWarmup } from '@/hooks/use-drama-playback-warmup';
 import { selectDramas } from '@/lib/drama-catalog';
 import { clearFeedReturn, peekFeedReturn } from '@/lib/drama-feed-return';
 import { DramaListHeader, DramaGridSkeleton } from '@/components/drama/drama-list-shell';
@@ -30,6 +31,7 @@ const RESTORE_TAIL_COUNT = 12;
 
 export default function DramasPage() {
   useDramaStreamWarmth();
+  useDramaPlaybackWarmup('/watch');
   const performancePolicy = useMobilePerformancePolicy();
   const listBudget = performancePolicy.dramas;
   const { data, isLoading, isError, isFetching, refetch } = useDramaListQuery();
