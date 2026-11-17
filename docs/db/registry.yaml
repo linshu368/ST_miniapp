@@ -39,8 +39,6 @@ schemas:
       purpose: 给客服仓库读的只读视图,
       note: 20261117_db_reorg_ops_cs_feed.sql 建立；授权 cs_runtime_v1 / cs_persona_reader,
     }
-  analytics_grafana:
-    { status: drop, phase: 1, note: 视图与物化视图并入 miniapp_analytics，Grafana 面板 SQL 同步改 }
   cs: { status: external, note: 客服仓库 linshu368/ST_cs_platform 拥有 }
   drama_archive: { status: external, note: 上传端拥有；本仓库只拥有 drama_likes / drama_comments }
   public:

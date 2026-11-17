@@ -17,7 +17,7 @@
 3. 1c：收回 `cs_runtime_v1` 对业务表的直接读权限；`cs_persona_reader` 只保留 `cs_feed` 与 `miniapp_analytics`；删除 `cs_outreach_reader_v1`。
 4. 1d：删除 `users.st_handle`/`st_initialized_at`、`wish_roles`、`cs_platform`、`miniapp`、`public` 残留函数与两个停用 cron；`botlinks` 列名改小写；`drama_survey_responses` 迁入 `miniapp_features`。以 Supabase 每日备份为归档。
 5. 1e：`admin.managed_config_keys` 登记表取代 `*_before_*` 包装链，校验行为不变；复核并删除无人读取的 runtime_config key。
-6. 1f：`analytics_grafana` 并入 `miniapp_analytics`，Grafana 面板 SQL 同步替换，数值前后一致。
+6. 1f：`analytics_grafana` 已无看板、告警、函数读取，物化视图停更，直接删除（原计划为合并）。
 
 ## Acceptance Criteria
 

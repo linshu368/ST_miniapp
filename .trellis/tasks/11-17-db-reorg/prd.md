@@ -27,7 +27,7 @@
 4. 按 `design.md` 的阶段 1–6 完成迁移。每个阶段完成后，registry 回写为最终状态。
 5. 外部读者不受影响：
    - 客服仓库在阶段 1 切到 `cs_feed` 视图；
-   - Grafana 面板在 `analytics_grafana` 并入 `miniapp_analytics` 时同步改 SQL；
+   - Grafana 看板只读 `miniapp_analytics`（`analytics_grafana` 已无读者，1f 删除）；
    - 指标读者角色同步改授权。
 
 ## Acceptance Criteria

@@ -16,7 +16,7 @@
   - `cs_runtime_v1`：运行时账号，有活跃连接。读 `app_core.users`、`miniapp_user_settings`、`billing.user_wallets` / `vip_memberships` / `payment_orders`、`experience.chat_sessions`（见 `packages/server/src/domain/{users,conversations,outreach,alerts}.ts`）。
   - `cs_persona_reader`：**在用**。客服"画像簇"功能执行产品同学手写的圈人 SQL，这个账号对业务 schema 有全表 SELECT（客服仓库 `db/migrations/009_product_outreach.sql`、`packages/server/src/personaDb.ts`）。已保存的画像 SQL 直接写主库内部表名，后续拆表会让它失效。
   - `cs_outreach_reader_v1`：两个仓库零引用、无连接，属遗留账号。
-- `analytics_grafana` 有 11 个物化视图、35 个视图。只有 `v_user_ecosystem_daily` 与 `miniapp_analytics` 重名。`miniapp_analytics.refresh_grafana_core_day` 引用它。
+- `analytics_grafana` 有 11 个物化视图、35 个视图（1f 核对后确认已无读者，改为删除）。`miniapp_analytics.refresh_grafana_core_day` 引用它。
 - `public` 只剩 `compute_daily_metrics`、`show_dashboard` 两个函数。调用它们的两个定时任务 `daily_metrics_midnight` / `daily_metrics_noon` 已停用，最后一次运行报"relation does not exist"。
 - `admin.is_managed_config_key` / `validate_managed_config_value` 是包装链，每加一个托管 key 就把旧函数改名为 `*_before_<feature>` 再包一层，共 24 个旧版本。
 - 顺带发现（不在本阶段修）：`grafana_core_recent_30m` 近 7 天 336 次中失败 121 次，原因是扫 `chat_history` 超过 5 秒语句超时。阶段 5 瘦身后复查。
@@ -94,12 +94,16 @@
   - `pnpm -s admin config describe` 列出的 key 与登记表一致；
   - 对每类 key 各发一次草稿，确认校验结果与改造前一致（测试库）。
 
-### 1f 分析 schema 合并（主仓库加 Grafana）
+### 1f 删除 analytics_grafana — `20261117_db_reorg_drop_analytics_grafana.sql`
 
-- `analytics_grafana` 的 46 个对象 `ALTER ... SET SCHEMA miniapp_analytics`；重名的 `v_user_ecosystem_daily` 改名为 `v_user_ecosystem_daily_grafana`。
-- 改 `miniapp_analytics.refresh_grafana_core_day`；`grafana_reader` / `grafana_cloud` 的授权迁到同名对象上。
-- 用 Grafana MCP 找出所有引用 `analytics_grafana.` 的面板，批量替换 SQL。替换前后用同一时间范围对比每个面板的查询结果。
-- 删除空的 `analytics_grafana` schema。
+原计划合并到 `miniapp_analytics`。核对后改为删除，依据所有者"没数据/没在用就去掉"的原则：
+
+- Grafana 现存 27 个看板与全部告警规则都没有引用 `analytics_grafana`：经营看板与短剧诊断看板只查 `miniapp_analytics`，其余走 Loki/Faro。引用它的 9 个过期看板已于 11-04 删除。
+- 11 个物化视图最后一次刷新在 10-24 至 10-26，有几个从未刷新，没有任何 cron 或函数维护它们。
+- 没有函数、cron、外部视图引用它。`refresh_grafana_core_day` 是 LIKE 下划线通配造成的误报，精确匹配为 0。
+- 同时删除只在它上面有授权的组角色 `grafana_reader`：只有在删 schema 后没有残留依赖、且有 ADMIN 权限时才删，否则保留并打印 NOTICE。
+- 迁移内守卫：仍有函数、外部视图或 cron 引用时拒绝执行。
+- 验证：`bash scripts/test-db-reorg-p1f-migration.sh`（非超级用户；正常删除、外部依赖时拒绝且不改动）。
 
 ## 执行纪律
 
