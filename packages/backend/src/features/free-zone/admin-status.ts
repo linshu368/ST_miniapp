@@ -68,7 +68,7 @@ function lastProbe(metrics: Record<string, unknown> | null): FreeZoneProbe | nul
   return parsed.success ? parsed.data : null;
 }
 
-/** last_metrics 里评估任务记下的业务数据（只有在架模型才有 turns）。 */
+/** last_metrics 里评估任务记下的质量数据（只有在架模型才有 turns）。 */
 function businessSnapshot(
   row: Pick<StatusRow, 'status' | 'last_metrics'> | undefined
 ): FreeZoneBusinessSnapshot | null {
@@ -146,7 +146,6 @@ export function buildFreeZoneStatus(
   const evaluated = rows.flatMap((row) => (row.evaluated_at ? [row.evaluated_at.getTime()] : []));
   return {
     enabled: config.enabled,
-    required_passes: config.relist.required_passes,
     last_evaluated_at: evaluated.length ? new Date(Math.max(...evaluated)).toISOString() : null,
     models: [...configured, ...removed],
     events: events.map((event) => ({

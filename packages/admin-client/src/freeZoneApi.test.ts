@@ -193,10 +193,10 @@ describe('freeZoneBusinessText', () => {
     );
   });
 
-  it('splits fallback into slow and error once the evaluation records both', () => {
+  it('shows the unusable rate and error fallback once the evaluation records both', () => {
     const split = { ...business, slow_fallback_pct: 6.25, error_fallback_pct: 33.5 };
     expect(freeZoneBusinessText(model({ status: 'listed', business: split }))).toBe(
-      '78 轮 · 超时兜底 6.3% · 报错兜底 33.5% · 中断 30.4%（14/46）'
+      '78 轮 · 不可用 6.3% · 报错兜底 33.5% · 中断 30.4%（14/46）'
     );
   });
 

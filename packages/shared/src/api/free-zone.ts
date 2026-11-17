@@ -88,41 +88,41 @@ export const FreeZoneScreeningSchema = z.object({
   max_probe_ttft_ms: DurationMsSchema.nullable().default(null),
 });
 
+/**
+ * 在架质量：两类原因，处理不同。
+ * - 质量原因（不可接受）：最近的真实轮次里中断率或不可用率超过上限 → 直接下架并停着，
+ *   评估不会自动放回来，运营点「立即上架」才回来。每 30 分钟评估时按这个模型最近
+ *   QUALITY_WINDOW_TURNS 轮算（只算这次上架之后的），至少 QUALITY_MIN_TURNS 轮才判断。
+ * - 价格原因（多半是暂时的）：真实请求被 Surplus 拒绝派单的比例超过上限 → 当场下架，
+ *   冷却 relist.price_cooldown_minutes 后照常由评估按报价重新上架。
+ * 上限留空（null）表示这一项不检查。
+ */
 export const FreeZoneOnShelfSchema = z.object({
-  window_hours: z.number().int().min(1).max(168).default(24),
-  min_turns: z.number().int().min(1).max(100_000).default(50),
-  max_no_output_pct: PercentSchema.nullable().default(10),
+  /** 中断率：开始出字后没写完就断（不含用户点停、内容审核），占免费模型自己交付轮次的比例 */
+  max_interrupted_pct: PercentSchema.nullable().default(8),
   /**
-   * 超时兜底率上限：免费模型在「启动兜底等待」内没出字被兜底抢先，或到首字总上限都没出字。
-   * 这类会让用户多等，所以设上限。报错兜底（报错、空回复后立刻兜底）对体验影响小，只显示不设上限。
-   * 默认留空：上线时不改变现有判定。
+   * 不可用率：超时兜底 + 超时——等到「启动兜底等待」免费模型还没出字（之后才报错也算），
+   * 或最后什么都没收到，占全部轮次的比例。报错、空回复后立刻兜底的不算（影响小）。
    */
-  max_slow_fallback_pct: PercentSchema.nullable().default(null),
-  max_timeout_pct: PercentSchema.nullable().default(2),
-  max_ttft_p90_ms: DurationMsSchema.nullable().default(7500),
-  max_refusal_pct: PercentSchema.nullable().default(null),
-  max_truncation_pct: PercentSchema.nullable().default(null),
-  /** 生成中断率：免费模型开始出字后没写完就断了，占它自己交付的轮次的比例（不含用户点停） */
-  max_interrupted_pct: PercentSchema.nullable().default(null),
-  max_dislike_pct: PercentSchema.nullable().default(null),
+  max_unusable_pct: PercentSchema.nullable().default(10),
   /**
-   * 派不出去率上限：真实请求被 Surplus 拒绝派单（折扣底线达不到、没有可用卖家，404/503）的比例。
-   * 和上面几项不同，不等 30 分钟一轮的评估、不看统计窗口和最少轮数：每次请求后按这个模型
-   * 最近 20 次主请求算，至少 10 次拿到响应、比例超过上限就立刻下架（按官方原因冷却）。
-   * 派单探测只发几个字，可能派得出去；几万 token 的真实对话却几乎全被拒，每轮都落到原价兜底。
+   * 派不出去率：真实请求被 Surplus 拒绝派单（折扣底线达不到、没有可用卖家，404/503）的比例。
+   * 不等评估：每次请求后按这个模型最近 20 次主请求算，至少 10 次拿到响应、超过上限就当场下架。
+   * 派单探测只发几个字，可能派得出去；几万 token 的真实对话却可能几乎全被拒。
    */
   max_unroutable_pct: PercentSchema.nullable().default(50),
 });
 
+/** 质量判断看最近多少轮、至少多少轮才判断（固定值，不做运营参数） */
+export const QUALITY_WINDOW_TURNS = 100;
+export const QUALITY_MIN_TURNS = 30;
+
 export const FreeZoneRelistSchema = z.object({
-  required_passes: z.number().int().min(1).max(48).default(2),
-  cooldown_official_minutes: z.number().int().min(0).max(43_200).default(120),
-  /** 业务原因下架的冷却梯度：7 天内第 1、2、3… 次下架依次取值，超出取最后一个 */
-  cooldown_business_minutes: z
-    .array(z.number().int().min(0).max(43_200))
-    .min(1)
-    .max(5)
-    .default([1440, 4320, 10080]),
+  /**
+   * 价格原因下架（官方报价没了、派单探测派不出去、真实请求派不出去）后多久再评估。
+   * 之后每 30 分钟一轮，报价达标就直接上架。质量原因下架不看这个：一直停着等运营上架。
+   */
+  price_cooldown_minutes: z.number().int().min(0).max(43_200).default(60),
 });
 
 export const FreeZoneFirstTokenSchema = z

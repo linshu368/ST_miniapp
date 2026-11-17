@@ -14,6 +14,7 @@ import {
 import {
   FREE_ZONE_STATUS_GROUPS,
   freeZoneStatusLabel,
+  isFreeZoneHeld,
   isFreeZoneManualHold,
   fetchFreeZoneStatus,
   freeZoneBusinessText,
@@ -52,14 +53,15 @@ function time(iso: string | null): string {
   return iso ? dayjs(iso).format('M月D日 HH:mm') : '—';
 }
 
-function detail(model: AdminFreeZoneStatusModel, requiredPasses: number): string {
+function detail(model: AdminFreeZoneStatusModel): string {
   if (model.status === 'listed') {
     const probe = freeZoneProbeText(model);
     return `用 ${model.providers.join('、')}，${time(model.provider_since)} 起${probe ? `；${probe}` : ''}`;
   }
   if (isFreeZoneManualHold(model)) return '手动下架，点「立即上架」才会回来';
-  if (model.status === 'cooling') return `冷却到 ${time(model.cooldown_until)}`;
-  if (model.status === 'unlisted') return `连续达标 ${model.consecutive_passes}/${requiredPasses}`;
+  if (isFreeZoneHeld(model)) return '质量原因下架，点「立即上架」才会回来';
+  if (model.status === 'cooling') return `冷却到 ${time(model.cooldown_until)}，之后报价达标就上架`;
+  if (model.status === 'unlisted') return '等报价达标（每 30 分钟评估）';
   return '等下一轮评估';
 }
 
@@ -110,21 +112,8 @@ function NameCell(props: { model: AdminFreeZoneStatusModel; group: FreeZoneStatu
   );
 }
 
-function ExcludedProviders(props: { model: AdminFreeZoneStatusModel }) {
-  const excluded = Object.entries(props.model.excluded_providers);
-  if (excluded.length === 0) return null;
-  return (
-    <Typography.Text type="warning">
-      排除中：{excluded.map(([name, until]) => `${name}（到 ${time(until)}）`).join('、')}
-    </Typography.Text>
-  );
-}
-
-/** 三块共用一套列：在架的不显示状态和原因；业务下架的多一列下架原因。 */
-function columns(
-  requiredPasses: number,
-  group: FreeZoneStatusGroup
-): TableColumnsType<AdminFreeZoneStatusModel> {
+/** 三块共用一套列：在架的不显示状态和原因；质量下架的多一列下架原因。 */
+function columns(group: FreeZoneStatusGroup): TableColumnsType<AdminFreeZoneStatusModel> {
   const name = {
     title: '候选',
     key: 'name',
@@ -137,31 +126,20 @@ function columns(
     title: '详情',
     key: 'detail',
     width: 220,
-    render: (_: unknown, model: AdminFreeZoneStatusModel) => detail(model, requiredPasses),
+    render: (_: unknown, model: AdminFreeZoneStatusModel) => detail(model),
   };
   if (group === 'listed') {
     return [
       name,
       detailColumn,
       {
-        title: '当前供应商业务数据',
+        title: '最近质量',
         key: 'business',
-        width: 300,
         render: (_, model) => (
-          <Tooltip title="当前供应商开始用之后、统计窗口内的真实轮次，截至最近一轮评估。超时兜底＝等到启动兜底等待还没出字（之后才报错也算，超时优先）、或到总上限都没出字；报错兜底＝等待时间到之前就报错、空回复，立刻兜底；中断＝开始出字后没写完就断了（不含用户点停），分母是它自己交付的轮次。">
+          <Tooltip title="这次上架之后最近的真实轮次，截至最近一轮评估。不可用＝超时兜底＋超时：等到启动兜底等待还没出字（之后才报错也算）、或最后什么都没收到；报错兜底＝等待时间到之前就报错、空回复，立刻兜底（只显示）；中断＝开始出字后没写完就断了（不含用户点停），分母是它自己交付的轮次。">
             <Typography.Text>{freeZoneBusinessText(model) || '—'}</Typography.Text>
           </Tooltip>
         ),
-      },
-      {
-        title: '排除中的供应商',
-        key: 'excluded',
-        render: (_, model) =>
-          Object.keys(model.excluded_providers).length > 0 ? (
-            <ExcludedProviders model={model} />
-          ) : (
-            <Typography.Text type="secondary">—</Typography.Text>
-          ),
       },
     ];
   }
@@ -181,12 +159,7 @@ function columns(
   const reason = {
     title: '最近原因',
     key: 'reason',
-    render: (_: unknown, model: AdminFreeZoneStatusModel) => (
-      <Space orientation="vertical" size={4}>
-        <ReasonCell model={model} />
-        <ExcludedProviders model={model} />
-      </Space>
-    ),
+    render: (_: unknown, model: AdminFreeZoneStatusModel) => <ReasonCell model={model} />,
   };
   if (group === 'not_listed') return [name, status, detailColumn, reason];
   return [
@@ -221,7 +194,7 @@ function GroupTable(props: {
   if (props.models.length === 0) {
     return <Typography.Text type="secondary">暂无。</Typography.Text>;
   }
-  const base = columns(props.data.required_passes, props.group);
+  const base = columns(props.group);
   const action = {
     title: '操作',
     key: 'action',
@@ -309,7 +282,7 @@ function EventList(props: { data: AdminFreeZoneStatusResponse }) {
   );
 }
 
-/** 评估任务落库的线上状态，分三块：在架、未上架、因业务数据下架；每块可折叠。 */
+/** 评估任务落库的线上状态，分三块：在架、未上架、因质量下架；每块可折叠。 */
 export function FreeZoneStatusPanel(props: { editing?: FreeZoneCandidateEditing }) {
   const api = useAdminApi();
   const [data, setData] = useState<AdminFreeZoneStatusResponse | null>(null);
@@ -338,7 +311,7 @@ export function FreeZoneStatusPanel(props: { editing?: FreeZoneCandidateEditing 
     FREE_ZONE_STATUS_GROUPS.map((group) => [group.key, []])
   );
   for (const model of data?.models ?? []) grouped.get(freeZoneStatusGroup(model))?.push(model);
-  // 默认展开在架的；业务下架的有内容才展开；未上架的模型多，默认收起
+  // 默认展开在架的；质量下架的有内容才展开；未上架的模型多，默认收起
   const defaultOpen: FreeZoneStatusGroup[] = [
     'listed',
     ...((grouped.get('business_delisted')?.length ?? 0) > 0

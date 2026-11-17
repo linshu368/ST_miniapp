@@ -5,8 +5,8 @@ import type { AdminFreeZoneStatusModel } from '@miniapp/shared';
 import { useAdminApi } from '../lib/adminApiContext';
 
 /**
- * 线上状态里未上架 / 冷却中 / 业务下架的候选可以手动立即上架：跳过连续达标和冷却，
- * 供应商按当前行情和初筛门槛选。上架后照常评估，不达标照样会换供应商或下架。
+ * 线上状态里未上架 / 冷却中 / 质量下架的候选可以手动立即上架：跳过冷却和停用，
+ * 供应商按当前行情和初筛门槛选。上架后照常评估，报价不达标、质量越线照样会换供应商或下架。
  */
 export function FreeZoneListNowButton(props: {
   model: AdminFreeZoneStatusModel;

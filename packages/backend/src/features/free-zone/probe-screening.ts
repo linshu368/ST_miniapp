@@ -4,7 +4,7 @@
  * 按同一套规则探下一家，最多 MAX_PROBES 家；探测说不清（网络等）就整轮维持现状。
  */
 import type { FreeZoneProbe, FreeZoneScreening } from '@miniapp/shared';
-import type { FreeZoneModelState } from './lifecycle.js';
+import { stillCooling, type FreeZoneModelState } from './lifecycle.js';
 import type { ProbeFn } from './probe.js';
 import { pickProvider, type ScreeningResult } from './screening.js';
 
@@ -27,14 +27,6 @@ function failure(probe: FreeZoneProbe, maxTtftMs: number | null): string | null 
     return `${probe.provider}: 探测首字 ${probe.first_token_ms} > ${maxTtftMs}`;
   }
   return null;
-}
-
-function activeExclusions(state: FreeZoneModelState, now: Date): Set<string> {
-  return new Set(
-    Object.entries(state.excludedProviders)
-      .filter(([, until]) => Date.parse(until) > now.getTime())
-      .map(([provider]) => provider)
-  );
 }
 
 /** 探测这一项的汇总：探了几家、几家派得出去且首字不超上限 */
@@ -62,23 +54,14 @@ export async function applyProbes(input: {
 }): Promise<ProbedScreening> {
   const { screening, state, now, rules } = input;
   const untouched = { screening, hold: false, probes: [], chosen: null };
-  const cooling =
-    state.status === 'cooling' &&
-    state.cooldownUntil !== null &&
-    Date.parse(state.cooldownUntil) > now.getTime();
-  if (!screening?.pass || !rules.probe_enabled || cooling) return untouched;
+  if (!screening?.pass || !rules.probe_enabled || stillCooling(state, now)) return untouched;
 
   const current = state.status === 'listed' ? (state.providers[0] ?? null) : null;
-  const excluded = activeExclusions(state, now);
   let qualified = [...screening.qualified];
   const probes: FreeZoneProbe[] = [];
   const reasons: string[] = [];
   for (let attempt = 0; attempt < MAX_PROBES; attempt += 1) {
-    const provider = pickProvider(qualified, {
-      current,
-      excluded,
-      ratio: rules.price_band_ratio,
-    });
+    const provider = pickProvider(qualified, { current, ratio: rules.price_band_ratio });
     if (!provider) break;
     const result = await input.probe({
       model: input.model,
@@ -99,7 +82,7 @@ export async function applyProbes(input: {
     reasons.push(failed);
     qualified = qualified.filter((item) => item.provider !== provider);
   }
-  // 一家都没探（达标的都在排除期）：交给状态机按原样处理
+  // 一家都没探：交给状态机按原样处理
   if (probes.length === 0) return untouched;
   // 探到上限还没有能派单的：剩下没探的也不放行，宁可这一轮不上
   return {

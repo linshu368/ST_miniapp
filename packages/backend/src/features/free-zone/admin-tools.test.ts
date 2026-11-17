@@ -121,7 +121,6 @@ describe('previewFreeZoneScreening', () => {
 describe('buildFreeZoneStatus', () => {
   it('orders by the published pool and keeps removed candidates at the end', () => {
     const config = FreeZoneConfigSchema.parse({
-      relist: { required_passes: 3 },
       candidates: [
         {
           id: 'free-a',
@@ -192,7 +191,6 @@ describe('buildFreeZoneStatus', () => {
       last_delist: { cause: 'business', at: at.toISOString(), reason: '兜底交付率% 30 > 15' },
     });
     expect(status.models[1]).toMatchObject({ ever_listed: false, last_delist: null });
-    expect(status.required_passes).toBe(3);
     expect(status.last_evaluated_at).toBe(at.toISOString());
     expect(
       status.models.map((model) => [model.candidate_id, model.status, model.in_config])
