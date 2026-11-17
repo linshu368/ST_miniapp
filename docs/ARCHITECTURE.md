@@ -17,7 +17,7 @@ Railway 展示补充（本地未部署）：统一 Pino 出口由可注入纯展
 本地候选（2026-11-11，未部署）：聊天历史读取采用索引选轮次后加载小型展示投影；原 admission 事务维护精确身份/开场白，旧 writer 仅使投影失效，有限人工回填覆盖旧记录。原 prompt、账务、分支与上下文窗口语义保持不变。读写切换及恢复见 [聊天历史优化说明](chat-history-read-performance.md)，正式 TEST/生产覆盖与 Android/iOS 不退化验收仍是发布门槛。
 
 > 本文档描述项目当前架构（2026-09-30 更新，基于 2026-08-12 自研引擎版重写）。
-> 九域划分与跨域豁免以本文 §5.1 和铁律 8 为准。ST 替换动机、归属地图原稿、099 割接剧本已移出工作区，取回方式见 §12。
+> **数据库落位（schema 归属、数据性质、新表新列、外部读者）以 [`docs/db/CONTRACT.md`](db/CONTRACT.md) 与 [`docs/db/registry.yaml`](db/registry.yaml) 为准**；本文 §5.1 与铁律 8 的地图描述的是 2026-11-17 重组前的布局，冲突时以契约为准。ST 替换动机、归属地图原稿、099 割接剧本已移出工作区，取回方式见 §12。
 >
 > **状态口径**（每条能力都带标注，不标注即为 ✅）：
 >
@@ -60,7 +60,7 @@ Railway 展示补充（本地未部署）：统一 Pino 出口由可注入纯展
    **现行应用的星尘发放（注册 / 签到 / 运营赠送 / 邀请 / 社群）只发生在数据库 `SECURITY DEFINER` RPC 内**，且对应发奖 RPC 的「钱包 upsert + `bonus_credits` 加值 + `wallet_ledger` 记账」都收口在唯一入口 **`billing.grant_bonus_credits`**（`20260911_billing_grant_bonus_credits.sql`）；业务判定（配置、去重、上限、通知、审计）留在各 RPC。应用层只调 RPC、不做手动余额加减。CI 由 legacy guard `wallet-bonus-grant` 拦新迁移里再出现 `bonus_credits = bonus_credits + …`（见 §7.5）。充值入账（动 `main_credits` 与支付字段）是另一条已收口的路径，不走这个入口。发奖 RPC 的挂点：邀请「聊天轮数」在 `generation/settle.ts` 结算成功后触发，「首次付费」在 `PaymentSettlement.settlePaidOrder` 入账后触发（`lib/invite-rewards.ts`），社群入群在 `routes/community.ts`（webhook 自动 + 既有成员手动校验）。
    签到自然日更新（本地实现，远端未执行）：`20261030_checkin_calendar_day.sql` 仅调整既有签到 RPC 的时间条件和 `next_claim_at`，按 Asia/Shanghai 每天 00:00 恢复，取得账户/会员锁后采集当前时间；奖励分档、发放事务和权限保持。Backend GET 使用 shared `getNextDailyCheckinAt`，Frontend 到期回读一次并复用前台恢复刷新。无新增表、cron、余额重置或旧事实回填。
 7. **`runtime_config` 只有一个读取入口**：`backend/src/platform/runtime-config.ts`（表在 `app_core.runtime_config`）。模型目录、定价、平台规则模板都从这里取，不允许并行实现第二套读法。
-8. **数据库按九个归属域划分，新表必须声明归属域**（迁移文件头部注释 `-- domain: xxx`）；**跨域访问只准走 RPC / repository / API**，不得直接 SELECT/JOIN 另一个域的表。允许的惯例：指向根实体（`users` / `characters`）的 FK；`miniapp_analytics` 只读其他域，任何域不得反向读它。存量豁免（收口前不再新增同类）：
+8. **数据库按业务域 × 数据性质落位，规则见 `docs/db/CONTRACT.md`，每张表登记在 `docs/db/registry.yaml`**（下文九域描述为重组前布局）；**新表必须声明归属域**（迁移文件头部注释 `-- domain: xxx`）；**跨域访问只准走 RPC / repository / API**，不得直接 SELECT/JOIN 另一个域的表。允许的惯例：指向根实体（`users` / `characters`）的 FK；`miniapp_analytics` 只读其他域，任何域不得反向读它。存量豁免（收口前不再新增同类）：
    - `users.total_round` / `miniapp_user_settings.total_round` 由 experience 链路回写；
    - `miniapp_features.character_ranking_scores` 由 lobby 定时任务直接聚合 `experience.chat_history`；
    - `experience.chat_history.llm_charge_id` 软引用 `billing.llm_usage_charges`；按编号回查由 `idx_chat_history_llm_charge_id` 非空部分索引支持，禁止在计费门禁扫描整张历史表。
@@ -392,6 +392,8 @@ T9 专表 contract：`20261016_openrouter_chat_history_drop_legacy_aliases.sql` 
 ## 5. 数据模型与真相归属
 
 ### 5.1 数据库九域布局（media_plaza M1 之后）
+
+> 重组前布局，仅供追溯。现行 schema 与每张表的去向见 [`docs/db/registry.yaml`](db/registry.yaml)，规则见 [`docs/db/CONTRACT.md`](db/CONTRACT.md)。
 
 | Schema              | 归属域           | 内容                                                                                                                                                                                                                                                                                                                                              |
 | ------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

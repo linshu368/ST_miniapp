@@ -30,6 +30,7 @@
 - Admin：`.trellis/spec/admin/app/index.md`
 - Shared contracts：`.trellis/spec/shared/contracts/index.md`
 - Supabase/migrations：`.trellis/spec/database/supabase/index.md`
+- **数据库落位（新表/新列/jsonb 键/配置 key/函数/外部读者）：`docs/db/CONTRACT.md` + `docs/db/registry.yaml`，动手前必读**
 - 跨层设计：`.trellis/spec/guides/cross-layer-thinking-guide.md`
 
 若文档与实现冲突，先记录来源和差异，不得把推断写成当前事实。
@@ -85,7 +86,16 @@
 ### 4. 数据库与环境
 
 - test 与 production 不保证同构，必须明确当前操作环境；不得用测试库结论代替生产实况。
-- 新建表、视图、物化视图或数据库函数前，必须按 `.trellis/spec/database/supabase/schema-and-object-conventions.md` 判断八域归属，并在任务 PRD/design 中记录业务不变量、权威写入方、生命周期、运行时消费者和跨 schema 依赖；归属未完成不得创建 migration，也不得把对象暂放 `public`。
+- **数据库落位卡**（详见 `docs/db/CONTRACT.md`，每张表的现状与去向见 `docs/db/registry.yaml`）：
+  1. 每张表一组坐标：业务域（schema）× 数据性质。性质按顺序判定：M 钱 → O 观测 → J 任务 → D 派生 → C 配置 → S 状态 → E 实体。
+  2. 新字段只有在性质、写入模块、写入时机、生命周期都相同时，才能加进现有表；否则建旁表（同主键）或子表。
+  3. 钱（价格、折扣、扣费快照）只进 `billing`，业务表只存 `*_charge_id` / `*_ledger_id`。测速、上游调用明细、事件、告警只进 `ops`。租约、重试、退避只进 `*_jobs` 表。
+  4. registry 里 `frozen` / `moving` 的表不加列。一次性 UI 标记写 `miniapp_features.user_marks`，不加列。
+  5. jsonb 只用于 `*_snapshot`、`raw_*`、`*_detail`。要过滤、计费、分支判断的值必须是真列。新列不叫 `metadata`/`extra`/`data`。
+  6. 表名不带供应商名。一个功能一个 `<feature>_config` 对象 key。函数不套 `*_before_*` 包装层。
+  7. 外部系统只读 `cs_feed` / `miniapp_analytics` 视图。产品请求路径不读 `ops` / `miniapp_analytics`。
+  8. 建表、删表、加列、删列，同一个 PR 更新 `registry.yaml`。CI 对违规给警告；违反时 PR 描述必须写理由。
+- 新建表、视图、物化视图或数据库函数前，在任务 PRD/design 中按 CONTRACT §2.2 记录坐标、权威写入模块、生命周期与保留期、跨域引用；归属未完成不得创建 migration，也不得把对象暂放 `public`。
 - `packages/shared/migrations/` 是唯一 migration 源，不得创建 `supabase/migrations/` 平行来源或改写历史 migration。
 - migration 一次执行一个文件，记录前后 shape、权限/RLS、关键读写、锁/容量和回滚。
 - Supabase MCP 只允许在确认连接目标后执行只读结构采集；禁止读取业务行或将敏感导出提交 Git。
