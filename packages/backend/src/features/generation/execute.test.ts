@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { config } from '../../platform/config.js';
+import { CHAT_MAX_VISIBLE_CHARS } from './generation-stream.js';
 import type { GenerationSettlementEntry } from './settle.js';
 import type { GenerationLogger, GenerationRequest } from './types.js';
 import type { LlmModelProvider } from '@miniapp/shared';
@@ -331,6 +332,41 @@ describe('execute（流式）', () => {
       status: 'stream_interrupted',
       assistant_reply: '半句',
     });
+  });
+
+  it('可见正文超过上限时中止上游，按 length 中断收口，保留已生成部分', async () => {
+    const chunk = '字'.repeat(7_000);
+    stubUpstream(() =>
+      sseResponse([DELTA(chunk), DELTA(chunk), DELTA('不该收到的尾巴'), 'data: [DONE]\n\n'])
+    );
+
+    const result = await execute(request(), undefined, fakeLogger());
+
+    expect(result).toMatchObject({ status: 'stream_interrupted', finishReason: 'length' });
+    expect(result.content.length).toBeGreaterThan(CHAT_MAX_VISIBLE_CHARS);
+    expect(result.content).not.toContain('不该收到的尾巴');
+    expect(savedHistory()[0]).toMatchObject({
+      status: 'stream_interrupted',
+      finish_reason: 'length',
+    });
+  });
+
+  it('推理内容不计入可见正文上限', async () => {
+    const reasoning = (text: string) =>
+      `data: ${JSON.stringify({ id: 'gen-1', choices: [{ delta: { reasoning: text } }] })}\n\n`;
+    stubUpstream(() =>
+      sseResponse([
+        reasoning('想'.repeat(20_000)),
+        reasoning('想'.repeat(20_000)),
+        DELTA('完整回复'),
+        `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }] })}\n\n`,
+        'data: [DONE]\n\n',
+      ])
+    );
+
+    const result = await execute(request(), undefined, fakeLogger());
+
+    expect(result).toMatchObject({ status: 'success', content: '完整回复', finishReason: 'stop' });
   });
 
   it('内容过滤有正文也按 incomplete 收口且不扣费', async () => {
