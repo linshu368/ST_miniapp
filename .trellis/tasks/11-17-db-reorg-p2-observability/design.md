@@ -63,7 +63,25 @@
 3. 后端发布：从最新 main 拉发布分支，只带本步后端改动。
 4. 生产后端上线后核对告警写入与畅聊事件写入落在 `ops`，再在下一个 migration 删兼容视图。
 
-## 2c 及之后（待逐个设计）
+## 2c 授权收口：看板账号只经视图读，清掉浏览器角色遗留授权
+
+`20261117_db_reorg_revoke_reader_and_browser_grants.sql`。
+
+- 看板账号 `first_token_metrics_reader`（`grafana_cloud` 的上级）对 `experience` 三张表有直接/列级 SELECT 和三条 RLS 策略，只因 `chat_first_token_facts` 是 `security_invoker`。生产核对：没有任何看板面板查 `experience`，也没有面板查这个视图（`pg_stat_statements` 里只有 `grafana_cloud` 的临时查询）；报表函数只读这个视图。改法：视图改所有者权限（与同 schema 其他分析视图一致），收回 `experience` 的表权限、USAGE 与三条策略。
+- 浏览器角色 `anon`/`authenticated` 在业务 schema 里还留着 16 个表/视图的读写权限（含钱包、流水、支付订单、用户、聊天记录），来自早年建在 `public` 后 `SET SCHEMA` 带过来的授权。二者对这些 schema 都没有 USAGE，所以现在读不到；收回只是去掉隐患。`admin` 的授权是运营后台设计，不动。业务 schema 没有指向浏览器角色的默认权限，不会再授出去。
+- `experience.chat_history`、`miniapp_traffic.botlinks`、`traffic_clicks` 仍未开 RLS。能访问它们的只有 `postgres`（所有者）与 `service_role`，都 BYPASSRLS，开启不改变行为。`ALTER TABLE ... ENABLE ROW LEVEL SECURITY` 对 23 GB 的 `chat_history` 只是短暂的元数据锁，`lock_timeout` 5s 兜底。
+- 不碰钱：不改任何函数，计费读写都走 `service_role`/`postgres`。
+
+## 留给阶段 6 的观测外迁（理由见下）
+
+阶段 2 剩下三块都要改计费链路上的函数，放到阶段 6 与计费统一一起做，避免同一批函数改两次：
+
+- `chat_generation_requests` 的 9 个测速列（`first_token_emitted_ms` 10-29 起停写，可直接删）：写入方 `report_chat_first_token` 同一条 UPDATE 里还写交付失败标记、释放免费轮次额度。
+- 上游调用合并（`ops.llm_calls`）：交付仲裁 `select_chat_generation_delivery` 把赢家调用 ID 写进 OpenRouter/Venice 明细表，结算回捞 `sync-job` 按这些表找未结算对话并读存好的用量决定是否重拉。近 7 天三家明细表的调用 ID 100% 已在 `chat_generation_attempts`，身份可以只留在 attempts；用量属于计费输入，应在结算时冻结进 billing。
+- 媒体生成调用的耗时/上游列（`chat_message_audio`、`chat_message_images`）：这两张表的计费列在阶段 6 搬走，耗时列一起搬。
+- `billing.payment_operation_events` → `ops.payment_events`：随阶段 4 支付对账。
+
+## 2d 及之后（待逐个设计）
 
 - 上游调用合并：`ops.llm_calls` 收 3 张供应商表与 `free_zone_calls` 的明细和成本；畅聊多路调用身份进 `chat_generation_attempts`。改 `select_chat_generation_delivery`、`conversation-history-billing`、`surplus-billing-recovery`、`free-zone/call-costs` 的读取。2a 的函数随之改读 `ops.llm_calls`。
 - `chat_generation_requests` 纯测速列外迁到 `ops.chat_generation_timings`，逐列对照三个读取函数确认。
