@@ -70,6 +70,7 @@ export function assembleConversationContext(input: {
     turnIndex: row.turn_index,
     userInput: row.user_input,
     assistantReply: row.assistant_reply,
+    status: row.status,
   }));
   return {
     openingMessage:

@@ -38,7 +38,7 @@ import {
   failTurn,
   settleExecutedTurn,
 } from './turn-execution.js';
-import { buildEngineHistory, turnsToMessages } from './history.js';
+import { buildEngineHistory, turnsToPromptMessages } from './history.js';
 import { renderStoryMemoryBlock } from '../story-memory/text.js';
 import {
   applyStoryMemoryWindow,
@@ -310,7 +310,7 @@ async function loadTurnPrompt(input: {
     log: input.log,
   });
   const history = buildEngineHistory(
-    turnsToMessages(windowed.turns),
+    turnsToPromptMessages(windowed.turns),
     context.openingMessage ?? card.first_mes
   );
   const storyMemory = storyMemoryBlock(session.id, windowed, memory, input);

@@ -52,7 +52,7 @@ describe('assembleConversationContext', () => {
         { role: 'user', content: '你好' },
         { role: 'assistant', content: '新回复' },
       ],
-      turns: [{ turnIndex: 1, userInput: '你好', assistantReply: '新回复' }],
+      turns: [{ turnIndex: 1, userInput: '你好', assistantReply: '新回复', status: 'success' }],
     });
   });
 
