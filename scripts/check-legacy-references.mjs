@@ -76,6 +76,30 @@ const RULES = [
       'packages/shared/migrations/20261117_db_reorg_drop_ops_compat_views.sql',
     ],
   },
+  {
+    id: 'moved-to-user-marks',
+    pattern:
+      /\b(?:vip_entry_seen_at|characters_last_seen_at|image_plaza_first_share_completed_at|growth_prompt_states|(?:choice|status|memory)_full_rules_remaining|claim_instruction_slot_modes)\b/g,
+    message:
+      '数据库重组 3b-1：一次性标记在 miniapp_features.user_marks（UserMarksRepository / touch_user_mark），' +
+      '"已完成首发分享"= billing.image_plaza_share_rewards 有记录，指令槽旧计数器已删。新函数不要再写 settings 这些列；' +
+      '已在 TEST 执行过的迁移别改原文件，另写 forward-fix（参考 20261117_db_reorg_p3b1_video_share_first_share.sql）',
+    // 建列/建表/写入的历史迁移与断言脚本，以及 3b-1 迁移本身。
+    allow: [
+      'packages/shared/migrations/20260921_vip_billing_schema.sql',
+      'packages/shared/migrations/20260924_vip_billing_schema_pg_cron_compat.sql',
+      'packages/shared/migrations/20261012_image_plaza_v2.sql',
+      'packages/shared/migrations/20261013_image_plaza_seed_catalog.sql',
+      'packages/shared/migrations/20261013_platform_instruction_slot_windows.sql',
+      'packages/shared/migrations/20261013_session_scoped_instruction_slot_modes.sql',
+      'packages/shared/migrations/20261113_growth_prompt_states.sql',
+      'packages/shared/migrations/20261117_db_reorg_p3b1_user_marks.sql',
+      'packages/shared/migrations/20261117_db_reorg_p3b1_user_marks_contract.sql',
+      'packages/shared/migrations/20261117_db_reorg_p3b1_clear_orphan_first_share.sql',
+      'packages/shared/migrations/20261117_db_reorg_p3b1_video_share_first_share.sql',
+      'scripts/platform-instruction-slot-windows-assert.sql',
+    ],
+  },
 
   // ── 已整包删除的 package ────────────────────────────────────────────────
   {
