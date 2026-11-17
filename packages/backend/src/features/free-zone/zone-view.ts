@@ -5,16 +5,38 @@
  * 开放规则会分阶段变化（整周免费 → 每周时段 → 限定范围），这样改规则不用改前端。
  */
 import type {
+  CatalogFreeZoneModel,
   FixedDeductionConfig,
   FreeZoneCandidate,
   FreeZoneConfig,
+  LlmModelProvider,
   ModelCatalogTierKey,
   PublicFreeZone,
 } from '@miniapp/shared';
 
-export interface ListedFreeModel {
-  candidate: FreeZoneCandidate;
-  providers: string[];
+/** 栏目里一个模型对用户可见的信息，两种来源都有 */
+export type FreeZoneEntry = Pick<
+  FreeZoneCandidate,
+  'id' | 'display_name' | 'tagline' | 'family' | 'benchmark_tier'
+>;
+
+/**
+ * 栏目里此刻可用的免费模型，两种来源：
+ * - surplus：候选池里被评估上架的 Surplus 模型，带选定的供应商；
+ * - catalog：模型目录「免费畅聊」板块里启用的模型，和付费目录同一条通路，不评估。
+ */
+export type ListedFreeModel =
+  | { source: 'surplus'; candidate: FreeZoneCandidate; providers: string[] }
+  | { source: 'catalog'; candidate: CatalogFreeZoneModel };
+
+/** 实际调用的上游模型 */
+export function freeModelUpstream(listed: ListedFreeModel): {
+  provider: LlmModelProvider;
+  providerModelId: string;
+} {
+  return listed.source === 'surplus'
+    ? { provider: 'surplus', providerModelId: listed.candidate.surplus_model }
+    : { provider: listed.candidate.provider, providerModelId: listed.candidate.provider_model_id };
 }
 
 function originalCredits(tier: ModelCatalogTierKey, pricing: FixedDeductionConfig): number {
@@ -63,7 +85,7 @@ export function chooseReplacement(input: {
   currentFamily: string | null;
   usable: ListedFreeModel[];
   random?: () => number;
-}): FreeZoneCandidate | null {
+}): FreeZoneEntry | null {
   if (input.usable.length === 0) return null;
   const family = input.currentFamily?.toLowerCase() ?? null;
   const sameFamily = family
