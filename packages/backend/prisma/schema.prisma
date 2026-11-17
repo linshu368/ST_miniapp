@@ -20,7 +20,7 @@ model MiniappUser {
   created_at            DateTime                 @default(now()) @db.Timestamptz(6)
   updated_at            DateTime                 @default(now()) @db.Timestamptz(6)
   daily_checkins        daily_checkins[]
-  miniapp_user_settings miniapp_user_settings?
+  user_preferences      user_preferences?
   payment_orders        miniapp_payment_orders[]
   user_wallets          user_wallets?
   wallet_ledger         wallet_ledger[]
@@ -29,15 +29,9 @@ model MiniappUser {
   @@schema("app_core")
 }
 
-model miniapp_user_settings {
+/// 用户级生成与语音偏好（数据库重组 3b-2 由 miniapp_user_settings 改名；资料列已迁到 users）。
+model user_preferences {
   user_id                  String      @id @db.Uuid
-  tg_username              String?
-  tg_first_name            String?
-  tg_last_name             String?
-  display_name             String?
-  avatar_url               String?
-  tg_avatar_url            String?
-  custom_avatar_url        String?
   /// NULL = 从未选择，跟随 runtime_config.pref_word_count_tiers.default_tier_id（086）
   pref_word_count          String?
   pref_show_options        Boolean     @default(true)

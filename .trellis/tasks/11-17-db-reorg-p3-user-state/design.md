@@ -67,6 +67,36 @@
 
 验证：`bash scripts/test-db-reorg-p3b1-migration.sh`（回填一致；增长弹窗上限/间隔判定前后一致；窗口内新旧两边写入互相可见且不回环；首发分享推导与旧列一致；收缩补齐与删除；可重跑）。
 
+### 3b-2 资料进 users、settings 改名 user_preferences（生产只读核对，11-17）
+
+3b-1 已上生产。settings 剩 20 列：资料 7 列（tg_username / tg_first_name / tg_last_name / tg_avatar_url / display_name / custom_avatar_url / avatar_url）+ 偏好 10 列 + user_id / 时间戳。
+
+| 对象                                                                      | 现状                                                                                                                              | 去向                                                                                      |
+| ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| 资料 6 列                                                                 | 仓库每次 getOrCreate 都无条件回写 TG 资料（每次一条 UPDATE）                                                                      | 加到 `app_core.users`；TG 资料刷新改为 `app_core.refresh_user_profile`，值没变不写        |
+| `avatar_url`                                                              | 544 行全是旧 TG 头像链接；72 行与 tg/custom 不同，都是 `tg_avatar_url` 上线后没再登录的用户；后端不读，这些用户现在就显示默认头像 | 删除，不迁（删了界面无变化）                                                              |
+| 偏好 10 列                                                                | 仓库 + 4 个函数（两个开轮函数、回复风格、指令槽偏好）读写                                                                         | 留在原表，整表改名 `app_core.user_preferences`（含另一会话 11-17 加的 `pref_drive_mode`） |
+| `cs_feed.user_identities`                                                 | 读 settings 的昵称                                                                                                                | 扩展步改读 users，输出列不变                                                              |
+| `admin.list_invite_records` / `admin.lookup_user_for_credit_grant`        | join settings 取昵称                                                                                                              | 扩展步改 join users（按原文替换 join 语句，别名不变）                                     |
+| 后端 raw SQL：`features/creator/public-author.ts`、`routes/characters.ts` | join settings 取作者昵称                                                                                                          | 改 join users                                                                             |
+
+发布窗口（扩展后、新后端上线前）：
+
+- 新后端写偏好经扩展步建的同名自动可更新视图 `app_core.user_preferences`（只含偏好列，落到 settings），收缩步删视图、表改名，名字不变，后端不用再发。
+- 资料两边同步：旧后端写 settings 资料列 → 触发器同步到 users（INSERT 只带非空值，UPDATE 只带变化的列）；新后端写 users → 回写 settings（旧实例读到新值）。`pg_trigger_depth()` 防回环。
+- 不变式：窗口内每个 settings 行的资料与 users 一致。新建 settings 行（新后端经视图建偏好行、开轮函数、回复风格函数）不带资料，BEFORE INSERT 先从 users 填上；否则收缩步"按 settings 补 users"会把新后端先写进 users 的资料冲掉（本地测试 1039 场景复现过）。
+
+收缩：
+
+1. 删同步触发器；锁 settings，资料不一致的列按 settings 补到 users（只可能来自扩展事务里的竞态，窗口内两边同步）。
+2. 守卫：除 4 个偏好函数外不得再有函数引用 `app_core.miniapp_user_settings`。
+3. 删视图 → 表改名 `user_preferences`（约束、索引同步改名）→ 删 7 个资料列。
+4. 4 个偏好函数按原文把 `app_core.miniapp_user_settings` 换成 `app_core.user_preferences`（每个函数出现次数须与采集时一致，否则拒绝）。
+
+后端：新增 `UserProfileRepository`（users 资料读写、`refresh_user_profile`）；`MiniappUserSettingsRepository` 改为组合资料 + 偏好，对外接口和返回形状不变；开轮读偏好与昵称改为同一请求内并行两次读取。Prisma 设置模型改名 `user_preferences`。
+
+验证：`bash scripts/test-db-reorg-p3b2-migration.sh`（回填一致；`cs_feed.user_identities` 与两个管理函数前后输出一致；窗口内双向同步不回环；资料没变时不写；视图插入/更新照常（默认值、CHECK、回复风格原子合并）；收缩改名后 4 个函数照常；可重跑）。
+
 ## 3c 之后
 
 待 3b 上线后逐个设计（角色上架、配置校验链）。
