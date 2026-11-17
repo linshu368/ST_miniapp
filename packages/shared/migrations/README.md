@@ -1,6 +1,16 @@
 # SQL 迁移文件
 
-## 2026-11-17 数据库重组阶段 1c：客服账号只读视图层（本地 PG17 验证）
+## 2026-11-17 数据库重组阶段 1c 修正：遗留角色逐项撤权（本地 PG17 非超级用户验证）
+
+`20261117_db_reorg_cs_grants_fix.sql` 取代下面 `20261117_db_reorg_cs_grants.sql` 在生产的执行。
+
+- 原因：原文件用 `DROP OWNED BY cs_outreach_reader_v1` 撤权。生产的 postgres 不是超级用户，也不是该角色成员（只有 ADMIN），报 `permission denied to drop objects`，整个事务回滚、未生效。
+- 原文件已在 TEST 记账，按账本规则不改。生产对原文件的失败认领以 `abandon_claim` 作废，之后不再执行原文件。
+- 修正：按 `pg_shdepend` 逐项 REVOKE（表/视图、schema、数据库），断言无残留依赖后 `DROP ROLE`。生产核对过这些授权的 grantor 均为 postgres。其余撤权内容与原文件相同。
+- 验证：`bash scripts/test-db-reorg-p1c-migration.sh` 改为以"非超级用户 + CREATEROLE"账号建对象并执行，与生产 postgres 同权。原文件在此条件下复现失败，修正版两次执行均成功，角色级读写断言通过。
+- 发布：TEST 单文件（无客服角色，跳过）→ Production：先 abandon_claim 原文件，再执行本文件。
+
+## 2026-11-17 数据库重组阶段 1c：客服账号只读视图层（生产执行失败已回滚，由上面的修正文件取代）
 
 `20261117_db_reorg_cs_grants.sql`（domain: 外部读者授权）。前置：`20261117_db_reorg_ops_cs_feed.sql` 已执行，客服仓库已改读 `cs_feed`（ST_cs_platform 91c9593）。
 
