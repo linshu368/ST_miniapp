@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 # Disposable PG17 only. No remote URI, host ports or real user data.
-# Verifies 20261117_db_reorg_cs_grants.sql: idempotent re-run; CS roles lose direct reads on business
-# tables but keep cs_feed / miniapp_analytics; FK-checked writes into cs.* still work; the legacy role is
-# dropped; an environment without the CS roles is skipped safely.
+# Verifies 20261117_db_reorg_cs_grants_fix.sql. Objects, roles and the migration run as a NON-superuser with
+# CREATEROLE (same as Supabase's postgres): the original 20261117_db_reorg_cs_grants.sql must reproduce the
+# production failure (DROP OWNED denied), the fix must succeed twice, CS roles lose direct reads on business
+# tables but keep cs_feed / miniapp_analytics, FK-checked writes into cs.* still work, the legacy role is
+# dropped, and an environment without the CS roles is skipped safely.
 set -euo pipefail
 task_root="$(cd "$(dirname "$0")/.." && pwd)"
-migration="$task_root/packages/shared/migrations/20261117_db_reorg_cs_grants.sql"
+original="$task_root/packages/shared/migrations/20261117_db_reorg_cs_grants.sql"
+migration="$task_root/packages/shared/migrations/20261117_db_reorg_cs_grants_fix.sql"
 
 run_case() {
   local with_roles="$1"
@@ -18,9 +21,14 @@ run_case() {
       docker exec "$task_container" pg_isready -U postgres >/dev/null 2>&1; then break; fi
     sleep 1
   done
-  local task_psql=(docker exec -i "$task_container" psql -X -q -U postgres -v ON_ERROR_STOP=1)
+  local super_psql=(docker exec -i "$task_container" psql -X -q -U postgres -v ON_ERROR_STOP=1)
+  local admin_psql=(docker exec -i "$task_container" psql -X -q -U app_admin -d postgres -v ON_ERROR_STOP=1)
 
-  "${task_psql[@]}" >/dev/null <<'SQL'
+  "${super_psql[@]}" >/dev/null <<'SQL'
+CREATE ROLE app_admin LOGIN NOSUPERUSER CREATEROLE BYPASSRLS;
+GRANT CREATE, CONNECT ON DATABASE postgres TO app_admin;
+SQL
+  "${admin_psql[@]}" >/dev/null <<'SQL'
 CREATE SCHEMA app_core; CREATE SCHEMA billing; CREATE SCHEMA experience; CREATE SCHEMA miniapp_features;
 CREATE SCHEMA miniapp_traffic; CREATE SCHEMA miniapp_analytics; CREATE SCHEMA cs_feed; CREATE SCHEMA cs;
 CREATE TABLE app_core.users(id uuid PRIMARY KEY, tg_id text);
@@ -34,7 +42,7 @@ CREATE TABLE cs.conversations(id uuid PRIMARY KEY DEFAULT gen_random_uuid(), use
 INSERT INTO app_core.users VALUES ('00000000-0000-4000-8000-000000000001', '1');
 SQL
   if [[ "$with_roles" == yes ]]; then
-    "${task_psql[@]}" >/dev/null <<'SQL'
+    "${admin_psql[@]}" >/dev/null <<'SQL'
 CREATE ROLE cs_runtime_v1 NOLOGIN; CREATE ROLE cs_persona_reader NOLOGIN; CREATE ROLE cs_outreach_reader_v1 NOLOGIN;
 -- Mirrors ST_cs_platform migrations 009 / 016 plus 20261117_db_reorg_ops_cs_feed.sql.
 GRANT USAGE ON SCHEMA cs, app_core, billing, experience, cs_feed TO cs_runtime_v1;
@@ -46,18 +54,23 @@ GRANT USAGE ON SCHEMA app_core, billing, experience, miniapp_features, miniapp_t
 GRANT SELECT ON ALL TABLES IN SCHEMA app_core, billing, experience, miniapp_features, miniapp_traffic, miniapp_analytics TO cs_outreach_reader_v1;
 GRANT CONNECT ON DATABASE postgres TO cs_outreach_reader_v1;
 SQL
+    # The original file must reproduce the production failure under the same privileges.
+    if "${admin_psql[@]}" >/dev/null 2>&1 < "$original"; then
+      echo 'original migration unexpectedly succeeded as a non-superuser' >&2
+      exit 1
+    fi
   fi
 
-  "${task_psql[@]}" >/dev/null < "$migration"
+  "${admin_psql[@]}" >/dev/null < "$migration"
   # Re-running must be a no-op rather than an error.
-  "${task_psql[@]}" >/dev/null < "$migration"
+  "${admin_psql[@]}" >/dev/null < "$migration"
 
   if [[ "$with_roles" != yes ]]; then
     echo "case with_roles=no OK"
     return
   fi
 
-  "${task_psql[@]}" <<'SQL'
+  "${super_psql[@]}" <<'SQL'
 \set QUIET on
 DO $chk$
 BEGIN
@@ -103,4 +116,4 @@ SQL
 
 run_case yes
 run_case no
-echo 'OK: 20261117_db_reorg_cs_grants.sql'
+echo 'OK: 20261117_db_reorg_cs_grants_fix.sql (original reproduces the production failure)'
