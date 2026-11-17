@@ -49,7 +49,9 @@
   - 1c 收权前在客服后台逐个试跑一遍。
 - 上线后观察一天：客服工作台的用户资料、对话列表、回访、告警均正常。
 
-### 1c 收权（主仓库）
+### 1c 收权（主仓库）— `20261117_db_reorg_cs_grants.sql`
+
+> 所有者 2026-11-17 确认旧画像簇可直接丢弃；客服平台近期无人打开，不等线上流量，以本地角色级验证为准。
 
 - 收回 `cs_runtime_v1` 对 `app_core` / `billing` / `experience` 业务表的直接 SELECT 和 schema USAGE。
 - `cs_persona_reader` 只保留 `cs_feed`、`miniapp_analytics`。
