@@ -1,5 +1,14 @@
 # SQL 迁移文件
 
+## 2026-11-17 数据库重组阶段 2b 收尾：删除 ops 兼容视图
+
+`20261117_db_reorg_drop_ops_compat_views.sql`：删除 `app_core.alert_incidents`、`app_core.alert_delivery_attempts`、`miniapp_features.free_zone_events` 三个临时兼容视图。
+
+- 前置：生产后端已改读 `ops`（#879，11-17 14:40 部署），`pg_stat_statements` 中旧表名语句不再增长。
+- 守卫：旧名仍是表时拒绝；视图之上若有依赖，`DROP VIEW` 不带 CASCADE 会回滚。
+- 验证：`bash scripts/test-db-reorg-p2b-migration.sh` 末段（两次幂等、`ops` 表与数据不变、旧名是表时拒绝）。
+- 回滚：重建同名视图（定义见 2b 迁移）。
+
 ## 2026-11-17 数据库重组阶段 2b：告警、畅聊事件迁入 ops；删除短剧旧 SQL 链路（本地 PG17 非超级用户验证）
 
 `20261117_db_reorg_ops_alerts_free_zone_events.sql`（domain: ops）。计划见 `.trellis/tasks/11-17-db-reorg-p2-observability/design.md` 2b。

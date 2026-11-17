@@ -5,9 +5,12 @@
 # (FOR UPDATE, INSERT RETURNING, ON CONFLICT DO NOTHING, UPDATE ... FROM a FOR UPDATE SKIP LOCKED CTE) still works
 # through the compatibility views as service_role; the new backend SQL works on ops; the analytics view follows;
 # anon/authenticated get nothing; free_zone_events stays append-only for service_role.
+# Then 20261117_db_reorg_drop_ops_compat_views.sql: idempotent removal of the three views, ops tables untouched,
+# refuses while an old name is still a table.
 set -euo pipefail
 task_root="$(cd "$(dirname "$0")/.." && pwd)"
 migration="$task_root/packages/shared/migrations/20261117_db_reorg_ops_alerts_free_zone_events.sql"
+drop_views="$task_root/packages/shared/migrations/20261117_db_reorg_drop_ops_compat_views.sql"
 task_container="st-db-reorg-p2b-${RANDOM}-$$"
 trap 'docker rm -f "$task_container" >/dev/null 2>&1 || true' EXIT
 docker run -d --rm --name "$task_container" --network none -e POSTGRES_HOST_AUTH_METHOD=trust postgres:17 >/dev/null
@@ -210,3 +213,24 @@ SELECT (:fz_n = 3) AS fz_ok \gset
 \endif
 SQL
 echo 'OK: 20261117_db_reorg_ops_alerts_free_zone_events.sql'
+
+"${admin_psql[@]}" >/dev/null < "$drop_views"
+"${admin_psql[@]}" >/dev/null < "$drop_views"
+"${admin_psql[@]}" >/dev/null <<'SQL'
+DO $gone$ BEGIN
+  IF to_regclass('app_core.alert_incidents') IS NOT NULL OR to_regclass('app_core.alert_delivery_attempts') IS NOT NULL
+     OR to_regclass('miniapp_features.free_zone_events') IS NOT NULL THEN
+    RAISE EXCEPTION 'compatibility views survived';
+  END IF;
+  IF (SELECT count(*) FROM ops.alert_incidents) <> 2 OR (SELECT count(*) FROM ops.alert_delivery_jobs) <> 2
+     OR (SELECT count(*) FROM ops.free_zone_events) <> 3 THEN
+    RAISE EXCEPTION 'ops tables changed';
+  END IF;
+END $gone$;
+CREATE TABLE app_core.alert_incidents (id int);
+SQL
+if "${admin_psql[@]}" >/dev/null 2>&1 < "$drop_views"; then
+  echo 'drop_ops_compat_views ran while app_core.alert_incidents is a table' >&2
+  exit 1
+fi
+echo 'OK: 20261117_db_reorg_drop_ops_compat_views.sql'
