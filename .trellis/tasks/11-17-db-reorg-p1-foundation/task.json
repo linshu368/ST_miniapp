@@ -1,0 +1,41 @@
+{
+  "id": "db-reorg-p1-foundation",
+  "name": "db-reorg-p1-foundation",
+  "title": "数据库重组阶段1：地基与清理",
+  "description": "建 ops 与 cs_feed；客服改读视图并收窄只读账号；合并分析 schema；删除死表死列死配置；admin 托管配置包装链改登记表",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P1",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-17",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "11-17-db-reorg",
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "pending"
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "阶段 1 只新增 ops/cs_feed 视图层、收窄外部只读账号、删除已无读者的表/列/函数/配置、合并分析 schema；不改 MiniApp 页面、接口或请求链路的查询。cs_feed 只给客服服务读，admin 托管配置校验只在运营平台发布时执行。Android/iOS 页面加载 P95 与接口 P95 不受影响，不填零或推测数值。"
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "阶段 1 是行为不变的数据库结构与权限调整：1a 只建 schema 和视图；1b 是客服仓库改读视图（日志沿用该仓库现有规范）；1c 收权、1d 删除已确认无读者的对象、1f 移动分析视图，均不改 MiniApp 后端运行路径；1e 把 admin 托管配置校验从包装链合并为登记表加单个函数，校验结果不变，失败仍由既有 admin 配置发布接口的错误日志记录，不新增事件。验证方式见 design.md 各子步骤。"
+    }
+  }
+}
