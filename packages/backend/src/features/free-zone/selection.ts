@@ -19,6 +19,8 @@ import {
   viewFreeZone,
   type FreeZoneSnapshot,
 } from './snapshot.js';
+import { needsAccessFacts } from './access.js';
+import type { AccessFactsLoader } from './access-facts.js';
 import { chooseReplacement, type ListedFreeModel } from './zone-view.js';
 
 const ZERO_PRICING: FixedDeductionConfig = {
@@ -39,7 +41,7 @@ export type FreeZoneSelection =
   | { kind: 'usable'; listed: ListedFreeModel; snapshot: FreeZoneSnapshot }
   | { kind: 'replaced'; toModelId: string; replacement: SelectionReplacement };
 
-/** 只有栏目开放才算可用；未开放的三种状态（未开始/仅限自创/没有模型）都不可用。 */
+/** 只有栏目开放才算可用；其余状态（未开始/仅限自创/没有模型/会员等下次/会员专享）都不可用。 */
 export function isUsable(view: PublicFreeZone | null): boolean {
   return view?.state === 'open';
 }
@@ -52,26 +54,28 @@ export async function isOwnCharacter(userId: string, characterId: string | null)
 /**
  * 已选的是免费模型时返回判断结果；不是免费模型返回 null，调用方走原来的付费目录逻辑。
  * isOwnCard 由调用方提供（目录接口本来就查过），生成链路传 undefined 时这里按需查。
+ * 对这个用户关闭（试用到期、畅聊日结束…）时不拦截：换成付费默认模型照常生成。
  */
 export async function resolveFreeZoneSelection(input: {
   persistedModelId: string | null;
   userId: string;
   characterId: string | null;
   catalog: ModelCatalog;
+  /** 按身份开放要用的用户事实；只在需要时调用 */
+  loadFacts: AccessFactsLoader;
   isOwnCard?: boolean;
   now?: Date;
 }): Promise<FreeZoneSelection | null> {
   if (!isFreeZoneModelId(input.persistedModelId)) return null;
+  const now = input.now ?? new Date();
   const snapshot = await getFreeZoneSnapshot();
   const needsOwnership = snapshot?.config.scope === 'own_cards';
-  const isOwnCard =
+  const [isOwnCard, facts] = await Promise.all([
     input.isOwnCard ??
-    (needsOwnership ? await isOwnCharacter(input.userId, input.characterId) : false);
-  const view = viewFreeZone(snapshot, {
-    now: input.now ?? new Date(),
-    isOwnCard,
-    pricing: ZERO_PRICING,
-  });
+      (needsOwnership ? isOwnCharacter(input.userId, input.characterId) : Promise.resolve(false)),
+    snapshot && needsAccessFacts(snapshot.config, now) ? input.loadFacts() : Promise.resolve(null),
+  ]);
+  const view = viewFreeZone(snapshot, { now, isOwnCard, pricing: ZERO_PRICING, facts });
   const listed = findListedFreeModel(snapshot, input.persistedModelId);
   if (listed && snapshot && isUsable(view)) return { kind: 'usable', listed, snapshot };
 
@@ -129,6 +133,7 @@ export async function resolveCatalogFreeZone(input: {
   catalog: ModelCatalog;
   isOwnCard: boolean;
   pricing: FixedDeductionConfig;
+  loadFacts: AccessFactsLoader;
   now?: Date;
 }): Promise<{
   view: PublicFreeZone | null;
@@ -137,19 +142,26 @@ export async function resolveCatalogFreeZone(input: {
   replacement: SelectionReplacement | null;
 }> {
   const now = input.now ?? new Date();
-  const [snapshot, settled] = await Promise.all([
-    getFreeZoneSnapshot(),
+  const snapshot = await getFreeZoneSnapshot();
+  const [facts, settled] = await Promise.all([
+    snapshot && needsAccessFacts(snapshot.config, now) ? input.loadFacts() : null,
     settleFreeZoneSelection({
       persistedModelId: input.settingsModelId,
       userId: input.userId,
       characterId: input.characterId,
       catalog: input.catalog,
       isOwnCard: input.isOwnCard,
+      loadFacts: input.loadFacts,
       now,
     }),
   ]);
   return {
-    view: viewFreeZone(snapshot, { now, isOwnCard: input.isOwnCard, pricing: input.pricing }),
+    view: viewFreeZone(snapshot, {
+      now,
+      isOwnCard: input.isOwnCard,
+      pricing: input.pricing,
+      facts,
+    }),
     usable: settled.usable?.listed ?? null,
     modelId: settled.modelId,
     replacement: settled.replacement,

@@ -2,15 +2,21 @@
 
 import { useEntryEnrichReady } from '@/lib/entry-phase';
 import type { ReplyChoicePayload } from '@miniapp/reply-renderer';
-import { CHAT_MESSAGE_EDIT_ROUNDS, type ChatMessage } from '@miniapp/shared';
+import {
+  CHAT_MESSAGE_EDIT_ROUNDS,
+  type ChatMessage,
+  type GetModelCatalogData,
+} from '@miniapp/shared';
 import { ArrowDown, Loader2 } from 'lucide-react';
 import dynamic from 'next/dynamic';
-import type { ReactNode } from 'react';
+import { Fragment, useMemo, type ReactNode } from 'react';
 import { useChatMessageScroll } from './use-chat-message-scroll';
 
 import type { AssistantBodyPlan } from '@/lib/text-postprocess/reply-plan';
 
 import { messageThinkingKey, type MessageThinkingMap } from '@/lib/chat-thinking';
+import { freeZoneSwitchDividers, type FreeZoneSwitchDivider } from '@/lib/free-zone';
+import { ChatFreeZoneDivider } from './chat-free-zone-divider';
 import { ChatMessageBubble, ChatTypingBubble } from './chat-message-bubble';
 const ChatGuide = dynamic(
   () => import('@/components/onboarding/chat-guide').then((module) => module.ChatGuide),
@@ -45,6 +51,8 @@ interface ChatMessageListProps {
   editDisabled?: boolean;
   viewportHeight?: number | null;
   onEditingChange?: (editing: boolean) => void;
+  /** 模型目录：用来在「免费 → 付费」那一轮前加分隔线 */
+  freeZoneCatalog?: GetModelCatalogData;
 }
 
 export function ChatMessageList(props: ChatMessageListProps) {
@@ -63,6 +71,10 @@ export function ChatMessageList(props: ChatMessageListProps) {
     onEditingChange,
   } = props;
   const latestTurn = Math.max(0, ...messages.map((message) => message.turn_index));
+  const switchDividers = useMemo(
+    () => freeZoneSwitchDividers(messages, props.freeZoneCatalog),
+    [messages, props.freeZoneCatalog]
+  );
   const {
     editing,
     handleEditingChange,
@@ -108,6 +120,7 @@ export function ChatMessageList(props: ChatMessageListProps) {
 
           <MessageRows
             list={props}
+            switchDividers={switchDividers}
             latestTurn={latestTurn}
             editing={editing}
             lastId={last?.id}
@@ -150,12 +163,15 @@ export function ChatMessageList(props: ChatMessageListProps) {
 
 function MessageRows({
   list,
+  switchDividers,
   latestTurn,
   editing,
   lastId,
   onEditingChange,
 }: {
   list: ChatMessageListProps;
+  /** 键是那一轮第一条消息的 id */
+  switchDividers: Readonly<Record<string, FreeZoneSwitchDivider>>;
   latestTurn: number;
   editing: boolean;
   lastId?: string;
@@ -185,43 +201,49 @@ function MessageRows({
       {messages
         .filter((message) => !message.deleted)
         .map((message) => (
-          <ChatMessageBubble
-            key={`${message.id}:${message.revision}`}
-            message={message}
-            editable={
-              message.turn_index > 0 &&
-              message.turn_index > latestTurn - CHAT_MESSAGE_EDIT_ROUNDS &&
-              message.status !== 'streaming'
-            }
-            editDisabled={editDisabled}
-            editMenuDisabled={editing}
-            viewportHeight={viewportHeight}
-            onEditingChange={onEditingChange}
-            characterName={characterName}
-            characterAvatarUrl={characterAvatarUrl}
-            userAvatarUrl={userAvatarUrl}
-            streaming={message.id === streamingMessageId || message.status === 'streaming'}
-            stalled={replyStalled && message.id === lastId && message.status === 'streaming'}
-            quotaExhaustedNotice={
-              quotaExhaustedNotice?.messageId === message.id ? quotaExhaustedNotice.text : undefined
-            }
-            renderFooter={
-              renderFooter
-                ? (tools, editAction) => renderFooter(message, tools, editAction)
-                : undefined
-            }
-            branch={branchFor?.(message)}
-            replyPlan={message.role === 'assistant' ? replyPlanFor?.(message) : undefined}
-            displayName={displayName}
-            choiceDisabled={choiceDisabledFor?.(message) !== false}
-            onChoice={
-              onChoice && message.role === 'assistant'
-                ? (choice) => onChoice(message, choice)
-                : undefined
-            }
-            detailsDefaultOpen={detailsDefaultOpen}
-            thinkingText={thinkingByMessage?.[messageThinkingKey(message)]}
-          />
+          <Fragment key={`${message.id}:${message.revision}`}>
+            {switchDividers[message.id] ? (
+              <ChatFreeZoneDivider divider={switchDividers[message.id]!} />
+            ) : null}
+            <ChatMessageBubble
+              message={message}
+              editable={
+                message.turn_index > 0 &&
+                message.turn_index > latestTurn - CHAT_MESSAGE_EDIT_ROUNDS &&
+                message.status !== 'streaming'
+              }
+              editDisabled={editDisabled}
+              editMenuDisabled={editing}
+              viewportHeight={viewportHeight}
+              onEditingChange={onEditingChange}
+              characterName={characterName}
+              characterAvatarUrl={characterAvatarUrl}
+              userAvatarUrl={userAvatarUrl}
+              streaming={message.id === streamingMessageId || message.status === 'streaming'}
+              stalled={replyStalled && message.id === lastId && message.status === 'streaming'}
+              quotaExhaustedNotice={
+                quotaExhaustedNotice?.messageId === message.id
+                  ? quotaExhaustedNotice.text
+                  : undefined
+              }
+              renderFooter={
+                renderFooter
+                  ? (tools, editAction) => renderFooter(message, tools, editAction)
+                  : undefined
+              }
+              branch={branchFor?.(message)}
+              replyPlan={message.role === 'assistant' ? replyPlanFor?.(message) : undefined}
+              displayName={displayName}
+              choiceDisabled={choiceDisabledFor?.(message) !== false}
+              onChoice={
+                onChoice && message.role === 'assistant'
+                  ? (choice) => onChoice(message, choice)
+                  : undefined
+              }
+              detailsDefaultOpen={detailsDefaultOpen}
+              thinkingText={thinkingByMessage?.[messageThinkingKey(message)]}
+            />
+          </Fragment>
         ))}
     </>
   );
