@@ -8,11 +8,13 @@
 # - legacy *_full_rules_remaining counters, claim functions and trigger are gone;
 # - contract reconciles leftovers written only to settings, refuses when share_image_plaza_artifact's settings upsert
 #   was changed by someone else, then drops the compat objects and columns; share still works and first share is
-#   derivable from billing.image_plaza_share_rewards exactly as the old column said; idempotent.
+#   derivable from billing.image_plaza_share_rewards exactly as the old column said; idempotent;
+# - pre-step clears first-share times without a reward record (hand-edited test data) that block the contract.
 set -euo pipefail
 task_root="$(cd "$(dirname "$0")/.." && pwd)"
 expand="$task_root/packages/shared/migrations/20261117_db_reorg_p3b1_user_marks.sql"
 contract="$task_root/packages/shared/migrations/20261117_db_reorg_p3b1_user_marks_contract.sql"
+clear_orphan="$task_root/packages/shared/migrations/20261117_db_reorg_p3b1_clear_orphan_first_share.sql"
 task_container="st-db-reorg-p3b1-${RANDOM}-$$"
 trap 'docker rm -f "$task_container" >/dev/null 2>&1 || true' EXIT
 docker run -d --rm --name "$task_container" --network none -e POSTGRES_HOST_AUTH_METHOD=trust postgres:17 >/dev/null
@@ -490,6 +492,14 @@ ALTER TABLE app_core.miniapp_user_settings ENABLE TRIGGER settings_sync_marks;
 CREATE TABLE test_fixture.first_share_before AS
   SELECT user_id FROM app_core.miniapp_user_settings WHERE image_plaza_first_share_completed_at IS NOT NULL;
 SQL
+
+# A first-share time without a reward record (hand-edited test data) blocks the contract; the pre-step clears it.
+"${admin_psql[@]}" -c "UPDATE app_core.miniapp_user_settings SET image_plaza_first_share_completed_at = now() WHERE user_id = test_fixture.uid('1012')" >/dev/null
+if "${admin_psql[@]}" >/dev/null 2>&1 < "$contract"; then echo 'contract ignored an orphan first share' >&2; exit 1; fi
+"${admin_psql[@]}" >/dev/null < "$clear_orphan"
+"${admin_psql[@]}" >/dev/null < "$clear_orphan"
+[[ "$("${admin_psql[@]}" -At -c "SELECT count(*) FROM app_core.miniapp_user_settings WHERE image_plaza_first_share_completed_at IS NOT NULL")" == 4 ]] ||
+  { echo 'orphan pre-step cleared the wrong rows' >&2; exit 1; }
 
 # Contract refuses when someone else changed the share function's settings write.
 "${admin_psql[@]}" >/dev/null <<'SQL'
