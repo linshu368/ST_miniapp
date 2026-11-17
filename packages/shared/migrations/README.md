@@ -1,5 +1,17 @@
 # SQL 迁移文件
 
+## 2026-11-17 数据库重组阶段 1f：删除无读者的 analytics_grafana（本地 PG17 非超级用户验证）
+
+`20261117_db_reorg_drop_analytics_grafana.sql`（domain: miniapp_analytics 为唯一看数入口）。
+
+- 删除 `analytics_grafana`：11 个物化视图、35 个视图，约 1.7 MB。
+  - Grafana 现存看板与告警零引用；物化视图自 10 月下旬起无人刷新；无函数、cron、外部视图依赖；仓库零引用。
+  - 迁移内守卫：仍有引用时拒绝执行。
+- 删除只在该 schema 上有授权的组角色 `grafana_reader`（`grafana_cloud` 的上级角色）。有残留依赖或无 ADMIN 时保留并打印 NOTICE。
+- `grafana_cloud` 读 `miniapp_analytics` 不受影响。
+- 验证：`bash scripts/test-db-reorg-p1f-migration.sh`（两次幂等；外部依赖存在时拒绝且不改动）。
+- 发布：TEST 单文件 → Production 单文件，无应用代码改动。回滚：不可逆，视图定义可从历史 migration 取回。
+
 ## 2026-11-17 数据库重组阶段 1e：托管配置 key 登记表（本地 PG17 非超级用户验证）
 
 `20261117_db_reorg_managed_config_keys.sql`（domain: admin + app_core.runtime_config）。计划见 `.trellis/tasks/11-17-db-reorg-p1-foundation/design.md` 1e。
