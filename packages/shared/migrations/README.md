@@ -1,5 +1,15 @@
 # SQL 迁移文件
 
+## 2026-11-17 数据库重组阶段 1c：客服账号只读视图层（本地 PG17 验证）
+
+`20261117_db_reorg_cs_grants.sql`（domain: 外部读者授权）。前置：`20261117_db_reorg_ops_cs_feed.sql` 已执行，客服仓库已改读 `cs_feed`（ST_cs_platform 91c9593）。
+
+- `cs_runtime_v1`：撤销 `app_core` / `billing` / `experience` 的表权限与 USAGE，只留 `cs`（客服自有）与 `cs_feed`。客服表到 `app_core.users` 的外键检查以表所有者身份执行，不受影响。
+- `cs_persona_reader`：撤销全部业务 schema，只留 `cs_feed`、`miniapp_analytics`。旧画像簇按所有者决定直接丢弃。
+- `cs_outreach_reader_v1`：零引用、无连接、不拥有对象（迁移内再次断言），`DROP OWNED` 撤权后删除。
+- 验证：`bash scripts/test-db-reorg-p1c-migration.sh`（两次幂等；以角色身份读视图成功、读业务表被拒；经外键写 `cs.conversations` 成功；无这些角色的环境跳过）。
+- 发布：TEST 单文件（无客服角色，预期跳过）→ Production 单文件。回滚：按 ST_cs_platform `db/migrations/009`、`016` 重新授权。
+
 ## 2026-11-17 数据库重组阶段 1d：清理无读者的结构（本地 PG17 验证，远端未执行）
 
 `20261117_db_reorg_cleanup.sql`（domain: app_core / miniapp_traffic / miniapp_features / PostgREST 暴露配置）。计划见 `.trellis/tasks/11-17-db-reorg-p1-foundation/design.md` 1d。
