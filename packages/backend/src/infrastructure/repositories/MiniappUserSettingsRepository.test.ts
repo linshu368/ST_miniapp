@@ -40,7 +40,6 @@ function initialRow(): MiniappUserSettingsRow {
     pref_drive_mode: null,
     pref_custom_instructions: 'existing preference',
     selected_model_id: null,
-    characters_last_seen_at: null,
     pref_voice_id: null,
     pref_voice_playback_rate: 1,
     created_at: '2026-10-23T00:00:00Z',

@@ -8,7 +8,6 @@ import {
   type ProviderImagePlazaModel,
   type SubmitImagePlazaAttemptRequest,
 } from '@miniapp/shared';
-import { getDomainDb } from '../../lib/supabase.js';
 import {
   deletePlazaImage,
   signPlazaImagePath,
@@ -34,8 +33,6 @@ export type { ImagePlazaWorkerAttempt } from './repository-model.js';
 
 /** Public repository API remains stable while feed and worker storage stay focused. */
 export class ImagePlazaRepository extends ImagePlazaFeedRepository {
-  private readonly billing = getDomainDb('billing');
-
   async createQuote(input: {
     userId: string;
     model: ProviderImagePlazaModel;
