@@ -20,12 +20,15 @@ const PercentSchema = z.number().min(0).max(100);
 const DurationMsSchema = z.number().int().positive().max(110_000);
 const IsoTimeSchema = z.string().datetime({ offset: true });
 
+/** 免费模型 id：候选池和模型目录「免费畅聊」板块共用 */
+export const FreeZoneModelIdSchema = z
+  .string()
+  .trim()
+  .max(64)
+  .regex(/^free-[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/, '免费模型 id 必须以 free- 开头');
+
 export const FreeZoneCandidateSchema = z.object({
-  id: z
-    .string()
-    .trim()
-    .max(64)
-    .regex(/^free-[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/, '免费模型 id 必须以 free- 开头'),
+  id: FreeZoneModelIdSchema,
   /** Surplus 的标准模型名，例如 deepseek-v4-pro */
   surplus_model: z
     .string()

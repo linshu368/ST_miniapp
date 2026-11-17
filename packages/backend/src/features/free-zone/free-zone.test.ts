@@ -317,7 +317,7 @@ describe('resolveFreeZoneView', () => {
     scope: 'own_cards',
     candidates: [candidate],
   });
-  const listed = [{ candidate, providers: ['zai'] }];
+  const listed = [{ source: 'surplus' as const, candidate, providers: ['zai'] }];
   const at = (iso: string) => new Date(iso);
   const view = (overrides: Partial<Parameters<typeof resolveFreeZoneView>[0]> = {}) =>
     resolveFreeZoneView({
@@ -346,6 +346,7 @@ describe('resolveFreeZoneView', () => {
 
 describe('chooseReplacement', () => {
   const make = (id: string, family: string) => ({
+    source: 'surplus' as const,
     candidate: {
       id,
       surplus_model: id,

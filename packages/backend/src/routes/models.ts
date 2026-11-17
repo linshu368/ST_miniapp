@@ -32,6 +32,7 @@ import {
   resolveCatalogFreeZone,
   resolveFreeZoneSelection,
 } from '../features/free-zone/selection.js';
+import { freeModelUpstream } from '../features/free-zone/zone-view.js';
 import {
   coverageForTextWallet,
   presentTextModelCatalog,
@@ -170,15 +171,17 @@ export default async function modelsRoutes(app: FastifyInstance) {
         vipActive: entitlement.active,
       });
       const catalogModel = resolveEnabledCatalogModel(snapshot.catalog, selection.modelId);
-      // 畅聊免费模型不在付费目录里，选中时按它自己的 Surplus 上游返回。
-      const selectedModel = freeZone.usable
-        ? {
-            id: freeZone.usable.candidate.id,
-            openrouter_model_id: freeZone.usable.candidate.surplus_model,
-            provider: 'surplus' as const,
-            provider_model_id: freeZone.usable.candidate.surplus_model,
-          }
-        : catalogModel;
+      // 畅聊免费模型不在付费目录的档位里，选中时按它自己的上游返回。
+      const freeUpstream = freeZone.usable ? freeModelUpstream(freeZone.usable) : null;
+      const selectedModel =
+        freeZone.usable && freeUpstream
+          ? {
+              id: freeZone.usable.candidate.id,
+              openrouter_model_id: freeUpstream.providerModelId,
+              provider: freeUpstream.provider,
+              provider_model_id: freeUpstream.providerModelId,
+            }
+          : catalogModel;
       if (freeZone.replacement) {
         log.biz.info(
           {
@@ -376,14 +379,15 @@ async function selectFreeZoneModel(input: {
     return reply.status(409).send(fail('FREE_ZONE_UNAVAILABLE', '畅聊模型暂未开放'));
   }
   const { candidate } = decision.listed;
+  const upstream = freeModelUpstream(decision.listed);
   await settings.setSelectedModelId(userId, input.request.user, candidate.id);
   log.biz.info(
     {
       event: 'models.select.done',
       userId,
       modelId: candidate.id,
-      provider: 'surplus',
-      model: candidate.surplus_model,
+      provider: upstream.provider,
+      model: upstream.providerModelId,
       freeZone: true,
     },
     '用户切换模型'
@@ -391,9 +395,9 @@ async function selectFreeZoneModel(input: {
   return reply.send(
     ok<SelectModelData>({
       model_id: candidate.id,
-      openrouter_model_id: candidate.surplus_model,
-      provider: 'surplus',
-      provider_model_id: candidate.surplus_model,
+      openrouter_model_id: upstream.providerModelId,
+      provider: upstream.provider,
+      provider_model_id: upstream.providerModelId,
     })
   );
 }

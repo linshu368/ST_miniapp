@@ -182,6 +182,8 @@ export async function dispatchGeneration(input: DispatchInput): Promise<{
   const elapsed = performance.now() - request.firstToken.requestStartedAt;
   const policy = request.model.firstTokenPolicy;
   const { freeZone } = request.model;
+  // 模型目录「免费畅聊」板块的模型没有 Surplus 那套参数，只按计费上下文认出是畅聊
+  const freeZoneId = request.model.billingContext?.freeZone?.candidateId;
   const historyId = request.historyId;
   const delivered = await forwardWithFirstTokenFallback({
     primary: request.model,
@@ -204,16 +206,16 @@ export async function dispatchGeneration(input: DispatchInput): Promise<{
     onReady: request.firstToken.onReady,
     forward,
     // 畅聊：每一路调用（含并发落败、被取消的）都记下来，事后按账单补真实花费；
-    // 主请求另外计入「派不出去」计数，比例过高当场下架
-    onCallSettled: freeZone
+    // 候选池（Surplus）模型的主请求另外计入「派不出去」计数，比例过高当场下架
+    onCallSettled: freeZoneId
       ? (call) => {
           if (historyId) {
             recordFreeZoneCall(
-              { ...call, chatHistoryId: historyId, candidateId: freeZone.candidateId },
+              { ...call, chatHistoryId: historyId, candidateId: freeZoneId },
               log.sys
             );
           }
-          if (call.role === 'primary') {
+          if (freeZone && call.role === 'primary') {
             noteFreeZonePrimaryCall({
               candidateId: freeZone.candidateId,
               providers: freeZone.providers,

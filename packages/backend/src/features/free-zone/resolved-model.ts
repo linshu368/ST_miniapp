@@ -1,11 +1,15 @@
 /**
  * 把一个可用的畅聊免费模型拼成生成链路要的 ResolvedModel。
  *
- * 主调用走 Surplus（带折扣底线 + 供应商白名单），兜底沿用付费目录配置的兜底模型（1017）；
- * 首字参数用畅聊自己的「等多久启动兜底」和「总上限」，只对免费模型生效。
+ * 候选池（Surplus）模型：主调用带折扣底线 + 供应商白名单，可并发多路；首字参数用畅聊自己的
+ * 「等多久启动兜底」和「总上限」。模型目录「免费畅聊」板块的模型：和轻量/标准/旗舰完全同一条
+ * 通路（一次首发 + 兜底，首字参数取模型目录），只是本轮按畅聊计费（扣 0，记原价）。
+ * 兜底都沿用付费目录配置的兜底模型（1017）。
  */
 import {
   DEFAULT_FALLBACK_TOKEN_TIMEOUT_MS,
+  DEFAULT_FIRST_TOKEN_DEADLINE_MS,
+  DEFAULT_FIRST_TOKEN_TIMEOUT_MS,
   DEFAULT_FIRST_TOKEN_TIMEOUT_RATE_TARGET,
   FIRST_TOKEN_FALLBACK_MODEL_ID,
   freeZoneDiscountFloor,
@@ -14,49 +18,74 @@ import {
 import type { fetchModelCatalogSnapshot, LlmPricingConfig } from '../../platform/model-tiers.js';
 import type { ResolvedModel } from '../generation/types.js';
 import type { FreeZoneSnapshot } from './snapshot.js';
-import type { ListedFreeModel } from './zone-view.js';
+import { freeModelUpstream, type ListedFreeModel } from './zone-view.js';
 
-export function buildFreeZoneResolvedModel(input: {
+interface BuildInput {
   listed: ListedFreeModel;
   zone: FreeZoneSnapshot;
   catalogSnapshot: Awaited<ReturnType<typeof fetchModelCatalogSnapshot>>;
   pricing: LlmPricingConfig;
   entitlement: ResolvedModel['entitlement'];
-}): ResolvedModel {
-  const { candidate, providers } = input.listed;
-  const { catalog, version } = input.catalogSnapshot;
+}
+
+/** 两种来源共用：上游、按畅聊计费（扣 0，原价按对标档位记进快照） */
+function freeZoneBase(input: BuildInput) {
+  const { candidate } = input.listed;
+  const { provider, providerModelId } = freeModelUpstream(input.listed);
   const originalCredits = Math.max(
     0,
     Math.round(input.pricing.fixedDeduction[candidate.benchmark_tier])
   );
   return {
     modelId: candidate.id,
-    provider: 'surplus',
-    providerModelId: candidate.surplus_model,
-    openRouterModelId: candidate.surplus_model,
+    provider,
+    providerModelId,
+    openRouterModelId: providerModelId,
     tier: null,
     isFree: false,
     entitlement: input.entitlement,
     billingContext: {
       modelId: candidate.id,
       modelDisplayName: candidate.display_name,
-      provider: 'surplus',
-      providerModelId: candidate.surplus_model,
-      openRouterModelId: candidate.surplus_model,
+      provider,
+      providerModelId,
+      openRouterModelId: providerModelId,
       modelTier: null,
-      catalogVersion: version,
+      catalogVersion: input.catalogSnapshot.version,
       isFree: false,
       freeZone: { candidateId: candidate.id, originalCredits },
     },
+  } satisfies ResolvedModel;
+}
+
+export function buildFreeZoneResolvedModel(input: BuildInput): ResolvedModel {
+  const base = freeZoneBase(input);
+  const { catalog, version } = input.catalogSnapshot;
+  const firstTokenCommon = {
+    fallbackModelId: catalog.fallback_model_id ?? FIRST_TOKEN_FALLBACK_MODEL_ID,
+    fallbackProviders: resolveFallbackProviders(catalog),
+    fallbackTimeoutMs: catalog.fallback_timeout_ms ?? DEFAULT_FALLBACK_TOKEN_TIMEOUT_MS,
+    timeoutRateTarget:
+      catalog.first_token_timeout_rate_target ?? DEFAULT_FIRST_TOKEN_TIMEOUT_RATE_TARGET,
+    catalogVersion: version,
+  };
+  if (input.listed.source === 'catalog') {
+    return {
+      ...base,
+      firstTokenPolicy: {
+        ...firstTokenCommon,
+        timeoutMs: input.listed.candidate.first_token_timeout_ms ?? DEFAULT_FIRST_TOKEN_TIMEOUT_MS,
+        deadlineMs: catalog.first_token_deadline_ms ?? DEFAULT_FIRST_TOKEN_DEADLINE_MS,
+      },
+    };
+  }
+  const { candidate, providers } = input.listed;
+  return {
+    ...base,
     firstTokenPolicy: {
-      fallbackModelId: catalog.fallback_model_id ?? FIRST_TOKEN_FALLBACK_MODEL_ID,
-      fallbackProviders: resolveFallbackProviders(catalog),
+      ...firstTokenCommon,
       timeoutMs: input.zone.config.first_token.primary_wait_ms,
-      fallbackTimeoutMs: catalog.fallback_timeout_ms ?? DEFAULT_FALLBACK_TOKEN_TIMEOUT_MS,
       deadlineMs: input.zone.config.first_token.deadline_ms,
-      timeoutRateTarget:
-        catalog.first_token_timeout_rate_target ?? DEFAULT_FIRST_TOKEN_TIMEOUT_RATE_TARGET,
-      catalogVersion: version,
     },
     freeZone: {
       candidateId: candidate.id,
