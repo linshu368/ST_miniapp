@@ -10,11 +10,13 @@
 #   was changed by someone else, then drops the compat objects and columns; share still works and first share is
 #   derivable from billing.image_plaza_share_rewards exactly as the old column said; idempotent;
 # - pre-step clears first-share times without a reward record (hand-edited test data) that block the contract.
+# - pre-step strips the same settings upsert from the TEST-only video share function (unmerged branch).
 set -euo pipefail
 task_root="$(cd "$(dirname "$0")/.." && pwd)"
 expand="$task_root/packages/shared/migrations/20261117_db_reorg_p3b1_user_marks.sql"
 contract="$task_root/packages/shared/migrations/20261117_db_reorg_p3b1_user_marks_contract.sql"
 clear_orphan="$task_root/packages/shared/migrations/20261117_db_reorg_p3b1_clear_orphan_first_share.sql"
+video_share="$task_root/packages/shared/migrations/20261117_db_reorg_p3b1_video_share_first_share.sql"
 task_container="st-db-reorg-p3b1-${RANDOM}-$$"
 trap 'docker rm -f "$task_container" >/dev/null 2>&1 || true' EXIT
 docker run -d --rm --name "$task_container" --network none -e POSTGRES_HOST_AUTH_METHOD=trust postgres:17 >/dev/null
@@ -324,6 +326,22 @@ BEGIN
   );
 END;
 $function$;
+-- TEST-only video share function from the unmerged video branch (same settings upsert, paren inline).
+CREATE FUNCTION billing.share_media_plaza_video(p_user_id uuid, p_artifact_id uuid, p_title text, p_description text,
+  p_model_name text, p_tags text[], p_rebate_rate numeric)
+ RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'pg_catalog' AS $function$
+BEGIN
+  INSERT INTO app_core.miniapp_user_settings(user_id, image_plaza_first_share_completed_at)
+  VALUES (p_user_id, now())
+  ON CONFLICT (user_id) DO UPDATE
+  SET image_plaza_first_share_completed_at = COALESCE(
+        app_core.miniapp_user_settings.image_plaza_first_share_completed_at,
+        EXCLUDED.image_plaza_first_share_completed_at),
+      updated_at = now();
+
+  RETURN jsonb_build_object('work_id', p_artifact_id, 'already_shared', false);
+END;
+$function$;
 CREATE FUNCTION test_fixture.make_shareable(p_user uuid) RETURNS uuid LANGUAGE plpgsql AS $$
 DECLARE v_attempt uuid; v_artifact uuid;
 BEGIN
@@ -511,6 +529,15 @@ END $tamper$;
 SQL
 if "${admin_psql[@]}" >/dev/null 2>&1 < "$contract"; then echo 'contract rewrote a changed share function' >&2; exit 1; fi
 "${admin_psql[@]}" -c "DO \$r\$ BEGIN EXECUTE (SELECT def FROM test_fixture.share_def); END \$r\$" >/dev/null
+
+# A function from an unmerged branch (TEST only) still writes the dropped column: contract refuses; pre-step strips it.
+if "${admin_psql[@]}" >/dev/null 2>&1 < "$contract"; then echo 'contract ignored the video share function' >&2; exit 1; fi
+"${admin_psql[@]}" >/dev/null < "$video_share"
+"${admin_psql[@]}" >/dev/null < "$video_share"
+[[ "$("${admin_psql[@]}" -At -c "SELECT prosrc ~ 'miniapp_user_settings' OR NOT prosecdef FROM pg_proc WHERE proname = 'share_media_plaza_video'")" == f ]] ||
+  { echo 'video share function not rewritten' >&2; exit 1; }
+[[ "$("${admin_psql[@]}" -At -c "SELECT (billing.share_media_plaza_video(test_fixture.uid('1013'), gen_random_uuid(), 't', 'd', 'm', NULL, 0) ->> 'already_shared')")" == false ]] ||
+  { echo 'video share function broken after rewrite' >&2; exit 1; }
 
 "${admin_psql[@]}" >/dev/null < "$contract"
 "${admin_psql[@]}" >/dev/null < "$contract"
