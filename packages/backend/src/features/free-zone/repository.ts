@@ -210,7 +210,7 @@ export async function saveFreeZoneEvaluation(
         for (const event of item.events) {
           const row = eventRow(event, s.providers);
           await tx.$executeRaw`
-            INSERT INTO miniapp_features.free_zone_events (candidate_id, event_type, cause, providers, reason, metrics)
+            INSERT INTO ops.free_zone_events (candidate_id, event_type, cause, providers, reason, metrics)
             VALUES (${s.candidateId}, ${event.type}, ${row.cause}, ${row.providers}::text[],
               ${row.reason}, ${JSON.stringify(item.metrics)}::jsonb)`;
         }
@@ -288,7 +288,7 @@ export async function saveManualListing(input: {
           last_reason = EXCLUDED.last_reason, updated_at = EXCLUDED.updated_at`;
       const eventData = eventRow(event, s.providers);
       await tx.$executeRaw`
-        INSERT INTO miniapp_features.free_zone_events (candidate_id, event_type, cause, providers, reason)
+        INSERT INTO ops.free_zone_events (candidate_id, event_type, cause, providers, reason)
         VALUES (${s.candidateId}, ${event.type}, ${eventData.cause}, ${eventData.providers}::text[],
           ${eventData.reason})`;
       return { kind: 'saved', previous, state: s };
@@ -334,7 +334,7 @@ export async function saveDelisting(input: {
         WHERE candidate_id = ${s.candidateId}`;
       const eventData = eventRow(event, s.providers);
       await tx.$executeRaw`
-        INSERT INTO miniapp_features.free_zone_events (candidate_id, event_type, cause, providers, reason)
+        INSERT INTO ops.free_zone_events (candidate_id, event_type, cause, providers, reason)
         VALUES (${s.candidateId}, ${event.type}, ${eventData.cause}, ${previous.providers}::text[],
           ${eventData.reason})`;
       return { kind: 'saved', previous, state: s };

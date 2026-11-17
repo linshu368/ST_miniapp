@@ -34,7 +34,7 @@ export class PrismaAlertPersistence implements AlertPersistence {
       async (tx) => {
         const existing = await tx.$queryRaw<IncidentRow[]>(Prisma.sql`
         SELECT id, state, severity, last_window_ended_at, last_observed_at, latest_evaluation_id
-        FROM app_core.alert_incidents
+        FROM ops.alert_incidents
         WHERE fingerprint = ${input.evaluation.fingerprint}
         FOR UPDATE
       `);
@@ -43,7 +43,7 @@ export class PrismaAlertPersistence implements AlertPersistence {
         if (!row) {
           if (input.evaluation.state === 'healthy') return { kind: 'duplicate' };
           const inserted = await tx.$queryRaw<Array<{ id: bigint }>>(Prisma.sql`
-          INSERT INTO app_core.alert_incidents (
+          INSERT INTO ops.alert_incidents (
             fingerprint, state, severity, confidence, location, title, summary, recommended_action,
             latest_evaluation_id, latest_producer_run_id, first_firing_at, last_firing_at,
             last_observed_at, last_window_ended_at, metrics, samples
@@ -70,7 +70,7 @@ export class PrismaAlertPersistence implements AlertPersistence {
         const transition = transitionFor(row, input.evaluation);
         const state = input.evaluation.state === 'healthy' ? 'recovered' : 'open';
         await tx.$executeRaw(Prisma.sql`
-        UPDATE app_core.alert_incidents SET
+        UPDATE ops.alert_incidents SET
           state = ${state}, severity = ${input.evaluation.severity}, confidence = ${input.evaluation.confidence},
           location = ${JSON.stringify(input.evaluation.location)}::jsonb, title = ${input.evaluation.title},
           summary = ${input.evaluation.summary}, recommended_action = ${input.evaluation.recommended_action ?? null},
@@ -118,7 +118,7 @@ export class PrismaAlertPersistence implements AlertPersistence {
     card: SafeAlertCard
   ): Promise<void> {
     await tx.$executeRaw(Prisma.sql`
-      INSERT INTO app_core.alert_delivery_attempts (
+      INSERT INTO ops.alert_delivery_jobs (
         incident_id, channel, notification_key, transition, state, payload, next_attempt_at
       ) VALUES (${incidentId}, 'feishu', ${key}, ${transition}, 'pending', ${JSON.stringify(card)}::jsonb, now())
       ON CONFLICT (notification_key) DO NOTHING
