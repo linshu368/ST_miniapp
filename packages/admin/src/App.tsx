@@ -528,7 +528,10 @@ function AdminWorkspace(props: {
     const ids = snapshots.flatMap((snapshot) => {
       const parsed = ModelCatalogSchema.safeParse(snapshot);
       return parsed.success
-        ? parsed.data.tiers.flatMap((tier) => tier.models.map((model) => model.id))
+        ? [
+            ...parsed.data.tiers.flatMap((tier) => tier.models.map((model) => model.id)),
+            ...parsed.data.free_zone_models.map((model) => model.id),
+          ]
         : [];
     });
     return new Set(ids);
