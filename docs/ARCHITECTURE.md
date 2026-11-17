@@ -375,6 +375,8 @@ T9 专表 contract：`20261016_openrouter_chat_history_drop_legacy_aliases.sql` 
 
 到期提醒脚本是 `packages/backend/src/scripts/send-vip-expiry-reminders.ts`。`--dry-run` 只计数。`--write` 还要求已发布 `vip_reminders_enabled` 恰好为 true。窗口是 Asia/Shanghai 的到期当天和提前 3 天，同一周期不重复插入。Railway development 的 `stminiapp-vip-reminder-cron` 以 `--write` 运行；production IaC 不声明该 Cron。消息详情是 `GET /api/notifications/:id`；`POST /api/notifications/read` 必须带具体 id，只提交 scope 会 400。历史通知正文不因续费改写。
 
+**畅聊按身份开放（2026-11-17）**：`free_zone_config.access`（默认关）打开后，福利期之外畅聊只对三类人开放（北京时间）：`trial_since` 之后注册的新用户注册起 `trial_hours` 小时；有效会员最近一次开通/续费（`billing.vip_purchase_grants.granted_at`）起 `vip_welcome_days` 天；有效会员每周 `vip_weekly` 窗口（默认周四 12:00 起 15 小时）。判定是纯函数 `features/free-zone/access.ts`，用户事实由 `access-facts.ts` 惰性读取（注册时间、最近开通），读失败临时放行并打 `free_zone.access_facts_failed`。对用户关闭时沿用原替换逻辑：选着免费模型的直接换成付费默认模型照常生成计费；前端在「免费 → 付费」那一轮前加分隔线（按 `ChatMessage.credits_per_turn` 推导，即已有的 `chat_history.deduction_rate`，0 为免费轮；切换原因不落库）。VIP 增长弹窗改为跟着畅聊走：试用/会员期间不弹，试用或福利期刚结束 → 被切到付费的下一轮后弹一次，会员畅聊日 → 非会员打开即弹；频次见 `access.prompt`（默认间隔 3 天、每 3 次停 30 天），仍复用 `record_growth_prompt_event` 的 `prompt='vip'` 记录。原「累计 50 轮」触发已去掉。
+
 2026-09-24 产品确认 TEST 真机 VIP 验收通过。当时任务日志中的 TEST 状态是 `vip_purchase_enabled=true`、`vip_reminders_enabled=true`。Production 购买、提醒和数据都未按本任务打开，上线仍等 T9 的明确批准。
 
 ### 4.9 图片创作广场（代码完成，实库 migration/canary 待执行）

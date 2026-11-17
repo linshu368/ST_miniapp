@@ -237,6 +237,7 @@ export function ChatModelSwitcher({
               setError(null);
               setFeedback(freeZoneClosedHint(freeZone));
             }}
+            onUpgrade={() => router.push(`/vip?returnTo=${encodeURIComponent(returnTo)}`)}
           />
         ) : null}
         {data.catalog.tiers.map((tier) => (

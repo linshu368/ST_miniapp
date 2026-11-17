@@ -28,7 +28,7 @@ import {
 } from '@/lib/utils/payment';
 import { useHaptic, useTelegramBackButton } from '@/lib/telegram';
 import { vipKeys } from '@/lib/api/vip';
-import { modelCatalogKeys } from '@/lib/api/models';
+import { modelCatalogKeys, reselectFreeZoneAfterVip } from '@/lib/api/models';
 import { isVipOrder, orderBenefitLabel } from '@/lib/vip/presentation';
 
 export default function PaymentPendingPage() {
@@ -99,9 +99,14 @@ export default function PaymentPendingPage() {
       // 开通会改变签到加成，回到“我的”时不能继续显示开通前的缓存额度。
       void queryClient.invalidateQueries({ queryKey: paymentKeys.checkin() });
       void queryClient.invalidateQueries({ queryKey: vipKeys.status });
-      void queryClient.invalidateQueries({ queryKey: modelCatalogKeys.detail });
+      // 刚付完（10 分钟内）才自动选回畅聊：以后从订单列表再点进来，不能把用户自己换的模型改掉。
+      const paidAt = order.paid_at ? Date.parse(order.paid_at) : Number.NaN;
+      const justPaid = Number.isFinite(paidAt) && Date.now() - paidAt < 10 * 60 * 1000;
+      void (justPaid ? reselectFreeZoneAfterVip() : Promise.resolve(null))
+        .catch(() => null)
+        .finally(() => void queryClient.invalidateQueries({ queryKey: modelCatalogKeys.detail }));
     }
-  }, [order?.product_type, order?.status, queryClient]);
+  }, [order?.product_type, order?.status, order?.paid_at, queryClient]);
 
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {

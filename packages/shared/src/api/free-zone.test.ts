@@ -4,6 +4,7 @@ import {
   FreeZoneConfigSchema,
   freeZoneDiscountFloor,
   freeZoneRulesFor,
+  formatVipWeeklyWindow,
 } from './free-zone.js';
 
 const screening = { ...DEFAULT_FREE_ZONE_CONFIG.screening, min_discount_pct: 90 };
@@ -34,5 +35,34 @@ describe('per-model discount floor', () => {
       ],
     });
     expect(config.candidates[0]?.min_discount_pct).toBeNull();
+  });
+});
+
+describe('formatVipWeeklyWindow', () => {
+  it('writes the VIP day in plain words', () => {
+    expect(formatVipWeeklyWindow({ weekday: 4, start_minute: 720, duration_minutes: 900 })).toBe(
+      '周四 12:00 至次日 03:00'
+    );
+    expect(formatVipWeeklyWindow({ weekday: 4, start_minute: 720, duration_minutes: 600 })).toBe(
+      '周四 12:00 至 22:00'
+    );
+    expect(formatVipWeeklyWindow({ weekday: 7, start_minute: 1200, duration_minutes: 1800 })).toBe(
+      '周日 20:00 至周二 02:00'
+    );
+  });
+
+  it('defaults access to off so old configs keep the welfare-only behaviour', () => {
+    const parsed = FreeZoneConfigSchema.parse({});
+    expect(parsed.access).toMatchObject({ enabled: false, trial_since: null, trial_hours: 72 });
+    expect(parsed.access.vip_weekly).toEqual({
+      weekday: 4,
+      start_minute: 720,
+      duration_minutes: 900,
+    });
+    expect(parsed.access.prompt).toEqual({
+      min_interval_days: 3,
+      batch_size: 3,
+      batch_cooldown_days: 30,
+    });
   });
 });

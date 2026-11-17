@@ -17,6 +17,7 @@ import { createLogger } from '../../lib/logger.js';
 import { fetchModelCatalogSnapshot } from '../../platform/model-tiers.js';
 import { fetchFreeZoneConfig } from './config.js';
 import { loadFreeZoneStates } from './repository.js';
+import { evaluateFreeZoneAccess, type FreeZoneAccessFacts } from './access.js';
 import { resolveFreeZoneView, type FreeZoneEntry, type ListedFreeModel } from './zone-view.js';
 
 const log = createLogger('free-zone');
@@ -99,11 +100,30 @@ export function findCandidate(
   );
 }
 
-/** 栏目对这个用户、这张卡、此刻的状态；null 表示不显示。 */
+/**
+ * 栏目对这个用户、这张卡、此刻的状态；null 表示不显示。
+ * facts 只有福利期外、按身份开放打开时才用到（needsAccessFacts）；null 表示没读或读失败。
+ */
 export function viewFreeZone(
   snapshot: FreeZoneSnapshot | null,
-  input: { now: Date; isOwnCard: boolean; pricing: FixedDeductionConfig }
+  input: {
+    now: Date;
+    isOwnCard: boolean;
+    pricing: FixedDeductionConfig;
+    facts: FreeZoneAccessFacts | null;
+  }
 ): PublicFreeZone | null {
   if (!snapshot) return null;
-  return resolveFreeZoneView({ config: snapshot.config, listed: snapshot.listed, ...input });
+  const access = evaluateFreeZoneAccess({
+    config: snapshot.config,
+    now: input.now,
+    facts: input.facts,
+  });
+  return resolveFreeZoneView({
+    config: snapshot.config,
+    listed: snapshot.listed,
+    isOwnCard: input.isOwnCard,
+    pricing: input.pricing,
+    access,
+  });
 }

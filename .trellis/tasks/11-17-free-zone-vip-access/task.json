@@ -1,0 +1,123 @@
+{
+  "id": "free-zone-vip-access",
+  "name": "free-zone-vip-access",
+  "title": "畅聊按身份开放：新人试用 + VIP 周四/开通礼 + 转化弹窗",
+  "description": "福利期后畅聊按身份开放（新人 3 天、VIP 开通 5 天+周四畅聊日）、到期直接切付费并加分隔线、VIP 并排双券弹窗与频次",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P2",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-17",
+  "completedAt": null,
+  "branch": "codex/free-zone-vip-access",
+  "base_branch": "dev",
+  "worktree_path": "/Users/qianpeijia/PycharmProjects/pythonProject/ST_miniapp/worktrees/free-zone-vip-access",
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "shared.business.conversation-contracts",
+        "shared.business.engagement-support-contracts",
+        "backend.business.conversation-generation",
+        "backend.business.engagement-support",
+        "frontend.business.conversation-ui",
+        "frontend.business.engagement-support",
+        "frontend.business.wallet-payment",
+        "admin.business.operations"
+      ]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": ["/chat/:id", "/characters", "/chats"],
+      "apis": [
+        "GET /api/v1/models/catalog（+1 条索引读：最近开通时间）",
+        "GET /api/growth/prompts（+1 条索引读）",
+        "对话生成预检（选中免费模型且开关开时 +2 条主键/索引读，与现有读并行）"
+      ],
+      "android": {
+        "page_p95_baseline_ms": 2588.84,
+        "page_p95_target_ms": 2718,
+        "baseline_route": "/chat/:id",
+        "baseline_measurement": "sentry metrics page.ready.duration",
+        "note": "沿用 11-13 growth-prompts 任务同口径基线，目标 +5% 以内"
+      },
+      "ios": {
+        "page_p95_baseline_ms": 2352.6,
+        "page_p95_target_ms": 2470,
+        "baseline_route": "/chat/:id",
+        "baseline_measurement": "sentry metrics page.ready.duration",
+        "note": "同上"
+      },
+      "api": {
+        "p95_baseline_ms": null,
+        "p95_target_ms": 1500,
+        "endpoint": "GET /api/v1/models/catalog",
+        "baseline_platform": "android",
+        "reason": "新增读为单行索引读，目标与同类读接口一致；新增耗时目标 ≤30ms"
+      },
+      "measurement": {
+        "source": "Sentry page.ready.duration（route × tg_platform）；Railway 路由日志 duration_ms",
+        "window": "发布后 24 小时复查；会员周四窗口首个样本 11-26"
+      },
+      "notes": "弹窗与分隔线不在首屏请求路径；栏目卡随现有目录接口返回，不新增请求"
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "required",
+      "scope": [
+        "GET /api/v1/models/catalog",
+        "对话生成预检 resolveModelForUser",
+        "GET /api/growth/prompts",
+        "POST /api/growth/prompts/events"
+      ],
+      "integration_points": [
+        "复用 requestLogger / createLogger('generation') 与现有 free_zone.selection_replaced、models.config.free_zone_replaced、growth.prompts.read、growth.prompt.event"
+      ],
+      "events": [
+        {
+          "event": "free_zone.access_facts_failed",
+          "operation": "free_zone.access",
+          "levels": ["warn"],
+          "outcomes": ["failed"],
+          "fields": ["user_id", "stage", "duration_ms", "err"]
+        },
+        {
+          "event": "free_zone.selection_replaced",
+          "operation": "generation.resolve_model",
+          "levels": ["info"],
+          "outcomes": ["succeeded"],
+          "fields": ["user_id", "fromModelId", "toModelId", "reason", "access_via", "audience"]
+        },
+        {
+          "event": "growth.prompts.read",
+          "operation": "http.request",
+          "levels": ["info", "warn"],
+          "outcomes": ["succeeded", "failed"],
+          "fields": ["community_prompt", "vip_prompt", "vip_context", "duration_ms"]
+        }
+      ],
+      "failure_paths": [
+        "读用户事实失败→放行并 warn；配置非法→栏目不显示（现有降级）；shown 超频→recorded=false；自动选回失败→前端日志不重试"
+      ],
+      "correlation": "沿用 HTTP ALS 与生成链路上下文，不新增存储",
+      "redaction": "只记 id、枚举与耗时；不记注册时间原文以外的个人资料、不记对话内容",
+      "verification": [
+        "单测覆盖读事实失败放行分支与 warn 日志",
+        "TEST 人工检查 Railway 日志 vip_context / access_via 字段"
+      ],
+      "alerting": "不新增告警：读事实失败已放行且有 warn 日志，生成报错率沿用现有 p1 告警"
+    }
+  }
+}
