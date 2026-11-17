@@ -16,6 +16,7 @@
     "lint:imports": "eslint --no-eslintrc -c .eslintrc.json 'packages/*/src/**/*.{ts,tsx}' --rule '{}' --no-inline-config",
     "lint:legacy": "node scripts/check-legacy-references.mjs",
     "lint:migrations": "node scripts/check-migration-filenames.mjs",
+    "lint:db-contract": "node scripts/db-contract-lint.mjs",
     "lint:complexity": "node scripts/complexity-budget.mjs check",
     "lint:backend-logging": "node scripts/check-backend-logging.mjs",
     "complexity:report": "node scripts/complexity-budget.mjs report",
@@ -54,7 +55,8 @@
     "lint-staged": "^16.4.0",
     "prettier": "^3.8.3",
     "railway": "^3.11.0",
-    "supabase": "^2.109.0"
+    "supabase": "^2.109.0",
+    "yaml": "^2.8.3"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

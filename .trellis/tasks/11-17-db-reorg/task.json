@@ -1,0 +1,41 @@
+{
+  "id": "db-reorg",
+  "name": "db-reorg",
+  "title": "数据库契约与彻底拆分重组",
+  "description": "按业务域×数据性质建立数据库契约，并分阶段把存量宽表、观测字段、任务字段、计费字段迁到目标位置",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P1",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-17",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "pending"
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "父任务只新增契约、registry 与规划文档，不改运行代码、页面或接口；阶段 5（chat_history 瘦身）与阶段 6（计费统一）会影响对话发送与消息列表接口，由各自子任务声明 Android/iOS 与接口 P95。"
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "父任务本次只新增数据库契约、registry 与规划文档，并修改 AGENTS/spec/ARCHITECTURE 指针，不改运行代码、配置、迁移或部署；阶段 1–6 各建子任务并各自完成日志接入评估。"
+    }
+  }
+}
