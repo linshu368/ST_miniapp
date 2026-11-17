@@ -344,9 +344,8 @@ export async function runSettlement(
 
   if (entry.status !== 'success') return;
 
-  // total_round 回写 app_core.users 与 app_core.miniapp_user_settings
-  // （归属地图裁决 6 的存量豁免：chat_history 属 experience，计数落 app_core）。
-  const { error: roundErr } = await getDomainDb('app_core').rpc('increment_user_total_round', {
+  // 累计轮数只记在 experience.user_chat_stats（数据库重组 3a）。
+  const { error: roundErr } = await getDomainDb('experience').rpc('increment_user_total_round', {
     p_user_id: entry.user_id,
     p_delta: 1,
   });

@@ -1,0 +1,41 @@
+{
+  "id": "db-reorg-p3-user-state",
+  "name": "db-reorg-p3-user-state",
+  "title": "数据库重组阶段3：用户与状态拆分",
+  "description": "users 只留身份；归因、轮数、资料、一次性标记、偏好、角色上架各回各的表；运营配置校验链重写",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P1",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-17",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "11-17-db-reorg",
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "pending"
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "3a 把每个已登录接口首次解析用户身份时的读取（app_core.users 单行 SELECT，60s 进程内缓存）换成一次 miniapp_traffic.enter_user RPC（同样按 tg_id 主键/唯一索引读，常规登录不写库），往返次数不变或更少；建号/首次进入/bot 首启从最多 3 次往返降为 1 次。不改页面与接口契约。没有可见 P95 样本前不填零或推测数值；上线后看 Railway 日志 user 解析耗时与 Supabase pg_stat_statements 中 enter_user 平均耗时。"
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "3a 是数据落位调整：lib/user.ts 失败仍抛同样的'查询 MiniApp 用户失败'错误，由各路由既有 pino 错误日志记录；settle.ts 的轮数 +1 失败沿用 chathistory.round.increment_failed 事件；invite 补 source_id 失败沿用既有 error 日志。不新增事件。"
+    }
+  }
+}

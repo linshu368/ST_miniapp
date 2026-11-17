@@ -16,7 +16,6 @@ export interface MiniappUserSettingsRow {
   avatar_url: string | null;
   tg_avatar_url: string | null;
   custom_avatar_url: string | null;
-  total_round: number;
   /** NULL = 从未选择，跟随 runtime_config 的 default_tier_id（086） */
   pref_word_count: StoredPreferredWordCount;
   pref_show_options: boolean;
