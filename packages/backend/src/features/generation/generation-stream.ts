@@ -17,6 +17,14 @@ import type {
   GenerationResult,
 } from './types.js';
 import type { ExecutionObservation } from './generation-dispatch.js';
+/**
+ * 单次聊天回复的可见正文上限（字符）。只数用户看得到的正文，不含推理。
+ * 约 8000 token；近 7 天成功回复最长约 9800 字符，正常回复不会触及。
+ * 模型偶发失控（无限续写记忆栏、复读）时靠它提前掐断，而不是烧到超时，单条可达 3 万字符。
+ * 触顶按中断处理：finish_reason=length，不扣费，已生成的部分保留。
+ */
+export const CHAT_MAX_VISIBLE_CHARS = 12_000;
+
 type StreamInput = {
   request: GenerationRequest;
   billing: ModelBillingContext;
@@ -122,6 +130,9 @@ export async function consumeStream(input: StreamInput): Promise<GenerationResul
       hooks?.onFirstToken?.();
     }
   };
+  // 只数可见正文：onDelta 本来就逐片段回调，这里只多一次整数累加和比较。
+  const outputCap = new AbortController();
+  let visibleChars = 0;
   const tap = createSseTap({
     generationId: headerGenerationId,
     onGenerationId: request.firstToken ? undefined : hooks?.onGenerationId,
@@ -134,6 +145,8 @@ export async function consumeStream(input: StreamInput): Promise<GenerationResul
     onDelta: (delta) => {
       noteFirstToken(delta);
       hooks?.onDelta?.(delta);
+      visibleChars += delta.length;
+      if (visibleChars > CHAT_MAX_VISIBLE_CHARS && !outputCap.signal.aborted) outputCap.abort();
     },
     onEnd: settleOnce,
   });
@@ -147,24 +160,44 @@ export async function consumeStream(input: StreamInput): Promise<GenerationResul
           callback();
         },
       }),
-      { signal }
+      { signal: AbortSignal.any([signal, outputCap.signal]) }
     );
   } catch (err) {
     // 流被上游或网络打断时 flush 不触发，终态要在这里补齐，否则预留的免费轮会一直挂着
     const partial = tap.snapshot();
-    log.sys.error(
-      {
-        event: 'llm.stream.failed',
-        err,
-        userId: request.userId,
-        sessionId: request.sessionId ?? null,
-        generationId: partial.generationId,
-      },
-      'upstream stream aborted'
-    );
-    await settleOnce({ ...partial, completed: false });
+    // 用户取消/超时同时发生时仍按原有口径处理；只有单纯触顶才算输出超限。
+    const outputCapped = outputCap.signal.aborted && !signal.aborted;
+    if (outputCapped) {
+      log.sys.warn(
+        {
+          event: 'llm.stream.output_capped',
+          userId: request.userId,
+          sessionId: request.sessionId ?? null,
+          generationId: partial.generationId,
+          visibleChars,
+          limit: CHAT_MAX_VISIBLE_CHARS,
+        },
+        '可见正文超过上限，已中止上游'
+      );
+    } else {
+      log.sys.error(
+        {
+          event: 'llm.stream.failed',
+          err,
+          userId: request.userId,
+          sessionId: request.sessionId ?? null,
+          generationId: partial.generationId,
+        },
+        'upstream stream aborted'
+      );
+    }
+    await settleOnce({
+      ...partial,
+      completed: false,
+      ...(outputCapped ? { finishReason: 'length' } : {}),
+    });
     const actual = state.settledResult ?? partial;
-    hooks?.onError?.(toError(err));
+    if (!outputCapped) hooks?.onError?.(toError(err));
     return {
       status: 'stream_interrupted',
       content: actual.content,
