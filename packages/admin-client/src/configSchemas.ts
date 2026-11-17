@@ -166,6 +166,19 @@ const EditableModelCatalogTierSchema = z.object({
   models: z.array(EditableModelCatalogModelSchema),
 });
 
+/** 模型目录「免费畅聊」板块：编辑中允许空值，保存时由 shared 的严格 schema 校验 */
+const EditableCatalogFreeZoneModelSchema = z.object({
+  id: z.string(),
+  provider: LlmModelProviderSchema,
+  provider_model_id: z.string(),
+  display_name: z.string(),
+  tagline: z.string().default(''),
+  family: z.string().default(''),
+  benchmark_tier: z.enum(['light', 'standard', 'premium']).default('standard'),
+  first_token_timeout_ms: z.number().default(4000),
+  enabled: z.boolean().default(true),
+});
+
 export const EditableModelCatalogSchema = z.object({
   fallback_provider_routes: z
     .array(
@@ -181,6 +194,8 @@ export const EditableModelCatalogSchema = z.object({
   first_token_timeout_rate_target: z.number().default(0.01),
   default_model_id: z.string(),
   tiers: z.array(EditableModelCatalogTierSchema),
+  // 漏了这一项时 zod 会把整块丢掉：编辑器每次渲染都按解析结果显示，新加的免费模型会立刻消失
+  free_zone_models: z.array(EditableCatalogFreeZoneModelSchema).default([]),
 });
 
 // 仅验证编辑结构，允许清空、重复 ID 等中间态；保存仍使用 shared 的严格 schema。

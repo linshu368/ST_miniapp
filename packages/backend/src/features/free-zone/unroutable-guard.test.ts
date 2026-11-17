@@ -125,7 +125,7 @@ describe('delistUnroutable', () => {
       reasons: ['真实请求派不出去 8/10 > 50%'],
     });
     const cooldownUntil = new Date(
-      T0 + DEFAULT_FREE_ZONE_CONFIG.relist.cooldown_official_minutes * 60_000
+      T0 + DEFAULT_FREE_ZONE_CONFIG.relist.price_cooldown_minutes * 60_000
     ).toISOString();
     expect(state).toMatchObject({ status: 'cooling', providers: [], cooldownUntil });
     expect(event).toEqual({
