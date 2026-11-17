@@ -120,8 +120,8 @@ export const FreeZoneProbeSchema = z.object({
 export const FreeZoneModelStatusSchema = z.enum(['unlisted', 'listed', 'cooling']);
 
 /**
- * 在架模型最近一轮评估时的真实业务数据：只统计当前供应商开始用之后、统计窗口内的轮次。
- * 百分比都是 0–100；没有样本的项为 null。
+ * 在架模型最近一轮评估时的质量数据：这次上架之后最近 QUALITY_WINDOW_TURNS 轮。
+ * 百分比都是 0–100；没有样本的项为 null。旧记录里还有已停用的指标（兜底交付率等），照原样显示。
  */
 export const FreeZoneBusinessSnapshotSchema = z.object({
   turns: z.number().int().nonnegative(),
@@ -162,7 +162,7 @@ export const AdminFreeZoneStatusModelSchema = z.object({
   provider_since: z.string().nullable(),
   consecutive_passes: z.number().int().nonnegative(),
   cooldown_until: z.string().nullable(),
-  /** 因业务越线被排除的供应商 → 排除到期时间 */
+  /** 旧机制「业务越线排除供应商」留下的记录（已停用，不再新增） */
   excluded_providers: z.record(z.string()),
   last_reason: z.string().nullable(),
   /** 最近一轮官方初筛的逐项汇总；新字段上线前评估的记录为 null */
@@ -198,15 +198,14 @@ export const AdminFreeZoneEventSchema = z.object({
 
 export const AdminFreeZoneStatusResponseSchema = z.object({
   enabled: z.boolean(),
-  required_passes: z.number().int().positive(),
   last_evaluated_at: z.string().nullable(),
   models: z.array(AdminFreeZoneStatusModelSchema),
   events: z.array(AdminFreeZoneEventSchema),
 });
 
 /**
- * 运营手动「立即上架」：跳过连续达标次数和冷却期，直接用一家供应商上架；之后照常每 30 分钟评估，
- * 官方数据或业务数据不达标照样会换供应商或下架。不指定供应商时按当前行情和初筛门槛选。
+ * 运营手动「立即上架」：跳过冷却期（含质量原因下架后的停用），直接用一家供应商上架；之后照常
+ * 每 30 分钟评估，报价不达标、质量越线照样会换供应商或下架。不指定供应商时按当前行情和初筛门槛选。
  */
 export const AdminFreeZoneListNowRequestSchema = z.object({
   candidate_id: z.string().trim().min(1).max(64),

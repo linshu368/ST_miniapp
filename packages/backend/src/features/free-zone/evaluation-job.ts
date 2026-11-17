@@ -5,7 +5,7 @@
  * 再打开。总开关只决定用户能不能看到栏目。
  *
  * 外部依赖都按「拿不到就维持现状」处理：Surplus 某个模型的行情拿不到，这个模型本轮
- * 不动；业务指标查询失败，在架模型本轮不按业务数据下架。
+ * 不动；质量指标查询失败，在架模型本轮不按质量下架。
  */
 import type { FastifyBaseLogger } from 'fastify';
 import { freeZoneRulesFor, type FreeZoneCandidate, type FreeZoneConfig } from '@miniapp/shared';
@@ -15,16 +15,16 @@ import { fetchFreeZoneConfig } from './config.js';
 import {
   advanceState,
   initialState,
-  judgeBusinessMetrics,
-  type BusinessVerdict,
+  judgeQuality,
   type FreeZoneModelState,
+  type QualityVerdict,
 } from './lifecycle.js';
 import {
-  loadFreeZoneMetrics,
+  loadFreeZoneQuality,
   loadFreeZoneStatesVersioned,
   saveFreeZoneEvaluation,
   type EvaluatedCandidate,
-  type ModelMetrics,
+  type ModelQuality,
 } from './repository.js';
 import { screenModel, summarizeScreening, type ScreeningResult } from './screening.js';
 import { createSurplusProbe, type ProbeFn } from './probe.js';
@@ -124,8 +124,8 @@ async function probeAll(
 function snapshotMetrics(
   probed: ProbedScreening,
   rules: FreeZoneConfig['screening'],
-  business: BusinessVerdict,
-  metrics: ModelMetrics | undefined,
+  quality: QualityVerdict,
+  metrics: ModelQuality | undefined,
   market: SurplusModelMarket | null | undefined
 ): Record<string, unknown> {
   const screening = probed.screening;
@@ -155,22 +155,16 @@ function snapshotMetrics(
           summary: summarizeScreening(screening, probeCheck(probed.probes, rules)),
         }
       : null,
-    business: business.kind,
+    business: quality.kind,
     ...(metrics
       ? {
           turns: metrics.turns,
-          no_output_pct: metrics.noOutputPct,
-          fallback_delivered_pct: metrics.fallbackDeliveredPct,
-          slow_fallback_pct: metrics.slowFallbackPct,
+          // 不可用率（超时兜底 + 超时）沿用旧字段名，运营平台照旧显示
+          slow_fallback_pct: metrics.unusablePct,
           error_fallback_pct: metrics.errorFallbackPct,
-          timeout_pct: metrics.timeoutPct,
           primary_delivered_turns: metrics.primaryDeliveredTurns,
           interrupted_turns: metrics.interruptedTurns,
           interrupted_pct: metrics.interruptedPct,
-          ttft_p90_ms: metrics.ttftP90Ms,
-          dislike_pct: metrics.dislikePct,
-          avg_cost_usd: metrics.avgCostUsd,
-          avg_prompt_tokens: metrics.avgPromptTokens,
         }
       : {}),
   };
@@ -217,10 +211,10 @@ async function evaluateFreeZone(log: FastifyBaseLogger, probeImpl: ProbeFn): Pro
     });
     const [markets, metrics] = await Promise.all([
       fetchMarkets(config.candidates, log),
-      loadFreeZoneMetrics(listed, config.on_shelf.window_hours).catch((err: unknown) => {
+      loadFreeZoneQuality(listed).catch((err: unknown) => {
         log.error(
           { kind: 'sys', event: 'free_zone.metrics_failed', err },
-          '业务指标读取失败，本轮不按业务数据下架'
+          '质量指标读取失败，本轮不按质量下架'
         );
         return null;
       }),
@@ -243,15 +237,15 @@ async function evaluateFreeZone(log: FastifyBaseLogger, probeImpl: ProbeFn): Pro
       // 探测说不清时按「数据缺失」处理：在架的维持、未上架的这一轮不算达标也不清零
       const screening = probe.hold ? null : probe.screening;
       const modelMetrics = metrics?.get(candidate.id);
-      const business: BusinessVerdict =
+      const quality: QualityVerdict =
         state.status === 'listed' && metrics
-          ? judgeBusinessMetrics(modelMetrics ?? null, config.on_shelf)
+          ? judgeQuality(modelMetrics ?? null, config.on_shelf)
           : { kind: 'insufficient', turns: modelMetrics?.turns ?? 0 };
       const next = advanceState({
         state,
         now,
         screening,
-        business,
+        quality,
         relist: config.relist,
         priceBandRatio: config.screening.price_band_ratio,
       });
@@ -259,7 +253,7 @@ async function evaluateFreeZone(log: FastifyBaseLogger, probeImpl: ProbeFn): Pro
         surplusModel: candidate.surplus_model,
         state: next.state,
         events: next.events,
-        metrics: snapshotMetrics(probe, rules, business, modelMetrics, markets[index]),
+        metrics: snapshotMetrics(probe, rules, quality, modelMetrics, markets[index]),
         version: versions.get(candidate.id) ?? null,
       };
     });
