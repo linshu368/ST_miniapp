@@ -21,6 +21,8 @@ export interface StoryTurn {
   turnIndex: number;
   userInput: string;
   assistantReply: string | null;
+  /** 该轮终态（chat_history.status）；只在组 prompt 时用来识别中断回复，压缩读取不带。 */
+  status?: string;
 }
 
 export function turnBodyChars(turn: StoryTurn): number {
