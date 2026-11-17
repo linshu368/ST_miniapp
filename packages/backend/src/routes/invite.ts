@@ -159,10 +159,10 @@ export default async function inviteRoutes(app: FastifyInstance) {
 
     if (status === 'bound' && !dbUser.source_id) {
       // 邀请流量渠道归因（已拍板 D1）：仅首次、守卫式写入，失败不影响绑定结果。
-      const { error: sourceErr } = await getDomainDb('app_core')
-        .from('users')
+      const { error: sourceErr } = await getDomainDb('miniapp_traffic')
+        .from('user_attributions')
         .update({ source_id: INVITE_SOURCE_ID, updated_at: new Date().toISOString() })
-        .eq('id', dbUser.id)
+        .eq('user_id', dbUser.id)
         .is('source_id', null);
       if (sourceErr) {
         request.log.error({ err: sourceErr }, '[Invite] 写入 source_id=invite 失败');
