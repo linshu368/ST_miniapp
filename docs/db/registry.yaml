@@ -54,20 +54,7 @@ tables:
     owner: backend/src/lib/user.ts
     status: moving
     keep: [id, tg_id, created_at, updated_at]
-    move:
-      - {
-          to: miniapp_traffic.user_attributions,
-          cols: [source_id, bot_entered_at, miniapp_entered_at],
-          phase: 3,
-        }
-      - { to: experience.user_chat_stats, cols: [total_round], phase: 3 }
-      - {
-          to: miniapp_traffic.user_attributions,
-          cols: [st_initialized_at],
-          phase: 3,
-          note: miniapp_traffic.record_app_entry 经 to_jsonb(u) 读它作幕间资格依据，搬迁时同步改函数,
-        }
-    note: 阶段 3 从 miniapp_user_settings 迁入 TG 资料与用户自定义资料（见 app_core.miniapp_user_settings.move）
+    note: 3a 已把归因列迁到 miniapp_traffic.user_attributions、轮数迁到 experience.user_chat_stats（收缩步删列）。建号只走 app_core.ensure_user。阶段 3b 从 miniapp_user_settings 迁入 TG 资料与用户自定义资料
 
   app_core.miniapp_user_settings:
     nature: S
@@ -89,12 +76,6 @@ tables:
             ],
           phase: 3,
           note: avatar_url 若可由另两列推导则删除,
-        }
-      - {
-          to: experience.user_chat_stats,
-          cols: [total_round],
-          phase: 3,
-          note: 与 users.total_round 重复，合并为一份,
         }
       - {
           to: miniapp_features.user_marks,
@@ -537,10 +518,9 @@ tables:
   experience.user_chat_stats:
     {
       nature: D,
-      owner: rpc:app_core.increment_user_total_round（改归 experience）,
-      status: planned,
-      phase: 3,
-      from: users.total_round + miniapp_user_settings.total_round,
+      owner: rpc:experience.increment_user_total_round,
+      status: active,
+      note: 无行=0；读用 experience.user_total_round,
     }
 
   experience.chat_branch_turns:
@@ -851,10 +831,8 @@ tables:
   miniapp_traffic.user_attributions:
     {
       nature: E,
-      owner: rpc:miniapp_traffic.record_app_entry,
-      status: planned,
-      phase: 3,
-      from: app_core.users 的 source_id / bot_entered_at / miniapp_entered_at,
+      owner: rpc:miniapp_traffic.enter_user / record_app_entry；邀请绑定补 source_id,
+      status: active,
     }
   miniapp_traffic.botlinks:
     {

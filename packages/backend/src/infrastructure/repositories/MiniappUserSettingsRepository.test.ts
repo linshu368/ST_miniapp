@@ -32,7 +32,6 @@ function initialRow(): MiniappUserSettingsRow {
     avatar_url: null,
     tg_avatar_url: null,
     custom_avatar_url: null,
-    total_round: 0,
     pref_word_count: null,
     pref_show_options: true,
     pref_show_status: true,

@@ -53,15 +53,10 @@ function installExistingUserDb(
   read: (tgId: string) => Promise<{ data: ReturnType<typeof userRow> | null; error: unknown }>
 ) {
   const maybeSingle = vi.fn((tgId: string) => read(tgId));
+  // enter_user RPC 一次返回整行（数据库重组 3a）。
   mocks.getDomainDb.mockReturnValue({
-    from: vi.fn(() => ({
-      select: vi.fn(() => ({
-        eq: vi.fn((_column: string, tgId: string) => ({
-          abortSignal: vi.fn(() => ({
-            maybeSingle: () => maybeSingle(tgId),
-          })),
-        })),
-      })),
+    rpc: vi.fn((_name: string, args: { p_tg_id: string }) => ({
+      abortSignal: vi.fn(() => maybeSingle(args.p_tg_id)),
     })),
   });
   return maybeSingle;

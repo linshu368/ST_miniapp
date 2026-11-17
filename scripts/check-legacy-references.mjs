@@ -113,6 +113,9 @@ const RULES = [
       'scripts/mujian-entry-assertions.sql',
       // 20261117 重组 1d：删除 st_handle 列本身（st_initialized_at 仍作幕间资格依据，阶段 3 迁走）。
       'packages/shared/migrations/20261117_db_reorg_cleanup.sql',
+      // 20261117 重组 3a：st_initialized_at 作只读历史证据搬到 miniapp_traffic.user_attributions，并删 users 上的列。
+      'packages/shared/migrations/20261117_db_reorg_p3a_user_attributions.sql',
+      'packages/shared/migrations/20261117_db_reorg_p3a_user_attributions_contract.sql',
     ],
   },
 
