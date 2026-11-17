@@ -159,6 +159,23 @@ function qualified(raw) {
 }
 
 /** Lint one migration's SQL text; returns [{ line, message }]. */
+/** 同一文件里「先 SET SCHEMA 再 RENAME」算一步：沿 RENAME 链找到最终表名。 */
+function followRenames(text, table) {
+  let current = table;
+  for (let i = 0; i < 5; i += 1) {
+    const [schema, name] = current.split('.');
+    const m = text.match(
+      new RegExp(
+        `alter\\s+table\\s+(?:if\\s+exists\\s+)?(?:only\\s+)?"?${schema}"?\\."?${name}"?\\s+rename\\s+to\\s+"?(\\w+)"?`,
+        'i'
+      )
+    );
+    if (!m) break;
+    current = `${schema}.${m[1].toLowerCase()}`;
+  }
+  return current;
+}
+
 export function lintSql(sql, registry) {
   const text = blankComments(sql);
   const warnings = [];
@@ -196,7 +213,7 @@ export function lintSql(sql, registry) {
       const target = moved[1]
         ? `${moved[1].toLowerCase()}.${name}`
         : `${schema}.${moved[2].toLowerCase()}`;
-      if (!registry.tables[target])
+      if (!registry.tables[target] && !registry.tables[followRenames(text, target)])
         push(m.index, [`${table} 移动/改名为 ${target}，目标未在 registry 登记`]);
       continue;
     }

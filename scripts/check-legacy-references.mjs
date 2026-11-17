@@ -62,6 +62,20 @@ const RULES = [
       'st_platform / st_users / st_infra（088）、growth（089）、miniapp_simulation（090）、cs_platform（20261117）已删库。渠道归因走 miniapp_traffic，客服在独立仓库的 cs schema',
   },
 
+  {
+    id: 'moved-to-ops-sql',
+    pattern:
+      /\b(?:from|join|into|update|table)\s+(?:app_core\.alert_incidents|app_core\.alert_delivery_attempts|miniapp_features\.free_zone_events)\b/gi,
+    message:
+      '数据库重组 2b 已迁到 ops：ops.alert_incidents、ops.alert_delivery_jobs、ops.free_zone_events。旧名只剩发布窗口内的兼容视图',
+    // 建表的历史迁移，以及迁移本身（SET SCHEMA 与兼容视图）。
+    allow: [
+      'packages/shared/migrations/20261010_payment_alerting_foundation.sql',
+      'packages/shared/migrations/20261112_free_zone.sql',
+      'packages/shared/migrations/20261117_db_reorg_ops_alerts_free_zone_events.sql',
+    ],
+  },
+
   // ── 已整包删除的 package ────────────────────────────────────────────────
   {
     id: 'deleted-packages',
