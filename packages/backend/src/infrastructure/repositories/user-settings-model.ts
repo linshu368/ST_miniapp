@@ -26,7 +26,6 @@ export interface MiniappUserSettingsRow {
   pref_drive_mode: string | null;
   pref_custom_instructions: string | null;
   selected_model_id: string | null;
-  characters_last_seen_at: string | null;
   pref_voice_id: string | null;
   pref_voice_playback_rate: number;
   created_at: string;

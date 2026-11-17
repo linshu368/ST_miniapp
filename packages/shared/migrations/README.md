@@ -1,5 +1,16 @@
 # SQL 迁移文件
 
+## 2026-11-17 数据库重组阶段 3b-1：一次性标记进 user_marks（本地 PG17 非超级用户验证）
+
+`20261117_db_reorg_p3b1_user_marks.sql`（扩展）+ `20261117_db_reorg_p3b1_user_marks_contract.sql`（收缩，后端发布后执行）。计划见 `.trellis/tasks/11-17-db-reorg-p3-user-state/design.md` 3b-1。
+
+- 新表 `miniapp_features.user_marks`（`(user_id, mark_key)`，count / first_at / last_at / last_action）：并入 `growth_prompt_states`（`growth_prompt.<kind>`）与 settings 的 `vip_entry_seen_at`（`vip_entry.seen`）、`characters_last_seen_at`（`characters_latest.seen`）。写只经 `touch_user_mark` / `record_growth_prompt_event`（签名与判定不变）。
+- 扩展步直接删 10-13 起只为回滚保留的 `*_full_rules_remaining` 三列、`claim_instruction_slot_modes` 等 4 个函数与触发器（后端不读，0 次调用）。返利表加 `user_id` 索引。
+- 发布窗口：`growth_prompt_states` 留只读兼容视图；settings 两列与 user_marks 双向同步（只在值变化时写，`pg_trigger_depth` 防回环）。
+- 收缩：删同步触发器与兼容视图，锁表补齐窗口残差；`share_image_plaza_artifact` 去掉写 settings 首发分享时间的 upsert（按原文定位，删掉的文本与预期不一致就拒绝）；删 settings 三列。首发分享改由 `billing.image_plaza_share_rewards` 是否有记录推导（生产 7 人与旧列完全一致）。
+- 验证：`bash scripts/test-db-reorg-p3b1-migration.sh`。
+- 发布：TEST 扩展 → 生产扩展 → 后端发布 → 核对 → TEST/生产收缩。回滚：扩展步保留标记列且双向同步，回退后端即可。
+
 ## 2026-11-17 数据库重组阶段 3a：用户归因与轮数拆出 users（本地 PG17 非超级用户验证）
 
 `20261117_db_reorg_p3a_user_attributions.sql`（扩展）+ `20261117_db_reorg_p3a_user_attributions_contract.sql`（收缩，后端发布后执行）。计划见 `.trellis/tasks/11-17-db-reorg-p3-user-state/design.md` 3a。
