@@ -27,8 +27,18 @@ schemas:
   miniapp_traffic: { status: active, purpose: 渠道、入口、邀请、用户归因 }
   admin: { status: active, purpose: 运营平台过程 }
   miniapp_analytics: { status: active, purpose: 看数视图与离线汇总；Grafana/指标读者唯一入口 }
-  ops: { status: planned, phase: 1, purpose: 工程观测（上游调用明细、测速、事件、告警） }
-  cs_feed: { status: planned, phase: 1, purpose: 给客服仓库读的只读视图 }
+  ops:
+    {
+      status: active,
+      purpose: 工程观测（上游调用明细、测速、事件、告警）,
+      note: 20261117_db_reorg_ops_cs_feed.sql 建立；只给 service_role,
+    }
+  cs_feed:
+    {
+      status: active,
+      purpose: 给客服仓库读的只读视图,
+      note: 20261117_db_reorg_ops_cs_feed.sql 建立；授权 cs_runtime_v1 / cs_persona_reader,
+    }
   analytics_grafana:
     { status: drop, phase: 1, note: 视图与物化视图并入 miniapp_analytics，Grafana 面板 SQL 同步改 }
   cs: { status: external, note: 客服仓库 linshu368/ST_cs_platform 拥有 }
@@ -1006,19 +1016,21 @@ tables:
       retention_days: 365,
     }
 
-  # ───────────────────────── cs_feed（新建视图层） ─────────────────────────
-  cs_feed.users:
+  # ───────────────────────── cs_feed（视图层） ─────────────────────────
+  cs_feed.user_identities:
     {
       nature: D,
-      owner: 本仓库,
-      status: planned,
-      phase: 1,
-      note: 客服读 users + 资料 + total_rounds + VIP 截止,
+      owner: packages/shared/migrations（视图定义）,
+      status: active,
+      note: 客服对话列表/回访/告警用；输出列 user_id / tg_id / display_name / username 保持不变,
     }
-  cs_feed.wallets: { nature: D, owner: 本仓库, status: planned, phase: 1 }
-  cs_feed.payment_orders: { nature: D, owner: 本仓库, status: planned, phase: 1 }
-  cs_feed.chat_sessions: { nature: D, owner: 本仓库, status: planned, phase: 1 }
-  cs_feed.chat_messages: { nature: D, owner: 本仓库, status: planned, phase: 1 }
+  cs_feed.user_profiles:
+    {
+      nature: D,
+      owner: packages/shared/migrations（视图定义）,
+      status: active,
+      note: 客服资料卡；输出列与客服 users.ts profileSelect 一致，内部拆表时只改定义,
+    }
 
   # ───────────────────────── 本仓库在外部 schema 里拥有的表 ─────────────────────────
   drama_archive.drama_likes:

@@ -1,5 +1,19 @@
 # SQL 迁移文件
 
+## 2026-11-17 数据库重组阶段 1a：建 ops 与 cs_feed（本地 PG17 验证，远端未执行）
+
+`20261117_db_reorg_ops_cs_feed.sql`（domain: ops 新建 + cs_feed 新建）。规则见 `docs/db/CONTRACT.md`，计划见 `.trellis/tasks/11-17-db-reorg-p1-foundation/design.md`。前置：`app_core.users` / `miniapp_user_settings`、`billing.user_wallets` / `vip_memberships` / `payment_orders`、`experience.chat_sessions`。
+
+- `ops`：空 schema，只给 service_role USAGE；撤销 PUBLIC，以及新函数默认的 PUBLIC EXECUTE。阶段 2 起承接上游调用明细、测速、事件、告警。
+- `cs_feed`：给客服仓库读的只读视图层，不暴露给 PostgREST。
+  - `user_identities`：用户 id、tg_id、展示名、username；
+  - `user_profiles`：资料卡，输出列与客服 `users.ts` 的 `profileSelect` 逐列一致。
+  - 视图归 postgres，带 `security_barrier`，做法与 `analytics_grafana` 现有视图相同。
+  - `cs_runtime_v1`、`cs_persona_reader` 只在生产存在，存在时才授权视图 SELECT。旧的业务表授权暂不收回（阶段 1c 收回）。
+- 验证：`bash scripts/test-db-reorg-p1a-migration.sh`（两次执行幂等；视图与客服原 SQL 在空名字、无钱包、无设置、已删会话、未完成订单等边界数据上逐行一致；客服角色在没有任何底表权限时能读视图；anon/authenticated 无权限）。
+- 发布：TEST 单文件 → Production 单文件 → 客服仓库改读 `cs_feed`（1b）→ 收权（1c）。只新增对象，旧代码不受影响。
+- 回滚：客服仓库切换前，`DROP SCHEMA cs_feed CASCADE; DROP SCHEMA ops;`；切换后先回退客服仓库。
+
 ## 2026-11-17 剧情模式（本地 PG17 验证，远端未执行）
 
 `20261117_drive_mode.sql`（domain: app_core 用户偏好 + admin managed key）。前置：`app_core.miniapp_user_settings`、admin managed config 函数链。
