@@ -335,7 +335,7 @@ describe('execute（流式）', () => {
   });
 
   it('可见正文超过上限时中止上游，按 length 中断收口，保留已生成部分', async () => {
-    const chunk = '字'.repeat(7_000);
+    const chunk = '字'.repeat(Math.ceil(CHAT_MAX_VISIBLE_CHARS * 0.6));
     stubUpstream(() =>
       sseResponse([DELTA(chunk), DELTA(chunk), DELTA('不该收到的尾巴'), 'data: [DONE]\n\n'])
     );

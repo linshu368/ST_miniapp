@@ -19,11 +19,12 @@ import type {
 import type { ExecutionObservation } from './generation-dispatch.js';
 /**
  * 单次聊天回复的可见正文上限（字符）。只数用户看得到的正文，不含推理。
- * 约 8000 token；近 7 天成功回复最长约 9800 字符，正常回复不会触及。
+ * 对应约 4500 token（实测 1.65 字符/可见 token）；近 7 天 3.7 万条成功回复里只有 20 条
+ * （0.05%）的可见 token 超过 4500。
  * 模型偶发失控（无限续写记忆栏、复读）时靠它提前掐断，而不是烧到超时，单条可达 3 万字符。
  * 触顶按中断处理：finish_reason=length，不扣费，已生成的部分保留。
  */
-export const CHAT_MAX_VISIBLE_CHARS = 12_000;
+export const CHAT_MAX_VISIBLE_CHARS = 7_400;
 
 type StreamInput = {
   request: GenerationRequest;
