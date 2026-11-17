@@ -127,6 +127,11 @@ jsonb 只允许三种用途，列名必须体现用途：
 
 - 函数跟随它维护的不变量所在的域。视图跟随用途：看数的放 `miniapp_analytics`，给客服的放 `cs_feed`。
 - **禁止包装链**：不许把旧函数改名成 `*_before_<feature>`、新函数里 `OR` 调旧函数。白名单、校验这类"每加一项就要改"的逻辑，用登记表加一个函数实现。
+- **新增运营托管配置 key 的唯一做法**：
+  1. `INSERT INTO admin.managed_config_keys`（登记即可编辑，草稿/发布表靠外键约束，不再改 CHECK）；
+  2. 在 `admin.validate_managed_config_value`（最外层）里用 `CREATE OR REPLACE` 原地加一个 `IF p_config_key = ... THEN ... RETURN; END IF;` 分支。该函数下面 15 层 `*_before_*` 是冻结的存量，不改名、不再新增，阶段 3 合并配置对象时整体重写；
+  3. 在 `packages/admin-client` 注册 schema 和菜单。
+  - 退役 key：把登记表的 `retired_at` 设为当前时间（发布历史仍可引用），并删除 `runtime_config` 行。
 - 改函数签名或行为，用 `CREATE OR REPLACE` 原地替换；旧版本不保留。
 - 触发器只用于数据库必须保证的跨写一致性（例如计数缓存），并在 registry 对应列标明 `maintained_by`。
 
