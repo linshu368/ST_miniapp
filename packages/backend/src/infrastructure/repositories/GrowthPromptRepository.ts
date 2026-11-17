@@ -1,28 +1,41 @@
-// 增长弹窗（进群 / VIP）的展示记录与判定所需的付费事实。存储见 migration 20261113_growth_prompt_states.sql。
+// 增长弹窗（进群 / VIP）的展示记录与判定所需的付费事实。展示记录存在 miniapp_features.user_marks
+// （mark_key = growth_prompt.<kind>，见 migration 20261117_db_reorg_p3b1_user_marks.sql）。
 // 写只经数据库函数：次数与间隔上限在一条语句里原子判定，多设备同时触发也不会超额。
 
 import type { GrowthPromptEvent, GrowthPromptKind } from '@miniapp/shared';
 import { getDomainDb } from '../../lib/supabase.js';
 import type { PromptCap, PromptState } from '../../features/growth/prompt-rules.js';
+import { USER_MARK_KEYS, UserMarksRepository, type UserMarkKey } from './UserMarksRepository.js';
 
 export interface PaymentFacts {
   vipValidUntil: string | null;
   hasPaid: boolean;
 }
 
+const PROMPT_MARK_KEYS: Record<GrowthPromptKind, UserMarkKey> = {
+  community: USER_MARK_KEYS.growthPromptCommunity,
+  vip: USER_MARK_KEYS.growthPromptVip,
+};
+
 export class GrowthPromptRepository {
+  private readonly marks = new UserMarksRepository();
+
   private get features() {
     return getDomainDb('miniapp_features');
   }
 
   async readStates(userId: string): Promise<Map<GrowthPromptKind, PromptState>> {
-    const { data, error } = await this.features
-      .from('growth_prompt_states')
-      .select('prompt, shown_count, last_shown_at')
-      .eq('user_id', userId);
-    if (error) throw error;
-    const rows = (data ?? []) as Array<PromptState & { prompt: GrowthPromptKind }>;
-    return new Map(rows.map((row) => [row.prompt, row]));
+    const kinds = Object.keys(PROMPT_MARK_KEYS) as GrowthPromptKind[];
+    const marks = await this.marks.read(
+      userId,
+      kinds.map((kind) => PROMPT_MARK_KEYS[kind])
+    );
+    const states = new Map<GrowthPromptKind, PromptState>();
+    for (const kind of kinds) {
+      const mark = marks.get(PROMPT_MARK_KEYS[kind]);
+      if (mark) states.set(kind, { shown_count: mark.count, last_shown_at: mark.last_at });
+    }
+    return states;
   }
 
   async readPaymentFacts(userId: string): Promise<PaymentFacts> {
