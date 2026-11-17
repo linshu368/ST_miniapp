@@ -1,5 +1,15 @@
 # SQL 迁移文件
 
+## 2026-11-17 数据库重组阶段 2c：看板账号只经视图读，清掉浏览器角色遗留授权（本地 PG17 非超级用户验证）
+
+`20261117_db_reorg_revoke_reader_and_browser_grants.sql`。计划见 `.trellis/tasks/11-17-db-reorg-p2-observability/design.md` 2c。
+
+- `miniapp_analytics.chat_first_token_facts` 改为所有者权限；收回 `first_token_metrics_reader` 对 `experience` 三张表的直接/列级 SELECT、USAGE，删除三条 `first_token_metrics_read` 策略。报表函数与后端读视图不受影响。
+- 收回 `anon`/`authenticated` 在业务 schema（不含 `admin`）的全部表/视图权限。二者本就没有这些 schema 的 USAGE，行为不变。
+- `experience.chat_history`、`miniapp_traffic.botlinks`、`traffic_clicks` 开启 RLS（访问者只有所有者与 BYPASSRLS 的 `service_role`）。
+- 验证：`bash scripts/test-db-reorg-p2c-migration.sh`。`scripts/sql/grant-first-token-metrics-reader.sql` 同步为只授视图。
+- 回滚：视图 `SET (security_invoker = true)` 并按旧版脚本重授；RLS 可 DISABLE。
+
 ## 2026-11-17 数据库重组阶段 2b 收尾：删除 ops 兼容视图
 
 `20261117_db_reorg_drop_ops_compat_views.sql`：删除 `app_core.alert_incidents`、`app_core.alert_delivery_attempts`、`miniapp_features.free_zone_events` 三个临时兼容视图。
