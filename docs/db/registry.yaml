@@ -60,7 +60,7 @@ tables:
     nature: S
     owner: backend/src/infrastructure/repositories/MiniappUserSettingsRepository.ts
     status: moving
-    note: 阶段 3 拆完后整表改名为 app_core.user_preferences
+    note: 阶段 3 拆完后整表改名为 app_core.user_preferences。*_full_rules_remaining 三列与 claim_instruction_slot_modes 等 4 个函数 10-13 起只为回滚保留，3b-1 已删
     move:
       - {
           to: app_core.users,
@@ -79,22 +79,15 @@ tables:
         }
       - {
           to: miniapp_features.user_marks,
-          cols:
-            [
-              characters_last_seen_at,
-              vip_entry_seen_at,
-              choice_full_rules_remaining,
-              status_full_rules_remaining,
-              memory_full_rules_remaining,
-            ],
+          cols: [characters_last_seen_at, vip_entry_seen_at],
           phase: 3,
-          note: '*_full_rules_remaining 由 app_core.claim_instruction_slot_modes 读写，函数同步改',
+          note: 3b-1 已回填并双向同步，收缩步删列,
         }
       - {
           to: billing.image_plaza_share_rewards,
           cols: [image_plaza_first_share_completed_at],
           phase: 3,
-          note: 首次分享资格改为由返利记录是否存在推导，删列,
+          note: 3b-1 首发分享改由返利记录是否存在推导（生产 7 人完全一致），收缩步删列,
         }
     keep:
       [
@@ -701,7 +694,12 @@ tables:
       status: active,
     }
   billing.image_plaza_share_rewards:
-    { nature: M, owner: rpc:billing.share_image_plaza_artifact, status: active }
+    {
+      nature: M,
+      owner: rpc:billing.share_image_plaza_artifact,
+      status: active,
+      note: 每次首发分享同一事务写一条（返利为 0 也写），"已完成首发分享"即该用户有记录（3b-1）,
+    }
   billing.character_creator_rewards:
     { nature: M, owner: backend/src/features/creator, status: active }
   billing.character_creator_reward_balances:
@@ -710,17 +708,15 @@ tables:
   # ───────────────────────── miniapp_features ─────────────────────────
   miniapp_features.user_marks:
     nature: S
-    owner: backend/src/infrastructure/repositories/GrowthPromptRepository.ts（改名）
-    status: planned
-    phase: 3
-    from: growth_prompt_states 泛化 + miniapp_user_settings 的一次性标记列
-    note: (user_id, mark_key) 主键；count / first_at / last_at / last_action / value
+    owner: backend/src/infrastructure/repositories/UserMarksRepository.ts
+    status: active
+    note: (user_id, mark_key) 主键，mark_key = <功能>.<事件>，新标记不改表、在 USER_MARK_KEYS 登记。写只经 touch_user_mark / record_growth_prompt_event。现有 growth_prompt.<community|vip>、vip_entry.seen、characters_latest.seen（3b-1）
 
   miniapp_features.growth_prompt_states:
     nature: S
-    owner: backend/src/infrastructure/repositories/GrowthPromptRepository.ts
-    status: moving
-    move: [{ to: miniapp_features.user_marks, cols: ['*'], phase: 3 }]
+    owner: rpc:miniapp_features.record_growth_prompt_event
+    status: drop
+    note: 3b-1 已并入 user_marks（growth_prompt.<kind>），原表已删，只剩发布窗口只读兼容视图，收缩步删除
 
   miniapp_features.free_zone_calls:
     nature: O
