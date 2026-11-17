@@ -86,13 +86,13 @@ test('dropping a table still registered as active warns; moving does not', () =>
 
 test('set schema followed by rename in the same file counts as one move', () => {
   const ok = `
-    alter table app_core.alert_delivery_attempts set schema ops;
-    alter table ops.alert_delivery_attempts rename to alert_deliveries;
+    alter table app_core.old_outbox set schema ops;
+    alter table ops.old_outbox rename to alert_deliveries;
   `;
   assert.deepEqual(messages(ok), []);
-  const bad = messages('alter table app_core.alert_delivery_attempts set schema ops;');
+  const bad = messages('alter table app_core.old_outbox set schema ops;');
   assert.equal(bad.length, 1);
-  assert.match(bad[0], /ops\.alert_delivery_attempts/);
+  assert.match(bad[0], /ops\.old_outbox/);
 });
 
 test('comments are ignored and line numbers point at the statement', () => {
