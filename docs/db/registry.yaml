@@ -910,9 +910,16 @@ tables:
     {
       nature: C,
       owner: rpc:admin,
-      status: planned,
-      phase: 1,
-      note: 取代 24 个 *_before_* 包装链的白名单与校验类型登记表,
+      status: active,
+      note: 运营托管 key 登记（20261117_db_reorg_managed_config_keys.sql）；config_drafts/config_releases 外键引用；retired_at 非空为退役,
+    }
+  admin.validate_managed_config_value:
+    {
+      nature: C,
+      owner: rpc:admin,
+      status: frozen,
+      phase: 3,
+      note: 函数而非表。最外层可原地加分支；下面 15 层 *_before_* 冻结，阶段 3 合并配置对象时整体重写,
     }
 
   # ───────────────────────── miniapp_analytics ─────────────────────────
@@ -1031,26 +1038,9 @@ tables:
 
 # runtime_config key 清理（阶段 1 逐个复核后执行）
 runtime_config_keys:
-  drop_candidates:
-    - { key: miniapp_daily_checkin_bonus_credits, reason: 描述已写明"发奖不再读取" }
-    - {
-        key: lobby_pinned_characters,
-        reason: ARCHITECTURE 写明后端不再读取；只剩 admin 校验函数引用,
-      }
-    - { key: image_plaza_tags_feature_enabled, reason: 后端不再读取；只剩 admin 校验函数引用 }
-    - { key: ai_config_source, reason: 代码与函数零引用 }
-    - { key: interaction_mode_blocks, reason: 代码与函数零引用 }
-    - { key: llm_model_tiers, reason: 代码与函数零引用 }
-    - {
-        key: miniapp_chat_message_credit_cost,
-        reason: 代码与函数零引用（已被 llm_pricing_config 取代）,
-      }
-    - { key: miniapp_model_tier_credit_costs, reason: 代码与函数零引用 }
-    - {
-        key: miniapp_payment_prompt_dialog_config,
-        reason: 只剩 admin 校验函数引用，需确认前端是否经通用接口读取,
-      }
-    - { key: miniapp_recharge_page_config, reason: 同上 }
+  # drop_candidates 已于 20261117_db_reorg_managed_config_keys.sql 处理：7 个托管 key 退役、
+  # 另 5 个零引用 key（ai_config_source / interaction_mode_blocks / llm_model_tiers /
+  # miniapp_chat_message_credit_cost / miniapp_model_tier_credit_costs）的行已删除。
   merge_into_object:
     - {
         into: voice_config,

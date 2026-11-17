@@ -12,6 +12,22 @@
 - 验证：`bash scripts/test-db-reorg-p1f-migration.sh`（两次幂等；外部依赖存在时拒绝且不改动）。
 - 发布：TEST 单文件 → Production 单文件，无应用代码改动。回滚：不可逆，视图定义可从历史 migration 取回。
 
+## 2026-11-17 数据库重组阶段 1e：托管配置 key 登记表（本地 PG17 非超级用户验证）
+
+`20261117_db_reorg_managed_config_keys.sql`（domain: admin + app_core.runtime_config）。计划见 `.trellis/tasks/11-17-db-reorg-p1-foundation/design.md` 1e。
+
+- 新表 `admin.managed_config_keys(config_key PK, managed_via, retired_at, note)`：56 个运营托管 key 加 `miniapp_text_postprocess_config`（text_postprocess）。
+- `admin.is_managed_config_key` 改为查表（operations_config 且未退役），NULL 入参仍返回 NULL，权限仍只给 postgres。迁移内先记录旧 9 层链对每个 key 的判断，替换后逐一比对，不一致即回滚。
+- `config_drafts` / `config_releases` 的 key CHECK 与 advanced-image CHECK 改为外键引用登记表。历史中登记表外的旧 key 以退役身份补登。
+- 删除 9 个 `admin.is_managed_config_key_before_*`（迁移内断言除这两个 CHECK 外无其他引用）。
+- 退役 7 个 key（运营台已不展示、后端不读）：`miniapp_recharge_page_config`、`miniapp_payment_prompt_dialog_config`、`system_fallback_character_id`、`miniapp_daily_checkin_bonus_credits`、`media_feature_free_trial_limit`、`image_plaza_tags_feature_enabled`、`lobby_pinned_characters`。删除这些 key 以及另外 5 个零引用 key 的 `runtime_config` 行。
+- `admin.validate_managed_config_value` 的 15 层不改，冻结：**以后新增托管 key = 登记表插一行 + 最外层原地加校验分支 + admin-client 注册**，不再改名套层、不再改 CHECK（CONTRACT §2.5）。
+- 验证：`bash scripts/test-db-reorg-p1e-migration.sh`。以非超级用户 + CREATEROLE 执行，用生产链原文做夹具。覆盖两次幂等、逐 key 一致、NULL 语义、外键接受历史/拒绝未知、旧 CHECK 与包装函数已删、配置行增删、权限不扩大。
+- 发布：TEST 单文件 → Production 单文件 → admin/shared 去掉两个零引用常量（先后不敏感）。
+- 回滚：恢复某个退役 key 时，`UPDATE admin.managed_config_keys SET retired_at = NULL`，并重新写入 runtime_config 行。
+
+> 备注（1c）：`20261117_db_reorg_cs_grants.sql` 在生产留有一条失败认领（`repo_migration_claims`）。生产未执行 `20261013_repo_migration_claim_recovery.sql`，`abandon_claim` 不可用。该认领只阻止原文件重跑，原文件已由 `_fix` 取代，不影响其他迁移。
+
 ## 2026-11-17 数据库重组阶段 1c 修正：遗留角色逐项撤权（本地 PG17 非超级用户验证）
 
 `20261117_db_reorg_cs_grants_fix.sql` 取代下面 `20261117_db_reorg_cs_grants.sql` 在生产的执行。

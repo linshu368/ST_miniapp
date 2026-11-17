@@ -84,6 +84,8 @@ const RULES = [
       /\bGetModelTiersData\b|\buseModelTiersQuery\b|\/api\/platform\/models\b|\bllm_model_tiers\b|\blegacyTiersToCatalog\b/g,
     message:
       '旧模型档位已退场：runtime_config 只读 llm_model_catalog（040 起），对外只有 GET /api/v1/models/config（PublicModelCatalog）一种形状，前端走 useModelCatalogQuery',
+    // 20261117 重组 1e：删除遗留的 llm_model_tiers 运行配置行本身。
+    allow: ['packages/shared/migrations/20261117_db_reorg_managed_config_keys.sql'],
   },
   {
     id: 'st-handle',

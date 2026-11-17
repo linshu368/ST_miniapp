@@ -80,19 +80,18 @@
   - 后端 `/health` 与一次真实对话请求正常；
   - 运营台读写配置正常（admin schema 经 PostgREST）。
 
-### 1e 托管配置包装链改登记表（主仓库加 admin-client）
+### 1e 托管配置 key 登记表 — `20261117_db_reorg_managed_config_keys.sql`
 
-- 新表 `admin.managed_config_keys(key text PK, value_kind text CHECK, created_at)`。
-- `is_managed_config_key` 改为查表；`validate_managed_config_value` 合并为一个函数：
-  - 通用部分按 `value_kind` 校验；
-  - 个别 key 的结构校验保留为同一函数里的分支。
-  - 逐个读 24 个旧函数，把校验原样搬过来，不放宽也不收紧。
-- 删除 24 个 `*_before_*`。
-- runtime_config 死 key 逐个复核：后端、shared、admin-client、CLI coverage、前端通用配置接口。确认没人读的，在同一 PR 删除 key 行和注册表项。
-  - 散装 key 合并成对象 key 放到阶段 3 以后，因为会改动运营台页面。
-- 验收：
-  - `pnpm -s admin config describe` 列出的 key 与登记表一致；
-  - 对每类 key 各发一次草稿，确认校验结果与改造前一致（测试库）。
+核对后调整的范围：
+
+- 生产 26 个链函数的原文以 md5 逐个核对（统一 CRLF 后与仓库重建或生产原文一致），作为改造基准。
+- `is_managed_config_key` 的 9 层只是 key 名单的并集，等价替换为 `admin.managed_config_keys` 登记表加查表函数：
+  - NULL 入参仍返回 NULL；权限仍只给 postgres（调用方都是 postgres 所有的 SECURITY DEFINER 函数）。
+  - 迁移内先记录旧链对每个 key 和若干探针的判断，替换后逐一比对，不一致即回滚。
+- `config_drafts` / `config_releases` 上拼接 key 列表的 CHECK（加 key 时要删除重建）改为外键引用登记表。草稿/发布历史里的旧 key 以退役身份补登，冗余的 advanced-image CHECK 一并删除。
+- 退役 7 个 key：运营台测试已断言不再展示，后端与函数不再读取。同时删除这 7 个及另外 5 个零引用 key 的 `runtime_config` 行，以及 shared 中两个零引用常量。
+- **`validate_managed_config_value` 的 15 层不改**：其中有入参改写（`miniapp_payment_plans` 以 `p_value -> 'plans'` 重入下一层）和后置校验（`lobby_ranking_params` 先调下一层再查 rotation）。等价重写需要复制内层或逐 key 重建，加上全量差分测试。阶段 3 合并散装 key 时这些校验本来就要整体重写，所以现在冻结：CONTRACT §2.5 写明新 key 只在最外层原地加分支。
+- 验证：`bash scripts/test-db-reorg-p1e-migration.sh`，以非超级用户执行，夹具是 `scripts/sql/db-reorg-p1e/is-managed-chain-prod.sql`（生产原文）。
 
 ### 1f 删除 analytics_grafana — `20261117_db_reorg_drop_analytics_grafana.sql`
 
