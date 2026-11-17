@@ -87,7 +87,7 @@ export interface ChatSession {
 
 /**
  * 用户级生成配置：对该用户所有会话生效，不做会话级覆盖（总方案决策 10）。
- * 存储于 app_core.miniapp_user_settings；公开数据不包含运营规则。
+ * 存储于 app_core.user_preferences；公开数据不包含运营规则。
  */
 export interface UserGenerationConfig {
   /**
