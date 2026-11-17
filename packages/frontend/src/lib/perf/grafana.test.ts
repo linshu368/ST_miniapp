@@ -46,6 +46,19 @@ describe('bounded engineering Faro exporter', () => {
     vi.unstubAllGlobals();
   });
 
+  it('keeps groups API distinct from conversation detail through the finite exporter', async () => {
+    const fake = fakeSdk();
+    const exporter = createEngineeringExporter(async () => fake.sdk);
+    await exporter.initialize();
+    exporter.measurement('api.total', 500, { api_route: 'conversation_groups' });
+    expect(fake.measurement).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        context: expect.objectContaining({ api_route: 'conversation_groups' }),
+      })
+    );
+  });
+
   it('does not import or send when disabled or when public config is invalid', async () => {
     const fake = fakeSdk();
     const loader = vi.fn(async () => fake.sdk);
@@ -68,6 +81,42 @@ describe('bounded engineering Faro exporter', () => {
     expect(fake.transport).not.toHaveBeenCalled();
   });
 
+  it('exports only finite seek dimensions and never media identity or URLs', async () => {
+    const fake = fakeSdk();
+    const exporter = createEngineeringExporter(async () => fake.sdk);
+    await exporter.initialize();
+    exporter.measurement('drama.seek_stage', 1200, {
+      source_measurement_version: 'drama_seek_resume_v1',
+      stage: 'seek_before_seeked',
+      seek_buffered: 'no',
+      seek_direction: 'forward',
+      resume_expected: true,
+      frame_processing_status: 'missing',
+      network_match: 'same_source_overlap',
+      source: 'https://PRIVATE_MEDIA.invalid/?token=PRIVATE_TOKEN',
+      observation_id: 'PRIVATE_ID',
+    });
+    expect(fake.measurement).toHaveBeenCalledWith(
+      { type: 'st_drama_seek_stage', values: { duration_ms: 1200 } },
+      expect.objectContaining({
+        context: expect.objectContaining({
+          source_measurement_version: 'drama_seek_resume_v1',
+          seek_buffered: 'no',
+          resume_expected: 'true',
+        }),
+      })
+    );
+    exporter.event('drama.seek_terminal', { seek_budget: 'within_3s', outcome: 'playing' });
+    expect(fake.event).toHaveBeenCalledWith(
+      'st_drama_seek_terminal',
+      expect.objectContaining({ seek_budget: 'within_3s' }),
+      'st.engineering',
+      expect.anything()
+    );
+    expect(
+      JSON.stringify([...fake.event.mock.calls, ...fake.measurement.mock.calls])
+    ).not.toContain('PRIVATE_');
+  });
   it('exports only bounded public catalog model and numeric policy fields for first-token analysis', async () => {
     const fake = fakeSdk();
     const exporter = createEngineeringExporter(async () => fake.sdk);

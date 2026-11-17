@@ -2,20 +2,19 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Search, X } from 'lucide-react';
+import { RefreshCw, Search, Sparkles, Undo2, X } from 'lucide-react';
 
-import { DEFAULT_LOBBY_SORT, type LobbySort } from '@miniapp/shared';
+import type { LobbySort } from '@miniapp/shared';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 
-import {
-  useCharactersQuery,
-  useLobbyLatestBadgeQuery,
-  useMarkLobbyLatestSeenMutation,
-} from '@/lib/api/characters';
+import { useLobbyLatestBadgeQuery, useMarkLobbyLatestSeenMutation } from '@/lib/api/characters';
+import { useLobbyDiscoveryFeed } from '@/lib/api/lobby-recommendations';
+import { lobbyViewerScope } from '@/lib/lobby-recommendation-state';
 import { markCriticalSettled, useEntryEnrichReady } from '@/lib/entry-phase';
 import { chatEntryPath } from '@/lib/chat-entry';
 import { useCharacterSocialsQuery } from '@/lib/api/character-social';
@@ -38,9 +37,9 @@ import {
 } from '@/lib/lobby-return';
 
 import { CharacterCard } from './character-card';
+import { useLobbyExposures } from './use-lobby-exposures';
 import type { CharacterDetailTab } from './character-detail-sheet';
 import { RoleplayHeader } from '@/components/roleplay/roleplay-header';
-import { RecentConversationCard } from '@/components/roleplay/recent-conversation-card';
 
 const CharacterDetailSheet = dynamic(
   () =>
@@ -62,6 +61,11 @@ const RESTORE_TAIL_COUNT = 12;
 
 const RESTORE_DEADLINE_MS = 1600;
 const NEIGHBOR_WINDOW = 4;
+const CACHE_REVALIDATE_FALLBACK_MS = {
+  android: 3000,
+  ios: 2500,
+  other: 1500,
+} as const;
 
 // 命中打分:数字越大越精确,0 = 不命中
 // 顺序:name 完整匹配 > name 开头 > name 包含 > tag 完整 > tag 包含 > author > description
@@ -113,80 +117,113 @@ function neighborIds(ids: string[], anchorId: string): string[] {
   return neighbors;
 }
 
+function experiencedCharacterIds(
+  sessions: readonly { message_count: number; character_id: string }[]
+) {
+  return new Set(
+    sessions.filter((item) => item.message_count > 0).map((item) => item.character_id)
+  );
+}
+
 export function CharacterGallery() {
+  return <CharacterGalleryView key={lobbyViewerScope()} />;
+}
+
+function CharacterGalleryView() {
   const router = useRouter();
   const performancePolicy = useMobilePerformancePolicy();
   const listBudget = performancePolicy.characters;
-  const [savedDiscovery] = useState(readRoleplayDiscovery);
+  const [savedDiscovery] = useState(() => readRoleplayDiscovery());
   // P0=列表；enrich=收藏/会话史/角标。列表有缓存或首包结算后 markCriticalSettled。
   const enrichReady = useEntryEnrichReady();
-  const history = useConversationsQuery(undefined, enrichReady);
+  const [criticalVisualSettled, setCriticalVisualSettled] = useState(false);
+  // entry-phase 是应用启动级状态，SPA 导航后通常已经放行；再加当前路由首图门槛，
+  // 避免会话史、社交计数和角标在角色卡图片之前抢连接与主线程。
+  const routeEnrichReady = enrichReady && criticalVisualSettled;
+  const history = useConversationsQuery(undefined, routeEnrichReady);
   // message_count 不计虚拟开场白；只标记已确认的用户对话，未命中不代表从未聊过。
   const experiencedIds = useMemo(
-    () =>
-      new Set(
-        (history.data?.sessions ?? [])
-          .filter((item) => item.message_count > 0)
-          .map((item) => item.character_id)
-      ),
+    () => experiencedCharacterIds(history.data?.sessions ?? []),
     [history.data?.sessions]
   );
-  // 只在当前接口返回的有效会话中选择，不把服务端分页范围解释成全局最近。
-  const recentConversation = useMemo(
-    () =>
-      history.data?.sessions
-        .filter(
-          (item) =>
-            item.message_count > 0 && Number.isFinite(Date.parse(item.last_message_at ?? ''))
-        )
-        .sort(
-          (left, right) =>
-            Date.parse(right.last_message_at ?? '') - Date.parse(left.last_message_at ?? '')
-        )[0],
-    [history.data?.sessions]
+  const [restoreSnapshot, setRestoreSnapshot] = useState<LobbyReturnSnapshot | null>(() =>
+    readLobbyReturnSnapshot()
   );
-  const [restoreSnapshot] = useState<LobbyReturnSnapshot | null>(() => readLobbyReturnSnapshot());
   const [isRestoring, setIsRestoring] = useState(() => restoreSnapshot !== null);
-  const [sort, setSort] = useState<LobbySort>(
-    restoreSnapshot?.sort ?? savedDiscovery.sort ?? DEFAULT_LOBBY_SORT
-  );
-  const [criticalVisualSettled, setCriticalVisualSettled] = useState(false);
-  const { data, isLoading, isError, isFetching, isFetched, isFetchedAfterMount, refetch } =
-    useCharactersQuery(sort);
-  // 有可展示数据（含本地缓存）或列表已失败/完成首轮，即放行 enrich，别让旁路永远等。
+  const [sort, setSort] = useState<LobbySort>(restoreSnapshot?.sort ?? savedDiscovery.sort);
+  const [query, setQuery] = useState(restoreSnapshot?.query ?? savedDiscovery.query);
+  const [manualBatchChanged, setManualBatchChanged] = useState(false);
+  const [tailRequested, setTailRequested] = useState(false);
+  const {
+    recommendation,
+    resetVisit,
+    data,
+    isLoading,
+    isError,
+    isFetching,
+    isFetchedAfterMount,
+    refetch,
+    usesDirectory,
+    publicView,
+    publicCheckedAt,
+    hasUnloadedTail,
+    tailFailed,
+  } = useLobbyDiscoveryFeed({
+    sort,
+    search: !!query.trim(),
+    restore: restoreSnapshot,
+    manualChange: manualBatchChanged,
+    tailRequested,
+  });
   useEffect(() => {
-    if (data !== undefined || isError || isFetched) markCriticalSettled();
-  }, [data, isError, isFetched]);
+    if (data !== undefined || isError) markCriticalSettled();
+  }, [data, isError]);
   useEffect(() => {
     if (
+      usesDirectory &&
       criticalVisualSettled &&
       data !== undefined &&
       !isRestoring &&
       !isFetching &&
       !isFetchedAfterMount
-    ) {
+    )
       void refetch();
-    }
-  }, [criticalVisualSettled, data, isFetchedAfterMount, isFetching, isRestoring, refetch]);
+  }, [
+    usesDirectory,
+    criticalVisualSettled,
+    data,
+    isFetchedAfterMount,
+    isFetching,
+    isRestoring,
+    refetch,
+  ]);
   useEffect(() => {
     setCriticalVisualSettled(false);
   }, [sort]);
   useEffect(() => {
-    if (data === undefined || isFetchedAfterMount || criticalVisualSettled) return;
-    // 图片始终不结算时也要校准目录；只把后台请求移出最拥挤的首屏窗口。
-    const timer = window.setTimeout(() => setCriticalVisualSettled(true), 1500);
+    if (data === undefined || criticalVisualSettled) return;
+    // 图片始终不结算时也要放行非关键数据；缓存目录的后台校准由下面的 effect 决定是否需要。
+    // 移动端兜底继续避开前 2 秒关键窗口，同时把超时纳入视觉终态，避免成功样本偏差。
+    const timer = window.setTimeout(() => {
+      setCriticalVisualSettled(true);
+      markPageCriticalVisual(
+        '/characters',
+        'timeout',
+        undefined,
+        isFetching || isRestoring ? 'cache' : 'fetch'
+      );
+    }, CACHE_REVALIDATE_FALLBACK_MS[performancePolicy.platform]);
     return () => window.clearTimeout(timer);
-  }, [criticalVisualSettled, data, isFetchedAfterMount]);
+  }, [criticalVisualSettled, data, isFetching, isRestoring, performancePolicy.platform]);
   // 大厅有本地缓存秒开：content 记用户看到列表的时刻，fresh 记最新列表到达的时刻，两者分开才看得出后端慢。
   const lobbyFresh = useFreshAfterFetch(isFetching, data !== undefined, isError);
   usePageReady(
     '/characters',
-    data !== undefined && !isError,
+    data !== undefined && !isError && !isLoading,
     lobbyFresh,
     isError,
     data !== undefined && (isFetching || isRestoring) ? 'cache' : lobbyFresh ? 'fetch' : 'unknown'
   );
-  const [query, setQuery] = useState(restoreSnapshot?.query ?? savedDiscovery.query);
   const generalScrollRestored = useRef(false);
   useEffect(() => {
     rememberRoleplayDiscovery({ sort, query, favoritesOnly: false });
@@ -197,9 +234,30 @@ export function CharacterGallery() {
   const [enteringId, setEnteringId] = useState<string | null>(null);
   const enteringRef = useRef(false);
   const restoredAnchorIdRef = useRef<string | null>(null);
-  const restoreCalibrationUsedRef = useRef(false);
+  const mountedRef = useRef(true);
+  const changingBatchRef = useRef(false);
+  const [batchNotice, setBatchNotice] = useState<{
+    message: string;
+    undoId?: string;
+    retry?: 'refresh' | 'undo';
+  } | null>(null);
+  const noticeTimer = useRef<ReturnType<typeof setTimeout>>();
+  const previousView = useRef<{
+    public: boolean;
+    tail: boolean;
+    scrollY: number;
+    renderLimit: number;
+  }>();
+  const batchScroll = useRef<number | null>(null);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      clearTimeout(noticeTimer.current);
+    };
+  }, []);
 
-  const latestBadge = useLobbyLatestBadgeQuery({ enabled: enrichReady });
+  const latestBadge = useLobbyLatestBadgeQuery({ enabled: routeEnrichReady });
   const { mutate: markLatestSeen } = useMarkLobbyLatestSeenMutation();
   const markedLatestRef = useRef(false);
   // 点「最新」当场收起，不等标记已看的请求回来；点推荐、搜索、卡片都不影响。
@@ -255,13 +313,6 @@ export function CharacterGallery() {
     root.classList.add('featured-paused');
     return () => root.classList.remove('featured-paused');
   }, [previewId]);
-  const recentCharacter = useMemo(
-    () =>
-      recentConversation
-        ? characters.find((character) => character.id === recentConversation.character_id)
-        : undefined,
-    [characters, recentConversation]
-  );
 
   useEffect(() => {
     if (!restoreSnapshot) return;
@@ -281,17 +332,17 @@ export function CharacterGallery() {
   }, [characters, query]);
 
   useLayoutEffect(() => {
-    if (generalScrollRestored.current || restoreSnapshot || !data) return;
+    if (generalScrollRestored.current || restoreSnapshot || !data || isLoading) return;
     generalScrollRestored.current = true;
     restoreRoleplayScroll('/characters');
-  }, [data, restoreSnapshot]);
+  }, [data, isLoading, restoreSnapshot]);
 
   const [renderLimit, setRenderLimit] = useState(listBudget.initialRenderCount);
   // 从详情返回靠锚点卡片还原滚动位置：锚点及其之前的卡必须已挂载，之后只需再多挂约一屏。
   // 不能整表一次挂全：整页在 invisible 状态下同步挂几十上百张卡，返回时就是“闪一下再卡一下”。
   // 该值只依赖挂载时持有的快照，恢复结束后不会回落，避免已显示的卡被卸载。
   const restoreFloor = useMemo(() => {
-    if (!restoreSnapshot) return 0;
+    if (!restoreSnapshot || manualBatchChanged) return 0;
     const candidateIds = [
       restoreSnapshot.anchorCharacterId,
       ...restoreSnapshot.neighborCharacterIds,
@@ -302,7 +353,7 @@ export function CharacterGallery() {
     }
     // 锚点和邻居都不在当前列表里（数据已变）：走 scrollY 兜底，需要足够高度，只能全量。
     return filtered.length > 0 ? Number.POSITIVE_INFINITY : 0;
-  }, [filtered, restoreSnapshot]);
+  }, [filtered, manualBatchChanged, restoreSnapshot]);
   const effectiveLimit = Math.max(renderLimit, restoreFloor);
   // 搜索时结果通常很少且用户在等结果，直接全量，不让命中的卡被分批延迟。
   const renderAll = query.trim() !== '';
@@ -312,9 +363,112 @@ export function CharacterGallery() {
   );
   const criticalCharacterId = visibleCharacters[0]?.id;
 
+  useLobbyExposures({
+    enabled:
+      sort === 'recommended' &&
+      !query.trim() &&
+      !publicView &&
+      recommendation.ready &&
+      recommendation.settled &&
+      recommendation.data?.enabled === true &&
+      !isRestoring &&
+      !previewId &&
+      !enteringId,
+    scope: recommendation.scope,
+    batchId: recommendation.data?.batch_id,
+    characterIds: visibleCharacters.map((character) => character.id),
+  });
+
+  useLayoutEffect(() => {
+    if (batchScroll.current === null) return;
+    window.scrollTo({ top: batchScroll.current, behavior: 'auto' });
+    batchScroll.current = null;
+  }, [recommendation.data?.batch_id]);
+
+  const changeBatch = async (action: 'refresh' | 'undo' = 'refresh', undoId?: string) => {
+    if (recommendation.pending || changingBatchRef.current) return;
+    changingBatchRef.current = true;
+    const scopeAtStart = recommendation.scope;
+    clearTimeout(noticeTimer.current);
+    const before = recommendation.data;
+    const view = {
+      public: !!publicView,
+      tail: tailRequested,
+      scrollY: window.scrollY,
+      renderLimit: effectiveLimit,
+    };
+    if (action === 'undo' && previousView.current?.public && undoId === 'public-view') {
+      const previous = previousView.current;
+      previousView.current = undefined;
+      changingBatchRef.current = false;
+      setManualBatchChanged(false);
+      setTailRequested(previous.tail);
+      setRenderLimit(previous.renderLimit);
+      window.requestAnimationFrame(() =>
+        window.scrollTo({ top: previous.scrollY, behavior: 'auto' })
+      );
+      setBatchNotice({ message: '已回到上一批' });
+      noticeTimer.current = setTimeout(() => setBatchNotice(null), 8000);
+      return;
+    }
+    const result =
+      action === 'undo' && undoId
+        ? await recommendation.undo(undoId)
+        : await recommendation.refresh();
+    changingBatchRef.current = false;
+    if (!mountedRef.current || lobbyViewerScope() !== scopeAtStart) return;
+    if (!result) {
+      setBatchNotice({
+        message: action === 'undo' ? '暂时没能撤回，再试一下' : '没换成功，原来的还在',
+        retry: action,
+        undoId,
+      });
+      return;
+    }
+    // A successful response can contain the current batch when the undo window
+    // expired or another window moved on. Only the requested ID proves restoration.
+    if (action === 'undo' && (!result.enabled || result.batch_id !== undoId)) {
+      previousView.current = undefined;
+      batchScroll.current = null;
+      setBatchNotice({ message: '推荐已更新，暂时不能撤回' });
+      noticeTimer.current = setTimeout(() => setBatchNotice(null), 8000);
+      return;
+    }
+    clearLobbyReturnSnapshot();
+    setManualBatchChanged(true);
+    if (action === 'undo') {
+      const previous = previousView.current;
+      batchScroll.current = previous?.scrollY ?? 0;
+      setTailRequested(previous?.tail ?? false);
+      setRenderLimit(previous?.renderLimit ?? listBudget.initialRenderCount);
+      previousView.current = undefined;
+      setBatchNotice({ message: '已回到上一批' });
+    } else {
+      previousView.current = view;
+      setTailRequested(false);
+      batchScroll.current = 0;
+      setRenderLimit(listBudget.initialRenderCount);
+      setBatchNotice({
+        message: result.batch_id !== before?.batch_id ? '换一批，看看新的相遇' : '推荐已更新',
+        undoId: view.public
+          ? 'public-view'
+          : result.previous_batch_id === before?.batch_id
+            ? (result.previous_batch_id ?? undefined)
+            : undefined,
+      });
+    }
+    // The response may already have committed before the event continuation runs.
+    window.requestAnimationFrame(() => {
+      if (!mountedRef.current || batchScroll.current === null) return;
+      window.scrollTo({ top: batchScroll.current, behavior: 'auto' });
+      batchScroll.current = null;
+    });
+    noticeTimer.current = setTimeout(() => setBatchNotice(null), 8000);
+  };
+
   useCharacterSocialsQuery(
     visibleCharacters.map((character) => character.id),
-    enrichReady
+    routeEnrichReady
   );
 
   // 按滚动位置补齐，而不是在空闲帧定时补：定时补会在路由 transition 渲染让出主线程的间隙里
@@ -322,16 +476,21 @@ export function CharacterGallery() {
   // 哨兵只在用户接近列表底部时才触发；每批挂完 effectiveLimit 变化会重建观察器，
   // 哨兵仍在范围内就继续补，直到它被推到范围之外。
   const loadMoreRef = useRef<HTMLDivElement>(null);
-  const hasMoreToRender = !renderAll && effectiveLimit < filtered.length;
+  const hasMoreToRender = !renderAll && (effectiveLimit < filtered.length || hasUnloadedTail);
   useEffect(() => {
     const node = loadMoreRef.current;
     if (!hasMoreToRender || !node) return;
-    const grow = () =>
+    const grow = () => {
+      if (hasUnloadedTail && effectiveLimit >= filtered.length) setTailRequested(true);
       setRenderLimit((limit) => Math.max(limit, restoreFloor) + listBudget.renderBatchSize);
+    };
     if (typeof IntersectionObserver === 'undefined') {
-      // 极老的 WebView 没有观察器：退回一次性全量，保证列表完整。
-      setRenderLimit(Number.POSITIVE_INFINITY);
-      return;
+      // Even an older WebView waits for scroll demand before downloading the tail.
+      const onScroll = () => {
+        if (node.getBoundingClientRect().top <= window.innerHeight + 250) grow();
+      };
+      window.addEventListener('scroll', onScroll, { passive: true });
+      return () => window.removeEventListener('scroll', onScroll);
     }
     const observer = new IntersectionObserver(
       (entries) => {
@@ -341,7 +500,7 @@ export function CharacterGallery() {
     );
     observer.observe(node);
     return () => observer.disconnect();
-  }, [hasMoreToRender, effectiveLimit, listBudget, restoreFloor]);
+  }, [hasMoreToRender, hasUnloadedTail, effectiveLimit, filtered.length, listBudget, restoreFloor]);
 
   const finishRestore = useCallback(() => {
     clearLobbyReturnSnapshot();
@@ -358,7 +517,12 @@ export function CharacterGallery() {
       ];
       for (const id of candidateIds) {
         const element = findLobbyCardElement(id);
-        if (!element) continue;
+        // The selected ID may already be in the resolved list before its card is mounted.
+        // Give the real anchor a chance before falling back to a neighbour or a scroll offset.
+        if (!element) {
+          if (!allowScrollFallback && filtered.some((card) => card.id === id)) return false;
+          continue;
+        }
         const rect = element.getBoundingClientRect();
         window.scrollTo({
           top: clampScrollY(window.scrollY + rect.top - restoreSnapshot.anchorViewportTop),
@@ -378,7 +542,7 @@ export function CharacterGallery() {
 
       return false;
     },
-    [filtered.length, finishRestore, isError, restoreSnapshot]
+    [filtered, finishRestore, isError, restoreSnapshot]
   );
 
   useLayoutEffect(() => {
@@ -387,12 +551,59 @@ export function CharacterGallery() {
   }, [isLoading, isRestoring, restoreFromSnapshot]);
 
   useEffect(() => {
-    if (!isRestoring) return;
+    if (!isRestoring || isLoading) return;
     const timer = window.setTimeout(() => {
       restoreFromSnapshot(true);
     }, RESTORE_DEADLINE_MS);
     return () => window.clearTimeout(timer);
-  }, [isRestoring, restoreFromSnapshot]);
+  }, [isRestoring, isLoading, restoreFromSnapshot]);
+
+  // The card can move *after* the first correct scroll: offscreen rows replace their
+  // intrinsic estimates or Next restores the document scroll.
+  // Keep the already visible anchor steady through those layout changes, never through user input.
+  useLayoutEffect(() => {
+    const id = restoredAnchorIdRef.current;
+    if (!restoreSnapshot || isRestoring || manualBatchChanged || !id) return;
+    const anchor = findLobbyCardElement(id);
+    if (!anchor) return;
+    let frame = 0;
+    let stopped = false;
+    const align = () => {
+      frame = 0;
+      if (stopped || !anchor.isConnected) return;
+      const top = clampScrollY(
+        window.scrollY + anchor.getBoundingClientRect().top - restoreSnapshot.anchorViewportTop
+      );
+      if (Math.abs(top - window.scrollY) > 1) window.scrollTo({ top, behavior: 'instant' });
+    };
+    const schedule = () => {
+      if (!stopped && !frame) frame = window.requestAnimationFrame(align);
+    };
+    const observer =
+      typeof ResizeObserver !== 'undefined' ? new ResizeObserver(schedule) : undefined;
+    observer?.observe(document.body);
+    if (anchor.parentElement) observer?.observe(anchor.parentElement);
+    const inputEvents = ['pointerdown', 'touchstart', 'wheel', 'keydown'] as const;
+    const stop = () => {
+      if (stopped) return;
+      stopped = true;
+      observer?.disconnect();
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(deadline);
+      window.removeEventListener('scroll', schedule);
+      document.removeEventListener('load', schedule, true);
+      document.removeEventListener('contentvisibilityautostatechange', schedule, true);
+      for (const type of inputEvents) window.removeEventListener(type, stop, true);
+    };
+    const deadline = window.setTimeout(stop, RESTORE_DEADLINE_MS);
+    for (const type of inputEvents)
+      window.addEventListener(type, stop, { capture: true, passive: true });
+    window.addEventListener('scroll', schedule, { passive: true });
+    document.addEventListener('load', schedule, true);
+    document.addEventListener('contentvisibilityautostatechange', schedule, true);
+    schedule();
+    return stop;
+  }, [isRestoring, restoreSnapshot, manualBatchChanged]);
 
   const cancelRestore = useCallback(() => {
     if (!isRestoring) return;
@@ -415,9 +626,30 @@ export function CharacterGallery() {
         anchorViewportTop: rect?.top ?? 0,
         scrollY: window.scrollY,
         viewportWidth: window.innerWidth,
+        publicHead:
+          sort === 'recommended' && !query.trim() && publicView
+            ? {
+                cards: characters.slice(0, 12),
+                checkedAt: publicCheckedAt,
+                hasTail: hasUnloadedTail || characters.length > 12,
+              }
+            : undefined,
+        recommendationBatchId:
+          sort === 'recommended' && !query.trim() && !publicView
+            ? recommendation.data?.batch_id
+            : null,
       });
     },
-    [filtered, query, sort]
+    [
+      filtered,
+      query,
+      recommendation.data?.batch_id,
+      sort,
+      publicView,
+      publicCheckedAt,
+      characters,
+      hasUnloadedTail,
+    ]
   );
 
   const handleImageSettled = useCallback(
@@ -431,26 +663,8 @@ export function CharacterGallery() {
           data !== undefined && (isFetching || isRestoring) ? 'cache' : 'fetch'
         );
       }
-      if (
-        restoreCalibrationUsedRef.current ||
-        restoredAnchorIdRef.current !== characterId ||
-        !restoreSnapshot
-      ) {
-        return;
-      }
-      restoreCalibrationUsedRef.current = true;
-      window.requestAnimationFrame(() => {
-        const element = findLobbyCardElement(characterId);
-        if (!element) return;
-        const rect = element.getBoundingClientRect();
-        window.scrollTo({
-          top: clampScrollY(window.scrollY + rect.top - restoreSnapshot.anchorViewportTop),
-          left: 0,
-          behavior: 'auto',
-        });
-      });
     },
-    [criticalCharacterId, data, isFetching, isRestoring, restoreSnapshot]
+    [criticalCharacterId, data, isFetching, isRestoring]
   );
 
   useEffect(() => {
@@ -473,11 +687,11 @@ export function CharacterGallery() {
   const searchBar = (
     <div
       className={cn(
-        'mx-auto w-full max-w-screen-xl px-4 pb-2 pt-2 sm:px-6 lg:px-8',
+        'mx-auto flex w-full max-w-screen-xl items-center gap-2 px-4 pb-2 pt-2 sm:px-6 lg:px-8',
         hiddenWhileRestoring
       )}
     >
-      <div className="relative">
+      <div className="relative min-w-0 flex-1">
         <Search
           className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
           aria-hidden="true"
@@ -489,8 +703,11 @@ export function CharacterGallery() {
             cancelRestore();
             setQuery(e.target.value);
           }}
-          placeholder="搜索角色、标签或作者"
-          className="h-10 rounded-full pl-10 pr-10 border-border bg-card text-foreground placeholder:text-muted-foreground/70 focus-visible:ring-ring/50 focus-visible:bg-secondary transition-all"
+          placeholder="角色、标签或作者"
+          className={cn(
+            'h-10 rounded-full border-border bg-card pl-10 pr-3 text-foreground placeholder:text-muted-foreground/70 focus-visible:ring-ring/50 focus-visible:bg-secondary transition-all',
+            query && 'pr-10'
+          )}
           aria-label="搜索角色"
         />
         {query && (
@@ -508,68 +725,127 @@ export function CharacterGallery() {
           </Button>
         )}
       </div>
+      <Link
+        href="/wishes?from=characters"
+        className="group inline-flex min-h-11 shrink-0 items-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <span className="inline-flex h-10 items-center gap-1.5 rounded-full border border-primary/15 bg-primary/5 px-2.5 text-[12px] font-medium text-foreground/80 transition-colors group-hover:bg-primary/10 group-hover:text-foreground group-active:bg-primary/15">
+          <Sparkles className="size-3.5 text-primary/80" strokeWidth={1.6} aria-hidden />
+          许个愿
+        </span>
+      </Link>
     </div>
   );
 
   // 切换只改列表顺序，搜索词与卡片上的既有能力都保持不变。
   const sortTabs = (
     <div
-      role="tablist"
-      aria-label="角色排序"
       className={cn(
         'mx-auto flex w-full max-w-screen-xl items-center gap-2 px-4 pb-1 pt-1.5 sm:px-6 lg:px-8',
         hiddenWhileRestoring
       )}
     >
-      {LOBBY_TABS.map((tab) => {
-        const active = sort === tab.value;
-        return (
-          <button
-            key={tab.value}
-            type="button"
-            role="tab"
-            aria-selected={active}
-            onClick={() => {
-              if (sort !== tab.value) cancelRestore();
-              setSort(tab.value);
-            }}
+      <div role="tablist" aria-label="角色排序" className="flex items-center gap-2">
+        {LOBBY_TABS.map((tab) => {
+          const active = sort === tab.value;
+          return (
+            <button
+              key={tab.value}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => {
+                if (sort !== tab.value) {
+                  cancelRestore();
+                  setRestoreSnapshot(null);
+                  resetVisit();
+                  setTailRequested(false);
+                  setManualBatchChanged(false);
+                  setRenderLimit(listBudget.initialRenderCount);
+                  setBatchNotice(null);
+                  previousView.current = undefined;
+                  setSort(tab.value);
+                }
+              }}
+              className={cn(
+                'relative rounded-full border px-4 py-1.5 text-[13px] transition-all',
+                active
+                  ? 'border-primary/30 bg-primary/10 text-primary'
+                  : 'border-transparent text-muted-foreground hover:bg-card hover:text-foreground'
+              )}
+            >
+              {tab.label}
+              {/* 气泡浮在按钮右上角外侧，不压文字；pointer-events-none 保证点击区域完整。 */}
+              {tab.value === 'latest' && showLatestBadge ? (
+                <span
+                  role="status"
+                  aria-label="有新角色卡"
+                  className="pointer-events-none absolute -right-1 -top-1.5 rounded-full border border-success/50 bg-success/15 px-1.5 text-[9px] font-bold leading-[14px] tracking-wide text-success"
+                >
+                  New
+                </span>
+              ) : null}
+            </button>
+          );
+        })}
+      </div>
+      {sort === 'recommended' && !query.trim() && (recommendation.data?.enabled || publicView) ? (
+        <button
+          type="button"
+          aria-label="换一批推荐角色"
+          aria-busy={recommendation.pending}
+          disabled={recommendation.pending || (!publicView && !recommendation.ready)}
+          onClick={() => void changeBatch()}
+          className="ml-auto inline-flex min-h-11 shrink-0 items-center justify-center gap-1.5 rounded-full px-2.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-card hover:text-foreground active:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+        >
+          <RefreshCw
             className={cn(
-              'relative rounded-full border px-4 py-1.5 text-[13px] transition-all',
-              active
-                ? 'border-primary/30 bg-primary/10 text-primary'
-                : 'border-transparent text-muted-foreground hover:bg-card hover:text-foreground'
+              'size-3.5',
+              recommendation.pending && 'animate-spin motion-reduce:animate-none'
             )}
-          >
-            {tab.label}
-            {/* 气泡浮在按钮右上角外侧，不压文字；pointer-events-none 保证点击区域完整。 */}
-            {tab.value === 'latest' && showLatestBadge ? (
-              <span
-                role="status"
-                aria-label="有新角色卡"
-                className="pointer-events-none absolute -right-1 -top-1.5 rounded-full border border-success/50 bg-success/15 px-1.5 text-[9px] font-bold leading-[14px] tracking-wide text-success"
-              >
-                New
-              </span>
-            ) : null}
-          </button>
-        );
-      })}
+            strokeWidth={1.7}
+            aria-hidden
+          />
+          换一批
+        </button>
+      ) : null}
     </div>
   );
 
   const listHeader = (
     <>
-      <RoleplayHeader active="discover">{searchBar}</RoleplayHeader>
+      <RoleplayHeader active="discover" recommended={sort === 'recommended' && !query.trim()}>
+        {searchBar}
+      </RoleplayHeader>
       {sortTabs}
-      <RecentConversationCard
-        enabled={enrichReady}
-        recent={recentConversation}
-        character={recentCharacter}
-        loading={history.isLoading}
-        error={history.isError}
-        fetching={history.isFetching}
-        onRetry={() => void history.refetch()}
-      />
+      {batchNotice && sort === 'recommended' ? (
+        <div
+          role="status"
+          className="fixed inset-x-4 bottom-[calc(var(--app-nav-space)+0.75rem)] z-40 mx-auto flex max-w-sm items-center justify-between gap-3 rounded-2xl border border-white/10 bg-[#242125]/95 px-4 py-1.5 text-[12px] text-foreground shadow-lg backdrop-blur-xl"
+        >
+          <span>{batchNotice.message}</span>
+          {batchNotice.retry ? (
+            <button
+              type="button"
+              disabled={recommendation.pending}
+              onClick={() => void changeBatch(batchNotice.retry, batchNotice.undoId)}
+              className="min-h-11 shrink-0 rounded-lg px-2 font-medium text-primary disabled:opacity-50"
+            >
+              重试
+            </button>
+          ) : batchNotice.undoId ? (
+            <button
+              type="button"
+              disabled={recommendation.pending}
+              onClick={() => void changeBatch('undo', batchNotice.undoId)}
+              className="inline-flex min-h-11 shrink-0 items-center gap-1 rounded-lg px-2 font-medium text-primary disabled:opacity-50"
+            >
+              <Undo2 className="size-3.5" aria-hidden />
+              撤回
+            </button>
+          ) : null}
+        </div>
+      ) : null}
     </>
   );
 
@@ -595,7 +871,7 @@ export function CharacterGallery() {
     );
   }
 
-  if (isError) {
+  if (isError && !data) {
     return (
       <>
         {listHeader}
@@ -641,8 +917,15 @@ export function CharacterGallery() {
             {`没有匹配「${query}」的角色`}
           </p>
           <p className="text-center text-[11px] text-muted-foreground/80">
-            换个名字或标签试试，也可以看看推荐角色。
+            换个名字或标签试试，也可以告诉创作者你想玩什么。
           </p>
+          <Link
+            href="/wishes?from=characters&compose=1"
+            className="mt-2 inline-flex min-h-11 items-center gap-1.5 rounded-full border border-primary/20 bg-primary/10 px-5 text-sm text-primary"
+          >
+            <Sparkles className="size-4" aria-hidden />
+            许个愿，让创作者看见
+          </Link>
         </div>
       ) : (
         <div
@@ -669,7 +952,15 @@ export function CharacterGallery() {
       {hasMoreToRender ? (
         <div ref={loadMoreRef} aria-hidden="true" className="h-px w-full" />
       ) : null}
-
+      {tailFailed ? (
+        <button
+          type="button"
+          onClick={() => void refetch()}
+          className="mx-auto block min-h-11 px-3 text-sm text-muted-foreground"
+        >
+          更多角色暂时没加载出来，点此重试
+        </button>
+      ) : null}
       {detailLoaded ? (
         <CharacterDetailSheet
           characterId={previewId}

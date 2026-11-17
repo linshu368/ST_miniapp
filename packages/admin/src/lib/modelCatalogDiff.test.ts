@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { ModelCatalog } from '@miniapp/shared';
-import { configMetadata } from './configSchemas';
+import { configMetadata } from '@miniapp/admin-client';
 import { getModelCatalogChangeSummary } from './modelCatalogDiff';
 
 describe('getModelCatalogChangeSummary', () => {

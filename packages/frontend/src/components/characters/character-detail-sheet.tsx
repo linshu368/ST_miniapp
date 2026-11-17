@@ -1,17 +1,22 @@
 'use client';
 
 import { useEffect, useId, useRef, useState } from 'react';
-import { ChevronDown, Loader2, Quote, Sparkles, X } from 'lucide-react';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { ChevronDown, ChevronRight, Expand, Loader2, Quote, Sparkles, X } from 'lucide-react';
 import type { CharacterSummary, ChatSession } from '@miniapp/shared';
 import { useCharacterQuery } from '@/lib/api/characters';
+import { rememberPublicCreatorOpener } from '@/lib/roleplay-navigation';
 import { useConversationsQuery } from '@/lib/api/conversations';
 import { useCharacterSocialQuery } from '@/lib/api/character-social';
 import { characterRoomGradient } from '@/lib/utils/character-hue';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
 import { lobbyImageUrl } from './character-card';
+import { useTelegramBackButton } from '@/lib/telegram/hooks';
 import { CharacterSocialBar, socialCount } from './character-social-bar';
 import { CharacterComments } from './character-comments';
+import { CharacterCoverViewer } from './character-cover-viewer';
 
 export type CharacterDetailTab = 'intro' | 'comments';
 interface CharacterDetailSheetProps {
@@ -60,6 +65,10 @@ function CharacterDetailContent({
 }: Omit<CharacterDetailSheetProps, 'characterId'> & { characterId: string; open: boolean }) {
   const detailQuery = useCharacterQuery(characterId, { enabled: open });
   const character = detailQuery.data?.character ?? summary;
+  const authorName = detailQuery.data?.character.author_name?.trim();
+  const publicCreatorId = detailQuery.data?.character.public_creator_id;
+  const authorHref = publicCreatorId ? `/creators/${encodeURIComponent(publicCreatorId)}` : null;
+  const pathname = usePathname();
   const history = useConversationsQuery(characterId, open && !inConversation);
   const social = useCharacterSocialQuery(characterId, open);
   const lastSession = history.data?.sessions
@@ -69,6 +78,26 @@ function CharacterDetailContent({
     >((latest, item) => (!latest || Date.parse(item.last_message_at ?? item.created_at) > Date.parse(latest.last_message_at ?? latest.created_at) ? item : latest), undefined);
   const [tab, setTab] = useState<CharacterDetailTab>(initialTab);
   const [greetingOpen, setGreetingOpen] = useState(false);
+  const [viewingCover, setViewingCover] = useState(false);
+  const [failedCover, setFailedCover] = useState<string>();
+  const coverUrl =
+    character?.avatar_url && character.avatar_url !== failedCover
+      ? character.avatar_url
+      : undefined;
+  useTelegramBackButton(
+    open
+      ? () => {
+          if (viewingCover && coverUrl) setViewingCover(false);
+          else onClose();
+        }
+      : null,
+    'dialog'
+  );
+  const coverOpener = useRef<HTMLButtonElement | null>(null);
+  const showCover = (button: HTMLButtonElement) => {
+    coverOpener.current = button;
+    setViewingCover(true);
+  };
   const [viewport, setViewport] = useState<{ height: number; bottom: number } | null>(null);
   const [dragY, setDragY] = useState(0);
   const touch = useRef<{ x: number; y: number } | null>(null);
@@ -79,6 +108,8 @@ function CharacterDetailContent({
     if (open) {
       setTab(initialTab);
       setDragY(0);
+    } else {
+      setViewingCover(false);
     }
   }, [open, initialTab]);
   useEffect(() => {
@@ -188,21 +219,55 @@ function CharacterDetailContent({
             className="size-11 shrink-0 overflow-hidden rounded-xl border border-border"
             style={{ background: characterRoomGradient(characterId) }}
           >
-            {character?.avatar_url ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={lobbyImageUrl(character.avatar_url)}
-                alt=""
-                className="h-full w-full object-cover object-top"
-              />
+            {coverUrl ? (
+              <button
+                type="button"
+                className="block size-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
+                aria-label="查看角色头像大图"
+                onClick={(event) => showCover(event.currentTarget)}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={lobbyImageUrl(coverUrl)}
+                  alt=""
+                  className="size-full object-cover object-top"
+                />
+              </button>
             ) : null}
           </div>
           <div className="min-w-0 flex-1">
             <SheetTitle className="truncate text-[17px] font-semibold tracking-tight">
               {character?.name ?? '角色详情'}
             </SheetTitle>
-            <SheetDescription className="mt-0.5 text-[10px] text-muted-foreground/65">
-              {tab === 'comments' ? '角色评论 · 分享你的体验' : '了解这个角色，开启你的故事'}
+            <SheetDescription
+              className={
+                authorName
+                  ? 'mt-0.5 text-[13px] leading-5 text-muted-foreground'
+                  : 'mt-0.5 text-[10px] text-muted-foreground/65'
+              }
+            >
+              {authorName ? (
+                authorHref && pathname !== authorHref ? (
+                  <Link
+                    href={authorHref}
+                    prefetch={false}
+                    onClick={() => publicCreatorId && rememberPublicCreatorOpener(publicCreatorId)}
+                    className="relative inline-flex max-w-full items-center gap-0.5 rounded-sm text-primary/90 after:absolute after:inset-x-0 after:-inset-y-3 active:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    title={`作者：${authorName}`}
+                  >
+                    <span className="truncate">作者：{authorName}</span>
+                    <ChevronRight className="size-3.5 shrink-0" aria-hidden />
+                  </Link>
+                ) : (
+                  <span className="block truncate" title={`作者：${authorName}`}>
+                    作者：{authorName}
+                  </span>
+                )
+              ) : tab === 'comments' ? (
+                '角色评论 · 分享你的体验'
+              ) : (
+                '了解这个角色，开启你的故事'
+              )}
             </SheetDescription>
           </div>
           {tab === 'comments' && !inConversation ? (
@@ -290,19 +355,30 @@ function CharacterDetailContent({
         >
           {character ? (
             <>
-              <div
-                className="relative mb-4 h-[min(44dvh,24rem)] overflow-hidden rounded-2xl border border-border/50"
-                style={{ background: characterRoomGradient(characterId) }}
-              >
-                {character.avatar_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
+              {coverUrl && (
+                <button
+                  type="button"
+                  aria-label="全屏查看角色封面"
+                  onClick={(event) => showCover(event.currentTarget)}
+                  className="relative mb-4 block w-full overflow-hidden rounded-2xl bg-secondary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    src={character.avatar_url}
+                    src={coverUrl}
                     alt={character.name}
-                    className="h-full w-full object-contain object-center"
+                    width={640}
+                    height={800}
+                    className="block h-auto max-h-[min(46dvh,25rem)] w-full object-cover object-[center_25%]"
+                    onError={() => setFailedCover(coverUrl)}
                   />
-                ) : null}
-              </div>
+                  <span
+                    aria-hidden
+                    className="pointer-events-none absolute right-2.5 top-2.5 grid size-8 place-items-center rounded-full bg-black/50 text-white"
+                  >
+                    <Expand className="size-4" strokeWidth={1.7} />
+                  </span>
+                </button>
+              )}
               {character.personality_tags.length ? (
                 <div className="mb-4 -mt-1 flex flex-wrap gap-1.5">
                   {character.personality_tags.slice(0, 6).map((tag) => (
@@ -344,11 +420,6 @@ function CharacterDetailContent({
                     </blockquote>
                   ) : null}
                 </section>
-              ) : null}
-              {character.author_name ? (
-                <p className="mt-4 text-[10px] text-muted-foreground/50">
-                  创作者 · {character.author_name}
-                </p>
               ) : null}
             </>
           ) : detailQuery.isError ? (
@@ -416,6 +487,14 @@ function CharacterDetailContent({
       >
         <CharacterComments characterId={characterId} active={open && tab === 'comments'} />
       </div>
+      {open && viewingCover && coverUrl && (
+        <CharacterCoverViewer
+          src={coverUrl}
+          name={character?.name ?? '角色'}
+          onClose={() => setViewingCover(false)}
+          returnFocus={() => coverOpener.current?.focus({ preventScroll: true })}
+        />
+      )}
     </SheetContent>
   );
 }

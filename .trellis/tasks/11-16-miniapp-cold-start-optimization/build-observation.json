@@ -1,0 +1,51 @@
+{
+  "environment": "Local production build Next14.2.35; no business API calls",
+  "measurement": "Static script raw bytes and independent gzip estimates; not actual network transfer or production latency",
+  "entries": [
+    {
+      "cohort": "new",
+      "status": 200,
+      "location": null,
+      "shell": "/characters",
+      "script_count": 27,
+      "script_raw_bytes": 1167506,
+      "script_gzip_estimate_bytes": 371727
+    },
+    {
+      "cohort": "returning",
+      "status": 200,
+      "location": null,
+      "shell": "/chats",
+      "script_count": 28,
+      "script_raw_bytes": 1215078,
+      "script_gzip_estimate_bytes": 384468
+    },
+    {
+      "cohort": "invalid",
+      "status": 200,
+      "location": null,
+      "shell": "/characters",
+      "script_count": 27,
+      "script_raw_bytes": 1167506,
+      "script_gzip_estimate_bytes": 371727
+    },
+    {
+      "cohort": "returning_again",
+      "status": 200,
+      "location": null,
+      "shell": "/chats",
+      "script_count": 28,
+      "script_raw_bytes": 1215078,
+      "script_gzip_estimate_bytes": 384468
+    },
+    {
+      "cohort": "new_again",
+      "status": 200,
+      "location": null,
+      "shell": "/characters",
+      "script_count": 27,
+      "script_raw_bytes": 1167506,
+      "script_gzip_estimate_bytes": 371727
+    }
+  ]
+}

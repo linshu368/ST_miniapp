@@ -1,0 +1,3 @@
+# ripgrep（Claude Code / Codex 的默认搜索）遵守本文件：这些路径仍在 Git 中，只是不进入 AI 默认搜索结果。
+# 需要查历史时显式搜索：rg -u <pattern> .trellis/tasks/archive
+.trellis/tasks/archive/

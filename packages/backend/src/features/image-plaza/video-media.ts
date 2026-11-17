@@ -1,16 +1,16 @@
-import { createHash } from 'node:crypto';
+import type { FastifyBaseLogger } from 'fastify';
 import { execFile } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { copyFile, mkdir, mkdtemp, open, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { FastifyBaseLogger } from 'fastify';
 import { config } from '../../platform/config.js';
+import { writePlayableVideo } from './video-media-command.js';
 
 const MAX_FASTSTART_MOOV_BYTES = 256 * 1024;
 const MAX_KEYFRAME_INTERVAL_SECONDS = 2.1;
 const FIRST_KEYFRAME_MAX_SECONDS = 0.1;
-const MEDIA_COMMAND_TIMEOUT_MS = 30 * 60_000;
 
 let available = false;
 
@@ -118,78 +118,10 @@ export async function prepareVideoFile(
     await copyFile(inputPath, videoPath);
   } else if (compatible && seekable) {
     branch = 'remux';
-    await run(
-      config.imagePlaza.ffmpegPath,
-      [
-        '-v',
-        'error',
-        '-i',
-        inputPath,
-        '-map',
-        '0:v:0',
-        '-map',
-        '0:a:0?',
-        '-c',
-        'copy',
-        '-movflags',
-        '+faststart',
-        '-y',
-        videoPath,
-      ],
-      MEDIA_COMMAND_TIMEOUT_MS
-    );
+    await writePlayableVideo(branch, inputPath, videoPath, run);
   } else {
     branch = 'transcode';
-    await run(
-      config.imagePlaza.ffmpegPath,
-      [
-        '-v',
-        'error',
-        '-i',
-        inputPath,
-        '-map',
-        '0:v:0',
-        '-map',
-        '0:a:0?',
-        '-vf',
-        "scale='min(1920,iw)':'min(1920,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2",
-        '-fpsmax',
-        '30',
-        '-c:v',
-        'libx264',
-        '-preset',
-        'fast',
-        '-crf',
-        '23',
-        '-maxrate',
-        '6M',
-        '-bufsize',
-        '12M',
-        '-pix_fmt',
-        'yuv420p',
-        '-profile:v',
-        'high',
-        '-level:v',
-        '4.1',
-        '-force_key_frames',
-        'expr:gte(t,n_forced*2)',
-        '-sc_threshold',
-        '0',
-        '-c:a',
-        'aac',
-        '-b:a',
-        '128k',
-        '-ar',
-        '48000',
-        '-ac',
-        '2',
-        '-movflags',
-        '+faststart',
-        '-y',
-        videoPath,
-      ],
-      MEDIA_COMMAND_TIMEOUT_MS
-    );
+    await writePlayableVideo(branch, inputPath, videoPath, run);
   }
 
   await run(

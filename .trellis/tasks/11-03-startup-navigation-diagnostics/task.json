@@ -1,0 +1,61 @@
+{
+  "id": "startup-navigation-diagnostics",
+  "name": "startup-navigation-diagnostics",
+  "title": "补齐启动 HTML 首字节等待诊断分段",
+  "description": "扩展现有慢启动事件的 Navigation Timing 数值分段，不改开屏计时、指标调用和业务调度。用户批准方案并要求跳过本地验证，编码后直接提交推送功能分支。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "frontend",
+  "package": "frontend",
+  "priority": "P2",
+  "creator": "qj",
+  "assignee": "qj",
+  "createdAt": "2026-11-03",
+  "completedAt": null,
+  "branch": "codex/startup-navigation-diagnostics",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "packages/frontend/src/lib/perf/startup-phases.ts",
+    "packages/frontend/src/lib/perf/page-tracker.test.ts",
+    "packages/frontend/src/lib/sentry/sanitize.test.ts",
+    "docs/miniapp-startup-performance.md",
+    ".trellis/spec/frontend/app/testing-quality-and-deployment.md"
+  ],
+  "notes": "代码、既有测试用例和两份文档已编写。按用户明确要求未运行本地验证及Git hooks；不部署、不修改生产配置。提交/推送状态以Git记录为准。真机性能和Sentry实收待独立验收，保持in_progress。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": ["frontend.infrastructure.client-ui-foundation"]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": ["/", "/characters", "/dramas", "其他既有启动观察入口"],
+      "apis": [],
+      "android": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 4000
+      },
+      "ios": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 4000
+      },
+      "api": {
+        "p95_baseline_ms": null,
+        "p95_target_ms": null
+      },
+      "measurement": {
+        "source": "现有 Sentry startup.shell_ready.duration / startup.telegram_ready.duration；保持 measurement、有效样本与 ready 过滤",
+        "window": "用户提供：北京时间 2026-11-02 17:38 至 11-03 17:26，首页 Android/4g ready=sent 117条；发布后按精确 release 与固定窗口核对"
+      },
+      "notes": "用户未提供当前窗口双端开屏 P95，均保留 null；18次>4秒，10次 HTML 首字节已>4秒。4g是有效网络质量分类。总目标 P95<4秒，本次只补诊断，不承诺直接降低 P95。无 API 行为改动，API P95不适用。按用户要求跳过本地验证；真机新增计算 P95<=1ms、业务发起时序和 Cloud 实收待后续验证。"
+    }
+  }
+}

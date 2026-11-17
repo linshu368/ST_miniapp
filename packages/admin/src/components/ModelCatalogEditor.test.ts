@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ModelCatalogSchema, type ModelCatalog } from '@miniapp/shared';
-import { EditableModelCatalogSchema } from '../lib/configSchemas';
+import { EditableModelCatalogSchema } from '@miniapp/admin-client';
+import { newFreeZoneModel } from './ModelCatalogFreeZoneSection';
 import {
   appendDraftModel,
   appendDraftTier,
@@ -100,11 +101,46 @@ describe('editable model catalog additions', () => {
     });
   });
 
+  it('preserves a Surplus provider mapping while parsing editable state', () => {
+    const surplusCatalog = structuredClone(catalog);
+    Object.assign(surplusCatalog.tiers[0]!.models[0]!, {
+      provider: 'surplus',
+      provider_model_id: 'anthropic/claude-haiku-5.5',
+      openrouter_model_id: 'anthropic/claude-haiku-5.5',
+    });
+
+    const parsed = EditableModelCatalogSchema.parse(surplusCatalog);
+
+    expect(parsed.tiers[0]?.models[0]).toMatchObject({
+      provider: 'surplus',
+      provider_model_id: 'anthropic/claude-haiku-5.5',
+      openrouter_model_id: 'anthropic/claude-haiku-5.5',
+    });
+  });
+
   it('keeps a newly added incomplete model editable', () => {
     const result = appendDraftModel(catalog, 0, 123);
     expect(result.tiers[0]?.models.at(-1)?.id).toBe('model-123-2');
     expect(EditableModelCatalogSchema.safeParse(result).success).toBe(true);
     expect(ModelCatalogSchema.safeParse(result).success).toBe(false);
+  });
+
+  it('keeps a newly added free zone model through the editable parse', () => {
+    // 编辑器按 EditableModelCatalogSchema 的解析结果渲染：漏掉这一块，点「添加免费模型」会没反应
+    const added = { ...catalog, free_zone_models: [newFreeZoneModel(123)] };
+    const parsed = EditableModelCatalogSchema.parse(added);
+    expect(parsed.free_zone_models).toEqual([
+      expect.objectContaining({ id: 'free-model-123', provider: 'openrouter', family: '' }),
+    ]);
+    // 还没选上游、没填系列，不能发布
+    expect(ModelCatalogSchema.safeParse(added).success).toBe(false);
+    const filled = {
+      ...added,
+      free_zone_models: [
+        { ...newFreeZoneModel(123), provider_model_id: 'qwen/qwen3.6-plus', family: 'qwen' },
+      ],
+    };
+    expect(ModelCatalogSchema.parse(filled).free_zone_models).toHaveLength(1);
   });
 
   it('keeps a newly added empty tier editable', () => {

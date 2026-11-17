@@ -1,44 +1,21 @@
 'use client';
 
+import { vipPlanRewardLabel, vipCheckinRewardLabel } from '@/lib/vip/rewards';
 import { usePageReady } from '@/lib/perf/page-ready';
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import {
-  AlertCircle,
-  ChevronLeft,
-  Crown,
-  ChevronRight,
-  Gift,
-  Loader2,
-  Sparkles,
-  TicketPercent,
-  Zap,
-} from 'lucide-react';
-import {
-  DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG,
-  type CreatePaymentOrderData,
-  type PaymentType,
-} from '@miniapp/shared';
+import { AlertCircle, ChevronLeft, Crown, ChevronRight, Loader2, Sparkles } from 'lucide-react';
+import { type CreatePaymentOrderData, type PaymentType } from '@miniapp/shared';
 
-import { PaymentVpnPromptDialog } from '@/components/payment/payment-vpn-prompt-dialog';
-import { AlipayPaymentGuidanceDialog } from '@/components/payment/alipay-payment-guidance-dialog';
-import { VipBenefitArt } from '@/components/vip/vip-benefit-art';
+import { VipBenefitArt, VipDailyBenefits } from '@/components/vip/vip-benefit-art';
+import { VipFreeZoneBenefit } from '@/components/vip/vip-free-zone-benefit';
 import { Button } from '@/components/ui/button';
 import { AlipayIcon, WeChatPayIcon } from '@/components/icons';
 import { formatNumber, formatYuanShort, safePaymentReturnTo } from '@/lib/utils/payment';
-import {
-  useCheckoutConfirmationMutation,
-  useCreatePaymentOrderMutation,
-  usePaymentPlansQuery,
-} from '@/lib/api/payment';
+import { useCreatePaymentOrderMutation, usePaymentPlansQuery } from '@/lib/api/payment';
 import { useVipStatusQuery } from '@/lib/api/vip';
 import { openCreatedPayment } from '@/lib/payment/open-created-payment';
-import { clearCheckoutConfirmation } from '@/lib/payment/open-storage';
-import {
-  capturePaymentMethodSelected,
-  capturePaymentOrderCreated,
-} from '@/lib/payment/flow-telemetry';
 import { useHaptic, useTelegramBackButton } from '@/lib/telegram';
 import { cn } from '@/lib/utils';
 import { feedbackAfterPaint, startAction } from '@/lib/perf/action-tracker';
@@ -83,28 +60,12 @@ function VipPageContent() {
     plansQuery.isError || vipQuery.isError
   );
   const createOrder = useCreatePaymentOrderMutation();
-  const { mutate: confirmCheckout } = useCheckoutConfirmationMutation();
   const [paymentType, setPaymentType] = useState<PaymentType>('alipay');
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
-  const [alipayPromptOpen, setAlipayPromptOpen] = useState(false);
-  const [wechatPromptOpen, setWechatPromptOpen] = useState(false);
-  const [preparedPayment, setPreparedPayment] = useState<CreatePaymentOrderData | null>(null);
   const submitLock = useRef(false);
-
-  const reportCheckoutConfirmation = useCallback(
-    ({ orderId, request }: Parameters<typeof confirmCheckout>[0]) => {
-      confirmCheckout(
-        { orderId, request },
-        { onSuccess: () => clearCheckoutConfirmation(orderId, request.request_id) }
-      );
-    },
-    [confirmCheckout]
-  );
 
   // 商品展示与下单都只接受发布中的月卡，不能在月卡缺失时落回旧周卡。
   const monthlyPlan = plansQuery.data?.vip_plans?.find((plan) => plan.id === 'month');
-  const promptConfig =
-    plansQuery.data?.payment_prompt_dialog_config ?? DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG;
   const paymentChannels = plansQuery.data?.payment_channels;
   const paymentTypes = useMemo<PaymentType[]>(() => {
     if (!paymentChannels) return ['alipay'];
@@ -131,22 +92,14 @@ function VipPageContent() {
     : plansQuery.isLoading
       ? '正在读取月卡…'
       : plansQuery.isError
-        ? '月卡暂时无法加载'
+        ? '月卡没加载出来，再试一次吧'
         : !monthlyPlan || !monthlyPlan.available
           ? '月卡暂未开放'
           : `${vipQuery.data?.active ? '续费 VIP 月卡' : '开通 VIP 月卡'} ¥${formatYuanShort(monthlyPlan.price_cents)}`;
 
   const openPrepared = useCallback(
-    async (result: CreatePaymentOrderData) => {
-      await openCreatedPayment({
-        router,
-        result,
-        returnTo,
-        paymentType,
-        reportCheckoutConfirmation,
-      });
-    },
-    [paymentType, reportCheckoutConfirmation, returnTo, router]
+    (result: CreatePaymentOrderData) => openCreatedPayment({ router, result, returnTo }),
+    [returnTo, router]
   );
 
   const handleSubmit = async () => {
@@ -174,26 +127,10 @@ function VipPageContent() {
       });
       feedbackAfterPaint(submitAction);
       const result = await creating;
-      capturePaymentOrderCreated({
-        planId: selection.id,
-        paymentType,
-        orderId: result.order.id,
-        amountCents: result.order.amount_cents,
-      });
-      if (paymentType === 'alipay') {
-        setPreparedPayment(result);
-        setAlipayPromptOpen(true);
-        return;
-      }
-      if (promptConfig.enabled) {
-        setPreparedPayment(result);
-        setWechatPromptOpen(true);
-        return;
-      }
-      await openPrepared(result);
+      openPrepared(result);
     } catch {
       notification('error');
-      setCheckoutError('暂时无法创建订单，请稍后重试。');
+      setCheckoutError('订单没创建成功，再试一次吧。');
     } finally {
       submitLock.current = false;
     }
@@ -217,36 +154,11 @@ function VipPageContent() {
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden px-4 pb-5 pt-4">
         <VipBenefitArt monthlyPlan={monthlyPlan} status={vipQuery.data} />
 
-        <section aria-label="会员专享权益">
-          <h2 className="mb-3 px-1 text-sm font-bold">
-            {vipQuery.data?.active ? '你的会员权益已生效' : '再享三项会员权益'}
-          </h2>
-          <div className="grid grid-cols-3 gap-2">
-            <div className="min-w-0 rounded-[20px] border border-border bg-card px-2 py-3 text-center">
-              <TicketPercent className="mx-auto size-4 text-primary" aria-hidden />
-              <p className="mt-2 text-[19px] font-bold tabular-nums text-primary">
-                {discountLabel ?? '—'}
-              </p>
-              <p className="mt-1 text-[10px] text-muted-foreground">全模型对话</p>
-            </div>
-            <div className="min-w-0 rounded-[20px] border border-border bg-card px-2 py-3 text-center">
-              <Gift className="mx-auto size-4 text-primary" aria-hidden />
-              <p className="mt-2 text-[19px] font-bold tabular-nums text-primary">
-                {benefits ? formatNumber(benefits.checkin_vip_credits) : '—'}
-                <span className="ml-1 text-[10px] font-medium">星尘/天</span>
-              </p>
-              <p className="mt-1 text-[10px] text-muted-foreground">每日签到奖励</p>
-            </div>
-            <div className="min-w-0 rounded-[20px] border border-border bg-card px-2 py-3 text-center">
-              <Zap className="mx-auto size-4 text-primary" aria-hidden />
-              <p className="mt-2 text-[17px] font-bold leading-7 text-primary">更多模型</p>
-              <p className="mt-1 text-[10px] text-muted-foreground">解锁标准与旗舰</p>
-            </div>
-          </div>
-          <p className="mt-2 px-1 text-[10px] leading-5 text-muted-foreground">
-            会员享对话优惠，聊天仍按轮消耗星尘。
-          </p>
-        </section>
+        <VipDailyBenefits
+          active={vipQuery.data?.active ?? false}
+          benefits={benefits}
+          discountLabel={discountLabel}
+        />
 
         <section aria-label="VIP 月卡">
           {plansQuery.isLoading ? (
@@ -256,7 +168,7 @@ function VipPageContent() {
             </div>
           ) : plansQuery.isError ? (
             <div className="rounded-[24px] border border-destructive/30 bg-destructive/5 px-4 py-6 text-center">
-              <p className="text-sm font-semibold">月卡暂时无法加载</p>
+              <p className="text-sm font-semibold">月卡没加载出来，再试一次吧</p>
               <Button
                 variant="outline"
                 size="sm"
@@ -290,23 +202,27 @@ function VipPageContent() {
                   <span className="ml-1 text-[10px] text-muted-foreground">/期</span>
                 </p>
               </div>
-              {monthlyPlan.bonus_credits > 0 ? (
+              <VipFreeZoneBenefit renewing={vipQuery.data?.active ?? false} />
+              {monthlyPlan.bonus_credits + (monthlyPlan.bonus_main_credits ?? 0) > 0 ? (
                 <div className="mt-4 flex items-start gap-2 rounded-2xl border border-primary/15 bg-primary/[0.06] px-3 py-2.5">
                   <Sparkles className="mt-0.5 size-3.5 shrink-0 text-primary" aria-hidden />
                   <div>
                     <p className="text-xs font-semibold text-primary">
                       {vipQuery.data?.active ? '续费再赠' : '开通赠'}{' '}
-                      {formatNumber(monthlyPlan.bonus_credits)} 专项星尘
+                      {vipPlanRewardLabel(monthlyPlan)}
                     </p>
                     <p className="mt-1 text-[10px] text-muted-foreground">
-                      用于轻量模型对话，{vipQuery.data?.active ? '续费' : '开通'}后到账
+                      {(monthlyPlan.bonus_main_credits ?? 0) > 0
+                        ? '通用星尘可用于中高级模型，'
+                        : '用于轻量模型对话，'}
+                      {vipQuery.data?.active ? '续费' : '开通'}后到账
                     </p>
                   </div>
                 </div>
               ) : null}
               {benefits ? (
                 <p className="mt-3 text-[10px] leading-5 text-muted-foreground">
-                  会员每日签到 {formatNumber(benefits.checkin_vip_credits)} 星尘（非会员新用户每日{' '}
+                  会员每日签到 {vipCheckinRewardLabel(benefits)}（非会员新玩家每日{' '}
                   {formatNumber(benefits.checkin_base_credits)}），记得来领取。
                 </p>
               ) : null}
@@ -369,9 +285,6 @@ function VipPageContent() {
                   onClick={() => {
                     whisper();
                     setPaymentType(type);
-                    if (selection) {
-                      capturePaymentMethodSelected({ planId: selection.id, paymentType: type });
-                    }
                   }}
                   className={cn(
                     'flex min-h-11 items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold transition-colors',
@@ -404,37 +317,6 @@ function VipPageContent() {
           </Button>
         </div>
       </div>
-
-      <AlipayPaymentGuidanceDialog
-        open={alipayPromptOpen}
-        onOpenChange={(open) => {
-          setAlipayPromptOpen(open);
-          if (!open) setPreparedPayment(null);
-        }}
-        onConfirm={() => {
-          if (!preparedPayment) return;
-          const result = preparedPayment;
-          setAlipayPromptOpen(false);
-          setPreparedPayment(null);
-          void openPrepared(result);
-        }}
-      />
-      <PaymentVpnPromptDialog
-        open={wechatPromptOpen}
-        config={promptConfig}
-        canConfirm={Boolean(preparedPayment)}
-        onOpenChange={(open) => {
-          setWechatPromptOpen(open);
-          if (!open) setPreparedPayment(null);
-        }}
-        onConfirm={() => {
-          if (!preparedPayment) return;
-          const result = preparedPayment;
-          setWechatPromptOpen(false);
-          setPreparedPayment(null);
-          void openPrepared(result);
-        }}
-      />
     </main>
   );
 }

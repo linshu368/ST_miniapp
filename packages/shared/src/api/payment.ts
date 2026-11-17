@@ -9,6 +9,39 @@ import { isVipPlanId, type VipPlan } from './vip.js';
 export type PaymentType = 'alipay' | 'wxpay';
 export const PaymentTypeSchema = z.enum(['alipay', 'wxpay']);
 
+/** TTZF 易支付 GET 通知的外部契约；签名覆盖扩展字段，由后端使用原始 query 验证。 */
+export const EpayNotificationSchema = z
+  .object({
+    pid: z.string().regex(/^\d{1,20}$/),
+    trade_no: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
+    out_trade_no: z.string().regex(/^EP[0-9a-f]{30}$/),
+    type: PaymentTypeSchema,
+    name: z.string().min(1).max(2_048),
+    money: z.string().regex(/^\d{1,12}(?:\.\d{1,3})?$/),
+    trade_status: z.enum(['TRADE_PENDING', 'TRADE_SUCCESS', 'TRADE_REFUND', 'TRADE_ERROR']),
+    sign: z.string().regex(/^[a-fA-F0-9]{32}$/),
+    sign_type: z.literal('MD5'),
+  })
+  .catchall(z.string().max(2_048));
+export type EpayNotification = z.infer<typeof EpayNotificationSchema>;
+
+/** Provider responses are validated before any checkout or settlement is exposed. */
+export const EpayCreateResponseSchema = z.object({
+  code: z.literal(1),
+  trade_no: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
+  payurl: z.string().url().max(4_096),
+});
+
+export const EpayQueryResponseSchema = z.object({
+  code: z.literal(1),
+  pid: z.union([z.string().regex(/^\d{1,20}$/), z.number().int().nonnegative().safe()]).nullish(),
+  trade_no: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
+  out_trade_no: z.string().regex(/^EP[0-9a-f]{30}$/),
+  type: PaymentTypeSchema,
+  money: z.string().regex(/^\d{1,12}(?:\.\d{1,3})?$/),
+  status: z.union([z.literal(0), z.literal(1)]),
+});
+
 /**
  * Controls which checkout entries are presented to new purchasers. It deliberately does not
  * change gateway support: pending and historic orders continue to use their stored payment type.
@@ -141,69 +174,18 @@ export const PaymentPlansRuntimeConfigSchema = z
 
 export const DEFAULT_PENDING_ARRIVAL_HINT = '完成付款后积分将自动到账，通常不超过 3 分钟';
 
-export const RechargePageConfigSchema = z.object({
-  title: z.string().trim().min(1).max(30),
-  description: z.string().trim().min(1).max(120),
-  button_text: z.string().trim().min(1).max(20),
-  theme_color: z.string().regex(/^#[0-9a-fA-F]{6}$/),
-  balance_color: z
-    .string()
-    .regex(/^#[0-9a-fA-F]{6}$/)
-    .default('#8b5cf6'),
-  selected_plan_color: z
-    .string()
-    .regex(/^#[0-9a-fA-F]{6}$/)
-    .default('#f59e0b'),
-  badge_color: z
-    .string()
-    .regex(/^#[0-9a-fA-F]{6}$/)
-    .default('#6366f1'),
-  button_color: z
-    .string()
-    .regex(/^#[0-9a-fA-F]{6}$/)
-    .default('#ec4899'),
-  /** 订单等待页提示：付款后积分到账时效。缺省兼容旧配置。 */
-  pending_arrival_hint: z.string().trim().min(1).max(80).default(DEFAULT_PENDING_ARRIVAL_HINT),
-});
-
-export type RechargePageConfig = z.infer<typeof RechargePageConfigSchema>;
-
-export const DEFAULT_RECHARGE_PAGE_CONFIG: RechargePageConfig = {
-  title: '星尘商店',
-  description: '为每段相遇点一盏星光',
-  button_text: '立即支付',
-  theme_color: '#ec4899',
-  balance_color: '#8b5cf6',
-  selected_plan_color: '#f59e0b',
-  badge_color: '#6366f1',
-  button_color: '#ec4899',
-  pending_arrival_hint: DEFAULT_PENDING_ARRIVAL_HINT,
-};
-
-export const PaymentPromptDialogConfigSchema = z.object({
-  enabled: z.boolean(),
-  title: z.string().trim().min(1).max(40),
-  description: z.string().trim().min(1).max(200),
-  confirm_text: z.string().trim().min(1).max(30),
-  footer_note: z
-    .string()
-    .trim()
-    .min(1)
-    .max(100)
-    .default('点击确认后，将继续跳转到外部浏览器完成微信支付。'),
-  accent_color: z.string().regex(/^#[0-9a-fA-F]{6}$/),
-});
-
-export type PaymentPromptDialogConfig = z.infer<typeof PaymentPromptDialogConfigSchema>;
-
-export const DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG: PaymentPromptDialogConfig = {
-  enabled: true,
-  title: '支付前请先关闭 VPN',
-  description: '为避免支付页面无法打开、订单异常或到账延迟，请关闭 VPN 后再继续支付。',
-  confirm_text: '已关闭VPN，去截图保存二维码',
-  footer_note: '点击确认后，将继续跳转到外部浏览器完成微信支付。',
-  accent_color: '#f59e0b',
-};
+/**
+ * 星尘商店展示参数。曾由运营平台配置，现固定在代码里，不再提供运营入口。
+ * 颜色是新皮肤下的实际取值。
+ */
+export const RECHARGE_PAGE_DISPLAY = {
+  buttonText: '立即支付',
+  balanceColor: '#8b5cf6',
+  selectedPlanColor: '#d0b99a',
+  badgeColor: '#d0b99a',
+  buttonColor: '#ead7bc',
+  pendingArrivalHint: DEFAULT_PENDING_ARRIVAL_HINT,
+} as const;
 
 export interface PaymentOrder {
   /** 订单号，沿用老项目 TG_{userId}_{ts}_{rand} 语义 */
@@ -237,6 +219,7 @@ export interface PaymentOrder {
   fulfillment_applied?: boolean;
   vip_duration_days?: number | null;
   vip_bonus_credits?: number | null;
+  vip_bonus_main_credits?: number | null;
   vip_valid_until?: string | null;
 }
 
@@ -247,8 +230,6 @@ export interface GetPaymentPlansData {
   payment_channels?: PaymentChannelsConfig;
   /** 旧客户端忽略即可；未部署 VIP 商品的 producer 可以省略。 */
   vip_plans?: VipPlan[];
-  page_config: RechargePageConfig;
-  payment_prompt_dialog_config: PaymentPromptDialogConfig;
   /** 因余额不足进入充值页时展示的运营提示语 */
   insufficient_credits_notice: string;
 }
@@ -260,36 +241,9 @@ export interface CreatePaymentOrderRequest {
 }
 export interface CreatePaymentOrderData {
   order: PaymentOrder;
-  /** 支付渠道返回的支付目标：微信 scheme 或 H5 跳转链接 */
+  /** 支付平台托管收银台地址（https） */
   pay_url: string;
 }
-
-// ==== POST /api/payment/orders/:id/checkout-confirmations ====
-
-/** 用户确认交给外部收银台的动作；不代表第三方页面已展示或付款完成。 */
-export const CheckoutConfirmationActionSchema = z.enum(['initial_open', 'reopen']);
-export type CheckoutConfirmationAction = z.infer<typeof CheckoutConfirmationActionSchema>;
-
-export const PostCheckoutConfirmationRequestSchema = z
-  .object({
-    /** 同一次浏览器动作重试时保持不变，后端据此原子去重。 */
-    request_id: z.string().uuid(),
-    /** 浏览器记录的用户动作时间；后端另存 recorded_at，拒绝不可信时间。 */
-    occurred_at: z.string().datetime({ offset: true }),
-    action: CheckoutConfirmationActionSchema,
-  })
-  .strict();
-export type PostCheckoutConfirmationRequest = z.infer<typeof PostCheckoutConfirmationRequestSchema>;
-
-export const PostCheckoutConfirmationDataSchema = z
-  .object({
-    recorded: z.boolean(),
-    checkout_confirmed_at: z.string().datetime({ offset: true }).nullable(),
-    last_checkout_confirmed_at: z.string().datetime({ offset: true }).nullable(),
-    checkout_confirm_count: z.number().int().nonnegative(),
-  })
-  .strict();
-export type PostCheckoutConfirmationData = z.infer<typeof PostCheckoutConfirmationDataSchema>;
 
 // ==== GET /api/payment/orders/:id ====
 export interface GetPaymentOrderData {

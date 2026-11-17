@@ -1,21 +1,27 @@
+import '../instrumentation.js';
 import '../platform/config.js';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 import {
-  runFastPaymentReconciliation,
-  runFastPaymentReconciliationLoop,
-} from '../features/payment/usecases/FastPaymentReconciliation.js';
+  runPaymentReconciliation,
+  runPaymentReconciliationLoop,
+} from '../features/payment/usecases/PaymentReconciliation.js';
 import { MiniappPaymentOrderRepository } from '../infrastructure/repositories/MiniappPaymentOrderRepository.js';
-import { ZqPaymentGateway } from '../infrastructure/payment/ZqPaymentGateway.js';
+import { EpayPaymentGateway } from '../infrastructure/payment/EpayPaymentGateway.js';
 import { createLogger } from '../lib/logger.js';
 import { closeSupabaseClient } from '../lib/supabase.js';
-import { config } from '../platform/config.js';
+import {
+  observeBackgroundRun,
+  startStandaloneObservability,
+} from '../lib/background-observability.js';
 
 const log = createLogger('payment');
 const orders = new MiniappPaymentOrderRepository();
-const gateway = new ZqPaymentGateway();
+const gateway = new EpayPaymentGateway();
 const shutdown = new AbortController();
 let exitCode = 0;
+let passStartedAt = performance.now();
+const stopObservability = startStandaloneObservability();
 
 for (const signal of ['SIGTERM', 'SIGINT'] as const) {
   process.once(signal, () => {
@@ -24,20 +30,24 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const) {
 }
 
 log.sys.info(
-  { event: 'payment.fast_cron.started', paymentEnabled: config.payment.enabled },
-  '支付订单快速对账 worker 启动'
+  { event: 'payment.reconcile_worker.started', paymentEnabled: gateway.configured },
+  '支付订单对账 worker 启动'
 );
 
 try {
-  await runFastPaymentReconciliationLoop({
-    runPass: () =>
-      runFastPaymentReconciliation({
+  await runPaymentReconciliationLoop({
+    runPass: () => {
+      passStartedAt = performance.now();
+      return runPaymentReconciliation({
         orders,
         gateway,
         log,
-        paymentEnabled: config.payment.enabled,
+        paymentEnabled: gateway.configured,
+        trigger: 'fast_reconcile',
         events: orders,
-      }),
+        signal: shutdown.signal,
+      });
+    },
     sleep: async (milliseconds, signal) => {
       try {
         await sleep(milliseconds, undefined, { signal });
@@ -48,37 +58,66 @@ try {
     },
     signal: shutdown.signal,
     onPass: (result) => {
-      if (!config.payment.enabled) {
-        console.log('Fast payment reconciliation skipped: PAYMENT_ENABLED is not true');
+      observeBackgroundRun({
+        job: 'payment_reconciliation',
+        outcome: !gateway.configured ? 'skipped' : result.lookupFailed ? 'partial' : 'success',
+        startedAt: passStartedAt,
+      });
+      if (!gateway.configured) {
+        log.sys.info(
+          { event: 'payment.reconciliation.skipped', outcome: 'skipped' },
+          'Payment provider is not configured'
+        );
         return;
       }
-      console.log(
-        `Fast payment reconciliation: checked=${result.checked} claimed=${result.claimed} ` +
-          `settled=${result.settled} unpaid=${result.unpaid} failed=${result.failed}`
+      log.sys.info(
+        {
+          event: 'payment.reconciliation.summary',
+          checkedCount: result.checked,
+          settledCount: result.settled,
+          closedCount: result.closed,
+          failedCount: result.lookupFailed,
+        },
+        'Payment reconciliation completed'
       );
     },
     onError: (error) => {
-      const message = error instanceof Error ? error.message : String(error);
-      log.sys.error({ event: 'payment.fast_cron.failed', err: error }, '支付订单快速对账本轮失败');
-      console.error(`Fast payment reconciliation failed: ${message}`);
+      observeBackgroundRun({
+        job: 'payment_reconciliation',
+        outcome: 'error',
+        startedAt: passStartedAt,
+        error,
+      });
+      log.sys.error(
+        { event: 'payment.reconcile_worker.failed', err: error },
+        '支付订单对账本轮失败'
+      );
     },
   });
 } catch (error) {
-  const message = error instanceof Error ? error.message : String(error);
-  log.sys.error({ event: 'payment.fast_cron.failed', err: error }, '支付订单快速对账 worker 退出');
-  console.error(`Fast payment reconciliation worker failed: ${message}`);
+  observeBackgroundRun({
+    job: 'payment_reconciliation_worker',
+    outcome: 'error',
+    startedAt: passStartedAt,
+    error,
+  });
+  log.sys.error(
+    { event: 'payment.reconcile_worker.failed', err: error },
+    '支付订单对账 worker 退出'
+  );
   exitCode = 1;
 } finally {
-  log.sys.info({ event: 'payment.fast_cron.stopped' }, '支付订单快速对账 worker 停止');
+  log.sys.info({ event: 'payment.reconcile_worker.stopped' }, '支付订单对账 worker 停止');
   try {
     await closeSupabaseClient();
   } catch (error) {
     log.sys.error(
-      { event: 'payment.fast_cron.cleanup_failed', err: error },
-      '支付订单快速对账资源清理失败'
+      { event: 'payment.reconcile_worker.cleanup_failed', err: error },
+      '支付订单对账资源清理失败'
     );
     exitCode = 1;
   }
 
-  process.exit(exitCode);
+  await stopObservability();
+  process.exitCode = exitCode;
 }

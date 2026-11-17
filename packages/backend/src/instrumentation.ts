@@ -1,5 +1,10 @@
 import * as Sentry from '@sentry/node';
-import { sanitizeTelemetry } from '@miniapp/shared';
+import {
+  safeSentryBreadcrumb,
+  safeSentryEvent,
+  safeSentryLog,
+} from './platform/observability/sentry-safety.js';
+import { safeLogAttributes } from './platform/observability/safe-log.js';
 
 /** 初值；上线后按 Sentry 配额占用调整。 */
 const TRACE_SAMPLE_RATE = 0.2;
@@ -39,8 +44,14 @@ if (isSentryEnabled) {
     initialScope: {
       tags: { service: 'backend' },
     },
-    beforeSend: (event) => sanitizeTelemetry(event),
-    beforeSendTransaction: (event) => sanitizeTelemetry(event),
-    beforeBreadcrumb: (breadcrumb) => sanitizeTelemetry(breadcrumb),
+    beforeSend: safeSentryEvent,
+    beforeSendTransaction: safeSentryEvent,
+    beforeSendSpan: (span) => ({
+      ...span,
+      description: 'Backend operation',
+      data: safeLogAttributes(span.data ?? {}),
+    }),
+    beforeBreadcrumb: safeSentryBreadcrumb,
+    beforeSendLog: safeSentryLog,
   });
 }

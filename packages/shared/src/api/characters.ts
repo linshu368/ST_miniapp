@@ -1,20 +1,21 @@
+import { z } from 'zod';
+
 // 列表页用的精简结构
-export interface CharacterSummary {
-  id: string;
-  name: string;
-  /** 角色一句话氛围描述，卡片上截断展示 */
-  description: string;
-  avatar_url: string;
-  /** 性格/特质标签，3-5 个，卡片和详情页都展示 */
-  personality_tags: string[];
-  /** 创作者展示名 */
-  author_name: string;
-  /** 是否属于大厅固定前八角色 */
-  is_featured: boolean;
-}
+export const CharacterSummarySchema = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  description: z.string(),
+  avatar_url: z.string(),
+  personality_tags: z.array(z.string()),
+  author_name: z.string(),
+  is_featured: z.boolean(),
+});
+export type CharacterSummary = z.infer<typeof CharacterSummarySchema>;
 
 // 详情页 / 对话页用的完整结构
 export interface CharacterDetail extends CharacterSummary {
+  /** Public author space, available only when there are visible creator works. */
+  public_creator_id?: string;
   /** 角色开场第一句话 */
   greeting: string;
   /** 创作者写给读者的补充说明（可为空） */
@@ -23,7 +24,7 @@ export interface CharacterDetail extends CharacterSummary {
 
 /**
  * 首页角色列表排序页签。
- * recommended：运营固定前八 + 第九张起按聊天转化率，新卡冷启动随机插入中段。
+ * recommended：公共质量目录；启用个人轮换的客户端另按鉴权批次投影顺序。
  * latest：仅按角色最后上架时间倒序，不保留运营固定位。
  */
 export type LobbySort = 'recommended' | 'latest';
@@ -40,6 +41,9 @@ export function parseLobbySort(value: unknown): LobbySort {
 // GET /api/characters 的查询参数
 export interface GetCharactersQuery {
   sort?: LobbySort;
+  /** Public recommended head; ids is an optional CSV to revalidate an existing head in place. */
+  limit?: 12;
+  ids?: string;
 }
 
 // GET /api/characters 的响应体
@@ -63,4 +67,17 @@ export interface LobbyLatestBadgeData {
 /** Existing conversations render their bound creator version; lobby/detail without a session show current content. */
 export interface GetCharacterByIdQuery {
   session_id?: string;
+}
+
+export const PublicCreatorSpaceQuerySchema = z
+  .object({
+    page: z.coerce.number().int().min(1).max(10000).default(1),
+  })
+  .strict();
+
+export interface PublicCreatorSpaceData {
+  author_name: string;
+  characters: (CharacterSummary & { like_count: number; favorite_count: number })[];
+  page: number;
+  has_more: boolean;
 }

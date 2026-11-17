@@ -20,6 +20,11 @@ import {
 } from '@miniapp/shared';
 import { getLlmProviderRuntimeConfig } from '../../platform/runtime-config.js';
 import { veniceFetch } from '../../platform/venice-http.js';
+import { withUpstreamTiming, type UpstreamTiming } from './upstream-timing.js';
+import { observeLlmProviderResponse } from './provider-alerts.js';
+import { clientFetch } from '../../platform/observability/fetch.js';
+
+const fetch = clientFetch('generation.transport', 'llm');
 
 const LLM_UPSTREAM_URL = getLlmProviderRuntimeConfig('openrouter').baseUrl;
 
@@ -32,10 +37,14 @@ export function resolveUpstreamUrl(subPath: string, baseUrl = LLM_UPSTREAM_URL):
   return `${baseUrl.replace(/\/+$/, '')}${subPath}`;
 }
 
-export function resolveProviderUpstream(provider: LlmModelProvider): {
+export function resolveProviderUpstream(
+  provider: LlmModelProvider,
+  model?: string
+): {
   provider: LlmModelProvider;
   url: string;
   apiKey: string;
+  model?: string;
 } {
   const capability = LLM_PROVIDER_CAPABILITIES[provider];
   const runtime = getLlmProviderRuntimeConfig(provider);
@@ -44,6 +53,7 @@ export function resolveProviderUpstream(provider: LlmModelProvider): {
     provider,
     url: resolveUpstreamUrl(capability.chatCompletionsPath, baseUrl),
     apiKey: runtime.apiKey,
+    ...(model ? { model } : {}),
   };
 }
 
@@ -55,9 +65,14 @@ export async function forwardToUpstream(input: {
   signal?: AbortSignal;
   apiKey?: string;
   provider?: LlmModelProvider;
+  model?: string;
+  timing?: UpstreamTiming;
+  /** 供应商专属请求头，比如 Surplus 的 X-Min-Discount */
+  headers?: Record<string, string>;
 }): Promise<Response> {
   const provider = input.provider ?? 'openrouter';
   const forwardHeaders: Record<string, string> = {
+    ...input.headers,
     'Content-Type': 'application/json',
     Authorization: `Bearer ${input.apiKey ?? LLM_API_KEY}`,
   };
@@ -67,23 +82,31 @@ export async function forwardToUpstream(input: {
   }
 
   // Venice 本地可走 VENICE_HTTPS_PROXY；OpenRouter 等其它上游保持直连。
-  if (provider === 'venice') {
-    return await veniceFetch(input.url, {
-      method: input.method,
-      headers: forwardHeaders,
-      body: input.body,
-      signal: input.signal,
-      duplex: 'half',
-    });
+  const response =
+    provider === 'venice'
+      ? await withUpstreamTiming(input.timing, () =>
+          veniceFetch(input.url, {
+            method: input.method,
+            headers: forwardHeaders,
+            body: input.body,
+            signal: input.signal,
+            duplex: 'half',
+          })
+        )
+      : await withUpstreamTiming(input.timing, () =>
+          fetch(input.url, {
+            method: input.method,
+            headers: forwardHeaders,
+            body: input.body,
+            signal: input.signal,
+            // @ts-expect-error Node 18+ fetch supports duplex
+            duplex: 'half',
+          })
+        );
+  if (input.model) {
+    observeLlmProviderResponse({ provider, model: input.model, status: response.status });
   }
-  return await fetch(input.url, {
-    method: input.method,
-    headers: forwardHeaders,
-    body: input.body,
-    signal: input.signal,
-    // @ts-expect-error Node 18+ fetch supports duplex
-    duplex: 'half',
-  });
+  return response;
 }
 
 export interface SseTapResult {

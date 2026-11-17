@@ -1,0 +1,37 @@
+{
+  "observedAtUtc": "2026-11-10T09:31:05Z",
+  "environment": "production",
+  "backend": "https://stminiapp-production.up.railway.app",
+  "method": "OPTIONS",
+  "path": "/api/v1/conversations",
+  "accessControlRequestMethod": "GET",
+  "accessControlRequestHeaders": ["x-init-data", "content-type"],
+  "results": [
+    {
+      "origin": "https://st-miniapp-frontend.vercel.app",
+      "status": 500,
+      "allowOrigin": null,
+      "allowCredentials": null
+    },
+    {
+      "origin": "https://app.themijing.com",
+      "status": 204,
+      "allowOrigin": "https://app.themijing.com",
+      "allowCredentials": "true"
+    },
+    {
+      "origin": "https://st-miniapp-frontend-preview-check.vercel.app",
+      "status": 500,
+      "allowOrigin": null,
+      "allowCredentials": null
+    }
+  ],
+  "fixedOfficialOriginHistoricalDenials": {
+    "n": 62,
+    "min": "2026-11-04T05:58:22.095071104Z",
+    "max": "2026-11-09T21:59:23.234491172Z",
+    "retrieved": 62
+  },
+  "runtimeConfigurationAccess": "Railway OAuth exposes variable names only; FRONTEND_URL and ADMIN_PLATFORM_URL values not visible",
+  "configurationNotChanged": true
+}

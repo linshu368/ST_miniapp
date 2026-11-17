@@ -1,6 +1,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import * as Sentry from '@sentry/nextjs';
 import {
   CreateCreatorCharacterSchema,
   SaveCreatorCharacterSchema,
@@ -27,6 +28,8 @@ import { getRawInitData, INIT_DATA_HEADER } from '@/lib/telegram/auth';
 import { parseTelegramUser } from '@/lib/telegram/user';
 import { API_URL, apiClient, toApiClientError } from './client';
 import { favoriteKeys } from './favorites';
+import { getMetricDimensions } from '@/lib/perf/env-tags';
+import { recordEngineeringEvent, recordEngineeringMeasurement } from '@/lib/perf/grafana';
 
 function creatorClientIdentity(): string {
   return String(parseTelegramUser(getRawInitData()).id ?? 'local-browser');
@@ -77,6 +80,7 @@ export function useCreatorCharacterQuery(id: string | undefined) {
     queryFn: ({ signal }) =>
       apiClient<GetCreatorCharacterData>(`/api/creator/characters/${encodeURIComponent(id!)}`, {
         signal,
+        queuePriority: 'critical',
       }),
     enabled: Boolean(id),
     staleTime: 30_000,
@@ -187,6 +191,10 @@ export function useCreateCreatorCoverMutation() {
         method: 'POST',
         body: JSON.stringify(CreatorCoverRequestSchema.parse(body)),
         timeoutMs: 60_000,
+        // 请求体的 id 由客户端生成，createCreatorCoverAsset 按这个 id 做了“先查是否已存在
+        // 再写”的幂等处理：传输层失败后原样重放，不会重复建资产。沿用 GET 的传输层重试，
+        // 吸收生产排查发现的那类“数据已传完、等响应时客户端掉线”的瞬时抖动。
+        idempotent: true,
       });
       return { asset: CreatorCoverAssetSchema.parse(data.asset) };
     },
@@ -201,9 +209,76 @@ interface PolishInput {
   onText: (text: string) => void;
 }
 
+type CreatorPolishOutcome = 'complete' | 'error' | 'aborted' | 'timeout';
+
+class CreatorPolishTiming {
+  private readonly startedAt = performance.now();
+  private firstTextRecorded = false;
+  private finished = false;
+
+  constructor(private readonly target: CreatorPolishRequest['target']) {}
+
+  headers(status: number): void {
+    this.measure('creator.polish.headers', 'creator.polish.headers.duration', {
+      status_class: `${Math.floor(status / 100)}xx`,
+    });
+  }
+
+  firstText(): void {
+    if (this.firstTextRecorded) return;
+    this.firstTextRecorded = true;
+    this.measure('creator.polish.first_text', 'creator.polish.first_text.duration');
+  }
+
+  finish(outcome: CreatorPolishOutcome): void {
+    if (this.finished) return;
+    this.finished = true;
+    this.measure('creator.polish.full', 'creator.polish.duration', { outcome });
+    this.safely(() =>
+      recordEngineeringEvent('creator.polish.terminal', {
+        target: this.target,
+        outcome,
+        source_measurement_version: 'creator_polish_v1',
+      })
+    );
+  }
+
+  private measure(
+    engineeringName: 'creator.polish.headers' | 'creator.polish.first_text' | 'creator.polish.full',
+    sentryName:
+      | 'creator.polish.headers.duration'
+      | 'creator.polish.first_text.duration'
+      | 'creator.polish.duration',
+    attributes: Readonly<Record<string, string>> = {}
+  ): void {
+    const durationMs = performance.now() - this.startedAt;
+    const tags = {
+      target: this.target,
+      ...attributes,
+      source_measurement_version: 'creator_polish_v1',
+    };
+    this.safely(() => recordEngineeringMeasurement(engineeringName, durationMs, tags));
+    this.safely(() =>
+      Sentry.metrics.distribution(sentryName, durationMs, {
+        unit: 'millisecond',
+        attributes: { ...tags, ...getMetricDimensions() },
+      })
+    );
+  }
+
+  private safely(run: () => void): void {
+    try {
+      run();
+    } catch {
+      // Telemetry is best-effort and cannot alter streamed text delivery.
+    }
+  }
+}
+
 /** Streaming stays in the API layer. A lost terminal event preserves all received text for adoption. */
 export async function streamCreatorPolish({ body, signal, onText }: PolishInput): Promise<string> {
   const validated = CreatorPolishRequestSchema.parse(body);
+  const timing = new CreatorPolishTiming(validated.target);
   const controller = new AbortController();
   const abort = () => controller.abort(signal.reason);
   if (signal.aborted) abort();
@@ -222,6 +297,7 @@ export async function streamCreatorPolish({ body, signal, onText }: PolishInput)
       body: JSON.stringify(validated),
       signal: controller.signal,
     });
+    timing.headers(response.status);
     if (!response.ok)
       throw toApiClientError(response.status, await response.json().catch(() => null));
     if (!response.body) throw new Error('未收到润色内容，请重试。原稿已保留。');
@@ -238,6 +314,7 @@ export async function streamCreatorPolish({ body, signal, onText }: PolishInput)
       if (event.type === 'delta') {
         text += event.text;
         onText(text);
+        if (event.text.trim()) timing.firstText();
       }
     };
     try {
@@ -256,11 +333,15 @@ export async function streamCreatorPolish({ body, signal, onText }: PolishInput)
       }
       if (!done || !text.trim())
         throw new Error('这次润色未完整完成。已有内容仍可采用，原稿已保留。');
+      timing.finish('complete');
       return text;
     } finally {
       await reader.cancel().catch(() => undefined);
       reader.releaseLock();
     }
+  } catch (error) {
+    timing.finish(controller.signal.aborted ? (signal.aborted ? 'aborted' : 'timeout') : 'error');
+    throw error;
   } finally {
     clearTimeout(timer);
     signal.removeEventListener('abort', abort);

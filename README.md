@@ -1,21 +1,22 @@
 # ST_miniapp
 
+2026-11-16 内容链优化（本地候选）：会话页只读已有公开角色摘要，缺失详情走 normal 并按用户/会话保留1分钟内存缓存；分组只读依赖超时返回既有503，标签summary最多等待250ms；自动推荐预算1.5秒、手动操作5秒。无新增私人持久缓存或数据库迁移。本轮按用户要求不启动本地UI，详情及发布门禁见 [实施说明](.trellis/tasks/11-12-overnight-page-performance/content-path-optimization-2026-11-16.md)。
+
+2026-11-16 MiniApp 冷启动专项（本地候选）：根入口按 landing cookie 内部 rewrite，直接返回已有会话或大厅静态框架；保存 Telegram 启动参数后再规范地址，减少一次文档跳转。可见会话第一页使用预留 critical 槽。研究、验证和发布复测见 [专项说明](.trellis/tasks/11-12-overnight-page-performance/cold-start-optimization-2026-11-16.md)。
+
+2026-11-16 日志完整性补全（本地未部署）：补齐捕获异常、warn 告警、数据库 cause、对账每轮上下文和大厅 Next.js 代理链路，并扩展 DB/HTTP/调度静态门禁。Backend 由 Railway 捕获，代理摘要在 Next.js 服务端 stdout；缓存、业务契约和默认关闭告警保持兼容，详见 [运行说明](docs/backend-observability-runtime.md)。
+
+日志实现、告警规则和 SDK 候选入口现已集中在 [日志模块目录](packages/backend/src/platform/observability/README.md)。后续只改目录内 `alert-rules.json` 管理模块/状态码等规则，执行 `pnpm --filter @miniapp/backend logging:validate` 后随应用发布；LOG_ALERT_RULES 环境变量已停止读取。总开关默认关闭、通知 secret 仍独立部署。
+
+Railway 可读性补充（本地未部署）：首行新增中文模块、请求/任务场景、真实结果与安全错误说明；探测策略和余额预检结果显式记录。展示名称集中修改日志目录的 `labels.zh-CN.ts`，英文事件码与链路查询保留。按用户要求，本轮不运行本地 UI/浏览器验收，示例与边界见模块说明。
+
+2026-11-14 合并审计补齐媒体/影像任务、后台实体与独立数据库客户端的日志接入；字段语义、模块查询及安全边界见 [运行说明](docs/backend-observability-runtime.md)，验证结果见 [任务记录](.trellis/tasks/11-12-backend-observability/verification.md)。本地实现尚未部署。
+
+本地日志整改候选（2026-11-14，未部署）：Railway 捕获 Pino stdout；补充用户、业务模块、角色/创作、短剧/单集及会话 ID，与 trace/request 关联。字段来源、查询示例、错误契约兼容和默认关闭的直接日志告警见 [运行说明](docs/backend-observability-runtime.md)。无需新增日志存储。
+
 ST_miniapp 是围绕 Telegram MiniApp、AI 角色聊天、钱包/支付、语音、增长运营和客服能力构建的 pnpm monorepo。仓库包含面向用户的 Next.js 前端、Fastify API、内部运营 SPA、共享契约/迁移包，以及由 Frontend 和 Admin 共用的回复渲染包。客服平台已拆到独立仓库 [`linshu368/ST_cs_platform`](https://github.com/linshu368/ST_cs_platform)，本仓库只保留 Bot 消息转发和 `/api/support/*` 代理。
 
 > 深层架构、数据流和路由清单见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)；Railway 生产运维见 [`ops/railway/README.md`](ops/railway/README.md)。本文负责新成员入门、依赖关系、环境、命令和交付约定。
-
-> 对话调用前准备减负候选：本轮设置/目录快照复用，身份与报价保存5次请求合为2次；须先验证并执行`20261030_chat_generation_dispatch_prepare.sql`，再发布应用。保持现行兜底等待与6秒首字预算，计费/取消/恢复仍依赖同步业务事实；步骤见[首字运行说明](docs/first-token-fallback.md)。尚未发布，不能用本地验证替代生产耗时结果。
-> MiniApp 入口先输出静态框架，初始化后通知 Telegram 展示；独立启动指标 `startup.shell_ready.duration` / `startup.telegram_ready.duration` 的口径、P95 查询与验证边界见 [前端性能规范](.trellis/spec/frontend/app/testing-quality-and-deployment.md#miniapp-启动框架与-p95)。本地实现不代表已经发布或收到生产样本。
-> ready 前分段诊断本地增量复用 Sentry：`startup.stage.duration` 配合 ≥5 秒的单次 `miniapp_startup_slow` 数值快照区分启动阶段；节点只记录时间戳，资源摘要收集与新增上报在 ready 后执行。尚待发布和真机实收验证，口径见上述规范。
-> 短剧性能日常统一看[工程短剧看板](https://ea3213527545.grafana.net/d/st-engineering-drama)。v3复用原计时器、集中shared阶段计算；默认双轨，验证通过后才显式切换统一模式，保留Pino诊断及旧看板历史。字段、分母、release、切换与回滚见[短剧播放耗时排查](docs/drama-playback-timing.md)。本地代码不代表生产已启用。
-
-本分支新增短剧生产 CDN 对照能力：鉴权用户按实验固定分组，约 20% Bunny／80% Supabase；相同视频与播放器，起播和未缓冲快进保留真实逐次耗时、失败及重试累计等待。关闭后新播放重新确认 Supabase 地址。无新数据库表或实验平台。生产专用回源／签名／开关、发布和 12 小时首次比较见 [操作说明](ops/drama-cdn-rollout.md)。当前仅为本地实现，生产尚未启用；既有 pr-525 TEST Preview 功能验收不代表生产或性能达标。
-
-> 短剧达到5秒的启动终态与迟到媒体详情复用现有 Backend OTLP 出口写 Grafana Cloud Loki；不新增五秒快照，也不再通过接收接口写 Supabase 分析表。`st-engineering-drama` 增加逐次详情/观察ID查询；旧 `st-drama-playback` 仅保留历史SQL数据。代码与线上状态分开验收，发布步骤见 [短剧看板操作说明](docs/grafana/drama-playback-runbook.md)。
-
-> 图片广场 Admin 保存草稿触发 `config_drafts_config_key_check` 的兼容修复：新增 `20261016_reconcile_image_plaza_managed_config_keys.sql`，保留现有白名单并恢复四个图片广场 key，不改正式配置。尚待 TEST workflow 单文件执行及保存/发布验收；详见迁移目录 README，Production 另行审批。
-
-开屏优化（本地，待发布）：[实现边界、4秒验收与冻结基线](docs/miniapp-startup-performance.md)。
 
 ## 0. 运行环境
 
@@ -52,23 +53,27 @@ ST_miniapp 是围绕 Telegram MiniApp、AI 角色聊天、钱包/支付、语音
 ```text
 packages/frontend    ─┐
 packages/admin       ─┴──> packages/reply-renderer ──> packages/shared
+packages/admin       ───┐
+packages/admin-cli   ───┴──> packages/admin-client ──> packages/shared
 packages/backend     ───────────────────────────────> packages/shared
 
 ```
 
 `pnpm-workspace.yaml` 只包含 `packages/*`。三个应用包可以依赖 `@miniapp/shared`，但彼此不得直接 import；跨应用通信使用 HTTP。Shared 不依赖应用包。
 
-| 目录                      | 包名/形态                                | 主要职责                                                         | 默认开发端口 |
-| ------------------------- | ---------------------------------------- | ---------------------------------------------------------------- | ------------ |
-| `packages/frontend`       | `@miniapp/frontend` / Next.js 14         | Telegram MiniApp 用户界面、聊天、钱包、支付、语音、社区等        | 3000         |
-| `packages/backend`        | `@miniapp/backend` / Fastify 5           | API、鉴权、生成/计费、Supabase/Prisma、支付、Telegram、客服代理  | 3001         |
-| `packages/admin`          | `@miniapp/admin` / Vite React            | 配置、模型、角色卡、公告、裂变和运营赠送                         | 3003         |
-| `packages/shared`         | `@miniapp/shared` / TS 源码包            | API DTO、Zod schema、文本后处理编译/执行纯工具和 SQL migrations  | -            |
-| `packages/reply-renderer` | `@miniapp/reply-renderer` / React 源码包 | Frontend/Admin 共用的安全 Markdown、受限 HTML/CSS 和可信交互渲染 | -            |
+| 目录                      | 包名/形态                                | 主要职责                                                                 | 默认开发端口 |
+| ------------------------- | ---------------------------------------- | ------------------------------------------------------------------------ | ------------ |
+| `packages/frontend`       | `@miniapp/frontend` / Next.js 14         | Telegram MiniApp 用户界面、聊天、钱包、支付、语音、社区等                | 3000         |
+| `packages/backend`        | `@miniapp/backend` / Fastify 5           | API、鉴权、生成/计费、Supabase/Prisma、支付、Telegram、客服代理          | 3001         |
+| `packages/admin`          | `@miniapp/admin` / Vite React            | 运营平台网页：配置、模型、角色卡、公告、裂变                             | 3003         |
+| `packages/admin-client`   | `@miniapp/admin-client` / TS 源码包      | 运营平台网页与 CLI 共用：配置注册表与校验、菜单分组、Admin RPC/HTTP 调用 | -            |
+| `packages/admin-cli`      | `@miniapp/admin-cli` / Node CLI          | 生产运营平台命令行 `pnpm admin`，见 `packages/admin-cli/README.md`       | -            |
+| `packages/shared`         | `@miniapp/shared` / TS 源码包            | API DTO、Zod schema、文本后处理编译/执行纯工具和 SQL migrations          | -            |
+| `packages/reply-renderer` | `@miniapp/reply-renderer` / React 源码包 | Frontend/Admin 共用的安全 Markdown、受限 HTML/CSS 和可信交互渲染         | -            |
 
 Shared 的 `main`/`types` 直接指向 `src/index.ts`，没有独立 build 产物；修改公开出口会直接影响所有消费者。
 
-回复风格可在 Admin“平台规则 → 回复风格”维护，用户端按已发布目录动态展示独立开关。运营自填标记/规则仅存储，不参与本轮模型指令组装。`20261023_reply_style_options.sql` 提供目录managed-key和原子偏好映射；发布顺序为迁移 → Backend/Admin → Frontend。
+图片广场目录的 USD 标准价与统一定价参数随运营草稿保存、发布和回滚；重新打开读取保存值。改变参数不会自动改写已发布星尘价，仍需明确重算并发布，详见 `packages/admin/README.md`。
 
 ## 3. 技术栈
 
@@ -97,9 +102,7 @@ pnpm dev:admin
 
 移动端页面预览使用 `pnpm preview:ui`，场景入口 `http://127.0.0.1:3121`。固定浏览器验收用 `pnpm test:ui --grep @profile`（或 `@roleplay` / `@chat` / `@image`）按组运行。首次安装、手机尺寸、报告及新增场景方法见 [移动端验收说明](packages/ui-tests/README.md)。该环境使用虚构数据，正式发布仍遵循既有质量检查。
 
-历史对话分支目前仅本地实现：预览选择「历史对话分支」或「分支失败恢复」，运行 `pnpm test:ui --grep @chat-branch` 复用手机验收。分支成为现有列表中的独立会话，原对话不变；初始继承最多低水位 A 轮，后续沿原 A/B 上下文窗口。数据库使用 `experience.chat_branch_turns` 固定引用，不复制生成或计费事实。远端尚未迁移/发布；部署前先验证并执行 `20261029_conversation_branches.sql`，再发布 Backend → Frontend；出现问题可隐藏入口，但已有分支必须保留可读取继承历史的 Backend，不能直接退回完全旧版。隔离数据库验证：`bash scripts/test-conversation-branches-migration.sh`。
-
-回复点赞同样仅在本地：每条完整角色回复提供48px触区的小图标，可点亮/取消，按会话与真实回复版本保存；分支和重生成各自独立。大厅角色总赞累加角色卡直接点赞与所有回复点赞，同一用户赞不同回复分别计数，取消减回。`20261029_chat_message_likes.sql` 必须在上述分支迁移之后执行，再部署 Backend → Frontend。列表沿原查询读取个人点赞，不复制正文、不增加生成/消费计数。本地浏览器复用 `pnpm test:ui --grep @chat-like`；数据库验收仍用同一隔离脚本。
+按功能的固定验收分组（`@chat`、`@creator`、`@drama` 等）见 [移动端验收说明](packages/ui-tests/README.md)；数据库隔离验证脚本统一放在 `scripts/test-*.sh`，用法见各脚本头部注释。
 
 ```bash
 pnpm typecheck
@@ -136,41 +139,36 @@ pnpm --filter @miniapp/backend video-plaza:seed-sql -- --target test --processed
 
 TEST 视频种子 SQL 只能通过 GitHub Actions `Database Migration` 选择 `environment=test` 单文件执行。工作流会向该次 `psql` 会话注入 TEST project ref 与 Storage 已核验标记；执行脚本会拒绝把 `_seed_test_` 文件用于 production，也会拒绝缺少这些确认值的直接执行。
 
-### 角色创作与空间（2026-10-30，本地集成，未发布）
-
-底部入口顺序为「角色 / 创作 / 中央播放首页 / AI短剧 / 我的」。`/creation` 承接角色创作、收藏和本人作品；`/creation/characters/new` 与 `/:id/edit` 使用真实创作 API。旧 `/create` 图片视频广场及工作室继续保留，通过创作页进入。上传封面、从本人生成作品选封面、文档导入、本地草稿、全屏编辑、AI润色与采用撤回都在同一流程内；预设不提供AI润色。预设区提供四套可多选的固定模板，仅展示名称、适用场景与效果，正文作为服务端静态文本保存；同时支持自写和导入。当前不新增运营配置页面。
-
-作者修改的是卡片：未开聊可以使用更新内容，首次实际发言在开轮事务内绑定卡级不可变版本，已开聊与分支继续沿用该版本。转为私密后停止大厅展示，曾收藏或使用过的人保留使用资格。
-
-2026-11-02新增角色卡AI审核：运营平台一级「角色卡审核」维护prompt正文；输出固定为approved:boolean、reason:string，两字段必须齐全且禁止额外字段。公开/更新公开/私密转公开先审服务端已保存的完整文字资料（含预设/导入文件），通过才CAS发布；私密不调用公开审核。通过静默返回我的创作，拒绝提示原因并保稿，服务/格式异常可重试但不放行。已有公开版本/已聊快照和运营禁用/归档不变。历史待审的处置独立于新提交的AI审核。运营同页提供「测试审核」：粘贴角色资料，使用当前未发布正文试跑，展示通过/原因及固定结构校验；不写正式规则或角色。旧人工待审页面及人工通过/驳回HTTP入口已退场。迁移和实际部署状态见本任务验证记录。
-
-他人使用作者卡的真实扣费按40%奖励至作者专项星尘，免费/失败不发；自用8折与VIP取更优惠者、不叠加、不发自身奖励。资金与退款回收均在原计费事务中，界面模拟不代替账务验证。
-
-固定移动端验收：`pnpm test:ui --grep @creator`，场景含创建发布、失败重试、封面生成回流、润色截断采用和撤回。卡级权限/上下文验证：`bash scripts/test-creator-characters-local.sh`；计费验证复用 `bash scripts/test-first-token-fallback-local.sh`。隔离本地数据库通过不代表TEST或生产已迁移。迁移及部署顺序见 [迁移目录说明](packages/shared/migrations/README.md)。AI润色复用主项目OpenRouter配置与明确模型，不读取独立Lab密钥；真实供应商和生产存储需部署前验证。
-
 ## 5. 环境变量
 
 不要提交真实 `.env`。浏览器端 `NEXT_PUBLIC_*` 与 `VITE_*` 会进入 bundle，不能存放 secret。完整变量以各包 `.env.example`、源码读取点和部署平台为准。
 
 ### Backend 主要变量组
 
-| 类别          | 变量                                                                                                                                                                                              | 说明                                                                                                            |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| Runtime/CORS  | `NODE_ENV`, `PORT`, `FRONTEND_URL`, `ADMIN_PLATFORM_URL`                                                                                                                                          | 服务环境、端口和允许来源                                                                                        |
-| 数据库选择    | `DATABASE_ENV`, `TEST_*`, `PROD_*`, `DATABASE_URL`, `DIRECT_URL`, `SUPABASE_*`                                                                                                                    | 测试/生产项目、连接与 service role；`ALLOW_PROD_DATABASE` 仅紧急人工操作                                        |
-| Telegram      | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `BOT_INTERNAL_SECRET`, `TELEGRAM_COMMUNITY_BOT_TOKEN`                                                                                            | Bot、webhook 和内部调用鉴权                                                                                     |
-| CS 服务       | `CS_SERVICE_URL`, `CS_SERVICE_SECRET`                                                                                                                                                             | 独立客服服务（ST_cs_platform）地址和共享密钥；Bot 转发与 `/api/support/*` 代理使用，`CS_SERVICE_ENABLED` 已废弃 |
-| LLM           | `LLM_UPSTREAM_URL`, `LLM_API_KEY`, `OPENAI_API_KEY`, `LLM_DEFAULT_MODEL`                                                                                                                          | 生成上游与默认模型                                                                                              |
-| Voice         | `DEEPSEEK_*`, `MINIMAX_*`                                                                                                                                                                         | 语音文案与 TTS；关键 key 缺失时语音不可用                                                                       |
-| Payment       | `PAYMENT_ENABLED`, `PAYMENT_BASE_URL`, `PAYMENT_MERCHANT_ID`, `PAYMENT_MERCHANT_PRIVATE_KEY`, `PAYMENT_PLATFORM_PUBLIC_KEY`, `PAYMENT_NOTIFY_URL`, `PAYMENT_RETURN_URL`                           | 支付开关、商户和签名/回调                                                                                       |
-| Telemetry     | `SENTRY_*`, `LOG_LEVEL`, `LOG_PRETTY`                                                                                                                                                             | Sentry 和日志                                                                                                   |
-| Feature/asset | `DEFAULT_USER_AVATAR_URL`, `CHARACTER_STORAGE_BUCKET`, `CHAT_HISTORY_SYNC_ENABLED`, `LOBBY_RANKING_REFRESH_ENABLED`, `VIDEO_PLAZA_WORKER_ENABLED`, `VIDEO_PLAZA_*`, `FFMPEG_PATH`, `FFPROBE_PATH` | 资源和运行开关；视频 worker 默认关闭，本地需 ffmpeg/ffprobe 在 PATH 或显式配置路径                              |
+| 类别          | 变量                                                                                                                | 说明                                                                                                            |
+| ------------- | ------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Runtime/CORS  | `NODE_ENV`, `PORT`, `FRONTEND_URL`, `ADMIN_PLATFORM_URL`, `FRONTEND_ALLOWED_ORIGINS`                                | 服务环境、端口和精确允许来源；额外来源逗号分隔，不接受路径或通配符                                              |
+| 数据库选择    | `DATABASE_ENV`, `TEST_*`, `PROD_*`, `DATABASE_URL`, `DIRECT_URL`, `SUPABASE_*`                                      | 测试/生产项目、连接与 service role；`ALLOW_PROD_DATABASE` 仅紧急人工操作                                        |
+| Telegram      | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `BOT_INTERNAL_SECRET`, `TELEGRAM_COMMUNITY_BOT_TOKEN`              | Bot、webhook 和内部调用鉴权                                                                                     |
+| CS 服务       | `CS_SERVICE_URL`, `CS_SERVICE_SECRET`                                                                               | 独立客服服务（ST_cs_platform）地址和共享密钥；Bot 转发与 `/api/support/*` 代理使用，`CS_SERVICE_ENABLED` 已废弃 |
+| LLM           | `LLM_UPSTREAM_URL`, `LLM_API_KEY`, `OPENAI_API_KEY`, `LLM_DEFAULT_MODEL`                                            | 生成上游与默认模型                                                                                              |
+| Voice         | `DEEPSEEK_*`, `MINIMAX_*`                                                                                           | 语音文案与 TTS；关键 key 缺失时语音不可用                                                                       |
+| Payment       | `PAYMENT_ENABLED`, `PAYMENT_RETURN_URL`, `PAYMENT_NOTIFY_URL`, `TTZF_APP_ID`, `TTZF_APP_KEY`, `TTZF_BASE_URL`       | TTZF 易支付；应用 ID/密钥也需配置到对账 Worker 与过期 Cron。关新建单不停止已配置订单的通知/查单恢复。           |
+| Admin CLI     | `ADMIN_CLI_ALLOWED_EMAILS`                                                                                          | 运营平台 CLI 免密登录白名单（逗号分隔邮箱）；为空时 CLI 登录接口关闭                                            |
+| Telemetry     | `SENTRY_*`, `LOG_LEVEL`, `LOG_PRETTY`                                                                               | Sentry 和日志                                                                                                   |
+| Feature/asset | `DEFAULT_USER_AVATAR_URL`, `CHARACTER_STORAGE_BUCKET`, `CHAT_HISTORY_SYNC_ENABLED`, `LOBBY_RANKING_REFRESH_ENABLED` | 资源和运行开关                                                                                                  |
+
+Venice 使用 `VENICE_API_BASE_URL` / `VENICE_API_KEY`，Surplus Intelligence 使用 `SURPLUS_API_BASE_URL` / `SURPLUS_API_KEY`；供应商凭据只配置在 Backend，不得放入前端环境变量。
+
+Surplus Intelligence 的官方默认 API 为 `https://api.surplusintelligence.ai/v1`，现有内部 provider 标识 `surplus` 保持兼容。聊天调用明细写入 `experience.surplusintelligence_chat_history`，保存实际非正文参数及按来源过滤的响应元数据；会话正文和账务结果仍归 `chat_history`。启用前必须先执行并验证完整兼容迁移 `20261110_surplusintelligence_chat_history_compat.sql`（原文件保留不改），再部署应用、通过运营 CLI 发布模型配置，具体顺序与恢复见 [迁移说明](packages/shared/migrations/README.md)。仓库实现不代表远端迁移或真实供应商验收已完成。
 
 开发 bypass（如 `MOCK_AUTH`、`DEV_AUTH_BYPASS`）禁止在 production 启用。
 
+视频创作还使用 `VIDEO_PLAZA_WORKER_ENABLED`、`VIDEO_PLAZA_*`、`FFMPEG_PATH` 与 `FFPROBE_PATH`；worker默认关闭，部署环境须提供ffmpeg/ffprobe。视频目录/报价/提交与结果展示继续复用影像广场链路。
+
 ### Frontend
 
-主要包括 `NEXT_PUBLIC_API_URL`、`NEXT_PUBLIC_DEFAULT_USER_AVATAR_URL`、`NEXT_PUBLIC_SENTRY_DSN`、`NEXT_PUBLIC_SENTRY_ENVIRONMENT`。仓库当前有本地 `.env.local`，不得把其中值复制到文档或日志；新增变量应补安全的 example 模板。
+主要包括 `NEXT_PUBLIC_API_URL`、`NEXT_PUBLIC_DEFAULT_USER_AVATAR_URL`、`NEXT_PUBLIC_SENTRY_DSN`、`NEXT_PUBLIC_SENTRY_ENVIRONMENT`；可选 `NEXT_PUBLIC_DRAMA_STREAM_ORIGIN`（短剧 Stream 播放域名，仅用于 preconnect，本地不配不影响功能）；可选 `NEXT_PUBLIC_DRAMA_IOS_HLSJS`（设为 `true` 时，iOS 短剧播放在设备支持 `ManagedMediaSource` 时改用 hls.js 低档起播；未设置或非 `true` 默认关闭，走现有原生 HLS）。仓库当前有本地 `.env.local`，不得把其中值复制到文档或日志；新增变量应补安全的 example 模板。
 
 ### Admin
 
@@ -185,12 +183,6 @@ Admin Vercel Preview 在构建期固定 API 映射：普通 branch Preview 与 `
 
 ## 6. Supabase 与数据库迁移
 
-签到零点更新（2026-10-30，本地已验证，未发布）：`20261030_checkin_calendar_day.sql` 将领取资格改为北京时间每天 00:00 恢复；旧记录无需回填，VIP/新用户/老用户金额沿用配置，不清空已领余额。先 TEST/生产逐环境迁移，再发布 Backend/Frontend。个人中心跨零点回读服务端资格；回归复用 `bash scripts/test-vip-billing-migrations.sh`（无本机 PostgreSQL 时使用隔离 Docker PG17）及 `pnpm test:ui --grep @profile`。
-
-短剧目录复用 `/api/dramas` 的完整标题、标签、简介，在前端做搜索／分类交集和排序。剧级文字逐字段采用 `dramas → 同剧 ai_results → 空值`；“最新”采用可播视频最早的 `created_at`，推荐保留接口顺序。`20261026_drama_video_created_at.sql` 仅计划用于 TEST：为已核验的 577 条存量按来源／消息升序补录展示时间，新增视频由独立上传端在首次上传成功时写入（本仓库不改该脚本）。先迁移验收，再发布 Backend／Frontend；当前远端执行状态和验证限制见[任务记录](.trellis/tasks/10-26-drama-mvp-search-latest/verification.md)，字段及恢复约定见[短剧目录契约](.trellis/spec/database/supabase/drama-catalog.md)。
-
-本地待评审短剧新版以 `/` 沉浸首页、`/dramas` 双列剧场为两个入口，角色发现位于 `/characters`。公共底栏统一为「角色 / AI短剧 / 中央播放首页 / 生成 / 我的」五入口，共享高度、安全区与隐藏规则，角色和影像内部交互保持独立。所有短剧由官方发布，不提供博主关注。收藏/续看仍保存在本设备；点赞与评论通过鉴权互动 API。新表和 RPC 仅在 `drama_archive`，发布须先执行 `20261027_drama_interactions.sql`；当前未执行线上迁移/发布。隔离验证：`bash scripts/test-drama-interactions-migration.sh`（需本机 Docker 与 postgres:17）；固定手机验收：`pnpm test:ui --grep @drama`。详见[本轮验收记录](.trellis/tasks/10-27-drama-mobile-ux/verification.md)。
-
 ```bash
 pnpm supabase:start
 pnpm supabase:status
@@ -199,37 +191,11 @@ pnpm supabase:link:test
 ```
 
 - `packages/shared/migrations/` 是唯一 SQL migration 来源；不要复制到 `supabase/migrations/`。
-- 聊天计费资格按 `chat_history.llm_charge_id` 查找，需先执行 `20261027_chat_charge_lookup_index.sql`（TEST→生产、CONCURRENTLY、无外层事务）；高频查询须核对生产计划，取消轮询不得读取完整 prompt。
 - `supabase/config.toml` 的 migration schema path 当前不会自动重放 shared migrations，因此本地 reset/push 不代表项目迁移链已完整执行。
 - 远端 migration 默认通过 [`.github/workflows/db-migrate.yml`](.github/workflows/db-migrate.yml) 的手工 `workflow_dispatch` 单文件执行；保留项目 ref 校验、production 明文确认和环境并发锁。先测试后生产，每一步记录前后结构、RLS/grants、关键读写、锁/容量和回滚。
 - 2026-09-10 起新 migration 使用 `YYYYMMDD_描述.sql`；workflow 以 `psql --file` 执行，并在 `supabase_migrations.repo_migrations` 中按 filename/checksum 查重和记账。历史三位编号文件已冻结且可能重号，不得按编号推断环境状态。
 - 测试库与生产库不保证同构。数据库结构参考必须标注环境、时间和证据，不能拿 migration 当实库快照。
 - 详细规则见 [Supabase spec](.trellis/spec/database/supabase/index.md)。
-
-OpenRouter 调用事实由 `experience.openrouter_chat_history` 保存，消费 11 个厂商原名字段（`usage_cache` 可缺失，0 保留），`llm_generation_id`/`llm_generation_data` 保持现名。本地 Backend 已停止读写主表 12 个调用列；正常对话读取显式业务投影，上游前保存快照/对应 provider 占位，首次 ID 持久化后再转发该 chunk；已收到正文不会因 metadata 写失败清空。主表业务 `llm_finish_reason`、正文/历史和计费事实继续保留，Venice 从自己的明细提供 ID，mapper/表结构不变。
-
-发布顺序为无旧依赖 Backend → 所有共享库旧 writer 退出/窗口覆盖 → catch-up 与 provider 视图 → 独立 contract。2026-10-16 新增 `20261016_openrouter_chat_history_drop_legacy_aliases.sql`，仅删除 OpenRouter 专表 11 个重复 `llm_*` 别名，保留 11 个原名字段、`llm_generation_id`/`llm_generation_data`、FK/唯一/权限；NULL metadata 可正常待回捞。专表 contract 可先于主表 12 列 DROP，但两者各有门禁，主表未知旧 JSON/历史治理守卫不会被绕过。TEST catch-up/views 已记账，不重跑；PR430 已合并，dev 已部署 f15fb73d，PR425 等共享旧消费者须独立核对。隔离 PG17/PostgREST 真删两处列不等于真实 TEST/Production 验收；文件/顺序/恢复与剩余历史门禁见 [发布清单](.trellis/tasks/10-15-openrouter-history-extract/production-release-checklist.md)。
-
-文本后处理快照的版本外键需要 `postgres` 执行 `SELECT FOR KEY SHARE`。`20260929_fix_text_postprocess_snapshot_fk_lock.sql` 仅授予 owner `UPDATE(version)` 以满足行锁检查，同时恢复 API 角色最小权限；快照仍由 `ENABLE ALWAYS` 触发器禁止直接修改。账本 `applied` 不代替权限、开轮/重生成及回复回读验收，新迁移仍须逐环境手工执行。
-
-新发送和重生成通过数据库 current-postprocess RPC，在既有开轮事务内读取 `app_core.runtime_config` 的正式指针、校验对应不可变 artifact 快照并写入 `chat_history.postprocess_version`。开轮成功必返回非空版本；配置缺失、协议错版、快照不可用或新 RPC 未部署时拒绝开轮且不调用 LLM，不再因 Backend 冷启动生成永久无版本消息。旧显式 wrapper 的 `NULL=不绑定` 兼容语义保留，旧消息不回填；应用发布顺序为 migration → Backend。
-
-图片广场必须依次手动验证并执行 `20261012_image_plaza_v2.sql`、`20261013_image_plaza_seed_catalog.sql`、`20261013_image_plaza_seed_large_assets.sql` 后才能运行初始数据 apply。`image-plaza:seed` 默认只做工作簿 dry-run；真实写入还要求审核 manifest、明确 `--target test|production`、`--limit 1..500`、原图存储确认，Production 另需显式确认。普通图片保持 20 MiB，已审核 seed 原图允许至 50 MiB；来源权利/内容/元数据审核、test canary 或容量门禁未完成时不得导入。test 导入结果见任务 `10-10-image-plaza-v2`。
-
-图片广场 M1（`20261027_media_plaza_schema_move.sql`）及 PostgREST 暴露已由用户确认在 TEST、Production 完成：8 张图片表和 3 个图片 RPC 已位于 `media_plaza`，Backend 只直连新域，不保留旧 schema 双读。视频广场后续只需按 `20261027_media_plaza_video.sql` → `20261027_media_plaza_video_config.sql` 逐文件先在 TEST 执行并验证，禁止重跑 M1；Production 视频迁移仍需单独审批。视频 seed 必须先对全部 5,097 个 URL 运行 HEAD 估算并人工核对报告与 bucket 配额，apply 还需 `--confirm-size <报告SHA-256>`、明确 `--target`、显式 `--limit 1..500`；B-SEED-1 未关闭前不得实际转存。
-
-图片广场 TEST seed 迁移另见 [离线 SQL 导出与 Storage 迁移方法](ops/image-plaza-seed-migration.md)：不随部署执行；2026-10-20 已授权独立 Storage 本地暂存/并发上传/回读校验阶段，进度以任务和受限 report 为准，尚未执行生产 SQL。新增数据文件不得入 Git；已发现三个历史导出被跟踪，恢复 ignore 不代表清除了历史。
-
-### AI 回复后处理
-
-- `packages/shared/src/api/text-postprocess.ts` 定义草稿、发布、回滚、版本批次和诊断契约；`packages/shared/src/rich-reply-protocol.ts` 是模型富回复协议的唯一事实源，`packages/shared/src/text-postprocess/` 负责确定性编译、固定模块解析与分段处理，不执行网络或数据库 IO。
-- Admin「回复富文本规则」使用独立草稿、发布版本和历史恢复流程。保存不切换正式版本；发布/回滚使用 CAS 与 `request_id`，结果未知先查询请求结果，禁止盲目重试写操作。
-- 同页「解析与兜底」可启用版本化 `rich_reply` 配置：三模块 EOF 收口、标题/副标题与降级文案、标签别名/括号对、协议外层围栏兼容。新配置允许至少一个完整有效选项点击，损坏残余以文字展示；副标题 `{count}` 使用实际选项数。无配置的历史快照沿用 v1/v2 行为。
-- 发布前先逐环境执行 `20261015_rich_reply_recovery_config.sql`，再部署支持协议 artifact v3 的 Backend、Frontend 与 Admin，最后在 Admin 启用、保存、发布。旧客户端不支持 v3，会回退原文；需要回退应用时先发布不含 `rich_reply` 的旧 source。此迁移仅扩展既有 Admin validator，无新表/数据回填，不代表 TEST/Production 已执行。
-- 已发布的 source 与 compiled artifact 作为 `app_core.text_postprocess_versions` 不可变快照原子保存；`app_core.runtime_config.miniapp_text_postprocess_config` 只保存当前正式指针。
-- 每条 assistant 消息绑定自己的 `postprocess_version`。Frontend 按版本批量读取 artifact；缺失、非法、旧消息 `NULL` 或 Worker 失败时只展示完整原始 Markdown，不在客户端编译 source，也不选择最新版本替代。
-- 流式阶段继续显示安全 Markdown；服务端终态后才挂载共用 `ReplyRenderer`。可信 choice 只在最新完整回复上调用正常发送链路，并有同步防双击。
-- TEST/PR 的 Admin 工作台与 Telegram 真机链路已验收；这不代表 Production migration、发布或未覆盖失败场景已完成。
 
 ## 7. 部署拓扑
 
@@ -250,14 +216,15 @@ OpenRouter 调用事实由 `experience.openrouter_chat_history` 保存，消费 
 - Backend route 保留 `@frontend-ready` 注释；LLM 生成/计费走 `features/generation`；运行时配置走 `platform/runtime-config.ts`。
 - 服务日志使用 Pino，原始错误记录 `{ err }`；只记录 allowlist 请求字段、结果摘要、耗时和链路，不记录 token/密钥/完整敏感正文。
 - 设计优先复用稳定能力和最小充分实现。可靠性基于真实故障模型；重试有限且只用于安全操作，关键写入评估幂等、并发和补偿。
+- 运行时代码单文件 ≤500 行、单函数 ≤120 行，`pnpm lint:complexity` 在 CI 阻断新增超标；存量超标见 `scripts/complexity-baseline.json`，改到时顺手拆小。定期复盘用 `pnpm complexity:report`。
 
 详细规则见根 [`AGENTS.md`](AGENTS.md) 与 [`.trellis/spec/`](.trellis/spec/)。
-
-文字回复等待超过 8 秒显示等待提示；“取消本次回复”调用受鉴权的服务端取消接口，确认该轮终态后恢复发送，并在最新未成功回复下显示“重新生成”，复用原用户输入。断网/离页只停止本地读流。取消与正常完成以数据库条件更新决定先后，取消待确认时保留重试入口；详情读取负责回收超过 120 秒的残留生成状态。此修复不需要数据库迁移，发布顺序为 Backend → Frontend，TEST/Preview 的真机、SSE 与钱包/免费额度验收通过后才能规划生产发布。
 
 ## 9. Trellis 开发流程
 
 非琐碎任务：创建 task → 编写/审核 PRD → 复杂任务补 design/implement/task → 配置 context → `task.py start` → 实施/检查 → spec 更新 → 提交/归档。
+
+任务最后一次提交超过 14 天后用 `python3 .trellis/scripts/archive_stale.py --apply` 归档。归档目录写在 `.ignore` 里，AI/ripgrep 默认搜不到；查历史用 `rg -u`。功能上线状态、发布顺序等过程记录写在任务目录，不写进本 README。
 
 规划必须回答复用调研、故障模型、高可用措施适用性、最小方案、兼容/迁移/回滚和失败路径验证。不要把“高可用”当作堆叠基础设施的理由，也不要用“简洁”省略必要安全与恢复。
 
@@ -272,8 +239,12 @@ OpenRouter 调用事实由 `experience.openrouter_chat_history` 保存，消费 
 
 - [系统架构](docs/ARCHITECTURE.md)
 - [首 token 兜底、数据口径与人工观察](docs/first-token-fallback.md)
-- [Grafana 用户首 token 业务看板](docs/grafana/chat-first-token.json)：客户端首字交付耗时、每型号兜底触发率与超时率（v4当前标准见文末）；读取授权通过 `20261023_grafana_first_token_reader.sql` 正式迁移。
+- [Grafana 看板说明](docs/grafana/README.md)：经营核心 `st-model-overview`，工程看板 `st-engineering-pages/roleplay/drama/backend`（首字与兜底在 roleplay）
+- [短剧播放耗时排查](docs/drama-playback-timing.md) · [短剧 CDN 对照发布](ops/drama-cdn-rollout.md)
+- [MiniApp 开屏性能](docs/miniapp-startup-performance.md)
+- [数据库迁移目录与发布顺序](packages/shared/migrations/README.md)
 - [Railway 运维](ops/railway/README.md)
+- [支付上游探测与新增策略](docs/payment-availability-probe.md)
 - [后端日志与可观测性](.trellis/spec/backend/app/data-reliability-and-security.md)
 - [数据库域与归属](docs/ARCHITECTURE.md#51-数据库九域布局media_plaza-m1-之后)
 - [Trellis 工作流](.trellis/workflow.md)
@@ -281,62 +252,22 @@ OpenRouter 调用事实由 `experience.openrouter_chat_history` 保存，消费 
 - [Shared spec](.trellis/spec/shared/contracts/index.md)
 - [Supabase spec](.trellis/spec/database/supabase/index.md)
 
-### OpenRouter 历史诊断清退补充
+短剧推荐列表置顶环境清单中的 30 部剧。所有账号播放清单指定单集时使用 Cloudflare Stream，播放其他单集时使用 Supabase。配置、重试与验收见[短剧播放来源](docs/drama-stream-ab.md)。iPhone 真机操作见[点播采样工具](scripts/ios-drama-sampler/README.md)。
 
-T10 新增 `20261016_openrouter_history_disposition.sql`，先按现有mapper白名单保全类型化调用事实/受控诊断，丢弃其余历史诊断并清父表旧JSON；不改正文/业务终态/账单/额度。已有OR诊断同样规范化，Venice明细不写。更新尚未在两库执行的主表DROP：依赖处置成功账本，将引入snapshot前的旧终态/dedup/失败/pending明确分类，保留旧pending和原幂等键，不以settled_at为空误判或补写假结算。现代未知/冲突/未收口旧字段仍拒绝。TEST先处置、验证后再DROP；超过2000候选拒绝，Production另审批次，不重跑已记账文件。用户已明确忽略作废PR425。详见任务发布清单与T10报告，代码声明不代表已在远端处置。
+### VIP 混合奖励（2026-11-05）
 
-当前首 token 竞争策略为首发派发后默认4秒启动兜底、原首发继续，两路共同受10秒首字总上限约束；兜底默认2秒参数用于预留提前启动预算，不是运行硬截止。赢家确定即取消败方，原价格权益只结算一次。总时间包含前置/网络/界面交付；思考模式同样受约束。迁移先TEST后生产，本地代码完成不代表已上线。详见[运行与数据口径](docs/first-token-fallback.md)。
+`20261105_vip_mixed_rewards.sql` 先经测试环境再生产执行，随后发布应用，最后通过运营 CLI 发布混合签到与开卡赠礼配置。旧签到数字及旧订单继续兼容；开卡奖励使用订单两钱包快照，同事务入账且不增加实付收入。回退先恢复旧配置，保留混合发放支持处理在途订单。详见 `.trellis/tasks/11-05-vip-mixed-rewards/`。
 
-新轮首 token 可见确认与计费：`20261026_first_token_visible_billing.sql` 将客户端真实可见回报加入既有计费资格判断；服务端完成而客户端超时无字时不扣星尘、不消费免费次数。缺报 pending 后保守免收，既有 sync 依据 RPC 实际 pending 保留回捞；存量政策不改。超时采用灰色轻提示。详见 `docs/first-token-fallback.md`。
+支付接入：TTZF 易支付建单不发送可选 `param`，回调与查单不要求回传该字段；环境隔离依赖独立回调地址、应用凭据及数据库，本环境订单仍需通过签名、商户、渠道、交易号及金额校验。见 `ops/railway/README.md`。
 
-Grafana 经营统计的轻量口径、刷新预算及发布恢复流程见 [docs/grafana/README.md](docs/grafana/README.md)。真实首字体验看板与经营日汇总分别服务用户体验与经营判断。
+支付上游探测采用独立 `stminiapp-payment-availability-probe` Cron，默认每半小时一次 1 元待支付建单，不保存本地订单。仅 `PAYMENT_PROBE_ENABLED=true` 开启，默认关闭；`PAYMENT_PROBE_CHANNEL` 默认支付宝，探测 IP 自动获取本机 IPv4，无需配置。策略注册位于 `features/payment/availability/strategies/index.ts`，默认复用共享飞书告警。使用与扩展见 [探测说明](docs/payment-availability-probe.md)；仓库配置不代表远端已启用。
 
-文字回复主动停止：新版客户端显式发送 `reason=user_stop`，后端持久化 `user_cancelled`；已冻结原价的轮次按所选型号原权益结算，免费轮消费免费次数，不增加扣费弹窗。自动首字截止传 `first_token_timeout`，系统超时/失败继续免扣。历史请求策略不回填；新请求即使省略原因也由后台策略与截止事实裁决。尚未受理/报价前取消不伪造账单。发布顺序为 `20261026_user_stop_billing.sql`（TEST后production）→ Backend → 新Frontend；只回退前端停止产生新标记，保留已产生标记的结算能力。
+查单响应兼容厂商返回 `pid: null` 或省略 pid，有值时仍核对应用 ID；查单请求凭据、回调 pid/签名和订单结算校验保持必需。
 
-## 历史：可恢复交付协议 v3（2026-10-27）
+### 聊天回复负反馈
 
-本节取代旧版“当前未可见→自动取消/免单”的运行规则。后端4秒首发、2秒兜底、10秒总首字预算仍由正式配置决定；模型在预算内选中有效首字后立即放行，意图/身份持久化与传输并行，结算前必须确认。断连写入返回false，不冒充客户端已收到；断连不终止生成。
+回复点踩通过独立鉴权接口保存到 `experience.chat_reply_feedback`，空原因可提交，固定回复/编辑版本去重并保留当轮快照。只在面板打开时读取，不进入生成、计费或角色评分链路，无运营页面。迁移顺序、权限和批量分析口径见 [聊天回复反馈](docs/chat-reply-feedback.md)。
 
-客户端v3记录真实接收/显示时间，收到后视口未显示不触发取消；hidden/page_left是观测中断，返回实际显示可更新记录且保留后台标记。前台超过预算未收到的事实锁存，不因后续可恢复而抹除。新策略拒绝旧页面的first_token_timeout取消指令；真实截止由生成服务控制，明确user_stop仍走原价一次结算。
+### 幕间入口与归因（本地接入）
 
-回复恢复复用有权限的会话详情与原活动轮询。活动快照最多128轮、125秒，每轮正文256Ki字符/公开思考64Ki字符，按user/session/revision隔离；一次first_token_preview检查点最多2048字符，最终正文仍由chat_history持久化。跨实例/进程重启读取检查点和最终结果，不宣称进程内快照持久。公开思考不写入正文或后续prompt。
-
-recoverable_delivery仅新Backend显式启用；旧请求/终结账单不回填、不追扣。离页/后台已完整保存且可取回的正常回复不免单；真实系统截止/前台无接收超时免费，主动停止原报价原权益一次。缺回报继续pending，预算+15秒仍缺报按保守免单处理，避免服务端完成先扣费而客户端随后报告失败。只有思考无完整正文不自动收费。内部billing gate复用visible返回值表示已满足该轮交付策略，并非声称用户当时正在看。
-
-唯一新增迁移20261027_recoverable_chat_delivery.sql：experience拥有策略/首字检查点，billing资格函数读取事实；analytics只追加无正文的策略/时刻/失败锁存字段。无新cron、逐token数据库写、业务回填或公开权限。先TEST、后生产迁移、后Backend/Frontend。回退保留新增对象和终账，必要时forward-fix。
-
-验证：本任务release-review记录自动化、真实PG、TEST流/浏览器和生产版本证据；测试通过不等于线上1%目标已达成。看板v3区分前台等待超时与系统无首字截断，显示分布只用浏览器业务侧实际时长，后台/缺报不填0。
-
-## 客户端首字交付 v4（2026-10-28）
-
-新客户端用 `client_committed_v4` 替换屏幕可见检测：提交动作 → 本轮正文或已开启的公开思考首次提交到 React 消息界面状态。它是业务侧交付口径，不是像素/阅读证明。滚动位置、气泡是否在视口、思考是否折叠均不参与；received 仅供分段排查，不能取消截止。提交时间达到当轮 deadline 即归超时，计时器延迟不能变成超时后的成功。
-
-send/regenerate 携带可选 `first_token_measurement`；后端通过既有 begin RPC 的同一次 INSERT 写入现有 measurement_method，缺报请求仍属于 v4。每轮首次结果不可改写；离页/后台独立终态，生成仍可继续并在返回时恢复。迟到回复可展示但不改写已超时记录。旧 v1-v3 保留兼容，历史独立筛选。
-
-统计复用现有 first_token_visible_ms 列承载按版本定义的时长，不增加表、cron、轮询或逐 token 写入。主指标为前台已知结果的无字时间截断率；成功分布只取截止前已交付样本，离页/缺报及覆盖率同时显示。后台和缺报不能当成功，不用服务端或供应商 latency 填补客户端数据。v4只改变观测口径；最新竞争策略见后文，总首字上限10秒与1%目标保留。
-
-系统超时免费、免费预留释放；主动停止沿原报价/权益一次结算。计费继续用一次交付结果和服务端持久化终态保障正确性，不依赖滚动/阅读。已结算记录只补调用元数据，不重进计费；归档明细依永久去重返回显式 archived 终态，不重扣、不伪造账单；failed 进入已有有界退避。缺报沿用原预算+15秒保守收口，不增加新计费任务。
-
-迁移为 `20261028_client_committed_first_token.sql`、`20261028_llm_archived_charge_result.sql`，均仅替换既有函数，保留 ACL 和历史数据。先 TEST 验证、合 dev，再生产迁移 → Backend → Frontend/看板。发布证据见任务 release-review；1%是否达成须由上线后的 v4 样本判断。
-
-## 首发与兜底竞争交付（2026-10-28）
-
-首发实际派发后达到型号阈值（默认4秒）启动兜底，首发继续；两路共用原10秒首字截止，任一路先出现有效正文或已开启公开思考即锁定唯一赢家，立即中止败方。`fallback_timeout_ms`字段保留兼容，默认2000仅作为前置过慢时提前启动兜底的预留时间，不再是兜底自身硬截止。同型号不并发重复请求，可等到总截止；首发明确失败只允许一次顺序兜底。历史阶段预算不回填，新旧策略按实际发布时刻分窗；客户端仍用v4，总耗时不相加两路并行等待。
-
-只消费赢家的replay与原charge_id结算，原报价/权益、超时免扣、主动停止和离页恢复规则不变。败方立即取消，不为排查drain；只把已接收的正文/公开思考有界片段和race_lost原因并入原attempt一次异步终态写，不发给用户、不进上下文、不另计费。正常attempt最多派发/终态两次observe；删除旧首发额外元数据补读，无新cron/轮询。diagnostic保存不阻塞首字，赢家身份仍须持久化才能结算。
-
-新迁移`20261028_first_token_race.sql`扩展现有attempt诊断列并解除禁止首发回赢的守卫，保留数据库单赢家CAS/PT409；Grafana仅获原指标列权限，不能读诊断正文。先本地与TEST验证、合dev，再生产迁移和应用/Admin/看板。回退应用保留诊断列与原账务，不扩权限，不改历史数据。
-
-## 六秒预算与有限补报（2026-10-29）
-
-生产运营目录版本97已由用户发布：总首字上限6000ms、启用型号启动兜底阈值2000ms；停用型号保留原值。本次代码发布不覆盖该配置。Shared全局缺省改为6秒，新增型号仍默认4秒；正式配置与每轮冻结值优先。首发继续参与竞争，先出有效正文或已开启公开思考首字即锁定赢家并立即停止另一方。只有首字受截止约束，完整回复不受6秒限制。此前10秒样本保留原冻结预算，分析时分窗。
-
-SSE start携带当轮冻结总预算。客户端若持有旧目录缓存，按原点击时间修正剩余等待，不从收到start重新计时，也不改写已产生的首份终态。离页/后台仍是独立结果，后台生成与返回恢复保持原行为。
-
-首份结果沿用原回报API，浏览器按Telegram用户暂存未确认的标量回执，不保存正文、凭证或授权信息；最多20条、24小时过期。保留即时最多3次尝试，耗尽后最多再补1次；每次包括排队和body最多3秒。成功即删除；启动、联网、返回前台触发串行补发，每次最多4条、30秒冷却，无定时轮询或服务端扫描。进程被强杀且尚未产生终态仍可能缺报，不能补成成功。
-
-早于SSE身份的非成功v4终态可用原request_id上报。既有RPC按现有client_request_id索引最多读取2条，校验用户与会话且唯一时才定位；歧义不猜，成功结果仍必须有消息编号与revision。首份终态后的重放不UPDATE。迁移20261029_first_token_receipt_recovery.sql仅替换既有函数；不增加表、索引、cron、逐token写入或历史回填，不改变超时免扣、主动停止及正常回复一次计费。
-
-发布顺序：本地PG/测试→TEST迁移与应用验收→先合dev→生产迁移→Backend/Frontend/Admin→Grafana说明；配置只读核对版本97。回退应用保留兼容RPC，必要时前向修复，不删除账务。
-
-最近十轮消息编辑/单条删除：`pnpm preview:ui` 选择「消息编辑与删除」，固定验收 `pnpm test:ui --grep @chat-edit`。原会话和分支互不影响，双方消息可改，只删选中单条。部署前先按迁移README验证并执行 `20261102_chat_message_overrides.sql`。
+幕间复用短剧 API；两端进入事实、精准 CORS 来源、迁移与本地验收见 [幕间接入说明](docs/mujian-integration.md)。新增迁移与应用发布分开，未执行线上迁移或部署。

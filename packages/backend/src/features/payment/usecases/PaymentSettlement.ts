@@ -1,14 +1,15 @@
+import { epayAmountCents, isEpayOrderId } from '../../../infrastructure/payment/epay-protocol.js';
+import { observation } from '../../../platform/observability/runtime.js';
 /**
  * backend / features / payment / usecases / PaymentSettlement.ts
  *
- * 支付入账的唯一出口。四个入口共用这里：
- *   - 异步通知      routes/payment.ts  POST|GET /api/payment/webhook/zqpay
- *   - 同步回跳      routes/payment.ts  GET /api/payment/return
- *   - 前端轮询查单  routes/payment.ts  GET /api/payment/orders/:id
- *   - 判过期前查单  scripts/expire-payment-orders.ts
+ * 支付入账的唯一出口。所有可信确认都走这里：
+ *   - Webhook        routes/payment.ts  GET /api/payment/notify/ttzf（验签）
+ *   - 前端轮询/回跳  routes/payment.ts  GET /api/payment/orders/:id、GET /api/payment/return（主动查单）
+ *   - 对账任务       features/payment/usecases/PaymentReconciliation.ts（有限并发查单）
  *
- * 厂商的异步通知不保证送达（2026-08-21 实测有整条没推的订单），所以到账不能只挂在
- * 通知上；但多入口就必须共用一条幂等路径，否则会出现重复加星尘。
+ * Webhook 不保证送达，所以到账不能只挂在通知上；但多入口就必须共用一条幂等路径，
+ * 否则会出现重复加星尘。回跳 URL 参数不签名，永远不直接作为入账依据。
  */
 
 import type { PaymentOrderStatus, PaymentSettlementSource } from '@miniapp/shared';
@@ -19,9 +20,11 @@ import type {
   MiniappPaymentOrderRepository,
   MiniappPaymentOrderRow,
 } from '../../../infrastructure/repositories/MiniappPaymentOrderRepository.js';
-import type { ZqPaymentGateway } from '../../../infrastructure/payment/ZqPaymentGateway.js';
+import type {
+  PaymentGateway,
+  PaymentQueryTarget,
+} from '../../../infrastructure/payment/PaymentGateway.js';
 import { paymentSuccessNotice } from '../domain/paymentNotice.js';
-import { observePaymentOrderSettled } from './PaymentOrderTelemetry.js';
 import {
   recordPaymentOperationEvent,
   type PaymentEventRecorder,
@@ -36,7 +39,7 @@ export type SettlementOutcome = 'completed' | 'order_not_found' | 'amount_mismat
 
 type SettlementOrders = Pick<
   MiniappPaymentOrderRepository,
-  'findById' | 'complete' | 'reopenExpired'
+  'findById' | 'complete' | 'reopenExpired' | 'attachProviderTransaction'
 >;
 
 /** credits 历史行在回填前仍认 credits_added；VIP 只认 fulfillment_applied。 */
@@ -54,6 +57,21 @@ export function isOrderFulfilled(
  * credits 历史行在回填前仍认 credits_added。同一订单重放由邀请日志去重。
  */
 export async function settlePaidOrder(
+  ...args: Parameters<typeof settlePaidOrderObserved>
+): Promise<SettlementOutcome> {
+  return observation.observe(
+    'payment.settlement',
+    () => settlePaidOrderObserved(...args),
+    (result) => ({
+      outcome:
+        result === 'completed' ? 'succeeded' : result === 'order_not_found' ? 'rejected' : 'failed',
+      outcome_known: result !== 'failed',
+      error_code: result === 'completed' ? undefined : `PAYMENT_${result.toUpperCase()}`,
+    })
+  );
+}
+
+async function settlePaidOrderObserved(
   input: {
     orderId: string;
     paidAmount: string | undefined;
@@ -96,6 +114,18 @@ export async function settlePaidOrder(
     return 'amount_mismatch';
   }
 
+  if (
+    isEpayOrderId(order.id) &&
+    !(await bindProviderReference(order, input.providerTransactionId, orders))
+  ) {
+    recordPaymentOperationEvent(
+      events,
+      log,
+      settlementEvent(input, source, order, 'failed', 'provider_ref_mismatch')
+    );
+    return 'failed';
+  }
+
   // 确认迟于过期任务时订单已是 expired，但钱是真收了：先放回 pending 再履约。
   // VIP 已履约订单的 credits_added 仍是 false，必须同时看 fulfillment_applied。
   if (order.status === 'expired' && !isOrderFulfilled(order)) {
@@ -109,39 +139,7 @@ export async function settlePaidOrder(
   const started = Date.now();
   try {
     const completed = await orders.complete(order.id, input.providerTransactionId, source);
-    // 终态事件是非关键观测：必须在 complete 成功之后触发，且不得 delay/回滚入账。
-    try {
-      void observePaymentOrderSettled(
-        {
-          orderId: completed.id,
-          userId: order.user_id,
-          paymentType: order.payment_type,
-          settledBy: completed.settled_by,
-        },
-        log
-      );
-    } catch (telemetryError) {
-      log.sys.error(
-        { event: 'payment.telemetry.failed', err: telemetryError, orderId: order.id },
-        '支付终态事件发送失败'
-      );
-    }
-    if (order.status !== 'completed') {
-      try {
-        const notice = paymentSuccessNotice(order);
-        await insertUserNotification({
-          userId: order.user_id,
-          category: 'system',
-          title: notice.title,
-          body: notice.body,
-        });
-      } catch (notificationError) {
-        log.sys.error(
-          { event: 'payment.notification.failed', orderId: order.id, err: notificationError },
-          '支付完成消息写入失败'
-        );
-      }
-    }
+    await notifyPaymentCompletion(order, log);
 
     // 裂变「被邀请人首次付费」奖励。挂在这里而不是各入口，是因为四条入账路径都收敛到本函数。
     // 不按 order.status 跳过重放：判定 RPC 自带幂等，重放反而给上一次失败的判定一次重试机会。
@@ -192,8 +190,8 @@ const lastQueryAt = new Map<string, number>();
  * 返回是否发生了状态变化，调用方据此决定要不要重读订单。
  */
 export async function reconcileWithGateway(
-  order: { id: string; status: PaymentOrderStatus },
-  gateway: Pick<ZqPaymentGateway, 'queryOrder'>,
+  order: PaymentQueryTarget & { status: PaymentOrderStatus },
+  gateway: Pick<PaymentGateway, 'queryOrder'>,
   orders: SettlementOrders,
   log: SettlementLogger,
   source: SettlementSource = 'query',
@@ -204,6 +202,8 @@ export async function reconcileWithGateway(
     recordPaymentOperationEvent(events, log, queryEvent(order, source, 'skipped', null));
     return false;
   }
+  // 新订单没有平台交易号时，仍能按商户订单号找回；旧供应商订单不进入新查单链。
+  if (!isEpayOrderId(order.id)) return false;
 
   const now = Date.now();
   const previous = lastQueryAt.get(order.id);
@@ -219,10 +219,16 @@ export async function reconcileWithGateway(
   lastQueryAt.set(order.id, now);
 
   const startedAt = Date.now();
-  const result = await gateway.queryOrder(order.id);
+  const result = await gateway.queryOrder(order);
   if (!result.success) {
     log.sys.warn(
-      { event: 'payment.query.failed', orderId: order.id, source, reason: result.errorMessage },
+      {
+        event: 'payment.query.failed',
+        orderId: order.id,
+        source,
+        errorClass: result.errorClass,
+        providerCode: result.providerCode,
+      },
       '主动查单失败'
     );
     recordPaymentOperationEvent(events, log, {
@@ -303,9 +309,39 @@ function settlementEvent(
   };
 }
 
-/** 厂商金额是「元」字符串，本地订单是「分」整数。非法格式返回 NaN，让金额校验必然失败。 */
+/** 平台金额是「元」字符串（可能是 "1" 或 "1.00"），本地订单是「分」整数。非法格式返回 NaN，让金额校验必然失败。 */
 export function parseAmountCents(amount: string | undefined): number {
-  if (!amount || !/^\d+(?:\.\d{1,2})?$/.test(amount)) return NaN;
-  const [yuan = '0', fraction = ''] = amount.split('.');
-  return Number(yuan) * 100 + Number(fraction.padEnd(2, '0'));
+  return epayAmountCents(amount);
+}
+
+async function bindProviderReference(
+  order: MiniappPaymentOrderRow,
+  transactionId: string | null,
+  orders: SettlementOrders
+): Promise<boolean> {
+  if (!transactionId) return false;
+  if (order.provider_transaction_id) return order.provider_transaction_id === transactionId;
+  return orders.attachProviderTransaction(order.id, transactionId);
+}
+
+async function notifyPaymentCompletion(
+  order: MiniappPaymentOrderRow,
+  log: SettlementLogger
+): Promise<void> {
+  if (order.status !== 'completed') {
+    try {
+      const notice = paymentSuccessNotice(order);
+      await insertUserNotification({
+        userId: order.user_id,
+        category: 'system',
+        title: notice.title,
+        body: notice.body,
+      });
+    } catch (notificationError) {
+      log.sys.error(
+        { event: 'payment.notification.failed', orderId: order.id, err: notificationError },
+        '支付完成消息写入失败'
+      );
+    }
+  }
 }

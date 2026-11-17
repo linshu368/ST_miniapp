@@ -1,5 +1,13 @@
 # Frontend API、数据流与状态管理
 
+## 会话摘要缓存与入口预算（2026-11-16，本地候选）
+
+`use-session-character.ts` 分离会话行的数据策略与视图；lookup仅以disabled observers复用公开目录/public-head的既有Query key和快照，不发全表请求。持久快照按CharacterSummarySchema、既有24小时TTL及合法savedAt校验，损坏/过期/未来时间删除，storage拒绝只用内存；按数据实际时间合并，不能把读盘时刻伪装成新数据。
+
+缺失详情在entry enrich/导航安静窗后走normal，复用三槽中普通最多两槽；会话行详情staleTime=60秒，gc沿用5分钟，不新增持久化。key必须继续包含viewer与session，绑定character_version_id的会话不得使用当前大厅摘要；其他详情调用的默认TTL/优先级不改。
+
+推荐自动入口open/resume总期限1500ms，手动refresh/undo和手动退回open为5000ms，400兼容尝试共享同一控制器/截止。复用现有450ms公开头hedge和旧批次保留，私人推荐不进入共享公共缓存。分组约定404/503才降平铺，未知500保留错误；groups禁用额外transportRetry，不能重复3秒RPC后才降级。
+
 ## API 层地图
 
 - `client.ts`：唯一通用 HTTP client，拼 `API_URL`、注入 Telegram `X-Init-Data`、解析 shared envelope/错误；只供 `lib/api` 使用。
@@ -10,7 +18,6 @@
 - `generation-config.ts`、`models.ts`、`model-cache-policy.ts`：生成偏好、模型目录/选择和缓存 freshness。
 - `voice.ts`：用户语音配置、会话音频、生成 mutation 和 audio map。
 - `payment.ts`：套餐、下单、订单状态轮询、余额、流水、签到、订单 infinite query。
-- `telemetry.ts`：`GET /api/telemetry/replay-context` 的 React Query hook；失败不得阻断 replay。
 - `settings.ts`、`notifications.ts`、`support.ts`、`invite.ts`、`community.ts`：对应业务域。
 - `growth.ts`：Provider 上报使用的纯请求函数；`use-refetch-on-foreground.ts`：可见性恢复。
 
@@ -48,147 +55,16 @@ SSE：`page → streamConversationTurn(AbortSignal, callbacks) → fetch Readabl
 
 `lib/telegram/init.ts` 初始化 SDK；`auth.ts` 提供 raw initData；`user.ts` 解析最小用户字段；`launch-url.ts` 尽早清理 URL 敏感参数；`hooks.ts/index.ts` 封装运行环境。禁止日志/Sentry/replay 收集完整 initData、支付参数和消息正文。
 
-禁止日志、Sentry 事件、PostHog 事件属性、URL query 和应用错误上报收集完整 initData、支付参数、`pay_url`、token/secret 和消息正文。`sanitizeTelemetry` 只清理已知敏感键，不能替代 Session Replay 的 DOM/输入屏蔽。
+禁止日志、Sentry 事件、URL query 和应用错误上报收集完整 initData、支付参数、`pay_url`、token/secret 和消息正文。`sanitizeTelemetry` 只清理已知敏感键，不能替代 Session Replay 的 DOM/输入屏蔽。
 
 ### Design Decision: Session Replay 聊天正文例外
 
-**Context**: 产品需要在回放中检查流式节奏和 Markdown 呈现；原规则把消息正文从所有 replay 中排除，无法满足该验收。
+**Decision**: 2026-09-15 隐私责任人批准受控例外：用户输入和模型回复可以出现在 Sentry Session Replay **画面**中（`maskAllText: false`）。例外不授权把正文复制到事件、日志或错误上报。支付密码/账号/验证码等输入仍须 browser-side 屏蔽；完整 initData 与 `pay_url` 不得出现在录制 URL 中。2026-11-04 起项目只保留 Sentry Replay（PostHog 录屏与事件已移除）。
 
-**Decision**: 2026-09-15 隐私责任人批准受控例外：用户输入和模型回复可以出现在 Session Replay **画面**中。该例外覆盖即将接入的 PostHog Session Replay，以及现有 Sentry Session Replay（`maskAllText: false`，本期不改）。例外不授权把正文复制到事件、日志或错误上报。支付密码/账号/验证码等输入仍须 browser-side 屏蔽；完整 initData 与 `pay_url` 不得出现在录制 URL 或事件属性中。PostHog Session Replay 保留期以当前套餐上限为准：**当前项目为 Free 套餐，最长 30 天**。60 天仅在升级付费套餐后才可能，不得写成当前能力或验收项。
-
-**Contracts**:
-
-| 通道                                               | 完整 initData / token / secret | `pay_url` 与支付表单               | 聊天正文       |
-| -------------------------------------------------- | ------------------------------ | ---------------------------------- | -------------- |
-| 应用日志、Sentry 事件、PostHog 事件属性、URL query | 禁止                           | 禁止                               | 禁止           |
-| PostHog / Sentry Session Replay 画面               | 禁止                           | 禁止（`ph-no-capture` 或暂停录制） | 允许（已批准） |
-
-**Validation & Error Matrix**:
-
-- 事件 capture 含 message/content/initData/`pay_url` → 丢弃该属性或整事件，不得上报。
-- 支付输入未加屏蔽 → 不得开始/继续录制该控件；第三方无法屏蔽时先 `stopSessionRecording`。
-- Replay SDK 失败 → no-op，不阻断聊天或支付。
-
-**Good / Base / Bad**:
-
-- Good: 回放能看到流式 Markdown；时间线事件只有 session/order/model id。
-- Base: 聊天页录制；充值页敏感输入被屏蔽。
-- Bad: `capture('chat_turn_completed', { text: delta })` 或把 `pay_url` 放进 router query 并继续录制。
-
-**Wrong vs Correct**:
-
-#### Wrong
-
-```ts
-posthog.capture('chat_turn_completed', { content: assistantText });
-```
-
-#### Correct
-
-```ts
-posthog.capture('chat_turn_completed', {
-  telegram_user_id,
-  replay_context_id,
-  conversation_session_id,
-  character_id,
-  selected_model_id,
-});
-```
-
-**Tests Required**:
-
-- T1 无产品代码，不新增自动化测试。
-- 后续 adapter 必须在 runtime schema 拒绝 `content` / `pay_url` / initData 类属性。
-- T7 在 PostHog 检索上述敏感字段应为空，并确认已批准的聊天正文只出现在回放画面。
-- T7 确认项目套餐为 Free、Session Replay retention 为 30 天（套餐与设置截图）；不得按 60 天验收。
-
-**Related**: `.trellis/tasks/09-15-user-behavior-replay/research/t1-decision-record.md`（含 Free 套餐 30 天保留策略）。本期不做 `user_cohort`。
-
-## Scenario: PostHog Session Replay 与支付回流
-
-### 1. Scope / Trigger
-
-- Trigger: 聊天/付费墙需要 Session Replay 与受限事件；Telegram WebView、Next.js 公开变量、web SDK session 轮转和外部支付回流都与默认假设不同。
-
-### 2. Signatures
-
-- Frontend adapter：`createPostHogAdapter()` / `getReplayLifecycle()`；生命周期状态 `idle | chat | recharge | paywall_followup | external_payment_pending | ended`。`recharge` 是独立的主动充值 context，不带聊天身份。
-- Context API：`GET /api/telemetry/replay-context`（Telegram 鉴权，无 query），形状为 `GetReplayContextData`。
-- 回流观察：`observePaymentReturn({ source, route })`；`source` 为 `start_param | query_param | webview_resume`。
-
-### 3. Contracts
-
-- 浏览器公开变量：`NEXT_PUBLIC_POSTHOG_KEY`、`NEXT_PUBLIC_POSTHOG_HOST`（必须 HTTPS，无 userinfo/path/query）。
-- 服务端密钥：`POSTHOG_API_KEY` / `POSTHOG_HOST` 只在 Backend；缺省 no-op。
-- Next.js 只内联静态 `process.env.NEXT_PUBLIC_*`。`readPostHogBrowserEnv` 必须直接读 `process.env.NEXT_PUBLIC_POSTHOG_KEY/HOST`，禁止 `const env = process.env; env.NEXT_PUBLIC_*`。
-- web `posthog-js` 开始新段：先 `sessionManager.resetSessionId()`，再 `startSessionRecording({ sampling, linked_flag, url_trigger, event_trigger })`。`stopSessionRecording()` + `startSessionRecording(overrides)` **不会**轮转 `$session_id`；禁止调用会丢掉 identity 的 `reset()`；禁止把移动端 `startSessionRecording(false)` 用在 web。
-- 录制 owner 在根 `Providers` 的 `ReplayLifecycleOwner`，不能放在会随路由卸载的 `use-chat-session` cleanup。
-- 进入付费墙必须先**同步调用** `enterPaywallFollowup()`（内部立刻置 `paywallHold`），再 `router.push`。`push` **不得** `await` lifecycle 队列 / `whenReady()` / SDK import。continuation 的 `triggerSource` / `returnTo` / `requiredCredits` 在 push 前同步写入；`replay_context_id` 与 `paywall_triggered` 在 queue settle 后补丁，失败则降级，不得挡住跳转。hold/followup 期间忽略 `route_change`/`pagehide`；同角色重绑保持原 `replay_context_id`；回到聊天再 `reenterChatFromFollowup()`。
-- `loadSdk()` / `initPromise` 必须有显式超时（`POSTHOG_SDK_LOAD_TIMEOUT_MS`）；超时视为 `init_failed`，保证 `whenReady()` 有限时间内 settle，lifecycle 串行队列不得被动态 import 永久占住。
-- 打开外部支付前写入 `st.replay.external_payment_pending` 并 `enterExternalPaymentPending()` 同步停录，再 `openLink`。无效支付 URL 不进入 pending；`pagehide`/hidden 证据写回 pending，可信回流后 `resumeRecording()`，不轮转 `$session_id`。新文档只在 pending 未过期且有离开证据或显式回流时恢复 MiniApp 内录制，不伪造聊天身份；初次跳转订单页不能立即恢复。Telegram 冻结恢复时 URL 通常不变；根上 visibility/focus/pageshow 在有离开证据时发一次 `payment_return_observed(return_source=webview_resume)`。同一 `order_id` 去重；普通前后台、刷新、VPN 弹窗 focus 不误报。
-- `pay_url` 只进 order-id keyed 的短 TTL `sessionStorage`，不得进 router query / 事件属性 / 回放 URL。
-
-### 4. Validation & Error Matrix
-
-- 缺 KEY/HOST 或 host 非 HTTPS → adapter `missing_config`/`invalid_host` no-op，聊天/支付继续。
-- SDK 动态 import 超时或抛错 → `init_failed` no-op，聊天/支付继续；`whenReady()` 必须 settle。
-- `startNewRecording` 以 `sessionRecordingStarted()` 为准，不得把 SDK 调用返回值当成已在录。
-- capture 含禁止键（`content`/`pay_url`/`initData` 等）→ runtime schema 丢弃。
-- 个人中心「星尘充值」点击同步保留主动充值 context；SDK 尝试启动录制后发送 `recharge_entry_clicked`（`entry_source=profile_balance`），充值页事件等待同一启动尝试。不能给它伪造聊天会话。`onClick` 不得 `await whenReady()`/`init`；SDK 未配置或失败时链接照常跳转。不得与 `recharge_viewed` 混为一项。
-- `register_for_session` 的聊天属性会自动进入后续 PostHog 事件；Replay 真正结束且 `replay_chat_ended` 发出后需用 `unregister_for_session` 清理四个聊天关联属性。主动充值在 SDK 就绪后再清理一次，以覆盖初始化前 no-op 和页面重载留下的旧值；聊天 followup 期间不得清理。
-- 无真实 `conversationSessionId` → 不 `startChatReplay`。
-- 未配置 Backend `POSTHOG_API_KEY` → 不发服务端终态事件，也不反查用户；结算仍成功。
-- pending 订单与 `payment_flow_left_observed` 都不是支付失败。
-
-### 5. Good/Base/Bad Cases
-
-- Good: 两张角色卡两条 `$session_id`；付费墙到充值同一 `replay_context_id`；切回 Telegram 且 URL 不变时一次 `payment_return_observed` 与 status 事件同一 `order_id`。
-- Base: Preview 注入公开变量，Production 留空即关闭；Sentry Replay 维持现有 100% / `maskAllText: false`。
-- Bad: 经 `process.env` 对象读公开变量导致 Preview 零 recording；`enterPaywallFollowup` 排队后被 occupancy `route_change` 掐断；`await enterPaywallFollowup()` 后再 push，SDK chunk 挂起导致付费墙跳转静默卡死；只认 `?payment=returned` 导致 WebView 恢复无回流事件。
-
-### 6. Tests Required
-
-- `config.test.ts`：静态 env 读取与非法 host。
-- `adapter.test.ts`：`resetSessionId` + override start；schema 拒绝禁止键；SDK import 超时后 `init`/`whenReady` settle 且忽略迟到的 load；`recharge_entry_clicked` 无 `replay_context_id` 可发送，旧聊天会话属性可清除。
-- `lifecycle.test.ts`：paywall hold、同角色重绑、followup 忽略 `route_change`；真正结束后才清除聊天会话属性。
-- `recharge-redirect.test.ts`：调用 followup 后立即 push；continuation 在跳转前写入；`paywall_triggered` 等队列 settle。
-- `flow-telemetry.test.ts`：回流去重/误报；`recharge_entry_clicked` 先保留 context 再排入录制队列，payload 无 URL/`pay_url`；`recharge_viewed` 无 context 仍跳过；SDK 尚未接收的订单状态可重试。
-- `return-observer.test.ts`：有离开证据才 `webview_resume`；同 order 去重；无 pending 不误报。
-- shared `telemetry-contract.test.ts`：`return_source`、禁止键、`user_cohort` 不存在、`recharge_entry_clicked` 允许没有 `replay_context_id`。
-
-### 7. Wrong vs Correct
-
-#### Wrong
-
-```ts
-function readEnv(env = process.env) {
-  return { key: env.NEXT_PUBLIC_POSTHOG_KEY, host: env.NEXT_PUBLIC_POSTHOG_HOST };
-}
-posthog.startSessionRecording(false);
-await lifecycle.enterPaywallFollowup();
-router.push(rechargePath);
-```
-
-#### Correct
-
-```ts
-const key = process.env.NEXT_PUBLIC_POSTHOG_KEY;
-const host = process.env.NEXT_PUBLIC_POSTHOG_HOST;
-client.sessionManager?.resetSessionId();
-client.startSessionRecording({
-  sampling: true,
-  linked_flag: true,
-  url_trigger: true,
-  event_trigger: true,
-});
-const followup = lifecycle.enterPaywallFollowup();
-writePaywallContinuation({ ...snapshot.replayContextId });
-router.push(rechargePath);
-void followup.then(() => {
-  patchPaywallContinuation({ replayContextId: snapshot.replayContextId });
-  lifecycle.capture({ event: 'paywall_triggered', ... });
-});
-```
+| 通道                             | 完整 initData / token / secret | `pay_url` 与支付表单 | 聊天正文       |
+| -------------------------------- | ------------------------------ | -------------------- | -------------- |
+| 应用日志、Sentry 事件、URL query | 禁止                           | 禁止                 | 禁止           |
+| Sentry Session Replay 画面       | 禁止                           | 禁止                 | 允许（已批准） |
 
 ## Scenario: 显式取消文字回复与重新生成
 
@@ -243,3 +119,13 @@ recoverable_delivery仅新Backend显式启用；旧请求/终结账单不回填�
 唯一新增迁移20261027_recoverable_chat_delivery.sql：experience拥有策略/首字检查点，billing资格函数读取事实；analytics只追加无正文的策略/时刻/失败锁存字段。无新cron、逐token数据库写、业务回填或公开权限。先TEST、后生产迁移、后Backend/Frontend。回退保留新增对象和终账，必要时forward-fix。
 
 验证：本任务release-review记录自动化、真实PG、TEST流/浏览器和生产版本证据；测试通过不等于线上1%目标已达成。看板v3区分前台等待超时与系统无首字截断，显示分布只用浏览器业务侧实际时长，后台/缺报不填0。
+
+## Scenario: 大厅服务端代理日志与链路（2026-11-16 本地候选）
+
+1. **Scope / Trigger**：`GET /api/lobby-characters` 是独立 Next.js 服务端边界；自身连接/取消/读取失败不能仅依靠 Backend Railway 日志发现。只记录固定 JSON 服务端摘要，复用 Sentry 时长指标，不引入依赖/采集服务。
+2. **Signatures**：`createLobbyProxyObservation(request)` 提供 `requestId`、`upstream(headers)`、`responseHeaders(initial?)`、`finish(status, outcome, publicCode?)`。只允许 route 模块调用，不能导入客户端组件。
+3. **Contracts**：接收/转发有界 `X-Request-Id`（1–128 个字母/数字/下划线/连字符），非法时生成 UUID；回传经过格式校验的 Backend request ID 和 32 位 hex trace ID。单次实际执行输出 `lobby.proxy.terminal`，含状态/耗时/结果及固定公开码，无 URL、query、响应正文、身份、凭证和原异常。公共 latest 缓存、推荐不缓存及既有 timeout/signal 不变；缓存中的 ID 属于源站执行，不代表新浏览器请求执行。
+4. **Validation / Errors**：成功、参数拒绝、HTTP 拒绝、网络/读取失败、5 秒截止、调用方取消分别记录；502/504/499 保留原 JSON 契约。读取失败也保留已取得的后端 trace。日志输出失败不改变响应；不转发客户端任意 headers 或接受非法后端关联头。
+5. **Good / Base / Bad**：Good 为按代理 request/trace 查询 Backend；Base 为旧后端无 trace 时省略字段；Bad 为将 query、凭证或 Error.message 写日志，或把共享缓存响应的 ID 当作本次浏览器执行 ID。
+6. **Tests Required**：扩展 route.test.ts，断言头透传/非法输入替换、成功/502/504/499 一条终态、正文与凭证不输出、日志输出故障隔离、缓存值不变；Frontend typecheck/lint/build 和现有消费者检查。
+7. **Wrong vs Correct**：错误是原样转发全量请求头、用浏览器 logger 或仅 Sentry 指标代替服务端摘要；正确是在 server route 使用受控单行 JSON，并仅将校验后的链路头回传。该摘要在 Next.js 部署 stdout，Backend 日志告警开关不控制此独立运行时，不新增旁路告警请求。

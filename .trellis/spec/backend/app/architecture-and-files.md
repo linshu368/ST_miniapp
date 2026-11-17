@@ -16,18 +16,19 @@
 
 - `billing/`：角色免费额度与 usage 定价纯逻辑。
 - `community/`：官方群配置与 Telegram Bot API 客户端。
-- `conversations/`：`generate.ts` 一轮编排，`history.ts` 展开历史，`context-window.ts` 水位窗口，`sse.ts` 事件编码，`errors.ts` 错误归一，`user-placeholder.ts` 昵称占位。
+- `story-memory/`：正文字数水位（`window-plan.ts`）、生成链路接入（`turn.ts`）、压缩任务与 worker、结果校验。
+- `conversations/`：`generate.ts` 一轮编排，`history.ts` 展开历史，`sse.ts` 事件编码，`errors.ts` 错误归一，`user-placeholder.ts` 昵称占位。
 - `text-postprocess/`：Admin 状态/草稿/发布/回滚编排、隔离编译 Worker、严格配置读取和版本批次查询；不进入 generation/计费出口。
 - `engine/`：`prompt-engine.ts` 组消息，`render-instructions.ts` 渲染模板，`platform-instructions.ts` 取平台规则，`types.ts/index.ts` 定义内部边界；除配置读取外尽量纯函数。
 - `generation/`：生成/计费唯一出口；`execute.ts` 编排，`precheck.ts` 余额预检，`quota.ts` 免费额度，`resolve-model.ts` 模型解析，`prompt-caching.ts` 缓存策略，`upstream.ts` OpenRouter 流，`voice-billing.ts` 语音策略。
 - `lobby/`：精选、置顶、推荐排序参数/分数/统计与刷新。
 - `payment/domain/`：充值规则；`payment/usecases/`：下单、结算、回调报告、快速对账、订单过期、支付终态 telemetry observer。
+- `payment/availability/`：独立上游建单探测、轮次编排和有界策略执行；新策略放 `strategies/` 并在 `strategies/index.ts` 注册。默认飞书经既有 Publisher/outbox。扩展契约见 [支付探测说明](../../../../docs/payment-availability-probe.md)。
 - `voice/`：语音文本/提示词/草稿、音色目录、MiniMax/DeepSeek 上游、生成编排与计费配置。
 
 ## `src/infrastructure/`
 
-- `payment/ZqPaymentGateway.ts`：支付供应商签名、请求/查询和响应适配，不决定业务结算规则。
-- `telemetry/posthog-capture.ts`：Node 原生 fetch 调 PostHog capture；短超时、无重试，失败不回滚业务。
+- `payment/EpayPaymentGateway.ts`：TTZF 易支付表单建单、GET 单笔查单与通知验签；`epay-protocol.ts` 实现小写 MD5/精确金额/原始 query 校验，`epay-http.ts` 限制超时、响应大小和重定向，不决定业务结算规则。
 - `repositories/CharacterCardRepository.ts`：角色卡；`ChatSessionRepository.ts`、`ConversationHistoryRepository.ts`：会话、历史、current-postprocess 原子开轮；`TextPostprocessRepository.ts`：草稿/发布/版本快照 RPC；`ChatMessageAudioRepository.ts`：音频。
 - `MiniappCharacterFavoriteRepository.ts`、`MiniappCharacterFreeQuotaRepository.ts`、`MiniappPaymentOrderRepository.ts`、`MiniappUserSettingsRepository.ts`、`MiniappWalletRepository.ts`：各业务域持久化。
 - `conversation-errors.ts` 归一 repository 错误；`effective-display-name.ts` 计算展示昵称。
@@ -37,7 +38,7 @@ Repository 隐藏 schema client/Prisma 行形状，返回领域结果；跨 sche
 ## `src/lib/`、`src/platform/` 与其他目录
 
 - `lib/db.ts`：Prisma 单例；`lib/supabase.ts`：按域 Supabase client。
-- `lib/logger.ts`/`log-pretty.ts`：pino；`lib/sentry.ts`：监控与脱敏。
+- `platform/observability/`：集中日志核心、Pino/Sentry/后台观测接线、规则和测试；`sdk.ts` 只导出低依赖 factory/契约，文件规则及项目 singleton 留在装配层。`lib/logger.ts`、`logger-options.ts`、`sentry.ts`、`background-observability.ts` 仅重导出兼容。
 - `chat-history-logger.ts` + `chat-history-sync-job.ts`：终态即时记录与轮询补齐；`chat-voice-storage.ts`：语音 Storage。
 - `lobby-ranking-refresh-job.ts`/`lobby-latest-badge.ts`：大厅后台能力；`notifications.ts`/`notification-scope.ts`：通知；`cs-service.ts`：调用独立客服服务（linshu368/ST_cs_platform）；`telegram-links.ts`、`user-avatar.ts`、`user.ts`：边界工具。
 - `platform/config.ts`：环境变量解析唯一中心；`runtime-config.ts`：DB 配置读取唯一入口；`model-tiers.ts`、`openrouter-models.ts`：模型档位和目录。

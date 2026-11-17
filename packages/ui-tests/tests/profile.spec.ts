@@ -98,7 +98,7 @@ async function expectProfileLayout(page: Page) {
   await expect(wallet.getByText('3,600', { exact: true })).toBeVisible();
   await expect(checkin).toBeEnabled();
   await expect(membership.getByRole('button')).toBeEnabled();
-  await expect(nav.getByRole('link', { name: 'AI短剧', exact: true })).toBeVisible();
+  await expect(nav.getByRole('link', { name: '剧场', exact: true })).toBeVisible();
   await expectMobileLayout(page);
 
   const walletBox = await wallet.boundingBox();
@@ -225,7 +225,7 @@ test('@profile @recharge 下单失败保留选择和金额，VIP入口保留原�
     payment_type: 'alipay',
   });
   await expect(page.getByLabel('充值确认').getByRole('alert')).toHaveText(
-    '暂时无法创建订单，请稍后重试。'
+    '订单没创建成功，再试一次吧。'
   );
   await expect(page.getByRole('button', { name: '立即支付 ¥30', exact: true })).toBeEnabled();
   await expect(page.getByLabel('充值确认').getByText('21,600', { exact: true })).toBeVisible();
@@ -243,7 +243,7 @@ test('@profile @recharge @layout 充值空态、失败和渠道关闭不会误�
 }) => {
   await preview.scenario('recharge-error');
   await page.goto('/profile/recharge');
-  await expect(page.getByText('充值套餐暂时无法加载')).toBeVisible();
+  await expect(page.getByText('充值套餐没加载出来，再试一次吧')).toBeVisible();
   await expect(page.getByRole('button', { name: '重新加载', exact: true })).toBeVisible();
   await expect(page.getByLabel('充值确认').getByRole('button')).toBeDisabled();
   await expect(page.getByRole('link', { name: '订单', exact: true })).toBeVisible();
@@ -259,7 +259,7 @@ test('@profile @recharge @layout 充值空态、失败和渠道关闭不会误�
     .getByRole('radio')
     .first()
     .click();
-  await expect(page.getByText('暂不可用，请稍后再试')).toBeVisible();
+  await expect(page.getByText('暂时用不了，稍后再试')).toBeVisible();
   await expect(page.getByRole('button', { name: '立即支付 ¥10', exact: true })).toBeDisabled();
   expect(
     (await preview.state()).requests.filter(
@@ -277,4 +277,24 @@ test('@profile @recharge @layout 充值空态、失败和渠道关闭不会误�
   await expect(page.getByText('每次对话，已享 7折 优惠')).toBeVisible();
   await expectMobileLayout(page);
   await preview.screenshot('充值页-会员与单套餐', { fullPage: false });
+});
+
+test('@profile @vip-mixed @layout 混合签到与月卡显示两种星尘', async ({ page, preview }) => {
+  await preview.scenario('vip-mixed');
+  await page.goto('/profile');
+  await expect(page.getByText('120 专项＋30 通用星尘').first()).toBeVisible();
+  await page.getByRole('button', { name: '每日签到', exact: true }).click();
+  await expect(page.getByText('通用星尘 +30', { exact: true })).toBeVisible();
+  await expect(page.getByText('专项星尘 +120', { exact: true })).toBeVisible();
+  const state = await preview.state();
+  expect(state.wallet.main_credits).toBe(3030);
+  expect(state.wallet.bonus_credits).toBe(720);
+  expect(state.wallet.credits).toBe(3750);
+  await expectMobileLayout(page);
+  await preview.screenshot('混合签到到账');
+  await page.getByRole('button', { name: '关闭签到提示' }).click();
+  await page.getByRole('button', { name: '查看 VIP 权益与续费' }).click();
+  await expect(page.getByText('2,000 专项＋1,000 通用星尘').first()).toBeVisible();
+  await expectMobileLayout(page);
+  await preview.screenshot('混合会员权益');
 });

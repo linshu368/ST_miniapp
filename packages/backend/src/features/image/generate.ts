@@ -1,5 +1,5 @@
 import type { Logger, RequestLogger } from '../../lib/logger.js';
-import type { ImageErrorCode, ImageFailureKind } from '@miniapp/shared';
+import type { ImageErrorCode } from '@miniapp/shared';
 import { ChatMessageImageRepository } from '../../infrastructure/repositories/ChatMessageImageRepository.js';
 import type { ChatMessageImageRow } from '../../infrastructure/repositories/ChatMessageImageRepository.js';
 import { CharacterCardRepository } from '../../infrastructure/repositories/CharacterCardRepository.js';
@@ -22,10 +22,6 @@ import {
   requireVisualAnchor,
   translateImagePrompt,
 } from '../generation/image-upstream.js';
-import {
-  observeImageGenerationCompleted,
-  observeImageGenerationFailed,
-} from './ImageGenerationTelemetry.js';
 
 type ImageLogger = Logger | RequestLogger;
 
@@ -48,8 +44,6 @@ export async function runImageGeneration(input: {
   const characters = new CharacterCardRepository();
   const startedAt = Date.now();
   const attempt = input.attempt;
-  let telemetryContext: { characterId: string; selectedModelId: string | null } | null = null;
-  let terminalProvider = attempt.provider;
 
   try {
     const session = await sessions.getSession(attempt.session_id, attempt.user_id);
@@ -57,30 +51,13 @@ export async function runImageGeneration(input: {
       await images.markFailed(attempt.id, 'image_session_not_found', Date.now() - startedAt);
       return;
     }
-    telemetryContext = { characterId: session.character_id, selectedModelId: null };
 
     const turn = await history.findCurrentTurnById(attempt.session_id, attempt.message_id);
     if (!turn?.assistant_reply?.trim()) {
       const latencyMs = Date.now() - startedAt;
       await images.markFailed(attempt.id, 'image_message_not_eligible', latencyMs);
-      void observeImageGenerationFailed(
-        {
-          ...imageTelemetryBase(attempt, telemetryContext),
-          terminalStatus: 'failed',
-          errorCode: 'image_message_not_eligible',
-          failureKind: 'business',
-          provider: attempt.provider,
-          fallbackUsed: isFallbackProvider(attempt.provider),
-          durationMs: latencyMs,
-        },
-        input.log
-      );
       return;
     }
-    telemetryContext = {
-      characterId: session.character_id,
-      selectedModelId: turn.llm_billing_snapshot?.model_id ?? null,
-    };
 
     const character = await characters.requireCard(
       session.character_id,
@@ -91,18 +68,6 @@ export async function runImageGeneration(input: {
     if (!attempt.prompt_cn) {
       const latencyMs = Date.now() - startedAt;
       await images.markFailed(attempt.id, 'image_prompt_empty', latencyMs);
-      void observeImageGenerationFailed(
-        {
-          ...imageTelemetryBase(attempt, telemetryContext),
-          terminalStatus: 'failed',
-          errorCode: 'image_prompt_empty',
-          failureKind: 'business',
-          provider: attempt.provider,
-          fallbackUsed: isFallbackProvider(attempt.provider),
-          durationMs: latencyMs,
-        },
-        input.log
-      );
       return;
     }
     const promptEn = await translateImagePrompt(attempt.prompt_cn, input.imageConfig.textModel);
@@ -133,7 +98,6 @@ export async function runImageGeneration(input: {
               height: attempt.height,
               model: attempt.model,
             });
-      terminalProvider = providerImage.provider;
     } catch (grokError) {
       if (
         attempt.provider !== 'liaobots_grok' ||
@@ -142,7 +106,6 @@ export async function runImageGeneration(input: {
       ) {
         throw grokError;
       }
-      terminalProvider = 'replicate_z';
       providerImage = await generateFallbackImage({
         attempt,
         images,
@@ -168,7 +131,6 @@ export async function runImageGeneration(input: {
       ) {
         throw grokOutputError;
       }
-      terminalProvider = 'replicate_z';
       providerImage = await generateFallbackImage({
         attempt,
         images,
@@ -198,58 +160,11 @@ export async function runImageGeneration(input: {
       throw new ImageSettlementUnknownError(error);
     }
 
-    if (settlement.charge_status === 'insufficient_balance') {
-      await compensateStoredImage(stored.path, attempt, input.log);
-      void observeImageGenerationFailed(
-        {
-          ...imageTelemetryBase(attempt, telemetryContext),
-          terminalStatus: 'failed',
-          errorCode: 'image_settlement_insufficient_balance',
-          failureKind: 'settlement',
-          provider: providerImage.provider,
-          fallbackUsed: isFallbackProvider(providerImage.provider),
-          durationMs: Date.now() - startedAt,
-        },
-        input.log
-      );
-    } else if (settlement.charge_status === 'free_trial_invalid') {
-      await compensateStoredImage(stored.path, attempt, input.log);
-      void observeImageGenerationFailed(
-        {
-          ...imageTelemetryBase(attempt, telemetryContext),
-          terminalStatus: 'failed',
-          errorCode: 'image_free_trial_invalid',
-          failureKind: 'settlement',
-          provider: providerImage.provider,
-          fallbackUsed: isFallbackProvider(providerImage.provider),
-          durationMs: Date.now() - startedAt,
-        },
-        input.log
-      );
-    } else if (
-      settlement.charge_status === 'charged' ||
-      settlement.charge_status === 'already_charged' ||
-      settlement.charge_status === 'free_trial_consumed' ||
-      settlement.charge_status === 'already_free_trial_consumed'
+    if (
+      settlement.charge_status === 'insufficient_balance' ||
+      settlement.charge_status === 'free_trial_invalid'
     ) {
-      const freeTrial =
-        settlement.charge_status === 'free_trial_consumed' ||
-        settlement.charge_status === 'already_free_trial_consumed';
-      void observeImageGenerationCompleted(
-        {
-          ...imageTelemetryBase(attempt, telemetryContext),
-          chargeStatus: settlement.charge_status,
-          creditsCharged: freeTrial ? 0 : Number(attempt.price_credits),
-          provider: providerImage.provider,
-          fallbackUsed: isFallbackProvider(providerImage.provider),
-          width: attempt.width,
-          height: attempt.height,
-          mimeType: stored.mimeType,
-          byteSize: stored.byteSize,
-          durationMs: Date.now() - startedAt,
-        },
-        input.log
-      );
+      await compensateStoredImage(stored.path, attempt, input.log);
     }
 
     input.log.biz.info(
@@ -299,36 +214,8 @@ export async function runImageGeneration(input: {
     try {
       if (error instanceof ImageUpstreamError && error.unknownOutcome) {
         await images.markFailedUnknown(attempt.id, error.code as ImageErrorCode, latencyMs);
-        if (telemetryContext) {
-          void observeImageGenerationFailed(
-            {
-              ...imageTelemetryBase(attempt, telemetryContext),
-              terminalStatus: 'failed_unknown',
-              errorCode: error.code,
-              failureKind: imageFailureKind(error),
-              provider: terminalProvider,
-              fallbackUsed: isFallbackProvider(terminalProvider),
-              durationMs: latencyMs,
-            },
-            input.log
-          );
-        }
       } else {
         await images.markFailed(attempt.id, code, latencyMs);
-        if (telemetryContext) {
-          void observeImageGenerationFailed(
-            {
-              ...imageTelemetryBase(attempt, telemetryContext),
-              terminalStatus: 'failed',
-              errorCode: code,
-              failureKind: imageFailureKind(error),
-              provider: terminalProvider,
-              fallbackUsed: isFallbackProvider(terminalProvider),
-              durationMs: latencyMs,
-            },
-            input.log
-          );
-        }
       }
     } catch (markError) {
       input.log.sys.error(
@@ -416,34 +303,6 @@ function readUrlHost(value: string): string | null {
   } catch {
     return null;
   }
-}
-
-function imageTelemetryBase(
-  attempt: ChatMessageImageRow,
-  context: { characterId: string; selectedModelId: string | null }
-) {
-  return {
-    userId: attempt.user_id,
-    characterId: context.characterId,
-    conversationSessionId: attempt.session_id,
-    selectedModelId: context.selectedModelId,
-    messageId: attempt.message_id,
-    attemptId: attempt.id,
-    attemptNo: attempt.attempt_no,
-  };
-}
-
-function isFallbackProvider(provider: string): boolean {
-  return provider !== 'liaobots_grok';
-}
-
-function imageFailureKind(error: unknown): ImageFailureKind {
-  if (!(error instanceof ImageUpstreamError)) return 'unknown';
-  if (error.code.includes('timeout')) return 'timeout';
-  if (error.code.includes('network')) return 'network';
-  if (error.stage === 'download') return 'storage';
-  if (error.stage === 'provider') return 'provider';
-  return 'unknown';
 }
 
 /** 结算明确拒绝后删除不可展示对象；删除失败只告警，保留路径摘要供运维清理。 */

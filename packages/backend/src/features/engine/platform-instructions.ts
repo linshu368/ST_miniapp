@@ -1,3 +1,4 @@
+import { observation } from '../../platform/observability/runtime.js';
 /**
  * backend / features / engine / platform-instructions.ts
  *
@@ -14,6 +15,8 @@
 import {
   DEFAULT_WORD_COUNT_TIERS_CONFIG,
   InstructionSlotRulesSchema,
+  DRIVE_MODE_OPTIONS_KEY,
+  ReplyStyleOptionsConfigSchema,
   toPublicWordCountTiers,
   WordCountTiersConfigSchema,
   type PublicWordCountTiers,
@@ -24,13 +27,19 @@ import {
   fetchRuntimeConfigEntries,
   type RuntimeConfigEntry,
 } from '../../platform/runtime-config.js';
-import type { EnginePlatformInstructions, EngineWordCountTiers } from './types.js';
+import type {
+  EnginePlatformInstructions,
+  EngineReplyStyle,
+  EngineWordCountTiers,
+} from './types.js';
+import { readDriveModes, warnIfDriveSlotMissing } from './drive-mode.js';
 
 export const PLATFORM_INSTRUCTIONS_TEMPLATE_KEY = 'system_instructions';
 export const WORD_COUNT_TIERS_KEY = 'pref_word_count_tiers';
 export const CHOICE_RULES_KEY = 'choice_rules';
 export const STATUS_RULES_KEY = 'status_rules';
 export const MEMORY_RULES_KEY = 'memory_rules';
+export const REPLY_STYLE_OPTIONS_KEY = 'reply_style_options';
 
 const CONFIG_KEYS = [
   PLATFORM_INSTRUCTIONS_TEMPLATE_KEY,
@@ -38,6 +47,8 @@ const CONFIG_KEYS = [
   CHOICE_RULES_KEY,
   STATUS_RULES_KEY,
   MEMORY_RULES_KEY,
+  REPLY_STYLE_OPTIONS_KEY,
+  DRIVE_MODE_OPTIONS_KEY,
 ] as const;
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -60,6 +71,7 @@ const FALLBACK_TEMPLATE = [
   '{{CHOICE_RULES}}',
   '{{STATUS_RULES}}',
   '{{MEMORY_RULES}}',
+  '{{DRIVE_RULES}}',
   '输出篇幅为 {{WORD_COUNT}} 字，仅使用简体中文。',
   '用户个人偏好为：{{USER_CUSTOM_INSTRUCTIONS}}',
 ].join('\n');
@@ -227,10 +239,11 @@ export function buildSnapshot(
 
   const template = parseTemplate(entries.get(PLATFORM_INSTRUCTIONS_TEMPLATE_KEY));
   if (!template || !isCurrentTemplate(template)) {
-    console.error(
-      `[engine] runtime_config ${PLATFORM_INSTRUCTIONS_TEMPLATE_KEY} (version ${
-        entries.get(PLATFORM_INSTRUCTIONS_TEMPLATE_KEY)?.version ?? -1
-      }) 缺失、非法或包含废弃占位符；平台规则已降级到内置兜底模板`
+    observation.emit(
+      'engine.template_degraded',
+      'engine.config',
+      { outcome: 'degraded', outcome_known: false },
+      'warn'
     );
     degraded = true;
   }
@@ -238,8 +251,11 @@ export function buildSnapshot(
   const wordCountEntry = entries.get(WORD_COUNT_TIERS_KEY);
   let wordCountTiers = parseWordCountTiers(wordCountEntry?.value);
   if (!wordCountTiers) {
-    console.error(
-      `[engine] runtime_config ${WORD_COUNT_TIERS_KEY} 缺失或格式非法，字数档位已降级到内置兜底`
+    observation.emit(
+      'engine.word_count_degraded',
+      'engine.config',
+      { outcome: 'degraded', outcome_known: false },
+      'warn'
     );
     degraded = true;
   } else {
@@ -252,10 +268,16 @@ export function buildSnapshot(
       // 回灌契约校验后的值：两个出口从此拿到同一份（已 trim）数据
       wordCountTiers = configToEngineWordCountTiers(validated.config);
     } else {
-      console.error(
-        `[engine] runtime_config ${WORD_COUNT_TIERS_KEY}（version ${
-          wordCountEntry?.version ?? -1
-        }）不满足 shared 契约，字数档位已整表降级到内置兜底：${validated.issues.join('；')}`
+      observation.emit(
+        'engine.word_count_contract_degraded',
+        'engine.config',
+        {
+          outcome: 'degraded',
+          outcome_known: false,
+          resource: WORD_COUNT_TIERS_KEY,
+          config_version: wordCountEntry?.version,
+        },
+        'warn'
       );
       wordCountTiers = null;
       degraded = true;
@@ -275,16 +297,70 @@ export function buildSnapshot(
     degraded = true;
   }
 
+  const replyStyles = readReplyStyles(entries);
+  if (replyStyles.degraded) degraded = true;
+
+  const driveModes = readDriveModes(entries);
+  if (driveModes.degraded) degraded = true;
+  const effectiveTemplate = template && isCurrentTemplate(template) ? template : FALLBACK_TEMPLATE;
+  if (
+    warnIfDriveSlotMissing(
+      effectiveTemplate,
+      driveModes.config,
+      entries.get(PLATFORM_INSTRUCTIONS_TEMPLATE_KEY)?.version
+    )
+  ) {
+    degraded = true;
+  }
+
   return {
     instructions: {
-      template: template && isCurrentTemplate(template) ? template : FALLBACK_TEMPLATE,
+      template: effectiveTemplate,
       wordCountTiers: wordCountTiers ?? FALLBACK_WORD_COUNT_TIERS,
       choiceRules: slotRules.choiceRules.rules,
       statusRules: slotRules.statusRules.rules,
       memoryRules: slotRules.memoryRules.rules,
+      replyStyles: replyStyles.styles,
+      driveModes: driveModes.config,
     },
     degraded,
   };
+}
+
+/** 未配置 = 没有可选风格；配置损坏时同样不注入任何风格，并打降级日志。 */
+function readReplyStyles(entries: Map<string, RuntimeConfigEntry>): {
+  styles: EngineReplyStyle[];
+  degraded: boolean;
+} {
+  const entry = entries.get(REPLY_STYLE_OPTIONS_KEY);
+  if (!entry) return { styles: [], degraded: false };
+
+  const parsed = ReplyStyleOptionsConfigSchema.safeParse(entry.value);
+  if (parsed.success) {
+    return {
+      styles: parsed.data.options.map(({ id, marker, rules, enabled }) => ({
+        id,
+        marker,
+        rules,
+        enabled,
+      })),
+      degraded: false,
+    };
+  }
+
+  // Validation issues can contain operator rule text; log only the config identity/version.
+  observation.emit(
+    'engine.reply_styles_degraded',
+    'engine.config',
+    {
+      outcome: 'degraded',
+      outcome_known: false,
+      resource: REPLY_STYLE_OPTIONS_KEY,
+      config_version: entry.version,
+    },
+    'warn'
+  );
+  return { styles: [], degraded: true };
 }
 
 function readSlotRules(
@@ -296,8 +372,11 @@ function readSlotRules(
   if (rules) return { rules, degraded: false };
 
   // Do not include validation issues or a JSON value here: both can contain operator rule text.
-  console.error(
-    `[engine] runtime_config ${key} (version ${entry?.version ?? -1}) 缺失或不满足 instruction-slot schema；已使用安全兜底`
+  observation.emit(
+    'engine.slot_rules_degraded',
+    'engine.config',
+    { outcome: 'degraded', outcome_known: false },
+    'warn'
   );
   return { rules: FALLBACK_SLOT_RULES, degraded: true };
 }
@@ -311,7 +390,12 @@ export async function fetchPlatformInstructions(): Promise<PlatformInstructionsS
   try {
     entries = await fetchRuntimeConfigEntries(CONFIG_KEYS);
   } catch (error) {
-    console.error('[engine] 读取平台规则失败:', error);
+    observation.emit(
+      'engine.instructions_read_failed',
+      'engine.config',
+      { outcome: 'degraded', outcome_known: false, err: error },
+      'warn'
+    );
     entries = new Map();
   }
 

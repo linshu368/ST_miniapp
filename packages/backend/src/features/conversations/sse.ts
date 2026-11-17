@@ -16,6 +16,10 @@
 import type { OutgoingHttpHeaders } from 'node:http';
 import type { FastifyReply } from 'fastify';
 import type { ConversationStreamEvent } from '@miniapp/shared';
+import { observation } from '../../platform/observability/runtime.js';
+import type { Operation } from '../../platform/observability/core.js';
+import type { EventFields } from '../../platform/observability/events.js';
+import { observationOutcome } from '../../platform/observability/outcomes.js';
 
 export interface ConversationStreamSink {
   /** 响应头已写出。为 false 时调用方仍可改用 HTTP 状态码 + JSON 错误体 */
@@ -45,10 +49,18 @@ export function createReplyStreamSink(
   let closed = false;
   let clientGone = false;
   let firstVisibleTokenReported = false;
+  let streamObservation: Operation | undefined;
+  let streamResult: EventFields = { outcome: 'unknown', outcome_known: false };
 
   // 'close' 在正常收尾时也会触发，此时 closed 已为 true，不会误判成客户端断开。
   reply.raw.on('close', () => {
     clientGone = true;
+    if (!closed)
+      streamObservation?.finish({
+        outcome: 'interrupted',
+        outcome_known: false,
+        http_status: reply.raw.headersSent ? 200 : null,
+      });
   });
 
   const writable = (): boolean => !closed && !clientGone && !reply.raw.destroyed;
@@ -63,9 +75,17 @@ export function createReplyStreamSink(
     open() {
       if (opened) return;
       opened = true;
+      streamObservation = observation.start('conversation.stream', { stage: 'delivery' });
       // 交出 reply 的所有权，之后由本 sink 独占裸响应，Fastify 不再尝试序列化任何东西。
       reply.hijack();
-      if (!writable()) return;
+      if (!writable()) {
+        streamObservation.finish({
+          outcome: 'interrupted',
+          outcome_known: false,
+          http_status: null,
+        });
+        return;
+      }
       // 连带把 Fastify 已经挂在 reply 上的响应头一起发出去。hijack 之后没人替我们发它们，
       // 而 @fastify/cors 正是在 onRequest 里用 reply.header() 写的 Access-Control-*：
       // 漏掉这批头，浏览器会直接拒收这条跨域流（前端报网络异常），后端却照常生成、
@@ -92,6 +112,10 @@ export function createReplyStreamSink(
       }
     },
     send(event) {
+      if (event.type === 'error')
+        streamResult = { outcome: 'failed', outcome_known: true, public_error_code: event.code };
+      if (event.type === 'done')
+        streamResult = { outcome: observationOutcome(event.status), outcome_known: true };
       if (!opened || !writable()) return false;
       try {
         reply.raw.write(encodeStreamEvent(event));
@@ -125,6 +149,10 @@ export function createReplyStreamSink(
       if (!opened || closed) return;
       const shouldEnd = writable();
       closed = true;
+      streamObservation?.finish({
+        ...(clientGone ? { outcome: 'interrupted' as const, outcome_known: false } : streamResult),
+        http_status: reply.raw.headersSent ? 200 : null,
+      });
       if (shouldEnd) reply.raw.end();
     },
   };

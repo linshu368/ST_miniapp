@@ -1,3 +1,4 @@
+import { runObservedJob } from '../platform/observability/jobs.js';
 /**
  * backend / scripts / payment-callback-report.ts
  *
@@ -16,6 +17,7 @@
  * docs/payment-missing-credits-remediation.md 的「回调监控」一节。
  */
 
+import '../instrumentation.js';
 import '../platform/config.js';
 import {
   buildPaymentCallbackReport,
@@ -25,40 +27,58 @@ import {
 import { MiniappPaymentOrderRepository } from '../infrastructure/repositories/MiniappPaymentOrderRepository.js';
 import { createLogger } from '../lib/logger.js';
 import { closeSupabaseClient } from '../lib/supabase.js';
+import {
+  observeBackgroundRun,
+  startStandaloneObservability,
+} from '../lib/background-observability.js';
 
 const log = createLogger('payment');
 const args = process.argv.slice(2);
 let exitCode = 0;
+let terminalError: unknown;
+const observationStartedAt = performance.now();
+const stopObservability = startStandaloneObservability();
 
-try {
-  const range = resolveShanghaiDayRange(Date.now(), parseDaysAgo(args));
-  const orders = await new MiniappPaymentOrderRepository().listCreatedBetween({
-    since: range.since,
-    until: range.until,
-  });
-  const report = buildPaymentCallbackReport(orders, range);
-
-  console.log(
-    args.includes('--json') ? JSON.stringify(report) : formatPaymentCallbackReport(report)
-  );
-} catch (error) {
-  const message = error instanceof Error ? error.message : String(error);
-  log.sys.error({ event: 'payment.report.failed', err: error }, '支付回调日报生成失败');
-  console.error(`Payment callback report failed: ${message}`);
-  exitCode = 1;
-} finally {
+await runObservedJob('payment_callback_report', async () => {
   try {
-    await closeSupabaseClient();
-  } catch (error) {
-    log.sys.error(
-      { event: 'payment.report.cleanup_failed', err: error },
-      '支付回调日报资源清理失败'
-    );
-    exitCode = 1;
-  }
+    const range = resolveShanghaiDayRange(Date.now(), parseDaysAgo(args));
+    const orders = await new MiniappPaymentOrderRepository().listCreatedBetween({
+      since: range.since,
+      until: range.until,
+    });
+    const report = buildPaymentCallbackReport(orders, range);
 
-  process.exit(exitCode);
-}
+    console.log(
+      args.includes('--json') ? JSON.stringify(report) : formatPaymentCallbackReport(report)
+    );
+  } catch (error) {
+    terminalError = error;
+
+    log.sys.error({ event: 'payment.report.failed', err: error }, '支付回调日报生成失败');
+
+    exitCode = 1;
+  } finally {
+    try {
+      await closeSupabaseClient();
+    } catch (error) {
+      terminalError ??= error;
+      log.sys.error(
+        { event: 'payment.report.cleanup_failed', err: error },
+        '支付回调日报资源清理失败'
+      );
+      exitCode = 1;
+    }
+
+    observeBackgroundRun({
+      job: 'payment_callback_report',
+      outcome: exitCode === 0 ? 'success' : 'error',
+      startedAt: observationStartedAt,
+      error: terminalError,
+    });
+    await stopObservability();
+    process.exitCode = exitCode;
+  }
+});
 
 function parseDaysAgo(argv: readonly string[]): number {
   const raw = argv.find((arg) => arg.startsWith('--days-ago='))?.split('=')[1];

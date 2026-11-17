@@ -1,0 +1,11 @@
+{"file": ".trellis/spec/backend/app/index.md", "reason": "Backend entry and quality checks"}
+{"file": ".trellis/spec/backend/app/architecture-and-files.md", "reason": "Routes, features, gateway and repository boundaries"}
+{"file": ".trellis/spec/backend/app/data-reliability-and-security.md", "reason": "Secret handling, deadlines, idempotency and logging"}
+{"file": ".trellis/spec/backend/app/testing-scripts-and-deployment.md", "reason": "Payment verification and deployment boundaries"}
+{"file": ".trellis/spec/backend/app/modules/business/wallet-payment.md", "reason": "Current settlement and payment implementation"}
+{"file": ".trellis/spec/shared/contracts/index.md", "reason": "External shared DTO ownership"}
+{"file": ".trellis/spec/shared/contracts/api-contracts.md", "reason": "Runtime validation and compatibility"}
+{"file": ".trellis/spec/frontend/app/index.md", "reason": "Payment consumers and existing frontend checks"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Consumer and partial-deployment consistency"}
+{"file": "packages/ui-tests/README.md", "reason": "Reuse existing recharge fixtures and acceptance groups"}
+{"file": ".trellis/tasks/11-09-ttzf-payment-provider/research/provider-protocol.md", "reason": "User-supplied epay protocol and provider verification gaps"}

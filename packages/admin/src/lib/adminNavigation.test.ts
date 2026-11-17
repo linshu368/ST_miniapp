@@ -15,8 +15,11 @@ import {
   PLATFORM_INSTRUCTION_CONFIG_KEYS,
   VIP_STRATEGY_CONFIG_KEYS,
   resolveAdminMenuSelection,
-  sidebarManagedConfigKeys,
+  ADMIN_MENU,
+  adminMenuLeafKeys,
+  menuGroupKeyFor,
 } from './adminNavigation';
+import { managedConfigKeys } from '@miniapp/admin-client';
 
 describe('admin navigation', () => {
   it('opens a managed config from the operations submenu', () => {
@@ -33,10 +36,9 @@ describe('admin navigation', () => {
       configKey: 'llm_model_catalog',
     });
   });
-  it('opens the outreach grant page, which sits under 运营配置 but is not a managed config', () => {
-    expect(resolveAdminMenuSelection('outreach_credit_grant')).toEqual({
-      view: 'outreach_credit_grant',
-    });
+  it('no longer routes the retired outreach grant page', () => {
+    expect(resolveAdminMenuSelection('outreach_credit_grant')).toEqual({ view: 'configs' });
+    expect(adminMenuLeafKeys()).not.toContain('outreach_credit_grant');
   });
 
   it('opens the invite program page, which sits under 运营配置 but is not a managed config', () => {
@@ -60,13 +62,13 @@ describe('admin navigation', () => {
     });
   });
 
-  it('hides invite managed configs from the sidebar config submenu', () => {
+  it('shows invite configs only through the invite program page', () => {
     for (const key of INVITE_PROGRAM_CONFIG_KEYS) {
-      expect(sidebarManagedConfigKeys).not.toContain(key);
+      expect(adminMenuLeafKeys()).not.toContain(configMenuKey(key));
     }
-    // 其余 config 目录不受影响
-    expect(sidebarManagedConfigKeys).toContain('llm_model_catalog');
-    expect(sidebarManagedConfigKeys).toContain('miniapp_payment_plans');
+    expect(adminMenuLeafKeys()).toContain('invite_program');
+    expect(adminMenuLeafKeys()).toContain(configMenuKey('llm_model_catalog'));
+    expect(adminMenuLeafKeys()).toContain(configMenuKey('miniapp_payment_plans'));
   });
 
   it('routes image generation configs to one grouped menu and hides duplicate entries', () => {
@@ -75,7 +77,7 @@ describe('admin navigation', () => {
         view: 'image_generation_config',
         configKey: key,
       });
-      expect(sidebarManagedConfigKeys).not.toContain(key);
+      expect(adminMenuLeafKeys()).not.toContain(configMenuKey(key));
     }
     expect(resolveAdminMenuSelection('image_generation_config')).toEqual({
       view: 'image_generation_config',
@@ -88,7 +90,7 @@ describe('admin navigation', () => {
         view: 'vip_strategy',
         configKey: key,
       });
-      expect(sidebarManagedConfigKeys).not.toContain(key);
+      expect(adminMenuLeafKeys()).not.toContain(configMenuKey(key));
     }
     expect(resolveAdminMenuSelection('vip_strategy')).toEqual({ view: 'vip_strategy' });
   });
@@ -99,15 +101,35 @@ describe('admin navigation', () => {
         view: 'platform_instructions',
         configKey: key,
       });
-      expect(sidebarManagedConfigKeys).not.toContain(key);
+      expect(adminMenuLeafKeys()).not.toContain(configMenuKey(key));
     }
     expect(resolveAdminMenuSelection('platform_instructions')).toEqual({
       view: 'platform_instructions',
     });
   });
 
-  it('keeps the retired media limit hidden while VIP strategy owns per-feature limits', () => {
-    expect(sidebarManagedConfigKeys).not.toContain('media_feature_free_trial_limit');
+  it('groups the sidebar into the agreed sections with release history last', () => {
+    expect(ADMIN_MENU.map((node) => node.label)).toEqual([
+      '模型与计费',
+      '对话与回复',
+      '角色与大厅',
+      '充值与会员',
+      '用户增长',
+      '图片',
+      '发布历史',
+    ]);
+    expect(menuGroupKeyFor('vip_strategy')).toBe('group:monetization');
+    expect(menuGroupKeyFor(configMenuKey(CREATOR_REVIEW_PROMPT_KEY))).toBe('group:characters');
+  });
+
+  it('gives every managed config exactly one reachable entry', () => {
+    const leaves = adminMenuLeafKeys();
+    expect(new Set(leaves).size).toBe(leaves.length);
+    for (const key of managedConfigKeys) {
+      const selection = resolveAdminMenuSelection(configMenuKey(key));
+      const entry = selection.view === 'configs' ? configMenuKey(key) : selection.view;
+      expect(leaves, key).toContain(entry);
+    }
   });
 
   it('keeps independent top-level pages separate', () => {
@@ -123,7 +145,8 @@ describe('reply style options navigation', () => {
     const expected = { view: 'reply_style_options', configKey: 'reply_style_options' };
     expect(resolveAdminMenuSelection('reply_style_options')).toEqual(expected);
     expect(resolveAdminMenuSelection(configMenuKey('reply_style_options'))).toEqual(expected);
-    expect(sidebarManagedConfigKeys).not.toContain('reply_style_options');
+    expect(adminMenuLeafKeys()).not.toContain(configMenuKey('reply_style_options'));
+    expect(adminMenuLeafKeys()).toContain('reply_style_options');
     expect(PLATFORM_INSTRUCTION_CONFIG_KEYS).toEqual([
       'choice_rules',
       'status_rules',
@@ -137,12 +160,14 @@ describe('creator review prompt navigation', () => {
   it('does not resolve the retired human review view', () => {
     expect(resolveAdminMenuSelection('creator_characters')).toEqual({ view: 'configs' });
   });
-  it('keeps the top-level AI prompt editor routed without a roleplay tab or duplicate menu', () => {
+  it('keeps the AI prompt editor routed under 角色与大厅 without a roleplay tab', () => {
     expect(resolveAdminMenuSelection(configMenuKey(CREATOR_REVIEW_PROMPT_KEY))).toEqual({
       view: 'configs',
       configKey: CREATOR_REVIEW_PROMPT_KEY,
     });
-    expect(sidebarManagedConfigKeys).not.toContain(CREATOR_REVIEW_PROMPT_KEY);
+    expect(
+      adminMenuLeafKeys().filter((key) => key === configMenuKey(CREATOR_REVIEW_PROMPT_KEY))
+    ).toHaveLength(1);
     expect(PLATFORM_INSTRUCTION_CONFIG_KEYS).not.toContain(CREATOR_REVIEW_PROMPT_KEY);
   });
 });

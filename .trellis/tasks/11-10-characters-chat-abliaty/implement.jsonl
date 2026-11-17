@@ -1,0 +1,24 @@
+{"file": ".trellis/spec/frontend/app/index.md", "reason": "Frontend constraints"}
+{"file": ".trellis/spec/frontend/app/modules/business/character-lobby.md", "reason": "Lobby cache, sorting and readiness"}
+{"file": ".trellis/spec/frontend/app/modules/business/conversation-ui.md", "reason": "Chat entry and rendering"}
+{"file": ".trellis/spec/frontend/app/modules/infrastructure/client-ui-foundation.md", "reason": "Auth, API, timing and scheduling"}
+{"file": ".trellis/spec/backend/app/index.md", "reason": "Backend ownership, routes and observability"}
+{"file": ".trellis/spec/backend/app/data-reliability-and-security.md", "reason": "Timeouts, bounded retries, cancellation and logging"}
+{"file": ".trellis/spec/backend/app/modules/business/conversation-generation.md", "reason": "Conversation read/write semantics"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Cross-layer consumer and failure checks"}
+{"file": "packages/ui-tests/README.md", "reason": "Existing acceptance harness"}
+{"file": ".trellis/tasks/11-10-characters-chat-abliaty/research/reuse-and-evidence.md", "reason": "Research and source limitations"}
+{"file": ".trellis/tasks/11-10-characters-chat-abliaty/design.md", "reason": "Reviewed implementation boundary"}
+{"file": ".trellis/spec/backend/app/modules/infrastructure/runtime-data-security.md", "reason": "CORS source policy, environment boundary and safe logging"}
+{"file": ".trellis/spec/shared/contracts/index.md", "reason": "Reuse the existing shared error envelope for rejected cross-origin requests"}
+{"file": ".trellis/spec/shared/contracts/api-contracts.md", "reason": "Existing shared error response contract and producer-consumer compatibility"}
+{"file": ".trellis/tasks/11-10-characters-chat-abliaty/research/cors-preflight.md", "reason": "Confirmed OPTIONS 500 cause, source attribution limits and security regression matrix"}
+{"file": ".trellis/spec/database/supabase/index.md", "reason": "B3 database ownership and migration entry"}
+{"file": ".trellis/spec/database/supabase/schema-and-object-conventions.md", "reason": "experience display projection ownership and invariants"}
+{"file": ".trellis/spec/database/supabase/migrations-and-rollbacks.md", "reason": "Expand, bounded backfill, TEST-first workflow and recovery"}
+{"file": ".trellis/spec/database/supabase/security-rls-and-grants.md", "reason": "New table/trigger/RPC least privilege and production ACL drift"}
+{"file": ".trellis/spec/database/supabase/introspection-and-documentation.md", "reason": "Catalog-only evidence and environment identity"}
+{"file": "scripts/test-conversation-branches-migration.sh", "reason": "Reuse disposable PG17 migration and branch/message harness"}
+{"file": ".trellis/tasks/11-10-characters-chat-abliaty/research/history-read-performance.md", "reason": "B3 Sentry/Railway/catalog evidence and original performance matrix; combined design controls implementation"}
+{"file": ".trellis/tasks/11-10-characters-chat-abliaty/research/history-design-review.md", "reason": "Historical B3 review evidence; implementation superseded by history-combined-design.md"}
+{"file": ".trellis/tasks/11-10-characters-chat-abliaty/research/history-combined-design.md", "reason": "Authoritative B3 combined design: page keys, exact display projection, atomic writer, legacy invalidation, complete backfill and read/write recovery"}

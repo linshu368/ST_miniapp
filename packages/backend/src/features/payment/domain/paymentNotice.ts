@@ -8,13 +8,20 @@ export function paymentSuccessNotice(order: {
   bonus_credits: number;
   vip_duration_days: number | null;
   vip_bonus_credits: number | null;
+  vip_bonus_main_credits?: number;
 }): { title: string; body: string } {
   if (order.product_type === 'vip') {
     const label =
       order.product_id === 'month' ? '月卡' : order.product_id === 'week' ? '周卡' : '会员';
     const days = order.vip_duration_days ?? 0;
     const bonus = order.vip_bonus_credits ?? 0;
-    const bonusText = bonus > 0 ? `，${bonus} 专项星尘已到账` : '';
+    const main = order.vip_bonus_main_credits ?? 0;
+    const bonusText =
+      main > 0
+        ? `，${bonus} 专项星尘和 ${main} 通用星尘已到账`
+        : bonus > 0
+          ? `，${bonus} 专项星尘已到账`
+          : '';
     return {
       title: `VIP ${label}已生效`,
       body: `订单 ${order.id} 已完成，会员已顺延 ${days} 天${bonusText}。`,

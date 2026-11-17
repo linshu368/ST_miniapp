@@ -1,8 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG,
-  DEFAULT_RECHARGE_PAGE_CONFIG,
-} from '@miniapp/shared';
 
 const mocks = vi.hoisted(() => ({
   fetchRuntimeConfigEntries: vi.fn(),
@@ -18,9 +14,7 @@ import {
   getPaymentPageRuntimeConfig,
   INSUFFICIENT_CREDITS_NOTICE_CONFIG_KEY,
   PAYMENT_PLANS_CONFIG_KEY,
-  PAYMENT_PROMPT_DIALOG_CONFIG_KEY,
   PaymentPlansConfigError,
-  RECHARGE_PAGE_CONFIG_KEY,
 } from './rechargeRules.js';
 
 const validPlan = {
@@ -46,15 +40,6 @@ describe('getPaymentPageRuntimeConfig', () => {
   });
 
   it('loads the payment page configuration in one batch', async () => {
-    const pageConfig = { ...DEFAULT_RECHARGE_PAGE_CONFIG, title: '充值页' };
-    const promptConfig = {
-      enabled: true,
-      title: '支付提示',
-      description: '请确认支付环境。',
-      confirm_text: '继续',
-      footer_note: '支付完成后返回。',
-      accent_color: '#f59e0b',
-    };
     mocks.fetchRuntimeConfigEntries.mockResolvedValue(
       new Map([
         [
@@ -68,8 +53,6 @@ describe('getPaymentPageRuntimeConfig', () => {
             },
           }),
         ],
-        [RECHARGE_PAGE_CONFIG_KEY, entry(pageConfig)],
-        [PAYMENT_PROMPT_DIALOG_CONFIG_KEY, entry(promptConfig)],
         [INSUFFICIENT_CREDITS_NOTICE_CONFIG_KEY, entry(null, '请先充值')],
       ])
     );
@@ -81,15 +64,11 @@ describe('getPaymentPageRuntimeConfig', () => {
         wxpay_enabled: false,
         default_payment_type: 'alipay',
       },
-      pageConfig,
-      paymentPromptDialogConfig: promptConfig,
       insufficientCreditsNotice: '请先充值',
     });
     expect(mocks.fetchRuntimeConfigEntries).toHaveBeenCalledOnce();
     expect(mocks.fetchRuntimeConfigEntries.mock.calls[0]?.[0]).toEqual([
       PAYMENT_PLANS_CONFIG_KEY,
-      RECHARGE_PAGE_CONFIG_KEY,
-      PAYMENT_PROMPT_DIALOG_CONFIG_KEY,
       INSUFFICIENT_CREDITS_NOTICE_CONFIG_KEY,
     ]);
   });
@@ -104,14 +83,12 @@ describe('getPaymentPageRuntimeConfig', () => {
     await expect(getPaymentPageRuntimeConfig()).rejects.toBeInstanceOf(PaymentPlansConfigError);
   });
 
-  it('keeps safe defaults for missing non-critical page configuration', async () => {
+  it('keeps the default insufficient-credits notice when none is configured', async () => {
     mocks.fetchRuntimeConfigEntries.mockResolvedValue(
       new Map([[PAYMENT_PLANS_CONFIG_KEY, entry([validPlan])]])
     );
 
     const result = await getPaymentPageRuntimeConfig();
-    expect(result.pageConfig).toEqual(DEFAULT_RECHARGE_PAGE_CONFIG);
-    expect(result.paymentPromptDialogConfig).toEqual(DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG);
     expect(result.insufficientCreditsNotice).toBe('当前星尘积分不足，需要先购买积分才能继续聊天。');
   });
 });

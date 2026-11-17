@@ -72,7 +72,7 @@ export function ChatSplash({
   onRetry,
   onVisible,
 }: {
-  backHref?: '/characters' | '/chats' | '/creation?tab=favorites' | '/creation?tab=created';
+  backHref?: ReturnType<typeof import('@/lib/roleplay-navigation').roleplayReturnPath>;
   characterId: string;
   sessionId?: string | null;
   ready: boolean;

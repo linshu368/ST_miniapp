@@ -12,7 +12,10 @@ import {
 } from '@miniapp/shared';
 import type { ReplyChoicePayload } from '@miniapp/reply-renderer';
 
-import { CONVERSATION_RECOVERING_MESSAGE } from '@/lib/api/conversation-stream';
+import {
+  CONVERSATION_RECOVERING_MESSAGE,
+  CONVERSATION_SLOW_NETWORK_MESSAGE,
+} from '@/lib/api/conversation-stream';
 import { ChatComposer, MAX_USER_INPUT_LENGTH } from '@/components/chat/chat-composer';
 import { ChatMessageList } from '@/components/chat/chat-message-list';
 import {
@@ -26,12 +29,14 @@ import {
 } from '@/components/chat/chat-reply-presentation';
 import { ChatRegenerateButton } from '@/components/chat/chat-regenerate-button';
 import { ChatToolsSheet } from '@/components/chat/chat-tools-sheet';
+import { DramaSurveyPrompt } from '@/components/chat/drama-survey-prompt';
 import { ChatTopBar } from '@/components/chat/chat-top-bar';
 import { lobbyImageUrl } from '@/components/characters/character-card';
 import type { CharacterDetailTab } from '@/components/characters/character-detail-sheet';
 import { ChatSplash } from '@/components/chat/chat-splash';
-import { useChatReplayBinding, useChatSession } from '@/hooks/use-chat-session';
+import { useChatSession } from '@/hooks/use-chat-session';
 import { useMemoryDraft } from '@/hooks/use-memory-draft';
+import { useApiConnectionWarmth } from '@/hooks/use-connection-warmth';
 import { useConversationTurn } from '@/hooks/use-conversation-turn';
 import { useConversationBranch } from '@/hooks/use-conversation-branch';
 import { useCharacterQuery } from '@/lib/api/characters';
@@ -73,6 +78,7 @@ import { useTelegramBackButton } from '@/lib/telegram';
 import { getRawInitData } from '@/lib/telegram/auth';
 import { parseTelegramUser } from '@/lib/telegram/user';
 import { readThinkingPreference, writeThinkingPreference } from '@/lib/chat-thinking';
+import { useThinkingNotice } from '@/hooks/use-thinking-notice';
 import { useVisualViewportHeight } from '@/lib/use-visual-viewport-height';
 import {
   markCriticalSettled,
@@ -118,6 +124,14 @@ const ChatMessageVoiceFooter = dynamic(
     })),
   { ssr: false }
 );
+
+function isSoftStreamNotice(message: string): boolean {
+  return (
+    message === FIRST_TOKEN_RETRY_MESSAGE ||
+    message === CONVERSATION_RECOVERING_MESSAGE ||
+    message === CONVERSATION_SLOW_NETWORK_MESSAGE
+  );
+}
 
 export default function SelfHostedChatPage() {
   const { characterId } = useParams<{ characterId: string }>();
@@ -178,6 +192,7 @@ export default function SelfHostedChatPage() {
   }, [session.ready, session.entryError]);
   const modelCatalogQuery = useModelCatalogQuery({ enabled: enrichReady, characterId });
   const selectedModelId = modelCatalogQuery.data?.selected_model_id ?? null;
+  const thinkingNotice = useThinkingNotice(selectedModelId);
   const selectedModelUsesFreeQuota = useMemo(() => {
     const catalog = modelCatalogQuery.data?.catalog;
     if (!catalog || !selectedModelId) return null;
@@ -186,13 +201,6 @@ export default function SelfHostedChatPage() {
         ?.is_free ?? null
     );
   }, [modelCatalogQuery.data?.catalog, selectedModelId]);
-
-  useChatReplayBinding({
-    characterId,
-    conversationSessionId: activeSessionId,
-    selectedModelId,
-    pageReady: session.ready,
-  });
 
   const persisted = useMemo(
     () => [
@@ -294,6 +302,8 @@ export default function SelfHostedChatPage() {
   const characterQuery = useCharacterQuery(characterId, { sessionId: activeSessionId });
   const character = characterQuery.data?.character;
 
+  useApiConnectionWarmth();
+
   const {
     abort,
     canRegenerate,
@@ -322,6 +332,7 @@ export default function SelfHostedChatPage() {
     onSessionGone: abandonSessionWithDraft,
     goBack,
     onRestoreSendContent: restoreSendContent,
+    onThinkingIgnored: thinkingNotice.onThinkingIgnored,
   });
 
   const userSettingsQuery = useUserSettingsQuery({ enabled: backgroundReady });
@@ -420,13 +431,13 @@ export default function SelfHostedChatPage() {
         {
           onError: (error) => {
             // 异步阶段的失败由记录里的 failed 状态呈现，这里只管受理阶段的
-            if (redirectToRechargeFromError(router, error, returnTo, 'chat_voice')) return;
+            if (redirectToRechargeFromError(router, error, returnTo)) return;
             const code = (error as { code?: string }).code;
             setStreamError(
               code === 'CONFLICT'
                 ? '这条回复正在生成语音'
                 : code === 'VOICE_UNAVAILABLE'
-                  ? '语音功能暂不可用'
+                  ? '语音暂时用不了'
                   : '语音生成没能开始，请重试'
             );
           },
@@ -561,7 +572,9 @@ export default function SelfHostedChatPage() {
               ? '返回我的创作'
               : session.backHref === '/creation?tab=favorites'
                 ? '返回收藏'
-                : '返回发现'
+                : session.backHref.startsWith('/creators/')
+                  ? '返回作者空间'
+                  : '返回发现'
         }
         onBack={goBack}
         characterId={characterId}
@@ -587,6 +600,7 @@ export default function SelfHostedChatPage() {
       <ChatMessageList
         key={activeSessionId ?? 'pending'}
         messages={messages}
+        freeZoneCatalog={modelCatalogQuery.data}
         editDisabled={generating || serverBusy || branch.creating || !session.ready}
         onEditingChange={setEditingMessage}
         viewportHeight={viewportHeight}
@@ -668,15 +682,7 @@ export default function SelfHostedChatPage() {
                           redirectToRecharge(router, {
                             returnTo,
                             requiredCredits: imageConfigQuery.data?.billing.credits_per_generation,
-                            triggerSource: 'chat_image',
                           }),
-                        telemetry: {
-                          characterId,
-                          conversationSessionId: activeSessionId ?? '',
-                          selectedModelId,
-                          messageId: message.id,
-                          requiredCredits: imageConfigQuery.data?.billing.credits_per_generation,
-                        },
                       }
                     : null
                 }
@@ -760,14 +766,12 @@ export default function SelfHostedChatPage() {
           role="status"
           aria-live="polite"
           className={
-            streamError === FIRST_TOKEN_RETRY_MESSAGE ||
-            streamError === CONVERSATION_RECOVERING_MESSAGE
+            isSoftStreamNotice(streamError)
               ? 'mx-4 mb-2 flex items-center gap-2 px-3 py-2 text-muted-foreground'
               : 'mx-4 mb-2 flex items-center gap-2 rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-destructive'
           }
         >
-          {streamError !== FIRST_TOKEN_RETRY_MESSAGE &&
-          streamError !== CONVERSATION_RECOVERING_MESSAGE ? (
+          {!isSoftStreamNotice(streamError) ? (
             <AlertCircle className="h-4 w-4 shrink-0" aria-hidden />
           ) : null}
           <span className="min-w-0 flex-1 text-[12px]">{streamError}</span>
@@ -805,7 +809,11 @@ export default function SelfHostedChatPage() {
           detailsDefaultOpen={detailsDefaultOpen}
           onDetailsDefaultOpenChange={handleDetailsDefaultOpenChange}
           thinkingEnabled={thinkingEnabled}
-          onThinkingEnabledChange={changeThinkingEnabled}
+          onThinkingEnabledChange={(enabled) => {
+            changeThinkingEnabled(enabled);
+            thinkingNotice.onThinkingToggled(enabled);
+          }}
+          notice={thinkingNotice.notice}
           leftSlot={
             <ChatToolsSheet
               onCreateConversation={() => {
@@ -844,6 +852,8 @@ export default function SelfHostedChatPage() {
           }}
         />
       ) : null}
+
+      <DramaSurveyPrompt {...{ generating, messages, userScope }} failed={streamError != null} />
 
       {/* 始终挂着：ChatSplash 自己负责收场动画并在结束后返回 null，条件卸载会把动画切掉 */}
       <ChatSplash

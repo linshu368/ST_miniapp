@@ -14,6 +14,7 @@ Check each boundary:
 - Which layer owns defaults and normalization?
 - What happens for empty, null, invalid, unauthorized, and upstream-failure cases?
 - Which tests prove the round trip?
+- Which existing or new log events cover this change, its failure paths, and request/job correlation? Complete the [logging integration planning gate](../backend/app/logging-integration-planning.md) before starting implementation.
 
 ST_miniapp-specific reminders:
 
@@ -22,4 +23,3 @@ ST_miniapp-specific reminders:
 - LLM billing must not bypass `features/generation`.
 - Runtime config must not bypass `platform/runtime-config.ts`.
 - Route readiness is visible through `@frontend-ready`.
-- Session Replay / 支付观测：浏览器 `NEXT_PUBLIC_POSTHOG_*` 必须静态读取；录制 lifecycle 放根 Providers；外部支付回流不能只认 URL；服务端 PostHog 失败不得影响结算。

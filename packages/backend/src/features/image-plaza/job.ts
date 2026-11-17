@@ -1,9 +1,12 @@
+import { runObservedJob } from '../../platform/observability/jobs.js';
+import { withBusinessContext } from '../../platform/observability/context.js';
 import { randomUUID } from 'node:crypto';
 import type { FastifyBaseLogger } from 'fastify';
 import { sendBackendSentryLog } from '../../lib/sentry.js';
 import { config } from '../../platform/config.js';
 import { ImagePlazaRepository, ImagePlazaSettlementError } from './repository.js';
 import { generateImagePlazaImage, ImagePlazaUpstreamError } from './upstream.js';
+import { observeBackgroundRun } from '../../lib/background-observability.js';
 
 let timer: NodeJS.Timeout | null = null;
 let running = false;
@@ -13,90 +16,114 @@ export function startImagePlazaGenerationJob(log: FastifyBaseLogger): void {
   const workerId = `image-plaza-${randomUUID()}`;
   const repository = new ImagePlazaRepository();
   const tick = async () => {
-    if (running) return;
+    const startedAt = performance.now();
+    if (running) {
+      observeBackgroundRun({ job: 'image_plaza_generation', outcome: 'skipped', startedAt });
+      return;
+    }
     running = true;
+    let outcome: 'success' | 'partial' | 'error' | 'skipped' = 'success';
+    let terminalError: unknown;
     try {
       await repository.markStaleDispatchedUnknown(new Date().toISOString());
       const jobs = await repository.claimJobs(workerId, 2, config.imagePlaza.workerLeaseSeconds);
+      if (jobs.length === 0) outcome = 'skipped';
       for (const attempt of jobs) {
-        try {
-          const reference = attempt.referenceArtifactId
-            ? await repository.loadReference(attempt.referenceArtifactId, attempt.userId)
-            : undefined;
-          await repository.markGenerating(attempt.id);
-          const generated = await generateImagePlazaImage({
-            providerModelId:
-              attempt.mode === 't2i'
-                ? attempt.providerModelId
-                : (attempt.editProviderModelId ?? attempt.providerModelId),
-            prompt: attempt.prompt,
-            aspectRatio: attempt.aspectRatio,
-            resolution: attempt.resolution,
-            sizingMode: attempt.sizingMode,
-            mode: attempt.mode,
-            autoOptimize: attempt.autoOptimize,
-            ...(reference ? { reference } : {}),
-          });
-          await repository.recordProviderRequestId(attempt.id, generated.providerRequestId);
-          await repository.settleGeneratedImage({
-            attempt,
-            bytes: generated.bytes,
-            mimeType: generated.mimeType,
-          });
-          log.info(
-            { event: 'image_plaza.generation.ready', attemptId: attempt.id },
-            'Image plaza generation completed'
-          );
-        } catch (err) {
-          const failure =
-            err instanceof ImagePlazaUpstreamError || err instanceof ImagePlazaSettlementError
-              ? err
-              : null;
-          await repository
-            .markFailed(
-              attempt.id,
-              failure?.code ?? 'image_plaza_generation_failed',
-              failure?.outcomeUnknown ?? false
-            )
-            .catch((markErr) =>
+        await withBusinessContext(
+          { business_module: 'image', user_id: attempt.userId, attempt_id: attempt.id },
+          async () => {
+            try {
+              const reference = attempt.referenceArtifactId
+                ? await repository.loadReference(attempt.referenceArtifactId, attempt.userId)
+                : undefined;
+              await repository.markGenerating(attempt.id);
+              const generated = await generateImagePlazaImage({
+                providerModelId:
+                  attempt.mode === 't2i'
+                    ? attempt.providerModelId
+                    : (attempt.editProviderModelId ?? attempt.providerModelId),
+                prompt: attempt.prompt,
+                aspectRatio: attempt.aspectRatio,
+                resolution: attempt.resolution,
+                sizingMode: attempt.sizingMode,
+                mode: attempt.mode,
+                autoOptimize: attempt.autoOptimize,
+                ...(reference ? { reference } : {}),
+              });
+              await repository.recordProviderRequestId(attempt.id, generated.providerRequestId);
+              await repository.settleGeneratedImage({
+                attempt,
+                bytes: generated.bytes,
+                mimeType: generated.mimeType,
+              });
+              log.info(
+                { event: 'image_plaza.generation.ready', attemptId: attempt.id },
+                'Image plaza generation completed'
+              );
+            } catch (err) {
+              outcome = 'partial';
+              const failure =
+                err instanceof ImagePlazaUpstreamError || err instanceof ImagePlazaSettlementError
+                  ? err
+                  : null;
+              await repository
+                .markFailed(
+                  attempt.id,
+                  failure?.code ?? 'image_plaza_generation_failed',
+                  failure?.outcomeUnknown ?? false
+                )
+                .catch((markErr) =>
+                  log.error(
+                    { err: markErr, attemptId: attempt.id },
+                    'Image plaza failure marking failed'
+                  )
+                );
               log.error(
-                { err: markErr, attemptId: attempt.id },
-                'Image plaza failure marking failed'
-              )
-            );
-          log.error(
-            { err, event: 'image_plaza.generation.failed', attemptId: attempt.id },
-            'Image plaza generation failed'
-          );
-          try {
-            sendBackendSentryLog('error', 'image_plaza.generation.failed', {
-              attemptId: attempt.id,
-              providerModelId:
-                attempt.mode === 't2i'
-                  ? attempt.providerModelId
-                  : (attempt.editProviderModelId ?? attempt.providerModelId),
-              mode: attempt.mode,
-              errorCode: failure?.code ?? 'image_plaza_generation_failed',
-              outcomeUnknown: failure?.outcomeUnknown ?? false,
-            });
-          } catch (sentryErr) {
-            // Telemetry is non-critical and must not interrupt later jobs in the same worker tick.
-            log.error(
-              { err: sentryErr, event: 'image_plaza.sentry_log.failed', attemptId: attempt.id },
-              'Image plaza Sentry log failed'
-            );
+                { err, event: 'image_plaza.generation.failed', attemptId: attempt.id },
+                'Image plaza generation failed'
+              );
+              try {
+                sendBackendSentryLog('error', 'image_plaza.generation.failed', {
+                  attemptId: attempt.id,
+                  providerModelId:
+                    attempt.mode === 't2i'
+                      ? attempt.providerModelId
+                      : (attempt.editProviderModelId ?? attempt.providerModelId),
+                  mode: attempt.mode,
+                  errorCode: failure?.code ?? 'image_plaza_generation_failed',
+                  outcomeUnknown: failure?.outcomeUnknown ?? false,
+                });
+              } catch (sentryErr) {
+                // Telemetry is non-critical and must not interrupt later jobs in the same worker tick.
+                log.error(
+                  { err: sentryErr, event: 'image_plaza.sentry_log.failed', attemptId: attempt.id },
+                  'Image plaza Sentry log failed'
+                );
+              }
+            }
           }
-        }
+        );
       }
     } catch (err) {
+      outcome = 'error';
+      terminalError = err;
       log.error({ err, event: 'image_plaza.worker.failed' }, 'Image plaza worker tick failed');
     } finally {
+      observeBackgroundRun({
+        job: 'image_plaza_generation',
+        outcome,
+        startedAt,
+        error: terminalError,
+      });
       running = false;
     }
   };
-  timer = setInterval(() => void tick(), Math.max(1000, config.imagePlaza.workerIntervalMs));
+  timer = setInterval(
+    () => void runObservedJob('image_plaza_generation', tick),
+    Math.max(1000, config.imagePlaza.workerIntervalMs)
+  );
   timer.unref();
-  void tick();
+  void runObservedJob('image_plaza_generation', tick);
 }
 
 export function stopImagePlazaGenerationJob(): void {

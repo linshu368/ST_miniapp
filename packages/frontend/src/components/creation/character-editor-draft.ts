@@ -21,6 +21,7 @@ export interface CharacterEditorDraft {
   baselineFingerprint?: string;
   coverStudioId?: string | null;
   recoveryFor?: string | null;
+  sourceWishId?: string | null;
 }
 export interface StoredCharacterDraft extends CharacterEditorDraft {
   version: 1;
@@ -210,6 +211,10 @@ export function parseStoredCharacterDraft(
     coverStudioId:
       typeof source.coverStudioId === 'string' && UUID.test(source.coverStudioId)
         ? source.coverStudioId
+        : null,
+    sourceWishId:
+      typeof source.sourceWishId === 'string' && UUID.test(source.sourceWishId)
+        ? source.sourceWishId
         : null,
     recoveryFor:
       typeof source.recoveryFor === 'string' && UUID.test(source.recoveryFor)

@@ -97,3 +97,19 @@ send/regenerate 携带可选 `first_token_measurement`；后端通过既有 begi
 系统超时免费、免费预留释放；主动停止沿原报价/权益一次结算。计费继续用一次交付结果和服务端持久化终态保障正确性，不依赖滚动/阅读。已结算记录只补调用元数据，不重进计费；归档明细依永久去重返回显式 archived 终态，不重扣、不伪造账单；failed 进入已有有界退避。缺报沿用原预算+15秒保守收口，不增加新计费任务。
 
 迁移为 `20261028_client_committed_first_token.sql`、`20261028_llm_archived_charge_result.sql`，均仅替换既有函数，保留 ACL 和历史数据。先 TEST 验证、合 dev，再生产迁移 → Backend → Frontend/看板。发布证据见任务 release-review；1%是否达成须由上线后的 v4 样本判断。
+
+## 支付供应商替换为 Vexutopia（2026-11-03）
+
+无迁移。`payment_orders.provider_transaction_id` 改为建单成功即写入 Vexutopia `tx_…`（`complete_payment_order` 的 `COALESCE` 写法兼容）。`next_reconcile_at`/`reconcile_attempts`/`reconcile_locked_until` 与 `checkout_*` 列、`record_checkout_confirmation` RPC 不再被调用，按约定保留不删。`payment_operation_events` 写入改为按 `event_key` 冲突忽略，便于对账把同一异常只记一次。
+
+## VIP 混合星尘奖励（2026-11-05）
+
+20261105_vip_mixed_rewards.sql 增订单/开卡审计通用赠送快照，旧值为 0；grant_vip_reward 复用 canonical 专项发放并原子更新通用余额及同一条 ledger。保留订单唯一约束、北京零点签到边界、原锁与幂等；赠送不计实付收入。先 test 后 production，应用部署完成后再发布拆分配置。回退先还原配置，保留混合结算能力直至在途订单结束，不回收已发奖励。
+
+隔离 PG 覆盖并发、幂等、旧订单及故障回滚；远端执行与部署状态见任务 `11-05-vip-mixed-rewards` 的发布记录。
+
+## TTZF epay repository behavior (2026-11-09)
+
+No new schema objects or migrations. Existing billing.payment_orders and complete_payment_order remain the authoritative atomic fulfilment boundary. New EP-prefixed IDs isolate provider traffic from historical MA orders. attachProviderTransaction binds only null references on pending/expired rows and rereads after a racing update; an existing different reference is never overwritten. markFailed only changes pending rows without a provider reference, protecting early callbacks.
+
+The historical note that next_reconcile_at is unused is superseded: bounded reconciliation selects due EP orders (including null references), sorts by next_reconcile_at/id and rotates candidates before querying. Existing lease/attempt columns remain unused. Expiry no longer bulk-closes unknown or legacy outcomes. Refunds do not automatically change wallet/VIP balances. Repository mocks cover CAS/query predicates; actual RPC concurrency/rollback and target-environment schema verification remain for engineering TEST acceptance. No remote database was accessed for this change.

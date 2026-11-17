@@ -18,9 +18,14 @@ import { flushSync } from 'react-dom';
 import { getRawInitData, INIT_DATA_HEADER } from '@/lib/telegram/auth';
 import { createLogger } from '@/lib/logger';
 import { API_URL } from './client';
+import { lobbyViewerScope } from '@/lib/lobby-recommendation-state';
+import { useOnboardingStore } from '@/stores/onboarding-store';
+import { noteCompletedRound } from '@/lib/growth/prompt-visit';
 
 const log = createLogger('conversation-stream');
 export const CONVERSATION_RECOVERING_MESSAGE = '正在接回这条回复，请稍候';
+/** The first-token clock passed but the server has not failed the turn, so it is not an error. */
+export const CONVERSATION_SLOW_NETWORK_MESSAGE = '网络有点慢，正在接收回复';
 
 export interface InsufficientBalanceDetail {
   creditsRequired: number;
@@ -59,7 +64,7 @@ export interface StreamTurnOptions {
   onDelta: (text: string) => void;
   onReasoning?: (text: string) => void;
   onDone: (event: ConversationStreamDoneEvent) => void;
-  onDispatched?: () => void;
+  onDispatched?: (url: string) => void;
   onFirstDeltaReceived?: () => void;
 }
 
@@ -171,6 +176,15 @@ export function createConversationRequestId(): string {
 }
 
 /**
+ * 只算成功的新一轮，不算重新生成，也不会重复计数：新人引导的跨卡计轮，
+ * 加上增长弹窗「本次打开新完成的轮数」。
+ */
+function recordNewTurn(guideScope: string, turnId: string): void {
+  useOnboardingStore.getState().recordCompletedTurn(guideScope, turnId);
+  noteCompletedRound();
+}
+
+/**
  * 发一轮消息或重生成，把 SSE 事件分发到回调。
  *
  * 关于 abort：它只停止本地读流。后端明确不因客户端断开而终止生成（sse.ts），
@@ -193,8 +207,9 @@ async function readConversationStream(options: StreamTurnOptions): Promise<void>
   const initData = getRawInitData();
   if (initData) headers.set(INIT_DATA_HEADER, initData);
 
-  options.onDispatched?.();
-  const response = await fetch(`${API_URL}${path}`, {
+  const url = `${API_URL}${path}`;
+  options.onDispatched?.(url);
+  const response = await fetch(url, {
     method: 'POST',
     headers,
     body: JSON.stringify({
@@ -230,6 +245,8 @@ async function readConversationStream(options: StreamTurnOptions): Promise<void>
   let buffer = '';
   let finished = false;
   let firstTokenFlushed = false;
+  // 这一轮显示不显示思考过程：默认跟开关；服务端在 start 里说要显示（畅聊免费模型关不掉思考）就显示
+  let revealReasoning = options.thinkingEnabled !== false;
 
   const pushText = (batch: ReturnType<typeof createDeltaBatcher>, text: string): void => {
     const meaningful = text.trim().length > 0;
@@ -248,6 +265,7 @@ async function readConversationStream(options: StreamTurnOptions): Promise<void>
   const handle = (event: ConversationStreamEvent): void => {
     switch (event.type) {
       case 'start':
+        if (event.thinking_enabled === true) revealReasoning = true;
         onStart(event);
         return;
       case 'delta':
@@ -259,7 +277,7 @@ async function readConversationStream(options: StreamTurnOptions): Promise<void>
         return;
       case 'reasoning':
         batcher.flush();
-        if (options.thinkingEnabled !== false && typeof event.text === 'string') {
+        if (revealReasoning && typeof event.text === 'string') {
           pushText(reasoningBatcher, event.text);
         }
         return;
@@ -319,7 +337,7 @@ async function readConversationStream(options: StreamTurnOptions): Promise<void>
 
   if (!finished) {
     throw new ConversationStreamError(
-      '生成中断，请稍后重试',
+      '生成中断了，再点一次重新来',
       response.status,
       'upstream_error',
       undefined,
@@ -333,6 +351,7 @@ export const CONVERSATION_STREAM_IDLE_TIMEOUT_MS = 130_000;
 export const CONVERSATION_STREAM_DEADLINE_MS = 150_000;
 
 export async function streamConversationTurn(options: StreamTurnOptions): Promise<void> {
+  const guideScope = lobbyViewerScope();
   const controller = new AbortController();
   let idleTimer: ReturnType<typeof setTimeout>;
   let deadlineTimer: ReturnType<typeof setTimeout>;
@@ -384,7 +403,13 @@ export async function streamConversationTurn(options: StreamTurnOptions): Promis
           options.onReasoning?.(text);
         },
         onDone: (event) => {
-          if (!controller.signal.aborted) options.onDone(event);
+          if (controller.signal.aborted) return;
+          options.onDone(event);
+          if (options.content !== undefined && event.status === 'complete')
+            recordNewTurn(
+              guideScope,
+              `${options.sessionId}:${options.requestId ?? event.assistant_message_id}`
+            );
         },
       }),
     ]);

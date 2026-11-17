@@ -9,7 +9,6 @@
 
 import { FastifyInstance } from 'fastify';
 import {
-  LOBBY_FEATURED_POSITION_COUNT,
   fail,
   ok,
   type CharacterSummary,

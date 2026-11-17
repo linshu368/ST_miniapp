@@ -13,6 +13,13 @@ type PreviewState = {
   wallet: { credits: number; main_credits: number; bonus_credits: number };
   requests: { method: string; path: string; thinking_enabled?: boolean }[];
   unhandled: string[];
+  lobby: {
+    current: import('@miniapp/shared').LobbyRecommendationData | null;
+    previous: import('@miniapp/shared').LobbyRecommendationData | null;
+    batches_created: number;
+    actions: { action: string; request_id: string; expected_batch_id?: string | null }[];
+    exposures: { batch_id: string; character_id: string; seen_at: string }[];
+  };
 };
 type Preview = {
   scenario: (name: Scenario) => Promise<void>;

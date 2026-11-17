@@ -10,6 +10,7 @@ import {
 } from '@/lib/api/generation-config';
 import { cn } from '@/lib/utils';
 import { isInstructionSlotEnabled } from './chat-generation-settings-state';
+import { ChatDriveModePicker } from './chat-drive-mode-picker';
 import {
   claimReplyPreferenceGuide,
   type ReplyDetailsDefaultOpen,
@@ -50,6 +51,7 @@ export function ChatReplyPreferences({
   });
   const config = query.data?.config;
   const styleOptions = query.data?.reply_style_options ?? [];
+  const driveModes = query.data?.drive_modes;
   const wordCountTiers = query.data?.word_count_tiers;
   const lengthOptions = (wordCountTiers?.tiers ?? [])
     .slice()
@@ -63,6 +65,8 @@ export function ChatReplyPreferences({
   const [pendingSlotValues, setPendingSlotValues] = useState<PendingSlotValues>({});
   const [pendingStyleValues, setPendingStyleValues] = useState<Record<string, boolean>>({});
   const [failedStyleValues, setFailedStyleValues] = useState<Record<string, boolean>>({});
+  const [pendingDriveMode, setPendingDriveMode] = useState<string | null>(null);
+  const [driveModeFailed, setDriveModeFailed] = useState(false);
   const styleDescriptionId = useId();
   const enabledSlotLabels = SLOT_CONFIG.filter((slot) =>
     isInstructionSlotEnabled(pendingSlotValues[slot.key] ?? config?.[slot.preference])
@@ -75,6 +79,7 @@ export function ChatReplyPreferences({
   const saving =
     patch.isPending ||
     pendingWordCount !== null ||
+    pendingDriveMode !== null ||
     Object.keys(pendingSlotValues).length > 0 ||
     Object.keys(pendingStyleValues).length > 0;
   const pointerStartY = useRef<number | null>(null);
@@ -112,6 +117,15 @@ export function ChatReplyPreferences({
     if (!config || pendingWordCount !== null || id === activeWordCount) return;
     setPendingWordCount(id);
     void savePreference({ pref_word_count: id }).finally(() => setPendingWordCount(null));
+  };
+
+  const changeDriveMode = (id: string) => {
+    if (!config || pendingDriveMode !== null || id === config.pref_drive_mode) return;
+    setPendingDriveMode(id);
+    setDriveModeFailed(false);
+    void savePreference({ pref_drive_mode: id })
+      .then((saved) => setDriveModeFailed(!saved))
+      .finally(() => setPendingDriveMode(null));
   };
 
   const saveInstructions = () => {
@@ -229,6 +243,18 @@ export function ChatReplyPreferences({
           className="chat-scroll-area min-h-0 overflow-y-auto overscroll-contain px-3 pb-3 pt-1"
           style={{ maxHeight: Math.min(maxContentHeight, 384) }}
         >
+          {driveModes && config ? (
+            <div className="mb-3 border-b border-border/60">
+              <ChatDriveModePicker
+                driveModes={driveModes}
+                activeId={config.pref_drive_mode}
+                pendingId={pendingDriveMode}
+                failed={driveModeFailed}
+                onChange={changeDriveMode}
+              />
+            </div>
+          ) : null}
+
           <section aria-label="回复长度" className="pb-3">
             <div className="mb-2 flex items-center justify-between gap-2">
               <h3 className="text-[11px] font-semibold text-foreground">回复长度</h3>
@@ -257,7 +283,7 @@ export function ChatReplyPreferences({
                 </button>
               </div>
             ) : lengthOptions.length === 0 ? (
-              <p className="py-2 text-[11px] text-muted-foreground">暂无可用档位</p>
+              <p className="py-2 text-[11px] text-muted-foreground">这里暂时没有可选的档位</p>
             ) : (
               <div
                 className="grid gap-1.5"

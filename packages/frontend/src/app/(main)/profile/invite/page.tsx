@@ -25,7 +25,6 @@ import {
   useInviteEntryStatusQuery,
   useInviteStatsQuery,
 } from '@/lib/api/invite';
-import { retainPaywallFollowupIfActive } from '@/lib/payment/flow-telemetry';
 import { useHaptic, useTelegramBackButton } from '@/lib/telegram';
 import { formatNumber } from '@/lib/utils/payment';
 
@@ -64,11 +63,6 @@ export default function InviteCenterPage() {
     false,
     entryStatus.isError || visiblePanel.isError
   );
-
-  useEffect(() => {
-    // 只延续已有 chat/paywall context，无活跃 replay 时不新开 recording。
-    retainPaywallFollowupIfActive();
-  }, []);
 
   return (
     <main className="mx-auto flex min-h-[calc(100dvh-var(--app-nav-space))] max-w-md flex-col bg-background text-foreground">
@@ -203,7 +197,9 @@ function InviteTabPanel({ center }: { center: ReturnType<typeof useInviteCenterQ
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-3 py-20 text-center">
         <RefreshCw className="h-8 w-8 text-muted-foreground/60" aria-hidden />
-        <p className="text-[13px] font-medium text-muted-foreground">邀请信息暂时无法加载</p>
+        <p className="text-[13px] font-medium text-muted-foreground">
+          邀请信息没加载出来，再试一次吧
+        </p>
         <Button
           variant="outline"
           size="sm"
@@ -295,7 +291,9 @@ function StatsTabPanel({ stats }: { stats: ReturnType<typeof useInviteStatsQuery
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-3 py-20 text-center">
         <RefreshCw className="h-8 w-8 text-muted-foreground/60" aria-hidden />
-        <p className="text-[13px] font-medium text-muted-foreground">邀请数据暂时无法加载</p>
+        <p className="text-[13px] font-medium text-muted-foreground">
+          邀请数据没加载出来，再试一次吧
+        </p>
         <Button
           variant="outline"
           size="sm"

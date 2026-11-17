@@ -1,4 +1,5 @@
 import { config } from '../../platform/config.js';
+import { clientFetch } from '../../platform/observability/fetch.js';
 import { veniceFetch } from '../../platform/venice-http.js';
 
 export interface VideoPlazaProviderErrorSummary {
@@ -130,7 +131,7 @@ export async function downloadVideo(url: string): Promise<Buffer> {
   let lastError: unknown;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
-      const response = await fetch(parsed, {
+      const response = await clientFetch('video.download', 'venice')(parsed, {
         redirect: 'error',
         signal: AbortSignal.timeout(120_000),
       });

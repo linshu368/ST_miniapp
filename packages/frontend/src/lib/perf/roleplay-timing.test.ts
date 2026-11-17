@@ -21,7 +21,8 @@ afterEach(() => {
 
 describe('roleplay full-reply engineering mirror', () => {
   it('uses a monotonic clock for send/regenerate and keeps the first terminal immutable', async () => {
-    const timing = new RoleplayReplyTiming('not-exported-request', 'regenerate');
+    const terminal = vi.fn();
+    const timing = new RoleplayReplyTiming('not-exported-request', 'regenerate', terminal);
     await vi.advanceTimersByTimeAsync(1200);
     vi.setSystemTime(new Date('2000-01-01'));
     timing.finish('complete');
@@ -32,6 +33,7 @@ describe('roleplay full-reply engineering mirror', () => {
       expect.objectContaining({ action: 'regenerate', outcome: 'complete' })
     );
     expect(engineering.event).toHaveBeenCalledTimes(2);
+    expect(terminal).toHaveBeenCalledExactlyOnceWith(1200, 'complete');
     expect(JSON.stringify(engineering.event.mock.calls)).not.toContain('not-exported');
   });
 

@@ -4,7 +4,11 @@ import type {
   OpenRouterModelDirectory,
   ProviderModelDirectory,
 } from '@miniapp/shared';
-import { getCatalogProviderIssues, getOpenRouterCatalogIssues } from './openRouterModels';
+import {
+  getCatalogProviderIssues,
+  getOpenRouterCatalogIssues,
+  getFallbackProviderIssues,
+} from './openRouterModels';
 
 const upstream = {
   id: 'google/gemini-flash',
@@ -50,6 +54,24 @@ const catalog: ModelCatalog = {
 };
 
 describe('OpenRouter admin helpers', () => {
+  it('requires a separate provider pair after changing fallback and rejects blocked preferences', () => {
+    expect(getFallbackProviderIssues(catalog)).toEqual([]);
+    expect(getFallbackProviderIssues({ ...catalog, fallback_model_id: 'vendor/new' })).toHaveLength(
+      1
+    );
+    expect(
+      getFallbackProviderIssues(catalog, {
+        rules: [
+          {
+            openrouter_model_id: 'deepseek/deepseek-v4.1-flash-1017',
+            blocked_providers: ['Together'],
+            preferred_providers: [],
+            note: '',
+          },
+        ],
+      })
+    ).toHaveLength(1);
+  });
   it('accepts known models and reports missing models', () => {
     expect(getOpenRouterCatalogIssues(catalog, directory)).toEqual([]);
 
@@ -76,7 +98,13 @@ it('validates the configured fallback against the existing OpenRouter directory'
     provider: 'openrouter',
     models: [{ ...upstream, provider: 'openrouter', status: 'available', raw_status_label: null }],
   };
-  const configured = { ...catalog, fallback_model_id: upstream.id };
+  const configured: ModelCatalog = {
+    ...catalog,
+    fallback_model_id: upstream.id,
+    fallback_provider_routes: [
+      { model_id: upstream.id, preferred_providers: ['google-vertex', 'google-ai-studio'] },
+    ],
+  };
   expect(getCatalogProviderIssues(configured, { openrouter: providerDirectory })).toEqual([]);
   expect(
     getCatalogProviderIssues(

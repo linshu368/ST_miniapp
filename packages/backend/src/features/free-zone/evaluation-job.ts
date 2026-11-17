@@ -1,0 +1,305 @@
+/**
+ * 畅聊候选模型的定时评估：每 30 分钟一轮，所有候选一起推进状态。
+ *
+ * 只要配置里有候选就评估，不看总开关：运营可以先关着栏目、在 Grafana 里看哪些模型达标，
+ * 再打开。总开关只决定用户能不能看到栏目。
+ *
+ * 外部依赖都按「拿不到就维持现状」处理：Surplus 某个模型的行情拿不到，这个模型本轮
+ * 不动；质量指标查询失败，在架模型本轮不按质量下架。
+ */
+import type { FastifyBaseLogger } from 'fastify';
+import { freeZoneRulesFor, type FreeZoneCandidate, type FreeZoneConfig } from '@miniapp/shared';
+import { observeBackgroundRun } from '../../lib/background-observability.js';
+import { runObservedJob } from '../../platform/observability/jobs.js';
+import { fetchFreeZoneConfig } from './config.js';
+import {
+  advanceState,
+  initialState,
+  judgeQuality,
+  type FreeZoneModelState,
+  type QualityVerdict,
+} from './lifecycle.js';
+import {
+  loadFreeZoneQuality,
+  loadFreeZoneStatesVersioned,
+  saveFreeZoneEvaluation,
+  type EvaluatedCandidate,
+  type ModelQuality,
+} from './repository.js';
+import { screenModel, summarizeScreening, type ScreeningResult } from './screening.js';
+import { createSurplusProbe, type ProbeFn } from './probe.js';
+import { applyProbes, probeCheck, type ProbedScreening } from './probe-screening.js';
+import { fetchSurplusModelMarket, type SurplusModelMarket } from './surplus-market.js';
+import { invalidateFreeZoneSnapshot } from './snapshot.js';
+
+const INTERVAL_MS = 30 * 60 * 1000;
+const STARTUP_DELAY_MS = 60 * 1000;
+/** 多副本错峰启动时，别人刚评估过就不再推进，避免「连续达标」被多算 */
+const MIN_INTERVAL_MINUTES = 25;
+const JOB = 'free_zone_evaluation';
+
+let timer: NodeJS.Timeout | null = null;
+let startupTimer: NodeJS.Timeout | null = null;
+let running = false;
+
+export function startFreeZoneEvaluationJob(log: FastifyBaseLogger): void {
+  if (timer || startupTimer) return;
+  const jlog = log.child({ module: 'free-zone' });
+  timer = setInterval(() => void runFreeZoneEvaluation(jlog), INTERVAL_MS);
+  startupTimer = setTimeout(() => {
+    startupTimer = null;
+    void runFreeZoneEvaluation(jlog);
+  }, STARTUP_DELAY_MS);
+}
+
+export function stopFreeZoneEvaluationJob(): void {
+  if (timer) clearInterval(timer);
+  if (startupTimer) clearTimeout(startupTimer);
+  timer = null;
+  startupTimer = null;
+}
+
+/** 一次最多同时问几个模型：候选多时一口气全发容易被公开接口限流。 */
+const MARKET_CONCURRENCY = 4;
+
+async function fetchMarkets(
+  candidates: FreeZoneCandidate[],
+  log: FastifyBaseLogger
+): Promise<Array<SurplusModelMarket | null>> {
+  const results: Array<SurplusModelMarket | null> = [];
+  for (let start = 0; start < candidates.length; start += MARKET_CONCURRENCY) {
+    const batch = candidates.slice(start, start + MARKET_CONCURRENCY);
+    results.push(
+      ...(await Promise.all(
+        batch.map((candidate) =>
+          fetchSurplusModelMarket(candidate.surplus_model).catch((err: unknown) => {
+            log.warn(
+              {
+                kind: 'sys',
+                event: 'free_zone.market_unavailable',
+                err,
+                model: candidate.surplus_model,
+              },
+              'Surplus 行情拿不到，这个模型本轮维持现状'
+            );
+            return null;
+          })
+        )
+      ))
+    );
+  }
+  return results;
+}
+
+/** 每个候选按初筛结果做派单探测（并发同行情一样受限）。 */
+async function probeAll(
+  candidates: FreeZoneCandidate[],
+  screenings: Array<ScreeningResult | null>,
+  states: Map<string, FreeZoneModelState>,
+  rules: FreeZoneConfig['screening'],
+  now: Date,
+  probe: ProbeFn
+): Promise<ProbedScreening[]> {
+  const results: ProbedScreening[] = [];
+  for (let start = 0; start < candidates.length; start += MARKET_CONCURRENCY) {
+    const batch = candidates.slice(start, start + MARKET_CONCURRENCY);
+    results.push(
+      ...(await Promise.all(
+        batch.map((candidate, offset) =>
+          applyProbes({
+            model: candidate.surplus_model,
+            screening: screenings[start + offset] ?? null,
+            state: states.get(candidate.id) ?? initialState(candidate.id),
+            now,
+            rules: freeZoneRulesFor(rules, candidate),
+            probe,
+          })
+        )
+      ))
+    );
+  }
+  return results;
+}
+
+function snapshotMetrics(
+  probed: ProbedScreening,
+  rules: FreeZoneConfig['screening'],
+  quality: QualityVerdict,
+  metrics: ModelQuality | undefined,
+  market: SurplusModelMarket | null | undefined
+): Record<string, unknown> {
+  const screening = probed.screening;
+  const direct = market?.book.directPrice;
+  return {
+    probe: probed.chosen,
+    // 原价：运营平台据此决定每个模型的折扣底线
+    direct_price: direct
+      ? {
+          input_per_1m: direct.inputPer1m,
+          output_per_1m: direct.outputPer1m,
+          source: direct.source,
+        }
+      : null,
+    probes: probed.probes,
+    screening: screening
+      ? {
+          pass: screening.pass,
+          qualified: screening.qualified.map((item) => ({
+            provider: item.provider,
+            price: item.price,
+            ttft_p50_ms: item.ttftP50Ms,
+            offers: item.qualifiedOffers,
+          })),
+          realized_7d_discount_pct: screening.realized7dDiscountPct,
+          reasons: screening.reasons.slice(0, 10),
+          summary: summarizeScreening(screening, probeCheck(probed.probes, rules)),
+        }
+      : null,
+    business: quality.kind,
+    ...(metrics
+      ? {
+          turns: metrics.turns,
+          // 不可用率（超时兜底 + 超时）沿用旧字段名，运营平台照旧显示
+          slow_fallback_pct: metrics.unusablePct,
+          error_fallback_pct: metrics.errorFallbackPct,
+          primary_delivered_turns: metrics.primaryDeliveredTurns,
+          interrupted_turns: metrics.interruptedTurns,
+          interrupted_pct: metrics.interruptedPct,
+        }
+      : {}),
+  };
+}
+
+/** 初筛：折扣底线按模型取（候选单独设了就用它，否则用统一值）。 */
+function screenAll(
+  config: FreeZoneConfig,
+  markets: ReadonlyArray<SurplusModelMarket | null>
+): Array<ScreeningResult | null> {
+  return markets.map((market, index) =>
+    market
+      ? screenModel(market, freeZoneRulesFor(config.screening, config.candidates[index]))
+      : null
+  );
+}
+
+const defaultProbe = createSurplusProbe();
+
+export async function runFreeZoneEvaluation(
+  log: FastifyBaseLogger,
+  probeImpl: ProbeFn = defaultProbe
+): Promise<void> {
+  return runObservedJob(JOB, () => evaluateFreeZone(log, probeImpl));
+}
+
+async function evaluateFreeZone(log: FastifyBaseLogger, probeImpl: ProbeFn): Promise<void> {
+  const startedAt = performance.now();
+  if (running) {
+    observeBackgroundRun({ job: JOB, outcome: 'skipped', startedAt });
+    return;
+  }
+  running = true;
+  try {
+    const config = await fetchFreeZoneConfig();
+    if (config.candidates.length === 0) {
+      observeBackgroundRun({ job: JOB, outcome: 'skipped', startedAt });
+      return;
+    }
+    const { states, versions } = await loadFreeZoneStatesVersioned();
+    const listed = config.candidates.flatMap((candidate) => {
+      const state = states.get(candidate.id);
+      return state?.status === 'listed' ? [{ id: candidate.id, since: state.providerSince }] : [];
+    });
+    const [markets, metrics] = await Promise.all([
+      fetchMarkets(config.candidates, log),
+      loadFreeZoneQuality(listed).catch((err: unknown) => {
+        log.error(
+          { kind: 'sys', event: 'free_zone.metrics_failed', err },
+          '质量指标读取失败，本轮不按质量下架'
+        );
+        return null;
+      }),
+    ]);
+
+    const now = new Date();
+    const screenings = screenAll(config, markets);
+    const probed = await probeAll(
+      config.candidates,
+      screenings,
+      states,
+      config.screening,
+      now,
+      probeImpl
+    );
+    const evaluated: EvaluatedCandidate[] = config.candidates.map((candidate, index) => {
+      const state = states.get(candidate.id) ?? initialState(candidate.id);
+      const rules = freeZoneRulesFor(config.screening, candidate);
+      const probe = probed[index] ?? { screening: null, hold: true, probes: [], chosen: null };
+      // 探测说不清时按「数据缺失」处理：在架的维持、未上架的这一轮不算达标也不清零
+      const screening = probe.hold ? null : probe.screening;
+      const modelMetrics = metrics?.get(candidate.id);
+      const quality: QualityVerdict =
+        state.status === 'listed' && metrics
+          ? judgeQuality(modelMetrics ?? null, config.on_shelf)
+          : { kind: 'insufficient', turns: modelMetrics?.turns ?? 0 };
+      const next = advanceState({
+        state,
+        now,
+        screening,
+        quality,
+        relist: config.relist,
+        priceBandRatio: config.screening.price_band_ratio,
+      });
+      return {
+        surplusModel: candidate.surplus_model,
+        state: next.state,
+        events: next.events,
+        metrics: snapshotMetrics(probe, rules, quality, modelMetrics, markets[index]),
+        version: versions.get(candidate.id) ?? null,
+      };
+    });
+
+    const { outcome, skipped } = await saveFreeZoneEvaluation(evaluated, MIN_INTERVAL_MINUTES);
+    if (outcome === 'saved') invalidateFreeZoneSnapshot();
+    const written = evaluated.filter((item) => !skipped.includes(item.state.candidateId));
+    for (const item of outcome === 'saved' ? written : []) {
+      for (const event of item.events) {
+        log.info(
+          {
+            kind: 'biz',
+            event: `free_zone.${event.type}`,
+            candidateId: item.state.candidateId,
+            detail: event,
+          },
+          '畅聊模型状态变化'
+        );
+      }
+    }
+    log.info(
+      {
+        kind: 'sys',
+        event: 'free_zone.evaluated',
+        outcome,
+        candidateCount: evaluated.length,
+        skippedChangedCount: skipped.length,
+        listedCount: evaluated.filter((item) => item.state.status === 'listed').length,
+        missingMarketCount: markets.filter((market) => market === null).length,
+        probeCount: probed.reduce((sum, item) => sum + item.probes.length, 0),
+        unroutableProbeCount: probed.reduce(
+          (sum, item) => sum + item.probes.filter((p) => p.outcome === 'unroutable').length,
+          0
+        ),
+      },
+      '畅聊评估完成'
+    );
+    observeBackgroundRun({
+      job: JOB,
+      outcome: outcome === 'saved' ? 'success' : 'skipped',
+      startedAt,
+    });
+  } catch (err) {
+    log.error({ kind: 'sys', event: 'free_zone.evaluation_failed', err }, '畅聊评估失败');
+    observeBackgroundRun({ job: JOB, outcome: 'error', startedAt, error: err });
+  } finally {
+    running = false;
+  }
+}

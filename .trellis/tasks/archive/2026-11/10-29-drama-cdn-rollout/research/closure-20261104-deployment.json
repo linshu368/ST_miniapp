@@ -1,0 +1,129 @@
+{
+  "target": {
+    "projectId": "ce38c0c0-88cd-407a-9c04-06124cd42e97",
+    "environmentId": "f03d6c61-84e3-434d-a81a-0ae209167ef5",
+    "serviceId": "8bd593b7-7c40-4ab6-8808-c0863f27a22a"
+  },
+  "mutation_started_at": {
+    "current_time": "2026-11-04 03:01:03 UTC"
+  },
+  "mutation": {
+    "environment": {
+      "id": "f03d6c61-84e3-434d-a81a-0ae209167ef5",
+      "name": "production"
+    },
+    "serviceId": "8bd593b7-7c40-4ab6-8808-c0863f27a22a",
+    "variableNames": ["DRAMA_CDN_ENABLED"],
+    "skippedDeploys": false,
+    "staged": null
+  },
+  "release": "26da44cc74420caf3642c33bcb4b4752eff6132c",
+  "deployments": [
+    {
+      "id": "911cb481-b57b-4aa7-83d7-9386d266c632",
+      "status": "SUCCESS",
+      "createdAt": "2026-11-04T03:01:08.017Z",
+      "updatedAt": "2026-11-04T03:01:27.830Z",
+      "serviceId": "8bd593b7-7c40-4ab6-8808-c0863f27a22a",
+      "environmentId": "f03d6c61-84e3-434d-a81a-0ae209167ef5",
+      "url": null,
+      "snapshotId": "f2d585c2-cf99-4745-8032-998f3be9eed1",
+      "canRollback": true,
+      "canRedeploy": true,
+      "regions": ["asia-southeast1-eqsg3a"],
+      "meta": {
+        "reason": "deploy",
+        "commitMessage": "Merge pull request #650 from linshu368/feat/admin-cli-email-login\n\nfeat: passwordless admin CLI login for an allowlisted email",
+        "commitHash": "26da44cc74420caf3642c33bcb4b4752eff6132c",
+        "branch": "main"
+      }
+    },
+    {
+      "id": "fbad46dc-0dbb-444d-9cfb-070affa39c8a",
+      "status": "REMOVED",
+      "createdAt": "2026-11-04T02:46:28.758Z",
+      "updatedAt": "2026-11-04T03:01:30.941Z",
+      "serviceId": "8bd593b7-7c40-4ab6-8808-c0863f27a22a",
+      "environmentId": "f03d6c61-84e3-434d-a81a-0ae209167ef5",
+      "url": null,
+      "snapshotId": "95ffc75d-e1cb-4a50-8312-415e19a7daf4",
+      "canRollback": true,
+      "canRedeploy": true,
+      "regions": ["asia-southeast1-eqsg3a"],
+      "meta": {
+        "reason": "deploy",
+        "commitMessage": "Merge pull request #650 from linshu368/feat/admin-cli-email-login\n\nfeat: passwordless admin CLI login for an allowlisted email",
+        "commitHash": "26da44cc74420caf3642c33bcb4b4752eff6132c",
+        "branch": "main"
+      }
+    }
+  ],
+  "status": {
+    "environment": {
+      "id": "f03d6c61-84e3-434d-a81a-0ae209167ef5",
+      "name": "production"
+    },
+    "services": [
+      {
+        "serviceId": "8bd593b7-7c40-4ab6-8808-c0863f27a22a",
+        "serviceName": "stminiapp",
+        "state": "online",
+        "statusText": "Online",
+        "activeDeployments": [
+          {
+            "id": "911cb481-b57b-4aa7-83d7-9386d266c632",
+            "status": "SUCCESS",
+            "createdAt": "2026-11-04T03:01:08.017Z",
+            "statusUpdatedAt": "2026-11-04T03:01:27.829Z"
+          }
+        ],
+        "replicaStatus": {
+          "running": 1,
+          "crashed": 0,
+          "total": 1
+        },
+        "cronJob": null,
+        "issues": {
+          "warningCount": 0,
+          "criticalCount": 0
+        },
+        "recentFailures": 0,
+        "recentFailedDeployments": [],
+        "hasIssues": false,
+        "isCronJob": false,
+        "hasVolume": false
+      }
+    ],
+    "pendingWork": [],
+    "summary": {
+      "totalServices": 1,
+      "servicesWithIssues": 0,
+      "totalFailures": 0
+    }
+  },
+  "effective_at": "2026-11-04T03:01:30.941Z",
+  "basis": "Replacement SUCCESS at 03:01:27.830Z; previous deployment REMOVED at 03:01:30.941Z; 1/1 running and no pending work.",
+  "readback": {
+    "DRAMA_CDN_ENABLED": "false",
+    "experiment_id": "drama-bunny-prod-20261029-v1",
+    "other_experiment_config_unchanged": true,
+    "compared_variable_names": [
+      "DRAMA_CDN_BASE_URL",
+      "DRAMA_CDN_EXPERIMENT_ID",
+      "DRAMA_CDN_EXPERIMENT_KEY",
+      "DRAMA_CDN_TOKEN_KEY"
+    ]
+  },
+  "health": {
+    "status": "ok",
+    "timestamp": "2026-11-04T03:01:45.739Z"
+  },
+  "playback_acceptance": "Updated in closure-20261104-playback.json: iOS new playback and episode switch passed with supabase/disabled first-frame logs; retry not tested per user clarification; original Bunny live sample and Android/race checks remain.",
+  "tail": {
+    "from": "2026-11-04T02:59:06.000Z",
+    "to": "2026-11-04T03:01:30.941Z",
+    "count": 0,
+    "filter": "@event:drama.frontend_timing",
+    "limit": 500
+  }
+}

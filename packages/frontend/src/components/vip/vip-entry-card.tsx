@@ -3,6 +3,7 @@
 import type { VipPlan, VipStatus } from '@miniapp/shared';
 import { ChevronRight, Crown, Loader2 } from 'lucide-react';
 
+import { vipPlanRewardLabel, vipCheckinRewardLabel } from '@/lib/vip/rewards';
 import { formatNumber, formatYuanShort } from '@/lib/utils/payment';
 import { formatDiscountLabel, vipEntryExpiryLabel } from '@/lib/vip/presentation';
 
@@ -29,7 +30,9 @@ export function VipEntryCard({
       ? formatDiscountLabel(benefits.text_discount_rate)
       : null;
   const dailyCheckin = benefits?.checkin_vip_credits;
-  const bonus = monthlyPlan?.bonus_credits ?? 0;
+  const bonus = (monthlyPlan?.bonus_credits ?? 0) + (monthlyPlan?.bonus_main_credits ?? 0);
+  const rewardLabel = monthlyPlan ? vipPlanRewardLabel(monthlyPlan) : '';
+  const dailyLabel = benefits ? vipCheckinRewardLabel(benefits) : '';
   const expiry = vipEntryExpiryLabel(status ?? null);
 
   if (variant === 'recharge') {
@@ -63,8 +66,7 @@ export function VipEntryCard({
               开通赠{' '}
               <strong className="text-[22px] font-medium tabular-nums tracking-tight">
                 {formatNumber(bonus)}
-              </strong>{' '}
-              专项星尘
+              </strong>
             </>
           ) : (
             '解锁月卡专属权益'
@@ -72,7 +74,7 @@ export function VipEntryCard({
         </span>
         <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] leading-5 text-[#bca99a]">
           {typeof dailyCheckin === 'number' && dailyCheckin > 0 ? (
-            <span>每日签到 {formatNumber(dailyCheckin)} 星尘</span>
+            <span>每日签到 {dailyLabel}</span>
           ) : null}
           {!active && discount ? <span>对话享 {discount}</span> : null}
           {active && expiry ? <span>{expiry}</span> : null}
@@ -80,7 +82,7 @@ export function VipEntryCard({
         </span>
         {!active && bonus > 0 ? (
           <span className="mt-2 block border-t border-[#cfb897]/10 pt-2 text-[10px] leading-4 text-[#a99b92]">
-            专项星尘用于轻量模型对话 · 会员单独开通
+            {rewardLabel}
           </span>
         ) : null}
       </button>
@@ -120,7 +122,7 @@ export function VipEntryCard({
               </>
             ) : bonus > 0 ? (
               <>
-                <span className="block text-[11px] text-[#c9b5a6]">开通即赠专项星尘</span>
+                <span className="block text-[11px] text-[#c9b5a6]">开通即赠星尘</span>
                 <span className="mt-0.5 block text-[38px] font-medium leading-[44px] tabular-nums tracking-[-0.04em]">
                   {formatNumber(bonus)}
                 </span>
@@ -139,10 +141,7 @@ export function VipEntryCard({
           {typeof dailyCheckin === 'number' && dailyCheckin > 0 ? (
             <span>
               每日签到{' '}
-              <strong className="font-medium tabular-nums text-[#f0dcc6]">
-                {formatNumber(dailyCheckin)}
-              </strong>{' '}
-              星尘
+              <strong className="font-medium tabular-nums text-[#f0dcc6]">{dailyLabel}</strong>
             </span>
           ) : null}
           {discount ? (
@@ -154,7 +153,7 @@ export function VipEntryCard({
         </span>
         {!active ? (
           <span className="relative mt-1 flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-[10px] leading-4 text-[#ad9a91]">
-            <span>{bonus > 0 ? '专项星尘用于轻量模型对话' : '查看月卡内容与专属权益'}</span>
+            <span>{bonus > 0 ? rewardLabel : '查看月卡内容与专属权益'}</span>
             {monthlyPlan ? (
               <span>
                 ¥{formatYuanShort(monthlyPlan.price_cents)} / {monthlyPlan.duration_days} 天
@@ -197,7 +196,7 @@ export function VipEntryCard({
         </span>
         <span className="relative mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-primary/15 pt-3 text-[10px] text-[#dcc4a4]">
           {typeof dailyCheckin === 'number' && dailyCheckin > 0 ? (
-            <span>每日签到 {formatNumber(dailyCheckin)} 星尘</span>
+            <span>每日签到 {dailyLabel}</span>
           ) : null}
           {discount ? <span>对话 {discount}</span> : null}
           <span className="ml-auto inline-flex items-center gap-0.5 text-primary">
@@ -234,7 +233,7 @@ export function VipEntryCard({
               <span className="text-[34px] font-bold leading-10 tabular-nums tracking-tight">
                 {formatNumber(bonus)}
               </span>
-              <span className="ml-1.5 text-[11px] font-semibold">专项星尘</span>
+              <span className="ml-1.5 text-[11px] font-semibold">星尘</span>
             </span>
           ) : (
             <span className="block text-lg font-bold">把喜欢的故事，聊得更尽兴</span>
@@ -261,11 +260,7 @@ export function VipEntryCard({
       </span>
       <span className="mt-1.5 flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-[10px] leading-4 text-muted-foreground">
         <span>
-          {active
-            ? (expiry ?? '查看会员详情')
-            : bonus > 0
-              ? '专项星尘可用于轻量模型对话'
-              : '查看月卡内容与专属权益'}
+          {active ? (expiry ?? '查看会员详情') : bonus > 0 ? rewardLabel : '查看月卡内容与专属权益'}
         </span>
         {monthlyPlan ? (
           <span>

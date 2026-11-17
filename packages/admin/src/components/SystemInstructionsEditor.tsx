@@ -1,5 +1,5 @@
 import { Alert, Input, Space, Tag, Typography } from 'antd';
-import { SystemInstructionsSchema } from '../lib/configSchemas';
+import { SystemInstructionsSchema } from '@miniapp/admin-client';
 
 const PLACEHOLDERS = [
   '{{CHOICE_RULES}}',

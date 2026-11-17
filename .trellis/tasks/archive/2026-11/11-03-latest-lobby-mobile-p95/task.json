@@ -1,0 +1,58 @@
+{
+  "id": "latest-lobby-mobile-p95",
+  "name": "latest-lobby-mobile-p95",
+  "title": "大厅默认最新与移动端 P95 优化",
+  "description": "角色大厅首次进入默认展示最新角色，并收紧 Android/iOS 首屏渲染与缓存重校准预算，以生产关键视觉 P95 2 秒为目标",
+  "status": "completed",
+  "dev_type": "feature",
+  "scope": "frontend",
+  "package": "frontend",
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-03",
+  "completedAt": "2026-11-03",
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "本地实现与回归已完成；生产关键视觉 P95=2秒仍需发布后按 release 和平台复验，当前不得宣称线上已达标。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": ["frontend.business.character-lobby"]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": ["/characters（默认最新列表、首张角色卡关键视觉）"],
+      "apis": [
+        "GET /api/lobby-characters?sort=latest",
+        "GET /api/characters?sort=latest（同源代理上游）"
+      ],
+      "android": {
+        "page_p95_baseline_ms": 5907,
+        "page_p95_target_ms": 2000
+      },
+      "ios": {
+        "page_p95_baseline_ms": 2538,
+        "page_p95_target_ms": 2000
+      },
+      "api": {
+        "p95_baseline_ms": 214,
+        "p95_target_ms": 1000
+      },
+      "measurement": {
+        "source": "Grafana Cloud Loki production engineering_v1 的 st_page_critical_visual，route=/characters、outcome=loaded、foreground，按 tg_platform/navigation_type/cache 分组；主基线取 fetch+spa：Android 5906.97ms(N=75)，iOS 2538ms(N=6，低样本)。接口基线取同窗 Sentry production GET /api/characters http.server P95 214.22ms(count=370)；同源 /api/lobby-characters 尚无独立可见聚合样本。",
+        "window": "2026-11-02 18:00 至 2026-11-03 16:00 Asia/Shanghai（22h）。发布后按 release 比较至少两个完整24h窗口；Android/iOS及cache/fetch、mount/spa分别观察，每组有效终态少于100时只记低样本并延长窗口。"
+      },
+      "notes": "2秒是生产发布目标，不是本地代码可保证的既成事实。Android主样本充分但明显超标；iOS当前N=6，不可据此宣称稳定基线。页面ready同窗fetch+spa为Android 4791.06ms(N=27)、iOS 1803ms(N=3)。保留失败/离页/图片错误终态，不以占位或删慢样本达标；若发布后关键视觉P95仍超过2秒或失败率上升，停止扩大发布并回退默认排序/首屏预算或forward-fix。"
+    }
+  }
+}

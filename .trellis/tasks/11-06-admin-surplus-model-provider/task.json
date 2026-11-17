@@ -1,0 +1,42 @@
+{
+  "id": "admin-surplus-model-provider",
+  "name": "admin-surplus-model-provider",
+  "title": "Admin 模型目录支持 Surplus 平台",
+  "description": "在现有多模型平台目录与生成链路中增加 Surplus，并由后端环境变量提供地址和凭据。",
+  "status": "in_progress",
+  "dev_type": "feature",
+  "scope": "admin,shared,backend,docs",
+  "package": "admin",
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-06",
+  "completedAt": null,
+  "branch": "fix_request_speed",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "Surplus runtime configuration must use SURPLUS_API_BASE_URL and SURPLUS_API_KEY; secrets remain backend-only.",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "admin.business.operations",
+        "shared.business.conversation-contracts",
+        "backend.business.conversation-generation",
+        "backend.infrastructure.runtime-data-security"
+      ]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "改动面是内部 Admin 模型目录、共享 provider 契约与后端 Surplus 上游适配；不改变 Android/iOS 页面加载路径或面向移动端的读取接口。Surplus 只有在运营发布选择该 provider 后才参与聊天生成，生成时延需按模型另行上线观测，不能用本任务虚构移动端 P95 基线。"
+    }
+  }
+}

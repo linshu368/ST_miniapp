@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "id": "payment-http-failures",
+      "enabled": false,
+      "business_modules": ["payment"],
+      "operations": ["http.request"],
+      "http_statuses": [500, 502, 503, 504],
+      "min_level": "error",
+      "severity": "P1"
+    },
+    {
+      "id": "payment-gateway-429",
+      "enabled": false,
+      "modules": ["payment"],
+      "operations": ["payment.transport"],
+      "upstream_statuses": [429],
+      "min_level": "warn",
+      "severity": "P1"
+    },
+    {
+      "id": "http-rate-limited",
+      "enabled": false,
+      "operations": ["http.request"],
+      "http_statuses": [429],
+      "min_level": "warn",
+      "severity": "P2"
+    },
+    {
+      "id": "runtime-errors",
+      "enabled": true,
+      "min_level": "error",
+      "severity": "P1"
+    }
+  ]
+}

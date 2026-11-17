@@ -127,10 +127,33 @@ PR 临时环境复制 development 后会立即删除该 Cron，避免多个调�
 
 ### 支付对账（快速 Worker + 过期 Cron）
 
-支付告警另有独立常驻服务 `stminiapp-payment-alert-monitor`：Start Command 为
+主动建单探测独立运行于 `stminiapp-payment-availability-probe`，Start Command 为
+`./node_modules/.bin/tsx src/scripts/payment-availability-probe.ts`，Cron Schedule 为
+`*/30 * * * *`，Restart Policy 为 `Never`，无域名、healthcheck 或 TCP proxy。
+服务复用 backend 镜像；只在该服务设置 `PAYMENT_PROBE_ENABLED=true` 才启用，未设置默认关闭。
+`PAYMENT_PROBE_CHANNEL` 默认 `alipay`；探测 clientip 自动取本机非回环 IPv4，无可用地址时使用 `127.0.0.1`，无需手动配置或请求外部 IP 服务。
+IaC 保留开关和渠道两个部署变量，显式引用 API 的本环境 TTZF 凭据、notify/return URL、DB/DIRECT_URL 和观测配置。
+无需向探测服务配置飞书 webhook，告警仍由下面的共享 worker 投递。
+PR 工作流移除复制来的探测服务，运行时也拒绝 pr-/preview；代码与 IaC 不代表生产已启用。
+先部署新告警规则投递兼容，再 TEST 验证并启用；异常时关闭探测开关即可。
+单轮 1 元、无本地订单、多策略扩展与上线检查见 [支付探测说明](../../docs/payment-availability-probe.md)。
+
+共享告警 outbox 由独立常驻服务 `stminiapp-payment-alert-monitor` 投递；该服务同时生产支付告警，
+也负责发送 API 服务写入的 Sentry 与 OpenRouter/Venice/Surplus 限流、额度、账户访问告警，并在同轮主动查询
+Venice `GET /api/v1/billing/balance`：当 `balances.usd`（null 按 0）低于 **$10** 时发布 generation 域
+P1 `venice-balance-low`（fingerprint 含 `:generation:venice:balance_low`），恢复需连续两轮不低于阈值。
+Surplus Intelligence 使用 `SURPLUS_API_BASE_URL` 下的 `GET /payments/balance` 与 `SURPLUS_API_KEY`，读取
+`credit_balance_usdc` 微美元整数字符串并换算为可消费 USD 余额；余额低于
+**$10** 时发布 P1 `surplus-balance-low`（fingerprint 含 `:generation:surplus:balance_low`），并要求连续两轮恢复。
+任一余额探针失败（超时/网络/5xx/401 或响应不合法）只把本轮标为 partial，不关闭既有余额事故，也不阻断
+支付监控、另一个供应商探针与 outbox。
+Start Command 为
 `./node_modules/.bin/tsx src/scripts/payment-alert-monitor.ts`，Restart Policy 为 `Always`，
 不设 Cron Schedule、healthcheck、域名或 TCP proxy。它以数据库 advisory lock 防止重叠，
-每分钟运行 P0、每五分钟运行 P1；只读支付订单/操作事件并通过公共 outbox 发布。缺失或非法
+每分钟运行 P0、每五分钟运行 P1；支付规则只读支付操作事件（规则 v3 只看平台直接信号）并通过公共 outbox 发布，
+每轮同时有界投递一条到期通知。模型告警与 Venice/Surplus 余额检查不新增服务；通过 Railway 服务变量引用沿用 API 的
+`VENICE_API_KEY`（**须为可调 billing 的 Admin Key**）、`SURPLUS_API_KEY`、对应 base URL、公共 outbox 与
+`FEISHU_ALERT_WEBHOOK_URL`。缺失或非法
 `alerting` runtime config 时通知保持关闭。这里仅描述目标运行面，不授权 Railway apply、部署、
 环境变量或通知开关写入。
 
@@ -141,8 +164,30 @@ PR 临时环境复制 development 后会立即删除该 Cron，避免多个调�
 **Railway cron 最短间隔是 5 分钟**（平台硬限制：GraphQL 会返回
 `Minimum interval between cron executions is 5 minutes`）。因此快速对账不能靠
 `* * * * *`，必须改成常驻 Worker：进程内 `while` 每 30 秒跑一轮
-`runFastPaymentReconciliation`，调度仍走库里的 `next_reconcile_at` / 租约 / 退避。
-过期兜底继续用 `*/5 * * * *`。
+`runPaymentReconciliation`，用 TTZF 易支付 `GET /api/epay/api.php`（act=order）单笔查最近 7 天
+未履约新订单。每轮最多 30 单、并发 3、派发预算 25 秒，每次查单限时 5 秒；按既有
+`next_reconcile_at` 查询前移到队尾，避免慢单饿死后续订单。已确认支付的结算允许完成。
+过期兜底继续用 `*/5 * * * *`，仅对查单确认未付且超过本地期限的单标记过期。
+
+**主服务及支付任务使用 `TTZF_APP_ID`、`TTZF_APP_KEY`、`TTZF_BASE_URL`**（IaC 引用主服务变量）。
+APP_ID 是应用 ID，不是商户号；BASE_URL 默认 `https://ttzf8.com/api`。
+主服务设置 `PAYMENT_NOTIFY_URL=https://<本环境后端域名>/api/payment/notify/ttzf` 和
+`PAYMENT_RETURN_URL=https://<本环境后端域名>/api/payment/return`，建单逐次携带，不需要注册 Webhook。
+建单不发送可选 `param`，回调/查单不依赖它。各环境使用独立回调地址、应用凭据及数据库；
+回调只能履约本环境已存在的随机 EP 订单，仍校验签名、商户、渠道、交易号与精确金额。
+厂商查单响应可能返回 `pid: null` 或省略该字段，后端接受这两种情况，有值时仍核对应用 ID；
+请求中的 pid/key 和签名回调中的 pid 仍必填。订单、渠道、交易号及金额校验不变。
+GET 查单遵循用户明确指定的协议：key 只在服务端 HTTPS 请求中传输，禁止日志/错误/遥测输出完整地址。
+生产与测试配置分开，不把真实凭据放入源码、命令行或文档。
+
+切换发布：先在明确的 TEST 环境联调建单、已付/未付查单、通知重放、晚付、VIP/星尘到账，再配置目标环境变量、部署 API 和两个任务，最后开放新建单。
+当前仅代码与本地模拟验证，不代表远端已部署或真实支付可用；必须核验真实返回的交易号格式、HTTPS payurl、金额与回跳。
+仅返回 qrcode/urlscheme 时目前不交出收银台，订单保留供后续可信恢复；需供应商返回 HTTPS payurl。
+故障时关闭 `PAYMENT_ENABLED`，保留 TTZF 配置和新版本回调/查单，处理完在途订单再恢复；不能切回已停用厂商。
+旧 `MA_…` 订单保留历史，未结订单人工核对，不用 TTZF 自动关闭/补账。无新增迁移。
+Android/iOS 真机分别验证支付宝/微信唤起、关闭/重开、Telegram 回跳；按平台观测至少 7 天 P95，无样本不得填零。
+支付 clientip 在 Railway 公共 HTTP 入口读取并校验 `X-Real-IP`，本地使用 socket IP；不得向不可信网络开放绕过边缘的 TCP/私有入口。
+依据：[Railway 请求头说明](https://docs.railway.com/networking/public-networking/specs-and-limits#technical-specifications)。
 
 IaC 可用时，`.railway/railway.ts` 会配置这两个服务。若目标环境尚不能用 IaC 管理，则在
 Railway 控制台手动创建并逐项对齐：
@@ -159,13 +204,12 @@ Railway 控制台手动创建并逐项对齐：
    - Start Command：`./node_modules/.bin/tsx src/scripts/reconcile-payment-orders.ts`
    - **清空 Cron Schedule**（不要填 `* * * * *`，平台会拒绝）
    - Restart Policy：`Always`（或 `On Failure`）
-   - 进程保持 Online，日志约每 30 秒一轮 `Fast payment reconciliation: checked=…`。
-     `PAYMENT_ENABLED !== true` 时只 sleep，不查单。SIGTERM/SIGINT 下完本轮再退出。
-   - 新订单默认创建约 60 秒后可领取，因此 webhook / 回跳都失败时，首次查单通常落在
-     创建后 60–90 秒。
+   - 进程保持 Online，日志约每 30 秒一轮 `Payment reconciliation: checked=…`。
+     缺少 TTZF 配置时跳过；关闭 `PAYMENT_ENABLED` 后继续恢复已有订单。SIGTERM/SIGINT 停止派发并中止在途查询。
+   - 队列积压和供应商响应会影响恢复延迟，不能承诺每单 30 秒内到账。
 4. 过期服务（一次性 Cron）保持不变：Start Command
    `./node_modules/.bin/tsx src/scripts/expire-payment-orders.ts`，Cron Schedule `*/5 * * * *`，
-   Restart Policy `Never`。它只回溯已到期订单，并在查单健康时执行判过期。
+   Restart Policy `Never`。它运行同样的有限并发查单补账，仅确认未付的超时订单可标记 expired，部分查询失败不影响其他订单恢复。
 5. 两个服务都关闭 healthcheck，不生成 Railway domain，不配置 TCP proxy。不要给
    Worker 加会打 `/health` 的 HTTP 探活（镜像 Dockerfile 的 HEALTHCHECK 针对 API；
    本服务没有 HTTP 端口，Railway 侧探活必须关掉，否则会把常驻循环判死）。
@@ -213,6 +257,9 @@ Railway 控制台手动创建并逐项对齐：
 
 若运营模型目录启用 Venice，必须在 `stminiapp` 的对应 Railway 环境单独配置
 `VENICE_API_KEY`；可选的 `VENICE_API_BASE_URL` 默认是 `https://api.venice.ai/api/v1`。
+若启用 Surplus Intelligence，则同一环境必须配置 `SURPLUS_API_KEY` 与 `SURPLUS_API_BASE_URL`；余额监控要求该 base
+实现官方文档中的 `GET /payments/balance`。IaC 只把这些变量从 `stminiapp` 引用到 `stminiapp-payment-alert-monitor`，
+不会把真实密钥写入仓库。
 密钥只属于 backend，不得放入 Vercel/Admin 浏览器变量。先配置密钥并 redeploy backend，
 确认 `/api/platform/model-providers/venice/models` 可读取目录后，再发布含 Venice 模型的目录；
 回滚时先把目录发布回 OpenRouter 模型，再移除 Venice 密钥。

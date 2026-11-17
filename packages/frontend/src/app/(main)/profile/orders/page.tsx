@@ -2,7 +2,7 @@
 
 import { usePageReady } from '@/lib/perf/page-ready';
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import {
   CheckCircle2,
   ChevronLeft,
@@ -16,14 +16,8 @@ import type { PaymentOrder, PaymentOrderStatus } from '@miniapp/shared';
 
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { usePaymentOrdersInfiniteQuery } from '@/lib/api/payment';
-import {
-  capturePaymentOrderStatusObserved,
-  observePaymentReturn,
-  retainPaywallFollowupIfActive,
-} from '@/lib/payment/flow-telemetry';
 import {
   formatNumber,
   formatYuanShort,
@@ -66,26 +60,12 @@ function OrdersPageFallback() {
 
 function OrdersPageContent() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const paymentReturned = searchParams.get('payment') === 'returned';
   const goBack = useCallback(() => router.push('/profile'), [router]);
   useTelegramBackButton(goBack);
 
   const [tab, setTab] = useState<TabKey>('all');
   const [openOrder, setOpenOrder] = useState<PaymentOrder | null>(null);
   const { whisper } = useHaptic();
-
-  useEffect(() => {
-    retainPaywallFollowupIfActive();
-  }, []);
-
-  useEffect(() => {
-    if (!paymentReturned) return;
-    observePaymentReturn({
-      source: 'query_param',
-      route: '/profile/orders',
-    });
-  }, [paymentReturned]);
 
   const query = usePaymentOrdersInfiniteQuery(tabToStatus(tab), 20);
   usePageReady('/profile/orders', query.data !== undefined, false, query.isError);
@@ -167,7 +147,6 @@ function OrdersPageContent() {
               order={order}
               onOpen={() => {
                 whisper();
-                capturePaymentOrderStatusObserved(order);
                 setOpenOrder(order);
               }}
             />
@@ -202,11 +181,11 @@ function OrdersPageContent() {
 function EmptyState({ tab }: { tab: TabKey }) {
   const text =
     tab === 'completed'
-      ? '暂无已完成的订单'
+      ? '还没有已完成的订单'
       : tab === 'pending'
-        ? '暂无待支付的订单'
+        ? '没有待支付的订单'
         : tab === 'expired'
-          ? '暂无已过期的订单'
+          ? '没有已过期的订单'
           : '这里空空如也';
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-3 py-20 text-center text-muted-foreground">

@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/backend/app/routes-and-features.md", "reason": "生成唯一出口与关键持久化门禁"}
+{"file": ".trellis/spec/backend/app/data-reliability-and-security.md", "reason": "低负载遥测与失败隔离"}
+{"file": ".trellis/spec/shared/contracts/api-contracts.md", "reason": "跨包契约及兼容"}
+{"file": ".trellis/spec/admin/app/ui-state-and-validation.md", "reason": "按型号表单、草稿发布与校验"}
+{"file": ".trellis/spec/database/supabase/migrations-and-rollbacks.md", "reason": "纯校验函数的单文件TEST先行与ACL保护"}

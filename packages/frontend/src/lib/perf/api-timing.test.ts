@@ -28,7 +28,22 @@ describe('API engineering timing projection', () => {
   it('exports finite groups, never IDs, query strings or arbitrary URLs', () => {
     expect(apiRouteGroup('/api/dramas/short-id/playback?token=secret')).toBe('drama_playback');
     expect(apiRouteGroup('/api/dramas/short-id/play?episode=2')).toBe('drama_playback');
+    expect(apiRouteGroup('/api/dramas/play')).toBe('drama_playback');
     expect(apiRouteGroup('/api/v1/conversations/id/messages?secret=yes')).toBe('conversation_turn');
+    expect(apiRouteGroup('/api/lobby-characters?sort=latest')).toBe('lobby_characters');
+    expect(apiRouteGroup('/api/v1/conversations/groups?offset=0&summary=1')).toBe(
+      'conversation_groups'
+    );
+    expect(apiRouteGroup('/api/v1/conversations/session-id')).toBe('conversation_detail');
+    expect(apiRouteGroup('/api/characters/latest-badge')).toBe('character_activity');
+    expect(apiRouteGroup('/api/characters/latest-seen')).toBe('character_activity');
+    expect(apiRouteGroup('/api/characters/social')).toBe('character_social');
+    expect(apiRouteGroup('/api/characters/card/social')).toBe('character_social');
+    expect(apiRouteGroup('/api/characters/recommendation')).toBe('character_recommendation');
+    expect(apiRouteGroup('/api/creator/analytics')).toBe('creator');
+    expect(apiRouteGroup('/api/creators/author/characters')).toBe('creator_public');
+    expect(apiRouteGroup('/api/character-wishes/wish/responses')).toBe('character_wishes');
+    expect(apiRouteGroup('/api/favorites/ids')).toBe('favorites');
     expect(apiRouteGroup('/api/unknown/private-user')).toBe('other');
     expect(apiRouteGroup('https://private.example/api/dramas')).toBe('other');
   });
@@ -51,6 +66,7 @@ describe('API engineering timing projection', () => {
         headersAt: 900,
         endedAt: 2000,
         status: 200,
+        upstreamMs: 420,
         outcome: 'ok',
       },
       1
@@ -59,6 +75,7 @@ describe('API engineering timing projection', () => {
       ['api.queue', 300],
       ['api.headers', 500],
       ['api.body', 1100],
+      ['api.upstream', 420],
     ]);
     expect(telemetry.measurement.mock.calls[0]?.[2]).toEqual({
       api_route: 'drama_detail',

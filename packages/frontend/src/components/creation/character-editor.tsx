@@ -16,9 +16,10 @@ import {
 import { cn } from '@/lib/utils';
 import { useTelegramBackButton } from '@/lib/telegram/hooks';
 import {
-  fileToImagePlazaPayload,
   useCreateImagePlazaConversationMutation,
+  validateImagePlazaReference,
 } from '@/lib/api/image-plaza';
+import { prepareCoverImage } from '@/lib/utils/cover-image';
 import {
   useCreatorCharactersQuery,
   useCreatorCharacterQuery,
@@ -29,6 +30,8 @@ import {
   usePublishCreatorCharacterMutation,
   useSetCreatorVisibilityMutation,
 } from '@/lib/api/creator-characters';
+import { useCharacterWishQuery } from '@/lib/api/character-wishes';
+import { usePageReady } from '@/lib/perf/page-ready';
 import { ApiClientError } from '@/lib/api/client';
 import {
   initialCharacterEditorDraft,
@@ -38,8 +41,10 @@ import {
 import { useCharacterEditorDraft } from './use-character-editor-draft';
 import { CreatorDocumentImport, CreatorDocumentAttachments } from './character-editor-documents';
 import { CharacterPresetChoices } from './character-editor-presets';
+import { CharacterEditorHeader } from './character-editor-header';
 import {
   CharacterEditorModal,
+  dismissTopCharacterEditorModal,
   CharacterFullscreenEditor,
   CharacterPolishDialog,
   type CharacterPolishSession,
@@ -82,7 +87,7 @@ const FIELDS = [
   {
     key: 'opening',
     label: '开场白',
-    placeholder: '用户进入聊天后看到的第一段内容。可以描写开场场景，也可以让角色先说一句话。',
+    placeholder: '玩家进入聊天后看到的第一段内容。可以描写开场场景，也可以让角色先说一句话。',
     rows: 5,
     required: true,
     divider: true,
@@ -115,10 +120,20 @@ export function CharacterEditorPage({ characterId }: { characterId?: string }) {
     characterId ?? (requestedDraft && UUID.test(requestedDraft) ? requestedDraft : null);
   const list = useCreatorCharactersQuery();
   const detail = useCreatorCharacterQuery(characterId);
+  const route = characterId ? '/creation/characters/:id/edit' : '/creation/characters/new';
+  usePageReady(
+    route,
+    Boolean(draftId && list.data && (!characterId || detail.data)),
+    false,
+    list.isError || Boolean(characterId && detail.isError)
+  );
   useEffect(() => {
-    if (!characterId && !draftId)
-      router.replace(`/creation/characters/new?draft=${crypto.randomUUID()}`, { scroll: false });
-  }, [characterId, draftId, router]);
+    if (!characterId && !draftId) {
+      const params = new URLSearchParams(search.toString());
+      params.set('draft', crypto.randomUUID());
+      router.replace(`/creation/characters/new?${params.toString()}`, { scroll: false });
+    }
+  }, [characterId, draftId, router, search]);
   const retry = () => {
     void list.refetch();
     if (characterId) void detail.refetch();
@@ -159,7 +174,8 @@ export function CharacterEditorPage({ characterId }: { characterId?: string }) {
       character={detail.data?.character}
       reloadCharacter={async () => {
         const result = await detail.refetch();
-        if (result.error || !result.data) throw result.error ?? new Error('暂时无法读取最新角色。');
+        if (result.error || !result.data)
+          throw result.error ?? new Error('没读到最新的角色，再试一次吧。');
         return result.data.character;
       }}
     />
@@ -183,6 +199,14 @@ function CharacterEditor({
   const local = useCharacterEditorDraft({ ownerId, draftId, characterId: character?.id }, initial);
   const { ready: localReady, update: updateLocal, flush: flushLocal } = local;
   const { draft, visibility, coverAssetId } = local.value;
+  const wishParam = search.get('wish');
+  const sourceWishId =
+    local.value.sourceWishId ?? (wishParam && UUID.test(wishParam) ? wishParam : undefined);
+  const sourceWish = useCharacterWishQuery(sourceWishId ?? undefined);
+  useEffect(() => {
+    if (localReady && sourceWishId && !local.value.sourceWishId)
+      updateLocal((current) => ({ ...current, sourceWishId }));
+  }, [localReady, sourceWishId, local.value.sourceWishId, updateLocal]);
   const editorPath = character
     ? `/creation/characters/${character.id}/edit`
     : `/creation/characters/new?draft=${draftId}`;
@@ -199,7 +223,9 @@ function CharacterEditor({
   const polishMutation = useCreatorPolishMutation();
   const [editing, setEditing] = useState<TextField | null>(null);
   const [fullCover, setFullCover] = useState(false);
-  const [showRequired, setShowRequired] = useState(false);
+  const [correctionField, setCorrectionField] = useState('');
+  const showRequired = Boolean(correctionField);
+  const [coverError, setCoverError] = useState('');
   const [notice, setNotice] = useState('');
   const [working, setWorking] = useState(false);
   const [recoveryOpen, setRecoveryOpen] = useState(false);
@@ -220,7 +246,7 @@ function CharacterEditor({
   const adoptedCover = useRef<string | null>(null);
   const missingFields = creatorPublishMissingFields(draft, coverAssetId);
   const busy = working || upload.isPending || createStudio.isPending;
-  const reviewing = visibility === 'public' && (publish.isPending || setVisibility.isPending);
+  const publishing = visibility === 'public' && (publish.isPending || setVisibility.isPending);
   const sameContent = Boolean(
     character &&
     JSON.stringify(character.draft) === JSON.stringify(draft) &&
@@ -267,13 +293,13 @@ function CharacterEditor({
   }, [cover.data, returningId, localReady, updateLocal, router, editorPath]);
 
   const goBack = useCallback(async () => {
-    if (busyRef.current) return;
+    if (dismissTopCharacterEditorModal() || busyRef.current) return;
     if (!(await flushLocal())) {
       setNotice('本地草稿还没保存成功，请稍后再返回。当前内容仍在这里。');
       return;
     }
-    router.push('/creation?tab=created');
-  }, [flushLocal, router]);
+    router.push(sourceWishId ? `/wishes/${sourceWishId}` : '/creation?tab=created');
+  }, [flushLocal, router, sourceWishId]);
   useTelegramBackButton(goBack);
   const change = (
     key: keyof Pick<CharacterDraft, 'name' | 'description' | 'opening' | 'background' | 'preset'>,
@@ -284,9 +310,10 @@ function CharacterEditor({
     if (busyRef.current) return;
     busyRef.current = true;
     setWorking(true);
-    setNotice('');
+    setCoverError('');
     try {
-      const payload = await fileToImagePlazaPayload(file);
+      validateImagePlazaReference(file);
+      const payload = await prepareCoverImage(file);
       const { asset } = await upload.mutateAsync({
         id: crypto.randomUUID(),
         source: 'upload',
@@ -300,7 +327,7 @@ function CharacterEditor({
       }));
     } catch (error) {
       if (mounted.current)
-        setNotice(error instanceof Error ? error.message : '封面上传失败，请重试。');
+        setCoverError(error instanceof Error ? error.message : '封面上传失败，请重试。');
     } finally {
       busyRef.current = false;
       if (mounted.current) setWorking(false);
@@ -311,7 +338,7 @@ function CharacterEditor({
     if (busyRef.current) return;
     busyRef.current = true;
     setWorking(true);
-    setNotice('');
+    setCoverError('');
     try {
       if (!(await local.flush())) throw new Error('本地草稿暂未保存，请稍后再进入图片创作。');
       let studioId = local.value.coverStudioId;
@@ -326,7 +353,7 @@ function CharacterEditor({
       router.push(`/create/studio/${studioId}?creator_return=${encodeURIComponent(editorPath)}`);
     } catch (error) {
       if (mounted.current)
-        setNotice(error instanceof Error ? error.message : '暂时无法进入图片创作，请重试。');
+        setCoverError(error instanceof Error ? error.message : '没能进入图片创作，再试一次吧。');
     } finally {
       busyRef.current = false;
       if (mounted.current) setWorking(false);
@@ -348,8 +375,6 @@ function CharacterEditor({
   function discardPolish() {
     const current = sessionRef.current;
     if (!current) return;
-    active.current?.abort();
-    active.current = null;
     local.update((value) => {
       const candidates = { ...value.polishCandidates };
       delete candidates[current.target];
@@ -358,6 +383,20 @@ function CharacterEditor({
     sessionRef.current = null;
     setSession(null);
     setPolishOpen(false);
+    void local.flush();
+  }
+  function stopPolish() {
+    const current = sessionRef.current;
+    if (current?.state !== 'loading') return;
+    // Detach first so a late stream event cannot overwrite the retained text.
+    const controller = active.current;
+    active.current = null;
+    controller?.abort();
+    if (!current.result.trim()) {
+      discardPolish();
+      return;
+    }
+    keepPolish({ ...current, state: 'stopped' });
     void local.flush();
   }
   async function polish(target: CharacterPolishTarget, retry = false) {
@@ -427,9 +466,11 @@ function CharacterEditor({
       开场白: 'creator-opening',
       背景: 'creator-background',
       标签: 'creator-tags',
+      可见性: 'creator-visibility',
     };
     const element = document.getElementById(ids[label] ?? '');
     if (!element) return;
+    setCorrectionField(label);
     element.scrollIntoView({
       behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
       block: 'center',
@@ -437,8 +478,33 @@ function CharacterEditor({
     const focusTarget =
       element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement
         ? element
-        : element.parentElement?.querySelector<HTMLElement>('button, input');
+        : element.parentElement?.querySelector<HTMLElement>(
+            label === '可见性' ? 'input:checked' : 'button, input'
+          );
     focusTarget?.focus({ preventScroll: true });
+  }
+
+  function correctionHint(label: string) {
+    if (label !== correctionField) return null;
+    const index = missingFields.indexOf(label);
+    const next = missingFields.length ? missingFields[(index + 1) % missingFields.length] : null;
+    return (
+      <div className="flex min-h-8 flex-wrap items-center gap-x-3 text-xs">
+        <span className="text-muted-foreground" role="status">
+          {missingFields.length ? `还差 ${missingFields.length} 项必填` : '必填项已补齐'}
+        </span>
+        {next !== label && (
+          <button
+            type="button"
+            disabled={busy}
+            className="min-h-11 text-primary"
+            onClick={() => focusMissing(next ?? '可见性')}
+          >
+            {next ? `去补${next}` : '确认可见性'}
+          </button>
+        )}
+      </div>
+    );
   }
 
   async function loadLatestKeepingBackup() {
@@ -471,7 +537,7 @@ function CharacterEditor({
       backupId.current = null;
     } catch (error) {
       setNotice(
-        error instanceof Error ? error.message : '未能保留修改，当前内容没有替换，请重试。'
+        error instanceof Error ? error.message : '修改没保存成功，现在的内容没变，再试一次吧。'
       );
     } finally {
       busyRef.current = false;
@@ -481,7 +547,6 @@ function CharacterEditor({
 
   async function submit() {
     if (busyRef.current || unchanged) return;
-    setShowRequired(true);
     setNotice('');
     if (missingFields.length) {
       focusMissing(missingFields[0]!);
@@ -499,6 +564,7 @@ function CharacterEditor({
     busyRef.current = true;
     setWorking(true);
     try {
+      let publishedDestination = '/creation?tab=created';
       if (sameContent && character?.state === 'ready' && character.visibility !== visibility) {
         await setVisibility.mutateAsync({
           id: character.id,
@@ -538,13 +604,21 @@ function CharacterEditor({
               ).character;
         local.update((value) => ({ ...value, serverRevision: current.revision }));
         await local.flush();
-        await publish.mutateAsync({
+        const published = await publish.mutateAsync({
           id: current.id,
-          body: { expected_revision: current.revision, visibility },
+          body: {
+            expected_revision: current.revision,
+            visibility,
+            ...(sourceWishId ? { wish_id: sourceWishId } : {}),
+          },
         });
+        if (published.wish_response) {
+          const response = published.wish_response;
+          publishedDestination = `/wishes/${response.wish_id}${response.status === 'not_linked' ? `?respond=${current.id}` : ''}`;
+        }
       }
       await local.clear();
-      router.replace('/creation?tab=created');
+      router.replace(publishedDestination);
     } catch (error) {
       if (error instanceof ApiClientError && error.status === 409) {
         local.setConflict(true);
@@ -573,32 +647,37 @@ function CharacterEditor({
         void local.flush();
       }}
     >
-      <header className="flex min-h-11 items-center justify-between gap-3">
-        <button
-          type="button"
-          onClick={() => void goBack()}
-          disabled={busy}
-          className="flex min-h-11 shrink-0 items-center gap-2 text-sm text-foreground disabled:opacity-50"
-        >
-          <ArrowLeft className="size-4" />
-          {character ? '编辑角色' : '创建角色'}
-        </button>
-        <span
-          role="status"
-          className={cn(
-            'text-right text-[10px] leading-5 text-muted-foreground',
-            local.status === 'error' && 'text-destructive'
+      <CharacterEditorHeader
+        editing={Boolean(character)}
+        busy={busy}
+        status={local.status}
+        onBack={() => void goBack()}
+      />
+      {sourceWishId && (
+        <aside className="mt-4 rounded-xl border border-primary/15 bg-primary/[0.04] px-3.5 py-3">
+          <div className="flex items-center justify-between gap-3 text-xs">
+            <span className="font-medium text-primary">来自心愿墙的灵感</span>
+            <Link
+              href={`/wishes/${sourceWishId}`}
+              className="flex min-h-11 items-center text-muted-foreground"
+            >
+              查看心愿
+            </Link>
+          </div>
+          {sourceWish.data ? (
+            <p className="line-clamp-3 whitespace-pre-wrap break-words text-sm leading-6 text-foreground/85">
+              {sourceWish.data.wish.body}
+            </p>
+          ) : sourceWish.isError ? (
+            <p className="text-xs leading-6 text-muted-foreground">
+              暂时无法查看原心愿，你可以继续创作。
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground">正在读取心愿…</p>
           )}
-        >
-          {local.status === 'saving'
-            ? '保存中…'
-            : local.status === 'saved'
-              ? '草稿已保存到本地'
-              : local.status === 'error'
-                ? '本地保存暂不可用'
-                : '草稿自动保存在本地'}
-        </span>
-      </header>
+          <p className="mt-2 text-[11px] text-muted-foreground">公开发布后，作品会回应这个心愿。</p>
+        </aside>
+      )}
       {local.conflict && (
         <div
           className="mt-4 rounded-xl border border-warn/30 p-3 text-xs leading-6 text-warn"
@@ -704,6 +783,12 @@ function CharacterEditor({
               if (file) void uploadCover(file);
             }}
           />
+          {coverError && (
+            <p role="alert" className="mt-2 text-xs leading-6 text-destructive">
+              {coverError}
+            </p>
+          )}
+          {correctionHint('角色形象')}
           {cover.isError && (
             <button
               type="button"
@@ -735,6 +820,7 @@ function CharacterEditor({
           placeholder="给角色或故事起个名字"
           onChange={(event) => change('name', event.target.value)}
         />
+        {correctionHint('名称')}
       </div>
       {FIELDS.map((field) => {
         const filesKey =
@@ -820,6 +906,7 @@ function CharacterEditor({
                   <Expand className="size-4" />
                 </button>
               </div>
+              {correctionHint(field.label)}
               {filesKey && (
                 <CreatorDocumentAttachments
                   files={files}
@@ -966,9 +1053,12 @@ function CharacterEditor({
               </label>
             ))}
           </div>
+          {correctionHint('标签')}
         </fieldset>
         <fieldset className="mt-7">
-          <legend className="mb-3 text-sm font-medium text-foreground">可见性{requiredMark}</legend>
+          <legend id="creator-visibility" className="mb-3 text-sm font-medium text-foreground">
+            可见性{requiredMark}
+          </legend>
           <div className="grid grid-cols-2 gap-2.5">
             {(['public', 'private'] as const).map((value) => (
               <label key={value} className="cursor-pointer">
@@ -990,14 +1080,14 @@ function CharacterEditor({
                   />
                 </span>
                 <span className="mt-2 block px-1 text-[11px] leading-6 text-muted-foreground">
-                  {value === 'public' ? '审核通过后进入大厅' : '进入自己的空间，只有自己能看到'}
+                  {value === 'public' ? '公开后进入大厅' : '进入自己的空间，只有自己能看到'}
                 </span>
               </label>
             ))}
           </div>
           {character?.published_revision && visibility === 'private' ? (
             <p className="mt-3 text-[11px] leading-6 text-muted-foreground">
-              已收藏或使用过这张卡的用户仍可继续聊天。
+              已收藏或使用过这张卡的玩家仍可继续聊天。
             </p>
           ) : null}
         </fieldset>
@@ -1036,7 +1126,7 @@ function CharacterEditor({
           className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-primary/30 bg-primary text-sm font-semibold text-primary-foreground disabled:opacity-40"
         >
           {busy && <LoaderCircle className="size-4 animate-spin" />}
-          {reviewing ? '正在审核…' : busy ? '正在保存…' : unchanged ? '没有新修改' : submitLabel}
+          {publishing ? '正在发布…' : busy ? '正在保存…' : unchanged ? '没有新修改' : submitLabel}
         </button>
       </section>
       {recoveryOpen && (
@@ -1105,6 +1195,7 @@ function CharacterEditor({
         <CharacterPolishDialog
           session={session}
           onClose={closePolish}
+          onStop={stopPolish}
           onDiscard={discardPolish}
           onRetry={() => void polish(session.target, true)}
           onEdit={(result) => {

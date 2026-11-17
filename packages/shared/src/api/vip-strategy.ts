@@ -21,8 +21,6 @@ export const FEATURE_FREE_TRIAL_LIMITS_CONFIG_KEY = 'feature_free_trial_limits';
 export const CHECKIN_NEW_USER_CREDITS_CONFIG_KEY = 'miniapp_checkin_new_user_credits';
 /** 非 VIP 且注册>CHECKIN_NEW_USER_MAX_AGE_DAYS 天的每日签到绝对额。 */
 export const CHECKIN_VETERAN_CREDITS_CONFIG_KEY = 'miniapp_checkin_veteran_credits';
-/** 遗留全员基础签到键；发奖不再读取，Admin 仍可编辑。 */
-export const LEGACY_DAILY_CHECKIN_BONUS_CREDITS_CONFIG_KEY = 'miniapp_daily_checkin_bonus_credits';
 
 export const CHECKIN_NEW_USER_MAX_AGE_DAYS = 14;
 export const DEFAULT_CHECKIN_NEW_USER_CREDITS = 60;
@@ -50,6 +48,7 @@ export const VipPlanTermsSchema = z
     price_cents: positiveCents,
     duration_days: positiveDays,
     bonus_credits: nonnegativeCredits,
+    bonus_main_credits: nonnegativeCredits.optional(),
     title: z.string().trim().min(1).max(40),
     description: z.string().trim().max(200).nullable(),
     badge_text: z.string().trim().min(1).max(40).nullable(),
@@ -65,7 +64,7 @@ export const VipPlansConfigSchema = z
   })
   .strict()
   .superRefine((value, ctx) => {
-    if (value.week.bonus_credits !== 0) {
+    if (value.week.bonus_credits !== 0 || (value.week.bonus_main_credits ?? 0) !== 0) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['week', 'bonus_credits'],
@@ -80,11 +79,25 @@ export const VipTextDiscountRateSchema = z.number().finite().gt(0).lte(1);
 export type VipTextDiscountRate = z.infer<typeof VipTextDiscountRateSchema>;
 
 /** VIP 每日签到绝对星尘额（非加成）。 */
-export const VipCheckinBonusConfigSchema = z
-  .number()
-  .int()
-  .min(0)
-  .max(VIP_CHECKIN_FIXED_CREDITS_MAX);
+const checkinCredits = z.number().int().min(0).max(VIP_CHECKIN_FIXED_CREDITS_MAX);
+export const VipCheckinBonusConfigSchema = z.union([
+  checkinCredits,
+  z
+    .object({ bonus_credits: checkinCredits, main_credits: checkinCredits })
+    .strict()
+    .refine(
+      (value) => value.bonus_credits + value.main_credits <= VIP_CHECKIN_FIXED_CREDITS_MAX,
+      '签到奖励总额超过上限'
+    ),
+]);
+
+/** 旧数字配置全部进入专项钱包；混合配置明确每种余额。 */
+export function splitVipCheckinReward(config: VipCheckinBonusConfig): {
+  bonus_credits: number;
+  main_credits: number;
+} {
+  return typeof config === 'number' ? { bonus_credits: config, main_credits: 0 } : config;
+}
 
 export type VipCheckinBonusConfig = z.infer<typeof VipCheckinBonusConfigSchema>;
 
@@ -144,7 +157,8 @@ export function vipCheckinBonusCredits(input: {
   vipActive: boolean;
 }): number {
   if (!input.vipActive) return 0;
-  return input.config;
+  const split = splitVipCheckinReward(input.config);
+  return split.bonus_credits + split.main_credits;
 }
 
 export function registrationAgeDays(createdAt: string | Date, now: string | Date): number {

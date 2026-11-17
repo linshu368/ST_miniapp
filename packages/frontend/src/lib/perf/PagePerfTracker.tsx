@@ -1,6 +1,5 @@
 'use client';
 
-import { usePathname } from 'next/navigation';
 import { useEffect } from 'react';
 
 import { installAssetFailureReporter } from './asset-failures';
@@ -8,8 +7,7 @@ import { beginPage } from './page-tracker';
 import { dramaTiming, installDramaTiming } from './drama-observer';
 
 /** 挂在 Providers 里：路由变化时开始计时，并安装一次资源加载失败监听。无渲染输出。 */
-export function PagePerfTracker() {
-  const pathname = usePathname();
+export function PagePerfTracker({ pathname }: { pathname: string }) {
   useEffect(() => {
     installAssetFailureReporter();
     return installDramaTiming();

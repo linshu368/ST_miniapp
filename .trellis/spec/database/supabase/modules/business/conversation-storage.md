@@ -15,9 +15,25 @@ last_verified_at: 2026-11-02
 
 ## 当前状态
 
+### 聊天展示投影契约（2026-11-11 本地候选）
+
+1. **范围/触发**：长历史分页和 prompt TOAST 解压；新对象归 experience，原 history 是权威，projection 随父行删除，不碰 billing。
+2. **签名**：`list_chat_message_page(uuid,uuid,integer default null,integer default 25)` 返回 session_chat_display；`backfill_chat_history_display(uuid[])` 最多 100 ID，仅运维执行。
+3. **契约**：先按逻辑轮次选 K+1 个 key，再加载正文及 overlay；version=1 的 request_id/opening_message 可以为 NULL，表示已知空值。原 admission invoker 在同事务从实际接受的输入维护，service 仅 SELECT/INSERT/UPDATE；旧 UPDATE history trigger 只置失效，不解析 JSON。
+4. **验证/错误**：owner/软删除失败 P0002，参数越界 22023；SQL 超时不自动重试；缺失/失效兼容解析头两项，未迁移不能静默退成空历史。未知 admission 补丁锚点整笔回滚，多行锚点统一 LF 并要求唯一。
+5. **Good/Base/Bad**：完整投影的普通/深/最早页都不提取 history；缺投影保持旧展示但仍有解压成本；对失效投影信任 NULL、伪造 request ID、裁剪旧历史均禁止。
+6. **测试**：复用 PG17 branch harness，逐字段/全分页/分支/编辑/删除/点赞等价、初始重放、旧 writer、跳锁重访、有限回填、写恢复和 ACL；性能与覆盖必须单独验证，真实 TEST/生产门槛见 `docs/chat-history-read-performance.md`。
+7. **错误与正确**：错误是 `history->0` 就认为无需 detoast，或仅回退 Backend 就认为已撤回 DB 维护；正确是有效小投影消除 JSON 提取，并分别演练读回退和 admission/trigger 写恢复。
+
 本地候选（尚未执行远端迁移）：20261102_chat_message_overrides.sql 新增experience.chat_message_overrides，按会话/历史ID/role覆盖显示和上下文；原生成/扣费行不可变。RPC与生成共用会话锁，限制最近十个逻辑轮次且删除不移动窗口。旧分支保持原值，新分支创建事务冻结覆盖。user删除后不能以该输入重生成。仅隔离PG17验证通过，远端迁移与真实联调尚未执行。
 
 新发送与重生成使用 `experience.start_chat_history_*_with_current_postprocess`：在开轮事务内读取 `app_core.runtime_config` 当前正式指针、校验不可变 artifact 快照，再复用既有显式版本 wrapper 写入非空 `chat_history.postprocess_version`。旧 wrapper 的 `NULL=不绑定` 保留兼容，旧行不回填。
+
+本地候选（2026-11-10，未执行远端迁移）：`20261110_story_memory.sql` 新增 `experience.story_memories`（会话记忆版本，覆盖终点随版本严格递增，全部保留供分支按锚点选择）与 `experience.story_memory_jobs`（每会话一行压缩任务状态，租约/退避）。窗口起点改由 Backend 按正文字数水位经 `advance_story_memory_window` CAS 前移并同事务建任务；按轮数的 `apply_context_window_flood` 已删除。`fork_chat_session` 改为 4 参数，按记忆覆盖范围继承原文并复制记忆。
+
+### 对话分组（2026-11-13 本地实现，TEST/生产未执行）
+
+`20261113_chat_folders.sql`（domain experience）：`experience.chat_folders(id, user_id → app_core.users ON DELETE CASCADE, name trim 后 1–12 字, created_at, updated_at, UNIQUE(user_id,id), UNIQUE(user_id,name))`；`experience.chat_sessions.folder_id uuid NULL` 复合 FK `(user_id, folder_id) → chat_folders(user_id,id) ON DELETE SET NULL (folder_id)`；部分索引 `idx_chat_sessions_user_folder_recent ... WHERE deleted_at IS NULL AND folder_id IS NOT NULL`；函数 `chat_folder_summary(uuid)`、`list_chat_session_groups(uuid,uuid,boolean,int,int)`（SECURITY DEFINER、search_path=pg_catalog、3s）。RLS 开启，表与函数只授 service_role。归属：分组组织的是用户核心互动内容，与会话同生命周期、同消费者，属 experience。发布顺序 TEST → 生产迁移（独立确认）→ Backend → Frontend；回滚只回退应用、保留表列，缺陷 forward-fix。生产规模（2026-11-13）：chat_sessions 约 2 万行/19MB，加列为元数据变更、建索引无匹配行。
 
 ## 入口与调用者
 
@@ -26,7 +42,9 @@ last_verified_at: 2026-11-02
 | 路径                                                                                  | 职责                                             |
 | ------------------------------------------------------------------------------------- | ------------------------------------------------ |
 | `packages/shared/migrations/069_miniapp_chat_sessions.sql`                            | 会话基线                                         |
-| `packages/shared/migrations/077_context_window.sql`                                   | 上下文水位                                       |
+| `packages/shared/migrations/077_context_window.sql`                                   | 窗口起点列（泄洪逻辑已由 20261110 删除）         |
+| `packages/shared/migrations/20261110_story_memory.sql`                                | 会话长期记忆、字数水位前移、分支记忆继承         |
+| `scripts/test-story-memory-migration.sh`                                              | PostgreSQL 17 隔离记忆验收入口                   |
 | `packages/shared/migrations/080_chat_message_voice.sql`                               | 语音元数据                                       |
 | `packages/shared/migrations/20260914_chat_message_images.sql`                         | 图片 attempt、租约与 Storage bucket              |
 | `packages/shared/migrations/20260930_bind_current_text_postprocess_on_turn_start.sql` | 开轮原子绑定当前正式展示版本                     |

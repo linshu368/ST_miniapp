@@ -26,7 +26,7 @@ async function main() {
 }
 
 main().catch((err) => {
-  logger.fatal({ err }, 'Failed to start server');
+  logger.fatal({ event: 'server.start_failed', err }, 'Failed to start server');
   Sentry.captureException(err);
   void Sentry.flush(2_000).finally(() => process.exit(1));
 });

@@ -7,6 +7,7 @@ import {
   useQuery,
   useQueryClient,
   type InfiniteData,
+  type QueryClient,
 } from '@tanstack/react-query';
 import type {
   CreatePaymentOrderData,
@@ -19,8 +20,6 @@ import type {
   GetWalletBalanceData,
   GetWalletSpendingData,
   PaymentOrderStatus,
-  PostCheckoutConfirmationData,
-  PostCheckoutConfirmationRequest,
   PostDailyCheckinData,
 } from '@miniapp/shared';
 
@@ -66,23 +65,13 @@ async function postCreateOrder(body: CreatePaymentOrderRequest): Promise<CreateP
   });
 }
 
-async function postCheckoutConfirmation(input: {
-  orderId: string;
-  request: PostCheckoutConfirmationRequest;
-}): Promise<PostCheckoutConfirmationData> {
-  return apiClient<PostCheckoutConfirmationData>(
-    `/api/payment/orders/${encodeURIComponent(input.orderId)}/checkout-confirmations`,
-    {
-      method: 'POST',
-      body: JSON.stringify(input.request),
-    }
-  );
-}
-
-async function fetchWalletBalance(): Promise<GetWalletBalanceData> {
-  // Profile 的可用态只依赖余额；使用并发调度器为导航保留的 critical 槽，
-  // 避免签到、VIP、社区等同屏普通读取先占满非关键槽后让主内容排队。
-  return apiClient<GetWalletBalanceData>('/api/wallet/balance', { queuePriority: 'critical' });
+async function fetchWalletBalance(signal?: AbortSignal): Promise<GetWalletBalanceData> {
+  // Profile shell 不等待余额，但余额卡仍是首屏唯一立即读取的数据；保留 critical 槽，
+  // 避免签到、VIP、社区等次级读取先占满连接后让金额长时间停在占位态。
+  return apiClient<GetWalletBalanceData>('/api/wallet/balance', {
+    queuePriority: 'critical',
+    signal,
+  });
 }
 
 async function fetchWalletSpending(): Promise<GetWalletSpendingData> {
@@ -126,17 +115,6 @@ export function useCreatePaymentOrderMutation() {
   });
 }
 
-/** Best-effort checkout intent recorder. The caller owns its order-keyed retry record. */
-export function useCheckoutConfirmationMutation() {
-  return useMutation<
-    PostCheckoutConfirmationData,
-    Error,
-    { orderId: string; request: PostCheckoutConfirmationRequest }
-  >({
-    mutationFn: postCheckoutConfirmation,
-  });
-}
-
 /** 订单详情 + 2s 轮询；pending 轮询、其它状态停 */
 export function usePaymentOrderQuery(orderId: string | undefined) {
   return useQuery<GetPaymentOrderData>({
@@ -159,7 +137,15 @@ export function usePaymentOrderQuery(orderId: string | undefined) {
 export function useWalletBalanceQuery() {
   return useQuery<GetWalletBalanceData>({
     queryKey: paymentKeys.wallet(),
-    queryFn: fetchWalletBalance,
+    queryFn: ({ signal }) => fetchWalletBalance(signal),
+    staleTime: 15_000,
+  });
+}
+
+export function prefetchWalletBalanceQuery(queryClient: QueryClient): Promise<void> {
+  return queryClient.prefetchQuery({
+    queryKey: paymentKeys.wallet(),
+    queryFn: ({ signal }) => fetchWalletBalance(signal),
     staleTime: 15_000,
   });
 }
@@ -180,14 +166,15 @@ export function useWalletSpendingQuery() {
   });
 }
 
-export function useDailyCheckinQuery() {
+export function useDailyCheckinQuery({ enabled = true }: { enabled?: boolean } = {}) {
   const query = useQuery<GetDailyCheckinData>({
     queryKey: paymentKeys.checkin(),
     queryFn: fetchDailyCheckin,
+    enabled,
     staleTime: 30_000,
   });
   const { refetch } = query;
-  useRefetchOnForeground(refetch);
+  useRefetchOnForeground(refetch, enabled);
   const canClaim = query.data?.checkin.can_claim;
   const nextClaimAt = query.data?.checkin.next_claim_at;
   useEffect(() => {
@@ -200,7 +187,7 @@ export function useDailyCheckinQuery() {
       Math.max(0, waitMs) + 100
     );
     return () => window.clearTimeout(timer);
-  }, [canClaim, nextClaimAt, refetch]);
+  }, [canClaim, enabled, nextClaimAt, refetch]);
   return query;
 }
 

@@ -9,7 +9,6 @@ export const FEATURE_FREE_TRIAL_LIMIT_MAX = 20;
 export const MAX_FEATURE_FREE_TRIAL_LIMIT = 100;
 /** 兼容旧调用方：表示缺配置时的默认额度，而不是不可变业务上限。 */
 export const FEATURE_FREE_TRIAL_LIMIT = DEFAULT_FEATURE_FREE_TRIAL_LIMIT;
-export const MEDIA_FEATURE_FREE_TRIAL_LIMIT_CONFIG_KEY = 'media_feature_free_trial_limit';
 
 export const FeatureFreeTrialFeatureSchema = z.enum(['voice', 'basic_image']);
 export type FeatureFreeTrialFeature = z.infer<typeof FeatureFreeTrialFeatureSchema>;

@@ -4,6 +4,7 @@ import {
   DEFAULT_VIP_CHECKIN_BONUS_CONFIG,
   isVipActiveAt,
   quoteTieredCheckinReward,
+  splitVipCheckinReward,
   type VipCheckinBonusConfig,
 } from '@miniapp/shared';
 
@@ -16,6 +17,8 @@ export function quoteDailyCheckinReward(input: {
   newUserCredits?: number;
   veteranCredits?: number;
 }): {
+  main_reward_credits: number;
+  bonus_reward_credits: number;
   base_reward_credits: number;
   vip_reward_credits: number;
   reward_credits: number;
@@ -33,5 +36,9 @@ export function quoteDailyCheckinReward(input: {
   if (!Number.isInteger(quote.reward_credits) || quote.reward_credits <= 0) {
     throw new Error('invalid checkin reward');
   }
-  return quote;
+  const main =
+    quote.reward_tier === 'vip'
+      ? splitVipCheckinReward(input.vipCredits ?? DEFAULT_VIP_CHECKIN_BONUS_CONFIG).main_credits
+      : 0;
+  return { ...quote, main_reward_credits: main, bonus_reward_credits: quote.reward_credits - main };
 }

@@ -10,7 +10,6 @@ vi.mock('../../../lib/notifications.js', () => ({
 vi.mock('../../../lib/invite-rewards.js', () => ({
   checkInviteFirstPaidReward: vi.fn(async () => undefined),
 }));
-vi.mock('./PaymentOrderTelemetry.js', () => ({ observePaymentOrderSettled: vi.fn() }));
 
 function order(): MiniappPaymentOrderRow {
   return {
@@ -57,6 +56,7 @@ describe('settlement operation event semantics', () => {
           status: 'completed' as const,
           credits_added: true,
         })),
+        attachProviderTransaction: vi.fn(async () => true),
         reopenExpired: vi.fn(async () => undefined),
       };
       const events = { recordOperationEvent: vi.fn(async () => undefined) };

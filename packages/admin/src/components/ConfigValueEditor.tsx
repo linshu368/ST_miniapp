@@ -1,4 +1,7 @@
 import { ReplyStyleOptionsEditor } from './ReplyStyleOptionsEditor';
+import { DriveModeOptionsEditor } from './DriveModeOptionsEditor';
+import { StoryMemoryConfigEditor, StoryMemoryPromptEditor } from './StoryMemoryEditors';
+import { LlmPricingConfigEditor } from './LlmPricingConfigEditor';
 import { useState } from 'react';
 import {
   Alert,
@@ -16,10 +19,12 @@ import {
 } from 'antd';
 import {
   CREATOR_REVIEW_PROMPT_KEY,
+  DRIVE_MODE_OPTIONS_KEY,
+  FREE_ZONE_CONFIG_KEY,
+  STORY_MEMORY_CONFIG_KEY,
+  STORY_MEMORY_PROMPT_KEY,
   DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG,
   DEFAULT_PAYMENT_CHANNELS_CONFIG,
-  DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG,
-  DEFAULT_RECHARGE_PAGE_CONFIG,
   DEFAULT_WORD_COUNT_TIERS_CONFIG,
   FreeQuotaExhaustedDialogConfigSchema,
   IMAGE_PLAZA_DEFAULT_TAG_GROUP_ID,
@@ -29,10 +34,7 @@ import {
   ImagePlazaTagConfigSchema,
   VideoPlazaModelCatalogSchema,
   LlmPricingConfigSchema,
-  MAX_FEATURE_FREE_TRIAL_LIMIT,
   ModelCatalogSchema,
-  PaymentPromptDialogConfigSchema,
-  RechargePageConfigSchema,
   type ModelCatalog,
   type LlmModelProvider,
   type OpenRouterModelDirectory,
@@ -59,8 +61,7 @@ import {
   type InviteRewardRulesConfig,
   type ImageTextModelConfig,
   type ManagedConfigKey,
-} from '../lib/configSchemas';
-import type { CharacterCard } from '../lib/adminApi';
+} from '@miniapp/admin-client';
 import { InviteCenterConfigEditor } from './InviteCenterConfigEditor';
 import { InviteRewardRulesEditor } from './InviteRewardRulesEditor';
 import {
@@ -69,13 +70,11 @@ import {
   ImagePlazaTagsEditor,
   VideoPlazaModelCatalogEditor,
 } from './ImagePlazaConfigEditors';
-import { LobbyPinnedCharactersEditor } from './LobbyPinnedCharactersEditor';
 import { LobbyRankingParamsEditor } from './LobbyRankingParamsEditor';
 import { ModelCatalogEditor } from './ModelCatalogEditor';
 import { FallbackConfigEditor } from './FallbackConfigEditor';
-import { PaymentPromptDialogConfigEditor } from './PaymentPromptDialogConfigEditor';
+import { FreeZoneConfigEditor } from './FreeZoneConfigEditor';
 import { ProviderRoutingConfigEditor } from './ProviderRoutingConfigEditor';
-import { RechargePageConfigEditor } from './RechargePageConfigEditor';
 import { SystemInstructionsEditor } from './SystemInstructionsEditor';
 import { CreatorReviewPromptEditor } from './CreatorReviewPromptEditor';
 import { PlatformInstructionSlotRulesEditor } from './PlatformInstructionSlotRulesEditor';
@@ -262,10 +261,6 @@ export function ConfigValueEditor(props: {
   syncLoading: Partial<Record<LlmModelProvider, boolean>>;
   syncError: Partial<Record<LlmModelProvider, string | null>>;
   onRefreshProvider: (provider: LlmModelProvider) => void;
-  paymentPlans: PaymentPlan[];
-  characters: CharacterCard[];
-  charactersLoading: boolean;
-  charactersError: string | null;
   onUploadInvitePoster: (file: File) => Promise<string>;
   onTestCreatorReview: (
     input: CreatorReviewTestRequest,
@@ -332,28 +327,6 @@ export function ConfigValueEditor(props: {
         disabled={props.disabled}
         onChange={props.onChange}
       />
-    );
-  }
-
-  if (props.configKey === 'image_plaza_tags_feature_enabled') {
-    const enabled = props.value === true;
-    return (
-      <Space align="center" size="middle">
-        <Switch
-          checked={enabled}
-          disabled={props.disabled}
-          onChange={(next) => props.onChange(next)}
-        />
-        <div>
-          <Typography.Text strong>
-            {enabled ? '分享自动打标已开启' : '分享自动打标已关闭'}
-          </Typography.Text>
-          <br />
-          <Typography.Text type="secondary">
-            仅控制分享时空标签时是否调用模型自动打标；广场仍展示标签，并按提示词中文译文筛选。
-          </Typography.Text>
-        </div>
-      </Space>
     );
   }
 
@@ -440,7 +413,6 @@ export function ConfigValueEditor(props: {
 
   if (
     props.configKey === 'image_generation_credits' ||
-    props.configKey === 'media_feature_free_trial_limit' ||
     props.configKey === 'image_width' ||
     props.configKey === 'image_height' ||
     props.configKey === 'image_max_prompt_chars' ||
@@ -449,21 +421,10 @@ export function ConfigValueEditor(props: {
     const isDimension = props.configKey === 'image_width' || props.configKey === 'image_height';
     const isBytes = props.configKey === 'image_max_output_bytes';
     const isContractLimit = props.configKey === 'image_max_prompt_chars';
-    const isFreeTrialLimit = props.configKey === 'media_feature_free_trial_limit';
     return (
       <InputNumber
         min={isDimension ? 256 : isBytes ? 1048576 : 1}
-        max={
-          isDimension
-            ? 4096
-            : isBytes
-              ? 52428800
-              : isFreeTrialLimit
-                ? MAX_FEATURE_FREE_TRIAL_LIMIT
-                : isContractLimit
-                  ? 1000
-                  : undefined
-        }
+        max={isDimension ? 4096 : isBytes ? 52428800 : isContractLimit ? 1000 : undefined}
         precision={0}
         value={typeof props.value === 'number' ? props.value : undefined}
         disabled={props.disabled || isContractLimit}
@@ -495,6 +456,29 @@ export function ConfigValueEditor(props: {
         disabled={props.disabled}
         onChange={props.onChange}
         onTest={props.onTestCreatorReview}
+      />
+    );
+  }
+
+  if (props.configKey === FREE_ZONE_CONFIG_KEY) return <FreeZoneConfigEditor {...props} />;
+  if (props.configKey === DRIVE_MODE_OPTIONS_KEY) return <DriveModeOptionsEditor {...props} />;
+
+  if (props.configKey === STORY_MEMORY_CONFIG_KEY) {
+    return (
+      <StoryMemoryConfigEditor
+        value={props.value}
+        disabled={props.disabled}
+        onChange={props.onChange}
+      />
+    );
+  }
+
+  if (props.configKey === STORY_MEMORY_PROMPT_KEY) {
+    return (
+      <StoryMemoryPromptEditor
+        value={typeof props.value === 'string' ? props.value : ''}
+        disabled={props.disabled}
+        onChange={props.onChange}
       />
     );
   }
@@ -542,19 +526,6 @@ export function ConfigValueEditor(props: {
     );
   }
 
-  if (props.configKey === 'lobby_pinned_characters') {
-    return (
-      <LobbyPinnedCharactersEditor
-        value={props.value}
-        characters={props.characters}
-        charactersLoading={props.charactersLoading}
-        charactersError={props.charactersError}
-        disabled={props.disabled}
-        onChange={props.onChange}
-      />
-    );
-  }
-
   if (props.configKey === 'lobby_ranking_params') {
     return (
       <LobbyRankingParamsEditor
@@ -567,7 +538,6 @@ export function ConfigValueEditor(props: {
 
   if (
     props.configKey === 'miniapp_new_user_signup_bonus_credits' ||
-    props.configKey === 'miniapp_daily_checkin_bonus_credits' ||
     props.configKey === 'miniapp_checkin_new_user_credits' ||
     props.configKey === 'miniapp_checkin_veteran_credits' ||
     props.configKey === 'miniapp_character_free_chat_quota_limit'
@@ -579,17 +549,6 @@ export function ConfigValueEditor(props: {
         value={typeof props.value === 'number' ? props.value : 0}
         disabled={props.disabled}
         onChange={(value) => props.onChange(value ?? 0)}
-      />
-    );
-  }
-
-  if (props.configKey === 'system_fallback_character_id') {
-    return (
-      <Input
-        value={typeof props.value === 'string' ? props.value : ''}
-        placeholder="角色 UUID"
-        disabled={props.disabled}
-        onChange={(event) => props.onChange(event.target.value)}
       />
     );
   }
@@ -615,41 +574,12 @@ export function ConfigValueEditor(props: {
   }
 
   if (props.configKey === 'llm_pricing_config') {
-    const parsed = LlmPricingConfigSchema.safeParse(props.value);
-    const fixedDeduction = parsed.success
-      ? parsed.data.fixedDeduction
-      : {
-          freeQuotaExhausted: 10,
-          light: 15,
-          standard: 30,
-          premium: 50,
-        };
     return (
-      <Row gutter={[12, 12]}>
-        {(
-          [
-            ['freeQuotaExhausted', '免费模型超出免费轮次'],
-            ['light', '轻量档（付费）'],
-            ['standard', '标准档'],
-            ['premium', '旗舰档'],
-          ] as const
-        ).map(([key, label]) => (
-          <Col xs={24} md={12} lg={6} key={key}>
-            <Typography.Text>{label}（星尘/轮）</Typography.Text>
-            <InputNumber
-              min={0}
-              className="field-full"
-              value={fixedDeduction[key]}
-              disabled={props.disabled}
-              onChange={(number) =>
-                props.onChange({
-                  fixedDeduction: { ...fixedDeduction, [key]: number ?? 0 },
-                })
-              }
-            />
-          </Col>
-        ))}
-      </Row>
+      <LlmPricingConfigEditor
+        value={props.value}
+        disabled={props.disabled}
+        onChange={props.onChange}
+      />
     );
   }
 
@@ -844,18 +774,6 @@ export function ConfigValueEditor(props: {
     );
   }
 
-  if (props.configKey === 'miniapp_recharge_page_config') {
-    const parsed = RechargePageConfigSchema.safeParse(props.value);
-    return (
-      <RechargePageConfigEditor
-        value={parsed.success ? parsed.data : DEFAULT_RECHARGE_PAGE_CONFIG}
-        plans={props.paymentPlans}
-        disabled={props.disabled}
-        onChange={props.onChange}
-      />
-    );
-  }
-
   if (props.configKey === 'llm_provider_routing_config') {
     return (
       <ProviderRoutingConfigEditor
@@ -863,17 +781,6 @@ export function ConfigValueEditor(props: {
         disabled={props.disabled}
         onChange={props.onChange}
         openRouterDirectory={openRouterDirectory}
-      />
-    );
-  }
-
-  if (props.configKey === 'miniapp_payment_prompt_dialog_config') {
-    const parsed = PaymentPromptDialogConfigSchema.safeParse(props.value);
-    return (
-      <PaymentPromptDialogConfigEditor
-        value={parsed.success ? parsed.data : DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG}
-        disabled={props.disabled}
-        onChange={props.onChange}
       />
     );
   }

@@ -1,7 +1,10 @@
-import { randomUUID } from 'node:crypto';
 import type { FastifyBaseLogger } from 'fastify';
+import { randomUUID } from 'node:crypto';
 import { config } from '../../platform/config.js';
+import { withBusinessContext } from '../../platform/observability/context.js';
+import { finishBackgroundOperation, runObservedJob } from '../../platform/observability/jobs.js';
 import { deletePlazaVideoAssets, uploadPlazaVideoAsset } from './storage.js';
+import { isVideoMediaAvailable, prepareVideo } from './video-media.js';
 import { VideoPlazaRepository, type VideoAttemptRow } from './video-repository.js';
 import {
   completeVideo,
@@ -11,7 +14,6 @@ import {
   retrieveVideo,
   VideoPlazaUpstreamError,
 } from './video-upstream.js';
-import { isVideoMediaAvailable, prepareVideo } from './video-media.js';
 
 let timer: NodeJS.Timeout | null = null;
 let running = false;
@@ -26,35 +28,66 @@ export function startVideoPlazaGenerationJob(log: FastifyBaseLogger): void {
   const repository = new VideoPlazaRepository();
   const workerId = `video-${process.pid}-${randomUUID()}`;
   let rerunRequested = false;
-  const tick = async (rerunIfBusy = false): Promise<void> => {
-    if (running) {
-      if (rerunIfBusy) rerunRequested = true;
-      return;
-    }
-    running = true;
-    try {
-      const submitting = await repository.claimSubmitJobs(
-        workerId,
-        2,
-        config.imagePlaza.videoWorkerLeaseSeconds
-      );
-      await Promise.all(submitting.map((attempt) => submit(repository, attempt, workerId, log)));
-      const polling = await repository.claimPollJobs(
-        workerId,
-        2,
-        config.imagePlaza.videoWorkerLeaseSeconds
-      );
-      await Promise.all(polling.map((attempt) => poll(repository, attempt, workerId, log)));
-    } catch (err) {
-      log.error({ err, event: 'video_plaza.worker_tick_failed' }, 'Video plaza worker tick failed');
-    } finally {
-      running = false;
-      if (rerunRequested) {
-        rerunRequested = false;
-        void tick();
+  const tick = (rerunIfBusy = false): Promise<void> =>
+    runObservedJob('video_plaza_generation', async () => {
+      if (running) {
+        if (rerunIfBusy) rerunRequested = true;
+        finishBackgroundOperation('video_plaza_generation', {
+          outcome: 'skipped',
+          outcome_known: true,
+        });
+        return;
       }
-    }
-  };
+      running = true;
+      try {
+        const submitting = await repository.claimSubmitJobs(
+          workerId,
+          2,
+          config.imagePlaza.videoWorkerLeaseSeconds
+        );
+        await Promise.all(
+          submitting.map((attempt) =>
+            withBusinessContext(
+              { business_module: 'video', user_id: attempt.user_id, attempt_id: attempt.id },
+              () => submit(repository, attempt, workerId, log)
+            )
+          )
+        );
+        const polling = await repository.claimPollJobs(
+          workerId,
+          2,
+          config.imagePlaza.videoWorkerLeaseSeconds
+        );
+        await Promise.all(
+          polling.map((attempt) =>
+            withBusinessContext(
+              { business_module: 'video', user_id: attempt.user_id, attempt_id: attempt.id },
+              () => poll(repository, attempt, workerId, log)
+            )
+          )
+        );
+        finishBackgroundOperation('video_plaza_generation', {
+          outcome: submitting.length + polling.length === 0 ? 'skipped' : 'succeeded',
+          outcome_known: true,
+        });
+      } catch (err) {
+        finishBackgroundOperation('video_plaza_generation', {
+          outcome: 'failed',
+          outcome_known: false,
+          err,
+        });
+        log.error(
+          { err, event: 'video_plaza.worker_tick_failed' },
+          'Video plaza worker tick failed'
+        );
+      } finally {
+        running = false;
+        if (rerunRequested) {
+          rerunRequested = false;
+          void tick();
+        }
+      }
+    });
   wakeTick = () => void tick(true);
   void tick();
   timer = setInterval(() => void tick(), Math.max(1_000, config.imagePlaza.videoWorkerIntervalMs));
@@ -187,22 +220,7 @@ async function poll(
     const bytes =
       result.bytes ?? (await downloadVideo(result.downloadUrl ?? attempt.download_url ?? ''));
     const media = await prepareVideo(bytes);
-    const uploadResults = await Promise.allSettled([
-      uploadPlazaVideoAsset({
-        path: storagePath,
-        bytes: media.video,
-        contentType: 'video/mp4',
-      }),
-      uploadPlazaVideoAsset({
-        path: posterPath,
-        bytes: media.poster,
-        contentType: 'image/jpeg',
-      }),
-    ]);
-    const failedUpload = uploadResults.find(
-      (result): result is PromiseRejectedResult => result.status === 'rejected'
-    );
-    if (failedUpload) throw failedUpload.reason;
+    await uploadPreparedVideo(media, storagePath, posterPath);
     // RPC 提交结果一旦可能未知，就保留对象交给对账流程，避免删除其实已发布的资源。
     publishing = true;
     await repository.publish({
@@ -277,4 +295,27 @@ async function poll(
       'Video processing failed'
     );
   }
+}
+
+async function uploadPreparedVideo(
+  media: Awaited<ReturnType<typeof prepareVideo>>,
+  storagePath: string,
+  posterPath: string
+): Promise<void> {
+  const uploadResults = await Promise.allSettled([
+    uploadPlazaVideoAsset({
+      path: storagePath,
+      bytes: media.video,
+      contentType: 'video/mp4',
+    }),
+    uploadPlazaVideoAsset({
+      path: posterPath,
+      bytes: media.poster,
+      contentType: 'image/jpeg',
+    }),
+  ]);
+  const failedUpload = uploadResults.find(
+    (result): result is PromiseRejectedResult => result.status === 'rejected'
+  );
+  if (failedUpload) throw failedUpload.reason;
 }

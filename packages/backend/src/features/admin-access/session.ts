@@ -1,6 +1,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { config } from '../../platform/config.js';
 import { getSupabaseClient } from '../../lib/supabase.js';
+import { observation } from '../../platform/observability/runtime.js';
 
 export type AdminRole = 'owner' | 'operator' | 'viewer';
 export type AdminAccess = 'read' | 'write';
@@ -14,7 +15,7 @@ export interface AdminActor {
 
 export class AdminSessionError extends Error {
   constructor(
-    readonly statusCode: 401 | 403,
+    readonly statusCode: 401 | 403 | 503,
     message: string
   ) {
     super(message);
@@ -50,20 +51,30 @@ export async function requireAdminActor(
   const {
     data: { user },
     error: userError,
-  } = await supabase.auth.getUser(token);
+  } = await supabase.auth.getUser(token).catch((err: unknown) => {
+    throw dependencyError(err);
+  });
+  if (userError && ![400, 401, 403].includes(userError.status ?? 0))
+    throw dependencyError(userError);
   if (userError || !user) {
     throw new AdminSessionError(401, 'Admin session is invalid');
   }
 
+  return loadAdminActor(user.id, access);
+}
+
+/** 按 auth 用户 id 读运营身份，并校验角色与当前部署环境的访问权限。 */
+export async function loadAdminActor(userId: string, access: AdminAccess): Promise<AdminActor> {
+  const supabase = getSupabaseClient();
   const { data: adminUser, error: adminError } = await supabase
     .schema('admin')
     .from('admin_users')
     .select('role,can_access_test,can_access_prod')
-    .eq('user_id', user.id)
+    .eq('user_id', userId)
     .maybeSingle();
   const role = adminUser?.role;
+  if (adminError) throw dependencyError(adminError);
   if (
-    adminError ||
     !adminUser ||
     typeof role !== 'string' ||
     !roleAllows(role, access) ||
@@ -79,7 +90,7 @@ export async function requireAdminActor(
   }
 
   return {
-    userId: user.id,
+    userId,
     role,
     canAccessTest: adminUser.can_access_test === true,
     canAccessProd: adminUser.can_access_prod === true,
@@ -88,16 +99,34 @@ export async function requireAdminActor(
 
 export async function authorizeAdminOperator(
   request: FastifyRequest,
-  reply: FastifyReply
+  reply: FastifyReply,
+  access: AdminAccess = 'write'
 ): Promise<boolean> {
   try {
-    await requireAdminActor(request.headers.authorization, 'write');
+    await requireAdminActor(request.headers.authorization, access);
     return true;
   } catch (error) {
     if (error instanceof AdminSessionError) {
-      await reply.status(error.statusCode).send({ message: error.message });
+      await reply.status(error.statusCode).send({
+        message: error.message,
+        code:
+          error.statusCode === 503
+            ? 'AUTH_DEPENDENCY_UNAVAILABLE'
+            : error.statusCode === 401
+              ? 'UNAUTHORIZED'
+              : 'FORBIDDEN',
+      });
       return false;
     }
     throw error;
   }
+}
+
+function dependencyError(err: unknown): AdminSessionError {
+  observation.emit('auth.dependency_failed', 'auth.admin', {
+    outcome: 'failed',
+    error_code: 'AUTH_DEPENDENCY_UNAVAILABLE',
+    err,
+  });
+  return new AdminSessionError(503, 'Admin authentication service is temporarily unavailable');
 }

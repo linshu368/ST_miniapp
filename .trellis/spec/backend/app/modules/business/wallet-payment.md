@@ -5,8 +5,8 @@ scope: backend
 category: business
 status: active
 owners: [backend]
-last_verified_task: .trellis/tasks/10-28-client-ready-first-token/
-last_verified_at: 2026-10-28
+last_verified_task: .trellis/tasks/archive/2026-11/11-10-payment-probe-auto-ip/
+last_verified_at: 2026-11-10
 ---
 
 # 钱包、签到与充值支付
@@ -68,6 +68,8 @@ Backend payment/wallet tests、runtime-config 批量读取与 fallback 测试、
 - 2026-10-27：任务 `10-27-sentry-performance-optimization` 将 `/api/payment/plans` 的四条同表配置读取合并为一次批量读取，订单权威读取保持独立。
 - 2026-10-13：任务 `10-10-image-plaza-v2` 收敛分享奖励写入口并隔离种子作品。
 - 2026-10-20：任务 `Remove confirmed repository noise`（`.trellis/tasks/archive/2026-10/10-20-remove-confirmed-repository-noise/`）删除无法恢复的乱码变更记录；commit：`63eee1e847f678f4b2c434f872425a40fc7f891a`。
+- 2026-11-10：任务 `Payment availability probe and extensible response strategies`（`.trellis/tasks/archive/2026-11/11-10-payment-availability-probe/`）Added isolated upstream-only payment probe, environment switch, bounded response strategies and extension documentation. Local code remains uncommitted; any archive HEAD reference is the starting baseline only；commit：`042bdc9c08264e4120f7870b049164d118657d58`。
+- 2026-11-10：任务 `支付探测自动获取本机IP`（`.trellis/tasks/archive/2026-11/11-10-payment-probe-auto-ip/`）Removed manual probe IP configuration in favor of local IPv4 selection and loopback fallback. Local changes remain uncommitted; archive HEAD is baseline only；commit：`042bdc9c08264e4120f7870b049164d118657d58`。
 
 ## 客户端首字交付 v4（2026-10-28）
 
@@ -80,3 +82,55 @@ send/regenerate 携带可选 `first_token_measurement`；后端通过既有 begi
 系统超时免费、免费预留释放；主动停止沿原报价/权益一次结算。计费继续用一次交付结果和服务端持久化终态保障正确性，不依赖滚动/阅读。已结算记录只补调用元数据，不重进计费；归档明细依永久去重返回显式 archived 终态，不重扣、不伪造账单；failed 进入已有有界退避。缺报沿用原预算+15秒保守收口，不增加新计费任务。
 
 迁移为 `20261028_client_committed_first_token.sql`、`20261028_llm_archived_charge_result.sql`，均仅替换既有函数，保留 ACL 和历史数据。先 TEST 验证、合 dev，再生产迁移 → Backend → Frontend/看板。发布证据见任务 release-review；1%是否达成须由上线后的 v4 样本判断。
+
+## 支付供应商替换为 Vexutopia（2026-11-03）
+
+子千易整体删除（网关、表单回调、诊断脚本、配置）。`infrastructure/payment/VexutopiaPaymentGateway.ts` 负责建单（`Idempotency-Key = order-<本地订单号>`，仅超时/网络/限流/上游 503 重试一次）、单笔查单、批量 lookup 与 Webhook HMAC 验签。建单成功后先写 `provider_transaction_id`，写不进去就标 failed、不交出收银台。入账来源：`webhook`（验签 + `mijing_env` 本环境过滤）、`query`（轮询/回跳单笔查单）、`cron`（`PaymentReconciliation` 每 30 秒 / 5 分钟批量查最近 2 小时未履约订单，平台终态未付则本地提前置 expired）。回跳只导航。`payment.refunded` 只记事件和告警，不自动扣回。收银台确认上报整体删除；告警规则 v3 只读操作事件中的平台直接信号。任务：`.trellis/tasks/11-03-vexutopia-payment/`。
+
+## VIP 混合星尘奖励（2026-11-05）
+
+VIP 签到配置兼容旧数字及专项/通用拆分；报价、结果和 VIP benefits 都提供两钱包额度。创建月卡订单冻结 vip_bonus_main_credits，结算与到账通知读取订单快照；不修改旧订单或历史余额。
+
+隔离 PG 覆盖并发、幂等、旧订单及故障回滚；远端执行与部署状态见任务 `11-05-vip-mixed-rewards` 的发布记录。
+
+## TTZF epay cutover (2026-11-09)
+
+### Scope / Trigger
+
+Replaces retired Vexutopia in new purchases, callbacks, polling and workers. No native API, provider registry or database migration. The preceding Vexutopia section describes historical behavior only.
+
+### Signatures
+
+`EpayPaymentGateway.createPayment({orderId, amount, type, description, clientIp})`; `queryOrder({id, provider_transaction_id, payment_type}, signal?)`; `GET /api/payment/notify/ttzf`; existing order/list/return consumer endpoints remain compatible.
+
+### Contracts
+
+`TTZF_APP_ID` is the application ID; `TTZF_APP_KEY` is its secret; `TTZF_BASE_URL` defaults to https://ttzf8.com/api. `PAYMENT_NOTIFY_URL` and `PAYMENT_RETURN_URL` must be environment-specific HTTPS backend routes. New IDs are EP plus 30 lowercase random hex digits. Creation omits optional param; notification/query processing does not depend on its echo. Isolate environment callback URLs, credentials and databases; notifications require an existing local order. Creation is POST form; query is the user-selected documented GET act=order with credentials sent only to the HTTPS provider, never logged. All transport calls disable redirects; query disables caching. Lowercase MD5 signs raw sorted nonempty fields except sign/sign_type/signType, including legacy param extensions when present. Railway public ingress supplies validated X-Real-IP; local requests use socket IP. Do not expose untrusted direct/private/TCP ingress.
+
+### Validation & Error Matrix
+
+Query-response pid may be omitted/null, as observed in the provider's successful paid response. Validate any non-null pid against the configured application ID; malformed or mismatched values still fail. Request pid/key and signed notification pid remain required. Matching local order/channel/provider reference and exact amount remain settlement guards; null pid never bypasses them.
+
+Invalid signature/pid -> 401 fail; malformed or duplicate fields -> 400 fail; channel/ref/amount mismatch -> fail without fulfilment; persistence failure -> 500 fail for retry. Unknown local order -> 404 fail without fulfilment; absent/empty/legacy param does not block trusted local payments. Only TRADE_SUCCESS or numeric query status=1 enters the common settlement boundary. Fractional cents are rejected, trailing third decimal zero is accepted. Creation timeout, malformed success or failed reference persistence stays recoverable; no blind create retry. QR/scheme-only responses do not expose checkout. GET return parameters never grant benefits.
+
+### Good/Base/Bad Cases
+
+Good: early callback binds reference using CAS, then existing atomic complete RPC grants once. Base: status=0 remains recoverable; expired paid orders reopen. Bad: old MA IDs never query TTZF; mismatched trade references cannot overwrite the first binding. Recovery remains enabled with credentials even if PAYMENT_ENABLED disables new purchases. Worker limits: 30 candidates, concurrency 3, 25-second dispatch deadline, 5-second query; next_reconcile_at rotates before query, seven-day automatic window, later explicit queries/callbacks still recover. Only confirmed unpaid local-deadline orders expire; no bulk expiry. Refunds alert without automatic reversal.
+
+### Tests / Manual Acceptance
+
+Protocol, repository, callback/settlement and bounded-worker regressions are included. See task verification.md for completed checks and user-requested stop. Engineer validates TEST credentials, HTTPS checkout, paid/unpaid GET lookup, notification retries/concurrency, missing callbacks, late payments, credits/VIP and Android/iOS handoff/return. Local mocks do not prove database or provider behavior.
+
+### Wrong vs Correct
+
+Wrong: infer paid from return URL, round 6.001 to 6.00, or overwrite provider_transaction_id after an early callback. Correct: validate the trusted provider fact, compare exact cents, CAS the reference, then call PaymentSettlement.settlePaidOrder. Wrong: roll back to a retired-provider binary with TTZF orders in flight. Correct: disable new purchases and retain TTZF recovery while forward-fixing.
+
+## Payment availability probe (2026-11-10, local implementation)
+
+Independent Railway Cron `stminiapp-payment-availability-probe` runs every 30 minutes and exits. `PAYMENT_PROBE_ENABLED=true` enables it (default off), independently of normal PAYMENT_ENABLED. Channel defaults to alipay; PAYMENT_PROBE_CHANNEL may select wxpay. No client-IP environment setting is needed: resolvePaymentProbeClientIp selects a non-internal local IPv4, falling back to 127.0.0.1 when none is available or interface inspection fails. This is a local/container address, not verified public egress; there is no external discovery request. Normal user payment client IP handling is unchanged. Preview/pr environments skip before DB initialization.
+
+`src/scripts/payment-availability-probe.ts` composes `features/payment/availability/{probe,round,strategy}.ts`. The gateway receives one ephemeral CNY 1 request with optional AbortSignal; no local order, payment operation event, query, checkout navigation or retry. Independent session lock 731007 prevents overlap, not exactly-once per slot. Soft cancellation at 45 seconds precedes a 60-second hard deadline; failed unlock still closes the owning DB connection.
+
+New strategies implement PaymentAvailabilityStrategy (id, timeoutMs, appliesTo, handle) under `availability/strategies/` and register in `strategies/index.ts#createPaymentAvailabilityStrategies`. One/many use the same executor: at most 8 strategies, concurrency 2, per-strategy 1-25000ms budget, independent failures; total cancellation also cancels waiting work. Default feishu-alert uses the existing Publisher/outbox with fingerprint `<environment>:payment:upstream-create-probe:<channel>`. Only that rule opts into P1/recovered delivery; persistent failures reuse one incident. Acceptance means persistence, not actual delivery.
+
+Runtime and failure contracts: [probe spec](../../payment-availability-probe.md). Extension and rollout guide: `docs/payment-availability-probe.md`. Existing payment routes, settlement and user order persistence remain unchanged. No new schema objects or migrations. Live TEST/upstream/Feishu and production enablement/performance verification remain separate; code is not deployment evidence.

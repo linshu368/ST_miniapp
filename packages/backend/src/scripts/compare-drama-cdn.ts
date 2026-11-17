@@ -2,7 +2,7 @@
 import { readFileSync, statSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
-import { railwayDramaReport } from './import-drama-timing.js';
+import { railwayDramaReport } from './railway-drama-report.js';
 
 type Row = NonNullable<ReturnType<typeof railwayDramaReport>>;
 interface Window {

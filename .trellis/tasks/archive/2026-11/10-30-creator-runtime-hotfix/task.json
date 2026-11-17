@@ -1,0 +1,35 @@
+{
+  "id": "creator-runtime-hotfix",
+  "name": "creator-runtime-hotfix",
+  "title": "Restore conversation entry after creator release",
+  "description": "",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P0",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-30",
+  "completedAt": "2026-11-06",
+  "branch": "codex/fix-creator-runtime-projection",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "2026-11-06 archive_stale：module knowledge 门禁未通过，未写回 spec（changes 模式缺少 module-updates.json）",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "backend.business.conversation-generation",
+        "database.infrastructure.schema-security"
+      ]
+    }
+  }
+}

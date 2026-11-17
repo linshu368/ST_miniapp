@@ -6,16 +6,19 @@
 
 经营看板继续读取已有 Supabase 轻量汇总；原首字回执、赢家身份、恢复和计费事实继续原样持久化。本次没有新增监控表、索引、cron、逐事件数据库查询/写入，原短剧分析上传的历史约定由2026-10-29五秒长尾任务修订：接收端仅将达到5秒的终态/network详情经既有后端OTLP写Loki，不再触发Supabase分析写入；历史表和SQL看板保留，发布后单独核验自然样本送达。
 
-四个独立入口：
+五个独立入口：
 
-| 源文件 / UID                   | 工程首先看什么                                            | 数据源        |
-| ------------------------------ | --------------------------------------------------------- | ------------- |
-| `st-engineering-pages.json`    | 页面可用、打开/导航、缓存/刷新、API 全程与分段            | Cloud Loki    |
-| `st-engineering-roleplay.json` | 首字、完整回复、恢复、交互反馈                            | Cloud Loki    |
-| `st-engineering-drama.json`    | 目录、启动、首帧、阶段、播放中断与恢复                    | Cloud Loki    |
-| `st-engineering-backend.json`  | HTTP/生成/上游尝试/短剧服务端/Prisma/runtime/出口健康下钻 | Cloud Metrics |
+| 源文件 / UID                          | 工程首先看什么                                              | 数据源        |
+| ------------------------------------- | ----------------------------------------------------------- | ------------- |
+| `st-engineering-pages.json`           | 页面可用、打开/导航、缓存/刷新、API 全程与分段              | Cloud Loki    |
+| `st-engineering-roleplay.json`        | 首字、完整回复、恢复、交互反馈                              | Cloud Loki    |
+| `st-engineering-drama.json`           | 目录、启动、首帧、阶段、播放中断与恢复                      | Cloud Loki    |
+| `st-engineering-backend.json`         | HTTP/生成/上游尝试/短剧服务端/Prisma/runtime/出口健康下钻   | Cloud Metrics |
+| `st-five-route-navigation-ready.json` | 五个一级入口点击到真实内容可见 P95、2秒达标率、样本量和终态 | Cloud Loki    |
 
-前三项是工程体验产出，第四项是定位原因的证据。保留既有经营、首字 v4 和短剧看板，不覆盖其他 TextBot 项目。源 JSON 默认绑定当前 `grafanacloud-logs` / `grafanacloud-prom`，保留待接入模板；线上接入状态按实际 Cloud 样本独立更新，不因导入模板而视为验收。
+页面、角色扮演、短剧和五入口专项是工程体验产出，Backend 看板是定位原因的证据。保留既有经营、首字 v4 和短剧看板，不覆盖其他 TextBot 项目。源 JSON 默认绑定当前 `grafanacloud-logs` / `grafanacloud-prom`，保留待接入模板；线上接入状态按实际 Cloud 样本独立更新，不因导入模板而视为验收。
+
+五入口专项固定覆盖 `/`、`/dramas`、`/characters`、`/creation`、`/profile`。P95 和 2 秒达标率都读取同一条 `page.navigation` 的 `duration_ms`；页面测量另带低基数 `readiness_budget=within_2s|over_2s` 供发布后核对。看板必须同时查看成功样本量、`page.terminal` 和 `page.stall`，单个 route/platform 少于 100 个成功终态只标低样本，无数据不能解释成达标。
 
 ## 短剧统一定义v3（本地代码，尚未发布）
 
@@ -24,6 +27,18 @@
 工程看板是日常唯一统计入口，旧SQL看板保留历史及切换对照。v3筛选默认隔离旧定义；入口/地址来源/首帧/目录起点只过滤具有相应属性的面板，播放质量窗口保持其原版本与分母。诊断final快照和network尾报告按phase分开，不相加当播放数。能力/有效N与条件分位一起看，完整有界单次诊断留Pino，不发送身份/媒体URL到Faro。
 
 NEXT_PUBLIC_DRAMA_TIMING_MODE默认legacy。只有替代验证通过后显式启用unified，才移除专用start和快速成功全量诊断上传；保留100%≥5秒/非成功和5%不足5秒成功Pino细节，符合条件的final/network经Backend OTLP写Loki，purpose=diagnostic在路由/repository/导入器均禁止分析写入。全量工程统计不采样。Backend先兼容，再Frontend默认双轨，再TEST/Cloud/真实流程，最后独立批准生产切换；不开生产、不删旧对象。统一release由构建SHA决定。详见[统一定义与门禁](../drama-playback-timing.md)。
+
+## 派发前卡顿诊断（本地候选，尚未发布）
+
+`lib/preparation-diagnostics.ts` 补充两类非权威观测，不改变首字上限、路由、重试或计费：
+
+- Railway Pino `conversation.request_preparation`：聊天发送/重生成在 Fastify 内的 `before_body`、`body_parse`、`validation`、`pre_handler` 阶段；仅慢于 1 秒或前置失败/中断时输出。`pre_handler` 包含路由鉴权，不包含 handler 内业务准备；`body_parse` 是读取与解析请求体的合计，不等于纯网络上传。容器入口以前的排队不在计时范围。
+- Railway Pino `supabase.rest_wait`：REST 每次 fetch 尝试等到响应头的耗时；超过 1 秒先输出一次 `pending`，结束再输出结果。只保留白名单表/RPC 名、固定方法、状态及耗时，不保留 URL、查询条件、header 或正文。未知资源为 `other`。Response 原样返回、不读正文，因此此计时不代表完整 RPC/SQL/正文读取，也不能拆成连接池等待。
+- Sentry `prep.dependency.duration` 使用固定 stage/outcome/method 标签记录完成样本；挂起请求先看 Pino pending，不能只查成功完成分位数。这两类新诊断暂不接入 Grafana 指标，需在 Railway 日志核验，不能把 Cloud 空图解释成没有慢请求。
+
+现有 `st_prisma_operation_duration_seconds` 已包含 Prisma 调用方的池等待，但不覆盖 Supabase REST。`generation.pre_dispatch` 的各阶段分位数不得相加或当作同一个失败请求；缺少派发字段不能独立证明请求没有进入任何上游路径。成功首字 ≥5 秒为零也不代表超时失败为零；分布必须和超时、离页、缺失回执分别展示。
+
+发布后验证：在 TEST 发送/重生成、鉴权拒绝及受控慢 REST 场景核验日志；随后按生产新版本观察至少 24 小时，按 Android/iOS 同口径比较首字 P95 与全部请求超时率。当前未执行线上验收，不宣称历史事故已定根因。
 
 ## 三类核心测量
 
@@ -59,7 +74,7 @@ NEXT_PUBLIC_DRAMA_TIMING_MODE默认legacy。只有替代验证通过后显式启
 
 ## 页面与接口覆盖
 
-已登记20个页面模板：`/`、`/characters`、`/chats`、`/chat/:id`、`/chat/:id/voice/:id`、`/create`、`/create/studio/:id`、`/create/work/:id`、`/dramas`、`/dramas/:id`、`/vip`、`/profile`、`/profile/recharge`、`/profile/recharge/:id`、`/profile/orders`、`/profile/spending`、`/profile/messages`、`/profile/messages/:id`、`/profile/invite`、`/profile/support`。
+已登记21个页面模板：`/`、`/characters`、`/chats`、`/chat/:id`、`/chat/:id/voice/:id`、`/create`、`/create/studio/:id`、`/create/work/:id`、`/creation`、`/dramas`、`/dramas/:id`、`/vip`、`/profile`、`/profile/recharge`、`/profile/recharge/:id`、`/profile/orders`、`/profile/spending`、`/profile/messages`、`/profile/messages/:id`、`/profile/invite`、`/profile/support`。
 
 - 路径白名单在 `lib/perf/route-template.ts`；页面通过现有 `usePageReady` 声明真实就绪/失败。未知短路径归 other，不把动态ID当维度。
 - API 客户端自动覆盖24个有限接口组，不输出原路径/query。诊断上传排除，防止采集递归。大厅同源代理等绕过统一客户端的请求不在 `api.total` 承诺内，页面端到端和后端HTTP仍可观测。
@@ -154,3 +169,11 @@ Faro 2.13 默认 `FetchTransport.send` 强制添加 `Idempotency-Key`，当前�
 本地复用固定Faro→Alloy→Loki合成验证：型号A两次成功（1000/5999ms）、一次6000ms截断、一次离页、一次明确受理拒绝、一次未受理拒绝；型号B一次2000ms成功。验证A截断率1/3（离页/未受理拒绝不稀释）、B为0、成功P95小于6000、所有Loki面板语法和分布。服务端真实OTLP合成接收端验证字段安全、秒单位和独立请求/派发/赢家计数；真实模型与生产数据不参与。
 
 下一步沿原框架TEST接入门禁：真实Cloud字段/指标名、按型号出图与采集丢弃核对后再生产启用；确认替代有效再退役对应纯监控SQL，旧业务事实与经营看板不删、不重启旧全量cron。候选源码通过不等于线上已经切源。
+
+## 聊天网络归因（2026-11-02，候选）
+
+`roleplay.network` 按 `stage` 上报 `network_overhead`（点击到收到 start 减服务端已用时间）、`network_setup`（DNS、连接、TLS、排队、预检）、`network_path`（已建立连接上的传输），附 `protocol`、`conn_reused`、`delay_attribution`。聊天请求的 Resource Timing 由本轮自己的 PerformanceObserver 读取，不依赖可能已写满的整页缓冲区；`network_status` 说明证据是否齐全（`available` 有计时、`limited` 跨域计时被清零、`no_entry` 没有条目、`unsupported` 浏览器不支持），`rt_buffer` 记录整页缓冲区是否也有这条（`miss` 而 `available` 即缓冲区已满）。`roleplay.delay` 每轮一条，是“我方责任超时率”的分子分母来源；`roleplay.first_token_late` 记录超时后的真实首字时长。只有 start 与 Resource Timing 同时存在才能把传输判给用户，否则计入我方。规则见 [首字兜底说明](../first-token-fallback.md)。
+
+## 无缓冲快进恢复（2026-11-03，本地实现，待发布）
+
+短剧工程看板新增299–307号区域，位于启动阶段后、前台播放中断恢复前；独立drama_seek_resume_v1，仅无缓冲向前且需要继续播放进入主图。新增全窗口P95/N、3秒恢复率/分母、趋势、定位前后与缓冲首次观测/帧处理、网络候选与每阶段N、诊断能力/截断、≥3秒受控明细。每次final单计，network仅补诊断；新快进网络阶段变量只作用网络区。起播/目录/CDN专属筛选不作用，默认环境以当前Cloud设置为准，不改旧区查询。完整口径、采样上限、平台限制和Backend→Frontend顺序见[快进说明](../drama-playback-timing.md#无缓冲快进恢复与关联诊断2026-11-03本地实现待发布)。源码JSON和Cloud增量面板独立验收，空图不算生产实收。

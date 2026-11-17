@@ -1,3 +1,5 @@
+import { observation } from '../../platform/observability/runtime.js';
+import { bindBusinessContext } from '../../platform/observability/context.js';
 // 自研引擎对话会话仓库（M1）。
 //
 // 方案：docs/ST_remove-MVP实施方案.md §5.1 / §5.2 / §5.7。
@@ -5,14 +7,21 @@
 //
 // 所有读写都带 user_id 过滤：ownership 校验落在仓库层，M3b 不需要先查一次再判归属。
 
-import type { ChatMessage, ChatSession } from '@miniapp/shared';
+import type { ChatMessage, ChatSession, ConversationQuickFilter } from '@miniapp/shared';
 import { grantCreatorCharacterAccess } from '../../features/creator/access.js';
 import { getDomainDb } from '../../lib/supabase.js';
 import { clampLimit, toOpeningMessage } from './ConversationHistoryRepository.js';
 import { ConversationRepositoryError, throwConversationRpcError } from './conversation-errors.js';
+import { toFolderError } from './ChatFolderRepository.js';
 
 const MAX_TITLE_LENGTH = 60;
 const DEFAULT_SESSION_TITLE = '新的对话';
+const IDLE_DAYS = 30;
+
+/** PostgREST 的 like 里 `*` 也是通配符；`%_\` 用反斜杠转义，`*` 直接去掉。 */
+function likePattern(query: string): string {
+  return `%${query.replace(/\*/g, '').replace(/[\\%_]/g, (char) => `\\${char}`)}%`;
+}
 
 /** PostgREST 把「列不存在」透传成 Postgres 的 42703 */
 function isMissingPinnedColumn(error: { code?: string; message?: string }): boolean {
@@ -29,6 +38,8 @@ export interface ChatSessionRow {
   last_message_preview: string | null;
   message_count: number;
   pinned_at: string | null;
+  /** 20261113 迁移前不存在 */
+  folder_id?: string | null;
   context_window_start_turn: number;
   deleted_at: string | null;
   created_at: string;
@@ -44,6 +55,11 @@ export interface ListSessionsOptions {
   characterId?: string;
   limit?: number;
   offset?: number;
+  /** 分组 id，或 'none' 只看未分组 */
+  folder?: string;
+  /** 按对话名搜索；有搜索时不限分组 */
+  query?: string;
+  quick?: ConversationQuickFilter;
 }
 
 export class ChatSessionRepository {
@@ -65,18 +81,15 @@ export class ChatSessionRepository {
     sourceSessionId: string;
     messageId: string;
     requestId: string;
-    retainTurns: number;
   }): Promise<ChatSessionRow> {
-    if (!Number.isInteger(input.retainTurns) || input.retainTurns < 1 || input.retainTurns > 1000) {
-      throw new Error('分支上下文配置不可用');
-    }
+    // Inherited range and memory copy are decided inside the RPC from the source's
+    // memory coverage, so the caller passes no window parameters.
     const { data, error } = await this.db
       .rpc('fork_chat_session', {
         p_user_id: input.userId,
         p_source_session_id: input.sourceSessionId,
         p_message_id: input.messageId,
         p_request_id: input.requestId,
-        p_retain_turns: input.retainTurns,
       })
       .abortSignal(AbortSignal.timeout(5_000));
     if (error) throwConversationRpcError(error, '创建对话分支失败');
@@ -136,7 +149,7 @@ export class ChatSessionRepository {
       .limit(1)
       .maybeSingle();
 
-    if (error) throw new Error(`查询空会话失败：${error.message}`);
+    if (error) throw new Error(`查询空会话失败：${error.message}`, { cause: error });
     return (data as ChatSessionRow | null) ?? null;
   }
 
@@ -155,7 +168,7 @@ export class ChatSessionRepository {
       .select('*')
       .single();
 
-    if (error) throw new Error(`创建会话失败：${error.message}`);
+    if (error) throw new Error(`创建会话失败：${error.message}`, { cause: error });
     return data as ChatSessionRow;
   }
 
@@ -184,6 +197,21 @@ export class ChatSessionRepository {
       if (options.characterId) {
         query = query.eq('character_id', options.characterId);
       }
+      if (options.query) {
+        query = query.ilike('title', likePattern(options.query));
+      } else if (options.folder === 'none') {
+        query = query.is('folder_id', null);
+      } else if (options.folder) {
+        query = query.eq('folder_id', options.folder);
+      }
+      if (options.quick === 'short') {
+        query = query.lte('message_count', 2);
+      } else if (options.quick === 'idle') {
+        query = query.lt(
+          'last_message_at',
+          new Date(Date.now() - IDLE_DAYS * 86_400_000).toISOString()
+        );
+      }
       if (withPinned) {
         query = query.order('pinned_at', { ascending: false, nullsFirst: false });
       }
@@ -198,8 +226,11 @@ export class ChatSessionRepository {
     if (result.error && isMissingPinnedColumn(result.error)) {
       // 只在第一次探到时降级并记一次；之后直接走无置顶排序的分支，不再白打一次请求
       this.pinnedColumnMissing = true;
-      console.warn(
-        '[ChatSessionRepository] chat_sessions.pinned_at 不存在，本次按最近活跃排序。请执行迁移 078_chat_session_pinned.sql'
+      observation.emit(
+        'conversation.pinned_column_missing',
+        'conversation.config',
+        { outcome: 'degraded', outcome_known: false },
+        'warn'
       );
       result = await run(false);
     }
@@ -218,8 +249,11 @@ export class ChatSessionRepository {
       .is('deleted_at', null)
       .maybeSingle();
 
-    if (error) throw new Error(`查询会话失败：${error.message}`);
-    return (data as ChatSessionRow | null) ?? null;
+    if (error) throw new Error(`查询会话失败：${error.message}`, { cause: error });
+    const session = (data as ChatSessionRow | null) ?? null;
+    if (session)
+      bindBusinessContext({ session_id: session.id, character_id: session.character_id });
+    return session;
   }
 
   async requireSession(sessionId: string, userId: string): Promise<ChatSessionRow> {
@@ -238,7 +272,7 @@ export class ChatSessionRepository {
   async updateSession(
     sessionId: string,
     userId: string,
-    patch: { title?: string | null; pinned?: boolean }
+    patch: { title?: string | null; pinned?: boolean; folderId?: string | null }
   ): Promise<ChatSessionRow> {
     const changes: Record<string, unknown> = { updated_at: new Date().toISOString() };
     if ('title' in patch) {
@@ -253,6 +287,9 @@ export class ChatSessionRepository {
     if (patch.pinned !== undefined) {
       changes.pinned_at = patch.pinned ? new Date().toISOString() : null;
     }
+    if (patch.folderId !== undefined) {
+      changes.folder_id = patch.folderId;
+    }
 
     const { data, error } = await this.db
       .from('chat_sessions')
@@ -263,7 +300,11 @@ export class ChatSessionRepository {
       .select('*')
       .maybeSingle();
 
-    if (error) throw new Error(`更新会话失败：${error.message}`);
+    // 分组不存在/不属于本人由复合 FK 拦下（23503），翻成 folder_not_found。
+    if (error)
+      throw patch.folderId
+        ? toFolderError(error, '更新会话失败')
+        : new Error(`更新会话失败：${error.message}`, { cause: error });
     if (!data) {
       throw new ConversationRepositoryError('session_not_found', `会话不存在：${sessionId}`);
     }
@@ -282,7 +323,7 @@ export class ChatSessionRepository {
       .select('id')
       .maybeSingle();
 
-    if (error) throw new Error(`删除会话失败：${error.message}`);
+    if (error) throw new Error(`删除会话失败：${error.message}`, { cause: error });
     if (!data) {
       throw new ConversationRepositoryError('session_not_found', `会话不存在：${sessionId}`);
     }
@@ -327,6 +368,7 @@ export function toChatSession(row: ChatSessionRow): ChatSession {
     message_count: row.message_count,
     // 迁移 078 未执行时行里没有这一列，契约仍要给出 null 而不是 undefined
     pinned_at: row.pinned_at ?? null,
+    folder_id: row.folder_id ?? null,
     created_at: row.created_at,
     updated_at: row.updated_at,
     ...(row.branch_source_turn_index != null && (row.branch_inherited_turns ?? 0) > 0

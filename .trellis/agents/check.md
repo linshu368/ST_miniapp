@@ -45,6 +45,8 @@ labels: [trellis, check]
 
 ## 通用检查要求
 
+- 核对任务日志声明与实际 producer/consumer/白名单，不以 AST guard 或“已有统一日志”推断覆盖。审查新增、重命名及合并入口的 timeout、SDK 业务失败、并发实体上下文和实际 Pino JSON；用户/对象 ID 只进授权出口，检查 Sentry 独立 span/log/event/breadcrumb 与告警边界。依据 `.trellis/spec/backend/app/logging-integration-planning.md` 记录失败场景和线上未验收项。
+
 - 检查是否充分复用现有组件、模块、feature、hook、store、bridge、contract 与工具能力。
 - 检查是否出现明显的无用代码、无意义抽象或过度设计。
 - 检查是否兼顾可复用性、可扩展性、高可用性，同时没有把实现复杂化。

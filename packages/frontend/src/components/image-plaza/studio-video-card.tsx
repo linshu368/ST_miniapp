@@ -1,13 +1,13 @@
 'use client';
 
-import { Copy, Download, LoaderCircle, Play, RefreshCw, Share2 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
-import type { VideoPlazaArtifact, VideoPlazaAttemptStatus } from '@miniapp/shared';
-import { requestTelegramFileDownload } from '@/lib/telegram/hooks';
 import { useMobilePerformancePolicy } from '@/lib/mobile-performance';
 import { supabasePublicImageSrcSet, supabasePublicImageUrl } from '@/lib/supabase-image';
+import { requestTelegramFileDownload } from '@/lib/telegram/hooks';
+import type { VideoPlazaArtifact, VideoPlazaAttemptStatus } from '@miniapp/shared';
+import { Copy, Download, LoaderCircle, Play, RefreshCw, Share2 } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 
-export function StudioVideoCard(props: {
+type StudioVideoCardProps = {
   artifact: VideoPlazaArtifact;
   status: VideoPlazaAttemptStatus;
   prompt: string;
@@ -18,7 +18,9 @@ export function StudioVideoCard(props: {
   onNotice: (message: string) => void;
   onSettled?: (outcome: 'loaded' | 'error' | 'absent') => void;
   priority?: boolean;
-}) {
+};
+
+function useStudioVideoMedia(props: StudioVideoCardProps) {
   const performancePolicy = useMobilePerformancePolicy();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -110,18 +112,44 @@ export function StudioVideoCard(props: {
     settle('error');
   };
 
-  const download = async () => {
-    try {
-      const accepted = await requestTelegramFileDownload(
-        props.artifact.video_url,
-        `video-${props.artifact.id}.mp4`
-      );
-      if (!accepted) window.open(props.artifact.video_url, '_blank', 'noopener,noreferrer');
-    } catch {
-      props.onNotice('下载未完成，已为你打开原视频');
-      window.open(props.artifact.video_url, '_blank', 'noopener,noreferrer');
-    }
+  const download = () => downloadVideoArtifact(props);
+  return {
+    containerRef,
+    videoRef,
+    active,
+    displayPoster,
+    mediaReady,
+    posterSettled,
+    posterFailed,
+    useOriginalPoster,
+    posterSrcSet,
+    setMediaReady,
+    setPosterSettled,
+    settle,
+    handlePosterError,
+    activateAndPlay,
+    download,
   };
+}
+
+export function StudioVideoCard(props: StudioVideoCardProps) {
+  const {
+    containerRef,
+    videoRef,
+    active,
+    displayPoster,
+    mediaReady,
+    posterSettled,
+    posterFailed,
+    useOriginalPoster,
+    posterSrcSet,
+    setMediaReady,
+    setPosterSettled,
+    settle,
+    handlePosterError,
+    activateAndPlay,
+    download,
+  } = useStudioVideoMedia(props);
   return (
     <article className="overflow-hidden rounded-3xl bg-card ring-1 ring-border">
       <div ref={containerRef} className="relative aspect-video w-full bg-black">
@@ -197,4 +225,17 @@ export function StudioVideoCard(props: {
       </div>
     </article>
   );
+}
+
+async function downloadVideoArtifact(props: StudioVideoCardProps): Promise<void> {
+  try {
+    const accepted = await requestTelegramFileDownload(
+      props.artifact.video_url,
+      `video-${props.artifact.id}.mp4`
+    );
+    if (!accepted) window.open(props.artifact.video_url, '_blank', 'noopener,noreferrer');
+  } catch {
+    props.onNotice('下载未完成，已为你打开原视频');
+    window.open(props.artifact.video_url, '_blank', 'noopener,noreferrer');
+  }
 }

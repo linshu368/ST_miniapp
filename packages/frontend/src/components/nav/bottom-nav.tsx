@@ -1,115 +1,92 @@
 'use client';
 
-import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { Clapperboard, MessagesSquare, PenLine, Play, User } from 'lucide-react';
+import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 
-import { cn } from '@/lib/utils';
-import { useDramaLibraryStore } from '@/stores/drama-library-store';
 import { useNotificationUnreadCountQuery } from '@/lib/api/notifications';
 import { useSupportUnreadQuery } from '@/lib/api/support';
+import { prefetchCharactersQuery } from '@/lib/api/characters';
+import { prefetchFavoritesQuery } from '@/lib/api/favorites';
+import { prefetchWalletBalanceQuery } from '@/lib/api/payment';
 import { clearLobbyReturnSnapshot } from '@/lib/lobby-return';
 import { canPrefetchInBackground } from '@/lib/background-prefetch';
 import { afterEntryBackground } from '@/lib/entry-phase';
-import { useMobilePerformancePolicy, type MobilePerformancePolicy } from '@/lib/mobile-performance';
 import {
-  readRoleplayView,
-  rememberRoleplayScroll,
-  rememberRoleplayView,
-} from '@/lib/roleplay-navigation';
+  afterNavigationQuietWindow,
+  beginNavigationQuietWindow,
+  isNavigationBackgroundAllowed,
+  useNavigationBackgroundAllowed,
+} from '@/lib/navigation-quiet-window';
+import {
+  useMobilePerformancePolicy,
+  type MobilePerformancePolicy,
+  type PrimaryNavigationRoute,
+} from '@/lib/mobile-performance';
+import { readRoleplayDiscovery, rememberRoleplayScroll } from '@/lib/roleplay-navigation';
 
-const NAV_ITEMS = [
-  { href: '/characters', label: '角色', Icon: MessagesSquare },
-  { href: '/creation', label: '创作', Icon: PenLine },
-  { href: '/', label: '首页', Icon: Play },
-  { href: '/dramas', label: 'AI短剧', Icon: Clapperboard },
-  { href: '/profile', label: '我的', Icon: User },
-] as const;
+import { BottomNavShell, isCreationRoute } from './bottom-nav-shell';
 
-const HEAVY_ROUTE_HREFS = new Set<string>(['/', '/dramas', '/creation']);
+export { isBottomNavHidden } from './bottom-nav-shell';
+
 const BACKGROUND_PREFETCH_GAP_MS = 800;
 
-function isCreationRoute(pathname: string | null | undefined): boolean {
-  return Boolean(
-    pathname &&
-    ['/creation', '/create'].some(
-      (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
-    )
-  );
-}
+const PRIMARY_ROUTES: readonly PrimaryNavigationRoute[] = [
+  '/dramas',
+  '/chats',
+  '/characters',
+  '/creation',
+  '/profile',
+];
 
-function canPrefetchHeavyRoute(): boolean {
-  return canPrefetchInBackground();
+function primaryRouteOf(pathname: string | null): PrimaryNavigationRoute | null {
+  if (pathname === '/characters' || pathname === '/chats') return pathname;
+  if (isCreationRoute(pathname)) return '/creation';
+  if (pathname === '/watch' || pathname?.startsWith('/dramas')) return '/dramas';
+  if (pathname?.startsWith('/profile')) return '/profile';
+  return null;
 }
 
 function backgroundPrefetchTargets(
   pathname: string | null,
-  roleplayHref: '/characters' | '/chats',
-  routePriority: MobilePerformancePolicy['routePriority']
+  routeWarmupOrder: MobilePerformancePolicy['routeWarmupOrder'],
+  limit: MobilePerformancePolicy['backgroundRoutePrefetchLimit']
 ): string[] {
-  let candidates: string[] = [];
-  if (pathname === '/characters' || pathname === '/chats')
-    candidates = ['/creation', '/', '/dramas'];
-  else if (isCreationRoute(pathname)) candidates = [roleplayHref, '/', '/dramas'];
-  else if (pathname === '/') candidates = [roleplayHref, '/dramas'];
-  else if (pathname?.startsWith('/dramas')) candidates = ['/', '/profile', roleplayHref];
-  else if (pathname?.startsWith('/profile')) candidates = ['/dramas', '/', roleplayHref];
-
-  const kind = (href: string): MobilePerformancePolicy['routePriority'][number] => {
-    if (href === '/characters' || href === '/chats') return 'characters';
-    if (href === '/') return 'home';
-    if (href === '/dramas') return 'dramas';
-    return 'other';
-  };
-  return candidates
-    .map((href, index) => ({ href, index, rank: routePriority.indexOf(kind(href)) }))
+  const current = primaryRouteOf(pathname);
+  return PRIMARY_ROUTES.filter((href) => href !== current)
+    .map((href, index) => ({ href, index, rank: routeWarmupOrder.indexOf(href) }))
     .sort((left, right) => left.rank - right.rank || left.index - right.index)
-    .slice(0, 2)
+    .slice(0, limit)
     .map(({ href }) => href);
 }
 
-// 深层页面（支付流程、沉浸式输入页、消息与客服会话）隐藏底部导航，让主内容拿满可视高度
-const HIDDEN_PREFIXES = [
-  '/profile/recharge',
-  '/profile/messages',
-  '/profile/support',
-  '/create/studio',
-  '/creation/characters',
-  '/vip',
-];
-
-export function isBottomNavHidden(pathname: string | null, controlsVisible = true) {
-  return Boolean(
-    pathname &&
-    ((pathname === '/' && !controlsVisible) ||
-      HIDDEN_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)) ||
-      /^\/dramas\/[^/]+/.test(pathname))
-  );
+function prefetchPrimaryRouteData(
+  queryClient: QueryClient,
+  href: string,
+  platform: MobilePerformancePolicy['platform']
+): void {
+  // Android touchstart is too close to click to warm secondary data without competing
+  // with the route chunk. Characters remains because its list gates content-ready.
+  if (platform === 'android' && href !== '/characters') return;
+  if (href === '/characters') {
+    void prefetchCharactersQuery(queryClient, readRoleplayDiscovery('latest').sort);
+  } else if (href === '/creation') {
+    void prefetchFavoritesQuery(queryClient);
+  } else if (href === '/profile') {
+    void prefetchWalletBalanceQuery(queryClient);
+  }
 }
 
-export function BottomNav() {
-  const pathname = usePathname();
-  const performancePolicy = useMobilePerformancePolicy();
-  const dramaControlsVisible = useDramaLibraryStore((state) => state.playbackControlsVisible);
-  const router = useRouter();
-  const currentRoleplayPath = pathname === '/characters' || pathname === '/chats' ? pathname : null;
-  const [roleplayHref, setRoleplayHref] = useState<'/characters' | '/chats'>('/characters');
-
-  useEffect(() => {
-    if (currentRoleplayPath) {
-      rememberRoleplayView(currentRoleplayPath);
-      setRoleplayHref(currentRoleplayPath);
-      return;
-    }
-    setRoleplayHref(readRoleplayView());
-  }, [currentRoleplayPath]);
-
+function useBackgroundRoutePrefetch(
+  pathname: string | null,
+  policy: MobilePerformancePolicy,
+  router: { prefetch: (href: string) => void }
+): void {
   useEffect(() => {
     const targets = backgroundPrefetchTargets(
       pathname,
-      roleplayHref,
-      performancePolicy.routePriority
+      policy.routeWarmupOrder,
+      policy.backgroundRoutePrefetchLimit
     );
     if (targets.length === 0) return;
 
@@ -118,10 +95,16 @@ export function BottomNav() {
     let idleHandle: number | undefined;
     let nextIndex = 0;
     const scheduleNext = () => {
-      if (cancelled || nextIndex >= targets.length || !canPrefetchInBackground()) return;
+      if (
+        cancelled ||
+        nextIndex >= targets.length ||
+        !isNavigationBackgroundAllowed() ||
+        !canPrefetchInBackground()
+      )
+        return;
       const run = () => {
         idleHandle = undefined;
-        if (cancelled || !canPrefetchInBackground()) return;
+        if (cancelled || !isNavigationBackgroundAllowed() || !canPrefetchInBackground()) return;
         router.prefetch(targets[nextIndex]!);
         nextIndex += 1;
         if (nextIndex < targets.length) {
@@ -135,9 +118,7 @@ export function BottomNav() {
       }
     };
 
-    // Touch intent gives almost no lead time. Warm only adjacent destinations after P0 work,
-    // and serialize them so route chunks do not recreate the original cold-start burst.
-    void afterEntryBackground().then(scheduleNext);
+    void afterEntryBackground().then(afterNavigationQuietWindow).then(scheduleNext);
     return () => {
       cancelled = true;
       if (timer !== undefined) window.clearTimeout(timer);
@@ -145,12 +126,28 @@ export function BottomNav() {
         window.cancelIdleCallback(idleHandle);
       }
     };
-  }, [pathname, performancePolicy, roleplayHref, router]);
+  }, [pathname, policy, router]);
+}
+
+export function BottomNav() {
+  const pathname = usePathname();
+  const performancePolicy = useMobilePerformancePolicy();
+  const queryClient = useQueryClient();
+  const router = useRouter();
+  const currentRoleplayPath = pathname === '/characters' || pathname === '/chats' ? pathname : null;
+  const navigationBackgroundAllowed = useNavigationBackgroundAllowed();
+  // Touch intent gives almost no lead time. Warm adjacent chunks only after the current
+  // destination has painted, and serialize them to avoid recreating the entry burst.
+  useBackgroundRoutePrefetch(pathname, performancePolicy, router);
 
   // 未读属于「我的」：只在 profile 拉取/轮询。大厅、影像、聊天都不提前打，缓存仍可画红点。
   const onProfileTab = Boolean(pathname?.startsWith('/profile'));
-  const unread = useNotificationUnreadCountQuery({ enabled: onProfileTab });
-  const supportUnread = useSupportUnreadQuery({ enabled: onProfileTab });
+  const unread = useNotificationUnreadCountQuery({
+    enabled: onProfileTab && navigationBackgroundAllowed,
+  });
+  const supportUnread = useSupportUnreadQuery({
+    enabled: onProfileTab && navigationBackgroundAllowed,
+  });
   // 「我的」页里公告和客服回复各有各的红点，导航上只汇总成一个。
   const hasUnread = (unread.data?.total ?? 0) > 0 || supportUnread.data?.has_unread === true;
 
@@ -169,168 +166,24 @@ export function BottomNav() {
   return (
     <BottomNavShell
       pathname={pathname}
-      controlsVisible={dramaControlsVisible}
       highlighted={pendingHref ?? pathname}
-      roleplayHref={currentRoleplayPath ?? roleplayHref}
       hasUnread={hasUnread}
-      onIntent={(href) => router.prefetch(href)}
-      onNavigate={(event, targetHref, href, current) => {
+      onIntent={(href) => {
+        router.prefetch(href);
+        prefetchPrimaryRouteData(queryClient, href, performancePolicy.platform);
+      }}
+      onNavigate={(event, href, current) => {
+        if (!current) beginNavigationQuietWindow(href);
         if (currentRoleplayPath) rememberRoleplayScroll(currentRoleplayPath);
-        if (href === '/characters') {
-          rememberRoleplayView(targetHref === '/chats' ? '/chats' : '/characters');
-          if (currentRoleplayPath) {
-            event.preventDefault();
-            if (currentRoleplayPath === '/characters') clearLobbyReturnSnapshot();
-            window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
-            rememberRoleplayScroll(currentRoleplayPath);
-          }
+        // 已在大厅或对话列表时再点本栏目：回到顶部，不重新进入页面。
+        if (current && href === currentRoleplayPath) {
+          event.preventDefault();
+          if (href === '/characters') clearLobbyReturnSnapshot();
+          window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+          rememberRoleplayScroll(href);
         }
-        if (!current) setPendingHref(targetHref);
+        if (!current) setPendingHref(href);
       }}
     />
-  );
-}
-
-/** 启动时只复用导航展示，不读取身份、storage 或挂业务 query。 */
-export function BottomNavShell({
-  pathname,
-  controlsVisible = true,
-  highlighted = pathname,
-  roleplayHref = '/characters',
-  hasUnread = false,
-  onIntent,
-  onNavigate,
-}: {
-  pathname: string;
-  controlsVisible?: boolean;
-  highlighted?: string | null;
-  roleplayHref?: '/characters' | '/chats';
-  hasUnread?: boolean;
-  onIntent?: (href: string) => void;
-  onNavigate?: (
-    event: React.MouseEvent<HTMLAnchorElement>,
-    targetHref: string,
-    href: string,
-    current: boolean
-  ) => void;
-}) {
-  if (isBottomNavHidden(pathname, controlsVisible)) return null;
-  const currentRoleplayPath = pathname === '/characters' || pathname === '/chats' ? pathname : null;
-  return (
-    <div
-      className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center bg-[#19171a]"
-      style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
-    >
-      {/* 不用 backdrop-blur：导航悬浮在持续滚动、带流光动画的列表上方，模糊要每帧重采样背后内容，
-          弱机 WebView 上会占满合成线程（大厅卡片去模糊同理），点按响应也会被拖慢。 */}
-      <nav
-        aria-label="主导航"
-        className="pointer-events-auto grid h-[var(--app-nav-height)] w-full max-w-lg grid-cols-5 items-center gap-1 border-t border-white/[0.055] px-2 text-[#eee7e2]"
-      >
-        {NAV_ITEMS.map(({ href, label, Icon }) => {
-          const targetHref = href === '/characters' ? (currentRoleplayPath ?? roleplayHref) : href;
-          const active =
-            href === '/characters'
-              ? highlighted === '/characters' || highlighted === '/chats'
-              : href === '/'
-                ? highlighted === '/'
-                : href === '/creation'
-                  ? isCreationRoute(highlighted)
-                  : highlighted?.startsWith(href);
-          const current =
-            href === '/characters'
-              ? Boolean(currentRoleplayPath)
-              : href === '/'
-                ? pathname === '/'
-                : href === '/creation'
-                  ? isCreationRoute(pathname)
-                  : pathname?.startsWith(href);
-          const isHeavyRoute = HEAVY_ROUTE_HREFS.has(href);
-          const prefetchOnIntent = () => {
-            if (!current && (!isHeavyRoute || canPrefetchHeavyRoute())) {
-              onIntent?.(targetHref);
-            }
-          };
-          return (
-            <Link
-              key={href}
-              href={targetHref}
-              prefetch={false}
-              scroll={href === '/characters' ? false : undefined}
-              // 底栏常驻；关闭视口自动预取，只在明确 hover/focus/touch 意图时拉目标路由。
-              onMouseEnter={prefetchOnIntent}
-              onFocus={prefetchOnIntent}
-              onTouchStart={prefetchOnIntent}
-              onClick={(event) => onNavigate?.(event, targetHref, href, current)}
-              aria-current={current ? 'page' : undefined}
-              aria-label={label}
-              className={cn(
-                'group relative flex h-[58px] min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-1 transition-[color,background-color,transform] duration-150 active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#d7b4bf] motion-reduce:transition-none',
-                href === '/'
-                  ? 'px-0'
-                  : active
-                    ? 'text-[#f0e3e6]'
-                    : 'text-[#9f969d] hover:text-[#eee7e2] active:bg-white/[0.04]'
-              )}
-            >
-              {href === '/' ? (
-                <svg
-                  aria-hidden="true"
-                  viewBox="0 0 44 44"
-                  fill="none"
-                  className={cn(
-                    'h-[38px] w-[38px] transition-colors duration-150 motion-reduce:transition-none',
-                    active ? 'text-[#f3e6e9]' : 'text-[#c9adb8]'
-                  )}
-                >
-                  <path
-                    d="M10.5 9.6C8.3 8.4 5.6 10 5.6 12.5v19c0 2.5 2.7 4.1 4.9 2.9l7-4V13.6l-7-4Z"
-                    fill={active ? '#b78599' : '#745460'}
-                  />
-                  <path
-                    fillRule="evenodd"
-                    clipRule="evenodd"
-                    d="M17.6 6.9c-2.7-1.6-6.1.4-6.1 3.5v23.2c0 3.1 3.4 5.1 6.1 3.5l20.1-11.6c2.7-1.6 2.7-5.4 0-7L17.6 6.9Zm1.1 8.5c-.5-.3-1.2.1-1.2.7v11.8c0 .6.7 1 1.2.7l10.2-5.9c.5-.3.5-1.1 0-1.4l-10.2-5.9Z"
-                    fill="currentColor"
-                  />
-                  <path
-                    d="M17.6 6.9 37.7 18.5"
-                    stroke={active ? '#fff7f4' : '#e7cfd6'}
-                    strokeWidth="1.1"
-                    strokeLinecap="round"
-                  />
-                </svg>
-              ) : (
-                <>
-                  <span
-                    className={cn(
-                      'relative flex h-7 w-11 items-center justify-center rounded-full transition-colors duration-150 motion-reduce:transition-none',
-                      active ? 'bg-[#d7b4bf]/[0.08]' : 'bg-transparent'
-                    )}
-                  >
-                    <Icon size={21} strokeWidth={active ? 1.9 : 1.65} aria-hidden="true" />
-                    {href === '/profile' && hasUnread ? (
-                      <span
-                        role="status"
-                        aria-label="有未读消息"
-                        className="absolute right-1.5 top-0.5 h-1.5 w-1.5 rounded-full bg-[#d9919b] ring-2 ring-[#19171a]"
-                      />
-                    ) : null}
-                  </span>
-                  <span
-                    className={cn(
-                      'whitespace-nowrap text-[11px] leading-none',
-                      active ? 'font-semibold' : 'font-medium'
-                    )}
-                  >
-                    {label}
-                  </span>
-                </>
-              )}
-            </Link>
-          );
-        })}
-      </nav>
-    </div>
   );
 }

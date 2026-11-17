@@ -6,8 +6,8 @@ import {
   type VideoPlazaInputMode,
   type VideoPlazaQuoteData,
 } from '@miniapp/shared';
-import { getDomainDb } from '../../lib/supabase.js';
-import { signPlazaImagePath, signPrivateVideoPath } from './storage.js';
+import { signPrivateVideoPath } from './storage.js';
+import { VideoPlazaWorkerRepository } from './video-worker-repository.js';
 
 interface VideoQuoteRow {
   id: string;
@@ -51,10 +51,7 @@ interface VideoArtifactRow {
   duration_ms: number;
 }
 
-export class VideoPlazaRepository {
-  private readonly plaza = getDomainDb('media_plaza');
-  private readonly billing = getDomainDb('billing');
-
+export class VideoPlazaRepository extends VideoPlazaWorkerRepository {
   async createQuote(input: {
     userId: string;
     model: ProviderVideoPlazaModel;
@@ -87,7 +84,8 @@ export class VideoPlazaRepository {
       })
       .select('*')
       .single();
-    if (error || !data) throw new Error(`video_plaza_quote_create_failed:${error?.message ?? ''}`);
+    if (error || !data)
+      throw new Error(`video_plaza_quote_create_failed:${error?.message ?? ''}`, { cause: error });
     return {
       quote_id: String(data.id),
       model_id: input.model.id,
@@ -190,21 +188,16 @@ export class VideoPlazaRepository {
         .delete()
         .in('id', [userMessage.id, assistantMessage.id]);
       if (replay) return { attempt: replay };
-      throw new Error(`video_plaza_attempt_create_failed:${error?.message ?? ''}`);
+      throw new Error(`video_plaza_attempt_create_failed:${error?.message ?? ''}`, {
+        cause: error,
+      });
     }
 
     await this.plaza
       .from('image_plaza_messages')
       .update({ media_type: 'video', video_attempt_id: data.id })
       .in('id', [userMessage.id, assistantMessage.id]);
-    const reserve = await this.billing.rpc('reserve_media_plaza_video', {
-      p_attempt_id: data.id,
-      p_user_id: input.userId,
-    });
-    if (reserve.error) throw new Error(`video_plaza_reserve_failed:${reserve.error.message}`);
-    if (reserve.data?.status === 'insufficient_balance')
-      throw new Error('video_plaza_insufficient_balance');
-    if (reserve.data?.status === 'too_many_active') throw new Error('video_plaza_too_many_active');
+    await this.reserveAttempt(String(data.id), input.userId);
     const attempt = await this.getAttempt(String(data.id), input.userId);
     if (!attempt) throw new Error('video_plaza_attempt_not_found');
     return {
@@ -219,6 +212,20 @@ export class VideoPlazaRepository {
     };
   }
 
+  private async reserveAttempt(attemptId: string, userId: string): Promise<void> {
+    const reserve = await this.billing.rpc('reserve_media_plaza_video', {
+      p_attempt_id: attemptId,
+      p_user_id: userId,
+    });
+    if (reserve.error)
+      throw new Error(`video_plaza_reserve_failed:${reserve.error.message}`, {
+        cause: reserve.error,
+      });
+    if (reserve.data?.status === 'insufficient_balance')
+      throw new Error('video_plaza_insufficient_balance');
+    if (reserve.data?.status === 'too_many_active') throw new Error('video_plaza_too_many_active');
+  }
+
   async getAttempt(attemptId: string, userId: string): Promise<VideoPlazaAttempt | null> {
     const [attemptResult, artifactResult] = await Promise.all([
       this.plaza
@@ -230,194 +237,15 @@ export class VideoPlazaRepository {
       this.plaza.from('video_artifacts').select('*').eq('attempt_id', attemptId).maybeSingle(),
     ]);
     const { data, error } = attemptResult;
-    if (error) throw new Error(`video_plaza_attempt_read_failed:${error.message}`);
+    if (error)
+      throw new Error(`video_plaza_attempt_read_failed:${error.message}`, { cause: error });
     if (!data) return null;
     const { data: artifact, error: artifactError } = artifactResult;
-    if (artifactError) throw new Error(`video_plaza_artifact_read_failed:${artifactError.message}`);
-    return this.mapAttempt(data as VideoAttemptRow, artifact as VideoArtifactRow | null);
-  }
-
-  async claimSubmitJobs(
-    workerId: string,
-    limit: number,
-    leaseSeconds: number
-  ): Promise<VideoAttemptRow[]> {
-    const { data, error } = await this.plaza.rpc('claim_video_submit_jobs', {
-      p_worker_id: workerId,
-      p_limit: limit,
-      p_lease_seconds: leaseSeconds,
-    });
-    if (error) throw new Error(`video_plaza_submit_claim_failed:${error.message}`);
-    return (data ?? []) as VideoAttemptRow[];
-  }
-
-  async claimPollJobs(
-    workerId: string,
-    limit: number,
-    leaseSeconds: number
-  ): Promise<VideoAttemptRow[]> {
-    const { data, error } = await this.plaza.rpc('claim_video_poll_jobs', {
-      p_worker_id: workerId,
-      p_limit: limit,
-      p_lease_seconds: leaseSeconds,
-    });
-    if (error) throw new Error(`video_plaza_poll_claim_failed:${error.message}`);
-    return (data ?? []) as VideoAttemptRow[];
-  }
-
-  async getReferenceUrl(referenceId: string | null): Promise<string | null> {
-    if (!referenceId) return null;
-    const { data, error } = await this.plaza
-      .from('image_plaza_reference_assets')
-      .select('storage_path')
-      .eq('id', referenceId)
-      .maybeSingle();
-    if (error || !data?.storage_path) throw new Error('video_plaza_reference_not_found');
-    return signPlazaImagePath(String(data.storage_path), 15 * 60);
-  }
-
-  async markQueued(
-    attemptId: string,
-    workerId: string,
-    queueId: string,
-    downloadUrl: string | null
-  ): Promise<void> {
-    const { error } = await this.plaza
-      .from('video_attempts')
-      .update({
-        status: 'queued',
-        provider_request_id: queueId,
-        download_url: downloadUrl,
-        next_poll_at: new Date(Date.now() + 5_000).toISOString(),
-        lease_owner: null,
-        lease_expires_at: null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', attemptId)
-      .eq('lease_owner', workerId)
-      .eq('status', 'submitting');
-    if (error) throw new Error(`video_plaza_queue_update_failed:${error.message}`);
-  }
-
-  async releaseSubmit(attemptId: string, workerId: string, retryCount: number): Promise<void> {
-    const delay = Math.min(60_000, 5_000 * 2 ** Math.min(retryCount, 4));
-    const { error } = await this.plaza
-      .from('video_attempts')
-      .update({
-        lease_owner: null,
-        lease_expires_at: new Date(Date.now() + delay).toISOString(),
-        poll_count: retryCount,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', attemptId)
-      .eq('lease_owner', workerId)
-      .eq('status', 'submitting');
-    if (error) throw new Error(`video_plaza_submit_release_failed:${error.message}`);
-  }
-
-  async schedulePoll(
-    attemptId: string,
-    workerId: string,
-    status: 'queued' | 'processing',
-    pollCount: number,
-    recommendedDelayMs?: number
-  ): Promise<void> {
-    const delay =
-      recommendedDelayMs === undefined
-        ? Math.min(60_000, 5_000 * 2 ** Math.min(pollCount, 4))
-        : Math.min(60_000, Math.max(5_000, Math.round(recommendedDelayMs)));
-    const { error } = await this.plaza
-      .from('video_attempts')
-      .update({
-        status,
-        poll_count: pollCount,
-        next_poll_at: new Date(Date.now() + delay).toISOString(),
-        lease_owner: null,
-        lease_expires_at: null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', attemptId)
-      .eq('lease_owner', workerId)
-      .in('status', ['queued', 'processing']);
-    if (error) throw new Error(`video_plaza_poll_update_failed:${error.message}`);
-  }
-
-  async markStoring(
-    attemptId: string,
-    workerId: string,
-    downloadUrl: string | null
-  ): Promise<void> {
-    const { error } = await this.plaza
-      .from('video_attempts')
-      .update({
-        status: 'storing',
-        download_url: downloadUrl,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', attemptId)
-      .eq('lease_owner', workerId)
-      .in('status', ['queued', 'processing']);
-    if (error) throw new Error(`video_plaza_storing_update_failed:${error.message}`);
-  }
-
-  async publish(input: {
-    attemptId: string;
-    workerId: string;
-    storagePath: string;
-    byteSize: number;
-    width: number;
-    height: number;
-    durationMs: number;
-    posterPath: string;
-    posterWidth: number;
-    posterHeight: number;
-  }): Promise<void> {
-    const { error } = await this.plaza.rpc('publish_video_artifact', {
-      p_attempt_id: input.attemptId,
-      p_worker_id: input.workerId,
-      p_storage_path: input.storagePath,
-      p_byte_size: input.byteSize,
-      p_width: input.width,
-      p_height: input.height,
-      p_duration_ms: input.durationMs,
-      p_poster_path: input.posterPath,
-      p_poster_width: input.posterWidth,
-      p_poster_height: input.posterHeight,
-    });
-    if (error) throw new Error(`video_plaza_publish_failed:${error.message}`);
-  }
-
-  async fail(
-    attemptId: string,
-    workerId: string,
-    input: {
-      status: 'failed' | 'moderation_rejected' | 'expired' | 'failed_unknown';
-      code: string;
-      refund: boolean;
-    }
-  ): Promise<void> {
-    const { error } = await this.plaza
-      .from('video_attempts')
-      .update({
-        status: input.status,
-        error_code: input.code,
-        download_url: null,
-        lease_owner: null,
-        lease_expires_at: null,
-        completed_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', attemptId)
-      .eq('lease_owner', workerId)
-      .in('status', ['submitting', 'queued', 'processing', 'storing']);
-    if (error) throw new Error(`video_plaza_failure_update_failed:${error.message}`);
-    if (input.refund) {
-      const refund = await this.billing.rpc('refund_media_plaza_video', {
-        p_attempt_id: attemptId,
-        p_reason: input.code,
+    if (artifactError)
+      throw new Error(`video_plaza_artifact_read_failed:${artifactError.message}`, {
+        cause: artifactError,
       });
-      if (refund.error) throw new Error(`video_plaza_refund_failed:${refund.error.message}`);
-    }
+    return this.mapAttempt(data as VideoAttemptRow, artifact as VideoArtifactRow | null);
   }
 
   async share(input: {
@@ -439,7 +267,9 @@ export class VideoPlazaRepository {
       p_rebate_rate: input.rebateRate,
     });
     if (error || !data || typeof data.work_id !== 'string')
-      throw new Error(`video_plaza_share_failed:${error?.message ?? 'invalid result'}`);
+      throw new Error(`video_plaza_share_failed:${error?.message ?? 'invalid result'}`, {
+        cause: error,
+      });
     return {
       workId: data.work_id,
       alreadyShared: data.already_shared === true,
@@ -475,7 +305,8 @@ export class VideoPlazaRepository {
       .eq('user_id', userId)
       .eq('idempotency_key', body.idempotency_key)
       .maybeSingle();
-    if (error) throw new Error(`video_plaza_idempotency_read_failed:${error.message}`);
+    if (error)
+      throw new Error(`video_plaza_idempotency_read_failed:${error.message}`, { cause: error });
     if (!data) return null;
     const row = data as VideoAttemptRow;
     if (

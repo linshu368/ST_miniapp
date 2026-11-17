@@ -3,7 +3,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_VIP_PLANS_CONFIG } from '@miniapp/shared';
 import type { MiniappPaymentOrderRow } from '../../../infrastructure/repositories/MiniappPaymentOrderRepository.js';
 import { RechargeUseCase } from './RechargeUseCase.js';
-import { observePaymentOrderFailed } from './PaymentOrderTelemetry.js';
 import { readVipStrategy, type VipStrategy } from '../../../platform/vip-strategy.js';
 
 vi.mock('../../../platform/config.js', async (importOriginal) => {
@@ -38,11 +37,6 @@ vi.mock('../domain/rechargeRules.js', async (importOriginal) => {
     isVipPurchaseEnabled: vi.fn(async () => false),
   };
 });
-
-vi.mock('./PaymentOrderTelemetry.js', () => ({
-  observePaymentOrderFailed: vi.fn(),
-  observePaymentOrderSettled: vi.fn(),
-}));
 
 vi.mock('../../../platform/vip-strategy.js', () => ({
   readVipStrategy: vi.fn(),
@@ -93,14 +87,13 @@ function createOrder(): MiniappPaymentOrderRow {
   };
 }
 
-describe('RechargeUseCase payment failure telemetry', () => {
+describe('RechargeUseCase gateway failure', () => {
   beforeEach(() => {
-    vi.mocked(observePaymentOrderFailed).mockReset();
     vi.mocked(readVipStrategy).mockReset();
     vi.mocked(readVipStrategy).mockResolvedValue(publishedStrategy());
   });
 
-  it('emits payment_order_failed only after markFailed persists', async () => {
+  it('marks the created order failed when the gateway rejects it', async () => {
     const order = createOrder();
     const orders = {
       create: vi.fn(async (input: { id: string }) => ({ ...order, id: input.id })),
@@ -115,29 +108,17 @@ describe('RechargeUseCase payment failure telemetry', () => {
       usecase.createOrder({
         userId: order.user_id,
         planId: 'plan-entry',
+        clientIp: '203.0.113.10',
         paymentType: 'wxpay',
-        clientIp: '127.0.0.1',
       })
-    ).rejects.toThrow('gateway down');
+    ).rejects.toMatchObject({ code: 'PAYMENT_INVALID_RESPONSE', statusCode: 502 });
 
     const createdId = vi.mocked(orders.create).mock.calls[0]?.[0].id;
-    expect(createdId).toEqual(expect.stringMatching(/^MA_/));
+    expect(createdId).toEqual(expect.stringMatching(/^EP[0-9a-f]{30}$/));
     expect(orders.markFailed).toHaveBeenCalledWith(createdId);
-    expect(observePaymentOrderFailed).toHaveBeenCalledWith(
-      {
-        orderId: createdId,
-        userId: order.user_id,
-        paymentType: 'wxpay',
-        settledBy: null,
-      },
-      expect.anything()
-    );
-    expect(vi.mocked(observePaymentOrderFailed).mock.invocationCallOrder[0]).toBeGreaterThan(
-      orders.markFailed.mock.invocationCallOrder[0] ?? 0
-    );
   });
 
-  it('does not emit when markFailed itself fails to persist', async () => {
+  it('surfaces the persistence error when markFailed itself fails', async () => {
     const order = createOrder();
     const persistError = new Error('db down');
     const orders = {
@@ -155,12 +136,10 @@ describe('RechargeUseCase payment failure telemetry', () => {
       usecase.createOrder({
         userId: order.user_id,
         planId: 'plan-entry',
+        clientIp: '203.0.113.10',
         paymentType: 'wxpay',
-        clientIp: '127.0.0.1',
       })
     ).rejects.toThrow('db down');
-
-    expect(observePaymentOrderFailed).not.toHaveBeenCalled();
   });
 });
 
@@ -175,11 +154,13 @@ describe('RechargeUseCase product snapshots', () => {
     const orders = {
       create: vi.fn(async (input: { id: string }) => ({ ...order, ...input })),
       markFailed: vi.fn(async () => undefined),
+      attachProviderTransaction: vi.fn(async () => true),
     };
     const gateway = {
       createPayment: vi.fn(async () => ({
         success: true,
-        paymentUrl: 'https://pay.example/checkout',
+        paymentUrl: 'https://checkout.example/pay?session=tx_abc123',
+        providerTransactionId: 'tx_abc123',
       })),
     };
     return {
@@ -195,8 +176,8 @@ describe('RechargeUseCase product snapshots', () => {
     await usecase.createOrder({
       userId: order.user_id,
       planId: 'plan-entry',
+      clientIp: '203.0.113.10',
       paymentType: 'wxpay',
-      clientIp: '127.0.0.1',
     });
     expect(orders.create).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -210,7 +191,7 @@ describe('RechargeUseCase product snapshots', () => {
       })
     );
     expect(gateway.createPayment).toHaveBeenCalledWith(
-      expect.objectContaining({ amount: '6.00', productName: '星尘' })
+      expect.objectContaining({ amount: '6.00', description: '星尘' })
     );
   });
 
@@ -220,8 +201,8 @@ describe('RechargeUseCase product snapshots', () => {
       usecase.createOrder({
         userId: order.user_id,
         planId: 'week',
+        clientIp: '203.0.113.10',
         paymentType: 'wxpay',
-        clientIp: '127.0.0.1',
       })
     ).rejects.toThrow('VIP 购买未开放');
     expect(orders.create).not.toHaveBeenCalled();
@@ -234,8 +215,8 @@ describe('RechargeUseCase product snapshots', () => {
     await week.usecase.createOrder({
       userId: week.order.user_id,
       planId: 'week',
+      clientIp: '203.0.113.10',
       paymentType: 'wxpay',
-      clientIp: '127.0.0.1',
     });
     expect(week.orders.create).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -249,15 +230,15 @@ describe('RechargeUseCase product snapshots', () => {
       })
     );
     expect(week.gateway.createPayment).toHaveBeenCalledWith(
-      expect.objectContaining({ amount: '1.00', productName: '周卡' })
+      expect.objectContaining({ amount: '1.00', description: '周卡' })
     );
 
     const month = harness();
     await month.usecase.createOrder({
       userId: month.order.user_id,
       planId: 'month',
+      clientIp: '203.0.113.10',
       paymentType: 'alipay',
-      clientIp: '127.0.0.1',
     });
     expect(month.orders.create).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -271,7 +252,37 @@ describe('RechargeUseCase product snapshots', () => {
       })
     );
     expect(month.gateway.createPayment).toHaveBeenCalledWith(
-      expect.objectContaining({ amount: '2.00', productName: '月卡' })
+      expect.objectContaining({ amount: '2.00', description: '月卡' })
+    );
+  });
+
+  it('freezes both VIP gift wallets in a new order without changing the payment amount', async () => {
+    const strategy = publishedStrategy({ purchaseEnabled: true });
+    Object.assign(strategy.plans.month, {
+      price_cents: 3888,
+      bonus_credits: 2000,
+      bonus_main_credits: 1000,
+    });
+    vi.mocked(readVipStrategy).mockResolvedValue(strategy);
+    const month = harness();
+    await month.usecase.createOrder({
+      userId: month.order.user_id,
+      planId: 'month',
+      clientIp: '203.0.113.10',
+      paymentType: 'alipay',
+    });
+    expect(month.orders.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        amount_cents: 3888,
+        credits_amount: 0,
+        bonus_credits: 0,
+        vip_bonus_credits: 2000,
+        vip_bonus_main_credits: 1000,
+        vip_duration_days: 31,
+      })
+    );
+    expect(month.gateway.createPayment).toHaveBeenCalledWith(
+      expect.objectContaining({ amount: '38.88' })
     );
   });
 
@@ -281,8 +292,8 @@ describe('RechargeUseCase product snapshots', () => {
       usecase.createOrder({
         userId: order.user_id,
         planId: 'not-a-plan',
+        clientIp: '203.0.113.10',
         paymentType: 'wxpay',
-        clientIp: '127.0.0.1',
       })
     ).rejects.toThrow('支付套餐不存在');
     expect(orders.create).not.toHaveBeenCalled();
@@ -297,16 +308,16 @@ describe('RechargeUseCase product snapshots', () => {
     await usecase.createOrder({
       userId: order.user_id,
       planId: 'week',
+      clientIp: '203.0.113.10',
       paymentType: 'wxpay',
-      clientIp: '127.0.0.1',
     });
     const first = vi.mocked(orders.create).mock.calls[0]?.[0];
     plans.week = { ...plans.week, price_cents: 2000, duration_days: 10 };
     await usecase.createOrder({
       userId: order.user_id,
       planId: 'week',
+      clientIp: '203.0.113.10',
       paymentType: 'wxpay',
-      clientIp: '127.0.0.1',
     });
     const second = vi.mocked(orders.create).mock.calls[1]?.[0];
     expect(first).toEqual(expect.objectContaining({ amount_cents: 100, vip_duration_days: 7 }));
@@ -324,10 +335,10 @@ describe('RechargeUseCase product snapshots', () => {
       failing.createOrder({
         userId: order.user_id,
         planId: 'month',
+        clientIp: '203.0.113.10',
         paymentType: 'wxpay',
-        clientIp: '127.0.0.1',
       })
-    ).rejects.toThrow('gateway down');
+    ).rejects.toMatchObject({ code: 'PAYMENT_INVALID_RESPONSE', statusCode: 502 });
     expect(orders.markFailed).toHaveBeenCalledOnce();
   });
 
@@ -350,11 +361,74 @@ describe('RechargeUseCase product snapshots', () => {
       usecase.createOrder({
         userId: order.user_id,
         planId: 'plan-entry',
+        clientIp: '203.0.113.10',
         paymentType: 'wxpay',
-        clientIp: '127.0.0.1',
       })
     ).rejects.toThrow('db down');
     expect(gateway.createPayment).not.toHaveBeenCalled();
+    expect(orders.markFailed).not.toHaveBeenCalled();
+  });
+
+  it('records the provider transaction before returning the checkout URL', async () => {
+    const { order, orders, usecase } = harness();
+    const data = await usecase.createOrder({
+      userId: order.user_id,
+      planId: 'plan-entry',
+      clientIp: '203.0.113.10',
+      paymentType: 'alipay',
+    });
+    const createdId = vi.mocked(orders.create).mock.calls[0]?.[0].id;
+    expect(orders.attachProviderTransaction).toHaveBeenCalledWith(createdId, 'tx_abc123');
+    expect(data.pay_url).toBe('https://checkout.example/pay?session=tx_abc123');
+    expect(data.order.provider_transaction_id).toBe('tx_abc123');
+  });
+
+  it('preserves unknown writes for recovery without exposing checkout', async () => {
+    const { order, orders, usecase } = harness();
+    orders.attachProviderTransaction.mockRejectedValueOnce(new Error('db down'));
+    await expect(
+      usecase.createOrder({
+        userId: order.user_id,
+        planId: 'plan-entry',
+        clientIp: '203.0.113.10',
+        paymentType: 'alipay',
+      })
+    ).rejects.toMatchObject({ code: 'PAYMENT_CREATE_UNKNOWN', statusCode: 500 });
+    expect(orders.markFailed).not.toHaveBeenCalled();
+
+    orders.attachProviderTransaction.mockResolvedValueOnce(false);
+    await expect(
+      usecase.createOrder({
+        userId: order.user_id,
+        planId: 'plan-entry',
+        clientIp: '203.0.113.10',
+        paymentType: 'alipay',
+      })
+    ).rejects.toMatchObject({ code: 'PAYMENT_CREATE_UNKNOWN', statusCode: 500 });
+    expect(orders.markFailed).not.toHaveBeenCalled();
+  });
+
+  it('keeps ambiguous creation outcomes recoverable', async () => {
+    const { order, orders } = harness();
+    const usecase = new RechargeUseCase(
+      orders as never,
+      {
+        createPayment: async () => ({
+          success: false,
+          outcomeUnknown: true,
+          errorMessage: 'timeout',
+          errorClass: 'timeout',
+        }),
+      } as never
+    );
+    await expect(
+      usecase.createOrder({
+        userId: order.user_id,
+        planId: 'plan-entry',
+        clientIp: '203.0.113.10',
+        paymentType: 'alipay',
+      })
+    ).rejects.toMatchObject({ code: 'PAYMENT_TIMEOUT', statusCode: 504 });
     expect(orders.markFailed).not.toHaveBeenCalled();
   });
 });

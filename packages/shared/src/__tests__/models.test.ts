@@ -6,7 +6,42 @@ import {
   resolveEnabledCatalogModel,
   resolveRuntimeCatalogModel,
   toPublicModelCatalog,
+  resolveFallbackProviders,
+  ProviderModelSummarySchema,
 } from '../api/models.js';
+import { LLM_PROVIDER_CAPABILITIES } from '../api/model-providers.js';
+
+describe('ProviderModelSummarySchema capabilities', () => {
+  const model = {
+    provider: 'surplus',
+    id: 'vendor/model',
+    name: 'Model',
+    description: null,
+    context_length: null,
+    prompt_usd_per_token: 0,
+    completion_usd_per_token: 0,
+    status: 'available',
+    raw_status_label: null,
+  };
+
+  it('keeps old summaries valid and preserves bounded optional parameter names', () => {
+    expect(ProviderModelSummarySchema.parse(model).supported_parameters).toBeUndefined();
+    expect(
+      ProviderModelSummarySchema.parse({ ...model, supported_parameters: ['reasoning_effort'] })
+        .supported_parameters
+    ).toEqual(['reasoning_effort']);
+    expect(
+      ProviderModelSummarySchema.safeParse({ ...model, supported_parameters: ['arbitrary value'] })
+        .success
+    ).toBe(false);
+    expect(
+      ProviderModelSummarySchema.safeParse({
+        ...model,
+        supported_parameters: Array(129).fill('reasoning'),
+      }).success
+    ).toBe(false);
+  });
+});
 
 describe('LlmPricingConfigSchema', () => {
   it('validates fixed per-round deductions', () => {
@@ -70,6 +105,39 @@ const validCatalog = {
 };
 
 describe('ModelCatalogSchema', () => {
+  it('keeps fallback provider pairs bound to their model and rejects duplicates', () => {
+    const parsed = ModelCatalogSchema.parse({
+      ...validCatalog,
+      fallback_provider_routes: [
+        { model_id: 'vendor/fast', preferred_providers: ['provider-a', 'provider-b'] },
+      ],
+    });
+    expect(resolveFallbackProviders(parsed)).toEqual(['together', 'crusoe']);
+    expect(resolveFallbackProviders({ ...parsed, fallback_model_id: 'vendor/fast' })).toEqual([
+      'provider-a',
+      'provider-b',
+    ]);
+    expect(
+      resolveFallbackProviders({ ...parsed, fallback_model_id: 'vendor/new' })
+    ).toBeUndefined();
+    expect(
+      ModelCatalogSchema.safeParse({
+        ...validCatalog,
+        fallback_provider_routes: [
+          { model_id: 'vendor/fast', preferred_providers: ['Together', 'together'] },
+        ],
+      }).success
+    ).toBe(false);
+    expect(
+      ModelCatalogSchema.safeParse({
+        ...validCatalog,
+        fallback_provider_routes: [
+          { model_id: 'vendor/fast', preferred_providers: ['a', 'b'] },
+          { model_id: 'VENDOR/FAST', preferred_providers: ['c', 'd'] },
+        ],
+      }).success
+    ).toBe(false);
+  });
   it('defaults legacy models and validates manual first-token budgets', () => {
     const parsed = ModelCatalogSchema.parse(validCatalog);
     expect(parsed.fallback_model_id).toBe('deepseek/deepseek-v4.1-flash-1017');
@@ -193,6 +261,35 @@ describe('ModelCatalogSchema', () => {
     expect(parsed.tiers[0]!.models[1]).toMatchObject({
       provider: 'venice',
       provider_model_id: 'google/gemini-flash',
+    });
+  });
+
+  it('accepts Surplus model mappings and scopes duplicate checks by provider', () => {
+    const catalog = structuredClone(validCatalog) as {
+      tiers: Array<{ models: Array<Record<string, unknown>> }>;
+    };
+    catalog.tiers[0]!.models.push({
+      id: 'surplus-flash',
+      provider: 'surplus',
+      provider_model_id: 'google/gemini-flash',
+      openrouter_model_id: 'google/gemini-flash',
+      display_name: 'Surplus Flash',
+      tagline: 'Surplus',
+      is_free: false,
+      enabled: true,
+      sort_order: 1,
+    });
+
+    const parsed = ModelCatalogSchema.parse(catalog);
+    expect(parsed.tiers[0]!.models[1]).toMatchObject({
+      provider: 'surplus',
+      provider_model_id: 'google/gemini-flash',
+    });
+    expect(LLM_PROVIDER_CAPABILITIES.surplus).toMatchObject({
+      label: 'Surplus Intelligence',
+      defaultBaseUrl: 'https://api.surplusintelligence.ai/v1',
+      apiKeyEnv: 'SURPLUS_API_KEY',
+      baseUrlEnv: 'SURPLUS_API_BASE_URL',
     });
   });
 

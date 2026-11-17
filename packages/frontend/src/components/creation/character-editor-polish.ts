@@ -4,7 +4,7 @@ export type CharacterPolishSession = {
   target: CharacterPolishTarget;
   original: string;
   result: string;
-  state: 'loading' | 'ready' | 'error';
+  state: 'loading' | 'ready' | 'stopped' | 'error';
   error: string;
 };
 
@@ -26,7 +26,10 @@ export function parseCharacterPolishCandidates(value: unknown): CharacterPolishC
       typeof record.original !== 'string' ||
       typeof record.result !== 'string' ||
       !record.result.trim() ||
-      (record.state !== 'loading' && record.state !== 'ready' && record.state !== 'error')
+      (record.state !== 'loading' &&
+        record.state !== 'ready' &&
+        record.state !== 'stopped' &&
+        record.state !== 'error')
     )
       continue;
     candidates[target] = {

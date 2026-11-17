@@ -1,0 +1,255 @@
+{
+  "schema_version": 1,
+  "proposed_commit": "feat: support Surplus Intelligence call history and recovery",
+  "state": "unstaged; no commit or production action authorized",
+  "files": [
+    {
+      "path": ".trellis/spec/backend/app/index.md",
+      "sha256": "3d9d75e418bd1e596082ce283e9bcd79c97a54b705068bfe753c646e98531eaf"
+    },
+    {
+      "path": ".trellis/spec/backend/app/surplusintelligence-calls.md",
+      "sha256": "eac77f56eed581ebe898290bb4cf78632641ac6ef411d1e207df11485348705a"
+    },
+    {
+      "path": ".trellis/tasks/11-09-surplusintelligence-history/check.jsonl",
+      "sha256": "95e10ae2d03118aed98909517ce5a42dee0e967018b662f841acb2a6570d2b27"
+    },
+    {
+      "path": ".trellis/tasks/11-09-surplusintelligence-history/design.md",
+      "sha256": "fd4b072ebb5e2d9d896241a2431736b90fba3099b5bbcf44a7598ee2c54ef395"
+    },
+    {
+      "path": ".trellis/tasks/11-09-surplusintelligence-history/implement.jsonl",
+      "sha256": "95e10ae2d03118aed98909517ce5a42dee0e967018b662f841acb2a6570d2b27"
+    },
+    {
+      "path": ".trellis/tasks/11-09-surplusintelligence-history/implement.md",
+      "sha256": "e6f4ccfb6b0c9d67c436a979e44c509f5e52554626569147a17238e1127a41a3"
+    },
+    {
+      "path": ".trellis/tasks/11-09-surplusintelligence-history/module-updates.json",
+      "sha256": "defdaf657212f0395f22e14102fc23d024e14802ef1ef070c93d5e1d38e22c2a"
+    },
+    {
+      "path": ".trellis/tasks/11-09-surplusintelligence-history/prd.md",
+      "sha256": "b900b7a2dbea4b5decad95924bee236982bbd738058e8d92da1c82c510d0fd60"
+    },
+    {
+      "path": ".trellis/tasks/11-09-surplusintelligence-history/release-checklist.md",
+      "sha256": "ff3527c200d285ee10a2b15a6d45bb7ce35adfb519a20f870a3a3417c524b323"
+    },
+    {
+      "path": ".trellis/tasks/11-09-surplusintelligence-history/research.md",
+      "sha256": "0b3c8a9f3f45399704fcc17b6f63a1dce34875971390e261e0a82b11857f1538"
+    },
+    {
+      "path": ".trellis/tasks/11-09-surplusintelligence-history/research/delivery-line-endings-regression.mjs",
+      "sha256": "52ac7031efd618355aa3e8b69c148ac0b62f7bb1169c6cc192fe324be18a32fc"
+    },
+    {
+      "path": ".trellis/tasks/11-09-surplusintelligence-history/response-fields.md",
+      "sha256": "56cd37a8d696c0ae383f5f601f92932eb6690f438605e87f484de5be845bf59f"
+    },
+    {
+      "path": ".trellis/tasks/11-09-surplusintelligence-history/task.json",
+      "sha256": "6b77d57b4dafeefb9d3a84738dc60554499da0fd3676b8b3cab1a0ddeabb1038"
+    },
+    {
+      "path": ".trellis/tasks/11-09-surplusintelligence-history/task.md",
+      "sha256": "9066be1bf76e6fd94b771723239d905355b74ef77f9633c5502a065f07c3a97b"
+    },
+    {
+      "path": "README.md",
+      "sha256": "ae7966717bb6afb94630febd60cd78c97e84285c997f1a839c5c257af2d72552"
+    },
+    {
+      "path": "docs/ARCHITECTURE.md",
+      "sha256": "b92f5fd37e4e5a0510131ea7b3a82bdb4433e1215f8efdd14a803c21e34d8308"
+    },
+    {
+      "path": "packages/backend/src/features/generation/execute.test.ts",
+      "sha256": "dc525466da32198591a714fc6194dd807cd4fd468961fd3cfded7ca4a2af05d7"
+    },
+    {
+      "path": "packages/backend/src/features/generation/execute.ts",
+      "sha256": "5f2fa732f10fb58f5cb706b55bf1b5e7caf102472302af1e9c3db63233d08317"
+    },
+    {
+      "path": "packages/backend/src/features/generation/generation-body.ts",
+      "sha256": "1f8169a4b624871768697db5ad66bc5ff87ac5788d6c14b56ade90616f1ed523"
+    },
+    {
+      "path": "packages/backend/src/features/generation/generation-dispatch.ts",
+      "sha256": "9122f59db8ba5f06d5d068e9ef326939b1bb5367ca5392bbc4174119ccab730e"
+    },
+    {
+      "path": "packages/backend/src/features/generation/generation-nonstream.test.ts",
+      "sha256": "c3a158a9f9ec117c8d363dd9eed439fabe2762602a702c27d89ec746d144d0b4"
+    },
+    {
+      "path": "packages/backend/src/features/generation/generation-nonstream.ts",
+      "sha256": "4f066fd18adc5a5f434ae612e8a5b6b92e36ad3809772ca3331f1d99b824c8bc"
+    },
+    {
+      "path": "packages/backend/src/features/generation/generation-prepare.ts",
+      "sha256": "0a904b05e35d99c8592a6bcf64b3b4c1a83e8bb2a7cc61a5c24a165759282b17"
+    },
+    {
+      "path": "packages/backend/src/features/generation/generation-runtime.ts",
+      "sha256": "0201d00aa684a05c218effb2233b0a5906ef965aee0b0125ccc6ed8b0873ecab"
+    },
+    {
+      "path": "packages/backend/src/features/generation/generation-settlement.ts",
+      "sha256": "ae289216ebd2cb5c08825d836a998933ec9bb7dd942b52f4232e1151ab686adf"
+    },
+    {
+      "path": "packages/backend/src/features/generation/generation-stream.ts",
+      "sha256": "01d35f6a84d8d8f7b782c266e35f3d4b29dc69f9d24d9f33b12d0903b370399a"
+    },
+    {
+      "path": "packages/backend/src/features/generation/surplus-call-transport.test.ts",
+      "sha256": "c01e340aa40254fa0aef48823f2999256727cffc86d198ad39095ef7788a5dab"
+    },
+    {
+      "path": "packages/backend/src/features/generation/surplus-call-transport.ts",
+      "sha256": "124137ad3a855c0cad703365667ba216b19fa91c7f9a6ebb3a839e50f49965a1"
+    },
+    {
+      "path": "packages/backend/src/features/generation/surplus-reasoning.test.ts",
+      "sha256": "c3532dcdfb8f1b5bcc6389e1354b35497b5fafc72401021cb0da9dbd607e4fc4"
+    },
+    {
+      "path": "packages/backend/src/features/generation/surplus-reasoning.ts",
+      "sha256": "dee4f66ab0a24feb20acc924234093ef271703427b7435217ceaf4bade86fa9a"
+    },
+    {
+      "path": "packages/backend/src/features/generation/surplus-request-recovery.test.ts",
+      "sha256": "74233e1aa92fedb9af9f244d492f3988ae27238ea2c5c4276db6cac1b3b22853"
+    },
+    {
+      "path": "packages/backend/src/features/generation/surplus-request-recovery.ts",
+      "sha256": "76476a8f128a7301871530ef855a1f58645018d4cf51ad5bb89d943f0d1a5342"
+    },
+    {
+      "path": "packages/backend/src/features/generation/surplus-response-capture.test.ts",
+      "sha256": "3f3d88dee16ef92e18eff4994c8d6cc02f6818e8bd292fa0ea4c307b2534e9ae"
+    },
+    {
+      "path": "packages/backend/src/features/generation/surplus-response-capture.ts",
+      "sha256": "97e8a4564a86fc7e72a686522c12069290ec573a7a998c4481af208013e75e04"
+    },
+    {
+      "path": "packages/backend/src/features/generation/surplus-response-filter.ts",
+      "sha256": "e61f9b531c4cb11701d0dea9b6feb085214f5f23fcad61ee0d1da0a71d690146"
+    },
+    {
+      "path": "packages/backend/src/features/generation/surplus-response-schema.ts",
+      "sha256": "4ca3b2e055c22a19c6ff94d4761d52ba1f584f3daaf9a8d231658fbc9809d766"
+    },
+    {
+      "path": "packages/backend/src/features/generation/sync-charge-recovery.ts",
+      "sha256": "98cedf0e9e77bd3f7b7140c46cf92b647e47135f3131632d101f48415387a239"
+    },
+    {
+      "path": "packages/backend/src/features/generation/sync-job.test.ts",
+      "sha256": "b41e14dfd0cf9b55f38b61aad381c20c1a9853d60c42e6036bc3671468df466f"
+    },
+    {
+      "path": "packages/backend/src/features/generation/sync-job.ts",
+      "sha256": "c93d76d310858b916eb4f6512b2959bd4e4b0f2ac7affdbc118281c613b01b56"
+    },
+    {
+      "path": "packages/backend/src/features/generation/sync-record-recovery.ts",
+      "sha256": "12d018a7ad2a437fc50db24e1d488e4dac4c3eff25c03294130562ffdddc9b64"
+    },
+    {
+      "path": "packages/backend/src/features/generation/sync-retry-state.ts",
+      "sha256": "87478e8a261ee87039e8ce0741369bc1a942a463e78d4f0f31e19364017e1564"
+    },
+    {
+      "path": "packages/backend/src/features/generation/types.ts",
+      "sha256": "f77ed6e00209639e0a04097583e076e4104c073cc7632deb353b029a646e859e"
+    },
+    {
+      "path": "packages/backend/src/infrastructure/repositories/SurplusIntelligenceChatHistoryRepository.test.ts",
+      "sha256": "c51fe392756d23e2f85ed102676f295e3a183aa2193fe78e30151fa78eb4a35b"
+    },
+    {
+      "path": "packages/backend/src/infrastructure/repositories/SurplusIntelligenceChatHistoryRepository.ts",
+      "sha256": "44179d5c38163237e1202ff06c81fd08bafe3d0a6ca93e927dba07919348a233"
+    },
+    {
+      "path": "packages/backend/src/infrastructure/repositories/surplus-billing-recovery.ts",
+      "sha256": "8faa5fe87f3d984607321bb2d60f33af7800cd5620fc0828166132efd9ef1a55"
+    },
+    {
+      "path": "packages/backend/src/platform/model-provider-directory.test.ts",
+      "sha256": "31b4248dd3b66b5be1e416949d1323bb442b0c6d19b3b4c267ed6173f102e8d4"
+    },
+    {
+      "path": "packages/backend/src/platform/model-provider-directory.ts",
+      "sha256": "2b22d2f717caceab9b127686bebb38f257bea2f3d5c14f9a6f0cb05ffc87e373"
+    },
+    {
+      "path": "packages/shared/migrations/20261110_surplusintelligence_chat_history.sql",
+      "sha256": "c6ade6050d3be7d95156f692017a31edf23829d2142b7180671d804bfae6fcca"
+    },
+    {
+      "path": "packages/shared/migrations/20261110_surplusintelligence_chat_history_compat.sql",
+      "sha256": "8504eead9c59565449c75cddf971312803f70357638d5cc86c427d43d08f66f6"
+    },
+    {
+      "path": "packages/shared/migrations/README.md",
+      "sha256": "915ed8b7fa3a2cece3c5e1b2829f57ae20ba4929dffad3f26bf9bfc878b1b597"
+    },
+    {
+      "path": "packages/shared/migrations/tests/surplusintelligence_chat_history.sql",
+      "sha256": "35dca8d9a8941fc5a2837f933ddf54f1fd7d1d5e280aafbff648aed6e4cd5840"
+    },
+    {
+      "path": "packages/shared/src/__tests__/models.test.ts",
+      "sha256": "ae91a9e2dd00ff5bd95c3c4a4b9a58cc9c28e775e96fa98f99b30b1b1fa46a4f"
+    },
+    {
+      "path": "packages/shared/src/api/model-catalog.ts",
+      "sha256": "3a2e770d425b777187f2c3542f069fb62f042682ac55048414ce0a1ca60ab5ea"
+    },
+    {
+      "path": "packages/shared/src/api/models.ts",
+      "sha256": "0baaa593b7f6356b6eac09559e4780a613734d2500cdea40be9d12ac2f160f3d"
+    },
+    {
+      "path": "packages/ui-tests/README.md",
+      "sha256": "868cd2743af9ac045ad9f5dd1d4e96eb48adc8f79fe864e054b44d8d8ddd6d20"
+    },
+    {
+      "path": "packages/ui-tests/fixtures/data.ts",
+      "sha256": "105ce1c376ecf72b5558ac13a3beb478e9e5babccdadc0aa5b4bcc0f0938bae3"
+    },
+    {
+      "path": "packages/ui-tests/fixtures/server.test.ts",
+      "sha256": "d5f79b6ce34185d3420cc88835f8e6e6634b50e70db8d631b0a7038781d997f5"
+    },
+    {
+      "path": "packages/ui-tests/fixtures/server.ts",
+      "sha256": "22271386ee2c43923ecd54878be85d2efa666d05e8925afe6092c3b569cf5499"
+    },
+    {
+      "path": "packages/ui-tests/tests/chat.spec.ts",
+      "sha256": "725308df2858330e6326bd0e7cbdbfd2bc40033711b5d6f82861cc72daf67b8d"
+    },
+    {
+      "path": "scripts/complexity-baseline.json",
+      "sha256": "40490e19e9d2710b0e584608583dec74f57ebb02095b35bbaf437ef4f57df3fc"
+    },
+    {
+      "path": "scripts/test-first-token-fallback-local.sh",
+      "sha256": "2555318975318344ddaf0bd09ea74b723da5e677f9a37d5665b45a3fb5338dd7"
+    }
+  ],
+  "review_artifacts_without_self_hash": [
+    ".trellis/tasks/11-09-surplusintelligence-history/review-files.json",
+    ".trellis/tasks/11-09-surplusintelligence-history/verification.md"
+  ]
+}

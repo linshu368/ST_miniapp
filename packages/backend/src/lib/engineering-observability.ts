@@ -1,46 +1,21 @@
-/** 非权威工程遥测；不注册全局 tracer，不替代生成/交付/计费数据库事实。 */
-import { ROOT_CONTEXT, type Attributes } from '@opentelemetry/api';
-import { resourceFromAttributes } from '@opentelemetry/resources';
-import { MeterProvider, PeriodicExportingMetricReader } from '@opentelemetry/sdk-metrics';
 import {
-  BatchLogRecordProcessor,
-  LoggerProvider,
-  type SdkLogRecord,
-} from '@opentelemetry/sdk-logs';
-import { OTLPMetricExporter } from '@opentelemetry/exporter-metrics-otlp-http';
-import { OTLPLogExporter } from '@opentelemetry/exporter-logs-otlp-http';
+  boundedLabel,
+  createTelemetry,
+  type EngineeringTelemetryConfig,
+} from './engineering-telemetry-exporter.js';
+import { observation } from '../platform/observability/runtime.js';
+import { observationOutcome } from '../platform/observability/outcomes.js';
+import { hasBackgroundOperation } from '../platform/observability/jobs.js';
+export type { EngineeringTelemetryConfig } from './engineering-telemetry-exporter.js';
+
+import type { UpstreamTiming } from '../features/generation/upstream-timing.js';
 import {
   DRAMA_TIMING_BODY_LIMIT,
   DramaTimingReportSchema,
   type DramaTimingReport,
 } from '@miniapp/shared';
-
-export interface EngineeringTelemetryConfig {
-  enabled: boolean;
-  endpoint: string;
-  environment: string;
-  version: string;
-}
-
-const MAX_LOG_QUEUE = 256;
-const EXPORT_TIMEOUT_MS = 2_000;
-const DURATION_BUCKETS = [
-  0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2, 3, 4, 6, 10, 20, 40, 60, 120,
-];
-const LABEL_VALUES = new Map<string, Set<string>>();
-const SAFE_KEY = /^[a-zA-Z0-9_./:*-]{1,120}$/;
+const LLM_PROVIDERS = new Set(['openrouter', 'venice', 'surplus']);
 type MetricAttributes = Record<string, string | number | boolean>;
-
-/** 模板/模型来自应用目录，仍限制不同值数量，防止意外把 ID 当标签。 */
-function boundedLabel(kind: string, value: string, limit: number): string {
-  if (!SAFE_KEY.test(value) || /[a-f0-9]{8}-[a-f0-9-]{27,}/i.test(value)) return 'unknown';
-  let values = LABEL_VALUES.get(kind);
-  if (!values) LABEL_VALUES.set(kind, (values = new Set()));
-  if (values.has(value)) return value;
-  if (values.size >= limit) return 'other';
-  values.add(value);
-  return value;
-}
 
 export function engineeringRoute(route: string): string {
   return route.startsWith('/api/') ? boundedLabel('route', route, 256) : 'unmatched';
@@ -48,8 +23,7 @@ export function engineeringRoute(route: string): string {
 
 function identity(input: { provider: string; model: string }): MetricAttributes {
   return {
-    platform:
-      input.provider === 'openrouter' || input.provider === 'venice' ? input.provider : 'unknown',
+    platform: LLM_PROVIDERS.has(input.provider) ? input.provider : 'unknown',
     model: boundedLabel('model', input.model, 64),
   };
 }
@@ -78,186 +52,6 @@ export function startEngineeringTelemetry(
     // 配置已预校验；SDK 初始化故障也不能令应用不可用。
     return async () => {};
   }
-}
-
-function createTelemetry(options: EngineeringTelemetryConfig) {
-  const health = {
-    logQueued: 0,
-    logDropped: 0,
-    logFailed: 0,
-    metricFailed: 0,
-    instrumentFailed: 0,
-  };
-  class MetricsExporter extends OTLPMetricExporter {
-    override export(
-      data: Parameters<OTLPMetricExporter['export']>[0],
-      callback: Parameters<OTLPMetricExporter['export']>[1]
-    ) {
-      super.export(data, (result) => {
-        if (result.code !== 0) health.metricFailed++;
-        callback(result);
-      });
-    }
-  }
-  class LogsExporter extends OTLPLogExporter {
-    override export(
-      records: Parameters<OTLPLogExporter['export']>[0],
-      callback: Parameters<OTLPLogExporter['export']>[1]
-    ) {
-      health.logQueued = Math.max(0, health.logQueued - records.length);
-      super.export(records, (result) => {
-        if (result.code !== 0) health.logFailed += records.length;
-        callback(result);
-      });
-    }
-  }
-  // 与 SDK 队列同界限的入口计数，明确区分排队溢出与发送失败；不接管应用 Pino。
-  class LogsProcessor extends BatchLogRecordProcessor {
-    override onEmit(record: SdkLogRecord) {
-      if (health.logQueued >= MAX_LOG_QUEUE) {
-        health.logDropped++;
-        return;
-      }
-      health.logQueued++;
-      super.onEmit(record);
-    }
-  }
-  const resource = resourceFromAttributes({
-    'service.name': 'st-miniapp-backend',
-    'service.namespace': 'st-miniapp',
-    'deployment.environment.name': options.environment,
-    'service.version': boundedLabel('version', options.version, 8),
-  });
-  const commonAttributes = {
-    environment: options.environment,
-    release: boundedLabel('version', options.version, 8),
-  };
-  const endpoint = options.endpoint.replace(/\/$/, '');
-  const meterProvider = new MeterProvider({
-    resource,
-    views: [{ instrumentName: 'st_*', aggregationCardinalityLimit: 2_000 }],
-    readers: [
-      new PeriodicExportingMetricReader({
-        exporter: new MetricsExporter({
-          url: `${endpoint}/v1/metrics`,
-          timeoutMillis: EXPORT_TIMEOUT_MS,
-          concurrencyLimit: 1,
-        }),
-        exportIntervalMillis: 15_000,
-        exportTimeoutMillis: EXPORT_TIMEOUT_MS,
-      }),
-    ],
-  });
-  const loggerProvider = new LoggerProvider({
-    resource,
-    forceFlushTimeoutMillis: EXPORT_TIMEOUT_MS,
-    logRecordLimits: { attributeCountLimit: 20, attributeValueLengthLimit: 120 },
-    processors: [
-      new LogsProcessor({
-        exporter: new LogsExporter({
-          url: `${endpoint}/v1/logs`,
-          timeoutMillis: EXPORT_TIMEOUT_MS,
-          concurrencyLimit: 1,
-        }),
-        maxQueueSize: MAX_LOG_QUEUE,
-        maxExportBatchSize: 64,
-        scheduledDelayMillis: 1_000,
-        exportTimeoutMillis: EXPORT_TIMEOUT_MS,
-      }),
-    ],
-  });
-  const meter = meterProvider.getMeter('st-miniapp-engineering', '1');
-  const logger = loggerProvider.getLogger('st-miniapp-engineering', '1');
-  const histograms = new Map<string, ReturnType<typeof meter.createHistogram>>();
-  const counters = new Map<string, ReturnType<typeof meter.createCounter>>();
-  const gauges = new Map<string, ReturnType<typeof meter.createGauge>>();
-  const healthMetric = meter.createObservableCounter('st_telemetry_failures', {
-    description: 'Process-local failures, not a complete delivery guarantee',
-  });
-  healthMetric.addCallback((result) => {
-    for (const [reason, count] of Object.entries(health)) {
-      if (reason !== 'logQueued') result.observe(count, { ...commonAttributes, reason });
-    }
-  });
-  meter
-    .createObservableGauge('st_telemetry_log_queue')
-    .addCallback((result) => result.observe(health.logQueued, commonAttributes));
-  const guarded = (run: () => void) => {
-    try {
-      run();
-    } catch {
-      health.instrumentFailed++;
-    }
-  };
-  return {
-    duration(name: string, ms: number, attrs: Attributes) {
-      guarded(() => {
-        if (!Number.isFinite(ms) || ms < 0) return;
-        let instrument = histograms.get(name);
-        if (!instrument) {
-          instrument = meter.createHistogram(name, {
-            unit: 's',
-            advice: { explicitBucketBoundaries: DURATION_BUCKETS },
-          });
-          histograms.set(name, instrument);
-        }
-        instrument.record(ms / 1_000, { ...commonAttributes, ...attrs }, ROOT_CONTEXT);
-      });
-    },
-    count(name: string, attrs: Attributes) {
-      guarded(() => {
-        let instrument = counters.get(name);
-        if (!instrument) {
-          instrument = meter.createCounter(name);
-          counters.set(name, instrument);
-        }
-        instrument.add(1, { ...commonAttributes, ...attrs }, ROOT_CONTEXT);
-      });
-    },
-    gauge(name: string, value: number) {
-      guarded(() => {
-        if (!Number.isFinite(value) || value < 0) return;
-        let instrument = gauges.get(name);
-        if (!instrument) {
-          instrument = meter.createGauge(name);
-          gauges.set(name, instrument);
-        }
-        instrument.record(value, commonAttributes, ROOT_CONTEXT);
-      });
-    },
-    event(event: string, attrs: MetricAttributes, body = event) {
-      guarded(() =>
-        logger.emit({
-          body,
-          eventName: event,
-          severityNumber: 9,
-          severityText: 'INFO',
-          attributes: { ...commonAttributes, ...attrs },
-          context: ROOT_CONTEXT,
-        })
-      );
-    },
-    async shutdown() {
-      // SDK 自身短超时之外，再限制应用关闭等待；断网不阻塞发布/主交易退出。
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      try {
-        await Promise.race([
-          Promise.allSettled([
-            meterProvider.shutdown({ timeoutMillis: EXPORT_TIMEOUT_MS }),
-            loggerProvider.shutdown(),
-          ]),
-          new Promise<void>((resolve) => {
-            timer = setTimeout(resolve, 2_500);
-            timer.unref();
-          }),
-        ]);
-      } catch {
-        // 关闭失败只丢遥测，不能让 Fastify 的业务资源关闭链失败。
-      } finally {
-        if (timer) clearTimeout(timer);
-      }
-    },
-  };
 }
 
 export function observeHttp(input: {
@@ -299,6 +93,33 @@ export function observeRuntime(loopDelayMs: number, rss: number) {
   active?.gauge('st_runtime_rss_bytes', rss);
 }
 
+export type BackgroundJobOutcome = 'success' | 'partial' | 'error' | 'skipped' | 'cancelled';
+
+/** Process and scheduler jobs use fixed names only; business IDs never become labels. */
+export function observeBackgroundJob(input: {
+  job: string;
+  outcome: BackgroundJobOutcome;
+  durationMs: number;
+}): void {
+  if (!hasBackgroundOperation(input.job))
+    observation.emit('job.terminal', `job.${input.job}`, {
+      outcome: observationOutcome(input.outcome),
+      outcome_known: input.outcome !== 'error',
+      duration_ms: input.durationMs,
+    });
+  if (!active) return;
+  const attrs = {
+    job: boundedLabel('background_job', input.job, 64),
+    outcome: input.outcome,
+  };
+  active.duration('st_background_job_duration', input.durationMs, attrs);
+  active.count('st_background_job_runs', attrs);
+  active.event('background_job.terminal', {
+    ...attrs,
+    duration_ms: Math.round(input.durationMs),
+  });
+}
+
 export function observeGenerationDispatch(input: {
   provider: string;
   model: string;
@@ -335,9 +156,19 @@ export function observeGenerationAttempt(input: {
   durationMs?: number;
   headersMs?: number;
   firstTokenMs?: number;
+  timing?: UpstreamTiming;
   dispatched: boolean;
   phase?: 'first_token' | 'generation';
 }) {
+  observation.emit('generation.attempt', `generation.attempt.${input.role}`, {
+    outcome: observationOutcome(input.outcome),
+    outcome_known: !['timeout', 'stream_interrupted', 'observation_deadline'].includes(
+      input.outcome
+    ),
+    provider: input.provider,
+    stage: input.outcome,
+    duration_ms: input.durationMs,
+  });
   if (!active) return;
   const attrs = {
     ...identity(input),
@@ -353,9 +184,43 @@ export function observeGenerationAttempt(input: {
     active.duration('st_generation_headers', input.headersMs, attrs);
   if (input.firstTokenMs !== undefined)
     active.duration('st_generation_first_token', input.firstTokenMs, attrs);
+  const t = input.timing;
+  const difference = (end?: number, start?: number) =>
+    end !== undefined && start !== undefined && end >= start ? end - start : undefined;
+  const stages = {
+    request_create: t?.requestCreatedMs,
+    connection_wait: difference(t?.sendHeadersMs, t?.requestCreatedMs),
+    request_send: difference(t?.bodySentMs, t?.sendHeadersMs),
+    response_wait: difference(t?.responseHeadersMs, t?.bodySentMs),
+    response_to_token: difference(input.firstTokenMs, t?.responseHeadersMs),
+  };
+  const details: Record<string, number | string> = {};
+  if (t && input.dispatched) {
+    details.network_stage =
+      t.responseHeadersMs !== undefined
+        ? 'headers_received'
+        : t.bodySentMs !== undefined
+          ? 'awaiting_headers'
+          : t.sendHeadersMs !== undefined
+            ? 'sending_body'
+            : t.requestCreatedMs !== undefined
+              ? 'awaiting_connection'
+              : 'unobserved';
+    for (const [stage, duration] of Object.entries(stages)) {
+      if (duration === undefined) continue;
+      // One fixed stage label, no request IDs or vendor names as metric dimensions.
+      active.duration('st_generation_network_stage', duration, {
+        ...identity(input),
+        role: input.role,
+        stage,
+      });
+      details[`${stage}_ms`] = Math.round(duration);
+    }
+  }
   active.event('generation.attempt_terminal', {
     ...attrs,
     ...(input.durationMs === undefined ? {} : { duration_ms: Math.round(input.durationMs) }),
+    ...details,
   });
 }
 
@@ -370,6 +235,27 @@ export function observeGenerationPrepare(input: {
     ...identity(input),
     outcome: input.outcome,
   });
+}
+
+export type GenerationPreparationStage =
+  | 'route_setup'
+  | 'settings'
+  | 'turn_open'
+  | 'context'
+  | 'dispatch_gate';
+
+export function observeGenerationPreparationStages(input: {
+  provider: string;
+  model: string;
+  stages?: Partial<Record<GenerationPreparationStage, number>>;
+  log?: MetricAttributes;
+}) {
+  if (!active) return;
+  const attrs = identity(input);
+  if (input.stages)
+    for (const [stage, duration] of Object.entries(input.stages))
+      active.duration('st_generation_pre_dispatch_stage', duration, { ...attrs, stage });
+  if (input.log) active.event('generation.pre_dispatch', { ...attrs, ...input.log });
 }
 
 export type GenerationOutcome =
@@ -403,7 +289,8 @@ export function observeDramaRequest(input: {
   route: string;
   outcome: 'ok' | 'http_error' | 'unplayable';
   signCache: string;
-  stages: Partial<Record<'auth' | 'db_read' | 'assemble' | 'sign', number>>;
+  manifestCache?: string;
+  stages: Partial<Record<'auth' | 'db_read' | 'assemble' | 'sign' | 'manifest', number>>;
   durationMs: number;
 }) {
   if (!active) return;
@@ -413,9 +300,13 @@ export function observeDramaRequest(input: {
     sign_cache: ['hit', 'miss', 'inflight', 'unused'].includes(input.signCache)
       ? input.signCache
       : 'unknown',
+    manifest_cache:
+      input.manifestCache && ['hit', 'miss', 'inflight', 'unused'].includes(input.manifestCache)
+        ? input.manifestCache
+        : 'unused',
   };
   const detail: MetricAttributes = { ...attrs, total_ms: Math.round(input.durationMs) };
-  for (const stage of ['auth', 'db_read', 'assemble', 'sign'] as const) {
+  for (const stage of ['auth', 'db_read', 'assemble', 'sign', 'manifest'] as const) {
     const ms = input.stages[stage];
     if (ms !== undefined && Number.isFinite(ms) && ms >= 0) {
       active.duration('st_drama_server_stage', ms, { ...attrs, stage });
@@ -429,8 +320,9 @@ export function observeDramaRequest(input: {
 export function observeDramaStartupDiagnostic(report: DramaTimingReport): void {
   if (
     !active ||
-    report.type !== 'playback' ||
-    report.elapsedMs < 5_000 ||
+    (report.type !== 'playback' && !(report.type === 'seek' && report.seek?.definition)) ||
+    // CDN 实验组要解释中位数，快样本也全量保留；其余流量只留慢样本。
+    (!report.delivery && report.elapsedMs < (report.type === 'seek' ? 3_000 : 5_000)) ||
     (report.phase !== 'final' && report.phase !== 'network')
   )
     return;
@@ -439,15 +331,17 @@ export function observeDramaStartupDiagnostic(report: DramaTimingReport): void {
   if (!parsed.success) return;
   const payload = JSON.stringify(parsed.data);
   if (Buffer.byteLength(payload, 'utf8') > DRAMA_TIMING_BODY_LIMIT) return;
+  const event = report.type === 'seek' ? 'drama.seek_diagnostic' : 'drama.startup_diagnostic';
   active.event(
-    'drama.startup_diagnostic',
+    event,
     {
-      kind: 'drama_startup_diagnostic',
+      kind: report.type === 'seek' ? 'drama_seek_diagnostic' : 'drama_startup_diagnostic',
       phase: parsed.data.phase,
       outcome: parsed.data.outcome,
       total_ms: parsed.data.elapsedMs,
+      engine: parsed.data.engine ?? 'unknown',
     },
-    JSON.stringify({ event: 'drama.startup_diagnostic', ...parsed.data })
+    JSON.stringify({ event, ...parsed.data })
   );
 }
 

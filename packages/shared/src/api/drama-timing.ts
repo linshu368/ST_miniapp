@@ -7,6 +7,11 @@ export const DRAMA_TIMING_MAX_MEDIA_EVENTS = 32;
 export const DRAMA_TIMING_MAX_RESOURCES = 16;
 export const DRAMA_TIMING_DEFINITION = 'drama_v3';
 
+// 实际引擎：只能来自运行时事实（hls.js MEDIA_ATTACHED 的 mediaSource 类型或装载分支），不能靠开关推测。
+const DRAMA_PLAYBACK_ENGINES = ['hlsjs_mse', 'hlsjs_mms', 'native_hls', 'native_file'] as const;
+export const DramaPlaybackEngineSchema = z.enum(DRAMA_PLAYBACK_ENGINES);
+export type DramaPlaybackEngine = z.infer<typeof DramaPlaybackEngineSchema>;
+
 // 标识只用于串联日志；允许旧 WebView 的 web-* fallback，但不接受 URL 或任意正文。
 const Id = z
   .string()
@@ -37,6 +42,29 @@ const ResourceSchema = z
     transferBytes: z.number().int().nonnegative().max(1e12).optional(),
     protocol: z.enum(['h2', 'h3', 'http1', 'other']).optional(),
     visibility: z.enum(['detailed', 'limited']),
+    // Stream 子请求按路径分类；只记分类，不记 URL（路径里有签名）。
+    kind: z.enum(['manifest', 'playlist', 'segment']).optional(),
+  })
+  .strict();
+
+// hls.js 自带的加载统计不受 Timing-Allow-Origin 限制，能拿到首字节和字节数。
+const HlsLoadSchema = z
+  .object({
+    kind: z.enum(['manifest', 'level', 'audio_track', 'init', 'fragment']),
+    track: z.enum(['main', 'audio']).optional(),
+    level: z.number().int().min(0).max(64).optional(),
+    bitrate: z.number().int().nonnegative().max(1e9).optional(),
+    height: z.number().int().min(1).max(32768).optional(),
+    sn: z.number().int().nonnegative().optional(),
+    positionMs: Duration.optional(),
+    mediaMs: Duration.optional(),
+    startMs: Offset,
+    firstByteMs: Offset.optional(),
+    endMs: Offset,
+    appendedMs: Offset.optional(),
+    bytes: z.number().int().nonnegative().max(1e12).optional(),
+    // 快进诊断：该分片的时间范围覆盖快进目标（frag.start ≤ 目标 < frag.start + duration）。
+    coversTarget: z.boolean().optional(),
   })
   .strict();
 
@@ -52,6 +80,14 @@ const NetworkSchema = z
 const DiagnosticsSchema = z
   .object({
     network: NetworkSchema.optional(),
+    hls: z
+      .object({
+        entries: z.array(HlsLoadSchema).max(DRAMA_TIMING_MAX_RESOURCES),
+        truncated: z.boolean(),
+        manifestInline: z.boolean().optional(), // 主清单是否来自内联下发；旧客户端缺省，不推断为 false
+      })
+      .strict()
+      .optional(),
     frame: z
       .object({
         callbackAtMs: Duration,
@@ -136,13 +172,55 @@ export const DramaTimingReportSchema = z
         wasPlaying: z.boolean(),
         seekedMs: Duration.optional(),
         frameMs: Duration.optional(),
+        definition: z.literal('drama_seek_resume_v1').optional(),
+        fromMs: Duration.optional(),
+        direction: z.enum(['forward', 'backward', 'same', 'unknown']).optional(),
+        positionSetMs: Duration.optional(),
+        seekingMs: Duration.optional(),
+        playingMs: Duration.optional(),
+        firstBufferedMs: Duration.optional(),
+        samplingCapped: z.boolean().optional(),
+        samplesTruncated: z.boolean().optional(),
+        endReason: z.enum(['terminal', 'paused', 'deadline']).optional(),
+        samples: z
+          .array(
+            z
+              .object({
+                atMs: Duration,
+                event: z.enum([
+                  'commit',
+                  'position_set',
+                  'seeking',
+                  'seeked',
+                  'progress',
+                  'waiting',
+                  'canplay',
+                  'playing',
+                  'pause',
+                  'sample',
+                  'frame',
+                  'timeupdate',
+                  'error',
+                ]),
+                readyState: z.number().int().min(0).max(4),
+                paused: z.boolean(),
+                seeking: z.boolean(),
+                currentTimeMs: Duration.optional(),
+                targetBuffered: z.enum(['yes', 'no', 'unknown']),
+                targetBufferedAheadMs: Duration.optional(),
+              })
+              .strict()
+          )
+          .max(32)
+          .optional(),
       })
       .strict()
       .optional(),
     phase: z.enum(['start', 'slow', 'final', 'network']),
     version: z.literal(2).optional(),
     definition: z.literal(DRAMA_TIMING_DEFINITION).optional(),
-    route: z.enum(['/', '/dramas', '/dramas/:id']).optional(),
+    // 视频流已从 / 移到 /watch；仍接受 /，避免尚未刷新的旧客户端报告被拒。
+    route: z.enum(['/watch', '/', '/dramas', '/dramas/:id']).optional(),
     // Unified diagnostics remain logs; they must never re-enter analytics storage.
     purpose: z.literal('diagnostic').optional(),
     context: z
@@ -205,6 +283,7 @@ export const DramaTimingReportSchema = z
       .strict(),
     addressSource: z.enum(['fetch', 'inflight', 'cache', 'unknown']).optional(),
     frameMethod: z.enum(['video_frame_callback', 'playing_and_timeupdate']).optional(),
+    engine: DramaPlaybackEngineSchema.optional(),
     list: z
       .object({
         id: Id,
@@ -303,8 +382,21 @@ export const DramaTimingReportSchema = z
         message: 'Successful seek requires a target frame',
       });
     }
-    if (report.phase === 'network' && report.type === 'seek') {
+    if (report.phase === 'network' && report.type === 'seek' && !report.seek?.definition) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'No network tail for seek' });
+    }
+    if (
+      report.type === 'seek' &&
+      report.seek?.definition &&
+      report.outcome === 'playing' &&
+      (!report.seek.wasPlaying ||
+        report.seek.seekedMs === undefined ||
+        report.seek.playingMs === undefined)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Seek resume requires seeked, frame and playback evidence',
+      });
     }
   });
 
@@ -313,6 +405,7 @@ export type DramaMediaState = z.infer<typeof MediaStateSchema>;
 export type DramaMediaEvent = z.infer<typeof MediaEventSchema>;
 export type DramaNetworkTiming = z.infer<typeof NetworkSchema>;
 export type DramaResourceTiming = z.infer<typeof ResourceSchema>;
+export type DramaHlsLoad = z.infer<typeof HlsLoadSchema>;
 export type DramaStartupDiagnostics = z.infer<typeof DiagnosticsSchema>;
 
 /** One definition for browser reports and server diagnostics. Missing/reversed
@@ -383,6 +476,7 @@ export function dramaTimingLogFields(report: DramaTimingReport) {
     elapsed_ms: report.elapsedMs,
     address_source: report.addressSource,
     frame_method: report.frameMethod,
+    engine: report.engine,
     ...Object.fromEntries(
       Object.entries(report.definition ? dramaTimingStages(report.marks) : report.stages).map(
         ([key, value]) => [`${key}_ms`, value]

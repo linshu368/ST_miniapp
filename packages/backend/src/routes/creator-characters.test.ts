@@ -1,7 +1,6 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  CREATOR_REVIEW_REJECTED_CODE,
   CREATOR_REVIEW_UNAVAILABLE_CODE,
   emptyCharacterDraft,
   type CreatorCharacter,
@@ -16,12 +15,18 @@ const mocks = vi.hoisted(() => ({
   admin: vi.fn(),
   user: vi.fn(),
   clearLobby: vi.fn(),
+  linkWish: vi.fn(),
 }));
 vi.mock('../features/creator/repository.js', () => ({
   CreatorCharacterRepository: class {
     get = mocks.get;
     getReviewMaterial = mocks.material;
     mutate = mocks.mutate;
+  },
+}));
+vi.mock('../features/character-wishes/repository.js', () => ({
+  CharacterWishRepository: class {
+    linkResponse = mocks.linkWish;
   },
 }));
 vi.mock('../features/generation/creator-review.js', () => ({
@@ -48,6 +53,9 @@ vi.mock('../features/lobby/featured-snapshot.js', () => ({
 }));
 vi.mock('../platform/config.js', () => ({ config: { database: { target: 'test' } } }));
 import creatorCharacterRoutes from './creator-characters.js';
+import { createObserver } from '../platform/observability/core.js';
+import { registerHttpObservation } from '../platform/observability/http.js';
+import type { ObservationEvent } from '../platform/observability/events.js';
 
 const ownerId = '10000000-0000-4000-8000-000000000001';
 const cardId = '10000000-0000-4000-8000-000000000002';
@@ -89,6 +97,7 @@ function card(): CreatorCharacter {
   };
 }
 let app: FastifyInstance;
+const observationRecords: ObservationEvent[] = [];
 beforeEach(async () => {
   vi.resetAllMocks();
   mocks.user.mockResolvedValue({ id: ownerId });
@@ -104,6 +113,15 @@ beforeEach(async () => {
     revision: 3,
   });
   app = Fastify();
+  observationRecords.length = 0;
+  registerHttpObservation(
+    app,
+    createObserver([
+      (event) => {
+        observationRecords.push(event);
+      },
+    ])
+  );
   app.addHook('preHandler', async (request) => {
     request.user = { id: 1, first_name: 'Fixture' };
   });
@@ -125,21 +143,37 @@ function publish(
   });
 }
 
-describe('creator public publication review', () => {
+describe('creator direct public publication', () => {
+  it('binds a newly created draft ID before persistence, including the failure terminal', async () => {
+    mocks.mutate.mockRejectedValueOnce({ code: 'P0409' });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/creator/characters',
+      payload: { id: cardId, draft: emptyCharacterDraft() },
+    });
+    expect(response.statusCode).toBe(409);
+    expect(observationRecords.at(-1)).toMatchObject({
+      event: 'operation.terminal',
+      business_module: 'creator',
+      character_id: cardId,
+      creation_id: cardId,
+      http_status: 409,
+    });
+  });
   it.each(['publish', 'visibility'] as const)(
-    'audits the owner-bound stored revision before public %s',
+    'directly approves the owner-bound stored revision for public %s',
     async (action) => {
       expect((await publish(action)).statusCode).toBe(200);
       expect(mocks.get).toHaveBeenCalledWith(cardId, ownerId);
-      expect(mocks.material).toHaveBeenCalledWith(cardId, ownerId, 2);
-      expect(mocks.review).toHaveBeenCalledWith(material);
+      expect(mocks.material).not.toHaveBeenCalled();
+      expect(mocks.review).not.toHaveBeenCalled();
       expect(mocks.mutate).toHaveBeenCalledWith({
         ownerId,
         id: cardId,
         action,
         expectedRevision: 2,
         visibility: 'public',
-        review: { approved: true, reason: '资料完整' },
+        review: { approved: true, reason: '直接发布' },
       });
       expect(mocks.clearLobby).toHaveBeenCalledTimes(1);
     }
@@ -152,31 +186,22 @@ describe('creator public publication review', () => {
     expect(mocks.mutate.mock.calls[0]![0]).not.toHaveProperty('review');
   });
 
-  it('returns a real content rejection without mutating the old card or clearing lobby data', async () => {
+  it('publishes edits to a public card even when the dormant reviewer would reject them', async () => {
     mocks.get.mockResolvedValue({ ...card(), visibility: 'public', approved_revision: 1 });
-    mocks.review.mockResolvedValue({ approved: false, reason: '请去掉站外转账广告。' });
-    const result = await publish();
-    expect(result.statusCode).toBe(422);
-    expect(result.json()).toMatchObject({
-      success: false,
-      error: { code: CREATOR_REVIEW_REJECTED_CODE, message: '请去掉站外转账广告。' },
-    });
-    expect(mocks.mutate).not.toHaveBeenCalled();
-    expect(mocks.clearLobby).not.toHaveBeenCalled();
+    mocks.review.mockResolvedValue({ approved: false, reason: '需要修改' });
+    expect((await publish()).statusCode).toBe(200);
+    expect(mocks.review).not.toHaveBeenCalled();
+    expect(mocks.material).not.toHaveBeenCalled();
+    expect(mocks.mutate.mock.calls[0]![0].review.approved).toBe(true);
+    expect(mocks.clearLobby).toHaveBeenCalledTimes(1);
   });
 
-  it('returns a retryable service error for invalid model output without leaking it', async () => {
-    mocks.review.mockRejectedValue(
-      Object.assign(new Error('untrusted provider body and prompt'), {
-        code: CREATOR_REVIEW_UNAVAILABLE_CODE,
-      })
-    );
-    const result = await publish();
-    expect(result.statusCode).toBe(503);
-    expect(result.json().error.code).toBe(CREATOR_REVIEW_UNAVAILABLE_CODE);
-    expect(result.body).not.toContain('untrusted');
-    expect(mocks.mutate).not.toHaveBeenCalled();
-    expect(mocks.clearLobby).not.toHaveBeenCalled();
+  it('publishes without calling an unavailable reviewer', async () => {
+    mocks.review.mockRejectedValue(new Error('review provider unavailable'));
+    expect((await publish()).statusCode).toBe(200);
+    expect(mocks.review).not.toHaveBeenCalled();
+    expect(mocks.material).not.toHaveBeenCalled();
+    expect(mocks.mutate.mock.calls[0]![0].review.approved).toBe(true);
   });
 
   it('does not let the browser supply a review decision', async () => {
@@ -219,16 +244,16 @@ describe('creator public publication review', () => {
     expect(mocks.review).not.toHaveBeenCalled();
   });
 
-  it('does not apply a reviewed result when the draft changed before final CAS', async () => {
+  it('rejects a draft changed before final publication CAS', async () => {
     mocks.mutate.mockRejectedValue(
-      Object.assign(new Error('edited during review'), { code: 'P0409' })
+      Object.assign(new Error('edited during publication'), { code: 'P0409' })
     );
     expect((await publish()).statusCode).toBe(409);
-    expect(mocks.review).toHaveBeenCalledTimes(1);
+    expect(mocks.review).not.toHaveBeenCalled();
     expect(mocks.clearLobby).not.toHaveBeenCalled();
   });
 
-  it('checks required fields before spending a public review call', async () => {
+  it('checks required fields before direct publication', async () => {
     const incomplete = card();
     incomplete.draft.opening = '';
     mocks.get.mockResolvedValue(incomplete);
@@ -318,6 +343,40 @@ describe('Admin review policy dry run', () => {
     expect(mocks.mutate).not.toHaveBeenCalled();
     expect(mocks.clearLobby).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ['http_429', 'http_429'],
+    ['material_unavailable', 'material_unavailable'],
+    [undefined, 'unknown'],
+    ['Bad value: provider body', 'unknown'],
+  ])('logs review failure %s as %s without provider text', async (failure, logged) => {
+    const lines: string[] = [];
+    const loggedApp = Fastify({
+      logger: { level: 'warn', stream: { write: (line: string) => void lines.push(line) } },
+    });
+    await loggedApp.register(creatorCharacterRoutes);
+    await loggedApp.ready();
+    mocks.testReview.mockRejectedValue(
+      Object.assign(new Error('untrusted provider body and prompt'), {
+        code: CREATOR_REVIEW_UNAVAILABLE_CODE,
+        failure,
+      })
+    );
+    const result = await loggedApp.inject({
+      method: 'POST',
+      url: '/api/admin/creator-characters/review-test',
+      headers: { authorization: 'Bearer test-only-admin-session' },
+      payload: { prompt: '当前编辑中的审核正文', material },
+    });
+    await loggedApp.close();
+    expect(result.statusCode).toBe(503);
+    const entry = lines
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+      .find((line) => line.event === 'creator.review.unavailable');
+    expect(entry).toMatchObject({ failure: logged, action: 'review-test' });
+    expect(lines.join('')).not.toContain('untrusted');
+    expect(lines.join('')).not.toContain('Bad value');
+  });
 });
 
 describe('retired manual creator review endpoints', () => {
@@ -348,4 +407,36 @@ describe('retired manual creator review endpoints', () => {
       expect(mocks.clearLobby).not.toHaveBeenCalled();
     }
   );
+});
+
+describe('publication followed by wish response', () => {
+  const wishId = '10000000-0000-4000-8000-000000000004';
+  it('links only the successfully published public card and authenticated owner', async () => {
+    mocks.linkWish.mockResolvedValue({ linked: true });
+    const result = await publish('publish', 'public', { wish_id: wishId });
+    expect(result.statusCode).toBe(200);
+    expect(result.json().data.wish_response).toEqual({ wish_id: wishId, status: 'linked' });
+    expect(mocks.linkWish).toHaveBeenCalledWith({ userId: ownerId, wishId, characterId: cardId });
+  });
+  it('keeps a completed publication successful when the source wish has been withdrawn', async () => {
+    mocks.linkWish.mockRejectedValue(Object.assign(new Error('withdrawn'), { code: 'P0404' }));
+    const result = await publish('publish', 'public', { wish_id: wishId });
+    expect(result.statusCode).toBe(200);
+    expect(result.json().data).toMatchObject({
+      character: { id: cardId },
+      wish_response: { wish_id: wishId, status: 'not_linked' },
+    });
+  });
+  it('does not link a private card or a failed publication', async () => {
+    mocks.mutate.mockResolvedValue(card());
+    expect((await publish('publish', 'private', { wish_id: wishId })).statusCode).toBe(200);
+    expect(mocks.linkWish).not.toHaveBeenCalled();
+    mocks.mutate.mockRejectedValue(Object.assign(new Error('stale'), { code: 'P0409' }));
+    expect((await publish('publish', 'public', { wish_id: wishId })).statusCode).toBe(409);
+    expect(mocks.linkWish).not.toHaveBeenCalled();
+  });
+  it('does not accept wish metadata on the independent visibility endpoint', async () => {
+    expect((await publish('visibility', 'public', { wish_id: wishId })).statusCode).toBe(400);
+    expect(mocks.linkWish).not.toHaveBeenCalled();
+  });
 });

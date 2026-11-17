@@ -1,4 +1,8 @@
-import type { SupportMessage } from '@miniapp/shared';
+import {
+  CharacterWishNotificationMetadataSchema,
+  type NotificationItem,
+  type SupportMessage,
+} from '@miniapp/shared';
 
 export function formatMessageTime(iso: string, now: Date = new Date()): string {
   const date = new Date(iso);
@@ -38,4 +42,13 @@ export function pendingOutbox(
     confirmed.map((message) => message.client_msg_id).filter((id): id is string => Boolean(id))
   );
   return pending.filter((item) => !confirmedIds.has(item.clientMsgId));
+}
+
+/** Build known internal destinations from validated metadata, never follow arbitrary action URLs. */
+export function characterWishNotificationPath(
+  item: Pick<NotificationItem, 'kind' | 'metadata'>
+): string | null {
+  if (item.kind !== 'character_wish_response') return null;
+  const metadata = CharacterWishNotificationMetadataSchema.safeParse(item.metadata);
+  return metadata.success ? `/wishes/${metadata.data.wish_id}` : null;
 }

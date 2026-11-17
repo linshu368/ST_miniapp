@@ -1,0 +1,41 @@
+{
+  "id": "db-reorg-p2-observability",
+  "name": "db-reorg-p2-observability",
+  "title": "数据库重组阶段2：观测外迁",
+  "description": "所有观测数据进 ops；上游调用拆成身份（attempts）与明细（ops.llm_calls）；看板只经 miniapp_analytics 读；先修经营看板日汇总刷新",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P1",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-17",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "11-17-db-reorg",
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "pending"
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "2a 只改分析缓存 miniapp_analytics.grafana_core_daily 的刷新函数与 pg_cron 任务，读者只有 Grafana；不在 MiniApp 页面、接口或请求链路上，Android/iOS 页面加载 P95 与接口 P95 不受影响，不填零或推测数值。2b 起若改动请求链路写入，在对应子步骤重新评估本门禁。"
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "2a 是数据库内部的派生缓存刷新：结果写入汇总表的 refreshed_at，成败记录在 pg_cron 的 cron.job_run_details，看板「最近两日数据更新时间」面板直接展示新鲜度；不经过应用后端，不新增事件或日志。2b 起涉及后端写入路径时在对应子步骤重新评估。"
+    }
+  }
+}

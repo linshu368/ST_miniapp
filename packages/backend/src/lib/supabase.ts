@@ -12,6 +12,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import WebSocket from 'ws';
 import { config } from '../platform/config.js';
+import { observedSupabaseFetch } from './preparation-diagnostics.js';
 
 let _client: SupabaseClient | null = null;
 
@@ -39,6 +40,7 @@ export function getSupabaseClient(): SupabaseClient {
   }
 
   _client = createClient(url, key, {
+    global: { fetch: observedSupabaseFetch },
     auth: {
       autoRefreshToken: false,
       persistSession: false,
@@ -57,7 +59,8 @@ export function getSupabaseClient(): SupabaseClient {
 /**
  * 归属域对应的物理 schema。
  *
- * 前八域由 migration 099 收口，media_plaza 由独立 M1 迁移加入。
+ * 前八域由 migration 099 收口，media_plaza 由独立 M1 迁移加入；cs_platform 已于 20261117 删除。
+ * 落位规则见 docs/db/CONTRACT.md，每张表登记在 docs/db/registry.yaml。
  * 一个 repository 横跨多个域时必须显式取多个域客户端，不要图省事共用一个。
  */
 export const DOMAIN_SCHEMAS = [
@@ -66,7 +69,6 @@ export const DOMAIN_SCHEMAS = [
   'experience',
   'billing',
   'admin',
-  'cs_platform',
   'miniapp_traffic',
   'miniapp_analytics',
   'media_plaza',

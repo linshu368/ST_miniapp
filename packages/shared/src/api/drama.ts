@@ -7,7 +7,7 @@ import { z } from 'zod';
 // 对外只暴露展示字段，不透传数据库行、object_path、
 // Telegram 定位信息（source_id / message_id / media_id）或任务表记录。
 //
-// 播放地址刻意不放在列表/详情里：点击卡片只发一次 GET /api/dramas/:id/play，
+// 播放地址刻意不放在列表/详情里：点击卡片只发一次取址（POST /api/dramas/play，旧版 GET /api/dramas/:id/play），
 // 后端只给选中那一条视频签一个临时 URL，避免进页面时为全量视频签名。
 
 /** 列表页用的精简结构 */
@@ -85,15 +85,16 @@ export const DramaDeliverySchema = z
       .min(1)
       .max(64)
       .regex(/^[a-zA-Z0-9_-]+$/),
-    group: z.enum(['supabase', 'bunny']),
-    provider: z.enum(['supabase', 'bunny', 'unknown']),
-    reason: z.enum(['assigned', 'disabled', 'unavailable']),
+    group: z.enum(['supabase', 'bunny', 'stream']),
+    provider: z.enum(['supabase', 'bunny', 'stream', 'unknown']),
+    reason: z.enum(['assigned', 'disabled', 'unavailable', 'fallback']),
   })
   .strict();
 export type DramaDelivery = z.infer<typeof DramaDeliverySchema>;
 
 /** 播放地址。唯一包含临时签名 URL 的对外结构 */
 export interface DramaPlayback {
+  format?: 'mp4' | 'hls';
   /** 旧 Backend 可缺失，不能推断为对照组。 */
   delivery?: DramaDelivery;
   /** 本次选中的视频；整部剧都不可播时为 null，没有视频可指 */
@@ -103,6 +104,12 @@ export interface DramaPlayback {
   play_url: string | null;
   /** 签名有效期终点的 ISO 8601 时间，失败时为 null */
   expires_at: string | null;
+  /**
+   * Stream 主清单（m3u8）原始文本，内容与签名 token 无关，可安全跨用户复用。
+   * 仅在 Stream 组命中后端进程内缓存时才有值；未命中、超时或非 Stream 播放源时缺失，
+   * 前端必须照常对 play_url 发起网络请求。旧 Backend 缺失此字段。
+   */
+  inline_manifest?: string;
 }
 
 // GET /api/dramas 的响应体
@@ -115,7 +122,7 @@ export interface GetDramaByIdData {
   drama: DramaDetail;
 }
 
-// GET /api/dramas/:id/play 的响应体
+// POST /api/dramas/play 与 GET /api/dramas/:id/play 的响应体
 export interface GetDramaPlaybackData {
   playback: DramaPlayback;
 }
@@ -161,3 +168,28 @@ export interface GetDramaCommentsData {
 export interface CreateDramaCommentData {
   comment: DramaComment;
 }
+
+/** HLS capability is explicit so older clients continue to receive MP4. */
+export const DramaPlaybackOptionsSchema = z
+  .object({
+    video_id: z.string().uuid().optional(),
+    format: z.literal('hls').optional(),
+    fallback: z.literal('mp4').optional(),
+  })
+  .strict();
+
+/**
+ * POST /api/dramas/play 的请求体。
+ * 固定地址的目的：CORS 预检按 URL 缓存，原来每集一个地址导致每次都要预检。
+ * `format/fallback` 与 GET 查询参数同义，旧客户端继续走 GET /api/dramas/:id/play。
+ * drama_id 的 UUID 校验留给处理函数，以保持与 GET 一致的错误文案。
+ */
+export const DramaPlayRequestSchema = z
+  .object({
+    drama_id: z.string().min(1).max(64),
+    video_id: z.string().uuid().optional(),
+    format: z.literal('hls').optional(),
+    fallback: z.literal('mp4').optional(),
+  })
+  .strict();
+export type DramaPlayRequest = z.infer<typeof DramaPlayRequestSchema>;

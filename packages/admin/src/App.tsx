@@ -20,25 +20,25 @@ import {
   Tabs,
   Tag,
   Typography,
+  type MenuProps,
 } from 'antd';
 import { Refine } from '@refinedev/core';
 import { dataProvider } from '@refinedev/supabase';
 import {
-  CREATOR_REVIEW_PROMPT_KEY,
+  LLM_MODEL_PROVIDERS,
   ModelCatalogSchema,
-  PaymentPlansRuntimeConfigSchema,
+  LlmProviderRoutingConfigSchema,
   type LlmModelProvider,
   type ModelCatalog,
-  type PaymentPlan,
   type ProviderModelDirectory,
 } from '@miniapp/shared';
 import { LoginPage } from './components/LoginPage';
+import { AdminApiProvider } from './lib/adminApiContext';
 import { ConfigValueEditor } from './components/ConfigValueEditor';
 import { findDuplicateOpenRouterAssignments } from './components/ModelCatalogEditor';
 import { CharacterCardsView } from './components/CharacterCardsView';
 import { AnnouncementsView } from './components/AnnouncementsView';
 import { InviteProgramView } from './components/InviteProgramView';
-import { OutreachCreditGrantView } from './components/OutreachCreditGrantView';
 import { VipStrategyView } from './components/VipStrategyView';
 import {
   discardDraft,
@@ -58,23 +58,37 @@ import {
   type ConfigDraft,
   type ConfigRelease,
   type ManagedConfig,
-} from './lib/adminApi';
+} from '@miniapp/admin-client';
 import {
   configMetadata,
   isTextManagedConfig,
   parseManagedConfig,
   resolveManagedWorkingValue,
   type ManagedConfigKey,
-} from './lib/configSchemas';
+} from '@miniapp/admin-client';
 import {
   checkAdminApiReachability,
   getAdminClient,
   isEnvironmentConfigured,
   type AdminEnvironment,
+  getAdminApiUrl,
 } from './lib/environment';
-import { fetchModelProviderDirectory, getCatalogProviderIssues } from './lib/openRouterModels';
-import { getModelCatalogChangeSummary } from './lib/modelCatalogDiff';
+import { readFileAsBase64 } from './lib/fileBase64';
+import {
+  fetchModelProviderDirectory,
+  getCatalogProviderIssues,
+  getFallbackProviderIssues,
+} from './lib/openRouterModels';
 import { TextPostprocessView } from './components/TextPostprocessView';
+import { ReleaseChangeDetails } from './components/ReleaseChangeDetails';
+import {
+  draftSaveFields,
+  formatDate,
+  getReleaseChangeSummary,
+  jsonPreview,
+  maskConfigSecret,
+  releasePreviewValue,
+} from './lib/configReleaseDiff';
 import {
   configMenuKey,
   IMAGE_GENERATION_CONFIG_KEYS,
@@ -86,7 +100,8 @@ import {
   isImagePlazaConfigKey,
   isPlatformInstructionConfigKey,
   resolveAdminMenuSelection,
-  sidebarManagedConfigKeys,
+  ADMIN_MENU,
+  menuGroupKeyFor,
   type AdminViewKey,
   type InviteProgramTabKey,
   type ImageGenerationConfigKey,
@@ -100,6 +115,17 @@ import {
   type WorkbenchStore,
 } from './lib/textPostprocessWorkbench';
 
+// antd 的菜单项是联合类型，逐项构造字面量才能让类型推断落到正确分支。
+const MENU_ITEMS: MenuProps['items'] = ADMIN_MENU.map((node) =>
+  'children' in node
+    ? {
+        key: node.key,
+        label: node.label,
+        children: node.children.map((child) => ({ key: child.key, label: child.label })),
+      }
+    : { key: node.key, label: node.label }
+);
+
 function confirmAction(title: string, content: React.ReactNode, danger = false): Promise<boolean> {
   return new Promise((resolve) => {
     Modal.confirm({
@@ -112,162 +138,6 @@ function confirmAction(title: string, content: React.ReactNode, danger = false):
       onCancel: () => resolve(false),
     });
   });
-}
-
-function jsonPreview(value: unknown): string {
-  if (typeof value === 'string') return value;
-  return JSON.stringify(value, null, 2);
-}
-
-function releasePreviewValue(release: Pick<ConfigRelease, 'value' | 'text_value'>): unknown {
-  return release.text_value ?? release.value;
-}
-
-function maskConfigSecret(key: ManagedConfigKey, value: unknown): unknown {
-  if (key !== 'image_text_model_config' || !isPlainObject(value)) return value;
-  return {
-    ...value,
-    api_key: typeof value.api_key === 'string' && value.api_key ? '••••••••' : '',
-  };
-}
-
-function draftSaveFields(
-  key: ManagedConfigKey,
-  parsed: unknown
-): { value: unknown; textValue?: string | null } {
-  if (isTextManagedConfig(key)) {
-    return { value: null, textValue: typeof parsed === 'string' ? parsed : String(parsed ?? '') };
-  }
-  return { value: parsed };
-}
-
-function formatDate(value: string): string {
-  return new Date(value).toLocaleString('zh-CN', { hour12: false });
-}
-
-interface ValueChange {
-  path: string;
-  before: unknown;
-  after: unknown;
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function collectValueChanges(
-  before: unknown,
-  after: unknown,
-  path = '配置值',
-  changes: ValueChange[] = []
-): ValueChange[] {
-  if (Object.is(before, after)) return changes;
-
-  if (Array.isArray(before) && Array.isArray(after)) {
-    const length = Math.max(before.length, after.length);
-    for (let index = 0; index < length; index += 1) {
-      collectValueChanges(before[index], after[index], `${path}[${index}]`, changes);
-    }
-    return changes;
-  }
-
-  if (isPlainObject(before) && isPlainObject(after)) {
-    const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
-    for (const key of keys) {
-      collectValueChanges(before[key], after[key], `${path}.${key}`, changes);
-    }
-    return changes;
-  }
-
-  changes.push({ path, before, after });
-  return changes;
-}
-
-function getPreviousRelease(
-  allReleases: ConfigRelease[],
-  release: ConfigRelease
-): ConfigRelease | undefined {
-  return allReleases
-    .filter(
-      (candidate) =>
-        candidate.config_key === release.config_key &&
-        candidate.runtime_version < release.runtime_version
-    )
-    .sort((left, right) => right.runtime_version - left.runtime_version)[0];
-}
-
-function formatChangeValue(value: unknown): string {
-  if (value === undefined) return '未设置';
-  const serialized = typeof value === 'string' ? value : (JSON.stringify(value) ?? String(value));
-  return serialized.length > 160 ? `${serialized.slice(0, 157)}…` : serialized;
-}
-
-function getReleaseChangeSummary(allReleases: ConfigRelease[], release: ConfigRelease): string {
-  const previousRelease = getPreviousRelease(allReleases, release);
-  if (!previousRelease) return '首次发布完整配置';
-  const previousValue = releasePreviewValue(previousRelease);
-  const currentValue = releasePreviewValue(release);
-  if (release.config_key === 'llm_model_catalog') {
-    const modelSummary = getModelCatalogChangeSummary(previousValue, currentValue);
-    if (modelSummary) return modelSummary;
-  }
-  const changes = collectValueChanges(previousValue, currentValue);
-  if (changes.length === 0) return '配置内容未变化';
-  return `${changes.length} 项：${changes
-    .slice(0, 2)
-    .map((change) => change.path)
-    .join('、')}${changes.length > 2 ? '…' : ''}`;
-}
-
-function ReleaseChangeDetails(props: {
-  release: ConfigRelease;
-  allReleases: ConfigRelease[];
-  compact?: boolean;
-}) {
-  const previousRelease = getPreviousRelease(props.allReleases, props.release);
-  const currentValue = maskConfigSecret(
-    props.release.config_key,
-    releasePreviewValue(props.release)
-  );
-  if (!previousRelease) {
-    return (
-      <div className="release-change-details">
-        <Typography.Text strong>首次发布的完整配置</Typography.Text>
-        {!props.compact ? <pre className="diff-preview">{jsonPreview(currentValue)}</pre> : null}
-      </div>
-    );
-  }
-
-  const changes = collectValueChanges(
-    maskConfigSecret(previousRelease.config_key, releasePreviewValue(previousRelease)),
-    currentValue
-  );
-  const visibleChanges = props.compact ? changes.slice(0, 3) : changes;
-
-  return (
-    <div className="release-change-details">
-      <Typography.Text strong>具体修改（{changes.length} 项）</Typography.Text>
-      {changes.length === 0 ? (
-        <Typography.Text type="secondary">配置内容未变化</Typography.Text>
-      ) : (
-        <div className="release-change-list">
-          {visibleChanges.map((change, index) => (
-            <div className="release-change-item" key={`${change.path}-${index}`}>
-              <code>{change.path}</code>
-              <span className="release-change-before">{formatChangeValue(change.before)}</span>
-              <span aria-hidden>→</span>
-              <span className="release-change-after">{formatChangeValue(change.after)}</span>
-            </div>
-          ))}
-          {props.compact && changes.length > visibleChanges.length ? (
-            <Typography.Text type="secondary">
-              另有 {changes.length - visibleChanges.length} 项修改，请在“发布历史”中展开查看。
-            </Typography.Text>
-          ) : null}
-        </div>
-      )}
-    </div>
-  );
 }
 
 export function AdminApp() {
@@ -437,16 +307,18 @@ export function AdminApp() {
 
   return (
     <Refine dataProvider={refineDataProvider} resources={[]} options={{ syncWithLocation: false }}>
-      <AdminWorkspace
-        client={client}
-        environment={environment}
-        admin={admin}
-        onEnvironmentChange={switchEnvironment}
-        onLogout={async () => {
-          await client.auth.signOut();
-          await loadIdentity(client);
-        }}
-      />
+      <AdminApiProvider client={client} environment={environment}>
+        <AdminWorkspace
+          client={client}
+          environment={environment}
+          admin={admin}
+          onEnvironmentChange={switchEnvironment}
+          onLogout={async () => {
+            await client.auth.signOut();
+            await loadIdentity(client);
+          }}
+        />
+      </AdminApiProvider>
     </Refine>
   );
 }
@@ -461,6 +333,7 @@ function AdminWorkspace(props: {
   const { message } = AntApp.useApp();
   const [view, setView] = useState<AdminViewKey>('configs');
   const [selectedKey, setSelectedKey] = useState<ManagedConfigKey>('llm_model_catalog');
+  const selectedMenuKey = view === 'configs' ? configMenuKey(selectedKey) : view;
   // 「裂变邀请管理」当前 tab；config tab 激活时须与 selectedKey 同步，编辑器才指向正确的 key
   const [inviteTab, setInviteTab] = useState<InviteProgramTabKey>(INVITE_PROGRAM_CONFIG_KEYS[0]);
   const [imageConfigTab, setImageConfigTab] = useState<ImageGenerationConfigKey>(
@@ -584,12 +457,9 @@ function AdminWorkspace(props: {
     }
   }, [props.client]);
 
-  // 固定位编辑器要按卡名选卡，所以它也需要角色卡清单，不只有角色卡页面需要
   useEffect(() => {
-    if (view === 'characters' || selectedKey === 'lobby_pinned_characters') {
-      void reloadCharacters();
-    }
-  }, [reloadCharacters, selectedKey, view]);
+    if (view === 'characters') void reloadCharacters();
+  }, [reloadCharacters, view]);
 
   const reloadProviderDirectory = useCallback(
     async (provider: LlmModelProvider, forceRefresh = false) => {
@@ -617,8 +487,7 @@ function AdminWorkspace(props: {
   );
 
   useEffect(() => {
-    void reloadProviderDirectory('openrouter');
-    void reloadProviderDirectory('venice');
+    for (const provider of LLM_MODEL_PROVIDERS) void reloadProviderDirectory(provider);
   }, [reloadProviderDirectory]);
 
   const currentConfig = useMemo(
@@ -648,11 +517,6 @@ function AdminWorkspace(props: {
     (props.environment === 'production'
       ? props.admin.can_access_prod
       : props.admin.can_access_test);
-  const paymentPlans = useMemo<PaymentPlan[]>(() => {
-    const runtimeValue = configs.find((config) => config.key === 'miniapp_payment_plans')?.value;
-    const parsed = PaymentPlansRuntimeConfigSchema.safeParse(runtimeValue);
-    return parsed.success ? parsed.data.plans : [];
-  }, [configs]);
   const publishedModelIds = useMemo(() => {
     const runtimeValue = configs.find((config) => config.key === 'llm_model_catalog')?.value;
     const snapshots = [
@@ -664,7 +528,10 @@ function AdminWorkspace(props: {
     const ids = snapshots.flatMap((snapshot) => {
       const parsed = ModelCatalogSchema.safeParse(snapshot);
       return parsed.success
-        ? parsed.data.tiers.flatMap((tier) => tier.models.map((model) => model.id))
+        ? [
+            ...parsed.data.tiers.flatMap((tier) => tier.models.map((model) => model.id)),
+            ...parsed.data.free_zone_models.map((model) => model.id),
+          ]
         : [];
     });
     return new Set(ids);
@@ -683,14 +550,28 @@ function AdminWorkspace(props: {
 
   const validateModelProviderConfig = useCallback(
     (key: ManagedConfigKey, value: unknown): void => {
-      if (key !== 'llm_model_catalog') return;
-      const catalog = ModelCatalogSchema.parse(value) as ModelCatalog;
-      const issues = getCatalogProviderIssues(catalog, providerDirectories);
+      if (key !== 'llm_model_catalog' && key !== 'llm_provider_routing_config') return;
+      const catalog = ModelCatalogSchema.parse(
+        key === 'llm_model_catalog'
+          ? value
+          : configs.find((config) => config.key === 'llm_model_catalog')?.value
+      ) as ModelCatalog;
+      const routing = LlmProviderRoutingConfigSchema.parse(
+        key === 'llm_provider_routing_config'
+          ? value
+          : (configs.find((config) => config.key === 'llm_provider_routing_config')?.value ?? {
+              rules: [],
+            })
+      );
+      const issues =
+        key === 'llm_model_catalog'
+          ? getCatalogProviderIssues(catalog, providerDirectories, routing)
+          : getFallbackProviderIssues(catalog, routing);
       if (issues.length > 0) {
         throw new Error(`模型配置未通过平台目录校验：${issues.join('；')}`);
       }
     },
-    [providerDirectories]
+    [providerDirectories, configs]
   );
 
   useEffect(() => {
@@ -1000,16 +881,18 @@ function AdminWorkspace(props: {
         syncLoading={providerLoading}
         syncError={providerErrors}
         onRefreshProvider={(provider) => void reloadProviderDirectory(provider, true)}
-        paymentPlans={paymentPlans}
-        characters={characters}
-        charactersLoading={charactersLoading}
-        charactersError={charactersError}
-        onUploadInvitePoster={(file) => uploadInvitePoster(props.client, props.environment, file)}
+        onUploadInvitePoster={async (file) =>
+          uploadInvitePoster(
+            props.client,
+            getAdminApiUrl(props.environment),
+            await readFileAsBase64(file, '海报文件读取失败')
+          )
+        }
         onTestCreatorReview={(input, signal) =>
-          testCreatorCharacterReview(props.client, props.environment, input, signal)
+          testCreatorCharacterReview(props.client, getAdminApiUrl(props.environment), input, signal)
         }
         onTestImageTextModel={(value) =>
-          testImageTextModelConfig(props.client, props.environment, value)
+          testImageTextModelConfig(props.client, getAdminApiUrl(props.environment), value)
         }
       />
       <Divider />
@@ -1121,8 +1004,8 @@ function AdminWorkspace(props: {
         </div>
         <Menu
           mode="inline"
-          defaultOpenKeys={['configs', 'platform_rules']}
-          selectedKeys={[view === 'configs' ? configMenuKey(selectedKey) : view]}
+          defaultOpenKeys={[menuGroupKeyFor(selectedMenuKey) ?? ADMIN_MENU[0]?.key ?? '']}
+          selectedKeys={[selectedMenuKey]}
           onClick={({ key }) => {
             void (async () => {
               if (saving) return;
@@ -1168,37 +1051,7 @@ function AdminWorkspace(props: {
               setView(selection.view);
             })();
           }}
-          items={[
-            {
-              key: 'configs',
-              label: '运营配置',
-              children: [
-                ...sidebarManagedConfigKeys.map((key) => ({
-                  key: configMenuKey(key),
-                  label: configMetadata[key].label,
-                })),
-                { key: 'fallback_config', label: '兜底配置' },
-                { key: 'outreach_credit_grant', label: '回访星尘赠送' },
-                { key: 'invite_program', label: '裂变邀请管理' },
-                { key: 'image_generation_config', label: '图片生成配置' },
-                { key: 'image_plaza', label: '图片广场' },
-                {
-                  key: 'platform_rules',
-                  label: '平台规则',
-                  children: [
-                    { key: 'platform_instructions', label: '主体与模块规则' },
-                    { key: 'reply_style_options', label: '回复风格' },
-                  ],
-                },
-                { key: 'vip_strategy', label: 'VIP策略' },
-                { key: 'text_postprocess', label: '回复富文本规则' },
-              ],
-            },
-            { key: 'characters', label: '角色卡' },
-            { key: configMenuKey(CREATOR_REVIEW_PROMPT_KEY), label: '角色卡审核' },
-            { key: 'announcements', label: '公告管理' },
-            { key: 'releases', label: '发布历史' },
-          ]}
+          items={MENU_ITEMS}
         />
       </Layout.Sider>
       <Layout>
@@ -1282,12 +1135,6 @@ function AdminWorkspace(props: {
                 setSelectedKey('system_instructions');
                 setView('configs');
               }}
-            />
-          ) : view === 'outreach_credit_grant' ? (
-            <OutreachCreditGrantView
-              client={props.client}
-              environment={props.environment}
-              canWrite={canWrite}
             />
           ) : view === 'invite_program' ? (
             <InviteProgramView

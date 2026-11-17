@@ -1,0 +1,55 @@
+{
+  "id": "drama-stream-startup-diagnostics",
+  "name": "drama-stream-startup-diagnostics",
+  "title": "短剧 Stream 起播提前建连与分片级诊断",
+  "description": "Stream 域名提前建连（页面加载 + 播放意图），起播诊断记录 Stream 子请求（iOS 资源计时）与 hls.js 加载统计（Android），CDN 实验组诊断全量写入 Loki。",
+  "status": "in_progress",
+  "dev_type": "feature",
+  "scope": "cross-layer",
+  "package": "frontend",
+  "priority": "P2",
+  "creator": "linshu",
+  "assignee": "linshu",
+  "createdAt": "2026-11-06",
+  "completedAt": null,
+  "branch": "feat/drama-stream-startup-diagnostics",
+  "base_branch": "dev",
+  "worktree_path": "/Users/qj/python_project/ST_miniAPP_stream_diag",
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": ["frontend.business.drama-experience"]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": ["短剧播放页（起播耗时，非页面加载）"],
+      "apis": [],
+      "android": {
+        "page_p95_baseline_ms": 3870,
+        "page_p95_target_ms": 3870
+      },
+      "ios": {
+        "page_p95_baseline_ms": 7590,
+        "page_p95_target_ms": 3000
+      },
+      "api": {
+        "p95_baseline_ms": null,
+        "p95_target_ms": null
+      },
+      "measurement": {
+        "source": "Grafana st-engineering-drama（Loki）st_drama_stage source_to_playing，cdn_group=stream，按 tg_platform 与 app_version 分前后；iOS 主清单耗时取后端 drama.startup_diagnostic 网络记录",
+        "window": "基线：2026-11-04 11:00Z 至 11-06 约 47h；发布后取等长窗口"
+      },
+      "notes": "按起播耗时口径（设置源→开始播放，Stream 组，Faro 全量）填写，不是页面加载 P95。iOS 基线 P95 7.59s（N=25）、Android 3.87s（N=18）；3000ms 是项目总目标，本任务以诊断为主，提前建连预计只省 0.1–0.4s，不承诺单独达成。专项验收：iOS 慢样本主清单请求中位耗时（基线 1.13s）下降；Stream 组诊断出现子请求 kind 与 hls 加载统计。样本少，N<30 只作方向参考，不补零。接口不涉及。"
+    }
+  }
+}

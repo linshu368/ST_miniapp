@@ -35,6 +35,26 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Check logging integration plans
+        env:
+          PLAN_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ -z "$PLAN_BASE" ] || [[ "$PLAN_BASE" =~ ^0+$ ]]; then
+            echo "No prior commit is available for planning comparison" >&2
+            exit 1
+          fi
+          python .trellis/scripts/logging_planning_gate.py --base "$PLAN_BASE"
+
+      - name: Test logging planning gate
+        run: python -m unittest discover -s scripts -p 'test_logging_planning_gate.py'
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -72,6 +92,27 @@ jobs:
       # 规则与冻结清单在 scripts/check-migration-filenames.mjs。
       - name: Check migration filenames
         run: pnpm lint:migrations
+
+      # 数据库契约：本次改动的 migration 对照 docs/db/registry.yaml，只给 PR 警告、不阻断合并。
+      # 规则见 docs/db/CONTRACT.md §7，脚本在 scripts/db-contract-lint.mjs。
+      - name: Check database contract (warnings only)
+        env:
+          PLAN_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: node scripts/db-contract-lint.mjs --base "$PLAN_BASE"
+      - name: Test database contract lint
+        run: node --test scripts/db-contract-lint.test.mjs
+
+      # 运行时代码的文件/函数长度预算（棘轮）：新增超标阻断，存量只提示增长。
+      # 上限与基线在 scripts/complexity-budget.mjs / scripts/complexity-baseline.json。
+      - name: Check complexity budget
+        run: pnpm lint:complexity
+
+      - name: Check backend logging boundaries
+        run: pnpm lint:backend-logging
+      - name: Validate log alert rules
+        run: pnpm --filter @miniapp/backend logging:validate
+      - name: Test backend logging guard
+        run: node --test scripts/check-backend-logging.test.mjs
 
       - name: Test shared package
         run: pnpm --filter @miniapp/shared test

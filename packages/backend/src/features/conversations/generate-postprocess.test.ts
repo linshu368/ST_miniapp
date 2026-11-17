@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { DEFAULT_STORY_MEMORY_CONFIG } from '@miniapp/shared';
 import type { ChatSessionRow } from '../../infrastructure/repositories/ChatSessionRepository.js';
 import type { RequestLogger } from '../../lib/logger.js';
 import { ConversationRepositoryError } from '../../infrastructure/repositories/conversation-errors.js';
@@ -19,7 +20,8 @@ const mocks = vi.hoisted(() => ({
   requireCard: vi.fn(),
   getGenerationConfig: vi.fn(),
   getDisplayName: vi.fn(),
-  fetchWindow: vi.fn(),
+  fetchStoryMemoryConfig: vi.fn(),
+  readStoryMemory: vi.fn(),
   readSnapshots: vi.fn(),
   saveRichReplyMetadata: vi.fn(),
 }));
@@ -80,10 +82,15 @@ vi.mock('../text-postprocess/repository.js', () => ({
 vi.mock('../engine/index.js', () => ({
   buildPrompt: mocks.buildPrompt,
   fetchPlatformInstructions: mocks.fetchInstructions,
+  selectDriveRules: () => ({ modeId: null, rules: '' }),
 }));
 
-vi.mock('./context-window.js', () => ({
-  fetchContextWindowLimits: mocks.fetchWindow,
+vi.mock('../story-memory/config.js', () => ({
+  fetchStoryMemoryConfig: mocks.fetchStoryMemoryConfig,
+}));
+vi.mock('../story-memory/turn.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../story-memory/turn.js')>()),
+  readStoryMemoryForTurn: mocks.readStoryMemory,
 }));
 
 import { runConversationTurn } from './generate.js';
@@ -148,13 +155,22 @@ describe('runConversationTurn postprocess binding', () => {
     mocks.getGenerationConfig.mockResolvedValue({});
     mocks.getDisplayName.mockResolvedValue('Alice');
     mocks.fetchInstructions.mockResolvedValue({ instructions: {}, degraded: false });
-    mocks.fetchWindow.mockResolvedValue({ maxTurns: 75, retainTurns: 50 });
+    mocks.fetchStoryMemoryConfig.mockResolvedValue(DEFAULT_STORY_MEMORY_CONFIG);
+    mocks.readStoryMemory.mockResolvedValue({
+      content: null,
+      coveredEndTurn: 0,
+      outcome: 'empty',
+      readMs: 0,
+    });
     mocks.resolveModel.mockResolvedValue({ openRouterModelId: 'model-a' });
     mocks.getContextBeforeTurn.mockResolvedValue({
       openingMessage: '开场白',
       messages: [
         { role: 'user', content: 'previous-user' },
         { role: 'assistant', content: 'previous-assistant-raw' },
+      ],
+      turns: [
+        { turnIndex: 1, userInput: 'previous-user', assistantReply: 'previous-assistant-raw' },
       ],
       truncatedTurns: 0,
     });
@@ -166,7 +182,7 @@ describe('runConversationTurn postprocess binding', () => {
     );
     mocks.execute.mockImplementation(
       async (
-        request: { userInput: string; messages: unknown[] },
+        _request: { userInput: string; messages: unknown[] },
         hooks: { onStreamOpen: () => void; onDelta: (text: string) => void }
       ) => {
         hooks.onStreamOpen();
@@ -210,8 +226,6 @@ describe('runConversationTurn postprocess binding', () => {
     expect(mocks.startTurn).toHaveBeenCalledWith(
       expect.objectContaining({
         userContent: 'raw-user',
-        maxContextTurns: 75,
-        retainContextTurns: 50,
       })
     );
     expect(mocks.startRegeneration).not.toHaveBeenCalled();

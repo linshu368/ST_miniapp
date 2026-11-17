@@ -25,6 +25,7 @@
 - shared 不得导入任何应用包；根出口不得导出 Node/server-only 依赖。
 - 已发布字段/联合值不得无迁移删除、重命名、收窄或改变语义；优先兼容扩展。
 - runtime helper 必须确定、无隐藏 I/O/环境读取/全局可变状态。
+- 涉及接口/事件标识变更时，按 [日志接入声明](../../backend/app/logging-integration-planning.md) 核对所有消费者的日志映射、白名单与兼容；后端内部日志字段不因此成为公开 API。共享出口合并需保留双方仍有消费者的契约并运行 shared 测试和全仓 typecheck。
 
 ## Quality Check
 

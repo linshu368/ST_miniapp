@@ -1,10 +1,12 @@
 import { createServer, type Server } from 'node:http';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DramaTimingReportSchema, type DramaTimingReport } from '@miniapp/shared';
+import { createConversationPreparationTiming } from '../features/conversations/preparation-timing.js';
 import {
   engineeringRoute,
   observeDramaStartupDiagnostic,
   observeChatFirstToken,
+  observeBackgroundJob,
   observeGenerationAttempt,
   observeGenerationDispatch,
   observeGenerationTerminal,
@@ -67,6 +69,35 @@ async function receiver(logStatus = 200) {
 const options = { enabled: true, environment: 'test', version: 'safe-test-release' };
 
 describe('engineering telemetry boundary', () => {
+  it('accepts reports both with and without the engine field (deploy-order compatibility)', () => {
+    const base = {
+      type: 'playback' as const,
+      phase: 'final' as const,
+      id: 'compat-observation',
+      outcome: 'playing' as const,
+      elapsedMs: 1_000,
+      marks: {},
+      stages: {},
+      queries: [],
+    };
+    expect(DramaTimingReportSchema.safeParse(base).success).toBe(true);
+    expect(DramaTimingReportSchema.safeParse({ ...base, engine: 'hlsjs_mms' }).success).toBe(true);
+    expect(DramaTimingReportSchema.safeParse({ ...base, engine: 'bogus' }).success).toBe(false);
+  });
+
+  it('exports one bounded background-job terminal with duration and count', async () => {
+    const sink = await receiver();
+    stop = startEngineeringTelemetry({ ...options, endpoint: sink.endpoint });
+    observeBackgroundJob({ job: 'chat_history_sync', outcome: 'partial', durationMs: 1250 });
+    await stop();
+    const wire = JSON.stringify(sink.received);
+    expect(wire).toContain('st_background_job_duration');
+    expect(wire).toContain('st_background_job_runs');
+    expect(wire).toContain('background_job.terminal');
+    expect(wire).toContain('chat_history_sync');
+    expect(wire).toContain('partial');
+  });
+
   it('retains five-second terminal details and late network evidence as JSON log bodies', async () => {
     const sink = await receiver();
     stop = startEngineeringTelemetry({ ...options, endpoint: sink.endpoint });
@@ -83,6 +114,7 @@ describe('engineering telemetry boundary', () => {
       id: 'slow-observation',
       entry: 'episode',
       videoId: 'safe-video',
+      engine: 'native_hls',
       outcome: 'playing',
       elapsedMs: 6_000,
       marks: {
@@ -145,6 +177,25 @@ describe('engineering telemetry boundary', () => {
     observeDramaStartupDiagnostic({ ...report, phase: 'network' });
     for (const outcome of ['error', 'left', 'background'] as const)
       observeDramaStartupDiagnostic({ ...report, outcome, elapsedMs: 16_007 });
+    const seekReport: DramaTimingReport = {
+      ...report,
+      type: 'seek',
+      elapsedMs: 3000,
+      frameMethod: 'video_frame_callback',
+      seek: {
+        definition: 'drama_seek_resume_v1',
+        targetMs: 40000,
+        direction: 'forward',
+        buffered: 'no',
+        wasPlaying: true,
+        seekedMs: 2800,
+        frameMs: 2900,
+        playingMs: 3000,
+      },
+    };
+    observeDramaStartupDiagnostic({ ...seekReport, elapsedMs: 2999 });
+    observeDramaStartupDiagnostic(seekReport);
+    observeDramaStartupDiagnostic({ ...seekReport, phase: 'network' });
     observeDramaStartupDiagnostic({ ...report, token: 'PRIVATE_TOKEN' } as DramaTimingReport);
     observeDramaStartupDiagnostic({
       ...report,
@@ -158,14 +209,21 @@ describe('engineering telemetry boundary', () => {
           resource.scopeLogs.flatMap((scope) => scope.logRecords)
         )
       );
-    expect(records).toHaveLength(6);
+    expect(records).toHaveLength(8);
     const bodies = records.map((r) => JSON.parse(r.body.stringValue) as Record<string, unknown>);
-    expect(bodies.map((b) => b.elapsedMs)).toEqual([5_000, 6_000, 6_000, 16_007, 16_007, 16_007]);
+    expect(bodies.map((b) => b.elapsedMs)).toEqual([
+      5_000, 6_000, 6_000, 16_007, 16_007, 16_007, 3000, 3000,
+    ]);
     expect(bodies[1]).toMatchObject({
       event: 'drama.startup_diagnostic',
       ...report,
     });
+    expect(records[1]?.attributes.some((a) => a.key === 'engine')).toBe(true);
     expect(bodies[2]).toMatchObject({ phase: 'network', id: 'slow-observation' });
+    expect(bodies[6]).toMatchObject({
+      event: 'drama.seek_diagnostic',
+      seek: { buffered: 'no', definition: 'drama_seek_resume_v1' },
+    });
     expect(JSON.stringify(records)).not.toContain('PRIVATE_');
     expect(
       records.every((r) =>
@@ -174,6 +232,96 @@ describe('engineering telemetry boundary', () => {
         )
       )
     ).toBe(true);
+  });
+
+  it('retains every CDN experiment sample with sub-request and hls.js load evidence', async () => {
+    const sink = await receiver();
+    stop = startEngineeringTelemetry({ ...options, endpoint: sink.endpoint });
+    const report = DramaTimingReportSchema.parse({
+      type: 'playback',
+      phase: 'final',
+      delivery: {
+        experimentId: 'drama-stream-prod-20261104-v1',
+        group: 'stream',
+        provider: 'stream',
+        reason: 'assigned',
+      },
+      id: 'fast-stream',
+      entry: 'cover',
+      outcome: 'playing',
+      elapsedMs: 1_200,
+      marks: { source_set: 100, metadata: 600, first_frame: 1_200, playing: 1_200 },
+      stages: {},
+      queries: [],
+      diagnostics: {
+        network: {
+          status: 'limited',
+          entries: [
+            {
+              startMs: 100,
+              fetchStartMs: 100,
+              responseEndMs: 300,
+              visibility: 'limited',
+              kind: 'segment',
+            },
+          ],
+          truncated: false,
+        },
+        hls: {
+          entries: [
+            {
+              kind: 'fragment',
+              track: 'main',
+              level: 0,
+              bitrate: 400_000,
+              sn: 1,
+              positionMs: 0,
+              mediaMs: 4_000,
+              startMs: 120,
+              firstByteMs: 380,
+              endMs: 520,
+              appendedMs: 540,
+              bytes: 83_000,
+            },
+          ],
+          truncated: false,
+        },
+      },
+    });
+    observeDramaStartupDiagnostic(report);
+    observeDramaStartupDiagnostic({
+      ...report,
+      type: 'seek',
+      id: 'fast-stream-seek',
+      elapsedMs: 800,
+      frameMethod: 'video_frame_callback',
+      seek: {
+        definition: 'drama_seek_resume_v1',
+        targetMs: 40_000,
+        direction: 'forward',
+        buffered: 'no',
+        wasPlaying: true,
+        seekedMs: 600,
+        frameMs: 700,
+        playingMs: 800,
+      },
+    });
+    observeDramaStartupDiagnostic({ ...report, delivery: undefined, id: 'fast-default' });
+    await stop();
+    const bodies = sink.received
+      .filter((r) => r.path === '/v1/logs')
+      .flatMap((r) =>
+        (r.body as unknown as LogsPayload).resourceLogs.flatMap((resource) =>
+          resource.scopeLogs.flatMap((scope) => scope.logRecords)
+        )
+      )
+      .map((r) => JSON.parse(r.body.stringValue) as DramaTimingReport);
+    // 非实验流量仍只留起播 ≥5s / 快进 ≥3s。
+    expect(bodies.map((b) => b.id)).toEqual(['fast-stream', 'fast-stream-seek']);
+    expect(bodies[0]?.diagnostics).toMatchObject({
+      network: { entries: [{ kind: 'segment' }] },
+      hls: { entries: [{ kind: 'fragment', firstByteMs: 380, bytes: 83_000 }] },
+    });
   });
 
   it('does not connect when disabled and rejects raw URL/identifier route labels', async () => {
@@ -234,6 +382,25 @@ describe('engineering telemetry boundary', () => {
       generation_id: 'PRIVATE_GENERATION_ID',
     };
     observeGenerationAttempt(unsafe);
+    observeGenerationAttempt({
+      ...unsafe,
+      headersMs: 90,
+      firstTokenMs: 100,
+      timing: {
+        startedAt: 1,
+        requestCreatedMs: 1,
+        sendHeadersMs: 10,
+        bodySentMs: 20,
+        responseHeadersMs: 90,
+      },
+    });
+    const ready = createConversationPreparationTiming(performance.now() - 1200);
+    ready.enter('dispatch_gate', { provider: 'openrouter', providerModelId: 'safe-model' });
+    ready.ready();
+    const incomplete = createConversationPreparationTiming(performance.now() - 1200);
+    incomplete.enter('turn_open', { provider: 'openrouter', providerModelId: 'failed-turn-only' });
+    incomplete.incomplete();
+    incomplete.incomplete();
     observeChatFirstToken({
       requestedModel: 'selected-catalog-model',
       stage: 'accepted',
@@ -264,6 +431,10 @@ describe('engineering telemetry boundary', () => {
     const wire = JSON.stringify(sink.received);
     expect(wire).not.toMatch(/PRIVATE_|untrusted-provider/);
     expect(wire).toContain('generation.attempt_terminal');
+    expect(wire).toContain('st_generation_network_stage');
+    expect(wire).toContain('response_wait_ms');
+    expect(wire).toContain('generation.pre_dispatch');
+    expect(wire).toContain('st_generation_pre_dispatch_stage');
     expect(wire).toContain('first_token_observed');
     expect(wire).toContain('filtered');
     expect(wire).toContain('st-miniapp-backend');
@@ -276,6 +447,28 @@ describe('engineering telemetry boundary', () => {
     expect(metrics).toHaveLength(1);
     const emitted = (metrics[0]!.body as unknown as MetricsPayload).resourceMetrics.flatMap((r) =>
       r.scopeMetrics.flatMap((s) => s.metrics)
+    );
+    expect(JSON.stringify(emitted)).not.toContain('failed-turn-only');
+    const records = sink.received
+      .filter((r) => r.path === '/v1/logs')
+      .flatMap((r) =>
+        (r.body as unknown as LogsPayload).resourceLogs.flatMap((resource) =>
+          resource.scopeLogs.flatMap((scope) => scope.logRecords)
+        )
+      );
+    const failedPreparation = records.filter(
+      (record) =>
+        record.eventName === 'generation.pre_dispatch' &&
+        JSON.stringify(record.attributes).includes('failed-turn-only')
+    );
+    expect(failedPreparation).toHaveLength(1);
+    expect(failedPreparation[0]?.attributes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: 'outcome', value: { stringValue: 'incomplete' } }),
+        expect.objectContaining({ key: 'stage', value: { stringValue: 'turn_open' } }),
+        expect.objectContaining({ key: 'elapsed_ms' }),
+        expect.objectContaining({ key: 'total_ms' }),
+      ])
     );
     const duration = emitted.find((m) => m.name === 'st_http_server_duration');
     expect(duration?.unit).toBe('s');

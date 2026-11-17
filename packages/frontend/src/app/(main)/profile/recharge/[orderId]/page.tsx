@@ -1,39 +1,23 @@
 'use client';
 
 import { usePageReady } from '@/lib/perf/page-ready';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, ChevronLeft, Clock, Loader2, XCircle } from 'lucide-react';
-import { DEFAULT_RECHARGE_PAGE_CONFIG, type PaymentOrder } from '@miniapp/shared';
+import { RECHARGE_PAGE_DISPLAY, type PaymentOrder } from '@miniapp/shared';
 
 import { Button } from '@/components/ui/button';
 
 import { cn } from '@/lib/utils';
-import {
-  paymentKeys,
-  useCheckoutConfirmationMutation,
-  usePaymentOrderQuery,
-  usePaymentPlansQuery,
-} from '@/lib/api/payment';
-import {
-  captureExternalPaymentOpenRequested,
-  capturePaymentFlowLeftObserved,
-  capturePaymentOrderStatusObserved,
-  observePaymentReturn,
-  resumePaymentReplayFromPending,
-  retainPaywallFollowupIfActive,
-} from '@/lib/payment/flow-telemetry';
+import { paymentKeys, usePaymentOrderQuery } from '@/lib/api/payment';
 import {
   adoptPayUrlQueryIntoStorage,
-  clearCheckoutConfirmation,
   clearPaymentOpenIfTerminal,
   hasPaymentOpenUrl,
   readPaymentOpenMeta,
-  takePendingCheckoutConfirmation,
 } from '@/lib/payment/open-storage';
 import { reopenStoredPayment } from '@/lib/payment/open-created-payment';
-import { getReplayLifecycle } from '@/lib/telemetry';
 import {
   formatCountdown,
   formatNumber,
@@ -44,7 +28,7 @@ import {
 } from '@/lib/utils/payment';
 import { useHaptic, useTelegramBackButton } from '@/lib/telegram';
 import { vipKeys } from '@/lib/api/vip';
-import { modelCatalogKeys } from '@/lib/api/models';
+import { modelCatalogKeys, reselectFreeZoneAfterVip } from '@/lib/api/models';
 import { isVipOrder, orderBenefitLabel } from '@/lib/vip/presentation';
 
 export default function PaymentPendingPage() {
@@ -52,7 +36,6 @@ export default function PaymentPendingPage() {
   const orderId = params?.orderId ? decodeURIComponent(params.orderId) : undefined;
   const search = useSearchParams();
   const paymentStarted = search?.get('payment_started') === '1';
-  const paymentReturned = search?.get('payment') === 'returned';
   const returnToFromQuery = safePaymentReturnTo(search?.get('returnTo') ?? null);
   const [storedReturnTo, setStoredReturnTo] = useState<string | null>(null);
   const [canReopenPayment, setCanReopenPayment] = useState(false);
@@ -70,43 +53,14 @@ export default function PaymentPendingPage() {
     false,
     isError
   );
-  const { data: plansData } = usePaymentPlansQuery();
-  const { mutate: confirmCheckout } = useCheckoutConfirmationMutation();
   const order = data?.order;
-  const orderRef = useRef(order);
-  const backfilledRequestIds = useRef(new Set<string>());
-  orderRef.current = order;
-  const pendingArrivalHint =
-    plansData?.page_config.pending_arrival_hint ??
-    DEFAULT_RECHARGE_PAGE_CONFIG.pending_arrival_hint;
-
-  const reportCheckoutConfirmation = useCallback(
-    ({ orderId: confirmationOrderId, request }: Parameters<typeof confirmCheckout>[0]) => {
-      confirmCheckout(
-        { orderId: confirmationOrderId, request },
-        { onSuccess: () => clearCheckoutConfirmation(confirmationOrderId, request.request_id) }
-      );
-    },
-    [confirmCheckout]
-  );
-
-  const backfillPendingConfirmation = useCallback(() => {
-    if (!orderId) return;
-    const request = takePendingCheckoutConfirmation(orderId);
-    if (!request || backfilledRequestIds.current.has(request.request_id)) return;
-    backfilledRequestIds.current.add(request.request_id);
-    reportCheckoutConfirmation({ orderId, request });
-  }, [orderId, reportCheckoutConfirmation]);
+  const pendingArrivalHint = RECHARGE_PAGE_DISPLAY.pendingArrivalHint;
 
   // 返回不能用 push：那会把星尘商店压成新的历史条目，商店自己的返回键再 back
   // 回到本页，取消支付时就在两页之间死循环。
   // payment_started=1 只由充值页下单跳转时带上，所以它同时也是「上一格就是商店」的判据；
   // 支付回跳深链走的是 router.replace，栈里没有商店那一格，只能用 replace 顶掉本页。
   const goBack = useCallback(() => {
-    const current = orderRef.current;
-    if (current?.status === 'pending') {
-      capturePaymentFlowLeftObserved(current);
-    }
     if (paymentStarted) {
       router.back();
       return;
@@ -116,49 +70,14 @@ export default function PaymentPendingPage() {
   useTelegramBackButton(goBack);
 
   useEffect(() => {
-    retainPaywallFollowupIfActive();
-  }, []);
-
-  useEffect(() => {
     if (!orderId) return;
-    adoptPayUrlQueryIntoStorage(
-      orderId,
-      search?.get('pay_url') ?? null,
-      returnToFromQuery,
-      getReplayLifecycle().getSnapshot().replayContextId
-    );
-    resumePaymentReplayFromPending(orderId);
+    adoptPayUrlQueryIntoStorage(orderId, search?.get('pay_url') ?? null, returnToFromQuery);
     setCanReopenPayment(hasPaymentOpenUrl(orderId));
     setStoredReturnTo(readPaymentOpenMeta(orderId)?.returnTo ?? null);
   }, [orderId, returnToFromQuery, search]);
 
   useEffect(() => {
-    if (!orderId || paymentStarted) return;
-    backfillPendingConfirmation();
-  }, [backfillPendingConfirmation, orderId, paymentStarted]);
-
-  useEffect(() => {
-    let leftMiniApp = false;
-    const onVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') leftMiniApp = true;
-      if (document.visibilityState === 'visible' && leftMiniApp) backfillPendingConfirmation();
-    };
-    document.addEventListener('visibilitychange', onVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', onVisibilityChange);
-  }, [backfillPendingConfirmation]);
-
-  useEffect(() => {
-    if (!paymentReturned || !orderId) return;
-    observePaymentReturn({
-      source: 'query_param',
-      orderId,
-      route: `/profile/recharge/${orderId}`,
-    });
-  }, [orderId, paymentReturned]);
-
-  useEffect(() => {
     if (!order) return;
-    capturePaymentOrderStatusObserved(order);
     if (!orderId) return;
     clearPaymentOpenIfTerminal(orderId, order.status);
     if (order.status !== 'pending') setCanReopenPayment(false);
@@ -180,9 +99,14 @@ export default function PaymentPendingPage() {
       // 开通会改变签到加成，回到“我的”时不能继续显示开通前的缓存额度。
       void queryClient.invalidateQueries({ queryKey: paymentKeys.checkin() });
       void queryClient.invalidateQueries({ queryKey: vipKeys.status });
-      void queryClient.invalidateQueries({ queryKey: modelCatalogKeys.detail });
+      // 刚付完（10 分钟内）才自动选回畅聊：以后从订单列表再点进来，不能把用户自己换的模型改掉。
+      const paidAt = order.paid_at ? Date.parse(order.paid_at) : Number.NaN;
+      const justPaid = Number.isFinite(paidAt) && Date.now() - paidAt < 10 * 60 * 1000;
+      void (justPaid ? reselectFreeZoneAfterVip() : Promise.resolve(null))
+        .catch(() => null)
+        .finally(() => void queryClient.invalidateQueries({ queryKey: modelCatalogKeys.detail }));
     }
-  }, [order?.product_type, order?.status, queryClient]);
+  }, [order?.product_type, order?.status, order?.paid_at, queryClient]);
 
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -233,21 +157,7 @@ export default function PaymentPendingPage() {
             canReopenPayment={canReopenPayment}
             onReopenPayment={() => {
               if (!orderId) return;
-              void (async () => {
-                const opened = await reopenStoredPayment({
-                  orderId,
-                  paymentType: order.payment_type,
-                  reportCheckoutConfirmation,
-                });
-                if (!opened) {
-                  captureExternalPaymentOpenRequested({
-                    orderId,
-                    paymentType: order.payment_type,
-                    openFailureKind: 'storage_unavailable',
-                  });
-                  setCanReopenPayment(false);
-                }
-              })();
+              if (!reopenStoredPayment({ orderId })) setCanReopenPayment(false);
             }}
             onBack={goBack}
             arrivalHint={pendingArrivalHint}
@@ -256,7 +166,7 @@ export default function PaymentPendingPage() {
           <CompletedView
             order={order}
             // 支付已完成，本页不该再留在栈里等用户按返回退回来。
-            onHome={() => router.replace(returnTo ?? '/')}
+            onHome={() => router.replace(returnTo ?? '/characters')}
             onOrders={() => router.push('/profile/orders')}
           />
         ) : (

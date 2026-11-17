@@ -8,6 +8,7 @@ import type {
   SetUserAvatarRequest,
 } from '@miniapp/shared';
 import { requireTelegramAuth } from '../middleware/auth.js';
+import { registerUserOnboardingRoute } from './user-onboarding.js';
 import { getOrCreateDbUser } from '../lib/user.js';
 import {
   MiniappUserSettingsRepository,
@@ -21,6 +22,7 @@ import {
 } from '../lib/user-avatar.js';
 
 export default async function settingsRoutes(app: FastifyInstance) {
+  registerUserOnboardingRoute(app);
   const settings = new MiniappUserSettingsRepository();
 
   // @frontend-ready: true
@@ -54,12 +56,21 @@ export default async function settingsRoutes(app: FastifyInstance) {
 
         return reply.send(ok<PatchUserSettingsData>({ settings: toUserSettings(row) }));
       } catch (error) {
+        request.log.error(
+          {
+            event: 'user.settings.update_failed',
+            error_code: 'USER_SETTINGS_UPDATE_FAILED',
+            err: error,
+          },
+          'User settings update failed'
+        );
         const message = error instanceof Error ? error.message : 'Update settings failed';
         return reply.status(400).send(fail('BAD_REQUEST', message));
       }
     }
   );
 
+  // @frontend-ready: true
   app.post(
     '/api/users/avatar',
     { preHandler: [requireTelegramAuth], bodyLimit: 3 * 1024 * 1024 },
@@ -82,6 +93,14 @@ export default async function settingsRoutes(app: FastifyInstance) {
 
         return reply.send(ok<SetUserAvatarData>({ settings: toUserSettings(row) }));
       } catch (error) {
+        request.log.error(
+          {
+            event: 'user.avatar.import_failed',
+            error_code: 'USER_AVATAR_IMPORT_FAILED',
+            err: error,
+          },
+          'User avatar import failed'
+        );
         const message = error instanceof Error ? error.message : 'Avatar import failed';
         return reply.status(400).send(fail('BAD_REQUEST', message));
       }

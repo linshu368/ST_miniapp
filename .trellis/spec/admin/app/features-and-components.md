@@ -9,7 +9,7 @@
 5. **公告**：列表、创建/修改、发布状态和删除。
 6. **邀请裂变**：邀请中心/奖励规则配置及邀请关系查询。
 7. **回访赠送**：按明确用户标识赠送星尘，属于高风险计费写操作。
-8. **回复富文本规则**：三栏工作台维护版本化规则 source，提供五类模板起点、正则/flags/稳定 ID、受限 HTML/CSS、真实 renderer 预览、草稿保存、明确发布、历史与回滚；System Instructions 保留独立入口。
+8. **回复富文本规则**：两栏工作台维护版本化规则 source，提供五类模板起点、正则/flags/稳定 ID、受限 HTML/CSS、草稿保存、明确发布、历史与回滚；真实回复效果由用户端渲染链路负责，运营平台不提供富文本效果预览；System Instructions 保留独立入口。
 
 ## 组件契约
 
@@ -18,7 +18,7 @@
 - Modal/Drawer 关闭前处理未保存修改；破坏性操作必须展示对象、环境和后果并二次确认。
 - Table 的 row key 必须稳定；排序结果必须由稳定 ID 表达，禁止用展示名称充当身份。
 - 组件不可直接解释数据库列或 Supabase 原始错误，应消费 helper 返回的领域结果。
-- `TextPostprocessView` 必须复用单一 workbench session、preview runner、`textPostprocessApi` 与 `ReplyRenderer`；列表匹配、捕获组和舞台来自同一预览结果。流式模拟期间显示原文，完整/重置终态才运行 Worker/renderer，避免 partial fragment 竞争导致超时或按钮残留。
+- `TextPostprocessView` 必须复用单一 workbench session 与 `textPostprocessApi`；规则列表、编辑器、草稿、发布、历史和恢复都围绕同一份 source 状态工作。运营平台不维护富文本预览状态、Worker 或 renderer 副本。
 
 ## 高风险写操作
 

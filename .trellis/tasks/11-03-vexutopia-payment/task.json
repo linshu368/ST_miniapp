@@ -1,0 +1,60 @@
+{
+  "id": "vexutopia-payment",
+  "name": "vexutopia-payment",
+  "title": "支付供应商替换为 Vexutopia",
+  "description": "废弃子千易，支付宝/微信下单、回调验签、查单对账、告警全面切到 Vexutopia",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P0",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-03",
+  "completedAt": null,
+  "branch": "feat/vexutopia-payment",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "backend.business.wallet-payment",
+        "database.business.billing-payment",
+        "shared.business.wallet-payment-contracts",
+        "frontend.business.wallet-payment"
+      ]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": ["/profile/recharge", "/profile/recharge/:orderId", "/vip"],
+      "apis": ["POST /api/payment/orders", "GET /api/payment/orders/:id"],
+      "android": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 3000
+      },
+      "ios": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 3000
+      },
+      "api": {
+        "p95_baseline_ms": null,
+        "p95_target_ms": 3000
+      },
+      "measurement": {
+        "source": "Grafana Loki Faro st_page_ready（route 分组，tg_platform=android|ios）；接口取后端 pino 日志 recharge.order.create 与请求耗时，按路由分开算 P95",
+        "window": "发布后新版本至少 7 天同口径；单组有效样本少于 100 时标为低样本并延长观察"
+      },
+      "notes": "页面代码基本不改，目标为不退化。旧供应商已停用，旧接口耗时不可比，基线为无可见样本（null 不是 0）。接口门禁只有单值，填建单目标 3000ms；订单详情（含内联查单）另设 1500ms 目标。发布后分 Android/iOS 核对页面就绪 P95 与两个接口 P95，未有足够样本前不宣称达标。"
+    }
+  }
+}

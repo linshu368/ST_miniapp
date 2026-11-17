@@ -1,4 +1,5 @@
 import { Client } from 'pg';
+import { observation } from '../platform/observability/runtime.js';
 
 type LockRow = { locked?: boolean; unlocked?: boolean };
 
@@ -38,9 +39,11 @@ export async function withSessionAdvisoryLock<T>(
   let primaryError: unknown;
 
   try {
-    await client.connect();
+    await observation.observe('db.lease.connect', () => client.connect());
     connected = true;
-    const lock = await client.query('SELECT pg_try_advisory_lock($1::bigint) AS locked', [key]);
+    const lock = await observation.observe('db.lease.lock', () =>
+      client.query('SELECT pg_try_advisory_lock($1::bigint) AS locked', [key])
+    );
     if (lock.rows[0]?.locked !== true) return { acquired: false };
 
     acquired = true;
@@ -49,28 +52,31 @@ export async function withSessionAdvisoryLock<T>(
     primaryError = err;
     throw err;
   } finally {
+    let cleanupError: unknown;
     if (connected && acquired) {
       try {
-        const unlock = await client.query('SELECT pg_advisory_unlock($1::bigint) AS unlocked', [
-          key,
-        ]);
+        const unlock = await observation.observe('db.lease.unlock', () =>
+          client.query('SELECT pg_advisory_unlock($1::bigint) AS unlocked', [key])
+        );
         if (unlock.rows[0]?.unlocked !== true) {
           throw new Error('payment alert advisory lock was not released by its owning session');
         }
       } catch (err) {
         options.onCleanupError?.('unlock', err);
-        if (primaryError === undefined) throw err;
+        cleanupError = err;
       }
     }
 
     if (connected) {
       try {
-        await client.end();
+        await observation.observe('db.lease.close', () => client.end());
       } catch (err) {
         options.onCleanupError?.('close', err);
-        if (primaryError === undefined) throw err;
+        cleanupError ??= err;
       }
     }
+    // Even a failed unlock must close the owning session, which releases its advisory locks.
+    if (primaryError === undefined && cleanupError !== undefined) throw cleanupError;
   }
 }
 

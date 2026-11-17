@@ -1,0 +1,36 @@
+{
+  "id": "character-social",
+  "name": "character-social",
+  "title": "角色卡点赞收藏评论体验",
+  "description": "本地角色卡点赞收藏评论完整体验",
+  "status": "completed",
+  "dev_type": "fullstack",
+  "scope": "character-social",
+  "package": "backend",
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-29",
+  "completedAt": "2026-11-06",
+  "branch": "feat/character-social-release",
+  "base_branch": "dev",
+  "worktree_path": "/Users/qianpeijia/Documents/ChatGPT/角色扮演/ST_miniapp-character-social-release",
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "User authorized production release after local review on 2026-10-29. Scoped dev integration and main release in progress.\n2026-11-06 archive_stale：module knowledge 门禁未通过，未写回 spec（changes 模式缺少 module-updates.json）",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "frontend.business.character-lobby",
+        "backend.business.character-lobby",
+        "shared.business.character-lobby-contracts"
+      ]
+    }
+  }
+}

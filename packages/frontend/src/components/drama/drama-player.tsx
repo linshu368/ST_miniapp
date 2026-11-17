@@ -28,16 +28,24 @@ import { useDramaSwipe } from './use-drama-swipe';
 import { useDramaCommentsPanel } from './drama-comments-context';
 import {
   useDramaDetailQuery,
-  useDramaPlaybackQuery,
   useDramaSocialQuery,
   useDramaLikeMutation,
   usePreloadDramaPlayback,
 } from '@/lib/api/drama';
 import { resolveNextVideoId } from '@/lib/drama-playback';
 import { dramaTiming } from '@/lib/perf/drama-observer';
+import { useDramaStreamPlayback } from './use-drama-stream-playback';
+import {
+  loadDramaSource,
+  resolveResumeTarget,
+  alignResumeSeconds,
+  type LoadDramaSourceOptions,
+} from '@/lib/drama-media-source';
+import type HlsPlayer from 'hls.js';
+import { observeDramaHls, type HlsEvents } from '@/lib/perf/drama-hls';
 import { observeDramaMedia } from '@/lib/perf/drama-media';
 import type { DramaPlaybackTiming } from '@/lib/perf/drama-timing';
-import type { DramaSummary } from '@miniapp/shared';
+import type { DramaSummary, DramaPlayback, DramaPlaybackEngine } from '@miniapp/shared';
 import { cn } from '@/lib/utils';
 import { supabasePublicImageUrl } from '@/lib/supabase-image';
 import { markPageCriticalVisual } from '@/lib/perf/page-tracker';
@@ -72,6 +80,32 @@ interface DramaPlayerProps {
 function formatTime(seconds: number) {
   const safe = Number.isFinite(seconds) ? Math.max(0, Math.floor(seconds)) : 0;
   return `${Math.floor(safe / 60)}:${String(safe % 60).padStart(2, '0')}`;
+}
+
+/** 续播秒数对齐分片后，和引擎诊断回调一起交给 loadDramaSource。 */
+function resumeSourceOptions(
+  pending: Pick<DramaProgressRecord, 'videoId' | 'seconds'> | undefined,
+  videoId: string | null | undefined,
+  exact: boolean,
+  format: DramaPlayback['format'],
+  onEngine: (engine: DramaPlaybackEngine) => void
+): LoadDramaSourceOptions {
+  const seconds = pending && pending.videoId === videoId ? pending.seconds : undefined;
+  return {
+    startPosition:
+      seconds === undefined ? undefined : exact ? seconds : alignResumeSeconds(seconds, format),
+    onEngine,
+  };
+}
+
+function assignPlaybackEngine(
+  engineRef: { current: DramaPlaybackEngine | undefined },
+  timing: DramaPlaybackTiming
+) {
+  return (engine: DramaPlaybackEngine) => {
+    engineRef.current = engine;
+    timing.engine = engine;
+  };
 }
 
 const ignoreGesture = (target: EventTarget | null) =>
@@ -117,6 +151,8 @@ export function DramaPlayer({
     !initialVideoId && Boolean(resume.current && !resume.current.completed)
   );
   const resumeExactPosition = useRef(false);
+  // hls.js 已按该秒数预设 startPosition 时，onLoadedMetadata 命中同一目标值可跳过重复 seek。
+  const appliedStartPositionRef = useRef<number | undefined>(undefined);
   const initialSelectionPending = useRef(Boolean(initialVideoId));
   const [activeVideoId, setActiveVideoId] = useState<string | null>(
     () =>
@@ -155,7 +191,19 @@ export function DramaPlayer({
     });
   };
   // 播放与详情并行，元数据加载不阻塞首集的视频元素挂载或签名请求。
-  const playbackQuery = useDramaPlaybackQuery(id, activeVideoId ?? undefined);
+  const [retryVersion, setRetryVersion] = useState(0);
+  const timingRef = useRef<{
+    videoId: string | null;
+    retryVersion: number;
+    flow: DramaPlaybackTiming;
+  } | null>(null);
+  const { playbackQuery, recoverStream } = useDramaStreamPlayback(
+    id,
+    activeVideoId,
+    playbackOwner,
+    retryVersion,
+    timingRef
+  );
   const playback = playbackQuery.data;
   // Likes/comments are not needed for first frame. Start them after playback has
   // either resolved or failed so they cannot compete for the media URL.
@@ -168,16 +216,14 @@ export function DramaPlayer({
   const [buffering, setBuffering] = useState(true);
   const [mediaVisualReady, setMediaVisualReady] = useState(false);
   const [failed, setFailed] = useState(false);
-  const [retryVersion, setRetryVersion] = useState(0);
   const [retryState, setRetryState] = useState<'idle' | 'loading' | 'error'>('idle');
   const retryAttempt = useRef(0);
-  const timingRef = useRef<{
-    videoId: string | null;
-    retryVersion: number;
-    flow: DramaPlaybackTiming;
-  } | null>(null);
   const mediaTimingRef = useRef<ReturnType<typeof observeDramaMedia> | null>(null);
   const seekTimingRef = useRef<ReturnType<typeof dramaTiming.beginSeek> | null>(null);
+  // hls.js 实例只在 hls 路径存在；快进诊断靠它记录分片加载。
+  const hlsHandleRef = useRef<{ player: HlsPlayer; events: HlsEvents } | null>(null);
+  // 本次装载实际判定的播放引擎；原生路径下为 undefined。
+  const engineRef = useRef<DramaPlaybackEngine | undefined>(undefined);
   const [time, setTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [episodesOpen, setEpisodesOpen] = useState(false);
@@ -504,7 +550,6 @@ export function DramaPlayer({
     // 上一个 effect 已绑定当前尝试；媒体 effect 仍只跟随原有 src/retry 依赖。
     const timing = timingRef.current!.flow;
     timing.mark('source_set');
-    videoEl.src = playback.play_url;
     const mediaTiming = observeDramaMedia(videoEl, playback.play_url, timing);
     mediaTimingRef.current = mediaTiming;
     const start = async () => {
@@ -519,10 +564,12 @@ export function DramaPlayer({
         await videoEl.play();
         mediaTiming.resolved('automatic');
       } catch (error: unknown) {
-        mediaTiming.rejected(error);
         if (cancelled) return;
+        const retryMuted =
+          error instanceof DOMException && error.name === 'NotAllowedError' && !videoEl.muted;
+        mediaTiming.rejected(error, 'automatic', retryMuted);
         // 浏览器可能禁止有声自动播放，只降级一次；仍失败时保留手动播放入口。
-        if (error instanceof DOMException && error.name === 'NotAllowedError' && !videoEl.muted) {
+        if (retryMuted) {
           videoEl.muted = true;
           setPlaybackPreferences({ muted: true });
           try {
@@ -541,11 +588,38 @@ export function DramaPlayer({
         }
       }
     };
-    void start();
+    const sourceOptions = resumeSourceOptions(
+      resumePending.current ? resume.current : undefined,
+      playback.video_id,
+      resumeExactPosition.current,
+      playback.format,
+      assignPlaybackEngine(engineRef, timing)
+    );
+    appliedStartPositionRef.current = sourceOptions.startPosition;
+    const releaseSource = loadDramaSource(
+      videoEl,
+      playback,
+      () => {
+        void start();
+      },
+      () => {
+        if (!recoverStream()) {
+          setFailed(true);
+          setBuffering(false);
+        }
+      },
+      (hls, events) => {
+        hlsHandleRef.current = { player: hls, events };
+        observeDramaHls(hls, events, timing, Boolean(playback.inline_manifest));
+      },
+      sourceOptions
+    );
     return () => {
       cancelled = true;
       seekTimingRef.current?.('switched');
       seekTimingRef.current = null;
+      hlsHandleRef.current = null;
+      engineRef.current = undefined;
       if (playback.video_id && Number.isFinite(videoEl.currentTime) && videoEl.readyState >= 1) {
         sourceCheckpoint.current = {
           videoId: playback.video_id,
@@ -557,6 +631,7 @@ export function DramaPlayer({
       persistProgress.current(videoEl, true);
       mediaOwner.current = null;
       mediaTiming.dispose();
+      releaseSource();
       if (mediaTimingRef.current === mediaTiming) mediaTimingRef.current = null;
       // 换集、换剧或退出立即释放旧媒体，迟到的旧请求不能继续发声。
       videoEl.pause();
@@ -569,12 +644,15 @@ export function DramaPlayer({
     playback?.playable,
     playback?.video_id,
     playback?.expires_at,
+    playback?.format,
+    playback?.inline_manifest,
     retryVersion,
     retryState,
     setPlaybackPreferences,
     cancelPictureTap,
     setControlsVisible,
     embedded,
+    recoverStream,
   ]);
 
   useEffect(() => {
@@ -822,7 +900,7 @@ export function DramaPlayer({
       : undefined;
 
   useEffect(() => {
-    if (embedded && info && !info.cover_url) markPageCriticalVisual('/', 'absent');
+    if (embedded && info && !info.cover_url) markPageCriticalVisual('/watch', 'absent');
   }, [embedded, info]);
 
   useEffect(() => {
@@ -1011,7 +1089,7 @@ export function DramaPlayer({
             onLoadedData={() => {
               if (embedded) {
                 setMediaVisualReady(true);
-                markPageCriticalVisual('/', 'loaded');
+                markPageCriticalVisual('/watch', 'loaded');
               }
             }}
             onPause={(event) => {
@@ -1035,18 +1113,24 @@ export function DramaPlayer({
               ) {
                 resumePending.current = false;
                 // 重新进入已播完的单集从头看；中断恢复即使临近片尾也不能归零。
-                const target =
-                  !resumeExactPosition.current && progress.seconds >= video.duration - 0.5
-                    ? 0
-                    : Math.min(progress.seconds, video.duration);
+                const target = resolveResumeTarget({
+                  seconds: progress.seconds,
+                  duration: video.duration,
+                  exact: resumeExactPosition.current,
+                  format: playback?.format,
+                });
                 resumeExactPosition.current = false;
                 if (video.paused && target >= video.duration - 0.05) pausedAtEnd.current = true;
-                video.currentTime = target;
+                // hls.js 已按 startPosition 拉到同一目标分片时，不重复 seek 避免多一次清空重拉。
+                const alreadyApplied =
+                  hlsHandleRef.current !== null && appliedStartPositionRef.current === target;
+                if (!alreadyApplied) video.currentTime = target;
                 setTime(target);
               }
             }}
             onError={() => {
-              if (embedded) markPageCriticalVisual('/', 'error');
+              if (recoverStream()) return;
+              if (embedded) markPageCriticalVisual('/watch', 'error');
               if (videoEl?.getAttribute('src')) {
                 videoEl.pause();
                 setFailed(true);
@@ -1070,8 +1154,8 @@ export function DramaPlayer({
               loading="eager"
               decoding="async"
               fetchPriority="high"
-              onLoad={() => markPageCriticalVisual('/', 'loaded')}
-              onError={() => markPageCriticalVisual('/', 'error')}
+              onLoad={() => markPageCriticalVisual('/watch', 'loaded')}
+              onError={() => markPageCriticalVisual('/watch', 'error')}
               className={cn(
                 'pointer-events-none absolute inset-0 h-full w-full object-cover transition-opacity duration-150 motion-reduce:transition-none',
                 mediaVisualReady ? 'opacity-0' : 'opacity-100'
@@ -1097,8 +1181,8 @@ export function DramaPlayer({
           {!embedded && overlayVisible ? (
             <header className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-center justify-between [&_button]:pointer-events-auto [&_a]:pointer-events-auto px-4 pt-[calc(0.5rem+env(safe-area-inset-top))]">
               <Link
-                href={returnToHome ? '/' : '/dramas'}
-                aria-label={returnToHome ? '返回首页' : '返回短剧'}
+                href={returnToHome ? '/watch' : '/dramas'}
+                aria-label={returnToHome ? '返回放映' : '返回短剧'}
                 onClick={() => {
                   if (videoEl) persistProgress.current(videoEl, true);
                   if (returnToHome) useDramaLibraryStore.getState().setBrowse({ activeId: id });
@@ -1198,7 +1282,7 @@ export function DramaPlayer({
                 aria-label="短剧互动"
                 className={cn(
                   'pointer-events-none absolute right-2 z-20 flex flex-col items-center gap-2 [&_button]:pointer-events-auto',
-                  embedded ? 'bottom-[188px]' : 'bottom-[232px]'
+                  embedded ? 'bottom-[calc(188px+env(safe-area-inset-bottom))]' : 'bottom-[232px]'
                 )}
                 data-player-no-swipe
               >
@@ -1251,10 +1335,7 @@ export function DramaPlayer({
               </aside>
               <section
                 ref={controlsFooter}
-                className={cn(
-                  'pointer-events-none absolute inset-x-0 bottom-0 z-10 px-4 pt-6 [&_button]:pointer-events-auto [&_input]:pointer-events-auto [&_a]:pointer-events-auto',
-                  embedded ? 'pb-2' : 'pb-[calc(0.5rem+env(safe-area-inset-bottom))]'
-                )}
+                className="pointer-events-none absolute inset-x-0 bottom-0 z-10 px-4 pb-[calc(0.5rem+env(safe-area-inset-bottom))] pt-6 [&_button]:pointer-events-auto [&_input]:pointer-events-auto [&_a]:pointer-events-auto"
               >
                 <p
                   role="status"
@@ -1411,11 +1492,14 @@ export function DramaPlayer({
                           wasPlaying,
                           id,
                           currentVideoId ?? undefined,
-                          playback.delivery
+                          playback.delivery,
+                          hlsHandleRef.current ?? undefined,
+                          engineRef.current
                         );
                       }}
                       onScrubbingChange={setScrubbing}
                       onCommit={(seconds, wasPlaying) => {
+                        seekTimingRef.current?.positionSet();
                         pausedAtEnd.current = !wasPlaying && seconds >= duration - 0.05;
                         setTime(seconds);
                         setFinished(false);

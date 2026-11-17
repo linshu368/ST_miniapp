@@ -1,0 +1,59 @@
+{
+  "id": "creator-analytics-preview",
+  "name": "creator-analytics-preview",
+  "title": "创作数据：真实统计与分页落地",
+  "description": "本人创作数据与移动分页落地；用户确认测试通过后经dev发布",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "creator-analytics-preview",
+  "package": "frontend",
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-02",
+  "completedAt": null,
+  "branch": "codex/creator-analytics-dev",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "2026-11-02用户授权测试通过后dev→main发布，仅创作数据；作者署名保持原工作区待发布。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "frontend.business.character-lobby",
+        "backend.business.character-lobby",
+        "shared.business.character-lobby-contracts"
+      ]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": ["/creation", "/creation/data"],
+      "apis": ["GET /api/creator/analytics"],
+      "android": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 2500
+      },
+      "ios": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 2500
+      },
+      "api": {
+        "p95_baseline_ms": null,
+        "p95_target_ms": 1500
+      },
+      "measurement": {
+        "source": "后端现有creator analytics read耗时日志；Android/iOS新页面无已有专用实收基线，发布后分别用真实WebView采样到数据可见时间，若无足够样本明确缺口。",
+        "window": "发布后24小时按平台与release观察；不足样本标低样本，不用本地耗时替代线上P95。"
+      },
+      "notes": "新增只读页面无可见线上样本，三项基线均null。移动模拟验证布局/交互，不代表Android/iOS性能。后端复用现有请求日志，页面新增加载过程不阻塞其他入口。先核验生产版本和错误，再分别采样平台P95。"
+    }
+  }
+}

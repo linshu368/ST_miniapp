@@ -18,11 +18,11 @@ import type { LobbyRankingParams } from '@miniapp/shared';
 /** SQL 侧算出的每卡原始量 */
 export interface RawCardStats {
   characterId: string;
-  /** n_c：窗口内与该卡有过至少一轮的去重用户数 */
+  /** n_c：窗口内与该卡有过至少一轮、且首触该卡前已满足平台资历的去重用户数 */
   sampleSize: number;
   /** D30_c = AVG(LEAST(turns, 30)) / 30，取值 [0, 1]；无样本时为 null */
   d30Raw: number | null;
-  /** k_c：窗口内首次会话已结束满 48 小时的新客数 */
+  /** k_c：合格用户中，窗口内首次会话已结束满 48 小时的该卡新客数 */
   returnSampleSize: number;
   /** R48_c = 48 小时内回访的新客 / k_c；k_c = 0 时为 null */
   r48Raw: number | null;

@@ -8,7 +8,7 @@ import {
   VipPlansConfigSchema,
   VipTextDiscountRateSchema,
 } from '@miniapp/shared';
-import { configSchemas } from './configSchemas';
+import { configSchemas } from '@miniapp/admin-client';
 import { blankToNull, checkinAbsoluteCredits, vipPriceLabel } from './vipStrategyForm';
 
 describe('VIP strategy form', () => {
@@ -51,6 +51,25 @@ describe('VIP strategy form', () => {
     expect(configSchemas.vip_checkin_bonus_config.safeParse(-1).success).toBe(false);
     expect(blankToNull('  ')).toBeNull();
     expect(blankToNull('角标')).toBe('角标');
+  });
+
+  it('shares mixed wallet validation with the operational CLI', () => {
+    expect(
+      configSchemas.vip_checkin_bonus_config.parse({ bonus_credits: 120, main_credits: 30 })
+    ).toEqual({ bonus_credits: 120, main_credits: 30 });
+    expect(
+      configSchemas.vip_checkin_bonus_config.safeParse({ bonus_credits: 120, main_credits: -30 })
+        .success
+    ).toBe(false);
+    expect(
+      configSchemas.vip_checkin_bonus_config.safeParse({ bonus_credits: 1000000, main_credits: 1 })
+        .success
+    ).toBe(false);
+    const plans = structuredClone(DEFAULT_VIP_PLANS_CONFIG);
+    Object.assign(plans.month, { bonus_credits: 2000, bonus_main_credits: 1000 });
+    expect(configSchemas.vip_plans_config.parse(plans).month.bonus_main_credits).toBe(1000);
+    Object.assign(plans.week, { bonus_main_credits: 1 });
+    expect(configSchemas.vip_plans_config.safeParse(plans).success).toBe(false);
   });
 
   it('rejects discount and free-trial values outside the shared bounds', () => {

@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "metric": "startup.shell_ready.duration",
+  "unit": "millisecond",
+  "route": "/",
+  "environment": "production",
+  "telegram_ready": "sent",
+  "baselines": {
+    "B0": {
+      "file": "miniapp-startup-baseline-2026-10-30.json",
+      "sha256": "28ec6be90d35b19896db2ea456ef2a66cc7ed49b226d05e76f2fce358bda2a42",
+      "role": "before optimizations 1 and 2"
+    },
+    "B1": {
+      "file": "miniapp-startup-baseline-2026-11-02.json",
+      "role": "after optimizations 1 and 2; release scope confirmed by user"
+    }
+  },
+  "third_optimization": {
+    "scope": "optional startup-module splitting and pure navigation presentation extraction; retain existing production prefetch",
+    "publish_status": "not_published_by_this_delivery",
+    "release": null,
+    "window": null,
+    "results": null
+  },
+  "required_direct_comparisons": [
+    {
+      "candidate": "B1",
+      "reference": "B0",
+      "purpose": "observed combined change after optimizations 1 and 2"
+    },
+    {
+      "candidate": "C_after_third",
+      "reference": "B1",
+      "purpose": "observed incremental difference relative to first-two baseline"
+    },
+    {
+      "candidate": "C_after_third",
+      "reference": "B0",
+      "purpose": "observed total difference relative to original baseline"
+    }
+  ],
+  "formulas": {
+    "p95_reduction_ms": "reference.p95_s * 1000 - candidate.p95_s * 1000",
+    "p95_reduction_pct": "(reference.p95_s - candidate.p95_s) / reference.p95_s * 100",
+    "over_4s_reduction_percentage_points": "(reference.over_4s_count/reference.count - candidate.over_4s_count/candidate.count) * 100"
+  },
+  "B1_vs_B0": {
+    "p95_reduction_ms": 2240,
+    "p95_reduction_pct": 32.98969072164949,
+    "over_4s_reduction_percentage_points": 7.34126984126984
+  },
+  "interpretation_rules": [
+    "Compute each comparison directly from its own reference; do not add percentage gains, subgroup P95s, or stage P95s.",
+    "Always report count, window, release, P95, over-budget numerator/denominator, and platform/network groups.",
+    "B0 ios/unknown is not automatically comparable to B1 ios/all-networks.",
+    "Do not overwrite frozen snapshots on later queries; add a dated snapshot if values change.",
+    "C release must be the actually deployed production release after the user merges, not the feature-branch commit.",
+    "No C data or benefit is filled before real production samples exist.",
+    "The delivery base dev 69a722c6 has the same tree as main 7c4eea5d and includes intervening mobile-policy/prefetch changes absent from B1 release 5fffd6c. C-vs-B1/B0 are observed differences, not unique causal attribution to this patch.",
+    "If available, separately retain a pre-C snapshot for the immediately preceding production release to distinguish intervening changes; it supplements rather than replaces B0/B1."
+  ]
+}

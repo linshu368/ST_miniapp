@@ -1,3 +1,4 @@
+import { observation } from './observability/runtime.js';
 /**
  * backend / platform / runtime-config.ts
  *
@@ -9,7 +10,14 @@
  */
 
 import { getDomainDb } from '../lib/supabase.js';
+import { z } from 'zod';
 import { config } from './config.js';
+
+/** Deployment-only log alerts: disabling does not initialize any database-backed alert policy. */
+export function getLogAlertSettings() {
+  return { ...config.alerting.logs, webhookUrl: config.alerting.feishuWebhookUrl };
+}
+import type { LlmModelProvider } from '@miniapp/shared';
 export interface DramaPlaybackCdnConfig {
   tokenKey: string;
   sourceOrigin: string;
@@ -77,11 +85,10 @@ export function getDramaPlaybackCdnConfig(): DramaPlaybackCdnConfig | null {
   };
 }
 
-/** Deployment opt-in: a compatible backend may ship before the manual analytics migration. */
-export function getDramaTimingPersistenceConfig() {
+/** 短剧计时日志里标注的环境与服务端版本，供 Railway 日志导出后按 release 分窗对比。 */
+export function getDramaTimingLogContext() {
   const candidate = process.env.RAILWAY_GIT_COMMIT_SHA || process.env.SENTRY_RELEASE || 'unknown';
   return {
-    enabled: process.env.DRAMA_TIMING_PERSIST_ENABLED === 'true',
     environment: config.database.target,
     release: /^[a-zA-Z0-9_.-]{1,128}$/.test(candidate) ? candidate : 'unknown',
   };
@@ -93,19 +100,24 @@ export interface LlmProviderRuntimeConfig {
 }
 
 /** Provider credentials stay in backend runtime config; catalogs only store public provider IDs. */
-export function getLlmProviderRuntimeConfig(
-  provider: 'openrouter' | 'venice'
-): LlmProviderRuntimeConfig {
-  if (provider === 'openrouter') {
-    return {
-      baseUrl: process.env.LLM_UPSTREAM_URL || 'https://openrouter.ai/api/v1',
-      apiKey: process.env.LLM_API_KEY || process.env.OPENAI_API_KEY || '',
-    };
+export function getLlmProviderRuntimeConfig(provider: LlmModelProvider): LlmProviderRuntimeConfig {
+  switch (provider) {
+    case 'openrouter':
+      return {
+        baseUrl: process.env.LLM_UPSTREAM_URL || 'https://openrouter.ai/api/v1',
+        apiKey: process.env.LLM_API_KEY || process.env.OPENAI_API_KEY || '',
+      };
+    case 'venice':
+      return {
+        baseUrl: process.env.VENICE_API_BASE_URL || 'https://api.venice.ai/api/v1',
+        apiKey: process.env.VENICE_API_KEY || '',
+      };
+    case 'surplus':
+      return {
+        baseUrl: process.env.SURPLUS_API_BASE_URL || 'https://api.surplusintelligence.ai/v1',
+        apiKey: process.env.SURPLUS_API_KEY || '',
+      };
   }
-  return {
-    baseUrl: process.env.VENICE_API_BASE_URL || 'https://api.venice.ai/api/v1',
-    apiKey: process.env.VENICE_API_KEY || '',
-  };
 }
 
 export interface RuntimeConfigEntry {
@@ -190,7 +202,12 @@ async function fetchRuntimeConfigEntryDirect(
   const { data, error } = await bounded.maybeSingle();
 
   if (error) {
-    console.error(`[runtime-config] Failed to fetch ${key}:`, error);
+    observation.emit(
+      'config.read_failed',
+      'config.config',
+      { outcome: 'degraded', outcome_known: false, err: error },
+      'warn'
+    );
     return null;
   }
   if (!data) return null;
@@ -268,7 +285,12 @@ async function fetchRuntimeConfigEntriesDirect(
     .abortSignal(signal);
 
   if (error) {
-    console.error(`[runtime-config] Failed to fetch ${keys.join(' / ')}:`, error);
+    observation.emit(
+      'config.batch_read_failed',
+      'config.config',
+      { outcome: 'degraded', outcome_known: false, err: error },
+      'warn'
+    );
     return new Map();
   }
 
@@ -285,4 +307,80 @@ export function clearRuntimeConfigInflightReads(): void {
   entryInflight.clear();
   entriesInflight.clear();
   pendingReadBatch = null;
+}
+
+const streamManifestSchema = z
+  .object({
+    environment: z.enum(['test', 'production']),
+    videos: z
+      .array(
+        z
+          .object({
+            dramaId: z.string().uuid(),
+            videoId: z.string().uuid(),
+            uid: z.string().regex(/^[a-f0-9]{32}$/),
+          })
+          .strict()
+      )
+      .length(30),
+  })
+  .strict();
+
+export function getDramaStreamConfig(retainIdentity = false) {
+  if (
+    !retainIdentity &&
+    (process.env.DRAMA_STREAM_ENABLED !== 'true' || process.env.DRAMA_CDN_ENABLED === 'true')
+  )
+    return null;
+  try {
+    const manifest = streamManifestSchema.parse(
+      JSON.parse(process.env.DRAMA_STREAM_MANIFEST || '')
+    );
+    const id = process.env.DRAMA_STREAM_EXPERIMENT_ID || '';
+    const key = process.env.DRAMA_STREAM_EXPERIMENT_KEY || '';
+    if (
+      manifest.environment !== config.database.target ||
+      !/^[a-zA-Z0-9_-]{1,64}$/.test(id) ||
+      key.length < 32 ||
+      new Set(manifest.videos.map((v) => v.dramaId)).size !== 30 ||
+      new Set(manifest.videos.map((v) => v.videoId)).size !== 30 ||
+      new Set(manifest.videos.map((v) => v.uid)).size !== 30
+    )
+      return null;
+    // A valid catalog still owns these videos when the signing credentials are unavailable.
+    const signing = getDramaStreamSigningConfig();
+    return { ...manifest, id, key, signing };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Signing material for videos whose Stream UID comes from the database (migrated library).
+ * Independent of the A/B experiment: no manifest, no enrollment. Invalid or absent => null.
+ */
+export function getDramaStreamSigningConfig() {
+  const host = process.env.DRAMA_STREAM_HOST || '';
+  const keyId = process.env.DRAMA_STREAM_KEY_ID || '';
+  const privateKey = process.env.DRAMA_STREAM_PRIVATE_KEY || '';
+  if (
+    !/^customer-[a-zA-Z0-9-]+\.cloudflarestream\.com$/.test(host) ||
+    !/^[a-zA-Z0-9_-]+$/.test(keyId) ||
+    !privateKey
+  )
+    return null;
+  return { host, keyId, privateKey };
+}
+
+/**
+ * Migration phase switch. Default (unset or anything but 'false') keeps legacy Supabase videos playable.
+ * 'false' ends the legacy library: only dramas whose every video is a ready Stream video are listed.
+ */
+export function isDramaLegacySupabaseEnabled() {
+  return process.env.DRAMA_LEGACY_SUPABASE_ENABLED !== 'false';
+}
+
+/** Registered Mujian origin only; no Vercel wildcard or user-controlled hostname. */
+export function getMujianOrigin(): string {
+  return 'https://short-drama-demo-sigma.vercel.app';
 }

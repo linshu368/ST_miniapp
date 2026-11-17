@@ -4,7 +4,6 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Loader2 } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
-import { PH_CHAT_REPLAY_VISIBLE_CLASS } from '@/lib/telemetry/masking';
 import { ChatReplyPreferences } from './chat-reply-preferences';
 import { ChatThinkingToggle } from './chat-thinking';
 import {
@@ -37,6 +36,8 @@ interface ChatComposerProps {
   onDetailsDefaultOpenChange: (value: ReplyDetailsDefaultOpen) => void;
   thinkingEnabled: boolean;
   onThinkingEnabledChange: (enabled: boolean) => void;
+  /** 浮在输入区上方的一句轻提示（例如当前模型关不掉深度思考）；计时由调用方管 */
+  notice?: string | null;
 }
 
 export function ChatComposer({
@@ -53,6 +54,7 @@ export function ChatComposer({
   onDetailsDefaultOpenChange,
   thinkingEnabled,
   onThinkingEnabledChange,
+  notice,
 }: ChatComposerProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const compositionActiveRef = useRef(false);
@@ -95,12 +97,16 @@ export function ChatComposer({
   };
 
   return (
-    <div
-      className={cn(
-        'flex min-h-0 max-h-full shrink flex-col bg-background px-2.5 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2',
-        PH_CHAT_REPLAY_VISIBLE_CLASS
-      )}
-    >
+    <div className="relative flex min-h-0 max-h-full shrink flex-col bg-background px-2.5 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2">
+      {notice ? (
+        // 回复偏好条会裁掉溢出的内容，所以提示浮在整个输入区上方、靠右对着深度思考按钮
+        <p
+          role="status"
+          className="pointer-events-none absolute bottom-full right-3 z-20 mb-1 max-w-[min(18rem,calc(100%-1.5rem))] rounded-xl border border-border bg-card px-3 py-2 text-[12px] leading-snug text-foreground shadow-[0_8px_24px_rgb(0_0_0/45%)]"
+        >
+          {notice}
+        </p>
+      ) : null}
       <ChatReplyPreferences
         maxContentHeight={limits.preferences}
         detailsDefaultOpen={detailsDefaultOpen}

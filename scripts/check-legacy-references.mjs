@@ -57,9 +57,51 @@ const RULES = [
   {
     id: 'dropped-schema-sql',
     pattern:
-      /\b(?:from|join|into|update|table)\s+(?:st_platform|st_users|st_infra|miniapp_simulation|growth)\.\w+/gi,
+      /\b(?:from|join|into|update|table)\s+(?:st_platform|st_users|st_infra|miniapp_simulation|growth|cs_platform)\.\w+/gi,
     message:
-      'st_platform / st_users / st_infra（088）、growth（089）、miniapp_simulation（090）已删库。渠道归因走 miniapp_traffic',
+      'st_platform / st_users / st_infra（088）、growth（089）、miniapp_simulation（090）、cs_platform（20261117）已删库。渠道归因走 miniapp_traffic，客服在独立仓库的 cs schema',
+  },
+
+  {
+    id: 'moved-to-ops-sql',
+    pattern:
+      /\b(?:from|join|into|update|table)\s+(?:app_core\.alert_incidents|app_core\.alert_delivery_attempts|miniapp_features\.free_zone_events)\b/gi,
+    message:
+      '数据库重组 2b 已迁到 ops：ops.alert_incidents、ops.alert_delivery_jobs、ops.free_zone_events。旧名只剩发布窗口内的兼容视图',
+    // 建表的历史迁移，以及迁移本身（SET SCHEMA 与兼容视图）。
+    allow: [
+      'packages/shared/migrations/20261010_payment_alerting_foundation.sql',
+      'packages/shared/migrations/20261112_free_zone.sql',
+      'packages/shared/migrations/20261117_db_reorg_ops_alerts_free_zone_events.sql',
+      'packages/shared/migrations/20261117_db_reorg_drop_ops_compat_views.sql',
+    ],
+  },
+  {
+    id: 'moved-to-user-marks',
+    pattern:
+      /\b(?:vip_entry_seen_at|characters_last_seen_at|image_plaza_first_share_completed_at|growth_prompt_states|(?:choice|status|memory)_full_rules_remaining|claim_instruction_slot_modes)\b/g,
+    message:
+      '数据库重组 3b-1：一次性标记在 miniapp_features.user_marks（UserMarksRepository / touch_user_mark），' +
+      '"已完成首发分享"= billing.image_plaza_share_rewards 有记录，指令槽旧计数器已删。新函数不要再写 settings 这些列；' +
+      '已在 TEST 执行过的迁移别改原文件，另写 forward-fix（参考 20261117_db_reorg_p3b1_video_share_first_share.sql）',
+    // 建列/建表/写入的历史迁移与断言脚本，以及 3b-1 迁移本身。
+    allow: [
+      'packages/shared/migrations/20260921_vip_billing_schema.sql',
+      'packages/shared/migrations/20260924_vip_billing_schema_pg_cron_compat.sql',
+      'packages/shared/migrations/20261012_image_plaza_v2.sql',
+      'packages/shared/migrations/20261013_image_plaza_seed_catalog.sql',
+      'packages/shared/migrations/20261013_platform_instruction_slot_windows.sql',
+      'packages/shared/migrations/20261013_session_scoped_instruction_slot_modes.sql',
+      // Historical video definition; the 20261117 video-share forward-fix removes this write.
+      // Never rewrite applied SQL. Deploy the forward-fix after the video definition, including reruns.
+      'packages/shared/migrations/20261027_media_plaza_video.sql',
+      'packages/shared/migrations/20261113_growth_prompt_states.sql',
+      'packages/shared/migrations/20261117_db_reorg_p3b1_user_marks.sql',
+      'packages/shared/migrations/20261117_db_reorg_p3b1_user_marks_contract.sql',
+      'packages/shared/migrations/20261117_db_reorg_p3b1_clear_orphan_first_share.sql',
+      'packages/shared/migrations/20261117_db_reorg_p3b1_video_share_first_share.sql',
+      'scripts/platform-instruction-slot-windows-assert.sql',
+    ],
   },
 
   // ── 已整包删除的 package ────────────────────────────────────────────────
@@ -84,11 +126,25 @@ const RULES = [
       /\bGetModelTiersData\b|\buseModelTiersQuery\b|\/api\/platform\/models\b|\bllm_model_tiers\b|\blegacyTiersToCatalog\b/g,
     message:
       '旧模型档位已退场：runtime_config 只读 llm_model_catalog（040 起），对外只有 GET /api/v1/models/config（PublicModelCatalog）一种形状，前端走 useModelCatalogQuery',
+    // 20261117 重组 1e：删除遗留的 llm_model_tiers 运行配置行本身。
+    allow: ['packages/shared/migrations/20261117_db_reorg_managed_config_keys.sql'],
   },
   {
     id: 'st-handle',
     pattern: /\bst_handle\b|\bst_initialized_at\b|\bderiveStHandle\b|st-bridge/g,
     message: 'ST 身份映射已退场（迁移 111/112）。用户身份只用 app_core.users.tg_id',
+    // Read-only historical eligibility evidence: production still retains the optional marker.
+    // No provisioning, identity mapping or writes to the retired column.
+    allow: [
+      'packages/shared/migrations/20261111_mujian_entry_funnel.sql',
+      'scripts/mujian-entry-assertions.sql',
+      // 20261117 重组 1d：删除 st_handle 列本身（st_initialized_at 仍作幕间资格依据，阶段 3 迁走）。
+      'packages/shared/migrations/20261117_db_reorg_cleanup.sql',
+      // 20261117 重组 3a：st_initialized_at 作只读历史证据搬到 miniapp_traffic.user_attributions，并删 users 上的列。
+      'packages/shared/migrations/20261117_db_reorg_p3a_user_attributions.sql',
+      'packages/shared/migrations/20261117_db_reorg_p3a_user_attributions_contract.sql',
+      'packages/shared/migrations/20261117_db_reorg_p3a_drop_test_funnel_stats.sql',
+    ],
   },
 
   // ── 一个关键行为一条主路径 ──────────────────────────────────────────────
@@ -99,8 +155,13 @@ const RULES = [
       'experience.chat_history 只能由 ConversationHistoryRepository 读写（列归属见该文件头注释）',
     allow: [
       'packages/backend/src/infrastructure/repositories/ConversationHistoryRepository.ts',
+      // Existing repository delegation extracted upstream; not an independent writer.
+      'packages/backend/src/infrastructure/repositories/conversation-history-billing.ts',
       // OpenRouter 元数据回填先从其专属表有界筛选候选 ID，再只读父记录；不写 chat_history。
       'packages/backend/src/infrastructure/repositories/OpenRouterChatHistoryRepository.ts',
+      // Surplus 无专属元数据表；该 provider-specific helper 仅由 ConversationHistoryRepository
+      // 委托做未结算行的有界只读扫描，不提供写入出口。
+      'packages/backend/src/infrastructure/repositories/surplus-billing-recovery.ts',
       // 集成测试直连库造数据、断言与清理，不经业务链路
       'packages/backend/src/infrastructure/repositories/conversations.integration.test.ts',
       // Local disposable PG/PostgREST fixtures only; no application writer or remote database.
@@ -116,7 +177,7 @@ const RULES = [
       'packages/backend/src/features/generation/upstream.ts',
       'packages/backend/src/features/generation/upstream.test.ts',
       // Shared provider capability data declares the relative path; only upstream.ts executes it.
-      'packages/shared/src/api/models.ts',
+      'packages/shared/src/api/model-providers.ts',
       // 图片广场非流式辅助任务：作品提示词翻译/标签分类，不生成聊天回复、不读写聊天历史，
       // 不进入用户聊天计费；调用仍归 generation/ 管理，不能豁免整个目录。
       'packages/backend/src/features/generation/image-plaza-prompt-translate.ts',
@@ -148,6 +209,8 @@ const RULES = [
       'packages/shared/migrations/20260921_vip_payment_fulfillment.sql',
       // T3A 只替换同一函数体，让履约读取订单快照而不是写死 1399/2888。
       'packages/shared/migrations/20260923_vip_strategy_config.sql',
+      // 同一履约出口支持两钱包订单快照，保留原结算幂等和收入语义。
+      'packages/shared/migrations/20261105_vip_mixed_rewards.sql',
       // 告警 foundation 仅在迁移 preflight 中确认既有履约出口仍存在，
       // 不调用、替换或新增任何应用侧结算路径。
       'packages/shared/migrations/20261010_payment_alerting_foundation.sql',

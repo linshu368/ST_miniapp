@@ -5,8 +5,8 @@ scope: database
 category: infrastructure
 status: active
 owners: [database]
-last_verified_task: .trellis/tasks/10-27-media-plaza-schema-move/
-last_verified_at: 2026-10-27
+last_verified_task: .trellis/tasks/11-04-lobby-fast-entry/
+last_verified_at: 2026-11-04
 ---
 
 # Schema、RLS 与迁移执行基建
@@ -16,6 +16,8 @@ last_verified_at: 2026-10-27
 定义九域归属、跨域边界、RLS/grant、日期命名、账本治理和 `psql` 单文件迁移纪律。生产迁移必须测试优先、人工执行并记录 shape、权限、容量与回滚。
 
 ## 当前状态
+
+2026-11-11 本地候选：chat_history_display_metadata 开启 RLS，撤销 PUBLIC/anon/authenticated/service 默认权限后仅给 service SELECT/INSERT/UPDATE，以保持原 admission SECURITY INVOKER。投影视图为 security_invoker，分页函数仅 service 可执行且核验 owner；有限回填函数仅运维角色，失效 trigger 函数固定 search_path 并撤销外部执行。旧 history RLS/ACL 的生产差异仍须独立核验，本次不默认为已修复。
 
 高级图片应用退场后，`20260928_remove_advanced_image_config.sql` 作为待人工执行的 forward migration，删除四个 `image_advanced_*` runtime/Admin 配置并以 managed-key、validator 和 CHECK 三层阻止回写；普通图片 `feature_free_trial_limits.basic_image`、历史图片 attempt 与结算对象不变。
 
@@ -74,3 +76,11 @@ last_verified_at: 2026-10-27
 ## 2026-10-26 轻量经营统计
 
 `20261026_grafana_light_core.sql` 新增 miniapp_analytics.grafana_core_daily 日/型号派生汇总，运行时不依赖。owner-only refresh_grafana_core_day 一次仅处理近14天内的一天，先按 created_at 范围过滤后关联计费/供应商标量，保留实际成本覆盖率、去重每日用户和实际支付/星尘口径。只有一个30分钟 cron 更新今天/昨天，caller statement5s/lock1s/禁并行、事务 advisory lock，失败保留旧快照；读者仅 SELECT 聚合，不能刷新或接触正文。退出11个旧全历史 cron，保留其旧数据对象。生产新 cron 在实测与引导填充前关闭，执行状态见任务10-26-grafana-light-core。
+
+## 前几屏优质轮换（2026-11-02，本地未发布）
+
+20261102_lobby_quality_rotation.sql新增miniapp_features用户批次/曝光摘要，RLS+后端CRUD，用户/角色FK到app_core并级联删除；评分表增加qualified-v1与可信证据三列，不回填旧分。增量validator保留owner/有效ACL/grant option及罕见CHECK OID/convalidated，首次安装包装避免重放抹去后续校验。先迁移后Backend与合格评分刷新；应用发布后全量生效，兼容旧配置字段，不修改已执行迁移。故障回退保留数据；远端执行及部署状态以本任务发布记录为准。
+
+## 大厅评分成功记录
+
+`miniapp_features.lobby_ranking_refresh_state` 界定同一算法与参数的最近一次成功计算，仅评分任务读写。单行、无用户数据，RLS开启，客户端无权限。由 `20261104_lobby_ranking_refresh_state.sql` 新增；旧程序可忽略。

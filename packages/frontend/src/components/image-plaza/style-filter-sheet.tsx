@@ -1,8 +1,5 @@
 'use client';
 
-import { ChevronDown } from 'lucide-react';
-import { useMemo } from 'react';
-import type { GetImagePlazaFeedData } from '@miniapp/shared';
 import {
   Sheet,
   SheetClose,
@@ -11,6 +8,9 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet';
+import type { GetImagePlazaFeedData } from '@miniapp/shared';
+import { ChevronDown } from 'lucide-react';
+import { useMemo } from 'react';
 
 export function StyleFilterSheet(props: {
   tags: GetImagePlazaFeedData['tags'];
@@ -20,34 +20,7 @@ export function StyleFilterSheet(props: {
   onOpen?: () => void;
   onChange: (tags: string[]) => void;
 }) {
-  const groups = useMemo(() => {
-    const grouped = new Map<
-      string,
-      {
-        id: string;
-        label: string;
-        sortOrder: number;
-        layout: 'chips' | 'grid';
-        tags: GetImagePlazaFeedData['tags'];
-      }
-    >();
-    for (const tag of props.tags) {
-      // Backend-first 发布；若误回滚到旧 Backend，仍将无分组目录安全归入默认组。
-      const groupId = tag.group_id || 'style';
-      const group = grouped.get(groupId) ?? {
-        id: groupId,
-        label: tag.group_label || '风格',
-        sortOrder: tag.group_sort_order ?? 0,
-        layout: tag.group_layout || 'chips',
-        tags: [],
-      };
-      group.tags.push(tag);
-      grouped.set(groupId, group);
-    }
-    return [...grouped.values()].sort(
-      (a, b) => a.sortOrder - b.sortOrder || a.id.localeCompare(b.id)
-    );
-  }, [props.tags]);
+  const groups = useMemo(() => groupStyleTags(props.tags), [props.tags]);
   const allTagIds = useMemo(() => props.tags.map((tag) => tag.id), [props.tags]);
   const activeTagIds = props.selected.length ? props.selected : allTagIds;
   const activeTagSet = new Set(activeTagIds);
@@ -141,5 +114,34 @@ export function StyleFilterSheet(props: {
         </div>
       </SheetContent>
     </Sheet>
+  );
+}
+
+function groupStyleTags(tags: GetImagePlazaFeedData['tags']) {
+  const grouped = new Map<
+    string,
+    {
+      id: string;
+      label: string;
+      sortOrder: number;
+      layout: 'chips' | 'grid';
+      tags: GetImagePlazaFeedData['tags'];
+    }
+  >();
+  for (const tag of tags) {
+    // Backend-first 发布；若误回滚到旧 Backend，仍将无分组目录安全归入默认组。
+    const groupId = tag.group_id || 'style';
+    const group = grouped.get(groupId) ?? {
+      id: groupId,
+      label: tag.group_label || '风格',
+      sortOrder: tag.group_sort_order ?? 0,
+      layout: tag.group_layout || 'chips',
+      tags: [],
+    };
+    group.tags.push(tag);
+    grouped.set(groupId, group);
+  }
+  return [...grouped.values()].sort(
+    (a, b) => a.sortOrder - b.sortOrder || a.id.localeCompare(b.id)
   );
 }

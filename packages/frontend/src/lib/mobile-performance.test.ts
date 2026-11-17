@@ -1,3 +1,11 @@
+/*
+ * @Author: whc 952987912@qq.com
+ * @Date: 2026-11-04 09:34:09
+ * @LastEditors: whc 952987912@qq.com
+ * @LastEditTime: 2026-11-04 09:34:36
+ * @FilePath: \ST_miniapp\packages\frontend\src\lib\mobile-performance.test.ts
+ * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
+ */
 import { describe, expect, it } from 'vitest';
 
 import { getMobilePerformancePolicy, mobilePlatformGroup } from './mobile-performance';
@@ -17,7 +25,28 @@ describe('mobile performance policy', () => {
 
     expect(android.routePriority.slice(0, 2)).toEqual(['characters', 'home']);
     expect(ios.routePriority.slice(0, 2)).toEqual(['home', 'dramas']);
-    expect(android.characters.initialRenderCount).toBeLessThanOrEqual(6);
+    expect(android.routeWarmupOrder.slice(0, 2)).toEqual(['/characters', '/profile']);
+    expect(ios.routeWarmupOrder.slice(0, 2)).toEqual(['/profile', '/characters']);
+    expect(android.backgroundRoutePrefetchLimit).toBe(1);
+    expect(ios.backgroundRoutePrefetchLimit).toBe(2);
+    expect(getMobilePerformancePolicy('unknown').backgroundRoutePrefetchLimit).toBe(2);
+    expect(android.lobbyRequestTimeoutMs).toBe(4_000);
+    expect(getMobilePerformancePolicy('android_x').lobbyRequestTimeoutMs).toBe(4_000);
+    expect(ios.lobbyRequestTimeoutMs).toBe(20_000);
+    expect(getMobilePerformancePolicy('unknown').lobbyRequestTimeoutMs).toBe(20_000);
+    expect(android.characters).toMatchObject({
+      initialRenderCount: 4,
+      renderBatchSize: 4,
+      eagerImageCount: 1,
+      highPriorityImageCount: 1,
+    });
+    expect(ios.characters).toMatchObject({
+      initialRenderCount: 4,
+      renderBatchSize: 6,
+      eagerImageCount: 2,
+      highPriorityImageCount: 1,
+    });
+    expect(getMobilePerformancePolicy('unknown').characters.initialRenderCount).toBe(4);
     expect(ios.dramas.initialRenderCount).toBeLessThanOrEqual(6);
     expect(android.imagePlaza.list.initialRenderCount).toBeLessThanOrEqual(6);
     expect(ios.imagePlaza.list.initialRenderCount).toBeLessThanOrEqual(6);

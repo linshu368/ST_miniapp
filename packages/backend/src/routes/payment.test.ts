@@ -1,20 +1,46 @@
+import { signEpay } from '../infrastructure/payment/epay-protocol.js';
 import Fastify from 'fastify';
-import type { FastifyReply } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { RequestLogger } from '../lib/logger.js';
 import type { MiniappPaymentOrderRow } from '../infrastructure/repositories/MiniappPaymentOrderRepository.js';
-import type { PaymentQueryResult } from '../infrastructure/payment/ZqPaymentGateway.js';
+import type { PaymentQueryResult } from '../infrastructure/payment/PaymentGateway.js';
 import { insertUserNotification } from '../lib/notifications.js';
 import { checkInviteFirstPaidReward } from '../lib/invite-rewards.js';
-import { handleZqPayWebhook } from './payment.js';
+import { handleEpayNotification } from '../features/payment/usecases/EpayNotification.js';
+import { EpayPaymentGateway } from '../infrastructure/payment/EpayPaymentGateway.js';
+import { paymentClientIp } from './payment.js';
+import { fastifyLoggerOptions } from '../lib/logger.js';
+import pino from 'pino';
 import {
   isOrderFulfilled,
   reconcileWithGateway,
   settlePaidOrder,
 } from '../features/payment/usecases/PaymentSettlement.js';
 import { toPaymentOrder } from '../infrastructure/repositories/MiniappPaymentOrderRepository.js';
-import { observePaymentOrderSettled } from '../features/payment/usecases/PaymentOrderTelemetry.js';
+
+const APP_KEY = 'fixture-app-secret';
+const ORDER_ID = 'EP' + 'a'.repeat(30);
+
+vi.mock('../platform/config.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../platform/config.js')>();
+  return {
+    config: {
+      ...actual.config,
+      payment: {
+        ...actual.config.payment,
+        enabled: true,
+        returnUrl: 'https://backend.example/api/payment/return',
+        notifyUrl: 'https://backend.example/api/payment/notify/ttzf',
+        epay: {
+          baseUrl: 'https://provider.example/api',
+          appId: '1001',
+          appKey: 'fixture-app-secret',
+        },
+      },
+    },
+  };
+});
 
 vi.mock('../lib/notifications.js', () => ({
   insertUserNotification: vi.fn(async () => undefined),
@@ -23,34 +49,6 @@ vi.mock('../lib/notifications.js', () => ({
 vi.mock('../lib/invite-rewards.js', () => ({
   checkInviteFirstPaidReward: vi.fn(async () => undefined),
 }));
-
-vi.mock('../features/payment/usecases/PaymentOrderTelemetry.js', () => ({
-  observePaymentOrderSettled: vi.fn(),
-  observePaymentOrderFailed: vi.fn(),
-}));
-
-function createReply() {
-  const state = {
-    statusCode: 200,
-    contentType: '',
-    body: undefined as unknown,
-  };
-  const reply = {
-    status(code: number) {
-      state.statusCode = code;
-      return this;
-    },
-    type(contentType: string) {
-      state.contentType = contentType;
-      return this;
-    },
-    send(body: unknown) {
-      state.body = body;
-      return this;
-    },
-  } as unknown as FastifyReply;
-  return { reply, state };
-}
 
 function createLog(): RequestLogger {
   const logger = {
@@ -74,7 +72,7 @@ function createOrder(overrides: Partial<MiniappPaymentOrderRow> = {}): MiniappPa
     amount_cents: 600,
     credits_amount: 600,
     bonus_credits: 0,
-    provider_transaction_id: null,
+    provider_transaction_id: 'tx_abc123',
     credits_added: false,
     created_at: '2026-08-21T09:00:00.000Z',
     expires_at: '2026-08-21T09:15:00.000Z',
@@ -94,21 +92,6 @@ function createOrder(overrides: Partial<MiniappPaymentOrderRow> = {}): MiniappPa
   };
 }
 
-/** 子千易实测不下发 sign_type / timestamp（见 0ce6eb2），所以基准回调不带这两个字段，
- *  需要它们的用例自己加。 */
-function createNotify(overrides: Record<string, string> = {}) {
-  return {
-    pid: '55',
-    trade_no: 'ZQ-order-1',
-    out_trade_no: 'MA-order-1',
-    type: 'wxpay',
-    trade_status: 'TRADE_SUCCESS',
-    money: '6.00',
-    sign: 'signed',
-    ...overrides,
-  };
-}
-
 function createOrders(order = createOrder()) {
   return {
     findById: vi.fn(async () => order),
@@ -122,348 +105,220 @@ function createOrders(order = createOrder()) {
           settled_by: settledBy,
         })
     ),
+    attachProviderTransaction: vi.fn(async () => true),
     reopenExpired: vi.fn(async () => undefined),
   };
 }
 
-function createGateway(options: { merchant?: boolean; signature?: boolean } = {}) {
-  return {
-    isExpectedMerchant: vi.fn(() => options.merchant ?? true),
-    verifyNotifySign: vi.fn(() => options.signature ?? true),
-  };
-}
+beforeEach(() => vi.clearAllMocks());
 
-function warnReasons(log: RequestLogger): string[] {
-  const warn = log.sys.warn as unknown as { mock: { calls: unknown[][] } };
-  return warn.mock.calls
-    .map((call) => call[0] as { reason?: string })
-    .map((payload) => payload?.reason)
-    .filter((reason): reason is string => typeof reason === 'string');
-}
-
-beforeEach(() => {
-  vi.clearAllMocks();
+describe('payment request privacy and client address', () => {
+  it('uses only the validated Railway edge address in deployment and socket IP locally', () => {
+    const request = {
+      ip: '127.0.0.1',
+      headers: { 'x-real-ip': '203.0.113.10', 'x-forwarded-for': '198.51.100.1' },
+    };
+    expect(paymentClientIp(request, true)).toBe('203.0.113.10');
+    expect(paymentClientIp(request, false)).toBe('127.0.0.1');
+    expect(
+      paymentClientIp({ ...request, headers: { 'x-real-ip': '203.0.113.10,198.51.100.1' } }, true)
+    ).toBe('');
+    expect(paymentClientIp({ ...request, headers: {} }, true)).toBe('');
+  });
+  it('does not emit callback signatures, query fields or IPs in automatic Fastify logs', async () => {
+    const lines: string[] = [];
+    const options = fastifyLoggerOptions();
+    delete options.transport;
+    const logger = pino(
+      { ...options, level: 'info' },
+      {
+        write: (line: string) => {
+          lines.push(line);
+        },
+      }
+    );
+    const app = Fastify({ loggerInstance: logger });
+    app.get('/api/payment/notify/ttzf', () => 'fail');
+    try {
+      await app.inject(
+        '/api/payment/notify/ttzf?sign=fixture-sign&name=private-name&clientip=203.0.113.10'
+      );
+      const output = lines.join('');
+      expect(output).toContain('/api/payment/notify/ttzf');
+      for (const value of ['fixture-sign', 'private-name', '203.0.113.10'])
+        expect(output).not.toContain(value);
+    } finally {
+      await app.close();
+    }
+  });
 });
 
-describe('handleZqPayWebhook', () => {
-  it('completes a valid order and writes one arrival notification', async () => {
-    const orders = createOrders();
-    const { reply, state } = createReply();
+function notification(overrides: Record<string, string> = {}) {
+  const fields = {
+    pid: '1001',
+    trade_no: 'tx_abc123',
+    out_trade_no: ORDER_ID,
+    type: 'wxpay',
+    name: 'fixture',
+    money: '6.000',
+    trade_status: 'TRADE_SUCCESS',
+    sign_type: 'MD5',
+    ...overrides,
+  };
+  return new URLSearchParams({ ...fields, sign: signEpay(fields, APP_KEY) }).toString();
+}
 
-    await handleZqPayWebhook(createNotify(), reply, createGateway(), orders, createLog());
-
-    expect(orders.complete).toHaveBeenCalledWith('MA-order-1', 'ZQ-order-1', 'webhook');
-    expect(insertUserNotification).toHaveBeenCalledOnce();
-    expect(observePaymentOrderSettled).toHaveBeenCalledWith(
-      {
-        orderId: 'MA-order-1',
-        userId: '00000000-0000-0000-0000-000000000001',
-        paymentType: 'wxpay',
-        settledBy: 'webhook',
-      },
-      expect.anything()
-    );
-    expect(state).toMatchObject({
-      statusCode: 200,
-      contentType: 'text/plain',
-      body: 'success',
-    });
-  });
-
-  it('runs the invite first-paid reward hook for the credited order', async () => {
-    const orders = createOrders();
-    const { reply } = createReply();
-
-    await handleZqPayWebhook(createNotify(), reply, createGateway(), orders, createLog());
-
-    expect(checkInviteFirstPaidReward).toHaveBeenCalledWith(
-      { userId: '00000000-0000-0000-0000-000000000001', orderId: 'MA-order-1' },
-      expect.anything()
-    );
-  });
-
-  it('accepts a callback that carries sign_type=RSA and a fresh timestamp', async () => {
-    const orders = createOrders();
-    const { reply, state } = createReply();
-
-    await handleZqPayWebhook(
-      createNotify({ sign_type: 'RSA', timestamp: Math.floor(Date.now() / 1000).toString() }),
-      reply,
-      createGateway(),
+describe('epay settlement and notification', () => {
+  async function deliver(query = notification(), order = createOrder({ id: ORDER_ID })) {
+    const orders = createOrders(order);
+    const result = await handleEpayNotification(query, {
+      gateway: new EpayPaymentGateway(),
       orders,
-      createLog()
-    );
-
-    expect(orders.complete).toHaveBeenCalledOnce();
-    expect(state.body).toBe('success');
-  });
-
-  it('does not notify twice when a completed order receives a repeated callback', async () => {
-    const order = createOrder({ status: 'completed', credits_added: true, settled_by: 'webhook' });
-    const orders = {
-      findById: vi.fn(async () => order),
-      complete: vi.fn(async () => order),
-      reopenExpired: vi.fn(async () => undefined),
-    };
-    const { reply, state } = createReply();
-
-    await handleZqPayWebhook(createNotify(), reply, createGateway(), orders, createLog());
-
-    expect(orders.complete).toHaveBeenCalledOnce();
-    expect(orders.reopenExpired).not.toHaveBeenCalled();
-    expect(insertUserNotification).not.toHaveBeenCalled();
-    // 到账通知不重发，但发奖判定要重跑：判定自带幂等，重放是上一次失败判定唯一的重试机会。
-    expect(checkInviteFirstPaidReward).toHaveBeenCalledOnce();
-    expect(state.body).toBe('success');
-  });
-
-  it('does not emit settlement telemetry when complete fails to persist', async () => {
-    const orders = createOrders();
-    orders.complete.mockRejectedValueOnce(new Error('db down'));
-    const { reply, state } = createReply();
-
-    await handleZqPayWebhook(createNotify(), reply, createGateway(), orders, createLog());
-
-    expect(observePaymentOrderSettled).not.toHaveBeenCalled();
-    expect(state).toMatchObject({ statusCode: 500, body: 'fail' });
-  });
-
-  it('keeps settlement successful when terminal telemetry throws', async () => {
-    vi.mocked(observePaymentOrderSettled).mockImplementationOnce(() => {
-      throw new Error('posthog down');
+      log: createLog(),
+      events: { recordOperationEvent: vi.fn(async () => undefined) },
     });
-    const orders = createOrders();
-    const { reply, state } = createReply();
+    return { orders, result };
+  }
 
-    await handleZqPayWebhook(createNotify(), reply, createGateway(), orders, createLog());
-
-    expect(orders.complete).toHaveBeenCalledOnce();
-    expect(state.body).toBe('success');
-  });
-
-  it('does not wait for hanging telemetry before returning completed', async () => {
-    vi.mocked(observePaymentOrderSettled).mockImplementationOnce(
-      () => new Promise(() => undefined)
+  it('binds an early callback before completing the order', async () => {
+    const { orders, result } = await deliver(
+      notification(),
+      createOrder({ id: ORDER_ID, provider_transaction_id: null })
     );
-    const result = await settlePaidOrder(
-      { orderId: 'MA-order-1', paidAmount: '6.00', providerTransactionId: 'ZQ-order-1' },
-      createOrders(),
-      createLog(),
-      'webhook'
-    );
-    expect(result).toBe('completed');
-  });
-
-  it('reopens an order that expired before the callback arrived, then credits it', async () => {
-    const orders = createOrders(createOrder({ status: 'expired' }));
-    const { reply, state } = createReply();
-
-    await handleZqPayWebhook(createNotify(), reply, createGateway(), orders, createLog());
-
-    expect(orders.reopenExpired).toHaveBeenCalledWith('MA-order-1');
-    expect(orders.complete).toHaveBeenCalledWith('MA-order-1', 'ZQ-order-1', 'webhook');
+    expect(result).toEqual({ status: 200, body: 'success' });
+    expect(orders.attachProviderTransaction).toHaveBeenCalledWith(ORDER_ID, 'tx_abc123');
+    expect(orders.complete).toHaveBeenCalledWith(ORDER_ID, 'tx_abc123', 'webhook');
     expect(insertUserNotification).toHaveBeenCalledOnce();
-    expect(state.body).toBe('success');
-  });
-
-  it('does not reopen an expired order that was already credited', async () => {
-    const orders = createOrders(createOrder({ status: 'expired', credits_added: true }));
-    const { reply } = createReply();
-
-    await handleZqPayWebhook(createNotify(), reply, createGateway(), orders, createLog());
-
-    expect(orders.reopenExpired).not.toHaveBeenCalled();
+    expect(checkInviteFirstPaidReward).toHaveBeenCalledOnce();
   });
 
   it.each([
-    ['merchant_mismatch', createGateway({ merchant: false })],
-    ['invalid_signature', createGateway({ signature: false })],
-  ])('rejects a callback with reason %s', async (reason, gateway) => {
-    const orders = createOrders();
-    const { reply, state } = createReply();
-    const log = createLog();
-
-    await handleZqPayWebhook(createNotify(), reply, gateway, orders, log);
-
-    expect(orders.findById).not.toHaveBeenCalled();
-    expect(warnReasons(log)).toEqual([reason]);
-    expect(state).toMatchObject({ statusCode: 400, body: 'fail' });
-  });
-
-  it('rejects a callback without a merchant order id', async () => {
-    const orders = createOrders();
-    const { reply, state } = createReply();
-    const log = createLog();
-    const { out_trade_no: _omitted, ...notify } = createNotify();
-
-    await handleZqPayWebhook(notify, reply, createGateway(), orders, log);
-
-    expect(warnReasons(log)).toEqual(['missing_order_id']);
-    expect(state).toMatchObject({ statusCode: 400, body: 'fail' });
-  });
-
-  it('rejects a callback whose timestamp is outside the replay window', async () => {
-    const orders = createOrders();
-    const { reply, state } = createReply();
-    const log = createLog();
-    const hourAgo = Math.floor((Date.now() - 60 * 60 * 1000) / 1000).toString();
-
-    await handleZqPayWebhook(
-      createNotify({ timestamp: hourAgo }),
-      reply,
-      createGateway(),
-      orders,
-      log
-    );
-
-    expect(orders.findById).not.toHaveBeenCalled();
-    expect(warnReasons(log)).toEqual(['stale_timestamp']);
-    expect(state).toMatchObject({ statusCode: 400, body: 'fail' });
-  });
-
-  it('rejects an amount mismatch without completing the order', async () => {
-    const orders = createOrders();
-    const { reply, state } = createReply();
-
-    await handleZqPayWebhook(
-      createNotify({ money: '6.01' }),
-      reply,
-      createGateway(),
-      orders,
-      createLog()
-    );
-
+    [{ money: '6.001' }, 409],
+    [{ money: '6.01' }, 409],
+    [{ pid: '1002' }, 401],
+    [{ type: 'alipay' }, 409],
+    [{ trade_no: 'other' }, 409],
+    [{ sign_type: 'SHA256' }, 400],
+  ] as const)('rejects mismatched trusted fields %j', async (fields, status) => {
+    const { orders, result } = await deliver(notification(fields));
+    expect(result.status).toBe(status);
     expect(orders.complete).not.toHaveBeenCalled();
-    expect(observePaymentOrderSettled).not.toHaveBeenCalled();
-    expect(state).toMatchObject({ statusCode: 400, body: 'fail' });
   });
 
-  it('acknowledges a non-success status without completing the order', async () => {
-    const orders = createOrders();
-    const { reply, state } = createReply();
+  it.each(['TRADE_PENDING', 'TRADE_REFUND', 'TRADE_ERROR'])(
+    'acknowledges %s without crediting',
+    async (trade_status) => {
+      const { orders, result } = await deliver(notification({ trade_status }));
+      expect(result).toEqual({ status: 200, body: 'success' });
+      expect(orders.complete).not.toHaveBeenCalled();
+    }
+  );
 
-    await handleZqPayWebhook(
-      createNotify({ trade_status: 'WAIT_BUYER_PAY' }),
-      reply,
-      createGateway(),
-      orders,
-      createLog()
+  it.each(['', 'legacy-environment'])('accepts signed optional param %j', async (param) => {
+    const { orders, result } = await deliver(notification({ param }));
+    expect(result).toEqual({ status: 200, body: 'success' });
+    expect(orders.complete).toHaveBeenCalledWith(ORDER_ID, 'tx_abc123', 'webhook');
+  });
+
+  it('still verifies signed legacy param before reading local orders', async () => {
+    const query = notification({ param: 'legacy-environment' }).replace(
+      'param=legacy-environment',
+      'param=tampered'
     );
-
+    const { orders, result } = await deliver(query);
+    expect(result).toEqual({ status: 401, body: 'fail' });
     expect(orders.findById).not.toHaveBeenCalled();
-    expect(state.body).toBe('success');
   });
-});
 
-describe('reconcileWithGateway', () => {
-  function createQueryGateway(result: PaymentQueryResult) {
-    return { queryOrder: vi.fn(async () => result) };
-  }
-
-  it('credits a pending order once the vendor reports it as paid', async () => {
-    const orders = createOrders();
-    const gateway = createQueryGateway({
-      success: true,
-      paid: true,
-      amount: '6.00',
-      tradeNo: 'ZQ-order-1',
+  it('rejects unknown local orders without granting benefits', async () => {
+    const orders = createOrders(createOrder({ id: ORDER_ID }));
+    const unknownOrders = { ...orders, findById: vi.fn(async () => null) };
+    const result = await handleEpayNotification(notification(), {
+      gateway: new EpayPaymentGateway(),
+      orders: unknownOrders,
+      log: createLog(),
     });
-
-    const changed = await reconcileWithGateway(
-      toPaymentOrder(createOrder({ id: 'MA-query-paid' })),
-      gateway,
-      orders,
-      createLog()
-    );
-
-    expect(gateway.queryOrder).toHaveBeenCalledWith('MA-query-paid');
-    expect(orders.complete).toHaveBeenCalledWith('MA-order-1', 'ZQ-order-1', 'query');
-    expect(changed).toBe(true);
-  });
-
-  it('credits an expired order the vendor reports as paid', async () => {
-    const orders = createOrders(createOrder({ status: 'expired' }));
-    const gateway = createQueryGateway({ success: true, paid: true, amount: '6.00' });
-
-    const changed = await reconcileWithGateway(
-      toPaymentOrder(createOrder({ id: 'MA-query-expired', status: 'expired' })),
-      gateway,
-      orders,
-      createLog()
-    );
-
-    expect(orders.reopenExpired).toHaveBeenCalledOnce();
-    expect(changed).toBe(true);
-  });
-
-  it('leaves the order alone when the vendor reports it unpaid', async () => {
-    const orders = createOrders();
-    const gateway = createQueryGateway({ success: true, paid: false });
-
-    const changed = await reconcileWithGateway(
-      toPaymentOrder(createOrder({ id: 'MA-query-unpaid' })),
-      gateway,
-      orders,
-      createLog()
-    );
-
+    expect(result).toEqual({ status: 404, body: 'fail' });
     expect(orders.complete).not.toHaveBeenCalled();
-    expect(changed).toBe(false);
   });
 
-  it('does not query a terminal order at all', async () => {
-    const orders = createOrders();
-    const gateway = createQueryGateway({ success: true, paid: true, amount: '6.00' });
-
-    const changed = await reconcileWithGateway(
-      toPaymentOrder(createOrder({ id: 'MA-query-done', status: 'completed' })),
-      gateway,
-      orders,
-      createLog()
+  it('reopens a late paid order and acknowledges duplicates without another notice', async () => {
+    const late = await deliver(notification(), createOrder({ id: ORDER_ID, status: 'expired' }));
+    expect(late.orders.reopenExpired).toHaveBeenCalledWith(ORDER_ID);
+    vi.clearAllMocks();
+    const duplicate = await deliver(
+      notification(),
+      createOrder({ id: ORDER_ID, status: 'completed', fulfillment_applied: true })
     );
-
-    expect(gateway.queryOrder).not.toHaveBeenCalled();
-    expect(changed).toBe(false);
+    expect(duplicate.result.body).toBe('success');
+    expect(insertUserNotification).not.toHaveBeenCalled();
   });
 
-  it('throttles repeated polling of the same order', async () => {
-    const orders = createOrders();
-    const gateway = createQueryGateway({ success: true, paid: false });
-    const order = toPaymentOrder(createOrder({ id: 'MA-query-throttled' }));
+  it('requests retry after a database failure', async () => {
+    const orders = createOrders(createOrder({ id: ORDER_ID }));
+    orders.complete.mockRejectedValueOnce(new Error('db down'));
+    expect(
+      await handleEpayNotification(notification(), {
+        gateway: new EpayPaymentGateway(),
+        orders,
+        log: createLog(),
+      })
+    ).toEqual({ status: 500, body: 'fail' });
+  });
 
-    await reconcileWithGateway(order, gateway, orders, createLog());
-    await reconcileWithGateway(order, gateway, orders, createLog());
+  it('does not complete when a competing callback has bound a different reference', async () => {
+    const orders = createOrders(createOrder({ id: ORDER_ID, provider_transaction_id: null }));
+    orders.attachProviderTransaction.mockResolvedValueOnce(false);
+    expect(
+      await settlePaidOrder(
+        { orderId: ORDER_ID, paidAmount: '6.00', providerTransactionId: 'tx_other' },
+        orders,
+        createLog(),
+        'query'
+      )
+    ).toBe('failed');
+    expect(orders.complete).not.toHaveBeenCalled();
+  });
 
+  it('recovers a missing create response using merchant ID and throttles polling', async () => {
+    const order = createOrder({ id: 'EP' + 'b'.repeat(30), provider_transaction_id: null });
+    const orders = createOrders(order);
+    const gateway = {
+      queryOrder: vi.fn(
+        async (): Promise<PaymentQueryResult> => ({
+          success: true,
+          paid: true,
+          amount: '6.00',
+          tradeNo: 'tx_abc123',
+        })
+      ),
+    };
+    expect(await reconcileWithGateway(toPaymentOrder(order), gateway, orders, createLog())).toBe(
+      true
+    );
+    await reconcileWithGateway(toPaymentOrder(order), gateway, orders, createLog());
     expect(gateway.queryOrder).toHaveBeenCalledOnce();
+    expect(orders.complete).toHaveBeenCalledOnce();
   });
 
-  it('keeps the order pending when the vendor amount disagrees', async () => {
-    const orders = createOrders();
-    const gateway = createQueryGateway({ success: true, paid: true, amount: '6.01' });
-
-    const changed = await reconcileWithGateway(
-      toPaymentOrder(createOrder({ id: 'MA-query-mismatch' })),
-      gateway,
-      orders,
-      createLog()
-    );
-
-    expect(orders.complete).not.toHaveBeenCalled();
-    expect(changed).toBe(false);
+  it('never queries an old provider order', async () => {
+    const gateway = { queryOrder: vi.fn(async () => ({ success: true, paid: false })) };
+    await reconcileWithGateway(toPaymentOrder(createOrder()), gateway, createOrders(), createLog());
+    expect(gateway.queryOrder).not.toHaveBeenCalled();
   });
 });
 
-// 回调面回归护栏：厂商用什么方法和 Content-Type 推送通知不由我们决定，
-// GET query 和表单 POST 两条都必须能落到同一个 handler。
 const routeOrders = {
-  findById: vi.fn(async () => createOrder()),
+  findById: vi.fn(async (): Promise<MiniappPaymentOrderRow | null> => createOrder()),
   complete: vi.fn(async () => createOrder({ status: 'completed', credits_added: true })),
   reopenExpired: vi.fn(async () => undefined),
+  attachProviderTransaction: vi.fn(async () => true),
   expirePendingByIdForUser: vi.fn(async () => undefined),
   findByIdForUser: vi.fn(async () => null),
   listByUser: vi.fn(async () => []),
   markFailed: vi.fn(async () => undefined),
   create: vi.fn(async () => createOrder()),
+  recordOperationEvent: vi.fn(async () => undefined),
 };
 
 // 整个模块被替换掉，所以两个入口都得给：现在业务代码走的是 getDomainDb，
@@ -497,23 +352,7 @@ vi.mock(
   }
 );
 
-// 刻意保留真实网关的判定形状（认商户号、要求 sign 存在），否则「回跳没签名也不能入账」
-// 这类用例会被一个永远返回 true 的 stub 蒙过去。
-vi.mock('../infrastructure/payment/ZqPaymentGateway.js', () => ({
-  ZqPaymentGateway: class {
-    isExpectedMerchant(pid: string | undefined) {
-      return pid === '55';
-    }
-    verifyNotifySign(notifyData: { sign?: string }) {
-      return Boolean(notifyData.sign);
-    }
-    async queryOrder() {
-      return { success: false, errorMessage: 'not used in these tests' };
-    }
-  },
-}));
-
-async function buildWebhookApp() {
+async function buildPaymentApp() {
   const { default: paymentRoutes } = await import('./payment.js');
   const app = Fastify({ logger: false });
   await app.register(paymentRoutes);
@@ -521,10 +360,58 @@ async function buildWebhookApp() {
   return app;
 }
 
+describe('GET /api/payment/notify/ttzf', () => {
+  it('passes the raw signed query and returns the exact provider acknowledgement', async () => {
+    routeOrders.findById.mockResolvedValue(createOrder({ id: ORDER_ID }));
+    const app = await buildPaymentApp();
+    try {
+      const response = await app.inject(`/api/payment/notify/ttzf?${notification()}`);
+      expect(response.statusCode).toBe(200);
+      expect(response.body).toBe('success');
+      expect(response.headers['cache-control']).toBe('no-store');
+      expect(routeOrders.complete).toHaveBeenCalledWith(ORDER_ID, 'tx_abc123', 'webhook');
+    } finally {
+      await app.close();
+    }
+  });
+  it.each(['&money=6.00', '&pid=1001'])(
+    'rejects repeated fields before database access',
+    async (suffix) => {
+      const app = await buildPaymentApp();
+      try {
+        const response = await app.inject(`/api/payment/notify/ttzf?${notification()}${suffix}`);
+        expect(response.statusCode).toBe(400);
+        expect(routeOrders.findById).not.toHaveBeenCalled();
+      } finally {
+        await app.close();
+      }
+    }
+  );
+  it('rejects tampering and removes the old webhook endpoint', async () => {
+    const app = await buildPaymentApp();
+    try {
+      expect(
+        (
+          await app.inject(
+            `/api/payment/notify/ttzf?${notification().replace('money=6.000', 'money=7.000')}`
+          )
+        ).statusCode
+      ).toBe(401);
+      expect(
+        (await app.inject({ method: 'POST', url: '/api/payment/webhook/vexutopia', payload: {} }))
+          .statusCode
+      ).toBe(404);
+      expect(routeOrders.complete).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
+});
+
 describe('GET /api/payment/orders', () => {
   it('lists orders without expiring pending rows as a read side effect', async () => {
     vi.stubEnv('DEV_AUTH_BYPASS', '1');
-    const app = await buildWebhookApp();
+    const app = await buildPaymentApp();
 
     try {
       const response = await app.inject({
@@ -541,100 +428,56 @@ describe('GET /api/payment/orders', () => {
   });
 });
 
-describe('POST/GET /api/payment/webhook/zqpay', () => {
-  const notify = createNotify();
-
-  it('credits the order for a form-encoded POST callback', async () => {
-    const app = await buildWebhookApp();
-
-    const response = await app.inject({
-      method: 'POST',
-      url: '/api/payment/webhook/zqpay',
-      headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      payload: new URLSearchParams(notify).toString(),
-    });
-
-    expect(response.statusCode).toBe(200);
-    expect(response.body).toBe('success');
-    expect(routeOrders.complete).toHaveBeenCalledWith('MA-order-1', 'ZQ-order-1', 'webhook');
-
-    await app.close();
-  });
-
-  it('credits the order for a query-string GET callback', async () => {
-    const app = await buildWebhookApp();
-
-    const response = await app.inject({
-      method: 'GET',
-      url: `/api/payment/webhook/zqpay?${new URLSearchParams(notify).toString()}`,
-    });
-
-    expect(response.statusCode).toBe(200);
-    expect(response.body).toBe('success');
-    expect(routeOrders.complete).toHaveBeenCalledWith('MA-order-1', 'ZQ-order-1', 'webhook');
-
-    await app.close();
-  });
-});
-
-// 厂商《支付结果通知》把 return_url 也定义为一条支付结果通知，参数与异步通知相同。
-// 异步通知实测有整条没推的订单，所以回跳这条必须也能入账。
 describe('GET /api/payment/return', () => {
+  const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: false }), { status: 200 }));
+
   beforeEach(() => {
-    // 回跳会去解析 Bot username，别让测试打真实的 Telegram API。
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => new Response(JSON.stringify({ ok: false }), { status: 200 }))
-    );
+    // 回跳会解析 Bot username 并查一次平台单据，别让测试打真实网络。
+    fetchMock.mockClear();
+    vi.stubGlobal('fetch', fetchMock);
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  it('credits the order carried by a verified sync return', async () => {
-    const app = await buildWebhookApp();
+  it('queries the provider for the returning order and never credits from URL params', async () => {
+    routeOrders.findById.mockResolvedValueOnce(createOrder({ id: ORDER_ID }));
+    const app = await buildPaymentApp();
 
-    const response = await app.inject({
-      method: 'GET',
-      url: `/api/payment/return?${new URLSearchParams(createNotify()).toString()}`,
-    });
+    try {
+      const response = await app.inject({
+        method: 'GET',
+        url: `/api/payment/return?out_trade_no=${ORDER_ID}&trade_status=TRADE_SUCCESS`,
+      });
 
-    expect(response.statusCode).toBe(302);
-    expect(routeOrders.complete).toHaveBeenCalledWith('MA-order-1', 'ZQ-order-1', 'return');
-
-    await app.close();
+      expect(response.statusCode).toBe(302);
+      expect(routeOrders.findById).toHaveBeenCalledWith(ORDER_ID);
+      expect(
+        fetchMock.mock.calls.map((call) => String((call as unknown[])[0]).split('?')[0])
+      ).toContain('https://provider.example/api/epay/api.php');
+      // 平台响应不是已完成交易，所以不能入账；URL 上的 status=success 不起作用。
+      expect(routeOrders.complete).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
   });
 
-  it('still navigates without crediting when the return is not a success notice', async () => {
-    const app = await buildWebhookApp();
+  it('still navigates for an unknown or malformed order id', async () => {
+    const app = await buildPaymentApp();
 
-    const response = await app.inject({
-      method: 'GET',
-      url: `/api/payment/return?${new URLSearchParams(
-        createNotify({ trade_status: 'WAIT_BUYER_PAY' })
-      ).toString()}`,
-    });
+    try {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/payment/return?order_id=../../etc',
+      });
 
-    expect(response.statusCode).toBe(302);
-    expect(routeOrders.complete).not.toHaveBeenCalled();
-
-    await app.close();
-  });
-
-  it('still navigates when the return carries no signature at all', async () => {
-    const app = await buildWebhookApp();
-    const { sign: _omitted, ...unsigned } = createNotify();
-
-    const response = await app.inject({
-      method: 'GET',
-      url: `/api/payment/return?${new URLSearchParams(unsigned).toString()}`,
-    });
-
-    expect(response.statusCode).toBe(302);
-    expect(routeOrders.complete).not.toHaveBeenCalled();
-
-    await app.close();
+      expect(response.statusCode).toBe(302);
+      expect(routeOrders.findById).not.toHaveBeenCalled();
+      expect(routeOrders.complete).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
   });
 });
 
@@ -663,13 +506,14 @@ describe('toPaymentOrder', () => {
       created_at: '2026-08-21T09:00:00.000Z',
       expires_at: '2026-08-21T09:15:00.000Z',
       paid_at: '2026-08-21T09:02:00.000Z',
-      provider_transaction_id: null,
+      provider_transaction_id: 'tx_abc123',
       settled_by: 'query',
       product_type: 'credits',
       product_id: null,
       fulfillment_applied: false,
       vip_duration_days: null,
       vip_bonus_credits: null,
+      vip_bonus_main_credits: 0,
       vip_valid_until: null,
     });
   });
@@ -814,6 +658,7 @@ describe('VIP payment settlement', () => {
     const orders = {
       findById: vi.fn(async () => order),
       complete: vi.fn(async () => order),
+      attachProviderTransaction: vi.fn(async () => true),
       reopenExpired: vi.fn(async () => undefined),
     };
     for (const source of ['webhook', 'return', 'query', 'cron'] as const) {

@@ -9,7 +9,6 @@ import {
   DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG,
   type ChatMessage,
   type ChatMessageStatus,
-  type ChatTurnFailureKind,
   type GetCharacterFreeQuotaData,
   type GetConversationData,
 } from '@miniapp/shared';
@@ -18,12 +17,14 @@ import { useQueryClient } from '@tanstack/react-query';
 import {
   ConversationStreamError,
   CONVERSATION_RECOVERING_MESSAGE,
+  CONVERSATION_SLOW_NETWORK_MESSAGE,
   createConversationRequestId,
   streamConversationTurn,
 } from '@/lib/api/conversation-stream';
 import { ApiClientError } from '@/lib/api/client';
+import { connectionVerifiedAgeMs } from '@/lib/api/connection-warmth';
+import { reportConversationFirstToken } from '@/lib/api/first-token-reports';
 import {
-  reportConversationFirstToken,
   conversationKeys,
   fetchConversationDetail,
   useCancelConversationTurnMutation,
@@ -47,7 +48,6 @@ import {
 } from '@/lib/recharge-redirect';
 import { feedbackAfterPaint, startAction } from '@/lib/perf/action-tracker';
 import { getMetricDimensions } from '@/lib/perf/env-tags';
-import { getReplayLifecycle } from '@/lib/telemetry';
 import { MAIN_WALLET_NOTICE } from '@/lib/vip/presentation';
 import {
   appendMessageThinking,
@@ -59,6 +59,7 @@ import { FirstTokenObservation } from '@/lib/perf/first-token-observation';
 import { RoleplayReplyTiming } from '@/lib/perf/roleplay-timing';
 
 const REPLY_STALLED_NOTICE_MS = 8_000;
+const NETWORK_REPORT_DELAY_MS = 1_000;
 export const CANCEL_DISCOVERY_DEADLINE_MS = 30_000;
 const FREE_QUOTA_REFRESH_DELAYS_MS = [0, 300, 900] as const;
 const log = createLogger('conversation-turn');
@@ -71,7 +72,7 @@ const log = createLogger('conversation-turn');
 function reportChatLatency(
   metric: 'chat.first_token.duration' | 'chat.full_reply.duration',
   durationMs: number,
-  attributes: { character_id: string; outcome?: 'ok' | 'failed' | 'error' }
+  attributes: { character_id: string; action?: 'send' | 'regenerate'; outcome?: string }
 ): void {
   try {
     Sentry.metrics.distribution(metric, durationMs, {
@@ -96,6 +97,8 @@ interface UseConversationTurnOptions {
   onSessionGone: () => void;
   goBack: () => void;
   onRestoreSendContent: (content: string) => void;
+  /** 深度思考关着、这一轮却照样收到了思考过程（模型关不掉思考），每轮最多报一次 */
+  onThinkingIgnored?: (modelId: string) => void;
 }
 
 type PendingTurn = {
@@ -124,141 +127,6 @@ export function findPendingTurnMessage(
   );
 }
 
-type TurnTelemetryMeta = {
-  mode: 'send' | 'regenerate';
-  turnIndex: number;
-  revision: number;
-  selectedModelId: string | null;
-  startedAt: number;
-};
-
-/**
- * 会话域 revision 从 0 起；shared 事件契约要求 revision > 0。
- * T5 不得改契约，因此把 0 投影为 1；> 0 原样上报。
- */
-export function toTelemetryRevision(revision: number): number {
-  return revision < 1 ? 1 : revision;
-}
-
-export function estimateChatTurnTelemetry(input: {
-  mode: 'send' | 'regenerate';
-  messages: ChatMessage[];
-}): { turnIndex: number; revision: number } {
-  const last = input.messages.at(-1);
-  if (input.mode === 'regenerate') {
-    return {
-      turnIndex: last && last.turn_index > 0 ? last.turn_index : 1,
-      revision: toTelemetryRevision((last?.revision ?? 0) + 1),
-    };
-  }
-  return {
-    turnIndex: (last?.turn_index ?? 0) + 1,
-    revision: 1,
-  };
-}
-
-export function classifyChatTurnFailure(error: unknown): ChatTurnFailureKind {
-  if (error instanceof ConversationStreamError) {
-    if (
-      error.code === 'insufficient_balance' ||
-      error.code === 'session_not_found' ||
-      error.code === 'character_not_found' ||
-      error.code === 'session_busy' ||
-      error.code === 'regenerate_not_allowed' ||
-      error.status === 402
-    ) {
-      return 'business';
-    }
-    if (error.status === 408 || error.status === 504) return 'timeout';
-    if (error.code === 'upstream_error') return 'unknown';
-    if (error.status >= 400 && error.status < 500) return 'business';
-    return 'unknown';
-  }
-  if (error instanceof Error && error.name === 'TimeoutError') return 'timeout';
-  return 'network';
-}
-
-function safelyRunTelemetry(run: () => void): void {
-  try {
-    run();
-  } catch {
-    // 分析失败不得影响 SSE / Abort / 用户可见错误
-  }
-}
-
-function turnDurationMs(startedAt: number): number {
-  return Math.max(0, Math.round(Date.now() - startedAt));
-}
-
-function captureTurnLifecycleEvent(
-  sessionId: string,
-  characterId: string,
-  meta: TurnTelemetryMeta,
-  event:
-    | { type: 'started' }
-    | { type: 'stream_opened' }
-    | { type: 'completed' }
-    | { type: 'failed'; failureKind: ChatTurnFailureKind }
-): void {
-  safelyRunTelemetry(() => {
-    const lifecycle = getReplayLifecycle();
-    const base = {
-      character_id: characterId,
-      conversation_session_id: sessionId,
-      selected_model_id: meta.selectedModelId,
-      turn_index: meta.turnIndex,
-      revision: meta.revision,
-    };
-    const isRegen = meta.mode === 'regenerate';
-    switch (event.type) {
-      case 'started':
-        if (isRegen) {
-          lifecycle.capture({ event: 'chat_regeneration_requested', ...base });
-        } else {
-          lifecycle.capture({ event: 'chat_turn_started', ...base });
-        }
-        return;
-      case 'stream_opened':
-        lifecycle.capture({
-          event: 'chat_stream_opened',
-          ...base,
-        });
-        return;
-      case 'completed': {
-        const duration_ms = turnDurationMs(meta.startedAt);
-        if (isRegen) {
-          lifecycle.capture({ event: 'chat_regeneration_completed', ...base, duration_ms });
-        } else {
-          lifecycle.capture({ event: 'chat_turn_completed', ...base, duration_ms });
-        }
-        return;
-      }
-      case 'failed': {
-        const duration_ms = turnDurationMs(meta.startedAt);
-        if (isRegen) {
-          lifecycle.capture({
-            event: 'chat_regeneration_failed',
-            ...base,
-            duration_ms,
-            failure_kind: event.failureKind,
-          });
-        } else {
-          lifecycle.capture({
-            event: 'chat_turn_failed',
-            ...base,
-            duration_ms,
-            failure_kind: event.failureKind,
-          });
-        }
-      }
-    }
-  });
-}
-
-function failureKindFromSettledStatus(_status: ChatMessageStatus): ChatTurnFailureKind {
-  return 'unknown';
-}
-
 /**
  * 一轮对话的发送 / 重生成 / 停止。流式临时态、卡顿提示、402 与流内失败都在这里。
  * 会话身份不在这里，见 use-chat-session。
@@ -276,8 +144,11 @@ export function useConversationTurn({
   onSessionGone,
   goBack,
   onRestoreSendContent,
+  onThinkingIgnored,
 }: UseConversationTurnOptions) {
   const router = useRouter();
+  const thinkingIgnoredRef = useRef(onThinkingIgnored);
+  thinkingIgnoredRef.current = onThinkingIgnored;
   const queryClient = useQueryClient();
   const freeQuotaQuery = useCharacterFreeQuotaQuery(characterId);
   const refetchFreeQuota = freeQuotaQuery.refetch;
@@ -344,7 +215,6 @@ export function useConversationTurn({
     setThinkingState({ sessionId, messages: {} });
     setQuotaRefreshing(false);
     setStreamError(null);
-    safelyRunTelemetry(() => getReplayLifecycle().setStreaming(false));
   }, [sessionId]);
 
   // 离开页面时停掉读流。后端不会因此终止，但本地不该再往一个卸载了的组件里写
@@ -395,9 +265,13 @@ export function useConversationTurn({
           ? { ...current, status }
           : dropCurrentStreamingTurn(current);
       });
-      setStreamError((current) => (current === CONVERSATION_RECOVERING_MESSAGE ? null : current));
+      setStreamError((current) => {
+        if (current === CONVERSATION_RECOVERING_MESSAGE) return null;
+        if (current !== CONVERSATION_SLOW_NETWORK_MESSAGE) return current;
+        // The durable terminal is the server's verdict on a turn that looked merely slow.
+        return status === 'complete' ? null : FIRST_TOKEN_RETRY_MESSAGE;
+      });
       controller?.abort();
-      safelyRunTelemetry(() => getReplayLifecycle().setStreaming(false));
       return;
     }
     setStreaming((current) => prunePersistedStreamingTurns(current, persistedMessages, sessionId));
@@ -623,7 +497,6 @@ export function useConversationTurn({
         void redirectToRecharge(router, {
           returnTo,
           requiredCredits: requiredCreditsFromError(error),
-          triggerSource: 'chat_sse',
         });
         restoreDraft(input);
         return;
@@ -642,7 +515,6 @@ export function useConversationTurn({
           void redirectToRecharge(router, {
             returnTo,
             requiredCredits: requiredCreditsFromError(error),
-            triggerSource: 'chat_sse',
           });
           restoreDraft(input);
           return;
@@ -707,7 +579,13 @@ export function useConversationTurn({
         return;
       const requestId = createConversationRequestId();
       replyTimingRef.current?.finish('superseded');
-      const replyTiming = new RoleplayReplyTiming(requestId, input.mode);
+      const replyTiming = new RoleplayReplyTiming(requestId, input.mode, (durationMs, outcome) => {
+        reportChatLatency('chat.full_reply.duration', durationMs, {
+          character_id: characterId,
+          action: input.mode,
+          outcome,
+        });
+      });
       replyTimingRef.current = replyTiming;
       observationRef.current?.unavailable('superseded');
       const observation = new FirstTokenObservation(
@@ -718,8 +596,9 @@ export function useConversationTurn({
         },
         () => {
           if (observationRef.current !== observation) return;
-          // Client delivery telemetry never cancels a server-owned turn.
-          setStreamError(FIRST_TOKEN_RETRY_MESSAGE);
+          // This clock includes the user's own network. The server owns the verdict:
+          // only its failure offers a retry, so a reply on its way is never called failed.
+          setStreamError(CONVERSATION_SLOW_NETWORK_MESSAGE);
         },
         thinkingEnabled,
         input.mode,
@@ -740,23 +619,9 @@ export function useConversationTurn({
 
       // 本轮之前的额度。生成结束后要拿它跟新值比，判断额度是不是刚好在这一轮见底
       const quotaBefore = freeQuotaRef.current;
-      const estimated = estimateChatTurnTelemetry({
-        mode: input.mode,
-        messages,
-      });
-      const turnMeta: TurnTelemetryMeta = {
-        mode: input.mode,
-        turnIndex: estimated.turnIndex,
-        revision: estimated.revision,
-        selectedModelId,
-        startedAt: Date.now(),
-      };
-
       const controller = new AbortController();
       abortRef.current = controller;
       setStreamError(null);
-      captureTurnLifecycleEvent(sessionId, characterId, turnMeta, { type: 'started' });
-      safelyRunTelemetry(() => getReplayLifecycle().setStreaming(true));
 
       const optimisticUser: ChatMessage | null =
         input.mode === 'send' && input.content !== undefined
@@ -797,6 +662,10 @@ export function useConversationTurn({
       let assistantMessageId: string | null = null;
       let assistantRevision = pendingRef.current.revision;
       let settledStatus: ChatMessageStatus | null = null;
+      // 这一轮收不收思考过程：开关开着，或服务端 start 说要显示（畅聊免费模型关不掉思考）
+      let revealThisTurn = thinkingEnabled;
+      let turnModelId = selectedModelId;
+      let thinkingIgnoredReported = false;
 
       try {
         await streamConversationTurn({
@@ -805,7 +674,7 @@ export function useConversationTurn({
           thinkingEnabled,
           content: input.content,
           signal: controller.signal,
-          onDispatched: () => observation.dispatched(),
+          onDispatched: (url) => observation.dispatched(url, connectionVerifiedAgeMs()),
           onFirstDeltaReceived: () => {
             if (isCurrent()) observation.received();
           },
@@ -819,6 +688,12 @@ export function useConversationTurn({
               requestId,
             };
             assistantMessageId = event.assistant_message_id;
+            turnModelId = event.requested_model_id ?? turnModelId;
+            if (event.thinking_enabled === true) {
+              revealThisTurn = true;
+              observation.thinkingEnabled = true;
+            }
+            observation.started(event.server_elapsed_ms);
             observation.identify(
               event.assistant_message_id,
               event.revision,
@@ -827,11 +702,6 @@ export function useConversationTurn({
               event.fallback_trigger_ms
             );
             assistantRevision = event.revision;
-            turnMeta.turnIndex = event.turn_index;
-            turnMeta.revision = toTelemetryRevision(event.revision);
-            captureTurnLifecycleEvent(sessionId, characterId, turnMeta, {
-              type: 'stream_opened',
-            });
             setStreaming((current) => (current ? applyStreamStart(current, event) : current));
           },
           onDelta: (text) => {
@@ -839,7 +709,11 @@ export function useConversationTurn({
             setStreaming((current) => (current ? appendStreamText(current, text) : current));
           },
           onReasoning: (text) => {
-            if (!isCurrent() || !thinkingEnabled || !assistantMessageId || !text) return;
+            if (!isCurrent() || !revealThisTurn || !assistantMessageId || !text) return;
+            if (!thinkingEnabled && !thinkingIgnoredReported) {
+              thinkingIgnoredReported = true;
+              thinkingIgnoredRef.current?.(turnModelId ?? 'unknown');
+            }
             const key = messageThinkingKey({
               session_id: sessionId,
               id: assistantMessageId,
@@ -878,20 +752,6 @@ export function useConversationTurn({
         // A fast invalidation can resolve against a stale snapshot. The final
         // batch stays until the matching durable response actually takes over.
         if (!settledStatus) setStreaming(dropCurrentStreamingTurn);
-        if (settledStatus && settledStatus !== 'complete') {
-          captureTurnLifecycleEvent(sessionId, characterId, turnMeta, {
-            type: 'failed',
-            failureKind: failureKindFromSettledStatus(settledStatus),
-          });
-        } else {
-          captureTurnLifecycleEvent(sessionId, characterId, turnMeta, { type: 'completed' });
-        }
-        if (input.mode === 'send') {
-          reportChatLatency('chat.full_reply.duration', Date.now() - turnMeta.startedAt, {
-            character_id: characterId,
-            outcome: settledStatus && settledStatus !== 'complete' ? 'failed' : 'ok',
-          });
-        }
         await refreshQuotaAndBalance(quotaBefore, assistantMessageId, isCurrent);
       } catch (error) {
         if (!isCurrent()) return;
@@ -916,18 +776,6 @@ export function useConversationTurn({
             );
           } else {
             replyTiming.recovering();
-          }
-        }
-        if (!aborted) {
-          captureTurnLifecycleEvent(sessionId, characterId, turnMeta, {
-            type: 'failed',
-            failureKind: classifyChatTurnFailure(error),
-          });
-          if (input.mode === 'send') {
-            reportChatLatency('chat.full_reply.duration', Date.now() - turnMeta.startedAt, {
-              character_id: characterId,
-              outcome: 'error',
-            });
           }
         }
         // Reception is not success: let the retained batch's React commit decide
@@ -966,10 +814,20 @@ export function useConversationTurn({
         )
           setStreamError(FIRST_TOKEN_RETRY_MESSAGE);
       } finally {
+        // Resource timing appears only after the response has fully ended.
+        window.setTimeout(() => observation.reportNetwork(), NETWORK_REPORT_DELAY_MS);
         if (!isCurrent()) return;
+        const serverFailed =
+          settledStatus && settledStatus !== 'complete' && !observation.hasReceivedToken;
+        setStreamError((current) =>
+          current === CONVERSATION_SLOW_NETWORK_MESSAGE
+            ? serverFailed
+              ? FIRST_TOKEN_RETRY_MESSAGE
+              : null
+            : current
+        );
         requestRef.current = null;
         setQuotaRefreshing(false);
-        safelyRunTelemetry(() => getReplayLifecycle().setStreaming(false));
         if (abortRef.current === controller) abortRef.current = null;
       }
     },
@@ -1037,7 +895,7 @@ export function useConversationTurn({
               }),
               new Promise<never>((_resolve, reject) => {
                 timer = setTimeout(
-                  () => reject(new Error('本次回复尚未确认，请稍后重试取消')),
+                  () => reject(new Error('这次回复还没确认好，稍后再点停止')),
                   remaining
                 );
               }),
@@ -1096,7 +954,7 @@ export function useConversationTurn({
           setStreamError('本次回复未开始，原消息已保留');
           return;
         }
-        if (!assistantMessageId) throw new Error('本次回复尚未确认，请稍后重试取消');
+        if (!assistantMessageId) throw new Error('这次回复还没确认好，稍后再点停止');
         if (message) observationRef.current?.identify(assistantMessageId, message.revision);
         const result = await cancelTurn({
           sessionId,
@@ -1150,7 +1008,6 @@ export function useConversationTurn({
         abortRef.current = null;
         setStreaming(dropCurrentStreamingTurn);
         setQuotaRefreshing(false);
-        safelyRunTelemetry(() => getReplayLifecycle().setStreaming(false));
         void queryClient.invalidateQueries({ queryKey: paymentKeys.wallet() });
         void queryClient.invalidateQueries({ queryKey: freeQuotaKeys.detail(characterId) });
       } catch (error) {

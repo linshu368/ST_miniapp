@@ -1,38 +1,115 @@
 import { randomUUID } from 'node:crypto';
 import type { AlertEvaluation, AlertSeverity } from '@miniapp/shared';
-import {
-  aggregatePaymentAttempts,
-  summarizePaymentAttempts,
-  type PaymentAlertOrderSnapshot,
-} from './PaymentAlertAggregation.js';
 
-export const PAYMENT_ALERT_RULE_VERSION = 'v2';
+/**
+ * v3：只看支付平台直接给出的信号（建单错误码、平台订单状态、Webhook 验签结果），
+ * 不再从“用户打开过收银台却没付成”去推测故障——那是老供应商查不到任何状态时的权宜做法。
+ */
+export const PAYMENT_ALERT_RULE_VERSION = 'v4';
+
 export type PaymentOperation = {
   event_kind: string;
   outcome: string;
   trigger: string;
   occurred_at: string;
   error_class: string | null;
+  /** 建单、查单耗时；老事件和不计时的事件为空。 */
+  duration_ms?: number | null;
   order_id: string | null;
   user_id: string | null;
 };
+
 export interface PaymentAlertSnapshot {
-  orders: PaymentAlertOrderSnapshot[];
-  /**
-   * 最近确认的订单，不按时间窗口截断。只给「连续未支付」使用，避免放宽 60 分钟扫描后改变 P1。
-   * 缺省为空，规则不触发。
-   */
-  latestOrders?: PaymentAlertOrderSnapshot[];
+  /** 最近 60 分钟的支付操作事件，按 occurred_at 升序。 */
   operations: PaymentOperation[];
-  productionWebhookBaseline: boolean;
 }
-export const P0_USER_UNPAID_RULE_ID = 'p0-user-unpaid-5m';
-export const P0_CONSECUTIVE_UNPAID_RULE_ID = 'p0-consecutive-unpaid';
-/** 暂时只有这两条 P0 可以进入飞书。P1 仍会计算和记录事故，但不投递。 */
+
+export const P0_PROVIDER_CREATE_FAILING_RULE_ID = 'p0-provider-create-failing';
+export const P0_PAID_NOT_FULFILLED_RULE_ID = 'p0-paid-not-fulfilled';
+export const P1_REFUND_RULE_ID = 'p1-refund';
+export const P1_PROVIDER_QUERY_FAILING_RULE_ID = 'p1-provider-query-failing';
+export const P1_WEBHOOK_REJECTED_RULE_ID = 'p1-webhook-rejected';
+/** 预警：平台变慢或开始间歇失败，还没到用户连续建单失败的程度。 */
+export const P1_PROVIDER_DEGRADED_RULE_ID = 'p1-provider-degraded';
+
+/** 预警：收银台能打开，但平台判定的付款失败占比异常高（渠道问题的信号）。 */
+export const P1_PROVIDER_PAY_FAILURE_RATE_RULE_ID = 'p1-provider-pay-failure-rate';
+const PAY_FAILURE_WINDOW_MS = 30 * 60_000;
+const PAY_FAILURE_MIN_COUNT = 3;
+const PAY_FAILURE_MIN_RATIO = 0.6;
+/** 平台明确判定付款没成的状态。cancelled 多半是用户主动关闭，expired 是放弃，都不算渠道故障。 */
+const PAY_FAILED_CLASSES = new Set(['provider_failed']);
+
+/** 单次建单/查单超过这个耗时就算“慢”（建单目标 P95 ≤ 3 秒）。 */
+export const SLOW_CALL_MS = 3_000;
+/** 对账循环把成功但偏慢的查单记成这个分类，供预警规则统计。 */
+export const SLOW_CALL_ERROR_CLASS = 'slow';
+
+/**
+ * 会推送飞书的规则：用户付不了钱、付了钱没拿到权益、钱被退回，
+ * 以及平台还没让用户出错之前的预警（查单探测失败、平台变慢或间歇失败）。其余只记事故。
+ */
 export const FEISHU_NOTIFY_RULE_IDS = new Set([
-  P0_USER_UNPAID_RULE_ID,
-  P0_CONSECUTIVE_UNPAID_RULE_ID,
+  P0_PROVIDER_CREATE_FAILING_RULE_ID,
+  P0_PAID_NOT_FULFILLED_RULE_ID,
+  P1_REFUND_RULE_ID,
+  P1_PROVIDER_QUERY_FAILING_RULE_ID,
+  P1_PROVIDER_DEGRADED_RULE_ID,
+  P1_PROVIDER_PAY_FAILURE_RATE_RULE_ID,
 ]);
+
+/**
+ * 恢复防抖：监控每分钟一轮，规则连续健康这么多轮才算恢复。
+ * 预警类规则的阈值落在滑动窗口边缘，容易在触发/健康间来回跳，所以要等更久；其余规则沿用 2 轮。
+ */
+export const DEFAULT_RECOVERY_PASSES = 2;
+export const EARLY_WARNING_RECOVERY_PASSES = 10;
+const EARLY_WARNING_RULE_IDS = new Set([
+  P1_PROVIDER_QUERY_FAILING_RULE_ID,
+  P1_PROVIDER_DEGRADED_RULE_ID,
+  P1_PROVIDER_PAY_FAILURE_RATE_RULE_ID,
+]);
+export function recoveryPassesFor(ruleId: string): number {
+  return EARLY_WARNING_RULE_IDS.has(ruleId)
+    ? EARLY_WARNING_RECOVERY_PASSES
+    : DEFAULT_RECOVERY_PASSES;
+}
+
+/** 平台说已付款、本地却没入账的错误分类（不论来自 Webhook 还是对账）。 */
+const PAID_ANOMALY_CLASSES = new Set(['currency_mismatch', 'provider_ref_mismatch']);
+/** 对账发现的单据异常不是“查单接口坏了”，不计入查单失败率。 */
+const LOOKUP_ANOMALY_CLASSES = new Set([
+  'provider_not_found',
+  'provider_ref_mismatch',
+  'currency_mismatch',
+]);
+const WEBHOOK_REJECTED_CLASSES = new Set([
+  'signature_invalid',
+  'invalid_body',
+  'merchant_mismatch',
+  'not_configured',
+]);
+const QUERY_EVENT_KINDS = new Set(['payment_query', 'fast_reconcile', 'expiry_reconcile']);
+
+const ERROR_LABELS: Record<string, string> = {
+  method_maintenance: '渠道维护',
+  provider_unavailable: '平台不可用',
+  configuration: '密钥/账户配置错误',
+  rate_limited: '被限流',
+  provider_rejected: '平台拒单',
+  response_invalid: '平台响应异常',
+  timeout: '超时',
+  network: '网络错误',
+  provider_ref_persist_failed: '平台单号写库失败',
+  settlement_failed: '本地履约失败',
+  amount_mismatch: '金额不符',
+  currency_mismatch: '币种不符',
+  provider_ref_mismatch: '交易号不符',
+  order_not_found: '本地订单不存在',
+  refund: '退款',
+  chargeback: '拒付',
+};
+
 type Rule = {
   id: string;
   severity: AlertSeverity;
@@ -40,287 +117,300 @@ type Rule = {
   firing: boolean;
   metrics: Array<[string, number, 'count' | 'ratio' | 'milliseconds']>;
   location: AlertEvaluation['location'];
-  confidence: AlertEvaluation['confidence'];
   title: string;
   summary?: string;
+  recommendedAction: string;
 };
 
-/** Pure V2 evaluator. It deliberately emits one independently-versioned evaluation per rule. */
+/** Pure evaluator. It deliberately emits one independently-versioned evaluation per rule. */
 export function evaluatePaymentAlertRules(
   snapshot: PaymentAlertSnapshot,
   now = new Date()
 ): AlertEvaluation[] {
-  const nowMs = now.getTime();
-  const inWindow = (ms: number) =>
-    snapshot.orders.filter(
-      (o) =>
-        o.checkoutConfirmedAt &&
-        Date.parse(o.checkoutConfirmedAt) >= nowMs - ms &&
-        Date.parse(o.checkoutConfirmedAt) <= nowMs
-    );
-  const attempts15 = aggregatePaymentAttempts(inWindow(15 * 60_000));
-  const a15 = summarizePaymentAttempts(attempts15.attempts, nowMs, 10 * 60_000);
-  const ops = (kind: string, ms: number) =>
-    snapshot.operations.filter(
-      (o) =>
-        o.event_kind === kind &&
-        Date.parse(o.occurred_at) >= nowMs - ms &&
-        Date.parse(o.occurred_at) <= nowMs
-    );
-  // P0-01 暂时停用，建单失败计数保留在下方注释中，恢复规则时一并恢复。
-  const query10 = ops('payment_query', 10 * 60_000).filter((x) => x.outcome !== 'skipped');
-  const queryFailed = query10.filter((x) => x.outcome === 'failed').length;
-  // P0-04 暂时停用，本地结算失败计数保留在注释规则中。
-  const completed60 = snapshot.orders.filter(
-    (o) =>
-      o.status === 'completed' &&
-      o.fulfillmentApplied &&
-      o.paidAt &&
-      Date.parse(o.paidAt) >= nowMs - 60 * 60_000
+  const metrics = paymentMetrics(snapshot, now);
+  return [...settlementRules(metrics), ...providerRules(metrics)].map((rule) =>
+    evaluation(rule, now)
   );
-  const p95 = percentile(
-    completed60.flatMap((o) =>
-      o.checkoutConfirmedAt && o.paidAt && Date.parse(o.paidAt) >= Date.parse(o.checkoutConfirmedAt)
-        ? [Date.parse(o.paidAt) - Date.parse(o.checkoutConfirmedAt)]
-        : []
-    ),
-    0.95
-  );
-  const repeatUnpaid = repeatUnpaidUsers(snapshot.orders, nowMs, 5 * 60_000);
-  const consecutiveOrders = latestConsecutiveOrders(snapshot.latestOrders ?? []);
-  const rules: Rule[] = [
-    rule(
-      P0_USER_UNPAID_RULE_ID,
-      'P0',
-      5,
-      repeatUnpaid.length >= 1,
-      [
-        ['unpaid_count', repeatUnpaid.reduce((sum, user) => sum + user.orders.length, 0), 'count'],
-        ['affected_users', repeatUnpaid.length, 'count'],
-      ],
-      { kind: 'unknown' },
-      'suspected',
-      'P0 同一用户5分钟内至少2单未支付成功',
-      repeatUnpaidSummary(repeatUnpaid)
-    ),
-    // 观察窗口记为 0：是否触发只看最近连续订单，不看它们相距多久。
-    rule(
-      P0_CONSECUTIVE_UNPAID_RULE_ID,
-      'P0',
-      0,
-      consecutiveOrders !== null,
-      [['consecutive_count', consecutiveOrders ? 4 : 0, 'count']],
-      { kind: 'unknown' },
-      'suspected',
-      'P0 连续4个订单均未支付成功',
-      consecutiveOrders ? consecutiveUnpaidSummary(consecutiveOrders) : undefined
-    ),
-    /*
-    rule(
-      'p0-01',
-      'P0',
-      5,
-      create5.length >= 5 &&
-        new Set(create5.map((x) => x.user_id).filter(Boolean)).size >= 2 &&
-        createFailed / create5.length >= 0.5 &&
-        create5.slice(-3).every((x) => x.outcome === 'failed'),
-      [
-        ['provider_create_attempts', create5.length, 'count'],
-        ['failure_ratio', ratio(createFailed, create5.length), 'ratio'],
-      ],
-      { kind: 'dependency', component: 'provider_create' },
-      'confirmed',
-      '厂商建单阻断'
-    ),
-    rule(
-      'p0-02',
-      'P0',
-      15,
-      a15.attempts >= 5 &&
-        a15.affectedUsers >= 3 &&
-        a15.successfulAttempts === 0 &&
-        a15.longPendingAttempts >= 3,
-      [
-        ['attempts', a15.attempts, 'count'],
-        ['affected_users', a15.affectedUsers, 'count'],
-      ],
-      { kind: 'unknown' },
-      'suspected',
-      '多用户支付未成功'
-    ),
-    rule(
-      'p0-03',
-      'P0',
-      15,
-      a15.attempts >= 5 &&
-        a15.affectedUsers >= 3 &&
-        ratio(a15.suspectedFailedAttempts, a15.successfulAttempts + a15.suspectedFailedAttempts) >=
-          0.5 &&
-        a15.suspectedFailedAttempts >= 2,
-      [
-        ['attempts', a15.attempts, 'count'],
-        [
-          'suspected_failure_ratio',
-          ratio(a15.suspectedFailedAttempts, a15.successfulAttempts + a15.suspectedFailedAttempts),
-          'ratio',
-        ],
-      ],
-      { kind: 'unknown' },
-      'suspected',
-      '支付疑似失败率过高'
-    ),
-    rule(
-      'p0-04',
-      'P0',
-      5,
-      settlementFailed.length >= 2 ||
-        snapshot.orders.some(
-          (o) =>
-            o.paidAt &&
-            nowMs - Date.parse(o.paidAt) > 60_000 &&
-            (o.status !== 'completed' || !o.fulfillmentApplied)
-        ),
-      [['settlement_failures', settlementFailed.length, 'count']],
-      { kind: 'application', component: 'local_settlement' },
-      'confirmed',
-      '已付款未履约'
-    ),
-    rule(
-      'p0-05',
-      'P0',
-      10,
-      a15.attempts >= 5 &&
-        a15.affectedUsers >= 3 &&
-        a15.successfulAttempts === 0 &&
-        query10.length > 0 &&
-        ratio(queryFailed, query10.length) > 0.8,
-      [['query_failure_ratio', ratio(queryFailed, query10.length), 'ratio']],
-      { kind: 'dependency', component: 'provider_query' },
-      'suspected',
-      '确认能力整体失效'
-    ),
-    */
-    rule(
-      'p1-01',
-      'P1',
-      10,
-      (() => {
-        const w = ops('webhook', 10 * 60_000);
-        const trusted = w.filter((x) => x.error_class !== 'signature_invalid');
-        return trusted.length >= 3 && trusted.some((x) => x.outcome === 'failed');
-      })(),
-      [['webhook_events', ops('webhook', 600_000).length, 'count']],
-      { kind: 'delivery_path', component: 'webhook' },
-      'suspected',
-      'Webhook 处理异常'
-    ),
-    rule(
-      'p1-02',
-      'P1',
-      60,
-      snapshot.productionWebhookBaseline &&
-        completed60.length >= 5 &&
-        ratio(completed60.filter((o) => o.settledBy === 'webhook').length, completed60.length) <
-          0.2 &&
-        ratio(
-          completed60.filter((o) => o.settledBy === 'query' || o.settledBy === 'cron').length,
-          completed60.length
-        ) >= 0.5,
-      [
-        ['completed', completed60.length, 'count'],
-        [
-          'webhook_settlement_ratio',
-          ratio(completed60.filter((o) => o.settledBy === 'webhook').length, completed60.length),
-          'ratio',
-        ],
-      ],
-      { kind: 'delivery_path', component: 'webhook' },
-      'suspected',
-      'Webhook 投递疑似退化'
-    ),
-    rule(
-      'p1-03',
-      'P1',
-      10,
-      query10.length >= 10 && ratio(queryFailed, query10.length) >= 0.2,
-      [
-        ['query_attempts', query10.length, 'count'],
-        ['failure_ratio', ratio(queryFailed, query10.length), 'ratio'],
-      ],
-      { kind: 'dependency', component: 'provider_query' },
-      'confirmed',
-      '主动查单失败率过高'
-    ),
-    rule(
-      'p1-04',
-      'P1',
-      60,
-      completed60.length >= 5 &&
-        completed60.filter((o) => o.settledBy === 'cron').length / completed60.length >= 0.3,
-      [['completed', completed60.length, 'count']],
-      { kind: 'application', component: 'reconciliation' },
-      'confirmed',
-      '过度依赖后台对账'
-    ),
-    rule(
-      'p1-05',
-      'P1',
-      60,
-      completed60.length >= 5 && p95 > 180_000,
-      [
-        ['p95_confirmation_to_paid_ms', p95, 'milliseconds'],
-        [
-          'p95_excluded_count',
-          completed60.length -
-            completed60.filter(
-              (o) =>
-                o.checkoutConfirmedAt &&
-                o.paidAt &&
-                Date.parse(o.paidAt) >= Date.parse(o.checkoutConfirmedAt)
-            ).length,
-          'count',
-        ],
-      ],
-      { kind: 'unknown' },
-      'suspected',
-      '确认到到账变慢'
-    ),
-    rule(
-      'p1-06',
-      'P1',
-      15,
-      a15.longPendingAttempts > 0 && !(a15.attempts >= 5 && a15.affectedUsers >= 3),
-      [['long_pending_attempts', a15.longPendingAttempts, 'count']],
-      { kind: 'unknown' },
-      'suspected',
-      '少量订单长时间等待'
-    ),
-  ];
-  return rules.map((r) => evaluation(r, now));
 }
-function rule(
-  id: string,
-  severity: AlertSeverity,
-  minutes: number,
-  firing: boolean,
-  metrics: Rule['metrics'],
-  location: Rule['location'],
-  confidence: Rule['confidence'],
-  title: string,
-  summary?: string
-): Rule {
+
+function paymentMetrics(snapshot: PaymentAlertSnapshot, now = new Date()) {
+  const nowMs = now.getTime();
+  const within = (ms: number, filter: (op: PaymentOperation) => boolean) =>
+    snapshot.operations.filter((op) => {
+      const at = Date.parse(op.occurred_at);
+      return at >= nowMs - ms && at <= nowMs && filter(op);
+    });
+
+  const creates = within(10 * 60_000, (op) => op.event_kind === 'gateway_create');
+  const createFailures = creates.filter((op) => op.outcome === 'failed');
+  const createBlocked =
+    createFailures.length >= 3 && creates.slice(-3).every((op) => op.outcome === 'failed');
+
+  const unresolvedPaid = unresolvedPaidAnomalies(snapshot.operations, nowMs);
+
+  const refunds = within(
+    60 * 60_000,
+    (op) =>
+      op.event_kind === 'webhook' &&
+      op.outcome === 'failed' &&
+      (op.error_class === 'refund' || op.error_class === 'chargeback')
+  );
+
+  const queries = within(
+    10 * 60_000,
+    (op) =>
+      QUERY_EVENT_KINDS.has(op.event_kind) &&
+      op.outcome !== 'skipped' &&
+      !LOOKUP_ANOMALY_CLASSES.has(op.error_class ?? '') &&
+      op.error_class !== SLOW_CALL_ERROR_CLASS
+  );
+  const queryFailures = queries.filter((op) => op.outcome === 'failed');
+
+  const webhookRejected = within(
+    10 * 60_000,
+    (op) =>
+      op.event_kind === 'webhook' &&
+      op.outcome === 'failed' &&
+      WEBHOOK_REJECTED_CLASSES.has(op.error_class ?? '')
+  );
+
+  // 预警：建单间歇失败（还没连续 3 次）或平台整体变慢。P0 已触发时不重复预警。
+  const createFailureRatio = ratio(createFailures.length, creates.length);
+  const intermittentCreateFailures =
+    !createBlocked && createFailures.length >= 2 && createFailureRatio >= 0.4;
+  const slowCreates = creates.filter(
+    (op) => op.outcome !== 'failed' && (op.duration_ms ?? 0) >= SLOW_CALL_MS
+  );
+  const slowProbes = within(
+    10 * 60_000,
+    (op) => QUERY_EVENT_KINDS.has(op.event_kind) && op.error_class === SLOW_CALL_ERROR_CLASS
+  );
+  const slowCalls = slowCreates.length + slowProbes.length;
+  const degraded = intermittentCreateFailures || slowCalls >= 3;
+  const degradedReasons = [
+    intermittentCreateFailures
+      ? `建单 ${creates.length} 次失败 ${createFailures.length} 次（${describeClasses(createFailures)}）`
+      : '',
+    slowCalls >= 3
+      ? `慢调用 ${slowCalls} 次（建单 ${slowCreates.length}、查单 ${slowProbes.length}，阈值 ${SLOW_CALL_MS / 1000} 秒）`
+      : '',
+  ].filter(Boolean);
+
+  // 付款失败占比：分子是平台判 failed 的不同订单，分母是“成功入账 + 平台判 failed”的不同订单。
+  const payWindow = within(PAY_FAILURE_WINDOW_MS, () => true);
+  const failedPayOrders = distinctOrders(
+    payWindow.filter(
+      (op) =>
+        op.outcome === 'unpaid' &&
+        (QUERY_EVENT_KINDS.has(op.event_kind) || op.event_kind === 'webhook') &&
+        PAY_FAILED_CLASSES.has(op.error_class ?? '')
+    )
+  );
+  const paidOrders = distinctOrders(
+    payWindow.filter((op) => op.event_kind === 'settlement' && op.outcome === 'succeeded')
+  );
+  const payFailureRatio = ratio(failedPayOrders, failedPayOrders + paidOrders);
+  const payFailureHigh =
+    failedPayOrders >= PAY_FAILURE_MIN_COUNT && payFailureRatio >= PAY_FAILURE_MIN_RATIO;
+
   return {
-    id,
-    severity,
-    windowMs: minutes * 60_000,
-    firing,
-    metrics,
-    location,
-    confidence,
-    title,
-    ...(summary ? { summary } : {}),
+    creates,
+    createFailures,
+    createBlocked,
+    unresolvedPaid,
+    refunds,
+    queries,
+    queryFailures,
+    webhookRejected,
+    createFailureRatio,
+    slowCalls,
+    degraded,
+    degradedReasons,
+    failedPayOrders,
+    paidOrders,
+    payFailureRatio,
+    payFailureHigh,
   };
 }
+
+type Metrics = ReturnType<typeof paymentMetrics>;
+
+function settlementRules(metrics: Metrics): Rule[] {
+  const { creates, createFailures, createBlocked, unresolvedPaid, refunds } = metrics;
+  return [
+    {
+      id: P0_PROVIDER_CREATE_FAILING_RULE_ID,
+      severity: 'P0',
+      windowMs: 10 * 60_000,
+      firing: createBlocked,
+      metrics: [
+        ['provider_create_attempts', creates.length, 'count'],
+        ['failure_ratio', ratio(createFailures.length, creates.length), 'ratio'],
+      ],
+      location: { kind: 'dependency', component: 'provider_create' },
+      title: 'P0 支付平台建单连续失败',
+      summary: `最近 10 分钟建单 ${creates.length} 次，失败 ${createFailures.length} 次：${describeClasses(createFailures)}`,
+      recommendedAction:
+        '按错误分类处理：平台不可用查看 TTZF 控制台；配置错误检查应用 ID 与应用密钥；写库失败查数据库。',
+    },
+    {
+      id: P0_PAID_NOT_FULFILLED_RULE_ID,
+      severity: 'P0',
+      windowMs: 10 * 60_000,
+      firing: unresolvedPaid.length > 0,
+      // 指标名不能含 order/key/token 等词：告警卡片安全策略会整张拒发（safe-card.ts）。
+      metrics: [['unresolved_count', unresolvedPaid.length, 'count']],
+      location: { kind: 'application', component: 'local_settlement' },
+      title: 'P0 平台已收款但未发放权益',
+      summary: unresolvedPaid
+        .slice(0, 5)
+        .map((op) => `【订单】${op.order_id ?? '未知'}（${label(op.error_class)}）`)
+        .join('\n'),
+      recommendedAction: '按订单号核对平台单据与本地订单，修复后通过对账任务或供应商通知重试补账。',
+    },
+    {
+      id: P1_REFUND_RULE_ID,
+      severity: 'P1',
+      windowMs: 60 * 60_000,
+      firing: refunds.length > 0,
+      metrics: [['refund_events', refunds.length, 'count']],
+      location: { kind: 'dependency', component: 'provider_refund' },
+      title: 'P1 支付平台发生退款或拒付',
+      summary: refunds
+        .slice(0, 5)
+        .map((op) => `【订单】${op.order_id ?? '未知'}（${label(op.error_class)}）`)
+        .join('\n'),
+      recommendedAction: '人工确认是否需要收回已发放的会员或星尘。',
+    },
+  ];
+}
+
+function providerRules(metrics: Metrics): Rule[] {
+  const {
+    createFailures,
+    queries,
+    queryFailures,
+    webhookRejected,
+    createFailureRatio,
+    slowCalls,
+    degraded,
+    degradedReasons,
+    failedPayOrders,
+    paidOrders,
+    payFailureRatio,
+    payFailureHigh,
+  } = metrics;
+  return [
+    {
+      id: P1_PROVIDER_QUERY_FAILING_RULE_ID,
+      severity: 'P1',
+      windowMs: 10 * 60_000,
+      firing: queryFailures.length >= 3 && ratio(queryFailures.length, queries.length) > 0.8,
+      metrics: [
+        ['query_attempts', queries.length, 'count'],
+        ['query_failure_ratio', ratio(queryFailures.length, queries.length), 'ratio'],
+      ],
+      location: { kind: 'dependency', component: 'provider_query' },
+      title: 'P1 支付平台查单接口异常',
+      summary: `最近 10 分钟查单 ${queries.length} 次，失败 ${queryFailures.length} 次：${describeClasses(queryFailures)}`,
+      recommendedAction:
+        '查单失败期间依赖已验签通知入账；检查 TTZF 状态、应用配置及 GET 查单接口。',
+    },
+    {
+      id: P1_PROVIDER_DEGRADED_RULE_ID,
+      severity: 'P1',
+      windowMs: 10 * 60_000,
+      firing: degraded,
+      metrics: [
+        ['create_failures', createFailures.length, 'count'],
+        ['create_failure_ratio', createFailureRatio, 'ratio'],
+        ['slow_calls', slowCalls, 'count'],
+      ],
+      location: { kind: 'dependency', component: 'provider_health' },
+      title: 'P1 支付平台不稳定（预警）',
+      summary: `用户尚未连续失败，但平台已出现异常：${degradedReasons.join('；')}`,
+      recommendedAction:
+        '先看 TTZF 控制台；趋势继续恶化会升级为建单连续失败。必要时在后台临时关闭受影响的渠道。',
+    },
+    {
+      id: P1_PROVIDER_PAY_FAILURE_RATE_RULE_ID,
+      severity: 'P1',
+      windowMs: PAY_FAILURE_WINDOW_MS,
+      firing: payFailureHigh,
+      metrics: [
+        ['failed_payments', failedPayOrders, 'count'],
+        ['paid_payments', paidOrders, 'count'],
+        ['failure_ratio', payFailureRatio, 'ratio'],
+      ],
+      location: { kind: 'dependency', component: 'provider_payment_channel' },
+      title: 'P1 支付失败占比异常偏高（预警）',
+      summary: `最近 30 分钟平台判定付款失败 ${failedPayOrders} 笔，成功入账 ${paidOrders} 笔，失败占比 ${Math.round(payFailureRatio * 100)}%。收银台能打开但用户付不成，疑似渠道问题`,
+      recommendedAction:
+        '核对已验签的 TRADE_ERROR 通知与 TTZF 控制台记录；确认渠道故障后可在后台临时关闭该渠道。',
+    },
+    {
+      id: P1_WEBHOOK_REJECTED_RULE_ID,
+      severity: 'P1',
+      windowMs: 10 * 60_000,
+      firing: webhookRejected.length >= 3,
+      metrics: [['rejected_webhooks', webhookRejected.length, 'count']],
+      location: { kind: 'delivery_path', component: 'webhook' },
+      title: 'P1 支付回调验签失败',
+      summary: `最近 10 分钟 ${webhookRejected.length} 次回调被拒`,
+      recommendedAction: '检查 TTZF 应用 ID、应用密钥、通知地址和环境标记是否一致。',
+    },
+  ];
+}
+
+/**
+ * 10 分钟内出现的“已付款未入账”事实，且同一订单之后没有入账成功。
+ * 看 60 分钟内的入账成功，是为了让迟到的补账能把告警自动恢复。
+ */
+function unresolvedPaidAnomalies(
+  operations: PaymentOperation[],
+  nowMs: number
+): PaymentOperation[] {
+  const settledAt = new Map<string, number>();
+  for (const op of operations) {
+    if (op.event_kind === 'settlement' && op.outcome === 'succeeded' && op.order_id) {
+      settledAt.set(
+        op.order_id,
+        Math.max(settledAt.get(op.order_id) ?? 0, Date.parse(op.occurred_at))
+      );
+    }
+  }
+  const seen = new Set<string>();
+  return operations.filter((op) => {
+    const at = Date.parse(op.occurred_at);
+    if (at < nowMs - 10 * 60_000 || at > nowMs || op.outcome !== 'failed') return false;
+    const paidAnomaly =
+      op.event_kind === 'settlement' || PAID_ANOMALY_CLASSES.has(op.error_class ?? '');
+    if (!paidAnomaly) return false;
+    const key = op.order_id ?? `unknown:${op.occurred_at}`;
+    if (seen.has(key)) return false;
+    if (op.order_id && (settledAt.get(op.order_id) ?? 0) > at) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function distinctOrders(operations: PaymentOperation[]): number {
+  return new Set(operations.map((op) => op.order_id).filter(Boolean)).size;
+}
+
+function describeClasses(operations: PaymentOperation[]): string {
+  const counts = new Map<string, number>();
+  for (const op of operations) {
+    const name = label(op.error_class);
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+  return [...counts.entries()].map(([name, count]) => `${name}×${count}`).join('、') || '无';
+}
+
+function label(errorClass: string | null): string {
+  return errorClass ? (ERROR_LABELS[errorClass] ?? errorClass) : '未分类';
+}
+
 function evaluation(rule: Rule, now: Date): AlertEvaluation {
   const ended = now.toISOString();
   return {
@@ -337,123 +427,19 @@ function evaluation(rule: Rule, now: Date): AlertEvaluation {
     state: rule.firing ? 'firing' : 'healthy',
     severity: rule.severity,
     location: rule.location,
-    confidence: rule.confidence,
+    // 规则只读平台明确给出的结果，没有推测成分。
+    confidence: 'confirmed',
     observed_at: ended,
     window_started_at: new Date(now.getTime() - rule.windowMs).toISOString(),
     window_ended_at: ended,
     title: rule.title,
     summary: rule.firing
-      ? boundText(rule.summary ?? '支付监控规则满足触发条件', 500)
+      ? boundText(rule.summary || '支付监控规则满足触发条件', 500)
       : '支付监控窗口健康',
     metrics: rule.metrics.map(([name, value, unit]) => ({ name, value, unit })),
     samples: [],
-    recommended_action: '核对支付事件聚合与支付服务日志。',
+    recommended_action: rule.recommendedAction,
   };
-}
-type UnpaidHit = {
-  orderId: string;
-  telegramId: string | null;
-  confirmedAt: string;
-};
-
-function repeatUnpaidUsers(
-  orders: PaymentAlertOrderSnapshot[],
-  nowMs: number,
-  windowMs: number
-): Array<{ telegramId: string | null; orders: UnpaidHit[] }> {
-  const byUser = new Map<string, { telegramId: string | null; orders: UnpaidHit[] }>();
-  for (const order of orders) {
-    const confirmedAt = confirmationMs(order);
-    if (
-      !order.userId ||
-      !order.checkoutConfirmedAt ||
-      confirmedAt === null ||
-      confirmedAt < nowMs - windowMs ||
-      confirmedAt > nowMs ||
-      paidSuccessfully(order)
-    ) {
-      continue;
-    }
-    const current = byUser.get(order.userId) ?? {
-      telegramId: order.telegramId ?? null,
-      orders: [],
-    };
-    current.orders.push({
-      orderId: order.orderId,
-      telegramId: order.telegramId ?? null,
-      confirmedAt: order.checkoutConfirmedAt,
-    });
-    byUser.set(order.userId, current);
-  }
-  return [...byUser.values()]
-    .filter((user) => user.orders.length >= 2)
-    .map((user) => ({
-      telegramId: user.telegramId,
-      orders: user.orders.sort((a, b) => Date.parse(b.confirmedAt) - Date.parse(a.confirmedAt)),
-    }));
-}
-
-function repeatUnpaidSummary(
-  users: Array<{ telegramId: string | null; orders: UnpaidHit[] }>
-): string {
-  return users
-    .slice(0, 5)
-    .map((user) => {
-      const sample = user.orders[0];
-      return [
-        `【tg-id】${user.telegramId ?? '未知'}`,
-        `【未支付订单】${user.orders.length} 单`,
-        `【订单号】${sample?.orderId ?? '-'}`,
-        `【时间】${sample ? formatTimestamp(sample.confirmedAt) : '-'}`,
-      ].join('\n');
-    })
-    .join('\n\n');
-}
-
-/** 最近 4 笔已确认订单全部未支付成功时返回这 4 笔，按时间从早到晚。不足 4 笔或其中有成功单则不触发。 */
-function latestConsecutiveOrders(
-  orders: PaymentAlertOrderSnapshot[]
-): PaymentAlertOrderSnapshot[] | null {
-  const latest = orders
-    .filter((order) => confirmationMs(order) !== null)
-    .sort(
-      (a, b) =>
-        (confirmationMs(b) ?? 0) - (confirmationMs(a) ?? 0) || b.orderId.localeCompare(a.orderId)
-    )
-    .slice(0, 4);
-  if (latest.length !== 4 || latest.some((order) => paidSuccessfully(order))) return null;
-  return latest.sort(
-    (a, b) =>
-      (confirmationMs(a) ?? 0) - (confirmationMs(b) ?? 0) || a.orderId.localeCompare(b.orderId)
-  );
-}
-
-function consecutiveUnpaidSummary(orders: PaymentAlertOrderSnapshot[]): string {
-  const byUser = new Map<string, { telegramId: string | null; orderIds: string[] }>();
-  for (const order of orders) {
-    const group = byUser.get(order.userId) ?? {
-      telegramId: order.telegramId ?? null,
-      orderIds: [],
-    };
-    group.orderIds.push(order.orderId);
-    byUser.set(order.userId, group);
-  }
-  return [...byUser.values()]
-    .map((group) =>
-      [
-        `【tg-id】${group.telegramId ?? '未知'}`,
-        ...group.orderIds.map((orderId) => `【订单】${orderId}`),
-      ].join('\n')
-    )
-    .join('\n\n');
-}
-
-function formatTimestamp(iso: string): string {
-  const ms = Date.parse(iso);
-  if (!Number.isFinite(ms)) return iso;
-  const shifted = new Date(ms + 8 * 60 * 60 * 1000);
-  const pad = (value: number) => String(value).padStart(2, '0');
-  return `${shifted.getUTCFullYear()}-${pad(shifted.getUTCMonth() + 1)}-${pad(shifted.getUTCDate())} ${pad(shifted.getUTCHours())}:${pad(shifted.getUTCMinutes())}:${pad(shifted.getUTCSeconds())} +08:00`;
 }
 
 function boundText(value: string, max: number): string {
@@ -461,24 +447,10 @@ function boundText(value: string, max: number): string {
   return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
 }
 
-function paidSuccessfully(order: PaymentAlertOrderSnapshot): boolean {
-  return order.status === 'completed' || order.paidAt !== null;
-}
-
-function confirmationMs(order: PaymentAlertOrderSnapshot): number | null {
-  if (!order.checkoutConfirmedAt) return null;
-  const ms = Date.parse(order.checkoutConfirmedAt);
-  return Number.isFinite(ms) ? ms : null;
-}
-
 function ratio(a: number, b: number) {
   return b === 0 ? 0 : a / b;
 }
-function percentile(v: number[], p: number) {
-  if (!v.length) return 0;
-  const x = [...v].sort((a, b) => a - b);
-  return x[Math.min(x.length - 1, Math.ceil(x.length * p) - 1)]!;
-}
+
 function environment(): AlertEvaluation['environment'] {
   const e = process.env.NODE_ENV;
   return e === 'production' || e === 'test' || e === 'preview' ? e : 'development';

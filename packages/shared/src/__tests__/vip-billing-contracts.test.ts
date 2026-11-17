@@ -459,7 +459,7 @@ describe('wallet policy and splits', () => {
     ).toBe(true);
   });
 
-  it('allocates light-text combination debit atomically and refunds the same split', () => {
+  it('allocates light-text combination debit bonus-first, atomically, and refunds the same split', () => {
     const combination = allocateWalletDebit({
       policy: 'main_then_bonus',
       amount: 13,
@@ -472,9 +472,29 @@ describe('wallet policy and splits', () => {
       value: {
         policy: 'main_then_bonus',
         debit_key: 'llm:msg-1',
-        main_credits: 10,
-        bonus_credits: 3,
+        main_credits: 0,
+        bonus_credits: 13,
         total_credits: 13,
+      },
+    });
+
+    // 专项不够时，先扣光专项，再用通用补足。
+    expect(
+      allocateWalletDebit({
+        policy: 'main_then_bonus',
+        amount: 25,
+        main_credits: 10,
+        bonus_credits: 20,
+        debit_key: 'llm:msg-1b',
+      })
+    ).toEqual({
+      ok: true,
+      value: {
+        policy: 'main_then_bonus',
+        debit_key: 'llm:msg-1b',
+        main_credits: 5,
+        bonus_credits: 20,
+        total_credits: 25,
       },
     });
 
@@ -513,7 +533,7 @@ describe('wallet policy and splits', () => {
 
     expect(
       allocateWalletRefund({
-        original_debit: { main_credits: 10, bonus_credits: 3, total_credits: 13 },
+        original_debit: { main_credits: 0, bonus_credits: 13, total_credits: 13 },
         refund_key: 'refund:llm:msg-1',
         debit_key: 'llm:msg-1',
       })
@@ -522,8 +542,8 @@ describe('wallet policy and splits', () => {
       value: {
         refund_key: 'refund:llm:msg-1',
         debit_key: 'llm:msg-1',
-        main_credits: 10,
-        bonus_credits: 3,
+        main_credits: 0,
+        bonus_credits: 13,
         total_credits: 13,
       },
     });
@@ -671,25 +691,6 @@ describe('additive compatibility for existing DTOs', () => {
           highlight_text: null,
         },
       ],
-      page_config: {
-        title: '星尘商店',
-        description: '说明',
-        button_text: '支付',
-        theme_color: '#ec4899',
-        balance_color: '#8b5cf6',
-        selected_plan_color: '#f59e0b',
-        badge_color: '#6366f1',
-        button_color: '#ec4899',
-        pending_arrival_hint: '完成付款后积分将自动到账，通常不超过 3 分钟',
-      },
-      payment_prompt_dialog_config: {
-        enabled: true,
-        title: '支付前请先关闭 VPN',
-        description: '请关闭 VPN 后再继续支付。',
-        confirm_text: '已关闭VPN，继续支付',
-        footer_note: '确认后打开外部浏览器。',
-        accent_color: '#f59e0b',
-      },
       insufficient_credits_notice: '余额不足',
     };
     const spending: WalletSpendingRecord = {

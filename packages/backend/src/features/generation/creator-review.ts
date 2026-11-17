@@ -80,7 +80,7 @@ async function runCreatorReview(
       unpublishedPolicy ??
         (configured === null ? DEFAULT_CREATOR_REVIEW_PROMPT : configured.textValue)
     );
-    const upstream = resolveProviderUpstream('openrouter');
+    const upstream = resolveProviderUpstream('openrouter', MODEL_ID);
     if (!upstream.apiKey) throw new CreatorReviewUnavailableError('unconfigured');
     failure = 'transport_unavailable';
     const response = await forwardToUpstream({

@@ -225,6 +225,56 @@
           }
         ]
       }
+    },
+    {
+      "files": ["packages/admin-client/**/*.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@miniapp/frontend",
+                  "@miniapp/frontend/*",
+                  "@miniapp/backend",
+                  "@miniapp/backend/*",
+                  "@miniapp/admin",
+                  "@miniapp/admin/*",
+                  "@miniapp/cs-platform",
+                  "@miniapp/cs-platform/*"
+                ],
+                "message": "应用包互不 import，跨进程走 HTTP；运营端共用逻辑放 @miniapp/admin-client"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["packages/admin-cli/**/*.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@miniapp/frontend",
+                  "@miniapp/frontend/*",
+                  "@miniapp/backend",
+                  "@miniapp/backend/*",
+                  "@miniapp/admin",
+                  "@miniapp/admin/*",
+                  "@miniapp/cs-platform",
+                  "@miniapp/cs-platform/*"
+                ],
+                "message": "应用包互不 import，跨进程走 HTTP；运营端共用逻辑放 @miniapp/admin-client"
+              }
+            ]
+          }
+        ]
+      }
     }
   ]
 }

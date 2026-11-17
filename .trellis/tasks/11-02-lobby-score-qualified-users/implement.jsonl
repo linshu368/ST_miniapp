@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/app/data-reliability-and-security.md", "reason": "专用DB路径与观测"}
+{"file": ".trellis/spec/backend/app/testing-scripts-and-deployment.md", "reason": "显式隔离集成测试"}
+{"file": ".trellis/tasks/11-02-lobby-score-qualified-users/prd.md", "reason": "已确认产品口径"}
+{"file": ".trellis/tasks/11-02-lobby-score-qualified-users/design.md", "reason": "资格与统计、空样本和容量设计"}

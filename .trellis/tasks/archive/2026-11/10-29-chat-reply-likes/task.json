@@ -1,0 +1,37 @@
+{
+  "id": "chat-reply-likes",
+  "name": "chat-reply-likes",
+  "title": "聊天回复点赞与舒适触区",
+  "description": "每轮角色回复的舒适点赞按钮、持久化与隔离反馈，仅本地",
+  "status": "completed",
+  "dev_type": "fullstack",
+  "scope": null,
+  "package": "backend",
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-29",
+  "completedAt": "2026-11-06",
+  "branch": "feat/conversation-branches",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "2026-11-06 archive_stale：module knowledge 门禁未通过，未写回 spec（目标摘要冲突: .trellis/spec/backend/app/modules/business/conversation-generation.md）",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "frontend.business.conversation-ui",
+        "backend.business.conversation-generation",
+        "database.business.conversation-storage",
+        "shared.business.conversation-contracts"
+      ]
+    }
+  }
+}

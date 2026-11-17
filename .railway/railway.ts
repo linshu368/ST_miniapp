@@ -11,14 +11,15 @@
  *
  * 方案 Y 拓扑（网关收敛后）：对外域名绑 Vercel（前端在边缘，不在 Railway）。
  * ST 退场后 nginx 已无分发对象，st-bundle 整包退场；Railway 运行 backend API、
- * 一个常驻支付对账 Worker、一个无公网入口的支付过期 Cron，以及 VIP 到期提醒 Cron。
- * 四个服务都跟随
+ * 常驻支付对账/告警 Worker、支付过期/可用性探测 Cron，以及 VIP 到期提醒 Cron。
+ * 这些服务都跟随
  * 同一 GitHub 分支自动部署：
  *
  *   浏览器 ──▶ Vercel (页面) ──▶ stminiapp (backend, 对外域名) ──▶ Supabase / OpenRouter
  *                                      ▲
  *   常驻 Worker ──▶ stminiapp-payment-reconcile-cron（进程内每 30 秒查一轮）
  *   Railway Cron ──▶ stminiapp-payment-cron（每 5 分钟运行一次后退出）
+ *   Railway Cron ──▶ stminiapp-payment-availability-probe（每 30 分钟，默认关闭）
  *   Railway Cron ──▶ stminiapp-vip-reminder-cron（每小时运行一次后退出）
  *
  * 前端通过 build 期固化的 NEXT_PUBLIC_API_URL 直连 backend 的 Railway 公网域名，
@@ -45,6 +46,7 @@ import { defineRailway, fn, github, preserve, project, service } from 'railway/i
 
 const REPOSITORY = process.env.RAILWAY_GITHUB_REPO ?? 'linshu368/ST_miniapp';
 const COMMON_API_VARIABLES = [
+  'ADMIN_CLI_ALLOWED_EMAILS',
   'ADMIN_PLATFORM_URL',
   'BATCH_LAB_ENABLED',
   'BATCH_LAB_MODEL_KEY',
@@ -57,7 +59,6 @@ const COMMON_API_VARIABLES = [
   'DEEPSEEK_API_KEY',
   'DEFAULT_LLM_MODEL',
   'DIRECT_URL',
-  'DRAMA_TIMING_PERSIST_ENABLED',
   'ENGINEERING_TELEMETRY_ENABLED',
   'ENGINEERING_OTLP_ENDPOINT',
   'FRONTEND_URL',
@@ -71,30 +72,27 @@ const COMMON_API_VARIABLES = [
   'OPENAI_API_KEY',
   'OPENAI_API_BASE_URL',
   'OPENAI_MODEL',
-  'PAYMENT_BASE_URL',
   'PAYMENT_ENABLED',
-  'PAYMENT_MERCHANT_ID',
-  'PAYMENT_MERCHANT_PRIVATE_KEY',
-  'PAYMENT_NOTIFY_URL',
-  'PAYMENT_PLATFORM_PUBLIC_KEY',
   'PAYMENT_RETURN_URL',
+  'PAYMENT_NOTIFY_URL',
   'PROD_SUPABASE_PROJECT_REF',
-  'POSTHOG_API_KEY',
-  'POSTHOG_HOST',
-  'POSTHOG_TIMEOUT_MS',
   'REPLICATE_TOKEN',
   'SENTRY_DSN',
   'SENTRY_ENVIRONMENT',
   'ST_BASE_URL',
   'ST_PROVISION_URL',
   'ST_USER_PASSWORD_SECRET',
+  'SURPLUS_API_BASE_URL',
+  'SURPLUS_API_KEY',
   'TELEGRAM_BOT_TOKEN',
   'TELEGRAM_COMMUNITY_BOT_TOKEN',
   'TELEGRAM_WEBHOOK_SECRET',
-  // Existing API variables not consumed by the payment monitor must remain
-  // preserved when applying IaC for the monitor service.
+  // Provider variables are preserved on the API service and explicitly referenced by the monitor.
   'VENICE_API_BASE_URL',
   'VENICE_API_KEY',
+  'TTZF_APP_ID',
+  'TTZF_APP_KEY',
+  'TTZF_BASE_URL',
   'Z_MODEL',
 ] as const;
 const DEVELOPMENT_API_VARIABLES = [
@@ -113,9 +111,6 @@ const PRODUCTION_API_VARIABLES = [
   'LLM_DEFAULT_MODEL',
   'LLM_UPSTREAM_URL',
   'MINIAPP_SHORT_NAME',
-  'PAYMENT_GATEWAY',
-  'PAYMENT_MERCHANT_KEY',
-  'PAYMENT_V2_BASE_URL',
   'PORT',
   'PROD_DATABASE_URL',
   'PROD_DIRECT_URL',
@@ -176,12 +171,27 @@ export default defineRailway((ctx) => {
           TEST_SUPABASE_PROJECT_REF: stminiapp.env.TEST_SUPABASE_PROJECT_REF,
         }),
     PAYMENT_ENABLED: stminiapp.env.PAYMENT_ENABLED,
-    PAYMENT_BASE_URL: stminiapp.env.PAYMENT_BASE_URL,
-    PAYMENT_MERCHANT_ID: stminiapp.env.PAYMENT_MERCHANT_ID,
-    PAYMENT_MERCHANT_PRIVATE_KEY: stminiapp.env.PAYMENT_MERCHANT_PRIVATE_KEY,
-    PAYMENT_PLATFORM_PUBLIC_KEY: stminiapp.env.PAYMENT_PLATFORM_PUBLIC_KEY,
-    PAYMENT_NOTIFY_URL: stminiapp.env.PAYMENT_NOTIFY_URL,
     PAYMENT_RETURN_URL: stminiapp.env.PAYMENT_RETURN_URL,
+    // 同环境的通知与查单使用同一应用凭据；关闭新建单后仍保留在途订单恢复。
+    TTZF_APP_ID: stminiapp.env.TTZF_APP_ID,
+    TTZF_APP_KEY: stminiapp.env.TTZF_APP_KEY,
+    TTZF_BASE_URL: stminiapp.env.TTZF_BASE_URL,
+  };
+
+  const paymentAlertMonitorEnv = {
+    ...paymentCronEnv,
+    VENICE_API_BASE_URL: stminiapp.env.VENICE_API_BASE_URL,
+    VENICE_API_KEY: stminiapp.env.VENICE_API_KEY,
+    SURPLUS_API_BASE_URL: stminiapp.env.SURPLUS_API_BASE_URL,
+    SURPLUS_API_KEY: stminiapp.env.SURPLUS_API_KEY,
+  };
+
+  const paymentAlertMonitorEnv = {
+    ...paymentCronEnv,
+    VENICE_API_BASE_URL: stminiapp.env.VENICE_API_BASE_URL,
+    VENICE_API_KEY: stminiapp.env.VENICE_API_KEY,
+    SURPLUS_API_BASE_URL: stminiapp.env.SURPLUS_API_BASE_URL,
+    SURPLUS_API_KEY: stminiapp.env.SURPLUS_API_KEY,
   };
 
   const paymentReconcileWorker = service('stminiapp-payment-reconcile-cron', {
@@ -212,7 +222,7 @@ export default defineRailway((ctx) => {
     },
     start: './node_modules/.bin/tsx src/scripts/payment-alert-monitor.ts',
     deploy: { restartPolicyType: 'ALWAYS' },
-    env: paymentCronEnv,
+    env: paymentAlertMonitorEnv,
   });
 
   const paymentCron = fn('stminiapp-payment-cron', {
@@ -230,6 +240,33 @@ export default defineRailway((ctx) => {
       restartPolicyType: 'NEVER',
     },
     env: paymentCronEnv,
+  });
+
+  // One unpaid CNY 1 create request per run; keep it separate from user reconciliation
+  // and shared alert delivery. Missing probe variables keep this service disabled.
+  const paymentAvailabilityProbe = fn('stminiapp-payment-availability-probe', {
+    source: github(REPOSITORY, { branch }),
+    build: {
+      builder: 'DOCKERFILE',
+      buildCommand: 'pnpm install',
+      buildEnvironment: 'V3',
+      dockerfilePath: '/ops/docker/Dockerfile.backend',
+    },
+    start: './node_modules/.bin/tsx src/scripts/payment-availability-probe.ts',
+    deploy: {
+      cronSchedule: '*/30 * * * *',
+      restartPolicyType: 'NEVER',
+    },
+    env: {
+      ...paymentCronEnv,
+      PAYMENT_NOTIFY_URL: stminiapp.env.PAYMENT_NOTIFY_URL,
+      PAYMENT_PROBE_ENABLED: preserve(),
+      PAYMENT_PROBE_CHANNEL: preserve(),
+      SENTRY_DSN: stminiapp.env.SENTRY_DSN,
+      SENTRY_ENVIRONMENT: stminiapp.env.SENTRY_ENVIRONMENT,
+      ENGINEERING_TELEMETRY_ENABLED: stminiapp.env.ENGINEERING_TELEMETRY_ENABLED,
+      ENGINEERING_OTLP_ENDPOINT: stminiapp.env.ENGINEERING_OTLP_ENDPOINT,
+    },
   });
 
   // 两个环境都声明 Cron，但真实写入仍要各环境的 vip_reminders_enabled 显式为 true；
@@ -279,6 +316,9 @@ export default defineRailway((ctx) => {
     paymentReconcileWorker,
     paymentAlertMonitorWorker,
     paymentCron,
+    ...(['development', 'production'].includes(targetEnvironment)
+      ? [paymentAvailabilityProbe]
+      : []),
     vipReminderCron,
   ];
 

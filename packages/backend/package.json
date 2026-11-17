@@ -8,13 +8,16 @@
     "pnpm": ">=9"
   },
   "scripts": {
+    "logging:validate": "tsx src/platform/observability/validate-alert-rules.ts",
     "dev": "tsx watch --import ./src/instrumentation.ts src/server.ts",
     "start": "npx prisma generate && tsx --import ./src/instrumentation.ts src/server.ts",
     "payment:expire-orders": "tsx src/scripts/expire-payment-orders.ts",
     "payment:reconcile-orders": "tsx src/scripts/reconcile-payment-orders.ts",
-    "payment:diagnose-query": "tsx src/scripts/diagnose-zqpay-query.ts",
     "payment:callback-report": "tsx src/scripts/payment-callback-report.ts",
+    "payment:probe": "tsx src/scripts/payment-availability-probe.ts",
     "vip:send-expiry-reminders": "tsx src/scripts/send-vip-expiry-reminders.ts",
+    "story-memory:replay": "tsx src/scripts/story-memory-replay.ts",
+    "drama-survey:report": "tsx src/scripts/drama-survey-report.ts",
     "image-plaza:seed": "tsx src/scripts/import-image-plaza-seed.ts",
     "image-plaza:translate-seed-prompts": "tsx src/scripts/translate-image-plaza-seed-prompts.ts",
     "image-plaza:retry-failed-prompts-venice": "tsx src/scripts/translate-image-plaza-seed-prompts.ts --retry-failed --venice-model qwen-3-8-27b",
@@ -26,7 +29,8 @@
     "video-plaza:seed-validate-playback": "tsx src/scripts/validate-video-plaza-seed-playback.ts",
     "test": "vitest run --exclude '**/*.integration.test.ts'",
     "test:integration": "vitest run src/infrastructure/repositories/conversations.integration.test.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:lobby-ranking": "vitest run src/features/lobby/ranking-score.test.ts src/features/lobby/recommended-ranking.test.ts src/features/lobby/ranking-params.test.ts src/features/lobby/recommendation-ranking.test.ts src/routes/lobby-recommendation.test.ts src/features/lobby/ranking-stats.integration.test.ts"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.0",
@@ -49,7 +53,8 @@
     "tus-js-client": "4.3.1",
     "undici": "7.16.0",
     "ws": "^8.21.0",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "zod": "^3.23.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

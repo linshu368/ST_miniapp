@@ -1,12 +1,22 @@
 import { FastifyInstance, type FastifyBaseLogger } from 'fastify';
 import { discoverableCharacterWhere, canUseCharacter } from '../features/creator/access.js';
-import { resolveCreatorCoverUrl } from '../features/creator/covers.js';
+import {
+  resolveCreatorCoverUrl,
+  resolvePublicCreatorCoverUrls,
+} from '../features/creator/covers.js';
 import { CharacterDraftSchema } from '@miniapp/shared';
 import { getDomainDb } from '../lib/supabase.js';
 import { CreatorCharacterIdSchema } from '@miniapp/shared';
 import { prisma } from '../lib/db.js';
 import { config } from '../platform/config.js';
-import { LOBBY_FEATURED_POSITION_COUNT, ok, fail, parseLobbySort } from '@miniapp/shared';
+import {
+  LOBBY_FEATURED_POSITION_COUNT,
+  LOBBY_ROTATION_HEAD_SIZE,
+  ok,
+  fail,
+  parseLobbySort,
+  PublicLobbyHeadIdsSchema,
+} from '@miniapp/shared';
 import type {
   GetCharactersData,
   GetCharacterByIdData,
@@ -14,15 +24,21 @@ import type {
   CharacterDetail,
   LobbyLatestBadgeData,
 } from '@miniapp/shared';
+import { readLobbyHeadRows } from '../features/lobby/recommendation-repository.js';
+import { getPublicLobbyHeadOrder } from '../features/lobby/recommendation.js';
 import { loadCharacterRankingScores } from '../features/lobby/ranking-stats.js';
-import { applyPinnedOnly, buildRecommendedOrder } from '../features/lobby/recommended-ranking.js';
+import { buildRecommendedOrder } from '../features/lobby/recommended-ranking.js';
 import { resolveLobbyFeaturedIds } from '../features/lobby/featured.js';
-import { resolveLobbyPinnedCharacters } from '../features/lobby/pinned-characters.js';
 import { loadLobbyFeaturedIdSet } from '../features/lobby/featured-snapshot.js';
 import { hasNewLobbyCharacters } from '../lib/lobby-latest-badge.js';
-import { MiniappUserSettingsRepository } from '../infrastructure/repositories/MiniappUserSettingsRepository.js';
+import {
+  USER_MARK_KEYS,
+  UserMarksRepository,
+} from '../infrastructure/repositories/UserMarksRepository.js';
 import { getOrCreateDbUser } from '../lib/user.js';
 import { optionalTelegramAuth, requireTelegramAuth } from '../middleware/auth.js';
+import { Prisma } from '@prisma/client';
+import { publicAuthorName, publicCreatorIdSql } from '../features/creator/public-author.js';
 
 const CHARACTER_STORAGE_BUCKET = process.env.CHARACTER_STORAGE_BUCKET || 'character-assets';
 
@@ -48,8 +64,89 @@ export async function resolveCharacterDisplayAvatarUrl(
   return resolveCharacterAvatarUrl(characterId, avatarUrl);
 }
 
+export async function resolvePublicCharacterAvatarUrls(
+  cards: { id: string; avatar_url: string }[],
+  log: FastifyBaseLogger
+): Promise<Map<string, string>> {
+  const prefix = 'creator-cover:';
+  const coverIds = cards
+    .filter((c) => c.avatar_url.startsWith(prefix))
+    .map((c) => c.avatar_url.slice(prefix.length));
+  const signed = await resolvePublicCreatorCoverUrls(coverIds, log);
+  return new Map(
+    cards.map((c) => [
+      c.id,
+      c.avatar_url.startsWith(prefix)
+        ? (signed.get(c.avatar_url.slice(prefix.length)) ?? '')
+        : resolveCharacterAvatarUrl(c.id, c.avatar_url),
+    ])
+  );
+}
+
+/** Fetch only the first currently visible cards in this saved order. Checking at read
+ * time keeps private/delisted cards out and fills gaps from the same batch's tail. */
+export async function loadLobbyHeadCards(
+  orderedIds: string[],
+  log: FastifyBaseLogger
+): Promise<CharacterSummary[]> {
+  const rows = await readLobbyHeadRows(prisma, orderedIds);
+  if (!rows.length) return [];
+  const avatars = await resolvePublicCharacterAvatarUrls(rows, log);
+  const featured = await loadLobbyFeaturedIdSet(log);
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    avatar_url: avatars.get(row.id) ?? '',
+    personality_tags: Array.isArray(row.tags)
+      ? row.tags.filter((tag): tag is string => typeof tag === 'string')
+      : [],
+    author_name: row.creator,
+    is_featured: featured.has(row.id),
+  }));
+}
+
+/** Detail-only credit: do not fan author-profile lookups out over the lobby list. */
+async function resolveCharacterDetailCredit(
+  characterId: string,
+  originalCreator: string,
+  log: FastifyBaseLogger
+): Promise<Pick<CharacterDetail, 'author_name' | 'public_creator_id'>> {
+  try {
+    const [profile] = await prisma.$queryRaw<
+      Array<{
+        display_name: string | null;
+        tg_first_name: string | null;
+        public_creator_id: string | null;
+      }>
+    >`
+      SELECT settings.display_name, settings.tg_first_name,
+        CASE WHEN EXISTS (
+          SELECT 1 FROM app_core.character_creations work
+          JOIN app_core.characters card ON card.id = work.character_id
+          WHERE work.owner_user_id = creation.owner_user_id AND NOT card.is_test
+            AND app_core.can_discover_character(card.id)
+        ) THEN ${publicCreatorIdSql(Prisma.sql`creation.owner_user_id`)} END AS public_creator_id
+      FROM app_core.character_creations creation
+      LEFT JOIN app_core.miniapp_user_settings settings ON settings.user_id = creation.owner_user_id
+      WHERE creation.character_id = ${characterId}::uuid
+    `;
+    if (profile)
+      return {
+        author_name: publicAuthorName(profile),
+        ...(profile.public_creator_id ? { public_creator_id: profile.public_creator_id } : {}),
+      };
+  } catch (err) {
+    log.warn(
+      { err, event: 'character.author_lookup_failed' },
+      'Character author credit unavailable'
+    );
+  }
+  return { author_name: originalCreator };
+}
+
 export default async function characterRoutes(app: FastifyInstance) {
-  const userSettings = new MiniappUserSettingsRepository();
+  const userMarks = new UserMarksRepository();
 
   // 与首页列表用同一套可见性过滤：用户看不到的角色卡不该点亮 New。
   async function findLatestListedAt(log: FastifyBaseLogger): Promise<Date | null> {
@@ -69,10 +166,26 @@ export default async function characterRoutes(app: FastifyInstance) {
 
   // @frontend-ready: true
   app.get('/api/characters', async (request, reply) => {
-    const sort = parseLobbySort((request.query as { sort?: unknown } | undefined)?.sort);
+    const query = request.query as { sort?: unknown; limit?: unknown; ids?: unknown };
+    const sort = parseLobbySort(query.sort);
+    const headOnly = sort === 'recommended' && query.limit === String(LOBBY_ROTATION_HEAD_SIZE);
+    const requestedIds =
+      query.ids === undefined ? undefined : PublicLobbyHeadIdsSchema.safeParse(query.ids);
+    if (requestedIds && (!requestedIds.success || !headOnly || query.sort !== 'recommended')) {
+      return reply.code(400).send(fail('BAD_REQUEST', '公共推荐首屏请求无效'));
+    }
+    if (headOnly) {
+      const order = requestedIds?.data ?? (await getPublicLobbyHeadOrder());
+      const cards = await loadLobbyHeadCards(order, request.log);
+      reply.header('Cache-Control', 'no-store');
+      return reply.send(ok<GetCharactersData>({ characters: cards }));
+    }
 
     const characters = await prisma.character.findMany({
-      where: discoverableCharacterWhere,
+      where:
+        sort === 'recommended'
+          ? { ...discoverableCharacterWhere, is_test: false }
+          : discoverableCharacterWhere,
       // 「最新」只看最后上架时间；「推荐」先取运营顺序，再在内存里做动态排序。
       orderBy:
         sort === 'latest'
@@ -92,10 +205,7 @@ export default async function characterRoutes(app: FastifyInstance) {
     let featuredIds = new Set<string>();
 
     if (sort === 'recommended') {
-      const [snapshot, pinned] = await Promise.all([
-        loadCharacterRankingScores(),
-        resolveLobbyPinnedCharacters(request.log),
-      ]);
+      const snapshot = await loadCharacterRankingScores();
       // 排序分不可用（job 还没跑过第一轮，或查询失败）时保持运营顺序。
       // 不能把空结果当成「所有卡样本都是 0」——那会让整个大厅落进冷启动池被随机打乱。
       ordered = snapshot
@@ -104,15 +214,12 @@ export default async function characterRoutes(app: FastifyInstance) {
             scores: snapshot.scores,
             minSample: snapshot.minSample,
             protectedPrefix: LOBBY_FEATURED_POSITION_COUNT,
-            pinnedIds: pinned.characterIds,
           })
-        : // 分数没有也要认固定位：运营点的主推位与打分无关，不该被 job 状态连带拖掉
-          applyPinnedOnly(characters, pinned.characterIds);
+        : characters;
 
       featuredIds = resolveLobbyFeaturedIds({
         operatorOrdered: characters,
         snapshot,
-        pinnedIds: pinned.characterIds,
       });
     }
 
@@ -124,7 +231,7 @@ export default async function characterRoutes(app: FastifyInstance) {
         avatar_url: await resolveCharacterDisplayAvatarUrl(c.id, c.avatar_url),
         personality_tags: Array.isArray(c.tags) ? (c.tags as string[]) : [],
         author_name: c.creator,
-        // 「最新」页不保留运营固定位，也不残留热门金框。
+        // 「最新」页不残留热门金框。
         is_featured: featuredIds.has(c.id),
       }))
     );
@@ -149,7 +256,9 @@ export default async function characterRoutes(app: FastifyInstance) {
       const user = await getOrCreateDbUser(request.user);
       const [latestListedAt, lastSeenAt] = await Promise.all([
         findLatestListedAt(request.log),
-        userSettings.getCharactersLastSeenAt(user.id),
+        userMarks
+          .readOne(user.id, USER_MARK_KEYS.charactersLatestSeen)
+          .then((mark) => mark?.last_at ?? null),
       ]);
 
       reply.header('Cache-Control', 'no-store');
@@ -167,7 +276,7 @@ export default async function characterRoutes(app: FastifyInstance) {
     async (request, reply) => {
       if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
       const user = await getOrCreateDbUser(request.user);
-      await userSettings.markCharactersSeen(user.id, request.user);
+      await userMarks.touch(user.id, USER_MARK_KEYS.charactersLatestSeen);
 
       reply.header('Cache-Control', 'no-store');
       return reply.send(ok<LobbyLatestBadgeData>({ has_new: false }));
@@ -211,15 +320,20 @@ export default async function characterRoutes(app: FastifyInstance) {
             first_mes: string;
             creator_notes: string;
           };
+          // The story stays frozen; the author credit follows the creator's current public name.
+          const [avatarUrl, credit] = await Promise.all([
+            resolveCharacterDisplayAvatarUrl(id, frozen.avatar_url),
+            resolveCharacterDetailCredit(id, frozen.creator, request.log),
+          ]);
           return reply.send(
             ok<GetCharacterByIdData>({
               character: {
                 id,
                 name: frozen.name,
                 description: frozen.description,
-                avatar_url: await resolveCharacterDisplayAvatarUrl(id, frozen.avatar_url),
+                avatar_url: avatarUrl,
                 personality_tags: frozen.tags,
-                author_name: frozen.creator,
+                ...credit,
                 is_featured: false,
                 greeting: frozen.first_mes,
                 creator_notes: frozen.creator_notes,
@@ -261,16 +375,22 @@ export default async function characterRoutes(app: FastifyInstance) {
           })
         : null;
       const draft = owned ? CharacterDraftSchema.parse(owned.draft) : null;
+      const [avatarUrl, credit] = await Promise.all([
+        owned
+          ? owned.cover_asset_id
+            ? resolveCreatorCoverUrl(owned.cover_asset_id)
+            : Promise.resolve('')
+          : resolveCharacterDisplayAvatarUrl(character.id, character.avatar_url),
+        resolveCharacterDetailCredit(character.id, character.creator, request.log),
+      ]);
       const characterDetail: CharacterDetail = {
         id: character.id,
         name: draft?.name ?? character.name,
         description: draft?.description ?? character.description,
-        avatar_url: owned
-          ? ((owned.cover_asset_id ? await resolveCreatorCoverUrl(owned.cover_asset_id) : '') ?? '')
-          : await resolveCharacterDisplayAvatarUrl(character.id, character.avatar_url),
+        avatar_url: avatarUrl ?? '',
         personality_tags:
           draft?.tags ?? (Array.isArray(character.tags) ? (character.tags as string[]) : []),
-        author_name: character.creator,
+        ...credit,
         is_featured: featuredIds.has(character.id),
         greeting: draft?.opening ?? character.first_mes,
         creator_notes: character.creator_notes,

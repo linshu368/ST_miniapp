@@ -1,0 +1,243 @@
+{
+  "id": "backend-observability",
+  "name": "backend-observability",
+  "title": "Backend-observability-and-error-contracts",
+  "description": "Incremental backend logging and error-contract improvements; Railway stdout capture, no extra storage.",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-12",
+  "completedAt": null,
+  "branch": "feat_log_modules",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "docs/backend-logging-design.md",
+    "docs/backend-error-code-design.md",
+    "docs/backend-error-code-review.md",
+    "docs/logging-reuse-and-alert-config.md"
+  ],
+  "notes": "User approved module-by-module commits, compatibility-first migration and disabled-by-default direct log alerts. No push.",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "backend.infrastructure.runtime-data-security",
+        "backend.business.conversation-generation",
+        "backend.business.wallet-payment",
+        "backend.business.voice-message",
+        "backend.business.character-lobby",
+        "backend.business.engagement-support",
+        "shared.business.conversation-contracts",
+        "shared.business.wallet-payment-contracts",
+        "frontend.business.character-lobby",
+        "frontend.infrastructure.client-ui-foundation"
+      ]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": [
+        "chat/roleplay/creator",
+        "image",
+        "wallet/recharge/VIP",
+        "lobby/drama/voice",
+        "other Backend consumers",
+        "Growth prompt host on chat/characters/chats and drama survey in chat"
+      ],
+      "apis": [
+        "Backend HTTP APIs",
+        "SSE first-byte and terminal latency",
+        "DB/provider calls",
+        "GET /api/growth/prompts and POST /api/growth/prompts/events",
+        "GET/POST /api/v1/drama-survey and POST /dismiss",
+        "POST /api/telegram/community-webhook",
+        "Media voice/image and image-plaza request paths; background generation and lobby/lease operations",
+        "GET /api/lobby-characters Next.js proxy: bounded correlation and one safe terminal log"
+      ],
+      "android": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 2000
+      },
+      "ios": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 2000
+      },
+      "api": {
+        "p95_baseline_ms": null,
+        "p95_target_ms": 2000
+      },
+      "measurement": {
+        "source": "Existing Grafana/Faro and Sentry data grouped by release/route/platform; no visible baseline samples yet.",
+        "window": "Compare 24 hours before and after deployment; extend when N<100, separately for Android and iOS."
+      },
+      "notes": "Null means unmeasured. Target ordinary pages/APIs at 2000ms and no more than 5 percent P95 regression. Measure SSE and long jobs separately. Real production verification remains required."
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "required",
+      "scope": [
+        "Backend HTTP, providers, payment, scheduled jobs and logging planning/CI tools",
+        "Merge f25d969b and audit image/voice/payment/community/growth identity and field projection",
+        "2026-11-16: caught exceptions, legacy warnings, database error causes, reconciliation rounds, Next.js lobby proxy and AST guard gaps",
+        "Centralize logging implementation/rules and expose a side-effect-free SDK candidate entry",
+        "Railway-readable Chinese module/scenario/result/error summaries; payment probe and generation balance precheck results"
+      ],
+      "integration_points": [
+        "Reuse platform/observability, safe Pino output, clientFetch and runObservedJob; no additional storage",
+        "2026-11-14: Reuse auth, user identity cache, HTTP route templates and verified business records to bind user/session/character/creation/drama/video correlation; no extra DB queries",
+        "Reuse explicit HTTP target/response ID projection, owned ChatSessionRepository.getSession and per-entity image/plaza/story-memory contexts; welcome clientFetch; growth scalar summaries",
+        "Shared/dedicated applyPrismaObservation and observed PostgreSQL advisory lease connect/lock/unlock/close; original connection, lock, transaction and timeout preserved",
+        "Reuse safe Pino hooks/cause projection, observed reconciliation loops and local Next.js server JSON summary with bounded correlation headers",
+        "Use platform/observability as the single backend logging directory; fixed versioned rule file, explicit SDK factories and project adapters",
+        "Pure injectable log presentation with project catalog, unified Pino hook and inherited HTTP/job call_scene; explicit probe scalar projection",
+        "Reuse observer for existing image/voice wallet precheck and provider monitor result logs, retaining exact queries and outcomes"
+      ],
+      "events": [
+        {
+          "event": "operation.terminal",
+          "operation": "http.request",
+          "levels": ["info", "warn", "error"],
+          "outcomes": ["succeeded", "failed", "rejected", "interrupted", "unknown"],
+          "fields": [
+            "http_status",
+            "public_error_code",
+            "duration_ms",
+            "request_id",
+            "trace_id",
+            "span_id",
+            "business_module",
+            "user_id",
+            "telegram_user_id",
+            "session_id",
+            "character_id",
+            "creation_id",
+            "drama_id",
+            "video_id",
+            "image_conversation_id",
+            "attempt_id",
+            "work_id",
+            "artifact_id",
+            "message_id",
+            "audio_id",
+            "image_id"
+          ]
+        },
+        {
+          "event": "operation.terminal",
+          "operation": "job.free_zone_evaluation",
+          "levels": ["info", "warn", "error"],
+          "outcomes": ["succeeded", "failed", "skipped", "unknown"],
+          "fields": ["duration_ms", "trace_id", "span_id", "outcome_known"]
+        },
+        {
+          "event": "community.welcome.failed",
+          "operation": "community.welcome.telegram",
+          "levels": ["info", "warn"],
+          "outcomes": ["succeeded", "failed", "timed_out"],
+          "fields": [
+            "duration_ms",
+            "upstream_status",
+            "request_id",
+            "trace_id",
+            "user_id",
+            "telegram_user_id"
+          ]
+        },
+        {
+          "event": "growth.prompt.event",
+          "operation": "http.request",
+          "levels": ["info", "warn"],
+          "outcomes": ["succeeded", "failed"],
+          "fields": [
+            "prompt_kind",
+            "action",
+            "recorded",
+            "community_prompt",
+            "vip_prompt",
+            "user_id",
+            "trace_id"
+          ]
+        },
+        {
+          "event": "operation.terminal",
+          "operation": "db.lease.lock",
+          "levels": ["info", "error"],
+          "outcomes": ["succeeded", "failed"],
+          "fields": ["outcome_known", "duration_ms", "request_id", "trace_id", "span_id"]
+        },
+        {
+          "event": "lobby.proxy.terminal",
+          "operation": "lobby.proxy",
+          "levels": ["info", "warn", "error"],
+          "outcomes": ["succeeded", "rejected", "failed", "timed_out", "cancelled"],
+          "fields": [
+            "request_id",
+            "upstream_request_id",
+            "trace_id",
+            "http_status",
+            "duration_ms",
+            "public_error_code"
+          ]
+        },
+        {
+          "event": "payment.probe.completed",
+          "operation": "job.payment_availability_probe",
+          "levels": ["info"],
+          "outcomes": ["succeeded", "degraded", "failed", "skipped"],
+          "fields": [
+            "probe_result",
+            "paymentType",
+            "errorClass",
+            "duration_ms",
+            "strategy_success_count",
+            "strategy_failed_count",
+            "strategy_skipped_count",
+            "strategy_timed_out_count",
+            "strategy_cancelled_count",
+            "trace_id",
+            "call_scene"
+          ]
+        },
+        {
+          "event": "llm.balance.precheck_passed",
+          "operation": "generation.precheck",
+          "levels": ["info", "error"],
+          "outcomes": ["succeeded", "failed", "skipped", "rejected"],
+          "fields": ["outcome", "error_code", "trace_id", "call_scene", "model"]
+        }
+      ],
+      "failure_paths": [
+        "HTTP 401/403/409/429/5xx and disconnect; provider timeout; missing-event errors; concurrent jobs; disabled/failed notification",
+        "Identity lookup failure, invalid IDs, shared identity inflight waiters, concurrent resource scopes, late HTTP terminal enrichment and safe output projection",
+        "Normal owned-session reads missing character binding, :sessionId media routes, batched worker cross-entity metadata, Telegram HTTP 200/payload failure, growth projection omissions and new upstream task missing log plan",
+        "Caught DB/storage failures retaining compatible HTTP responses; unlabelled warn alerts; wrapped DB cause; per-round callback trace; proxy body/timeout/cancel/header failures; uninstrumented SDK clients/timers",
+        "Disabled alert configuration must not read files; missing/invalid/oversized enabled rules; exact HTTP versus upstream status; SDK imports must not bootstrap Pino/config/DB",
+        "Unknown catalog entry, malicious interpolated error/message, formatter failure, concurrent HTTP/job scenes, payment overlap/guard/configuration/strategy failures and wallet query failure"
+      ],
+      "correlation": "Reuse request ALS and isolated job roots; transport child spans; one terminal event per operation. Per-root bounded business correlation is enriched after authentication and user resolution; independent business scopes clone the correlation fields. Creator creation_id equals character_id in the existing model.",
+      "redaction": "Allow validated internal UUIDs and authenticated Telegram identifier only in Railway JSON; no names/contact data, raw errors, bodies, URLs, credentials or initData. Exclude new business identifiers from Sentry, alert notifications and metric labels. Missing or invalid IDs are omitted. Display fields are generated from safe machine metadata and fixed catalog entries only; no arbitrary message interpolation. call_scene contains registered route templates or stable job operations only.",
+      "alerting": "Default-off deployment switch and webhook secret remain separate; only versioned alert-rules.json supplies rules, with bounded direct delivery and no LOG_ALERT_RULES environment source.",
+      "verification": [
+        "Backend full credential-free tests plus logger/http/alert/free-zone regression tests",
+        "Backend typecheck, ESLint, complexity and AST logging guard",
+        "Python planning gate tests including pending/missing declaration, state isolation and CI selection",
+        "After release inspect Railway correlation and actual notifications; record real Android/iOS/API P95 without inventing samples",
+        "Assert physical Pino JSON contains canonical user/session/character/creation/drama/video IDs; test auth, identity cache/inflight, HTTP failures/SSE, concurrent scopes and Sentry/alert exclusion",
+        "Shared tests, all consumers typecheck, Frontend stream compatibility and Frontend/Admin builds for the merge; real repository owned/missing/error regression and welcome transport/payload cases",
+        "Config and SDK isolation regression tests, real logging:validate CLI/CI, old consumers and all workspace checks after file moves",
+        "Physical Pino JSON and inherited/concurrent call_scene regression; default-off alerts unchanged; existing probe/precheck tests for scalar summaries and unchanged original results/errors"
+      ]
+    }
+  }
+}

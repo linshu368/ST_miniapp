@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "run_id": "2026-11-11T08-53-44-755Z",
+  "source_fingerprint": "291de70b97dc06c1972ed016f0f90f0ad1f9754c76b2adf15dd856b02b854fc4",
+  "plan_sha256": "561f0fb8ed335d024a470d281c82b32517e4ef364141bbedc4bf510806fe995c",
+  "project_ref": "zoqelpfhurwehlvypryl",
+  "device_mode": "emulated",
+  "timing_version": "local-logical-v1",
+  "dataset_version": "synthetic-history-private-v2",
+  "started_at": "2026-11-11T08:55:19.696Z",
+  "samples": [],
+  "fatal_errors": ["REPEATED_FAILURE_STOP"],
+  "cleanup_complete": true,
+  "commit": "086f1eda8ef180f5b5c87805a753b71df9a0c703",
+  "environment": {
+    "host_os": "win32 10.0.18363",
+    "node_version": "v24.15.0",
+    "playwright_version": "1.64.1",
+    "machine": "Intel(R) Core(TM) i7-8650U CPU @ 1.90GHz / 8 logical CPUs",
+    "production_build": true,
+    "backend_mode": "test-config-real-app",
+    "auth_mode": "synthetic-telegram",
+    "network_profile": "host-network-unthrottled",
+    "tls_verified": true,
+    "schema_before": "32475cb51ec930fdd8e1e8bb8d2e9bef928065aa9506da6c1b15f0364191c14f",
+    "schema_after": "32475cb51ec930fdd8e1e8bb8d2e9bef928065aa9506da6c1b15f0364191c14f",
+    "chromium_version": "156.0.8078.4",
+    "webkit_version": "27.2"
+  },
+  "ended_at": "2026-11-11T09:05:23.784Z"
+}

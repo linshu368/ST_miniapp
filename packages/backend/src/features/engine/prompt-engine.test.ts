@@ -38,6 +38,8 @@ const INSTRUCTIONS: EnginePlatformInstructions = {
   choiceRules: { on_first_two_turns: '选项完整', on_later_turns: '选项简洁', off: '选项关闭' },
   statusRules: { on_first_two_turns: '状态完整', on_later_turns: '状态简洁', off: '状态关闭' },
   memoryRules: { on_first_two_turns: '记忆完整', on_later_turns: '记忆简洁', off: '记忆关闭' },
+  replyStyles: [],
+  driveModes: null,
 };
 
 const SLOT_MODES: InstructionSlotModes = { choice: 'full', status: 'concise', memory: 'off' };
@@ -113,6 +115,17 @@ describe('buildPrompt', () => {
   it('system_prompt 为空时不产生空的 system 消息', () => {
     const { messages } = buildPrompt(input({ character: { ...CHARACTER, system_prompt: '   ' } }));
     expect(messages.map((m) => m.role)).toEqual(['assistant', 'user', 'assistant', 'user']);
+  });
+
+  it('会话记忆是紧跟角色卡的独立 system 消息，在开场白与历史之前，不并入角色卡', () => {
+    const { messages } = buildPrompt(input({ storyMemory: '前情提要：甲已离开。' }));
+    expect(messages[0]).toEqual({ role: 'system', content: '你是莫池来，说话简短。' });
+    expect(messages[1]).toEqual({ role: 'system', content: '前情提要：甲已离开。' });
+    expect(messages[2]).toEqual({ role: 'assistant', content: FIRST_MES });
+    const withoutCard = buildPrompt(
+      input({ character: { ...CHARACTER, system_prompt: '' }, storyMemory: '前情提要：甲。' })
+    ).messages;
+    expect(withoutCard[0]).toEqual({ role: 'system', content: '前情提要：甲。' });
   });
 
   it('v1 只消费 system_prompt，其余角色卡字段不进 prompt', () => {

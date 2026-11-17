@@ -5,6 +5,7 @@ import {
   type LlmModelProvider,
 } from '@miniapp/shared';
 import type { AttemptObservation } from '../../infrastructure/repositories/GenerationObservationRepository.js';
+import type { UpstreamTiming } from './upstream-timing.js';
 import { createLeadingThinkingSplitter, readExposedReasoning } from './upstream.js';
 import {
   observeChatFirstToken,
@@ -19,6 +20,31 @@ export interface TransportModel {
   provider: LlmModelProvider;
   providerModelId: string;
 }
+/**
+ * 多路主请求（畅聊免费模型并发）时，每一路的落库写入要等分出胜负：
+ * 胜出的那一路（全都没出字时取最后结束的那一路）才真正写进这一轮唯一的主请求记录，其余丢弃。
+ * 只有一路时不用。
+ */
+export interface PersistGate {
+  owns(): Promise<boolean>;
+}
+
+/** 一次真正发出的上游调用结束（胜出、落败、取消、报错）时的事实，用于事后核算花费 */
+export interface SettledCall {
+  role: 'primary' | 'fallback';
+  /** 第几路：并发主请求 0–2，兜底 0 */
+  slot: number;
+  provider: LlmModelProvider;
+  providerModelId: string;
+  dispatchedAt: string;
+  endReason: NonNullable<AttemptObservation['end_reason']>;
+  /** Surplus 请求号（响应头 x-si-request-id），响应头前就停下的没有 */
+  requestId: string | null;
+  generationId: string | null;
+  /** 上游响应状态码；响应头前就停下的没有 */
+  httpStatus: number | null;
+}
+
 export interface FirstTokenAttemptStore {
   prepareFallback(attempt: AttemptObservation, triggeredMs: number): Promise<void>;
   observe(attempt: AttemptObservation): Promise<void>;
@@ -48,12 +74,17 @@ interface Attempt {
   signal: AbortSignal;
   prepared: Promise<void>;
   startedAt: number;
+  timing: UpstreamTiming;
   finished: boolean;
   recorded: boolean;
   writes: Promise<void>;
   content: string;
   reasoning: string;
   truncated: boolean;
+  /** 多路主请求时才有：决定这一路的写入要不要真正落库 */
+  gate?: PersistGate;
+  slot: number;
+  requestId: string | null;
   stop(): void;
 }
 
@@ -70,6 +101,11 @@ export async function forwardWithFirstTokenFallback(input: {
   onReady?: () => void;
   fallbackModelId?: string;
   primaryAttemptId: string;
+  /**
+   * 同时发几路主请求（默认 1）。先出字的胜出、其余取消；全部失败或到 timeoutMs 才启动兜底，
+   * 之后所有还在跑的主请求和兜底一起竞争。所有主请求共用 primaryAttemptId 这一条记录。
+   */
+  primaryCount?: number;
   /** Starts the other attempt; it never expires an already dispatched primary. */
   timeoutMs: number;
   /** Reserve for starting fallback when preparation has used most of the total budget. */
@@ -79,8 +115,15 @@ export async function forwardWithFirstTokenFallback(input: {
   requestStartedAt: number;
   signal: AbortSignal;
   store: FirstTokenAttemptStore;
-  forward(model: TransportModel, signal: AbortSignal, onDispatch: () => void): Promise<Response>;
+  forward(
+    model: TransportModel,
+    signal: AbortSignal,
+    onDispatch: () => void,
+    attempt: { role: 'primary' | 'fallback'; timing: UpstreamTiming; gate?: PersistGate }
+  ): Promise<Response>;
   onObservationError(error: unknown): void;
+  /** 每次真正发出的调用结束时各报一次（含并发落败、被取消的），只用于核算花费 */
+  onCallSettled?(call: SettledCall): void;
 }): Promise<{
   response: Response;
   model: TransportModel;
@@ -93,14 +136,22 @@ export async function forwardWithFirstTokenFallback(input: {
   const fallbackModelId = input.fallbackModelId ?? FIRST_TOKEN_FALLBACK_MODEL_ID;
   const reserveMs = input.fallbackTimeoutMs ?? DEFAULT_FALLBACK_TOKEN_TIMEOUT_MS;
   const deadlineAt = performance.now() + input.remainingFirstTokenMs;
-  const differentModels = !(
-    input.primary.provider === 'openrouter' && input.primary.providerModelId === fallbackModelId
-  );
   let thresholdTimer: ReturnType<typeof setTimeout> | undefined;
   let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
   let settled = false;
-  let primary: Attempt | undefined;
+  let primaries: Attempt[] = [];
   let fallback: Attempt | undefined;
+  // 多路主请求共用一条主请求记录：分出胜负前谁都不写，定下来后只放行这一路
+  let decideSlot!: (owner: Attempt) => void;
+  let slotDecided = false;
+  const slotOwner = new Promise<Attempt>((resolve) => {
+    decideSlot = (owner) => {
+      if (slotDecided) return;
+      slotDecided = true;
+      resolve(owner);
+    };
+  });
+  const allPrimariesFinished = () => primaries.every((item) => item.finished);
   let lastFailure: { attempt: Attempt; result?: Peeked; error?: unknown } | undefined;
   let resolveSelected!: (value: { attempt: Attempt; result: Peeked }) => void;
   let rejectSelected!: (reason: unknown) => void;
@@ -121,6 +172,7 @@ export async function forwardWithFirstTokenFallback(input: {
     attempt.writes = attempt.writes
       .then(async () => {
         await attempt.prepared;
+        if (attempt.gate && !(await attempt.gate.owns())) return;
         await input.store.observe(snapshot);
       })
       .catch(input.onObservationError);
@@ -132,9 +184,23 @@ export async function forwardWithFirstTokenFallback(input: {
   ) => {
     if (attempt.recorded) return;
     attempt.recorded = true;
+    // 所有主请求都结束了还没人胜出：最后结束的那一路代表这一轮的主请求
+    if (attempt.gate && primaries.every((item) => item.recorded)) decideSlot(attempt);
     attempt.observation.end_reason = reason;
-    if (attempt.observation.dispatched_at)
+    if (attempt.observation.dispatched_at) {
       attempt.observation.observed_until_ms = performance.now() - attempt.startedAt;
+      input.onCallSettled?.({
+        role: attempt.observation.role,
+        slot: attempt.slot,
+        provider: attempt.model.provider,
+        providerModelId: attempt.model.providerModelId,
+        dispatchedAt: attempt.observation.dispatched_at,
+        endReason: reason,
+        requestId: attempt.requestId,
+        generationId: attempt.observation.generation_id ?? null,
+        httpStatus: attempt.observation.http_status ?? null,
+      });
+    }
     if (attempt.controller.signal.reason instanceof LostFirstTokenRace) {
       attempt.observation.discarded_response = {
         reason: 'race_lost',
@@ -156,6 +222,7 @@ export async function forwardWithFirstTokenFallback(input: {
       durationMs: attempt.observation.observed_until_ms,
       headersMs: attempt.observation.headers_ms,
       firstTokenMs: attempt.observation.first_token_ms,
+      timing: attempt.timing,
     });
     record(attempt);
   };
@@ -176,7 +243,7 @@ export async function forwardWithFirstTokenFallback(input: {
     if (settled) return;
     settled = true;
     clearFirstTokenTimers();
-    abortAttempt(primary, error);
+    for (const item of primaries) abortAttempt(item, error);
     abortAttempt(fallback, error);
     rejectSelected(error);
   };
@@ -190,7 +257,8 @@ export async function forwardWithFirstTokenFallback(input: {
   const createAttempt = (
     model: TransportModel,
     role: 'primary' | 'fallback',
-    id: string
+    id: string,
+    slot = 0
   ): Attempt => {
     const controller = new AbortController();
     return {
@@ -200,12 +268,15 @@ export async function forwardWithFirstTokenFallback(input: {
       signal: AbortSignal.any([input.signal, controller.signal]),
       prepared: Promise.resolve(),
       startedAt: performance.now(),
+      timing: { startedAt: performance.now() },
       finished: false,
       recorded: false,
       writes: Promise.resolve(),
       content: '',
       reasoning: '',
       truncated: false,
+      slot,
+      requestId: null,
       stop: () => {},
     };
   };
@@ -227,8 +298,10 @@ export async function forwardWithFirstTokenFallback(input: {
     // There is no await between the deadline check, winner lock and cancelling the other request.
     settled = true;
     clearFirstTokenTimers();
+    if (attempt.gate) decideSlot(attempt);
     recordTerminal(attempt, 'first_token_observed');
-    abortAttempt(attempt === primary ? fallback : primary, new LostFirstTokenRace());
+    for (const other of [...primaries, fallback])
+      if (other !== attempt) abortAttempt(other, new LostFirstTokenRace());
     observeChatFirstToken({
       requestedModel: input.requestedModelId ?? 'unknown',
       stage: 'selected',
@@ -260,6 +333,7 @@ export async function forwardWithFirstTokenFallback(input: {
       assertBudget();
       signal.throwIfAborted();
       attempt.startedAt = performance.now();
+      attempt.timing.startedAt = attempt.startedAt;
       observation.dispatched_at = new Date().toISOString();
       observation.dispatch_offset_ms = attempt.startedAt - input.requestStartedAt;
       observeGenerationDispatch({
@@ -277,7 +351,9 @@ export async function forwardWithFirstTokenFallback(input: {
           triggerMs: input.timeoutMs,
         });
       record(attempt);
-      if (observation.role === 'primary' && differentModels) {
+      // The fallback model selected as primary still races: execute routes the
+      // second attempt to the other provider, so it is never left without a backup.
+      if (observation.role === 'primary' && thresholdTimer === undefined) {
         const wait = Math.min(
           input.timeoutMs,
           Math.max(0, deadlineAt - attempt.startedAt - reserveMs)
@@ -286,7 +362,11 @@ export async function forwardWithFirstTokenFallback(input: {
       }
     };
     signal.throwIfAborted();
-    const response = await input.forward(model, signal, onDispatch);
+    const response = await input.forward(model, signal, onDispatch, {
+      role: observation.role,
+      timing: attempt.timing,
+      ...(attempt.gate ? { gate: attempt.gate } : {}),
+    });
     responseBody = response.body;
     // Some transports resolve headers after cancellation; never leave that late body open.
     if (signal.aborted) {
@@ -296,6 +376,9 @@ export async function forwardWithFirstTokenFallback(input: {
     observation.headers_ms = performance.now() - attempt.startedAt;
     observation.http_status = response.status;
     observation.generation_id = response.headers.get('x-generation-id');
+    if (model.provider === 'surplus')
+      attempt.requestId =
+        response.headers.get('x-si-request-id') ?? response.headers.get('x-request-id');
     if (!response.ok || !response.body) {
       recordTerminal(attempt, 'upstream_error');
       stop();
@@ -484,8 +567,9 @@ export async function forwardWithFirstTokenFallback(input: {
       return;
     }
     lastFailure = { attempt, result, error };
-    if (attempt === primary) startFallback();
-    if (fallback?.finished && (!primary || primary.finished)) {
+    // 「报错立刻兜底」：多路时要所有主请求都失败了才算
+    if (attempt.observation.role === 'primary' && allPrimariesFinished()) startFallback();
+    if (fallback?.finished && allPrimariesFinished()) {
       settled = true;
       clearFirstTokenTimers();
       if (lastFailure.result)
@@ -517,14 +601,20 @@ export async function forwardWithFirstTokenFallback(input: {
     }
   }
 
-  const skipPrimary = differentModels && deadlineAt - performance.now() <= reserveMs;
+  const skipPrimary = deadlineAt - performance.now() <= reserveMs;
   if (skipPrimary) {
     const skipped = createAttempt(input.primary, 'primary', input.primaryAttemptId);
     recordTerminal(skipped, 'budget_skipped');
     startFallback();
   } else {
-    primary = createAttempt(input.primary, 'primary', input.primaryAttemptId);
-    void runAttempt(primary);
+    const count = Math.max(1, Math.min(3, Math.floor(input.primaryCount ?? 1)));
+    primaries = Array.from({ length: count }, (_, slot) =>
+      createAttempt(input.primary, 'primary', input.primaryAttemptId, slot)
+    );
+    if (count > 1)
+      for (const attempt of primaries)
+        attempt.gate = { owns: () => slotOwner.then((owner) => owner === attempt) };
+    for (const attempt of primaries) void runAttempt(attempt);
   }
   try {
     const selected = await selection;
@@ -548,7 +638,7 @@ export async function forwardWithFirstTokenFallback(input: {
         (selected.result.observation.first_token_ms ?? 0),
     };
   } catch (error) {
-    abortAttempt(primary, error);
+    for (const item of primaries) abortAttempt(item, error);
     abortAttempt(fallback, error);
     throw error;
   } finally {

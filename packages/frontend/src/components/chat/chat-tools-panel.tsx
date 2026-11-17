@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState, type ComponentType } from 'react';
-import { ChevronLeft, ImageIcon, MessagesSquare, Mic } from 'lucide-react';
+import { ChevronLeft, ImageIcon, MessagesSquare, Mic, BookOpen } from 'lucide-react';
+import { StoryGuideContent } from '@/components/onboarding/story-guide-sheet';
 
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
@@ -9,14 +10,16 @@ import { ToolRow } from './chat-tool-row';
 import { ChatVoicePicker, ChatVoiceSettings } from './chat-voice-settings';
 
 type ToolsTab = 'chat' | 'voice' | 'image';
-type ToolsPanel = 'voice' | null;
+type ToolsPanel = 'voice' | 'guide' | null;
 
 const PANEL_TITLES: Record<Exclude<ToolsPanel, null>, string> = {
   voice: '默认声音',
+  guide: '聊偏了？你可以改',
 };
 
 const PANEL_DESCRIPTIONS: Record<Exclude<ToolsPanel, null>, string> = {
   voice: '选择角色说话的声音',
+  guide: '改一句话，或从中途重新聊。',
 };
 
 const TABS: { key: ToolsTab; label: string; icon: ComponentType<{ className?: string }> }[] = [
@@ -63,24 +66,7 @@ export function ChatToolsPanel({
               新对话、语音和图片设置
             </SheetDescription>
 
-            <div className="my-4 flex gap-1 rounded-full bg-muted p-1">
-              {TABS.map((item) => (
-                <button
-                  key={item.key}
-                  type="button"
-                  onClick={() => setTab(item.key)}
-                  className={cn(
-                    'flex flex-1 items-center justify-center gap-1.5 rounded-full py-2 text-[13px] font-medium transition-colors',
-                    tab === item.key
-                      ? 'bg-background text-foreground shadow-sm'
-                      : 'text-muted-foreground'
-                  )}
-                >
-                  <item.icon className="size-3.5" aria-hidden />
-                  {item.label}
-                </button>
-              ))}
-            </div>
+            <ToolsTabs tab={tab} onChange={setTab} />
 
             {tab === 'chat' ? (
               <div className="space-y-2">
@@ -93,6 +79,12 @@ export function ChatToolsPanel({
                     onOpenChange(false);
                     onCreateConversation();
                   }}
+                />
+                <ToolRow
+                  icon={BookOpen}
+                  title="玩法小贴士"
+                  hint="编辑、分支怎么用"
+                  onClick={() => setPanel('guide')}
                 />
               </div>
             ) : tab === 'voice' ? (
@@ -124,11 +116,36 @@ export function ChatToolsPanel({
             </div>
             <SheetDescription className="sr-only">{PANEL_DESCRIPTIONS[panel]}</SheetDescription>
 
-            <ChatVoicePicker onPicked={() => setPanel(null)} />
+            {panel === 'voice' ? (
+              <ChatVoicePicker onPicked={() => setPanel(null)} />
+            ) : (
+              <StoryGuideContent />
+            )}
           </>
         )}
       </SheetContent>
     </Sheet>
+  );
+}
+
+function ToolsTabs({ tab, onChange }: { tab: ToolsTab; onChange: (tab: ToolsTab) => void }) {
+  return (
+    <div className="my-4 flex gap-1 rounded-full bg-muted p-1">
+      {TABS.map((item) => (
+        <button
+          key={item.key}
+          type="button"
+          onClick={() => onChange(item.key)}
+          className={cn(
+            'flex flex-1 items-center justify-center gap-1.5 rounded-full py-2 text-[13px] font-medium transition-colors',
+            tab === item.key ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground'
+          )}
+        >
+          <item.icon className="size-3.5" aria-hidden />
+          {item.label}
+        </button>
+      ))}
+    </div>
   );
 }
 

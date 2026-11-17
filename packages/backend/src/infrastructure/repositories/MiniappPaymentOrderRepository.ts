@@ -26,6 +26,7 @@ export interface MiniappPaymentOrderRow {
   product_id: string | null;
   vip_duration_days: number | null;
   vip_bonus_credits: number | null;
+  vip_bonus_main_credits?: number;
   fulfillment_applied: boolean;
   vip_valid_until: string | null;
   next_reconcile_at: string;
@@ -46,6 +47,7 @@ export interface CreateMiniappPaymentOrderInput {
   product_id: string;
   vip_duration_days: number | null;
   vip_bonus_credits: number | null;
+  vip_bonus_main_credits?: number;
 }
 
 export interface PaymentOperationEventInput {
@@ -81,13 +83,6 @@ export interface PaymentOperationEventInput {
   metadata?: Record<string, string | number | boolean | null>;
 }
 
-export interface CheckoutConfirmationRecord {
-  recorded: boolean;
-  checkout_confirmed_at: string | null;
-  last_checkout_confirmed_at: string | null;
-  checkout_confirm_count: number;
-}
-
 /** 日报按天全量取，单页上限只是为了不把一天的订单压成一次超大响应。 */
 const REPORT_PAGE_SIZE = 500;
 
@@ -96,7 +91,7 @@ export class MiniappPaymentOrderRepository {
 
   async create(input: CreateMiniappPaymentOrderInput): Promise<MiniappPaymentOrderRow> {
     const { data, error } = await this.db.from('payment_orders').insert(input).select('*').single();
-    if (error) throw new Error(`创建支付订单失败：${error.message}`);
+    if (error) throw new Error(`创建支付订单失败：${error.message}`, { cause: error });
     return data as MiniappPaymentOrderRow;
   }
 
@@ -106,7 +101,7 @@ export class MiniappPaymentOrderRepository {
       .select('*')
       .eq('id', id)
       .maybeSingle();
-    if (error) throw new Error(`查询支付订单失败：${error.message}`);
+    if (error) throw new Error(`查询支付订单失败：${error.message}`, { cause: error });
     return (data as MiniappPaymentOrderRow | null) ?? null;
   }
 
@@ -117,38 +112,22 @@ export class MiniappPaymentOrderRepository {
       .eq('id', id)
       .eq('user_id', userId)
       .maybeSingle();
-    if (error) throw new Error(`查询用户支付订单失败：${error.message}`);
+    if (error) throw new Error(`查询用户支付订单失败：${error.message}`, { cause: error });
     return (data as MiniappPaymentOrderRow | null) ?? null;
   }
 
-  async recordCheckoutConfirmation(input: {
-    orderId: string;
-    userId: string;
-    requestId: string;
-    occurredAt: string;
-    action: 'initial_open' | 'reopen';
-  }): Promise<CheckoutConfirmationRecord> {
-    const { data, error } = await this.db.rpc('record_checkout_confirmation', {
-      p_order_id: input.orderId,
-      p_user_id: input.userId,
-      p_request_id: input.requestId,
-      p_occurred_at: input.occurredAt,
-      p_action: input.action,
-    });
-    if (error) throw new Error(`记录收银台确认失败：${error.message}`);
-    const row = Array.isArray(data) ? data[0] : data;
-    if (!row || typeof row !== 'object') throw new Error('记录收银台确认失败：RPC 返回为空');
-    return row as CheckoutConfirmationRecord;
-  }
-
+  /** event_key 是事实的去重键：同一事实重复上报（如对账每轮都看到同一异常）直接忽略，不算失败。 */
   async recordOperationEvent(input: PaymentOperationEventInput): Promise<void> {
-    const { error } = await this.db.from('payment_operation_events').insert({
-      ...input,
-      error_class: input.error_class ?? null,
-      duration_ms: input.duration_ms ?? null,
-      metadata: input.metadata ?? {},
-    });
-    if (error) throw new Error(`记录支付操作事件失败：${error.message}`);
+    const { error } = await this.db.from('payment_operation_events').upsert(
+      {
+        ...input,
+        error_class: input.error_class ?? null,
+        duration_ms: input.duration_ms ?? null,
+        metadata: input.metadata ?? {},
+      },
+      { onConflict: 'event_key', ignoreDuplicates: true }
+    );
+    if (error) throw new Error(`记录支付操作事件失败：${error.message}`, { cause: error });
   }
 
   async listByUser(input: {
@@ -172,7 +151,7 @@ export class MiniappPaymentOrderRepository {
     }
 
     const { data, error } = await query;
-    if (error) throw new Error(`查询支付订单列表失败：${error.message}`);
+    if (error) throw new Error(`查询支付订单列表失败：${error.message}`, { cause: error });
     return (data ?? []) as MiniappPaymentOrderRow[];
   }
 
@@ -203,7 +182,7 @@ export class MiniappPaymentOrderRepository {
       }
 
       const { data, error } = await query;
-      if (error) throw new Error(`查询区间支付订单失败：${error.message}`);
+      if (error) throw new Error(`查询区间支付订单失败：${error.message}`, { cause: error });
 
       const page = (data ?? []) as MiniappPaymentOrderRow[];
       rows.push(...page);
@@ -215,7 +194,7 @@ export class MiniappPaymentOrderRepository {
     const { data, error } = await this.db.rpc('expire_payment_orders', {
       p_user_id: userId,
     });
-    if (error) throw new Error(`过期用户支付订单失败：${error.message}`);
+    if (error) throw new Error(`过期用户支付订单失败：${error.message}`, { cause: error });
     return typeof data === 'number' ? data : 0;
   }
 
@@ -223,18 +202,16 @@ export class MiniappPaymentOrderRepository {
     const { data, error } = await this.db.rpc('expire_payment_orders', {
       p_user_id: null,
     });
-    if (error) throw new Error(`过期支付订单失败：${error.message}`);
+    if (error) throw new Error(`过期支付订单失败：${error.message}`, { cause: error });
     return typeof data === 'number' ? data : 0;
   }
 
-  /**
-   * 判过期前需要跟厂商对一次账的订单：已到期但还没入账的 pending，
-   * 以及窗口内已被判过期、仍未入账的订单。
-   */
-  async listUnsettledAroundExpiry(input: {
+  /** 包含建单响应丢失、无交易号的易支付订单；按持久化轮询时间排序避免慢单饿死后续订单。 */
+  async listRecentUnsettled(input: {
     since: string;
-    until: string;
     limit: number;
+    now: string;
+    signal?: AbortSignal;
   }): Promise<MiniappPaymentOrderRow[]> {
     const { data, error } = await this.db
       .from('payment_orders')
@@ -242,81 +219,40 @@ export class MiniappPaymentOrderRepository {
       .in('status', ['pending', 'expired'])
       .eq('credits_added', false)
       .eq('fulfillment_applied', false)
-      .gte('expires_at', input.since)
-      .lte('expires_at', input.until)
-      .order('expires_at', { ascending: true })
-      .limit(input.limit);
-
-    if (error) throw new Error(`查询待对账支付订单失败：${error.message}`);
-    return (data ?? []) as MiniappPaymentOrderRow[];
-  }
-
-  async listDueForReconciliation(input: {
-    now: string;
-    limit: number;
-  }): Promise<MiniappPaymentOrderRow[]> {
-    const { data, error } = await this.db
-      .from('payment_orders')
-      .select('*')
-      .eq('status', 'pending')
-      .eq('credits_added', false)
-      .eq('fulfillment_applied', false)
-      .gt('expires_at', input.now)
+      .like('id', 'EP%')
+      .gte('created_at', input.since)
       .lte('next_reconcile_at', input.now)
-      .or(`reconcile_locked_until.is.null,reconcile_locked_until.lt.${input.now}`)
       .order('next_reconcile_at', { ascending: true })
-      .limit(input.limit);
+      .order('id', { ascending: true })
+      .limit(input.limit)
+      .abortSignal(input.signal ?? AbortSignal.timeout(5_000));
 
-    if (error) throw new Error(`查询待快速对账支付订单失败：${error.message}`);
+    if (error) throw new Error(`查询待对账支付订单失败：${error.message}`, { cause: error });
     return (data ?? []) as MiniappPaymentOrderRow[];
   }
 
-  async claimForReconciliation(input: {
-    candidate: MiniappPaymentOrderRow;
-    now: string;
-    lockedUntil: string;
-  }): Promise<MiniappPaymentOrderRow | null> {
-    const { candidate } = input;
-    const { data, error } = await this.db
+  /** 查询前先排到队尾；崩溃后到期可重试，多实例重复只读查询仍由结算幂等兜底。 */
+  async scheduleReconciliation(id: string, nextAt: string, signal?: AbortSignal): Promise<void> {
+    const { error } = await this.db
       .from('payment_orders')
-      .update({
-        last_reconciled_at: input.now,
-        reconcile_attempts: candidate.reconcile_attempts + 1,
-        reconcile_locked_until: input.lockedUntil,
-      })
-      .eq('id', candidate.id)
-      .eq('status', 'pending')
-      .eq('credits_added', false)
-      .eq('fulfillment_applied', false)
-      .eq('next_reconcile_at', candidate.next_reconcile_at)
-      .eq('reconcile_attempts', candidate.reconcile_attempts)
-      .or(`reconcile_locked_until.is.null,reconcile_locked_until.lt.${input.now}`)
-      .select('*')
-      .maybeSingle();
-
-    if (error) throw new Error(`领取快速对账支付订单失败：${error.message}`);
-    return (data as MiniappPaymentOrderRow | null) ?? null;
+      .update({ next_reconcile_at: nextAt })
+      .eq('id', id)
+      .in('status', ['pending', 'expired'])
+      .abortSignal(signal ?? AbortSignal.timeout(5_000));
+    if (error) throw new Error('安排支付对账失败', { cause: error });
   }
 
-  async releaseReconciliationClaim(input: {
-    id: string;
-    lockedUntil: string;
-    nextReconcileAt: string;
-  }): Promise<boolean> {
+  /** 查单确认未支付且超过本地期限后标记过期；迟到支付仍允许恢复履约。 */
+  async expirePendingById(id: string): Promise<boolean> {
     const { data, error } = await this.db
       .from('payment_orders')
-      .update({
-        next_reconcile_at: input.nextReconcileAt,
-        reconcile_locked_until: null,
-      })
-      .eq('id', input.id)
+      .update({ status: 'expired' })
+      .eq('id', id)
       .eq('status', 'pending')
-      .eq('credits_added', false)
-      .eq('reconcile_locked_until', input.lockedUntil)
       .select('id')
       .maybeSingle();
 
-    if (error) throw new Error(`释放快速对账支付订单失败：${error.message}`);
+    if (error) throw new Error(`关闭支付订单失败：${error.message}`, { cause: error });
     return data !== null;
   }
 
@@ -329,7 +265,7 @@ export class MiniappPaymentOrderRepository {
       .eq('status', 'pending')
       .lte('expires_at', new Date().toISOString());
 
-    if (error) throw new Error(`过期支付订单失败：${error.message}`);
+    if (error) throw new Error(`过期支付订单失败：${error.message}`, { cause: error });
   }
 
   /** 把已超时但未履约的订单放回 pending，让迟到的已验签回调还能补账。
@@ -344,15 +280,33 @@ export class MiniappPaymentOrderRepository {
       .eq('credits_added', false)
       .eq('fulfillment_applied', false);
 
-    if (error) throw new Error(`恢复超时支付订单失败：${error.message}`);
+    if (error) throw new Error(`恢复超时支付订单失败：${error.message}`, { cause: error });
+  }
+
+  /** 以 CAS 固定首次交易号，允许通知先到/重复关联，永远不覆盖其他交易号。 */
+  async attachProviderTransaction(id: string, providerTransactionId: string): Promise<boolean> {
+    const { data, error } = await this.db
+      .from('payment_orders')
+      .update({ provider_transaction_id: providerTransactionId })
+      .eq('id', id)
+      .in('status', ['pending', 'expired'])
+      .is('provider_transaction_id', null)
+      .select('id')
+      .maybeSingle();
+    if (error) throw new Error(`记录支付平台单号失败：${error.message}`, { cause: error });
+    if (data !== null) return true;
+    const existing = await this.findById(id);
+    return existing?.provider_transaction_id === providerTransactionId;
   }
 
   async markFailed(id: string): Promise<void> {
     const { error } = await this.db
       .from('payment_orders')
       .update({ status: 'failed' })
-      .eq('id', id);
-    if (error) throw new Error(`标记支付订单失败失败：${error.message}`);
+      .eq('id', id)
+      .eq('status', 'pending')
+      .is('provider_transaction_id', null);
+    if (error) throw new Error(`标记支付订单失败失败：${error.message}`, { cause: error });
   }
 
   async complete(
@@ -365,7 +319,7 @@ export class MiniappPaymentOrderRepository {
       p_provider_transaction_id: providerTransactionId,
       p_settled_by: settledBy,
     });
-    if (error) throw new Error(`完成支付订单失败：${error.message}`);
+    if (error) throw new Error(`完成支付订单失败：${error.message}`, { cause: error });
     return data as MiniappPaymentOrderRow;
   }
 }
@@ -388,6 +342,7 @@ export function toPaymentOrder(row: MiniappPaymentOrderRow): PaymentOrder {
     fulfillment_applied: row.fulfillment_applied,
     vip_duration_days: row.vip_duration_days,
     vip_bonus_credits: row.vip_bonus_credits,
+    vip_bonus_main_credits: row.vip_bonus_main_credits ?? 0,
     vip_valid_until: row.vip_valid_until,
   };
 }

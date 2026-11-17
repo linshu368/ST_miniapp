@@ -279,6 +279,12 @@ export function CreatedCharacters() {
                 <Plus className="size-4" />
                 创作角色卡
               </Link>
+              <Link
+                href="/wishes?from=creation"
+                className="mt-2 inline-flex min-h-11 items-center text-xs text-muted-foreground active:text-primary"
+              >
+                还没想好题材？去心愿墙看看
+              </Link>
             </div>
           )}
         </>
@@ -296,8 +302,8 @@ export function CreatedCharacters() {
           <SheetTitle>{changing?.visibility === 'public' ? '设为私密' : '公开你的角色'}</SheetTitle>
           <SheetDescription className="mt-3 text-sm leading-7">
             {changing?.visibility === 'public'
-              ? '将不再展示在大厅，已收藏或使用过的用户仍可继续使用。'
-              : '审核通过后进入大厅，所有人都能与你的角色聊天。'}
+              ? '将不再展示在大厅，已收藏或使用过的玩家仍可继续使用。'
+              : '公开后进入大厅，所有人都能与你的角色聊天。'}
           </SheetDescription>
           {error ? (
             <p role="alert" className="mt-3 text-sm text-destructive">
@@ -320,13 +326,13 @@ export function CreatedCharacters() {
                 });
                 setChanging(null);
               } catch (e) {
-                setError(e instanceof Error ? e.message : '暂时未能修改，请重试');
+                setError(e instanceof Error ? e.message : '没改成功，再试一次吧');
               }
             }}
           >
             {visibility.isPending
               ? changing?.visibility === 'private'
-                ? '正在审核…'
+                ? '正在发布…'
                 : '正在保存…'
               : changing?.visibility === 'public'
                 ? '确认设为私密'

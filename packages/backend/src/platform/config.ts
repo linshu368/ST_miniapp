@@ -1,8 +1,9 @@
-import { readFileSync, existsSync } from 'node:fs';
-import { resolve } from 'node:path';
-import dotenv from 'dotenv';
-import { ProxyAgent, setGlobalDispatcher } from 'undici';
 import { createDatabaseConfig, resolveDefaultUserAvatarUrl } from '@miniapp/shared';
+import dotenv from 'dotenv';
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { ProxyAgent, setGlobalDispatcher } from 'undici';
+import { loadLogAlertPolicy } from './observability/alert-config.js';
 
 dotenv.config();
 
@@ -64,6 +65,10 @@ function engineeringTelemetryEndpoint(): string {
 export const config = {
   port: parseInt(process.env.PORT || '3001', 10),
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000',
+  frontendAllowedOrigins: (process.env.FRONTEND_ALLOWED_ORIGINS || '')
+    .split(',')
+    .filter((value) => value.trim()),
+  devAuthBypass: process.env.DEV_AUTH_BYPASS === '1',
   adminPlatformUrl: process.env.ADMIN_PLATFORM_URL || 'https://st-admin-platform.vercel.app',
   nodeEnv,
   engineeringTelemetry: {
@@ -73,6 +78,7 @@ export const config = {
     version: process.env.SENTRY_RELEASE || process.env.RAILWAY_GIT_COMMIT_SHA || 'unknown',
   },
   telegramBotToken: process.env.TELEGRAM_BOT_TOKEN || '',
+  telegramMiniappShortName: process.env.MINIAPP_SHORT_NAME || 'app',
   telegramWebhookSecret: process.env.TELEGRAM_WEBHOOK_SECRET || '',
   botInternalSecret: process.env.BOT_INTERNAL_SECRET || '',
   telegramCommunityBotToken: process.env.TELEGRAM_COMMUNITY_BOT_TOKEN || '',
@@ -137,6 +143,12 @@ export const config = {
     workerLeaseSeconds: parseInt(process.env.IMAGE_WORKER_LEASE_SECONDS || '180', 10),
   },
 
+  // 会话长期记忆后台压缩 worker；本地调试可用 STORY_MEMORY_WORKER_ENABLED=false 关闭。
+  // 是否生成/注入由运营配置 story_memory_config.enabled 控制。
+  storyMemory: {
+    workerEnabled: process.env.STORY_MEMORY_WORKER_ENABLED !== 'false',
+  },
+
   // Venice 出站可选代理：仅本地开发填写 VENICE_HTTPS_PROXY；Railway/生产留空直连。
   venice: {
     httpsProxy: process.env.VENICE_HTTPS_PROXY?.trim() || '',
@@ -165,26 +177,37 @@ export const config = {
 
   // ── MiniApp 支付 ───────────────────────────────────────────────────────────
   payment: {
+    trustRailwayEdge: Boolean(process.env.RAILWAY_ENVIRONMENT_NAME),
     enabled: process.env.PAYMENT_ENABLED === 'true',
-    baseUrl: process.env.PAYMENT_BASE_URL || 'https://zq.716faka.com',
-    merchantId: process.env.PAYMENT_MERCHANT_ID || '',
-    merchantPrivateKey: process.env.PAYMENT_MERCHANT_PRIVATE_KEY || '',
-    platformPublicKey: process.env.PAYMENT_PLATFORM_PUBLIC_KEY || '',
-    notifyUrl: process.env.PAYMENT_NOTIFY_URL || '',
     returnUrl: process.env.PAYMENT_RETURN_URL || '',
+    notifyUrl: process.env.PAYMENT_NOTIFY_URL || '',
+    epay: {
+      baseUrl: process.env.TTZF_BASE_URL || 'https://ttzf8.com/api',
+      appId: process.env.TTZF_APP_ID?.trim() || '',
+      appKey: process.env.TTZF_APP_KEY?.trim() || '',
+    },
   },
 
-  // ── PostHog 服务端 capture（支付终态等非关键事件）──────────────────────────
-  // 这是进程环境密钥，走 config.ts；不是 app_core.runtime_config 的运营配置。
-  // 缺 key / 非法 host 时 adapter no-op，不得影响支付结算。
-  posthog: {
-    apiKey: process.env.POSTHOG_API_KEY || '',
-    host: process.env.POSTHOG_HOST || 'https://us.i.posthog.com',
-    timeoutMs: parseInt(process.env.POSTHOG_TIMEOUT_MS || '3000', 10),
+  // 独立 Cron 才消费这些参数；不改变用户建单或支付恢复开关。
+  paymentProbe: {
+    enabled: process.env.PAYMENT_PROBE_ENABLED === 'true',
+    channel: process.env.PAYMENT_PROBE_CHANNEL?.trim() || 'alipay',
+    preview:
+      process.env.SENTRY_ENVIRONMENT === 'preview' ||
+      /^(?:pr-|preview(?:-|$))/i.test(process.env.RAILWAY_ENVIRONMENT_NAME || ''),
   },
 
-  // Webhook 是部署 secret；是否发送、重试和限流属于 runtime_config.alerting，默认关闭。
+  // 运营平台 CLI 免密登录白名单（逗号分隔邮箱）。为空时 /api/admin/cli/session 关闭。
+  adminCli: {
+    allowedEmails: (process.env.ADMIN_CLI_ALLOWED_EMAILS || '')
+      .split(',')
+      .map((email) => email.trim().toLowerCase())
+      .filter(Boolean),
+  },
+
+  // Webhook 是部署 secret；日志规则只读模块文件，原支付 outbox 的 DB 策略仍独立。
   alerting: {
+    logs: loadLogAlertPolicy(process.env.LOG_ALERTING_ENABLED),
     feishuWebhookUrl: process.env.FEISHU_ALERT_WEBHOOK_URL || '',
     // Sentry → 后端 webhook 的共享密钥；为空时该入口一律 401（安全默认）。
     sentryWebhookSecret: process.env.SENTRY_ALERT_WEBHOOK_SECRET || '',

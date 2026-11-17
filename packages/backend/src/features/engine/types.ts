@@ -5,7 +5,7 @@
 // 与本模块的组装逻辑承担。
 // {{user}} 是唯一例外：组 prompt 时替换为 persona.displayName。
 
-import type { InstructionSlotRules, UserGenerationConfig } from '@miniapp/shared';
+import type { DriveModesConfig, InstructionSlotRules, UserGenerationConfig } from '@miniapp/shared';
 
 /** Persisted by the turn-start RPC; never part of a public DTO. */
 export type InstructionSlotMode = 'full' | 'concise' | 'off';
@@ -64,6 +64,18 @@ export interface EnginePlatformInstructions {
   choiceRules: InstructionSlotRules;
   statusRules: InstructionSlotRules;
   memoryRules: InstructionSlotRules;
+  /** 运营维护的回复风格目录（reply_style_options），按用户 pref_reply_styles 注入模板。 */
+  replyStyles: EngineReplyStyle[];
+  /** 剧情模式（drive_mode_options）；未配置或损坏时为 null，渲染时注入内置保守规则。 */
+  driveModes: DriveModesConfig | null;
+}
+
+/** 回复风格的私有部分：marker 是运营写进主体模板的占位符，rules 是开启时替换进去的规则。 */
+export interface EngineReplyStyle {
+  id: string;
+  marker: string;
+  rules: string;
+  enabled: boolean;
 }
 
 export interface EngineInput {
@@ -73,12 +85,15 @@ export interface EngineInput {
    * 开场白已由 M3b 作为虚拟 turn 0 包含在内：首轮取角色卡，之后取首轮 prompt 快照。
    * 因此引擎**不得**再注入 character.first_mes，否则每轮都会重复一条。
    * 本轮用户输入不在其中，见 userInput。
-   * 窗口下界以 SQL 为准，这里已经是泄洪后的切片，引擎不得再 slice。
+   * 窗口下界由会话编排按正文字数水位决定，这里已经是截断后的切片，引擎不得再 slice。
    */
   history: EngineHistoryMessage[];
   /**
-   * 被窗口截掉的早期轮数。由 SQL 窗口起点算出，引擎只回填观测字段。
-   * 未泄洪或缺省为 0。
+   * 已渲染好的会话长期记忆（前情提要），作为紧跟角色卡的独立 system 消息。
+   */
+  storyMemory?: string;
+  /**
+   * 被窗口截掉的早期轮数，引擎只回填观测字段。未截断或缺省为 0。
    */
   truncatedTurns?: number;
   /** 本轮用户输入原文。引擎负责把平台规则包装在它外面后作为最后一条 user 消息 */
@@ -103,8 +118,7 @@ export interface EngineOutput {
    */
   sampling: Record<string, number>;
   /**
-   * 被窗口截掉的早期轮数，用于观测。
-   * 窗口下界以 SQL 为准；引擎原样回填 input.truncatedTurns，不再二次裁剪。
+   * 被窗口截掉的早期轮数，用于观测。引擎原样回填 input.truncatedTurns，不再二次裁剪。
    */
   truncatedTurns: number;
 }

@@ -20,6 +20,7 @@ const log = createLogger('perf');
 export const PAGE_STALL_MS = 4_000;
 /** 「刚进去最慢」的验证窗口：统计进页后这段时间内的请求。 */
 export const ENTRY_WINDOW_MS = 10_000;
+export const PAGE_NAVIGATION_BUDGET_MS = 2_000;
 
 /**
  * 每个页面都定义了「可用时刻」并开看门狗（design §3.2）。
@@ -233,8 +234,13 @@ function engineeringReady(page: ActivePage): void {
   });
   if (current.navigationType === 'document')
     recordEngineeringMeasurement('page.launch', visitElapsed(current), attributes);
-  if (current.navigationType === 'spa')
-    recordEngineeringMeasurement('page.navigation', visitElapsed(current), attributes);
+  if (current.navigationType === 'spa') {
+    const navigationElapsed = visitElapsed(current);
+    recordEngineeringMeasurement('page.navigation', navigationElapsed, {
+      ...attributes,
+      readiness_budget: navigationElapsed <= PAGE_NAVIGATION_BUDGET_MS ? 'within_2s' : 'over_2s',
+    });
+  }
   finishVisit(current, 'ready');
 }
 

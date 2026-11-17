@@ -3,6 +3,7 @@
 // 路由前缀 /api/v1/conversations 由 M3b 实现、M5 消费；鉴权统一走 requireTelegramAuth（X-Init-Data）
 
 import type { PreferredWordCount } from './settings';
+import type { ChatFolderSummary } from './conversation-folders';
 import { z } from 'zod';
 import { splitEditableReply } from '../rich-reply-protocol';
 import {
@@ -11,6 +12,7 @@ import {
   type PublicReplyStyleOption,
 } from './reply-style-options';
 import type { PublicWordCountTiers } from './word-count-tiers';
+import { DriveModeIdSchema, type PublicDriveModes } from './drive-modes';
 
 // ==== 领域对象 ====
 
@@ -47,6 +49,11 @@ export interface ChatMessage {
   /** 生成时的模型快照，仅 assistant 消息有值。改配置后历史输出仍可解释（总方案决策 10） */
   model_id: string | null;
   /**
+   * 这一轮每轮扣多少星尘（开轮时定下的档位价，仅 assistant 消息）；0 表示免费轮（畅聊等）。
+   * 缺省表示不知道：旧后端、继承的历史、本地流式占位。前端据此在「免费 → 付费」那一轮前加分隔线。
+   */
+  credits_per_turn?: number;
+  /**
    * 展示规则发布版本。缺失或 null 都表示这条消息继续用原来的 Markdown；
    * 旧 producer 不写该字段时不能拿当前线上版本顶上。
    */
@@ -72,6 +79,8 @@ export interface ChatSession {
   message_count: number;
   /** null = 未置顶。置顶会话排在列表最前，多个置顶之间按此时间倒序 */
   pinned_at: string | null;
+  /** 用户放入的分组；null/缺省 = 未分组（旧后端不返回该字段） */
+  folder_id?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -93,6 +102,11 @@ export interface UserGenerationConfig {
   pref_show_memory: boolean;
   /** Missing means no selected styles; independent boolean choices. */
   pref_reply_styles?: ReplyStylePreferences;
+  /**
+   * 生效的剧情模式 id（已按启用档位与默认档解析）。未配置剧情模式时缺省，
+   * 此时引擎使用内置的保守规则。
+   */
+  pref_drive_mode?: string;
   pref_custom_instructions: string | null;
 }
 
@@ -105,6 +119,7 @@ export const UserGenerationConfigSchema: z.ZodType<UserGenerationConfig> = z
     pref_show_status: z.boolean(),
     pref_show_memory: z.boolean(),
     pref_reply_styles: ReplyStylePreferencesSchema.optional(),
+    pref_drive_mode: DriveModeIdSchema.optional(),
     pref_custom_instructions: z.string().nullable(),
   })
   .strict();
@@ -132,7 +147,8 @@ export type ConversationErrorCode =
   | 'reply_like_not_allowed'
   | 'message_change_not_allowed'
   | 'message_change_conflict'
-  | 'upstream_error';
+  | 'upstream_error'
+  | 'upstream_timeout';
 
 // ==== POST /api/v1/conversations ====
 
@@ -153,7 +169,16 @@ export interface ListConversationsQuery {
   character_id?: string;
   limit?: number;
   offset?: number;
+  /** 分组 id；`none` = 只看未分组；不传 = 全部 */
+  folder?: string;
+  /** 按对话名搜索（不区分大小写，1–30 字）；与 folder 同时传时以搜索为准、不限分组 */
+  q?: string;
+  /** 管理模式的快捷筛选：short = 只聊了一两句（≤2 轮）；idle = 30 天没聊 */
+  quick?: ConversationQuickFilter;
 }
+
+export const CONVERSATION_QUICK_FILTERS = ['short', 'idle'] as const;
+export type ConversationQuickFilter = (typeof CONVERSATION_QUICK_FILTERS)[number];
 
 /**
  * 列表恒定过滤掉 message_count = 0 的会话：进角色卡就会建会话，一句话没发的那些
@@ -164,6 +189,11 @@ export interface ListConversationsQuery {
 export interface ListConversationsData {
   sessions: ChatSession[];
   total: number;
+  /**
+   * 仅全量列表（不带 character_id）的首页（offset=0）附带，供标签栏显示数量。
+   * 读取失败或迁移未执行时缺省，前端据此隐藏分组入口。
+   */
+  folder_summary?: ChatFolderSummary;
 }
 
 // ==== GET /api/v1/conversations/:id ====
@@ -207,7 +237,7 @@ export interface SetMessageLikeData {
 // ==== PATCH /api/v1/conversations/:id ====
 
 /**
- * 两个字段都可选：只传 title 是重命名，只传 pinned 是置顶/取消置顶，都不传是空操作。
+ * 字段都可选：只传 title 是重命名，只传 pinned 是置顶/取消置顶，只传 folder_id 是移到分组，都不传是空操作。
  * title = null 是有意义的取值（恢复为当前角色名），所以「本次不改标题」只能用
  * 「不带 title 字段」表达，不能用 null 兼任。
  */
@@ -215,6 +245,8 @@ export interface UpdateConversationRequest {
   /** null 表示恢复为当前绑定角色的 name */
   title?: string | null;
   pinned?: boolean;
+  /** 移到分组；null = 移出分组 */
+  folder_id?: string | null;
 }
 
 export interface UpdateConversationData {
@@ -266,6 +298,8 @@ export interface ConversationStreamStartEvent {
   requested_model_id?: string;
   /** Configured delay after primary dispatch, not the actual trigger offset or fallback lifetime. */
   fallback_trigger_ms?: number;
+  /** Server time spent before this event; the client subtracts it to isolate network time. */
+  server_elapsed_ms?: number;
   type: 'start';
   /** Frozen total budget measured from the original user submission, never from this event. */
   first_token_deadline_ms?: number;
@@ -273,7 +307,10 @@ export interface ConversationStreamStartEvent {
   user_message_id: string | null;
   assistant_message_id: string;
   revision: number;
-  /** Requested setting for this turn, not a guarantee that the model exposes reasoning. */
+  /**
+   * 这一轮是否显示思考过程：默认等于请求里的开关；畅聊免费模型恒为 true（关不掉思考的模型照样先想，
+   * 过程要让用户看到）。不保证模型真的会吐出思考过程。
+   */
   thinking_enabled?: boolean;
   /** 本轮开轮时绑定的规则版本。旧 start 事件没有该字段时按 null 解释。 */
   postprocess_version?: number | null;
@@ -324,6 +361,8 @@ export interface GetGenerationConfigData {
   word_count_tiers: PublicWordCountTiers;
   /** Enabled options in operator order; no private marker or rule text. */
   reply_style_options?: PublicReplyStyleOption[];
+  /** 启用的剧情模式；未配置时缺省，前端隐藏该栏目。不含规则正文。 */
+  drive_modes?: PublicDriveModes;
 }
 
 // ==== PATCH /api/v1/generation-config ====
@@ -339,6 +378,8 @@ export interface PatchGenerationConfigRequest {
   pref_show_memory?: boolean;
   /** Partial map merge; unrelated option IDs are preserved. */
   pref_reply_styles?: ReplyStylePreferences;
+  /** 必须是当前启用的剧情模式 id */
+  pref_drive_mode?: string;
   pref_custom_instructions?: string | null;
 }
 
@@ -350,6 +391,7 @@ export const PatchGenerationConfigRequestSchema: z.ZodType<PatchGenerationConfig
     pref_show_status: z.boolean().optional(),
     pref_show_memory: z.boolean().optional(),
     pref_reply_styles: ReplyStylePreferencesSchema.optional(),
+    pref_drive_mode: DriveModeIdSchema.optional(),
     pref_custom_instructions: z.string().nullable().optional(),
   })
   .strict();
@@ -359,6 +401,7 @@ export interface PatchGenerationConfigData {
   word_count_tiers: PublicWordCountTiers;
   /** Enabled options in operator order; no private marker or rule text. */
   reply_style_options?: PublicReplyStyleOption[];
+  drive_modes?: PublicDriveModes;
 }
 
 /** POST /api/v1/conversations/:id/cancel. The ID binds cancellation to one revision. */

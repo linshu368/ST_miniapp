@@ -327,7 +327,7 @@ describe('first-token fallback budget and delivery', () => {
     await delivered.response.body?.cancel();
     test.controller.abort();
   });
-  it('the same model uses one POST and may deliver after the primary trigger up to the total deadline', async () => {
+  it('the fallback model selected as primary still gets a second attempt at the trigger', async () => {
     const test = setup({
       primaryAt: 55,
       primary: { provider: 'openrouter', providerModelId: 'vendor/operator-flash' },
@@ -335,23 +335,22 @@ describe('first-token fallback budget and delivery', () => {
     });
     await vi.advanceTimersByTimeAsync(56);
     const delivered = await test.result;
-    expect(delivered.role).toBe('primary');
-    expect(test.calls).toHaveLength(1);
-    expect(test.calls[0]?.cancelled).toBe(false);
-    expect(test.store.prepareFallback).not.toHaveBeenCalled();
+    expect(test.calls).toHaveLength(2);
+    expect(test.store.prepareFallback).toHaveBeenCalledTimes(1);
+    expect(test.calls.filter((call) => call.cancelled)).toHaveLength(1);
     await delivered.response.body?.cancel();
   });
-  it('the same silent model is stopped at the total deadline without a duplicate POST', async () => {
+  it('a silent same-model race stops both attempts at the total deadline', async () => {
     const test = setup({
       primaryAt: 100,
+      fallbackAt: 200,
       primary: { provider: 'openrouter', providerModelId: 'vendor/operator-flash' },
       fallbackModelId: 'vendor/operator-flash',
     });
     await vi.advanceTimersByTimeAsync(101);
     await expect(test.result).rejects.toMatchObject({ stage: 'global' });
-    expect(test.calls).toHaveLength(1);
-    expect(test.calls[0]?.cancelled).toBe(true);
-    expect(test.store.prepareFallback).not.toHaveBeenCalled();
+    expect(test.calls).toHaveLength(2);
+    expect(test.calls.every((call) => call.cancelled)).toBe(true);
   });
   it('honors cancellation while waiting for the first token', async () => {
     const test = setup({ primaryAt: 55 });

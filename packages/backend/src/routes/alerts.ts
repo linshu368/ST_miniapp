@@ -21,9 +21,6 @@ import type { AlertEvaluation } from '@miniapp/shared';
 const ALERT_SECRET_HEADER = 'x-alert-secret';
 /** Internal Integration 每次投递都会带上它，签名是 body 的 HMAC-SHA256。 */
 const SENTRY_SIGNATURE_HEADER = 'sentry-hook-signature';
-/** 原始 body 只对本路由生效：验签需要字节级原文，解析后的对象无法还原空白与键序。 */
-const RAW_JSON = 'sentry-webhook-raw-json';
-
 function secretMatches(provided: string | undefined): boolean {
   const expected = config.alerting.sentryWebhookSecret;
   if (!expected || !provided) return false;

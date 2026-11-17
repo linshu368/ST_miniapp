@@ -7,7 +7,7 @@ datasource db {
   url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
   // 只列有 model 落在里面的 schema（migration 099 的归属划分）。
-  // $queryRaw 用全限定名访问 experience / cs_platform，不需要在这里声明。
+  // $queryRaw 用全限定名访问 experience，不需要在这里声明。
   schemas   = ["app_core", "miniapp_features", "billing"]
 }
 
@@ -17,10 +17,6 @@ datasource db {
 model MiniappUser {
   id                    String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   tg_id                 String                   @unique
-  source_id             String?
-  bot_entered_at        DateTime?                @db.Timestamptz(6)
-  miniapp_entered_at    DateTime?                @db.Timestamptz(6)
-  total_round           BigInt                   @default(0)
   created_at            DateTime                 @default(now()) @db.Timestamptz(6)
   updated_at            DateTime                 @default(now()) @db.Timestamptz(6)
   daily_checkins        daily_checkins[]
@@ -42,7 +38,6 @@ model miniapp_user_settings {
   avatar_url               String?
   tg_avatar_url            String?
   custom_avatar_url        String?
-  total_round              BigInt      @default(0)
   /// NULL = 从未选择，跟随 runtime_config.pref_word_count_tiers.default_tier_id（086）
   pref_word_count          String?
   pref_show_options        Boolean     @default(true)

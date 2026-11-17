@@ -86,36 +86,38 @@ interface ChatMessageBubbleProps {
 export function ChatMessageBubble(props: ChatMessageBubbleProps) {
   if (!props.editable && !props.branch) return <ChatMessageContent {...props} />;
   return (
-    <ChatMessageEditing
-      message={props.message}
-      enabled={Boolean(props.editable)}
-      disabled={Boolean(props.editDisabled)}
-      menuDisabled={props.editMenuDisabled}
-      viewportHeight={props.viewportHeight}
-      branch={props.branch}
-      onEditingChange={props.onEditingChange}
-    >
-      {({ actions, editAction, editor }) => (
-        <ChatMessageContent
-          {...props}
-          editActions={
-            <>
-              {editAction}
-              {actions}
-            </>
-          }
-          inlineEditor={editor}
-          footer={
-            props.renderFooter?.(actions, editAction) ?? (
+    <div id={`chat-message-${props.message.id}`} className="contents">
+      <ChatMessageEditing
+        message={props.message}
+        enabled={Boolean(props.editable)}
+        disabled={Boolean(props.editDisabled)}
+        menuDisabled={props.editMenuDisabled}
+        viewportHeight={props.viewportHeight}
+        branch={props.branch}
+        onEditingChange={props.onEditingChange}
+      >
+        {({ actions, editAction, editor }) => (
+          <ChatMessageContent
+            {...props}
+            editActions={
               <>
                 {editAction}
                 {actions}
               </>
-            )
-          }
-        />
-      )}
-    </ChatMessageEditing>
+            }
+            inlineEditor={editor}
+            footer={
+              props.renderFooter?.(actions, editAction) ?? (
+                <>
+                  {editAction}
+                  {actions}
+                </>
+              )
+            }
+          />
+        )}
+      </ChatMessageEditing>
+    </div>
   );
 }
 

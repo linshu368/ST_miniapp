@@ -278,6 +278,34 @@ describe('notification routes', () => {
     vi.stubEnv('DEV_AUTH_BYPASS', '1');
   });
 
+  it('preserves wish response metadata and recipient isolation through the real mapper', async () => {
+    const metadata = { wish_id: MINE, character_id: BROADCAST };
+    Object.assign(notifications[0]!, {
+      scope: 'personal',
+      category: 'interaction',
+      kind: 'character_wish_response',
+      metadata,
+      action_path: `/wishes/${MINE}`,
+    });
+    const app = await buildApp();
+    try {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/notifications?scope=personal',
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json().data.notifications).toHaveLength(1);
+      expect(response.json().data.notifications[0]).toMatchObject({
+        id: MINE,
+        kind: 'character_wish_response',
+        metadata,
+        action_path: `/wishes/${MINE}`,
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
   it('requires telegram auth', async () => {
     vi.stubEnv('DEV_AUTH_BYPASS', '');
     const app = await buildApp();

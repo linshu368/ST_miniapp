@@ -1,9 +1,66 @@
 'use client';
 
-import * as Sentry from '@sentry/nextjs';
+import { ImagePlazaHistorySheet } from '@/components/image-plaza/image-plaza-history-sheet';
+import { StudioArtifactCard } from '@/components/image-plaza/studio-artifact-card';
+import {
+  StudioReferencePicker,
+  UNSUPPORTED_REFERENCE_NOTICE,
+} from '@/components/image-plaza/studio-reference-picker';
+import { StudioVideoCard } from '@/components/image-plaza/studio-video-card';
+import {
+  Sheet,
+  SheetClose,
+  SheetContent,
+  SheetDescription,
+  SheetTitle,
+  SheetTrigger,
+} from '@/components/ui/sheet';
+import { useMemoryDraft } from '@/hooks/use-memory-draft';
+import {
+  useCreateCreatorCoverMutation,
+  useCreatorCharactersQuery,
+} from '@/lib/api/creator-characters';
+import {
+  fileToImagePlazaPayload,
+  isVideoPlazaAttemptTerminal,
+  useCreateImagePlazaConversationMutation,
+  useCreateVideoReferenceFromImageArtifactMutation,
+  useImagePlazaConfigQuery,
+  useImagePlazaConversationQuery,
+  useImagePlazaQuoteMutation,
+  useShareImagePlazaMutation,
+  useShareVideoPlazaMutation,
+  useSubmitImagePlazaAttemptMutation,
+  useSubmitVideoPlazaAttemptMutation,
+  useUploadImagePlazaReferenceMutation,
+  useVideoPlazaAttemptQuery,
+  useVideoPlazaQuoteMutation,
+  validateImagePlazaReference,
+  videoPlazaQuoteRequestFromAttempt,
+} from '@/lib/api/image-plaza';
 import { markCriticalSettled } from '@/lib/entry-phase';
 import { feedbackAfterPaint, startAction } from '@/lib/perf/action-tracker';
 import { getMetricDimensions } from '@/lib/perf/env-tags';
+import { usePageReady } from '@/lib/perf/page-ready';
+import { markPageCriticalVisual } from '@/lib/perf/page-tracker';
+import { sendSentryLog } from '@/lib/sentry/client';
+import { useTelegramBackButton } from '@/lib/telegram';
+import { useVisualViewportHeight } from '@/lib/use-visual-viewport-height';
+import {
+  IMAGE_PLAZA_PROMPT_MAX_CHARS,
+  parseCreatorCoverReturn,
+  selectSupportedVideoPlazaOptions,
+  type ImagePlazaArtifact,
+  type ImagePlazaAspectRatio,
+  type ImagePlazaMode,
+  type ImagePlazaModel,
+  type VideoPlazaAttempt,
+  type VideoPlazaInputMode,
+  type VideoPlazaModel,
+  type VideoPlazaQuoteData,
+} from '@miniapp/shared';
+import * as Sentry from '@sentry/nextjs';
+import { useQuery } from '@tanstack/react-query';
 import {
   ArrowLeft,
   Check,
@@ -19,55 +76,6 @@ import {
 import dynamic from 'next/dynamic';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  IMAGE_PLAZA_PROMPT_MAX_CHARS,
-  selectSupportedVideoPlazaOptions,
-  parseCreatorCoverReturn,
-  type ImagePlazaArtifact,
-  type ImagePlazaAspectRatio,
-  type ImagePlazaMode,
-  type ImagePlazaModel,
-  type VideoPlazaAttempt,
-  type VideoPlazaInputMode,
-  type VideoPlazaModel,
-  type VideoPlazaQuoteData,
-} from '@miniapp/shared';
-import {
-  fileToImagePlazaPayload,
-  isVideoPlazaAttemptTerminal,
-  videoPlazaQuoteRequestFromAttempt,
-  validateImagePlazaReference,
-  useCreateImagePlazaConversationMutation,
-  useCreateVideoReferenceFromImageArtifactMutation,
-  useImagePlazaConfigQuery,
-  useImagePlazaConversationQuery,
-  useImagePlazaQuoteMutation,
-  useShareImagePlazaMutation,
-  useSubmitImagePlazaAttemptMutation,
-  useUploadImagePlazaReferenceMutation,
-  useShareVideoPlazaMutation,
-  useSubmitVideoPlazaAttemptMutation,
-  useVideoPlazaAttemptQuery,
-  useVideoPlazaQuoteMutation,
-} from '@/lib/api/image-plaza';
-import { StudioArtifactCard } from '@/components/image-plaza/studio-artifact-card';
-import { StudioVideoCard } from '@/components/image-plaza/studio-video-card';
-import { useCreateCreatorCoverMutation } from '@/lib/api/creator-characters';
-import { ImagePlazaHistorySheet } from '@/components/image-plaza/image-plaza-history-sheet';
-import { useMemoryDraft } from '@/hooks/use-memory-draft';
-import { useTelegramBackButton } from '@/lib/telegram';
-import { usePageReady } from '@/lib/perf/page-ready';
-import { markPageCriticalVisual } from '@/lib/perf/page-tracker';
-import { useVisualViewportHeight } from '@/lib/use-visual-viewport-height';
-import { sendSentryLog } from '@/lib/sentry/client';
-import {
-  Sheet,
-  SheetClose,
-  SheetContent,
-  SheetDescription,
-  SheetTitle,
-  SheetTrigger,
-} from '@/components/ui/sheet';
 
 const StudioSettingsDialog = dynamic(() =>
   import('@/components/image-plaza/studio-settings-dialog').then(
@@ -87,6 +95,50 @@ export default function ImagePlazaStudioPage() {
   const params = useParams<{ conversationId: string }>();
   // App Router may reuse the page when switching conversations; local uploads/settings must not survive.
   return <ImagePlazaStudio key={params.conversationId} conversationId={params.conversationId} />;
+}
+
+// Only mounted for a validated return route from the character editor.
+function CreatorDescriptionShortcut({
+  returnPath,
+  prompt,
+  onInsert,
+}: {
+  returnPath: string;
+  prompt: string;
+  onInsert: (text: string, clipped: boolean) => void;
+}) {
+  const ownerId = useCreatorCharactersQuery().data?.owner_user_id;
+  const { data: description } = useQuery({
+    queryKey: ['creator-cover-description', ownerId, returnPath],
+    enabled: Boolean(ownerId),
+    gcTime: 0,
+    retry: false,
+    queryFn: async () => {
+      if (!ownerId) return '';
+      const url = new URL(returnPath, window.location.origin);
+      const characterId = url.pathname.endsWith('/edit') ? url.pathname.split('/')[3] : undefined;
+      const draftId = characterId ?? url.searchParams.get('draft');
+      if (!draftId) return '';
+      const { loadCharacterDraft } = await import('@/components/creation/character-editor-draft');
+      const local = await loadCharacterDraft({ ownerId, draftId, characterId });
+      return local?.draft.description.trim() ?? '';
+    },
+  });
+  if (!description || prompt.includes(description)) return null;
+  const prefix = prompt.trim() ? prompt + '\n\n' : '';
+  const remaining = IMAGE_PLAZA_PROMPT_MAX_CHARS - prefix.length;
+  const excerpt = description.slice(0, Math.max(0, remaining)).replace(/[\uD800-\uDBFF]$/u, '');
+  if (!excerpt) return null;
+  return (
+    <button
+      type="button"
+      className="inline-flex min-h-11 items-center gap-1.5 text-xs font-medium text-primary"
+      onClick={() => onInsert(prefix + excerpt, excerpt.length < description.length)}
+    >
+      <Plus size={14} aria-hidden />
+      {prompt.trim() ? '追加角色描述' : '带入角色描述'}
+    </button>
+  );
 }
 
 function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
@@ -165,7 +217,6 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
   const videoQuote = useVideoPlazaQuoteMutation();
   const submitVideo = useSubmitVideoPlazaAttemptMutation(conversationId);
   const shareVideo = useShareVideoPlazaMutation();
-  const fileInput = useRef<HTMLInputElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const messagesRef = useRef<HTMLDivElement | null>(null);
   const followLatestRef = useRef(true);
@@ -176,6 +227,7 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
   const referenceFile = useRef<File | null>(null);
   const sending = useRef(false);
   const videoReferenceMapping = useRef(false);
+  const promptInput = useRef<HTMLTextAreaElement>(null);
   // 从点击生成到图片真正解码展示出来的耗时；只算最新这一次生成，图片 onLoad 消费后清掉。
   const genStartedAt = useRef<number | null>(null);
   const genReported = useRef(false);
@@ -256,7 +308,7 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
       router.push(next.pathname + next.search);
     } catch (error) {
       if (coverRouteVersion.current === routeVersion)
-        setNotice(error instanceof Error ? error.message : '暂时未能使用这张封面，请重试');
+        setNotice(error instanceof Error ? error.message : '这张封面没用上，再试一次吧');
     } finally {
       coverBusy.current = false;
     }
@@ -611,7 +663,7 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
         ? Boolean(videoModel && videoModel.image_input !== 'none')
         : model.supports_i2i;
     if (!referenceAllowed) {
-      showNotice('当前模型不支持添加参考图');
+      showNotice(mediaMode === 'video' ? '当前视频模型不支持参考图' : UNSUPPORTED_REFERENCE_NOTICE);
       return;
     }
     let token: number;
@@ -739,7 +791,7 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
   if ((!config.data && config.isError) || (!data && conversation.isError))
     return (
       <StudioMessage>
-        <p>生成记录暂时无法读取。</p>
+        <p>生成记录没读出来，稍后再看看。</p>
         <button
           type="button"
           disabled={config.isFetching || conversation.isFetching}
@@ -754,7 +806,7 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
       </StudioMessage>
     );
   if (!config.data?.enabled || !data || !model)
-    return <StudioMessage>图片创作暂不可用</StudioMessage>;
+    return <StudioMessage>图片创作暂时用不了</StudioMessage>;
 
   const tip = config.data.share_tip;
   const rate = `${Math.round(config.data.share_rebate_rate * 100)}%`;
@@ -1038,7 +1090,19 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
               </div>
             ) : null}
 
+            {creatorReturn && (
+              <CreatorDescriptionShortcut
+                returnPath={creatorReturn}
+                prompt={prompt}
+                onInsert={(text, clipped) => {
+                  setPrompt(text);
+                  promptInput.current?.focus({ preventScroll: true });
+                  if (clipped) showNotice('已带入可容纳的角色描述，原稿保持完整。');
+                }}
+              />
+            )}
             <textarea
+              ref={promptInput}
               value={mediaMode === 'video' ? videoPrompt : prompt}
               maxLength={mediaMode === 'video' ? undefined : IMAGE_PLAZA_PROMPT_MAX_CHARS}
               onChange={(event) =>
@@ -1063,32 +1127,21 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
             />
           </div>
           <div className="mt-3 flex shrink-0 flex-wrap items-center gap-1">
-            <input
-              ref={fileInput}
-              type="file"
-              accept="image/png,image/jpeg,image/webp"
-              className="hidden"
-              onChange={(event) => {
-                void chooseReference(event.target.files?.[0]);
-                event.currentTarget.value = '';
-              }}
+            <StudioReferencePicker
+              disabled={mediaMode === 'video' && (!videoModel || videoModel.image_input === 'none')}
+              unsupportedNotice={
+                mediaMode === 'video'
+                  ? '当前视频模型不支持参考图，可切换其他视频模型'
+                  : UNSUPPORTED_REFERENCE_NOTICE
+              }
+              supportsReference={
+                mediaMode === 'video'
+                  ? Boolean(videoModel && videoModel.image_input !== 'none')
+                  : model.supports_i2i
+              }
+              onChoose={chooseReference}
+              onNotice={showNotice}
             />
-            <button
-              type="button"
-              onClick={() => fileInput.current?.click()}
-              disabled={
-                mediaMode === 'video' ? videoModel?.image_input === 'none' : !model.supports_i2i
-              }
-              aria-label="添加参考图"
-              title={
-                (mediaMode === 'video' ? videoModel?.image_input !== 'none' : model.supports_i2i)
-                  ? '添加参考图'
-                  : '当前模型不支持参考图'
-              }
-              className="grid size-11 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-background/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"
-            >
-              <ImagePlus className="size-5" aria-hidden />
-            </button>
             <button
               type="button"
               onClick={() =>
@@ -1506,7 +1559,7 @@ function attemptFailureMessage(errorCode: string): string {
     return '图片服务暂未接受本次生成，请调整后重试';
   }
   if (errorCode.includes('reference')) return '参考图当前不可用，请重新添加后再试';
-  return '图片服务未完成本次生成，请稍后重试';
+  return '这次图片没生成出来，再试一次吧';
 }
 
 function StudioMessage({ children }: { children: React.ReactNode }) {

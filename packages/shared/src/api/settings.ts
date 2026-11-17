@@ -1,6 +1,16 @@
 // MiniApp 用户设置领域的前后端共享契约
 import { z } from 'zod';
 import { ReplyStylePreferencesSchema, type ReplyStylePreferences } from './reply-style-options';
+import { DriveModeIdSchema } from './drive-modes';
+
+/** GET /api/users/onboarding: advisory UI only, never a permission or reward. */
+export const UserOnboardingSchema = z
+  .object({
+    eligible: z.boolean(),
+    expires_at: z.string().datetime().nullable(),
+  })
+  .strict();
+export type UserOnboardingData = z.infer<typeof UserOnboardingSchema>;
 
 /**
  * 回复长度档位 id。权威列表来自 runtime_config.pref_word_count_tiers，
@@ -77,6 +87,8 @@ export interface PatchUserSettingsRequest {
   pref_show_memory?: boolean;
   /** Partial map merge; unrelated option IDs are preserved. */
   pref_reply_styles?: ReplyStylePreferences;
+  /** 必须是当前启用的剧情模式 id */
+  pref_drive_mode?: string;
   pref_custom_instructions?: string | null;
 }
 
@@ -90,6 +102,7 @@ export const PatchUserSettingsRequestSchema: z.ZodType<PatchUserSettingsRequest>
     pref_show_status: z.boolean().optional(),
     pref_show_memory: z.boolean().optional(),
     pref_reply_styles: ReplyStylePreferencesSchema.optional(),
+    pref_drive_mode: DriveModeIdSchema.optional(),
     pref_custom_instructions: z.string().nullable().optional(),
   })
   .strict();

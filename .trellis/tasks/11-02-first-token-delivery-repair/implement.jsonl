@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/backend/app/modules/business/conversation-generation.md", "reason": "生成、首字竞争与计费规则"}
+{"file": ".trellis/spec/backend/app/routes-and-features.md", "reason": "生成唯一出口"}
+{"file": ".trellis/spec/backend/app/data-reliability-and-security.md", "reason": "低负载遥测与失败隔离"}
+{"file": ".trellis/spec/frontend/app/api-dataflow-and-state.md", "reason": "前端请求与状态规范"}
+{"file": ".trellis/spec/shared/contracts/api-contracts.md", "reason": "start 事件契约"}
+{"file": ".trellis/spec/database/supabase/migrations-and-rollbacks.md", "reason": "函数替换、ACL 与回滚"}
+{"file": "docs/first-token-fallback.md", "reason": "首字策略文档"}

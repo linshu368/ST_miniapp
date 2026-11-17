@@ -8,7 +8,7 @@ const LONG_TOKEN = /^[0-9a-z_-]{20,}$/i;
 
 /** 已登记页面才进入工程聚合；未知短路径也可能含用户名，不能直接当标签。 */
 export const ENGINEERING_PAGE_ROUTES = new Set([
-  '/',
+  '/watch',
   '/characters',
   '/chats',
   '/chat/:id',
@@ -16,6 +16,11 @@ export const ENGINEERING_PAGE_ROUTES = new Set([
   '/create',
   '/create/studio/:id',
   '/create/work/:id',
+  '/creation',
+  '/creation/characters/new',
+  '/creation/characters/:id/edit',
+  '/creation/data',
+  '/creators/:id',
   '/dramas',
   '/dramas/:id',
   '/vip',
@@ -28,6 +33,8 @@ export const ENGINEERING_PAGE_ROUTES = new Set([
   '/profile/messages/:id',
   '/profile/invite',
   '/profile/support',
+  '/wishes',
+  '/wishes/:id',
 ]);
 
 export function engineeringRoute(route: string): string {

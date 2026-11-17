@@ -12,13 +12,45 @@ declare global {
   }
 }
 
+function notifyNativeReadyFromHtml(): 'sent' | 'unavailable' | 'failed' {
+  try {
+    const params = new URLSearchParams(
+      window.location.search.slice(1) + '&' + window.location.hash.slice(1)
+    );
+    if (!params.get('tgWebAppVersion') || !params.get('tgWebAppPlatform')) return 'unavailable';
+    const native = window as Window & {
+      TelegramWebviewProxy?: { postEvent: (name: string, data: string) => void };
+      external?: External & { notify?: (message: string) => void };
+    };
+    // Same two native transports as @telegram-apps/bridge 2.11.0. Embedded web
+    // Telegram clients retain the existing SDK fallback rather than a new message bridge.
+    if (
+      native.TelegramWebviewProxy &&
+      typeof native.TelegramWebviewProxy.postEvent === 'function'
+    ) {
+      native.TelegramWebviewProxy.postEvent('web_app_ready', '{}');
+    } else if (native.external && typeof native.external.notify === 'function') {
+      native.external.notify('{"eventType":"web_app_ready"}');
+    } else {
+      return 'unavailable';
+    }
+    return 'sent';
+  } catch {
+    return 'failed';
+  }
+}
+
 /** Serialized into HTML: keep this function self-contained, with no runtime imports. */
-function bootstrapStartupShell(): void {
+function bootstrapStartupShell(notify: () => 'sent' | 'unavailable' | 'failed'): void {
   if (window.__miniappStartup) return;
-  const pathname = window.location.pathname;
+  const pathname =
+    window.location.pathname === '/'
+      ? (document.querySelector('[data-startup-content]')?.getAttribute('data-startup-pathname') ??
+        '')
+      : window.location.pathname;
   // Only these routes already have an equivalent, independently verified HTML frame.
   // Other entries keep their existing post-hydration readiness contract.
-  if (pathname !== '/' && pathname !== '/characters' && pathname !== '/dramas') return;
+  if (['/watch', '/characters', '/dramas', '/chats'].indexOf(pathname) < 0) return;
   const state: EarlyStartup = { startedAt: performance.now() };
   window.__miniappStartup = state;
   const protectLaunchContext = (event: MouseEvent) => {
@@ -62,41 +94,14 @@ function bootstrapStartupShell(): void {
     );
   };
   const shellVisible = () => {
-    // The CSS token distinguishes the styled frame from unstyled HTML. The inner marker
-    // and navigation check avoid declaring an empty min-height wrapper ready.
+    // CSS token = styled frame; inner marker + nav (fullscreen /watch has none) = not an empty wrapper.
     return (
       Boolean(getComputedStyle(document.documentElement).getPropertyValue('--app-nav-height')) &&
       visible(document.querySelector('[data-startup-content] main')) &&
       visible(document.querySelector('[data-startup-content]')) &&
-      visible(document.querySelector('[data-startup-shell] nav[aria-label="主导航"]'))
+      (document.querySelector('[data-startup-content][data-startup-fullscreen]') !== null ||
+        visible(document.querySelector('[data-startup-shell] nav[aria-label="主导航"]')))
     );
-  };
-  const notify = (): 'sent' | 'unavailable' | 'failed' => {
-    try {
-      const params = new URLSearchParams(
-        window.location.search.slice(1) + '&' + window.location.hash.slice(1)
-      );
-      if (!params.get('tgWebAppVersion') || !params.get('tgWebAppPlatform')) return 'unavailable';
-      const native = window as Window & {
-        TelegramWebviewProxy?: { postEvent: (name: string, data: string) => void };
-        external?: External & { notify?: (message: string) => void };
-      };
-      // Same two native transports as @telegram-apps/bridge 2.11.0. Embedded web
-      // Telegram clients retain the existing SDK fallback rather than a new message bridge.
-      if (
-        native.TelegramWebviewProxy &&
-        typeof native.TelegramWebviewProxy.postEvent === 'function'
-      ) {
-        native.TelegramWebviewProxy.postEvent('web_app_ready', '{}');
-      } else if (native.external && typeof native.external.notify === 'function') {
-        native.external.notify('{"eventType":"web_app_ready"}');
-      } else {
-        return 'unavailable';
-      }
-      return 'sent';
-    } catch {
-      return 'failed';
-    }
   };
   const check = () => {
     if (stopped) return;
@@ -138,4 +143,4 @@ function bootstrapStartupShell(): void {
 
 // A raw inline script executes while parsing HTML, independently of Next's script queue.
 // It only reads DOM and writes this bounded in-memory record; it never changes React's tree.
-export const EARLY_STARTUP_SCRIPT = `(${bootstrapStartupShell.toString()})();`;
+export const EARLY_STARTUP_SCRIPT = `(${bootstrapStartupShell.toString()})(${notifyNativeReadyFromHtml.toString()});`;

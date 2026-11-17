@@ -5,8 +5,8 @@ scope: backend
 category: business
 status: active
 owners: [backend]
-last_verified_task: .trellis/tasks/11-02-chat-message-edit-delete/
-last_verified_at: 2026-11-02
+last_verified_task: .trellis/tasks/11-16-miniapp-content-path-optimization/
+last_verified_at: 2026-11-16
 ---
 
 # 会话与生成
@@ -14,6 +14,10 @@ last_verified_at: 2026-11-02
 ## 职责与边界
 
 ## 当前状态
+
+2026-11-11 本地候选：历史展示使用 `list_chat_message_page(user_id,session_id,before_turn_index,turn_limit)`，最多 K+1 轮，owner 校验后读取；Repository facade 保持生成/计费签名，专用 reads/mapping/billing 文件各自有界。context/cancel 读取 `session_chat_display`，recover/require/finalize 不返回无 consumer 的整份 history。读页仅对明确传输中断有限重试，SQL 超时不重试；日志按 identity/owner/settings/recover/opening/page 分段。部署前必须执行两份 20261111 扩展迁移、回填并核验全覆盖，见 `docs/chat-history-read-performance.md`。未上线，不以本地测试替代实际准备/首字 P95。
+
+本地候选（2026-11-10）：会话长期记忆。窗口按正文字数双水位在 Backend 决定（`features/story-memory/`），超过高水位先由进程内 worker 压缩将要移出的轮次（默认取生产兜底模型参数，平台成本、不走用户计费），记忆落地后的下一轮窗口与记忆同时切换（先压缩后截断）；生成时与准备阶段并行读取最新版本（用到时最多再等 50ms，失败不注入），作为紧跟角色卡的独立 system 消息；压缩不输入角色卡与开场白。参数与 prompt 为运营 managed config。离线回放 `pnpm --filter @miniapp/backend story-memory:replay -- --session <id>`。
 
 本地候选（尚未发布）：PATCH /api/v1/conversations/:id/messages/:messageId 通过Telegram身份、共享契约和受限RPC修改最近十轮的单条消息。角色编辑请求只包含正文，repository按用户/会话/消息读取有效原文并保留附加内容，RPC在会话锁内校验expected_version，避免并发覆盖。上下文不再读取已删除文本；不调用模型，不生成额外扣费。
 
@@ -35,7 +39,6 @@ AI 回复后处理版本由数据库 current-postprocess RPC 在开轮事务内�
 | `packages/backend/src/features/text-postprocess/config.ts`                          | Admin 正式版本指针严格读取        |
 | `packages/backend/src/infrastructure/repositories/ConversationHistoryRepository.ts` | current-postprocess 开轮 RPC      |
 | `packages/backend/src/features/image/`                                              | 图片任务编排与 telemetry observer |
-| `packages/backend/src/features/image/ImageGenerationTelemetry.ts`                   | 图片生成安全事件 observer         |
 | `packages/backend/src/routes/images.ts`                                             | 图片 HTTP 入口                    |
 
 ## 关键实现链路
@@ -46,21 +49,21 @@ AI 回复后处理版本由数据库 current-postprocess RPC 在开轮事务内�
 
 OpenRouter mapper、计费读取和回捞仓储统一使用专表的厂商原名字段；`llm_generation_id`、`llm_generation_data` 为明确保留的例外。主表 `recordBillingOutcome` 显式接收金额、结算时间和业务结束原因，禁止复用并修改 OpenRouter 元数据对象承载计费列。`usage_cache` 可缺失，不作为元数据完整性的必需条件。Venice 的 mapper/repository 不参与本次命名调整。原名代码需先执行 `20261016_openrouter_original_metadata_fields.sql`；远端未执行前不能部署。
 
-消费 shared conversations/images/telemetry 契约、experience 会话与图片 attempt、OpenRouter、DeepSeek、Grok/Liaobots、Replicate Z、Supabase Storage 和服务端 PostHog capture。
+消费 shared conversations/images/telemetry 契约、experience 会话与图片 attempt、OpenRouter、DeepSeek、Grok/Liaobots、Replicate Z、Supabase Storage。
 
 ## 关键节点与约束
 
-流前错误使用 HTTP；响应头发出后使用流内 error。聊天与图片上游适配不得旁路 `features/generation`。图片 provider 前租约可恢复；Grok 失败只允许切换一次 Z，Z dispatch 后结果未知必须失败关闭。结算明确余额不足删除对象，结算响应未知则保留对象和 storing 状态待幂等对账，且不发送 PostHog 终态事件。事件不得包含 prompt 正文、图片 URL、Storage path、provider request id 或错误 body。
+流前错误使用 HTTP；响应头发出后使用流内 error。聊天与图片上游适配不得旁路 `features/generation`。图片 provider 前租约可恢复；Grok 失败只允许切换一次 Z，Z dispatch 后结果未知必须失败关闭。结算明确余额不足删除对象，结算响应未知则保留对象和 storing 状态待幂等对账。日志不得包含 prompt 正文、图片 URL、Storage path、provider request id 或错误 body。
 
 ## 验证方式
 
-`pnpm --filter @miniapp/backend typecheck && pnpm --filter @miniapp/backend test`；真实上游、PostHog Preview 和 SSE 缓冲使用可重复人工回归，已删除的 `mvp:regression` 不再使用。
+`pnpm --filter @miniapp/backend typecheck && pnpm --filter @miniapp/backend test`；真实上游和 SSE 缓冲使用可重复人工回归，已删除的 `mvp:regression` 不再使用。
 
 ## 已知缺口与待核验项
 
 本地已实现主表调用字段清退：正常读写为显式业务投影，finalizeTurn 不接收调用 ID，上游前 await 快照/专表占位、首次 ID 持久化；已接收 SSE/非流式正文在 metadata 失败时仍保留。五路恢复消费对应专表身份/已存事实，业务取消/超时与计费归属保持。未部署，真实环境验收见任务 T8 报告。
 
-角色卡更多人设字段和自建预设格式仍待后续任务；图片真实 DeepSeek/Grok、Storage、重启/并发、PostHog Preview 事件与发布观测仍待 test 环境验收。
+角色卡更多人设字段和自建预设格式仍待后续任务；图片真实 DeepSeek/Grok、Storage、重启/并发与发布观测仍待 test 环境验收。
 
 ## 关联模块
 
@@ -74,9 +77,19 @@ Venice 单图编辑按报价快照的 `sizingMode` 组装尺寸字段：所有�
 
 审核后的 Civitai 初始数据通过独立离线导入器进入公开作品，不伪造用户、会话或生成 attempt。导入保留最多 2000 字原始提示词与模型映射，超限行隔离且不截断；apply 必须同时提供逐条审核清单、明确 test/production 目标、原图存储确认和有限批次，生产还需额外确认。
 
-Feed/config 始终返回图片与视频共用的启用标签目录及分组元数据；单标签、多标签和计数都按标签中文 label 在 `snapshot.prompt_zh` 做转义后的字面包含匹配，多标签为 OR，再与 search/media 取交集，不按作品 `tags` 数组筛选。「全部」不限制标签。`image_plaza_tags_feature_enabled` 只控制分享时空 tags 的自动打标。
+Feed/config 始终返回图片与视频共用的启用标签目录及分组元数据；单标签、多标签和计数都按标签中文 label 在 `snapshot.prompt_zh` 做转义后的字面包含匹配，多标签为 OR，再与 search/media 取交集，不按作品 `tags` 数组筛选。「全部」不限制标签。分享时空 tags 恒自动打标，沿用上游退役 `image_plaza_tags_feature_enabled` 的行为。
 
 视频创作复用该模块的会话与公开作品投影，但走独立 `video-repository`、`video-upstream`、`video-job`：提交只预扣并返回 202，queue 超时记 `failed_unknown` 且不自动重投；retrieve/download/complete 仅做有限安全重试。视频不调用 LLM 提示词优化。列表 DTO 不含 MP4，详情/工作室签名 URL 复用 `storage.ts` 的有界 LRU。
+
+### 影像合并边界（2026-11-17，本地验证）
+
+1. **范围**：视频分支整合上游 repository 拆分、集中日志和 `admin-client` 迁移；不改变数据库、计费协议或远程发布状态。
+2. **入口**：`ImagePlazaRepository` 保留原公开方法，feed、作品签名、会话 hydration 分别位于 `repository-feed.ts`、`repository-work.ts`、`repository-conversation.ts`；视频 worker 写操作由 `video-worker-repository.ts` 承接。路由按 `image-plaza-feed.ts`、`video-plaza.ts` 分组，仍在原 plugin 上注册。
+3. **契约**：图片与视频共用会话和作品投影；读取会话必须同时保留 `video_attempt` 和视频快照。视频目录在 `admin-client/configSchemas.ts` 与 `menu.ts` 同时登记，网页和 CLI 共用。保留上游首次分享记录读取与自动打标恒开启行为，不恢复已退役开关或 PostHog。
+4. **失败矩阵**：并发超限保持 429；报价失效、越权参考图、幂等冲突和 queue 未知结果沿用原协议；原始数据库错误保留 cause。视频纯文本模型禁用参考图按钮，图片模式仍允许点击查看不支持提示，不能因复用选择组件互相覆盖。
+5. **正反场景**：正常为图片产物映射首帧后进入视频创作、切模型后保留参考图并按能力禁用；旧视频表不存在时图片会话仍可读取。错误为仅选择上游图片 mapper，导致视频快照或任务丢失。
+6. **验证**：复用 shared 契约、Backend 影像与观测、Frontend、Admin、CLI 与 UI fixture 测试；全仓 typecheck、日志/复杂度门禁及构建。`@image` 和封面回流覆盖模拟链路；真实供应商、账务、Telegram 下载和双端 P95 另验，不由本地成功推定。
+7. **合并方法**：应把分支能力接到上游新边界，并保留既有入口和错误语义；不得整文件选择旧 repository 或旧 Admin 配置路径，绕开上游拆分、日志与 CLI 消费者。
 
 ## 变更记录
 
@@ -137,7 +150,7 @@ Wrong：`replyChunks.push(reasoning)`。Correct：思考只进`onReasoningDelta`
 
 回复恢复复用有权限的会话详情与原活动轮询。活动快照最多128轮、125秒，每轮正文256Ki字符/公开思考64Ki字符，按user/session/revision隔离；一次first_token_preview检查点最多2048字符，最终正文仍由chat_history持久化。跨实例/进程重启读取检查点和最终结果，不宣称进程内快照持久。公开思考不写入正文或后续prompt。
 
-recoverable_delivery仅新Backend显式启用；旧请求/终结账单不回填、不追扣。离页/后台已完整保存且可取回的正常回复不免单；真实系统截止/前台无接收超时免费，主动停止原报价原权益一次。缺回报继续pending，预算+15秒仍缺报按保守免单处理，避免服务端完成先扣费而客户端随后报告失败。只有思考无完整正文不自动收费。内部billing gate复用visible返回值表示已满足该轮交付策略，并非声称用户当时正在看。
+recoverable_delivery仅新Backend显式启用；旧请求/终结账单不回填、不追扣。离页/后台已完整保存且可取回的正常回复不免单；真实系统截止免费（2026-11-02 起前台无接收不再影响计费），主动停止原报价原权益一次。缺回报继续pending，预算+15秒仍缺报按保守免单处理，避免服务端完成先扣费而客户端随后报告失败。只有思考无完整正文不自动收费。内部billing gate复用visible返回值表示已满足该轮交付策略，并非声称用户当时正在看。
 
 唯一新增迁移20261027_recoverable_chat_delivery.sql：experience拥有策略/首字检查点，billing资格函数读取事实；analytics只追加无正文的策略/时刻/失败锁存字段。无新cron、逐token数据库写、业务回填或公开权限。先TEST、后生产迁移、后Backend/Frontend。回退保留新增对象和终账，必要时forward-fix。
 
@@ -165,7 +178,7 @@ send/regenerate 携带可选 `first_token_measurement`；后端通过既有 begi
 
 ## 首发与兜底竞争交付（2026-10-28）
 
-首发实际派发后达到型号阈值（默认4秒）启动兜底，首发继续；两路共用原10秒首字截止，任一路先出现有效正文或已开启公开思考即锁定唯一赢家，立即中止败方。`fallback_timeout_ms`字段保留兼容，默认2000仅作为前置过慢时提前启动兜底的预留时间，不再是兜底自身硬截止。同型号不并发重复请求，可等到总截止；首发明确失败只允许一次顺序兜底。历史阶段预算不回填，新旧策略按实际发布时刻分窗；客户端仍用v4，总耗时不相加两路并行等待。
+首发实际派发后达到型号阈值（默认4秒）启动兜底，首发继续；两路共用原10秒首字截止，任一路先出现有效正文或已开启公开思考即锁定唯一赢家，立即中止败方。`fallback_timeout_ms`字段保留兼容，默认2000仅作为前置过慢时提前启动兜底的预留时间，不再是兜底自身硬截止。同型号在阈值后以相反供应商顺序启动第二路；首发明确失败只允许一次顺序兜底。历史阶段预算不回填，新旧策略按实际发布时刻分窗；客户端仍用v4，总耗时不相加两路并行等待。
 
 只消费赢家的replay与原charge_id结算，原报价/权益、超时免扣、主动停止和离页恢复规则不变。败方立即取消，不为排查drain；只把已接收的正文/公开思考有界片段和race_lost原因并入原attempt一次异步终态写，不发给用户、不进上下文、不另计费。正常attempt最多派发/终态两次observe；删除旧首发额外元数据补读，无新cron/轮询。diagnostic保存不阻塞首字，赢家身份仍须持久化才能结算。
 
@@ -188,3 +201,88 @@ RPC 与列表读取设 5 秒请求预算；UUID 校验失败返回 400，源不�
 `PUT /api/v1/conversations/:id/messages/:messageId/like` 接受严格 `{liked:boolean}`，认证用户由后端传入 `experience.set_chat_message_like`。RPC 以会话归属及当前可见回复版本为边界，包含分支继承回复；显式目标值使重复提交幂等。不存在或非本人会话统一 404，失效或未完成回复返回 `reply_like_not_allowed`（409）。响应只含 `session_id/message_id/liked`，设置 `no-store`，仓库调用有 5 秒预算，日志不包含正文或 prompt。
 
 反馈存储于 `experience.chat_message_likes`，按会话和实际 history ID 隔离。消息列表从既有叠加视图一次读取 `liked`，只投影到 assistant 消息；上下文查询不选该字段，不影响模型输入、会话排序、角色卡热度或钱包。重生成新版本不继承旧赞，创建分支不复制来源会话的赞。迁移顺序为分支迁移 → 点赞迁移 → Backend → Frontend；新增点赞迁移执行后不得再重跑会删去其末列的旧分支视图定义。应用回退可忽略新增字段，保留反馈事实。
+
+## 调用前准备与兜底路由契约（2026-11-02，本地候选）
+
+### 1. Scope / Trigger
+
+压缩业务自身调用前串行等待，区分派发、连接可写、发送完成、响应头与有效token。线上发布和效果须另验，不从供应商latency推定用户体验。
+
+### 2. Signatures
+
+`prepareGeneration({model, characterId, useFallback, payer?: {userId, chargeId, log, signal}})`返回原配置快照及可选paidAdmission（原始报价、一次余额预检Promise）。`fallback_provider_routes`属于既有ModelCatalog；`firstTokenPolicy.fallbackProviders`冻结本轮两供应商。`upstream-timing.ts`仅内部内存诊断，未增加HTTP/SSE公共字段。
+
+### 3. Contracts
+
+useFallback时路由配置提前同批读取；直接Venice消费者仍不读OpenRouter配置。付费预检不预留/扣款/创建钱包，execute核对user/charge/model/character并复用；免费轮仍由预留决定。报价/prompt持久化先于调用，不能fire-and-forget。默认1017的旧配置兼容Together/Crusoe；新型号保存端要求两个独立slug。配置写入纯校验迁移保留函数OID/ACL及既有预算判断，无用户请求DB负担。新监控只经已有OTLP，不新增DB操作。
+
+### 4. Validation & Error Matrix
+
+重复/缺失/非法供应商→拒绝保存；更换型号不沿用旧名单。发布UI拒绝与现有屏蔽规则冲突；运行时屏蔽仍优先。身份不符/余额不足/余额读取失败→不发上游。提前只读Promise拒绝已挂handler，最终由execute按原逻辑处理。系统超时免扣；主动stop与原政策一致。诊断异常不能影响fetch；取消/竞败未收到的阶段保持缺失。
+
+### 5. Good / Base / Bad Cases
+
+Good：一次钱包读与上下文重叠、路由同批、冻结原报价。Base：非对话execute仍在既有门禁读取。Bad：为了首字提前扣费、免费轮多查钱包、改6秒截止、每token写库或相加并行阶段P95。
+
+### 6. Tests Required
+
+既有execute/upstream/first-token测试覆盖两赢家、免费/付费、真实请求体优先对、报错接管、共同截止、身份错配、余额不足和复用；真实本地HTTP隔离并发和abort阶段。既有SQL harness重放新迁移、非法配对拒绝和OID/ACL不变，并回归交付/扣费。Alloy真实往返验证白名单。全消费者typecheck、Admin/Frontend build、@chat与Admin改型号/重复项回归。模拟200ms收益不作为线上改善证据。
+
+### 7. Wrong vs Correct
+
+Wrong：`await context; await wallet; dispatch`，或把派发至首字减供应商latency称为确定网络耗时。Correct：付费轮提前只读预检并复用，再等待既有持久化门禁；用同一请求已知阶段定位剩余时间，业务结果由客户端数据裁决。
+
+## 服务端交付计费与责任归因（2026-11-02）
+
+本节取代此前“客户端超时免扣”的规则。计费只看服务端事实：总预算内选出首字且回复完整落库即结算并消耗免费额度；服务端超时或晚于预算才免扣。客户端计时只是观测，`client_delivery_failed` 只表示转述的服务端失败。无回报仍保守免扣。
+
+兜底模型被选为首发时也有第二路：首发用优先供应商顺序，第二路用相反顺序。start 事件的 `server_elapsed_ms` 供客户端分离网络时间。
+
+Wrong：把客户端 6 秒超时当成投递失败而免扣，或把建连耗时算成用户网络。Correct：只有已建立连接上的传输算用户，证据不全算我方，排除量与主指标并列展示。
+
+## 聊天接口派发前准备（2026-11-06，本地候选）
+
+发送和重生成复用同一入口。身份确认后即可开始会话归属查询，与模型目录读取重叠；两份结果就绪才进入开轮。准备中止时，晚到的身份结果不得发起归属查询。配置预算、身份检查、开轮锁和计费快照仍按既有顺序生效。
+
+诊断使用 Fastify 请求入口单调时钟。SSE `server_elapsed_ms` 和准备分段包含鉴权、参数校验；模型预算仍使用原业务时钟。未完成派发门禁时，通过原 OTLP `generation.pre_dispatch` 最多发送一次 `outcome=incomplete`，携带停留阶段、该段耗时及总耗时；已完成门禁的请求继续写原直方图。通过慢目录并发、迟到身份、SSE 起始时间及日志与直方图隔离回归。线上比较时按 release 区分新旧分段起点。
+
+## Scenario: 对话页分组、按角色归拢与批量整理（2026-11-13，本地实现，迁移未远端执行）
+
+### 1. Scope / Trigger
+
+对话页（`/chats`）成为有对话记录用户的落地页，重度用户需要分组、按角色归拢、搜索、批量清理与翻页。只改会话组织方式，不改生成、计费或会话内容。
+
+### 2. Signatures
+
+- `GET /api/v1/conversations` 新增 `folder=<uuid>|none`、`q`（对话名 ILIKE，≤30 字，转义 `%_\`、去掉 `*`）、`quick=short|idle`、`summary=1`（仅全量首页附 `folder_summary`，与列表并行读 `experience.chat_folder_summary`）。
+- `GET /api/v1/conversations/groups?folder=&limit=&offset=&summary=1` → `{groups:[{session,session_count}], total}`（`experience.list_chat_session_groups`）。
+- `PATCH /api/v1/conversations/:id` 增 `folder_id: uuid|null`，与 title/pinned 合并成一次 UPDATE。
+- `POST /api/v1/conversations/batch` `{session_ids[1..100], action: move|pin|unpin|delete, folder_id?}` → `{updated}`。
+- `POST/PATCH/DELETE /api/v1/conversation-folders[/:id]`。
+- 文件：`routes/conversation-folders.ts`、`infrastructure/repositories/ChatFolderRepository.ts`；`ChatSessionRepository.listSessions/updateSession` 扩展。
+
+### 3. Contracts
+
+分组归属由复合 FK `(user_id, folder_id) → chat_folders(user_id, id)` 在数据库层保证；删分组 `ON DELETE SET NULL (folder_id)` 只清分组。批量写一条 UPDATE，按 `user_id`、未软删、`message_count>0` 过滤，`updated` 为实际生效条数；删除即软删，与单条同口径。分组名 trim 后 1–12 字、同用户不重名、上限 20（应用层计数 + 唯一约束）。错误码独立为 `ChatFolderErrorCode`，不进生成链路的 `ConversationErrorCode` 穷举。
+
+### 4. Validation & Error Matrix
+
+非法 folder/quick → 400；分组不存在或非本人（含 FK 23503）→ 404 `folder_not_found`；重名 23505 → 409 `folder_name_taken`；超限 → 409 `folder_limit`；迁移未执行（42P01/42703/PGRST202）→ 503 `folders_unavailable`。汇总读取失败只记 `conversation.folder.summary_failed` warn，列表照常返回不带汇总（前端隐藏分组入口）。
+
+### 5. Good / Base / Bad Cases
+
+Good：迁移后首页一次请求带列表与汇总。Base：迁移前默认列表照常（不引用新列），分组入口隐藏。Bad：大厅「聊过」标记的列表请求也带汇总（只有对话页首页带 `summary=1`）；批量删除绕过软删。
+
+### 6. Tests Required
+
+`scripts/test-chat-folders-migration.sh`（一次性 PG17：重复执行、跨用户 FK、列级置空、汇总/归拢/分页、ACL、用户级联）；后端既有单测全量；`pnpm test:ui --grep @chats` 覆盖新建→挑选放入→删分组、单条移动、按角色与整组操作、搜索翻页、快速筛选批量删除、少量对话不出工具。
+
+## Content-path optimization (2026-11-16, local candidate)
+
+Chats reads public character summaries through passive Query observers and existing validated persisted catalogue/head snapshots. It does not dispatch a cold full catalogue. Missing details wait for entry enrichment/navigation quiet and use normal priority, with 60-second row freshness in the existing viewer/session-scoped memory key. Version-bound sessions never use current public summaries as their authoritative character. Existing storage keys/24h TTL remain; invalid/expired/future snapshots are removed, denied storage uses memory. No private list/message/balance/permission/payment persistence was added.
+
+Groups read deadlines and stable dependency timeout codes use existing 503/folders_unavailable; programming/permission errors retain failure semantics. Optional summary is capped at 250ms for groups and flat, with SDK cancellation and a bounded consumer race; no duplicate full list read. Groups transport retry is disabled so the agreed fallback is not delayed by another RPC. Cancellation does not prove PostgreSQL has stopped.
+
+Automatic recommendation entry uses a 1500ms shared deadline; manual refresh/undo and manual fallback open remain 5000ms. Existing hedge, batch ownership, viewer guards and retry UUIDs remain. Request transport/manual mutation and conversation row data hooks are separated without new framework or dependencies.
+
+User explicitly excludes launching local UI verification. Unit/contract/type/build/static checks and remaining production gates are recorded in `.trellis/tasks/11-16-miniapp-content-path-optimization/verification.md`; real Telegram interactions/P95 and conditional prewarming/CDN changes remain post-release work.

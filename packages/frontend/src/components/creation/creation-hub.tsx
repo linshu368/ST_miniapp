@@ -1,25 +1,33 @@
 'use client';
 
+import { useQueryClient } from '@tanstack/react-query';
+import {
+  ArrowUpRight,
+  ChartNoAxesColumnIncreasing,
+  ChevronRight,
+  ImagePlus,
+  Star,
+  UserRoundPen,
+} from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
-import { ArrowUpRight, ChevronRight, ImagePlus, Star, UserRoundPen } from 'lucide-react';
 
 import { CharacterCard } from '@/components/characters/character-card';
 import {
   CharacterDetailSheet,
   type CharacterDetailTab,
 } from '@/components/characters/character-detail-sheet';
-import { CreatedCharacters } from './created-characters';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
-import { useFavoritesQuery } from '@/lib/api/favorites';
 import { useCharacterSocialsQuery } from '@/lib/api/character-social';
+import { useFavoritesQuery } from '@/lib/api/favorites';
 import { prefetchImagePlazaFeed } from '@/lib/api/image-plaza';
-import { afterEntryBackground } from '@/lib/entry-phase';
 import { canPrefetchInBackground } from '@/lib/background-prefetch';
 import { chatEntryPath } from '@/lib/chat-entry';
+import { afterEntryBackground } from '@/lib/entry-phase';
+import { useFreshAfterFetch, usePageReady } from '@/lib/perf/page-ready';
 import { cn } from '@/lib/utils';
+import { CreatedCharacters } from './created-characters';
 
 export function CreationHub() {
   const router = useRouter();
@@ -29,6 +37,13 @@ export function CreationHub() {
   const [benefitsOpen, setBenefitsOpen] = useState(false);
   const [preview, setPreview] = useState<{ id: string; tab: CharacterDetailTab } | null>(null);
   const favorites = useFavoritesQuery();
+  const favoritesFresh = useFreshAfterFetch(
+    favorites.isFetching,
+    favorites.data !== undefined,
+    favorites.isError
+  );
+  // 创作按钮、图片入口和栏目导航已是可交互主内容；下方收藏读取不应绑死整页 ready。
+  usePageReady('/creation', true, favoritesFresh, false);
   const cards = favorites.data?.characters ?? [];
   useCharacterSocialsQuery(
     cards.map((card) => card.id),
@@ -246,7 +261,21 @@ export function CreationHub() {
             )}
           </div>
         ) : (
-          <CreatedCharacters />
+          <>
+            <div className="mb-3 flex items-center justify-between">
+              <span className="text-xs text-muted-foreground">我的角色作品</span>
+              <Link
+                href="/creation/data"
+                prefetch={false}
+                className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-primary/25 bg-primary/10 px-3 text-[13px] font-medium text-primary transition-colors active:bg-primary/20"
+              >
+                <ChartNoAxesColumnIncreasing className="size-4" strokeWidth={1.6} aria-hidden />
+                创作数据
+                <ArrowUpRight className="size-3.5" aria-hidden />
+              </Link>
+            </div>
+            <CreatedCharacters />
+          </>
         )}
       </section>
 
@@ -270,7 +299,7 @@ export function CreationHub() {
             <section>
               <h3 className="text-sm font-medium text-primary">他人使用，获得 40% 星尘奖励</h3>
               <p className="mt-2 text-[13px] leading-7 text-muted-foreground">
-                其他用户使用你的角色卡并消耗星尘，你可获得该次实际消耗的 40% 作为专项星尘奖励。
+                其他玩家使用你的角色卡并消耗星尘，你可获得该次实际消耗的 40% 作为专项星尘奖励。
               </p>
               <p className="mt-2 rounded-xl bg-white/[0.035] px-3 py-2 text-xs leading-6 text-foreground/80">
                 例如：他人消耗 100 星尘，你获得 40 星尘。

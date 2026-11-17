@@ -1,0 +1,55 @@
+{
+  "id": "drama-stream-db-playback",
+  "name": "drama-stream-db-playback",
+  "title": "存量短剧迁移到 Cloudflare Stream 的 App 播放对接",
+  "description": "App 按 videos.stream_uid 播放存量迁移到 Cloudflare Stream 的短剧；阶段一双源并存，阶段二仅整剧 Stream 进入列表。",
+  "status": "in_progress",
+  "dev_type": "feature",
+  "scope": "backend",
+  "package": "backend",
+  "priority": "P2",
+  "creator": "linshu",
+  "assignee": "linshu",
+  "createdAt": "2026-11-10",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "配套归档端迁移 010（telegram-video-archive/migrations/010_restream_legacy.sql）。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": ["backend.infrastructure.runtime-data-security"]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": ["/dramas", "/dramas/:id", "/watch（起播）"],
+      "apis": ["GET /api/dramas", "GET /api/dramas/:id/play"],
+      "android": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 3000
+      },
+      "ios": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 3000
+      },
+      "api": {
+        "p95_baseline_ms": null,
+        "p95_target_ms": 3000
+      },
+      "measurement": {
+        "source": "Grafana st-engineering-drama（Loki）st_drama_stage，按 cdn_group/provider 分组",
+        "window": "发布前后各取等长窗口"
+      },
+      "notes": "本任务不改前端和起播链路，没有新基线，不补零不推测；目标 3000ms 取项目目标（任何入口起播 P95≤3s），本任务不承诺单独达成，实际要求是不退化。迁移后 Stream 行的起播/seek 另行对比，样本不足只作方向参考。"
+    }
+  }
+}

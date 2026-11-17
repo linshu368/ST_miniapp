@@ -54,13 +54,13 @@ BEGIN
   SELECT count(*) INTO v_count FROM billing.wallet_ledger WHERE debit_key = 'debit-main';
   PERFORM vip_t2_test.assert(v_count = 1, 'debit replay one ledger');
 
-  -- main insufficient, bonus covers (main_then_bonus)
+  -- main_then_bonus：专项优先，专项不足的部分再扣通用
   v_json := billing.apply_wallet_debit(u1, 'debit-mix', 'main_then_bonus', 90, 'chat_debit', 'test', 'debit-mix');
   PERFORM vip_t2_test.assert(v_json->>'status' = 'debited', 'mix debit');
-  PERFORM vip_t2_test.assert((v_json->'split'->>'main_credits')::numeric = 70, 'mix uses remaining main');
-  PERFORM vip_t2_test.assert((v_json->'split'->>'bonus_credits')::numeric = 20, 'mix uses bonus remainder');
+  PERFORM vip_t2_test.assert((v_json->'split'->>'main_credits')::numeric = 50, 'mix uses main for the remainder');
+  PERFORM vip_t2_test.assert((v_json->'split'->>'bonus_credits')::numeric = 40, 'mix drains bonus first');
   SELECT main_credits, bonus_credits INTO v_main, v_bonus FROM billing.user_wallets WHERE user_id = u1;
-  PERFORM vip_t2_test.assert(v_main = 0 AND v_bonus = 20, 'mix wallet leftover');
+  PERFORM vip_t2_test.assert(v_main = 20 AND v_bonus = 0, 'mix wallet leftover');
 
   -- total insufficient, zero partial
   v_raised := false;
@@ -73,7 +73,7 @@ BEGIN
   SELECT count(*) INTO v_count FROM billing.wallet_ledger WHERE debit_key = 'debit-short';
   PERFORM vip_t2_test.assert(v_count = 0, 'total insufficient no ledger');
   SELECT main_credits, bonus_credits INTO v_main, v_bonus FROM billing.user_wallets WHERE user_id = u1;
-  PERFORM vip_t2_test.assert(v_main = 0 AND v_bonus = 20, 'total insufficient no wallet change');
+  PERFORM vip_t2_test.assert(v_main = 20 AND v_bonus = 0, 'total insufficient no wallet change');
 
   -- main_only with only bonus
   v_raised := false;
@@ -89,8 +89,8 @@ BEGIN
   -- refund split matches debit, replay, second key on same debit
   v_json := billing.refund_wallet_debit('refund-mix', 'debit-mix');
   PERFORM vip_t2_test.assert(v_json->>'status' = 'refunded', 'refund once');
-  PERFORM vip_t2_test.assert((v_json->'split'->>'main_credits')::numeric = 70, 'refund main');
-  PERFORM vip_t2_test.assert((v_json->'split'->>'bonus_credits')::numeric = 20, 'refund bonus');
+  PERFORM vip_t2_test.assert((v_json->'split'->>'main_credits')::numeric = 50, 'refund main');
+  PERFORM vip_t2_test.assert((v_json->'split'->>'bonus_credits')::numeric = 40, 'refund bonus');
   v_json := billing.refund_wallet_debit('refund-mix', 'debit-mix');
   PERFORM vip_t2_test.assert(v_json->>'status' = 'already_refunded', 'same refund_key replay');
   v_json := billing.refund_wallet_debit('refund-mix-2', 'debit-mix');
@@ -101,6 +101,18 @@ BEGIN
   PERFORM vip_t2_test.assert(v_count = 1, 'one refund fact');
   SELECT main_credits, bonus_credits INTO v_main, v_bonus FROM billing.user_wallets WHERE user_id = u1;
   PERFORM vip_t2_test.assert(v_main = 70 AND v_bonus = 40, 'refund restored mix');
+
+  -- 专项足够时只扣专项，通用不动；退款按流水原路还原
+  v_json := billing.apply_wallet_debit(u1, 'debit-bonus-first', 'main_then_bonus', 30, 'chat_debit', 'test', 'debit-bonus-first');
+  PERFORM vip_t2_test.assert(v_json->>'status' = 'debited', 'bonus-first debit');
+  PERFORM vip_t2_test.assert((v_json->'split'->>'main_credits')::numeric = 0, 'bonus covers: main untouched');
+  PERFORM vip_t2_test.assert((v_json->'split'->>'bonus_credits')::numeric = 30, 'bonus covers: bonus debited');
+  SELECT main_credits, bonus_credits INTO v_main, v_bonus FROM billing.user_wallets WHERE user_id = u1;
+  PERFORM vip_t2_test.assert(v_main = 70 AND v_bonus = 10, 'bonus-first wallet');
+  v_json := billing.refund_wallet_debit('refund-bonus-first', 'debit-bonus-first');
+  PERFORM vip_t2_test.assert(v_json->>'status' = 'refunded', 'bonus-first refund');
+  SELECT main_credits, bonus_credits INTO v_main, v_bonus FROM billing.user_wallets WHERE user_id = u1;
+  PERFORM vip_t2_test.assert(v_main = 70 AND v_bonus = 40, 'bonus-first refund restored');
 
   v_raised := false;
   BEGIN

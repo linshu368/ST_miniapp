@@ -43,6 +43,26 @@ const nextConfig = {
     outputFileTracingRoot: join(__dirname, '../..'),
   },
   transpilePackages: ['@miniapp/shared', '@miniapp/reply-renderer'],
+  // 冷启动落地页：有对话记录的用户进「对话」，其余进角色大厅。cookie 由前端读到会话后写入
+  // （src/lib/landing-route.ts，名称与取值须一致）。两条规则条件互斥。
+  // Return the existing static document; Providers captures query/hash before URL canonicalization.
+  async rewrites() {
+    // beforeFiles keeps matching: use mutually exclusive cookie conditions.
+    return {
+      beforeFiles: [
+        {
+          source: '/',
+          has: [{ type: 'cookie', key: 'st_landing', value: 'chats' }],
+          destination: '/chats',
+        },
+        {
+          source: '/',
+          missing: [{ type: 'cookie', key: 'st_landing', value: 'chats' }],
+          destination: '/characters',
+        },
+      ],
+    };
+  },
   webpack: (config) => {
     config.resolve.extensionAlias = {
       '.js': ['.ts', '.tsx', '.js', '.jsx'],

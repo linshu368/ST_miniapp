@@ -1,0 +1,6 @@
+{"file":".trellis/spec/backend/app/index.md","reason":"核对 Backend 质量检查"}
+{"file":".trellis/spec/backend/app/data-reliability-and-security.md","reason":"核对安全日志、超时、重试和降级"}
+{"file":".trellis/spec/backend/app/modules/business/conversation-generation.md","reason":"核对 generation 唯一出口与业务语义"}
+{"file":".trellis/spec/backend/app/testing-scripts-and-deployment.md","reason":"核对测试和部署验证"}
+{"file": "packages/backend/src/scripts/payment-alert-monitor.ts", "reason": "核对挂载不阻断支付与投递"}
+{"file": "ops/railway/README.md", "reason": "核对运维说明与 Admin Key"}

@@ -1,0 +1,5 @@
+{"file":".trellis/spec/frontend/app/index.md","reason":"检查Frontend边界与最低验证"}
+{"file":".trellis/spec/frontend/app/pages-components-and-ui.md","reason":"检查大厅状态、图片与可访问性"}
+{"file":".trellis/spec/frontend/app/testing-quality-and-deployment.md","reason":"检查移动P95口径与发布后验证"}
+{"file":".trellis/spec/frontend/app/modules/business/character-lobby.md","reason":"检查返回恢复、推荐和列表行为不回退"}
+{"file":".trellis/tasks/11-03-latest-lobby-mobile-p95/research/baseline-and-reuse.md","reason":"核对基线、目标和低样本声明"}

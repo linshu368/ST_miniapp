@@ -1,3 +1,6 @@
+import { clientFetch } from '../../platform/observability/fetch.js';
+
+const fetch = clientFetch('generation.metadata', 'openrouter');
 /**
  * backend / features / generation / openrouter-metadata.ts
  *

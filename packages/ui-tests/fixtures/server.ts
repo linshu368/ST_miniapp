@@ -1,13 +1,30 @@
 import { createServer, type ServerResponse } from 'node:http';
+import type { InviteBindData } from '@miniapp/shared';
+import { createChatFeedbackFixture } from './chat-feedback.js';
+import { createChatFolderFixture, makeFolderSessionSamples } from './chat-folders.js';
+import { createGrowthPromptFixture } from './growth-prompts.js';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import {
+  CharacterWishQuerySchema,
+  CreateCharacterWishSchema,
+  SupportCharacterWishSchema,
+  RespondCharacterWishSchema,
+  type CharacterWish,
+  type CharacterWishCard,
+  type NotificationItem,
+  LobbyRecommendationRequestSchema,
+  PublicLobbyHeadIdsSchema,
+  LobbyRecommendationExposuresSchema,
+  type LobbyRecommendationData,
+  CreatorAnalyticsQuerySchema,
   CreateCreatorCharacterSchema,
   SaveCreatorCharacterSchema,
   PublishCreatorCharacterSchema,
+  SetCreatorVisibilitySchema,
   CreatorCoverRequestSchema,
   CreatorPolishRequestSchema,
   CreatorAiReviewResultSchema,
@@ -38,10 +55,12 @@ import {
   type GetDramaSocialData,
   type GetDramaCommentsData,
   type CreateDramaCommentData,
+  DramaPlayRequestSchema,
   ImagePlazaConversationSchema,
   ImagePlazaQuoteRequestSchema,
   PatchGenerationConfigRequestSchema,
   PatchUserSettingsRequestSchema,
+  UserOnboardingSchema,
   SelectModelRequestSchema,
   SubmitImagePlazaAttemptRequestSchema,
   SubmitVideoPlazaAttemptRequestSchema,
@@ -62,17 +81,28 @@ import {
 } from '@miniapp/shared';
 import {
   IDS,
+  publicCreatorFixture,
+  WISH_IDS,
   EDIT_REPLY_PANELS,
   isScenario,
   later,
   makeData,
   makeChatSessionSamples,
+  useSurplusPreviewCatalog,
+  selectPreviewModel,
   scenarios,
   stamp,
   voiceConfig,
   chatImageConfig,
   type Scenario,
 } from './data.js';
+
+import { makeCreatorAnalytics } from './creator-analytics.js';
+import {
+  applyFreeZoneScenario,
+  FREE_ZONE_KEEPS_THINKING_ID,
+  selectFreeZonePreviewModel,
+} from './free-zone.js';
 
 const HOST = '127.0.0.1';
 export const PREVIEW_PROTOCOL = 'st-miniapp-ui-v1';
@@ -83,9 +113,89 @@ export function createPreviewServer(apiPort: number, appPort: number) {
   const app = `http://${HOST}:${appPort}`;
   let data = makeData(api);
   let scenario: Scenario = 'standard';
+  let onboardingRounds = 0;
+  let lobbyCurrent: LobbyRecommendationData | null = null;
+  let lobbyPrevious: LobbyRecommendationData | null = null;
+  let lobbyBatchCount = 0;
+  let lobbyClockOffset = 0;
+  let lobbyFailureDelivered = false;
+  const lobbyActions: { action: string; request_id: string; expected_batch_id?: string | null }[] =
+    [];
+  const lobbyExposures = new Map<
+    string,
+    { batch_id: string; character_id: string; seen_at: string }
+  >();
+  const lobbyNow = () => Date.now() + lobbyClockOffset;
+  const lobbyEnabled = () => scenario.startsWith('lobby-rotation');
+  const lobbyDisabled: LobbyRecommendationData = {
+    enabled: false,
+    degraded: false,
+    batch_id: null,
+    generated_at: null,
+    expires_at: null,
+    character_ids: [],
+    head_ids: [],
+    previous_batch_id: null,
+  };
   const creatorOwner = '70000000-0000-4000-8000-000000000001';
   const creatorCards = new Map<string, CreatorCharacter>();
   const creatorCovers = new Map<string, CreatorCoverAsset>();
+  const wishes = new Map<string, CharacterWish>();
+  const wishCards = new Map<string, Set<string>>();
+  const withdrawnWishes = new Set<string>();
+  const wishNotifications = new Map<string, NotificationItem>();
+  let wishFailureDelivered = false;
+  let wishLinkFailureDelivered = false;
+  function visibleWishCards(wishId: string): CharacterWishCard[] {
+    return [...(wishCards.get(wishId) ?? [])].flatMap((id) => {
+      const owned = creatorCards.get(id);
+      if (
+        owned &&
+        (owned.state !== 'ready' ||
+          owned.visibility !== 'public' ||
+          owned.approved_revision === null)
+      )
+        return [];
+      const card = data.characters.find((item) => item.id === id);
+      return card
+        ? [
+            {
+              id,
+              name: card.name,
+              description: card.description,
+              cover_url: card.avatar_url || null,
+            },
+          ]
+        : [];
+    });
+  }
+  function wishView(wish: CharacterWish): CharacterWish {
+    return { ...wish, response_count: visibleWishCards(wish.id).length };
+  }
+  function linkWishCard(wishId: string, characterId: string): boolean {
+    const wish = wishes.get(wishId);
+    const card = creatorCards.get(characterId);
+    if (
+      !wish ||
+      withdrawnWishes.has(wishId) ||
+      wish.visibility !== 'public' ||
+      !card ||
+      card.state !== 'ready' ||
+      card.visibility !== 'public' ||
+      card.approved_revision === null
+    )
+      return false;
+    if (scenario === 'wishes-response-error' && !wishLinkFailureDelivered) {
+      wishLinkFailureDelivered = true;
+      return false;
+    }
+    const cards = wishCards.get(wishId) ?? new Set<string>();
+    cards.add(characterId);
+    wishCards.set(wishId, cards);
+    // The logged-in creator is excluded from recipients; another creator's earlier response is seeded below.
+    return true;
+  }
+  let creatorAnalyticsFailureDelivered = false;
   let creatorFailureDelivered = false;
   let creatorReviewFailureDelivered = false;
   let claimedAt: string | null = null;
@@ -187,6 +297,9 @@ export function createPreviewServer(apiPort: number, appPort: number) {
   >();
   let branchFailureDelivered = false;
   const messageLikes = new Set<string>();
+  const replyFeedback = createChatFeedbackFixture();
+  const chatFolders = createChatFolderFixture();
+  const growthPrompts = createGrowthPromptFixture();
   let messageLikeFailureDelivered = false;
   let messageEditFailureDelivered = false;
 
@@ -236,18 +349,149 @@ export function createPreviewServer(apiPort: number, appPort: number) {
     };
   }
 
-  function reset(next: Scenario) {
+  function visibleLobbyCards() {
+    return data.characters
+      .filter((card) => {
+        const creation = creatorCards.get(card.id);
+        return (
+          !creation ||
+          (creation.state === 'ready' &&
+            creation.visibility === 'public' &&
+            creation.approved_revision !== null)
+        );
+      })
+      .map(({ id, name, description, avatar_url, personality_tags, author_name, is_featured }) => ({
+        id,
+        name,
+        description,
+        avatar_url,
+        personality_tags,
+        author_name,
+        is_featured,
+      }));
+  }
+
+  function reset(next: Scenario, lobbyCardCount = 36) {
+    onboardingRounds =
+      next === 'new-user-near-creator'
+        ? 9
+        : next === 'new-user-creator-ready'
+          ? 10
+          : next === 'new-user-replied'
+            ? 1
+            : 0;
     epoch += 1;
     for (const stream of streams) stream.end();
     streams.clear();
-    data = makeData(api);
+    data = makeData(api, next.startsWith('lobby-rotation') ? lobbyCardCount : 18);
+    if (next === 'chat-surplus' || next === 'chat-surplus-fallback') useSurplusPreviewCatalog(data);
+    applyFreeZoneScenario(data, next);
+    lobbyCurrent = null;
+    lobbyPrevious = null;
+    lobbyBatchCount = 0;
+    lobbyClockOffset = 0;
+    lobbyFailureDelivered = false;
+    lobbyActions.length = 0;
+    lobbyExposures.clear();
     creatorCards.clear();
     creatorCovers.clear();
+    wishes.clear();
+    wishCards.clear();
+    withdrawnWishes.clear();
+    wishNotifications.clear();
+    wishFailureDelivered = false;
+    wishLinkFailureDelivered = false;
+    const samples = [
+      {
+        id: WISH_IDS.adventure,
+        body: '想玩一个有自己生活的深海探险家。表面上总是开玩笑，遇到危险却会认真保护同伴，故事从一封没有署名的海图开始。',
+        visibility: 'public',
+        is_mine: false,
+        wanted_count: 18,
+      },
+      {
+        id: WISH_IDS.detective,
+        body: '希望有一张双人破案的角色卡。对方很敏锐，但不要直接给我答案，留一点线索让我自己发现。',
+        visibility: 'public',
+        is_mine: false,
+        wanted_count: 27,
+      },
+      {
+        id: WISH_IDS.minePublic,
+        body: '想开一间深夜书店，每位来客都有一段没说出口的故事。可以慢慢聊天，不需要每一轮都出大事件。',
+        visibility: 'public',
+        is_mine: true,
+        wanted_count: 7,
+      },
+      {
+        id: WISH_IDS.mineGarden,
+        body: '想和一位经营山间小旅馆的朋友，一起把荒废的花园重新种好。',
+        visibility: 'public',
+        is_mine: true,
+        wanted_count: 1,
+      },
+    ] as const;
+    for (const [index, sample] of samples.entries())
+      wishes.set(sample.id, {
+        ...sample,
+        supported: false,
+        response_count: 0,
+        created_at: new Date(Date.now() - index * 3600_000).toISOString(),
+      });
+    wishCards.set(WISH_IDS.minePublic, new Set([data.characters[1]!.id]));
+    if (next.startsWith('wishes')) {
+      const sample = data.characters[0]!;
+      creatorCards.set(WISH_IDS.ownCard, {
+        id: WISH_IDS.ownCard,
+        owner_user_id: creatorOwner,
+        name: '深海来客',
+        description: '一张神秘海图，一位不肯解释的旅人。',
+        cover_asset_id: 'a4000000-0000-4000-8000-000000000001',
+        cover_url: sample.avatar_url,
+        tags: ['奇幻'],
+        draft: {
+          ...emptyCharacterDraft(),
+          name: '深海来客',
+          description: '一张神秘海图，一位不肯解释的旅人。',
+          opening: '「准备好出发了吗？」',
+          background: '一位经验丰富的深海探险者，乐观而谨慎。',
+          tags: ['奇幻'],
+        },
+        state: 'ready',
+        visibility: 'public',
+        review_status: 'approved',
+        review_message: null,
+        revision: 1,
+        submitted_revision: 1,
+        published_revision: 1,
+        approved_revision: 1,
+        created_at: stamp(),
+        updated_at: stamp(),
+      });
+      data.characters.push({ ...sample, id: WISH_IDS.ownCard, name: '深海来客' });
+      wishNotifications.set(WISH_IDS.notification, {
+        id: WISH_IDS.notification,
+        scope: 'personal',
+        category: 'interaction',
+        title: '你期待的角色有回应了',
+        body: '有人为你期待的深夜书店故事创作了角色，去看看吧。',
+        published_at: stamp(),
+        created_at: stamp(),
+        is_read: false,
+        kind: 'character_wish_response',
+        action_path: `/wishes/${WISH_IDS.minePublic}`,
+        metadata: { wish_id: WISH_IDS.minePublic, character_id: data.characters[1]!.id },
+      });
+    }
+    creatorAnalyticsFailureDelivered = false;
     creatorFailureDelivered = false;
     creatorReviewFailureDelivered = false;
     branchRequests.clear();
     branchFailureDelivered = false;
     messageLikes.clear();
+    replyFeedback.reset();
+    chatFolders.reset();
+    growthPrompts.reset();
     messageLikeFailureDelivered = false;
     messageEditFailureDelivered = false;
     scenario = next;
@@ -321,7 +565,7 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         wxpay_enabled: false,
         default_payment_type: 'alipay',
       };
-    if (next === 'vip')
+    if (next === 'vip' || next === 'vip-mixed')
       Object.assign(data.vip, {
         active: true,
         remaining_days: 31,
@@ -330,11 +574,19 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         last_plan_id: 'month',
         entry_badge_visible: false,
       });
+    if (next === 'vip-mixed') {
+      Object.assign(data.vip.benefits!, { checkin_main_credits: 30, checkin_bonus_credits: 120 });
+      Object.assign(data.plans.vip_plans![0]!, { bonus_credits: 2000, bonus_main_credits: 1000 });
+    }
     if (next === 'empty') {
       data.dramas = [];
       data.characters = [];
       data.sessions = [];
       data.works = [];
+    }
+    if (next === 'new-user') {
+      data.messages = data.messages.filter((message) => message.turn_index === 0);
+      for (const session of data.sessions) session.message_count = 0;
     }
     if (next === 'no-balance')
       Object.assign(data.wallet, {
@@ -343,6 +595,11 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         main_credits: 0,
         bonus_credits: 0,
       });
+    if (next === 'chat-folders') {
+      const sample = makeFolderSessionSamples(data.sessions[0]!, data.characters);
+      data.sessions = sample.sessions;
+      chatFolders.reset(sample.folders);
+    }
     if (next === 'chat-sessions') {
       const messages = data.messages;
       data.sessions = makeChatSessionSamples(data.sessions[0]!);
@@ -466,6 +723,11 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         json(res, 200, { protocol: PREVIEW_PROTOCOL, root: process.cwd(), app, api });
         return;
       }
+      // Connection keep-warm target, matching the real database-free health route.
+      if (path === '/health' && method === 'GET') {
+        ok(res, { status: 'ok', timestamp: new Date().toISOString() });
+        return;
+      }
       if (path === '/__preview/state' && method === 'GET') {
         reconcileImages();
         json(res, 200, {
@@ -474,6 +736,13 @@ export function createPreviewServer(apiPort: number, appPort: number) {
           wallet: data.wallet,
           requests,
           unhandled,
+          lobby: {
+            current: lobbyCurrent,
+            previous: lobbyPrevious,
+            batches_created: lobbyBatchCount,
+            actions: lobbyActions,
+            exposures: [...lobbyExposures.values()],
+          },
         });
         return;
       }
@@ -486,8 +755,28 @@ export function createPreviewServer(apiPort: number, appPort: number) {
           fail(res, 400, 'invalid_scenario', '请选择已定义场景');
           return;
         }
-        reset(requested);
+        const count =
+          body && typeof body === 'object' && 'lobby_card_count' in body
+            ? body.lobby_card_count
+            : 36;
+        if (typeof count !== 'number' || !Number.isInteger(count) || count < 12 || count > 1000) {
+          fail(res, 400, 'invalid_fixture_size', '角色数量应为12至1000之间的整数');
+          return;
+        }
+        reset(requested, count);
         json(res, 200, { scenario });
+        return;
+      }
+      if (path === '/__preview/lobby' && method === 'POST') {
+        // Local fixture controls only; no environment, account or remote data access.
+        const control = body as { advance_hours?: number; remove_character_id?: string };
+        if (typeof control.advance_hours === 'number' && Number.isFinite(control.advance_hours))
+          lobbyClockOffset += Math.max(0, Math.min(2400, control.advance_hours)) * 3600_000;
+        if (control.remove_character_id)
+          data.characters = data.characters.filter(
+            (card) => card.id !== control.remove_character_id
+          );
+        ok(res, { now: new Date(lobbyNow()).toISOString() });
         return;
       }
       if (path === '/' && method === 'GET') {
@@ -639,22 +928,15 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         fail(res, 405, 'METHOD_NOT_ALLOWED', '方法不支持');
         return;
       }
-      const dramaRoute = path.match(/^\/api\/dramas\/([^/]+)(\/play)?$/);
-      if (dramaRoute && method === 'GET') {
-        const drama = data.dramas.find((item) => item.id === dramaRoute[1]);
-        if (!drama) {
-          fail(res, 404, 'NOT_FOUND', '短剧不存在');
-          return;
-        }
-        if (!dramaRoute[2]) {
-          ok(res, { drama } satisfies GetDramaByIdData);
-          return;
-        }
+      // 播放地址：新客户端 POST 固定地址，旧客户端 GET /:id/play，两者返回同一份响应。
+      const servePlay = (
+        drama: (typeof data.dramas)[number],
+        videoId: string | null | undefined
+      ) => {
         if (scenario === 'drama-play-error') {
           fail(res, 503, 'preview_unavailable', '播放暂不可用');
           return;
         }
-        const videoId = url.searchParams.get('video_id');
         const video = videoId ? drama.videos.find((item) => item.id === videoId) : drama.videos[0];
         if (!video) {
           fail(res, 404, 'NOT_FOUND', '视频不存在');
@@ -674,6 +956,41 @@ export function createPreviewServer(apiPort: number, appPort: number) {
             },
           },
         } satisfies GetDramaPlaybackData);
+      };
+      if (path === '/api/dramas/play' && method === 'POST') {
+        const request = DramaPlayRequestSchema.parse(body);
+        const drama = data.dramas.find((item) => item.id === request.drama_id);
+        if (!drama) fail(res, 404, 'NOT_FOUND', '短剧不存在');
+        else servePlay(drama, request.video_id);
+        return;
+      }
+      const dramaRoute = path.match(/^\/api\/dramas\/([^/]+)(\/play)?$/);
+      if (dramaRoute && method === 'GET') {
+        const drama = data.dramas.find((item) => item.id === dramaRoute[1]);
+        if (!drama) {
+          fail(res, 404, 'NOT_FOUND', '短剧不存在');
+          return;
+        }
+        if (!dramaRoute[2]) {
+          ok(res, { drama } satisfies GetDramaByIdData);
+          return;
+        }
+        servePlay(drama, url.searchParams.get('video_id'));
+        return;
+      }
+      if (path === '/api/users/onboarding' && method === 'GET') {
+        if (scenario === 'onboarding-error') {
+          fail(res, 503, 'ONBOARDING_UNAVAILABLE', '预览：引导读取失败');
+          return;
+        }
+        const eligible = scenario.startsWith('new-user') && onboardingRounds < 10;
+        ok(
+          res,
+          UserOnboardingSchema.parse({
+            eligible,
+            expires_at: eligible ? new Date(Date.now() + 7 * 86400_000).toISOString() : null,
+          })
+        );
         return;
       }
       if (path === '/api/users/settings') {
@@ -697,8 +1014,14 @@ export function createPreviewServer(apiPort: number, appPort: number) {
             last_claimed_at: claimedAt,
             next_claim_at: claimedAt ? getNextDailyCheckinAt(claimedAt) : null,
             reward_credits: data.vip.active ? 150 : 30,
-            base_reward_credits: 30,
-            vip_reward_credits: 150,
+            base_reward_credits: data.vip.active ? 0 : 30,
+            vip_reward_credits: data.vip.active ? 150 : 0,
+            main_reward_credits: data.vip.active
+              ? (data.vip.benefits?.checkin_main_credits ?? 0)
+              : 0,
+            bonus_reward_credits: data.vip.active
+              ? (data.vip.benefits?.checkin_bonus_credits ?? 150)
+              : 30,
           },
         });
         return;
@@ -714,15 +1037,25 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         }
         claimedAt = stamp();
         const reward = data.vip.active ? 150 : 30;
-        creditBonus(reward);
+        const mainGift = data.vip.active ? (data.vip.benefits?.checkin_main_credits ?? 0) : 0;
+        data.wallet.main_credits += mainGift;
+        data.wallet.credits += mainGift;
+        data.wallet.total_credits += mainGift;
+        creditBonus(reward - mainGift);
         ok(res, {
           wallet: data.wallet,
           checkin: {
             claimed_at: claimedAt,
             next_claim_at: getNextDailyCheckinAt(claimedAt),
             reward_credits: reward,
-            base_reward_credits: 30,
-            vip_reward_credits: 150,
+            base_reward_credits: data.vip.active ? 0 : 30,
+            vip_reward_credits: data.vip.active ? 150 : 0,
+            main_reward_credits: data.vip.active
+              ? (data.vip.benefits?.checkin_main_credits ?? 0)
+              : 0,
+            bonus_reward_credits: data.vip.active
+              ? (data.vip.benefits?.checkin_bonus_credits ?? 150)
+              : 30,
           },
         });
         return;
@@ -768,21 +1101,30 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         fail(res, 409, 'preview_payment_disabled', '本地预览不创建真实支付订单');
         return;
       }
+      const growthResult = growthPrompts.handle(method, path, body, scenario);
+      if (growthResult !== undefined) {
+        ok(res, growthResult);
+        return;
+      }
       if (path === '/api/community/entry' && method === 'GET') {
         ok(res, {
           enabled: true,
           title: '官方社群',
           description: '交流灵感，领取奖励',
-          reward_credits: 100,
+          reward_credits: scenario === 'growth-community' ? 500 : 100,
           telegram_url: 'https://t.me/preview_community',
           fallback_handle: '@preview_community',
-          claim_status: scenario === 'community-joined' ? 'rewarded' : 'unclaimed',
+          claim_status:
+            scenario === 'community-joined' || growthPrompts.communityRewarded
+              ? 'rewarded'
+              : 'unclaimed',
           rewarded_at: null,
         });
         return;
       }
       if (path === '/api/notifications/unread-count' && method === 'GET') {
-        ok(res, { official: 0, personal: 0, total: 0 });
+        const unread = [...wishNotifications.values()].filter((item) => !item.is_read).length;
+        ok(res, { official: 0, personal: unread, total: unread });
         return;
       }
       if (path === '/api/support/unread' && method === 'GET') {
@@ -797,8 +1139,137 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         ok(res, { entry_enabled: false, center_entered: true });
         return;
       }
+      if (path === '/api/invite/bind' && method === 'POST') {
+        const code = (body as { invite_code?: unknown } | null)?.invite_code;
+        // The standard fixture is an existing account; binding reaches a terminal
+        // result without mutating any real invitation relationship.
+        ok(res, {
+          status:
+            typeof code === 'string' && /^[A-Za-z0-9]{8}$/.test(code)
+              ? 'not_new_user'
+              : 'invalid_code',
+        } satisfies InviteBindData);
+        return;
+      }
       if (path === '/api/notifications' && method === 'GET') {
-        ok(res, { notifications: [], next_cursor: null });
+        ok(res, {
+          notifications:
+            url.searchParams.get('scope') === 'official' ? [] : [...wishNotifications.values()],
+          next_cursor: null,
+        });
+        return;
+      }
+      if (path === '/api/notifications/read' && method === 'POST') {
+        const ids =
+          typeof body === 'object' && body !== null && 'ids' in body && Array.isArray(body.ids)
+            ? body.ids
+            : [];
+        let marked = 0;
+        for (const id of ids) {
+          const notification = typeof id === 'string' ? wishNotifications.get(id) : undefined;
+          if (notification && !notification.is_read) {
+            notification.is_read = true;
+            marked++;
+          }
+        }
+        ok(res, { marked });
+        return;
+      }
+      if (path.startsWith('/api/notifications/') && method === 'GET') {
+        const notification = wishNotifications.get(path.split('/').pop()!);
+        if (notification) ok(res, { notification });
+        else fail(res, 404, 'NOT_FOUND', '消息不存在');
+        return;
+      }
+      if (path === '/api/character-wishes' && method === 'GET') {
+        const query = CharacterWishQuerySchema.parse(Object.fromEntries(url.searchParams));
+        const items = [...wishes.values()]
+          .filter(
+            (item) =>
+              !withdrawnWishes.has(item.id) &&
+              (query.scope === 'mine' ? item.is_mine : item.visibility === 'public')
+          )
+          .map(wishView)
+          .sort(
+            (a, b) =>
+              (query.sort === 'popular' ? b.wanted_count - a.wanted_count : 0) ||
+              b.created_at.localeCompare(a.created_at) ||
+              b.id.localeCompare(a.id)
+          );
+        ok(res, {
+          items: items.slice((query.page - 1) * query.page_size, query.page * query.page_size),
+          page: query.page,
+          page_size: query.page_size,
+          total: items.length,
+        });
+        return;
+      }
+      if (path === '/api/character-wishes' && method === 'POST') {
+        const input = CreateCharacterWishSchema.parse(body);
+        if (scenario === 'wishes-error' && !wishFailureDelivered) {
+          wishFailureDelivered = true;
+          fail(res, 503, 'UNAVAILABLE', '这次没能提交，请重试。你写的内容还在。');
+          return;
+        }
+        if (!wishes.has(input.id))
+          wishes.set(input.id, {
+            ...input,
+            created_at: stamp(),
+            is_mine: true,
+            supported: false,
+            wanted_count: 1,
+            response_count: 0,
+          });
+        const existing = wishes.get(input.id)!;
+        if (!existing.is_mine) {
+          fail(res, 409, 'CONFLICT', '请重新提交心愿');
+          return;
+        }
+        ok(res, { wish: wishView(existing) });
+        return;
+      }
+      const wishMatch = path.match(/^\/api\/character-wishes\/([^/]+)(?:\/(support|responses))?$/);
+      if (wishMatch) {
+        const [, id, action] = wishMatch;
+        const wish = wishes.get(id!);
+        if (!wish || withdrawnWishes.has(id!)) {
+          fail(res, 404, 'NOT_FOUND', '这个心愿已撤回或暂时不可查看');
+          return;
+        }
+        if (method === 'GET' && !action) {
+          ok(res, { wish: wishView(wish), cards: visibleWishCards(id!) });
+          return;
+        }
+        if (method === 'DELETE' && !action) {
+          if (!wish.is_mine) {
+            fail(res, 403, 'FORBIDDEN', '只能撤回自己的心愿');
+            return;
+          }
+          withdrawnWishes.add(id!);
+          ok(res, { withdrawn: true });
+          return;
+        }
+        if (method === 'PUT' && action === 'support') {
+          const input = SupportCharacterWishSchema.parse(body);
+          if (wish.visibility !== 'public' || wish.is_mine) {
+            fail(res, 403, 'FORBIDDEN', '无法支持这个心愿');
+            return;
+          }
+          wish.wanted_count += Number(input.supported) - Number(wish.supported);
+          wish.supported = input.supported;
+          ok(res, { wish: wishView(wish) });
+          return;
+        }
+        if (method === 'POST' && action === 'responses') {
+          const input = RespondCharacterWishSchema.parse(body);
+          if (!linkWishCard(id!, input.character_id)) {
+            fail(res, 409, 'UNAVAILABLE', '请选择你已公开的角色');
+            return;
+          }
+          ok(res, { linked: true });
+          return;
+        }
+        fail(res, 405, 'METHOD_NOT_ALLOWED', '方法不支持');
         return;
       }
       if (path === '/api/characters/social' && method === 'GET') {
@@ -918,6 +1389,14 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         fail(res, 405, 'METHOD_NOT_ALLOWED', '方法不支持');
         return;
       }
+      if (path === '/api/creator/analytics' && method === 'GET') {
+        const input = CreatorAnalyticsQuerySchema.parse(Object.fromEntries(url.searchParams));
+        if (scenario === 'creator-data-error' && !creatorAnalyticsFailureDelivered) {
+          creatorAnalyticsFailureDelivered = true;
+          fail(res, 503, 'preview_unavailable', '暂时没能读取创作数据');
+        } else ok(res, makeCreatorAnalytics(input, api, scenario === 'creator-data-empty'));
+        return;
+      }
       if (path === '/api/creator/characters' && method === 'GET') {
         ok(res, {
           owner_user_id: creatorOwner,
@@ -996,7 +1475,9 @@ export function createPreviewServer(apiPort: number, appPort: number) {
           (method === 'POST' && action === 'publish') ||
           (method === 'PUT' && action === 'visibility')
         ) {
-          const input = PublishCreatorCharacterSchema.parse(body);
+          const input = (
+            action === 'publish' ? PublishCreatorCharacterSchema : SetCreatorVisibilitySchema
+          ).parse(body);
           if (scenario === 'creator-save-error' && !creatorFailureDelivered) {
             creatorFailureDelivered = true;
             fail(res, 503, 'UNAVAILABLE', '暂时未能发布，草稿已保留');
@@ -1068,7 +1549,19 @@ export function createPreviewServer(apiPort: number, appPort: number) {
           const existing = data.characters.findIndex((item) => item.id === card.id);
           if (existing < 0) data.characters.push(character);
           else data.characters[existing] = character;
-          ok(res, { character: card });
+          const wishId =
+            action === 'publish' &&
+            typeof body === 'object' &&
+            body !== null &&
+            'wish_id' in body &&
+            typeof body.wish_id === 'string'
+              ? body.wish_id
+              : null;
+          const wishResponse =
+            wishId && input.visibility === 'public'
+              ? { wish_id: wishId, status: linkWishCard(wishId, card.id) ? 'linked' : 'not_linked' }
+              : undefined;
+          ok(res, { character: card, ...(wishResponse ? { wish_response: wishResponse } : {}) });
           return;
         }
       }
@@ -1115,6 +1608,16 @@ export function createPreviewServer(apiPort: number, appPort: number) {
           input.target === 'opening'
             ? '书店即将打烊，门上的铜铃却在此刻轻响。林舟从书页间抬起眼，认出你时微微一顿。\n\n「我以为你已经忘了这个地方。」他合上书，把靠窗的椅子轻轻拉开。杯里的茶还温着，而他似乎有一句话等了很久。'
             : '## 角色与生活\n\n林舟经营一间旧书店。他记得常客偏爱的书，也记得那些没有说出口的告别。\n\n## 个性与矛盾\n\n他习惯用玩笑掩饰认真，越是在乎的人，越不肯把心意说得直白。平时做决定很果断，遇到重逢却会先整理桌角，再试探着问一句近况。\n\n## 与你的关系\n\n你们曾在这间书店相遇。多年之后，他保留的那本书仍夹着你写的纸条，但你的回应和选择始终由你决定。';
+        if (scenario === 'creator-polish-stop') {
+          res.flushHeaders();
+          if (input.target === 'opening') {
+            res.write(JSON.stringify({ type: 'delta', text: draftText.slice(0, 16) }) + '\n');
+          }
+          // Keep the stream open so the user's stop, rather than a timer, ends generation.
+          streams.add(res);
+          res.once('close', () => streams.delete(res));
+          return;
+        }
         for (let i = 0; i < draftText.length; i += 16) {
           res.write(`${JSON.stringify({ type: 'delta', text: draftText.slice(i, i + 16) })}\n`);
           await delay(12);
@@ -1124,29 +1627,181 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         );
         return;
       }
+      if (path === '/api/characters/recommendation' && method === 'POST') {
+        const input = LobbyRecommendationRequestSchema.parse(body);
+        lobbyActions.push({
+          action: input.action,
+          request_id: input.request_id,
+          expected_batch_id: input.expected_batch_id,
+        });
+        if (!lobbyEnabled()) {
+          ok(res, lobbyDisabled);
+          return;
+        }
+        if (
+          input.action === 'refresh' &&
+          scenario === 'lobby-rotation-error' &&
+          !lobbyFailureDelivered
+        ) {
+          lobbyFailureDelivered = true;
+          fail(res, 503, 'SERVICE_UNAVAILABLE', '这次没换成功，请再试一下');
+          return;
+        }
+        const available = new Map(visibleLobbyCards().map((card) => [card.id, card]));
+        const respond = (batch: LobbyRecommendationData) => {
+          const character_ids = batch.character_ids.filter((id) => available.has(id));
+          const head_ids = character_ids.slice(0, 12);
+          ok(res, {
+            ...batch,
+            character_ids,
+            head_ids,
+            ...(input.include_head_cards
+              ? { head_cards: head_ids.map((id) => available.get(id)!) }
+              : {}),
+          });
+        };
+        if (
+          input.action === 'resume' &&
+          lobbyPrevious &&
+          input.expected_batch_id === lobbyPrevious.batch_id
+        ) {
+          respond(lobbyPrevious);
+          return;
+        }
+        if (
+          input.action === 'undo' &&
+          lobbyCurrent &&
+          lobbyPrevious &&
+          input.expected_batch_id === lobbyCurrent.batch_id &&
+          input.restore_batch_id === lobbyPrevious.batch_id &&
+          lobbyNow() - Date.parse(lobbyCurrent.generated_at!) <= 30_000
+        ) {
+          const restored = lobbyPrevious;
+          lobbyPrevious = lobbyCurrent;
+          lobbyCurrent = { ...restored, previous_batch_id: null };
+          respond(lobbyCurrent);
+          return;
+        }
+        const canRefresh =
+          input.action === 'refresh' && input.expected_batch_id === lobbyCurrent?.batch_id;
+        const expired =
+          input.action === 'open' &&
+          lobbyCurrent?.expires_at &&
+          Date.parse(lobbyCurrent.expires_at) <= lobbyNow();
+        if (
+          !lobbyCurrent ||
+          (lobbyCurrent.batch_id !== input.request_id && (canRefresh || expired))
+        ) {
+          const ids = data.characters.map((card) => card.id);
+          // Deliberately deterministic UI fixture; production weighted selection has separate real tests.
+          const offset = (lobbyBatchCount * 12) % Math.max(ids.length, 1);
+          const ordered = [...ids.slice(offset), ...ids.slice(0, offset)];
+          lobbyPrevious = lobbyCurrent;
+          lobbyCurrent = {
+            enabled: true,
+            degraded: false,
+            batch_id: input.request_id,
+            generated_at: new Date(lobbyNow()).toISOString(),
+            expires_at: new Date(lobbyNow() + 86400_000).toISOString(),
+            character_ids: ordered,
+            head_ids: ordered.slice(0, 12),
+            previous_batch_id: lobbyPrevious?.batch_id ?? null,
+          };
+          lobbyBatchCount += 1;
+          if (
+            input.action === 'refresh' &&
+            scenario === 'lobby-rotation-lost-response' &&
+            !lobbyFailureDelivered
+          ) {
+            lobbyFailureDelivered = true;
+            fail(res, 503, 'SERVICE_UNAVAILABLE', '批次响应暂时中断，请重试');
+            return;
+          }
+        }
+        respond(lobbyCurrent);
+        return;
+      }
+      if (path === '/api/characters/recommendation/exposures' && method === 'POST') {
+        const input = LobbyRecommendationExposuresSchema.parse(body);
+        const batch = [lobbyCurrent, lobbyPrevious].find(
+          (entry) => entry?.batch_id === input.batch_id
+        );
+        let accepted = 0;
+        if (batch)
+          for (const id of input.character_ids) {
+            const key = `${input.batch_id}:${id}`;
+            if (
+              batch.character_ids.includes(id) &&
+              data.characters.some((card) => card.id === id) &&
+              !lobbyExposures.has(key)
+            ) {
+              lobbyExposures.set(key, {
+                batch_id: input.batch_id,
+                character_id: id,
+                seen_at: new Date(lobbyNow()).toISOString(),
+              });
+              accepted += 1;
+            }
+          }
+        ok(res, { accepted });
+        return;
+      }
       if (path === '/api/characters/latest-badge' || path === '/api/characters/latest-seen') {
         ok(res, { has_new: false });
         return;
       }
       if (path === '/api/characters' && method === 'GET') {
-        const characters = data.characters.filter((card) => {
-          const creation = creatorCards.get(card.id);
-          return (
-            !creation ||
-            (creation.state === 'ready' &&
-              creation.visibility === 'public' &&
-              creation.approved_revision !== null)
-          );
-        });
+        const cards = visibleLobbyCards();
+        const sort = url.searchParams.get('sort');
+        const head = sort === 'recommended' && url.searchParams.get('limit') === '12';
+        if (url.searchParams.has('ids')) {
+          const ids = PublicLobbyHeadIdsSchema.safeParse(url.searchParams.get('ids'));
+          if (!head || url.searchParams.getAll('ids').length !== 1 || !ids.success) {
+            fail(res, 400, 'BAD_REQUEST', '首屏角色校准请求无效');
+            return;
+          }
+          const byId = new Map(cards.map((card) => [card.id, card]));
+          ok(res, { characters: ids.data.flatMap((id) => byId.get(id) ?? []) });
+          return;
+        }
+        if (sort === 'latest') cards.reverse();
+        ok(res, { characters: head ? cards.slice(0, 12) : cards });
+        return;
+      }
+      const publicCreatorPath = /^\/api\/creators\/([^/]+)\/characters$/.exec(path);
+      if (publicCreatorPath && method === 'GET') {
+        if (publicCreatorPath[1] !== publicCreatorFixture.id) {
+          fail(res, 404, 'NOT_FOUND', '暂时无法查看该作者空间');
+          return;
+        }
+        const cards = data.characters.filter((card) =>
+          publicCreatorFixture.characterIds.includes(card.id)
+        );
+        // One card per fixture page exercises paging without manufacturing a large catalogue.
+        const page = Number(url.searchParams.get('page') || 1);
         ok(res, {
-          characters: url.searchParams.get('sort') === 'latest' ? characters.reverse() : characters,
+          author_name: publicCreatorFixture.nickname,
+          characters: cards.slice(page - 1, page).map((card) => {
+            const { like_count, favorite_count } = characterSocialFor(card.id);
+            return { ...card, like_count, favorite_count };
+          }),
+          page,
+          has_more: page < cards.length,
         });
         return;
       }
       if (path.startsWith('/api/characters/') && method === 'GET') {
         const character = data.characters.find((item) => item.id === path.split('/').pop());
-        if (character) ok(res, { character });
-        else fail(res, 404, 'character_not_found', '角色不存在');
+        if (character) {
+          const detail = publicCreatorFixture.characterIds.includes(character.id)
+            ? {
+                ...character,
+                author_name: publicCreatorFixture.nickname,
+                public_creator_id: publicCreatorFixture.id,
+              }
+            : character;
+          ok(res, { character: detail });
+        } else fail(res, 404, 'character_not_found', '角色不存在');
         return;
       }
       if (path === '/api/favorites/ids' && method === 'GET') {
@@ -1190,11 +1845,33 @@ export function createPreviewServer(apiPort: number, appPort: number) {
       }
       if (path === '/api/v1/models/select' && method === 'POST') {
         const { model_id } = SelectModelRequestSchema.parse(body);
-        if (model_id !== 'preview-light') {
+        const freeZone = selectFreeZonePreviewModel(data, model_id);
+        if (freeZone === 'closed') {
+          fail(res, 409, 'FREE_ZONE_UNAVAILABLE', '畅聊模型暂未开放');
+          return;
+        }
+        if (freeZone === null && !selectPreviewModel(data, model_id)) {
           fail(res, 400, 'unknown_model', '预览模型不存在');
           return;
         }
-        ok(res, { model_id, openrouter_model_id: 'preview/model' });
+        ok(res, {
+          model_id,
+          openrouter_model_id: data.models.selected_openrouter_model_id,
+          provider: data.models.selected_provider,
+          provider_model_id: data.models.selected_provider_model_id,
+        });
+        return;
+      }
+      const folderResult = chatFolders.handle(method, path, url, body, data.sessions);
+      if (folderResult) {
+        if (folderResult.status === 200) ok(res, folderResult.data);
+        else
+          fail(
+            res,
+            folderResult.status,
+            folderResult.code ?? 'BAD_REQUEST',
+            folderResult.message ?? '请求无效'
+          );
         return;
       }
       if (path === '/api/v1/conversations') {
@@ -1223,23 +1900,6 @@ export function createPreviewServer(apiPort: number, appPort: number) {
           };
           data.messages.push(greeting);
           ok(res, { session, messages: [greeting] });
-          return;
-        }
-        if (method === 'GET') {
-          const sessions = data.sessions
-            .filter(
-              (item) =>
-                item.message_count > 0 &&
-                (!url.searchParams.get('character_id') ||
-                  item.character_id === url.searchParams.get('character_id'))
-            )
-            .sort(
-              (a, b) =>
-                (b.pinned_at ?? '').localeCompare(a.pinned_at ?? '') ||
-                (b.last_message_at ?? '').localeCompare(a.last_message_at ?? '') ||
-                b.created_at.localeCompare(a.created_at)
-            );
-          ok(res, { sessions, total: sessions.length });
           return;
         }
       }
@@ -1342,6 +2002,30 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         });
         return;
       }
+      const feedbackMatch = path.match(
+        /^\/api\/v1\/conversations\/([^/]+)\/messages\/([^/]+)\/feedback$/
+      );
+      if (feedbackMatch && (method === 'GET' || method === 'PUT')) {
+        const [, sessionId, messageId] = feedbackMatch;
+        if (!data.sessions.some((session) => session.id === sessionId)) {
+          fail(res, 404, 'NOT_FOUND', '对话不存在');
+          return;
+        }
+        const message = currentConversationMessages(sessionId!).find(
+          (item) => item.id === messageId && item.role === 'assistant'
+        );
+        const result = replyFeedback.handle(
+          method,
+          sessionId!,
+          message,
+          Number(url.searchParams.get('edit_version')),
+          body,
+          scenario === 'chat-like-error'
+        );
+        if (result.status === 200) ok(res, result.data);
+        else fail(res, result.status, result.code!, result.message!);
+        return;
+      }
       const messageLikeMatch = path.match(
         /^\/api\/v1\/conversations\/([^/]+)\/messages\/([^/]+)\/like$/
       );
@@ -1402,7 +2086,10 @@ export function createPreviewServer(apiPort: number, appPort: number) {
             typeof patch !== 'object' ||
             ('title' in patch && patch.title !== null && typeof patch.title !== 'string') ||
             (patch.pinned !== undefined && typeof patch.pinned !== 'boolean') ||
-            (!('title' in patch) && patch.pinned === undefined)
+            ('folder_id' in patch &&
+              patch.folder_id !== null &&
+              typeof patch.folder_id !== 'string') ||
+            (!('title' in patch) && patch.pinned === undefined && !('folder_id' in patch))
           ) {
             fail(res, 400, 'BAD_REQUEST', '会话参数无效');
             return;
@@ -1414,6 +2101,13 @@ export function createPreviewServer(apiPort: number, appPort: number) {
               '新的对话';
           }
           if (patch.pinned !== undefined) session.pinned_at = patch.pinned ? stamp() : null;
+          if ('folder_id' in patch) {
+            if (patch.folder_id && !chatFolders.has(patch.folder_id)) {
+              fail(res, 404, 'folder_not_found', '分组不存在');
+              return;
+            }
+            session.folder_id = patch.folder_id ?? null;
+          }
           session.updated_at = stamp();
           ok(res, { session } satisfies UpdateConversationData);
           return;
@@ -1560,8 +2254,13 @@ export function createPreviewServer(apiPort: number, appPort: number) {
             content: '',
             status: 'streaming',
             finish_reason: null,
+            model_id:
+              scenario === 'chat-surplus-fallback'
+                ? 'preview-light'
+                : data.models.selected_model_id,
           };
           data.messages.push(message);
+          const keepsThinking = data.models.selected_model_id === FREE_ZONE_KEEPS_THINKING_ID;
           const currentEpoch = epoch;
           const write = (event: ConversationStreamEvent) => {
             if (!res.destroyed && !res.writableEnded)
@@ -1576,16 +2275,26 @@ export function createPreviewServer(apiPort: number, appPort: number) {
           res.on('close', () => streams.delete(res));
           write({
             type: 'start',
+            requested_model_id: data.models.selected_model_id,
             turn_index: turn,
             revision: message.revision,
             user_message_id: userId,
             assistant_message_id: message.id,
-            thinking_enabled: parsed.thinking_enabled !== false,
+            // 畅聊免费模型的思考过程一律显示；关不掉思考的那个，开关关着也照样吐思考
+            thinking_enabled: parsed.thinking_enabled !== false || keepsThinking,
+            // A short frozen budget reaches the browser deadline without a slow test.
+            ...(scenario === 'chat-late-first-token' ? { first_token_deadline_ms: 1_000 } : {}),
           });
           await delay(150);
-          if (parsed.thinking_enabled !== false)
+          if (parsed.thinking_enabled !== false || keepsThinking)
             write({ type: 'reasoning', text: '沿着当前故事线，准备一个自然的回应。' });
-          await delay(scenario === 'chat-slow' ? 2200 : 700);
+          await delay(
+            scenario === 'chat-slow' || scenario === 'chat-surplus-fallback'
+              ? 2200
+              : scenario === 'chat-late-first-token'
+                ? 2500
+                : 700
+          );
           if (
             currentEpoch !== epoch ||
             res.destroyed ||
@@ -1618,7 +2327,10 @@ export function createPreviewServer(apiPort: number, appPort: number) {
               message.status = 'complete';
               message.finish_reason = 'stop';
             }
-            if (action === 'messages') session.message_count += 2;
+            if (action === 'messages') {
+              session.message_count += 2;
+              if (message.status === 'complete') onboardingRounds += 1;
+            }
             session.last_message_preview = message.content;
             write({
               type: 'done',

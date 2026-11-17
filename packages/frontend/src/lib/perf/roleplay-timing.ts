@@ -22,7 +22,8 @@ export class RoleplayReplyTiming {
 
   constructor(
     readonly requestId: string,
-    private readonly action: 'send' | 'regenerate'
+    private readonly action: 'send' | 'regenerate',
+    private readonly onTerminal?: (durationMs: number, outcome: RoleplayReplyOutcome) => void
   ) {
     this.safely(() =>
       recordEngineeringEvent('roleplay.started', this.attributes('full_reply', 'waiting'))
@@ -45,9 +46,10 @@ export class RoleplayReplyTiming {
     this.finished = true;
     document.removeEventListener('visibilitychange', this.visibility);
     const now = performance.now();
+    const durationMs = now - this.startedAt;
     this.safely(() => {
       const attributes = this.attributes('full_reply', outcome);
-      recordEngineeringMeasurement('roleplay.full_reply', now - this.startedAt, attributes);
+      recordEngineeringMeasurement('roleplay.full_reply', durationMs, attributes);
       recordEngineeringEvent('roleplay.terminal', attributes);
       if (this.recoveryAt !== undefined) {
         const recovery = this.attributes('recovery', outcome);
@@ -55,6 +57,7 @@ export class RoleplayReplyTiming {
         recordEngineeringEvent('roleplay.terminal', recovery);
       }
     });
+    this.safely(() => this.onTerminal?.(durationMs, outcome));
   }
 
   private attributes(stage: 'full_reply' | 'recovery', outcome: string) {

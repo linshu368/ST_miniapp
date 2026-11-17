@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { Providers } from './providers';
 import { EARLY_STARTUP_SCRIPT } from '@/lib/perf/early-startup';
+import { DRAMA_STREAM_ORIGIN, DRAMA_STREAM_PRECONNECT_MODES } from '@/lib/drama-stream-origin';
 
 export const metadata: Metadata = {
   title: 'MiniApp',
@@ -28,6 +29,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="zh" className="dark">
       <head>
         {apiOrigin ? <link rel="preconnect" href={apiOrigin} crossOrigin="anonymous" /> : null}
+        {DRAMA_STREAM_ORIGIN
+          ? DRAMA_STREAM_PRECONNECT_MODES.map((mode) => (
+              <link
+                key={mode ?? 'native'}
+                rel="preconnect"
+                href={DRAMA_STREAM_ORIGIN}
+                crossOrigin={mode}
+              />
+            ))
+          : null}
       </head>
       <body className="min-h-screen bg-background text-foreground antialiased">
         <Providers>{children}</Providers>

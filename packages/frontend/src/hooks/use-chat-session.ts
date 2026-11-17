@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useConversationQuery, useCreateConversationMutation } from '@/lib/api/conversations';
 import { chatEntryPath } from '@/lib/chat-entry';
@@ -10,7 +10,6 @@ import {
   roleplayReturnPath,
   type RoleplaySource,
 } from '@/lib/roleplay-navigation';
-import { getReplayLifecycle, useReplayLifecycle, type ReplayLifecycleState } from '@/lib/telemetry';
 
 function replaceChatUrl(
   characterId: string,
@@ -22,6 +21,25 @@ function replaceChatUrl(
     '',
     chatEntryPath(characterId, { sessionId: sessionId ?? undefined, source })
   );
+}
+
+function entryErrorMessage(
+  createError: unknown,
+  detailCode: string | undefined,
+  createFailed: boolean,
+  detailFailed: boolean
+): string | null {
+  const createCode =
+    createError instanceof Error ? (createError as { code?: string }).code : undefined;
+  if (
+    [createCode, detailCode].some((code) => code === 'UNAUTHORIZED' || code === 'AUTH_REQUIRED')
+  ) {
+    return '登录信息已失效，请从 Telegram 重新打开小程序';
+  }
+  if (createFailed) return '对话创建失败，请重试';
+  return detailFailed && detailCode !== 'session_not_found' && detailCode !== 'NOT_FOUND'
+    ? '对话加载失败，请重试'
+    : null;
 }
 
 /**
@@ -39,7 +57,7 @@ export function useChatSession(characterId: string) {
   const resetCreatedConversation = createConversation.reset;
   const createdSessionId = createConversation.data?.session.id ?? null;
   const activeSessionId = sessionId ?? createdSessionId;
-  const conversationQuery = useConversationQuery(activeSessionId ?? undefined);
+  const conversationQuery = useConversationQuery(activeSessionId ?? undefined, createdSessionId);
 
   const returnTo = useMemo(
     () =>
@@ -121,13 +139,12 @@ export function useChatSession(characterId: string) {
     if (activeSessionId) void conversationQuery.refetch();
   }, [activeSessionId, conversationQuery, createConversation]);
 
-  const entryError = createConversation.isError
-    ? '对话创建失败，请重试'
-    : conversationQuery.isError &&
-        detailErrorCode !== 'session_not_found' &&
-        detailErrorCode !== 'NOT_FOUND'
-      ? '对话加载失败，请重试'
-      : null;
+  const entryError = entryErrorMessage(
+    createConversation.error,
+    detailErrorCode,
+    createConversation.isError,
+    conversationQuery.isError
+  );
 
   const ready = Boolean(activeSessionId) && conversationQuery.isSuccess;
 
@@ -145,119 +162,4 @@ export function useChatSession(characterId: string) {
     selectSession,
     detailErrorCode,
   };
-}
-
-/**
- * `/chat/:characterId` 与 `/chat/:characterId/voice/:messageId` 同属一段聊天回放。
- * `/chats` 是历史列表，不算在内。
- */
-export function isChatReplayPath(pathname: string): boolean {
-  const path = pathname.split('?')[0] ?? pathname;
-  return /^\/chat\/[^/]+$/.test(path) || /^\/chat\/[^/]+\/voice\/[^/]+$/.test(path);
-}
-
-export function shouldEndChatReplayAfterLeave(input: {
-  occupancy: number;
-  pathname: string;
-  state: ReplayLifecycleState;
-  paywallContinuationActive?: boolean;
-}): boolean {
-  if (input.occupancy > 0) return false;
-  if (isChatReplayPath(input.pathname)) return false;
-  if (input.paywallContinuationActive) return false;
-  return input.state === 'chat';
-}
-
-let chatReplayOccupancy = 0;
-let leaveReplayTimer: ReturnType<typeof setTimeout> | undefined;
-
-function scheduleEndReplayIfLeftChat(): void {
-  if (leaveReplayTimer !== undefined) clearTimeout(leaveReplayTimer);
-  leaveReplayTimer = setTimeout(() => {
-    leaveReplayTimer = undefined;
-    const pathname = typeof window === 'undefined' ? '' : window.location.pathname;
-    const lifecycle = getReplayLifecycle();
-    if (
-      !shouldEndChatReplayAfterLeave({
-        occupancy: chatReplayOccupancy,
-        pathname,
-        state: lifecycle.getState(),
-        paywallContinuationActive: lifecycle.isPaywallContinuationActive(),
-      })
-    ) {
-      return;
-    }
-    void lifecycle.endReplay('route_change');
-  }, 0);
-}
-
-export function resetChatReplayOccupancyForTests(): void {
-  chatReplayOccupancy = 0;
-  if (leaveReplayTimer === undefined) return;
-  clearTimeout(leaveReplayTimer);
-  leaveReplayTimer = undefined;
-}
-
-/** 会话可聊之后再闲时启动录屏，避免与会话 GET 抢连接、撑开 navigation。 */
-const CHAT_REPLAY_IDLE_TIMEOUT_MS = 2_500;
-
-/**
- * 聊天页 / 自定义语音页共用的回放绑定。
- * 不能把 end 放进 useChatSession 的 unmount：切到语音页也会卸掉那个 hook。
- */
-export function useChatReplayBinding(input: {
-  characterId: string;
-  conversationSessionId: string | null;
-  selectedModelId: string | null;
-  /** false 时不启动录屏（等会话详情就绪）；默认 true 兼容语音子页。 */
-  pageReady?: boolean;
-}): void {
-  const lifecycle = useReplayLifecycle();
-  const pageReady = input.pageReady !== false;
-
-  useEffect(() => {
-    if (!input.conversationSessionId || !pageReady) return;
-    let cancelled = false;
-    let idleHandle: number | undefined;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-
-    const start = () => {
-      if (cancelled) return;
-      void lifecycle
-        .startChatReplay({
-          characterId: input.characterId,
-          conversationSessionId: input.conversationSessionId!,
-          selectedModelId: input.selectedModelId,
-        })
-        .catch(() => undefined);
-    };
-
-    // 功能路径零等待埋点：空闲帧再拉 PostHog / 开录屏。
-    if (typeof window.requestIdleCallback === 'function') {
-      idleHandle = window.requestIdleCallback(start, { timeout: CHAT_REPLAY_IDLE_TIMEOUT_MS });
-    } else {
-      timer = setTimeout(start, 400);
-    }
-
-    return () => {
-      cancelled = true;
-      if (idleHandle !== undefined) window.cancelIdleCallback?.(idleHandle);
-      if (timer !== undefined) clearTimeout(timer);
-    };
-  }, [input.characterId, input.conversationSessionId, input.selectedModelId, pageReady, lifecycle]);
-
-  useEffect(() => {
-    chatReplayOccupancy += 1;
-    if (leaveReplayTimer !== undefined) {
-      clearTimeout(leaveReplayTimer);
-      leaveReplayTimer = undefined;
-    }
-    if (chatReplayOccupancy === 1) {
-      lifecycle.reenterChatFromFollowup();
-    }
-    return () => {
-      chatReplayOccupancy = Math.max(0, chatReplayOccupancy - 1);
-      scheduleEndReplayIfLeftChat();
-    };
-  }, [lifecycle]);
 }

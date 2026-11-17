@@ -1,0 +1,64 @@
+{
+  "id": "new-user-guide",
+  "name": "new-user-guide",
+  "title": "新用户渐进式角色体验引导",
+  "description": "新用户角色主线引导及10轮后返场创作邀请",
+  "status": "review",
+  "dev_type": null,
+  "scope": "onboarding",
+  "package": "frontend",
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-06",
+  "completedAt": null,
+  "branch": "codex/new-user-guide",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "新手引导及创作邀请已完成本地验收与预览。创作阶段仅本机成功新问答去重至10轮，零新增请求；未提交、推送或发布。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "frontend.business.conversation-ui",
+        "frontend.business.character-lobby",
+        "backend.business.engagement-support",
+        "shared.business.engagement-support-contracts",
+        "frontend.infrastructure.client-ui-foundation",
+        "shared.business.wallet-payment-contracts",
+        "backend.business.conversation-generation",
+        "admin.infrastructure.admin-client-auth"
+      ]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": ["/characters", "/chats", "/chat/:characterId", "/creation/characters/new"],
+      "apis": ["GET /api/users/onboarding"],
+      "android": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 4000
+      },
+      "ios": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 4000
+      },
+      "api": {
+        "p95_baseline_ms": null,
+        "p95_target_ms": 1000
+      },
+      "measurement": {
+        "source": "Existing Faro page.ready/api.total by release and platform; local Playwright flow/critical request ordering",
+        "window": "2026-11-06 local development; future release compare preceding/following24h with N"
+      },
+      "notes": "双端基线未采集可核验同版本样本，null不是0。目标为预算并非测量；后续发布需复核两端P95不退化5%。首屏background后有界资格读，失败不阻塞；本轮无生产发布。"
+    }
+  }
+}

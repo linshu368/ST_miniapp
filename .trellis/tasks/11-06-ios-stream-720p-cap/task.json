@@ -1,0 +1,55 @@
+{
+  "id": "ios-stream-720p-cap",
+  "name": "ios-stream-720p-cap",
+  "title": "iOS Stream 起播封顶 720p",
+  "description": "Apple 平台原生 HLS 的 Stream 播放地址追加 clientBandwidthHint=2.5，让主清单只含 ≤720p 单档，缩小首片以缩短起播。",
+  "status": "in_progress",
+  "dev_type": "feature",
+  "scope": "frontend",
+  "package": "frontend",
+  "priority": "P2",
+  "creator": "linshu",
+  "assignee": "linshu",
+  "createdAt": "2026-11-06",
+  "completedAt": null,
+  "branch": "feat/ios-stream-720p-cap",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": ["frontend.business.drama-experience"]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": ["短剧播放页（起播耗时，非页面加载）"],
+      "apis": [],
+      "android": {
+        "page_p95_baseline_ms": 3870,
+        "page_p95_target_ms": 3870
+      },
+      "ios": {
+        "page_p95_baseline_ms": 7590,
+        "page_p95_target_ms": 3000
+      },
+      "api": {
+        "p95_baseline_ms": null,
+        "p95_target_ms": null
+      },
+      "measurement": {
+        "source": "Grafana st-engineering-drama（Loki）st_drama_stage，cdn_group=stream，按 tg_platform=ios、app_version 分前后",
+        "window": "基线：2026-11-04 11:00Z 至 11-06 约 47h；发布后取等长窗口"
+      },
+      "notes": "门禁字段按\"起播耗时\"口径填写（设置源→开始播放，Stream 组，Faro 全量，实验开流至 2026-11-06 约 47h），不是页面加载 P95。iOS 基线 P95 7.59s（N=25），目标 3000ms 是项目目标（任何入口起播 P95≤3s），本任务只是其中一步，不承诺单独达成。Android 不受影响，基线 P95 3.87s（N=18），目标取\"不退化\"。接口不涉及。iOS 样本少，发布后 N<30 只作方向参考，不补零；另需对比 iOS Stream 元数据→数据 P50（基线 2.69s）和前台卡顿占比不明显上升。"
+    }
+  }
+}

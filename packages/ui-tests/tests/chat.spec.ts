@@ -4,7 +4,7 @@ import type { ReportFirstTokenRequest } from '@miniapp/shared';
 import type { ForkConversationData, ListConversationsData } from '@miniapp/shared';
 import type { Page } from '@playwright/test';
 import { IDS } from './fixtures.js';
-import { CHAT_SESSION_IDS, LONG_SESSION_TITLE } from '../fixtures/data.js';
+import { CHAT_SESSION_IDS, LONG_SESSION_TITLE, SURPLUS_PREVIEW_MODEL } from '../fixtures/data.js';
 
 function likeResponse(page: Page) {
   return page.waitForResponse(
@@ -12,21 +12,135 @@ function likeResponse(page: Page) {
   );
 }
 
-test('@chat @chat-like @layout 回复点赞有48px触区，轻点立即反馈并持久保存', async ({
+test('@chat @surplus @layout Surplus Intelligence 目录、发送、重答与取消沿用真实页面', async ({
+  page,
+  preview,
+  request,
+}) => {
+  await preview.scenario('chat-surplus');
+  const catalog = (await (await request.get(`${previewApiUrl}/api/v1/models/config`)).json()).data;
+  expect(catalog).toMatchObject({
+    selected_provider: SURPLUS_PREVIEW_MODEL.provider,
+    selected_provider_model_id: SURPLUS_PREVIEW_MODEL.provider_model_id,
+  });
+  await page.goto(chatPath);
+  await page.getByRole('button', { name: /展开引擎选择/ }).click();
+  await expect(page.getByText('Surplus Intelligence', { exact: true }).first()).toBeVisible();
+  await page.keyboard.press('Escape');
+  const answer = page.getByText('「那就出发吧。」旅人轻轻合上地图，把下一步的选择留给你。', {
+    exact: true,
+  });
+  await sendChat(page, '我们用 Surplus Intelligence 继续故事。');
+  await expect(answer).toBeVisible();
+  await expect(page.getByRole('button', { name: '取消本次回复', exact: true })).toHaveCount(0);
+  const regenerated = page.waitForResponse(
+    (response) => response.url().endsWith('/regenerate') && response.request().method() === 'POST'
+  );
+  await page.getByRole('button', { name: '换一个回复', exact: true }).click();
+  const generation = await regenerated;
+  expect(generation.ok()).toBeTruthy();
+  await expect
+    .poll(async () => {
+      const current = (
+        await (await request.get(`${previewApiUrl}/api/v1/conversations/${IDS.session}`)).json()
+      ).data;
+      const last = current.messages.at(-1);
+      return { revision: last?.revision, status: last?.status };
+    })
+    .toEqual({ revision: 2, status: 'complete' });
+  await expect(page.getByRole('button', { name: '取消本次回复', exact: true })).toHaveCount(0);
+  await expect(answer).toHaveCount(1);
+  const detail = (
+    await (await request.get(`${previewApiUrl}/api/v1/conversations/${IDS.session}`)).json()
+  ).data;
+  expect(detail.messages.at(-1)).toMatchObject({
+    model_id: SURPLUS_PREVIEW_MODEL.id,
+    revision: 2,
+    status: 'complete',
+  });
+  const started = page.waitForResponse(
+    (response) => response.url().endsWith('/messages') && response.request().method() === 'POST'
+  );
+  await sendChat(page, '这一轮先停下来。');
+  expect((await started).ok()).toBeTruthy();
+  const cancelled = page.waitForResponse(
+    (response) => response.url().endsWith('/cancel') && response.request().method() === 'POST'
+  );
+  await page.getByRole('button', { name: '取消本次回复', exact: true }).click();
+  expect((await cancelled).ok()).toBeTruthy();
+  await expect(page.getByRole('button', { name: '发送', exact: true })).toBeVisible();
+  const stopped = (
+    await (await request.get(`${previewApiUrl}/api/v1/conversations/${IDS.session}`)).json()
+  ).data;
+  expect(stopped.messages.at(-1)).toMatchObject({
+    model_id: SURPLUS_PREVIEW_MODEL.id,
+    status: 'interrupted',
+    finish_reason: 'user_cancelled',
+  });
+  await page.reload();
+  await expect(page.getByRole('button', { name: '发送', exact: true })).toBeVisible();
+  expect((await preview.state()).wallet.credits).toBe(3600);
+  await expectMobileLayout(page);
+  await preview.screenshot('Surplus Intelligence 重答与停止');
+});
+
+test('@chat @surplus @layout Surplus 慢主调用由 OpenRouter 兜底交付且不改变模型选择', async ({
+  page,
+  preview,
+  request,
+}) => {
+  await preview.scenario('chat-surplus-fallback');
+  await page.goto(chatPath);
+  await page.getByRole('button', { name: '关闭深度思考', exact: true }).click();
+  await sendChat(page, '等一会儿，也请把故事接下去。');
+  await expect(
+    page.getByText('「那就出发吧。」旅人轻轻合上地图，把下一步的选择留给你。', { exact: true })
+  ).toBeVisible();
+  // The final text chunk can precede the terminal SSE event and persisted status.
+  await expect(page.getByRole('button', { name: '取消本次回复', exact: true })).toHaveCount(0);
+  const detail = (
+    await (await request.get(`${previewApiUrl}/api/v1/conversations/${IDS.session}`)).json()
+  ).data;
+  expect(detail.messages.at(-1)).toMatchObject({
+    model_id: 'preview-light',
+    status: 'complete',
+    finish_reason: 'stop',
+  });
+  const catalog = (await (await request.get(`${previewApiUrl}/api/v1/models/config`)).json()).data;
+  expect(catalog).toMatchObject({
+    selected_model_id: SURPLUS_PREVIEW_MODEL.id,
+    selected_provider: 'surplus',
+  });
+  expect(
+    (await preview.state()).requests.filter(
+      (item) => item.method === 'POST' && item.path.endsWith('/messages')
+    )
+  ).toHaveLength(1);
+  await page.reload();
+  await expect(
+    page.getByText('「那就出发吧。」旅人轻轻合上地图，把下一步的选择留给你。', { exact: true })
+  ).toHaveCount(1);
+  await expectMobileLayout(page);
+  await preview.screenshot('Surplus Intelligence 选择与兜底回复');
+});
+
+test('@chat @chat-like @layout 回复操作紧凑排布，点赞立即反馈并持久保存', async ({
   page,
   preview,
 }) => {
   await page.goto('/characters');
+  await page.getByRole('tab', { name: '推荐', exact: true }).click();
   const card = page.locator(`[data-lobby-character-id="${IDS.character}"]`);
   const characterLike = card.getByRole('button', { name: '点赞 林间旅人', exact: true });
   await expect(characterLike).toContainText('128');
   await card.getByRole('button', { name: '查看 林间旅人 的详情', exact: true }).click();
   await page.getByRole('dialog').getByRole('button', { name: '继续对话', exact: true }).click();
+  await page.waitForURL(/\/chat\//);
   const like = page.getByTitle('赞第 1 轮回复', { exact: true });
   await like.scrollIntoViewIfNeeded();
   const box = await like.boundingBox();
-  expect(box?.width).toBeGreaterThanOrEqual(48);
-  expect(box?.height).toBeGreaterThanOrEqual(48);
+  expect(box?.width).toBeGreaterThanOrEqual(36);
+  expect(box?.height).toBeGreaterThanOrEqual(44);
   await page.getByRole('textbox', { name: '输入消息' }).fill('点赞不影响我正在写的话');
   const saved = likeResponse(page);
   await like.click({ position: { x: 4, y: 24 } });
@@ -41,6 +155,7 @@ test('@chat @chat-like @layout 回复点赞有48px触区，轻点立即反馈并
   await expect(characterLike).toHaveAttribute('aria-pressed', 'false');
   await card.getByRole('button', { name: '查看 林间旅人 的详情', exact: true }).click();
   await page.getByRole('dialog').getByRole('button', { name: '继续对话', exact: true }).click();
+  await page.waitForURL(/\/chat\//);
   await page.reload();
   await expect(like).toHaveAttribute('aria-pressed', 'true');
   const removed = likeResponse(page);
@@ -121,6 +236,31 @@ async function loadBranchTurn(page: Page, turn: number) {
   }
   throw new Error(`第 ${turn} 轮没有加载出来`);
 }
+
+test('@chat @chat-history 旧WebView连续翻完200轮，完整记录与草稿保留', async ({
+  page,
+  preview,
+}) => {
+  await preview.scenario('chat-branch');
+  await page.addInitScript(() => {
+    Object.defineProperty(Array.prototype, 'findLast', { value: undefined, configurable: true });
+  });
+  await page.goto(chatPath);
+  await expect(
+    page.getByRole('button', { name: '第200轮角色回复操作', exact: true })
+  ).toBeAttached();
+  await page.getByRole('textbox', { name: '输入消息' }).fill('翻页时保留的草稿');
+  await loadBranchTurn(page, 1);
+  await expect(page.getByRole('button', { name: '查看更早的消息', exact: true })).toHaveCount(0);
+  const turns = await page
+    .getByRole('button', { name: /^第\d+轮角色回复操作$/ })
+    .evaluateAll((buttons) =>
+      buttons.map((button) => Number(button.getAttribute('aria-label')?.match(/第(\d+)轮/)?.[1]))
+    );
+  expect(turns).toEqual(Array.from({ length: 200 }, (_, index) => index + 1));
+  await expect(page.getByRole('textbox', { name: '输入消息' })).toHaveValue('翻页时保留的草稿');
+  await expectMobileLayout(page);
+});
 
 async function openBranch(page: Page, turn: number): Promise<ForkConversationData> {
   const button = await loadBranchTurn(page, turn);
@@ -342,6 +482,22 @@ test('@chat 首字交付不等待滚回最新消息，单轮只回报一次', as
   await preview.screenshot('滚动位置不改变首字交付');
 });
 
+test('@chat 首字迟到只提示网络慢，回复到达后提示消失且不误报重试', async ({ page, preview }) => {
+  await preview.scenario('chat-late-first-token');
+  await page.goto(chatPath);
+  await page.getByRole('button', { name: '关闭深度思考', exact: true }).click();
+  await sendChat(page, '这条回复会晚一点到');
+  const slowNotice = page.getByText('网络有点慢，正在接收回复', { exact: true });
+  await expect(slowNotice).toBeVisible();
+  await expect(page.getByText('这次回应稍慢，再试一次吧', { exact: true })).toHaveCount(0);
+  await preview.screenshot('首字迟到时的网络提示');
+  await expect(
+    page.getByText('「那就出发吧。」旅人轻轻合上地图，把下一步的选择留给你。', { exact: true })
+  ).toBeAttached();
+  await expect(slowNotice).toHaveCount(0);
+  await expect(page.getByText('这次回应稍慢，再试一次吧', { exact: true })).toHaveCount(0);
+});
+
 test('@chat @layout 深度思考默认开启，正文出现后自动折叠', async ({ page, preview }) => {
   await preview.scenario('chat-slow');
   await page.goto(chatPath);
@@ -352,6 +508,8 @@ test('@chat @layout 深度思考默认开启，正文出现后自动折叠', asy
     page.getByText('「那就出发吧。」旅人轻轻合上地图，把下一步的选择留给你。', { exact: true })
   ).toBeVisible();
   await expect(page.getByLabel('思考内容', { exact: true })).toHaveCount(0);
+  // The final text precedes SSE done; wait for terminal auto-collapse before reopening it.
+  await expect(page.getByRole('button', { name: '取消本次回复', exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'thinking' }).click();
   await expect(page.getByLabel('思考内容', { exact: true })).toBeVisible();
   await expectMobileLayout(page);
@@ -388,6 +546,20 @@ test('@chat @layout 多行输入与回复偏好可操作，多个风格独立开
   await expect(page.getByRole('button', { name: '发送', exact: true })).toBeInViewport();
   await page.getByRole('button', { name: /回复偏好/ }).click();
   await expect(page.getByText('回复长度', { exact: true })).toBeVisible();
+  // 剧情模式：四档单选，默认档选中，切换后说明随之变化并写入偏好。
+  const driveModes = page.getByRole('radiogroup', { name: '剧情模式' });
+  await expect(driveModes.getByRole('radio')).toHaveCount(4);
+  await expect(driveModes.getByRole('radio', { name: '等 TA 撩' })).toBeChecked();
+  await driveModes.getByRole('radio', { name: '替我演' }).click();
+  await expect(driveModes.getByRole('radio', { name: '替我演' })).toBeChecked();
+  await expect(
+    page.getByText('你只管定方向，连你的戏份也一起写好。', { exact: false })
+  ).toBeVisible();
+  await page.reload();
+  await page.getByRole('button', { name: /回复偏好/ }).click();
+  await expect(
+    page.getByRole('radiogroup', { name: '剧情模式' }).getByRole('radio', { name: '替我演' })
+  ).toBeChecked();
   await page.getByRole('button', { name: '详细', exact: true }).click();
   const dialogue = page.getByRole('switch', { name: '角色多说话', exact: true });
   const concise = page.getByRole('switch', { name: '节奏紧凑', exact: true });
@@ -424,7 +596,8 @@ test('@chat @chat-edit @layout 最近十轮就地编辑、取消及删除单条�
   const editButton = page.getByRole('button', { name: '编辑第11轮角色正文', exact: true });
   await editButton.scrollIntoViewIfNeeded();
   const editBox = await editButton.boundingBox();
-  expect(editBox?.width).toBeGreaterThanOrEqual(44);
+  // 回复操作栏紧凑排布（编辑/重生成/赞/踩一行放下）：宽 36、高保持 44，和点赞用例一致
+  expect(editBox?.width).toBeGreaterThanOrEqual(36);
   expect(editBox?.height).toBeGreaterThanOrEqual(44);
   await editButton.click();
   const editor = page.getByRole('textbox', { name: '编辑角色回复' });
@@ -599,4 +772,70 @@ test('@chat @chat-sessions @layout 同角色多段对话可区分，收纳管理
   await expectMobileLayout(page);
   await expect.poll(async () => Math.round((await drawer.boundingBox())?.x ?? -1)).toBe(0);
   await preview.screenshot('重命名置顶与切换后的对话记录');
+});
+
+test('@chat-dislike @layout 点踩可直接提交，窄屏提交栏始终可见', async ({ page, preview }) => {
+  await page.goto(chatPath);
+  await page.getByRole('textbox', { name: '输入消息' }).fill('保留我的聊天草稿');
+  const dislike = page.getByRole('button', { name: '不喜欢这条回复', exact: true });
+  await dislike.click();
+  const dialog = page.getByRole('dialog');
+  const submit = dialog.getByRole('button', { name: '提交反馈', exact: true });
+  await expect(submit).toBeEnabled();
+  await expect(submit).toBeInViewport({ ratio: 1 });
+  await preview.screenshot('点踩反馈首屏');
+  await submit.click();
+  await expect(dialog).not.toBeVisible();
+  const recorded = page.getByRole('button', { name: '查看这条回复的反馈', exact: true });
+  await expect(recorded).toHaveAttribute('aria-pressed', 'true');
+  await expect(recorded).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  await expect(page.getByRole('textbox', { name: '输入消息' })).toHaveValue('保留我的聊天草稿');
+  await recorded.click();
+  await dialog.getByRole('button', { name: '没有性张力', exact: true }).click();
+  await dialog.getByRole('textbox').fill('前面说好的事忘记了');
+  await dialog.getByRole('button', { name: '关闭反馈', exact: true }).click();
+  await recorded.click();
+  await expect(dialog.getByRole('textbox')).toHaveValue('前面说好的事忘记了');
+  await expect(dialog.getByRole('button', { name: '没有性张力', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true'
+  );
+  await page.setViewportSize({ width: 320, height: 340 });
+  await expect(submit).toBeInViewport({ ratio: 1 });
+  await submit.click();
+  await expect(dialog).not.toBeVisible();
+});
+
+test('@chat-dislike @layout 反馈失败保留草稿，重试与刷新读取同一份记录', async ({
+  page,
+  preview,
+}) => {
+  await preview.scenario('chat-like-error');
+  await page.goto(chatPath);
+  await page.getByRole('button', { name: '不喜欢这条回复', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByRole('button', { name: '重复啰嗦', exact: true }).click();
+  await dialog.getByRole('textbox').fill('总是重复相同的话');
+  const submit = dialog.getByRole('button', { name: '提交反馈', exact: true });
+  await submit.click();
+  await expect(dialog.getByRole('alert')).toContainText('重试');
+  await expect(dialog.getByRole('textbox')).toHaveValue('总是重复相同的话');
+  const before = await page.request.get(
+    `${previewApiUrl}/api/v1/conversations/${IDS.session}/messages/50000000-0000-4000-8000-000000000003/feedback?edit_version=0`
+  );
+  const first = await before.json();
+  await submit.click();
+  await expect(dialog).not.toBeVisible();
+  await page.reload();
+  await page.getByRole('button', { name: '不喜欢这条回复', exact: true }).click();
+  await expect(dialog.getByRole('textbox')).toHaveValue('总是重复相同的话');
+  await expect(dialog.getByRole('button', { name: '重复啰嗦', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true'
+  );
+  const after = await page.request.get(
+    `${previewApiUrl}/api/v1/conversations/${IDS.session}/messages/50000000-0000-4000-8000-000000000003/feedback?edit_version=0`
+  );
+  expect((await after.json()).data.feedback.id).toBe(first.data.feedback.id);
+  expect((await preview.state()).wallet.credits).toBe(3600);
 });

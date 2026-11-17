@@ -26,6 +26,29 @@ export const STARTUP_STAGE_NAMES = [
 ] as const;
 type StartupStage = (typeof STARTUP_STAGE_NAMES)[number];
 
+const NAVIGATION_TIMESTAMPS = [
+  ['document_fetch_start', 'fetchStart'],
+  ['document_dns_start', 'domainLookupStart'],
+  ['document_dns_end', 'domainLookupEnd'],
+  ['document_connect_start', 'connectStart'],
+  ['document_connect_end', 'connectEnd'],
+  ['document_tls_start', 'secureConnectionStart'],
+  ['document_request_start', 'requestStart'],
+  ['document_redirect_start', 'redirectStart'],
+  ['document_redirect_end', 'redirectEnd'],
+  ['document_worker_start', 'workerStart'],
+] as const;
+const NAVIGATION_DURATIONS = [
+  'document_pre_fetch',
+  'document_fetch_to_dns',
+  'document_dns',
+  'document_dns_to_connect',
+  'document_connect',
+  'document_connect_to_request',
+  'document_request_wait',
+  'document_tls',
+] as const;
+
 export const STARTUP_DETAIL_FIELDS = [
   ...STARTUP_STAGE_NAMES,
   ...PHASES,
@@ -40,6 +63,10 @@ export const STARTUP_DETAIL_FIELDS = [
   'script_transfer_bytes',
   'script_max_fetch_ms',
   'resources_truncated',
+  'navigation_diagnostics_version',
+  ...NAVIGATION_TIMESTAMPS.map(([field]) => field),
+  ...NAVIGATION_DURATIONS,
+  'document_redirect_count',
 ] as const;
 
 export function markStartupPhase(phase: StartupPhase): void {
@@ -57,7 +84,9 @@ export function collectStartupDetails(
   readyAt: number,
   observedAt = readyAt
 ) {
-  const details: Partial<Record<(typeof STARTUP_DETAIL_FIELDS)[number], number>> = {};
+  const details: Partial<Record<(typeof STARTUP_DETAIL_FIELDS)[number], number>> = {
+    navigation_diagnostics_version: 1,
+  };
   const stages: Partial<Record<StartupStage, number>> = {};
   const valid = (v: number | undefined): v is number =>
     v !== undefined && Number.isFinite(v) && v >= 0 && v <= observedAt;
@@ -92,6 +121,65 @@ export function collectStartupDetails(
       if (nav.responseEnd > 0 && valid(nav.responseEnd)) {
         details.document_response_end = nav.responseEnd;
         duration('document_download', nav.responseStart, nav.responseEnd);
+      }
+      // 只扩展现有慢事件上下文，不进入 stages，避免增加指标调用与上报次数。
+      for (const [field, property] of NAVIGATION_TIMESTAMPS) {
+        const value = nav[property];
+        if (valid(value)) details[field] = value;
+      }
+      if (
+        Number.isInteger(nav.redirectCount) &&
+        nav.redirectCount >= 0 &&
+        nav.redirectCount <= 65535
+      ) {
+        details.document_redirect_count = nav.redirectCount;
+      }
+      const navigationDuration = (
+        field: (typeof NAVIGATION_DURATIONS)[number],
+        start: number | undefined,
+        end: number | undefined
+      ) => {
+        if (valid(start) && valid(end) && end >= start) details[field] = end - start;
+      };
+      navigationDuration('document_pre_fetch', 0, details.document_fetch_start);
+      navigationDuration(
+        'document_fetch_to_dns',
+        details.document_fetch_start,
+        details.document_dns_start
+      );
+      navigationDuration('document_dns', details.document_dns_start, details.document_dns_end);
+      navigationDuration(
+        'document_dns_to_connect',
+        details.document_dns_end,
+        details.document_connect_start
+      );
+      navigationDuration(
+        'document_connect',
+        details.document_connect_start,
+        details.document_connect_end
+      );
+      navigationDuration(
+        'document_connect_to_request',
+        details.document_connect_end,
+        details.document_request_start
+      );
+      navigationDuration(
+        'document_request_wait',
+        details.document_request_start,
+        details.document_response_start
+      );
+      // TLS 是 connect 的子区间；0 不证明无 TLS，连接前空档也不等于已确认的排队。
+      if (
+        valid(details.document_tls_start) &&
+        details.document_tls_start > 0 &&
+        valid(details.document_connect_start) &&
+        details.document_tls_start >= details.document_connect_start
+      ) {
+        navigationDuration(
+          'document_tls',
+          details.document_tls_start,
+          details.document_connect_end
+        );
       }
     }
   } catch {

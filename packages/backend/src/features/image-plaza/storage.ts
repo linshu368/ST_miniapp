@@ -1,5 +1,8 @@
 import { Buffer } from 'node:buffer';
 import { getSupabaseClient } from '../../lib/supabase.js';
+import { clientFetch } from '../../platform/observability/fetch.js';
+
+const fetch = clientFetch('storage.image_plaza', 'http');
 
 const BUCKET = 'image-plaza';
 const VIDEO_BUCKET = 'media-plaza-video';
@@ -269,14 +272,16 @@ export async function uploadPlazaVideoAsset(input: {
       cacheControl: '31536000',
       upsert: false,
     });
-  if (error) throw new Error(`video_plaza_storage_upload_failed:${error.message}`);
+  if (error)
+    throw new Error(`video_plaza_storage_upload_failed:${error.message}`, { cause: error });
 }
 
 export async function deletePlazaVideoAssets(paths: string[]): Promise<void> {
   for (const path of paths) assertVideoPath(path);
   if (!paths.length) return;
   const { error } = await getSupabaseClient().storage.from(VIDEO_BUCKET).remove(paths);
-  if (error) throw new Error(`video_plaza_storage_delete_failed:${error.message}`);
+  if (error)
+    throw new Error(`video_plaza_storage_delete_failed:${error.message}`, { cause: error });
 }
 
 /** Public video works share the same bounded stable-URL cache as images. */

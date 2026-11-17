@@ -1,0 +1,20 @@
+{
+  "packages/backend/src/platform/runtime-config.ts": "281df89191870c8e389307cfb30bb101b0c5b5525658b693fd76af706a624644",
+  "packages/backend/src/features/drama/stream.ts": "adcfa66d6a7e7451eb576680010eef22d6c2697f6829f91794c85f30bdbad76b",
+  "packages/backend/src/features/drama/stream.test.ts": "ce942e922e8a163d9f37e89b08e33838588819fb0494dda58371e920d592caba",
+  "scripts/drama-stream-cohort.mjs": "9f8deef1f93daa7a701e361480f21591ea23cad3b9deba17bb5d4a4f411f397e",
+  "README.md": "4524effad62c53616cdc7d9849c60bac47b252fc730b40eb31460d7868118be2",
+  "docs/ARCHITECTURE.md": "36ffc90257f61059bb19e5758cf2e1fca5b7c66d2ae11729f1877f6aa78a2f30",
+  "docs/drama-stream-ab.md": "207c3f8f2b90178689c33040fdbf36c12ce7f780f3bf3c3c75afab141d89d802",
+  ".trellis/spec/backend/app/modules/infrastructure/runtime-data-security.md": "e74fd362ef710ba42fd0eb1157b1b4a53390e33ecf09de1631eec1356e76ff36",
+  "scripts/ios-drama-sampler/.gitignore": "903d0cd53eb8011c00b5579ebb5639780c7df6481ddc42cbfd63c1abf571d997",
+  "scripts/ios-drama-sampler/README.md": "bc43b897d59ceb4276c5bfa4d244b4a1c6ff7b8bfd4abfd96df72c0cbee81951",
+  "scripts/ios-drama-sampler/cli.mjs": "1580f52affc5797a49250b3561c5255011544def6cffdb35adda90f93d638a59",
+  "scripts/ios-drama-sampler/config.mjs": "53fce2f86aaebd4c0c29bd493f0677a5321c17d0a866344dc563eb24854f8209",
+  "scripts/ios-drama-sampler/run.command": "2d27f9d44b5fbed7b6d6955e2e86332b598f43ed35a3ec183f789ddf77b64df6",
+  "scripts/ios-drama-sampler/runner.mjs": "f53a67eb268f9b029705ecfc4110e70647874ebcf4aded5d92df45f25a9b140a",
+  "scripts/ios-drama-sampler/scenes.mjs": "4b794a130cb81a062d45730677d15d9e381e6ca31c337c6b5776cb38951fee0a",
+  "scripts/ios-drama-sampler/ui.mjs": "b7381d84fe8ecb1af466ecd9724e9e4d6ab9cb9141f13a8941311c5afa110ed8",
+  "scripts/ios-drama-sampler/vision.swift": "e2d668092778b3c17437434e453180add42bb177d46ea85601c114ebfd4a76da",
+  "scripts/ios-drama-sampler/webdriver.mjs": "3fa254eaf6f6903e58fee2e105e571c005de1962da3678f266b7646f2f3a8fbc"
+}

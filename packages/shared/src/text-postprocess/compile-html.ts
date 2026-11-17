@@ -58,7 +58,7 @@ export function compileTemplate(input: {
   }
   const tree: TrustedNode[] = [];
   for (const node of fragment.childNodes) {
-    const converted = convertNode(node, input, encoded, diagnostics, null, 1);
+    const converted = convertNode(node, input, encoded, diagnostics, 1);
     if (converted) tree.push(...converted);
   }
   if (tree.length === 0 && diagnostics.length === 0) {
@@ -79,7 +79,6 @@ function convertNode(
   input: { ruleId: string; replacement: string; groups: { count: number; names: string[] } },
   encoded: { html: string; toOriginal: (offset: number) => number },
   diagnostics: TextPostprocessDiagnostic[],
-  parent: TextPostprocessHtmlTag | null,
   depth: number
 ): TrustedNode[] | null {
   if (diagnostics.length > TEXT_POSTPROCESS_LIMITS.maxDiagnostics) return null;
@@ -136,7 +135,7 @@ function convertNode(
   const attributes = convertAttributes(element, input, encoded, diagnostics);
   const children: TrustedNode[] = [];
   for (const child of element.childNodes) {
-    const converted = convertNode(child, input, encoded, diagnostics, tag, depth + 1);
+    const converted = convertNode(child, input, encoded, diagnostics, depth + 1);
     if (converted) children.push(...converted);
   }
   if (diagnostics.length > 0) return null;

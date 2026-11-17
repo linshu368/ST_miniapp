@@ -14,6 +14,7 @@
 ```bash
 pnpm --filter @miniapp/backend dev
 pnpm --filter @miniapp/backend typecheck
+pnpm --filter @miniapp/backend logging:validate
 pnpm --filter @miniapp/backend test
 ```
 
@@ -22,7 +23,7 @@ pnpm --filter @miniapp/backend test
 ## 部署与验收
 
 - 主服务部署 Railway；参考 `ops/docker/Dockerfile.backend`、`ops/railway/README.md`、`.railway/railway.ts`。监听 `PORT`，健康检查 `/health`。
-- Backend PostHog（`POSTHOG_API_KEY`/`POSTHOG_HOST`/`POSTHOG_TIMEOUT_MS`）只用于支付终态 capture，不是浏览器公开变量。Preview/PR 副本可注入；Production 留空即关闭。去掉 key 后 capture no-op，不回滚订单。
+- 日志规则随 `src/platform/observability/alert-rules.json` 发布，不再读取旧规则环境变量；发布前迁入需要保留的旧自定义规则并运行 logging:validate。文件路径独立于 cwd，关闭不读、开启错误文件阻断启动；总开关/通知 secret 仍为部署配置，不进入规则文件。
 - start 先 `prisma generate`，再 `tsx --import ./src/instrumentation.ts src/server.ts`；当前没有传统 `dist` build。
 - 支付过期/对账可能为独立 Railway 服务/任务。部署不执行 DB migration，禁止把迁移塞进启动命令。
 - route/feature：typecheck + 现有相关 tests + 契约和 `@frontend-ready`；contract：shared test + 所有 consumers typecheck；生成：SSE/扣费失败路径与必要人工回归；支付：状态机/重复回调/原子入账/恢复；DB：test-first、RLS/锁/回滚；deploy：fail-fast、health、日志脱敏。

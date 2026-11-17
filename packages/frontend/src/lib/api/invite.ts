@@ -17,10 +17,11 @@ export const inviteKeys = {
 };
 
 /** 邀请入口显隐 + "2200星尘"提醒标签状态（我的页 / 充值页 / 星尘不足弹窗共享缓存）。 */
-export function useInviteEntryStatusQuery() {
+export function useInviteEntryStatusQuery({ enabled = true }: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: inviteKeys.entryStatus,
     queryFn: () => apiClient<InviteEntryStatusData>('/api/invite/entry-status'),
+    enabled,
     staleTime: 60_000,
   });
 }

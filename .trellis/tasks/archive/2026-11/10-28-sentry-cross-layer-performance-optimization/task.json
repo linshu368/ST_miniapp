@@ -1,0 +1,44 @@
+{
+  "id": "sentry-cross-layer-performance-optimization",
+  "name": "sentry-cross-layer-performance-optimization",
+  "title": "Sentry 全链路性能优化与稳定性治理",
+  "description": "基于 2026-10-28 Sentry、Railway 与 Supabase 生产证据，分阶段优化前端导航调度、戏剧首屏、生成交付、图片广场和可观测性；以验证门禁控制数据库与基础设施改动。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": "frontend,backend,shared,database",
+  "package": "frontend,backend,shared,database",
+  "priority": "P0",
+  "creator": "cline",
+  "assignee": "cline",
+  "createdAt": "2026-10-28",
+  "completedAt": "2026-11-06",
+  "branch": "fix_request_speed",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": ["10-29-optimize-entry-pages-p95-2s", "10-30-sentry-1030-performance-optimization"],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "2026-11-06 archive_stale：module knowledge 门禁未通过，未写回 spec（changes 模式缺少 module-updates.json）",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "frontend.infrastructure.client-ui-foundation",
+        "frontend.business.conversation-ui",
+        "frontend.business.character-lobby",
+        "frontend.business.engagement-support",
+        "backend.infrastructure.runtime-data-security",
+        "backend.business.conversation-generation",
+        "backend.business.character-lobby",
+        "shared.business.conversation-contracts",
+        "shared.business.character-lobby-contracts",
+        "database.business.conversation-storage",
+        "database.infrastructure.schema-security"
+      ]
+    }
+  }
+}

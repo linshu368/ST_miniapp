@@ -18,6 +18,11 @@ vi.mock('@telegram-apps/sdk-react', () => ({ retrieveLaunchParams: () => ({}) })
 
 import { snapshotInflight } from './inflight';
 import {
+  __resetRequestConcurrencyForTests,
+  getRequestConcurrencyStats,
+  withRequestSlot,
+} from '../api/request-concurrency';
+import {
   outcomeForStatus,
   RequestTimeoutError,
   SLOW_REQUEST_MS,
@@ -34,6 +39,7 @@ describe('outcomeForStatus', () => {
 
 describe('timedFetch', () => {
   beforeEach(() => {
+    __resetRequestConcurrencyForTests();
     distribution.mockClear();
     count.mockClear();
     captureMessage.mockClear();
@@ -46,10 +52,22 @@ describe('timedFetch', () => {
 
   it('records duration for a fast ok request without raising an event', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 200 })));
-    const res = await timedFetch('https://api.test/api/wallet/balance', {}, { requestId: 'r1' });
+    const res = await timedFetch(
+      'https://api.test/api/wallet/balance',
+      {},
+      { requestId: 'r1' },
+      async (response) => response
+    );
     expect(res.status).toBe(200);
     expect(distribution).toHaveBeenCalledWith(
       'api.request.duration',
+      expect.any(Number),
+      expect.objectContaining({
+        attributes: expect.objectContaining({ route: '/api/wallet/balance', outcome: 'ok' }),
+      })
+    );
+    expect(distribution).toHaveBeenCalledWith(
+      'api.headers.duration',
       expect.any(Number),
       expect.objectContaining({
         attributes: expect.objectContaining({ route: '/api/wallet/balance', outcome: 'ok' }),
@@ -69,7 +87,12 @@ describe('timedFetch', () => {
           )
       )
     );
-    const pending = timedFetch('https://api.test/api/characters', {}, { requestId: 'r2' });
+    const pending = timedFetch(
+      'https://api.test/api/characters',
+      {},
+      { requestId: 'r2' },
+      async (response) => response
+    );
     await vi.advanceTimersByTimeAsync(SLOW_REQUEST_MS + 600);
     await pending;
     expect(captureMessage).toHaveBeenCalledWith('slow_request');
@@ -90,7 +113,8 @@ describe('timedFetch', () => {
     const pending = timedFetch(
       'https://api.test/api/characters',
       {},
-      { requestId: 'r3', timeoutMs: 1000 }
+      { requestId: 'r3', timeoutMs: 1000 },
+      async (response) => response
     );
     const assertion = expect(pending).rejects.toBeInstanceOf(RequestTimeoutError);
     await vi.advanceTimersByTimeAsync(1100);
@@ -119,7 +143,8 @@ describe('timedFetch', () => {
     const pending = timedFetch(
       'https://api.test/api/characters',
       { signal: controller.signal },
-      { requestId: 'r4' }
+      { requestId: 'r4' },
+      async (response) => response
     );
     const assertion = expect(pending).rejects.toBeDefined();
     controller.abort();
@@ -133,12 +158,114 @@ describe('timedFetch', () => {
     });
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 200 })));
     await expect(
-      timedFetch('https://api.test/api/wallet/balance', {}, { requestId: 'r5' })
+      timedFetch(
+        'https://api.test/api/wallet/balance',
+        {},
+        { requestId: 'r5' },
+        async (response) => response
+      )
     ).resolves.toBeInstanceOf(Response);
     expect(count).toHaveBeenCalledWith(
       'perf.instrument_error',
       1,
-      expect.objectContaining({ attributes: { side: 'frontend', stage: 'request_timing' } })
+      expect.objectContaining({
+        attributes: { side: 'frontend', stage: 'request_headers_timing' },
+      })
     );
+  });
+
+  it('keeps timeout and inflight active until the response body consumer settles', async () => {
+    let requestSignal: AbortSignal | undefined;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_url: string, init: RequestInit) => {
+        requestSignal = init.signal ?? undefined;
+        return Promise.resolve(new Response('{}', { status: 200 }));
+      })
+    );
+    const pending = timedFetch(
+      'https://api.test/api/characters',
+      {},
+      { requestId: 'body-timeout', timeoutMs: 1000 },
+      async (_response) =>
+        new Promise<never>((_resolve, reject) =>
+          requestSignal?.addEventListener(
+            'abort',
+            () => reject(new DOMException('timeout', 'AbortError')),
+            { once: true }
+          )
+        )
+    );
+    expect(snapshotInflight()).toHaveLength(1);
+    const assertion = expect(pending).rejects.toBeInstanceOf(RequestTimeoutError);
+    await vi.advanceTimersByTimeAsync(1100);
+    await assertion;
+    expect(distribution).toHaveBeenCalledWith(
+      'api.request.duration',
+      expect.any(Number),
+      expect.objectContaining({ attributes: expect.objectContaining({ outcome: 'timeout' }) })
+    );
+    expect(snapshotInflight()).toEqual([]);
+  });
+
+  it('does not label a successful header with an invalid response body as ok', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('broken', { status: 200 })));
+    await expect(
+      timedFetch('https://api.test/api/characters', {}, { requestId: 'invalid-body' }, async () => {
+        throw new Error('invalid envelope');
+      })
+    ).rejects.toThrow('invalid envelope');
+    expect(distribution).toHaveBeenCalledWith(
+      'api.request.duration',
+      expect.any(Number),
+      expect.objectContaining({
+        attributes: expect.objectContaining({ outcome: 'invalid_response' }),
+      })
+    );
+  });
+
+  it('includes slot queue time in the deadline and never dispatches expired work', async () => {
+    __resetRequestConcurrencyForTests(1);
+    let release: () => void = () => {};
+    const occupied = withRequestSlot(
+      'critical',
+      undefined,
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        })
+    );
+    await Promise.resolve();
+    const fetch = vi.fn();
+    vi.stubGlobal('fetch', fetch);
+    const pending = timedFetch(
+      '/api/characters',
+      {},
+      { requestId: 'queued', timeoutMs: 1000, priority: 'critical' },
+      async () => 'done'
+    );
+    const assertion = expect(pending).rejects.toBeInstanceOf(RequestTimeoutError);
+    await vi.advanceTimersByTimeAsync(1001);
+    await assertion;
+    expect(fetch).not.toHaveBeenCalled();
+    expect(getRequestConcurrencyStats().waiting).toBe(0);
+    release();
+    await occupied;
+    expect(snapshotInflight()).toEqual([]);
+  });
+
+  it('releases a slot when an uncooperative body reader never settles', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}')));
+    const pending = timedFetch(
+      '/api/characters',
+      {},
+      { requestId: 'stuck-body', timeoutMs: 1000, priority: 'critical' },
+      () => new Promise<never>(() => {})
+    );
+    const assertion = expect(pending).rejects.toBeInstanceOf(RequestTimeoutError);
+    await vi.advanceTimersByTimeAsync(1001);
+    await assertion;
+    expect(getRequestConcurrencyStats().inFlight).toBe(0);
+    expect(snapshotInflight()).toEqual([]);
   });
 });

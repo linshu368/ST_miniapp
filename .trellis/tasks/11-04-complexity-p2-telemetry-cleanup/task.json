@@ -1,0 +1,58 @@
+{
+  "id": "complexity-p2-telemetry-cleanup",
+  "name": "complexity-p2-telemetry-cleanup",
+  "title": "降复杂度 P2：埋点与死代码清理",
+  "description": "",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P2",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-04",
+  "completedAt": null,
+  "branch": "refactor/complexity-remove-posthog",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "11-04-complexity-reduction",
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "no_module_change",
+      "reason": "只删除 PostHog 与短剧计时旧轨等埋点代码，业务模块的行为、契约和数据不变；spec 中关于 PostHog/回放的描述作为文档同步在同一 PR 修改"
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": [
+        "/chat/:id（聊天页，移除回放 lifecycle 与 capture）",
+        "/profile、/profile/recharge、/profile/recharge/:id、/vip（移除充值漏斗 capture）"
+      ],
+      "apis": [],
+      "android": {
+        "page_p95_baseline_ms": 2392,
+        "page_p95_target_ms": 2392
+      },
+      "ios": {
+        "page_p95_baseline_ms": 3362,
+        "page_p95_target_ms": 3362
+      },
+      "api": {
+        "p95_baseline_ms": null,
+        "p95_target_ms": null
+      },
+      "measurement": {
+        "source": "Grafana Cloud Loki production Faro measurement type=st_page_ready，按 context_route 与 context_tg_platform 分组的 quantile_over_time(0.95)。/chat/:id Android 2392ms(N=135)、iOS 3362ms(N=31，低样本)；/profile Android 1679ms(N=123)、iOS 1192ms(N=40)；/profile/recharge Android 571ms(N=18，低样本)，iOS N=1 记为无可见样本。",
+        "window": "基线 2026-11-03 13:00 至 2026-11-04 13:00（Asia/Shanghai）；发布后按 release 比较至少一个完整 24h 窗口，Android/iOS 分开，样本少于 100 记低样本并延长。"
+      },
+      "notes": "只删除埋点（PostHog 录屏、事件与回放 lifecycle），不改页面渲染和数据请求，目标为不退化，取基线本身。posthog-js 原为动态 import，移除后首屏不应变慢。受影响接口仅删除 GET /api/telemetry/replay-context（聊天页不再请求它），不设接口 P95 目标，api 字段为 null。iOS 与充值页样本少，发布后只做不退化核对，不宣称改善。"
+    }
+  }
+}

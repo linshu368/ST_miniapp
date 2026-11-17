@@ -14,15 +14,12 @@ import {
   Sparkles,
 } from 'lucide-react';
 import {
-  DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG,
-  DEFAULT_RECHARGE_PAGE_CONFIG,
+  RECHARGE_PAGE_DISPLAY,
   type CreatePaymentOrderData,
   type PaymentType,
 } from '@miniapp/shared';
 
 import { AlipayIcon, WeChatPayIcon } from '@/components/icons';
-import { AlipayPaymentGuidanceDialog } from '@/components/payment/alipay-payment-guidance-dialog';
-import { PaymentVpnPromptDialog } from '@/components/payment/payment-vpn-prompt-dialog';
 import { VipEntryCard } from '@/components/vip/vip-entry-card';
 import { Button } from '@/components/ui/button';
 import {
@@ -40,24 +37,12 @@ import { cn } from '@/lib/utils';
 import { PlanCard } from '@/components/payment/plan-card';
 import { useInviteEntryStatusQuery } from '@/lib/api/invite';
 import {
-  useCheckoutConfirmationMutation,
   useCreatePaymentOrderMutation,
   usePaymentPlansQuery,
   useWalletBalanceQuery,
 } from '@/lib/api/payment';
 import { useVipStatusQuery } from '@/lib/api/vip';
-import {
-  capturePaymentMethodSelected,
-  capturePaymentOrderCreated,
-  capturePaywallDismissed,
-  capturePaywallInviteSelected,
-  capturePaywallRechargeSelected,
-  captureRechargeViewed,
-  resumePaymentReplayFromPending,
-  retainPaywallFollowupIfActive,
-} from '@/lib/payment/flow-telemetry';
 import { openCreatedPayment } from '@/lib/payment/open-created-payment';
-import { clearCheckoutConfirmation } from '@/lib/payment/open-storage';
 import {
   formatNumber,
   paymentTypeLabel,
@@ -95,58 +80,20 @@ function RechargePageContent() {
   const vipStatus = useVipStatusQuery();
   const wallet = useWalletBalanceQuery();
   const createOrder = useCreatePaymentOrderMutation();
-  const { mutate: confirmCheckout } = useCheckoutConfirmationMutation();
   const inviteEntry = useInviteEntryStatusQuery();
   const inviteEntryEnabled = inviteEntry.data?.entry_enabled === true;
 
   const goInviteCenter = useCallback(() => {
-    capturePaywallInviteSelected();
     router.push('/profile/invite');
   }, [router]);
-
-  useEffect(() => {
-    retainPaywallFollowupIfActive();
-    resumePaymentReplayFromPending();
-    captureRechargeViewed();
-  }, []);
 
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [paymentType, setPaymentType] = useState<PaymentType>('alipay');
   const [noticeDismissed, setNoticeDismissed] = useState(false);
-  const noticeChoiceRef = useRef<'invite' | 'recharge' | null>(null);
-  const [alipayPromptOpen, setAlipayPromptOpen] = useState(false);
-  const [wechatPromptOpen, setWechatPromptOpen] = useState(false);
-  const [preparedPayment, setPreparedPayment] = useState<CreatePaymentOrderData | null>(null);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const submitLock = useRef(false);
 
-  const reportCheckoutConfirmation = useCallback(
-    ({ orderId, request }: Parameters<typeof confirmCheckout>[0]) => {
-      confirmCheckout(
-        { orderId, request },
-        { onSuccess: () => clearCheckoutConfirmation(orderId, request.request_id) }
-      );
-    },
-    [confirmCheckout]
-  );
-
   const plans = data?.plans ?? [];
-  const pageConfig = data?.page_config ?? DEFAULT_RECHARGE_PAGE_CONFIG;
-  const paymentPromptConfig =
-    data?.payment_prompt_dialog_config ?? DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG;
-  // 旧的默认荧光配色使用新皮肤；运营明确配置过的颜色仍生效。
-  const selectedPlanColor =
-    pageConfig.selected_plan_color === DEFAULT_RECHARGE_PAGE_CONFIG.selected_plan_color
-      ? '#d0b99a'
-      : pageConfig.selected_plan_color;
-  const badgeColor =
-    pageConfig.badge_color === DEFAULT_RECHARGE_PAGE_CONFIG.badge_color
-      ? '#d0b99a'
-      : pageConfig.badge_color;
-  const buttonColor =
-    pageConfig.button_color === DEFAULT_RECHARGE_PAGE_CONFIG.button_color
-      ? '#ead7bc'
-      : pageConfig.button_color;
   const paymentChannels = data?.payment_channels;
   const paymentTypes = useMemo<PaymentType[]>(() => {
     if (!paymentChannels) return ['alipay'];
@@ -179,9 +126,8 @@ function RechargePageContent() {
       whisper();
       setCheckoutError(null);
       setSelectedKey(selectionKey('credits', id));
-      capturePaymentMethodSelected({ planId: id, paymentType });
     },
-    [paymentType, whisper]
+    [whisper]
   );
 
   const openVip = () => {
@@ -193,16 +139,8 @@ function RechargePageContent() {
   };
 
   const launchPayment = useCallback(
-    async (result: CreatePaymentOrderData) => {
-      await openCreatedPayment({
-        router,
-        result,
-        returnTo,
-        paymentType,
-        reportCheckoutConfirmation,
-      });
-    },
-    [paymentType, reportCheckoutConfirmation, returnTo, router]
+    (result: CreatePaymentOrderData) => openCreatedPayment({ router, result, returnTo }),
+    [returnTo, router]
   );
 
   const handleSubmit = useCallback(async () => {
@@ -227,26 +165,10 @@ function RechargePageContent() {
       });
       feedbackAfterPaint(submitAction);
       const result = await creating;
-      capturePaymentOrderCreated({
-        planId: selection.id,
-        paymentType,
-        orderId: result.order.id,
-        amountCents: result.order.amount_cents,
-      });
-      if (paymentType === 'alipay') {
-        setPreparedPayment(result);
-        setAlipayPromptOpen(true);
-        return;
-      }
-      if (paymentPromptConfig.enabled) {
-        setPreparedPayment(result);
-        setWechatPromptOpen(true);
-        return;
-      }
-      await launchPayment(result);
+      launchPayment(result);
     } catch {
       notification('error');
-      setCheckoutError('暂时无法创建订单，请稍后重试。');
+      setCheckoutError('订单没创建成功，再试一次吧。');
     } finally {
       submitLock.current = false;
     }
@@ -255,31 +177,11 @@ function RechargePageContent() {
     paymentAvailable,
     createOrder,
     impact,
-    paymentPromptConfig.enabled,
     paymentType,
     launchPayment,
     notification,
     isError,
   ]);
-
-  const handleConfirmPayment = useCallback(() => {
-    if (!preparedPayment) return;
-    const result = preparedPayment;
-    setAlipayPromptOpen(false);
-    setWechatPromptOpen(false);
-    setPreparedPayment(null);
-    void launchPayment(result);
-  }, [preparedPayment, launchPayment]);
-
-  const handleAlipayPromptOpenChange = useCallback((open: boolean) => {
-    setAlipayPromptOpen(open);
-    if (!open) setPreparedPayment(null);
-  }, []);
-
-  const handleWechatPromptOpenChange = useCallback((open: boolean) => {
-    setWechatPromptOpen(open);
-    if (!open) setPreparedPayment(null);
-  }, []);
 
   return (
     <main
@@ -343,7 +245,7 @@ function RechargePageContent() {
           {isError ? (
             <div className="flex min-h-[180px] flex-col items-center justify-center rounded-[20px] border border-white/10 bg-white/[0.025] px-6 text-center">
               <AlertCircle className="size-6 text-[#c4aaa1]" aria-hidden />
-              <p className="mt-3 text-sm font-medium">充值套餐暂时无法加载</p>
+              <p className="mt-3 text-sm font-medium">充值套餐没加载出来，再试一次吧</p>
               <p className="mt-1 text-xs text-[#a99b9b]">稍后重试，已付款的订单仍可查看</p>
               <Button
                 variant="outline"
@@ -378,8 +280,8 @@ function RechargePageContent() {
                   key={plan.id}
                   plan={plan}
                   selected={selectionKey('credits', plan.id) === selectedKey}
-                  selectedColor={selectedPlanColor}
-                  badgeColor={badgeColor}
+                  selectedColor={RECHARGE_PAGE_DISPLAY.selectedPlanColor}
+                  badgeColor={RECHARGE_PAGE_DISPLAY.badgeColor}
                   disabled={createOrder.isPending}
                   onSelect={handleSelectCredits}
                 />
@@ -429,7 +331,7 @@ function RechargePageContent() {
               />
             </summary>
             <p className="pb-4 leading-6">
-              {pageConfig.pending_arrival_hint}
+              {RECHARGE_PAGE_DISPLAY.pendingArrivalHint}
               。可在右上角「订单」查看进度；如遇到问题，可以联系在线客服。
             </p>
           </details>
@@ -480,8 +382,6 @@ function RechargePageContent() {
                   onClick={() => {
                     whisper();
                     setPaymentType(t);
-                    if (selection)
-                      capturePaymentMethodSelected({ planId: selection.id, paymentType: t });
                   }}
                   className={cn(
                     'flex min-h-11 items-center justify-center gap-1.5 rounded-xl border px-2.5 text-xs transition-colors disabled:opacity-60',
@@ -500,7 +400,7 @@ function RechargePageContent() {
               );
             })}
             {paymentTypes.length === 0 ? (
-              <span className="text-xs text-[#b2a5a4]">暂不可用，请稍后再试</span>
+              <span className="text-xs text-[#b2a5a4]">暂时用不了，稍后再试</span>
             ) : null}
           </div>
         </div>
@@ -539,7 +439,7 @@ function RechargePageContent() {
             style={{
               backgroundColor:
                 selection?.available && paymentAvailable && !isError && !createOrder.isPending
-                  ? buttonColor
+                  ? RECHARGE_PAGE_DISPLAY.buttonColor
                   : undefined,
             }}
           >
@@ -547,32 +447,16 @@ function RechargePageContent() {
               pending: createOrder.isPending,
               selection,
               vipActive: false,
-              creditsButtonText: pageConfig.button_text,
+              creditsButtonText: RECHARGE_PAGE_DISPLAY.buttonText,
             })}
           </Button>
         </div>
       </footer>
-      <AlipayPaymentGuidanceDialog
-        open={alipayPromptOpen}
-        onOpenChange={handleAlipayPromptOpenChange}
-        onConfirm={handleConfirmPayment}
-      />
-      <PaymentVpnPromptDialog
-        open={wechatPromptOpen}
-        config={paymentPromptConfig}
-        canConfirm={Boolean(preparedPayment)}
-        onOpenChange={handleWechatPromptOpenChange}
-        onConfirm={handleConfirmPayment}
-      />
       <Dialog
         open={showInsufficientCreditsNotice}
         onOpenChange={(open) => {
           if (open) return;
           setNoticeDismissed(true);
-          if (noticeChoiceRef.current === 'invite' || noticeChoiceRef.current === 'recharge') {
-            return;
-          }
-          capturePaywallDismissed();
         }}
       >
         <DialogContent className="w-[calc(100%-2rem)] max-w-sm rounded-2xl border-border bg-popover text-popover-foreground">
@@ -580,8 +464,8 @@ function RechargePageContent() {
             <div
               className="mb-2 flex h-12 w-12 items-center justify-center rounded-full"
               style={{
-                color: pageConfig.balance_color,
-                backgroundColor: `${pageConfig.balance_color}26`,
+                color: RECHARGE_PAGE_DISPLAY.balanceColor,
+                backgroundColor: `${RECHARGE_PAGE_DISPLAY.balanceColor}26`,
               }}
             >
               <Sparkles className="h-6 w-6" aria-hidden />
@@ -595,11 +479,7 @@ function RechargePageContent() {
             <DialogClose asChild>
               <Button
                 className="w-full rounded-xl font-bold text-primary-foreground"
-                style={{ backgroundColor: buttonColor }}
-                onClick={() => {
-                  noticeChoiceRef.current = 'recharge';
-                  capturePaywallRechargeSelected();
-                }}
+                style={{ backgroundColor: RECHARGE_PAGE_DISPLAY.buttonColor }}
               >
                 选择套餐
               </Button>
@@ -610,7 +490,6 @@ function RechargePageContent() {
                 className="w-full rounded-xl border-rose/40 bg-transparent font-bold text-rose hover:bg-rose/10 hover:text-rose"
                 onClick={() => {
                   // PRD：关闭当前提示并直接进入邀请中心
-                  noticeChoiceRef.current = 'invite';
                   setNoticeDismissed(true);
                   goInviteCenter();
                 }}

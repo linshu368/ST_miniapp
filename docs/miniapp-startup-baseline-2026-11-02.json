@@ -1,0 +1,87 @@
+{
+  "schema_version": 2,
+  "baseline_id": "B1_after_first_two_optimizations",
+  "status": "frozen_reference_snapshot",
+  "source": {
+    "kind": "user_provided_production_snapshot",
+    "reported_as_of_Asia_Shanghai": "2026-11-02 11:02 +08:00",
+    "release_scope": "single release explicitly confirmed by user",
+    "independently_requeried_in_this_delivery": false,
+    "precision": "P95 values were supplied to two decimal places in seconds; window bounds were supplied to minute precision",
+    "notes": [
+      "Freeze the supplied aggregate values, not invented raw samples.",
+      "Replay URLs use minute-boundary seconds :00; original query seconds were not supplied and historical late ingestion may change a later replay."
+    ]
+  },
+  "organization": "wangqiao",
+  "project": "st-miniapp",
+  "project_id": "4511818663788624",
+  "environment": "production",
+  "release": "5fffd6ce1dcd0b23504f0e9699bde93ee0eb23ae",
+  "optimizations_included": [
+    "1: independent HTML frame readiness and native ready notification",
+    "2: deferred heavy Sentry initialization"
+  ],
+  "optimizations_excluded": ["3: optional startup-module splitting in codex/miniapp-startup-split"],
+  "window_Asia_Shanghai": {
+    "start": "2026-11-01 11:02 +08:00",
+    "end": "2026-11-02 11:02 +08:00",
+    "precision": "minute"
+  },
+  "window_utc": {
+    "start": "2026-11-01T03:02Z",
+    "end": "2026-11-02T03:02Z",
+    "precision": "minute"
+  },
+  "metric": "startup.shell_ready.duration",
+  "unit": "millisecond",
+  "filters": {
+    "route": "/",
+    "telegram_ready": "sent"
+  },
+  "target": {
+    "p95_lte_ms": 4000,
+    "over_budget_operator": ">",
+    "over_budget_ms": 4000
+  },
+  "overall": {
+    "count": 144,
+    "p50_s": null,
+    "p95_s": 4.55,
+    "max_s": null,
+    "over_4s_count": 10,
+    "over_4s_fraction": 0.06944444444444445
+  },
+  "groups": [
+    {
+      "route": "/",
+      "tg_platform": "android",
+      "net_type": "4g",
+      "count": 91,
+      "p95_s": 5.74,
+      "over_4s_count": null
+    },
+    {
+      "route": "/",
+      "tg_platform": "ios",
+      "net_type": null,
+      "network_scope": "all networks in user report; not confirmed identical to B0 ios/unknown subgroup",
+      "count": 43,
+      "p95_s": 3.76,
+      "over_4s_count": null
+    }
+  ],
+  "groups_not_enumerated_in_report_count": 10,
+  "auxiliary_not_baseline": {
+    "all_post_optimization_releases_valid_count": 487,
+    "release_valid_count": 419,
+    "release_home_cumulative_count": 410,
+    "release_home_cumulative_p95_s": 5.77
+  },
+  "query_urls": {
+    "home": "https://wangqiao.sentry.io/explore/metrics/?project=4511818663788624&environment=production&start=2026-11-01T03%3A02%3A00&end=2026-11-02T03%3A02%3A00&metric=%7B%22metric%22%3A%7B%22name%22%3A%22startup.shell_ready.duration%22%2C%22type%22%3A%22distribution%22%2C%22unit%22%3A%22millisecond%22%7D%2C%22query%22%3A%22release%3A5fffd6ce1dcd0b23504f0e9699bde93ee0eb23ae+telegram_ready%3Asent+route%3A%2F%22%2C%22aggregateFields%22%3A%5B%7B%22yAxes%22%3A%5B%22count%28value%2Cstartup.shell_ready.duration%2Cdistribution%2Cmillisecond%29%22%2C%22p50%28value%2Cstartup.shell_ready.duration%2Cdistribution%2Cmillisecond%29%22%2C%22p95%28value%2Cstartup.shell_ready.duration%2Cdistribution%2Cmillisecond%29%22%2C%22max%28value%2Cstartup.shell_ready.duration%2Cdistribution%2Cmillisecond%29%22%5D%7D%5D%2C%22mode%22%3A%22aggregate%22%7D",
+    "home_over_4s": "https://wangqiao.sentry.io/explore/metrics/?project=4511818663788624&environment=production&start=2026-11-01T03%3A02%3A00&end=2026-11-02T03%3A02%3A00&metric=%7B%22metric%22%3A%7B%22name%22%3A%22startup.shell_ready.duration%22%2C%22type%22%3A%22distribution%22%2C%22unit%22%3A%22millisecond%22%7D%2C%22query%22%3A%22release%3A5fffd6ce1dcd0b23504f0e9699bde93ee0eb23ae+telegram_ready%3Asent+route%3A%2F+value%3A%3E4000%22%2C%22aggregateFields%22%3A%5B%7B%22yAxes%22%3A%5B%22count%28value%2Cstartup.shell_ready.duration%2Cdistribution%2Cmillisecond%29%22%2C%22p50%28value%2Cstartup.shell_ready.duration%2Cdistribution%2Cmillisecond%29%22%2C%22p95%28value%2Cstartup.shell_ready.duration%2Cdistribution%2Cmillisecond%29%22%2C%22max%28value%2Cstartup.shell_ready.duration%2Cdistribution%2Cmillisecond%29%22%5D%7D%5D%2C%22mode%22%3A%22aggregate%22%7D",
+    "groups": "https://wangqiao.sentry.io/explore/metrics/?project=4511818663788624&environment=production&start=2026-11-01T03%3A02%3A00&end=2026-11-02T03%3A02%3A00&metric=%7B%22metric%22%3A%7B%22name%22%3A%22startup.shell_ready.duration%22%2C%22type%22%3A%22distribution%22%2C%22unit%22%3A%22millisecond%22%7D%2C%22query%22%3A%22release%3A5fffd6ce1dcd0b23504f0e9699bde93ee0eb23ae+telegram_ready%3Asent+route%3A%2F%22%2C%22aggregateFields%22%3A%5B%7B%22groupBy%22%3A%22route%22%7D%2C%7B%22groupBy%22%3A%22tg_platform%22%7D%2C%7B%22groupBy%22%3A%22net_type%22%7D%2C%7B%22yAxes%22%3A%5B%22count%28value%2Cstartup.shell_ready.duration%2Cdistribution%2Cmillisecond%29%22%2C%22p50%28value%2Cstartup.shell_ready.duration%2Cdistribution%2Cmillisecond%29%22%2C%22p95%28value%2Cstartup.shell_ready.duration%2Cdistribution%2Cmillisecond%29%22%2C%22max%28value%2Cstartup.shell_ready.duration%2Cdistribution%2Cmillisecond%29%22%5D%7D%5D%2C%22mode%22%3A%22aggregate%22%7D"
+  },
+  "missing_values": "null means not supplied; never interpret as zero or infer missing outcome counts."
+}

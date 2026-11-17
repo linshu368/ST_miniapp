@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useNavigationBackgroundAllowed } from './navigation-quiet-window';
 
 /** 关键路径一直不结算时，仍放行 enrich，避免角标等永久饿死。 */
 const CRITICAL_FALLBACK_MS = 8_000;
@@ -87,6 +88,7 @@ export function afterEntryBackground(): Promise<void> {
 
 /** React Query `enabled`：收藏、会话史、角标、模型目录等。 */
 export function useEntryEnrichReady(): boolean {
+  const navigationAllowed = useNavigationBackgroundAllowed();
   const [ready, setReady] = useState(enrichReady);
   useEffect(() => {
     ensureEntryPhaseWatching();
@@ -100,11 +102,12 @@ export function useEntryEnrichReady(): boolean {
       enrichListeners.delete(onReady);
     };
   }, []);
-  return ready;
+  return ready && navigationAllowed;
 }
 
 /** React Query `enabled`：未读红点、settings、广场预取、增长/邀请等。 */
-export function useEntryBackgroundReady(): boolean {
+export function useEntryBackgroundReady(respectNavigation = true): boolean {
+  const navigationAllowed = useNavigationBackgroundAllowed();
   const [ready, setReady] = useState(backgroundReady);
   useEffect(() => {
     ensureEntryPhaseWatching();
@@ -118,7 +121,7 @@ export function useEntryBackgroundReady(): boolean {
       backgroundListeners.delete(onReady);
     };
   }, []);
-  return ready;
+  return ready && (!respectNavigation || navigationAllowed);
 }
 
 /** 仅测试。 */

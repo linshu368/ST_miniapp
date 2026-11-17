@@ -27,7 +27,7 @@ import {
   updateAnnouncement,
   type Announcement,
   type AnnouncementCategory,
-} from '../lib/announcementsApi';
+} from '@miniapp/admin-client';
 
 interface AnnouncementsViewProps {
   client: SupabaseClient;

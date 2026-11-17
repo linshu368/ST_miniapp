@@ -6,16 +6,52 @@
 
 import type { DramaDetail, DramaSummary, VideoItem } from '@miniapp/shared';
 import type { DramaRow, VideoRow } from './repository.js';
+import {
+  getDramaStreamSigningConfig,
+  isDramaLegacySupabaseEnabled,
+} from '../../platform/runtime-config.js';
 
 /**
- * 可播判定：上传任务确认成功**且**对象路径非空，两个条件都要。
+ * Stream 视频就绪：upload 任务成功，且 stream_uid、stream_ready_at 同时存在（归档端只在
+ * Stream 转码就绪后才写入，存量重传则在整剧就绪时一起切换），并且本服务能签名。
+ * 签名参数缺失时判为不可播，不让用户点到放不出来的集。
+ */
+export function isStreamReady(video: VideoRow): boolean {
+  return (
+    video.storage_provider === 'cloudflare_stream' &&
+    video.upload_succeeded &&
+    !!video.stream_uid &&
+    !!video.stream_ready_at &&
+    getDramaStreamSigningConfig() !== null
+  );
+}
+
+/**
+ * 可播判定。
  *
- * 不能只看 object_path —— 归档端的上传和落库不是跨服务原子事务（见 §4），
- * 存在对象已上传但状态未落库、或路径写入失败的中间态。
+ * Stream 行：见 isStreamReady。
+ * supabase 存量行：上传任务确认成功**且**对象路径非空，两个条件都要（归档端的上传和落库不是
+ * 跨服务原子事务，存在对象已上传但路径未落库的中间态）；存量迁移完成后由
+ * DRAMA_LEGACY_SUPABASE_ENABLED=false 整体关闭。
  * 这只表示持久就绪状态，本次签名是否成功是 DramaPlayback.playable 的事。
  */
 export function isPlayable(video: VideoRow): boolean {
-  return video.upload_succeeded && video.object_path !== null && video.object_path !== '';
+  if (video.storage_provider === 'cloudflare_stream') return isStreamReady(video);
+  return (
+    isDramaLegacySupabaseEnabled() &&
+    video.upload_succeeded &&
+    video.object_path !== null &&
+    video.object_path !== ''
+  );
+}
+
+/**
+ * 一部剧里对外可播的视频。存量迁移完成后（DRAMA_LEGACY_SUPABASE_ENABLED=false），
+ * 只有所有视频都已是就绪 Stream 的剧才整体可见，否则一集都不出，避免半迁移的剧进入播放列表。
+ */
+export function playableVideos(drama: DramaRow): VideoRow[] {
+  if (!isDramaLegacySupabaseEnabled() && !drama.videos.every(isStreamReady)) return [];
+  return drama.videos.filter(isPlayable);
 }
 
 /** 封面就绪判定：和 isPlayable 一个思路，cover_upload 阶段确认成功且路径非空 */
@@ -71,7 +107,7 @@ export function toDramaSummary(
   drama: DramaRow,
   buildCoverUrl: (coverPath: string) => string
 ): DramaSummary {
-  const playable = drama.videos.filter(isPlayable);
+  const playable = playableVideos(drama);
   const first = playable[0];
   // 只聚合可播视频；缺时间的集不伪造时间，也不能让未就绪集提前影响上架排序。
   const publishedTimes = playable
@@ -102,6 +138,6 @@ export function toDramaDetail(
 ): DramaDetail {
   return {
     ...toDramaSummary(drama, buildCoverUrl),
-    videos: drama.videos.filter(isPlayable).map(toVideoItem),
+    videos: playableVideos(drama).map(toVideoItem),
   };
 }

@@ -31,6 +31,8 @@ for role in ['anon','authenticated','service_role']:
 print(sql)
 PY
 "${task_psql[@]}" >/dev/null <<'SQL'
+ALTER TABLE app_core.characters ADD COLUMN IF NOT EXISTS is_test boolean NOT NULL DEFAULT false;
+ALTER TABLE app_core.miniapp_user_settings ADD COLUMN IF NOT EXISTS display_name text, ADD COLUMN IF NOT EXISTS tg_first_name text;
 ALTER TABLE app_core.characters ADD COLUMN name text NOT NULL DEFAULT '',ADD COLUMN description text NOT NULL DEFAULT '',
  ADD COLUMN avatar_url text NOT NULL DEFAULT '',ADD COLUMN creator text NOT NULL DEFAULT '',ADD COLUMN first_mes text NOT NULL DEFAULT '',
  ADD COLUMN system_prompt text NOT NULL DEFAULT '',ADD COLUMN personality text NOT NULL DEFAULT '',ADD COLUMN scenario text NOT NULL DEFAULT '',
@@ -183,3 +185,28 @@ SQL
 } | "${task_psql[@]}" >/dev/null
 "${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/tests/creator_characters.sql"
 printf 'PASS: creator core PG17 (AI review gate, untouched legacy queue, disabled/archive preservation, CAS/access, real turn freeze, branches, immutable ACL). Database: %s\n' "$task_database"
+
+# Reuse the existing message-center fixture and actual VIP shape constraints for wishes.
+python3 - "$task_root" <<'PY' | "${task_psql[@]}" >/dev/null
+import sys
+from pathlib import Path
+root=Path(sys.argv[1])/'packages/shared/migrations'
+base=(root/'fixtures/vip_billing_t2_harness.sql').read_text()
+a=base.index('CREATE TABLE IF NOT EXISTS miniapp_features.notifications (')
+b=base.index('\nALTER TABLE billing.user_wallets',a)
+print(base[a:b])
+vip=(root/'20260924_vip_billing_schema_pg_cron_compat.sql').read_text()
+a=vip.index('-- ── 7. 通知去重键')
+b=vip.index('-- ── 8.',a)
+print(vip[a:b])
+PY
+"${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/20261102_character_wishes.sql" >/dev/null
+"${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/tests/character_wishes.sql"
+printf 'PASS: character wishes PG17 (anonymous public-only writes, owner ACL, unique support, response ownership, atomic notifications and retry deduplication).\n'
+
+"${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/20261103_public_creator_space_index.sql" >/dev/null
+
+"${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/20261103_chat_sessions_reply_like_lookup_index.sql" >/dev/null
+
+CREATOR_ANALYTICS_TEST_CONTAINER="$task_container" CREATOR_ANALYTICS_TEST_DB="$task_database" \
+  pnpm --dir "$task_root/packages/backend" exec vitest run src/features/creator/analytics.integration.test.ts src/features/creator/public-author.integration.test.ts

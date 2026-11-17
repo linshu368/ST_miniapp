@@ -1,5 +1,9 @@
 # 移动端预览与固定验收
 
+冷启动专项复用 `pnpm test:ui --grep @startup`：root 返回 200、cookie 分流、启动脚本阻塞/恢复、参数先捕获、邀请绑定、单文档/无额外落地页 RSC、无 hydration 错误及浏览器返回/刷新。邀请 fixture 只返回普通存量账户的 `not_new_user`/无效码终态，不建立真实关系；不会替代生产新用户奖励幂等与 Telegram Android/iOS 真机性能验收。首次 dev 编译超时保留 trace，等待常驻预览预热后复跑。
+
+聊天读取优化继续复用 `@chat` / `@roleplay`；`@chat-history` 在禁用 `Array.findLast` 的页面中连续翻完 200 轮，逐轮核对无遗漏/重复并保留草稿。数据库投影、真实首字与 Android/iOS P95 另由 PG17/正式环境验收，页面 fixture 不替代这些证据。
+
 日常页面修改先复用本环境。真实 Next.js 页面、React Query 和 SSE consumer 照常运行，API 由本机虚构数据提供；无需数据库、Telegram 登录、支付或模型密钥。不是生产联调环境。
 
 ## 快速开始
@@ -30,7 +34,9 @@ pnpm test:ui --grep @profile       # 签到、VIP、充值与社群展示
 pnpm test:ui --grep @recharge      # 充值金额、到账确认、失败恢复、VIP回流和窄屏
 pnpm test:ui --grep @roleplay      # 角色发现、进入对话与返回
 pnpm test:ui --grep @chat          # 深度思考、回复偏好、多行输入、余额不足
-pnpm test:ui --grep @drama         # 视频首页、双列剧场、选集、追剧、续看与错误恢复
+pnpm test:ui --grep @onboarding    # 新人主线、编辑分支引导、跳过、旧用户与失败降级
+pnpm test:ui --grep @drama         # 双列剧场、点封面进放映与返回定位、选集、追剧、续看与错误恢复
+pnpm test:ui --grep @chats         # 对话页：分组标签、挑选放入、移到分组、按角色归拢与整组操作、搜索翻页、管理批量删除
 pnpm test:ui --grep @image         # 同款、设置、生成、失败、保存原图入口
 pnpm test:ui --project=android    # 390×844，全部固定流程
 pnpm test:ui --project=narrow     # 320×568，关键布局流程
@@ -64,6 +70,12 @@ pnpm test:ui:fixtures            # 模拟服务本身的协议与隔离检查
 | `image-pending`    | 触发生成后保持进行中，可返回看记录                         |
 
 `fixtures/data.ts` 是场景与初始数据入口。金额仅为验收示例，不同步线上配置或用户资料。不要将 token、initData、生产响应、聊天或数据库导出放进 fixture / trace。聊天中的语音与附图仅提供静态配置和空记录，本轮不模拟它们的生成。
+
+### Surplus Intelligence 聊天
+
+`pnpm test:ui --grep '@surplus'` 复用 `chat.spec.ts` 的390/320尺寸及既有HTTP/SSE服务。`chat-surplus` 提供完整平台名称 **Surplus Intelligence**、内部 `provider=surplus` 和虚构 `provider_model_id=preview-surplus-text`，验证目录展示、发送、重生成、取消与刷新恢复。`chat-surplus-fallback` 模拟慢主调用后由现有 OpenRouter 模型交付，验证一次发送、回复保留和用户选择仍为 Surplus。
+
+fixture 不连接 `api.surplusintelligence.ai` 或其他供应商，模型ID与正文均为本地虚构数据。这里验证真实页面消费公开DTO/SSE的行为，不能证明真实供应商路由、调用明细落库或一次扣费；这些由后端、隔离数据库及目标环境验收承担。
 
 ## 扩展方式
 
@@ -137,7 +149,7 @@ pnpm test:ui:fixtures            # 模拟服务本身的协议与隔离检查
 
 ### 回复点赞
 
-复用普通聊天与「历史对话分支」，新增「回复点赞失败」状态。`pnpm test:ui --grep @chat-like` 验证390/320布局、48px按钮边缘可点、点亮/取消与刷新持久化、失败恢复/草稿保留、历史轮次、分支和重新生成不继承旧赞。全部基于本地虚构数据；SQL权限/固定版本/幂等继续复用 `bash scripts/test-conversation-branches-migration.sh`，没有另建临时脚本或真实扣费。
+复用普通聊天与「历史对话分支」，新增「回复点赞失败」状态。`pnpm test:ui --grep @chat-like` 验证390/320布局、紧凑操作按钮边缘可点、点亮/取消与刷新持久化、失败恢复/草稿保留、历史轮次、分支和重新生成不继承旧赞。全部基于本地虚构数据；SQL权限/固定版本/幂等继续复用 `bash scripts/test-conversation-branches-migration.sh`，没有另建临时脚本或真实扣费。
 
 `pnpm test:ui --grep @startup` 关闭 JavaScript，验证首页、角色、短剧列表的初始 HTML 框架和五项导航，无业务 API 请求；不替代 Telegram 原生启动遮罩与 Sentry 生产指标接收验收。
 
@@ -170,3 +182,59 @@ pnpm test:ui:fixtures            # 模拟服务本身的协议与隔离检查
 ## 同角色多段对话
 
 场景 `chat-sessions` 复用 `chat.spec.ts`，定向运行 `pnpm test:ui --grep @chat-sessions`。包含两个同名默认会话、长自定义名、默认分支、继承自定义名的分支，以及置顶和当前状态。390/320尺寸验证创建日期区分且不回写标题、自定义名称完整保留、来源轮次、更多菜单不跳转、重命名取消/保存、置顶、删除取消及切换当前会话，并保留两张截图。PATCH/DELETE 仅操作本机虚构会话；此场景不更改生产接口、排序或分支逻辑。
+
+## 角色评分口径（本地候选）
+
+`pnpm test:lobby-ranking` 复用现有Vitest评分/排序/参数测试，并在自动创建且自动删除的本机PG17容器中执行真实统计SQL。需要Docker；不读取项目env、不连接远端数据库、不使用真实用户。覆盖首次接触前满24小时且10个有效轮次、边界、失败/空白/重生成去重、历史资格不追溯、跨窗口与R48观察期、零合格样本覆盖旧分。容量复验用 `ST_LOBBY_SCORE_BENCHMARK=1 pnpm test:lobby-ranking`，自动生成40万虚构轮次并报告EXPLAIN耗时。
+
+这里改变离线评分，不改变页面；`@roleplay`仍负责大厅交互，浏览器mock不能证明评分SQL正确。推荐轮换继续复用下方的大厅场景。
+
+## 前几屏优质轮换
+
+`pnpm test:ui --grep @lobby-rotation`复用角色大厅，包含24小时边界、试聊返回不换批、手动换批/撤回、失败保留/丢响应同UUID、实际曝光、账号缓存隔离、下架保序与320/390布局。场景入口提供 `lobby-rotation`、`lobby-rotation-error`、`lobby-rotation-lost-response`；36张虚构卡，无生产连接。时间控制只在本机fixture中存在，模拟POST `/__preview/lobby`推进服务端时钟；生产API不提供该控制。
+
+UI fixture轮换用确定顺序方便验证，不代表生产随机算法；`pnpm test:lobby-ranking`另跑真实生产算法/HTTP契约和一次性PG17，验证质量分档、曝光恢复、22候选相邻去重、旧证据、权限/迁移重放、CAS与独立连接并发。两种验收互补，之后功能调整直接复用这两个命令。
+
+可选本地性能对照命令 `ST_UI_MEASURE_LOBBY=1 pnpm test:ui --project=android --grep @lobby-perf --repeat-each=6`。相同 662 张虚构角色、390×844 浏览器和已记住推荐标签的空缓存，依次打开推荐、进入首卡聊天并返回。只在两个本地 API 上施加 Chromium 的 80 ms 延迟及 256 KiB/s 上下行带宽。丢弃第 0 次 Next 开发编译预热，比较随后 5 次首卡能通过点击命中检测的中位耗时。不设绝对毫秒门槛。
+
+每次 Playwright 附件 `lobby-perf.json` 记录可点击后再观察 700 ms 内的 API 请求数，推荐批次及目录的解码字节、含响应头的浏览器传输字节。图片、页面脚本不计入这两个接口的字节数。比较不同提交时分别启动独立检出和本地 fixture，使用相同探针、摘要字段与数据量。
+
+## 创作数据验收
+
+`ST_UI_APP_PORT=3180 pnpm preview:ui`，从 `/creation?tab=created` 点击「创作数据」或直接打开 `/creation/data`。`creator-data`、`creator-data-empty`、`creator-data-error` 三种场景固定；执行 `ST_UI_TEST_APP_PORT=3190 pnpm test:ui --grep @creator-data` 复用390/320移动验收，若端口占用请选择另一对空闲端口，不结束其他窗口服务。
+
+生产组件消费真实鉴权API，预览通过同一shared契约从fixture server读取合成数据（`fixtures/creator-analytics.ts`）；示例只在预览显示标记。覆盖：首页3条/无翻页，全部作品/奖励/反馈服务端分页，首尾禁用，返回列表保留页码，多角色/周期/排序、0收入、空态、503重试、不泄漏后台规则说明。仅在展示接口断网失败时重试，不把失败当0。
+
+统计SQL通过既有 `bash scripts/test-creator-characters-local.sh` 验证：无网络PG17、实际迁移、实际参数化查询；覆盖作者隔离、自用、私密卡、重复生成/分支继承、首次成功日期、北京跨日、多卡用户去重、真实到账/退款/抵扣、删除评论和分页。可用 `CREATOR_TEST_CONTAINER=已有隔离容器` 复用，不依赖Supabase或生产密钥。
+
+本地验收不等于已连接或核验生产创作者数据；本轮不改扣费和奖励发放。
+
+## 角色心愿墙（本地候选）
+
+场景 `wishes` / `wishes-error` / `wishes-response-error`，从 `/wishes` 进入；`pnpm test:ui --grep @wishes` 复用既有手机验收。固定内容全部虚构，覆盖提交前所有人可见且不显示昵称头像的明确提示、仅匿名公开、我的心愿筛选、支持/取消、创作数据入口、已有作品回应、通知回到心愿、失败保留原稿、从心愿新建角色的来源恢复，以及已发布但回应失败时只重试关联和窄屏布局。卡片后续改私密时，公共墙隐藏回应入口。
+
+`pnpm test:ui:fixtures` 同时验证 shared 响应、拒绝 private 提交、本人筛选隔离、重复支持/重复回应/创建重试和500字上限。浏览器 fixture 只验证真实前端与模拟HTTP的完整链路；真实数据库权限、事务和通知幂等继续由后端/隔离Postgres验证，不代表远端迁移已执行或真实用户已收到通知。
+
+作者空间使用 `pnpm test:ui --grep @public-author-space` 检查分页、开聊返回及计数。只浏览两页应有两次作品请求，打开详情前没有逐卡或批量 social 请求。计数正确性与数据库迁移由 `bash scripts/test-creator-characters-local.sh` 在隔离 PostgreSQL 中验证。发布后分别观察作者空间 API 时延与 Android、iOS 页面可见耗时；本地 SQL 计时不代表线上 P95。
+
+VIP 混合奖励复用 `@profile`：`vip-mixed` 场景每日签到 120 专项＋30 通用，月卡 2000 专项＋1000 通用；检查两钱包余额、到账提示和窄屏布局。数据库原子发放由 `scripts/test-vip-billing-migrations.sh` 覆盖，页面模拟不代表真实支付验收。
+
+## 新人主线引导（2026-11-06，本地候选）
+
+固定场景 `new-user` 从发现页开始，`new-user-replied` 直接查看第一轮后的编辑/分支提示，`onboarding-error` 验证资格读取失败仍可聊天；`standard` 是旧用户，无自动引导。`@onboarding` 覆盖390/320宽度、首次默认推荐、一键展开回复偏好、真实编辑/更多菜单衔接、无自动写入、跳过刷新、返场找对话。原 `@chat-edit`/`@chat-branch` 继续验证实际修改与分支行为。
+
+进度按本机账号持久化，手动预览中刷新不会重播已跳过教程；仍可在聊天工具箱的“玩法小贴士”查看说明。自动用例使用独立浏览器上下文，可直接重复运行。这里的用户、对话及资格都是fixture，不访问生产数据；真机系统键盘与线上双端P95不由本地模拟代替。
+
+创作邀请复用 `@creator-onboarding`：`onboarding.spec.ts` 的 `seedBasicGuide` 固定本机9/10轮和基础引导状态，`new-user-near-creator` / `new-user-creator-ready` 提供相应虚构账号/消息；手动切服务端场景本身不会覆盖浏览器已保存进度。覆盖重生成不加轮、9轮换卡不邀请、跨卡第10轮成功返场、冷进入/最新/未完成基础引导不显示、关闭刷新不重复、AI润色与预设只定位不写入，390/320尺寸。邀请额外接口请求数断言为0；测试fixture和真实计费完全隔离。
+
+### 聊天回复反馈
+
+`pnpm test:ui --grep @chat-dislike` 复用标准聊天与`chat-like-error`虚构场景，覆盖空反馈提交、首屏提交栏、320px/340px压缩视口、关闭保留草稿、失败重试、写入成功丢响应不重复、刷新读取已存原因说明。首屏不逐条读反馈，打开面板才查询。右侧按钮36px宽44px高，无点击圆形底色。真实权限、编辑/分支快照和用户级清理由`bash scripts/test-conversation-branches-migration.sh`在隔离PG17覆盖。本地fixture不连接生产。
+
+## 幕间独立站本地验收
+
+`pnpm --filter @miniapp/ui-tests exec playwright test -c playwright.mujian.config.ts` 验证同级幕间静态仓库，可加 `--ui` 交互查看。使用已有短剧 fixture/视频、模拟 Telegram 与拦截 API；固定 3188 端口，和原有 3120/3121、3130/3131 分离。覆盖目录/换集/销毁、收藏与历史、失败重试、HLS.js、两种弹窗、自然来源和无身份入口。详情与真实联调缺口见 `docs/mujian-integration.md`。
+
+## 对话页分组与整理（@chats）
+
+`pnpm test:ui --grep @chats` 复用对话页 390/320 尺寸。场景 `chat-folders` 提供 32 段虚构对话（前 4 个角色各 3 段、2 个分组、若干只聊一两句与 30 天未聊），分组、搜索、快捷筛选、按角色归拢与批量接口由 `fixtures/chat-folders.ts` 按 Backend 同口径在内存实现；`standard` 场景只有 1 段对话，用于验证对话少时不出现工具。冷启动 `/` 按 cookie `st_landing` 落地对话页的跳转在 `@startup @navigation` 中验证。

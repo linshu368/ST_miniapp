@@ -2,7 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DramaTimingTracker, type DramaTimingReport } from './drama-timing';
 import { observeDramaMedia } from './drama-media';
 import { DRAMA_TIMING_MAX_MEDIA_EVENTS, DramaTimingReportSchema } from '@miniapp/shared';
-import { mediaResourceFields, observeDramaResources } from './drama-resources';
+import {
+  mediaResourceFields,
+  observeDramaResources,
+  observeSeekResources,
+} from './drama-resources';
 import { observeDramaSeek } from './drama-seek';
 
 const engineering = vi.hoisted(() => ({
@@ -48,7 +52,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   engineering.enabled.mockReturnValue(false);
   engineering.dimensions = { net_type: '4g', tg_platform: 'ios' };
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+  vi.useFakeTimers({
+    toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'performance'],
+  });
   reports = [];
   video = new Video();
   tracker = new DramaTimingTracker(
@@ -325,7 +331,7 @@ describe('foreground playback quality windows', () => {
     video.frame?.();
     await vi.advanceTimersByTimeAsync(1000);
     observer.dispose();
-    expect(windows()).toEqual([expect.objectContaining({ route: '/', playing_ms: 1000 })]);
+    expect(windows()).toEqual([expect.objectContaining({ route: '/watch', playing_ms: 1000 })]);
     expect(Object.keys(windows()[0] ?? {})).not.toEqual(
       expect.arrayContaining(['dramaId', 'videoId', 'sessionId', 'source'])
     );
@@ -460,6 +466,8 @@ describe('video startup observation', () => {
       outcome: 'waiting',
       seek: { buffered: 'no' },
     });
+    video.paused = false;
+    video.dispatchEvent(new Event('playing'));
     callback?.(performance.now(), frame(40));
     expect(reports.at(-1)).toMatchObject({
       phase: 'final',
@@ -501,6 +509,145 @@ describe('video startup observation', () => {
     stop('left');
     video.dispatchEvent(new Event('error'));
     expect(reports).toHaveLength(1);
+  });
+  it('does not call a target still frame resumed playback and bounds seek state sampling', async () => {
+    let callback: VideoFrameRequestCallback | undefined;
+    (video as unknown as HTMLVideoElement).requestVideoFrameCallback = (listener) => {
+      callback = listener;
+      return 1;
+    };
+    const stop = observeDramaSeek(video as unknown as HTMLVideoElement, 'media-a', 40, true, {
+      id: 'new-seek',
+      dramaId: 'a',
+      now: () => performance.now(),
+      emit: (r) => reports.push(r),
+    });
+    video.currentTime = 40;
+    stop.positionSet();
+    await vi.advanceTimersByTimeAsync(100);
+    video.dispatchEvent(new Event('seeking'));
+    video.dispatchEvent(new Event('seeked'));
+    callback?.(0, { mediaTime: 40, processingDuration: 0.012 } as VideoFrameCallbackMetadata);
+    expect(reports.filter((r) => r.phase === 'final')).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(10_000);
+    video.buffered = { length: 1, start: () => 39, end: () => 50 };
+    video.paused = false;
+    video.dispatchEvent(new Event('playing'));
+    const final = reports.at(-1)!;
+    expect(final).toMatchObject({
+      outcome: 'playing',
+      seek: {
+        definition: 'drama_seek_resume_v1',
+        direction: 'forward',
+        fromMs: 0,
+        positionSetMs: 0,
+        samplingCapped: true,
+        firstBufferedMs: 10100,
+      },
+      diagnostics: { frame: { processingMs: 12 } },
+    });
+    expect(final.seek!.samples!.length).toBeLessThanOrEqual(32);
+    expect(DramaTimingReportSchema.safeParse(final).success).toBe(true);
+    const count = reports.length;
+    stop();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(reports).toHaveLength(count);
+  });
+  it('does not reuse a playing signal invalidated by another waiting event', async () => {
+    let callback: VideoFrameRequestCallback | undefined;
+    (video as unknown as HTMLVideoElement).requestVideoFrameCallback = (cb) => {
+      callback = cb;
+      return 1;
+    };
+    video.paused = false;
+    const stop = observeDramaSeek(video as unknown as HTMLVideoElement, 'media-a', 40, true, {
+      id: 'seek-wait',
+      dramaId: 'a',
+      now: () => performance.now(),
+      emit: (r) => reports.push(r),
+    });
+    video.currentTime = 40;
+    video.dispatchEvent(new Event('seeked'));
+    video.dispatchEvent(new Event('playing'));
+    video.dispatchEvent(new Event('waiting'));
+    callback?.(performance.now(), { mediaTime: 40 } as VideoFrameCallbackMetadata);
+    expect(reports).toHaveLength(0);
+    video.dispatchEvent(new Event('playing'));
+    expect(reports.at(-1)).toMatchObject({ outcome: 'playing' });
+    stop();
+  });
+  it('ends only the diagnostics at its deadline without mutating media playback', async () => {
+    video.requestVideoFrameCallback = undefined;
+    const stop = observeDramaSeek(video as unknown as HTMLVideoElement, 'media-a', 40, true, {
+      id: 'deadline',
+      dramaId: 'a',
+      now: () => performance.now(),
+      emit: (r) => reports.push(r),
+    });
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(reports.at(-1)).toMatchObject({
+      outcome: 'unverified',
+      seek: { endReason: 'deadline' },
+    });
+    expect(video.currentTime).toBe(0);
+    expect(video.paused).toBe(true);
+    stop();
+  });
+  it('retains overlapping in-flight requests, isolates generations and freezes final network snapshots', async () => {
+    type Listener = (list: { getEntries(): PerformanceEntry[] }) => void;
+    let listener: Listener | undefined;
+    const disconnect = vi.fn();
+    vi.stubGlobal(
+      'PerformanceObserver',
+      class {
+        static supportedEntryTypes = ['resource'];
+        constructor(cb: Listener) {
+          listener = cb;
+        }
+        observe() {}
+        takeRecords() {
+          return [];
+        }
+        disconnect = disconnect;
+      }
+    );
+    vi.spyOn(performance, 'getEntriesByType').mockReturnValue([]);
+    const tail = vi.fn();
+    const reader = observeSeekResources('media-a', 100, 20, tail);
+    const resource = (name: string, startTime: number, responseEnd: number) =>
+      ({
+        name,
+        startTime,
+        fetchStart: startTime,
+        responseEnd,
+        entryType: 'resource',
+        requestStart: 0,
+        responseStart: 0,
+      }) as PerformanceResourceTiming;
+    listener?.({
+      getEntries: () => [
+        resource('media-a', 30, 150),
+        resource('media-a', 10, 160),
+        resource('other', 110, 170),
+      ],
+    });
+    const final = reader.snapshot();
+    expect(final).toMatchObject({
+      status: 'limited',
+      entries: [{ startMs: -70, responseEndMs: 50 }],
+    });
+    reader.finish(true, 200);
+    listener?.({
+      getEntries: () => [resource('media-a', 160, 350), resource('media-a', 210, 360)],
+    });
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(final.entries).toHaveLength(1);
+    expect(tail).toHaveBeenCalledWith(
+      expect.objectContaining({ entries: expect.any(Array), closed: 'terminal_tail' })
+    );
+    expect(tail.mock.calls[0]![0].entries).toHaveLength(2);
+    expect(disconnect).toHaveBeenCalled();
+    expect(JSON.stringify(tail.mock.calls)).not.toContain('media-a');
   });
   it('does not call a network-only stalled event a user-visible playback interruption', async () => {
     vi.stubGlobal('document', Object.assign(new EventTarget(), { visibilityState: 'visible' }));
@@ -790,6 +937,52 @@ describe('video startup observation', () => {
     stop();
     expect(disconnect).toHaveBeenCalledTimes(1);
   });
+  it('classifies every same-origin Stream request without serializing the signed path', () => {
+    type Listener = (list: { getEntries(): PerformanceEntry[] }) => void;
+    let listener: Listener | undefined;
+    vi.stubGlobal(
+      'PerformanceObserver',
+      class {
+        static supportedEntryTypes = ['resource'];
+        constructor(callback: Listener) {
+          listener = callback;
+        }
+        observe() {}
+        disconnect() {}
+        takeRecords() {
+          return [];
+        }
+      }
+    );
+    const origin = 'https://customer-abc123.cloudflarestream.com';
+    const source = `${origin}/SIGNED.TOKEN/manifest/video.m3u8?clientBandwidthHint=2.5`;
+    const flow = tracker.ensurePlayback('a');
+    const stop = observeDramaResources(source, flow);
+    const resource = (name: string, startTime: number) =>
+      ({
+        entryType: 'resource',
+        name,
+        startTime,
+        fetchStart: startTime,
+        duration: 5,
+        responseEnd: startTime + 5,
+      }) as PerformanceResourceTiming;
+    listener?.({
+      getEntries: () => [
+        resource(source, 1),
+        resource(`${origin}/SIGNED.TOKEN/manifest/stream_t1.m3u8?a=1`, 2),
+        resource(`${origin}/SIGNED.TOKEN/video/1.mp4`, 3),
+        resource('https://customer-abc123.cloudflarestream.com.evil.invalid/x.m3u8', 4),
+        resource('https://other.invalid/poster.jpg', 5),
+      ],
+    });
+    flow.finish('playing');
+    const entries = reports.find((r) => r.phase === 'final')?.diagnostics?.network?.entries;
+    expect(entries?.map((entry) => entry.kind)).toEqual(['manifest', 'playlist', 'segment']);
+    expect(JSON.stringify(reports)).not.toContain('SIGNED');
+    expect(DramaTimingReportSchema.safeParse(reports.at(-1)).success).toBe(true);
+    stop();
+  });
   it('reports startup milestones, sanitized play results and live slow/final state', async () => {
     const observer = bind();
     observer.playCalled('automatic');
@@ -1054,4 +1247,42 @@ describe('video startup observation', () => {
     video.dispatchEvent(new Event('error'));
     expect(reports[0]?.outcome).toBe('error');
   });
+});
+
+it('retains the startup until an automatic muted retry produces its first frame', async () => {
+  const observer = bind();
+  observer.playCalled('automatic');
+  await vi.advanceTimersByTimeAsync(3200);
+  observer.rejected(
+    new DOMException('sound requires gesture', 'NotAllowedError'),
+    'automatic',
+    true
+  );
+  expect(tracker.ensurePlayback('a').outcome).toBeUndefined();
+  expect(reports.filter((report) => report.phase === 'final')).toHaveLength(0);
+  video.muted = true;
+  observer.playCalled('automatic');
+  await vi.advanceTimersByTimeAsync(400);
+  video.paused = false;
+  video.dispatchEvent(new Event('playing'));
+  video.frame?.();
+  const finals = reports.filter((report) => report.phase === 'final');
+  expect(finals).toHaveLength(1);
+  expect(finals[0]).toMatchObject({ outcome: 'playing', elapsedMs: 3600 });
+  expect(finals[0]?.media?.events).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ name: 'play_rejected', error: 'not_allowed' }),
+    ])
+  );
+  observer.dispose();
+});
+
+it('ends as autoplay blocked if the muted retry is also rejected', () => {
+  const observer = bind();
+  observer.rejected(new DOMException('first blocked', 'NotAllowedError'), 'automatic', true);
+  observer.rejected(new DOMException('muted retry blocked', 'NotAllowedError'));
+  expect(reports.filter((report) => report.phase === 'final')).toEqual([
+    expect.objectContaining({ outcome: 'autoplay_blocked' }),
+  ]);
+  observer.dispose();
 });

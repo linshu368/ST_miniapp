@@ -1,0 +1,25 @@
+{
+  "name": "@miniapp/admin-cli",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "mijing-admin": "./bin/mijing-admin.mjs"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@miniapp/admin-client": "workspace:*",
+    "@miniapp/shared": "workspace:*",
+    "@supabase/supabase-js": "^2.110.6",
+    "tsx": "^4.19.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.5.0",
+    "vitest": "^4.1.7"
+  }
+}

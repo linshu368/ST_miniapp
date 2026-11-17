@@ -1,3 +1,5 @@
+import { runObservedJob } from '../../platform/observability/jobs.js';
+import { withBusinessContext } from '../../platform/observability/context.js';
 import type { FastifyBaseLogger } from 'fastify';
 import { randomUUID } from 'node:crypto';
 import { createLogger, type Logger } from '../../lib/logger.js';
@@ -5,6 +7,7 @@ import { config } from '../../platform/config.js';
 import { ChatMessageImageRepository } from '../../infrastructure/repositories/ChatMessageImageRepository.js';
 import { getImageRuntimeConfig } from './config.js';
 import { runImageGeneration } from './generate.js';
+import { observeBackgroundRun } from '../../lib/background-observability.js';
 
 let timer: NodeJS.Timeout | null = null;
 let running = false;
@@ -15,10 +18,10 @@ export function startChatImageGenerationJob(appLog?: FastifyBaseLogger): void {
   const log = createLogger('image');
   appLog?.info('[image-job] Chat image generation job enabled');
   timer = setInterval(() => {
-    void tick(log);
+    void runObservedJob('chat_image_generation', () => tick(log));
   }, config.image.workerIntervalMs);
   timer.unref();
-  void tick(log);
+  void runObservedJob('chat_image_generation', () => tick(log));
 }
 
 export function stopChatImageGenerationJob(): void {
@@ -28,17 +31,47 @@ export function stopChatImageGenerationJob(): void {
 }
 
 async function tick(log: Logger): Promise<void> {
-  if (running) return;
+  const startedAt = performance.now();
+  if (running) {
+    observeBackgroundRun({ job: 'chat_image_generation', outcome: 'skipped', startedAt });
+    return;
+  }
   running = true;
+  let outcome: 'success' | 'skipped' | 'error' = 'success';
+  let terminalError: unknown;
   try {
     const imageConfig = await getImageRuntimeConfig();
     const repo = new ChatMessageImageRepository();
     const jobs = await repo.claim(3, workerId, config.image.workerLeaseSeconds);
-    if (jobs.length === 0) return;
-    await Promise.all(jobs.map((attempt) => runImageGeneration({ attempt, imageConfig, log })));
+    if (jobs.length === 0) {
+      outcome = 'skipped';
+      return;
+    }
+    await Promise.all(
+      jobs.map((attempt) =>
+        withBusinessContext(
+          {
+            business_module: 'image',
+            user_id: attempt.user_id,
+            session_id: attempt.session_id,
+            message_id: attempt.message_id,
+            image_id: attempt.id,
+          },
+          () => runImageGeneration({ attempt, imageConfig, log })
+        )
+      )
+    );
   } catch (error) {
+    outcome = 'error';
+    terminalError = error;
     log.sys.error({ event: 'image.job.tick_failed', err: error }, '图片生成任务轮询失败');
   } finally {
+    observeBackgroundRun({
+      job: 'chat_image_generation',
+      outcome,
+      startedAt,
+      error: terminalError,
+    });
     running = false;
   }
 }

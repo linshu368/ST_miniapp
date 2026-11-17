@@ -18,6 +18,7 @@ import {
 } from 'antd';
 import { arrayMove } from '@dnd-kit/sortable';
 import { useMemo, useState } from 'react';
+import { ModelCatalogFreeZoneSection } from './ModelCatalogFreeZoneSection';
 import {
   DEFAULT_FIRST_TOKEN_TIMEOUT_MS,
   LLM_MODEL_PROVIDER_LABELS,
@@ -425,6 +426,14 @@ export function ModelCatalogEditor(props: {
           >
             Add tier
           </Button>
+
+          <ModelCatalogFreeZoneSection
+            value={props.value}
+            onChange={props.onChange}
+            disabled={props.disabled}
+            providerDirectories={props.providerDirectories}
+            publishedModelIds={props.publishedModelIds}
+          />
         </Space>
       </Col>
       <Col xs={24} xl={8}>

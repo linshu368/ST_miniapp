@@ -1,0 +1,6 @@
+- [ ] 观察器与条目选择
+- [ ] 上报 network_status / rt_buffer 与白名单
+- [ ] 既有单测扩展并通过
+- [ ] typecheck、@chat UI 验收、diff check
+- [ ] dev PR + TEST 验证；main 发布；同步回 dev
+- [ ] 发布后按平台核对 available 占比与页面/首字 P95 不退化

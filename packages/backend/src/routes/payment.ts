@@ -1,14 +1,19 @@
-import { FastifyInstance, FastifyReply } from 'fastify';
-import { ok, fail, PostCheckoutConfirmationRequestSchema } from '@miniapp/shared';
-import { requestLogger, type RequestLogger } from '../lib/logger.js';
+import { type FastifyInstance, type FastifyRequest } from 'fastify';
+import { CheckoutError } from '../features/payment/usecases/checkout-errors.js';
+import {
+  UnknownPaymentPlanError,
+  VipPurchaseDisabledError,
+} from '../features/payment/domain/rechargeRules.js';
+import { isIP } from 'node:net';
+import { config } from '../platform/config.js';
+import { ok, fail } from '@miniapp/shared';
+import { requestLogger } from '../lib/logger.js';
 import type {
   CreatePaymentOrderRequest,
   GetPaymentOrderData,
   GetPaymentOrdersData,
   GetPaymentOrdersQuery,
   GetPaymentPlansData,
-  PostCheckoutConfirmationData,
-  PaymentOrder,
   PaymentOrderStatus,
   PaymentType,
 } from '@miniapp/shared';
@@ -21,46 +26,40 @@ import {
 } from '../features/payment/domain/rechargeRules.js';
 import { readVipStrategy } from '../platform/vip-strategy.js';
 import { RechargeUseCase } from '../features/payment/usecases/RechargeUseCase.js';
-import {
-  reconcileWithGateway,
-  settlePaidOrder,
-} from '../features/payment/usecases/PaymentSettlement.js';
+import { reconcileWithGateway } from '../features/payment/usecases/PaymentSettlement.js';
 import {
   MiniappPaymentOrderRepository,
   toPaymentOrder,
 } from '../infrastructure/repositories/MiniappPaymentOrderRepository.js';
-import {
-  ZqPaymentGateway,
-  type ZqPaymentNotifyData,
-} from '../infrastructure/payment/ZqPaymentGateway.js';
-import { config } from '../platform/config.js';
-import { insertUserNotification } from '../lib/notifications.js';
-import {
-  CheckoutConfirmationError,
-  CheckoutConfirmationUseCase,
-} from '../features/payment/usecases/CheckoutConfirmation.js';
-import { recordPaymentOperationEvent } from '../features/payment/usecases/PaymentOperationEvents.js';
+import { EpayPaymentGateway } from '../infrastructure/payment/EpayPaymentGateway.js';
+import { registerPaymentCallbacks } from './payment-callbacks.js';
 
 const PAYMENT_STATUSES: PaymentOrderStatus[] = ['pending', 'completed', 'expired', 'failed'];
 const PAYMENT_TYPES: PaymentType[] = ['alipay', 'wxpay'];
 
+/** Railway public HTTP ingress supplies X-Real-IP; never infer a fixed XFF hop count. */
+export function paymentClientIp(
+  request: Pick<FastifyRequest, 'headers' | 'ip'>,
+  trustRailwayEdge = config.payment.trustRailwayEdge
+): string {
+  if (!trustRailwayEdge) return request.ip;
+  const value = request.headers['x-real-ip'];
+  // Fail closed on a missing/malformed edge header; do not substitute a proxy address.
+  return typeof value === 'string' && isIP(value) ? value : '';
+}
+
 export default async function paymentRoutes(app: FastifyInstance) {
-  // 厂商异步通知可能以表单 POST 送达，Fastify 默认只解析 json / text。
-  if (!app.hasContentTypeParser('application/x-www-form-urlencoded')) {
-    app.addContentTypeParser(
-      'application/x-www-form-urlencoded',
-      { parseAs: 'string' },
-      (_request, body, done) => {
-        done(null, Object.fromEntries(new URLSearchParams(body as string)));
-      }
-    );
-  }
-
   const orders = new MiniappPaymentOrderRepository();
-  const gateway = new ZqPaymentGateway();
+  const gateway = new EpayPaymentGateway();
   const recharge = new RechargeUseCase(orders, gateway, orders);
-  const checkoutConfirmations = new CheckoutConfirmationUseCase(orders);
+  registerPlans(app);
+  registerCreate(app, recharge);
+  registerOrderDetail(app, orders, gateway, recharge);
+  registerOrderList(app, orders);
+  registerPaymentCallbacks(app, { orders, gateway });
+}
 
+function registerPlans(app: FastifyInstance) {
   // @frontend-ready: true
   app.get('/api/payment/plans', async (request, reply) => {
     try {
@@ -73,8 +72,6 @@ export default async function paymentRoutes(app: FastifyInstance) {
           plans: pageRuntime.plans,
           payment_channels: pageRuntime.paymentChannels,
           vip_plans: buildVipPlans(strategy.purchaseEnabled, strategy.plans),
-          page_config: pageRuntime.pageConfig,
-          payment_prompt_dialog_config: pageRuntime.paymentPromptDialogConfig,
           insufficient_credits_notice: pageRuntime.insufficientCreditsNotice,
         })
       );
@@ -88,7 +85,9 @@ export default async function paymentRoutes(app: FastifyInstance) {
         .send(fail('PAYMENT_PLANS_UNAVAILABLE', '充值套餐暂不可用，请稍后重试'));
     }
   });
+}
 
+function registerCreate(app: FastifyInstance, recharge: RechargeUseCase) {
   // @frontend-ready: true
   app.post('/api/payment/orders', { preHandler: [requireTelegramAuth] }, async (request, reply) => {
     if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
@@ -99,14 +98,15 @@ export default async function paymentRoutes(app: FastifyInstance) {
     }
 
     const log = requestLogger(request.log, 'payment');
+    const startedAt = Date.now();
     try {
       const dbUser = await getOrCreateDbUser(request.user);
       const data = await recharge.createOrder({
         userId: dbUser.id,
         planId: body.plan_id,
         paymentType: body.payment_type,
-        clientIp: request.ip,
         log,
+        clientIp: paymentClientIp(request),
       });
       log.biz.info(
         {
@@ -116,18 +116,21 @@ export default async function paymentRoutes(app: FastifyInstance) {
           planId: body.plan_id,
           productType: data.order.product_type,
           paymentType: body.payment_type,
-          // 记下交给厂商的回调地址和收银台域名：星尘不到账时第一个要排除的就是
-          // 「我们报给厂商的 notify_url 到底是哪个环境」。
-          notifyUrl: config.payment.notifyUrl,
+          providerTransactionId: data.order.provider_transaction_id,
           payUrlHost: describeUrlHost(data.pay_url),
+          durationMs: Date.now() - startedAt,
         },
         '用户创建充值订单'
       );
       return reply.send(ok(data));
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Create payment order failed';
       log.sys.warn(
-        { event: 'recharge.order.create_failed', err: error, planId: body.plan_id },
+        {
+          event: 'recharge.order.create_failed',
+          err: error,
+          planId: body.plan_id,
+          durationMs: Date.now() - startedAt,
+        },
         '创建充值订单失败'
       );
       if (error instanceof PaymentPlansConfigError) {
@@ -135,60 +138,21 @@ export default async function paymentRoutes(app: FastifyInstance) {
           .status(503)
           .send(fail('PAYMENT_PLANS_UNAVAILABLE', '充值套餐暂不可用，请稍后重试'));
       }
-      return reply.status(400).send(fail('PAYMENT_CREATE_FAILED', message));
+      if (error instanceof CheckoutError)
+        return reply.status(error.statusCode).send(fail(error.code, error.message));
+      if (error instanceof UnknownPaymentPlanError || error instanceof VipPurchaseDisabledError)
+        return reply.status(400).send(fail('PAYMENT_CREATE_FAILED', error.message));
+      return reply.status(500).send(fail('INTERNAL_ERROR', '创建支付订单失败，请稍后重试'));
     }
   });
+}
 
-  // @frontend-ready: true
-  app.post(
-    '/api/payment/orders/:id/checkout-confirmations',
-    { preHandler: [requireTelegramAuth] },
-    async (request, reply) => {
-      if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
-
-      const body = PostCheckoutConfirmationRequestSchema.safeParse(request.body);
-      if (!body.success) {
-        return reply.status(400).send(fail('BAD_REQUEST', 'Invalid checkout confirmation request'));
-      }
-
-      const { id } = request.params as { id: string };
-      const log = requestLogger(request.log, 'payment');
-      try {
-        const dbUser = await getOrCreateDbUser(request.user);
-        const data = await checkoutConfirmations.record({
-          orderId: id,
-          userId: dbUser.id,
-          requestId: body.data.request_id,
-          occurredAt: body.data.occurred_at,
-          action: body.data.action,
-        });
-        log.biz.info(
-          {
-            event: 'payment.checkout_confirmation.recorded',
-            orderId: id,
-            action: body.data.action,
-            recorded: data.recorded,
-            confirmationCount: data.checkout_confirm_count,
-          },
-          '收银台确认已记录'
-        );
-        return reply.send(ok<PostCheckoutConfirmationData>(data));
-      } catch (error) {
-        if (error instanceof CheckoutConfirmationError) {
-          const status = error.code === 'NOT_FOUND' ? 404 : 422;
-          return reply.status(status).send(fail(error.code, error.message));
-        }
-        log.sys.error(
-          { event: 'payment.checkout_confirmation.failed', err: error, orderId: id },
-          '记录收银台确认失败'
-        );
-        return reply
-          .status(500)
-          .send(fail('CHECKOUT_CONFIRMATION_FAILED', 'Unable to record checkout'));
-      }
-    }
-  );
-
+function registerOrderDetail(
+  app: FastifyInstance,
+  orders: MiniappPaymentOrderRepository,
+  gateway: EpayPaymentGateway,
+  recharge: RechargeUseCase
+) {
   // @frontend-ready: true
   app.get(
     '/api/payment/orders/:id',
@@ -204,10 +168,9 @@ export default async function paymentRoutes(app: FastifyInstance) {
         return reply.status(404).send(fail('NOT_FOUND', 'Payment order not found'));
       }
 
-      // 主动查单：厂商的异步通知不保证送达，前端本来就在轮询这个接口，
-      // 在这里补一次查单，到账就不再依赖对方推送。
+      // 前端本来就在轮询这个接口，顺手查一次平台单据，到账不必等 Webhook。
       if (
-        config.payment.enabled &&
+        gateway.configured &&
         (await reconcileWithGateway(
           order,
           gateway,
@@ -223,7 +186,9 @@ export default async function paymentRoutes(app: FastifyInstance) {
       return reply.send(ok<GetPaymentOrderData>({ order }));
     }
   );
+}
 
+function registerOrderList(app: FastifyInstance, orders: MiniappPaymentOrderRepository) {
   // @frontend-ready: true
   app.get('/api/payment/orders', { preHandler: [requireTelegramAuth] }, async (request, reply) => {
     if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
@@ -250,212 +215,6 @@ export default async function paymentRoutes(app: FastifyInstance) {
       })
     );
   });
-
-  // @frontend-ready: true
-  app.get('/api/payment/return', async (request, reply) => {
-    const log = requestLogger(request.log, 'payment');
-    const returnData = normalizeNotifyData(request.query);
-    const verification = verifyNotify(gateway, returnData);
-    const orderId =
-      verification.ok && isSafePaymentOrderId(verification.orderId) ? verification.orderId : null;
-
-    recordPaymentOperationEvent(orders, log, {
-      event_key: `return:${verification.ok ? 'verified' : verification.reason}:${orderId ?? Date.now()}`,
-      order_id: orderId,
-      user_id: null,
-      event_kind: 'return',
-      stage: 'callback',
-      outcome: verification.ok ? 'succeeded' : 'failed',
-      source: 'gateway',
-      trigger: 'return',
-      error_class: verification.ok ? null : verification.reason,
-      occurred_at: new Date().toISOString(),
-    });
-
-    // 厂商《支付结果通知》把 notify_url 和 return_url 都定义为「支付结果通知」，
-    // 参数与签名完全相同。异步通知不保证送达（实测就有整条没推的订单），所以验签通过的
-    // 同步回跳同样入账；重复入账由 credits_added 幂等兜住。
-    if (orderId && returnData.trade_status === 'TRADE_SUCCESS') {
-      await settlePaidOrder(
-        {
-          orderId,
-          paidAmount: returnData.money,
-          providerTransactionId: returnData.trade_no ?? null,
-        },
-        orders,
-        log,
-        'return',
-        orders
-      ).catch((error: unknown) => {
-        // 回跳的首要职责是把用户送回 MiniApp，入账失败不能卡住导航。
-        log.sys.error(
-          { event: 'payment.return.settle_failed', orderId, err: error },
-          '同步回跳入账失败'
-        );
-      });
-    } else if (!verification.ok) {
-      log.sys.warn(
-        {
-          event: 'payment.return.verify_failed',
-          reason: verification.reason,
-          fields: Object.keys(returnData).sort(),
-        },
-        '同步回跳验证失败，仅做导航'
-      );
-    }
-
-    const botUsername = await resolveTelegramBotUsername();
-
-    reply.header('Cache-Control', 'no-store');
-    if (botUsername) {
-      const startParam = orderId ? `payment_return_${orderId}` : 'payment_return';
-      const miniappShortName = resolveMiniappShortName();
-      const telegramUrl = new URL(`https://t.me/${botUsername}/${miniappShortName}`);
-      telegramUrl.searchParams.set('startapp', startParam);
-      return reply.redirect(telegramUrl.toString());
-    }
-
-    const fallbackUrl = new URL(
-      orderId ? `/profile/recharge/${encodeURIComponent(orderId)}` : '/profile/orders',
-      config.frontendUrl
-    );
-    fallbackUrl.searchParams.set('payment', 'returned');
-    return reply.redirect(fallbackUrl.toString());
-  });
-
-  // @frontend-ready: true
-  app.get('/api/payment/webhook/zqpay', async (request, reply) => {
-    return handleZqPayWebhook(
-      request.query,
-      reply,
-      gateway,
-      orders,
-      requestLogger(request.log, 'payment'),
-      orders
-    );
-  });
-
-  // @frontend-ready: true
-  app.post('/api/payment/webhook/zqpay', async (request, reply) => {
-    return handleZqPayWebhook(
-      request.body,
-      reply,
-      gateway,
-      orders,
-      requestLogger(request.log, 'payment'),
-      orders
-    );
-  });
-}
-
-type WebhookVerification =
-  | { ok: true; orderId: string }
-  | {
-      ok: false;
-      reason: 'missing_order_id' | 'merchant_mismatch' | 'invalid_signature' | 'stale_timestamp';
-    };
-
-function verifyNotify(
-  gateway: Pick<ZqPaymentGateway, 'isExpectedMerchant' | 'verifyNotifySign'>,
-  notifyData: ZqPaymentNotifyData
-): WebhookVerification {
-  const orderId = notifyData.out_trade_no;
-  if (!orderId) return { ok: false, reason: 'missing_order_id' };
-  if (!gateway.isExpectedMerchant(notifyData.pid)) {
-    return { ok: false, reason: 'merchant_mismatch' };
-  }
-  if (!gateway.verifyNotifySign(notifyData)) {
-    return { ok: false, reason: 'invalid_signature' };
-  }
-  // timestamp 只在厂商真的带了的时候校验：子千易实测会省略这个字段，把它当必填
-  // 会连同合法回调一起判死。防重放由 RSA 验签和 credits_added 幂等承担。
-  if (notifyData.timestamp && !isRecentTimestamp(notifyData.timestamp)) {
-    return { ok: false, reason: 'stale_timestamp' };
-  }
-  return { ok: true, orderId };
-}
-
-export async function handleZqPayWebhook(
-  payload: unknown,
-  reply: FastifyReply,
-  gateway: Pick<ZqPaymentGateway, 'isExpectedMerchant' | 'verifyNotifySign'>,
-  orders: Pick<MiniappPaymentOrderRepository, 'findById' | 'complete' | 'reopenExpired'>,
-  log: RequestLogger,
-  events?: import('../features/payment/usecases/PaymentOperationEvents.js').PaymentEventRecorder
-) {
-  const notifyData = normalizeNotifyData(payload);
-  const verification = verifyNotify(gateway, notifyData);
-
-  if (!verification.ok) {
-    recordPaymentOperationEvent(events, log, {
-      event_key: `webhook:failed:${verification.reason}:${Date.now()}`,
-      order_id: null,
-      user_id: null,
-      event_kind: 'webhook',
-      stage: 'callback',
-      outcome: 'failed',
-      source: 'gateway',
-      trigger: 'webhook',
-      error_class: verification.reason,
-      occurred_at: new Date().toISOString(),
-    });
-    log.sys.warn(
-      {
-        event: 'payment.webhook.verify_failed',
-        reason: verification.reason,
-        orderId: notifyData.out_trade_no,
-        pid: notifyData.pid,
-        // 只记字段名不记值：定位「厂商到底发了什么」时不泄露签名和金额。
-        fields: Object.keys(notifyData).sort(),
-      },
-      '子千易支付回调验证失败'
-    );
-    return reply.status(400).type('text/plain').send('fail');
-  }
-
-  const orderId = verification.orderId;
-  recordPaymentOperationEvent(events, log, {
-    event_key: `webhook:succeeded:${orderId}:${notifyData.trade_no ?? 'none'}`,
-    order_id: orderId,
-    user_id: null,
-    event_kind: 'webhook',
-    stage: 'callback',
-    outcome: 'succeeded',
-    source: 'gateway',
-    trigger: 'webhook',
-    occurred_at: new Date().toISOString(),
-  });
-  log.biz.info({ event: 'payment.webhook.received', orderId }, '收到子千易支付回调');
-
-  if (notifyData.trade_status !== 'TRADE_SUCCESS') {
-    return reply.type('text/plain').send('success');
-  }
-
-  const settlement = await settlePaidOrder(
-    { orderId, paidAmount: notifyData.money, providerTransactionId: notifyData.trade_no ?? null },
-    orders,
-    log,
-    'webhook',
-    events
-  );
-
-  switch (settlement) {
-    case 'completed':
-      return reply.type('text/plain').send('success');
-    case 'order_not_found':
-      return reply.status(404).type('text/plain').send('fail');
-    case 'amount_mismatch':
-      return reply.status(400).type('text/plain').send('fail');
-    default:
-      return reply.status(500).type('text/plain').send('fail');
-  }
-}
-
-function normalizeNotifyData(payload: unknown): ZqPaymentNotifyData {
-  if (!payload || typeof payload !== 'object') return {};
-  return Object.fromEntries(
-    Object.entries(payload as Record<string, unknown>).map(([key, value]) => [key, String(value)])
-  );
 }
 
 function isPaymentType(value: unknown): value is PaymentType {
@@ -468,48 +227,10 @@ function clampLimit(limit: unknown): number {
   return Math.min(Math.max(parsed, 1), 50);
 }
 
-function isRecentTimestamp(value: string | undefined): boolean {
-  if (!value || !/^\d{10}$/.test(value)) return false;
-  const timestampMs = Number(value) * 1000;
-  return Number.isSafeInteger(timestampMs) && Math.abs(Date.now() - timestampMs) <= 10 * 60 * 1000;
-}
-
 function describeUrlHost(value: string): string {
   try {
     return new URL(value).host;
   } catch {
     return 'invalid';
   }
-}
-
-function isSafePaymentOrderId(value: string | undefined): value is string {
-  return Boolean(value && value.length <= 200 && /^[A-Za-z0-9_-]+$/.test(value));
-}
-
-let telegramBotUsernamePromise: Promise<string | null> | null = null;
-
-function resolveTelegramBotUsername(): Promise<string | null> {
-  if (!config.telegramBotToken) return Promise.resolve(null);
-  telegramBotUsernamePromise ??= fetch(
-    `https://api.telegram.org/bot${config.telegramBotToken}/getMe`,
-    { signal: AbortSignal.timeout(5_000) }
-  )
-    .then(
-      (response) =>
-        response.json() as Promise<{
-          ok?: boolean;
-          result?: { username?: string };
-        }>
-    )
-    .then((data) => {
-      const username = data.ok ? data.result?.username?.replace(/^@/, '') : null;
-      return username && /^[A-Za-z0-9_]{5,32}$/.test(username) ? username : null;
-    })
-    .catch(() => null);
-  return telegramBotUsernamePromise;
-}
-
-function resolveMiniappShortName(): string {
-  const value = (process.env.MINIAPP_SHORT_NAME || 'app').replace(/^\/+|\/+$/g, '');
-  return /^[A-Za-z0-9_]{1,64}$/.test(value) ? value : 'app';
 }

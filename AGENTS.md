@@ -30,6 +30,7 @@
 - Admin：`.trellis/spec/admin/app/index.md`
 - Shared contracts：`.trellis/spec/shared/contracts/index.md`
 - Supabase/migrations：`.trellis/spec/database/supabase/index.md`
+- **数据库落位（新表/新列/jsonb 键/配置 key/函数/外部读者）：`docs/db/CONTRACT.md` + `docs/db/registry.yaml`，动手前必读**
 - 跨层设计：`.trellis/spec/guides/cross-layer-thinking-guide.md`
 
 若文档与实现冲突，先记录来源和差异，不得把推断写成当前事实。
@@ -43,6 +44,7 @@
 3. 对于复杂任务，创建 `design.md` 写技术设计，`implement.md` 写执行计划，`task.md` 写可执行的任务分解，然后再执行 `task.py start`。
 4. 在规划文档被审核完成并且任务移到 `in_progress` 之前，不要写产品代码。
 5. 在派发子代理时，用 `implement.jsonl` 和 `check.jsonl` 列出相关的规范/研究文件。
+6. 任务最后一次提交超过 14 天后用 `python3 ./.trellis/scripts/archive_stale.py --apply` 归档（不带 `--apply` 只列出）。`.trellis/tasks/archive/` 已写入 `.ignore`，默认搜索不会命中；查历史设计用 `rg -u <pattern> .trellis/tasks/archive`。
 
 复杂任务在 `task.py start` 前必须通过以下规划门禁：
 
@@ -52,6 +54,11 @@
 4. **演进与恢复**：说明兼容、迁移/发布顺序、旧数据、灰度、停止条件、回滚或 forward-fix。
 5. **可验证性**：`implement.md`/`task.md` 必须覆盖失败路径、consumer 校验、人工场景和可执行命令，而不只验证 happy path。
 6. **Android/iOS 性能与 P95**：功能开发、问题修改和方案设计必须在 `task.json.meta.mobile_performance` 中声明受影响页面与接口，分别记录 Android、iOS 页面加载 P95 及接口 P95 的基线、目标、数据来源、观测窗口和发布后验证；无可见样本不得补零或推测，确实不适用时必须写明具体理由。声明为 `pending` 或内容不完整时，`task.py start` 必须阻断。
+7. **日志系统接入**：所有新增功能、功能修改及问题修复的规划必须完成 `task.json.meta.logging_integration`，说明接入或复用位置、事件/operation、等级/结果、允许字段、链路关联、脱敏、失败路径、告警策略及验证。已有日志不构成豁免，必须确认其覆盖本次变化；只有纯文档、静态样式等不影响运行行为的任务可填写有具体理由的 `not_applicable`。缺失、`pending` 或内容不完整时 `task.py start` 必须阻断，旧任务重新启动同样适用。CI 校验本次变更触及的活动任务规划；详细字段与命令见 [日志接入规划规范](.trellis/spec/backend/app/logging-integration-planning.md)。
+
+2026-11-11补充：此前规划门禁继续适用，包括 `meta.mobile_performance` 声明完整性与 `pending` 阻断。后续开发不强制运行固定样本的本地性能测试，也不要求接入暂停中的 `11-11-local-mobile-performance-gate`；具体任务已明确的验收要求继续保留。
+
+2026-11-11补充：此前规划门禁继续适用，包括 `meta.mobile_performance` 声明完整性与 `pending` 阻断。后续开发不强制运行固定样本的本地性能测试，也不要求接入暂停中的 `11-11-local-mobile-performance-gate`；具体任务已明确的验收要求继续保留。
 
 高可用、复用与简洁必须平衡：高可用不是堆组件，复用不是提前泛化，简洁不是省略安全、错误处理、日志、测试或恢复。冲突时先保证业务正确性与安全，再采用满足需求的最低复杂度。
 
@@ -59,6 +66,7 @@
 
 - 包管理器：`pnpm`；运行时：Node.js `>=22`。
 - TypeScript 严格模式；不要添加 `any`。
+- 运行时代码单文件不超过 500 行、单函数不超过 120 行（`pnpm lint:complexity`，CI 阻断新增超标）。改到基线里的超长文件/函数时顺手拆小，不要继续往里追加；拆小后运行 `node scripts/complexity-budget.mjs update` 收紧基线。定期复盘用 `pnpm complexity:report`。
 - 外部数据契约必须在 `packages/shared/src/api/*` 中定义，然后才能被后端处理器或前端使用者使用。
 - `frontend`、`backend` 和 `admin` 之间不能互相导入；跨应用调用使用 HTTP。
 - 前端/管理端代码不能直接使用数据库行类型。
@@ -78,12 +86,31 @@
 ### 4. 数据库与环境
 
 - test 与 production 不保证同构，必须明确当前操作环境；不得用测试库结论代替生产实况。
-- 新建表、视图、物化视图或数据库函数前，必须按 `.trellis/spec/database/supabase/schema-and-object-conventions.md` 判断八域归属，并在任务 PRD/design 中记录业务不变量、权威写入方、生命周期、运行时消费者和跨 schema 依赖；归属未完成不得创建 migration，也不得把对象暂放 `public`。
+- **数据库落位卡**（详见 `docs/db/CONTRACT.md`，每张表的现状与去向见 `docs/db/registry.yaml`）：
+  1. 每张表一组坐标：业务域（schema）× 数据性质。性质按顺序判定：M 钱 → O 观测 → J 任务 → D 派生 → C 配置 → S 状态 → E 实体。
+  2. 新字段只有在性质、写入模块、写入时机、生命周期都相同时，才能加进现有表；否则建旁表（同主键）或子表。
+  3. 钱（价格、折扣、扣费快照）只进 `billing`，业务表只存 `*_charge_id` / `*_ledger_id`。测速、上游调用明细、事件、告警只进 `ops`。租约、重试、退避只进 `*_jobs` 表。
+  4. registry 里 `frozen` / `moving` 的表不加列。一次性 UI 标记写 `miniapp_features.user_marks`，不加列。
+  5. jsonb 只用于 `*_snapshot`、`raw_*`、`*_detail`。要过滤、计费、分支判断的值必须是真列。新列不叫 `metadata`/`extra`/`data`。
+  6. 表名不带供应商名。一个功能一个 `<feature>_config` 对象 key。函数不套 `*_before_*` 包装层。
+  7. 外部系统只读 `cs_feed` / `miniapp_analytics` 视图。产品请求路径不读 `ops` / `miniapp_analytics`。
+  8. 建表、删表、搬表，同一个 PR 更新 `registry.yaml`。CI 对违规给警告（`pnpm lint:db-contract`）；违反时 PR 描述必须写理由。
+- 新建表、视图、物化视图或数据库函数前，在任务 PRD/design 中按 CONTRACT §2.2 记录坐标、权威写入模块、生命周期与保留期、跨域引用；归属未完成不得创建 migration，也不得把对象暂放 `public`。
 - `packages/shared/migrations/` 是唯一 migration 源，不得创建 `supabase/migrations/` 平行来源或改写历史 migration。
 - migration 一次执行一个文件，记录前后 shape、权限/RLS、关键读写、锁/容量和回滚。
 - Supabase MCP 只允许在确认连接目标后执行只读结构采集；禁止读取业务行或将敏感导出提交 Git。
 
-### 5. 验证与提交
+### 5. 运营平台操作（mijing-admin CLI）
+
+- 操作生产运营平台（运营配置、角色卡与上架布局、公告、邀请、回复富文本规则）一律用仓库内的 CLI，不操作浏览器、不截图。说明见 `packages/admin-cli/README.md`，完整命令目录：`pnpm -s admin help --json`。
+- AI 调用固定用 `pnpm -s admin <命令> --json`（仓库子目录用 `pnpm -s -w admin`），按 `error.code` 与退出码处理结果。
+- 先 `whoami`；改之前用 `config describe` / `config get` 看现值，写入走 `draft set → diff → publish`，发布后再 `get` 复核。
+- 写命令不带 `--yes` 只返回 `confirmation_required` 和差异。**生产写操作必须先把差异给用户看，得到用户在对话里的明确同意后才带 `--yes`**；一次同意只对应这一次改动。
+- 登录免密：`pnpm -s admin login --email <白名单邮箱> --name <操作人> --json`（白名单在后端 `ADMIN_CLI_ALLOWED_EMAILS`）。遇到 `auth_required` 可直接重新登录；`setup_required` 需用户提供后端地址与 anon key。
+- 遇到 `draft_exists`（别人有未发布草稿）、`conflict`（线上已变化）先告诉用户，不要自行加 `--replace-draft` 或重试。
+- **运营平台加功能时同步 CLI**：新增/修改 managed config 只需按现有方式在 `packages/admin-client`（`configSchemas.ts` 注册表 + `menu.ts` 的 `ADMIN_MENU_GROUPS`）登记，CLI 自动支持；新增专用页面或新的 Admin RPC / `/api/admin/*` 接口时，调用代码放 `admin-client`，在 `packages/admin-cli/src/commands/` 补对应命令（写操作必须走 `ctx.confirm`），在 `packages/admin-cli/src/coverage.ts` 登记，并更新 `packages/admin-cli/README.md`。漏登记会让 admin-cli 的 typecheck/测试失败。
+
+### 6. 验证与提交
 
 - 移动端页面验收优先复用 `packages/ui-tests/README.md`：`pnpm preview:ui` 使用固定虚构场景和热更新；`pnpm test:ui --grep @profile`（或 `@roleplay` / `@chat` / `@image`）按改动范围复跑。不要逐次重建临时 mock 后端或一次性浏览器脚本；新状态扩展已有 fixture。手动3120/3121与自动3130/3131隔离，不覆盖普通构建缓存。模拟页面验收不能替代真实计费/供应商/支付和系统键盘验证。
 
@@ -93,6 +120,8 @@
 - bug 修复以及安全、计费、并发、契约、迁移等高风险改动，应在规划和风险评估中确认是否需要创建回归测试文件；未获确认时不得自动创建，但必须运行既有验证并记录可重复人工验证与剩余风险。
 - commit 遵循仓库近期 Conventional Commit 风格（如 `feat:`、`fix:`、`docs:`、`chore:`），一个提交对应一个完整变更单元。
 - 不自动 amend 或 push；不要把用户已有的无关修改混入提交。
+- 普通改动由 PR 作者负责发布。确认 PR 只包含本次改动，且最新提交的 `Quality Gate` 和适用检查均已通过后，作者自行合并，无需等待另一名工程师批准或代合。
+- 合入生产分支后，作者负责确认该版本已成功部署，并在线上核对本次改动的实际结果。发现异常时，由作者跟进修复或回滚。
 - 拉取/合并 upstream 时把上游代码视为只读；冲突解决保留上游行为，仅适配当前分支改动，除非用户明确授权改变上游逻辑。
 
 在开始实现之前，先阅读 `.trellis/spec/` 中的相关规格，以及它们引用的源文档。

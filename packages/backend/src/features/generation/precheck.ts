@@ -80,11 +80,13 @@ export function resolveBillingPlan(input: {
 }): BillingPlan {
   const { chargeId, billing, isFreeRound, pricing, entitlement, log } = input;
 
+  const freeZone = billing.freeZone;
   const fixedDeduction = resolveFixedDeduction({
     isFreeModel: billing.isFree,
     isFreeRound,
     modelTier: billing.modelTier,
     config: pricing.fixedDeduction,
+    isFreeZone: freeZone !== undefined,
   });
   if (fixedDeduction.category === 'standard_fallback') {
     log.sys.warn(
@@ -98,17 +100,21 @@ export function resolveBillingPlan(input: {
     );
   }
 
-  const tier = tierForTextQuote(billing.modelTier);
+  // 畅聊按轻量能力报价：不要求 VIP、应扣 0；原价取对标档位，只用于记录「省了多少」。
+  const tier = freeZone ? 'light' : tierForTextQuote(billing.modelTier);
   // 免费轮把原价记在快照里，实付为 0，避免和 VIP 折扣叠在一起。
   const quote = quoteAcceptedTextUsage({
-    originalCredits: originalCreditsForDecision({
-      category: fixedDeduction.category,
-      undiscountedAmount: fixedDeduction.amount,
-      config: pricing.fixedDeduction,
-    }),
+    originalCredits: freeZone
+      ? freeZone.originalCredits
+      : originalCreditsForDecision({
+          category: fixedDeduction.category,
+          undiscountedAmount: fixedDeduction.amount,
+          config: pricing.fixedDeduction,
+        }),
     tier,
     isVip: entitlement.active,
-    isFreeRound: fixedDeduction.category === 'free_quota',
+    isFreeRound:
+      fixedDeduction.category === 'free_quota' || fixedDeduction.category === 'free_zone',
     vipValidUntil: entitlement.validUntil,
     creatorSelf:
       input.creator !== undefined && input.creator.creatorUserId === input.creator.payerUserId,
@@ -123,7 +129,7 @@ export function resolveBillingPlan(input: {
       charge_id: chargeId,
       model_id: billing.modelId,
       model_display_name: billing.modelDisplayName,
-      model_markup: isFreeRound ? 0 : 1,
+      model_markup: isFreeRound || freeZone ? 0 : 1,
       fixed_deduction: quote.payable_credits,
       fixed_deduction_category: fixedDeduction.category,
       catalog_version: billing.catalogVersion,
@@ -170,24 +176,39 @@ export async function checkWalletBalance(input: {
   const { userId, requiredAmount, walletPolicy, openRouterModelId, log } = input;
 
   if (requiredAmount === 0) {
-    log.biz.debug(
-      { event: 'llm.balance.check_skipped', userId, model: openRouterModelId },
+    log.biz.info(
+      {
+        event: 'llm.balance.check_skipped',
+        outcome: 'skipped',
+        reason: 'free_round',
+        userId,
+        model: openRouterModelId,
+      },
       'free model balance check skipped'
     );
     return { ok: true };
   }
 
-  const wallet = await wallets().getOrCreate(userId);
+  const wallet = await wallets()
+    .findByUserId(userId)
+    .catch((err: unknown) => {
+      log.sys.error(
+        { event: 'llm.balance.precheck_failed', outcome: 'failed', err },
+        '生成余额预检查询失败'
+      );
+      throw err;
+    });
   const coverage = coverageForTextWallet({
     policy: walletPolicy,
     payableCredits: requiredAmount,
-    mainCredits: wallet.main_credits,
-    bonusCredits: wallet.bonus_credits,
+    mainCredits: wallet?.main_credits ?? 0,
+    bonusCredits: wallet?.bonus_credits ?? 0,
   });
   if (!coverage.ok) {
     log.biz.info(
       {
         event: 'llm.balance.insufficient',
+        outcome: 'rejected',
         userId,
         policy: walletPolicy,
         code: coverage.code,
@@ -204,5 +225,14 @@ export async function checkWalletBalance(input: {
     };
   }
 
+  log.biz.info(
+    {
+      event: 'llm.balance.precheck_passed',
+      outcome: 'succeeded',
+      userId,
+      model: openRouterModelId,
+    },
+    '生成余额预检通过'
+  );
   return { ok: true };
 }

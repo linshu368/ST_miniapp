@@ -4,13 +4,16 @@ import { useCallback, useEffect, useRef } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 
 import { DramaPlayer } from '@/components/drama/drama-player';
-import { useDramaBrowseQueueQuery } from '@/lib/api/drama';
+import { useDramaStreamWarmth } from '@/hooks/use-connection-warmth';
+import { useDramaPlaybackWarmup } from '@/hooks/use-drama-playback-warmup';
+import { startDramaPlayIntent, useDramaBrowseQueueQuery } from '@/lib/api/drama';
 import { dramaTiming } from '@/lib/perf/drama-observer';
-import { useHydrateDramaLibrary } from '@/stores/drama-library-store';
+import { useDramaLibraryStore, useHydrateDramaLibrary } from '@/stores/drama-library-store';
 
 export default function DramaDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  useDramaStreamWarmth();
   const searchParams = useSearchParams();
   const returnToHome = searchParams.get('from') === 'feed';
   const selectedVideo = searchParams.get('video');
@@ -23,6 +26,7 @@ export default function DramaDetailPage() {
     const query = params.toString();
     router.replace(`/dramas/${id}${query ? `?${query}` : ''}`, { scroll: false });
   }, [id, router, searchParams, selectedVideo]);
+  useDramaPlaybackWarmup();
   const hydrated = useHydrateDramaLibrary();
   const queueQuery = useDramaBrowseQueueQuery();
   const navigating = useRef(false);
@@ -47,7 +51,11 @@ export default function DramaDetailPage() {
     const target = direction === 1 ? next : previous;
     if (!target || navigating.current) return;
     navigating.current = true;
-    dramaTiming.beginPlayback(target.id, 'switch');
+    // 播放器首次请求用的就是本机进度里未完成的那集；videoId 不一致则接不上这次请求。
+    const progress = useDramaLibraryStore.getState().history[target.id];
+    const videoId = progress && !progress.completed ? progress.videoId : undefined;
+    dramaTiming.beginPlayback(target.id, 'switch', videoId);
+    startDramaPlayIntent(target.id, videoId);
     // 换剧不堆积历史记录；返回始终直接回到已验收的列表页。
     router.replace(`/dramas/${target.id}${returnToHome ? '?from=feed' : ''}`, { scroll: false });
   };

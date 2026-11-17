@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { observation } from '../../platform/observability/runtime.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_WORD_COUNT_TIERS_CONFIG } from '@miniapp/shared';
 import {
@@ -171,7 +172,7 @@ describe('buildSnapshot：字数档位的契约校验与降级', () => {
   });
 
   it('模板或任一槽位非法时只使用安全 fallback，并且日志不含规则正文', () => {
-    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const logged = vi.spyOn(observation, 'emit').mockImplementation(() => {});
     const invalidSlots = entries(VALID);
     invalidSlots.set('choice_rules', {
       value: { on_first_two_turns: 'secret rule' },
@@ -190,6 +191,105 @@ describe('buildSnapshot：字数档位的契约校验与降级', () => {
     expect(snapshot.instructions.template).not.toContain('{{INTERACTION_MODE}}');
     expect(snapshot.instructions.choiceRules).not.toContain('secret rule');
     expect(logged.mock.calls.flat().join(' ')).not.toContain('secret rule');
+  });
+
+  it('剧情模式随平台规则读取；损坏时降级为空且日志不含规则正文', () => {
+    const mode = {
+      id: 'active',
+      ui_label: '等 TA 撩',
+      description: '',
+      rules: 'secret drive rule',
+      enabled: true,
+      sort_order: 0,
+    };
+    const withModes = entries(VALID);
+    withModes.set('system_instructions', {
+      value: null,
+      textValue: `${TEMPLATE} {{DRIVE_RULES}}`,
+      version: 2,
+    });
+    withModes.set('drive_mode_options', {
+      value: { modes: [mode], default_mode_id: 'active' },
+      textValue: null,
+      version: 3,
+    });
+    const snapshot = buildSnapshot(withModes);
+    expect(snapshot.degraded).toBe(false);
+    expect(snapshot.instructions.driveModes?.default_mode_id).toBe('active');
+    expect(buildSnapshot(entries(VALID)).instructions.driveModes).toBeNull();
+
+    const logged = vi.spyOn(observation, 'emit').mockImplementation(() => {});
+    withModes.set('drive_mode_options', {
+      value: { modes: [{ ...mode, enabled: false }], default_mode_id: 'active' },
+      textValue: null,
+      version: 4,
+    });
+    const broken = buildSnapshot(withModes);
+    expect(broken.degraded).toBe(true);
+    expect(broken.instructions.driveModes).toBeNull();
+    expect(JSON.stringify(logged.mock.calls)).not.toContain('secret drive rule');
+  });
+
+  // 回复风格曾因占位符没进模板而静默失效；剧情模式配了但模板缺槽位必须告警并置降级。
+  it('剧情模式已配置但模板缺 {{DRIVE_RULES}} 时告警', () => {
+    const logged = vi.spyOn(observation, 'emit').mockImplementation(() => {});
+    const missing = entries(VALID);
+    missing.set('drive_mode_options', {
+      value: {
+        modes: [
+          {
+            id: 'follow',
+            ui_label: '我来带',
+            description: '',
+            rules: 'r',
+            enabled: true,
+            sort_order: 0,
+          },
+        ],
+        default_mode_id: 'follow',
+      },
+      textValue: null,
+      version: 5,
+    });
+    const snapshot = buildSnapshot(missing);
+    expect(snapshot.degraded).toBe(true);
+    expect(logged.mock.calls.map((call) => call[0])).toContain('engine.drive_slot_missing');
+  });
+
+  it('回复风格目录随平台规则读取；缺失不降级，损坏时不注入且日志不含规则正文', () => {
+    const style = {
+      id: 'style-a',
+      name: '尺度',
+      description: '',
+      marker: '{{CHIDU}}',
+      rules: 'secret style rule',
+      enabled: true,
+    };
+    const withStyles = entries(VALID);
+    withStyles.set('reply_style_options', {
+      value: { options: [style] },
+      textValue: null,
+      version: 5,
+    });
+    const snapshot = buildSnapshot(withStyles);
+    expect(snapshot.degraded).toBe(false);
+    expect(snapshot.instructions.replyStyles).toEqual([
+      { id: 'style-a', marker: '{{CHIDU}}', rules: 'secret style rule', enabled: true },
+    ]);
+
+    expect(buildSnapshot(entries(VALID)).instructions.replyStyles).toEqual([]);
+    expect(buildSnapshot(entries(VALID)).degraded).toBe(false);
+
+    const logged = vi.spyOn(observation, 'emit').mockImplementation(() => {});
+    withStyles.set('reply_style_options', {
+      value: { options: [{ ...style, unexpected: true }] },
+      textValue: null,
+      version: 6,
+    });
+    const broken = buildSnapshot(withStyles);
+    expect(broken.degraded).toBe(true);
+    expect(broken.instructions.replyStyles).toEqual([]);
+    expect(JSON.stringify(logged.mock.calls)).not.toContain('secret style rule');
   });
 
   // 回归：宽松解析放过、shared 契约拦下的配置，过去会静默把整张档位表换成内置默认档，
@@ -220,15 +320,18 @@ describe('buildSnapshot：字数档位的契约校验与降级', () => {
       },
     ],
   ])('%s：置 degraded、打日志，且两个出口都回落到内置兜底', (_name, wordCountValue) => {
-    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const logged = vi.spyOn(observation, 'emit').mockImplementation(() => {});
 
     const snapshot = buildSnapshot(entries(wordCountValue));
 
     expect(snapshot.degraded).toBe(true);
     expect(logged).toHaveBeenCalledOnce();
-    const message = String(logged.mock.calls[0]?.[0]);
-    expect(message).toContain('pref_word_count_tiers');
-    expect(message).toContain('version 7');
+    expect(logged).toHaveBeenCalledWith(
+      'engine.word_count_contract_degraded',
+      'engine.config',
+      expect.objectContaining({ resource: 'pref_word_count_tiers', config_version: 7 }),
+      'warn'
+    );
 
     // prompt 出口与 MiniApp 出口必须是同一份内置兜底
     const publicTiers = toPublicWordCountTiersFromEngine(snapshot.instructions.wordCountTiers);

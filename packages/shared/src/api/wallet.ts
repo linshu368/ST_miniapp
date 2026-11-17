@@ -27,7 +27,7 @@ export const FreeQuotaExhaustedDialogConfigSchema = z.object({
 export type FreeQuotaExhaustedDialogConfig = z.infer<typeof FreeQuotaExhaustedDialogConfigSchema>;
 
 export const DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG: FreeQuotaExhaustedDialogConfig = {
-  text: '和「{characterName}」的免费轮次用完了。这是这张卡的免费额度，其他角色不受影响。往后每轮消耗星尘。',
+  text: '和「{characterName}」的免费轮次用完了。这是这张卡的免费额度，其他角色不受影响。接下来每聊一轮会用掉一点星尘。',
 };
 
 // ==== GET /api/wallet/balance ====
@@ -331,7 +331,9 @@ export function allocateWalletDebit(input: {
     };
   }
 
-  // 轻量文本才允许的原子组合扣：先 main 再 bonus，余额不足时整笔失败。
+  // 轻量文本才允许的原子组合扣：专项（bonus）优先，不足部分再扣通用（main），余额不足时整笔失败。
+  // 与 billing.apply_wallet_debit（20261111_light_text_bonus_first_debit.sql）保持一致；
+  // 策略标识符仍是 'main_then_bonus'（在途快照与取值校验沿用），含义以此处为准。
   if (input.main_credits + input.bonus_credits < input.amount) {
     return {
       ok: false,
@@ -339,8 +341,8 @@ export function allocateWalletDebit(input: {
       message: 'main and bonus wallets cannot cover the full amount together',
     };
   }
-  const mainCredits = Math.min(input.main_credits, input.amount);
-  const bonusCredits = input.amount - mainCredits;
+  const bonusCredits = Math.min(input.bonus_credits, input.amount);
+  const mainCredits = input.amount - bonusCredits;
   return {
     ok: true,
     value: {
@@ -448,6 +450,8 @@ export interface DailyCheckinStatus {
   reward_credits: number;
   base_reward_credits?: number;
   vip_reward_credits?: number;
+  main_reward_credits?: number;
+  bonus_reward_credits?: number;
 }
 
 export interface GetDailyCheckinData {
@@ -463,5 +467,7 @@ export interface PostDailyCheckinData {
     reward_credits: number;
     base_reward_credits?: number;
     vip_reward_credits?: number;
+    main_reward_credits?: number;
+    bonus_reward_credits?: number;
   };
 }

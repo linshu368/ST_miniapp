@@ -1,0 +1,55 @@
+{
+  "id": "first-token-delivery-repair",
+  "name": "first-token-delivery-repair",
+  "title": "首字交付修复：去误报、服务端计费、连接保温、兜底备份与耗时归因",
+  "description": "",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "frontend",
+  "priority": "P0",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-02",
+  "completedAt": null,
+  "branch": "codex/first-token-delivery-repair",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": ["backend.business.conversation-generation"]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": ["/chat/:id"],
+      "apis": ["POST /api/v1/conversations/:id/messages（点击到首字）"],
+      "android": {
+        "page_p95_baseline_ms": 3127,
+        "page_p95_target_ms": 3127
+      },
+      "ios": {
+        "page_p95_baseline_ms": 2565,
+        "page_p95_target_ms": 2565
+      },
+      "api": {
+        "p95_baseline_ms": 5290,
+        "p95_target_ms": 4500
+      },
+      "measurement": {
+        "source": "Grafana Loki Faro：st_page_ready（route=/chat/:id）与 st_roleplay_first_token（outcome=observed，<6000ms），按 tg_platform 分组",
+        "window": "基线取 2026-10-30 至 11-02 共 72 小时；发布后取新版本至少 7 天同口径"
+      },
+      "notes": "页面基线 Android 3127ms（n=408）、iOS 2565ms（n=104），本任务不改页面加载，目标为不退化。接口基线为成功请求点击到首字 P95：Android 5290ms、iOS 5298ms，只含 6 秒内成功样本，超时样本需看 timed_out 占比；gate 只有单值，填 Android。tdesktop 另看。发布后按 Android/iOS 分别核对首字 P50/P95、我方责任超时率与页面就绪是否退化。16:53 后样本仅 5 个用户，不作基线。"
+    }
+  }
+}

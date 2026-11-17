@@ -1,3 +1,4 @@
+import '../instrumentation.js';
 import '../platform/config.js';
 import { isAbsolute, resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -12,6 +13,10 @@ import { getImagePlazaRuntimeConfig } from '../features/image-plaza/config.js';
 import { createLogger } from '../lib/logger.js';
 import { closeSupabaseClient } from '../lib/supabase.js';
 import { config } from '../platform/config.js';
+import {
+  observeBackgroundRun,
+  startStandaloneObservability,
+} from '../lib/background-observability.js';
 
 interface CliOptions {
   input: string;
@@ -27,6 +32,10 @@ interface CliOptions {
 
 const log = createLogger('image-plaza-seed-import');
 let exitCode = 0;
+let outcome: 'success' | 'partial' | 'error' = 'success';
+let terminalError: unknown;
+const observationStartedAt = performance.now();
+const stopObservability = startStandaloneObservability();
 
 try {
   const options = parseArgs(process.argv.slice(2));
@@ -116,9 +125,14 @@ try {
       `Image plaza seed apply complete: selected=${selected.length} concurrency=${options.concurrency} imported=${imported} ` +
         `already_imported=${alreadyImported} failed=${failed}`
     );
-    if (failed > 0) exitCode = 1;
+    if (failed > 0) {
+      exitCode = 1;
+      outcome = 'partial';
+    }
   }
 } catch (err) {
+  outcome = 'error';
+  terminalError = err;
   log.sys.error({ event: 'image_plaza.seed.import_failed', err }, '初始作品导入任务失败');
   console.error(err instanceof Error ? err.message : 'image_plaza_seed_import_failed');
   exitCode = 1;
@@ -126,6 +140,8 @@ try {
   try {
     await closeSeedImportResources();
   } catch (err) {
+    outcome = 'error';
+    terminalError ??= err;
     log.sys.error(
       { event: 'image_plaza.seed.proxy_cleanup_failed', err },
       '初始作品代理资源清理失败'
@@ -135,11 +151,20 @@ try {
   try {
     await closeSupabaseClient();
   } catch (err) {
+    outcome = 'error';
+    terminalError ??= err;
     log.sys.error({ event: 'image_plaza.seed.cleanup_failed', err }, '初始作品导入资源清理失败');
     exitCode = 1;
   }
 }
 
+observeBackgroundRun({
+  job: 'image_plaza_seed_import',
+  outcome,
+  startedAt: observationStartedAt,
+  error: terminalError,
+});
+await stopObservability();
 process.exitCode = exitCode;
 
 function assertApplyGates(options: CliOptions, approval?: SeedApprovalManifest): void {

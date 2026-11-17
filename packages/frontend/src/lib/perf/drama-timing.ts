@@ -10,8 +10,11 @@ import {
   type DramaMediaState,
   type DramaStartupDiagnostics,
   type DramaNetworkTiming,
+  type DramaPlaybackEngine,
 } from '@miniapp/shared';
 export type { DramaTimingReport } from '@miniapp/shared';
+import type HlsPlayer from 'hls.js';
+import type { HlsEvents } from './drama-hls';
 import type { ApiAttemptTiming } from '@/lib/api/client';
 import { recordEngineeringEvent } from './grafana';
 
@@ -53,7 +56,7 @@ export interface DramaQueryTiming {
 }
 
 interface ListTiming {
-  route: '/' | '/dramas';
+  route: '/watch' | '/dramas';
   id: string;
   startedAt: number;
   startKind: 'navigation_click' | 'route_commit' | 'query_start' | 'document_navigation' | 'retry';
@@ -74,6 +77,7 @@ export class DramaPlaybackTiming {
   outcome?: DramaOutcome;
   addressSource?: DramaTimingReport['addressSource'];
   frameMethod?: DramaTimingReport['frameMethod'];
+  engine?: DramaPlaybackEngine;
   resolvedVideoId?: string;
   delivery?: DramaDelivery;
   private timer: ReturnType<typeof setTimeout>;
@@ -137,6 +141,10 @@ export class DramaPlaybackTiming {
     return () => {
       if (this.readLongTasks === read) this.readLongTasks = undefined;
     };
+  }
+
+  hlsTiming(hls: NonNullable<DramaStartupDiagnostics['hls']>): void {
+    if (!this.outcome) this.diagnostics.hls = hls;
   }
 
   networkTiming(network: DramaNetworkTiming, supplement = false): void {
@@ -247,7 +255,7 @@ export class DramaPlaybackTiming {
       type: 'playback',
       phase,
       definition: DRAMA_TIMING_DEFINITION,
-      route: this.owner === 'home' ? '/' : '/dramas/:id',
+      route: this.owner === 'home' ? '/watch' : '/dramas/:id',
       delivery: this.delivery,
       recovery: {
         rootId: this.rootId,
@@ -268,6 +276,7 @@ export class DramaPlaybackTiming {
       stages,
       addressSource: this.addressSource,
       frameMethod: this.frameMethod,
+      engine: this.engine,
       cover: this.cover,
       list: list
         ? {
@@ -392,16 +401,18 @@ export class DramaTimingTracker {
     const match = /^\/dramas\/([^/]+)\/?$/.exec(pathname);
     if (this.playback) {
       // The embedded home player may mount before this root route effect. Its
-      // owner is '/', not a missing detail route; same-drama owners stay distinct.
+      // owner is '/watch', not a missing detail route; same-drama owners stay distinct.
       const remainsOnOwnerRoute =
-        this.playback.owner === 'home' ? pathname === '/' : match?.[1] === this.playback.dramaId;
+        this.playback.owner === 'home'
+          ? pathname === '/watch'
+          : match?.[1] === this.playback.dramaId;
       if (!remainsOnOwnerRoute) {
         this.playback.finish('left');
         this.stopSeek?.('left');
         this.playback = undefined;
       }
     }
-    if (pathname === '/' || pathname === '/dramas') {
+    if (pathname === '/watch' || pathname === '/dramas') {
       if (
         this.onListRoute !== pathname &&
         (!this.list || this.list.ended || this.list.route !== pathname)
@@ -568,7 +579,9 @@ export class DramaTimingTracker {
     wasPlaying: boolean,
     dramaId: string,
     videoId: string | undefined,
-    delivery?: DramaDelivery
+    delivery?: DramaDelivery,
+    hls?: { player: HlsPlayer; events: HlsEvents },
+    engine?: DramaPlaybackEngine
   ) {
     this.stopSeek?.('switched');
     const stop = observeDramaSeek(video, source, target, wasPlaying, {
@@ -577,6 +590,10 @@ export class DramaTimingTracker {
       videoId,
       delivery,
       context: this.context,
+      route: this.playback?.owner === 'home' ? '/watch' : '/dramas/:id',
+      sourceAt: this.playback?.marks.source_set ?? this.playback?.startedAt,
+      hls,
+      engine,
       now: this.now,
       emit: this.emit,
     });

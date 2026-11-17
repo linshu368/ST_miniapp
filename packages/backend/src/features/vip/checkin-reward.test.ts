@@ -52,6 +52,8 @@ describe('quoteDailyCheckinReward', () => {
         veteranCredits: 15,
       })
     ).toEqual({
+      main_reward_credits: 0,
+      bonus_reward_credits: 150,
       base_reward_credits: 0,
       vip_reward_credits: 150,
       reward_credits: 150,
@@ -71,5 +73,24 @@ describe('quoteDailyCheckinReward', () => {
         veteranCredits: 15,
       }).vip_reward_credits
     ).toBe(0);
+  });
+});
+
+it('quotes mixed VIP rewards and excludes the main gift for non-VIP users', () => {
+  const input = {
+    createdAt: '2026-01-01',
+    validUntil: '2027-01-01',
+    now: '2026-11-05',
+    vipCredits: { bonus_credits: 120, main_credits: 30 },
+  };
+  expect(quoteDailyCheckinReward(input)).toMatchObject({
+    reward_credits: 150,
+    main_reward_credits: 30,
+    bonus_reward_credits: 120,
+  });
+  expect(quoteDailyCheckinReward({ ...input, validUntil: null })).toMatchObject({
+    reward_credits: 15,
+    main_reward_credits: 0,
+    bonus_reward_credits: 15,
   });
 });

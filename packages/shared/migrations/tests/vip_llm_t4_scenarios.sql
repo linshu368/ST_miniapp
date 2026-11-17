@@ -114,12 +114,12 @@ BEGIN
   SELECT main_credits, bonus_credits INTO v_main, v_bonus FROM billing.user_wallets WHERE user_id = u_bonus;
   PERFORM vip_t4_test.assert(v_main = 0 AND v_bonus = 50, 'premium bonus-only wallet unchanged');
 
-  -- 组合扣：先充值再专项。
+  -- 组合扣：专项优先，不足再扣通用。
   v_json := vip_t4_test.charge(u_mix, '00000000-0000-4000-8000-000000000104', 'gen-mix', 40, 'main_then_bonus', 'light', 'stop');
-  PERFORM vip_t4_test.assert((v_json -> 'charge' -> 'metadata' ->> 'main_delta')::NUMERIC = -20, 'mix main');
-  PERFORM vip_t4_test.assert((v_json -> 'charge' -> 'metadata' ->> 'bonus_delta')::NUMERIC = -20, 'mix bonus');
+  PERFORM vip_t4_test.assert((v_json -> 'charge' -> 'metadata' ->> 'main_delta')::NUMERIC = -10, 'mix main');
+  PERFORM vip_t4_test.assert((v_json -> 'charge' -> 'metadata' ->> 'bonus_delta')::NUMERIC = -30, 'mix bonus');
   SELECT main_credits, bonus_credits INTO v_main, v_bonus FROM billing.user_wallets WHERE user_id = u_mix;
-  PERFORM vip_t4_test.assert(v_main = 0 AND v_bonus = 10, 'mix wallet');
+  PERFORM vip_t4_test.assert(v_main = 10 AND v_bonus = 0, 'mix wallet');
 
   -- 重复扣款不二次入账。
   v_json := vip_t4_test.charge(u_mix, '00000000-0000-4000-8000-000000000104', 'gen-mix', 40, 'main_then_bonus', 'light', 'stop');
@@ -127,7 +127,7 @@ BEGIN
   SELECT count(*) INTO v_count FROM billing.wallet_ledger WHERE debit_key = '00000000-0000-4000-8000-000000000104';
   PERFORM vip_t4_test.assert(v_count = 1, 'replay ledger count');
   SELECT main_credits, bonus_credits INTO v_main, v_bonus FROM billing.user_wallets WHERE user_id = u_mix;
-  PERFORM vip_t4_test.assert(v_main = 0 AND v_bonus = 10, 'replay wallet');
+  PERFORM vip_t4_test.assert(v_main = 10 AND v_bonus = 0, 'replay wallet');
 
   -- 受理快照：pending 记 48，之后用 999 重放仍扣 48。
   v_key := '00000000-0000-4000-8000-000000000105';

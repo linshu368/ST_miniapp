@@ -1,48 +1,93 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { DEFAULT_LOBBY_SORT } from '@miniapp/shared';
 import type {
   ApiResponse,
-  GetCharactersData,
   GetCharacterByIdData,
+  GetCharactersData,
   LobbyLatestBadgeData,
   LobbySort,
 } from '@miniapp/shared';
+import {
+  CharacterSummarySchema,
+  DEFAULT_LOBBY_SORT,
+  LOBBY_ROTATION_HEAD_SIZE,
+} from '@miniapp/shared';
+import { useMemo } from 'react';
+import {
+  useMutation,
+  useQueries,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from '@tanstack/react-query';
 
+import { getMobilePerformancePolicy } from '@/lib/mobile-performance';
 import { createRequestId, timedFetch } from '@/lib/perf/request-timing';
 import { getRawInitData } from '@/lib/telegram/auth';
 import { parseTelegramUser } from '@/lib/telegram/user';
 
-import { apiClient } from './client';
-import { withRequestSlot } from './request-concurrency';
+import { apiClient, type ApiRequestInit } from './client';
 import { useRefetchOnForeground } from './use-refetch-on-foreground';
 
 // ==== 纯 fetch 函数（私有，不导出给业务）====
-async function fetchCharacters(sort: LobbySort, signal?: AbortSignal): Promise<GetCharactersData> {
+async function fetchCharacters(
+  sort: LobbySort,
+  signal?: AbortSignal,
+  headOnly = false,
+  ids?: readonly string[]
+): Promise<GetCharactersData> {
   // 大厅经 Vercel 同源代理，不走 apiClient；仍占 critical 槽，避免与直连 Railway 旁路齐射。
-  return withRequestSlot('critical', signal, async () => {
-    const response = await timedFetch(
-      `/api/lobby-characters?sort=${sort}`,
-      { cache: 'no-store', signal },
-      { requestId: createRequestId() }
-    );
-    const json = (await response.json().catch(() => null)) as ApiResponse<GetCharactersData> | null;
-    if (!response.ok || !json?.success) {
-      throw new Error(json && !json.success ? json.error.message : `API error: ${response.status}`);
+  const publicLatest = sort === 'latest' && !headOnly && !ids?.length;
+  const data = await timedFetch(
+    `/api/lobby-characters?sort=${sort}${headOnly ? `&limit=${LOBBY_ROTATION_HEAD_SIZE}` : ''}${ids?.length ? `&ids=${ids.join(',')}` : ''}`,
+    { ...(publicLatest ? {} : { cache: 'no-store' as const }), signal },
+    {
+      requestId: createRequestId(),
+      priority: 'critical',
+      timeoutMs: getMobilePerformancePolicy().lobbyRequestTimeoutMs,
+    },
+    async (response) => {
+      const json = (await response.json().catch((error: unknown) => {
+        if (signal?.aborted || (error instanceof Error && error.name === 'AbortError')) throw error;
+        return null;
+      })) as ApiResponse<GetCharactersData> | null;
+      if (!response.ok || !json?.success) {
+        throw new Error(
+          json && !json.success ? json.error.message : `API error: ${response.status}`
+        );
+      }
+      // An older upstream may ignore limit. Never write a partial head into the full-directory cache.
+      if (ids && json.data.characters.some((card) => !ids.includes(card.id)))
+        throw new Error('旧版目录不支持指定角色校准');
+      if (headOnly) {
+        const head = {
+          ...json.data,
+          characters: json.data.characters.slice(0, LOBBY_ROTATION_HEAD_SIZE),
+        };
+        return head;
+      }
+      return json.data;
     }
-    persistCharacters(sort, json.data);
-    return json.data;
-  });
+  );
+  if (signal?.aborted) throw signal.reason ?? new DOMException('Aborted', 'AbortError');
+  // A late body must not overwrite cached cards after its total deadline expired.
+  if (headOnly) {
+    if (!ids?.length) persistPublicLobbyHead(data);
+  } else persistCharacters(sort, data);
+  return data;
 }
 
 async function fetchCharacterById(
   id: string,
   signal?: AbortSignal,
-  sessionId?: string | null
+  sessionId?: string | null,
+  queuePriority?: ApiRequestInit['queuePriority']
 ): Promise<GetCharacterByIdData> {
   const query = sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : '';
-  return apiClient<GetCharacterByIdData>(`/api/characters/${id}${query}`, { signal });
+  return apiClient<GetCharacterByIdData>(`/api/characters/${id}${query}`, {
+    signal,
+    queuePriority,
+  });
 }
 
 // ==== Query Keys ====
@@ -58,39 +103,65 @@ export const characterKeys = {
       String(parseTelegramUser(getRawInitData()).id ?? 'local-browser'),
       sessionId ?? null,
     ] as const,
+  publicHead: (ids?: readonly string[]) =>
+    [...characterKeys.all, 'public-head', ids ?? 'default'] as const,
   latestBadge: () => [...characterKeys.all, 'latest-badge'] as const,
 };
 
 // v4 隔离「推荐 / 最新」两套顺序，并弃用只存单一顺序的 v3 快照。
 const CHARACTER_CACHE_KEY_PREFIX = 'miniapp:lobby-characters:v4';
 const CHARACTER_CACHE_MAX_AGE_MS = 24 * 60 * 60_000;
+const PUBLIC_HEAD_CACHE_KEY = 'miniapp:lobby-public-head:v1';
 
 function cacheKey(sort: LobbySort): string {
-  return `${CHARACTER_CACHE_KEY_PREFIX}:${sort}`;
+  return sort === 'recommended'
+    ? 'miniapp:lobby-characters:v5:recommended'
+    : `${CHARACTER_CACHE_KEY_PREFIX}:${sort}`;
 }
 
-function readPersistedCharacters(sort: LobbySort): GetCharactersData | undefined {
+function readPersistedCatalogue(
+  key: string
+): { data: GetCharactersData; savedAt: number } | undefined {
   if (typeof window === 'undefined') return undefined;
   try {
-    const raw = window.localStorage.getItem(cacheKey(sort));
+    const raw = window.localStorage.getItem(key);
     if (!raw) return undefined;
     const cached = JSON.parse(raw) as { savedAt?: number; data?: GetCharactersData };
+    const characters = CharacterSummarySchema.array().safeParse(cached.data?.characters);
     if (
+      !Number.isFinite(cached.savedAt) ||
       !cached.savedAt ||
+      cached.savedAt > Date.now() ||
       Date.now() - cached.savedAt > CHARACTER_CACHE_MAX_AGE_MS ||
-      !Array.isArray(cached.data?.characters)
+      !characters.success
     ) {
-      window.localStorage.removeItem(cacheKey(sort));
+      window.localStorage.removeItem(key);
       return undefined;
     }
-    return cached.data;
+    return characters.success
+      ? { data: { characters: characters.data }, savedAt: cached.savedAt }
+      : undefined;
   } catch {
+    try {
+      window.localStorage.removeItem(key);
+    } catch {
+      /* Storage is optional. */
+    }
     return undefined;
   }
 }
 
+function readPersistedCharacters(sort: LobbySort): GetCharactersData | undefined {
+  return readPersistedCatalogue(cacheKey(sort))?.data;
+}
+
+function readPersistedPublicLobbyHead(): GetCharactersData | undefined {
+  return readPersistedCatalogue(PUBLIC_HEAD_CACHE_KEY)?.data;
+}
+
 const pendingPersist = new Map<LobbySort, GetCharactersData>();
 let persistScheduled = false;
+let pendingPublicHead: GetCharactersData | undefined;
 
 function flushPersistedCharacters(): void {
   persistScheduled = false;
@@ -102,6 +173,17 @@ function flushPersistedCharacters(): void {
     }
   }
   pendingPersist.clear();
+  if (pendingPublicHead) {
+    try {
+      window.localStorage.setItem(
+        PUBLIC_HEAD_CACHE_KEY,
+        JSON.stringify({ savedAt: Date.now(), data: pendingPublicHead })
+      );
+    } catch {
+      // 与完整目录一样，storage 不可用时只保留 React Query 内存结果。
+    }
+    pendingPublicHead = undefined;
+  }
 }
 
 // 整表 stringify + 同步写 localStorage 是主线程长任务；放在响应回调里会和列表渲染、
@@ -109,6 +191,15 @@ function flushPersistedCharacters(): void {
 // 推迟到空闲帧，同一 sort 的多次响应只写最后一份。
 function persistCharacters(sort: LobbySort, data: GetCharactersData): void {
   pendingPersist.set(sort, data);
+  schedulePersistedCharacters();
+}
+
+function persistPublicLobbyHead(data: GetCharactersData): void {
+  pendingPublicHead = data;
+  schedulePersistedCharacters();
+}
+
+function schedulePersistedCharacters(): void {
   if (persistScheduled) return;
   persistScheduled = true;
   if (typeof window.requestIdleCallback === 'function') {
@@ -120,17 +211,111 @@ function persistCharacters(sort: LobbySort, data: GetCharactersData): void {
 
 // ==== React Query hooks（业务层唯一入口）====
 
-export function useCharactersQuery(sort: LobbySort = DEFAULT_LOBBY_SORT) {
+/** Same keys and fetch owners as the lobby, with passive observers only. */
+export function cachedLobbyCharacterQueries() {
+  const head = readPersistedCatalogue(PUBLIC_HEAD_CACHE_KEY);
+  return [
+    ...(['recommended', 'latest'] as const).map((sort) => {
+      const cached = readPersistedCatalogue(cacheKey(sort));
+      return {
+        queryKey: characterKeys.list(sort),
+        queryFn: ({ signal }: { signal: AbortSignal }) => fetchCharacters(sort, signal),
+        initialData: cached?.data,
+        initialDataUpdatedAt: cached?.savedAt,
+        enabled: false,
+      };
+    }),
+    {
+      queryKey: characterKeys.publicHead(),
+      queryFn: ({ signal }: { signal: AbortSignal }) =>
+        fetchCharacters('recommended', signal, true),
+      initialData: head?.data,
+      initialDataUpdatedAt: head?.savedAt,
+      enabled: false,
+    },
+  ];
+}
+
+/** Subscribe to existing public summaries; disabled observers never dispatch a catalogue read. */
+export function useCachedLobbyCharacters(): GetCharactersData | undefined {
+  const queries = useMemo(cachedLobbyCharacterQueries, []);
+  const [recommended, latest, head] = useQueries({ queries });
+  const { data: recommendedData, dataUpdatedAt: recommendedAt = 0 } = recommended ?? {};
+  const { data: latestData, dataUpdatedAt: latestAt = 0 } = latest ?? {};
+  const { data: headData, dataUpdatedAt: headAt = 0 } = head ?? {};
+  return useMemo(() => {
+    const sources = [
+      { data: recommendedData, at: recommendedAt },
+      { data: latestData, at: latestAt },
+      { data: headData, at: headAt },
+    ].filter((source) => source.data !== undefined);
+    if (!sources.length) return undefined;
+    // More recent public data wins; no recommendation order or private detail is cached here.
+    sources.sort((a, b) => a.at - b.at);
+    const cards = new Map(
+      sources.flatMap(
+        (source) => source.data?.characters.map((card) => [card.id, card] as const) ?? []
+      )
+    );
+    return { characters: [...cards.values()] };
+  }, [recommendedData, latestData, headData, recommendedAt, latestAt, headAt]);
+}
+
+export function useCharactersQuery(sort: LobbySort = DEFAULT_LOBBY_SORT, enabled = true) {
   return useQuery<GetCharactersData>({
     queryKey: characterKeys.list(sort),
     queryFn: ({ signal }) => fetchCharacters(sort, signal),
-    initialData: () => readPersistedCharacters(sort),
+    enabled,
+    initialData: () => (enabled ? readPersistedCharacters(sort) : undefined),
     // Persisted data keeps the lobby instant, but every mount must reconcile with
     // the database so reordering, delisting, and archival appear immediately.
     staleTime: 0,
     // 有本地快照时先让关键头像完成，再由大厅在 enrich 阶段校准；无数据时仍会立即 fetch。
     refetchOnMount: false,
     gcTime: CHARACTER_CACHE_MAX_AGE_MS,
+  });
+}
+
+export function prefetchCharactersQuery(
+  queryClient: QueryClient,
+  sort: LobbySort = DEFAULT_LOBBY_SORT
+): Promise<void> {
+  // The recommended tab fetches its personalized 12-card head on entry.
+  if (sort === 'recommended') return Promise.resolve();
+  return queryClient.prefetchQuery({
+    queryKey: characterKeys.list(sort),
+    queryFn: ({ signal }) => fetchCharacters(sort, signal),
+    initialData: () => readPersistedCharacters(sort),
+    staleTime: 30_000,
+    gcTime: CHARACTER_CACHE_MAX_AGE_MS,
+  });
+}
+
+/** An old server can only hydrate a user-requested refresh through its full catalog. */
+export async function readLegacyHeadCards(client: QueryClient, order: string[]) {
+  const catalogue = await client.fetchQuery({
+    queryKey: characterKeys.list('recommended'),
+    queryFn: ({ signal }) => fetchCharacters('recommended', signal),
+    staleTime: 30_000,
+  });
+  const byId = new Map(catalogue.characters.map((card) => [card.id, card]));
+  const character_ids = order.filter((id) => byId.has(id));
+  const head_ids = character_ids.slice(0, LOBBY_ROTATION_HEAD_SIZE);
+  return { character_ids, head_ids, head_cards: head_ids.map((id) => byId.get(id)!) };
+}
+
+export function usePublicLobbyHead(enabled: boolean, ids?: readonly string[], forceFresh = false) {
+  return useQuery({
+    queryKey: characterKeys.publicHead(ids),
+    queryFn: ({ signal }) => fetchCharacters('recommended', signal, true, ids),
+    enabled,
+    initialData: () =>
+      enabled && !forceFresh && !ids?.length ? readPersistedPublicLobbyHead() : undefined,
+    initialDataUpdatedAt: 0,
+    staleTime: forceFresh ? 0 : 30_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    retry: false,
   });
 }
 
@@ -173,14 +358,20 @@ export function useMarkLobbyLatestSeenMutation() {
  */
 export function useCharacterQuery(
   id: string | undefined,
-  options: { enabled?: boolean; sessionId?: string | null } = {}
+  options: {
+    enabled?: boolean;
+    sessionId?: string | null;
+    queuePriority?: ApiRequestInit['queuePriority'];
+    staleTime?: number;
+  } = {}
 ) {
   return useQuery<GetCharacterByIdData>({
     queryKey: id ? characterKeys.detail(id, options.sessionId) : characterKeys.all,
     enabled: !!id && options.enabled !== false,
+    ...(options.staleTime === undefined ? {} : { staleTime: options.staleTime }),
     queryFn: async ({ signal }) => {
       if (!id) throw new Error('character id is required');
-      return fetchCharacterById(id, signal, options.sessionId);
+      return fetchCharacterById(id, signal, options.sessionId, options.queuePriority);
     },
   });
 }

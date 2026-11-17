@@ -9,7 +9,7 @@ import {
   RequestTimeoutError,
   timedFetch,
 } from '@/lib/perf/request-timing';
-import { withRequestSlot, type RequestPriority } from '@/lib/api/request-concurrency';
+import type { RequestPriority } from '@/lib/api/request-concurrency';
 import { recordApiAttempt, recordApiTotal, shouldObserveApiTiming } from '@/lib/perf/api-timing';
 
 export const API_URL =
@@ -94,7 +94,16 @@ export interface ApiAttemptTiming {
   headersAt?: number;
   endedAt?: number;
   status?: number;
+  /** Next.js proxy reported backend duration; absent for direct backend calls. */
+  upstreamMs?: number;
   outcome?: 'ok' | 'timeout' | 'aborted' | 'http_error' | 'error';
+}
+
+function proxyUpstreamDuration(value: string | null): number | undefined {
+  const match = value?.match(/(?:^|,)\s*backend;dur=([0-9]+(?:\.[0-9]+)?)(?:\s*;|\s*,|\s*$)/i);
+  if (!match) return undefined;
+  const duration = Number(match[1]);
+  return Number.isFinite(duration) && duration >= 0 && duration <= 60_000 ? duration : undefined;
 }
 
 /** 单次请求超时（毫秒）；不传则按路径取默认值。 */
@@ -102,6 +111,8 @@ export type ApiRequestInit = Omit<RequestInit, 'priority'> & {
   timeoutMs?: number;
   /** A declared single-attempt experiment must retain the first transport failure. */
   transportRetry?: false;
+  /** 只读且可安全重放的非 GET 请求（如 POST /api/dramas/play）沿用 GET 的传输层重试。 */
+  idempotent?: true;
   /** 只在明确需要分段计时时传入；回调异常不会影响请求。对象随本次尝试推进。 */
   onAttempt?: (timing: ApiAttemptTiming) => void;
   /**
@@ -183,9 +194,10 @@ function resolveMethod(options?: ApiRequestInit): string {
 export function isRetryableGetTransportError(
   error: unknown,
   method: string,
-  externalSignal?: AbortSignal
+  externalSignal?: AbortSignal,
+  idempotent = false
 ): boolean {
-  if (method !== 'GET') return false;
+  if (method !== 'GET' && !idempotent) return false;
   if (externalSignal?.aborted) return false;
   if (error instanceof RequestTimeoutError) return true;
   if (error instanceof ApiClientError && error.code === 'client_timeout') return true;
@@ -196,6 +208,11 @@ export function isRetryableGetTransportError(
 function toTransportApiError(error: unknown): never {
   if (error instanceof RequestTimeoutError) {
     throw new ApiClientError('请求超时，请检查网络后重试', 0, 'client_timeout');
+  }
+  // fetch 在连接中途被断开（弱网、WebView 切前后台）时按浏览器实现抛不同的 TypeError
+  // （Chrome "Failed to fetch"、Safari "Load failed" 等），原样抛出会在 UI 上露出英文底层报错。
+  if (error instanceof TypeError) {
+    throw new ApiClientError('网络连接中断，请检查网络后重试', 0, 'network_error');
   }
   throw error;
 }
@@ -249,38 +266,50 @@ async function apiClientOnce<T>(
     queuePriority: _queuePriority,
     onAttempt: _onAttempt,
     transportRetry: _transportRetry,
+    idempotent: _idempotent,
     ...fetchOptions
   } = options ?? {};
-  const res = await timedFetch(
+  return timedFetch(
     url,
     { ...fetchOptions, headers },
-    { requestId, timeoutMs: timeoutMs ?? resolveTimeoutMs(path) }
+    {
+      requestId,
+      timeoutMs: timeoutMs ?? resolveTimeoutMs(path),
+      // The timer must start before acquiring a slot, including on retries.
+      priority: resolveRequestPriority(path, resolveMethod(options), options?.queuePriority),
+      onDispatch: () => {
+        if (timing) timing.dispatchedAt = performance.now();
+      },
+    },
+    async (res) => {
+      if (timing) {
+        timing.headersAt = performance.now();
+        timing.status = res.status;
+        timing.upstreamMs = proxyUpstreamDuration(res.headers.get('Server-Timing'));
+      }
+      const json = (await res.json().catch((error: unknown) => {
+        // Abort must reach timedFetch so an active body deadline remains a real timeout.
+        if (options?.signal?.aborted || (error instanceof Error && error.name === 'AbortError'))
+          throw error;
+        return null;
+      })) as ApiResponse<T> | null;
+
+      if (!res.ok) {
+        log.error(`Error ${res.status} for ${url}:`, json);
+        recordFailedRequest(requestId, path, resolveMethod(options), res.status);
+        throw toApiClientError(res.status, json);
+      }
+
+      if (!json) throw new Error('API response is empty');
+      if (!json.success) throw new Error(json.error.message);
+      return json.data;
+    }
   ).catch((error: unknown) => {
-    recordFailedRequest(requestId, path, resolveMethod(options), 0);
+    if (!(error instanceof ApiClientError))
+      recordFailedRequest(requestId, path, resolveMethod(options), 0);
     // 保留 RequestTimeoutError，供外层决定是否对 GET 再试一次。
     throw error;
   });
-  if (timing) {
-    timing.headersAt = performance.now();
-    timing.status = res.status;
-  }
-  const json = (await res.json().catch(() => null)) as ApiResponse<T> | null;
-
-  if (!res.ok) {
-    log.error(`Error ${res.status} for ${url}:`, json);
-    recordFailedRequest(requestId, path, resolveMethod(options), res.status);
-    throw toApiClientError(res.status, json);
-  }
-
-  if (!json) {
-    throw new Error('API response is empty');
-  }
-
-  if (!json.success) {
-    throw new Error(json.error.message);
-  }
-
-  return json.data;
 }
 
 /**
@@ -291,9 +320,9 @@ async function apiClientOnce<T>(
  */
 export async function apiClient<T>(path: string, options?: ApiRequestInit): Promise<T> {
   const method = resolveMethod(options);
-  const priority = resolveRequestPriority(path, method, options?.queuePriority);
+  const idempotent = method === 'GET' || options?.idempotent === true;
   const maxAttempts =
-    method === 'GET' && options?.transportRetry !== false ? 1 + GET_TRANSPORT_RETRY_MAX : 1;
+    idempotent && options?.transportRetry !== false ? 1 + GET_TRANSPORT_RETRY_MAX : 1;
   const signal = options?.signal ?? undefined;
   const observe = shouldObserveApiTiming(path);
   const startedAt = observe ? performance.now() : 0;
@@ -317,10 +346,7 @@ export async function apiClient<T>(path: string, options?: ApiRequestInit): Prom
           }
         }
         try {
-          const result = await withRequestSlot(priority, signal, () => {
-            if (timing) timing.dispatchedAt = performance.now();
-            return apiClientOnce<T>(path, options, timing);
-          });
+          const result = await apiClientOnce<T>(path, options, timing);
           if (timing) timing.outcome = 'ok';
           return result;
         } catch (error) {
@@ -346,11 +372,14 @@ export async function apiClient<T>(path: string, options?: ApiRequestInit): Prom
             ? signal.reason
             : new DOMException('Aborted', 'AbortError');
         }
-        if (attempt >= maxAttempts || !isRetryableGetTransportError(error, method, signal)) {
+        if (
+          attempt >= maxAttempts ||
+          !isRetryableGetTransportError(error, method, signal, idempotent)
+        ) {
           toTransportApiError(error);
         }
         const delayMs = retryDelayMs();
-        log.warn(`GET transport retry after ${delayMs}ms`, { path, attempt });
+        log.warn(`${method} transport retry after ${delayMs}ms`, { path, attempt });
         await sleep(delayMs, signal);
       }
     }

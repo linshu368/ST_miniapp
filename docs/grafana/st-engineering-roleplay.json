@@ -219,7 +219,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**待 TEST Cloud 接入验证；不是线上验收完成。** 本机已核验固定版本 Faro → Alloy → Loki 的日志字段。Cloud 托管浏览器入口需再核对实际流标签/格式，browser_selector 不得凭空猜测。无数据不等于0次失败。按同环境、版本、入口、网络/平台层比较，成功P50/P95与终态样本量一起看；低样本只观察，不自动排名或作人员考核。默认24h/5min，避免高频长窗查询。\n\n开始/终态按窗口计数，**不是逐请求闭环或全访问覆盖**（无身份关联，窗口边界和丢报可影响结果）。先观察24–48h基线，再审核预算；后台、离页和主动停止单列。\n\n首字是正文或已开启思考进入匹配消息的React commit，不是像素/阅读证明。完整回复另算；首字到达不保证最终成功。聊天入场见页面看板/chat/:id，角色点击反馈不能冒充数据可用。所选型号使用公开目录的有限标识，不含用户/会话/请求身份；平台与上游等待见后端。\n\n**业务首字专项**：默认6秒预算；按用户所选型号统计。无字时间截断率=timed_out/前台已知首字结果，目标1%；成功分布只含截止前交付（正文或已开启思考），不包含整条回复耗时。离页/后台/停止与缺报不当成功。开始、终态是已接收信号的窗口计数，不是精确缺报率；需同时看采集健康。服务端启动兜底、选中兜底与客户端交付是三个不同事实。新专项只读Loki/Metrics，不读Supabase。\n\n**分层比较：** 设备/客户端按Telegram平台归类，不采集具体机型；网络是浏览器估算的有效速度等级，不是Wi-Fi/蜂窝类型。iOS等不支持时为unknown，不能视为弱网。默认全部保留历史缺标签；具体筛选只看对应样本。普通测量取入队时网络；播放窗口取起点，起止不同标mixed，不证明整窗稳定。"
+        "content": "**待 TEST Cloud 接入验证；不是线上验收完成。** 本机已核验固定版本 Faro → Alloy → Loki 的日志字段。Cloud 托管浏览器入口需再核对实际流标签/格式，browser_selector 不得凭空猜测。无数据不等于0次失败。按同环境、版本、入口、网络/平台层比较，成功P50/P95与终态样本量一起看；低样本只观察，不自动排名或作人员考核。默认24h/5min，避免高频长窗查询。\n\n开始/终态按窗口计数，**不是逐请求闭环或全访问覆盖**（无身份关联，窗口边界和丢报可影响结果）。先观察24–48h基线，再审核预算；后台、离页和主动停止单列。\n\n首字是正文或已开启思考进入匹配消息的React commit，不是像素/阅读证明。完整回复另算；首字到达不保证最终成功。聊天入场见页面看板/chat/:id，角色点击反馈不能冒充数据可用。所选型号使用公开目录的有限标识，不含用户/会话/请求身份；平台与上游等待见后端。\n\n**业务首字专项**：默认6秒预算；按用户所选型号统计。无字时间截断率=timed_out/前台已知首字结果，目标1%；成功分布只含截止前交付（正文或已开启思考），不包含整条回复耗时。离页/后台/停止与缺报不当成功。开始、终态是已接收信号的窗口计数，不是精确缺报率；需同时看采集健康。服务端启动兜底、选中兜底与客户端交付是三个不同事实。新专项只读Loki/Metrics，不读Supabase。\n\n**分层比较：** 设备/客户端按Telegram平台归类，不采集具体机型；网络是浏览器估算的有效速度等级，不是Wi-Fi/蜂窝类型。iOS等不支持时为unknown，不能视为弱网。默认全部保留历史缺标签；具体筛选只看对应样本。普通测量取入队时网络；播放窗口取起点，起止不同标mixed，不证明整窗稳定。\n\n**责任归因（2026-11-02 起）**：6秒不再一刀切。只有已建立连接上的传输算用户网络；建连、握手、预检、调用前和上游等待全部算我方，证据不全也算我方。主指标看“我方责任超时率”，用户实际等待仍看点击到首token P50/P95。"
       },
       "fieldConfig": {
         "defaults": {},
@@ -601,6 +601,162 @@
           "datasource": {
             "type": "prometheus",
             "uid": "grafanacloud-prom"
+          }
+        }
+      ]
+    },
+    {
+      "id": 107,
+      "title": "我方责任超时率",
+      "type": "stat",
+      "description": "实际等待减去用户传输耗时后仍达到总预算，或服务端超时、证据不全。建连、预检、调用前、上游等待全部计入。这是主指标。",
+      "datasource": {
+        "type": "loki",
+        "uid": "grafanacloud-logs"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 30,
+        "w": 6,
+        "h": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "noValue": "—"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "graphMode": "none",
+        "colorMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          },
+          "expr": "(sum (count_over_time(${browser_selector:raw} |= \"st_roleplay_delay\" | logfmt | event_data_tg_platform=~\"$tg_platform\" | event_data_net_type=~\"$net_type\" | kind=\"event\" | event_name=\"st_roleplay_delay\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_stage=\"first_token\" | event_data_delay_attribution=\"ours\" [$__range])) or vector(0)) / sum (count_over_time(${browser_selector:raw} |= \"st_roleplay_delay\" | logfmt | event_data_tg_platform=~\"$tg_platform\" | event_data_net_type=~\"$net_type\" | kind=\"event\" | event_name=\"st_roleplay_delay\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_stage=\"first_token\" [$__range]))",
+          "legendFormat": "",
+          "editorMode": "code",
+          "queryType": "instant"
+        }
+      ]
+    },
+    {
+      "id": 108,
+      "title": "判定为用户网络的占比",
+      "type": "stat",
+      "description": "实际等待超预算，但扣掉已建立连接上的传输后在预算内。排除量必须与主指标一起看，不得隐藏。",
+      "datasource": {
+        "type": "loki",
+        "uid": "grafanacloud-logs"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 30,
+        "w": 6,
+        "h": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "noValue": "—"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "graphMode": "none",
+        "colorMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          },
+          "expr": "(sum (count_over_time(${browser_selector:raw} |= \"st_roleplay_delay\" | logfmt | event_data_tg_platform=~\"$tg_platform\" | event_data_net_type=~\"$net_type\" | kind=\"event\" | event_name=\"st_roleplay_delay\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_stage=\"first_token\" | event_data_delay_attribution=\"user_network\" [$__range])) or vector(0)) / sum (count_over_time(${browser_selector:raw} |= \"st_roleplay_delay\" | logfmt | event_data_tg_platform=~\"$tg_platform\" | event_data_net_type=~\"$net_type\" | kind=\"event\" | event_name=\"st_roleplay_delay\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | event_data_measurement_version=\"$measurement_version\" | event_data_stage=\"first_token\" [$__range]))",
+          "legendFormat": "",
+          "editorMode": "code",
+          "queryType": "instant"
+        }
+      ]
+    },
+    {
+      "id": 109,
+      "title": "网络开销分解 P50 / P95",
+      "type": "timeseries",
+      "description": "network_overhead=点击到收到start减服务端已用时间；network_setup=建连与排队（我方可优化，始终计入我方）；network_path=已建立连接上的传输（用户网络）。",
+      "gridPos": {
+        "x": 12,
+        "y": 30,
+        "w": 12,
+        "h": 5
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "grafanacloud-logs"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "noValue": "—"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": ["lastNotNull"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "quantile_over_time(0.5, ${browser_selector:raw} |= \"st_roleplay_network\" | logfmt | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | kind=\"measurement\" | type=\"st_roleplay_network\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_stage)",
+          "legendFormat": "{{context_stage}} P50",
+          "queryType": "range",
+          "instant": false,
+          "range": true,
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "quantile_over_time(0.95, ${browser_selector:raw} |= \"st_roleplay_network\" | logfmt | context_tg_platform=~\"$tg_platform\" | context_net_type=~\"$net_type\" | kind=\"measurement\" | type=\"st_roleplay_network\" | app_name=\"st-miniapp\" | app_environment=\"$environment\" | app_version=~\"$release\" | context_measurement_version=\"$measurement_version\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (context_stage)",
+          "legendFormat": "{{context_stage}} P95",
+          "queryType": "range",
+          "instant": false,
+          "range": true,
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
           }
         }
       ]

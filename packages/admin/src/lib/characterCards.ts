@@ -1,5 +1,5 @@
-import type { CharacterCard } from './adminApi';
-import type { CharacterLayoutValue } from './adminApi';
+import type { CharacterCard } from '@miniapp/admin-client';
+import type { CharacterLayoutValue } from '@miniapp/admin-client';
 
 export function normalizeCharacterTags(value: unknown): string[] {
   if (!Array.isArray(value)) return [];

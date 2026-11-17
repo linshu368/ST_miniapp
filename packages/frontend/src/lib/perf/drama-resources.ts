@@ -4,6 +4,7 @@ import {
   type DramaResourceTiming,
 } from '@miniapp/shared';
 import type { DramaPlaybackTiming } from './drama-timing';
+import { parseDramaStreamOrigin } from '@/lib/drama-stream-origin';
 
 const finite = (n: number) => Number.isFinite(n);
 const round = (n: number) => Math.round(n * 10) / 10;
@@ -67,11 +68,142 @@ export function mediaResourceFields(
   };
 }
 
+/**
+ * Stream 的子清单与分片 URL 和主清单不同，只按 URL 精确匹配会漏掉它们；同一时刻只有一个播放源，
+ * 所以 Stream 源接收同域名的全部请求并按路径分类。其余源仍只认精确 URL。
+ */
+export function mediaRequestMatcher(
+  source: string
+): (name: string) => { kind?: DramaResourceTiming['kind'] } | undefined {
+  const origin = parseDramaStreamOrigin(source);
+  if (!origin) return (name) => (name === source ? {} : undefined);
+  return (name) => {
+    if (name === source) return { kind: 'manifest' };
+    if (!name.startsWith(`${origin}/`)) return undefined;
+    const path = name.slice(origin.length).split(/[?#]/, 1)[0] ?? '';
+    return { kind: path.endsWith('.m3u8') ? 'playlist' : 'segment' };
+  };
+}
+
+/** Same-source overlapping requests are candidates, not a mapping from byte ranges to target frames.
+ * Keep negative starts for requests already in flight when the seek was committed.
+ * Stream 的子清单和分片 URL 与主清单不同，沿用起播的 mediaRequestMatcher 按签名前缀收，并只上报 kind。 */
+export function observeSeekResources(
+  source: string,
+  startedAt: number,
+  sourceAt: number,
+  onTail: (network: DramaNetworkTiming) => void
+) {
+  const entries: DramaResourceTiming[] = [];
+  const seen = new Set<string>();
+  const match = mediaRequestMatcher(source);
+  let supported = supports('resource');
+  let truncated = false;
+  let closed = false;
+  let final = false;
+  let changedAfterFinal = false;
+  let observer: PerformanceObserver | undefined;
+  let tail: ReturnType<typeof setTimeout> | undefined;
+  let endAt: number | undefined;
+  const snapshot = (reason?: DramaNetworkTiming['closed']): DramaNetworkTiming => ({
+    status: !supported
+      ? 'unsupported'
+      : !entries.length
+        ? 'no_entry'
+        : entries.some((entry) => entry.visibility === 'detailed')
+          ? 'available'
+          : 'limited',
+    entries: entries.map((entry) => ({ ...entry })),
+    truncated,
+    closed: reason,
+  });
+  const accept = (resources: PerformanceEntry[]) => {
+    if (closed) return;
+    for (const resource of resources) {
+      const entry = resource as PerformanceResourceTiming;
+      if (
+        entry.entryType !== 'resource' ||
+        entry.startTime < sourceAt ||
+        entry.responseEnd < startedAt ||
+        (endAt !== undefined && entry.startTime > endAt)
+      )
+        continue;
+      const matched = match(entry.name);
+      if (!matched) continue;
+      // 视频/音频分片可能并行且时间相同，key 必须含请求名才不会互相吃掉；key 只留在内存，不上报。
+      const key = `${entry.name}|${entry.startTime}|${entry.responseEnd}`;
+      if (seen.has(key)) continue;
+      if (entries.length >= DRAMA_TIMING_MAX_RESOURCES) {
+        if (final && !truncated) changedAfterFinal = true;
+        truncated = true;
+        continue;
+      }
+      const fields = mediaResourceFields(entry, startedAt);
+      if (fields) {
+        seen.add(key);
+        entries.push(matched.kind ? { ...fields, kind: matched.kind } : fields);
+        if (final) changedAfterFinal = true;
+      }
+    }
+  };
+  const drain = () => {
+    try {
+      if (observer) accept(observer.takeRecords());
+    } catch {
+      /* optional */
+    }
+  };
+  const release = () => {
+    if (closed) return;
+    drain();
+    closed = true;
+    clearTimeout(tail);
+    try {
+      observer?.disconnect();
+    } catch {
+      /* native reader */
+    }
+  };
+  if (supported) {
+    try {
+      observer = new PerformanceObserver((list) => accept(list.getEntries()));
+      observer.observe({ type: 'resource', buffered: true });
+      accept(performance.getEntriesByType('resource'));
+    } catch {
+      supported = false;
+      release();
+    }
+  }
+  return {
+    snapshot: () => {
+      drain();
+      return snapshot();
+    },
+    release,
+    finish: (allowTail: boolean, endedAt: number) => {
+      if (final) return;
+      final = true;
+      endAt = endedAt;
+      drain();
+      if (!allowTail || !supported || closed) {
+        release();
+        return;
+      }
+      // An incomplete media response may produce its timing entry after playback resumes.
+      tail = setTimeout(() => {
+        release();
+        if (changedAfterFinal) onTail(snapshot('terminal_tail'));
+      }, 5_000);
+    },
+  };
+}
+
 /** Passive observation only: no probe requests, fetch interception, or global buffer clearing. */
 export function observeDramaResources(source: string, timing: DramaPlaybackTiming): () => void {
   const entries: DramaResourceTiming[] = [];
   const seen = new Set<string>();
   const sourceAt = timing.marks.source_set ?? timing.startedAt;
+  const match = mediaRequestMatcher(source);
   let truncated = false;
   let disposed = false;
   let changedAfterFinal = false;
@@ -96,12 +228,9 @@ export function observeDramaResources(source: string, timing: DramaPlaybackTimin
     if (disposed) return;
     for (const resource of resources) {
       // Same URL reused by a later src generation must not steal an earlier request.
-      if (
-        resource.entryType !== 'resource' ||
-        resource.name !== source ||
-        resource.startTime < sourceAt
-      )
-        continue;
+      if (resource.entryType !== 'resource' || resource.startTime < sourceAt) continue;
+      const matched = match(resource.name);
+      if (!matched) continue;
       const entry = resource as PerformanceResourceTiming;
       const key = `${entry.startTime}/${entry.responseEnd}/${entry.duration}`;
       if (seen.has(key)) continue;
@@ -113,7 +242,7 @@ export function observeDramaResources(source: string, timing: DramaPlaybackTimin
       const fields = mediaResourceFields(entry, timing.startedAt);
       if (!fields) continue;
       seen.add(key);
-      entries.push(fields);
+      entries.push(matched.kind ? { ...fields, kind: matched.kind } : fields);
       if (timing.outcome) changedAfterFinal = true;
     }
     timing.networkTiming(snapshot());

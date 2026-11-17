@@ -10,7 +10,7 @@ import { ApiClientError } from '@/lib/api/client';
 import { useNotificationDetailQuery } from '@/lib/api/notifications';
 import { useVipStatusQuery } from '@/lib/api/vip';
 import { useTelegramBackButton } from '@/lib/telegram';
-import { formatMessageTime } from '@/lib/utils/notifications';
+import { formatMessageTime, characterWishNotificationPath } from '@/lib/utils/notifications';
 import {
   supportsVipRenewal,
   vipExpiryImpactCopy,
@@ -36,10 +36,12 @@ export default function NotificationDetailPage() {
   );
   const vip = useVipStatusQuery();
   const notification = detail.data?.notification;
+  const wishPath = notification ? characterWishNotificationPath(notification) : null;
   const showRenew = notification ? supportsVipRenewal(notification) : false;
   const impact = vipExpiryImpactCopy(vip.data?.benefits);
   const missing = isMissingNotification(detail.error);
-  const expiryWindow = notification ? vipExpiryDisplayWindow(vip.data ?? null, notification) : null;
+  const expiryWindow =
+    showRenew && notification ? vipExpiryDisplayWindow(vip.data ?? null, notification) : null;
 
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col bg-background text-foreground">
@@ -69,7 +71,7 @@ export default function NotificationDetailPage() {
         </div>
       ) : detail.isError || !notification ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
-          <p className="text-sm text-muted-foreground">消息暂时无法加载</p>
+          <p className="text-sm text-muted-foreground">消息没加载出来，再试一次吧</p>
           <Button variant="outline" size="sm" onClick={() => void detail.refetch()}>
             <RefreshCw className="mr-1 h-3.5 w-3.5" aria-hidden />
             重新加载
@@ -96,7 +98,7 @@ export default function NotificationDetailPage() {
                 {vip.isLoading ? (
                   <p className="text-sm text-muted-foreground">正在读取当前会员状态</p>
                 ) : vip.isError || !vip.data ? (
-                  <p className="text-sm text-muted-foreground">当前会员状态暂时无法确认</p>
+                  <p className="text-sm text-muted-foreground">会员状态没查到，稍后再看看</p>
                 ) : (
                   <MembershipRows
                     title={
@@ -124,16 +126,16 @@ export default function NotificationDetailPage() {
             )}
           </article>
 
-          {showRenew ? (
+          {showRenew || wishPath ? (
             <div
               className="fixed inset-x-0 bottom-0 mx-auto w-full max-w-md border-t border-border bg-background/95 px-4 py-3 backdrop-blur-md"
               style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.75rem)' }}
             >
               <Button
                 className="h-11 w-full rounded-xl bg-primary font-bold text-primary-foreground"
-                onClick={() => router.push('/vip')}
+                onClick={() => router.push(wishPath ?? '/vip')}
               >
-                立即续费
+                {wishPath ? '去看看回应的角色' : '立即续费'}
               </Button>
             </div>
           ) : null}

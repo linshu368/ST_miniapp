@@ -77,8 +77,6 @@ function severityFromRuleName(name: string | undefined): AlertEvaluation['severi
   return match?.[1]?.toUpperCase() as AlertEvaluation['severity'] | undefined;
 }
 
-const PERF_EVENTS = new Set(['page_stall', 'action_stall', 'slow_request', 'asset_load_failed']);
-
 /** 只允许安全字符，避免把用户 ID、URL 或任意字符串带进告警身份。 */
 function slug(value: string, fallback: string): string {
   const cleaned = value

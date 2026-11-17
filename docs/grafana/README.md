@@ -2,9 +2,9 @@
 
 页面体验、角色扮演和短剧工程性能的独立遥测实施见 [工程性能验收](engineering-performance.md)。四张 `st-engineering-*.json` 是待 TEST Cloud 接入验证的源文件，不表示已上线；既有经营/首字/短剧看板和业务事实保持不变。
 
-短剧启动使用独立新看板 `st-drama-playback`（`drama-playback.json`），不混入经营/首token看板。新路径需独立迁移和显式启用，发布、历史导入与真机步骤见 [操作说明](drama-playback-runbook.md)。仓库JSON存在不表示线上已导入。
+短剧启动诊断看 `st-engineering-drama`（Loki）。旧 SQL 看板 `st-drama-playback` 及其表、视图、函数已于 2026-11-17 删除（数据库重组 2b）。Loki 链路的发布与真机步骤见 [操作说明](drama-playback-runbook.md)。
 
-运营入口收拢为两张看板：`st-model-overview`（经营核心）与 `chat-first-token-manual`（客户端首字交付）。其他4个旧链接保留迁移说明，不再执行查询/变量查询。旧表和历史缓存保留，11个旧全历史cron退出。不要再整体启用旧缓存任务。
+运营入口是 `st-model-overview`（经营核心）；首字与兜底监控在 `st-engineering-roleplay`。`chat-first-token-manual` 只剩迁移指引，原 4 个"已合并"看板和 TextBot 系列已于 2026-11-04 删除。旧表和历史缓存保留，11个旧全历史cron退出。不要再整体启用旧缓存任务。
 
 ## 口径与开销
 
@@ -35,7 +35,7 @@ TEST与生产依次通过Database Migration workflow执行单文件。迁移只�
 
 发布前置：`20261027_recoverable_chat_delivery.sql` 后执行 `20261028_client_committed_first_token.sql`，然后 Backend、Frontend、看板。新迁移只替换既有函数、复用既有字段与权限；无历史回填、新表、索引、cron、连接或客户端轮询。5分钟刷新、现有只读连接限制保持不变。数据库保留 first_token_visible_ms 字段名兼容旧版，其含义由 measurement_method 决定。
 
-本地验证复用 `bash scripts/test-first-token-fallback-local.sh`：PG17 实跑重复迁移、一次终态/回执无UPDATE、早收晚提交免扣并释放预留、离页与主动停止计费、历史隔离、缺报统计及全部导出看板SQL。仓库修改不代表远端已发布；回退应用/旧版本筛选即可，保留已写v4事实，数据库问题使用forward-fix。
+本地验证复用 `bash scripts/test-first-token-fallback-local.sh`：PG17 实跑重复迁移、一次终态/回执无UPDATE、早收晚提交免扣并释放预留（2026-11-02 起由服务端交付计费取代，见 first-token-fallback.md）、离页与主动停止计费、历史隔离、缺报统计及全部导出看板SQL。仓库修改不代表远端已发布；回退应用/旧版本筛选即可，保留已写v4事实，数据库问题使用forward-fix。
 
 ## 首发与兜底竞争策略（2026-10-28）
 

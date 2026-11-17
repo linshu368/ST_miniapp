@@ -16,24 +16,28 @@ const QUERY_TIMEOUT_MS = 5000;
  * 视频只提供可播/封面就绪和首次上架时间，不参与剧级文字回退。
  */
 const LIST_COLUMNS =
-  'id,title,tags,description,ai_results!ai_results_drama_fkey(title,tags,description),videos(id,episode,message_id,created_at,object_path,cover_path,pipeline_tasks(stage,status))';
+  'id,title,tags,description,ai_results!ai_results_drama_fkey(title,tags,description),videos(id,episode,message_id,created_at,object_path,storage_provider,stream_uid,stream_ready_at,cover_path,pipeline_tasks(stage,status))';
 
 /** 详情页额外读取各集自己的原始展示字段 */
 const DETAIL_COLUMNS =
-  'id,title,tags,description,ai_results!ai_results_drama_fkey(title,tags,description),videos(id,episode,message_id,created_at,object_path,cover_path,original_title,original_tags,original_description,pipeline_tasks(stage,status))';
+  'id,title,tags,description,ai_results!ai_results_drama_fkey(title,tags,description),videos(id,episode,message_id,created_at,object_path,storage_provider,stream_uid,stream_ready_at,cover_path,original_title,original_tags,original_description,pipeline_tasks(stage,status))';
 
 /**
  * /play 只需要定位对象和判定就绪，不取任何展示字段。
  * 这是首帧关键路径，payload 越小越好。
  */
 const PLAY_COLUMNS =
-  'id,title,videos(id,episode,message_id,object_path,pipeline_tasks(stage,status))';
+  'id,title,videos(id,episode,message_id,object_path,storage_provider,stream_uid,stream_ready_at,pipeline_tasks(stage,status))';
 
-/** repository 对外的视频投影。object_path 仅供签名使用，不得出现在响应里 */
+/** repository 对外的视频投影。object_path / stream_uid 仅供签名使用，不得出现在响应里 */
 export interface VideoRow {
   id: string;
   episode: string | null;
   object_path: string | null;
+  /** 'supabase' = 存量原文件（object_path）；'cloudflare_stream' = Stream（stream_uid，object_path 为空） */
+  storage_provider: 'supabase' | 'cloudflare_stream';
+  stream_uid: string | null;
+  stream_ready_at: string | null;
   /** pipeline_tasks 中 stage='upload' 的 status 是否为 succeeded */
   upload_succeeded: boolean;
   cover_path: string | null;
@@ -63,6 +67,9 @@ interface RawVideo {
   episode: string | null;
   message_id: number;
   object_path: string | null;
+  storage_provider?: string | null;
+  stream_uid?: string | null;
+  stream_ready_at?: string | null;
   cover_path?: string | null;
   original_title?: string | null;
   original_tags?: string[] | null;
@@ -93,6 +100,11 @@ function toVideoRow(raw: RawVideo): VideoRow {
     id: raw.id,
     episode: raw.episode,
     object_path: raw.object_path,
+    // 009 之前的库没有这一列；缺失即存量 supabase 行
+    storage_provider:
+      raw.storage_provider === 'cloudflare_stream' ? 'cloudflare_stream' : 'supabase',
+    stream_uid: raw.stream_uid ?? null,
+    stream_ready_at: raw.stream_ready_at ?? null,
     upload_succeeded: upload?.status === 'succeeded',
     cover_path: raw.cover_path ?? null,
     cover_upload_succeeded: coverUpload?.status === 'succeeded',

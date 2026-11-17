@@ -57,7 +57,9 @@ export default function SpendingPage() {
         ) : query.isError && items.length === 0 ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 py-20 text-center">
             <RefreshCw className="h-8 w-8 text-muted-foreground/60" aria-hidden />
-            <p className="text-[13px] font-medium text-muted-foreground">消费明细暂时无法加载</p>
+            <p className="text-[13px] font-medium text-muted-foreground">
+              消费明细没加载出来，再试一次吧
+            </p>
             <Button
               variant="outline"
               size="sm"
@@ -83,7 +85,7 @@ function EmptyState() {
       <div className="mb-2 rounded-full bg-card p-4">
         <ReceiptText className="h-8 w-8 opacity-50" aria-hidden />
       </div>
-      <p className="text-[13px] font-medium tracking-wide">暂无星尘消耗记录</p>
+      <p className="text-[13px] font-medium tracking-wide">还没有星尘消耗，放心聊</p>
     </div>
   );
 }

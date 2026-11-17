@@ -6,6 +6,7 @@ import type { ChatMessage, SetMessageLikeData } from '@miniapp/shared';
 import { useSetMessageLikeMutation } from '@/lib/api/conversations';
 import { useHaptic } from '@/lib/telegram/hooks';
 import { cn } from '@/lib/utils';
+import { ChatMessageDislikeButton } from './chat-message-dislike-button';
 
 export interface MessageLikeFeedback {
   sessionId: string;
@@ -58,22 +59,28 @@ export function ChatMessageLikeButton({
   };
 
   return (
-    <button
-      type="button"
-      aria-label={liked ? '取消点赞' : '点赞这条回复'}
-      title={`赞第 ${message.turn_index} 轮回复`}
-      aria-pressed={liked}
-      aria-busy={pending}
-      disabled={pending}
-      onClick={() => void toggle()}
-      className={cn(
-        'inline-flex size-12 shrink-0 items-center justify-center rounded-full transition-colors active:bg-primary/10 motion-safe:active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait',
-        liked
-          ? 'text-primary hover:bg-primary/10'
-          : 'text-muted-foreground/70 hover:bg-secondary hover:text-foreground'
-      )}
-    >
-      <ThumbsUp className={cn('size-4', liked ? 'fill-primary/25' : 'fill-none')} aria-hidden />
-    </button>
+    <>
+      <button
+        type="button"
+        aria-label={liked ? '取消点赞' : '点赞这条回复'}
+        title={`赞第 ${message.turn_index} 轮回复`}
+        aria-pressed={liked}
+        aria-busy={pending}
+        disabled={pending}
+        onClick={() => void toggle()}
+        className={cn(
+          'inline-flex size-11 shrink-0 items-center justify-center rounded-full transition-colors active:bg-primary/10 motion-safe:active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait',
+          liked
+            ? 'text-primary hover:bg-primary/10'
+            : 'text-muted-foreground/70 hover:bg-secondary hover:text-foreground'
+        )}
+      >
+        <ThumbsUp className={cn('size-4', liked ? 'fill-primary/25' : 'fill-none')} aria-hidden />
+      </button>
+      <ChatMessageDislikeButton
+        key={`${message.id}:${message.edit_version ?? 0}`}
+        message={message}
+      />
+    </>
   );
 }

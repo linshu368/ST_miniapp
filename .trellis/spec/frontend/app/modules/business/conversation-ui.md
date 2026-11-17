@@ -5,17 +5,21 @@ scope: frontend
 category: business
 status: active
 owners: [frontend]
-last_verified_task: .trellis/tasks/11-02-chat-message-edit-delete/
-last_verified_at: 2026-11-02
+last_verified_task: .trellis/tasks/11-16-miniapp-content-path-optimization/
+last_verified_at: 2026-11-16
 ---
 
 # 用户会话、语音与图片界面
 
 ## 职责与边界
 
-负责会话列表、流式聊天、重生成、模型/回复偏好（长度、回复模块、自定义要求）、语音、角色回复图片交互展示，以及图片生成用户侧 PostHog 事件。不拥有 PostHog SDK 初始化、后端图片生成或支付结算。
+负责会话列表、流式聊天、重生成、模型/回复偏好（长度、回复模块、自定义要求）、语音、角色回复图片交互展示。不拥有后端图片生成或支付结算。
 
 ## 当前状态
+
+2026-11-11 本地候选：ChatGuide 在 entry enrich 阶段动态加载，兼容缺少 Array.findLast 的旧 WebView；根错误边界以原地址 reload 恢复。原始签名 initData 在清理启动参数前从 SDK/内存/Telegram host/URL 捕获，不持久化、不重建身份，后端仍逐请求验证；身份失效提示从 Telegram 重开，不自动重发消息或清除已有会话。历史完整性、滚动与草稿沿用既有 consumer，`@chat-history` 验证连续 200 轮与旧 WebView。详见 `docs/chat-history-read-performance.md`，真实 Android/iOS 性能仍待正式验收。
+
+本地候选（尚未发布，2026-11-06）：新注册用户在第一次角色对话前看到轻量输入提示，可一键展开真实回复偏好抽屉，已展开时不关闭，不更改任何偏好；成功回复后才展示可主动展开的编辑/分支介绍。编辑只打开既有铅笔入口，分支只打开既有更多菜单，教程不直接提交修改或创建会话；说明采用短句，仅点明改话控制后续、最近10轮、已有后续不重写、分支保留原对话。输入、编辑、生成时收起自动提示。所有用户可在工具箱的“玩法小贴士”重看说明。引导不进入消息历史，原滚动行为抽到 use-chat-message-scroll，按原语义保留。
 
 本地候选（尚未发布）：最近十轮（一问一答为一轮）的用户消息和角色正文可就地编辑、单条删除。消息底部的44px更多按钮收纳分支及删除；角色回复的编辑以独立铅笔按钮与重生成/点赞置于右侧；用户消息的编辑仍在更多菜单。删除原位出现“确认吗？/取消/确认”，不增加第二层弹窗。编辑时收起普通输入框但保留草稿，取消/失败不丢内容，视口缩小后保存仍可点。角色附加富文本不进入编辑框。旧轮次仅保留分支，开场白无修改。
 
@@ -27,30 +31,41 @@ last_verified_at: 2026-11-02
 
 历史文本按服务端 A/B 轮次规则继承，前端不拼接或持久化副本。继承消息仍可继续分支，最后一条仍可重生成；它们不提供语音/图片生成操作，付费媒体留在原会话，新产生的回复恢复正常媒体操作。加载更早消息保持阅读位置，分页结果按会话和请求身份隔离，不得串入新分支。
 
-`/chats` 现在是角色模块内部的「对话」栏目，全局导航为「角色 / 剧场 / 中央首页 / 影像 / 我的」。发现与对话使用固定顶部栏目；角色收藏迁入发现的已收藏筛选，对话列表保留跨角色历史、置顶、重命名和删除确认，管理操作收进各行菜单并提供请求中/失败反馈。
+`/chats` 是底栏一级入口「对话」（2026-11-12），也是有对话记录用户的冷启动落地页（2026-11-13）；首要任务是接着聊，列表第一行即最近对话。对话列表保留跨角色历史、置顶、重命名和删除确认，单条管理收进各行「⋯」（新增「移到分组」）。
+
+**对话页整理（2026-11-13，任务 `11-13-chat-folders`）**：杂而不乱——列表永远是主体；对话少于 6 个且没有分组时不出现任何工具，页面与原来一致。工具只有一排「搜索 + 按角色 + 管理」和一排分组标签（全部 · 各分组 · 未分组 · ＋新建，只有当前项用香槟金）；选中分组时下方一行「名称 · 数量 ⋯」，改名/删除收进「⋯」。
+
+- 分组：用户自建、服务端保存、一段对话最多一个分组；删分组不删对话。新建后停在空分组，空状态给「挑选对话放进来」（进入带目标的管理模式，底部只有「放进「X」」）。
+- 按角色：默认开启，关闭记在本机（localStorage）；同角色多段收成叠卡，点卡片直接接着聊该角色最新一段，「N 段」展开每段（完整标题 + 时间 · 轮数）。置顶角色在前（任一段置顶即整组置顶），其余按最新一段时间。整组「⋯」只有「置顶这个角色」「整组移到分组」，改名/删除留在单段。归拢行不标分组小标签（段落可能分散）。归拢接口 404/503 时退回平铺。
+- 返回原处：从对话页点开一段再返回，恢复分组、搜索、展开的角色，刚点开的那一行停到可视区并闪金边（共享 `components/ui/return-flash.tsx`，剧场同用）。
+- 搜索：按对话名、不限分组，停 300ms 再查；搜索与管理模式一律平铺。
+- 管理：独立模式，顶部「已选 N 个 · 全选 · 完成」与快速筛选（只聊了一两句 / 30 天没聊，结果自动全选），底部操作条覆盖底栏（移到分组 / 置顶 / 删除，删除二次确认）。
+- 翻页：每页 20，底部哨兵提前 600px 加载；快捷筛选一页 100。标签栏数量随列表首页（`summary=1`）同一请求返回，分组增改删先就地改缓存再刷新。
 
 角色详情按角色查历史，明确区分继续已有会话、显式新对话与首次开始；读取失败显示重试，不默认创建。`chatEntryPath` 仅携带 `from=discover|conversations`，旧链接和非法来源回退发现；会话创建、切换及 returnTo 保留来源，聊天顶部、Telegram BackButton 和 Splash 退出共同回来源栏目。语音和充值继续复用含会话身份的 returnTo；失效会话清理旧创建结果后沿既有重建路径恢复。
 
 文字回复等待 8 秒保留提示；本地或服务端 streaming 均展示“取消本次回复”，终态确认后在最新未成功回复下显示“重新生成”，复用原输入。客户端读流/取消/刷新均有限等待；旧请求身份隔离、消息去重防止切会话或取消后旧状态覆盖新回复。Telegram/移动设备验收仍未执行。
 
-自研聊天 UI、SSE、工具箱、语音和图片交互代码已落地。图片只保留普通“看看TA”入口，支持免费描述、普通图片免费次数/付费预览、确认/自定义、生成中、失败、余额不足、ready 卡和 Dialog 预览；高级图按钮与 VIP 锁定交互已删除。图片 telemetry 继续只记录安全摘要。
+自研聊天 UI、SSE、工具箱、语音和图片交互代码已落地。图片只保留普通“看看TA”入口，支持免费描述、普通图片免费次数/付费预览、确认/自定义、生成中、失败、余额不足、ready 卡和 Dialog 预览；高级图按钮与 VIP 锁定交互已删除。历史 PostHog 图片事件上报已在2026-11-04移除，不能用于当前使用量分析。
 
 ## 入口与调用者
 
-用户从角色模块的 `/characters` 发现、详情或接着聊，以及 `/chats` 对话列表进入 `/chat/[characterId]`；`/chats` 原有链接继续有效，不再是独立全局底栏入口。
+用户从 `/characters` 发现、详情，以及 `/chats` 对话页（平铺行、按角色叠卡与展开段落）进入 `/chat/[characterId]`。有对话记录的用户冷启动直接落在 `/chats`。
 
 ## 涉及文件
 
 | 路径                                                                 | 职责                                            |
 | -------------------------------------------------------------------- | ----------------------------------------------- |
 | `packages/frontend/src/app/chat/[characterId]/page.tsx`              | 会话页、图片 footer 接线、`chat_image` 充值来源 |
-| `packages/frontend/src/app/(main)/chats/page.tsx`                    | 模块内对话列表与管理菜单                        |
-| `packages/frontend/src/components/roleplay/`                         | 固定模块栏目与接着聊卡片                        |
+| `packages/frontend/src/app/(main)/chats/page.tsx`                    | 对话页壳                                        |
+| `packages/frontend/src/components/conversations/`                    | 对话页列表、分组、按角色、管理与启动骨架        |
+| `packages/frontend/src/lib/api/conversation-folders.ts`              | 对话页分页/归拢/分组/批量 hooks                 |
+| `packages/frontend/src/lib/landing-route.ts`                         | 冷启动落地页 cookie                             |
+| `packages/frontend/src/components/roleplay/`                         | 固定模块栏目                                    |
 | `packages/frontend/src/lib/chat-entry.ts`                            | 会话入口与语音路径构造                          |
 | `packages/frontend/src/lib/roleplay-navigation.ts`                   | 有限来源、最后栏目和位置恢复                    |
 | `packages/frontend/src/components/chat/`                             | 聊天组件                                        |
 | `packages/frontend/src/components/chat/chat-message-image.tsx`       | 图片面板、结果卡、预览与图片事件调用            |
-| `packages/frontend/src/lib/image-generation/telemetry.ts`            | 图片生成前端事件 helper 与去重                  |
 | `packages/frontend/src/lib/api/conversation-stream.ts`               | SSE client                                      |
 | `packages/frontend/src/hooks/use-chat-session.ts`                    | 会话生命周期                                    |
 | `packages/frontend/src/hooks/use-conversation-turn.ts`               | 发送/重生成编排                                 |
@@ -65,11 +80,11 @@ last_verified_at: 2026-11-02
 
 ## 数据、契约与外部依赖
 
-消费 shared conversations/voice/images/telemetry 契约和 Backend HTTP/SSE。图片 telemetry helper 只接收业务 ID、attempt 摘要、状态和错误码；实际保存图片仍使用 URL 调 Telegram 下载，但 URL 不进入事件属性。
+消费 shared conversations/voice/images 契约和 Backend HTTP/SSE。实际保存图片使用 URL 调 Telegram 下载；历史图片 PostHog helper 已移除。
 
 ## 关键节点与约束
 
-服务端状态走 React Query；组件不直接 fetch；图片组件只持有局部面板状态，不接收内部英文 prompt，不把中文 prompt、图片 URL、Storage path、provider request id 或完整错误 body 送入 PostHog。
+服务端状态走 React Query；组件不直接 fetch；图片组件只持有局部面板状态，不接收内部英文 prompt，不把中文 prompt、图片 URL、Storage path、provider request id 或完整错误 body 写入日志或上报。
 
 ## 验证方式
 
@@ -83,7 +98,7 @@ last_verified_at: 2026-11-02
 
 角色模块本轮仅做本地界面与交互预览，`/tmp` 示例服务不进入产品提交，也不能作为真实 Backend、计费、Telegram WebView 或生产数据验收证据。新增导航的真实环境联调与原有移动端验收仍需单独执行。
 
-图片 runtime 开关默认关闭；图 1~9、Telegram 长按保存、safe area/软键盘、PostHog Preview 真机事件和真实后端联调仍待 test 环境人工验收。
+图片 runtime 开关默认关闭；图 1~9、Telegram 长按保存、safe area/软键盘、真实后端联调仍待 test 环境人工验收。
 
 ## 关联模块
 
@@ -126,7 +141,7 @@ last_verified_at: 2026-11-02
 
 ### 3. Contracts
 
-默认on，用户级设备存储只存bool，生成中锁定当次值。独立reasoning事件不进入ChatMessage.content/cache；仅当前页面按session/id/revision保留最近12条、每条64Ki字符；切会话清空，离页/刷新不持久化。消息标题为`thinking`；输入区使用Atom原子轨道图标+“深度思考”胶囊，无问号/说明弹窗，aria-pressed和开关操作名称保留。真实思考到达展开，正文开始/终态自动收起一次，手动重新展开后不被正文delta抢状态。纯转义文字/低对比度/160px内部滚动，PostHog/Sentry遮罩，无思考则“正在准备回复”。
+默认on，用户级设备存储只存bool，生成中锁定当次值。独立reasoning事件不进入ChatMessage.content/cache；仅当前页面按session/id/revision保留最近12条、每条64Ki字符；切会话清空，离页/刷新不持久化。消息标题为`thinking`；输入区使用Atom原子轨道图标+“深度思考”胶囊，无问号/说明弹窗，aria-pressed和开关操作名称保留。真实思考到达展开，正文开始/终态自动收起一次，手动重新展开后不被正文delta抢状态。纯转义文字/低对比度/160px内部滚动，Sentry遮罩，无思考则“正在准备回复”。
 
 ### 4. Validation & Error Matrix
 
@@ -183,3 +198,31 @@ send/regenerate 携带可选 `first_token_measurement`；后端通过既有 begi
 ## 同角色多会话抽屉（2026-11-02，本地候选）
 
 ChatSessionDrawer将空/角色同名/明确默认分支名以created_at显示区分，保留自定义名称，用CSS限制展示行数，不回写title或修改共享七字helper。当前标记、已有preview/最近时间和branch.source_turn_index帮助辨认；每行44px更多入口展开重命名、置顶、删除，复用既有query/mutation及删除确认。SessionRenameField可传展示placeholder且输入法组合Enter不提前保存。无新增接口/数据库/生成调用。chat-sessions场景复用chat.spec验证390/320宽度及原分支流程。
+
+## 首字等待提示与连接保温（2026-11-02）
+
+客户端首字计时到点只显示软提示“网络有点慢，正在接收回复”，不提供重试；服务端错误或持久化失败终态才提示重试，成功后提示消失。计时结果只进遥测，不影响计费。
+
+聊天页用 `useApiConnectionWarmth` 保持到 API 源站的连接：页面可见且 5 分钟内有操作时请求 `/health`，经 `warmApiConnection` 节流到最多每 25 秒一次。它不走 `apiClient`，不带自定义头，失败静默。
+
+Wrong：用客户端时钟宣布失败，或把保温做成无上限轮询。Correct：服务端拥有失败判定，保温随用户活动有界运行。
+
+新手创作计数（2026-11-06，本地候选）：conversation-stream在成功新发送done后为请求开始时账号写入本地引导记录，最多10个session/request标记，同请求重复done不重复；重生成、停止、失败均不计。计数仅控制产品提示，不涉及账务/服务端total_round，未入组与过期账号不写；聊天中不展示创作邀请。
+
+## Cold-start optimization (2026-11-16, local candidate)
+
+Root `/` is internally rewritten to the existing static chats/characters route using mutually exclusive landing-cookie rules. Providers resolves the initial shell from the actual layout tree; after capturing Telegram launch context and sanitizing sensitive URL parameters, it canonicalizes the already-loaded path with Next-integrated native History, then mounts business readers. HTML early-ready handles the root alias without an extra document request. Private API data and identity are never cached by this routing rule.
+
+Visible conversation list/groups first pages explicitly use critical request priority; subsequent pages remain normal, with existing signals, deadlines and retry limits. The groups timing dimension is conversation_groups, distinct from historical conversation_detail. Finite telemetry schema lives in grafana-schema.ts; the native HTML ready transport is independently serialized to keep the startup function within its complexity limit.
+
+Existing startup/launch/API tests and local @startup/@navigation/@chats flows verify mechanisms; production Android/iOS P95 remains a post-release requirement. Implementation/research and rollback: `.trellis/tasks/11-16-miniapp-cold-start-optimization/`.
+
+## Content-path optimization (2026-11-16, local candidate)
+
+Chats reads public character summaries through passive Query observers and existing validated persisted catalogue/head snapshots. It does not dispatch a cold full catalogue. Missing details wait for entry enrichment/navigation quiet and use normal priority, with 60-second row freshness in the existing viewer/session-scoped memory key. Version-bound sessions never use current public summaries as their authoritative character. Existing storage keys/24h TTL remain; invalid/expired/future snapshots are removed, denied storage uses memory. No private list/message/balance/permission/payment persistence was added.
+
+Groups read deadlines and stable dependency timeout codes use existing 503/folders_unavailable; programming/permission errors retain failure semantics. Optional summary is capped at 250ms for groups and flat, with SDK cancellation and a bounded consumer race; no duplicate full list read. Groups transport retry is disabled so the agreed fallback is not delayed by another RPC. Cancellation does not prove PostgreSQL has stopped.
+
+Automatic recommendation entry uses a 1500ms shared deadline; manual refresh/undo and manual fallback open remain 5000ms. Existing hedge, batch ownership, viewer guards and retry UUIDs remain. Request transport/manual mutation and conversation row data hooks are separated without new framework or dependencies.
+
+User explicitly excludes launching local UI verification. Unit/contract/type/build/static checks and remaining production gates are recorded in `.trellis/tasks/11-16-miniapp-content-path-optimization/verification.md`; real Telegram interactions/P95 and conditional prewarming/CDN changes remain post-release work.

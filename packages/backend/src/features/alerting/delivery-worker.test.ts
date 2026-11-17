@@ -118,6 +118,26 @@ describe('AlertDeliveryWorker', () => {
     expect(sink.deliver).toHaveBeenCalledTimes(1);
   });
 
+  it.each([
+    ['firing', 'P1'],
+    ['recovered', 'P1'],
+  ] as const)('calls Feishu for a generation %s card', async (transition, severity) => {
+    state.row = {
+      id: 1n,
+      notification_key: `production:generation:venice:rate_limited:model:${transition}:x`,
+      payload: {
+        severity,
+        transition,
+        incident_fingerprint: 'production:generation:venice:rate_limited:model',
+      },
+      attempt_count: 1,
+    };
+    const sink = { deliver: vi.fn().mockResolvedValue({ kind: 'succeeded' }) };
+    const worker = new AlertDeliveryWorker(sink as never, log, async () => config);
+    await expect(worker.deliverOne()).resolves.toBe('sent');
+    expect(sink.deliver).toHaveBeenCalledTimes(1);
+  });
+
   it('does not claim or call Feishu while notifications are disabled', async () => {
     const sink = { deliver: vi.fn() };
     const worker = new AlertDeliveryWorker(sink as never, log, async () => ({
@@ -125,6 +145,44 @@ describe('AlertDeliveryWorker', () => {
       notifications_enabled: false,
     }));
     await expect(worker.deliverOne()).resolves.toBe('disabled');
+    expect(sink.deliver).not.toHaveBeenCalled();
+  });
+
+  it.each(['firing', 'recovered'] as const)(
+    'delivers the dedicated payment probe %s notification',
+    async (transition) => {
+      state.row = {
+        id: 1n,
+        attempt_count: 1,
+        notification_key: `test:payment:upstream-create-probe:alipay:${transition}:x`,
+        payload: {
+          severity: 'P1',
+          transition,
+          incident_fingerprint: 'test:payment:upstream-create-probe:alipay',
+        },
+      };
+      const sink = { deliver: vi.fn().mockResolvedValue({ kind: 'succeeded' }) };
+      expect(
+        await new AlertDeliveryWorker(sink as never, log, async () => config).deliverOne()
+      ).toBe('sent');
+      expect(sink.deliver).toHaveBeenCalledOnce();
+    }
+  );
+
+  it.each([
+    'test:payment:upstream-create-probe:all',
+    'test:payment:upstream-create-probe:alipay:extra',
+  ])('does not broaden the probe exception to %s', async (fingerprint) => {
+    state.row = {
+      id: 1n,
+      attempt_count: 1,
+      notification_key: 'x',
+      payload: { severity: 'P1', incident_fingerprint: fingerprint },
+    };
+    const sink = { deliver: vi.fn() };
+    expect(await new AlertDeliveryWorker(sink as never, log, async () => config).deliverOne()).toBe(
+      'abandoned'
+    );
     expect(sink.deliver).not.toHaveBeenCalled();
   });
 });

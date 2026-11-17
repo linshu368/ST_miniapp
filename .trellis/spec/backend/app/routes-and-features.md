@@ -1,5 +1,11 @@
 # Backend 路由、功能域与调用链
 
+## 会话分组只读降级（2026-11-16，本地候选）
+
+ChatFolderRepository.listGroups仅对自己的3秒读期限、SQL57014/PostgREST PGRST003或原有功能不可用码映射folders_unavailable/503；已知编程/权限错误即使与期限同时到达也保留错误语义，外部AbortError未触发自身期限时不降级。映射只限只读groups，不扩散到写入未知结果。
+
+groups及flat的可选folder_summary共用250ms独立预算，向SDK透传取消信号且以Promise race约束不合作传输；失败/超时仅省略summary，迟到结果不改主体、不另读全量列表。HTTP取消不能证明数据库端已立即停止；正式环境另核对实际容量和SQL时长。日志复用conversation.groups.unavailable、conversation.folder.summary_failed及HTTP根终态，保留安全{err}/cause和request/trace关联，不记录私人列表。
+
 ## 路由插件清单
 
 | 文件                                       | 功能与依赖                                                                                       |
@@ -9,7 +15,7 @@
 | `voice.ts` / `models.ts`                   | 语音配置、会话音频、语音生成；模型档位/目录/选择                                                 |
 | `settings.ts` / `wallet.ts`                | 用户昵称头像偏好；余额、流水、签到                                                               |
 | `payment.ts` / `vip.ts`                    | 套餐、下单、订单查询/回调；VIP 状态与入口角标                                                    |
-| `telemetry.ts`                             | 受鉴权 replay context；支付终态事件在 feature 层异步发送                                         |
+| `telemetry.ts`                             | 短剧播放耗时/诊断报告接收；负责鉴权、校验和日志摘要，不承载 replay context                       |
 | `notifications.ts` / `support.ts`          | 消息列表、单条详情和按 id 已读；MiniApp 客服会话、消息、已读/未读                                |
 | `invite.ts` / `growth.ts` / `community.ts` | 邀请绑定/统计；渠道归因；官方群验证与奖励                                                        |
 | `bot.ts`                                   | Telegram webhook、start 与回复回流                                                               |
@@ -26,9 +32,9 @@
 
 ### 对话 SSE
 
-1. 鉴权并校验 session ownership；并行解析模型、角色、偏好、昵称、平台规则和窗口配置。
-2. 原子 RPC 在会话锁内分配 `turn_index`/revision、执行上下文泄洪并写 `streaming` 行。
-3. history 展开窗口，engine 组 prompt 并保存快照。
+1. 鉴权并校验 session ownership；并行解析模型、角色、偏好、昵称、平台规则和记忆配置；最新会话记忆单独并行读取（用到时最多再等 50ms，失败不注入）。
+2. 原子 RPC 在会话锁内分配 `turn_index`/revision 并写 `streaming` 行（不推进窗口）。
+3. 按正文字数水位与记忆覆盖决定窗口（先压缩后截断，写入不等待），engine 组 prompt（记忆作为紧跟角色卡的独立 system 消息）并保存快照。
 4. generation 做免费额度、定价、余额预检和上游请求。
 5. 上游确认 2xx 后才提交 SSE headers，发送 `start → delta* → done`；此前错误保持 HTTP JSON，流中错误发 `error`。
 6. 客户端断开后按既有策略 drain，终态同步写入，usage/扣费由即时记录和 sync job 收敛。

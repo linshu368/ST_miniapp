@@ -1,6 +1,6 @@
 'use client';
 
-import { feedbackAfterPaint, startAction } from '@/lib/perf/action-tracker';
+import { startAction } from '@/lib/perf/action-tracker';
 import { usePageReady } from '@/lib/perf/page-ready';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
@@ -8,8 +8,6 @@ import { ChevronLeft, Loader2 } from 'lucide-react';
 import { MAX_CUSTOM_VOICE_CHARS } from '@miniapp/shared';
 
 import { Button } from '@/components/ui/button';
-import { useChatReplayBinding } from '@/hooks/use-chat-session';
-import { useModelCatalogQuery } from '@/lib/api/models';
 import {
   toVoiceMap,
   useGenerateVoiceMutation,
@@ -38,12 +36,6 @@ export default function CustomVoicePage() {
   const characterId = params.characterId;
   const messageId = params.messageId;
   const sessionId = searchParams.get('session');
-  const modelCatalogQuery = useModelCatalogQuery({ characterId });
-  useChatReplayBinding({
-    characterId,
-    conversationSessionId: sessionId,
-    selectedModelId: modelCatalogQuery.data?.selected_model_id ?? null,
-  });
   // returnTo 缺失或不是站内相对路径时回落到会话入口，不拿它当跳转目标
   const returnTo = searchParams.get('returnTo');
   const backTo =
@@ -117,15 +109,12 @@ export default function CustomVoicePage() {
         },
         onError: (mutationError) => {
           const code = (mutationError as { code?: string }).code;
-          if (
-            redirectToRechargeFromError(router, mutationError, returnToForRecharge, 'custom_voice')
-          )
-            return;
+          if (redirectToRechargeFromError(router, mutationError, returnToForRecharge)) return;
           setError(
             code === 'CONFLICT'
               ? '这条回复正在生成语音，请稍后再试'
               : code === 'VOICE_UNAVAILABLE'
-                ? '语音功能暂不可用'
+                ? '语音暂时用不了'
                 : (mutationError as Error).message || '语音生成没能开始，请重试'
           );
         },

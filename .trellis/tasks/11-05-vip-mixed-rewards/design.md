@@ -1,0 +1,5 @@
+# 设计与评审
+
+复用检索：vip-strategy shared schema、readVipStrategy、quoteTieredCheckinReward、MiniappWalletRepository、grant_bonus_credits、claim_daily_checkin、complete_payment_order、PaymentProductSnapshot、VipStrategyView、vip presentation及现有PG billing harness。配置改为向后兼容的签到number或{bonus_credits,main_credits}，计划增可选bonus_main_credits（旧值默认为0）。主钱包可用于高级模型，实际赠送经账务事务而非前端加余额。
+订单与发放审计在billing原表增加通用额度快照，缺省0兼容历史。新增billing.grant_vip_reward仅为VIP签到/开卡的原子混合发放：专项复用grant_bonus_credits，通用更新主钱包，并在同一事务内补齐刚创建流水的main_delta和最终余额；保留每次奖励一条流水以及VIP订单唯一键；不改变paid_amount。调用者原有账户/订单锁与幂等边界不变，失败同事务回滚。miniapp_features签到记录为一次领取，app_core runtime为发布权威，admin草稿和发布沿原机制。新增函数无PUBLIC权限，保留替换函数ACL/owner；无新表/索引/队列/定时任务、无业务回填。
+发布顺序：隔离PG测试→测试迁移→dev→生产向后兼容迁移→应用→CLI两项配置发布并复读。恢复先还原运营配置（已有订单仍按快照），代码需保留混合奖励能力直至在途订单完成；不得丢弃已发余额或返写旧订单。参数和接口超时沿现有实现，不增加读请求，发放新增主钱包短更新及同事务补齐流水。外部支付网关保持原有幂等与验证路径。

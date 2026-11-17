@@ -40,7 +40,7 @@ import {
   toApiClientError,
 } from './client';
 import { __resetRequestConcurrencyForTests, withRequestSlot } from './request-concurrency';
-import { reportConversationFirstToken } from './conversations';
+import { reportConversationFirstToken } from './first-token-reports';
 import { __resetFirstTokenReportsForTests } from './first-token-reports';
 import type { ReportFirstTokenRequest } from '@miniapp/shared';
 import type { ApiAttemptTiming } from './client';
@@ -218,9 +218,11 @@ describe('apiClient GET transport retry', () => {
   it('retains the first GET failure when a single-attempt experiment opts out', async () => {
     const fetchMock = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'));
     vi.stubGlobal('fetch', fetchMock);
+    // TypeError 经 toTransportApiError 转成中文友好文案（见 client.ts），断言的是
+    // "没有重试"这件事本身（只调用一次 fetch），不是原始浏览器报错文本有没有保留。
     await expect(
       apiClient('/api/transport-retry-fixture', { transportRetry: false })
-    ).rejects.toThrow('Failed to fetch');
+    ).rejects.toThrow('网络连接中断');
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(fetchMock.mock.calls[0]?.[1]).not.toHaveProperty('transportRetry');
   });
@@ -281,6 +283,26 @@ describe('apiClient GET transport retry', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it('retries a declared idempotent POST once, and never leaks the option into fetch', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ success: true, data: { ok: true } }), { status: 200 })
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const pending = apiClient<{ ok: boolean }>('/api/dramas/play', {
+      method: 'POST',
+      body: '{}',
+      idempotent: true,
+    });
+    await vi.advanceTimersByTimeAsync(600);
+    await expect(pending).resolves.toEqual({ ok: true });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[0]?.[1]).not.toHaveProperty('idempotent');
+  });
+
   it('includes queue wait, response headers and body parsing without leaking observation options into fetch', async () => {
     __resetRequestConcurrencyForTests(1);
     let release!: () => void;
@@ -297,7 +319,10 @@ describe('apiClient GET transport retry', () => {
       'fetch',
       vi.fn((_url: string, init: RequestInit) => {
         expect(init).not.toHaveProperty('onAttempt');
-        const response = new Response('{}', { status: 200 });
+        const response = new Response('{}', {
+          status: 200,
+          headers: { 'Server-Timing': 'backend;dur=420.5' },
+        });
         vi.spyOn(response, 'json').mockImplementation(
           () =>
             new Promise((resolve) =>
@@ -323,6 +348,7 @@ describe('apiClient GET transport retry', () => {
       endedAt: 3000,
       outcome: 'ok',
       status: 200,
+      upstreamMs: 420.5,
     });
     expect(engineering.measurement).toHaveBeenCalledWith(
       'api.total',
@@ -332,6 +358,11 @@ describe('apiClient GET transport retry', () => {
     expect(engineering.measurement).toHaveBeenCalledWith(
       'api.body',
       1500,
+      expect.objectContaining({ attempt: 1 })
+    );
+    expect(engineering.measurement).toHaveBeenCalledWith(
+      'api.upstream',
+      420.5,
       expect.objectContaining({ attempt: 1 })
     );
   });
@@ -422,6 +453,79 @@ describe('apiClient GET transport retry', () => {
     expect(fetch).not.toHaveBeenCalled();
     release();
     await blocker;
+  });
+
+  it('expires queued attempts without dispatching them later or leaking a slot', async () => {
+    __resetRequestConcurrencyForTests(1);
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    let release!: () => void;
+    const blocker = withRequestSlot(
+      'normal',
+      undefined,
+      () =>
+        new Promise<void>((done) => {
+          release = done;
+        })
+    );
+    await Promise.resolve();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response(JSON.stringify({ success: true, data: { ok: true } })));
+    vi.stubGlobal('fetch', fetchMock);
+    const attempts: ApiAttemptTiming[] = [];
+    const pending = apiClient('/api/dramas', {
+      timeoutMs: 1000,
+      onAttempt: (timing) => attempts.push(timing),
+    });
+    const rejected = expect(pending).rejects.toMatchObject({ code: 'client_timeout' });
+    await vi.advanceTimersByTimeAsync(2200);
+    await rejected;
+    expect(attempts).toHaveLength(2);
+    expect(attempts.every((timing) => timing.dispatchedAt === undefined)).toBe(true);
+    expect(attempts.every((timing) => timing.outcome === 'timeout')).toBe(true);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(engineering.event).toHaveBeenCalledWith(
+      'api.terminal',
+      expect.objectContaining({ outcome: 'timeout', attempts: 2 })
+    );
+    release();
+    await blocker;
+    await expect(apiClient('/api/dramas')).resolves.toEqual({ ok: true });
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('uses the remaining attempt time after queueing instead of restarting the deadline', async () => {
+    __resetRequestConcurrencyForTests(1);
+    let release!: () => void;
+    const blocker = withRequestSlot(
+      'normal',
+      undefined,
+      () =>
+        new Promise<void>((done) => {
+          release = done;
+        })
+    );
+    await Promise.resolve();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => new Promise<Response>(() => {}))
+    );
+    const attempts: ApiAttemptTiming[] = [];
+    const pending = apiClient('/api/dramas', {
+      timeoutMs: 1000,
+      transportRetry: false,
+      onAttempt: (timing) => attempts.push(timing),
+    });
+    const rejected = expect(pending).rejects.toMatchObject({ code: 'client_timeout' });
+    await vi.advanceTimersByTimeAsync(800);
+    release();
+    await blocker;
+    await vi.advanceTimersByTimeAsync(200);
+    await rejected;
+    expect(attempts[0]).toMatchObject({ queuedAt: 0, dispatchedAt: 800, endedAt: 1000 });
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it('cancels transport retry backoff without dispatching another request', async () => {

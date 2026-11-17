@@ -4,6 +4,10 @@ node_modules/
 .next-ui-preview/
 .next-ui-test/
 /output/playwright/
+/output/performance/
+/output/build-snapshots/
+/output/cold-start-*.log
+.next-perf/
 dist/
 .env
 .env.local
@@ -14,8 +18,8 @@ dist/
 .cursor/mcp.json
 
 *.tsbuildinfo
+__pycache__/
 
-ops/git/.env
 .DS_Store
 
 # Prisma schema 本地备份,不入库

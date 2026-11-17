@@ -28,7 +28,7 @@ export async function storeMessageVoice(input: {
     cacheControl: '31536000',
     upsert: true,
   });
-  if (error) throw new Error(`保存语音失败：${error.message}`);
+  if (error) throw new Error(`保存语音失败：${error.message}`, { cause: error });
 
   const { data } = client.storage.from(VOICE_BUCKET).getPublicUrl(path);
   return { path, url: data.publicUrl };
@@ -36,5 +36,5 @@ export async function storeMessageVoice(input: {
 
 export async function deleteMessageVoice(path: string): Promise<void> {
   const { error } = await getSupabaseClient().storage.from(VOICE_BUCKET).remove([path]);
-  if (error) throw new Error(`删除语音失败：${error.message}`);
+  if (error) throw new Error(`删除语音失败：${error.message}`, { cause: error });
 }

@@ -11,6 +11,8 @@ import type { FirstTokenAttemptStore } from './first-token-fallback.js';
 import type { LlmBillingSnapshot } from '../../infrastructure/repositories/ConversationHistoryRepository.js';
 import type { SseTapResult } from './upstream.js';
 import type { RequestLogger } from '../../lib/logger.js';
+import type { BalancePrecheck, BillingPlan } from './precheck.js';
+import type { SurplusReasoningResolution } from './surplus-reasoning.js';
 
 /**
  * 生成出口的日志入口。对话链路传请求内的 requestLogger（带 reqId），
@@ -39,11 +41,25 @@ export interface ResolvedModel {
   billingContext?: ModelBillingContext;
   firstTokenPolicy?: {
     fallbackModelId?: string;
+    fallbackProviders?: [string, string];
     timeoutMs: number;
     fallbackTimeoutMs?: number;
     deadlineMs: number;
     timeoutRateTarget: number;
     catalogVersion: number;
+  };
+  /**
+   * 畅聊免费模型。只作用于 Surplus 主调用：请求带折扣底线头和供应商白名单；
+   * 兜底（OpenRouter 1017）不受影响。
+   */
+  freeZone?: {
+    candidateId: string;
+    providers: string[];
+    minDiscountPct: number;
+    /** 同时发几路主请求（1–3），先出字的胜出 */
+    parallelRequests?: number;
+    /** 派不出去率上限（%），超过立刻下架；null 不检查 */
+    maxUnroutablePct?: number | null;
   };
 }
 
@@ -64,6 +80,14 @@ export interface GenerationPreparation {
   routingPreferences: Array<OpenRouterProviderPreferences | null>;
   creatorUserId: string | null;
   quotaLimit?: number;
+  /** Capability evidence only; unsupported supplier effort values are never invented. */
+  surplusReasoning?: SurplusReasoningResolution;
+  /** Paid models need no quota decision. One request-local read can overlap prompt assembly. */
+  paidAdmission?: {
+    userId: string;
+    plan: BillingPlan;
+    balance: Promise<BalancePrecheck>;
+  };
 }
 
 export interface GenerationRequest {
@@ -89,6 +113,8 @@ export interface GenerationRequest {
   stream: boolean;
   /** Defaults on; exposed reasoning is progress and never saved as reply content. */
   thinkingEnabled?: boolean;
+  /** 思考过程是否显示给用户并算作出字；缺省跟 thinkingEnabled（见 reasoning-display.ts） */
+  revealReasoning?: boolean;
   /** Explicit user cancellation and the conversation deadline; disconnects do not abort. */
   signal?: AbortSignal;
   /**

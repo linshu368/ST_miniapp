@@ -1,0 +1,63 @@
+{
+  "id": "lobby-landing-nav-order",
+  "name": "lobby-landing-nav-order",
+  "title": "首屏改为角色大厅并调整底栏顺序",
+  "description": "冷启动落地页从视频流改为角色大厅；视频流挪到 /watch；底栏改为 放映|剧场|秘境(中央)|创作|我的，悬浮岛样式。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "frontend",
+  "priority": "P2",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-04",
+  "completedAt": null,
+  "branch": "fix/small-fixes-1104",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "frontend.infrastructure.client-ui-foundation",
+        "frontend.business.drama-experience",
+        "frontend.business.character-lobby"
+      ]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": [
+        "冷启动入口 /（307 → /characters，角色大厅成为落地页）",
+        "/watch（原 / 视频流，仅换路径）",
+        "底栏五个主路由切换"
+      ],
+      "apis": [],
+      "android": {
+        "page_p95_baseline_ms": 2477,
+        "page_p95_target_ms": 2477
+      },
+      "ios": {
+        "page_p95_baseline_ms": 2990,
+        "page_p95_target_ms": 2990
+      },
+      "api": {
+        "p95_baseline_ms": null,
+        "p95_target_ms": null
+      },
+      "measurement": {
+        "source": "Grafana Faro st_page_ready（生产，2026-10-28~11-04，outcome=ready）：冷启动 / document 安卓 P95 2477ms（668次）、iOS 2990ms（185次）；/characters document 仅安卓7次、iOS1次，无可用基线；/characters SPA 安卓 P95 2375ms（925次）、iOS 2112ms（203次）。",
+        "window": "发布前后各两个完整 24 小时窗；按平台、版本隔离，比较冷启动 document 落地页（发布后为 /characters）P95 与发布前 / 的 P95。单组有效样本少于 100 时标为低样本并延长观察。"
+      },
+      "notes": "目标是冷启动落地页 P95 不劣于当前视频流落地页（安卓 2477ms、iOS 2990ms），跳转耗时计入 page.ready。iOS 样本较少（185），需延长观察。不新增、不修改接口，api 字段为 null；冷启动关键请求由 /api/dramas 换成大厅首屏请求，接口本身不变，其 P95 由 lobby-fast-entry 任务跟踪。/watch 仅换路径，按发布前 / 的 SPA P95（安卓 49ms、iOS 19ms）对照不退化。"
+    }
+  }
+}

@@ -18,11 +18,13 @@ export * from './api/vip-strategy';
 export * from './api/settings';
 export * from './api/instruction-slot-rules';
 export * from './api/word-count-tiers';
+export * from './api/story-memory';
 export * from './api/lobby-ranking-params';
-export * from './api/lobby-pinned-characters';
+export * from './api/lobby-recommendation';
 export * from './api/wallet';
 export * from './api/feature-free-trials';
 export * from './api/conversations';
+export * from './api/conversation-folders';
 export * from './api/generation-observations';
 export * from './api/voice';
 export * from './api/images';
@@ -31,11 +33,13 @@ export * from './api/video-plaza';
 export * from './api/growth';
 export * from './api/invite';
 export * from './api/community';
+export * from './api/growth-prompts';
 export * from './api/models';
+export * from './api/free-zone.js';
+export * from './api/free-zone-admin.js';
 export * from './api/provider-routing';
 export * from './api/notifications';
 export * from './api/support';
-export * from './api/telemetry';
 export * from './api/drama';
 export * from './api/drama-timing';
 export * from './api/text-postprocess';
@@ -64,7 +68,16 @@ export * from './user-placeholder';
 export * from './rich-reply-protocol';
 export * from './telemetry/sanitize';
 export * from './api/reply-style-options';
+export * from './api/drive-modes';
 
 export * from './api/creator-characters';
 
 export * from './api/creator-tools.js';
+
+export * from './api/creator-analytics.js';
+
+export * from './api/character-wishes.js';
+export * from './api/admin-cli-session';
+export * from './api/chat-feedback';
+export * from './api/backend-errors';
+export * from './api/drama-survey';
