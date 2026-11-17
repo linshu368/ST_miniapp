@@ -84,6 +84,17 @@ test('dropping a table still registered as active warns; moving does not', () =>
   assert.equal(messages('drop table if exists app_core.users cascade;').length, 0);
 });
 
+test('set schema followed by rename in the same file counts as one move', () => {
+  const ok = `
+    alter table app_core.alert_delivery_attempts set schema ops;
+    alter table ops.alert_delivery_attempts rename to alert_deliveries;
+  `;
+  assert.deepEqual(messages(ok), []);
+  const bad = messages('alter table app_core.alert_delivery_attempts set schema ops;');
+  assert.equal(bad.length, 1);
+  assert.match(bad[0], /ops\.alert_delivery_attempts/);
+});
+
 test('comments are ignored and line numbers point at the statement', () => {
   const warnings = lintSql(
     '-- alter table experience.chat_history add column x_ms int;\n\nalter table experience.chat_sessions add column y_ms int;',
