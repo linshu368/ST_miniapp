@@ -154,17 +154,15 @@ export async function runConversationTurn(
   const preparation =
     input.preparationTiming ?? createConversationPreparationTiming(requestStartedAt);
   preparation.enter('settings');
+  // 其余字段（昵称、记忆配置与读取、用户角色设定）只用于组 prompt，原样交给 loadTurnPrompt。
   const {
     chargeId,
     model,
     userConfig,
-    displayName,
     instructions,
-    storyMemoryConfig,
-    storyMemory,
-    characterSettings,
     executionPreparation,
     preparationSignal,
+    ...promptContext
   } = await prepareTurnInputs({
     sessionId: session.id,
     characterId: session.character_id,
@@ -241,11 +239,8 @@ export async function runConversationTurn(
       turn,
       signal: control.signal,
       userConfig,
-      displayName,
       instructions: instructions.instructions,
-      storyMemoryConfig,
-      storyMemory,
-      characterSettings,
+      ...promptContext,
       log,
     });
 
