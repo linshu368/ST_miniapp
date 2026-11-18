@@ -1,3 +1,4 @@
+import { isStreamPrivateKeyValid } from '../lib/stream-signing.js';
 import { observation } from './observability/runtime.js';
 /**
  * backend / platform / runtime-config.ts
@@ -12,6 +13,34 @@ import { observation } from './observability/runtime.js';
 import { getDomainDb } from '../lib/supabase.js';
 import { z } from 'zod';
 import { config } from './config.js';
+
+/** Plaza reuses the existing drama account/signing material; OAuth is never a runtime credential. */
+export function getVideoStreamConfig() {
+  const signing = getDramaStreamSigningConfig();
+  const { accountId, apiToken } = getCloudflareManagementConfig();
+  if (
+    !signing ||
+    !/^[a-f0-9]{32}$/.test(accountId) ||
+    !apiToken.trim() ||
+    !isStreamPrivateKeyValid(signing.privateKey)
+  )
+    return null;
+  return {
+    ...signing,
+    accountId,
+    apiToken,
+    environment: config.database.target,
+    encodeDeadlineSeconds: 1200,
+  };
+}
+
+/** Reuses the management token already configured locally by the operator. */
+export function getCloudflareManagementConfig() {
+  return {
+    accountId: process.env.CLOUDFLARE_ACCOUNT_ID || '',
+    apiToken: process.env.CLOUDFLARE_API_TOKEN || process.env.VIDEO_STREAM_API_TOKEN || '',
+  };
+}
 
 /** Deployment-only log alerts: disabling does not initialize any database-backed alert policy. */
 export function getLogAlertSettings() {

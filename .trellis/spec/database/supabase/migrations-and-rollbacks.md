@@ -24,6 +24,8 @@ GitHub Actions 操作前再次核对 workflow 版本、目标 environment secret
 
 ## 安全变更模式
 
+- 重建通用钱包函数前检查所有现行调用方的 entry_type 与 ledger CHECK；不能用早期白名单覆盖后续视频扩展。`20261117_media_plaza_video_wallet_entry_guard.sql` 只修复当前函数唯一已知守卫，保留主体、OID、owner/ACL/config与分账策略；未知形状拒绝，不重跑旧完整视频/钱包迁移。隔离验收加载真实 reserve/refund 及当前 bonus-first helper，TEST postflight 只读核对类型/权限，TEST 目录已确认守卫生效但账本缺记录，后续模型402仍是独立阻塞；不能把守卫生效写成视频生成成功。
+
 - managed-key 白名单不得用另一分支的静态名单覆盖当前支持集合；改名包装函数会保留 OID，既有 CHECK 可能仍绑定前置函数，因此必须同时验证 drafts/releases 的实际表达式与 RPC 入口。参考 `20261016_reconcile_image_plaza_managed_config_keys.sql`（MIGRATION，未部署）；保持 validator、专用配置例外和 convalidated，不用删 CHECK 绕过保存错误。
 
 - 破坏性字段采用 expand → 双兼容/回填 → consumer 切换 → contract；不得同次先删后发。

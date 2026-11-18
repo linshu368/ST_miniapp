@@ -1,28 +1,28 @@
 import type { HealthData } from '@miniapp/shared';
 import { ok } from '@miniapp/shared';
 import Fastify, { type FastifyServerOptions } from 'fastify';
-import { requestId } from './platform/observability/context.js';
-import { registerHttpObservation } from './platform/observability/http.js';
-import { observation } from './platform/observability/runtime.js';
-import { startLogAlerts } from './platform/observability/alert-runtime.js';
+import {
+  startFreeZoneCallCostJob,
+  stopFreeZoneCallCostJob,
+} from './features/free-zone/call-costs.js';
+import {
+  startFreeZoneEvaluationJob,
+  stopFreeZoneEvaluationJob,
+} from './features/free-zone/evaluation-job.js';
 import { startChatHistorySyncJob, stopChatHistorySyncJob } from './features/generation/index.js';
 import {
   startImagePlazaGenerationJob,
   stopImagePlazaGenerationJob,
 } from './features/image-plaza/job.js';
+import {
+  startVideoPlazaGenerationJob,
+  stopVideoPlazaGenerationJob,
+} from './features/image-plaza/video-job.js';
 import { startChatImageGenerationJob, stopChatImageGenerationJob } from './features/image/job.js';
-import { shutdownTextPostprocessValidation } from './features/text-postprocess/validate-pool.js';
 import { startStoryMemoryJob, stopStoryMemoryJob } from './features/story-memory/worker.js';
+import { shutdownTextPostprocessValidation } from './features/text-postprocess/validate-pool.js';
 import { registerCors } from './lib/cors.js';
 import { startEngineeringTelemetry } from './lib/engineering-observability.js';
-import {
-  startFreeZoneEvaluationJob,
-  stopFreeZoneEvaluationJob,
-} from './features/free-zone/evaluation-job.js';
-import {
-  startFreeZoneCallCostJob,
-  stopFreeZoneCallCostJob,
-} from './features/free-zone/call-costs.js';
 import {
   startLobbyRankingRefreshJob,
   stopLobbyRankingRefreshJob,
@@ -31,23 +31,27 @@ import { fastifyLoggerOptions } from './lib/logger.js';
 import { registerRequestPerf, startRuntimeMetrics } from './lib/perf-metrics.js';
 import { bindRequestSentryContext } from './lib/sentry.js';
 import { config } from './platform/config.js';
+import { startLogAlerts } from './platform/observability/alert-runtime.js';
+import { requestId } from './platform/observability/context.js';
+import { registerHttpObservation } from './platform/observability/http.js';
+import { observation } from './platform/observability/runtime.js';
 import { getMujianOrigin } from './platform/runtime-config.js';
 import adminCliSessionRoutes from './routes/admin-cli-session.js';
-import adminSupabaseProxyRoutes from './routes/admin-supabase-proxy.js';
 import adminFreeZoneRoutes from './routes/admin-free-zone.js';
+import adminSupabaseProxyRoutes from './routes/admin-supabase-proxy.js';
 import alertRoutes from './routes/alerts.js';
 import botRoutes from './routes/bot.js';
 import characterSocialRoutes from './routes/character-social.js';
 import characterWishRoutes from './routes/character-wishes.js';
 import characterRoutes from './routes/characters.js';
 import chatFeedbackRoutes from './routes/chat-feedback.js';
-import dramaSurveyRoutes from './routes/drama-survey.js';
 import communityRoutes from './routes/community.js';
 import conversationRoutes from './routes/conversations.js';
 import creatorAnalyticsRoutes from './routes/creator-analytics.js';
 import creatorCharacterRoutes from './routes/creator-characters.js';
 import creatorToolsRoutes from './routes/creator-tools.js';
 import dramaInteractionRoutes from './routes/drama-interactions.js';
+import dramaSurveyRoutes from './routes/drama-survey.js';
 import dramaRoutes from './routes/drama.js';
 import favoriteRoutes from './routes/favorites.js';
 import characterPersonaRoutes from './routes/character-persona.js';
@@ -161,6 +165,7 @@ export async function buildApp() {
 
   startChatImageGenerationJob(app.log);
   startImagePlazaGenerationJob(app.log);
+  startVideoPlazaGenerationJob(app.log);
   startStoryMemoryJob(app.log);
   startFreeZoneEvaluationJob(app.log);
   startFreeZoneCallCostJob(app.log);
@@ -173,6 +178,7 @@ export async function buildApp() {
     stopLobbyRankingRefreshJob();
     stopChatImageGenerationJob();
     stopImagePlazaGenerationJob();
+    stopVideoPlazaGenerationJob();
     stopStoryMemoryJob();
     stopFreeZoneEvaluationJob();
     stopFreeZoneCallCostJob();

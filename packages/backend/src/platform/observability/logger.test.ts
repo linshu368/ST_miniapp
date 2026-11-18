@@ -451,3 +451,40 @@ describe('Pino compatibility safety', () => {
     });
   });
 });
+
+it('keeps plaza delivery identity and safe terminal fields in actual Pino JSON', () => {
+  const { log, lines } = captureLogs();
+  const userId = '11111111-1111-4111-8111-111111111111';
+  const attemptId = '22222222-2222-4222-8222-222222222222';
+  withContext(newContext(), () => {
+    bindBusinessContext({
+      business_module: 'image',
+      user_id: userId,
+      attempt_id: attemptId,
+      artifact_id: '33333333-3333-4333-8333-333333333333',
+    });
+    log.error({
+      event: 'operation.terminal',
+      operation: 'video.delivery.encode',
+      provider: 'cloudflare',
+      outcome: 'failed',
+      stage: 'encoding',
+      apiToken: 'fixture-private-token',
+      play_url: 'https://fixture.invalid/private-playback',
+      err: new Error('fixture-private-token'),
+    });
+  });
+  const row = JSON.parse(lines[0]!);
+  expect(row).toMatchObject({
+    business_module: 'image',
+    user_id: userId,
+    attempt_id: attemptId,
+    artifact_id: '33333333-3333-4333-8333-333333333333',
+    provider: 'cloudflare',
+    stage: 'encoding',
+    outcome: 'failed',
+  });
+  expect(row.trace_id).toBeTruthy();
+  expect(lines.join('')).not.toContain('fixture-private-token');
+  expect(lines.join('')).not.toContain('private-playback');
+});

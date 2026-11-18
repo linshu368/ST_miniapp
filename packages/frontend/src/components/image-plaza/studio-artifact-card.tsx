@@ -1,9 +1,11 @@
 'use client';
 
-import { Check, Copy, Download, LoaderCircle, RefreshCcw, Share2 } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { Check, Copy, Download, LoaderCircle, RefreshCcw, Share2, Video } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import type { ImagePlazaArtifact } from '@miniapp/shared';
 import { requestTelegramFileDownload } from '@/lib/telegram/hooks';
+import { useMobilePerformancePolicy } from '@/lib/mobile-performance';
+import { supabasePublicImageSrcSet, supabasePublicImageUrl } from '@/lib/supabase-image';
 
 interface StudioArtifactCardProps {
   artifact: ImagePlazaArtifact;
@@ -14,18 +16,66 @@ interface StudioArtifactCardProps {
   regenerateDisabled: boolean;
   onRefresh: (prompt: string) => void;
   onShare: (artifact: ImagePlazaArtifact) => void;
+  onUseAsVideoReference: (artifact: ImagePlazaArtifact) => void;
+  creatingVideoReference: boolean;
+  videoReferenceDisabled: boolean;
   onNotice: (message: string) => void;
   onLoad?: () => void;
+  onSettled?: (outcome: 'loaded' | 'error') => void;
+  priority?: boolean;
   onUseAsCover?: (artifact: ImagePlazaArtifact) => void;
   selectingCover?: boolean;
 }
 
 export function StudioArtifactCard(props: StudioArtifactCardProps) {
+  const performancePolicy = useMobilePerformancePolicy();
   const sharing = props.sharing === true;
   const savingRef = useRef(false);
   const [saving, setSaving] = useState(false);
   const [saveFeedback, setSaveFeedback] = useState('');
   const [showOriginal, setShowOriginal] = useState(false);
+  const [useOriginalPreview, setUseOriginalPreview] = useState(false);
+  const [imageState, setImageState] = useState<'loading' | 'loaded' | 'error'>('loading');
+  const settled = useRef(false);
+  const widths = performancePolicy.imagePlaza.studioImageWidths;
+  const maxWidth = widths[widths.length - 1] ?? 720;
+  const ratio = {
+    width: props.artifact.width > 0 ? props.artifact.width : 4,
+    height: props.artifact.height > 0 ? props.artifact.height : 5,
+  };
+  const transformedUrl = supabasePublicImageUrl(props.artifact.image_url, {
+    width: maxWidth,
+    height: Math.round((maxWidth * ratio.height) / ratio.width),
+    quality: performancePolicy.imagePlaza.studioImageQuality,
+    resize: 'contain',
+  });
+  const transformedSrcSet = supabasePublicImageSrcSet(props.artifact.image_url, widths, ratio, {
+    quality: performancePolicy.imagePlaza.studioImageQuality,
+    resize: 'contain',
+  });
+  const displayUrl = useOriginalPreview ? props.artifact.image_url : transformedUrl;
+
+  const settle = (outcome: 'loaded' | 'error') => {
+    if (settled.current) return;
+    settled.current = true;
+    props.onSettled?.(outcome);
+  };
+
+  useEffect(() => {
+    settled.current = false;
+    setUseOriginalPreview(false);
+    setImageState('loading');
+  }, [props.artifact.image_url]);
+
+  const handleImageError = () => {
+    if (!useOriginalPreview && transformedUrl !== props.artifact.image_url) {
+      setUseOriginalPreview(true);
+      setImageState('loading');
+      return;
+    }
+    setImageState('error');
+    settle('error');
+  };
 
   const saveImage = async () => {
     if (savingRef.current) return;
@@ -67,16 +117,39 @@ export function StudioArtifactCard(props: StudioArtifactCardProps) {
   return (
     <article>
       <div className="relative flex aspect-[4/5] items-center justify-center overflow-hidden rounded-[1.75rem] border border-border bg-[#151115] shadow-inner">
-        <img
-          src={props.artifact.image_url}
-          alt="生成结果"
-          width={props.artifact.width}
-          height={props.artifact.height}
-          loading="lazy"
-          decoding="async"
-          className={`max-h-full w-full object-contain transition ${sharing ? 'opacity-40' : ''}`}
-          onLoad={props.onLoad}
-        />
+        {imageState === 'loading' ? (
+          <div aria-hidden className="absolute inset-0 animate-pulse bg-muted/50" />
+        ) : null}
+        {imageState !== 'error' ? (
+          <img
+            src={displayUrl}
+            srcSet={useOriginalPreview ? undefined : transformedSrcSet}
+            sizes="(max-width: 640px) calc(100vw - 24px), 50vw"
+            alt="生成结果"
+            width={props.artifact.width}
+            height={props.artifact.height}
+            loading={props.priority ? 'eager' : 'lazy'}
+            fetchPriority={props.priority ? 'high' : 'auto'}
+            decoding="async"
+            className={`max-h-full w-full object-contain transition ${
+              imageState !== 'loaded' ? 'opacity-0' : sharing ? 'opacity-40' : 'opacity-100'
+            }`}
+            onLoad={() => {
+              setImageState('loaded');
+              props.onLoad?.();
+              settle('loaded');
+            }}
+            onError={handleImageError}
+          />
+        ) : (
+          <p
+            role="img"
+            aria-label="生成结果暂不可用"
+            className="px-5 text-sm text-muted-foreground"
+          >
+            图片暂不可用，可稍后重试或打开原图
+          </p>
+        )}
         {sharing ? (
           <div
             role="status"
@@ -115,6 +188,19 @@ export function StudioArtifactCard(props: StudioArtifactCardProps) {
           <RefreshCcw className="size-4" aria-hidden />
         )}
         {props.regenerating ? '正在提交…' : '按当前设置再生成'}
+      </button>
+      <button
+        type="button"
+        disabled={props.videoReferenceDisabled}
+        onClick={() => props.onUseAsVideoReference(props.artifact)}
+        className="mt-2 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-primary/40 bg-primary/5 px-3 text-xs font-semibold text-primary disabled:opacity-50"
+      >
+        {props.creatingVideoReference ? (
+          <LoaderCircle className="size-4 animate-spin" aria-hidden />
+        ) : (
+          <Video className="size-4" aria-hidden />
+        )}
+        {props.creatingVideoReference ? '正在设置…' : '用这张图生成视频'}
       </button>
       <div className="mt-2 grid grid-cols-3 gap-2">
         <ArtifactButton label="复制提示词" onClick={() => void copyPrompt()}>

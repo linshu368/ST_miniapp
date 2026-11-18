@@ -48,3 +48,5 @@ pnpm --filter @miniapp/backend test
 ```
 
 契约变更必须追加所有消费者 typecheck；对话/生成链路运行现有 backend 测试并记录真实上游/SSE 人工回归，已删除的阶段 `mvp:regression` 不再是验证入口。数据库迁移不随部署自动执行，只能按 Supabase spec 的单文件流程操作。
+
+广场视频Stream交付的配置、RPC/鉴权、故障恢复、迁移与日志遵循[具体契约](./video-plaza-stream.md)；本地候选状态与发布证据分别核对。
