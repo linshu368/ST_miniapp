@@ -1,4 +1,5 @@
 import { createServer, type ServerResponse } from 'node:http';
+import { plazaFeedFixture } from './plaza-feed.js';
 import type { InviteBindData } from '@miniapp/shared';
 import { createChatFeedbackFixture } from './chat-feedback.js';
 import { createChatFolderFixture, makeFolderSessionSamples } from './chat-folders.js';
@@ -2364,10 +2365,8 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         return;
       }
       if (path === '/api/image-plaza/feed' && method === 'GET') {
-        const search = url.searchParams.get('search')?.toLowerCase() ?? '';
         ok(res, {
-          items: data.works.filter((item) => item.title.toLowerCase().includes(search)),
-          next_cursor: null,
+          ...plazaFeedFixture(data.works, url, scenario === 'image-masonry'),
           tags: data.imageConfig.tags,
         });
         return;

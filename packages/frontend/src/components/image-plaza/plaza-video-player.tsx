@@ -1,6 +1,8 @@
 'use client';
-import type { VideoPlazaPlayback, VideoPlazaPlaybackObservation } from '@miniapp/shared';
-import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
+import type { VideoPlazaPlayback } from '@miniapp/shared';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { PlazaVideoObserver } from './plaza-video-observer';
+import type { PlazaDimensions } from '@/lib/perf/plaza-metrics';
 import { loadHlsMediaSource } from '@/lib/hls-media-source';
 import {
   useVideoPlazaObservationMutation,
@@ -13,16 +15,18 @@ function usePlazaVideoSource(artifactId: string, playback: VideoPlazaPlayback, a
   const [failed, setFailed] = useState(false);
   const refreshCount = useRef(0);
   const alive = useRef(true);
+  const recovering = useRef(false);
   const { mutateAsync: refreshPlayback } = useVideoPlazaPlaybackMutation(artifactId);
   const position = useRef({ seconds: 0, playing: false });
   const recover = useCallback(async () => {
-    if (!alive.current) return;
+    if (!alive.current || recovering.current) return;
     const node = videoRef.current;
     if (!node || refreshCount.current >= 1) {
       setFailed(true);
       return;
     }
     refreshCount.current++;
+    recovering.current = true;
     position.current = { seconds: node.currentTime, playing: !node.paused };
     try {
       const result = await refreshPlayback();
@@ -32,6 +36,8 @@ function usePlazaVideoSource(artifactId: string, playback: VideoPlazaPlayback, a
       }
     } catch {
       if (alive.current) setFailed(true);
+    } finally {
+      recovering.current = false;
     }
   }, [refreshPlayback]);
   const target = fresh ?? playback;
@@ -68,11 +74,15 @@ function usePlazaVideoSource(artifactId: string, playback: VideoPlazaPlayback, a
       }
     );
     const hidden = () => {
-      if (document.visibilityState === 'hidden') node.pause();
+      if (document.visibilityState === 'hidden') {
+        position.current = { seconds: node.currentTime, playing: !node.paused };
+        node.pause();
+      }
     };
     document.addEventListener('visibilitychange', hidden);
     return () => {
       disposed = true;
+      if (!document.hidden) position.current = { seconds: node.currentTime, playing: !node.paused };
       stop();
       document.removeEventListener('visibilitychange', hidden);
       node.removeEventListener('loadedmetadata', restore);
@@ -81,108 +91,68 @@ function usePlazaVideoSource(artifactId: string, playback: VideoPlazaPlayback, a
       node.load();
     };
   }, [active, target, recover]);
-  return { videoRef, failed, recover };
+  return { videoRef, failed, recover, target };
 }
 
 function usePlazaVideoObservation(
-  videoRef: RefObject<HTMLVideoElement>,
+  videoRef: React.RefObject<HTMLVideoElement>,
   artifactId: string,
-  failed: boolean
+  failed: boolean,
+  active: boolean,
+  route: PlazaDimensions['route'],
+  entryStartedAt: number,
+  source: VideoPlazaPlayback
 ) {
   const { mutate: send } = useVideoPlazaObservationMutation();
-  const timing = useRef({
-    started: 0,
-    firstSettled: false,
-    seeking: 0,
-    waiting: 0,
-    stalls: 0,
-    stallMs: 0,
-    reports: 0,
-  });
-  const alive = useRef(true);
-  const report = useCallback(
-    (
-      stage: VideoPlazaPlaybackObservation['stage'],
-      outcome: VideoPlazaPlaybackObservation['outcome'],
-      duration: number,
-      count?: number
-    ) => {
-      if (timing.current.reports++ >= 8) return;
-      send({
-        artifact_id: artifactId,
-        stage,
-        outcome,
-        duration_ms: Math.min(3_600_000, Math.max(0, duration)),
-        ...(count !== undefined ? { count } : {}),
-      });
-    },
-    [artifactId, send]
-  );
-  const frame = (run: () => void) => {
-    const node = videoRef.current;
-    const shown = () => {
-      if (alive.current) run();
-    };
-    if (node?.requestVideoFrameCallback) node.requestVideoFrameCallback(shown);
-    else
-      requestAnimationFrame(() => {
-        if (node && node.readyState >= 2) shown();
-      });
-  };
+  const observer = useRef<PlazaVideoObserver>();
+  const reports = useRef(0);
+  const owner = useRef({ generation: 0 });
+  const activities = useRef(0);
+  const sourceOwner = useRef<VideoPlazaPlayback>();
   useEffect(() => {
-    alive.current = true;
-    const current = timing.current;
-    return () => {
-      alive.current = false;
-      if (current.started && !current.firstSettled)
-        report('first_frame', 'interrupted', performance.now() - current.started);
-      if (current.waiting) current.stallMs += performance.now() - current.waiting;
-      if (current.stalls) report('stall', 'succeeded', current.stallMs, current.stalls);
-      if (current.seeking) report('seek', 'interrupted', performance.now() - current.seeking);
-    };
-  }, [report]);
-  useEffect(() => {
-    if (failed && timing.current.started && !timing.current.firstSettled) {
-      timing.current.firstSettled = true;
-      report('first_frame', 'failed', performance.now() - timing.current.started);
+    const lifecycle = owner.current;
+    const generation = ++lifecycle.generation;
+    if (!videoRef.current || !active) {
+      observer.current?.stop(document.hidden ? 'background' : 'interrupted');
+      observer.current = undefined;
+      return;
     }
-  }, [failed, report]);
-  return {
-    onPlay: () => {
-      if (!timing.current.started) timing.current.started = performance.now();
-    },
-    onPlaying: () => {
-      const current = timing.current;
-      if (current.waiting) {
-        current.stallMs += performance.now() - current.waiting;
-        current.waiting = 0;
-      }
-      if (current.started && !current.firstSettled)
-        frame(() => {
-          if (current.firstSettled) return;
-          current.firstSettled = true;
-          report('first_frame', 'succeeded', performance.now() - current.started);
-        });
-    },
-    onSeeking: () => {
-      if (!timing.current.seeking) timing.current.seeking = performance.now();
-    },
-    onSeeked: () => {
-      const started = timing.current.seeking;
-      if (started)
-        frame(() => {
-          if (timing.current.seeking !== started) return;
-          report('seek', 'succeeded', performance.now() - started);
-          timing.current.seeking = 0;
-        });
-    },
-    onWaiting: () => {
-      if (timing.current.firstSettled && !timing.current.waiting) {
-        timing.current.waiting = performance.now();
-        timing.current.stalls++;
-      }
-    },
-  };
+    if (observer.current && sourceOwner.current !== source) {
+      observer.current.stop('interrupted');
+      observer.current = undefined;
+    }
+    if (!observer.current) {
+      const initial = activities.current++ === 0;
+      sourceOwner.current = source;
+      observer.current = new PlazaVideoObserver(
+        videoRef.current,
+        { route, media: 'video', entry_kind: initial ? 'initial' : 'continuation' },
+        (stage, outcome, duration, count) => {
+          if (reports.current++ >= 8) return;
+          send({
+            artifact_id: artifactId,
+            stage,
+            outcome,
+            duration_ms: Math.min(3_600_000, Math.max(0, duration)),
+            ...(count !== undefined ? { count } : {}),
+          });
+        },
+        initial && route === '/create/work/:id' ? entryStartedAt : performance.now()
+      );
+    }
+    const current = observer.current;
+    // StrictMode's cleanup/setup pair retains its owner, so it cannot fabricate a page-left.
+    return () =>
+      queueMicrotask(() => {
+        if (lifecycle.generation === generation && observer.current === current) {
+          current.stop(document.hidden ? 'background' : 'left');
+          observer.current = undefined;
+        }
+      });
+  }, [videoRef, artifactId, active, route, entryStartedAt, send, source]);
+  useEffect(() => {
+    if (failed) observer.current?.fail();
+  }, [failed]);
 }
 
 /** Artifact identity owns the player lifecycle; both consumers key this component by artifactId. */
@@ -192,15 +162,42 @@ export function PlazaVideoPlayer({
   poster,
   active = true,
   onReady,
+  entryStartedAt,
 }: {
   artifactId: string;
   playback: VideoPlazaPlayback;
   poster?: string;
   active?: boolean;
   onReady?: () => void;
+  entryStartedAt?: number;
 }) {
-  const source = usePlazaVideoSource(artifactId, playback, active);
-  const observation = usePlazaVideoObservation(source.videoRef, artifactId, source.failed);
+  const [foreground, setForeground] = useState(
+    () => typeof document === 'undefined' || !document.hidden
+  );
+  const [mountedAt] = useState(() => performance.now());
+  useEffect(() => {
+    const update = () => setForeground(!document.hidden);
+    document.addEventListener('visibilitychange', update);
+    return () => document.removeEventListener('visibilitychange', update);
+  }, []);
+  const enabled = active && foreground;
+  const source = usePlazaVideoSource(artifactId, playback, enabled);
+  const route =
+    typeof window !== 'undefined' && window.location.pathname.startsWith('/create/work/')
+      ? '/create/work/:id'
+      : '/create/studio/:id';
+  usePlazaVideoObservation(
+    source.videoRef,
+    artifactId,
+    source.failed,
+    enabled,
+    route,
+    entryStartedAt ?? mountedAt,
+    source.target
+  );
+  const saveData =
+    typeof navigator !== 'undefined' &&
+    (navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData;
   return (
     <>
       <video
@@ -208,11 +205,10 @@ export function PlazaVideoPlayer({
         poster={poster}
         controls={active}
         playsInline
-        preload={active ? 'metadata' : 'none'}
+        preload={enabled ? (saveData ? 'metadata' : 'auto') : 'none'}
         className="absolute inset-0 size-full object-contain"
         onLoadedData={onReady}
         onError={() => void source.recover()}
-        {...observation}
       />
       {source.failed ? (
         <p

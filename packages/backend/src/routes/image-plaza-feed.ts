@@ -128,7 +128,10 @@ export function registerImagePlazaFeedRoute(
         request.log.info(
           {
             event: 'image_plaza.feed.completed',
+            outcome: 'succeeded',
             sort: query.sort ?? 'legacy',
+            media,
+            ranking_version: query.sort === 'recommended' ? 2 : 1,
             count: page.works.length,
             hasCursor: Boolean(cursor),
             hasSearch: Boolean(search),

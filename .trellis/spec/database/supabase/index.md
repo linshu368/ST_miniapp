@@ -6,6 +6,8 @@
 
 ## 专题规范
 
+影像广场D类排名旁表、原子重建、版本游标和恢复契约见[运行说明](../../../../docs/media-plaza-feed-ranking.md)；20261118排名迁移尚未远端执行。
+
 - **[数据库契约](../../../../docs/db/CONTRACT.md) + [登记表](../../../../docs/db/registry.yaml)：新表、新列、jsonb 键、配置 key、函数、外部读者的落位权威，动手前必读**
 - [Schema 对象书写约定](./schema-and-object-conventions.md)：约束命名、类型、注释等对象级约定
 - [迁移、发布与回滚](./migrations-and-rollbacks.md)

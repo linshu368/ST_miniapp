@@ -97,6 +97,7 @@ export const chineseLogCatalog: LogPresentationCatalog = {
     'video.delivery.upload': '上传广场视频',
     'video.delivery.encode': '处理广场视频多码率',
     'video.delivery.playback': '读取广场视频播放',
+    'image_plaza.feed.rebuild': '重建影像广场模型均衡排名',
     'video.delivery.download': '准备广场视频下载',
     'video.delivery.cleanup': '清理视频交付资产',
     'video.delivery.management': '查询视频交付状态',

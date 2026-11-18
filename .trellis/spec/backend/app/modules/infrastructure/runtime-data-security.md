@@ -5,8 +5,8 @@ scope: backend
 category: infrastructure
 status: active
 owners: [backend]
-last_verified_task: .trellis/tasks/10-30-image-plaza-edit-400-compat/
-last_verified_at: 2026-10-30
+last_verified_task: .trellis/tasks/11-18-media-plaza-feed-ranking-masonry/
+last_verified_at: 2026-11-18
 ---
 
 # 运行时、鉴权与数据访问基建
@@ -92,3 +92,9 @@ MiniApp 已鉴权接口通过 `lib/user.ts` 把同一 Telegram 用户的并发 g
 ## 短剧播放来源
 
 Stream 开关开启时，列表和取址共用本环境的 30 条有序清单。后端验证鉴权、可播状态及单集归属，再按剧 ID 和视频 ID 匹配清单。匹配时签发 Stream HLS，重试仍使用 Stream。旧入组比例和定向采样账号配置均已退休。签名失败返回不可播，日志记录实际结果。发布步骤见 `docs/drama-stream-ab.md`。
+
+## 2026-11-18 影像广场本地候选
+
+安全Pino投影允许广场media/ranking_version，feed完成结果与HTTP request/trace关联。排名重建复用operation观测和明确目标的维护CLI；真实日志JSON回归覆盖字段保留及正文排除。
+
+实现和验证边界见 `docs/media-plaza-feed-ranking.md` 与 `.trellis/tasks/11-18-media-plaza-feed-ranking-masonry/verification.md`。

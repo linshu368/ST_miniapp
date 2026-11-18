@@ -5,8 +5,8 @@ scope: frontend
 category: infrastructure
 status: active
 owners: [frontend]
-last_verified_task: .trellis/tasks/11-16-miniapp-content-path-optimization/
-last_verified_at: 2026-11-16
+last_verified_task: .trellis/tasks/11-18-media-plaza-feed-ranking-masonry/
+last_verified_at: 2026-11-18
 ---
 
 # API、Telegram 与 UI 基建
@@ -101,3 +101,9 @@ Groups read deadlines and stable dependency timeout codes use existing 503/folde
 Automatic recommendation entry uses a 1500ms shared deadline; manual refresh/undo and manual fallback open remain 5000ms. Existing hedge, batch ownership, viewer guards and retry UUIDs remain. Request transport/manual mutation and conversation row data hooks are separated without new framework or dependencies.
 
 User explicitly excludes launching local UI verification. Unit/contract/type/build/static checks and remaining production gates are recorded in `.trellis/tasks/11-16-miniapp-content-path-optimization/verification.md`; real Telegram interactions/P95 and conditional prewarming/CDN changes remain post-release work.
+
+## 2026-11-18 影像广场本地候选
+
+推荐query key升级并将feed hook归属image-plaza-feed.ts，过期游标只自动清链恢复一次。plaza_v1同一观测值镜像Sentry/Faro，白名单区分media/sort/entry_kind，失败/后台/离开不进入成功P95；观测上传排除产品API计时。
+
+实现和验证边界见 `docs/media-plaza-feed-ranking.md` 与 `.trellis/tasks/11-18-media-plaza-feed-ranking-masonry/verification.md`。

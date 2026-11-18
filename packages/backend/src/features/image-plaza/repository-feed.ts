@@ -1,4 +1,10 @@
-import { type ImagePlazaFeedSort, type PlazaFeedItem, type PlazaWork } from '@miniapp/shared';
+import { z } from 'zod';
+import {
+  IMAGE_PLAZA_INVALID_CURSOR,
+  type ImagePlazaFeedSort,
+  type PlazaFeedItem,
+  type PlazaWork,
+} from '@miniapp/shared';
 import {
   cursorFilter,
   decodeFeedCursor,
@@ -16,6 +22,41 @@ import {
   WorkRow,
 } from './repository-model.js';
 import { ImagePlazaWorkRepository } from './repository-work.js';
+
+const RecommendedPageSchema = z.object({
+  ranking_revision: z.string().uuid(),
+  items: z
+    .array(
+      z
+        .object({
+          id: z.string().uuid(),
+          user_id: z.string().nullable().default(null),
+          attempt_id: z.string().nullable().default(null),
+          artifact_id: z.string().nullable().default(null),
+          title: z.string(),
+          model_id: z.string(),
+          model_name: z.string(),
+          width: z.number().int().positive(),
+          height: z.number().int().positive(),
+          tags: z.array(z.string()),
+          snapshot: z.unknown(),
+          like_count: z.number().int().nonnegative(),
+          published_at: z.string().datetime({ offset: true }),
+          deleted_at: z.string().nullable(),
+          initial_feed_order: z
+            .string()
+            .regex(/^[1-9][0-9]{0,18}$/)
+            .nullable(),
+          media_type: z.enum(['image', 'video']).default('image'),
+          video_artifact_id: z.string().nullable().optional(),
+          video_attempt_id: z.string().nullable().optional(),
+          duration_ms: z.number().int().nonnegative().nullable().optional(),
+          description: z.string().optional(),
+        })
+        .transform((row): WorkRow => ({ ...row, snapshot: row.snapshot }))
+    )
+    .max(21),
+});
 
 /** Feed reads and work metadata share the original domain clients. */
 export class ImagePlazaFeedRepository extends ImagePlazaWorkRepository {
@@ -110,75 +151,91 @@ export class ImagePlazaFeedRepository extends ImagePlazaWorkRepository {
     const filter = feedFilter(input.search, input.tagLabels, input.media);
     const cursor = decodeFeedCursor(input.cursor, input.sort, filter);
     const signal = AbortSignal.timeout(10_000);
-    const read = async (
-      partition: 'liked' | 'zero' | 'latest',
-      limit: number,
-      exclude: string[] = []
-    ) => {
-      // Cast bigint before JSON serialization; Number would silently lose deep cursor precision.
-      let query = this.mediaPlaza
-        .from('image_plaza_works')
-        .select(WORK_COLUMNS)
-        .is('deleted_at', null);
-      if (partition === 'liked')
-        query = query.gt('like_count', 0).order('like_count', { ascending: false });
-      if (partition === 'zero')
-        query = query
-          .eq('like_count', 0)
-          .order('initial_feed_order', { ascending: true, nullsFirst: false });
-      query = query.order('published_at', { ascending: false }).order('id', { ascending: false });
-      if (input.search?.trim()) {
-        const pattern = quotePostgrestFilterValue(
-          `%${escapeIlikePattern(input.search.trim().slice(0, 80))}%`
-        );
-        query = query.or(
-          `snapshot->>prompt.ilike.${pattern},snapshot->>prompt_zh.ilike.${pattern}`
-        );
-      }
-      if (input.media && input.media !== 'all') query = query.eq('media_type', input.media);
-      const tagFilter = promptZhTagFilter(input.tagLabels);
-      if (tagFilter) query = query.or(tagFilter);
-      if (cursor?.partition === partition) query = query.or(cursorFilter(cursor));
-      // These IDs came from this bounded DB page, not arbitrary request filter syntax.
-      if (exclude.length) query = query.not('id', 'in', `(${exclude.join(',')})`);
-      const { data, error } = await query.limit(limit).abortSignal(signal);
-      if (error) throw new Error('image plaza feed read failed', { cause: error });
-      return (data ?? []) as WorkRow[];
-    };
-    let rows: WorkRow[];
-    let likedRows = 0;
-    if (input.sort === 'latest') rows = await read('latest', input.limit + 1);
-    else {
-      rows = cursor?.partition === 'zero' ? [] : await read('liked', input.limit + 1);
-      likedRows = rows.length;
-      if (rows.length <= input.limit) {
-        rows.push(
-          ...(await read(
-            'zero',
-            input.limit + 1 - rows.length,
-            rows.map((row) => row.id)
-          ))
-        );
-      }
+    if (input.sort === 'recommended')
+      return this.listRecommendedWorks(input, filter, cursor, signal);
+    let query = this.mediaPlaza
+      .from('image_plaza_works')
+      .select(WORK_COLUMNS)
+      .is('deleted_at', null)
+      .order('published_at', { ascending: false })
+      .order('id', { ascending: false });
+    if (input.media && input.media !== 'all') query = query.eq('media_type', input.media);
+    const tagFilter = promptZhTagFilter(input.tagLabels);
+    if (tagFilter) query = query.or(tagFilter);
+    if (input.search?.trim()) {
+      const pattern = quotePostgrestFilterValue(
+        `%${escapeIlikePattern(input.search.trim().slice(0, 80))}%`
+      );
+      query = query.or(`snapshot->>prompt.ilike.${pattern},snapshot->>prompt_zh.ilike.${pattern}`);
     }
+    if (cursor) query = query.or(cursorFilter(cursor));
+    const { data, error } = await query.limit(input.limit + 1).abortSignal(signal);
+    if (error) throw new Error('image plaza feed read failed', { cause: error });
+    const rows = (data ?? []) as WorkRow[];
     const visible = rows.slice(0, input.limit);
     const last = visible.at(-1);
     let nextCursor: string | null = null;
     if (last && rows.length > input.limit) {
       const base = { v: 1 as const, filter, publishedAt: last.published_at, id: last.id };
-      const next: FeedCursor =
-        input.sort === 'latest'
-          ? { ...base, sort: 'latest', partition: 'latest' }
-          : visible.length <= likedRows
-            ? { ...base, sort: 'recommended', partition: 'liked', likeCount: last.like_count }
-            : {
-                ...base,
-                sort: 'recommended',
-                partition: 'zero',
-                order: last.initial_feed_order ?? null,
-              };
+      const next: FeedCursor = { ...base, sort: 'latest', partition: 'latest' };
       nextCursor = encodeFeedCursor(next);
     }
+    return {
+      works: await this.hydrateFeedWorks(visible, input.userId, {
+        feedImages: true,
+        includeReferences: false,
+        signal,
+      }),
+      nextCursor,
+    };
+  }
+
+  private async listRecommendedWorks(
+    input: {
+      userId: string;
+      search?: string;
+      tagLabels?: string[];
+      media?: 'all' | 'image' | 'video';
+      limit: number;
+    },
+    filter: string,
+    cursor: FeedCursor | null,
+    signal: AbortSignal
+  ): Promise<{ works: PlazaFeedItem[]; nextCursor: string | null }> {
+    if (cursor && cursor.v !== 2) throw new Error(IMAGE_PLAZA_INVALID_CURSOR);
+    const { data, error } = await this.mediaPlaza
+      .rpc('read_image_plaza_recommended_feed', {
+        p_media: input.media ?? 'all',
+        p_search: input.search?.trim() ?? '',
+        p_tag_labels: input.tagLabels ?? [],
+        p_limit: input.limit,
+        p_revision: cursor?.v === 2 ? cursor.rankingRevision : null,
+        p_partition: cursor?.partition ?? null,
+        p_like_count: cursor?.partition === 'liked' ? cursor.likeCount : null,
+        p_order: cursor?.partition === 'zero' ? cursor.order : null,
+        p_id: cursor?.id ?? null,
+      })
+      .abortSignal(signal);
+    if (error) {
+      if (error.message === IMAGE_PLAZA_INVALID_CURSOR) throw new Error(IMAGE_PLAZA_INVALID_CURSOR);
+      throw new Error('image plaza recommended feed read failed', { cause: error });
+    }
+    const page = RecommendedPageSchema.parse(data);
+    const visible = page.items.slice(0, input.limit);
+    const last = visible.at(-1);
+    const nextCursor =
+      last && page.items.length > input.limit
+        ? encodeFeedCursor({
+            v: 2,
+            filter,
+            id: last.id,
+            sort: 'recommended',
+            rankingRevision: page.ranking_revision,
+            ...(last.like_count > 0
+              ? { partition: 'liked' as const, likeCount: last.like_count }
+              : { partition: 'zero' as const, order: last.initial_feed_order ?? null }),
+          })
+        : null;
     return {
       works: await this.hydrateFeedWorks(visible, input.userId, {
         feedImages: true,

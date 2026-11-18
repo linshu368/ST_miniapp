@@ -12,9 +12,10 @@ type Call = { method: string; args: unknown[] };
 const state = vi.hoisted(() => ({
   calls: [] as Call[],
   responses: [] as unknown[][],
+  rpcResponses: [] as unknown[],
 }));
 
-function createThenableBuilder(data: unknown[] = []) {
+function createThenableBuilder(data: unknown = []) {
   const builder: Record<string, unknown> = {};
   const track =
     (method: string) =>
@@ -41,7 +42,7 @@ function createThenableBuilder(data: unknown[] = []) {
   }
   // Supabase query builders are thenable; empty page skips hydrate.
   builder.then = (
-    onFulfilled?: (value: { data: unknown[]; error: null }) => unknown,
+    onFulfilled?: (value: { data: unknown; error: null }) => unknown,
     onRejected?: (reason: unknown) => unknown
   ) => Promise.resolve({ data, error: null }).then(onFulfilled, onRejected);
   return builder;
@@ -51,6 +52,15 @@ vi.mock('../../lib/supabase.js', () => {
   const getDomainDb = (schema: string) => {
     if (schema === 'media_plaza') {
       return {
+        rpc: (name: string, args: unknown) => {
+          state.calls.push({ method: 'rpc', args: [name, args] });
+          return createThenableBuilder(
+            state.rpcResponses.shift() ?? {
+              ranking_revision: '00000000-0000-0000-0000-000000000000',
+              items: [],
+            }
+          );
+        },
         from: (table: string) => {
           state.calls.push({ method: 'from', args: [table] });
           return createThenableBuilder(state.responses.shift() ?? []);
@@ -199,27 +209,31 @@ describe('versioned feed cursors', () => {
       'IMAGE_PLAZA_INVALID_CURSOR'
     );
   });
-  it('queries liked then zero, but a zero cursor queries only the zero section', async () => {
+  it('uses a bounded ranked RPC with media/filter and rejects old recommended cursors before reads', async () => {
     state.calls = [];
     const repository = new ImagePlazaRepository();
-    await repository.listWorks({ userId: 'user-1', sort: 'recommended', limit: 20 });
-    expect(state.calls.filter((call) => call.method === 'from')).toHaveLength(2);
-    expect(state.calls.find((call) => call.method === 'gt')?.args).toEqual(['like_count', 0]);
-    expect(state.calls.find((call) => call.method === 'eq')?.args).toEqual(['like_count', 0]);
-    state.calls = [];
     await repository.listWorks({
       userId: 'user-1',
       sort: 'recommended',
-      search: 'portrait',
-      tagLabels: ['肖像'],
-      cursor: encodeFeedCursor(zero),
+      media: 'video',
       limit: 20,
     });
-    expect(state.calls.filter((call) => call.method === 'from')).toHaveLength(1);
-    expect(state.calls.some((call) => call.method === 'gt')).toBe(false);
-    expect(
-      state.calls.filter((call) => call.method === 'order').map((call) => call.args[0])
-    ).toEqual(['initial_feed_order', 'published_at', 'id']);
+    expect(state.calls.find((call) => call.method === 'rpc')?.args).toEqual([
+      'read_image_plaza_recommended_feed',
+      expect.objectContaining({ p_media: 'video', p_limit: 20, p_partition: null }),
+    ]);
+    state.calls = [];
+    await expect(
+      repository.listWorks({
+        userId: 'user-1',
+        sort: 'recommended',
+        search: 'portrait',
+        tagLabels: ['\u8096\u50cf'],
+        cursor: encodeFeedCursor(zero),
+        limit: 20,
+      })
+    ).rejects.toThrow('IMAGE_PLAZA_INVALID_CURSOR');
+    expect(state.calls).toHaveLength(0);
   });
   it('latest ignores likes/order and malformed new cursors fail before reads', async () => {
     state.calls = [];
@@ -235,7 +249,7 @@ describe('versioned feed cursors', () => {
     expect(state.calls).toHaveLength(0);
   });
 
-  it('stitches a partial liked page into zero works, excludes selected IDs and continues with a zero cursor', async () => {
+  it('hydrates a ranked mixed partition page and continues with a revision-bound zero cursor', async () => {
     const row = (suffix: number, likes: number, order: string | null) => ({
       id: `11111111-1111-4111-8111-${String(suffix).padStart(12, '0')}`,
       artifact_id: `artifact-${suffix}`,
@@ -269,19 +283,28 @@ describe('versioned feed cursors', () => {
       storage_path: 'path',
     }));
     state.calls = [];
-    state.responses = [[liked], [firstZero, nextZero], artifacts];
+    state.rpcResponses = [
+      {
+        ranking_revision: '00000000-0000-0000-0000-000000000000',
+        items: [liked, firstZero, nextZero],
+      },
+    ];
+    state.responses = [artifacts];
     const repository = new ImagePlazaRepository();
     const first = await repository.listWorks({ userId: 'owner', sort: 'recommended', limit: 2 });
     expect(first.works.map((item) => item.id)).toEqual([liked.id, firstZero.id]);
-    expect(state.calls.find((call) => call.method === 'not')?.args).toEqual([
-      'id',
-      'in',
-      `(${liked.id})`,
-    ]);
     expect(
       decodeFeedCursor(first.nextCursor ?? undefined, 'recommended', feedFilter())
-    ).toMatchObject({ partition: 'zero', order: '1' });
-    state.responses = [[nextZero], artifacts];
+    ).toMatchObject({
+      v: 2,
+      partition: 'zero',
+      order: '1',
+      rankingRevision: '00000000-0000-0000-0000-000000000000',
+    });
+    state.rpcResponses = [
+      { ranking_revision: '00000000-0000-0000-0000-000000000000', items: [nextZero] },
+    ];
+    state.responses = [artifacts];
     const second = await repository.listWorks({
       userId: 'owner',
       sort: 'recommended',

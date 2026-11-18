@@ -5,8 +5,8 @@ scope: backend
 category: business
 status: active
 owners: [backend]
-last_verified_task: .trellis/tasks/11-16-miniapp-content-path-optimization/
-last_verified_at: 2026-11-16
+last_verified_task: .trellis/tasks/11-18-media-plaza-feed-ranking-masonry/
+last_verified_at: 2026-11-18
 ---
 
 # 会话与生成
@@ -286,3 +286,9 @@ Groups read deadlines and stable dependency timeout codes use existing 503/folde
 Automatic recommendation entry uses a 1500ms shared deadline; manual refresh/undo and manual fallback open remain 5000ms. Existing hedge, batch ownership, viewer guards and retry UUIDs remain. Request transport/manual mutation and conversation row data hooks are separated without new framework or dependencies.
 
 User explicitly excludes launching local UI verification. Unit/contract/type/build/static checks and remaining production gates are recorded in `.trellis/tasks/11-16-miniapp-content-path-optimization/verification.md`; real Telegram interactions/P95 and conditional prewarming/CDN changes remain post-release work.
+
+## 2026-11-18 影像广场本地候选
+
+影像广场推荐通过有界RPC读取版本排名，最新继续按published_at和ID读取；服务端筛选发生在分页前，hydrate仍只为列表提供封面。生成、计费、分享返利不变，排名维护不进入用户请求路径。
+
+实现和验证边界见 `docs/media-plaza-feed-ranking.md` 与 `.trellis/tasks/11-18-media-plaza-feed-ranking-masonry/verification.md`。

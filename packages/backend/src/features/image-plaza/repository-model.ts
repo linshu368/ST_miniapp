@@ -41,7 +41,7 @@ export interface ImagePlazaWorkerAttempt {
 
 export interface WorkRow {
   id: string;
-  user_id: string;
+  user_id: string | null;
   attempt_id: string | null;
   artifact_id: string | null;
   media_type?: 'image' | 'video';

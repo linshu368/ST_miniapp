@@ -32,6 +32,10 @@ export function apiRouteGroup(path: string): string {
   if (/^\/api\/dramas\/[^/]+$/.test(pathname)) return 'drama_detail';
   if (/^\/api\/dramas\/[^/]+\/(?:play|playback)$/.test(pathname)) return 'drama_playback';
   if (pathname.startsWith('/api/dramas/')) return 'drama_social';
+  if (pathname === '/api/image-plaza/feed') return 'image_plaza_feed';
+  if (/^\/api\/image-plaza\/works\/[^/]+$/.test(pathname)) return 'image_plaza_detail';
+  if (/^\/api\/image-plaza\/video-artifacts\/[^/]+\/playback$/.test(pathname))
+    return 'image_plaza_playback';
   const groups: ReadonlyArray<readonly [string, string]> = [
     ['/api/v1/images/', 'images'],
     ['/api/v1/voice/', 'voice'],
@@ -54,7 +58,11 @@ export function apiRouteGroup(path: string): string {
 
 export function shouldObserveApiTiming(path: string): boolean {
   // Existing receipt/telemetry uploads are diagnostics, not user requests; avoid feedback loops.
-  return !path.startsWith('/api/telemetry/') && isEngineeringTelemetryEnabled();
+  return (
+    !path.startsWith('/api/telemetry/') &&
+    !path.startsWith('/api/image-plaza/playback-observations') &&
+    isEngineeringTelemetryEnabled()
+  );
 }
 
 function attributes(path: string, method: string, timing: ApiAttemptTiming) {

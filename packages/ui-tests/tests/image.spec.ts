@@ -1,5 +1,95 @@
 import { test, expect, IDS, studioPath, expectMobileLayout } from './fixtures.js';
 
+test('@image @layout 混排瀑布流连续三页、稳定分列与媒体筛选', async ({ page, preview }) => {
+  await preview.scenario('image-masonry');
+  const feedRequests: string[] = [];
+  const mediaRequests: string[] = [];
+  page.on('request', (request) => {
+    const url = new URL(request.url());
+    if (url.pathname === '/api/image-plaza/feed')
+      feedRequests.push(url.searchParams.get('cursor') ?? 'first');
+    if (/\.(m3u8|mpegts|mp4|m4s)(?:$|\?)/.test(url.pathname)) mediaRequests.push(url.pathname);
+  });
+  await page.goto('/create');
+  const cards = page.locator('[data-image-work-id]');
+  await expect(cards.first()).toBeVisible();
+  await expect(page.locator('[data-plaza-column]')).toHaveCount(2);
+  const initialColumns = await cards.evaluateAll((nodes) =>
+    nodes.map((node) => ({
+      id: node.getAttribute('data-image-work-id'),
+      column: Array.from(document.querySelectorAll('[data-plaza-column]')).indexOf(
+        node.parentElement!
+      ),
+    }))
+  );
+  for (let step = 0; step < 30 && (await cards.count()) < 60; step++) {
+    const before = await cards.count();
+    await page.evaluate(() => {
+      const ends = Array.from(document.querySelectorAll('[data-plaza-column-end]')).map(
+        (node) => node.getBoundingClientRect().top
+      );
+      window.scrollTo(0, Math.min(...ends) + window.scrollY - window.innerHeight + 120);
+    });
+    await expect.poll(() => cards.count()).toBeGreaterThan(before);
+  }
+  await expect(cards).toHaveCount(60);
+  expect(feedRequests).toEqual(['first', 'plaza-fixture-20', 'plaza-fixture-40']);
+  expect(mediaRequests).toEqual([]);
+  for (const item of initialColumns) {
+    const column = await page
+      .locator(`[data-image-work-id="${item.id}"]`)
+      .evaluate((node) =>
+        Array.from(document.querySelectorAll('[data-plaza-column]')).indexOf(node.parentElement!)
+      );
+    expect(column).toBe(item.column);
+  }
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.getByRole('button', { name: '视频', exact: true }).click();
+  await expect(page.locator('[data-media-type="video"]').first()).toBeVisible();
+  await expect(page.locator('[data-media-type="image"]')).toHaveCount(0);
+  await page.getByRole('button', { name: '最新', exact: true }).click();
+  // Latest video is synthetic item 58; CSS columns do not change this assertion's identity.
+  await expect(
+    page.locator('[data-image-work-id="77777777-7777-4777-8777-000000000058"]')
+  ).toBeVisible();
+  await expectMobileLayout(page);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await expect(page.locator('[data-plaza-column]')).toHaveCount(2);
+  await preview.screenshot('混合比例瀑布流');
+});
+
+test('@image 排名过期只自动恢复一次，持续失败保留刷新入口', async ({ page, preview }) => {
+  await preview.scenario('image-masonry');
+  let rejected = 0;
+  await page.route('**/api/image-plaza/feed?**', async (route) => {
+    if (new URL(route.request().url()).searchParams.has('cursor')) {
+      rejected++;
+      await route.fulfill({
+        status: 400,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: false,
+          error: { code: 'IMAGE_PLAZA_INVALID_CURSOR', message: '分页已失效' },
+        }),
+      });
+    } else await route.continue();
+  });
+  await page.goto('/create');
+  await expect(page.locator('[data-image-work-id]').first()).toBeVisible();
+  for (let step = 0; step < 20 && rejected < 2; step++) {
+    const before = await page.locator('[data-image-work-id]').count();
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await expect
+      .poll(
+        async () => rejected >= 2 || (await page.locator('[data-image-work-id]').count()) !== before
+      )
+      .toBe(true);
+  }
+  await expect(page.getByRole('button', { name: '加载失败，点击刷新后继续' })).toBeVisible();
+  expect(rejected).toBe(2);
+  await expect(page.locator('[data-image-work-id]').first()).toBeAttached();
+});
+
 test('@image @layout 标签横滑不带走固定筛选，底部面板按分组切换', async ({ page, preview }) => {
   await page.goto('/create');
   const scroll = page.locator('[data-image-plaza-tags-scroll]');
