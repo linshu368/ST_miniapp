@@ -8,7 +8,7 @@
 #   except: chat_history.history is no longer written, the frozen prompt lands in ops.chat_prompt_observations, and the
 #   first-token preview is also written to chat_generation_requests;
 # - new turns have history NULL; the invalidation trigger and the two unused indexes are gone;
-# - backfill writes display projections (= extract of history) only for session turns without one, keeps existing v1
+# - backfill (and its faster follow-up) writes display projections (= extract of history) only for session turns without one, keeps existing v1
 #   projections, skips rows locked by a writer and completes on rerun; copies previews and drive_mode; validates the
 #   two NOT VALID checks; a rerun changes nothing.
 set -euo pipefail
@@ -16,6 +16,7 @@ task_root="$(cd "$(dirname "$0")/.." && pwd)"
 mig="$task_root/packages/shared/migrations"
 expand="$mig/20261119_db_reorg_p5_chat_history_expand.sql"
 backfill="$mig/20261119_db_reorg_p5_chat_history_backfill.sql"
+backfill_fast="$mig/20261119_db_reorg_p5_chat_history_backfill_fast.sql"
 display="$mig/20261111_chat_history_display_metadata.sql"
 task_container="st-db-reorg-p5-${RANDOM}-$$"
 trap 'docker rm -f "$task_container" >/dev/null 2>&1 || true' EXIT
@@ -577,6 +578,17 @@ SELECT NOT EXISTS (SELECT 1 FROM experience.chat_history_display_metadata WHERE 
         'chat_generation_requests_first_token_preview_check') AND NOT convalidated);
 SQL
 wait "$locker"
+# The faster follow-up finishes the remainder; afterwards the original file closes with nothing left.
+# Pretend the original runs never reached the small phases for one row each (as in production).
+"${admin_psql[@]}" >/dev/null <<'SQL'
+UPDATE experience.chat_generation_requests SET first_token_preview = NULL WHERE chat_history_id = '00000000-0000-4000-8000-0000000001a4';
+UPDATE experience.chat_history SET drive_mode = NULL WHERE id = '00000000-0000-4000-8000-0000000001a5';
+SQL
+fast_run=$("${admin_psql[@]}" -f - <"$backfill_fast" 2>&1) || { echo "FAIL: fast backfill errored: $fast_run"; exit 1; }
+[[ "$fast_run" == *"fast remaining: projection 0 / preview 0 / drive_mode 0"* && "$fast_run" == *"display projection written 1 rows"* &&
+  "$fast_run" == *"first_token_preview copied 1 rows"* && "$fast_run" == *"drive_mode copied 1 rows"* ]] ||
+  { echo "FAIL: fast backfill did not finish the locked row: $fast_run"; exit 1; }
+echo "ok: fast backfill finishes the remainder"
 second_run=$("${admin_psql[@]}" -f - <"$backfill" 2>&1) || { echo "FAIL: backfill (second_run) errored: $second_run"; exit 1; }
 [[ "$second_run" == *"remaining: projection 0 / preview 0 / drive_mode 0"* ]] || { echo "FAIL: rerun left work: $second_run"; exit 1; }
 check "backfill: projections equal the legacy extraction; existing projection kept; no-session rows untouched" <<'SQL'
