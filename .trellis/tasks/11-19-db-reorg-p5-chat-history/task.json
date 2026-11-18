@@ -1,0 +1,39 @@
+{
+  "id": "db-reorg-p5-chat-history",
+  "name": "db-reorg-p5-chat-history",
+  "title": "数据库重组阶段5：experience.chat_history 瘦身",
+  "description": "prompt 快照（history，占表 95%+）迁 ops 并按保留期清理；首字预览归交付状态表；drive_mode 转真列；删死列 upstream_status 与无用索引；展示投影补齐后去掉现场解析 history 的兜底",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P1",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-19",
+  "completedAt": null,
+  "branch": "feat/db-reorg-p5-chat-history",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "11-17-db-reorg",
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "pending"
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "pending"
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "pending"
+    }
+  }
+}
