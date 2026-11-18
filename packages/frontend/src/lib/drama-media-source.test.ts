@@ -247,7 +247,8 @@ it('builds a pLoader from inline_manifest and passes it into the Hls config', as
   await vi.waitFor(() => expect(state.created).toHaveBeenCalledOnce());
   expect(createInlinePlaylistLoader).toHaveBeenCalledWith(
     inlinePlayback.play_url,
-    inlinePlayback.inline_manifest
+    inlinePlayback.inline_manifest,
+    undefined
   );
   expect(state.lastConfig?.pLoader).toBe('fake-ploader-sentinel');
   cleanup();

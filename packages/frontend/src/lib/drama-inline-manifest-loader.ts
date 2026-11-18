@@ -8,11 +8,12 @@ import type {
   PlaylistLoaderContext,
   PlaylistLoaderConstructor,
 } from 'hls.js';
+import type { DramaPlaybackResources, DramaPrefetchUsage } from '@/lib/drama-playback-resources';
 
 /**
  * 内联走的不是网络请求：start===end（耗时 0），不填 first（没有真实首字节）。
  * `recordHlsLoads` 的 `positive()` 判断非正数会自动省略 firstByteMs，
- * 消费方据此能和"恰好很快"的真实网络请求区分——配合诊断里的 manifestInline 字段双重确认。
+ * 消费方据此能和"恰好很快"的真实网络请求区分——配合诊断里的 manifestInline / prefetch 双重确认。
  */
 function buildInlineStats(contentLength: number): LoaderStats {
   const now = performance.now();
@@ -29,15 +30,26 @@ function buildInlineStats(contentLength: number): LoaderStats {
   };
 }
 
+/** 播放资源缓存：子清单按绝对 URL 命中，usage 记录实际从缓存应答的数量和字节。 */
+export interface PlaylistCache {
+  resources: DramaPlaybackResources;
+  usage: DramaPrefetchUsage;
+}
+
+const isChildPlaylist = (context: PlaylistLoaderContext) =>
+  context.type === 'level' || context.type === 'audioTrack';
+
 /**
- * 只拦截"主清单请求、地址等于 matchUrl"这一种情况，直接用内联内容应答；
- * 其它所有请求（子清单、分片、不匹配的 manifest 请求）原样转发到 hls.js 当前配置的
- * 真实网络 loader（`config.loader`，对子清单/分片同样有效，因为 pLoader 只服务
- * manifest/level/audioTrack/subtitleTrack 这类 playlist 请求）。
+ * 只拦截两类 playlist 请求，其它所有请求原样转发到 hls.js 当前配置的真实网络 loader
+ * （`config.loader`；pLoader 只服务 manifest/level/audioTrack/subtitleTrack 这类 playlist 请求）：
+ * - 主清单、地址等于 matchUrl、且有内联内容：直接用内联内容应答。
+ * - 子清单（level/audioTrack）、URL 在缓存里：等预取结果（预取失败就转发到网络）；
+ *   不在缓存里的走网络，成功后回写缓存，供往回滑和回到同一部复用。
  */
 export function createInlinePlaylistLoader(
   matchUrl: string,
-  content: string
+  content: string | undefined,
+  cache?: PlaylistCache
 ): PlaylistLoaderConstructor {
   return class InlinePlaylistLoader implements Loader<PlaylistLoaderContext> {
     // hls.js 的 config.loader 类型是 Loader<LoaderContext>（通用形状）；真实实现
@@ -65,23 +77,59 @@ export function createInlinePlaylistLoader(
       config: LoaderConfiguration,
       callbacks: LoaderCallbacks<PlaylistLoaderContext>
     ): void {
-      if (context.type === 'manifest' && context.url === matchUrl) {
-        this.aborted = false;
-        const stats = buildInlineStats(content.length);
-        this.cachedInlineStats = stats;
-        this.cachedInlineContext = context;
-        const response: LoaderResponse = { url: matchUrl, data: content };
+      this.aborted = false;
+      this.cachedInlineStats = null;
+      this.cachedInlineContext = null;
+      if (content !== undefined && context.type === 'manifest' && context.url === matchUrl) {
         // 延后一个微任务触发，和真实网络 loader 的异步时序保持一致，
         // 不在 load() 同一个调用栈里就触发下游处理。
-        queueMicrotask(() => {
+        queueMicrotask(() => this.respond(context, content, callbacks));
+        return;
+      }
+      const pending =
+        cache && isChildPlaylist(context) ? cache.resources.playlists.get(context.url) : undefined;
+      if (pending) {
+        void pending.then((text) => {
           if (this.aborted) return;
-          callbacks.onSuccess(response, stats, context, null);
+          if (text === undefined) return this.forward(context, config, callbacks);
+          cache!.usage.playlists += 1;
+          cache!.usage.bytes += text.length;
+          this.respond(context, text, callbacks);
         });
         return;
       }
-      this.cachedInlineStats = null;
-      this.cachedInlineContext = null;
-      this.delegate.load(context, config, callbacks);
+      this.forward(context, config, callbacks);
+    }
+
+    private respond(
+      context: PlaylistLoaderContext,
+      data: string,
+      callbacks: LoaderCallbacks<PlaylistLoaderContext>
+    ): void {
+      if (this.aborted) return;
+      const stats = buildInlineStats(data.length);
+      this.cachedInlineStats = stats;
+      this.cachedInlineContext = context;
+      const response: LoaderResponse = { url: context.url, data };
+      callbacks.onSuccess(response, stats, context, null);
+    }
+
+    private forward(
+      context: PlaylistLoaderContext,
+      config: LoaderConfiguration,
+      callbacks: LoaderCallbacks<PlaylistLoaderContext>
+    ): void {
+      if (!cache || !isChildPlaylist(context))
+        return this.delegate.load(context, config, callbacks);
+      const playlists = cache.resources.playlists;
+      this.delegate.load(context, config, {
+        ...callbacks,
+        onSuccess: (response, stats, ctx, networkDetails) => {
+          if (typeof response.data === 'string' && !playlists.has(ctx.url))
+            playlists.set(ctx.url, Promise.resolve(response.data));
+          callbacks.onSuccess(response, stats, ctx, networkDetails);
+        },
+      });
     }
 
     abort(): void {
