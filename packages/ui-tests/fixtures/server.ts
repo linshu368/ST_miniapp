@@ -63,6 +63,8 @@ import {
   UserOnboardingSchema,
   SelectModelRequestSchema,
   SubmitImagePlazaAttemptRequestSchema,
+  SubmitVideoPlazaAttemptRequestSchema,
+  VideoPlazaQuoteRequestSchema,
   type ChatMessage,
   type ChatSession,
   type UpdateConversationRequest,
@@ -70,6 +72,8 @@ import {
   type DeleteConversationData,
   type ConversationStreamEvent,
   type ImagePlazaAttempt,
+  type VideoPlazaAttempt,
+  type VideoPlazaQuoteRequest,
   type GetDramasData,
   type GetDramaByIdData,
   type GetDramaPlaybackData,
@@ -279,6 +283,11 @@ export function createPreviewServer(apiPort: number, appPort: number) {
   >();
   const imageKeys = new Map<string, ImagePlazaAttempt>();
   const quotes = new Map<string, { credits: number; expiresAt: number }>();
+  const videoQuotes = new Map<
+    string,
+    { credits: number; expiresAt: number; params: VideoPlazaQuoteRequest }
+  >();
+  const videoAttempts = new Map<string, VideoPlazaAttempt>();
   const streams = new Set<ServerResponse>();
   const requests: { method: string; path: string; thinking_enabled?: boolean }[] = [];
   const unhandled: string[] = [];
@@ -507,6 +516,8 @@ export function createPreviewServer(apiPort: number, appPort: number) {
     commentFailureDelivered = false;
     imageKeys.clear();
     quotes.clear();
+    videoQuotes.clear();
+    videoAttempts.clear();
     requests.length = 0;
     unhandled.length = 0;
     if (next === 'recharge' || next === 'recharge-unavailable') {
@@ -786,6 +797,21 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         res.end(
           `<svg xmlns="http://www.w3.org/2000/svg" width="768" height="1024" viewBox="0 0 768 1024"><defs><linearGradient id="g" x2="0" y2="1"><stop stop-color="${colors[tone] ?? colors[0]}"/><stop offset="1" stop-color="#20243a"/></linearGradient></defs><path fill="url(#g)" d="M0 0h768v1024H0z"/><circle fill="#f9eaca" opacity=".8" cx="540" cy="240" r="72"/><path fill="#484e6d" d="M0 640 240 330 480 670 650 470 768 580V1024H0"/><path fill="#27394b" d="M0 790 200 580 430 850 600 700 768 810V1024H0"/><path fill="#b3cbd4" opacity=".5" d="M320 1024 400 810 430 850 460 1024z"/></svg>`
         );
+        return;
+      }
+
+      if (
+        /^\/assets\/plaza-video\/(?:master\.m3u8|[01]\/(?:index\.m3u8|segment[0-9]+\.mpegts))$/.test(
+          path
+        ) &&
+        (method === 'GET' || method === 'HEAD')
+      ) {
+        const file = await readFile(new URL(`.${path}`, import.meta.url));
+        res.writeHead(200, {
+          'Content-Type': path.endsWith('.m3u8') ? 'application/vnd.apple.mpegurl' : 'video/mp2t',
+          'Content-Length': file.length,
+        });
+        res.end(method === 'HEAD' ? undefined : file);
         return;
       }
 
@@ -2346,6 +2372,14 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         });
         return;
       }
+      if (path === '/api/image-plaza/feed/tag-counts' && method === 'GET') {
+        ok(res, {
+          counts: Object.fromEntries(
+            data.imageConfig.tags.map((tag, index) => [tag.id, Math.max(1, 12 - index)])
+          ),
+        });
+        return;
+      }
       if (path.startsWith('/api/image-plaza/works/') && method === 'GET') {
         const work = data.works.find((item) => item.id === path.split('/').pop());
         if (work) ok(res, { work });
@@ -2358,9 +2392,19 @@ export function createPreviewServer(apiPort: number, appPort: number) {
           return;
         }
         if (method === 'POST') {
+          const sourceId =
+            typeof body === 'object' && body !== null && 'source_work_id' in body
+              ? body.source_work_id
+              : undefined;
+          const source =
+            typeof sourceId === 'string'
+              ? data.works.find((item) => item.id === sourceId)
+              : undefined;
           const studio = ImagePlazaConversationSchema.parse({
             ...makeData(api).studios[0],
             id: randomUUID(),
+            title: source ? `同款 · ${source.title}` : '新建影像创作',
+            snapshot: source?.snapshot ?? null,
           });
           data.studios.push(studio);
           ok(res, { conversation: studio });
@@ -2380,8 +2424,85 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         });
         return;
       }
+      if (path === '/api/image-plaza/video-quotes' && method === 'POST') {
+        const quote = VideoPlazaQuoteRequestSchema.parse(body);
+        const credits =
+          quote.duration_s === 10 ? 80 : quote.resolution.toLowerCase() === '1080p' ? 60 : 40;
+        const quoteId = randomUUID();
+        videoQuotes.set(quoteId, {
+          credits,
+          expiresAt: Date.now() + 60_000,
+          params: quote,
+        });
+        ok(res, {
+          ...quote,
+          quote_id: quoteId,
+          credits,
+          expires_at: new Date(Date.now() + 60_000).toISOString(),
+        });
+        return;
+      }
+      if (path === '/api/image-plaza/playback-observations' && method === 'POST') {
+        ok(res, { accepted: true });
+        return;
+      }
+      const videoArtifactMatch = path.match(
+        /^\/api\/image-plaza\/video-artifacts\/([^/]+)\/(playback|download)$/
+      );
+      if (videoArtifactMatch && method === 'GET') {
+        const artifact = [...videoAttempts.values()]
+          .map((a) => a.artifact)
+          .find((a) => a?.id === videoArtifactMatch[1]);
+        const work = data.works.find(
+          (w) => w.media_type === 'video' && w.artifact_id === videoArtifactMatch[1]
+        );
+        if (!artifact && (!work || work.media_type !== 'video')) {
+          fail(res, 404, 'NOT_FOUND', '视频不存在');
+          return;
+        }
+        if (videoArtifactMatch[2] === 'download') {
+          ok(res, {
+            status: 'ready',
+            download_url: `${api}/assets/drama-preview.mp4`,
+            expires_at: new Date(Date.now() + 900_000).toISOString(),
+          });
+          return;
+        }
+        ok(res, {
+          artifact_id: videoArtifactMatch[1],
+          poster_url:
+            artifact?.poster_url ?? (work?.media_type === 'video' ? work.poster_url : null),
+          playback: {
+            format: 'hls',
+            play_url: `${api}/assets/plaza-video/master.m3u8`,
+            expires_at: new Date(Date.now() + 900_000).toISOString(),
+          },
+        });
+        return;
+      }
+      const videoAttemptMatch = path.match(/^\/api\/image-plaza\/video-attempts\/([^/]+)$/);
+      if (videoAttemptMatch && method === 'GET') {
+        const attempt = videoAttempts.get(videoAttemptMatch[1]!);
+        if (attempt) ok(res, { attempt });
+        else fail(res, 404, 'video_attempt_not_found', '视频任务不存在');
+        return;
+      }
+      if (
+        /^\/api\/image-plaza\/image-artifacts\/[^/]+\/video-reference$/.test(path) &&
+        method === 'POST'
+      ) {
+        ok(res, {
+          artifact: {
+            id: randomUUID(),
+            image_url: `${api}/assets/scene.svg`,
+            width: 768,
+            height: 1024,
+          },
+        });
+        return;
+      }
       const studioMatch = path.match(
-        /^\/api\/image-plaza\/conversations\/([^/]+)(?:\/(attempts))?$/
+        /^\/api\/image-plaza\/conversations\/([^/]+)(?:\/(attempts|video-attempts))?$/
       );
       if (studioMatch) {
         const studio = data.studios.find((item) => item.id === studioMatch[1]);
@@ -2424,10 +2545,20 @@ export function createPreviewServer(apiPort: number, appPort: number) {
               id: randomUUID(),
               role: 'user',
               content: input.prompt,
+              media_type: 'image',
               attempt: null,
+              video_attempt: null,
               created_at: stamp(),
             },
-            { id: randomUUID(), role: 'assistant', content: '', attempt, created_at: stamp() }
+            {
+              id: randomUUID(),
+              role: 'assistant',
+              content: '',
+              media_type: 'image',
+              attempt,
+              video_attempt: null,
+              created_at: stamp(),
+            }
           );
           studio.snapshot = {
             ...input,
@@ -2440,6 +2571,66 @@ export function createPreviewServer(apiPort: number, appPort: number) {
             attempt,
           });
           imageKeys.set(input.idempotency_key, attempt);
+          ok(res, { attempt });
+          return;
+        }
+        if (method === 'POST' && studioMatch[2] === 'video-attempts') {
+          const input = SubmitVideoPlazaAttemptRequestSchema.parse(body);
+          const quote = videoQuotes.get(input.quote_id);
+          if (!quote || quote.expiresAt < Date.now()) {
+            fail(res, 409, 'quote_expired', '请重新报价');
+            return;
+          }
+          const attempt: VideoPlazaAttempt = {
+            id: randomUUID(),
+            conversation_id: studio.id,
+            status: 'ready',
+            error_code: null,
+            quote_credits: quote.credits,
+            params: {
+              ...quote.params,
+              reference_artifact_id: input.reference_artifact_id ?? null,
+            },
+            artifact: {
+              id: randomUUID(),
+              playback: {
+                format: 'hls',
+                play_url: `${api}/assets/plaza-video/master.m3u8`,
+                expires_at: new Date(Date.now() + 900_000).toISOString(),
+              },
+              poster_url: `${api}/assets/scene.svg?tone=1`,
+              width: 1280,
+              height: 720,
+              duration_ms: quote.params.duration_s * 1000,
+            },
+            created_at: stamp(),
+            updated_at: stamp(),
+          };
+          studio.messages.push(
+            {
+              id: randomUUID(),
+              role: 'user',
+              content: input.prompt,
+              media_type: 'video',
+              attempt: null,
+              video_attempt: null,
+              created_at: stamp(),
+            },
+            {
+              id: randomUUID(),
+              role: 'assistant',
+              content: '生成完成',
+              media_type: 'video',
+              attempt: null,
+              video_attempt: attempt,
+              created_at: stamp(),
+            }
+          );
+          studio.snapshot = { prompt: input.prompt, ...attempt.params };
+          videoAttempts.set(attempt.id, attempt);
+          data.wallet.main_credits -= quote.credits;
+          data.wallet.credits -= quote.credits;
+          data.wallet.total_credits -= quote.credits;
           ok(res, { attempt });
           return;
         }

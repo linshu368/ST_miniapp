@@ -77,9 +77,23 @@ Venice 单图编辑按报价快照的 `sizingMode` 组装尺寸字段：所有�
 
 审核后的 Civitai 初始数据通过独立离线导入器进入公开作品，不伪造用户、会话或生成 attempt。导入保留最多 2000 字原始提示词与模型映射，超限行隔离且不截断；apply 必须同时提供逐条审核清单、明确 test/production 目标、原图存储确认和有限批次，生产还需额外确认。
 
-Feed/config 始终返回启用标签目录；点击业务标签按标签中文 label 在 `snapshot.prompt_zh` 字面包含筛选，「全部」不限制标签。分享时空 tags 恒自动打标（2026-11-03 起不再读取 `image_plaza_tags_feature_enabled`）。
+Feed/config 始终返回图片与视频共用的启用标签目录及分组元数据；单标签、多标签和计数都按标签中文 label 在 `snapshot.prompt_zh` 做转义后的字面包含匹配，多标签为 OR，再与 search/media 取交集，不按作品 `tags` 数组筛选。「全部」不限制标签。分享时空 tags 恒自动打标，沿用上游退役 `image_plaza_tags_feature_enabled` 的行为。
+
+视频创作复用该模块的会话与公开作品投影，但走独立 `video-repository`、`video-upstream`、`video-job`：提交只预扣并返回 202，queue 超时记 `failed_unknown` 且不自动重投；retrieve/download/complete 仅做有限安全重试。视频不调用 LLM 提示词优化。列表 DTO 不含 MP4，详情/工作室签名 URL 复用 `storage.ts` 的有界 LRU。
+
+### 影像合并边界（2026-11-17，本地验证）
+
+1. **范围**：视频分支整合上游 repository 拆分、集中日志和 `admin-client` 迁移；不改变数据库、计费协议或远程发布状态。
+2. **入口**：`ImagePlazaRepository` 保留原公开方法，feed、作品签名、会话 hydration 分别位于 `repository-feed.ts`、`repository-work.ts`、`repository-conversation.ts`；视频 worker 写操作由 `video-worker-repository.ts` 承接。路由按 `image-plaza-feed.ts`、`video-plaza.ts` 分组，仍在原 plugin 上注册。
+3. **契约**：图片与视频共用会话和作品投影；读取会话必须同时保留 `video_attempt` 和视频快照。视频目录在 `admin-client/configSchemas.ts` 与 `menu.ts` 同时登记，网页和 CLI 共用。保留上游首次分享记录读取与自动打标恒开启行为，不恢复已退役开关或 PostHog。
+4. **失败矩阵**：并发超限保持 429；报价失效、越权参考图、幂等冲突和 queue 未知结果沿用原协议；原始数据库错误保留 cause。视频纯文本模型禁用参考图按钮，图片模式仍允许点击查看不支持提示，不能因复用选择组件互相覆盖。
+5. **正反场景**：正常为图片产物映射首帧后进入视频创作、切模型后保留参考图并按能力禁用；旧视频表不存在时图片会话仍可读取。错误为仅选择上游图片 mapper，导致视频快照或任务丢失。
+6. **验证**：复用 shared 契约、Backend 影像与观测、Frontend、Admin、CLI 与 UI fixture 测试；全仓 typecheck、日志/复杂度门禁及构建。`@image` 和封面回流覆盖模拟链路；真实供应商、账务、Telegram 下载和双端 P95 另验，不由本地成功推定。
+7. **合并方法**：应把分支能力接到上游新边界，并保留既有入口和错误语义；不得整文件选择旧 repository 或旧 Admin 配置路径，绕开上游拆分、日志与 CLI 消费者。
 
 ## 变更记录
+
+- 2026-10-28：任务 `10-16-creation-plaza-video-planning` 统一图片/视频标签目录，并将多标签与计数收口到 `prompt_zh` ILIKE。
 
 - 2026-10-30：任务 `10-30-image-plaza-edit-400-compat` 修复固定尺寸 Venice 编辑请求的 `resolution` 兼容，并保持 resolution 模型原有档位语义。
 - 2026-10-15：任务 `10-15-image-plaza-tag-prompt-filter` 解耦标签展示与自动打标，feed 标签筛选改为 `prompt_zh` 中文包含匹配。

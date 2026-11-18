@@ -92,6 +92,9 @@ const RULES = [
       'packages/shared/migrations/20261013_image_plaza_seed_catalog.sql',
       'packages/shared/migrations/20261013_platform_instruction_slot_windows.sql',
       'packages/shared/migrations/20261013_session_scoped_instruction_slot_modes.sql',
+      // Historical video definition; the 20261117 video-share forward-fix removes this write.
+      // Never rewrite applied SQL. Deploy the forward-fix after the video definition, including reruns.
+      'packages/shared/migrations/20261027_media_plaza_video.sql',
       'packages/shared/migrations/20261113_growth_prompt_states.sql',
       'packages/shared/migrations/20261117_db_reorg_p3b1_user_marks.sql',
       'packages/shared/migrations/20261117_db_reorg_p3b1_user_marks_contract.sql',

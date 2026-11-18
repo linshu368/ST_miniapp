@@ -1,32 +1,18 @@
 'use client';
 
 import Link from 'next/link';
-import { discardPendingAction, startPendingAction } from '@/lib/perf/action-tracker';
-import { usePageReady } from '@/lib/perf/page-ready';
-import { useRouter } from 'next/navigation';
-import {
-  ChevronLeft,
-  Copy,
-  Heart,
-  ImageIcon,
-  LoaderCircle,
-  RefreshCw,
-  Search,
-  Sparkles,
-  WandSparkles,
-} from 'lucide-react';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { ImagePlazaHistorySheet } from '@/components/image-plaza/image-plaza-history-sheet';
+import { PlazaCard } from '@/components/image-plaza/plaza-card';
+import { StyleFilterSheet } from '@/components/image-plaza/style-filter-sheet';
 import {
   IMAGE_PLAZA_FEED_STALE_TIME_MS,
   imagePlazaKeys,
+  prefetchImagePlazaConfig,
   useCreateImagePlazaConversationMutation,
   useImagePlazaConfigQuery,
   useImagePlazaFeedQuery,
-  useSetImagePlazaLikeMutation,
+  useImagePlazaTagCountsQuery,
 } from '@/lib/api/image-plaza';
-import type { GetImagePlazaFeedData, ImagePlazaWork, ImagePlazaFeedSort } from '@miniapp/shared';
-import { ImagePlazaHistorySheet } from '@/components/image-plaza/image-plaza-history-sheet';
 import { markCriticalSettled } from '@/lib/entry-phase';
 import {
   clearImagePlazaReturn,
@@ -34,6 +20,23 @@ import {
   restoreImagePlazaReturn,
   saveImagePlazaReturn,
 } from '@/lib/image-plaza-return';
+import { useMobilePerformancePolicy } from '@/lib/mobile-performance';
+import { discardPendingAction, startPendingAction } from '@/lib/perf/action-tracker';
+import { usePageReady } from '@/lib/perf/page-ready';
+import { markPageCriticalVisual } from '@/lib/perf/page-tracker';
+import type { GetImagePlazaFeedData, ImagePlazaFeedSort } from '@miniapp/shared';
+import { useQueryClient } from '@tanstack/react-query';
+import {
+  ChevronLeft,
+  ImageIcon,
+  LoaderCircle,
+  RefreshCw,
+  Search,
+  Sparkles,
+  WandSparkles,
+} from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 type NavigatorWithConnection = Navigator & {
   connection?: { saveData?: boolean; effectiveType?: string };
@@ -52,20 +55,74 @@ function canPrefetchWorkRoute(): boolean {
 export default function CreatePage() {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const performancePolicy = useMobilePerformancePolicy();
+  const listBudget = performancePolicy.imagePlaza.list;
   const [returnSnapshot] = useState(() => readImagePlazaReturn());
   const restoring = useRef(returnSnapshot !== null);
   const [search, setSearch] = useState(returnSnapshot?.search ?? '');
-  const [tag, setTag] = useState(returnSnapshot?.tag ?? 'all');
-  const [tags, setTags] = useState<GetImagePlazaFeedData['tags']>([{ id: 'all', label: '全部' }]);
+  const [selectedTags, setSelectedTags] = useState<string[]>(
+    returnSnapshot?.tags ??
+      (returnSnapshot?.tag && returnSnapshot.tag !== 'all' ? [returnSnapshot.tag] : [])
+  );
+  const [media, setMedia] = useState<'all' | 'image' | 'video'>(returnSnapshot?.media ?? 'all');
+  const [tags, setTags] = useState<GetImagePlazaFeedData['tags']>([
+    {
+      id: 'all',
+      label: '全部',
+      group_id: 'style',
+      group_label: '风格',
+      group_sort_order: 0,
+      group_layout: 'chips',
+      media_types: ['image', 'video'],
+    },
+  ]);
   const [sort, setSort] = useState<ImagePlazaFeedSort>(returnSnapshot?.sort ?? 'recommended');
   const [debouncedSearch, setDebouncedSearch] = useState(returnSnapshot?.search ?? '');
-  const feed = useImagePlazaFeedQuery(debouncedSearch, tag, sort);
-  // Feed 首包结算后再预热工作室共用的模型配置。创建响应本身已写入 conversation
-  // cache，因此用户点击进入时两份 P0 数据都能直接复用；失败仍由 Studio 原错误态承接。
-  useImagePlazaConfigQuery({ enabled: feed.data !== undefined || feed.isError });
+  const stableTags = useMemo(() => [...selectedTags].sort(), [selectedTags]);
+  const feed = useImagePlazaFeedQuery(debouncedSearch, stableTags, sort, media);
+  const items = useMemo(() => {
+    const seen = new Set<string>();
+    return (feed.data?.pages.flatMap((page) => page.items) ?? []).filter((item) => {
+      if (seen.has(item.id)) return false;
+      seen.add(item.id);
+      return true;
+    });
+  }, [feed.data]);
+  const [renderLimit, setRenderLimit] = useState(() =>
+    returnSnapshot ? Number.POSITIVE_INFINITY : listBudget.initialRenderCount
+  );
+  const feedViewKey = useMemo(
+    () => JSON.stringify([debouncedSearch, stableTags, sort, media]),
+    [debouncedSearch, stableTags, sort, media]
+  );
+  const previousFeedViewKey = useRef(feedViewKey);
   useEffect(() => {
-    if (feed.data !== undefined || feed.isError || feed.isFetched) markCriticalSettled();
-  }, [feed.data, feed.isError, feed.isFetched]);
+    if (previousFeedViewKey.current === feedViewKey) return;
+    previousFeedViewKey.current = feedViewKey;
+    setRenderLimit(listBudget.initialRenderCount);
+  }, [feedViewKey, listBudget.initialRenderCount]);
+  const renderedItems = useMemo(() => items.slice(0, renderLimit), [items, renderLimit]);
+  const hasMoreToRender = renderedItems.length < items.length;
+  const [criticalVisualSettled, setCriticalVisualSettled] = useState(false);
+  const availableTags = useMemo(() => tags.filter((item) => item.id !== 'all'), [tags]);
+  const tagCounts = useImagePlazaTagCountsQuery(
+    debouncedSearch,
+    media,
+    availableTags.length > 0 && criticalVisualSettled
+  );
+  // 首批媒体结算后再预热工作室共用的模型配置。创建响应本身已写入 conversation
+  // cache，因此用户点击进入时两份 P0 数据都能直接复用；失败仍由 Studio 原错误态承接。
+  useImagePlazaConfigQuery({ enabled: criticalVisualSettled || feed.isError });
+  useEffect(() => {
+    if (criticalVisualSettled || feed.isError) markCriticalSettled();
+  }, [criticalVisualSettled, feed.isError]);
+  useEffect(() => {
+    if (criticalVisualSettled || feed.data === undefined || feed.isError) return;
+    // 媒体解码异常不能永久饿死标签计数和配置预热；旁路只放行后台工作，
+    // critical visual 指标仍必须由真实 load/error/absent 结算。
+    const timer = window.setTimeout(() => setCriticalVisualSettled(true), 1500);
+    return () => window.clearTimeout(timer);
+  }, [criticalVisualSettled, feed.data, feed.isError]);
   const { fetchNextPage, hasNextPage, isFetchingNextPage } = feed;
   const createConversation = useCreateImagePlazaConversationMutation();
   const sentinel = useRef<HTMLDivElement | null>(null);
@@ -104,48 +161,53 @@ export default function CreatePage() {
     // 筛选请求期间只保留标签栏，避免卸载后闪烁、丢失横向滚动位置；不复用旧作品或游标。
     if (!feedTags) return;
     setTags(feedTags);
-    if (tag !== 'all' && !feedTags.some((item) => item.id === tag)) setTag('all');
-  }, [tag, feedTags]);
+    setSelectedTags((current) => current.filter((id) => feedTags.some((item) => item.id === id)));
+  }, [feedTags]);
 
   useEffect(() => {
     const node = sentinel.current;
     if (!node) return;
+    if (typeof IntersectionObserver === 'undefined') {
+      // 极老 WebView 保留完整列表能力；只是不再自动预取下一页。
+      setRenderLimit(Number.POSITIVE_INFINITY);
+      return;
+    }
     const observer = new IntersectionObserver(
       (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return;
+        // 先把已经拿到的数据渐进画出来，再请求下一页；否则短首屏会让 sentinel
+        // 常驻视口并连续拉取多页，重新制造网络和解码突发。
+        if (hasMoreToRender) {
+          setRenderLimit((limit) => limit + listBudget.renderBatchSize);
+          return;
+        }
         if (
-          entries[0]?.isIntersecting &&
           hasNextPage &&
           !isFetchingNextPage &&
           !feed.paginationInvalidated &&
           !feed.isPlaceholderData &&
           !feed.isError &&
           !feed.isFetching
-        ) {
+        )
           void fetchNextPage();
-        }
       },
-      { rootMargin: '240px' }
+      { rootMargin: listBudget.renderMoreRootMargin }
     );
     observer.observe(node);
     return () => observer.disconnect();
   }, [
     fetchNextPage,
+    hasMoreToRender,
     hasNextPage,
     isFetchingNextPage,
+    listBudget.renderBatchSize,
+    listBudget.renderMoreRootMargin,
     feed.paginationInvalidated,
     feed.isPlaceholderData,
     feed.isError,
     feed.isFetching,
   ]);
 
-  const items = useMemo(() => {
-    const seen = new Set<string>();
-    return (feed.data?.pages.flatMap((page) => page.items) ?? []).filter((item) => {
-      if (seen.has(item.id)) return false;
-      seen.add(item.id);
-      return true;
-    });
-  }, [feed.data]);
   usePageReady(
     '/create',
     feed.data !== undefined && (!feed.isError || items.length > 0),
@@ -153,7 +215,47 @@ export default function CreatePage() {
     feed.isError
   );
   // 行优先分列：1 2 / 3 4，避免 CSS columns 的竖向填充（1 3 / 2 4）
-  const feedColumns = useMemo(() => splitIntoColumns(items, 2), [items]);
+  const feedColumns = useMemo(() => splitIntoColumns(renderedItems, 2), [renderedItems]);
+  const criticalPreviewIds = useMemo(
+    () => renderedItems.slice(0, 2).map((item) => item.id),
+    [renderedItems]
+  );
+  const criticalPreviewKey = criticalPreviewIds.join(':');
+  const criticalPreviews = useRef<{
+    key: string;
+    outcomes: Map<string, 'loaded' | 'error' | 'absent'>;
+  }>({ key: '', outcomes: new Map() });
+  if (criticalPreviews.current.key !== criticalPreviewKey) {
+    criticalPreviews.current = { key: criticalPreviewKey, outcomes: new Map() };
+  }
+  const handleCriticalPreviewSettled = useCallback(
+    (id: string, outcome: 'loaded' | 'error' | 'absent') => {
+      if (!criticalPreviewIds.includes(id)) return;
+      const state = criticalPreviews.current;
+      if (state.key !== criticalPreviewKey || state.outcomes.has(id)) return;
+      state.outcomes.set(id, outcome);
+      if (state.outcomes.size !== criticalPreviewIds.length) return;
+      const outcomes = [...state.outcomes.values()];
+      setCriticalVisualSettled(true);
+      markPageCriticalVisual(
+        '/create',
+        outcomes.includes('error') ? 'error' : outcomes.includes('loaded') ? 'loaded' : 'absent',
+        undefined,
+        feed.data !== undefined && feed.isFetching ? 'cache' : 'fetch'
+      );
+    },
+    [criticalPreviewIds, criticalPreviewKey, feed.data, feed.isFetching]
+  );
+  useEffect(() => {
+    if (feed.data === undefined || feed.isError || criticalPreviewIds.length > 0) return;
+    setCriticalVisualSettled(true);
+    markPageCriticalVisual('/create', 'absent', undefined, feed.isFetching ? 'cache' : 'fetch');
+  }, [criticalPreviewIds.length, feed.data, feed.isError, feed.isFetching]);
+  useEffect(() => {
+    if (!feed.isError || items.length > 0) return;
+    setCriticalVisualSettled(true);
+    markPageCriticalVisual('/create', 'error', undefined, 'fetch');
+  }, [feed.isError, items.length]);
 
   useLayoutEffect(() => {
     if (
@@ -171,10 +273,12 @@ export default function CreatePage() {
     restoring.current = false;
   }, [returnSnapshot, feed.data, feed.dataUpdatedAt, feed.isFetching, feed.paginationInvalidated]);
 
-  const saveReturn = (workId?: string) => saveImagePlazaReturn({ search, tag, sort }, workId);
+  const saveReturn = (workId?: string) =>
+    saveImagePlazaReturn({ search, tags: stableTags, media, sort }, workId);
 
   const startStudio = (sourceWorkId?: string) => {
     saveReturn(sourceWorkId);
+    void prefetchImagePlazaConfig(queryClient);
     setPendingSourceWorkId(sourceWorkId ?? 'new');
     startPendingAction('create_conversation');
     createConversation.mutate(sourceWorkId ? { source_work_id: sourceWorkId } : {}, {
@@ -193,7 +297,7 @@ export default function CreatePage() {
     setIsPullRefreshing(true);
     try {
       await queryClient.resetQueries({
-        queryKey: imagePlazaKeys.feed(debouncedSearch, tag, sort),
+        queryKey: imagePlazaKeys.feed(debouncedSearch, stableTags, sort, media),
         exact: true,
       });
     } finally {
@@ -268,9 +372,28 @@ export default function CreatePage() {
               ) : (
                 <Sparkles className="size-4" />
               )}
-              生成图片
+              去创作
             </button>
           </div>
+        </div>
+        <div
+          className="mt-2 grid grid-cols-3 rounded-xl bg-card p-1 ring-1 ring-border"
+          role="group"
+          aria-label="媒体类型"
+        >
+          {(['all', 'image', 'video'] as const).map((value) => (
+            <button
+              key={value}
+              type="button"
+              aria-pressed={media === value}
+              onClick={() => {
+                setMedia(value);
+              }}
+              className={`min-h-9 rounded-lg text-xs font-bold ${media === value ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}`}
+            >
+              {value === 'all' ? '全部' : value === 'image' ? '图片' : '视频'}
+            </button>
+          ))}
         </div>
         <label className="mt-2 flex h-10 items-center gap-2 rounded-xl border border-border bg-card px-3 text-muted-foreground">
           <Search className="size-4" aria-hidden />
@@ -285,21 +408,48 @@ export default function CreatePage() {
         <div className="mt-1 space-y-1">
           {tags.some((item) => item.id !== 'all') ? (
             <div
-              className="flex min-w-0 items-center gap-2 overflow-x-auto py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              className="flex min-w-0 items-center gap-2 py-1"
               role="group"
               aria-label="作品标签"
             >
-              {tags.map((item) => (
+              <div
+                data-image-plaza-tags-scroll
+                className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              >
                 <button
-                  key={item.id}
                   type="button"
-                  aria-pressed={tag === item.id}
-                  onClick={() => setTag(item.id)}
-                  className={`relative shrink-0 whitespace-nowrap rounded-full border px-4 py-1.5 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary ${tag === item.id ? 'border-primary/30 bg-primary/10 text-primary' : 'border-transparent text-muted-foreground hover:bg-card hover:text-foreground'}`}
+                  aria-pressed={selectedTags.length === 0}
+                  onClick={() => setSelectedTags([])}
+                  className={`shrink-0 whitespace-nowrap rounded-xl border px-3 py-2 text-[13px] font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary ${selectedTags.length === 0 ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border bg-card text-muted-foreground'}`}
                 >
-                  {item.label}
+                  不限
                 </button>
-              ))}
+                {availableTags.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    aria-pressed={selectedTags.includes(item.id)}
+                    onClick={() =>
+                      setSelectedTags((current) =>
+                        current.length === 1 && current[0] === item.id ? [] : [item.id]
+                      )
+                    }
+                    className={`relative shrink-0 whitespace-nowrap rounded-xl border px-3 py-2 text-[13px] font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary ${selectedTags.includes(item.id) ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border bg-card text-muted-foreground hover:text-foreground'}`}
+                  >
+                    {item.label}{' '}
+                    <span className="text-xs font-normal opacity-70">
+                      {tagCounts.isError ? '—' : (tagCounts.data?.counts[item.id] ?? '…')}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <StyleFilterSheet
+                tags={availableTags}
+                selected={selectedTags}
+                counts={tagCounts.data?.counts}
+                countsFailed={tagCounts.isError}
+                onChange={setSelectedTags}
+              />
             </div>
           ) : null}
           <div className="flex items-center gap-2" role="group" aria-label="作品排序">
@@ -343,12 +493,19 @@ export default function CreatePage() {
         ) : items.length === 0 ? (
           <EmptyState
             icon={<WandSparkles />}
-            title={search || tag !== 'all' ? '没有找到对应作品' : '还没有公开作品'}
-            action={search || tag !== 'all' ? '查看全部' : '生成第一张'}
+            title={
+              search || selectedTags.length || media !== 'all'
+                ? '没有找到对应作品'
+                : '还没有公开作品'
+            }
+            action={
+              search || selectedTags.length || media !== 'all' ? '查看全部' : '生成第一个作品'
+            }
             onAction={() => {
-              if (search || tag !== 'all') {
+              if (search || selectedTags.length || media !== 'all') {
                 setSearch('');
-                setTag('all');
+                setSelectedTags([]);
+                setMedia('all');
               } else startStudio();
             }}
           />
@@ -364,9 +521,13 @@ export default function CreatePage() {
                   <PlazaCard
                     key={work.id}
                     work={work}
-                    priority={columnIndex + rowIndex * 2 < 2}
+                    eager={columnIndex + rowIndex * 2 < listBudget.eagerImageCount}
+                    priority={columnIndex + rowIndex * 2 < listBudget.highPriorityImageCount}
+                    imageWidths={performancePolicy.imagePlaza.feedImageWidths}
+                    imageQuality={performancePolicy.imagePlaza.feedImageQuality}
                     useSamePending={pendingSourceWorkId === work.id}
                     interactionDisabled={createConversation.isPending}
+                    onPreviewSettled={handleCriticalPreviewSettled}
                     onPrefetch={() => {
                       if (canPrefetchWorkRoute()) router.prefetch(`/create/work/${work.id}`);
                     }}
@@ -388,6 +549,8 @@ export default function CreatePage() {
             </button>
           ) : feed.isFetchingNextPage ? (
             <LoaderCircle className="size-5 animate-spin" />
+          ) : hasMoreToRender ? (
+            '继续下滑加载更多'
           ) : !feed.hasNextPage && items.length > 0 && !feed.isPlaceholderData ? (
             '已经到底啦'
           ) : null}
@@ -399,104 +562,6 @@ export default function CreatePage() {
         </p>
       ) : null}
     </main>
-  );
-}
-
-function PlazaCard(props: {
-  work: ImagePlazaWork;
-  priority: boolean;
-  useSamePending: boolean;
-  interactionDisabled: boolean;
-  onPrefetch: () => void;
-  onOpen: () => void;
-  onUseSame: () => void;
-}) {
-  const like = useSetImagePlazaLikeMutation(props.work.id);
-  const imageRef = useRef<HTMLImageElement | null>(null);
-  const [imageLoaded, setImageLoaded] = useState(false);
-  const aspectRatio =
-    props.work.width > 0 && props.work.height > 0
-      ? `${props.work.width} / ${props.work.height}`
-      : '2 / 3';
-
-  useEffect(() => {
-    setImageLoaded(false);
-    const node = imageRef.current;
-    if (node?.complete && node.naturalWidth > 0) setImageLoaded(true);
-  }, [props.work.image_url]);
-
-  return (
-    <article
-      data-image-work-id={props.work.id}
-      className="group relative overflow-hidden rounded-[1.5rem] bg-card ring-1 ring-border/70"
-    >
-      {like.isError ? (
-        <p
-          role="alert"
-          className="absolute inset-x-0 top-0 z-10 bg-destructive p-2 text-xs text-destructive-foreground"
-        >
-          点赞未确认，请刷新后重试
-        </p>
-      ) : null}
-      <Link
-        href={`/create/work/${props.work.id}`}
-        prefetch={false}
-        aria-label={`查看作品：${props.work.title}`}
-        onPointerEnter={props.onPrefetch}
-        onFocus={props.onPrefetch}
-        onTouchStart={props.onPrefetch}
-        onClick={props.onOpen}
-        className="block"
-      >
-        <div className="relative w-full overflow-hidden bg-muted/50" style={{ aspectRatio }}>
-          {!imageLoaded ? (
-            <div aria-hidden className="absolute inset-0 animate-pulse bg-muted" />
-          ) : null}
-          <img
-            ref={imageRef}
-            src={props.work.image_url}
-            alt={props.work.title}
-            width={props.work.width}
-            height={props.work.height}
-            loading={props.priority ? 'eager' : 'lazy'}
-            fetchPriority={props.priority ? 'high' : 'low'}
-            decoding="async"
-            onLoad={() => setImageLoaded(true)}
-            className={`absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-[1.02] ${
-              imageLoaded ? 'opacity-100' : 'opacity-0'
-            }`}
-          />
-        </div>
-      </Link>
-      <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 bg-gradient-to-t from-black/90 via-black/35 to-transparent p-2 pt-16 text-white sm:p-3 sm:pt-16">
-        <button
-          type="button"
-          disabled={like.isPending}
-          onClick={() => like.mutate(!props.work.liked)}
-          aria-label={
-            props.work.liked ? `取消点赞：${props.work.title}` : `点赞：${props.work.title}`
-          }
-          className="inline-flex h-10 shrink-0 items-center gap-1 rounded-full text-xs font-black drop-shadow-md disabled:opacity-60"
-        >
-          <Heart className={`size-4 ${props.work.liked ? 'fill-current' : ''}`} />
-          {props.work.like_count}
-        </button>
-        <button
-          type="button"
-          disabled={props.interactionDisabled}
-          onClick={props.onUseSame}
-          aria-label={`用同款：${props.work.title}`}
-          className="inline-flex h-10 shrink-0 items-center gap-1 rounded-xl border border-white/10 bg-black/45 px-2 text-[11px] font-black text-[#d8c1aa] shadow-lg backdrop-blur-md transition active:scale-95 sm:h-11 sm:gap-1.5 sm:px-3 sm:text-xs"
-        >
-          {props.useSamePending ? (
-            <LoaderCircle className="size-4 animate-spin" />
-          ) : (
-            <Copy className="size-4" />
-          )}
-          {props.useSamePending ? '正在打开' : '用同款'}
-        </button>
-      </div>
-    </article>
   );
 }
 

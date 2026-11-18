@@ -1,38 +1,38 @@
-import { Buffer } from 'node:buffer';
 import {
   ImagePlazaSnapshotSchema,
+  VideoPlazaSnapshotSchema,
   type ImagePlazaArtifact,
   type ImagePlazaAttempt,
   type ImagePlazaConversation,
   type ImagePlazaSnapshot,
   type ProviderImagePlazaModel,
   type SubmitImagePlazaAttemptRequest,
+  type VideoPlazaSnapshot,
 } from '@miniapp/shared';
+import { Buffer } from 'node:buffer';
+import { ImagePlazaConversationRepository } from './repository-conversation.js';
+import {
+  AttemptRow,
+  canAccessReference,
+  ConversationRow,
+  ImagePlazaWorkerAttempt,
+  mapAttemptRow,
+  mapConversationRow,
+} from './repository-model.js';
+import { ImagePlazaWorkerRepository } from './repository-worker.js';
 import {
   deletePlazaImage,
   signPlazaImagePath,
   uploadPlazaImage,
   type PlazaMimeType,
 } from './storage.js';
-import {
-  ImagePlazaWorkerAttempt,
-  ArtifactRow,
-  AttemptRow,
-  MessageRow,
-  ConversationRow,
-  mapAttemptRow,
-  mapConversationRow,
-  canAccessReference,
-} from './repository-model.js';
-import { ImagePlazaFeedRepository } from './repository-feed.js';
-import { ImagePlazaWorkerRepository } from './repository-worker.js';
 
 export { ImagePlazaSettlementError } from './repository-model.js';
 
 export type { ImagePlazaWorkerAttempt } from './repository-model.js';
 
 /** Public repository API remains stable while feed and worker storage stay focused. */
-export class ImagePlazaRepository extends ImagePlazaFeedRepository {
+export class ImagePlazaRepository extends ImagePlazaConversationRepository {
   async createQuote(input: {
     userId: string;
     model: ProviderImagePlazaModel;
@@ -117,18 +117,60 @@ export class ImagePlazaRepository extends ImagePlazaFeedRepository {
     };
   }
 
+  async createVideoReferenceFromImageArtifact(
+    artifactId: string,
+    userId: string
+  ): Promise<ImagePlazaArtifact> {
+    const { data, error } = await this.mediaPlaza.rpc(
+      'get_or_create_video_reference_from_image_artifact',
+      {
+        p_user_id: userId,
+        p_artifact_id: artifactId,
+      }
+    );
+    if (error) {
+      if (error.code === 'P0002' || error.code === '42501') {
+        throw new Error('image_plaza_artifact_not_found');
+      }
+      throw new Error(`image plaza video reference create failed: ${error.message}`, {
+        cause: error,
+      });
+    }
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      throw new Error('image_plaza_video_reference_result_invalid');
+    }
+    const result = data as Record<string, unknown>;
+    if (
+      typeof result.id !== 'string' ||
+      typeof result.storage_path !== 'string' ||
+      typeof result.width !== 'number' ||
+      typeof result.height !== 'number'
+    ) {
+      throw new Error('image_plaza_video_reference_result_invalid');
+    }
+    return {
+      id: result.id,
+      image_url: await signPlazaImagePath(result.storage_path),
+      width: result.width,
+      height: result.height,
+    };
+  }
+
   async createConversation(userId: string, sourceWorkId?: string): Promise<ImagePlazaConversation> {
-    let title = '新建图片创作';
-    let snapshot: ImagePlazaSnapshot | null = null;
+    let title = '新建影像创作';
+    let snapshot: ImagePlazaSnapshot | VideoPlazaSnapshot | null = null;
     if (sourceWorkId) {
       const { data, error } = await this.mediaPlaza
         .from('image_plaza_works')
-        .select('title,snapshot')
+        .select('title,snapshot,media_type')
         .eq('id', sourceWorkId)
         .is('deleted_at', null)
         .maybeSingle();
       if (error || !data) throw new Error('image_plaza_source_work_not_found');
-      const parsed = ImagePlazaSnapshotSchema.safeParse(data.snapshot);
+      const parsed =
+        data.media_type === 'video'
+          ? VideoPlazaSnapshotSchema.safeParse(data.snapshot)
+          : ImagePlazaSnapshotSchema.safeParse(data.snapshot);
       if (!parsed.success) throw new Error('image_plaza_source_snapshot_invalid');
       title = `同款 · ${String(data.title).slice(0, 68)}`;
       // 同款会话只保留英文 prompt；中文译文仅用于作品详情展示与列表搜索。
@@ -146,39 +188,6 @@ export class ImagePlazaRepository extends ImagePlazaFeedRepository {
       });
     // 新建会话必然没有消息和任务，直接映射可省掉两次空表读取，缩短“用同款”跳转等待。
     return mapConversationRow(data as ConversationRow, []);
-  }
-
-  async listConversations(
-    userId: string
-  ): Promise<Array<Omit<ImagePlazaConversation, 'messages'>>> {
-    const { data, error } = await this.mediaPlaza
-      .from('image_plaza_conversations')
-      .select('*')
-      .eq('user_id', userId)
-      .order('updated_at', { ascending: false })
-      .limit(50);
-    if (error)
-      throw new Error(`image plaza conversations read failed: ${error.message}`, { cause: error });
-    return (data ?? []).map((row) => {
-      const conversation = mapConversationRow(row as ConversationRow, []);
-      const { messages: _messages, ...summary } = conversation;
-      return summary;
-    });
-  }
-
-  async getConversation(
-    conversationId: string,
-    userId: string
-  ): Promise<ImagePlazaConversation | null> {
-    const { data, error } = await this.mediaPlaza
-      .from('image_plaza_conversations')
-      .select('*')
-      .eq('id', conversationId)
-      .eq('user_id', userId)
-      .maybeSingle();
-    if (error)
-      throw new Error(`image plaza conversation read failed: ${error.message}`, { cause: error });
-    return data ? this.hydrateConversation(data as ConversationRow) : null;
   }
 
   async createAttempt(input: {
@@ -343,59 +352,6 @@ export class ImagePlazaRepository extends ImagePlazaFeedRepository {
       alreadyShared: result.already_shared === true,
       rewardCredits: Number(result.reward_credits ?? 0),
     };
-  }
-
-  private async hydrateConversation(row: ConversationRow): Promise<ImagePlazaConversation> {
-    const [{ data: messages, error: messageError }, { data: attempts, error: attemptError }] =
-      await Promise.all([
-        this.mediaPlaza
-          .from('image_plaza_messages')
-          .select('*')
-          .eq('conversation_id', row.id)
-          .order('created_at'),
-        this.mediaPlaza.from('image_plaza_attempts').select('*').eq('conversation_id', row.id),
-      ]);
-    if (messageError || attemptError) throw new Error('image_plaza_conversation_hydration_failed');
-    const attemptRows = (attempts ?? []) as AttemptRow[];
-    const artifacts = await this.getArtifacts(attemptRows.map((attempt) => attempt.id));
-    const byAssistantMessage = new Map(
-      attemptRows.map((attempt) => [
-        attempt.assistant_message_id,
-        mapAttemptRow(attempt, artifacts.get(attempt.id) ?? []),
-      ])
-    );
-    return mapConversationRow(
-      row,
-      ((messages ?? []) as MessageRow[]).map((message) => ({
-        ...message,
-        attempt: byAssistantMessage.get(message.id) ?? null,
-      }))
-    );
-  }
-
-  private async getArtifacts(attemptIds: string[]): Promise<Map<string, ImagePlazaArtifact[]>> {
-    const result = new Map<string, ImagePlazaArtifact[]>();
-    if (attemptIds.length === 0) return result;
-    const { data, error } = await this.mediaPlaza
-      .from('image_plaza_artifacts')
-      .select('*')
-      .in('attempt_id', attemptIds)
-      .order('position');
-    if (error)
-      throw new Error(`image plaza artifacts read failed: ${error.message}`, { cause: error });
-    await Promise.all(
-      ((data ?? []) as ArtifactRow[]).map(async (row) => {
-        const list = result.get(row.attempt_id) ?? [];
-        list.push({
-          id: row.id,
-          image_url: await signPlazaImagePath(row.storage_path),
-          width: row.width,
-          height: row.height,
-        });
-        result.set(row.attempt_id, list);
-      })
-    );
-    return result;
   }
 
   private async findAttemptByIdempotency(

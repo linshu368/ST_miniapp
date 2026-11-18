@@ -1,5 +1,7 @@
 # ST_miniAPP 架构说明
 
+2026-11-17 广场视频 TEST 修复：详情播放复用 Backend 的 DRAMA_STREAM 三项签名配置，Railway 预览环境必须单独配置；本地 `.env` 不随镜像发布。`pr-566` 已补齐五项 Stream 配置并验证12个已发布作品。视频预扣经 `billing.reserve_media_plaza_video → billing.apply_wallet_debit`，后者的完整重定义必须保留视频调用方的类型白名单；新守卫修复已在 TEST 生效（仓库账本未登记），只扩展该类型，现行专项优先和权限核验通过；后续真实任务被 Venice queue 的402拒绝。见 [运行手册](video-plaza-stream.md)。
+
 2026-11-16 内容链候选：`/chats` 的公开摘要lookup仅订阅已有Query/持久快照，补缺详情在enrich/导航安静窗后以normal执行，按既有用户+session key短期内存复用。分组RPC只对自身取消期限或已知依赖超时返回503/folders_unavailable，未知编程/权限错误保留；groups和flat共用250ms可取消的可选summary预算。自动推荐open/resume总预算1500ms，手动刷新/撤回（包括兼容open）保持5000ms，UUID和viewer隔离不变。HTTP契约不新增字段，无SQL迁移；先兼容Backend再Frontend，生产验收与条件性D/E变更见 [实施说明](../.trellis/tasks/11-12-overnight-page-performance/content-path-optimization-2026-11-16.md)。
 
 2026-11-16 MiniApp 冷启动专项（本地候选）：`/` 按 landing cookie 内部 rewrite 到已有静态 `/chats` 或 `/characters`，返回一个文档；Providers 根据实际路由树保持 SSR 框架一致，捕获 Telegram 启动上下文后用原生 History API 同步规范路径，再挂业务。可见会话列表第一页使用预留 critical 槽，分页维持 normal；groups 遥测独立于 conversation_detail，历史指标不能直接混比。未改变后端/鉴权/私人缓存，生产效果需发布后验证。见 [专项说明](../.trellis/tasks/11-12-overnight-page-performance/cold-start-optimization-2026-11-16.md)。
@@ -29,6 +31,7 @@ Railway 展示补充（本地未部署）：统一 Pino 出口由可注入纯展
 >
 > 当前进度：**自研引擎已全量上线，ST 链路（代码、schema、部署单元）已全部退场**；M5 自研聊天 UI、M6 切换（`chat_engine_mode` 开关已用完即删，083）均已交付；上下文截断已由按轮数泄洪（077）换成正文字数水位 + 会话长期记忆（20261110）。
 > **Schema 划分一阶段已在生产落地**（2026-08-28 C3 割接完成，099 执行 9.4 秒、API 停机约 38 分钟）：原 `miniapp` schema 的 22 表 + 1 视图 + 24 函数已按归属域分布到 `app_core` / `miniapp_features` / `experience` / `billing` / `cs_platform`，`miniapp` 只剩空壳待批次 D 删除。
+> **图片广场 M1 已在 TEST、Production 落地**（2026-10-27 用户确认）：8 张图片表和 3 个图片 RPC 已迁到第九域 `media_plaza` 并完成 PostgREST 暴露；后端直接访问新 schema，不保留旧路径兼容。
 > 语音消息生成链路已上线（080）；按次计费首版（101/102）曾整体回退（PR #298，test 库用 104 清理），随后以 **105_voice_billing_atomic** 重做落地，由 `runtime_config.voice_billing_enabled` 开关控制（默认关，详见 §4.6）。
 > 2026-09 新增两条增长链路：裂变邀请（105–109，`routes/invite.ts`）与官方社群入群奖励（108/109，`routes/community.ts`），发奖全部在数据库 RPC 内完成（见 §1 铁律 6）。
 > 角色回复图片生成的代码与 test migration 已落地，但 `image_generation_enabled` 默认关闭；真实 DeepSeek/Grok、Telegram 真机及 production 发布尚未验收，不视为现网已开放。
@@ -109,19 +112,19 @@ Railway 展示补充（本地未部署）：统一 Pino 出口由可注入纯展
                ▼                          ▼               ▼
 ┌────────────────────────────────────┐ ┌──────────────┐ ┌──────────────────┐
 │ Supabase（PostgreSQL + Storage）    │ │ OpenRouter   │ │ MiniMax TTS      │
-│  九域布局（media_plaza M1 后）：      │ │ （LLM 上游）  │ │ DeepSeek（写稿）  │
+│  九域布局（media_plaza M1 之后）：   │ │ （LLM 上游）  │ │ DeepSeek（写稿）  │
 │  ├ app_core      用户/角色卡/配置   │ │ 平台真实 key │ │ （语音链路上游）  │
 │  ├ experience    会话/chat_history/ │ │ 只在 backend │ └──────────────────┘
 │  │               语音元数据          │ └──────────────┘
 │  ├ billing       钱包/订单/计费/额度 │
 │  ├ miniapp_features 收藏/签到/通知/  │      ⑤ Telegram Bot webhook
 │  │               通知/排序分         │      → /api/telegram/webhook
-│  ├ media_plaza   图片广场全生命周期  │
 │  ├ cs_platform   旧回访/客服（已停用）│
 │  ├ miniapp_traffic  渠道归因         │  Railway 另有支付任务；development 另有提醒 Cron：
 │  ├ miniapp_analytics 看数视图        │   · payment-reconcile-cron（常驻对账）
 │  ├ admin         运营台账号/审计     │   · payment-cron（*/5 过期任务）
-│                                    │   · vip-reminder-cron（仅 development）
+│  ├ media_plaza   图片/视频广场       │   · vip-reminder-cron（仅 development）
+│                                    │
 │  └ miniapp       空壳（待删）        │
 │  Storage: character-assets /        │
 │           miniapp-chat-voice / images │
@@ -379,11 +382,14 @@ T9 专表 contract：`20261016_openrouter_chat_history_drop_legacy_aliases.sql` 
 
 2026-09-24 产品确认 TEST 真机 VIP 验收通过。当时任务日志中的 TEST 状态是 `vip_purchase_enabled=true`、`vip_reminders_enabled=true`。Production 购买、提醒和数据都未按本任务打开，上线仍等 T9 的明确批准。
 
-### 4.9 图片创作广场（代码完成，实库 migration/canary 待执行）
+2026-11-17本地候选：广场视频统一Cloudflare Stream；Supabase保留稳定UID/链接、封面与业务事实。独立video_delivery_jobs承担TUS断点、租约/退避/未知隔离；发布及明确失败退款由RPC原子收敛。按artifact鉴权的HLS取址/MP4下载与工作室/详情共用播放器，业务日志模块image。TEST全部13条云资产已上传核验，数据库和应用切换尚未执行，生产不在本任务操作范围；顺序与恢复见[操作说明](video-plaza-stream.md)。
 
+### 4.9 图片与视频创作广场（图片 M1 已执行；视频 migration/canary 待执行）
+
+图片广场与角色回复图片完全独立：共享契约在 `shared/src/api/image-plaza.ts`，Backend 在 `features/image-plaza/` 与 `routes/image-plaza.ts`，Frontend 使用 `/create`、`/create/work/[workId]` 和 `/create/studio/[conversationId]`。报价、异步 Venice 生成、Storage、结算、分享返利、feed/详情/点赞/用同款都走这套独立链路；提示词在 textarea、shared schema、作品快照、attempt/message、数据库和上游调用中统一最多 2,000 字，不静默截断。Feed/config 始终返回图片与视频共用的启用标签目录，目录支持运营分组、顺序与 chip/grid 布局；单/多标签和计数都按配置 label 对 `snapshot.prompt_zh` 做转义后的字面包含匹配，「全部」不限制，不按作品 `tags` 数组筛选。分享时客户端未传标签即自动打标，不再读取已退役开关。
+
+图片 M1 与 PostgREST 暴露已在 TEST、Production 完成，8 张图片表和 3 个图片 RPC 统一位于 `media_plaza`；Backend 不再探测或回退旧 schema。仓库已实现视频扩展，视频 M2/M3、Venice canary 与发布状态以原视频任务的执行记录为准；本次合并仅验证本地实现：图片与视频共用会话、作品投影、点赞及首次分享奖励；视频使用 10 分钟权威报价、预扣/失败退款、租约 worker、私有 `media-plaza-video` bucket 和 `ffmpeg +faststart`。列表只返回并签名 poster，详情/工作室才返回可直接放入 `<video src>` 的 MP4 签名 URL；浏览器依赖 HTTP Range，不走 fetch→blob。视频提示词不设业务字符上限，也不发送图片链路的自动优化字段。
 模型目录的可选 `pricing_factors` 与 USD `standard_prices` 一起经过运营草稿、发布和回滚；Admin 重新打开读回保存参数，实际报价与扣费继续读取已发布的各档位 `credits`，不随参数编辑自动重算。
-
-图片广场与角色回复图片完全独立：共享契约在 `shared/src/api/image-plaza.ts`，Backend 在 `features/image-plaza/` 与 `routes/image-plaza.ts`，Frontend 使用 `/create`、`/create/work/[workId]` 和 `/create/studio/[conversationId]`。报价、异步 Venice 生成、Storage、结算、分享返利、feed/详情/点赞/用同款都走这套独立链路；提示词在 textarea、shared schema、作品快照、attempt/message、数据库和上游调用中统一最多 2,000 字，不静默截断。Feed 始终返回启用标签目录；业务标签按 `snapshot.prompt_zh` 中文 label 字面包含筛选，「全部」不限制；分享时客户端未传标签即自动打标（2026-11-03 起恒开启，后端不再读 `image_plaza_tags_feature_enabled`）。
 
 `media_plaza.image_plaza_works` 是公开作品投影，`media_plaza.image_plaza_artifacts` 保存自有 Storage 元数据。`origin=generated` 必须关联真实用户和已结算 attempt；`origin=civitai_seed` 不得伪造用户、会话、attempt 或账务，只在内部保存 Civitai source ID/URL/heat，公开 DTO 仅返回自有签名 URL、模型和作品快照。本地 `like_count` 始终只由 `media_plaza.image_plaza_likes` 重算，不能混入来源热度。分享返利仍只允许 generated artifact，并通过 `billing.grant_bonus_credits` 发放。
 
@@ -415,7 +421,7 @@ T9 专表 contract：`20261016_openrouter_chat_history_drop_legacy_aliases.sql` 
 
 三张钱表的口径纪律：**支付金额以订单为准，星尘变动以流水为准，钱包余额只是可重建的当前状态。**
 
-短剧是既有外部归档域 `drama_archive`，基础表由独立 `telegram-video-archive` 管理，不属于本仓九域治理。本次仅通过 shared migration 扩展既有 `videos.created_at`，不创建新表／schema／RPC。`DramaRepository` 经 `dramas → ai_results.drama_id` 获取剧级文字，`assemble` 统一逐字段回退；可播视频最早时间输出为 `first_published_at`，前端在完整目录上组合搜索／分类并按该字段排序，点击后保存当前播放队列顺序。外部上传端负责后续时间写入，NULL 不伪造为当前时间。迁移先于消费者发布，TEST 的补录时间不是历史上传事实，Production 不随本次执行。详见[短剧目录与时间契约](../.trellis/spec/database/supabase/drama-catalog.md)。
+短剧是既有外部归档域 `drama_archive`，基础表由独立 `telegram-video-archive` 管理，不代表九域治理已经扩展。本次仅通过 shared migration 扩展既有 `videos.created_at`，不创建新表／schema／RPC。`DramaRepository` 经 `dramas → ai_results.drama_id` 获取剧级文字，`assemble` 统一逐字段回退；可播视频最早时间输出为 `first_published_at`，前端在完整目录上组合搜索／分类并按该字段排序，点击后保存当前播放队列顺序。外部上传端负责后续时间写入，NULL 不伪造为当前时间。迁移先于消费者发布，TEST 的补录时间不是历史上传事实，Production 不随本次执行。详见[短剧目录与时间契约](../.trellis/spec/database/supabase/drama-catalog.md)。
 
 本地短剧体验增量（尚未发布）：官方剧级点赞/评论表 `drama_archive.drama_likes`、`drama_archive.drama_comments` 和 `create_drama_comment` RPC 由 ST_miniapp backend 拥有，原归档表仍由独立上传端管理。两表仅依赖 `drama_archive.dramas(id)` 与 `app_core.users(id)`，不借用角色或影像互动表；删除根实体级联清理。service_role 只获得点赞 SELECT/INSERT/DELETE、评论 SELECT/UPDATE(deleted_at) 与发布 RPC EXECUTE，匿名/登录数据库角色不开放表或 RPC；后端 Telegram 鉴权后映射用户身份，删除附带作者条件，评论游标分页，展示匿名剧友名。发布 RPC 按用户事务锁限制每分钟3条并保证 UUID 重试幂等，软删除保留幂等/限流记录，不允许重试复活。前端 `lib/api/drama.ts` 管理互动服务器缓存；本设备收藏/观看记录仍由独立本地 store 管理。迁移先行、后端其次、前端最后；回滚应用先保留互动数据，移除表需另行确认。
 
@@ -507,7 +513,7 @@ frontend 自有 Route Handler：`GET /api/lobby-characters`（白名单 sort 参
 
 大厅评分资格校准（本地候选）：仍由 `lobby-ranking-refresh-job` 的独立连接离线聚合、短事务覆盖 `miniapp_features.character_ranking_scores`，不进入大厅请求路径。以每个用户首次向某卡发起聊天的历史时间为准，要求全平台首次有效聊天满24小时、至少10个有效逻辑轮次完成在先；成功且输入/回复非空才算资历，同轮重生成只算一次。完成时间优先使用不早于记录创建的结算时刻，旧记录缺失时退回创建时间，不能证明旧记录秒级真实完成先后。D30/R48原参数、合格用户的发起轮次统计和观察期保持；活动卡无合格用户仍输出零样本，不能沿用旧成熟资格。无schema/公开契约改动，发布后下次成功重算才生效，本地改动不等于线上已更新。
 
-**进程内定时任务**（`app.ts` 启动，不走 HTTP）：`features/generation/sync-job.ts`（OpenRouter 计费回捞）、`features/image/job.ts`（角色回复图片 DB 租约 worker，可由 `IMAGE_WORKER_ENABLED` 关闭）、`features/image-plaza/job.ts`（图片广场 Venice worker，可由 `IMAGE_PLAZA_WORKER_ENABLED` 关闭）、`lib/lobby-ranking-refresh-job.ts`（大厅排序重算）。支付对账与过期是独立 Railway 服务（见 §8）。
+**进程内定时任务**（`app.ts` 启动，不走 HTTP）：`features/generation/sync-job.ts`（OpenRouter 计费回捞）、`features/image/job.ts`（角色回复图片 DB 租约 worker，可由 `IMAGE_WORKER_ENABLED` 关闭）、`features/image-plaza/job.ts`（图片广场 Venice worker，可由 `IMAGE_PLAZA_WORKER_ENABLED` 关闭）、`features/image-plaza/video-job.ts`（视频queue/retrieve/转存worker，默认关闭且媒体工具探测失败时不启动）、`lib/lobby-ranking-refresh-job.ts`（大厅排序重算）。支付对账与过期是独立 Railway 服务（见 §8）。
 
 ---
 
@@ -558,7 +564,7 @@ packages/backend/src/
 
 - 位置 `packages/shared/migrations/`（`archive/` 另存 087 删除的 admin RPC 定义备查）。
 - **命名规则（2026-09-10 起）**：新迁移一律 `YYYYMMDD_描述.sql`。三位数字编号已停用并由 CI 拦截（`pnpm lint:migrations`，冻结清单在 `scripts/check-migration-filenames.mjs`）——历史上 021/030/031/032/053/065/086/088/092/093/095 撞号，100 号立规后 105/108/109 又各撞一对。
-- **迁移账本**：`supabase_migrations.repo_migrations` 记录每个环境实际执行过的文件（filename / checksum / applied_by / applied_at）。这是平台 schema 上的仓库账本，不是九个业务域的表，也不是 CLI 的 `schema_migrations`。`Database Migration` workflow 的 `apply` 把查账本、执行 SQL、写账本放在同一次调用（`scripts/apply-repo-migration.sh`）：已记录且 checksum 一致则拒绝重跑；checksum 不一致报 `MIGRATION_CHECKSUM_DRIFT`（不要改旧文件再跑，写新迁移）；账本表不存在时除 `20260910_schema_migrations_ledger.sql` 外直接失败，不再静默放行。`force_rerun` 只允许文件未改时再执行一遍 SQL，**不覆盖**首次 `applied_at` / checksum，历史写在 `repo_migration_events`（`20260914_repo_migration_ledger_events.sql`）。Apply 与 Record 之间用 `repo_migration_claims` 认领，避免「库已变、账本没有」。`mode=inspect` 用仓库日期命名文件的 sha256 对账本，并探 R3 `grant_bonus_credits`、111 `st_handle` 可空、A 的结算两列。账本只覆盖 2026-09-10 后的新迁移，存量不回填。生产环境拒绝 `104_rollback_voice_billing.sql`。本地协议回归：`pnpm test:migration-ledger`。
+- **迁移账本**：`supabase_migrations.repo_migrations` 记录每个环境实际执行过的文件（filename / checksum / applied_by / applied_at）。这是平台 schema 上的仓库账本，不是八个业务域的表，也不是 CLI 的 `schema_migrations`。`Database Migration` workflow 的 `apply` 把查账本、执行 SQL、写账本放在同一次调用（`scripts/apply-repo-migration.sh`）：已记录且 checksum 一致则拒绝重跑；checksum 不一致报 `MIGRATION_CHECKSUM_DRIFT`（不要改旧文件再跑，写新迁移）；账本表不存在时除 `20260910_schema_migrations_ledger.sql` 外直接失败，不再静默放行。`force_rerun` 只允许文件未改时再执行一遍 SQL，**不覆盖**首次 `applied_at` / checksum，历史写在 `repo_migration_events`（`20260914_repo_migration_ledger_events.sql`）。Apply 与 Record 之间用 `repo_migration_claims` 认领，避免「库已变、账本没有」。`mode=inspect` 用仓库日期命名文件的 sha256 对账本，并探 R3 `grant_bonus_credits`、111 `st_handle` 可空、A 的结算两列。账本只覆盖 2026-09-10 后的新迁移，存量不回填。生产环境拒绝 `104_rollback_voice_billing.sql`。本地协议回归：`pnpm test:migration-ledger`。
 - **历史存量编号必须小心**（均已冻结，仅供查档）：
   - 021 / 030 / 031 / 032 / 053 / 065 历史重号，同号无依赖，按文件名字母序执行；
   - 086 / 088 / 092 / 093 / 095 与 105 / 108 / 109 也各有两个文件，来自并行发布线，**同号但含义不同，不要按序号推断内容**；

@@ -1,29 +1,20 @@
 'use client';
 
-import { useCallback, useEffect, useSyncExternalStore } from 'react';
-import {
-  infiniteQueryOptions,
-  useInfiniteQuery,
-  useMutation,
-  useQuery,
-  useQueryClient,
-  useIsMutating,
-  type InfiniteData,
-  type QueryClient,
-  type QueryKey,
-} from '@tanstack/react-query';
 import type {
   CreateImagePlazaConversationData,
   CreateImagePlazaConversationRequest,
+  CreateVideoReferenceFromImageArtifactData,
   GetImagePlazaConfigData,
   GetImagePlazaConversationData,
   GetImagePlazaConversationsData,
   GetImagePlazaFeedData,
   GetImagePlazaWorkData,
+  GetVideoPlazaAttemptData,
+  GetVideoPlazaTagCountsData,
+  ImagePlazaFeedSort,
   ImagePlazaQuoteData,
   ImagePlazaQuoteRequest,
-  ImagePlazaWork,
-  ImagePlazaFeedSort,
+  PlazaWork,
   SetImagePlazaLikeData,
   ShareImagePlazaWorkData,
   ShareImagePlazaWorkRequest,
@@ -32,19 +23,24 @@ import type {
   UploadImagePlazaReferenceData,
   UploadImagePlazaReferenceRequest,
 } from '@miniapp/shared';
+import {
+  infiniteQueryOptions,
+  useInfiniteQuery,
+  useIsMutating,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type InfiniteData,
+  type QueryClient,
+  type QueryKey,
+} from '@tanstack/react-query';
+import { useCallback, useEffect, useSyncExternalStore } from 'react';
 import { apiClient, ApiClientError } from './client';
 import { paymentKeys } from './payment';
 
-export const imagePlazaKeys = {
-  all: ['image-plaza'] as const,
-  config: () => [...imagePlazaKeys.all, 'config'] as const,
-  feed: (search: string, tag: string, sort: ImagePlazaFeedSort = 'recommended') =>
-    [...imagePlazaKeys.all, 'feed', 1, search.trim(), tag, sort] as const,
-  work: (id: string) => [...imagePlazaKeys.all, 'work', id] as const,
-  conversations: () => [...imagePlazaKeys.all, 'conversations'] as const,
-  conversation: (id: string) => [...imagePlazaKeys.all, 'conversation', id] as const,
-  attempt: (id: string) => [...imagePlazaKeys.all, 'attempt', id] as const,
-};
+import { imagePlazaKeys } from './image-plaza-keys';
+export { imagePlazaKeys } from './image-plaza-keys';
+export * from './video-plaza';
 
 export const IMAGE_PLAZA_FEED_STALE_TIME_MS = 60_000;
 
@@ -63,15 +59,22 @@ export function useImagePlazaConfigQuery({ enabled = true }: { enabled?: boolean
  * feed 的查询配置只此一份：页面 hook 与导航栏的空闲预取共用同一个 key 和 queryFn，
  * 否则预取写进缓存的数据页面读不到。
  */
-function imagePlazaFeedQueryOptions(search: string, tag: string, sort: ImagePlazaFeedSort) {
+function imagePlazaFeedQueryOptions(
+  search: string,
+  tags: string | string[],
+  sort: ImagePlazaFeedSort,
+  media: 'all' | 'image' | 'video' = 'all'
+) {
+  const selectedTags = Array.isArray(tags) ? [...tags].sort() : tags === 'all' ? [] : [tags];
   return infiniteQueryOptions({
-    queryKey: imagePlazaKeys.feed(search, tag, sort),
+    queryKey: imagePlazaKeys.feed(search, selectedTags, sort, media),
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam, signal }) => {
       const params = new URLSearchParams();
       params.set('sort', sort);
+      if (media !== 'all') params.set('media', media);
       if (search.trim()) params.set('search', search.trim());
-      if (tag !== 'all') params.set('tag', tag);
+      if (selectedTags.length) params.set('tags', selectedTags.join(','));
       if (pageParam) params.set('cursor', pageParam);
       return apiClient<GetImagePlazaFeedData>(`/api/image-plaza/feed?${params.toString()}`, {
         signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
@@ -89,23 +92,32 @@ function imagePlazaFeedQueryOptions(search: string, tag: string, sort: ImagePlaz
  * 预取只负责让「点进创作」时已经有数据可画。
  */
 export function prefetchImagePlazaFeed(client: QueryClient): Promise<void> {
-  return client.prefetchInfiniteQuery(imagePlazaFeedQueryOptions('', 'all', 'recommended'));
+  return client.prefetchInfiniteQuery(imagePlazaFeedQueryOptions('', [], 'recommended', 'all'));
+}
+
+export function prefetchImagePlazaConfig(client: QueryClient): Promise<void> {
+  return client.prefetchQuery({
+    queryKey: imagePlazaKeys.config(),
+    queryFn: () => apiClient<GetImagePlazaConfigData>('/api/image-plaza/config'),
+    staleTime: 60_000,
+  });
 }
 
 export function useImagePlazaFeedQuery(
   search: string,
-  tag: string,
-  sort: ImagePlazaFeedSort = 'recommended'
+  tags: string | string[],
+  sort: ImagePlazaFeedSort = 'recommended',
+  media: 'all' | 'image' | 'video' = 'all'
 ) {
   const client = useQueryClient();
   const query = useInfiniteQuery({
-    ...imagePlazaFeedQueryOptions(search, tag, sort),
+    ...imagePlazaFeedQueryOptions(search, tags, sort, media),
     refetchOnMount: false,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   });
   useEffect(() => {
-    const key = imagePlazaKeys.feed(search, tag, sort);
+    const key = imagePlazaKeys.feed(search, tags, sort, media);
     const state = client.getQueryState(key);
     const stale =
       state?.isInvalidated ||
@@ -122,21 +134,21 @@ export function useImagePlazaFeedQuery(
       { updatedAt: state?.dataUpdatedAt }
     );
     void client.refetchQueries({ queryKey: key, exact: true });
-  }, [client, search, tag, sort]);
+  }, [client, search, tags, sort, media]);
   const subscribe = useCallback(
     (notify: () => void) => client.getQueryCache().subscribe(notify),
     [client]
   );
   const paginationInvalidated = useSyncExternalStore(
     subscribe,
-    () => client.getQueryState(imagePlazaKeys.feed(search, tag, sort))?.isInvalidated === true,
+    () =>
+      client.getQueryState(imagePlazaKeys.feed(search, tags, sort, media))?.isInvalidated === true,
     () => false
   );
   return { ...query, paginationInvalidated };
 }
 
 export function useImagePlazaWorkQuery(id: string) {
-  const client = useQueryClient();
   return useQuery<GetImagePlazaWorkData>({
     queryKey: imagePlazaKeys.work(id),
     queryFn: ({ signal }) =>
@@ -145,17 +157,30 @@ export function useImagePlazaWorkQuery(id: string) {
       }),
     enabled: Boolean(id),
     staleTime: 60_000,
+    // Upstream also seeds placeholderData from feed cards; this branch's PlazaFeedItem
+    // omits snapshot/detail fields, so feed reuse would break detail first paint.
     retry: false,
-    placeholderData: () => {
-      const feeds = client.getQueriesData<InfiniteData<GetImagePlazaFeedData>>({
-        queryKey: [...imagePlazaKeys.all, 'feed'],
-      });
-      for (const [, feed] of feeds) {
-        const work = feed?.pages.flatMap((page) => page.items).find((item) => item.id === id);
-        if (work) return { work };
-      }
-      return undefined;
+  });
+}
+
+export function useImagePlazaTagCountsQuery(
+  search: string,
+  media: 'all' | 'image' | 'video',
+  enabled = true
+) {
+  return useQuery({
+    queryKey: imagePlazaKeys.tagCounts(search, media),
+    queryFn: ({ signal }) => {
+      const params = new URLSearchParams({ media });
+      if (search.trim()) params.set('search', search.trim());
+      return apiClient<GetVideoPlazaTagCountsData>(
+        `/api/image-plaza/feed/tag-counts?${params.toString()}`,
+        { signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]) }
+      );
     },
+    enabled,
+    staleTime: 60_000,
+    retry: false,
   });
 }
 
@@ -174,7 +199,7 @@ export function useImagePlazaConversationQuery(id: string) {
     queryKey: imagePlazaKeys.conversation(id),
     queryFn: async ({ signal }) => {
       const next = await apiClient<GetImagePlazaConversationData>(
-        `/api/image-plaza/conversations/${id}`,
+        `/api/image-plaza/conversations/${id}?include_video=1`,
         { signal }
       );
       const current = client.getQueryData<GetImagePlazaConversationData>(
@@ -192,6 +217,16 @@ export function useImagePlazaConversationQuery(id: string) {
         )
       ) {
         void client.invalidateQueries({ queryKey: paymentKeys.wallet() });
+      }
+      for (const { video_attempt: attempt } of next.conversation.messages) {
+        if (!attempt) continue;
+        client.setQueryData<GetVideoPlazaAttemptData>(
+          imagePlazaKeys.videoAttempt(attempt.id),
+          (current) =>
+            !current || Date.parse(attempt.updated_at) >= Date.parse(current.attempt.updated_at)
+              ? { attempt }
+              : current
+        );
       }
       return next;
     },
@@ -248,6 +283,17 @@ export function useUploadImagePlazaReferenceMutation() {
   });
 }
 
+export function useCreateVideoReferenceFromImageArtifactMutation() {
+  return useMutation({
+    retry: false,
+    mutationFn: (artifactId: string) =>
+      apiClient<CreateVideoReferenceFromImageArtifactData>(
+        `/api/image-plaza/image-artifacts/${artifactId}/video-reference`,
+        { method: 'POST', signal: AbortSignal.timeout(15_000) }
+      ),
+  });
+}
+
 export function useSubmitImagePlazaAttemptMutation(conversationId: string) {
   const client = useQueryClient();
   return useMutation({
@@ -261,7 +307,7 @@ export function useSubmitImagePlazaAttemptMutation(conversationId: string) {
   });
 }
 
-type LikeFields = Pick<ImagePlazaWork, 'liked' | 'like_count'>;
+type LikeFields = Pick<PlazaWork, 'liked' | 'like_count'>;
 type LikeSnapshot = { key: QueryKey; fields: LikeFields };
 
 /** Patch only the target's fields so another work's concurrent mutation is never rolled back. */

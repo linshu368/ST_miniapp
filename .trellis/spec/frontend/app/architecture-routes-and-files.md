@@ -18,7 +18,7 @@
 | `/characters`                                                       | `(main)/characters/page.tsx`，角色模块「发现」；角色 gallery 与搜索排序（接着聊入口在对话页）                                                              |
 | `/dramas` / `/dramas/[id]`                                          | 双列剧场/追剧库与本剧专注播放、选集                                                                                                                        |
 | `/chats`                                                            | `(main)/chats/page.tsx` 壳 + `components/conversations/`；对话页：有对话记录用户的冷启动落地页，跨角色历史、分组标签、按角色归拢、搜索、管理（多选）与翻页 |
-| `/create`                                                           | 影像广场入口；当前已实现图片生成链路                                                                                                                       |
+| `/create`                                                           | 影像广场入口；图片/视频混排、筛选与创作，视频目录未发布时隐藏                                                                                              |
 | `/profile`                                                          | 我的页、余额/签到、VIP 入口、设置、社区入口                                                                                                                |
 | `/vip`                                                              | 月卡权益、会员身份、开通或续费；保留历史周卡状态展示                                                                                                       |
 | `/profile/recharge`                                                 | 星尘套餐独立下单、VIP权益引导；`/[orderId]` 支付等待/轮询/回跳                                                                                             |

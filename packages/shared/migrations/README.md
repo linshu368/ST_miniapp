@@ -1,3 +1,7 @@
+# 2026-11-17 广场视频 Stream（本地候选，TEST未执行）
+
+必须按 delivery扩展 → 已核验的test_assets数据切换 → 新应用发布/核验 → contract收缩 顺序逐文件执行，不能按字典序批跑。三文件及回滚/容量/锁/权限说明见[运行手册](../../../docs/video-plaza-stream.md)。数据迁移恰好13行CAS，固定TEST身份，保留封面/业务主键/账务；源MP4清理是应用验收后的独立步骤。新J表RLS/service-only，发布/退款同一attempt锁及租约token；5s锁/30-60s语句预算，未知结果不重放或删除。生产不在本次执行范围。
+
 # SQL 迁移文件
 
 ## 2026-11-18 数据库重组阶段 3c：上架状态拆出 characters（本地 PG17 非超级用户验证）
@@ -34,7 +38,7 @@
 - 收缩：删同步触发器与兼容视图，锁表补齐窗口残差；`share_image_plaza_artifact` 去掉写 settings 首发分享时间的 upsert（按原文定位，删掉的文本与预期不一致就拒绝）；删 settings 三列。首发分享改由 `billing.image_plaza_share_rewards` 是否有记录推导（生产 7 人与旧列完全一致）。
 - 验证：`bash scripts/test-db-reorg-p3b1-migration.sh`。
 - `20261117_db_reorg_p3b1_clear_orphan_first_share.sql`：收缩前置。TEST 有手工改过的测试数据（有首发分享时间、无返利记录），挡住收缩守卫；按新定义清空（生产 0 行，空操作）。
-- `20261117_db_reorg_p3b1_video_share_first_share.sql`：收缩前置。TEST 上有未合并视频广场分支（#566）建的 `billing.share_media_plaza_video`，同样写 settings 首发时间；按原文去掉那段（同一事务已写返利记录，行为不变）。生产无此函数，空操作。视频分支上线前要在其迁移后补同样改动，legacy 守卫 `moved-to-user-marks` 会提示。
+- `20261117_db_reorg_p3b1_video_share_first_share.sql`：收缩前置。原重组执行记录中，TEST 有视频广场分支（#566）建的 `billing.share_media_plaza_video`，生产当时无此函数；迁移按原文去掉 settings 首发时间写入（同一事务已写返利记录，行为不变）。视频分支合并后，首次安装或重建 `20261027_media_plaza_video.sql` 的分享函数，必须紧接着单文件执行该 forward-fix，再开放视频分享；原视频 SQL 保留为历史定义，不改写。若该环境曾因函数不存在而把 forward-fix 记为空操作，不能只看账本判定已修复，须核对安装后的函数定义；需要重跑时用既有 Database Migration workflow 的 `force_rerun`，仍须遵守环境确认、测试先行和生产批准。最终函数不得再写 `miniapp_user_settings.image_plaza_first_share_completed_at`。本次合并未查询或修改任何远程环境。
 - 发布：TEST 扩展 → 生产扩展 → 后端发布 → 核对 → 清孤立首发分享、去掉视频分享的旧写入 → TEST/生产收缩。回滚：扩展步保留标记列且双向同步，回退后端即可。
 
 ## 2026-11-17 数据库重组阶段 3a：用户归因与轮数拆出 users（本地 PG17 非超级用户验证）
@@ -331,7 +335,7 @@
 步骤：GitHub → Actions → `Database Migration` → 选 `mode` 与 `environment`。
 
 - **inspect**：只读。把日期命名迁移的 sha256 和 `repo_migrations` 对账，并探 R3 发奖入口、111 `st_handle` 是否可空、A 的结算两列。生产同样要填 `confirm_production`。
-- **apply**：填 `migration_file`（如 `packages/shared/migrations/20260910_schema_migrations_ledger.sql`）。生产必须在 `confirm_production` 填 `RUN_PRODUCTION_MIGRATION`。查账本、执行、记账在同一次调用里；已执行且 checksum 一致会报 `MIGRATION_ALREADY_APPLIED`；文件被改过报 `MIGRATION_CHECKSUM_DRIFT`（写新迁移，不要改旧文件再跑）。`force_rerun` 只在文件未改时重跑 SQL，不覆盖首次记账。生产会拒绝 `104_rollback_voice_billing.sql`。
+- **apply**：填 `migration_file`（如 `packages/shared/migrations/20260910_schema_migrations_ledger.sql`）。生产必须在 `confirm_production` 填 `RUN_PRODUCTION_MIGRATION`。查账本、执行、记账在同一次调用里；已执行且 checksum 一致会报 `MIGRATION_ALREADY_APPLIED`；文件被改过报 `MIGRATION_CHECKSUM_DRIFT`（写新迁移，不要改旧文件再跑）。`force_rerun` 只在文件未改时重跑 SQL，不覆盖首次记账。生产会拒绝 `104_rollback_voice_billing.sql`。`media_plaza` 视频 seed 文件按 `_seed_test_` / `_seed_production_` 与环境强绑定；TEST seed 还由 workflow 向单次 `psql` 会话注入 project ref 和 Storage 核验确认，禁止绕过 workflow 直接执行。
 - **abandon_claim**：仅用于“SQL 已回滚/失败、没有账本成功行、原文件在失败认领后被修订”的恢复。先执行 `20261013_repo_migration_claim_recovery.sql`，再选择原 `migration_file` 并填写 `claim_abandon_reason`；脚本会在一个事务中锁定认领、复核无账本且 checksum 漂移、记录旧/新 checksum 与原因，然后删除认领，**不会执行目标 migration SQL**。之后才能以修订文件正常 `apply`。不得把它用于已记账文件、同 checksum 的可续跑认领，或代替生产问题排查。
 
 应用启动**不会**自动跑 SQL；`packages/backend` 的 `start` 只做 `prisma generate`。workflow 校验 project ref：test 只能连 `zoqelpfhurwehlvypryl`，production 只能连 `wbtsfzozlmurljvglhpn`。
