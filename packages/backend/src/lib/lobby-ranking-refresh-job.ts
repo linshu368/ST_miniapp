@@ -187,6 +187,9 @@ export async function runLobbyRankingRefresh(log: FastifyBaseLogger): Promise<vo
         WHERE singleton AND completed_at > clock_timestamp() - interval '24 hours'
           AND scoring_rules->>'algorithm' = ${QUALIFIED_QUALITY_VERSION}::text
           AND (${degraded}::boolean OR scoring_rules = ${rules}::jsonb)
+          AND EXISTS (
+            SELECT 1 FROM miniapp_features.character_deep_experience_stats
+          )
       ) AS fresh
     `;
     if (state?.fresh) {
