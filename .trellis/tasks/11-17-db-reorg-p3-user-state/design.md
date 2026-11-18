@@ -132,6 +132,30 @@
 - 遗漏的读者（发布前 pg_stat_statements 抓到）：pg_cron `card_position_hourly_snapshot`（jobid 5）命令文本直读 characters 的上架列，不在函数守卫里。扩展步用 `cron.alter_job` 改成 join 上架表（命令与预期原文不一致就拒绝），写入内容不变；收缩步加守卫：不得再有 cron 命令读旧列。其写入的 `miniapp_analytics.card_position_snapshot` 无读者（10-23 起只有一次 Studio 浏览），172MB，列为候选删除，待用户确认。
 - 核对（后端发布后）：pg_stat_statements 里带 `"app_core"."characters"."enabled"` / `"last_listed_at"` / `"sort_order"` 且不含 `character_listings` 的语句停涨，新的 join 上架表语句在涨；之后再执行收缩步。
 
-## 3d 之后
+## 3d 配置校验链压成一层（生产只读核对，11-18）
 
-待 3c 上线后设计（配置校验链）。
+现状：`admin.validate_managed_config_value(p_config_key, p_value, p_text_value)` 是 16 层链（最外层 + 15 个 `*_before_*`，约 33KB），每加一个配置功能就把旧函数改名、新函数里加一个分支再调旧的。调用方只有 4 个运营函数：`upsert_config_draft`、`save_config_draft`（存草稿）、`publish_config_draft`、`rollback_config_release`（后两个先查 `is_managed_config_key`）。没有约束/触发器/后端直接调用；属主 postgres，只有属主能执行。
+
+逐层读过后的事实：
+
+- 绝大多数层是"本层 key 校验完 RETURN，否则调下一层"，key 互不相交；
+- 有遮蔽：`system_instructions` 在 4 层出现，只有 image_plaza 层（5 个占位符）生效；`llm_provider_routing_config`、`llm_model_catalog`、`llm_pricing_config` 的下层分支同样是死代码；
+- 两处不是单纯分发：story_memory 层先跑完下层再给 `lobby_ranking_params` 加轮换字段校验（给 `lobby_pinned_characters` 加固定位 ID 校验）；rich_reply_protocol 层校验对象形 `miniapp_payment_plans` 时，把 `plans` 子数组送回下层按数组形校验；
+- "是否托管"（`is_managed_config_key`，退役即否）只在最底层查。所以退役 key 若在上层有分支（`lobby_pinned_characters`、`image_plaza_tags_feature_enabled`、`media_feature_free_trial_limit`、`miniapp_payment_prompt_dialog_config`），存草稿仍能通过（发布会被拦）。
+
+终态：一个函数、一层 `CASE p_config_key` 分发。先查是否托管（退役/未登记一律拒绝，草稿也存不进），再按 key 走各自分支；分支里的判断与报错原文照搬生效层。长分支拆成具名校验函数：`admin.validate_reply_style_options`、`admin.validate_pref_word_count_tiers`、`admin.validate_payment_plans_config`（对象形/数组形）与 `admin.validate_payment_plan_list`（数组形）。删掉：15 个 `*_before_*`、退役 key 的分支、`image_advanced_%` 分支（未登记，托管检查已拒绝）、只被退役分支用的 `validate_lobby_pinned_characters` / `validate_payment_prompt_dialog_config`。加 key 的做法变成：登记表插一行 + 分发里加一个 `WHEN`（必要时加一个具名校验函数）。
+
+行为差异（有意）：退役 key 存草稿改为拒绝；未登记的 `image_advanced_*` 报错文案从"no longer managed"变为"not managed by admin"。其余 key 输出（成功/错误码/错误文案）不变。
+
+迁移（单文件，无后端改动，不分扩展/收缩）：
+
+1. 守卫：16 层的 prosrc md5 必须是写迁移时的版本（已改成单层则跳过，可重跑）；
+2. 旧最外层改名 `validate_managed_config_value_legacy`，建新函数与 4 个具名校验函数；
+3. 自检（不通过整体回滚）：对一组合成样例（每个已登记 key × 多种类型/text_value 组合 + 各分支的合法与边界样例）以及 `config_drafts` / `config_releases` / `runtime_config` 里的全部现存值，逐条比较新旧结果（成功或"错误码:文案"）；托管 key 必须完全一致，非托管/退役 key 新函数必须报 not managed；
+4. 删旧链 16 个函数与 2 个死辅助函数；收权（只有属主）；更新登记表与函数注释。
+
+验证：`bash scripts/test-db-reorg-p3d-migration.sh`——旧链 16 层从历史迁移原文按 md5 抽出（与生产一致），被调用的辅助校验函数用可探测替身（带标记就报"被调用了哪个函数"），新旧逐条比对；守卫拒绝、自检拒绝（故意改坏一个分支）、可重跑。TEST/生产执行时自检用真实辅助函数和真实配置值再比一遍。
+
+## 3e 之后
+
+`miniapp_analytics.card_position_snapshot`（无读者，172MB）是否停任务删表，待用户决定。

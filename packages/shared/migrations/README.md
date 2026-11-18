@@ -4,6 +4,17 @@
 
 # SQL 迁移文件
 
+## 2026-11-18 数据库重组阶段 3d：配置校验链压成一层（本地 PG17 非超级用户验证）
+
+`20261118_db_reorg_p3d_flatten_config_validator.sql`（单文件，无后端改动）。计划见 `.trellis/tasks/11-17-db-reorg-p3-user-state/design.md` 3d。
+
+- `admin.validate_managed_config_value` 从 16 层（最外层 + 15 个 `*_before_*`）改为单层 `CASE p_config_key` 分发：先查是否托管，再走该 key 的分支；判断与报错原文照搬当前生效层（被上层遮蔽的死分支丢弃）。长校验拆成 `validate_reply_style_options`、`validate_pref_word_count_tiers`、`validate_payment_plans_config`、`validate_payment_plan_list`。
+- 删旧链 16 个函数与只被退役分支用的 `validate_lobby_pinned_characters`、`validate_payment_prompt_dialog_config`；收权只留属主。
+- 有意差异：退役 key 存草稿改为拒绝；未登记 `image_advanced_*` 的报错文案改为 not managed。其余 key 结果不变。
+- 迁移内自检：合成样例 + `config_drafts` / `config_releases` / `runtime_config` 全部现存值逐条比新旧结果，不一致整体回滚（TEST/生产用真实辅助校验函数再比一遍）。守卫：16 层 md5 必须是写迁移时的版本，多出一层也拒绝；已压平则跳过。
+- 验证：`bash scripts/test-db-reorg-p3d-migration.sh`（旧链按生产 md5 从历史迁移原文抽出，辅助函数用可探测替身；含守卫/自检拒绝、热会话调用方、可重跑）。
+- 发布：TEST → 生产。回滚：按历史迁移重建旧链（新旧结果已逐条比对一致，通常不需要）。
+
 ## 2026-11-18 数据库重组阶段 3c：上架状态拆出 characters（本地 PG17 非超级用户验证）
 
 `20261118_db_reorg_p3c_character_listings.sql`（扩展）+ `20261118_db_reorg_p3c_character_listings_contract.sql`（收缩，后端发布后执行）。计划见 `.trellis/tasks/11-17-db-reorg-p3-user-state/design.md` 3c。
