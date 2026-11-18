@@ -209,5 +209,14 @@ printf 'PASS: character wishes PG17 (anonymous public-only writes, owner ACL, un
 
 "${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/20261103_chat_sessions_reply_like_lookup_index.sql" >/dev/null
 
+# Listing state moved to app_core.character_listings (3c). This fixture predates the admin functions the 3c migration
+# rewrites, so only the table it reads is created here (shape from 20261118_db_reorg_p3c_character_listings.sql).
+"${task_psql[@]}" >/dev/null <<'SQL'
+CREATE TABLE app_core.character_listings (
+  character_id uuid PRIMARY KEY REFERENCES app_core.characters(id) ON DELETE CASCADE,
+  enabled boolean NOT NULL DEFAULT false, sort_order integer NOT NULL DEFAULT 0,
+  archived_at timestamp without time zone, last_listed_at timestamptz, updated_at timestamptz NOT NULL DEFAULT now());
+SQL
+
 CREATOR_ANALYTICS_TEST_CONTAINER="$task_container" CREATOR_ANALYTICS_TEST_DB="$task_database" \
   pnpm --dir "$task_root/packages/backend" exec vitest run src/features/creator/analytics.integration.test.ts src/features/creator/public-author.integration.test.ts

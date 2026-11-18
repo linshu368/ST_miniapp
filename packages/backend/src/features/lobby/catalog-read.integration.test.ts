@@ -35,19 +35,27 @@ describe.skipIf(process.env.ST_LOBBY_PG_PORT !== '55439')(
       await client.query(`CREATE SCHEMA app_core;
       CREATE TABLE app_core.characters(id uuid PRIMARY KEY,name text NOT NULL,description text NOT NULL,
         avatar_url text NOT NULL DEFAULT '',tags text[] NOT NULL DEFAULT '{}',creator text NOT NULL DEFAULT '',
-        sort_order integer NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),enabled boolean NOT NULL DEFAULT true,
-        is_test boolean NOT NULL DEFAULT false,archived_at timestamptz);
+        created_at timestamptz NOT NULL DEFAULT now(),is_test boolean NOT NULL DEFAULT false);
+      CREATE TABLE app_core.character_listings(character_id uuid PRIMARY KEY REFERENCES app_core.characters,
+        enabled boolean NOT NULL DEFAULT true,sort_order integer NOT NULL,archived_at timestamp);
       CREATE TABLE app_core.character_creations(character_id uuid PRIMARY KEY,state text,visibility text,approved_revision integer);
-      INSERT INTO app_core.characters(id,name,description,tags,sort_order)
+      INSERT INTO app_core.characters(id,name,description,tags)
       SELECT ('10000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,'Synthetic',repeat('complete ',1000),
-        ARRAY['one','two','three'],n FROM generate_series(1,14) n;
+        ARRAY['one','two','three'] FROM generate_series(1,14) n;
+      INSERT INTO app_core.character_listings(character_id,sort_order)
+      SELECT ('10000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,n FROM generate_series(1,14) n;
       INSERT INTO app_core.character_creations VALUES('10000000-0000-4000-8000-000000000001','ready','private',1);`);
       const migration = readFileSync(
-        new URL('../../../../shared/migrations/20261030_creator_characters.sql', import.meta.url),
+        new URL(
+          '../../../../shared/migrations/20261118_db_reorg_p3c_character_listings.sql',
+          import.meta.url
+        ),
         'utf8'
       );
-      const start = migration.indexOf('CREATE FUNCTION app_core.can_discover_character(');
-      const end = migration.indexOf('$$;', start) + 3;
+      const start = migration.indexOf(
+        'CREATE OR REPLACE FUNCTION app_core.can_discover_character('
+      );
+      const end = migration.indexOf('$function$;', start) + 11;
       if (start < 0 || end < start) throw new Error('Authoritative visibility function missing');
       await client.query(migration.slice(start, end));
     });
@@ -74,7 +82,11 @@ describe.skipIf(process.env.ST_LOBBY_PG_PORT !== '55439')(
 
       // There is deliberately no updated_at column: invalidation must follow actual fields.
       await client!.query(
-        `UPDATE app_core.characters SET tags=ARRAY['changed'],description='  ',sort_order=-1 WHERE id=$1`,
+        `UPDATE app_core.characters SET tags=ARRAY['changed'],description='  ' WHERE id=$1`,
+        [cardId(3)]
+      );
+      await client!.query(
+        'UPDATE app_core.character_listings SET sort_order=-1 WHERE character_id=$1',
         [cardId(3)]
       );
       const changed = await readRecommendationCatalog(db, first);
@@ -90,15 +102,20 @@ describe.skipIf(process.env.ST_LOBBY_PG_PORT !== '55439')(
         [cardId(1)]
       );
       expect((await readLobbyHeadRows(db, ids))[0]?.id).toBe(cardId(1));
-      await client!.query('UPDATE app_core.characters SET enabled=false WHERE id=$1', [cardId(2)]);
+      await client!.query(
+        'UPDATE app_core.character_listings SET enabled=false WHERE character_id=$1',
+        [cardId(2)]
+      );
       expect((await readLobbyHeadRows(db, ids)).some((c) => c.id === cardId(2))).toBe(false);
       expect(
         (await readRecommendationCatalog(db, changed)).value.some((c) => c.id === cardId(2))
       ).toBe(false);
 
-      await client!.query(`INSERT INTO app_core.characters(id,name,description,sort_order)
-      SELECT ('10000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,'Synthetic','complete',n
-      FROM generate_series(15,10015) n`);
+      await client!.query(`INSERT INTO app_core.characters(id,name,description)
+      SELECT ('10000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,'Synthetic','complete'
+      FROM generate_series(15,10015) n;
+      INSERT INTO app_core.character_listings(character_id,sort_order)
+      SELECT ('10000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,n FROM generate_series(15,10015) n`);
       expect((await readRecommendationCatalog(db, null)).value).toHaveLength(10000);
       expect((await readFeaturedCatalog(db, null)).value).toHaveLength(10014);
     }, 30000);
