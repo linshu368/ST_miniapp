@@ -156,6 +156,12 @@
 
 验证：`bash scripts/test-db-reorg-p3d-migration.sh`——旧链 16 层从历史迁移原文按 md5 抽出（与生产一致），被调用的辅助校验函数用可探测替身（带标记就报"被调用了哪个函数"），新旧逐条比对；守卫拒绝、自检拒绝（故意改坏一个分支）、可重跑。TEST/生产执行时自检用真实辅助函数和真实配置值再比一遍。
 
+执行中的补充（11-18 晚）：
+
+- 生产在 20:08 执行了视频广场的 `20261118_media_plaza_video_production_config.sql`，按旧办法在最外层原地加了 `image_plaza_video_model_catalog` 分支（换行符 CRLF）。3d 守卫的最外层 md5 改为含该分支的版本，单层分发加上同一分支（报错原文 'video catalog must not use text_value'）。
+- TEST 守卫拒绝：`20261118_db_reorg_p3d_report_validator_layers.sql`（只读报告）显示 TEST 的链被早期视频迁移（20261027）按旧办法多套了两层，且各层套入顺序与生产不同（多层都有的 key 生效版本可能不同）。前置 `20261118_db_reorg_p3d_align_test_validator_chain.sql`：链与生产一致（生产）或已压平则空操作；只在 TEST 把整条链重建成生产当前的 16 层（函数体由脚本从历史迁移原文按生产 md5 抽出），非 TEST 不一致直接拒绝。之后 3d 在两个环境面对同一条链，自检照常。
+- 守卫按去掉 `\r` 后的 md5 比对（生产部分层存 CRLF）。
+
 ## 3e 之后
 
 `miniapp_analytics.card_position_snapshot`（无读者，172MB）是否停任务删表，待用户决定。
