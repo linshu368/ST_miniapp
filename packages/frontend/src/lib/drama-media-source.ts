@@ -3,6 +3,11 @@ import type HlsPlayer from 'hls.js';
 import type { MediaAttachedData } from 'hls.js';
 import type { HlsEvents } from '@/lib/perf/drama-hls';
 import { createInlinePlaylistLoader } from '@/lib/drama-inline-manifest-loader';
+import {
+  bindPrefetchUsage,
+  playbackConsumption,
+  type DramaPrefetchUsage,
+} from '@/lib/drama-playback-resources';
 import { restartStalledAudioOnSeek } from '@/lib/drama-hls-seek';
 
 const owners = new WeakMap<HTMLVideoElement, string>();
@@ -75,10 +80,34 @@ export function capAppleHlsQuality(playback: DramaPlayback): DramaPlayback {
   };
 }
 
+/** 本设备的 HLS 起播是否走 hls.js（与 loadDramaSource 的分支一致，不含加载后的 Hls.isSupported 兜底）。 */
+export function prefersHlsJs(): boolean {
+  return !isAppleWebKit() || shouldUseHlsOnApple();
+}
+
 /** 非 Apple 平台、以及 Apple 平台走 hls.js 时提前拉取 chunk，让首次起播不再等待动态加载；失败时仍在起播时重试。 */
 export function preloadDramaHls(): void {
-  if (isAppleWebKit() && !shouldUseHlsOnApple()) return;
+  if (!prefersHlsJs()) return;
   void import('hls.js').catch(() => undefined);
+}
+
+/** 主清单内联、或播放资源缓存可用时接管清单请求；两者都没有时用 hls.js 默认 loader。 */
+function playlistLoaderFor(source: string, playback: DramaPlayback) {
+  const consumption = playbackConsumption(playback);
+  const usage: DramaPrefetchUsage = {
+    ...(consumption?.source ? { source: consumption.source, ageMs: consumption.ageMs } : {}),
+    playlists: 0,
+    bytes: 0,
+  };
+  if (!playback.inline_manifest && !consumption) return { usage };
+  return {
+    usage,
+    pLoader: createInlinePlaylistLoader(
+      source,
+      playback.inline_manifest,
+      consumption && { resources: consumption.resources, usage }
+    ),
+  };
 }
 
 /** 按 hls.js 实际 attach 的 MediaSource 构造器区分 MSE/MMS，不用开关值推测。 */
@@ -135,6 +164,7 @@ export function loadDramaSource(
           } else failed();
           return;
         }
+        const { usage, pLoader } = playlistLoaderFor(source, playback);
         const hls = new Hls({
           manifestLoadingTimeOut: 10000,
           fragLoadingTimeOut: 15000,
@@ -142,11 +172,10 @@ export function loadDramaSource(
           startLevel: 0,
           // -1 是 hls.js 的自动默认值；传入续播秒数让第一片直接请求目标分片，不再先拉 sn0 探测带宽。
           startPosition: options?.startPosition ?? -1,
-          // 后端随 /play 内联了主清单时，跳过这一次真实网络请求；子清单/分片仍走真实网络。
-          ...(playback.inline_manifest
-            ? { pLoader: createInlinePlaylistLoader(source, playback.inline_manifest) }
-            : {}),
+          // 内联主清单与缓存的子清单跳过真实网络请求；其余清单和全部分片仍走真实网络。
+          ...(pLoader ? { pLoader } : {}),
         });
+        bindPrefetchUsage(hls, usage);
         const stopSeekRestart = restartStalledAudioOnSeek(hls, Hls.Events, video);
         destroy = () => {
           stopSeekRestart();
