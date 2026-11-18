@@ -186,6 +186,30 @@ const RULES = [
     ],
   },
 
+  {
+    id: 'dropped-request-timing-columns',
+    pattern:
+      /\b(?:first_token_emitted_ms|client_request_dispatched_ms|client_wait_finished_ms|client_first_token_received_ms|client_backgrounded|client_reported_at|chat_first_token_report)\b/g,
+    message:
+      '数据库重组 6a-1：chat_generation_requests 的这 6 个测速列与 miniapp_analytics.chat_first_token_report 已删除；' +
+      '客户端首字、渲染延迟、切后台看 Faro roleplay.first_token / roleplay.render，交付判定只读请求表留下的交付列',
+    // 建这些列与报告函数的历史迁移；6a-1 迁移（守卫要点名旧列）与它的断言脚本。
+    allow: [
+      'packages/shared/migrations/20261023_chat_first_token_fallback.sql',
+      'packages/shared/migrations/20261023_chat_first_token_fallback_config.sql',
+      'packages/shared/migrations/20261023_grafana_first_token_reader.sql',
+      'packages/shared/migrations/20261117_db_reorg_revoke_reader_and_browser_grants.sql',
+      'packages/shared/migrations/20261026_first_token_stage_budgets.sql',
+      'packages/shared/migrations/20261026_first_token_receipt_quota_release.sql',
+      'packages/shared/migrations/20261027_recoverable_chat_delivery.sql',
+      'packages/shared/migrations/20261028_client_committed_first_token.sql',
+      'packages/shared/migrations/20261029_first_token_receipt_recovery.sql',
+      'packages/shared/migrations/20261102_first_token_server_delivery_billing.sql',
+      'packages/shared/migrations/20261119_db_reorg_p6a1_request_timing_cleanup.sql',
+      'scripts/test-db-reorg-p6a1-migration.sh',
+    ],
+  },
+
   // ── 已整包删除的 package ────────────────────────────────────────────────
   {
     id: 'deleted-packages',

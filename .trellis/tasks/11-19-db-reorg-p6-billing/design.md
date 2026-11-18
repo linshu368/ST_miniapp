@@ -58,7 +58,7 @@
 
 | 步    | 内容                                                                                                                                                                                                                               | 碰钱 | 后端发布 |
 | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- | -------- |
-| 6a-1  | 请求表测速列 → `ops.chat_generation_timings`；删 3 个死列；重建首字视图；删无人调用的报告函数                                                                                                                                      | 否   | 不需要   |
+| 6a-1  | 请求表删 6 个无读者的测速列（不新建表）；重建首字视图；删已退役的首字报告函数                                                                                                                                                      | 否   | 不需要   |
 | 6a-2a | 调用表测速列 → `ops.llm_calls`（每次上游调用一行，主键 = attempt_id）；删常量列 `provider_latency_scope`；`enrichGeneration` 改写 ops                                                                                              | 否   | 需要     |
 | 6a-2b | OpenRouter / Venice 明细 → `ops.llm_calls`（`raw_usage` / `raw_generation`）；交付仲裁不再插明细行；sync-job 的"明细不全"扫描改读 ops；看板日汇总改读 ops 成本                                                                     | 否   | 需要     |
 | 6a-2c | Surplus 明细 → `ops.llm_calls`，请求记录补查状态 → `ops.llm_cost_jobs`；`surplus-billing-recovery` 改按 `attempts.generation_id` 取交付身份（不再嵌入）；`free_zone_turn_facts` 改读 ops                                           | 否   | 需要     |
@@ -73,52 +73,29 @@
 
 每步按"扩展 → 后端发布 → 两次采样确认旧读写停涨 → 收缩"；纯数据库内的子步（6a-1）一个迁移完成。
 
-## 6a-1：请求表测速列 → `ops.chat_generation_timings`
+## 6a-1：请求表测速列清理（不新建表）
 
-### 列去向
+逐列核对后，原计划的 `ops.chat_generation_timings` 不需要：
 
-| 列                                                                                  | 近 7 天       | 去向                        |
-| ----------------------------------------------------------------------------------- | ------------- | --------------------------- |
-| `primary_timeout_ms`、`timeout_rate_target`、`fallback_timeout_ms`                  | 每行都有      | ops（开轮时冻结的测速配置） |
-| `fallback_triggered_ms`                                                             | 7781 行       | ops                         |
-| `client_first_token_received_ms`、`client_backgrounded`、`client_reported_at`       | 4.4–4.7 万行  | ops                         |
-| `first_token_emitted_ms`、`client_request_dispatched_ms`、`client_wait_finished_ms` | 0（10-29 起） | 删除                        |
+| 列                                                                                  | 近 7 天       | 真实用途                                                                                                                                           | 去向 |
+| ----------------------------------------------------------------------------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ---- |
+| `primary_timeout_ms`、`timeout_rate_target`、`fallback_timeout_ms`                  | 每行都有      | 开轮时冻结的请求参数；`fallback_timeout_ms` 还参与开轮函数的重放身份校验                                                                           | 留   |
+| `fallback_triggered_ms`                                                             | 7781 行       | 与兜底调用行同锁写入；畅聊模型评估（`primary_wait_ms`）据此判断"报错转兜底"                                                                        | 留   |
+| `first_token_emitted_ms`、`client_request_dispatched_ms`、`client_wait_finished_ms` | 0（10-29 起） | 后端已不写/不上报                                                                                                                                  | 删   |
+| `client_first_token_received_ms`、`client_backgrounded`、`client_reported_at`       | 4.4–4.7 万行  | 只被首字视图输出、再被已退役的 `chat_first_token_report` 读；客户端首字、渲染延迟、切后台已由 Faro `roleplay.first_token` / `roleplay.render` 记录 | 删   |
 
-留在请求表的都是交付状态与计费依据：`first_token_deadline_ms`、`delivery_attempt_id`、`requires_visible_token`、`user_stop_billing_enabled`、`recoverable_delivery`、`first_token_timeout`、`server_timeout_stage`、`server_first_token_ready_ms`、`first_token_preview`、`billing_rejected`、`client_outcome`、`client_reason`、`client_delivery_failed`、`client_first_token_visible_ms`、`measurement_method` 等（门禁与首字上报的判断都只读这些）。`report_chat_first_token` 判断"是否在后台"用的是本次上报参数，不读 `client_backgrounded` 列。
+`report_chat_first_token` 判断"是否在后台"用的是本次上报参数（`p_report->>'backgrounded'`），不读列；门禁、交付仲裁、取消都不读这 6 列。前端照旧上报，后端照旧透传，函数只是不再落库。
 
-### 新表
+### 迁移（一个文件，纯数据库，不需要后端发布）
 
-```sql
-ops.chat_generation_timings(
-  chat_history_id uuid PRIMARY KEY,          -- 软引用 experience.chat_generation_requests
-  primary_timeout_ms integer NOT NULL,
-  timeout_rate_target numeric NOT NULL,
-  fallback_timeout_ms integer,
-  fallback_triggered_ms numeric,
-  client_first_token_received_ms numeric,
-  client_backgrounded boolean,
-  client_reported_at timestamptz,
-  created_at timestamptz NOT NULL            -- = 请求行 created_at，按它清理
-)
-```
+1. 锁外守卫：`report_chat_first_token` 里要改的那段原文恰好出现一次（已改过则跳过）；`chat_first_token_facts` 的输出列集合与生产 11-19 一致；依赖它的只有 `free_zone_turn_facts`；`chat_first_token_report` 存在则必须是生产正文（md5 `eab9f5f4…`）。
+2. 锁内（一个 DO 块、一次往返；`lock_timeout 5s`）：锁两个视图与请求表 → 改 `report_chat_first_token`（按原文替换那条 UPDATE 的列清单，`pg_get_functiondef` 改写，保留 OID/属主/授权）→ 删 `chat_first_token_report` → 删并按生产定义重建两个视图（去掉 `client_backgrounded`、`client_request_dispatched_ms`、`client_first_token_received_ms`、`first_token_emitted_ms`、`client_server_residual_ms`、`client_display_delay_ms`、`client_wait_finished_ms` 7 个输出列），恢复授权（`service_role`、`first_token_metrics_reader` 只读）→ 删请求表 6 列 → 收尾守卫：没有函数正文再引用这 6 个列名 → `NOTIFY pgrst`。
+3. 可重跑：列已删、函数已改、视图已是新形状时整段跳过。
 
-RLS 开启，`service_role` 授 SELECT/INSERT/UPDATE（三个写入函数是 SECURITY INVOKER，由 service_role 调用）；视图是 owner 权限，读者不需要直接授权。保留 180 天；最早的数据是 10-23，2027-04 前没有可删的行，清理任务与 5b 的 prompt 快照清理合成一个 `ops` 每日清理任务一起建。
+### 核对
 
-### 迁移（一个文件）
-
-1. 锁外：建表；全量回填（6.8 万行，INSERT…SELECT）。
-2. 锁内（一个 DO 块，一次往返）：`lock_timeout 5s` 锁请求表 → 补近 1 天的增量（`ON CONFLICT DO UPDATE`，客户端上报和兜底都在开轮几秒内）→ 按原文定位改 3 个函数（每个锚点必须恰好匹配一次，已改过的跳过；用 `pg_get_functiondef` 改写，保留 OID、属主、授权）：
-   - `begin_chat_generation_observation`：请求行不再写 3 个配置列，同语句块里插 timings 行；
-   - `prepare_chat_generation_fallback`：`fallback_triggered_ms` 改写 timings；
-   - `report_chat_first_token`：请求表只更新交付相关列，`client_first_token_received_ms / client_backgrounded / client_reported_at` 改写 timings，两个死列不再出现；
-     → 重建 `chat_first_token_facts`（LEFT JOIN timings；去掉 `client_request_dispatched_ms`、`first_token_emitted_ms`、`client_server_residual_ms`、`client_wait_finished_ms` 四个输出列）与依赖它的 `free_zone_turn_facts`，恢复原授权（`service_role`、`first_token_metrics_reader` 只读）→ 删 `chat_first_token_report`（确认无调用后）→ 删请求表 10 列（7 列已迁 + 3 个死列）。
-3. 守卫：
-   - 锁外：生产 3 个函数的 md5 必须是采集时的值（`211f5c49…` / `cb47e2c3…` / `2ca9d83c…`），否则拒绝（TEST 不同构时另写前置）；
-   - 锁内：每个请求行都有 timings 行；改完后没有函数正文再引用被删的列名；
-   - 自检：改动前后对 `chat_first_token_facts` 近 3 天、改动前已存在的行，按保留列算聚合指纹（行数 + 各列 sum/count），必须一致，否则整体回滚。
-4. 回放核对：本地 PG17 用生产函数正文（按 md5 从历史迁移抽取）建夹具，跑开轮 → 兜底 → 交付 → 首字上报 → 门禁，比较改前改后视图输出与门禁结果；TEST 跑一轮真实生成（Railway development 免登录）后看视图行。
-
-上线后核对：新轮次的 timings 行与请求行一一对应；畅聊模型评估（每 30 分钟）无报错、指标连续；Grafana 01 看板畅聊两块面板有数。
+- 本地 PG17（非超级用户）：生产形状的夹具 + 生产函数正文（md5 校验）；改前改后同一组首字上报场景（observed / 超时 / 重放 / 可恢复交付的迟到上报 / 真实服务端超时释放免费额度）返回值、请求行保留列、额度收口调用一致；两个视图保留列逐行一致；锚点不匹配时整体拒绝且不留改动；重跑无变化。
+- TEST → 生产；生产上线后：新轮次首字上报正常（`client_outcome` 分布连续）、畅聊模型评估每 30 分钟无报错、Grafana 01 看板畅聊两块面板有数、`chat_first_token_report` 删前再采样一次确认 grafana_cloud 调用数不涨。
 
 ## 6a-2 / 6a-3 要点（各自开工前再细化）
 
@@ -163,6 +140,6 @@ billing.usage_charges(
 
 ## 待定
 
-- 6a-1 删 `chat_first_token_report`：等下一次采样确认 grafana_cloud 调用数不涨。
+- 6a-1 删 `chat_first_token_report`：生产执行前再采样一次，确认 grafana_cloud 调用数不涨。
 - 6b-3 聊天配图、6b-4 广场租约：等 4b / 4c 决定。
 - `usage_charges` 里 `free` 状态的行（每周约 1.1 万）是否永久保留，6b-1 定稿时按消费记录是否展示免费轮再定。

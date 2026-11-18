@@ -36,7 +36,7 @@
     "mobile_performance": {
       "schema_version": 1,
       "mode": "not_applicable",
-      "reason": "6a-1 只改数据库函数与分析视图：开轮/兜底/首字上报三个 RPC 由更新请求表改为同事务写 ops 表，写入量不变；不改任何接口或页面的查询形状。后续子步改到后端读写时在各自设计里单独评估。"
+      "reason": "6a-1 只改数据库：首字上报 RPC 少写 5 列、分析视图少 7 个输出列，不改任何接口或页面的查询形状，写入只会更少。后续改到后端读写的子步在各自设计里单独评估。"
     },
     "logging_integration": {
       "schema_version": 1,

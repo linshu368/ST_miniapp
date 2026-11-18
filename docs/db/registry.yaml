@@ -245,7 +245,11 @@ tables:
         requested_provider,
         requested_provider_model_id,
         catalog_version,
+        primary_timeout_ms,
+        timeout_rate_target,
         fallback_model_id,
+        fallback_timeout_ms,
+        fallback_triggered_ms,
         first_token_deadline_ms,
         delivery_attempt_id,
         requires_visible_token,
@@ -263,27 +267,19 @@ tables:
         measurement_method,
         created_at,
       ]
-    move:
+    drop_cols:
       - {
-          to: ops.chat_generation_timings,
           cols:
             [
-              primary_timeout_ms,
-              timeout_rate_target,
-              fallback_timeout_ms,
-              fallback_triggered_ms,
+              first_token_emitted_ms,
+              client_request_dispatched_ms,
+              client_wait_finished_ms,
               client_first_token_received_ms,
               client_backgrounded,
               client_reported_at,
             ],
           phase: 6,
-          note: 6a-1；门禁与首字上报只读留下的交付列，这 7 列只有首字视图读,
-        }
-    drop_cols:
-      - {
-          cols: [first_token_emitted_ms, client_request_dispatched_ms, client_wait_finished_ms],
-          phase: 6,
-          note: 10-29 起后端不再写入，全为空,
+          note: 6a-1；前 3 列 10-29 起全空，后 3 列只剩已退役的首字报告在读，客户端首字/渲染/后台已由 Faro roleplay.first_token 记录,
         }
 
   experience.chat_generation_attempts:
@@ -928,15 +924,6 @@ tables:
       status: planned,
       phase: 6,
       note: 上游成本与用量的事后补查任务,
-    }
-  ops.chat_generation_timings:
-    {
-      nature: O,
-      owner: rpc:experience.begin_chat_generation_observation / prepare_chat_generation_fallback / report_chat_first_token,
-      status: planned,
-      phase: 6,
-      retention_days: 180,
-      note: 每轮一行（chat_history_id 软引用请求表）；只被 miniapp_analytics.chat_first_token_facts 读,
     }
   ops.media_generation_calls:
     {
