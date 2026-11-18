@@ -56,20 +56,17 @@
 
 先观测外迁（6a，不碰钱），再计费统一（6b）。6b 依赖 6a-2 建好的 `ops.llm_calls`（`llm_usage_charges` 的成本列要迁过去）。
 
-| 步    | 内容                                                                                                                                                                                                                               | 碰钱 | 后端发布 |
-| ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- | -------- |
-| 6a-1  | 请求表删 6 个无读者的测速列（不新建表）；重建首字视图；删已退役的首字报告函数                                                                                                                                                      | 否   | 不需要   |
-| 6a-2a | 调用表测速列 → `ops.llm_calls`（每次上游调用一行，主键 = attempt_id）；删常量列 `provider_latency_scope`；`enrichGeneration` 改写 ops                                                                                              | 否   | 需要     |
-| 6a-2b | OpenRouter / Venice 明细 → `ops.llm_calls`（`raw_usage` / `raw_generation`）；交付仲裁不再插明细行；sync-job 的"明细不全"扫描改读 ops；看板日汇总改读 ops 成本                                                                     | 否   | 需要     |
-| 6a-2c | Surplus 明细 → `ops.llm_calls`，请求记录补查状态 → `ops.llm_cost_jobs`；`surplus-billing-recovery` 改按 `attempts.generation_id` 取交付身份（不再嵌入）；`free_zone_turn_facts` 改读 ops                                           | 否   | 需要     |
-| 6a-2d | `free_zone_calls`：调用身份并入 `chat_generation_attempts`（畅聊多路调用即多次 attempt），成本列 → `ops.llm_calls` / `ops.llm_cost_jobs`；`free_zone_call_costs` 改读 ops                                                          | 否   | 需要     |
-| 6a-3  | 语音 `latency_ms` → `ops.media_generation_calls`（配图的 `provider_prompt / base_url_host / latency_ms` 看 4b 决定）                                                                                                               | 否   | 需要     |
-| 6b-0  | 对账基线：下文 R1–R7 按日（上海时区）跑一遍存档                                                                                                                                                                                    | —    | —        |
-| 6b-1  | 文本：建 `billing.usage_charges`；`charge_llm_usage` 等改写新表；`chat_history` 计费 4 列、`llm_usage_charges`（成本列去 `ops.llm_calls`）、去重表并入；门禁、交付仲裁、反馈、消息列表、看板日汇总、后端结算/回捞/消费记录全部切换 | 是   | 需要     |
-| 6b-2  | 语音：`chat_message_audio` 13 个计费列 → `usage_charges`                                                                                                                                                                           | 是   | 需要     |
-| 6b-3  | 聊天配图：按 4b 决定，保留则同 6b-2，下线则整表删                                                                                                                                                                                  | 是   | 需要     |
-| 6b-4  | 图片/视频广场：报价表 → `usage_charges`（status=quoted），attempts 钱字段 → charge_id；与视频广场负责人对齐后做                                                                                                                    | 是   | 需要     |
-| 6b-5  | 消费记录统一从 `usage_charges` 读；`wallet_ledger.reference_id` 统一指向 charge                                                                                                                                                    | 是   | 需要     |
+| 步   | 内容                                                                                                                                                                                                                               | 碰钱 | 后端发布 |
+| ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- | -------- |
+| 6a-1 | 请求表删 6 个无读者的测速列（不新建表）；重建首字视图；删已退役的首字报告函数                                                                                                                                                      | 否   | 不需要   |
+| 6a-2 | 上游调用观测，见下文"6a-2 细化"：2a 删 attempts 无读者列 → 2b 交付身份只认 attempts → 2c 建 `ops.llm_calls` 收三张明细与畅聊成本                                                                                                   | 否   | 需要     |
+| 6a-3 | 语音 `latency_ms` → `ops.media_generation_calls`（配图的 `provider_prompt / base_url_host / latency_ms` 看 4b 决定）                                                                                                               | 否   | 需要     |
+| 6b-0 | 对账基线：下文 R1–R7 按日（上海时区）跑一遍存档                                                                                                                                                                                    | —    | —        |
+| 6b-1 | 文本：建 `billing.usage_charges`；`charge_llm_usage` 等改写新表；`chat_history` 计费 4 列、`llm_usage_charges`（成本列去 `ops.llm_calls`）、去重表并入；门禁、交付仲裁、反馈、消息列表、看板日汇总、后端结算/回捞/消费记录全部切换 | 是   | 需要     |
+| 6b-2 | 语音：`chat_message_audio` 13 个计费列 → `usage_charges`                                                                                                                                                                           | 是   | 需要     |
+| 6b-3 | 聊天配图：按 4b 决定，保留则同 6b-2，下线则整表删                                                                                                                                                                                  | 是   | 需要     |
+| 6b-4 | 图片/视频广场：报价表 → `usage_charges`（status=quoted），attempts 钱字段 → charge_id；与视频广场负责人对齐后做                                                                                                                    | 是   | 需要     |
+| 6b-5 | 消费记录统一从 `usage_charges` 读；`wallet_ledger.reference_id` 统一指向 charge                                                                                                                                                    | 是   | 需要     |
 
 每步按"扩展 → 后端发布 → 两次采样确认旧读写停涨 → 收缩"；纯数据库内的子步（6a-1）一个迁移完成。
 
@@ -97,12 +94,33 @@
 - 本地 PG17（非超级用户）：生产形状的夹具 + 生产函数正文（md5 校验）；改前改后同一组首字上报场景（observed / 超时 / 重放 / 可恢复交付的迟到上报 / 真实服务端超时释放免费额度）返回值、请求行保留列、额度收口调用一致；两个视图保留列逐行一致；锚点不匹配时整体拒绝且不留改动；重跑无变化。
 - TEST → 生产；生产上线后：新轮次首字上报正常（`client_outcome` 分布连续）、畅聊模型评估每 30 分钟无报错、Grafana 01 看板畅聊两块面板有数、`chat_first_token_report` 删前再采样一次确认 grafana_cloud 调用数不涨。
 
-## 6a-2 / 6a-3 要点（各自开工前再细化）
+### 6a-1 上线结果（11-19）
 
-- `ops.llm_calls`：每次上游调用一行，主键 `id` = `chat_generation_attempts.id`（attempts 出现之前的旧明细行用原明细行 id，`attempt_id` 为空）；列：`chat_history_id`、`provider`、测速（`dispatch_offset_ms / headers_ms / first_chunk_ms / first_token_ms / observed_until_ms / http_status / provider_latency_ms`）、供应商回报（`provider_name / provider_reported_model / native_tokens_* / prompt/completion/cached/reasoning tokens / cost_usd / generation_time_ms`）、`raw_request / raw_usage / raw_generation / discarded_detail`（jsonb，键在 registry 登记）、`created_at / updated_at`。保留 180 天。
-- 落败调用快照 `discarded_response` 现在兼做"这次调用已终结"的守卫，随测速列一起迁，守卫在 `observe_chat_generation_attempt` 里改读 ops。
-- sync-job 的扫描源：`listRowsMissingGenerationData`（OpenRouter 明细不全）改读 ops；计费回捞的三个 provider 扫描仍以 `chat_history` 报价快照为准，6b-1 后改为 `usage_charges.status='pending'`。
-- `select_chat_generation_delivery` 去掉对两张明细表的写入后，"同一轮不能同时有 OpenRouter 与 Venice 交付"的检查由 `delivery_attempt_id` 唯一性本身保证。
+- PR #961（设计 + 迁移）；TEST 06:16、生产 06:18（北京时间）执行。生产 NOTICE：函数已改、两个视图已重建、6 列已删，首字视图近 1 天（1 小时以前）6830 行改动前后指纹一致。
+- 执行前三次采样（05:55 / 06:20 / 06:25）grafana_cloud 对首字视图与报告函数都是 52 条语句、111 次，没有新调用。
+- 生产核对：`report_chat_first_token` md5 与本地测试改后一致（`ecdab7e1…`）；报告函数已删；首字视图 49 列，授权（service_role、first_token_metrics_reader 只读）与 `security_invoker=false` 照旧；`free_zone_turn_facts` 近 1 天 5207 行可读。上线后新轮次首字上报、交付正常；主服务迁移后无报错。
+- 第一次在 TEST 触发 workflow 时 `migration_file` 只写了文件名，被参数校验挡下（未连库）；该参数要写完整路径 `packages/shared/migrations/…`。
+
+## 6a-2 细化（11-19 逐列核对后）
+
+### 读者核对
+
+- `chat_generation_attempts` 测速列：`dispatch_offset_ms / first_token_ms / observed_until_ms` 是畅聊模型评估（`primary_wait_ms`、`primary_observed_until_ms`）与 Grafana 01（`free_zone_turn_facts.primary_ttft_ms`）的输入，**留**；`headers_ms / first_chunk_ms / http_status / provider_latency_ms / provider_latency_scope（常量）/ provider_name / provider_reported_model` 只被首字视图输出、视图这些输出列已无读者（报告函数已删），后三个还与 OpenRouter 明细重复，**删**；`discarded_response`（落败调用片段，兼做 observe 的终态守卫）随明细一起迁 `ops.llm_calls.discarded_detail`。
+- 三张供应商明细表在数据库里没有函数/视图读用量列（Surplus 的 `buyer_cost_micro / provider_name / prompt_tokens / cached_tokens` 进 `free_zone_turn_facts`；OpenRouter/Venice 的 `usage` 进看板日汇总）。后端读法：
+  - `listRowsPendingBilling`（openrouter/venice）与 `listRowsMissingProviderIdentity`：**把明细表当交付身份**（`llm_generation_id`、两表互斥），经 PostgREST 外键嵌入；Surplus 版 `listSurplusRowsPendingBilling` 嵌入 Surplus 明细与请求表。
+  - `OpenRouterChatHistoryRepository`：开轮占位 + 写 generation_id（`ensurePlaceholder / ensureGenerationId`，与交付仲裁里的插入重复）、`readGenerationDataBatch` 给回捞判断"元数据是否齐全、finish_reason 是什么"、`listRowsMissingGenerationData` 扫明细不全的行。
+  - `free-zone/call-costs.ts` 读 Surplus 明细的 `request_id`。
+
+### 拆步（替换原 6a-2a~d）
+
+| 步    | 内容                                                                                                                                                                                                                                                                  | 后端发布 |
+| ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| 6a-2a | attempts 删 7 个无读者列：后端 `enrichGeneration` 只补 `finish_reason` → 发布 → 两次采样确认旧 UPDATE 停涨 → 迁移改 `observe_chat_generation_attempt`、重建首字视图（去掉对应输出列）、删列                                                                           | 需要     |
+| 6a-2b | 交付身份只认 attempts：回捞的待结算/缺身份扫描改读"交付调用"（`requests.delivery_attempt_id` → attempts 的 provider 与 generation_id，用一个只读 RPC 一次取回，不靠外键嵌入）；后端不再写明细占位与 generation_id；`select_chat_generation_delivery` 不再往明细表插行 | 需要     |
+| 6a-2c | 建 `ops.llm_calls`（主键 = attempt id）：三张明细的用量/原始数据、`discarded_response`、`free_zone_calls` 成本列迁入；Surplus 请求记录补查 → `ops.llm_cost_jobs`；回捞读元数据、看板日汇总、畅聊两个视图、成本补查改读 ops；删三张明细表                              | 需要     |
+| 6a-3  | 语音 `latency_ms` → `ops.media_generation_calls`（配图看 4b）                                                                                                                                                                                                         | 需要     |
+
+6a-2b 动的是结算回捞的"找哪些轮次要结算"，金额与扣费函数不变；仍按 6b 的对账口径前后各跑一次 R1/R2。
 
 ## 6b：`billing.usage_charges` 草案（6b-1 开工前定稿）
 
