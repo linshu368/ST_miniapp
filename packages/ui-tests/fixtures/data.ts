@@ -48,6 +48,11 @@ export const WISH_IDS = {
 } as const;
 
 export const scenarios = {
+  'image-masonry': {
+    label: '影像广场多页瀑布流',
+    description: '60条虚构图片/视频，横竖比例混合、三页加载与媒体筛选',
+    path: '/create',
+  },
   'new-user': {
     label: '新人主线引导',
     description: '选角色、第一句话、编辑与分支、返回找对话；可跳过（虚构新账号）',

@@ -56,6 +56,8 @@
       "sha256": "5d98d5a808fff14271405c81fef0f824f25c0f35c2c6ec34d677ca3859b1518b"
     }
   ],
-  "production_writes_performed": false,
-  "execution_gate": "User will deploy the compatible video release first; then re-check live SHA, catalog, asset/cover integrity, migration ledger and run serially via Database Migration. Files must exist in the selected GitHub ref; no automatic commit/push."
+  "production_writes_performed": true,
+  "execution_gate": "Completed all ten serial workflow imports and postflight. Do not replay already recorded files without a separately reviewed recovery.",
+  "execution_report": "production-seed-import-execution.json",
+  "verification_report": "production-seed-import-verification.json"
 }

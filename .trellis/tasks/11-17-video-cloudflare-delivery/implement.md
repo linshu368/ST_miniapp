@@ -78,6 +78,8 @@
 
 ## 生产种子导入授权与等待（2026-11-18）
 
+后续已完成：用户通知上线后，复核cae4b356包含混合行读取器/Stream及生产前端、Admin发布成功；10份种子从已推送分支逐批执行，全部通过。最终生产4987产物/4987已发布作品、缺Stream链接0、图片8047不变；最新Railway为4a2f1d06且health200。完整批次run/checksum与前后计数见production-seed-import-execution.json、production-seed-import-verification.json。下列为导入前门禁及等待记录，不再表示当前阻塞。
+
 - 用户已授权生产10批导入，随后选择自己先上线视频版本；当前不触发数据写入/部署，不自动commit/push。
 - 已确认生产wbtsfzozlmurljvglhpn健康，视频三表/Stream交付表、UID/播放链接列与service-only RPC已存在；不再沿用先前“生产无表”的审计结论，也不重跑基础迁移。MCP仍仅采集目录结构。
 - Railway生产仍为9f21f4a3 / 78159c80-afa0-466b-89dc-3b8c50c809ea，实际源码hydrateWorks仅图片且查不到artifact即报image_plaza_work_shape_invalid；CLOUDFLARE_ACCOUNT_ID为外部暂存变更，不代用户发布。

@@ -30,14 +30,14 @@
 - 翻译包中各模型条数：Wan 3.0 Pro 1877、MiniMax H3 Max R2V 1109、MiniMax H3 Max 711、Seedance 2.0 R2V Enhanced 682、Seedance 1.5 Pro 583、Wan 3.0 Reference 120。
 - 模型分布：
 
-  | 模型                      | 条数 |
-  | ------------------------- | ---- |
-  | Wan 3.0 Pro               | 1880 |
-  | MiniMax H3 Max R2V        | 1112 |
-  | MiniMax H3 Max            | 716  |
-  | Seedance 2.0 R2V Enhanced | 686  |
-  | Seedance 1.5 Pro          | 583  |
-  | Wan 3.0 Reference         | 120  |
+  | 模型 | 条数 |
+  | --- | --- |
+  | Wan 3.0 Pro | 1880 |
+  | MiniMax H3 Max R2V | 1112 |
+  | MiniMax H3 Max | 716 |
+  | Seedance 2.0 R2V Enhanced | 686 |
+  | Seedance 1.5 Pro | 583 |
+  | Wan 3.0 Reference | 120 |
 
 - 候选垫图列是 `orchestration.civitai.com/...jpg?sig=...` 形式的签名 URL，很可能已经过期；只作为来源元数据保存，**不在日志里输出**。
 - 原型总览记录了 27 条“涉未成年”剔除（图+视频合计；视频 5097→5082）。导入时必须加审核门禁，不能全量公开。

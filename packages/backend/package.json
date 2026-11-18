@@ -19,6 +19,7 @@
     "story-memory:replay": "tsx src/scripts/story-memory-replay.ts",
     "drama-survey:report": "tsx src/scripts/drama-survey-report.ts",
     "image-plaza:seed": "tsx src/scripts/import-image-plaza-seed.ts",
+    "image-plaza:rebuild-feed": "tsx src/scripts/rebuild-image-plaza-feed.ts",
     "image-plaza:translate-seed-prompts": "tsx src/scripts/translate-image-plaza-seed-prompts.ts",
     "image-plaza:retry-failed-prompts-venice": "tsx src/scripts/translate-image-plaza-seed-prompts.ts --retry-failed --venice-model qwen-3-8-27b",
     "video-plaza:estimate-size": "tsx src/scripts/estimate-video-plaza-seed-size.ts",

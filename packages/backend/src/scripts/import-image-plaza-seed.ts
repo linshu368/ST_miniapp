@@ -10,6 +10,7 @@ import {
   type SeedApprovalManifest,
 } from '../features/image-plaza/seed-import.js';
 import { getImagePlazaRuntimeConfig } from '../features/image-plaza/config.js';
+import { rebuildImagePlazaFeedOrder } from '../features/image-plaza/feed-ranking.js';
 import { createLogger } from '../lib/logger.js';
 import { closeSupabaseClient } from '../lib/supabase.js';
 import { config } from '../platform/config.js';
@@ -120,6 +121,7 @@ try {
     await Promise.all(
       Array.from({ length: Math.min(options.concurrency, selected.length) }, () => worker())
     );
+    if (imported > 0) await rebuildImagePlazaFeedOrder();
 
     console.log(
       `Image plaza seed apply complete: selected=${selected.length} concurrency=${options.concurrency} imported=${imported} ` +

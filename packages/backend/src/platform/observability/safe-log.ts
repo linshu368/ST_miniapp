@@ -64,12 +64,14 @@ const TEXT_FIELDS = new Set([
   'experiment_identity',
   'prompt_kind',
   'sort',
+  'media',
   'mode',
   'call_scene',
   'probe_result',
 ]);
 const NUMBER_FIELDS = new Set([
   'config_version',
+  'ranking_version',
   'pid',
   'schema_version',
   'http_status',

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   IMAGE_PLAZA_PROMPT_MAX_CHARS,
   ImagePlazaFeedQuerySchema,
+  ImagePlazaFeedCursorSchema,
   ImagePlazaModelCatalogSchema,
   ImagePlazaShareTipConfigSchema,
   ImagePlazaSnapshotSchema,
@@ -10,6 +11,36 @@ import {
 } from '../api/image-plaza.js';
 
 describe('image plaza feed query compatibility', () => {
+  it('keeps latest v1, binds recommended v2 to a revision and preserves bigint precision', () => {
+    const base = { filter: 'a'.repeat(64), id: '11111111-1111-4111-8111-111111111111' };
+    const cursor = {
+      ...base,
+      v: 2,
+      sort: 'recommended',
+      partition: 'zero',
+      rankingRevision: '22222222-2222-4222-8222-222222222222',
+      order: '9007199254740993',
+    };
+    expect(ImagePlazaFeedCursorSchema.parse(cursor)).toEqual(cursor);
+    for (const order of ['bad', '', '0', '-1', '1.5']) {
+      expect(ImagePlazaFeedCursorSchema.safeParse({ ...cursor, order }).success).toBe(false);
+    }
+    expect(
+      ImagePlazaFeedCursorSchema.safeParse({ ...cursor, rankingRevision: 'bad' }).success
+    ).toBe(false);
+    expect(
+      ImagePlazaFeedCursorSchema.safeParse({ ...cursor, order: '9223372036854775808' }).success
+    ).toBe(false);
+    expect(
+      ImagePlazaFeedCursorSchema.safeParse({
+        ...base,
+        v: 1,
+        sort: 'latest',
+        partition: 'latest',
+        publishedAt: '2026-01-01T00:00:00Z',
+      }).success
+    ).toBe(true);
+  });
   it('preserves omitted legacy sort and normalizes explicit sorts', () => {
     expect(ImagePlazaFeedQuerySchema.parse({})).toEqual({});
     expect(

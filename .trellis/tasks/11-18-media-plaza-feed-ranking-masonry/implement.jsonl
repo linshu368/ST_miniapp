@@ -1,0 +1,8 @@
+{"file":".trellis/spec/frontend/app/index.md","reason":"页面、React Query、状态与组件边界"}
+{"file":".trellis/spec/backend/app/index.md","reason":"推荐仓库、鉴权及服务端日志边界"}
+{"file":".trellis/spec/shared/contracts/index.md","reason":"推荐游标v2兼容与consumer校验"}
+{"file":".trellis/spec/database/supabase/index.md","reason":"派生排名、事务、权限与迁移"}
+{"file":"docs/db/CONTRACT.md","reason":"派生旁表及内部函数落位权威"}
+{"file":"docs/db/registry.yaml","reason":"现有works与新派生对象登记"}
+{"file":".trellis/tasks/11-18-media-plaza-feed-ranking-masonry/research/current-behavior.md","reason":"实现事实、复用调查与故障模型"}
+{"file":".trellis/tasks/11-18-media-plaza-feed-ranking-masonry/research/observability-contract.md","reason":"Sentry与Grafana同口径、维度及窗口契约"}

@@ -12,7 +12,7 @@ export const imagePlazaKeys = {
     [
       ...imagePlazaKeys.all,
       'feed',
-      2,
+      3,
       search.trim(),
       Array.isArray(tags) ? [...tags].sort() : tags === 'all' ? [] : [tags],
       sort,

@@ -58,6 +58,41 @@ describe('bounded engineering Faro exporter', () => {
       })
     );
   });
+  it('preserves plaza dimensions through final payload sanitation without identity or URLs', async () => {
+    const fake = fakeSdk();
+    const exporter = createEngineeringExporter(async () => fake.sdk);
+    await exporter.initialize();
+    const result = fake.initialize.mock.calls[0]![0].beforeSend!({
+      type: 'measurement',
+      meta: {},
+      payload: {
+        type: 'st_plaza_first_frame',
+        timestamp: '',
+        values: { duration_ms: 1200 },
+        context: {
+          route: '/create/work/:id',
+          media: 'video',
+          sort: 'recommended',
+          stage: 'first_frame',
+          source_measurement_version: 'plaza_v1',
+          measurement: 'video_frame_callback',
+          artifact_id: 'private',
+          play_url: 'private',
+        },
+      },
+    } as TransportItem);
+    expect(result).toMatchObject({
+      payload: {
+        type: 'st_plaza_first_frame',
+        context: {
+          media: 'video',
+          source_measurement_version: 'plaza_v1',
+          measurement: 'video_frame_callback',
+        },
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain('private');
+  });
 
   it('does not import or send when disabled or when public config is invalid', async () => {
     const fake = fakeSdk();

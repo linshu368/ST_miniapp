@@ -1,5 +1,7 @@
 # 广场视频 Cloudflare 生产上线清单
 
+**2026-11-18 20:39（Asia/Shanghai）执行完成：10批共4987条已导入生产。** 每批工作流成功、数量和checksum记账通过；最终4987个视频产物、4987条已发布视频作品、缺Stream链接0，原8047条可见图片作品数量不变。执行记录与前后计数见`.trellis/tasks/11-17-video-cloudflare-delivery/production-seed-import-execution.json`和`production-seed-import-verification.json`。先前的“等待用户上线”已解除；下方为原发布方案/审计快照，不能再据此重跑已完成文件。当前Railway为4a2f1d06且health200，本轮只导入种子，没有付费生成、改运营配置或执行旧列contract。
+
 2026-11-18导入授权后的最新复核：生产视频基础三表、Stream交付表/UID/链接及视频RPC已经存在，不得再重跑base/Stream扩展。Railway当前`9f21f4a3`（部署`78159c80-afa0-466b-89dc-3b8c50c809ea`）仍是image-only读取代码，直接导入会触发作品hydrate失败；用户明确选择自己先上线，之后由助手继续导入。10份原样种子SQL已复制到`packages/shared/migrations/`，哈希/批次见任务`production-seed-import-manifest.json`；必须随选定GitHub ref提交后才能workflow读取，当前未自动commit/push、未执行生产数据写入。`CLOUDFLARE_ACCOUNT_ID`目前是外部暂存、尚未部署的变更。下方“已核验生产实况”为前次审计记录，执行前以后续实时核验为准。
 
 核验日期：2026-11-18（Asia/Shanghai）。范围仅广场视频与指定目录的初始素材。本轮只读访问生产部署、目录/迁移元数据、Cloudflare库存和封面，没有执行生产DDL/DML、改变量、部署或生成任务。

@@ -5,8 +5,8 @@ scope: frontend
 category: business
 status: active
 owners: [frontend]
-last_verified_task: .trellis/tasks/11-16-miniapp-content-path-optimization/
-last_verified_at: 2026-11-16
+last_verified_task: .trellis/tasks/11-18-media-plaza-feed-ranking-masonry/
+last_verified_at: 2026-11-18
 ---
 
 # 用户会话、语音与图片界面
@@ -106,7 +106,7 @@ last_verified_at: 2026-11-16
 
 ## 影像广场（图片创作广场 V2，2026-10-12）
 
-影像广场使用 `/create`、`/create/studio/[conversationId]` 与 `/create/work/[workId]` 独立路由；服务端数据统一由 `src/lib/api/image-plaza.ts` 的 React Query hooks 获取，不与聊天图片生成状态混用。当前代码支持图片/视频混排、媒体与多标签筛选、同一会话内切换创作；标签横滑区与右侧固定「全部风格」分离，底部 Sheet 按运营分组和 chip/grid 布局展示，默认全部展示并可逐项取消。图片/视频共用标签目录，切换媒体只改变作品与计数。列表视频只加载 poster，MP4 仅在详情/工作室以原生 `<video src>` 请求。远程迁移与视频目录未发布时，配置返回空视频模型并隐藏入口。
+影像广场使用 `/create`、`/create/studio/[conversationId]` 与 `/create/work/[workId]` 独立路由；服务端数据统一由 `src/lib/api/image-plaza.ts` 的 React Query hooks 获取，不与聊天图片生成状态混用。当前代码支持图片/视频混排、媒体与多标签筛选、同一会话内切换创作；标签横滑区与右侧固定「全部风格」分离，底部 Sheet 按运营分组和 chip/grid 布局展示，默认全部展示并可逐项取消。图片/视频共用标签目录，切换媒体只改变作品与计数。列表视频只加载 poster，Stream/HLS playback 在详情和工作室按活动状态加载。远程迁移与视频目录未发布时，配置返回空视频模型并隐藏入口。
 
 提示词手工输入与快照复用统一受 Shared 的 2000 字上限约束；“用同款”恢复初始作品快照，并保留种子作品 `auto_optimize=false`，避免再次改写原始提示词。真实移动端与 test 数据链路仍需人工验收。
 
@@ -226,3 +226,9 @@ Groups read deadlines and stable dependency timeout codes use existing 503/folde
 Automatic recommendation entry uses a 1500ms shared deadline; manual refresh/undo and manual fallback open remain 5000ms. Existing hedge, batch ownership, viewer guards and retry UUIDs remain. Request transport/manual mutation and conversation row data hooks are separated without new framework or dependencies.
 
 User explicitly excludes launching local UI verification. Unit/contract/type/build/static checks and remaining production gates are recorded in `.trellis/tasks/11-16-miniapp-content-path-optimization/verification.md`; real Telegram interactions/P95 and conditional prewarming/CDN changes remain post-release work.
+
+## 2026-11-18 影像广场本地候选
+
+广场页面拆为筛选、状态与列表职责；所有屏宽固定两列，依据宽高比向短列稳定追加，双列底部共用加载闸门。详情使用实际封面解码与帧呈现计时，播放器保留Stream/HLS、一次换签、后台释放及旧源回调隔离。
+
+实现和验证边界见 `docs/media-plaza-feed-ranking.md` 与 `.trellis/tasks/11-18-media-plaza-feed-ranking-masonry/verification.md`。
