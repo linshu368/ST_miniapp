@@ -232,7 +232,7 @@ tables:
   experience.chat_generation_requests:
     nature: S
     owner: backend/src/infrastructure/repositories/GenerationObservationRepository.ts
-    status: moving
+    status: active
     billing_input: true
     note: 名字像观测，实为交付状态与计费依据（billing.chat_delivery_billing_gate、experience.report_chat_first_token、cancel_chat_generation 读取）
     keep:
@@ -267,21 +267,6 @@ tables:
         measurement_method,
         created_at,
       ]
-    drop_cols:
-      - {
-          cols:
-            [
-              first_token_emitted_ms,
-              client_request_dispatched_ms,
-              client_wait_finished_ms,
-              client_first_token_received_ms,
-              client_backgrounded,
-              client_reported_at,
-            ],
-          phase: 6,
-          note: 6a-1；前 3 列 10-29 起全空，后 3 列只剩已退役的首字报告在读，客户端首字/渲染/后台已由 Faro roleplay.first_token 记录,
-        }
-
   experience.chat_generation_attempts:
     nature: S
     owner: backend/src/infrastructure/repositories/GenerationObservationRepository.ts

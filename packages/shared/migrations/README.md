@@ -16,7 +16,7 @@
 - `report_chat_first_token` 按原文替换那条 UPDATE 的列清单（只是不再落库这 5 列）；删 `miniapp_analytics.chat_first_token_report`；按生产定义重建 `chat_first_token_facts`（去掉 7 个输出列）与 `free_zone_turn_facts`，授权与 reloptions 照旧。
 - 一个事务、一个 DO 块：守卫（锚点恰好一次、视图输出列与生产一致、依赖只有畅聊视图、属主）→ 改动前算首字视图指纹 → 改函数、删视图（只锁视图本身，不 LOCK 视图以免递归锁 chat_history）→ 锁请求表 → 重建视图 → 删列 → 指纹一致、无函数再引用这 6 列。可重跑。
 - 验证：`bash scripts/test-db-reorg-p6a1-migration.sh`（夹具为生产函数与视图原文、md5 核对；锚点漂移与多出依赖视图时拒绝且不留痕；11 个首字上报场景前后返回值、保留列、免费额度释放、计费门禁判定一致；两个视图逐行一致；后端畅聊评估查询照常；重跑无变化）。
-- 发布：TEST → 生产（执行前再采样一次确认 grafana_cloud 不再调用报告函数）→ 核对新轮次首字上报、畅聊评估、Grafana 01 畅聊面板。
+- 发布：TEST → 生产（执行前再采样一次确认 grafana_cloud 不再调用报告函数）→ 核对新轮次首字上报、畅聊评估、Grafana 01 畅聊面板。**11-19 已在 TEST 与生产执行并核对。**
 
 ## 2026-11-19 数据库重组阶段 5a：chat_history 瘦身——扩展与回填（本地 PG17 非超级用户验证）
 

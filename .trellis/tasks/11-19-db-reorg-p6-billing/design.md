@@ -97,6 +97,13 @@
 - 本地 PG17（非超级用户）：生产形状的夹具 + 生产函数正文（md5 校验）；改前改后同一组首字上报场景（observed / 超时 / 重放 / 可恢复交付的迟到上报 / 真实服务端超时释放免费额度）返回值、请求行保留列、额度收口调用一致；两个视图保留列逐行一致；锚点不匹配时整体拒绝且不留改动；重跑无变化。
 - TEST → 生产；生产上线后：新轮次首字上报正常（`client_outcome` 分布连续）、畅聊模型评估每 30 分钟无报错、Grafana 01 看板畅聊两块面板有数、`chat_first_token_report` 删前再采样一次确认 grafana_cloud 调用数不涨。
 
+### 6a-1 上线结果（11-19）
+
+- PR #961（设计 + 迁移）；TEST 06:16、生产 06:18（北京时间）执行。生产 NOTICE：函数已改、两个视图已重建、6 列已删，首字视图近 1 天（1 小时以前）6830 行改动前后指纹一致。
+- 执行前三次采样（05:55 / 06:20 / 06:25）grafana_cloud 对首字视图与报告函数都是 52 条语句、111 次，没有新调用。
+- 生产核对：`report_chat_first_token` md5 与本地测试改后一致（`ecdab7e1…`）；报告函数已删；首字视图 49 列，授权（service_role、first_token_metrics_reader 只读）与 `security_invoker=false` 照旧；`free_zone_turn_facts` 近 1 天 5207 行可读。上线后新轮次首字上报、交付正常；主服务迁移后无报错。
+- 第一次在 TEST 触发 workflow 时 `migration_file` 只写了文件名，被参数校验挡下（未连库）；该参数要写完整路径 `packages/shared/migrations/…`。
+
 ## 6a-2 / 6a-3 要点（各自开工前再细化）
 
 - `ops.llm_calls`：每次上游调用一行，主键 `id` = `chat_generation_attempts.id`（attempts 出现之前的旧明细行用原明细行 id，`attempt_id` 为空）；列：`chat_history_id`、`provider`、测速（`dispatch_offset_ms / headers_ms / first_chunk_ms / first_token_ms / observed_until_ms / http_status / provider_latency_ms`）、供应商回报（`provider_name / provider_reported_model / native_tokens_* / prompt/completion/cached/reasoning tokens / cost_usd / generation_time_ms`）、`raw_request / raw_usage / raw_generation / discarded_detail`（jsonb，键在 registry 登记）、`created_at / updated_at`。保留 180 天。
