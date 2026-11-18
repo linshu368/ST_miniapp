@@ -10,7 +10,7 @@ function row(
   turnIndex: number,
   userInput: string,
   assistantReply: string,
-  history: unknown[] = []
+  displayOpening?: string | null
 ): ConversationHistoryRow {
   return {
     id: `row-${turnIndex}`,
@@ -18,10 +18,9 @@ function row(
     model: 'test/model',
     user_input: userInput,
     assistant_reply: assistantReply,
-    history,
+    ...(displayOpening !== undefined ? { display_opening_message: displayOpening } : {}),
     character_id: null,
     status: 'success',
-    upstream_status: 200,
     deduction_rate: null,
     created_at: '2026-08-13T00:00:00.000Z',
     llm_finish_reason: 'stop',
@@ -35,15 +34,10 @@ function row(
 }
 
 describe('assembleConversationContext', () => {
-  it('未截断时 truncatedTurns=0，开场白取窗口首轮快照', () => {
+  it('未截断时 truncatedTurns=0，开场白取窗口首轮的展示投影', () => {
     const context = assembleConversationContext({
       windowStartTurn: 1,
-      windowRows: [
-        row(1, '你好', '新回复', [
-          { role: 'system', content: 'system' },
-          { role: 'assistant', content: OPENING },
-        ]),
-      ],
+      windowRows: [row(1, '你好', '新回复', OPENING)],
     });
     expect(context).toEqual({
       openingMessage: OPENING,
@@ -56,11 +50,11 @@ describe('assembleConversationContext', () => {
     });
   });
 
-  it('截断后开场白仍取 turn 1 快照，不取窗口内第一轮', () => {
+  it('截断后开场白仍取 turn 1 的投影，不取窗口内第一轮', () => {
     const context = assembleConversationContext({
       windowStartTurn: 27,
-      windowRows: [row(27, '窗口内', '窗口回复', [{ role: 'assistant', content: '不是开场白' }])],
-      openingHistory: [{ role: 'assistant', content: OPENING }],
+      windowRows: [row(27, '窗口内', '窗口回复', '不是开场白')],
+      openingMessage: OPENING,
     });
     expect(context.openingMessage).toBe(OPENING);
     expect(context.truncatedTurns).toBe(26);
@@ -68,6 +62,13 @@ describe('assembleConversationContext', () => {
       { role: 'user', content: '窗口内' },
       { role: 'assistant', content: '窗口回复' },
     ]);
+  });
+
+  it('没有投影时开场白为空，不从别处猜', () => {
+    expect(
+      assembleConversationContext({ windowStartTurn: 1, windowRows: [row(1, '问', '答')] })
+        .openingMessage
+    ).toBeNull();
   });
 
   it('空回复不进 messages，但仍占窗口轮次', () => {

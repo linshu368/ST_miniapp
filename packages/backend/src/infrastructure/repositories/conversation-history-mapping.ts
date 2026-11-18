@@ -62,10 +62,8 @@ export function readWindowStart(value: unknown): number {
 export function assembleConversationContext(input: {
   windowStartTurn: number;
   windowRows: ConversationHistoryRow[];
-  openingHistory?: unknown[];
   openingMessage?: string | null;
 }): ConversationContext {
-  const openingSource = input.openingHistory ?? input.windowRows[0]?.history;
   const turns = input.windowRows.map((row) => ({
     turnIndex: row.turn_index,
     userInput: row.user_input,
@@ -73,12 +71,11 @@ export function assembleConversationContext(input: {
     status: row.status,
   }));
   return {
+    // The opening lives in turn 1's display projection (written at admission, backfilled for older turns).
     openingMessage:
       input.openingMessage !== undefined
         ? input.openingMessage
-        : input.windowRows[0]?.display_opening_message !== undefined
-          ? input.windowRows[0].display_opening_message
-          : extractOpeningMessage(openingSource),
+        : (input.windowRows[0]?.display_opening_message ?? null),
     messages: turnsToMessages(turns),
     turns,
     truncatedTurns: Math.max(input.windowStartTurn - 1, 0),
@@ -94,22 +91,8 @@ export function latestRevisionRows(rows: ConversationHistoryRow[]): Conversation
   return [...latest.values()].sort((left, right) => left.turn_index - right.turn_index);
 }
 
-export function extractOpeningMessage(history: unknown[] | undefined): string | null {
-  if (!Array.isArray(history)) return null;
-  for (const item of history) {
-    if (!item || typeof item !== 'object') continue;
-    const candidate = item as { role?: unknown; content?: unknown };
-    if (candidate.role === 'assistant' && typeof candidate.content === 'string') {
-      const content = candidate.content.trim();
-      if (content) return content;
-    }
-  }
-  return null;
-}
-
 export function toChatMessages(row: ConversationHistoryRow): ChatMessage[] {
-  const requestId =
-    row.display_request_id !== undefined ? row.display_request_id : extractRequestId(row.history);
+  const requestId = row.display_request_id;
   return [
     {
       id: `${row.id}:user`,
@@ -197,13 +180,6 @@ export function withStoredRequestId(
   if (!requestId) return history;
   const first = history[0] ?? { role: 'system', content: '' };
   return [{ ...first, request_id: requestId }, ...history.slice(1)];
-}
-
-function extractRequestId(history: unknown[] | undefined): string | undefined {
-  const first = history?.[0];
-  if (!first || typeof first !== 'object') return undefined;
-  const requestId = (first as { request_id?: unknown }).request_id;
-  return typeof requestId === 'string' ? requestId : undefined;
 }
 
 /** deduction_rate 是开轮时定下的每轮星尘；继承的历史在视图里是 NULL，不下发 */
