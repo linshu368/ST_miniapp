@@ -71,3 +71,15 @@
 - 日志复用提交 HTTP 根、db.supabase 与 `image_plaza.request_failed` 的 request/trace/cause；新增迁移只输出固定守卫失败码，允许类型变化不放开任意错误正文，不打开通知。验证已有真实日志 P0001 关联与后续响应；审批后在 TEST workflow 执行并复核目录。
 - 风险评估：涉及钱与迁移，必须新增最小隔离 PostgreSQL/WASM 回归，加载真实钱包/视频 reserve/refund 函数及新迁移；覆盖旧守卫复现、视频预扣/幂等/退款一次、额度不足零扣、聊天专项优先/图片通用策略不变、非法类型、未知守卫拒绝/原子回滚、重放和 ACL。单连接不冒充多连接并发；已有钱包机制未改。
 - 发布/恢复：审核最终文件后提交/单独授权推送，再通过 Database Migration 单文件 TEST apply，回读类型守卫和流水约束；不动生产。保留现行分账/退款事实，异常停止受理并采用新 forward-fix，不重跑旧钱包迁移。工程师可复用既有 @image 场景补真实提交失败提示；本轮免本地 UI，单次 HTTP 耗时不作 Android/iOS P95。
+
+## 生产SQL生成（2026-11-18）
+
+用户已要求实施，见production-sql-design.md的复用、落位、可靠性、恢复、日志/性能与专项回归计划；当前任务保持in_progress，生成base/config两文件和测试，不触发生产workflow。
+
+## 生产种子导入授权与等待（2026-11-18）
+
+- 用户已授权生产10批导入，随后选择自己先上线视频版本；当前不触发数据写入/部署，不自动commit/push。
+- 已确认生产wbtsfzozlmurljvglhpn健康，视频三表/Stream交付表、UID/播放链接列与service-only RPC已存在；不再沿用先前“生产无表”的审计结论，也不重跑基础迁移。MCP仍仅采集目录结构。
+- Railway生产仍为9f21f4a3 / 78159c80-afa0-466b-89dc-3b8c50c809ea，实际源码hydrateWorks仅图片且查不到artifact即报image_plaza_work_shape_invalid；CLOUDFLARE_ACCOUNT_ID为外部暂存变更，不代用户发布。
+- 10份种子SQL按原字节复制到唯一迁移源，哈希/行数见production-seed-import-manifest.json；逐文件500（前9份）/487，合计4987，不修改原英文/中文快照、视频UID和私有封面引用。无用户/钱包写入；旧seed的失败回滚/冲突及幂等已隔离验证。
+- 用户上线后再核对真实部署SHA含Stream/混合行读取器，确认对应GitHub ref含10文件，逐环境核对ledger/claim/checksum、结构/ACL、素材/封面与容量；再按01→10单文件Database Migration（production显式确认、force_rerun=false）执行，检查每批matched/published与预期一致，失败/未知立即停止。保留原工作流日志审计，不输出prompt/签名/密钥。两份一次性base/config若已存在不得再跑。

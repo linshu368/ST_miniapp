@@ -32,6 +32,37 @@ GitHub Actions 操作前再次核对 workflow 版本、目标 environment secret
 - 大表索引/约束评估 concurrent、NOT VALID/VALIDATE、statement/lock timeout 和 Railway/Supabase 连接影响。
 - migration 应可重复检测目标 shape；不能真正幂等时明确“一次性”及安全失败条件。
 - 回滚可能丢数据时优先 forward-fix；任何恢复步骤都写明数据损失边界和备份前提。
+
+## 广场视频生产兼容引导（2026-11-18候选，未远端执行）
+
+### Scope / Trigger
+
+生产图片结构已存在、视频未部署，现行钱包增加creator/survey且CHECK为NOT VALID，配置已转登记表/FK。不可直接重跑早期视频两份静态迁移。
+
+### Signatures
+
+`20261118_media_plaza_video_production_base.sql`→`20261118_media_plaza_video_production_config.sql`；后续标签、图片参考和Stream使用既有迁移，应用先支持混合作品再导入种子。reserve/refund/share与交付RPC签名沿现有消费者，不新增公开接口。
+
+### Contracts
+
+base保留现有ledger CHECK表达式后OR视频类型，保持NOT VALID；唯一已知钱包入口守卫最小替换，主体/属性/OID不变。原图片来源谓词完整保存在仅image适用的约束，现有origin枚举不改；已有私有封面桶参数不覆盖。config保留lookup、标签validator及drafts/releases全部约束OID/定义，在当前outer validator根BEGIN插入视频分支并保持其他源码/属性，不加before包装、不写价格/运行值。旧M/J逻辑字段按registry债务复用，拆分另改消费者。
+
+### Validation & Error Matrix
+
+部分视频结构、未知钱包守卫/validated类型约束、不兼容桶、图片规模超过10万、缺登记FK、冲突/退役视频key、无法识别outer根结构→事务失败；锁5秒，base语句120秒/config60秒。两份均一次性重放拒绝；提交/记账结果未知先互证catalog/claim/checksum，再审恢复。固定错误不携带动态目录内容；复用workflow审计和既有HTTP/DB/worker关联日志，无新告警/日志表。
+
+### Good / Base / Bad Cases
+
+Good：保留生产已有类型、函数与图片约束，扩展现行登记路径。Base：只有旧图片行且桶已含封面，数据和桶设置不动。Bad：重建旧钱包主体、放宽图片NULL来源规则、覆盖配置静态名单，或旧image-only后端仍在线就导入视频作品。
+
+### Tests Required
+
+`node scripts/test-video-production-migrations.mjs <PGlite入口> [外部种子目录]`加载真实钱包/图片/视频SQL和脱敏catalog定义，验证扣退/分享一次、零返利、bonus-first/main_only、图片与creator/survey保留、FK/ACL/属性、失败全回滚及重放拒绝；可接续10批4987素材。旧配置委托为合成拒绝器，不能替代生产全部key回归。既有钱包与Stream专项继续跑；同名只读postflight随workflow验收。单连接WASM不证明并发、远端TEST或生产容量，禁止据此宣称线上完成。
+
+### Wrong vs Correct
+
+Wrong：账本缺记录就force_rerun，或导入后回退image-only应用。Correct：区分结构已提交和记账，独立审恢复；停worker保留资产/账务，forward-fix或回退到已验证的混合行消费者。
+
 - 文本后处理迁移/应用顺序固定为版本/草稿与显式 wrapper → artifact/权限 forward-fix → current-postprocess 开轮 RPC → Backend → Frontend/Admin。已发布快照和被 history 引用的版本不得 DROP/改写；应用回退保留数据对象，配置恢复通过发布新版本，数据库缺陷使用 reviewed forward-fix。
 
 ## OpenRouter 兼容发布门禁

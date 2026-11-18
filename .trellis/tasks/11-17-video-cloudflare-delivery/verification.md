@@ -1,5 +1,18 @@
 # 当前验证证据（2026-11-17，本地候选）
 
+## 生产兼容SQL生成（2026-11-18）
+
+后续导入授权复核：生产已存在视频/Stream基础对象，不能重跑早期引导。Railway最新9f21f4a3（78159c80-afa0-466b-89dc-3b8c50c809ea）仍无video-stream/混合读取器；真实hydrateWorks对视频NULL artifact触发image_plaza_work_shape_invalid。用户选择自己先上线，再继续导入。本轮10份原始SQL已逐字节/哈希校验并纳入唯一迁移源，合计4987条，迁移命名通过；无生产DDL/DML或部署，未提交推送。下一步门禁与manifest见implement.md，不把生产结构已就绪写成应用已上线。
+
+- 交付`20261118_media_plaza_video_production_base.sql`与`20261118_media_plaza_video_production_config.sql`，各有同名只读postflight；未修改历史迁移、未执行远端DDL/DML、未改Railway变量/部署、未发布价格或发起付费生成。任务仍有远端验证/发布门禁，未标记整体完成。
+- 新隔离PG17/WASM回归复用真实钱包、图片表、视频RPC与脱敏catalog定义：原creator/survey保留且可发奖；bonus-first/main_only、扣退一次、零/正返利分享重放；原图片来源非空规则、桶设置、service-only/RLS；配置原lookup/标签/outer属性及FK保留，旧key/drive分支仍校验；未知钱包守卫/outer、部分结构、validated类型CHECK/缺FK/公开桶拒绝并全事务回滚，重复执行安全拒绝。旧配置委托使用合成拒绝器，仅证明委托保留；不代表全部生产key已实测。
+- 同一升级夹具接续标签/参考图/Stream迁移及外部10批素材SQL，逐文件哈希匹配，得到4987 seed产物/作品；重放不增行，缺封面/资产冲突拒绝回滚。原图片及生成/分享事实保留。单连接WASM不覆盖多连接并发或生产所有历史行；没有远端TEST执行或生产容量实测。
+- 命令：`node scripts/test-video-production-migrations.mjs <已安装PGlite入口> <外部素材目录>`；既有`test-video-wallet-reservation.mjs`与`test-video-stream-delivery.mjs`均通过。shared 25文件256项、Backend广场/播放12文件102项通过。8包`pnpm -r typecheck`通过；第一次因合入上游后本地Prisma Client过期缺listing失败，按当前schema重新generate后通过，未改源码或数据库。
+- 迁移命名、日志AST/规划、模块payload、复杂度及格式/diff检查通过。db-contract通过但6条提示已逐项解释：旧M/J落位债务复用（需PR注明理由）、两处媒体时长非测速。复杂度仅既有基线警告。本轮只改SQL/回归脚本/文档，shared无build脚本，运行时TS/依赖未改，不重复有Sentry上传副作用的Frontend构建；用户免本地UI，未做UI/真机/P95。
+- 两份一次性SQL不可盲目force_rerun；提交成功而记账未知时先核对catalog/claim/checksum，另审恢复。先结构后兼容应用再种子，异常停worker并保留资产/账务forward-fix；视频行导入后不能回退image-only Backend。执行顺序/PR落位例外说明见`docs/video-plaza-production-release.md`。
+
+2026-11-18追加：生产只读核验及4987条初始化素材已整理，见docs/video-plaza-production-release.md。生产无视频基础表、旧M2钱包约束及M3配置迁移不兼容现状，尚不能直接上线；本轮未执行生产写操作。10批哈希/契约/隔离SQL验证通过，4987个Cloudflare库存重新核验ready/private，六模型签名HLS及生产封面样本通过。完整封面字节复核为11-17交接证据，生产长期密钥/余额、模型价格和兼容升级另验。
+
 ## 真实TEST资产和Cloudflare
 
 目标zoqelpfhurwehlvypryl，13条=10种子+3生成，74,247,409字节。13/13源文件已独立备份并回读SHA-256，恢复目录位于Git之外。13/13已上传Stream并验证签名清单、多档子清单与实际分片；实际每条3～5档，匿名访问拒绝。单条MP4下载副本ready，签名下载经Cloudflare重定向后Range可读。首次未开始上传的创建回执已按精确test资产标记对账补偿，无盲重投；正式13条各有独立UID。
