@@ -4,6 +4,7 @@ from contextlib import redirect_stdout, redirect_stderr
 import io
 import json
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -141,6 +142,67 @@ class LoggingPlanningGateTests(unittest.TestCase):
                          "1234567", b".trellis/tasks/current/prd.md\0"]), \
                      redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
                     self.assertEqual(gate.main(["--base", "base"]), expected)
+
+
+def _git(root: Path, args: list[str]) -> None:
+    subprocess.run(["git", *args], cwd=root, check=True, capture_output=True)
+
+
+def _init_task_repo(root: Path, body: dict) -> None:
+    _git(root, ["init", "-q"])
+    _git(root, ["config", "user.email", "gate-test@example.com"])
+    _git(root, ["config", "user.name", "gate-test"])
+    hooks = root / "hooks"
+    hooks.mkdir()
+    _git(root, ["config", "core.hooksPath", str(hooks)])
+    path = root / ".trellis/tasks/legacy/task.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps(body, indent=2) + "\n", encoding="utf-8")
+    (path.parent / "task.md").write_text(
+        "| ID | Status |\n| -- | ------ |\n| T1 | Todo |\n", encoding="utf-8")
+    _git(root, ["add", "."])
+    _git(root, ["commit", "-q", "-m", "base"])
+
+
+class FormattingOnlyPlanningTests(unittest.TestCase):
+    def test_json_reprint_and_markdown_alignment_are_formatting_only(self):
+        before = '{\n  "meta": {\n    "modules": [\n      "backend.route"\n    ]\n  }\n}\n'
+        after = '{\n  "meta": {\n    "modules": ["backend.route"]\n  }\n}\n'
+        self.assertTrue(gate.formatting_only_change("task.json", before, after))
+        aligned = "| ID  | Status |\n| --- | ------ |\n| T1  | Todo   |\n"
+        original = "| ID | Status |\n| -- | ------ |\n| T1 | Todo |\n"
+        self.assertTrue(gate.formatting_only_change("task.md", original, aligned))
+        self.assertFalse(gate.formatting_only_change("task.md", original, original + "\nAdded a step.\n"))
+        self.assertFalse(gate.formatting_only_change("task.json", None, after))
+
+    def test_reformat_of_an_old_task_does_not_fail_the_gate(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _init_task_repo(root, task_data(None))
+            base = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
+            task_json = root / ".trellis/tasks/legacy/task.json"
+            task_json.write_text(json.dumps(json.loads(task_json.read_text(encoding="utf-8")),
+                                            separators=(",", ":")) + "\n", encoding="utf-8")
+            (root / ".trellis/tasks/legacy/task.md").write_text(
+                "| ID  | Status |\n| --- | ------ |\n| T1  | Todo   |\n", encoding="utf-8")
+            _git(root, ["add", "."])
+            _git(root, ["commit", "-q", "-m", "reformat"])
+            with patch.object(gate, "__file__", str(root / ".trellis/scripts/logging_planning_gate.py")), \
+                 redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as err:
+                self.assertEqual(gate.main(["--base", base]), 0, err.getvalue())
+
+    def test_real_plan_edit_still_requires_a_logging_plan(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _init_task_repo(root, task_data(None))
+            base = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
+            path = root / ".trellis/tasks/legacy/task.md"
+            path.write_text(path.read_text(encoding="utf-8") + "\nRecord the dispatch failure.\n", encoding="utf-8")
+            _git(root, ["add", "."])
+            _git(root, ["commit", "-q", "-m", "resume"])
+            with patch.object(gate, "__file__", str(root / ".trellis/scripts/logging_planning_gate.py")), \
+                 redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                self.assertEqual(gate.main(["--base", base]), 1)
 
 
 if __name__ == "__main__":
