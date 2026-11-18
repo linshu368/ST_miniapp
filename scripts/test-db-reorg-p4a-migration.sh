@@ -13,6 +13,7 @@ set -euo pipefail
 task_root="$(cd "$(dirname "$0")/.." && pwd)"
 expand="$task_root/packages/shared/migrations/20261118_db_reorg_p4a_payment_reconcile_jobs.sql"
 contract="$task_root/packages/shared/migrations/20261118_db_reorg_p4a_payment_reconcile_jobs_contract.sql"
+record_rpc="$task_root/packages/shared/migrations/20261118_db_reorg_p4a_record_payment_event.sql"
 task_container="st-db-reorg-p4a-${RANDOM}-$$"
 trap 'docker rm -f "$task_container" >/dev/null 2>&1 || true' EXIT
 docker run -d --rm --name "$task_container" --network none -e POSTGRES_HOST_AUTH_METHOD=trust postgres:17 >/dev/null
@@ -77,7 +78,10 @@ CREATE TABLE billing.payment_operation_events (
   error_class text, duration_ms integer, occurred_at timestamptz NOT NULL, recorded_at timestamptz NOT NULL DEFAULT now(),
   metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
   CONSTRAINT payment_operation_events_duration_ms_check CHECK (duration_ms IS NULL OR duration_ms >= 0),
-  CONSTRAINT payment_operation_events_metadata_check CHECK (jsonb_typeof(metadata) = 'object'));
+  CONSTRAINT payment_operation_events_metadata_check CHECK (jsonb_typeof(metadata) = 'object'),
+  CONSTRAINT payment_operation_events_event_kind_check CHECK (event_kind = ANY (ARRAY['checkout_confirmation', 'order_creation',
+    'gateway_create', 'webhook', 'return', 'payment_query', 'settlement', 'fast_reconcile', 'expiry_reconcile'])),
+  CONSTRAINT payment_operation_events_outcome_check CHECK (outcome = ANY (ARRAY['started', 'succeeded', 'failed', 'unpaid', 'paid', 'skipped'])));
 CREATE INDEX idx_payment_operation_events_occurred_at ON billing.payment_operation_events USING btree (occurred_at DESC);
 CREATE INDEX idx_payment_operation_events_order_recorded_at ON billing.payment_operation_events USING btree (order_id, recorded_at DESC) WHERE (order_id IS NOT NULL);
 ALTER TABLE billing.payment_operation_events ENABLE ROW LEVEL SECURITY;
@@ -210,6 +214,36 @@ DO $$ BEGIN
 END $$;
 SQL
 echo "ok: new backend event insert (typed params, dedupe) and alert scan SQL run against ops.payment_events"
+
+# record_payment_event: the backend's single write path into ops.payment_events (via PostgREST as service_role).
+"${admin_psql[@]}" >/dev/null <"$record_rpc"
+"${admin_psql[@]}" >/dev/null <"$record_rpc"
+"${admin_psql[@]}" >/dev/null <<'SQL'
+SET ROLE service_role;
+DO $$ BEGIN
+  IF billing.record_payment_event('fast_reconcile:EP-expired-2d:rpc', 'EP-expired-2d', '00000000-0000-4000-8000-000000000001',
+       'fast_reconcile', 'query', 'unpaid', 'gateway', 'fast_reconcile', NULL, 950, now(), '{"attempt":2}') IS NOT TRUE
+     OR billing.record_payment_event('fast_reconcile:EP-expired-2d:rpc', 'EP-expired-2d', NULL,
+       'fast_reconcile', 'query', 'failed', 'gateway', 'fast_reconcile', 'timeout', NULL, now(), NULL) IS NOT FALSE THEN
+    RAISE EXCEPTION 'assert: record_payment_event insert/dedupe wrong';
+  END IF;
+  BEGIN
+    PERFORM billing.record_payment_event('bad:1', NULL, NULL, 'not_a_kind', 'query', 'unpaid', 'gateway', 'fast_reconcile',
+      NULL, NULL, now(), NULL);
+    RAISE EXCEPTION 'assert: invalid event kind accepted';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+END $$;
+RESET ROLE;
+DO $$ BEGIN
+  IF (SELECT duration_ms FROM ops.payment_events WHERE event_key = 'fast_reconcile:EP-expired-2d:rpc') <> 950
+     OR has_function_privilege('anon', 'billing.record_payment_event(text,text,uuid,text,text,text,text,text,text,integer,timestamptz,jsonb)', 'EXECUTE')
+     OR has_function_privilege('authenticated', 'billing.record_payment_event(text,text,uuid,text,text,text,text,text,text,integer,timestamptz,jsonb)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'assert: record_payment_event result or grants wrong';
+  END IF;
+END $$;
+SQL
+echo "ok: record_payment_event writes ops.payment_events as service_role, dedupes, rejects invalid kinds, not for anon"
 
 # Claim: backoff sequence and cap, cleanup, then concurrency -------------------------------------------------------
 "${admin_psql[@]}" >/dev/null <<'SQL'
