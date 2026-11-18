@@ -858,13 +858,10 @@ tables:
       note: 运营托管 key 登记（20261117_db_reorg_managed_config_keys.sql）；config_drafts/config_releases 外键引用；retired_at 非空为退役,
     }
   admin.validate_managed_config_value:
-    {
-      nature: C,
-      owner: rpc:admin,
-      status: frozen,
-      phase: 3,
-      note: 函数而非表。最外层可原地加分支；下面 15 层 *_before_* 冻结，阶段 3 合并配置对象时整体重写,
-    }
+    nature: C
+    owner: rpc:admin（存草稿、发布、回滚）
+    status: active
+    note: 函数而非表。3d 起单层 CASE 按 key 分发（先查 is_managed_config_key，退役/未登记拒绝）；长校验拆成 admin.validate_reply_style_options / validate_pref_word_count_tiers / validate_payment_plans_config / validate_payment_plan_list。加 key = 登记表一行 + 一个 WHEN
 
   # ───────────────────────── miniapp_analytics ─────────────────────────
   miniapp_analytics.card_position_snapshot:
