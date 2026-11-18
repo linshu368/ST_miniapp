@@ -32,10 +32,6 @@ function order(): MiniappPaymentOrderRow {
     vip_bonus_credits: null,
     fulfillment_applied: false,
     vip_valid_until: null,
-    next_reconcile_at: '2026-10-10T11:01:00.000Z',
-    last_reconciled_at: null,
-    reconcile_attempts: 0,
-    reconcile_locked_until: null,
   };
 }
 
