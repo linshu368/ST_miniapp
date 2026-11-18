@@ -1,6 +1,31 @@
 import type { Page } from '@playwright/test';
 import { test, expect, expectMobileLayout } from './fixtures.js';
 
+test('@profile @wallet-spending @layout 视频预扣与原路退款分开显示且不改变余额', async ({
+  page,
+  preview,
+}) => {
+  await preview.scenario('spending-video');
+  const before = (await preview.state()).wallet;
+  await page.goto('/profile/spending');
+  const debit = page
+    .getByRole('article')
+    .filter({ has: page.getByRole('heading', { name: '视频消费', exact: true }) });
+  const refund = page
+    .getByRole('article')
+    .filter({ has: page.getByRole('heading', { name: '视频退款', exact: true }) });
+  await expect(debit.getByText('-40.5', { exact: true })).toBeVisible();
+  await expect(debit.getByText('已预扣', { exact: true })).toBeVisible();
+  await expect(debit.getByText('通用 -10.0 · 专项 -30.5', { exact: true })).toBeVisible();
+  await expect(refund.getByText('+40.5', { exact: true })).toBeVisible();
+  await expect(refund.getByText('已原路退回', { exact: true })).toBeVisible();
+  await expect(refund.getByText('通用 +10.0 · 专项 +30.5', { exact: true })).toBeVisible();
+  await expect(page.getByRole('article')).toHaveCount(2);
+  expect((await preview.state()).wallet).toEqual(before);
+  await expectMobileLayout(page);
+  await preview.screenshot('视频消费与退款明细');
+});
+
 test('@profile @layout 未开通会员：签到到账、两处引导及 VIP 跳转', async ({ page, preview }) => {
   await page.goto('/profile');
   await expect(page.getByText('每天 00:00 更新', { exact: true })).toBeVisible();

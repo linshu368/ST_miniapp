@@ -91,6 +91,7 @@ function EmptyState() {
 }
 
 function SpendingRow({ item }: { item: WalletSpendingRecord }) {
+  const refund = Boolean(item.refund_of) || item.source_label === '原路退款';
   return (
     <article className="flex items-center gap-4 rounded-[20px] border border-border bg-card p-4">
       <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
@@ -111,6 +112,11 @@ function SpendingRow({ item }: { item: WalletSpendingRecord }) {
         >
           {item.status_label}
         </p>
+        {item.main_delta !== undefined || item.bonus_delta !== undefined ? (
+          <p className="mt-1 text-[10px] tabular-nums text-muted-foreground">
+            通用 {formatDelta(item.main_delta)} · 专项 {formatDelta(item.bonus_delta)}
+          </p>
+        ) : null}
         <time
           dateTime={item.created_at}
           className="mt-1 block text-[10px] font-medium tabular-nums tracking-wide text-muted-foreground/70"
@@ -124,8 +130,8 @@ function SpendingRow({ item }: { item: WalletSpendingRecord }) {
         ) : (
           <>
             <p className="text-[15px] font-black tabular-nums text-primary">
-              {item.charged_amount > 0 ? '-' : ''}
-              {item.charged_amount.toFixed(1)}
+              {item.charged_amount !== 0 ? (refund ? '+' : '-') : ''}
+              {Math.abs(item.charged_amount).toFixed(1)}
             </p>
             <p className="mt-0.5 text-[10px] text-muted-foreground">星尘</p>
           </>
@@ -133,6 +139,11 @@ function SpendingRow({ item }: { item: WalletSpendingRecord }) {
       </div>
     </article>
   );
+}
+
+function formatDelta(value: number | undefined): string {
+  if (value === undefined || !Number.isFinite(value)) return '—';
+  return `${value > 0 ? '+' : ''}${value.toFixed(1)}`;
 }
 
 function formatExactDateTime(iso: string): string {

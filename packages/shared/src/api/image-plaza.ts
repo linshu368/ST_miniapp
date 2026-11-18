@@ -343,6 +343,7 @@ export type ImagePlazaMessage = z.infer<typeof ImagePlazaMessageSchema>;
 export const ImagePlazaConversationSchema = z.object({
   id: z.string().uuid(),
   title: z.string(),
+  source_work_id: z.string().uuid().nullable().optional(),
   snapshot: z.union([ImagePlazaSnapshotSchema, VideoPlazaSnapshotSchema]).nullable(),
   messages: z.array(ImagePlazaMessageSchema),
   created_at: z.string().datetime(),

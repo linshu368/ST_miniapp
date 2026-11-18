@@ -5,7 +5,7 @@ scope: backend
 category: business
 status: active
 owners: [backend]
-last_verified_task: .trellis/tasks/11-18-media-plaza-feed-ranking-masonry/
+last_verified_task: .trellis/tasks/11-18-video-spending-records/
 last_verified_at: 2026-11-18
 ---
 
@@ -292,3 +292,9 @@ User explicitly excludes launching local UI verification. Unit/contract/type/bui
 影像广场推荐通过有界RPC读取版本排名，最新继续按published_at和ID读取；服务端筛选发生在分页前，hydrate仍只为列表提供封面。生成、计费、分享返利不变，排名维护不进入用户请求路径。
 
 实现和验证边界见 `docs/media-plaza-feed-ranking.md` 与 `.trellis/tasks/11-18-media-plaza-feed-ranking-masonry/verification.md`。
+
+## Video cover source (2026-11-18 local candidate)
+
+mapConversationRow projects existing source_work_id as UUID/null for authenticated conversation consumers; no new SQL read/write or migration. Default-cover client reuses existing authorized work lookup, reference upload and explicit-reference video submit; no billing substitution.
+
+Evidence and release limitations: `docs/video-plaza-stream.md`, `.trellis/tasks/11-18-video-spending-records/verification.md`.

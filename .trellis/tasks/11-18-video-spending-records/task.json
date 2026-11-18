@@ -1,0 +1,116 @@
+{
+  "id": "video-spending-records",
+  "name": "video-spending-records",
+  "title": "Video spending, configured quotes and default covers",
+  "description": "Video spending display, configured R2V quotes, and authorized current-cover reference fallback; no billing change and no local UI runs.",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "cross-layer",
+  "package": "backend",
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-18",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "Local UI run explicitly stopped at user request; do not restart or claim pass. R2V scope confirmed no reference image. Payment-query optimization remains separate, unimplemented and not mixed with this video display fix. Local implementation complete; see verification/review. No staging, commit, push or deployment.",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "backend.business.wallet-payment",
+        "frontend.business.wallet-payment",
+        "frontend.business.conversation-ui",
+        "shared.business.conversation-contracts",
+        "backend.business.conversation-generation"
+      ]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": ["/profile/spending", "/create/studio/:id"],
+      "apis": [
+        "GET /api/wallet/spending",
+        "POST /api/image-plaza/video-quotes",
+        "GET /api/image-plaza/works/:workId",
+        "POST /api/image-plaza/references"
+      ],
+      "android": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 2000
+      },
+      "ios": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 2000
+      },
+      "api": {
+        "p95_baseline_ms": null,
+        "p95_target_ms": 800
+      },
+      "measurement": {
+        "source": "Existing Sentry/Faro page/API timings; no independent visible successful samples for this fix, baseline null.",
+        "window": "Before/after24h split Android/iOS, release and route; N<100 extends72h with low sample label."
+      },
+      "notes": "No new frontend polling; bounded parallel media reads,100 per existing segment. Local fixtures do not prove real P95. Studio ready target1500ms; spending target2000ms, both API targets800ms. Local UI runs waived by user. Cover download/upload only after explicit Generate; no initial-page request added. Existing reference upload deadline60s is not claimed to meet quote800ms; real default-cover generation preparation timing requires separate observation."
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "required",
+      "scope": [
+        "GET /api/wallet/spending video debit/refund history",
+        "Spending debit/refund and split presentation",
+        "R2V quote mode before adding reference; existing quote HTTP400/200 terminal",
+        "Authorized source-work lookup and existing reference upload before non-t2v generation; quotes still configured"
+      ],
+      "integration_points": [
+        "Existing wallet route HTTP root/terminal and Supabase client observation; sanitized error cause"
+      ],
+      "events": [
+        {
+          "event": "operation.terminal",
+          "operation": "http.request",
+          "levels": ["info", "warn", "error"],
+          "outcomes": ["succeeded", "failed", "timed_out", "interrupted"],
+          "fields": [
+            "http_status",
+            "public_error_code",
+            "duration_ms",
+            "request_id",
+            "trace_id",
+            "span_id"
+          ]
+        },
+        {
+          "event": "operation.terminal",
+          "operation": "db.supabase",
+          "levels": ["info", "warn", "error"],
+          "outcomes": ["succeeded", "failed", "timed_out", "cancelled"],
+          "fields": ["upstream_status", "duration_ms", "outcome", "trace_id"]
+        }
+      ],
+      "failure_paths": [
+        "Ledger error/timeout returns existing error, not silent partial spending",
+        "No matching rows returns empty list; no side-effect or retry",
+        "Missing optional split hides it; never synthesize balance deductions",
+        "Missing/unreadable/oversized cover stops before paid submit; preserve draft and show error",
+        "Manual upload in progress/error never silently falls back; changed reference invalidates delayed preparation"
+      ],
+      "correlation": "Existing HTTP request/trace response headers and DB child spans; no extra identity metrics.",
+      "redaction": "Existing allowlisted status/duration/correlation only; no amounts, raw ledger metadata, prompt, token or signed URL logging.",
+      "alerting": "Reuse existing default-disabled HTTP/DB rules; no new remote alerts.",
+      "verification": [
+        "Repository ownership/sign/failure regressions; actual existing HTTP/logging tests",
+        "Frontend @profile fixture and typecheck/build; logging planning gate and backend logging guard"
+      ]
+    }
+  }
+}
