@@ -112,10 +112,26 @@ export class GenerationObservationRepository {
   }
 
   async observe(historyId: string, attempt: AttemptObservation): Promise<void> {
+    // The RPC stores only call identity, the three timings the free-zone evaluation reads, and the
+    // terminal snapshot. Headers/first-chunk/provider latency go to OTel (observeGenerationAttempt).
+    const stored = {
+      id: attempt.id,
+      role: attempt.role,
+      provider: attempt.provider,
+      model: attempt.model,
+      generation_id: attempt.generation_id,
+      dispatched_at: attempt.dispatched_at,
+      dispatch_offset_ms: attempt.dispatch_offset_ms,
+      first_token_ms: attempt.first_token_ms,
+      observed_until_ms: attempt.observed_until_ms,
+      end_reason: attempt.end_reason,
+      finish_reason: attempt.finish_reason,
+      discarded_response: attempt.discarded_response,
+    };
     const { error } = await this.db
       .rpc('observe_chat_generation_attempt', {
         p_history_id: historyId,
-        p_observation: attempt,
+        p_observation: stored,
       })
       .abortSignal(AbortSignal.timeout(5_000));
     if (error) throw new Error('保存模型调用观测失败', { cause: error });
@@ -167,25 +183,15 @@ export class GenerationObservationRepository {
     if (error) throw new Error('保存业务首 token 阶段失败', { cause: error });
   }
 
+  /** Provider-reported finish reason for the delivered OpenRouter call; latency/provider/model stay in its metadata row. */
   async enrichGeneration(
     generationId: string,
-    metadata: {
-      latency: number | null;
-      provider_name: string | null;
-      finish_reason: string | null;
-      model?: string | null;
-    }
+    metadata: { finish_reason: string | null }
   ): Promise<void> {
-    const patch = {
-      ...(metadata.latency !== null ? { provider_latency_ms: metadata.latency } : {}),
-      ...(metadata.provider_name ? { provider_name: metadata.provider_name } : {}),
-      ...(metadata.model ? { provider_reported_model: metadata.model } : {}),
-      ...(metadata.finish_reason ? { finish_reason: metadata.finish_reason } : {}),
-    };
-    if (!Object.keys(patch).length) return;
+    if (!metadata.finish_reason) return;
     const { error } = await this.db
       .from('chat_generation_attempts')
-      .update(patch)
+      .update({ finish_reason: metadata.finish_reason })
       .eq('provider', 'openrouter')
       .eq('generation_id', generationId)
       .abortSignal(AbortSignal.timeout(3000));

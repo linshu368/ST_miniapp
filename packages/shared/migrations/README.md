@@ -8,6 +8,16 @@
 
 # SQL 迁移文件
 
+## 2026-11-19 数据库重组阶段 6a-2a：生成调用表删 7 个无读者的列（本地 PG17 非超级用户验证）
+
+`20261119_db_reorg_p6a2a_attempt_columns.sql`，**后端发布、旧写入停涨之后执行**。计划见 `.trellis/tasks/11-19-db-reorg-p6-billing/design.md`（6a-2 细化）。
+
+- 删 `experience.chat_generation_attempts` 的 `headers_ms / first_chunk_ms / http_status / provider_latency_ms / provider_latency_scope（常量）/ provider_name / provider_reported_model`：只被首字视图输出、这些输出列已无读者；首包/首块耗时在 OTel，供应商名/延迟/型号与 OpenRouter 明细重复。留调用身份、畅聊评估读的 3 个耗时、落败快照（6a-2c 迁 ops）。
+- 后端（同一 PR）：`enrichGeneration` 只补 `finish_reason`；`observe` 只把 RPC 存的字段发过去。
+- 迁移：`observe_chat_generation_attempt` 按原文删 6 行赋值（三段锚点要么全在要么全不在）；首字视图去掉 14 个输出列（35 列）与畅聊视图一起重建；删 7 列。一个事务、一个 DO 块；先删视图再锁 attempts；首字视图指纹前后一致；可重跑。
+- 验证：`bash scripts/test-db-reorg-p6a2a-migration.sh`（先执行 6a-1 作为起点；observe 原文 md5 核对；单锚点漂移、多出读 attempts 的视图时拒绝且不留痕；8 步观测场景前后保留列、终态、拒绝一致；两个视图逐行一致；畅聊评估查询照常；重跑无变化）。
+- 发布：后端发布 → 两次采样确认旧的 attempts 供应商列 UPDATE 停涨 → TEST → 生产。
+
 ## 2026-11-19 数据库重组阶段 6a-1：生成请求表删 6 个无读者的测速列（本地 PG17 非超级用户验证）
 
 `20261119_db_reorg_p6a1_request_timing_cleanup.sql`，纯数据库、不需要后端发布。计划见 `.trellis/tasks/11-19-db-reorg-p6-billing/design.md`。
