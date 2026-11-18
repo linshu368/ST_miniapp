@@ -35,7 +35,7 @@ export interface FreeZoneModelState {
   businessDelistsAt: string[];
 }
 
-/** 在架模型最近的真实轮次（这次上架之后）里的两项质量指标 */
+/** 在架模型过去 3 小时（这次上架之后）的真实轮次里的两项质量指标 */
 export interface QualityMetrics {
   turns: number;
   /** 不可用率：超时兜底 + 超时，占全部轮次 */
