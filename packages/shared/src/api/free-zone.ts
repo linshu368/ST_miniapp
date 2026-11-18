@@ -91,8 +91,8 @@ export const FreeZoneScreeningSchema = z.object({
 /**
  * 在架质量：两类原因，处理不同。
  * - 质量原因（不可接受）：最近的真实轮次里中断率或不可用率超过上限 → 直接下架并停着，
- *   评估不会自动放回来，运营点「立即上架」才回来。每 30 分钟评估时按这个模型最近
- *   QUALITY_WINDOW_TURNS 轮算（只算这次上架之后的），至少 QUALITY_MIN_TURNS 轮才判断。
+ *   评估不会自动放回来，运营点「立即上架」才回来。每 30 分钟评估时按这个模型过去
+ *   QUALITY_WINDOW_HOURS 小时的全部轮次算（只算这次上架之后的），至少 QUALITY_MIN_TURNS 轮才判断。
  * - 价格原因（多半是暂时的）：真实请求被 Surplus 拒绝派单的比例超过上限 → 当场下架，
  *   冷却 relist.price_cooldown_minutes 后照常由评估按报价重新上架。
  * 上限留空（null）表示这一项不检查。
@@ -113,8 +113,12 @@ export const FreeZoneOnShelfSchema = z.object({
   max_unroutable_pct: PercentSchema.nullable().default(50),
 });
 
-/** 质量判断看最近多少轮、至少多少轮才判断（固定值，不做运营参数） */
-export const QUALITY_WINDOW_TURNS = 100;
+/**
+ * 质量判断看过去多少小时、至少多少轮才判断（固定值，不做运营参数）。
+ * 按时间而不是「最近 N 轮」：最近 100 轮里一两个对话一直出问题、又聊得勤的用户就能把模型拉下架
+ * （11-17 3 Flash Preview、3.1 Flash Lite 都是这样），按 3 小时全部轮次算会稀释掉。
+ */
+export const QUALITY_WINDOW_HOURS = 3;
 export const QUALITY_MIN_TURNS = 30;
 
 export const FreeZoneRelistSchema = z.object({

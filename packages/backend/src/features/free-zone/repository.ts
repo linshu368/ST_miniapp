@@ -8,7 +8,7 @@
  */
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../lib/db.js';
-import { QUALITY_MIN_TURNS, QUALITY_WINDOW_TURNS } from '@miniapp/shared';
+import { QUALITY_MIN_TURNS, QUALITY_WINDOW_HOURS } from '@miniapp/shared';
 import type { FreeZoneEvent, FreeZoneModelState, QualityMetrics } from './lifecycle.js';
 
 const ADVISORY_LOCK_KEY = 740_112;
@@ -81,7 +81,7 @@ interface QualityRow {
 }
 
 /**
- * 在架模型的质量指标：只算这次上架（或换供应商）之后、最近 QUALITY_WINDOW_TURNS 轮。
+ * 在架模型的质量指标：只算这次上架（或换供应商）之后、过去 QUALITY_WINDOW_HOURS 小时的全部轮次。
  * 口径与 Grafana / free_zone_turn_facts 一致，兜底按起因拆开、超时优先：
  * - 不可用：免费模型没交付，且不是「等待时间到之前就报错/空回复、立刻兜底」，
  *   也不是出字前用户自己取消的——即超时兜底 + 超时；
@@ -99,11 +99,11 @@ export async function loadFreeZoneQuality(
       WITH scope AS (
         SELECT * FROM unnest(${modelIds}::text[], ${sinces}::timestamptz[]) AS s(model_id, since)
       ), recent AS (
-        SELECT c.*, row_number() OVER (
-          PARTITION BY c.requested_model_id ORDER BY c.request_received_at DESC) AS rn
+        SELECT c.*
         FROM miniapp_analytics.chat_first_token_facts c
         JOIN scope s ON s.model_id = c.requested_model_id
-        WHERE c.request_received_at >= GREATEST(s.since, now() - interval '7 days')
+        WHERE c.request_received_at >= GREATEST(
+          s.since, now() - make_interval(hours => ${QUALITY_WINDOW_HOURS}::int))
       ), classified AS (
         SELECT requested_model_id AS model_id,
           delivery_role = 'primary' AS primary_delivered,
@@ -116,7 +116,7 @@ export async function loadFreeZoneQuality(
             AND primary_wait_ms + 50 >= COALESCE(primary_observed_until_ms, 0), false) AS error_fallback,
           business_finish_reason IS NOT DISTINCT FROM 'user_cancelled'
             AND NOT COALESCE(server_first_token_timeout, false) AS user_cancelled
-        FROM recent WHERE rn <= ${QUALITY_WINDOW_TURNS}
+        FROM recent
       )
       SELECT model_id,
         count(*)::int AS turns,
