@@ -99,14 +99,7 @@ tables:
   app_core.characters:
     nature: E
     owner: backend/src/infrastructure/repositories/CharacterCardRepository.ts
-    status: moving
-    move:
-      - {
-          to: app_core.character_listings,
-          cols: [enabled, sort_order, last_listed_at, archived_at],
-          phase: 3,
-          note: 上架状态由运营发布写入，与卡内容写入方不同,
-        }
+    status: active
     keep:
       [
         id,
@@ -135,14 +128,14 @@ tables:
         created_at,
         updated_at,
       ]
-    note: 官方卡读本表内容列、创作卡读 character_versions，同一事实两条路径；是否统一为"内容全进版本表"另行评估（design.md 候选项）
+    note: 只存卡内容（上架状态在 character_listings，3c 拆出）。官方卡读本表内容列、创作卡读 character_versions，同一事实两条路径；是否统一为"内容全进版本表"另行评估（design.md 候选项）
 
   app_core.character_listings:
     nature: S
-    owner: rpc:admin（角色卡上架布局发布）
-    status: planned
-    phase: 3
-    from: app_core.characters 的 enabled / sort_order / last_listed_at / archived_at
+    owner: rpc:admin.publish_character_layout_draft（运营布局发布）
+    status: active
+    keep: [character_id, enabled, sort_order, archived_at, last_listed_at, updated_at]
+    note: 每卡一行，插卡触发器建行（下架、排序 0）。其余写入方：admin.create_character、app_core.mutate_creator_character / review_creator_character、官方卡导入脚本。last_listed_at 只在由未上架转为上架时刷新（触发器）；测试卡不能上架（触发器）。后端只读（Prisma 关系 Character.listing）
 
   app_core.character_versions:
     {
@@ -863,7 +856,10 @@ tables:
 
   # ───────────────────────── miniapp_analytics ─────────────────────────
   miniapp_analytics.card_position_snapshot:
-    { nature: D, owner: 定时任务（ops/schema-split/cron-job5-prod.sql）, status: active }
+    nature: D
+    owner: cron card_position_hourly_snapshot（jobid 5，每小时整点）
+    status: active
+    note: 3c 起命令改读 character_listings（写入内容不变）。11-18 核对无读者：pg_stat 自 10-23 起只有一次 Studio 浏览、无视图/函数依赖；172MB、约 101 万行、每小时约 880 行。候选删除（停任务 + 删表），待确认
   miniapp_analytics.grafana_core_daily:
     {
       nature: D,

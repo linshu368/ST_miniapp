@@ -1,10 +1,14 @@
 import type { Prisma } from '@prisma/client';
 import { getDomainDb } from '../../lib/supabase.js';
 
+/** On shelf: listed and not archived (app_core.character_listings). */
+export const listedCharacterWhere: Prisma.CharacterWhereInput = {
+  listing: { is: { enabled: true, archived_at: null } },
+};
+
 /** Same predicate as SQL can_discover_character; pending edits retain the approved runtime. */
 export const discoverableCharacterWhere: Prisma.CharacterWhereInput = {
-  enabled: true,
-  archived_at: null,
+  ...listedCharacterWhere,
   OR: [
     { creation: { is: null } },
     {
