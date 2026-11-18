@@ -20,7 +20,7 @@ model MiniappUser {
   created_at            DateTime                 @default(now()) @db.Timestamptz(6)
   updated_at            DateTime                 @default(now()) @db.Timestamptz(6)
   daily_checkins        daily_checkins[]
-  miniapp_user_settings miniapp_user_settings?
+  user_preferences      user_preferences?
   payment_orders        miniapp_payment_orders[]
   user_wallets          user_wallets?
   wallet_ledger         wallet_ledger[]
@@ -29,15 +29,9 @@ model MiniappUser {
   @@schema("app_core")
 }
 
-model miniapp_user_settings {
+/// 用户级生成与语音偏好（数据库重组 3b-2 由 miniapp_user_settings 改名；资料列已迁到 users）。
+model user_preferences {
   user_id                  String      @id @db.Uuid
-  tg_username              String?
-  tg_first_name            String?
-  tg_last_name             String?
-  display_name             String?
-  avatar_url               String?
-  tg_avatar_url            String?
-  custom_avatar_url        String?
   /// NULL = 从未选择，跟随 runtime_config.pref_word_count_tiers.default_tier_id（086）
   pref_word_count          String?
   pref_show_options        Boolean     @default(true)
@@ -54,6 +48,7 @@ model miniapp_user_settings {
 
 model Character {
   creation                  CharacterCreation?
+  listing                   CharacterListing?
   id                        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name                      String
   description               String    @default("")
@@ -76,14 +71,26 @@ model Character {
   system_prompt             String    @default("")
   tags                      Json      @default("[]")
   raw_card                  Json?
-  enabled                   Boolean   @default(true)
   is_test                   Boolean   @default(false)
   card_hash                 String?
-  sort_order                Int       @default(0)
-  archived_at               DateTime? @db.Timestamp(6)
-  last_listed_at            DateTime? @db.Timestamptz(6)
 
   @@map("characters")
+  @@schema("app_core")
+}
+
+/// 角色卡上架状态（每卡一行，插卡触发器建行）。写入只经数据库函数：运营布局发布、新建卡、创作者建卡/发布/审核。
+model CharacterListing {
+  character_id   String    @id @db.Uuid
+  enabled        Boolean   @default(false)
+  sort_order     Int       @default(0)
+  /// 归档时间，北京时间无时区
+  archived_at    DateTime? @db.Timestamp(6)
+  /// 最近一次由未上架转为上架的时间（「最新」排序与 New 角标）
+  last_listed_at DateTime? @db.Timestamptz(6)
+  updated_at     DateTime  @default(now()) @db.Timestamptz(6)
+  character      Character @relation(fields: [character_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@map("character_listings")
   @@schema("app_core")
 }
 

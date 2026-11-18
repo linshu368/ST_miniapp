@@ -183,6 +183,7 @@ const EditableCatalogFreeZoneModelSchema = z.object({
   family: z.string().default(''),
   benchmark_tier: z.enum(['light', 'standard', 'premium']).default('standard'),
   first_token_timeout_ms: z.number().default(4000),
+  turns_per_24h: z.number().nullable().default(null),
   enabled: z.boolean().default(true),
 });
 

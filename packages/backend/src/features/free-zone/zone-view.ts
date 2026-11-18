@@ -4,14 +4,15 @@
  * 栏目状态只由后端按「用户身份 + 角色卡 + 当前时间」算出，前端不判断规则：
  * 开放规则会变（福利期 → 新人试用 / 会员开通礼 / 会员每周畅聊日），这样改规则不用改前端。
  */
-import type {
-  CatalogFreeZoneModel,
-  FixedDeductionConfig,
-  FreeZoneCandidate,
-  FreeZoneConfig,
-  LlmModelProvider,
-  ModelCatalogTierKey,
-  PublicFreeZone,
+import {
+  freeZoneTurnLimit,
+  type CatalogFreeZoneModel,
+  type FixedDeductionConfig,
+  type FreeZoneCandidate,
+  type FreeZoneConfig,
+  type LlmModelProvider,
+  type ModelCatalogTierKey,
+  type PublicFreeZone,
 } from '@miniapp/shared';
 import type { FreeZoneAccessResult } from './access.js';
 
@@ -67,6 +68,8 @@ export function resolveFreeZoneView(input: {
       tagline: candidate.tagline,
       benchmark_tier: candidate.benchmark_tier,
       original_credits: originalCredits(candidate.benchmark_tier, input.pricing),
+      limited: freeZoneTurnLimit(config, candidate) !== null,
+      limit_resets_at: null,
     })),
     access: access.publicAccess,
   };

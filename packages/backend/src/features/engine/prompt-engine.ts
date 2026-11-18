@@ -5,7 +5,7 @@
  *
  * 移植自旧 bot 的 src/infrastructure/ai/SimplePromptEngine.ts 的 _buildMessages()。
  * 最终形状：
- *   [system: 角色卡 system_prompt] + [system: 会话长期记忆（有则）] + 历史（含虚拟 turn 0 开场白）
+ *   [system: 角色卡 system_prompt] + [system: 用户设定（有则）] + [system: 会话长期记忆（有则）] + 历史（含虚拟 turn 0 开场白）
  *   + [user: 平台规则 + 本轮输入]
  *
  * 方案：docs/ST_remove-MVP实施方案.md §六。
@@ -14,6 +14,7 @@
 import { replaceUserPlaceholder } from '@miniapp/shared';
 import type { EngineInput, EngineMessage, EngineOutput, PromptEngine } from './types.js';
 import { renderPlatformInstructions, wrapUserInput } from './render-instructions.js';
+import { renderUserSettings } from './user-settings.js';
 
 /**
  * 组装本轮生成的 messages。
@@ -37,7 +38,11 @@ export function buildPrompt(input: EngineInput): EngineOutput {
   if (systemPrompt.trim() !== '') {
     messages.push({ role: 'system', content: systemPrompt });
   }
-  // 会话记忆是独立的第二条 system，紧跟角色卡、在开场白与历史之前；不并入角色卡，也不伪造成对话轮次。
+  // 用户设定紧跟角色卡、在会话记忆之前：它很少改，放在更稳定的前缀里缓存命中更久；
+  // 它每轮由生成链路重新读取，不属于历史，截断与压缩都不会碰它。
+  const userSettings = input.userSettings ? renderUserSettings(input.userSettings) : null;
+  if (userSettings) messages.push({ role: 'system', content: userSettings });
+  // 会话记忆是独立的 system，紧跟角色卡、在开场白与历史之前；不并入角色卡，也不伪造成对话轮次。
   if (input.storyMemory?.trim()) {
     messages.push({ role: 'system', content: input.storyMemory });
   }

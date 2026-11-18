@@ -20,6 +20,12 @@ const PercentSchema = z.number().min(0).max(100);
 const DurationMsSchema = z.number().int().positive().max(110_000);
 const IsoTimeSchema = z.string().datetime({ offset: true });
 
+/**
+ * 每人 24 小时最多用几轮（滚动 24 小时，只数成功的轮次，含重新生成）。留空：模型上留空用全局上限，
+ * 全局也留空就不限。候选池和模型目录「免费畅聊」板块共用。
+ */
+export const FreeZoneTurnLimitSchema = z.number().int().min(1).max(5000).nullable();
+
 /** 免费模型 id：候选池和模型目录「免费畅聊」板块共用 */
 export const FreeZoneModelIdSchema = z
   .string()
@@ -53,6 +59,8 @@ export const FreeZoneCandidateSchema = z.object({
    * X-Min-Discount 都按它。有些模型原价本来就低，可以放宽一点。
    */
   min_discount_pct: z.number().int().min(1).max(100).nullable().default(null),
+  /** 这个模型每人 24 小时最多几轮；留空用全局上限（usage_limit.turns_per_24h） */
+  turns_per_24h: FreeZoneTurnLimitSchema.default(null),
 });
 
 export const FreeZoneScreeningSchema = z.object({
@@ -91,8 +99,8 @@ export const FreeZoneScreeningSchema = z.object({
 /**
  * 在架质量：两类原因，处理不同。
  * - 质量原因（不可接受）：最近的真实轮次里中断率或不可用率超过上限 → 直接下架并停着，
- *   评估不会自动放回来，运营点「立即上架」才回来。每 30 分钟评估时按这个模型最近
- *   QUALITY_WINDOW_TURNS 轮算（只算这次上架之后的），至少 QUALITY_MIN_TURNS 轮才判断。
+ *   评估不会自动放回来，运营点「立即上架」才回来。每 30 分钟评估时按这个模型过去
+ *   QUALITY_WINDOW_HOURS 小时的全部轮次算（只算这次上架之后的），至少 QUALITY_MIN_TURNS 轮才判断。
  * - 价格原因（多半是暂时的）：真实请求被 Surplus 拒绝派单的比例超过上限 → 当场下架，
  *   冷却 relist.price_cooldown_minutes 后照常由评估按报价重新上架。
  * 上限留空（null）表示这一项不检查。
@@ -113,8 +121,12 @@ export const FreeZoneOnShelfSchema = z.object({
   max_unroutable_pct: PercentSchema.nullable().default(50),
 });
 
-/** 质量判断看最近多少轮、至少多少轮才判断（固定值，不做运营参数） */
-export const QUALITY_WINDOW_TURNS = 100;
+/**
+ * 质量判断看过去多少小时、至少多少轮才判断（固定值，不做运营参数）。
+ * 按时间而不是「最近 N 轮」：最近 100 轮里一两个对话一直出问题、又聊得勤的用户就能把模型拉下架
+ * （11-17 3 Flash Preview、3.1 Flash Lite 都是这样），按 3 小时全部轮次算会稀释掉。
+ */
+export const QUALITY_WINDOW_HOURS = 3;
 export const QUALITY_MIN_TURNS = 30;
 
 export const FreeZoneRelistSchema = z.object({
@@ -123,6 +135,15 @@ export const FreeZoneRelistSchema = z.object({
    * 之后每 30 分钟一轮，报价达标就直接上架。质量原因下架不看这个：一直停着等运营上架。
    */
   price_cooldown_minutes: z.number().int().min(0).max(43_200).default(60),
+});
+
+/**
+ * 用量上限：防个别用户一直猛聊把成本拖垮。某个免费模型用满后，发消息时自动换到同系列、
+ * 再到其他没用满的免费模型，都用满了换付费默认模型，并在那一轮回复下轻提示一句。
+ */
+export const FreeZoneUsageLimitSchema = z.object({
+  /** 全局：模型自己没设上限时，每人 24 小时最多几轮；留空不限 */
+  turns_per_24h: FreeZoneTurnLimitSchema.default(null),
 });
 
 export const FreeZoneFirstTokenSchema = z
@@ -198,6 +219,7 @@ export const FreeZoneConfigSchema = z
     relist: FreeZoneRelistSchema.default({}),
     first_token: FreeZoneFirstTokenSchema.default({}),
     access: FreeZoneAccessSchema.default({}),
+    usage_limit: FreeZoneUsageLimitSchema.default({}),
   })
   .superRefine((config, ctx) => {
     const ids = config.candidates.map((candidate) => candidate.id);
@@ -221,6 +243,7 @@ export type FreeZoneRelist = z.infer<typeof FreeZoneRelistSchema>;
 export type FreeZoneConfig = z.infer<typeof FreeZoneConfigSchema>;
 export type FreeZoneAccess = z.infer<typeof FreeZoneAccessSchema>;
 export type FreeZoneVipWeekly = z.infer<typeof FreeZoneVipWeeklySchema>;
+export type FreeZoneUsageLimit = z.infer<typeof FreeZoneUsageLimitSchema>;
 
 export const DEFAULT_FREE_ZONE_CONFIG: FreeZoneConfig = FreeZoneConfigSchema.parse({});
 
@@ -238,6 +261,14 @@ export function freeZoneRulesFor(
   candidate: { min_discount_pct?: number | null } | null | undefined
 ): FreeZoneScreening {
   return { ...screening, min_discount_pct: freeZoneDiscountFloor(screening, candidate) };
+}
+
+/** 这个免费模型每人 24 小时的上限：模型自己设了用它，否则用全局；null 表示不限。 */
+export function freeZoneTurnLimit(
+  config: { usage_limit?: { turns_per_24h?: number | null } },
+  model: { turns_per_24h?: number | null } | null | undefined
+): number | null {
+  return model?.turns_per_24h ?? config.usage_limit?.turns_per_24h ?? null;
 }
 
 const WEEKDAY_LABELS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
@@ -282,6 +313,10 @@ export const PublicFreeZoneModelSchema = z.object({
   benchmark_tier: ModelCatalogTierKeySchema,
   /** 划线原价：对标档位当前的星尘价 */
   original_credits: z.number().int().nonnegative(),
+  /** 这个模型有每人 24 小时上限（不下发具体数字）；旧后端不返回 */
+  limited: z.boolean().optional(),
+  /** 这个用户已用满上限：什么时候恢复；没用满为 null */
+  limit_resets_at: IsoTimeSchema.nullable().optional(),
 });
 
 export const FREE_ZONE_ACCESS_VIA = ['welfare', 'trial', 'vip_welcome', 'vip_weekly'] as const;
@@ -334,6 +369,19 @@ export const PublicFreeZoneSchema = z.discriminatedUnion('state', [
 ]);
 
 export type PublicFreeZoneModel = z.infer<typeof PublicFreeZoneModelSchema>;
+
+/**
+ * 选中的免费模型这 24 小时用满了、本轮自动换掉时，SSE start 带给前端的轻提示（回复下面一行小字）。
+ * 下架、栏目关闭换模型不带这个（另有分隔线或公告）。
+ */
+export interface FreeZoneLimitSwitch {
+  from_name: string;
+  to_name: string;
+  /** 免费模型都用满了，换成了付费默认模型 */
+  to_paid: boolean;
+  /** 原来那个模型什么时候恢复 */
+  resets_at: string | null;
+}
 export type PublicFreeZoneAccess = z.infer<typeof PublicFreeZoneAccessSchema>;
 export type PublicFreeZone = z.infer<typeof PublicFreeZoneSchema>;
 export type PublicFreeZoneState = PublicFreeZone['state'];

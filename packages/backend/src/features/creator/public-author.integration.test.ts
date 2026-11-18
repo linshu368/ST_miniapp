@@ -19,11 +19,13 @@ const owner = id(101);
 const other = id(102);
 const allPrivate = id(103);
 const fixture = `
-INSERT INTO app_core.users(id) VALUES ('${owner}'),('${other}'),('${allPrivate}');
-INSERT INTO app_core.miniapp_user_settings(user_id,display_name) VALUES ('${owner}','同名作者'),('${other}','同名作者');
-INSERT INTO app_core.characters(id,name,description,enabled,archived_at,is_test,last_listed_at,created_at)
- SELECT ('77000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,'公开版本'||n,repeat('长',200),n<>17,
- CASE WHEN n=16 THEN now() ELSE NULL END,n=20,'2026-10-01Z','2026-09-01Z' FROM generate_series(1,23)n;
+INSERT INTO app_core.users(id,display_name) VALUES ('${owner}','同名作者'),('${other}','同名作者'),('${allPrivate}',NULL);
+INSERT INTO app_core.characters(id,name,description,is_test,created_at)
+ SELECT ('77000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,'公开版本'||n,repeat('长',200),n=20,'2026-09-01Z'
+ FROM generate_series(1,23)n;
+INSERT INTO app_core.character_listings(character_id,enabled,archived_at,last_listed_at)
+ SELECT ('77000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,n<>17,CASE WHEN n=16 THEN now() ELSE NULL END,'2026-10-01Z'
+ FROM generate_series(1,23)n;
 INSERT INTO app_core.character_creations(character_id,owner_user_id,draft,draft_runtime,state,visibility,approved_revision,review_status)
  SELECT ('77000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,
  (CASE n WHEN 22 THEN '${other}' WHEN 23 THEN '${allPrivate}' ELSE '${owner}' END)::uuid,

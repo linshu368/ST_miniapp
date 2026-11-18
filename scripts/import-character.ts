@@ -385,6 +385,18 @@ async function uploadPngWithRetry(params: {
   }
 }
 
+// 已存在的卡：排序位置从上架表读（上架状态不在 characters 上）。
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function readListingSortOrder(schemaClient: any, characterId: string, fallback: number) {
+  const { data, error } = await schemaClient
+    .from('character_listings')
+    .select('sort_order')
+    .eq('character_id', characterId)
+    .maybeSingle();
+  if (error) fatal(`查询上架状态失败：${error.message}`);
+  return Number(data?.sort_order ?? fallback);
+}
+
 async function importOneCharacter(params: {
   pngPath: string;
   name?: string;
@@ -406,7 +418,7 @@ async function importOneCharacter(params: {
 
   const { data: existing, error: existingError } = await schemaClient
     .from('characters')
-    .select('id,name,sort_order,is_test')
+    .select('id,name,is_test')
     .eq('card_hash', cardHash)
     .maybeSingle();
   if (existingError) {
@@ -424,7 +436,7 @@ async function importOneCharacter(params: {
       cardHash,
       characterId: existing.id as string,
       characterName: existing.name as string,
-      sortOrder: Number(existing.sort_order ?? sortOrder),
+      sortOrder: await readListingSortOrder(schemaClient, existing.id as string, sortOrder),
       storagePath: `characters/platform_${existing.id}.png`,
       setAsFallback: false,
       isTest: Boolean(existing.is_test),
@@ -484,10 +496,8 @@ async function importOneCharacter(params: {
     spec: card.spec ?? 'chara_card_v2',
     spec_version: card.spec_version ?? '2.0',
     avatar_url: avatarUrl,
-    enabled: !isTest,
     is_test: isTest,
     card_hash: cardHash,
-    sort_order: sortOrder,
     raw_card: card,
     created_at: now,
     updated_at: now,
@@ -497,7 +507,7 @@ async function importOneCharacter(params: {
     await supabase.storage.from(bucket).remove([storagePath]);
     const { data: racedExisting, error: racedExistingError } = await schemaClient
       .from('characters')
-      .select('id,name,sort_order,is_test')
+      .select('id,name,is_test')
       .eq('card_hash', cardHash)
       .single();
     if (racedExistingError || !racedExisting) {
@@ -513,7 +523,7 @@ async function importOneCharacter(params: {
       cardHash,
       characterId: racedExisting.id as string,
       characterName: racedExisting.name as string,
-      sortOrder: Number(racedExisting.sort_order ?? sortOrder),
+      sortOrder: await readListingSortOrder(schemaClient, racedExisting.id as string, sortOrder),
       storagePath: `characters/platform_${racedExisting.id}.png`,
       setAsFallback: false,
       isTest: Boolean(racedExisting.is_test),
@@ -526,6 +536,18 @@ async function importOneCharacter(params: {
     console.log('   ⚠️  DB 写入失败，回滚 Storage 文件...');
     await supabase.storage.from(bucket).remove([storagePath]);
     fatal(`DB 写入失败：${insertError.message}`);
+  }
+
+  // 上架行由插卡触发器建好（下架、排序 0）；正式卡在这里上架并排到指定位置，测试卡保持下架。
+  const { error: listingError } = await schemaClient
+    .from('character_listings')
+    .update({ enabled: !isTest, sort_order: sortOrder, updated_at: new Date().toISOString() })
+    .eq('character_id', uuid);
+  if (listingError) {
+    console.log('   ⚠️  上架状态写入失败，回滚角色与 Storage 文件...');
+    await schemaClient.from('characters').delete().eq('id', uuid);
+    await supabase.storage.from(bucket).remove([storagePath]);
+    fatal(`上架状态写入失败：${listingError.message}`);
   }
   console.log('   ✅ DB 写入成功');
 

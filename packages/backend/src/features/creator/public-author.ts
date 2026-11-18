@@ -31,20 +31,22 @@ export type PublicAuthorPageRow = {
 export function buildPublicCreatorPageQuery(publicId: string, page: number): Prisma.Sql {
   // The ownership row is already joined here: apply the same UGC visibility criteria as
   // can_discover_character directly, instead of running a second lookup for each candidate.
-  const listed = Prisma.sql`c.enabled AND c.archived_at IS NULL AND NOT c.is_test
+  const listed = Prisma.sql`l.enabled AND l.archived_at IS NULL AND NOT c.is_test
     AND cr.state = 'ready' AND cr.visibility = 'public' AND cr.approved_revision IS NOT NULL`;
   return Prisma.sql`
     WITH author AS MATERIALIZED (
       SELECT cr.owner_user_id
       FROM app_core.character_creations cr JOIN app_core.characters c ON c.id = cr.character_id
+      JOIN app_core.character_listings l ON l.character_id = c.id
       WHERE ${publicCreatorIdSql(Prisma.sql`cr.owner_user_id`)} = ${publicId}::uuid AND ${listed}
       LIMIT 1
     ), probe AS MATERIALIZED (
-      SELECT c.id, c.last_listed_at, c.created_at
+      SELECT c.id, l.last_listed_at, c.created_at
       FROM author a JOIN app_core.character_creations cr ON cr.owner_user_id = a.owner_user_id
       JOIN app_core.characters c ON c.id = cr.character_id
+      JOIN app_core.character_listings l ON l.character_id = c.id
       WHERE ${listed}
-      ORDER BY c.last_listed_at DESC NULLS LAST, c.created_at DESC, c.id DESC
+      ORDER BY l.last_listed_at DESC NULLS LAST, c.created_at DESC, c.id DESC
       LIMIT ${PUBLIC_CREATOR_PAGE_SIZE + 1} OFFSET ${(page - 1) * PUBLIC_CREATOR_PAGE_SIZE}
     ), shown AS MATERIALIZED (
       SELECT * FROM probe ORDER BY last_listed_at DESC NULLS LAST, created_at DESC, id DESC
@@ -66,6 +68,6 @@ export function buildPublicCreatorPageQuery(publicId: string, page: number): Pri
         FROM shown w JOIN app_core.characters c ON c.id = w.id
         LEFT JOIN reply_likes r ON r.character_id = c.id
       ), '[]'::jsonb) AS cards
-    FROM author a LEFT JOIN app_core.miniapp_user_settings s ON s.user_id = a.owner_user_id
+    FROM author a LEFT JOIN app_core.users s ON s.id = a.owner_user_id
   `;
 }

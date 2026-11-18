@@ -26,13 +26,14 @@ root=Path(sys.argv[1]); source=(root/'scripts/test-conversation-branches-migrati
 a=source.index("<<'SQL'\n")+len("<<'SQL'\n"); b=source.index('\nSQL\n',a)
 sql=source[a:b]
 for role in ['anon','authenticated','service_role']:
- line=next(x for x in sql.splitlines() if x.startswith('CREATE ROLE '+role+' '))
- sql=sql.replace(line, "DO $$ BEGIN IF NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='"+role+"') THEN "+line+" END IF; END $$;")
+ # The source script may already guard role creation; only wrap bare CREATE ROLE lines.
+ line=next((x for x in sql.splitlines() if x.startswith('CREATE ROLE '+role+' ')), None)
+ if line: sql=sql.replace(line, "DO $$ BEGIN IF NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='"+role+"') THEN "+line+" END IF; END $$;")
 print(sql)
 PY
 "${task_psql[@]}" >/dev/null <<'SQL'
 ALTER TABLE app_core.characters ADD COLUMN IF NOT EXISTS is_test boolean NOT NULL DEFAULT false;
-ALTER TABLE app_core.miniapp_user_settings ADD COLUMN IF NOT EXISTS display_name text, ADD COLUMN IF NOT EXISTS tg_first_name text;
+ALTER TABLE app_core.users ADD COLUMN IF NOT EXISTS display_name text, ADD COLUMN IF NOT EXISTS tg_first_name text;
 ALTER TABLE app_core.characters ADD COLUMN name text NOT NULL DEFAULT '',ADD COLUMN description text NOT NULL DEFAULT '',
  ADD COLUMN avatar_url text NOT NULL DEFAULT '',ADD COLUMN creator text NOT NULL DEFAULT '',ADD COLUMN first_mes text NOT NULL DEFAULT '',
  ADD COLUMN system_prompt text NOT NULL DEFAULT '',ADD COLUMN personality text NOT NULL DEFAULT '',ADD COLUMN scenario text NOT NULL DEFAULT '',
@@ -207,6 +208,15 @@ printf 'PASS: character wishes PG17 (anonymous public-only writes, owner ACL, un
 "${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/20261103_public_creator_space_index.sql" >/dev/null
 
 "${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/20261103_chat_sessions_reply_like_lookup_index.sql" >/dev/null
+
+# Listing state moved to app_core.character_listings (3c). This fixture predates the admin functions the 3c migration
+# rewrites, so only the table it reads is created here (shape from 20261118_db_reorg_p3c_character_listings.sql).
+"${task_psql[@]}" >/dev/null <<'SQL'
+CREATE TABLE app_core.character_listings (
+  character_id uuid PRIMARY KEY REFERENCES app_core.characters(id) ON DELETE CASCADE,
+  enabled boolean NOT NULL DEFAULT false, sort_order integer NOT NULL DEFAULT 0,
+  archived_at timestamp without time zone, last_listed_at timestamptz, updated_at timestamptz NOT NULL DEFAULT now());
+SQL
 
 CREATOR_ANALYTICS_TEST_CONTAINER="$task_container" CREATOR_ANALYTICS_TEST_DB="$task_database" \
   pnpm --dir "$task_root/packages/backend" exec vitest run src/features/creator/analytics.integration.test.ts src/features/creator/public-author.integration.test.ts

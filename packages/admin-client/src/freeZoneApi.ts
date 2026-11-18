@@ -277,7 +277,7 @@ function pct(value: number | null): string {
 
 /**
  * 在架模型的质量数据一句话：不可用（超时兜底 + 超时）让用户干等、报错兜底多花点钱，中断是用户体验
- * 实打实受损。只统计这次上架之后最近的轮次，截至最近一轮评估。
+ * 实打实受损。只统计这次上架之后、过去 3 小时的轮次，截至最近一轮评估。
  */
 export function freeZoneBusinessText(model: AdminFreeZoneStatusModel): string {
   const business = model.business;

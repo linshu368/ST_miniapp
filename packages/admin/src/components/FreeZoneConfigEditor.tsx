@@ -16,11 +16,12 @@ import {
 } from 'antd';
 import {
   QUALITY_MIN_TURNS,
-  QUALITY_WINDOW_TURNS,
+  QUALITY_WINDOW_HOURS,
   type FreeZoneConfig,
   type FreeZoneOnShelf,
   type FreeZoneRelist,
   type FreeZoneScreening,
+  type FreeZoneUsageLimit,
 } from '@miniapp/shared';
 import {
   asFreeZoneConfig,
@@ -140,6 +141,16 @@ const RELIST_FIELDS: ReadonlyArray<NumberField<'price_cooldown_minutes'>> = [
   },
 ];
 
+const USAGE_LIMIT_FIELDS: ReadonlyArray<NumberField<keyof FreeZoneUsageLimit & string>> = [
+  {
+    key: 'turns_per_24h',
+    label: '每人 24 小时上限（轮）',
+    hint: '模型自己没设上限时用这个；留空不限。只数成功的轮次（含重新生成），滚动 24 小时',
+    min: 1,
+    max: 5000,
+  },
+];
+
 function NumberFields<T extends object>(props: {
   value: T;
   fields: ReadonlyArray<NumberField<keyof T & string>>;
@@ -194,6 +205,7 @@ function StatusSection(props: {
         editing={{
           candidates: props.value.candidates,
           defaultDiscountPct: props.value.screening.min_discount_pct,
+          defaultTurnLimit: props.value.usage_limit.turns_per_24h,
           disabled: props.disabled,
           onChange: (candidates) => props.onChange({ candidates }),
         }}
@@ -278,9 +290,31 @@ function OpenSettings(props: {
   );
 }
 
+/** 全局每人 24 小时上限；模型单独的上限在候选池、线上状态和模型目录里设。 */
+function UsageLimitSection(props: {
+  value: FreeZoneUsageLimit;
+  disabled?: boolean;
+  onChange: (value: FreeZoneUsageLimit) => void;
+}) {
+  return (
+    <Section
+      title="用量上限"
+      hint="防个别用户一直猛聊拖垮成本：每个免费模型每人 24 小时最多几轮。模型单独设了（候选池、线上状态、模型目录「免费畅聊」板块）按它的，没设按这里。用满后发消息时自动换同系列、再换其他没用满的免费模型，都用满了换付费默认模型，并在那条回复下轻提示一句；栏目里这个模型显示「次数已用完」和恢复时间。"
+    >
+      <NumberFields
+        value={props.value}
+        fields={USAGE_LIMIT_FIELDS}
+        disabled={props.disabled}
+        onChange={(patch) => props.onChange({ ...props.value, ...patch })}
+      />
+    </Section>
+  );
+}
+
 /** 候选池默认收起：几十个模型时不用一直往下翻。 */
 function CandidatePool(props: {
   value: FreeZoneConfig['candidates'];
+  defaultTurnLimit: number | null;
   disabled?: boolean;
   onChange: (value: FreeZoneConfig['candidates']) => void;
 }) {
@@ -295,6 +329,7 @@ function CandidatePool(props: {
             children: (
               <FreeZoneCandidatesEditor
                 value={props.value}
+                defaultTurnLimit={props.defaultTurnLimit}
                 disabled={props.disabled}
                 onChange={props.onChange}
               />
@@ -348,8 +383,14 @@ export function FreeZoneConfigEditor(props: {
       <StatusSection value={value} disabled={props.disabled} onChange={update} />
       <CandidatePool
         value={value.candidates}
+        defaultTurnLimit={value.usage_limit.turns_per_24h}
         disabled={props.disabled}
         onChange={(candidates) => update({ candidates })}
+      />
+      <UsageLimitSection
+        value={value.usage_limit}
+        disabled={props.disabled}
+        onChange={(usage_limit) => update({ usage_limit })}
       />
       <Section
         title="官方数据初筛"
@@ -370,7 +411,7 @@ export function FreeZoneConfigEditor(props: {
       </Section>
       <Section
         title="在架质量"
-        hint={`每 30 分钟评估时，看这次上架之后最近 ${QUALITY_WINDOW_TURNS} 轮（至少 ${QUALITY_MIN_TURNS} 轮才判断）。中断率、不可用率越线是质量原因：直接下架并停着。派不出去是价格原因：冷却后报价回来自动上架。`}
+        hint={`每 30 分钟评估时，看这次上架之后、过去 ${QUALITY_WINDOW_HOURS} 小时的全部轮次（至少 ${QUALITY_MIN_TURNS} 轮才判断）。中断率、不可用率越线是质量原因：直接下架并停着。派不出去是价格原因：冷却后报价回来自动上架。`}
       >
         <NumberFields
           value={value.on_shelf}

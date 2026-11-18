@@ -120,7 +120,7 @@ export const FreeZoneProbeSchema = z.object({
 export const FreeZoneModelStatusSchema = z.enum(['unlisted', 'listed', 'cooling']);
 
 /**
- * 在架模型最近一轮评估时的质量数据：这次上架之后最近 QUALITY_WINDOW_TURNS 轮。
+ * 在架模型最近一轮评估时的质量数据：这次上架之后、过去 QUALITY_WINDOW_HOURS 小时的全部轮次。
  * 百分比都是 0–100；没有样本的项为 null。旧记录里还有已停用的指标（兜底交付率等），照原样显示。
  */
 export const FreeZoneBusinessSnapshotSchema = z.object({

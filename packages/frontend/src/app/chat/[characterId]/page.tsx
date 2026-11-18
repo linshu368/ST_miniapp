@@ -312,6 +312,7 @@ export default function SelfHostedChatPage() {
     lastMessage,
     messages,
     quotaExhaustedNotice,
+    freeZoneSwitchNotice,
     replyStalled,
     runTurn,
     serverBusy,
@@ -584,10 +585,6 @@ export default function SelfHostedChatPage() {
           setCharacterPanelLoaded(true);
           setCharacterPanel('intro');
         }}
-        onOpenComments={() => {
-          setCharacterPanelLoaded(true);
-          setCharacterPanel('comments');
-        }}
         onOpenSessions={() => {
           setSessionsLoaded(true);
           setSessionsOpen(true);
@@ -623,6 +620,7 @@ export default function SelfHostedChatPage() {
         replyStalled={replyStalled}
         streamingMessageId={streaming?.assistantMessageId ?? null}
         quotaExhaustedNotice={quotaExhaustedNotice}
+        freeZoneSwitchNotice={freeZoneSwitchNotice}
         displayName={displayName}
         replyPlanFor={(message) => planMessageReply(message, versionStates)}
         choiceDisabledFor={(message) =>
@@ -814,16 +812,7 @@ export default function SelfHostedChatPage() {
             thinkingNotice.onThinkingToggled(enabled);
           }}
           notice={thinkingNotice.notice}
-          leftSlot={
-            <ChatToolsSheet
-              onCreateConversation={() => {
-                leaveBranchView();
-                draftRecoveryRef.current = null;
-                session.openNewConversation();
-              }}
-              creating={session.createConversation.isPending}
-            />
-          }
+          leftSlot={<ChatToolsSheet characterId={characterId} />}
         />
       ) : null}
 
@@ -850,6 +839,12 @@ export default function SelfHostedChatPage() {
             draftRecoveryRef.current = null;
             session.selectSession(nextSessionId);
           }}
+          onCreateConversation={() => {
+            leaveBranchView();
+            draftRecoveryRef.current = null;
+            session.openNewConversation();
+          }}
+          creating={session.createConversation.isPending}
         />
       ) : null}
 

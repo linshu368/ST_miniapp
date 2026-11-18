@@ -22,6 +22,7 @@ import { prisma } from '../lib/db.js';
 import { requestLogger } from '../lib/logger.js';
 import { resolveCharacterDisplayAvatarUrl } from './characters.js';
 import { loadLobbyFeaturedIdSet } from '../features/lobby/featured-snapshot.js';
+import { listedCharacterWhere } from '../features/creator/access.js';
 import { MiniappCharacterFavoriteRepository } from '../infrastructure/repositories/MiniappCharacterFavoriteRepository.js';
 
 const CHARACTER_ID_REGEX =
@@ -65,8 +66,7 @@ export default async function favoriteRoutes(app: FastifyInstance) {
         prisma.character.findMany({
           where: {
             id: { in: favoriteRows.map((favorite) => favorite.character_id) },
-            enabled: true,
-            archived_at: null,
+            ...listedCharacterWhere,
           },
           select: {
             id: true,

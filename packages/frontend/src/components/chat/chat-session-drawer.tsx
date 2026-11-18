@@ -9,6 +9,7 @@ import {
   Pencil,
   Pin,
   PinOff,
+  Plus,
   RefreshCw,
   Trash2,
 } from 'lucide-react';
@@ -30,11 +31,13 @@ interface ChatSessionDrawerProps {
   characterName?: string | null;
   activeSessionId: string | null;
   onSelect: (sessionId: string) => void;
+  onCreateConversation: () => void;
+  creating: boolean;
 }
 
 /**
- * 「开启新对话」不在这里：它是工具箱里的一项，抽屉只负责列既有对话。
- * 同一个动作摆两处会让人以为是两件事。
+ * 「新对话」只放在这里：它是在这个角色的对话列表里加一条，和列表放在一起最好找。
+ * 工具箱里不再放，同一个动作摆两处会让人以为是两件事。
  */
 export function ChatSessionDrawer({
   open,
@@ -43,6 +46,8 @@ export function ChatSessionDrawer({
   characterName,
   activeSessionId,
   onSelect,
+  onCreateConversation,
+  creating,
 }: ChatSessionDrawerProps) {
   // 抽屉关着时不查：会话列表只在用户主动翻的时候才需要新鲜
   const query = useConversationsQuery(characterId, open);
@@ -62,11 +67,30 @@ export function ChatSessionDrawer({
         className="w-[86vw] max-w-[340px] border-border/70 bg-background p-0"
       >
         <div className="flex h-full flex-col">
-          <div className="border-b border-border/60 px-5 pb-4 pt-[calc(env(safe-area-inset-top)+1rem)]">
-            <SheetTitle className="text-base font-semibold text-foreground">对话记录</SheetTitle>
-            <SheetDescription className="mt-1.5 truncate pr-8 text-xs text-muted-foreground">
-              {characterName?.trim() || '与这个角色的历史对话'}
-            </SheetDescription>
+          <div className="flex items-start gap-3 border-b border-border/60 px-5 pb-4 pt-[calc(env(safe-area-inset-top)+1rem)]">
+            <div className="min-w-0 flex-1">
+              <SheetTitle className="text-base font-semibold text-foreground">对话记录</SheetTitle>
+              <SheetDescription className="mt-1.5 truncate text-xs text-muted-foreground">
+                {characterName?.trim() || '与这个角色的历史对话'}
+              </SheetDescription>
+            </div>
+            <button
+              type="button"
+              disabled={creating}
+              onClick={() => {
+                onOpenChange(false);
+                onCreateConversation();
+              }}
+              aria-label="开启新对话，当前对话会保留"
+              className="inline-flex min-h-9 shrink-0 items-center gap-1 rounded-full bg-primary/10 px-3 text-xs font-semibold text-primary transition-colors hover:bg-primary/15 disabled:opacity-55"
+            >
+              {creating ? (
+                <Loader2 className="size-3.5 animate-spin" aria-hidden />
+              ) : (
+                <Plus className="size-3.5" strokeWidth={2.4} aria-hidden />
+              )}
+              新对话
+            </button>
           </div>
 
           <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto p-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)]">

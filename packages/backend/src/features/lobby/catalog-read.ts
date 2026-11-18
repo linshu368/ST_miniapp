@@ -62,10 +62,10 @@ export async function readRecommendationCatalog(
   const rows = await readWithinBudget(db.$queryRaw<unknown[]>`
     WITH cards AS MATERIALIZED (
       SELECT c.id,c.tags,(c.name ~ '[^[:space:]]' AND c.description ~ '[^[:space:]]') AS can_explore,
-        c.sort_order,c.created_at
-      FROM app_core.characters c
+        l.sort_order,c.created_at
+      FROM app_core.characters c JOIN app_core.character_listings l ON l.character_id=c.id
       WHERE NOT c.is_test AND app_core.can_discover_character(c.id)
-      ORDER BY c.sort_order ASC,c.created_at DESC LIMIT 10000
+      ORDER BY l.sort_order ASC,c.created_at DESC LIMIT 10000
     ), document AS MATERIALIZED (
       SELECT coalesce(jsonb_agg(jsonb_build_object('id',id,'tags',tags,'can_explore',can_explore)
         ORDER BY sort_order ASC,created_at DESC),'[]'::jsonb) AS payload FROM cards
@@ -93,9 +93,9 @@ export async function readFeaturedCatalog(
   const rows = await readWithinBudget(db.$queryRaw<unknown[]>`
     WITH document AS MATERIALIZED (
       SELECT coalesce(jsonb_agg(jsonb_build_object('id',c.id)
-        ORDER BY c.sort_order ASC,c.created_at DESC),'[]'::jsonb) AS payload
-      FROM app_core.characters c
-      WHERE c.enabled AND c.archived_at IS NULL AND (
+        ORDER BY l.sort_order ASC,c.created_at DESC),'[]'::jsonb) AS payload
+      FROM app_core.characters c JOIN app_core.character_listings l ON l.character_id=c.id
+      WHERE l.enabled AND l.archived_at IS NULL AND (
         NOT EXISTS(SELECT 1 FROM app_core.character_creations cr WHERE cr.character_id=c.id)
         OR EXISTS(SELECT 1 FROM app_core.character_creations cr WHERE cr.character_id=c.id
           AND cr.state='ready' AND cr.visibility='public' AND cr.approved_revision IS NOT NULL))

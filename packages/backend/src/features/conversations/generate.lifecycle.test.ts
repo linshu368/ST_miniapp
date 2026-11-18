@@ -59,6 +59,13 @@ vi.mock('../../infrastructure/repositories/CharacterCardRepository.js', () => ({
     requireCard = mocks.card;
   },
 }));
+vi.mock('../../infrastructure/repositories/UserPersonaRepository.js', () => ({
+  UserPersonaRepository: class {
+    async readPromptSettings() {
+      return { notes: '', personaDescription: '' };
+    }
+  },
+}));
 vi.mock('../../infrastructure/repositories/MiniappUserSettingsRepository.js', () => ({
   MiniappUserSettingsRepository: class {
     async getGenerationContext() {

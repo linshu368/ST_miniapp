@@ -4,7 +4,15 @@ import { useEffect, useState } from 'react';
 import { Check, ChevronDown, Clock3 } from 'lucide-react';
 import type { PublicFreeZone, PublicFreeZoneModel, PublicModelCatalogTier } from '@miniapp/shared';
 
-import { freeZoneRulesText, freeZoneStatusText, isFreeZoneOpen, isVipZone } from '@/lib/free-zone';
+import {
+  freeZoneHasTurnLimits,
+  freeZoneModelResetsAt,
+  freeZoneRulesText,
+  freeZoneStatusText,
+  formatFreeZoneTime,
+  isFreeZoneOpen,
+  isVipZone,
+} from '@/lib/free-zone';
 import { cn } from '@/lib/utils';
 
 const TIER_FALLBACK: Record<string, { label: string; color: string }> = {
@@ -25,6 +33,7 @@ export function ChatFreeZoneSection({
   selecting,
   onSelect,
   onClosedTap,
+  onLimitTap,
   onUpgrade,
 }: {
   zone: PublicFreeZone;
@@ -33,6 +42,8 @@ export function ChatFreeZoneSection({
   selecting: boolean;
   onSelect: (modelId: string) => void;
   onClosedTap: () => void;
+  /** 点了 24 小时已用满的模型 */
+  onLimitTap: (model: PublicFreeZoneModel) => void;
   /** 非会员点「开通 VIP」 */
   onUpgrade: () => void;
 }) {
@@ -79,20 +90,26 @@ export function ChatFreeZoneSection({
       ) : null}
       {collapsed || zone.models.length === 0 ? null : (
         <div className="divide-y divide-border border-t border-border">
-          {zone.models.map((model) => (
-            <FreeZoneModelRow
-              key={model.id}
-              model={model}
-              open={open}
-              active={open && model.id === selectedId}
-              selecting={selecting}
-              tier={
-                tiers.find((item) => item.key === model.benchmark_tier) ??
-                TIER_FALLBACK[model.benchmark_tier]
-              }
-              onClick={() => (open ? onSelect(model.id) : onClosedTap())}
-            />
-          ))}
+          {zone.models.map((model) => {
+            const resetsAt = open ? freeZoneModelResetsAt(model) : null;
+            return (
+              <FreeZoneModelRow
+                key={model.id}
+                model={model}
+                open={open}
+                resetsAt={resetsAt}
+                active={open && model.id === selectedId}
+                selecting={selecting}
+                tier={
+                  tiers.find((item) => item.key === model.benchmark_tier) ??
+                  TIER_FALLBACK[model.benchmark_tier]
+                }
+                onClick={() =>
+                  !open ? onClosedTap() : resetsAt ? onLimitTap(model) : onSelect(model.id)
+                }
+              />
+            );
+          })}
         </div>
       )}
     </section>
@@ -152,9 +169,11 @@ function FreeZoneHeader({
         >
           每轮 0 星尘
         </span>
-        <span className="rounded-md bg-black/20 px-2 py-1 text-[10.5px] font-medium leading-none text-foreground/75">
-          不限次数
-        </span>
+        {freeZoneHasTurnLimits(zone) ? null : (
+          <span className="rounded-md bg-black/20 px-2 py-1 text-[10.5px] font-medium leading-none text-foreground/75">
+            不限次数
+          </span>
+        )}
         <span className="ml-auto" />
         <span
           className={cn(
@@ -179,10 +198,14 @@ function FreeZoneHeader({
   );
 }
 
-/** 未开放时这一行仍可点（给出「何时开放」的提示），所以不标 disabled。 */
+/**
+ * 未开放、24 小时已用满时这一行仍可点（给出「何时开放 / 何时恢复」的提示），所以不标 disabled。
+ * 用满的行压暗，名字下面写恢复时间。
+ */
 function FreeZoneModelRow({
   model,
   open,
+  resetsAt,
   active,
   selecting,
   tier,
@@ -190,6 +213,8 @@ function FreeZoneModelRow({
 }: {
   model: PublicFreeZoneModel;
   open: boolean;
+  /** 这个用户 24 小时已用满：恢复时间 */
+  resetsAt: string | null;
   active: boolean;
   selecting: boolean;
   tier: { label: string; color: string } | undefined;
@@ -218,7 +243,7 @@ function FreeZoneModelRow({
       ) : (
         <Clock3 className="size-4 shrink-0 text-muted-foreground/70" aria-hidden />
       )}
-      <span className={cn('min-w-0 flex-1', !open && 'opacity-55')}>
+      <span className={cn('min-w-0 flex-1', (!open || resetsAt) && 'opacity-55')}>
         <span className="flex min-w-0 items-center gap-2">
           <span className="truncate text-[15px] font-medium text-foreground">
             {model.display_name}
@@ -232,13 +257,17 @@ function FreeZoneModelRow({
             </span>
           ) : null}
         </span>
-        {model.tagline ? (
+        {resetsAt ? (
+          <span className="mt-1 block text-[11px] leading-snug text-muted-foreground">
+            次数已用完 · {formatFreeZoneTime(resetsAt)} 恢复
+          </span>
+        ) : model.tagline ? (
           <span className="mt-1 line-clamp-2 block text-[11px] leading-snug text-muted-foreground">
             {model.tagline}
           </span>
         ) : null}
       </span>
-      <span className={cn('shrink-0 text-right leading-none', !open && 'opacity-50')}>
+      <span className={cn('shrink-0 text-right leading-none', (!open || resetsAt) && 'opacity-50')}>
         <span
           className={cn(
             'block text-[13px] font-bold tabular-nums',

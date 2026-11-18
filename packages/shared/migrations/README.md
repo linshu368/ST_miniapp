@@ -4,6 +4,30 @@
 
 # SQL 迁移文件
 
+## 2026-11-18 数据库重组阶段 3c：上架状态拆出 characters（本地 PG17 非超级用户验证）
+
+`20261118_db_reorg_p3c_character_listings.sql`（扩展）+ `20261118_db_reorg_p3c_character_listings_contract.sql`（收缩，后端发布后执行）。计划见 `.trellis/tasks/11-17-db-reorg-p3-user-state/design.md` 3c。
+
+- 新表 `app_core.character_listings`（每卡一行：enabled / sort_order / archived_at / last_listed_at / updated_at），从 characters 回填；插卡触发器自动建行。上架时间触发器、"测试卡不能上架"守卫移到上架表；卡片表留"测试卡必须有 card_hash"CHECK 与"已上架的卡不能改成测试卡"守卫。service_role 只读写不增删（导入脚本插卡后设上架值）。
+- 运营 `get_characters` / `get_character_layout` / `publish_character_layout_draft` / `create_character`（改返回 jsonb，键不变）与 `can_discover_character` / `can_use_character` 整函数重写（md5 守卫：线上必须是写迁移时依据的版本）；创作者 `mutate_creator_character` / `review_creator_character` 只按原文替换写上架列的 3 句（匹配不是恰好一处就拒绝）；`v_card_quality_session` 改 join。删 0 调用的 `archive_character` / `set_character_enabled` / `reorder_characters`。
+- 运营列表的"更新时间"取卡内容与上架两者较晚的一个（布局发布不再改卡片表的 updated_at，界面所见不变）。
+- 发布窗口：上架表 → 卡片表 4 列单向镜像，供旧后端读；写入方在扩展步已全部换成写上架表。
+- pg_cron `card_position_hourly_snapshot` 的命令文本直读旧列：扩展步用 `cron.alter_job` 改为 join 上架表（写入内容不变，命令与预期原文不一致就拒绝；TEST 无 pg_cron 跳过），收缩步守卫不得再有 cron 命令读旧列。
+- 收缩：锁两表 → 删镜像 → 守卫（每卡恰有上架行且与旧列一致；无函数/视图再读旧列）→ 插卡触发器改按默认值建行 → 删旧 CHECK、3 个旧索引、旧触发器函数与 4 列。
+- 验证：`bash scripts/test-db-reorg-p3c-migration.sh`（旧函数跑固定场景作基线，扩展后、收缩后逐字比对）。
+- 发布：TEST 扩展 → 生产扩展 → 后端发布 → 核对 → TEST/生产收缩。回滚：扩展步不删列且镜像同步，回退后端即可（旧的 3 个 RPC 无人调用，不恢复）。
+
+## 2026-11-17 数据库重组阶段 3b-2：资料进 users，settings 改名 user_preferences（本地 PG17 非超级用户验证）
+
+`20261117_db_reorg_p3b2_user_profile.sql`（扩展）+ `20261117_db_reorg_p3b2_user_profile_contract.sql`（收缩，后端发布后执行）。计划见 `.trellis/tasks/11-17-db-reorg-p3-user-state/design.md` 3b-2。
+
+- `app_core.users` 加 6 个资料列并回填；TG 资料刷新改为 `app_core.refresh_user_profile`，值没变不写。`avatar_url`（旧 TG 头像链接，无人读）不迁，收缩步删除。
+- 扩展步建同名自动可更新视图 `app_core.user_preferences`（只含偏好列），新后端从发布起就用最终名字；`cs_feed.user_identities`（保留 security_barrier）与两个运营函数改读 users，输出不变。
+- 发布窗口资料双向同步，新建 settings 行先从 users 填资料（不变式：窗口内两边一致，收缩步才能按 settings 补 users）。
+- 收缩：锁表补齐 → 守卫（除 4 个偏好函数外无函数/视图引用旧表）→ 删视图、表改名（约束同步改名）、删 7 个资料列 → 4 个偏好函数换新表名。
+- 验证：`bash scripts/test-db-reorg-p3b2-migration.sh`。
+- 发布：TEST 扩展 → 生产扩展 → 后端发布 → 核对 → TEST/生产收缩。回滚：扩展步不删列且双向同步，回退后端即可。
+
 ## 2026-11-17 数据库重组阶段 3b-1：一次性标记进 user_marks（本地 PG17 非超级用户验证）
 
 `20261117_db_reorg_p3b1_user_marks.sql`（扩展）+ `20261117_db_reorg_p3b1_user_marks_contract.sql`（收缩，后端发布后执行）。计划见 `.trellis/tasks/11-17-db-reorg-p3-user-state/design.md` 3b-1。

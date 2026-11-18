@@ -13,6 +13,7 @@ import {
 } from './reply-style-options';
 import type { PublicWordCountTiers } from './word-count-tiers';
 import { DriveModeIdSchema, type PublicDriveModes } from './drive-modes';
+import type { FreeZoneLimitSwitch } from './free-zone';
 
 // ==== 领域对象 ====
 
@@ -87,7 +88,7 @@ export interface ChatSession {
 
 /**
  * 用户级生成配置：对该用户所有会话生效，不做会话级覆盖（总方案决策 10）。
- * 存储于 app_core.miniapp_user_settings；公开数据不包含运营规则。
+ * 存储于 app_core.user_preferences；公开数据不包含运营规则。
  */
 export interface UserGenerationConfig {
   /**
@@ -314,6 +315,8 @@ export interface ConversationStreamStartEvent {
   thinking_enabled?: boolean;
   /** 本轮开轮时绑定的规则版本。旧 start 事件没有该字段时按 null 解释。 */
   postprocess_version?: number | null;
+  /** 选中的畅聊模型 24 小时用满、本轮自动换了模型；回复下轻提示一句 */
+  free_zone_switch?: FreeZoneLimitSwitch;
 }
 
 /** 增量：text 是本次新增的片段，不是累积全文 */

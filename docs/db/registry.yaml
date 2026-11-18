@@ -51,44 +51,33 @@ tables:
   # ───────────────────────── app_core ─────────────────────────
   app_core.users:
     nature: E
-    owner: backend/src/lib/user.ts
-    status: moving
-    keep: [id, tg_id, created_at, updated_at]
-    note: 3a 已把归因列迁到 miniapp_traffic.user_attributions、轮数迁到 experience.user_chat_stats（收缩步删列）。建号只走 app_core.ensure_user。阶段 3b 从 miniapp_user_settings 迁入 TG 资料与用户自定义资料
+    owner: backend/src/lib/user.ts（身份）+ backend/src/infrastructure/repositories/UserProfileRepository.ts（资料）
+    status: active
+    keep:
+      [
+        id,
+        tg_id,
+        tg_username,
+        tg_first_name,
+        tg_last_name,
+        tg_avatar_url,
+        display_name,
+        custom_avatar_url,
+        created_at,
+        updated_at,
+      ]
+    note: 身份 + 资料。建号只走 app_core.ensure_user；TG 资料只经 app_core.refresh_user_profile（值没变不写）。归因在 miniapp_traffic.user_attributions、轮数在 experience.user_chat_stats（3a），资料 3b-2 从 miniapp_user_settings 迁入
 
   app_core.miniapp_user_settings:
     nature: S
     owner: backend/src/infrastructure/repositories/MiniappUserSettingsRepository.ts
-    status: moving
-    note: 阶段 3 拆完后整表改名为 app_core.user_preferences。*_full_rules_remaining 三列与 claim_instruction_slot_modes 等 4 个函数 10-13 起只为回滚保留，3b-1 已删
-    move:
-      - {
-          to: app_core.users,
-          cols:
-            [
-              tg_username,
-              tg_first_name,
-              tg_last_name,
-              tg_avatar_url,
-              display_name,
-              custom_avatar_url,
-              avatar_url,
-            ],
-          phase: 3,
-          note: avatar_url 若可由另两列推导则删除,
-        }
-      - {
-          to: miniapp_features.user_marks,
-          cols: [characters_last_seen_at, vip_entry_seen_at],
-          phase: 3,
-          note: 3b-1 已回填并双向同步，收缩步删列,
-        }
-      - {
-          to: billing.image_plaza_share_rewards,
-          cols: [image_plaza_first_share_completed_at],
-          phase: 3,
-          note: 3b-1 首发分享改由返利记录是否存在推导（生产 7 人完全一致），收缩步删列,
-        }
+    status: drop
+    note: 3b-2 改名 app_core.user_preferences（资料列迁到 users，avatar_url 无人读直接删；标记 3b-1 已迁 user_marks、计数器已删）。只剩发布窗口，收缩步改名
+
+  app_core.user_preferences:
+    nature: S
+    owner: backend/src/infrastructure/repositories/MiniappUserSettingsRepository.ts
+    status: active
     keep:
       [
         user_id,
@@ -105,25 +94,24 @@ tables:
         created_at,
         updated_at,
       ]
+    note: 用户级生成与语音偏好（每用户一行，无行=全部默认）。由 miniapp_user_settings 改名（3b-2）；回复风格、三个指令槽开关只经各自 RPC 原子更新
 
-  app_core.user_preferences:
+  app_core.user_personas:
+    nature: E
+    owner: backend/src/infrastructure/repositories/UserPersonaRepository.ts
+    status: active
+    note: 用户的主角人设库（每人最多 10 个，至多一个默认）。写只经 rpc:app_core.save_user_persona / delete_user_persona；描述原样进 prompt，名字只给用户区分（20261118_character_persona.sql）
+
+  app_core.user_character_preferences:
     nature: S
-    owner: backend/src/infrastructure/repositories/MiniappUserSettingsRepository.ts
-    status: planned
-    phase: 3
-    from: app_core.miniapp_user_settings（改名，只保留生成与语音偏好）
+    owner: backend/src/infrastructure/repositories/UserPersonaRepository.ts
+    status: active
+    note: 用户 × 角色卡：补充设定（≤1000 字）+ 人设选择（persona_id / persona_disabled 互斥，无行或都空 = 跟随默认）。生成链路经 rpc:app_core.get_character_prompt_settings 读取
 
   app_core.characters:
     nature: E
     owner: backend/src/infrastructure/repositories/CharacterCardRepository.ts
-    status: moving
-    move:
-      - {
-          to: app_core.character_listings,
-          cols: [enabled, sort_order, last_listed_at, archived_at],
-          phase: 3,
-          note: 上架状态由运营发布写入，与卡内容写入方不同,
-        }
+    status: active
     keep:
       [
         id,
@@ -152,14 +140,14 @@ tables:
         created_at,
         updated_at,
       ]
-    note: 官方卡读本表内容列、创作卡读 character_versions，同一事实两条路径；是否统一为"内容全进版本表"另行评估（design.md 候选项）
+    note: 只存卡内容（上架状态在 character_listings，3c 拆出）。官方卡读本表内容列、创作卡读 character_versions，同一事实两条路径；是否统一为"内容全进版本表"另行评估（design.md 候选项）
 
   app_core.character_listings:
     nature: S
-    owner: rpc:admin（角色卡上架布局发布）
-    status: planned
-    phase: 3
-    from: app_core.characters 的 enabled / sort_order / last_listed_at / archived_at
+    owner: rpc:admin.publish_character_layout_draft（运营布局发布）
+    status: active
+    keep: [character_id, enabled, sort_order, archived_at, last_listed_at, updated_at]
+    note: 每卡一行，插卡触发器建行（下架、排序 0）。其余写入方：admin.create_character、app_core.mutate_creator_character / review_creator_character、官方卡导入脚本。last_listed_at 只在由未上架转为上架时刷新（触发器）；测试卡不能上架（触发器）。后端只读（Prisma 关系 Character.listing）
 
   app_core.character_versions:
     {
@@ -901,7 +889,10 @@ tables:
 
   # ───────────────────────── miniapp_analytics ─────────────────────────
   miniapp_analytics.card_position_snapshot:
-    { nature: D, owner: 定时任务（ops/schema-split/cron-job5-prod.sql）, status: active }
+    nature: D
+    owner: cron card_position_hourly_snapshot（jobid 5，每小时整点）
+    status: active
+    note: 3c 起命令改读 character_listings（写入内容不变）。11-18 核对无读者：pg_stat 自 10-23 起只有一次 Studio 浏览、无视图/函数依赖；172MB、约 101 万行、每小时约 880 行。候选删除（停任务 + 删表），待确认
   miniapp_analytics.grafana_core_daily:
     {
       nature: D,

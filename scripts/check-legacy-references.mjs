@@ -103,6 +103,53 @@ const RULES = [
       'scripts/platform-instruction-slot-windows-assert.sql',
     ],
   },
+  {
+    id: 'renamed-user-preferences',
+    pattern: /\bminiapp_user_settings\b/g,
+    message:
+      '数据库重组 3b-2：miniapp_user_settings 已改名 app_core.user_preferences（只留偏好），' +
+      '资料（TG 资料、昵称、自定义头像）在 app_core.users（UserProfileRepository / refresh_user_profile）。' +
+      '已在 TEST 执行过的迁移别改原文件，另写 forward-fix',
+    // 建表/改表的历史迁移与断言脚本，以及重组迁移本身。
+    allow: [
+      'packages/shared/migrations/20260921_vip_billing_schema.sql',
+      'packages/shared/migrations/20260924_vip_billing_schema_pg_cron_compat.sql',
+      'packages/shared/migrations/20261012_image_plaza_v2.sql',
+      'packages/shared/migrations/20261013_image_plaza_seed_catalog.sql',
+      'packages/shared/migrations/20261013_platform_instruction_slot_windows.sql',
+      'packages/shared/migrations/20261013_session_scoped_instruction_slot_modes.sql',
+      'packages/shared/migrations/20261014_rich_reply_dynamic_mode.sql',
+      'packages/shared/migrations/20261023_reply_style_options.sql',
+      'packages/shared/migrations/20261117_drive_mode.sql',
+      'packages/shared/migrations/20261117_db_reorg_ops_cs_feed.sql',
+      'packages/shared/migrations/20261117_db_reorg_p3a_drop_test_funnel_stats.sql',
+      'packages/shared/migrations/20261117_db_reorg_p3a_user_attributions.sql',
+      'packages/shared/migrations/20261117_db_reorg_p3a_user_attributions_contract.sql',
+      'packages/shared/migrations/20261117_db_reorg_p3b1_clear_orphan_first_share.sql',
+      'packages/shared/migrations/20261117_db_reorg_p3b1_user_marks.sql',
+      'packages/shared/migrations/20261117_db_reorg_p3b1_user_marks_contract.sql',
+      'packages/shared/migrations/20261117_db_reorg_p3b1_video_share_first_share.sql',
+      'packages/shared/migrations/20261117_db_reorg_p3b2_user_profile.sql',
+      'packages/shared/migrations/20261117_db_reorg_p3b2_user_profile_contract.sql',
+      'scripts/platform-instruction-slot-windows-assert.sql',
+      'scripts/platform-instruction-slot-windows-bootstrap.sql',
+    ],
+  },
+
+  {
+    id: 'moved-to-character-listings',
+    pattern:
+      /\b(?:archive_character|set_character_enabled|reorder_characters|tf_track_character_listing)\b/g,
+    message:
+      '数据库重组 3c：上架状态（enabled / sort_order / archived_at / last_listed_at）已从 app_core.characters 拆到 ' +
+      'app_core.character_listings；直接改上下架/排序/归档的三个旧 RPC 和卡片表上的上架时间触发器已删除。' +
+      '上下架走布局草稿 → admin.publish_character_layout_draft；后端读 Prisma 关系 Character.listing',
+    allow: [
+      'packages/shared/migrations/20261118_db_reorg_p3c_character_listings.sql',
+      'packages/shared/migrations/20261118_db_reorg_p3c_character_listings_contract.sql',
+      'scripts/test-db-reorg-p3c-migration.sh',
+    ],
+  },
 
   // ── 已整包删除的 package ────────────────────────────────────────────────
   {

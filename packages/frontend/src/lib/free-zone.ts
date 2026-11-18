@@ -2,9 +2,11 @@ import {
   formatVipWeeklyWindow,
   freeZoneWeekdayLabel,
   type ChatMessage,
+  type FreeZoneLimitSwitch,
   type GetModelCatalogData,
   type PublicFreeZone,
   type PublicFreeZoneAccess,
+  type PublicFreeZoneModel,
 } from '@miniapp/shared';
 
 /**
@@ -110,6 +112,38 @@ export function freeZoneBoundaryDelay(
 export function selectedFreeZoneModel(data: GetModelCatalogData | undefined, now = new Date()) {
   if (!data || !isFreeZoneOpen(data.free_zone, now)) return null;
   return data.free_zone?.models.find((model) => model.id === data.selected_model_id) ?? null;
+}
+
+/** 栏目里有没有模型设了每人 24 小时上限（有就不再写「不限次数」） */
+export function freeZoneHasTurnLimits(zone: PublicFreeZone): boolean {
+  return zone.models.some((model) => model.limited === true);
+}
+
+/** 这个用户把这个模型 24 小时的次数用满了、还没恢复：返回恢复时间，否则 null */
+export function freeZoneModelResetsAt(model: PublicFreeZoneModel, now = new Date()): string | null {
+  const at = model.limit_resets_at;
+  return at && Date.parse(at) > now.getTime() ? at : null;
+}
+
+/** 点了已用满的模型时的就地提示 */
+export function freeZoneLimitHint(model: PublicFreeZoneModel, now = new Date()): string {
+  const at = freeZoneModelResetsAt(model, now);
+  return `「${model.display_name}」24 小时内的免费次数用完了${
+    at ? `，${formatFreeZoneTime(at, now)} 恢复` : ''
+  }，先换一个吧`;
+}
+
+/** 用满上限、本轮自动换了模型时，回复下的一行轻提示 */
+export function freeZoneSwitchNoticeText(item: FreeZoneLimitSwitch, now = new Date()): string {
+  const at = item.resets_at ? formatFreeZoneTime(item.resets_at, now) : null;
+  if (item.to_paid) {
+    return `畅聊模型 24 小时内的免费次数都用完了，这轮起改用「${item.to_name}」${
+      at ? `，${at} 后可再选「${item.from_name}」` : ''
+    }`;
+  }
+  return `「${item.from_name}」24 小时内的免费次数用完了，已换成「${item.to_name}」继续畅聊${
+    at ? `，${at} 恢复` : ''
+  }`;
 }
 
 function trialLength(access: PublicFreeZoneAccess): string {

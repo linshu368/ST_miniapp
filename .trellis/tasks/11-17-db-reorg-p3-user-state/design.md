@@ -67,6 +67,71 @@
 
 验证：`bash scripts/test-db-reorg-p3b1-migration.sh`（回填一致；增长弹窗上限/间隔判定前后一致；窗口内新旧两边写入互相可见且不回环；首发分享推导与旧列一致；收缩补齐与删除；可重跑）。
 
-## 3c 之后
+### 3b-2 资料进 users、settings 改名 user_preferences（生产只读核对，11-17）
 
-待 3b 上线后逐个设计（角色上架、配置校验链）。
+3b-1 已上生产。settings 剩 20 列：资料 7 列（tg_username / tg_first_name / tg_last_name / tg_avatar_url / display_name / custom_avatar_url / avatar_url）+ 偏好 10 列 + user_id / 时间戳。
+
+| 对象                                                                      | 现状                                                                                                                              | 去向                                                                                      |
+| ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| 资料 6 列                                                                 | 仓库每次 getOrCreate 都无条件回写 TG 资料（每次一条 UPDATE）                                                                      | 加到 `app_core.users`；TG 资料刷新改为 `app_core.refresh_user_profile`，值没变不写        |
+| `avatar_url`                                                              | 544 行全是旧 TG 头像链接；72 行与 tg/custom 不同，都是 `tg_avatar_url` 上线后没再登录的用户；后端不读，这些用户现在就显示默认头像 | 删除，不迁（删了界面无变化）                                                              |
+| 偏好 10 列                                                                | 仓库 + 4 个函数（两个开轮函数、回复风格、指令槽偏好）读写                                                                         | 留在原表，整表改名 `app_core.user_preferences`（含另一会话 11-17 加的 `pref_drive_mode`） |
+| `cs_feed.user_identities`                                                 | 读 settings 的昵称                                                                                                                | 扩展步改读 users，输出列不变                                                              |
+| `admin.list_invite_records` / `admin.lookup_user_for_credit_grant`        | join settings 取昵称                                                                                                              | 扩展步改 join users（按原文替换 join 语句，别名不变）                                     |
+| 后端 raw SQL：`features/creator/public-author.ts`、`routes/characters.ts` | join settings 取作者昵称                                                                                                          | 改 join users                                                                             |
+
+发布窗口（扩展后、新后端上线前）：
+
+- 新后端写偏好经扩展步建的同名自动可更新视图 `app_core.user_preferences`（只含偏好列，落到 settings），收缩步删视图、表改名，名字不变，后端不用再发。
+- 资料两边同步：旧后端写 settings 资料列 → 触发器同步到 users（INSERT 只带非空值，UPDATE 只带变化的列）；新后端写 users → 回写 settings（旧实例读到新值）。`pg_trigger_depth()` 防回环。
+- 不变式：窗口内每个 settings 行的资料与 users 一致。新建 settings 行（新后端经视图建偏好行、开轮函数、回复风格函数）不带资料，BEFORE INSERT 先从 users 填上；否则收缩步"按 settings 补 users"会把新后端先写进 users 的资料冲掉（本地测试 1039 场景复现过）。
+
+收缩：
+
+1. 删同步触发器；锁 settings，资料不一致的列按 settings 补到 users（只可能来自扩展事务里的竞态，窗口内两边同步）。
+2. 守卫：除 4 个偏好函数外不得再有函数引用 `app_core.miniapp_user_settings`。
+3. 删视图 → 表改名 `user_preferences`（约束、索引同步改名）→ 删 7 个资料列。
+4. 4 个偏好函数按原文把 `app_core.miniapp_user_settings` 换成 `app_core.user_preferences`（每个函数出现次数须与采集时一致，否则拒绝）。
+
+后端：新增 `UserProfileRepository`（users 资料读写、`refresh_user_profile`）；`MiniappUserSettingsRepository` 改为组合资料 + 偏好，对外接口和返回形状不变；开轮读偏好与昵称改为同一请求内并行两次读取。Prisma 设置模型改名 `user_preferences`。
+
+验证：`bash scripts/test-db-reorg-p3b2-migration.sh`（回填一致；`cs_feed.user_identities` 与两个管理函数前后输出一致；窗口内双向同步不回环；资料没变时不写；视图插入/更新照常（默认值、CHECK、回复风格原子合并）；收缩改名后 4 个函数照常；可重跑）。
+
+## 3c 角色上架状态拆出 characters（生产只读核对，11-18）
+
+现状：`app_core.characters` 1077 行（874 在架、18 归档），上架 4 列 `enabled / sort_order / archived_at / last_listed_at` 与卡内容同表，写入方是运营布局发布与创作者发布/审核（卡内容写入方是导入、创作、审核）。
+
+| 对象                                                                                            | 现状                                                                | 处理                                                                                                           |
+| ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `admin.archive_character` / `set_character_enabled` / `reorder_characters`                      | 10-23 起 0 次调用；CLI 注释写明网页与 CLI 都已改走"布局草稿 → 发布" | 扩展步删除                                                                                                     |
+| `admin.get_characters` / `get_character_layout` / `publish_character_layout_draft`              | 运营网页/CLI 在用                                                   | 扩展步整函数重写为读写 `character_listings`；输出不变（列表的 `updated_at` 取卡与上架两者较晚，界面所见不变）  |
+| `admin.create_character`                                                                        | 返回 `app_core.characters` 行类型                                   | 改为返回 jsonb：卡字段 + 上架字段，键与原来一致（删列后行类型会缺字段）                                        |
+| `app_core.can_discover_character` / `can_use_character`                                         | 可见性判断                                                          | 重写为 join 上架表                                                                                             |
+| `app_core.mutate_creator_character` / `review_creator_character`                                | 只有建卡写上架初值、发布/审核刷新上架时间几句涉及                   | 按原文定位只替换这几句（删掉的文本与预期不一致就拒绝）                                                         |
+| 触发器 `trg_characters_track_listing`                                                           | 上架/恢复时刷新 `last_listed_at`                                    | 移到上架表（逻辑不变）                                                                                         |
+| CHECK `characters_test_cards_disabled`                                                          | 测试卡必须下架且有 card_hash（跨内容与上架列）                      | 拆成：卡片表 CHECK"测试卡必须有 card_hash" + 上架表守卫"测试卡不能上架" + 卡片表守卫"已上架的卡不能改成测试卡" |
+| `miniapp_analytics.v_card_quality_session`                                                      | 人工分析偶用                                                        | 改 join 上架表，列不变                                                                                         |
+| 后端 Prisma（大厅列表/最新角标/详情/收藏/推荐/可见性公共条件）、raw SQL（大厅目录、创作者主页） | 读上架列                                                            | 改读 `listing` 关系 / join 上架表                                                                              |
+| `scripts/import-character.ts`                                                                   | 直接往 characters 写 enabled/sort_order                             | 改为插卡后更新上架行                                                                                           |
+
+`app_core.character_listings`（S，每卡一行，FK characters 级联删除）：`character_id, enabled, sort_order, archived_at（沿用北京时间无时区）, last_listed_at, updated_at`。不变式：每张卡恰有一行上架记录——`characters` 插入后触发器自动建行（扩展期间按卡片表上那 4 列的值建，收缩后按默认值：下架、排序 0），各写入方插卡后再更新上架行。`characters.enabled` 默认值改为 false，与"新卡默认下架"一致。
+
+发布窗口：数据库里的写入方全部在扩展步换成新函数，后端不直接写上架列，所以只需单向镜像：上架表 AFTER INSERT/UPDATE → 回写 characters 的 4 列，供旧后端读。卡片表的上架时间触发器在扩展步删除（由上架表负责），镜像不会再被它改写。
+
+收缩：删镜像触发器；插卡触发器换成按默认值建行；守卫（上架表与镜像列一致；除本次重写的函数外，不得再有函数读 characters 的上架列）；删旧 CHECK、3 个旧索引、旧触发器函数和 4 列。
+
+验证：`bash scripts/test-db-reorg-p3c-migration.sh`（回填一致；三个运营函数与可见性函数前后输出一致；布局发布、新建卡、创作者建卡/发布/审核在新旧两种实现下结果一致；测试卡守卫；窗口镜像；收缩守卫与删列；可重跑）。
+
+实现中的补充决定（11-18）：
+
+- 权限：service_role 对 characters 本就有全部权限，上架表只给 SELECT + UPDATE（官方卡导入脚本插卡后设上架值）；建行由插卡触发器做，删行随卡级联。
+- 导入脚本 `scripts/import-character.ts`：卡片表只写内容，插入后更新上架行（正式卡上架、按指定排序；测试卡保持下架）；上架行写失败则删卡和已上传文件。
+- 布局发布不再改卡片表的 `updated_at`（原来每次发布把全部卡的 updated_at 刷成当时），运营列表的"更新时间"取卡与上架两者较晚，界面所见不变。核过：后端没有把卡片 `updated_at` 当缓存/变更信号的读者（大厅目录按字段指纹失效）。
+- 创作者函数写 `characters.updated_at=now()` 时按会话时区（UTC）落成无时区值，比北京时间早 8 小时，是既有问题；本次只替换上架几句，不顺手改。
+- 收缩步"仍有函数读旧列"的守卫按"引用 app_core.characters + 出现 4 个列名 + 不含 character_listings"判定，上架表自己的两个触发器函数按名排除（本地测试抓到误报）。
+- 遗漏的读者（发布前 pg_stat_statements 抓到）：pg_cron `card_position_hourly_snapshot`（jobid 5）命令文本直读 characters 的上架列，不在函数守卫里。扩展步用 `cron.alter_job` 改成 join 上架表（命令与预期原文不一致就拒绝），写入内容不变；收缩步加守卫：不得再有 cron 命令读旧列。其写入的 `miniapp_analytics.card_position_snapshot` 无读者（10-23 起只有一次 Studio 浏览），172MB，列为候选删除，待用户确认。
+- 核对（后端发布后）：pg_stat_statements 里带 `"app_core"."characters"."enabled"` / `"last_listed_at"` / `"sort_order"` 且不含 `character_listings` 的语句停涨，新的 join 上架表语句在涨；之后再执行收缩步。
+
+## 3d 之后
+
+待 3c 上线后设计（配置校验链）。
