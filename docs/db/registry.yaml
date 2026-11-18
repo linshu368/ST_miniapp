@@ -212,22 +212,10 @@ tables:
       ]
     move:
       - {
-          to: experience.chat_history,
-          cols: [drive_mode],
-          phase: 5,
-          note: 由 rich_reply_metadata.drive_mode 转真列，与三个指令槽档位列并列,
-        }
-      - {
           to: ops.chat_prompt_observations,
           cols: [history],
           phase: 5,
           note: 发给模型的 messages，占表 95% 以上；补齐展示投影后不影响展示与扣费，属 O,
-        }
-      - {
-          to: experience.chat_generation_requests,
-          cols: [first_token_preview],
-          phase: 5,
-          note: 交付恢复用，属交付状态,
         }
       - {
           to: billing.usage_charges,
@@ -236,7 +224,6 @@ tables:
           phase: 6,
           note: 计费门禁、交付仲裁、Surplus 结算恢复都读这些列,
         }
-    drop_cols: [{ cols: [upstream_status], phase: 5, note: 10-27 后不再写入，前端不读 }]
     keys:
       rich_reply_metadata:
         [展示用富回复元数据（rich_reply_mode / rich_reply_result / rich_reply_issues）]
@@ -267,6 +254,7 @@ tables:
         first_token_timeout,
         server_timeout_stage,
         server_first_token_ready_ms,
+        first_token_preview,
         billing_rejected,
         client_outcome,
         client_reason,
@@ -518,7 +506,7 @@ tables:
       nature: E,
       owner: rpc:experience.begin_chat_generation_observation,
       status: active,
-      note: 每轮的 request_id 与首轮开场白；阶段 5 history 迁出后不再可重建，是权威来源（收缩时去掉 projection_version）,
+      note: 每轮的 request_id 与首轮开场白；history 迁出后的唯一来源（5a 收缩起不再有 projection_version，展示视图不再解析 history）,
     }
   experience.chat_message_likes:
     { nature: S, owner: rpc:experience.set_chat_message_like, status: active }

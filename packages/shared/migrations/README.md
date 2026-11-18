@@ -15,9 +15,10 @@
 - `history`（发给模型的 messages，占表 95% 以上、每天新增 0.5–1GB）属观测：新表 `ops.chat_prompt_observations`（history_id 软引用），`begin_chat_generation_observation` 定稿时写它、不再写主表；已存 request_id 的比对改读展示投影。开轮/重生成不再写 `history`，列去掉 NOT NULL，删投影失效触发器。
 - `first_token_preview` 归交付状态 `chat_generation_requests`（发布窗口两边都写）；`drive_mode` 从 `rich_reply_metadata` 转真列；删两个没人用的索引。
 - 回填：存量会话轮次补齐展示投影（之后展示不再现场解析 history）、预览与 drive_mode 复制、校验两个 CHECK。文件不包事务、不依赖会话状态（经 Supavisor 事务池执行）：持久过程 + `\gexec` 多次 CALL，每次约 50 秒、逐批提交；投影或预览没做完就报错，重跑本文件继续。
-- 验证：`bash scripts/test-db-reorg-p5-migration.sh`（夹具为生产函数原文、md5 核对；同一场景扩展前后结果一致，只差 prompt 与预览的存放处；锚点不符拒绝且不留痕；可重跑；回填跳过被锁行、报未完成、重跑完成）。
+- 验证：`bash scripts/test-db-reorg-p5-migration.sh`（夹具为生产函数与视图原文、md5 核对；同一场景扩展前后结果一致，只差 prompt 与预览的存放处；锚点不符拒绝且不留痕；可重跑；回填跳过被锁行、报未完成、重跑完成；收缩前后消息列表/会话展示/会话历史读到的结果一致，四种守卫拒绝不留痕，暖会话执行，收缩后准入/预览/重生成结果不变，可重跑）。
 - 发布：TEST 扩展 → TEST 回填 → 生产扩展 → 生产回填 → 后端发布 → 核对 → 5b（按保留期搬历史快照并清空释放空间）→ 收缩。回滚：扩展不删列不删数据，旧后端照常工作。
 - `20261119_db_reorg_p5_chat_history_backfill_fast.sql`：提速补充。原回填在生产每次 CALL 都按主键从头重走 keyset，完成越多重走越慢（每次从约 1 万行掉到约 1800 行），且按 UUID 顺序读 TOAST 是随机读。原文件有失败认领（生产不能 abandon），不改原文件：本文件先做预览与 drive_mode，再一次扫出全部待补投影、按 created_at 顺序补；做完后重跑原文件（剩余为 0）闭合认领。
+- `20261119_db_reorg_p5_chat_history_contract.sql`（收缩，5a 后端上线、旧写入停涨后执行）：先按行锁把残留的 jsonb drive_mode 挪进列；主事务按读者顺序锁视图再锁表，守卫投影全覆盖、预览一致、list 函数为已知原文、无 cron 读；删 list_chat_message_page 与 4 个视图，重建 chat_history_display / session_chat_display（不再输出 upstream_status、display_fallback，不再从 history 现场解析，预览读 chat_generation_requests）、session_chat_history（直接建在主表上，current_chat_history 删除）与同签名的 list_chat_message_page；record_chat_delivery_preview 只写新列；投影去掉 projection_version；删 backfill_chat_history_display、chat_history.upstream_status / first_token_preview。history 列等 5b。可重跑。
 
 ## 2026-11-18 数据库重组阶段 4a：支付对账任务表 + 退避，支付事件迁 ops（本地 PG17 非超级用户验证）
 
