@@ -33,6 +33,7 @@
     "format:check": "prettier --check .",
     "prepare": "husky",
     "test:lobby-ranking": "pnpm --filter @miniapp/backend test:lobby-ranking",
+    "test:lobby-deep-experience": "bash scripts/test-character-deep-experience-migration.sh",
     "admin": "node packages/admin-cli/bin/mijing-admin.mjs"
   },
   "engines": {

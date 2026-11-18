@@ -793,6 +793,14 @@ tables:
       status: active,
       reads: [experience.chat_history（离线聚合，存量豁免）],
     }
+  miniapp_features.character_deep_experience_stats:
+    {
+      nature: D,
+      owner: backend/src/features/lobby/deep-experience-stats.ts,
+      status: active,
+      reads: [experience.chat_history（离线聚合，存量豁免）],
+      note: 30分钟切session、超过20轮计一次，供角色社交RPC追加到like_count；每日覆盖式刷新。,
+    }
   miniapp_features.lobby_ranking_refresh_state:
     {
       nature: S,
