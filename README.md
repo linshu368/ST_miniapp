@@ -137,6 +137,8 @@ pnpm --filter @miniapp/backend video-plaza:stream-migrate --phase preflight --di
 
 TEST 视频种子 SQL 只能通过 GitHub Actions `Database Migration` 选择 `environment=test` 单文件执行。工作流会向该次 `psql` 会话注入 TEST project ref 与 Storage 已核验标记；执行脚本会拒绝把 `_seed_test_` 文件用于 production，也会拒绝缺少这些确认值的直接执行。
 
+广场视频生产兼容候选使用`20261118_media_plaza_video_production_base.sql`→`20261118_media_plaza_video_production_config.sql`替代早期两份video基础/config迁移；已通过隔离验证，未远端执行。标签/参考图/Stream、应用与4987条素材的顺序见[生产上线清单](docs/video-plaza-production-release.md)，不重跑旧钱包/配置白名单。
+
 ## 5. 环境变量
 
 不要提交真实 `.env`。浏览器端 `NEXT_PUBLIC_*` 与 `VITE_*` 会进入 bundle，不能存放 secret。完整变量以各包 `.env.example`、源码读取点和部署平台为准。

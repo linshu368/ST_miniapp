@@ -34,7 +34,9 @@
         "shared.business.conversation-contracts",
         "database.business.conversation-storage",
         "backend.business.wallet-payment",
-        "database.business.billing-payment"
+        "database.business.billing-payment",
+        "database.infrastructure.schema-security",
+        "admin.business.operations"
       ]
     },
     "mobile_performance": {
@@ -84,12 +86,15 @@
         "工作室/详情HLS取址、下载、首帧和失败恢复",
         "短剧复用能力回归及业务上下文白名单修正",
         "TEST全部13个视频迁移、校验、数据切换与清理",
-        "TEST预览缺签名导致详情503，以及钱包视频预扣P0001的定位和最小守卫恢复"
+        "TEST预览缺签名导致详情503，以及钱包视频预扣P0001的定位和最小守卫恢复",
+        "生成生产兼容base/config迁移；复用workflow账本/claim/checksum和现行HTTP/DB日志，不执行生产写入",
+        "生产4987条种子导入已授权；复用Database Migration逐批checksum/claim/ledger/计数审计；等待用户上线兼容读取器，当前不执行生产数据写入"
       ],
       "integration_points": [
         "platform/observability/fetch.ts与jobs.ts、context.ts",
         "events.ts、safe-log.ts、logger-options.ts、labels.zh-CN.ts及alert-rules.json",
-        "既有video-job、HTTP取址边界与前端媒体观测接收出口"
+        "既有video-job、HTTP取址边界与前端媒体观测接收出口",
+        ".github/workflows/db-migrate.yml及apply-repo-migration.sh的固定诊断/执行审计"
       ],
       "events": [
         {
@@ -144,7 +149,8 @@
         "上传超时或未知结果、429和有限退避、重复创建与重启恢复",
         "转码失败、码率未就绪、发布结果未知及补偿失败",
         "无权限、签名失效、HLS失败、切源/离页/后台中断与下载尚未就绪",
-        "Railway缺配置、钱包类型遗漏、迁移未知/重复守卫或属性异常；沿原HTTP/DB根及安全cause关联，不输出任意异常正文"
+        "Railway缺配置、钱包类型遗漏、迁移未知/重复守卫或属性异常；沿原HTTP/DB根及安全cause关联，不输出任意异常正文",
+        "基础对象缺失/部分初始化、未知钱包约束、旧列写入、配置非登记表布局、重复初始化均事务拒绝；未知提交需互证后恢复"
       ],
       "correlation": "统一business_module=image，修正video被过滤问题；可信任务/鉴权记录绑定user、image_conversation、attempt、artifact、work，继承request/trace/span。异步轮次独立根、逐资产隔离，不为日志额外查库。",
       "redaction": "只输出显式白名单的状态、计数、耗时和安全错误；不记录token、私钥、签名URL、提示词、完整响应或任意DTO；业务ID不进入指标/Sentry标签。",
@@ -153,7 +159,8 @@
         "真实Pino JSON验证关联字段、脱敏、一次终态、并发隔离、原错误与业务结果不变",
         "pnpm lint:backend-logging及既有观测测试；覆盖上传未知、转码失败、刷新失败和关闭告警",
         "前端首帧/seek/卡顿到后端出口全链验证；TEST/Railway实际检索在环境与发布确认后执行",
-        "pr-566真实提交HTTP500/request/trace/cause=P0001及预览修复后12作品HTTP200；钱包forward-fix执行后复核目录/账本及受控生成"
+        "pr-566真实提交HTTP500/request/trace/cause=P0001及预览修复后12作品HTTP200；钱包forward-fix执行后复核目录/账本及受控生成",
+        "隔离真实SQL验证旧类型/专项优先/ACL/FK/现有键和图片不变；SQL错误不输出动态记录，不打开通知"
       ]
     },
     "test_data_migration": {
@@ -190,6 +197,27 @@
       "wallet_guard_fix_remote_applied": true,
       "wallet_guard_fix_ledger_recorded": false,
       "generation_blocker": "Venice queue HTTP402; three attempts confirmed failed with video_provider_http_402 and no artifact"
+    },
+    "production_sql_generation": {
+      "authorized": "generate_and_validate_only",
+      "execute_production": false,
+      "design": "production-sql-design.md",
+      "files": [
+        "20261118_media_plaza_video_production_base.sql",
+        "20261118_media_plaza_video_production_config.sql"
+      ],
+      "replay": "one_shot_guard_rejects; unknown commit requires catalog/claim/ledger reconciliation",
+      "schema_debt": "replicate existing video contracts recorded as moving; no new legacy fields; billing/job separation remains explicit debt"
+    },
+    "production_seed_import": {
+      "authorized": true,
+      "environment": "production",
+      "project_ref": "wbtsfzozlmurljvglhpn",
+      "state": "awaiting_user_production_video_release",
+      "manifest": "production-seed-import-manifest.json",
+      "production_writes_performed": false,
+      "workflow_only": true,
+      "no_auto_commit_or_push": true
     }
   }
 }
