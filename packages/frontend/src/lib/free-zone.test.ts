@@ -3,9 +3,13 @@ import type { ChatMessage, GetModelCatalogData, PublicFreeZone } from '@miniapp/
 
 import {
   freeZoneBoundaryDelay,
+  freeZoneHasTurnLimits,
+  freeZoneLimitHint,
+  freeZoneModelResetsAt,
   freeZoneRulesText,
   freeZoneStatusText,
   freeZoneSwitchDividers,
+  freeZoneSwitchNoticeText,
   remainingText,
 } from './free-zone';
 
@@ -133,5 +137,54 @@ describe('free zone copy', () => {
       '每周四 12:00 至次日 03:00畅聊'
     );
     expect(freeZoneBoundaryDelay(vipOnly, now)).toBe(24 * 60 * 60 * 1000);
+  });
+});
+
+describe('24-hour limit copy', () => {
+  const model = {
+    id: 'free-gemini',
+    display_name: 'Gemini 3.8 Flash',
+    tagline: '',
+    benchmark_tier: 'standard' as const,
+    original_credits: 33,
+    limited: true,
+  };
+  const later = new Date(now.getTime() + 3 * 60 * 60 * 1000).toISOString();
+  const earlier = new Date(now.getTime() - 60 * 1000).toISOString();
+
+  it('drops the "unlimited" claim only when some model has a limit', () => {
+    const zone = { state: 'no_models', ...base, models: [model] } as PublicFreeZone;
+    expect(freeZoneHasTurnLimits(zone)).toBe(true);
+    expect(freeZoneHasTurnLimits({ ...zone, models: [{ ...model, limited: false }] })).toBe(false);
+    // 旧后端不返回 limited
+    expect(freeZoneHasTurnLimits({ ...zone, models: [{ ...model, limited: undefined }] })).toBe(
+      false
+    );
+  });
+
+  it('treats a model as used up only until its reset time', () => {
+    expect(freeZoneModelResetsAt({ ...model, limit_resets_at: later }, now)).toBe(later);
+    expect(freeZoneModelResetsAt({ ...model, limit_resets_at: earlier }, now)).toBeNull();
+    expect(freeZoneModelResetsAt({ ...model, limit_resets_at: null }, now)).toBeNull();
+    expect(freeZoneLimitHint({ ...model, limit_resets_at: later }, now)).toMatch(
+      /^「Gemini 3\.8 Flash」24 小时内的免费次数用完了，.+ 恢复，先换一个吧$/
+    );
+  });
+
+  it('writes the switch notice for another free model or a paid one', () => {
+    const item = {
+      from_name: 'Gemini 3.8 Flash',
+      to_name: 'Gemini 3.1 Flash Lite',
+      resets_at: later,
+    };
+    expect(freeZoneSwitchNoticeText({ ...item, to_paid: false }, now)).toMatch(
+      /^「Gemini 3\.8 Flash」24 小时内的免费次数用完了，已换成「Gemini 3\.1 Flash Lite」继续畅聊，.+ 恢复$/
+    );
+    expect(
+      freeZoneSwitchNoticeText(
+        { ...item, to_name: 'DeepSeek', to_paid: true, resets_at: null },
+        now
+      )
+    ).toBe('畅聊模型 24 小时内的免费次数都用完了，这轮起改用「DeepSeek」');
   });
 });

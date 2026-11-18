@@ -143,6 +143,24 @@ describe('editable model catalog additions', () => {
     expect(ModelCatalogSchema.parse(filled).free_zone_models).toHaveLength(1);
   });
 
+  it('keeps the 24-hour limit of a free zone model through the editable parse', () => {
+    const limited = {
+      ...catalog,
+      free_zone_models: [
+        {
+          ...newFreeZoneModel(123),
+          provider_model_id: 'qwen/qwen3.6-plus',
+          family: 'qwen',
+          turns_per_24h: 80,
+        },
+      ],
+    };
+    expect(EditableModelCatalogSchema.parse(limited).free_zone_models[0]?.turns_per_24h).toBe(80);
+    expect(ModelCatalogSchema.parse(limited).free_zone_models?.[0]?.turns_per_24h).toBe(80);
+    // 留空 = 用畅聊配置的全局上限
+    expect(newFreeZoneModel(1).turns_per_24h).toBeNull();
+  });
+
   it('keeps a newly added empty tier editable', () => {
     const result = appendDraftTier(catalog);
     expect(result.tiers.map((tier) => tier.tier)).toEqual(['light', 'premium', 'standard']);
