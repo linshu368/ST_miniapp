@@ -14,19 +14,21 @@ import {
   Switch,
   Typography,
 } from 'antd';
-import type {
-  FreeZoneConfig,
-  FreeZoneOnShelf,
-  FreeZoneRelist,
-  FreeZoneScreening,
+import {
+  QUALITY_MIN_TURNS,
+  QUALITY_WINDOW_TURNS,
+  type FreeZoneConfig,
+  type FreeZoneOnShelf,
+  type FreeZoneRelist,
+  type FreeZoneScreening,
 } from '@miniapp/shared';
 import {
   asFreeZoneConfig,
   describeFreeZoneStatus,
   freeZoneIssues,
-  parseMinutesList,
   toPeriodTime,
 } from '../lib/freeZoneForm';
+import { FreeZoneAccessEditor } from './FreeZoneAccessEditor';
 import { FreeZoneScreeningOptions } from './FreeZoneScreeningOptions';
 import { FreeZoneCandidatesEditor } from './FreeZoneCandidatesEditor';
 import { FreeZoneScreeningPanel } from './FreeZoneScreeningPanel';
@@ -106,72 +108,33 @@ const SCREENING_FIELDS: ReadonlyArray<NumberField<keyof FreeZoneScreening & stri
 
 const ON_SHELF_FIELDS: ReadonlyArray<NumberField<keyof FreeZoneOnShelf & string>> = [
   {
-    key: 'window_hours',
-    label: '统计窗口（小时）',
-    hint: '看最近多久的真实轮次',
-    required: true,
-    min: 1,
-    max: 168,
-  },
-  { key: 'min_turns', label: '最少轮数', hint: '样本不够这么多轮就不判断', required: true, min: 1 },
-  {
-    key: 'max_no_output_pct',
-    label: '没出字率上限（%）',
-    hint: '主模型一个字都没出',
-    max: 100,
-    precision: 1,
-  },
-  {
-    key: 'max_fallback_delivered_pct',
-    label: '兜底交付率上限（%）',
-    hint: '最后交给用户的是兜底模型写的回复',
-    max: 100,
-    precision: 1,
-  },
-  {
-    key: 'max_timeout_pct',
-    label: '超时率上限（%）',
-    hint: '用户最后什么都没收到',
-    max: 100,
-    precision: 1,
-  },
-  {
-    key: 'max_ttft_p90_ms',
-    label: '真实首字 p90 上限（毫秒）',
-    hint: '主模型在我们流量上的首字',
-    min: 1,
-  },
-  { key: 'max_refusal_pct', label: '拒答率上限（%）', hint: '留空不检查', max: 100, precision: 1 },
-  {
-    key: 'max_truncation_pct',
-    label: '截断率上限（%）',
-    hint: '留空不检查',
-    max: 100,
-    precision: 1,
-  },
-  {
     key: 'max_interrupted_pct',
-    label: '生成中断率上限（%）',
-    hint: '开始出字后没写完就断了，占它自己交付轮次的比例；不含用户点停；留空不检查',
+    label: '中断率上限（%）',
+    hint: `开始出字后没写完就断（不含用户点停），占它自己交付轮次的比例。超过就下架并停着，点「立即上架」才回来；留空不检查`,
     max: 100,
     precision: 1,
   },
-  { key: 'max_dislike_pct', label: '点踩率上限（%）', hint: '留空不检查', max: 100, precision: 1 },
+  {
+    key: 'max_unusable_pct',
+    label: '不可用率上限（%）',
+    hint: '超时兜底 + 超时：等到「启动兜底等待」还没出字，或最后什么都没收到。报错、空回复后立刻兜底的不算。超过就下架并停着；留空不检查',
+    max: 100,
+    precision: 1,
+  },
+  {
+    key: 'max_unroutable_pct',
+    label: '派不出去率上限（%）',
+    hint: '真实请求被 Surplus 拒绝派单（折扣底线达不到、没有卖家）的比例。不等评估：最近 20 次主请求里至少 10 次有响应、超过就当场下架，算价格原因（冷却后报价回来自动上架）；留空不检查',
+    max: 100,
+    precision: 1,
+  },
 ];
 
-const RELIST_FIELDS: ReadonlyArray<NumberField<'required_passes' | 'cooldown_official_minutes'>> = [
+const RELIST_FIELDS: ReadonlyArray<NumberField<'price_cooldown_minutes'>> = [
   {
-    key: 'required_passes',
-    label: '连续达标次数',
-    hint: '每 30 分钟评估一次，连续达标这么多次才上架',
-    required: true,
-    min: 1,
-    max: 48,
-  },
-  {
-    key: 'cooldown_official_minutes',
-    label: '官方原因冷却（分钟）',
-    hint: '因 Surplus 官方数据不达标下架后，多久内不再上架',
+    key: 'price_cooldown_minutes',
+    label: '价格原因下架后冷却（分钟）',
+    hint: '官方报价不达标、探测或真实请求派不出去而下架后，多久再评估；之后每 30 分钟一轮，报价达标就上架',
     required: true,
     max: 43_200,
   },
@@ -205,26 +168,6 @@ function NumberFields<T extends object>(props: {
         </Col>
       ))}
     </Row>
-  );
-}
-
-function MinutesListInput(props: {
-  value: number[];
-  disabled?: boolean;
-  onChange: (value: number[]) => void;
-}) {
-  // 自己保留输入框原文，否则打到「1440, 」时逗号会被立刻吃掉。
-  const [text, setText] = useState(() => props.value.join(', '));
-  return (
-    <Input
-      value={text}
-      placeholder="1440, 4320, 10080"
-      disabled={props.disabled}
-      onChange={(event) => {
-        setText(event.target.value);
-        props.onChange(parseMinutesList(event.target.value));
-      }}
-    />
   );
 }
 
@@ -298,8 +241,8 @@ function OpenSettings(props: {
           }}
         />
         <Typography.Text type="secondary">
-          开放时栏目显示「结束时间 结束」；没到开始时间显示「开始时间
-          开始」；过了结束时间栏目隐藏。要延长就改结束时间。
+          福利期内所有人都能用：栏目显示「结束时间 结束」；没到开始时间显示「开始时间
+          开始」。过了结束时间：按身份开放关着就隐藏，开着就按下面的规则。
         </Typography.Text>
       </div>
       <div>
@@ -395,6 +338,13 @@ export function FreeZoneConfigEditor(props: {
       <Section title="栏目开放">
         <OpenSettings value={value} disabled={props.disabled} onChange={update} />
       </Section>
+      <Section title="福利期外按身份开放（新人试用 / 会员）">
+        <FreeZoneAccessEditor
+          value={value.access}
+          disabled={props.disabled}
+          onChange={(access) => update({ access })}
+        />
+      </Section>
       <StatusSection value={value} disabled={props.disabled} onChange={update} />
       <CandidatePool
         value={value.candidates}
@@ -419,8 +369,8 @@ export function FreeZoneConfigEditor(props: {
         <FreeZoneScreeningPanel config={value} />
       </Section>
       <Section
-        title="在架业务数据"
-        hint="只统计当前供应商开始用之后的轮次。越线就排除这家、换下一家达标供应商；所有供应商都不行才下架。"
+        title="在架质量"
+        hint={`每 30 分钟评估时，看这次上架之后最近 ${QUALITY_WINDOW_TURNS} 轮（至少 ${QUALITY_MIN_TURNS} 轮才判断）。中断率、不可用率越线是质量原因：直接下架并停着。派不出去是价格原因：冷却后报价回来自动上架。`}
       >
         <NumberFields
           value={value.on_shelf}
@@ -429,25 +379,16 @@ export function FreeZoneConfigEditor(props: {
           onChange={(patch) => update({ on_shelf: { ...value.on_shelf, ...patch } })}
         />
       </Section>
-      <Section title="上架与冷却">
+      <Section
+        title="上架与冷却"
+        hint="每 30 分钟评估一次：没在架的报价达标（含派单探测）就上架；在架的报价不达标就换同档其他供应商，都不行才下架。"
+      >
         <NumberFields
           value={relist}
           fields={RELIST_FIELDS}
           disabled={props.disabled}
           onChange={updateRelist}
         />
-        <div>
-          <Typography.Text>业务原因冷却梯度（分钟）</Typography.Text>
-          <MinutesListInput
-            value={relist.cooldown_business_minutes}
-            disabled={props.disabled}
-            onChange={(cooldown_business_minutes) => updateRelist({ cooldown_business_minutes })}
-          />
-          <Typography.Text type="secondary">
-            7 天内第 1、2、3 次因业务数据下架，依次冷却这么久，超出取最后一个（1440 = 24 小时，10080
-            = 7 天）。 业务越线被排除的供应商，排除时长取第一个值。
-          </Typography.Text>
-        </div>
       </Section>
       <Section
         title="首字（只对免费模型生效）"

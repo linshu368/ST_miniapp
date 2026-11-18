@@ -6,30 +6,53 @@ import {
   type UserSettings,
 } from '@miniapp/shared';
 import { config } from '../../platform/config.js';
+import type { EditableUserProfile, UserProfile } from './UserProfileRepository.js';
 
-export interface MiniappUserSettingsRow {
+/** app_core.user_preferences 一行：用户级生成与语音偏好。 */
+export interface UserPreferencesRow {
   user_id: string;
-  tg_username: string | null;
-  tg_first_name: string | null;
-  tg_last_name: string | null;
-  display_name: string | null;
-  avatar_url: string | null;
-  tg_avatar_url: string | null;
-  custom_avatar_url: string | null;
-  total_round: number;
   /** NULL = 从未选择，跟随 runtime_config 的 default_tier_id（086） */
   pref_word_count: StoredPreferredWordCount;
   pref_show_options: boolean;
   pref_show_status: boolean;
   pref_show_memory: boolean;
   pref_reply_styles: ReplyStylePreferences;
+  /** NULL = 从未选择，跟随 drive_mode_options 的默认档 */
+  pref_drive_mode: string | null;
   pref_custom_instructions: string | null;
   selected_model_id: string | null;
-  characters_last_seen_at: string | null;
   pref_voice_id: string | null;
   pref_voice_playback_rate: number;
   created_at: string;
   updated_at: string;
+}
+
+/** 「我的」设置接口看到的一行：users 上的资料 + user_preferences 上的偏好。 */
+export type MiniappUserSettingsRow = UserPreferencesRow & Omit<UserProfile, 'updated_at'>;
+
+const EMPTY_PROFILE: Omit<UserProfile, 'updated_at'> = {
+  tg_username: null,
+  tg_first_name: null,
+  tg_last_name: null,
+  tg_avatar_url: null,
+  display_name: null,
+  custom_avatar_url: null,
+};
+
+/** updated_at 取资料与偏好里较晚的一个，改昵称/头像同样算一次设置更新。 */
+export function composeSettingsRow(
+  preferences: UserPreferencesRow,
+  profile: UserProfile | null
+): MiniappUserSettingsRow {
+  const { updated_at: profileUpdatedAt, ...profileFields } = profile ?? {
+    ...EMPTY_PROFILE,
+    updated_at: preferences.updated_at,
+  };
+  const updated_at =
+    Date.parse(profileUpdatedAt) > Date.parse(preferences.updated_at)
+      ? profileUpdatedAt
+      : preferences.updated_at;
+  return { ...preferences, ...profileFields, updated_at };
 }
 
 export type MutableUserSettingsFields = Partial<
@@ -42,6 +65,7 @@ export type MutableUserSettingsFields = Partial<
     | 'pref_show_status'
     | 'pref_show_memory'
     | 'pref_reply_styles'
+    | 'pref_drive_mode'
     | 'pref_custom_instructions'
   >
 >;
@@ -73,6 +97,20 @@ export function omitInstructionSlotPreferences(
     ...rest
   } = update;
   return rest;
+}
+
+/** 资料字段写 users，其余写 user_preferences。 */
+export function splitProfileFields<T extends MutableUserSettingsFields>(
+  update: T
+): { profile: EditableUserProfile; preferences: Omit<T, 'display_name' | 'custom_avatar_url'> } {
+  const { display_name, custom_avatar_url, ...preferences } = update;
+  return {
+    profile: {
+      ...(display_name !== undefined ? { display_name } : {}),
+      ...(custom_avatar_url !== undefined ? { custom_avatar_url } : {}),
+    },
+    preferences,
+  };
 }
 
 export function toUserSettings(row: MiniappUserSettingsRow): UserSettings {

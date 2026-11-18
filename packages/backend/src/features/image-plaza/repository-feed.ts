@@ -25,17 +25,18 @@ import {
 /** Feed reads and work metadata share the original domain clients. */
 export class ImagePlazaFeedRepository {
   protected readonly mediaPlaza: ReturnType<typeof getDomainDb> = getDomainDb('media_plaza');
-  private readonly appCore = getDomainDb('app_core');
+  protected readonly billing: ReturnType<typeof getDomainDb> = getDomainDb('billing');
 
+  /** 首发分享在同一事务里必写一条返利记录（返利为 0 也写），有记录即完成过。 */
   async hasCompletedFirstShare(userId: string): Promise<boolean> {
-    const { data, error } = await this.appCore
-      .from('miniapp_user_settings')
-      .select('image_plaza_first_share_completed_at')
+    const { data, error } = await this.billing
+      .from('image_plaza_share_rewards')
+      .select('id')
       .eq('user_id', userId)
-      .maybeSingle();
+      .limit(1);
     if (error)
-      throw new Error(`image plaza settings read failed: ${error.message}`, { cause: error });
-    return typeof data?.image_plaza_first_share_completed_at === 'string';
+      throw new Error(`image plaza share reward read failed: ${error.message}`, { cause: error });
+    return (data ?? []).length > 0;
   }
 
   async listWorks(input: {

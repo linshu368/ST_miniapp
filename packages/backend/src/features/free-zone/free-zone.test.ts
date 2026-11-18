@@ -9,11 +9,13 @@ import {
 import {
   advanceState,
   initialState,
-  judgeBusinessMetrics,
-  type BusinessVerdict,
+  judgeQuality,
+  MANUAL_HOLD_UNTIL,
   type FreeZoneModelState,
+  type QualityVerdict,
 } from './lifecycle.js';
 import { chooseReplacement, resolveFreeZoneView } from './zone-view.js';
+import { evaluateFreeZoneAccess } from './access.js';
 import type { SurplusModelMarket } from './surplus-market.js';
 
 const rules = DEFAULT_FREE_ZONE_CONFIG.screening;
@@ -153,8 +155,8 @@ describe('pickProvider', () => {
 
 describe('advanceState', () => {
   const now = new Date('2026-11-12T12:00:00Z');
-  const pass: BusinessVerdict = { kind: 'pass' };
-  const fail: BusinessVerdict = { kind: 'fail', reasons: ['兜底交付率% 30 > 15'] };
+  const pass: QualityVerdict = { kind: 'pass' };
+  const fail: QualityVerdict = { kind: 'fail', reasons: ['中断率% 12 > 8'] };
   const twoProviders = screenModel(
     market(
       [...fiveDeep('fast', 100), ...fiveDeep('slow', 120)],
@@ -170,9 +172,9 @@ describe('advanceState', () => {
   const step = (
     state: FreeZoneModelState,
     screening: typeof twoProviders | null = twoProviders,
-    business: BusinessVerdict = pass,
+    quality: QualityVerdict = pass,
     at = now
-  ) => advanceState({ state, now: at, screening, business, relist, priceBandRatio: ratio });
+  ) => advanceState({ state, now: at, screening, quality, relist, priceBandRatio: ratio });
   const listedOn = (provider: string): FreeZoneModelState => ({
     ...initialState('free-a'),
     status: 'listed',
@@ -180,18 +182,18 @@ describe('advanceState', () => {
     providerSince: '2026-11-12T00:00:00.000Z',
   });
 
-  it('lists only after the required consecutive passes, on the picked provider', () => {
-    const first = step(initialState('free-a'));
-    expect(first.state.status).toBe('unlisted');
-    const second = step(first.state);
-    expect(second.state).toMatchObject({ status: 'listed', providers: ['fast'] });
-    expect(second.state.providerSince).toBe(now.toISOString());
-    expect(second.events).toEqual([{ type: 'listed', providers: ['fast'] }]);
+  it('lists on the first passing round, on the picked provider', () => {
+    const result = step(initialState('free-a'));
+    expect(result.state).toMatchObject({ status: 'listed', providers: ['fast'] });
+    expect(result.state.providerSince).toBe(now.toISOString());
+    expect(result.events).toEqual([{ type: 'listed', providers: ['fast'] }]);
   });
 
-  it('a failed screening resets the streak', () => {
-    const first = step(initialState('free-a'));
-    expect(step(first.state, nothing).state.consecutivePasses).toBe(0);
+  it('stays unlisted with the reasons while nothing qualifies', () => {
+    const result = step(initialState('free-a'), nothing);
+    expect(result.state.status).toBe('unlisted');
+    expect(result.state.lastReason).toBeTruthy();
+    expect(result.events).toEqual([]);
   });
 
   it('holds a listed model when official data is missing', () => {
@@ -217,70 +219,62 @@ describe('advanceState', () => {
     });
   });
 
-  it('delists with the short cooldown only when no provider qualifies', () => {
-    const result = step(listedOn('fast'), nothing);
-    expect(result.state.status).toBe('cooling');
-    expect(result.state.cooldownUntil).toBe('2026-11-12T14:00:00.000Z');
-  });
-
-  it('on business failure excludes the provider and switches, then delists with escalation', () => {
-    const switched = step(listedOn('fast'), twoProviders, fail);
-    expect(switched.state.providers).toEqual(['slow']);
-    expect(switched.state.excludedProviders.fast).toBe('2026-11-13T12:00:00.000Z');
-    expect(switched.events[0]).toMatchObject({ type: 'provider_switched', cause: 'business' });
-
-    const delisted = step(switched.state, twoProviders, fail);
+  it('a price delist cools for an hour, then the price coming back relists it', () => {
+    const delisted = step(listedOn('fast'), nothing);
     expect(delisted.state.status).toBe('cooling');
-    expect(delisted.state.cooldownUntil).toBe('2026-11-13T12:00:00.000Z');
-
-    const relistedLater = { ...delisted.state, status: 'listed' as const, providers: ['other'] };
-    const again = step(relistedLater, nothing, fail, new Date('2026-11-14T12:00:00Z'));
-    expect(again.state.cooldownUntil).toBe('2026-11-17T12:00:00.000Z');
+    expect(delisted.state.cooldownUntil).toBe('2026-11-12T13:00:00.000Z');
+    expect(delisted.events[0]).toMatchObject({ type: 'delisted', cause: 'official' });
+    // 30 分钟后还在冷却
+    expect(
+      step(delisted.state, twoProviders, pass, new Date('2026-11-12T12:30:00Z')).events
+    ).toEqual([]);
+    // 评估比冷却早到几秒也算到期，报价回来就当轮上架
+    const back = step(delisted.state, twoProviders, pass, new Date('2026-11-12T12:59:50Z'));
+    expect(back.events.map((event) => event.type)).toEqual(['cooldown_ended', 'listed']);
+    expect(back.state.status).toBe('listed');
   });
 
-  it('returns to unlisted after cooldown and counts that tick as a pass', () => {
-    const cooling: FreeZoneModelState = {
-      ...initialState('free-a'),
-      status: 'cooling',
-      cooldownUntil: '2026-11-12T11:00:00Z',
-    };
-    const result = step(cooling);
-    expect(result.state.status).toBe('unlisted');
-    expect(result.state.consecutivePasses).toBe(1);
-    expect(result.events[0]).toEqual({ type: 'cooldown_ended' });
+  it('a quality failure takes the model off and holds it, even if the price is fine', () => {
+    const delisted = step(listedOn('fast'), twoProviders, fail);
+    expect(delisted.state).toMatchObject({ status: 'cooling', cooldownUntil: MANUAL_HOLD_UNTIL });
+    expect(delisted.state.lastReason).toContain('立即上架');
+    expect(delisted.events[0]).toMatchObject({ type: 'delisted', cause: 'business' });
+    let state = delisted.state;
+    for (let round = 1; round <= 5; round += 1) {
+      state = step(state, twoProviders, pass, new Date(now.getTime() + round * 86_400_000)).state;
+    }
+    expect(state.status).toBe('cooling');
   });
 });
 
-describe('judgeBusinessMetrics', () => {
+describe('judgeQuality', () => {
   const onShelf = DEFAULT_FREE_ZONE_CONFIG.on_shelf;
-  const base = {
-    turns: 100,
-    noOutputPct: 1,
-    fallbackDeliveredPct: 5,
-    timeoutPct: 0.5,
-    ttftP90Ms: 4000,
-    refusalPct: null,
-    truncationPct: null,
-    interruptedPct: 4,
-    dislikePct: null,
-  };
+  const base = { turns: 100, unusablePct: 3, interruptedPct: 4 };
 
   it('does not judge with too few turns', () => {
-    expect(judgeBusinessMetrics({ ...base, turns: 10 }, onShelf).kind).toBe('insufficient');
-  });
-
-  it('fails when any configured line is crossed', () => {
-    const verdict = judgeBusinessMetrics({ ...base, noOutputPct: 12 }, onShelf);
-    expect(verdict).toEqual({ kind: 'fail', reasons: ['没出字率% 12 > 10'] });
-  });
-
-  it('judges the mid-generation interruption rate once a line is set', () => {
-    expect(judgeBusinessMetrics({ ...base, interruptedPct: 30.4 }, onShelf).kind).toBe('pass');
-    const verdict = judgeBusinessMetrics(
-      { ...base, interruptedPct: 30.4 },
-      { ...onShelf, max_interrupted_pct: 5 }
+    expect(judgeQuality({ ...base, turns: 10, interruptedPct: 50 }, onShelf).kind).toBe(
+      'insufficient'
     );
-    expect(verdict).toEqual({ kind: 'fail', reasons: ['生成中断率% 30.4 > 5'] });
+  });
+
+  it('fails on a high interruption or unusable rate', () => {
+    expect(judgeQuality(base, onShelf).kind).toBe('pass');
+    expect(judgeQuality({ ...base, interruptedPct: 9.04 }, onShelf)).toEqual({
+      kind: 'fail',
+      reasons: ['中断率% 9 > 8'],
+    });
+    expect(judgeQuality({ ...base, unusablePct: 11.4 }, onShelf)).toEqual({
+      kind: 'fail',
+      reasons: ['不可用率% 11.4 > 10'],
+    });
+  });
+
+  it('skips a check that is cleared or has no data', () => {
+    const bad = { ...base, interruptedPct: 30, unusablePct: 30 };
+    expect(judgeQuality(bad, { max_interrupted_pct: null, max_unusable_pct: null }).kind).toBe(
+      'pass'
+    );
+    expect(judgeQuality({ ...base, interruptedPct: null }, onShelf).kind).toBe('pass');
   });
 });
 
@@ -303,17 +297,29 @@ describe('resolveFreeZoneView', () => {
     scope: 'own_cards',
     candidates: [candidate],
   });
-  const listed = [{ candidate, providers: ['zai'] }];
+  const listed = [{ source: 'surplus' as const, candidate, providers: ['zai'] }];
   const at = (iso: string) => new Date(iso);
-  const view = (overrides: Partial<Parameters<typeof resolveFreeZoneView>[0]> = {}) =>
-    resolveFreeZoneView({
-      config,
-      listed,
-      now: at('2026-11-20T00:00:00Z'),
-      isOwnCard: true,
+  const view = (
+    overrides: {
+      config?: typeof config;
+      listed?: typeof listed;
+      now?: Date;
+      isOwnCard?: boolean;
+    } = {}
+  ) => {
+    const cfg = overrides.config ?? config;
+    return resolveFreeZoneView({
+      config: cfg,
+      listed: overrides.listed ?? listed,
+      isOwnCard: overrides.isOwnCard ?? true,
       pricing,
-      ...overrides,
+      access: evaluateFreeZoneAccess({
+        config: cfg,
+        now: overrides.now ?? at('2026-11-20T00:00:00Z'),
+        facts: null,
+      }),
     });
+  };
 
   it('is hidden when disabled or after the period', () => {
     expect(view({ config: { ...config, enabled: false } })).toBeNull();
@@ -325,13 +331,15 @@ describe('resolveFreeZoneView', () => {
     expect(view({ listed: [] })?.state).toBe('no_models');
     expect(view({ isOwnCard: false })?.state).toBe('own_card_only');
     const open = view();
-    expect(open).toMatchObject({ state: 'open', ends_at: config.period?.ends_at });
+    expect(open).toMatchObject({ state: 'open', ends_at: '2026-11-29T16:00:00.000Z' });
+    expect(open?.access).toMatchObject({ via: 'welfare', audience: 'everyone' });
     expect(open?.models[0]?.original_credits).toBe(55);
   });
 });
 
 describe('chooseReplacement', () => {
   const make = (id: string, family: string) => ({
+    source: 'surplus' as const,
     candidate: {
       id,
       surplus_model: id,

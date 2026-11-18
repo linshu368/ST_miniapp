@@ -8,6 +8,8 @@
 
 日志实现、告警规则和 SDK 候选入口现已集中在 [日志模块目录](packages/backend/src/platform/observability/README.md)。后续只改目录内 `alert-rules.json` 管理模块/状态码等规则，执行 `pnpm --filter @miniapp/backend logging:validate` 后随应用发布；LOG_ALERT_RULES 环境变量已停止读取。总开关默认关闭、通知 secret 仍独立部署。
 
+Railway 可读性补充（本地未部署）：首行新增中文模块、请求/任务场景、真实结果与安全错误说明；探测策略和余额预检结果显式记录。展示名称集中修改日志目录的 `labels.zh-CN.ts`，英文事件码与链路查询保留。按用户要求，本轮不运行本地 UI/浏览器验收，示例与边界见模块说明。
+
 2026-11-14 合并审计补齐媒体/影像任务、后台实体与独立数据库客户端的日志接入；字段语义、模块查询及安全边界见 [运行说明](docs/backend-observability-runtime.md)，验证结果见 [任务记录](.trellis/tasks/11-12-backend-observability/verification.md)。本地实现尚未部署。
 
 本地日志整改候选（2026-11-14，未部署）：Railway 捕获 Pino stdout；补充用户、业务模块、角色/创作、短剧/单集及会话 ID，与 trace/request 关联。字段来源、查询示例、错误契约兼容和默认关闭的直接日志告警见 [运行说明](docs/backend-observability-runtime.md)。无需新增日志存储。

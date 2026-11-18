@@ -20,12 +20,15 @@ const PercentSchema = z.number().min(0).max(100);
 const DurationMsSchema = z.number().int().positive().max(110_000);
 const IsoTimeSchema = z.string().datetime({ offset: true });
 
+/** 免费模型 id：候选池和模型目录「免费畅聊」板块共用 */
+export const FreeZoneModelIdSchema = z
+  .string()
+  .trim()
+  .max(64)
+  .regex(/^free-[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/, '免费模型 id 必须以 free- 开头');
+
 export const FreeZoneCandidateSchema = z.object({
-  id: z
-    .string()
-    .trim()
-    .max(64)
-    .regex(/^free-[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/, '免费模型 id 必须以 free- 开头'),
+  id: FreeZoneModelIdSchema,
   /** Surplus 的标准模型名，例如 deepseek-v4-pro */
   surplus_model: z
     .string()
@@ -85,29 +88,41 @@ export const FreeZoneScreeningSchema = z.object({
   max_probe_ttft_ms: DurationMsSchema.nullable().default(null),
 });
 
+/**
+ * 在架质量：两类原因，处理不同。
+ * - 质量原因（不可接受）：最近的真实轮次里中断率或不可用率超过上限 → 直接下架并停着，
+ *   评估不会自动放回来，运营点「立即上架」才回来。每 30 分钟评估时按这个模型最近
+ *   QUALITY_WINDOW_TURNS 轮算（只算这次上架之后的），至少 QUALITY_MIN_TURNS 轮才判断。
+ * - 价格原因（多半是暂时的）：真实请求被 Surplus 拒绝派单的比例超过上限 → 当场下架，
+ *   冷却 relist.price_cooldown_minutes 后照常由评估按报价重新上架。
+ * 上限留空（null）表示这一项不检查。
+ */
 export const FreeZoneOnShelfSchema = z.object({
-  window_hours: z.number().int().min(1).max(168).default(24),
-  min_turns: z.number().int().min(1).max(100_000).default(50),
-  max_no_output_pct: PercentSchema.nullable().default(10),
-  max_fallback_delivered_pct: PercentSchema.nullable().default(15),
-  max_timeout_pct: PercentSchema.nullable().default(2),
-  max_ttft_p90_ms: DurationMsSchema.nullable().default(7500),
-  max_refusal_pct: PercentSchema.nullable().default(null),
-  max_truncation_pct: PercentSchema.nullable().default(null),
-  /** 生成中断率：免费模型开始出字后没写完就断了，占它自己交付的轮次的比例（不含用户点停） */
-  max_interrupted_pct: PercentSchema.nullable().default(null),
-  max_dislike_pct: PercentSchema.nullable().default(null),
+  /** 中断率：开始出字后没写完就断（不含用户点停、内容审核），占免费模型自己交付轮次的比例 */
+  max_interrupted_pct: PercentSchema.nullable().default(8),
+  /**
+   * 不可用率：超时兜底 + 超时——等到「启动兜底等待」免费模型还没出字（之后才报错也算），
+   * 或最后什么都没收到，占全部轮次的比例。报错、空回复后立刻兜底的不算（影响小）。
+   */
+  max_unusable_pct: PercentSchema.nullable().default(10),
+  /**
+   * 派不出去率：真实请求被 Surplus 拒绝派单（折扣底线达不到、没有可用卖家，404/503）的比例。
+   * 不等评估：每次请求后按这个模型最近 20 次主请求算，至少 10 次拿到响应、超过上限就当场下架。
+   * 派单探测只发几个字，可能派得出去；几万 token 的真实对话却可能几乎全被拒。
+   */
+  max_unroutable_pct: PercentSchema.nullable().default(50),
 });
 
+/** 质量判断看最近多少轮、至少多少轮才判断（固定值，不做运营参数） */
+export const QUALITY_WINDOW_TURNS = 100;
+export const QUALITY_MIN_TURNS = 30;
+
 export const FreeZoneRelistSchema = z.object({
-  required_passes: z.number().int().min(1).max(48).default(2),
-  cooldown_official_minutes: z.number().int().min(0).max(43_200).default(120),
-  /** 业务原因下架的冷却梯度：7 天内第 1、2、3… 次下架依次取值，超出取最后一个 */
-  cooldown_business_minutes: z
-    .array(z.number().int().min(0).max(43_200))
-    .min(1)
-    .max(5)
-    .default([1440, 4320, 10080]),
+  /**
+   * 价格原因下架（官方报价没了、派单探测派不出去、真实请求派不出去）后多久再评估。
+   * 之后每 30 分钟一轮，报价达标就直接上架。质量原因下架不看这个：一直停着等运营上架。
+   */
+  price_cooldown_minutes: z.number().int().min(0).max(43_200).default(60),
 });
 
 export const FreeZoneFirstTokenSchema = z
@@ -131,6 +146,44 @@ export const FreeZonePeriodSchema = z
 
 export const FreeZoneScopeSchema = z.enum(['all_cards', 'own_cards']);
 
+/** 会员每周畅聊日（北京时间）。默认周四 12:00 起 15 小时，到周五 03:00。 */
+export const FreeZoneVipWeeklySchema = z.object({
+  /** ISO 周几：1 = 周一 … 7 = 周日 */
+  weekday: z.number().int().min(1).max(7).default(4),
+  /** 当天从第几分钟开始（720 = 12:00） */
+  start_minute: z.number().int().min(0).max(1439).default(720),
+  /** 持续多少分钟，可以跨到第二天（900 = 到次日 03:00）；最长一周 */
+  duration_minutes: z.number().int().min(30).max(10_080).default(900),
+});
+
+/**
+ * VIP 弹窗频次：两次至少隔 min_interval_days 天；每弹满 batch_size 次，
+ * 距上一次要满 batch_cooldown_days 天才再弹——这样任意 batch_cooldown_days 天内不超过 batch_size 次。
+ */
+export const FreeZoneAccessPromptSchema = z.object({
+  min_interval_days: z.number().int().min(0).max(90).default(3),
+  batch_size: z.number().int().min(1).max(10).default(3),
+  batch_cooldown_days: z.number().int().min(0).max(365).default(30),
+});
+
+/**
+ * 福利期之外按身份开放（北京时间）。总开关关着时只有福利期，和最初版本一样。
+ * - 新人试用：trial_since 之后注册的用户，注册起 trial_hours 小时；
+ * - 会员开通礼：最近一次开通/续费起 vip_welcome_days 天；
+ * - 会员每周畅聊日：vip_weekly。
+ * 都只在会员有效期内算；对用户关闭时选着免费模型的照常生成，换成付费默认模型。
+ */
+export const FreeZoneAccessSchema = z.object({
+  enabled: z.boolean().default(false),
+  /** 这个时间之后注册的用户才有新人试用；null 表示不开新人试用 */
+  trial_since: IsoTimeSchema.nullable().default(null),
+  trial_hours: z.number().int().min(1).max(720).default(72),
+  /** 0 表示不送开通礼 */
+  vip_welcome_days: z.number().int().min(0).max(31).default(5),
+  vip_weekly: FreeZoneVipWeeklySchema.default({}),
+  prompt: FreeZoneAccessPromptSchema.default({}),
+});
+
 export const FreeZoneConfigSchema = z
   .object({
     enabled: z.boolean().default(false),
@@ -144,6 +197,7 @@ export const FreeZoneConfigSchema = z
     on_shelf: FreeZoneOnShelfSchema.default({}),
     relist: FreeZoneRelistSchema.default({}),
     first_token: FreeZoneFirstTokenSchema.default({}),
+    access: FreeZoneAccessSchema.default({}),
   })
   .superRefine((config, ctx) => {
     const ids = config.candidates.map((candidate) => candidate.id);
@@ -165,6 +219,8 @@ export type FreeZoneScreening = z.infer<typeof FreeZoneScreeningSchema>;
 export type FreeZoneOnShelf = z.infer<typeof FreeZoneOnShelfSchema>;
 export type FreeZoneRelist = z.infer<typeof FreeZoneRelistSchema>;
 export type FreeZoneConfig = z.infer<typeof FreeZoneConfigSchema>;
+export type FreeZoneAccess = z.infer<typeof FreeZoneAccessSchema>;
+export type FreeZoneVipWeekly = z.infer<typeof FreeZoneVipWeeklySchema>;
 
 export const DEFAULT_FREE_ZONE_CONFIG: FreeZoneConfig = FreeZoneConfigSchema.parse({});
 
@@ -184,6 +240,39 @@ export function freeZoneRulesFor(
   return { ...screening, min_discount_pct: freeZoneDiscountFloor(screening, candidate) };
 }
 
+const WEEKDAY_LABELS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+
+/** ISO 周几（1–7）的中文名 */
+export function freeZoneWeekdayLabel(weekday: number): string {
+  return WEEKDAY_LABELS[weekday - 1] ?? `周${weekday}`;
+}
+
+function clockText(minuteOfDay: number): string {
+  const minute = ((minuteOfDay % 1440) + 1440) % 1440;
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${pad(Math.floor(minute / 60))}:${pad(minute % 60)}`;
+}
+
+/**
+ * 会员畅聊日的人话写法（北京时间）：「周四 12:00 至次日 03:00」；
+ * 当天结束写「周四 12:00 至 23:00」，跨两天以上写结束那天的周几。运营平台和前端共用。
+ */
+export function formatVipWeeklyWindow(weekly: {
+  weekday: number;
+  start_minute: number;
+  duration_minutes: number;
+}): string {
+  const end = weekly.start_minute + weekly.duration_minutes;
+  const dayOffset = Math.floor(end / 1440);
+  const endText =
+    dayOffset === 0
+      ? ` ${clockText(end)}`
+      : dayOffset === 1
+        ? `次日 ${clockText(end)}`
+        : `${freeZoneWeekdayLabel(((weekly.weekday - 1 + dayOffset) % 7) + 1)} ${clockText(end)}`;
+  return `${freeZoneWeekdayLabel(weekly.weekday)} ${clockText(weekly.start_minute)} 至${endText}`;
+}
+
 // ── 公开契约 ──────────────────────────────────────────────────────────────
 
 export const PublicFreeZoneModelSchema = z.object({
@@ -195,22 +284,56 @@ export const PublicFreeZoneModelSchema = z.object({
   original_credits: z.number().int().nonnegative(),
 });
 
+export const FREE_ZONE_ACCESS_VIA = ['welfare', 'trial', 'vip_welcome', 'vip_weekly'] as const;
+export type FreeZoneAccessVia = (typeof FREE_ZONE_ACCESS_VIA)[number];
+
+export const FREE_ZONE_AUDIENCES = ['everyone', 'trial', 'vip', 'non_vip'] as const;
+export type FreeZoneAudience = (typeof FREE_ZONE_AUDIENCES)[number];
+
+/** 开放规则里前端写文案要用的数字；时间一律北京时间 */
+export const PublicFreeZoneAccessSchema = z.object({
+  /** 此刻为什么对这个用户开放；未开放为 null */
+  via: z.enum(FREE_ZONE_ACCESS_VIA).nullable(),
+  /** 按谁来展示：福利期 everyone，新人试用期 trial，其余按是否会员 */
+  audience: z.enum(FREE_ZONE_AUDIENCES),
+  trial_hours: z.number().int().positive(),
+  vip_welcome_days: z.number().int().nonnegative(),
+  vip_weekly: z.object({
+    weekday: z.number().int().min(1).max(7),
+    start_minute: z.number().int().min(0).max(1439),
+    duration_minutes: z.number().int().positive(),
+  }),
+});
+
 const PublicFreeZoneBase = {
   rules: z.string(),
   models: z.array(PublicFreeZoneModelSchema),
+  /** 按身份开放的说明；只有福利期的旧后端不返回 */
+  access: PublicFreeZoneAccessSchema.optional(),
 };
+
+/** 当前或下一个会员畅聊日 */
+const VipDayWindowSchema = z.object({
+  open: z.boolean(),
+  starts_at: IsoTimeSchema,
+  ends_at: IsoTimeSchema,
+});
 
 /**
  * 栏目状态。open 写结束时间；未开放按原因区分：
- * not_started 写开始时间，own_card_only 是范围只限自创卡而当前是别人的卡，no_models 是没有在架模型。
+ * not_started 写开始时间，own_card_only 是范围只限自创卡而当前是别人的卡，no_models 是没有在架模型；
+ * vip_waiting 是会员等下一个畅聊日（写开始时间），vip_only 是非会员（会员专享，带当前/下一个畅聊日）。
  */
 export const PublicFreeZoneSchema = z.discriminatedUnion('state', [
   z.object({ state: z.literal('open'), ends_at: IsoTimeSchema, ...PublicFreeZoneBase }),
   z.object({ state: z.literal('not_started'), starts_at: IsoTimeSchema, ...PublicFreeZoneBase }),
   z.object({ state: z.literal('own_card_only'), ...PublicFreeZoneBase }),
   z.object({ state: z.literal('no_models'), ...PublicFreeZoneBase }),
+  z.object({ state: z.literal('vip_waiting'), starts_at: IsoTimeSchema, ...PublicFreeZoneBase }),
+  z.object({ state: z.literal('vip_only'), vip_day: VipDayWindowSchema, ...PublicFreeZoneBase }),
 ]);
 
 export type PublicFreeZoneModel = z.infer<typeof PublicFreeZoneModelSchema>;
+export type PublicFreeZoneAccess = z.infer<typeof PublicFreeZoneAccessSchema>;
 export type PublicFreeZone = z.infer<typeof PublicFreeZoneSchema>;
 export type PublicFreeZoneState = PublicFreeZone['state'];

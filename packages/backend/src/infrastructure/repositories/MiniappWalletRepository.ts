@@ -19,6 +19,7 @@ import {
   mapLlmRefundSpendingRow,
 } from './wallet-mapping.js';
 import { getDailyCheckinStatus } from './wallet-checkin.js';
+import { observation } from '../../platform/observability/runtime.js';
 
 export type {
   MiniappWalletRow,
@@ -109,15 +110,21 @@ export class MiniappWalletRepository {
     | { ok: true; wallet: MiniappWalletRow }
     | { ok: false; creditsRequired: number; creditsAvailable: number; wallet: MiniappWalletRow }
   > {
-    const wallet = await this.getOrCreate(userId);
-    return wallet.main_credits < requiredAmount
-      ? {
-          ok: false,
-          creditsRequired: requiredAmount,
-          creditsAvailable: wallet.main_credits,
-          wallet,
-        }
-      : { ok: true, wallet };
+    return observation.observe(
+      'wallet.balance.precheck',
+      async () => {
+        const wallet = await this.getOrCreate(userId);
+        return wallet.main_credits < requiredAmount
+          ? {
+              ok: false as const,
+              creditsRequired: requiredAmount,
+              creditsAvailable: wallet.main_credits,
+              wallet,
+            }
+          : { ok: true as const, wallet };
+      },
+      (result) => ({ outcome: result.ok ? 'succeeded' : 'rejected', outcome_known: true })
+    );
   }
 
   /**

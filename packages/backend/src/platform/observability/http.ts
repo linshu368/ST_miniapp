@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { bindBusinessContext, newContext, withContext } from './context.js';
 import type { createObserver, Operation } from './core.js';
 import type { EventFields } from './events.js';
+import { safeName } from './events.js';
 import {
   httpBusinessFields,
   imageBodyBusinessFields,
@@ -102,6 +103,7 @@ export function registerHttpObservation(
   const states = new WeakMap<FastifyRequest, RequestObservation>();
   app.addHook('onRequest', (request, reply, done) => {
     const context = newContext(request.id);
+    context.call_scene = safeName(`${request.method}:${request.routeOptions.url ?? 'unmatched'}`);
     Object.assign(context.business!, httpBusinessFields(request));
     const state: RequestObservation = {
       operation: observer.start(

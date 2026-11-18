@@ -4,9 +4,8 @@ import { bindBusinessContext } from '../platform/observability/context.js';
 
 /**
  * 几乎每个已登录接口都先走这里，PostgREST 挂死时它曾拖到约 300s（Sentry GET users p50 58s）。
- * 这里只给按 tg_id 的读加 5s 上限：读失败直接抛错，路由返回 5xx，前端可以重试。
- * 插入/更新只受全局 30s 兜底约束：客户端放弃时服务端可能已经提交，
- * 但下次请求会按 tg_id 回读到这条记录（tg_id 唯一），所以重试不会产生重复用户。
+ * 建用户/读用户的 RPC 加 5s 上限：失败直接抛错，路由返回 5xx，前端可以重试。
+ * 客户端放弃时服务端可能已经提交，但 RPC 幂等（tg_id 唯一、入口时间只补空值），重试不会产生重复用户。
  */
 const USER_READ_TIMEOUT_MS = 5_000;
 /**
@@ -42,7 +41,6 @@ const identityInflight = new Map<string, Promise<MiniappDbUserIdentity>>();
 
 /**
  * 确保 app_core.users 中有对应的 MiniApp 用户记录并返回。
- * 不再写 public.users，MiniApp 身份从这里开始独立。
  */
 export async function getOrCreateDbUser(tgUser: TelegramUser): Promise<MiniappDbUserIdentity> {
   // Bind in each caller, including cache hits and waiters sharing another request's Promise.
@@ -112,6 +110,21 @@ function cacheUserIdentity(tgId: string, identity: MiniappDbUserIdentity): void 
   });
 }
 
+/** 注册时间：畅聊新人试用从这里算。生成链路只有 user UUID，所以单独按主键读。 */
+export async function findUserCreatedAt(userId: string): Promise<string | null> {
+  const { data, error } = await getDomainDb('app_core')
+    .from('users')
+    .select('created_at')
+    .eq('id', userId)
+    .abortSignal(AbortSignal.timeout(USER_READ_TIMEOUT_MS))
+    .maybeSingle();
+  if (error) {
+    throw new Error(`查询 MiniApp 用户注册时间失败：${error.message}`, { cause: error });
+  }
+  const createdAt = (data as { created_at?: unknown } | null)?.created_at;
+  return typeof createdAt === 'string' ? createdAt : null;
+}
+
 /** 支付 webhook/cron 没有 Telegram header，用内部 user UUID 反查 analytics identity。 */
 export async function findTelegramIdByUserId(userId: string): Promise<string | null> {
   const { data, error } = await getDomainDb('app_core')
@@ -128,126 +141,41 @@ export async function findTelegramIdByUserId(userId: string): Promise<string | n
   return typeof tgId === 'string' && tgId.length > 0 ? tgId : null;
 }
 
+/**
+ * 建用户 + 写归因走一次 RPC（miniapp_traffic.enter_user）：身份在 app_core.users，来源与入口时间在
+ * miniapp_traffic.user_attributions，轮数在 experience.user_chat_stats。函数里首次建号记来源、
+ * 入口时间只补空值，没有要补的值时只读不写；返回形状与原 users 行一致。
+ * 重复调用幂等（tg_id 唯一、只补空值），超时后客户端重试是安全的。
+ */
+async function enterUser(
+  tgId: string,
+  sourceId: string | null,
+  entry: 'miniapp' | 'bot' | null
+): Promise<MiniappDbUser> {
+  const { data, error } = await getDomainDb('miniapp_traffic')
+    .rpc('enter_user', { p_tg_id: tgId, p_source_id: sourceId, p_entry: entry })
+    .abortSignal(AbortSignal.timeout(USER_READ_TIMEOUT_MS));
+  if (error) {
+    throw new Error(`查询 MiniApp 用户失败：${error.message}`, { cause: error });
+  }
+  const row = data as
+    | (Omit<MiniappDbUser, 'total_round'> & { total_round: number | string })
+    | null;
+  if (!row?.id) throw new Error('查询 MiniApp 用户失败：返回为空');
+  return { ...row, total_round: Number(row.total_round) || 0 };
+}
+
 export async function getOrCreateMiniappUserByTgId(
   tgId: string,
   sourceId: string | null = null,
   markMiniappEntered = true
 ): Promise<MiniappDbUser> {
-  const db = getDomainDb('app_core');
-
-  const { data: existing, error: readErr } = await db
-    .from('users')
-    .select('*')
-    .eq('tg_id', tgId)
-    .abortSignal(AbortSignal.timeout(USER_READ_TIMEOUT_MS))
-    .maybeSingle();
-
-  if (readErr) {
-    throw new Error(`查询 MiniApp 用户失败：${readErr.message}`);
-  }
-
-  if (existing) {
-    const user = existing as MiniappDbUser;
-    if (markMiniappEntered && !user.miniapp_entered_at) {
-      return markMiniappEnteredAt(user.id);
-    }
-    return user;
-  }
-
-  const now = new Date().toISOString();
-  const { data, error: insertErr } = await db
-    .from('users')
-    .insert({
-      tg_id: tgId,
-      source_id: sourceId,
-      miniapp_entered_at: markMiniappEntered ? now : null,
-      created_at: now,
-      updated_at: now,
-    })
-    .select('*')
-    .single();
-
-  if (!insertErr && data) {
-    return data as MiniappDbUser;
-  }
-
-  // 并发首次登录时可能已有另一个请求完成插入，回读一次保证幂等。
-  const { data: afterRace, error: raceReadErr } = await db
-    .from('users')
-    .select('*')
-    .eq('tg_id', tgId)
-    .abortSignal(AbortSignal.timeout(USER_READ_TIMEOUT_MS))
-    .maybeSingle();
-
-  if (raceReadErr) {
-    throw new Error(`创建 MiniApp 用户失败，且回读失败：${raceReadErr.message}`);
-  }
-  if (afterRace) {
-    const user = afterRace as MiniappDbUser;
-    if (markMiniappEntered && !user.miniapp_entered_at) {
-      return markMiniappEnteredAt(user.id);
-    }
-    return user;
-  }
-
-  throw new Error(`创建 MiniApp 用户失败：${insertErr?.message ?? 'unknown error'}`);
+  return enterUser(tgId, sourceId, markMiniappEntered ? 'miniapp' : null);
 }
 
 export async function recordBotStart(
   tgId: string,
   sourceId: string | null = null
 ): Promise<MiniappDbUser> {
-  const user = await getOrCreateMiniappUserByTgId(tgId, sourceId, false);
-  if (user.bot_entered_at) return user;
-
-  const now = new Date().toISOString();
-  const { data, error } = await getDomainDb('app_core')
-    .from('users')
-    .update({
-      bot_entered_at: now,
-      source_id: user.source_id ?? sourceId,
-      updated_at: now,
-    })
-    .eq('id', user.id)
-    .is('bot_entered_at', null)
-    .select('*')
-    .maybeSingle();
-
-  if (error) {
-    throw new Error(`记录 bot /start 时间失败：${error.message}`, { cause: error });
-  }
-
-  return (data as MiniappDbUser | null) ?? user;
-}
-
-async function markMiniappEnteredAt(userId: string): Promise<MiniappDbUser> {
-  const now = new Date().toISOString();
-  const { data, error } = await getDomainDb('app_core')
-    .from('users')
-    .update({
-      miniapp_entered_at: now,
-      updated_at: now,
-    })
-    .eq('id', userId)
-    .is('miniapp_entered_at', null)
-    .select('*')
-    .maybeSingle();
-
-  if (error) {
-    throw new Error(`记录 MiniApp 首次进入时间失败：${error.message}`, { cause: error });
-  }
-
-  if (data) return data as MiniappDbUser;
-
-  const { data: current, error: readErr } = await getDomainDb('app_core')
-    .from('users')
-    .select('*')
-    .eq('id', userId)
-    .single();
-
-  if (readErr || !current) {
-    throw new Error(`记录 MiniApp 首次进入时间后回读失败：${readErr?.message ?? 'not found'}`);
-  }
-
-  return current as MiniappDbUser;
+  return enterUser(tgId, sourceId, 'bot');
 }

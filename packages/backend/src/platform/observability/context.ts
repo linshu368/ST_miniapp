@@ -1,12 +1,15 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { safeBusinessFields, type BusinessFields } from './business-context.js';
+import { safeName } from './events.js';
 
 export interface ObservationContext {
   trace_id: string;
   span_id: string;
   parent_span_id?: string;
   request_id?: string;
+  /** Stable registered HTTP route or job operation; never an incoming URL or user text. */
+  call_scene?: string;
   /** Per-root metadata is enriched after auth; spans keep their immutable trace identity. */
   business?: BusinessFields;
 }
@@ -60,6 +63,10 @@ export function contextLogFields(
 export function contextLogFields(): Partial<Omit<ObservationContext, 'business'>> & BusinessFields;
 export function contextLogFields(context = currentContext()) {
   if (!context) return {};
-  const { business, ...trace } = context;
-  return { ...safeBusinessFields(business ?? {}), ...trace };
+  const { business, call_scene, ...trace } = context;
+  return {
+    ...safeBusinessFields(business ?? {}),
+    ...trace,
+    ...(call_scene ? { call_scene: safeName(call_scene) } : {}),
+  };
 }

@@ -10,13 +10,19 @@
  * 方案：docs/ST_remove-MVP实施方案.md §六。
  */
 
-import { RICH_REPLY_PROTOCOL_INSTRUCTIONS, type UserGenerationConfig } from '@miniapp/shared';
+import {
+  RICH_REPLY_PROTOCOL_INSTRUCTIONS,
+  type ReplyStylePreferences,
+  type UserGenerationConfig,
+} from '@miniapp/shared';
 import type {
   EnginePlatformInstructions,
+  EngineReplyStyle,
   EngineWordCountTiers,
   InstructionSlotMode,
   InstructionSlotModes,
 } from './types.js';
+import { selectDriveRules } from './drive-mode.js';
 
 /** pref_custom_instructions 为空时注入模板的占位文案，与 bot 一致 */
 export const EMPTY_CUSTOM_INSTRUCTIONS = '暂无';
@@ -51,6 +57,49 @@ function replaceAll(source: string, placeholder: RegExp, value: string): string 
   return source.replace(placeholder, () => value);
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * 回复风格注入：模板里的 marker 换成用户已开启风格的规则，其余 marker 一律清空，
+ * 绝不把占位符原样发给模型。用户开启了、但 marker 没写进模板（或没填 marker）的风格，
+ * 规则追加在模板末尾，保证开关一定生效。
+ *
+ * 一次正则扫描完成全部替换：先替换进去的规则里即使含有别的 marker，也不会被二次展开。
+ * 风格按生成时的用户偏好取值，重新生成会用当前开关。
+ */
+export function applyReplyStyles(
+  template: string,
+  styles: readonly EngineReplyStyle[],
+  preferences: ReplyStylePreferences | undefined
+): string {
+  const replacements = new Map<string, string>();
+  const unplaced: string[] = [];
+
+  for (const style of styles) {
+    const active = style.enabled && preferences?.[style.id] === true && style.rules !== '';
+    if (style.marker !== '' && template.includes(style.marker)) {
+      replacements.set(style.marker, active ? style.rules : '');
+    } else if (active) {
+      unplaced.push(style.rules);
+    }
+  }
+
+  let rendered = template;
+  if (replacements.size > 0) {
+    const pattern = new RegExp(
+      [...replacements.keys()]
+        .sort((a, b) => b.length - a.length)
+        .map(escapeRegExp)
+        .join('|'),
+      'g'
+    );
+    rendered = template.replace(pattern, (marker) => replacements.get(marker) ?? '');
+  }
+  return unplaced.length > 0 ? `${rendered}\n\n${unplaced.join('\n\n')}` : rendered;
+}
+
 function selectSlotRules(
   rules: EnginePlatformInstructions['choiceRules'],
   mode: InstructionSlotMode
@@ -82,8 +131,19 @@ export function renderPlatformInstructions(
   const customInstructions =
     userConfig.pref_custom_instructions?.trim() || EMPTY_CUSTOM_INSTRUCTIONS;
 
-  let rendered = replaceAll(
+  // 先处理运营写的风格 marker，最后才填用户自由文本，用户文本里的同名字符串不会被展开。
+  let rendered = applyReplyStyles(
     instructions.template,
+    instructions.replyStyles,
+    userConfig.pref_reply_styles
+  );
+  rendered = replaceAll(
+    rendered,
+    /\{\{DRIVE_RULES\}\}/g,
+    selectDriveRules(instructions.driveModes, userConfig.pref_drive_mode).rules
+  );
+  rendered = replaceAll(
+    rendered,
     /\{\{CHOICE_RULES\}\}/g,
     selectSlotRules(instructions.choiceRules, slotModes.choice)
   );

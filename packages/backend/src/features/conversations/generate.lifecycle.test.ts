@@ -69,6 +69,7 @@ vi.mock('../../infrastructure/repositories/MiniappUserSettingsRepository.js', ()
 vi.mock('../engine/index.js', () => ({
   fetchPlatformInstructions: async () => ({ degraded: false, instructions: {} }),
   buildPrompt: mocks.buildPrompt,
+  selectDriveRules: () => ({ modeId: null, rules: '' }),
 }));
 vi.mock('../generation/index.js', () => ({
   execute: mocks.execute,

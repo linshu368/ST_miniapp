@@ -38,6 +38,8 @@ const INSTRUCTIONS: EnginePlatformInstructions = {
   choiceRules: { on_first_two_turns: '选项完整', on_later_turns: '选项简洁', off: '选项关闭' },
   statusRules: { on_first_two_turns: '状态完整', on_later_turns: '状态简洁', off: '状态关闭' },
   memoryRules: { on_first_two_turns: '记忆完整', on_later_turns: '记忆简洁', off: '记忆关闭' },
+  replyStyles: [],
+  driveModes: null,
 };
 
 const SLOT_MODES: InstructionSlotModes = { choice: 'full', status: 'concise', memory: 'off' };

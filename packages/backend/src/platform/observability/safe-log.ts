@@ -65,6 +65,8 @@ const TEXT_FIELDS = new Set([
   'prompt_kind',
   'sort',
   'mode',
+  'call_scene',
+  'probe_result',
 ]);
 const NUMBER_FIELDS = new Set([
   'config_version',

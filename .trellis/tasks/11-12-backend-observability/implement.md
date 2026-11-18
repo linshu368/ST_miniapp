@@ -70,3 +70,7 @@ CI 按 base..HEAD 校验新增/修改的活跃任务规划（task.json/prd/desig
 2. 迁入日志相关实现/测试及仅 Backend 消费的 logging conventions，自动解析并更新导入/测试 mock；低依赖 sdk.ts 导出与项目启动装配分离。运行相关回归、类型、门禁/复杂度，按模块提交。
 3. 加版本化规则文件、有界 loader、纯验证和模块/HTTP/上游条件；移除环境规则读取，保留总开关/secret。补关闭不读、cwd无关、无效/超限/未知字段、条件组合、第一条匹配、通知安全测试；允许为这些安全/契约/导入风险新建配置及 SDK 回归文件。
 4. 加目录 README、纯 logging:validate 命令和 CI，验证真实文件；运行全量无凭证 Backend、Shared、全仓 typecheck、适用 ESLint、门禁、格式/复杂度、Frontend/Admin build；更新真实目录/配置/SDK边界文档及模块载荷并提交。
+
+## Railway 可读性实施补充
+
+按 [可读性补充](railway-readability-2026-11-16.md) 依次完成展示/场景传播、探测/预检结果、回归与文档；安全风险在既有测试文件补回归，不创建新测试文件。

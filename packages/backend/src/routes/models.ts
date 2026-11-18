@@ -29,9 +29,14 @@ import { VipStatusService } from '../features/vip/vip-status.js';
 import { getCharacterCreatorOwner } from '../features/generation/creator-billing.js';
 import { canUseCharacter } from '../features/creator/access.js';
 import {
+  createAccessFactsLoader,
+  type AccessFactsLoader,
+} from '../features/free-zone/access-facts.js';
+import {
   resolveCatalogFreeZone,
   resolveFreeZoneSelection,
 } from '../features/free-zone/selection.js';
+import { freeModelUpstream } from '../features/free-zone/zone-view.js';
 import {
   coverageForTextWallet,
   presentTextModelCatalog,
@@ -163,6 +168,11 @@ export default async function modelsRoutes(app: FastifyInstance) {
         catalog: snapshot.catalog,
         isOwnCard,
         pricing: pricing.fixedDeduction,
+        loadFacts: createAccessFactsLoader({
+          userId: dbUser.id,
+          createdAt: dbUser.created_at,
+          vipValidUntil: entitlement.valid_until,
+        }),
       });
       const selection = resolveTextModelSelection({
         catalog: snapshot.catalog,
@@ -170,15 +180,17 @@ export default async function modelsRoutes(app: FastifyInstance) {
         vipActive: entitlement.active,
       });
       const catalogModel = resolveEnabledCatalogModel(snapshot.catalog, selection.modelId);
-      // 畅聊免费模型不在付费目录里，选中时按它自己的 Surplus 上游返回。
-      const selectedModel = freeZone.usable
-        ? {
-            id: freeZone.usable.candidate.id,
-            openrouter_model_id: freeZone.usable.candidate.surplus_model,
-            provider: 'surplus' as const,
-            provider_model_id: freeZone.usable.candidate.surplus_model,
-          }
-        : catalogModel;
+      // 畅聊免费模型不在付费目录的档位里，选中时按它自己的上游返回。
+      const freeUpstream = freeZone.usable ? freeModelUpstream(freeZone.usable) : null;
+      const selectedModel =
+        freeZone.usable && freeUpstream
+          ? {
+              id: freeZone.usable.candidate.id,
+              openrouter_model_id: freeUpstream.providerModelId,
+              provider: freeUpstream.provider,
+              provider_model_id: freeUpstream.providerModelId,
+            }
+          : catalogModel;
       if (freeZone.replacement) {
         log.biz.info(
           {
@@ -280,6 +292,13 @@ export default async function modelsRoutes(app: FastifyInstance) {
             userId: dbUser.id,
             log,
             settings,
+            // 福利期外要按身份判断能不能选；会员到期时间只在需要时才读。
+            loadFacts: async () =>
+              createAccessFactsLoader({
+                userId: dbUser.id,
+                createdAt: dbUser.created_at,
+                vipValidUntil: (await vip.getStatus(dbUser.id, log)).valid_until,
+              })(),
           });
         }
         const selectedModel = resolveEnabledCatalogModel(snapshot.catalog, parsed.data.model_id);
@@ -349,7 +368,7 @@ export default async function modelsRoutes(app: FastifyInstance) {
 }
 
 /**
- * 选畅聊免费模型：只看此刻对这张卡开不开放，不查钱包也不查 VIP（应扣 0）。
+ * 选畅聊免费模型：只看此刻对这个用户、这张卡开不开放，不查钱包（应扣 0）。
  */
 async function selectFreeZoneModel(input: {
   modelId: string;
@@ -360,6 +379,7 @@ async function selectFreeZoneModel(input: {
   reply: FastifyReply;
   log: ReturnType<typeof requestLogger>;
   settings: MiniappUserSettingsRepository;
+  loadFacts: AccessFactsLoader;
 }) {
   const { reply, log, userId, settings } = input;
   const decision = await resolveFreeZoneSelection({
@@ -367,6 +387,7 @@ async function selectFreeZoneModel(input: {
     userId,
     characterId: input.characterId ?? null,
     catalog: input.catalog,
+    loadFacts: input.loadFacts,
   });
   if (decision?.kind !== 'usable' || !input.request.user) {
     log.biz.info(
@@ -376,14 +397,15 @@ async function selectFreeZoneModel(input: {
     return reply.status(409).send(fail('FREE_ZONE_UNAVAILABLE', '畅聊模型暂未开放'));
   }
   const { candidate } = decision.listed;
+  const upstream = freeModelUpstream(decision.listed);
   await settings.setSelectedModelId(userId, input.request.user, candidate.id);
   log.biz.info(
     {
       event: 'models.select.done',
       userId,
       modelId: candidate.id,
-      provider: 'surplus',
-      model: candidate.surplus_model,
+      provider: upstream.provider,
+      model: upstream.providerModelId,
       freeZone: true,
     },
     '用户切换模型'
@@ -391,9 +413,9 @@ async function selectFreeZoneModel(input: {
   return reply.send(
     ok<SelectModelData>({
       model_id: candidate.id,
-      openrouter_model_id: candidate.surplus_model,
-      provider: 'surplus',
-      provider_model_id: candidate.surplus_model,
+      openrouter_model_id: upstream.providerModelId,
+      provider: upstream.provider,
+      provider_model_id: upstream.providerModelId,
     })
   );
 }

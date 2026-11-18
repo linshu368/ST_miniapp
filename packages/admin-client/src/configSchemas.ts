@@ -47,6 +47,9 @@ import {
   VipPlansConfigSchema,
   VipTextDiscountRateSchema,
   WordCountTiersConfigSchema,
+  DEFAULT_DRIVE_MODES_CONFIG,
+  DRIVE_MODE_OPTIONS_KEY,
+  DriveModesConfigSchema,
 } from '@miniapp/shared';
 import { z } from 'zod';
 
@@ -67,6 +70,7 @@ export const managedConfigKeys = [
   'status_rules',
   'memory_rules',
   'reply_style_options',
+  DRIVE_MODE_OPTIONS_KEY,
   'pref_word_count_tiers',
   STORY_MEMORY_CONFIG_KEY,
   STORY_MEMORY_PROMPT_KEY,
@@ -162,6 +166,19 @@ const EditableModelCatalogTierSchema = z.object({
   models: z.array(EditableModelCatalogModelSchema),
 });
 
+/** 模型目录「免费畅聊」板块：编辑中允许空值，保存时由 shared 的严格 schema 校验 */
+const EditableCatalogFreeZoneModelSchema = z.object({
+  id: z.string(),
+  provider: LlmModelProviderSchema,
+  provider_model_id: z.string(),
+  display_name: z.string(),
+  tagline: z.string().default(''),
+  family: z.string().default(''),
+  benchmark_tier: z.enum(['light', 'standard', 'premium']).default('standard'),
+  first_token_timeout_ms: z.number().default(4000),
+  enabled: z.boolean().default(true),
+});
+
 export const EditableModelCatalogSchema = z.object({
   fallback_provider_routes: z
     .array(
@@ -177,6 +194,8 @@ export const EditableModelCatalogSchema = z.object({
   first_token_timeout_rate_target: z.number().default(0.01),
   default_model_id: z.string(),
   tiers: z.array(EditableModelCatalogTierSchema),
+  // 漏了这一项时 zod 会把整块丢掉：编辑器每次渲染都按解析结果显示，新加的免费模型会立刻消失
+  free_zone_models: z.array(EditableCatalogFreeZoneModelSchema).default([]),
 });
 
 // 仅验证编辑结构，允许清空、重复 ID 等中间态；保存仍使用 shared 的严格 schema。
@@ -331,6 +350,7 @@ export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   status_rules: InstructionSlotRulesSchema,
   memory_rules: InstructionSlotRulesSchema,
   reply_style_options: ReplyStyleOptionsConfigSchema,
+  [DRIVE_MODE_OPTIONS_KEY]: DriveModesConfigSchema,
   pref_word_count_tiers: WordCountTiersConfigSchema,
   [STORY_MEMORY_CONFIG_KEY]: StoryMemoryConfigSchema,
   [STORY_MEMORY_PROMPT_KEY]: StoryMemoryPromptSchema,
@@ -499,8 +519,14 @@ export const configMetadata: Record<
   reply_style_options: {
     label: '回复风格',
     description:
-      '管理回复偏好中的选项名称、说明、展示顺序与独立开关；沿用草稿、发布和回滚。英文占位符与规则内容由你维护，本次仅存储，不参与模型生成。',
+      '管理回复偏好中的选项名称、说明、展示顺序与独立开关；沿用草稿、发布和回滚。英文占位符写进主体模板；用户开启的选项，规则内容替换对应占位符，未开启时替换为空。',
     defaultValue: { options: [] },
+  },
+  [DRIVE_MODE_OPTIONS_KEY]: {
+    label: '剧情模式',
+    description:
+      '回复偏好最上方的「剧情模式」：用户选择剧情由谁推动。每档的名称和说明展示给用户；规则替换主体模板里的 {{DRIVE_RULES}}，模型每次只看到用户所选的一档，所以每档规则必须自成一体。未选择的用户使用默认档。',
+    defaultValue: DEFAULT_DRIVE_MODES_CONFIG,
   },
   [FREE_ZONE_CONFIG_KEY]: {
     label: '畅聊（免费模型）',

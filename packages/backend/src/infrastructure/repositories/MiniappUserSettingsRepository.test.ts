@@ -29,18 +29,16 @@ function initialRow(): MiniappUserSettingsRow {
     tg_first_name: 'Test',
     tg_last_name: null,
     display_name: null,
-    avatar_url: null,
     tg_avatar_url: null,
     custom_avatar_url: null,
-    total_round: 0,
     pref_word_count: null,
     pref_show_options: true,
     pref_show_status: true,
     pref_show_memory: true,
     pref_reply_styles: {},
+    pref_drive_mode: null,
     pref_custom_instructions: 'existing preference',
     selected_model_id: null,
-    characters_last_seen_at: null,
     pref_voice_id: null,
     pref_voice_playback_rate: 1,
     created_at: '2026-10-23T00:00:00Z',
@@ -91,8 +89,12 @@ describe('reply-style user preference persistence boundary', () => {
     stored.pref_word_count = 'retired-tier';
     stored.pref_show_options = false;
     const result = await repository.getGenerationContext('test-user');
-    expect(database.from).toHaveBeenCalledExactlyOnceWith('miniapp_user_settings');
-    expect(database.read).toHaveBeenCalledOnce();
+    // 偏好与资料分在两张表：同一请求内各读一次，之后本轮不再读。
+    expect(database.from.mock.calls.map((call) => call[0]).sort()).toEqual([
+      'user_preferences',
+      'users',
+    ]);
+    expect(database.read).toHaveBeenCalledTimes(2);
     expect(result).toMatchObject({
       displayName: '本轮昵称',
       config: {
@@ -104,8 +106,10 @@ describe('reply-style user preference persistence boundary', () => {
     });
   });
 
-  it('uses existing defaults and persona fallback when the single settings read has no row', async () => {
-    database.read.mockResolvedValueOnce({ data: null, error: null });
+  it('uses existing defaults and persona fallback when neither preferences nor profile exist', async () => {
+    database.read
+      .mockResolvedValueOnce({ data: null, error: null })
+      .mockResolvedValueOnce({ data: null, error: null });
     expect(await repository.getGenerationContext('test-user')).toMatchObject({
       displayName: '你',
       config: { selected_model_id: null, pref_word_count: '300-500', pref_show_memory: true },
@@ -115,12 +119,30 @@ describe('reply-style user preference persistence boundary', () => {
     expect((await repository.getGenerationContext('test-user')).displayName).toBe('Telegram name');
   });
 
-  it('fails closed without adding a second read if preparation cannot read settings', async () => {
+  it('takes the persona from the profile even when no preference row exists yet', async () => {
+    stored.display_name = '资料昵称';
+    database.read.mockResolvedValueOnce({ data: null, error: null });
+    expect(await repository.getGenerationContext('test-user')).toMatchObject({
+      displayName: '资料昵称',
+      config: { selected_model_id: null, pref_show_options: true },
+    });
+  });
+
+  it('fails closed without retrying if preparation cannot read settings', async () => {
     database.read.mockResolvedValueOnce({ data: null, error: { message: 'unavailable' } });
     await expect(repository.getGenerationContext('test-user')).rejects.toThrow(
       '查询用户生成配置失败'
     );
-    expect(database.read).toHaveBeenCalledOnce();
+    expect(database.read).toHaveBeenCalledTimes(2);
+  });
+
+  it('fails closed when the profile read fails even if preferences were read', async () => {
+    database.read
+      .mockResolvedValueOnce({ data: { ...stored }, error: null })
+      .mockResolvedValueOnce({ data: null, error: { message: 'profile unavailable' } });
+    await expect(repository.getGenerationContext('test-user')).rejects.toThrow(
+      '查询用户生成配置失败'
+    );
   });
 
   it('defaults old/missing settings to an empty map without changing custom instructions', async () => {

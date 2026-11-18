@@ -184,6 +184,7 @@ export class ConversationHistoryRepository {
       rich_reply_mode: 'full' | 'concise';
       rich_reply_result: 'exact' | 'recovered' | 'failed';
       rich_reply_issues: string[];
+      drive_mode?: string;
     }
   ): Promise<void> {
     const { error } = await this.db

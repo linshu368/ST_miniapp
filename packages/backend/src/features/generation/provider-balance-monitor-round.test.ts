@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { runProviderBalanceMonitorRound } from './provider-balance-monitor-round.js';
 
 describe('runProviderBalanceMonitorRound', () => {
-  const log = () => ({ sys: { error: vi.fn() } }) as never;
+  const log = () => ({ sys: { error: vi.fn(), info: vi.fn() } }) as never;
 
   it('runs both providers and marks a probe failure partial', async () => {
     const venice = { runOnce: vi.fn(async () => ({ outcome: 'probe_failed' as const })) };
@@ -19,7 +19,7 @@ describe('runProviderBalanceMonitorRound', () => {
     const venice = { runOnce: vi.fn(async () => Promise.reject(new Error('venice down'))) };
     const surplus = { runOnce: vi.fn(async () => ({ outcome: 'skipped' as const })) };
     const error = vi.fn();
-    const logger = { sys: { error } } as never;
+    const logger = { sys: { error, info: vi.fn() } } as never;
 
     await expect(runProviderBalanceMonitorRound({ venice, surplus, log: logger })).resolves.toBe(
       'partial'
@@ -31,8 +31,26 @@ describe('runProviderBalanceMonitorRound', () => {
   it('keeps the round successful when configured providers are healthy or skipped', async () => {
     const venice = { runOnce: vi.fn(async () => ({ outcome: 'ok' as const })) };
     const surplus = { runOnce: vi.fn(async () => ({ outcome: 'skipped' as const })) };
-    await expect(runProviderBalanceMonitorRound({ venice, surplus, log: log() })).resolves.toBe(
+    const info = vi.fn();
+    const logger = { sys: { error: vi.fn(), info } } as never;
+    await expect(runProviderBalanceMonitorRound({ venice, surplus, log: logger })).resolves.toBe(
       'success'
+    );
+    expect(info).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'venice.balance_monitor.completed',
+        outcome: 'ok',
+        provider: 'venice',
+      }),
+      expect.any(String)
+    );
+    expect(info).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'surplus.balance_monitor.completed',
+        outcome: 'skipped',
+        provider: 'surplus',
+      }),
+      expect.any(String)
     );
   });
 });

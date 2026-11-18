@@ -68,7 +68,7 @@ function lastProbe(metrics: Record<string, unknown> | null): FreeZoneProbe | nul
   return parsed.success ? parsed.data : null;
 }
 
-/** last_metrics 里评估任务记下的业务数据（只有在架模型才有 turns）。 */
+/** last_metrics 里评估任务记下的质量数据（只有在架模型才有 turns）。 */
 function businessSnapshot(
   row: Pick<StatusRow, 'status' | 'last_metrics'> | undefined
 ): FreeZoneBusinessSnapshot | null {
@@ -146,7 +146,6 @@ export function buildFreeZoneStatus(
   const evaluated = rows.flatMap((row) => (row.evaluated_at ? [row.evaluated_at.getTime()] : []));
   return {
     enabled: config.enabled,
-    required_passes: config.relist.required_passes,
     last_evaluated_at: evaluated.length ? new Date(Math.max(...evaluated)).toISOString() : null,
     models: [...configured, ...removed],
     events: events.map((event) => ({
@@ -170,7 +169,7 @@ export async function loadFreeZoneStatus(
       FROM miniapp_features.free_zone_models`,
     prisma.$queryRaw<EventRow[]>`
       SELECT candidate_id, event_type, cause, providers, reason, created_at
-      FROM miniapp_features.free_zone_events
+      FROM ops.free_zone_events
       ORDER BY created_at DESC
       LIMIT ${EVENT_LIMIT}`,
     prisma.$queryRaw<HistoryRow[]>`
@@ -181,7 +180,7 @@ export async function loadFreeZoneStatus(
         (array_agg(reason ORDER BY created_at DESC) FILTER (WHERE event_type = 'delisted'))[1]
           AS last_delist_reason,
         max(created_at) FILTER (WHERE event_type = 'delisted') AS last_delisted_at
-      FROM miniapp_features.free_zone_events
+      FROM ops.free_zone_events
       GROUP BY candidate_id`,
   ]);
   return buildFreeZoneStatus(config, rows, events, history);

@@ -12,6 +12,7 @@ import {
   type PublicReplyStyleOption,
 } from './reply-style-options';
 import type { PublicWordCountTiers } from './word-count-tiers';
+import { DriveModeIdSchema, type PublicDriveModes } from './drive-modes';
 
 // ==== 领域对象 ====
 
@@ -48,6 +49,11 @@ export interface ChatMessage {
   /** 生成时的模型快照，仅 assistant 消息有值。改配置后历史输出仍可解释（总方案决策 10） */
   model_id: string | null;
   /**
+   * 这一轮每轮扣多少星尘（开轮时定下的档位价，仅 assistant 消息）；0 表示免费轮（畅聊等）。
+   * 缺省表示不知道：旧后端、继承的历史、本地流式占位。前端据此在「免费 → 付费」那一轮前加分隔线。
+   */
+  credits_per_turn?: number;
+  /**
    * 展示规则发布版本。缺失或 null 都表示这条消息继续用原来的 Markdown；
    * 旧 producer 不写该字段时不能拿当前线上版本顶上。
    */
@@ -81,7 +87,7 @@ export interface ChatSession {
 
 /**
  * 用户级生成配置：对该用户所有会话生效，不做会话级覆盖（总方案决策 10）。
- * 存储于 app_core.miniapp_user_settings；公开数据不包含运营规则。
+ * 存储于 app_core.user_preferences；公开数据不包含运营规则。
  */
 export interface UserGenerationConfig {
   /**
@@ -96,6 +102,11 @@ export interface UserGenerationConfig {
   pref_show_memory: boolean;
   /** Missing means no selected styles; independent boolean choices. */
   pref_reply_styles?: ReplyStylePreferences;
+  /**
+   * 生效的剧情模式 id（已按启用档位与默认档解析）。未配置剧情模式时缺省，
+   * 此时引擎使用内置的保守规则。
+   */
+  pref_drive_mode?: string;
   pref_custom_instructions: string | null;
 }
 
@@ -108,6 +119,7 @@ export const UserGenerationConfigSchema: z.ZodType<UserGenerationConfig> = z
     pref_show_status: z.boolean(),
     pref_show_memory: z.boolean(),
     pref_reply_styles: ReplyStylePreferencesSchema.optional(),
+    pref_drive_mode: DriveModeIdSchema.optional(),
     pref_custom_instructions: z.string().nullable(),
   })
   .strict();
@@ -349,6 +361,8 @@ export interface GetGenerationConfigData {
   word_count_tiers: PublicWordCountTiers;
   /** Enabled options in operator order; no private marker or rule text. */
   reply_style_options?: PublicReplyStyleOption[];
+  /** 启用的剧情模式；未配置时缺省，前端隐藏该栏目。不含规则正文。 */
+  drive_modes?: PublicDriveModes;
 }
 
 // ==== PATCH /api/v1/generation-config ====
@@ -364,6 +378,8 @@ export interface PatchGenerationConfigRequest {
   pref_show_memory?: boolean;
   /** Partial map merge; unrelated option IDs are preserved. */
   pref_reply_styles?: ReplyStylePreferences;
+  /** 必须是当前启用的剧情模式 id */
+  pref_drive_mode?: string;
   pref_custom_instructions?: string | null;
 }
 
@@ -375,6 +391,7 @@ export const PatchGenerationConfigRequestSchema: z.ZodType<PatchGenerationConfig
     pref_show_status: z.boolean().optional(),
     pref_show_memory: z.boolean().optional(),
     pref_reply_styles: ReplyStylePreferencesSchema.optional(),
+    pref_drive_mode: DriveModeIdSchema.optional(),
     pref_custom_instructions: z.string().nullable().optional(),
   })
   .strict();
@@ -384,6 +401,7 @@ export interface PatchGenerationConfigData {
   word_count_tiers: PublicWordCountTiers;
   /** Enabled options in operator order; no private marker or rule text. */
   reply_style_options?: PublicReplyStyleOption[];
+  drive_modes?: PublicDriveModes;
 }
 
 /** POST /api/v1/conversations/:id/cancel. The ID binds cancellation to one revision. */

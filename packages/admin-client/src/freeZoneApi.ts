@@ -222,16 +222,24 @@ export const FREE_ZONE_STATUS_GROUPS: ReadonlyArray<{
   {
     key: 'not_listed',
     label: '未上架',
-    hint: '从没上过架的，以及上过架、因 Surplus 官方数据不达标下架的（标「曾上架」）',
+    hint: '从没上过架的，以及上过架、因价格原因（报价不达标、派不出去）下架的（标「曾上架」）；报价达标就自动上架',
   },
   {
     key: 'business_delisted',
-    label: '因业务数据下架',
-    hint: '上过架，在我们自己的流量上越线被下掉的；冷却期满、重新达标后会回到在架',
+    label: '因质量下架',
+    hint: '上过架，中断率或不可用率越线被下掉的；停着不会自动回来，点「立即上架」才回来',
   },
 ];
 
-/** 在架看当前状态；不在架的，最近一次是因业务数据下架的单独一块，其余都算未上架。 */
+/** 停着不会自动回来的下架（手动下架、质量原因下架）：冷却截止设在 2100 年 */
+export function isFreeZoneHeld(model: AdminFreeZoneStatusModel): boolean {
+  return (
+    model.status === 'cooling' &&
+    model.cooldown_until !== null &&
+    Date.parse(model.cooldown_until) >= Date.parse('2099-01-01T00:00:00Z')
+  );
+}
+
 /**
  * 运营手动下架、还没重新上架：冷却中且最近一次下架没有原因分类（自动下架都带 official/business）。
  * 这种不会自动回来，状态显示「手动下架」而不是冷却到某个时间。
@@ -245,7 +253,9 @@ export function isFreeZoneManualHold(model: AdminFreeZoneStatusModel): boolean {
 /** 状态标签：手动下架单独显示，其余按状态。 */
 export function freeZoneStatusLabel(model: AdminFreeZoneStatusModel): string {
   if (!model.status) return '未评估';
-  return isFreeZoneManualHold(model) ? '手动下架' : FREE_ZONE_STATUS_LABELS[model.status];
+  if (isFreeZoneManualHold(model)) return '手动下架';
+  if (isFreeZoneHeld(model)) return '质量下架';
+  return FREE_ZONE_STATUS_LABELS[model.status];
 }
 
 export function freeZoneStatusGroup(model: AdminFreeZoneStatusModel): FreeZoneStatusGroup {
@@ -266,8 +276,8 @@ function pct(value: number | null): string {
 }
 
 /**
- * 在架模型的业务数据一句话：兜底多了是花钱，中断是用户体验实打实受损，两个都摆出来。
- * 只统计当前供应商开始用之后、统计窗口内的轮次，截至最近一轮评估。
+ * 在架模型的质量数据一句话：不可用（超时兜底 + 超时）让用户干等、报错兜底多花点钱，中断是用户体验
+ * 实打实受损。只统计这次上架之后最近的轮次，截至最近一轮评估。
  */
 export function freeZoneBusinessText(model: AdminFreeZoneStatusModel): string {
   const business = model.business;
@@ -277,10 +287,13 @@ export function freeZoneBusinessText(model: AdminFreeZoneStatusModel): string {
     business.interrupted_turns !== null && business.primary_delivered_turns
       ? `中断 ${pct(business.interrupted_pct)}（${business.interrupted_turns}/${business.primary_delivered_turns}）`
       : `中断 ${pct(business.interrupted_pct)}`;
-  return [
-    `${business.turns} 轮`,
-    `兜底 ${pct(business.fallback_delivered_pct)}`,
-    interrupted,
-    `没出字 ${pct(business.no_output_pct)}`,
-  ].join(' · ');
+  // 兜底按起因拆开：超时兜底影响体验；报错兜底（报错、空回复后立刻兜底）影响小。旧记录没有拆分就照旧显示
+  const fallback =
+    business.slow_fallback_pct !== null || business.error_fallback_pct !== null
+      ? [
+          `不可用 ${pct(business.slow_fallback_pct)}`,
+          `报错兜底 ${pct(business.error_fallback_pct)}`,
+        ]
+      : [`兜底 ${pct(business.fallback_delivered_pct)}`, `没出字 ${pct(business.no_output_pct)}`];
+  return [`${business.turns} 轮`, ...fallback, interrupted].join(' · ');
 }

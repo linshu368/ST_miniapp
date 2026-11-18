@@ -6,6 +6,8 @@
 
 2026-11-16 日志目录集中（本地未部署）：Pino、Sentry/后台观测接线和规则统一位于 `platform/observability/`，旧 lib 入口仅重导出。规则唯一来源为目录内 alert-rules.json，配置中心只读取总开关/secret；不再读取 LOG_ALERT_RULES。sdk.ts 导出不触发应用启动的 factory/契约，框架、文件及通知渠道由项目装配，参见 [模块说明](../packages/backend/src/platform/observability/README.md)。
 
+Railway 展示补充（本地未部署）：统一 Pino 出口由可注入纯展示工厂和项目中文词表生成首行；HTTP 注册模板/任务名随 ALS 继承，原事件码与告警匹配不变。探测和预检投影真实标量结果，不读取正文、不新增查询/重试。SDK 导出工厂，词表留在项目适配；不恢复原始错误消息或增加日志存储。
+
 2026-11-16 本地日志补全：数据库转换保留 cause，安全出口继续去除原始消息；支付对账的执行及汇总位于同一轮次根上下文。大厅 Next.js 代理只透传有界请求 ID、回传受控链路头，并在自身部署 stdout 记录固定摘要，与 Backend Railway 日志按请求关联。无新增日志存储、SQL、业务重试或公开 API；详情见 [运行说明](backend-observability-runtime.md)。
 
 2026-11-14 日志合并审计（本地未部署）：补齐媒体/影像对象、逐实体 worker、支付/群身份、增长/问卷事件及欢迎语 transport；共享与大厅专用 Prisma 复用同一观测扩展，pg lease 观测原连接/锁/清理调用，不新增 SQL/池或修改事务。字段和安全出口见 [运行时日志](backend-observability-runtime.md)。
@@ -15,7 +17,7 @@
 本地候选（2026-11-11，未部署）：聊天历史读取采用索引选轮次后加载小型展示投影；原 admission 事务维护精确身份/开场白，旧 writer 仅使投影失效，有限人工回填覆盖旧记录。原 prompt、账务、分支与上下文窗口语义保持不变。读写切换及恢复见 [聊天历史优化说明](chat-history-read-performance.md)，正式 TEST/生产覆盖与 Android/iOS 不退化验收仍是发布门槛。
 
 > 本文档描述项目当前架构（2026-09-30 更新，基于 2026-08-12 自研引擎版重写）。
-> 九域划分与跨域豁免以本文 §5.1 和铁律 8 为准。ST 替换动机、归属地图原稿、099 割接剧本已移出工作区，取回方式见 §12。
+> **数据库落位（schema 归属、数据性质、新表新列、外部读者）以 [`docs/db/CONTRACT.md`](db/CONTRACT.md) 与 [`docs/db/registry.yaml`](db/registry.yaml) 为准**；本文 §5.1 与铁律 8 的地图描述的是 2026-11-17 重组前的布局，冲突时以契约为准。ST 替换动机、归属地图原稿、099 割接剧本已移出工作区，取回方式见 §12。
 >
 > **状态口径**（每条能力都带标注，不标注即为 ✅）：
 >
@@ -58,7 +60,7 @@
    **现行应用的星尘发放（注册 / 签到 / 运营赠送 / 邀请 / 社群）只发生在数据库 `SECURITY DEFINER` RPC 内**，且对应发奖 RPC 的「钱包 upsert + `bonus_credits` 加值 + `wallet_ledger` 记账」都收口在唯一入口 **`billing.grant_bonus_credits`**（`20260911_billing_grant_bonus_credits.sql`）；业务判定（配置、去重、上限、通知、审计）留在各 RPC。应用层只调 RPC、不做手动余额加减。CI 由 legacy guard `wallet-bonus-grant` 拦新迁移里再出现 `bonus_credits = bonus_credits + …`（见 §7.5）。充值入账（动 `main_credits` 与支付字段）是另一条已收口的路径，不走这个入口。发奖 RPC 的挂点：邀请「聊天轮数」在 `generation/settle.ts` 结算成功后触发，「首次付费」在 `PaymentSettlement.settlePaidOrder` 入账后触发（`lib/invite-rewards.ts`），社群入群在 `routes/community.ts`（webhook 自动 + 既有成员手动校验）。
    签到自然日更新（本地实现，远端未执行）：`20261030_checkin_calendar_day.sql` 仅调整既有签到 RPC 的时间条件和 `next_claim_at`，按 Asia/Shanghai 每天 00:00 恢复，取得账户/会员锁后采集当前时间；奖励分档、发放事务和权限保持。Backend GET 使用 shared `getNextDailyCheckinAt`，Frontend 到期回读一次并复用前台恢复刷新。无新增表、cron、余额重置或旧事实回填。
 7. **`runtime_config` 只有一个读取入口**：`backend/src/platform/runtime-config.ts`（表在 `app_core.runtime_config`）。模型目录、定价、平台规则模板都从这里取，不允许并行实现第二套读法。
-8. **数据库按九个归属域划分，新表必须声明归属域**（迁移文件头部注释 `-- domain: xxx`）；**跨域访问只准走 RPC / repository / API**，不得直接 SELECT/JOIN 另一个域的表。允许的惯例：指向根实体（`users` / `characters`）的 FK；`miniapp_analytics` 只读其他域，任何域不得反向读它。存量豁免（收口前不再新增同类）：
+8. **数据库按业务域 × 数据性质落位，规则见 `docs/db/CONTRACT.md`，每张表登记在 `docs/db/registry.yaml`**（下文九域描述为重组前布局）；**新表必须声明归属域**（迁移文件头部注释 `-- domain: xxx`）；**跨域访问只准走 RPC / repository / API**，不得直接 SELECT/JOIN 另一个域的表。允许的惯例：指向根实体（`users` / `characters`）的 FK；`miniapp_analytics` 只读其他域，任何域不得反向读它。存量豁免（收口前不再新增同类）：
    - `users.total_round` / `miniapp_user_settings.total_round` 由 experience 链路回写；
    - `miniapp_features.character_ranking_scores` 由 lobby 定时任务直接聚合 `experience.chat_history`；
    - `experience.chat_history.llm_charge_id` 软引用 `billing.llm_usage_charges`；按编号回查由 `idx_chat_history_llm_charge_id` 非空部分索引支持，禁止在计费门禁扫描整张历史表。
@@ -279,7 +281,9 @@ v1 是旧 bot `SimplePromptEngine` 的忠实移植，最终形状：
 
 三个槽位的开关是用户级偏好，模式选择是会话级事实并随 revision 持久化在 `experience.chat_history`。每个会话第 1～3 个逻辑轮使用 full；第 4 轮起仅当上一逻辑轮最新 revision 的 `rich_reply_metadata.rich_reply_result` 为 `exact` 时使用 concise，`recovered`、`failed` 或缺失时恢复 full。关闭槽位使用 off。重生成根据被替换 revision 的诊断重新选择模式，而不是消费用户级计数；旧 `*_full_rules_remaining` 字段仅保留作应用回滚兼容。
 
-回复风格目录独立存储在 `runtime_config.reply_style_options`，不属于上述模型平台规则。Admin“平台规则 → 回复风格”管理名称、说明、运营自填标记/文本、顺序和启停，沿用草稿/发布/历史/回滚。generation-config API仅公开已发布启用项的id/name/description；私有marker/rules不下发、不注入模型。用户选择存为 `miniapp_user_settings.pref_reply_styles` JSONB，专用service_role invoker RPC按id原子合并，前端同样按id乐观确认/回滚。空目录隐藏用户界面区域，新项目默认关闭。迁移 `20261023_reply_style_options.sql` 须先TEST后Production再部署消费者。
+回复风格目录独立存储在 `runtime_config.reply_style_options`，不属于上述模型平台规则。Admin“平台规则 → 回复风格”管理名称、说明、运营自填标记/文本、顺序和启停，沿用草稿/发布/历史/回滚。generation-config API仅公开已发布启用项的id/name/description；私有marker/rules不下发给前端。生成时引擎随平台规则一起读取该目录（同一版本缓存）：用户开启且启用的风格，rules 替换主体模板里对应 marker；其余 marker 清空，不把占位符原样发给模型；开启了但 marker 不在模板里的，rules 追加在模板末尾。风格按生成时的用户偏好取值，重生成用当前开关。用户选择存为 `miniapp_user_settings.pref_reply_styles` JSONB，专用service_role invoker RPC按id原子合并，前端同样按id乐观确认/回滚。空目录隐藏用户界面区域，新项目默认关闭。迁移 `20261023_reply_style_options.sql` 须先TEST后Production再部署消费者。
+
+剧情模式目录存储在 `runtime_config.drive_mode_options`（shared `DriveModesConfigSchema`：1–8 档，每档 id/名称/说明/规则/启停/排序，另有默认档）。主体模板用 `{{DRIVE_RULES}}` 标出注入位置，引擎按用户 `miniapp_user_settings.pref_drive_mode` 取档（未选、停用、未知 id 回落默认档），模型每次只看到一档；目录缺失或损坏时注入 shared `FALLBACK_DRIVE_RULES`（等同上线前的防抢话）。模式已配置而模板缺占位符时记 `engine.drive_slot_missing` 并置 degraded。替换顺序：回复风格 marker → `{{DRIVE_RULES}}` → 固定占位符 → 用户手写偏好。generation-config API 只公开启用档位的 id/名称/说明；PATCH 只接受启用档位。每轮实际档位写入 `experience.chat_history.rich_reply_metadata.drive_mode`。迁移 `20261117_drive_mode.sql` 须先 TEST 后 Production，再部署消费者，最后发布运营配置；回滚先回滚主体模板，再回退代码。
 
 ### 4.4.1 AI 回复后处理与展示
 
@@ -371,6 +375,8 @@ T9 专表 contract：`20261016_openrouter_chat_history_drop_legacy_aliases.sql` 
 
 到期提醒脚本是 `packages/backend/src/scripts/send-vip-expiry-reminders.ts`。`--dry-run` 只计数。`--write` 还要求已发布 `vip_reminders_enabled` 恰好为 true。窗口是 Asia/Shanghai 的到期当天和提前 3 天，同一周期不重复插入。Railway development 的 `stminiapp-vip-reminder-cron` 以 `--write` 运行；production IaC 不声明该 Cron。消息详情是 `GET /api/notifications/:id`；`POST /api/notifications/read` 必须带具体 id，只提交 scope 会 400。历史通知正文不因续费改写。
 
+**畅聊按身份开放（2026-11-17）**：`free_zone_config.access`（默认关）打开后，福利期之外畅聊只对三类人开放（北京时间）：`trial_since` 之后注册的新用户注册起 `trial_hours` 小时；有效会员最近一次开通/续费（`billing.vip_purchase_grants.granted_at`）起 `vip_welcome_days` 天；有效会员每周 `vip_weekly` 窗口（默认周四 12:00 起 15 小时）。判定是纯函数 `features/free-zone/access.ts`，用户事实由 `access-facts.ts` 惰性读取（注册时间、最近开通），读失败临时放行并打 `free_zone.access_facts_failed`。对用户关闭时沿用原替换逻辑：选着免费模型的直接换成付费默认模型照常生成计费；前端在「免费 → 付费」那一轮前加分隔线（按 `ChatMessage.credits_per_turn` 推导，即已有的 `chat_history.deduction_rate`，0 为免费轮；切换原因不落库）。VIP 增长弹窗改为跟着畅聊走：试用/会员期间不弹，试用或福利期刚结束 → 被切到付费的下一轮后弹一次，会员畅聊日 → 非会员打开即弹；频次见 `access.prompt`（默认间隔 3 天、每 3 次停 30 天），仍复用 `record_growth_prompt_event` 的 `prompt='vip'` 记录。原「累计 50 轮」触发已去掉。
+
 2026-09-24 产品确认 TEST 真机 VIP 验收通过。当时任务日志中的 TEST 状态是 `vip_purchase_enabled=true`、`vip_reminders_enabled=true`。Production 购买、提醒和数据都未按本任务打开，上线仍等 T9 的明确批准。
 
 ### 4.9 图片创作广场（代码完成，实库 migration/canary 待执行）
@@ -388,6 +394,8 @@ T9 专表 contract：`20261016_openrouter_chat_history_drop_legacy_aliases.sql` 
 ## 5. 数据模型与真相归属
 
 ### 5.1 数据库九域布局（media_plaza M1 之后）
+
+> 重组前布局，仅供追溯。现行 schema 与每张表的去向见 [`docs/db/registry.yaml`](db/registry.yaml)，规则见 [`docs/db/CONTRACT.md`](db/CONTRACT.md)。
 
 | Schema              | 归属域           | 内容                                                                                                                                                                                                                                                                                                                                              |
 | ------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -611,9 +619,9 @@ packages/backend/src/
 
 短剧性能的唯一计时owner仍为drama-timing/媒体观察器；shared `dramaTimingStages`集中阶段定义，`definition=drama_v3`与兼容报告version=2分开。Faro/Loki提供全量目录/启动/首帧/阶段、结果与有限诊断摘要；OTel复用原Backend auth/db_read/assemble/sign分段；Pino保留有界单次请求/媒体诊断。首页/详情归属与目录起点绑定原观察，构建release统一为实际SHA，身份和签名URL不进Faro标签。
 
-短剧列表与播放通过鉴权 `POST /api/telemetry/drama-timing` 接收有界客户端报告并保留Pino日志。达到5000ms的播放终态以及同一次观察的迟到network报告，以受控JSON正文经现有工程OTLP队列→Alloy→Grafana Cloud Loki，事件名 `drama.startup_diagnostic`；strict shared白名单、32KiB报告上限、256项既有队列与2秒出口预算不变。观察/视频/会话ID仅放日志正文，不进入指标或stream标签。无需Frontend变更或五秒快照；原十秒slow仍兼容但不写此Loki详情流。路由不再构造分析DB队列、不调用原观察RPC；写库代码、导入器与 `DRAMA_TIMING_PERSIST_ENABLED` 已于 2026-11-04 删除，历史表/旧SQL看板保留。新看板详情追加到 `st-engineering-drama`，final与network不能重复计作两次启动。能力受TAO/WebView限制，limited/no_entry/unsupported不是0毫秒；出口关闭、过载或页面强退仍可能丢失，202只证明接口接收。源码不代表已上线，见[计时说明](drama-playback-timing.md)和[看板操作说明](grafana/drama-playback-runbook.md)。
+短剧列表与播放通过鉴权 `POST /api/telemetry/drama-timing` 接收有界客户端报告并保留Pino日志。达到5000ms的播放终态以及同一次观察的迟到network报告，以受控JSON正文经现有工程OTLP队列→Alloy→Grafana Cloud Loki，事件名 `drama.startup_diagnostic`；strict shared白名单、32KiB报告上限、256项既有队列与2秒出口预算不变。观察/视频/会话ID仅放日志正文，不进入指标或stream标签。无需Frontend变更或五秒快照；原十秒slow仍兼容但不写此Loki详情流。路由不再构造分析DB队列、不调用原观察RPC；写库代码、导入器与 `DRAMA_TIMING_PERSIST_ENABLED` 已于 2026-11-04 删除，历史表、旧SQL看板与清理job已于 2026-11-17 删除。新看板详情追加到 `st-engineering-drama`，final与network不能重复计作两次启动。能力受TAO/WebView限制，limited/no_entry/unsupported不是0毫秒；出口关闭、过载或页面强退仍可能丢失，202只证明接口接收。源码不代表已上线，见[计时说明](drama-playback-timing.md)和[看板操作说明](grafana/drama-playback-runbook.md)。
 
-构建模式NEXT_PUBLIC_DRAMA_TIMING_MODE默认legacy，保留全量旧POST；此路由在任何模式下都不再写分析库。验证后显式unified且Faro配置有效时，POST保留100%≥5秒/非成功与5%不足5秒成功诊断，不再上传start，全量性能统计不采样。purpose=diagnostic还由repository/import防止历史补录。旧表/SQL视图/历史看板/保留期job保留，无新migration/cron/依赖。Backend兼容→Frontend默认legacy→验证→独立授权unified；回滚Frontend模式legacy仅恢复上传量，不恢复DB写入。详见[短剧统一口径](drama-playback-timing.md)与[切换说明](grafana/drama-playback-runbook.md)。
+构建模式NEXT_PUBLIC_DRAMA_TIMING_MODE默认legacy，保留全量旧POST；此路由在任何模式下都不再写分析库。验证后显式unified且Faro配置有效时，POST保留100%≥5秒/非成功与5%不足5秒成功诊断，不再上传start，全量性能统计不采样。purpose=diagnostic还由repository/import防止历史补录。旧表/SQL视图/历史看板/保留期job已于 2026-11-17 删除。Backend兼容→Frontend默认legacy→验证→独立授权unified；回滚Frontend模式legacy仅恢复上传量，不恢复DB写入。详见[短剧统一口径](drama-playback-timing.md)与[切换说明](grafana/drama-playback-runbook.md)。
 
 **本地页面验收**：`packages/ui-tests` 以虚构公开DTO提供HTTP/SSE场景，浏览器运行真实Frontend。手动与自动验收使用独立端口、状态和Next缓存，不依赖数据库、模型或支付；见 [移动端验收说明](../packages/ui-tests/README.md)。
 

@@ -8,7 +8,6 @@ import {
   formatCheckValue,
   formatPricePer1m,
   freeZoneIssues,
-  parseMinutesList,
   screeningRequestFrom,
   toPeriodTime,
 } from './freeZoneForm';
@@ -75,10 +74,6 @@ describe('form helpers', () => {
       }).success
     ).toBe(true);
   });
-
-  it('parses the cooldown ladder with either comma', () => {
-    expect(parseMinutesList('1440, 4320，10080')).toEqual([1440, 4320, 10080]);
-  });
 });
 
 describe('describeFreeZoneStatus', () => {
@@ -130,5 +125,36 @@ describe('screening helpers', () => {
     expect(formatCheckValue('max_ttft_p50_ms', 3043)).toBe('3043ms');
     expect(formatCheckValue('min_samples', null)).toBe('未知');
     expect(formatPricePer1m(308358)).toBe('$0.31');
+  });
+});
+
+describe('access settings', () => {
+  it('fills missing access fields with defaults and keeps what was saved', () => {
+    const value = asFreeZoneConfig({
+      enabled: true,
+      access: { enabled: true, trial_hours: 48, vip_weekly: { weekday: 5 } },
+    });
+    expect(value.access).toMatchObject({ enabled: true, trial_hours: 48, vip_welcome_days: 5 });
+    expect(value.access.vip_weekly).toEqual({
+      weekday: 5,
+      start_minute: 720,
+      duration_minutes: 900,
+    });
+    expect(value.access.prompt.batch_cooldown_days).toBe(30);
+    expect(freeZoneIssues(value)).toEqual([]);
+  });
+
+  it('describes the post-welfare rules once the period is over', () => {
+    const value = asFreeZoneConfig({
+      enabled: true,
+      period: { starts_at: '2026-11-11T00:00:00+08:00', ends_at: '2026-11-22T00:00:00+08:00' },
+      access: { enabled: true, trial_since: '2026-11-22T00:00:00+08:00' },
+    });
+    const status = describeFreeZoneStatus(value, new Date('2026-11-23T00:00:00+08:00'));
+    expect(status.type).toBe('success');
+    expect(status.text).toContain('会员每周四 12:00 至次日 03:00');
+    expect(freeZoneIssues({ ...value, access: { ...value.access, trial_hours: 0 } })[0]).toContain(
+      '按身份开放 · 新人试用时长'
+    );
   });
 });

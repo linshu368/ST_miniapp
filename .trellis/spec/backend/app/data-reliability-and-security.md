@@ -30,6 +30,16 @@
 
 ## 可观测性与发布
 
+### Railway 可读性输出契约
+
+1. **适用范围**：所有 Backend Pino 日志；新增事件/模块/任务或改调用场景时，核对 `platform/observability/labels.zh-CN.ts`，不能仅依赖 operation.started/terminal 排障。
+2. **签名**：纯 `createLogPresentation(catalog)(safeRecord, numericLevel)` 返回 msg/module_name/scenario/result/error_message；项目词表注入，SDK 不导入中文词表或应用装配。Pino hook 生成摘要，formatter 仅接受内部生成展示字段，业务传入的同名字段/插值消息被丢弃。
+3. **契约**：msg 最多700字符。`call_scene` 只允许 method:已注册HTTP模板或 job.稳定任务名，在独立请求/任务根创建并由子 span 继承；不读原始URL/请求参数。保留英文事件/operation/module/等级、原始状态和耗时精度及 trace/request/span；不采样/删除基础事件。中文展示不作为告警匹配条件。
+4. **错误矩阵**：没有 outcome 的 info→已记录；unknown/SSE200→结果未确认；探测 unavailable/策略失败→分别显示真实结果，不能由 HTTP200 推断成功。已识别 code/cause/class→固定中文说明；未知错误→未分类及安全源码位置，绝不放行任意 Error.message/SDK details。展示异常→固定事件降级，原日志/业务继续。
+5. **案例**：正常为会员请求→同一 call_scene 的 DB 子操作；基础为独立任务→其 job 场景；错误为嵌套 probe/strategies 整体传 logger 后以为能查到结果。任务应显式投影结果、渠道、错误分类和有界计数，不输出 URL/交易号/钱包 DTO。
+6. **验证**：既有 logger/http/SDK 测试验证实际 JSON、child/setBindings、并发场景隔离、已投影 cause、未知事件和展示失败；probe/precheck/repository 验证跳过/配置错误/部分失败/查询异常、原返回值及执行一次。用户明确免除本地 UI 时，不启动浏览器；真实 Railway 展示/P95 随发布核验。
+7. **正误对照**：错误是恢复任意中文插值或将总 info 推断成功；正确是集中维护固定词表、显式记录实际结果、让摘要引用稳定机器字段，并保留结构化检索。
+
 日志实现、测试及规则集中在 `platform/observability/`；`alert-rules.json` 是唯一规则来源，LOG_ALERT_RULES 环境变量已移除读取。总开关默认关闭时零文件 I/O，开启时只读固定模块相对 URL 并冻结快照，文件错误 fail fast。业务仍通过 runtime-config 的统一 getter 取得配置。模块/业务模块、HTTP/上游状态分别精确匹配；停用专项规则不抑制后续兜底。`logging:validate` 和 CI 校验真实文件，无数据库或通知副作用。SDK 候选入口不导入 runtime、配置、文件、Pino、DB 或具体渠道；业务字段与框架适配保持显式，完整契约见 [模块 README](../../../../packages/backend/src/platform/observability/README.md)。
 
 ### 统一运行时事件接入契约

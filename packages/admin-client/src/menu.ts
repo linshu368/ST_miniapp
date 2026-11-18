@@ -1,5 +1,6 @@
 import {
   CREATOR_REVIEW_PROMPT_KEY,
+  DRIVE_MODE_OPTIONS_KEY,
   FREE_ZONE_CONFIG_KEY,
   STORY_MEMORY_CONFIG_KEY,
   STORY_MEMORY_PROMPT_KEY,
@@ -117,6 +118,7 @@ export const ADMIN_MENU_GROUPS: readonly AdminMenuGroup[] = [
         label: '回复风格',
         configKeys: ['reply_style_options'],
       },
+      { kind: 'config', key: DRIVE_MODE_OPTIONS_KEY, label: '剧情模式' },
       { kind: 'config', key: 'pref_word_count_tiers' },
       { kind: 'view', view: 'text_postprocess', label: '回复富文本规则', configKeys: [] },
       { kind: 'config', key: STORY_MEMORY_CONFIG_KEY, label: '长期记忆参数' },

@@ -1,5 +1,7 @@
 # 短剧启动看板：发布、历史导入与真机验收
 
+> 2026-11-17：旧 SQL 链路（`miniapp_analytics.drama_playback_observations` 表、`drama_playback_facts` 视图、记录/清理函数、清理 cron、看板 `st-drama-playback`、角色 `drama_metrics_reader`）已删除（`20261117_db_reorg_drop_drama_playback_sql.sql`）。下文涉及 SQL 表与旧看板的段落只作历史记录；当前诊断看 `st-engineering-drama`。
+
 ## Loki五秒慢启动详情（2026-10-29，本地待发布）
 
 当前增量以已上线73be921为基线，沿用现有OTLP→Alloy→Cloud Loki，不新增服务、凭证或Supabase migration。不修改播放、客户端计时或五秒时行为。
@@ -43,16 +45,9 @@ Grafana Explore选择 `grafanacloud-logs`，先筛终态，再展开JSON。达�
 
 详细字段、采样、隐私与能力边界统一见 [短剧播放耗时排查](../drama-playback-timing.md)。新代码回归/查询通过不等于上述Cloud往返与真实Telegram验收通过。
 
-## 独立看板
+## 独立看板（已删除）
 
-- 文件：`docs/grafana/drama-playback.json`，名称“短剧｜启动耗时与诊断”，UID `st-drama-playback`。
-- 只新建此看板；不改 `st-model-overview`、`chat-first-token-manual` 或其余已有看板。
-- 导入时绑定既有生产只读 PostgreSQL `fg1oltvmm56v4b`；TEST 绑定已核验测试数据源，绝不因变量选择test就把它当作生产库中真实存在的测试数据。
-- 创建前检查UID未被其他看板占用，API创建使用 `overwrite=false`。若UID冲突先核实，不覆盖他人看板。原有数据源连接上限保持不变。
-
-早期接入记录（不代表当前环境状态）：当时已创建 [短剧｜启动耗时与诊断](https://ea3213527545.grafana.net/d/st-drama-playback)，version 1，仅展示待接入状态。该记录当时生产新表/视图尚未迁移，12个业务面板targets与SQL变量暂未启用；结构查询返回“待迁移”，空白不代表零耗时。已有看板与数据源未修改。
-
-正式启用时读回此UID最新版本，将本地JSON的 `${DS_POSTGRES}` 绑定为已核验UID，去除导入专用 `__inputs`；仅更新此独立看板并保留folder/id/version、检查版本冲突。迁移/权限/发布门禁通过后才能启用；逐一执行统计/变量SQL并检查真实渲染。
+旧看板 `st-drama-playback`（原文件 `docs/grafana/drama-playback.json`）于 2026-11-17 随 SQL 表一起删除，`st-engineering-backend` 与 `st-engineering-drama` 上指向它的链接同时移除。
 
 ## 生产 cron 权限兼容修复
 

@@ -32,6 +32,9 @@ importers:
       supabase:
         specifier: ^2.109.0
         version: 2.109.0
+      yaml:
+        specifier: ^2.8.3
+        version: 2.8.3
 
   packages/admin:
     dependencies:

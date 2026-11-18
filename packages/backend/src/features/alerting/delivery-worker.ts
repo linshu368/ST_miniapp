@@ -62,7 +62,7 @@ export class AlertDeliveryWorker {
     const card = row.payload as SafeAlertCard;
     if (feishuNotificationSuppressed(card)) {
       await prisma.$executeRaw(Prisma.sql`
-        UPDATE app_core.alert_delivery_attempts
+        UPDATE ops.alert_delivery_jobs
         SET state = 'abandoned', next_attempt_at = NULL, last_error_class = 'notify_suppressed', updated_at = now()
         WHERE id = ${row.id} AND state = 'sending'
       `);
@@ -80,7 +80,7 @@ export class AlertDeliveryWorker {
     this.nextAllowedAt = Date.now() + config.min_delivery_interval_ms;
     if (result.kind === 'succeeded') {
       await prisma.$executeRaw(Prisma.sql`
-        UPDATE app_core.alert_delivery_attempts
+        UPDATE ops.alert_delivery_jobs
         SET state = 'succeeded', delivered_at = now(), updated_at = now(), last_error_class = NULL
         WHERE id = ${row.id} AND state = 'sending'
       `);
@@ -93,7 +93,7 @@ export class AlertDeliveryWorker {
     const exhausted = result.kind === 'permanent' || row.attempt_count >= config.max_attempts;
     if (exhausted) {
       await prisma.$executeRaw(Prisma.sql`
-        UPDATE app_core.alert_delivery_attempts
+        UPDATE ops.alert_delivery_jobs
         SET state = 'abandoned', next_attempt_at = NULL, last_error_class = ${result.errorClass}, updated_at = now()
         WHERE id = ${row.id} AND state = 'sending'
       `);
@@ -110,7 +110,7 @@ export class AlertDeliveryWorker {
     const retryAfter = result.kind === 'retryable' ? result.retryAfterMs : undefined;
     const delay = backoffMs(row.attempt_count, retryAfter);
     await prisma.$executeRaw(Prisma.sql`
-      UPDATE app_core.alert_delivery_attempts
+      UPDATE ops.alert_delivery_jobs
       SET state = 'failed', next_attempt_at = now() + (${delay} * interval '1 millisecond'),
           last_error_class = ${result.errorClass}, updated_at = now()
       WHERE id = ${row.id} AND state = 'sending'
@@ -133,7 +133,7 @@ export class AlertDeliveryWorker {
       async (tx) => {
         const rows = await tx.$queryRaw<DeliveryRow[]>(Prisma.sql`
         WITH due AS (
-          SELECT id FROM app_core.alert_delivery_attempts
+          SELECT id FROM ops.alert_delivery_jobs
           WHERE (
             state IN ('pending', 'failed') AND next_attempt_at <= now()
           ) OR (
@@ -143,7 +143,7 @@ export class AlertDeliveryWorker {
           FOR UPDATE SKIP LOCKED
           LIMIT 1
         )
-        UPDATE app_core.alert_delivery_attempts attempts
+        UPDATE ops.alert_delivery_jobs attempts
         SET state = 'sending', attempt_count = attempts.attempt_count + 1,
             last_attempt_at = now(), updated_at = now()
         FROM due WHERE attempts.id = due.id

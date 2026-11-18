@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { UserGenerationConfig } from '@miniapp/shared';
-import { RICH_REPLY_PROTOCOL_INSTRUCTIONS, RICH_REPLY_PROTOCOL_VERSION } from '@miniapp/shared';
 import {
+  FALLBACK_DRIVE_RULES,
+  RICH_REPLY_PROTOCOL_INSTRUCTIONS,
+  RICH_REPLY_PROTOCOL_VERSION,
+  type DriveModesConfig,
+} from '@miniapp/shared';
+import {
+  applyReplyStyles,
   EMPTY_CUSTOM_INSTRUCTIONS,
   renderPlatformInstructions,
   resolveWordCountPromptValue,
@@ -9,6 +15,7 @@ import {
 } from './render-instructions.js';
 import type {
   EnginePlatformInstructions,
+  EngineReplyStyle,
   EngineWordCountTiers,
   InstructionSlotModes,
 } from './types.js';
@@ -31,9 +38,12 @@ const INSTRUCTIONS: EnginePlatformInstructions = {
   choiceRules: { on_first_two_turns: '选择完整', on_later_turns: '选择简洁', off: '选择关闭' },
   statusRules: { on_first_two_turns: '状态完整', on_later_turns: '状态简洁', off: '状态关闭' },
   memoryRules: { on_first_two_turns: '记忆完整', on_later_turns: '记忆简洁', off: '记忆关闭' },
+  replyStyles: [],
+  driveModes: null,
 };
 
 const MODES: InstructionSlotModes = { choice: 'full', status: 'concise', memory: 'off' };
+const MODE_SLOTS = MODES;
 
 function config(overrides: Partial<UserGenerationConfig> = {}): UserGenerationConfig {
   return {
@@ -151,6 +161,139 @@ describe('renderPlatformInstructions', () => {
     expect(renderPlatformInstructions(INSTRUCTIONS, config(), MODES)).toContain(
       '若其中的标签或格式描述与本协议冲突，一律以本协议为准'
     );
+  });
+});
+
+describe('回复风格注入', () => {
+  const STYLES: EngineReplyStyle[] = [
+    { id: 'style-a', marker: '{{CHIDU}}', rules: '尺度规则', enabled: true },
+    { id: 'style-b', marker: '{{TUIJIN}}', rules: '推进规则', enabled: true },
+    { id: 'style-c', marker: '{{QINMI}}', rules: '亲密规则', enabled: false },
+  ];
+  const STYLED: EnginePlatformInstructions = {
+    ...INSTRUCTIONS,
+    template: `${INSTRUCTIONS.template}\n风格：[{{CHIDU}}][{{TUIJIN}}][{{QINMI}}]`,
+    replyStyles: STYLES,
+  };
+
+  // 回归：上线后 marker 从未被替换，模型收到的是字面量 {{CHIDU}}，用户开关全部无效。
+  it('开启的风格替换为规则，未开启/目录停用的清空，不留占位符', () => {
+    const rendered = renderPlatformInstructions(
+      STYLED,
+      config({ pref_reply_styles: { 'style-a': true, 'style-b': false, 'style-c': true } }),
+      MODES
+    );
+    expect(rendered).toContain('风格：[尺度规则][][]');
+    expect(rendered).not.toMatch(/\{\{.+?\}\}/);
+  });
+
+  it('没有任何偏好时全部 marker 清空', () => {
+    const rendered = renderPlatformInstructions(STYLED, config(), MODES);
+    expect(rendered).toContain('风格：[][][]');
+  });
+
+  it('开启但 marker 不在模板里的风格，规则追加在模板末尾、协议之前', () => {
+    const rendered = renderPlatformInstructions(
+      {
+        ...INSTRUCTIONS,
+        replyStyles: [{ id: 'style-d', marker: '{{MISSING}}', rules: '追加规则', enabled: true }],
+      },
+      config({ pref_reply_styles: { 'style-d': true } }),
+      MODES
+    );
+    expect(rendered).toContain('追加规则');
+    expect(rendered.indexOf('追加规则')).toBeLessThan(
+      rendered.indexOf(RICH_REPLY_PROTOCOL_INSTRUCTIONS)
+    );
+  });
+
+  it('一次扫描替换：规则里含别的 marker 或替换模式时按字面量保留', () => {
+    const rendered = applyReplyStyles(
+      '[{{A}}][{{B}}]',
+      [
+        { id: 'style-a', marker: '{{A}}', rules: '含{{B}}和$&', enabled: true },
+        { id: 'style-b', marker: '{{B}}', rules: 'B规则', enabled: true },
+      ],
+      { 'style-a': true, 'style-b': true }
+    );
+    expect(rendered).toBe('[含{{B}}和$&][B规则]');
+  });
+
+  it('用户自由文本里的同名 marker 不会被展开', () => {
+    const rendered = renderPlatformInstructions(
+      { ...STYLED, template: '偏好：{{USER_CUSTOM_INSTRUCTIONS}} {{CHIDU}}' },
+      config({ pref_reply_styles: { 'style-a': true }, pref_custom_instructions: '{{CHIDU}}' }),
+      MODES
+    );
+    expect(rendered).toContain('偏好：{{CHIDU}} 尺度规则');
+  });
+});
+
+describe('剧情模式注入', () => {
+  const MODES: DriveModesConfig = {
+    modes: [
+      {
+        id: 'follow',
+        ui_label: '我来带',
+        description: '',
+        rules: '跟随规则',
+        enabled: true,
+        sort_order: 0,
+      },
+      {
+        id: 'active',
+        ui_label: '等 TA 撩',
+        description: '',
+        rules: '主动规则',
+        enabled: true,
+        sort_order: 1,
+      },
+      {
+        id: 'novel',
+        ui_label: '替我演',
+        description: '',
+        rules: '小说规则',
+        enabled: false,
+        sort_order: 3,
+      },
+    ],
+    default_mode_id: 'active',
+  };
+  const DRIVEN: EnginePlatformInstructions = {
+    ...INSTRUCTIONS,
+    template: `${INSTRUCTIONS.template}\n模式：[{{DRIVE_RULES}}]`,
+    driveModes: MODES,
+  };
+
+  it('按用户所选档位注入规则', () => {
+    const rendered = renderPlatformInstructions(
+      DRIVEN,
+      config({ pref_drive_mode: 'follow' }),
+      MODE_SLOTS
+    );
+    expect(rendered).toContain('模式：[跟随规则]');
+  });
+
+  it('未选、已停用或未知档位回落到默认档', () => {
+    for (const pref of [undefined, 'novel', 'gone']) {
+      const rendered = renderPlatformInstructions(
+        DRIVEN,
+        config(pref === undefined ? {} : { pref_drive_mode: pref }),
+        MODE_SLOTS
+      );
+      expect(rendered).toContain('模式：[主动规则]');
+    }
+  });
+
+  // 配置缺失或损坏时必须退回上线前的防抢话，不能留空槽位或原样发出占位符。
+  it('未配置剧情模式时注入内置保守规则', () => {
+    const rendered = renderPlatformInstructions(
+      { ...DRIVEN, driveModes: null },
+      config({ pref_drive_mode: 'follow' }),
+      MODE_SLOTS
+    );
+    expect(rendered).toContain(`模式：[${FALLBACK_DRIVE_RULES}]`);
+    expect(rendered).not.toContain('{{DRIVE_RULES}}');
   });
 });
 

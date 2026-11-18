@@ -2,11 +2,17 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { useQueryClient } from '@tanstack/react-query';
-import type { GetGrowthPromptsData, GrowthPrompt } from '@miniapp/shared';
+import { useQueryClient, type QueryClient } from '@tanstack/react-query';
+import {
+  isFreeZoneModelId,
+  type GetGrowthPromptsData,
+  type GetModelCatalogData,
+  type GrowthPrompt,
+} from '@miniapp/shared';
 
 import { useCommunityEntryQuery } from '@/lib/api/community';
 import { recordGrowthPromptEvent, useGrowthPromptsQuery } from '@/lib/api/growth-prompts';
+import { modelCatalogKeys } from '@/lib/api/models';
 import { notificationKeys } from '@/lib/api/notifications';
 import { paymentKeys } from '@/lib/api/payment';
 import { claimPromptSlot, isPromptSlotTaken, useRoundsThisVisit } from '@/lib/growth/prompt-visit';
@@ -15,6 +21,7 @@ import { openTelegramCommunity } from '@/lib/telegram/hooks';
 import { formatNumber } from '@/lib/utils/payment';
 
 import { GrowthPromptCard } from './growth-prompt-card';
+import { VipFreeZoneCard } from './vip-free-zone-card';
 
 /** 回复写完、换页或数据刚到之后，留一点空让用户看完再弹。 */
 const SETTLE_MS = 1500;
@@ -30,6 +37,26 @@ function isCalmMoment(pathname: string): boolean {
   if (document.visibilityState !== 'visible' || !isPromptRoute(pathname)) return false;
   if (document.activeElement?.matches('input, textarea, [contenteditable="true"]')) return false;
   return !document.querySelector('[role="dialog"], [role="alertdialog"]');
+}
+
+/**
+ * 「刚结束」类 VIP 弹窗底部的切换提示：从缓存里的模型目录看用户此刻被切到了哪一档。
+ * 目录还没拉过就写笼统的说法。
+ */
+function paidSwitchNote(queryClient: QueryClient): string {
+  const catalogs = queryClient.getQueriesData<GetModelCatalogData>({
+    queryKey: modelCatalogKeys.detail,
+  });
+  for (const [, data] of catalogs) {
+    if (!data || isFreeZoneModelId(data.selected_model_id)) continue;
+    const tier = data.catalog.tiers.find((entry) =>
+      entry.models.some((model) => model.id === data.selected_model_id)
+    );
+    if (!tier) continue;
+    const credits = tier.payable_credits ?? tier.original_credits;
+    return `已切换到${tier.label}模型继续聊${credits !== undefined ? ` · 每轮 ${credits} 星尘` : ''}`;
+  }
+  return '已切换到付费模型继续聊';
 }
 
 export function pickGrowthPrompt(
@@ -115,7 +142,15 @@ export function GrowthPromptHost() {
 
   return (
     <>
-      {active ? (
+      {active?.kind === 'vip' && active.context ? (
+        <VipFreeZoneCard
+          prompt={active}
+          context={active.context}
+          switchNote={active.context === 'vip_day' ? null : paidSwitchNote(queryClient)}
+          onAccept={accept}
+          onDismiss={dismiss}
+        />
+      ) : active ? (
         <GrowthPromptCard
           prompt={active}
           fallbackHandle={fallbackHandle}

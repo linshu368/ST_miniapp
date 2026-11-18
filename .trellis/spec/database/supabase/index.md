@@ -6,7 +6,8 @@
 
 ## 专题规范
 
-- [Schema 划分与对象约定](./schema-and-object-conventions.md)：新增表、视图、物化视图或函数前，用九域判定流程确认归属
+- **[数据库契约](../../../../docs/db/CONTRACT.md) + [登记表](../../../../docs/db/registry.yaml)：新表、新列、jsonb 键、配置 key、函数、外部读者的落位权威，动手前必读**
+- [Schema 对象书写约定](./schema-and-object-conventions.md)：约束命名、类型、注释等对象级约定
 - [迁移、发布与回滚](./migrations-and-rollbacks.md)
 - [安全、RLS 与授权](./security-rls-and-grants.md)
 - [MCP 采集与文档维护](./introspection-and-documentation.md)
@@ -25,7 +26,7 @@
 
 1. 阅读 `docs/ARCHITECTURE.md` 数据库章节、`ops/schema-split/inventory.sql` 和相关 migration；历史专项文档已清理时按 ARCHITECTURE 中的 Git 取回说明追溯，不引用不存在的工作区路径。
 2. 搜索 `.from()`、`.rpc()`、`.schema()`、raw SQL、Prisma model、repository、函数/view/trigger/FK/cron 引用。
-3. 按《Schema 划分与对象约定》的九域判定流程记录新对象归属理由，再明确锁与容量、事务、幂等、RLS/grant、发布顺序、验证和回滚。
+3. 按数据库契约 §2 确定坐标（业务域 × 数据性质）并更新 registry，再明确锁与容量、事务、幂等、RLS/grant、发布顺序、验证和回滚。
 4. test 与 production 不保证同构；不得将一方结果冒充另一方。
 
 ## Required Rules

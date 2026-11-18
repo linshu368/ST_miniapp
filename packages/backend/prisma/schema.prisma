@@ -7,7 +7,7 @@ datasource db {
   url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
   // 只列有 model 落在里面的 schema（migration 099 的归属划分）。
-  // $queryRaw 用全限定名访问 experience / cs_platform，不需要在这里声明。
+  // $queryRaw 用全限定名访问 experience，不需要在这里声明。
   schemas   = ["app_core", "miniapp_features", "billing"]
 }
 
@@ -17,14 +17,10 @@ datasource db {
 model MiniappUser {
   id                    String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   tg_id                 String                   @unique
-  source_id             String?
-  bot_entered_at        DateTime?                @db.Timestamptz(6)
-  miniapp_entered_at    DateTime?                @db.Timestamptz(6)
-  total_round           BigInt                   @default(0)
   created_at            DateTime                 @default(now()) @db.Timestamptz(6)
   updated_at            DateTime                 @default(now()) @db.Timestamptz(6)
   daily_checkins        daily_checkins[]
-  miniapp_user_settings miniapp_user_settings?
+  user_preferences      user_preferences?
   payment_orders        miniapp_payment_orders[]
   user_wallets          user_wallets?
   wallet_ledger         wallet_ledger[]
@@ -33,16 +29,9 @@ model MiniappUser {
   @@schema("app_core")
 }
 
-model miniapp_user_settings {
+/// 用户级生成与语音偏好（数据库重组 3b-2 由 miniapp_user_settings 改名；资料列已迁到 users）。
+model user_preferences {
   user_id                  String      @id @db.Uuid
-  tg_username              String?
-  tg_first_name            String?
-  tg_last_name             String?
-  display_name             String?
-  avatar_url               String?
-  tg_avatar_url            String?
-  custom_avatar_url        String?
-  total_round              BigInt      @default(0)
   /// NULL = 从未选择，跟随 runtime_config.pref_word_count_tiers.default_tier_id（086）
   pref_word_count          String?
   pref_show_options        Boolean     @default(true)

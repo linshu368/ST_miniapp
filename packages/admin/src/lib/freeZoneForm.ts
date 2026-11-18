@@ -7,6 +7,7 @@ import {
   type FreeZoneCandidate,
   type FreeZoneConfig,
   type FreeZoneScreeningCheckKey,
+  formatVipWeeklyWindow,
 } from '@miniapp/shared';
 import type { ZodIssue } from 'zod';
 
@@ -28,6 +29,8 @@ export function asFreeZoneConfig(value: unknown): FreeZoneConfig {
       ...DEFAULT_FREE_ZONE_CONFIG[key],
       ...(isRecord(raw[key]) ? raw[key] : {}),
     }) as FreeZoneConfig[K];
+  const defaults = DEFAULT_FREE_ZONE_CONFIG.access;
+  const rawAccess = isRecord(raw.access) ? raw.access : {};
   return {
     ...DEFAULT_FREE_ZONE_CONFIG,
     ...raw,
@@ -36,6 +39,15 @@ export function asFreeZoneConfig(value: unknown): FreeZoneConfig {
     on_shelf: section('on_shelf'),
     relist: section('relist'),
     first_token: section('first_token'),
+    access: {
+      ...defaults,
+      ...rawAccess,
+      vip_weekly: {
+        ...defaults.vip_weekly,
+        ...(isRecord(rawAccess.vip_weekly) ? rawAccess.vip_weekly : {}),
+      },
+      prompt: { ...defaults.prompt, ...(isRecord(rawAccess.prompt) ? rawAccess.prompt : {}) },
+    },
   } as FreeZoneConfig;
 }
 
@@ -69,14 +81,6 @@ export function formatPeriodTime(iso: string): string {
   return dayjs(iso).format('M月D日 HH:mm');
 }
 
-/** 业务原因冷却梯度：逗号或空格分隔的分钟数。 */
-export function parseMinutesList(text: string): number[] {
-  return text
-    .split(/[,，\s]+/)
-    .filter((item) => item.length > 0)
-    .map((item) => Number(item));
-}
-
 const SECTION_LABELS: Record<string, string> = {
   enabled: '总开关',
   rules_text: '规则文字',
@@ -84,9 +88,10 @@ const SECTION_LABELS: Record<string, string> = {
   scope: '使用范围',
   candidates: '候选池',
   screening: '官方数据初筛',
-  on_shelf: '在架业务数据',
+  on_shelf: '在架质量',
   relist: '上架与冷却',
   first_token: '首字',
+  access: '按身份开放',
 };
 
 const FIELD_LABELS: Record<string, string> = {
@@ -112,20 +117,24 @@ const FIELD_LABELS: Record<string, string> = {
   blocked_providers: '屏蔽渠道',
   probe_enabled: '派单探测',
   max_probe_ttft_ms: '探测首字上限',
-  window_hours: '统计窗口',
-  min_turns: '最少轮数',
-  max_no_output_pct: '没出字率',
-  max_fallback_delivered_pct: '兜底交付率',
-  max_timeout_pct: '超时率',
-  max_refusal_pct: '拒答率',
-  max_truncation_pct: '截断率',
-  max_interrupted_pct: '生成中断率',
-  max_dislike_pct: '点踩率',
-  required_passes: '连续达标次数',
-  cooldown_official_minutes: '官方原因冷却',
-  cooldown_business_minutes: '业务原因冷却梯度',
+  max_interrupted_pct: '中断率',
+  max_unusable_pct: '不可用率',
+  max_unroutable_pct: '派不出去率',
+  price_cooldown_minutes: '价格原因下架后冷却',
   primary_wait_ms: '启动兜底等待',
   deadline_ms: '首字总上限',
+  enabled: '开关',
+  trial_since: '新人试用起始注册时间',
+  trial_hours: '新人试用时长',
+  vip_welcome_days: '会员开通礼天数',
+  vip_weekly: '会员畅聊日',
+  weekday: '周几',
+  start_minute: '开始时间',
+  duration_minutes: '时长',
+  prompt: 'VIP 弹窗频次',
+  min_interval_days: '最短间隔',
+  batch_size: '每批次数',
+  batch_cooldown_days: '每批之后冷却',
 };
 
 function issuePlace(path: ReadonlyArray<string | number>): string {
@@ -193,7 +202,12 @@ export function describeFreeZoneStatus(config: FreeZoneConfig, now: Date): FreeZ
     return { type: 'warning', text: '福利期时间不合法。' };
   }
   if (now.getTime() >= endsAt) {
-    return { type: 'warning', text: '福利期已经结束：栏目隐藏。要延长就把结束时间往后改。' };
+    return config.access.enabled
+      ? {
+          type: 'success',
+          text: `福利期已经结束，现在按身份开放：${describeFreeZoneAccess(config)}`,
+        }
+      : { type: 'warning', text: '福利期已经结束：栏目隐藏。要延长就把结束时间往后改。' };
   }
   const scope =
     config.scope === 'own_cards'
@@ -205,10 +219,24 @@ export function describeFreeZoneStatus(config: FreeZoneConfig, now: Date): FreeZ
       text: `福利期还没开始：栏目折叠显示「${formatPeriodTime(period.starts_at)} 开始」，可以预览、不能选。开始后${scope}`,
     };
   }
+  const after = config.access.enabled
+    ? `福利期结束后按身份开放：${describeFreeZoneAccess(config)}`
+    : '福利期结束后栏目隐藏。';
   return {
     type: 'success',
-    text: `开放中：栏目显示「${formatPeriodTime(period.ends_at)} 结束」。${scope}一个在架模型都没有时显示「暂未开放」。`,
+    text: `开放中：栏目显示「${formatPeriodTime(period.ends_at)} 结束」。${scope}一个在架模型都没有时显示「暂未开放」。${after}`,
   };
+}
+
+/** 按身份开放的一句话说明，给状态预览用。 */
+export function describeFreeZoneAccess(config: FreeZoneConfig): string {
+  const access = config.access;
+  const trial = access.trial_since
+    ? `${formatPeriodTime(access.trial_since)} 之后注册的新用户注册起 ${access.trial_hours} 小时`
+    : '不开新人试用';
+  const welcome =
+    access.vip_welcome_days > 0 ? `会员开通/续费起 ${access.vip_welcome_days} 天` : '不送开通礼';
+  return `${trial}；${welcome}；会员每${formatVipWeeklyWindow(access.vip_weekly)}（北京时间）。其余时间选着免费模型的会直接切到付费默认模型。`;
 }
 
 /**

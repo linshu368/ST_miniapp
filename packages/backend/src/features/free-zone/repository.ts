@@ -8,7 +8,8 @@
  */
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../lib/db.js';
-import type { BusinessMetrics, FreeZoneEvent, FreeZoneModelState } from './lifecycle.js';
+import { QUALITY_MIN_TURNS, QUALITY_WINDOW_TURNS } from '@miniapp/shared';
+import type { FreeZoneEvent, FreeZoneModelState, QualityMetrics } from './lifecycle.js';
 
 const ADVISORY_LOCK_KEY = 740_112;
 const METRICS_STATEMENT_TIMEOUT_MS = 20_000;
@@ -62,94 +63,85 @@ export async function loadFreeZoneStates(): Promise<Map<string, FreeZoneModelSta
   return (await loadFreeZoneStatesVersioned()).states;
 }
 
-export interface ModelMetrics extends BusinessMetrics {
+export interface ModelQuality extends QualityMetrics {
   /** 免费模型自己交付的轮次（中断率的分母）与其中中断的轮次 */
   primaryDeliveredTurns: number;
   interruptedTurns: number;
-  /** 每次成功出字调用的平均实际价格（美元），只观察不判定 */
-  avgCostUsd: number | null;
-  avgPromptTokens: number | null;
+  /** 报错兜底：等待时间到之前就报错、空回复，立刻兜底（只显示，不判定） */
+  errorFallbackPct: number | null;
 }
 
-interface MetricsRow {
+interface QualityRow {
   model_id: string;
   turns: number;
-  no_output_pct: number | null;
-  fallback_delivered_pct: number | null;
-  timeout_pct: number | null;
-  ttft_p90_ms: number | null;
-  refusal_pct: number | null;
-  truncation_pct: number | null;
+  unusable_turns: number;
+  error_fallback_turns: number;
   primary_delivered_turns: number;
   interrupted_turns: number;
-  avg_cost_usd: number | null;
-  avg_prompt_tokens: number | null;
-  dislikes: number;
 }
 
 /**
- * 在架模型最近窗口内的真实业务指标；口径与 Grafana 读的是同一个视图。
- * 每个模型只统计当前供应商开始用之后的轮次（since），换了供应商就重新累计，不和上一家混。
+ * 在架模型的质量指标：只算这次上架（或换供应商）之后、最近 QUALITY_WINDOW_TURNS 轮。
+ * 口径与 Grafana / free_zone_turn_facts 一致，兜底按起因拆开、超时优先：
+ * - 不可用：免费模型没交付，且不是「等待时间到之前就报错/空回复、立刻兜底」，
+ *   也不是出字前用户自己取消的——即超时兜底 + 超时；
+ * - 中断：免费模型自己交付后没写完就断（不含用户点停、内容审核）。
  */
-export async function loadFreeZoneMetrics(
-  models: Array<{ id: string; since: string | null }>,
-  windowHours: number
-): Promise<Map<string, ModelMetrics>> {
+export async function loadFreeZoneQuality(
+  models: Array<{ id: string; since: string | null }>
+): Promise<Map<string, ModelQuality>> {
   if (models.length === 0) return new Map();
   const modelIds = models.map((model) => model.id);
   const sinces = models.map((model) => model.since ?? '1970-01-01T00:00:00Z');
   const rows = await prisma.$transaction(async (tx) => {
     await tx.$executeRawUnsafe(`SET LOCAL statement_timeout = ${METRICS_STATEMENT_TIMEOUT_MS}`);
-    return tx.$queryRaw<MetricsRow[]>`
+    return tx.$queryRaw<QualityRow[]>`
       WITH scope AS (
         SELECT * FROM unnest(${modelIds}::text[], ${sinces}::timestamptz[]) AS s(model_id, since)
-      ), turns AS (
-        SELECT f.model_id,
-          count(*)::int AS turns,
-          (avg(CASE WHEN primary_output THEN 0 ELSE 100 END))::float8 AS no_output_pct,
-          (avg(CASE WHEN fallback_delivered THEN 100 ELSE 0 END))::float8 AS fallback_delivered_pct,
-          (avg(CASE WHEN timed_out THEN 100 ELSE 0 END))::float8 AS timeout_pct,
-          (percentile_cont(0.9) WITHIN GROUP (ORDER BY primary_ttft_ms))::float8 AS ttft_p90_ms,
-          (avg(CASE WHEN refused THEN 100 ELSE 0 END))::float8 AS refusal_pct,
-          (avg(CASE WHEN truncated THEN 100 ELSE 0 END))::float8 AS truncation_pct,
-          (count(*) FILTER (WHERE primary_delivered))::int AS primary_delivered_turns,
-          (count(*) FILTER (WHERE interrupted))::int AS interrupted_turns,
-          (avg(buyer_cost_usd) FILTER (WHERE primary_output))::float8 AS avg_cost_usd,
-          (avg(prompt_tokens) FILTER (WHERE primary_output))::float8 AS avg_prompt_tokens
-        FROM miniapp_analytics.free_zone_turn_facts f
-        JOIN scope s ON s.model_id = f.model_id
-        WHERE f.turn_at >= GREATEST(now() - make_interval(hours => ${windowHours}::int), s.since)
-        GROUP BY f.model_id
-      ), dislikes AS (
-        SELECT d.model_id, count(*)::int AS dislikes
-        FROM miniapp_analytics.free_zone_dislikes d
-        JOIN scope s ON s.model_id = d.model_id
-        WHERE d.created_at >= GREATEST(now() - make_interval(hours => ${windowHours}::int), s.since)
-        GROUP BY d.model_id
+      ), recent AS (
+        SELECT c.*, row_number() OVER (
+          PARTITION BY c.requested_model_id ORDER BY c.request_received_at DESC) AS rn
+        FROM miniapp_analytics.chat_first_token_facts c
+        JOIN scope s ON s.model_id = c.requested_model_id
+        WHERE c.request_received_at >= GREATEST(s.since, now() - interval '7 days')
+      ), classified AS (
+        SELECT requested_model_id AS model_id,
+          delivery_role = 'primary' AS primary_delivered,
+          COALESCE(delivery_role = 'primary' AND business_status = 'stream_interrupted'
+            AND COALESCE(business_finish_reason, '') NOT IN ('user_cancelled', 'content_filter'),
+            false) AS interrupted,
+          COALESCE(delivery_role IS DISTINCT FROM 'primary'
+            AND primary_end_reason IN ('upstream_error', 'stream_interrupted')
+            AND primary_wait_ms IS NOT NULL
+            AND primary_wait_ms + 50 >= COALESCE(primary_observed_until_ms, 0), false) AS error_fallback,
+          business_finish_reason IS NOT DISTINCT FROM 'user_cancelled'
+            AND NOT COALESCE(server_first_token_timeout, false) AS user_cancelled
+        FROM recent WHERE rn <= ${QUALITY_WINDOW_TURNS}
       )
-      SELECT t.*, COALESCE(d.dislikes, 0) AS dislikes
-      FROM turns t LEFT JOIN dislikes d USING (model_id)`;
+      SELECT model_id,
+        count(*)::int AS turns,
+        (count(*) FILTER (WHERE primary_delivered IS NOT TRUE AND NOT error_fallback
+          AND NOT user_cancelled))::int AS unusable_turns,
+        (count(*) FILTER (WHERE error_fallback))::int AS error_fallback_turns,
+        (count(*) FILTER (WHERE primary_delivered))::int AS primary_delivered_turns,
+        (count(*) FILTER (WHERE interrupted))::int AS interrupted_turns
+      FROM classified GROUP BY model_id`;
   });
+  const pct = (part: number, whole: number) => (whole > 0 ? (part / whole) * 100 : null);
   return new Map(
     rows.map((row) => [
       row.model_id,
       {
         turns: row.turns,
-        noOutputPct: row.no_output_pct,
-        fallbackDeliveredPct: row.fallback_delivered_pct,
-        timeoutPct: row.timeout_pct,
-        ttftP90Ms: row.ttft_p90_ms,
-        refusalPct: row.refusal_pct,
-        truncationPct: row.truncation_pct,
+        unusablePct: pct(row.unusable_turns, row.turns),
+        errorFallbackPct: pct(row.error_fallback_turns, row.turns),
+        // 交付轮次太少时中断率波动太大，不判这一项
         interruptedPct:
-          row.primary_delivered_turns > 0
-            ? (row.interrupted_turns / row.primary_delivered_turns) * 100
+          row.primary_delivered_turns >= QUALITY_MIN_TURNS
+            ? pct(row.interrupted_turns, row.primary_delivered_turns)
             : null,
         primaryDeliveredTurns: row.primary_delivered_turns,
         interruptedTurns: row.interrupted_turns,
-        dislikePct: row.turns > 0 ? (row.dislikes / row.turns) * 100 : null,
-        avgCostUsd: row.avg_cost_usd,
-        avgPromptTokens: row.avg_prompt_tokens,
       },
     ])
   );
@@ -218,7 +210,7 @@ export async function saveFreeZoneEvaluation(
         for (const event of item.events) {
           const row = eventRow(event, s.providers);
           await tx.$executeRaw`
-            INSERT INTO miniapp_features.free_zone_events (candidate_id, event_type, cause, providers, reason, metrics)
+            INSERT INTO ops.free_zone_events (candidate_id, event_type, cause, providers, reason, metrics)
             VALUES (${s.candidateId}, ${event.type}, ${row.cause}, ${row.providers}::text[],
               ${row.reason}, ${JSON.stringify(item.metrics)}::jsonb)`;
         }
@@ -296,7 +288,7 @@ export async function saveManualListing(input: {
           last_reason = EXCLUDED.last_reason, updated_at = EXCLUDED.updated_at`;
       const eventData = eventRow(event, s.providers);
       await tx.$executeRaw`
-        INSERT INTO miniapp_features.free_zone_events (candidate_id, event_type, cause, providers, reason)
+        INSERT INTO ops.free_zone_events (candidate_id, event_type, cause, providers, reason)
         VALUES (${s.candidateId}, ${event.type}, ${eventData.cause}, ${eventData.providers}::text[],
           ${eventData.reason})`;
       return { kind: 'saved', previous, state: s };
@@ -305,27 +297,34 @@ export async function saveManualListing(input: {
   );
 }
 
-export type ManualDelistingOutcome =
+export type DelistingOutcome =
   | { kind: 'saved'; previous: FreeZoneModelState; state: FreeZoneModelState }
-  | { kind: 'not_listed' };
+  | { kind: 'not_listed' }
+  /** build 判断不该下架（例如这期间供应商已经换了） */
+  | { kind: 'unchanged' };
 
 /**
- * 运营手动下架落库：锁住这一行，确认在架，按 build 算出新状态写回并记一条下架事件。
+ * 评估之外的下架落库（运营手动下架、真实请求派不出去）：锁住这一行，确认在架，
+ * 按 build 算出新状态写回并记一条下架事件；build 返回 null 表示不动。
  * 只更新已有的行（在架必然有行），所以不需要 surplus_model，移出候选池的行也能收掉。
  * 写入会刷新 updated_at，正在推算的评估看到版本变了就不会覆盖。
  */
-export async function saveManualDelisting(input: {
+export async function saveDelisting(input: {
   candidateId: string;
-  build: (current: FreeZoneModelState) => { state: FreeZoneModelState; event: FreeZoneEvent };
-}): Promise<ManualDelistingOutcome> {
+  build: (
+    current: FreeZoneModelState
+  ) => { state: FreeZoneModelState; event: FreeZoneEvent } | null;
+}): Promise<DelistingOutcome> {
   return prisma.$transaction(
-    async (tx): Promise<ManualDelistingOutcome> => {
+    async (tx): Promise<DelistingOutcome> => {
       const [row] = await tx.$queryRaw<StateRow[]>`
         SELECT ${STATE_COLUMNS} FROM miniapp_features.free_zone_models
         WHERE candidate_id = ${input.candidateId} FOR UPDATE`;
       const previous = row ? toState(row) : null;
       if (previous?.status !== 'listed') return { kind: 'not_listed' };
-      const { state: s, event } = input.build(previous);
+      const built = input.build(previous);
+      if (!built) return { kind: 'unchanged' };
+      const { state: s, event } = built;
       await tx.$executeRaw`
         UPDATE miniapp_features.free_zone_models SET
           status = ${s.status}, providers = ${s.providers}::text[],
@@ -335,7 +334,7 @@ export async function saveManualDelisting(input: {
         WHERE candidate_id = ${s.candidateId}`;
       const eventData = eventRow(event, s.providers);
       await tx.$executeRaw`
-        INSERT INTO miniapp_features.free_zone_events (candidate_id, event_type, cause, providers, reason)
+        INSERT INTO ops.free_zone_events (candidate_id, event_type, cause, providers, reason)
         VALUES (${s.candidateId}, ${event.type}, ${eventData.cause}, ${previous.providers}::text[],
           ${eventData.reason})`;
       return { kind: 'saved', previous, state: s };

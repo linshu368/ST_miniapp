@@ -31,7 +31,10 @@ import { buildRecommendedOrder } from '../features/lobby/recommended-ranking.js'
 import { resolveLobbyFeaturedIds } from '../features/lobby/featured.js';
 import { loadLobbyFeaturedIdSet } from '../features/lobby/featured-snapshot.js';
 import { hasNewLobbyCharacters } from '../lib/lobby-latest-badge.js';
-import { MiniappUserSettingsRepository } from '../infrastructure/repositories/MiniappUserSettingsRepository.js';
+import {
+  USER_MARK_KEYS,
+  UserMarksRepository,
+} from '../infrastructure/repositories/UserMarksRepository.js';
 import { getOrCreateDbUser } from '../lib/user.js';
 import { optionalTelegramAuth, requireTelegramAuth } from '../middleware/auth.js';
 import { Prisma } from '@prisma/client';
@@ -125,7 +128,7 @@ async function resolveCharacterDetailCredit(
             AND app_core.can_discover_character(card.id)
         ) THEN ${publicCreatorIdSql(Prisma.sql`creation.owner_user_id`)} END AS public_creator_id
       FROM app_core.character_creations creation
-      LEFT JOIN app_core.miniapp_user_settings settings ON settings.user_id = creation.owner_user_id
+      LEFT JOIN app_core.users settings ON settings.id = creation.owner_user_id
       WHERE creation.character_id = ${characterId}::uuid
     `;
     if (profile)
@@ -143,7 +146,7 @@ async function resolveCharacterDetailCredit(
 }
 
 export default async function characterRoutes(app: FastifyInstance) {
-  const userSettings = new MiniappUserSettingsRepository();
+  const userMarks = new UserMarksRepository();
 
   // 与首页列表用同一套可见性过滤：用户看不到的角色卡不该点亮 New。
   async function findLatestListedAt(log: FastifyBaseLogger): Promise<Date | null> {
@@ -253,7 +256,9 @@ export default async function characterRoutes(app: FastifyInstance) {
       const user = await getOrCreateDbUser(request.user);
       const [latestListedAt, lastSeenAt] = await Promise.all([
         findLatestListedAt(request.log),
-        userSettings.getCharactersLastSeenAt(user.id),
+        userMarks
+          .readOne(user.id, USER_MARK_KEYS.charactersLatestSeen)
+          .then((mark) => mark?.last_at ?? null),
       ]);
 
       reply.header('Cache-Control', 'no-store');
@@ -271,7 +276,7 @@ export default async function characterRoutes(app: FastifyInstance) {
     async (request, reply) => {
       if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
       const user = await getOrCreateDbUser(request.user);
-      await userSettings.markCharactersSeen(user.id, request.user);
+      await userMarks.touch(user.id, USER_MARK_KEYS.charactersLatestSeen);
 
       reply.header('Cache-Control', 'no-store');
       return reply.send(ok<LobbyLatestBadgeData>({ has_new: false }));

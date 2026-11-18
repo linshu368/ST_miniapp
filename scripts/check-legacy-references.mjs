@@ -57,9 +57,80 @@ const RULES = [
   {
     id: 'dropped-schema-sql',
     pattern:
-      /\b(?:from|join|into|update|table)\s+(?:st_platform|st_users|st_infra|miniapp_simulation|growth)\.\w+/gi,
+      /\b(?:from|join|into|update|table)\s+(?:st_platform|st_users|st_infra|miniapp_simulation|growth|cs_platform)\.\w+/gi,
     message:
-      'st_platform / st_users / st_infra（088）、growth（089）、miniapp_simulation（090）已删库。渠道归因走 miniapp_traffic',
+      'st_platform / st_users / st_infra（088）、growth（089）、miniapp_simulation（090）、cs_platform（20261117）已删库。渠道归因走 miniapp_traffic，客服在独立仓库的 cs schema',
+  },
+
+  {
+    id: 'moved-to-ops-sql',
+    pattern:
+      /\b(?:from|join|into|update|table)\s+(?:app_core\.alert_incidents|app_core\.alert_delivery_attempts|miniapp_features\.free_zone_events)\b/gi,
+    message:
+      '数据库重组 2b 已迁到 ops：ops.alert_incidents、ops.alert_delivery_jobs、ops.free_zone_events。旧名只剩发布窗口内的兼容视图',
+    // 建表的历史迁移，以及迁移本身（SET SCHEMA 与兼容视图）。
+    allow: [
+      'packages/shared/migrations/20261010_payment_alerting_foundation.sql',
+      'packages/shared/migrations/20261112_free_zone.sql',
+      'packages/shared/migrations/20261117_db_reorg_ops_alerts_free_zone_events.sql',
+      'packages/shared/migrations/20261117_db_reorg_drop_ops_compat_views.sql',
+    ],
+  },
+  {
+    id: 'moved-to-user-marks',
+    pattern:
+      /\b(?:vip_entry_seen_at|characters_last_seen_at|image_plaza_first_share_completed_at|growth_prompt_states|(?:choice|status|memory)_full_rules_remaining|claim_instruction_slot_modes)\b/g,
+    message:
+      '数据库重组 3b-1：一次性标记在 miniapp_features.user_marks（UserMarksRepository / touch_user_mark），' +
+      '"已完成首发分享"= billing.image_plaza_share_rewards 有记录，指令槽旧计数器已删。新函数不要再写 settings 这些列；' +
+      '已在 TEST 执行过的迁移别改原文件，另写 forward-fix（参考 20261117_db_reorg_p3b1_video_share_first_share.sql）',
+    // 建列/建表/写入的历史迁移与断言脚本，以及 3b-1 迁移本身。
+    allow: [
+      'packages/shared/migrations/20260921_vip_billing_schema.sql',
+      'packages/shared/migrations/20260924_vip_billing_schema_pg_cron_compat.sql',
+      'packages/shared/migrations/20261012_image_plaza_v2.sql',
+      'packages/shared/migrations/20261013_image_plaza_seed_catalog.sql',
+      'packages/shared/migrations/20261013_platform_instruction_slot_windows.sql',
+      'packages/shared/migrations/20261013_session_scoped_instruction_slot_modes.sql',
+      'packages/shared/migrations/20261113_growth_prompt_states.sql',
+      'packages/shared/migrations/20261117_db_reorg_p3b1_user_marks.sql',
+      'packages/shared/migrations/20261117_db_reorg_p3b1_user_marks_contract.sql',
+      'packages/shared/migrations/20261117_db_reorg_p3b1_clear_orphan_first_share.sql',
+      'packages/shared/migrations/20261117_db_reorg_p3b1_video_share_first_share.sql',
+      'scripts/platform-instruction-slot-windows-assert.sql',
+    ],
+  },
+  {
+    id: 'renamed-user-preferences',
+    pattern: /\bminiapp_user_settings\b/g,
+    message:
+      '数据库重组 3b-2：miniapp_user_settings 已改名 app_core.user_preferences（只留偏好），' +
+      '资料（TG 资料、昵称、自定义头像）在 app_core.users（UserProfileRepository / refresh_user_profile）。' +
+      '已在 TEST 执行过的迁移别改原文件，另写 forward-fix',
+    // 建表/改表的历史迁移与断言脚本，以及重组迁移本身。
+    allow: [
+      'packages/shared/migrations/20260921_vip_billing_schema.sql',
+      'packages/shared/migrations/20260924_vip_billing_schema_pg_cron_compat.sql',
+      'packages/shared/migrations/20261012_image_plaza_v2.sql',
+      'packages/shared/migrations/20261013_image_plaza_seed_catalog.sql',
+      'packages/shared/migrations/20261013_platform_instruction_slot_windows.sql',
+      'packages/shared/migrations/20261013_session_scoped_instruction_slot_modes.sql',
+      'packages/shared/migrations/20261014_rich_reply_dynamic_mode.sql',
+      'packages/shared/migrations/20261023_reply_style_options.sql',
+      'packages/shared/migrations/20261117_drive_mode.sql',
+      'packages/shared/migrations/20261117_db_reorg_ops_cs_feed.sql',
+      'packages/shared/migrations/20261117_db_reorg_p3a_drop_test_funnel_stats.sql',
+      'packages/shared/migrations/20261117_db_reorg_p3a_user_attributions.sql',
+      'packages/shared/migrations/20261117_db_reorg_p3a_user_attributions_contract.sql',
+      'packages/shared/migrations/20261117_db_reorg_p3b1_clear_orphan_first_share.sql',
+      'packages/shared/migrations/20261117_db_reorg_p3b1_user_marks.sql',
+      'packages/shared/migrations/20261117_db_reorg_p3b1_user_marks_contract.sql',
+      'packages/shared/migrations/20261117_db_reorg_p3b1_video_share_first_share.sql',
+      'packages/shared/migrations/20261117_db_reorg_p3b2_user_profile.sql',
+      'packages/shared/migrations/20261117_db_reorg_p3b2_user_profile_contract.sql',
+      'scripts/platform-instruction-slot-windows-assert.sql',
+      'scripts/platform-instruction-slot-windows-bootstrap.sql',
+    ],
   },
 
   // ── 已整包删除的 package ────────────────────────────────────────────────
@@ -84,6 +155,8 @@ const RULES = [
       /\bGetModelTiersData\b|\buseModelTiersQuery\b|\/api\/platform\/models\b|\bllm_model_tiers\b|\blegacyTiersToCatalog\b/g,
     message:
       '旧模型档位已退场：runtime_config 只读 llm_model_catalog（040 起），对外只有 GET /api/v1/models/config（PublicModelCatalog）一种形状，前端走 useModelCatalogQuery',
+    // 20261117 重组 1e：删除遗留的 llm_model_tiers 运行配置行本身。
+    allow: ['packages/shared/migrations/20261117_db_reorg_managed_config_keys.sql'],
   },
   {
     id: 'st-handle',
@@ -94,6 +167,12 @@ const RULES = [
     allow: [
       'packages/shared/migrations/20261111_mujian_entry_funnel.sql',
       'scripts/mujian-entry-assertions.sql',
+      // 20261117 重组 1d：删除 st_handle 列本身（st_initialized_at 仍作幕间资格依据，阶段 3 迁走）。
+      'packages/shared/migrations/20261117_db_reorg_cleanup.sql',
+      // 20261117 重组 3a：st_initialized_at 作只读历史证据搬到 miniapp_traffic.user_attributions，并删 users 上的列。
+      'packages/shared/migrations/20261117_db_reorg_p3a_user_attributions.sql',
+      'packages/shared/migrations/20261117_db_reorg_p3a_user_attributions_contract.sql',
+      'packages/shared/migrations/20261117_db_reorg_p3a_drop_test_funnel_stats.sql',
     ],
   },
 

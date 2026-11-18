@@ -66,23 +66,14 @@ const coolingGlm: FreeZoneModelState = {
 };
 
 describe('listManually', () => {
-  it('lists right away on the given provider, clearing cooldown and that provider’s exclusion only', () => {
-    const { state, event } = listManually({
-      state: coolingGlm,
-      provider: 'zai',
-      now: NOW,
-      requiredPasses: 2,
-    });
+  it('lists right away on the given provider, clearing any cooldown or hold', () => {
+    const { state, event } = listManually({ state: coolingGlm, provider: 'zai', now: NOW });
     expect(state).toMatchObject({
       status: 'listed',
       providers: ['zai'],
       providerSince: NOW.toISOString(),
       cooldownUntil: null,
-      consecutivePasses: 2,
       lastReason: null,
-      excludedProviders: { other: '2026-11-13T00:00:00.000Z' },
-      // 再因业务下架时冷却照样逐级拉长
-      businessDelistsAt: coolingGlm.businessDelistsAt,
     });
     expect(event).toEqual({ type: 'listed', providers: ['zai'], manual: true });
   });

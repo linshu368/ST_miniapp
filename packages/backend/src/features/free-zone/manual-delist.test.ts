@@ -9,7 +9,7 @@ import {
   type FreeZoneModelState,
 } from './lifecycle.js';
 import { delistFreeZoneModelNow, type DelistNowDeps } from './manual-delist.js';
-import type { ManualDelistingOutcome } from './repository.js';
+import type { DelistingOutcome } from './repository.js';
 import type { ScreeningResult } from './screening.js';
 
 const NOW = new Date('2026-11-13T08:00:00.000Z');
@@ -35,16 +35,13 @@ const passing: ScreeningResult = {
 };
 
 describe('delistManually', () => {
-  it('takes the model off now and holds it, keeping business history and exclusions', () => {
+  it('takes the model off now and holds it', () => {
     const { state, event } = delistManually({ state: listedGlm });
     expect(state).toMatchObject({
       status: 'cooling',
       providers: [],
       providerSince: null,
-      consecutivePasses: 0,
       cooldownUntil: MANUAL_HOLD_UNTIL,
-      excludedProviders: listedGlm.excludedProviders,
-      businessDelistsAt: listedGlm.businessDelistsAt,
     });
     expect(event).toEqual({
       type: 'delisted',
@@ -61,7 +58,7 @@ describe('delistManually', () => {
         state,
         now: new Date(NOW.getTime() + round * 30 * 60_000),
         screening: passing,
-        business: { kind: 'insufficient', turns: 0 },
+        quality: { kind: 'insufficient', turns: 0 },
         relist: DEFAULT_FREE_ZONE_CONFIG.relist,
         priceBandRatio: 3,
       }).state;
@@ -71,12 +68,12 @@ describe('delistManually', () => {
 
   it('comes back through list-now', () => {
     const held = delistManually({ state: listedGlm }).state;
-    const { state } = listManually({ state: held, provider: 'zai', now: NOW, requiredPasses: 2 });
+    const { state } = listManually({ state: held, provider: 'zai', now: NOW });
     expect(state).toMatchObject({ status: 'listed', providers: ['zai'], cooldownUntil: null });
   });
 });
 
-function deps(outcome: (current: FreeZoneModelState) => ManualDelistingOutcome): DelistNowDeps {
+function deps(outcome: (current: FreeZoneModelState) => DelistingOutcome): DelistNowDeps {
   const config = FreeZoneConfigSchema.parse({
     ...DEFAULT_FREE_ZONE_CONFIG,
     candidates: [

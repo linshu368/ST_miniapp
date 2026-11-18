@@ -8,6 +8,7 @@ const state = vi.hoisted(() => ({
   observe: vi.fn(),
   stop: vi.fn(),
   dbLoads: 0,
+  overlap: false,
   log: { biz: { info: vi.fn() }, sys: { error: vi.fn(), warn: vi.fn() } },
 }));
 vi.mock('../instrumentation.js', () => ({}));
@@ -21,8 +22,7 @@ vi.mock('../lib/background-observability.js', () => ({
 }));
 vi.mock('../lib/postgres-advisory-lease.js', () => ({
   withSessionAdvisoryLock: async (_key: number, work: () => Promise<unknown>) => ({
-    acquired: true,
-    value: await work(),
+    ...(state.overlap ? { acquired: false } : { acquired: true, value: await work() }),
   }),
 }));
 vi.mock('../infrastructure/payment/EpayPaymentGateway.js', () => ({
@@ -48,6 +48,8 @@ describe('standalone payment probe process wiring', () => {
     vi.clearAllMocks();
     state.settings.enabled = false;
     state.settings.preview = false;
+    state.settings.channel = 'alipay';
+    state.overlap = false;
     state.dbLoads = 0;
     state.createPayment.mockResolvedValue({
       success: true,
@@ -74,6 +76,15 @@ describe('standalone payment probe process wiring', () => {
       expect(state.publish).not.toHaveBeenCalled();
       expect(process.exitCode).toBe(0);
       expect(state.observe).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'skipped' }));
+      expect(state.log.biz.info).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: 'payment.probe.guarded',
+          outcome: 'skipped',
+          probe_result: 'skipped',
+          reason,
+        }),
+        expect.any(String)
+      );
     }
   );
 
@@ -86,6 +97,20 @@ describe('standalone payment probe process wiring', () => {
     expect(state.stop).toHaveBeenCalledOnce();
     expect(process.exitCode).toBe(0);
     expect(JSON.stringify(state.log.biz.info.mock.calls)).not.toContain('private-trade');
+    expect(state.log.biz.info).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'payment.probe.completed',
+        outcome: 'success',
+        probe_result: 'available',
+        paymentType: 'alipay',
+        strategy_success_count: 1,
+        strategy_failed_count: 0,
+      }),
+      expect.any(String)
+    );
+    const summary = state.log.biz.info.mock.calls[0]![0];
+    expect(summary).not.toHaveProperty('probe');
+    expect(summary).not.toHaveProperty('strategies');
   });
 
   it('reports partial when alert persistence fails, without re-probing', async () => {
@@ -96,6 +121,61 @@ describe('standalone payment probe process wiring', () => {
     expect(state.disconnect).toHaveBeenCalledOnce();
     expect(process.exitCode).toBe(1);
     expect(state.observe).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'partial' }));
+    expect(state.log.biz.info).toHaveBeenCalledWith(
+      expect.objectContaining({
+        probe_result: 'available',
+        outcome: 'partial',
+        strategy_failed_count: 1,
+      }),
+      expect.any(String)
+    );
+  });
+
+  it.each(['invalid_channel', 'gateway_configuration'] as const)(
+    'reports configuration failure distinctly: %s',
+    async (reason) => {
+      state.settings.enabled = true;
+      if (reason === 'invalid_channel') state.settings.channel = 'invalid';
+      else state.createPayment.mockResolvedValue({ success: false, errorClass: 'configuration' });
+      await import('./payment-availability-probe.js');
+      expect(state.log.biz.info).toHaveBeenCalledWith(
+        expect.objectContaining({ probe_result: 'configuration_error', reason }),
+        expect.any(String)
+      );
+      expect(state.publish).not.toHaveBeenCalled();
+      expect(process.exitCode).toBe(1);
+    }
+  );
+
+  it('shows actual unavailable result and a safe error classification', async () => {
+    state.settings.enabled = true;
+    state.createPayment.mockResolvedValue({
+      success: false,
+      errorClass: 'timeout',
+      errorMessage: 'private',
+    });
+    await import('./payment-availability-probe.js');
+    expect(state.log.biz.info).toHaveBeenCalledWith(
+      expect.objectContaining({
+        probe_result: 'unavailable',
+        errorClass: 'timeout',
+        outcome: 'partial',
+      }),
+      expect.any(String)
+    );
+    expect(JSON.stringify(state.log.biz.info.mock.calls)).not.toContain('private');
+  });
+
+  it('reports overlap without inventing a probe result or sending a request', async () => {
+    state.settings.enabled = true;
+    state.overlap = true;
+    await import('./payment-availability-probe.js');
+    expect(state.log.biz.info).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'skipped', reason: 'overlap' }),
+      expect.any(String)
+    );
+    expect(state.createPayment).not.toHaveBeenCalled();
+    expect(state.publish).not.toHaveBeenCalled();
   });
 
   it('cancels outstanding work before the hard deadline and still cleans up', async () => {

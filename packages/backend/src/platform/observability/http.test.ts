@@ -247,23 +247,32 @@ describe('HTTP observation', () => {
 
   it('propagates request context through overlapping handlers and nested observations', async () => {
     const { app, observer, records } = setup();
-    app.get('/parallel', async (request) =>
-      observer.observe('test.nested', async () => {
-        await new Promise((resolve) => setTimeout(resolve, 1));
-        expect(currentContext()?.request_id).toBe(request.id);
-        return { success: true };
-      })
-    );
+    for (const route of ['/parallel', '/parallel-two'])
+      app.get(route, async (request) =>
+        observer.observe('test.nested', async () => {
+          await new Promise((resolve) => setTimeout(resolve, 1));
+          expect(currentContext()?.request_id).toBe(request.id);
+          return { success: true };
+        })
+      );
     try {
       await Promise.all(
-        ['one', 'two'].map((id) =>
-          app.inject({ url: '/parallel', headers: { 'x-request-id': id } })
+        ['one', 'two'].map((id, index) =>
+          app.inject({
+            url: index === 0 ? '/parallel' : '/parallel-two',
+            headers: { 'x-request-id': id },
+          })
         )
       );
       for (const id of ['one', 'two']) {
         const group = records.filter((record) => record.request_id === id);
         expect(group).toHaveLength(4);
         expect(new Set(group.map((record) => record.trace_id)).size).toBe(1);
+        expect(
+          group.every(
+            (record) => record.call_scene === (id === 'one' ? 'GET:/parallel' : 'GET:/parallel-two')
+          )
+        ).toBe(true);
       }
       expect(currentContext()).toBeUndefined();
     } finally {

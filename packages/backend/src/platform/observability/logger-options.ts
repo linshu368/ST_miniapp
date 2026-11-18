@@ -7,6 +7,32 @@ import { contextLogFields } from './context.js';
 import { safeError, safeName } from './events.js';
 import { publishAlertLog } from './log-channel.js';
 import { safeLogRecord } from './safe-log.js';
+import { createLogPresentation, type LogPresentation } from './presentation.js';
+import { chineseLogCatalog } from './labels.zh-CN.js';
+
+const renderPresentation = createLogPresentation(chineseLogCatalog);
+const PRESENTATION = Symbol('trustedLogPresentation');
+
+function presentationFor(record: Record<string, unknown>, level: number): LogPresentation {
+  try {
+    return renderPresentation(safeLogRecord(record), level);
+  } catch {
+    return {
+      msg: safeName(record.event, 'Structured log'),
+      module_name: '系统',
+      scenario: '日志摘要生成失败',
+      result: '结果未确认',
+    };
+  }
+}
+
+function formatLogRecord(record: Record<string, unknown>): Record<string, unknown> {
+  const display =
+    (record as { [PRESENTATION]?: LogPresentation })[PRESENTATION] ?? presentationFor(record, 30);
+  const { msg: _msg, ...fields } = display;
+  // Derived fields lead Railway's detail view; untrusted caller-supplied display strings are dropped.
+  return { ...fields, ...safeLogRecord(record) };
+}
 
 export const logLevel =
   process.env.LOG_LEVEL ?? (process.env.NODE_ENV === 'test' ? 'silent' : 'info');
@@ -38,7 +64,7 @@ function sanitizeChildBindings(child: pino.Logger): void {
   target[pino.symbols.formattersSym] = {
     ...target[pino.symbols.formattersSym],
     bindings: safeLogRecord,
-    log: safeLogRecord,
+    log: formatLogRecord,
   };
   target[pino.symbols.chindingsSym] = '';
   child.setBindings(bindings);
@@ -67,7 +93,7 @@ export function fastifyLoggerOptions(): Record<string, unknown> {
     formatters: {
       ...(base.formatters as Record<string, unknown> | undefined),
       bindings: safeLogRecord,
-      log: safeLogRecord,
+      log: formatLogRecord,
     },
     mixin: () => contextLogFields(),
     hooks: {
@@ -93,7 +119,8 @@ export function fastifyLoggerOptions(): Record<string, unknown> {
           record.event =
             level >= 60 ? 'logger.fatal' : level >= 50 ? 'logger.error' : 'logger.warn';
         publishAlertLog(record, level);
-        method.call(this, record, safeName(record.event, 'Structured log'));
+        const display = presentationFor(record, level);
+        method.call(this, { ...record, [PRESENTATION]: display }, display.msg);
       },
     },
     // GET 支付通知包含可重放签名和商品信息。自动请求日志只保留路径与链路。
