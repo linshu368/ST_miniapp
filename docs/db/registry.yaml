@@ -955,7 +955,7 @@ tables:
     }
   ops.payment_events:
     nature: O
-    owner: backend/src/infrastructure/repositories/MiniappPaymentOrderRepository.ts（Prisma 原生 SQL 写）
+    owner: rpc:billing.record_payment_event（MiniappPaymentOrderRepository 经 PostgREST 调用）
     status: active
     retention_days: 365
     note: 原 billing.payment_operation_events（4a 迁入）；event_key 去重；PaymentAlertMonitor 读近 1 小时（Prisma）
