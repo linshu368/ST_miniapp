@@ -26,6 +26,11 @@ import { QUALIFIED_QUALITY_VERSION } from '../features/lobby/recommendation-rank
 import { computeRankingScores } from '../features/lobby/ranking-score.js';
 import { resolveLobbyRankingParams } from '../features/lobby/ranking-params.js';
 import {
+  computeDeepExperienceStats,
+  persistDeepExperienceStats,
+  type DeepExperienceStat,
+} from '../features/lobby/deep-experience-stats.js';
+import {
   clearCharacterRankingScoreCache,
   computeRawCardStats,
   persistRankingScores,
@@ -199,10 +204,11 @@ export async function runLobbyRankingRefresh(log: FastifyBaseLogger): Promise<vo
     timeoutChanged = true;
     const raw = await computeRawCardStats(dedicated, params);
     const scores = computeRankingScores(raw, params);
+    const deepExperienceStats = await computeDeepExperienceStats(dedicated);
 
     // 只有整窗口完全没有卡片活动才是空结果；有活动但无合格用户的卡会产出 n=0，
     // 必须照常落表覆盖旧样本。真正空结果继续保留原快照，避免异常清表。
-    if (scores.length === 0) {
+    if (scores.length === 0 && deepExperienceStats.length === 0) {
       log.warn(
         { kind: 'sys', event: 'lobby_ranking.skipped_empty', durationMs: Date.now() - startedAt },
         '聚合结果为空，保留上一轮分数'
@@ -211,7 +217,7 @@ export async function runLobbyRankingRefresh(log: FastifyBaseLogger): Promise<vo
     }
 
     // 落表单独短事务：避免 INSERT 成功、DELETE 失败留下半截覆盖态。
-    await persistSnapshot(dedicated, scores, params, rules);
+    await persistSnapshot(dedicated, scores, deepExperienceStats, params, rules);
 
     // 提交后再让读路径失效，否则缓存可能填进还没提交的旧值
     clearCharacterRankingScoreCache();
@@ -227,6 +233,11 @@ export async function runLobbyRankingRefresh(log: FastifyBaseLogger): Promise<vo
         // 同一用户可为不同卡贡献样本，这里记录 user-card 对数而非全平台去重人数。
         qualifiedUserCardCount: scores.reduce((sum, row) => sum + row.sampleSize, 0),
         returnObservationCount: scores.reduce((sum, row) => sum + row.returnSampleSize, 0),
+        deepExperienceCardCount: deepExperienceStats.length,
+        deepExperienceSessionCount: deepExperienceStats.reduce(
+          (sum, row) => sum + row.deepSessionCount,
+          0
+        ),
         durationMs: Date.now() - startedAt,
         windowDays: params.window_days,
         paramsVersion: version,
@@ -255,12 +266,14 @@ export async function runLobbyRankingRefresh(log: FastifyBaseLogger): Promise<vo
 async function persistSnapshot(
   dedicated: PrismaClient,
   scores: Parameters<typeof persistRankingScores>[1],
+  deepExperienceStats: readonly DeepExperienceStat[],
   params: Parameters<typeof persistRankingScores>[2],
   rules: string
 ): Promise<void> {
   await dedicated.$transaction(
     async (tx) => {
       await persistRankingScores(tx, scores, params);
+      await persistDeepExperienceStats(tx, deepExperienceStats);
       await tx.$executeRaw`
         INSERT INTO miniapp_features.lobby_ranking_refresh_state (singleton, scoring_rules, completed_at)
         VALUES (true, ${rules}::jsonb, clock_timestamp())
