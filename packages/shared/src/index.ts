@@ -42,6 +42,7 @@ export * from './api/notifications';
 export * from './api/support';
 export * from './api/drama';
 export * from './api/drama-timing';
+export * from './api/drama-timing-hls';
 export * from './api/text-postprocess';
 export {
   applyTextPostprocess,

@@ -213,11 +213,16 @@
       "authorized": true,
       "environment": "production",
       "project_ref": "wbtsfzozlmurljvglhpn",
-      "state": "awaiting_user_production_video_release",
+      "state": "preflight_verified_awaiting_workflow_ledger_inspect",
       "manifest": "production-seed-import-manifest.json",
       "production_writes_performed": false,
       "workflow_only": true,
-      "no_auto_commit_or_push": true
+      "no_auto_commit_or_push": true,
+      "live_sha": "cae4b356e2b21c0e97626ed2ab2ca15e97839f75",
+      "live_deployment_id": "7148f5b4-de11-4403-a8ca-38c7ba1d2381",
+      "workflow_ref": "feat_video_park",
+      "workflow_source_sha": "e7aa3f43c001a8201457b6abf27bf072bff5544d",
+      "inspect_run_id": 44303150060
     }
   }
 }

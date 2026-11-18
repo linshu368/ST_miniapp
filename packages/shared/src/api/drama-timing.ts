@@ -1,10 +1,14 @@
 import { z } from 'zod';
 import { DramaDeliverySchema } from './drama';
+import {
+  DRAMA_TIMING_MAX_RESOURCES,
+  HlsDiagnosticsSchema,
+  HlsLoadSchema,
+} from './drama-timing-hls';
 
 export const DRAMA_TIMING_BODY_LIMIT = 32 * 1024;
 export const DRAMA_TIMING_UPLOAD_TIMEOUT_MS = 5_000;
 export const DRAMA_TIMING_MAX_MEDIA_EVENTS = 32;
-export const DRAMA_TIMING_MAX_RESOURCES = 16;
 export const DRAMA_TIMING_DEFINITION = 'drama_v3';
 
 // 实际引擎：只能来自运行时事实（hls.js MEDIA_ATTACHED 的 mediaSource 类型或装载分支），不能靠开关推测。
@@ -47,27 +51,6 @@ const ResourceSchema = z
   })
   .strict();
 
-// hls.js 自带的加载统计不受 Timing-Allow-Origin 限制，能拿到首字节和字节数。
-const HlsLoadSchema = z
-  .object({
-    kind: z.enum(['manifest', 'level', 'audio_track', 'init', 'fragment']),
-    track: z.enum(['main', 'audio']).optional(),
-    level: z.number().int().min(0).max(64).optional(),
-    bitrate: z.number().int().nonnegative().max(1e9).optional(),
-    height: z.number().int().min(1).max(32768).optional(),
-    sn: z.number().int().nonnegative().optional(),
-    positionMs: Duration.optional(),
-    mediaMs: Duration.optional(),
-    startMs: Offset,
-    firstByteMs: Offset.optional(),
-    endMs: Offset,
-    appendedMs: Offset.optional(),
-    bytes: z.number().int().nonnegative().max(1e12).optional(),
-    // 快进诊断：该分片的时间范围覆盖快进目标（frag.start ≤ 目标 < frag.start + duration）。
-    coversTarget: z.boolean().optional(),
-  })
-  .strict();
-
 const NetworkSchema = z
   .object({
     status: z.enum(['unsupported', 'no_entry', 'limited', 'available']),
@@ -80,14 +63,7 @@ const NetworkSchema = z
 const DiagnosticsSchema = z
   .object({
     network: NetworkSchema.optional(),
-    hls: z
-      .object({
-        entries: z.array(HlsLoadSchema).max(DRAMA_TIMING_MAX_RESOURCES),
-        truncated: z.boolean(),
-        manifestInline: z.boolean().optional(), // 主清单是否来自内联下发；旧客户端缺省，不推断为 false
-      })
-      .strict()
-      .optional(),
+    hls: HlsDiagnosticsSchema.optional(),
     frame: z
       .object({
         callbackAtMs: Duration,
