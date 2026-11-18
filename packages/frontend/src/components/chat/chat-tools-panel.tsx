@@ -1,35 +1,29 @@
 'use client';
 
 import { useEffect, useState, type ComponentType } from 'react';
-import { ChevronLeft, MessagesSquare, Mic, BookOpen, UserRound } from 'lucide-react';
+import { ChevronLeft, MessagesSquare, Mic, BookOpen } from 'lucide-react';
 import type { UserPersona } from '@miniapp/shared';
 import { StoryGuideTips } from '@/components/onboarding/story-guide-tips';
 
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { useCharacterMySettingsQuery } from '@/lib/api/character-persona';
 import { cn } from '@/lib/utils';
-import {
-  ChatCharacterSettings,
-  ChatPersonaEditor,
-  characterSettingsHint,
-} from './chat-character-settings';
+import { ChatCharacterModules, ChatPersonaEditor } from './chat-character-settings';
 import { ToolRow } from './chat-tool-row';
 import { ChatVoicePicker, ChatVoiceSettings } from './chat-voice-settings';
 
 type ToolsTab = 'chat' | 'voice';
-type ToolsPanel = 'voice' | 'guide' | 'character' | 'persona' | null;
+type ToolsPanel = 'voice' | 'guide' | 'persona' | null;
 
 const PANEL_TITLES: Record<Exclude<ToolsPanel, null>, string> = {
   voice: '默认声音',
   guide: '玩法小贴士',
-  character: '角色设定',
   persona: '人设',
 };
 
 const PANEL_DESCRIPTIONS: Record<Exclude<ToolsPanel, null>, string> = {
   voice: '选择角色说话的声音',
   guide: '常见功能怎么用，各个开关是干嘛的',
-  character: '补充这张卡的人物，选择你的人设',
   persona: '新建或编辑主角人设',
 };
 
@@ -76,12 +70,14 @@ export function ChatToolsPanel({ characterId, open, onOpenChange }: ChatToolsPan
             <ToolsTabs tab={tab} onChange={setTab} />
 
             {tab === 'chat' ? (
-              <div className="space-y-2">
-                <ToolRow
-                  icon={UserRound}
-                  title="角色设定"
-                  hint={characterSettingsHint(characterSettings.data)}
-                  onClick={() => setPanel('character')}
+              <div className="space-y-2.5">
+                {/* 人设与补充设定直接展开在这里，省掉一次点进二级页 */}
+                <ChatCharacterModules
+                  characterId={characterId}
+                  onEditPersona={(persona) => {
+                    setEditingPersona(persona);
+                    setPanel('persona');
+                  }}
                 />
                 <ToolRow
                   icon={BookOpen}
@@ -99,8 +95,8 @@ export function ChatToolsPanel({ characterId, open, onOpenChange }: ChatToolsPan
             <div className="mb-4 flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => setPanel(panel === 'persona' ? 'character' : null)}
-                aria-label={panel === 'persona' ? '返回角色设定' : '返回工具箱'}
+                onClick={() => setPanel(null)}
+                aria-label="返回工具箱"
                 className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground transition-colors hover:text-foreground"
               >
                 <ChevronLeft className="size-5" aria-hidden />
@@ -117,21 +113,13 @@ export function ChatToolsPanel({ characterId, open, onOpenChange }: ChatToolsPan
 
             {panel === 'voice' ? (
               <ChatVoicePicker onPicked={() => setPanel(null)} />
-            ) : panel === 'character' ? (
-              <ChatCharacterSettings
-                characterId={characterId}
-                onEditPersona={(persona) => {
-                  setEditingPersona(persona);
-                  setPanel('persona');
-                }}
-              />
             ) : panel === 'persona' ? (
               <ChatPersonaEditor
                 key={editingPersona?.id ?? 'new'}
                 characterId={characterId}
                 persona={editingPersona}
                 firstPersona={(characterSettings.data?.personas.length ?? 0) === 0}
-                onDone={() => setPanel('character')}
+                onDone={() => setPanel(null)}
               />
             ) : (
               <StoryGuideTips />
