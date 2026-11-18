@@ -312,6 +312,7 @@ export default function SelfHostedChatPage() {
     lastMessage,
     messages,
     quotaExhaustedNotice,
+    freeZoneSwitchNotice,
     replyStalled,
     runTurn,
     serverBusy,
@@ -619,6 +620,7 @@ export default function SelfHostedChatPage() {
         replyStalled={replyStalled}
         streamingMessageId={streaming?.assistantMessageId ?? null}
         quotaExhaustedNotice={quotaExhaustedNotice}
+        freeZoneSwitchNotice={freeZoneSwitchNotice}
         displayName={displayName}
         replyPlanFor={(message) => planMessageReply(message, versionStates)}
         choiceDisabledFor={(message) =>

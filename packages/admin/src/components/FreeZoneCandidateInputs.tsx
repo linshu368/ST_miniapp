@@ -10,6 +10,8 @@ export interface FreeZoneCandidateEditing {
   candidates: FreeZoneCandidate[];
   /** 初筛里的统一折扣底线：单独底线空着时用它，输入框里提示 */
   defaultDiscountPct: number;
+  /** 全局每人 24 小时上限：单独上限空着时用它；null 表示不限 */
+  defaultTurnLimit: number | null;
   disabled?: boolean;
   onChange: (candidates: FreeZoneCandidate[]) => void;
 }
@@ -19,6 +21,14 @@ export const PARALLEL_HINT =
 
 export const DISCOUNT_HINT =
   '这个模型单独的折扣底线：空着用初筛里的统一底线，填了就按它（初筛、派单探测、真实请求都按它）。原价本来就低的模型可以放宽。改完保存并发布配置后生效。';
+
+export const TURN_LIMIT_HINT =
+  '每人 24 小时最多用几轮（只数成功的，含重新生成）：空着用「用量上限」里的全局值。用满后发消息时自动换同系列、再换其他没用满的免费模型，都用满了换付费默认模型，并在那条回复下轻提示一句。改完保存并发布配置后生效。';
+
+/** 单独上限空着时输入框里的提示 */
+export function turnLimitPlaceholder(defaultTurnLimit: number | null): string {
+  return defaultTurnLimit === null ? '不限' : `全局${defaultTurnLimit}`;
+}
 
 type Props = { model: AdminFreeZoneStatusModel; editing?: FreeZoneCandidateEditing };
 
@@ -77,6 +87,25 @@ export function FreeZoneDiscountInput(props: Props) {
       value={found.candidate.min_discount_pct ?? null}
       disabled={found.editing.disabled}
       onChange={(value) => found.patch({ min_discount_pct: value ?? null })}
+    />
+  );
+}
+
+export function FreeZoneTurnLimitInput(props: Props) {
+  const found = locate(props);
+  if (!found) return <NotInPool />;
+  return (
+    <InputNumber
+      size="small"
+      min={1}
+      max={5000}
+      precision={0}
+      style={{ width: 88 }}
+      placeholder={turnLimitPlaceholder(found.editing.defaultTurnLimit)}
+      // 旧配置里没有这一项：空着 = 用全局上限
+      value={found.candidate.turns_per_24h ?? null}
+      disabled={found.editing.disabled}
+      onChange={(value) => found.patch({ turns_per_24h: value ?? null })}
     />
   );
 }

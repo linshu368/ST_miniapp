@@ -1,8 +1,9 @@
 /**
  * 用户当前选择的免费模型，此刻在这张角色卡上能不能用；不能用就换成谁。
  *
- * 选择按用户存（不按角色卡）。不可用的原因：模型被下架、栏目对这张卡/此刻不开放。
- * 换的顺序：同系列在架模型 → 随机一个在架模型 → 付费目录的默认模型（目前是 1017）。
+ * 选择按用户存（不按角色卡）。不可用的原因：模型被下架、栏目对这张卡/此刻不开放、
+ * 这个用户 24 小时内用满了这个模型的上限（usage-limit.ts）。
+ * 换的顺序：同系列没用满的在架模型 → 随机一个没用满的在架模型 → 付费目录的默认模型（目前是 1017）。
  * 只做判断不写库，写回由调用方做（目录接口和生成链路的写法不同）。
  */
 import {
@@ -22,6 +23,7 @@ import {
 import { needsAccessFacts } from './access.js';
 import type { AccessFactsLoader } from './access-facts.js';
 import { chooseReplacement, type ListedFreeModel } from './zone-view.js';
+import { NO_EXHAUSTED, type ExhaustedFreeModels, type FreeZoneUsageLoader } from './usage-limit.js';
 
 const ZERO_PRICING: FixedDeductionConfig = {
   freeQuotaExhausted: 0,
@@ -30,11 +32,18 @@ const ZERO_PRICING: FixedDeductionConfig = {
   premium: 0,
 };
 
-/** 自动换模型的记录（只写日志，不给用户弹提示：用户自己在公告里说明）。 */
+/**
+ * 自动换模型的记录。下架、关闭只写日志（用户自己在公告里说明，关闭另有分隔线）；
+ * 用满上限的在生成链路里轻提示一句（FreeZoneLimitSwitch）。
+ */
 export interface SelectionReplacement {
   fromName: string;
   toName: string;
-  reason: 'delisted' | 'closed';
+  reason: 'delisted' | 'closed' | 'limit_reached';
+  /** 换成了付费目录的模型（没有能用的免费模型） */
+  toPaid: boolean;
+  /** limit_reached：原模型什么时候恢复 */
+  resetsAt: string | null;
 }
 
 export type FreeZoneSelection =
@@ -63,6 +72,13 @@ export async function resolveFreeZoneSelection(input: {
   catalog: ModelCatalog;
   /** 按身份开放要用的用户事实；只在需要时调用 */
   loadFacts: AccessFactsLoader;
+  /** 每人 24 小时上限；不传按不限 */
+  loadUsage?: FreeZoneUsageLoader;
+  /**
+   * 选中的模型用满时要不要换掉（默认要）。目录接口传 false：只在栏目里标「已用完」，
+   * 等真正发消息时再换，换的那一轮才有提示。
+   */
+  enforceLimit?: boolean;
   isOwnCard?: boolean;
   now?: Date;
 }): Promise<FreeZoneSelection | null> {
@@ -77,23 +93,32 @@ export async function resolveFreeZoneSelection(input: {
   ]);
   const view = viewFreeZone(snapshot, { now, isOwnCard, pricing: ZERO_PRICING, facts });
   const listed = findListedFreeModel(snapshot, input.persistedModelId);
-  if (listed && snapshot && isUsable(view)) return { kind: 'usable', listed, snapshot };
+  const open = snapshot !== null && isUsable(view);
+  const exhausted: ExhaustedFreeModels =
+    open && input.loadUsage ? await input.loadUsage(snapshot) : NO_EXHAUSTED;
+  const resetsAt = listed ? (exhausted.get(listed.candidate.id) ?? null) : null;
+  if (listed && open && (resetsAt === null || input.enforceLimit === false)) {
+    return { kind: 'usable', listed, snapshot };
+  }
 
   const current = findCandidate(snapshot, input.persistedModelId);
-  const replacement =
-    snapshot && isUsable(view)
-      ? chooseReplacement({ currentFamily: current?.family ?? null, usable: snapshot.listed })
-      : null;
+  const usable = open
+    ? snapshot.listed.filter(({ candidate }) => !exhausted.has(candidate.id))
+    : [];
+  const replacement = chooseReplacement({ currentFamily: current?.family ?? null, usable });
   const fallback = input.catalog.tiers
     .flatMap((tier) => tier.models)
     .find((model) => model.id === input.catalog.default_model_id);
+  const reason = !listed ? 'delisted' : open ? 'limit_reached' : 'closed';
   return {
     kind: 'replaced',
     toModelId: replacement?.id ?? input.catalog.default_model_id,
     replacement: {
       fromName: current?.display_name ?? '畅聊模型',
       toName: replacement?.display_name ?? fallback?.display_name ?? '默认模型',
-      reason: listed ? 'closed' : 'delisted',
+      reason,
+      toPaid: replacement === null,
+      resetsAt: reason === 'limit_reached' ? resetsAt : null,
     },
   };
 }
@@ -134,6 +159,7 @@ export async function resolveCatalogFreeZone(input: {
   isOwnCard: boolean;
   pricing: FixedDeductionConfig;
   loadFacts: AccessFactsLoader;
+  loadUsage: FreeZoneUsageLoader;
   now?: Date;
 }): Promise<{
   view: PublicFreeZone | null;
@@ -152,18 +178,38 @@ export async function resolveCatalogFreeZone(input: {
       catalog: input.catalog,
       isOwnCard: input.isOwnCard,
       loadFacts: input.loadFacts,
+      loadUsage: input.loadUsage,
+      enforceLimit: false,
       now,
     }),
   ]);
+  const view = viewFreeZone(snapshot, {
+    now,
+    isOwnCard: input.isOwnCard,
+    pricing: input.pricing,
+    facts,
+  });
+  // 选着付费模型的用户打开面板，也要看到哪些免费模型已用完
+  const exhausted = snapshot && isUsable(view) ? await input.loadUsage(snapshot) : NO_EXHAUSTED;
   return {
-    view: viewFreeZone(snapshot, {
-      now,
-      isOwnCard: input.isOwnCard,
-      pricing: input.pricing,
-      facts,
-    }),
+    view: markExhausted(view, exhausted),
     usable: settled.usable?.listed ?? null,
     modelId: settled.modelId,
     replacement: settled.replacement,
+  };
+}
+
+/** 给栏目里用满了的模型标上恢复时间 */
+function markExhausted(
+  view: PublicFreeZone | null,
+  exhausted: ExhaustedFreeModels
+): PublicFreeZone | null {
+  if (!view || exhausted.size === 0) return view;
+  return {
+    ...view,
+    models: view.models.map((model) => ({
+      ...model,
+      limit_resets_at: exhausted.get(model.id) ?? null,
+    })),
   };
 }

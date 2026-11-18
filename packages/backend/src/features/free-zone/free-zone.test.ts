@@ -289,6 +289,7 @@ describe('resolveFreeZoneView', () => {
     benchmark_tier: 'premium' as const,
     parallel_requests: 1,
     min_discount_pct: null,
+    turns_per_24h: null,
   };
   const config = FreeZoneConfigSchema.parse({
     enabled: true,
@@ -349,6 +350,7 @@ describe('chooseReplacement', () => {
       benchmark_tier: 'light' as const,
       parallel_requests: 1,
       min_discount_pct: null,
+      turns_per_24h: null,
     },
     providers: ['p'],
   });

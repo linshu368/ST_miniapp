@@ -38,6 +38,8 @@ interface ChatMessageListProps {
   replyStalled?: boolean;
   /** 刚好用完免费额度的那一轮回复下方展示轻提示 */
   quotaExhaustedNotice?: { messageId: string; text: string };
+  /** 畅聊模型 24 小时用满、自动换模型的那一轮回复下方展示轻提示 */
+  freeZoneSwitchNotice?: { messageId: string; text: string };
   /** 挂在指定消息下方的操作区 */
   renderFooter?: (message: ChatMessage, tools: ReactNode, editAction: ReactNode) => ReactNode;
   branchFor?: (message: ChatMessage) => { pending: boolean; onBranch: () => void } | undefined;
@@ -187,6 +189,7 @@ function MessageRows({
     streamingMessageId,
     replyStalled,
     quotaExhaustedNotice,
+    freeZoneSwitchNotice,
     renderFooter,
     branchFor,
     replyPlanFor,
@@ -224,6 +227,11 @@ function MessageRows({
               quotaExhaustedNotice={
                 quotaExhaustedNotice?.messageId === message.id
                   ? quotaExhaustedNotice.text
+                  : undefined
+              }
+              freeZoneSwitchNotice={
+                freeZoneSwitchNotice?.messageId === message.id
+                  ? freeZoneSwitchNotice.text
                   : undefined
               }
               renderFooter={
