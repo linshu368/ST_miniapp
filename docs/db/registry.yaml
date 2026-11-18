@@ -615,28 +615,20 @@ tables:
   billing.payment_orders:
     nature: M
     owner: backend/src/infrastructure/repositories/MiniappPaymentOrderRepository.ts（入账只走 PaymentSettlement.settlePaidOrder）
-    status: moving
-    move:
-      - {
-          to: ops.payment_events,
-          cols: [checkout_confirmed_at, last_checkout_confirmed_at, checkout_confirm_count],
-          phase: 2,
-          note: 先确认结账确认是否影响对账调度，若影响则归 J,
-        }
-      - {
-          to: billing.payment_reconcile_jobs,
-          cols: [next_reconcile_at, last_reconciled_at, reconcile_attempts, reconcile_locked_until],
-          phase: 4,
-        }
+    status: active
+    note: 4a 起只留订单与履约事实：对账调度在 payment_reconcile_jobs；结账确认只记 ops.payment_events 的 checkout_confirmation 事件（原 3 列无读者，收缩步删）
 
   billing.payment_reconcile_jobs:
-    { nature: J, owner: backend/src/features/payment, status: planned, phase: 4 }
+    nature: J
+    owner: rpc:billing.claim_payment_reconcile_jobs（features/payment/usecases/PaymentReconciliation.ts 调用）
+    status: active
+    note: 每张可对账订单一行，插单触发器建行；领取时清掉已入账/已终结/出 7 天窗口的任务，按 30s·2^n 退避（封顶 2 小时）
 
   billing.payment_operation_events:
     nature: O
     owner: backend/src/infrastructure/repositories/MiniappPaymentOrderRepository.ts
-    status: moving
-    move: [{ to: ops.payment_events, cols: ['*'], phase: 2, note: PaymentAlertMonitor 同步改读 }]
+    status: drop
+    note: 4a 整表迁 ops.payment_events；只剩发布窗口兼容视图，收缩步删除
 
   billing.usage_charges:
     nature: M
@@ -957,13 +949,11 @@ tables:
       retention_days: 180,
     }
   ops.payment_events:
-    {
-      nature: O,
-      owner: backend/src/infrastructure/repositories/MiniappPaymentOrderRepository.ts,
-      status: planned,
-      phase: 2,
-      retention_days: 365,
-    }
+    nature: O
+    owner: backend/src/infrastructure/repositories/MiniappPaymentOrderRepository.ts（Prisma 原生 SQL 写）
+    status: active
+    retention_days: 365
+    note: 原 billing.payment_operation_events（4a 迁入）；event_key 去重；PaymentAlertMonitor 读近 1 小时（Prisma）
   ops.alert_incidents: { nature: O, owner: backend/src/features/alerting, status: active }
   ops.alert_delivery_jobs:
     { nature: J, owner: backend/src/features/alerting, status: active, note: 告警投递 outbox }

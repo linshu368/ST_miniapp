@@ -17,6 +17,10 @@ import {
 // older payments still recover via a verified callback or an explicit order query.
 export const RECONCILE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 export const RECONCILE_LOOP_DELAY_MS = 30_000;
+// Per-order backoff: 30s, 1m, 2m, ... capped at 2h. Lost callbacks are recovered within about the order's age;
+// abandoned orders are queried ~90 times in 7 days instead of every loop.
+export const RECONCILE_BASE_DELAY_SECONDS = 30;
+export const RECONCILE_MAX_DELAY_SECONDS = 2 * 60 * 60;
 export const RECONCILE_MAX_CANDIDATES = 30;
 export const RECONCILE_CONCURRENCY = 3;
 export const RECONCILE_DISPATCH_BUDGET_MS = 25_000;
@@ -31,8 +35,7 @@ export interface PaymentReconciliationResult {
 
 type ReconcileOrders = Pick<
   MiniappPaymentOrderRepository,
-  | 'listRecentUnsettled'
-  | 'scheduleReconciliation'
+  | 'claimDueReconciliations'
   | 'expirePendingById'
   | 'findById'
   | 'complete'
@@ -78,10 +81,13 @@ async function reconcileBatch(input: ReconcileInput): Promise<PaymentReconciliat
     AbortSignal.timeout(RECONCILE_DISPATCH_BUDGET_MS),
     ...(input.signal ? [input.signal] : []),
   ]);
-  const candidates = await input.orders.listRecentUnsettled({
-    since: new Date(now - RECONCILE_WINDOW_MS).toISOString(),
+  // Claiming schedules each order's next attempt first: a crash or timeout retries later, settlement is idempotent.
+  const candidates = await input.orders.claimDueReconciliations({
     now: new Date(now).toISOString(),
+    windowStart: new Date(now - RECONCILE_WINDOW_MS).toISOString(),
     limit: RECONCILE_MAX_CANDIDATES,
+    baseDelaySeconds: RECONCILE_BASE_DELAY_SECONDS,
+    maxDelaySeconds: RECONCILE_MAX_DELAY_SECONDS,
     signal,
   });
   const eligible = candidates
@@ -93,12 +99,6 @@ async function reconcileBatch(input: ReconcileInput): Promise<PaymentReconciliat
       const order = eligible[next++];
       if (!order) break;
       try {
-        // Durable rotation avoids repeatedly spending the whole budget on the oldest slow orders.
-        await input.orders.scheduleReconciliation(
-          order.id,
-          new Date((input.now ?? Date.now()) + RECONCILE_LOOP_DELAY_MS).toISOString(),
-          signal
-        );
         signal.throwIfAborted();
         result.checked += 1;
         await reconcileOrder(order, input, result, signal, now);

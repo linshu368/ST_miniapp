@@ -4,6 +4,16 @@
 
 # SQL 迁移文件
 
+## 2026-11-18 数据库重组阶段 4a：支付对账任务表 + 退避，支付事件迁 ops（本地 PG17 非超级用户验证）
+
+`20261118_db_reorg_p4a_payment_reconcile_jobs.sql`（扩展）+ `20261118_db_reorg_p4a_payment_reconcile_jobs_contract.sql`（收缩，后端发布后执行）。计划见 `.trellis/tasks/11-18-db-reorg-p4-jobs/design.md` 4a。
+
+- 修 bug：对账 worker 对 7 天内未入账的易支付单每 30 秒查一次、连查 7 天（实测每天约 3 万次查单/事件，平台查单接口被打出间歇 500）。新表 `billing.payment_reconcile_jobs`（插单触发器建行、回填可对账订单）+ `billing.claim_payment_reconcile_jobs`：领取时清掉已入账/已终结/出窗口任务，按 30s·2^n（封顶 2 小时）排下一次；多实例 SKIP LOCKED。7 天内每单约 90 次查单。
+- `billing.payment_operation_events` 整表迁 `ops.payment_events`（约束/索引同步改名），旧位置留兼容视图；ops 不经 PostgREST，新后端用 Prisma 原生 SQL 读写。删无调用方的 `billing.record_checkout_confirmation`。
+- 收缩：删兼容视图；删 `payment_orders` 的 4 个对账调度列与 3 个结账确认列（无读者）及其索引/约束。守卫：无函数/视图再引用。
+- 验证：`bash scripts/test-db-reorg-p4a-migration.sh`（回填范围、插单建任务、退避序列与封顶、清理、并发互斥、旧视图 upsert 去重、新后端原生 SQL、收缩守卫与删列、可重跑）。
+- 发布：TEST 扩展 → 生产扩展 → 后端发布 → 核对（`fast_reconcile` 事件每小时从约 1250 降到个位数、旧调度更新语句停涨）→ TEST/生产收缩。回滚：扩展步不删列、兼容视图在，回退后端即可。
+
 ## 2026-11-18 数据库重组阶段 3d：配置校验链压成一层（本地 PG17 非超级用户验证）
 
 `20261118_db_reorg_p3d_flatten_config_validator.sql`（单文件，无后端改动）。计划见 `.trellis/tasks/11-17-db-reorg-p3-user-state/design.md` 3d。
