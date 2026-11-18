@@ -1,0 +1,159 @@
+{
+  "project_ref": "wbtsfzozlmurljvglhpn",
+  "environment": "production",
+  "workflow_ref": "feat_video_park",
+  "source_sha": "d0dc98c386ada2099e443e3fc55e6961a3172a57",
+  "live_deployment_sha": "cae4b356e2b21c0e97626ed2ab2ca15e97839f75",
+  "live_deployment_id": "7148f5b4-de11-4403-a8ca-38c7ba1d2381",
+  "inspect_run_id": 44303150060,
+  "batches": [
+    {
+      "batch": 1,
+      "file": "packages/shared/migrations/20261117_media_plaza_video_stream_seed_production_01.sql",
+      "expected_rows": 500,
+      "sha256": "88f896678307470f5d3509148fd6542ad9b4c6c2b88936b7622d978f6c25e3a7",
+      "run_id": 44304016243,
+      "url": "https://github.com/linshu368/ST_miniapp/actions/runs/44304016243",
+      "verified": true,
+      "conclusion": "success",
+      "count_results": [[500, 500]],
+      "ledger_checksum_recorded": true
+    },
+    {
+      "batch": 2,
+      "file": "packages/shared/migrations/20261117_media_plaza_video_stream_seed_production_02.sql",
+      "expected_rows": 500,
+      "sha256": "1c19d86f78ef8e98e182a63c42740674315187ef4ceecf418a383c1228e7f923",
+      "run_id": 44304281284,
+      "url": "https://github.com/linshu368/ST_miniapp/actions/runs/44304281284",
+      "verified": true,
+      "conclusion": "success",
+      "count_results": [[500, 500]],
+      "ledger_checksum_recorded": true
+    },
+    {
+      "batch": 3,
+      "file": "packages/shared/migrations/20261117_media_plaza_video_stream_seed_production_03.sql",
+      "expected_rows": 500,
+      "sha256": "2089a36d7b47bffff75437bb466376843eb68596833b0f9cf16157a18fcd4ab6",
+      "run_id": 44304438476,
+      "url": "https://github.com/linshu368/ST_miniapp/actions/runs/44304438476",
+      "verified": true,
+      "conclusion": "success",
+      "count_results": [[500, 500]],
+      "ledger_checksum_recorded": true
+    },
+    {
+      "batch": 4,
+      "file": "packages/shared/migrations/20261117_media_plaza_video_stream_seed_production_04.sql",
+      "expected_rows": 500,
+      "sha256": "b7dfad88dcb6034be1e7bac5a02473e7bbb55473a43036e7998993135af9e56e",
+      "run_id": 44304648096,
+      "url": "https://github.com/linshu368/ST_miniapp/actions/runs/44304648096",
+      "verified": true,
+      "conclusion": "success",
+      "count_results": [[500, 500]],
+      "ledger_checksum_recorded": true
+    },
+    {
+      "batch": 5,
+      "file": "packages/shared/migrations/20261117_media_plaza_video_stream_seed_production_05.sql",
+      "expected_rows": 500,
+      "sha256": "45a1eb79c1b6dca2702dc064c0df4f8e45e1fff08cfe3b2b1e24cc71bd90b196",
+      "run_id": 44304957591,
+      "url": "https://github.com/linshu368/ST_miniapp/actions/runs/44304957591",
+      "verified": true,
+      "conclusion": "success",
+      "count_results": [[500, 500]],
+      "ledger_checksum_recorded": true
+    },
+    {
+      "batch": 6,
+      "file": "packages/shared/migrations/20261117_media_plaza_video_stream_seed_production_06.sql",
+      "expected_rows": 500,
+      "sha256": "79569b4ecae6567238355300b449a2831b59d5eade7f413191bcb535c63a8b7b",
+      "run_id": 44305091827,
+      "url": "https://github.com/linshu368/ST_miniapp/actions/runs/44305091827",
+      "verified": true,
+      "conclusion": "success",
+      "count_results": [[500, 500]],
+      "ledger_checksum_recorded": true
+    },
+    {
+      "batch": 7,
+      "file": "packages/shared/migrations/20261117_media_plaza_video_stream_seed_production_07.sql",
+      "expected_rows": 500,
+      "sha256": "b3a4529d5fe48980b1b1dbf321a85d9d8f595cabd3f0e6ecb3adf13e49123092",
+      "run_id": 44305238609,
+      "url": "https://github.com/linshu368/ST_miniapp/actions/runs/44305238609",
+      "verified": true,
+      "conclusion": "success",
+      "count_results": [[500, 500]],
+      "ledger_checksum_recorded": true
+    },
+    {
+      "batch": 8,
+      "file": "packages/shared/migrations/20261117_media_plaza_video_stream_seed_production_08.sql",
+      "expected_rows": 500,
+      "sha256": "6bcffb173e9ca25bbb750750def4823d26aef445b281405426085751a6ec2446",
+      "run_id": 44305439310,
+      "url": "https://github.com/linshu368/ST_miniapp/actions/runs/44305439310",
+      "verified": true,
+      "conclusion": "success",
+      "count_results": [[500, 500]],
+      "ledger_checksum_recorded": true
+    },
+    {
+      "batch": 9,
+      "file": "packages/shared/migrations/20261117_media_plaza_video_stream_seed_production_09.sql",
+      "expected_rows": 500,
+      "sha256": "da011f2973bfa3fc4ce3fdb9f1b03441ded8ac6b380268509ef5ece681c2ea3a",
+      "run_id": 44305630204,
+      "url": "https://github.com/linshu368/ST_miniapp/actions/runs/44305630204",
+      "verified": true,
+      "conclusion": "success",
+      "count_results": [[500, 500]],
+      "ledger_checksum_recorded": true
+    },
+    {
+      "batch": 10,
+      "file": "packages/shared/migrations/20261117_media_plaza_video_stream_seed_production_10.sql",
+      "expected_rows": 487,
+      "sha256": "5d98d5a808fff14271405c81fef0f824f25c0f35c2c6ec34d677ca3859b1518b",
+      "run_id": 44305873410,
+      "url": "https://github.com/linshu368/ST_miniapp/actions/runs/44305873410",
+      "verified": true,
+      "conclusion": "success",
+      "count_results": [[487, 487]],
+      "ledger_checksum_recorded": true
+    }
+  ],
+  "inspect_verified": true,
+  "updated_at": "2026-11-18T12:39:26.903463+00:00",
+  "inspect_source_sha": "e7aa3f43c001a8201457b6abf27bf072bff5544d",
+  "ref_change_review": "User merged main/dev; all ten SQL files and workflow/apply/inspect scripts byte-identical to the inspected ref.",
+  "frontend_release": {
+    "sha": "cae4b356e2b21c0e97626ed2ab2ca15e97839f75",
+    "production_environment": "Production – st-miniapp-frontend",
+    "deployment_record_id": 7883003655,
+    "state": "success",
+    "evidence": "GitHub deployment statuses for the exact release SHA; Vercel connector account does not cover this production team."
+  },
+  "admin_release": {
+    "sha": "cae4b356e2b21c0e97626ed2ab2ca15e97839f75",
+    "production_environment": "Production – st-admin-platform",
+    "deployment_record_id": 7882972121,
+    "state": "success"
+  },
+  "state": "complete",
+  "verified_rows": 4987,
+  "verification_report": "production-seed-import-verification.json",
+  "completed_at": "2026-11-18T12:39:58.577Z",
+  "final_deployment": {
+    "sha": "4a2f1d0636ff94f5d864a94ade6a430891dcbb8f",
+    "id": "bce3779c-d268-4370-bdf6-73d922c43916",
+    "status": "SUCCESS",
+    "video_reader_present": true,
+    "health_http": 200
+  }
+}

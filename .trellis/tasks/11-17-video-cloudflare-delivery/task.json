@@ -88,7 +88,7 @@
         "TEST全部13个视频迁移、校验、数据切换与清理",
         "TEST预览缺签名导致详情503，以及钱包视频预扣P0001的定位和最小守卫恢复",
         "生成生产兼容base/config迁移；复用workflow账本/claim/checksum和现行HTTP/DB日志，不执行生产写入",
-        "生产4987条种子导入已授权；复用Database Migration逐批checksum/claim/ledger/计数审计；等待用户上线兼容读取器，当前不执行生产数据写入"
+        "生产4987条种子已按01至10逐文件Database Migration执行；checksum/claim/ledger/计数审计通过，固定诊断不输出prompt/签名/密钥"
       ],
       "integration_points": [
         "platform/observability/fetch.ts与jobs.ts、context.ts",
@@ -213,16 +213,20 @@
       "authorized": true,
       "environment": "production",
       "project_ref": "wbtsfzozlmurljvglhpn",
-      "state": "preflight_verified_awaiting_workflow_ledger_inspect",
+      "state": "complete",
       "manifest": "production-seed-import-manifest.json",
-      "production_writes_performed": false,
+      "production_writes_performed": true,
       "workflow_only": true,
       "no_auto_commit_or_push": true,
       "live_sha": "cae4b356e2b21c0e97626ed2ab2ca15e97839f75",
       "live_deployment_id": "7148f5b4-de11-4403-a8ca-38c7ba1d2381",
       "workflow_ref": "feat_video_park",
-      "workflow_source_sha": "e7aa3f43c001a8201457b6abf27bf072bff5544d",
-      "inspect_run_id": 44303150060
+      "workflow_source_sha": "d0dc98c386ada2099e443e3fc55e6961a3172a57",
+      "inspect_run_id": 44303150060,
+      "execution_report": "production-seed-import-execution.json",
+      "imported_rows": 4987,
+      "verification_report": "production-seed-import-verification.json",
+      "completed_at": "2026-11-18T12:39:58.577Z"
     }
   }
 }
