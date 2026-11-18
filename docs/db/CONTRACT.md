@@ -129,7 +129,7 @@ jsonb 只允许三种用途，列名必须体现用途：
 - **禁止包装链**：不许把旧函数改名成 `*_before_<feature>`、新函数里 `OR` 调旧函数。白名单、校验这类"每加一项就要改"的逻辑，用登记表加一个函数实现。
 - **新增运营托管配置 key 的唯一做法**：
   1. `INSERT INTO admin.managed_config_keys`（登记即可编辑，草稿/发布表靠外键约束，不再改 CHECK）；
-  2. 在 `admin.validate_managed_config_value`（最外层）里用 `CREATE OR REPLACE` 原地加一个 `IF p_config_key = ... THEN ... RETURN; END IF;` 分支。该函数下面 15 层 `*_before_*` 是冻结的存量，不改名、不再新增，阶段 3 合并配置对象时整体重写；
+  2. 在 `admin.validate_managed_config_value`（单层 `CASE p_config_key` 分发，3d 起）里用 `CREATE OR REPLACE` 原地加一个 `WHEN` 分支；校验超过十几行就拆成具名函数 `admin.validate_<key>(...)`，分支里一句 `PERFORM`。只收 JSON 的 key 加进函数开头的 text_value 拒收清单。是否托管由函数开头统一检查，分支里不用再查；
   3. 在 `packages/admin-client` 注册 schema 和菜单。
   - 退役 key：把登记表的 `retired_at` 设为当前时间（发布历史仍可引用），并删除 `runtime_config` 行。
 - 改函数签名或行为，用 `CREATE OR REPLACE` 原地替换；旧版本不保留。

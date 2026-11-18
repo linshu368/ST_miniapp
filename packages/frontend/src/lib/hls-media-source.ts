@@ -1,6 +1,6 @@
 import type { DramaPlaybackEngine } from '@miniapp/shared';
 import type HlsPlayer from 'hls.js';
-import type { MediaAttachedData } from 'hls.js';
+import type { MediaAttachedData, PlaylistLoaderConstructor } from 'hls.js';
 import type { HlsEvents } from '@/lib/perf/drama-hls';
 import { createInlinePlaylistLoader } from '@/lib/drama-inline-manifest-loader';
 import { restartStalledAudioOnSeek } from '@/lib/drama-hls-seek';
@@ -15,6 +15,11 @@ export interface HlsMediaSourceOptions {
   onEngine?: (engine: DramaPlaybackEngine) => void;
   forceHlsOnApple?: boolean;
   restartSeekAudio?: boolean;
+  /** 仅在真正创建 hls.js 时调用。短剧用来挂预取 loader，并在实例创建后绑定用量。 */
+  prepareHls?: (source: string) => {
+    pLoader?: PlaylistLoaderConstructor;
+    onCreated?: (hls: HlsPlayer) => void;
+  };
 }
 function isAppleWebKit() {
   return typeof navigator !== 'undefined' && /iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent);
@@ -64,6 +69,13 @@ export function loadHlsMediaSource(
           } else failed();
           return;
         }
+        // prepareHls 优先（短剧预取子清单）；否则内联主清单跳过这一次请求，子清单和分片仍走网络。
+        const prepared = options?.prepareHls?.(source);
+        const pLoader =
+          prepared?.pLoader ??
+          (playback.inline_manifest
+            ? createInlinePlaylistLoader(source, playback.inline_manifest)
+            : undefined);
         const hls = new Hls({
           manifestLoadingTimeOut: 10000,
           fragLoadingTimeOut: 15000,
@@ -71,11 +83,9 @@ export function loadHlsMediaSource(
           startLevel: 0,
           // -1 是 hls.js 的自动默认值；传入续播秒数让第一片直接请求目标分片，不再先拉 sn0 探测带宽。
           startPosition: options?.startPosition ?? -1,
-          // 后端随 /play 内联了主清单时，跳过这一次真实网络请求；子清单/分片仍走真实网络。
-          ...(playback.inline_manifest
-            ? { pLoader: createInlinePlaylistLoader(source, playback.inline_manifest) }
-            : {}),
+          ...(pLoader ? { pLoader } : {}),
         });
+        prepared?.onCreated?.(hls);
         const stopSeekRestart = options?.restartSeekAudio
           ? restartStalledAudioOnSeek(hls, Hls.Events, video)
           : () => undefined;

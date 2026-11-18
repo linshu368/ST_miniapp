@@ -1,0 +1,100 @@
+{
+  "id": "drama-playback-prefetch",
+  "name": "drama-playback-prefetch",
+  "title": "短剧播放资源缓存：片库封面预取地址与清单",
+  "description": "片库可见封面与按下封面时预取 /play、主清单与最低档子清单；loader 命中缓存并回写，覆盖往回滑与回到同一部",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "frontend",
+  "priority": "P1",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-18",
+  "completedAt": null,
+  "branch": "feat/drama-prefetch",
+  "base_branch": "main",
+  "worktree_path": "/Users/qj/python_project/ST_miniAPP_prefetch",
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": ["frontend.business.drama-experience"]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": [
+        "/dramas（片库：空闲时预取可见封面）",
+        "/watch 与 /dramas/:id 起播（cover 入口为主）"
+      ],
+      "apis": ["POST /api/dramas/play"],
+      "android": {
+        "page_p95_baseline_ms": 3820,
+        "page_p95_target_ms": 3000,
+        "notes": "口径=起播 3s 达标率（含放弃）的等价 P95（含放弃 P95，下界），全入口 cover|switch|episode|direct。基线 P0 达标率 83.1%（分母 231），cover 70.8%（分母 89，含放弃 P95≥4.52s）；剔除占比 18.9%，失败率 0.4%。目标 3000ms 等价达标率 95%；预期本次到不了（首片首字节+下载约占慢样本 54%，不在范围）。/dramas 页面就绪不得劣化：预取在页面就绪、背景任务放行、静默期和一次空闲之后才开始。"
+      },
+      "ios": {
+        "page_p95_baseline_ms": 7860,
+        "page_p95_target_ms": 3000,
+        "notes": "#888 后仅分母 22（达标率 45.5%），样本不足，改用近 7 天：P0 达标率 64.5%（分母 242），cover 48.8%（分母 80，含放弃 P95≥8.87s）；剔除占比 34.9%，失败率 0.9%。7 天窗口含 #888 之前的数据，Faro 不能剔除自动点播脚本样本。"
+      },
+      "api": {
+        "p95_baseline_ms": 1140,
+        "p95_target_ms": 1200,
+        "endpoint": "POST /api/dramas/play",
+        "baseline_platform": "android",
+        "notes": "客户端测得的 /play 总耗时（后端单次诊断 queries.playback.attempts.totalMs，outcome=ok），Android n=197 P50 348ms，iOS n=26 P95 1576ms。本次不改接口；调用量每次进片库最多 +4（background 优先级），目标为不劣化（+5% 以内）。"
+      },
+      "measurement": {
+        "source": "Faro {service_name=\"st-miniapp\"} st_drama_startup（drama_v3，duration_ms 判定，按 sync 口径分类）；单次明细与预取命中看后端 Loki drama.startup_diagnostic 的 diagnostics.prefetch",
+        "window": "Android 基线 2026-11-17T11:52Z（#888 全量上线）～11-18T11:00Z（23h）；iOS 基线近 7 天至 11-18T11:00Z。发布后按 app_version 是否为合入提交后代分组，等长窗口（最好 7 天）复查"
+      },
+      "notes": "主指标是起播 3s 达标率（含放弃），gate 字段填等价的含放弃 P95（下界）。护栏：失败率上升不超过 1 个百分点、快进 3s 恢复率下降不超过 4 个百分点、剔除占比波动不超过 5 个百分点。验收按入口（重点 cover）× 平台区分 prefetch 命中/未命中。"
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "required",
+      "scope": ["前端起播诊断 drama.startup_diagnostic（经 /api/telemetry 写入后端 Loki）"],
+      "integration_points": [
+        "复用 DramaPlaybackTiming → drama-observer 上报链路；shared DiagnosticsSchema 新增可选 prefetch 对象，后端 telemetry 路由按 schema 透传写日志，不新增事件"
+      ],
+      "events": [
+        {
+          "event": "drama.startup_diagnostic",
+          "operation": "drama.startup",
+          "levels": ["info"],
+          "outcomes": ["succeeded", "failed", "cancelled", "unknown"],
+          "fields": [
+            "diagnostics.prefetch.source",
+            "diagnostics.prefetch.ageMs",
+            "diagnostics.prefetch.address",
+            "diagnostics.prefetch.manifest",
+            "diagnostics.prefetch.playlists",
+            "diagnostics.prefetch.bytes",
+            "diagnostics.prefetch.discarded"
+          ]
+        }
+      ],
+      "failure_paths": [
+        "预取 /play 或子清单失败、超时、过期：静默丢弃并计入下一份报告的 discarded，起播走原路径",
+        "schema 不接受新字段（前端先于后端部署）：整份诊断被拒，所以必须先部署后端"
+      ],
+      "correlation": "沿用诊断已有的 id / context.sessionId / release；预取条目不单独生成请求关联 ID",
+      "redaction": "只记录来源枚举、耗时、字节数和计数，不记录 play_url、token、清单内容或 URL",
+      "alerting": "不新增告警；按 drama-stream-ab / st-engineering-drama 看板与验收脚本人工复查",
+      "verification": [
+        "单测覆盖缓存过期与重试绕过、loader 按 URL 命中、主清单解析",
+        "shared 测试 + 全部消费者 typecheck",
+        "发布后在 Loki 抽查 diagnostics.prefetch 出现且命中样本的 level/audio_track 无 firstByteMs"
+      ]
+    }
+  }
+}

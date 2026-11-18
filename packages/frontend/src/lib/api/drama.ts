@@ -11,11 +11,8 @@ import { useCallback, useMemo } from 'react';
 import { createRequestId } from '@/lib/perf/request-timing';
 import type {
   DramaDetail,
-  DramaPlayback,
   DramaSummary,
   GetDramaByIdData,
-  DramaPlayRequest,
-  GetDramaPlaybackData,
   GetDramasData,
   GetDramaSocialData,
   GetDramaCommentsData,
@@ -25,9 +22,8 @@ import type {
 } from '@miniapp/shared';
 
 import { apiClient } from './client';
+import { loadDramaPlayback, prefetchDramaPlayback, startDramaPlayIntent } from './drama-playback';
 import { dramaTiming } from '@/lib/perf/drama-observer';
-import { capAppleHlsQuality } from '@/lib/drama-media-source';
-import { warmDramaStreamOrigin } from '@/lib/drama-stream-origin';
 
 const DRAMA_CATALOG_CACHE_KEY = 'miniapp:drama-catalog:stream-v2';
 const DRAMA_CATALOG_STALE_MS = 15 * 60_000;
@@ -254,72 +250,8 @@ async function fetchDramaDetail(
   });
 }
 
-async function fetchDramaPlayback(
-  id: string,
-  videoId?: string,
-  signal?: AbortSignal
-): Promise<DramaPlayback> {
-  // 固定地址的 POST：CORS 预检按 URL 缓存，原来每集一个 URL 导致每次都要预检。
-  const body: DramaPlayRequest = { drama_id: id };
-  if (videoId) body.video_id = videoId;
-  if (
-    typeof document !== 'undefined' &&
-    (document.createElement('video').canPlayType('application/vnd.apple.mpegurl') ||
-      typeof MediaSource !== 'undefined')
-  )
-    body.format = 'hls';
-  return dramaTiming.query('playback', id, videoId, async (onAttempt) => {
-    const data = await apiClient<GetDramaPlaybackData>('/api/dramas/play', {
-      method: 'POST',
-      body: JSON.stringify(body),
-      // /play 只读，沿用 GET 时的传输层重试，吸收客户端到 Railway 的瞬时抖动。
-      idempotent: true,
-      onAttempt,
-      signal,
-      timeoutMs: 5000,
-      queuePriority: 'critical',
-    });
-    return capAppleHlsQuality(data.playback);
-  });
-}
-
-// 播放意图在点击当下就发出取址，播放器挂载后的 useDramaPlaybackQuery 再接上这次请求，
-// 省掉路由跳转 + 播放器挂载（约 0.5s）的等待。请求不进 React Query 缓存：
-// 每次意图仍然重新取址（不复用意图发生前的结果），也就不需要放开 gcTime: 0。
-const PLAY_INTENT_TTL_MS = 10_000;
-const playIntents = new Map<string, { promise: Promise<DramaPlayback>; startedAt: number }>();
-const playIntentKey = (id: string, videoId?: string) => `${id}:${videoId ?? ''}`;
-
-/** 必须在 dramaTiming.beginPlayback 之后调用，请求才会挂到本次播放观察上。 */
-export function startDramaPlayIntent(id: string, videoId?: string): void {
-  const now = Date.now();
-  for (const [key, intent] of playIntents) {
-    if (now - intent.startedAt > PLAY_INTENT_TTL_MS) playIntents.delete(key);
-  }
-  const promise = fetchDramaPlayback(id, videoId);
-  warmDramaStreamOrigin();
-  // 没被接上时无人处理拒绝；接上的一方仍会拿到原始拒绝。
-  promise.catch(() => undefined);
-  playIntents.set(playIntentKey(id, videoId), { promise, startedAt: now });
-}
-
-/**
- * 取播放地址：优先接上同 (剧, 集) 的意图请求（10 秒内有效、只用一次），接不上就新建请求。
- * 播放失败后重新签发地址，跳过可能已失效的意图请求。
- */
-export function loadDramaPlayback(
-  id: string,
-  videoId?: string,
-  signal?: AbortSignal,
-  freshRequest = false
-): Promise<DramaPlayback> {
-  const key = playIntentKey(id, videoId);
-  const intent = freshRequest ? undefined : playIntents.get(key);
-  if (!freshRequest) playIntents.delete(key);
-  return intent && Date.now() - intent.startedAt <= PLAY_INTENT_TTL_MS
-    ? intent.promise
-    : fetchDramaPlayback(id, videoId, signal);
-}
+// 取址、播放意图与播放资源缓存在 ./drama-playback；这里保留原导出路径给既有调用方。
+export { loadDramaPlayback, prefetchDramaPlayback, startDramaPlayIntent };
 
 // 保留结果对象身份，防止 structural sharing 把本次请求映射到旧对象的计时元数据。
 export function useDramaListQuery(route: '/watch' | '/dramas' = '/dramas') {

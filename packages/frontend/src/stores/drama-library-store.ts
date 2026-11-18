@@ -272,6 +272,12 @@ export const useDramaLibraryStore = create<DramaLibraryState>((set, get) => ({
   },
 }));
 
+/** 播放器首次取址用的就是本机进度里未看完的那集；预取与点击必须用同一个集，才接得上。 */
+export function resumeVideoId(dramaId: string): string | undefined {
+  const progress = useDramaLibraryStore.getState().history[dramaId];
+  return progress && !progress.completed ? progress.videoId : undefined;
+}
+
 export function useHydrateDramaLibrary() {
   const hydrated = useDramaLibraryStore((state) => state.hydrated);
   const hydrate = useDramaLibraryStore((state) => state.hydrate);
