@@ -102,13 +102,13 @@ function registerMySettingsRoutes(app: FastifyInstance, repo: UserPersonaReposit
     try {
       const dbUser = await getOrCreateDbUser(request.user);
       await repo.writeMySettings(dbUser.id, characterId, parsed.data);
-      // 日志只记长度与选择模式，不记设定正文。
+      // 日志只记字数与选择模式，不记设定正文。字段名要过 safe-log 白名单（*Count 数字、mode 文本），否则会被丢掉。
       requestLogger(request.log, 'character-persona').biz.info(
         {
           event: 'character_persona.saved',
           characterId,
-          notesLength: parsed.data.notes?.length,
-          personaMode: parsed.data.persona?.mode,
+          notesCharCount: parsed.data.notes?.length,
+          mode: parsed.data.persona?.mode,
         },
         '角色设定已保存'
       );
