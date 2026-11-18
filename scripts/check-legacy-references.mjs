@@ -154,6 +154,22 @@ const RULES = [
     ],
   },
 
+  {
+    id: 'moved-payment-reconcile-and-events',
+    pattern:
+      /\bpayment_operation_events\b|\b(?:next_reconcile_at|last_reconciled_at|reconcile_attempts|reconcile_locked_until|checkout_confirmed_at|last_checkout_confirmed_at|checkout_confirm_count|record_checkout_confirmation)\b|\b(?:listRecentUnsettled|scheduleReconciliation)\b/g,
+    message:
+      '数据库重组 4a：支付对账调度在 billing.payment_reconcile_jobs（只经 claim_payment_reconcile_jobs 领取与退避），' +
+      '支付事件在 ops.payment_events（后端用 Prisma 原生 SQL）；payment_orders 的对账列与结账确认列已删',
+    // 建表/建函数的历史迁移，以及 4a 迁移与断言脚本本身。
+    allow: [
+      'packages/shared/migrations/20261010_payment_alerting_foundation.sql',
+      'packages/shared/migrations/20261118_db_reorg_p4a_payment_reconcile_jobs.sql',
+      'packages/shared/migrations/20261118_db_reorg_p4a_payment_reconcile_jobs_contract.sql',
+      'scripts/test-db-reorg-p4a-migration.sh',
+    ],
+  },
+
   // ── 已整包删除的 package ────────────────────────────────────────────────
   {
     id: 'deleted-packages',

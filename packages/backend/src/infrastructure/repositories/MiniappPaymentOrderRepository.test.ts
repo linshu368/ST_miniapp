@@ -16,6 +16,7 @@ const { chain, results } = vi.hoisted(() => {
     'lte',
     'order',
     'limit',
+    'rpc',
     'abortSignal',
   ])
     chain[method] = vi.fn(() => chain);
@@ -58,19 +59,80 @@ describe('payment order compare-and-set persistence', () => {
     expect(chain.eq).toHaveBeenCalledWith('status', 'pending');
     expect(chain.is).toHaveBeenCalledWith('provider_transaction_id', null);
   });
-  it('selects only due new-provider orders, including missing references, in persistent queue order', async () => {
-    results.push({ data: [], error: null });
+  it('claims due reconcile jobs through the backoff RPC and returns the order rows', async () => {
+    results.push({ data: [{ id: 'EP1' }], error: null });
     const signal = AbortSignal.timeout(1000);
-    await new MiniappPaymentOrderRepository().listRecentUnsettled({
-      since: 'since',
+    const rows = await new MiniappPaymentOrderRepository().claimDueReconciliations({
       now: 'now',
+      windowStart: 'since',
       limit: 30,
+      baseDelaySeconds: 30,
+      maxDelaySeconds: 7200,
       signal,
     });
-    expect(chain.like).toHaveBeenCalledWith('id', 'EP%');
-    expect(chain.lte).toHaveBeenCalledWith('next_reconcile_at', 'now');
-    expect(chain.order).toHaveBeenNthCalledWith(1, 'next_reconcile_at', { ascending: true });
+    expect(rows).toEqual([{ id: 'EP1' }]);
+    expect(chain.rpc).toHaveBeenCalledWith('claim_payment_reconcile_jobs', {
+      p_now: 'now',
+      p_window_start: 'since',
+      p_limit: 30,
+      p_base_delay_seconds: 30,
+      p_max_delay_seconds: 7200,
+    });
     expect(chain.abortSignal).toHaveBeenCalledWith(signal);
-    expect(chain.is).not.toHaveBeenCalled();
+  });
+  it('records payment events through the billing RPC with deduplication left to event_key', async () => {
+    results.push({ data: true, error: null });
+    await new MiniappPaymentOrderRepository().recordOperationEvent({
+      event_key: 'fast_reconcile:EP1:1',
+      order_id: 'EP1',
+      user_id: null,
+      event_kind: 'fast_reconcile',
+      stage: 'query',
+      outcome: 'unpaid',
+      source: 'gateway',
+      trigger: 'fast_reconcile',
+      duration_ms: 812,
+      occurred_at: '2026-11-18T15:00:00.000Z',
+    });
+    expect(chain.rpc).toHaveBeenCalledWith('record_payment_event', {
+      p_event_key: 'fast_reconcile:EP1:1',
+      p_order_id: 'EP1',
+      p_user_id: null,
+      p_event_kind: 'fast_reconcile',
+      p_stage: 'query',
+      p_outcome: 'unpaid',
+      p_source: 'gateway',
+      p_trigger: 'fast_reconcile',
+      p_error_class: null,
+      p_duration_ms: 812,
+      p_occurred_at: '2026-11-18T15:00:00.000Z',
+      p_metadata: {},
+    });
+    results.push({ data: null, error: { message: 'check violation' } });
+    await expect(
+      new MiniappPaymentOrderRepository().recordOperationEvent({
+        event_key: 'x',
+        order_id: null,
+        user_id: null,
+        event_kind: 'webhook',
+        stage: 'callback',
+        outcome: 'failed',
+        source: 'gateway',
+        trigger: 'webhook',
+        occurred_at: '2026-11-18T15:00:00.000Z',
+      })
+    ).rejects.toThrow('记录支付操作事件失败');
+  });
+  it('surfaces claim failures instead of skipping reconciliation silently', async () => {
+    results.push({ data: null, error: { message: 'boom' } });
+    await expect(
+      new MiniappPaymentOrderRepository().claimDueReconciliations({
+        now: 'now',
+        windowStart: 'since',
+        limit: 30,
+        baseDelaySeconds: 30,
+        maxDelaySeconds: 7200,
+      })
+    ).rejects.toThrow('领取待对账支付订单失败');
   });
 });
