@@ -206,16 +206,22 @@ tables:
         choice_rules_mode,
         status_rules_mode,
         memory_rules_mode,
+        drive_mode,
         rich_reply_metadata,
         llm_charge_id,
       ]
     move:
-      - { to: ops.llm_calls, cols: [upstream_status], phase: 2 }
       - {
-          to: experience.chat_prompt_snapshots,
+          to: experience.chat_history,
+          cols: [drive_mode],
+          phase: 5,
+          note: 由 rich_reply_metadata.drive_mode 转真列，与三个指令槽档位列并列,
+        }
+      - {
+          to: ops.chat_prompt_observations,
           cols: [history],
           phase: 5,
-          note: 23 GB 中约 97% 来自本列；13 个 RPC 引用,
+          note: 发给模型的 messages，占表 95% 以上；补齐展示投影后不影响展示与扣费，属 O,
         }
       - {
           to: experience.chat_generation_requests,
@@ -230,16 +236,11 @@ tables:
           phase: 6,
           note: 计费门禁、交付仲裁、Surplus 结算恢复都读这些列,
         }
+    drop_cols: [{ cols: [upstream_status], phase: 5, note: 10-27 后不再写入，前端不读 }]
     keys:
-      rich_reply_metadata: [展示用富回复元数据；drive_mode 阶段 5 迁为真列]
+      rich_reply_metadata:
+        [展示用富回复元数据（rich_reply_mode / rich_reply_result / rich_reply_issues）]
     note: 计费字段迁出前，llm_charge_id 是业务侧唯一允许的计费关联
-
-  experience.chat_prompt_snapshots:
-    nature: E
-    owner: backend/src/infrastructure/repositories/ConversationHistoryRepository.ts
-    status: planned
-    phase: 5
-    from: experience.chat_history.history（一行一个 history_id，写一次）
 
   experience.chat_generation_requests:
     nature: S
@@ -514,10 +515,10 @@ tables:
     }
   experience.chat_history_display_metadata:
     {
-      nature: D,
-      owner: rpc:experience.backfill_chat_history_display,
+      nature: E,
+      owner: rpc:experience.begin_chat_generation_observation,
       status: active,
-      note: 消息列表展示投影缓存,
+      note: 每轮的 request_id 与首轮开场白；阶段 5 history 迁出后不再可重建，是权威来源（收缩时去掉 projection_version）,
     }
   experience.chat_message_likes:
     { nature: S, owner: rpc:experience.set_chat_message_like, status: active }
@@ -953,6 +954,13 @@ tables:
       phase: 2,
       retention_days: 180,
     }
+  ops.chat_prompt_observations:
+    nature: O
+    owner: rpc:experience.begin_chat_generation_observation
+    status: planned
+    phase: 5
+    retention_days: 7
+    note: 每轮发给模型的 messages（history_id 软引用 chat_history，messages_snapshot 写一次）；pg_cron 每日按批清理；保留天数待用户确认（建议 7）
   ops.payment_events:
     nature: O
     owner: rpc:billing.record_payment_event（MiniappPaymentOrderRepository 经 PostgREST 调用）
