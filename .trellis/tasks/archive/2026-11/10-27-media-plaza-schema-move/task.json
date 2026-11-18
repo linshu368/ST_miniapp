@@ -21,7 +21,7 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "2026-11-06 archive_stale：module knowledge 门禁未通过，未写回 spec（changes 模式缺少 module-updates.json）",
+  "notes": "2026-10-27 user confirmed M1 and PostgREST media_plaza exposure completed in both TEST and Production. Preserve the applied migration, do not rerun or roll it back, and use forward-fix for any discovered drift. Application merge/deployment remains separate. 2026-11-06 archive_stale：module knowledge门禁未通过，未写回spec（changes模式缺少module-updates.json）。",
   "meta": {
     "module_impact": {
       "schema_version": 1,

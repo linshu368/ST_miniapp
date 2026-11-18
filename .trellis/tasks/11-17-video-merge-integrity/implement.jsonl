@@ -1,0 +1,9 @@
+{"file": ".trellis/spec/backend/app/index.md", "reason": "Backend入口与质量要求"}
+{"file": ".trellis/spec/backend/app/data-reliability-and-security.md", "reason": "超时、计费、错误和日志边界"}
+{"file": ".trellis/spec/backend/app/logging-integration-planning.md", "reason": "合并日志规划门禁"}
+{"file": ".trellis/spec/frontend/app/index.md", "reason": "工作室与React Query约束"}
+{"file": ".trellis/spec/admin/app/index.md", "reason": "配置和CLI共用边界"}
+{"file": ".trellis/spec/shared/contracts/index.md", "reason": "共享协议与消费者验证"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "跨层兼容与失败路径"}
+{"file": ".trellis/tasks/10-16-creation-plaza-video-planning/design.md", "reason": "既有视频设计"}
+{"file": ".trellis/tasks/10-30-fix-video-studio-experience/design.md", "reason": "既有上游适配与工作室优化"}

@@ -1,5 +1,6 @@
 'use client';
 
+import { PlazaVideoPlayer } from '@/components/image-plaza/plaza-video-player';
 import { usePageReady } from '@/lib/perf/page-ready';
 import { ArrowLeft, Heart, LoaderCircle, RotateCcw, WandSparkles } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
@@ -32,11 +33,14 @@ function ImagePlazaWorkDetail({ workId }: { workId: string }) {
   const createConversation = useCreateImagePlazaConversationMutation();
   const [showReference, setShowReference] = useState(false);
   const work = query.data?.work;
-  const [displayedImage, setDisplayedImage] = useState<string | null>(work?.image_url ?? null);
+  const imageWork = work?.media_type === 'image' ? work : null;
+  const [displayedImage, setDisplayedImage] = useState<string | null>(imageWork?.image_url ?? null);
   const [failedImage, setFailedImage] = useState(false);
   const [retryImage, setRetryImage] = useState(0);
   const imageUrl =
-    showReference && work?.reference_image_url ? work.reference_image_url : work?.image_url;
+    showReference && imageWork?.reference_image_url
+      ? imageWork.reference_image_url
+      : imageWork?.image_url;
 
   useEffect(() => {
     if (!imageUrl) return;
@@ -103,16 +107,25 @@ function ImagePlazaWorkDetail({ workId }: { workId: string }) {
           className="relative mx-auto overflow-hidden rounded-[1.75rem] bg-card ring-1 ring-border"
           style={{ aspectRatio: `${work.width} / ${work.height}`, maxHeight: '72vh' }}
         >
-          <img
-            src={displayedImage ?? work.image_url}
-            alt={showReference ? `${work.title}参考图` : work.title}
-            width={work.width}
-            height={work.height}
-            loading="lazy"
-            decoding="async"
-            className="h-full w-full object-contain"
-          />
-          {displayedImage !== imageUrl && !failedImage ? (
+          {work.media_type === 'video' ? (
+            <PlazaVideoPlayer
+              key={work.artifact_id}
+              artifactId={work.artifact_id}
+              playback={work.playback}
+              poster={work.poster_url ?? undefined}
+            />
+          ) : (
+            <img
+              src={displayedImage ?? work.image_url}
+              alt={showReference ? `${work.title}参考图` : work.title}
+              width={work.width}
+              height={work.height}
+              loading="lazy"
+              decoding="async"
+              className="h-full w-full object-contain"
+            />
+          )}
+          {work.media_type === 'image' && displayedImage !== imageUrl && !failedImage ? (
             <span
               role="status"
               className="absolute bottom-3 left-3 rounded-full bg-black/60 px-3 py-1 text-xs text-white"
@@ -121,7 +134,7 @@ function ImagePlazaWorkDetail({ workId }: { workId: string }) {
             </span>
           ) : null}
         </div>
-        {failedImage ? (
+        {work.media_type === 'image' && failedImage ? (
           <button
             type="button"
             className="mt-3 text-xs text-primary"
@@ -133,7 +146,7 @@ function ImagePlazaWorkDetail({ workId }: { workId: string }) {
             图片加载失败，点击重试
           </button>
         ) : null}
-        {work.reference_image_url ? (
+        {work.media_type === 'image' && work.reference_image_url ? (
           <div className="mt-3 flex justify-center">
             <button
               type="button"

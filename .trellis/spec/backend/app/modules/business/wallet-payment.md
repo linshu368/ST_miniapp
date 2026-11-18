@@ -61,6 +61,8 @@ Backend payment/wallet tests、runtime-config 批量读取与 fallback 测试、
 
 `20261013_image_plaza_seed_catalog.sql` 前向重建分享 RPC，使首次分享奖励只经 `billing.grant_bonus_credits` 发放并拒绝种子 artifact 进入用户分享返利链；真实数据库升级和并发验证仍待明确 test 目标。
 
+视频使用 `billing.reserve_media_plaza_video` 预扣、终态失败用 `refund_media_plaza_video` 幂等退款；按用户 advisory lock 限制同时进行中的任务数。图片与视频分享共用首次分享完成字段，视频 seed 不产生扣费或返利。上述 RPC 仅存在于待执行的 `20261027_media_plaza_video.sql`，本地代码完成不代表 test/production 已生效。
+
 ## 变更记录
 
 - 2026-10-27：任务 `10-27-sentry-performance-optimization` 将 `/api/payment/plans` 的四条同表配置读取合并为一次批量读取，订单权威读取保持独立。

@@ -1,4 +1,9 @@
-import { useState } from 'react';
+import type {
+  ImagePlazaAspectRatio,
+  ImagePlazaModelCatalog,
+  ImagePlazaShareTipConfig,
+  ProviderImagePlazaModel,
+} from '@miniapp/shared';
 import {
   Alert,
   Button,
@@ -12,19 +17,11 @@ import {
   Switch,
   Typography,
 } from 'antd';
-import type {
-  ImagePlazaAspectRatio,
-  ImagePlazaModelCatalog,
-  ImagePlazaShareTipConfig,
-  ImagePlazaTagConfig,
-  ProviderImagePlazaModel,
-} from '@miniapp/shared';
-import { ImagePlazaTagConfigSchema } from '@miniapp/shared';
 import {
-  calculateImagePlazaPrice,
-  imagePlazaPriceKey,
   IMAGE_PLAZA_PRICING_INPUT_MAX,
+  calculateImagePlazaPrice,
   getImagePlazaPricingFactors,
+  imagePlazaPriceKey,
   type ImagePlazaPricingFactors,
 } from '../lib/imagePlazaPricing';
 import { ImagePlazaPricingEditor } from './ImagePlazaPricingEditor';
@@ -368,122 +365,5 @@ function previewText(value: string): string {
   return value.replace(/\{rate\}/g, '30%').replace(/\{model\}/g, 'Seedream V5 Pro');
 }
 
-export function ImagePlazaTagsEditor(props: {
-  value: ImagePlazaTagConfig;
-  disabled?: boolean;
-  onChange: (value: ImagePlazaTagConfig) => void;
-}) {
-  // 业务 ID 可编辑，不能用作 React key；行标识只属于 UI，不进入保存的配置。
-  const [rowKeys, setRowKeys] = useState(() => props.value.map(() => crypto.randomUUID()));
-  if (rowKeys.length !== props.value.length) {
-    setRowKeys(props.value.map(() => crypto.randomUUID()));
-  }
-  const validation = ImagePlazaTagConfigSchema.safeParse(props.value);
-  const update = (index: number, patch: Partial<ImagePlazaTagConfig[number]>) => {
-    const next = structuredClone(props.value);
-    next[index] = { ...next[index], ...patch };
-    props.onChange(next);
-  };
-  return (
-    <Space direction="vertical" size="middle" className="editor-stack">
-      <Alert
-        showIcon
-        type="info"
-        message="“全部”是系统固定标签"
-        description="删除运营标签只影响后续筛选入口，不会删除作品或改写历史作品标签。"
-      />
-      {!validation.success && (
-        <Alert
-          type="warning"
-          showIcon
-          message="请完善标签后保存，当前输入会保留"
-          description={validation.error.issues.map((issue) => issue.message).join('；')}
-        />
-      )}
-      <Card size="small">
-        <Row gutter={12}>
-          <Col span={8}>
-            <Input value="all" disabled />
-          </Col>
-          <Col span={10}>
-            <Input value="全部" disabled />
-          </Col>
-          <Col span={6}>
-            <Switch checked disabled />
-          </Col>
-        </Row>
-      </Card>
-      {props.value.map((tag, index) => (
-        <Card key={rowKeys[index]} size="small">
-          <Row gutter={[12, 12]} align="middle">
-            <Col xs={24} md={7}>
-              <Input
-                addonBefore="ID"
-                aria-label={`标签 ${index + 1} ID`}
-                value={tag.id}
-                disabled={props.disabled}
-                onChange={(event) => update(index, { id: event.target.value })}
-              />
-            </Col>
-            <Col xs={24} md={7}>
-              <Input
-                addonBefore="名称"
-                aria-label={`标签 ${index + 1} 名称`}
-                value={tag.label}
-                disabled={props.disabled}
-                onChange={(event) => update(index, { label: event.target.value })}
-              />
-            </Col>
-            <Col xs={8} md={3}>
-              <Switch
-                checked={tag.enabled}
-                disabled={props.disabled}
-                onChange={(enabled) => update(index, { enabled })}
-              />
-            </Col>
-            <Col xs={8} md={3}>
-              <InputNumber
-                min={0}
-                precision={0}
-                value={tag.sort_order}
-                disabled={props.disabled}
-                onChange={(sort_order) => update(index, { sort_order: sort_order ?? 0 })}
-              />
-            </Col>
-            <Col xs={8} md={4}>
-              <Button
-                danger
-                block
-                disabled={props.disabled}
-                onClick={() => {
-                  setRowKeys((current) => current.filter((_, itemIndex) => itemIndex !== index));
-                  props.onChange(props.value.filter((_, itemIndex) => itemIndex !== index));
-                }}
-              >
-                删除
-              </Button>
-            </Col>
-          </Row>
-        </Card>
-      ))}
-      <Button
-        block
-        disabled={props.disabled}
-        onClick={() => {
-          setRowKeys((current) => [...current, crypto.randomUUID()]);
-          props.onChange([
-            ...props.value,
-            {
-              id: `tag-${Date.now()}`,
-              label: '新标签',
-              enabled: true,
-              sort_order: props.value.length,
-            },
-          ]);
-        }}
-      >
-        添加标签
-      </Button>
-    </Space>
-  );
-}
+export { ImagePlazaTagsEditor } from './ImagePlazaTagsEditor';
+export { VideoPlazaModelCatalogEditor } from './VideoPlazaConfigEditor';

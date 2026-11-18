@@ -1,0 +1,338 @@
+{
+  "scope": "仅暂存本次冲突解决与必要适配；不提交、不推送，不重置既有自动合并内容",
+  "merge_head": "be737c2398936b79e031f5d7cfe310f4e347f672",
+  "files": [
+    {
+      "path": ".trellis/spec/backend/app/modules/business/conversation-generation.md",
+      "action": "stage",
+      "sha256": "8b992652bda930b00fa0da6a2ccbf37512097d6aaefb027865e3bedd84577980"
+    },
+    {
+      "path": ".trellis/spec/backend/app/modules/infrastructure/runtime-data-security.md",
+      "action": "stage",
+      "sha256": "3a505879707ce312f1da6d9a18c5c96c79964cf2cb7c40bea54fb45470198166"
+    },
+    {
+      "path": ".trellis/spec/frontend/app/architecture-routes-and-files.md",
+      "action": "stage",
+      "sha256": "27a4b6a9c38aa57998e5e73b6921e86dfa4b34cd8b3d3d54fb5bae63184f5dfc"
+    },
+    {
+      "path": ".trellis/tasks/10-16-creation-plaza-video-planning/task.json",
+      "action": "stage",
+      "sha256": "bf76a2b3d079dbf0093417a311601e3d12e3e6e4016d5d720622c6aaa4b9f13b"
+    },
+    {
+      "path": ".trellis/tasks/10-30-checkin-midnight/release-review.md",
+      "action": "delete",
+      "sha256": null
+    },
+    {
+      "path": ".trellis/tasks/10-30-fix-video-studio-experience/task.json",
+      "action": "stage",
+      "sha256": "e9efaca7620739fac9416e0c540566550b928c3558075f4593fe0bbe7a1b412e"
+    },
+    {
+      "path": ".trellis/tasks/11-04-complexity-reduction/task.json",
+      "action": "stage",
+      "sha256": "98ed112c14653f11bbe2493436427d497e9311aecfc3b3b490849577488d99d3"
+    },
+    {
+      "path": ".trellis/tasks/11-17-video-merge-integrity/check.jsonl",
+      "action": "stage",
+      "sha256": "25d71eb2155a98c045e645132034075b1c83d34c9d1692a1d3e43c62851e6d65"
+    },
+    {
+      "path": ".trellis/tasks/11-17-video-merge-integrity/design.md",
+      "action": "stage",
+      "sha256": "07552c9d2639e4d48b7fd3acf22f074fba5f2d90f17e3d1624a2b751ae76e6d2"
+    },
+    {
+      "path": ".trellis/tasks/11-17-video-merge-integrity/implement.jsonl",
+      "action": "stage",
+      "sha256": "25d71eb2155a98c045e645132034075b1c83d34c9d1692a1d3e43c62851e6d65"
+    },
+    {
+      "path": ".trellis/tasks/11-17-video-merge-integrity/implement.md",
+      "action": "stage",
+      "sha256": "734bfce3c51584935d42ff259149e94dbf70d3b42cd5d4cc76f97892e680b8a3"
+    },
+    {
+      "path": ".trellis/tasks/11-17-video-merge-integrity/prd.md",
+      "action": "stage",
+      "sha256": "4d296d70bfe8355028859c422fadc15ce06dd1a70288c7ba9b4d413a0f92c216"
+    },
+    {
+      "path": ".trellis/tasks/11-17-video-merge-integrity/session-files.json",
+      "action": "stage",
+      "sha256": "b4f7ac5058f70e2341602823dd0631aa33dd4aa2dd116952708ee3499658cd94"
+    },
+    {
+      "path": ".trellis/tasks/11-17-video-merge-integrity/task.json",
+      "action": "stage",
+      "sha256": "bb252334ac5631f069c5186a2337f35fec7b1cecc11260f4464323e043884e03"
+    },
+    {
+      "path": ".trellis/tasks/11-17-video-merge-integrity/task.md",
+      "action": "stage",
+      "sha256": "23e8b33dbe752327b13196c4da7522295cc4cbd2ea665839561c34a5d804e23e"
+    },
+    {
+      "path": ".trellis/tasks/11-17-video-merge-integrity/verification.md",
+      "action": "stage",
+      "sha256": "c0837dfda9390707238b877b9e299ca37d4a54c644fad2d9f157328253371a77"
+    },
+    {
+      "path": ".trellis/tasks/archive/2026-11/10-27-media-plaza-schema-move/task.json",
+      "action": "stage",
+      "sha256": "2dc4d98f4b1d7f5b82e4672b6dcb8343abb07f277fc32972dc55728bdde5d638"
+    },
+    {
+      "path": "README.md",
+      "action": "stage",
+      "sha256": "7e9d16cc91019aad122feff87f8c43393aa209991f60a6e2f408e2a53196de3c"
+    },
+    {
+      "path": "docs/ARCHITECTURE.md",
+      "action": "stage",
+      "sha256": "bbf82a739b6fea5b4ed0bc46e36f88c2f58483476edcdb821d5b6df469c83562"
+    },
+    {
+      "path": "packages/admin-client/src/configSchemas.ts",
+      "action": "stage",
+      "sha256": "80894f0283a15ea3adafc708ae7e396148fb89920e3fe279ffcd41c9b291a2cf"
+    },
+    {
+      "path": "packages/admin-client/src/menu.ts",
+      "action": "stage",
+      "sha256": "00fd7642672b20b1a6c5efc2d00e886c92cd7a8aae6887ebccc30e82e435fda1"
+    },
+    {
+      "path": "packages/admin-client/src/videoPlazaConfig.ts",
+      "action": "stage",
+      "sha256": "401dd92bdbe661fbe381278fe4baa938dd979a9450f08ed23564f10771704a97"
+    },
+    {
+      "path": "packages/admin/src/components/ImagePlazaConfigEditors.tsx",
+      "action": "stage",
+      "sha256": "7008facec2f8cdc8a262a163bda7fb0d084e2aef3de26008c2454f5644f10161"
+    },
+    {
+      "path": "packages/admin/src/components/ImagePlazaTagsEditor.tsx",
+      "action": "stage",
+      "sha256": "281c1f0b9aebcf4782fab0afd12d19802c709af34abd689bf8e2c02c98b0e5a4"
+    },
+    {
+      "path": "packages/admin/src/components/VideoPlazaConfigEditor.tsx",
+      "action": "stage",
+      "sha256": "f173fdd1967d0b26ae1d2ade45ac70806da1b116b2dc6e24d3e85b6d4cb57677"
+    },
+    {
+      "path": "packages/admin/src/lib/adminNavigation.ts",
+      "action": "stage",
+      "sha256": "0fd1d314c9529238bea87285e90ee5de640f84d75b4e5ae243006f43bec53ac6"
+    },
+    {
+      "path": "packages/admin/src/lib/configSchemas.test.ts",
+      "action": "stage",
+      "sha256": "4138edc516eea22a2b477079d52efc5a9eb1b864ee3dadc7381e2965f8246680"
+    },
+    {
+      "path": "packages/backend/src/app.ts",
+      "action": "stage",
+      "sha256": "1d44e0560e8c1182eb4aa5f7159ce3a880fdc09294eb9b3a092a32fe4dc9e7f9"
+    },
+    {
+      "path": "packages/backend/src/features/image-plaza/config.ts",
+      "action": "stage",
+      "sha256": "425cc09d360693455af215397924e4db494f834622bbae1deb7401136e1a78b0"
+    },
+    {
+      "path": "packages/backend/src/features/image-plaza/repository-conversation.ts",
+      "action": "stage",
+      "sha256": "d9eb2b9ab55d886b2550449fa22e714bcc6929839b493a84003360bd13964967"
+    },
+    {
+      "path": "packages/backend/src/features/image-plaza/repository-feed.ts",
+      "action": "stage",
+      "sha256": "d5ed0aad8487d5be0d1c13ab424ee28b9747e7ee619bb6ed198086b5ce56f976"
+    },
+    {
+      "path": "packages/backend/src/features/image-plaza/repository-model.ts",
+      "action": "stage",
+      "sha256": "2da8c6c690b56bbcad915f00b6df614c8d4996e18e2368ee1a882ce40a1b8cd5"
+    },
+    {
+      "path": "packages/backend/src/features/image-plaza/repository-work.ts",
+      "action": "stage",
+      "sha256": "39a8f6139f1601bdc65e6ffc1eebccb290e45c90a785b1b984d398c7413eae53"
+    },
+    {
+      "path": "packages/backend/src/features/image-plaza/repository.ts",
+      "action": "stage",
+      "sha256": "beb79000db82330607e367edc17422c0d241db0b447fb1f1b597c814d275b446"
+    },
+    {
+      "path": "packages/backend/src/features/image-plaza/storage.ts",
+      "action": "stage",
+      "sha256": "97cf1b1a40e20acb98d2d7ac44e33adc2cb9c50a8201602bce38deae2b3f64e6"
+    },
+    {
+      "path": "packages/backend/src/features/image-plaza/video-job.ts",
+      "action": "stage",
+      "sha256": "108293012885d2cbfe8f9d0e9966c10f49b3030e12cf69fd4f632da6978e9ec7"
+    },
+    {
+      "path": "packages/backend/src/features/image-plaza/video-media-command.ts",
+      "action": "stage",
+      "sha256": "f003735e6d541ac5c202689675c2dbd3cf3e99fd2c7a4bb69ce406f43daab28e"
+    },
+    {
+      "path": "packages/backend/src/features/image-plaza/video-media.ts",
+      "action": "stage",
+      "sha256": "62b59609e45b38aa8fcdd4f260f30c2d29d6cdef85a8426ef1e8ddf44cbda9aa"
+    },
+    {
+      "path": "packages/backend/src/features/image-plaza/video-repository.ts",
+      "action": "stage",
+      "sha256": "d1f23aefa6530b283454d795c4a2140d5472e4581b71c9c883faee870e333b03"
+    },
+    {
+      "path": "packages/backend/src/features/image-plaza/video-upstream.ts",
+      "action": "stage",
+      "sha256": "127f0181473f96f7476962a1fa556eda3d9a2ed94420b6798ba0031a1cec0eee"
+    },
+    {
+      "path": "packages/backend/src/features/image-plaza/video-worker-repository.ts",
+      "action": "stage",
+      "sha256": "d56c7626148f51ce014784dd082bb0b82151dc0f9cddb5e198636b942645270d"
+    },
+    {
+      "path": "packages/backend/src/platform/config.ts",
+      "action": "stage",
+      "sha256": "0f1d5b82a8a19c43427e79f1f6983eff2a24f2c23b0390a036513599b156c97b"
+    },
+    {
+      "path": "packages/backend/src/routes/image-plaza-errors.ts",
+      "action": "stage",
+      "sha256": "e400079c6828c1afa9055621bab59ad1a337766fc8662599d0ca8c200a5cee0c"
+    },
+    {
+      "path": "packages/backend/src/routes/image-plaza-feed.ts",
+      "action": "stage",
+      "sha256": "b21b2998e18d2fe99b49523ff249c18f8e497235fd764839a3783b304a29eb80"
+    },
+    {
+      "path": "packages/backend/src/routes/image-plaza-helpers.ts",
+      "action": "stage",
+      "sha256": "79156c0c6b55dd224cbe675cc058078f8d384ca55577ba748e1c981449c0fa50"
+    },
+    {
+      "path": "packages/backend/src/routes/image-plaza.ts",
+      "action": "stage",
+      "sha256": "1a85c05951f72f2dda9751ec49e1a31a76e999309ec4593e0c642b5e9ee7436c"
+    },
+    {
+      "path": "packages/backend/src/routes/video-plaza.ts",
+      "action": "stage",
+      "sha256": "4cfa5305f2e5bd79461ab77337d9d6b9a022400d1f4fb9c729857f556f39ff08"
+    },
+    {
+      "path": "packages/frontend/src/app/(main)/create/page.tsx",
+      "action": "stage",
+      "sha256": "40bae0549a29585f5c7fc833f46857c0f5cbcd3dfaedcc9d3241b9ad6f4aaf68"
+    },
+    {
+      "path": "packages/frontend/src/app/(main)/create/studio/[conversationId]/page.tsx",
+      "action": "stage",
+      "sha256": "085c4d03c716a218f7d38fc0eef7f7cd8d65dd97d2e9f925615abbda15c8f6ce"
+    },
+    {
+      "path": "packages/frontend/src/components/creation/creation-hub.tsx",
+      "action": "stage",
+      "sha256": "acbcbc4156ffd6cfc076a1a6d4facdf9ce22076c0caf087b00fe146aba1eee4e"
+    },
+    {
+      "path": "packages/frontend/src/components/image-plaza/plaza-card.tsx",
+      "action": "stage",
+      "sha256": "51d2c467c94a4d948000e8eff575761429b27b7e5a2aadf91090f68881500221"
+    },
+    {
+      "path": "packages/frontend/src/components/image-plaza/studio-reference-picker.tsx",
+      "action": "stage",
+      "sha256": "a921a16f098c1194b338c8934c8b0a59b78360f352ccec9626cbcfb8e56c4051"
+    },
+    {
+      "path": "packages/frontend/src/components/image-plaza/studio-video-card.tsx",
+      "action": "stage",
+      "sha256": "ed0a9fa33c3ca0ddc8e103e349361184e6053d0bdcdc12adb892e5a7c63f4643"
+    },
+    {
+      "path": "packages/frontend/src/components/image-plaza/style-filter-sheet.tsx",
+      "action": "stage",
+      "sha256": "761d0dd78f1e5ea0b54bc6eaab9a831f1115b992e318e246bf291bb23a7d8e42"
+    },
+    {
+      "path": "packages/frontend/src/lib/api/image-plaza-keys.ts",
+      "action": "stage",
+      "sha256": "1fac30d81c2c1a68a36d9078069beadb4cd9eef91fd31f7ef39a69f8e9cd8131"
+    },
+    {
+      "path": "packages/frontend/src/lib/api/image-plaza.ts",
+      "action": "stage",
+      "sha256": "5253933437a55742b79d21af2f2269a4ff2afb80b5811a433fe636d9471660e1"
+    },
+    {
+      "path": "packages/frontend/src/lib/api/video-plaza.ts",
+      "action": "stage",
+      "sha256": "8e15011c0414669b923827d79a082c810085c4a14e991ef46e2fbfeb89fc13bb"
+    },
+    {
+      "path": "packages/shared/migrations/README.md",
+      "action": "stage",
+      "sha256": "ea172f42d1ea5a4f03a1eb88baad254941b3f4ac94caa3fa3f54731c6ab8b8e3"
+    },
+    {
+      "path": "packages/shared/src/api/image-plaza-tags.ts",
+      "action": "stage",
+      "sha256": "e882ed3d41d673312894a03757cbf0a3051113d70af84d85521468230d662977"
+    },
+    {
+      "path": "packages/shared/src/api/image-plaza.ts",
+      "action": "stage",
+      "sha256": "1e8f257a83ac7f48651e21cfbd32258d65c2cd0d7ff81dc1aff4c2da1a4d606c"
+    },
+    {
+      "path": "packages/ui-tests/fixtures/data.ts",
+      "action": "stage",
+      "sha256": "a06af273e35e2c703a897db3202866a4270282957f993fb11502f5e580926f68"
+    },
+    {
+      "path": "packages/ui-tests/fixtures/server.test.ts",
+      "action": "stage",
+      "sha256": "8271fd23930ce0b0cefa617772c2feca2d1c210460bc159c7a45cadbba1901a3"
+    },
+    {
+      "path": "pnpm-lock.yaml",
+      "action": "stage",
+      "sha256": "6d1a302fc7d267aae4a6b88545783b8dc02e635797744037fed86cdf4c7c177b"
+    },
+    {
+      "path": "scripts/check-backend-logging.mjs",
+      "action": "stage",
+      "sha256": "96b48dd88625ac0b73bd822b88c09d61adcd8e46b567881842c42a63653e09b6"
+    },
+    {
+      "path": "scripts/check-legacy-references.mjs",
+      "action": "stage",
+      "sha256": "dbf397cb3aaf3cd1001bc4c7e32ea51e990382704536ec9c8bb652995420d422"
+    },
+    {
+      "path": "scripts/complexity-baseline.json",
+      "action": "stage",
+      "sha256": "69ad0a10526c0f9a573a6ee10d80421fad1692fe54cf828a2dbc18a1e8016b98"
+    }
+  ],
+  "manifest_path": ".trellis/tasks/11-17-video-merge-integrity/review-manifest.json",
+  "manifest_note": "本审查清单自身也纳入拟暂存；自身摘要在审查输出中记录，避免自引用。"
+}

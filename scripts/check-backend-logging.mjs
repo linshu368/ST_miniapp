@@ -13,6 +13,9 @@ const rawFetchOwners = new Set([
   'platform/observability/fetch.ts',
   'platform/observability/fetch-core.ts',
   'features/alerting/feishu-alert-sink.ts', // Instrumenting notification delivery could recursively alert.
+  'features/image-plaza/video-seed-import.ts', // Offline video importer; bounded redirects and proxy behavior have existing tests.
+  'scripts/upload-video-plaza-seed-assets.ts', // Human-operated Storage uploader; preserves reviewed JSON/proxy protocol.
+  'scripts/validate-video-plaza-seed-playback.ts', // Offline signed-URL Range validation, never a product request.
   'features/image-plaza/seed-import.ts', // Offline importer; proxy, limits and retries have their own tests.
 ]);
 
@@ -148,6 +151,13 @@ const offlineScripts = new Set([
   'railway-drama-report.ts',
   'payment-callback-report.ts',
   'import-image-plaza-seed.ts',
+  // Video seed tools are offline human/JSON CLIs, matching the existing image importer.
+  'estimate-video-plaza-seed-size.ts',
+  'generate-video-plaza-seed-sql.ts',
+  'import-video-plaza-seed.ts',
+  'process-video-plaza-seed-assets.ts',
+  'upload-video-plaza-seed-assets.ts',
+  'validate-video-plaza-seed-playback.ts',
   'drama-survey-report.ts',
   'compare-drama-stream.ts',
   'compare-drama-startup-optimizations.ts',

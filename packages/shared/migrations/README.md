@@ -1,4 +1,175 @@
+# 2026-11-17 广场视频 Stream（本地候选，TEST未执行）
+
+必须按 delivery扩展 → 已核验的test_assets数据切换 → 新应用发布/核验 → contract收缩 顺序逐文件执行，不能按字典序批跑。三文件及回滚/容量/锁/权限说明见[运行手册](../../../docs/video-plaza-stream.md)。数据迁移恰好13行CAS，固定TEST身份，保留封面/业务主键/账务；源MP4清理是应用验收后的独立步骤。新J表RLS/service-only，发布/退款同一attempt锁及租约token；5s锁/30-60s语句预算，未知结果不重放或删除。生产不在本次执行范围。
+
 # SQL 迁移文件
+
+## 2026-11-18 数据库重组阶段 3c：上架状态拆出 characters（本地 PG17 非超级用户验证）
+
+`20261118_db_reorg_p3c_character_listings.sql`（扩展）+ `20261118_db_reorg_p3c_character_listings_contract.sql`（收缩，后端发布后执行）。计划见 `.trellis/tasks/11-17-db-reorg-p3-user-state/design.md` 3c。
+
+- 新表 `app_core.character_listings`（每卡一行：enabled / sort_order / archived_at / last_listed_at / updated_at），从 characters 回填；插卡触发器自动建行。上架时间触发器、"测试卡不能上架"守卫移到上架表；卡片表留"测试卡必须有 card_hash"CHECK 与"已上架的卡不能改成测试卡"守卫。service_role 只读写不增删（导入脚本插卡后设上架值）。
+- 运营 `get_characters` / `get_character_layout` / `publish_character_layout_draft` / `create_character`（改返回 jsonb，键不变）与 `can_discover_character` / `can_use_character` 整函数重写（md5 守卫：线上必须是写迁移时依据的版本）；创作者 `mutate_creator_character` / `review_creator_character` 只按原文替换写上架列的 3 句（匹配不是恰好一处就拒绝）；`v_card_quality_session` 改 join。删 0 调用的 `archive_character` / `set_character_enabled` / `reorder_characters`。
+- 运营列表的"更新时间"取卡内容与上架两者较晚的一个（布局发布不再改卡片表的 updated_at，界面所见不变）。
+- 发布窗口：上架表 → 卡片表 4 列单向镜像，供旧后端读；写入方在扩展步已全部换成写上架表。
+- pg_cron `card_position_hourly_snapshot` 的命令文本直读旧列：扩展步用 `cron.alter_job` 改为 join 上架表（写入内容不变，命令与预期原文不一致就拒绝；TEST 无 pg_cron 跳过），收缩步守卫不得再有 cron 命令读旧列。
+- 收缩：锁两表 → 删镜像 → 守卫（每卡恰有上架行且与旧列一致；无函数/视图再读旧列）→ 插卡触发器改按默认值建行 → 删旧 CHECK、3 个旧索引、旧触发器函数与 4 列。
+- 验证：`bash scripts/test-db-reorg-p3c-migration.sh`（旧函数跑固定场景作基线，扩展后、收缩后逐字比对）。
+- 发布：TEST 扩展 → 生产扩展 → 后端发布 → 核对 → TEST/生产收缩。回滚：扩展步不删列且镜像同步，回退后端即可（旧的 3 个 RPC 无人调用，不恢复）。
+
+## 2026-11-17 数据库重组阶段 3b-2：资料进 users，settings 改名 user_preferences（本地 PG17 非超级用户验证）
+
+`20261117_db_reorg_p3b2_user_profile.sql`（扩展）+ `20261117_db_reorg_p3b2_user_profile_contract.sql`（收缩，后端发布后执行）。计划见 `.trellis/tasks/11-17-db-reorg-p3-user-state/design.md` 3b-2。
+
+- `app_core.users` 加 6 个资料列并回填；TG 资料刷新改为 `app_core.refresh_user_profile`，值没变不写。`avatar_url`（旧 TG 头像链接，无人读）不迁，收缩步删除。
+- 扩展步建同名自动可更新视图 `app_core.user_preferences`（只含偏好列），新后端从发布起就用最终名字；`cs_feed.user_identities`（保留 security_barrier）与两个运营函数改读 users，输出不变。
+- 发布窗口资料双向同步，新建 settings 行先从 users 填资料（不变式：窗口内两边一致，收缩步才能按 settings 补 users）。
+- 收缩：锁表补齐 → 守卫（除 4 个偏好函数外无函数/视图引用旧表）→ 删视图、表改名（约束同步改名）、删 7 个资料列 → 4 个偏好函数换新表名。
+- 验证：`bash scripts/test-db-reorg-p3b2-migration.sh`。
+- 发布：TEST 扩展 → 生产扩展 → 后端发布 → 核对 → TEST/生产收缩。回滚：扩展步不删列且双向同步，回退后端即可。
+
+## 2026-11-17 数据库重组阶段 3b-1：一次性标记进 user_marks（本地 PG17 非超级用户验证）
+
+`20261117_db_reorg_p3b1_user_marks.sql`（扩展）+ `20261117_db_reorg_p3b1_user_marks_contract.sql`（收缩，后端发布后执行）。计划见 `.trellis/tasks/11-17-db-reorg-p3-user-state/design.md` 3b-1。
+
+- 新表 `miniapp_features.user_marks`（`(user_id, mark_key)`，count / first_at / last_at / last_action）：并入 `growth_prompt_states`（`growth_prompt.<kind>`）与 settings 的 `vip_entry_seen_at`（`vip_entry.seen`）、`characters_last_seen_at`（`characters_latest.seen`）。写只经 `touch_user_mark` / `record_growth_prompt_event`（签名与判定不变）。
+- 扩展步直接删 10-13 起只为回滚保留的 `*_full_rules_remaining` 三列、`claim_instruction_slot_modes` 等 4 个函数与触发器（后端不读，0 次调用）。返利表加 `user_id` 索引。
+- 发布窗口：`growth_prompt_states` 留只读兼容视图；settings 两列与 user_marks 双向同步（只在值变化时写，`pg_trigger_depth` 防回环）。
+- 收缩：删同步触发器与兼容视图，锁表补齐窗口残差；`share_image_plaza_artifact` 去掉写 settings 首发分享时间的 upsert（按原文定位，删掉的文本与预期不一致就拒绝）；删 settings 三列。首发分享改由 `billing.image_plaza_share_rewards` 是否有记录推导（生产 7 人与旧列完全一致）。
+- 验证：`bash scripts/test-db-reorg-p3b1-migration.sh`。
+- `20261117_db_reorg_p3b1_clear_orphan_first_share.sql`：收缩前置。TEST 有手工改过的测试数据（有首发分享时间、无返利记录），挡住收缩守卫；按新定义清空（生产 0 行，空操作）。
+- `20261117_db_reorg_p3b1_video_share_first_share.sql`：收缩前置。原重组执行记录中，TEST 有视频广场分支（#566）建的 `billing.share_media_plaza_video`，生产当时无此函数；迁移按原文去掉 settings 首发时间写入（同一事务已写返利记录，行为不变）。视频分支合并后，首次安装或重建 `20261027_media_plaza_video.sql` 的分享函数，必须紧接着单文件执行该 forward-fix，再开放视频分享；原视频 SQL 保留为历史定义，不改写。若该环境曾因函数不存在而把 forward-fix 记为空操作，不能只看账本判定已修复，须核对安装后的函数定义；需要重跑时用既有 Database Migration workflow 的 `force_rerun`，仍须遵守环境确认、测试先行和生产批准。最终函数不得再写 `miniapp_user_settings.image_plaza_first_share_completed_at`。本次合并未查询或修改任何远程环境。
+- 发布：TEST 扩展 → 生产扩展 → 后端发布 → 核对 → 清孤立首发分享、去掉视频分享的旧写入 → TEST/生产收缩。回滚：扩展步保留标记列且双向同步，回退后端即可。
+
+## 2026-11-17 数据库重组阶段 3a：用户归因与轮数拆出 users（本地 PG17 非超级用户验证）
+
+`20261117_db_reorg_p3a_user_attributions.sql`（扩展）+ `20261117_db_reorg_p3a_user_attributions_contract.sql`（收缩，后端发布后执行）。计划见 `.trellis/tasks/11-17-db-reorg-p3-user-state/design.md` 3a。
+
+- 新表 `miniapp_traffic.user_attributions`（来源、bot/MiniApp 首次进入、历史标记）与 `experience.user_chat_stats`（累计轮数，以 users 为准合并 settings 那份）；从 users 回填。
+- 新函数 `app_core.ensure_user`、`miniapp_traffic.enter_user`、`experience.increment_user_total_round`、`experience.user_total_round`。`record_app_entry`、`check_invite_chat_rounds_reward`、`cs_feed.user_profiles`、`traffic_daily_stats` 改读新表（视图输出不变）。删除 8 个无人使用的分析视图。
+- 发布窗口：users 上的触发器把旧后端写的归因列同步到新表；`app_core.increment_user_total_round` 暂留为兼容壳。收缩步先在 users 锁内按回填规则再补一次（扩展执行期间旧后端只写进 users 的残差，生产实测 1 人差 1 轮），再删触发器、兼容壳与 users 的 5 列、settings.total_round（守卫：补齐后仍有缺口或仍有函数引用旧列时拒绝）。
+- `20261117_db_reorg_p3a_drop_test_funnel_stats.sql`：收缩前置。TEST 独有的遗留视图 `miniapp_analytics.funnel_stats` 依赖 users.bot_entered_at，挡住删列（生产无此视图，执行为空操作）；删完复核再无视图依赖要删的列。
+- 验证：`bash scripts/test-db-reorg-p3a-migration.sh`。
+- 发布：TEST 扩展 → 生产扩展 → 后端发布 → 核对 → 删 funnel_stats → TEST/生产收缩。回滚：扩展步不删列，回退后端即可。
+
+## 2026-11-17 数据库重组阶段 2c：看板账号只经视图读，清掉浏览器角色遗留授权（本地 PG17 非超级用户验证）
+
+`20261117_db_reorg_revoke_reader_and_browser_grants.sql`。计划见 `.trellis/tasks/11-17-db-reorg-p2-observability/design.md` 2c。
+
+- `miniapp_analytics.chat_first_token_facts` 改为所有者权限；收回 `first_token_metrics_reader` 对 `experience` 三张表的直接/列级 SELECT、USAGE，删除三条 `first_token_metrics_read` 策略。报表函数与后端读视图不受影响。
+- 收回 `anon`/`authenticated` 在业务 schema（不含 `admin`）的全部表/视图权限。二者本就没有这些 schema 的 USAGE，行为不变。
+- `experience.chat_history`、`miniapp_traffic.botlinks`、`traffic_clicks` 开启 RLS（访问者只有所有者与 BYPASSRLS 的 `service_role`）。
+- 验证：`bash scripts/test-db-reorg-p2c-migration.sh`。`scripts/sql/grant-first-token-metrics-reader.sql` 同步为只授视图。
+- 回滚：视图 `SET (security_invoker = true)` 并按旧版脚本重授；RLS 可 DISABLE。
+
+## 2026-11-17 数据库重组阶段 2b 收尾：删除 ops 兼容视图
+
+`20261117_db_reorg_drop_ops_compat_views.sql`：删除 `app_core.alert_incidents`、`app_core.alert_delivery_attempts`、`miniapp_features.free_zone_events` 三个临时兼容视图。
+
+- 前置：生产后端已改读 `ops`（#879，11-17 14:40 部署），`pg_stat_statements` 中旧表名语句不再增长。
+- 守卫：旧名仍是表时拒绝；视图之上若有依赖，`DROP VIEW` 不带 CASCADE 会回滚。
+- 验证：`bash scripts/test-db-reorg-p2b-migration.sh` 末段（两次幂等、`ops` 表与数据不变、旧名是表时拒绝）。
+- 回滚：重建同名视图（定义见 2b 迁移）。
+
+## 2026-11-17 数据库重组阶段 2b：告警、畅聊事件迁入 ops；删除短剧旧 SQL 链路（本地 PG17 非超级用户验证）
+
+`20261117_db_reorg_ops_alerts_free_zone_events.sql`（domain: ops）。计划见 `.trellis/tasks/11-17-db-reorg-p2-observability/design.md` 2b。
+
+- `app_core.alert_incidents` → `ops.alert_incidents`；`app_core.alert_delivery_attempts` → `ops.alert_delivery_jobs`；`miniapp_features.free_zone_events` → `ops.free_zone_events`。`SET SCHEMA` 原样搬，分析视图 `free_zone_model_events` 自动跟随。
+- 旧位置留同名兼容视图（`security_invoker`，授权同原表），给发布前的旧后端用；后端上线生产后由下一个 migration 删除。
+- 验证：`bash scripts/test-db-reorg-p2b-migration.sh`。以 service_role 执行后端真实 SQL：旧 SQL 经兼容视图、新 SQL 直接打 `ops`，含 `FOR UPDATE`、`RETURNING`、`ON CONFLICT DO NOTHING`、`UPDATE ... FROM`（`SKIP LOCKED`）；序列接续、FK/RLS 随表、事件只追加、浏览器角色无权限。
+- 发布：TEST → Production → 后端发布（改读 `ops`）→ 删兼容视图。回滚：兼容视图在，旧后端可直接回退。
+
+`20261117_db_reorg_drop_drama_playback_sql.sql`（domain: miniapp_analytics）。
+
+- 删除已停写的短剧 SQL 观测：`drama_playback_observations` 表、`drama_playback_facts` 视图、记录/清理函数、停用的 cron、组角色 `drama_metrics_reader`。11-01 之后有写入或有外部依赖时拒绝。
+- 验证：`bash scripts/test-db-reorg-p2b-drama-migration.sh`（正常删除两次幂等；近期写入、外部视图两种情况拒绝且不改动；`grafana_cloud` 读其他分析视图不受影响）。
+- 发布：TEST → Production，同时删 Grafana 看板 `st-drama-playback` 与两处链接。回滚：不可逆，结构可从 `20261027_drama_playback_observability*.sql` 重建，历史行以每日备份为准。
+
+## 2026-11-17 数据库重组阶段 2a：经营看板日汇总刷新提速（本地 PG17 非超级用户验证）
+
+`20261117_db_reorg_core_refresh_bounded.sql`（domain: miniapp_analytics，派生缓存）。计划见 `.trellis/tasks/11-17-db-reorg-p2-observability/design.md` 2a。
+
+- 问题：`grafana_core_recent_30m` 在一条命令里刷新今天和昨天，每条 5s 超时、同一事务连坐。函数逐行随机查供应商明细表，当天 4533 行 5.8s，11-17 午后 8 次失败 6 次，看板停更。
+- 函数同签名、同输出、同权限。openrouter/venice 明细先按 `created_at` 取 `[当天 00:00 - 5 分钟, 次日 01:00)` 再哈希配对（生产实测明细比聊天记录晚 0~111 秒写入）。计费表仍按 `charge_key` 查。
+- cron 拆两个：`grafana_core_recent_30m` 只刷今天（20s）；新增 `grafana_core_yesterday_close`（`17 16-22 * * *` GMT，北京时间 00:17~06:17）只刷昨天（30s）。
+- 验证：`bash scripts/test-db-reorg-p2a-migration.sh`。保留旧函数副本，在 3 天随机合成数据上逐天比较新旧输出逐行一致；把窗口改窄会被测试抓到。生产执行前只读比较 11-16 全天 8035 行，新旧写法 0 行不同。
+- 发布：TEST 单文件 → Production 单文件，无应用代码改动。回滚：重新执行 `20261026_grafana_light_core.sql` 的函数与 cron 段。
+
+## 2026-11-17 数据库重组阶段 1f：删除无读者的 analytics_grafana（本地 PG17 非超级用户验证）
+
+`20261117_db_reorg_drop_analytics_grafana.sql`（domain: miniapp_analytics 为唯一看数入口）。
+
+- 删除 `analytics_grafana`：11 个物化视图、35 个视图，约 1.7 MB。
+  - Grafana 现存看板与告警零引用；物化视图自 10 月下旬起无人刷新；无函数、cron、外部视图依赖；仓库零引用。
+  - 迁移内守卫：仍有引用时拒绝执行。
+- 删除只在该 schema 上有授权的组角色 `grafana_reader`（`grafana_cloud` 的上级角色）。有残留依赖或无 ADMIN 时保留并打印 NOTICE。
+- `grafana_cloud` 读 `miniapp_analytics` 不受影响。
+- 验证：`bash scripts/test-db-reorg-p1f-migration.sh`（两次幂等；外部依赖存在时拒绝且不改动）。
+- 发布：TEST 单文件 → Production 单文件，无应用代码改动。回滚：不可逆，视图定义可从历史 migration 取回。
+
+## 2026-11-17 数据库重组阶段 1e：托管配置 key 登记表（本地 PG17 非超级用户验证）
+
+`20261117_db_reorg_managed_config_keys.sql`（domain: admin + app_core.runtime_config）。计划见 `.trellis/tasks/11-17-db-reorg-p1-foundation/design.md` 1e。
+
+- 新表 `admin.managed_config_keys(config_key PK, managed_via, retired_at, note)`：56 个运营托管 key 加 `miniapp_text_postprocess_config`（text_postprocess）。
+- `admin.is_managed_config_key` 改为查表（operations_config 且未退役），NULL 入参仍返回 NULL，权限仍只给 postgres。迁移内先记录旧 9 层链对每个 key 的判断，替换后逐一比对，不一致即回滚。
+- `config_drafts` / `config_releases` 的 key CHECK 与 advanced-image CHECK 改为外键引用登记表。历史中登记表外的旧 key 以退役身份补登。
+- 删除 9 个 `admin.is_managed_config_key_before_*`（迁移内断言除这两个 CHECK 外无其他引用）。
+- 退役 7 个 key（运营台已不展示、后端不读）：`miniapp_recharge_page_config`、`miniapp_payment_prompt_dialog_config`、`system_fallback_character_id`、`miniapp_daily_checkin_bonus_credits`、`media_feature_free_trial_limit`、`image_plaza_tags_feature_enabled`、`lobby_pinned_characters`。删除这些 key 以及另外 5 个零引用 key 的 `runtime_config` 行。
+- `admin.validate_managed_config_value` 的 15 层不改，冻结：**以后新增托管 key = 登记表插一行 + 最外层原地加校验分支 + admin-client 注册**，不再改名套层、不再改 CHECK（CONTRACT §2.5）。
+- 验证：`bash scripts/test-db-reorg-p1e-migration.sh`。以非超级用户 + CREATEROLE 执行，用生产链原文做夹具。覆盖两次幂等、逐 key 一致、NULL 语义、外键接受历史/拒绝未知、旧 CHECK 与包装函数已删、配置行增删、权限不扩大。
+- 发布：TEST 单文件 → Production 单文件 → admin/shared 去掉两个零引用常量（先后不敏感）。
+- 回滚：恢复某个退役 key 时，`UPDATE admin.managed_config_keys SET retired_at = NULL`，并重新写入 runtime_config 行。
+
+> 备注（1c）：`20261117_db_reorg_cs_grants.sql` 在生产留有一条失败认领（`repo_migration_claims`）。生产未执行 `20261013_repo_migration_claim_recovery.sql`，`abandon_claim` 不可用。该认领只阻止原文件重跑，原文件已由 `_fix` 取代，不影响其他迁移。
+
+## 2026-11-17 数据库重组阶段 1c 修正：遗留角色逐项撤权（本地 PG17 非超级用户验证）
+
+`20261117_db_reorg_cs_grants_fix.sql` 取代下面 `20261117_db_reorg_cs_grants.sql` 在生产的执行。
+
+- 原因：原文件用 `DROP OWNED BY cs_outreach_reader_v1` 撤权。生产的 postgres 不是超级用户，也不是该角色成员（只有 ADMIN），报 `permission denied to drop objects`，整个事务回滚、未生效。
+- 原文件已在 TEST 记账，按账本规则不改。生产对原文件的失败认领以 `abandon_claim` 作废，之后不再执行原文件。
+- 修正：按 `pg_shdepend` 逐项 REVOKE（表/视图、schema、数据库），断言无残留依赖后 `DROP ROLE`。生产核对过这些授权的 grantor 均为 postgres。其余撤权内容与原文件相同。
+- 验证：`bash scripts/test-db-reorg-p1c-migration.sh` 改为以"非超级用户 + CREATEROLE"账号建对象并执行，与生产 postgres 同权。原文件在此条件下复现失败，修正版两次执行均成功，角色级读写断言通过。
+- 发布：TEST 单文件（无客服角色，跳过）→ Production：先 abandon_claim 原文件，再执行本文件。
+
+## 2026-11-17 数据库重组阶段 1c：客服账号只读视图层（生产执行失败已回滚，由上面的修正文件取代）
+
+`20261117_db_reorg_cs_grants.sql`（domain: 外部读者授权）。前置：`20261117_db_reorg_ops_cs_feed.sql` 已执行，客服仓库已改读 `cs_feed`（ST_cs_platform 91c9593）。
+
+- `cs_runtime_v1`：撤销 `app_core` / `billing` / `experience` 的表权限与 USAGE，只留 `cs`（客服自有）与 `cs_feed`。客服表到 `app_core.users` 的外键检查以表所有者身份执行，不受影响。
+- `cs_persona_reader`：撤销全部业务 schema，只留 `cs_feed`、`miniapp_analytics`。旧画像簇按所有者决定直接丢弃。
+- `cs_outreach_reader_v1`：零引用、无连接、不拥有对象（迁移内再次断言），`DROP OWNED` 撤权后删除。
+- 验证：`bash scripts/test-db-reorg-p1c-migration.sh`（两次幂等；以角色身份读视图成功、读业务表被拒；经外键写 `cs.conversations` 成功；无这些角色的环境跳过）。
+- 发布：TEST 单文件（无客服角色，预期跳过）→ Production 单文件。回滚：按 ST_cs_platform `db/migrations/009`、`016` 重新授权。
+
+## 2026-11-17 数据库重组阶段 1d：清理无读者的结构（本地 PG17 验证，远端未执行）
+
+`20261117_db_reorg_cleanup.sql`（domain: app_core / miniapp_traffic / miniapp_features / PostgREST 暴露配置）。计划见 `.trellis/tasks/11-17-db-reorg-p1-foundation/design.md` 1d。
+
+- 删除 `app_core.users.st_handle`，零引用，唯一索引随列删除。`st_initialized_at` 保留：幕间资格函数在读它，阶段 3 再搬。
+- `miniapp_traffic.botlinks` 的 `"Purchase_amount"` / `"Procurement_days"` 改名为小写；视图 `traffic_daily_stats` 按列号引用，输出不变。
+- 删除 `miniapp_features.wish_roles` 与 `create_wish_role` / `complete_wish_role`。
+- 从 authenticator 的 `pgrst.db_schemas`、`pgrst.db_extra_search_path` 去掉 `miniapp`、`cs_platform`，保持原顺序，旧值打印在 NOTICE。然后删除 `cs_platform`（CASCADE）与空 `miniapp` schema，提交时 NOTIFY pgrst 先重载配置、再重载 schema。没有这两个 GUC 的环境跳过改写。
+- 注销两个停用 cron（`daily_metrics_midnight` / `noon`），删除 `public.compute_daily_metrics` / `show_dashboard`。
+- 归档以 Supabase 每日备份为准（所有者确认）。删除不可逆；暴露列表可按 NOTICE 旧值恢复。
+- 验证：`bash scripts/test-db-reorg-p1d-migration.sh`（两次幂等、暴露列表只少两项且顺序不变、视图输出不变、无 GUC / 无 pg_cron 环境安全跳过）。
+- 发布：TEST 单文件 → Production 单文件 → 后端（只去掉不再使用的 cs_platform 域客户端，先后顺序不敏感）。上线后核对后端 `/health`、真实对话、运营台读写。
+
+## 2026-11-17 数据库重组阶段 1a：建 ops 与 cs_feed（本地 PG17 验证，远端未执行）
+
+`20261117_db_reorg_ops_cs_feed.sql`（domain: ops 新建 + cs_feed 新建）。规则见 `docs/db/CONTRACT.md`，计划见 `.trellis/tasks/11-17-db-reorg-p1-foundation/design.md`。前置：`app_core.users` / `miniapp_user_settings`、`billing.user_wallets` / `vip_memberships` / `payment_orders`、`experience.chat_sessions`。
+
+- `ops`：空 schema，只给 service_role USAGE；撤销 PUBLIC，以及新函数默认的 PUBLIC EXECUTE。阶段 2 起承接上游调用明细、测速、事件、告警。
+- `cs_feed`：给客服仓库读的只读视图层，不暴露给 PostgREST。
+  - `user_identities`：用户 id、tg_id、展示名、username；
+  - `user_profiles`：资料卡，输出列与客服 `users.ts` 的 `profileSelect` 逐列一致。
+  - 视图归 postgres，带 `security_barrier`，做法与 `analytics_grafana` 现有视图相同。
+  - `cs_runtime_v1`、`cs_persona_reader` 只在生产存在，存在时才授权视图 SELECT。旧的业务表授权暂不收回（阶段 1c 收回）。
+- 验证：`bash scripts/test-db-reorg-p1a-migration.sh`（两次执行幂等；视图与客服原 SQL 在空名字、无钱包、无设置、已删会话、未完成订单等边界数据上逐行一致；客服角色在没有任何底表权限时能读视图；anon/authenticated 无权限）。
+- 发布：TEST 单文件 → Production 单文件 → 客服仓库改读 `cs_feed`（1b）→ 收权（1c）。只新增对象，旧代码不受影响。
+- 回滚：客服仓库切换前，`DROP SCHEMA cs_feed CASCADE; DROP SCHEMA ops;`；切换后先回退客服仓库。
 
 ## 2026-11-17 剧情模式（本地 PG17 验证，远端未执行）
 
@@ -164,7 +335,7 @@
 步骤：GitHub → Actions → `Database Migration` → 选 `mode` 与 `environment`。
 
 - **inspect**：只读。把日期命名迁移的 sha256 和 `repo_migrations` 对账，并探 R3 发奖入口、111 `st_handle` 是否可空、A 的结算两列。生产同样要填 `confirm_production`。
-- **apply**：填 `migration_file`（如 `packages/shared/migrations/20260910_schema_migrations_ledger.sql`）。生产必须在 `confirm_production` 填 `RUN_PRODUCTION_MIGRATION`。查账本、执行、记账在同一次调用里；已执行且 checksum 一致会报 `MIGRATION_ALREADY_APPLIED`；文件被改过报 `MIGRATION_CHECKSUM_DRIFT`（写新迁移，不要改旧文件再跑）。`force_rerun` 只在文件未改时重跑 SQL，不覆盖首次记账。生产会拒绝 `104_rollback_voice_billing.sql`。
+- **apply**：填 `migration_file`（如 `packages/shared/migrations/20260910_schema_migrations_ledger.sql`）。生产必须在 `confirm_production` 填 `RUN_PRODUCTION_MIGRATION`。查账本、执行、记账在同一次调用里；已执行且 checksum 一致会报 `MIGRATION_ALREADY_APPLIED`；文件被改过报 `MIGRATION_CHECKSUM_DRIFT`（写新迁移，不要改旧文件再跑）。`force_rerun` 只在文件未改时重跑 SQL，不覆盖首次记账。生产会拒绝 `104_rollback_voice_billing.sql`。`media_plaza` 视频 seed 文件按 `_seed_test_` / `_seed_production_` 与环境强绑定；TEST seed 还由 workflow 向单次 `psql` 会话注入 project ref 和 Storage 核验确认，禁止绕过 workflow 直接执行。
 - **abandon_claim**：仅用于“SQL 已回滚/失败、没有账本成功行、原文件在失败认领后被修订”的恢复。先执行 `20261013_repo_migration_claim_recovery.sql`，再选择原 `migration_file` 并填写 `claim_abandon_reason`；脚本会在一个事务中锁定认领、复核无账本且 checksum 漂移、记录旧/新 checksum 与原因，然后删除认领，**不会执行目标 migration SQL**。之后才能以修订文件正常 `apply`。不得把它用于已记账文件、同 checksum 的可续跑认领，或代替生产问题排查。
 
 应用启动**不会**自动跑 SQL；`packages/backend` 的 `start` 只做 `prisma generate`。workflow 校验 project ref：test 只能连 `zoqelpfhurwehlvypryl`，production 只能连 `wbtsfzozlmurljvglhpn`。

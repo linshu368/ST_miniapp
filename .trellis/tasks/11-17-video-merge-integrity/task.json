@@ -1,0 +1,97 @@
+{
+  "id": "video-merge-integrity",
+  "name": "video-merge-integrity",
+  "title": "解决上游合并冲突并保全视频生成",
+  "description": "解决当前合并冲突并验证视频与图片现有链路",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-17",
+  "completedAt": null,
+  "branch": "feat_video_park",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "no_module_change",
+      "reason": "恢复双方已实现能力并适配上游拆分，不新增模块职责或公开协议。"
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": ["/create", "/create/studio/[conversationId]", "/creation"],
+      "apis": [
+        "GET /api/image-plaza/config",
+        "GET /api/image-plaza/feed",
+        "POST /api/image-plaza/video-quotes",
+        "POST /api/image-plaza/conversations/:id/video-attempts"
+      ],
+      "android": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 1500
+      },
+      "ios": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 1500
+      },
+      "api": {
+        "p95_baseline_ms": null,
+        "p95_target_ms": 800
+      },
+      "measurement": {
+        "source": "既有视频规划目标；本次没有可见线上样本，基线为null",
+        "window": "本次本地验证；发布后24小时按Android/iOS在正确环境复查"
+      },
+      "notes": "双端无本次可见样本，不填零；保留既有工作室与接口目标，真实生成时长单列。"
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "required",
+      "scope": ["影像广场与视频worker合并整合"],
+      "integration_points": [
+        "routes/image-plaza-errors.ts复用Pino错误日志",
+        "现有HTTP观测、video-job及video-upstream下载边界"
+      ],
+      "events": [
+        {
+          "event": "image_plaza.request_failed",
+          "operation": "http.request",
+          "levels": ["warn", "error"],
+          "outcomes": ["rejected", "failed"],
+          "fields": ["err", "event", "request_id", "trace_id", "duration_ms"]
+        },
+        {
+          "event": "operation.terminal",
+          "operation": "job.video_plaza_generation",
+          "levels": ["info", "warn", "error"],
+          "outcomes": ["succeeded", "skipped", "failed", "unknown"],
+          "fields": ["outcome", "outcome_known", "duration_ms", "trace_id", "user_id", "attempt_id"]
+        },
+        {
+          "event": "operation.terminal",
+          "operation": "video.download",
+          "levels": ["info", "warn"],
+          "outcomes": ["succeeded", "failed", "timed_out", "cancelled"],
+          "fields": ["upstream_status", "duration_ms", "error_code", "provider", "trace_id"]
+        }
+      ],
+      "failure_paths": ["保留并发429、报价过期、越权参考图、queue未知、生成失败退款与HTTP异常"],
+      "correlation": "复用请求ALS、request/trace响应头与worker逐attempt可信用户上下文，不添加身份查询。",
+      "redaction": "仅状态、错误安全投影、耗时及可信ID；禁止记录提示词、签名URL、token、initData或完整正文。",
+      "alerting": "沿用默认关闭的日志告警；通知失败隔离，无新出口。",
+      "verification": ["pnpm lint:backend-logging", "既有影像与观测测试及全仓typecheck"]
+    }
+  }
+}
