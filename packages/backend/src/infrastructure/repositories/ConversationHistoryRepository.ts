@@ -1,6 +1,6 @@
 import { STREAMING_STALE_SECONDS } from './conversation-history-types.js';
-// Public conversation repository facade; generation identity/prompt writes live
-// in the atomic admission RPC. Display reads never require provider snapshots.
+// Public conversation repository facade; generation identity and the frozen prompt are written by the atomic
+// admission RPC (prompt → ops.chat_prompt_observations). Display reads never require provider snapshots.
 import {
   splitEditableReply,
   type CancelConversationTurnRequest,
@@ -8,22 +8,17 @@ import {
   type ChangeChatMessageRequest,
   type SetMessageLikeData,
 } from '@miniapp/shared';
-import type { GenerationMessage, GenerationStatus } from '../../features/generation/types.js';
+import type { GenerationStatus } from '../../features/generation/types.js';
 import { getDomainDb, type DomainDb } from '../../lib/supabase.js';
 import { ConversationRepositoryError, throwConversationRpcError } from './conversation-errors.js';
 import * as billing from './conversation-history-billing.js';
-import {
-  mapStartedTurn,
-  withStoredRequestId,
-  type StartedHistoryTurnRpc,
-} from './conversation-history-mapping.js';
+import { mapStartedTurn, type StartedHistoryTurnRpc } from './conversation-history-mapping.js';
 import { ConversationHistoryReads } from './conversation-history-reads.js';
 import type { ConversationHistoryRow, StartedHistoryTurn } from './conversation-history-types.js';
 import { MiniappCharacterFreeQuotaRepository } from './MiniappCharacterFreeQuotaRepository.js';
 export {
   assembleConversationContext,
   clampLimit,
-  extractOpeningMessage,
   latestRevisionRows,
   toChatMessages,
   toChatMessageStatus,
@@ -33,7 +28,7 @@ export {
 export * from './conversation-history-types.js';
 export { STREAMING_STALE_SECONDS } from './conversation-history-types.js';
 const TURN_COLUMNS =
-  'id,user_id,model,user_input,assistant_reply,character_id,status,upstream_status,deduction_rate,created_at,llm_finish_reason,llm_charge_id,session_id,turn_index,revision,postprocess_version,rich_reply_metadata,first_token_preview,llm_billing_snapshot,llm_billing_settled_at';
+  'id,user_id,model,user_input,assistant_reply,character_id,status,deduction_rate,created_at,llm_finish_reason,llm_charge_id,session_id,turn_index,revision,postprocess_version,rich_reply_metadata,llm_billing_snapshot,llm_billing_settled_at';
 
 export class ConversationHistoryRepository {
   private readonly reads: ConversationHistoryReads;
@@ -174,10 +169,6 @@ export class ConversationHistoryRepository {
     return result.data as StartedHistoryTurnRpc;
   }
 
-  async setPendingRequestId(historyId: string, requestId: string): Promise<void> {
-    await this.setPromptHistory(historyId, [], requestId);
-  }
-
   async saveRichReplyMetadata(
     historyId: string,
     metadata: {
@@ -187,30 +178,15 @@ export class ConversationHistoryRepository {
       drive_mode?: string;
     }
   ): Promise<void> {
+    // drive_mode is the turn's prompt-assembly tier: a real column next to the instruction-slot modes.
+    const { drive_mode: driveMode, ...richReply } = metadata;
     const { error } = await this.db
       .from('chat_history')
-      .update({ rich_reply_metadata: metadata })
+      .update({ rich_reply_metadata: richReply, drive_mode: driveMode ?? null })
       .eq('id', historyId)
       .eq('status', 'success')
       .abortSignal(AbortSignal.timeout(5_000));
     if (error) throw new Error(`写入富文本协议诊断失败：${error.message}`, { cause: error });
-  }
-
-  async setPromptHistory(
-    historyId: string,
-    history: GenerationMessage[],
-    requestId?: string
-  ): Promise<void> {
-    // Correlation lives only in the stored snapshot. Never mutate messages that are
-    // forwarded upstream, nor replace the opening assistant message in the prompt.
-    const storedHistory = withStoredRequestId(history, requestId);
-    const { error } = await this.db
-      .from('chat_history')
-      .update({ history: storedHistory })
-      .eq('id', historyId)
-      .eq('status', 'streaming')
-      .abortSignal(AbortSignal.timeout(5_000));
-    if (error) throw new Error(`写入对话上下文快照失败：${error.message}`, { cause: error });
   }
 
   /**
@@ -222,7 +198,6 @@ export class ConversationHistoryRepository {
     content: string;
     status: GenerationStatus;
     finishReason?: string | null;
-    upstreamStatus?: number | null;
     chargeId?: string | null;
   }): Promise<ConversationHistoryRow> {
     let query = this.db
@@ -230,7 +205,6 @@ export class ConversationHistoryRepository {
       .update({
         assistant_reply: input.content || null,
         status: input.status,
-        upstream_status: input.upstreamStatus ?? null,
         llm_finish_reason: input.finishReason ?? null,
         ...(input.chargeId !== undefined ? { llm_charge_id: input.chargeId } : {}),
       })
@@ -258,7 +232,6 @@ export class ConversationHistoryRepository {
           assistant_reply: input.content || null,
           status: input.status,
           llm_finish_reason: current.llm_finish_reason,
-          upstream_status: input.upstreamStatus ?? null,
           ...(input.chargeId !== undefined ? { llm_charge_id: input.chargeId } : {}),
         })
         .eq('id', input.historyId)

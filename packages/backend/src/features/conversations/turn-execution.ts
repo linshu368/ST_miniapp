@@ -165,7 +165,6 @@ export async function settleExecutedTurn(
     finishReason: isExternallyInterrupted(current.llm_finish_reason)
       ? current.llm_finish_reason
       : result.finishReason,
-    upstreamStatus: result.upstreamStatus ?? null,
     chargeId: result.chargeId,
   });
   const status =

@@ -10,7 +10,6 @@ const mocks = vi.hoisted(() => ({
   startRegeneration: vi.fn(),
   recoverStaleStreaming: vi.fn(),
   getContextBeforeTurn: vi.fn(),
-  setPromptHistory: vi.fn(),
   finalizeTurn: vi.fn(),
   requireTurnById: vi.fn(),
   execute: vi.fn(),
@@ -42,7 +41,6 @@ vi.mock('../../infrastructure/repositories/ConversationHistoryRepository.js', ()
     startRegeneration = mocks.startRegeneration;
     recoverStaleStreaming = mocks.recoverStaleStreaming;
     getContextBeforeTurn = mocks.getContextBeforeTurn;
-    setPromptHistory = mocks.setPromptHistory;
     finalizeTurn = mocks.finalizeTurn;
     requireTurnById = mocks.requireTurnById;
     requireTurnState = mocks.requireTurnById;
@@ -144,7 +142,6 @@ describe('runConversationTurn postprocess binding', () => {
     mocks.startRegeneration.mockReset();
     mocks.recoverStaleStreaming.mockReset();
     mocks.getContextBeforeTurn.mockReset();
-    mocks.setPromptHistory.mockReset();
     mocks.finalizeTurn.mockReset();
     mocks.requireTurnById.mockReset();
     mocks.execute.mockReset();
@@ -209,7 +206,6 @@ describe('runConversationTurn postprocess binding', () => {
     mocks.readSnapshots.mockResolvedValue({ found: [{ artifact: {} }], unavailable_versions: [] });
     mocks.saveRichReplyMetadata.mockResolvedValue(undefined);
     mocks.requireTurnById.mockResolvedValue({ llm_finish_reason: null });
-    mocks.setPromptHistory.mockResolvedValue(undefined);
     mocks.recoverStaleStreaming.mockResolvedValue(undefined);
   });
 
@@ -251,7 +247,6 @@ describe('runConversationTurn postprocess binding', () => {
     expect(mocks.finalizeTurn).toHaveBeenCalledWith(
       expect.objectContaining({ content: 'model-raw-reply' })
     );
-    expect(JSON.stringify(mocks.setPromptHistory.mock.calls)).not.toContain('SECRET_TEMPLATE');
     await vi.waitFor(() =>
       expect(mocks.saveRichReplyMetadata).toHaveBeenCalledWith(
         'history',

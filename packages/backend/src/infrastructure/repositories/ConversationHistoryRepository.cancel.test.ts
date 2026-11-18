@@ -116,7 +116,7 @@ vi.mock('../../lib/supabase.js', () => ({
   }),
 }));
 
-const { ConversationHistoryRepository, toChatMessages, extractOpeningMessage } =
+const { ConversationHistoryRepository, toChatMessages } =
   await import('./ConversationHistoryRepository.js');
 function row(overrides: Partial<FixtureRow> = {}): FixtureRow {
   return {
@@ -125,10 +125,8 @@ function row(overrides: Partial<FixtureRow> = {}): FixtureRow {
     model: 'model',
     user_input: 'original input',
     assistant_reply: null,
-    history: [],
     character_id: 'character',
     status: 'streaming',
-    upstream_status: null,
     deduction_rate: null,
     created_at: new Date().toISOString(),
     llm_finish_reason: null,
@@ -367,21 +365,11 @@ describe('persisted cancellation/completion arbitration', () => {
     expect(state.rows[0]?.status).toBe('streaming');
     expect(state.rows[0]?.llm_finish_reason).toBe('cancelled');
   });
-  it('prompt snapshot keeps request identity and opening without mutating upstream prompt', async () => {
-    const repository = new ConversationHistoryRepository();
+  it('request identity comes from the display projection and only on the assistant message', () => {
     const requestId = '11111111-2222-4333-8444-555555555555';
-    await repository.setPendingRequestId('reply', requestId);
-    expect(toChatMessages(state.rows[0]!)[1]?.request_id).toBe(requestId);
-    const prompt = [
-      { role: 'system', content: 'rules' },
-      { role: 'assistant', content: 'opening greeting' },
-      { role: 'user', content: 'input' },
-    ];
-    await repository.setPromptHistory('reply', prompt, requestId);
-    expect(toChatMessages(state.rows[0]!)[1]?.request_id).toBe(requestId);
-    expect(extractOpeningMessage(state.rows[0]?.history)).toBe('opening greeting');
-    expect(prompt[0]).not.toHaveProperty('request_id');
-    expect(toChatMessages(state.rows[0]!)[0]).not.toHaveProperty('request_id');
+    const messages = toChatMessages(row({ display_request_id: requestId }));
+    expect(messages[1]?.request_id).toBe(requestId);
+    expect(messages[0]).not.toHaveProperty('request_id');
   });
 
   it('legacy stored prompts omit request identity instead of guessing it', () => {

@@ -16,13 +16,10 @@ export interface ConversationHistoryRow {
   model: string;
   user_input: string;
   assistant_reply: string | null;
-  history?: unknown[];
   display_request_id?: string | null;
   display_opening_message?: string | null;
-  display_fallback?: boolean;
   character_id: string | null;
   status: string;
-  upstream_status: number | null;
   deduction_rate: number | null;
   created_at: string;
   llm_finish_reason: string | null;
