@@ -272,6 +272,24 @@ sed "s/'free zone config requires a JSON object'/'free zone config requires an o
 expect_fail "migration whose flattened branch differs" "flattened validator differs from the 16-layer chain" <"$work_dir/tampered.sql"
 assert_chain_intact
 
+# TEST stores some layers with the other line ending than production; the guard compares bodies without \r.
+"${admin_psql[@]}" >/dev/null <<'SQL'
+DO $$
+DECLARE v_fn regprocedure; v_src text;
+BEGIN
+  v_fn := 'admin.validate_managed_config_value_before_image_plaza(text,jsonb,text)'::regprocedure;  -- LF -> CRLF
+  SELECT prosrc INTO v_src FROM pg_proc WHERE oid = v_fn;
+  EXECUTE replace(pg_get_functiondef(v_fn), v_src, replace(v_src, E'\n', E'\r\n'));
+  v_fn := 'admin.validate_managed_config_value_before_payment_prompt(text,jsonb,text)'::regprocedure;  -- CRLF -> LF
+  SELECT prosrc INTO v_src FROM pg_proc WHERE oid = v_fn;
+  EXECUTE replace(pg_get_functiondef(v_fn), v_src, replace(v_src, E'\r', ''));
+  IF position(E'\r' IN (SELECT prosrc FROM pg_proc WHERE oid = 'admin.validate_managed_config_value_before_image_plaza(text,jsonb,text)'::regprocedure)) = 0
+     OR position(E'\r' IN (SELECT prosrc FROM pg_proc WHERE oid = v_fn)) > 0 THEN
+    RAISE EXCEPTION 'assert: line endings not flipped';
+  END IF;
+END $$;
+SQL
+
 # Apply from a session that already cached a plan calling the validator --------------------------------------------
 docker cp "$migration" "$task_container:/tmp/p3d.sql" >/dev/null
 "${admin_psql[@]}" -At >"$work_dir/warm.txt" <<'SQL'

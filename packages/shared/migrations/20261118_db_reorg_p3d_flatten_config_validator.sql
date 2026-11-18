@@ -2,7 +2,7 @@
 -- 计划见 .trellis/tasks/11-17-db-reorg-p3-user-state/design.md 3d，规则见 docs/db/CONTRACT.md §2.5。
 --
 -- 把 16 层的 admin.validate_managed_config_value（最外层 + 15 个 *_before_*）压成一层 CASE 分发：
---   1. 守卫：16 层必须是写本迁移时的版本（已压平则跳过）；旧最外层改名 *_legacy；
+--   1. 守卫：16 层必须是写本迁移时的版本（按去掉 \r 后的 md5 比：TEST 与生产只差换行符 CRLF/LF；已压平则跳过）；旧最外层改名 *_legacy；
 --   2. 建新函数（先查是否托管，再按 key 分发；判断与报错原文照搬当前生效的那一层）与 4 个具名校验函数；
 --   3. 自检：合成样例 + config_drafts / config_releases / runtime_config 的全部现存值，逐条比新旧结果
 --      （成功，或"错误码:文案"）。托管 key 必须完全一致；非托管/退役 key 新函数必须报 not managed。不一致整体回滚；
@@ -37,19 +37,19 @@ BEGIN
     ('validate_managed_config_value_before_free_zone', 'cb7231a5a388e44c0953573d8a98672d'),
     ('validate_managed_config_value_before_story_memory', '47560512792fcaf2e17a11fe4dadd7d0'),
     ('validate_managed_config_value_before_lobby_rotation', 'e5437d86931ebc68e6083bae2fe8ca0f'),
-    ('validate_managed_config_value_before_creator_review', '1c9a59d208eb00efad62fa856e53583e'),
+    ('validate_managed_config_value_before_creator_review', '1b2e7c9a07f543cd38de0f96363517c3'),
     ('validate_managed_config_value_before_checkin_tiers', '54d69e3bb4034cf09893a665b6971cf2'),
-    ('validate_managed_config_value_before_reply_styles', '64826e221280027fc7e2126a238fb646'),
-    ('validate_managed_config_value_before_image_plaza_tags_feature', '61e0f7e57ef57045eafe1829e83a1c7a'),
+    ('validate_managed_config_value_before_reply_styles', 'dfa1bd840e718465e29a0c327d9ef2bf'),
+    ('validate_managed_config_value_before_image_plaza_tags_feature', '89ac9b618d02c95f2f8f489ab2b10fef'),
     ('validate_managed_config_value_before_image_plaza', 'ccefb9ee6d1de89e9c05ac52909f1211'),
     ('validate_managed_config_value_before_instruction_slots', 'caca71a531ae7759326c95fd140d7ed3'),
     ('validate_managed_config_value_before_rich_reply_protocol', '2b9d6e649cdea5ebd73988d3c508f0fc'),
     ('validate_managed_config_value_before_vip_strategy', 'b2983e9f975228e058e5bb2c5d0562e7'),
     ('validate_managed_config_value_before_provider_routing', '7271d892ab3423eb39c1d776ddc6e0ad'),
-    ('validate_managed_config_value_before_payment_prompt', '4652e86ca93217145375d86d30d14530'),
+    ('validate_managed_config_value_before_payment_prompt', 'f4a48cba8a5cf986322576f2cf86df7c'),
     ('validate_managed_config_value_before_fixed_billing', 'd2621ae91ba2957375abed820d3751bd')
   ) AS t(fn, md5sum)
-  WHERE (SELECT md5(p.prosrc) FROM pg_proc p WHERE p.oid = to_regprocedure('admin.' || t.fn || '(text,jsonb,text)'))
+  WHERE (SELECT md5(replace(p.prosrc, E'\r', '')) FROM pg_proc p WHERE p.oid = to_regprocedure('admin.' || t.fn || '(text,jsonb,text)'))
         IS DISTINCT FROM t.md5sum;
   IF v_bad IS NOT NULL THEN
     RAISE EXCEPTION 'validator layers differ from the versions this migration was written against: %', v_bad;
