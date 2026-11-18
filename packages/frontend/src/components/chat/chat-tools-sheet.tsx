@@ -10,12 +10,11 @@ const ChatToolsPanel = dynamic(
 );
 
 interface ChatToolsSheetProps {
-  onCreateConversation: () => void;
-  creating: boolean;
+  characterId: string;
 }
 
 /** 工具按钮留在输入区关键路径，面板内容在用户首次打开时再下载。 */
-export function ChatToolsSheet({ onCreateConversation, creating }: ChatToolsSheetProps) {
+export function ChatToolsSheet({ characterId }: ChatToolsSheetProps) {
   const [loaded, setLoaded] = useState(false);
   const [open, setOpen] = useState(false);
 
@@ -34,12 +33,7 @@ export function ChatToolsSheet({ onCreateConversation, creating }: ChatToolsShee
       </button>
 
       {loaded ? (
-        <ChatToolsPanel
-          open={open}
-          onOpenChange={setOpen}
-          onCreateConversation={onCreateConversation}
-          creating={creating}
-        />
+        <ChatToolsPanel characterId={characterId} open={open} onOpenChange={setOpen} />
       ) : null}
     </>
   );

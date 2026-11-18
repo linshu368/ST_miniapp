@@ -584,10 +584,6 @@ export default function SelfHostedChatPage() {
           setCharacterPanelLoaded(true);
           setCharacterPanel('intro');
         }}
-        onOpenComments={() => {
-          setCharacterPanelLoaded(true);
-          setCharacterPanel('comments');
-        }}
         onOpenSessions={() => {
           setSessionsLoaded(true);
           setSessionsOpen(true);
@@ -814,16 +810,7 @@ export default function SelfHostedChatPage() {
             thinkingNotice.onThinkingToggled(enabled);
           }}
           notice={thinkingNotice.notice}
-          leftSlot={
-            <ChatToolsSheet
-              onCreateConversation={() => {
-                leaveBranchView();
-                draftRecoveryRef.current = null;
-                session.openNewConversation();
-              }}
-              creating={session.createConversation.isPending}
-            />
-          }
+          leftSlot={<ChatToolsSheet characterId={characterId} />}
         />
       ) : null}
 
@@ -850,6 +837,12 @@ export default function SelfHostedChatPage() {
             draftRecoveryRef.current = null;
             session.selectSession(nextSessionId);
           }}
+          onCreateConversation={() => {
+            leaveBranchView();
+            draftRecoveryRef.current = null;
+            session.openNewConversation();
+          }}
+          creating={session.createConversation.isPending}
         />
       ) : null}
 

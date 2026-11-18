@@ -50,6 +50,7 @@ import creatorToolsRoutes from './routes/creator-tools.js';
 import dramaInteractionRoutes from './routes/drama-interactions.js';
 import dramaRoutes from './routes/drama.js';
 import favoriteRoutes from './routes/favorites.js';
+import characterPersonaRoutes from './routes/character-persona.js';
 import growthRoutes from './routes/growth.js';
 import growthPromptRoutes from './routes/growth-prompts.js';
 import imagePlazaRoutes from './routes/image-plaza.js';
@@ -101,6 +102,7 @@ export async function buildApp() {
   await app.register(characterWishRoutes);
   await app.register(creatorAnalyticsRoutes);
   await app.register(favoriteRoutes);
+  await app.register(characterPersonaRoutes);
   await app.register(characterSocialRoutes);
   await app.register(paymentRoutes);
   await app.register(walletRoutes);

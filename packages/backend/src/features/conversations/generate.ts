@@ -53,7 +53,7 @@ import {
 import type { ConversationStreamSink } from './sse.js';
 import { prepareTurnInputs } from './turn-preparation.js';
 import { createTurnScope } from './turn-scope.js';
-import { characters, historyRecords, userSettings } from './turn-repositories.js';
+import { characters, historyRecords, userPersonas, userSettings } from './turn-repositories.js';
 
 export { withConversationPreparationDeadline } from './turn-preparation.js';
 export { normalizePersistedOutcome } from './turn-execution.js';
@@ -154,16 +154,15 @@ export async function runConversationTurn(
   const preparation =
     input.preparationTiming ?? createConversationPreparationTiming(requestStartedAt);
   preparation.enter('settings');
+  // 其余字段（昵称、记忆配置与读取、用户角色设定）只用于组 prompt，原样交给 loadTurnPrompt。
   const {
     chargeId,
     model,
     userConfig,
-    displayName,
     instructions,
-    storyMemoryConfig,
-    storyMemory,
     executionPreparation,
     preparationSignal,
+    ...promptContext
   } = await prepareTurnInputs({
     sessionId: session.id,
     characterId: session.character_id,
@@ -172,6 +171,7 @@ export async function runConversationTurn(
     firstTokenDeadlineMs: input.firstTokenDeadlineMs,
     catalogSnapshot: input.catalogSnapshot,
     settings: userSettings(),
+    personas: userPersonas(),
     history: historyRecords(),
     log,
   });
@@ -239,10 +239,8 @@ export async function runConversationTurn(
       turn,
       signal: control.signal,
       userConfig,
-      displayName,
       instructions: instructions.instructions,
-      storyMemoryConfig,
-      storyMemory,
+      ...promptContext,
       log,
     });
 
@@ -279,6 +277,7 @@ async function loadTurnPrompt(input: {
   instructions: PromptInput['instructions'];
   storyMemoryConfig: StoryMemoryConfig;
   storyMemory: Promise<StoryMemoryRead>;
+  characterSettings: { notes: string; personaDescription: string };
   log: RequestLogger;
 }) {
   const { session, turn } = input;
@@ -320,6 +319,7 @@ async function loadTurnPrompt(input: {
     character: toEngineCharacter(card),
     history,
     storyMemory,
+    userSettings: input.characterSettings,
     truncatedTurns,
     userInput: turn.userInput,
     userConfig: input.userConfig,
