@@ -296,22 +296,6 @@ tables:
           phase: 6,
           note: 6a-2c，落败调用片段（键 discarded_detail）,
         }
-    drop_cols:
-      - {
-          cols:
-            [
-              headers_ms,
-              first_chunk_ms,
-              http_status,
-              provider_latency_ms,
-              provider_latency_scope,
-              provider_name,
-              provider_reported_model,
-            ],
-          phase: 6,
-          note: 6a-2a；只被首字视图输出且无读者，首包/首块耗时已在 OTel，供应商名/延迟/型号与 OpenRouter 明细重复,
-        }
-
   experience.openrouter_chat_history:
     nature: O
     owner: backend/src/infrastructure/repositories/OpenRouterChatHistoryRepository.ts
