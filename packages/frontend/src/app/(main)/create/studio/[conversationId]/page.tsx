@@ -7,6 +7,7 @@ import {
   UNSUPPORTED_REFERENCE_NOTICE,
 } from '@/components/image-plaza/studio-reference-picker';
 import { StudioVideoCard } from '@/components/image-plaza/studio-video-card';
+import { StudioPromptInput } from '@/components/image-plaza/studio-prompt-input';
 import {
   Sheet,
   SheetClose,
@@ -48,6 +49,7 @@ import { useTelegramBackButton } from '@/lib/telegram';
 import { useVisualViewportHeight } from '@/lib/use-visual-viewport-height';
 import {
   IMAGE_PLAZA_PROMPT_MAX_CHARS,
+  VIDEO_PLAZA_PROMPT_MAX_CHARS,
   parseCreatorCoverReturn,
   selectSupportedVideoPlazaOptions,
   type ImagePlazaArtifact,
@@ -500,6 +502,10 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
     source = 'video-composer',
     retryAttempt: VideoPlazaAttempt | null = null
   ) => {
+    if (nextPrompt.trim().length > VIDEO_PLAZA_PROMPT_MAX_CHARS) {
+      showNotice(`视频提示词最多 ${VIDEO_PLAZA_PROMPT_MAX_CHARS} 字，请缩短后再生成`);
+      return;
+    }
     const targetModel = retryAttempt
       ? videoModels.find((item) => item.id === retryAttempt.params.model_id)
       : videoModel;
@@ -1101,29 +1107,15 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
                 }}
               />
             )}
-            <textarea
-              ref={promptInput}
+            <StudioPromptInput
+              inputRef={promptInput}
+              media={mediaMode}
               value={mediaMode === 'video' ? videoPrompt : prompt}
-              maxLength={mediaMode === 'video' ? undefined : IMAGE_PLAZA_PROMPT_MAX_CHARS}
-              onChange={(event) =>
-                mediaMode === 'video'
-                  ? setVideoPrompt(event.target.value)
-                  : setPrompt(event.target.value.slice(0, IMAGE_PLAZA_PROMPT_MAX_CHARS))
-              }
-              onKeyDown={(event) => {
-                if (
-                  event.key === 'Enter' &&
-                  (event.ctrlKey || event.metaKey) &&
-                  !event.nativeEvent.isComposing
-                ) {
-                  event.preventDefault();
-                  if (mediaMode === 'video') void generateVideo();
-                  else void generate();
-                }
+              onChange={mediaMode === 'video' ? setVideoPrompt : setPrompt}
+              onSubmit={() => {
+                if (mediaMode === 'video') void generateVideo();
+                else void generate();
               }}
-              rows={4}
-              placeholder={mediaMode === 'video' ? '描述你想生成的视频…' : '描述你想生成的画面…'}
-              className="min-h-24 w-full resize-none overflow-y-auto bg-transparent text-base leading-7 outline-none placeholder:text-muted-foreground"
             />
           </div>
           <div className="mt-3 flex shrink-0 flex-wrap items-center gap-1">

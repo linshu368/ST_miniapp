@@ -3,6 +3,7 @@ import { VideoPlazaPlaybackSchema } from './video-playback.js';
 export * from './video-playback.js';
 
 export const VIDEO_PLAZA_MAX_FILE_BYTES = 200 * 1024 * 1024;
+export const VIDEO_PLAZA_PROMPT_MAX_CHARS = 5_000;
 
 export const VIDEO_PLAZA_SUPPORTED_DURATIONS = [5, 10] as const;
 export const VIDEO_PLAZA_SUPPORTED_RESOLUTIONS = ['720p', '1080p'] as const;
@@ -265,7 +266,7 @@ export type VideoPlazaQuoteData = z.infer<typeof VideoPlazaQuoteDataSchema>;
 
 export const SubmitVideoPlazaAttemptRequestSchema = z
   .object({
-    prompt: z.string().trim().min(1),
+    prompt: z.string().trim().min(1).max(VIDEO_PLAZA_PROMPT_MAX_CHARS),
     quote_id: z.string().uuid(),
     idempotency_key: z.string().uuid(),
     reference_artifact_id: z.string().uuid().nullable().optional(),

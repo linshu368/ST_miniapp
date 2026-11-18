@@ -151,3 +151,9 @@ send/regenerate 携带可选 `first_token_measurement`；后端通过既有 begi
 api/image-plaza-feed-cursor.ts定义推荐v2版本游标，绑定rankingRevision、filter和分区，bigint保持字符串；保留旧schema可解析及latest v1，由新推荐consumer明确拒绝旧v1。公开媒体DTO不暴露DB排名行。
 
 实现和验证边界见 `docs/media-plaza-feed-ranking.md` 与 `.trellis/tasks/11-18-media-plaza-feed-ranking-masonry/verification.md`。
+
+## 2026-11-18 video prompt5000 (local candidate)
+
+VIDEO_PLAZA_PROMPT_MAX_CHARS=5000 bounds new SubmitVideoPlazaAttemptRequestSchema requests. Historical video snapshot schemas remain unbounded; image request/snapshot constraints remain unchanged.
+
+See `docs/video-plaza-stream.md` and `.trellis/tasks/11-18-video-prompt-5000/verification.md` for release and evidence boundaries.

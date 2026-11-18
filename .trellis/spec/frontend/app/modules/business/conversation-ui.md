@@ -232,3 +232,9 @@ User explicitly excludes launching local UI verification. Unit/contract/type/bui
 广场页面拆为筛选、状态与列表职责；所有屏宽固定两列，依据宽高比向短列稳定追加，双列底部共用加载闸门。详情使用实际封面解码与帧呈现计时，播放器保留Stream/HLS、一次换签、后台释放及旧源回调隔离。
 
 实现和验证边界见 `docs/media-plaza-feed-ranking.md` 与 `.trellis/tasks/11-18-media-plaza-feed-ranking-masonry/verification.md`。
+
+## 2026-11-18 video prompt5000 (local candidate)
+
+StudioPromptInput shares video5000/image2000 limits; video submission rejects over-limit drafts or retries before quoting without truncating historical prompts. Keyboard/IME handling stays in the extracted input.
+
+See `docs/video-plaza-stream.md` and `.trellis/tasks/11-18-video-prompt-5000/verification.md` for release and evidence boundaries.

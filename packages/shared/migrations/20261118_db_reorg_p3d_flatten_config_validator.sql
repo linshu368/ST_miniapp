@@ -2,6 +2,7 @@
 -- 计划见 .trellis/tasks/11-17-db-reorg-p3-user-state/design.md 3d，规则见 docs/db/CONTRACT.md §2.5。
 --
 -- 把 16 层的 admin.validate_managed_config_value（最外层 + 15 个 *_before_*）压成一层 CASE 分发：
+--   前置：20261118_db_reorg_p3d_align_test_validator_chain.sql 已把 TEST 的错位链对齐成生产当前的 16 层；
 --   1. 守卫：16 层必须是写本迁移时的版本（按去掉 \r 后的 md5 比：TEST 与生产只差换行符 CRLF/LF；已压平则跳过）；旧最外层改名 *_legacy；
 --   2. 建新函数（先查是否托管，再按 key 分发；判断与报错原文照搬当前生效的那一层）与 4 个具名校验函数；
 --   3. 自检：合成样例 + config_drafts / config_releases / runtime_config 的全部现存值，逐条比新旧结果
@@ -32,7 +33,7 @@ BEGIN
 
   SELECT string_agg(t.fn, ', ') INTO v_bad
   FROM (VALUES
-    ('validate_managed_config_value', 'f2a182f9fdf8acf3db0a3c8065765b1f'),
+    ('validate_managed_config_value', 'c637e78820a51c60ac0b6b8749681997'),  -- 含视频目录分支（20261118_media_plaza_video_production_config.sql）
     ('validate_managed_config_value_before_drive_mode', 'c59a939fb223ce5efa9771fba280c2d2'),
     ('validate_managed_config_value_before_free_zone', 'cb7231a5a388e44c0953573d8a98672d'),
     ('validate_managed_config_value_before_story_memory', '47560512792fcaf2e17a11fe4dadd7d0'),
@@ -514,7 +515,13 @@ BEGIN
           USING ERRCODE = '22023';
       END IF;
 
-    -- 图片：生成、描述、广场 ---------------------------------------------------------------------
+    -- 图片：生成、描述、广场、视频广场 -----------------------------------------------------------
+    WHEN 'image_plaza_video_model_catalog' THEN
+      IF p_text_value IS NOT NULL THEN
+        RAISE EXCEPTION 'video catalog must not use text_value' USING ERRCODE = '22023';
+      END IF;
+      PERFORM admin.validate_image_plaza_video_model_catalog(p_value);
+
     WHEN 'image_generation_enabled', 'image_generation_credits', 'image_price_label', 'image_default_art_style',
          'image_width', 'image_height', 'image_max_prompt_chars', 'image_max_output_bytes', 'image_prompt_policy',
          'image_prompt_over_limit_hint', 'image_description_failed_hint', 'image_generation_failed_hint',
@@ -613,6 +620,8 @@ BEGIN
     ('image_plaza_tags', '[]', NULL),
     ('image_plaza_share_tip', '{}', NULL),
     ('image_plaza_model_catalog', '"x"', NULL),
+    ('image_plaza_video_model_catalog', '{"models":[]}', NULL),
+    ('image_plaza_video_model_catalog', '{"models":[]}', 'x'),
     ('choice_rules', '{"on_first_two_turns":"a","on_later_turns":"b","off":"c"}', NULL),
     ('status_rules', '{"on_first_two_turns":"a","on_later_turns":" ","off":"c"}', NULL),
     ('memory_rules', '{"on_first_two_turns":"a","on_later_turns":"b","other":"c"}', NULL),

@@ -168,8 +168,15 @@ test('@image @layout 广场用同款进入工作室，设置与模拟生成结�
   await page.getByRole('button', { name: /选择视频模型，当前为 纯文本视频/ }).click();
   await page.getByRole('button', { name: /Wan 3.0 Pro/ }).click();
   await expect(page.getByText('已添加首帧图', { exact: true })).toBeVisible();
-  await page.getByPlaceholder('描述你想生成的视频…').fill('林间薄雾缓缓流动。');
+  const videoInput = page.getByPlaceholder('描述你想生成的视频…');
+  await expect(videoInput).toHaveAttribute('maxlength', '5000');
+  const longPrompt = '长'.repeat(5000);
+  await videoInput.fill(longPrompt);
+  const submitted = page.waitForRequest(
+    (request) => request.method() === 'POST' && request.url().endsWith('/video-attempts')
+  );
   await page.getByRole('button', { name: '发送生成' }).click();
+  expect((await submitted).postDataJSON().prompt).toBe(longPrompt);
   await expect(page.getByRole('button', { name: '编辑', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: '重新生成', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: '下载', exact: true })).toBeVisible();

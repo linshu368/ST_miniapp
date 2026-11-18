@@ -1,3 +1,7 @@
+# 2026-11-18 视频提示词5000字（本地候选，远端未执行）
+
+`20261118_media_plaza_message_prompt_5000.sql`：消息content CHECK从1–2000扩为1–5000，validated已知shape守卫与目标重放，事务5秒锁/30秒语句上限，RLS/ACL/其他约束不变。先TEST及同名tests/postflight，再独立确认production，之后发布消费者；图片API仍2000。回滚应用时保留5000存储约束，不能截断已保存长内容。具体步骤见[视频运行手册](../../../docs/video-plaza-stream.md#视频提示词5000字)。
+
 # 2026-11-17 广场视频 Stream（本地候选，TEST未执行）
 
 必须按 delivery扩展 → 已核验的test_assets数据切换 → 新应用发布/核验 → contract收缩 顺序逐文件执行，不能按字典序批跑。三文件及回滚/容量/锁/权限说明见[运行手册](../../../docs/video-plaza-stream.md)。数据迁移恰好13行CAS，固定TEST身份，保留封面/业务主键/账务；源MP4清理是应用验收后的独立步骤。新J表RLS/service-only，发布/退款同一attempt锁及租约token；5s锁/30-60s语句预算，未知结果不重放或删除。生产不在本次执行范围。
@@ -12,7 +16,10 @@
 - 删旧链 16 个函数与只被退役分支用的 `validate_lobby_pinned_characters`、`validate_payment_prompt_dialog_config`；收权只留属主。
 - 有意差异：退役 key 存草稿改为拒绝；未登记 `image_advanced_*` 的报错文案改为 not managed。其余 key 结果不变。
 - 迁移内自检：合成样例 + `config_drafts` / `config_releases` / `runtime_config` 全部现存值逐条比新旧结果，不一致整体回滚（TEST/生产用真实辅助校验函数再比一遍）。守卫：16 层 md5 必须是写迁移时的版本，多出一层也拒绝；已压平则跳过。
-- 验证：`bash scripts/test-db-reorg-p3d-migration.sh`（旧链按生产 md5 从历史迁移原文抽出，辅助函数用可探测替身；含守卫/自检拒绝、热会话调用方、可重跑）。
+- 含视频广场的 `image_plaza_video_model_catalog` 分支（生产 11-18 20:08 已按旧办法加在最外层）。
+- `20261118_db_reorg_p3d_report_validator_layers.sql`：只读报告，把与生产不同的层打到执行日志（TEST 报出早期视频迁移多套两层且套入顺序不同）。
+- `20261118_db_reorg_p3d_align_test_validator_chain.sql`：前置。链与生产一致或已压平则空操作（生产）；只在 TEST 重建成生产当前的 16 层，非 TEST 不一致拒绝。
+- 验证：`bash scripts/test-db-reorg-p3d-migration.sh`（对齐前置建出生产链并覆盖空操作/拒绝/重建 TEST 形态；辅助函数用可探测替身；含守卫/自检拒绝、热会话调用方、可重跑）。
 - 发布：TEST → 生产。回滚：按历史迁移重建旧链（新旧结果已逐条比对一致，通常不需要）。
 
 ## 2026-11-18 数据库重组阶段 3c：上架状态拆出 characters（本地 PG17 非超级用户验证）

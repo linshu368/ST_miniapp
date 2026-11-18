@@ -1,5 +1,17 @@
 # 广场视频 Cloudflare Stream 切换
 
+## 视频提示词5000字
+
+2026-11-18本地候选，尚未执行远端迁移/发布。生产只读catalog确认消息content为1–2000，而视频输入/API原来无上限，导致长提示词在消息插入时返回400并被包装为500；未进入任务预扣或模型。新请求通过 `VIDEO_PLAZA_PROMPT_MAX_CHARS=5000` 统一输入和API，图片入口继续2000。完整提示词保存到消息/任务后原样调用模型，超过5000在写入前拒绝；历史快照保持原样，不静默截断。上游自己的限制可能独立拒绝。
+
+迁移 `20261118_media_plaza_message_prompt_5000.sql` 只放宽现有content CHECK至1–5000；没有新表/列、内容改写或权限/计费变更。共享存储容量扩大，图片产品上限仍由原有API/input守住。只接受已知2000或目标5000的validated CHECK，未知shape拒绝，目标重放为空操作。事务内5秒锁/30秒语句期限，ACCESS EXCLUSIVE锁覆盖短暂替换与VALIDATE；各环境须确认锁/容量，失败回滚。
+
+发布经 `.github/workflows/db-migrate.yml`，单文件TEST→同名tests/postflight→独立审核production同文件→Backend/Frontend。不能提前部署新消费者，也不重投失败任务或自动发起付费生成。执行结果未知先对账catalog/claim/ledger，不盲force_rerun。
+
+回滚应用时保留5000存储CHECK；已保存长消息后不能直接收紧2000，更不能删除/截断历史内容。需要收紧时另审数据处理。复验：`node scripts/test-video-prompt-5000.mjs <本地PGlite入口>`，既有shared/image/video route与@image场景、全仓typecheck和frontend build。5000字真实生成与Android/iOS键盘/P95仍须发布后独立验证。
+
+## 已有部署记录
+
 2026-11-18生产初始化完成：用户上线兼容视频读取器后，10批4987条种子已通过Database Migration串行导入并记账；4987产物/已发布作品、缺Stream链接0，图片8047条不变。最终生产Railway为4a2f1d06、health200。详情和批次审计见[生产上线清单](video-plaza-production-release.md)，不要重跑已完成种子或基础迁移。
 
 生产只读核验、4987条初始数据与两份已生成/隔离验证的兼容SQL见[2026-11-18生产上线清单](video-plaza-production-release.md)。生产缺视频基础结构，旧基础/配置迁移与现行契约冲突；新base/config尚未远端执行，不能直接套用TEST切换顺序。
