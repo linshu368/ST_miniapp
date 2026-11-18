@@ -1,4 +1,3 @@
-import { prisma } from '../../lib/db.js';
 import { getDomainDb } from '../../lib/supabase.js';
 import type {
   PaymentOrder,
@@ -114,20 +113,26 @@ export class MiniappPaymentOrderRepository {
   }
 
   /** event_key 是事实的去重键：同一事实重复上报（如对账每轮都看到同一异常）直接忽略，不算失败。
-   *  事件表在 ops（不经 PostgREST 暴露），用 Prisma 原生 SQL 写。 */
+   *  事件表在 ops（不经 PostgREST 暴露），经 billing.record_payment_event 写入：与订单读写同一通道，
+   *  不依赖各 Railway 服务的 Prisma 连接配置（对账 / payment-cron 的 DATABASE_URL 与主服务不同）。 */
   async recordOperationEvent(input: PaymentOperationEventInput): Promise<void> {
-    try {
-      await prisma.$executeRaw`
-        INSERT INTO ops.payment_events (event_key, order_id, user_id, event_kind, stage, outcome, source, trigger,
-          error_class, duration_ms, occurred_at, metadata)
-        VALUES (${input.event_key}, ${input.order_id}, ${input.user_id}::uuid, ${input.event_kind}, ${input.stage},
-          ${input.outcome}, ${input.source}, ${input.trigger}, ${input.error_class ?? null},
-          ${input.duration_ms ?? null}::integer, ${input.occurred_at}::timestamptz,
-          ${JSON.stringify(input.metadata ?? {})}::jsonb)
-        ON CONFLICT (event_key) DO NOTHING`;
-    } catch (error) {
-      throw new Error('记录支付操作事件失败', { cause: error });
-    }
+    const { error } = await this.db
+      .rpc('record_payment_event', {
+        p_event_key: input.event_key,
+        p_order_id: input.order_id,
+        p_user_id: input.user_id,
+        p_event_kind: input.event_kind,
+        p_stage: input.stage,
+        p_outcome: input.outcome,
+        p_source: input.source,
+        p_trigger: input.trigger,
+        p_error_class: input.error_class ?? null,
+        p_duration_ms: input.duration_ms ?? null,
+        p_occurred_at: input.occurred_at,
+        p_metadata: input.metadata ?? {},
+      })
+      .abortSignal(AbortSignal.timeout(5_000));
+    if (error) throw new Error(`记录支付操作事件失败：${error.message}`, { cause: error });
   }
 
   async listByUser(input: {
