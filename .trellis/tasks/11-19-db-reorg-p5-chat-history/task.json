@@ -29,11 +29,13 @@
     },
     "mobile_performance": {
       "schema_version": 1,
-      "mode": "pending"
+      "mode": "not_applicable",
+      "reason": "5a 不改任何页面或接口的查询形状：消息列表、上下文组装仍读同一视图与 list_chat_message_page（输出列不变）；开轮准入 RPC 由 UPDATE 主表大字段改为 INSERT ops 表，写入量相同；回填后老会话展示不再逐行解压 history，只会变快。上线后核对消息列表 P95。"
     },
     "logging_integration": {
       "schema_version": 1,
-      "mode": "pending"
+      "mode": "not_applicable",
+      "reason": "不新增日志事件；沿用 conversation.detail.slow 等既有事件。后端发布时删掉其中已无意义的 fallbackCount（展示投影补齐后恒为 0）。迁移进度只在 Database Migration workflow 日志里以 NOTICE 给出。"
     }
   }
 }
