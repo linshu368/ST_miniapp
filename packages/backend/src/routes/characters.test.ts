@@ -23,7 +23,8 @@ vi.mock('../lib/db.js', () => ({
 }));
 vi.mock('../features/creator/access.js', () => ({
   canUseCharacter: mocks.canUse,
-  discoverableCharacterWhere: { enabled: true, archived_at: null },
+  discoverableCharacterWhere: { listing: { is: { enabled: true, archived_at: null } } },
+  listedCharacterWhere: { listing: { is: { enabled: true, archived_at: null } } },
 }));
 vi.mock('../features/creator/covers.js', () => ({
   resolveCreatorCoverUrl: mocks.cover,

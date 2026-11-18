@@ -1,5 +1,9 @@
 import { FastifyInstance, type FastifyBaseLogger } from 'fastify';
-import { discoverableCharacterWhere, canUseCharacter } from '../features/creator/access.js';
+import {
+  discoverableCharacterWhere,
+  listedCharacterWhere,
+  canUseCharacter,
+} from '../features/creator/access.js';
 import {
   resolveCreatorCoverUrl,
   resolvePublicCreatorCoverUrls,
@@ -152,11 +156,13 @@ export default async function characterRoutes(app: FastifyInstance) {
   async function findLatestListedAt(log: FastifyBaseLogger): Promise<Date | null> {
     try {
       const listed = await prisma.character.findFirst({
-        where: { ...discoverableCharacterWhere, last_listed_at: { not: null } },
-        orderBy: { last_listed_at: 'desc' },
-        select: { last_listed_at: true },
+        where: {
+          AND: [discoverableCharacterWhere, { listing: { is: { last_listed_at: { not: null } } } }],
+        },
+        orderBy: { listing: { last_listed_at: 'desc' } },
+        select: { listing: { select: { last_listed_at: true } } },
       });
-      return listed?.last_listed_at ?? null;
+      return listed?.listing?.last_listed_at ?? null;
     } catch (err) {
       // New 角标只是辅助提醒；角色聚合查询异常时关闭角标，不能让首页跟着不可用。
       log.warn({ err }, 'Failed to resolve latest character listing timestamp');
@@ -189,8 +195,8 @@ export default async function characterRoutes(app: FastifyInstance) {
       // 「最新」只看最后上架时间；「推荐」先取运营顺序，再在内存里做动态排序。
       orderBy:
         sort === 'latest'
-          ? [{ last_listed_at: 'desc' }, { created_at: 'desc' }]
-          : [{ sort_order: 'asc' }, { created_at: 'desc' }],
+          ? [{ listing: { last_listed_at: 'desc' } }, { created_at: 'desc' }]
+          : [{ listing: { sort_order: 'asc' } }, { created_at: 'desc' }],
       select: {
         id: true,
         name: true,
@@ -348,7 +354,7 @@ export default async function characterRoutes(app: FastifyInstance) {
       // select 只取契约字段，不拖 raw_card 等大 JSON。
       const [character, featuredIds] = await Promise.all([
         prisma.character.findFirst({
-          where: { id, enabled: true, archived_at: null },
+          where: { id, ...listedCharacterWhere },
           select: {
             id: true,
             name: true,

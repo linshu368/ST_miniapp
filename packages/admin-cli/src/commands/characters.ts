@@ -30,7 +30,8 @@ import { table } from '../output';
 
 /**
  * 角色上下架、删除、排序都走“布局草稿 → 发布”，与网页角色卡页一致；
- * 数据库里早期的 set_character_enabled / reorder_characters 等 RPC 网页已不用，CLI 也不暴露。
+ * 早期直接改上下架、排序、归档的三个 RPC 已在数据库重组 3c 删除；
+ * 上架状态现在在 app_core.character_listings，只经布局发布等数据库函数写入。
  */
 
 type LayoutStatus = 'listed' | 'delisted' | 'deleted' | 'unassigned';
