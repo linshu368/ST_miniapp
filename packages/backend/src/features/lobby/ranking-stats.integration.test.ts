@@ -17,6 +17,7 @@ import {
   persistRankingScores,
   type RankingDbClient,
 } from './ranking-stats.js';
+import { computeDeepExperienceStats } from './deep-experience-stats.js';
 import { computeRankingScores } from './ranking-score.js';
 import {
   updateRecommendation,
@@ -179,6 +180,11 @@ beforeAll(async () => {
       n_c integer, d30_raw double precision, d30_shrunk double precision,
       k_c integer, r48_raw double precision, score numeric,
       window_days integer,min_users integer,computed_at timestamptz
+    );
+    CREATE TABLE miniapp_features.character_deep_experience_stats(
+      character_id uuid PRIMARY KEY REFERENCES app_core.characters ON DELETE CASCADE,
+      deep_session_count bigint NOT NULL DEFAULT 0,
+      computed_at timestamptz NOT NULL DEFAULT now()
     );
   `);
   const checkpointSql = readFileSync(
@@ -346,6 +352,72 @@ describe('评分刷新去重（本地 PG17）', () => {
       await seed.end();
     }
   }, 60_000);
+});
+
+describe('角色卡深度体验 session 统计（本地 PG17）', () => {
+  it('按30分钟切session、21轮计数并合并同轮revision', async () => {
+    const user = randomUUID();
+    const firstSession = randomUUID();
+    const secondSession = randomUUID();
+    const exactlyTwentySession = randomUUID();
+    const legacyUser = randomUUID();
+    const legacyBase = now - 10 * hour;
+
+    for (let turnIndex = 1; turnIndex <= 21; turnIndex += 1) {
+      await turn({
+        user,
+        card: cardA,
+        session: firstSession,
+        turn: turnIndex,
+        at: now - 4 * hour + turnIndex * 60_000,
+      });
+    }
+    // A regenerated revision must not add a turn, even though it has its own row.
+    await turn({
+      user,
+      card: cardA,
+      session: firstSession,
+      turn: 1,
+      revision: 1,
+      at: now - 4 * hour + 30_000,
+    });
+
+    // The first turn is 30 minutes and one second after the previous session's last turn.
+    for (let turnIndex = 1; turnIndex <= 21; turnIndex += 1) {
+      await turn({
+        user,
+        card: cardA,
+        session: secondSession,
+        turn: turnIndex,
+        at: now - 4 * hour + 51 * 60_000 + 1_000 + (turnIndex - 1) * 60_000,
+      });
+    }
+
+    for (let turnIndex = 1; turnIndex <= 20; turnIndex += 1) {
+      await turn({
+        user,
+        card: cardB,
+        session: exactlyTwentySession,
+        turn: turnIndex,
+        at: now - 3 * hour + turnIndex * 60_000,
+      });
+    }
+
+    for (let index = 0; index < 21; index += 1) {
+      await turn({
+        user: legacyUser,
+        card: cardC,
+        session: null,
+        turn: null,
+        at: legacyBase + index * 60_000,
+      });
+    }
+
+    const stats = await computeDeepExperienceStats(db);
+    expect(stats.find((row) => row.characterId === cardA)?.deepSessionCount).toBe(2);
+    expect(stats.find((row) => row.characterId === cardB)?.deepSessionCount).toBe(0);
+    expect(stats.find((row) => row.characterId === cardC)?.deepSessionCount).toBe(1);
+  });
 });
 
 describe('角色评分的平台资历门槛（本地 PG17）', () => {

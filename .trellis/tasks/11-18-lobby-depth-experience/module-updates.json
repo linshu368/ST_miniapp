@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "updates": [
+    {
+      "module_id": "backend.business.character-lobby",
+      "summary": "大厅每日刷新任务新增按30分钟session、21轮门槛的深度体验摘要，并复用既有社交聚合读取。",
+      "files": [
+        "packages/backend/src/features/lobby/",
+        "packages/backend/src/lib/lobby-ranking-refresh-job.ts"
+      ]
+    },
+    {
+      "module_id": "frontend.business.character-lobby",
+      "summary": "前端继续复用既有like_count展示，未增加请求和页面状态。",
+      "files": ["packages/frontend/src/components/characters/character-social-bar.tsx"]
+    },
+    {
+      "module_id": "shared.business.character-lobby-contracts",
+      "summary": "CharacterSocial公开字段保持兼容，like_count语义扩展为包含深度体验次数。",
+      "files": ["packages/shared/src/api/character-social.ts"]
+    },
+    {
+      "module_id": "database.business.conversation-storage",
+      "summary": "新增大厅派生深度体验摘要表并扩展角色社交RPC。",
+      "files": ["packages/shared/migrations/", "docs/db/registry.yaml"]
+    }
+  ]
+}
