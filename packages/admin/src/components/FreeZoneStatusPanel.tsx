@@ -136,7 +136,7 @@ function columns(group: FreeZoneStatusGroup): TableColumnsType<AdminFreeZoneStat
         title: '最近质量',
         key: 'business',
         render: (_, model) => (
-          <Tooltip title="这次上架之后最近的真实轮次，截至最近一轮评估。不可用＝超时兜底＋超时：等到启动兜底等待还没出字（之后才报错也算）、或最后什么都没收到；报错兜底＝等待时间到之前就报错、空回复，立刻兜底（只显示）；中断＝开始出字后没写完就断了（不含用户点停），分母是它自己交付的轮次。">
+          <Tooltip title="这次上架之后、过去 3 小时的真实轮次，截至最近一轮评估。不可用＝超时兜底＋超时：等到启动兜底等待还没出字（之后才报错也算）、或最后什么都没收到；报错兜底＝等待时间到之前就报错、空回复，立刻兜底（只显示）；中断＝开始出字后没写完就断了（不含用户点停），分母是它自己交付的轮次。">
             <Typography.Text>{freeZoneBusinessText(model) || '—'}</Typography.Text>
           </Tooltip>
         ),
