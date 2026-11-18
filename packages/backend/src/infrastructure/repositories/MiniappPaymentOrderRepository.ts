@@ -1,3 +1,4 @@
+import { prisma } from '../../lib/db.js';
 import { getDomainDb } from '../../lib/supabase.js';
 import type {
   PaymentOrder,
@@ -29,10 +30,6 @@ export interface MiniappPaymentOrderRow {
   vip_bonus_main_credits?: number;
   fulfillment_applied: boolean;
   vip_valid_until: string | null;
-  next_reconcile_at: string;
-  last_reconciled_at: string | null;
-  reconcile_attempts: number;
-  reconcile_locked_until: string | null;
 }
 
 export interface CreateMiniappPaymentOrderInput {
@@ -116,18 +113,21 @@ export class MiniappPaymentOrderRepository {
     return (data as MiniappPaymentOrderRow | null) ?? null;
   }
 
-  /** event_key 是事实的去重键：同一事实重复上报（如对账每轮都看到同一异常）直接忽略，不算失败。 */
+  /** event_key 是事实的去重键：同一事实重复上报（如对账每轮都看到同一异常）直接忽略，不算失败。
+   *  事件表在 ops（不经 PostgREST 暴露），用 Prisma 原生 SQL 写。 */
   async recordOperationEvent(input: PaymentOperationEventInput): Promise<void> {
-    const { error } = await this.db.from('payment_operation_events').upsert(
-      {
-        ...input,
-        error_class: input.error_class ?? null,
-        duration_ms: input.duration_ms ?? null,
-        metadata: input.metadata ?? {},
-      },
-      { onConflict: 'event_key', ignoreDuplicates: true }
-    );
-    if (error) throw new Error(`记录支付操作事件失败：${error.message}`, { cause: error });
+    try {
+      await prisma.$executeRaw`
+        INSERT INTO ops.payment_events (event_key, order_id, user_id, event_kind, stage, outcome, source, trigger,
+          error_class, duration_ms, occurred_at, metadata)
+        VALUES (${input.event_key}, ${input.order_id}, ${input.user_id}::uuid, ${input.event_kind}, ${input.stage},
+          ${input.outcome}, ${input.source}, ${input.trigger}, ${input.error_class ?? null},
+          ${input.duration_ms ?? null}::integer, ${input.occurred_at}::timestamptz,
+          ${JSON.stringify(input.metadata ?? {})}::jsonb)
+        ON CONFLICT (event_key) DO NOTHING`;
+    } catch (error) {
+      throw new Error('记录支付操作事件失败', { cause: error });
+    }
   }
 
   async listByUser(input: {
@@ -206,40 +206,28 @@ export class MiniappPaymentOrderRepository {
     return typeof data === 'number' ? data : 0;
   }
 
-  /** 包含建单响应丢失、无交易号的易支付订单；按持久化轮询时间排序避免慢单饿死后续订单。 */
-  async listRecentUnsettled(input: {
-    since: string;
-    limit: number;
+  /** 领取到期的对账任务（billing.payment_reconcile_jobs）：库里同一事务清掉已入账/已终结/出窗口的任务，
+   *  按指数退避排好下一次，再返回订单行（含建单响应丢失、无交易号的易支付单）。多实例 SKIP LOCKED 不重复领取。 */
+  async claimDueReconciliations(input: {
     now: string;
+    windowStart: string;
+    limit: number;
+    baseDelaySeconds: number;
+    maxDelaySeconds: number;
     signal?: AbortSignal;
   }): Promise<MiniappPaymentOrderRow[]> {
     const { data, error } = await this.db
-      .from('payment_orders')
-      .select('*')
-      .in('status', ['pending', 'expired'])
-      .eq('credits_added', false)
-      .eq('fulfillment_applied', false)
-      .like('id', 'EP%')
-      .gte('created_at', input.since)
-      .lte('next_reconcile_at', input.now)
-      .order('next_reconcile_at', { ascending: true })
-      .order('id', { ascending: true })
-      .limit(input.limit)
+      .rpc('claim_payment_reconcile_jobs', {
+        p_now: input.now,
+        p_window_start: input.windowStart,
+        p_limit: input.limit,
+        p_base_delay_seconds: input.baseDelaySeconds,
+        p_max_delay_seconds: input.maxDelaySeconds,
+      })
       .abortSignal(input.signal ?? AbortSignal.timeout(5_000));
 
-    if (error) throw new Error(`查询待对账支付订单失败：${error.message}`, { cause: error });
+    if (error) throw new Error(`领取待对账支付订单失败：${error.message}`, { cause: error });
     return (data ?? []) as MiniappPaymentOrderRow[];
-  }
-
-  /** 查询前先排到队尾；崩溃后到期可重试，多实例重复只读查询仍由结算幂等兜底。 */
-  async scheduleReconciliation(id: string, nextAt: string, signal?: AbortSignal): Promise<void> {
-    const { error } = await this.db
-      .from('payment_orders')
-      .update({ next_reconcile_at: nextAt })
-      .eq('id', id)
-      .in('status', ['pending', 'expired'])
-      .abortSignal(signal ?? AbortSignal.timeout(5_000));
-    if (error) throw new Error('安排支付对账失败', { cause: error });
   }
 
   /** 查单确认未支付且超过本地期限后标记过期；迟到支付仍允许恢复履约。 */
