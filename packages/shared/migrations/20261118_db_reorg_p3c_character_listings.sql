@@ -8,7 +8,8 @@
 --   2. 插卡后自动建上架行（扩展期间按卡片表上那 4 列的值建）；characters.enabled 默认改为 false；
 --   3. 删 3 个 0 调用的旧运营函数；运营布局 3 个函数、新建卡、两个可见性函数改读写上架表；
 --      创作者发布/审核两个函数按原文只替换涉及上架的几句；分析视图改 join；
---   4. 发布窗口：上架表 → characters 4 列单向镜像，供旧后端读（写入方全部已换成新函数，后端不直接写上架列）。
+--   4. 发布窗口：上架表 → characters 4 列单向镜像，供旧后端读（写入方全部已换成新函数，后端不直接写上架列）；
+--   5. pg_cron 每小时位次快照（card_position_hourly_snapshot）改读上架表，写入内容不变。
 -- 收缩步（后端发布后）：20261118_db_reorg_p3c_character_listings_contract.sql 删镜像、旧约束/索引/列。
 --
 -- Verify: bash scripts/test-db-reorg-p3c-migration.sh
@@ -649,6 +650,36 @@ CREATE OR REPLACE VIEW miniapp_analytics.v_card_quality_session AS
      LEFT JOIN miniapp_features.character_ranking_scores s ON s.character_id = c.id
   WHERE l.enabled = true
   ORDER BY s.score DESC NULLS LAST, s.d30_shrunk DESC NULLS LAST, s.r48_raw DESC NULLS LAST, s.n_c DESC NULLS LAST, c.id;
+
+-- 10. pg_cron 每小时位次快照（card_position_hourly_snapshot）改读上架表，写入内容不变 ------------------
+-- cron 命令是纯文本，不在函数守卫里；命令与预期原文不一致就拒绝，不猜着改。只能用 cron.alter_job 原地改
+-- （Supabase 上 postgres 不能直接 UPDATE cron.job）。TEST 没有 pg_cron，跳过。
+DO $cron$
+DECLARE
+  r record;
+  c_old constant text := 'INSERT INTO miniapp_analytics.card_position_snapshot (character_id, name, sort_order, enabled) '
+    'SELECT id, name, sort_order, enabled FROM app_core.characters '
+    'WHERE enabled = true AND COALESCE(is_test,false) = false AND archived_at IS NULL';
+  c_new constant text := 'INSERT INTO miniapp_analytics.card_position_snapshot (character_id, name, sort_order, enabled)
+    SELECT c.id, c.name, l.sort_order, l.enabled
+    FROM app_core.characters c JOIN app_core.character_listings l ON l.character_id = c.id
+    WHERE l.enabled AND l.archived_at IS NULL AND NOT c.is_test';
+BEGIN
+  IF to_regclass('cron.job') IS NULL THEN
+    RETURN;
+  END IF;
+  FOR r IN EXECUTE $q$SELECT jobid, command FROM cron.job WHERE command LIKE '%card_position_snapshot%'$q$ LOOP
+    IF position('character_listings' IN r.command) > 0 THEN
+      CONTINUE;  -- 已改（重跑）
+    END IF;
+    IF rtrim(btrim(regexp_replace(r.command, '\s+', ' ', 'g')), ';') <> c_old THEN
+      RAISE EXCEPTION 'cron job % differs from the expected card position snapshot command; refusing to rewrite: %',
+        r.jobid, r.command;
+    END IF;
+    EXECUTE 'SELECT cron.alter_job(job_id => $1, command => $2)' USING r.jobid, c_new;
+  END LOOP;
+END
+$cron$;
 
 NOTIFY pgrst, 'reload schema';
 COMMIT;

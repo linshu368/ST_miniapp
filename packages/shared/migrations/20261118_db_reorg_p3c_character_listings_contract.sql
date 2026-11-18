@@ -77,6 +77,16 @@ BEGIN
     RAISE EXCEPTION 'views still depend on listing columns of app_core.characters: %', v_ref;
   END IF;
 
+  -- pg_cron 命令是纯文本，删列不会报错，只会在下次执行时失败，单独查。
+  IF to_regclass('cron.job') IS NOT NULL THEN
+    EXECUTE $q$SELECT string_agg(jobid::text || ' ' || coalesce(jobname, ''), ', ') FROM cron.job
+      WHERE command ~ 'app_core\.characters\M' AND command ~ '\m(enabled|sort_order|archived_at|last_listed_at)\M'
+        AND position('character_listings' IN command) = 0$q$ INTO v_ref;
+    IF v_ref IS NOT NULL THEN
+      RAISE EXCEPTION 'cron jobs still read listing columns of app_core.characters: %', v_ref;
+    END IF;
+  END IF;
+
   -- 3. 插卡触发器按默认值建行 -------------------------------------------------------
   CREATE OR REPLACE FUNCTION app_core.tf_characters_ensure_listing()
   RETURNS trigger

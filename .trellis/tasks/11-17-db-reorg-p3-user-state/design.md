@@ -129,6 +129,7 @@
 - 布局发布不再改卡片表的 `updated_at`（原来每次发布把全部卡的 updated_at 刷成当时），运营列表的"更新时间"取卡与上架两者较晚，界面所见不变。核过：后端没有把卡片 `updated_at` 当缓存/变更信号的读者（大厅目录按字段指纹失效）。
 - 创作者函数写 `characters.updated_at=now()` 时按会话时区（UTC）落成无时区值，比北京时间早 8 小时，是既有问题；本次只替换上架几句，不顺手改。
 - 收缩步"仍有函数读旧列"的守卫按"引用 app_core.characters + 出现 4 个列名 + 不含 character_listings"判定，上架表自己的两个触发器函数按名排除（本地测试抓到误报）。
+- 遗漏的读者（发布前 pg_stat_statements 抓到）：pg_cron `card_position_hourly_snapshot`（jobid 5）命令文本直读 characters 的上架列，不在函数守卫里。扩展步用 `cron.alter_job` 改成 join 上架表（命令与预期原文不一致就拒绝），写入内容不变；收缩步加守卫：不得再有 cron 命令读旧列。其写入的 `miniapp_analytics.card_position_snapshot` 无读者（10-23 起只有一次 Studio 浏览），172MB，列为候选删除，待用户确认。
 - 核对（后端发布后）：pg_stat_statements 里带 `"app_core"."characters"."enabled"` / `"last_listed_at"` / `"sort_order"` 且不含 `character_listings` 的语句停涨，新的 join 上架表语句在涨；之后再执行收缩步。
 
 ## 3d 之后

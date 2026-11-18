@@ -701,6 +701,18 @@ CREATE VIEW miniapp_analytics.v_card_quality_session AS
   ORDER BY s.score DESC NULLS LAST, s.d30_shrunk DESC NULLS LAST, s.r48_raw DESC NULLS LAST, s.n_c DESC NULLS LAST, c.id;
 GRANT SELECT ON miniapp_analytics.v_card_quality_session TO cs_persona_reader;
 
+-- pg_cron stand-in (Supabase: postgres may only change jobs through cron.alter_job). Job text as in production.
+CREATE SCHEMA cron;
+CREATE TABLE cron.job (jobid bigint PRIMARY KEY, jobname text, schedule text NOT NULL, command text NOT NULL,
+  active boolean NOT NULL DEFAULT true);
+CREATE FUNCTION cron.alter_job(job_id bigint, schedule text DEFAULT NULL, command text DEFAULT NULL,
+  database text DEFAULT NULL, username text DEFAULT NULL, active boolean DEFAULT NULL) RETURNS void LANGUAGE sql AS
+  $$ UPDATE cron.job j SET command = COALESCE(alter_job.command, j.command) WHERE j.jobid = alter_job.job_id $$;
+CREATE TABLE miniapp_analytics.card_position_snapshot (snapshot_at timestamptz NOT NULL DEFAULT now(),
+  character_id uuid NOT NULL, name text, sort_order integer, enabled boolean);
+INSERT INTO cron.job VALUES (5, 'card_position_hourly_snapshot', '0 * * * *',
+E'INSERT INTO miniapp_analytics.card_position_snapshot (character_id, name, sort_order, enabled)\n    SELECT id, name, sort_order, enabled FROM app_core.characters\n    WHERE enabled = true AND COALESCE(is_test,false) = false AND archived_at IS NULL');
+
 DO $md5$
 DECLARE
   r record;
@@ -847,7 +859,10 @@ BEGIN
   PERFORM app_core.review_creator_character(c_owner, test_fixture.id('c4'), test_fixture.revision(test_fixture.id('c4')), 'approve', NULL, 'test');
   PERFORM app_core.mutate_creator_character(test_fixture.id('a001'), test_fixture.id('c5'), 'save',
     test_fixture.revision(test_fixture.id('c5')), test_fixture.creator_payload('创作五改', test_fixture.id('cc01')));
+  EXECUTE (SELECT command FROM cron.job WHERE jobname = 'card_position_hourly_snapshot');
   v_out := jsonb_build_object(
+    'position_snapshot', (SELECT jsonb_agg(jsonb_build_object('id', p.character_id, 'name', p.name, 'sort', p.sort_order,
+                            'enabled', p.enabled) ORDER BY p.character_id) FROM miniapp_analytics.card_position_snapshot p),
     'initial', v_initial,
     'final', test_fixture.snapshot(),
     'created', (v_new - 'created_at' - 'updated_at' - 'last_listed_at') || jsonb_build_object(
@@ -903,7 +918,8 @@ jq -e '.final.layout.published.delisted_ids | index("NEW-CARD")' "$work_dir/befo
   jq -e '.final.discover["'"$(id c1)"'"] == true and .final.discover["'"$(id c5)"'"] == false and .final.discover["'"$(id c6)"'"] == false' "$work_dir/before.json" >/dev/null &&
   jq -e '.final.use["'"$(id c6)|$(id a003)"'"] == true and .final.use["'"$(id c6)|$(id a001)"'"] == false' "$work_dir/before.json" >/dev/null &&
   jq -e '[.final.admin_list[] | select(.updated == "now")] | length == 17' "$work_dir/before.json" >/dev/null &&
-  jq -e '(.audit | length) == 4 and .final.layout.layout_version == 4' "$work_dir/before.json" >/dev/null ||
+  jq -e '(.audit | length) == 4 and .final.layout.layout_version == 4' "$work_dir/before.json" >/dev/null &&
+  jq -e '(.position_snapshot | length) == 11' "$work_dir/before.json" >/dev/null ||
   { echo "FAIL: baseline scenario misses an expected effect"; exit 1; }
 echo "ok: baseline scenario with the old functions"
 
@@ -928,6 +944,12 @@ SQL
 expect_fail "expand over a changed creator review sentence" "expected exactly one match, found 0" <"$expand"
 "${admin_psql[@]}" >/dev/null <<'SQL'
 DO $$ BEGIN EXECUTE (SELECT def FROM test_fixture.saved_defs WHERE fn LIKE 'app_core.review_creator_character%'); END $$;
+CREATE TABLE test_fixture.saved_cron AS SELECT jobid, command FROM cron.job;
+UPDATE cron.job SET command = command || ' LIMIT 10' WHERE jobid = 5;
+SQL
+expect_fail "expand over a changed position snapshot cron command" "differs from the expected card position snapshot command" <"$expand"
+"${admin_psql[@]}" >/dev/null <<'SQL'
+UPDATE cron.job j SET command = s.command FROM test_fixture.saved_cron s WHERE s.jobid = j.jobid;
 DO $$ BEGIN
   IF (SELECT md5(prosrc) FROM pg_proc WHERE oid = 'admin.get_characters()'::regprocedure) <> '4f07ba1b25c8f7d33e1665df218d3288'
      OR (SELECT md5(prosrc) FROM pg_proc WHERE oid = 'app_core.review_creator_character(uuid,uuid,integer,text,text,text)'::regprocedure)
@@ -1001,6 +1023,9 @@ BEGIN
                'app_core.review_creator_character(uuid,uuid,integer,text,text,text)'::regprocedure)
              AND (prosrc ~ 'last_listed_at=CASE' OR prosrc ~ 'enabled,sort_order\)')) THEN
     RAISE EXCEPTION 'assert: creator functions still write card listing columns';
+  END IF;
+  IF (SELECT command FROM cron.job WHERE jobid = 5) NOT LIKE '%JOIN app_core.character_listings l%' THEN
+    RAISE EXCEPTION 'assert: position snapshot cron job not rewritten';
   END IF;
 END $$;
 SQL
@@ -1085,6 +1110,11 @@ SQL
 expect_fail "contract with a view on characters.sort_order" "views still depend on listing columns" <"$contract"
 "${admin_psql[@]}" >/dev/null <<'SQL'
 DROP VIEW test_fixture.rogue_v;
+INSERT INTO cron.job VALUES (9, 'rogue_listing_job', '*/5 * * * *', 'SELECT count(*) FROM app_core.characters WHERE enabled');
+SQL
+expect_fail "contract with a cron job reading characters.enabled" "cron jobs still read listing columns of app_core.characters: 9 rogue_listing_job" <"$contract"
+"${admin_psql[@]}" >/dev/null <<'SQL'
+DELETE FROM cron.job WHERE jobid = 9;
 UPDATE app_core.characters SET sort_order = 999 WHERE id = test_fixture.id('1');
 SQL
 expect_fail "contract with a card written directly" "differ from their listing row" <"$contract"

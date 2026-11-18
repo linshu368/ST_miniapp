@@ -8,6 +8,7 @@
 - 运营 `get_characters` / `get_character_layout` / `publish_character_layout_draft` / `create_character`（改返回 jsonb，键不变）与 `can_discover_character` / `can_use_character` 整函数重写（md5 守卫：线上必须是写迁移时依据的版本）；创作者 `mutate_creator_character` / `review_creator_character` 只按原文替换写上架列的 3 句（匹配不是恰好一处就拒绝）；`v_card_quality_session` 改 join。删 0 调用的 `archive_character` / `set_character_enabled` / `reorder_characters`。
 - 运营列表的"更新时间"取卡内容与上架两者较晚的一个（布局发布不再改卡片表的 updated_at，界面所见不变）。
 - 发布窗口：上架表 → 卡片表 4 列单向镜像，供旧后端读；写入方在扩展步已全部换成写上架表。
+- pg_cron `card_position_hourly_snapshot` 的命令文本直读旧列：扩展步用 `cron.alter_job` 改为 join 上架表（写入内容不变，命令与预期原文不一致就拒绝；TEST 无 pg_cron 跳过），收缩步守卫不得再有 cron 命令读旧列。
 - 收缩：锁两表 → 删镜像 → 守卫（每卡恰有上架行且与旧列一致；无函数/视图再读旧列）→ 插卡触发器改按默认值建行 → 删旧 CHECK、3 个旧索引、旧触发器函数与 4 列。
 - 验证：`bash scripts/test-db-reorg-p3c-migration.sh`（旧函数跑固定场景作基线，扩展后、收缩后逐字比对）。
 - 发布：TEST 扩展 → 生产扩展 → 后端发布 → 核对 → TEST/生产收缩。回滚：扩展步不删列且镜像同步，回退后端即可（旧的 3 个 RPC 无人调用，不恢复）。
