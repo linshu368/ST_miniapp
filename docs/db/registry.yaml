@@ -272,15 +272,18 @@ tables:
               timeout_rate_target,
               fallback_timeout_ms,
               fallback_triggered_ms,
-              first_token_emitted_ms,
-              client_request_dispatched_ms,
               client_first_token_received_ms,
               client_backgrounded,
-              client_wait_finished_ms,
               client_reported_at,
             ],
-          phase: 2,
-          note: 阶段 2 设计时逐列对照三个读取函数再确认,
+          phase: 6,
+          note: 6a-1；门禁与首字上报只读留下的交付列，这 7 列只有首字视图读,
+        }
+    drop_cols:
+      - {
+          cols: [first_token_emitted_ms, client_request_dispatched_ms, client_wait_finished_ms],
+          phase: 6,
+          note: 10-29 起后端不再写入，全为空,
         }
 
   experience.chat_generation_attempts:
@@ -318,7 +321,7 @@ tables:
               provider_reported_model,
               discarded_response,
             ],
-          phase: 2,
+          phase: 6,
         }
 
   experience.openrouter_chat_history:
@@ -330,7 +333,7 @@ tables:
         {
           to: ops.llm_calls,
           cols: ['*'],
-          phase: 2,
+          phase: 6,
           note: generation_id 身份已在 attempts；select_chat_generation_delivery 与 conversation-history-billing 同步改,
         },
       ]
@@ -339,7 +342,7 @@ tables:
     nature: O
     owner: backend/src/infrastructure/repositories/VeniceChatHistoryRepository.ts
     status: moving
-    move: [{ to: ops.llm_calls, cols: ['*'], phase: 2 }]
+    move: [{ to: ops.llm_calls, cols: ['*'], phase: 6 }]
 
   experience.surplusintelligence_chat_history:
     nature: O
@@ -349,7 +352,7 @@ tables:
       - {
           to: ops.llm_calls,
           cols: ['*'],
-          phase: 2,
+          phase: 6,
           note: surplus-billing-recovery 改为读 attempts 身份,
         }
       - {
@@ -361,7 +364,7 @@ tables:
               request_record_next_retry_at,
               metadata_capture_status,
             ],
-          phase: 2,
+          phase: 6,
         }
 
   experience.chat_message_audio:
@@ -391,7 +394,7 @@ tables:
         updated_at,
       ]
     move:
-      - { to: ops.media_generation_calls, cols: [latency_ms], phase: 2 }
+      - { to: ops.media_generation_calls, cols: [latency_ms], phase: 6 }
       - {
           to: billing.usage_charges,
           cols:
@@ -449,7 +452,7 @@ tables:
       - {
           to: ops.media_generation_calls,
           cols: [provider_prompt, base_url_host, latency_ms],
-          phase: 2,
+          phase: 6,
         }
       - {
           to: experience.chat_image_jobs,
@@ -740,15 +743,15 @@ tables:
               request_id,
               generation_id,
             ],
-          phase: 2,
+          phase: 6,
           note: 畅聊每一路调用都是一次上游调用,
         }
       - {
           to: ops.llm_calls,
           cols: [cost_usd, cost_source, prompt_tokens, completion_tokens],
-          phase: 2,
+          phase: 6,
         }
-      - { to: ops.llm_cost_jobs, cols: [cost_attempts, settled_at], phase: 2 }
+      - { to: ops.llm_cost_jobs, cols: [cost_attempts, settled_at], phase: 6 }
 
   miniapp_features.free_zone_models:
     nature: S
@@ -909,8 +912,8 @@ tables:
     nature: O
     owner: backend/src/infrastructure/repositories/GenerationObservationRepository.ts
     status: planned
-    phase: 2
-    note: 每次上游调用一行，attempt_id 为主键（软引用 experience.chat_generation_attempts.id）；合并 attempts 测速列、三张供应商表、free_zone_calls 成本列、chat_history.upstream_status、llm_usage_charges 成本列（阶段 6）
+    phase: 6
+    note: 每次上游调用一行，attempt_id 为主键（软引用 experience.chat_generation_attempts.id）；合并 attempts 测速列、三张供应商表、free_zone_calls 成本列、llm_usage_charges 成本列（6a-2 起，见 .trellis/tasks/11-19-db-reorg-p6-billing/design.md）
     keys:
       {
         raw_request: [供应商请求参数原样],
@@ -923,23 +926,24 @@ tables:
       nature: J,
       owner: backend/src/features/free-zone/call-costs.ts + surplus 用量回填,
       status: planned,
-      phase: 2,
+      phase: 6,
       note: 上游成本与用量的事后补查任务,
     }
   ops.chat_generation_timings:
     {
       nature: O,
-      owner: backend/src/infrastructure/repositories/GenerationObservationRepository.ts,
+      owner: rpc:experience.begin_chat_generation_observation / prepare_chat_generation_fallback / report_chat_first_token,
       status: planned,
-      phase: 2,
+      phase: 6,
       retention_days: 180,
+      note: 每轮一行（chat_history_id 软引用请求表）；只被 miniapp_analytics.chat_first_token_facts 读,
     }
   ops.media_generation_calls:
     {
       nature: O,
       owner: backend/src/features/voice + image,
       status: planned,
-      phase: 2,
+      phase: 6,
       retention_days: 180,
     }
   ops.chat_prompt_observations:
