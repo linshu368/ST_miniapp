@@ -32,6 +32,13 @@ export interface EngineCharacter {
   post_history_instructions: string;
 }
 
+export interface EngineUserSettings {
+  /** 用户为这张卡补充的设定（可写多个人物）。 */
+  notes: string;
+  /** 用户扮演的主角人设描述。名字不进这里，称呼仍用昵称。 */
+  personaDescription: string;
+}
+
 export interface EngineHistoryMessage {
   role: 'user' | 'assistant';
   content: string;
@@ -96,6 +103,11 @@ export interface EngineInput {
    * 被窗口截掉的早期轮数，引擎只回填观测字段。未截断或缺省为 0。
    */
   truncatedTurns?: number;
+  /**
+   * 用户对这张角色卡的设定：补充设定与主角人设。空串表示这一段不出现，两段都空则整条消息不出现。
+   * 每轮由生成链路重新读取，不属于历史，因此不受截断与压缩影响。
+   */
+  userSettings?: EngineUserSettings;
   /** 本轮用户输入原文。引擎负责把平台规则包装在它外面后作为最后一条 user 消息 */
   userInput: string;
   userConfig: UserGenerationConfig;
