@@ -181,22 +181,21 @@ describe.skipIf(!url)('real local PostgREST generation facts', () => {
         first_token_visible_ms: null,
       })
     ).toBe(true);
-    const rows = await client.schema('miniapp_analytics').rpc('chat_first_token_report', {
-      p_from: '2026-10-22T00:00:00+08',
-      p_to: '2026-10-23T00:00:00+08',
-    });
+    const rows = await client
+      .schema('miniapp_analytics')
+      .from('chat_first_token_facts')
+      .select(
+        'requested_model_id,client_outcome,client_first_token_visible_ms,delivery_role,fallback_provider_gap_ms'
+      )
+      .eq('chat_history_id', h);
     if (rows.error) throw rows.error;
-    const report = (rows.data as Array<Record<string, unknown>>).find(
-      (r) => r.model_id === 'rpc-selected'
-    );
-    expect(report).toMatchObject({
-      requests: 1,
-      model_requests: 1,
-      sample_eligible: false,
-      user_first_token_p90_ms: 5300,
-      fallback_selected: 1,
-      client_timeouts: 0,
-      fallback_provider_gap_p90_ms: 100,
+    expect(rows.data).toHaveLength(1);
+    expect(rows.data![0]).toMatchObject({
+      requested_model_id: 'rpc-selected',
+      client_outcome: 'observed',
+      client_first_token_visible_ms: 5300,
+      delivery_role: 'fallback',
+      fallback_provider_gap_ms: 100,
     });
   });
   it('allows dedicated metrics reads but denies message content and client direct reporting', async () => {
@@ -204,17 +203,11 @@ describe.skipIf(!url)('real local PostgREST generation facts', () => {
     const view = await metrics
       .schema('miniapp_analytics')
       .from('chat_first_token_facts')
-      .select(
-        'chat_history_id,first_token_emitted_ms,client_request_dispatched_ms,client_wait_finished_ms'
-      )
+      .select('chat_history_id,client_outcome,fallback_started')
       .eq('chat_history_id', h);
     expect(view.error).toBeNull();
     expect(view.data).toHaveLength(1);
-    expect(view.data![0]).toMatchObject({
-      first_token_emitted_ms: null,
-      client_request_dispatched_ms: null,
-      client_wait_finished_ms: null,
-    });
+    expect(view.data![0]).toMatchObject({ chat_history_id: h, client_outcome: 'observed' });
     const content = await metrics
       .schema('experience')
       .from('chat_history')
