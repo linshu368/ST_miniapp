@@ -114,3 +114,12 @@ prompt 快照保留多久（5b 依赖，5a 不依赖）：
 - 全部保留：复制全部 23GB，表继续每月涨约 20GB。
 
 删除后用户对话正文（`user_input`/`assistant_reply`）不受影响，丢的只是"当时拼给模型的完整上下文"（系统提示、角色卡、记忆在那一刻的版本）。
+
+## 5a 上线结果（11-19 凌晨）
+
+- 03:07 生产扩展；03:17 后端发布（#956），03:20 起新轮次 `history` 为空、prompt 进 `ops.chat_prompt_observations`（与轮次一一对应）、`drive_mode` 写真列。
+- 回填：原文件每次 CALL 从头按主键重走 keyset，越跑越慢（每次 1 万行掉到 1800 行），两轮后另写 `_backfill_fast`（一次扫出待补 id、按 `created_at` 顺序补，每次 6–10k 行），两轮补完后重跑原文件闭合认领（生产不能 abandon）。会话轮次投影全覆盖。
+- pg_stat_statements：jsonb drive_mode 写入、带 upstream_status 的收口写入、写 history、旧主表直读（含 upstream_status）、`current_chat_history` 全部直读，发布后均停涨。
+- 04:22 生产收缩（#959）：残留 jsonb drive_mode 18721 行挪进列；4 个视图与 list 函数重建、`current_chat_history` 删除；删 `upstream_status`、`first_token_preview`、`projection_version`、`backfill_chat_history_display`。收缩后新轮次正常，主服务无 error。
+- 锁时长：排他锁持有约 9 秒——锁内的预览一致性检查扫全表约 3.5 秒，其余是十几条语句各约 0.22 秒的 runner↔数据库往返。凌晨低峰只让 1 轮交付多等了几秒。以后同类收缩：重的守卫一律放在锁外（锁内只查增量），锁内的 DDL 合进一个 DO 块，避免逐条往返。
+- 还剩：`history` 列（约 23GB）等 5b（保留期待用户决定）；计费 4 列在阶段 6。
