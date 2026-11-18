@@ -67,6 +67,102 @@ export function restartStalledAudioOnSeek(
   };
 }
 
+/** 落点在分片最后这一段时，目标分片装入缓冲后浏览器仍要等下一片才能恢复播放（线上尾段 1–3s）。 */
+const SNAP_TAIL_FRACTION = 0.2;
+/** 吸附到下一片起点后再往里偏一点，避免浮点误差让 hls.js 仍选中上一片。 */
+const SNAP_OFFSET_S = 0.05;
+/** 目标分片下载预算：慢样本首字节 P50 约 1.3s，加上 1s 下载和约 0.3s 尾段仍在 3s 内。 */
+const SEEK_FRAGMENT_BUDGET_S = 1;
+const DEFAULT_FRAGMENT_S = 4;
+
+/**
+ * 用户提交无缓冲快进前调用，返回实际要定位的时间。
+ *
+ * - 落点在分片末尾 20% 时吸附到下一片起点（最多前移约 0.8s），只需下载一片就能恢复。
+ * - ABR 平时按“下载时间≈播放时间”选档，快进需要尽快下完一片：给目标分片强制一个按带宽估算
+ *   1s 内下完的档位（`nextAutoLevel`，ABR 在该档分片加载成功后自行清除）。
+ * - 强制档位要保持到那一片装入缓冲：hls.js 1.7.4 在分片“已下载、未入缓冲”时若档位变了，会按
+ *   旧缓冲末端把同一 sn 换高档重下。弱网下 ABR 估算仍偏高，这次重下会在恢复后立刻卡顿
+ *   （本地限速复现 3/3 → 保持后 0/3）。所以该档分片加载完时再强制一次，入缓冲后解除，
+ *   之后 ABR 已拿到快进后的真实测速。最多多影响一片。
+ *
+ * 已缓冲的目标、hls.js 状态缺失或抛错时原值返回，等价于现状。
+ */
+export function createHlsSeekPlanner(hls: HlsPlayer, events: HlsEvents, video: HTMLVideoElement) {
+  let pinned: number | undefined;
+  const onLoaded = (_event: unknown, { frag }: FragLoadedData) => {
+    if (pinned !== undefined && frag.type === 'main' && frag.level === pinned)
+      hls.nextAutoLevel = pinned;
+  };
+  const onBuffered = (_event: unknown, { frag }: FragBufferedData) => {
+    if (frag.type === 'main') pinned = undefined;
+  };
+  hls.on(events.FRAG_LOADED, onLoaded);
+  hls.on(events.FRAG_BUFFERED, onBuffered);
+  return {
+    plan(target: number): number {
+      pinned = undefined;
+      try {
+        if (isBuffered(video, target) || !hls.levels.length) return target;
+        const fragments = currentFragments(hls);
+        const planned = snapTarget(fragments, target, video.duration);
+        const fragment = fragments.find((frag) => covers(frag, planned));
+        pinned = forceSeekLevel(hls, fragment?.duration || DEFAULT_FRAGMENT_S);
+        return planned;
+      } catch {
+        return target;
+      }
+    },
+    stop() {
+      pinned = undefined;
+      try {
+        hls.off(events.FRAG_LOADED, onLoaded);
+        hls.off(events.FRAG_BUFFERED, onBuffered);
+      } catch {
+        /* already destroyed */
+      }
+    },
+  };
+}
+
+function currentFragments(hls: HlsPlayer): Fragment[] {
+  const index = hls.currentLevel >= 0 ? hls.currentLevel : hls.loadLevel;
+  return hls.levels[index]?.details?.fragments ?? [];
+}
+
+function snapTarget(fragments: Fragment[], target: number, duration: number): number {
+  const index = fragments.findIndex((frag) => covers(frag, target));
+  const frag = fragments[index];
+  const following = fragments[index + 1];
+  if (!frag || !following) return target;
+  if (target - frag.start < frag.duration * (1 - SNAP_TAIL_FRACTION)) return target;
+  const snapped = following.start + SNAP_OFFSET_S;
+  return Number.isFinite(duration) && snapped >= duration ? target : snapped;
+}
+
+/** 返回实际强制的档位；不需要强制时返回 undefined。 */
+function forceSeekLevel(hls: HlsPlayer, fragmentSeconds: number): number | undefined {
+  if (!hls.autoLevelEnabled) return undefined;
+  const level = pickSeekLevel(hls, fragmentSeconds);
+  if (level >= hls.nextAutoLevel) return undefined;
+  hls.nextAutoLevel = level;
+  return level;
+}
+
+/** 只挑已有子清单的档位，避免为降档多一次子清单请求；都不满足时用最低档。 */
+function pickSeekLevel(hls: HlsPlayer, fragmentSeconds: number): number {
+  const { levels, minAutoLevel, maxAutoLevel, bandwidthEstimate } = hls;
+  if (Number.isFinite(bandwidthEstimate) && bandwidthEstimate > 0) {
+    for (let i = Math.min(maxAutoLevel, levels.length - 1); i > minAutoLevel; i--) {
+      const level = levels[i];
+      if (!level?.details) continue;
+      if ((level.maxBitrate * fragmentSeconds) / bandwidthEstimate <= SEEK_FRAGMENT_BUDGET_S)
+        return i;
+    }
+  }
+  return minAutoLevel;
+}
+
 function covers(frag: Fragment, time: number): boolean {
   return frag.start <= time && time < frag.start + frag.duration;
 }

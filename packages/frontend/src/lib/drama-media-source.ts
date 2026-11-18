@@ -77,7 +77,10 @@ export function preloadDramaHls(): void {
   void import('hls.js').catch(() => undefined);
 }
 
-export { ownsHlsMediaSource as ownsDramaSource } from './hls-media-source';
+export {
+  ownsHlsMediaSource as ownsDramaSource,
+  prepareHlsSeek as prepareDramaSeek,
+} from './hls-media-source';
 
 /** The cleanup invalidates pending imports before touching the shared video element. */
 export interface LoadDramaSourceOptions {
@@ -99,5 +102,6 @@ export function loadDramaSource(
     ...options,
     forceHlsOnApple: shouldUseHlsOnApple(),
     restartSeekAudio: true,
+    planSeeks: true,
   });
 }
