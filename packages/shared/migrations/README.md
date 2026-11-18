@@ -8,6 +8,16 @@
 
 # SQL 迁移文件
 
+## 2026-11-19 数据库重组阶段 5a：chat_history 瘦身——扩展与回填（本地 PG17 非超级用户验证）
+
+`20261119_db_reorg_p5_chat_history_expand.sql`（扩展，只改目录与函数）+ `20261119_db_reorg_p5_chat_history_backfill.sql`（回填，扩展之后执行）。计划见 `.trellis/tasks/11-19-db-reorg-p5-chat-history/design.md`。
+
+- `history`（发给模型的 messages，占表 95% 以上、每天新增 0.5–1GB）属观测：新表 `ops.chat_prompt_observations`（history_id 软引用），`begin_chat_generation_observation` 定稿时写它、不再写主表；已存 request_id 的比对改读展示投影。开轮/重生成不再写 `history`，列去掉 NOT NULL，删投影失效触发器。
+- `first_token_preview` 归交付状态 `chat_generation_requests`（发布窗口两边都写）；`drive_mode` 从 `rich_reply_metadata` 转真列；删两个没人用的索引。
+- 回填：存量会话轮次补齐展示投影（之后展示不再现场解析 history）、预览与 drive_mode 复制、校验两个 CHECK。文件不包事务、不依赖会话状态（经 Supavisor 事务池执行）：持久过程 + `\gexec` 多次 CALL，每次约 50 秒、逐批提交；投影或预览没做完就报错，重跑本文件继续。
+- 验证：`bash scripts/test-db-reorg-p5-migration.sh`（夹具为生产函数原文、md5 核对；同一场景扩展前后结果一致，只差 prompt 与预览的存放处；锚点不符拒绝且不留痕；可重跑；回填跳过被锁行、报未完成、重跑完成）。
+- 发布：TEST 扩展 → TEST 回填 → 生产扩展 → 生产回填 → 后端发布 → 核对 → 5b（按保留期搬历史快照并清空释放空间）→ 收缩。回滚：扩展不删列不删数据，旧后端照常工作。
+
 ## 2026-11-18 数据库重组阶段 4a：支付对账任务表 + 退避，支付事件迁 ops（本地 PG17 非超级用户验证）
 
 `20261118_db_reorg_p4a_payment_reconcile_jobs.sql`（扩展）+ `20261118_db_reorg_p4a_payment_reconcile_jobs_contract.sql`（收缩，后端发布后执行）。计划见 `.trellis/tasks/11-18-db-reorg-p4-jobs/design.md` 4a。
