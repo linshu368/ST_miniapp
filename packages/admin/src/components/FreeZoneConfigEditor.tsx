@@ -16,7 +16,7 @@ import {
 } from 'antd';
 import {
   QUALITY_MIN_TURNS,
-  QUALITY_WINDOW_TURNS,
+  QUALITY_WINDOW_HOURS,
   type FreeZoneConfig,
   type FreeZoneOnShelf,
   type FreeZoneRelist,
@@ -370,7 +370,7 @@ export function FreeZoneConfigEditor(props: {
       </Section>
       <Section
         title="在架质量"
-        hint={`每 30 分钟评估时，看这次上架之后最近 ${QUALITY_WINDOW_TURNS} 轮（至少 ${QUALITY_MIN_TURNS} 轮才判断）。中断率、不可用率越线是质量原因：直接下架并停着。派不出去是价格原因：冷却后报价回来自动上架。`}
+        hint={`每 30 分钟评估时，看这次上架之后、过去 ${QUALITY_WINDOW_HOURS} 小时的全部轮次（至少 ${QUALITY_MIN_TURNS} 轮才判断）。中断率、不可用率越线是质量原因：直接下架并停着。派不出去是价格原因：冷却后报价回来自动上架。`}
       >
         <NumberFields
           value={value.on_shelf}
