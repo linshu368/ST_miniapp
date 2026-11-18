@@ -342,3 +342,42 @@ export async function saveDelisting(input: {
     { timeout: 10_000, maxWait: 5_000 }
   );
 }
+
+/**
+ * 这个用户过去 24 小时在每个有上限的免费模型上用了几轮：只数成功的轮次（含重新生成），
+ * 按开轮时的模型算（兜底交付的也算这个免费模型的）。用满的同时给出恢复时间：
+ * 还在算数的最早那一轮（倒数第 limit 轮）滑出 24 小时的时刻。
+ */
+export async function loadFreeZoneTurnUsage(
+  userId: string,
+  limits: ReadonlyArray<{ modelId: string; limit: number }>
+): Promise<Map<string, { turns: number; resetsAt: string | null }>> {
+  if (limits.length === 0) return new Map();
+  const ids = limits.map((item) => item.modelId);
+  const caps = limits.map((item) => item.limit);
+  const rows = await prisma.$queryRaw<
+    Array<{ model_id: string; turns: number; resets_at: Date | null }>
+  >`
+    WITH limits AS (
+      SELECT * FROM unnest(${ids}::text[], ${caps}::int[]) AS l(model_id, max_turns)
+    ), turns AS (
+      SELECT g.requested_model_id AS model_id, h.created_at,
+        row_number() OVER (PARTITION BY g.requested_model_id ORDER BY h.created_at DESC) AS rn
+      FROM experience.chat_history h
+      JOIN experience.chat_generation_requests g ON g.chat_history_id = h.id
+      WHERE h.user_id = ${userId}::uuid
+        AND h.created_at >= now() - interval '24 hours'
+        AND h.status = 'success'
+        AND g.requested_model_id = ANY(${ids}::text[])
+    )
+    SELECT t.model_id, count(*)::int AS turns,
+      max(t.created_at) FILTER (WHERE t.rn = l.max_turns) + interval '24 hours' AS resets_at
+    FROM turns t JOIN limits l USING (model_id)
+    GROUP BY t.model_id`;
+  return new Map(
+    rows.map((row) => [
+      row.model_id,
+      { turns: row.turns, resetsAt: row.resets_at?.toISOString() ?? null },
+    ])
+  );
+}

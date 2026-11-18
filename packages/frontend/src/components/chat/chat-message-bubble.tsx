@@ -63,6 +63,7 @@ interface ChatMessageBubbleProps {
   stalled?: boolean;
   /** 本轮刚好用完该角色卡免费额度时，挂在回复正文下的轻提示 */
   quotaExhaustedNotice?: string;
+  freeZoneSwitchNotice?: string;
   /** 挂在正文下方的操作区，目前只有重生成按钮 */
   footer?: ReactNode;
   renderFooter?: (tools: ReactNode, editAction: ReactNode) => ReactNode;
@@ -129,6 +130,7 @@ function ChatMessageContent({
   streaming,
   stalled,
   quotaExhaustedNotice,
+  freeZoneSwitchNotice,
   footer,
   replyPlan,
   displayName,
@@ -200,6 +202,7 @@ function ChatMessageContent({
               <ReplyNotice>TA 刚才没能回应，可以再试一次。本次未扣星尘。</ReplyNotice>
             ) : null}
             {quotaExhaustedNotice ? <ReplyNotice>{quotaExhaustedNotice}</ReplyNotice> : null}
+            {freeZoneSwitchNotice ? <ReplyNotice>{freeZoneSwitchNotice}</ReplyNotice> : null}
           </div>
           {!inlineEditor && footer ? <div className="pt-1.5">{footer}</div> : null}
         </div>

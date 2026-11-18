@@ -19,6 +19,7 @@ import {
   resolveEffectiveSelectedModelId,
   resolveFallbackProviders,
   resolveEnabledCatalogModel,
+  type FreeZoneLimitSwitch,
   type LlmModelProvider,
 } from '@miniapp/shared';
 import {
@@ -27,7 +28,8 @@ import {
   getPricingConfig,
 } from '../../platform/model-tiers.js';
 import { createAccessFactsLoader } from '../free-zone/access-facts.js';
-import { settleFreeZoneSelection } from '../free-zone/selection.js';
+import { settleFreeZoneSelection, type SelectionReplacement } from '../free-zone/selection.js';
+import { createFreeZoneUsageLoader } from '../free-zone/usage-limit.js';
 import { buildFreeZoneResolvedModel } from '../free-zone/resolved-model.js';
 import { MiniappUserSettingsRepository } from '../../infrastructure/repositories/MiniappUserSettingsRepository.js';
 import { createLogger } from '../../lib/logger.js';
@@ -103,6 +105,7 @@ export async function resolveModelForUser(
   });
   if (freeZone.model) return freeZone.model;
   const persistedModelId = freeZone.persistedModelId;
+  const freeZoneSwitch = freeZone.limitSwitch ? { freeZoneSwitch: freeZone.limitSwitch } : {};
   const selection = resolveTextModelSelection({
     catalog: snapshot.catalog,
     persistedModelId,
@@ -163,6 +166,18 @@ export async function resolveModelForUser(
       active: entitlement.active,
       validUntil: entitlement.valid_until,
     },
+    ...freeZoneSwitch,
+  };
+}
+
+/** 用满上限换掉的那一轮，回复下轻提示一句；下架、关闭换掉的不提示 */
+function limitSwitchOf(replacement: SelectionReplacement | null): FreeZoneLimitSwitch | null {
+  if (replacement?.reason !== 'limit_reached') return null;
+  return {
+    from_name: replacement.fromName,
+    to_name: replacement.toName,
+    to_paid: replacement.toPaid,
+    resets_at: replacement.resetsAt,
   };
 }
 
@@ -177,7 +192,11 @@ async function resolveFreeZoneTurn(input: {
   snapshot: Awaited<ReturnType<typeof fetchModelCatalogSnapshot>>;
   entitlement: ResolvedModel['entitlement'];
   log: ReturnType<typeof createLogger>;
-}): Promise<{ model: ResolvedModel | null; persistedModelId: string | null }> {
+}): Promise<{
+  model: ResolvedModel | null;
+  persistedModelId: string | null;
+  limitSwitch: FreeZoneLimitSwitch | null;
+}> {
   const settled = await settleFreeZoneSelection({
     persistedModelId: input.persistedModelId,
     userId: input.userId,
@@ -188,6 +207,7 @@ async function resolveFreeZoneTurn(input: {
       userId: input.userId,
       vipValidUntil: input.entitlement.validUntil,
     }),
+    loadUsage: createFreeZoneUsageLoader(input.userId),
   });
   if (settled.replacement) {
     try {
@@ -206,19 +226,23 @@ async function resolveFreeZoneTurn(input: {
         fromModelId: input.persistedModelId,
         toModelId: settled.modelId,
         reason: settled.replacement.reason,
+        toPaid: settled.replacement.toPaid,
       },
       '畅聊模型不可用，本轮已替换'
     );
   }
-  if (!settled.usable) return { model: null, persistedModelId: settled.modelId };
+  const limitSwitch = limitSwitchOf(settled.replacement);
+  if (!settled.usable) return { model: null, persistedModelId: settled.modelId, limitSwitch };
+  const model = buildFreeZoneResolvedModel({
+    listed: settled.usable.listed,
+    zone: settled.usable.snapshot,
+    catalogSnapshot: input.snapshot,
+    pricing: await getPricingConfig(),
+    entitlement: input.entitlement,
+  });
   return {
-    model: buildFreeZoneResolvedModel({
-      listed: settled.usable.listed,
-      zone: settled.usable.snapshot,
-      catalogSnapshot: input.snapshot,
-      pricing: await getPricingConfig(),
-      entitlement: input.entitlement,
-    }),
+    model: limitSwitch ? { ...model, freeZoneSwitch: limitSwitch } : model,
     persistedModelId: settled.modelId,
+    limitSwitch,
   };
 }

@@ -19,7 +19,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-type SectionKey = 'screening' | 'on_shelf' | 'relist' | 'first_token';
+type SectionKey = 'screening' | 'on_shelf' | 'relist' | 'first_token' | 'usage_limit';
 
 /** 缺的字段补默认值；运营正在填、还不合法的值原样保留，由校验提示，不偷偷改掉。 */
 export function asFreeZoneConfig(value: unknown): FreeZoneConfig {
@@ -39,6 +39,7 @@ export function asFreeZoneConfig(value: unknown): FreeZoneConfig {
     on_shelf: section('on_shelf'),
     relist: section('relist'),
     first_token: section('first_token'),
+    usage_limit: section('usage_limit'),
     access: {
       ...defaults,
       ...rawAccess,
@@ -60,6 +61,7 @@ export const EMPTY_FREE_ZONE_CANDIDATE: FreeZoneCandidate = {
   benchmark_tier: 'light',
   parallel_requests: 1,
   min_discount_pct: null,
+  turns_per_24h: null,
 };
 
 /** 新候选的 id 留空时，按 Surplus 模型名生成一个：deepseek-v4.1 → free-deepseek-v4-1。 */
@@ -92,6 +94,7 @@ const SECTION_LABELS: Record<string, string> = {
   relist: '上架与冷却',
   first_token: '首字',
   access: '按身份开放',
+  usage_limit: '用量上限',
 };
 
 const FIELD_LABELS: Record<string, string> = {
@@ -105,6 +108,7 @@ const FIELD_LABELS: Record<string, string> = {
   benchmark_tier: '对标档位',
   parallel_requests: '并发',
   min_discount_pct: '折扣底线',
+  turns_per_24h: '每人 24 小时上限',
   min_qualified_offers: '达标报价数',
   min_realized_discount_pct: '7 天成交折扣',
   min_uptime_pct: '成功率',
