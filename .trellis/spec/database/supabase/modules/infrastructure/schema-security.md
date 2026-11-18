@@ -5,7 +5,7 @@ scope: database
 category: infrastructure
 status: active
 owners: [database]
-last_verified_task: .trellis/tasks/11-18-video-prompt-5000/
+last_verified_task: .trellis/tasks/11-18-media-plaza-feed-ranking-masonry/
 last_verified_at: 2026-11-18
 ---
 

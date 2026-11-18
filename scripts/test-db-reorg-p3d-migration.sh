@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Disposable PG17 only. No remote URI, host ports or real user data.
 # Verifies 20261118_db_reorg_p3d_flatten_config_validator.sql as a NON-superuser:
-# - the 16-layer admin.validate_managed_config_value chain is rebuilt from the historical migrations by matching the
-#   production prosrc md5 (no hand-copied bodies); called helper validators are probe stubs that name themselves when
-#   given {"__fail":true}, so a wrong dispatch shows up as a different outcome;
+# - the TEST pre-step 20261118_db_reorg_p3d_align_test_validator_chain.sql builds the production 16-layer chain (bodies
+#   generated from the historical migrations by production md5 + the video catalog branch) on an empty/TEST-shaped
+#   chain, is a no-op on the production shape, and refuses to rebuild outside TEST; called helper validators are probe
+#   stubs that name themselves when given {"__fail":true}, so a wrong dispatch shows up as a different outcome;
 # - guard refuses a changed layer and an extra layer; the in-migration self-check refuses a flattened branch that
 #   differs (tampered copy of the migration); refused runs leave the chain untouched;
 # - applied from a session that already cached a plan calling the validator, the caller keeps working;
@@ -13,6 +14,7 @@
 set -euo pipefail
 task_root="$(cd "$(dirname "$0")/.." && pwd)"
 migration="$task_root/packages/shared/migrations/20261118_db_reorg_p3d_flatten_config_validator.sql"
+align="$task_root/packages/shared/migrations/20261118_db_reorg_p3d_align_test_validator_chain.sql"
 task_container="st-db-reorg-p3d-${RANDOM}-$$"
 work_dir="$(mktemp -d)"
 trap 'docker rm -f "$task_container" >/dev/null 2>&1 || true; rm -rf "$work_dir"' EXIT
@@ -25,81 +27,35 @@ done
 super_psql=(docker exec -i "$task_container" psql -X -q -U postgres -v ON_ERROR_STOP=1)
 admin_psql=(docker exec -i "$task_container" psql -X -q -U app_admin -d postgres -v ON_ERROR_STOP=1)
 
+expect_fail() { # label, expected error substring; SQL on stdin
+  local out
+  if out=$("${admin_psql[@]}" 2>&1); then
+    echo "FAIL: $1 should have been refused"; exit 1
+  fi
+  if [[ "$out" != *"$2"* ]]; then
+    echo "FAIL: $1 refused with an unexpected error:"; echo "$out"; exit 1
+  fi
+  echo "ok: $1 refused"
+}
+assert_chain_intact() {
+  "${admin_psql[@]}" >/dev/null <<'SQL'
+DO $$ BEGIN
+  IF (SELECT count(*) FROM pg_proc WHERE pronamespace = 'admin'::regnamespace AND proname LIKE 'validate\_managed\_config\_value%') <> 16
+     OR to_regprocedure('admin.validate_managed_config_value_legacy(text,jsonb,text)') IS NOT NULL
+     OR to_regprocedure('admin.validate_payment_plan_list(jsonb)') IS NOT NULL
+     OR (SELECT md5(replace(prosrc, E'\r', '')) FROM pg_proc WHERE oid = 'admin.validate_managed_config_value(text,jsonb,text)'::regprocedure)
+        <> 'c637e78820a51c60ac0b6b8749681997' THEN
+    RAISE EXCEPTION 'assert: refused run left changes behind';
+  END IF;
+END $$;
+SQL
+}
+
 "${super_psql[@]}" >/dev/null <<'SQL'
 CREATE ROLE app_admin LOGIN NOSUPERUSER CREATEROLE;
 GRANT CREATE, CONNECT ON DATABASE postgres TO app_admin;
 SQL
 
-# Old chain: every layer body is located in packages/shared/migrations by its production md5 (11-18).
-python3 - "$task_root" >"$work_dir/chain.sql" <<'PY'
-import hashlib, pathlib, re, sys
-root = pathlib.Path(sys.argv[1]) / 'packages/shared/migrations'
-targets = {
-  'validate_managed_config_value': 'f2a182f9fdf8acf3db0a3c8065765b1f',
-  'validate_managed_config_value_before_drive_mode': 'c59a939fb223ce5efa9771fba280c2d2',
-  'validate_managed_config_value_before_free_zone': 'cb7231a5a388e44c0953573d8a98672d',
-  'validate_managed_config_value_before_story_memory': '47560512792fcaf2e17a11fe4dadd7d0',
-  'validate_managed_config_value_before_lobby_rotation': 'e5437d86931ebc68e6083bae2fe8ca0f',
-  'validate_managed_config_value_before_creator_review': '1c9a59d208eb00efad62fa856e53583e',
-  'validate_managed_config_value_before_checkin_tiers': '54d69e3bb4034cf09893a665b6971cf2',
-  'validate_managed_config_value_before_reply_styles': '64826e221280027fc7e2126a238fb646',
-  'validate_managed_config_value_before_image_plaza_tags_feature': '61e0f7e57ef57045eafe1829e83a1c7a',
-  'validate_managed_config_value_before_image_plaza': 'ccefb9ee6d1de89e9c05ac52909f1211',
-  'validate_managed_config_value_before_instruction_slots': 'caca71a531ae7759326c95fd140d7ed3',
-  'validate_managed_config_value_before_rich_reply_protocol': '2b9d6e649cdea5ebd73988d3c508f0fc',
-  'validate_managed_config_value_before_vip_strategy': 'b2983e9f975228e058e5bb2c5d0562e7',
-  'validate_managed_config_value_before_provider_routing': '7271d892ab3423eb39c1d776ddc6e0ad',
-  'validate_managed_config_value_before_payment_prompt': '4652e86ca93217145375d86d30d14530',
-  'validate_managed_config_value_before_fixed_billing': 'd2621ae91ba2957375abed820d3751bd',
-}
-by_md5 = {v: k for k, v in targets.items()}
-opener = re.compile(r'\$([A-Za-z_][A-Za-z0-9_]*)?\$')
-def spans(text, depth=0):
-    i = 0
-    while True:
-        m = opener.search(text, i)
-        if not m:
-            return
-        end = text.find(m.group(0), m.end())
-        if end < 0:
-            return
-        body = text[m.end():end]
-        yield body
-        if depth < 4:
-            yield from spans(body, depth + 1)
-        i = end + len(m.group(0))
-found = {}
-for path in sorted(root.rglob('*.sql')):
-    for body in spans(path.read_bytes().decode('utf-8')):
-        for cand in (body, body.replace('\n', '\r\n')):
-            name = by_md5.get(hashlib.md5(cand.encode('utf-8')).hexdigest())
-            if name and name not in found:
-                found[name] = cand
-missing = sorted(set(targets) - set(found))
-if missing:
-    sys.exit('layers not found in migrations: ' + ', '.join(missing))
-crlf = []
-for name, body in found.items():
-    if '\r' in body:
-        crlf.append(name)
-    assert '$legacy_body$' not in body
-    print(f"CREATE FUNCTION admin.{name}(p_config_key text, p_value jsonb, p_text_value text DEFAULT NULL)\n"
-          f" RETURNS void LANGUAGE plpgsql STABLE SET search_path TO 'pg_catalog'\n"
-          f"AS $legacy_body${body.replace(chr(13) + chr(10), chr(10))}$legacy_body$;")
-# Production stores some bodies with CRLF line endings; restore them so prosrc matches byte for byte.
-print("DO $crlf$ DECLARE v_fn regprocedure; v_src text; BEGIN")
-for name in sorted(crlf):
-    print(f"  v_fn := 'admin.{name}(text,jsonb,text)'::regprocedure;")
-    print("  SELECT prosrc INTO v_src FROM pg_proc WHERE oid = v_fn;")
-    print("  EXECUTE replace(pg_get_functiondef(v_fn), v_src, replace(v_src, E'\\n', E'\\r\\n'));")
-print("END $crlf$;")
-print("DO $md5$ BEGIN")
-for name, md5sum in targets.items():
-    print(f"  IF (SELECT md5(prosrc) FROM pg_proc WHERE oid = 'admin.{name}(text,jsonb,text)'::regprocedure) <> '{md5sum}' THEN")
-    print(f"    RAISE EXCEPTION 'fixture layer {name} does not match production';")
-    print("  END IF;")
-print("END $md5$;")
-PY
 
 "${admin_psql[@]}" >/dev/null <<'SQL'
 CREATE ROLE anon NOLOGIN;
@@ -107,6 +63,11 @@ CREATE ROLE authenticated NOLOGIN;
 CREATE ROLE service_role NOLOGIN;
 CREATE SCHEMA admin; CREATE SCHEMA app_core; CREATE SCHEMA test_fixture;
 GRANT USAGE ON SCHEMA admin TO anon, authenticated, service_role;
+
+CREATE TABLE admin.environment_config (id integer PRIMARY KEY, environment text NOT NULL);
+INSERT INTO admin.environment_config VALUES (1, 'test');
+CREATE FUNCTION admin.current_environment() RETURNS text LANGUAGE sql STABLE AS
+  $$ SELECT environment FROM admin.environment_config WHERE id = 1 $$;
 
 CREATE TABLE admin.managed_config_keys (
   config_key text PRIMARY KEY, managed_via text NOT NULL, retired_at timestamptz, note text,
@@ -131,7 +92,7 @@ FROM unnest(ARRAY['choice_rules', 'creator_character_review_prompt', 'drive_mode
   'miniapp_payment_prompt_dialog_config', 'miniapp_recharge_page_config', 'miniapp_text_postprocess_config',
   'pref_word_count_tiers', 'reply_style_options', 'status_rules', 'story_memory_config', 'story_memory_prompt',
   'system_fallback_character_id', 'system_instructions', 'vip_checkin_bonus_config', 'vip_plans_config',
-  'vip_purchase_enabled', 'vip_reminders_enabled', 'vip_text_discount_rate']) AS k;
+  'vip_purchase_enabled', 'vip_reminders_enabled', 'vip_text_discount_rate', 'image_plaza_video_model_catalog']) AS k;
 CREATE FUNCTION admin.is_managed_config_key(p_config_key text) RETURNS boolean LANGUAGE sql STABLE
   SET search_path TO 'pg_catalog' AS $$
     SELECT CASE WHEN p_config_key IS NULL THEN NULL ELSE EXISTS (
@@ -151,7 +112,8 @@ BEGIN
     'validate_invite_center_config', 'validate_vip_plans_config', 'validate_vip_text_discount_rate',
     'validate_vip_checkin_bonus_config', 'validate_feature_free_trial_limits', 'validate_lobby_ranking_params',
     'validate_model_catalog_core', 'validate_model_catalog_prd', 'validate_fixed_llm_deduction_config',
-    'validate_recharge_page_config', 'validate_free_quota_exhausted_dialog_config'] LOOP
+    'validate_recharge_page_config', 'validate_free_quota_exhausted_dialog_config',
+    'validate_image_plaza_video_model_catalog'] LOOP
     EXECUTE format($f$CREATE FUNCTION admin.%I(p_value jsonb) RETURNS void LANGUAGE plpgsql STABLE AS $b$
       BEGIN
         IF jsonb_typeof(p_value) = 'object' AND p_value ? '__fail' THEN
@@ -219,36 +181,63 @@ BEGIN
   END LOOP;
 END $$;
 SQL
-"${admin_psql[@]}" >/dev/null <"$work_dir/chain.sql"
-echo "ok: fixture (16-layer chain rebuilt from migrations, md5 equals production; probe stubs)"
+"${admin_psql[@]}" >/dev/null <"$align"
+"${admin_psql[@]}" >/dev/null <<'SQL'
+CREATE TABLE test_fixture.chain_md5 AS
+SELECT oid::regprocedure::text AS fn, md5(prosrc) AS md5sum FROM pg_proc
+WHERE pronamespace = 'admin'::regnamespace AND proname LIKE 'validate\_managed\_config\_value%';
+DO $$ BEGIN
+  IF (SELECT count(*) FROM test_fixture.chain_md5) <> 16
+     OR (SELECT md5(replace(prosrc, E'\r', '')) FROM pg_proc WHERE oid = 'admin.validate_managed_config_value(text,jsonb,text)'::regprocedure)
+        <> 'c637e78820a51c60ac0b6b8749681997' THEN
+    RAISE EXCEPTION 'assert: align pre-step did not build the production chain';
+  END IF;
+END $$;
+SQL
+echo "ok: align pre-step builds the production 16-layer chain on TEST (empty chain)"
+
+# Align pre-step: no-op on the production shape; refuses to rebuild outside TEST; rebuilds a TEST-shaped chain.
+"${admin_psql[@]}" >/dev/null <"$align"
+"${admin_psql[@]}" >/dev/null <<'SQL'
+DO $$ BEGIN
+  IF EXISTS (SELECT oid::regprocedure::text, md5(prosrc) FROM pg_proc
+             WHERE pronamespace = 'admin'::regnamespace AND proname LIKE 'validate\_managed\_config\_value%'
+             EXCEPT SELECT fn, md5sum FROM test_fixture.chain_md5) THEN
+    RAISE EXCEPTION 'assert: align changed the production-shaped chain';
+  END IF;
+END $$;
+-- TEST shape: an extra wrapper layer and two layers swapped (bodies under each other's names).
+CREATE FUNCTION admin.validate_managed_config_value_before_media_plaza_video(p_config_key text, p_value jsonb, p_text_value text DEFAULT NULL)
+  RETURNS void LANGUAGE plpgsql AS $$ BEGIN PERFORM admin.validate_managed_config_value_before_drive_mode(p_config_key, p_value, p_text_value); END $$;
+CREATE TABLE test_fixture.swap AS SELECT
+  pg_get_functiondef('admin.validate_managed_config_value_before_image_plaza(text,jsonb,text)'::regprocedure) AS a,
+  pg_get_functiondef('admin.validate_managed_config_value_before_instruction_slots(text,jsonb,text)'::regprocedure) AS b;
+DO $$ BEGIN
+  EXECUTE replace((SELECT a FROM test_fixture.swap), 'validate_managed_config_value_before_image_plaza(', 'validate_managed_config_value_before_instruction_slots(');
+END $$;
+UPDATE admin.environment_config SET environment = 'production';
+SQL
+expect_fail "align outside TEST on a differing chain" "refusing to rebuild" <"$align"
+"${admin_psql[@]}" >/dev/null <<'SQL'
+UPDATE admin.environment_config SET environment = 'test';
+SQL
+"${admin_psql[@]}" >/dev/null <"$align"
+"${admin_psql[@]}" >/dev/null <<'SQL'
+DO $$ BEGIN
+  IF to_regprocedure('admin.validate_managed_config_value_before_media_plaza_video(text,jsonb,text)') IS NOT NULL
+     OR EXISTS (SELECT fn, md5sum FROM test_fixture.chain_md5
+                EXCEPT SELECT oid::regprocedure::text, md5(prosrc) FROM pg_proc
+                WHERE pronamespace = 'admin'::regnamespace AND proname LIKE 'validate\_managed\_config\_value%') THEN
+    RAISE EXCEPTION 'assert: align did not restore the production chain from the TEST shape';
+  END IF;
+END $$;
+SQL
+echo "ok: align is a no-op on the production shape, refuses outside TEST, rebuilds a TEST-shaped chain"
 
 "${admin_psql[@]}" >/dev/null <<'SQL'
 CREATE TABLE test_fixture.baseline AS SELECT * FROM test_fixture.outcomes();
 SQL
 
-expect_fail() { # label, expected error substring; SQL on stdin
-  local out
-  if out=$("${admin_psql[@]}" 2>&1); then
-    echo "FAIL: $1 should have been refused"; exit 1
-  fi
-  if [[ "$out" != *"$2"* ]]; then
-    echo "FAIL: $1 refused with an unexpected error:"; echo "$out"; exit 1
-  fi
-  echo "ok: $1 refused"
-}
-assert_chain_intact() {
-  "${admin_psql[@]}" >/dev/null <<'SQL'
-DO $$ BEGIN
-  IF (SELECT count(*) FROM pg_proc WHERE pronamespace = 'admin'::regnamespace AND proname LIKE 'validate\_managed\_config\_value%') <> 16
-     OR to_regprocedure('admin.validate_managed_config_value_legacy(text,jsonb,text)') IS NOT NULL
-     OR to_regprocedure('admin.validate_payment_plan_list(jsonb)') IS NOT NULL
-     OR (SELECT md5(prosrc) FROM pg_proc WHERE oid = 'admin.validate_managed_config_value(text,jsonb,text)'::regprocedure)
-        <> 'f2a182f9fdf8acf3db0a3c8065765b1f' THEN
-    RAISE EXCEPTION 'assert: refused run left changes behind';
-  END IF;
-END $$;
-SQL
-}
 
 # Guards ------------------------------------------------------------------------------------------------------------
 "${admin_psql[@]}" >/dev/null <<'SQL'
@@ -325,7 +314,7 @@ BEGIN
     RAISE EXCEPTION 'assert: battery too small';
   END IF;
   -- The probe stubs must actually be reached through the new dispatch.
-  IF (SELECT count(DISTINCT outcome) FROM test_fixture.baseline WHERE outcome LIKE '22023:stub %') < 17 THEN
+  IF (SELECT count(DISTINCT outcome) FROM test_fixture.baseline WHERE outcome LIKE '22023:stub %') < 18 THEN
     RAISE EXCEPTION 'assert: battery did not reach the helper validators';
   END IF;
 
