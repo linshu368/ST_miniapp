@@ -11,13 +11,13 @@ import type { ConversationContext, ConversationHistoryRow } from './conversation
 import { readConversationPage } from './conversation-page-retry.js';
 
 const MESSAGE_DISPLAY_COLUMNS =
-  'id,user_id,model,user_input,assistant_reply,character_id,status,upstream_status,deduction_rate,created_at,llm_finish_reason,llm_charge_id,session_id,turn_index,revision,postprocess_version,first_token_preview,is_inherited,liked,user_deleted,assistant_deleted,user_edit_version,assistant_edit_version,display_request_id,display_opening_message,display_fallback';
+  'id,user_id,model,user_input,assistant_reply,character_id,status,deduction_rate,created_at,llm_finish_reason,llm_charge_id,session_id,turn_index,revision,postprocess_version,first_token_preview,is_inherited,liked,user_deleted,assistant_deleted,user_edit_version,assistant_edit_version,display_request_id,display_opening_message';
 
 export class ConversationHistoryReads {
   constructor(private readonly db: DomainDb) {}
   /**
    * 返回 current turn 之前、窗口起点之后的当前版本上下文。
-   * 开场白取 turn 1 的展示投影，不随泄洪丢掉；未回填记录由视图兼容提取。
+   * 开场白取 turn 1 的展示投影，不随泄洪丢掉。
    * listMessages 不加这个过滤。
    *
    * knownWindowStartTurn：开轮 RPC 刚返回的窗口起点。调用方有就传，省掉一次 chat_sessions 读；
@@ -108,7 +108,7 @@ export class ConversationHistoryReads {
   ): Promise<{
     messages: ChatMessage[];
     hasMore: boolean;
-    diagnostics: { attempts: number; elapsedMs: number; fallbackCount: number };
+    diagnostics: { attempts: number; elapsedMs: number };
   }> {
     const turnLimit = Math.max(Math.ceil(clampLimit(options.limit, 50, 200) / 2), 1);
     const result = await readConversationPage(
@@ -152,7 +152,6 @@ export class ConversationHistoryReads {
       diagnostics: {
         attempts: result.attempts,
         elapsedMs: result.elapsedMs,
-        fallbackCount: latest.filter((row) => row.display_fallback).length,
       },
     };
   }
