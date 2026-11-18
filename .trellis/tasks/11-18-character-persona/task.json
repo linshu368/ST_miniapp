@@ -1,0 +1,130 @@
+{
+  "id": "character-persona",
+  "name": "character-persona",
+  "title": "角色设定与主角人设",
+  "description": "角色卡补充设定 + 主角人设库（按卡选用），注入为角色卡后的独立 system；聊天页工具箱精简、玩法小贴士扩充、新对话移到对话记录侧栏。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P2",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-18",
+  "completedAt": null,
+  "branch": "codex/character-persona",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "backend.business.conversation-generation",
+        "database.business.conversation-storage",
+        "shared.business.conversation-contracts",
+        "frontend.business.conversation-ui"
+      ]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": [],
+      "apis": [
+        "POST /api/v1/conversations/:id/messages",
+        "POST /api/v1/conversations/:id/regenerate",
+        "GET /api/characters/:characterId/my-settings",
+        "PUT /api/characters/:characterId/my-settings"
+      ],
+      "android": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": null
+      },
+      "ios": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": null
+      },
+      "api": {
+        "p95_baseline_ms": null,
+        "p95_target_ms": 2000
+      },
+      "measurement": {
+        "source": "Grafana 客户端首 token 与后端派发耗时（按 release 分组）；新接口看 Railway HTTP 终态 duration_ms",
+        "window": "发布前 3 天与发布后等长窗口"
+      },
+      "notes": "页面加载不受影响：新面板在工具箱内懒加载，顶栏/侧栏只增删一个按钮，pages 为空、双端页面指标为 null。生成链路只在准备期并行读取里多一次主键 RPC（5s abort），目标为首 token 与派发前 P95 不退化；无基线样本时发布前从 Grafana 读取，不填零。接口目标沿用会话准备期的工程观察目标 2000ms（非线上基线）。"
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "required",
+      "scope": [
+        "GET/PUT /api/characters/:characterId/my-settings",
+        "POST/PATCH/DELETE /api/personas",
+        "生成准备期读取用户设定（prepareTurnInputs）"
+      ],
+      "integration_points": [
+        "复用 platform/observability/http.ts 的 HTTP 终态",
+        "routes/character-persona.ts 用 requestLogger(request.log,'character-persona') 记业务事件",
+        "生成链路复用 prepareTurnInputs 既有准备期观测，读取失败沿用同批读取的失败收口"
+      ],
+      "events": [
+        {
+          "event": "character_persona.saved",
+          "operation": "character_persona.write",
+          "levels": ["info"],
+          "outcomes": ["succeeded"],
+          "fields": ["characterId", "notesLength", "personaMode", "request_id", "trace_id"]
+        },
+        {
+          "event": "character_persona.read.failed",
+          "operation": "character_persona.read",
+          "levels": ["error"],
+          "outcomes": ["failed"],
+          "fields": ["err", "request_id", "trace_id"]
+        },
+        {
+          "event": "character_persona.write.failed",
+          "operation": "character_persona.write",
+          "levels": ["error"],
+          "outcomes": ["failed"],
+          "fields": ["err", "request_id", "trace_id"]
+        },
+        {
+          "event": "character_persona.save.failed",
+          "operation": "persona.save",
+          "levels": ["error"],
+          "outcomes": ["failed"],
+          "fields": ["err", "request_id", "trace_id"]
+        },
+        {
+          "event": "character_persona.delete.failed",
+          "operation": "persona.delete",
+          "levels": ["error"],
+          "outcomes": ["failed"],
+          "fields": ["err", "request_id", "trace_id"]
+        }
+      ],
+      "failure_paths": [
+        "请求体非法 → 400 INVALID_REQUEST，不记业务日志（HTTP 终态覆盖）",
+        "人设超过 10 个 → 409 PERSONA_LIMIT；人设/角色不存在或越权 → 404",
+        "数据库异常 → 500 并记 *.failed（{ err }）",
+        "生成准备期读取失败或超时 → 本轮失败，沿用准备期失败收口（开轮前，无孤儿行），不吞错"
+      ],
+      "correlation": "复用请求 ALS 上下文与响应链路头；业务事件带 characterId，生成链路沿用会话 trace_id",
+      "redaction": "只记长度与选择模式；不记补充设定正文、人设名称或描述、initData、token；原始错误交给 { err } 安全投影",
+      "alerting": "不新增告警规则；500 沿用既有 HTTP 错误等级，生成失败沿用会话生成既有告警",
+      "verification": [
+        "pnpm --filter @miniapp/backend typecheck 与 lint:backend-logging",
+        "engine user-settings 测试与 conversations/routes 测试",
+        "人工：TEST 环境保存设定后检查 Railway 日志只有长度与模式字段"
+      ]
+    }
+  }
+}

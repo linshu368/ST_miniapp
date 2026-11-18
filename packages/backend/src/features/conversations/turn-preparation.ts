@@ -3,6 +3,7 @@ import { DEFAULT_FIRST_TOKEN_DEADLINE_MS } from '@miniapp/shared';
 import type { ChatSessionRow } from '../../infrastructure/repositories/ChatSessionRepository.js';
 import type { ConversationHistoryRepository } from '../../infrastructure/repositories/ConversationHistoryRepository.js';
 import type { MiniappUserSettingsRepository } from '../../infrastructure/repositories/MiniappUserSettingsRepository.js';
+import type { UserPersonaRepository } from '../../infrastructure/repositories/UserPersonaRepository.js';
 import type { RequestLogger } from '../../lib/logger.js';
 import { fetchModelCatalogSnapshot } from '../../platform/model-tiers.js';
 import { fetchPlatformInstructions } from '../engine/index.js';
@@ -56,7 +57,7 @@ export async function prepareConversationAdmission(
 }
 
 /**
- * 开轮之前的只读准备：模型、用户设置、平台规则、记忆配置并行读取，同时预热计费准备。
+ * 开轮之前的只读准备：模型、用户设置、平台规则、记忆配置、角色设定并行读取，同时预热计费准备。
  * 最新记忆单独并行读取、有短截止且永不 reject，不进入下面的等待。
  *
  * 都放在写入之前：这里抛异常时会话还没被动过，不会留下没有回复的孤儿 user 行。
@@ -70,6 +71,8 @@ export async function prepareTurnInputs(input: {
   firstTokenDeadlineMs: number | undefined;
   catalogSnapshot: Awaited<ReturnType<typeof fetchModelCatalogSnapshot>> | undefined;
   settings: MiniappUserSettingsRepository;
+  /** 用户对这张角色卡的补充设定与主角人设。 */
+  personas: UserPersonaRepository;
   history: ConversationHistoryRepository;
   log: RequestLogger;
 }) {
@@ -100,13 +103,15 @@ export async function prepareTurnInputs(input: {
   });
   void executionPreparation.catch(() => undefined);
   const storyMemory = readStoryMemoryForTurn(input.sessionId);
-  const [model, generationContext, instructions, storyMemoryConfig] =
+  const [model, generationContext, instructions, storyMemoryConfig, characterSettings] =
     await withConversationPreparationDeadline(
       Promise.all([
         modelPromise,
         generationContextPromise,
         instructionsPromise,
         fetchStoryMemoryConfig(),
+        // 不吞错：静默丢掉用户设定违背"一直生效"，失败与同批读取一样使本轮失败（开轮前，无孤儿行）。
+        input.personas.readPromptSettings(userId, input.characterId),
         // Ownership is already established. Recover stale writes concurrently
         // with independent reads, but always finish recovery before startTurn.
         input.history.recoverStaleStreaming(input.sessionId),
@@ -129,6 +134,7 @@ export async function prepareTurnInputs(input: {
     instructions,
     storyMemoryConfig,
     storyMemory,
+    characterSettings,
     executionPreparation,
     preparationSignal,
   };

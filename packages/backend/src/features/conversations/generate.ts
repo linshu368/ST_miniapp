@@ -53,7 +53,7 @@ import {
 import type { ConversationStreamSink } from './sse.js';
 import { prepareTurnInputs } from './turn-preparation.js';
 import { createTurnScope } from './turn-scope.js';
-import { characters, historyRecords, userSettings } from './turn-repositories.js';
+import { characters, historyRecords, userPersonas, userSettings } from './turn-repositories.js';
 
 export { withConversationPreparationDeadline } from './turn-preparation.js';
 export { normalizePersistedOutcome } from './turn-execution.js';
@@ -162,6 +162,7 @@ export async function runConversationTurn(
     instructions,
     storyMemoryConfig,
     storyMemory,
+    characterSettings,
     executionPreparation,
     preparationSignal,
   } = await prepareTurnInputs({
@@ -172,6 +173,7 @@ export async function runConversationTurn(
     firstTokenDeadlineMs: input.firstTokenDeadlineMs,
     catalogSnapshot: input.catalogSnapshot,
     settings: userSettings(),
+    personas: userPersonas(),
     history: historyRecords(),
     log,
   });
@@ -243,6 +245,7 @@ export async function runConversationTurn(
       instructions: instructions.instructions,
       storyMemoryConfig,
       storyMemory,
+      characterSettings,
       log,
     });
 
@@ -279,6 +282,7 @@ async function loadTurnPrompt(input: {
   instructions: PromptInput['instructions'];
   storyMemoryConfig: StoryMemoryConfig;
   storyMemory: Promise<StoryMemoryRead>;
+  characterSettings: { notes: string; personaDescription: string };
   log: RequestLogger;
 }) {
   const { session, turn } = input;
@@ -320,6 +324,7 @@ async function loadTurnPrompt(input: {
     character: toEngineCharacter(card),
     history,
     storyMemory,
+    userSettings: input.characterSettings,
     truncatedTurns,
     userInput: turn.userInput,
     userConfig: input.userConfig,

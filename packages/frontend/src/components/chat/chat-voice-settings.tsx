@@ -10,8 +10,7 @@ import { ToolRow } from './chat-tool-row';
 /**
  * 工具箱「语音设置」。与回复偏好同域：用户级配置，对所有角色生效。
  *
- * 音色列表放在二级页而不是平铺在这里——十几个音色平铺会把抽屉撑满，
- * 而这一栏之后还要放图片设置之外的其它项。
+ * 音色列表放在二级页而不是平铺在这里——十几个音色平铺会把抽屉撑满。
  */
 export function ChatVoiceSettings({ onOpenVoicePicker }: { onOpenVoicePicker: () => void }) {
   const query = useVoiceConfigQuery();
