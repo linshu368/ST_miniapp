@@ -120,6 +120,9 @@ const RULES = [
       'packages/shared/migrations/20261013_session_scoped_instruction_slot_modes.sql',
       'packages/shared/migrations/20261014_rich_reply_dynamic_mode.sql',
       'packages/shared/migrations/20261023_reply_style_options.sql',
+      // Historical video share function still names the old table. The 20261117
+      // video-share forward-fix removes that write after install. Never rewrite applied SQL.
+      'packages/shared/migrations/20261027_media_plaza_video.sql',
       'packages/shared/migrations/20261117_drive_mode.sql',
       'packages/shared/migrations/20261117_db_reorg_ops_cs_feed.sql',
       'packages/shared/migrations/20261117_db_reorg_p3a_drop_test_funnel_stats.sql',
