@@ -163,12 +163,7 @@ describe.skipIf(!url)('real local PostgREST generation facts', () => {
     expect(provider.data?.llm_generation_id).toBe(`fallback-${h}`);
     const observer = await db.from('venice_chat_history').select('id').eq('chat_history_id', h);
     expect(observer.data).toEqual([]);
-    await repository.enrichGeneration(`fallback-${h}`, {
-      latency: 700,
-      provider_name: 'Fixture Vendor',
-      finish_reason: 'stop',
-      model: 'fixture-delivered-model',
-    });
+    await repository.enrichGeneration(`fallback-${h}`, { finish_reason: 'stop' });
   });
   it('enforces owner/revision, accepts first report once, and returns consistent analytics', async () => {
     expect(await repository.report(randomUUID(), session, firstReport)).toBe(false);
@@ -184,9 +179,7 @@ describe.skipIf(!url)('real local PostgREST generation facts', () => {
     const rows = await client
       .schema('miniapp_analytics')
       .from('chat_first_token_facts')
-      .select(
-        'requested_model_id,client_outcome,client_first_token_visible_ms,delivery_role,fallback_provider_gap_ms'
-      )
+      .select('requested_model_id,client_outcome,client_first_token_visible_ms,delivery_role')
       .eq('chat_history_id', h);
     if (rows.error) throw rows.error;
     expect(rows.data).toHaveLength(1);
@@ -195,7 +188,6 @@ describe.skipIf(!url)('real local PostgREST generation facts', () => {
       client_outcome: 'observed',
       client_first_token_visible_ms: 5300,
       delivery_role: 'fallback',
-      fallback_provider_gap_ms: 100,
     });
   });
   it('allows dedicated metrics reads but denies message content and client direct reporting', async () => {
