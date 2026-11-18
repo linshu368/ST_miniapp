@@ -5,7 +5,7 @@ scope: database
 category: business
 status: active
 owners: [database]
-last_verified_task: .trellis/tasks/11-18-media-plaza-feed-ranking-masonry/
+last_verified_task: .trellis/tasks/11-18-video-prompt-5000/
 last_verified_at: 2026-11-18
 ---
 
@@ -174,3 +174,9 @@ RPC 锁定本人未删除会话，验证当前可见、success 且非空回复�
 20261118_media_plaza_feed_ranking.sql定义D类media_plaza.image_plaza_feed_scores与原子重建/有界读取函数；旧works.initial_feed_order保留。相对热度按模型名次轮转，统一图片视频排名再筛选。迁移仅本地引擎验证，未远端执行。
 
 实现和验证边界见 `docs/media-plaza-feed-ranking.md` 与 `.trellis/tasks/11-18-media-plaza-feed-ranking-masonry/verification.md`。
+
+## 2026-11-18 video prompt5000 (local candidate)
+
+Candidate migration 20261118_media_plaza_message_prompt_5000.sql widens existing E message content CHECK from1-2000 to1-5000 without new data objects or rewriting content. Image product requests remain2000. Not remotely executed.
+
+See `docs/video-plaza-stream.md` and `.trellis/tasks/11-18-video-prompt-5000/verification.md` for release and evidence boundaries.
