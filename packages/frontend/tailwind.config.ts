@@ -20,6 +20,8 @@ const config: Config = {
         background: 'hsl(var(--background))',
         /** 畅聊（免费模型）专用强调色，和主色金区分开 */
         'free-zone': 'hsl(var(--free-zone) / <alpha-value>)',
+        /** 工具箱「补充设定」的模块色，和主色金区分两个模块 */
+        mauve: 'hsl(var(--mauve) / <alpha-value>)',
         foreground: 'hsl(var(--foreground))',
         primary: {
           DEFAULT: 'hsl(var(--primary))',
