@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { mapConversationRow } from './repository-model.js';
+
 import {
   cursorFilter,
   decodeFeedCursor,
@@ -6,6 +8,21 @@ import {
   feedFilter,
   type FeedCursor,
 } from './feed-cursor.js';
+
+it('preserves the source work for default-cover consumers and keeps legacy rows nullable', () => {
+  const row = {
+    id: 'conversation',
+    user_id: 'owner',
+    title: 'fixture',
+    snapshot: null,
+    created_at: '2026-11-18T00:00:00Z',
+    updated_at: '2026-11-18T00:00:00Z',
+  };
+  expect(mapConversationRow(row, []).source_work_id).toBeNull();
+  expect(mapConversationRow({ ...row, source_work_id: 'source-work' }, []).source_work_id).toBe(
+    'source-work'
+  );
+});
 
 type Call = { method: string; args: unknown[] };
 

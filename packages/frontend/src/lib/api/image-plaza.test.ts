@@ -1,11 +1,20 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, type InfiniteData } from '@tanstack/react-query';
-import type { GetImagePlazaFeedData, GetImagePlazaWorkData, ImagePlazaWork } from '@miniapp/shared';
+import type {
+  GetImagePlazaFeedData,
+  GetImagePlazaWorkData,
+  ImagePlazaWork,
+  ImagePlazaConversation,
+} from '@miniapp/shared';
+import * as plazaApi from './image-plaza';
+import { apiClient } from './client';
+import { createVideoCoverReference, latestConversationCover } from './video-cover-reference';
 import {
   imagePlazaKeys,
   patchImagePlazaLike,
   restoreImagePlazaLike,
   validateImagePlazaReference,
+  videoPlazaInputModeForReference,
 } from './image-plaza';
 import {
   clearImagePlazaReturn,
@@ -15,6 +24,183 @@ import {
 } from '../image-plaza-return';
 
 vi.mock('./client', () => ({ apiClient: vi.fn(), ApiClientError: class extends Error {} }));
+
+describe('default video cover reference', () => {
+  const conversation: ImagePlazaConversation = {
+    id: '11111111-1111-4111-8111-111111111111',
+    title: 'fixture',
+    snapshot: null,
+    messages: [],
+    created_at: '2026-11-18T00:00:00Z',
+    updated_at: '2026-11-18T00:00:00Z',
+  };
+  const artifact = {
+    id: '22222222-2222-4222-8222-222222222222',
+    image_url: 'https://storage.example/reference.jpg',
+    width: 512,
+    height: 512,
+  };
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    vi.mocked(apiClient).mockReset();
+  });
+
+  it('reads the authorized source-work cover and uploads an explicit reference before submit', async () => {
+    const source = work('33333333-3333-4333-8333-333333333333');
+    vi.mocked(apiClient).mockResolvedValueOnce({ work: source });
+    const fetchCover = vi.fn(
+      async () => new Response('fixture', { headers: { 'content-type': 'image/jpeg' } })
+    );
+    vi.stubGlobal('fetch', fetchCover);
+    const payload = { image_base64: 'Zml4dHVyZQ==', mime_type: 'image/jpeg' as const };
+    vi.spyOn(plazaApi, 'fileToImagePlazaPayload').mockResolvedValue(payload);
+    const upload = vi.fn(async () => ({ artifact }));
+    expect(
+      await createVideoCoverReference(
+        new QueryClient(),
+        { ...conversation, source_work_id: source.id },
+        null,
+        upload
+      )
+    ).toEqual(artifact);
+    expect(apiClient).toHaveBeenCalledWith(
+      `/api/image-plaza/works/${source.id}`,
+      expect.any(Object)
+    );
+    expect(fetchCover).toHaveBeenCalledWith(
+      new URL(source.image_url),
+      expect.objectContaining({
+        credentials: 'omit',
+        redirect: 'error',
+        referrerPolicy: 'no-referrer',
+      })
+    );
+    expect(upload).toHaveBeenCalledExactlyOnceWith(payload);
+  });
+
+  it('uses the selected retry cover before the conversation source', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('fixture', { headers: { 'content-type': 'image/jpeg' } }))
+    );
+    vi.spyOn(plazaApi, 'fileToImagePlazaPayload').mockResolvedValue({
+      image_base64: 'fixture',
+      mime_type: 'image/jpeg',
+    });
+    await createVideoCoverReference(
+      new QueryClient(),
+      { ...conversation, source_work_id: conversation.id },
+      'https://storage.example/retry.jpg',
+      async () => ({ artifact })
+    );
+    expect(apiClient).not.toHaveBeenCalled();
+  });
+
+  it('rejects empty conversations before downloading or uploading anything', async () => {
+    const upload = vi.fn();
+    await expect(
+      createVideoCoverReference(new QueryClient(), conversation, null, upload)
+    ).rejects.toThrow('请先添加参考图');
+    expect(upload).not.toHaveBeenCalled();
+    expect(apiClient).not.toHaveBeenCalled();
+  });
+
+  it('uses the latest successful output in the current conversation as a cover', () => {
+    const imageMessage = (id: string, url: string): ImagePlazaConversation['messages'][number] => ({
+      id,
+      role: 'assistant',
+      content: '',
+      media_type: 'image',
+      video_attempt: null,
+      created_at: conversation.created_at,
+      attempt: {
+        id,
+        conversation_id: conversation.id,
+        status: 'ready',
+        quote_credits: 1,
+        error_code: null,
+        artifacts: [{ id, image_url: url, width: 512, height: 512 }],
+        created_at: conversation.created_at,
+        updated_at: conversation.updated_at,
+      },
+    });
+    expect(
+      latestConversationCover({
+        ...conversation,
+        messages: [
+          imageMessage('first', 'https://storage.example/first.jpg'),
+          imageMessage('latest', 'https://storage.example/latest.jpg'),
+        ],
+      })
+    ).toBe('https://storage.example/latest.jpg');
+  });
+
+  it('propagates denied source-work access without trying another asset or uploading', async () => {
+    vi.mocked(apiClient).mockRejectedValueOnce(new Error('not authorized'));
+    const upload = vi.fn();
+    await expect(
+      createVideoCoverReference(
+        new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+        { ...conversation, source_work_id: conversation.id },
+        null,
+        upload
+      )
+    ).rejects.toThrow('not authorized');
+    expect(upload).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    'http://storage.example/private.jpg',
+    'https://name:secret@storage.example/private.jpg',
+  ])('rejects unsafe cover URL %s without upload', async (url) => {
+    const fetchCover = vi.fn();
+    const upload = vi.fn();
+    vi.stubGlobal('fetch', fetchCover);
+    await expect(
+      createVideoCoverReference(new QueryClient(), conversation, url, upload)
+    ).rejects.toThrow('封面读取失败');
+    expect(fetchCover).not.toHaveBeenCalled();
+    expect(upload).not.toHaveBeenCalled();
+  });
+
+  it('bounds cover size and never leaks a signed URL in an error', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response('fixture', { headers: { 'content-length': String(21 * 1024 * 1024) } })
+      )
+    );
+    const upload = vi.fn();
+    await expect(
+      createVideoCoverReference(
+        new QueryClient(),
+        conversation,
+        'https://storage.example/cover.jpg?token=private',
+        upload
+      )
+    ).rejects.toThrow('封面读取失败，请手动添加参考图');
+    expect(upload).not.toHaveBeenCalled();
+    expect(latestConversationCover(conversation)).toBeNull();
+  });
+});
+
+describe('video quote input mode', () => {
+  it.each([
+    ['required_reference', false, 'r2v'],
+    ['required_reference', true, 'r2v'],
+    ['optional_reference', false, 't2v'],
+    ['optional_reference', true, 'r2v'],
+    ['optional_first_frame', false, 't2v'],
+    ['optional_first_frame', true, 'i2v'],
+    ['none', false, 't2v'],
+    ['none', true, 't2v'],
+    [undefined, false, 't2v'],
+  ] as const)('quotes %s with reference=%s as %s', (input, reference, expected) => {
+    expect(videoPlazaInputModeForReference(input, reference)).toBe(expected);
+  });
+});
 
 function work(id: string): ImagePlazaWork {
   return {

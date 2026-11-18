@@ -48,6 +48,11 @@ export const WISH_IDS = {
 } as const;
 
 export const scenarios = {
+  'spending-video': {
+    label: '视频消费与退款明细',
+    description: '同一虚构任务的预扣和原路退回，核对正负号、通用/专项与只读余额',
+    path: '/profile/spending',
+  },
   'image-masonry': {
     label: '影像广场多页瀑布流',
     description: '60条虚构图片/视频，横竖比例混合、三页加载与媒体筛选',
