@@ -544,17 +544,17 @@ tables:
     nature: M
     owner: backend/src/features/image-plaza/video-repository.ts
     status: moving
-    note: MIGRATION 20261027；广场视频未生产发布，历史报价落位债务待迁billing，本次不加列
+    note: 20261118 production_base仅首次部署现有报价契约，未生产执行；历史M落位债务待迁billing，不新增逻辑列
   media_plaza.video_attempts:
     nature: E
     owner: rpc:billing.reserve_media_plaza_video
     status: moving
-    note: MIGRATION 20261027；历史混合J/M字段待拆，本次交付租约进入video_delivery_jobs，不加列
+    note: 20261118 production_base仅首次部署现有契约，未生产执行；历史混合J/M待拆，不新增逻辑列；新交付租约进入video_delivery_jobs
   media_plaza.video_artifacts:
     nature: E
     owner: rpc:media_plaza.publish_video_artifact
     status: active
-    note: Stream UID/稳定链接与产物同生命周期；封面在Supabase；20261117扩展待TEST workflow执行
+    note: Stream UID/稳定链接与产物同生命周期；封面在Supabase；duration_ms为媒体内容时长非测速；生产base/Stream候选未执行
   media_plaza.video_delivery_jobs:
     nature: J
     owner: backend/src/features/image-plaza/video-delivery-repository.ts
